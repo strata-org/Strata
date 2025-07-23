@@ -1,0 +1,39 @@
+name: BoogieToStrata CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+
+env:
+  SOLUTION: Tools/BoogieToStrata/BoogieToStrata.sln
+  Z3URL: https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-x64-glibc-2.39.zip
+
+jobs:
+  build_and_test:
+    name: BoogieToStrata CI
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Lean
+        uses: leanprover/lean-action@v1
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Install tools
+        run: |
+          # Download a Z3 release
+          wget ${Z3URL}
+          unzip z3*.zip
+          export PATH="$(find $PWD/z3* -name bin -type d):$PATH"
+      - name: Build Strata
+        run: lake exe StrataVerify Examples/SimpleProc.boogie.st
+      - name: Build BoogieToStrata
+        run: |
+          dotnet build -warnaserror ${SOLUTION}
+      - name: Test BoogieToStrata
+        run: |
+          dotnet test ${SOLUTION}

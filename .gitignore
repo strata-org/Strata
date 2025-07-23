@@ -1,3 +1,4 @@
+.vscode
 /.lake
 
 # SMT files generated when running tests

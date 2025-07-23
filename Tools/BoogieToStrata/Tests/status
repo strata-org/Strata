@@ -1,0 +1,29 @@
+Arrays2.coat                   Correct output?
+Axioms.coat                    Correct output?
+B.coat                         Correct output?
+BooleanQuantification.coat     Correct output?
+BooleanQuantification2.coat    Correct output?
+BQueue.coat                    Type error (polymorphism)
+Bubble.coat                    Parse error (while loop)
+codeMotion.coat                Parse error (while loop)
+DivMod.coat                    Correct output?
+EQ_....coat                    Type error (polymorphism)
+Frame1.coat                    Correct output?
+FreeCall.coat                  Correct output?
+Gauss.coat                     Parse error (while loop)
+IfThenElse1.coat               Correct output?
+Implies.coat                   Correct output?
+Lambda.coat                    Correct output?
+LogicalExprs.coat              Correct output?
+McCarthy-91.coat               Correct output?
+ms1.coat                       Correct output?
+ms2.coat                       Correct output?
+ms3.coat                       Correct output?
+ms4.coat                       Type error (polymorphism)
+ms5.coat                       Correct output?
+ParallelAssignment.coat        Correct output?
+Quantifiers.coat               Correct output?
+strengthReductionWithQ.coat    Correct output?
+TypeSynonyms1.coat             Type error (polymorphism)
+TypeSynonyms2.coat             Type error (polymorphism)
+Where.coat                     Parse error (while loop)
