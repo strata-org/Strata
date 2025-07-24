@@ -43,7 +43,7 @@ namespace ArithPrograms
 
 -- set_option trace.Strata.generator true
 -- set_option trace.Strata.DDM.syntax true
-#strataGenAST ArithPrograms
+#strata_gen ArithPrograms
 -- #print Command.toAst
 -- #print Command.ofAst
 

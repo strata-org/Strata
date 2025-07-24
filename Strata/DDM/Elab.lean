@@ -37,10 +37,24 @@ open Lean
 
 namespace Elab
 
+namespace DialectLoader
+
+def initial := dialectProgramState.loader
+
+instance : Inhabited DialectLoader where
+  default := initial
+
+def freshDeclState (loader : DialectLoader) : DeclState where
+  loader := loader
+  parserMap := initDeclState.parserMap
+  tokenTable := initDeclState.tokenTable
+
+end DialectLoader
+
 /- Elaborate a Strata program -/
 partial def elabProgram
     (env : Lean.Environment)
-    (dialects : Array Dialect)
+    (dialects : DialectLoader)
     (inputContext : InputContext)
     (startPos : String.Pos := 0)
     (stopPos : String.Pos := inputContext.input.endPos) : DeclState := Id.run do
@@ -53,16 +67,14 @@ partial def elabProgram
           let c ← runCommand env programElabs
           if c then
             run
-  let s := initialProgramState
-  let s := s.addDialects! dialects
-  let s := { s with pos := startPos }
+  let s := { dialects.freshDeclState with pos := startPos }
   let ((), s) := run ctx s
   pure s
 
 /- Elaborate a Strata dialect definition. -/
 partial def elabDialect
     (env : Lean.Environment)
-    (dialects : Array Dialect)
+    (dialects : DialectLoader)
     (inputContext : Parser.InputContext)
     (startPos stopPos : String.Pos)
      : DeclState := Id.run do
@@ -76,9 +88,8 @@ partial def elabDialect
           let c ← runCommand env dialectElabs
           if c then
             run
-  let s := dialectProgramState
-  let s := s.addDialects! dialects
-  let s := { s with pos := startPos }
+  let s := {  dialects.freshDeclState with pos := startPos }
+  let s := Elab.openParserDialect s
   let ((), s) := run ctx s
   pure s
 

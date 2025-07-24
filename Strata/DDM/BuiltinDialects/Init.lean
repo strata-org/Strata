@@ -23,18 +23,15 @@ open Parser (minPrec)
 
 def initializeInitDialect : DeclM Unit := do
   let Init := "Init"
-  let _ ← declareEmptyDialect Init
+  declareEmptyDialect Init
 
   let Ident : DeclBindingKind := .cat <| .atom q`Init.Ident
-  declareAtomicCat q`Init.Ident Parser.identifier
-
   let Num : SyntaxCat := .atom q`Init.Num
-  declareAtomicCat q`Init.Num Parser.numLit
-
-  let Decimal : QualifiedIdent := q`Init.Decimal
-  declareAtomicCat Decimal Parser.decimalLit
-
   let Str : SyntaxCat := .atom q`Init.Str
+
+  declareAtomicCat q`Init.Ident Parser.identifier
+  declareAtomicCat q`Init.Num Parser.numLit
+  declareAtomicCat q`Init.Decimal Parser.decimalLit
   declareAtomicCat q`Init.Str Parser.strLit
 
   declareCat q`Init.Option #["a"]
@@ -321,13 +318,25 @@ def initializeInitDialect : DeclM Unit := do
     syntaxDef := .ofList [.ident 0 0],
   }
 
-def initialProgramState : DeclState := DeclM.runInitializer
-  initializeInitDialect
+def initDeclState : DeclState := DeclM.run (init := {}) initializeInitDialect
 
 def initDialect : Dialect :=
-  if initialProgramState.errors.size > 0 then
+  if initDeclState.errors.size > 0 then
     panic! "Initial program state initialization failed"
   else
-    match initialProgramState.env.dialects["Init"]? with
+    match initDeclState.dialects["Init"]? with
     | some d => d
     | none => panic! "Initialial dialect failed"
+
+namespace Elab.DialectLoader
+
+def addDialect! (ctx : DialectLoader) (d : Dialect) : DialectLoader :=
+  assert! d.name ∉ ctx.dialects
+  {
+    dialects := ctx.dialects.insert d
+    dialectParsers := addDialectToParser! initDeclState.fixedParsers ctx.dialectParsers d
+    syntaxElabMap := addDialectSyntaxElabs ctx.syntaxElabMap d
+  }
+
+
+end Elab.DialectLoader

@@ -267,13 +267,10 @@ protected def lookupVar (tctx : TypingContext) (var : String) : Option VarBindin
 
 end TypingContext
 
-def getOpenDialects [ElabClass m] : m (Array DialectName) :=
-  return (←getEnv).openDialects
-
 def commaPrec := 30
 
 def getCurrentDialectName : DeclM (Option DialectName) := do
-  return (←get) |>.currentDialect |>.map fun (_, name, _) => name
+  return (←get) |>.currentDialect |>.map fun (_, name) => name
 
 def getCurrentDialect : DeclM (Option Dialect) := do
   (← getCurrentDialectName) |>.mapM getDialect
@@ -517,8 +514,11 @@ end Tree
 -- Expression elaboration
 
 structure ElabContext where
-  env : Environment
-  parserState : ParserState
+  dialects : DialectMap
+  openDialects : Std.HashSet DialectName
+  /-- Map for looking up metadata by name. -/
+  metadataDeclMap : MetadataDeclMap
+  globalContext : GlobalContext
   inputContext : InputContext
   syntaxElabs : Std.HashMap QualifiedIdent SyntaxElaborator
 
@@ -531,8 +531,9 @@ def ElabM α := ReaderT ElabContext (StateM ElabState) α
 
 instance : ElabClass ElabM where
   getInputContext := return (←read).inputContext
-  getEnv := return (←read).env
-  getParserState := return (←read).parserState
+  getDialects := return (←read).dialects
+  getOpenDialects := return (←read).openDialects
+  getGlobalContext := return (←read).globalContext
   getErrorCount := return (←get).errors.size
   logErrorMessage stx msg :=
     modify fun s => { s with errors := s.errors.push (stx, msg) }
@@ -593,12 +594,12 @@ open dialect.
 private def resolveIdentDecl (stx : Syntax) (tpId : MaybeQualifiedIdent) : ElabM (QualifiedIdent × Decl) :=
   match tpId with
   | .qid qid => do
-    match (←getEnv).dialects[qid.dialect]? with
+    match (←read).dialects[qid.dialect]? with
     | none =>
       logError stx s!"Undeclared dialect {qid.dialect}."
       return default
     | some d =>
-      if d.name ∉ (← getOpenDialects) then
+      if d.name ∉ (← read).openDialects then
         logError stx s!"{d.name} is not an open dialect."
         return default
       let name := qid.name
@@ -611,8 +612,9 @@ private def resolveIdentDecl (stx : Syntax) (tpId : MaybeQualifiedIdent) : ElabM
 
   | .name name => do
     let mut decls : Array (Dialect × Decl) := #[]
-    for dName in ← getOpenDialects do
-      if let some d := (←getEnv).dialects[dName]? then
+    let dialects := (←read).dialects
+    for dName in (← read).openDialects do
+      if let some d := dialects[dName]? then
         match d.cache[name]? with
         | some decl =>
           decls := decls.push (d, decl)
@@ -626,9 +628,8 @@ private def resolveIdentDecl (stx : Syntax) (tpId : MaybeQualifiedIdent) : ElabM
     | some (d, decl) =>
 
       if let some (candD, _) := decls[1]? then
-        let ident : QualifiedIdent := { dialect := d.name, name := decl.name }
-        let name2 : QualifiedIdent := { dialect := candD.name, name }
-        logError stx s!"{name} is ambiguous: Could be {eformat ident} and {eformat name2}."
+        assert! d.name ≠ candD.name
+        logError stx s!"{name} is ambiguous: declared in {d.name} and {candD.name}."
         return default
 
       pure <| ({ dialect := d.name, name }, decl)
@@ -907,21 +908,14 @@ def elabMetadataName (stx : Syntax) (mi : MaybeQualifiedIdent) : ElabM (Qualifie
     logErrorMF stx mf!"Qualified ident {q} not yet supported." -- FIXME
     return default
   | .name ident =>
-    let env ← getEnv
-    let mut dialectNames : Array (DialectName × MetadataDecl) := #[]
-    let ps ← getParserState
-    for dname in ps.openDialects do
-      let some d := env.dialects[dname]?
-          | panic! "Unknown dialect {dname}"
-      if let some decl := d.metadata[ident]? then
-        dialectNames := dialectNames.push (d.name, decl)
-    let some (d, decl) := dialectNames[0]?
+    let decls := (←read).metadataDeclMap.get ident
+    let some (d, decl) := decls[0]?
       | logError stx s!"Unknown metadata attribute {ident}"
         return default
     -- Check if there is another possibility
-    if let some (d_alt, _) := dialectNames[1]? then
+    if let some (d_alt, _) := decls[1]? then
       logError stx s!"{ident} is ambiguous; declared in {d} and {d_alt}"
-    return ({ dialect := d, name := ident }, decl)
+    return ({ dialect := d, name := ident }, decl.val)
 
 /-- Map from variable names to their position. -/
 abbrev DeclBindingMap := Std.HashMap String Nat
@@ -1477,7 +1471,7 @@ partial def inferType (tctx : TypingContext) (e : Expr) : ElabM TypeExpr := do
       return resultType! tctx tp a.val.size
     | .type _ _ => panic! "Expected expression instead of type."
   | .fn ident => do
-    let dm := (← read).env.dialects
+    let dm := (← read).dialects
     let .function decl := dm.decl! ident
       | panic! s!"Expected {ident} to be a function"
     let fnArgCount := decl.argDecls.size
@@ -1536,7 +1530,7 @@ partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := 
     return default
   let some i := qualIdentKind stx
     | return panic! s!"Unknown command {stx.getKind}"
-  let some d := (←getEnv).dialects[i.dialect]?
+  let some d := (←read).dialects[i.dialect]?
     | return panic! s!"Unknown dialect {i.dialect} in {stx}"
   let some decl := d.ops[i.name]?
     | return panic! (f!"unknown operation {eformat i}").pretty
@@ -1584,11 +1578,11 @@ partial def runSyntaxElaborator
       if success then
         let expr := tree.info.asExpr!.expr
         let inferredType ← inferType tctx expr
-        let dm := (←getEnv).dialects
+        let dialects := (← read).dialects
         let resolveArg (i : Nat) : Option Arg := do
             assert! i < argLevel
             Tree.arg <$> trees[argLevel - i - 1]!
-        match expandMacros dm expectedType resolveArg with
+        match expandMacros dialects expectedType resolveArg with
         | .error () =>
           logError astx s!"Could not infer type."
         | .ok expectedType => do
@@ -1771,7 +1765,7 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree :=
   | _ => do
     let some i := qualIdentKind stx
       | return panic! s!"Unknown expression {stx}"
-    let some d := (←getEnv).dialects[i.dialect]?
+    let some d := (←read).dialects[i.dialect]?
       | return panic! s!"Unknown dialect {i.dialect} in {stx}"
     let some fn := d.functions[i.name]?
       | return panic! (f!"unknown operation {eformat i}").pretty
@@ -1787,11 +1781,15 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree :=
 end
 
 def runElab [Inhabited α] (action : ElabM α) : DeclM α := do
-  let env ← getEnv
-  let parserState ← getParserState
-  let inputContext ← getInputContext
-  let syntaxElabs := (←get).syntaxElabMap
-  let ctx : ElabContext := { env := env, parserState, inputContext, syntaxElabs }
+  let s ← get
+  let ctx : ElabContext := {
+        dialects := s.dialects,
+        openDialects := s.openDialectSet,
+        metadataDeclMap := s.metadataDeclMap,
+        globalContext := s.globalContext,
+        inputContext := (←read).inputContext,
+        syntaxElabs := s.syntaxElabMap
+  }
   let errors := (←get).errors
   -- Clear errors from decl
   modify fun s => { s with errors := #[] }
@@ -1953,7 +1951,7 @@ def translateSyntaxDef (params : DeclBindingsMap) (mdTree tree : Tree) : ElabM S
 abbrev CommandElab := Tree → DeclM Unit
 
 def checkDialectClosed : DeclM Unit := do
-  if let some (dstx, name, _) := (←get).currentDialect then
+  if let some (dstx, name) := (←get).currentDialect then
     logError dstx s!"Unclosed dialect {name}"
 
 def envSyntaxElabs (env : Environment) : SyntaxElabMap :=
@@ -1979,7 +1977,7 @@ def TypingContext.addToGlobal (tctx : TypingContext) : GlobalContext :=
   tctx.bindings.toArray.foldl (init := tctx.globalContext) ins
 
 def getParsers! (d : Dialect) : DeclM (Array DeclParser) := do
-  match (←get).parserState.parsingContext.mkDialectParsers d with
+  match (←get).fixedParsers.mkDialectParsers d with
   | .error msg =>
     panic! s!"Could not add open dialect: {eformat msg |>.pretty}"
     return #[]
@@ -1987,29 +1985,21 @@ def getParsers! (d : Dialect) : DeclM (Array DeclParser) := do
     pure parsers
 
 def startDialect (stx : Syntax) (name : String) : DeclM Unit := do
-  if name ∈ (←getEnv).dialects then
+  if name ∈ (← get).dialects then
     logError stx[1] <| s!"Dialect {name} already declared."
     return
-  let d ← declareEmptyDialect name
-  let ps ← getParserState
-  modify fun s => { s with currentDialect := some (stx, name, ps) }
+  declareEmptyDialect name
+  modify fun s => { s with currentDialect := some (stx, name) }
   openDialect name
-
-def finishDialect (stx : Syntax) : DeclM Unit := do
-  let some (_, _, ps) := (←get) |>.currentDialect
-    | logError stx "Not in dialect"; return
-  modify fun s => { s with currentDialect := none }
-  updateParserState fun _ => ps
-
 
 def elabOpenCommand (tree : Tree) : DeclM Unit := do
   assert! tree.children.size = 1
   let identTree := tree[0]!.info
   let name := identTree.asIdent!.val
-  if name ∉ (←getEnv).dialects then
+  if name ∉ (← get).dialects then
     logError identTree.stx <| s!"Unknown dialect {name}."
     return
-  if name ∈ (←getParserState).openDialects then
+  if name ∈ (←get).openDialectSet then
     logError identTree.stx <| s!"Dialect {name} already open."
     return
   openDialect name
@@ -2024,9 +2014,10 @@ private def elabCategoryCommand (tree : Tree) : DeclM Unit := do
     logError name.stx  s!"Category {name.val} already declared."
     return
   let decl : SynCatDecl := { name := name.val, argNames := #[] }
-  addDeclToEnv d.name (.syncat decl)
-  assert! d.name ∈ (←getEnv).openDialects
-  updateParserState (·.addSynCat d.name decl)
+  addDeclToDialect d.name (.syncat decl)
+  if d.name ∉ (← get).openDialects then
+    panic! s!"{d.name} not in open dialects."
+  modify (addSynCat d.name decl)
 
 private def checkTypeDeclarationArgs (tree : Tree) : ElabM (Array String) := do
   let bindings := tree.optBindings!
@@ -2059,7 +2050,7 @@ private def elabTypeCommand (tree : Tree) : DeclM Unit := do
     pure (name, args)
 
   if success then
-    addDeclToEnv d.name (.type { name, argNames })
+    addDeclToDialect d.name (.type { name, argNames })
 
 /- Add a new operator. -/
 def elabOpCommand (tree : Tree) : DeclM Unit := do
@@ -2107,7 +2098,7 @@ def elabOpCommand (tree : Tree) : DeclM Unit := do
         logError categoryTree.info.stx s!"Expected atomic category"
         return
 
-  let ctx := (←getParserState).parsingContext
+  let ctx := (←get).fixedParsers
   let ident : QualifiedIdent := { dialect := d.name, name }
   let dp ←
         match ctx.opSyntaxParser category ident argDecls opStx with
@@ -2128,7 +2119,7 @@ def elabOpCommand (tree : Tree) : DeclM Unit := do
     metadata := opMetadata,
     newBindings := newBindings
   }
-  addDecl d.name (.op decl) dp (opDeclElaborator decl)
+  addElabDecl d.name (.op decl) dp (opDeclElaborator decl)
 
 def resolveDeclTypeBinding  (name : String)
     (binding : TypingContext.VarBinding) (args : Array (Syntaxed DeclBindingKind)) : ElabM DeclBindingKind := do
@@ -2184,7 +2175,7 @@ def elabFnCommand (tree : Tree) : DeclM Unit := do
   let argDecls := params.decls.map (·.val)
 
   let ident := { dialect := d.name, name }
-  match (←getParserState).parsingContext.opSyntaxParser q`Init.Expr ident argDecls opStx with
+  match (←get).fixedParsers.opSyntaxParser q`Init.Expr ident argDecls opStx with
   | .error msg =>
     logErrorMF tree.info.stx msg
   | .ok dp =>
@@ -2200,7 +2191,7 @@ def elabFnCommand (tree : Tree) : DeclM Unit := do
       metadata := opMetadata,
     }
     let fnElab := mkSyntaxElab argDecls opStx opMetadata
-    addDecl d.name (.function decl) dp fnElab
+    addElabDecl d.name (.function decl) dp fnElab
 
 def elabMetadataArgCatType (stx : Syntax) (ci : SyntaxCat) : DeclM MetadataArgType := do
   match ci with
@@ -2281,7 +2272,9 @@ def dialectElabs : Std.HashMap QualifiedIdent CommandElab :=
 partial def runCommand (leanEnv : Lean.Environment) (commandElabs : Std.HashMap QualifiedIdent CommandElab) : DeclM Bool := do
   let inputContext := (←read).inputContext
   let leanParserState :=
-        (←getParserState).runCatParser
+        Parser.runCatParser
+          (←get).tokenTable
+          (←get).parserMap
           leanEnv
           inputContext
           (←get).pos
@@ -2298,7 +2291,7 @@ partial def runCommand (leanEnv : Lean.Environment) (commandElabs : Std.HashMap 
   let stx := leanParserState.stxStack.back
   modify fun s => { s with pos := leanParserState.pos }
   assert! stx.getKind ≠ nullKind
-  let glbl := (←get).env.globalContext
+  let glbl := (←get).globalContext
   let (tree, success) ← runElab <| runChecked <| elabOperation (.empty glbl) stx
   if success then
     let cmd := tree.info.asOp!.op
@@ -2306,7 +2299,10 @@ partial def runCommand (leanEnv : Lean.Environment) (commandElabs : Std.HashMap 
         act tree
     else do
       checkDialectClosed
-      updateEnv (·.addCommand cmd)
+      modify fun s => { s with
+        commands := s.commands.push cmd,
+        globalContext := s.globalContext.addCommand s.dialects cmd
+      }
   return true
 
 end Strata.Elab

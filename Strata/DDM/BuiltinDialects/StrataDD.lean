@@ -33,7 +33,7 @@ def initializeStrataDD : DeclM Unit := do
   let mkOpt (c:SyntaxCat) : SyntaxCat := .app (.atom q`Init.Option) c
   let mkCommaSepBy (c:SyntaxCat) : SyntaxCat := .app (.atom q`Init.CommaSepBy) c
 
-  let _ ← declareEmptyDialect StrataDD
+  declareEmptyDialect StrataDD
 
   -- Extend dialect with operation for constructing functions
   -- from bindings name and type.
@@ -174,15 +174,13 @@ def initializeStrataDD : DeclM Unit := do
   declareMetadata StrataDD { name := "declareFn",   args := #[.mk "name" .ident, .mk "args" .ident, .mk "type" .ident] }
   declareMetadata StrataDD { name := "declareMD",   args := #[.mk "name" .ident, .mk "type" .ident, .mk "md" .ident] }
 
-def dialectProgramState : DeclState := DeclM.runInitializer do
-  initializeInitDialect
+def dialectProgramState : DeclState := DeclM.run (init := initDeclState) do
   initializeStrataDD
-  openParserDialect "StrataDD"
 
 def strataDialect : Dialect :=
   if dialectProgramState.errors.size > 0 then
     panic! s!"{StrataDD} dialect initialization failed"
   else
-    match dialectProgramState.env.dialects[StrataDD]? with
+    match dialectProgramState.dialects[StrataDD]? with
     | some d => d
     | none => panic! s!"{StrataDD} dialect not found"

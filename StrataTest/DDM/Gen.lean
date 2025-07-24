@@ -65,7 +65,7 @@ op mkMutACommaSep (a : CommaSepBy MutA) : MutACommaSep => a;
 
 namespace TestDialect
 
-#strataGenAST TestDialect
+#strata_gen TestDialect
 
 /--
 info: inductive TestDialect.test : Type

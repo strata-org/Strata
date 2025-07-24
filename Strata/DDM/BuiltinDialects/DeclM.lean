@@ -104,31 +104,31 @@ macro_rules
 
 class ElabClass (m : Type → Type) extends Monad m where
   getInputContext : m InputContext
-  getEnv : m Environment
-  getParserState : m ParserState
+  getDialects : m DialectMap
+  getOpenDialects : m (Std.HashSet DialectName)
+  getGlobalContext : m GlobalContext
   getErrorCount : m Nat
   logErrorMessage : Syntax → Message → m Unit
 
-export ElabClass (getInputContext getEnv getParserState getErrorCount logErrorMessage)
+export ElabClass (logErrorMessage)
 
 /-
 Runs action and returns result along with Bool that is true if
 action ran without producing errors.
 -/
 def runChecked [ElabClass m] (action : m α) : m (α × Bool) := do
-  let errorCount ← getErrorCount
+  let errorCount ← ElabClass.getErrorCount
   let r ← action
-  return (r, errorCount = (← getErrorCount))
+  return (r, errorCount = (← ElabClass.getErrorCount))
 
 def logError [ElabClass m] (stx : Syntax) (msg : String) : m Unit := do
   let pos := stx.getHeadInfo.getPos?.getD 0
-  let inputCtx ← getInputContext
+  let inputCtx ← ElabClass.getInputContext
   logErrorMessage stx <| Lean.mkStringMessage inputCtx pos msg
 
 def logErrorMF [ElabClass m] (stx : Syntax) (msg : StrataFormat) : m Unit := do
-  let env ← Elab.getEnv
-  let c := env.formatContext {}
-  let s := env.formatState
+  let c : FormatContext := .ofDialects (← ElabClass.getDialects) (← ElabClass.getGlobalContext) {}
+  let s : FormatState := { openDialects := ← ElabClass.getOpenDialects }
   logError stx (msg c s |>.format |>.pretty)
 
 -- DeclM
@@ -141,44 +141,111 @@ def DeclContext.empty : DeclContext where
   inputContext := default
   stopPos := 0
 
+abbrev DialectParsers := Std.HashMap DialectName (Array DeclParser)
+
+abbrev MetadataDeclWithName (name : String) := { md : MetadataDecl // md.name = name }
+
+/--
+  Map metadata attribute names to any declarations with that name that
+  are in the current scope.
+-/
+structure MetadataDeclMap where
+  map : Std.DHashMap String (λname => Array (DialectName × MetadataDeclWithName name)) := {}
+deriving Inhabited
+
+namespace MetadataDeclMap
+
+def add (m : MetadataDeclMap) (dialect : DialectName) (decl : MetadataDecl) : MetadataDeclMap where
+  map := m.map.alter decl.name fun ma => some <| ma.getD #[] |>.push (dialect, ⟨decl, rfl⟩)
+
+def addDialect (m : MetadataDeclMap) (dialect : Dialect) :=
+  dialect.metadata.fold (init := m) (·.add dialect.name ·)
+
+def get (m : MetadataDeclMap) (name : String) : Array (DialectName × MetadataDeclWithName name) :=
+  m.map.getD name #[]
+
+end MetadataDeclMap
+
+structure DialectLoader where
+  /--- Map from dialect names to the dialect definition. -/
+  dialects : DialectMap := {}
+  /-- Parsers for dialects in map. -/
+  dialectParsers : DialectParsers := {}
+  /--/ Map for elaborating operations and functions. -/
+  syntaxElabMap : SyntaxElabMap := {}
+  deriving Inhabited
+
+namespace DialectLoader
+
+def addEmpty (l : DialectLoader) (name : DialectName) : DialectLoader :=
+  let d := { name }
+  { l with dialects := l.dialects.insert d
+           dialectParsers := l.dialectParsers.insert name #[]
+  }
+
+def addDialectToParser! (pctx : ParsingContext) (pm : DialectParsers) (dialect : Dialect) : DialectParsers :=
+  match pctx.mkDialectParsers dialect with
+  | .error msg =>
+    @panic _ ⟨pm⟩ s!"Could not add open dialect: {eformat msg |>.pretty}"
+  | .ok parsers => pm.insert dialect.name parsers
+
+def addDeclToDialect! (l : DialectLoader) (dialect : DialectName) (decl : Decl) :=
+  { l with
+    dialects := l.dialects.addDecl! dialect decl
+  }
+
+def addElabDeclToDialect! (l : DialectLoader) (dialect : DialectName) (decl : Decl) (dp : DeclParser) (se : SyntaxElaborator)  :=
+  { l with
+    dialects := l.dialects.addDecl! dialect decl
+    dialectParsers := l.dialectParsers.alter dialect fun c => (c.getD #[]).push dp
+    syntaxElabMap := addSyntaxElab l.syntaxElabMap dialect decl.name se
+  }
+
+end DialectLoader
+
 structure DeclState where
-  env : Environment
-  -- Parsers for dialects in environment.
-  -- Stored separately to avoid errors when opening dialect.
-  dialectParsers : Std.HashMap DialectName (Array DeclParser) := {}
-  -- The parser context represents the state of the parser.
-  parserState : ParserState := {}
-  -- Map for elaborating operations and functions
-  syntaxElabMap : SyntaxElabMap
+  -- Fixed parser map
+  fixedParsers : ParsingContext := {}
+  -- Map from dialect names to the dialect definition
+  loader : DialectLoader := {}
+  -- Dialects considered open for pretty-printing purposes.
+  openDialects : Array DialectName := #["Init"]
+  -- List of dialects considered open.
+  openDialectSet : Std.HashSet DialectName := .ofArray openDialects
+  /-- Map for looking up metadata by name. -/
+  metadataDeclMap : MetadataDeclMap := {}
+  -- Dynamic parser categories
+  parserMap : PrattParsingTableMap := {}
+  -- Token table for parsing
+  tokenTable : Lean.Parser.TokenTable := {}
+  -- Top level commands in file.
+  commands : Array Operation := #[]
+  -- Operations at the global level
+  globalContext : GlobalContext := {}
   -- String position in file.
-  pos : String.Pos
+  pos : String.Pos := 0
   -- Errors found in elaboration.
   errors : Array (Syntax × Message) := #[]
   -- Contains the dialect being defined and old parser state (if any)
-  currentDialect : Option (Syntax × DialectName × ParserState) := none
+  currentDialect : Option (Syntax × DialectName) := none
+  deriving Inhabited
 
 namespace DeclState
 
-protected
-def modifyEnv (f : Environment → Environment) (s : DeclState) :=
-  { s with env := f s.env }
+def dialects (s : DeclState) := s.loader.dialects
 
-def modifyParserState (f : ParserState → ParserState) (s : DeclState) :=
-  { s with parserState := f s.parserState }
+/-- Parsers for dialects in map. -/
+def dialectParsers (s : DeclState) := s.loader.dialectParsers
 
-def addDialect! (dialect : Dialect) (s : DeclState) : DeclState :=
-  match s.parserState.parsingContext.mkDialectParsers dialect with
-  | .error msg =>
-    @panic _ ⟨s⟩ s!"Could not add open dialect: {eformat msg |>.pretty}"
-  | .ok parsers =>
-    { s with
-      env := s.env.addDialect dialect,
-      dialectParsers := s.dialectParsers.insert dialect.name parsers
-      syntaxElabMap := addDialectSyntaxElabs s.syntaxElabMap dialect
-      }
+/-- Map for elaborating operations and functions -/
+def syntaxElabMap (s : DeclState) := s.loader.syntaxElabMap
 
-def addDialects! (dialects : Array Dialect) (s : DeclState) : DeclState :=
-  dialects.foldl (·.addDialect!) s
+def mkEnv (s : DeclState) : Environment := {
+      dialects := s.dialects -- FIXME.  Compute only reachable dialects.
+      openDialects := s.openDialects
+      commands := s.commands
+      globalContext := s.globalContext
+    }
 
 end DeclState
 
@@ -189,104 +256,127 @@ namespace DeclM
 
 instance : ElabClass DeclM where
   getInputContext := return (←read).inputContext
-  getEnv := return (←get).env
-  getParserState := return (←get).parserState
+  getDialects := return (←get).dialects
+  getOpenDialects :=
+    return .ofArray <| (←get).openDialects
+  getGlobalContext := return (←get).globalContext
   getErrorCount := return (←get).errors.size
   logErrorMessage stx msg :=
     modify fun s => { s with errors := s.errors.push (stx, msg) }
 
-def runInitializer (action : DeclM Unit) : DeclState :=
-  (action DeclContext.empty { pos := 0, env := .empty, syntaxElabMap := {}}).snd
+def run (action : DeclM Unit) (init : DeclState := {}) : DeclState :=
+  (action DeclContext.empty init).snd
 
 end DeclM
 
-def declareEmptyDialect (name : DialectName) : DeclM Dialect := do
-  let d := { name }
-  modify fun s => { s with
-    env := s.env.addDialect d
-    dialectParsers := s.dialectParsers.insert name #[]
-  }
-  pure d
-
-def updateEnv (f : Environment → Environment) : DeclM Unit := do
-  modify (·.modifyEnv f)
+def declareEmptyDialect (name : DialectName) : DeclM Unit := do
+  modify fun s => { s with loader := s.loader.addEmpty name }
 
 def getDialect (name : String) : DeclM Dialect := do
-  let some d := (← getEnv).dialects[name]?
+  let some d := (← get).dialects[name]?
     | panic! "Unknown dialect {name}"
   return d
 
-def addDeclToEnv (name : DialectName) (decl : Decl) : DeclM Unit := do
-  updateEnv (·.addDecl! name decl)
+def addDeclToDialect (name : DialectName) (decl : Decl) : DeclM Unit := do
+  modify fun s => { s with
+    loader := s.loader.addDeclToDialect! name decl
+  }
 
-def updateParserState (f : ParserState → ParserState) : DeclM Unit := do
-  modify (·.modifyParserState f)
+def addParserToCat (s : DeclState) (dp : DeclParser) : DeclState :=
+  assert! dp.category ∈ s.parserMap
+  { s with
+      tokenTable := s.tokenTable.addTokens dp.parser
+      parserMap :=
+        s.parserMap.alter dp.category fun mtables =>
+          match mtables with
+          | none => panic s!"Category {dp.category.fullName} not declared."
+          | some tables =>
+            let r := tables |>.addParser dp.isLeading dp.parser dp.outerPrec
+            some r,
+  }
+
+def addSynCat (dialect : String) (decl : SynCatDecl) (s : DeclState) : DeclState :=
+  let cat : QualifiedIdent := { dialect, name := decl.name }
+  if cat ∈ s.parserMap then
+    panic! s!"{cat} already declared."
+  else
+    { s with parserMap := s.parserMap.insert cat {} }
+
+private def openParserDialectImpl (s : DeclState) (dialect : DialectName) (syncats : Collection SynCatDecl) : DeclState :=
+  let ds := syncats.fold (init := s) (fun ps decl => addSynCat dialect decl ps)
+  let parsers := s.dialectParsers.getD dialect #[]
+  parsers.foldl (init := ds) addParserToCat
 
 /--
 Opens the dialect (not must not already be open)
 -/
 def openDialect (dialect : DialectName) : DeclM Unit := do
-  if dialect ∈ (←get).env.openDialects then
+  if dialect ∈ (←get).openDialects then
     panic! s!"Dialect {dialect} already open"
     return
   let d ← getDialect dialect
   modify fun s =>
-    { s with
-      env := s.env.openDialect dialect,
-      parserState :=
-        if dialect ∈ s.parserState.openDialects then
-          s.parserState
-        else
-          let parsers := s.dialectParsers.getD dialect #[]
-          s.parserState.openDialect dialect d.syncats parsers
+    let s := { s with
+      openDialects := s.openDialects.push dialect
+      openDialectSet := s.openDialectSet.insert dialect
+      metadataDeclMap := s.metadataDeclMap.addDialect d
     }
+    openParserDialectImpl s dialect d.syncats
 
 /--
-Opens the dialect in the parser so it is visible to parser, but not
+Opens the dialect definition dialect in the parser so it is visible to parser, but not
 part of environment.  This is used for dialect definitions.
 -/
-def openParserDialect (dialect : DialectName) : DeclM Unit := do
-  let d ← getDialect dialect
-  assert! dialect ∉ (←getParserState).openDialects
-  modify fun s =>
-    { s with
-      parserState :=
-        let parsers := s.dialectParsers.getD dialect #[]
-        s.parserState.openDialect dialect d.syncats parsers
-    }
+def openParserDialect (s : DeclState) : DeclState :=
+  let dialect := "StrataDD"
+  assert! "StrataDD" ∉ s.openDialectSet
+  match s.dialects[dialect]? with
+  | none => @panic _ ⟨s⟩  "Unknown dialect {name}"
+  | some d =>
+    let s := { s with metadataDeclMap := s.metadataDeclMap.addDialect d }
+    openParserDialectImpl s dialect d.syncats
+
+def addFixedParser (ident : QualifiedIdent) (p : Parser) (s : DeclState) : DeclState :=
+  { s with
+      fixedParsers := s.fixedParsers.add ident p,
+      tokenTable := s.tokenTable.addTokens p
+  }
 
 def declareAtomicCat (catIdent : QualifiedIdent) (p : Parser) : DeclM Unit := do
-  addDeclToEnv catIdent.dialect (.syncat { name := catIdent.name })
-  assert! catIdent.dialect ∈ (←getEnv).openDialects
-  updateParserState (·.addFixedParser catIdent p)
+  addDeclToDialect catIdent.dialect (.syncat { name := catIdent.name })
+  assert! catIdent.dialect ∈ (←get).openDialects
+  modify (addFixedParser catIdent p)
 
 def declareCat (cat : QualifiedIdent) (argNames : Array String := #[]): DeclM Unit := do
   let d ← getDialect cat.dialect
   if cat.name ∈ d.cache then
     panic! s!"declareCat Category {eformat cat} already declared"
   let decl := { name := cat.name, argNames }
-  addDeclToEnv cat.dialect (.syncat decl)
-  if cat ∈ (← getParserState).categoryMap then
+  addDeclToDialect cat.dialect (.syncat decl)
+  if cat ∈ (← get).parserMap then
     panic! s!"declareCat 2 Category {eformat cat} already declared"
-  if d.name ∈ (←getEnv).openDialects then
-    updateParserState (·.addSynCat cat.dialect decl)
+  if d.name ∈ (←get).openDialects then
+    modify (addSynCat cat.dialect decl)
 
-def addDecl (dialect : DialectName) (decl : Decl) (dp : DeclParser) (se : SyntaxElaborator) : DeclM Unit := do
-  modify fun s => { s with
-    env := s.env.addDecl! dialect decl
-    dialectParsers := s.dialectParsers.alter dialect fun c => (c.getD #[]).push dp
-    parserState := s.parserState.extendDeclParser dialect dp
-    syntaxElabMap := addSyntaxElab s.syntaxElabMap dialect decl.name se
-  }
+def addElabDecl (dialect : DialectName) (decl : Decl) (dp : DeclParser) (se : SyntaxElaborator) : DeclM Unit := do
+  modify fun s =>
+    let s := { s with
+      loader := s.loader.addElabDeclToDialect! dialect decl dp se
+    }
+    if dialect ∈ s.openDialectSet then
+      addParserToCat s dp
+    else
+      s
 
 def declareOp (dialect : DialectName) (decl : OpDecl) : DeclM Unit := do
-  match (←getParserState).parsingContext.opDeclParser dialect decl with
+  match (←get).fixedParsers.opDeclParser dialect decl with
   | .error msg =>
     panic! (eformat msg).pretty
   | .ok dp =>
-    addDecl dialect (.op decl) dp (opDeclElaborator decl)
+    addElabDecl dialect (.op decl) dp (opDeclElaborator decl)
 
-def declareMetadata (dialect : String) (decl : MetadataDecl) := do
-  addDeclToEnv dialect (.metadata decl)
-
-end Elab
+def declareMetadata (dialect : DialectName) (decl : MetadataDecl) := do
+  addDeclToDialect dialect (.metadata decl)
+  modify fun (s:DeclState) =>  { s with
+    metadataDeclMap := s.metadataDeclMap.add dialect decl
+  }
