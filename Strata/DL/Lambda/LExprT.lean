@@ -237,7 +237,8 @@ partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (ot
   let xt := .forAll [] (.ftvar xt')
   let S ← match oty with
   | .some ty =>
-    (Constraints.unify [(.ftvar xt', ty)] T.state.subst)
+    let (optTyy, T) := (ty.aliasInst T)
+    (Constraints.unify [(.ftvar xt', optTyy.getD ty)] T.state.subst)
   | .none =>
     .ok T.state.subst
 
@@ -250,9 +251,10 @@ partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (ot
   let mty := LMonoTy.subst T.state.subst (.ftvar xt')
   match oty with
   | .some ty =>
-    if ty == mty
+    let (optTyy, _) := (ty.aliasInst T)
+    if optTyy.getD ty == mty
     then .ok ()
-    else .error "Type annotation on LTerm.quant doesn't match inferred argument type"
+    else .error f!"Type annotation on LTerm.quant {ty} (alias for {optTyy.getD ty}) doesn't match inferred argument type"
   | _ => .ok ()
   if ety = LMonoTy.bool then do
     let etclosed := .varClose 0 xv et

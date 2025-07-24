@@ -123,7 +123,7 @@ def runSolver (solver : String) (args : Array String) : IO String := do
 def solverResult (vars : List (IdentT BoogieIdent)) (ans : String) (ctx : SMT.Context) (E : EncoderState) :
   Except Format Result := do
   let pos := (ans.find (fun c => c == '\n')).byteIdx
-  let verdict := ans.take pos
+  let verdict := (ans.take pos).trim
   let rest := ans.drop pos
   match verdict with
   | "sat"     =>

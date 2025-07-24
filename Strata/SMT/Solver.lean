@@ -142,13 +142,18 @@ private def readlnD (dflt : String) : SolverM String := do
 
 def checkSat (vars : List String) : SolverM Decision := do
   emitln "(check-sat)"
-  if !vars.isEmpty then
-    getValue vars
-  match (← readlnD "unknown\n") with
-  | "sat\n"     => return Decision.sat
-  | "unsat\n"   => return Decision.unsat
-  | "unknown\n" => return Decision.unknown
-  | other       => throw (IO.userError s!"Unrecognized solver output: {other}")
+  let result := (← readlnD "unknown").trim
+  match result with
+  | "sat"     =>
+    if !vars.isEmpty then
+      getValue vars
+    return Decision.sat
+  | "unsat"   => return Decision.unsat
+  | "unknown" =>
+    if !vars.isEmpty then
+      getValue vars
+    return Decision.unknown
+  | other     => throw (IO.userError s!"Unrecognized solver output: {other}")
 
 def reset : SolverM Unit :=
   emitln "(reset)"
