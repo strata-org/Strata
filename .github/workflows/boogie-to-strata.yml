@@ -21,12 +21,6 @@ jobs:
         with:
           build: false
           test: false
-      - name: Setup Lean
-        uses: leanprover/lean-action@v1
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.0.x'
       - name: Install solvers
         run: |
           # Download a Z3 release
@@ -41,6 +35,12 @@ jobs:
         run: |
           z3 --version
           cvc5 --version
+      - name: Setup Lean
+        uses: leanprover/lean-action@v1
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
       - name: Build Strata
         run: lake exe StrataVerify Examples/SimpleProc.boogie.st
       - name: Build BoogieToStrata
