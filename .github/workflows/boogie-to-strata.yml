@@ -18,6 +18,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          build: false
+          test: false
       - name: Setup Lean
         uses: leanprover/lean-action@v1
       - name: Setup .NET
