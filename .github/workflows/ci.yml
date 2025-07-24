@@ -1,0 +1,57 @@
+name: Build
+
+on:
+  pull_request:
+
+jobs:
+  get-branch-name:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get branch name
+        shell: bash
+        # The workflow is triggered by pull_request so we use `GITHUB_BASE_REF`
+        run: echo "branch_name=${GITHUB_BASE_REF}" >> $GITHUB_OUTPUT
+        id: get_branch_name
+    outputs:
+      branch_name: ${{ steps.get_branch_name.outputs.branch_name }}
+
+  build_and_test_lean:
+    name: Build and test Lean
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        toolchain:
+          - stable
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install Lean
+        shell: bash
+        run: |
+              wget https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh
+              bash elan-init.sh -y
+      - name: Install cvc5
+        shell: bash
+        run: |
+              ARCH=$(uname -m)
+              if [ "$ARCH" = "x86_64" ]; then
+                ARCH_NAME="x86_64"
+              elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+                ARCH_NAME="arm64"
+              else
+                echo "Unsupported architecture: $ARCH"
+                exit 1
+              fi
+              wget https://github.com/cvc5/cvc5/releases/download/cvc5-1.2.1/cvc5-Linux-${ARCH_NAME}-static.zip
+              unzip cvc5-Linux-${ARCH_NAME}-static.zip
+              chmod +x cvc5-Linux-${ARCH_NAME}-static/bin/cvc5
+              echo "$GITHUB_WORKSPACE/cvc5-Linux-${ARCH_NAME}-static/bin/" >> $GITHUB_PATH
+      - name: Download dependencies
+        shell: bash
+        run: source ~/.profile && lake -R -Kenv=dev update
+      - name: Build
+        shell: bash
+        run: source ~/.profile && lake build
+      - name: Test
+        shell: bash
+        run: source ~/.profile && lake test
