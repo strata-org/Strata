@@ -9,6 +9,7 @@ on:
 env:
   SOLUTION: Tools/BoogieToStrata/BoogieToStrata.sln
   Z3URL: https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-x64-glibc-2.39.zip
+  CVC5URL: https://github.com/cvc5/cvc5/releases/download/cvc5-1.3.0/cvc5-Linux-x86_64-static.zip
 
 jobs:
   build_and_test:
@@ -29,6 +30,10 @@ jobs:
           wget ${Z3URL}
           unzip z3*.zip
           export PATH="$(find $PWD/z3* -name bin -type d):$PATH"
+          # Download a cvc5 release
+          wget ${CVC5URL}
+          unzip cvc5*.zip
+          export PATH="$(find $PWD/cvc5* -name bin -type d):$PATH"
       - name: Build Strata
         run: lake exe StrataVerify Examples/SimpleProc.boogie.st
       - name: Build BoogieToStrata
