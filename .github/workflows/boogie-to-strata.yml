@@ -27,16 +27,20 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - name: Install tools
+      - name: Install solvers
         run: |
           # Download a Z3 release
           wget ${Z3URL}
           unzip z3*.zip
-          export PATH="$(find $PWD/z3* -name bin -type d):$PATH"
+          find $PWD/z3* -name bin -type d >> $GITHUB_PATH
           # Download a cvc5 release
           wget ${CVC5URL}
           unzip cvc5*.zip
-          export PATH="$(find $PWD/cvc5* -name bin -type d):$PATH"
+          find $PWD/cvc5* -name bin -type d >> $GITHUB_PATH
+      - name: Test solvers
+        run: |
+          z3 --version
+          cvc5 --version
       - name: Build Strata
         run: lake exe StrataVerify Examples/SimpleProc.boogie.st
       - name: Build BoogieToStrata
