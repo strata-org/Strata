@@ -5,6 +5,9 @@ on:
   pull_request:
     branches:
       - main
+  push:
+    branches:
+      - main
 
 env:
   SOLUTION: Tools/BoogieToStrata/BoogieToStrata.sln
@@ -18,9 +21,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          build: false
-          test: false
       - name: Install solvers
         run: |
           # Download a Z3 release
@@ -37,11 +37,14 @@ jobs:
           cvc5 --version
       - name: Setup Lean
         uses: leanprover/lean-action@v1
+        with:
+          build: false
+          test: false
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - name: Build Strata
+      - name: Build StrataVerify
         run: lake exe StrataVerify Examples/SimpleProc.boogie.st
       - name: Build BoogieToStrata
         run: |
