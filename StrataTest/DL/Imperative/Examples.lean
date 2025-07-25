@@ -22,7 +22,7 @@ namespace Strata
 ---------------------------------------------------------------------
 def testProgram1 : Environment :=
 #strata
-open ArithPrograms;
+program ArithPrograms;
   init x : num := 0;
   x := 1;
   havoc x;
@@ -50,7 +50,7 @@ Counterexample: (($__x0, Num), 0)
 
 def testProgram2 : Environment :=
 #strata
-open ArithPrograms;
+program ArithPrograms;
   init x : num := 0;
   x := 1;
   init y : num := 0;
@@ -71,7 +71,7 @@ info:
 
 def testProgram3 : Environment :=
 #strata
-open ArithPrograms;
+program ArithPrograms;
   var x : num;
   assert [double_x_lemma]: (2 * x == x + x);
 #end

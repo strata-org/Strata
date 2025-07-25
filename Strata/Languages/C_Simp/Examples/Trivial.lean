@@ -19,7 +19,7 @@ import Strata.Languages.C_Simp.Verify
 
 def TrivialEnv :=
 #strata
-open C_Simp;
+program C_Simp;
 
 procedure trivial () -> bool
   @pre true

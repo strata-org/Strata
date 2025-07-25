@@ -602,7 +602,7 @@ def parseNewBindings! (md : Metadata) (bindings : DeclBindings) : Array (Binding
 structure SynCatDecl where
   name : String
   argNames : Array String := #[]
-deriving Repr, DecidableEq
+deriving Repr, DecidableEq, Inhabited
 
 /--
 A declaration of an algebraic data type.
@@ -610,7 +610,7 @@ A declaration of an algebraic data type.
 structure TypeDecl where
   name : String
   argNames : Array String
-deriving Repr, DecidableEq
+deriving Repr, DecidableEq, Inhabited
 
 /-- Operator declaration -/
 structure OpDecl where

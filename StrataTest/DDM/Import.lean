@@ -23,11 +23,11 @@ error: Unknown dialect FailTest.
 #guard_msgs in
 def testEnvFail :=
 #strata
-open FailTest;
+program FailTest;
 #end
 
 def testEnv :=
 #strata
-open Test;
+program Test;
 assert;
 #end

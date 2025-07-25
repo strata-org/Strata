@@ -21,7 +21,7 @@ namespace Strata
 
 def mapEnv : Environment :=
 #strata
-open Boogie;
+program Boogie;
 
 const a : Map int bool;
 

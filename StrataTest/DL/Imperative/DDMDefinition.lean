@@ -32,7 +32,7 @@ op havoc  (v : Ident) : Command => "havoc " v ";\n";
 
 private def testEnv :=
 #strata
-open ArithPrograms;
+program ArithPrograms;
 init x : num := 0;
 assert [test]: (x == 0);
 #end

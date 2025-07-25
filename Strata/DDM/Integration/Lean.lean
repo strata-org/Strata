@@ -82,15 +82,12 @@ def strataDialectImpl: Lean.Elab.Command.CommandElab := fun (stx : Syntax) => do
   let emptyLeanEnv ← mkEmptyEnvironment 0
   let inputCtx ← getInputContext
   let loader := (dialectExt.getState (←Lean.getEnv)).loader
-  let ms := Elab.elabDialect emptyLeanEnv loader inputCtx p e
-  if !ms.errors.isEmpty then
-    for (stx, e) in ms.errors do
+  let (d, s) := Elab.elabDialect emptyLeanEnv loader inputCtx p e
+  if !s.errors.isEmpty then
+    for (stx, e) in s.errors do
       logMessage e
     return
-  let some (_, dialectName) := ms.currentDialect
-    | return
   -- Add dialect to command
-  let d := ms.dialects[dialectName]!
   let cmd ← `(command| def $(Lean.mkLocalDeclId d.name) := $(quote d))
   tryCatch (elabCommand cmd) fun e =>
     panic! "Elab command failed: {e}"

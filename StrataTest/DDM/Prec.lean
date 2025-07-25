@@ -37,7 +37,7 @@ info: assert ((t) && (t)) && (t);
 -/
 #guard_msgs in
 #eval ppParen #strata
-open TestPrec;
+program TestPrec;
 assert t && t && t;
 #end
 
@@ -46,7 +46,7 @@ info: assert (t) => ((t) => (t));
 -/
 #guard_msgs in
 #eval ppParen #strata
-open TestPrec;
+program TestPrec;
 assert t => t => t;
 #end
 
@@ -55,7 +55,7 @@ info: assert (f) ^^ (f);
 -/
 #guard_msgs in
 #eval ppParen #strata
-open TestPrec;
+program TestPrec;
 assert f ^^ f;
 #end
 
@@ -65,7 +65,7 @@ error: unexpected token '^^'; expected ';'
 -/
 #guard_msgs in
 #eval ppParen #strata
-open TestPrec;
+program TestPrec;
 assert f ^^ f ^^ f;
 #end
 
@@ -74,7 +74,7 @@ info: assert ((t) && (t)) || (t);
 -/
 #guard_msgs in
 #eval ppParen #strata
-open TestPrec;
+program TestPrec;
 assert t && t || t;
 #end
 
@@ -83,7 +83,7 @@ info: assert (t) || ((t) && (t));
 -/
 #guard_msgs in
 #eval ppParen #strata
-open TestPrec;
+program TestPrec;
 assert t || t && t;
 #end
 
@@ -92,6 +92,6 @@ info: assert ((t) || (f)) => (t);
 -/
 #guard_msgs in
 #eval ppParen #strata
-open TestPrec;
+program TestPrec;
 assert t || f => t;
 #end

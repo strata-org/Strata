@@ -22,7 +22,7 @@ namespace Strata
 
 def gotoEnv : Environment :=
 #strata
-open Boogie;
+program Boogie;
 var g : bool;
 procedure Test1(x : bool) returns (y : bool)
 {

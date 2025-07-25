@@ -34,7 +34,7 @@ def main (args : List String) : IO UInt32 := do
     let text ← IO.FS.readFile file
     let inputCtx := Lean.Parser.mkInputContext text file
     let emptyEnv ← Lean.mkEmptyEnvironment 0
-    let dctx : Elab.DialectLoader := .initial
+    let dctx := Elab.DialectLoader.builtinLoader
     let dctx := dctx.addDialect! Boogie
     let dctx := dctx.addDialect! C_Simp
     let s := Strata.Elab.elabProgram emptyEnv dctx inputCtx

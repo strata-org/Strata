@@ -26,7 +26,7 @@ section test
 
 def test1 : Environment :=
 #strata
-open Boogie;
+program Boogie;
 var i : bool;
 var j : bool;
 var k : bool;
@@ -47,7 +47,7 @@ procedure h() returns () spec {
 
 def test1Ans : Environment :=
 #strata
-open Boogie;
+program Boogie;
 var i : bool;
 var j : bool;
 var k : bool;
@@ -72,7 +72,7 @@ procedure h() returns () spec {
 
 def test2 : Environment :=
 #strata
-open Boogie;
+program Boogie;
 var i : bool;
 var j : bool;
 var k : bool;
@@ -94,7 +94,7 @@ procedure h() returns () spec {
 
 def test2Ans : Environment :=
 #strata
-open Boogie;
+program Boogie;
 var i : bool;
 var j : bool;
 var k : bool;

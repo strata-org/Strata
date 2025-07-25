@@ -24,7 +24,7 @@ op assert : Command => "assert" ";";
 op decimal (v : Decimal) : Command => "decimal " v ";";
 #end
 
-def testProgram := #strata open Test; decimal 1e99; #end
+def testProgram := #strata program Test; decimal 1e99; #end
 
 #guard toString testProgram.format == "decimal 1e99;"
 
@@ -98,7 +98,7 @@ error: Expression has type bool -> bool when int expected.
 -/
 #guard_msgs in
 example := #strata
-open TestLambda;
+program TestLambda;
 
 // Should report error
 eval ((fun (x : bool) => x)) : int;

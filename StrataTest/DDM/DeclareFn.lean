@@ -40,7 +40,7 @@ op command_assert (b : bool) : Command => "assert " b ";\n";
 
 def testDeclareFnEnv :=
 #strata
-open TestDeclareFn;
+program TestDeclareFn;
 function f(b : bool, i : int) : bool;
 assert f(true, 2);
 #end
@@ -83,7 +83,7 @@ op checkVar (tp : Type, v : tp) : Command => "check " v " : " tp ";\n";
 
 def testDeclareTypeEnv :=
 #strata
-open TestDeclareType;
+program TestDeclareType;
 type Int;
 type_fn Nat;
 type_fn Array (name : Type);

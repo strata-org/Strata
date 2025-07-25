@@ -19,7 +19,7 @@ import Strata.Languages.C_Simp.Verify
 
 def LoopTrivialEnv :=
 #strata
-open C_Simp;
+program C_Simp;
 
 procedure loopTrivial (n: int) -> int
   @pre true

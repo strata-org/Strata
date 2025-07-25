@@ -21,7 +21,7 @@ namespace Strata
 
 def simpleProcEnv : Environment :=
 #strata
-open Boogie;
+program Boogie;
 var g : bool;
 procedure Test(x : bool) returns (y : bool)
 spec {

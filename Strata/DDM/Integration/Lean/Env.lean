@@ -40,7 +40,7 @@ def dialect (pd : PersistentDialect) : Dialect :=
 end PersistentDialect
 
 structure DialectState where
-  loader : Elab.DialectLoader := .initial
+  loader : Elab.DialectLoader := Elab.DeclState.initDeclState.loader
   newDialects : Array Dialect := #[]
   deriving Inhabited
 

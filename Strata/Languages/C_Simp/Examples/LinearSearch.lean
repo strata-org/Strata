@@ -19,7 +19,7 @@ import Strata.Languages.C_Simp.Verify
 
 def LinearSearchEnv :=
 #strata
-open C_Simp;
+program C_Simp;
 
 procedure linearSearch (arr: intArr, e: int) -> bool
   @pre true
