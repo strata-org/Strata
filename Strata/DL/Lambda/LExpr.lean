@@ -154,6 +154,27 @@ def denoteInt (e : (LExpr Identifier)) : Option Int :=
   | _ => none
 
 /--
+If `e` is an `LExpr` real, then denote that into a Lean `String`.
+Note that we are type-agnostic here.
+-/
+def denoteReal (e : (LExpr Identifier)) : Option String :=
+  match e with
+  | .const x (some (.tcons "real" [])) => .some x
+  | .const x none => .some x
+  | _ => none
+
+/--
+If `e` is an `LExpr` bv<n>, then denote that into a Lean `BitVec n`.
+Note that we are type-agnostic here.
+-/
+def denoteBitVec (n : Nat) (e : (LExpr Identifier)) : Option (BitVec n) :=
+  match e with
+  | .const x (.some (.bitvec n')) =>
+    if n == n' then .map (.ofNat n) x.toNat? else none
+  | .const x none => .map (.ofNat n) x.toNat?
+  | _ => none
+
+/--
 If `e` is an _annotated_ `LExpr` string, then denote that into a Lean `String`.
 Note that unannotated strings are not denoted.
 -/

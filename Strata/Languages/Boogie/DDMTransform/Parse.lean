@@ -34,6 +34,11 @@ type bool;
 type int;
 type string;
 type real;
+// TODO: make these parameterized
+type bv8;
+type bv16;
+type bv32;
+type bv64;
 type Map (dom : Type, range : Type);
 
 category TypeArgs;
@@ -65,7 +70,12 @@ op monoDeclPush (dl : MonoDeclList, @[scope(dl)] b : MonoBind) : MonoDeclList =>
 fn not (b : bool) : bool => "!" b;
 
 fn natToInt (n : Num) : int => n;
+fn bv8Lit (n : Num) : bv8 => "bv{8}" "(" n ")";
+fn bv16Lit (n : Num) : bv16 => "bv{16}" "(" n ")";
+fn bv32Lit (n : Num) : bv32 => "bv{32}" "(" n ")";
+fn bv64Lit (n : Num) : bv64 => "bv{64}" "(" n ")";
 fn strLit (s : Str) : string => s;
+fn realLit (d : Decimal) : real => d;
 
 fn if (tp : Type, c : bool, t : tp, f : tp) : tp => "if " c:0 " then " t:50 "else " f:50;
 
@@ -235,7 +245,7 @@ op command_axiom (label : Option Label, e : bool) : Command => "axiom " label e 
 
 namespace BoogieDDM
 
-#strata_gen Boogie
+--#strata_gen Boogie
 
 end BoogieDDM
 

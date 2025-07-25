@@ -85,7 +85,7 @@ CEx: ($__x0, 0)
 
 Evaluated program:
 (procedure Test :  ((x : int)) → ((r : int)))
-modifies: ⏎
+modifies: []
 preconditions: ⏎
 postconditions: (good, (∀ (∃ ((((~Int.Add : (arrow int (arrow int int))) (r : int)) (((~Int.Add : (arrow int (arrow int int))) %0) %1)) == (((~Int.Add : (arrow int (arrow int int))) %1) (((~Int.Add : (arrow int (arrow int int))) %0) (r : int))))))) (bad, (∀ (((~Int.Lt : (arrow int (arrow int bool))) %0) (x : int))))
 body: assert [good_assert] (∀ (~Bool.Not (%0 == ((~Int.Add %0) #1))))

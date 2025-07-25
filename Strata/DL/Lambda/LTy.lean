@@ -44,6 +44,7 @@ inductive LMonoTy : Type where
   | ftvar (name : TyIdentifier)
   -- Type constructor.
   | tcons (name : String) (args : List LMonoTy)
+  | bitvec (size : Nat)
   deriving Inhabited, Repr
 
 abbrev LMonoTys := List LMonoTy
@@ -55,6 +56,26 @@ def LMonoTy.bool : LMonoTy :=
 @[match_pattern]
 def LMonoTy.int : LMonoTy :=
   .tcons "int" []
+
+@[match_pattern]
+def LMonoTy.real : LMonoTy :=
+  .tcons "real" []
+
+@[match_pattern]
+def LMonoTy.bv8 : LMonoTy :=
+  .bitvec 8
+
+@[match_pattern]
+def LMonoTy.bv16 : LMonoTy :=
+  .bitvec 16
+
+@[match_pattern]
+def LMonoTy.bv32 : LMonoTy :=
+  .bitvec 32
+
+@[match_pattern]
+def LMonoTy.bv64 : LMonoTy :=
+  .bitvec 64
 
 @[match_pattern]
 def LMonoTy.string : LMonoTy :=
@@ -110,6 +131,7 @@ types. So we define our own induction principle below.
 @[induction_eliminator]
 theorem LMonoTy.induct {P : LMonoTy → Prop}
   (ftvar : ∀f, P (.ftvar f))
+  (bitvec : ∀n, P (.bitvec n))
   (tcons : ∀name args, (∀ ty ∈ args, P ty) → P (.tcons name args)) :
   ∀ ty, P ty := by
   intro n
@@ -128,6 +150,7 @@ def LMonoTy.size (ty : LMonoTy) : Nat :=
   match ty with
   | .ftvar _ => 1
   | .tcons _ args => 1 + LMonoTys.size args
+  | .bitvec _ => 1
 
 def LMonoTys.size (args : LMonoTys) : Nat :=
     match args with
@@ -147,6 +170,7 @@ Boolean equality for `LMonoTy`.
 def LMonoTy.BEq (x y : LMonoTy) : Bool :=
   match x, y with
   | .ftvar i, .ftvar j => i == j
+  | .bitvec i, .bitvec j => i == j
   | .tcons i1 j1, .tcons i2 j2 =>
     i1 == i2 && j1.length == j2.length && go j1 j2
   | _, _ => false
@@ -175,6 +199,8 @@ instance : DecidableEq LMonoTy :=
                 induction x generalizing y
                 case ftvar =>
                   unfold LMonoTy.BEq at h <;> split at h <;> try simp_all
+                case bitvec =>
+                  unfold LMonoTy.BEq at h <;> split at h <;> try simp_all
                 case tcons =>
                   rename_i name args ih
                   cases y <;> try simp_all [LMonoTy.BEq]
@@ -191,6 +217,8 @@ instance : DecidableEq LMonoTy :=
     else
       isFalse (by induction x generalizing y
                   case ftvar =>
+                    cases y <;> try simp_all [LMonoTy.BEq]
+                  case bitvec n =>
                     cases y <;> try simp_all [LMonoTy.BEq]
                   case tcons name args ih =>
                     cases y <;> try simp_all [LMonoTy.BEq]
@@ -221,6 +249,7 @@ it.
 def LMonoTy.freeVars (mty : LMonoTy) : List TyIdentifier :=
   match mty with
   | .ftvar x => [x]
+  | .bitvec _ => []
   | .tcons _ ltys => LMonoTys.freeVars ltys
 
 /--
@@ -243,6 +272,7 @@ Get all type constructors in monotype `mty`.
 def LMonoTy.getTyConstructors (mty : LMonoTy) : List LMonoTy :=
   match mty with
   | .ftvar _ => []
+  | .bitvec _ => []
   | .tcons name mtys =>
     let typeargs :=  List.replicate mtys.length "_dummy"
     let args := typeargs.mapIdx (fun i elem => LMonoTy.ftvar (elem ++ toString i))
@@ -330,6 +360,7 @@ instance : ToString LMonoTy where
 private partial def formatLMonoTy (lmonoty : LMonoTy) : Format :=
   match lmonoty with
   | .ftvar x => toString x
+  | .bitvec n => f!"bv{n}"
   | .tcons name tys =>
     if tys.isEmpty then
       f!"{name}"
@@ -394,6 +425,10 @@ partial def elabLMonoTy : Lean.Syntax → MetaM Expr
   | `(lmonoty| bool) => do
     let argslist ← mkListLit (mkConst ``LMonoTy) []
     mkAppM ``LMonoTy.tcons #[(mkStrLit "bool"), argslist]
+  | `(lmonoty| bv8) =>  mkAppM ``LMonoTy.bv8 #[]
+  | `(lmonoty| bv16) => mkAppM ``LMonoTy.bv16 #[]
+  | `(lmonoty| bv32) => mkAppM ``LMonoTy.bv32 #[]
+  | `(lmonoty| bv64) => mkAppM ``LMonoTy.bv64 #[]
   | `(lmonoty| $i:ident $args:lmonoty*) => do
     let args' ← go args
     let argslist ← mkListLit (mkConst ``LMonoTy) args'.toList
