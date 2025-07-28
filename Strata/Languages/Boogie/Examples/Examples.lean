@@ -29,3 +29,6 @@ import Strata.Languages.Boogie.Examples.SimpleProc
 import Strata.Languages.Boogie.Examples.TypeDecl
 import Strata.Languages.Boogie.Examples.TypeAlias
 import Strata.Languages.Boogie.Examples.UnreachableAssert
+import Strata.Languages.Boogie.Examples.Map
+import Strata.Languages.Boogie.Examples.RealBitVector
+import Strata.Languages.Boogie.Examples.String
