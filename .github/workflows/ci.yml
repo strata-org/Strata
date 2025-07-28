@@ -56,8 +56,8 @@ jobs:
         shell: bash
         run: source ~/.profile && lake test
 
-  check_copyright_header:
-    name: Check copyright header
+  lint_checks:
+    name: Run lint checks
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -71,3 +71,5 @@ jobs:
       - name: Check copyright headers
         run: python3 .github/scripts/check_copyright_headers.py .
         shell: bash
+      - name: Check for trailing whitespace
+        run: .github/scripts/lintWhitespace.sh
