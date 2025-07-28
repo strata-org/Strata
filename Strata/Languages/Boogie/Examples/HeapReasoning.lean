@@ -197,7 +197,7 @@ spec {
   // instantiate c1 (i.e., new Container(0, 1, nullRef))
   var c1: Ref;
   assume allocationTime(c1) == tickingClock;
-  // assume isContainer(c1);
+  assume isContainer(c1);
   assert isContainer(c1);
   tickingClock := tickingClock + 1;           // After allocation: increase the tick
   call heap_var := Container_ctor(heap_var, c1, 0, 1, nullRef);

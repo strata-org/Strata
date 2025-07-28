@@ -5,7 +5,7 @@ type Ref;
 type Field;
 type Box;
 
-const nullRef: Ref;
+const null: Ref;
 
 type Struct := Map Field Box;
 type Heap := Map Ref Struct;
@@ -26,8 +26,9 @@ function isRef(v: Box): bool;
 // Replace by allocation time, one tick per 1) allocation 2) method call, const for each ref = allocation time, prove disjointness by proving that the allocation is greater
 var tickingClock: int;
 function allocationTime(r: Ref): int;
+axiom [tickingClockPositive]: tickingClock >= 0;
 
-axiom [allocationTimeOfNullIsSmallerThanEverything]: forall r: Ref :: r != nullRef ==> allocationTime(nullRef) < allocationTime(r);
+axiom [allocationTimeOfNullIsSmallerThanEverything]: forall r: Ref :: allocationTime(null) == -1;
 
 
 // Monomorphized boxing unboxing functions
@@ -78,7 +79,7 @@ spec {
   free requires allocationTime(initialNext) < tickingClock;
   requires isContainer(r);
   // User provided ------------------------------------------------------------------------------------------------------------
-  requires isContainer(initialNext);
+  requires isContainer(initialNext) || initialNext == null;
   requires r != initialNext;
   ensures UnboxingInt(newHeap[r][lycheeField]) == initialLychee;
   ensures UnboxingInt(newHeap[r][pineappleField]) == initialPineapple;
@@ -187,23 +188,23 @@ spec {
   var heap_var: Heap := heap;
   var methodEntryTime: int := tickingClock;
 
-  // instantiate c1 (i.e., new Container(0, 1, nullRef))
+  // instantiate c1 (i.e., new Container(0, 1, null))
   var c1: Ref;
   assume allocationTime(c1) == tickingClock;
-  // assume isContainer(c1);
+  assume isContainer(c1);
   assert isContainer(c1);
   tickingClock := tickingClock + 1;           // After allocation: increase the tick
-  call heap_var := Container_ctor(heap_var, c1, 0, 1, nullRef);
+  call heap_var := Container_ctor(heap_var, c1, 0, 1, null);
 
   assert [c1Lychees0]: isContainer(c1) && UnboxingInt(heap_var[c1][lycheeField]) == 0;
   assert [c1Pineapple1]: isContainer(c1) && UnboxingInt(heap_var[c1][pineappleField]) == 1;
 
-  // instantiate c2 (i.e., new Container(0, 0, nullRef))
+  // instantiate c2 (i.e., new Container(0, 0, null))
   var c2: Ref;
   assume allocationTime(c2) == tickingClock;
   assume isContainer(c2);
   tickingClock := tickingClock + 1;           // After allocation: increase the tick
-  call heap_var := Container_ctor(heap_var, c2, 0, 0, nullRef);
+  call heap_var := Container_ctor(heap_var, c2, 0, 0, null);
 
   // c1.next := c2
   assert MainModifiesFrame(heap_var, c1, methodEntryTime);       // We can do that since the ticking clock has increased
