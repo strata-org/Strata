@@ -41,11 +41,11 @@ def testDialectRoundTrip (d : Dialect) : Bool :=
 
 -- N.B. Run tests to print out the size of the Ion and JSON encoded messages.
 /--
-info: 2813
+info: 2730
 -/
 #guard_msgs in #eval initDialect.toIonBinary |>.size
 
 /--
-info: 9487
+info: 9212
 -/
 #guard_msgs in #eval initDialect.toIon |> fun (tbl, v) => v.unintern tbl |>.toJson |> toString |> String.length

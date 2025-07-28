@@ -14,11 +14,11 @@
   limitations under the License.
 -/
 
-import Strata.SMT.Basic
-import Strata.SMT.Function
-import Strata.SMT.Op
-import Strata.SMT.Term
-import Strata.SMT.TermType
+import Strata.DL.SMT.Basic
+import Strata.DL.SMT.Function
+import Strata.DL.SMT.Op
+import Strata.DL.SMT.Term
+import Strata.DL.SMT.TermType
 
 
 /-!

@@ -15,7 +15,7 @@
 -/
 
 import Lean.Environment
-import Strata.DDM.AST
+import Strata.DDM.Elab
 
 namespace Strata
 
@@ -40,20 +40,26 @@ def dialect (pd : PersistentDialect) : Dialect :=
 end PersistentDialect
 
 structure DialectState where
-  allDialects : Array Dialect := #[]
+  loader : Elab.DialectLoader := Elab.DeclState.initDeclState.loader
   newDialects : Array Dialect := #[]
   deriving Inhabited
 
 namespace DialectState
 
-def addDialect (s : DialectState) (d : Dialect) : DialectState where
-  allDialects := s.allDialects.push d
-  newDialects := s.newDialects.push d
+def addDialect! (s : DialectState) (d : Dialect) (isNew : Bool) : DialectState where
+  loader :=
+    assert! d.name ∉ s.loader.dialects
+    s.loader.addDialect! d
+  newDialects := if isNew then s.newDialects.push d else s.newDialects
 
 end DialectState
 
 def mkImported (e : Array (Array PersistentDialect)) : ImportM DialectState :=
-  return e.foldl (init := {}) (fun s a => a.foldl (init := s) (·.addDialect ·.dialect))
+  return e.foldl (init := {}) fun s a => a.foldl (init := s) fun s d =>
+    if d.name ∈ s.loader.dialects then
+      @panic _ ⟨s⟩ s!"Multiple dialects named {d.name} found in imports."
+    else
+      s.addDialect! d.dialect (isNew := false)
 
 def exportEntries (s : DialectState) : Array PersistentDialect :=
   s.newDialects.map .ofDialect
@@ -62,7 +68,9 @@ initialize dialectExt : PersistentEnvExtension PersistentDialect Dialect Dialect
   registerPersistentEnvExtension {
     mkInitial := pure {},
     addImportedFn := mkImported
-    addEntryFn    := DialectState.addDialect
+    addEntryFn    := fun s d =>
+      assert! d.name ∉ s.loader.dialects
+      DialectState.addDialect! s d (isNew := true)
     exportEntriesFn := exportEntries
   }
 

@@ -19,7 +19,7 @@ import Strata.Languages.C_Simp.Verify
 
 def SimpleTestEnv :=
 #strata
-open C_Simp;
+program C_Simp;
 
 procedure simpleTest (x: int, y: int) -> int
   @pre y > #0

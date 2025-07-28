@@ -21,7 +21,7 @@ namespace Strata
 
 def funcEnv : Environment :=
 #strata
-open Boogie;
+program Boogie;
 const fooConst : int;
 inline function fooTest() : int { fooConst }
 

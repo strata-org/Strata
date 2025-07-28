@@ -117,7 +117,6 @@ def translateLabel (_bindings : TransBindings) (e : ArithPrograms.Label) : Trans
 info: inductive ArithPrograms.Command : Type
 number of parameters: 0
 constructors:
-ArithPrograms.Command.openCommand : String → Command
 ArithPrograms.Command.init : String → ArithProgramsType → Expr → Command
 ArithPrograms.Command.var : String → ArithProgramsType → Command
 ArithPrograms.Command.assign : String → Expr → Command
@@ -160,7 +159,6 @@ def translateCommand (bindings : TransBindings) (c : ArithPrograms.Command) :
     return ((.assert label expr), bindings)
   | .havoc name =>
     return ((.havoc name), bindings)
-  | _ => TransM.error f!"Unexpected command {repr c}"
 
 partial def translateProgram (ops : Array Strata.Operation) : TransM Arith.Commands := do
   let (cmds, _) ← go 0 ops.size {} ops
@@ -186,7 +184,7 @@ open ArithPrograms
 
 private def testEnv :=
 #strata
-open ArithPrograms;
+program ArithPrograms;
 var x : num;
 assert [test]: (1 == 2);
 var y : num;

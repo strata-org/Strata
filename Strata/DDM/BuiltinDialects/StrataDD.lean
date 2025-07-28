@@ -22,7 +22,7 @@ open Elab
 
 def StrataDD : String := "StrataDD"
 
-def initializeStrataDD : DeclM Unit := do
+def strataDialect : Dialect := BuiltinM.create! StrataDD #[initDialect] do
   let Ident : DeclBindingKind := .cat <| .atom q`Init.Ident
   let BindingType := q`Init.BindingType
   let Command := q`Init.Command
@@ -33,11 +33,9 @@ def initializeStrataDD : DeclM Unit := do
   let mkOpt (c:SyntaxCat) : SyntaxCat := .app (.atom q`Init.Option) c
   let mkCommaSepBy (c:SyntaxCat) : SyntaxCat := .app (.atom q`Init.CommaSepBy) c
 
-  let _ ← declareEmptyDialect StrataDD
-
   -- Extend dialect with operation for constructing functions
   -- from bindings name and type.
-  declareOp StrataDD {
+  declareOp {
     name := "TypeFn",
     argDecls := #[
       { ident := "bindings", kind := Ident },
@@ -49,7 +47,7 @@ def initializeStrataDD : DeclM Unit := do
 
   let Binding := q`StrataDD.Binding
   declareCat Binding
-  declareOp StrataDD {
+  declareOp {
       name := "mkBinding",
       argDecls := #[
         { ident := "name", kind := Ident, },
@@ -62,7 +60,7 @@ def initializeStrataDD : DeclM Unit := do
 
   let Bindings := q`StrataDD.Bindings
   declareCat Bindings
-  declareOp StrataDD {
+  declareOp {
       name := "mkBindings",
       argDecls := #[
         { ident := "bs", kind := .cat <| mkCommaSepBy <| .atom Binding }
@@ -71,15 +69,15 @@ def initializeStrataDD : DeclM Unit := do
       syntaxDef := .ofList [.str "(", .ident 0 0, .str ")" ],
     }
 
-  declareOp StrataDD {
-     name := "dialectName",
-     argDecls := #[
-        { ident := "name", kind := Ident }
-     ],
-     category := q`Init.Command,
-     syntaxDef := .ofList [.str "dialect", .ident 0 0, .str ";"],
+  declareOp {
+    name := "importCommand",
+    argDecls := #[
+      { ident := "name", kind := Ident }
+    ],
+    category := Command,
+    syntaxDef := .ofList [.str "import", .ident 0 0, .str ";"]
   }
-  declareOp StrataDD {
+  declareOp {
     name := "categoryCommand",
     argDecls := #[
       { ident := "name", kind := Ident }
@@ -87,7 +85,7 @@ def initializeStrataDD : DeclM Unit := do
     category := Command,
     syntaxDef := .ofList [.str "category", .ident 0 0, .str ";"]
   }
-  declareOp StrataDD {
+  declareOp {
     name := "opCommand",
     argDecls := #[
       { ident := "name",
@@ -116,7 +114,7 @@ def initializeStrataDD : DeclM Unit := do
     category := Command,
     syntaxDef:= .ofList [.ident 3 0, .str "op", .ident 0 0, .ident 1 0, .str ":", .ident 2 0, .str "=>", .ident 4 0, .ident 5 0, .str ";"]
   }
-  declareOp StrataDD {
+  declareOp {
     name := "typeCommand",
     argDecls := #[
       { ident := "name", kind := Ident },
@@ -125,7 +123,7 @@ def initializeStrataDD : DeclM Unit := do
     category := Command,
     syntaxDef := .ofList [.str "type", .ident 0 0, .ident 1 0, .str ";"]
   }
-  declareOp StrataDD {
+  declareOp {
     name := "fnCommand",
     argDecls := #[
       { ident := "name",
@@ -154,7 +152,7 @@ def initializeStrataDD : DeclM Unit := do
     category := Command,
     syntaxDef := .ofList [.ident 3 0, .str "fn", .ident 0 0, .ident 1 0, .str ":", .ident 2 0, .str "=>", .ident 4 0, .ident 5 0, .str ";"]
   }
-  declareOp StrataDD {
+  declareOp {
     name := "mdCommand",
     argDecls := #[
       { ident := "name", kind := Ident },
@@ -163,26 +161,13 @@ def initializeStrataDD : DeclM Unit := do
     category := Command,
     syntaxDef := .ofList [.str "metadata", .ident 0 0, .ident 1 0, .str ";"]
   }
-  declareMetadata StrataDD { name := "prec", args := #[.mk "p" .num] }
-  declareMetadata StrataDD { name := "leftassoc", args := #[] }
-  declareMetadata StrataDD { name := "rightassoc", args := #[] }
+  declareMetadata { name := "prec", args := #[.mk "p" .num] }
+  declareMetadata { name := "leftassoc", args := #[] }
+  declareMetadata { name := "rightassoc", args := #[] }
 
-  declareMetadata StrataDD { name := "scope", args := #[.mk "scope" .ident] }
-  declareMetadata StrataDD { name := "declareType", args := #[.mk "name" .ident, .mk "args" (.opt .ident)] }
-  declareMetadata StrataDD { name := "aliasType",   args := #[.mk "name" .ident, .mk "args" (.opt .ident), .mk "def" .ident] }
-  declareMetadata StrataDD { name := "declare",     args := #[.mk "name" .ident, .mk "type" .ident] }
-  declareMetadata StrataDD { name := "declareFn",   args := #[.mk "name" .ident, .mk "args" .ident, .mk "type" .ident] }
-  declareMetadata StrataDD { name := "declareMD",   args := #[.mk "name" .ident, .mk "type" .ident, .mk "md" .ident] }
-
-def dialectProgramState : DeclState := DeclM.runInitializer do
-  initializeInitDialect
-  initializeStrataDD
-  openParserDialect "StrataDD"
-
-def strataDialect : Dialect :=
-  if dialectProgramState.errors.size > 0 then
-    panic! s!"{StrataDD} dialect initialization failed"
-  else
-    match dialectProgramState.env.dialects[StrataDD]? with
-    | some d => d
-    | none => panic! s!"{StrataDD} dialect not found"
+  declareMetadata { name := "scope", args := #[.mk "scope" .ident] }
+  declareMetadata { name := "declareType", args := #[.mk "name" .ident, .mk "args" (.opt .ident)] }
+  declareMetadata { name := "aliasType",   args := #[.mk "name" .ident, .mk "args" (.opt .ident), .mk "def" .ident] }
+  declareMetadata { name := "declare",     args := #[.mk "name" .ident, .mk "type" .ident] }
+  declareMetadata { name := "declareFn",   args := #[.mk "name" .ident, .mk "args" .ident, .mk "type" .ident] }
+  declareMetadata { name := "declareMD",   args := #[.mk "name" .ident, .mk "type" .ident, .mk "md" .ident] }

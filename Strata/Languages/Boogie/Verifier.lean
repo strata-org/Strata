@@ -17,7 +17,7 @@
 import Strata.Languages.Boogie.DDMTransform.Parse
 import Strata.Languages.Boogie.DDMTransform.Translate
 import Strata.Languages.Boogie.SMTEncoder
-import Strata.SMT.CexParser
+import Strata.DL.SMT.CexParser
 
 ---------------------------------------------------------------------
 

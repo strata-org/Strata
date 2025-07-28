@@ -14,20 +14,12 @@
   limitations under the License.
 -/
 
-import StrataTest.DDM.Elab
--- This tests that we can import a module and see dialects declared there.
-
-/--
-error: Unknown dialect FailTest.
--/
-#guard_msgs in
-def testEnvFail :=
-#strata
-program FailTest;
-#end
-
-def testEnv :=
-#strata
-program Test;
-assert;
-#end
+import Strata.DL.SMT.Basic
+import Strata.DL.SMT.CexParser
+import Strata.DL.SMT.Encoder
+import Strata.DL.SMT.Factory
+import Strata.DL.SMT.Function
+import Strata.DL.SMT.Op
+import Strata.DL.SMT.Solver
+import Strata.DL.SMT.Term
+import Strata.DL.SMT.TermType

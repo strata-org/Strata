@@ -19,7 +19,7 @@ import Strata.Languages.C_Simp.Verify
 
 def CoprimeEnv :=
 #strata
-open C_Simp;
+program C_Simp;
 
 procedure coprime (a: int, b: int) -> bool
   @pre ((a > #0) && (b > #0))

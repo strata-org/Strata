@@ -49,7 +49,7 @@ op procedure (name : Ident, b : Bindings, @[scope(b)] c : Block) : Command => @[
 
 def b3Env :=
 #strata
-open B3Lite;
+program B3Lite;
 assert true;
 assert (true ==> true) ==> true;
 assert true ==> (true ==> true);

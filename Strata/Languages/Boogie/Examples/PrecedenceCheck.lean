@@ -21,7 +21,7 @@ namespace Strata
 
 def precEnv : Environment :=
 #strata
-open Boogie;
+program Boogie;
 
 function foo(a : bool, b : bool, c : bool, d : bool) : bool {
   (((!a) || b) && ((!c) || d))

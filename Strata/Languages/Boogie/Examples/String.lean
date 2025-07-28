@@ -26,7 +26,7 @@ namespace Strata
 
 def strEnv : Environment :=
 #strata
-open Boogie;
+program Boogie;
 
 procedure main() returns () {
 

@@ -21,7 +21,7 @@ namespace Strata
 
 def oldExprEnv : Environment :=
 #strata
-open Boogie;
+program Boogie;
 var g : bool;
 var g2 : bool;
 

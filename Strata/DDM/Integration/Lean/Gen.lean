@@ -952,9 +952,6 @@ def gen (categories : Array (QualifiedIdent × Array DefaultCtor)) : GenM Unit :
         pure inhabitedCats
     inhabitedCats := s
 
-def addDialect (m : Std.HashMap String Dialect) (d : Dialect ) : Std.HashMap String Dialect :=
-  m.insert d.name d
-
 def runGenM (pref : String) (catNames : Array QualifiedIdent) (exprHasEta : Bool) (m : GenM α) : CommandElabM α := do
   let catNameCounts : Std.HashMap String Nat :=
     catNames.foldl (init := {}) fun m k =>
@@ -975,29 +972,25 @@ def runGenM (pref : String) (catNames : Array QualifiedIdent) (exprHasEta : Bool
   m ctx
 
 /--
-`#strataGenAST ident` generates an AST for the dialect `ident`.
+`#strata_gen ident` generates an AST for the dialect `ident`.
 
 This includes functions for
 -/
-syntax (name := genAST) "#strataGenAST" ident : command -- declare the syntax
+syntax (name := strataGenCmd) "#strata_gen" ident : command -- declare the syntax
 
-@[command_elab genAST]
+@[command_elab strataGenCmd]
 def genAstImpl : CommandElab := fun stx =>
   match stx with
-  | `(#strataGenAST $dialectStx) => do
+  | `(#strata_gen $dialectStx) => do
     let .str .anonymous dialectName := dialectStx.getId
       | throwErrorAt dialectStx s!"Expected dialect name"
-    let dialects := (dialectExt.getState (← getEnv)).allDialects
-    let allDialectMap : Std.HashMap String Dialect := {}
-    let allDialectMap := addDialect allDialectMap initDialect
-    let allDialectMap := addDialect allDialectMap strataDialect
-    let allDialectMap : Std.HashMap String Dialect := dialects.foldl (init := allDialectMap) addDialect
-    let depDialectNames := generateDependentDialects (allDialectMap[·]?) dialectName
+    let loader := dialectExt.getState (← getEnv) |>.loader
+    let depDialectNames := generateDependentDialects (loader.dialects.map[·]?) dialectName
     let usedDialects ← depDialectNames.mapM fun nm =>
-          match allDialectMap[nm]? with
+          match loader.dialects[nm]? with
           | some d => pure d
           | none => panic! s!"Missing dialect {nm}"
-    let some d := allDialectMap[dialectName]?
+    let some d := loader.dialects[dialectName]?
       | throwErrorAt dialectStx "Missing dialect"
     let (cm, errs) := mkCatOpMap usedDialects
     if errs.size > 0 then

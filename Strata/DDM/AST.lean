@@ -602,7 +602,7 @@ def parseNewBindings! (md : Metadata) (bindings : DeclBindings) : Array (Binding
 structure SynCatDecl where
   name : String
   argNames : Array String := #[]
-deriving Repr, DecidableEq
+deriving Repr, DecidableEq, Inhabited
 
 /--
 A declaration of an algebraic data type.
@@ -610,7 +610,7 @@ A declaration of an algebraic data type.
 structure TypeDecl where
   name : String
   argNames : Array String
-deriving Repr, DecidableEq
+deriving Repr, DecidableEq, Inhabited
 
 /-- Operator declaration -/
 structure OpDecl where
@@ -1103,23 +1103,24 @@ def kindOf! (ctx : GlobalContext) (idx : FreeVarIndex) : GlobalKind :=
   assert! idx < ctx.vars.size
   ctx.vars[idx]!.snd
 
-def addOpBindings (m : DialectMap) (init : GlobalContext) (op : Operation) : GlobalContext :=
-    foldOverOpBindings m addBinding init op
+def addCommand (dialects : DialectMap) (init : GlobalContext) (op : Operation) : GlobalContext :=
+    foldOverOpBindings dialects addBinding init op
   where addBinding gctx _ b args :=
           let name := varNameByIndex args b.nameIndex
-          let kind := resolveBindingIndices m b args
+          let kind := resolveBindingIndices dialects b args
           gctx.push name kind
 
 end GlobalContext
 
 structure Environment where
-  private mk ::
+  mk ::
   -- Map from dialect names to the dialect definition
   dialects : DialectMap := {}
   -- Dialects considered open for pretty-printing purposes.
   openDialects : Array DialectName := #["Init"]
   -- Top level commands in file.
   commands : Array Operation := #[]
+  -- Operations at the top command level.
   globalContext : GlobalContext
 
 namespace Environment
@@ -1131,34 +1132,23 @@ def empty : Environment := {
 instance : Inhabited Environment where
   default := .empty
 
-def opDecl! (env : Environment) (ident : QualifiedIdent) := env.dialects.opDecl! ident
-
 def addCommand (env : Environment) (cmd : Operation) : Environment :=
   { env with
     commands := env.commands.push cmd,
-    globalContext := env.globalContext.addOpBindings env.dialects cmd
+    globalContext := env.globalContext.addCommand env.dialects cmd
   }
 
 def create (dialects : List Dialect) (openDialects : Array DialectName) (commands : Array Operation) : Environment :=
-  let dialects := dialects.foldl (fun m d => m.insert d) {}
+  let dialects := dialects.foldl (fun m d => assert! d.name ∉ m; m.insert d) {}
   let env : Environment := { dialects, openDialects, commands := #[], globalContext := {} }
-  let gctx := commands.foldl (init := {}) (·.addOpBindings env.dialects ·)
+  let gctx := commands.foldl (init := {}) (·.addCommand dialects ·)
   { env with commands := commands, globalContext := gctx }
-
-def addDialect (env : Environment) (d : Dialect) : Environment :=
-  if d.name ∈ env.dialects then Id.run do
-    panic! s!"Dialect {d.name} already added"; env
-  else
-    { env with dialects := env.dialects.insert d }
 
 def openDialect (env : Environment) (d : DialectName) : Environment :=
   if d ∈ env.openDialects then
     env
   else
     { env with openDialects := env.openDialects.push d }
-
-def addDecl! (name : DialectName) (decl : Decl) (env : Environment) : Environment :=
-  { env with dialects := env.dialects.addDecl! name decl }
 
 end Environment
 

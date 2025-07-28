@@ -21,7 +21,7 @@ namespace Strata
 
 def procIfEnv : Environment :=
 #strata
-open Boogie;
+program Boogie;
 
 procedure F(n : int) returns (r : int)
 spec {

@@ -14,10 +14,10 @@
   limitations under the License.
 -/
 
-import Strata.SMT.Basic
-import Strata.SMT.Encoder
-import Strata.SMT.Factory
-import Strata.SMT.Op
-import Strata.SMT.Solver
-import Strata.SMT.Term
-import Strata.SMT.TermType
+import Strata.DL.SMT.Basic
+import Strata.DL.SMT.Encoder
+import Strata.DL.SMT.Factory
+import Strata.DL.SMT.Op
+import Strata.DL.SMT.Solver
+import Strata.DL.SMT.Term
+import Strata.DL.SMT.TermType
