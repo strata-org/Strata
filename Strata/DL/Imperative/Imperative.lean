@@ -14,10 +14,18 @@
   limitations under the License.
 -/
 
-import Strata.DL.SMT.Basic
-import Strata.DL.SMT.Encoder
-import Strata.DL.SMT.Factory
-import Strata.DL.SMT.Op
-import Strata.DL.SMT.Solver
-import Strata.DL.SMT.Term
-import Strata.DL.SMT.TermType
+import Strata.DL.Imperative.PureExpr
+import Strata.DL.Imperative.HasVars
+import Strata.DL.Imperative.MetaData
+
+import Strata.DL.Imperative.CmdEval
+import Strata.DL.Imperative.CmdType
+import Strata.DL.Imperative.CmdSemantics
+import Strata.DL.Imperative.StmtSemantics
+
+import Strata.DL.Imperative.NondetStmt
+import Strata.DL.Imperative.NondetStmtSemantics
+
+import Strata.DL.Imperative.Loopy
+
+import Strata.DL.Imperative.SMTUtils

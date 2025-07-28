@@ -216,7 +216,7 @@ genNum: 1
 
 The generated VCs are in terms of `ArithPrograms`' expressions. Given
 their simplicity, it is fairly straightforward to encode them to
-SMTLIB using Strata's [SMT dialect](../Strata/SMT). Strata's SMT
+SMTLIB using Strata's [SMT dialect](../Strata/DL/SMT). Strata's SMT
 dialect provides support for some core theories, like uninterpreted
 functions with equality, integers, quantifiers, etc., and some basic
 utilities, like a counterexample parser and file I/O function to write
