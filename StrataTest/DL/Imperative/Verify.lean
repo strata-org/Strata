@@ -54,7 +54,7 @@ def verify (smtsolver : String) (cmds : Commands) (verbose : Bool) :
                encodeArithToSMTTerms typedVarToSMT
                -- (FIXME)
                ((Arith.Eval.ProofObligation.freeVars obligation).map (fun v => (v, Arith.Ty.Num)))
-                smtsolver (smt2_filename obligation.label)
+                smtsolver (Imperative.smt2_filename obligation.label)
                 terms)
         match ans with
         | .ok (result, estate) =>
