@@ -21,7 +21,7 @@ namespace Strata
 
 def testEnv : Environment :=
 #strata
-open Boogie;
+program Boogie;
 
 procedure min(n : int, m : int) returns (k : int)
 spec {

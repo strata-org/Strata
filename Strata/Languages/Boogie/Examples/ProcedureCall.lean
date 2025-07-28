@@ -21,7 +21,7 @@ namespace Strata
 
 def globalCounterEnv : Environment :=
 #strata
-open Boogie;
+program Boogie;
 
 var counter : int;
 

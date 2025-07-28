@@ -19,7 +19,7 @@ import Strata.Languages.C_Simp.Verify
 
 def MinEnv :=
 #strata
-open C_Simp;
+program C_Simp;
 
 procedure min (a: int, b: int) -> int
   @pre true

@@ -21,7 +21,7 @@ namespace Strata
 
 def typeDeclEnv1 : Environment :=
 #strata
-open Boogie;
+program Boogie;
 type Foo (a : Type, b : Type);
 
 const fooConst : Foo int bool;
@@ -60,7 +60,7 @@ error: Expression has type Foo bool int when Foo bool bool expected.
 #guard_msgs in
 def typeDeclEnv2 : Environment :=
 #strata
-open Boogie;
+program Boogie;
 
 type Foo (a : Type, b : Type);
 
@@ -75,7 +75,7 @@ procedure P () returns () {
 
 def typeDeclEnv3 : Environment :=
 #strata
-open Boogie;
+program Boogie;
 type Foo (a : Type, b : Type);
 
 const fooVal : Foo int bool;

@@ -21,7 +21,7 @@ namespace Strata
 
 def havocEnv : Environment :=
 #strata
-open Boogie;
+program Boogie;
 procedure S() returns ()
 {
   var x : int;

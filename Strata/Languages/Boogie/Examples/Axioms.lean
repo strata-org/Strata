@@ -22,7 +22,7 @@ namespace Strata
 
 def axiomEnv : Environment :=
 #strata
-open Boogie;
+program Boogie;
 
 const x : int;
 axiom [a1]: x == 5;

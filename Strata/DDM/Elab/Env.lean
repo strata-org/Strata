@@ -21,11 +21,9 @@ namespace Strata
 
 open Lean
 
-structure ParserExtState where
-  categoryMap : Std.HashMap QualifiedIdent Parser.PrattParsingTables := {}
-  deriving Inhabited
+abbrev PrattParsingTableMap := Std.HashMap QualifiedIdent Parser.PrattParsingTables
 
-initialize parserExt : EnvExtension ParserExtState ←
+initialize parserExt : EnvExtension PrattParsingTableMap ←
   registerEnvExtension (pure {})
 
 end Strata

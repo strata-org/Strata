@@ -21,7 +21,7 @@ namespace Strata
 
 def quantEnv : Environment :=
 #strata
-open Boogie;
+program Boogie;
 procedure Test(x : int) returns (r : int)
 spec {
   ensures [good]: (forall y : int :: exists z : int :: r + (z + y) == y + (z + r));
@@ -35,7 +35,7 @@ spec {
 
 def triggerEnv : Environment :=
 #strata
-open Boogie;
+program Boogie;
 
 function f(x : int): int;
 function g(x : int, y : int): int;

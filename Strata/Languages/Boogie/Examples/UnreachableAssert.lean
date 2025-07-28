@@ -21,7 +21,7 @@ namespace Strata
 
 def unreachableAssertEnv : Environment :=
 #strata
-open Boogie;
+program Boogie;
 procedure R() returns ()
 {
   var x : int, y : int;

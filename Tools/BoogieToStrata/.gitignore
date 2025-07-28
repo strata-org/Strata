@@ -1,0 +1,9 @@
+.vscode
+.idea
+*.user
+bin
+obj
+vcs
+Tests/*.boogie.st
+Tests/*.out
+Tests/*.err

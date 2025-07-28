@@ -21,7 +21,7 @@ namespace Strata
 
 def msEnv : Environment :=
 #strata
-open Boogie;
+program Boogie;
 // Running example from Mutual Summaries paper
 //
 // int g;

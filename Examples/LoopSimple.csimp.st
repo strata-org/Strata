@@ -1,4 +1,4 @@
-open C_Simp;
+program C_Simp;
 
 procedure loopSimple (n: int) -> int
   @pre true

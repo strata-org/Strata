@@ -653,7 +653,7 @@ def prattParser (cat : QualifiedIdent) (tables : PrattParsingTables) (behavior :
 def dynamicParser (cat : QualifiedIdent) : Parser :=
   { fn := fun c s =>
     let parserState := parserExt.getState c.env
-    match parserState.categoryMap[cat]? with
+    match parserState[cat]? with
     | some tables =>
       prattParser cat tables .both c s
     | none =>
@@ -726,13 +726,18 @@ structure DeclParser where
   parser : Parser
 
 class ParsingContext where
-  fixedParsers : QualifiedIdent → Option Parser
+  fixedParsers : Std.HashMap QualifiedIdent Parser := {}
+  deriving Inhabited
 
 namespace ParsingContext
 
+def add (ctx : ParsingContext) (cat : QualifiedIdent) (p : Parser) : ParsingContext :=
+  assert! cat ∉ ctx.fixedParsers
+  { fixedParsers := ctx.fixedParsers.insert cat p }
+
 /-- Parser function for given syntax category -/
 def catParser (ctx : ParsingContext) (cat : QualifiedIdent) : Parser :=
-  if let some p := ctx.fixedParsers cat then
+  if let some p := ctx.fixedParsers[cat]? then
     p
   else
     dynamicParser cat
@@ -829,24 +834,16 @@ def mkDialectParsers (ctx : ParsingContext) (d : Dialect) : Except StrataFormat 
 end ParsingContext
 
 structure ParserState where
-  -- List of dialects considered open.
-  openDialects : Std.HashSet DialectName := { "Init" }
-  -- Token table for parsing
-  tokenTable : TokenTable := {}
-  -- Fixed parser map
-  fixedParsers : Std.HashMap QualifiedIdent Parser := {}
   -- Dynamic parser categories
-  categoryMap : Std.HashMap QualifiedIdent PrattParsingTables := {}
+  categoryMap : PrattParsingTableMap := {}
   deriving Inhabited
 
-namespace ParserState
-
-def runCatParser (parserState : ParserState)
+def runCatParser (tokenTable : TokenTable)
+                 (parsingTableMap : PrattParsingTableMap)
                  (leanEnv : Lean.Environment)
                  (inputContext : InputContext)
                  (pos stopPos : String.Pos) (cat : QualifiedIdent) : Lean.Parser.ParserState :=
-  let parserExtState := { categoryMap  := parserState.categoryMap }
-  let leanEnv := parserExt.modifyState leanEnv (fun _ => parserExtState)
+  let leanEnv := parserExt.modifyState leanEnv (fun _ => parsingTableMap)
   let pmc : ParserModuleContext := { env := leanEnv, options := {} }
   let leanParserState : Lean.Parser.ParserState := {
     pos      := pos
@@ -856,49 +853,6 @@ def runCatParser (parserState : ParserState)
     }
   }
   let p := dynamicParser cat
-  p.fn.run inputContext pmc parserState.tokenTable leanParserState
-
-def addFixedParser (ident : QualifiedIdent) (p : Parser) (s : ParserState) :=
-  { s with
-      fixedParsers := s.fixedParsers.insert ident p,
-      tokenTable := s.tokenTable.addTokens p
-  }
-
-def addSynCat (dialect : String) (decl : SynCatDecl) (s : ParserState) : ParserState :=
-  let cat : QualifiedIdent := { dialect, name := decl.name }
-  if cat ∈ s.categoryMap then
-    panic! s!"{cat} already declared."
-  else
-    { s with categoryMap := s.categoryMap.insert cat {} }
-
-def addParserToCat (s : ParserState) (dp : DeclParser) : ParserState :=
-  assert! dp.category ∈ s.categoryMap
-  { s with
-    categoryMap :=
-      s.categoryMap.alter dp.category fun mtables =>
-        match mtables with
-        | none => panic s!"Category {dp.category.fullName} not declared."
-        | some tables =>
-          let r := tables |>.addParser dp.isLeading dp.parser dp.outerPrec
-          some r,
-    tokenTable := s.tokenTable.addTokens dp.parser
-    }
-
-def extendDeclParser (s : ParserState) (dialect : DialectName) (dp : DeclParser) : ParserState :=
-  if dialect ∈ s.openDialects then
-    s.addParserToCat dp
-  else
-    s
-
-def parsingContext (s : ParserState) : ParsingContext where
-  fixedParsers := fun i => s.fixedParsers[i]?
-
-def openDialect (ps : ParserState) (dialect : DialectName) (syncats : Collection SynCatDecl) (parsers : Array DeclParser) : ParserState :=
-  assert! dialect ∉ ps.openDialects
-  let ps := { ps with openDialects := ps.openDialects.insert dialect }
-  let ps := syncats.fold (init := ps) (·.addSynCat dialect ·)
-  parsers.foldl (init := ps) (·.addParserToCat ·)
-
-end ParserState
+  p.fn.run inputContext pmc tokenTable leanParserState
 
 end Strata.Parser

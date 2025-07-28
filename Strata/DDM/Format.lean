@@ -72,7 +72,7 @@ end FormatContext
 /-- Format state includes local information -/
 structure FormatState where
   openDialects : Std.HashSet String
-  bindings : Array String
+  bindings : Array String := #[]
 
 def callPrec := 30
 def appPrec := 20
@@ -553,19 +553,26 @@ instance Dialect.instToStrataFormat : ToStrataFormat Dialect where
       let body := .join d.declarations.toList
       init ++ (.nest 2 body) ++ mformat "}\n"
 
-namespace Environment
+namespace FormatContext
 
-protected def formatContext (env : Environment) (opts : FormatOptions) : FormatContext where
+protected def ofDialects (dialects : DialectMap) (globalContext : GlobalContext) (opts : FormatOptions) : FormatContext where
   opts := opts
   getFnDecl sym := Id.run do
-    let .function f := env.dialects.decl! sym
+    let .function f := dialects.decl! sym
       | return panic! s!"Unknown function {sym}"
     some f
   getOpDecl i := Id.run do
-    let .op op := env.dialects.decl! i
+    let .op op := dialects.decl! i
       | panic! s!"Unknown op {i}"; return default
     some op
-  globalContext := env.globalContext
+  globalContext := globalContext
+
+end FormatContext
+
+namespace Environment
+
+protected def formatContext (env : Environment) (opts : FormatOptions) : FormatContext :=
+  .ofDialects env.dialects env.globalContext opts
 
 protected def formatState (env : Environment) : FormatState where
   openDialects := .ofArray env.openDialects

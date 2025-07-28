@@ -235,7 +235,7 @@ op command_axiom (label : Option Label, e : bool) : Command => "axiom " label e 
 
 namespace BoogieDDM
 
-#strataGenAST Boogie
+#strata_gen Boogie
 
 end BoogieDDM
 

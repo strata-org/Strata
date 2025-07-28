@@ -32,7 +32,7 @@ op havoc  (v : Ident) : Command => "havoc " v ";\n";
 
 private def testEnv :=
 #strata
-open ArithPrograms;
+program ArithPrograms;
 init x : num := 0;
 assert [test]: (x == 0);
 #end
@@ -43,7 +43,7 @@ namespace ArithPrograms
 
 -- set_option trace.Strata.generator true
 -- set_option trace.Strata.DDM.syntax true
-#strataGenAST ArithPrograms
+#strata_gen ArithPrograms
 -- #print Command.toAst
 -- #print Command.ofAst
 

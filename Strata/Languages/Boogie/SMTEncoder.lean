@@ -17,7 +17,7 @@
 
 
 import Strata.Languages.Boogie.Boogie
-import Strata.SMT
+import Strata.DL.SMT
 import Init.Data.String.Extra
 
 ---------------------------------------------------------------------

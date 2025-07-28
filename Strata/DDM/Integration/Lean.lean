@@ -62,12 +62,12 @@ def strataProgramImpl : TermElab := fun stx tp => do
         | throwError s!"Expected input context"
   let emptyEnv ← mkEmptyEnvironment 0
   let inputCtx ← (getInputContext : CoreM _)
-  let dialects := (dialectExt.getState (←Lean.getEnv)).allDialects
-  let ms := Elab.elabProgram emptyEnv dialects inputCtx p e
-  if ms.errors.isEmpty then
-    return toExpr ms.env
+  let loader := (dialectExt.getState (←Lean.getEnv)).loader
+  let ds := Elab.elabProgram emptyEnv loader inputCtx p e
+  if ds.errors.isEmpty then
+    return toExpr ds.mkEnv
   else
-    for (stx, e) in ms.errors do
+    for (stx, e) in ds.errors do
       logMessage e
     return mkApp2 (mkConst ``sorryAx [1]) (toTypeExpr Strata.Environment) (toExpr true)
 
@@ -81,20 +81,17 @@ def strataDialectImpl: Lean.Elab.Command.CommandElab := fun (stx : Syntax) => do
         | throwError s!"Expected input context"
   let emptyLeanEnv ← mkEmptyEnvironment 0
   let inputCtx ← getInputContext
-  let dialects := (dialectExt.getState (←Lean.getEnv)).allDialects
-  let ms := Elab.elabDialect emptyLeanEnv dialects inputCtx p e
-  if !ms.errors.isEmpty then
-    for (stx, e) in ms.errors do
+  let loader := (dialectExt.getState (←Lean.getEnv)).loader
+  let (d, s) := Elab.elabDialect emptyLeanEnv loader inputCtx p e
+  if !s.errors.isEmpty then
+    for (stx, e) in s.errors do
       logMessage e
     return
-  let some (_, dialectName, _) := ms.currentDialect
-    | return
   -- Add dialect to command
-  let d := ms.env.dialects[dialectName]!
   let cmd ← `(command| def $(Lean.mkLocalDeclId d.name) := $(quote d))
   tryCatch (elabCommand cmd) fun e =>
     panic! "Elab command failed: {e}"
   modifyEnv fun env =>
-    dialectExt.modifyState env (·.addDialect d)
+    dialectExt.modifyState env (·.addDialect! d (isNew := true))
 
 end Strata

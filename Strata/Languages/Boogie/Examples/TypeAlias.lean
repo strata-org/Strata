@@ -27,7 +27,7 @@ error: Expression has type FooAlias Foo int int when Foo bool int expected.
 #guard_msgs in
 def badTypeAliasEnv : Environment :=
 #strata
-open Boogie;
+program Boogie;
 type Foo (a : Type, b : Type);
 type FooAlias (a : Type) := Foo bool bool;
 
@@ -46,7 +46,7 @@ procedure P () returns () {
 
 def goodTypeAliasEnv : Environment :=
 #strata
-open Boogie;
+program Boogie;
 type Foo (a : Type, b : Type);
 type FooAlias (a : Type) := Foo int bool;
 type FooAlias2 (a : Type) := FooAlias (FooAlias bool);

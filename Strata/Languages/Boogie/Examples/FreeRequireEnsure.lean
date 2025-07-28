@@ -21,7 +21,7 @@ namespace Strata
 
 def freeReqEnsEnv : Environment :=
 #strata
-open Boogie;
+program Boogie;
 var g : int;
 procedure Proc() returns ()
 spec {
