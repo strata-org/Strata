@@ -5,7 +5,7 @@ namespace Strata
 
 def mapUpdateEnv : Environment :=
 #strata
-open Boogie;
+program Boogie;
 
 // Prelude begin --------------------------------------------------
 type Ref;
@@ -47,7 +47,7 @@ axiom [UnboxingBoxingInverseInt]: forall b: Box :: isInt(b) ==> BoxingInt(Unboxi
 function BoxingBool(v: bool): Box;
 function UnboxingBool(b: Box): bool;
 axiom [BoxingUnboxingInverseBool]: forall v: bool :: isBool(BoxingBool(v)) && UnboxingBool(BoxingBool(v)) == v;
-axiom [UnboxingBoxingInverseBool]: forall b: Box :: isInt(b) ==> BoxingBool(UnboxingBool(b)) == b;
+axiom [UnboxingBoxingInverseBool]: forall b: Box :: isBool(b) ==> BoxingBool(UnboxingBool(b)) == b;
 // string
 function BoxingStr(v: string): Box;
 function UnboxingStr(b: Box): string;
@@ -84,14 +84,14 @@ spec {
   free requires allocationTime(r) < tickingClock;
   free requires allocationTime(initialNext) < tickingClock;
   requires isContainer(r);
-  ensures tickingClock >= old(tickingClock);
-
-  requires isContainer(initialNext);
   // User provided ------------------------------------------------------------------------------------------------------------
+  requires isContainer(initialNext);
   requires r != initialNext;
   ensures UnboxingInt(newHeap[r][lycheeField]) == initialLychee;
   ensures UnboxingInt(newHeap[r][pineappleField]) == initialPineapple;
   ensures UnboxingRef(newHeap[r][nextField]) == initialNext;
+
+  ensures tickingClock >= old(tickingClock);
 
 }
 {
@@ -153,23 +153,24 @@ spec {
 }
 {
   var heap_var: Heap := heap;
+  var methodEntryTime: int := tickingClock;
 
   // ref1.lychee += 1
 
-  assert [modifiesFrameRef1]: UpdateContainersModifiesFrame(heap_var, ref1, ref1, tickingClock);
+  assert [modifiesFrameRef1]: UpdateContainersModifiesFrame(heap_var, ref1, ref1, methodEntryTime);
   var rhs1: Box := BoxingInt(UnboxingInt(heap_var[ref1][lycheeField]) + 1);
   heap_var := heap_var[ref1 := heap_var[ref1][lycheeField := rhs1]];
 
   // Cannot modify ref2
-  assert[modifiesFrameRef2]: !UpdateContainersModifiesFrame(heap_var, ref2, ref1, tickingClock);
+  assert[modifiesFrameRef2]: !UpdateContainersModifiesFrame(heap_var, ref2, ref1, methodEntryTime);
 
   // Cannot modify ref1.next (== ref2)
-  assert [modifiesFrameRef1Next]: !UpdateContainersModifiesFrame(heap_var, UnboxingRef(heap_var[ref1][nextField]), ref1, tickingClock);
+  assert [modifiesFrameRef1Next]: !UpdateContainersModifiesFrame(heap_var, UnboxingRef(heap_var[ref1][nextField]), ref1, methodEntryTime);
 
 
   // Modify ref1.pineapples through an alias in ref2
   // ref1.pineapple += 1
-  assert [modifiesFrameRef2Next]: UpdateContainersModifiesFrame(heap_var, UnboxingRef(heap_var[ref2][nextField]), ref1, tickingClock);
+  assert [modifiesFrameRef2Next]: UpdateContainersModifiesFrame(heap_var, UnboxingRef(heap_var[ref2][nextField]), ref1, methodEntryTime);
   var rhs2: Box := BoxingInt(UnboxingInt(heap_var[UnboxingRef(heap_var[ref2][nextField])][pineappleField]) + 1);
   heap_var := heap_var[UnboxingRef(heap_var[ref2][nextField]) := heap_var[UnboxingRef(heap_var[ref2][nextField])][pineappleField := rhs2]];
 
@@ -191,40 +192,45 @@ spec {
 }
 {
   var heap_var: Heap := heap;
+  var methodEntryTime: int := tickingClock;
 
-  // instantiate c1 (i.e., new Container(0, 1, null))
+  // instantiate c1 (i.e., new Container(0, 1, nullRef))
   var c1: Ref;
   assume allocationTime(c1) == tickingClock;
+  // assume isContainer(c1);
+  assert isContainer(c1);
   tickingClock := tickingClock + 1;           // After allocation: increase the tick
   call heap_var := Container_ctor(heap_var, c1, 0, 1, nullRef);
-  tickingClock := tickingClock + 1;           // After procedure call: increase the tick
 
-  // instantiate c2 (i.e., new Container(0, 0, null))
+  assert [c1Lychees0]: isContainer(c1) && UnboxingInt(heap_var[c1][lycheeField]) == 0;
+  assert [c1Pineapple1]: isContainer(c1) && UnboxingInt(heap_var[c1][pineappleField]) == 1;
+
+  // instantiate c2 (i.e., new Container(0, 0, nullRef))
   var c2: Ref;
   assume allocationTime(c2) == tickingClock;
+  assume isContainer(c2);
   tickingClock := tickingClock + 1;           // After allocation: increase the tick
   call heap_var := Container_ctor(heap_var, c2, 0, 0, nullRef);
-  tickingClock := tickingClock + 1;           // After procedure call: increase the tick
 
   // c1.next := c2
-  assert MainModifiesFrame(heap_var, c1, tickingClock);       // We can do that since the ticking clock has increased
+  assert MainModifiesFrame(heap_var, c1, methodEntryTime);       // We can do that since the ticking clock has increased
   var rhs: Box := BoxingRef(c2);
   heap_var := heap_var[c1 := heap_var[c1][nextField := rhs]];
 
   // c2.next := c1
-  assert MainModifiesFrame(heap_var, c2, tickingClock);       // We can do that since the ticking clock has increased
+  assert MainModifiesFrame(heap_var, c2, methodEntryTime);       // We can do that since the ticking clock has increased
   var rhs2: Box := BoxingRef(c1);
   heap_var := heap_var[c2 := heap_var[c2][nextField := rhs2]];
 
   call heap_var := UpdateContainers(heap_var, c1, c2);
 
-  assert UnboxingInt(newHeap[c1][lycheeField]) == 1;
-  assert UnboxingInt(newHeap[c1][pineappleField]) == 1;
-  assert UnboxingInt(newHeap[c2][lycheeField]) == 0;
-  assert UnboxingInt(newHeap[c2][pineappleField]) == 0;
+  assert [c1Lychees1]: isContainer(c1) && UnboxingInt(heap_var[c1][lycheeField]) == 1;
+  assert [c1Pineapple2]: isContainer(c1) && UnboxingInt(heap_var[c1][pineappleField]) == 2;
+  assert [c2Lychees0]: isContainer(c2) && UnboxingInt(heap_var[c2][lycheeField]) == 0;
+  assert [c2Pineapple0]: isContainer(c2) && UnboxingInt(heap_var[c2][pineappleField]) == 0;
 
-  assert UnboxingRef(newHeap[c1][nextField]) == c2;
-  assert UnboxingRef(newHeap[c2][nextField]) == c1;
+  assert [c1NextEqC2]: isContainer(c1) && UnboxingRef(heap_var[c1][nextField]) == c2;
+  assert [c2NextEqC1]: isContainer(c2) && UnboxingRef(heap_var[c2][nextField]) == c1;
 
   // Return the new heap
   newHeap := heap_var;

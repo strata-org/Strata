@@ -1,4 +1,4 @@
-open Boogie;
+program Boogie;
 
 // Prelude begin --------------------------------------------------
 type Ref;
@@ -40,7 +40,7 @@ axiom [UnboxingBoxingInverseInt]: forall b: Box :: isInt(b) ==> BoxingInt(Unboxi
 function BoxingBool(v: bool): Box;
 function UnboxingBool(b: Box): bool;
 axiom [BoxingUnboxingInverseBool]: forall v: bool :: isBool(BoxingBool(v)) && UnboxingBool(BoxingBool(v)) == v;
-axiom [UnboxingBoxingInverseBool]: forall b: Box :: isInt(b) ==> BoxingBool(UnboxingBool(b)) == b;
+axiom [UnboxingBoxingInverseBool]: forall b: Box :: isBool(b) ==> BoxingBool(UnboxingBool(b)) == b;
 // string
 function BoxingStr(v: string): Box;
 function UnboxingStr(b: Box): string;
@@ -77,14 +77,14 @@ spec {
   free requires allocationTime(r) < tickingClock;
   free requires allocationTime(initialNext) < tickingClock;
   requires isContainer(r);
-  ensures tickingClock >= old(tickingClock);
-
-  requires isContainer(initialNext);
   // User provided ------------------------------------------------------------------------------------------------------------
+  requires isContainer(initialNext);
   requires r != initialNext;
   ensures UnboxingInt(newHeap[r][lycheeField]) == initialLychee;
   ensures UnboxingInt(newHeap[r][pineappleField]) == initialPineapple;
   ensures UnboxingRef(newHeap[r][nextField]) == initialNext;
+
+  ensures tickingClock >= old(tickingClock);
 
 }
 {
@@ -190,12 +190,13 @@ spec {
   // instantiate c1 (i.e., new Container(0, 1, nullRef))
   var c1: Ref;
   assume allocationTime(c1) == tickingClock;
-  assume isContainer(c1);
+  // assume isContainer(c1);
+  assert isContainer(c1);
   tickingClock := tickingClock + 1;           // After allocation: increase the tick
   call heap_var := Container_ctor(heap_var, c1, 0, 1, nullRef);
 
-  assert [ok]: isContainer(c1) && UnboxingInt(heap_var[c1][lycheeField]) == 0;
-  assert [problematic]: isContainer(c1) && UnboxingInt(heap_var[c1][pineappleField]) == 1;
+  assert [c1Lychees0]: isContainer(c1) && UnboxingInt(heap_var[c1][lycheeField]) == 0;
+  assert [c1Pineapple1]: isContainer(c1) && UnboxingInt(heap_var[c1][pineappleField]) == 1;
 
   // instantiate c2 (i.e., new Container(0, 0, nullRef))
   var c2: Ref;
@@ -216,13 +217,13 @@ spec {
 
   call heap_var := UpdateContainers(heap_var, c1, c2);
 
-  assert isContainer(c1) && UnboxingInt(heap_var[c1][lycheeField]) == 1;
-  assert isContainer(c1) && UnboxingInt(heap_var[c1][pineappleField]) == 2;
-  assert isContainer(c2) && UnboxingInt(heap_var[c2][lycheeField]) == 0;
-  assert isContainer(c2) && UnboxingInt(heap_var[c2][pineappleField]) == 0;
+  assert [c1Lychees1]: isContainer(c1) && UnboxingInt(heap_var[c1][lycheeField]) == 1;
+  assert [c1Pineapple2]: isContainer(c1) && UnboxingInt(heap_var[c1][pineappleField]) == 2;
+  assert [c2Lychees0]: isContainer(c2) && UnboxingInt(heap_var[c2][lycheeField]) == 0;
+  assert [c2Pineapple0]: isContainer(c2) && UnboxingInt(heap_var[c2][pineappleField]) == 0;
 
-  assert isContainer(c1) && UnboxingRef(heap_var[c1][nextField]) == c2;
-  assert isContainer(c2) && UnboxingRef(heap_var[c2][nextField]) == c1;
+  assert [c1NextEqC2]: isContainer(c1) && UnboxingRef(heap_var[c1][nextField]) == c2;
+  assert [c2NextEqC1]: isContainer(c2) && UnboxingRef(heap_var[c2][nextField]) == c1;
 
   // Return the new heap
   newHeap := heap_var;
