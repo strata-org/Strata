@@ -16,7 +16,7 @@
 
 
 
-import Lean
+import Std.Internal.Parsec.String
 
 namespace Strata.SMT.CExParser
 open Std (Format ToFormat format)

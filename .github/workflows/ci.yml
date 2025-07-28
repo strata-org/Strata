@@ -73,3 +73,5 @@ jobs:
         shell: bash
       - name: Check for trailing whitespace
         run: .github/scripts/lintWhitespace.sh
+      - name: Check for import Lean
+        run: .github/scripts/checkLeanImport.sh

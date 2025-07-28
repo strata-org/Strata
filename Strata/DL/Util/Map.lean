@@ -21,7 +21,6 @@
 -- Copied over from LNSym
 -- https://github.com/leanprover/LNSym/blob/main/Arm/Map.lean
 
-import Lean
 open Std (ToFormat Format format)
 
 /-!

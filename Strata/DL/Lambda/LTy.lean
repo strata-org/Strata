@@ -17,7 +17,7 @@
 
 
 import Strata.DL.Util.Map
-import Lean
+import Lean.Elab.Term
 
 ---------------------------------------------------------------------
 
