@@ -23,10 +23,9 @@ function isBool(v: Box): bool;
 function isString(v: Box): bool;
 function isRef(v: Box): bool;
 
-// Replace by allocation time, one tick per 1) allocation 2) method call, const for each ref = allocation time, prove disjointness by proving that the allocation is greater
+// Replace by allocation time, one tick per 1) allocation 2) method call, const for each Ref = allocation time, prove disjointness by proving that the allocation is greater
 var tickingClock: int;
 function allocationTime(r: Ref): int;
-axiom [tickingClockPositive]: tickingClock >= 0;
 
 axiom [allocationTimeOfNullIsSmallerThanEverything]: forall r: Ref :: allocationTime(null) == -1;
 
@@ -75,9 +74,16 @@ function Container_ctorModifiesFrame(h: Heap, testedRef: Ref, r: Ref, methodEntr
 procedure Container_ctor(heap: Heap, r: Ref, initialLychee: int, initialPineapple: int, initialNext: Ref) returns (newHeap: Heap)
 spec {
   // Refs are allocated
+  free requires tickingClock >= 0;
   free requires allocationTime(r) < tickingClock;
   free requires allocationTime(initialNext) < tickingClock;
   requires isContainer(r);
+
+  free ensures (forall o: Ref :: 
+    { newHeap[o] } 
+    (o != null && allocationTime(o) >= 0 && allocationTime(o) < old(tickingClock))
+       ==> (newHeap[o] == heap[o] || o == r));
+
   // User provided ------------------------------------------------------------------------------------------------------------
   requires isContainer(initialNext) || initialNext == null;
   requires r != initialNext;
@@ -114,10 +120,12 @@ spec {
 function UpdateContainersModifiesFrame(h: Heap, testedRef: Ref, ref1: Ref, methodEntryTime: int): bool {
   testedRef == ref1 || (allocationTime(testedRef) >= methodEntryTime)
 }
+
 // Annotated with "modifies ref1"
 procedure UpdateContainers(heap: Heap, ref1: Ref, ref2: Ref) returns (newHeap: Heap)
 spec {
   // Refs are allocated
+  free requires tickingClock >= 0;
   free requires allocationTime(ref1) < tickingClock;
   free requires allocationTime(ref2) < tickingClock;
 
@@ -125,6 +133,11 @@ spec {
   requires isContainer(ref2);
 
   ensures tickingClock >= old(tickingClock);
+
+  free ensures (forall o: Ref :: 
+    { newHeap[o] } 
+    (o != null && allocationTime(o) >= 0 && allocationTime(o) < old(tickingClock))
+       ==> (newHeap[o] == heap[o] || o == ref1));
 
   // User provided ------------------------------------------------------------------------------------------------------------
   requires ref1 != ref2; // At first, I forgot it, and indeed the verification conditions helped me realizing it
@@ -183,6 +196,13 @@ procedure Main(heap: Heap) returns (newHeap: Heap)
 spec {
   modifies tickingClock;
 
+  free requires tickingClock >= 0;
+  ensures tickingClock >= old(tickingClock);
+
+  free ensures (forall o: Ref :: 
+    { newHeap[o] } 
+    (o != null && allocationTime(o) >= 0 && allocationTime(o) < old(tickingClock))
+       ==> (newHeap[o] == heap[o]));
 }
 {
   var heap_var: Heap := heap;
@@ -192,7 +212,6 @@ spec {
   var c1: Ref;
   assume allocationTime(c1) == tickingClock;
   assume isContainer(c1);
-  assert isContainer(c1);
   tickingClock := tickingClock + 1;           // After allocation: increase the tick
   call heap_var := Container_ctor(heap_var, c1, 0, 1, null);
 
