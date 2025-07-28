@@ -14,7 +14,7 @@
   limitations under the License.
 -/
 
-import Strata.SMT.TermType
+import Strata.DL.SMT.TermType
 
 /-!
 Based on Cedar's Term language.
