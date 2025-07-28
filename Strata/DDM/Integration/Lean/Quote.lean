@@ -227,10 +227,17 @@ instance : Quote Dialect where
         quote d.declarations
       ]
 
+namespace DialectMap
+
+instance : Quote DialectMap where
+  quote d := Syntax.mkCApp ``DialectMap.ofList! #[quote d.toList]
+
+end DialectMap
+
 instance : Quote Environment where
   quote ms : Term :=
     Syntax.mkCApp ``Environment.create #[
-      quote ms.dialects.toList,
+      quote ms.dialects,
       quote ms.openDialects,
       quote ms.commands
     ]
