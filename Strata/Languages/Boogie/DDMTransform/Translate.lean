@@ -601,8 +601,7 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     return ([.havoc id], bindings)
   | q`Boogie.assert, #[la, ca] =>
     let c ← translateExpr bindings ca
-    let default := ((s!"assert: {Std.format c}".replace "==" " eq ").replace " " "_")
-    let l ← translateOptionLabel default la
+    let l ← translateOptionLabel s!"assert: {Std.format c}" la
     return ([.assert l c], bindings)
   | q`Boogie.assume, #[la, ca] =>
     let c ← translateExpr bindings ca

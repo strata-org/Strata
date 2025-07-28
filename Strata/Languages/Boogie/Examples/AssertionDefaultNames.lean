@@ -43,7 +43,7 @@ info: (procedure Test :  ((x : int)) → ())
 modifies: []
 preconditions: (Test_requires_0, (x == (#1 : int)))
 postconditions: ⏎
-body: assert [assert:_(x__eq__(#1_:_int))] (x == (#1 : int))
+body: assert [assert: (x == (#1 : int))] (x == (#1 : int))
 
 Errors: #[]
 -/
@@ -55,16 +55,16 @@ info: [Strata.Boogie] Type checking succeeded.
 
 
 VCs:
-Label: assert:_(x__eq__(#1_:_int))
+Label: assert: (x == (#1 : int))
 Assumptions:
 (Test_requires_0, ($__x0 == #1))
 Proof Obligation:
 ($__x0 == #1)
 
-Wrote problem to vcs/assert:_(x__eq__(#1_:_int)).smt2.
+Wrote problem to vcs/assert:_(x_eq_(#1_:_int)).smt2.
 ---
 info:
-Obligation: assert:_(x__eq__(#1_:_int))
+Obligation: assert: (x == (#1 : int))
 Result: verified
 -/
 #guard_msgs in
