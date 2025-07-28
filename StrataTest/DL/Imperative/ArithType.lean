@@ -18,6 +18,13 @@ import Strata.DL.Imperative.CmdType
 import StrataTest.DL.Imperative.ArithExpr
 
 namespace Arith
+
+/-! ## Instantiate `Imperative`'s Type Checker
+
+We instantiate Imperative's `TypeContext` typeclass with `ArithPrograms`'
+specific implementations to obtain a type checker.
+-/
+
 namespace TypeCheck
 open Std (ToFormat Format format)
 open Imperative
@@ -39,6 +46,7 @@ def update (T : TEnv) (x : String) (ty : Ty) : TEnv :=
 def lookup (T : TEnv) (x : String) : Option Ty :=
   T.find? x
 
+/-- Type inference for `ArithPrograms`' commands. -/
 def inferType (T : TEnv) (c : Cmd PureExpr) (e : Expr) : Except Format (Expr × Ty × TEnv) := do
   match e with
   | .Num _ => .ok (e, .Num, T)
@@ -80,6 +88,7 @@ def inferType (T : TEnv) (c : Cmd PureExpr) (e : Expr) : Except Format (Expr × 
     else
       .error f!"Type checking failed for {e}"
 
+/-- Unify `ArithPrograms`' types. -/
 def unifyTypes (T : TEnv) (constraints : List (Ty × Ty)) : Except Format TEnv :=
   match constraints with
   | [] => .ok T
@@ -89,6 +98,9 @@ def unifyTypes (T : TEnv) (constraints : List (Ty × Ty)) : Except Format TEnv :
     else
       .error f!"Types {t1} and {t2} cannot be unified!"
 
+/--
+Instantiation of `TypeContext` for `ArithPrograms`.
+-/
 instance : TypeContext PureExpr TEnv where
   isBoolType := Arith.TypeCheck.isBoolType
   freeVars := (fun e => (Arith.Expr.freeVars e).map (fun (v, _) => v))

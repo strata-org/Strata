@@ -22,6 +22,14 @@ import Strata.DL.Imperative.SMTUtils
 namespace Arith
 open Std (ToFormat Format format)
 
+/-! ## Verifier for `ArithPrograms`
+
+Here, we build an end-to-end verifier for `ArithPrograms`. We hook up the DDM
+translator with the type checker + partial evaluator, followed by the SMT
+encoder. We then write some basic functions to invoke an SMT solver on every
+verification condition.
+-/
+
 open Strata.SMT in
 def typedVarToSMT (v : String) (ty : Ty) : Except Format (String × Strata.SMT.TermType) := do
   let ty' ← toSMTType ty

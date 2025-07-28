@@ -17,6 +17,15 @@
 import Strata.DDM.Integration.Lean
 ---------------------------------------------------------------------
 
+/-! # Getting Started with `ArithPrograms`
+
+## Concrete Syntax Definition using Strata's DDM
+
+Strata's Dialect Definition Mechanism (DDM) offers the ability to define a
+dialect's concrete syntax in a declarative fashion, after which we get parsing
+and preliminary type checking.
+-/
+
 #dialect
 dialect ArithPrograms;
 
@@ -46,6 +55,7 @@ op havoc  (v : Ident) : Command => "havoc " v ";\n";
 
 #end
 
+/-- Example: syntax of a program in the `ArithPrograms` dialect -/
 private def testEnv :=
 #strata
 program ArithPrograms;
@@ -56,6 +66,8 @@ assert [test]: (x == 0);
 ---------------------------------------------------------------------
 
 namespace ArithPrograms
+
+/- Automatically generate Lean types from the DDM definitions above. -/
 
 -- set_option trace.Strata.generator true
 -- set_option trace.Strata.DDM.syntax true

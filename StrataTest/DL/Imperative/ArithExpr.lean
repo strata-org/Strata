@@ -24,6 +24,23 @@ open Imperative
 
 ---------------------------------------------------------------------
 
+/-! ## Abstract Syntax for `ArithPrograms`
+
+NOTE: The Concrete Syntax is defined in `DDMDefinition.lean`.
+
+A good design choice for abstract syntax is one that is amenable to
+transformations, debugging, and analyses. The DDM-generated code may or may not
+serve your purpose. For example, for `ArithPrograms`, perhaps you would like to
+see named variables instead of de Bruijn indices, which is what the DDM
+generates.
+
+Here, we define the abstract syntax for `ArithPrograms`. For this simple
+dialect, this is in fact quite similar to the DDM-generated one, except that we
+have `Var : String → Option Ty` that have both the variable names and optionally
+their types instead of DDM's `.fvar`s.
+-/
+
+/-- Types in `ArithPrograms` -/
 inductive Ty where
   | Num | Bool
   deriving DecidableEq, Repr, Inhabited
@@ -90,6 +107,13 @@ abbrev PureExpr : PureExpr :=
      EvalEnv := Env,
      EqIdent := instDecidableEqString }
 
+/-- A Command of `ArithPrograms` -/
+abbrev Command := Imperative.Cmd Arith.PureExpr
+/-- Commands in `ArithPrograms` -/
+abbrev Commands := Imperative.Cmds Arith.PureExpr
+
+---------------------------------------------------------------------
+end Arith
 /-
 -- Here is an alternate formulation for untyped Arith expressions.
 /--
@@ -109,7 +133,3 @@ abbrev PureExpr : PureExpr :=
      TyEnv := Empty,
      EvalEnv :=  Env }
 -/
-
----------------------------------------------------------------------
-
-end Arith
