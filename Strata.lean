@@ -18,7 +18,7 @@
 import Strata.DDM.Integration.Lean
 import Strata.DDM.Ion
 import Strata.DDM.Example
-import Strata.SMT
+import Strata.DL.SMT
 
 import Strata.DL.Imperative.NondetStmtSemantics
 
