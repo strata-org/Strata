@@ -1,6 +1,8 @@
 # Implementation Plan
 
-- [ ] 1. Create Failing Tests for Manual Trigger Support
+- [x] 1. Create Failing Tests for Manual Trigger Support
+
+
   - Add test cases for basic trigger translation that currently fail
   - Create SMT2 output validation tests that expect `:pattern` attributes
   - Add nested quantifier flattening tests with expected outputs
