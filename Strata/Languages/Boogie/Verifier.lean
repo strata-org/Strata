@@ -160,6 +160,8 @@ def dischargeObligation
   (vars : List (IdentT BoogieIdent)) (smtsolver filename : String)
   (terms : List Term) (ctx : SMT.Context)
   : IO (Except Format (Result × EncoderState)) := do
+  if !(← System.FilePath.isDir VC_folder_name) then
+    let _ ← IO.FS.createDir VC_folder_name
   let filename := s!"{VC_folder_name}/{filename}"
   let handle ← IO.FS.Handle.mk filename IO.FS.Mode.write
   let solver ← Solver.fileWriter handle
