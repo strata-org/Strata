@@ -64,3 +64,9 @@ internal format of the dialects used to implement the language under
 analysis). These VCs are then encoded into SMT, and counterexamples,
 if any, report models for the variables present in the problem.
 
+## License
+
+The contents of this repository are licensed under the terms of either
+the Apache-2.0 or MIT license, at your choice. See
+[LICENSE-APACHE](LICENSE-APACHE) and [LICENSE-MIT](LICENSE-MIT) for
+details of the two licenses.
