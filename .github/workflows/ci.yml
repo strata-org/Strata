@@ -56,7 +56,7 @@ jobs:
                 ARCHIVE_NAME="z3-4.15.2-x64-glibc-2.39"
               elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
                 ARCH_NAME="arm64"
-                wget https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-arm64-win.zip
+                wget https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-arm64-glibc-2.34.zip
                 ARCHIVE_NAME="z3-4.15.2-arm64-win"
               else
                 echo "Unsupported architecture: $ARCH"
