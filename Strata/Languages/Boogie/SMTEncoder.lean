@@ -336,15 +336,15 @@ def toSMTTermString (e : (LExpr BoogieIdent)) (E : Env := Env.init) (ctx : SMT.C
   | .error e => return e.pretty
   | .ok (smt, _) => Encoder.termToString smt
 
--- /-- info: "(define-fun t0 () Bool (forall (($__bv0 Int)) (exists (($__bv1 Int)) (= $__bv0 $__bv1))))\n" -/
--- #guard_msgs in
+/-- info: "(define-fun t0 () Bool (forall (($__bv0 Int)) (exists (($__bv1 Int)) (= $__bv0 $__bv1))))\n" -/
+#guard_msgs in
 #eval toSMTTermString
   (.quant .all (.some .int)
    (.quant .exist (.some .int)
    (.eq (.bvar 1) (.bvar 0))))
 
--- /-- info: "; \"x\"\n(declare-const t0 Int)\n(define-fun t1 () Bool (exists (($__bv0 Int)) (= $__bv0 t0)))\n" -/
--- #guard_msgs in
+/-- info: "; \"x\"\n(declare-const t0 Int)\n(define-fun t1 () Bool (exists (($__bv0 Int)) (= $__bv0 t0)))\n" -/
+#guard_msgs in
 #eval toSMTTermString
    (.quant .exist (.some .int)
    (.eq (.bvar 0) (.fvar "x" (.some .int))))
