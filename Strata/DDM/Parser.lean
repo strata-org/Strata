@@ -201,16 +201,20 @@ partial def whitespace : ParserFn := fun c s =>
       s.mkUnexpectedError (pushMissing := false) "isolated carriage returns are not allowed"
     else if curr.isWhitespace then whitespace c (s.next' input i h)
     else if curr == '/' then
-      let i    := input.next' i h
-      let curr := input.get i
+      let j    := input.next' i h
+      let curr := input.get j
       match curr with
       | '/' =>
-        andthenFn (takeUntilFn (fun c => c = '\n')) whitespace c (s.next input i)
+        match c.tokens.matchPrefix input i with
+        | some _ => s
+        | none =>
+          andthenFn (takeUntilFn (fun c => c = '\n')) whitespace c (s.next input j)
       | '*' =>
-        let i    := input.next i
-        let curr := input.get i
-        if curr == '*' then s -- "/**" doc comment are actual tokens
-        else andthenFn (finishCommentBlock (pushMissingOnError := false)) whitespace c (s.next input i)
+        match c.tokens.matchPrefix input i with
+        | some _ => s
+        | none =>
+          let j := input.next j
+          andthenFn (finishCommentBlock (pushMissingOnError := false)) whitespace c (s.next input j)
       | _ =>
         s
     else s
@@ -462,7 +466,6 @@ def symbolFn (sym : String) : ParserFn :=
   symbolFnAux sym ("'" ++ sym ++ "'")
 
 def symbolNoAntiquot (sym : String) : Parser :=
-  let sym := sym.trim
   { info := symbolInfo sym
     fn   := symbolFn sym }
 
@@ -743,17 +746,19 @@ def catParser (ctx : ParsingContext) (cat : QualifiedIdent) : Parser :=
     dynamicParser cat
 
 /-
-This maps a op syntax atom over binders to the kind of expressions they need
-to parse.
+This walks the SyntaxDefAtomParser and prepends extracted parser to state.
+
+This is essentially a right-to-left fold and is implemented so that the parser starts with
+the first symbol.
 -/
-private def addSyntaxDefAtomToBuiltin (ctx : ParsingContext) (b : DeclBindings) (r : Array Parser) (o : SyntaxDefAtom) : Array Parser:=
+private def prependSyntaxDefAtomParser [Inhabited α] (ctx : ParsingContext) (b : DeclBindings) (prepend : Parser -> α → α) (o : SyntaxDefAtom) (r : α) : α :=
   match o with
   | .ident v prec => Id.run do
     if v ≥ b.size then
       return panic! s!"Invalid ident index {v} in bindings {eformat b}"
     let addParser (p : Parser) :=
       let q : Parser := Lean.Parser.adaptCacheableContext ({ · with prec }) p
-      r.push q
+      prepend q r
     match b[v]!.kind.categoryOf with
     | .app (.atom (q`Init.CommaSepBy)) (.atom c) =>
       addParser <| sepByNoAntiquot (catParser ctx c) (symbolNoAntiquot ",")
@@ -765,14 +770,17 @@ private def addSyntaxDefAtomToBuiltin (ctx : ParsingContext) (b : DeclBindings) 
       addParser <| catParser ctx c
     | c =>
       panic! s!"Category '{eformat c}' is not supported."
-  | .str l => r.push <| symbolNoAntiquot l
+  | .str l =>
+    let l := l.trim
+    if l.isEmpty then
+      r
+    else
+      prepend (symbolNoAntiquot l) r
   | .indent _ p =>
-    p.attach.foldl (init := r) fun r ⟨e, _⟩ => addSyntaxDefAtomToBuiltin ctx b r e
+    p.attach.foldr (init := r) fun ⟨e, _⟩ r => prependSyntaxDefAtomParser ctx b prepend e r
 
 private def liftToKind (ctx : ParsingContext) (o : List SyntaxDefAtom) (b : DeclBindings) : Parser :=
-  let pargs := o.foldl (init := #[]) (addSyntaxDefAtomToBuiltin ctx b)
-  let p := pargs.foldr (· >> ·) (init := skip)
-  p
+  o.foldr (init := skip) (prependSyntaxDefAtomParser ctx b (· >> ·))
 
 def opSyntaxParser (ctx : ParsingContext)
                    (category : QualifiedIdent)
