@@ -684,6 +684,10 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     let (tss, bindings) ← translateBlock bindings ta
     let (fss, bindings) ← translateElse bindings fa
     return ([.ite c { ss := tss } { ss := fss } ], bindings)
+  | q`Boogie.while_statement, #[ca, ba] =>
+    let c ← translateExpr bindings ca
+    let (bodyss, bindings) ← translateBlock bindings ba
+    return sorry -- ([.loop c { ss := bodyss } ], bindings)
   | q`Boogie.call_statement, #[lsa, fa, esa] =>
    let ls  ← translateCommaSep (translateIdent BoogieIdent) lsa
    let f   ← translateIdent String fa
