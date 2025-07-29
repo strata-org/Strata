@@ -16,7 +16,6 @@
 
 
 
-import Lean
 import Strata.DL.Imperative.Cmd
 
 namespace Imperative

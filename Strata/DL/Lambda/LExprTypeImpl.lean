@@ -87,6 +87,25 @@ def inferConst (T : (TEnv Identifier)) (c : String) (cty : Option LMonoTy) :
                 Don't know how to interpret the following constant:\n\
                 {@LExpr.const Identifier c cty}\n\
                 Known Types: {T.knownTypes}"
+  -- Annotated Reals
+  | c, some LMonoTy.real =>
+    if t[real] ∈ T.knownTypes then
+      .ok (mty[real], T)
+    else
+      .error f!"Reals are not registered in the known types.\n\
+                Don't know how to interpret the following constant:\n\
+                {@LExpr.const Identifier c cty}\n\
+                Known Types: {T.knownTypes}"
+  -- Annotated BitVecs
+  | c, some (LMonoTy.bitvec n) =>
+    let ty := LMonoTy.bitvec n
+    if .forAll [] ty ∈ T.knownTypes then
+      (.ok (ty, T))
+    else
+      .error f!"Bit vectors of size {n} are not registered in the known types.\n\
+                Don't know how to interpret the following constant:\n\
+                {@LExpr.const Identifier c cty}\n\
+                Known Types: {T.knownTypes}"
   -- Annotated Strings
   | c, some LMonoTy.string =>
     if t[string] ∈ T.knownTypes then

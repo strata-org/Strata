@@ -114,6 +114,28 @@ def median' (xs : List Int) (isOdd : ¬ (xs.length % 2 = 0)) : Int :=
   | .inr m => m
 ```
 
+### Write Tests for Your Code
+
+We encourage contributors to test their code, even if it is
+verified. Strata's Lean code extensively uses `#guard_msgs` for three
+main purposes:
+
+* For unit tests immediately after somewhat complicated functions
+  (e.g., type unification, etc.). These indicate -- sooner rather than
+  later -- if/when any changes break core functionality. They also aid
+  in code comprehension by providing usage examples.
+
+* For higher-level tests, e.g., in the `StrataTest` directory, which
+  does not contain an end-to-end Strata application but tests for core
+  components (e.g., just the DDM, just the partial evaluator of a
+  specific dialect, etc.). These tests serve as guides to understand
+  how to set up, use, and compose these core components.
+
+* In the `Examples` directories (e.g.,
+  `Strata/Languages/[Boogie|C_Simp]/Examples`), which showcase
+  end-to-end Strata applications and may include output from external
+  solvers.
+
 ## Syntactic Style Guidelines
 
 ### Naming Conventions

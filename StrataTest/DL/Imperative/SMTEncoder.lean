@@ -16,10 +16,21 @@
 
 import StrataTest.DL.Imperative.Arith
 import Strata.DL.Imperative.EvalContext
-import Strata.DL.SMT
+import Strata.DL.SMT.SMT
 import Init.Data.String.Extra
 
 namespace Arith
+
+/-! ## SMT Encoder for `ArithPrograms`' Verification Conditions
+
+The generated VCs are in terms of `ArithPrograms`' expressions. Given their
+simplicity, it is fairly straightforward to encode them to SMTLIB using Strata's
+SMT dialect. Strata's SMT dialect provides support for some core theories, like
+uninterpreted functions with equality, integers, quantifiers, etc., and some
+basic utilities, like a counterexample parser and file I/O function to write
+SMTLIB files.
+-/
+
 ---------------------------------------------------------------------
 
 open Std (ToFormat Format format)

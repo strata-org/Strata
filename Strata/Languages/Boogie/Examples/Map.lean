@@ -41,7 +41,7 @@ procedure P() returns ()
 /--
 info: func a :  () → (Map int bool);
 (procedure P :  () → ())
-modifies: ⏎
+modifies: []
 preconditions: ⏎
 postconditions: ⏎
 body: assume [a_zero_true_assumption] (((~select ~a) (#0 : int)) == (#true : bool))

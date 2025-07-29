@@ -925,17 +925,25 @@ instance : GetElem? DialectMap DialectName Dialect (fun m d => d ∈ m) where
   getElem? m d := m.map[d]?
   getElem! m d := m.map[d]!
 
-def insert (m : DialectMap) (d : Dialect) :=
+/--
+This inserts a dialect in to the dialect map.
+
+It panics if a dialect with the same name is already in the map
+or if the dialect imports a dialect not already in the map.
+-/
+def insert! (m : DialectMap) (d : Dialect) : DialectMap :=
   assert! d.name ∉ m
-  DialectMap.mk <| m.map.insert d.name d
+  assert! d.imports.all (· ∈ m)
+  { map := m.map.insert d.name d }
+
+def ofList! (l : List Dialect) : DialectMap :=
+  let m := l.foldl (init := {}) fun m d =>
+    assert! d.name ∉ m;
+    m.insert d.name d
+  assert! l.all fun d => d.imports.all (· ∈ m)
+  { map := m }
 
 def toList (m : DialectMap) : List Dialect := m.map.values
-
-def addDecl! (name : DialectName) (decl : Decl) (m : DialectMap) : DialectMap :=
-  let ins
-      | some d => some <| d.addDecl decl
-      | none => panic! s!"Unknown dialect {name}"
-  { map := m.map.alter name ins }
 
 def decl! (dm : DialectMap) (ident : QualifiedIdent) : Decl :=
   match dm.map[ident.dialect]? with
@@ -1138,11 +1146,12 @@ def addCommand (env : Environment) (cmd : Operation) : Environment :=
     globalContext := env.globalContext.addCommand env.dialects cmd
   }
 
-def create (dialects : List Dialect) (openDialects : Array DialectName) (commands : Array Operation) : Environment :=
-  let dialects := dialects.foldl (fun m d => assert! d.name ∉ m; m.insert d) {}
-  let env : Environment := { dialects, openDialects, commands := #[], globalContext := {} }
-  let gctx := commands.foldl (init := {}) (·.addCommand dialects ·)
-  { env with commands := commands, globalContext := gctx }
+def create (dialects : DialectMap) (openDialects : Array DialectName) (commands : Array Operation) : Environment :=
+  { dialects,
+    openDialects,
+    commands := commands,
+    globalContext := commands.foldl (init := {}) (·.addCommand dialects ·)
+  }
 
 def openDialect (env : Environment) (d : DialectName) : Environment :=
   if d ∈ env.openDialects then

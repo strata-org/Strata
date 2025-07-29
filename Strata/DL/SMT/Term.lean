@@ -42,6 +42,7 @@ namespace Strata.SMT
 inductive TermPrim : Type where
   | bool   : Bool → TermPrim
   | int    : Int → TermPrim
+  | real   : String → TermPrim
   | bitvec : ∀ {n}, BitVec n → TermPrim
   | string : String → TermPrim
 deriving instance Repr, Inhabited, DecidableEq for TermPrim
@@ -49,12 +50,14 @@ deriving instance Repr, Inhabited, DecidableEq for TermPrim
 def TermPrim.mkName : TermPrim → String
   | .bool _   => "bool"
   | .int _    => "int"
+  | .real _   => "real"
   | .bitvec _ => "bitvec"
   | .string _ => "string"
 
 def TermPrim.lt : TermPrim → TermPrim → Bool
   | .bool b₁, .bool b₂         => b₁ < b₂
   | .int  i₁, .int i₂          => i₁ < i₂
+  | .real r₁, .real r₂         => r₁ < r₂ -- TODO
   | @TermPrim.bitvec n₁ bv₁,
     @TermPrim.bitvec n₂ bv₂    => n₁ < n₂ || (n₁ = n₂ && bv₁.toNat < bv₂.toNat)
   | .string s₁, .string s₂     => s₁ < s₂
@@ -169,12 +172,14 @@ instance Term.decLt (x y : Term) : Decidable (x < y) :=
 
 abbrev Term.bool (b : Bool) : Term := .prim (.bool b)
 abbrev Term.int  (i : Int) : Term := .prim (.int i)
+abbrev Term.real  (r : String) : Term := .prim (.real r)
 abbrev Term.bitvec {n : Nat} (bv : BitVec n) : Term := .prim (.bitvec bv)
 abbrev Term.string (s : String) : Term := .prim (.string s)
 
 def TermPrim.typeOf : TermPrim → TermType
   | .bool _           => .bool
   | .int _            => .int
+  | .real _           => .real
   | .bitvec b         => .bitvec b.width
   | .string _         => .string
 

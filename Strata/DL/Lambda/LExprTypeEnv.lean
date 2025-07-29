@@ -471,6 +471,7 @@ def LMonoTy.aliasInst (mty : LMonoTy) (T : TEnv Identifier) : (Option LMonoTy ×
   | none =>
     match mty with
     | .ftvar _ => (some mty, T)
+    | .bitvec _ => (some mty, T)
     | .tcons name mtys =>
       let (maybe_mtys, T) := LMonoTys.aliasInst mtys T.context.aliases T
       match maybe_mtys with

@@ -91,6 +91,7 @@ def encodeType (ty : TermType) : EncoderM String := do
     match ty with
     | .bool             => return "Bool"
     | .int              => return "Int"
+    | .real             => return "Real"
     | .string           => return "String"
     | .bitvec n         => return s!"(_ BitVec {n})"
     | .option oty       => return s!"(Option {← encodeType oty})"
@@ -191,6 +192,7 @@ def encodeTerm (inBinder : Bool) (t : Term) : EncoderM String := do
       match p with
       | .bool b         => return if b then "true" else "false"
       | .int i          => return encodeInt i
+      | .real r         => return r
       | .bitvec bv      => return encodeBitVec bv
       | .string s       => return encodeString s
     | .none _           => defineTerm inBinder tyEnc s!"(as none {tyEnc})"

@@ -251,6 +251,9 @@ public class StrataGenerator : ReadOnlyVisitor {
             case TypeVariable typeVariable:
                 WriteText(Name(typeVariable.Name));
                 break;
+            case BvType bvType:
+                WriteText($"bv{bvType.Bits}");
+                break;
             case BasicType basicType:
                 if (basicType.IsBool) {
                     WriteText("bool");
@@ -292,7 +295,7 @@ public class StrataGenerator : ReadOnlyVisitor {
                 WriteText(literalExpr.asBool ? "true" : "false");
                 break;
             case LiteralExpr { isBvConst: true } literalExpr:
-                WriteText($"{literalExpr.asBvConst}bv{literalExpr.Type.BvBits}");
+                WriteText($"bv{{{literalExpr.asBvConst.Bits}}}({literalExpr.asBvConst.Value})");
                 break;
             case LiteralExpr { isBigDec: true } literalExpr:
                 WriteText(literalExpr.asBigDec.ToString());

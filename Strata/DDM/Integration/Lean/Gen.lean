@@ -159,7 +159,7 @@ partial def checkCat (op : QualifiedIdent) (c : SyntaxCat) : Except String Unit 
   if f ∈ forbiddenCategories then
     throw s!"{op.fullName} refers to unsupported category {f.fullName}."
 
-def ofDeclBinding (op : QualifiedIdent) (b : DeclBinding) :  Except String (String × SyntaxCat) := do
+def ofDeclBinding (op : QualifiedIdent) (b : DeclBinding) : Except String (String × SyntaxCat) := do
   let cat ←
     match b.kind with
     | .expr _ =>
@@ -232,12 +232,6 @@ def addOp (m : CatOpMap) (cat : CategoryName) (op : CatOp) : CatOpMap :=
   assert! cat ∈ m
   m.modify cat (fun a => a.push op)
 
-/--
-Return true if operator should not be added.
--/
-private def skipOp (d : DialectName) (decl : OpDecl) : Bool :=
-  d = "Init" ∧ (decl.category ∈ ignoredCategories ∨ decl.category ∈ specialCategories)
-
 def addCatM (cat : CategoryName) : CatOpM Unit := do
   modify fun s => { s with map := s.map.addCat cat }
 
@@ -253,7 +247,13 @@ def addDecl (d : DialectName) (decl : Decl) : CatOpM Unit :=
       .addError msg
   match decl with
   | .syncat decl =>
-    addCatM ⟨d, decl.name⟩
+    if d = "Init" ∧ decl.name = "TypeP" then do
+      let cat := q`Init.TypeP
+      addCatM ⟨d, decl.name⟩
+      addOpM cat { name := q`Init.type, argDecls := #[] }
+      addOpM cat { name := q`Init.expr, argDecls := #[("type", .atom q`Init.Type)] }
+    else
+      addCatM ⟨d, decl.name⟩
   | .op decl => do
     if decl.category ∈ ignoredCategories ∨ decl.category ∈ specialCategories then
       if d ≠ "Init" then
@@ -331,7 +331,7 @@ def WorkSet.pop [BEq α] [Hashable α] (s : WorkSet α) : Option (WorkSet α × 
 /--
 Add all atomic categories in bindings to set.
 -/
-private def addBindingAtomicCategories (s : CategorySet) (bs : DeclBindings) : CategorySet :=
+private def addArgCategories (s : CategorySet) (bs : DeclBindings) : CategorySet :=
   bs.foldl (init := s) fun s b =>
     b.kind.categoryOf.foldOverAtomicCategories (init := s) (·.insert ·)
 
@@ -353,13 +353,13 @@ def mkUsedCategories (m : CatOpMap) (d : Dialect) : CategorySet :=
     | .syncat decl => s.insert ⟨dname, decl.name⟩
     | .op decl =>
       let s := s.insert decl.category
-      let s := addBindingAtomicCategories s decl.argDecls
+      let s := addArgCategories s decl.argDecls
       s
     | .type _ =>
       s.insert q`Init.Type
     | .function decl =>
       let s := s.insert q`Init.Expr
-      let s := addBindingAtomicCategories s decl.argDecls
+      let s := addArgCategories s decl.argDecls
       s
     | .metadata _ => s
   mkUsedCategories.aux m (.ofSet cats)
@@ -382,10 +382,11 @@ def mkStandardCtors (exprHasEta : Bool) (cat : QualifiedIdent) : Array DefaultCt
       #[
         fvarCtor
       ]
+      /-
   | q`Init.TypeP =>
     #[ .mk "type" none #[],
        .mk "expr" none #[("type", .atom q`Init.Type)]
-    ]
+    ]-/
   | _ =>
     #[]
 
@@ -565,7 +566,9 @@ def genCtor (op : DefaultCtor) : GenM (TSyntax ``ctor) := do
   `(ctor| | $ctorId:ident $binders:bracketedBinder* )
 
 def mkInductive (cat : QualifiedIdent) (ctors : Array DefaultCtor) : GenM Command := do
-  `(inductive $(← getCategoryIdent cat) : Type where
+  let ident ←  getCategoryIdent cat
+  trace[Strata.generator] "Generating {ident}"
+  `(inductive $ident : Type where
     $(← ctors.mapM genCtor):ctor*
     deriving Repr)
 
@@ -808,18 +811,18 @@ def createNameIndexMap (cat : QualifiedIdent) (ops : Array DefaultCtor) : GenM (
   let cmd ← `(def $ofAstNameMap : Std.HashMap Strata.QualifiedIdent Nat := Std.HashMap.ofList $(quote nameIndexMap.toList))
   pure (nameIndexMap, ofAstNameMap, cmd)
 
-def mkOfAstDef (cat : QualifiedIdent) (v : Ident) (rhs : Term) (isRecursive : Bool) : GenM Command := do
-  let ofAst ← ofAstIdentM cat
+def mkOfAstDef (cat : QualifiedIdent) (ofAst : Ident) (v : Ident) (rhs : Term) (isRecursive : Bool) : GenM Command := do
   let catIdent ← getCategoryIdent cat
   let t ←
-    if isRecursive then
+    if isRecursive ∧ false then
       `(suffix|termination_by sizeOf $v)
     else
       `(suffix|)
-  `(def $ofAst ($v : $(categoryToAstTypeIdent cat)) : OfAstM $catIdent := $rhs $t:suffix)
+  `(partial def $ofAst ($v : $(categoryToAstTypeIdent cat)) : OfAstM $catIdent := $rhs $t:suffix)
 
 def genOfAst (cat : QualifiedIdent) (ops : Array DefaultCtor) (isRecursive : Bool) : GenM (Array Command × Command) := do
-  trace[Strata.generator] "Generating {repr cat}"
+  let ofAst ← ofAstIdentM cat
+  trace[Strata.generator] "Generating {ofAst}"
   let v ← mkFreshIdent (mkLocalIdent "v")
   match cat with
   | q`Init.Expr =>
@@ -837,7 +840,7 @@ def genOfAst (cat : QualifiedIdent) (ops : Array DefaultCtor) (isRecursive : Boo
           $cases:matchAlt*
           | _ => OfAstM.throwUnknownIdentifier $(quote cat) fnId)
         | _ => pure (panic! "Unexpected argument"))
-    pure (#[cmd], ← mkOfAstDef cat v rhs isRecursive)
+    pure (#[cmd], ← mkOfAstDef cat ofAst v rhs isRecursive)
   | q`Init.Type =>
     let argsVar ← mkFreshIdent (mkLocalIdent "args")
     let (nameIndexMap, ofAstNameMap, cmd) ← createNameIndexMap cat ops
@@ -848,21 +851,21 @@ def genOfAst (cat : QualifiedIdent) (ops : Array DefaultCtor) (isRecursive : Boo
         (match ($ofAstNameMap[typeIdent]?) with
         $cases:matchAlt*
         | _ => OfAstM.throwUnknownIdentifier $(quote cat) typeIdent)
-      | _ => pure (panic! "Unexpected argument"))
-    pure (#[cmd], ← mkOfAstDef cat v rhs isRecursive)
+      | _ => OfAstM.throwExpected "Expected type" (Arg.type $v))
+    pure (#[cmd], ← mkOfAstDef cat ofAst v rhs isRecursive)
   | q`Init.TypeP =>
     let catCtorIdent ← getCategoryOpIdent cat "type"
     let exprCtorIdent ← getCategoryOpIdent cat "expr"
-    let ofAst ← ofAstIdentM q`Init.Type
+    let typeOfAst ← ofAstIdentM q`Init.Type
     let rhs ← `(match $v:term with
       | Arg.cat (SyntaxCat.atom $(quote q`Init.Type)) =>
         return $catCtorIdent
       | Arg.type strataType => do
-        let tp ← $ofAst:term strataType
+        let tp ← $typeOfAst:term strataType
         return $exprCtorIdent tp
       | a =>
-        OfAstM.throwExpected "type or expression" a)
-    pure (#[], ← mkOfAstDef cat v rhs isRecursive)
+        OfAstM.throwExpected "Type parameter or type expression" a)
+    pure (#[], ← mkOfAstDef cat ofAst v rhs isRecursive)
   | _ =>
     let argsVar ← mkFreshIdent (mkLocalIdent "args")
     let (nameIndexMap, ofAstNameMap, cmd) ← createNameIndexMap cat ops
@@ -875,7 +878,7 @@ def genOfAst (cat : QualifiedIdent) (ops : Array DefaultCtor) (isRecursive : Boo
       match ($ofAstNameMap[Operation.name $v]?) with
       $cases:matchAlt*
       | _ => OfAstM.throwUnknownIdentifier $(quote cat) (Operation.name $v))
-    pure (#[cmd], ← mkOfAstDef cat v rhs isRecursive)
+    pure (#[cmd], ← mkOfAstDef cat ofAst v rhs isRecursive)
 
 abbrev InhabitedSet := Std.HashSet QualifiedIdent
 
@@ -920,7 +923,8 @@ def gen (categories : Array (QualifiedIdent × Array DefaultCtor)) : GenM Unit :
   for allCtors in orderedSyncatGroups categories do
     let newCats := Std.HashSet.ofArray <| allCtors.map (·.fst)
     let s ←
-      withTraceNode `Strata.generator (fun _ => return "Generating group") do
+      withTraceNode `Strata.generator (fun _ =>
+        return m!"Declarations group: {allCtors.map (·.fst)}") do
         -- Check if the toAst/ofAst definitions will be recursive by looking for
         -- categories that are not already in inhabited set.
         let isRecursive := allCtors.any fun (_, ops) =>
@@ -931,14 +935,14 @@ def gen (categories : Array (QualifiedIdent × Array DefaultCtor)) : GenM Unit :
         let cats := allCtors.map (·.fst)
         profileitM Lean.Exception s!"Generating inductives {cats}" (← getOptions) do
           let inductives ← allCtors.mapM fun (cat, ctors) => do
-            trace[Strata.generator] "Generating {cat.fullName}"
             assert! q`Init.Num ≠ cat
             assert! q`Init.Str ≠ cat
             mkInductive cat ctors
           runCmd <| elabCommands inductives
-        let _ ←
+        let inhabitedCats2 ←
           profileitM Lean.Exception s!"Generating inhabited {cats}" (← getOptions) do
             addInhabited allCtors inhabitedCats
+        let inhabitedCats := inhabitedCats2
         profileitM Lean.Exception s!"Generating toAstDefs {cats}" (← getOptions) do
           let toAstDefs ← allCtors.mapM fun (cat, ctors) => do
             genToAst cat ctors (isRecursive := isRecursive)
@@ -984,7 +988,7 @@ def genAstImpl : CommandElab := fun stx =>
   | `(#strata_gen $dialectStx) => do
     let .str .anonymous dialectName := dialectStx.getId
       | throwErrorAt dialectStx s!"Expected dialect name"
-    let loader := dialectExt.getState (← getEnv) |>.loader
+    let loader := dialectExt.getState (← getEnv) |>.loaded
     let depDialectNames := generateDependentDialects (loader.dialects.map[·]?) dialectName
     let usedDialects ← depDialectNames.mapM fun nm =>
           match loader.dialects[nm]? with
