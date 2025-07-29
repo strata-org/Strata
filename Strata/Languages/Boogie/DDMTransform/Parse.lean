@@ -144,6 +144,8 @@ op else0 () : Else =>;
 op else1 (f : Block) : Else => "else" f;
 op havoc_statement (v : Ident) : Statement => "havoc " v ";\n";
 
+op while_statement (c : bool, body : Block) : Statement => "while" "(" c ")" body;
+
 op call_statement (vs : CommaSepBy Ident, f : Ident, expr : CommaSepBy Expr) : Statement =>
    "call" vs ":=" f "(" expr ")" ";\n";
 op call_unit_statement (f : Ident, expr : CommaSepBy Expr) : Statement =>
