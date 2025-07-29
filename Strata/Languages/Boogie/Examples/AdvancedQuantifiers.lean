@@ -21,7 +21,7 @@ namespace Strata
 
 def advQuantEnv : Environment :=
 #strata
-open Boogie;
+program Boogie;
 axiom [mapAllValues0]: forall m: (Map int int), k: int :: m[k] == 0;
 procedure Update(mArg: Map int int, kArg: int) returns (res: int)
 spec {

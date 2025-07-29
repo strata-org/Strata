@@ -21,7 +21,7 @@ namespace Strata
 
 def QuantTypeAliases : Environment :=
 #strata
-open Boogie;
+program Boogie;
 
 type Ref;
 type Field;

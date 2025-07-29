@@ -16,6 +16,7 @@
 
 import Strata.Languages.Boogie.DDMTransform.Parse
 import Strata.Languages.Boogie.DDMTransform.Translate
+import Strata.Languages.Boogie.Options
 import Strata.Languages.Boogie.SMTEncoder
 import Strata.DL.SMT.CexParser
 
@@ -157,6 +158,7 @@ instance : ToString VCResults where
   toString rs := toString (VCResults.format rs)
 
 def dischargeObligation
+  (options : Options)
   (vars : List (IdentT BoogieIdent)) (smtsolver filename : String)
   (terms : List Term) (ctx : SMT.Context)
   : IO (Except Format (Result × EncoderState)) := do
@@ -167,7 +169,7 @@ def dischargeObligation
   let solver ← Solver.fileWriter handle
   let (ids, estate) ← Strata.SMT.Encoder.encodeBoogie ctx terms solver
   let _ ← solver.checkSat ids -- Will return unknown for Solver.fileWriter
-  IO.println s!"Wrote problem to {filename}."
+  if options.verbose then IO.println s!"Wrote problem to {filename}."
   let produce_models ←
     if smtsolver.endsWith "z3" then
       -- No need to specify -model because we already have `get-value` in the
@@ -182,7 +184,7 @@ def dischargeObligation
   | .error e => return .error e
   | .ok result => return .ok (result, estate)
 
-def verifySingleEnv (smtsolver : String) (pE : Program × Env) (verbose : Bool) :
+def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Options) :
     EIO Format VCResults := do
   let (p, E) := pE
   match E.error with
@@ -215,7 +217,7 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (verbose : Bool) 
         let ans ←
             IO.toEIO
               (fun e => f!"{e}")
-              (dischargeObligation
+              (dischargeObligation options
                 (ProofObligation.getVars obligation) smtsolver (obligation.label ++ ".smt2")
                 terms ctx)
         match ans with
@@ -225,23 +227,23 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (verbose : Bool) 
             let prog := f!"\n\nEvaluated program:\n{p}"
             dbg_trace f!"\n\nObligation {obligation.label}: could not be proved!\
                          \n\nResult: {result}\
-                         {if verbose then prog else ""}"
+                         {if options.verbose then prog else ""}"
             break
         | .error e =>
            results := results.push { obligation, result := .err (toString e) }
            let prog := f!"\n\nEvaluated program:\n{p}"
            dbg_trace f!"\n\nObligation {obligation.label}: solver error!\
                         \n\nError: {e}\
-                        {if verbose then prog else ""}"
+                        {if options.verbose then prog else ""}"
            break
     return results
 
-def verify (smtsolver : String) (program : Program) (verbose : Bool) : EIO Format VCResults := do
-  match Boogie.typeCheckAndPartialEval program with
+def verify (smtsolver : String) (program : Program) (options : Options := Options.default) : EIO Format VCResults := do
+  match Boogie.typeCheckAndPartialEval options program with
   | .error err =>
     .error f!"[Strata.Boogie] Type checking error: {format err}"
   | .ok pEs =>
-    let VCss ← (List.mapM (fun pE => verifySingleEnv smtsolver pE verbose) pEs)
+    let VCss ← (List.mapM (fun pE => verifySingleEnv smtsolver pE options) pEs)
     .ok VCss.toArray.flatten
 
 end Boogie
@@ -251,12 +253,12 @@ end Boogie
 namespace Strata
 
 def verify (smtsolver : String) (env : Environment)
-    (verbose : Bool := false) : IO Boogie.VCResults := do
+    (options : Options := Options.default) : IO Boogie.VCResults := do
   let (program, errors) := TransM.run (translateProgram env.commands)
   if errors.isEmpty then
     -- dbg_trace f!"AST: {program}"
     EIO.toIO (fun f => IO.Error.userError (toString f))
-                (Boogie.verify smtsolver program verbose)
+                (Boogie.verify smtsolver program options)
   else
     panic! s!"DDM Transform Error: {repr errors}"
 

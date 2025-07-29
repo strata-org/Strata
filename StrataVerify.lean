@@ -41,21 +41,27 @@ def main (args : List String) : IO UInt32 := do
     if errors.isEmpty then
       println! s!"Successfully parsed {file}"
       -- TODO: the `verify` function currently produces a lot of output
-      if file.endsWith ".csimp.st" then
-        let vcResults ← C_Simp.verify "z3" env
-        for vcResult in vcResults do
-          println! f!"{vcResult.obligation.label}: {vcResult.result}"
-        return if vcResults.all isSuccessVCResult then 0 else 1
+      let vcResults ← if file.endsWith ".csimp.st" then
+        C_Simp.verify "z3" env Options.quiet
       else
-        let vcResults ← verify "z3" env
-        for vcResult in vcResults do
-          println! f!"{vcResult.obligation.label}: {vcResult.result}"
-        return if vcResults.all isSuccessVCResult then 0 else 1
+        verify "z3" env Options.quiet
+      for vcResult in vcResults do
+        println! f!"{vcResult.obligation.label}: {vcResult.result}"
+      let success := vcResults.all isSuccessVCResult
+      if success then
+        println! f!"Proved all {vcResults.size} goals."
+        return 0
+      else
+        let provedGoalCount := (vcResults.filter isSuccessVCResult).size
+        let failedGoalCount := (vcResults.filter isSuccessVCResult).size
+        println! f!"Finished with {provedGoalCount} goals proved, {failedGoalCount} failed."
+        return 1
     else
       for (_, e) in errors do
         let msg ← e.toString
         println! s!"Error: {msg}"
+      println! f!"Finished with {errors.size} errors."
       return 1
   | _ => do
-    println! f!"Usage: StrataVerify <file.st.\{boogie, csimp}>"
+    println! f!"Usage: StrataVerify <file.\{boogie, csimp}.st>"
     return 1

@@ -96,6 +96,7 @@ mutual
 partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr BoogieIdent) (ctx : SMT.Context)
   : Except Format (Term × SMT.Context) := do
   match e with
+  | .const "true" _ => .ok ((Term.bool true), ctx)
   | .const _ ty =>
     match ty with
     | none => .error f!"Cannot encode unannotated constant {e}"
