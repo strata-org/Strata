@@ -73,25 +73,6 @@ def SMT.Context.removeSubst (ctx : SMT.Context) (newSubst: Map String TermType) 
 abbrev BoundVars := List (String × TermType)
 
 ---------------------------------------------------------------------
--- def extractTypeInstantiations (typeVars : List String) (patterns : List LMonoTy) (concreteTypes : List LMonoTy) : Map String LMonoTy :=
---   let partial unifyTypes (pattern : LMonoTy) (concrete : LMonoTy) (acc : Map String LMonoTy) : Map String LMonoTy :=
---     match pattern, concrete with
---     | .ftvar name, concrete_ty =>
---       if typeVars.contains name then
---         acc.insert name concrete_ty
---       else acc
---     | .tcons pname pargs, .tcons cname cargs =>
---       if pname == cname && pargs.length == cargs.length then
---         (pargs.zip cargs).foldl (fun acc' (p, c) => unifyTypes p c acc') acc
---       else acc
---     | _, _ => acc
-
---   if patterns.length == concreteTypes.length then
---     (patterns.zip concreteTypes).foldl (fun acc (pattern, concrete) =>
---       unifyTypes pattern concrete acc) Map.empty
---   else
---     Map.empty
-
 partial def unifyTypes (typeVars : List String) (pattern : LMonoTy) (concrete : LMonoTy) (acc : Map String LMonoTy) : Map String LMonoTy :=
   match pattern, concrete with
   | .ftvar name, concrete_ty =>
@@ -282,7 +263,7 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
           let bvars := (List.range formals.length).map (fun i => LExpr.bvar i)
           let body := LExpr.substFvars body (formals.zip bvars)
           let (term, ctx) ← toSMTTerm E bvs body ctx
-          .ok (ctx.addIF uf term,  ctx.ifs.contains ({ uf := uf, body := term }))
+          .ok (ctx.addIF uf term,  !ctx.ifs.contains ({ uf := uf, body := term }))
       if isNew then
         -- To ensure termination, we add the axioms only for new functions
         -- Get the function's type patterns (input types + output type)
