@@ -158,30 +158,30 @@ def Factory : @Factory BoogieIdent :=
      inputs := [("m", mapTy mty[%k] mty[%v]), ("i", mty[%k]), ("x", mty[%v])],
      output := mapTy mty[%k] mty[%v],
      axioms := [
-       -- Axiom 1: ∀ m k v. select(update(m, k, v), k) = v
+       -- ∀ m k v. select(update(m, k, v), k) = v
        (.quant .all (.some (mapTy mty[%k] mty[%v]))
          (.quant .all (.some mty[%k])
            (.quant .all (.some mty[%v])
              (.eq
-               (LExpr.mkApp (.op "select" none) 
-                 [LExpr.mkApp (.op "update" none) [(.bvar 2), (.bvar 1), (.bvar 0)], (.bvar 1)])
+               (LExpr.mkApp (.op "select"  (.some (LMonoTy.mkArrow (mapTy mty[%k] mty[%v]) [mty[%k], mty[%v]])))
+                 [LExpr.mkApp (.op "update" (.some (LMonoTy.mkArrow (mapTy mty[%k] mty[%v]) [mty[%k], mty[%v], mapTy mty[%k] mty[%v]]))) [(.bvar 2), (.bvar 1), (.bvar 0)], (.bvar 1)])
                (.bvar 0)
              )
            )
          )
        ),
 
-       -- Axiom 2: ∀ m kk okk v. okk ≠ kk → select(update(m, kk, v), okk) = select(m, okk)
+       -- ∀ m kk okk v. okk ≠ kk → select(update(m, kk, v), okk) = select(m, okk)
        (.quant .all (.some (mapTy mty[%k] mty[%v]))
          (.quant .all (.some mty[%k])
            (.quant .all (.some mty[%k])
              (.quant .all (.some mty[%v])
                (.ite
-                 (LExpr.mkApp (.op "Bool.Not" none) [(.eq (.bvar 1) (.bvar 2))])
+                 (LExpr.mkApp (.op "Bool.Not" (.some (LMonoTy.mkArrow mty[%k] [mty[%k], mty[bool]]))) [(.eq (.bvar 1) (.bvar 2))])
                  (.eq
-                   (LExpr.mkApp (.op "select" none) [(.bvar 3), (.bvar 1)])
-                   (LExpr.mkApp (.op "select" none) 
-                     [LExpr.mkApp (.op "update" none) [(.bvar 3), (.bvar 2), (.bvar 0)], (.bvar 1)])
+                   (LExpr.mkApp (.op "select" (.some (LMonoTy.mkArrow (mapTy mty[%k] mty[%v]) [mty[%k], mty[%v]]))) [(.bvar 3), (.bvar 1)])
+                   (LExpr.mkApp (.op "select" (.some (LMonoTy.mkArrow (mapTy mty[%k] mty[%v]) [mty[%k], mty[%v]])))
+                     [LExpr.mkApp (.op "update" (.some (LMonoTy.mkArrow (mapTy mty[%k] mty[%v]) [mty[%k], mty[%v], mapTy mty[%k] mty[%v]]))) [(.bvar 3), (.bvar 2), (.bvar 0)], (.bvar 1)])
                  )
                  (.const "true" (.some mty[bool]))
                )
