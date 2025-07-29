@@ -289,6 +289,9 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
                                                stk := orig_stk.appendToTop [s']})
                 Ewns_t ++ Ewns_f
 
+          | .loop guard _ _ body md =>
+            panic! "Unimplemented"
+
           | .goto l md => [{ Ewn with stk := Ewn.stk.appendToTop [.goto l md], nextLabel := (some l)}]
 
       List.flatMap (fun (ewn : EnvWithNext) => go' ewn rest ewn.nextLabel) EAndNexts

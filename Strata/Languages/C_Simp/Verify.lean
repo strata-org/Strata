@@ -39,6 +39,11 @@ def translate_expr (e : Loopy.DefaultPureExpr.Expr) : Lambda.LExpr Boogie.Boogie
   | .ite c t e => .ite (translate_expr c) (translate_expr t) (translate_expr e)
   | .eq e1 e2 => .eq (translate_expr e1) (translate_expr e2)
 
+def translate_opt_expr (e : Option Loopy.DefaultPureExpr.Expr) : Option (Lambda.LExpr Boogie.BoogieIdent) :=
+  match e with
+  | some e => translate_expr e
+  | none => none
+
 def translate_cmd (c: Loopy.Command) : Boogie.Command :=
   match c with
   | .init name ty e _md => .cmd (.init (.unres, name) ty (translate_expr e) {})
@@ -52,6 +57,7 @@ partial def translate_stmt (s: Imperative.Stmt Loopy.DefaultPureExpr Loopy.Comma
   | .cmd c => .cmd (translate_cmd c)
   | .block l b _md => .block l {ss := b.ss.map translate_stmt} {}
   | .ite cond thenb elseb _md => .ite (translate_expr cond) {ss := thenb.ss.map translate_stmt} {ss := elseb.ss.map translate_stmt} {}
+  | .loop guard measure invariant body _md => .loop (translate_expr guard) (translate_opt_expr measure) (translate_opt_expr invariant) {ss := body.ss.map translate_stmt} {}
   | .goto label _md => .goto label {}
 
 def loop_elimination_statement(s : Loopy.LoopOrStmt) : Boogie.Statement :=

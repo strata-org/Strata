@@ -94,6 +94,16 @@ theorem Statement.typeCheckWF :
       next heq =>
       apply ih
       rw [heq]
+    | loop g m i b md =>
+      simp at Htc
+      split at Htc <;> try simp_all
+      split at Htc <;> try simp_all
+      split at Htc <;> try simp_all
+      split at Htc <;> try simp_all
+      split at Htc <;> try simp_all
+      next heq =>
+      apply ih
+      rw [heq]
     | goto l =>
       simp at Htc
       split at Htc <;> try simp_all

@@ -110,6 +110,17 @@ def typeCheckAux (T : (TEnv BoogieIdent)) (P : Program) (op : Option Procedure) 
           .ok (s', T)
         | _ => .error f!"[{s}]: If's condition {cond} is not of type `bool`!"
 
+      | .loop guard m i b md => do
+        let _ ← T.freeVarCheck guard f!"[{s}]"
+        let (conda, T) ← LExprT.fromLExpr T guard
+        let condty := conda.toLMonoTy
+        match condty with
+        | .tcons "bool" [] =>
+          let (tb, T) ← typeCheckAux T P op [(.block "$$_then" b #[])]
+          let s' := .loop conda.toLExpr m i ⟨tb⟩ md
+          .ok (s', T)
+        | _ => .error f!"[{s}]: Loop's guard {guard} is not of type `bool`!"
+
       | .goto label _ =>
         match op with
         | .some p =>
@@ -143,16 +154,24 @@ def Command.subst (S : Subst) (c : Command) : Command :=
   | .call lhs pname args md =>
     .call lhs pname (args.map (fun a => a.applySubst S)) md
 
+private def substOptionExpr (S : Subst) (oe : Option Expression.Expr) : Option Expression.Expr :=
+  match oe with
+  | some e => some (LExpr.applySubst e S)
+  | none => none
+
 /--
 Apply type substitution `S` to a statement.
 -/
 def Statement.subst (S : Subst) (s : Statement) : Statement :=
+
   match s with
   | .cmd cmd => .cmd (Command.subst S cmd)
   | .block label b md =>
     .block label ⟨go S b.ss⟩ md
   | .ite cond thenb elseb md =>
     .ite (cond.applySubst S) ⟨go S thenb.ss⟩ ⟨go S elseb.ss⟩ md
+  | .loop guard m i body md =>
+    .loop (guard.applySubst S) (substOptionExpr S m) (substOptionExpr S i) ⟨go S body.ss⟩ md
   | .goto _ _ => s
   termination_by (Stmt.sizeOf s)
   decreasing_by

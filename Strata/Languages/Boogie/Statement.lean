@@ -116,6 +116,9 @@ def Statement.eraseTypes (s : Statement) : Statement :=
     let thenb' := { ss := Statements.eraseTypes thenb.ss }
     let elseb' := { ss := Statements.eraseTypes elseb.ss }
     .ite cond thenb' elseb' md
+  | .loop guard measure invariant body md =>
+    let body' := { ss := Statements.eraseTypes body.ss }
+    .loop guard measure invariant body' md
   | .goto l md => .goto l md
   termination_by (sizeOf s)
   decreasing_by
@@ -192,6 +195,8 @@ def Statement.modifiedVarsTrans
   | .block _ b _ => Statements.modifiedVarsTrans π b.ss
   | .ite _ tb eb _ =>
     Statements.modifiedVarsTrans π tb.ss ++ Statements.modifiedVarsTrans π eb.ss
+  | .loop _ _ _ b _ =>
+    Statements.modifiedVarsTrans π b.ss
   termination_by (Stmt.sizeOf s)
   decreasing_by
   all_goals simp_wf
@@ -232,6 +237,8 @@ def Statement.getVarsTrans
   | .block _ b _ => Statements.getVarsTrans π b.ss
   | .ite _ tb eb _ =>
     Statements.getVarsTrans π tb.ss ++ Statements.getVarsTrans π eb.ss
+  | .loop _ _ _ b _ =>
+    Statements.getVarsTrans π b.ss
   termination_by (Stmt.sizeOf s)
   decreasing_by
   all_goals simp_wf
@@ -278,6 +285,7 @@ def Statement.touchedVarsTrans
   | .goto _ _ => []
   | .block _ b _ => Statements.touchedVarsTrans π b.ss
   | .ite _ tb eb _ => Statements.touchedVarsTrans π tb.ss ++ Statements.touchedVarsTrans π eb.ss
+  | .loop _ _ _ b _ => Statements.touchedVarsTrans π b.ss
   termination_by (Stmt.sizeOf s)
   decreasing_by
   all_goals simp_wf
