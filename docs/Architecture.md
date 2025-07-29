@@ -91,7 +91,7 @@ The current Strata implementation includes only one analysis: the Boogie dialect
 
 ## External Reasoning Tools
 
-Strata was designed to be used with external reasoning tools such as SMT solvers, CHC solvers, abstract interpretation engines, model checkers, and others. Currently, the VCG for the Boogie language based on partial evaluation along with an interface to SMT solvers (in [`Strata.SMT`](../Strata/SMT/)).
+Strata was designed to be used with external reasoning tools such as SMT solvers, CHC solvers, abstract interpretation engines, model checkers, and others. Currently, the VCG for the Boogie language based on partial evaluation along with an interface to SMT solvers (in [`Strata.DL.SMT`](../Strata/DL/SMT/)).
 
 ## Third-Party Dialects and Analyses
 

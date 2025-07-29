@@ -40,23 +40,23 @@ def dialect (pd : PersistentDialect) : Dialect :=
 end PersistentDialect
 
 structure DialectState where
-  loader : Elab.DialectLoader := Elab.DeclState.initDeclState.loader
+  loaded : Elab.LoadedDialects := Elab.DeclState.initDeclState.loader
   newDialects : Array Dialect := #[]
   deriving Inhabited
 
 namespace DialectState
 
 def addDialect! (s : DialectState) (d : Dialect) (isNew : Bool) : DialectState where
-  loader :=
-    assert! d.name ∉ s.loader.dialects
-    s.loader.addDialect! d
+  loaded :=
+    assert! d.name ∉ s.loaded.dialects
+    s.loaded.addDialect! d
   newDialects := if isNew then s.newDialects.push d else s.newDialects
 
 end DialectState
 
 def mkImported (e : Array (Array PersistentDialect)) : ImportM DialectState :=
   return e.foldl (init := {}) fun s a => a.foldl (init := s) fun s d =>
-    if d.name ∈ s.loader.dialects then
+    if d.name ∈ s.loaded.dialects then
       @panic _ ⟨s⟩ s!"Multiple dialects named {d.name} found in imports."
     else
       s.addDialect! d.dialect (isNew := false)
@@ -69,7 +69,7 @@ initialize dialectExt : PersistentEnvExtension PersistentDialect Dialect Dialect
     mkInitial := pure {},
     addImportedFn := mkImported
     addEntryFn    := fun s d =>
-      assert! d.name ∉ s.loader.dialects
+      assert! d.name ∉ s.loaded.dialects
       DialectState.addDialect! s d (isNew := true)
     exportEntriesFn := exportEntries
   }

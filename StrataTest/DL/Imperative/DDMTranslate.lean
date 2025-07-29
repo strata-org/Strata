@@ -19,6 +19,15 @@ import StrataTest.DL.Imperative.DDMDefinition
 
 namespace ArithPrograms
 open Std (ToFormat Format format)
+
+/-!
+
+## Translation of Concrete Syntax into Abstract Syntax
+
+`ArithPrograms`' Concrete Syntax is defined in the file `DDMDefinition.lean` and
+Abstract Syntax is in the file `ArithExpr.lean`.
+-/
+
 ---------------------------------------------------------------------
 
 structure TransState where

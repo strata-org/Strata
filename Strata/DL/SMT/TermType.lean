@@ -26,6 +26,7 @@ namespace Strata.SMT
 inductive TermPrimType where
   | bool
   | int
+  | real
   | bitvec (n : Nat)
   | string
 deriving instance Repr, Inhabited, DecidableEq for TermPrimType
@@ -33,6 +34,7 @@ deriving instance Repr, Inhabited, DecidableEq for TermPrimType
 def TermPrimType.mkName : TermPrimType → String
   | .bool     => "bool"
   | .int      => "int"
+  | .real     => "real"
   | .bitvec _ => "bitvec"
   | .string   => "string"
 
@@ -171,6 +173,7 @@ instance : DecidableEq TermType :=
 
 abbrev TermType.bool : TermType := .prim .bool
 abbrev TermType.int  : TermType := .prim .int
+abbrev TermType.real : TermType := .prim .real
 abbrev TermType.bitvec (n : Nat) : TermType := .prim (.bitvec n)
 abbrev TermType.string : TermType := .prim .string
 

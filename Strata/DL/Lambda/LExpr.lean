@@ -19,7 +19,6 @@
 import Strata.DL.Lambda.LTy
 import Strata.DL.Lambda.Identifiers
 import Strata.DL.Lambda.MetaData
-import Lean
 
 /-
 Formalization of Lambda Expressions
@@ -30,16 +29,12 @@ Formalization of Lambda Expressions
 namespace Lambda
 open Std (ToFormat Format format)
 
-/-! # Lambda Dialect
-
-This dialect provides an implementation of simply-typed lambda calculus, along
-with a Hindley-Milner type system. It also comes with an extensible partial
-evaluator that is parameterized by an (optional) map from operator names to
-their specific evaluations. This allows adding evaluation support for new
-operators without changing the core logic or extending the AST.
--/
-
 /-! ## Lambda Expressions with Quantifiers -/
+
+inductive QuantifierKind
+  | all
+  | exist
+  deriving Repr, DecidableEq
 
 /--
 Lambda Expressions with Quantifiers.
@@ -53,19 +48,18 @@ We leave placeholders for (mono)type annotations only for constants
 variables (`.fvar`). For a fully (mono)type annotated AST, see `LExprT`
 that is created after the type inference transform.
 -/
-inductive QuantifierKind
-  | all
-  | exist
-  deriving Repr, DecidableEq
-
 inductive LExpr (Identifier : Type) : Type where
+  /-- `.const c ty`: constants (in the sense of literals). -/
   | const   (c : String) (ty : Option LMonoTy)
+  /-- `.op c ty`: operation names. -/
   | op      (o : Identifier) (ty : Option LMonoTy)
   | bvar    (deBruijnIndex : Nat)
   | fvar    (name : Identifier) (ty : Option LMonoTy)
   | mdata   (info : Info) (e : LExpr Identifier)
-  | abs     (ty : Option LMonoTy) (e : LExpr Identifier) -- ty is type of bound variable
-  | quant   (k : QuantifierKind) (ty : Option LMonoTy) (e : LExpr Identifier) -- ty is type of bound variable
+  /-- `.abs ty e`: abstractions; `ty` the is type of bound variable. -/
+  | abs     (ty : Option LMonoTy) (e : LExpr Identifier)
+  /-- `.quant k ty e`: quantified expressions; `ty` the is type of bound variable. -/
+  | quant   (k : QuantifierKind) (ty : Option LMonoTy) (e : LExpr Identifier)
   | app     (fn e : LExpr Identifier)
   | ite     (c t e : LExpr Identifier)
   | eq      (e1 e2 : LExpr Identifier)
@@ -151,6 +145,27 @@ def denoteInt (e : (LExpr Identifier)) : Option Int :=
   match e with
   | .const x (some (.tcons "int" [])) => x.toInt?
   | .const x none => x.toInt?
+  | _ => none
+
+/--
+If `e` is an `LExpr` real, then denote that into a Lean `String`.
+Note that we are type-agnostic here.
+-/
+def denoteReal (e : (LExpr Identifier)) : Option String :=
+  match e with
+  | .const x (some (.tcons "real" [])) => .some x
+  | .const x none => .some x
+  | _ => none
+
+/--
+If `e` is an `LExpr` bv<n>, then denote that into a Lean `BitVec n`.
+Note that we are type-agnostic here.
+-/
+def denoteBitVec (n : Nat) (e : (LExpr Identifier)) : Option (BitVec n) :=
+  match e with
+  | .const x (.some (.bitvec n')) =>
+    if n == n' then .map (.ofNat n) x.toNat? else none
+  | .const x none => .map (.ofNat n) x.toNat?
   | _ => none
 
 /--

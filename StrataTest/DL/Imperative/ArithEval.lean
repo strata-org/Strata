@@ -21,8 +21,13 @@ import Strata.DL.Imperative.CmdEval
 
 namespace Arith
 
-abbrev Command := Imperative.Cmd Arith.PureExpr
-abbrev Commands := Imperative.Cmds Arith.PureExpr
+/-! ## Instantiate `Imperative`'s Partial Evaluator
+
+We instantiate Imperative's `EvalContext` typeclass with `ArithPrograms`'
+specific implementations to obtain a partial evaluator that generates
+verification conditions on the fly (i.e., a Strongest-Postconditions
+Verification Condition Generator).
+-/
 
 ---------------------------------------------------------------------
 namespace Eval
@@ -142,6 +147,9 @@ theorem lookupEval (s1 s2 : State) (h : ∀ x, lookup s1 x = lookup s2 x) :
 
 ---------------------------------------------------------------------
 
+/--
+Instantiation of `EvalContext` for `ArithPrograms`.
+-/
 instance : EvalContext PureExpr State where
   eval := Arith.Eval.eval
   updateError := Arith.Eval.updateError

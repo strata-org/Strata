@@ -14,21 +14,29 @@
   limitations under the License.
 -/
 
+import Strata.DDM.Integration.Lean
+
+/-
+This test for regressions involving TypeP and empty types.
+-/
 
 
-import Lean
-import Strata.DL.Imperative.Stmt
-import Strata.DL.Imperative.TypeContext
+#dialect
+dialect TestTypeP;
 
-namespace Imperative
-open Std (ToFormat Format format)
----------------------------------------------------------------------
+category Binding;
+@[declare(name, tp)]
+op mkBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] name ":" tp;
 
---        def Stmt.typeCheck [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Stmt P)]
---     [DecidableEq P.Ident] [TC : TypeContext P T]
---     (τ : T) (s : Stmt P) : Except Format (Stmt P × T) := do
---   match s with
+#end
 
+#strata_gen TestTypeP
 
----------------------------------------------------------------------
-end Imperative
+/--
+info: inductive TypeP : Type
+number of parameters: 0
+constructors:
+TypeP.type : TypeP
+TypeP.expr : TestTypePType → TypeP
+-/
+#guard_msgs in #print TypeP

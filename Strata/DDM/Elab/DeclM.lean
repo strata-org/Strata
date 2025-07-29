@@ -14,6 +14,7 @@
   limitations under the License.
 -/
 
+import Strata.DDM.Elab.LoadedDialects
 import Strata.DDM.Parser
 import Strata.DDM.Util.Lean
 
@@ -24,74 +25,6 @@ open Strata.Parser (DeclParser InputContext Parser ParsingContext ParserState)
 namespace Strata
 
 namespace Elab
-
-/--
-Describes an elaboration relationship between a argument in the bindings and
-the syntax node.
--/
-structure ArgElaborator where
-  -- Index of this argument to elaborator in syntax tree.
-  syntaxLevel : Nat
-  -- Level of argument in bindings.
-  argLevel : Nat
-  -- Index of argument to use for typing context (if specified, must be less than argIndex)
-  contextLevel : Option (Fin argLevel) := .none
-deriving Inhabited, Repr
-
-def mkArgElab (bindings : DeclBindings) (syntaxLevel : Nat) (argLevel : Fin bindings.size) : ArgElaborator :=
-  let contextLevel : Option (Fin argLevel) := bindings.argScopeLevel argLevel
-  { argLevel := argLevel.val, syntaxLevel, contextLevel }
-
-def addElaborators (bindings : DeclBindings) (p : Nat × Array ArgElaborator) (a : SyntaxDefAtom) : Nat × Array ArgElaborator :=
-  match a with
-  | .ident level _prec =>
-    let (si, es) := p
-    if h : level < bindings.size then
-      let argElab := mkArgElab bindings si ⟨level, h⟩
-      (si + 1, es.push argElab)
-    else
-      panic! "Invalid index"
-  | .str _ =>
-    let (si, es) := p
-    (si + 1, es)
-  | .indent _ as =>
-    as.attach.foldl (init := p) (fun p ⟨a, _⟩ => addElaborators bindings p a)
-
-/-- Information needed to elaborator operations or functions. -/
-structure SyntaxElaborator where
-  argElaborators : Array ArgElaborator
-  resultScope : Option Nat
-deriving Inhabited, Repr
-
-def mkElaborators (bindings : DeclBindings) (as : Array SyntaxDefAtom) : Array ArgElaborator :=
-  let init : Array ArgElaborator := Array.mkEmpty bindings.size
-  let (_, es) := as.foldl (init := (0, init)) (addElaborators bindings)
-  es.qsort (fun x y => x.argLevel < y.argLevel)
-
-def mkSyntaxElab (bindings : DeclBindings) (stx : SyntaxDef) (opMd : Metadata) : SyntaxElaborator := {
-    argElaborators := mkElaborators bindings stx.atoms,
-    resultScope := opMd.resultLevel bindings.size,
-  }
-
-def opDeclElaborator (decl : OpDecl) : SyntaxElaborator :=
-  mkSyntaxElab decl.argDecls decl.syntaxDef decl.metadata
-
-def fnDeclElaborator (decl : FunctionDecl) : SyntaxElaborator :=
-  mkSyntaxElab decl.argDecls decl.syntaxDef decl.metadata
-
-abbrev SyntaxElabMap := Std.HashMap QualifiedIdent SyntaxElaborator
-
-def SyntaxElabMap.add (m : SyntaxElabMap) (dialect : String) (name : String) (se : SyntaxElaborator) : SyntaxElabMap :=
-  m.insert { dialect, name := name } se
-
-def SyntaxElabMap.addDecl (m : SyntaxElabMap) (dialect : String) (d : Decl) : SyntaxElabMap :=
-  match d with
-  | .op d => m.add dialect d.name (opDeclElaborator d)
-  | .function d => m.add dialect d.name (fnDeclElaborator d)
-  | _ => m
-
-def SyntaxElabMap.addDialect (m : SyntaxElabMap) (d : Dialect) : SyntaxElabMap :=
-  d.declarations.foldl (·.addDecl d.name) m
 
 -- Metadata syntax
 
@@ -137,11 +70,14 @@ structure DeclContext where
   inputContext : InputContext
   stopPos : String.Pos
 
-def DeclContext.empty : DeclContext where
+namespace DeclContext
+
+def empty : DeclContext where
   inputContext := default
   stopPos := 0
 
-abbrev DialectParsers := Std.HashMap DialectName (Array DeclParser)
+end DeclContext
+
 /-- Represents an entity with some form of unique string name. -/
 class NamedValue (α : Type) where
   name : α → String
@@ -156,25 +92,6 @@ abbrev ValueWithName (α : Type) [NamedValue α] (name : String) :=
 structure NamedValueMap (α : Type) [NamedValue α] where
   map : Std.DHashMap String (λname => Array (DialectName × ValueWithName α name)) := {}
 deriving Inhabited
-
-
-
-
-
-def DialectParsers.addDialect! (pm : DialectParsers) (pctx : ParsingContext) (dialect : Dialect) : DialectParsers :=
-  match pctx.mkDialectParsers dialect with
-  | .error msg =>
-    @panic _ ⟨pm⟩ s!"Could not add open dialect: {eformat msg |>.pretty}"
-  | .ok parsers => pm.insert dialect.name parsers
-
-structure DialectLoader where
-  /--- Map from dialect names to the dialect definition. -/
-  dialects : DialectMap := {}
-  /-- Parsers for dialects in map. -/
-  dialectParsers : DialectParsers := {}
-  /--/ Map for elaborating operations and functions. -/
-  syntaxElabMap : SyntaxElabMap := {}
-  deriving Inhabited
 
 /--
   Map metadata attribute names to any declarations with that name that
@@ -246,7 +163,7 @@ structure DeclState where
   -- Fixed parser map
   fixedParsers : ParsingContext := {}
   -- Map from dialect names to the dialect definition
-  loader : DialectLoader := {}
+  loader : LoadedDialects
   -- Dialects considered open for pretty-printing purposes.
   openDialects : Array DialectName := #["Init"]
   -- List of dialects considered open.
@@ -259,8 +176,6 @@ structure DeclState where
   parserMap : PrattParsingTableMap := {}
   -- Token table for parsing
   tokenTable : Lean.Parser.TokenTable := {}
-  -- Top level commands in file.
-  commands : Array Operation := #[]
   -- Operations at the global level
   globalContext : GlobalContext := {}
   -- String position in file.
@@ -271,24 +186,14 @@ structure DeclState where
 
 namespace DeclState
 
-def dialects (s : DeclState) := s.loader.dialects
-
-/-- Parsers for dialects in map. -/
-def dialectParsers (s : DeclState) := s.loader.dialectParsers
-
-/-- Map for elaborating operations and functions -/
-def syntaxElabMap (s : DeclState) := s.loader.syntaxElabMap
-
-def mkEnv (s : DeclState) : Environment := {
-      dialects := s.dialects -- FIXME.  Compute only reachable dialects.
+def mkEnv (s : DeclState) (commands : Array Operation) : Environment := {
+      dialects := s.loader.dialects -- FIXME.  Compute only reachable dialects.
       openDialects := s.openDialects
-      commands := s.commands
+      commands := commands
       globalContext := s.globalContext
     }
 
-end DeclState
-
-def addParserToCat (s : DeclState) (dp : DeclParser) : DeclState :=
+def addParserToCat! (s : DeclState) (dp : DeclParser) : DeclState :=
   assert! dp.category ∈ s.parserMap
   { s with
       tokenTable := s.tokenTable.addTokens dp.parser
@@ -301,36 +206,63 @@ def addParserToCat (s : DeclState) (dp : DeclParser) : DeclState :=
             some r,
   }
 
-def addSynCat (dialect : String) (decl : SynCatDecl) (s : DeclState) : DeclState :=
+def addSynCat! (s : DeclState) (dialect : String) (decl : SynCatDecl) : DeclState :=
   let cat : QualifiedIdent := { dialect, name := decl.name }
   if cat ∈ s.parserMap then
     panic! s!"{cat} already declared."
   else
     { s with parserMap := s.parserMap.insert cat {} }
 
-def openParserDialectImpl (s : DeclState) (dialect : DialectName) (syncats : Collection SynCatDecl) : DeclState :=
-  let ds := syncats.fold (init := s) (fun ps decl => addSynCat dialect decl ps)
-  let parsers := s.dialectParsers.getD dialect #[]
-  parsers.foldl (init := ds) addParserToCat
+/--
+Opens the dialect definition dialect in the parser so it is visible to parser, but not
+part of environment.  This is used for dialect definitions.
+-/
+def openParserDialect! (s : DeclState) (dialect : Dialect) : DeclState :=
+  let s := { s with
+    metadataDeclMap := s.metadataDeclMap.addDialect dialect
+  }
+  let name := dialect.name
+  let s := dialect.syncats.fold (init := s) (·.addSynCat! name ·)
+  let parsers := s.loader.dialectParsers.getD name #[]
+  parsers.foldl (init := s) addParserToCat!
+
+mutual
+
+partial def ensureLoaded! (s : DeclState) (dialect : DialectName) : DeclState :=
+  if dialect ∈ s.openDialectSet then
+    s
+  else
+    match s.loader.dialects[dialect]? with
+    | none => panic! s!"Unknown dialect {dialect}"
+    | some d => addDialect! s d
 
 /--
 Opens the dialect (not must not already be open)
 -/
-def openDialect! (dialect : DialectName) (s : DeclState) : DeclState :=
-  if dialect ∈ s.openDialectSet then
-    @panic _ ⟨s⟩ s!"Dialect {dialect} already open"
+partial def addDialect! (s : DeclState) (dialect : Dialect) : DeclState :=
+  assert! dialect.name ∉ s.openDialectSet
+  let s := dialect.imports.foldl (init := s) fun s d =>
+      assert! d ≠ dialect.name
+      ensureLoaded! s d
+  let s := { s with
+    openDialects := s.openDialects.push dialect.name
+    openDialectSet := s.openDialectSet.insert dialect.name
+    typeOrCatDeclMap := s.typeOrCatDeclMap.addDialect dialect
+  }
+  s.openParserDialect! dialect
+
+end
+
+/--
+Opens the dialect (not must not already be open)
+-/
+partial def openLoadedDialect! (s : DeclState) (dialect : Dialect) : DeclState :=
+  if dialect.name ∈ s.openDialectSet then
+    panic s!"Dialect {dialect.name} already open"
   else
-    match s.dialects[dialect]? with
-    | none =>
-      @panic _ ⟨s⟩ s!"Unknown dialect {dialect}"
-    | some d =>
-      let s := { s with
-        openDialects := s.openDialects.push dialect
-        openDialectSet := s.openDialectSet.insert dialect
-        metadataDeclMap := s.metadataDeclMap.addDialect d
-        typeOrCatDeclMap := s.typeOrCatDeclMap.addDialect d
-      }
-      openParserDialectImpl s dialect d.syncats
+    s.addDialect! dialect
+
+end DeclState
 
 @[reducible]
 def DeclM := ReaderT DeclContext (StateM DeclState)
@@ -339,14 +271,14 @@ namespace DeclM
 
 instance : ElabClass DeclM where
   getInputContext := return (←read).inputContext
-  getDialects := return (←get).dialects
+  getDialects := return (←get).loader.dialects
   getOpenDialects := return (←get).openDialectSet
   getGlobalContext := return (←get).globalContext
   getErrorCount := return (←get).errors.size
   logErrorMessage stx msg :=
     modify fun s => { s with errors := s.errors.push (stx, msg) }
 
-def run (action : DeclM Unit) (init : DeclState := {}) : DeclState :=
+def run (action : DeclM Unit) (init : DeclState) : DeclState :=
   (action DeclContext.empty init).snd
 
 end DeclM

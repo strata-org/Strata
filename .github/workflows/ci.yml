@@ -56,8 +56,8 @@ jobs:
         shell: bash
         run: source ~/.profile && lake test
 
-  check_copyright_header:
-    name: Check copyright header
+  lint_checks:
+    name: Run lint checks
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -71,3 +71,23 @@ jobs:
       - name: Check copyright headers
         run: python3 .github/scripts/check_copyright_headers.py .
         shell: bash
+      - name: Check for trailing whitespace
+        run: .github/scripts/lintWhitespace.sh
+      - name: Check for import Lean
+        run: .github/scripts/checkLeanImport.sh
+
+  build_doc:
+    name: Build Documentation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build documetation package
+        uses: leanprover/lean-action@v1
+        with:
+          build-args: '--wfail'
+          lake-package-directory: 'docs/ddm'
+      - name: Build Documentation
+        run: lake exe docs 
+        working-directory: docs/ddm

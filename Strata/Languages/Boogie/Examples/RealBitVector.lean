@@ -1,0 +1,158 @@
+/-
+  Copyright Strata Contributors
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+    https://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-/
+
+import Strata.Languages.Boogie.Verifier
+
+---------------------------------------------------------------------
+namespace Strata
+
+def realEnv : Environment :=
+#strata
+program Boogie;
+
+const x : real;
+const y : real;
+
+axiom [real_x_ge_1]: x >= 1.0;
+axiom [real_y_ge_2]: y >= 2.0;
+
+procedure P() returns ()
+{
+  assert [real_add_ge_good]: x + y >= 3.0;
+  assert [real_add_ge_bad]: x + y >= 4.0;
+};
+#end
+
+/-- info: true -/
+#guard_msgs in
+-- No errors in translation.
+#eval TransM.run (translateProgram (realEnv.commands)) |>.snd |>.isEmpty
+
+/--
+info: func x :  () → real;
+func y :  () → real;
+axiom real_x_ge_1: ((~Real.Ge ~x) (#1.0 : real));
+axiom real_y_ge_2: ((~Real.Ge ~y) (#2.0 : real));
+(procedure P :  () → ())
+modifies: []
+preconditions: ⏎
+postconditions: ⏎
+body: assert [real_add_ge_good] ((~Real.Ge ((~Real.Add ~x) ~y)) (#3.0 : real))
+assert [real_add_ge_bad] ((~Real.Ge ((~Real.Add ~x) ~y)) (#4.0 : real))
+
+Errors: #[]
+-/
+#guard_msgs in
+#eval TransM.run (translateProgram (realEnv.commands))
+
+/--
+info: [Strata.Boogie] Type checking succeeded.
+
+
+VCs:
+Label: real_add_ge_good
+Assumptions:
+(real_y_ge_2, ((~Real.Ge ~y) #2.0))
+(real_x_ge_1, ((~Real.Ge ~x) #1.0))
+Proof Obligation:
+((~Real.Ge ((~Real.Add ~x) ~y)) #3.0)
+
+Label: real_add_ge_bad
+Assumptions:
+(real_y_ge_2, ((~Real.Ge ~y) #2.0))
+(real_x_ge_1, ((~Real.Ge ~x) #1.0))
+Proof Obligation:
+((~Real.Ge ((~Real.Add ~x) ~y)) #4.0)
+
+Wrote problem to vcs/real_add_ge_good.smt2.
+Wrote problem to vcs/real_add_ge_bad.smt2.
+
+
+Obligation real_add_ge_bad: could not be proved!
+
+Result: failed
+CEx: ⏎
+---
+info:
+Obligation: real_add_ge_good
+Result: verified
+
+Obligation: real_add_ge_bad
+Result: failed
+CEx:
+-/
+#guard_msgs in
+#eval verify "cvc5" realEnv
+
+---------------------------------------------------------------------
+
+def bvEnv : Environment :=
+#strata
+program Boogie;
+
+const x : bv8;
+const y : bv8;
+
+axiom [bv_x_ge_1]: bv{8}(1) <= x;
+axiom [bv_y_ge_2]: bv{8}(2) <= y;
+
+procedure P() returns ()
+{
+  assert [bv_add_ge]: x + y == y + x;
+};
+#end
+
+/-- info: true -/
+#guard_msgs in
+-- No errors in translation.
+#eval TransM.run (translateProgram (bvEnv.commands)) |>.snd |>.isEmpty
+
+/--
+info: func x :  () → bv8;
+func y :  () → bv8;
+axiom bv_x_ge_1: ((~Bv8.Le (#1 : bv8)) ~x);
+axiom bv_y_ge_2: ((~Bv8.Le (#2 : bv8)) ~y);
+(procedure P :  () → ())
+modifies: []
+preconditions: ⏎
+postconditions: ⏎
+body: assert [bv_add_ge] (((~Bv8.Add ~x) ~y) == ((~Bv8.Add ~y) ~x))
+
+Errors: #[]
+-/
+#guard_msgs in
+#eval TransM.run (translateProgram (bvEnv.commands))
+
+/--
+info: [Strata.Boogie] Type checking succeeded.
+
+
+VCs:
+Label: bv_add_ge
+Assumptions:
+(bv_y_ge_2, ((~Bv8.Le #2) ~y))
+(bv_x_ge_1, ((~Bv8.Le #1) ~x))
+Proof Obligation:
+(((~Bv8.Add ~x) ~y) == ((~Bv8.Add ~y) ~x))
+
+Wrote problem to vcs/bv_add_ge.smt2.
+---
+info:
+Obligation: bv_add_ge
+Result: verified
+-/
+#guard_msgs in
+#eval verify "cvc5" bvEnv

@@ -111,8 +111,13 @@ def translateNat (arg : Arg) : TransM Nat := do
 
 def translateStr (arg : Arg) : TransM String := do
   let .strlit s := arg
-    | TransM.error s!"translateStr expects num lit"
+    | TransM.error s!"translateStr expects string lit"
   return s
+
+def translateReal (arg : Arg) : TransM Decimal := do
+  let .decimal d := arg
+    | TransM.error s!"translateReal expects decimal lit"
+  return d
 
 ---------------------------------------------------------------------
 
@@ -185,7 +190,10 @@ partial def translateLMonoTy (bindings : TransBindings) (arg : Arg) :
   let .type tp := arg
     | TransM.error s!"translateLMonoTy expected type {repr arg}"
   match tp with
-  | .ident i #[] => pure <| (.tcons i.name [])
+  | .ident q`Boogie.bv8 #[] => pure <| .bitvec 8
+  | .ident q`Boogie.bv16 #[] => pure <| .bitvec 16
+  | .ident q`Boogie.bv32 #[] => pure <| .bitvec 32
+  | .ident q`Boogie.bv64 #[] => pure <| .bitvec 64
   | .ident i argst =>
       let argst' ← translateLMonoTys bindings (argst.map Arg.type)
       pure <| (.tcons i.name argst'.toList.reverse)
@@ -361,25 +369,72 @@ def translateOptionMonoDeclList (bindings : TransBindings) (arg : Arg) :
     arg
 ---------------------------------------------------------------------
 
-def translateFn (q : QualifiedIdent) : TransM Boogie.Expression.Expr :=
-  match q with
-  | q`Boogie.equiv    => return (.op "Bool.Equiv"   none)
-  | q`Boogie.implies  => return (.op "Bool.Implies" none)
-  | q`Boogie.and      => return (.op "Bool.And"     none)
-  | q`Boogie.or       => return (.op "Bool.Or"      none)
-  | q`Boogie.not      => return (.op "Bool.Not"     none)
-  | q`Boogie.le       => return (.op "Int.Le"       none)
-  | q`Boogie.lt       => return (.op "Int.Lt"       none)
-  | q`Boogie.ge       => return (.op "Int.Ge"       none)
-  | q`Boogie.gt       => return (.op "Int.Gt"       none)
-  | q`Boogie.add_expr => return (.op "Int.Add"      none)
-  | q`Boogie.sub_expr => return (.op "Int.Sub"      none)
-  | q`Boogie.mul_expr => return (.op "Int.Mul"      none)
-  | q`Boogie.div_expr => return (.op "Int.Div"      none)
-  | q`Boogie.mod_expr => return (.op "Int.Mod"      none)
-  | q`Boogie.neg_expr => return (.op "Int.Neg"      none)
-  | q`Boogie.old      => return (.op "old"          none)
-  | _                 => TransM.error s!"translateFn: Unknown/unimplemented function {repr q}"
+def isArithTy : LMonoTy → Bool
+| .int => true
+| .real => true
+| .bitvec _ => true
+| _ => false
+
+def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Boogie.Expression.Expr :=
+  match ty?, q with
+  | _, q`Boogie.equiv    => return (.op "Bool.Equiv"   none)
+  | _, q`Boogie.implies  => return (.op "Bool.Implies" none)
+  | _, q`Boogie.and      => return (.op "Bool.And"     none)
+  | _, q`Boogie.or       => return (.op "Bool.Or"      none)
+  | _, q`Boogie.not      => return (.op "Bool.Not"     none)
+  | .some .int, q`Boogie.le       => return (.op "Int.Le"       none)
+  | .some .int, q`Boogie.lt       => return (.op "Int.Lt"       none)
+  | .some .int, q`Boogie.ge       => return (.op "Int.Ge"       none)
+  | .some .int, q`Boogie.gt       => return (.op "Int.Gt"       none)
+  | .some .int, q`Boogie.add_expr => return (.op "Int.Add"      none)
+  | .some .int, q`Boogie.sub_expr => return (.op "Int.Sub"      none)
+  | .some .int, q`Boogie.mul_expr => return (.op "Int.Mul"      none)
+  | .some .int, q`Boogie.div_expr => return (.op "Int.Div"      none)
+  | .some .int, q`Boogie.mod_expr => return (.op "Int.Mod"      none)
+  | .some .int, q`Boogie.neg_expr => return (.op "Int.Neg"      none)
+  | .some .real, q`Boogie.le       => return (.op "Real.Le"       none)
+  | .some .real, q`Boogie.lt       => return (.op "Real.Lt"       none)
+  | .some .real, q`Boogie.ge       => return (.op "Real.Ge"       none)
+  | .some .real, q`Boogie.gt       => return (.op "Real.Gt"       none)
+  | .some .real, q`Boogie.add_expr => return (.op "Real.Add"      none)
+  | .some .real, q`Boogie.sub_expr => return (.op "Real.Sub"      none)
+  | .some .real, q`Boogie.mul_expr => return (.op "Real.Mul"      none)
+  | .some .real, q`Boogie.div_expr => return (.op "Real.Div"      none)
+  | .some .real, q`Boogie.neg_expr => return (.op "Real.Neg"      none)
+  | .some .bv8, q`Boogie.le       => return (.op "Bv8.Le"       none)
+  | .some .bv8, q`Boogie.lt       => return (.op "Bv8.Lt"       none)
+  | .some .bv8, q`Boogie.ge       => return (.op "Bv8.Ge"       none)
+  | .some .bv8, q`Boogie.gt       => return (.op "Bv8.Gt"       none)
+  | .some .bv8, q`Boogie.add_expr => return (.op "Bv8.Add"      none)
+  | .some .bv8, q`Boogie.sub_expr => return (.op "Bv8.Sub"      none)
+  | .some .bv8, q`Boogie.mul_expr => return (.op "Bv8.Mul"      none)
+  | .some .bv8, q`Boogie.neg_expr => return (.op "Bv8.Neg"      none)
+  | .some .bv16, q`Boogie.le       => return (.op "Bv16.Le"       none)
+  | .some .bv16, q`Boogie.lt       => return (.op "Bv16.Lt"       none)
+  | .some .bv16, q`Boogie.ge       => return (.op "Bv16.Ge"       none)
+  | .some .bv16, q`Boogie.gt       => return (.op "Bv16.Gt"       none)
+  | .some .bv16, q`Boogie.add_expr => return (.op "Bv16.Add"      none)
+  | .some .bv16, q`Boogie.sub_expr => return (.op "Bv16.Sub"      none)
+  | .some .bv16, q`Boogie.mul_expr => return (.op "Bv16.Mul"      none)
+  | .some .bv16, q`Boogie.neg_expr => return (.op "Bv16.Neg"      none)
+  | .some .bv32, q`Boogie.le       => return (.op "Bv32.Le"       none)
+  | .some .bv32, q`Boogie.lt       => return (.op "Bv32.Lt"       none)
+  | .some .bv32, q`Boogie.ge       => return (.op "Bv32.Ge"       none)
+  | .some .bv32, q`Boogie.gt       => return (.op "Bv32.Gt"       none)
+  | .some .bv32, q`Boogie.add_expr => return (.op "Bv32.Add"      none)
+  | .some .bv32, q`Boogie.sub_expr => return (.op "Bv32.Sub"      none)
+  | .some .bv32, q`Boogie.mul_expr => return (.op "Bv32.Mul"      none)
+  | .some .bv32, q`Boogie.neg_expr => return (.op "Bv32.Neg"      none)
+  | .some .bv64, q`Boogie.le       => return (.op "Bv64.Le"       none)
+  | .some .bv64, q`Boogie.lt       => return (.op "Bv64.Lt"       none)
+  | .some .bv64, q`Boogie.ge       => return (.op "Bv64.Ge"       none)
+  | .some .bv64, q`Boogie.gt       => return (.op "Bv64.Gt"       none)
+  | .some .bv64, q`Boogie.add_expr => return (.op "Bv64.Add"      none)
+  | .some .bv64, q`Boogie.sub_expr => return (.op "Bv64.Sub"      none)
+  | .some .bv64, q`Boogie.mul_expr => return (.op "Bv64.Mul"      none)
+  | .some .bv64, q`Boogie.neg_expr => return (.op "Bv64.Neg"      none)
+  | _, q`Boogie.old      => return (.op "old"          none)
+  | _, _              => TransM.error s!"translateFn: Unknown/unimplemented function {repr q} at type {repr ty?}"
 
 mutual
 
@@ -416,9 +471,24 @@ partial def translateExpr (bindings : TransBindings) (arg : Arg) :
   | .fn q`Boogie.natToInt, [xa] =>
     let n ← translateNat xa
     return .const (toString n) Lambda.LMonoTy.int
+  | .fn q`Boogie.bv8Lit, [xa] =>
+    let n ← translateNat xa
+    return .const (toString n) Lambda.LMonoTy.bv8
+  | .fn q`Boogie.bv16Lit, [xa] =>
+    let n ← translateNat xa
+    return .const (toString n) Lambda.LMonoTy.bv16
+  | .fn q`Boogie.bv32Lit, [xa] =>
+    let n ← translateNat xa
+    return .const (toString n) Lambda.LMonoTy.bv32
+  | .fn q`Boogie.bv64Lit, [xa] =>
+    let n ← translateNat xa
+    return .const (toString n) Lambda.LMonoTy.bv64
   | .fn q`Boogie.strLit, [xa] =>
     let x ← translateStr xa
     return .const x Lambda.LMonoTy.string
+  | .fn q`Boogie.realLit, [xa] =>
+    let x ← translateReal xa
+    return .const (toString x) Lambda.LMonoTy.real
   -- Equality
   | .fn q`Boogie.equal, [_tpa, xa, ya] =>
     let x ← translateExpr bindings xa
@@ -480,7 +550,7 @@ partial def translateExpr (bindings : TransBindings) (arg : Arg) :
     translateQuantifier .exist bindings xsa (.some tsa) ba
   -- Binary function applications
   | .fn fni, [xa, ya] =>
-    let fn ← translateFn fni
+    let fn ← translateFn .none fni
     let x ← translateExpr bindings xa
     let y ← translateExpr bindings ya
     return .mkApp fn [x, y]
@@ -495,10 +565,10 @@ partial def translateExpr (bindings : TransBindings) (arg : Arg) :
     | q`Boogie.gt
     | q`Boogie.ge =>
       let ty ← translateLMonoTy bindings tpa
-      if ty ≠ (.tcons "int" []) then
+      if ¬ isArithTy ty then
         TransM.error s!"translateExpr unexpected type for {repr fni}: {repr args}"
       else
-        let fn ← translateFn fni
+        let fn ← translateFn (.some ty) fni
         let x ← translateExpr bindings xa
         let y ← translateExpr bindings ya
         return .mkApp fn [x, y]

@@ -244,6 +244,7 @@ def initDialect : Dialect := BuiltinM.create! "Init" #[] do
     syntaxDef := .ofList [.ident 0 0]
   }
 
+  -- `TypesP` is used type parameters that allow either a type or the type of types (Type).
   let TypeP := q`Init.TypeP
   declareCat TypeP
   declareOp  {

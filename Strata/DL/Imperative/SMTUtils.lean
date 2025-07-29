@@ -14,8 +14,7 @@
   limitations under the License.
 -/
 
-import Strata.DL.SMT
-import Strata.DL.SMT.CexParser
+import Strata.DL.SMT.SMT
 import Strata.DL.Imperative.PureExpr
 import Strata.DL.Imperative.EvalContext
 
