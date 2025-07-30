@@ -50,6 +50,7 @@ def lookup (T : TEnv) (x : String) : Option Ty :=
 def inferType (T : TEnv) (c : Cmd PureExpr) (e : Expr) : Except Format (Expr × Ty × TEnv) := do
   match e with
   | .Num _ => .ok (e, .Num, T)
+  | .Bool _ => .ok (e, .Bool, T)
   | .Var x xty =>
     -- We allow _annotated_ free variables to appear in the `init`
     -- statements.

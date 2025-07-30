@@ -56,6 +56,8 @@ number of parameters: 0
 constructors:
 ArithPrograms.Expr.fvar : Nat → Expr
 ArithPrograms.Expr.numLit : Nat → Expr
+ArithPrograms.Expr.btrue : Expr
+ArithPrograms.Expr.bfalse : Expr
 ArithPrograms.Expr.add_expr : Expr → Expr → Expr
 ArithPrograms.Expr.mul_expr : Expr → Expr → Expr
 ArithPrograms.Expr.eq_expr : ArithProgramsType → Expr → Expr → Expr
@@ -84,6 +86,7 @@ inductive Arith.Expr where
   | Mul (e1 e2 : Expr)
   | Eq (e1 e2 : Expr)
   | Num (n : Nat)
+  | Bool (b : Bool)
   | Var (v : String) (ty : Option Ty)
 ```
 
@@ -137,11 +140,10 @@ def eval (s : State) (e : Expr) : Expr :=
   | .Eq e1 e2 =>
     match (eval s e1), (eval s e2) with
     | .Num n1, .Num n2 =>
-      -- Zero is false; any non-zero number is true, but we choose 1 as the
-      -- canonical true here.
-      .Num (if n1 == n2 then 1 else 0)
+      (if n1 == n2 then .Bool true else .Bool false)
     | e1', e2' => .Eq e1' e2'
   | .Num n => .Num n
+  | .Bool b => .Bool b
   | .Var v ty => match s.env.find? v with | none => .Var v ty | some (_, e) => e
 ```
 
@@ -163,7 +165,7 @@ Obligation x_value_eq proved via evaluation!
 info: ok: Commands:
 init (x : Num) := 0
 x := 100
-assert [x_value_eq] 1
+assert [x_value_eq] true
 
 State:
 error: none
@@ -241,6 +243,7 @@ def toSMTTerm (E : Env) (e : Arith.Expr) : Except Format Term := do
     let e2 ← toSMTTerm E e2
     .ok (Term.app Op.eq [e1, e2] .bool)
   | .Num n => .ok (Term.int n)
+  | .Bool b => .ok (Term.bool b)
   | .Var v ty =>
     match ty with
     | none => .error f!"Variable {v} not type annotated; SMT encoding failed!"
