@@ -153,6 +153,9 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
 
 def VC_folder_name: String := "vcs"
 
+def smt2_filename (name: String): String :=
+  ((name.replace "==" "eq").replace "=" "-").replace " " "_" ++ ".smt2"
+
 def dischargeObligation {P : PureExpr} [ToFormat P.Ident]
   (encodeTerms : List Strata.SMT.Term → Strata.SMT.SolverM (List String × Strata.SMT.EncoderState))
   (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))

@@ -56,6 +56,7 @@ def toSMTTerm (E : Env) (e : Arith.Expr) : Except Format Term := do
     let e2 ← toSMTTerm E e2
     .ok (Term.app Op.eq [e1, e2] .bool)
   | .Num n => .ok (Term.int n)
+  | .Bool b => .ok (Term.bool b)
   | .Var v ty =>
     match ty with
     | none => .error f!"Variable {v} not type annotated; SMT encoding failed!"

@@ -63,13 +63,13 @@ private def testProgram2 : Commands :=
 info: ok: Commands:
 init (x : Num) := 0
 x := 100
-assert [x_value_eq] 1
+assert [x_value_eq] true
 
 State:
 error: none
 deferred: #[Label: x_value_eq
  Assumptions: ⏎
- Obligation: 1
+ Obligation: true
  Metadata: ⏎
  ]
 pathConditions: ⏎

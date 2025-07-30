@@ -67,6 +67,7 @@ inductive Expr where
   | Mul (e1 e2 : Expr)
   | Eq (e1 e2 : Expr)
   | Num (n : Nat)
+  | Bool (b : Bool)
   | Var (v : String) (ty : Option Ty)
   deriving Inhabited, Repr
 
@@ -78,6 +79,7 @@ def Expr.format (e : Expr) : Format :=
   | .Var v (.some ty) => f!"({v} : {ty})"
   | .Var v .none => f!"{v}"
   | .Num n => f!"{n}"
+  | .Bool b => f!"{b}"
 
 instance : ToFormat Expr where
   format := Expr.format
@@ -88,6 +90,7 @@ def Expr.freeVars (e : Expr) : List (String × Option Ty) :=
   | .Mul e1 e2 => e1.freeVars ++ e2.freeVars
   | .Eq e1 e2 => e1.freeVars ++ e2.freeVars
   | .Num _ => []
+  | .Bool _ => []
   | .Var v ty => [(v, ty)]
 
 /--
