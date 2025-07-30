@@ -68,10 +68,7 @@ info: function linearSearch {
   body:
 init (idx : int) := init_idx
 idx := #0
-while(((~Int.Lt idx) (~Array.Len arr)))
-(some ((~Int.Sub (~Array.Len arr)) idx))
-(some #true)
-{if (e == ((~Array.Get arr) idx)) then {return := #true}
+while (((~Int.Lt idx) (~Array.Len arr))) (some ((~Int.Sub (~Array.Len arr)) idx)) (some #true) {if (e == ((~Array.Get arr) idx)) then {return := #true}
  else{}
  idx := ((~Int.Add idx) #1)}
 return := #false

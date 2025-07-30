@@ -289,8 +289,8 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
                                                stk := orig_stk.appendToTop [s']})
                 Ewns_t ++ Ewns_f
 
-          | .loop guard _ _ body md =>
-            panic! "Unimplemented"
+          | .loop _ _ _ _ _ =>
+            panic! "Cannot evaluate `loop` statement. Please transform your program to eleminate loops before calling Boogie.Statement.evalAux"
 
           | .goto l md => [{ Ewn with stk := Ewn.stk.appendToTop [.goto l md], nextLabel := (some l)}]
 

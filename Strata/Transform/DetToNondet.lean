@@ -32,6 +32,8 @@ def StmtToNondetStmt {P : PureExpr} [Imperative.HasBool P] [Imperative.HasBoolNe
     .choice
       (.seq (.assert "true_cond" cond md) (StmtsToNondetStmt thenb.ss))
       (.seq ((.assert "false_cond" (Imperative.HasBoolNeg.neg cond) md)) (StmtsToNondetStmt elseb.ss))
+  | .loop   guard measure inv body md =>
+    .loop   StmtsToNondetStmt body
   -- TODO: need goto equivalent
   | .goto _ _ => (.assert "skip" Imperative.HasBool.tt)
   termination_by (sizeOf st)
