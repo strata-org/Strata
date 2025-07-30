@@ -83,6 +83,8 @@ number of parameters: 0
 constructors:
 ArithPrograms.Expr.fvar : Nat → Expr
 ArithPrograms.Expr.numLit : Nat → Expr
+ArithPrograms.Expr.btrue : Expr
+ArithPrograms.Expr.bfalse : Expr
 ArithPrograms.Expr.add_expr : Expr → Expr → Expr
 ArithPrograms.Expr.mul_expr : Expr → Expr → Expr
 ArithPrograms.Expr.eq_expr : ArithProgramsType → Expr → Expr → Expr
@@ -97,6 +99,8 @@ def translateExpr (bindings : TransBindings) (e : ArithPrograms.Expr) : TransM A
     let id := bindings.freeVars[i]!
     return (.Var id .none)
   | .numLit n => return (.Num n)
+  | .btrue => return (.Bool true)
+  | .bfalse => return (.Bool false)
   | .add_expr e1 e2 =>
     let e1 ← translateExpr bindings e1
     let e2 ← translateExpr bindings e2

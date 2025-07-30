@@ -35,6 +35,8 @@ type num;
 
 // Literals
 fn numLit (n : Num) : num => n;
+fn btrue : bool => "true";
+fn bfalse : bool => "false";
 
 // Expressions
 fn add_expr (a : num, b : num) : num => @[prec(25), leftassoc] a "+" b;
