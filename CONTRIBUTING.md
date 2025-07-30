@@ -35,9 +35,10 @@ When writing programs, rather than proofs, it can be tempting to use
 system interaction, file I/O, concurrency, and similar functionality,
 this can be okay. However, because we aim for it to be possible to
 verify core functionality, we prefer that operations over programs or
-terms -- such as transformation, verification condition generation, or
+terms -- such as transformations, verification condition generation, or
 testing -- be total functions and that this fact can, at least in
-principle, be proved.
+principle, be proved. That a function is total is also usually a 
+prerequisite for any proofs that use the function in question.
 
 In some cases, however, it may be valuable to prove properties of code
 that may, in fact, not terminate. For this use case, we prefer the use
@@ -221,7 +222,7 @@ details like:
     - All CI checks must pass on your PR.
     - No changes must be requested.
     - All conversations must be resolved.
-    - Approval from at least one Strata maintainer.
+    - Approval from at least two Strata maintainers is required.
     - Any changes to [code with an owner](.github/CODEOWNERS) requires approval
       from at least one of the corresponding code owners.
 
