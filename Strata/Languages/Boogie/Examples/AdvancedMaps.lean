@@ -33,14 +33,14 @@ spec {
   requires a[0] == 0;
 }
 {
-  assert a[0] == 0;
+  assert [a0eq0]: a[0] == 0;
   a := a[1 := 1];
   assert a[1] == 1;
   a := a[0 := 1];
-  assert a[1] == 1;
+  assert [a1eq1]: a[1] == 1;
 
   b := b[true := -1];
-  assert b[true] == -1;
+  assert [bTrueEqTrue]: b[true] == -1;
   assert [mix]: a[1] == -(b[true]);
 };
 #end
@@ -56,16 +56,16 @@ info: var (a : (Map int int)) := init_a_0
 var (b : (Map bool int)) := init_b_1
 (procedure P :  () → ())
 modifies: [a, b]
-preconditions: (P_requires_2, (((~select a) (#0 : int)) == (#0 : int)))
+preconditions: (P_requires_2, ((((~select : (arrow (Map int int) (arrow int int))) a) (#0 : int)) == (#0 : int)))
 postconditions: ⏎
-body: assert [assert: (((~select a) (#0 : int)) == (#0 : int))] (((~select a) (#0 : int)) == (#0 : int))
-a := (((~update a) (#1 : int)) (#1 : int))
-assert [assert: (((~select a) (#1 : int)) == (#1 : int))] (((~select a) (#1 : int)) == (#1 : int))
-a := (((~update a) (#0 : int)) (#1 : int))
-assert [assert: (((~select a) (#1 : int)) == (#1 : int))] (((~select a) (#1 : int)) == (#1 : int))
-b := (((~update b) (#true : bool)) (~Int.Neg (#1 : int)))
-assert [assert: (((~select b) (#true : bool)) == (~Int.Neg (#1 : int)))] (((~select b) (#true : bool)) == (~Int.Neg (#1 : int)))
-assert [mix] (((~select a) (#1 : int)) == (~Int.Neg ((~select b) (#true : bool))))
+body: assert [a0eq0] ((((~select : (arrow (Map int int) (arrow int int))) a) (#0 : int)) == (#0 : int))
+a := ((((~update : (arrow (Map int int) (arrow int (arrow int (Map int int))))) a) (#1 : int)) (#1 : int))
+assert [assert: ((((~select : (arrow (Map int int) (arrow int int))) a) (#1 : int)) == (#1 : int))] ((((~select : (arrow (Map int int) (arrow int int))) a) (#1 : int)) == (#1 : int))
+a := ((((~update : (arrow (Map int int) (arrow int (arrow int (Map int int))))) a) (#0 : int)) (#1 : int))
+assert [a1eq1] ((((~select : (arrow (Map int int) (arrow int int))) a) (#1 : int)) == (#1 : int))
+b := ((((~update : (arrow (Map bool int) (arrow bool (arrow int (Map bool int))))) b) (#true : bool)) (~Int.Neg (#1 : int)))
+assert [bTrueEqTrue] ((((~select : (arrow (Map bool int) (arrow bool int))) b) (#true : bool)) == (~Int.Neg (#1 : int)))
+assert [mix] ((((~select : (arrow (Map int int) (arrow int int))) a) (#1 : int)) == (~Int.Neg (((~select : (arrow (Map bool int) (arrow bool int))) b) (#true : bool))))
 
 Errors: #[]
 -/
@@ -77,25 +77,25 @@ info: [Strata.Boogie] Type checking succeeded.
 
 
 VCs:
-Label: assert: (((~select a) (#0 : int)) == (#0 : int))
+Label: a0eq0
 Assumptions:
 (P_requires_2, (((~select $__a0) #0) == #0))
 Proof Obligation:
 (((~select $__a0) #0) == #0)
 
-Label: assert: (((~select a) (#1 : int)) == (#1 : int))
+Label: assert: ((((~select : (arrow (Map int int) (arrow int int))) a) (#1 : int)) == (#1 : int))
 Assumptions:
 (P_requires_2, (((~select $__a0) #0) == #0))
 Proof Obligation:
 (((~select (((~update $__a0) #1) #1)) #1) == #1)
 
-Label: assert: (((~select a) (#1 : int)) == (#1 : int))
+Label: a1eq1
 Assumptions:
 (P_requires_2, (((~select $__a0) #0) == #0))
 Proof Obligation:
 (((~select (((~update (((~update $__a0) #1) #1)) #0) #1)) #1) == #1)
 
-Label: assert: (((~select b) (#true : bool)) == (~Int.Neg (#1 : int)))
+Label: bTrueEqTrue
 Assumptions:
 (P_requires_2, (((~select $__a0) #0) == #0))
 Proof Obligation:
@@ -107,23 +107,23 @@ Assumptions:
 Proof Obligation:
 (((~select (((~update (((~update $__a0) #1) #1)) #0) #1)) #1) == (~Int.Neg ((~select (((~update $__b1) #true) #-1)) #true)))
 
-Wrote problem to vcs/assert: (((~select a) (#0 : int)) == (#0 : int)).smt2.
-Wrote problem to vcs/assert: (((~select a) (#1 : int)) == (#1 : int)).smt2.
-Wrote problem to vcs/assert: (((~select a) (#1 : int)) == (#1 : int)).smt2.
-Wrote problem to vcs/assert: (((~select b) (#true : bool)) == (~Int.Neg (#1 : int))).smt2.
+Wrote problem to vcs/a0eq0.smt2.
+Wrote problem to vcs/assert:_((((~select_:_(arrow_(Map_int_int)_(arrow_int_int)))_a)_(#1_:_int))_eq_(#1_:_int)).smt2.
+Wrote problem to vcs/a1eq1.smt2.
+Wrote problem to vcs/bTrueEqTrue.smt2.
 Wrote problem to vcs/mix.smt2.
 ---
 info:
-Obligation: assert: (((~select a) (#0 : int)) == (#0 : int))
+Obligation: a0eq0
 Result: verified
 
-Obligation: assert: (((~select a) (#1 : int)) == (#1 : int))
+Obligation: assert: ((((~select : (arrow (Map int int) (arrow int int))) a) (#1 : int)) == (#1 : int))
 Result: verified
 
-Obligation: assert: (((~select a) (#1 : int)) == (#1 : int))
+Obligation: a1eq1
 Result: verified
 
-Obligation: assert: (((~select b) (#true : bool)) == (~Int.Neg (#1 : int)))
+Obligation: bTrueEqTrue
 Result: verified
 
 Obligation: mix
