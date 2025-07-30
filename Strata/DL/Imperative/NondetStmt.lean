@@ -24,7 +24,13 @@ import Strata.DL.Imperative.HasVars
 
 namespace Imperative
 
-/-! # Imperative dialect: non-deterministic statements -/
+/-! # Imperative dialect: non-deterministic statements
+
+These statements use assumptions to encode conditional branches and guarded
+loops. This is roughly the structure used by most formalizations of [Guarded
+Comamnds](https://en.wikipedia.org/wiki/Guarded_Command_Language), and in
+[Kleene Algebra with Tests](https://www.cs.cornell.edu/~kozen/Papers/kat.pdf).
+-/
 
 inductive NondetStmt (P : PureExpr) (Cmd : Type) : Type where
   | cmd      (cmd : Cmd)

@@ -29,9 +29,19 @@ namespace Boogie
 1. Local variables can shadow globals in Boogie, but the typechecker disallows
    that in Strata.Boogie.
 
-2. Unlike Boogie, Strata.Boogie is sensitive to global declaration order. E.g., a
-   global variable must be declared before it can be used in a procedure.
+2. Unlike Boogie, Strata.Boogie is sensitive to global declaration order. E.g.,
+   a global variable must be declared before it can be used in a procedure.
 
+3. Strata.Boogie does not (yet) support polymorphism.
+
+4. Strata.Boogie does not (yet) support arbitrary gotos. All gotos must
+   currently be to labels later in the program.
+
+5. Strata.Boogie does not support `where` clauses and `unique` constants,
+   requiring a tool like `BoogieToStrata` to desugar them.
+
+6. Strata.Boogie does not support algebraic data types or regular expression
+   types.
 -/
 
 def typeCheckAndPartialEval (program : Program) :

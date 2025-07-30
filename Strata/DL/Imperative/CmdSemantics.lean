@@ -141,7 +141,7 @@ inductive UpdateState : SemanticStore P → P.Ident → P.Expr → SemanticStore
     UpdateState σ x v σ'
 
 /--
-An inductive rule for state init.
+An inductive rule for state initialization.
 -/
 inductive InitState : SemanticStore P → P.Ident → P.Expr → SemanticStore P → Prop where
   | init :
