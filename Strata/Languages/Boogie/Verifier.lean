@@ -170,7 +170,14 @@ def dischargeObligation
       .ok "--produce-models"
     else
       return .error f!"Unsupported SMT solver: {smtsolver}"
-  let solver_out ← runSolver smtsolver #[filename, produce_models]
+  let timeout ←
+    if smtsolver.endsWith "z3" then
+      .ok s!"-t:{options.solverTimeout*1000}"
+    else if smtsolver.endsWith "cvc5" then
+      .ok  s!"--tlimit={options.solverTimeout*1000}"
+    else
+      return .error f!"Unsupported SMT solver: {smtsolver}"
+  let solver_out ← runSolver smtsolver #[filename, produce_models, timeout]
   match solverResult vars solver_out ctx estate with
   | .error e => return .error e
   | .ok result => return .ok (result, estate)
@@ -234,7 +241,10 @@ def verify (smtsolver : String) (program : Program) (options : Options := Option
   | .error err =>
     .error f!"[Strata.Boogie] Type checking error: {format err}"
   | .ok pEs =>
-    let VCss ← (List.mapM (fun pE => verifySingleEnv smtsolver pE options) pEs)
+    let VCss ← if options.checkOnly then
+                 pure []
+               else
+                 (List.mapM (fun pE => verifySingleEnv smtsolver pE options) pEs)
     .ok VCss.toArray.flatten
 
 end Boogie
