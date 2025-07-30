@@ -30,6 +30,9 @@ axiom [updateSelect]: forall m: Map k v, kk: k, vv: v :: m[kk := vv][kk] == vv;
 axiom [updatePreserves]: forall m: Map k v, okk: k, kk: k, vv: v :: m[kk := vv][okk] == m[okk];
 #end
 
+/--
+  This function extracts the Boogie.Decl in the given program that are axiom declarations
+-/
 def extractAxiomsDecl (prg: Boogie.Program) : (List Boogie.Decl) :=
   let rec loop (acc: List Boogie.Decl) (l: List Boogie.Decl): List Boogie.Decl :=
     match l with
@@ -40,11 +43,19 @@ def extractAxiomsDecl (prg: Boogie.Program) : (List Boogie.Decl) :=
           | _ => loop acc tl
   loop [] prg.decls
 
+/--
+  Extract the body LExpr from the axiom declaration
+-/
 def extractExpr (axDecl: Boogie.Decl): (Lambda.LExpr Boogie.BoogieIdent) :=
   match axDecl with
     | .ax a _ => a.e
     | _ => panic "Can be called only on axiom declaration"
 
+/--
+  Transform the given type into "ftvar name"
+  - if it is of form LMonoTy.tcons name []
+  - AND if name is in to_replace
+-/
 def transformSimpleTypeToFreeVariable (ty: Lambda.LMonoTy) (to_replace: List String): Lambda.LMonoTy :=
   match ty with
     | (.tcons name []) =>
@@ -56,6 +67,10 @@ def transformSimpleTypeToFreeVariable (ty: Lambda.LMonoTy) (to_replace: List Str
     | .tcons name args => .tcons name (args.map (fun ar => transformSimpleTypeToFreeVariable ar to_replace))
     | _ => ty
 
+/--
+  Transform all occurences of types of the form LMonoTy.tcons name [] into ftvar name, if name is in to_replace
+  in the given expression
+-/
 def replaceTypesByFTV (expr: Lambda.LExpr Boogie.BoogieIdent) (to_replace: List String): Lambda.LExpr Boogie.BoogieIdent :=
   match expr with
     | .const c oty => .const c (oty.map (fun t => transformSimpleTypeToFreeVariable t to_replace))
@@ -69,6 +84,10 @@ def replaceTypesByFTV (expr: Lambda.LExpr Boogie.BoogieIdent) (to_replace: List 
     | .eq e1 e2 => .eq (replaceTypesByFTV e1 to_replace) (replaceTypesByFTV e2 to_replace)
     | _ => expr
 
+/--
+  Extract all axioms from the given environment by first translating it into a Boogie Program.
+  It then extracts LExpr body from the axioms, and replace all occurences of the typeArgs by a ftvar with the same name
+-/
 def extractAxiomsWithFreeTypeVars (env: Environment) (typeArgs: List String): (List (Lambda.LExpr Boogie.BoogieIdent)) :=
   let prg: Boogie.Program := (TransM.run (translateProgram (env.commands))).fst
   let axiomsDecls := extractAxiomsDecl prg
