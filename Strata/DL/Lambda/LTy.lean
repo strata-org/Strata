@@ -62,6 +62,10 @@ def LMonoTy.real : LMonoTy :=
   .tcons "real" []
 
 @[match_pattern]
+def LMonoTy.bv1 : LMonoTy :=
+  .bitvec 1
+
+@[match_pattern]
 def LMonoTy.bv8 : LMonoTy :=
   .bitvec 8
 
@@ -425,6 +429,7 @@ partial def elabLMonoTy : Lean.Syntax → MetaM Expr
   | `(lmonoty| bool) => do
     let argslist ← mkListLit (mkConst ``LMonoTy) []
     mkAppM ``LMonoTy.tcons #[(mkStrLit "bool"), argslist]
+  | `(lmonoty| bv1) =>  mkAppM ``LMonoTy.bv1 #[]
   | `(lmonoty| bv8) =>  mkAppM ``LMonoTy.bv8 #[]
   | `(lmonoty| bv16) => mkAppM ``LMonoTy.bv16 #[]
   | `(lmonoty| bv32) => mkAppM ``LMonoTy.bv32 #[]
