@@ -356,9 +356,6 @@ def translateBindings (bindings : TransBindings) (op : Arg) :
   | _ =>
     TransM.error s!"translateBindings expects a comma separated list: {repr op}"
 
-def LoopOrStmt.toStmt (s : Statement) : Statement :=
-  s
-
 
 mutual
 partial def translateStmt (bindings : TransBindings) (arg : Arg) :
@@ -400,12 +397,12 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     return ([(.cmd (.assume l c))], bindings)
   | q`C_Simp.if_command, #[ca, ta, fa] =>
     let c ← translateExpr bindings ca
-    let t := { ss := (← translateBlock bindings ta).map LoopOrStmt.toStmt }
-    let f := { ss := (← translateElse bindings fa).map LoopOrStmt.toStmt }
+    let t := { ss := ← translateBlock bindings ta }
+    let f := { ss := ← translateElse bindings fa }
     return ([(.ite c t f)], bindings)
   | q`C_Simp.while_command, #[ga, measurea, invarianta, ba] =>
     -- TODO: Handle measure and invariant
-    return ([.loop (← translateExpr bindings ga) (← translateMeasure bindings measurea) (← translateInvariant bindings invarianta) { ss := (← translateBlock bindings ba).map LoopOrStmt.toStmt}], bindings)
+    return ([.loop (← translateExpr bindings ga) (← translateMeasure bindings measurea) (← translateInvariant bindings invarianta) { ss := ← translateBlock bindings ba }], bindings)
   | q`C_Simp.return, #[_tpa, ea] =>
     -- Return statements are assignments to the global `return` variable
     -- TODO: I don't think this works if we have functions with different return types

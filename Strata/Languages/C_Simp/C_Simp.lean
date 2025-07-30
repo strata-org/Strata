@@ -51,8 +51,6 @@ instance : Imperative.HasVarsImp Expression Command where
   modifiedVars := Imperative.Cmd.modifiedVars
 
 -- Our statement language is `DL/Imp` with `DL/Lambda` as the expression language
--- abbrev Statement := Loopy.LoopOrStmt
--- abbrev Command := Imperative.Cmd C_Simp.Expression
 
 -- A program is a list of functions. We start by defining functions
 
