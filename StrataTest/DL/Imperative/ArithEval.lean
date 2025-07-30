@@ -78,11 +78,10 @@ def eval (s : State) (e : Expr) : Expr :=
   | .Eq e1 e2 =>
     match (eval s e1), (eval s e2) with
     | .Num n1, .Num n2 =>
-      -- Zero is false; any non-zero number is true, but we choose 1 as the
-      -- canonical true here.
-      .Num (if n1 == n2 then 1 else 0)
+      (if n1 == n2 then .Bool true else .Bool false)
     | e1', e2' => .Eq e1' e2'
   | .Num n => .Num n
+  | .Bool b => .Bool b
   | .Var v ty => match s.env.find? v with | none => .Var v ty | some (_, e) => e
 
 def updateError (s : State) (e : EvalError PureExpr) : State :=
@@ -116,10 +115,8 @@ def genFreeVar (s : State) (x : String) (ty : Ty) : Expr × State :=
 
 def denoteBool (e : Expr) : Option Bool :=
   match e with
-  | .Num n =>
-    -- Non-zero numbers denote true; zero is false.
-    some (not (n == 0))
-  | .Var _ _ | .Plus _ _ | .Mul _ _ | .Eq _ _ => none
+  | .Bool b => some b
+  | .Var _ _ | .Plus _ _ | .Mul _ _ | .Eq _ _ | .Num _ => none
 
 def getPathConditions (s : State) : PathConditions PureExpr :=
   s.pathConditions
@@ -188,7 +185,7 @@ Obligation x_value_eq proved via evaluation!
 info: Commands:
 init (x : Num) := 0
 x := 100
-assert [x_value_eq] 1
+assert [x_value_eq] true
 
 State:
 error: none

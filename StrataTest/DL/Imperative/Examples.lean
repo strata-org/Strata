@@ -73,7 +73,9 @@ def testProgram3 : Environment :=
 #strata
 program ArithPrograms;
   var x : num;
-  assert [double_x_lemma]: (2 * x == x + x);
+  var b : bool;
+  b := (2 * x == x + x);
+  assert [double_x_lemma]: (b);
 #end
 
 /--

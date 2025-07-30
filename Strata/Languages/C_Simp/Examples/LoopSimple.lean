@@ -166,7 +166,7 @@ Proof Obligation:
 (((~Int.Div ((~Int.Mul $__n0) ((~Int.Sub $__n0) #1))) #2) == $__sum4)
 
 Wrote problem to vcs/entry_invariant.smt2.
-Wrote problem to vcs/assert measure_pos.smt2.
+Wrote problem to vcs/assert_measure_pos.smt2.
 Wrote problem to vcs/measure_decreases.smt2.
 Wrote problem to vcs/measure_imp_not_guard.smt2.
 Wrote problem to vcs/arbitrary_iter_maintain_invariant.smt2.

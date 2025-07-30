@@ -17,6 +17,7 @@
 import Strata.Languages.Boogie.DDMTransform.Parse
 import Strata.Languages.Boogie.DDMTransform.Translate
 import Strata.Languages.Boogie.SMTEncoder
+import Strata.DL.Imperative.SMTUtils
 import Strata.DL.SMT.CexParser
 
 ---------------------------------------------------------------------
@@ -216,7 +217,7 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (verbose : Bool) 
             IO.toEIO
               (fun e => f!"{e}")
               (dischargeObligation
-                (ProofObligation.getVars obligation) smtsolver (obligation.label ++ ".smt2")
+                (ProofObligation.getVars obligation) smtsolver (Imperative.smt2_filename obligation.label)
                 terms ctx)
         match ans with
         | .ok (result, estate) =>
