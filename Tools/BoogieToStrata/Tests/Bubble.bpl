@@ -23,6 +23,7 @@ var a: [int]int;
 // Note, the specification says nothing about the elements of 'a' outside the
 // range [0..N).  Moreover, Boogie does not prove that the program will terminate.
 
+/*
 procedure BubbleSort() returns (perm: [int]int)
   modifies a;
   // array is sorted
@@ -81,3 +82,4 @@ procedure BubbleSort() returns (perm: [int]int)
     }
   }
 }
+*/

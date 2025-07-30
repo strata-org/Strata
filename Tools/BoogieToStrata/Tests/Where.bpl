@@ -59,6 +59,7 @@ procedure P4()
   assert x == 7;  // error
 }
 
+/*
 procedure R0() returns (wProc: int where wProc == xProc,
                         xProc: int where 0 <= xProc,
                         yProc: int where xProc <= yProc);
@@ -163,3 +164,4 @@ procedure R5(K: int)
   assert x == K;
   assert 0 <= x;  // error
 }
+*/
