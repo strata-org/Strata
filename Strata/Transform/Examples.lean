@@ -221,8 +221,8 @@ def NondetTest1 : Stmt Expression (Cmd Expression) :=
 
 def NondetTest1Ans : NondetStmt Expression (Cmd Expression) :=
   .choice
-    (.seq (.cmd (.assert "true_cond" Boogie.true)) (.seq (.cmd $ .havoc "x") (.assume "skip" Imperative.HasBool.tt)))
-    (.seq (.cmd (.assert "false_cond" Boogie.false)) (.seq (.cmd $ .havoc "y") (.assume "skip" Imperative.HasBool.tt)))
+    (.seq (.cmd (.assume "true_cond" Boogie.true)) (.seq (.cmd $ .havoc "x") (.assume "skip" Imperative.HasBool.tt)))
+    (.seq (.cmd (.assume "false_cond" Boogie.false)) (.seq (.cmd $ .havoc "y") (.assume "skip" Imperative.HasBool.tt)))
 
 
 -- #eval toString $ Std.format (StmtToNondetStmt NondetTest1)
