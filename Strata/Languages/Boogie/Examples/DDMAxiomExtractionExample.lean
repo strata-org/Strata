@@ -94,7 +94,247 @@ def extractAxiomsWithFreeTypeVars (env: Environment) (typeArgs: List String): (L
   let axioms := axiomsDecls.map extractExpr
   axioms.map (fun a => replaceTypesByFTV a typeArgs)
 
+/--
+info: type k;
+type v;
+axiom [updateSelect]:forall(((m):(Map v k)),((kk):(k))),((vv):(v))::((m)[kk:=vv])[kk]==vv;
+axiom [updatePreserves]:forall((((m):(Map v k)),((okk):(k))),((kk):(k))),((vv):(v))::((m)[kk:=vv])[okk]==(m)[okk];
+-/
+#guard_msgs in
 #eval IO.println exampleEnv.format.render
+
+/--
+info: #[{ name := { dialect := "Boogie", name := "command_typedecl" },
+    args := ((Array.mkEmpty 2).push (Arg.ident "k")).push (Arg.option none) },
+  { name := { dialect := "Boogie", name := "command_typedecl" },
+    args := ((Array.mkEmpty 2).push (Arg.ident "v")).push (Arg.option none) },
+  { name := { dialect := "Boogie", name := "command_axiom" },
+    args :=
+      ((Array.mkEmpty 2).push
+            (Arg.option
+              (some
+                (Arg.op
+                  { name := { dialect := "Boogie", name := "label" },
+                    args := (Array.mkEmpty 1).push (Arg.ident "updateSelect") })))).push
+        (Arg.expr
+          (((Expr.fn { dialect := "Boogie", name := "forall" }).app
+                (Arg.op
+                  { name := { dialect := "Boogie", name := "declPush" },
+                    args :=
+                      ((Array.mkEmpty 2).push
+                            (Arg.op
+                              { name := { dialect := "Boogie", name := "declPush" },
+                                args :=
+                                  ((Array.mkEmpty 2).push
+                                        (Arg.op
+                                          { name := { dialect := "Boogie", name := "declAtom" },
+                                            args :=
+                                              (Array.mkEmpty 1).push
+                                                (Arg.op
+                                                  { name := { dialect := "Boogie", name := "bind_mk" },
+                                                    args :=
+                                                      (((Array.mkEmpty 3).push (Arg.ident "m")).push
+                                                            (Arg.option none)).push
+                                                        (Arg.type
+                                                          (TypeExpr.ident { dialect := "Boogie", name := "Map" }
+                                                            (((Array.mkEmpty 2).push
+                                                                  (TypeExpr.fvar 1 (Array.mkEmpty 0))).push
+                                                              (TypeExpr.fvar 0 (Array.mkEmpty 0))))) }) })).push
+                                    (Arg.op
+                                      { name := { dialect := "Boogie", name := "bind_mk" },
+                                        args :=
+                                          (((Array.mkEmpty 3).push (Arg.ident "kk")).push (Arg.option none)).push
+                                            (Arg.type (TypeExpr.fvar 0 (Array.mkEmpty 0))) }) })).push
+                        (Arg.op
+                          { name := { dialect := "Boogie", name := "bind_mk" },
+                            args :=
+                              (((Array.mkEmpty 3).push (Arg.ident "vv")).push (Arg.option none)).push
+                                (Arg.type (TypeExpr.fvar 1 (Array.mkEmpty 0))) }) })).app
+            (Arg.expr
+              ((((Expr.fn { dialect := "Boogie", name := "equal" }).app
+                        (Arg.type (TypeExpr.fvar 1 (Array.mkEmpty 0)))).app
+                    (Arg.expr
+                      (((((Expr.fn { dialect := "Boogie", name := "map_get" }).app
+                                    (Arg.type (TypeExpr.fvar 0 (Array.mkEmpty 0)))).app
+                                (Arg.type (TypeExpr.fvar 1 (Array.mkEmpty 0)))).app
+                            (Arg.expr
+                              ((((((Expr.fn { dialect := "Boogie", name := "map_set" }).app
+                                                (Arg.type (TypeExpr.fvar 0 (Array.mkEmpty 0)))).app
+                                            (Arg.type (TypeExpr.fvar 1 (Array.mkEmpty 0)))).app
+                                        (Arg.expr (Expr.bvar 2))).app
+                                    (Arg.expr (Expr.bvar 1))).app
+                                (Arg.expr (Expr.bvar 0))))).app
+                        (Arg.expr (Expr.bvar 1))))).app
+                (Arg.expr (Expr.bvar 0)))))) },
+  { name := { dialect := "Boogie", name := "command_axiom" },
+    args :=
+      ((Array.mkEmpty 2).push
+            (Arg.option
+              (some
+                (Arg.op
+                  { name := { dialect := "Boogie", name := "label" },
+                    args := (Array.mkEmpty 1).push (Arg.ident "updatePreserves") })))).push
+        (Arg.expr
+          (((Expr.fn { dialect := "Boogie", name := "forall" }).app
+                (Arg.op
+                  { name := { dialect := "Boogie", name := "declPush" },
+                    args :=
+                      ((Array.mkEmpty 2).push
+                            (Arg.op
+                              { name := { dialect := "Boogie", name := "declPush" },
+                                args :=
+                                  ((Array.mkEmpty 2).push
+                                        (Arg.op
+                                          { name := { dialect := "Boogie", name := "declPush" },
+                                            args :=
+                                              ((Array.mkEmpty 2).push
+                                                    (Arg.op
+                                                      { name := { dialect := "Boogie", name := "declAtom" },
+                                                        args :=
+                                                          (Array.mkEmpty 1).push
+                                                            (Arg.op
+                                                              { name := { dialect := "Boogie", name := "bind_mk" },
+                                                                args :=
+                                                                  (((Array.mkEmpty 3).push (Arg.ident "m")).push
+                                                                        (Arg.option none)).push
+                                                                    (Arg.type
+                                                                      (TypeExpr.ident
+                                                                        { dialect := "Boogie", name := "Map" }
+                                                                        (((Array.mkEmpty 2).push
+                                                                              (TypeExpr.fvar 1 (Array.mkEmpty 0))).push
+                                                                          (TypeExpr.fvar 0
+                                                                            (Array.mkEmpty 0))))) }) })).push
+                                                (Arg.op
+                                                  { name := { dialect := "Boogie", name := "bind_mk" },
+                                                    args :=
+                                                      (((Array.mkEmpty 3).push (Arg.ident "okk")).push
+                                                            (Arg.option none)).push
+                                                        (Arg.type (TypeExpr.fvar 0 (Array.mkEmpty 0))) }) })).push
+                                    (Arg.op
+                                      { name := { dialect := "Boogie", name := "bind_mk" },
+                                        args :=
+                                          (((Array.mkEmpty 3).push (Arg.ident "kk")).push (Arg.option none)).push
+                                            (Arg.type (TypeExpr.fvar 0 (Array.mkEmpty 0))) }) })).push
+                        (Arg.op
+                          { name := { dialect := "Boogie", name := "bind_mk" },
+                            args :=
+                              (((Array.mkEmpty 3).push (Arg.ident "vv")).push (Arg.option none)).push
+                                (Arg.type (TypeExpr.fvar 1 (Array.mkEmpty 0))) }) })).app
+            (Arg.expr
+              ((((Expr.fn { dialect := "Boogie", name := "equal" }).app
+                        (Arg.type (TypeExpr.fvar 1 (Array.mkEmpty 0)))).app
+                    (Arg.expr
+                      (((((Expr.fn { dialect := "Boogie", name := "map_get" }).app
+                                    (Arg.type (TypeExpr.fvar 0 (Array.mkEmpty 0)))).app
+                                (Arg.type (TypeExpr.fvar 1 (Array.mkEmpty 0)))).app
+                            (Arg.expr
+                              ((((((Expr.fn { dialect := "Boogie", name := "map_set" }).app
+                                                (Arg.type (TypeExpr.fvar 0 (Array.mkEmpty 0)))).app
+                                            (Arg.type (TypeExpr.fvar 1 (Array.mkEmpty 0)))).app
+                                        (Arg.expr (Expr.bvar 3))).app
+                                    (Arg.expr (Expr.bvar 1))).app
+                                (Arg.expr (Expr.bvar 0))))).app
+                        (Arg.expr (Expr.bvar 2))))).app
+                (Arg.expr
+                  (((((Expr.fn { dialect := "Boogie", name := "map_get" }).app
+                                (Arg.type (TypeExpr.fvar 0 (Array.mkEmpty 0)))).app
+                            (Arg.type (TypeExpr.fvar 1 (Array.mkEmpty 0)))).app
+                        (Arg.expr (Expr.bvar 3))).app
+                    (Arg.expr (Expr.bvar 2)))))))) }]
+-/
+#guard_msgs in
 #eval exampleEnv.commands
+
+/--
+info: [Lambda.LExpr.quant
+   (Lambda.QuantifierKind.all)
+   (some (Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]))
+   (Lambda.LExpr.quant
+     (Lambda.QuantifierKind.all)
+     (some (Lambda.LMonoTy.ftvar "k"))
+     (Lambda.LExpr.quant
+       (Lambda.QuantifierKind.all)
+       (some (Lambda.LMonoTy.ftvar "v"))
+       (Lambda.LExpr.eq
+         (Lambda.LExpr.app
+           (Lambda.LExpr.app
+             (Lambda.LExpr.op
+               u:select
+               (some (Lambda.LMonoTy.tcons
+                  "arrow"
+                  [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
+                   Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]])))
+             (Lambda.LExpr.app
+               (Lambda.LExpr.app
+                 (Lambda.LExpr.app
+                   (Lambda.LExpr.op
+                     u:update
+                     (some (Lambda.LMonoTy.tcons
+                        "arrow"
+                        [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
+                         Lambda.LMonoTy.tcons
+                           "arrow"
+                           [Lambda.LMonoTy.ftvar "k",
+                            Lambda.LMonoTy.tcons
+                              "arrow"
+                              [Lambda.LMonoTy.ftvar "v",
+                               Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]]]])))
+                   (Lambda.LExpr.bvar 2))
+                 (Lambda.LExpr.bvar 1))
+               (Lambda.LExpr.bvar 0)))
+           (Lambda.LExpr.bvar 1))
+         (Lambda.LExpr.bvar 0)))),
+ Lambda.LExpr.quant
+   (Lambda.QuantifierKind.all)
+   (some (Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]))
+   (Lambda.LExpr.quant
+     (Lambda.QuantifierKind.all)
+     (some (Lambda.LMonoTy.ftvar "k"))
+     (Lambda.LExpr.quant
+       (Lambda.QuantifierKind.all)
+       (some (Lambda.LMonoTy.ftvar "k"))
+       (Lambda.LExpr.quant
+         (Lambda.QuantifierKind.all)
+         (some (Lambda.LMonoTy.ftvar "v"))
+         (Lambda.LExpr.eq
+           (Lambda.LExpr.app
+             (Lambda.LExpr.app
+               (Lambda.LExpr.op
+                 u:select
+                 (some (Lambda.LMonoTy.tcons
+                    "arrow"
+                    [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
+                     Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]])))
+               (Lambda.LExpr.app
+                 (Lambda.LExpr.app
+                   (Lambda.LExpr.app
+                     (Lambda.LExpr.op
+                       u:update
+                       (some (Lambda.LMonoTy.tcons
+                          "arrow"
+                          [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
+                           Lambda.LMonoTy.tcons
+                             "arrow"
+                             [Lambda.LMonoTy.ftvar "k",
+                              Lambda.LMonoTy.tcons
+                                "arrow"
+                                [Lambda.LMonoTy.ftvar "v",
+                                 Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]]]])))
+                     (Lambda.LExpr.bvar 3))
+                   (Lambda.LExpr.bvar 1))
+                 (Lambda.LExpr.bvar 0)))
+             (Lambda.LExpr.bvar 2))
+           (Lambda.LExpr.app
+             (Lambda.LExpr.app
+               (Lambda.LExpr.op
+                 u:select
+                 (some (Lambda.LMonoTy.tcons
+                    "arrow"
+                    [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
+                     Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]])))
+               (Lambda.LExpr.bvar 3))
+             (Lambda.LExpr.bvar 2))))))]
+-/
+#guard_msgs in
 #eval
   extractAxiomsWithFreeTypeVars exampleEnv ["k", "v"]
