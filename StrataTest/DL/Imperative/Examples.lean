@@ -1,17 +1,7 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 import StrataTest.DL.Imperative.Verify
@@ -30,7 +20,12 @@ program ArithPrograms;
 #end
 
 /--
-info: Wrote problem to vcs/x_eq_1.smt2.
+info: Label: x_eq_1
+Assumptions: ⏎
+Obligation: ($__x0 : Num) = 1
+Metadata: ⏎
+
+Wrote problem to vcs/x_eq_1.smt2.
 
 
 Obligation x_eq_1: could not be proved!
@@ -58,11 +53,16 @@ program ArithPrograms;
 #end
 
 /--
-info:
-Obligation x_eq_y proved via evaluation!
+info: Label: x_eq_y
+Assumptions: ⏎
+Obligation: true
+Metadata: ⏎
 
+Wrote problem to vcs/x_eq_y.smt2.
 ---
 info:
+Obligation: x_eq_y
+Result: verified
 -/
 #guard_msgs in
 #eval Strata.ArithPrograms.verify "cvc5" testProgram2
@@ -79,7 +79,12 @@ program ArithPrograms;
 #end
 
 /--
-info: Wrote problem to vcs/double_x_lemma.smt2.
+info: Label: double_x_lemma
+Assumptions: ⏎
+Obligation: 2 × (init_x_0 : Num) = (init_x_0 : Num) + (init_x_0 : Num)
+Metadata: ⏎
+
+Wrote problem to vcs/double_x_lemma.smt2.
 ---
 info:
 Obligation: double_x_lemma

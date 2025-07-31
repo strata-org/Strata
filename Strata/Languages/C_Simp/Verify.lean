@@ -1,17 +1,7 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 import Strata.Languages.C_Simp.C_Simp
@@ -133,9 +123,10 @@ def to_boogie(program : C_Simp.Program) : Boogie.Program :=
 def C_Simp.get_program (env: Environment) : C_Simp.Program :=
   (Strata.C_Simp.TransM.run (Strata.C_Simp.translateProgram (env.commands))).fst
 
-def C_Simp.verify (smtsolver : String) (env : Environment) :
+def C_Simp.verify (smtsolver : String) (env : Environment) (options : Options := Options.default):
   IO Boogie.VCResults := do
   let program := C_Simp.get_program env
-  EIO.toIO (fun f => IO.Error.userError (toString f)) (Boogie.verify smtsolver (to_boogie program) false)
+  EIO.toIO (fun f => IO.Error.userError (toString f))
+    (Boogie.verify smtsolver (to_boogie program) options)
 
 end Strata

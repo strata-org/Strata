@@ -1,17 +1,7 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 import Strata.Languages.Boogie.Verifier
@@ -46,10 +36,12 @@ procedure main() returns () {
 info: [Strata.Boogie] Type checking succeeded.
 
 
-Obligation concrete_string_test proved via evaluation!
-
-
 VCs:
+Label: concrete_string_test
+Assumptions:
+Proof Obligation:
+#true
+
 Label: s1_s2_len_sum_eq_s3_len
 Assumptions:
 (s1_len, ((~Str.Length init_s1_0) == #3))
@@ -57,9 +49,13 @@ Assumptions:
 Proof Obligation:
 (((~Int.Add (~Str.Length init_s1_0)) (~Str.Length init_s2_1)) == (~Str.Length init_s3_2))
 
+Wrote problem to vcs/concrete_string_test.smt2.
 Wrote problem to vcs/s1_s2_len_sum_eq_s3_len.smt2.
 ---
 info:
+Obligation: concrete_string_test
+Result: verified
+
 Obligation: s1_s2_len_sum_eq_s3_len
 Result: verified
 -/
