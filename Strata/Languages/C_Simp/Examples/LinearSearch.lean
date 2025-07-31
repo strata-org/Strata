@@ -76,7 +76,7 @@ preconditions: (pre, #true)
 postconditions: (post, #true)
 body: init (idx : int) := init_idx
 idx := #0
-transformed loop block : {first_iter_asserts : {assert [entry_invariant] #true
+if ((~Int.Lt idx) (~Array.Len arr)) then {first_iter_asserts : {assert [entry_invariant] #true
   assert [assert measure_pos] ((~Int.Ge ((~Int.Sub (~Array.Len arr)) idx)) #0)}
  arbitrary iter facts : {loop havoc : {havoc return
    havoc idx}
@@ -94,6 +94,7 @@ transformed loop block : {first_iter_asserts : {assert [entry_invariant] #true
   havoc idx}
  assume [not_guard] (~Bool.Not ((~Int.Lt idx) (~Array.Len arr)))
  assume [invariant] #true}
+else{}
 return := #false
 -/
 #guard_msgs in

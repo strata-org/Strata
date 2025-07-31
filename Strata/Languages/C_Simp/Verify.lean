@@ -96,7 +96,7 @@ def loop_elimination_statement(s : C_Simp.Statement) : Boogie.Statement :=
       let not_guard : Boogie.Statement := .assume "not_guard" (.app (.op "Bool.Not" none) (translate_expr guard)) {}
       let invariant : Boogie.Statement := .assume "invariant" (translate_expr invariant) {}
 
-      .block "transformed loop block" {ss := [first_iter_facts, arbitrary_iter_facts, havocd, not_guard, invariant]} {}
+      .ite (translate_expr guard) {ss := [first_iter_facts, arbitrary_iter_facts, havocd, not_guard, invariant]} {ss := []} {}
     | _, _ => panic! "Loop elimination require measure and invariant"
   | _ => translate_stmt s
 
