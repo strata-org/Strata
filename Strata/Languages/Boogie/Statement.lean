@@ -1,17 +1,7 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 
@@ -116,6 +106,9 @@ def Statement.eraseTypes (s : Statement) : Statement :=
     let thenb' := { ss := Statements.eraseTypes thenb.ss }
     let elseb' := { ss := Statements.eraseTypes elseb.ss }
     .ite cond thenb' elseb' md
+  | .loop guard measure invariant body md =>
+    let body' := { ss := Statements.eraseTypes body.ss }
+    .loop guard measure invariant body' md
   | .goto l md => .goto l md
   termination_by (sizeOf s)
   decreasing_by
@@ -192,6 +185,8 @@ def Statement.modifiedVarsTrans
   | .block _ b _ => Statements.modifiedVarsTrans π b.ss
   | .ite _ tb eb _ =>
     Statements.modifiedVarsTrans π tb.ss ++ Statements.modifiedVarsTrans π eb.ss
+  | .loop _ _ _ b _ =>
+    Statements.modifiedVarsTrans π b.ss
   termination_by (Stmt.sizeOf s)
   decreasing_by
   all_goals simp_wf
@@ -232,6 +227,8 @@ def Statement.getVarsTrans
   | .block _ b _ => Statements.getVarsTrans π b.ss
   | .ite _ tb eb _ =>
     Statements.getVarsTrans π tb.ss ++ Statements.getVarsTrans π eb.ss
+  | .loop _ _ _ b _ =>
+    Statements.getVarsTrans π b.ss
   termination_by (Stmt.sizeOf s)
   decreasing_by
   all_goals simp_wf
@@ -278,6 +275,7 @@ def Statement.touchedVarsTrans
   | .goto _ _ => []
   | .block _ b _ => Statements.touchedVarsTrans π b.ss
   | .ite _ tb eb _ => Statements.touchedVarsTrans π tb.ss ++ Statements.touchedVarsTrans π eb.ss
+  | .loop _ _ _ b _ => Statements.touchedVarsTrans π b.ss
   termination_by (Stmt.sizeOf s)
   decreasing_by
   all_goals simp_wf

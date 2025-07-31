@@ -1,16 +1,37 @@
-copyright_header = """/-
+old_copyright_header = """/-
+  Copyright Strata Contributors
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+    https://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+-/"""
+
+new_copyright_header = """/-
   Copyright Strata Contributors
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/"""
 
 
-def file_starts_with_header(file_name: str) -> bool:
+def update_header(file_name: str) -> bool:
     with open(file_name, "r") as f:
         contents = f.read()
-    return contents.startswith(copyright_header)
+    if not contents.startswith(old_copyright_header):
+        return False
+    with open(file_name, "w") as f:
+        new_contents = new_copyright_header + contents[len(old_copyright_header):]
+        f.write(new_contents)
+    return True
 
-import os
+
 import sys
 from pathlib import Path
 
@@ -18,6 +39,8 @@ from pathlib import Path
 def check_all_lean_files(directory_path: str) -> bool:
     """
     Recursively check all .lean files in the given directory for copyright headers.
+    For each .lean file that starts with the old_copyright_header, replace this
+    with the new_copyright_header.
     
     Args:
         directory_path: Path to the directory to check
@@ -48,13 +71,14 @@ def check_all_lean_files(directory_path: str) -> bool:
     
     for lean_file in lean_files:
         try:
-            if not file_starts_with_header(str(lean_file)):
+            if not update_header(str(lean_file)):
                 files_without_header.append(lean_file)
         except Exception as e:
             print(f"Error reading file '{lean_file}': {e}")
             files_without_header.append(lean_file)
     
     if files_without_header:
+        print("Not all files' headers were updated")
         print(f"\nFound {len(files_without_header)} files without proper copyright header:")
         for file_path in files_without_header:
             print(f"  - {file_path}")

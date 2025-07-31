@@ -1,17 +1,7 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 import Strata.Languages.Boogie.DDMTransform.Parse
@@ -190,6 +180,7 @@ partial def translateLMonoTy (bindings : TransBindings) (arg : Arg) :
   let .type tp := arg
     | TransM.error s!"translateLMonoTy expected type {repr arg}"
   match tp with
+  | .ident q`Boogie.bv1 #[] => pure <| .bitvec 1
   | .ident q`Boogie.bv8 #[] => pure <| .bitvec 8
   | .ident q`Boogie.bv16 #[] => pure <| .bitvec 16
   | .ident q`Boogie.bv32 #[] => pure <| .bitvec 32
@@ -401,6 +392,14 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Boogie.Expr
   | .some .real, q`Boogie.mul_expr => return (.op "Real.Mul"      none)
   | .some .real, q`Boogie.div_expr => return (.op "Real.Div"      none)
   | .some .real, q`Boogie.neg_expr => return (.op "Real.Neg"      none)
+  | .some .bv1, q`Boogie.le       => return (.op "Bv1.Le"       none)
+  | .some .bv1, q`Boogie.lt       => return (.op "Bv1.Lt"       none)
+  | .some .bv1, q`Boogie.ge       => return (.op "Bv1.Ge"       none)
+  | .some .bv1, q`Boogie.gt       => return (.op "Bv1.Gt"       none)
+  | .some .bv1, q`Boogie.add_expr => return (.op "Bv1.Add"      none)
+  | .some .bv1, q`Boogie.sub_expr => return (.op "Bv1.Sub"      none)
+  | .some .bv1, q`Boogie.mul_expr => return (.op "Bv1.Mul"      none)
+  | .some .bv1, q`Boogie.neg_expr => return (.op "Bv1.Neg"      none)
   | .some .bv8, q`Boogie.le       => return (.op "Bv8.Le"       none)
   | .some .bv8, q`Boogie.lt       => return (.op "Bv8.Lt"       none)
   | .some .bv8, q`Boogie.ge       => return (.op "Bv8.Ge"       none)
@@ -471,6 +470,9 @@ partial def translateExpr (bindings : TransBindings) (arg : Arg) :
   | .fn q`Boogie.natToInt, [xa] =>
     let n ← translateNat xa
     return .const (toString n) Lambda.LMonoTy.int
+  | .fn q`Boogie.bv1Lit, [xa] =>
+    let n ← translateNat xa
+    return .const (toString n) Lambda.LMonoTy.bv1
   | .fn q`Boogie.bv8Lit, [xa] =>
     let n ← translateNat xa
     return .const (toString n) Lambda.LMonoTy.bv8

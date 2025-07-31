@@ -1,17 +1,7 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 
@@ -32,6 +22,7 @@ def KnownTypes : List LTy :=
    t[int],
    t[string],
    t[real],
+   t[bv1],
    t[bv8],
    t[bv16],
    t[bv32],
@@ -107,6 +98,42 @@ def Factory : @Factory BoogieIdent :=
       inputs := [("x", mty[int]), ("y", mty[int])],
       output := mty[bool],
       denote := some (binOpDenote Int Bool LExpr.denoteInt (fun x y => x >= y) mty[bool]) },
+
+    /- Bv1 Arithmetic Operations -/
+    { name := "Bv1.Add",
+      inputs := [("x", mty[bv1]), ("y", mty[bv1])],
+      output := mty[bv1],
+      denote := none },
+    { name := "Bv1.Sub",
+      inputs := [("x", mty[bv1]), ("y", mty[bv1])],
+      output := mty[bv1],
+      denote := none },
+    { name := "Bv1.Mul",
+      inputs := [("x", mty[bv1]), ("y", mty[bv1])],
+      output := mty[bv1],
+      denote := none },
+    { name := "Bv1.Neg",
+      inputs := [("x", mty[bv1])],
+      output := mty[bv1],
+      denote := none },
+
+    /- Bv1 Comparison Operations -/
+    { name := "Bv1.Lt",
+      inputs := [("x", mty[bv1]), ("y", mty[bv1])],
+      output := mty[bool],
+      denote := none },
+    { name := "Bv1.Le",
+      inputs := [("x", mty[bv1]), ("y", mty[bv1])],
+      output := mty[bool],
+      denote := none },
+    { name := "Bv1.Gt",
+      inputs := [("x", mty[bv1]), ("y", mty[bv1])],
+      output := mty[bool],
+      denote := none },
+    { name := "Bv1.Ge",
+      inputs := [("x", mty[bv1]), ("y", mty[bv1])],
+      output := mty[bool],
+      denote := none },
 
     /- Bv8 Arithmetic Operations -/
     { name := "Bv8.Add",

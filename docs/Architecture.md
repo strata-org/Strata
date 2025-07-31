@@ -42,18 +42,6 @@ The `Imperative` dialect ([`Strata.DL.Imperative`](../Strata/DL/Imperative/)) is
 * deterministic structured statements (if and while statements with explicit conditions), 
 * non-deterministic structured statements (choice and repetition, with conditions encoded using assumptions), 
 
-### Loopy
-
-The `Loopy` dialect ([`Strata.DL.Imperative.Loopy`](../Strata/DL/Imperative/Loopy.lean)) extends the `Imperative` dialect with non-nested loops. It introduces introduces `LoopOrStmt`:
-
-```
-inductive LoopOrStmt : Type where
-  | loop (guard: DefaultPureExpr.Expr) (body: Block DefaultPureExpr Command) (measure: Option DefaultPureExpr.Expr) (invariant: Option DefaultPureExpr.Expr)
-  | stmt (s : Stmt DefaultPureExpr Command)
-```
-
-Both the measure and the invariant are currently optional to allow you to implement automatic measure/invariant generation.
-
 ### Boogie
 
 The Boogie dialect ([`Strata.Languages.Boogie`](../Strata/Languages/Boogie/)) is intended to roughly mirror the capabilities of the [Boogie Intermediate Verification Language](https://github.com/boogie-org/boogie). As its foundation, it uses the `Imperative` dialect parameterized by the `Lambda` dialect. It specializes these dialects in several ways:
@@ -76,7 +64,7 @@ The `Imperative` dialect also includes a verification condition generator (VCG) 
 
 ### CSimp
 
-The CSimp dialect ([`Strata.Languages.C_Simp`](../Strata//Languages/C_Simp/) is a vaguely C-like language intended to show how to model common programming language constructs in Strata. There are many examples in `C_Simp/Examples`. CSimp builds on the `Loopy` dialect parameterized by the `Lambda` dialect.
+The CSimp dialect ([`Strata.Languages.C_Simp`](../Strata//Languages/C_Simp/) is a vaguely C-like language intended to show how to model common programming language constructs in Strata. There are many examples in `C_Simp/Examples`. CSimp builds on the `Imperative` dialect parameterized by the `Lambda` dialect.
 
 `C_Simp/Verify.lean` demonstrates verification via transformation to Boogie. A loop elimination pass is first run to transform loops into the appropriate `assume` and `assert` commands, and then Boogie’s VCG, described above, is used to verify the program.
 
