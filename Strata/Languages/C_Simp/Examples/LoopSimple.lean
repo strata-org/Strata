@@ -12,7 +12,7 @@ def LoopSimpleEnv :=
 program C_Simp;
 
 procedure loopSimple (n: int) -> int
-  @pre true
+  @pre (n >= #0)
   @post true
 {
   var sum : int;
@@ -34,7 +34,7 @@ procedure loopSimple (n: int) -> int
 #end
 
 /--
-info: procedureloopSimple(n:int)->int@pretrue@posttrue({
+info: procedureloopSimple(n:int)->int@pre(n)>=(#(0))@posttrue({
   varsum:int;
   vari:int;
   (sum):=#(0);
@@ -53,7 +53,7 @@ info: procedureloopSimple(n:int)->int@pretrue@posttrue({
 
 /--
 info: function loopSimple {
-  pre: #true
+  pre: ((~Int.Ge n) #0)
   post: #true
   body:
 init (sum : int) := init_sum
@@ -72,15 +72,14 @@ return := sum
 /--
 info: (procedure loopSimple :  ((n : int)) → ((return : int)))
 modifies: []
-preconditions: (pre, #true)
+preconditions: (pre, ((~Int.Ge n) #0))
 postconditions: (post, #true)
 body: init (sum : int) := init_sum
 init (i : int) := init_i
 sum := #0
 i := #0
-transformed loop block : {if ((~Int.Lt i) n) then {assert [entry_invariant] ((~Bool.And ((~Int.Le i) n)) (((~Int.Div ((~Int.Mul i) ((~Int.Sub i) #1))) #2) == sum))
+if ((~Int.Lt i) n) then {first_iter_asserts : {assert [entry_invariant] ((~Bool.And ((~Int.Le i) n)) (((~Int.Div ((~Int.Mul i) ((~Int.Sub i) #1))) #2) == sum))
   assert [assert measure_pos] ((~Int.Ge ((~Int.Sub n) i)) #0)}
- else{}
  arbitrary iter facts : {loop havoc : {havoc sum
    havoc i}
   arbitrary_iter_assumes : {assume [assume_guard] ((~Int.Lt i) n)
@@ -96,6 +95,7 @@ transformed loop block : {if ((~Int.Lt i) n) then {assert [entry_invariant] ((~B
   havoc i}
  assume [not_guard] (~Bool.Not ((~Int.Lt i) n))
  assume [invariant] ((~Bool.And ((~Int.Le i) n)) (((~Int.Div ((~Int.Mul i) ((~Int.Sub i) #1))) #2) == sum))}
+else{}
 assert [sum_assert] (((~Int.Div ((~Int.Mul n) ((~Int.Sub n) #1))) #2) == sum)
 return := sum
 -/
@@ -110,47 +110,52 @@ VCs:
 Label: entry_invariant
 Assumptions:
 (<label_ite_cond_true: ((~Int.Lt i) n)>, ((~Int.Lt #0) $__n0))
+(pre, ((~Int.Ge $__n0) #0))
 Proof Obligation:
 ((~Bool.And ((~Int.Le #0) $__n0)) #true)
 
 Label: assert measure_pos
 Assumptions:
 (<label_ite_cond_true: ((~Int.Lt i) n)>, ((~Int.Lt #0) $__n0))
+(pre, ((~Int.Ge $__n0) #0))
 Proof Obligation:
 ((~Int.Ge ((~Int.Sub $__n0) #0)) #0)
 
 Label: measure_decreases
 Assumptions:
-(<label_ite_cond_true: ((~Int.Lt i) n)>, (if ((~Int.Lt #0) $__n0) then ((~Int.Lt #0) $__n0) else #true))
-(<label_ite_cond_false: !((~Int.Lt i) n)>, (if (if ((~Int.Lt #0) $__n0) then #false else #true) then (if ((~Int.Lt #0) $__n0) then #false else #true) else #true)) (assume_guard, ((~Int.Lt $__i3) $__n0)) (assume_invariant, ((~Bool.And ((~Int.Le $__i3) $__n0)) (((~Int.Div ((~Int.Mul $__i3) ((~Int.Sub $__i3) #1))) #2) == $__sum2))) (assume_measure_pos, ((~Int.Ge ((~Int.Sub $__n0) $__i3)) #0))
+(<label_ite_cond_true: ((~Int.Lt i) n)>, ((~Int.Lt #0) $__n0))
+(assume_guard, ((~Int.Lt $__i3) $__n0)) (assume_invariant, ((~Bool.And ((~Int.Le $__i3) $__n0)) (((~Int.Div ((~Int.Mul $__i3) ((~Int.Sub $__i3) #1))) #2) == $__sum2))) (assume_measure_pos, ((~Int.Ge ((~Int.Sub $__n0) $__i3)) #0))
+(pre, ((~Int.Ge $__n0) #0))
 Proof Obligation:
 ((~Int.Lt ((~Int.Sub $__n0) ((~Int.Add $__i3) #1))) ((~Int.Sub $__n0) $__i3))
 
 Label: measure_imp_not_guard
 Assumptions:
-(<label_ite_cond_true: ((~Int.Lt i) n)>, (if ((~Int.Lt #0) $__n0) then ((~Int.Lt #0) $__n0) else #true))
-(<label_ite_cond_false: !((~Int.Lt i) n)>, (if (if ((~Int.Lt #0) $__n0) then #false else #true) then (if ((~Int.Lt #0) $__n0) then #false else #true) else #true)) (assume_guard, ((~Int.Lt $__i3) $__n0)) (assume_invariant, ((~Bool.And ((~Int.Le $__i3) $__n0)) (((~Int.Div ((~Int.Mul $__i3) ((~Int.Sub $__i3) #1))) #2) == $__sum2))) (assume_measure_pos, ((~Int.Ge ((~Int.Sub $__n0) $__i3)) #0))
+(<label_ite_cond_true: ((~Int.Lt i) n)>, ((~Int.Lt #0) $__n0))
+(assume_guard, ((~Int.Lt $__i3) $__n0)) (assume_invariant, ((~Bool.And ((~Int.Le $__i3) $__n0)) (((~Int.Div ((~Int.Mul $__i3) ((~Int.Sub $__i3) #1))) #2) == $__sum2))) (assume_measure_pos, ((~Int.Ge ((~Int.Sub $__n0) $__i3)) #0))
+(pre, ((~Int.Ge $__n0) #0))
 Proof Obligation:
 (if ((~Int.Le ((~Int.Sub $__n0) ((~Int.Add $__i3) #1))) #0) then (~Bool.Not ((~Int.Lt ((~Int.Add $__i3) #1)) $__n0)) else #true)
 
 Label: arbitrary_iter_maintain_invariant
 Assumptions:
-(<label_ite_cond_true: ((~Int.Lt i) n)>, (if ((~Int.Lt #0) $__n0) then ((~Int.Lt #0) $__n0) else #true))
-(<label_ite_cond_false: !((~Int.Lt i) n)>, (if (if ((~Int.Lt #0) $__n0) then #false else #true) then (if ((~Int.Lt #0) $__n0) then #false else #true) else #true)) (assume_guard, ((~Int.Lt $__i3) $__n0)) (assume_invariant, ((~Bool.And ((~Int.Le $__i3) $__n0)) (((~Int.Div ((~Int.Mul $__i3) ((~Int.Sub $__i3) #1))) #2) == $__sum2))) (assume_measure_pos, ((~Int.Ge ((~Int.Sub $__n0) $__i3)) #0))
+(<label_ite_cond_true: ((~Int.Lt i) n)>, ((~Int.Lt #0) $__n0))
+(assume_guard, ((~Int.Lt $__i3) $__n0)) (assume_invariant, ((~Bool.And ((~Int.Le $__i3) $__n0)) (((~Int.Div ((~Int.Mul $__i3) ((~Int.Sub $__i3) #1))) #2) == $__sum2))) (assume_measure_pos, ((~Int.Ge ((~Int.Sub $__n0) $__i3)) #0))
+(pre, ((~Int.Ge $__n0) #0))
 Proof Obligation:
 ((~Bool.And ((~Int.Le ((~Int.Add $__i3) #1)) $__n0)) (((~Int.Div ((~Int.Mul ((~Int.Add $__i3) #1)) ((~Int.Sub ((~Int.Add $__i3) #1)) #1))) #2) == ((~Int.Add $__sum2) $__i3)))
 
 Label: sum_assert
 Assumptions:
-(<label_ite_cond_true: ((~Int.Lt i) n)>, (if ((~Int.Lt #0) $__n0) then ((~Int.Lt #0) $__n0) else #true))
-(<label_ite_cond_false: !((~Int.Lt i) n)>, (if (if ((~Int.Lt #0) $__n0) then #false else #true) then (if ((~Int.Lt #0) $__n0) then #false else #true) else #true)) (assume_guard, ((~Int.Lt $__i3) $__n0)) (assume_invariant, ((~Bool.And ((~Int.Le $__i3) $__n0)) (((~Int.Div ((~Int.Mul $__i3) ((~Int.Sub $__i3) #1))) #2) == $__sum2))) (assume_measure_pos, ((~Int.Ge ((~Int.Sub $__n0) $__i3)) #0)) (not_guard, (~Bool.Not ((~Int.Lt $__i5) $__n0))) (invariant, ((~Bool.And ((~Int.Le $__i5) $__n0)) (((~Int.Div ((~Int.Mul $__i5) ((~Int.Sub $__i5) #1))) #2) == $__sum4)))
+(pre, ((~Int.Ge $__n0) #0))
+(<label_ite_cond_true: ((~Int.Lt i) n)>, (if ((~Int.Lt #0) $__n0) then ((~Int.Lt #0) $__n0) else #true)) (assume_guard, (if ((~Int.Lt #0) $__n0) then ((~Int.Lt $__i3) $__n0) else #true)) (assume_invariant, (if ((~Int.Lt #0) $__n0) then ((~Bool.And ((~Int.Le $__i3) $__n0)) (((~Int.Div ((~Int.Mul $__i3) ((~Int.Sub $__i3) #1))) #2) == $__sum2)) else #true)) (assume_measure_pos, (if ((~Int.Lt #0) $__n0) then ((~Int.Ge ((~Int.Sub $__n0) $__i3)) #0) else #true)) (not_guard, (if ((~Int.Lt #0) $__n0) then (~Bool.Not ((~Int.Lt $__i5) $__n0)) else #true)) (invariant, (if ((~Int.Lt #0) $__n0) then ((~Bool.And ((~Int.Le $__i5) $__n0)) (((~Int.Div ((~Int.Mul $__i5) ((~Int.Sub $__i5) #1))) #2) == $__sum4)) else #true)) (<label_ite_cond_false: !((~Int.Lt i) n)>, (if (if ((~Int.Lt #0) $__n0) then #false else #true) then (if ((~Int.Lt #0) $__n0) then #false else #true) else #true))
 Proof Obligation:
-(((~Int.Div ((~Int.Mul $__n0) ((~Int.Sub $__n0) #1))) #2) == $__sum4)
+(((~Int.Div ((~Int.Mul $__n0) ((~Int.Sub $__n0) #1))) #2) == (if ((~Int.Lt #0) $__n0) then $__sum4 else #0))
 
 Label: post
 Assumptions:
-(<label_ite_cond_true: ((~Int.Lt i) n)>, (if ((~Int.Lt #0) $__n0) then ((~Int.Lt #0) $__n0) else #true))
-(<label_ite_cond_false: !((~Int.Lt i) n)>, (if (if ((~Int.Lt #0) $__n0) then #false else #true) then (if ((~Int.Lt #0) $__n0) then #false else #true) else #true)) (assume_guard, ((~Int.Lt $__i3) $__n0)) (assume_invariant, ((~Bool.And ((~Int.Le $__i3) $__n0)) (((~Int.Div ((~Int.Mul $__i3) ((~Int.Sub $__i3) #1))) #2) == $__sum2))) (assume_measure_pos, ((~Int.Ge ((~Int.Sub $__n0) $__i3)) #0)) (not_guard, (~Bool.Not ((~Int.Lt $__i5) $__n0))) (invariant, ((~Bool.And ((~Int.Le $__i5) $__n0)) (((~Int.Div ((~Int.Mul $__i5) ((~Int.Sub $__i5) #1))) #2) == $__sum4)))
+(pre, ((~Int.Ge $__n0) #0))
+(<label_ite_cond_true: ((~Int.Lt i) n)>, (if ((~Int.Lt #0) $__n0) then ((~Int.Lt #0) $__n0) else #true)) (assume_guard, (if ((~Int.Lt #0) $__n0) then ((~Int.Lt $__i3) $__n0) else #true)) (assume_invariant, (if ((~Int.Lt #0) $__n0) then ((~Bool.And ((~Int.Le $__i3) $__n0)) (((~Int.Div ((~Int.Mul $__i3) ((~Int.Sub $__i3) #1))) #2) == $__sum2)) else #true)) (assume_measure_pos, (if ((~Int.Lt #0) $__n0) then ((~Int.Ge ((~Int.Sub $__n0) $__i3)) #0) else #true)) (not_guard, (if ((~Int.Lt #0) $__n0) then (~Bool.Not ((~Int.Lt $__i5) $__n0)) else #true)) (invariant, (if ((~Int.Lt #0) $__n0) then ((~Bool.And ((~Int.Le $__i5) $__n0)) (((~Int.Div ((~Int.Mul $__i5) ((~Int.Sub $__i5) #1))) #2) == $__sum4)) else #true)) (<label_ite_cond_false: !((~Int.Lt i) n)>, (if (if ((~Int.Lt #0) $__n0) then #false else #true) then (if ((~Int.Lt #0) $__n0) then #false else #true) else #true))
 Proof Obligation:
 #true
 
