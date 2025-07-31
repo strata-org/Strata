@@ -31,7 +31,7 @@ inductive NondetStmt (P : PureExpr) (Cmd : Type) : Type where
   | cmd      (cmd : Cmd)
   | seq      (s1 s2 : NondetStmt P Cmd)
   | choice   (s1 s2 : NondetStmt P Cmd)
-  | loop     (s : NondetStmt P Cmd) -- Uncomment once loops exist in Stmt
+  | loop     (s : NondetStmt P Cmd)
   deriving Inhabited
 
 abbrev NondetStmt.init {P : PureExpr} (name : P.Ident) (ty : P.Ty) (expr : P.Expr) (md : MetaData P := .empty) :=

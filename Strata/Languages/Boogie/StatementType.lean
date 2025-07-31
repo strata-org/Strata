@@ -110,16 +110,40 @@ def typeCheckAux (T : (TEnv BoogieIdent)) (P : Program) (op : Option Procedure) 
           .ok (s', T)
         | _ => .error f!"[{s}]: If's condition {cond} is not of type `bool`!"
 
-      | .loop guard m i b md => do
+      | .loop guard measure invariant body md => do
         let _ ← T.freeVarCheck guard f!"[{s}]"
         let (conda, T) ← LExprT.fromLExpr T guard
         let condty := conda.toLMonoTy
-        match condty with
-        | .tcons "bool" [] =>
-          let (tb, T) ← typeCheckAux T P op [(.block "$$_then" b #[])]
-          let s' := .loop conda.toLExpr m i ⟨tb⟩ md
+        let (mty, T) ← match measure with
+        | .some m => do
+          let _ ← T.freeVarCheck m f!"[{s}]"
+          let (ma, T) ← LExprT.fromLExpr T m
+          .ok ((some ma.toLMonoTy), T)
+        | _ => .ok (none, T)
+        let (ity, T) ← match invariant with
+        | .some i => do
+          let _ ← T.freeVarCheck i f!"[{s}]"
+          let (ia, T) ← LExprT.fromLExpr T i
+          .ok ((some ia.toLMonoTy), T)
+        | _ => .ok (none, T)
+        match (condty, mty, ity) with
+        | (.tcons "bool" [], none, none)
+        | (.tcons "bool" [], some (.tcons "int" []), none)
+        | (.tcons "bool" [], none, some (.tcons "bool" []))
+        | (.tcons "bool" [], some (.tcons "int" []), some (.tcons "bool" [])) =>
+          let (tb, T) ← typeCheckAux T P op [(.block "$$_loop_body" body #[])]
+          let s' := .loop conda.toLExpr measure invariant ⟨tb⟩ md
           .ok (s', T)
-        | _ => .error f!"[{s}]: Loop's guard {guard} is not of type `bool`!"
+        | _ =>
+          match condty with
+          | .tcons "bool" [] =>
+            match mty with
+            | none | .some (.tcons "int" []) =>
+              match ity with
+              | none | .some (.tcons "bool" []) => panic! "Internal error. condty, mty or ity must be unexpected."
+              | _ => .error f!"[{s}]: Loop's invariant {invariant} is not of type `bool`!"
+            | _ => .error f!"[{s}]: Loop's measure {measure} is not of type `int`!"
+          | _ =>  .error f!"[{s}]: Loop's guard {guard} is not of type `bool`!"
 
       | .goto label _ =>
         match op with
