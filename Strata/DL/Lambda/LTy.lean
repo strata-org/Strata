@@ -403,7 +403,7 @@ scoped syntax ident : tident
 scoped syntax tident (lmonoty)* : tcons
 scoped syntax tcons : lmonoty
 -- Special handling for function types.
-scoped syntax:60 lmonoty:60 "→" lmonoty:60 : lmonoty
+scoped syntax:65 lmonoty:66 "→" lmonoty:65 : lmonoty
 -- Special handling for bool and int types.
 declare_syntax_cat tprim
 scoped syntax "int" : tprim
@@ -454,6 +454,22 @@ elab "mty[" ty:lmonoty "]" : term => elabLMonoTy ty
 /-- info: LMonoTy.tcons "pair" [LMonoTy.tcons "int" [], LMonoTy.tcons "bool" []] : LMonoTy -/
 #guard_msgs in
 #check mty[pair int bool]
+
+/--
+info: LMonoTy.tcons "arrow"
+  [LMonoTy.tcons "Map" [LMonoTy.ftvar "k", LMonoTy.ftvar "v"],
+    LMonoTy.tcons "arrow" [LMonoTy.ftvar "k", LMonoTy.ftvar "v"]] : LMonoTy
+-/
+#guard_msgs in
+#check mty[(Map %k %v) → %k → %v]
+
+/--
+info: LMonoTy.tcons "arrow"
+  [LMonoTy.ftvar "a",
+    LMonoTy.tcons "arrow" [LMonoTy.ftvar "b", LMonoTy.tcons "arrow" [LMonoTy.ftvar "c", LMonoTy.ftvar "d"]]] : LMonoTy
+-/
+#guard_msgs in
+#check mty[%a → %b → %c → %d]
 
 declare_syntax_cat lty
 scoped syntax (lmonoty)* : lty
