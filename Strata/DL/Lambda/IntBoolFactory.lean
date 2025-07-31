@@ -14,17 +14,18 @@
   limitations under the License.
 -/
 
-
-
 import Strata.DL.Lambda.LState
+
+/-! ## A Minimal Factory with Support for Unbounded Integer and Boolean Operations
+
+See also `Strata.DL.Lambda.Factory`.
+-/
 
 ---------------------------------------------------------------------
 
 namespace Lambda
 open Std (ToFormat Format format)
 open LExpr LTy
-
-/-! ### Some Int and Bool Factory Functions. -/
 
 section IntBoolFactory
 

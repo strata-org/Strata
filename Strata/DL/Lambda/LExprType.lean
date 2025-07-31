@@ -14,8 +14,5 @@
   limitations under the License.
 -/
 
-
-
 import Strata.DL.Lambda.LExprTypeSpec
-import Strata.DL.Lambda.LExprTypeImpl
 import Strata.DL.Lambda.LExprT

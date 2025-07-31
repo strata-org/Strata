@@ -14,10 +14,15 @@
   limitations under the License.
 -/
 
-
-
 import Strata.DL.Lambda.LTy
 import Strata.DL.Util.List
+
+/-!
+## Type Substitution and Unification
+
+Implementation of type substitution and unification for Lambda. This is similar
+to Algorithm J in Hindley-Milner systems.
+-/
 
 ---------------------------------------------------------------------
 

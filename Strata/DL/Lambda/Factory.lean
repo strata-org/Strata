@@ -14,10 +14,22 @@
   limitations under the License.
 -/
 
-
-
 import Strata.DL.Lambda.LExprWF
 import Strata.DL.Lambda.LTy
+
+/-!
+## Lambda's Factory
+
+This module formalizes Lambda's _factory_, which is a mechanism to extend the
+type checker (see `Strata.DL.Lambda.LExprT`) and partial evaluator (see
+`Strata.DL.Lambda.LExprEval`) by providing a map from operations to their types
+and optionally, denotations. The factory allows adding type checking and
+evaluation support for new operations without modifying the implementation of
+either or any core ASTs.
+
+Also see `Strata.DL.Lambda.IntBoolFactory` for a concrete example of a factory.
+-/
+
 
 namespace Lambda
 
@@ -130,10 +142,10 @@ def LFunc.outputPolyType (f : (LFunc Identifier)) : LTy :=
 The type checker and partial evaluator for Lambda is parameterizable by
 a user-provided `Factory`.
 
-We don't have any "built-in" functions like `+`, `-`, etc. in `(LExpr Identifier)` -- lambdas
-are our only tool. `Factory` gives us a way to add support for concrete/symbolic
-evaluation and type checking for `FunFactory` functions without actually
-modifying any core logic or the ASTs.
+We don't have any "built-in" functions like `+`, `-`, etc. in `(LExpr
+Identifier)` -- lambdas are our only tool. `Factory` gives us a way to add
+support for concrete/symbolic evaluation and type checking for `FunFactory`
+functions without actually modifying any core logic or the ASTs.
 -/
 def Factory := Array (LFunc Identifier)
 

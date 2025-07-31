@@ -14,10 +14,13 @@
   limitations under the License.
 -/
 
-
-
 import Strata.DL.Lambda.Factory
 import Strata.DL.Lambda.Scopes
+
+/-! ## State for (Partial) Evaluation of Lambda Expressions
+
+See `Strata.DL.Lambda.LExprEval` for the partial evaluator.
+-/
 
 namespace Lambda
 
@@ -25,8 +28,6 @@ open Std (ToFormat Format format)
 
 variable {Identifier : Type} [DecidableEq Identifier] [ToFormat Identifier]
 ---------------------------------------------------------------------
-
-/-! ## State for (partial) evaluation of Lambda expressions. -/
 
 /-
 Configuration for symbolic execution, where we have `gen` for keeping track of

@@ -14,23 +14,21 @@
   limitations under the License.
 -/
 
-
-
 import Strata.DL.Util.Map
 import Lean.Elab.Term
 
----------------------------------------------------------------------
-
-namespace Lambda
-
-open Std (ToFormat Format format)
-
-/-! ## Types
+/-! ## Formalization of Mono- and Poly- Types in Lambda
 
 We implement a Hindley-Milner type system for expressions in Lambda, which means
 that we can infer the types of unannotated `LExpr`s. Note that at this time, we
 do not have `let`s in `LExpr`, so we do not tackle let-polymorphism yet.
 -/
+
+---------------------------------------------------------------------
+
+namespace Lambda
+open Std (ToFormat Format format)
+
 
 abbrev TyIdentifier := String
 

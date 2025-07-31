@@ -14,10 +14,13 @@
   limitations under the License.
 -/
 
-
-
 import Strata.DL.Lambda.LExprWF
 import Strata.DL.Lambda.LState
+
+/-! ## Partial evaluator for Lambda expressions
+
+See function `Lambda.LExpr.eval` for the implementation.
+-/
 
 ---------------------------------------------------------------------
 
@@ -27,8 +30,6 @@ open Std (ToFormat Format format)
 namespace LExpr
 
 variable {Identifier : Type} [DecidableEq Identifier] [ToFormat Identifier]
-
-/-! ## Partial evaluation of `LExpr`s. -/
 
 /--
 Check for boolean equality of two expressions `e1` and `e2` after erasing any
