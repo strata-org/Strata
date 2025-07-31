@@ -375,23 +375,113 @@ def Factory : @Factory BoogieIdent :=
      typeArgs := ["k", "v"],
      inputs := [("m", mapTy mty[%k] mty[%v]), ("i", mty[%k]), ("x", mty[%v])],
      output := mapTy mty[%k] mty[%v],
-     axioms := [
-      -- updateSelect
-      es[∀(Map %k %v):
-          (∀ (%k):
-            (∀ (%v):
-              (((~select : (Map %k %v) → %k → %v)
-                ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %2) %1) %0)) %1) == %0))],
-      -- update preserves
-      es[∀ (Map %k %v):
-          (∀ (%k):
-            (∀ (%k):
-              (∀ (%v):
-                  (((~select : (Map %k %v) → %k → %v)
-                    ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %3) %1) %0)) %2)
-                  ==
-                  ((((~select : (Map %k %v) → %k → %v) %3) %2)))))]
-     ]
+     axioms :=
+    -- TODO UNCOMMENT and replace when the Lambda elab is ready
+    --  [
+    --   -- updateSelect
+    --   es[∀(Map %k %v):
+    --       (∀ (%k):
+    --         (∀ (%v):
+    --           (((~select : (Map %k %v) → %k → %v)
+    --             ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %2) %1) %0)) %1) == %0))],
+    --   -- update preserves
+    --   es[∀ (Map %k %v):
+    --       (∀ (%k):
+    --         (∀ (%k):
+    --           (∀ (%v):
+    --               (((~select : (Map %k %v) → %k → %v)
+    --                 ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %3) %1) %0)) %2)
+    --               ==
+    --               ((((~select : (Map %k %v) → %k → %v) %3) %2)))))]
+    --  ]
+    [Lambda.LExpr.quant
+   (Lambda.QuantifierKind.all)
+   (some (Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]))
+   (Lambda.LExpr.quant
+     (Lambda.QuantifierKind.all)
+     (some (Lambda.LMonoTy.ftvar "k"))
+     (Lambda.LExpr.quant
+       (Lambda.QuantifierKind.all)
+       (some (Lambda.LMonoTy.ftvar "v"))
+       (Lambda.LExpr.eq
+         (Lambda.LExpr.app
+           (Lambda.LExpr.app
+             (Lambda.LExpr.op
+               "select"
+               (some (Lambda.LMonoTy.tcons
+                  "arrow"
+                  [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
+                   Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]])))
+             (Lambda.LExpr.app
+               (Lambda.LExpr.app
+                 (Lambda.LExpr.app
+                   (Lambda.LExpr.op
+                     "update"
+                     (some (Lambda.LMonoTy.tcons
+                        "arrow"
+                        [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
+                         Lambda.LMonoTy.tcons
+                           "arrow"
+                           [Lambda.LMonoTy.ftvar "k",
+                            Lambda.LMonoTy.tcons
+                              "arrow"
+                              [Lambda.LMonoTy.ftvar "v",
+                               Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]]]])))
+                   (Lambda.LExpr.bvar 2))
+                 (Lambda.LExpr.bvar 1))
+               (Lambda.LExpr.bvar 0)))
+           (Lambda.LExpr.bvar 1))
+         (Lambda.LExpr.bvar 0)))),
+ Lambda.LExpr.quant
+   (Lambda.QuantifierKind.all)
+   (some (Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]))
+   (Lambda.LExpr.quant
+     (Lambda.QuantifierKind.all)
+     (some (Lambda.LMonoTy.ftvar "k"))
+     (Lambda.LExpr.quant
+       (Lambda.QuantifierKind.all)
+       (some (Lambda.LMonoTy.ftvar "k"))
+       (Lambda.LExpr.quant
+         (Lambda.QuantifierKind.all)
+         (some (Lambda.LMonoTy.ftvar "v"))
+         (Lambda.LExpr.eq
+           (Lambda.LExpr.app
+             (Lambda.LExpr.app
+               (Lambda.LExpr.op
+                 "select"
+                 (some (Lambda.LMonoTy.tcons
+                    "arrow"
+                    [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
+                     Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]])))
+               (Lambda.LExpr.app
+                 (Lambda.LExpr.app
+                   (Lambda.LExpr.app
+                     (Lambda.LExpr.op
+                       "update"
+                       (some (Lambda.LMonoTy.tcons
+                          "arrow"
+                          [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
+                           Lambda.LMonoTy.tcons
+                             "arrow"
+                             [Lambda.LMonoTy.ftvar "k",
+                              Lambda.LMonoTy.tcons
+                                "arrow"
+                                [Lambda.LMonoTy.ftvar "v",
+                                 Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]]]])))
+                     (Lambda.LExpr.bvar 3))
+                   (Lambda.LExpr.bvar 1))
+                 (Lambda.LExpr.bvar 0)))
+             (Lambda.LExpr.bvar 2))
+           (Lambda.LExpr.app
+             (Lambda.LExpr.app
+               (Lambda.LExpr.op
+                 "select"
+                 (some (Lambda.LMonoTy.tcons
+                    "arrow"
+                    [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
+                     Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]])))
+               (Lambda.LExpr.bvar 3))
+             (Lambda.LExpr.bvar 2))))))]
    }]
 
 ---------------------------------------------------------------------
