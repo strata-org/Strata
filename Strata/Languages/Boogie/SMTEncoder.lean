@@ -1,17 +1,7 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 
@@ -262,6 +252,12 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
     | "Real.Le"      => .ok (Op.le,         .bool,   ctx)
     | "Real.Gt"      => .ok (Op.gt,         .bool,   ctx)
     | "Real.Ge"      => .ok (Op.ge,         .bool,   ctx)
+    | "Bv1.Neg"     => .ok (Op.bvneg,      .bitvec 1, ctx)
+    | "Bv1.Add"     => .ok (Op.bvadd,      .bitvec 1, ctx)
+    | "Bv1.Sub"     => .ok (Op.bvsub,      .bitvec 1, ctx)
+    | "Bv1.Mul"     => .ok (Op.bvmul,      .bitvec 1, ctx)
+    | "Bv1.Lt"      => .ok (Op.bvult,      .bool,   ctx)
+    | "Bv1.Le"      => .ok (Op.bvule,      .bool,   ctx)
     | "Bv8.Neg"     => .ok (Op.bvneg,      .bitvec 8, ctx)
     | "Bv8.Add"     => .ok (Op.bvadd,      .bitvec 8, ctx)
     | "Bv8.Sub"     => .ok (Op.bvsub,      .bitvec 8, ctx)

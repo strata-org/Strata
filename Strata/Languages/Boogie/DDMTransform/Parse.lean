@@ -1,17 +1,7 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 import Strata.DDM.Integration.Lean
@@ -35,6 +25,7 @@ type int;
 type string;
 type real;
 // TODO: make these parameterized
+type bv1;
 type bv8;
 type bv16;
 type bv32;
@@ -70,6 +61,7 @@ op monoDeclPush (dl : MonoDeclList, @[scope(dl)] b : MonoBind) : MonoDeclList =>
 fn not (b : bool) : bool => "!" b;
 
 fn natToInt (n : Num) : int => n;
+fn bv1Lit (n : Num) : bv1 => "bv{1}" "(" n ")";
 fn bv8Lit (n : Num) : bv8 => "bv{8}" "(" n ")";
 fn bv16Lit (n : Num) : bv16 => "bv{16}" "(" n ")";
 fn bv32Lit (n : Num) : bv32 => "bv{32}" "(" n ")";
