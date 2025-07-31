@@ -126,6 +126,7 @@ theorem EvalStmtDefMonotone
     cases Heval; next Heval =>
     apply EvalStmtsDefMonotone (ss:=b.ss) <;> try assumption
   case goto => cases Heval
+  case loop => cases Heval
   termination_by (Stmt.sizeOf s)
   decreasing_by all_goals simp [*] at * <;> omega
 

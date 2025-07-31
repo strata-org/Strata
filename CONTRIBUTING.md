@@ -12,14 +12,14 @@ facilitate this, we have several subsidiary goals.
 standard programming languages. In particular, we would like it to be
 easy to generate Strata code from front ends written in other languages.
 
-* **Lower barriers to contribution.** We would like contribution from a
+* **Lower barriers to contribution.** We would like contributions from a
 broad community of users, and don't want to insist that they write Lean
-code. And, if they write Lean code, we don't want it to need to use the
-most complex features of the language.
+code. And, if they do write Lean code, we don't want it to need to use the
+most complex features of the Lean language.
 
 * **Enable verification of production tools.** Ultimately, the code for
 Strata is a tool implementation rather than an academic formalization.
-Any verification we do is to convince ourselves that our tools are correct
+Any verification we do is to convince ourselves that our tools are correct.
 Therefore, the primary artifacts are the executable definitions, which
 should form the basis for a usable tool.
 
@@ -35,9 +35,10 @@ When writing programs, rather than proofs, it can be tempting to use
 system interaction, file I/O, concurrency, and similar functionality,
 this can be okay. However, because we aim for it to be possible to
 verify core functionality, we prefer that operations over programs or
-terms -- such as transformation, verification condition generation, or
-testing -- be total functions that can, at least in principle, be the
-subject of proof.
+terms -- such as transformations, verification condition generation, or
+testing -- be total functions and that this fact can, at least in
+principle, be proved. That a function is total is also usually a 
+prerequisite for any proofs that use the function in question.
 
 In some cases, however, it may be valuable to prove properties of code
 that may, in fact, not terminate. For this use case, we prefer the use
@@ -148,16 +149,15 @@ main purposes:
 
 ### Line Length
 
-Keep lines under 80 characters, never exceeding 100 characters.
+Strive to keep lines under 80 characters, never exceeding 100 characters.
 
 ### File Organization
 
 The file header should contain:
 * the copyright information,
-* a list of all authors and contributors to the file.
 
-All imports should be done immediately after this header. All files
-should have a module docstring (`/-!  ... -/`) immediately following
+All imports should be done immediately after this header. All public-facing
+files should have a module docstring (`/-!  ... -/`) immediately following
 the imports, like so:
 
 ```
@@ -173,7 +173,7 @@ In this file, we define... and prove...
 
 We recommend using `section`s or `namespace`s for code
 organization. Using a visual separator (e.g., an 80-character line
-formed by `-`) is also acceptable. The use of module docstring for
+formed by `-`) is also acceptable. The use of module docstrings for
 sectioning comments, with appropriate levels of headings, is strongly
 encouraged.
 
@@ -197,9 +197,9 @@ even if doing so causes them to become more verbose. Strata follows the
 closing the goal, it should always be converted to a `simp only [X, Y,
 Z]` call.
 
-* **External Dependencies**: Do not introduce any new external
-dependencies into the codebase -- be mindful of what you
-import. Exceptions are possible, but only when absolutely necessary.
+* **External Dependencies**: Do not introduce any unnecessary new external
+dependencies into the codebase -- be mindful of what you import.
+Exceptions are possible, but only when absolutely necessary.
 
 * **Documentation**: Add relevant documentation and comments to your
 code. Please refer to the [Syntactic Style
@@ -223,10 +223,12 @@ details like:
     - No changes must be requested.
     - All conversations must be resolved.
     - Approval from at least two Strata maintainers is required.
+    - Any changes to [code with an owner](.github/CODEOWNERS) requires approval
+      from at least one of the corresponding code owners.
 
 * **Not All PRs Get Merged**: We value every contribution. However, to
 enable code maintainability and quality, we will merge only those PRs
 that align with our priorities and goals.
 
-* **Work in Progress**: Strata is under development and things can
-change rapidly.
+* **Work in Progress**: Strata is under active development, and there may be breaking
+changes!

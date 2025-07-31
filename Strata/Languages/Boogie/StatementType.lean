@@ -110,6 +110,41 @@ def typeCheckAux (T : (TEnv BoogieIdent)) (P : Program) (op : Option Procedure) 
           .ok (s', T)
         | _ => .error f!"[{s}]: If's condition {cond} is not of type `bool`!"
 
+      | .loop guard measure invariant body md => do
+        let _ ← T.freeVarCheck guard f!"[{s}]"
+        let (conda, T) ← LExprT.fromLExpr T guard
+        let condty := conda.toLMonoTy
+        let (mty, T) ← match measure with
+        | .some m => do
+          let _ ← T.freeVarCheck m f!"[{s}]"
+          let (ma, T) ← LExprT.fromLExpr T m
+          .ok ((some ma.toLMonoTy), T)
+        | _ => .ok (none, T)
+        let (ity, T) ← match invariant with
+        | .some i => do
+          let _ ← T.freeVarCheck i f!"[{s}]"
+          let (ia, T) ← LExprT.fromLExpr T i
+          .ok ((some ia.toLMonoTy), T)
+        | _ => .ok (none, T)
+        match (condty, mty, ity) with
+        | (.tcons "bool" [], none, none)
+        | (.tcons "bool" [], some (.tcons "int" []), none)
+        | (.tcons "bool" [], none, some (.tcons "bool" []))
+        | (.tcons "bool" [], some (.tcons "int" []), some (.tcons "bool" [])) =>
+          let (tb, T) ← typeCheckAux T P op [(.block "$$_loop_body" body #[])]
+          let s' := .loop conda.toLExpr measure invariant ⟨tb⟩ md
+          .ok (s', T)
+        | _ =>
+          match condty with
+          | .tcons "bool" [] =>
+            match mty with
+            | none | .some (.tcons "int" []) =>
+              match ity with
+              | none | .some (.tcons "bool" []) => panic! "Internal error. condty, mty or ity must be unexpected."
+              | _ => .error f!"[{s}]: Loop's invariant {invariant} is not of type `bool`!"
+            | _ => .error f!"[{s}]: Loop's measure {measure} is not of type `int`!"
+          | _ =>  .error f!"[{s}]: Loop's guard {guard} is not of type `bool`!"
+
       | .goto label _ =>
         match op with
         | .some p =>
@@ -143,16 +178,24 @@ def Command.subst (S : Subst) (c : Command) : Command :=
   | .call lhs pname args md =>
     .call lhs pname (args.map (fun a => a.applySubst S)) md
 
+private def substOptionExpr (S : Subst) (oe : Option Expression.Expr) : Option Expression.Expr :=
+  match oe with
+  | some e => some (LExpr.applySubst e S)
+  | none => none
+
 /--
 Apply type substitution `S` to a statement.
 -/
 def Statement.subst (S : Subst) (s : Statement) : Statement :=
+
   match s with
   | .cmd cmd => .cmd (Command.subst S cmd)
   | .block label b md =>
     .block label ⟨go S b.ss⟩ md
   | .ite cond thenb elseb md =>
     .ite (cond.applySubst S) ⟨go S thenb.ss⟩ ⟨go S elseb.ss⟩ md
+  | .loop guard m i body md =>
+    .loop (guard.applySubst S) (substOptionExpr S m) (substOptionExpr S i) ⟨go S body.ss⟩ md
   | .goto _ _ => s
   termination_by (Stmt.sizeOf s)
   decreasing_by

@@ -123,7 +123,7 @@ instance : ToFormat TransBindings where
                 {Format.line}\
                 FreeVars: {b.freeVars}"
 
-instance : Inhabited (List Loopy.LoopOrStmt × TransBindings) where
+instance : Inhabited (List Statement × TransBindings) where
   default := ([], {})
 
 instance : Inhabited (C_Simp.Function × TransBindings) where
@@ -356,15 +356,10 @@ def translateBindings (bindings : TransBindings) (op : Arg) :
   | _ =>
     TransM.error s!"translateBindings expects a comma separated list: {repr op}"
 
-def LoopOrStmt.toStmt (s : Loopy.LoopOrStmt) : Stmt Loopy.DefaultPureExpr Loopy.Command :=
-  match s with
-  | .stmt s => s
-  | .loop _ _ _ _ => panic! "Tried to convert Loop to Stmt"
-
 
 mutual
 partial def translateStmt (bindings : TransBindings) (arg : Arg) :
-  TransM (List Loopy.LoopOrStmt × TransBindings) := do
+  TransM (List Statement × TransBindings) := do
   let .op op := arg
     | TransM.error s!"translateStmt expected op {repr arg}"
 
@@ -377,7 +372,7 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     let newBindings := { bindings with
                          boundVars := bbindings,
                          freeVars := bindings.freeVars.push id }
-    return ([.stmt (.cmd (.init id ty (initVarValue id)))], newBindings)
+    return ([(.cmd (.init id ty (initVarValue id)))], newBindings)
   | q`C_Simp.init_def, #[ida, tpa, ea] =>
     let id ← translateIdent ida
     let tp ← translateLMonoTy bindings tpa
@@ -387,36 +382,36 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     let newBindings := { bindings with
                          boundVars := bbindings,
                          freeVars := bindings.freeVars.push id }
-    return ([.stmt (.cmd (.init id ty val))], newBindings)
+    return ([(.cmd (.init id ty val))], newBindings)
   | q`C_Simp.assign, #[_tpa, ida, ea] =>
     let id ← translateIdent ida
     let val ← translateExpr bindings ea
-    return ([.stmt (.cmd (.set id val))], bindings)
+    return ([(.cmd (.set id val))], bindings)
   | q`C_Simp.assert, #[la, ca] =>
     let l ← translateIdent la
     let c ← translateExpr bindings ca
-    return ([.stmt (.cmd (.assert l c))], bindings)
+    return ([(.cmd (.assert l c))], bindings)
   | q`C_Simp.assume, #[la, ca] =>
     let l ← translateIdent la
     let c ← translateExpr bindings ca
-    return ([.stmt (.cmd (.assume l c))], bindings)
+    return ([(.cmd (.assume l c))], bindings)
   | q`C_Simp.if_command, #[ca, ta, fa] =>
     let c ← translateExpr bindings ca
-    let t := { ss := (← translateBlock bindings ta).map LoopOrStmt.toStmt }
-    let f := { ss := (← translateElse bindings fa).map LoopOrStmt.toStmt }
-    return ([.stmt (.ite c t f)], bindings)
+    let t := { ss := ← translateBlock bindings ta }
+    let f := { ss := ← translateElse bindings fa }
+    return ([(.ite c t f)], bindings)
   | q`C_Simp.while_command, #[ga, measurea, invarianta, ba] =>
     -- TODO: Handle measure and invariant
-    return ([.loop (← translateExpr bindings ga) { ss := (← translateBlock bindings ba).map LoopOrStmt.toStmt} (← translateMeasure bindings measurea) (← translateInvariant bindings invarianta)], bindings)
+    return ([.loop (← translateExpr bindings ga) (← translateMeasure bindings measurea) (← translateInvariant bindings invarianta) { ss := ← translateBlock bindings ba }], bindings)
   | q`C_Simp.return, #[_tpa, ea] =>
     -- Return statements are assignments to the global `return` variable
     -- TODO: I don't think this works if we have functions with different return types
     let val ← translateExpr bindings ea
-    return ([.stmt (.cmd (.set "return" val))], bindings)
+    return ([(.cmd (.set "return" val))], bindings)
   | name, args => TransM.error s!"Unexpected statement {name.fullName} with {args.size} arguments."
 
 partial def translateBlock (bindings : TransBindings) (arg : Arg) :
-  TransM (List Loopy.LoopOrStmt) := do
+  TransM (List Statement) := do
   let args ← checkOpArg arg q`C_Simp.block 1
   let .seq stmts := args[0]!
     | TransM.error s!"Invalid block {repr args[0]!}"
@@ -426,7 +421,7 @@ partial def translateBlock (bindings : TransBindings) (arg : Arg) :
   return a.toList
 
 partial def translateElse (bindings : TransBindings) (arg : Arg) :
-  TransM (List Loopy.LoopOrStmt) := do
+  TransM (List Statement) := do
   let .op op := arg
     | TransM.error s!"translateElse expected op {repr arg}"
   match op.name with

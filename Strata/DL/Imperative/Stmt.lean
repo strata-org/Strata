@@ -33,6 +33,8 @@ inductive Stmt (P : PureExpr) (Cmd : Type) : Type where
   | block    (label : String) (b : Block P Cmd) (md : MetaData P := .empty)
   /-- `ite` (if-then-else) statement provides structured control flow. -/
   | ite      (cond : P.Expr)  (thenb : Block P Cmd) (elseb : Block P Cmd) (md : MetaData P := .empty)
+  /-- `loop` Loop statement with optional measure (for termination) and invariant. -/
+  | loop     (guard : P.Expr) (measure : Option P.Expr) (invariant : Option P.Expr) (body : Block P Cmd) (md : MetaData P := .empty)
   /-- `goto` provides unstructured control flow. -/
   | goto     (label : String) (md : MetaData P := .empty)
   deriving Inhabited
@@ -59,6 +61,7 @@ def Stmt.sizeOf (s : Imperative.Stmt P C) : Nat :=
   | .cmd c => 1 + SizeOf.sizeOf c
   | .block l b _ => 1 + Stmts.sizeOf b.ss
   | .ite c t e _ => 3 + sizeOf c + Stmts.sizeOf t.ss + Stmts.sizeOf e.ss
+  | .loop g _ _ b _ => 3 + sizeOf g + Stmts.sizeOf b.ss
   | .goto l _ => 1 + l.length
   termination_by (sizeOf s)
   decreasing_by
@@ -66,6 +69,7 @@ def Stmt.sizeOf (s : Imperative.Stmt P C) : Nat :=
   cases b; simp; omega
   cases t; simp; omega
   cases e; simp; omega
+  cases b; simp; omega
 
 @[simp]
 def Stmts.sizeOf (ss : Imperative.Stmts P C) : Nat :=
@@ -122,6 +126,7 @@ def Stmt.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (s : Stmt P C) : List 
   | .cmd cmd => HasVarsPure.getVars cmd
   | .block _ b _ => Stmts.getVars b.ss
   | .ite _ tb eb _ => Stmts.getVars tb.ss ++ Stmts.getVars eb.ss
+  | .loop _ _ _ b _ => Stmts.getVars b.ss
   | .goto _ _  => []
   termination_by (Stmt.sizeOf s)
   decreasing_by
@@ -171,6 +176,7 @@ def Stmt.modifiedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   | .goto _ _ => []
   | .block _ b _ => Stmts.modifiedVars b.ss
   | .ite _ tb eb _ => Stmts.modifiedVars tb.ss ++ Stmts.modifiedVars eb.ss
+  | .loop _ _ _ b _ => Stmts.modifiedVars b.ss
   termination_by (Stmt.sizeOf s)
   decreasing_by
   all_goals simp_wf
@@ -234,6 +240,8 @@ partial def formatStmt (P : PureExpr) (s : Stmt P C)
                         Format.bracket "{" f!"{formatStmts P th.ss}" "}" ++
                         f!"{Format.line}else" ++
                         Format.bracket "{" f!"{formatStmts P el.ss}" "}"
+  | .loop guard measure invariant body md => f!"{md}while ({guard}) ({measure}) ({invariant}) " ++
+                        Format.bracket "{" f!"{formatStmts P body.ss}" "}"
   | .goto label md => f!"{md}goto {label}"
 
 partial def formatStmts (P : PureExpr) (ss : List (Stmt P C))
