@@ -113,6 +113,13 @@ procedure P() returns ()
 {
   assert [bv_add_ge]: x + y == y + x;
 };
+
+procedure Q(x: bv1) returns (r: bv1)
+spec {
+  ensures r == x - x;
+} {
+  r := x + x;
+};
 #end
 
 /-- info: true -/
@@ -131,6 +138,12 @@ preconditions: ⏎
 postconditions: ⏎
 body: assert [bv_add_ge] (((~Bv8.Add ~x) ~y) == ((~Bv8.Add ~y) ~x))
 
+(procedure Q :  ((x : bv1)) → ((r : bv1)))
+modifies: []
+preconditions: ⏎
+postconditions: (Q_ensures_0, (r == ((~Bv1.Sub x) x)))
+body: r := ((~Bv1.Add x) x)
+
 Errors: #[]
 -/
 #guard_msgs in
@@ -148,10 +161,20 @@ Assumptions:
 Proof Obligation:
 (((~Bv8.Add ~x) ~y) == ((~Bv8.Add ~y) ~x))
 
+Label: Q_ensures_0
+Assumptions:
+(bv_x_ge_1, ((~Bv8.Le #1) ~x))
+Proof Obligation:
+(((~Bv1.Add $__x0) $__x0) == ((~Bv1.Sub $__x0) $__x0))
+
 Wrote problem to vcs/bv_add_ge.smt2.
+Wrote problem to vcs/Q_ensures_0.smt2.
 ---
 info:
 Obligation: bv_add_ge
+Result: verified
+
+Obligation: Q_ensures_0
 Result: verified
 -/
 #guard_msgs in

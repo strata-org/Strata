@@ -64,10 +64,7 @@ info: function loopTrivial {
   body:
 init (i : int) := init_i
 i := #0
-while(((~Int.Lt i) n))
-(some ((~Int.Sub n) i))
-(some ((~Int.Le i) n))
-{i := ((~Int.Add i) #1)}
+while (((~Int.Lt i) n)) (some ((~Int.Sub n) i)) (some ((~Int.Le i) n)) {i := ((~Int.Add i) #1)}
 assert [i_eq_n] (i == n)
 return := i
 }

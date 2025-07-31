@@ -70,10 +70,7 @@ init (sum : int) := init_sum
 init (i : int) := init_i
 sum := #0
 i := #0
-while(((~Int.Lt i) n))
-(some ((~Int.Sub n) i))
-(some ((~Bool.And ((~Int.Le i) n)) (((~Int.Div ((~Int.Mul i) ((~Int.Sub i) #1))) #2) == sum)))
-{sum := ((~Int.Add sum) i)
+while (((~Int.Lt i) n)) (some ((~Int.Sub n) i)) (some ((~Bool.And ((~Int.Le i) n)) (((~Int.Div ((~Int.Mul i) ((~Int.Sub i) #1))) #2) == sum))) {sum := ((~Int.Add sum) i)
  i := ((~Int.Add i) #1)}
 assert [sum_assert] (((~Int.Div ((~Int.Mul n) ((~Int.Sub n) #1))) #2) == sum)
 return := sum
