@@ -19,47 +19,55 @@ import Strata.Languages.Boogie.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def advQuantEnv : Environment :=
+def assertionNames : Environment :=
 #strata
 program Boogie;
-axiom [mapAllValues0]: forall m: (Map int int), k: int :: m[k] == 0;
-procedure Update(mArg: Map int int, kArg: int) returns (res: int)
+procedure Test(x : int) returns ()
 spec {
-  ensures mArg[kArg] == 0;
+  requires x == 1;
 }
 {
-  assert [a]: mArg[kArg] == 0;
-  res := mArg[kArg];
+  assert x == 1;
 };
 #end
 
+-- Translation from DDM AST to Boogie/Strata AST
+
+/-- info: true -/
+#guard_msgs in
+-- No errors in translation.
+#eval TransM.run (translateProgram (assertionNames.commands)) |>.snd |>.isEmpty
+
+/--
+info: (procedure Test :  ((x : int)) → ())
+modifies: []
+preconditions: (Test_requires_0, (x == (#1 : int)))
+postconditions: ⏎
+body: assert [assert: (x == (#1 : int))] (x == (#1 : int))
+
+Errors: #[]
+-/
+#guard_msgs in
+#eval TransM.run (translateProgram (assertionNames.commands))
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
 
 
 VCs:
-Label: a
+Label: assert: (x == (#1 : int))
 Assumptions:
-(mapAllValues0, (∀ (∀ (((~select %1) %0) == #0))))
+(Test_requires_0, ($__x0 == #1))
 Proof Obligation:
-(((~select $__mArg0) $__kArg1) == #0)
+($__x0 == #1)
 
-Label: Update_ensures_0
-Assumptions:
-(mapAllValues0, (∀ (∀ (((~select %1) %0) == #0))))
-Proof Obligation:
-(((~select $__mArg0) $__kArg1) == #0)
-
-Wrote problem to vcs/a.smt2.
-Wrote problem to vcs/Update_ensures_0.smt2.
+Wrote problem to vcs/assert:_(x_eq_(#1_:_int)).smt2.
 ---
 info:
-Obligation: a
-Result: verified
-
-Obligation: Update_ensures_0
+Obligation: assert: (x == (#1 : int))
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" advQuantEnv
+#eval verify "z3" assertionNames
+
+---------------------------------------------------------------------

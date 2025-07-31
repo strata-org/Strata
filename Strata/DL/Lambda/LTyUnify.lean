@@ -18,7 +18,6 @@
 
 import Strata.DL.Lambda.LTy
 import Strata.DL.Util.List
-import Lean
 
 ---------------------------------------------------------------------
 

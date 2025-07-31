@@ -19,7 +19,6 @@
 import Strata.DL.Lambda.LTy
 import Strata.DL.Lambda.Identifiers
 import Strata.DL.Lambda.MetaData
-import Lean
 
 /-
 Formalization of Lambda Expressions

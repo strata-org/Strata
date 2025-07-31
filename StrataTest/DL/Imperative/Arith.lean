@@ -67,7 +67,7 @@ Obligation x_value_eq proved via evaluation!
 info: ok: Commands:
 init (x : Num) := 0
 x := 100
-assert [x_value_eq] 1
+assert [x_value_eq] true
 
 State:
 error: none

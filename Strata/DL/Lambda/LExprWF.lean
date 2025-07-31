@@ -17,7 +17,6 @@
 
 
 import Strata.DL.Lambda.LExpr
-import Lean
 
 /-
 Well-formedness of Lambda Expressions
