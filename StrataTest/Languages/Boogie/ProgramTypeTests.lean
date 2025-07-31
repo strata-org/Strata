@@ -39,7 +39,7 @@ def bad_prog : Program := { decls := [
 
 /-- info: error: Cannot unify differently named type constructors bool and int! -/
 #guard_msgs in
-#eval do let ans ← typeCheckAndPartialEval bad_prog
+#eval do let ans ← typeCheckAndPartialEval Options.default bad_prog
          return (format ans)
 
 def good_prog : Program := { decls := [
@@ -183,7 +183,7 @@ Proof Obligation:
 )
 -/
 #guard_msgs in
-#eval do let ans ← typeCheckAndPartialEval good_prog
+#eval do let ans ← typeCheckAndPartialEval Options.default good_prog
          return (format ans)
 
 ---------------------------------------------------------------------
@@ -217,7 +217,7 @@ info: error: [assert [q_check] (q == #1)] No free variables are allowed here!
 Free Variables: [q]
 -/
 #guard_msgs in
-#eval do let ans ← typeCheckAndPartialEval outOfScopeVarProg
+#eval do let ans ← typeCheckAndPartialEval Options.default outOfScopeVarProg
          return (format ans)
 
 ---------------------------------------------------------------------

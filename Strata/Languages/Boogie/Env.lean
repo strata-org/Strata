@@ -68,9 +68,9 @@ def ProofObligation.create
   if obligation.attr == .Free then
     dbg_trace f!"{Format.line}Obligation {label} is free!{Format.line}"
     none
-  else if obligation.expr.isTrue then
-    dbg_trace f!"{Format.line}Obligation {label} proved via evaluation!{Format.line}"
-    none
+  --else if obligation.expr.isTrue then
+  --  dbg_trace f!"{Format.line}Obligation {label} proved via evaluation!{Format.line}"
+  --  none
   else
     some (ProofObligation.mk label assumptions obligation.expr md)
 

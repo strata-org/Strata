@@ -72,9 +72,6 @@ open Strata.C_Simp in
 info: [Strata.Boogie] Type checking succeeded.
 
 
-Obligation post proved via evaluation!
-
-
 VCs:
 Label: test_assert
 Assumptions:
@@ -88,14 +85,25 @@ Assumptions:
 Proof Obligation:
 ((~Int.Gt ((~Int.Add $__x0) $__y1)) $__x0)
 
+Label: post
+Assumptions:
+(pre, ((~Int.Gt $__y1) #0))
+(<label_ite_cond_true: ((~Int.Gt z) #10)>, (if ((~Int.Gt ((~Int.Add $__x0) $__y1)) #10) then ((~Int.Gt ((~Int.Add $__x0) $__y1)) #10) else #true)) (<label_ite_cond_false: !((~Int.Gt z) #10)>, (if (if ((~Int.Gt ((~Int.Add $__x0) $__y1)) #10) then #false else #true) then (if ((~Int.Gt ((~Int.Add $__x0) $__y1)) #10) then #false else #true) else #true)) (test_assume, ((~Int.Gt (if ((~Int.Gt ((~Int.Add $__x0) $__y1)) #10) then ((~Int.Sub ((~Int.Add $__x0) $__y1)) #1) else ((~Int.Add ((~Int.Add $__x0) $__y1)) #1))) #0))
+Proof Obligation:
+#true
+
 Wrote problem to vcs/test_assert.smt2.
 Wrote problem to vcs/test_assert.smt2.
+Wrote problem to vcs/post.smt2.
 ---
 info:
 Obligation: test_assert
 Result: verified
 
 Obligation: test_assert
+Result: verified
+
+Obligation: post
 Result: verified
 -/
 #guard_msgs in

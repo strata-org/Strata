@@ -36,9 +36,6 @@ procedure ProcCaller () returns (x : int) {
 info: [Strata.Boogie] Type checking succeeded.
 
 
-Obligation g_lt_10 proved via evaluation!
-
-
 Obligation <Origin:Proc_Requires>g_eq_15 is free!
 
 
@@ -49,6 +46,12 @@ Assumptions:
 Proof Obligation:
 ((~Int.Gt $__g0) #10)
 
+Label: g_lt_10
+Assumptions:
+(g_eq_15, ($__g0 == #15))
+Proof Obligation:
+#true
+
 Label: g_eq_15_internal
 Assumptions:
 (<Origin:Proc_Ensures>g_lt_10, ((~Int.Lt $__g2) #10))
@@ -56,6 +59,7 @@ Proof Obligation:
 ($__g2 == #15)
 
 Wrote problem to vcs/g_gt_10_internal.smt2.
+Wrote problem to vcs/g_lt_10.smt2.
 Wrote problem to vcs/g_eq_15_internal.smt2.
 
 
@@ -63,9 +67,32 @@ Obligation g_eq_15_internal: could not be proved!
 
 Result: failed
 CEx: ($__g2, 0)
+
+Evaluated program:
+var (g : int) := init_g_0
+(procedure Proc :  () → ())
+modifies: [g]
+preconditions: (g_eq_15, ((g : int) == (#15 : int)) (Attribute: Boogie.Procedure.CheckAttr.Free))
+postconditions: (g_lt_10, (((~Int.Lt : (arrow int (arrow int bool))) (g : int)) (#10 : int)) (Attribute: Boogie.Procedure.CheckAttr.Free))
+body: assume [g_eq_15] ($__g0 == #15)
+assert [g_gt_10_internal] ((~Int.Gt $__g0) #10)
+g := ((~Int.Add $__g0) #1)
+#[<[g_lt_10]: (((~Int.Lt : (arrow int (arrow int bool))) (g : int)) (#10 : int))>,
+ <[g_lt_10]: FreePostCondition>] assert [g_lt_10] #true
+
+(procedure ProcCaller :  () → ((x : int)))
+modifies: []
+preconditions: ⏎
+postconditions: ⏎
+body: #[<var g: ($__g2 : int)>] call Proc([])
+assert [g_eq_15_internal] ($__g2 == #15)
+
 ---
 info:
 Obligation: g_gt_10_internal
+Result: verified
+
+Obligation: g_lt_10
 Result: verified
 
 Obligation: g_eq_15_internal

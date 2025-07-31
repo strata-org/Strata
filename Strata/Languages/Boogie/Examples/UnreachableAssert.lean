@@ -31,10 +31,14 @@ procedure R() returns ()
 info: [Strata.Boogie] Type checking succeeded.
 
 
-Obligation x_eq_y_internal proved via evaluation!
-
-
 VCs:
+Label: x_eq_y_internal
+Assumptions:
+(<label_ite_cond_true: (z == #false)>, (init_z_2 == #false))
+(z_false, (init_z_2 == #false))
+Proof Obligation:
+#true
+
 Label: unreachable
 Assumptions:
 (<label_ite_cond_false: !(z == #false)>, (if (init_z_2 == #false) then #false else #true))
@@ -49,10 +53,14 @@ Assumptions:
 Proof Obligation:
 (init_x_0 == (if (init_z_2 == #false) then init_x_0 else init_y_1))
 
+Wrote problem to vcs/x_eq_y_internal.smt2.
 Wrote problem to vcs/unreachable.smt2.
 Wrote problem to vcs/x_eq_y.smt2.
 ---
 info:
+Obligation: x_eq_y_internal
+Result: verified
+
 Obligation: unreachable
 Result: verified
 

@@ -75,6 +75,19 @@ Obligation real_add_ge_bad: could not be proved!
 
 Result: failed
 CEx: ⏎
+
+Evaluated program:
+func x :  () → real;
+func y :  () → real;
+axiom real_x_ge_1: (((~Real.Ge : (arrow real (arrow real bool))) (~x : real)) (#1.0 : real));
+axiom real_y_ge_2: (((~Real.Ge : (arrow real (arrow real bool))) (~y : real)) (#2.0 : real));
+(procedure P :  () → ())
+modifies: []
+preconditions: ⏎
+postconditions: ⏎
+body: assert [real_add_ge_good] ((~Real.Ge ((~Real.Add ~x) ~y)) #3.0)
+assert [real_add_ge_bad] ((~Real.Ge ((~Real.Add ~x) ~y)) #4.0)
+
 ---
 info:
 Obligation: real_add_ge_good

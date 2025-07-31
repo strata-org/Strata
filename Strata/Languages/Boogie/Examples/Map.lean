@@ -68,6 +68,17 @@ Obligation a_one_true: could not be proved!
 
 Result: failed
 CEx: ⏎
+
+Evaluated program:
+func a :  () → (Map int bool);
+(procedure P :  () → ())
+modifies: []
+preconditions: ⏎
+postconditions: ⏎
+body: assume [a_zero_true_assumption] (((~select ~a) #0) == #true)
+assert [a_zero_true] ((~select ~a) #0)
+assert [a_one_true] ((~select ~a) #1)
+
 ---
 info:
 Obligation: a_zero_true

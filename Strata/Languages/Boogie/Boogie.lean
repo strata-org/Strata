@@ -5,7 +5,7 @@
 -/
 
 
-
+import Strata.Languages.Boogie.Options
 import Strata.Languages.Boogie.ProgramEval
 import Strata.Languages.Boogie.ProgramType
 
@@ -34,22 +34,23 @@ namespace Boogie
    types.
 -/
 
-def typeCheckAndPartialEval (program : Program) :
+def typeCheckAndPartialEval (options : Options) (program : Program) :
   Except Std.Format (List (Program × Env)) := do
   let factory := Boogie.Factory
   let known_types := Boogie.KnownTypes
   let T := { Lambda.TEnv.default with functions := factory, knownTypes := known_types }
   let (program, _T) ← Program.typeCheck T program
   -- dbg_trace f!"[Strata.Boogie] Annotated program:\n{program}"
-  dbg_trace f!"[Strata.Boogie] Type checking succeeded.\n"
+  if options.verbose then dbg_trace f!"[Strata.Boogie] Type checking succeeded.\n"
   let σ ← (Lambda.LState.init).addFactory factory
   let E := { Env.init with exprEnv := σ,
                            program := program }
   let pEs := Program.eval E
-  dbg_trace f!"{Std.Format.line}VCs:"
-  for (_p, E) in pEs do
-    -- dbg_trace f!"Program: {p}"
-    dbg_trace f!"{ProofObligations.eraseTypes E.deferred}"
+  if options.verbose then do
+    dbg_trace f!"{Std.Format.line}VCs:"
+    for (_p, E) in pEs do
+      -- dbg_trace f!"Program: {p}"
+      dbg_trace f!"{ProofObligations.eraseTypes E.deferred}"
   return pEs
 
 instance : ToString (Program) where

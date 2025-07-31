@@ -95,11 +95,6 @@ return := i
 /--
 info: [Strata.Boogie] Type checking succeeded.
 
-[assume] pre satisfied via evaluation.
-
-
-Obligation post proved via evaluation!
-
 
 VCs:
 Label: entry_invariant
@@ -142,12 +137,20 @@ Assumptions:
 Proof Obligation:
 ($__i3 == $__n0)
 
+Label: post
+Assumptions:
+(<label_ite_cond_true: ((~Int.Lt i) n)>, (if ((~Int.Lt #0) $__n0) then ((~Int.Lt #0) $__n0) else #true))
+(<label_ite_cond_false: !((~Int.Lt i) n)>, (if (if ((~Int.Lt #0) $__n0) then #false else #true) then (if ((~Int.Lt #0) $__n0) then #false else #true) else #true)) (assume_guard, ((~Int.Lt $__i2) $__n0)) (assume_invariant, ((~Int.Le $__i2) $__n0)) (assume_measure_pos, ((~Int.Ge ((~Int.Sub $__n0) $__i2)) #0)) (not_guard, (~Bool.Not ((~Int.Lt $__i3) $__n0))) (invariant, ((~Int.Le $__i3) $__n0))
+Proof Obligation:
+#true
+
 Wrote problem to vcs/entry_invariant.smt2.
 Wrote problem to vcs/assert_measure_pos.smt2.
 Wrote problem to vcs/measure_decreases.smt2.
 Wrote problem to vcs/measure_imp_not_guard.smt2.
 Wrote problem to vcs/arbitrary_iter_maintain_invariant.smt2.
 Wrote problem to vcs/i_eq_n.smt2.
+Wrote problem to vcs/post.smt2.
 ---
 info:
 Obligation: entry_invariant
@@ -166,6 +169,9 @@ Obligation: arbitrary_iter_maintain_invariant
 Result: verified
 
 Obligation: i_eq_n
+Result: verified
+
+Obligation: post
 Result: verified
 -/
 #guard_msgs in

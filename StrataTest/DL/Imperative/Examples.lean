@@ -20,7 +20,12 @@ program ArithPrograms;
 #end
 
 /--
-info: Wrote problem to vcs/x_eq_1.smt2.
+info: Label: x_eq_1
+Assumptions: ⏎
+Obligation: ($__x0 : Num) = 1
+Metadata: ⏎
+
+Wrote problem to vcs/x_eq_1.smt2.
 
 
 Obligation x_eq_1: could not be proved!
@@ -48,11 +53,16 @@ program ArithPrograms;
 #end
 
 /--
-info:
-Obligation x_eq_y proved via evaluation!
+info: Label: x_eq_y
+Assumptions: ⏎
+Obligation: true
+Metadata: ⏎
 
+Wrote problem to vcs/x_eq_y.smt2.
 ---
 info:
+Obligation: x_eq_y
+Result: verified
 -/
 #guard_msgs in
 #eval Strata.ArithPrograms.verify "cvc5" testProgram2
@@ -69,7 +79,12 @@ program ArithPrograms;
 #end
 
 /--
-info: Wrote problem to vcs/double_x_lemma.smt2.
+info: Label: double_x_lemma
+Assumptions: ⏎
+Obligation: 2 × (init_x_0 : Num) = (init_x_0 : Num) + (init_x_0 : Num)
+Metadata: ⏎
+
+Wrote problem to vcs/double_x_lemma.smt2.
 ---
 info:
 Obligation: double_x_lemma

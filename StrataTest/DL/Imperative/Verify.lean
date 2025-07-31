@@ -35,6 +35,7 @@ def verify (smtsolver : String) (cmds : Commands) (verbose : Bool) :
   | .ok (cmds, S) =>
     let mut results := (#[] : Imperative.VCResults Arith.PureExpr)
     for obligation in S.deferred do
+      dbg_trace f!"{obligation}"
       let maybeTerms := Arith.ProofObligation.toSMTTerms S.env obligation
       match maybeTerms with
       | .error err =>

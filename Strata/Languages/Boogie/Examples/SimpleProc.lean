@@ -48,9 +48,6 @@ Errors: #[]
 info: [Strata.Boogie] Type checking succeeded.
 
 
-Obligation Test_ensures_2 proved via evaluation!
-
-
 VCs:
 Label: Test_ensures_0
 Assumptions:
@@ -62,14 +59,23 @@ Assumptions:
 Proof Obligation:
 ($__x0 == ((~Bool.Or $__x0) $__x0))
 
+Label: Test_ensures_2
+Assumptions:
+Proof Obligation:
+#true
+
 Wrote problem to vcs/Test_ensures_0.smt2.
 Wrote problem to vcs/Test_ensures_1.smt2.
+Wrote problem to vcs/Test_ensures_2.smt2.
 ---
 info:
 Obligation: Test_ensures_0
 Result: verified
 
 Obligation: Test_ensures_1
+Result: verified
+
+Obligation: Test_ensures_2
 Result: verified
 -/
 #guard_msgs in

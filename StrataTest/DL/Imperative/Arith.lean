@@ -50,10 +50,6 @@ private def testProgram2 : Commands :=
    .assert "x_value_eq" (.Eq (.Var "x" .none) (.Num 100))]
 
 /--
-info:
-Obligation x_value_eq proved via evaluation!
-
----
 info: ok: Commands:
 init (x : Num) := 0
 x := 100
@@ -61,7 +57,11 @@ assert [x_value_eq] true
 
 State:
 error: none
-deferred: #[]
+deferred: #[Label: x_value_eq
+ Assumptions: ⏎
+ Obligation: true
+ Metadata: ⏎
+ ]
 pathConditions: ⏎
 env: (x, (Num, 100))
 genNum: 0

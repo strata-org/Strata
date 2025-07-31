@@ -96,7 +96,7 @@ Result: failed
 CEx: ($__x0, 0)
 -/
 #guard_msgs in
-#eval verify "cvc5" quantEnv (verbose := true)
+#eval verify "cvc5" quantEnv Options.default
 
 /--
 info: [Strata.Boogie] Type checking succeeded.

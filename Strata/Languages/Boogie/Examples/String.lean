@@ -36,10 +36,12 @@ procedure main() returns () {
 info: [Strata.Boogie] Type checking succeeded.
 
 
-Obligation concrete_string_test proved via evaluation!
-
-
 VCs:
+Label: concrete_string_test
+Assumptions:
+Proof Obligation:
+#true
+
 Label: s1_s2_len_sum_eq_s3_len
 Assumptions:
 (s1_len, ((~Str.Length init_s1_0) == #3))
@@ -47,9 +49,13 @@ Assumptions:
 Proof Obligation:
 (((~Int.Add (~Str.Length init_s1_0)) (~Str.Length init_s2_1)) == (~Str.Length init_s3_2))
 
+Wrote problem to vcs/concrete_string_test.smt2.
 Wrote problem to vcs/s1_s2_len_sum_eq_s3_len.smt2.
 ---
 info:
+Obligation: concrete_string_test
+Result: verified
+
 Obligation: s1_s2_len_sum_eq_s3_len
 Result: verified
 -/

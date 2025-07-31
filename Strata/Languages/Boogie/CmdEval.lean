@@ -119,10 +119,6 @@ private def testProgram1 : Cmds Expression :=
    .assert "x_value_eq" eb[x == #10]]
 
 /--
-info:
-Obligation x_value_eq proved via evaluation!
-
----
 info: Commands:
 init (x : int) := #0
 x := #10
@@ -149,6 +145,10 @@ Path Conditions:
 
 
 Deferred Proof Obligations:
+Label: x_value_eq
+Assumptions:
+Proof Obligation:
+(#true : bool)
 -/
 #guard_msgs in
 #eval format $ Imperative.Cmds.eval Env.init testProgram1

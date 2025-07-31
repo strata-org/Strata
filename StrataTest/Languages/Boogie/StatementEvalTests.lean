@@ -15,10 +15,6 @@ open Std (ToFormat Format format)
 open Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.Syntax Boogie.Syntax
 
 /--
-info:
-Obligation x_eq_18 proved via evaluation!
-
----
 info: Error:
 none
 Subst Map:
@@ -39,6 +35,10 @@ Path Conditions:
 
 
 Deferred Proof Obligations:
+Label: x_eq_18
+Assumptions:
+Proof Obligation:
+(#true : bool)
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ [.init "x" t[int] eb[#0],
@@ -110,13 +110,6 @@ Deferred Proof Obligations:
        ] |>.snd |> format
 
 /--
-info:
-Obligation m_2_eq_20 proved via evaluation!
-
-
-Obligation m_1_eq_10 proved via evaluation!
-
----
 info: Error:
 none
 Subst Map:
@@ -143,6 +136,16 @@ Label: m_5_eq_50
 Assumptions:
 Proof Obligation:
 (((_minit : (arrow int int)) #5) == #50)
+
+Label: m_2_eq_20
+Assumptions:
+Proof Obligation:
+(#true : bool)
+
+Label: m_1_eq_10
+Assumptions:
+Proof Obligation:
+(#true : bool)
 -/
 #guard_msgs in
 #eval (evalOne (Env.init.pushScope [("minit", (mty[int → int], eb[(_minit : int → int)]))])
@@ -158,13 +161,6 @@ Proof Obligation:
                         ]) |>.snd |> format
 
 /--
-info:
-Obligation m_2_eq_20 proved via evaluation!
-
-
-Obligation m_1_eq_10 proved via evaluation!
-
----
 info: Error:
 none
 Subst Map:
@@ -190,6 +186,16 @@ Label: m_5_eq_50
 Assumptions:
 Proof Obligation:
 ((_minit #5) == #50)
+
+Label: m_2_eq_20
+Assumptions:
+Proof Obligation:
+(#true : bool)
+
+Label: m_1_eq_10
+Assumptions:
+Proof Obligation:
+(#true : bool)
 -/
 #guard_msgs in
 #eval (evalOne (Env.init.pushScope [("minit", (none, eb[_minit]))])
@@ -229,10 +235,6 @@ private def prog1 : Statements :=
  ]
 
 /--
-info:
-Obligation trivial proved via evaluation!
-
----
 info: Error:
 none
 Subst Map:
@@ -255,6 +257,13 @@ Path Conditions:
 [(z_false, (zinit == #false)) (<label_ite_cond_true: (z == #false)>, (if (zinit == #false) then (zinit == #false) else (#true : bool))) (<label_ite_cond_false: !(z == #false)>, (if (if (zinit == #false) then (#false : bool) else (#true : bool)) then (if (zinit == #false) then (#false : bool) else (#true : bool)) else (#true : bool)))]
 
 Deferred Proof Obligations:
+Label: trivial
+Assumptions:
+(<label_ite_cond_false: !(z == #false)>, (if (zinit == #false) then #false else #true))
+(z_false, (zinit == #false))
+Proof Obligation:
+#true
+
 Label: x_eq_y_label_0
 Assumptions:
 (z_false, (zinit == #false))

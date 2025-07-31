@@ -44,16 +44,18 @@ Errors: #[]
 /--
 info: [Strata.Boogie] Type checking succeeded.
 
-[assume] pre satisfied via evaluation.
-
-
-Obligation post proved via evaluation!
-
 
 VCs:
+Label: post
+Assumptions:
+Proof Obligation:
+#true
 
+Wrote problem to vcs/post.smt2.
 ---
 info:
+Obligation: post
+Result: verified
 -/
 #guard_msgs in
 #eval Strata.C_Simp.verify "cvc5" TrivialEnv

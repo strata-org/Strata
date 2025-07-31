@@ -58,6 +58,17 @@ Obligation x_eq_1: could not be proved!
 
 Result: failed
 CEx: ($__x0, 0)
+
+Evaluated program:
+(procedure S :  () → ())
+modifies: []
+preconditions: ⏎
+postconditions: ⏎
+body: init (x : int) := init_x_0
+x := #1
+#[<var x: ($__x0 : int)>] havoc x
+assert [x_eq_1] ($__x0 == #1)
+
 ---
 info:
 Obligation: x_eq_1

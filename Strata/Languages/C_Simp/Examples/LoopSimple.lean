@@ -105,11 +105,6 @@ return := sum
 /--
 info: [Strata.Boogie] Type checking succeeded.
 
-[assume] pre satisfied via evaluation.
-
-
-Obligation post proved via evaluation!
-
 
 VCs:
 Label: entry_invariant
@@ -152,12 +147,20 @@ Assumptions:
 Proof Obligation:
 (((~Int.Div ((~Int.Mul $__n0) ((~Int.Sub $__n0) #1))) #2) == $__sum4)
 
+Label: post
+Assumptions:
+(<label_ite_cond_true: ((~Int.Lt i) n)>, (if ((~Int.Lt #0) $__n0) then ((~Int.Lt #0) $__n0) else #true))
+(<label_ite_cond_false: !((~Int.Lt i) n)>, (if (if ((~Int.Lt #0) $__n0) then #false else #true) then (if ((~Int.Lt #0) $__n0) then #false else #true) else #true)) (assume_guard, ((~Int.Lt $__i3) $__n0)) (assume_invariant, ((~Bool.And ((~Int.Le $__i3) $__n0)) (((~Int.Div ((~Int.Mul $__i3) ((~Int.Sub $__i3) #1))) #2) == $__sum2))) (assume_measure_pos, ((~Int.Ge ((~Int.Sub $__n0) $__i3)) #0)) (not_guard, (~Bool.Not ((~Int.Lt $__i5) $__n0))) (invariant, ((~Bool.And ((~Int.Le $__i5) $__n0)) (((~Int.Div ((~Int.Mul $__i5) ((~Int.Sub $__i5) #1))) #2) == $__sum4)))
+Proof Obligation:
+#true
+
 Wrote problem to vcs/entry_invariant.smt2.
 Wrote problem to vcs/assert_measure_pos.smt2.
 Wrote problem to vcs/measure_decreases.smt2.
 Wrote problem to vcs/measure_imp_not_guard.smt2.
 Wrote problem to vcs/arbitrary_iter_maintain_invariant.smt2.
 Wrote problem to vcs/sum_assert.smt2.
+Wrote problem to vcs/post.smt2.
 ---
 info:
 Obligation: entry_invariant
@@ -176,6 +179,9 @@ Obligation: arbitrary_iter_maintain_invariant
 Result: verified
 
 Obligation: sum_assert
+Result: verified
+
+Obligation: post
 Result: verified
 -/
 #guard_msgs in

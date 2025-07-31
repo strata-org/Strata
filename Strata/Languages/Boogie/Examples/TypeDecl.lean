@@ -31,13 +31,17 @@ procedure P () returns () {
 info: [Strata.Boogie] Type checking succeeded.
 
 
-Obligation f_test proved via evaluation!
-
-
 VCs:
+Label: f_test
+Assumptions:
+Proof Obligation:
+#true
 
+Wrote problem to vcs/f_test.smt2.
 ---
 info:
+Obligation: f_test
+Result: verified
 -/
 #guard_msgs in
 #eval verify "cvc5" typeDeclEnv1
