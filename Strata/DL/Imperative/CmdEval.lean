@@ -68,8 +68,6 @@ def Cmd.eval [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P × S :=
       let c' := .assert label e md
       match EC.denoteBool e with
       | some true =>
-        -- dbg_trace f!"{Format.line}Obligation {label} proved via evaluation!{Format.line}"
-        -- (c', σ)
         (c', EC.deferObligation σ (ProofObligation.mk label assumptions e md))
       | some false =>
         if assumptions.isEmpty then
@@ -85,7 +83,6 @@ def Cmd.eval [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P × S :=
       let c' := .assume label e md
       match EC.denoteBool e with
       | some true =>
-        -- dbg_trace f!"[assume] {label} satisfied via evaluation.\n"
         (c', σ)
       | some false =>
         (c', EC.updateError σ (.AssumeFail label e))
