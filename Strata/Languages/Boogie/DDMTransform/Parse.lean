@@ -35,6 +35,7 @@ type int;
 type string;
 type real;
 // TODO: make these parameterized
+type bv1;
 type bv8;
 type bv16;
 type bv32;
@@ -70,6 +71,7 @@ op monoDeclPush (dl : MonoDeclList, @[scope(dl)] b : MonoBind) : MonoDeclList =>
 fn not (b : bool) : bool => "!" b;
 
 fn natToInt (n : Num) : int => n;
+fn bv1Lit (n : Num) : bv1 => "bv{1}" "(" n ")";
 fn bv8Lit (n : Num) : bv8 => "bv{8}" "(" n ")";
 fn bv16Lit (n : Num) : bv16 => "bv{16}" "(" n ")";
 fn bv32Lit (n : Num) : bv32 => "bv{32}" "(" n ")";

@@ -24,6 +24,14 @@ namespace Boogie
 open Std (ToFormat Format format)
 open Lambda
 
+/-!
+## Axioms
+
+Axioms are propositions assumed to be true throughout a Strata.Boogie program.
+They are passed on as assumptions to the SMT solver during VC generation. It's
+the responsibility of the user to ensure that they are consistent.
+-/
+
 structure Axiom where
   name : BoogieLabel
   e : LExpr BoogieIdent

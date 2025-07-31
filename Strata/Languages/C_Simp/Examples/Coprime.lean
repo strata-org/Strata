@@ -72,10 +72,7 @@ info: function coprime {
 init (i : int) := a
 if ((~Int.Lt b) a) then {i := b}
 else{}
-while(((~Int.Gt i) #1))
-(some i)
-(some #true)
-{if ((~Bool.And (((~Int.Mod b) i) == #0)) (((~Int.Mod a) i) == #0)) then {return := #false}
+while (((~Int.Gt i) #1)) (some i) (some #true) {if ((~Bool.And (((~Int.Mod b) i) == #0)) (((~Int.Mod a) i) == #0)) then {return := #false}
  else{}
  i := ((~Int.Sub i) #1)}
 return := #true

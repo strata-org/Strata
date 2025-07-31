@@ -16,7 +16,6 @@
 
 import Strata.Languages.C_Simp.DDMTransform.Parse
 import Strata.DL.Imperative.Stmt
-import Strata.DL.Imperative.Loopy
 import Strata.DL.Lambda.Lambda
 import Strata.DL.Lambda.LExpr
 import Strata.DL.Lambda.LTy
@@ -42,9 +41,16 @@ abbrev Expression : Imperative.PureExpr := {
   EqIdent := String.decEq
 }
 
+
+def Command := Imperative.Cmd Expression
+
+def Statement := Imperative.Stmt Expression Command
+
+instance : Imperative.HasVarsImp Expression Command where
+  definedVars := Imperative.Cmd.definedVars
+  modifiedVars := Imperative.Cmd.modifiedVars
+
 -- Our statement language is `DL/Imp` with `DL/Lambda` as the expression language
--- abbrev Statement := Loopy.LoopOrStmt
--- abbrev Command := Imperative.Cmd C_Simp.Expression
 
 -- A program is a list of functions. We start by defining functions
 
@@ -52,7 +58,7 @@ structure Function where
   name: Expression.Ident
   pre : Expression.Expr
   post : Expression.Expr
-  body : List Loopy.LoopOrStmt
+  body : List Statement
   ret_ty : Lambda.LMonoTy
   inputs : Map Expression.Ident Lambda.LMonoTy
 deriving Inhabited
@@ -61,16 +67,14 @@ structure Program where
   funcs : List Function
 
 -- Instances
+open Std (ToFormat Format format)
 
--- Provide ToFormat instances for DefaultPureExpr components
-instance : Std.ToFormat Loopy.DefaultPureExpr.Ident where
-  format s := Std.Format.text s  -- Convert String to Format
+instance [ToFormat Expression.Ident] [ToFormat Expression.Expr] [ToFormat Expression.Ty] : ToFormat Command where
+  format c := Imperative.formatCmd Expression c
 
-instance : Std.ToFormat Loopy.DefaultPureExpr.Expr where
-  format e := (inferInstance : Std.ToFormat (Lambda.LExpr String)).format e
-
-instance : Std.ToFormat Loopy.DefaultPureExpr.Ty where
-  format t := (inferInstance : Std.ToFormat Lambda.LTy).format t
+instance [ToFormat Expression.Ident] [ToFormat Expression.Expr] [ToFormat Expression.Ty] [ToFormat Command]:
+  ToFormat (List Statement) where
+  format ss := Imperative.formatStmts Expression ss
 
 instance : Std.ToFormat Function where
   format f :=
