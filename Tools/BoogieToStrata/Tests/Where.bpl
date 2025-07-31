@@ -59,6 +59,7 @@ procedure P4()
   assert x == 7;  // error
 }
 
+// TODO: disabled for now
 /*
 procedure R0() returns (wProc: int where wProc == xProc,
                         xProc: int where 0 <= xProc,

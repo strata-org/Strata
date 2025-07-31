@@ -27,8 +27,13 @@ def parseOptions (args : List String) : Except Std.Format (Options × String) :=
       go : Options → List String → Except Std.Format (Options × String)
       | opts, "--verbose" :: rest => go {opts with verbose := true} rest
       | opts, "--check" :: rest => go {opts with checkOnly := true} rest
-      | opts, "--solver-timeout" :: secondsStr :: rest => .error "Not yet implemented"
+      | opts, "--solver-timeout" :: secondsStr :: rest =>
+         let n? := String.toNat? secondsStr
+         match n? with
+         | .none => .error f!"Invalid number of seconds: {secondsStr}"
+         | .some n => go {opts with solverTimeout := n} rest
       | opts, [file] => pure (opts, file)
+      | _, [] => .error "StrataVerify requires a file as input"
       | _, args => .error f!"Unknown options: {args}"
 
 def usageMessage : String :=
@@ -48,7 +53,6 @@ def main (args : List String) : IO UInt32 := do
     let (env, errors) := Strata.Elab.elabProgram emptyEnv dctx inputCtx
     if errors.isEmpty then
       println! s!"Successfully parsed {file}"
-      -- TODO: the `verify` function currently produces a lot of output
       let vcResults ← if file.endsWith ".csimp.st" then
         C_Simp.verify "z3" env opts
       else

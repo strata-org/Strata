@@ -7,7 +7,8 @@
 structure Options where
   verbose : Bool
   checkOnly : Bool
-  solverTimeout : Nat -- Solver time limit in seconds
+  /-- Solver time limit in seconds -/
+  solverTimeout : Nat
 
 def Options.default : Options := {
   verbose := true,
