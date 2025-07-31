@@ -83,7 +83,7 @@ def loop_elimination_statement(s : C_Simp.Statement) : Boogie.Statement :=
 
       let entry_invariant : Boogie.Statement := .assert "entry_invariant" (translate_expr invariant) {}
       let assert_measure_positive : Boogie.Statement := .assert "assert measure_pos" measure_pos {}
-      let first_iter_facts : Boogie.Statement := .ite (translate_expr guard) {ss := [entry_invariant, assert_measure_positive]} {ss := []} {}
+      let first_iter_facts : Boogie.Statement := .block "first_iter_asserts" {ss := [entry_invariant, assert_measure_positive]} {}
 
       let arbitrary_iter_assumes := .block "arbitrary_iter_assumes" {ss := [(Boogie.Statement.assume "assume_guard" (translate_expr guard) {}), (Boogie.Statement.assume "assume_invariant" (translate_expr invariant) {}), (Boogie.Statement.assume "assume_measure_pos" measure_pos {})]} {}
       let measure_old_value_assign : Boogie.Statement := .init "special-name-for-old-measure-value" (.forAll [] (.tcons "int" [])) (translate_expr measure) {}

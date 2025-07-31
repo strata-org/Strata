@@ -81,9 +81,8 @@ postconditions: (post, #true)
 body: init (i : int) := a
 if ((~Int.Lt b) a) then {i := b}
 else{}
-transformed loop block : {if ((~Int.Gt i) #1) then {assert [entry_invariant] #true
+transformed loop block : {first_iter_asserts : {assert [entry_invariant] #true
   assert [assert measure_pos] ((~Int.Ge i) #0)}
- else{}
  arbitrary iter facts : {loop havoc : {havoc return
    havoc i}
   arbitrary_iter_assumes : {assume [assume_guard] ((~Int.Gt i) #1)
