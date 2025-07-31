@@ -125,64 +125,110 @@ function UpdateContainersModifiesFrame(h: Heap, testedRef: Ref, ref1: Ref, ref2:
 }
 
 // Annotated with "modifies ref1, ref2"
-procedure UpdateContainers(heap: Heap, ref1: Ref, ref2: Ref) returns (newHeap: Heap)
+procedure UpdateContainers(heap: Heap, ref1Struct: Struct, ref2Struct: Struct) returns (newRef1Struct: Struct, newRef2Struct: Struct, newHeap: Heap)
 spec {
   // Refs are allocated
   free requires tickingClock >= 0;
-  free requires allocationTime(ref1) < tickingClock;
-  free requires allocationTime(ref2) < tickingClock;
 
-  requires isContainer(ref1);
-  requires isContainer(ref2);
-
+  requires isContainerStruct(ref1Struct);
+  requires isContainerStruct(ref2Struct);
+  
   ensures tickingClock >= old(tickingClock);
 
   free ensures (forall o: Ref :: 
     { newHeap[o] } 
     (o != null && allocationTime(o) >= 0 && allocationTime(o) < old(tickingClock))
-       ==> (newHeap[o] == heap[o] || o == ref1 || o == ref2));
+       ==> (newHeap[o] == heap[o]));
 
   // User provided ------------------------------------------------------------------------------------------------------------
-  requires ref1 != ref2; // At first, I forgot it, and indeed the verification conditions helped me realizing it
 
-  requires UnboxingInt(heap[ref1][lycheeField]) == 0;
-  requires UnboxingInt(heap[ref1][pineappleField]) == 0;
-  requires UnboxingInt(heap[ref2][lycheeField]) == 0;
-  requires UnboxingInt(heap[ref2][pineappleField]) == 0;
+  requires UnboxingInt(ref1Struct[lycheeField]) == 0;
+  requires UnboxingInt(ref1Struct[pineappleField]) == 0;
+  requires UnboxingInt(ref2Struct[lycheeField]) == 0;
+  requires UnboxingInt(ref2Struct[pineappleField]) == 0;
 
-  ensures UnboxingInt(newHeap[ref1][lycheeField]) == 1;
-  ensures UnboxingInt(newHeap[ref1][pineappleField]) == 1;
-  ensures UnboxingInt(newHeap[ref2][lycheeField]) == 1;
-  ensures UnboxingInt(newHeap[ref2][pineappleField]) == 1;
+  ensures UnboxingInt(newRef1Struct[lycheeField]) == 3;
+  ensures UnboxingInt(newRef1Struct[pineappleField]) == 3;
+  ensures UnboxingInt(newRef2Struct[lycheeField]) == 3;
+  ensures UnboxingInt(newRef2Struct[pineappleField]) == 3;
 
 }
 {
   var heap_var: Heap := heap;
+  var ref1Struct_var: Struct := ref1Struct;
+  var ref2Struct_var: Struct := ref2Struct;
   var methodEntryTime: int := tickingClock;
 
   // ref1.lychee += 1
-  assert [modifiesFrameRef1]: UpdateContainersModifiesFrame(heap_var, ref1, ref1, ref2, methodEntryTime);
-  var rhs1: Box := BoxingInt(UnboxingInt(heap_var[ref1][lycheeField]) + 1);
-  heap_var := heap_var[ref1 := heap_var[ref1][lycheeField := rhs1]];
+  // assert UpdateContainersModifiesFrame(heap_var, ref1, ref1, ref2, methodEntryTime);
+  var rhs1: Box := BoxingInt(UnboxingInt(ref1Struct_var[lycheeField]) + 1);
+  ref1Struct_var := ref1Struct_var[lycheeField := rhs1];
 
   // ref1.pineapple += 1
-  assert [modifiesFrameRef1]: UpdateContainersModifiesFrame(heap_var, ref1, ref1, ref2, methodEntryTime);
-  var rhs2: Box := BoxingInt(UnboxingInt(heap_var[ref1][pineappleField]) + 1);
-  heap_var := heap_var[ref1 := heap_var[ref1][pineappleField := rhs2]];
+  // assert UpdateContainersModifiesFrame(heap_var, ref1, ref1, ref2, methodEntryTime);
+  var rhs2: Box := BoxingInt(UnboxingInt(ref1Struct_var[pineappleField]) + 1);
+  ref1Struct_var := ref1Struct_var[pineappleField := rhs2];
 
   // ref2.lychee += 1
-  assert [modifiesFrameRef1]: UpdateContainersModifiesFrame(heap_var, ref2, ref1, ref2, methodEntryTime);
-  var rhs3: Box := BoxingInt(UnboxingInt(heap_var[ref2][lycheeField]) + 1);
-  heap_var := heap_var[ref2 := heap_var[ref2][lycheeField := rhs3]];
+  // assert UpdateContainersModifiesFrame(heap_var, ref2, ref1, ref2, methodEntryTime);
+  var rhs3: Box := BoxingInt(UnboxingInt(ref2Struct_var[lycheeField]) + 1);
+  ref2Struct_var := ref2Struct_var[lycheeField := rhs3];
 
   // ref2.pineapple += 1
-  assert [modifiesFrameRef1]: UpdateContainersModifiesFrame(heap_var, ref2, ref1, ref2, methodEntryTime);
-  var rhs4: Box := BoxingInt(UnboxingInt(heap_var[ref2][pineappleField]) + 1);
-  heap_var := heap_var[ref2 := heap_var[ref2][pineappleField := rhs4]];
+  // assert UpdateContainersModifiesFrame(heap_var, ref2, ref1, ref2, methodEntryTime);
+  var rhs4: Box := BoxingInt(UnboxingInt(ref2Struct_var[pineappleField]) + 1);
+  ref2Struct_var := ref2Struct_var[pineappleField := rhs4];
 
+  // -----------------------------------------------------------------------------------------------------------------------
 
+  // ref1.lychee += 1
+  // assert UpdateContainersModifiesFrame(heap_var, ref1, ref1, ref2, methodEntryTime);
+  var rhs5: Box := BoxingInt(UnboxingInt(ref1Struct_var[lycheeField]) + 1);
+  ref1Struct_var := ref1Struct_var[lycheeField := rhs5];
+
+  // ref1.pineapple += 1
+  // assert UpdateContainersModifiesFrame(heap_var, ref1, ref1, ref2, methodEntryTime);
+  var rhs6: Box := BoxingInt(UnboxingInt(ref1Struct_var[pineappleField]) + 1);
+  ref1Struct_var := ref1Struct_var[pineappleField := rhs6];
+
+  // ref2.lychee += 1
+  // assert UpdateContainersModifiesFrame(heap_var, ref2, ref1, ref2, methodEntryTime);
+  var rhs7: Box := BoxingInt(UnboxingInt(ref2Struct_var[lycheeField]) + 1);
+  ref2Struct_var := ref2Struct_var[lycheeField := rhs7];
+
+  // ref2.pineapple += 1
+  // assert UpdateContainersModifiesFrame(heap_var, ref2, ref1, ref2, methodEntryTime);
+  var rhs8: Box := BoxingInt(UnboxingInt(ref2Struct_var[pineappleField]) + 1);
+  ref2Struct_var := ref2Struct_var[pineappleField := rhs8];
+
+  // -----------------------------------------------------------------------------------------------------------------------
+
+  // ref1.lychee += 1
+  // assert UpdateContainersModifiesFrame(heap_var, ref1, ref1, ref2, methodEntryTime);
+  var rhs9: Box := BoxingInt(UnboxingInt(ref1Struct_var[lycheeField]) + 1);
+  ref1Struct_var := ref1Struct_var[lycheeField := rhs9];
+
+  // ref1.pineapple += 1
+  // assert UpdateContainersModifiesFrame(heap_var, ref1, ref1, ref2, methodEntryTime);
+  var rhs10: Box := BoxingInt(UnboxingInt(ref1Struct_var[pineappleField]) + 1);
+  ref1Struct_var := ref1Struct_var[pineappleField := rhs10];
+
+  // ref2.lychee += 1
+  // assert UpdateContainersModifiesFrame(heap_var, ref2, ref1, ref2, methodEntryTime);
+  var rhs11: Box := BoxingInt(UnboxingInt(ref2Struct_var[lycheeField]) + 1);
+  ref2Struct_var := ref2Struct_var[lycheeField := rhs11];
+
+  // ref2.pineapple += 1
+  // assert UpdateContainersModifiesFrame(heap_var, ref2, ref1, ref2, methodEntryTime);
+  var rhs12: Box := BoxingInt(UnboxingInt(ref2Struct_var[pineappleField]) + 1);
+  ref2Struct_var := ref2Struct_var[pineappleField := rhs12];
+
+  // -----------------------------------------------------------------------------------------------------------------------
+  
   // Return the new heap
   newHeap := heap_var;
+  newRef1Struct := ref1Struct_var;
+  newRef2Struct := ref2Struct_var;
 };
 
 // Modifies frame for Main (manual lambda lifting)
@@ -224,13 +270,21 @@ spec {
   tickingClock := tickingClock + 1;           // After allocation: increase the tick
   call heap_var := Container_ctor(heap_var, c2, 0, 0, null);
 
+  var c1Struct : Struct := heap_var[c1];
+  var c2Struct : Struct := heap_var[c2];
 
-  call heap_var := UpdateContainers(heap_var, c1, c2);
+  call c1Struct, c2Struct, heap_var := UpdateContainers(heap_var,  c1Struct, c2Struct);
 
-  assert [c1Lychees1]: isContainer(c1) && UnboxingInt(heap_var[c1][lycheeField]) == 1;
-  assert [c1Pineapple2]: isContainer(c1) && UnboxingInt(heap_var[c1][pineappleField]) == 1;
-  assert [c2Lychees0]: isContainer(c2) && UnboxingInt(heap_var[c2][lycheeField]) == 1;
-  assert [c2Pineapple0]: isContainer(c2) && UnboxingInt(heap_var[c2][pineappleField]) == 1;
+  heap_var := heap_var[c1 := c1Struct];
+  heap_var := heap_var[c2 := c2Struct];
+
+  assert [c1Lychees1]: isContainer(c1) && UnboxingInt(heap_var[c1][lycheeField]) == 3;
+  assert [c1Pineapple2]: isContainer(c1) && UnboxingInt(heap_var[c1][pineappleField]) == 3;
+  assert [c2Lychees0]: isContainer(c2) && UnboxingInt(heap_var[c2][lycheeField]) == 3;
+  assert [c2Pineapple0]: isContainer(c2) && UnboxingInt(heap_var[c2][pineappleField]) == 3;
+
+  assert [c1NextEqC2]: isContainer(c1) && UnboxingRef(heap_var[c1][nextField]) == c2;
+  assert [c2NextEqC1]: isContainer(c2) && UnboxingRef(heap_var[c2][nextField]) == c1;
 
   // Return the new heap
   newHeap := heap_var;

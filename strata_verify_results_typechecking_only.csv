@@ -1,0 +1,10 @@
+filename,line_count,execution_time_seconds
+ContainerHeapAffine12.boogie.st,     292,65.578864000
+ContainerHeapAffine20.boogie.st,     337,99.062512000
+ContainerHeapAffine4.boogie.st,     248,41.058522000
+ContainerHeapAffine8.boogie.st,     270,52.702717000
+ContainerHeapClassic12.boogie.st,     283,229.493657000
+ContainerHeapClassic20.boogie.st,     327,537.202279000
+ContainerHeapClassic4.boogie.st,     238,67.863569000
+ContainerHeapClassic8.boogie.st,     256,109.089784000
+HeapReasoning.boogie.st,     254,95.121429000

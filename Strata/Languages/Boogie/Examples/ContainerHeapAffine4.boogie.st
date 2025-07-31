@@ -125,16 +125,13 @@ function UpdateContainersModifiesFrame(h: Heap, testedRef: Ref, ref1: Ref, ref2:
 }
 
 // Annotated with "modifies ref1, ref2"
-procedure UpdateContainers(heap: Heap, ref1: Ref, ref1Struct: Struct, ref2: Ref, ref2Struct: Struct) returns (newRef1Struct: Struct, newRef2Struct: Struct, newHeap: Heap)
+procedure UpdateContainers(heap: Heap, ref1Struct: Struct, ref2Struct: Struct) returns (newRef1Struct: Struct, newRef2Struct: Struct, newHeap: Heap)
 spec {
   // Refs are allocated
   free requires tickingClock >= 0;
 
-  requires isContainer(ref1);
-  requires isContainer(ref2);
-
-  requires heap[ref1] == ref1Struct;
-  requires heap[ref2] == ref2Struct;
+  requires isContainerStruct(ref1Struct);
+  requires isContainerStruct(ref2Struct);
   
   ensures tickingClock >= old(tickingClock);
 
@@ -144,10 +141,6 @@ spec {
        ==> (newHeap[o] == heap[o]));
 
   // User provided ------------------------------------------------------------------------------------------------------------
-  requires ref1 != ref2; // At first, I forgot it, and indeed the verification conditions helped me realizing it
-
-  requires UnboxingRef(ref1Struct[nextField]) == ref2;
-  requires UnboxingRef(ref2Struct[nextField]) == ref1;
 
   requires UnboxingInt(ref1Struct[lycheeField]) == 0;
   requires UnboxingInt(ref1Struct[pineappleField]) == 0;
@@ -159,8 +152,6 @@ spec {
   ensures UnboxingInt(newRef2Struct[lycheeField]) == 1;
   ensures UnboxingInt(newRef2Struct[pineappleField]) == 1;
 
-  ensures UnboxingRef(newRef1Struct[nextField]) == UnboxingRef(ref1Struct[nextField]);
-  ensures UnboxingRef(newRef2Struct[nextField]) == UnboxingRef(ref2Struct[nextField]);
 }
 {
   var heap_var: Heap := heap;
@@ -169,22 +160,22 @@ spec {
   var methodEntryTime: int := tickingClock;
 
   // ref1.lychee += 1
-  assert UpdateContainersModifiesFrame(heap_var, ref1, ref1, ref2, methodEntryTime);
+  // assert UpdateContainersModifiesFrame(heap_var, ref1, ref1, ref2, methodEntryTime);
   var rhs1: Box := BoxingInt(UnboxingInt(ref1Struct_var[lycheeField]) + 1);
   ref1Struct_var := ref1Struct_var[lycheeField := rhs1];
 
   // ref1.pineapple += 1
-  assert UpdateContainersModifiesFrame(heap_var, ref1, ref1, ref2, methodEntryTime);
+  // assert UpdateContainersModifiesFrame(heap_var, ref1, ref1, ref2, methodEntryTime);
   var rhs2: Box := BoxingInt(UnboxingInt(ref1Struct_var[pineappleField]) + 1);
   ref1Struct_var := ref1Struct_var[pineappleField := rhs2];
 
   // ref2.lychee += 1
-  assert UpdateContainersModifiesFrame(heap_var, ref2, ref1, ref2, methodEntryTime);
+  // assert UpdateContainersModifiesFrame(heap_var, ref2, ref1, ref2, methodEntryTime);
   var rhs3: Box := BoxingInt(UnboxingInt(ref2Struct_var[lycheeField]) + 1);
   ref2Struct_var := ref2Struct_var[lycheeField := rhs3];
 
   // ref2.pineapple += 1
-  assert UpdateContainersModifiesFrame(heap_var, ref2, ref1, ref2, methodEntryTime);
+  // assert UpdateContainersModifiesFrame(heap_var, ref2, ref1, ref2, methodEntryTime);
   var rhs4: Box := BoxingInt(UnboxingInt(ref2Struct_var[pineappleField]) + 1);
   ref2Struct_var := ref2Struct_var[pineappleField := rhs4];
 
@@ -235,20 +226,10 @@ spec {
   tickingClock := tickingClock + 1;           // After allocation: increase the tick
   call heap_var := Container_ctor(heap_var, c2, 0, 0, null);
 
-  // c1.next := c2
-  assert MainModifiesFrame(heap_var, c1, methodEntryTime);       // We can do that since the ticking clock has increased
-  var rhs: Box := BoxingRef(c2);
-  heap_var := heap_var[c1 := heap_var[c1][nextField := rhs]];
-
-  // c2.next := c1
-  assert MainModifiesFrame(heap_var, c2, methodEntryTime);       // We can do that since the ticking clock has increased
-  var rhs2: Box := BoxingRef(c1);
-  heap_var := heap_var[c2 := heap_var[c2][nextField := rhs2]];
-
   var c1Struct : Struct := heap_var[c1];
   var c2Struct : Struct := heap_var[c2];
 
-  call c1Struct, c2Struct, heap_var := UpdateContainers(heap_var, c1, c1Struct, c2, c2Struct);
+  call c1Struct, c2Struct, heap_var := UpdateContainers(heap_var,  c1Struct, c2Struct);
 
   heap_var := heap_var[c1 := c1Struct];
   heap_var := heap_var[c2 := c2Struct];

@@ -65,9 +65,9 @@ const nextField: Field;             // Ref to a Container
 axiom [ContainerFieldsAreDifferent1]: lycheeField != pineappleField && lycheeField != nextField && pineappleField != nextField;
 
 axiom [ContainerstructType]: forall h: Heap, r: Ref :: isContainer(r) ==> isContainerStruct(h[r]);
-axiom [lycheeFieldType]: forall s: Struct :: isContainer(s) ==> isInt(s[lycheeField]);
-axiom [pineappleFieldType]: forall s: Struct :: isContainer(s) ==> isInt(s[pineappleField]);
-axiom [nextFieldType]: forall s: Struct :: isContainer(s) ==> (isRef(s[nextField]) && isContainer(UnboxingRef(h[r][nextField])));
+axiom [lycheeFieldType]: forall s: Struct :: isContainerStruct(s) ==> isInt(s[lycheeField]);
+axiom [pineappleFieldType]: forall s: Struct :: isContainerStruct(s) ==> isInt(s[pineappleField]);
+axiom [nextFieldType]: forall s: Struct :: isContainerStruct(s) ==> (isRef(s[nextField]) && isContainer(UnboxingRef(s[nextField])));
 
 
 // Modifies frame for Container_ctor (manual lambda lifting)
@@ -145,9 +145,6 @@ spec {
   // User provided ------------------------------------------------------------------------------------------------------------
   requires ref1 != ref2; // At first, I forgot it, and indeed the verification conditions helped me realizing it
 
-  requires UnboxingRef(heap[ref1][nextField]) == ref2;
-  requires UnboxingRef(heap[ref2][nextField]) == ref1;
-
   requires UnboxingInt(heap[ref1][lycheeField]) == 0;
   requires UnboxingInt(heap[ref1][pineappleField]) == 0;
   requires UnboxingInt(heap[ref2][lycheeField]) == 0;
@@ -158,8 +155,6 @@ spec {
   ensures UnboxingInt(newHeap[ref2][lycheeField]) == 10;
   ensures UnboxingInt(newHeap[ref2][pineappleField]) == 10;
 
-  ensures UnboxingRef(newHeap[ref1][nextField]) == UnboxingRef(heap[ref1][nextField]);
-  ensures UnboxingRef(newHeap[ref2][nextField]) == UnboxingRef(heap[ref2][nextField]);
 }
 {
   var heap_var: Heap := heap;
@@ -430,15 +425,6 @@ spec {
   tickingClock := tickingClock + 1;           // After allocation: increase the tick
   call heap_var := Container_ctor(heap_var, c2, 0, 0, null);
 
-  // c1.next := c2
-  assert MainModifiesFrame(heap_var, c1, methodEntryTime);       // We can do that since the ticking clock has increased
-  var rhs: Box := BoxingRef(c2);
-  heap_var := heap_var[c1 := heap_var[c1][nextField := rhs]];
-
-  // c2.next := c1
-  assert MainModifiesFrame(heap_var, c2, methodEntryTime);       // We can do that since the ticking clock has increased
-  var rhs2: Box := BoxingRef(c1);
-  heap_var := heap_var[c2 := heap_var[c2][nextField := rhs2]];
 
   call heap_var := UpdateContainers(heap_var, c1, c2);
 
@@ -446,9 +432,6 @@ spec {
   assert [c1Pineapple2]: isContainer(c1) && UnboxingInt(heap_var[c1][pineappleField]) == 10;
   assert [c2Lychees0]: isContainer(c2) && UnboxingInt(heap_var[c2][lycheeField]) == 10;
   assert [c2Pineapple0]: isContainer(c2) && UnboxingInt(heap_var[c2][pineappleField]) == 10;
-
-  assert [c1NextEqC2]: isContainer(c1) && UnboxingRef(heap_var[c1][nextField]) == c2;
-  assert [c2NextEqC1]: isContainer(c2) && UnboxingRef(heap_var[c2][nextField]) == c1;
 
   // Return the new heap
   newHeap := heap_var;
