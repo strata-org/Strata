@@ -17,6 +17,7 @@
 import Strata.DL.Imperative.Cmd
 import Strata.DL.Imperative.EvalError
 import Strata.DL.Util.Maps
+import StrataTest.DL.Imperative.DDMDefinition
 
 namespace Arith
 open Std (ToFormat Format format)
@@ -24,17 +25,15 @@ open Imperative
 
 ---------------------------------------------------------------------
 
-inductive Ty where
-  | Num | Bool
-  deriving DecidableEq, Repr, Inhabited
+abbrev Ty := ArithPrograms.ArithProgramsType
 
 instance : ToFormat Ty where
-  format t := match t with | .Num => "Num" | .Bool => ".Bool"
+  format t := match t with | .num => "Num" | .bool => ".Bool"
 
 /--
 A type environment maps variable names to types.
 -/
-abbrev TEnv := Map String Ty
+abbrev TEnv := Map Nat Ty
 
 def TEnv.init : TEnv := []
 
@@ -45,50 +44,46 @@ instance : ToFormat TEnv where
 Simple arithmetic expressions that will be used to specialize Imperative's
 partial evaluator.
 -/
-inductive Expr where
-  | Plus (e1 e2 : Expr)
-  | Mul (e1 e2 : Expr)
-  | Eq (e1 e2 : Expr)
-  | Num (n : Nat)
-  | Var (v : String) (ty : Option Ty)
-  deriving Inhabited, Repr
+abbrev Expr := ArithPrograms.Expr
 
 def Expr.format (e : Expr) : Format :=
   match e with
-  | .Plus e1 e2 => f!"{Expr.format e1} + {Expr.format e2}"
-  | .Mul e1 e2 => f!"{Expr.format e1} × {Expr.format e2}"
-  | .Eq e1 e2 => f!"{Expr.format e1} = {Expr.format e2}"
-  | .Var v (.some ty) => f!"({v} : {ty})"
-  | .Var v .none => f!"{v}"
-  | .Num n => f!"{n}"
+  | .add_expr e1 e2 => f!"{Expr.format e1} + {Expr.format e2}"
+  | .mul_expr e1 e2 => f!"{Expr.format e1} × {Expr.format e2}"
+  | .eq_expr ty e1 e2 => f!"{Expr.format e1} = {Expr.format e2}"
+  | .ty_expr ty e => f!"({Expr.format e} : {ty})"
+--  | .Var v (.some ty) => f!"({v} : {ty})"
+  | .fvar v => f!"{v}"
+  | .numLit n => f!"{n}"
 
 instance : ToFormat Expr where
   format := Expr.format
 
-def Expr.freeVars (e : Expr) : List (String × Option Ty) :=
+def Expr.freeVars (e : Expr) : List Nat :=
   match e with
-  | .Plus e1 e2 => e1.freeVars ++ e2.freeVars
-  | .Mul e1 e2 => e1.freeVars ++ e2.freeVars
-  | .Eq e1 e2 => e1.freeVars ++ e2.freeVars
-  | .Num _ => []
-  | .Var v ty => [(v, ty)]
+  | .add_expr e1 e2 => Expr.freeVars e1 ++ Expr.freeVars e2
+  | .mul_expr e1 e2 => Expr.freeVars e1 ++ Expr.freeVars e2
+  | .eq_expr ty e1 e2 => Expr.freeVars e1 ++ Expr.freeVars e2
+  | .numLit _ => []
+  | .ty_expr ty e => Expr.freeVars e -- TODO: fix
+  | .fvar v => [v]
 
 /--
 An environment maps variable names to their types and corresponding
 values (expressions).
 -/
-abbrev Env := Map String (Ty × Expr)
+abbrev Env := Map Nat (Ty × Expr)
 
 instance : ToFormat Env where
   format := Map.format'
 
 abbrev PureExpr : PureExpr :=
-   { Ident := String,
+   { Ident := Nat,
      Expr := Expr,
      Ty := Ty,
      TyEnv := TEnv,
      EvalEnv := Env,
-     EqIdent := instDecidableEqString }
+     EqIdent := instDecidableEqNat }
 
 /-
 -- Here is an alternate formulation for untyped Arith expressions.

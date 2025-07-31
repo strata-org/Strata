@@ -11,6 +11,9 @@ type num;
 // Literals
 fn numLit (n : Num) : num => n;
 
+// Type annotation
+fn ty_expr (tp : Type, e : tp) : tp => "(" e ":" tp ")";
+
 // Expressions
 fn add_expr (a : num, b : num) : num => @[prec(25), leftassoc] a "+" b;
 fn mul_expr (a : num, b : num) : num => @[prec(27), leftassoc] a "*" b;
@@ -44,8 +47,11 @@ namespace ArithPrograms
 -- set_option trace.Strata.generator true
 -- set_option trace.Strata.DDM.syntax true
 #strata_gen ArithPrograms
--- #print Command.toAst
--- #print Command.ofAst
+#print ArithProgramsType
+#print Command
+#print Expr
+#print Command.toAst
+#print Command.ofAst
 
 end ArithPrograms
 

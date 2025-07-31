@@ -18,6 +18,7 @@
 
 import StrataTest.DL.Imperative.ArithExpr
 import Strata.DL.Imperative.CmdEval
+--import StrataTest.DL.Imperative.DDMDefinition
 
 namespace Arith
 
@@ -62,23 +63,24 @@ Evaluator for arithmetic expressions `Expr`.
 -/
 def eval (s : State) (e : Expr) : Expr :=
   match e with
-  | .Plus e1 e2 =>
+  | .add_expr e1 e2 =>
     match (eval s e1), (eval s e2) with
-    | .Num n1, .Num n2 => .Num (n1 + n2)
-    | e1', e2' => .Plus e1' e2'
-  | .Mul e1 e2 =>
+    | .numLit n1, .numLit n2 => .numLit (n1 + n2)
+    | e1', e2' => .add_expr e1' e2'
+  | .mul_expr e1 e2 =>
     match (eval s e1), (eval s e2) with
-    | .Num n1, .Num n2 => .Num (n1 * n2)
-    | e1', e2' => .Mul e1' e2'
-  | .Eq e1 e2 =>
+    | .numLit n1, .numLit n2 => .numLit (n1 * n2)
+    | e1', e2' => .mul_expr e1' e2'
+  | .eq_expr ty e1 e2 =>
     match (eval s e1), (eval s e2) with
-    | .Num n1, .Num n2 =>
+    | .numLit n1, .numLit n2 =>
       -- Zero is false; any non-zero number is true, but we choose 1 as the
       -- canonical true here.
-      .Num (if n1 == n2 then 1 else 0)
-    | e1', e2' => .Eq e1' e2'
-  | .Num n => .Num n
-  | .Var v ty => match s.env.find? v with | none => .Var v ty | some (_, e) => e
+      .numLit (if n1 == n2 then 1 else 0)
+    | e1', e2' => .eq_expr ty e1' e2'
+  | .numLit n => .numLit n
+  | .ty_expr _ e' => eval s e'
+  | .fvar v => match s.env.find? v with | none => .fvar v | some (_, e) => e
 
 def updateError (s : State) (e : EvalError PureExpr) : State :=
   { s with error := e }
@@ -86,35 +88,36 @@ def updateError (s : State) (e : EvalError PureExpr) : State :=
 def lookupError (s : State) : Option (EvalError PureExpr) :=
   s.error
 
-def update (s : State) (v : String) (ty : Ty) (e : Expr) : State :=
+def update (s : State) (v : Nat) (ty : Ty) (e : Expr) : State :=
   { s with env := s.env.insert v (ty, e) }
 
-def lookup (s : State) (v : String) : Option Arith.PureExpr.TypedExpr :=
+def lookup (s : State) (v : Nat) : Option Arith.PureExpr.TypedExpr :=
   match s.env.find? v with
   | some (ty, e) => some (e, ty)
   | none => none
 
 /--
 Add free variables to the environment, where the free variable is mapped to
-itself (i.e., `v ↦ .Var v ty`).
+itself (i.e., `v ↦ .Var v`).
 -/
 def preprocess (s : State) (e : Expr) : Expr × State :=
-  let freeVars := e.freeVars.filter (fun (v, _ty) => not (s.env.contains v))
-  let new_env := List.foldl (fun env (v, ty) => Map.insert env v (.Num, (Expr.Var v ty))) s.env freeVars
+  let freeVars := e.freeVars.filter (fun v => not (s.env.contains v))
+  let new_env := List.foldl (fun env v => Map.insert env v (.num,
+      (ArithPrograms.Expr.fvar v))) s.env freeVars
   let s := { s with env := new_env }
   (e, s)
 
-def genFreeVar (s : State) (x : String) (ty : Ty) : Expr × State :=
-  let newVar := "$__" ++ x ++ toString s.genNum
+def genFreeVar (s : State) (_:Nat) (_:Ty) : Expr × State :=
+  let newVar := s.genNum
   let s := { s with genNum := s.genNum + 1 }
-  (.Var newVar ty, s)
+  (ArithPrograms.Expr.fvar newVar, s)
 
 def denoteBool (e : Expr) : Option Bool :=
   match e with
-  | .Num n =>
+  | .numLit n =>
     -- Non-zero numbers denote true; zero is false.
     some (not (n == 0))
-  | .Var _ _ | .Plus _ _ | .Mul _ _ | .Eq _ _ => none
+  | _ => none
 
 def getPathConditions (s : State) : PathConditions PureExpr :=
   s.pathConditions
@@ -128,13 +131,13 @@ def deferObligation (s : State) (ob : ProofObligation PureExpr) : State :=
 def ProofObligation.freeVars (ob : ProofObligation PureExpr) : List String :=
   let assum_typedvars :=
       ob.assumptions.flatMap (fun e => e.values.flatMap (fun i => i.freeVars))
-  (assum_typedvars.map (fun (v, _) => v)) ++
-  (ob.obligation.freeVars.map (fun (v, _) => v))
+  (assum_typedvars.map (fun v => "$__" ++ toString v)) ++
+  (ob.obligation.freeVars.map (fun v => "$__" ++ toString v))
 
 theorem lookupEval (s1 s2 : State) (h : ∀ x, lookup s1 x = lookup s2 x) :
   ∀ e, eval s1 e = eval s2 e := by
   intro e; induction e <;> simp_all [eval]
-  case Var v _ =>
+  case fvar v =>
     simp_all [lookup]
     have hv := @h v; clear h
     split <;> (split <;> simp_all)
@@ -168,9 +171,9 @@ instance : ToFormat (Cmds PureExpr × State) where
 /- Tests -/
 
 private def testProgram1 : Cmds PureExpr :=
-  [.init "x" .Num (.Num 0),
-   .set "x" (.Plus (.Var "x" .none) (.Num 100)),
-   .assert "x_value_eq" (.Eq (.Var "x" .none) (.Num 100))]
+  [.init 0 .num (.numLit 0),
+   .set 0 (.add_expr (.fvar 0) (.numLit 100)),
+   .assert "x_value_eq" (.eq_expr .num (.fvar 0) (.numLit 100))]
 
 /--
 info:
@@ -178,15 +181,15 @@ Obligation x_value_eq proved via evaluation!
 
 ---
 info: Commands:
-init (x : Num) := 0
-x := 100
+init (0 : Num) := 0
+0 := 100
 assert [x_value_eq] 1
 
 State:
 error: none
 deferred: #[]
 pathConditions: ⏎
-env: (x, (Num, 100))
+env: (0, (Num, 100))
 genNum: 0
 -/
 #guard_msgs in
@@ -194,25 +197,25 @@ genNum: 0
 
 
 private def testProgram2 : Cmds PureExpr :=
-  [.init "x" .Num (.Var "y" .none),
-   .havoc "x",
-   .assert "x_value_eq" (.Eq (.Var "x" .none) (.Num 100))]
+  [.init 0 .num (.fvar 1),
+   .havoc 0,
+   .assert "x_value_eq" (.eq_expr .num (.fvar 0) (.numLit 100))]
 
 /--
 info: Commands:
-init (x : Num) := y
-#[<var x: ($__x0 : Num)>] havoc x
-assert [x_value_eq] ($__x0 : Num) = 100
+init (0 : Num) := 1
+#[<var 0: 0>] havoc 0
+assert [x_value_eq] 0 = 100
 
 State:
 error: none
 deferred: #[Label: x_value_eq
  Assumptions: ⏎
- Obligation: ($__x0 : Num) = 100
+ Obligation: 0 = 100
  Metadata: ⏎
  ]
 pathConditions: ⏎
-env: (y, (Num, y)) (x, (Num, ($__x0 : Num)))
+env: (1, (Num, 1)) (0, (Num, 0))
 genNum: 1
 -/
 #guard_msgs in

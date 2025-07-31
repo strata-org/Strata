@@ -25,7 +25,7 @@ open Imperative
 ---------------------------------------------------------------------
 
 def isBoolType (ty : Ty) : Bool :=
-  match ty with | .Bool => true | _ => false
+  match ty with | .bool => true | _ => false
 
 def preprocess (T : TEnv) (ty : Ty) : Except Format (Ty × TEnv) :=
   .ok (ty, T)
@@ -33,65 +33,59 @@ def preprocess (T : TEnv) (ty : Ty) : Except Format (Ty × TEnv) :=
 def postprocess (T : TEnv) (ty : Ty) : Except Format (Ty × TEnv) :=
   .ok (ty, T)
 
-def update (T : TEnv) (x : String) (ty : Ty) : TEnv :=
+def update (T : TEnv) (x : Nat) (ty : Ty) : TEnv :=
   T.insert x ty
 
-def lookup (T : TEnv) (x : String) : Option Ty :=
+def lookup (T : TEnv) (x : Nat) : Option Ty :=
   T.find? x
 
 def inferType (T : TEnv) (c : Cmd PureExpr) (e : Expr) : Except Format (Expr × Ty × TEnv) := do
   match e with
-  | .Num _ => .ok (e, .Num, T)
-  | .Var x xty =>
+  | .numLit _ => .ok (e, .num, T)
+  | .ty_expr ty e' =>
+    match e', c with
     -- We allow _annotated_ free variables to appear in the `init`
     -- statements.
-    let T ← match c with
-      | .init _ _ init_e _ =>
-        let init_e_fvs := Expr.freeVars init_e
-        if init_e_fvs.any (fun (_, ty) => ty.isNone) then
-          .error f!"Cannot infer the types of free variables in the initialization expression!\n\
-                    {e}"
-        else
-          let init_e_fvs := init_e_fvs.map (fun (x, ty) => (x, ty.get!))
-          .ok (List.foldl (fun T (x, ty) => Map.insert T x ty) T init_e_fvs)
-      | _ => .ok T
+    | .fvar v, .init _ _ _ _ =>
+      .ok (e, ty, Map.insert T v ty)
+    | _,_ =>
+      let (_,et,T) ← inferType T c e'
+      match et, ty with
+      | .num, .num => .ok (e, .num, T)
+      | .bool, .bool => .ok (e, .bool, T)
+      | _,_ => .error f!"The annotated type does not match"
+  | .fvar x =>
     match T.find? x with
-    | some ty =>
-      match xty with
-      | none => .ok (e, ty, T)
-      | some xty =>
-        if xty == ty then
-          .ok (e, ty, T)
-        else
-          .error f!"Variable {x} annotated with {xty} but has type {ty} in the context!"
-    | none => .error f!"Variable {x} not found in type context!"
-  | .Plus e1 e2 | .Mul e1 e2 =>
+    | some ty => .ok (e, ty, T)
+    | none =>
+      -- A free variable will fail type inference, but once this is wrapped with
+      -- .ty_expr ('v : ty'), the overall result will be successfully 'ty'.
+      .error f!"Variable {x} not found in type context!"
+  | .add_expr e1 e2 | .mul_expr e1 e2 =>
     let (_, e1t, T) ← inferType T c e1
     let (_, e2t, T) ← inferType T c e2
-    if e1t == .Num && e2t == .Num then
-      .ok (e, .Num, T)
-    else
-      .error f!"Type checking failed for {e}"
-  | .Eq e1 e2 =>
+    match e1t, e2t with
+    | .num, .num => .ok (e, .num, T)
+    | _, _ => .error f!"Type checking failed for {e}"
+  | .eq_expr ty e1 e2 =>
     let (_, e1t, T) ← inferType T c e1
     let (_, e2t, T) ← inferType T c e2
-    if e1t == .Num && e2t == .Num then
-      .ok (e, .Bool, T)
-    else
-      .error f!"Type checking failed for {e}"
+    match ty, e1t, e2t with
+    | .num, .num, .num => .ok (e, .bool, T)
+    | _,_,_ => .error f!"Type checking failed for {e}"
 
 def unifyTypes (T : TEnv) (constraints : List (Ty × Ty)) : Except Format TEnv :=
   match constraints with
   | [] => .ok T
   | (t1, t2) :: crest =>
-    if t1 == t2 then
-      unifyTypes T crest
-    else
-      .error f!"Types {t1} and {t2} cannot be unified!"
+    match t1, t2 with
+    | .num, .num => unifyTypes T crest
+    | .bool, .bool => unifyTypes T crest
+    | _, _ => .error f!"Types {t1} and {t2} cannot be unified!"
 
 instance : TypeContext PureExpr TEnv where
   isBoolType := Arith.TypeCheck.isBoolType
-  freeVars := (fun e => (Arith.Expr.freeVars e).map (fun (v, _) => v))
+  freeVars := (fun e => Arith.Expr.freeVars e)
   preprocess := Arith.TypeCheck.preprocess
   postprocess := Arith.TypeCheck.postprocess
   update := Arith.TypeCheck.update
@@ -109,25 +103,25 @@ instance : ToFormat (Cmds PureExpr × TEnv) where
 ---------------------------------------------------------------------
 
 private def testProgram1 : Cmds Arith.PureExpr :=
-  [.init "x" .Num (.Num 0),
-   .set "x" (.Plus (.Var "x" .none) (.Num 100)),
-   .assert "x_value_eq" (.Eq (.Var "x" .none) (.Num 100))]
+  [.init 0 .num (.numLit 0),
+   .set 0 (.add_expr (.fvar 0) (.numLit 100)),
+   .assert "x_value_eq" (.eq_expr .num (.fvar 0) (.numLit 100))]
 
 /--
 info: ok: Commands:
-init (x : Num) := 0
-x := x + 100
-assert [x_value_eq] x = 100
+init (0 : Num) := 0
+0 := 0 + 100
+assert [x_value_eq] 0 = 100
 
 TEnv:
-(x, Num)
+(0, Num)
 -/
 #guard_msgs in
 #eval do let (cs, τ) ← Cmds.typeCheck TEnv.init testProgram1
           return format (cs, τ)
 
 private def testProgram2 : Cmds Arith.PureExpr :=
-  [.init "x" .Bool (.Num 0)]
+  [.init 0 .bool (.numLit 0)]
 
 /-- info: error: Types .Bool and Num cannot be unified! -/
 #guard_msgs in
@@ -135,26 +129,26 @@ private def testProgram2 : Cmds Arith.PureExpr :=
           return format (cs, τ)
 
 private def testProgram3 : Cmds Arith.PureExpr :=
-  [.init "x" .Bool (.Var "x" .none)]
+  [.init 0 .bool (.fvar 0)]
 
 /--
-info: error: Type Checking [init (x : .Bool) := x]: Variable x cannot appear in its own initialization expression!
+info: error: Type Checking [init (0 : .Bool) := 0]: Variable 0 cannot appear in its own initialization expression!
 -/
 #guard_msgs in
 #eval do let (cs, τ) ← Cmds.typeCheck TEnv.init testProgram3
           return format (cs, τ)
 
 private def testProgram4 : Cmds Arith.PureExpr :=
-  [.init "x" .Num (.Num 5),
-   .set "x" (.Var "x" .none)]
+  [.init 0 .num (.numLit 5),
+   .set 0 (.fvar 0)]
 
 /--
 info: ok: Commands:
-init (x : Num) := 5
-x := x
+init (0 : Num) := 5
+0 := 0
 
 TEnv:
-(x, Num)
+(0, Num)
 -/
 #guard_msgs in
 #eval do let (cs, τ) ← Cmds.typeCheck TEnv.init testProgram4
@@ -162,46 +156,46 @@ TEnv:
 
 
 private def testProgram5 : Cmds Arith.PureExpr :=
-  [.init "x" .Num (.Num 5),
-   .init "x" .Bool (.Eq (.Num 1) (.Num 2))]
+  [.init 0 .num (.numLit 5),
+   .init 0 .bool (.eq_expr .num (.numLit 1) (.numLit 2))]
 
 /--
-info: error: Type Checking [init (x : .Bool) := 1 = 2]: Variable x of type Num already in context.
+info: error: Type Checking [init (0 : .Bool) := 1 = 2]: Variable 0 of type Num already in context.
 -/
 #guard_msgs in
 #eval do let (cs, τ) ← Cmds.typeCheck TEnv.init testProgram5
           return format (cs, τ)
 
 private def testProgram6 : Cmds Arith.PureExpr :=
-  [.init "x" .Num (.Var "y" .none)]
+  [.init 0 .num (.fvar 1)]
 
 /--
-info: error: Cannot infer the types of free variables in the initialization expression!
-y
+info: error: Variable 1 not found in type context!
 -/
 #guard_msgs in
 #eval do let (cs, τ) ← Cmds.typeCheck TEnv.init testProgram6
           return format (cs, τ)
 
 private def testProgram7 : Cmds Arith.PureExpr :=
-  [.init "x" .Num (.Plus (.Var "y" (some .Num)) (.Var "z" (some .Num)))]
+  [.init 0 .num (.add_expr (.ty_expr .num (.fvar 1))
+      (.ty_expr .num (.fvar 2)))]
 
 /--
 info: ok: Commands:
-init (x : Num) := (y : Num) + (z : Num)
+init (0 : Num) := (1 : Num) + (2 : Num)
 
 TEnv:
-(y, Num) (z, Num) (x, Num)
+(1, Num) (2, Num) (0, Num)
 -/
 #guard_msgs in
 #eval do let (cs, τ) ← Cmds.typeCheck TEnv.init testProgram7
           return format (cs, τ)
 
 private def testProgram8 : Cmds Arith.PureExpr :=
-  [.init "x" .Num (.Num 1),
-   .set "x" (.Var "y" (some .Num))]
+  [.init 0 .num (.numLit 1),
+   .set 0 (.ty_expr .num (.fvar 1))]
 
-/-- info: error: Variable y not found in type context! -/
+/-- info: error: Variable 1 not found in type context! -/
 #guard_msgs in
 #eval do let (cs, τ) ← Cmds.typeCheck TEnv.init testProgram8
           return format (cs, τ)
