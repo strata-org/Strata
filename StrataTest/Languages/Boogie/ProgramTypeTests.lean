@@ -1,17 +1,7 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 import Strata.Languages.Boogie.Boogie
@@ -49,7 +39,7 @@ def bad_prog : Program := { decls := [
 
 /-- info: error: Cannot unify differently named type constructors bool and int! -/
 #guard_msgs in
-#eval do let ans ← typeCheckAndPartialEval bad_prog
+#eval do let ans ← typeCheckAndPartialEval Options.default bad_prog
          return (format ans)
 
 def good_prog : Program := { decls := [
@@ -118,6 +108,14 @@ func Int.Lt :  ((x : int) (y : int)) → bool;
 func Int.Le :  ((x : int) (y : int)) → bool;
 func Int.Gt :  ((x : int) (y : int)) → bool;
 func Int.Ge :  ((x : int) (y : int)) → bool;
+func Bv1.Add :  ((x : bv1) (y : bv1)) → bv1;
+func Bv1.Sub :  ((x : bv1) (y : bv1)) → bv1;
+func Bv1.Mul :  ((x : bv1) (y : bv1)) → bv1;
+func Bv1.Neg :  ((x : bv1)) → bv1;
+func Bv1.Lt :  ((x : bv1) (y : bv1)) → bool;
+func Bv1.Le :  ((x : bv1) (y : bv1)) → bool;
+func Bv1.Gt :  ((x : bv1) (y : bv1)) → bool;
+func Bv1.Ge :  ((x : bv1) (y : bv1)) → bool;
 func Bv8.Add :  ((x : bv8) (y : bv8)) → bv8;
 func Bv8.Sub :  ((x : bv8) (y : bv8)) → bv8;
 func Bv8.Mul :  ((x : bv8) (y : bv8)) → bv8;
@@ -185,7 +183,7 @@ Proof Obligation:
 )
 -/
 #guard_msgs in
-#eval do let ans ← typeCheckAndPartialEval good_prog
+#eval do let ans ← typeCheckAndPartialEval Options.default good_prog
          return (format ans)
 
 ---------------------------------------------------------------------
@@ -219,7 +217,7 @@ info: error: [assert [q_check] (q == #1)] No free variables are allowed here!
 Free Variables: [q]
 -/
 #guard_msgs in
-#eval do let ans ← typeCheckAndPartialEval outOfScopeVarProg
+#eval do let ans ← typeCheckAndPartialEval Options.default outOfScopeVarProg
          return (format ans)
 
 ---------------------------------------------------------------------

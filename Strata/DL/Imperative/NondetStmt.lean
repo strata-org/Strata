@@ -1,17 +1,7 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 
@@ -24,13 +14,19 @@ import Strata.DL.Imperative.HasVars
 
 namespace Imperative
 
-/-! # Imperative dialect: non-deterministic statements -/
+/-! # Imperative dialect: non-deterministic statements
+
+These statements use assumptions to encode conditional branches and guarded
+loops. This is roughly the structure used by most formalizations of [Guarded
+Comamnds](https://en.wikipedia.org/wiki/Guarded_Command_Language), and in
+[Kleene Algebra with Tests](https://www.cs.cornell.edu/~kozen/Papers/kat.pdf).
+-/
 
 inductive NondetStmt (P : PureExpr) (Cmd : Type) : Type where
   | cmd      (cmd : Cmd)
   | seq      (s1 s2 : NondetStmt P Cmd)
   | choice   (s1 s2 : NondetStmt P Cmd)
-  --| loop     (s : NondetStmt P) -- Uncomment once loops exist in Stmt
+  | loop     (s : NondetStmt P Cmd)
   deriving Inhabited
 
 abbrev NondetStmt.init {P : PureExpr} (name : P.Ident) (ty : P.Ty) (expr : P.Expr) (md : MetaData P := .empty) :=
@@ -51,6 +47,7 @@ def NondetStmt.definedVars [HasVarsImp P C] (s : NondetStmt P C) : List P.Ident 
   | .cmd c => HasVarsImp.definedVars c
   | .seq s1 s2 => NondetStmt.definedVars s1 ++ NondetStmt.definedVars s2
   | .choice s1 s2 => NondetStmt.definedVars s1 ++ NondetStmt.definedVars s2
+  | .loop s => NondetStmt.definedVars s
 
 def NondetStmts.definedVars [HasVarsImp P C] (ss : List (NondetStmt P C)) : List P.Ident :=
   match ss with
@@ -65,6 +62,7 @@ def NondetStmt.modifiedVars [HasVarsImp P C] (s : NondetStmt P C) : List P.Ident
   | .cmd c => HasVarsImp.modifiedVars c
   | .seq s1 s2 => NondetStmt.modifiedVars s1 ++ NondetStmt.modifiedVars s2
   | .choice s1 s2 => NondetStmt.modifiedVars s1 ++ NondetStmt.modifiedVars s2
+  | .loop s => NondetStmt.modifiedVars s
 
 def NondetStmts.modifiedVars [HasVarsImp P C] (ss : List (NondetStmt P C)) : List P.Ident :=
   match ss with
@@ -88,7 +86,7 @@ def formatNondetStmt (P : PureExpr) (s : NondetStmt P C)
   | .cmd cmd => format cmd
   | .seq s1 s2 => f!"({formatNondetStmt P s1}) ; ({formatNondetStmt P s2})"
   | .choice s1 s2 => f!"({formatNondetStmt P s1}) | ({formatNondetStmt P s2})"
-  -- | .loop s => f!"({formatNondetStmt P s})*"
+  | .loop s => f!"({formatNondetStmt P s})*"
 
 instance [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] [ToFormat C]
         : ToFormat (NondetStmt P C) where

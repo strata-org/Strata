@@ -1,17 +1,7 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 import Strata.Languages.Boogie.Boogie
@@ -70,21 +60,42 @@ procedure Test2(x : int) returns (y : bool)
 info: [Strata.Boogie] Type checking succeeded.
 
 
-Obligation a1 proved via evaluation!
-
-
-Obligation a3 proved via evaluation!
-
-
-Obligation a4 proved via evaluation!
-
-
 VCs:
+Label: a1
+Assumptions:
+Proof Obligation:
+#true
+
+Label: a3
+Assumptions:
+Proof Obligation:
+#true
+
+Label: a4
+Assumptions:
+Proof Obligation:
+#true
+
 Label: a6
 Assumptions:
 (<label_ite_cond_true: ((~Int.Gt x) #0)>, ((~Int.Gt $__x2) #0))
 Proof Obligation:
 ((~Int.Gt ((~Int.Mul $__x2) #2)) $__x2)
+
+Label: a1
+Assumptions:
+Proof Obligation:
+#true
+
+Label: a3
+Assumptions:
+Proof Obligation:
+#true
+
+Label: a4
+Assumptions:
+Proof Obligation:
+#true
 
 Label: a7
 Assumptions:
@@ -92,11 +103,35 @@ Assumptions:
 Proof Obligation:
 ((~Int.Le $__x2) #0)
 
+Wrote problem to vcs/a1.smt2.
+Wrote problem to vcs/a3.smt2.
+Wrote problem to vcs/a4.smt2.
 Wrote problem to vcs/a6.smt2.
+Wrote problem to vcs/a1.smt2.
+Wrote problem to vcs/a3.smt2.
+Wrote problem to vcs/a4.smt2.
 Wrote problem to vcs/a7.smt2.
 ---
 info:
+Obligation: a1
+Result: verified
+
+Obligation: a3
+Result: verified
+
+Obligation: a4
+Result: verified
+
 Obligation: a6
+Result: verified
+
+Obligation: a1
+Result: verified
+
+Obligation: a3
+Result: verified
+
+Obligation: a4
 Result: verified
 
 Obligation: a7

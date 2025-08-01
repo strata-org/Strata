@@ -1,17 +1,7 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 import Strata.Languages.C_Simp.C_Simp
@@ -82,9 +72,6 @@ open Strata.C_Simp in
 info: [Strata.Boogie] Type checking succeeded.
 
 
-Obligation post proved via evaluation!
-
-
 VCs:
 Label: test_assert
 Assumptions:
@@ -98,14 +85,25 @@ Assumptions:
 Proof Obligation:
 ((~Int.Gt ((~Int.Add $__x0) $__y1)) $__x0)
 
+Label: post
+Assumptions:
+(pre, ((~Int.Gt $__y1) #0))
+(<label_ite_cond_true: ((~Int.Gt z) #10)>, (if ((~Int.Gt ((~Int.Add $__x0) $__y1)) #10) then ((~Int.Gt ((~Int.Add $__x0) $__y1)) #10) else #true)) (<label_ite_cond_false: !((~Int.Gt z) #10)>, (if (if ((~Int.Gt ((~Int.Add $__x0) $__y1)) #10) then #false else #true) then (if ((~Int.Gt ((~Int.Add $__x0) $__y1)) #10) then #false else #true) else #true)) (test_assume, ((~Int.Gt (if ((~Int.Gt ((~Int.Add $__x0) $__y1)) #10) then ((~Int.Sub ((~Int.Add $__x0) $__y1)) #1) else ((~Int.Add ((~Int.Add $__x0) $__y1)) #1))) #0))
+Proof Obligation:
+#true
+
 Wrote problem to vcs/test_assert.smt2.
 Wrote problem to vcs/test_assert.smt2.
+Wrote problem to vcs/post.smt2.
 ---
 info:
 Obligation: test_assert
 Result: verified
 
 Obligation: test_assert
+Result: verified
+
+Obligation: post
 Result: verified
 -/
 #guard_msgs in

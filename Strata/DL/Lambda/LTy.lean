@@ -1,17 +1,7 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 
@@ -60,6 +50,10 @@ def LMonoTy.int : LMonoTy :=
 @[match_pattern]
 def LMonoTy.real : LMonoTy :=
   .tcons "real" []
+
+@[match_pattern]
+def LMonoTy.bv1 : LMonoTy :=
+  .bitvec 1
 
 @[match_pattern]
 def LMonoTy.bv8 : LMonoTy :=
@@ -425,6 +419,7 @@ partial def elabLMonoTy : Lean.Syntax → MetaM Expr
   | `(lmonoty| bool) => do
     let argslist ← mkListLit (mkConst ``LMonoTy) []
     mkAppM ``LMonoTy.tcons #[(mkStrLit "bool"), argslist]
+  | `(lmonoty| bv1) =>  mkAppM ``LMonoTy.bv1 #[]
   | `(lmonoty| bv8) =>  mkAppM ``LMonoTy.bv8 #[]
   | `(lmonoty| bv16) => mkAppM ``LMonoTy.bv16 #[]
   | `(lmonoty| bv32) => mkAppM ``LMonoTy.bv32 #[]

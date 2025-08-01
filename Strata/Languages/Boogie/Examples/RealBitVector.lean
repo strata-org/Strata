@@ -1,17 +1,7 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 import Strata.Languages.Boogie.Verifier
@@ -85,6 +75,19 @@ Obligation real_add_ge_bad: could not be proved!
 
 Result: failed
 CEx: ⏎
+
+Evaluated program:
+func x :  () → real;
+func y :  () → real;
+axiom real_x_ge_1: (((~Real.Ge : (arrow real (arrow real bool))) (~x : real)) (#1.0 : real));
+axiom real_y_ge_2: (((~Real.Ge : (arrow real (arrow real bool))) (~y : real)) (#2.0 : real));
+(procedure P :  () → ())
+modifies: []
+preconditions: ⏎
+postconditions: ⏎
+body: assert [real_add_ge_good] ((~Real.Ge ((~Real.Add ~x) ~y)) #3.0)
+assert [real_add_ge_bad] ((~Real.Ge ((~Real.Add ~x) ~y)) #4.0)
+
 ---
 info:
 Obligation: real_add_ge_good
@@ -113,6 +116,13 @@ procedure P() returns ()
 {
   assert [bv_add_ge]: x + y == y + x;
 };
+
+procedure Q(x: bv1) returns (r: bv1)
+spec {
+  ensures r == x - x;
+} {
+  r := x + x;
+};
 #end
 
 /-- info: true -/
@@ -131,6 +141,12 @@ preconditions: ⏎
 postconditions: ⏎
 body: assert [bv_add_ge] (((~Bv8.Add ~x) ~y) == ((~Bv8.Add ~y) ~x))
 
+(procedure Q :  ((x : bv1)) → ((r : bv1)))
+modifies: []
+preconditions: ⏎
+postconditions: (Q_ensures_0, (r == ((~Bv1.Sub x) x)))
+body: r := ((~Bv1.Add x) x)
+
 Errors: #[]
 -/
 #guard_msgs in
@@ -148,10 +164,20 @@ Assumptions:
 Proof Obligation:
 (((~Bv8.Add ~x) ~y) == ((~Bv8.Add ~y) ~x))
 
+Label: Q_ensures_0
+Assumptions:
+(bv_x_ge_1, ((~Bv8.Le #1) ~x))
+Proof Obligation:
+(((~Bv1.Add $__x0) $__x0) == ((~Bv1.Sub $__x0) $__x0))
+
 Wrote problem to vcs/bv_add_ge.smt2.
+Wrote problem to vcs/Q_ensures_0.smt2.
 ---
 info:
 Obligation: bv_add_ge
+Result: verified
+
+Obligation: Q_ensures_0
 Result: verified
 -/
 #guard_msgs in

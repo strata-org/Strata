@@ -1,17 +1,7 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 import Strata.Languages.C_Simp.C_Simp
@@ -26,7 +16,7 @@ namespace Strata
 -- 2. Running SymExec of Lambda and Imp
 
 
-def translate_expr (e : Loopy.DefaultPureExpr.Expr) : Lambda.LExpr Boogie.BoogieIdent :=
+def translate_expr (e : C_Simp.Expression.Expr) : Lambda.LExpr Boogie.BoogieIdent :=
   match e with
   | .const c ty => .const c ty
   | .op o ty => .op (.unres, o) ty
@@ -39,7 +29,12 @@ def translate_expr (e : Loopy.DefaultPureExpr.Expr) : Lambda.LExpr Boogie.Boogie
   | .ite c t e => .ite (translate_expr c) (translate_expr t) (translate_expr e)
   | .eq e1 e2 => .eq (translate_expr e1) (translate_expr e2)
 
-def translate_cmd (c: Loopy.Command) : Boogie.Command :=
+def translate_opt_expr (e : Option C_Simp.Expression.Expr) : Option (Lambda.LExpr Boogie.BoogieIdent) :=
+  match e with
+  | some e => translate_expr e
+  | none => none
+
+def translate_cmd (c: C_Simp.Command) : Boogie.Command :=
   match c with
   | .init name ty e _md => .cmd (.init (.unres, name) ty (translate_expr e) {})
   | .set name e _md => .cmd (.set (.unres, name) (translate_expr e) {})
@@ -47,16 +42,37 @@ def translate_cmd (c: Loopy.Command) : Boogie.Command :=
   | .assert label b _md => .cmd (.assert label (translate_expr b) {})
   | .assume label b _md =>  .cmd (.assume label (translate_expr b) {})
 
-partial def translate_stmt (s: Imperative.Stmt Loopy.DefaultPureExpr Loopy.Command) : Boogie.Statement :=
+partial def translate_stmt (s: Imperative.Stmt C_Simp.Expression C_Simp.Command) : Boogie.Statement :=
   match s with
   | .cmd c => .cmd (translate_cmd c)
   | .block l b _md => .block l {ss := b.ss.map translate_stmt} {}
   | .ite cond thenb elseb _md => .ite (translate_expr cond) {ss := thenb.ss.map translate_stmt} {ss := elseb.ss.map translate_stmt} {}
+  | .loop guard measure invariant body _md => .loop (translate_expr guard) (translate_opt_expr measure) (translate_opt_expr invariant) {ss := body.ss.map translate_stmt} {}
   | .goto label _md => .goto label {}
 
-def loop_elimination_statement(s : Loopy.LoopOrStmt) : Boogie.Statement :=
+
+/--
+Eliminates loops and replaces them with the following:
+
+```
+Proof obligation that invariant holds on entry
+Proof obligation that invariant holds after arbitrary iteration
+  (assuming invariant and guard held at start)
+
+Proof obligation that measure is positive on entry
+Proof obligation that measure <= 0 implies guard is false
+Proof obligation that measure decreases on arbitrary iteration
+
+Assumption that guard is false on exit
+Assumption that invariant holds on exit
+```
+
+This is suitable for Symbolic Execution, but may not be suitable for
+other analyses.
+-/
+def loop_elimination_statement(s : C_Simp.Statement) : Boogie.Statement :=
   match s with
-  | .loop guard body measure invariant =>
+  | .loop guard measure invariant body _ =>
     match measure, invariant with
     | .some measure, some invariant =>
       -- let bodyss : := body.ss
@@ -67,7 +83,7 @@ def loop_elimination_statement(s : Loopy.LoopOrStmt) : Boogie.Statement :=
 
       let entry_invariant : Boogie.Statement := .assert "entry_invariant" (translate_expr invariant) {}
       let assert_measure_positive : Boogie.Statement := .assert "assert measure_pos" measure_pos {}
-      let first_iter_facts : Boogie.Statement := .ite (translate_expr guard) {ss := [entry_invariant, assert_measure_positive]} {ss := []} {}
+      let first_iter_facts : Boogie.Statement := .block "first_iter_asserts" {ss := [entry_invariant, assert_measure_positive]} {}
 
       let arbitrary_iter_assumes := .block "arbitrary_iter_assumes" {ss := [(Boogie.Statement.assume "assume_guard" (translate_expr guard) {}), (Boogie.Statement.assume "assume_invariant" (translate_expr invariant) {}), (Boogie.Statement.assume "assume_measure_pos" measure_pos {})]} {}
       let measure_old_value_assign : Boogie.Statement := .init "special-name-for-old-measure-value" (.forAll [] (.tcons "int" [])) (translate_expr measure) {}
@@ -80,9 +96,9 @@ def loop_elimination_statement(s : Loopy.LoopOrStmt) : Boogie.Statement :=
       let not_guard : Boogie.Statement := .assume "not_guard" (.app (.op "Bool.Not" none) (translate_expr guard)) {}
       let invariant : Boogie.Statement := .assume "invariant" (translate_expr invariant) {}
 
-      .block "transformed loop block" {ss := [first_iter_facts, arbitrary_iter_facts, havocd, not_guard, invariant]} {}
+      .ite (translate_expr guard) {ss := [first_iter_facts, arbitrary_iter_facts, havocd, not_guard, invariant]} {ss := []} {}
     | _, _ => panic! "Loop elimination require measure and invariant"
-  | .stmt s => translate_stmt s
+  | _ => translate_stmt s
 
 -- C_Simp functions are Boogie procedures
 def loop_elimination_function(f : C_Simp.Function) : Boogie.Procedure :=
@@ -104,16 +120,13 @@ def loop_elimination(program : C_Simp.Program) : Boogie.Program :=
 def to_boogie(program : C_Simp.Program) : Boogie.Program :=
   loop_elimination program
 
--- def C_Simp.verify (program : C_Simp.Program) :
---   IO Boogie.VCResults := do
---   EIO.toIO (fun f => IO.Error.userError (toString f)) (Boogie.verify "cvc5" (to_boogie program) false)
-
 def C_Simp.get_program (env: Environment) : C_Simp.Program :=
   (Strata.C_Simp.TransM.run (Strata.C_Simp.translateProgram (env.commands))).fst
 
-def C_Simp.verify (smtsolver : String) (env : Environment) :
+def C_Simp.verify (smtsolver : String) (env : Environment) (options : Options := Options.default):
   IO Boogie.VCResults := do
   let program := C_Simp.get_program env
-  EIO.toIO (fun f => IO.Error.userError (toString f)) (Boogie.verify smtsolver (to_boogie program) false)
+  EIO.toIO (fun f => IO.Error.userError (toString f))
+    (Boogie.verify smtsolver (to_boogie program) options)
 
 end Strata

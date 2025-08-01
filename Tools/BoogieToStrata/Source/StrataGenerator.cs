@@ -135,7 +135,7 @@ public class StrataGenerator : ReadOnlyVisitor {
     }
 
     private void EmitHeader() {
-        WriteLine("open Boogie;");
+        WriteLine("program Boogie;");
         WriteLine();
     }
 

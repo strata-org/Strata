@@ -1,17 +1,7 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 import Strata.Languages.C_Simp.C_Simp
@@ -68,10 +58,7 @@ info: function linearSearch {
   body:
 init (idx : int) := init_idx
 idx := #0
-while(((~Int.Lt idx) (~Array.Len arr)))
-(some ((~Int.Sub (~Array.Len arr)) idx))
-(some #true)
-{if (e == ((~Array.Get arr) idx)) then {return := #true}
+while (((~Int.Lt idx) (~Array.Len arr))) (some ((~Int.Sub (~Array.Len arr)) idx)) (some #true) {if (e == ((~Array.Get arr) idx)) then {return := #true}
  else{}
  idx := ((~Int.Add idx) #1)}
 return := #false
@@ -89,9 +76,8 @@ preconditions: (pre, #true)
 postconditions: (post, #true)
 body: init (idx : int) := init_idx
 idx := #0
-transformed loop block : {if ((~Int.Lt idx) (~Array.Len arr)) then {assert [entry_invariant] #true
+if ((~Int.Lt idx) (~Array.Len arr)) then {first_iter_asserts : {assert [entry_invariant] #true
   assert [assert measure_pos] ((~Int.Ge ((~Int.Sub (~Array.Len arr)) idx)) #0)}
- else{}
  arbitrary iter facts : {loop havoc : {havoc return
    havoc idx}
   arbitrary_iter_assumes : {assume [assume_guard] ((~Int.Lt idx) (~Array.Len arr))
@@ -108,6 +94,7 @@ transformed loop block : {if ((~Int.Lt idx) (~Array.Len arr)) then {assert [entr
   havoc idx}
  assume [not_guard] (~Bool.Not ((~Int.Lt idx) (~Array.Len arr)))
  assume [invariant] #true}
+else{}
 return := #false
 -/
 #guard_msgs in

@@ -46,6 +46,25 @@ jobs:
               unzip cvc5-Linux-${ARCH_NAME}-static.zip
               chmod +x cvc5-Linux-${ARCH_NAME}-static/bin/cvc5
               echo "$GITHUB_WORKSPACE/cvc5-Linux-${ARCH_NAME}-static/bin/" >> $GITHUB_PATH
+      - name: Install z3
+        shell: bash
+        run: |
+              ARCH=$(uname -m)
+              if [ "$ARCH" = "x86_64" ]; then
+                ARCH_NAME="x86_64"
+                wget https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-x64-glibc-2.39.zip
+                ARCHIVE_NAME="z3-4.15.2-x64-glibc-2.39"
+              elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+                ARCH_NAME="arm64"
+                wget https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-arm64-glibc-2.34.zip
+                ARCHIVE_NAME="z3-4.15.2-arm64-win"
+              else
+                echo "Unsupported architecture: $ARCH"
+                exit 1
+              fi
+              unzip "${ARCHIVE_NAME}.zip"
+              chmod +x "${ARCHIVE_NAME}/bin/z3"
+              echo "$GITHUB_WORKSPACE/${ARCHIVE_NAME}/bin/" >> $GITHUB_PATH
       - name: Download dependencies
         shell: bash
         run: source ~/.profile && lake -R -Kenv=dev update
