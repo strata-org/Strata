@@ -104,27 +104,6 @@ def realLeFunc : LFunc BoogieIdent := binaryPredicate "Real.Le" mty[real] none
 def realGtFunc : LFunc BoogieIdent := binaryPredicate "Real.Gt" mty[real] none
 def realGeFunc : LFunc BoogieIdent := binaryPredicate "Real.Ge" mty[real] none
 
-/- Boolean Operations -/
-def boolAndFunc : LFunc BoogieIdent :=
-  binaryOp "Bool.And" mty[bool]
-  (some (binOpDenote Bool Bool LExpr.denoteBool Bool.and mty[bool]))
-
-def boolOrFunc : LFunc BoogieIdent :=
-  binaryOp "Bool.Or" mty[bool]
-  (some (binOpDenote Bool Bool LExpr.denoteBool Bool.or mty[bool]))
-
-def boolImpliesFunc : LFunc BoogieIdent :=
-  binaryOp "Bool.Implies" mty[bool]
-  (some (binOpDenote Bool Bool LExpr.denoteBool (fun x y => ((not x) || y)) mty[bool]))
-
-def boolEquivFunc : LFunc BoogieIdent :=
-  binaryOp "Bool.Equiv" mty[bool]
-  (some (binOpDenote Bool Bool LExpr.denoteBool (fun x y => (x == y)) mty[bool]))
-
-def boolNotFunc : LFunc BoogieIdent :=
-  unaryOp "Bool.Not" mty[bool]
-  (some (unOpDenote Bool Bool LExpr.denoteBool Bool.not mty[bool]))
-
 /- String Operations -/
 
 def strLengthFunc : LFunc BoogieIdent :=

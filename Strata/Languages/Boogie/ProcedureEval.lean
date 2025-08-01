@@ -8,6 +8,7 @@
 
 import Strata.Languages.Boogie.Procedure
 import Strata.Languages.Boogie.StatementEval
+import Strata.Transform.LoopElim
 
 ---------------------------------------------------------------------
 
