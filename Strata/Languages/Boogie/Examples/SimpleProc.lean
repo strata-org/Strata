@@ -37,7 +37,7 @@ info: var (g : bool) := init_g_0
 modifies: []
 preconditions: ⏎
 postconditions: (Test_ensures_0, (y == x)) (Test_ensures_1, (x == y)) (Test_ensures_2, (g == (~old g)))
-body: y := ((~Bool.Or x) x)
+body: y := (((~Bool.Or : (arrow bool (arrow bool bool))) x) x)
 
 Errors: #[]
 -/

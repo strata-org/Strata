@@ -12,6 +12,7 @@ import Strata.Languages.Boogie.Identifiers
 import Strata.Languages.Boogie.Factory
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.HasVars
+import Strata.DL.Lambda.LExpr
 
 namespace Boogie
 open Imperative
