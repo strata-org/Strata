@@ -11,7 +11,7 @@ const null: Ref;
 type Struct := Map Field Box;
 type Heap := Map Ref Struct;
 
-// Map axiomatization
+// Map axiomatization TODO Remove when fixed
 axiom forall m: Struct, okk: Field, kk: Field, vv: Box :: okk != kk ==> m[okk] == m[kk := vv][okk];
 axiom forall m: Struct, kk: Field, vv: Box :: m[kk := vv][kk] == vv;
 
