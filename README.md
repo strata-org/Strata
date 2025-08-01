@@ -22,7 +22,7 @@ changes!**
 
    You can install Lean4 by following the instructions [here](https://lean-lang.org/).
 
-2. **SMT Solver**: Analyses tools in Strata use SMT solvers for program
+2. **SMT Solver**: Analysis tools in Strata use SMT solvers for program
    verification.
    - Install an SMT solver. You can use any solver you want, but the unit
      tests assume `cvc5` is on your `PATH` [cvc5](https://cvc5.github.io/).
@@ -39,7 +39,7 @@ Unit tests are run with `#guard_msgs` commands. No output means the tests passed
 
 ## Running Analyses on Existing Strata Programs
 
-Strata programs use the `.st` file extension, preceded the dialect name,
+Strata programs use the `.st` file extension, preceded by the dialect name,
 preceded by a second `.` e.g., `SimpleProc.boogie.st` or
 `LoopSimple.csimp.st`. Note the current `StrataVerify` executable
 relies on this file extension convention to know what dialect it's
