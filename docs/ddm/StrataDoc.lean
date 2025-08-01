@@ -22,98 +22,185 @@ shortTitle := "Strata"
 %%%
 
 The Strata Dialect Definition Mechanism (DDM) is a set of tools for defining
-intermediate representations (IRs) for a wide variety of programming and
-specification languages - including potentially all the top languages on Github.
+intermediate representations (IRs) for a wide variety of languages.
+The DDM combines features of a parser grammar and a datatype definition language
+to let developers quickly define intermediate representations that are easy to work with
+both programmatically and textually.  Additionally, the DDM can automatically
+generate serialization and deserialization code for its dialects to enable
+distributed analysis across language and system boundaries.
 
-Strata definitions combine features of a datatype or schema definition language with
-those of a parser generator so that intermediate representations can have an
-easy-to-read textual representation.  Strata supports serialization and will provide
-code generation in a variety of target languages so that one can build tooling for
-Strata analysis in your language of choice.
+The Strata DDM is implemented in Lean.  Strata dialects and programs may be embedded
+in Lean or in standalone dialect files.  In a future release, we will support working with
+Strata from the command line as well as other languages such as .Net-based language,
+JVM-based languages, Rust, Python and JavaScript/TypeScript.
 
-Strata dialect are declared in Strata dialect files or may be embedded in Lean
-using the [`#dialect`](#lean_dialect) command.
-
-language for defining
-languages including its operations as well as a syntactic textual representation.
-Progams may be mapped into Strata either by ensuring the syntax of the representation
-matches the language or by letting users use an extensting parser and translating
-its output into Strata terms.
-
-# Stata Dialects Definitions
+# Strata Dialect Definitions
 
 Dialects are the core mechanism in Strata used to declare and extend program
 intermediata representations.   A Strata dialect defines new syntactic categories,
-operations, types, functions and metadata.  Strata dialects may also extend one or
-more existing dialect with new operations by importing them.
+operations, types, functions and metadata.  Strata dialects are composable and
+can be used to define extensions that can be used in multiple languages.  There
+is a builtin dialect, called `Init` that provides some basic declarations that
+automatically are included in all other dialects.
 
-In this section, we show the concrete syntax for declarations in a dialect definition.
-Our convention is to use `monospace` text for concrete syntax in the dialect definition
+## Strata Dialect Concepts
+
+Each Strata dialect introduces declarations that ultimately define the IR.  There
+are five basic types of declarations:
+
+ * A {deftech}_Syntactic Category_ declaration represents a concept in a Strata dialect
+   definition such as an expression, type, statement, or binding.  They are
+   defined by operators.
+ * A {deftech}_Operator_ declaration defines information that may be stored in a
+   syntactic category, along with how it is textually presented.
+   Operators have arguments that may reference categories or types, and
+   use metadata to define how their arguments affect Strata
+   [typechecking](typechecking).
+ * A {deftech}_Type_ declaration declares a new builtin type for the dialect
+   that all programs in a dialect may refer to.  Types declarations do not introduce
+   new syntactic categories in a dialect, but rather extend a dialect `Init.Type`
+   with new types that may be refered to.  This allows Strata to support type variables
+   and polymorphism.
+ * A {deftech}_Function_ declaration introduces a new function into Strata's
+   builtin expression syntactic category `Init.Expr`.  Functions have an user-
+   defineable syntax like operators, but can be polymorphic and are type checked
+   after parsing.
+ * A {deftech}_Metadata_ declaration introduces a new attribute that may be attached
+   to other Strata declarations.  There are builtin metadata attributes used to
+   control parsing and typechecking in dialects.  Dialects may introduce new metadata
+   to provide a mechanism for associating properties with declarations.
+
+## Strata Examples
+
+As a simple example, we define a sequence of progressively more complex Strata
+dialects with Boolean and arithmetic expressions as well as a simple assertion
+language.  Each example provides just enough detail to help readers understand
+the example code.  The [Strata Dialect Language Reference](#reference)
+contains additional detail on the commands.
+
+```
+#dialect Bool;
+// Introduce Boolean type
+type Bool;
+
+// Introduce literals as constants.
+fn true_lit : Bool => "true";
+fn false_lit : Bool => "false";
+
+// Introduce basic Boolean operations.
+fn not_expr (tp : Type, a : tp) : tp => "-" a;
+fn and (a : bool, b : bool) : bool => @[prec(10), leftassoc] a " && " b;
+fn or (a : bool, b : bool) : bool => @[prec(8), leftassoc] a " || " b;
+fn imp (a : bool, b : bool) : bool => @[prec(8), leftassoc] a " ==> " b;
+
+// Introduce equality operations that work for arbitrary types.
+// The type is inferred.
+fn equal (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a " == " b;
+fn not_equal (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a " != " b;
+```
+
+We can then extend thse operations with an Integer type and operations.
+```
+#dialect Arith;
+import Bool;
+
+type Int;
+fn neg_expr (a : Int) : Int => "- " a;
+fn add_expr (a : Int, b : Int) : Int => @[prec(25), leftassoc] a " + " b;
+fn sub_expr (a : Int, b : Int) : Int => @[prec(25), leftassoc] a " - " b;
+fn mul_expr (a : Int, b : Int) : Int => @[prec(30), leftassoc] a " * " b;
+fn exp_expr (a : Int, b : Int) : Int => @[prec(32), rightassoc] a " ^ " b;
+
+fn le (a : Int, b : Int) : bool => @[prec(15)] a " <= " b;
+fn lt (a : Int, b : Int) : bool => @[prec(15)] a " < " b;
+fn ge (a : Int, b : Int) : bool => @[prec(15)] a " >= " b;
+fn gt (a : Int, b : Int) : bool => @[prec(15)] a " > " b;
+```
+
+By itself, these dialects do not define a new language.  To define a
+language, one needs to extends a builtin `Command` category with
+new commands.  This is done with the following dialect that introduces
+commands for assertions and defining functions:
+
+```
+dialect AssertLang;
+import Arith; // Automatically imports Bool dependency of Arirth
+
+// This introduces a new operator into the Command category.
+op assert (b : Bool) : Command => "assert " b ";";
+
+// Introduce a category for arguments.
+category ArgDecl;
+@[declare(var, tp)]
+op decl (var : Ident, tp : Type) : ArgDecl => var " : " tp;
+
+category ArgDecls;
+op decls (l : CommaSepBy ArgDecl) => "(" l ")";
+
+@[declareFn(name, args, tp)]
+op defFun (name : Ident, args : ArgDecls, tp : Type, @[scope(args)] value : tp)
+  : Command => "def " name args "=" value ";";
+
+// Now that we have binders, Introduce quantifiers
+fn forall (args : ArgDecls, @[scope(args)] b : bool) : bool =>
+  "forall " args ", " b;
+fn exists (args : ArgDecls, @[scope(args)] b : bool) : bool =>
+  "exists " args ", " b;
+```
+
+With these command extensions, we are now ready to use the dialects in programs:
+
+```
+program AssertLang;
+
+assert forall (a : Int), exists (b : Int), b > a;
+// Assert Fermat's last theorem
+assert forall (a : Int, b : Int, c : Int, n : Int),
+         a > 0 && b > 0 && c > 0 && n > 2 ==> a^n + b^n != c^n;
+
+// Introduce function
+def addMul(a : Int, b : Int, c : Int) = a * b + c;
+
+assert forall (a : Int, b : Int, c : Int),
+        b >= c ==> addMul(a, b, b) >= addMul(a, c, c);
+```
+
+# Strata Dialect Language Reference
+%%%
+tag := "reference"
+%%%
+
+The Strata Dialect Definition Language is defined in the rest of this section.
+The convention is to use `monospace` text for concrete syntax in the dialect definition
 language and _italic_ for identifiers and other expressions introduced as part of a
 specific dialect.
 
-Each dialect definition must begin with the name of the dialect specified
-via the command `dialect` _name_`;`.
+Each dialect definition must begin with the `dialect` followed by the name of the dialect.
+
+`dialect` _name_`;`.
+
+Additional commands are defined in the following subsections.
 
 ## Importing dialects
 
 Imports bring declarations of another dialect into the current dialect being
 declared.  This includes transitive imports of the dialect being imported.
 
-Each dialect implicitly imports the builtin `Init` dialect that includes some
-primitive declarations such as support for numeric literals that cannot
-currently be introduced in a Strata user dialect.
-
 :::paragraph
-Syntax: `import` _ident_`;`
+`import` _ident_`;`
 
-Imports the dialect `_ident_`.
+Imports the dialect _ident_.
 :::
 
 ## Syntactic Categories
 
-Perhaps the most fundamental concept in a Strata dialects is a
-{deftech}_Syntactic Category_.
-These are typically used to represent core concepts in a language
-such as statements, declarations, expressions, variables bindings and types.
+Syntactic categories are introduced by the `category` declaration:
 
 :::paragraph
-Syntax: `category` _name_`;`
+`category` _name_`;`
 
-Declares a new syntactic category `_name_`.
+Declares a new syntactic category _name_.
 :::
-
-The `Init` dialect introduces a few syntactic categories that cannot currently
-be defined in user definable dialects.
-
-* `Init.Type` and `Init.Expr` represent types and expressions in Strata.  Unlike
-  other categories, these are extended through the specialized `type` and
-  `fn` commands rather than [`op`](#operator) declarations so that expressions
-  can be type checked after parsing.  See [Types and Expressions](#type_expression) for
-  more details.
-
-* Syntactic categories that in dialects other than `Init` cannot currently cannot
-  take additional parameters.  This support will be added in a future update, but
-  to help users, the `Init` declares a few builtin parametric categories:
-
-  * `Init.Option c` denotes an optional value of `c`.  Syntactically, either
-    `c` may be read in or the empty string.
-
-  * `Init.Seq c` denotes a sequence of values with category `c`.  Each value of `c` is
-    separated by whitespace.
-
-  * `Init.CommaSepBy c` denotes a comma-separated list of values of type `c`.
-
-* Parsing for primitive literals and identifiers cannot be directly in syntax definitions.
-  To accomodate this, the `Init` dialect introduces the syntactic categories for this:
-
-  * `Init.Ident` represents to identifiers.  These are alphanumeric sequences that start with
-    a letter that are not otherwise used as keywords in a dialect.
-
-  * `Init.Str` represents string literals.  These are delimited by double quotes and use escaping
-    for special characters.
-
-  * `Init.Num` represents numeric natural number literals.
 
 ## Operators
 %%%
@@ -126,11 +213,11 @@ to the operator, the syntactic category being extended, and a syntax definition 
 how to pretty-print the operator.
 
 :::paragraph
-Syntax: _metadata_ `op` _name_`(`_id1_ `:` _k1_`,` _id2_ `:` _k2_, _..._`) :` _cat_ `=>` _syntax_`;`
+_md_ `op` _name_`(`_id1_ `:` _k1_`,` _id2_ `:` _k2_, _..._`) :` _cat_ `=>` _syntax_`;`
 
 Declares a new operator _name_ where
 
-* _metadata_ is optional metadata (see [Metadata](#metadata)).
+* _md_ is optional metadata (see [Metadata](#metadata)).
 * `(`_id1_ `:` _k1_`,` _id2_ `:` _k2_`,` _..._`)` are optional bindings and may
   be omited if the operator takes no arguments.  Each identifier _idN_ is the name
   of an argument while the _kN_ annotation may refer to a syntax category or type.
@@ -186,7 +273,7 @@ creation of typed IRs in Strata.
 
 ### Types
 
-Syntax: `type` _name_`(`_id1_ `:` `Type,` _id2_ `:` `Type,` _..._`);`
+`type` _name_`(`_id1_ `:` `Type,` _id2_ `:` `Type,` _..._`);`
 
 Declares a new type with optional parameters with names given by the identifiers
 _id1_, _id2_, ...
@@ -199,7 +286,7 @@ type Map (dom : Type, range : Type);  -- Ex. Map Nat Bool
 
 ### Expressions
 
-Syntax: _metadata_ `fn` _name_`(`_id1_ `:` _k1_`,` _id2_ `:` _k2_, _..._`) :` _type_ `=>` _syntax_`;`
+_metadata_ `fn` _name_`(`_id1_ `:` _k1_`,` _id2_ `:` _k2_, _..._`) :` _type_ `=>` _syntax_`;`
 
 This introduces a new function
 
@@ -223,34 +310,29 @@ attributes can be declared in dialects to build new capabilities on top of Strat
 of this is to provide an user-controllable extension mechanism to Strata dialects so that
 dialects themselves may be repurposed to new use cases.
 
-Syntax: `metadata` _name_ `(`_id1_ `:` _tp1_`,` _id2_ `:` _tp2_`,` _..._ `);`
+`metadata` _name_ `(`_id1_ `:` _tp1_`,` _id2_ `:` _tp2_`,` _..._ `);`
 
 Declares a new metadata operation with the given name.
 
-The type annotations are currently restricted to identifiers (for referencing arguments),
-natural numbers and optional values.  More general support for metadata will be added
-in a future relase.
-
-## Parsing, Type Checking and Pretty Printings
-%%%
-tag := "parsing_typechecking"
-%%%
-
-Strata automatically generates a parser, type checker and pretty printer from
-the {deftech}_syntax definitions_ and
-
- syntax definitions to de
+The type annotations in _tp1_ are currently restricted to `Ident`
+(for referencing arguments), natural numbers (`Num`) and optional versions of
+each (`Option Ident` and `Option Num`).  More general support for metadata will
+be added in a future relase.
 
 ### Syntax Definitions
 %%%
 tag := "syntaxdef"
 %%%
 
-A syntax definition is a sequence of tokens that describe the syntax of the operator or function.
+How operations and functions are represented in Strata depends on  {deftech}_syntax definitions_.
+Each syntax definition is a sequence of tokens that describe the syntax of the operator or function.
 
-* A string literal "text" outputs the literal text as a token.
-* An identifier var controls where the associated argument to the function or operator appears in output. The precedence of var is inferred from the operator precedence, but may be directly specified with the syntax var:prec. where prec is a non-negative integer.
-* There is an additional function `indent(`_n_`,` _tokens_`)` that causes the tokens argument to appear with additional whitespace added to increase indention by n characters.
+* A string literal such as `"assert "` outputs the literal text as a token.  Spacing should be used to ensure
+  whitespace appears after a token.
+* An argument name `arg` indicates the the associated argument to the function or operator appears in output.  The
+  precedence can be set with the syntax `arg:prec`.
+* For multiline declarations, the function `indent(`_n_`,` _tokens_`)` may be used.  The _tokens_ will appear
+  indented when they appear on new lines.
 
 There are three metadata annotations in the Strata dialect that may affect precedence in syntax definitions.
 
@@ -272,15 +354,11 @@ Without the rightassoc operator, this is equivalent to the definition:
 fn implies (p : Pred, q : Pred) : Pred => @[prec(20)] p:20 " ==> " q:19;
 ```
 
-Default Syntax.  Currently, syntax descriptions are required. We expect this to be changed in the future with a default syntax, and as part of this we plan to explore whether metadata annotations could be added to categories to allow per-category default syntax
 
-Strata
-
-TODO:
-
-* Give examples showing the operations for declaring variables, functions, types, etc.
-
-## Variable Scoping
+## Parsing, Type Checking and Pretty Printings
+%%%
+tag := "parsing_typechecking"
+%%%
 
 When parsing an operation or expression from source, there is an implicit variable
 context that contains bindings for variables in scope. Operators may transform this
@@ -318,15 +396,54 @@ category Statement;
 op varStatement (dl : DeclList) : Statement => "var " dl ";";
 ```
 
-There is additionally a builtin parametric category Strata.CommaSepList and DeclList could be replaced by CommaSepList Decl.
+## The `Init` dialect
+%%%
+tag := "init"
+%%%
+
+The `Init` dialect introduces a few syntactic categories that cannot currently
+be defined in user definable dialects.
+
+* `Init.Type` and `Init.Expr` represent types and expressions in Strata.  Unlike
+  other categories, these are extended through the specialized `type` and
+  `fn` commands rather than [`op`](#operator) declarations so that expressions
+  can be type checked after parsing.  See [Types and Expressions](#type_expression) for
+  more details.
+
+* Syntactic categories that in dialects other than `Init` cannot currently cannot
+  take additional parameters.  This support will be added in a future update, but
+  to help users, the `Init` declares a few builtin parametric categories:
+
+  * `Init.Option c` denotes an optional value of `c`.  Syntactically, either
+    `c` may be read in or the empty string.
+
+  * `Init.Seq c` denotes a sequence of values with category `c`.  Each value of `c` is
+    separated by whitespace.
+
+  * `Init.CommaSepBy c` denotes a comma-separated list of values of type `c`.
+
+* Parsing for primitive literals and identifiers cannot be directly in syntax definitions.
+  To accomodate this, the `Init` dialect introduces the syntactic categories for this:
+
+  * `Init.Ident` represents to identifiers.  These are alphanumeric sequences that start with
+    a letter that are not otherwise used as keywords in a dialect.
+
+  * `Init.Str` represents string literals.  These are delimited by double quotes and use escaping
+    for special characters.
+
+  * `Init.Num` represents numeric natural number literals.
 
 # Lean Integration
-
-TODO
-
-# Embedded dialects
 %%%
-tag := "lean_dialect"
+tag := "lean_integration"
 %%%
 
-TODO
+This will be described in a later release.
+
+
+# Command Line Use
+%%%
+tag := "command_line"
+%%%
+
+This will be described once available.
