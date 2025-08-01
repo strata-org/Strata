@@ -31,6 +31,8 @@ structure SMT.Context where
   sorts : Array SMT.Sort := #[]
   ufs : Array UF := #[]
   ifs : Array SMT.IF := #[]
+  axms : Array Term := #[]
+  tySubst: Map String TermType := []
 deriving Repr, DecidableEq, Inhabited
 
 def SMT.Context.default : SMT.Context := {}
@@ -48,9 +50,38 @@ def SMT.Context.addIF (ctx : SMT.Context) (fn : UF) (body : Term) : SMT.Context 
   if smtif ∈ ctx.ifs then ctx else
   { ctx with ifs := ctx.ifs.push smtif }
 
+def SMT.Context.addAxiom (ctx : SMT.Context) (axm : Term) : SMT.Context :=
+  if axm ∈ ctx.axms then ctx else
+  { ctx with axms := ctx.axms.push axm }
+
+def SMT.Context.addSubst (ctx : SMT.Context) (newSubst: Map String TermType) : SMT.Context :=
+  { ctx with tySubst := ctx.tySubst ++ newSubst }
+
+def SMT.Context.removeSubst (ctx : SMT.Context) (newSubst: Map String TermType) : SMT.Context :=
+  { ctx with tySubst := newSubst.foldl (fun acc_m p => acc_m.erase p.fst) ctx.tySubst }
+
 abbrev BoundVars := List (String × TermType)
 
 ---------------------------------------------------------------------
+partial def unifyTypes (typeVars : List String) (pattern : LMonoTy) (concrete : LMonoTy) (acc : Map String LMonoTy) : Map String LMonoTy :=
+  match pattern, concrete with
+  | .ftvar name, concrete_ty =>
+    if typeVars.contains name then
+      acc.insert name concrete_ty
+    else acc
+  | .tcons pname pargs, .tcons cname cargs =>
+    if pname == cname && pargs.length == cargs.length then
+      (pargs.zip cargs).foldl (fun acc' (p, c) => unifyTypes typeVars p c acc') acc
+    else acc
+  | _, _ => acc
+
+def extractTypeInstantiations (typeVars : List String) (patterns : List LMonoTy) (concreteTypes : List LMonoTy) : Map String LMonoTy :=
+  if patterns.length == concreteTypes.length then
+    (patterns.zip concreteTypes).foldl (fun acc (pattern, concrete) =>
+      unifyTypes typeVars pattern concrete acc) Map.empty
+  else
+    Map.empty
+
 
 mutual
 def LMonoTy.toSMTType (ty : LMonoTy) (ctx : SMT.Context) :
@@ -65,7 +96,10 @@ def LMonoTy.toSMTType (ty : LMonoTy) (ctx : SMT.Context) :
     let ctx := ctx.addSort { name := id, arity := args.length }
     let (args', ctx) ← LMonoTys.toSMTType args ctx
     .ok ((.constr id args'), ctx)
-  | _ => .error f!"Unimplemented encoding for type {ty}"
+  | .ftvar tyv => match ctx.tySubst.find? tyv with
+                    | .some termTy =>
+                      .ok (termTy, ctx)
+                    | _ => .error f!"Unimplemented encoding for type var {tyv}"
 
 def LMonoTys.toSMTType (args : LMonoTys) (ctx : SMT.Context) :
     Except Format ((List TermType) × SMT.Context) := do
@@ -262,17 +296,39 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
       let outty := tys.getLast (by exact @LMonoTy.destructArrow_non_empty fnty)
       let (smt_outty, ctx) ← LMonoTy.toSMTType outty ctx
       let uf := ({id := (toString $ format fn), args := argvars, out := smt_outty})
-      let ctx ←
+      let (ctx, isNew) ←
         match func.body with
-        | none => .ok (ctx.addUF uf)
+        | none => .ok (ctx.addUF uf, !ctx.ufs.contains uf)
         | some body =>
           -- Substitute the formals in the function body with appropriate
           -- `.bvar`s.
           let bvars := (List.range formals.length).map (fun i => LExpr.bvar i)
           let body := LExpr.substFvars body (formals.zip bvars)
           let (term, ctx) ← toSMTTerm E bvs body ctx
-          .ok (ctx.addIF uf term)
-      .ok (Op.uf uf, smt_outty, ctx)
+          .ok (ctx.addIF uf term,  !ctx.ifs.contains ({ uf := uf, body := term }))
+      if isNew then
+        -- To ensure termination, we add the axioms only for new functions
+        -- Get the function's type patterns (input types + output type)
+        let inputPatterns := func.inputs.values
+        let outputPattern := func.output
+        let allPatterns := inputPatterns ++ [outputPattern]
+
+        -- Extract type instantiations by matching patterns against concrete types
+        let type_instantiations: Map String LMonoTy := extractTypeInstantiations func.typeArgs allPatterns (intys ++ [outty])
+        let smt_ty_inst ← type_instantiations.foldlM (fun acc_map (tyVar, monoTy) => do
+          let (smtTy, _) ← LMonoTy.toSMTType monoTy ctx
+          .ok (acc_map.insert tyVar smtTy)
+        ) Map.empty
+        -- Add all axioms for this function to the context, with types binding for the type variables in the expr
+        let ctx ← func.axioms.foldlM (fun acc_ctx (ax: LExpr BoogieIdent) => do
+          let current_axiom_ctx := acc_ctx.addSubst smt_ty_inst
+            let (axiom_term, new_ctx) ← toSMTTerm E [] ax current_axiom_ctx
+            .ok (new_ctx.addAxiom axiom_term)
+        ) ctx
+        let ctx := ctx.removeSubst smt_ty_inst
+        .ok (Op.uf uf, smt_outty, ctx)
+      else
+        .ok (Op.uf uf, smt_outty, ctx)
 end
 
 def toSMTTerms (E : Env) (es : List (LExpr BoogieIdent)) (ctx : SMT.Context) :
