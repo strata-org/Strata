@@ -8,8 +8,8 @@ import Strata.DL.Lambda.LExpr
 import Strata.DL.Lambda.LState
 import Strata.DL.Lambda.LTy
 import Strata.DL.Lambda.LExprTypeEnv
-import Lean
 import Lean.Elab.Term
+import Lean.Meta
 
 /-!
 ## Reflect Lambda expressions into Lean's Logic
@@ -230,7 +230,7 @@ elab "test2" : term => do
 
 elab "elaborate_lexpr" "[" e:term "]" : term => unsafe do
   let expr ← Term.elabTerm e none
-  let lexpr ← evalExpr (LExpr String) (mkApp (mkConst ``LExpr) (mkConst ``String)) expr
+  let lexpr ← Lean.Meta.evalExpr (LExpr String) (mkApp (mkConst ``LExpr) (mkConst ``String)) expr
   let result ← liftM (LExpr.toExpr lexpr)
   return result
 
