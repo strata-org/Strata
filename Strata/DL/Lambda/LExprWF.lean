@@ -8,8 +8,10 @@
 
 import Strata.DL.Lambda.LExpr
 
-/-
-Well-formedness of Lambda Expressions
+/-! ## Well-formedness of Lambda Expressions
+
+See the definition `Lambda.LExpr.WF`. Also see theorem `HasType.regularity` in
+`Strata.DL.Lambda.LExprTypeSpec`.
 -/
 
 ---------------------------------------------------------------------

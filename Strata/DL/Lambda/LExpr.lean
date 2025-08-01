@@ -4,22 +4,20 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-
-
 import Strata.DL.Lambda.LTy
 import Strata.DL.Lambda.Identifiers
 import Strata.DL.Lambda.MetaData
 
-/-
-Formalization of Lambda Expressions
+/-! ## Lambda Expressions with Quantifiers
+
+Lambda expressions are formalized by the inductive type `LExpr`. Type
+formalization is described in `Strata.DL.Lambda.LTy`.
 -/
 
 ---------------------------------------------------------------------
 
 namespace Lambda
 open Std (ToFormat Format format)
-
-/-! ## Lambda Expressions with Quantifiers -/
 
 inductive QuantifierKind
   | all
@@ -31,7 +29,8 @@ Lambda Expressions with Quantifiers.
 
 Like Lean's own expressions, we use the locally nameless
 representation for this abstract syntax.
-See https://chargueraud.org/research/2009/ln/main.pdf
+See this [paper](https://chargueraud.org/research/2009/ln/main.pdf)
+for details.
 
 We leave placeholders for (mono)type annotations only for constants
 (`.const`), operations (`.op`), binders (`.abs`, `.quant`), and free
@@ -43,15 +42,20 @@ inductive LExpr (Identifier : Type) : Type where
   | const   (c : String) (ty : Option LMonoTy)
   /-- `.op c ty`: operation names. -/
   | op      (o : Identifier) (ty : Option LMonoTy)
+  /-- `.bvar deBruijnIndex`: bound variable. -/
   | bvar    (deBruijnIndex : Nat)
+  /-- `.fvar name ty`: free variable, with an option (mono)type annotation. -/
   | fvar    (name : Identifier) (ty : Option LMonoTy)
   | mdata   (info : Info) (e : LExpr Identifier)
   /-- `.abs ty e`: abstractions; `ty` the is type of bound variable. -/
   | abs     (ty : Option LMonoTy) (e : LExpr Identifier)
   /-- `.quant k ty e`: quantified expressions; `ty` the is type of bound variable. -/
   | quant   (k : QuantifierKind) (ty : Option LMonoTy) (e : LExpr Identifier)
+  /-- `.app fn e`: function application. -/
   | app     (fn e : LExpr Identifier)
+  /-- `.ite c t e`: if-then-else expression. -/
   | ite     (c t e : LExpr Identifier)
+  /-- `.eq e1 e2`: equality expression. -/
   | eq      (e1 e2 : LExpr Identifier)
   deriving Repr, DecidableEq
 
@@ -385,8 +389,11 @@ declare_syntax_cat mabs
 declare_syntax_cat mall
 declare_syntax_cat mexist
 scoped syntax "λ" lexpr : mabs
+scoped syntax "λ" "(" lmonoty ")" ":" lexpr : mabs
 scoped syntax "∀" lexpr : mall
+scoped syntax "∀" "(" lmonoty ")" ":" lexpr : mall
 scoped syntax "∃" lexpr : mexist
+scoped syntax "∃" "(" lmonoty ")" ":" lexpr : mexist
 scoped syntax mabs : lexpr
 scoped syntax mall : lexpr
 scoped syntax mexist : lexpr
@@ -404,18 +411,39 @@ scoped syntax mif lexpr mif lexpr mif lexpr : lexpr
 
 scoped syntax "(" lexpr ")" : lexpr
 
+open LTy.Syntax in
+/-- Elaborator for Lambda expressions.
+
+All type annotations in `LExpr` are for monotypes, not polytypes. It's the
+user's responsibility to ensure correct usage of type variables (i.e., they're
+unique).
+-/
 partial def elabLExpr (Identifier : Type) [MkIdent Identifier] : Lean.Syntax → MetaM Expr
   | `(lexpr| $c:lconst) => elabLConst Identifier c
   | `(lexpr| $o:lop) => elabLOp Identifier o
   | `(lexpr| $b:lbvar) => elabLBVar Identifier b
   | `(lexpr| $f:lfvar) => elabLFVar Identifier f
-  -- Note: there's currently no concrete syntax for binders annotated with types.
   | `(lexpr| λ $e:lexpr) => do
      let e' ← elabLExpr Identifier e
      mkAppM ``LExpr.absUntyped #[e']
+  | `(lexpr| λ ($mty:lmonoty): $e:lexpr) => do
+     let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy mty
+     let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
+     let e' ← elabLExpr Identifier e
+     mkAppM ``LExpr.abs #[lmonoty, e']
   | `(lexpr| ∀ $e:lexpr) => do
      let e' ← elabLExpr Identifier e
      mkAppM ``LExpr.allUntyped #[e']
+  | `(lexpr| ∀ ($mty:lmonoty): $e:lexpr) => do
+     let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy mty
+     let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
+     let e' ← elabLExpr Identifier e
+     mkAppM ``LExpr.all #[lmonoty, e']
+  | `(lexpr| ∃ ($mty:lmonoty): $e:lexpr) => do
+     let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy mty
+     let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
+     let e' ← elabLExpr Identifier e
+     mkAppM ``LExpr.exist #[lmonoty, e']
   | `(lexpr| ∃ $e:lexpr) => do
      let e' ← elabLExpr Identifier e
      mkAppM ``LExpr.existUntyped #[e']
@@ -449,9 +477,15 @@ instance : MkIdent String where
 
 elab "es[" e:lexpr "]" : term => elabLExpr (Identifier:=String) e
 
+open LTy.Syntax
+
 /-- info: (bvar 0).absUntyped.app (const "5" none) : LExpr String -/
 #guard_msgs in
 #check es[((λ %0) #5)]
+
+/-- info: (abs (some (LMonoTy.tcons "bool" [])) (bvar 0)).app (const "true" none) : LExpr String -/
+#guard_msgs in
+#check es[((λ (bool): %0) #true)]
 
 /-- info: ((bvar 0).eq (const "5" none)).allUntyped : LExpr String -/
 #guard_msgs in
@@ -461,10 +495,68 @@ elab "es[" e:lexpr "]" : term => elabLExpr (Identifier:=String) e
 #guard_msgs in
 #check es[(∃ %0 == #5)]
 
-open LTy.Syntax in
+/-- info: exist (some (LMonoTy.tcons "int" [])) ((bvar 0).eq (const "5" none)) : LExpr String -/
+#guard_msgs in
+#check es[(∃ (int): %0 == #5)]
+
 /-- info: fvar "x" (some (LMonoTy.tcons "bool" [])) : LExpr String -/
 #guard_msgs in
 #check es[(x : bool)]
+
+-- axiom [updateSelect]: forall m: Map k v, kk: k, vv: v :: m[kk := vv][kk] == vv;
+/--
+info: Lambda.LExpr.quant
+  (Lambda.QuantifierKind.all)
+  (some (Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]))
+  (Lambda.LExpr.quant
+    (Lambda.QuantifierKind.all)
+    (some (Lambda.LMonoTy.ftvar "k"))
+    (Lambda.LExpr.quant
+      (Lambda.QuantifierKind.all)
+      (some (Lambda.LMonoTy.ftvar "v"))
+      (Lambda.LExpr.eq
+        (Lambda.LExpr.app
+          (Lambda.LExpr.app
+            (Lambda.LExpr.op
+              "select"
+              (some (Lambda.LMonoTy.tcons
+                 "Map"
+                 [Lambda.LMonoTy.ftvar "k",
+                  Lambda.LMonoTy.tcons
+                    "arrow"
+                    [Lambda.LMonoTy.ftvar "v",
+                     Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]]])))
+            (Lambda.LExpr.app
+              (Lambda.LExpr.app
+                (Lambda.LExpr.app
+                  (Lambda.LExpr.op
+                    "update"
+                    (some (Lambda.LMonoTy.tcons
+                       "Map"
+                       [Lambda.LMonoTy.ftvar "k",
+                        Lambda.LMonoTy.tcons
+                          "arrow"
+                          [Lambda.LMonoTy.ftvar "v",
+                           Lambda.LMonoTy.tcons
+                             "arrow"
+                             [Lambda.LMonoTy.ftvar "k",
+                              Lambda.LMonoTy.tcons
+                                "arrow"
+                                [Lambda.LMonoTy.ftvar "v",
+                                 Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]]]]])))
+                  (Lambda.LExpr.bvar 2))
+                (Lambda.LExpr.bvar 1))
+              (Lambda.LExpr.bvar 0)))
+          (Lambda.LExpr.bvar 1))
+        (Lambda.LExpr.bvar 0))))
+-/
+#guard_msgs in
+#eval
+  es[∀ (Map %k %v):
+            (∀ (%k):
+               (∀ (%v):
+                  (((~select : Map %k %v → %k → %v)
+                     ((((~update : Map %k %v → %k → %v → Map %k %v) %2) %1) %0)) %1) == %0))]
 
 end Syntax
 
