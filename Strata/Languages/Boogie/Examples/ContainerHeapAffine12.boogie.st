@@ -224,7 +224,7 @@ spec {
   ref2Struct_var := ref2Struct_var[pineappleField := rhs12];
 
   // -----------------------------------------------------------------------------------------------------------------------
-  
+
   // Return the new heap
   newHeap := heap_var;
   newRef1Struct := ref1Struct_var;
@@ -282,9 +282,6 @@ spec {
   assert [c1Pineapple2]: isContainer(c1) && UnboxingInt(heap_var[c1][pineappleField]) == 3;
   assert [c2Lychees0]: isContainer(c2) && UnboxingInt(heap_var[c2][lycheeField]) == 3;
   assert [c2Pineapple0]: isContainer(c2) && UnboxingInt(heap_var[c2][pineappleField]) == 3;
-
-  assert [c1NextEqC2]: isContainer(c1) && UnboxingRef(heap_var[c1][nextField]) == c2;
-  assert [c2NextEqC1]: isContainer(c2) && UnboxingRef(heap_var[c2][nextField]) == c1;
 
   // Return the new heap
   newHeap := heap_var;

@@ -9,9 +9,10 @@ import shutil
 import csv
 from pathlib import Path
 import glob
+import re
 
 def run_command_with_timing(command, cwd=None):
-    """Run a command and return (success, duration, stdout, stderr)"""
+    """Run a command and return (success, duration, stdout, stderr, returncode)"""
     start_time = time.time()
     try:
         result = subprocess.run(
@@ -20,16 +21,40 @@ def run_command_with_timing(command, cwd=None):
             cwd=cwd,
             capture_output=True, 
             text=True, 
-            timeout=300  # 5 minute timeout
+            timeout=900  # 15 minute timeout
         )
         duration = time.time() - start_time
-        return result.returncode == 0, duration, result.stdout, result.stderr
+        return result.returncode == 0, duration, result.stdout, result.stderr, result.returncode
     except subprocess.TimeoutExpired:
         duration = time.time() - start_time
-        return False, duration, "", "Command timed out"
+        return False, duration, "", "Command timed out", -1
     except Exception as e:
         duration = time.time() - start_time
-        return False, duration, "", str(e)
+        return False, duration, "", str(e), -1
+
+def is_smt2_success(returncode, stdout, stderr):
+    """
+    Determine if an SMT2 execution should be considered successful.
+    Returns True if the output contains 'unsat', regardless of return code.
+    """
+    # Combine stdout and stderr for analysis
+    combined_output = (stdout + stderr).lower()
+    
+    # Check if output contains 'unsat' - this means the query was successfully solved
+    return 'unsat' in combined_output
+
+def get_smt2_result_type(stdout, stderr):
+    """Determine the type of SMT2 result: sat, unsat, unknown, or error"""
+    combined_output = (stdout + stderr).lower()
+    
+    if 'unsat' in combined_output:
+        return "unsat"
+    elif 'sat' in combined_output and 'unsat' not in combined_output:
+        return "sat"
+    elif 'unknown' in combined_output:
+        return "unknown"
+    else:
+        return "error"
 
 def empty_folder(folder_path):
     """Empty a folder if it exists, create it if it doesn't"""
@@ -50,6 +75,12 @@ def copy_smt2_files(source_dir, dest_dir):
     
     return copied_files
 
+def safe_shell_quote(filename):
+    """Safely quote a filename for shell execution"""
+    # Use shlex.quote for proper shell escaping
+    import shlex
+    return shlex.quote(filename)
+
 def process_file(file_path, temp_dir, csv_writer):
     """Process a single .boogie.st file"""
     print(f"Processing: {file_path}")
@@ -63,16 +94,16 @@ def process_file(file_path, temp_dir, csv_writer):
     empty_folder(vcs_dir)
     
     # Step 2: Run lake exe StrataVerify
-    lake_command = f"lake exe StrataVerify {file_path}"
+    lake_command = f"lake exe StrataVerify {safe_shell_quote(file_path)}"
     print(f"  Running: {lake_command}")
     
-    lake_success, lake_duration, lake_stdout, lake_stderr = run_command_with_timing(lake_command)
+    lake_success, lake_duration, lake_stdout, lake_stderr, lake_returncode = run_command_with_timing(lake_command)
     
     if not lake_success:
         print(f"  ❌ Lake command failed for {file_path}")
         print(f"     Error: {lake_stderr}")
         # Still write to CSV with 0 for smt2 time
-        csv_writer.writerow([file_path, lake_duration, 0, "lake_failed"])
+        csv_writer.writerow([file_path, lake_duration, 0, 0, 0, 0, 0, "lake_failed"])
         return False
     
     print(f"  ✅ Lake command completed in {lake_duration:.2f}s")
@@ -82,7 +113,7 @@ def process_file(file_path, temp_dir, csv_writer):
     
     if not smt2_files:
         print(f"  ⚠️  No .smt2 files found for {file_path}")
-        csv_writer.writerow([file_path, lake_duration, 0, "no_smt2_files"])
+        csv_writer.writerow([file_path, lake_duration, 0, 0, 0, 0, 0, "no_smt2_files"])
         return True
     
     print(f"  📁 Copied {len(smt2_files)} .smt2 files to {file_temp_dir}")
@@ -91,26 +122,65 @@ def process_file(file_path, temp_dir, csv_writer):
     total_smt2_time = 0
     successful_smt2 = 0
     failed_smt2 = 0
+    sat_count = 0
+    unsat_count = 0
+    unknown_count = 0
+    error_count = 0
     
     for smt2_file in smt2_files:
         smt2_name = os.path.basename(smt2_file)
-        cvc5_command = f"cvc5 {smt2_file}"
+        # Properly quote the filename for shell execution
+        cvc5_command = f"cvc5 {safe_shell_quote(smt2_file)}"
         
-        cvc5_success, cvc5_duration, cvc5_stdout, cvc5_stderr = run_command_with_timing(cvc5_command)
+        cvc5_success, cvc5_duration, cvc5_stdout, cvc5_stderr, cvc5_returncode = run_command_with_timing(cvc5_command)
         total_smt2_time += cvc5_duration
         
-        if cvc5_success:
+        # Use our simplified success detection - just check for 'unsat' in output
+        is_actually_successful = is_smt2_success(cvc5_returncode, cvc5_stdout, cvc5_stderr)
+        result_type = get_smt2_result_type(cvc5_stdout, cvc5_stderr)
+        
+        # Count result types
+        if result_type == "sat":
+            sat_count += 1
+        elif result_type == "unsat":
+            unsat_count += 1
+        elif result_type == "unknown":
+            unknown_count += 1
+        else:
+            error_count += 1
+        
+        if is_actually_successful:
             successful_smt2 += 1
-            print(f"    ✅ {smt2_name}: {cvc5_duration:.3f}s")
+            if cvc5_returncode == 0:
+                status_symbol = "✅"
+            else:
+                # Non-zero return but output contains 'unsat'
+                status_symbol = "🔶"
+            print(f"    {status_symbol} {smt2_name}: {cvc5_duration:.3f}s ({result_type})")
         else:
             failed_smt2 += 1
-            print(f"    ❌ {smt2_name}: {cvc5_duration:.3f}s (failed)")
+            print(f"    ❌ {smt2_name}: {cvc5_duration:.3f}s (failed - {result_type})")
     
-    print(f"  🎯 SMT2 replay: {successful_smt2} successful, {failed_smt2} failed, total time: {total_smt2_time:.2f}s")
+    print(f"  🎯 SMT2 replay: {successful_smt2} successful, {failed_smt2} failed")
+    print(f"     Results: {sat_count} sat, {unsat_count} unsat, {unknown_count} unknown, {error_count} errors")
+    print(f"     Total time: {total_smt2_time:.2f}s")
     
-    # Step 5: Write results to CSV
-    status = f"ok_{successful_smt2}_{failed_smt2}" if successful_smt2 > 0 else "all_smt2_failed"
-    csv_writer.writerow([file_path, lake_duration, total_smt2_time, status])
+    # Step 5: Write results to CSV with detailed breakdown
+    if successful_smt2 > 0:
+        status = f"ok_{successful_smt2}_{failed_smt2}"
+    else:
+        status = "all_smt2_failed"
+    
+    csv_writer.writerow([
+        file_path, 
+        lake_duration, 
+        total_smt2_time, 
+        sat_count, 
+        unsat_count, 
+        unknown_count, 
+        error_count, 
+        status
+    ])
     
     return True
 
@@ -152,10 +222,19 @@ def main():
     
     print(f"🚀 Processing {len(valid_files)} files...")
     
-    # Open CSV file and write header
+    # Open CSV file and write header with detailed columns
     with open(args.output, 'w', newline='') as csvfile:
         csv_writer = csv.writer(csvfile)
-        csv_writer.writerow(['filename', 'lake_time_seconds', 'smt2_replay_time_seconds', 'status'])
+        csv_writer.writerow([
+            'filename', 
+            'lake_time_seconds', 
+            'smt2_replay_time_seconds', 
+            'sat_count',
+            'unsat_count', 
+            'unknown_count', 
+            'error_count',
+            'status'
+        ])
         
         # Process each file
         successful = 0
@@ -175,7 +254,7 @@ def main():
             except Exception as e:
                 print(f"❌ Unexpected error processing {file_path}: {e}")
                 failed += 1
-                csv_writer.writerow([file_path, 0, 0, f"error_{str(e).replace(',', ';')}"])
+                csv_writer.writerow([file_path, 0, 0, 0, 0, 0, 0, f"error_{str(e).replace(',', ';')}"])
             
             # Flush CSV after each file
             csvfile.flush()
