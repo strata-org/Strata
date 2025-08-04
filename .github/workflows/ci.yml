@@ -77,13 +77,7 @@ jobs:
       - name: Verify examples
         shell: bash
         run: |
-              DIR="Examples"
-              if [ ! -d "$DIR" ]; then
-              echo "Error: Directory '$DIR' does not exist"
-              exit 1
-              fi
-              find "$DIR" -maxdepth 1 -type f -name "*.st" | while IFS= read -r file; do
-                  filename=$(basename "$file")
+              find "Examples" -maxdepth 1 -type f -name "*.st" | while IFS= read -r file; do
                   source ~/.profile && lake exe StrataVerify "$file"
               done
 
