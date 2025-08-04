@@ -34,6 +34,7 @@ open LExpr.Syntax LTy.Syntax
 
 /--
   Convert an LExpr String to an LExpr BoogieIdent, by considering all identifier as global, which is valid for axioms
+  TODO: Remove when Lambda elaborator offers parametric identifier type
 -/
 def ToBoogieIdent (ine: LExpr String): (LExpr BoogieIdent) :=
 match ine with
