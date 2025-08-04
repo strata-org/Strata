@@ -32,6 +32,23 @@ def KnownTypes : List LTy :=
 
 open LExpr.Syntax LTy.Syntax
 
+/--
+  Convert an LExpr String to an LExpr BoogieIdent, by considering all identifier as global, which is valid for axioms
+-/
+def ToBoogieIdent (ine: LExpr String): (LExpr BoogieIdent) :=
+match ine with
+    | .const c ty => .const c ty
+    | .op o oty => .op (BoogieIdent.glob o) oty
+    | .bvar deBruijnIndex => .bvar deBruijnIndex
+    | .fvar name oty => .fvar (BoogieIdent.glob name) oty
+    | .mdata info e => .mdata info (ToBoogieIdent e)
+    | .abs oty e => .abs oty (ToBoogieIdent e)
+    | .quant k oty e => .quant k oty (ToBoogieIdent e)
+    | .app fn e => .app (ToBoogieIdent fn) (ToBoogieIdent e)
+    | .ite c t e => .ite (ToBoogieIdent c) (ToBoogieIdent t) (ToBoogieIdent e)
+    | .eq e1 e2 => .eq (ToBoogieIdent e1) (ToBoogieIdent e2)
+
+
 -- TODO: generalize denote function to a functor that can map between Identifiers
 -- and resuse IntBoolFactory
 def Factory : @Factory BoogieIdent :=
@@ -377,111 +394,23 @@ def Factory : @Factory BoogieIdent :=
      output := mapTy mty[%k] mty[%v],
      axioms :=
     -- TODO UNCOMMENT and replace when the Lambda elab is ready
-    --  [
-    --   -- updateSelect
-    --   es[∀(Map %k %v):
-    --       (∀ (%k):
-    --         (∀ (%v):
-    --           (((~select : (Map %k %v) → %k → %v)
-    --             ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %2) %1) %0)) %1) == %0))],
-    --   -- update preserves
-    --   es[∀ (Map %k %v):
-    --       (∀ (%k):
-    --         (∀ (%k):
-    --           (∀ (%v):
-    --               (((~select : (Map %k %v) → %k → %v)
-    --                 ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %3) %1) %0)) %2)
-    --               ==
-    --               ((((~select : (Map %k %v) → %k → %v) %3) %2)))))]
-    --  ]
-    [Lambda.LExpr.quant
-   (Lambda.QuantifierKind.all)
-   (some (Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]))
-   (Lambda.LExpr.quant
-     (Lambda.QuantifierKind.all)
-     (some (Lambda.LMonoTy.ftvar "k"))
-     (Lambda.LExpr.quant
-       (Lambda.QuantifierKind.all)
-       (some (Lambda.LMonoTy.ftvar "v"))
-       (Lambda.LExpr.eq
-         (Lambda.LExpr.app
-           (Lambda.LExpr.app
-             (Lambda.LExpr.op
-               "select"
-               (some (Lambda.LMonoTy.tcons
-                  "arrow"
-                  [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
-                   Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]])))
-             (Lambda.LExpr.app
-               (Lambda.LExpr.app
-                 (Lambda.LExpr.app
-                   (Lambda.LExpr.op
-                     "update"
-                     (some (Lambda.LMonoTy.tcons
-                        "arrow"
-                        [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
-                         Lambda.LMonoTy.tcons
-                           "arrow"
-                           [Lambda.LMonoTy.ftvar "k",
-                            Lambda.LMonoTy.tcons
-                              "arrow"
-                              [Lambda.LMonoTy.ftvar "v",
-                               Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]]]])))
-                   (Lambda.LExpr.bvar 2))
-                 (Lambda.LExpr.bvar 1))
-               (Lambda.LExpr.bvar 0)))
-           (Lambda.LExpr.bvar 1))
-         (Lambda.LExpr.bvar 0)))),
- Lambda.LExpr.quant
-   (Lambda.QuantifierKind.all)
-   (some (Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]))
-   (Lambda.LExpr.quant
-     (Lambda.QuantifierKind.all)
-     (some (Lambda.LMonoTy.ftvar "k"))
-     (Lambda.LExpr.quant
-       (Lambda.QuantifierKind.all)
-       (some (Lambda.LMonoTy.ftvar "k"))
-       (Lambda.LExpr.quant
-         (Lambda.QuantifierKind.all)
-         (some (Lambda.LMonoTy.ftvar "v"))
-         (Lambda.LExpr.eq
-           (Lambda.LExpr.app
-             (Lambda.LExpr.app
-               (Lambda.LExpr.op
-                 "select"
-                 (some (Lambda.LMonoTy.tcons
-                    "arrow"
-                    [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
-                     Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]])))
-               (Lambda.LExpr.app
-                 (Lambda.LExpr.app
-                   (Lambda.LExpr.app
-                     (Lambda.LExpr.op
-                       "update"
-                       (some (Lambda.LMonoTy.tcons
-                          "arrow"
-                          [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
-                           Lambda.LMonoTy.tcons
-                             "arrow"
-                             [Lambda.LMonoTy.ftvar "k",
-                              Lambda.LMonoTy.tcons
-                                "arrow"
-                                [Lambda.LMonoTy.ftvar "v",
-                                 Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]]]])))
-                     (Lambda.LExpr.bvar 3))
-                   (Lambda.LExpr.bvar 1))
-                 (Lambda.LExpr.bvar 0)))
-             (Lambda.LExpr.bvar 2))
-           (Lambda.LExpr.app
-             (Lambda.LExpr.app
-               (Lambda.LExpr.op
-                 "select"
-                 (some (Lambda.LMonoTy.tcons
-                    "arrow"
-                    [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
-                     Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]])))
-               (Lambda.LExpr.bvar 3))
-             (Lambda.LExpr.bvar 2))))))]
+     [
+      -- updateSelect
+      ToBoogieIdent es[∀(Map %k %v):
+          (∀ (%k):
+            (∀ (%v):
+              (((~select : (Map %k %v) → %k → %v)
+                ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %2) %1) %0)) %1) == %0))],
+      -- update preserves
+      ToBoogieIdent es[∀ (Map %k %v):
+          (∀ (%k):
+            (∀ (%k):
+              (∀ (%v):
+                  (((~select : (Map %k %v) → %k → %v)
+                    ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %3) %1) %0)) %2)
+                  ==
+                  ((((~select : (Map %k %v) → %k → %v) %3) %2)))))]
+     ]
    }]
 
 ---------------------------------------------------------------------
