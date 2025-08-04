@@ -8,8 +8,14 @@ import Strata.DL.Lambda.LExpr
 import Strata.DL.Lambda.LState
 import Strata.DL.Lambda.LTy
 import Strata.DL.Lambda.LExprTypeEnv
-import Lean.Elab.Term
+import Strata.DL.Lambda.IntBoolFactory
+
 import Lean.Meta
+import Lean.Elab.Term
+
+import Lean.Server.CodeActions
+import Lean.Server.Requests
+import Lean.Elab.Command
 
 /-!
 ## Reflect Lambda expressions into Lean's Logic
@@ -50,6 +56,10 @@ info: Lean.Expr.app (Lean.Expr.app (Lean.Expr.const `Map []) (Lean.Expr.const `I
 open LTy.Syntax in
 #eval LMonoTy.toExpr mty[Map int bool]
 
+/--
+Convert values of type `Bool` to `Prop` (and leave values of type `Prop`
+unchanged); throw an error if non-`Bool` values are encountered.
+-/
 def toProp (e : Lean.Expr) : MetaM Lean.Expr := do
   let eType ← inferType e
   let eLvl ← getLevel eType
@@ -79,14 +89,23 @@ def LExpr.const.toExpr (c : String) (mty : Option LMonoTy) : MetaM Lean.Expr := 
       return (mkStrLit c)
     | _ => throwError f!"Unexpected constant: {c}"
 
+def LExpr.op.toExpr (F : @Factory String) (op : String) (_mty : Option LMonoTy) :
+    MetaM Lean.Expr := do
+    match F.find? (fun f => f.name == op) with
+    | none => throwError f!"[LExpr.op.toExpr] Operator {op} not found in the factory!"
+    | some _lfunc =>
+      match op with
+      | "Int.Add" => return (mkConst ``Int.add)
+      | _ => throwError f!"[LExpr.op.toExpr] Unimplemented: {op}"
+
 def LExpr.toExprNoFVars (e : LExpr String) : MetaM Lean.Expr := do
   match e with
   | .const c mty =>
     let expr ← LExpr.const.toExpr c mty
     return expr
 
-  | .op _ _ =>
-    throwError f!"[LExpr.toExprNoFVars] Operations not yet supported: {e}"
+  | .op name mty =>
+    LExpr.op.toExpr IntBoolFactory name mty
 
   | .bvar i =>
     let lctx ← getLCtx
@@ -127,8 +146,13 @@ def LExpr.toExprNoFVars (e : LExpr String) : MetaM Lean.Expr := do
             let expr ← mkForallFVars #[x] bodyExpr
             return expr
         | .exist => do
-          let lambdaExpr ← mkLambdaFVars #[x] bodyExpr
-          mkAppM ``Exists #[lambdaExpr]
+          -- let lambdaExpr ← mkLambdaFVars #[x] bodyExpr
+          -- dbg_trace f!"lambdaExpr: {lambdaExpr}"
+          -- -- mkAppM ``Exists #[lambdaExpr]
+          -- mkAppOptM ``Exists #[tyExpr, lambdaExpr]
+          let expr ← mkForallFVars #[x] (mkNot bodyExpr)
+          let expr := mkNot expr
+          return expr
 
   | .app fn arg =>
     let fnExpr ← LExpr.toExprNoFVars fn
@@ -173,62 +197,7 @@ section Tests
 
 open LTy.Syntax LExpr.Syntax
 
-def test1 : MetaM Lean.Expr :=
-  LExpr.toExpr
-    (.quant .all (some mty[int]) (.eq (.fvar "x" mty[int]) (.bvar 0)))
-
-/--
-info: Lean.Expr.forallE
-  `x
-  (Lean.Expr.const `Int [])
-  (Lean.Expr.forallE
-    (Lean.Name.mkNum `x._@.Strata.DL.Lambda.Reflect._hyg 1645)
-    (Lean.Expr.const `Int [])
-    (Lean.Expr.app
-      (Lean.Expr.app
-        (Lean.Expr.app (Lean.Expr.const `Eq [Lean.Level.succ (Lean.Level.zero)]) (Lean.Expr.const `Bool []))
-        (Lean.Expr.app
-          (Lean.Expr.app
-            (Lean.Expr.app
-              (Lean.Expr.app (Lean.Expr.const `BEq.beq [Lean.Level.zero]) (Lean.Expr.const `Int []))
-              (Lean.Expr.app
-                (Lean.Expr.app (Lean.Expr.const `instBEqOfDecidableEq [Lean.Level.zero]) (Lean.Expr.const `Int []))
-                (Lean.Expr.const `Int.instDecidableEq [])))
-            (Lean.Expr.bvar 1))
-          (Lean.Expr.bvar 0)))
-      (Lean.Expr.const `Bool.true []))
-    (Lean.BinderInfo.default))
-  (Lean.BinderInfo.default)
--/
-#guard_msgs in
-#eval test1
-
--- #eval show MetaM _ from do
---   ppExpr (← test1)
-
-elab "test1" : term => do
-  let result ← liftM test1
-  return result
-
-/-- info: ∀ (x x_1 : Int), (x == x_1) = true : Prop -/
-#guard_msgs in
-#check test1
-
-
-def test2 : MetaM Lean.Expr :=
-  LExpr.toExpr
-    (LExpr.app (.abs (some mty[bool]) (.bvar 0)) (.eq (.const "4" mty[int]) (.const "4" mty[int])))
-
-
-elab "test2" : term => do
-  let result ← liftM test2
-  return result
-
-/-- info: (fun x => x) (4 == 4) = true : Prop -/
-#guard_msgs in
-#check test2
-
-elab "elaborate_lexpr" "[" e:term "]" : term => unsafe do
+elab "test_elab_lexpr" "[" e:term "]" : term => unsafe do
   let expr ← Term.elabTerm e none
   let lexpr ← Lean.Meta.evalExpr (LExpr String) (mkApp (mkConst ``LExpr) (mkConst ``String)) expr
   let result ← liftM (LExpr.toExpr lexpr)
@@ -236,24 +205,256 @@ elab "elaborate_lexpr" "[" e:term "]" : term => unsafe do
 
 /-- error: Cannot reflect an untyped constant: 5! -/
 #guard_msgs in
-#check elaborate_lexpr [@LExpr.const String "5" Option.none]
+#check test_elab_lexpr [@LExpr.const String "5" Option.none]
 
 /-- error: Cannot coerce to a Prop: OfNat.ofNat.{0} Int 5 (instOfNat 5) -/
 #guard_msgs in
-#check elaborate_lexpr [@LExpr.const String "5" (Option.some (LMonoTy.int))]
+#check test_elab_lexpr [@LExpr.const String "5" (Option.some (LMonoTy.int))]
 
 /-- info: true -/
 #guard_msgs in
-#eval elaborate_lexpr [@LExpr.eq String
+#eval test_elab_lexpr [@LExpr.eq String
                           (@LExpr.const String "5" (Option.some (LMonoTy.int)))
                           (@LExpr.const String "5" (Option.some (LMonoTy.int)))]
 
 /-- info: ∀ (x : Int), (x == 5) = true : Prop -/
 #guard_msgs in
-#check elaborate_lexpr [@LExpr.eq String
+#check test_elab_lexpr [@LExpr.eq String
                           (@LExpr.fvar String "x" (Option.some (LMonoTy.int)))
                           (@LExpr.const String "5" (Option.some (LMonoTy.int)))]
+
+/-- info: ∀ (x x_1 : Int), (x == x_1) = true : Prop -/
+#guard_msgs in
+#check test_elab_lexpr [es[∀ (int): ((x : int) == %0)]]
+
+/-- info: ¬∀ (x : Int), ¬(5 == x) = true : Prop -/
+#guard_msgs in
+#check test_elab_lexpr [es[∃ (int): ((#5 : int) == %0)]]
 
 end Tests
 
 -------------------------------------------------------------------------------
+
+open Lean Lean.Expr Lean.Meta Lean.Elab Lean.Elab.Command
+open LExpr.Syntax LTy.Syntax
+
+partial def shallowExprToLMonoTy (e : Expr) : MetaM LMonoTy := do
+  match_expr e with
+  | LMonoTy.ftvar name =>
+    let some name := Lean.Meta.getStringValue? name | failure
+    return (.ftvar name)
+  | LMonoTy.tcons name args =>
+    let some name := Lean.Meta.getStringValue? name | failure
+    let some args ← Lean.Meta.getListLit? args | failure
+    let args ← go args.toList
+    return (.tcons name args)
+  | LMonoTy.bitvec n =>
+    let some n ← Lean.Meta.getNatValue? n | failure
+    return (.bitvec n)
+  | _ => throwError f!"[shallowExprToLMonoTy] Unimplemented: {e}"
+  where go (args : List Expr) : MetaM (List LMonoTy) := do
+  match args with
+  | [] => return []
+  | a :: arest =>
+    let a ← shallowExprToLMonoTy a
+    let arest ← go arest
+    return (a :: arest)
+
+def shallowOptionExprToLMonoTy (some_mty : Expr) : MetaM LMonoTy := do
+  match_expr some_mty with
+  | Option.none _ => failure
+  | Option.some _ mty => shallowExprToLMonoTy mty
+  | _ => throwError f!"Unexpected optional monotype: {some_mty}"
+
+partial def shallowExprToLExpr (e : Expr) : MetaM (LExpr String) := do
+  match_expr e with
+  | Lambda.LExpr.const identifier c some_mty =>
+    let_expr String ← identifier | failure
+    let some c := Lean.Meta.getStringValue? c | failure
+    let mty ← shallowOptionExprToLMonoTy some_mty
+    return (.const c mty)
+
+  | Lambda.LExpr.op identifier name some_mty =>
+    let_expr String ← identifier | failure
+    let some name := Lean.Meta.getStringValue? name | failure
+    -- (FIXME)
+    -- let mty ← shallowOptionExprToLMonoTy some_mty
+    return (.op name .none)
+
+  | Lambda.LExpr.bvar identifier n =>
+    let_expr String ← identifier | failure
+    let some n ← Lean.Meta.getNatValue? n | failure
+    return (.bvar n)
+
+  | Lambda.LExpr.fvar identifier name some_mty =>
+    let_expr String ← identifier | failure
+    let some name := Lean.Meta.getStringValue? name | failure
+    let mty ← shallowOptionExprToLMonoTy some_mty
+    return (.fvar name mty)
+
+  | Lambda.LExpr.abs identifier some_mty e =>
+    let_expr String ← identifier | failure
+    let mty ← shallowOptionExprToLMonoTy some_mty
+    let e ← shallowExprToLExpr e
+    return (.abs mty e)
+
+  | Lambda.LExpr.app identifier fn e =>
+    let_expr String ← identifier | failure
+    let fn ← shallowExprToLExpr fn
+    let e ← shallowExprToLExpr e
+    return (.app fn e)
+
+  | Lambda.LExpr.ite identifier c t e =>
+    let_expr String ← identifier | failure
+    let c ← shallowExprToLExpr c
+    let t ← shallowExprToLExpr t
+    let e ← shallowExprToLExpr e
+    return (.ite c t e)
+
+  | Lambda.LExpr.eq identifier e1 e2 =>
+    let_expr String ← identifier | failure
+    let e1 ← shallowExprToLExpr e1
+    let e2 ← shallowExprToLExpr e2
+    return (.eq e1 e2)
+
+  | Lambda.LExpr.quant identifier kind some_mty e =>
+    let_expr String ← identifier | failure
+    let mty ← shallowOptionExprToLMonoTy some_mty
+    let kind := match_expr kind with
+                | QuantifierKind.all => .all | _ => .exist
+    let e ← shallowExprToLExpr e
+    return (.quant kind mty e)
+
+  | _ => throwError f!"Unimplemented: {e}"
+
+/-
+elab "#gen_lean_vcs" lexpr:term : command => liftTermElabM do
+  let (term : Lean.Expr) ← Elab.Term.elabTerm lexpr (mkApp (mkConst ``LExpr) (mkConst ``String))
+  let (term : Lean.Expr) ← whnfD term
+  let lexpr ← shallowExprToLExpr term
+  let expr ← LExpr.toExpr lexpr
+  let pp ← ppExpr expr
+  dbg_trace f!"expr: {pp}"
+  return
+
+#gen_lean_vcs es[(x : int) == (#5 : int)]
+
+#gen_lean_vcs es[(x : int) == ((λ (int): %0) (#3 : int))]
+
+#eval es[(x : int) == ((~Int.Add %0) (#1 : int))]
+
+#gen_lean_vcs es[(x : int) == ((~Int.Add (#20 : int)) (#30 : int))]
+
+#gen_lean_vcs es[(x : int) == ((λ (int): ((~Int.Add %0) (#1 : int))) (#3 : int))]
+
+#gen_lean_vcs es[∃ (int): %0 == (#5 : int)]
+
+#gen_lean_vcs es[∀ (int): %0 == (#5 : int)]
+-/
+
+-------------------------------------------------------------------------------
+
+syntax (name := genLeanVCThms) "#gen_lean_vc_thms"
+  ws withoutPosition(ident) ws withoutPosition(ident) ws withoutPosition(term) : command
+
+structure GenLeanVCThmsOutput where
+  res : String
+deriving TypeName
+
+def genVCTheorem (ns name : TSyntax `ident) (lexpr : TSyntax `term) : TermElabM String := do
+  let full_name := Lean.Name.append ns.getId name.getId
+  let curr_ns ← getCurrNamespace
+  let label := if curr_ns == ns.getId then name.getId else full_name
+  let (term : Lean.Expr) ← Elab.Term.elabTerm lexpr (mkApp (mkConst ``LExpr) (mkConst ``String))
+  let (term : Lean.Expr) ← whnfD term
+  let lexpr ← shallowExprToLExpr term
+  let type ← LExpr.toExpr lexpr
+  let env ← getEnv
+  match env.find? full_name with
+  | some pre_exist_decl =>
+    if pre_exist_decl.type == type then
+      let msg := s!"Theorem {label} is already in the environment!"
+      let has_sorry := pre_exist_decl.value!.hasSorry
+      if has_sorry then
+        return (msg ++ s!"\nNote that theorem {label} was proved using `sorry`!")
+      else
+        return msg
+    else
+      return s!"Theorem of name {label} is already in the environment, \
+                 but its statement differs from the new conjecture! \n\
+                 Existing theorem statement:\n\
+                 {← ppExpr pre_exist_decl.type}\n\
+                 New statement:\n\
+                 {← ppExpr type}"
+  | none =>
+    let value ←  mkSorry (mkSort levelZero) false
+    let theoremText := s!"theorem {label} : {← ppExpr type} := {← ppExpr value}"
+    return theoremText
+
+
+@[command_elab genLeanVCThms] def elabGenLeanVCThms : CommandElab
+  | `(command| #gen_lean_vc_thms $ns $name $lexpr) => do
+      let msg ← liftTermElabM (genVCTheorem ns name lexpr)
+      pushInfoLeaf (.ofCustomInfo { stx := ← getRef, value := Dynamic.mk (GenLeanVCThmsOutput.mk msg) })
+      logInfo msg
+  | _ => throwUnsupportedSyntax
+
+mutual
+partial def customNodeFromTree (t : InfoTree) : Option (Syntax × String) := do
+  match t with
+  | .node (.ofCustomInfo { stx, value }) _ => return (stx, (← value.get? (GenLeanVCThmsOutput)).res)
+  | .node _ ts => customNodeFromTrees ts
+  | .context _ t => customNodeFromTree t
+  | _ => none
+
+partial def customNodeFromTrees (ts : PersistentArray InfoTree) : Option (Syntax × String) := Id.run do
+  let mut result := Option.none
+  for t in ts do
+    match customNodeFromTree t with
+    | none => continue
+    | some ans => result := ans; break
+  return result
+end
+
+open Server CodeAction Elab Command RequestM in
+@[command_code_action genLeanVCThms]
+def genLeanVCThmsCodeAction : CommandCodeAction := fun _ _ _ node => do
+  let .node _ ts := node | return #[]
+  -- let res := ts.findSome? fun
+  --   | .node (.ofCustomInfo { stx, value }) _ =>
+  --     return (stx, (← value.get? (GenLeanVCThmsOutput)).res)
+  --   | _ => none
+  let res := customNodeFromTrees ts
+  let some (stx, res) := res | return #[]
+  let doc ← readDoc
+  let eager := {
+    title := "Update #gen_lean_vc_thms with output"
+    kind? := "quickfix"
+    edit? := .none,
+    isPreferred? := true
+  }
+  pure #[{
+    eager
+    lazy? := some do
+      let some start := stx.getPos? | return eager
+      -- let some tail := stx.getTailPos? | return eager
+      let newText := s!"/- {res} -/\n"
+      pure { eager with
+        edit? := some <|.ofTextEdit doc.versionedIdentifier {
+          range := doc.meta.text.utf8RangeToLspRange ⟨start, start⟩
+          newText
+        }
+      }
+  }]
+
+
+theorem test_thm : ¬∀ (x : Int), ¬(x == 5) = true := by
+  simp_all
+
+/-- info: Theorem test_thm is already in the environment! -/
+#guard_msgs in
+#gen_lean_vc_thms Lambda test_thm es[∃ (int): %0 == (#5 : int)]
+
+/-- info: theorem eq_4_5 : (4 == 5) = true := sorry -/
+#guard_msgs in
+#gen_lean_vc_thms Lambda eq_4_5 es[(#4 : int) == (#5 : int)]
