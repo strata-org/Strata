@@ -64,3 +64,8 @@ internal format of the dialects used to implement the language under
 analysis). These VCs are then encoded into SMT, and counterexamples,
 if any, report models for the variables present in the problem.
 
+# Troubleshooter
+
+## When running unit tests: "error: no such file or directory (error code: 2)"
+
+This is likely due to `cvc5` not to be on the PATH environment variable. Add it and try again.

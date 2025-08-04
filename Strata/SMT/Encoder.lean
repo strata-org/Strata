@@ -171,11 +171,17 @@ def defineApp (inBinder : Bool) (tyEnc : String) (op : Op) (tEncs : List String)
       defineTerm inBinder tyEnc s!"({← encodeUF f} {args})"
   | _              => defineTerm inBinder tyEnc s!"({encodeOp op} {args})"
 
-def defineAll (inBinder : Bool) (xEnc : String) (tyEnc : String) (tEnc : String) : EncoderM String :=
-  defineTerm inBinder "Bool" s!"(forall (({xEnc} {tyEnc})) {tEnc})"
+def defineAll (inBinder : Bool) (xEnc : String) (tyEnc : String) (trEnc: String) (tEnc : String) : EncoderM String :=
+  if trEnc == xEnc then -- No valid trigger
+    defineTerm inBinder "Bool" s!"(forall (({xEnc} {tyEnc})) {tEnc})"
+  else
+    defineTerm inBinder "Bool" s!"(forall (({xEnc} {tyEnc})) (! {tEnc} !pattern {trEnc}))"
 
-def defineExist (inBinder : Bool) (xEnc : String) (tyEnc : String) (tEnc : String) : EncoderM String :=
-  defineTerm inBinder "Bool" s!"(exists (({xEnc} {tyEnc})) {tEnc})"
+def defineExist (inBinder : Bool) (xEnc : String) (tyEnc : String) (trEnc: String) (tEnc : String) : EncoderM String :=
+  if trEnc == xEnc then -- No valid trigger
+    defineTerm inBinder "Bool" s!"(exists (({xEnc} {tyEnc})) {tEnc})"
+  else
+    defineTerm inBinder "Bool" s!"(exists (({xEnc} {tyEnc})) (! {tEnc} !pattern {trEnc}))"
 
 def mapM₁ {m : Type u → Type v} [Monad m] {α : Type w} {β : Type u}
   (xs : List α) (f : {x : α // x ∈ xs} → m β) : m (List β) :=
@@ -209,8 +215,8 @@ def encodeTerm (inBinder : Bool) (t : Term) : EncoderM String := do
         -- applied to Terms of type .bitvec
         return "false"
     | .app op ts _         => defineApp inBinder tyEnc op (← mapM₁ ts (λ ⟨tᵢ, _⟩ => encodeTerm inBinder tᵢ)) ts
-    | .quant .all x ty t   => defineAll inBinder x (← encodeType ty) (← encodeTerm True t)
-    | .quant .exist x ty t => defineExist inBinder x (← encodeType ty) (← encodeTerm True t)
+    | .quant .all x ty tr t => defineAll inBinder x (← encodeType ty) (← encodeTerm True tr) (← encodeTerm True t)
+    | .quant .exist x ty tr t => defineExist inBinder x (← encodeType ty) (← encodeTerm True tr) (← encodeTerm True t)
   if inBinder && !t.isFreeVar
   then pure enc
   else modifyGet λ state => (enc, {state with terms := state.terms.insert t enc})

@@ -386,8 +386,7 @@ mutual
 partial
 def translateQuantifier
   (qk: QuantifierKind)
-  -- TODO: don't ignore triggers
-  (bindings : TransBindings) (xsa : Arg) (_triggersa: Option Arg) (bodya: Arg) :
+  (bindings : TransBindings) (xsa : Arg) (triggersa: Option Arg) (bodya: Arg) :
   TransM Boogie.Expression.Expr := do
     let xsArray ← translateDeclList bindings xsa
     -- Note: the indices in the following are placeholders
@@ -395,12 +394,20 @@ def translateQuantifier
     let boundVars' := bindings.boundVars ++ newBoundVars
     let xbindings := { bindings with boundVars := boundVars' }
     let b ← translateExpr xbindings bodya
+
+    -- Handle triggers if present
+    let triggers ← match triggersa with
+      | none => pure LExpr.noTrigger
+      | some tsa => translateExpr xbindings tsa
+
     -- Create one quantifier constructor per variable
-    return xsArray.foldr (fun (_, ty) e =>
+    let buildQuantifier := fun (_, ty) e =>
       match ty with
       | .forAll [] mty =>
-        .quant qk (.some mty) e
-      | _ => panic! s!"Expected monomorphic type in quantifier, got: {ty}") b
+        .quant qk (.some mty) triggers e
+      | _ => panic! s!"Expected monomorphic type in quantifier, got: {ty}"
+
+    return xsArray.foldr buildQuantifier b
 
 partial def translateExpr (bindings : TransBindings) (arg : Arg) :
   TransM Boogie.Expression.Expr := do

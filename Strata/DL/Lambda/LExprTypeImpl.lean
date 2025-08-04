@@ -128,7 +128,7 @@ partial def infer (T : (TEnv Identifier)) (e : (LExpr Identifier)) : Except Form
   | .fvar x fty  => inferFVar T x fty
   | .app e1 e2   => inferApp T e1 e2
   | .abs _ e     => inferAbs T e
-  | .quant _ _ e => inferQuant T e
+  | .quant _ _ _ e => inferQuant T e
   | .eq e1 e2    => inferEq T e1 e2
   | .ite c th el => inferIte T c th el
 

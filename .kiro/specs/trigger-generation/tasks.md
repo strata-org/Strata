@@ -8,26 +8,48 @@
   - Add nested quantifier flattening tests with expected outputs
   - _Requirements: 6.1, 6.2_
 
-- [ ] 2. Extend Boogie Grammar for Trigger Syntax
-  - Add `Trigger` and `Triggers` syntax categories to grammar
+- [x] 2. Extend Boogie Grammar for Trigger Syntax
+
+
+
+
+
+
+
+
+
+
+
+
+  - Add `Trigger` and `Triggers` syntax categories to metadata
   - Extend quantifier syntax to support optional trigger specifications
   - Support multiple trigger patterns `{ f(x) } { g(x, y) }`
   - Support multi-term patterns `{ f(x), g(x) }`
   - _Requirements: 1.1, 1.3, 1.4_
 
-- [ ] 3. Update AST Representation for Triggers
+- [x] 3. Update AST Representation for Triggers using metadata attributes
   - Add `TriggerPattern` data structure to represent trigger patterns
   - Extend quantifier AST nodes to include optional trigger information
-  - Ensure proper source location tracking for trigger patterns
   - Update AST traversal and manipulation functions
   - _Requirements: 1.1, 1.2_
 
 - [ ] 4. Implement Trigger Type Checking and Validation
+
+
+
+
+
+
+
+
+
   - Validate that trigger expressions are well-typed
-  - Check that all variables in triggers are bound by the quantifier
-  - Detect unbound variables and undefined functions in triggers
   - Generate clear error messages for invalid trigger patterns
+
+
   - _Requirements: 1.2, 3.1, 3.2, 3.3, 3.4_
+
+
 
 - [ ] 5. Implement SMT2 Translation for Trigger Patterns
   - Generate `:pattern` attributes for quantifiers with triggers

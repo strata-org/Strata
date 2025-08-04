@@ -116,8 +116,8 @@ def app : Function → List Term → Term
   | .uf f, ts => .app (.uf f) ts f.out
 
 -- Note: we could coalesce nested quantifiers here, since SMT-Lib allows multiple variables to be bound at once.
-def quant (qk : QuantifierKind) (x : String) (ty : TermType) (e : Term) : Term :=
-  .quant qk x ty e
+def quant (qk : QuantifierKind) (x : String) (ty : TermType) (tr : Term) (e : Term) : Term :=
+  .quant qk x ty tr e
 
 ---------- SMTLib theory of integer numbers (`Ints`) ----------
 
