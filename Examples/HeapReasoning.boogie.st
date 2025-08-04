@@ -28,6 +28,7 @@ function isRef(v: Box): bool;
 var tickingClock: int;
 function allocationTime(r: Ref): int;
 
+// TODO: What happens if allocating in an if-expression
 axiom [allocationTimeOfNullIsSmallerThanEverything]: forall r: Ref :: allocationTime(null) == -1;
 
 
