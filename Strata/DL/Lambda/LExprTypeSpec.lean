@@ -4,10 +4,20 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-
-
 import Strata.DL.Lambda.LExprTypeEnv
 import Strata.DL.Lambda.LExprWF
+
+/-! ## Typing Relation for Lambda Expressions
+
+Specification of Lambda's type inference. See `Strata.DL.Lambda.LExprT` for the
+implementation.
+
+The inductive relation `HasType` characterizes well-typed `LExpr`s. We
+specify a Hindley-Milner type system here, but note that at this time, we
+do not have `let`s in `LExpr`, so we do not tackle let-polymorphism yet.
+
+TODO: prove that the implementation conforms to the specification here.
+-/
 
 ---------------------------------------------------------------------
 
@@ -19,17 +29,6 @@ namespace LExpr
 open LTy
 
 variable {Identifier : Type} [DecidableEq Identifier]
-
-/-! ### Typing relation for Lambda expressions
-
-The inductive relation `HasType` characterizes well-typed `LExpr`s. We
-specify a Hindley-Milner type system here, but note that at this time, we
-do not have `let`s in `LExpr`, so we do not tackle let-polymorphism yet.
-
-See also `inferType` for a type inference function that corresponds to
-`HasType`.
--/
-
 
 /--
 Close `ty` by `x`, i.e., add `x` as a bound type variable.

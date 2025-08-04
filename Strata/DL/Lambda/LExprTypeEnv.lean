@@ -4,22 +4,22 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-
-
 import Strata.DL.Lambda.LExprWF
 import Strata.DL.Lambda.LTyUnify
 import Strata.DL.Lambda.Factory
 import Strata.DL.Util.Maps
 
+/-! ## Type Environment
+
+Data structures and utilities for type inference/checking of Lambda expressions.
+Also see `Strata.DL.Lambda.LExprT`.
+-/
+
 ---------------------------------------------------------------------
 
 namespace Lambda
-
 open Std (ToFormat Format format)
-
 open LExpr
-
-/-! ### Typing Environment -/
 
 ---------------------------------------------------------------------
 
