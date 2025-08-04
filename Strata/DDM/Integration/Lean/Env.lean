@@ -1,17 +1,7 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 import Lean.Environment
@@ -40,23 +30,23 @@ def dialect (pd : PersistentDialect) : Dialect :=
 end PersistentDialect
 
 structure DialectState where
-  loader : Elab.DialectLoader := Elab.DeclState.initDeclState.loader
+  loaded : Elab.LoadedDialects := Elab.DeclState.initDeclState.loader
   newDialects : Array Dialect := #[]
   deriving Inhabited
 
 namespace DialectState
 
 def addDialect! (s : DialectState) (d : Dialect) (isNew : Bool) : DialectState where
-  loader :=
-    assert! d.name ∉ s.loader.dialects
-    s.loader.addDialect! d
+  loaded :=
+    assert! d.name ∉ s.loaded.dialects
+    s.loaded.addDialect! d
   newDialects := if isNew then s.newDialects.push d else s.newDialects
 
 end DialectState
 
 def mkImported (e : Array (Array PersistentDialect)) : ImportM DialectState :=
   return e.foldl (init := {}) fun s a => a.foldl (init := s) fun s d =>
-    if d.name ∈ s.loader.dialects then
+    if d.name ∈ s.loaded.dialects then
       @panic _ ⟨s⟩ s!"Multiple dialects named {d.name} found in imports."
     else
       s.addDialect! d.dialect (isNew := false)
@@ -69,7 +59,7 @@ initialize dialectExt : PersistentEnvExtension PersistentDialect Dialect Dialect
     mkInitial := pure {},
     addImportedFn := mkImported
     addEntryFn    := fun s d =>
-      assert! d.name ∉ s.loader.dialects
+      assert! d.name ∉ s.loaded.dialects
       DialectState.addDialect! s d (isNew := true)
     exportEntriesFn := exportEntries
   }

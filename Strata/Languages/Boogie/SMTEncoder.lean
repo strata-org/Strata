@@ -1,23 +1,13 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 
 
 import Strata.Languages.Boogie.Boogie
-import Strata.SMT
+import Strata.DL.SMT.SMT
 import Init.Data.String.Extra
 
 ---------------------------------------------------------------------
@@ -66,8 +56,10 @@ mutual
 def LMonoTy.toSMTType (ty : LMonoTy) (ctx : SMT.Context) :
   Except Format (TermType × SMT.Context) := do
   match ty with
+  | .bitvec n => .ok (.bitvec n, ctx)
   | .tcons "bool" [] => .ok (.bool, ctx)
   | .tcons "int"  [] => .ok (.int, ctx)
+  | .tcons "real" [] => .ok (.real, ctx)
   | .tcons "string"  [] => .ok (.string, ctx)
   | .tcons id args =>
     let ctx := ctx.addSort { name := id, arity := args.length }
@@ -94,6 +86,7 @@ mutual
 partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr BoogieIdent) (ctx : SMT.Context)
   : Except Format (Term × SMT.Context) := do
   match e with
+  | .const "true" _ => .ok ((Term.bool true), ctx)
   | .const _ ty =>
     match ty with
     | none => .error f!"Cannot encode unannotated constant {e}"
@@ -109,6 +102,16 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr BoogieIdent) (ctx :
           | none =>
             .error f!"Unexpected integer constant {e}"
           | some i => .ok ((Term.int i), ctx)
+        | .real =>
+          match e.denoteReal with
+          | none =>
+            .error f!"Unexpected real constant {e}"
+          | some r => .ok ((Term.real r), ctx)
+        | .bitvec n =>
+          match e.denoteBitVec n with
+          | none =>
+            .error f!"Unexpected bv constant {e}"
+          | some v => .ok ((Term.bitvec v), ctx)
         | .string =>
           match e.denoteString with
           | none => .error f!"Unexpected string constant {e}"
@@ -214,6 +217,45 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
     | "Int.Le"       => .ok (Op.le,         .bool,   ctx)
     | "Int.Gt"       => .ok (Op.gt,         .bool,   ctx)
     | "Int.Ge"       => .ok (Op.ge,         .bool,   ctx)
+    | "Real.Neg"     => .ok (Op.neg,        .real,   ctx)
+    | "Real.Add"     => .ok (Op.add,        .real,   ctx)
+    | "Real.Sub"     => .ok (Op.sub,        .real,   ctx)
+    | "Real.Mul"     => .ok (Op.mul,        .real,   ctx)
+    | "Real.Div"     => .ok (Op.div,        .real,   ctx)
+    | "Real.Lt"      => .ok (Op.lt,         .bool,   ctx)
+    | "Real.Le"      => .ok (Op.le,         .bool,   ctx)
+    | "Real.Gt"      => .ok (Op.gt,         .bool,   ctx)
+    | "Real.Ge"      => .ok (Op.ge,         .bool,   ctx)
+    | "Bv1.Neg"     => .ok (Op.bvneg,      .bitvec 1, ctx)
+    | "Bv1.Add"     => .ok (Op.bvadd,      .bitvec 1, ctx)
+    | "Bv1.Sub"     => .ok (Op.bvsub,      .bitvec 1, ctx)
+    | "Bv1.Mul"     => .ok (Op.bvmul,      .bitvec 1, ctx)
+    | "Bv1.Lt"      => .ok (Op.bvult,      .bool,   ctx)
+    | "Bv1.Le"      => .ok (Op.bvule,      .bool,   ctx)
+    | "Bv8.Neg"     => .ok (Op.bvneg,      .bitvec 8, ctx)
+    | "Bv8.Add"     => .ok (Op.bvadd,      .bitvec 8, ctx)
+    | "Bv8.Sub"     => .ok (Op.bvsub,      .bitvec 8, ctx)
+    | "Bv8.Mul"     => .ok (Op.bvmul,      .bitvec 8, ctx)
+    | "Bv8.Lt"      => .ok (Op.bvult,      .bool,   ctx)
+    | "Bv8.Le"      => .ok (Op.bvule,      .bool,   ctx)
+    | "Bv16.Neg"     => .ok (Op.bvneg,      .bitvec 16, ctx)
+    | "Bv16.Add"     => .ok (Op.bvadd,      .bitvec 16, ctx)
+    | "Bv16.Sub"     => .ok (Op.bvsub,      .bitvec 16, ctx)
+    | "Bv16.Mul"     => .ok (Op.bvmul,      .bitvec 16, ctx)
+    | "Bv16.Lt"      => .ok (Op.bvult,      .bool,   ctx)
+    | "Bv16.Le"      => .ok (Op.bvule,      .bool,   ctx)
+    | "Bv32.Neg"     => .ok (Op.bvneg,      .bitvec 32, ctx)
+    | "Bv32.Add"     => .ok (Op.bvadd,      .bitvec 32, ctx)
+    | "Bv32.Sub"     => .ok (Op.bvsub,      .bitvec 32, ctx)
+    | "Bv32.Mul"     => .ok (Op.bvmul,      .bitvec 32, ctx)
+    | "Bv32.Lt"      => .ok (Op.bvult,      .bool,   ctx)
+    | "Bv32.Le"      => .ok (Op.bvule,      .bool,   ctx)
+    | "Bv64.Neg"     => .ok (Op.bvneg,      .bitvec 64, ctx)
+    | "Bv64.Add"     => .ok (Op.bvadd,      .bitvec 64, ctx)
+    | "Bv64.Sub"     => .ok (Op.bvsub,      .bitvec 64, ctx)
+    | "Bv64.Mul"     => .ok (Op.bvmul,      .bitvec 64, ctx)
+    | "Bv64.Lt"      => .ok (Op.bvult,      .bool,   ctx)
+    | "Bv64.Le"      => .ok (Op.bvule,      .bool,   ctx)
     | "Str.Length"   => .ok (Op.str_length, .int,    ctx)
     | "Str.Concat"   => .ok (Op.str_concat, .string, ctx)
     | _ => do

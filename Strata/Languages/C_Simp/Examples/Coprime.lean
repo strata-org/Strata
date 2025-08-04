@@ -1,17 +1,7 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 import Strata.Languages.C_Simp.C_Simp
@@ -72,10 +62,7 @@ info: function coprime {
 init (i : int) := a
 if ((~Int.Lt b) a) then {i := b}
 else{}
-while(((~Int.Gt i) #1))
-(some i)
-(some #true)
-{if ((~Bool.And (((~Int.Mod b) i) == #0)) (((~Int.Mod a) i) == #0)) then {return := #false}
+while (((~Int.Gt i) #1)) (some i) (some #true) {if ((~Bool.And (((~Int.Mod b) i) == #0)) (((~Int.Mod a) i) == #0)) then {return := #false}
  else{}
  i := ((~Int.Sub i) #1)}
 return := #true
@@ -94,9 +81,8 @@ postconditions: (post, #true)
 body: init (i : int) := a
 if ((~Int.Lt b) a) then {i := b}
 else{}
-transformed loop block : {if ((~Int.Gt i) #1) then {assert [entry_invariant] #true
+if ((~Int.Gt i) #1) then {first_iter_asserts : {assert [entry_invariant] #true
   assert [assert measure_pos] ((~Int.Ge i) #0)}
- else{}
  arbitrary iter facts : {loop havoc : {havoc return
    havoc i}
   arbitrary_iter_assumes : {assume [assume_guard] ((~Int.Gt i) #1)
@@ -113,6 +99,7 @@ transformed loop block : {if ((~Int.Gt i) #1) then {assert [entry_invariant] #tr
   havoc i}
  assume [not_guard] (~Bool.Not ((~Int.Gt i) #1))
  assume [invariant] #true}
+else{}
 return := #true
 -/
 #guard_msgs in

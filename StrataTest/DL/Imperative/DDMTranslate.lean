@@ -1,17 +1,7 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 import StrataTest.DL.Imperative.Arith
@@ -19,6 +9,15 @@ import StrataTest.DL.Imperative.DDMDefinition
 
 namespace ArithPrograms
 open Std (ToFormat Format format)
+
+/-!
+
+## Translation of Concrete Syntax into Abstract Syntax
+
+`ArithPrograms`' Concrete Syntax is defined in the file `DDMDefinition.lean` and
+Abstract Syntax is in the file `ArithExpr.lean`.
+-/
+
 ---------------------------------------------------------------------
 
 structure TransState where
@@ -74,6 +73,8 @@ number of parameters: 0
 constructors:
 ArithPrograms.Expr.fvar : Nat → Expr
 ArithPrograms.Expr.numLit : Nat → Expr
+ArithPrograms.Expr.btrue : Expr
+ArithPrograms.Expr.bfalse : Expr
 ArithPrograms.Expr.add_expr : Expr → Expr → Expr
 ArithPrograms.Expr.mul_expr : Expr → Expr → Expr
 ArithPrograms.Expr.eq_expr : ArithProgramsType → Expr → Expr → Expr
@@ -88,6 +89,8 @@ def translateExpr (bindings : TransBindings) (e : ArithPrograms.Expr) : TransM A
     let id := bindings.freeVars[i]!
     return (.Var id .none)
   | .numLit n => return (.Num n)
+  | .btrue => return (.Bool true)
+  | .bfalse => return (.Bool false)
   | .add_expr e1 e2 =>
     let e1 ← translateExpr bindings e1
     let e2 ← translateExpr bindings e2

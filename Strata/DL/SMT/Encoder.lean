@@ -1,24 +1,14 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.SMT.Factory
-import Strata.SMT.Op
-import Strata.SMT.Solver
-import Strata.SMT.Term
-import Strata.SMT.TermType
+import Strata.DL.SMT.Factory
+import Strata.DL.SMT.Op
+import Strata.DL.SMT.Solver
+import Strata.DL.SMT.Term
+import Strata.DL.SMT.TermType
 import Std.Data.HashMap
 
 /-!
@@ -91,6 +81,7 @@ def encodeType (ty : TermType) : EncoderM String := do
     match ty with
     | .bool             => return "Bool"
     | .int              => return "Int"
+    | .real             => return "Real"
     | .string           => return "String"
     | .bitvec n         => return s!"(_ BitVec {n})"
     | .option oty       => return s!"(Option {← encodeType oty})"
@@ -197,6 +188,7 @@ def encodeTerm (inBinder : Bool) (t : Term) : EncoderM String := do
       match p with
       | .bool b         => return if b then "true" else "false"
       | .int i          => return encodeInt i
+      | .real r         => return r
       | .bitvec bv      => return encodeBitVec bv
       | .string s       => return encodeString s
     | .none _           => defineTerm inBinder tyEnc s!"(as none {tyEnc})"

@@ -1,3 +1,9 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
 import Strata.DL.Imperative.Cmd
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.NondetStmt
@@ -16,6 +22,8 @@ def StmtToNondetStmt {P : PureExpr} [Imperative.HasBool P] [Imperative.HasBoolNe
     .choice
       (.seq (.assert "true_cond" cond md) (StmtsToNondetStmt thenb.ss))
       (.seq ((.assert "false_cond" (Imperative.HasBoolNeg.neg cond) md)) (StmtsToNondetStmt elseb.ss))
+  | .loop   guard _measure _inv body md =>
+    .loop (.seq (.assume "guard" guard md) (StmtsToNondetStmt body.ss))
   -- TODO: need goto equivalent
   | .goto _ _ => (.assert "skip" Imperative.HasBool.tt)
   termination_by (sizeOf st)

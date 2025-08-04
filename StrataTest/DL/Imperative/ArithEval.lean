@@ -1,17 +1,7 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 
@@ -21,8 +11,13 @@ import Strata.DL.Imperative.CmdEval
 
 namespace Arith
 
-abbrev Command := Imperative.Cmd Arith.PureExpr
-abbrev Commands := Imperative.Cmds Arith.PureExpr
+/-! ## Instantiate `Imperative`'s Partial Evaluator
+
+We instantiate Imperative's `EvalContext` typeclass with `ArithPrograms`'
+specific implementations to obtain a partial evaluator that generates
+verification conditions on the fly (i.e., a Strongest-Postconditions
+Verification Condition Generator).
+-/
 
 ---------------------------------------------------------------------
 namespace Eval
@@ -73,11 +68,10 @@ def eval (s : State) (e : Expr) : Expr :=
   | .Eq e1 e2 =>
     match (eval s e1), (eval s e2) with
     | .Num n1, .Num n2 =>
-      -- Zero is false; any non-zero number is true, but we choose 1 as the
-      -- canonical true here.
-      .Num (if n1 == n2 then 1 else 0)
+      (if n1 == n2 then .Bool true else .Bool false)
     | e1', e2' => .Eq e1' e2'
   | .Num n => .Num n
+  | .Bool b => .Bool b
   | .Var v ty => match s.env.find? v with | none => .Var v ty | some (_, e) => e
 
 def updateError (s : State) (e : EvalError PureExpr) : State :=
@@ -111,10 +105,8 @@ def genFreeVar (s : State) (x : String) (ty : Ty) : Expr × State :=
 
 def denoteBool (e : Expr) : Option Bool :=
   match e with
-  | .Num n =>
-    -- Non-zero numbers denote true; zero is false.
-    some (not (n == 0))
-  | .Var _ _ | .Plus _ _ | .Mul _ _ | .Eq _ _ => none
+  | .Bool b => some b
+  | .Var _ _ | .Plus _ _ | .Mul _ _ | .Eq _ _ | .Num _ => none
 
 def getPathConditions (s : State) : PathConditions PureExpr :=
   s.pathConditions
@@ -142,6 +134,9 @@ theorem lookupEval (s1 s2 : State) (h : ∀ x, lookup s1 x = lookup s2 x) :
 
 ---------------------------------------------------------------------
 
+/--
+Instantiation of `EvalContext` for `ArithPrograms`.
+-/
 instance : EvalContext PureExpr State where
   eval := Arith.Eval.eval
   updateError := Arith.Eval.updateError
@@ -173,18 +168,18 @@ private def testProgram1 : Cmds PureExpr :=
    .assert "x_value_eq" (.Eq (.Var "x" .none) (.Num 100))]
 
 /--
-info:
-Obligation x_value_eq proved via evaluation!
-
----
 info: Commands:
 init (x : Num) := 0
 x := 100
-assert [x_value_eq] 1
+assert [x_value_eq] true
 
 State:
 error: none
-deferred: #[]
+deferred: #[Label: x_value_eq
+ Assumptions: ⏎
+ Obligation: true
+ Metadata: ⏎
+ ]
 pathConditions: ⏎
 env: (x, (Num, 100))
 genNum: 0

@@ -1,3 +1,9 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
 import Strata.Languages.Boogie.Verifier
 
 ---------------------------------------------------------------------
@@ -5,7 +11,7 @@ namespace Strata
 
 def QuantTypeAliases : Environment :=
 #strata
-open Boogie;
+program Boogie;
 
 type Ref;
 type Field;

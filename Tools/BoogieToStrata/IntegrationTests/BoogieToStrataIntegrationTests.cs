@@ -63,8 +63,9 @@ public class BoogieToStrataIntegrationTests(ITestOutputHelper output) {
             Console.SetOut(consoleOutput);
             Console.SetError(consoleError);
             exitCode = BoogieToStrata.Main([filePath]);
-        }
-        finally {
+        } catch (Exception) {
+            exitCode = 1;
+        } finally {
             Console.SetOut(originalOut);
             Console.SetError(originalError);
         }
@@ -81,7 +82,6 @@ public class BoogieToStrataIntegrationTests(ITestOutputHelper output) {
 
         Assert.True(File.Exists(filePath), $"Test file does not exist: {filePath}");
 
-        // Act
         var (exitCode, standardOutput, errorOutput) = RunTranslation(filePath);
 
         output.WriteLine($"Exit code: {exitCode}");
@@ -109,26 +109,25 @@ public class BoogieToStrataIntegrationTests(ITestOutputHelper output) {
 
         Assert.True(File.Exists(filePath), $"Test file does not exist: {filePath}");
 
-        // Act
         var (exitCode, standardOutput, errorOutput) = RunTranslation(filePath);
         Assert.Equal(0, exitCode);
         Assert.True(standardOutput.Length > 0, "Expected some output from BoogieToStrata");
         Assert.True(errorOutput.Length == 0, "Expected no error output from BoogieToStrata");
-        var tempFile = Path.GetTempFileName();
+        var tempFile = Path.GetTempFileName() + ".boogie.st";
         File.WriteAllText(tempFile, standardOutput);
-        using var myProcess = new Process();
-        myProcess.StartInfo.FileName = GetVerifierPath();
-        myProcess.StartInfo.Arguments = tempFile;
-        myProcess.StartInfo.RedirectStandardOutput = true;
-        myProcess.StartInfo.RedirectStandardError = true;
-        myProcess.Start();
-        myProcess.WaitForExit();
+        using var proc = new Process();
+        proc.StartInfo.FileName = GetVerifierPath();
+        proc.StartInfo.Arguments = $"--verbose --check {tempFile}";
+        proc.StartInfo.RedirectStandardOutput = true;
+        proc.StartInfo.RedirectStandardError = true;
+        proc.Start();
+        proc.WaitForExit();
         File.Delete(tempFile);
         Directory.Delete(vcsDirectory, true);
-        // TODO: actually check output
-        //output.WriteLine(myProcess.StandardOutput.ReadToEnd());
-        //output.WriteLine(myProcess.StandardError.ReadToEnd());
-        //Assert.Equal(0, myProcess.ExitCode);
+        var stdout = proc.StandardOutput.ReadToEnd();
+        var stderr = proc.StandardError.ReadToEnd();
+        Assert.Contains("Skipping verification", stdout);
+        Assert.Equal(0, proc.ExitCode);
     }
 
     [Fact]
@@ -146,10 +145,8 @@ public class BoogieToStrataIntegrationTests(ITestOutputHelper output) {
 
     [Fact]
     public void TestsDirectoryContainsBoogieFiles() {
-        // Arrange & Act
         var bplFiles = Directory.GetFiles(TestsDirectory, "*.bpl", SearchOption.AllDirectories);
 
-        // Assert
         Assert.True(bplFiles.Length > 0, $"No .bpl files found in {TestsDirectory}");
 
         output.WriteLine($"Found {bplFiles.Length} .bpl test files:");

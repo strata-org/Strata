@@ -7,10 +7,10 @@ model specific programming constructs, and is extensible by tool
 developers to customize additional features to their needs.
 
 This README will help you get started with using and extending
-Strata. Also see the [Architecture](<TODO: insert pointer>) document
+Strata. Also see the [Architecture](docs/Architecture.md) document
 that introduces some terminology and describes Strata's components,
-and a [Getting Started](GettingStarted.md) guide that describes how to
-create a new dialect and analysis using existing features.
+and a [Getting Started](docs/GettingStarted.md) guide that describes
+how to create a new dialect and analysis using existing features.
 
 **N.B.: Strata is under active development, and there may be breaking
 changes!**
@@ -22,7 +22,7 @@ changes!**
 
    You can install Lean4 by following the instructions [here](https://lean-lang.org/).
 
-2. **SMT Solver**: Analyses tools in Strata use SMT solvers for program
+2. **SMT Solver**: Analysis tools in Strata use SMT solvers for program
    verification.
    - Install an SMT solver. You can use any solver you want, but the unit
      tests assume `cvc5` is on your `PATH` [cvc5](https://cvc5.github.io/).
@@ -39,7 +39,7 @@ Unit tests are run with `#guard_msgs` commands. No output means the tests passed
 
 ## Running Analyses on Existing Strata Programs
 
-Strata programs use the `.st` file extension, preceded the dialect name,
+Strata programs use the `.st` file extension, preceded by the dialect name,
 preceded by a second `.` e.g., `SimpleProc.boogie.st` or
 `LoopSimple.csimp.st`. Note the current `StrataVerify` executable
 relies on this file extension convention to know what dialect it's
@@ -69,3 +69,9 @@ if any, report models for the variables present in the problem.
 ## When running unit tests: "error: no such file or directory (error code: 2)"
 
 This is likely due to `cvc5` not to be on the PATH environment variable. Add it and try again.
+## License
+
+The contents of this repository are licensed under the terms of either
+the Apache-2.0 or MIT license, at your choice. See
+[LICENSE-APACHE](LICENSE-APACHE) and [LICENSE-MIT](LICENSE-MIT) for
+details of the two licenses.

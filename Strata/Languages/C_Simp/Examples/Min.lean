@@ -1,17 +1,7 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 import Strata.Languages.C_Simp.C_Simp
@@ -65,16 +55,20 @@ open Strata.C_Simp in
 /--
 info: [Strata.Boogie] Type checking succeeded.
 
-[assume] pre satisfied via evaluation.
-
-
-Obligation post proved via evaluation!
-
 
 VCs:
+Label: post
+Assumptions:
+(<label_ite_cond_true: ((~Int.Lt a) b)>, (if ((~Int.Lt $__a0) $__b1) then ((~Int.Lt $__a0) $__b1) else #true))
+(<label_ite_cond_false: !((~Int.Lt a) b)>, (if (if ((~Int.Lt $__a0) $__b1) then #false else #true) then (if ((~Int.Lt $__a0) $__b1) then #false else #true) else #true))
+Proof Obligation:
+#true
 
+Wrote problem to vcs/post.smt2.
 ---
 info:
+Obligation: post
+Result: verified
 -/
 #guard_msgs in
 #eval Strata.C_Simp.verify "cvc5" MinEnv

@@ -1,17 +1,7 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 
@@ -68,8 +58,9 @@ def Cmd.eval [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P × S :=
       let c' := .assert label e md
       match EC.denoteBool e with
       | some true =>
-        dbg_trace f!"{Format.line}Obligation {label} proved via evaluation!{Format.line}"
-        (c', σ)
+        -- dbg_trace f!"{Format.line}Obligation {label} proved via evaluation!{Format.line}"
+        -- (c', σ)
+        (c', EC.deferObligation σ (ProofObligation.mk label assumptions e md))
       | some false =>
         if assumptions.isEmpty then
           (c', EC.updateError σ (.AssertFail label e))
@@ -84,7 +75,7 @@ def Cmd.eval [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P × S :=
       let c' := .assume label e md
       match EC.denoteBool e with
       | some true =>
-        dbg_trace f!"[assume] {label} satisfied via evaluation.\n"
+        -- dbg_trace f!"[assume] {label} satisfied via evaluation.\n"
         (c', σ)
       | some false =>
         (c', EC.updateError σ (.AssumeFail label e))

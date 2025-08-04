@@ -19,10 +19,6 @@ const c2 : [C a b]int;
 const c3 : [C b a]int;
 
 axiom g0(c0) == 0;
-axiom g3(c0) == 0;
 axiom g1(c1) == 0;
-axiom g2(c1) == 0;
-axiom g1(c2) == 0;
 axiom g2(c2) == 0;
-axiom g0(c3) == 0;
 axiom g3(c3) == 0;

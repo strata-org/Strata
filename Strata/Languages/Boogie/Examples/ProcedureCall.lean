@@ -1,17 +1,7 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 import Strata.Languages.Boogie.Verifier
@@ -62,42 +52,67 @@ procedure Q2() returns () {
 info: [Strata.Boogie] Type checking succeeded.
 
 
-Obligation new_g_value proved via evaluation!
-
-
-Obligation <Origin:Inc_Requires>a_positive proved via evaluation!
-
-
-Obligation <Origin:Inc_Requires>a_positive proved via evaluation!
-
-
-Obligation assert: (#true : bool) proved via evaluation!
-
-
 VCs:
+Label: new_g_value
+Assumptions:
+(a_positive, ((~Int.Gt $__a1) #0))
+Proof Obligation:
+#true
+
 Label: old_g_property
 Assumptions:
 (a_positive, ((~Int.Gt $__a1) #0))
 Proof Obligation:
 (((~Int.Sub ((~Int.Add $__counter0) $__a1)) $__a1) == $__counter0)
 
-Label: return_value_lemma
+Label: <Origin:Inc_Requires>a_positive
+Assumptions:
+Proof Obligation:
+#true
+
+Label: <Origin:Inc_Requires>a_positive
 Assumptions:
 (<Origin:Inc_Ensures>new_g_value, ($__counter6 == ((~Int.Add $__counter3) #8)))
 (<Origin:Inc_Ensures>old_g_property, (((~Int.Sub $__b5) #8) == $__counter3))
-(<Origin:Inc_Ensures>new_g_value, ($__counter8 == ((~Int.Add $__counter6) #8)))
-(<Origin:Inc_Ensures>old_g_property, (((~Int.Sub $__b7) #8) == $__counter6))
+Proof Obligation:
+#true
+
+Label: return_value_lemma
+Assumptions:
+(<Origin:Inc_Ensures>new_g_value, ($__counter6 == ((~Int.Add $__counter3) #8)))
+(<Origin:Inc_Ensures>old_g_property, (((~Int.Sub $__b5) #8) == $__counter3)) (<Origin:Inc_Ensures>new_g_value, ($__counter8 == ((~Int.Add $__counter6) #8))) (<Origin:Inc_Ensures>old_g_property, (((~Int.Sub $__b7) #8) == $__counter6))
 Proof Obligation:
 ($__b7 == ((~Int.Add $__counter3) #16))
 
+Label: assert: (#true : bool)
+Assumptions:
+Proof Obligation:
+#true
+
+Wrote problem to vcs/new_g_value.smt2.
 Wrote problem to vcs/old_g_property.smt2.
+Wrote problem to vcs/<Origin:Inc_Requires>a_positive.smt2.
+Wrote problem to vcs/<Origin:Inc_Requires>a_positive.smt2.
 Wrote problem to vcs/return_value_lemma.smt2.
+Wrote problem to vcs/assert:_(#true_:_bool).smt2.
 ---
 info:
+Obligation: new_g_value
+Result: verified
+
 Obligation: old_g_property
 Result: verified
 
+Obligation: <Origin:Inc_Requires>a_positive
+Result: verified
+
+Obligation: <Origin:Inc_Requires>a_positive
+Result: verified
+
 Obligation: return_value_lemma
+Result: verified
+
+Obligation: assert: (#true : bool)
 Result: verified
 -/
 #guard_msgs in

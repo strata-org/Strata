@@ -1,17 +1,7 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 import StrataTest.DL.Imperative.DDMTranslate
@@ -21,6 +11,14 @@ import Strata.DL.Imperative.SMTUtils
 ---------------------------------------------------------------------
 namespace Arith
 open Std (ToFormat Format format)
+
+/-! ## Verifier for `ArithPrograms`
+
+Here, we build an end-to-end verifier for `ArithPrograms`. We hook up the DDM
+translator with the type checker + partial evaluator, followed by the SMT
+encoder. We then write some basic functions to invoke an SMT solver on every
+verification condition.
+-/
 
 open Strata.SMT in
 def typedVarToSMT (v : String) (ty : Ty) : Except Format (String × Strata.SMT.TermType) := do
@@ -37,6 +35,7 @@ def verify (smtsolver : String) (cmds : Commands) (verbose : Bool) :
   | .ok (cmds, S) =>
     let mut results := (#[] : Imperative.VCResults Arith.PureExpr)
     for obligation in S.deferred do
+      dbg_trace f!"{obligation}"
       let maybeTerms := Arith.ProofObligation.toSMTTerms S.env obligation
       match maybeTerms with
       | .error err =>
@@ -54,7 +53,7 @@ def verify (smtsolver : String) (cmds : Commands) (verbose : Bool) :
                encodeArithToSMTTerms typedVarToSMT
                -- (FIXME)
                ((Arith.Eval.ProofObligation.freeVars obligation).map (fun v => (v, Arith.Ty.Num)))
-                smtsolver (obligation.label ++ ".smt2")
+                smtsolver (Imperative.smt2_filename obligation.label)
                 terms)
         match ans with
         | .ok (result, estate) =>

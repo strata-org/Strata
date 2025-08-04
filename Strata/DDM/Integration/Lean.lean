@@ -1,17 +1,7 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 import Strata.DDM.Elab
@@ -62,12 +52,12 @@ def strataProgramImpl : TermElab := fun stx tp => do
         | throwError s!"Expected input context"
   let emptyEnv ← mkEmptyEnvironment 0
   let inputCtx ← (getInputContext : CoreM _)
-  let loader := (dialectExt.getState (←Lean.getEnv)).loader
-  let ds := Elab.elabProgram emptyEnv loader inputCtx p e
-  if ds.errors.isEmpty then
-    return toExpr ds.mkEnv
+  let loader := (dialectExt.getState (←Lean.getEnv)).loaded
+  let (env, errors) := Elab.elabProgram emptyEnv loader inputCtx p e
+  if errors.isEmpty then
+    return toExpr env
   else
-    for (stx, e) in ds.errors do
+    for (stx, e) in errors do
       logMessage e
     return mkApp2 (mkConst ``sorryAx [1]) (toTypeExpr Strata.Environment) (toExpr true)
 
@@ -81,8 +71,8 @@ def strataDialectImpl: Lean.Elab.Command.CommandElab := fun (stx : Syntax) => do
         | throwError s!"Expected input context"
   let emptyLeanEnv ← mkEmptyEnvironment 0
   let inputCtx ← getInputContext
-  let loader := (dialectExt.getState (←Lean.getEnv)).loader
-  let (d, s) := Elab.elabDialect emptyLeanEnv loader inputCtx p e
+  let loader := (dialectExt.getState (←Lean.getEnv)).loaded
+  let (d, s) ← Elab.elabDialect emptyLeanEnv loader inputCtx p e
   if !s.errors.isEmpty then
     for (stx, e) in s.errors do
       logMessage e

@@ -1,22 +1,12 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.SMT.TermType
-import Strata.SMT.Basic
-import Strata.SMT.Op
+import Strata.DL.SMT.TermType
+import Strata.DL.SMT.Basic
+import Strata.DL.SMT.Op
 
 /-!
 Based on Cedar's Term language.
@@ -42,6 +32,7 @@ namespace Strata.SMT
 inductive TermPrim : Type where
   | bool   : Bool → TermPrim
   | int    : Int → TermPrim
+  | real   : String → TermPrim
   | bitvec : ∀ {n}, BitVec n → TermPrim
   | string : String → TermPrim
 deriving instance Repr, Inhabited, DecidableEq for TermPrim
@@ -49,12 +40,14 @@ deriving instance Repr, Inhabited, DecidableEq for TermPrim
 def TermPrim.mkName : TermPrim → String
   | .bool _   => "bool"
   | .int _    => "int"
+  | .real _   => "real"
   | .bitvec _ => "bitvec"
   | .string _ => "string"
 
 def TermPrim.lt : TermPrim → TermPrim → Bool
   | .bool b₁, .bool b₂         => b₁ < b₂
   | .int  i₁, .int i₂          => i₁ < i₂
+  | .real r₁, .real r₂         => r₁ < r₂ -- TODO
   | @TermPrim.bitvec n₁ bv₁,
     @TermPrim.bitvec n₂ bv₂    => n₁ < n₂ || (n₁ = n₂ && bv₁.toNat < bv₂.toNat)
   | .string s₁, .string s₂     => s₁ < s₂
@@ -169,12 +162,14 @@ instance Term.decLt (x y : Term) : Decidable (x < y) :=
 
 abbrev Term.bool (b : Bool) : Term := .prim (.bool b)
 abbrev Term.int  (i : Int) : Term := .prim (.int i)
+abbrev Term.real  (r : String) : Term := .prim (.real r)
 abbrev Term.bitvec {n : Nat} (bv : BitVec n) : Term := .prim (.bitvec bv)
 abbrev Term.string (s : String) : Term := .prim (.string s)
 
 def TermPrim.typeOf : TermPrim → TermType
   | .bool _           => .bool
   | .int _            => .int
+  | .real _           => .real
   | .bitvec b         => .bitvec b.width
   | .string _         => .string
 

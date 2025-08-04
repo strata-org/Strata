@@ -1,23 +1,25 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
-
 
 import Strata.DL.Lambda.LExprWF
 import Strata.DL.Lambda.LTy
+
+/-!
+## Lambda's Factory
+
+This module formalizes Lambda's _factory_, which is a mechanism to extend the
+type checker (see `Strata.DL.Lambda.LExprT`) and partial evaluator (see
+`Strata.DL.Lambda.LExprEval`) by providing a map from operations to their types
+and optionally, denotations. The factory allows adding type checking and
+evaluation support for new operations without modifying the implementation of
+either or any core ASTs.
+
+Also see `Strata.DL.Lambda.IntBoolFactory` for a concrete example of a factory.
+-/
+
 
 namespace Lambda
 
@@ -130,10 +132,10 @@ def LFunc.outputPolyType (f : (LFunc Identifier)) : LTy :=
 The type checker and partial evaluator for Lambda is parameterizable by
 a user-provided `Factory`.
 
-We don't have any "built-in" functions like `+`, `-`, etc. in `(LExpr Identifier)` -- lambdas
-are our only tool. `Factory` gives us a way to add support for concrete/symbolic
-evaluation and type checking for `FunFactory` functions without actually
-modifying any core logic or the ASTs.
+We don't have any "built-in" functions like `+`, `-`, etc. in `(LExpr
+Identifier)` -- lambdas are our only tool. `Factory` gives us a way to add
+support for concrete/symbolic evaluation and type checking for `FunFactory`
+functions without actually modifying any core logic or the ASTs.
 -/
 def Factory := Array (LFunc Identifier)
 

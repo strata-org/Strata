@@ -1,25 +1,26 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 import StrataTest.DL.Imperative.Arith
 import Strata.DL.Imperative.EvalContext
-import Strata.SMT
+import Strata.DL.SMT.SMT
 import Init.Data.String.Extra
 
 namespace Arith
+
+/-! ## SMT Encoder for `ArithPrograms`' Verification Conditions
+
+The generated VCs are in terms of `ArithPrograms`' expressions. Given their
+simplicity, it is fairly straightforward to encode them to SMTLIB using Strata's
+SMT dialect. Strata's SMT dialect provides support for some core theories, like
+uninterpreted functions with equality, integers, quantifiers, etc., and some
+basic utilities, like a counterexample parser and file I/O function to write
+SMTLIB files.
+-/
+
 ---------------------------------------------------------------------
 
 open Std (ToFormat Format format)
@@ -45,6 +46,7 @@ def toSMTTerm (E : Env) (e : Arith.Expr) : Except Format Term := do
     let e2 ← toSMTTerm E e2
     .ok (Term.app Op.eq [e1, e2] .bool)
   | .Num n => .ok (Term.int n)
+  | .Bool b => .ok (Term.bool b)
   | .Var v ty =>
     match ty with
     | none => .error f!"Variable {v} not type annotated; SMT encoding failed!"

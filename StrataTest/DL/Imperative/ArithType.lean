@@ -1,23 +1,20 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 import Strata.DL.Imperative.CmdType
 import StrataTest.DL.Imperative.ArithExpr
 
 namespace Arith
+
+/-! ## Instantiate `Imperative`'s Type Checker
+
+We instantiate Imperative's `TypeContext` typeclass with `ArithPrograms`'
+specific implementations to obtain a type checker.
+-/
+
 namespace TypeCheck
 open Std (ToFormat Format format)
 open Imperative
@@ -39,9 +36,11 @@ def update (T : TEnv) (x : String) (ty : Ty) : TEnv :=
 def lookup (T : TEnv) (x : String) : Option Ty :=
   T.find? x
 
+/-- Type inference for `ArithPrograms`' commands. -/
 def inferType (T : TEnv) (c : Cmd PureExpr) (e : Expr) : Except Format (Expr × Ty × TEnv) := do
   match e with
   | .Num _ => .ok (e, .Num, T)
+  | .Bool _ => .ok (e, .Bool, T)
   | .Var x xty =>
     -- We allow _annotated_ free variables to appear in the `init`
     -- statements.
@@ -80,6 +79,7 @@ def inferType (T : TEnv) (c : Cmd PureExpr) (e : Expr) : Except Format (Expr × 
     else
       .error f!"Type checking failed for {e}"
 
+/-- Unify `ArithPrograms`' types. -/
 def unifyTypes (T : TEnv) (constraints : List (Ty × Ty)) : Except Format TEnv :=
   match constraints with
   | [] => .ok T
@@ -89,6 +89,9 @@ def unifyTypes (T : TEnv) (constraints : List (Ty × Ty)) : Except Format TEnv :
     else
       .error f!"Types {t1} and {t2} cannot be unified!"
 
+/--
+Instantiation of `TypeContext` for `ArithPrograms`.
+-/
 instance : TypeContext PureExpr TEnv where
   isBoolType := Arith.TypeCheck.isBoolType
   freeVars := (fun e => (Arith.Expr.freeVars e).map (fun (v, _) => v))

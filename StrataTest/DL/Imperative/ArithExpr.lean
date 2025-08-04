@@ -1,17 +1,7 @@
 /-
   Copyright Strata Contributors
 
-  Licensed under the Apache License, Version 2.0 (the "License");
-  you may not use this file except in compliance with the License.
-  You may obtain a copy of the License at
-
-    https://www.apache.org/licenses/LICENSE-2.0
-
-  Unless required by applicable law or agreed to in writing, software
-  distributed under the License is distributed on an "AS IS" BASIS,
-  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-  See the License for the specific language governing permissions and
-  limitations under the License.
+  SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
 import Strata.DL.Imperative.Cmd
@@ -24,6 +14,23 @@ open Imperative
 
 ---------------------------------------------------------------------
 
+/-! ## Abstract Syntax for `ArithPrograms`
+
+NOTE: The Concrete Syntax is defined in `DDMDefinition.lean`.
+
+A good design choice for abstract syntax is one that is amenable to
+transformations, debugging, and analyses. The DDM-generated code may or may not
+serve your purpose. For example, for `ArithPrograms`, perhaps you would like to
+see named variables instead of de Bruijn indices, which is what the DDM
+generates.
+
+Here, we define the abstract syntax for `ArithPrograms`. For this simple
+dialect, this is in fact quite similar to the DDM-generated one, except that we
+have `Var : String → Option Ty` that have both the variable names and optionally
+their types instead of DDM's `.fvar`s.
+-/
+
+/-- Types in `ArithPrograms` -/
 inductive Ty where
   | Num | Bool
   deriving DecidableEq, Repr, Inhabited
@@ -50,6 +57,7 @@ inductive Expr where
   | Mul (e1 e2 : Expr)
   | Eq (e1 e2 : Expr)
   | Num (n : Nat)
+  | Bool (b : Bool)
   | Var (v : String) (ty : Option Ty)
   deriving Inhabited, Repr
 
@@ -61,6 +69,7 @@ def Expr.format (e : Expr) : Format :=
   | .Var v (.some ty) => f!"({v} : {ty})"
   | .Var v .none => f!"{v}"
   | .Num n => f!"{n}"
+  | .Bool b => f!"{b}"
 
 instance : ToFormat Expr where
   format := Expr.format
@@ -71,6 +80,7 @@ def Expr.freeVars (e : Expr) : List (String × Option Ty) :=
   | .Mul e1 e2 => e1.freeVars ++ e2.freeVars
   | .Eq e1 e2 => e1.freeVars ++ e2.freeVars
   | .Num _ => []
+  | .Bool _ => []
   | .Var v ty => [(v, ty)]
 
 /--
@@ -90,6 +100,13 @@ abbrev PureExpr : PureExpr :=
      EvalEnv := Env,
      EqIdent := instDecidableEqString }
 
+/-- A Command of `ArithPrograms` -/
+abbrev Command := Imperative.Cmd Arith.PureExpr
+/-- Commands in `ArithPrograms` -/
+abbrev Commands := Imperative.Cmds Arith.PureExpr
+
+---------------------------------------------------------------------
+end Arith
 /-
 -- Here is an alternate formulation for untyped Arith expressions.
 /--
@@ -109,7 +126,3 @@ abbrev PureExpr : PureExpr :=
      TyEnv := Empty,
      EvalEnv :=  Env }
 -/
-
----------------------------------------------------------------------
-
-end Arith
