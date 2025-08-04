@@ -377,7 +377,9 @@ partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (ot
 
   let T := T.insertInContext xv xt
   let e' := LExpr.varOpen 0 (xv, some (.ftvar xt')) e
+  let triggers' := LExpr.varOpen 0 (xv, some (.ftvar xt')) triggers
   let (et, T) ← fromLExprAux T e'
+  let (triggersT, T) ← fromLExprAux T triggers'
   let ety := et.toLMonoTy
   let mty := LMonoTy.subst T.state.subst (.ftvar xt')
   match oty with
@@ -387,11 +389,11 @@ partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (ot
     then .ok ()
     else .error f!"Type annotation on LTerm.quant {ty} (alias for {optTyy.getD ty}) doesn't match inferred argument type"
   | _ => .ok ()
-  let (triggersT, T) ← fromLExprAux T triggers
   if ety = LMonoTy.bool then do
     let etclosed := .varClose 0 xv et
+    let triggersClosed := .varClose 0 xv triggersT
     let T := T.eraseFromContext xv
-    .ok (.quant qk mty triggersT etclosed, T)
+    .ok (.quant qk mty triggersClosed etclosed, T)
   else
     .error f!"Quantifier body has non-Boolean type: {ety}"
 
