@@ -711,8 +711,15 @@ public class StrataGenerator : ReadOnlyVisitor {
             WriteText("*");
         }
 
-        // TODO: invariants, etc.
-        WriteLine(") {");
+        WriteLine(")");
+        if (whileCmd.Invariants.Count != 0) {
+            IncIndent();
+            Indent("invariant");
+            EmitSeparated(whileCmd.Invariants, i => VisitExpr(i.Expr), " && ");
+            WriteLine(";");
+            DecIndent();
+        }
+        IndentLine("{");
         IncIndent();
         EmitStmtList(whileCmd.Body);
         DecIndent();
