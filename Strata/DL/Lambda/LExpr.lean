@@ -59,15 +59,14 @@ inductive LExpr (Identifier : Type) : Type where
   | eq      (e1 e2 : LExpr Identifier)
   deriving Repr, DecidableEq
 
-def LExpr.all {Identifier : Type} := @LExpr.quant Identifier .all
-def LExpr.exist {Identifier : Type} := @LExpr.quant Identifier .exist
+def LExpr.noTrigger {Identifier : Type} : LExpr Identifier := .bvar 0
+def LExpr.all {Identifier : Type} (ty : Option LMonoTy) := @LExpr.quant Identifier .all ty LExpr.noTrigger
+def LExpr.exist {Identifier : Type} (ty : Option LMonoTy) := @LExpr.quant Identifier .exist ty LExpr.noTrigger
 
 abbrev LExpr.absUntyped {Identifier : Type} := @LExpr.abs Identifier .none
 abbrev LExpr.allUntyped {Identifier : Type} := @LExpr.quant Identifier .all .none (bvar 0)
 abbrev LExpr.existUntyped {Identifier : Type} := @LExpr.quant Identifier .exist .none (bvar 0)
 
--- Helper construct that returns bvar 0 (useful as a placeholder)
-def LExpr.noTrigger {Identifier : Type} : LExpr Identifier := .bvar 0
 
 def LExpr.sizeOf [SizeOf Identifier]
   | LExpr.mdata (Identifier:=Identifier) _ e => 2 + sizeOf e
@@ -512,12 +511,15 @@ open LTy.Syntax
 info: Lambda.LExpr.quant
   (Lambda.QuantifierKind.all)
   (some (Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]))
+  (Lambda.LExpr.bvar 0)
   (Lambda.LExpr.quant
     (Lambda.QuantifierKind.all)
     (some (Lambda.LMonoTy.ftvar "k"))
+    (Lambda.LExpr.bvar 0)
     (Lambda.LExpr.quant
       (Lambda.QuantifierKind.all)
       (some (Lambda.LMonoTy.ftvar "v"))
+      (Lambda.LExpr.bvar 0)
       (Lambda.LExpr.eq
         (Lambda.LExpr.app
           (Lambda.LExpr.app
