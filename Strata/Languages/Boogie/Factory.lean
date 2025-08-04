@@ -394,7 +394,6 @@ def Factory : @Factory BoogieIdent :=
      inputs := [("m", mapTy mty[%k] mty[%v]), ("i", mty[%k]), ("x", mty[%v])],
      output := mapTy mty[%k] mty[%v],
      axioms :=
-    -- TODO UNCOMMENT and replace when the Lambda elab is ready
      [
       -- updateSelect
       ToBoogieIdent es[∀(Map %k %v):
