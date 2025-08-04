@@ -99,19 +99,20 @@ spec {
 }
 {
   var heap_var: Heap := heap;
+  var methodEntryTime: int := tickingClock;
 
   // r.lychee = initialLychee
-  assert [modifiesFrameRef1]: Container_ctorModifiesFrame(heap_var, r, r, tickingClock);
+  assert [modifiesFrameRef1]: Container_ctorModifiesFrame(heap_var, r, r, methodEntryTime);
   var rhs1: Box := BoxingInt(initialLychee);
   heap_var := heap_var[r := heap_var[r][lycheeField := rhs1]];
 
   // r.pineaple = initialPineapple
-  assert [modifiesFrameRef1]: Container_ctorModifiesFrame(heap_var, r, r, tickingClock);
+  assert [modifiesFrameRef1]: Container_ctorModifiesFrame(heap_var, r, r, methodEntryTime);
   var rhs2: Box := BoxingInt(initialPineapple);
   heap_var := heap_var[r := heap_var[r][pineappleField := rhs2]];
 
   // r.next = initialNext
-  assert [modifiesFrameRef1]: Container_ctorModifiesFrame(heap_var, r, r, tickingClock);
+  assert [modifiesFrameRef1]: Container_ctorModifiesFrame(heap_var, r, r, methodEntryTime);
   var rhs3: Box := BoxingRef(initialNext);
   heap_var := heap_var[r := heap_var[r][nextField := rhs3]];
 
