@@ -205,7 +205,7 @@ structure Cache (Identifier: Type) [Hashable Identifier] [BEq Identifier] [Lawfu
   hmap  : Std.HashMap (LExprNode Identifier) (LExprH Identifier)
   count : Int := -1
 
-def Cache.init : (Cache Identifier) :=
+def Cache.init (Identifier: Type) [Hashable Identifier] [BEq Identifier] [LawfulBEq Identifier] : (Cache Identifier) :=
   { hmap := ∅, count := -1 }
 
 def Cache.count_ok (cache : (Cache Identifier)) : Prop :=
@@ -253,7 +253,7 @@ def hashcons (e : LExprNode Identifier) (cache : Cache Identifier) : (LExprH Ide
     (lexpr, { cache with hmap := cache.hmap.insert e lexpr
                          count := new_cache_count } )
 
-theorem Cache.count_ok_hashcons (cache: Cache Identifier)  (h : Cache.WF cache) :
+theorem Cache.count_ok_hashcons {n: LExprNode Identifier} {cache: Cache Identifier}  (h : Cache.WF cache) :
   let (_e, cache') := hashcons n cache
   Cache.count_ok cache' := by
   simp_all [Cache.WF]
@@ -261,13 +261,13 @@ theorem Cache.count_ok_hashcons (cache: Cache Identifier)  (h : Cache.WF cache) 
   simp [hashcons]; split <;> try simp_all
   rename_i _ h_n_not_in_map
   have h_size_insert :=
-    @Std.HashMap.size_insert LExprNode LExpr _ _ cache.hmap _ _
+    @Std.HashMap.size_insert (LExprNode Identifier) (LExprH Identifier) _ _ cache.hmap _ _
                              n { node := n, tag := cache.count + 1 }
   simp [h_n_not_in_map] at h_size_insert
   simp_all [Cache.count_ok]
   omega
 
-theorem Cache.node_entry_ok_hashcons (h : Cache.WF cache) :
+theorem Cache.node_entry_ok_hashcons {n: LExprNode Identifier} {cache: Cache Identifier} (h : Cache.WF cache) :
   let (_e, cache') := hashcons n cache
   Cache.node_entry_ok cache' := by
   simp_all [Cache.WF]
@@ -277,7 +277,7 @@ theorem Cache.node_entry_ok_hashcons (h : Cache.WF cache) :
   simp [Cache.node_entry_ok]
   intro n1; split <;> try simp_all
   rename_i _ _ node tag heq
-  have h_insert_get := @Std.HashMap.getElem?_insert LExprNode LExpr _ _ cache.hmap _ _
+  have h_insert_get := @Std.HashMap.getElem?_insert (LExprNode Identifier) (LExprH Identifier) _ _ cache.hmap _ _
                         n n1 { node := n, tag := cache.count + 1 }
   split at h_insert_get <;> try simp_all
   simp [Cache.node_entry_ok] at h_node_entry_ok
@@ -285,7 +285,7 @@ theorem Cache.node_entry_ok_hashcons (h : Cache.WF cache) :
   simp_all; omega
   done
 
-theorem Cache.tag_unique_hashcons (h : Cache.WF cache) :
+theorem Cache.tag_unique_hashcons {n: LExprNode Identifier} {cache: Cache Identifier} (h : Cache.WF cache) :
   let (_e, cache') := hashcons n cache
   Cache.tag_unique cache' := by
   simp_all [Cache.WF]
@@ -298,21 +298,21 @@ theorem Cache.tag_unique_hashcons (h : Cache.WF cache) :
   rename_i _ _ _ n1' tag1' n2' tag2' heq1 heq2
   by_cases h_n_n1 : n == n1
   case pos => -- n == n1
-    have h_insert_get_n1 := @Std.HashMap.getElem?_insert LExprNode LExpr _ _ cache.hmap _ _
+    have h_insert_get_n1 := @Std.HashMap.getElem?_insert (LExprNode Identifier) (LExprH Identifier) _ _ cache.hmap _ _
                       n n1 { node := n, tag := cache.count + 1 }
     simp [h_n_n1] at h_insert_get_n1
     have h_n_n1' : n == n1' := by simp_all
     have h_tag1' : tag1' = cache.count + 1 := by simp_all
     by_cases h_n_n2 : n == n2
     case pos => -- n == n2 (and n == n1)
-      have h_insert_get_n2 := @Std.HashMap.getElem?_insert LExprNode LExpr _ _ cache.hmap _ _
+      have h_insert_get_n2 := @Std.HashMap.getElem?_insert (LExprNode Identifier) (LExprH Identifier) _ _ cache.hmap _ _
                   n n2 { node := n, tag := cache.count + 1 }
-      simp [h_n_n2] at h_insert_get_n2
-      have h_n_n2' : n == n2' := by simp_all
-      have h_tag2' : tag2' = cache.count + 1 := by simp_all
-      simp_all
+
+      have h_n1_eq_n: (n1 == n) = true := by exact LExprNode.beq_symm h_n_n1
+      have h_n1_eq_n2: (n1 == n2) = true := by exact LExprNode.beq_trans h_n1_eq_n h_n_n2
+      simp_all!
     case neg => -- n != n2 (and n == n1)
-      have h_insert_get_n2 := @Std.HashMap.getElem?_insert LExprNode LExpr _ _ cache.hmap _ _
+      have h_insert_get_n2 := @Std.HashMap.getElem?_insert (LExprNode Identifier) (LExprH Identifier) _ _ cache.hmap _ _
             n n2 { node := n, tag := cache.count + 1 }
       simp [h_n_n2] at h_insert_get_n2
       have h_cache_n2 : cache.hmap[n2]? = some { node := n2', tag := tag2' } := by simp_all
@@ -320,7 +320,7 @@ theorem Cache.tag_unique_hashcons (h : Cache.WF cache) :
       have h_node_entry_ok_n2 := @h_node_entry_ok n2
       simp_all; omega
   case neg => -- n != n1
-    have h_insert_get_n1 := @Std.HashMap.getElem?_insert LExprNode LExpr _ _ cache.hmap _ _
+    have h_insert_get_n1 := @Std.HashMap.getElem?_insert (LExprNode Identifier) (LExprH Identifier) _ _ cache.hmap _ _
       n n1 { node := n, tag := cache.count + 1 }
     simp [h_n_n1] at h_insert_get_n1
     have h_cache_n1 : cache.hmap[n1]? = some { node := n1', tag := tag1' } := by simp_all
@@ -328,14 +328,14 @@ theorem Cache.tag_unique_hashcons (h : Cache.WF cache) :
     have h_node_entry_ok_n1 := @h_node_entry_ok n1; simp_all
     by_cases h_n_n2 : n == n2
     case pos => -- n == n2 (and n != n1)
-      have h_insert_get_n2 := @Std.HashMap.getElem?_insert LExprNode LExpr _ _ cache.hmap _ _
+      have h_insert_get_n2 := @Std.HashMap.getElem?_insert (LExprNode Identifier) (LExprH Identifier) _ _ cache.hmap _ _
             n n2 { node := n, tag := cache.count + 1 }
       simp [h_n_n2] at h_insert_get_n2
       have h_n_n2' : n == n2' := by simp_all
       have h_tag2' : tag2' = cache.count + 1 := by simp_all
       simp_all; omega
     case neg => -- n != n2 (and n != n1)
-      have h_insert_get_n2 := @Std.HashMap.getElem?_insert LExprNode LExpr _ _ cache.hmap _ _
+      have h_insert_get_n2 := @Std.HashMap.getElem?_insert (LExprNode Identifier) (LExprH Identifier) _ _ cache.hmap _ _
                                n n2 { node := n, tag := cache.count + 1 }
       simp [h_n_n2] at h_insert_get_n2
       have h_cache_n2 : cache.hmap[n2]? = some { node := n2', tag := tag2' } := by simp_all
@@ -347,7 +347,7 @@ theorem Cache.tag_unique_hashcons (h : Cache.WF cache) :
 /--
 The `hashcons` function preserves the well-formedness of the `LExpr` cache.
 -/
-theorem Cache.WF_hashcons (h : Cache.WF cache) :
+theorem Cache.WF_hashcons  {n: LExprNode Identifier} {cache: Cache Identifier}  (h : Cache.WF cache) :
   let (_e, cache') := hashcons n cache
   Cache.WF cache' := by
   unfold Cache.WF
@@ -357,11 +357,11 @@ theorem Cache.WF_hashcons (h : Cache.WF cache) :
   simp_all
   done
 
-theorem hashcons_hashcons_mexpr :
+theorem hashcons_hashcons_lexprh {xn: LExprNode Identifier} {cache: Cache Identifier}:
   (hashcons xn cache).fst = (hashcons xn (hashcons xn cache).snd).fst := by
   simp_all [hashcons]; split <;> simp_all
 
-theorem hashcons_hashcons_cache :
+theorem hashcons_hashcons_cache {xn: LExprNode Identifier} {cache: Cache Identifier} :
   (hashcons xn cache).snd = (hashcons xn (hashcons xn cache).snd).snd := by
   simp_all [hashcons]; split <;> simp_all
 
@@ -412,25 +412,33 @@ theorem Cache.WF_and_beq {xn yn : LExprNode} {cache : Cache}
    constructors" below to ensure maximal sharing.
 -/
 
-def mkConst (c : Identifier) (cache : Cache) : LExpr × Cache :=
-  hashcons (.const c) cache
+def mkConst (c : String ) (oty: Option LMonoTy) (cache : Cache Identifier) : (LExprH Identifier) × (Cache Identifier) :=
+  hashcons (.const c oty) cache
 
-def mkBvar (index : Nat) (cache : Cache) : LExpr × Cache :=
+def mkOp (o: Identifier) (oty: Option LMonoTy) (cache : Cache Identifier) :=
+  hashcons (.op o oty) cache
+
+def mkBvar (index : Nat) (cache : Cache Identifier): (LExprH Identifier) × (Cache Identifier) :=
   hashcons (.bvar index) cache
 
-def mkFvar (name : Identifier) (cache : Cache) : LExpr × Cache :=
-  hashcons (.fvar name) cache
+def mkFvar (name : Identifier) (oty: Option LMonoTy) (cache : Cache Identifier): (LExprH Identifier) × (Cache Identifier) :=
+  hashcons (.fvar name oty) cache
 
-def mkAbs (e : LExpr) (cache : Cache) : LExpr × Cache :=
-  hashcons (.abs e) cache
+def mkMetaData (info: Info) (e: LExprH Identifier) (cache : Cache Identifier): (LExprH Identifier) × (Cache Identifier) :=
+  hashcons (.mdata info e) cache
 
-def mkApp (e1 e2 : LExpr) (cache : Cache) : LExpr × Cache :=
+def mkAbs (oty: Option LMonoTy) (e : LExprH Identifier) (cache : Cache Identifier): (LExprH Identifier) × (Cache Identifier) :=
+  hashcons (.abs oty e) cache
+
+def mkQuant (k : QuantifierKind) (oty : Option LMonoTy) (e : LExprH Identifier) (cache : Cache Identifier): (LExprH Identifier) × (Cache Identifier) :=
+ hashcons (.quant k oty e) cache
+def mkApp (e1 e2 : LExprH Identifier) (cache : Cache Identifier): (LExprH Identifier) × (Cache Identifier) :=
   hashcons (.app e1 e2) cache
 
-def mkIte (c t f : LExpr) (cache : Cache) : LExpr × Cache :=
+def mkIte (c t f : LExprH Identifier) (cache : Cache Identifier): (LExprH Identifier) × (Cache Identifier) :=
   hashcons (.ite c t f) cache
 
-def mkEq (e1 e2 : LExpr) (cache : Cache) : LExpr × Cache :=
+def mkEq (e1 e2 : LExprH Identifier) (cache : Cache Identifier): (LExprH Identifier) × (Cache Identifier) :=
   hashcons (.eq e1 e2) cache
 
 /--
@@ -438,41 +446,59 @@ Compute the size of `e` as a tree.
 
 Not optimized for execution efficiency; used for termination arguments.
 -/
-def size (e : LExpr) : Nat :=
+def size (e : LExprH Identifier) : Nat :=
   -- Lean can't figure out that this function terminates unless we destructure
   -- `e` using the `let` below.
   let { node := node, tag := _tag } := e
   match node with
-  | .const _ => 1
+  | .const _ _ => 1
+  | .op _ _ => 1
   | .bvar _ => 1
-  | .fvar _ => 1
-  | .abs e' => 1 + size e'
+  | .fvar _ _ => 1
+  | .mdata _ e' => 1 + size e'
+  | .abs _ e' => 1 + size e'
+  | .quant _ _ e' => 1 + size e'
   | .app e1 e2 => 1 + size e1 + size e2
   | .ite c t f => 1 + size c + size t + size f
   | .eq e1 e2 => 1 + size e1 + size e2
 
 /--
-Tag-suppressing printing for `LExpr`.
-TODO: Pretty-print and optimize.
+Tag-suppressing printing for `LExprH`.
 -/
-def print (e : LExpr) : String :=
+def formatLExprH (e : LExprH Identifier) [ToFormat Identifier] : Format :=
   let { node := e_node, tag := _tag } := e
   match e_node with
-  | .const c => "(.c " ++ c ++ ")"
-  | .bvar i => toString i
-  | .fvar x => "(.f " ++ (toString x) ++ ")"
-  | .abs e1 => "(λ " ++ LExpr.print e1 ++ ")"
-  | .app e1 e2 => "(" ++ LExpr.print e1 ++ " " ++ LExpr.print e2 ++ ")"
-  | .ite c t e => "(if " ++ LExpr.print c ++ " " ++ LExpr.print t ++ " " ++ LExpr.print e ++ ")"
-  | .eq e1 e2 => "(eq " ++ LExpr.print e1 ++ " " ++ LExpr.print e2 ++ ")"
+  | .const c oty =>
+    match oty with
+      | none => f!"#{c}"
+      | some ty => f!"(#{c} : {ty})"
+  | .op o oty =>
+    match oty with
+    | none => f!"~{o}"
+    | some ty => f!"(~{o} : {ty})"
+  | .bvar i => f!"%{i}"
+  | .fvar x ty =>
+    match ty with
+    | none => f!"{x}"
+    | some ty => f!"({x} : {ty})"
+  | .mdata _info e => formatLExprH e
+  | .abs _ e1 => Format.paren (f!"λ {formatLExprH e1}")
+  | .quant .all _ e1 => Format.paren (f!"∀ {formatLExprH e1}")
+  | .quant .exist _ e1 => Format.paren (f!"∃ {formatLExprH e1}")
+  | .app e1 e2 => Format.paren (formatLExprH e1 ++ " " ++ formatLExprH e2)
+  | .ite c t e => Format.paren
+                      ("if " ++ formatLExprH c ++
+                       " then " ++ formatLExprH t ++ " else "
+                       ++ formatLExprH e)
+  | .eq e1 e2 => Format.paren (formatLExprH e1 ++ " == " ++ formatLExprH e2)
 
-def foo (cache : Cache) : LExpr × LExpr × Cache :=
-  let (c1, cache) := mkConst "c1" cache
-  let (c2, cache) := mkConst "c1" cache
+def foo (cache : Cache Identifier) : (LExprH Identifier) × (LExprH Identifier) × (Cache Identifier) :=
+  let (c1, cache) := (mkConst "c1" .none cache)
+  let (c2, cache) := mkConst "c1" .none cache
   let (b0, cache) := mkBvar 0 cache
-  let (abs0, cache) := mkAbs b0 cache
+  let (abs0, cache) := mkAbs .none b0 cache
   -- dbg_trace s!"abs0: {abs0}"
-  let (abs1, cache) := mkAbs b0 cache
+  let (abs1, cache) := mkAbs .none b0 cache
   -- dbg_trace s!"abs1: {abs1}"
   let (app0, cache) := mkApp abs0 c1 cache
   -- dbg_trace s!"app0: {app0}"
@@ -480,20 +506,20 @@ def foo (cache : Cache) : LExpr × LExpr × Cache :=
   -- dbg_trace s!"app1: {app1}"
   (app0, app1, cache)
 
-#eval print (foo Cache.init).1
-#eval print (foo Cache.init).2.1
-#eval (foo Cache.init).2.2.hmap.values
-#eval (foo Cache.init).2.2.hmap.size
-#eval (foo Cache.init).2.2.count
+#eval (formatLExprH (foo (Cache.init String)).fst)
+#eval formatLExprH (foo (Cache.init String)).2.1
+#eval (foo (Cache.init String)).2.2.hmap.values
+#eval (foo (Cache.init String)).2.2.hmap.size
+#eval (foo (Cache.init String)).2.2.count
 
 /--
-Free variables in an `LExpr` are simply all the `LExpr.fvar`s in it.
+Free variables in an `LExprH` are simply all the `LExprH.fvar`s in it.
 
 Note that this function uses memoization. We map the unique tag of an `LExpr` to
 the free variables found in it using a cache of type `Std.HashMap Int (List
 Identifier)`.
 -/
-def free_vars_aux (e : LExpr) (acc : List Identifier) (map : Std.HashMap Int (List Identifier)) :
+def free_vars_aux (e : LExprH Identifier) (acc : List Identifier) (map : Std.HashMap Int (List Identifier)) :
   (List Identifier) × (Std.HashMap Int (List Identifier)) :=
   let { node := node, tag := tag } := e
   match map[tag]? with
@@ -501,10 +527,12 @@ def free_vars_aux (e : LExpr) (acc : List Identifier) (map : Std.HashMap Int (Li
   | none =>
     let (vars, map) :=
       match node with
-      | .const _ => (acc, map)
+      | .const _ _ => (acc, map)
+      | .op _ _ => (acc, map)
       | .bvar _ => (acc, map)
-      | .fvar x => (if x ∈ acc then acc else (x :: acc), map)
-      | .abs e1 => free_vars_aux e1 acc map
+      | .fvar x _ => (if x ∈ acc then acc else (x :: acc), map)
+      | .abs _ e1 => free_vars_aux e1 acc map
+      | .quant _ _ e => free_vars_aux e acc map
       | .app e1 e2 =>
         let (e1_vars, map) := free_vars_aux e1 acc map
         let (e2_vars, map) := free_vars_aux e2 acc map
@@ -518,50 +546,51 @@ def free_vars_aux (e : LExpr) (acc : List Identifier) (map : Std.HashMap Int (Li
         let (e1_vars, map) := free_vars_aux e1 acc map
         let (e2_vars, map) := free_vars_aux e2 acc map
         (e1_vars ++ e2_vars, map)
+      | .mdata m e => free_vars_aux e acc map
     let map := map.insert e.tag vars
     (vars, map)
   termination_by (size e)
   decreasing_by
     all_goals (simp_all [size]; try omega)
 
-def free_vars (e : LExpr) : List Identifier :=
+def free_vars (e : LExprH Identifier) : List Identifier :=
   let (vars, _) := free_vars_aux e ∅ ∅
   vars
 
-def bar (cache : Cache) : LExpr × Cache :=
-  let (x, cache) := mkFvar "x" cache
-  let (y, cache) := mkFvar "y" cache
-  let (a0, cache) := mkAbs x cache
+def bar (cache : Cache String) : (LExprH String) × (Cache String) :=
+  let (x, cache) := mkFvar "x" .none cache
+  let (y, cache) := mkFvar "y" .none cache
+  let (a0, cache) := mkAbs .none x cache
   let (a1, cache) := (mkApp a0 y) cache
   (a1, cache)
 
-#eval print (bar Cache.init).1
+#eval formatLExprH (bar (Cache.init String)).1
 
-#eval free_vars_aux (bar Cache.init).1 ∅ ∅
+#eval free_vars_aux (bar (Cache.init String)).1 ∅ ∅
 
-#eval free_vars (bar Cache.init).1
+#eval free_vars (bar (Cache.init String)).1
 
 /--
 Is `x` is a fresh variable w.r.t. `e`?
 -/
-def fresh (x : Identifier) (e : LExpr) : Bool :=
+def fresh (x : Identifier) (e : LExprH Identifier) : Bool :=
   x ∉ (free_vars e)
 
 /-- An expression `e` is closed if has no free variables. -/
-def closed (e : LExpr) : Bool :=
+def closed (e : LExprH Identifier) : Bool :=
   free_vars e == ∅
 
 /-- info: true -/
 #guard_msgs in
-#eval closed (foo Cache.init).1
+#eval closed (foo (Cache.init String)).1
 
 /-- info: false -/
 #guard_msgs in
-#eval closed (bar Cache.init).1
+#eval closed (bar (Cache.init String)).1
 
 @[simp]
-theorem free_vars_abs :
-  free_vars { node := (.abs e), tag := _tag } = free_vars e := by
+theorem free_vars_abs {Identifier: Type} :
+  free_vars { node := (.abs _ e), tag := _tag } = free_vars e := by
   simp [free_vars, free_vars_aux]
 
 @[simp]
