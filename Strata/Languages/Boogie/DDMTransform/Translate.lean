@@ -531,12 +531,16 @@ partial def translateExpr (bindings : TransBindings) (arg : Arg) :
      let x ← translateExpr bindings xa
      return .mkApp fn [x]
   | .fn q`Boogie.map_get, [_ktp, _vtp, ma, ia] =>
-     let fn : LExpr BoogieIdent := (LExpr.op "select" none)
+     let kty ← translateLMonoTy bindings _ktp
+     let vty ← translateLMonoTy bindings _vtp
+     let fn : LExpr BoogieIdent := (LExpr.op "select" (.some (LMonoTy.mkArrow (mapTy kty vty) [kty, vty])))
      let m ← translateExpr bindings ma
      let i ← translateExpr bindings ia
      return .mkApp fn [m, i]
   | .fn q`Boogie.map_set, [_ktp, _vtp, ma, ia, xa] =>
-     let fn : LExpr BoogieIdent := (LExpr.op "update" none)
+     let kty ← translateLMonoTy bindings _ktp
+     let vty ← translateLMonoTy bindings _vtp
+     let fn : LExpr BoogieIdent := (LExpr.op "update" (.some (LMonoTy.mkArrow (mapTy kty vty) [kty, vty, mapTy kty vty])))
      let m ← translateExpr bindings ma
      let i ← translateExpr bindings ia
      let x ← translateExpr bindings xa

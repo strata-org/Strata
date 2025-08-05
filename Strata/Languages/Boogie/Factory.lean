@@ -30,6 +30,26 @@ def KnownTypes : List LTy :=
    t[∀a b. %a → %b],
    t[∀a b. Map %a %b]]
 
+open LExpr.Syntax LTy.Syntax
+
+/--
+  Convert an LExpr String to an LExpr BoogieIdent, by considering all identifier as global, which is valid for axioms
+  TODO: Remove when Lambda elaborator offers parametric identifier type
+-/
+def ToBoogieIdent (ine: LExpr String): (LExpr BoogieIdent) :=
+match ine with
+    | .const c ty => .const c ty
+    | .op o oty => .op (BoogieIdent.glob o) oty
+    | .bvar deBruijnIndex => .bvar deBruijnIndex
+    | .fvar name oty => .fvar (BoogieIdent.glob name) oty
+    | .mdata info e => .mdata info (ToBoogieIdent e)
+    | .abs oty e => .abs oty (ToBoogieIdent e)
+    | .quant k oty e => .quant k oty (ToBoogieIdent e)
+    | .app fn e => .app (ToBoogieIdent fn) (ToBoogieIdent e)
+    | .ite c t e => .ite (ToBoogieIdent c) (ToBoogieIdent t) (ToBoogieIdent e)
+    | .eq e1 e2 => .eq (ToBoogieIdent e1) (ToBoogieIdent e2)
+
+
 -- TODO: generalize denote function to a functor that can map between Identifiers
 -- and resuse IntBoolFactory
 def Factory : @Factory BoogieIdent :=
@@ -372,7 +392,26 @@ def Factory : @Factory BoogieIdent :=
    { name := "update",
      typeArgs := ["k", "v"],
      inputs := [("m", mapTy mty[%k] mty[%v]), ("i", mty[%k]), ("x", mty[%v])],
-     output := mapTy mty[%k] mty[%v] }]
+     output := mapTy mty[%k] mty[%v],
+     axioms :=
+     [
+      -- updateSelect
+      ToBoogieIdent es[∀(Map %k %v):
+          (∀ (%k):
+            (∀ (%v):
+              (((~select : (Map %k %v) → %k → %v)
+                ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %2) %1) %0)) %1) == %0))],
+      -- update preserves
+      ToBoogieIdent es[∀ (Map %k %v):
+          (∀ (%k):
+            (∀ (%k):
+              (∀ (%v):
+                  (((~select : (Map %k %v) → %k → %v)
+                    ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %3) %1) %0)) %2)
+                  ==
+                  ((((~select : (Map %k %v) → %k → %v) %3) %2)))))]
+     ]
+   }]
 
 ---------------------------------------------------------------------
 
