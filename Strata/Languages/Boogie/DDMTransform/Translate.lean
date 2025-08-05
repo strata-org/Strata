@@ -455,13 +455,18 @@ def translateQuantifier
       | some tsa => translateExpr xbindings tsa
 
     -- Create one quantifier constructor per variable
-    let buildQuantifier := fun (_, ty) e =>
+    -- Trigger attached to only the innermost quantifier
+    let buildQuantifier := fun (_, ty) (e, first) =>
       match ty with
       | .forAll [] mty =>
-        .quant qk (.some mty) triggers e
+        let triggers := if first then
+            triggers
+          else
+            LExpr.noTrigger
+        (.quant qk (.some mty) triggers e, false)
       | _ => panic! s!"Expected monomorphic type in quantifier, got: {ty}"
 
-    return xsArray.foldr buildQuantifier b
+    return xsArray.foldr buildQuantifier (init := (b, true)) |>.1
 
 partial def translateExpr (bindings : TransBindings) (arg : Arg) :
   TransM Boogie.Expression.Expr := do
