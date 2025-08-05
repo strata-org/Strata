@@ -6,7 +6,7 @@
 
 
 
-import Strata.DL.Util.Props
+import Strata.DL.Util.ListUtils
 import Strata.Languages.Boogie.Program
 import Strata.Languages.Boogie.ProcedureType
 import Strata.Languages.Boogie.WF
@@ -66,14 +66,28 @@ theorem Procedure.typeCheckWF : Procedure.typeCheck T p pp = Except.ok (pp', T')
     exact Statement.typeCheckWF heq
   . -- 4. All local variable declarations in a procedure have no duplicates.
     sorry
+  . -- 12. The `inputs` list of a procedure does not overlap with the `outputs` list of the procedure
+    sorry
+  . simp at Hc1
+    exact Hc1
+  . simp at Hc2
+    exact Hc2
+  . -- 11. All `modifies` variables have no duplicates.
+    sorry
+  . -- 14. The `inputs` list of a procedure are all `BoogieIdent.locl`
+    sorry
+  . -- 15.  The `outputs` list of a procedure are all `BoogieIdent.locl`
+    sorry
   . constructor <;> simp
     . -- precondition
-      apply forall_iff_forall_mem.mpr
+      apply List.Forall_mem_iff.mpr
       intros x Hin
       constructor
       . constructor
         -- 5. All variables in post-conditions and pre-conditions are either `BoogieIdent.locl` or `BoogieIdent.glob`.
-        sorry
+        . sorry
+        -- 16. All variables in pre/post conditions that are `.locl` must be in `outputs` or `inputs` of the procedure
+        . sorry
       . split at tcok <;> simp_all
         split at tcok <;> simp_all
         apply Hc10 x.snd.expr ?_
@@ -83,7 +97,7 @@ theorem Procedure.typeCheckWF : Procedure.typeCheck T p pp = Except.ok (pp', T')
           refine ⟨?_, rfl⟩
           exact snd_values_mem Hin
     . -- postcondition
-      apply forall_iff_forall_mem.mpr
+      apply List.Forall_mem_iff.mpr
       intros x Hin
       constructor
       . -- 5. All variables in post-conditions and pre-conditions are either `BoogieIdent.locl` or `BoogieIdent.glob`.
@@ -91,7 +105,7 @@ theorem Procedure.typeCheckWF : Procedure.typeCheck T p pp = Except.ok (pp', T')
       . -- 6. Postconditions in a procedure are all `ValidExpression`s
         sorry
     . -- `modifies` variables
-      apply forall_iff_forall_mem.mpr
+      apply List.Forall_mem_iff.mpr
       intros x Hin
       constructor
       -- 1. All modified variables in a procedure are declared in the program.
