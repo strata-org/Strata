@@ -2,7 +2,7 @@
   Copyright Strata Contributors
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
-  -/
+-/
 
 /-
   This file is the entry point of typechecker correctness proofs. Specifically,
