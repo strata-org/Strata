@@ -1,11 +1,18 @@
 /-
   Copyright Strata Contributors
 
-  SPDX-License-Identifier: Apache-2.0 OR MIT
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+    https://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
 -/
-
-
-
 
 import Strata.DL.Imperative.CmdSemantics
 import Strata.DL.Imperative.StmtSemantics
@@ -327,6 +334,36 @@ theorem EvalStatementsEmpty :
 theorem EvalStatementsContractEmpty :
   EvalStatementsContract π δ δP σ₀ σ [] σ' → σ = σ' := by
   intros H; cases H <;> simp
+
+/-- Currently we cannot prove this theorem,
+    since the WellFormedSemanticEval definition does not assert
+    a congruence relation for definedness on store
+    that is, if f(a) is defined, then a must be defined.
+    We work around this by requiring this condition at `EvalExpressions`.
+  -/
+theorem EvalExpressionIsDefined :
+  WellFormedBoogieEvalCong δ →
+  WellFormedSemanticEvalVar δ →
+  (δ σ₀ σ e).isSome →
+  isDefined σ (HasVarsPure.getVars e) := by
+  intros Hwfc Hwfvr Hsome
+  intros v Hin
+  simp [WellFormedBoogieEvalCong] at Hwfc
+  simp [WellFormedSemanticEvalVar] at Hwfvr
+  induction e generalizing v <;>
+    simp [HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
+  case fvar v' ty' =>
+    specialize Hwfvr (Lambda.LExpr.fvar v' ty') v' σ₀ σ
+    simp [HasFvar.getFvar] at Hwfvr
+    simp_all
+  case mdata info e ih =>
+    -- Need extra congruence properties -- if f(a) is defined, then a must be defined
+    sorry
+  case abs => sorry
+  case quant => sorry
+  case app => sorry
+  case ite => sorry
+  case eq => sorry
 
 theorem UpdateStateNotDefMonotone
   {P : PureExpr} {σ σ' : SemanticStore P}
@@ -1868,6 +1905,17 @@ theorem InitVarsDefMonotone' :
   | intro es Hinit =>
   exact InitStatesDefMonotone' Hdisj Hdef Hinit
 
+-- theorem InitVarsNotDefMonotone' :
+--   vs.Disjoint vs' →
+--   isDefined σ' vs →
+--   InitVars σ vs' σ' →
+--   isNotDefined σ vs := by
+--   intros Hdisj Hdef Hinit
+--   have Hinit := InitVarsInitStates Hinit
+--   cases Hinit with
+--   | intro es Hinit =>
+--   exact InitStatesDefMonotone' Hdisj Hdef Hinit
+
 theorem InitStatesDefined :
   InitStates σ hs vs σ' → isDefined σ' hs := by
   intros Hinit
@@ -1995,6 +2043,78 @@ theorem EvalCmdTouch
   case eval_assert => exact TouchVars.none
   case eval_assume => exact TouchVars.none
 
+-- mutual
+-- theorem EvalStmtTouchTrans  :
+--   EvalStmt Expression (Cmd Expression) (EvalCmd Expression) δ δP σ₀ σ s σ' →
+--   isDefinedOver HasVarsImp.touchedVars σ s →
+--   TouchVars σ (HasVarsImp.touchedVars s) σ' := by
+--   intros Heval Hwf
+--   cases s <;> simp [HasVarsImp.touchedVars]
+--   case cmd cmd =>
+--     cases Heval with
+--     | cmd_sem Heval Hdef =>
+--     -- cases Heval <;>
+--     -- simp [HasVarsImp.modifiedVars] at *
+--     apply EvalCmdTouch
+--     <;> assumption
+--   case block label b =>
+--     cases Heval with
+--     | block_sem Heval =>
+--     cases Heval with
+--     | block_sem Heval' =>
+--     apply EvalStmtsTouchTrans <;> try assumption
+--   case ite cond thenb elseb =>
+--     cases Heval with
+--     | ite_true_sem Hcond Heval Hwf1 Hwf2 =>
+--       apply TouchVarsApp
+--       cases Heval
+--       . apply EvalStmtsTouchTrans <;> try assumption
+--       . apply TouchVarsId
+--         cases Heval
+--         apply EvalStmtsDefMonotone (σ:=σ) <;> try assumption
+--     | ite_false_sem Hcond Heval Hwf1 Hwf2 =>
+--       apply TouchVarsApp
+--       cases Heval
+--       . apply TouchVarsId
+--         simp [isDefinedOver, isDefined] at *
+--         intros <;> simp_all
+--       . cases Heval
+--         apply EvalStmtsTouchTrans <;> try assumption
+--   case goto => cases Heval
+--   termination_by Stmt.sizeOf s
+--   decreasing_by all_goals simp [*] at * <;> omega
+
+-- theorem EvalStmtsTouchTrans  :
+--   EvalStmts Expression (Cmd Expression) (EvalCmd Expression) δ δP σ₀ σ ss σ' →
+--   isDefinedOver Stmts.touchedVars σ ss →
+--   TouchVars σ (Stmts.touchedVars ss) σ' := by
+--   intros Heval Hwf
+--   cases ss <;> simp [Stmts.touchedVarsTrans]
+--   . have Hemp := EvalStmtsEmpty Heval
+--     simp [Hemp]
+--     exact TouchVars.none
+--   . next h t =>
+--     cases Heval with
+--     | @stmts_some_sem _ _ _ _ _ σ'' _ _ Heval Hevals =>
+--       apply TouchVarsApp
+--       . apply EvalStmtTouchTrans (σ':=σ'') Heval
+--         simp [isDefinedOver, isDefined,
+--               Stmt.touchedVarsTrans, Stmts.touchedVarsTrans] at *
+--         intros v a
+--         apply Hwf
+--         left; assumption
+--       . apply EvalStmtsTouchTrans Hevals
+--         simp [isDefinedOver] at *
+--         apply EvalStmtDefMonotone (σ:=σ)
+--         simp [isDefined, Stmts.touchedVarsTrans] at *
+--         intros v a
+--         apply Hwf
+--         right; assumption
+--         assumption
+--   termination_by Stmts.sizeOf ss
+--   decreasing_by all_goals simp [*] at * <;> omega
+-- end
+
 theorem UpdateStatesHavocVars : UpdateStates σ vars modvals σ' → HavocVars σ vars σ' := by
   intros H
   induction vars generalizing σ modvals
@@ -2029,10 +2149,83 @@ theorem UpdateStatesTouchVars : UpdateStates σ vars modvals σ' → TouchVars �
     apply ih
     apply Hup2
 
+-- theorem EvalStatementTouchTrans :
+--   EvalStatement π δ δP σ₀ σ s σ' →
+--   TouchVars σ (Stmt.touchedVarsTrans (ProcType:=Procedure) π s) σ' := by
+--   intros Heval
+--   cases Heval with
+--   | stmt_sem Hwf Heval =>
+--     apply EvalStmtTouchTrans Hwf Heval
+--   | call_sem lkup Heval Hwfval Hwfvars Hwfb Hwf2 Hwf Hup Hhav Hpre Heval2 Hpost Hrd Hup2 =>
+--     simp [Stmt.touchedVarsTrans, HasVarsTrans.allVarsTrans,
+--           HasVarsTrans.modifiedVarsTrans,
+--           HasVarsImp.touchedVars,
+--           Stmt.modifiedVarsTrans, Procedure.modifiedVarsTrans,
+--           HasVarsImp.modifiedVars,
+--           Procedure.modifiedVars,
+--           Stmts.modifiedVars,
+--           isDefinedOver, lkup]
+--     rw [← List.append_assoc]
+--     apply TouchVarsApp
+--     apply UpdateStatesTouchVars <;> assumption
+--     apply TouchVarsId
+--     apply UpdateStatesDefMonotone (σ:=σ) <;> try assumption
+--     simp [isDefined] at *
+--     intros v Hin
+--     apply Hwf
+--     simp [Stmt.allVarsTrans, Stmt.touchedVarsTrans, Stmt.touchedVarsTrans,
+--           lkup, HasVarsTrans.allVarsTrans, HasVarsTrans.touchedVarsTrans,
+--           HasVarsImp.touchedVars, Stmt.modifiedVarsTrans,
+--           HasVarsTrans.modifiedVarsTrans, Procedure.modifiedVarsTrans,
+--           HasVarsImp.modifiedVars]
+--     right; right; right; assumption
+
+-- theorem EvalStatementsTouchTrans :
+--   EvalStatements π δ δP σ₀ σ ss σ' →
+--   TouchVars σ (Stmts.touchedVarsTrans (ProcType:=Procedure) π ss) σ' := by
+--   intros Heval
+--   cases ss with
+--   | nil =>
+--     simp [Stmts.touchedVarsTrans]
+--     rw [EvalStatementsEmpty Heval]
+--     apply TouchVarsId
+--     simp [isDefined]
+--   | cons h t =>
+--     simp [Stmts.touchedVarsTrans, Stmt.touchedVarsTrans]
+--     cases Heval with
+--     | @stmts_some_sem _ _ _ _ _ _ σ₁ _ _ Heval Hevals =>
+--       apply TouchVarsApp (σ':=σ₁)
+--       exact EvalStatementTouchTrans Heval
+--       apply EvalStatementsTouchTrans Hevals
+
 theorem EvalCmdRefinesContract :
 EvalCmd Expression δ δP σ₀ σ c σ' →
 EvalCommandContract π δ δP σ₀ σ (CmdExt.cmd c) σ' := by
 intros H; constructor; assumption
+
+theorem EvalCommandRefinesContract :
+EvalCommand π δ δP σ₀ σ c σ' →
+EvalCommandContract π δ δP σ₀ σ c σ' := by
+intros H
+cases H with
+| cmd_sem H => exact EvalCommandContract.cmd_sem H
+| call_sem _ => sorry
+
+theorem EvalStmtRefinesContract :
+  EvalStmt Expression Command (EvalCommand π) δ δP σ₀ σ s σ' →
+  EvalStmt Expression Command (EvalCommandContract π) δ δP σ₀ σ s σ' := by
+  intros H
+  cases H with
+  | cmd_sem Hdef Heval =>
+    refine EvalStmt.cmd_sem ?_ Heval
+    exact EvalCommandRefinesContract Hdef
+  | block_sem Heval =>
+    -- refine EvalStmt.block_sem Heval
+    sorry
+  | ite_true_sem Hdef Heval =>
+    sorry
+  | ite_false_sem Hdef Heval =>
+    sorry
 
 theorem InvStoresUpdatedStateDisjRightMono :
   ¬ k' ∈ ks →
@@ -2270,58 +2463,87 @@ theorem InvStoresExceptInvStores :
   exact List.Disjoint.symm Hdis
   assumption
 
-set_option warn.sorry false in
-/--
-Note: Currently we cannot prove this theorem,
-  since `WellFormedSemanticEval` definition does not assert
-  a congruence relation for definedness on store,
-  that is, if `f(a)` is defined, then `a` must be defined.
-  We work around this by requiring this condition at `EvalExpressions`.
-  -/
-theorem EvalExpressionIsDefined :
-  WellFormedBoogieEvalCong δ →
-  WellFormedSemanticEvalVar δ →
-  (δ σ₀ σ e).isSome →
-  isDefined σ (HasVarsPure.getVars e) := by
-  intros Hwfc Hwfvr Hsome
-  intros v Hin
-  simp [WellFormedBoogieEvalCong] at Hwfc
-  simp [WellFormedSemanticEvalVar] at Hwfvr
-  induction e generalizing v <;>
-    simp [HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
-  case fvar v' ty' =>
-    specialize Hwfvr (Lambda.LExpr.fvar v' ty') v' σ₀ σ
-    simp [HasFvar.getFvar] at Hwfvr
-    simp_all
-  case mdata info e ih =>
-    -- Need extra congruence properties -- if f(a) is defined, then a must be defined
-    sorry
-  case abs => sorry
-  case quant => sorry
-  case app => sorry
-  case ite => sorry
-  case eq => sorry
-
-set_option warn.sorry false in
-/--
-NOTE:
-  In order to prove this refinement theorem, we need to reason about the
-  assymmetry between the two semantics regarding the temporary variables
-  created in the concrete semantics. That is, evaluating the procedure body may
-  create new variables in the store, and since the temporary variables are
-  discarded at the end of the call, it is possible to show that those created
-  variables are irrelevant, and can be approximated by updating the relevant
-  variables (that is, lhs ++ modifies)
--/
-theorem EvalCallBodyRefinesContract :
-  ∀ {π δ δP σ₀ σ lhs n args σ' p},
-  π n = .some p →
-  p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body →
-  EvalStatement π δ δP σ₀ σ (.call lhs n args) σ' →
-  EvalStatementContract π δ δP σ₀ σ (.call lhs n args) σ' := by
-  intros π δ δP σ₀ σ lhs n args σ' p pFound modValid H
-  cases H with
-  | cmd_sem Heval Hdef =>
-    cases Heval with
-    | call_sem lkup Heval Hwfval Hwfvars Hwfb Hwf Hwf2 Hup Hhav Hpre Heval2 Hpost Hrd Hup2 =>
+theorem TouchVarsHavocVarsSublist :
+  TouchVars σ ts σ'' →
+  vs.Sublist ts →
+  vs'.Sublist ts →
+  ∃ σ',
+    HavocVars σ vs σ' ∧
+    InitVars σ' vs' σ'' := by
+    intros Ht Hsub1 Hsub2
+    induction Hsub1 generalizing σ σ'' vs'
+    case slnil =>
+      exists σ''
+      simp [TouchVarsEmpty Ht]
+      simp_all
+      refine ⟨HavocVars.update_none, InitVars.init_none⟩
+    case cons l₁ l₂ id Hsub' ih =>
+      -- id is not in the modified list, it need to be in the init list
+      cases Ht with
+      | init_some Hinit Ht =>
+        -- id is initialized
+        sorry
+      | update_some Hup Ht =>
+        -- id is updated, contra
+        sorry
+    case cons₂ l₁ l₂ id Hsub' ih =>
+      -- id is in the modified list
       sorry
+
+-- theorem EvalCallBodyRefinesContract :
+--   ∀ {π δ δP σ₀ σ lhs n args σ' p},
+--   π n = .some p →
+--   p.spec.modifies = Stmts.modifiedVarsTrans π p.body →
+--   EvalStatement π δ δP σ₀ σ (.call lhs n args) σ' →
+--   EvalStatementContract π δ δP σ₀ σ (.call lhs n args) σ' := by
+--   intros π δ δP σ₀ σ lhs n args σ' p pFound modValid H
+--   cases H with
+--   | call_sem lkup Heval Hwfval Hwfvars Hwfb Hwf Hwf2 Hup Hhav Hpre Heval2 Hpost Hrd Hup2 =>
+--     next vals σA σAO σR p modvals =>
+--     simp [pFound] at lkup
+--     cases lkup
+--     have Htch := EvalStatementsTouchTrans Heval2
+--     simp [Stmts.touchedVarsTrans] at Htch
+--     -- NOTE: ReadValues and Postconditions need to work on store without local vars
+--     --  Postconditions: The postconditions only refer to variables in the store
+--     --  ReadValues: ReadValuesInit, given the values read are disjoint from the initialized variables
+--     have Hsub := Stmts.modifiedVarsSubTouchedVars (sts:=p.body) (π:=π)
+--     -- Nodup: but not true, since touchedVars can actually have duplicates. E.g. in branches
+--     have Hsub' : (Stmts.definedVarsTrans π p.body).Sublist (Stmts.touchedVarsTrans π p.body) := sorry
+--     have Ht := TouchVarsHavocVarsSublist Htch Hsub Hsub'
+--     cases Ht with
+--     | intro σR' Ht =>
+--     have Htch := Ht.1
+--     have Hdef := InitVarsDefined Hhav
+--     have Hhavid := HavocVarsId (σ:=σAO) (vs:=Map.keys p.header.outputs) Hdef
+--     simp [← modValid] at Htch
+--     refine EvalStatementContract.call_sem (σR:=σR') pFound Heval
+--           Hwfval Hwfvars Hwfb Hwf Hwf2 Hup Hhav Hpre Hhavid Htch ?_ ?_ Hup2
+--     . -- Post Conditions
+--       -- Since all vars are defined in a previous store
+--       -- The stores σR' σR and σAO are invariant in terms of those variables
+--       intros post Htrue
+--       have Hdef : isDefinedOver HasVarsPure.getVars σR' post := by sorry
+--       -- TODO: isDefined σ ks → Inits σ σ' → invStores σ σ' ks
+--       -- TODO: Evaluation function respect substitution on store and and expression
+--       -- δ σ₀ σ e = δ σ₀ σ (substFVarsFVars substs e)
+--       -- substStores σ σ' substs
+--       -- substExprs δ [(expr, expr')] := δ expr = δ expr'
+--       -- σR σR' are invariant over (getVars post)
+--       -- In this case it is just invariant, so no substitution is needed
+--       -- When substitution is needed, what do we need ???
+--       sorry
+--     . -- Read Values
+--       -- Prove that σR and σR' are invariant over (outputs ++ modifies)
+--       -- σR σR' are invariant over (outputs ++ modifies)
+--       -- can show that the initialized variables are not overlapping with (outputs ++ modifies)
+--       -- But the problem is that it's hard to extract the exact values used in initialization
+--       -- Solution 1: Try to de-duplicate modifiedVars,
+--       --  can prove that HavocVars has the same effect on dedup result
+--       --  This way we can have (modified ++ init).Nodup, where existing lemmas can be reused
+--       --  on HavocVars σAO (modified).eraseDup σR' → Inits
+--       -- TODO: (ks' ++ ks).Nodup → InitVars σ ks' σ' → invStores σ σ' ks
+--       sorry
+--   | stmt_sem stmtSem =>
+--     cases stmtSem <;> simp
+--   end

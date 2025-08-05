@@ -1,9 +1,3 @@
-/-
-  Copyright Strata Contributors
-
-  SPDX-License-Identifier: Apache-2.0 OR MIT
--/
-
 import Init.Data.List.Basic
 import Init.Data.List.Lemmas
 import Strata.Languages.Boogie.Env
@@ -169,6 +163,7 @@ theorem callElimStmtsNoExcept :
   | block l b md => exists [.block l b md]
   | ite cd tb eb md => exists [.ite cd tb eb md]
   | goto l b => exists [.goto l b]
+  | loop g m i b md => exists [.loop g m i b md]
   | cmd c =>
     cases c with
     | cmd c' => exists [Imperative.Stmt.cmd (CmdExt.cmd c')]
@@ -3206,6 +3201,7 @@ theorem callElimStatementCorrect :
   case block => exact ⟨σ', Inits.init InitVars.init_none, Heval⟩
   case ite => exact ⟨σ', Inits.init InitVars.init_none, Heval⟩
   case goto => exact ⟨σ', Inits.init InitVars.init_none, Heval⟩
+  case loop => exact ⟨σ', Inits.init InitVars.init_none, Heval⟩
   case cmd c =>
   cases c with
   | cmd c' =>
