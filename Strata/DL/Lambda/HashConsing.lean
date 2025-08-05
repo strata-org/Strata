@@ -233,27 +233,27 @@ A cache is well-formed if an `LExprNode` `n` maps to an `LExpr` whose
 
 TODO: Do we need more invariants here?
 -/
-def Cache.WF (cache : Cache) : Prop :=
+def Cache.WF (cache : Cache Identifier) : Prop :=
   Cache.count_ok cache ∧
   Cache.node_entry_ok cache ∧
   Cache.tag_unique cache
 
 @[simp]
 theorem Cache.init_WF :
-  Cache.WF (.init) := by
+  Cache.WF (@Cache.init Identifier _ _ _) := by
   simp [Cache.init, Cache.WF,
         Cache.count_ok, Cache.node_entry_ok, Cache.tag_unique]
 
-def hashcons (e : LExprNode) (cache : Cache) : LExpr × Cache :=
+def hashcons (e : LExprNode Identifier) (cache : Cache Identifier) : (LExprH Identifier) × (Cache Identifier) :=
   match cache.hmap[e]? with
   | some mexpr => (mexpr, cache)
   | none =>
     let new_cache_count := cache.count + 1
-    let mexpr := { node := e, tag := new_cache_count }
-    (mexpr, { cache with hmap := cache.hmap.insert e mexpr
+    let lexpr := { node := e, tag := new_cache_count }
+    (lexpr, { cache with hmap := cache.hmap.insert e lexpr
                          count := new_cache_count } )
 
-theorem Cache.count_ok_hashcons (h : Cache.WF cache) :
+theorem Cache.count_ok_hashcons (cache: Cache Identifier)  (h : Cache.WF cache) :
   let (_e, cache') := hashcons n cache
   Cache.count_ok cache' := by
   simp_all [Cache.WF]
