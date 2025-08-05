@@ -30,7 +30,7 @@ theorem eval_stmts_assert_store_cst
       | stmts_none_sem => exact eval_assert_store_cst H3
 
 theorem assert_elim
-  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvar P] [HasVal P] [HasBool P] [HasBoolNeg P] :
+  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasFvar P] [HasVal P] [HasBool P] [HasBoolNeg P] :
   WellFormedSemanticEvalBool δ δP →
   EvalStmts P (Cmd P) (EvalCmd P) δ δP σ₀ σ (.cmd (.assert l1 e md1) :: [.cmd (.assert l2 e md2)]) σ' →
   EvalStmts P (Cmd P) (EvalCmd P) δ δP σ₀ σ [.cmd (.assert l3 e md3)] σ' := by
@@ -54,6 +54,4 @@ theorem assert_elim
       . next Hdef =>
         intros v Hin
         apply Hdef v
-        simp [HasVarsImp.modifiedVars] at *
-        sorry
-        -- Change to concrete Cmd with unfoldable modifiedVars
+        simp [HasVarsImp.modifiedVars, Cmd.modifiedVars] at *
