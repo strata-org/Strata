@@ -14,7 +14,7 @@ open Imperative Boogie
 
 theorem StmtToNondetCorrect [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasBoolNeg P] :
   WellFormedSemanticEvalBool δ δP →
-  WellFormedSemanticEvalVal δ σ₀ σ →
+  WellFormedSemanticEvalVal δ →
   (∀ st,
     Stmt.sizeOf st ≤ m →
     EvalStmt P (Cmd P) (EvalCmd P) δ δP σ₀ σ st σ' →
@@ -86,6 +86,9 @@ theorem StmtToNondetCorrect [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [H
     case goto =>
       -- because goto has no semantics now, it also does not correspond to anything in the nondeterministic semantics
       cases Heval
+    case loop =>
+      -- because loop has no semantics now, it also does not correspond to anything in the nondeterministic semantics
+      cases Heval
   . intros ss Hsz Heval
     cases ss <;>
     cases Heval
@@ -98,7 +101,7 @@ theorem StmtToNondetCorrect [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [H
         simp [WellFormedSemanticEvalBool] at Hwfb
         simp [WellFormedSemanticEvalVal] at Hwfvl
         have Hval := wfbv.bool_is_val.1
-        have Hv := Hwfvl.2.2.2 HasBool.tt σ₀ σ Hval
+        have Hv := Hwfvl.2 HasBool.tt σ₀ σ Hval
         have Heq := (Hwfb σ₀ σ HasBool.tt).2.1
         exact Heq.mp Hv
       assumption
@@ -119,7 +122,7 @@ theorem StmtToNondetCorrect [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [H
 theorem StmtToNondetStmtCorrect
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasBoolNeg P] :
   WellFormedSemanticEvalBool δ δP →
-  WellFormedSemanticEvalVal δ σ₀ σ →
+  WellFormedSemanticEvalVal δ →
   EvalStmt P (Cmd P) (EvalCmd P) δ δP σ₀ σ st σ' →
   EvalNondetStmt P (Cmd P) (EvalCmd P) δ δP σ₀ σ (StmtToNondetStmt st) σ' := by
   intros Hwfb Hwfv Heval
@@ -128,7 +131,7 @@ theorem StmtToNondetStmtCorrect
 theorem StmtsToNondetStmtCorrect
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasBoolNeg P] :
   WellFormedSemanticEvalBool δ δP →
-  WellFormedSemanticEvalVal δ σ₀ σ →
+  WellFormedSemanticEvalVal δ →
   EvalStmts P (Cmd P) (EvalCmd P) δ δP σ₀ σ ss σ' →
   EvalNondetStmt P (Cmd P) (EvalCmd P) δ δP σ₀ σ (StmtsToNondetStmt ss) σ' := by
   intros Hwfb Hwfv Heval
