@@ -33,7 +33,16 @@ inductive LMonoTy : Type where
   -- Type constructor.
   | tcons (name : String) (args : List LMonoTy)
   | bitvec (size : Nat)
-  deriving Inhabited, Repr
+  deriving Inhabited, Repr, Hashable
+
+-- def LMonoTy.hash' [Hashable TyIdentifier] (ty: LMonoTy): UInt64 :=
+--   match ty with
+--     | .ftvar name => hash (".ftvar", name)
+--     | .tcons name args => hash (".tcons", name, args.map hash')
+--     | .bitvec size => hash (".bitvec", size)
+
+-- instance : Hashable LMonoTy where
+--   hash := LMonoTy.hash'
 
 abbrev LMonoTys := List LMonoTy
 

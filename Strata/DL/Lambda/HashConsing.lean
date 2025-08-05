@@ -1,8 +1,8 @@
-/- Authors(s):
-Shilpi Goel <shilgoel@amazon.com>
-Samuel Chassot <samuuu@amazon.com>
--/
+/-
+  Copyright Strata Contributors
 
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
 
 import Std.Data.HashMap
 
@@ -16,7 +16,7 @@ open Std (ToFormat Format format)
 inductive QuantifierKind
   | all
   | exist
-  deriving Repr, DecidableEq
+  deriving Repr, DecidableEq, Hashable
 
 
 /--
@@ -92,6 +92,10 @@ theorem LExprNode.induct (P : LExprNode Identifier → Prop)
   · exact caseEq
   · simp
 
+
+
+variable [Hashable Identifier] [BEq Identifier] [LawfulBEq Identifier]
+
 /--
 Boolean equality for `LExprNode` -- we intend to mimic pointer
 equality with this function.
@@ -101,7 +105,7 @@ Note that we cannot prove that this function is lawful (i.e.,
 guaranteed if our tagging and caching mechanism satisfies certain
 well-formedness properties.
 -/
-def LExprNode.beq (Identifier: Type) [BEq Identifier] (x y : LExprNode Identifier) : Bool :=
+def LExprNode.beq (x y : LExprNode Identifier) : Bool :=
   match x, y with
   | .const a oty1, .const b oty2 => a == b && oty1 == oty2
   | .op a oty1, .op b oty2 => a == b && oty1 == oty2
@@ -115,90 +119,107 @@ def LExprNode.beq (Identifier: Type) [BEq Identifier] (x y : LExprNode Identifie
   | .eq a1 a2, .eq b1 b2 => a1.tag == b1.tag && a2.tag == b2.tag
   | _, _ => false
 
-instance [BEq Identifier] : BEq (LExprNode Identifier) where
-  beq := LExprNode.beq Identifier
+instance : BEq (LExprNode Identifier) where
+  beq := LExprNode.beq
 
-theorem LExprNode.beq_refl :
-   ∀ {a : LExprNode}, (LExprNode.beq a a) = true := by
-   intro a; cases a <;> simp_all [LExprNode.beq]
+theorem LExprNode.beq_rfl :
+  ∀ {a : (LExprNode Identifier)}, (LExprNode.beq a a) = true := by
+  intro a
+  cases a <;> simp_all!
 
 theorem LExprNode.beq_symm :
-   ∀ {a b : LExprNode}, (LExprNode.beq a b) = true → (LExprNode.beq b a) = true := by
+  ∀ {a b : LExprNode Identifier}, (LExprNode.beq a b) = true → (LExprNode.beq b a) = true := by
   intro a b; simp [LExprNode.beq]
-  split <;> simp_all
+  split <;> simp_all!
+  -- intro h_eq h_ty
+  -- exact BEq.symm h_eq
+  -- intro h_eq h_ty
+  -- exact BEq.symm h_eq
 
 theorem LExprNode.beq_trans :
-   ∀ {a b c : LExprNode}, (LExprNode.beq a b) = true →
+  ∀ {a b c : LExprNode Identifier}, (LExprNode.beq a b) = true →
                           (LExprNode.beq b c) = true →
                           (LExprNode.beq a c) = true := by
-   intro a b c
-   simp [LExprNode.beq]; split <;> simp_all
-   all_goals (split <;> simp_all)
-   done
+  intro a b c
+  simp [LExprNode.beq]; split <;> simp_all
+  all_goals (split <;> simp_all)
+  -- intro h_eq_aa h_ty h_eq_ab h_ty2
+  -- exact BEq.trans h_eq_aa h_eq_ab
+  -- intro h_eq_aa h_ty h_eq_ab h_ty2
+  -- exact BEq.trans h_eq_aa h_eq_ab
 
-instance : EquivBEq LExprNode where
-  refl := LExprNode.beq_refl
+
+instance  : EquivBEq (LExprNode Identifier)  where
+  rfl := LExprNode.beq_rfl
   symm := LExprNode.beq_symm
   trans := LExprNode.beq_trans
 
 /--
 Hash function for `LExprNode` that is compatible with `LExprNode.beq`.
+Note: Type class instances for Hashable LMonoTy and Hashable Info are available with their definitions
 -/
-def LExprNode.hash' (n : LExprNode) : UInt64 :=
+def LExprNode.hash' [Hashable Identifier] (n : LExprNode Identifier) : UInt64 :=
   match n with
-  | .const c => hash (".const", c)
+  | .const c ty => hash (".const", c, ty)
+  | .op o ty => hash (".op", o, ty)
   | .bvar b => hash (".bvar", b)
-  | .fvar f => hash (".fvar", f)
-  | .abs e => hash (".abs", e.tag)
-  | .app e1 e2 => hash (".app", e1.tag, e2.tag)
+  | .fvar name ty => hash (".fvar", name, ty)
+  | .mdata info e => hash (".mdata", info, e.tag)
+  | .abs ty e => hash (".abs", ty, e.tag)
+  | .quant k oty a => hash (k, oty, a.tag)
+  | .app fn e => hash (".app", fn.tag, e.tag)
   | .ite c t f => hash (".ite", c.tag, t.tag, f.tag)
   | .eq e1 e2 => hash (".eq", e1.tag, e2.tag)
 
 theorem LExprNode.hash'_eq :
-  ∀ {a b : LExprNode}, LExprNode.beq a b → hash' a = hash' b := by
+  ∀ {a b : LExprNode Identifier}, LExprNode.beq a b → hash' a = hash' b := by
   intro a b
   simp [hash', beq]; split <;> simp_all
 
-instance : Hashable LExprNode where
+
+instance [Hashable Identifier] : Hashable (LExprNode Identifier) where
   hash := LExprNode.hash'
 
-instance : LawfulHashable LExprNode where
-  hash_eq _ _ := LExprNode.hash'_eq
+instance : LawfulHashable (LExprNode Identifier) where
+  hash_eq a b (h : (a == b) = true) : hash a = hash b :=
+    LExprNode.hash'_eq (by exact h)
 
-def LExpr.beq (x y : LExpr) : Bool :=
+def LExprH.beq (x y : LExprH Identifier) : Bool :=
   x.tag == y.tag
 
-instance : BEq LExpr where
-  beq := LExpr.beq
+instance : BEq (LExprH Identifier) where
+  beq := LExprH.beq
 
-namespace LExpr
+namespace LExprH
+
+
 
 /--
-A cache for Midi expressions that maps `LExprNode` keys to `LExpr` values.
+A cache for Midi expressions that maps `LExprNode` keys to `LExprH` values.
 
 `Std.HashMap` expects `LExprNode` to have compatible boolean equality
 and hash functions, which is guaranteed via `EquivBEq LExprNode` and
 `LawfulHashable LExprNode` instances above.
 -/
-structure Cache where
-  hmap : Std.HashMap LExprNode LExpr
+structure Cache (Identifier: Type) [Hashable Identifier] [BEq Identifier] [LawfulBEq Identifier] where
+  hmap  : Std.HashMap (LExprNode Identifier) (LExprH Identifier)
   count : Int := -1
 
-def Cache.init : Cache :=
+def Cache.init : (Cache Identifier) :=
   { hmap := ∅, count := -1 }
 
-def Cache.count_ok (cache : Cache) : Prop :=
+def Cache.count_ok (cache : (Cache Identifier)) : Prop :=
   -1 ≤ cache.count ∧
   (cache.count + 1).toNat = cache.hmap.size
 
-def Cache.node_entry_ok (cache : Cache) : Prop :=
-  ∀ (n1 : LExprNode),
+def Cache.node_entry_ok (cache : Cache Identifier) : Prop :=
+  ∀ (n1 : LExprNode Identifier),
     (match cache.hmap[n1]? with
      | some { node, tag } => node == n1 ∧ tag ≤ cache.count
      | none => True)
 
-def Cache.tag_unique (cache : Cache) : Prop :=
-  ∀ (n1 n2 : LExprNode),
+def Cache.tag_unique (cache : Cache Identifier) : Prop :=
+  ∀ (n1 n2 : LExprNode Identifier),
     (match cache.hmap[n1]?, cache.hmap[n2]? with
       | some { node := n1', tag := tag1' },
         some { node := n2', tag := tag2' } =>
