@@ -92,9 +92,7 @@ theorem LExprNode.induct (P : LExprNode Identifier → Prop)
   · exact caseEq
   · simp
 
-
-
-variable [Hashable Identifier] [BEq Identifier] [LawfulBEq Identifier]
+variable {Identifier: Type} [BEq Identifier] [LawfulBEq Identifier]
 
 /--
 Boolean equality for `LExprNode` -- we intend to mimic pointer
@@ -170,6 +168,9 @@ def LExprNode.hash' [Hashable Identifier] (n : LExprNode Identifier) : UInt64 :=
   | .app fn e => hash (".app", fn.tag, e.tag)
   | .ite c t f => hash (".ite", c.tag, t.tag, f.tag)
   | .eq e1 e2 => hash (".eq", e1.tag, e2.tag)
+
+
+variable [Hashable Identifier]
 
 theorem LExprNode.hash'_eq :
   ∀ {a b : LExprNode Identifier}, LExprNode.beq a b → hash' a = hash' b := by
@@ -441,6 +442,7 @@ def mkIte (c t f : LExprH Identifier) (cache : Cache Identifier): (LExprH Identi
 def mkEq (e1 e2 : LExprH Identifier) (cache : Cache Identifier): (LExprH Identifier) × (Cache Identifier) :=
   hashcons (.eq e1 e2) cache
 
+
 /--
 Compute the size of `e` as a tree.
 
@@ -531,22 +533,22 @@ def free_vars_aux (e : LExprH Identifier) (acc : List Identifier) (map : Std.Has
       | .op _ _ => (acc, map)
       | .bvar _ => (acc, map)
       | .fvar x _ => (if x ∈ acc then acc else (x :: acc), map)
+      | .mdata _ e1 => free_vars_aux e1 acc map
       | .abs _ e1 => free_vars_aux e1 acc map
-      | .quant _ _ e => free_vars_aux e acc map
+      | .quant _ _ e1 => free_vars_aux e1 acc map
       | .app e1 e2 =>
         let (e1_vars, map) := free_vars_aux e1 acc map
         let (e2_vars, map) := free_vars_aux e2 acc map
         (e1_vars ++ e2_vars, map)
       | .ite c t f =>
         let (c_vars, map) := free_vars_aux c acc map
-        let (t_vars, map) := free_vars_aux t acc map
-        let (f_vars, map) := free_vars_aux f acc map
+        let (t_vars, map) := free_vars_aux t c_vars map     -- Thread the accumulator
+        let (f_vars, map) := free_vars_aux f t_vars map     -- Thread the accumulator
         (c_vars ++ t_vars ++ f_vars, map)
       | .eq e1 e2 =>
         let (e1_vars, map) := free_vars_aux e1 acc map
-        let (e2_vars, map) := free_vars_aux e2 acc map
+        let (e2_vars, map) := free_vars_aux e2 e1_vars map  -- Use e1_vars as acc
         (e1_vars ++ e2_vars, map)
-      | .mdata m e => free_vars_aux e acc map
     let map := map.insert e.tag vars
     (vars, map)
   termination_by (size e)
@@ -589,18 +591,18 @@ def closed (e : LExprH Identifier) : Bool :=
 #eval closed (bar (Cache.init String)).1
 
 @[simp]
-theorem free_vars_abs {Identifier: Type} :
+theorem free_vars_abs:
   free_vars { node := (.abs _ e), tag := _tag } = free_vars e := by
   simp [free_vars, free_vars_aux]
 
 @[simp]
 theorem fresh_abs :
-  fresh x { node := (.abs e), tag := _tag } = fresh x e := by
+  fresh x { node := (.abs _ e), tag := _tag } = fresh x e := by
   simp [fresh]
 
 @[simp]
 theorem closed_abs :
-  closed { node := (.abs e), tag := _tag } = closed e := by
+  closed { node := (.abs _ e), tag := _tag } = closed e := by
   simp [closed]
 
 /--
