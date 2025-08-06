@@ -15,6 +15,7 @@ import Strata.DL.Lambda.Lambda
 import Strata.Transform.CallElim
 import Strata.DL.Imperative.CmdSemantics
 import Strata.Languages.Boogie.StatementSemantics
+import Strata.Languages.Boogie.StatementSemanticsProps
 import Strata.DL.Util.ListUtils
 
 namespace CallElimCorrect
