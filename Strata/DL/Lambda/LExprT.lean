@@ -409,8 +409,6 @@ partial def fromLExprAux.app (T : (TEnv Identifier)) (e1 e2 : (LExpr Identifier)
   let (optTyy2, T) := (ty2.aliasInst T)
   let (fresh_name2, T) := TEnv.genTyVar T
   let freshty2: LMonoTy := (.ftvar fresh_name2)
-  dbg_trace f!"optTyy1.getD ty1 ({optTyy1.getD ty1})"
-  dbg_trace f!"optTyy2.getD ty2 ({optTyy2.getD ty2})"
   let S ← Constraints.unify [(freshty1, optTyy1.getD ty1 )] T.state.subst
   let T := TEnv.updateSubst T S
   let S ← Constraints.unify [(freshty2, optTyy2.getD ty1 )] T.state.subst
