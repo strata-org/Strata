@@ -5,9 +5,9 @@
 -/
 
 
-import Strata.Languages.Boogie.Options
 import Strata.Languages.Boogie.ProgramEval
 import Strata.Languages.Boogie.ProgramType
+import Strata.DL.SMT.Options
 
 ---------------------------------------------------------------------
 
@@ -34,8 +34,9 @@ namespace Boogie
    types.
 -/
 
-def typeCheckAndPartialEval (options : Options) (program : Program) :
-  Except Std.Format (List (Program × Env)) := do
+def typeCheckAndPartialEval
+    (options : Strata.SMT.Options := Strata.SMT.Options.default) (program : Program) :
+    Except Std.Format (List (Program × Env)) := do
   let factory := Boogie.Factory
   let known_types := Boogie.KnownTypes
   let T := { Lambda.TEnv.default with functions := factory, knownTypes := known_types }

@@ -68,6 +68,6 @@ Obligation: x_eq_y
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" unreachableAssertEnv
+#eval verify unreachableAssertEnv
 
 ---------------------------------------------------------------------

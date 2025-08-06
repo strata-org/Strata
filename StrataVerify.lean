@@ -21,10 +21,12 @@ def isSuccessVCResult (vcResult : Boogie.VCResult) :=
 def isFailureVCResult (vcResult : Boogie.VCResult) :=
   !isSuccessResult vcResult.result
 
-def parseOptions (args : List String) : Except Std.Format (Options × String) :=
-  go Options.quiet args
+def parseOptions (args : List String) : Except Std.Format (SMT.Options × String) :=
+  go {SMT.Options.quiet with solver := "z3"} args
     where
-      go : Options → List String → Except Std.Format (Options × String)
+      go : SMT.Options → List String → Except Std.Format (SMT.Options × String)
+      | opts, "--solver" :: solverStr :: rest =>
+        go {opts with solver := solverStr} rest
       | opts, "--verbose" :: rest => go {opts with verbose := true} rest
       | opts, "--check" :: rest => go {opts with checkOnly := true} rest
       | opts, "--solver-timeout" :: secondsStr :: rest =>
@@ -54,9 +56,9 @@ def main (args : List String) : IO UInt32 := do
     if errors.isEmpty then
       println! s!"Successfully parsed {file}"
       let vcResults ← if file.endsWith ".csimp.st" then
-        C_Simp.verify "z3" env opts
+        C_Simp.verify env opts
       else
-        verify "z3" env opts
+        verify env opts
       for vcResult in vcResults do
         println! f!"{vcResult.obligation.label}: {vcResult.result}"
       let success := vcResults.all isSuccessVCResult

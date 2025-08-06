@@ -61,7 +61,7 @@ Obligation: n_le_100_postcond
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" procIfEnv
+#eval verify procIfEnv
 
 /-
 <PCs>

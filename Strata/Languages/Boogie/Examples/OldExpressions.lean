@@ -155,6 +155,6 @@ Obligation: T2_b_eq_false
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" oldExprEnv
+#eval verify oldExprEnv
 
 ---------------------------------------------------------------------

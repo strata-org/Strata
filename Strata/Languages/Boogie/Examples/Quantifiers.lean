@@ -96,7 +96,7 @@ Result: failed
 CEx: (__x0, 0)
 -/
 #guard_msgs in
-#eval verify "cvc5" quantEnv Options.default
+#eval verify quantEnv
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -128,4 +128,4 @@ Obligation: f_and_g
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" triggerEnv
+#eval verify  triggerEnv

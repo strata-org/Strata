@@ -116,7 +116,7 @@ Obligation: assert: (#true : bool)
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" globalCounterEnv
+#eval verify globalCounterEnv
 
 ---------------------------------------------------------------------
 

@@ -86,7 +86,7 @@ Obligation: implies_equiv
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" precEnv
+#eval verify precEnv
 
 end Strata
 

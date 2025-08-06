@@ -93,6 +93,6 @@ Obligation: fooAssertion
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" goodTypeAliasEnv
+#eval verify goodTypeAliasEnv
 
 --------------------------------------------------------------------

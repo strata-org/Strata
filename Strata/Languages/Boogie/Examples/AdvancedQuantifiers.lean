@@ -52,4 +52,4 @@ Obligation: Update_ensures_0
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" advQuantEnv
+#eval verify advQuantEnv

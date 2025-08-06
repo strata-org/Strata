@@ -190,4 +190,4 @@ Obligation: post
 Result: verified
 -/
 #guard_msgs in
-#eval Strata.C_Simp.verify "cvc5" LoopSimpleEnv
+#eval Strata.C_Simp.verify LoopSimpleEnv

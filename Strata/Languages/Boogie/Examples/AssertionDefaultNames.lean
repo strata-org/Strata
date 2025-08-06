@@ -58,6 +58,6 @@ Obligation: assert: (x == (#1 : int))
 Result: verified
 -/
 #guard_msgs in
-#eval verify "z3" assertionNames
+#eval verify assertionNames { Boogie.Options.default with solver := "z3" }
 
 ---------------------------------------------------------------------

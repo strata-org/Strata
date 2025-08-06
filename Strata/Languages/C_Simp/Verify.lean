@@ -8,6 +8,7 @@ import Strata.Languages.C_Simp.C_Simp
 import Strata.Languages.C_Simp.DDMTransform.Translate
 import Strata.Languages.Boogie.Verifier
 import Strata.DL.Imperative.Stmt
+import Strata.DL.SMT.Options
 
 namespace Strata
 
@@ -123,10 +124,10 @@ def to_boogie(program : C_Simp.Program) : Boogie.Program :=
 def C_Simp.get_program (env: Environment) : C_Simp.Program :=
   (Strata.C_Simp.TransM.run (Strata.C_Simp.translateProgram (env.commands))).fst
 
-def C_Simp.verify (smtsolver : String) (env : Environment) (options : Options := Options.default):
+def C_Simp.verify (env : Environment) (options : Strata.SMT.Options := Strata.SMT.Options.default):
   IO Boogie.VCResults := do
   let program := C_Simp.get_program env
   EIO.toIO (fun f => IO.Error.userError (toString f))
-    (Boogie.verify smtsolver (to_boogie program) options)
+    (Boogie.verify (to_boogie program) options)
 
 end Strata

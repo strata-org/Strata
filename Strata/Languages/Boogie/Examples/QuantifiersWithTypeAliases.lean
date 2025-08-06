@@ -79,4 +79,4 @@ Obligation: assert: (((~select ((~select newH) ref)) field) == ((~Int.Add ((~sel
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" QuantTypeAliases
+#eval verify QuantTypeAliases

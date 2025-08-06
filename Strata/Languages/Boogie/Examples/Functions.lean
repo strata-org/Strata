@@ -51,6 +51,6 @@ Obligation: fooEq
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" funcEnv
+#eval verify funcEnv
 
 ---------------------------------------------------------------------

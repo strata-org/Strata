@@ -60,6 +60,6 @@ Obligation: s1_s2_len_sum_eq_s3_len
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" strEnv
+#eval verify strEnv
 
 ---------------------------------------------------------------------

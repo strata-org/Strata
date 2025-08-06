@@ -6,6 +6,7 @@
 
 import Strata.Languages.Boogie.Boogie
 import Strata.Languages.Boogie.Verifier
+import Strata.Languages.Boogie.LeanDenote
 import Mathlib.Data.Real.Irrational
 
 ---------------------------------------------------------------------
@@ -24,6 +25,7 @@ procedure Test(p : int, q : int) returns ()
 
 };
 #end
+
 
 private theorem sqrt_2_is_irrational_helper :
   ∀ (p q : Int), (decide (q > 0) ==> !p * p == 2 * q * q) = true := by
@@ -62,6 +64,6 @@ info:
 ✅️ Theorem sqrt_2_is_irrational is already in the environment!
 -/
 #guard_msgs in
-#verify "cvc5" sqrt2IrrationalEnv
+#verify sqrt2IrrationalEnv (timeout := 1) (verbose := false)
 
 end Strata

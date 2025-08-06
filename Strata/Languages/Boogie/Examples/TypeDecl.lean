@@ -44,7 +44,7 @@ Obligation: f_test
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" typeDeclEnv1
+#eval verify typeDeclEnv1
 
 --------------------------------------------------------------------
 
@@ -106,7 +106,7 @@ Obligation: fooAssertion
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" typeDeclEnv3
+#eval verify typeDeclEnv3
 
 
 --------------------------------------------------------------------

@@ -98,7 +98,7 @@ Result: failed
 CEx:
 -/
 #guard_msgs in
-#eval verify "cvc5" realEnv
+#eval verify realEnv
 
 ---------------------------------------------------------------------
 
@@ -181,4 +181,4 @@ Obligation: Q_ensures_0
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" bvEnv
+#eval verify bvEnv
