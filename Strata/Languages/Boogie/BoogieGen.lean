@@ -62,8 +62,11 @@ theorem BoogieGenState.WFMono' :
   . -- StringGen WF
     rw [← Hgen.2]
     simp_all
-    cases Hwf
-    sorry
+    cases Hwf with
+    | intro left right =>
+    apply StringGenState.WFMono (n:=(StringGenState.gen pf.snd s.cs).fst)
+    exact left
+    rfl
   . -- nodup
     simp [← Hgen]
     have Hwfs : StringGenState.WF (StringGenState.gen pf.snd s.cs).snd := by
@@ -72,6 +75,8 @@ theorem BoogieGenState.WFMono' :
       apply Hwf.1
       rfl
     simp [StringGenState.WF] at Hwfs
+    /- The generated Boogie identifier does not occur in the list of already
+    generated identifiers -/
     sorry
   . -- is temp
     refine List.Forall_mem_iff.mpr ?_
@@ -92,8 +97,12 @@ theorem BoogieGenState.WFMono : ∀ (γ γ' : BoogieGenState) (pf l : BoogieIden
   intros γ γ' pf l Hgen Hwf
   refine ⟨?_, ?_, ?_⟩
   . exact WFMono' Hwf Hgen
-  . sorry
-  . sorry
+  . /- The generated Boogie identifier is in the new state, should be provable by
+    propagating this fact from StringGen and Counter generator -/
+    sorry
+  . /- After generating a new Boogie identifier, the new state is a super set of
+    the old state -/
+    sorry
 
 /-- BoogieLabelGen guarantees that all labels are .temp -/
 instance : LabelGen.WFLabelGen BoogieIdent BoogieGenState where

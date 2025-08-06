@@ -33,7 +33,6 @@ def StringGenState.WF (σ : StringGenState)
   := Counter.WF σ.cs ∧
     σ.cs.generated = σ.generated.unzip.fst ∧
     σ.generated.unzip.snd.Nodup ∧
-    -- Q: Is this needed?
     ∀ c s, (c,s) ∈ σ.generated →
       String.IsSuffix ("_" ++ toString c) s
 
@@ -110,11 +109,15 @@ theorem StringGenState.WFMono :
   . refine ⟨?_, Hwfnd⟩
     intros x Hin
     specialize Hwf12 _ _ Hin
+    /- `x` is the generated counter, given the counter `x` is fresh, we need to
+    show that it's impossible for "_x" to be a suffix of the generated name `n` -/
     sorry
   . intros c s Heq
     simp [String.IsSuffix]
     cases Heq with
     | inl HH =>
+      /- the newly generated counter `c` and name `s` satisfy the relationship
+      that the the "_c" is a suffix of `s` -/
       sorry
     | inr HH =>
       exact Hwf12 _ _ HH
