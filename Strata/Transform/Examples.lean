@@ -186,6 +186,12 @@ def tests : List (Program × Program) := [
   (CallElimTest3, CallElimTest3Ans),
 ].map (Prod.map translate translate)
 
+def callElim (p : Program)
+  : Program :=
+  match (runCallElim p callElim') with
+  | .ok res => res
+  | .error e => panic! e
+
 /--
 info: true
 -/

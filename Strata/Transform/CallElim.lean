@@ -324,11 +324,5 @@ def runCallElim {α : Type} (p : α) (f : α → CallElimM β):
   Except Err β :=
   runCallElimWith p f .emp
 
-def callElim (p : Program)
-  : Program :=
-  match (runCallElim p callElim') with
-  | .ok res => res
-  | .error e => panic! e
-
 end CallElim
 end Boogie
