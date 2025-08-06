@@ -25,7 +25,7 @@ def StmtToNondetStmt {P : PureExpr} [Imperative.HasBool P] [Imperative.HasBoolNe
   | .loop   guard _measure _inv body md =>
     .loop (.seq (.assume "guard" guard md) (StmtsToNondetStmt body.ss))
   -- TODO: need goto equivalent
-  | .goto _ _ => (.assert "skip" Imperative.HasBool.tt)
+  | .goto _ _ => (.assume "skip" Imperative.HasBool.tt)
   termination_by (sizeOf st)
   decreasing_by all_goals simp [sizeOf] <;> omega
 
@@ -33,7 +33,7 @@ def StmtsToNondetStmt {P : Imperative.PureExpr} [Imperative.HasBool P] [Imperati
   (ss : Imperative.Stmts P (Cmd P)) :
   Imperative.NondetStmt P (Cmd P) :=
   match ss with
-  | [] => (.assert "skip" Imperative.HasBool.tt)
+  | [] => (.assume "skip" Imperative.HasBool.tt)
   | s :: ss => .seq (StmtToNondetStmt s) (StmtsToNondetStmt ss)
   termination_by (sizeOf ss)
   decreasing_by all_goals simp [sizeOf]; omega

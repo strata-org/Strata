@@ -5,6 +5,8 @@
 -/
 
 import Strata.Transform.CallElim
+import Strata.Transform.DetToNondet
+import Strata.Languages.Boogie.StatementSemantics
 import Strata.Languages.Boogie.ProgramType
 import Strata.Languages.Boogie.ProgramWF
 import Strata.DL.Lambda.IntBoolFactory
@@ -12,9 +14,9 @@ open Boogie
 open CallElim
 open Strata
 
-section test
+section CallElimExamples
 
-def test1 : Environment :=
+def CallElimTest1 : Environment :=
 #strata
 program Boogie;
 var i : bool;
@@ -35,7 +37,7 @@ procedure h() returns () spec {
 };
 #end
 
-def test1Ans : Environment :=
+def CallElimTest1Ans : Environment :=
 #strata
 program Boogie;
 var i : bool;
@@ -62,7 +64,7 @@ procedure h() returns () spec {
 };
 #end
 
-def test2 : Environment :=
+def CallElimTest2 : Environment :=
 #strata
 program Boogie;
 var i : bool;
@@ -84,7 +86,7 @@ procedure h() returns () spec {
 };
 #end
 
-def test2Ans : Environment :=
+def CallElimTest2Ans : Environment :=
 #strata
 program Boogie;
 var i : bool;
@@ -115,7 +117,7 @@ procedure h() returns () spec {
 };
 #end
 
-def test3 : Environment :=
+def CallElimTest3 : Environment :=
 #strata
 program Boogie;
 var i : bool;
@@ -137,7 +139,7 @@ procedure h() returns () spec {
 };
 #end
 
-def test3Ans : Environment :=
+def CallElimTest3Ans : Environment :=
 #strata
 program Boogie;
 var i : bool;
@@ -179,9 +181,9 @@ def translateWF (t : Environment) : WF.WFProgram :=
   | .ok res => { self := p, prop := by exact WF.Program.typeCheckWF H }
 
 def tests : List (Program × Program) := [
-  (test1, test1Ans),
-  (test2, test2Ans),
-  (test3, test3Ans),
+  (CallElimTest1, CallElimTest1Ans),
+  (CallElimTest2, CallElimTest2Ans),
+  (CallElimTest3, CallElimTest3Ans),
 ].map (Prod.map translate translate)
 
 /--
@@ -193,4 +195,30 @@ info: true
 -- #eval callElim tests[1].fst
 -- #eval tests[1].snd
 
-end test
+end CallElimExamples
+
+section NondetExamples
+
+open Imperative
+
+def NondetTest1 : Stmt Expression (Cmd Expression) :=
+  .ite (Boogie.true) {ss :=
+    [.cmd $ .havoc "x" ]
+    } {ss :=
+    [.cmd $ .havoc "y" ]
+    }
+
+def NondetTest1Ans : NondetStmt Expression (Cmd Expression) :=
+  .choice
+    (.seq (.cmd (.assert "true_cond" Boogie.true)) (.seq (.cmd $ .havoc "x") (.assume "skip" Imperative.HasBool.tt)))
+    (.seq (.cmd (.assert "false_cond" Boogie.false)) (.seq (.cmd $ .havoc "y") (.assume "skip" Imperative.HasBool.tt)))
+
+
+-- #eval toString $ Std.format (StmtToNondetStmt NondetTest1)
+-- #eval toString $ Std.format NondetTest1Ans
+
+/-- info: true -/
+#guard_msgs in
+#eval (toString $ Std.format (StmtToNondetStmt NondetTest1)) == (toString $ Std.format NondetTest1Ans)
+
+end NondetExamples
