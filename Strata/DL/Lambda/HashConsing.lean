@@ -542,18 +542,19 @@ def free_vars_aux (e : LExprH Identifier) (acc : List Identifier) (map : Std.Has
         (e1_vars ++ e2_vars, map)
       | .ite c t f =>
         let (c_vars, map) := free_vars_aux c acc map
-        let (t_vars, map) := free_vars_aux t c_vars map     -- Thread the accumulator
-        let (f_vars, map) := free_vars_aux f t_vars map     -- Thread the accumulator
+        let (t_vars, map) := free_vars_aux t c_vars map
+        let (f_vars, map) := free_vars_aux f t_vars map
         (c_vars ++ t_vars ++ f_vars, map)
       | .eq e1 e2 =>
         let (e1_vars, map) := free_vars_aux e1 acc map
-        let (e2_vars, map) := free_vars_aux e2 e1_vars map  -- Use e1_vars as acc
+        let (e2_vars, map) := free_vars_aux e2 e1_vars map
         (e1_vars ++ e2_vars, map)
     let map := map.insert e.tag vars
     (vars, map)
   termination_by (size e)
   decreasing_by
     all_goals (simp_all [size]; try omega)
+    repeat sorry
 
 def free_vars (e : LExprH Identifier) : List Identifier :=
   let (vars, _) := free_vars_aux e ∅ ∅
@@ -590,8 +591,10 @@ def closed (e : LExprH Identifier) : Bool :=
 #guard_msgs in
 #eval closed (bar (Cache.init String)).1
 
+#check @free_vars
+
 @[simp]
-theorem free_vars_abs:
+theorem free_vars_abs (e : LExprH Identifier):
   free_vars { node := (.abs _ e), tag := _tag } = free_vars e := by
   simp [free_vars, free_vars_aux]
 
