@@ -12,3 +12,7 @@ globs = ["StrataTest.+"]
 
 [[lean_exe]]
 name = "StrataVerify"
+
+[[require]]
+name = "mathlib"
+scope = "leanprover-community"

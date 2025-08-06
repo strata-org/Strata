@@ -22,3 +22,4 @@ import Strata.Languages.Boogie.Examples.UnreachableAssert
 import Strata.Languages.Boogie.Examples.Map
 import Strata.Languages.Boogie.Examples.RealBitVector
 import Strata.Languages.Boogie.Examples.String
+import Strata.Languages.Boogie.Examples.IrratSqrt2

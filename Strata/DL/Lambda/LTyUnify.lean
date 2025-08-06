@@ -432,8 +432,8 @@ theorem Constraints.freeVars_of_zip_superset (h : args1.length = args2.length) :
     done
 
 theorem Constraints.freeVars_zip_dedup_length (h : args1.length = args2.length) :
-  (Constraints.freeVars (args1.zip args2)).dedup.length =
-  (LMonoTys.freeVars args1 ++ LMonoTys.freeVars args2).dedup.length := by
+  (Constraints.freeVars (args1.zip args2)).deduplicate.length =
+  (LMonoTys.freeVars args1 ++ LMonoTys.freeVars args2).deduplicate.length := by
   have h1 := @Constraints.freeVars_of_zip_superset args1 args2 h
   have h2 := @Constraints.freeVars_of_zip_subset args1 args2
   have h3 := @List.length_dedup_subset_eq _ _
@@ -660,10 +660,10 @@ private theorem Constraint.unify_termination_goal_1
     (h_lty : lty = LMonoTy.subst S.subst orig_lty)
     (_h4 : ¬id ∈ lty.freeVars)
     (_h5 : Map.find? S.subst id = some sty) :
-    (Constraints.freeVars [(sty, LMonoTy.subst S.subst orig_lty)] ++ S.subst.freeVars).dedup.length <
-    (Constraints.freeVars [(LMonoTy.ftvar id, orig_lty)] ++ S.subst.freeVars).dedup.length ∨
-    (Constraints.freeVars [(sty, LMonoTy.subst S.subst orig_lty)] ++ S.subst.freeVars).dedup.length =
-    (Constraints.freeVars [(LMonoTy.ftvar id, orig_lty)] ++ S.subst.freeVars).dedup.length ∧
+    (Constraints.freeVars [(sty, LMonoTy.subst S.subst orig_lty)] ++ S.subst.freeVars).deduplicate.length <
+    (Constraints.freeVars [(LMonoTy.ftvar id, orig_lty)] ++ S.subst.freeVars).deduplicate.length ∨
+    (Constraints.freeVars [(sty, LMonoTy.subst S.subst orig_lty)] ++ S.subst.freeVars).deduplicate.length =
+    (Constraints.freeVars [(LMonoTy.ftvar id, orig_lty)] ++ S.subst.freeVars).deduplicate.length ∧
     Constraints.size [(sty, LMonoTy.subst S.subst orig_lty)] <
     Constraints.size [(LMonoTy.ftvar id, orig_lty)] := by
   have h_sty := @Subst.freeVars_of_find_subset id sty S.subst _h5
@@ -704,10 +704,10 @@ private theorem Constraint.unify_termination_goal_2
     (h_lty : lty = LMonoTy.subst S.subst orig_lty)
     (_h4 : ¬id ∈ lty.freeVars)
     (_h5 : Map.find? S.subst id = some sty) :
-    (Constraints.freeVars [(sty, LMonoTy.subst S.subst orig_lty)] ++ S.subst.freeVars).dedup.length <
-    (Constraints.freeVars [(orig_lty, LMonoTy.ftvar id)] ++ S.subst.freeVars).dedup.length ∨
-    (Constraints.freeVars [(sty, LMonoTy.subst S.subst orig_lty)] ++ S.subst.freeVars).dedup.length =
-    (Constraints.freeVars [(orig_lty, LMonoTy.ftvar id)] ++ S.subst.freeVars).dedup.length ∧
+    (Constraints.freeVars [(sty, LMonoTy.subst S.subst orig_lty)] ++ S.subst.freeVars).deduplicate.length <
+    (Constraints.freeVars [(orig_lty, LMonoTy.ftvar id)] ++ S.subst.freeVars).deduplicate.length ∨
+    (Constraints.freeVars [(sty, LMonoTy.subst S.subst orig_lty)] ++ S.subst.freeVars).deduplicate.length =
+    (Constraints.freeVars [(orig_lty, LMonoTy.ftvar id)] ++ S.subst.freeVars).deduplicate.length ∧
     Constraints.size [(sty, LMonoTy.subst S.subst orig_lty)] <
     Constraints.size [(orig_lty, LMonoTy.ftvar id)] := by
   have h1 := @Constraints.freeVars_single_constraint_comm_subset orig_lty (LMonoTy.ftvar id)
@@ -720,7 +720,7 @@ private theorem Constraint.unify_termination_goal_2
   simp_all [Constraints.size, Constraint.size]
   have h_sub1 : A ++ Y ⊆ B ++ Y := by simp_all
   have h_sub2 : B ++ Y ⊆ A ++ Y := by simp_all
-  have h_sub : (B ++ Y).dedup.length = (A ++ Y).dedup.length := by
+  have h_sub : (B ++ Y).deduplicate.length = (A ++ Y).deduplicate.length := by
     exact List.length_dedup_subset_eq (B ++ Y) (A ++ Y) h_sub2 h_sub1
   simp_all
   omega
@@ -729,12 +729,12 @@ private theorem Constraint.unify_termination_goal_2
 private theorem Constraint.unify_termination_goal_3
     (S : SubstInfo) (name1 name2 : String) (args1 args2 : List LMonoTy)
     (h_tcons : name1 = name2 ∧ args1.length = args2.length) :
-    (Constraints.freeVars (args1.zip args2) ++ S.subst.freeVars).dedup.length <
+    (Constraints.freeVars (args1.zip args2) ++ S.subst.freeVars).deduplicate.length <
     (Constraints.freeVars [(LMonoTy.tcons name2 args1, LMonoTy.tcons name2 args2)] ++
-     S.subst.freeVars).dedup.length ∨
-    (Constraints.freeVars (args1.zip args2) ++ S.subst.freeVars).dedup.length =
+     S.subst.freeVars).deduplicate.length ∨
+    (Constraints.freeVars (args1.zip args2) ++ S.subst.freeVars).deduplicate.length =
     (Constraints.freeVars [(LMonoTy.tcons name2 args1, LMonoTy.tcons name2 args2)] ++
-     S.subst.freeVars).dedup.length ∧
+     S.subst.freeVars).deduplicate.length ∧
     Constraints.size (args1.zip args2) <
     Constraints.size [(LMonoTy.tcons name2 args1, LMonoTy.tcons name2 args2)] := by
   have h_zip_fvs_super := @Constraints.freeVars_of_zip_superset args1 args2 h_tcons.right
@@ -767,10 +767,10 @@ private theorem Constraint.unify_termination_goal_3
 
 private theorem Constraints.unify_termination_goal_1
     (cs : Constraints) (c : Constraint) (S : SubstInfo) :
-    (Constraints.freeVars [c] ++ S.subst.freeVars).dedup.length <
-      (Constraints.freeVars (c :: cs) ++ S.subst.freeVars).dedup.length ∨
-    (Constraints.freeVars [c] ++ S.subst.freeVars).dedup.length =
-        (Constraints.freeVars (c :: cs) ++ S.subst.freeVars).dedup.length ∧
+    (Constraints.freeVars [c] ++ S.subst.freeVars).deduplicate.length <
+      (Constraints.freeVars (c :: cs) ++ S.subst.freeVars).deduplicate.length ∨
+    (Constraints.freeVars [c] ++ S.subst.freeVars).deduplicate.length =
+        (Constraints.freeVars (c :: cs) ++ S.subst.freeVars).deduplicate.length ∧
     (Constraints.size [c] < Constraints.size (c :: cs) ∨
      Constraints.size [c] = Constraints.size (c :: cs)) := by
   simp_all [Constraints.freeVars, Constraints.size]
@@ -779,7 +779,7 @@ private theorem Constraints.unify_termination_goal_1
     simp_all
   generalize (c.freeVars ++ S.subst.freeVars) = l1 at *
   generalize (c.freeVars ++ (cs.freeVars ++ S.subst.freeVars)) = l2 at *
-  have h1 : (l1.dedup.length < l2.dedup.length) ∨ (l1.dedup.length = l2.dedup.length) := by
+  have h1 : (l1.deduplicate.length < l2.deduplicate.length) ∨ (l1.deduplicate.length = l2.deduplicate.length) := by
     have := @List.length_dedup_of_subset_le _ _ l1 l2 h_sub
     exact Or.symm (Nat.eq_or_lt_of_le this)
   cases h1 <;> try simp_all
@@ -789,10 +789,10 @@ private theorem Constraints.unify_termination_goal_1
 private theorem Constraints.unify_termination_goal_2
     (cs : Constraints) (c : Constraint) (S : SubstInfo)
     (relS : ValidSubstRelation [c] S) :
-    (Constraints.freeVars cs ++ relS.newS.subst.freeVars).dedup.length <
-    (Constraints.freeVars (c :: cs) ++ S.subst.freeVars).dedup.length ∨
-    (Constraints.freeVars cs ++ relS.newS.subst.freeVars).dedup.length =
-    (Constraints.freeVars (c :: cs) ++ S.subst.freeVars).dedup.length := by
+    (Constraints.freeVars cs ++ relS.newS.subst.freeVars).deduplicate.length <
+    (Constraints.freeVars (c :: cs) ++ S.subst.freeVars).deduplicate.length ∨
+    (Constraints.freeVars cs ++ relS.newS.subst.freeVars).deduplicate.length =
+    (Constraints.freeVars (c :: cs) ++ S.subst.freeVars).deduplicate.length := by
   obtain ⟨newS, h_subset_prop⟩ := relS
   simp [Subst.freeVars_subset_prop, Constraints.freeVars] at h_subset_prop
   simp [Constraints.freeVars] at *
@@ -884,7 +884,7 @@ def Constraint.unifyOne (c : Constraint) (S : SubstInfo) :
         .error f!"Cannot unify bv type {t1} and type constructor {t2}!"
     | .tcons _ _, .bitvec _ =>
         .error f!"Cannot unify type constructor {t1} and bv type {t2}!"
-  termination_by ((((Constraints.freeVars [c]) ++ S.subst.freeVars).dedup.length),
+  termination_by ((((Constraints.freeVars [c]) ++ S.subst.freeVars).deduplicate.length),
                   Constraints.size [c],
                   0)
   decreasing_by
@@ -904,7 +904,7 @@ def Constraints.unifyCore (cs : Constraints) (S : SubstInfo) :
     let relS ← Constraint.unifyOne c S
     let new_relS ← Constraints.unifyCore c_rest relS.newS
     .ok { newS := new_relS.newS, goodSubset := by simp [Subst.freeVars_subset_prop_mk_cons] }
-  termination_by ((((Constraints.freeVars cs) ++ S.subst.freeVars).dedup.length),
+  termination_by ((((Constraints.freeVars cs) ++ S.subst.freeVars).deduplicate.length),
                   Constraints.size cs,
                   1)
 

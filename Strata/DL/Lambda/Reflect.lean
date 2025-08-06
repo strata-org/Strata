@@ -218,7 +218,7 @@ def LExpr.toExprNoFVars {Identifier} [IS : IdentifierString Identifier]
 
 def LExpr.toExpr {Identifier} [IS: IdentifierString Identifier] [DecidableEq Identifier]
      (e : LExpr Identifier) : MetaM Lean.Expr := do
-  let idTs := e.freeVars.dedup
+  let idTs := e.freeVars.deduplicate
   let decls : List (Name × (Array Lean.Expr → MetaM Lean.Expr)) ←
     idTs.mapM fun idT => do
       match idT.snd with
