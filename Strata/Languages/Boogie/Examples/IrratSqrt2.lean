@@ -41,7 +41,9 @@ private theorem sqrt_2_is_irrational_helper :
   simp_all
 
 
-theorem sqrt_2_is_irrational : ∀ («$__p0» «$__q1» : ℤ), (decide («$__q1» > 0) ==> !«$__p0» * «$__p0» == 2 * «$__q1» * «$__q1») = true := by
+theorem sqrt_2_is_irrational : ∀ («$__p0» «$__q1» : ℤ),
+  (decide («$__q1» > 0) ==>
+  !«$__p0» * «$__p0» == 2 * «$__q1» * «$__q1») = true := by
   exact fun «$__p0» «$__q1» => sqrt_2_is_irrational_helper «$__p0» «$__q1»
 
 /--
