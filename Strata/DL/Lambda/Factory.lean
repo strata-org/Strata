@@ -88,6 +88,7 @@ structure LFunc (Identifier : Type) where
   -- a function, etc.).
   attr     : Array String := #[]
   denote   : Option ((LExpr Identifier) → List (LExpr Identifier) → (LExpr Identifier)) := .none
+  axioms   : List (LExpr Identifier) := []  -- For axiomatic definitions
 
 instance : Inhabited (LFunc Identifier) where
   default := { name := Inhabited.default, inputs := [], output := LMonoTy.bool }
