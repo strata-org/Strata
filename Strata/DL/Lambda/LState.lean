@@ -24,14 +24,14 @@ Configuration for symbolic execution, where we have `gen` for keeping track of
 fresh `fvar`'s numbering. We also have a `fuel` argument for the evaluation
 function, and support for factory functions.
 
-We rely on the parser disallowing Lambda variables to begin with `$__`, which is
-reserved for internal use. Also see `TEnv.genExprVar` used during type inference
-and `LState.genVar` used during evaluation.
+We rely on the parser disallowing Lambda variables to begin with `varPrefix`
+below, which is reserved for internal use. Also see `TEnv.genExprVar` used
+during type inference and `LState.genVar` used during evaluation.
 -/
 structure EvalConfig (Identifier : Type) where
   factory : @Factory Identifier
   fuel : Nat := 200
-  varPrefix : String := "$__"
+  varPrefix : String := "__"
   gen : Nat := 0
 
 instance : ToFormat (EvalConfig Identifier) where

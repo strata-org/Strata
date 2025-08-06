@@ -33,7 +33,7 @@ VCs:
 Label: barEq
 Assumptions:
 Proof Obligation:
-((~barTest1 $__a0) == $__a0)
+((~barTest1 __a0) == __a0)
 
 Label: fooEq
 Assumptions:

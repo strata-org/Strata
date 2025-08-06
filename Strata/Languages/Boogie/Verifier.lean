@@ -298,7 +298,7 @@ open Lean Elab Tactic Expr Meta Command
 def VCResults.toExprs (vcs : VCResults) : MetaM (Array (String × Lean.Expr)) := do
   let mut res := #[]
   for vc in vcs do
-    --if vc.result == .unknown then
+    if vc.result != .unsat then
       let expr := ProofObligation.toLExpr vc.obligation
       let expr ← LExpr.toExpr expr
       res := res.push (vc.obligation.label, expr)
@@ -435,49 +435,6 @@ def strataBoogieVerifyAction : CommandCodeAction := fun _ _ _ node => do
         }
       }
   }]
-
-/-
-def simpleProcEnv : Environment :=
-#strata
-program Boogie;
-var g : bool;
-procedure Test(x : bool) returns (y : bool)
-spec {
-  ensures (y == x);
-  ensures (x == y);
-  ensures (g == old(g));
-}
-{
-  y := x || x;
-};
-#end
-
-theorem Test_ensures_0 : ∀ («$__x0» : Bool), ((«$__x0» || «$__x0») == «$__x0») = true := by simp_all
-theorem Test_ensures_1 : ∀ («$__x0» : Bool), («$__x0» == («$__x0» || «$__x0»)) = true := by simp_all
-theorem Test_ensures_2 : true = true := by simp_all
-
-/--
-info: SMT Results:
-
-Obligation: Test_ensures_0
-Result: verified
-
-Obligation: Test_ensures_1
-Result: verified
-
-Obligation: Test_ensures_2
-Result: verified
----
-info:
-✅️ Theorem Test_ensures_0 is already in the environment!
-
-✅️ Theorem Test_ensures_1 is already in the environment!
-
-✅️ Theorem Test_ensures_2 is already in the environment!
--/
-#guard_msgs in
-#verify "cvc5" simpleProcEnv
--/
 
 end Strata
 

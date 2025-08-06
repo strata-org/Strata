@@ -25,7 +25,7 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
+Variable Prefix: __
 Variable gen count: 0
 Factory Functions:
 
@@ -57,7 +57,7 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
+Variable Prefix: __
 Variable gen count: 0
 Factory Functions:
 
@@ -90,7 +90,7 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
+Variable Prefix: __
 Variable gen count: 0
 Factory Functions:
 
@@ -122,7 +122,7 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
+Variable Prefix: __
 Variable gen count: 0
 Factory Functions:
 
@@ -172,7 +172,7 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
+Variable Prefix: __
 Variable gen count: 0
 Factory Functions:
 
@@ -247,7 +247,7 @@ zinit → zinit]
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
+Variable Prefix: __
 Variable gen count: 0
 Factory Functions:
 
@@ -294,9 +294,9 @@ private def prog2 : Statements := [
 /--
 info: init (x : int) := #0
 x := #1
-#[<var x: ($__x0 : int)>] havoc x
-assert [x_eq_1] ($__x0 == #1)
-#[<var x: ($__x1 : int)>] havoc x
+#[<var x: (__x0 : int)>] havoc x
+assert [x_eq_1] (__x0 == #1)
+#[<var x: (__x1 : int)>] havoc x
 x := #8
 -/
 #guard_msgs in
@@ -313,7 +313,7 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
+Variable Prefix: __
 Variable gen count: 2
 Factory Functions:
 
@@ -326,7 +326,7 @@ Deferred Proof Obligations:
 Label: x_eq_1
 Assumptions:
 Proof Obligation:
-(($__x0 : int) == #1)
+((__x0 : int) == #1)
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ prog2) |>.snd |> format

@@ -87,30 +87,30 @@ Proof Obligation:
 Label: T2_g2_eq_g
 Assumptions:
 (<Origin:T1_Ensures>T1_g_unchanged, (g == #true))
-(<Origin:T1_Ensures>T1_g2_eq_old_g, ($__g27 == #true)) (<Origin:T1_Ensures>T1_y_eq_old_g2, ($__a5 == #false)) (<Origin:T1_Ensures>T1_z_eq_y, ($__b6 == $__a5))
+(<Origin:T1_Ensures>T1_g2_eq_old_g, (__g27 == #true)) (<Origin:T1_Ensures>T1_y_eq_old_g2, (__a5 == #false)) (<Origin:T1_Ensures>T1_z_eq_y, (__b6 == __a5))
 Proof Obligation:
-($__g27 == #true)
+(__g27 == #true)
 
 Label: T2_g_true
 Assumptions:
 (<Origin:T1_Ensures>T1_g_unchanged, (g == #true))
-(<Origin:T1_Ensures>T1_g2_eq_old_g, ($__g27 == #true)) (<Origin:T1_Ensures>T1_y_eq_old_g2, ($__a5 == #false)) (<Origin:T1_Ensures>T1_z_eq_y, ($__b6 == $__a5))
+(<Origin:T1_Ensures>T1_g2_eq_old_g, (__g27 == #true)) (<Origin:T1_Ensures>T1_y_eq_old_g2, (__a5 == #false)) (<Origin:T1_Ensures>T1_z_eq_y, (__b6 == __a5))
 Proof Obligation:
 #true
 
 Label: T2_a_eq_false
 Assumptions:
 (<Origin:T1_Ensures>T1_g_unchanged, (g == #true))
-(<Origin:T1_Ensures>T1_g2_eq_old_g, ($__g27 == #true)) (<Origin:T1_Ensures>T1_y_eq_old_g2, ($__a5 == #false)) (<Origin:T1_Ensures>T1_z_eq_y, ($__b6 == $__a5))
+(<Origin:T1_Ensures>T1_g2_eq_old_g, (__g27 == #true)) (<Origin:T1_Ensures>T1_y_eq_old_g2, (__a5 == #false)) (<Origin:T1_Ensures>T1_z_eq_y, (__b6 == __a5))
 Proof Obligation:
-($__a5 == #false)
+(__a5 == #false)
 
 Label: T2_b_eq_false
 Assumptions:
 (<Origin:T1_Ensures>T1_g_unchanged, (g == #true))
-(<Origin:T1_Ensures>T1_g2_eq_old_g, ($__g27 == #true)) (<Origin:T1_Ensures>T1_y_eq_old_g2, ($__a5 == #false)) (<Origin:T1_Ensures>T1_z_eq_y, ($__b6 == $__a5))
+(<Origin:T1_Ensures>T1_g2_eq_old_g, (__g27 == #true)) (<Origin:T1_Ensures>T1_y_eq_old_g2, (__a5 == #false)) (<Origin:T1_Ensures>T1_z_eq_y, (__b6 == __a5))
 Proof Obligation:
-($__b6 == #false)
+(__b6 == #false)
 
 Wrote problem to vcs/T1_z_eq_g.smt2.
 Wrote problem to vcs/T1_z_eq_old_g2.smt2.

@@ -168,7 +168,7 @@ Label: Q_ensures_0
 Assumptions:
 (bv_x_ge_1, ((~Bv8.Le #1) ~x))
 Proof Obligation:
-(((~Bv1.Add $__x0) $__x0) == ((~Bv1.Sub $__x0) $__x0))
+(((~Bv1.Add __x0) __x0) == ((~Bv1.Sub __x0) __x0))
 
 Wrote problem to vcs/bv_add_ge.smt2.
 Wrote problem to vcs/Q_ensures_0.smt2.

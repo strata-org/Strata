@@ -49,7 +49,7 @@ VCs:
 Label: x_eq_1
 Assumptions:
 Proof Obligation:
-($__x0 == #1)
+(__x0 == #1)
 
 Wrote problem to vcs/x_eq_1.smt2.
 
@@ -57,7 +57,7 @@ Wrote problem to vcs/x_eq_1.smt2.
 Obligation x_eq_1: could not be proved!
 
 Result: failed
-CEx: ($__x0, 0)
+CEx: (__x0, 0)
 
 Evaluated program:
 (procedure S :  () → ())
@@ -66,14 +66,14 @@ preconditions: ⏎
 postconditions: ⏎
 body: init (x : int) := init_x_0
 x := #1
-#[<var x: ($__x0 : int)>] havoc x
-assert [x_eq_1] ($__x0 == #1)
+#[<var x: (__x0 : int)>] havoc x
+assert [x_eq_1] (__x0 == #1)
 
 ---
 info:
 Obligation: x_eq_1
 Result: failed
-CEx: ($__x0, 0)
+CEx: (__x0, 0)
 -/
 #guard_msgs in
 #eval verify "cvc5" havocEnv

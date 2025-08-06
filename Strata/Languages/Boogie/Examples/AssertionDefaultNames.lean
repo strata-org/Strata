@@ -47,9 +47,9 @@ info: [Strata.Boogie] Type checking succeeded.
 VCs:
 Label: assert: (x == (#1 : int))
 Assumptions:
-(Test_requires_0, ($__x0 == #1))
+(Test_requires_0, (__x0 == #1))
 Proof Obligation:
-($__x0 == #1)
+(__x0 == #1)
 
 Wrote problem to vcs/assert:_(x_eq_(#1_:_int)).smt2.
 ---

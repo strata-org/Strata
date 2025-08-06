@@ -95,7 +95,7 @@ State:
 
 Evaluation Config:
 Eval Depth: 200
-Variable Prefix: $__
+Variable Prefix: __
 Variable gen count: 0
 Factory Functions:
 func Int.Add :  ((x : int) (y : int)) → int;

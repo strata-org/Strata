@@ -52,12 +52,12 @@ VCs:
 Label: Test_ensures_0
 Assumptions:
 Proof Obligation:
-(((~Bool.Or $__x0) $__x0) == $__x0)
+(((~Bool.Or __x0) __x0) == __x0)
 
 Label: Test_ensures_1
 Assumptions:
 Proof Obligation:
-($__x0 == ((~Bool.Or $__x0) $__x0))
+(__x0 == ((~Bool.Or __x0) __x0))
 
 Label: Test_ensures_2
 Assumptions:

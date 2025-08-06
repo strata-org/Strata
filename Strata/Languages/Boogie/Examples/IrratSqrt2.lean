@@ -16,8 +16,12 @@ def sqrt2IrrationalEnv : Environment :=
 program Boogie;
 procedure Test(p : int, q : int) returns ()
 {
+
+  assert [int_add_commutes]: (p + q == q + p);
+
   assume [q_gt_0]: (q > 0);
   assert [sqrt_2_is_irrational]: ((p * p) != (2 * q * q));
+
 };
 #end
 
@@ -40,14 +44,16 @@ private theorem sqrt_2_is_irrational_helper :
     exact fun a => h_not_isSq_alt (id (Eq.symm a))
   simp_all
 
-
-theorem sqrt_2_is_irrational : ∀ («$__p0» «$__q1» : ℤ),
-  (decide («$__q1» > 0) ==>
-  !«$__p0» * «$__p0» == 2 * «$__q1» * «$__q1») = true := by
-  exact fun «$__p0» «$__q1» => sqrt_2_is_irrational_helper «$__p0» «$__q1»
+theorem sqrt_2_is_irrational : ∀ (__p0 __q1 : ℤ),
+  (decide (__q1 > 0) ==>
+          !__p0 * __p0 == 2 * __q1 * __q1) = true := by
+  apply sqrt_2_is_irrational_helper
 
 /--
 info: SMT Results:
+
+Obligation: int_add_commutes
+Result: verified
 
 Obligation: sqrt_2_is_irrational
 Result: err ⏎

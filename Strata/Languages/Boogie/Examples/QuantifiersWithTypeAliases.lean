@@ -33,6 +33,8 @@ procedure test(h: Heap, ref: Ref, field: Field) returns ()
 
 #end
 
+/-- info: true -/
+#guard_msgs in
 #eval TransM.run (translateProgram (QuantTypeAliases.commands)) |>.snd |>.isEmpty
 
 /--
@@ -68,9 +70,9 @@ Assumptions:
 (TODO, (∀ (∀ (∀ (((~select (((~update %2) %1) %0)) %1) == %0)))))
 (TODO, (∀ (∀ (∀ (∀ ((~Bool.Implies (~Bool.Not (%2 == %1))) (((~select %3) %2) == ((~select (((~update %3) %1) %0)) %2))))))))
 Proof Obligation:
-(((~select ((~select (((~update $__h0) $__ref1) (((~update ((~select $__h0) $__ref1)) $__field2) ((~Int.Add ((~select ((~select $__h0) $__ref1)) $__field2)) #1)))) $__ref1)) $__field2) == ((~Int.Add ((~select ((~select $__h0) $__ref1)) $__field2)) #1))
+(((~select ((~select (((~update __h0) __ref1) (((~update ((~select __h0) __ref1)) __field2) ((~Int.Add ((~select ((~select __h0) __ref1)) __field2)) #1)))) __ref1)) __field2) == ((~Int.Add ((~select ((~select __h0) __ref1)) __field2)) #1))
 
-Wrote problem to vcs/assert: (((~select ((~select newH) ref)) field) == ((~Int.Add ((~select ((~select h) ref)) field)) (#1 : int))).smt2.
+Wrote problem to vcs/assert:_(((~select_((~select_newH)_ref))_field)_eq_((~Int.Add_((~select_((~select_h)_ref))_field))_(#1_:_int))).smt2.
 ---
 info:
 Obligation: assert: (((~select ((~select newH) ref)) field) == ((~Int.Add ((~select ((~select h) ref)) field)) (#1 : int)))
