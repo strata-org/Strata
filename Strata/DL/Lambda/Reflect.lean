@@ -12,10 +12,10 @@ import Strata.DL.Lambda.IntBoolFactory
 
 import Lean.Meta
 import Lean.Elab.Term
+import Lean.Elab.Command
 
 import Lean.Server.CodeActions
 import Lean.Server.Requests
-import Lean.Elab.Command
 
 /-!
 ## Reflect Lambda expressions into Lean's Logic
@@ -26,6 +26,24 @@ WIP.
 namespace Lambda
 open Lean Elab Tactic Expr Meta
 open Std (ToFormat Format format)
+
+-------------------------------------------------------------------------------
+
+class IdentifierString (Identifier : Type) where
+  idToStr : Identifier → String
+  strToId : String → Identifier
+
+instance : IdentifierString String where
+  idToStr := fun s => s
+  strToId := fun s => s
+
+class ExprIdentifierString (Identifier : Type) where
+  idToStr : Expr → MetaM (Option String)
+  strToid : Expr → MetaM (Option Identifier)
+
+instance : ExprIdentifierString String where
+  idToStr := fun e => return getStringValue? e
+  strToid := fun e => return getStringValue? e
 
 -------------------------------------------------------------------------------
 
@@ -89,16 +107,30 @@ def LExpr.const.toExpr (c : String) (mty : Option LMonoTy) : MetaM Lean.Expr := 
       return (mkStrLit c)
     | _ => throwError f!"Unexpected constant: {c}"
 
-def LExpr.op.toExpr (F : @Factory String) (op : String) (_mty : Option LMonoTy) :
+def LExpr.op.toExpr {Identifier} [IS : IdentifierString Identifier]
+    (F : @Factory String) (op : Identifier) (_mty : Option LMonoTy) :
     MetaM Lean.Expr := do
+    let op := IS.idToStr op
     match F.find? (fun f => f.name == op) with
     | none => throwError f!"[LExpr.op.toExpr] Operator {op} not found in the factory!"
     | some _lfunc =>
       match op with
-      | "Int.Add" => return (mkConst ``Int.add)
+      -- | "Int.Add" => return (mkConst ``Int.add)
+      | "Int.Add" =>
+        mkAppOptM ``HAdd.hAdd #[mkConst ``Int, mkConst ``Int, mkConst ``Int, none]
+      -- | "Int.Mul" => return (mkConst ``Int.mul)
+      | "Int.Mul" =>
+        mkAppOptM ``HMul.hMul #[mkConst ``Int, mkConst ``Int, mkConst ``Int, none]
+      -- | "Int.Gt" => return (mkConst ``Int.gt)
+      | "Int.Gt" =>
+        mkAppOptM ``GT.gt #[mkConst ``Int, none]
+      | "Bool.Or" => return (mkConst ``Bool.or)
+      | "Bool.Not" => return (mkConst ``Bool.not)
+      | "Bool.Implies" => return (mkConst ``Bool.implies)
       | _ => throwError f!"[LExpr.op.toExpr] Unimplemented: {op}"
 
-def LExpr.toExprNoFVars (e : LExpr String) : MetaM Lean.Expr := do
+def LExpr.toExprNoFVars {Identifier} [IS : IdentifierString Identifier]
+    (e : LExpr Identifier) : MetaM Lean.Expr := do
   match e with
   | .const c mty =>
     let expr ← LExpr.const.toExpr c mty
@@ -110,14 +142,15 @@ def LExpr.toExprNoFVars (e : LExpr String) : MetaM Lean.Expr := do
   | .bvar i =>
     let lctx ← getLCtx
     let some decl := lctx.getAt? (lctx.decls.size - i - 1) |
-        throwError f!"[LExpr {e}]: No local declaration found in the context!"
+        throwError f!"[LExpr .bvar {i}]: No local declaration found in the context!"
     let expr := .fvar decl.fvarId
     return expr
 
   | .fvar f _ =>
+    let f := IS.idToStr f
     let lctx ← getLCtx
     match lctx.findFromUserName? (Lean.Name.mkSimple f) with
-    | none => throwError f!"[LExpr.toExprNoFVars] Cannot find free var in the local context: {e}"
+    | none => throwError f!"[LExpr.toExprNoFVars] Cannot find free var in the local context: .fvar {f}"
     | some decl => return decl.toExpr
 
   | .mdata _ e' => LExpr.toExprNoFVars e'
@@ -157,7 +190,14 @@ def LExpr.toExprNoFVars (e : LExpr String) : MetaM Lean.Expr := do
   | .app fn arg =>
     let fnExpr ← LExpr.toExprNoFVars fn
     let argExpr ← LExpr.toExprNoFVars arg
-    mkAppM' fnExpr #[argExpr]
+    let ret ← mkAppM' fnExpr #[argExpr]
+    let ret_type ← inferType ret
+    -- `fn` may be something like `GT.gt`, which returns a `Prop` instead of a
+    -- `Bool`. We convert such decidable `Prop`s to `Bool`s below.
+    if ret_type.isProp then
+      mkAppOptM ``decide #[ret, none]
+    else
+      return ret
 
   | .ite c t e =>
     -- Lean's ite:
@@ -176,15 +216,16 @@ def LExpr.toExprNoFVars (e : LExpr String) : MetaM Lean.Expr := do
     let expr ← mkAppM ``BEq.beq #[e1Expr, e2Expr]
     return expr
 
-def LExpr.toExpr (e : LExpr String) : MetaM Lean.Expr := do
-  let idTs := e.freeVars
+def LExpr.toExpr {Identifier} [IS: IdentifierString Identifier] [DecidableEq Identifier]
+     (e : LExpr Identifier) : MetaM Lean.Expr := do
+  let idTs := e.freeVars.dedup
   let decls : List (Name × (Array Lean.Expr → MetaM Lean.Expr)) ←
     idTs.mapM fun idT => do
       match idT.snd with
-      | none => throwError f!"Untyped fvar encountered: {idT.fst}"
+      | none => throwError f!"Untyped fvar encountered: {IS.idToStr idT.fst}"
       | some ty =>
         -- let name ← Lean.Core.mkFreshUserName (Lean.Name.mkSimple idT.fst)
-        let name := Lean.Name.mkSimple idT.fst
+        let name := Lean.Name.mkSimple (IS.idToStr idT.fst)
         return (name, fun _ => LMonoTy.toExpr ty)
   withLocalDeclsD decls.toArray fun fvars => do
     let e ← LExpr.toExprNoFVars e
@@ -266,59 +307,67 @@ def shallowOptionExprToLMonoTy (some_mty : Expr) : MetaM LMonoTy := do
   | Option.some _ mty => shallowExprToLMonoTy mty
   | _ => throwError f!"Unexpected optional monotype: {some_mty}"
 
-partial def shallowExprToLExpr (e : Expr) : MetaM (LExpr String) := do
+partial def shallowExprToLExpr {Identifier}
+    [IE : ExprIdentifierString Identifier] [IS : IdentifierString Identifier]
+    (e : Expr) : MetaM (LExpr Identifier) := do
   match_expr e with
-  | Lambda.LExpr.const identifier c some_mty =>
-    let_expr String ← identifier | failure
-    let some c := Lean.Meta.getStringValue? c | failure
+  | Lambda.LExpr.const _identifier c some_mty =>
+    -- let_expr String ← identifier | failure
+    let some c := Lean.Meta.getStringValue? c |
+      throwError f!"[shallowExprToLExpr] Couldn't get the constant {c}!"
     let mty ← shallowOptionExprToLMonoTy some_mty
     return (.const c mty)
 
-  | Lambda.LExpr.op identifier name some_mty =>
-    let_expr String ← identifier | failure
-    let some name := Lean.Meta.getStringValue? name | failure
+  | Lambda.LExpr.op _identifier name _some_mty =>
+    -- let_expr String ← identifier | failure
+    -- let some name := Lean.Meta.getStringValue? name | failure
+    let some name ← IE.idToStr name |
+      throwError f!"[shallowExprToLExpr] Couldn't get the op {name}!"
     -- (FIXME)
     -- let mty ← shallowOptionExprToLMonoTy some_mty
-    return (.op name .none)
+    return (.op (IS.strToId name) .none)
 
-  | Lambda.LExpr.bvar identifier n =>
-    let_expr String ← identifier | failure
-    let some n ← Lean.Meta.getNatValue? n | failure
+  | Lambda.LExpr.bvar _identifier n =>
+    -- let_expr String ← identifier | failure
+    let some n ← Lean.Meta.getNatValue? n |
+      throwError f!"[shallowExprToLExpr] Couldn't get the .bvar {n}!"
     return (.bvar n)
 
-  | Lambda.LExpr.fvar identifier name some_mty =>
-    let_expr String ← identifier | failure
-    let some name := Lean.Meta.getStringValue? name | failure
+  | Lambda.LExpr.fvar _identifier name some_mty =>
+    -- let_expr String ← identifier | failure
+    -- let some name := Lean.Meta.getStringValue? name | failure
+    let some name ← IE.idToStr name |
+      throwError f!"[shallowExprToLExpr] Couldn't get the .fvar {name}!"
     let mty ← shallowOptionExprToLMonoTy some_mty
-    return (.fvar name mty)
+    return (.fvar (IS.strToId name) mty)
 
-  | Lambda.LExpr.abs identifier some_mty e =>
-    let_expr String ← identifier | failure
+  | Lambda.LExpr.abs _identifier some_mty e =>
+    -- let_expr String ← identifier | failure
     let mty ← shallowOptionExprToLMonoTy some_mty
     let e ← shallowExprToLExpr e
     return (.abs mty e)
 
-  | Lambda.LExpr.app identifier fn e =>
-    let_expr String ← identifier | failure
+  | Lambda.LExpr.app _identifier fn e =>
+    -- let_expr String ← identifier | failure
     let fn ← shallowExprToLExpr fn
     let e ← shallowExprToLExpr e
     return (.app fn e)
 
-  | Lambda.LExpr.ite identifier c t e =>
-    let_expr String ← identifier | failure
+  | Lambda.LExpr.ite _identifier c t e =>
+    -- let_expr String ← identifier | failure
     let c ← shallowExprToLExpr c
     let t ← shallowExprToLExpr t
     let e ← shallowExprToLExpr e
     return (.ite c t e)
 
-  | Lambda.LExpr.eq identifier e1 e2 =>
-    let_expr String ← identifier | failure
+  | Lambda.LExpr.eq _identifier e1 e2 =>
+    -- let_expr String ← identifier | failure
     let e1 ← shallowExprToLExpr e1
     let e2 ← shallowExprToLExpr e2
     return (.eq e1 e2)
 
-  | Lambda.LExpr.quant identifier kind some_mty e =>
-    let_expr String ← identifier | failure
+  | Lambda.LExpr.quant _identifier kind some_mty e =>
+    -- let_expr String ← identifier | failure
     let mty ← shallowOptionExprToLMonoTy some_mty
     let kind := match_expr kind with
                 | QuantifierKind.all => .all | _ => .exist
@@ -361,13 +410,15 @@ structure GenLeanVCThmsOutput where
   res : String
 deriving TypeName
 
-def genVCTheorem (ns name : TSyntax `ident) (lexpr : TSyntax `term) : TermElabM String := do
+def genVCTheorem {Identifier} [IE : ExprIdentifierString Identifier]
+    [IS : IdentifierString Identifier] [DecidableEq Identifier]
+    (ns name : TSyntax `ident) (lexpr : TSyntax `term) : TermElabM String := do
   let full_name := Lean.Name.append ns.getId name.getId
   let curr_ns ← getCurrNamespace
   let label := if curr_ns == ns.getId then name.getId else full_name
-  let (term : Lean.Expr) ← Elab.Term.elabTerm lexpr (mkApp (mkConst ``LExpr) (mkConst ``String))
+  let (term : Lean.Expr) ← Elab.Term.elabTerm lexpr (mkApp (mkConst ``LExpr) (mkConst `Identifier))
   let (term : Lean.Expr) ← whnfD term
-  let lexpr ← shallowExprToLExpr term
+  let (lexpr : LExpr Identifier) ← shallowExprToLExpr term
   let type ← LExpr.toExpr lexpr
   let env ← getEnv
   match env.find? full_name with
@@ -391,10 +442,11 @@ def genVCTheorem (ns name : TSyntax `ident) (lexpr : TSyntax `term) : TermElabM 
     let theoremText := s!"theorem {label} : {← ppExpr type} := {← ppExpr value}"
     return theoremText
 
+-- Everything below assumes, for now, that `Identifier` is simply `String`.
 
 @[command_elab genLeanVCThms] def elabGenLeanVCThms : CommandElab
   | `(command| #gen_lean_vc_thms $ns $name $lexpr) => do
-      let msg ← liftTermElabM (genVCTheorem ns name lexpr)
+      let msg ← liftTermElabM (@genVCTheorem String _ _ _ ns name lexpr)
       pushInfoLeaf (.ofCustomInfo { stx := ← getRef, value := Dynamic.mk (GenLeanVCThmsOutput.mk msg) })
       logInfo msg
   | _ => throwUnsupportedSyntax
@@ -446,7 +498,6 @@ def genLeanVCThmsCodeAction : CommandCodeAction := fun _ _ _ node => do
         }
       }
   }]
-
 
 theorem test_thm : ¬∀ (x : Int), ¬(x == 5) = true := by
   simp_all

@@ -44,6 +44,10 @@ def binOpDenote {Identifier : Type} (InTy OutTy : Type) [ToString OutTy]
      | _, _ => e
    | _ => e)
 
+def Bool.implies (a b : Bool) : Bool :=
+  a → b
+infixl:65 " ==> "   => Bool.implies
+
 def IntBoolFactory : @Factory String :=
   open LTy.Syntax in
   #[{ name := "Int.Add",
@@ -105,7 +109,7 @@ def IntBoolFactory : @Factory String :=
     { name := "Bool.Implies",
       inputs := [("x", mty[bool]), ("y", mty[bool])],
       output := mty[bool],
-      denote := some (binOpDenote Bool Bool LExpr.denoteBool (fun x y => ((not x) || y)) mty[bool]) },
+      denote := some (binOpDenote Bool Bool LExpr.denoteBool Bool.implies mty[bool]) },
     { name := "Bool.Equiv",
       inputs := [("x", mty[bool]), ("y", mty[bool])],
       output := mty[bool],
