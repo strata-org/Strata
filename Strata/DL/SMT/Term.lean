@@ -70,7 +70,7 @@ inductive Term : Type where
   | none    : TermType → Term
   | some    : Term → Term
   | app     : Op → (args: List Term) → (retTy: TermType) → Term
-  | quant   : QuantifierKind → String → TermType → Term → Term → Term
+  | quant   : QuantifierKind → (args: List (String × TermType)) → (tr: Term) → (body: Term) → Term
 deriving instance Repr, Inhabited for Term
 
 def Term.isVar (t : Term) : Bool :=
@@ -100,10 +100,10 @@ def Term.hasDecEq (t t' : Term) : Decidable (t = t') := by
     | isTrue h₁, isTrue h₂, isTrue h₃ => isTrue (by rw [h₁, h₂, h₃])
     | isFalse h₁, _, _ | _, isFalse h₁, _ | _, _, isFalse h₁ =>
       isFalse (by intro h₂; simp [h₁] at h₂)
-  case quant.quant qk x ty tr t qk' x' ty' tr' t' =>
-    exact match decEq qk qk', decEq x x', decEq ty ty', Term.hasDecEq tr tr', Term.hasDecEq t t' with
-    | isTrue h₁, isTrue h₂, isTrue h₃, isTrue h₄, isTrue h₅ => isTrue (by rw [h₁, h₂, h₃, h₄, h₅])
-    | isFalse h₁, _, _, _, _| _, isFalse h₁, _, _, _ | _, _, isFalse h₁, _, _ | _, _, _, isFalse h₁, _ | _, _, _, _, isFalse h₁ =>
+  case quant.quant qk args tr t qk' args' tr' t' =>
+    exact match decEq qk qk', decEq args args', Term.hasDecEq tr tr', Term.hasDecEq t t' with
+    | isTrue h₁, isTrue h₂, isTrue h₃, isTrue h₄ => isTrue (by rw [h₁, h₂, h₃, h₄])
+    | isFalse h₁, _, _, _ | _, isFalse h₁, _, _ | _, _, isFalse h₁, _ | _, _, _, isFalse h₁ =>
       isFalse (by intro h₂; simp [h₁] at h₂)
 
 def Term.hasListDec (ts₁ ts₂ : List Term) : Decidable (ts₁ = ts₂) :=
@@ -130,8 +130,8 @@ def Term.mkName : Term → String
   | .none _     => "none"
   | .some _     => "some"
   | .app _ _ _  => "app"
-  | .quant .all _ _ _ _ => "all"
-  | .quant .exist _ _ _ _ => "exists"
+  | .quant .all _ _ _ => "all"
+  | .quant .exist _ _ _ => "exists"
 
 mutual
 def Term.lt : Term → Term → Bool
@@ -179,7 +179,7 @@ def Term.typeOf : Term → TermType
   | .none ty      => .option ty
   | .some t       => .option t.typeOf
   | .app _ _ ty   => ty
-  | .quant _ _ _ _ _ => .bool
+  | .quant _ _ _ _ => .bool
 
 
 def Term.isLiteral : Term → Bool
