@@ -1,8 +1,6 @@
 // RUN: %parallel-boogie "%s" > "%t"
 // RUN: %diff "%s.expect" "%t"
 
-// TODO: disabled for now
-/*
 procedure sum(n: int) returns (s: int)
 requires n >= 0;
 ensures s == (n * (n + 1)) div 2;
@@ -19,4 +17,3 @@ ensures s == (n * (n + 1)) div 2;
     s := s + i;
   }
 }
-*/
