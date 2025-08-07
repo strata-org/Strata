@@ -53,10 +53,10 @@ def strataProgramImpl : TermElab := fun stx tp => do
   let emptyEnv ← mkEmptyEnvironment 0
   let inputCtx ← (getInputContext : CoreM _)
   let loader := (dialectExt.getState (←Lean.getEnv)).loaded
-  let (env, errors) := Elab.elabProgram emptyEnv loader inputCtx p e
-  if errors.isEmpty then
+  match Elab.elabProgram loader emptyEnv inputCtx p e with
+  | .ok env =>
     return toExpr env
-  else
+  | .error errors =>
     for (stx, e) in errors do
       logMessage e
     return mkApp2 (mkConst ``sorryAx [1]) (toTypeExpr Strata.Environment) (toExpr true)
@@ -71,8 +71,9 @@ def strataDialectImpl: Lean.Elab.Command.CommandElab := fun (stx : Syntax) => do
         | throwError s!"Expected input context"
   let emptyLeanEnv ← mkEmptyEnvironment 0
   let inputCtx ← getInputContext
-  let loader := (dialectExt.getState (←Lean.getEnv)).loaded
-  let (d, s) ← Elab.elabDialect emptyLeanEnv loader inputCtx p e
+  let dialects:= (dialectExt.getState (←Lean.getEnv)).loaded
+  let loadFn (dialect : String) := pure (Except.error s!"Unknown dialect {dialect}.")
+  let (d, (s, loaded)) ← Elab.elabDialect emptyLeanEnv loadFn dialects inputCtx p e
   if !s.errors.isEmpty then
     for (stx, e) in s.errors do
       logMessage e

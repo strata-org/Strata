@@ -50,8 +50,8 @@ def main (args : List String) : IO UInt32 := do
     let dctx := Elab.LoadedDialects.builtin
     let dctx := dctx.addDialect! Boogie
     let dctx := dctx.addDialect! C_Simp
-    let (env, errors) := Strata.Elab.elabProgram emptyEnv dctx inputCtx
-    if errors.isEmpty then
+    match Strata.Elab.elabProgram dctx emptyEnv inputCtx with
+    | .ok env =>
       println! s!"Successfully parsed {file}"
       let vcResults ← if file.endsWith ".csimp.st" then
         C_Simp.verify "z3" env opts
@@ -71,7 +71,7 @@ def main (args : List String) : IO UInt32 := do
         let failedGoalCount := (vcResults.filter isFailureVCResult).size
         println! f!"Finished with {provedGoalCount} goals proved, {failedGoalCount} failed."
         return 1
-    else
+    | .error errors =>
       for (_, e) in errors do
         let msg ← e.toString
         println! s!"Error: {msg}"

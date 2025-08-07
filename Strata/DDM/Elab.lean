@@ -38,11 +38,10 @@ namespace DeclState
 
 def initDeclState : DeclState :=
   let s : DeclState := {
-    loader := .builtin
     openDialects := #[]
     openDialectSet := {}
   }
-  s.openLoadedDialect! initDialect
+  s.openLoadedDialect! .builtin initDialect
 
 end DeclState
 
@@ -54,11 +53,14 @@ deriving Inhabited
 /- Elaborate a Strata program -/
 partial def elabHeader
     (leanEnv : Lean.Environment)
-    (ctx : DeclContext)
-    (startPos : String.Pos := 0) : Header × Array (Syntax × Message) × String.Pos :=
+    (inputContext : InputContext)
+    (startPos : String.Pos := 0)
+    (stopPos : String.Pos := inputContext.input.endPos)
+     : Header × Array (Syntax × Message) × String.Pos :=
   let s : DeclState := .initDeclState
-  let s := s.openLoadedDialect! headerDialect
+  let s := s.openLoadedDialect! .builtin headerDialect
   let s := { s with pos := startPos }
+  let ctx := { inputContext := inputContext, stopPos := stopPos, loader := .builtin }
   let (mtree, s) := elabCommand leanEnv ctx s
   if s.errors.isEmpty then
     match mtree with
@@ -83,99 +85,103 @@ partial def runCommand (leanEnv : Lean.Environment) (commands : Array Operation)
   let (some tree, true) ← runChecked <| elabCommand leanEnv
     | return commands
   let cmd := tree.info.asOp!.op
+  let dialects := (← read).loader.dialects
   modify fun s => { s with
-    globalContext := s.globalContext.addCommand s.loader.dialects cmd
+    globalContext := s.globalContext.addCommand dialects cmd
   }
   runCommand leanEnv (commands.push cmd) stopPos
 
-structure Program where
-
-def mkEnv (s : DeclState) (commands : Array Operation) : Environment := {
-      dialects := s.loader.dialects -- FIXME.  Compute only reachable dialects.
-      openDialects := s.openDialects
-      commands := commands
-      globalContext := s.globalContext
-    }
-
 /- Elaborate a Strata program -/
 partial def elabProgram
-    (leanEnv : Lean.Environment)
     (loader : LoadedDialects)
+    (leanEnv : Lean.Environment)
     (inputContext : InputContext)
     (startPos : String.Pos := 0)
-    (stopPos : String.Pos := inputContext.input.endPos) : Environment × Array (Syntax × Message) :=
-  let ctx : DeclContext := { inputContext, stopPos }
-  let (header, errors, startPos) := elabHeader leanEnv ctx startPos
+    (stopPos : String.Pos := inputContext.input.endPos) : Except (Array (Syntax × Message)) Environment :=
+  assert! "Init" ∈ loader.dialects
+  let (header, errors, startPos) := elabHeader leanEnv inputContext startPos stopPos
   if errors.size > 0 then
-    (default, errors)
+    .error errors
   else
     match header with
     | .dialect stx _ =>
       let pos := stx.getPos? |>.getD 0
-      (default, #[(stx, Lean.mkStringMessage inputContext pos "Expected program name")])
+      .error #[(stx, Lean.mkStringMessage inputContext pos "Expected program name")]
     | .program stx dialect =>
       let s := DeclState.initDeclState
-      let s := { s with loader := loader, pos := startPos }
+      let s := { s with pos := startPos }
       let act : DeclM (Array Operation) := do
             let some d := loader.dialects[dialect]?
               | logError stx s!"Unknown dialect {dialect}."
                 return #[]
-            modify fun s => s.openLoadedDialect! d
+            modify (·.openLoadedDialect! loader d)
             runCommand leanEnv #[] stopPos
+      let ctx : DeclContext := { inputContext, stopPos, loader := loader }
       let (cmds, s) := act ctx s
-      (s.mkEnv cmds, s.errors)
+      if s.errors.isEmpty then
+        let openDialects := loader.dialects.importedDialects! dialect
+        .ok <| .create openDialects openDialects.map.keysArray cmds
+      else
+        .error s.errors
 
 /- Elaborate a Strata dialect definition. -/
 partial def elabDialect
     (leanEnv : Lean.Environment)
+    (loadCallback : DialectName → StateT LoadedDialects BaseIO (Except String Dialect))
     (dialects : LoadedDialects)
     (inputContext : Parser.InputContext)
-    (startPos stopPos : String.Pos)
-     : IO (Dialect × DeclState) := do
-  let ctx : DeclContext := { inputContext, stopPos }
-  let (header, errors, startPos) := elabHeader leanEnv ctx startPos
+    (startPos : String.Pos := 0)
+    (stopPos : String.Pos := inputContext.input.endPos)
+     : BaseIO (Dialect × DeclState × LoadedDialects) := do
+  let (header, errors, startPos) := elabHeader leanEnv inputContext startPos stopPos
   if errors.size > 0 then
-    return (default, { loader := dialects, errors := errors })
+    return (default, { errors := errors }, dialects)
 
   match header with
   | .program stx _ =>
     let pos := stx.getPos? |>.getD 0
     return (default, {
-      loader := dialects,
       errors := #[(stx, Lean.mkStringMessage inputContext pos "Expected dialect name")]
-    })
+    },
+    dialects)
   | .dialect stx dialect =>
-    let rec run : DialectM IO.RealWorld Unit := do
+    assert! "StrataDDL" ∈ dialects.dialects.map
+    let rec run : DialectM Unit := do
+          assert! "StrataDDL" ∈ (← get).loaded.dialects.map.keys
           let iniPos := (←getDeclState).pos
           if iniPos >= stopPos then
             return
           let c ← runDialectCommand leanEnv
           if c then
+            assert! "StrataDDL" ∈ (← get).loaded.dialects.map.keys
             run
     let s := DeclState.initDeclState
-    let s := s.openParserDialect! StrataDDL
+    let s := s.openParserDialect! dialects StrataDDL
     let s := { s with
-      loader := dialects,
       pos := startPos
       openDialectSet := s.openDialectSet.insert dialect
     }
-    let act : DialectM IO.RealWorld Unit := do
-          if dialect ∈ (← getDeclState).loader.dialects then
+    let act : DialectM Unit := do
+          assert! "StrataDDL" ∈ (← get).loaded.dialects.map.keys
+          if dialect ∈ (← get).loaded.dialects then
             logError stx[1] s!"Dialect {dialect} already declared."
-            return
-          run
-    let dctx : DialectContext IO.RealWorld := {
-      loadDialect := fun dialect => throw s!"Unknown dialect {dialect}.",
-      declContext := ctx
+          else
+            assert! "StrataDDL" ∈ (← get).loaded.dialects.map.keys
+            run
+    let dctx : DialectContext := {
+      loadDialect := loadCallback
+      inputContext := inputContext,
+      stopPos := stopPos
     }
     let ds : DialectState := {
       declState := s
       dialect := {
           name := dialect,
           imports := #[initDialect.name]
-      }
+      },
+      loaded := dialects
     }
-    let ((), ds) ← act dctx ds
-    pure (ds.dialect, ds.declState)
+    let ((), ds) ← act dctx |>.run ds
+    pure (ds.dialect, ds.declState, ds.loaded)
 
 end Strata.Elab

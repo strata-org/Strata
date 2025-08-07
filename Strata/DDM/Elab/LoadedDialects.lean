@@ -10,6 +10,10 @@ open Strata.Parser (DeclParser ParsingContext)
 
 namespace Strata.Elab
 
+/--
+Map from dialect names to all the declaration parsers brought into
+scope for that dialect.
+-/
 abbrev DialectParsers := Std.HashMap DialectName (Array DeclParser)
 
 namespace DialectParsers
@@ -27,11 +31,11 @@ Information about dialects.
 -/
 structure LoadedDialects where
   /--- Map from dialect names to the dialect definition. -/
-  dialects : DialectMap := {}
+  dialects : DialectMap
   /-- Parsers for dialects in map. -/
-  dialectParsers : DialectParsers := {}
+  dialectParsers : DialectParsers
   /--/ Map for elaborating operations and functions. -/
-  syntaxElabMap : SyntaxElabMap := {}
+  syntaxElabMap : SyntaxElabMap
   deriving Inhabited
 
 def initParsers : Parser.ParsingContext where
@@ -44,15 +48,24 @@ def initParsers : Parser.ParsingContext where
 
 namespace LoadedDialects
 
+def empty : LoadedDialects where
+  dialects := {}
+  dialectParsers := {}
+  syntaxElabMap := {}
+
 def addDialect! (loader : LoadedDialects) (d : Dialect) : LoadedDialects :=
   assert! d.name ∉ loader.dialects
-  {
-    dialects := loader.dialects.insert! d
-    dialectParsers := loader.dialectParsers.addDialect! initParsers d
-    syntaxElabMap := loader.syntaxElabMap.addDialect d
-  }
+  match initParsers.mkDialectParsers d with
+  | .error msg =>
+    @panic _ ⟨loader⟩ s!"Could not add open dialect: {eformat msg |>.pretty}"
+  | .ok parsers =>
+    {
+      dialects := loader.dialects.insert! d
+      dialectParsers := loader.dialectParsers.insert d.name parsers
+      syntaxElabMap := loader.syntaxElabMap.addDialect d
+    }
 
 def ofDialects! (ds : Array Dialect) : LoadedDialects :=
-  ds.foldl (init := {}) (·.addDialect! ·)
+  ds.foldl (init := .empty) (·.addDialect! ·)
 
 end LoadedDialects

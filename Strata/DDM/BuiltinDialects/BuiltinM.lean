@@ -17,12 +17,11 @@ namespace DeclState
 
 def ofDialects (ds : LoadedDialects) : DeclState :=
   let s : DeclState := {
-    loader := ds
     openDialects := #[]
     openDialectSet := {}
     tokenTable := initTokenTable
   }
-  ds.dialects.toList.foldl (init := s) (·.openLoadedDialect! ·)
+  ds.dialects.toList.foldl (init := s) (·.openLoadedDialect! ds ·)
 
 end DeclState
 
@@ -31,7 +30,7 @@ abbrev BuiltinM := StateT Dialect DeclM
 namespace BuiltinM
 
 def create! (name : DialectName) (dialects : Array Dialect) (act : BuiltinM Unit) : Dialect :=
-  let d : Dialect :=  { name }
+  let d : Dialect :=  { name := name, imports := dialects.map (·.name) }
   let s : DeclState := .ofDialects (.ofDialects! dialects)
   let (((), d), s) := act d .empty s
   if s.errors.size > 0 then
