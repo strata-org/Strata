@@ -10,9 +10,7 @@ namespace Strata
 
 open Elab
 
-def StrataDD : String := "StrataDD"
-
-def strataDialect : Dialect := BuiltinM.create! StrataDD #[initDialect] do
+def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
   let Ident : DeclBindingKind := .cat <| .atom q`Init.Ident
   let BindingType := q`Init.BindingType
   let Command := q`Init.Command
@@ -35,7 +33,7 @@ def strataDialect : Dialect := BuiltinM.create! StrataDD #[initDialect] do
     syntaxDef := .ofList [.str "fnOf(", .ident 0 0, .str ", ", .ident 1 0, .str ")"]
   }
 
-  let Binding := q`StrataDD.Binding
+  let Binding := q`StrataDDL.Binding
   declareCat Binding
   declareOp {
       name := "mkBinding",
@@ -48,7 +46,7 @@ def strataDialect : Dialect := BuiltinM.create! StrataDD #[initDialect] do
       syntaxDef := .ofList [.ident 2 0, .ident 0 0, .str ":", .ident 1 0],
     }
 
-  let Bindings := q`StrataDD.Bindings
+  let Bindings := q`StrataDDL.Bindings
   declareCat Bindings
   declareOp {
       name := "mkBindings",

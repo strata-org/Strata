@@ -388,7 +388,7 @@ def optBindings! (optBindingsTree : Tree) : Array Tree :=
   | some none =>
     #[]
   | some (some t) =>
-    assert! t.isSpecificOp q`StrataDD.mkBindings
+    assert! t.isSpecificOp q`StrataDDL.mkBindings
     assert! t.children.size = 1
     match t[0]!.asCommaSepInfo? with
     | none => panic! "Expected comma sep info"
@@ -400,7 +400,7 @@ def asBindingType! (tree : Tree) : Tree :=
   tree[0]!
 
 def binding! (tree : Tree) : IdentInfo × Tree × Option Tree := Id.run do
-  assert! tree.isSpecificOp q`StrataDD.mkBinding
+  assert! tree.isSpecificOp q`StrataDDL.mkBinding
   assert! tree.children.size = 3
   let .ofIdentInfo nameInfo := tree[0]!.info
     | panic! s!"Expected identifier {repr tree.info.stx.getKind}"

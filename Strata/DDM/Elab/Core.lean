@@ -814,7 +814,7 @@ def translateTypeExpr (params : ArgIndexMap) (varCount : Nat) (isType : Nat → 
     let rType ← translateTypeExpr params varCount isType rTree
     return .arrow aType rType
 
-  | q`StrataDD.TypeFn, #[bindingsTree, valTree] =>
+  | q`StrataDDL.TypeFn, #[bindingsTree, valTree] =>
     have p : sizeOf valTree < sizeOf argChildren := by decreasing_tactic
     let rType ← translateTypeExpr params varCount isType valTree
     translateFunMacro params varCount isType bindingsTree rType
@@ -847,7 +847,7 @@ partial def translateSyntaxCat (tree : Tree) : ElabM SyntaxCat := do
     | _ =>
       logError ident.info.stx s!"Expected category"; pure default
 
-  | q`StrataDD.TypeFn, _ => do
+  | q`StrataDDL.TypeFn, _ => do
     logError argInfo.stx s!"Expected category"
     return default
 
@@ -895,7 +895,7 @@ partial def translateBindingKind (params : DeclBindingsMap) (tree : Tree) : Elab
     let rType ← translateTypeExpr params.argIndexMap varCount isType rTree
     return .expr (.arrow aType rType)
 
-  | q`StrataDD.TypeFn, #[bindingsTree, valTree] => do
+  | q`StrataDDL.TypeFn, #[bindingsTree, valTree] => do
     let varCount := params.size
     let isType lvl := params.decls[lvl]!.val.kind.isType
     let rType ← translateTypeExpr params.argIndexMap varCount isType valTree
@@ -1459,7 +1459,7 @@ def translateSyntaxDef (params : DeclBindingsMap) (mdTree tree : Tree) : ElabM S
   let varLevelMap ← mkVarLevelMap params.decls
 
   let prec : Nat :=
-      match syntaxMetadata[q`StrataDD.prec]? with
+      match syntaxMetadata[q`StrataDDL.prec]? with
       | some #[.num l] => l
       | some _ => panic! "Unexpected precedence" -- FIXME
       | none => maxPrec
@@ -1469,8 +1469,8 @@ def translateSyntaxDef (params : DeclBindingsMap) (mdTree tree : Tree) : ElabM S
   let .node (.ofSeqInfo _) args := tree[0]!
     | panic! s!"Expected many args"
 
-  let isLeftAssoc := q`StrataDD.leftassoc ∈ syntaxMetadata
-  let isRightAssoc := q`StrataDD.rightassoc ∈ syntaxMetadata
+  let isLeftAssoc := q`StrataDDL.leftassoc ∈ syntaxMetadata
+  let isRightAssoc := q`StrataDDL.rightassoc ∈ syntaxMetadata
 
   let mut atoms : Array SyntaxDefAtom := #[]
   let mut usedArgs : Std.HashMap Nat ArgSetStatus := {}
