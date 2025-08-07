@@ -111,7 +111,7 @@ end Bindings
 
 structure TypingContext where
   private mk ::
-  globalContext : GlobalContext
+  globalContext : GlobalContext := {}
   -- This stores all the bindings added to the typing context.
   bindings : Bindings := {}
   -- This maintains a map from variable names to the indices of variables
@@ -261,20 +261,21 @@ deriving Inhabited, Repr
 
 namespace Info
 
-instance : Coe TypeInfo Info where
-  coe := .ofTypeInfo
-
 def asOp! : Info → OperationInfo
 | .ofOperationInfo info => info
 | _ => panic! "Expected operation"
 
-def asIdent! : Info → IdentInfo
-| .ofIdentInfo info => info
-| _ => panic! "Expected identifier"
-
 def asExpr! : Info → ExprInfo
 | .ofExprInfo info => info
 | info => panic! s!"Expected expression but given {repr info}"
+
+def asType! : Info → TypeInfo
+| .ofTypeInfo info => info
+| info => panic! s!"Expected type but given {repr info}"
+
+def asIdent! : Info → IdentInfo
+| .ofIdentInfo info => info
+| _ => panic! "Expected identifier"
 
 def elabInfo (info : Info) : ElabInfo :=
   match info with
@@ -388,7 +389,7 @@ def optBindings! (optBindingsTree : Tree) : Array Tree :=
   | some none =>
     #[]
   | some (some t) =>
-    assert! t.isSpecificOp q`StrataDD.mkBindings
+    assert! t.isSpecificOp q`StrataDDL.mkBindings
     assert! t.children.size = 1
     match t[0]!.asCommaSepInfo? with
     | none => panic! "Expected comma sep info"
@@ -400,7 +401,7 @@ def asBindingType! (tree : Tree) : Tree :=
   tree[0]!
 
 def binding! (tree : Tree) : IdentInfo × Tree × Option Tree := Id.run do
-  assert! tree.isSpecificOp q`StrataDD.mkBinding
+  assert! tree.isSpecificOp q`StrataDDL.mkBinding
   assert! tree.children.size = 3
   let .ofIdentInfo nameInfo := tree[0]!.info
     | panic! s!"Expected identifier {repr tree.info.stx.getKind}"

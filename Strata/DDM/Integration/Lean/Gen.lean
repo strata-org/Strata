@@ -5,7 +5,7 @@
 -/
 
 import Lean.Elab.Command
-import Strata.DDM.BuiltinDialects.StrataDD
+import Strata.DDM.BuiltinDialects.StrataDDL
 import Strata.DDM.Integration.Lean.Env
 import Strata.DDM.Integration.Lean.GenTrace
 import Strata.DDM.Integration.Lean.OfAstM
@@ -91,18 +91,18 @@ Forbidden categories are categories that
 def forbiddenCategories : Std.HashSet CategoryName := {
   q`Init.TypeExpr,
   q`Init.BindingType,
-  q`StrataDD.Binding
+  q`StrataDDL.Binding
 }
 
 private def forbiddenWellDefined : Bool :=
   forbiddenCategories.all fun nm =>
     match nm.dialect with
     | "Init" => nm.name ∈ initDialect
-    | "StrataDD" => nm.name ∈ strataDialect
+    | "StrataDDL" => nm.name ∈ StrataDDL
     | _ => false
 
 #guard "BindingType" ∈ initDialect.cache
-#guard "Binding" ∈ strataDialect.cache
+#guard "Binding" ∈ StrataDDL.cache
 #guard forbiddenWellDefined
 
 /--

@@ -5,7 +5,7 @@
 -/
 
 import Strata.DDM.Elab.DialectM
-import Strata.DDM.BuiltinDialects.StrataDD
+import Strata.DDM.BuiltinDialects.StrataDDL
 import Strata.DDM.BuiltinDialects.StrataHeader
 
 open Lean (
@@ -30,7 +30,7 @@ namespace Elab
 
 namespace LoadedDialects
 
-def builtin : LoadedDialects := .ofDialects! #[initDialect, headerDialect, strataDialect]
+def builtin : LoadedDialects := .ofDialects! #[initDialect, headerDialect, StrataDDL]
 
 end LoadedDialects
 
@@ -153,7 +153,7 @@ partial def elabDialect
           if c then
             run
     let s := DeclState.initDeclState
-    let s := s.openParserDialect! strataDialect
+    let s := s.openParserDialect! StrataDDL
     let s := { s with
       loader := dialects,
       pos := startPos

@@ -30,15 +30,15 @@ def KnownTypes : List LTy :=
    t[∀a b. %a → %b],
    t[∀a b. Map %a %b]]
 /--
-  Convert an LExpr String to an LExpr BoogieIdent, by considering all identifier as global, which is valid for axioms
+  Convert an LExpr String to an LExpr BoogieIdent
   TODO: Remove when Lambda elaborator offers parametric identifier type
 -/
 def ToBoogieIdent (ine: LExpr String): (LExpr BoogieIdent) :=
 match ine with
     | .const c ty => .const c ty
-    | .op o oty => .op (BoogieIdent.glob o) oty
+    | .op o oty => .op (BoogieIdent.unres o) oty
     | .bvar deBruijnIndex => .bvar deBruijnIndex
-    | .fvar name oty => .fvar (BoogieIdent.glob name) oty
+    | .fvar name oty => .fvar (BoogieIdent.unres name) oty
     | .mdata info e => .mdata info (ToBoogieIdent e)
     | .abs oty e => .abs oty (ToBoogieIdent e)
     | .quant k oty e => .quant k oty (ToBoogieIdent e)
