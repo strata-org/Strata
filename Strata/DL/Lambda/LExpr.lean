@@ -49,8 +49,8 @@ inductive LExpr (Identifier : Type) : Type where
   | mdata   (info : Info) (e : LExpr Identifier)
   /-- `.abs ty e`: abstractions; `ty` the is type of bound variable. -/
   | abs     (ty : Option LMonoTy) (e : LExpr Identifier)
-  /-- `.quant k ty e`: quantified expressions; `ty` the is type of bound variable. -/
-  | quant   (k : QuantifierKind) (ty : Option LMonoTy) (e : LExpr Identifier)
+  /-- `.quant k ty tr e`: quantified expressions; `ty` the is type of bound variable, and `tr` the trigger. -/
+  | quant   (k : QuantifierKind) (ty : Option LMonoTy) (trigger: LExpr Identifier) (e : LExpr Identifier)
   /-- `.app fn e`: function application. -/
   | app     (fn e : LExpr Identifier)
   /-- `.ite c t e`: if-then-else expression. -/
@@ -59,16 +59,19 @@ inductive LExpr (Identifier : Type) : Type where
   | eq      (e1 e2 : LExpr Identifier)
   deriving Repr, DecidableEq
 
-def LExpr.all {Identifier : Type} := @LExpr.quant Identifier .all
-def LExpr.exist {Identifier : Type} := @LExpr.quant Identifier .exist
+def LExpr.noTrigger {Identifier : Type} : LExpr Identifier := .bvar 0
+def LExpr.all {Identifier : Type} (ty : Option LMonoTy) := @LExpr.quant Identifier .all ty LExpr.noTrigger
+def LExpr.exist {Identifier : Type} (ty : Option LMonoTy) := @LExpr.quant Identifier .exist ty LExpr.noTrigger
 
 abbrev LExpr.absUntyped {Identifier : Type} := @LExpr.abs Identifier .none
-abbrev LExpr.allUntyped {Identifier : Type} := @LExpr.quant Identifier .all .none
-abbrev LExpr.existUntyped {Identifier : Type} := @LExpr.quant Identifier .exist .none
+abbrev LExpr.allUntyped {Identifier : Type} := @LExpr.quant Identifier .all .none (bvar 0)
+abbrev LExpr.existUntyped {Identifier : Type} := @LExpr.quant Identifier .exist .none (bvar 0)
+
+
 def LExpr.sizeOf [SizeOf Identifier]
   | LExpr.mdata (Identifier:=Identifier) _ e => 2 + sizeOf e
   | LExpr.abs   _ e => 2 + sizeOf e
-  | LExpr.quant _ _ e => 3 + sizeOf e
+  | LExpr.quant _ _ tr e => 3 + sizeOf e + sizeOf tr
   | LExpr.app fn e => 3 + sizeOf fn + sizeOf e
   | LExpr.ite c t e => 4 + sizeOf c + sizeOf t + sizeOf e
   | LExpr.eq  e1 e2 => 3 + sizeOf e1 + sizeOf e2
@@ -88,7 +91,7 @@ def LExpr.getVars (e : (LExpr Identifier)) := match e with
   | .fvar y _ => [y]
   | .mdata _ e' => LExpr.getVars e'
   | .abs _ e' => LExpr.getVars e'
-  | .quant _ _ e' => LExpr.getVars e'
+  | .quant _ _ _ e' => LExpr.getVars e'
   | .app e1 e2 => LExpr.getVars e1 ++ LExpr.getVars e2
   | .ite c t e => LExpr.getVars c ++ LExpr.getVars t ++ LExpr.getVars e
   | .eq e1 e2 => LExpr.getVars e1 ++ LExpr.getVars e2
@@ -201,7 +204,7 @@ def removeAllMData (e : (LExpr Identifier)) : (LExpr Identifier) :=
   | .const _ _ | .op _ _ | .fvar _ _ | .bvar _ => e
   | .mdata _ e1 => removeAllMData e1
   | .abs ty e1 => .abs ty (removeAllMData e1)
-  | .quant qk ty e1 => .quant qk ty (removeAllMData e1)
+  | .quant qk ty tr e1 => .quant qk ty (removeAllMData tr) (removeAllMData e1)
   | .app e1 e2 => .app (removeAllMData e1) (removeAllMData e2)
   | .ite c t f => .ite (removeAllMData c) (removeAllMData t) (removeAllMData f)
   | .eq e1 e2 => .eq (removeAllMData e1) (removeAllMData e2)
@@ -219,7 +222,7 @@ def size (e : (LExpr Identifier)) : Nat :=
   | .bvar _ => 1
   | .fvar _ _ => 1
   | .abs _ e' => 1 + size e'
-  | .quant _ _ e' => 1 + size e'
+  | .quant _ _ _ e' => 1 + size e'
   | .mdata _ e' => 1 + size e'
   | .app e1 e2 => 1 + size e1 + size e2
   | .ite c t f => 1 + size c + size t + size f
@@ -235,7 +238,7 @@ def eraseTypes (e : (LExpr Identifier)) : (LExpr Identifier) :=
   | .fvar x _ => .fvar x none
   | .bvar _ => e
   | .abs ty e => .abs ty (e.eraseTypes)
-  | .quant qk ty e => .quant qk ty (e.eraseTypes)
+  | .quant qk ty tr e => .quant qk ty (eraseTypes tr) (e.eraseTypes)
   | .app e1 e2 => .app (e1.eraseTypes) (e2.eraseTypes)
   | .ite c t f => .ite (c.eraseTypes) (t.eraseTypes) (f.eraseTypes)
   | .eq e1 e2 => .eq (e1.eraseTypes) (e2.eraseTypes)
@@ -264,8 +267,8 @@ private def formatLExpr [ToFormat Identifier] (e : (LExpr Identifier)) : Format 
     | some ty => f!"({x} : {ty})"
   | .mdata _info e => formatLExpr e
   | .abs _ e1 => Format.paren (f!"λ {formatLExpr e1}")
-  | .quant .all _ e1 => Format.paren (f!"∀ {formatLExpr e1}")
-  | .quant .exist _ e1 => Format.paren (f!"∃ {formatLExpr e1}")
+  | .quant .all _ _ e1 => Format.paren (f!"∀ {formatLExpr e1}")
+  | .quant .exist _ _ e1 => Format.paren (f!"∃ {formatLExpr e1}")
   | .app e1 e2 => Format.paren (formatLExpr e1 ++ " " ++ formatLExpr e2)
   | .ite c t e => Format.paren
                       ("if " ++ formatLExpr c ++
@@ -508,12 +511,15 @@ open LTy.Syntax
 info: Lambda.LExpr.quant
   (Lambda.QuantifierKind.all)
   (some (Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]))
+  (Lambda.LExpr.bvar 0)
   (Lambda.LExpr.quant
     (Lambda.QuantifierKind.all)
     (some (Lambda.LMonoTy.ftvar "k"))
+    (Lambda.LExpr.bvar 0)
     (Lambda.LExpr.quant
       (Lambda.QuantifierKind.all)
       (some (Lambda.LMonoTy.ftvar "v"))
+      (Lambda.LExpr.bvar 0)
       (Lambda.LExpr.eq
         (Lambda.LExpr.app
           (Lambda.LExpr.app

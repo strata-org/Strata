@@ -106,8 +106,29 @@ def app : Function → List Term → Term
   | .uf f, ts => .app (.uf f) ts f.out
 
 -- Note: we could coalesce nested quantifiers here, since SMT-Lib allows multiple variables to be bound at once.
-def quant (qk : QuantifierKind) (x : String) (ty : TermType) (e : Term) : Term :=
-  .quant qk x ty e
+def quant (qk : QuantifierKind) (x : String) (ty : TermType) (tr : Term) (e : Term) : Term :=
+  -- Check if we can coalesce with a nested quantifier
+  match e with
+  | .quant qk2 args2 tr2 e2 =>
+    -- Coalesce if:
+    -- 1. Same quantifier kind
+    -- 2. Outer trigger is just a bound variable (indicating no meaningful trigger)
+    let isSimpleTrigger := match tr with
+      | .var v => v.isBound  -- Check if it's a bound variable
+      | _ => false
+    let isInnerSimpleTrigger := match tr2 with
+      | .var v =>
+        v.isBound  -- Check if inner trigger is also a bound variable
+      | _ => false
+    if qk = qk2 && isSimpleTrigger then
+      -- If both triggers are simple, use the first variable as trigger
+      -- Otherwise use the inner trigger (which is more meaningful)
+      let coalescedTrigger := if isInnerSimpleTrigger then .var (TermVar.mk true x ty) else tr2
+      .quant qk ([(x, ty)] ++ args2) coalescedTrigger e2
+    else
+      .quant qk [(x, ty)] tr e
+  | _ =>
+    .quant qk [(x, ty)] tr e
 
 ---------- SMTLib theory of integer numbers (`Ints`) ----------
 

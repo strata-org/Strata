@@ -78,7 +78,7 @@ def IsOldPred.decidablePred (e : Expression.Expr): Decidable (IsOldPred e) :=
     else
       by apply isFalse; intros Hold; cases Hold; contradiction
   | .const _ _ | .bvar _ | .fvar _ _ | .mdata _ _ | .abs _ _
-  | .quant _ _ _ | .app _ _ | .ite _ _ _  | .eq _ _ =>
+  | .quant _ _ _ _ | .app _ _ | .ite _ _ _  | .eq _ _ =>
     by apply isFalse; intros Hold; cases Hold
 
 inductive IsFvar : Expression.Expr → Prop where
@@ -88,7 +88,7 @@ def IsFvar.decidablePred (e : Expression.Expr): Decidable (IsFvar e) :=
   match He : e with
   | .fvar v ty => isTrue fvar
   | .op _ _ | .const _ _ | .bvar _ | .mdata _ _ | .abs _ _
-  | .quant _ _ _ | .app _ _ | .ite _ _ _  | .eq _ _ =>
+  | .quant _ _ _ _ | .app _ _ | .ite _ _ _  | .eq _ _ =>
     by apply isFalse; intros H; cases H
 /--
 Normalize an expression containing applications of the `old` function by
@@ -107,7 +107,7 @@ def normalizeOldExpr (e : Expression.Expr) (inOld : Bool := false)
   | .const _ _ | .bvar _ | .op _ _ => e
   | .mdata m e' => .mdata m (normalizeOldExpr e' inOld)
   | .abs ty e' => .abs ty (normalizeOldExpr e' inOld)
-  | .quant qk ty e' => .quant qk ty (normalizeOldExpr e' inOld)
+  | .quant qk ty tr' e' => .quant qk ty (normalizeOldExpr tr' inOld) (normalizeOldExpr e' inOld)
   | .app e1 e2 =>
     match _He1 : e1 with
     | .op o ty =>
@@ -166,7 +166,7 @@ def containsOldExpr (e : Expression.Expr) : Bool :=
   | .const _ _ | .bvar _ | .fvar _ _ => false
   | .mdata _ e' => containsOldExpr e'
   | .abs _ e' => containsOldExpr e'
-  | .quant _ _ e' => containsOldExpr e'
+  | .quant _ _ tr' e' => containsOldExpr tr' || containsOldExpr e'
   | .app e1 e2 => containsOldExpr e1 || containsOldExpr e2
   | .ite c t f => containsOldExpr c || containsOldExpr t || containsOldExpr f
   | .eq e1 e2 => containsOldExpr e1 || containsOldExpr e2
@@ -189,7 +189,7 @@ def extractOldExprVars (expr : Expression.Expr)
   | .const _ _  | .bvar _  | .fvar _ _ | .op _ _ => []
   | .mdata _ e => extractOldExprVars e
   | .abs _ e => extractOldExprVars e
-  | .quant _ _ e => extractOldExprVars e
+  | .quant _ _ tr e => extractOldExprVars tr ++ extractOldExprVars e
   | .app e1 e2 => match e1, e2 with
     | .op (.unres "old") _, .fvar v _ => [v]
     | .op (.unres "old") _, _ => panic! s!"Old expression {expr} not normalized"
@@ -210,7 +210,7 @@ def substOld (var : Expression.Ident) (s e : Expression.Expr) :
   | .const _ _ | .fvar _ _ | .bvar _ | .op _ _ => e
   | .mdata m e' => .mdata m (substOld var s e')
   | .abs ty e' => .abs ty (substOld var s e')
-  | .quant qk ty e' => .quant qk ty (substOld var s e')
+  | .quant qk ty tr' e' => .quant qk ty (substOld var s tr') (substOld var s e')
   | .app e1 e2 =>
     match e1, e2 with
     | .op (.unres "old") _, .fvar x _ =>
@@ -258,7 +258,7 @@ inductive NormalizedOldExpr : Expression.Expr → Prop where
   | abs :    NormalizedOldExpr e →
              NormalizedOldExpr (.abs ty e)
   | quant :  NormalizedOldExpr e →
-             NormalizedOldExpr (.quant k ty e)
+             NormalizedOldExpr (.quant k ty tr e)
   | app :    NormalizedOldExpr fn →
              NormalizedOldExpr e →
              (IsOldPred fn → IsFvar e) →
@@ -281,7 +281,7 @@ inductive ValidExpression : Expression.Expr → Prop where
   | abs :    ValidExpression e →
              ValidExpression (.abs ty e)
   | quant :  ValidExpression e →
-             ValidExpression (.quant k ty e)
+             ValidExpression (.quant k ty tr e)
   | app :    ValidExpression fn →
              ValidExpression e →
              ¬ IsOldPred e →
@@ -656,7 +656,7 @@ inductive ContainsOldVar : Expression.Expr → Prop where
   | old : ContainsOldVar (@oldVar tyOld v ty)
   | mdata : ContainsOldVar e → ContainsOldVar (.mdata info e)
   | abs : ContainsOldVar e → ContainsOldVar (.abs ty e)
-  | quant : ContainsOldVar e → ContainsOldVar (.quant k ty e)
+  | quant : ContainsOldVar e → ContainsOldVar (.quant k ty tr e)
   | app_l : ContainsOldVar fn → ContainsOldVar (.app fn e)
   | app_r : ContainsOldVar e → ContainsOldVar (.app fn e)
   | ite_1 : ContainsOldVar c → ContainsOldVar (.ite c t e)

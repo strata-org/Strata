@@ -91,10 +91,10 @@ Proof Obligation:
 
 Wrote problem to vcs/new_g_value.smt2.
 Wrote problem to vcs/old_g_property.smt2.
-Wrote problem to vcs/<Origin:Inc_Requires>a_positive.smt2.
-Wrote problem to vcs/<Origin:Inc_Requires>a_positive.smt2.
+Wrote problem to vcs/(Origin-Inc_Requires)a_positive.smt2.
+Wrote problem to vcs/(Origin-Inc_Requires)a_positive.smt2.
 Wrote problem to vcs/return_value_lemma.smt2.
-Wrote problem to vcs/assert:_(#true_:_bool).smt2.
+Wrote problem to vcs/assert-_(#true_-_bool).smt2.
 ---
 info:
 Obligation: new_g_value
