@@ -88,6 +88,7 @@ structure LFunc (Identifier : Type) where
   -- a function, etc.).
   attr     : Array String := #[]
   denote   : Option ((LExpr Identifier) → List (LExpr Identifier) → (LExpr Identifier)) := .none
+  axioms   : List (LExpr Identifier) := []  -- For axiomatic definitions
 
 instance : Inhabited (LFunc Identifier) where
   default := { name := Inhabited.default, inputs := [], output := LMonoTy.bool }
@@ -121,6 +122,14 @@ def LFunc.type (f : (LFunc Identifier)) : Except Format LTy := do
   | [] => .ok (.forAll f.typeArgs f.output)
   | ity :: irest =>
     .ok (.forAll f.typeArgs (Lambda.LMonoTy.mkArrow ity (irest ++ output_tys)))
+
+def LFunc.opExpr (f: LFunc Identifier) : LExpr Identifier :=
+  let input_tys := f.inputs.values
+  let output_tys := Lambda.LMonoTy.destructArrow f.output
+  let ty := match input_tys with
+            | [] => f.output
+            | ity :: irest => Lambda.LMonoTy.mkArrow ity (irest ++ output_tys)
+  .op f.name ty
 
 def LFunc.inputPolyTypes (f : (LFunc Identifier)) : @LTySignature Identifier :=
   f.inputs.map (fun (id, mty) => (id, .forAll f.typeArgs mty))
