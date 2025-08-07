@@ -111,7 +111,7 @@ end Bindings
 
 structure TypingContext where
   private mk ::
-  globalContext : GlobalContext
+  globalContext : GlobalContext := {}
   -- This stores all the bindings added to the typing context.
   bindings : Bindings := {}
   -- This maintains a map from variable names to the indices of variables
@@ -261,20 +261,21 @@ deriving Inhabited, Repr
 
 namespace Info
 
-instance : Coe TypeInfo Info where
-  coe := .ofTypeInfo
-
 def asOp! : Info → OperationInfo
 | .ofOperationInfo info => info
 | _ => panic! "Expected operation"
 
-def asIdent! : Info → IdentInfo
-| .ofIdentInfo info => info
-| _ => panic! "Expected identifier"
-
 def asExpr! : Info → ExprInfo
 | .ofExprInfo info => info
 | info => panic! s!"Expected expression but given {repr info}"
+
+def asType! : Info → TypeInfo
+| .ofTypeInfo info => info
+| info => panic! s!"Expected type but given {repr info}"
+
+def asIdent! : Info → IdentInfo
+| .ofIdentInfo info => info
+| _ => panic! "Expected identifier"
 
 def elabInfo (info : Info) : ElabInfo :=
   match info with

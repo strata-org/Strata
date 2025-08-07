@@ -138,7 +138,7 @@ def resolveTypeBinding (tctx : TypingContext) (stx : Syntax) (name : String)
       return default
     if let .type [] _ := k then
       let info : TypeInfo := { inputCtx := tctx, stx := stx, typeExpr := .bvar idx, isInferred := false }
-      return .node info #[]
+      return .node (.ofTypeInfo info) #[]
     else
       logErrorMF stx mf!"Expected a type instead of {k}"
       return default
@@ -161,7 +161,7 @@ def resolveTypeBinding (tctx : TypingContext) (stx : Syntax) (name : String)
           children := children.push c
         let tp :=  .fvar fidx tpArgs
         let info : TypeInfo := { inputCtx := tctx, stx := stx, typeExpr := tp, isInferred := false }
-        return .node info children
+        return .node (.ofTypeInfo info) children
       else if let some a := args[params.size]? then
         logErrorMF a.info.stx mf!"Unexpected argument to {name}."
         return default
@@ -247,7 +247,7 @@ def translateTypeIdent (elabInfo : ElabInfo) (qualIdentInfo : Tree) (args : Arra
     let tpArgs ← args.mapM fun a => return (← asTypeInfo a).typeExpr
     let tp := .ident ident tpArgs
     let info : TypeInfo := { toElabInfo := elabInfo, typeExpr := tp, isInferred := false }
-    return .node info args
+    return .node (.ofTypeInfo info) args
   | .syncat decl =>
     let (_, success) ← runChecked <| checkArgSize stx ident decl.argNames.size args
     if !success then
@@ -1075,7 +1075,7 @@ partial def translateTypeTree (arg : Tree) : ElabM Tree := do
         | logError rType.info.stx s!"Expected type"; return default
       let tp := .arrow aInfo.typeExpr rInfo.typeExpr
       let info : TypeInfo := { toElabInfo := info.toElabInfo, typeExpr := tp, isInferred := false }
-      return .node info #[aType, rType]
+      return .node (.ofTypeInfo info) #[aType, rType]
     | _, _ =>
       logInternalError arg.info.stx s!"translateTypeTree given invalid operation {repr op}"
       return default
