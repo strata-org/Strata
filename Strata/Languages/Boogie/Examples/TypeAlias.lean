@@ -10,9 +10,9 @@ import Strata.Languages.Boogie.Verifier
 namespace Strata
 
 /--
-error: Expression has type FooAlias Foo int int when Foo bool int expected.
+error: Expression has type FooAlias (Foo int int) when Foo bool int expected.
 ---
-error: Expression has type FooAlias Foo int int when Foo bool int expected.
+error: Expression has type FooAlias (Foo int int) when Foo bool int expected.
 -/
 #guard_msgs in
 def badTypeAliasEnv : Environment :=
