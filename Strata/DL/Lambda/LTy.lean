@@ -4,23 +4,21 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-
-
 import Strata.DL.Util.Map
 import Lean.Elab.Term
 
----------------------------------------------------------------------
-
-namespace Lambda
-
-open Std (ToFormat Format format)
-
-/-! ## Types
+/-! ## Formalization of Mono- and Poly- Types in Lambda
 
 We implement a Hindley-Milner type system for expressions in Lambda, which means
 that we can infer the types of unannotated `LExpr`s. Note that at this time, we
 do not have `let`s in `LExpr`, so we do not tackle let-polymorphism yet.
 -/
+
+---------------------------------------------------------------------
+
+namespace Lambda
+open Std (ToFormat Format format)
+
 
 abbrev TyIdentifier := String
 
@@ -395,7 +393,7 @@ scoped syntax ident : tident
 scoped syntax tident (lmonoty)* : tcons
 scoped syntax tcons : lmonoty
 -- Special handling for function types.
-scoped syntax:60 lmonoty:60 "→" lmonoty:60 : lmonoty
+scoped syntax:65 lmonoty:66 "→" lmonoty:65 : lmonoty
 -- Special handling for bool and int types.
 declare_syntax_cat tprim
 scoped syntax "int" : tprim
@@ -446,6 +444,22 @@ elab "mty[" ty:lmonoty "]" : term => elabLMonoTy ty
 /-- info: LMonoTy.tcons "pair" [LMonoTy.tcons "int" [], LMonoTy.tcons "bool" []] : LMonoTy -/
 #guard_msgs in
 #check mty[pair int bool]
+
+/--
+info: LMonoTy.tcons "arrow"
+  [LMonoTy.tcons "Map" [LMonoTy.ftvar "k", LMonoTy.ftvar "v"],
+    LMonoTy.tcons "arrow" [LMonoTy.ftvar "k", LMonoTy.ftvar "v"]] : LMonoTy
+-/
+#guard_msgs in
+#check mty[(Map %k %v) → %k → %v]
+
+/--
+info: LMonoTy.tcons "arrow"
+  [LMonoTy.ftvar "a",
+    LMonoTy.tcons "arrow" [LMonoTy.ftvar "b", LMonoTy.tcons "arrow" [LMonoTy.ftvar "c", LMonoTy.ftvar "d"]]] : LMonoTy
+-/
+#guard_msgs in
+#check mty[%a → %b → %c → %d]
 
 declare_syntax_cat lty
 scoped syntax (lmonoty)* : lty

@@ -14,12 +14,17 @@ open Std (ToFormat Format format)
 
 /-! # Lambda Dialect
 
-This dialect provides an implementation of simply-typed lambda
-calculus (see `LExpr`), along with a Hindley-Milner type system (see
-`LTy`). It also comes with an extensible partial evaluator that is
-parameterized by an (optional) map from operator names to their
-specific evaluations. This allows adding evaluation support for new
-operators without changing the core logic or extending the AST.  -/
+The Lambda dialect provides an implementation of simply-typed lambda
+calculus, along with a Hindley-Milner type system. It also comes with an
+extensible partial evaluator that is parameterized by an (optional) map from
+operator names to their specific evaluations. This allows adding evaluation
+support for new operators without changing the core logic or extending the AST.
+
+See module `Strata.DL.Lambda.LExpr` for the formalization of expressions,
+`Strata.DL.Lambda.LTy` for the formalization of mono- and poly-types,
+`Strata.DL.Lambda.LExprT` for the type inference implementation, and
+`Strata.DL.Lambda.LExprEval` for the partial evaluator.
+-/
 
 variable {Identifier : Type} [ToString Identifier] [DecidableEq Identifier] [ToFormat Identifier] [HasGen Identifier]
 
