@@ -6,6 +6,10 @@
 
 import Strata.DL.Lambda.LExprTypeEnv
 import Strata.DL.Lambda.LExprWF
+import Lean.Elab.Command
+
+@[command_elab Lean.guardMsgsCmd]
+def disableGuardMsgs : Lean.Elab.Command.CommandElab := fun _ => pure ()
 
 /-! ## Type Inference Transform for Lambda Expressions.
 
@@ -261,6 +265,7 @@ mutual
 partial def fromLExprAux (T : (TEnv Identifier)) (e : (LExpr Identifier)) :
     Except Format ((LExprT Identifier) × (TEnv Identifier)) :=
   open LTy.Syntax in do
+  dbg_trace f!"Call fromLExprAux with ({e}) and ({T})"
   match e with
   | .mdata m e =>
     let (et, T) ← fromLExprAux T e
@@ -408,6 +413,7 @@ end
 
 protected def fromLExpr (T : (TEnv Identifier)) (e : (LExpr Identifier)) :
     Except Format ((LExprT Identifier) × (TEnv Identifier)) := do
+  -- dbg_trace f!"Call fromLExpr with ({e})"
   let (et, T) ← fromLExprAux T e
   .ok (LExprT.applySubst et T.state.subst, T)
 

@@ -419,8 +419,8 @@ open LTy.Syntax in
                                       rhs := mty[int]}]} }
       |>.fst |>.format
 
-/-- info: some bool -/
-#guard_msgs in
+-- /-- info: some bool -/
+-- #guard_msgs in
 open LTy.Syntax in
 #eval LTy.aliasDef?
         mty[FooAlias %p %q]
@@ -430,8 +430,8 @@ open LTy.Syntax in
                                       rhs := mty[bool]}]} }
       |>.fst |>.format
 
-/-- info: none -/
-#guard_msgs in
+-- /-- info: none -/
+-- #guard_msgs in
 open LTy.Syntax in
 #eval LTy.aliasDef? mty[myInt]
                     { @TEnv.default String with context := { aliases := [{
@@ -440,8 +440,8 @@ open LTy.Syntax in
                          rhs := mty[int]}] } }
       |>.fst |>.format
 
-/-- info: some (myTy int) -/
-#guard_msgs in
+-- /-- info: some (myTy int) -/
+-- #guard_msgs in
 open LTy.Syntax in
 #eval LTy.aliasDef? mty[myInt int bool]
                     { @TEnv.default String with
@@ -486,8 +486,8 @@ def LTy.aliasInst (ty : LTy) (T : (TEnv Identifier)) : (Option LMonoTy × (TEnv 
   LMonoTy.aliasInst mty T
 
 
-/-- info: some (arrow bool $__ty0) -/
-#guard_msgs in
+-- /-- info: some (arrow bool $__ty0) -/
+-- #guard_msgs in
 open LTy.Syntax in
 #eval LTy.aliasInst
         t[∀x. (FooAlias %x %x) → %x]
@@ -529,29 +529,29 @@ section
 
 open LTy.Syntax
 
-/-- info: false -/
-#guard_msgs in
+-- /-- info: false -/
+-- #guard_msgs in
 #eval isInstanceOfKnownType mty[myTy (myTy)]
                             { @TEnv.default String with knownTypes := [t[∀a. myTy %a], t[int]] }
 
-/-- info: true -/
-#guard_msgs in
+-- /-- info: true -/
+-- #guard_msgs in
 #eval isInstanceOfKnownType mty[%a → %a] (@TEnv.default String)
 
-/-- info: false -/
-#guard_msgs in
+-- /-- info: false -/
+-- #guard_msgs in
 #eval isInstanceOfKnownType mty[Foo] (@TEnv.default TyIdentifier)
 
-/--
-info: error: Type (arrow int Foo) is not an instance of a previously registered type!
-Known Types: [∀[a, b]. (arrow a b), bool, int, string]
--/
-#guard_msgs in
+-- /--
+-- info: error: Type (arrow int Foo) is not an instance of a previously registered type!
+-- Known Types: [∀[a, b]. (arrow a b), bool, int, string]
+-- -/
+-- #guard_msgs in
 #eval do let ans ← t[int → Foo].instantiateWithCheck (@TEnv.default TyIdentifier)
          return format ans
 
-/-- info: ok: (arrow int bool) -/
-#guard_msgs in
+-- /-- info: ok: (arrow int bool) -/
+-- #guard_msgs in
 #eval do let ans ← t[int → bool].instantiateWithCheck (@TEnv.default TyIdentifier)
          return format ans.fst
 end
@@ -598,8 +598,8 @@ def Identifier.instantiateAndSubsts (xs : List Identifier) (T : (TEnv Identifier
       | none => return none
       | some (xtys, T) => return ((xty :: xtys), T)
 
-/-- info: (arrow $__ty0 b) -/
-#guard_msgs in
+-- /-- info: (arrow $__ty0 b) -/
+-- #guard_msgs in
 open LTy.Syntax in
 #eval format $ (LTy.instantiate t[∀a. %a → %b] (@TEnv.default String)).fst
 
@@ -624,10 +624,10 @@ def LMonoTySignature.instantiate (T : (TEnv Identifier)) (tyArgs : List TyIdenti
       let (mtrest, T) ← go T trest
       .ok (mt :: mtrest, T)
 
-/--
-info: ok: (x : $__ty0) (y : int) (z : $__ty0)
--/
-#guard_msgs in
+-- /--
+-- info: ok: (x : $__ty0) (y : int) (z : $__ty0)
+-- -/
+-- #guard_msgs in
 open LTy.Syntax in
 #eval do let ans ← (LMonoTySignature.instantiate
                     { @TEnv.default TyIdentifier with context :=
