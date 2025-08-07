@@ -35,7 +35,7 @@ syntax, as follows:
 ```bash
 private def testEnv :=
 #strata
-open ArithPrograms;
+program ArithPrograms;
 init x : num := 0;
 assert [test]: (x == 0);
 #end
@@ -264,11 +264,11 @@ Some example programs can be found
 [here](../StrataTest/DL/Imperative/Examples.lean).
 
 ```bash
-def testProgram : Environment :=
+def testProgram : Program :=
 #strata
-open ArithPrograms;
-  var x : num;
-  assert [double_x_lemma]: (2 * x == x + x);
+program ArithPrograms;
+var x : num;
+assert [double_x_lemma]: (2 * x == x + x);
 #end
 
 /--

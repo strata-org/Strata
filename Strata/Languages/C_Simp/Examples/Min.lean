@@ -25,7 +25,8 @@ procedure min (a: int, b: int) -> int
 #end
 
 /--
-info: proceduremin(a:int, b:int)->int@pretrue@posttrue({
+info: program C_Simp;
+proceduremin(a:int, b:int)->int@pretrue@posttrue({
   if((a)<(b))then{
   returna;
   }

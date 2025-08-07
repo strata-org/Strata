@@ -97,7 +97,7 @@ partial def elabProgram
     (leanEnv : Lean.Environment)
     (inputContext : InputContext)
     (startPos : String.Pos := 0)
-    (stopPos : String.Pos := inputContext.input.endPos) : Except (Array (Syntax × Message)) Environment :=
+    (stopPos : String.Pos := inputContext.input.endPos) : Except (Array (Syntax × Message)) Program :=
   assert! "Init" ∈ loader.dialects
   let (header, errors, startPos) := elabHeader leanEnv inputContext startPos stopPos
   if errors.size > 0 then
@@ -120,7 +120,7 @@ partial def elabProgram
       let (cmds, s) := act ctx s
       if s.errors.isEmpty then
         let openDialects := loader.dialects.importedDialects! dialect
-        .ok <| .create openDialects openDialects.map.keysArray cmds
+        .ok <| .create openDialects dialect cmds
       else
         .error s.errors
 

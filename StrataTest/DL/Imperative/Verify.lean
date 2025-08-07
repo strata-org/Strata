@@ -80,9 +80,9 @@ end Arith
 namespace Strata
 namespace ArithPrograms
 
-def verify (smtsolver : String) (env : Environment)
+def verify (smtsolver : String) (pgm : Program)
     (verbose : Bool := false) : IO (Imperative.VCResults Arith.PureExpr) := do
-  let (program, errors) := ArithPrograms.TransM.run (ArithPrograms.translateProgram env.commands)
+  let (program, errors) := ArithPrograms.TransM.run (ArithPrograms.translateProgram pgm.commands)
   if errors.isEmpty then
     EIO.toIO (fun f => IO.Error.userError (toString f))
                 (Arith.verify smtsolver program verbose)
