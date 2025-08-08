@@ -262,34 +262,34 @@ def inferConst (T : (TEnv Identifier)) (c : String) (cty : Option LMonoTy) :
                 {@LExpr.const Identifier c cty}"
 
 mutual
-partial def fromLExprAux (T : (TEnv Identifier)) (e : (LExpr Identifier)) :
+partial def fromLExprAux (T : (TEnv Identifier)) (e : (LExpr Identifier)) (depth: Nat) :
     Except Format ((LExprT Identifier) × (TEnv Identifier)) :=
   open LTy.Syntax in do
-  dbg_trace f!"Call fromLExprAux with ({e})"
-  -- dbg_trace f!" and ({T})"
+  dbg_trace f!"Call fromLExprAux at depth {depth} with ({e})"
+  dbg_trace f!" and ({T})"
   match e with
   | .mdata m e =>
-    let (et, T) ← fromLExprAux T e
+    let (et, T) ← fromLExprAux T e (depth + 1)
     .ok ((.mdata m et), T)
   | .const c cty =>
     let (ty, T) ← inferConst T c cty
     .ok (.const c ty, T)
   | .op o oty =>
-    let (ty, T) ← inferOp T o oty
+    let (ty, T) ← inferOp T o oty depth
     .ok (.op o ty, T)
   | .bvar _ => .error f!"Cannot infer the type of this bvar: {e}"
   | .fvar x fty =>
     let (ty, T) ← inferFVar T x fty
     .ok (.fvar x ty, T)
-  | .app e1 e2   => fromLExprAux.app T e1 e2
-  | .abs ty e    => fromLExprAux.abs T ty e
-  | .quant qk ty e => fromLExprAux.quant T qk ty e
-  | .eq e1 e2    => fromLExprAux.eq T e1 e2
-  | .ite c th el => fromLExprAux.ite T c th el
+  | .app e1 e2   => fromLExprAux.app T e1 e2 depth
+  | .abs ty e    => fromLExprAux.abs T ty e depth
+  | .quant qk ty e => fromLExprAux.quant T qk ty e depth
+  | .eq e1 e2    => fromLExprAux.eq T e1 e2 depth
+  | .ite c th el => fromLExprAux.ite T c th el depth
 
 /-- Infer the type of an operation `.op o oty`, where an operation is defined in
   the factory. -/
-partial def inferOp (T : (TEnv Identifier)) (o : Identifier) (oty : Option LMonoTy) :
+partial def inferOp (T : (TEnv Identifier)) (o : Identifier) (oty : Option LMonoTy) (depth: Nat) :
   Except Format (LMonoTy × (TEnv Identifier)) :=
   open LTy.Syntax in
   match T.functions.find? (fun fn => fn.name == o) with
@@ -311,7 +311,7 @@ partial def inferOp (T : (TEnv Identifier)) (o : Identifier) (oty : Option LMono
             let T := T.addToContext func.inputPolyTypes
             -- Type check the body and ensure that it unifies with the return type.
             -- let (bodyty, T) ← infer T body
-            let (body_typed, T) ← fromLExprAux T body
+            let (body_typed, T) ← fromLExprAux T body (depth + 1)
             let bodyty := body_typed.toLMonoTy
             let (retty, T) ← func.outputPolyType.instantiateWithCheck T
             let S ← Constraints.unify [(retty, bodyty)] T.state.subst
@@ -329,33 +329,33 @@ partial def inferOp (T : (TEnv Identifier)) (o : Identifier) (oty : Option LMono
         let T := TEnv.updateSubst T S
         .ok (ty, TEnv.updateSubst T S)
 
-partial def fromLExprAux.ite (T : (TEnv Identifier)) (c th el : (LExpr Identifier)) := do
-  let (ct, T) ← fromLExprAux T c
-  let (tt, T) ← fromLExprAux T th
-  let (et, T) ← fromLExprAux T el
+partial def fromLExprAux.ite (T : (TEnv Identifier)) (c th el : (LExpr Identifier)) (depth: Nat) := do
+  let (ct, T) ← fromLExprAux T c (depth + 1)
+  let (tt, T) ← fromLExprAux T th (depth + 1)
+  let (et, T) ← fromLExprAux T el (depth + 1)
   let cty := ct.toLMonoTy
   let tty := tt.toLMonoTy
   let ety := et.toLMonoTy
   let S ← Constraints.unify [(cty, LMonoTy.bool), (tty, ety)] T.state.subst
   .ok (.ite ct tt et tty, TEnv.updateSubst T S)
 
-partial def fromLExprAux.eq (T : (TEnv Identifier)) (e1 e2 : (LExpr Identifier)) := do
+partial def fromLExprAux.eq (T : (TEnv Identifier)) (e1 e2 : (LExpr Identifier)) (depth: Nat) := do
   -- `.eq A B` is well-typed if there is some instantiation of
   -- type parameters in `A` and `B` that makes them have the same type.
-  let (e1t, T) ← fromLExprAux T e1
-  let (e2t, T) ← fromLExprAux T e2
+  let (e1t, T) ← fromLExprAux T e1 (depth + 1)
+  let (e2t, T) ← fromLExprAux T e2 (depth + 1)
   let ty1 := e1t.toLMonoTy
   let ty2 := e2t.toLMonoTy
   let S ← Constraints.unify [(ty1, ty2)] T.state.subst
   .ok (.eq e1t e2t LMonoTy.bool, TEnv.updateSubst T S)
 
-partial def fromLExprAux.abs (T : (TEnv Identifier)) (oty : Option LMonoTy) (e : (LExpr Identifier)) := do
+partial def fromLExprAux.abs (T : (TEnv Identifier)) (oty : Option LMonoTy) (e : (LExpr Identifier)) (depth: Nat) := do
   let (xv, T) := HasGen.genVar T
   let (xt', T) := TEnv.genTyVar T
   let xt := .forAll [] (.ftvar xt')
   let T := T.insertInContext xv xt
   let e' := LExpr.varOpen 0 (xv, some (.ftvar xt')) e
-  let (et, T) ← fromLExprAux T e'
+  let (et, T) ← fromLExprAux T e' (depth + 1)
   let ety := et.toLMonoTy
   let etclosed := .varClose 0 xv et
   let T := T.eraseFromContext xv
@@ -369,7 +369,7 @@ partial def fromLExprAux.abs (T : (TEnv Identifier)) (oty : Option LMonoTy) (e :
   | _, _ => .ok ()
   .ok (.abs etclosed mty, T)
 
-partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (oty : Option LMonoTy) (e : (LExpr Identifier)) := do
+partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (oty : Option LMonoTy) (e : (LExpr Identifier)) (depth: Nat) := do
   let (xv, T) := HasGen.genVar T
   let (xt', T) := TEnv.genTyVar T
   let xt := .forAll [] (.ftvar xt')
@@ -384,7 +384,7 @@ partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (ot
 
   let T := T.insertInContext xv xt
   let e' := LExpr.varOpen 0 (xv, some (.ftvar xt')) e
-  let (et, T) ← fromLExprAux T e'
+  let (et, T) ← fromLExprAux T e' (depth + 1)
   let ety := et.toLMonoTy
   let mty := LMonoTy.subst T.state.subst (.ftvar xt')
   match oty with
@@ -401,10 +401,10 @@ partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (ot
   else
     .error f!"Quantifier body has non-Boolean type: {ety}"
 
-partial def fromLExprAux.app (T : (TEnv Identifier)) (e1 e2 : (LExpr Identifier)) := do
-  let (e1t, T) ← fromLExprAux T e1
+partial def fromLExprAux.app (T : (TEnv Identifier)) (e1 e2 : (LExpr Identifier)) (depth: Nat) := do
+  let (e1t, T) ← fromLExprAux T e1 (depth + 1)
   let ty1 := e1t.toLMonoTy
-  let (e2t, T) ← fromLExprAux T e2
+  let (e2t, T) ← fromLExprAux T e2 (depth + 1)
   let ty2 := e2t.toLMonoTy
   let (fresh_name, T) := TEnv.genTyVar T
   let freshty := (.ftvar fresh_name)
@@ -429,7 +429,7 @@ end
 protected def fromLExpr (T : (TEnv Identifier)) (e : (LExpr Identifier)) :
     Except Format ((LExprT Identifier) × (TEnv Identifier)) := do
   -- dbg_trace f!"Call fromLExpr with ({e})"
-  let (et, T) ← fromLExprAux T e
+  let (et, T) ← fromLExprAux T e 0
   .ok (LExprT.applySubst et T.state.subst, T)
 
 protected def fromLExprs (T : (TEnv Identifier)) (es : List (LExpr Identifier)) :
