@@ -4,6 +4,15 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+/-
+  This file contains theormes related to `List.Nodup` property. The main theorem
+  is that the resulting list from `eraseDups` does not contain any duplicates
+  (see `eraseDups_Nodup`). It also contains other theorems such as `Nodup` is
+  preserved across filtering.
+
+  These theorems are essential for the call elimination correctness proof.
+  -/
+
 section Nodup
 
 theorem nodup_shrink : ∀ α {h : α} {l l' : List α} [BEq α],

@@ -4,13 +4,32 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+/-
+  This file contains miscellaneous utilities for manipulating lists and
+  properties on lists.
+-/
+
+/-- Two predicates `P` and `Q` are disjoint, that is, they cannot both hold on a
+    same instance of type `α` -/
 def PredDisjoint (P Q : α → Prop) : Prop := ∀ a, P a → Q a → False
 
+/-- Predicate `P` implies predicate `Q` -/
 def PredImplies (P Q : α → Prop) : Prop := ∀ a, P a → Q a
 
+/--
+  A list with global properties (`π`) and element-wise properties (`πs`). The
+  `split` method detaches the element-wise property of the first element from the
+  global property.
+
+  Usually, the global property makes use of the `Forall` predicate.
+ -/
 class ListP {α : Type} (π : α → Prop) (πs : List α → Prop) where
   split : ∀ {a : α} , πs (a :: as) → π a ×' πs as
 
+/--
+  Enable attaching the instance itself to properties about the instance.
+  See `WFProcedure` and `WFProgram`.
+-/
 class Wrapper (α : Type) where
   self : α
 

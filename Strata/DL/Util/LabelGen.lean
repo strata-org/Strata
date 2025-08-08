@@ -4,13 +4,26 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+/-
+  A type class for well-formed label generator.
+-/
+
 import Strata.DL.Util.Counter
 import Strata.DL.Util.StringGen
 namespace LabelGen
 
 /--
-a label generator of type α,
-  guaranteeing that all generated labels are unique
+  A well-formed label generator of type `α`, guaranteeing that all generated
+  labels are unique.  The generator `gen` takes a prefix of type `α`, and a
+  state of type `State`, returning a pair consisting of the generated identifier
+  of type and a new state (`α × State`).
+
+  It takes a generator-specific well-formedness property `wf` on the state. The
+  generator requires that
+
+1. well-formedness is preserved across label generation,
+2. the newly generated label is a member of the new state, and
+3. the new state is a superset of the old state.
   -/
 class WFLabelGen (α : Type) (State : Type) [HasSubset State] [DecidableEq α] where
   /-- an empty state -/

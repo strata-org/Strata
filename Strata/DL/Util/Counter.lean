@@ -4,6 +4,20 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+/-
+  This file contains a counter generator `genCounter`, as well as its underlying
+  state `CounterState`. The counter is designed to generate a unique number each
+  time, and the uniqueness of the generated number can be proven, by keep a
+  record of all previous generated numbers (see `CounterState.generated`).
+
+  The uniqueness proof can be derived from the `WF` property on `CounterState`,
+  where the next number to be generated is always greater than all previously
+  generated numbers, and the previously generated numbers do not contain
+  duplicates.
+
+  Also see `LabelGen.lean` for the generic type class for a unique label generator.
+-/
+
 namespace Counter
 
 structure CounterState where

@@ -4,6 +4,13 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+/-
+  This file contains the main proof that the call elimination transformation is
+  semantics preserving (see `callElimStatementCorrect`).
+  Additionally, `callElimStmtsNoExcept` shows that the call elimination
+  transformation always succeeds on well-formed statements.
+-/
+
 import Init.Data.List.Basic
 import Init.Data.List.Lemmas
 import Strata.Languages.Boogie.Env

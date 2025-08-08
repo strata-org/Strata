@@ -4,6 +4,14 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+/-
+  This file contains a string generator `StringGenState.gen`, where the
+  uniqueness of the generated strings is designed to be provable. It relies on a
+  `CounterState` to generate unique natural numbers (See `Counter.lean`).
+
+  Also see `LabelGen.lean` for the generic type class for a unique label generator.
+-/
+
 import Strata.DL.Util.Counter
 
 /-- `s.IsSuffix t` checks if the string `s` is a suffix of the string `t`.
@@ -23,6 +31,11 @@ instance : HasSubset StringGenState where
 @[simp]
 def StringGenState.emp : StringGenState := { cs := .emp, generated := [] }
 
+/--
+  The unique string generator. Generated strings consist of a prefix `pf`,
+  followed by an underscore (`_`), followed by a unique number given by its
+  underlying counter `σ.cs`.
+ -/
 def StringGenState.gen (pf : String) (σ : StringGenState) : String × StringGenState :=
   let (counter, cs) := Counter.genCounter σ.cs
   let newString : String := (pf ++ "_" ++ toString counter)
@@ -82,6 +95,14 @@ theorem StringGenState.subset : gen pf σ = (n, σ') → σ ⊆ σ' := by
   intros a Hin
   simp_all
 
+/--
+  (Incomplete) proof that the string generator produces unique strings.
+
+  The main argument for the uniqueness of the generated string is that, if the
+  unique numbers at the end of all strings are unique, then the strings
+  themselves must be unique as well.  Some injectivity theorems about
+  `Nat.toString` might be needed to prove the admitted cases in this theorem.
+-/
 theorem StringGenState.WFMono :
   WF σ →
   gen pf σ = (n, σ') →

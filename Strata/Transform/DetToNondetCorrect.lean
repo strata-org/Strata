@@ -4,6 +4,18 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+/-
+  This file contains the main proof that the deterministic-to-nondeterministic
+  transformation is semantics preserving (see `StmtToNondetStmtCorrect` and
+  `StmtToNondetStmtCorrect`)
+
+  Since the definitions involve mutual recursion, `Nat.strongRecOn` is used to
+  do induction on the size of the structure (see `StmtToNondetCorrect`). From
+  experience, `mutual` theorems in Lean sometimes does not work well with
+  implicit arguments, and it can be hard to find the cause from the generic
+  error message similar to "(kernel) application type mismatch".
+  -/
+
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.StmtSemantics
 import Strata.DL.Imperative.NondetStmt
