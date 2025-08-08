@@ -1,7 +1,7 @@
 program C_Simp;
 
 procedure loopSimple (n: int) -> int
-  @pre true
+  @pre (n >= #0)
   @post true
 {
   var sum : int;

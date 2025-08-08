@@ -268,12 +268,12 @@ def elabMdCommand (tree : Tree) : DialectM t Unit := do
 
 def dialectElabs : Std.HashMap QualifiedIdent (DialectElab t) :=
   Std.HashMap.ofList <|
-    [ (q`StrataDD.importCommand, elabDialectImportCommand),
-      (q`StrataDD.categoryCommand, elabCategoryCommand),
-      (q`StrataDD.opCommand,   elabOpCommand),
-      (q`StrataDD.typeCommand, elabTypeCommand),
-      (q`StrataDD.fnCommand,   elabFnCommand),
-      (q`StrataDD.mdCommand,   elabMdCommand),
+    [ (q`StrataDDL.importCommand, elabDialectImportCommand),
+      (q`StrataDDL.categoryCommand, elabCategoryCommand),
+      (q`StrataDDL.opCommand,   elabOpCommand),
+      (q`StrataDDL.typeCommand, elabTypeCommand),
+      (q`StrataDDL.fnCommand,   elabFnCommand),
+      (q`StrataDDL.mdCommand,   elabMdCommand),
     ]
 
 partial def runDialectCommand {t} (leanEnv : Lean.Environment) : DialectM t Bool := do
@@ -284,8 +284,7 @@ partial def runDialectCommand {t} (leanEnv : Lean.Environment) : DialectM t Bool
   | some tree =>
     if success then
       let cmd := tree.info.asOp!.op
-      if let some act := dialectElabs[cmd.name]? then
-          act tree
-      else do
-        panic! "Unexpected command"
+      match dialectElabs[cmd.name]? with
+      | some act => act tree
+      | none => panic! "Unexpected command"
     pure true

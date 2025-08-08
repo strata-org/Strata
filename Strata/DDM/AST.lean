@@ -31,7 +31,7 @@ section
 open _root_.Lean
 
 instance : Quote QualifiedIdent where
-  quote i :=  Syntax.mkCApp ``QualifiedIdent.mk #[quote i.dialect, quote i.name]
+  quote i := Syntax.mkCApp ``QualifiedIdent.mk #[quote i.dialect, quote i.name]
 
 @[macro quoteIdent] def quoteIdentImpl : Macro
   | `(q`$l:ident ) =>
@@ -255,20 +255,20 @@ deriving Inhabited, Repr, BEq
 
 namespace MetadataAttr
 
-def scopeName := q`StrataDD.scope
+def scopeName := q`StrataDDL.scope
 
 /-- Create scope using deBrujin index of environment. -/
 def scope (idx : Nat) : MetadataAttr :=
   { ident := scopeName, args := #[.catbvar idx ] }
 
 def declare (varIndex typeIndex : Nat) : MetadataAttr :=
-  { ident := q`StrataDD.declare, args := #[.catbvar varIndex, .catbvar typeIndex]}
+  { ident := q`StrataDDL.declare, args := #[.catbvar varIndex, .catbvar typeIndex]}
 
 def declareFn (varIndex bindingsIndex typeIndex : Nat) : MetadataAttr :=
-  { ident := q`StrataDD.declareFn, args := #[.catbvar varIndex, .catbvar bindingsIndex, .catbvar typeIndex]}
+  { ident := q`StrataDDL.declareFn, args := #[.catbvar varIndex, .catbvar bindingsIndex, .catbvar typeIndex]}
 
 def declareMD (varIndex typeIndex metadataIndex : Nat) : MetadataAttr :=
-  { ident := q`StrataDD.declareMD, args := #[.catbvar varIndex, .catbvar typeIndex, .catbvar metadataIndex]}
+  { ident := q`StrataDDL.declareMD, args := #[.catbvar varIndex, .catbvar typeIndex, .catbvar metadataIndex]}
 
 end MetadataAttr
 
@@ -503,7 +503,7 @@ private def mkValueBindingSpec
 def parseNewBindings (md : Metadata) (bindings : DeclBindings) : Array (BindingSpec bindings) × Array String :=
   let ins (attr : MetadataAttr) : NewBindingM (Option (BindingSpec bindings)) := do
         match attr.ident with
-        | q`StrataDD.declare => do
+        | q`StrataDDL.declare => do
           let #[.catbvar nameIndex, .catbvar typeIndex] := attr.args
             | newBindingErr "declare does not have expected 2 arguments."; return none
           let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < bindings.size))
@@ -511,7 +511,7 @@ def parseNewBindings (md : Metadata) (bindings : DeclBindings) : Array (BindingS
           let .isTrue typeP := inferInstanceAs (Decidable (typeIndex < bindings.size))
             | return panic! "Invalid name index"
           some <$> .value <$> mkValueBindingSpec bindings ⟨nameIndex, nameP⟩ ⟨typeIndex, typeP⟩
-        | q`StrataDD.declareMD => do
+        | q`StrataDDL.declareMD => do
           let #[.catbvar nameIndex, .catbvar typeIndex, .catbvar metadataIndex ] := attr.args
             | newBindingErr "declareMD missing required arguments."; return none
           let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < bindings.size))
@@ -521,7 +521,7 @@ def parseNewBindings (md : Metadata) (bindings : DeclBindings) : Array (BindingS
           let .isTrue mdP := inferInstanceAs (Decidable (metadataIndex < bindings.size))
             | return panic! "Invalid metadata index"
           some <$> .value <$> mkValueBindingSpec bindings ⟨nameIndex, nameP⟩ ⟨typeIndex, typeP⟩ (metadataIndex := .some ⟨metadataIndex, mdP⟩)
-        | q`StrataDD.declareFn => do
+        | q`StrataDDL.declareFn => do
           let #[.catbvar nameIndex, .catbvar argsIndex, .catbvar typeIndex] := attr.args
             | newBindingErr "declareFn missing required arguments."; return none
           let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < bindings.size))
@@ -531,7 +531,7 @@ def parseNewBindings (md : Metadata) (bindings : DeclBindings) : Array (BindingS
           let .isTrue typeP := inferInstanceAs (Decidable (typeIndex < bindings.size))
             | return panic! "Invalid name index"
           some <$> .value <$> mkValueBindingSpec bindings ⟨nameIndex, nameP⟩ ⟨typeIndex, typeP⟩ (argsIndex := some ⟨argsIndex, argsP⟩)
-        | q`StrataDD.declareType => do
+        | q`StrataDDL.declareType => do
           let #[.catbvar nameIndex, .option mArgsArg ] := attr.args
             | newBindingErr s!"declareType has bad arguments {repr attr.args}."; return none
           let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < bindings.size))
@@ -547,7 +547,7 @@ def parseNewBindings (md : Metadata) (bindings : DeclBindings) : Array (BindingS
                   pure <| some ⟨idx, argsP⟩
                 | _ => newBindingErr "declareType args invalid."; return none
           some <$> .type <$> pure { nameIndex, argsIndex, defIndex := none }
-        | q`StrataDD.aliasType => do
+        | q`StrataDDL.aliasType => do
           let #[.catbvar nameIndex, .option mArgsArg, .catbvar defIndex] := attr.args
             | newBindingErr "aliasType missing arguments."; return none
           let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < bindings.size))
