@@ -14,7 +14,7 @@ In the short term, Strata intends to support deductive verification with largely
 
 Dialects are intended to be the building blocks for complete languages. As such, each typically contains a small number of constructs, and sometimes as little as a single construct.
 
-Each dialect has a concrete syntax and a simple type system. The Dialect Definition Manager (DDM), in the [`Strata.DDM`](../Strata/DDM/) namespace, provides an embedded DSL within Lean to define the syntax and typing rules, which then produces a parser and preliminary type checker that can be used for processing either snippets embedded in a Lean source file or text read from external files.
+Each dialect has a concrete syntax and a simple type system. The Dialect Definition Mechanism (DDM), in the [`Strata.DDM`](../Strata/DDM/) namespace, provides an embedded DSL within Lean to define the syntax and typing rules, which then produces a parser and preliminary type checker that can be used for processing either snippets embedded in a Lean source file or text read from external files.
 
 The result of processing text written in a specific dialect is a generic and very flexible AST that captures all of the constructs possible in Strata. This representation allows flexibility, but is not particularly well-suited to concise traversals and transformations. Therefore, each dialect may have either an auto-generated or a hand-written Lean AST, as well, and a transformation from the generic syntax into dialect-specialized syntax.
 
