@@ -93,7 +93,6 @@ instance : Inhabited WFProgram where
 instance : ToFormat WFProgram where
   format wfp := format wfp.self
 
-set_option warn.sorry false in
 /--
 Auxiliary lemma for Program.typeCheck.goWF
 -/

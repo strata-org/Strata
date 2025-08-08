@@ -82,7 +82,6 @@ theorem StringGenState.subset : gen pf σ = (n, σ') → σ ⊆ σ' := by
   intros a Hin
   simp_all
 
-set_option warn.sorry false in
 theorem StringGenState.WFMono :
   WF σ →
   gen pf σ = (n, σ') →

@@ -51,7 +51,6 @@ theorem genBoogieIdentTemp :
   rw [← Hgen.1]
   constructor
 
-set_option warn.sorry false in
 theorem BoogieGenState.WFMono' :
   BoogieGenState.WF s →
   BoogieGenState.gen pf s = (l, s') →
@@ -91,7 +90,6 @@ theorem BoogieGenState.WFMono' :
     . simp [WF] at Hwf
       exact List.Forall_mem_iff.mp Hwf.2.2 _ HH
 
-set_option warn.sorry false in
 theorem BoogieGenState.WFMono : ∀ (γ γ' : BoogieGenState) (pf l : BoogieIdent),
   BoogieGenState.gen pf γ = (l, γ') → WF γ → WF γ' ∧ l ∈ γ'.generated ∧ γ ⊆ γ' := by
   intros γ γ' pf l Hgen Hwf

@@ -17,7 +17,6 @@ namespace WF
 
 open Std Lambda
 
-set_option warn.sorry false in
 /--
 A list of Statement 'ss' that passes type checking is well formed with respect to the whole program 'p'.
 -/

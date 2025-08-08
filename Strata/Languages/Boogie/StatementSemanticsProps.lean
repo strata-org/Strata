@@ -2005,7 +2005,6 @@ theorem InvStoresExceptInvStores :
   exact List.Disjoint.symm Hdis
   assumption
 
-set_option warn.sorry false in
 /--
 NOTE:
   In order to prove this refinement theorem, we need to reason about the
@@ -2027,7 +2026,6 @@ theorem EvalCallBodyRefinesContract :
   | call_sem lkup Heval Hwfval Hwfvars Hwfb Hwf Hwf2 Hup Hhav Hpre Heval2 Hpost Hrd Hup2 =>
     sorry
 
-set_option warn.sorry false in
 theorem EvalCommandRefinesContract :
 EvalCommand π δ δP σ₀ σ c σ' →
 EvalCommandContract π δ δP σ₀ σ c σ' := by
@@ -2040,7 +2038,6 @@ EvalCommandContract π δ δP σ₀ σ c σ' := by
     sorry
     constructor <;> assumption
 
-set_option warn.sorry false in
 /-- NOTE: should follow the same approach as `DetToNondetCorrect` to prove this
   mutually recursive theorem due to meta variable bug -/
 theorem EvalStmtsRefinesContract :
@@ -2088,7 +2085,6 @@ theorem EvalStmtRefinesContract :
     constructor
     apply EvalStmtsRefinesContract <;> assumption
 
-set_option warn.sorry false in
 /-- Currently we cannot prove this theorem,
     since the WellFormedSemanticEval definition does not assert
     a congruence relation for definedness on store
