@@ -14,6 +14,29 @@ open Strata.Parser (DeclParser InputContext Parser ParsingContext ParserState)
 
 namespace Strata
 
+namespace PrattParsingTableMap
+
+def addSynCat! (tables : PrattParsingTableMap) (dialect : String) (decl : SynCatDecl) : PrattParsingTableMap :=
+  let cat : QualifiedIdent := { dialect, name := decl.name }
+  if cat ∈ tables then
+    panic! s!"{cat} already declared."
+  else
+    tables.insert cat {}
+
+def addParserToCat! (tables : PrattParsingTableMap) (dp : DeclParser) : PrattParsingTableMap :=
+  tables.alter dp.category fun mtables =>
+    match mtables with
+    | none => panic s!"Category {dp.category.fullName} not declared."
+    | some tables =>
+      let r := tables |>.addParser dp.isLeading dp.parser dp.outerPrec
+      some r
+
+def addDialect! (tables : PrattParsingTableMap) (dialect : Dialect) (parsers : Array DeclParser) : PrattParsingTableMap :=
+  dialect.syncats.fold (init := tables) (·.addSynCat! dialect.name ·)
+  |> parsers.foldl PrattParsingTableMap.addParserToCat!
+
+end PrattParsingTableMap
+
 namespace Elab
 
 -- Metadata syntax
@@ -59,11 +82,14 @@ def logErrorMF [ElabClass m] (stx : Syntax) (msg : StrataFormat) : m Unit := do
 structure DeclContext where
   inputContext : InputContext
   stopPos : String.Pos
+  -- Map from dialect names to the dialect definition
+  loader : LoadedDialects
 
 namespace DeclContext
 
 def empty : DeclContext where
   inputContext := default
+  loader := .empty
   stopPos := 0
 
 end DeclContext
@@ -152,8 +178,6 @@ end TypeOrCatDeclMap
 structure DeclState where
   -- Fixed parser map
   fixedParsers : ParsingContext := {}
-  -- Map from dialect names to the dialect definition
-  loader : LoadedDialects
   -- Dialects considered open for pretty-printing purposes.
   openDialects : Array DialectName := #["Init"]
   -- List of dialects considered open.
@@ -176,81 +200,64 @@ structure DeclState where
 
 namespace DeclState
 
-def mkEnv (s : DeclState) (commands : Array Operation) : Environment := {
-      dialects := s.loader.dialects -- FIXME.  Compute only reachable dialects.
-      openDialects := s.openDialects
-      commands := commands
-      globalContext := s.globalContext
-    }
-
 def addParserToCat! (s : DeclState) (dp : DeclParser) : DeclState :=
   assert! dp.category ∈ s.parserMap
   { s with
       tokenTable := s.tokenTable.addTokens dp.parser
-      parserMap :=
-        s.parserMap.alter dp.category fun mtables =>
-          match mtables with
-          | none => panic s!"Category {dp.category.fullName} not declared."
-          | some tables =>
-            let r := tables |>.addParser dp.isLeading dp.parser dp.outerPrec
-            some r,
+      parserMap := s.parserMap.addParserToCat! dp
   }
 
 def addSynCat! (s : DeclState) (dialect : String) (decl : SynCatDecl) : DeclState :=
-  let cat : QualifiedIdent := { dialect, name := decl.name }
-  if cat ∈ s.parserMap then
-    panic! s!"{cat} already declared."
-  else
-    { s with parserMap := s.parserMap.insert cat {} }
+  { s with parserMap := s.parserMap.addSynCat! dialect decl }
 
 /--
 Opens the dialect definition dialect in the parser so it is visible to parser, but not
 part of environment.  This is used for dialect definitions.
 -/
-def openParserDialect! (s : DeclState) (dialect : Dialect) : DeclState :=
-  let s := { s with
-    metadataDeclMap := s.metadataDeclMap.addDialect dialect
-  }
+def openParserDialect! (s : DeclState) (loader : LoadedDialects) (dialect : Dialect) : DeclState :=
   let name := dialect.name
-  let s := dialect.syncats.fold (init := s) (·.addSynCat! name ·)
-  let parsers := s.loader.dialectParsers.getD name #[]
-  parsers.foldl (init := s) addParserToCat!
+  let parsers := loader.dialectParsers.getD name #[]
+  { s with
+    metadataDeclMap := s.metadataDeclMap.addDialect dialect
+    parserMap := s.parserMap.addDialect! dialect parsers
+    tokenTable := parsers.foldl (init := s.tokenTable) (·.addTokens ·.parser)
+  }
 
 mutual
 
-partial def ensureLoaded! (s : DeclState) (dialect : DialectName) : DeclState :=
+partial def ensureLoaded! (s : DeclState) (loaded : LoadedDialects) (dialect : DialectName) : DeclState :=
   if dialect ∈ s.openDialectSet then
     s
   else
-    match s.loader.dialects[dialect]? with
+    match loaded.dialects[dialect]? with
     | none => panic! s!"Unknown dialect {dialect}"
-    | some d => addDialect! s d
+    | some d => addDialect! s loaded d
 
 /--
 Opens the dialect (not must not already be open)
 -/
-partial def addDialect! (s : DeclState) (dialect : Dialect) : DeclState :=
+partial def addDialect! (s : DeclState) (loaded : LoadedDialects) (dialect : Dialect) : DeclState :=
   assert! dialect.name ∉ s.openDialectSet
   let s := dialect.imports.foldl (init := s) fun s d =>
       assert! d ≠ dialect.name
-      ensureLoaded! s d
+      ensureLoaded! s loaded d
   let s := { s with
     openDialects := s.openDialects.push dialect.name
     openDialectSet := s.openDialectSet.insert dialect.name
     typeOrCatDeclMap := s.typeOrCatDeclMap.addDialect dialect
   }
-  s.openParserDialect! dialect
+  s.openParserDialect! loaded dialect
 
 end
 
 /--
 Opens the dialect (not must not already be open)
 -/
-partial def openLoadedDialect! (s : DeclState) (dialect : Dialect) : DeclState :=
+partial def openLoadedDialect! (s : DeclState) (loaded : LoadedDialects) (dialect : Dialect) : DeclState :=
   if dialect.name ∈ s.openDialectSet then
     panic s!"Dialect {dialect.name} already open"
   else
-    s.addDialect! dialect
+    s.addDialect! loaded dialect
 
 end DeclState
 
@@ -261,7 +268,7 @@ namespace DeclM
 
 instance : ElabClass DeclM where
   getInputContext := return (←read).inputContext
-  getDialects := return (←get).loader.dialects
+  getDialects := return (←read).loader.dialects
   getOpenDialects := return (←get).openDialectSet
   getGlobalContext := return (←get).globalContext
   getErrorCount := return (←get).errors.size

@@ -10,44 +10,55 @@ import Strata.DDM.Elab.Core
 
 namespace Strata.Elab
 
-structure DialectContext t where
+structure DialectContext where
   /-- Callback to load dialects dynamically upon demand. -/
-  loadDialect : DialectName → EST String t Dialect
-  declContext : DeclContext
+  loadDialect : DialectName → StateT LoadedDialects BaseIO (Except String Dialect)
+  inputContext : Parser.InputContext
+  stopPos : String.Pos
 
 structure DialectState where
+  loaded : LoadedDialects
   declState : DeclState
   dialect : Dialect
 
-abbrev DialectM (t : Type) := ReaderT (DialectContext t) (StateT DialectState (ST t))
+abbrev DialectM := ReaderT DialectContext (StateRefT DialectState BaseIO)
 
-def getCurrentDialect : DialectM t Dialect := return (←get).dialect
+def getCurrentDialect : DialectM Dialect := return (←get).dialect
 
-instance {t} : MonadLift DeclM (DialectM t) where
-  monadLift act := fun c s => do
-    let { declState := ds, dialect := dialect } := s
-    let (r, ds) := act c.declContext ds
-    pure  (r, ⟨ds, dialect⟩)
+instance :  MonadState DialectState DialectM := inferInstanceAs (MonadState DialectState (ReaderT _ _))
 
-instance : ElabClass (DialectM t) where
-  getInputContext := (ElabClass.getInputContext : DeclM _)
-  getDialects := (ElabClass.getDialects : DeclM _)
-  getOpenDialects :=  (ElabClass.getOpenDialects : DeclM _)
-  getGlobalContext := (ElabClass.getGlobalContext : DeclM _)
-  getErrorCount := (ElabClass.getErrorCount : DeclM _)
-  logErrorMessage stx msg := (ElabClass.logErrorMessage stx msg : DeclM Unit)
+instance : MonadLift DeclM DialectM where
+  monadLift act := fun c => do
+    let { loaded := loaded, declState := ds, dialect := dialect } ← get
+    let ctx : DeclContext := {
+        inputContext := c.inputContext,
+        stopPos := c.stopPos,
+        loader := loaded
+    }
+    let (r, ds) := act ctx ds
+    set ({ loaded := loaded, declState := ds, dialect := dialect } : DialectState)
+    pure  r
 
-def getDeclState : DialectM t DeclState := (get : DeclM _)
+def getDeclState : DialectM DeclState := fun _ => DialectState.declState <$> get
 
-def modifyDeclState (f : DeclState → DeclState) : DialectM t Unit := (modify f : DeclM Unit)
+def modifyDeclState (f : DeclState → DeclState) : DialectM Unit := modify fun s => { s with declState := f s.declState }
 
-def modifyDialect (f : Dialect → Dialect) : DialectM t Unit :=
-  fun _ s => pure ((), { s with dialect := f s.dialect })
+def modifyDialect (f : Dialect → Dialect) : DialectM Unit := fun _ =>
+  modify fun (s : DialectState) => { s with dialect := f s.dialect }
 
-def addDeclToDialect (decl : Decl) : DialectM t Unit :=
+def addDeclToDialect (decl : Decl) : DialectM Unit :=
   modifyDialect fun d => d.addDecl decl
 
-abbrev DialectElab t := Tree → DialectM t Unit
+instance : ElabClass DialectM where
+  getInputContext := fun c => pure c.inputContext
+  getDialects := return (← get).loaded.dialects
+  getOpenDialects := return (← get).declState.openDialectSet
+  getGlobalContext := return (←get).declState.globalContext
+  getErrorCount := return (←get).declState.errors.size
+  logErrorMessage stx msg :=
+    modifyDeclState fun s => { s with errors := s.errors.push (stx, msg) }
+
+abbrev DialectElab := Tree → DialectM Unit
 
 private def checkTypeDeclarationArgs (tree : Tree) : ElabM (Array String) := do
   let bindings := tree.optBindings!
@@ -62,7 +73,7 @@ private def checkTypeDeclarationArgs (tree : Tree) : ElabM (Array String) := do
     m := addBinding m arg
   return m.decls.map (·.val.ident)
 
-private def elabTypeCommand (tree : Tree) : DialectM t Unit := do
+private def elabTypeCommand (tree : Tree) : DialectM Unit := do
   let d ← getCurrentDialect
   assert! tree.children.size = 2
 
@@ -83,7 +94,7 @@ private def elabTypeCommand (tree : Tree) : DialectM t Unit := do
     addDeclToDialect (.type decl)
 
 /- Add a new operator. -/
-def elabOpCommand (tree : Tree) : DialectM t Unit := do
+def elabOpCommand (tree : Tree) : DialectM Unit := do
   let d ← getCurrentDialect
   assert! tree.children.size = 6
   let nameInfo := tree[0]!.info.asIdent!
@@ -147,21 +158,35 @@ def elabOpCommand (tree : Tree) : DialectM t Unit := do
   }
   addDeclToDialect (.op decl)
 
-def elabDialectImportCommand (tree : Tree) : DialectM t Unit := do
+def elabDialectImportCommand (tree : Tree) : DialectM Unit := do
   assert! tree.children.size = 1
   let identTree := tree[0]!.info
   let name := identTree.asIdent!.val
-
-  let some d := (← getDeclState).loader.dialects[name]?
-    | logError identTree.stx <| s!"Unknown dialect {name}."
-      return
+  let d ←
+    match (← get).loaded.dialects[name]? with
+    | some d =>
+      pure d
+    | none =>
+      let loadCallback ← (·.loadDialect) <$> read
+      let r ← fun _ ref => do
+        let loaded := (← ref.get).loaded
+        assert! "StrataDDL" ∈ loaded.dialects.map.keys
+        let (r, loaded) ← loadCallback name loaded
+        ref.modify fun s => { s with loaded := loaded }
+        pure r
+      match r with
+      | .ok d =>
+        pure d
+      | .error msg =>
+        logError identTree.stx msg
+        return
   if name ∈ (←getDeclState).openDialectSet then
     logError identTree.stx <| s!"Dialect {name} already open."
     return
-  modifyDeclState (·.openLoadedDialect! d)
+  modify fun s => { s with declState := s.declState.openLoadedDialect! s.loaded d }
   modifyDialect fun d => { d with imports := d.imports.push name }
 
-private def elabCategoryCommand (tree : Tree) : DialectM t Unit := do
+private def elabCategoryCommand (tree : Tree) : DialectM Unit := do
   let d ← getCurrentDialect
   assert! d.name ∈ (← getDeclState).openDialectSet
   assert! tree.children.size = 1
@@ -175,7 +200,7 @@ private def elabCategoryCommand (tree : Tree) : DialectM t Unit := do
   modifyDeclState (·.addSynCat! d.name decl)
 
 /- Evaluate a function. -/
-def elabFnCommand (tree : Tree) : DialectM t Unit := do
+def elabFnCommand (tree : Tree) : DialectM Unit := do
   let d ← getCurrentDialect
   assert! tree.children.size = 6
 
@@ -225,7 +250,7 @@ def elabFnCommand (tree : Tree) : DialectM t Unit := do
     }
     addDeclToDialect (.function decl)
 
-def elabMdCommand (tree : Tree) : DialectM t Unit := do
+def elabMdCommand (tree : Tree) : DialectM Unit := do
   let d ← getCurrentDialect
   assert! tree.children.size = 2
 
@@ -266,7 +291,7 @@ def elabMdCommand (tree : Tree) : DialectM t Unit := do
       metadataDeclMap := s.metadataDeclMap.add dialect decl
     }
 
-def dialectElabs : Std.HashMap QualifiedIdent (DialectElab t) :=
+def dialectElabs : Std.HashMap QualifiedIdent DialectElab :=
   Std.HashMap.ofList <|
     [ (q`StrataDDL.importCommand, elabDialectImportCommand),
       (q`StrataDDL.categoryCommand, elabCategoryCommand),
@@ -276,7 +301,8 @@ def dialectElabs : Std.HashMap QualifiedIdent (DialectElab t) :=
       (q`StrataDDL.mdCommand,   elabMdCommand),
     ]
 
-partial def runDialectCommand {t} (leanEnv : Lean.Environment) : DialectM t Bool := do
+partial def runDialectCommand (leanEnv : Lean.Environment) : DialectM Bool := do
+  assert! "StrataDDL" ∈ (← get).loaded.dialects.map.keys
   let (mtree, success) ← runChecked <| elabCommand leanEnv
   match mtree with
   | none =>

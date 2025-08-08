@@ -782,9 +782,10 @@ A dialect definition.
 structure Dialect where
   name : DialectName
   -- Names of dialects that are imported into this dialect
-  imports : Array DialectName := #[]
+  imports : Array DialectName
   declarations : Array Decl := #[]
-  cache : Std.HashMap String Decl := {}
+  cache : Std.HashMap String Decl :=
+    declarations.foldl (init := {}) fun m d => m.insert d.name d
 deriving Inhabited
 
 namespace Dialect
@@ -947,6 +948,30 @@ def opDecl! (dm : DialectMap) (ident : QualifiedIdent) : OpDecl :=
   match dm.decl! ident with
   | .op decl => decl
   | _ => panic! s!"Unknown operation {ident.fullName}"
+
+/--
+Return set of all dialects that are imported by `dialect`.
+
+This includes transitive imports.
+-/
+partial def importedDialects! (map : DialectMap) (dialect : DialectName) : DialectMap := aux (.ofList [(d.name, d)]) [d]
+  where d :=
+          match map[dialect]? with
+          | none => panic! s!"Unknown dialect {dialect}"
+          | some d => d
+        aux (all : Std.HashMap DialectName Dialect) (next : List Dialect) : DialectMap :=
+          match next with
+          | d :: next =>
+            let (all, next) := d.imports.foldl (init := (all, next)) fun (all, next) i =>
+              if i ∈ all then
+                (all, next)
+              else
+                let d := match map[i]? with
+                          | none => panic! s!"Unknown dialect {i}"
+                          | some d => d
+               (all.insert i d, d :: next)
+            aux all next
+          | [] => DialectMap.mk all
 
 end DialectMap
 
@@ -1119,7 +1144,8 @@ structure Environment where
   -- Top level commands in file.
   commands : Array Operation := #[]
   -- Operations at the top command level.
-  globalContext : GlobalContext
+  globalContext : GlobalContext :=
+    commands.foldl (init := {}) (·.addCommand dialects ·)
 
 namespace Environment
 
@@ -1140,7 +1166,6 @@ def create (dialects : DialectMap) (openDialects : Array DialectName) (commands 
   { dialects,
     openDialects,
     commands := commands,
-    globalContext := commands.foldl (init := {}) (·.addCommand dialects ·)
   }
 
 def openDialect (env : Environment) (d : DialectName) : Environment :=
