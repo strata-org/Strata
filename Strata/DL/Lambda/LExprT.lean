@@ -265,7 +265,8 @@ mutual
 partial def fromLExprAux (T : (TEnv Identifier)) (e : (LExpr Identifier)) :
     Except Format ((LExprT Identifier) × (TEnv Identifier)) :=
   open LTy.Syntax in do
-  dbg_trace f!"Call fromLExprAux with ({e}) and ({T})"
+  dbg_trace f!"Call fromLExprAux with ({e})"
+  -- dbg_trace f!" and ({T})"
   match e with
   | .mdata m e =>
     let (et, T) ← fromLExprAux T e
