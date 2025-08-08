@@ -25,11 +25,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Install Lean
-        shell: bash
-        run: |
-              wget https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh
-              bash elan-init.sh -y
       - name: Install cvc5
         shell: bash
         run: |
@@ -65,15 +60,8 @@ jobs:
               unzip "${ARCHIVE_NAME}.zip"
               chmod +x "${ARCHIVE_NAME}/bin/z3"
               echo "$GITHUB_WORKSPACE/${ARCHIVE_NAME}/bin/" >> $GITHUB_PATH
-      - name: Download dependencies
-        shell: bash
-        run: source ~/.profile && lake -R -Kenv=dev update
-      - name: Build
-        shell: bash
-        run: source ~/.profile && lake build
-      - name: Test
-        shell: bash
-        run: source ~/.profile && lake test
+      - name: Setup Lean
+        uses: leanprover/lean-action@v1
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
