@@ -3,7 +3,7 @@
 *       @strata-org/reviewers
 
 # CSimp dialect files
-*.csimp.st    @andrewmwells-amazon @atomb
+*.csimp.st    @andrewmwells-amazon @shigoel
 
 # Boogie dialect files
 *.boogie.st    @atomb @MikaelMayer
@@ -30,7 +30,7 @@
 /Strata/Languages/Boogie/ @atomb @shigoel
 /StrataTest/Languages/Boogie/ @atomb @shigoel
 
-/Strata/Languages/C_Simp/ @andrewmwells-amazon
+/Strata/Languages/C_Simp/ @andrewmwells-amazon @shigoel
 
 /Strata/Transform/ @atomb
 
