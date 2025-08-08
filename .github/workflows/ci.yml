@@ -74,6 +74,16 @@ jobs:
       - name: Test
         shell: bash
         run: source ~/.profile && lake test
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build StrataVerify
+        run: lake exe StrataVerify Examples/SimpleProc.boogie.st
+      - name: Build BoogieToStrata
+        run: dotnet build -warnaserror ${SOLUTION}
+      - name: Test BoogieToStrata
+        run: dotnet test ${SOLUTION}
 
   lint_checks:
     name: Run lint checks
