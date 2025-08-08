@@ -3,6 +3,9 @@ name: Build
 on:
   pull_request:
 
+env:
+  SOLUTION: Tools/BoogieToStrata/BoogieToStrata.sln
+
 jobs:
   get-branch-name:
     runs-on: ubuntu-latest
@@ -60,13 +63,13 @@ jobs:
               unzip "${ARCHIVE_NAME}.zip"
               chmod +x "${ARCHIVE_NAME}/bin/z3"
               echo "$GITHUB_WORKSPACE/${ARCHIVE_NAME}/bin/" >> $GITHUB_PATH
-      - name: Setup Lean
-        uses: leanprover/lean-action@v1
-      - name: Setup .NET
+      - name: Install .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - name: Build StrataVerify
+      - name: Build and test Strata
+        uses: leanprover/lean-action@v1
+      - name: Build and run StrataVerify
         run: lake exe StrataVerify Examples/SimpleProc.boogie.st
       - name: Build BoogieToStrata
         run: dotnet build -warnaserror ${SOLUTION}
