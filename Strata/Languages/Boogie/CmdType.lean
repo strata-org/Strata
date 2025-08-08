@@ -88,6 +88,7 @@ def canonicalizeConstraints (constraints : List (LTy × LTy)) : Except Format Co
 
 def unifyTypes (T : TEnv BoogieIdent) (constraints : List (LTy × LTy)) : Except Format (TEnv BoogieIdent) := do
   let constraints ← canonicalizeConstraints constraints
+  dbg_trace "Constraints.unify in CmdType.unifyTypes"
   let S ← Constraints.unify constraints T.state.subst
   let T := T.updateSubst S
   return T

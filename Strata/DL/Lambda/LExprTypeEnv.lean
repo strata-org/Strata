@@ -392,6 +392,7 @@ def LTy.aliasDef? (mty : LMonoTy) (T : (TEnv Identifier)) : (Option LMonoTy × (
     let (mtys, T) := LMonoTys.instantiate args [lhs, rhs] T
     match mtys with
     | [lhsty, rhsty] =>
+      dbg_trace f!"Constraints.unify in LTy.aliasDef"
       match Constraints.unify [(mty, lhsty)] T.state.subst with
       | .error _ => go mty arest T
       | .ok S => (rhsty.subst S, T)
@@ -400,8 +401,8 @@ def LTy.aliasDef? (mty : LMonoTy) (T : (TEnv Identifier)) : (Option LMonoTy × (
       -- (FIXME) Prove that the following is unreachable.
       (none, T)
 
-/-- info: none -/
-#guard_msgs in
+-- /-- info: none -/
+-- #guard_msgs in
 open LTy.Syntax in
 #eval LTy.aliasDef? mty[%__ty0] { @TEnv.default String with
               context := { aliases := [{ args := ["x", "y"],
@@ -410,8 +411,8 @@ open LTy.Syntax in
       |>.fst |>.format
 
 
-/-- info: some int -/
-#guard_msgs in
+-- /-- info: some int -/
+-- #guard_msgs in
 open LTy.Syntax in
 #eval LTy.aliasDef? mty[myInt] { @TEnv.default String with
           context := { aliases := [{ args := [],
@@ -508,6 +509,7 @@ def isInstanceOfKnownType (ty : LMonoTy) (T : (TEnv Identifier)) : Bool :=
     | [] => false
     | k :: krest =>
       let (km, T) := LTy.instantiate k T
+      dbg_trace "Constraints.unify in isInstanceOfKnownType"
       match Constraints.unify [(km, ty)] S with
       | .error _ => go ty krest S T
       | .ok _ => true

@@ -922,7 +922,14 @@ bottom-up Hindley-Milner style algorithm that finds the most general type
 (principal type) of an expression by finding a substitution that makes all the
 types in the input constraints equal.
 -/
+def isFTVar (mty: LMonoTy): Bool :=
+  match mty with
+  | .ftvar _ => true
+  | _ => false
+
 def Constraints.unify (constraints : Constraints) (S : Subst) : Except Format Subst := do
+  dbg_trace f!"Add new constraint {constraints}"
+  dbg_trace f!"IsFTVar: {constraints.map (fun p: (LMonoTy × LMonoTy) => ((isFTVar p.fst), isFTVar p.snd))}"
   if h: SubstWF S then
     let relS ← Constraints.unifyCore constraints ⟨S, h⟩
     .ok relS.newS.subst
@@ -930,15 +937,29 @@ def Constraints.unify (constraints : Constraints) (S : Subst) : Except Format Su
     .error f!"[Constraints.unify] Input substitution map not well-formed!\n\
               Map: {S}"
 
-/--
-info: ok: (b, (arrow c d))
-(a, int)
--/
-#guard_msgs in
+
+
+-- /--
+-- info: ok: (b, (arrow c d))
+-- (a, int)
+-- -/
+-- #guard_msgs in
 open LTy.Syntax in
 #eval  do let S ← Constraints.unify [(mty[%a → %b], mty[int → (%c → %d)])] []
           return (format S)
 
 ---------------------------------------------------------------------
+
+open LTy.Syntax in
+#eval  do let S ← Constraints.unify [(mty[int], mty[%Heap])] []
+          return (format S)
+
+open LTy.Syntax in
+#eval  do let S ← Constraints.unify [(mty[int], mty[Heap])] []
+          return (format S)
+
+open LTy.Syntax in
+#eval  do let S ← Constraints.unify [(mty[Heap], mty[bool])] []
+          return (format S)
 
 end Lambda

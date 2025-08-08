@@ -178,6 +178,7 @@ def inferFVar (T : (TEnv Identifier)) (x : Identifier) (fty : Option LMonoTy) :
     | some fty =>
       -- We do not support expressions to be annotated with type synonyms yet.
       -- As such, if `fty` is a synonym, then the following may raise an error.
+      dbg_trace "Contraints.unify in inferFVar"
       let S ← Constraints.unify [(fty, ty)] T.state.subst
       .ok (ty, TEnv.updateSubst T S)
 
@@ -265,8 +266,8 @@ mutual
 partial def fromLExprAux (T : (TEnv Identifier)) (e : (LExpr Identifier)) (depth: Nat) :
     Except Format ((LExprT Identifier) × (TEnv Identifier)) :=
   open LTy.Syntax in do
-  dbg_trace f!"Call fromLExprAux at depth {depth} with ({e})"
-  dbg_trace f!" and ({T})"
+  -- dbg_trace f!"Call fromLExprAux at depth {depth} with ({e})"
+  -- dbg_trace f!" and ({T})"
   match e with
   | .mdata m e =>
     let (et, T) ← fromLExprAux T e (depth + 1)
@@ -314,6 +315,7 @@ partial def inferOp (T : (TEnv Identifier)) (o : Identifier) (oty : Option LMono
             let (body_typed, T) ← fromLExprAux T body (depth + 1)
             let bodyty := body_typed.toLMonoTy
             let (retty, T) ← func.outputPolyType.instantiateWithCheck T
+            dbg_trace "Contraints.unify in inferOp"
             let S ← Constraints.unify [(retty, bodyty)] T.state.subst
             let T := T.updateSubst S
             let T := T.popContext
@@ -325,6 +327,7 @@ partial def inferOp (T : (TEnv Identifier)) (o : Identifier) (oty : Option LMono
       | none => .ok (ty, T)
       | some cty =>
         let (optTyy, T) := (cty.aliasInst T)
+        dbg_trace "Contraints.unify in inferOp"
         let S ← Constraints.unify [(ty, optTyy.getD cty )] T.state.subst
         let T := TEnv.updateSubst T S
         .ok (ty, TEnv.updateSubst T S)
@@ -336,6 +339,7 @@ partial def fromLExprAux.ite (T : (TEnv Identifier)) (c th el : (LExpr Identifie
   let cty := ct.toLMonoTy
   let tty := tt.toLMonoTy
   let ety := et.toLMonoTy
+  dbg_trace "Contraints.unify in fromLExprAux.ite"
   let S ← Constraints.unify [(cty, LMonoTy.bool), (tty, ety)] T.state.subst
   .ok (.ite ct tt et tty, TEnv.updateSubst T S)
 
@@ -346,6 +350,7 @@ partial def fromLExprAux.eq (T : (TEnv Identifier)) (e1 e2 : (LExpr Identifier))
   let (e2t, T) ← fromLExprAux T e2 (depth + 1)
   let ty1 := e1t.toLMonoTy
   let ty2 := e2t.toLMonoTy
+  dbg_trace "Contraints.unify in fromLExprAux.eq"
   let S ← Constraints.unify [(ty1, ty2)] T.state.subst
   .ok (.eq e1t e2t LMonoTy.bool, TEnv.updateSubst T S)
 
@@ -376,6 +381,7 @@ partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (ot
   let S ← match oty with
   | .some ty =>
     let (optTyy, T) := (ty.aliasInst T)
+    dbg_trace "Constraints.unify in fromLExprAux.quant"
     (Constraints.unify [(.ftvar xt', optTyy.getD ty)] T.state.subst)
   | .none =>
     .ok T.state.subst
@@ -415,11 +421,14 @@ partial def fromLExprAux.app (T : (TEnv Identifier)) (e1 e2 : (LExpr Identifier)
   let (optTyy2, T) := (ty2.aliasInst T)
   let (fresh_name2, T) := TEnv.genTyVar T
   let freshty2: LMonoTy := (.ftvar fresh_name2)
+  dbg_trace "Constraints.unify in fromLExprAux.app"
   let S ← Constraints.unify [(freshty1, optTyy1.getD ty1 )] T.state.subst
   let T := TEnv.updateSubst T S
+  dbg_trace "Constraints.unify in fromLExprAux.app"
   let S ← Constraints.unify [(freshty2, optTyy2.getD ty1 )] T.state.subst
   let T := TEnv.updateSubst T S
 
+  dbg_trace "Constraints.unify in fromLExprAux.app"
   let S ← Constraints.unify [(freshty1, (.tcons "arrow" [freshty2, freshty]))] T.state.subst
   let mty := LMonoTy.subst S freshty
   .ok (.app e1t e2t mty, TEnv.updateSubst T S)

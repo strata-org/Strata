@@ -55,6 +55,7 @@ def typeCheckCmd (T : (TEnv BoogieIdent)) (P : Program) (c : Command) :
            let (ret_sig, T) ← LMonoTySignature.instantiate T proc.header.typeArgs proc.header.outputs
            let ret_mtys := LMonoTys.subst T.state.subst ret_sig.values
            let constraints := lhs_tys.zip ret_mtys
+           dbg_trace "Constraints.unify in StatementType.typeCheckCmd"
            let S ← Constraints.unify constraints T.state.subst
            let T := T.updateSubst S
            -- Infer the types of the actuals and unify with the types of the
@@ -65,6 +66,7 @@ def typeCheckCmd (T : (TEnv BoogieIdent)) (P : Program) (c : Command) :
            let (inp_sig, T) ← LMonoTySignature.instantiate T proc.header.typeArgs proc.header.inputs
            let inp_mtys := LMonoTys.subst T.state.subst inp_sig.values
            let constraints := args_tys.zip inp_mtys
+           dbg_trace "Constraints.unify in StatementType.typeCheckCmd"
            let S ← Constraints.unify constraints T.state.subst
            let T := T.updateSubst S
            let s' := .call lhs pname args' md
