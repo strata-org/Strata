@@ -120,12 +120,12 @@ def loop_elimination(program : C_Simp.Program) : Boogie.Program :=
 def to_boogie(program : C_Simp.Program) : Boogie.Program :=
   loop_elimination program
 
-def C_Simp.get_program (env: Environment) : C_Simp.Program :=
-  (Strata.C_Simp.TransM.run (Strata.C_Simp.translateProgram (env.commands))).fst
+def C_Simp.get_program (p : Strata.Program) : C_Simp.Program :=
+  (Strata.C_Simp.TransM.run (Strata.C_Simp.translateProgram (p.commands))).fst
 
-def C_Simp.verify (smtsolver : String) (env : Environment) (options : Options := Options.default):
+def C_Simp.verify (smtsolver : String) (p : Strata.Program) (options : Options := Options.default):
   IO Boogie.VCResults := do
-  let program := C_Simp.get_program env
+  let program := C_Simp.get_program p
   EIO.toIO (fun f => IO.Error.userError (toString f))
     (Boogie.verify smtsolver (to_boogie program) options)
 

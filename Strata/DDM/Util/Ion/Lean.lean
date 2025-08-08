@@ -113,16 +113,18 @@ structure FromIonCache where
 class FromIon (α : Type _) where
   fromIon : FromIonCache → Ion SymbolId → α
 
-class ToIon (α : Type _) where
-  toIon : SymbolIdCache → α → InternM (Ion SymbolId)
+class CachedToIon (α : Type _) where
+  cachedToIon : SymbolIdCache → α → InternM (Ion SymbolId)
 
-export ToIon (toIon)
+namespace CachedToIon
 
-instance [h : ToIon α] : ToIon (Array α) where
-  toIon refs a := .list <$> a.mapM (toIon refs)
+instance [h : CachedToIon α] : CachedToIon (Array α) where
+  cachedToIon refs a := .list <$> a.mapM (cachedToIon refs)
 
-instance [h : ToIon α] : ToIon (List α) where
-  toIon refs a := .list <$> a.toArray.mapM (toIon refs)
+instance [h : CachedToIon α] : CachedToIon (List α) where
+  cachedToIon refs a := .list <$> a.toArray.mapM (cachedToIon refs)
+
+end CachedToIon
 
 private def resolveGlobalDecl {m : Type → Type} [Monad m] [MonadResolveName m] [MonadEnv m] [MonadError m] (tp : Syntax) : m Name := do
   let cs ← resolveGlobalName tp.getId
@@ -201,7 +203,7 @@ def declareIonRefCacheImpl : Elab.Term.TermElab := fun stx _ =>
   | _ =>
     throwUnsupportedSyntax
 
-notation "ionRef!" s => toIon (ionRefEntry! s) s
+notation "ionRef!" s => CachedToIon.cachedToIon (ionRefEntry! s) s
 
 syntax (name := getIonEntries) "ionEntries!" "(" ident ")" : term -- declare the syntax
 
@@ -233,21 +235,23 @@ def declareIonSymbolTableImpl : Command.CommandElab := fun stx =>
     let name := `_root_ ++ name
     let ionSymbolCache : TSyntax `ident := mkIdent si (.str name "ionSymbolCache")
     let ionSymbolTable : TSyntax `ident := mkIdent si (.str name "ionSymbolTable")
+    let toIonPair : TSyntax `ident := mkIdent si (.str name "toIonValues")
     let toIon : TSyntax `ident := mkIdent si (.str name "toIon")
-    let toBinaryDef : TSyntax `ident := mkIdent si (.str name "toIonBinary")
     Command.elabCommand =<< `(
       def $ionSymbolCache : SymbolIdCache := { globalCache := $(quote tbl.entries), offset := $(quote tblIdx) }
     )
     Command.elabCommand =<< `(
       def $ionSymbolTable : SymbolTable := $(quote tbl.symtab)
     )
-    Command.elabCommand =<< `(
-      def $toIon (v : $tp) : SymbolTable × Ion SymbolId :=
-        runIntern (symbols := $ionSymbolTable) (toIon $ionSymbolCache v)
+    let toIonImplDef ← ``(fun v =>
+          runIntern (symbols := $ionSymbolTable) (CachedToIon.cachedToIon $ionSymbolCache v)
     )
     Command.elabCommand =<< `(
-      def $toBinaryDef (x : $tp) : ByteArray :=
-        let (tbl, v) := x.toIon
+      def $toIonPair : $tp → SymbolTable × Ion SymbolId := $toIonImplDef
+    )
+    Command.elabCommand =<< `(
+      def $toIon (x : $tp) : ByteArray :=
+        let (tbl, v) := $toIonPair x
         _root_.Ion.serialize #[tbl.localSymbolTableValue, v]
     )
   | _ =>

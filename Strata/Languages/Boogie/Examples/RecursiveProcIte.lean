@@ -9,7 +9,7 @@ import Strata.Languages.Boogie.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def procIfEnv : Environment :=
+def procIfPgm : Program :=
 #strata
 program Boogie;
 
@@ -61,7 +61,7 @@ Obligation: n_le_100_postcond
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" procIfEnv
+#eval verify "cvc5" procIfPgm
 
 /-
 <PCs>

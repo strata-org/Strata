@@ -80,8 +80,8 @@ def readLength (td : TypeDesc) (limit : Nat) : AReader (NatLe limit) := do
     else
       .fail ((←.curOffset) - 1) s!"Length is too large"
   else
-    let off ← .curOffset
     let len ← .ofLT readVarUInt
+    let off ← .curOffset
     if p : off + len ≤ limit then
       return .mk (off + len) p
     else
@@ -300,7 +300,11 @@ def popFinishedValues {size} (off : Nat) (ds : DeserializeState size) : Except S
     popFinishedValues off top3
 termination_by ds.stack.size
 
-def close {size} (r : DeserializeState size) : Array (Array (Ion SymbolId)) := r.prev.push r.cur
+def close {size} (r : DeserializeState size) : Array (Array (Ion SymbolId)) :=
+  if r.cur.isEmpty then
+    r.prev
+  else
+    r.prev.push r.cur
 
 def startNew {size} (r : DeserializeState size) : DeserializeState size :=
   { prev := r.close, cur := #[], stack := #[] }

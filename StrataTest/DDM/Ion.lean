@@ -5,23 +5,20 @@
 -/
 
 import Strata.DDM.Ion
-import Strata.DDM.BuiltinDialects.StrataDDL
+import Strata.DDM.Elab
 
 namespace Strata
 
 open _root_.Ion (SymbolTable Ion SymbolId)
 
-def runRoundTrip {α} [FromIon α] [BEq α] [Inhabited α] (toF : α → SymbolTable × Ion SymbolId) (init : α) : α  :=
-  let (tbl, r) := toF init
-  match @fromIon α _ r tbl with
-  | .error s => panic! s!"Deserialize failed: {s}"
-  | .ok d  => d
-
-def testRoundTrip {α} [FromIon α] [BEq α] [Inhabited α] (toF : α → SymbolTable × Ion SymbolId) (v : α) : Bool :=
-  runRoundTrip toF v == v
+def testRoundTrip {α} [FromIon α] [BEq α] [Inhabited α] (dialects : DialectMap) (toF : α → ByteArray) (init : α) : Bool :=
+  let bs := toF init
+  match FromIon.deserialize (α := α) dialects bs with
+  | .error _ => false
+  | .ok res  => res == init
 
 def testDialectRoundTrip (d : Dialect) : Bool :=
-  runRoundTrip Dialect.toIon d == d
+  testRoundTrip Elab.LoadedDialects.builtin.dialects Dialect.toIon d
 
 -- Test we can serialize/deserialize dialect
 #guard testDialectRoundTrip initDialect

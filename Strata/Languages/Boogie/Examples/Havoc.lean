@@ -9,7 +9,7 @@ import Strata.Languages.Boogie.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def havocEnv : Environment :=
+def havocPgm : Program :=
 #strata
 program Boogie;
 procedure S() returns ()
@@ -24,7 +24,7 @@ procedure S() returns ()
 /-- info: true -/
 #guard_msgs in
 -- No errors in translation.
-#eval TransM.run (translateProgram (havocEnv.commands)) |>.snd |>.isEmpty
+#eval TransM.run (translateProgram (havocPgm.commands)) |>.snd |>.isEmpty
 
 /--
 info: (procedure S :  () → ())
@@ -39,7 +39,7 @@ assert [x_eq_1] (x == (#1 : int))
 Errors: #[]
 -/
 #guard_msgs in
-#eval TransM.run (translateProgram (havocEnv.commands))
+#eval TransM.run (translateProgram (havocPgm.commands))
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -76,6 +76,6 @@ Result: failed
 CEx: ($__x0, 0)
 -/
 #guard_msgs in
-#eval verify "cvc5" havocEnv
+#eval verify "cvc5" havocPgm
 
 ---------------------------------------------------------------------

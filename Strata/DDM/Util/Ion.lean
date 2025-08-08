@@ -223,8 +223,7 @@ def intern (values : List (Ion String)) (symbols : SymbolTable := .system) : Arr
 Write values
 -/
 def internAndSerialize (values : List (Ion String)) (symbols : SymbolTable := .system) : ByteArray :=
-  let values := intern (symbols := symbols) values
-  values.foldl (init := binaryVersionMarker 1 0) (fun b v => v.serialize b |>.snd)
+  _root_.Ion.serialize <| intern (symbols := symbols) values
 
 /--
 Write a list of Ion values to file.

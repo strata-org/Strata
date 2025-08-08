@@ -557,25 +557,28 @@ protected def format (dialects : DialectMap) (d : Dialect) (opts : FormatOptions
 
 end Dialect
 
-namespace Environment
+namespace Program
 
-protected def formatContext (env : Environment) (opts : FormatOptions) : FormatContext :=
-  .ofDialects env.dialects env.globalContext opts
+protected def formatContext (p : Program) (opts : FormatOptions) : FormatContext :=
+  .ofDialects p.dialects p.globalContext opts
 
-protected def formatState (env : Environment) : FormatState where
-  openDialects := .ofArray env.openDialects
-  bindings := #[]
+protected def formatState (p : Program) : FormatState where
+  openDialects := .ofArray p.dialects.map.keysArray
 
-protected def format (env : Environment) (opts : FormatOptions := {}) : Format :=
-  let c := env.formatContext opts
-  let s := env.formatState
-  env.commands |>.map (mformat · c s |>.format) |>.toList |> Format.join
+protected def format (p : Program) (opts : FormatOptions := {}) : Format :=
+  let c := p.formatContext opts
+  let s := p.formatState
+  p.commands.foldl (init := f!"program {p.dialect};\n") fun f cmd =>
+    f ++ (mformat cmd c s).format
 
-protected def ppDialect! (env : Environment) (name : DialectName) (opts : FormatOptions := {}) : Format :=
-  match env.dialects[name]? with
-  | some d => d.format env.dialects opts
+instance : ToString Program where
+  toString p := p.format |>.render
+
+protected def ppDialect! (p : Program) (name : DialectName := p.dialect) (opts : FormatOptions := {}) : Format :=
+  match p.dialects[name]? with
+  | some d => d.format p.dialects opts
   | none => panic! s!"Unknown dialect {name}"
 
-end Environment
+end Program
 
 end Strata

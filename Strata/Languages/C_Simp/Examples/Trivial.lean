@@ -21,7 +21,8 @@ procedure trivial () -> bool
 #end
 
 /--
-info: proceduretrivial()->bool@pretrue@posttrue({
+info: program C_Simp;
+proceduretrivial()->bool@pretrue@posttrue({
   returntrue;
   }
   )

@@ -9,7 +9,7 @@ import Strata.Languages.Boogie.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def realEnv : Environment :=
+def realEnv : Program :=
 #strata
 program Boogie;
 
@@ -102,7 +102,7 @@ CEx:
 
 ---------------------------------------------------------------------
 
-def bvEnv : Environment :=
+def bvEnv : Program :=
 #strata
 program Boogie;
 

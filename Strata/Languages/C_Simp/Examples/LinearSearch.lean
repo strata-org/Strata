@@ -35,7 +35,8 @@ procedure linearSearch (arr: intArr, e: int) -> bool
 #end
 
 /--
-info: procedurelinearSearch(arr:intArr, e:int)->bool@pretrue@posttrue({
+info: program C_Simp;
+procedurelinearSearch(arr:intArr, e:int)->bool@pretrue@posttrue({
   varidx:int;
   (idx):=#(0);
   while((idx)<(len(arr)))@decreases((len(arr))-(idx))@invariant(true)({

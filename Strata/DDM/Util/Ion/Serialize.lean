@@ -185,8 +185,8 @@ def serialize : Ion SymbolId → Serialize
 end Ion
 
 /-- Create binary version marker -/
-def binaryVersionMarker (major : UInt8) (minor : UInt8) : ByteArray :=
+def binaryVersionMarker (major : UInt8 := 1) (minor : UInt8 := 0) : ByteArray :=
   .mk #[ 0xE0, major, minor, 0xEA ]
 
 def serialize (values : Array (Ion SymbolId)) : ByteArray :=
-  values.foldl (init := binaryVersionMarker 1 0) fun s v => v.serialize s |>.snd
+  values.foldl (init := binaryVersionMarker) fun s v => v.serialize s |>.snd

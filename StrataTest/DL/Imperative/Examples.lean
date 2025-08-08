@@ -10,7 +10,7 @@ import StrataTest.DL.Imperative.Verify
 namespace Strata
 
 ---------------------------------------------------------------------
-def testProgram1 : Environment :=
+def testProgram1 : Program :=
 #strata
 program ArithPrograms;
   init x : num := 0;
@@ -43,7 +43,7 @@ Counterexample: (($__x0, Num), 0)
 
 ---------------------------------------------------------------------
 
-def testProgram2 : Environment :=
+def testProgram2 : Program :=
 #strata
 program ArithPrograms;
   init x : num := 0;
@@ -69,7 +69,7 @@ Result: verified
 
 ---------------------------------------------------------------------
 
-def testProgram3 : Environment :=
+def testProgram3 : Program :=
 #strata
 program ArithPrograms;
   var x : num;

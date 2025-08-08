@@ -34,7 +34,8 @@ procedure loopSimple (n: int) -> int
 #end
 
 /--
-info: procedureloopSimple(n:int)->int@pre(n)>=(#(0))@posttrue({
+info: program C_Simp;
+procedureloopSimple(n:int)->int@pre(n)>=(#(0))@posttrue({
   varsum:int;
   vari:int;
   (sum):=#(0);

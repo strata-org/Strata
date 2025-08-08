@@ -33,7 +33,8 @@ procedure loopTrivial (n: int) -> int
 #end
 
 /--
-info: procedureloopTrivial(n:int)->int@pre(n)>=(#(0))@posttrue({
+info: program C_Simp;
+procedureloopTrivial(n:int)->int@pre(n)>=(#(0))@posttrue({
   vari:int;
   (i):=#(0);
   while((i)<(n))@decreases((n)-(i))@invariant((i)<=(n))({

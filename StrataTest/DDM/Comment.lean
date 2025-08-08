@@ -31,7 +31,8 @@ decl bar;
 #end
 
 /--
-info: decl foo;
+info: program Comment;
+decl foo;
 /*@ annotation */ decl bar;
 //@ inline
 decl bar;

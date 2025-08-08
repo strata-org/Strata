@@ -46,17 +46,17 @@ def main (args : List String) : IO UInt32 := do
     println! f!"Loading {file}"
     let text ← IO.FS.readFile file
     let inputCtx := Lean.Parser.mkInputContext text file
-    let emptyEnv ← Lean.mkEmptyEnvironment 0
     let dctx := Elab.LoadedDialects.builtin
     let dctx := dctx.addDialect! Boogie
     let dctx := dctx.addDialect! C_Simp
-    match Strata.Elab.elabProgram dctx emptyEnv inputCtx with
-    | .ok env =>
+    let leanEnv ← Lean.mkEmptyEnvironment 0
+    match Strata.Elab.elabProgram dctx leanEnv inputCtx with
+    | .ok pgm =>
       println! s!"Successfully parsed {file}"
       let vcResults ← if file.endsWith ".csimp.st" then
-        C_Simp.verify "z3" env opts
+        C_Simp.verify "z3" pgm opts
       else
-        verify "z3" env opts
+        verify "z3" pgm opts
       for vcResult in vcResults do
         println! f!"{vcResult.obligation.label}: {vcResult.result}"
       let success := vcResults.all isSuccessVCResult

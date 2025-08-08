@@ -9,7 +9,7 @@ import Strata.Languages.Boogie.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def oldExprEnv : Environment :=
+def oldExprEnv : Program :=
 #strata
 program Boogie;
 var g : bool;

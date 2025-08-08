@@ -57,7 +57,8 @@ procedure add (x : Nat, y : Nat, c : Pred) {
 #end
 
 /--
-info: assert true;
+info: program B3Lite;
+assert true;
 assert (true ==> true) ==> true;
 assert true ==> true ==> true;
 procedure add(x:Nat, y:Nat, c:Pred) {

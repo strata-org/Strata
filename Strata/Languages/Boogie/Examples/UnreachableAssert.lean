@@ -9,7 +9,7 @@ import Strata.Languages.Boogie.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def unreachableAssertEnv : Environment :=
+def unreachableAssertEnv : Program :=
 #strata
 program Boogie;
 procedure R() returns ()

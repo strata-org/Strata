@@ -9,7 +9,7 @@ import Strata.Languages.Boogie.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def globalCounterEnv : Environment :=
+def globalCounterEnv : Program :=
 #strata
 program Boogie;
 

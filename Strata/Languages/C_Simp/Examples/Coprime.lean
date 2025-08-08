@@ -35,7 +35,8 @@ procedure coprime (a: int, b: int) -> bool
 #end
 
 /--
-info: procedurecoprime(a:int, b:int)->bool@pre((a)>(#(0)))&&((b)>(#(0)))@posttrue({
+info: program C_Simp;
+procedurecoprime(a:int, b:int)->bool@pre((a)>(#(0)))&&((b)>(#(0)))@posttrue({
   var(i:int):=a;
   if((b)<(a))then{
   (i):=b;
