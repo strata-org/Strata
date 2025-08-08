@@ -4,7 +4,13 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-/-
+import Strata.DL.Util.ListUtils
+import Strata.Languages.Boogie.ProgramType
+import Strata.Languages.Boogie.WF
+import Strata.Languages.Boogie.StatementWF
+import Strata.Languages.Boogie.ProcedureWF
+
+/-! ## Well-Formedness for Programs
   This file is the entry point of typechecker correctness proofs. Specifically,
  `Program.typeCheckWF` states that if a program successfully type checks,
  then it is also well-formed.
@@ -66,12 +72,6 @@
  consequently, we can prove the main theorem that a program is well-formed if
  the program is type-checked.
 -/
-
-import Strata.DL.Util.ListUtils
-import Strata.Languages.Boogie.ProgramType
-import Strata.Languages.Boogie.WF
-import Strata.Languages.Boogie.StatementWF
-import Strata.Languages.Boogie.ProcedureWF
 
 namespace Boogie
 namespace WF

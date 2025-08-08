@@ -4,15 +4,15 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-/-
+import Strata.DL.Util.Counter
+
+/-! ## String Generator
   This file contains a string generator `StringGenState.gen`, where the
   uniqueness of the generated strings is designed to be provable. It relies on a
   `CounterState` to generate unique natural numbers (See `Counter.lean`).
 
   Also see `LabelGen.lean` for the generic type class for a unique label generator.
 -/
-
-import Strata.DL.Util.Counter
 
 /-- `s.IsSuffix t` checks if the string `s` is a suffix of the string `t`.
 from mathlib https://github.com/leanprover-community/mathlib4/blob/f3c56c29d5c787d62f66c207e097a159ff66318a/Mathlib/Data/String/Defs.lean#L37-L39

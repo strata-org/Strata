@@ -10,10 +10,14 @@ import Strata.Languages.Boogie.StatementSemantics
 import Strata.Languages.Boogie.ProgramType
 import Strata.Languages.Boogie.ProgramWF
 import Strata.DL.Lambda.IntBoolFactory
+
+/-! # Program Transformation Examples -/
+
 open Boogie
 open CallElim
 open Strata
 
+/-! ## Call Elimination Examples -/
 section CallElimExamples
 
 def CallElimTest1 : Environment :=
@@ -203,6 +207,7 @@ info: true
 
 end CallElimExamples
 
+/-! ## Deterministic-to-Nondeterministic Examples -/
 section NondetExamples
 
 open Imperative

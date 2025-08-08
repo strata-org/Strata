@@ -4,7 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-/-
+import Strata.DL.Util.ListUtils
+import Strata.Languages.Boogie.Program
+import Strata.Languages.Boogie.OldExpressions
+
+/-! # Well-Formedness of Boogie Programs
  This file contains well-formedness definitions of Boogie `Program`s Note that
  the substructures such as `WFStatementProp` also carry a `Program` instance, and
  this allows us to state more expressive well-formedness conditions than a
@@ -30,9 +34,6 @@
  can serve as a baseline for proving semantic preservations.
  -/
 
-import Strata.DL.Util.ListUtils
-import Strata.Languages.Boogie.Program
-import Strata.Languages.Boogie.OldExpressions
 
 namespace Boogie
 namespace WF

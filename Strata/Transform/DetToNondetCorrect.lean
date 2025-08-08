@@ -4,26 +4,30 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-/-
-  This file contains the main proof that the deterministic-to-nondeterministic
-  transformation is semantics preserving (see `StmtToNondetStmtCorrect` and
-  `StmtToNondetStmtCorrect`)
-
-  Since the definitions involve mutual recursion, `Nat.strongRecOn` is used to
-  do induction on the size of the structure (see `StmtToNondetCorrect`). From
-  experience, `mutual` theorems in Lean sometimes does not work well with
-  implicit arguments, and it can be hard to find the cause from the generic
-  error message similar to "(kernel) application type mismatch".
-  -/
-
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.StmtSemantics
 import Strata.DL.Imperative.NondetStmt
 import Strata.DL.Imperative.NondetStmtSemantics
 import Strata.Transform.DetToNondet
 
+/-! # Deterministic-to-Nondeterministic Transformation Correctness Proof
+  This file contains the main proof that the deterministic-to-nondeterministic
+  transformation is semantics preserving (see `StmtToNondetStmtCorrect` and
+  `StmtToNondetStmtCorrect`)
+  -/
+
 open Imperative Boogie
 
+/--
+  The proof implementation for `StmtToNondetStmtCorrect` and
+  `StmtToNondetStmtCorrect`.
+
+  Since the definitions involve mutual recursion, `Nat.strongRecOn` is used to
+  do induction on the size of the structure (see `StmtToNondetCorrect`). From
+  experience, `mutual` theorems in Lean sometimes does not work well with
+  implicit arguments, and it can be hard to find the cause from the generic
+  error message similar to "(kernel) application type mismatch".
+-/
 theorem StmtToNondetCorrect [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasBoolNeg P] :
   WellFormedSemanticEvalBool δ δP →
   WellFormedSemanticEvalVal δ →
@@ -131,6 +135,8 @@ theorem StmtToNondetCorrect [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [H
         omega
         exact Hevals
 
+/-- Proof that the Deterministic-to-nondeterministic transformation is correct
+for a single (deterministic) statement -/
 theorem StmtToNondetStmtCorrect
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasBoolNeg P] :
   WellFormedSemanticEvalBool δ δP →
@@ -140,6 +146,8 @@ theorem StmtToNondetStmtCorrect
   intros Hwfb Hwfv Heval
   apply (StmtToNondetCorrect Hwfb Hwfv (m:=st.sizeOf)).1 <;> simp_all
 
+/-- Proof that the Deterministic-to-nondeterministic transformation is correct
+for multiple (deterministic) statements -/
 theorem StmtsToNondetStmtCorrect
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasBoolNeg P] :
   WellFormedSemanticEvalBool δ δP →

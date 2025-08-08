@@ -4,8 +4,6 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-
-
 import Strata.DDM.Integration.Lean
 import Strata.DDM.Util.Format
 import Strata.Languages.Boogie.Statement
@@ -16,6 +14,8 @@ import Strata.Languages.Boogie.ProgramWF
 import Strata.DL.Util.ListUtils
 import Strata.Languages.Boogie.BoogieGen
 import Strata.DL.Util.LabelGen
+
+/-! # Call Elimination Transformation -/
 
 namespace Boogie
 namespace CallElim
@@ -78,16 +78,7 @@ def genOldExprIdents (idents : List Expression.Ident)
   : BoogieGenM (List Expression.Ident)
   := List.mapM genOldExprIdent idents
 
--- TODO: Should check if the variable is locally defined. If so, return false, because it shadows the global variable?
--- Or maybe we can have the old expression always refer to the global variable even if it is shadowed.
--- Shouldn't be hard to change
-
--- An edge case is, if the global variable is declared _after_ the current
--- procedure, the init statements will still be generated, but the initializer
--- value (e.g. the free variable) is undefined at this point.
-
--- But perhaps this is not a problem, since the Boogie manual P18 speciies that
--- "Global variables are in scope for all procedures"
+/-- Checks whether a variable `ident` can be found in program `p` -/
 def isGlobalVar (p : Program) (ident : Expression.Ident) : Bool :=
   (p.find? .var ident).isSome
 
@@ -126,7 +117,7 @@ def genArgExprIdentsTrip
 
 /--
 returned list has the shape
-((generated_name, ty), original_name)
+`((generated_name, ty), original_name)`
 -/
 def genOutExprIdentsTrip
   (outputs : @Lambda.LTySignature BoogieIdent)
@@ -138,7 +129,7 @@ def genOutExprIdentsTrip
 
 /--
 returned list has the shape
-((generated_name, ty), original_name)
+`((generated_name, ty), original_name)`
 -/
 def genOldExprIdentsTrip
   (p : Program)
@@ -201,17 +192,15 @@ def createOldVarsSubst
     trips.map go where go
     | ((v', _), v) => (v, createFvar v')
 
--- TODO: write a proof sketch on callElimStmt, taking wf as an input, and
--- proving that the result of transformation is not an error
+/--
+The main call elimination transformation algorithm on a single statement.
+The returned result is a sequence of statements if the
+-/
 def callElimStmt (st: Statement) (p : Program)
   : CallElimM (List Statement) := do
     match st with
       | .call lhs procName args _ =>
-        -- we have a call statement
-        -- ASSUME: procName is a declared procedure (can probably be produced by the type checker)
-        -- ASSUME: args are defined variables in the program (can probably be produced by the type checker)
-        -- ASSUME: lhs are not already declared (can probably be produced by the type checker)
-        -- generate versions of the old variables
+
         let some proc := Program.Procedure.find? p procName | throw s!"Procedure {procName} not found in program"
 
         let postconditions := OldExpressions.normalizeOldExprs $ proc.spec.postconditions.values.map Procedure.Check.expr
@@ -219,12 +208,10 @@ def callElimStmt (st: Statement) (p : Program)
         -- extract old variables in all post conditions
         let oldVars := postconditions.flatMap OldExpressions.extractOldExprVars
 
-        -- ASSERT: oldVars do not clash with existing global variables
         let oldVars := List.eraseDups oldVars
 
         -- filter out non-global variables
         let oldVars := oldVars.filter (isGlobalVar p)
-        -- ASSERT: oldVars has no duplicates
 
         let genArgTrips := genArgExprIdentsTrip (Lambda.LMonoTySignature.toTrivialLTy proc.header.inputs) args
 
@@ -244,8 +231,6 @@ def callElimStmt (st: Statement) (p : Program)
             : List ((Expression.Ident × Expression.Ty) × Expression.Ident)
             ← genOldTrips
 
-        -- ASSERT: each generated identifier is unique with respect to each other and those global variables
-
         -- initialize/declare the newly generated variables
         let argInit := createInits argTrips
         let outInit := createInitVars outTrips
@@ -256,8 +241,6 @@ def callElimStmt (st: Statement) (p : Program)
 
         -- only need to substitute post conditions.
         let postconditions := OldExpressions.substsOldExprs oldSubst postconditions
-        -- ASSERT: post condition does not contain "old" expressions
-        -- ASSERT: each old variable properly maps to the generated variable
 
         -- generate havoc for return variables, modified variables
         let havoc_ret := createHavocs lhs
@@ -284,17 +267,13 @@ def callElimStmt (st: Statement) (p : Program)
       | _ => return [ st ]
 
 def callElimStmts (ss: List Statement) (prog : Program)
-  -- (wf : WF.WFStmtsProp Expression prog ss)
   : CallElimM (List Statement) := do match ss with
     | [] => return []
     | s :: ss =>
-      -- let ⟨wfs, wfss⟩ : (WF.WFStmtProp _ prog _) ×' _ := ListP.split wf
       let s' := (callElimStmt s prog)
       let ss' := (callElimStmts ss prog)
       return (← s') ++ (← ss')
 
--- TODO: integrate the program parameter into the state as well
--- Walk through dcls, eliminating procedure call in them
 def callElimL (dcls : List Decl) (prog : Program)
   : CallElimM (List Decl) :=
   match dcls with
@@ -305,7 +284,8 @@ def callElimL (dcls : List Decl) (prog : Program)
       return Decl.proc { p with body := ← (callElimStmts p.body prog ) } :: (← (callElimL ds prog))
     | _       => return d :: (← (callElimL ds prog))
 
--- walk through all procedure bodies
+/-- Call Elimination for an entire program by walking through all procedure
+bodies -/
 def callElim' (p : Program) : CallElimM Program := return { decls := (← (callElimL p.decls p)) }
 
 @[simp]
@@ -318,7 +298,7 @@ def runCallElimWith {α : Type} (p : α) (f : α → CallElimM β) (s : BoogieGe
   Except Err β :=
   (runCallElimWith' p f s).fst
 
--- run call elimination with an empty counter state (e.g. starting from 0)
+/-- run call elimination with an empty counter state (e.g. starting from 0) -/
 @[simp]
 def runCallElim {α : Type} (p : α) (f : α → CallElimM β):
   Except Err β :=

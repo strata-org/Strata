@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-/-
+/-! ## Counter Generator
   This file contains a counter generator `genCounter`, as well as its underlying
   state `CounterState`. The counter is designed to generate a unique number each
   time, and the uniqueness of the generated number can be proven, by keep a

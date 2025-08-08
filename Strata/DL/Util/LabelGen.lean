@@ -4,13 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-/-
-  A type class for well-formed label generator.
--/
-
 import Strata.DL.Util.Counter
 import Strata.DL.Util.StringGen
 namespace LabelGen
+
+/-! ## Well-Formed Label Generator -/
 
 /--
   A well-formed label generator of type `α`, guaranteeing that all generated

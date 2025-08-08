@@ -4,21 +4,19 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-/-
-  This file contains a Boogie Identifier generator `BoogieGenState.gen`, where the
-  uniqueness of the generated identifiers is designed to be provable. It relies on a
-  `StringGenState` to generate unique strings (See `StringGen.lean`).
-
-  Also see `LabelGen.lean` for the generic type class for a unique label generator.
--/
-
-
 import Strata.Languages.Boogie.Statement
 import Strata.DL.Util.LabelGen
 import Strata.DL.Util.StringGen
 import Strata.DL.Util.ListUtils
 open Boogie Lambda Imperative
 
+/-! ## Boogie Identifier Generator
+  This file contains a Boogie Identifier generator `BoogieGenState.gen`, where the
+  uniqueness of the generated identifiers is designed to be provable. It relies on a
+  `StringGenState` to generate unique strings (See `StringGen.lean`).
+
+  Also see `LabelGen.lean` for the generic type class for a unique label generator.
+-/
 namespace Names
 
 def initVarValue (id : BoogieIdent) : Expression.Expr :=

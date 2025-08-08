@@ -4,8 +4,6 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-/- ## Theorems related to StatementSemantics -/
-
 import Strata.DL.Imperative.CmdSemantics
 import Strata.DL.Imperative.StmtSemantics
 import Strata.DL.Imperative.HasVars
@@ -15,6 +13,8 @@ import Strata.Languages.Boogie.Procedure
 import Strata.Languages.Boogie.Statement
 import Strata.Languages.Boogie.OldExpressions
 import Strata.Languages.Boogie.StatementSemantics
+
+/-! ## Theorems related to StatementSemantics -/
 
 namespace Boogie
 open Imperative

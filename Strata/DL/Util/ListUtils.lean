@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-/-
+/-! ## List Properties Utilities
   This file contains miscellaneous utilities for manipulating lists and
   properties on lists.
 -/
