@@ -12,8 +12,8 @@
 /Tools/BoogieToStrata/ @atomb @MikaelMayer
 
 # DDM
-/Strata/DDM/ @joehendrix
-/StrataTest/DDM/ @joehendrix
+/Strata/DDM/ @joehendrix @shigoel
+/StrataTest/DDM/ @joehendrix @shigoel 
 
 # Dialects
 /Strata/DL/Lambda/ @shigoel @atomb
