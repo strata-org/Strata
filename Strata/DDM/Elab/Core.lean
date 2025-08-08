@@ -100,9 +100,10 @@ structure ElabContext where
   typeOrCatDeclMap : TypeOrCatDeclMap
   /-- Map for looking up metadata by name. -/
   metadataDeclMap : MetadataDeclMap
-  globalContext : GlobalContext
+  /-- Syntax elaboration functions. -/
+  syntaxElabs : SyntaxElabMap
   inputContext : InputContext
-  syntaxElabs : Std.HashMap QualifiedIdent SyntaxElaborator
+  globalContext : GlobalContext
 
 structure ElabState where
   -- Errors found in elaboration.
@@ -138,7 +139,7 @@ def resolveTypeBinding (tctx : TypingContext) (stx : Syntax) (name : String)
       return default
     if let .type [] _ := k then
       let info : TypeInfo := { inputCtx := tctx, stx := stx, typeExpr := .bvar idx, isInferred := false }
-      return .node info #[]
+      return .node (.ofTypeInfo info) #[]
     else
       logErrorMF stx mf!"Expected a type instead of {k}"
       return default
@@ -161,7 +162,7 @@ def resolveTypeBinding (tctx : TypingContext) (stx : Syntax) (name : String)
           children := children.push c
         let tp :=  .fvar fidx tpArgs
         let info : TypeInfo := { inputCtx := tctx, stx := stx, typeExpr := tp, isInferred := false }
-        return .node info children
+        return .node (.ofTypeInfo info) children
       else if let some a := args[params.size]? then
         logErrorMF a.info.stx mf!"Unexpected argument to {name}."
         return default
@@ -247,7 +248,7 @@ def translateTypeIdent (elabInfo : ElabInfo) (qualIdentInfo : Tree) (args : Arra
     let tpArgs ← args.mapM fun a => return (← asTypeInfo a).typeExpr
     let tp := .ident ident tpArgs
     let info : TypeInfo := { toElabInfo := elabInfo, typeExpr := tp, isInferred := false }
-    return .node info args
+    return .node (.ofTypeInfo info) args
   | .syncat decl =>
     let (_, success) ← runChecked <| checkArgSize stx ident decl.argNames.size args
     if !success then
@@ -814,7 +815,7 @@ def translateTypeExpr (params : ArgIndexMap) (varCount : Nat) (isType : Nat → 
     let rType ← translateTypeExpr params varCount isType rTree
     return .arrow aType rType
 
-  | q`StrataDD.TypeFn, #[bindingsTree, valTree] =>
+  | q`StrataDDL.TypeFn, #[bindingsTree, valTree] =>
     have p : sizeOf valTree < sizeOf argChildren := by decreasing_tactic
     let rType ← translateTypeExpr params varCount isType valTree
     translateFunMacro params varCount isType bindingsTree rType
@@ -847,7 +848,7 @@ partial def translateSyntaxCat (tree : Tree) : ElabM SyntaxCat := do
     | _ =>
       logError ident.info.stx s!"Expected category"; pure default
 
-  | q`StrataDD.TypeFn, _ => do
+  | q`StrataDDL.TypeFn, _ => do
     logError argInfo.stx s!"Expected category"
     return default
 
@@ -895,7 +896,7 @@ partial def translateBindingKind (params : DeclBindingsMap) (tree : Tree) : Elab
     let rType ← translateTypeExpr params.argIndexMap varCount isType rTree
     return .expr (.arrow aType rType)
 
-  | q`StrataDD.TypeFn, #[bindingsTree, valTree] => do
+  | q`StrataDDL.TypeFn, #[bindingsTree, valTree] => do
     let varCount := params.size
     let isType lvl := params.decls[lvl]!.val.kind.isType
     let rType ← translateTypeExpr params.argIndexMap varCount isType valTree
@@ -1075,7 +1076,7 @@ partial def translateTypeTree (arg : Tree) : ElabM Tree := do
         | logError rType.info.stx s!"Expected type"; return default
       let tp := .arrow aInfo.typeExpr rInfo.typeExpr
       let info : TypeInfo := { toElabInfo := info.toElabInfo, typeExpr := tp, isInferred := false }
-      return .node info #[aType, rType]
+      return .node (.ofTypeInfo info) #[aType, rType]
     | _, _ =>
       logInternalError arg.info.stx s!"translateTypeTree given invalid operation {repr op}"
       return default
@@ -1163,6 +1164,23 @@ partial def runSyntaxElaborator
       treesr[idx].resultContext
   return (treesr, tctx)
 
+partial def elabType (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
+  let (tree, success) ← runChecked <| elabOperation tctx stx
+  if !success then
+    return default
+  assert! tree.isSpecificOp q`Init.mkType
+  assert! tree.children.size = 1
+  let t := tree[0]!
+  let (tree, success) ← runChecked <| translateTypeTree t
+  if !success then
+    return default
+  match tree.info with
+  | .ofTypeInfo _ =>
+    pure ()
+  | _ =>
+    logErrorMF stx mf!"Expected a type."
+  pure tree
+
 partial def catElaborator (c : SyntaxCat) : TypingContext → Syntax → ElabM Tree :=
   match c with
   | .atom q`Init.Expr =>
@@ -1196,23 +1214,7 @@ partial def catElaborator (c : SyntaxCat) : TypingContext → Syntax → ElabM T
         pure <| .node (.ofStrlitInfo info) #[]
       | none =>
         panic! s!"String not supported {stx} {stx.isStrLit?}"
-  | .atom q`Init.Type =>
-      fun tctx stx => do
-        let (tree, success) ← runChecked <| elabOperation tctx stx
-        if !success then
-          return default
-        assert! tree.isSpecificOp q`Init.mkType
-        assert! tree.children.size = 1
-        let t := tree[0]!
-        let (tree, success) ← runChecked <| translateTypeTree t
-        if !success then
-          return default
-        match tree.info with
-        | .ofTypeInfo _ =>
-          pure ()
-        | _ =>
-          logErrorMF stx mf!"Expected a type instead of {c}"
-        pure tree
+  | .atom q`Init.Type => elabType
   | .atom q`Init.TypeP =>
       fun tctx stx => do
         let (tree, true) ← runChecked <| elabOperation tctx stx
@@ -1341,10 +1343,11 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree :=
 end
 
 def runElab [Inhabited α] (action : ElabM α) : DeclM α := do
+  let loader := (← read).loader
   let s ← get
   let ctx : ElabContext := {
-        dialects := s.loader.dialects,
-        syntaxElabs := s.loader.syntaxElabMap,
+        dialects := loader.dialects,
+        syntaxElabs := loader.syntaxElabMap,
         openDialectSet := s.openDialectSet,
         typeOrCatDeclMap := s.typeOrCatDeclMap,
         metadataDeclMap := s.metadataDeclMap,
@@ -1459,7 +1462,7 @@ def translateSyntaxDef (params : DeclBindingsMap) (mdTree tree : Tree) : ElabM S
   let varLevelMap ← mkVarLevelMap params.decls
 
   let prec : Nat :=
-      match syntaxMetadata[q`StrataDD.prec]? with
+      match syntaxMetadata[q`StrataDDL.prec]? with
       | some #[.num l] => l
       | some _ => panic! "Unexpected precedence" -- FIXME
       | none => maxPrec
@@ -1469,8 +1472,8 @@ def translateSyntaxDef (params : DeclBindingsMap) (mdTree tree : Tree) : ElabM S
   let .node (.ofSeqInfo _) args := tree[0]!
     | panic! s!"Expected many args"
 
-  let isLeftAssoc := q`StrataDD.leftassoc ∈ syntaxMetadata
-  let isRightAssoc := q`StrataDD.rightassoc ∈ syntaxMetadata
+  let isLeftAssoc := q`StrataDDL.leftassoc ∈ syntaxMetadata
+  let isRightAssoc := q`StrataDDL.rightassoc ∈ syntaxMetadata
 
   let mut atoms : Array SyntaxDefAtom := #[]
   let mut usedArgs : Std.HashMap Nat ArgSetStatus := {}
@@ -1508,14 +1511,6 @@ def translateSyntaxDef (params : DeclBindingsMap) (mdTree tree : Tree) : ElabM S
       return default
 
   return { atoms, prec }
-
-def getParsers! (d : Dialect) : DeclM (Array DeclParser) := do
-  match (←get).fixedParsers.mkDialectParsers d with
-  | .error msg =>
-    panic! s!"Could not add open dialect: {eformat msg |>.pretty}"
-    return #[]
-  | .ok parsers =>
-    pure parsers
 
 def resolveDeclTypeBinding  (name : String)
     (binding : TypingContext.VarBinding) (args : Array (Syntaxed DeclBindingKind)) : ElabM DeclBindingKind := do

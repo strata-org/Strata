@@ -6,7 +6,7 @@
 
 
 
-import Strata.DL.Util.Props
+import Strata.DL.Util.ListUtils
 import Strata.Languages.Boogie.Program
 import Strata.Languages.Boogie.WF
 import Strata.Languages.Boogie.StatementType
@@ -17,7 +17,6 @@ namespace WF
 
 open Std Lambda
 
-set_option warn.sorry false in
 /--
 A list of Statement 'ss' that passes type checking is well formed with respect to the whole program 'p'.
 -/
@@ -29,7 +28,7 @@ theorem Statement.typeCheckWF :
   induction ss generalizing T pp' T' with
   | nil => constructor
   | cons h t ih =>
-  apply (forall_cons (WF.WFStatementProp p) h t).mpr
+  apply (List.Forall_cons (WF.WFStatementProp p) h t).mpr
   apply And.intro
   . unfold Statement.typeCheckAux at tcok
     simp only [bind] at tcok
@@ -48,10 +47,19 @@ theorem Statement.typeCheckWF :
         split at Hcall <;> try simp_all
         split at Hcall <;> try simp_all
         constructor <;> simp_all
+        . -- 13. The `lhs` of a call statement is disjoint from `modifies`, `outputs`, and `inputs` of the procedure
+          sorry
+        . -- 7. The `lhs` of a call statement contain no duplicates and are `BoogieIdent.locl`.
+          sorry
+        . refine List.Forall_mem_iff.mpr ?_
+          intros arg Hin
+          constructor
+          refine List.Forall_mem_iff.mpr ?_
+          intros var Hin'
+          -- 9. All variables mentioned in `args` of a call statement are either `BoogieIdent.locl` or `BoogieIdent.glob`.
+          sorry
       | cmd =>
         constructor
-        -- 3. All local variable declarations in a procedure are `BoogieIdent.locl`.
-        sorry
     | _ => constructor
     done
   . split at tcok <;> simp_all

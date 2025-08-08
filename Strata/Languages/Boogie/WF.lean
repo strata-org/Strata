@@ -4,7 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-/-
+import Strata.DL.Util.ListUtils
+import Strata.Languages.Boogie.Program
+import Strata.Languages.Boogie.OldExpressions
+
+/-! # Well-Formedness of Boogie Programs
  This file contains well-formedness definitions of Boogie `Program`s Note that
  the substructures such as `WFStatementProp` also carry a `Program` instance, and
  this allows us to state more expressive well-formedness conditions than a
@@ -30,9 +34,6 @@
  can serve as a baseline for proving semantic preservations.
  -/
 
-import Strata.DL.Util.Props
-import Strata.Languages.Boogie.Program
-import Strata.Languages.Boogie.OldExpressions
 
 namespace Boogie
 namespace WF
@@ -42,12 +43,20 @@ open Imperative
 /- Statement Wellformedness -/
 
 structure WFcmdProp (p : Program) (c : Imperative.Cmd Expression) : Prop where
-  lvar : Forall (BoogieIdent.isLocl ·) (HasVarsImp.definedVars (P:=Expression) c)
+
+structure WFargProp (p : Program) (arg : Expression.Expr) : Prop where
+  glarg : Forall (BoogieIdent.isGlobOrLocl ·) (HasVarsPure.getVars (P:=Expression) arg)
 
 structure WFcallProp (p : Program) (lhs : List Expression.Ident) (procName : String) (args : List Expression.Expr) : Prop where
   defined : (Program.Procedure.find? p (.unres procName)).isSome
-  arglen : (Program.Procedure.find? p (.unres procName) = some proc) → proc.header.inputs.length = args.length
-  outlen : (Program.Procedure.find? p (.unres procName) = some proc) → proc.header.outputs.length = lhs.length
+  arglen : (Program.Procedure.find? p (.unres procName) = some proc) →
+          proc.header.inputs.length = args.length
+  outlen : (Program.Procedure.find? p (.unres procName) = some proc) →
+          proc.header.outputs.length = lhs.length
+  lhsDisj : (Program.Procedure.find? p (.unres procName) = some proc) →
+          lhs.Disjoint (proc.spec.modifies ++ Map.keys proc.header.inputs ++ Map.keys proc.header.outputs)
+  lhsWF : lhs.Nodup ∧ Forall (BoogieIdent.isLocl ·) lhs
+  wfargs : Forall (WFargProp p) args
 
 def WFCmdExtProp (p : Program) (c : CmdExt Expression) : Prop := match c with
   | .cmd c => WFcmdProp p c
@@ -75,40 +84,45 @@ abbrev WFStatementsProp (p : Program) := Forall (WFStatementProp p)
 
 instance (p : Program) : ListP (WFStatementProp p) (WFStatementsProp p) where
   split := by intros as a wfs
-              have H := ((forall_cons (WFStatementProp p) a as).mp wfs)
+              have H := ((List.Forall_cons (WFStatementProp p) a as).mp wfs)
               exact ⟨H.1, H.2⟩
 
 /- Spec Wellformedness -/
 
-structure WFPrePostProp (p : Program) (pp : BoogieLabel × Procedure.Check): Prop where
+structure WFPrePostProp (p : Program) (d : Procedure) (pp : BoogieLabel × Procedure.Check)
+  : Prop where
   glvars : Forall (BoogieIdent.isGlobOrLocl ·) (HasVarsPure.getVars (P:=Expression) pp.2.expr)
+  lvars : Forall (fun x =>
+            (BoogieIdent.isLocl x) →
+            (x ∈ (Map.keys d.header.inputs) ++ (Map.keys d.header.outputs)))
+          (HasVarsPure.getVars (P:=Expression) pp.2.expr)
 
-structure WFPreProp (p : Program) (pp : BoogieLabel × Procedure.Check)
-  : Prop extends WFPrePostProp p pp
+structure WFPreProp (p : Program) (d : Procedure) (pp : BoogieLabel × Procedure.Check)
+  : Prop extends WFPrePostProp p d pp
   where
   nold : ¬ OldExpressions.containsOldExpr pp.2.expr
 
-structure WFPostProp (p : Program) (pp : BoogieLabel × Procedure.Check)
-  : Prop extends WFPrePostProp p pp
+structure WFPostProp (p : Program) (d : Procedure) (pp : BoogieLabel × Procedure.Check)
+  : Prop extends WFPrePostProp p d pp
   where
   oldexprs : OldExpressions.ValidExpression pp.2.expr
 
-structure WFModProp (p : Program) (mod : Expression.Ident) : Prop where
+structure WFModProp (p : Program) (d : Procedure) (mod : Expression.Ident) : Prop where
   defined : (Program.find? p .var mod).isSome
 
 @[simp]
-abbrev WFPresProp (p : Program) := Forall (WFPreProp p)
+abbrev WFPresProp (p : Program) (d : Procedure) := Forall (WFPreProp p d)
 
 @[simp]
-abbrev WFPostsProp (p : Program) := Forall (WFPostProp p)
+abbrev WFPostsProp (p : Program) (d : Procedure) := Forall (WFPostProp p d)
 
 @[simp]
-abbrev WFModsProp (p : Program) := Forall (WFModProp p)
+abbrev WFModsProp (p : Program) (d : Procedure) := Forall (WFModProp p d)
 
-structure WFSpecProp (p : Program) (spec : Procedure.Spec) : Prop where
-  wfpre : WFPresProp p spec.preconditions
-  wfpost : WFPostsProp p spec.postconditions
-  wfmod : WFModsProp p spec.modifies
+structure WFSpecProp (p : Program) (spec : Procedure.Spec) (d : Procedure): Prop where
+  wfpre : WFPresProp p d spec.preconditions
+  wfpost : WFPostsProp p d spec.postconditions
+  wfmod : WFModsProp p d spec.modifies
 
 /- Procedure Wellformedness -/
 
@@ -122,8 +136,13 @@ structure WFAxiomDeclarationProp (p : Program) (f : Axiom) : Prop where
 structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
   wfstmts : WFStatementsProp p d.body
   wfloclnd : (HasVarsImp.definedVars (P:=Expression) d.body).Nodup
-  wfspec : WFSpecProp p d.spec
-
+  ioDisjoint : (Map.keys d.header.inputs).Disjoint (Map.keys d.header.outputs)
+  inputsNodup : (Map.keys d.header.inputs).Nodup
+  outputsNodup : (Map.keys d.header.outputs).Nodup
+  modNodup : d.spec.modifies.Nodup
+  inputsLocl : Forall (BoogieIdent.isLocl ·) (Map.keys d.header.inputs)
+  outputsLocl : Forall (BoogieIdent.isLocl ·) (Map.keys d.header.outputs)
+  wfspec : WFSpecProp p d.spec d
 structure WFFunctionProp (p : Program) (f : Function) : Prop where
 
 @[simp]
@@ -138,7 +157,7 @@ abbrev WFDeclsProp (p : Program) := Forall (WFDeclProp p)
 
 instance (p : Program) : ListP (WFDeclProp p) (WFDeclsProp p) where
   split := by intros as a wfs
-              have H := ((forall_cons (WFDeclProp p) a as).mp wfs)
+              have H := ((List.Forall_cons (WFDeclProp p) a as).mp wfs)
               exact ⟨H.1, H.2⟩
 
 structure WFProgramProp (p : Program) where

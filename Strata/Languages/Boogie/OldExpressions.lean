@@ -6,7 +6,7 @@
 
 
 
-import Strata.Languages.Boogie.Names
+import Strata.Languages.Boogie.BoogieGen
 import Strata.Languages.Boogie.Procedure
 
 namespace Boogie
