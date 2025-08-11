@@ -79,7 +79,7 @@ the example code.  The [Strata Dialect Language Reference](#reference)
 contains additional detail on the commands.
 
 ```
-#dialect Bool;
+dialect Bool;
 // Introduce Boolean type
 type Bool;
 
@@ -89,19 +89,19 @@ fn false_lit : Bool => "false";
 
 // Introduce basic Boolean operations.
 fn not_expr (tp : Type, a : tp) : tp => "-" a;
-fn and (a : bool, b : bool) : bool => @[prec(10), leftassoc] a " && " b;
-fn or (a : bool, b : bool) : bool => @[prec(8), leftassoc] a " || " b;
-fn imp (a : bool, b : bool) : bool => @[prec(8), leftassoc] a " ==> " b;
+fn and (a : Bool, b : Bool) : Bool => @[prec(10), leftassoc] a " && " b;
+fn or (a : Bool, b : Bool) : Bool => @[prec(8), leftassoc] a " || " b;
+fn imp (a : Bool, b : Bool) : Bool => @[prec(8), leftassoc] a " ==> " b;
 
 // Introduce equality operations that work for arbitrary types.
 // The type is inferred.
-fn equal (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a " == " b;
-fn not_equal (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a " != " b;
+fn equal (tp : Type, a : tp, b : tp) : Bool => @[prec(15)] a " == " b;
+fn not_equal (tp : Type, a : tp, b : tp) : Bool => @[prec(15)] a " != " b;
 ```
 
 We can then extend thse operations with an Integer type and operations.
 ```
-#dialect Arith;
+dialect Arith;
 import Bool;
 
 type Int;
@@ -111,10 +111,10 @@ fn sub_expr (a : Int, b : Int) : Int => @[prec(25), leftassoc] a " - " b;
 fn mul_expr (a : Int, b : Int) : Int => @[prec(30), leftassoc] a " * " b;
 fn exp_expr (a : Int, b : Int) : Int => @[prec(32), rightassoc] a " ^ " b;
 
-fn le (a : Int, b : Int) : bool => @[prec(15)] a " <= " b;
-fn lt (a : Int, b : Int) : bool => @[prec(15)] a " < " b;
-fn ge (a : Int, b : Int) : bool => @[prec(15)] a " >= " b;
-fn gt (a : Int, b : Int) : bool => @[prec(15)] a " > " b;
+fn le (a : Int, b : Int) : Bool => @[prec(15)] a " <= " b;
+fn lt (a : Int, b : Int) : Bool => @[prec(15)] a " < " b;
+fn ge (a : Int, b : Int) : Bool => @[prec(15)] a " >= " b;
+fn gt (a : Int, b : Int) : Bool => @[prec(15)] a " > " b;
 ```
 
 By itself, these dialects do not define a new language.  To define a
