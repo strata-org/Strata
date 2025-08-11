@@ -27,7 +27,7 @@ end Lean.Parser.SyntaxStack
 
 namespace Lean.Parser.TokenTable
 
-def addTokens (tt : TokenTable) (p : Parser) : TokenTable :=
+def addParser (tt : TokenTable) (p : Parser) : TokenTable :=
   let tkns := p.info.collectTokens []
   tkns.foldl (λtt t => tt.insert t t) tt
 
@@ -83,6 +83,14 @@ export Lean.Parser (
     skip
     )
 
+/--
+Create an input context from a string.
+-/
+def stringInputContext (contents : String) : InputContext where
+  input    := contents
+  fileName := "placeholder"
+  fileMap  := FileMap.ofString contents
+
 private def isIdFirstOrBeginEscape (c : Char) : Bool :=
   isIdFirst c || isIdBeginEscape c
 
@@ -93,19 +101,6 @@ private def isToken (idStartPos idStopPos : String.Pos) (tk : Option Token) : Bo
      -- if a token is both a symbol and a valid identifier (i.e. a keyword),
      -- we want it to be recognized as a symbol
     tk.endPos ≥ idStopPos - idStartPos
-
-def ppIf (cat : QualifiedIdent) (s : α) (msg : Thunk String): α :=
-  if cat == q`Init.Expr then
-    @panic _ ⟨s⟩ msg.get
-  else
-    s
-
-def ppAux (cat : QualifiedIdent) (pre : String) (c : ParserContext) (s : ParserState) : ParserState :=
-  ppIf cat s <| .mk fun () =>
-    if let some msg := s.errorMsg then
-      s!"{pre} {cat.fullName}: pos := {s.pos}, prec := {c.prec}, lhsPrec := {s.lhsPrec}, stxStack.size := {s.stxStack.size}, error := {toString msg}"
-    else
-      s!"{pre} {cat.fullName}: pos := {s.pos}, prec := {c.prec}, lhsPrec := {s.lhsPrec}, stxStack.size := {s.stxStack.size}, back := {toString s.stxStack.back}"
 
 /--
 Create a trailing node
@@ -486,27 +481,6 @@ def strLit : Parser := {
   info := mkAtomicInfo "str"
 }
 
-def runParser (source : String) (p : Parser) : IO ParserState := do
-  let emptyEnv ← mkEmptyEnvironment 0
-  let ictx : InputContext := {
-    input    := source,
-    fileName := "placehodler"
-    fileMap  := FileMap.ofString source
-  }
-
-  let pmctx : ParserModuleContext := { env := emptyEnv, options := {} }
-  let tokens : TokenTable := .empty
-  let tokens := tokens.addTokens p
-  let s : ParserState := {
-      pos      := 0
-      cache    := {
-        tokenCache := { startPos := source.endPos + ' ' }
-        parserCache := {}
-    }
-  }
-  let s := p.fn.run ictx pmctx tokens s
-  pure s
-
 def identName (nm : QualifiedIdent) : Lean.Name :=
   Name.anonymous |>.str nm.dialect |>.str nm.name
 
@@ -598,7 +572,6 @@ partial def trailingLoop (cat : QualifiedIdent) (tables : PrattParsingTables) (c
   let iniPos := s.pos
   let (s, ps)       := indexed tables.trailingTable c s LeadingIdentBehavior.default
   if s.hasError then
-    let s := ppAux cat "trailingLoop indexed error" c s
     -- Discard token parse errors and break the trailing loop instead.
     -- The error will be flagged when the next leading position is parsed, unless the token
     -- is in fact valid there (e.g. EOI at command level, no-longer forbidden token)
