@@ -98,6 +98,13 @@ instance : Inhabited FormatState where
 def pushBinding (s : FormatState) (ident : String) : FormatState :=
   { s with bindings := s.bindings.push ident }
 
+def lvlVarName (s : FormatState) (lvl : Nat) : String :=
+  let b := s.bindings
+  if h : lvl < b.size then
+    b[lvl]
+  else
+    s!"bvar!{s.bindings.size - (lvl + 1)}"
+
 def bvarName (s : FormatState) (idx : Nat) : String :=
   let b := s.bindings
   if h : idx < b.size then
@@ -147,6 +154,9 @@ protected def nil : StrataFormat := fun _ _ => .atom .nil
 
 /-- Pretty print a free variable with the given index -/
 protected def fvar (fvarIdx : Nat) : StrataFormat := fun c _ => .atom (c.fvarName fvarIdx)
+
+/-- Pretty print a bound variable with the given deBruijn index -/
+protected def lvlVar (lvl : Nat) : StrataFormat := fun _ s => .atom (s.lvlVarName lvl)
 
 /-- Pretty print a bound variable with the given deBruijn index -/
 protected def bvar (idx : Nat) : StrataFormat := fun _ s => .atom (s.bvarName idx)
@@ -257,8 +267,8 @@ This pretty prints the argument an op atom has.
 -/
 private def SyntaxDefAtom.formatArgs (opts : FormatOptions) (args : Array PrecFormat) (stx : SyntaxDefAtom) : Format :=
   match stx with
-  | .ident i prec =>
-    let ⟨r, innerPrec⟩ := args[i]!
+  | .ident lvl prec =>
+    let ⟨r, innerPrec⟩ := args[lvl]!
     if prec > 0 ∧ (innerPrec ≤ prec ∨ opts.alwaysParen) then
       f!"({r})"
     else
@@ -465,7 +475,7 @@ end DeclBindings
 namespace SyntaxDefAtom
 
 protected def mformat : SyntaxDefAtom → StrataFormat
-| .ident var prec => mf!"{StrataFormat.bvar var}:{prec}" -- FIXME.  This may be wrong.
+| .ident lvl prec => mf!"{StrataFormat.lvlVar lvl}:{prec}" -- FIXME.  This may be wrong.
 | .str lit => mformat (escapeStringLit lit)
 | .indent n f =>
   let r := f.attach.map fun ⟨a, _⟩ => a.mformat
@@ -489,6 +499,17 @@ instance SynCatDecl.instToStrataFormat : ToStrataFormat SynCatDecl where
     let args : StrataFormat := .join <| d.argNames.map (mf!" {·}") |>.toList
     mf!"category {d.name}{args};\n"
 
+namespace OpDecl
+
+instance : ToStrataFormat OpDecl where
+  mformat d :=
+    let argDecls := d.argDecls
+    let mdf := if d.metadata.isEmpty then .nil else mf!"{argDecls.formatIn d.metadata} "
+    let argDeclsF := if argDecls.isEmpty then mf!"" else mf!" {argDecls}"
+    mf!"{mdf}op {d.name}{argDeclsF} : {d.category} => {argDecls.formatIn d.syntaxDef};\n"
+
+end OpDecl
+
 instance TypeDecl.instToStrataFormat : ToStrataFormat TypeDecl where
   mformat d :=
     let params := d.argNames
@@ -501,15 +522,11 @@ instance TypeDecl.instToStrataFormat : ToStrataFormat TypeDecl where
 
 instance FunctionDecl.instToStrataFormat : ToStrataFormat FunctionDecl where
   mformat d :=
-    let result := d.argDecls.formatIn d.result
-    mf!"op {d.name} {d.argDecls} : {result} => {d.argDecls.formatIn d.syntaxDef};\n"
-
-instance OpDecl.instToStrataFormat : ToStrataFormat OpDecl where
-  mformat d :=
-    let bindings := d.argDecls
-    let mdf := if d.metadata.isEmpty then .nil else mf!"{bindings.formatIn d.metadata} "
-    let bindingsF := if bindings.isEmpty then mf!"" else mf!" {bindings}"
-    mf!"{mdf}op {d.name}{bindingsF} : {d.category} => {bindings.formatIn d.syntaxDef};\n"
+    let argDecls := d.argDecls
+    let mdf := if d.metadata.isEmpty then .nil else mf!"{argDecls.formatIn d.metadata} "
+    let argDeclsF := if argDecls.isEmpty then mf!"" else mf!" {argDecls}"
+    let result := argDecls.formatIn d.result
+    mf!"{mdf}fn {d.name}{argDeclsF} : {result} => {d.argDecls.formatIn d.syntaxDef};\n"
 
 namespace MetadataArgType
 
