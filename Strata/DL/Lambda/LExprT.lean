@@ -21,7 +21,7 @@ namespace Lambda
 open Std (ToFormat Format format)
 open LTy
 
-variable {Identifier : Type} [ToString Identifier] [DecidableEq Identifier] [ToFormat Identifier] [HasGen Identifier]
+variable {Identifier : Type} [ToString Identifier] [DecidableEq Identifier] [ToFormat Identifier] [HasGen Identifier] [Hashable Identifier]
 
 /--
 Monotype-annotated Lambda expressions, obtained after a type inference transform
@@ -257,8 +257,6 @@ def inferConst (T : (TEnv Identifier)) (c : String) (cty : Option LMonoTy) :
       .error f!"Cannot infer the type of this constant: \
                 {@LExpr.const Identifier c cty}"
 
-structure FromLExprAuxCache [Hashable Identifier] where
-  cache : IO.Ref (Std.HashMap ((TEnv Identifier) × (LExpr Identifier)) (Except Format ((LExprT Identifier) × (TEnv Identifier))))
 
 mutual
 partial def fromLExprAux (T : (TEnv Identifier)) (e : (LExpr Identifier)) :
@@ -408,6 +406,13 @@ partial def fromLExprAux.app (T : (TEnv Identifier)) (e1 e2 : (LExpr Identifier)
   .ok (.app e1t e2t mty, TEnv.updateSubst T S)
 
 end
+
+structure FromLExprAuxCache (Identifier: Type) [ToString Identifier] [DecidableEq Identifier] [ToFormat Identifier] [HasGen Identifier] [Hashable Identifier] where
+  cache : IO.Ref (Std.HashMap ((TEnv Identifier) × (LExpr Identifier)) (Except Format ((LExprT Identifier) × (TEnv Identifier))))
+  valid : IO Prop := do
+    let hashMap ← cache.get
+    return ∀ (k : (TEnv Identifier) × (LExpr Identifier)) (v : Except Format ((LExprT Identifier) × (TEnv Identifier))),
+      hashMap.get? k = some v → v = fromLExprAux k.1 k.2
 
 protected def fromLExpr (T : (TEnv Identifier)) (e : (LExpr Identifier)) :
     Except Format ((LExprT Identifier) × (TEnv Identifier)) := do
