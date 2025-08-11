@@ -27,7 +27,7 @@ structure TypeAlias where
   args : List TyIdentifier
   lhs  : LMonoTy
   rhs  : LMonoTy
-  deriving DecidableEq, Repr
+  deriving DecidableEq, Repr, Hashable
 
 instance : ToFormat TypeAlias where
   format a :=
@@ -49,7 +49,7 @@ cycles in the map.
 structure TContext (Identifier : Type) where
   types   :  Maps Identifier LTy := []
   aliases :  List TypeAlias := []
-  deriving DecidableEq, Repr
+  deriving DecidableEq, Repr, Hashable
 
 instance : ToFormat (TContext Identifier) where
   format ctx :=
@@ -148,7 +148,7 @@ structure TState where
   exprGen : Nat := 0
   exprPrefix : String := "$__var"
   subst : Subst := []
-  deriving DecidableEq, Repr
+  deriving DecidableEq, Repr, Hashable
 
 def TState.init : TState := {}
 
@@ -183,6 +183,11 @@ instance : ToFormat TState where
 /-- Track registered types. -/
 abbrev KnownTypes := List LTy
 
+instance:  Hashable KnownTypes where
+  hash kt := match kt with
+    | [] => hash kt
+    | hd :: tl => hash (hash (hd), (hash tl))
+
 /--
 A type environment `TEnv` contains a stack of contexts `TContext` to track `LExpr`
 variables and their types, a typing state `TState` to track the global
@@ -195,6 +200,7 @@ structure TEnv (Identifier : Type) where
   state : TState
   functions : @Factory Identifier
   knownTypes : KnownTypes
+deriving Hashable
 
 def TEnv.default : TEnv Identifier :=
   open LTy.Syntax in

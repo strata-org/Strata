@@ -29,12 +29,15 @@ open Std (ToFormat Format format)
 
 open LTy.Syntax
 
-variable {Identifier : Type} [DecidableEq Identifier] [ToFormat Identifier] [Inhabited Identifier]
+variable {Identifier : Type} [DecidableEq Identifier] [ToFormat Identifier] [Inhabited Identifier] [Hashable Identifier]
 
 /--
 A signature is a map from variable identifiers to types.
 -/
 abbrev Signature (Identifier : Type) (Ty : Type) := Map Identifier Ty
+
+instance [Hashable Identifier] [Hashable Ty] : Hashable (Signature Identifier Ty) where
+  hash s := hash s
 
 def Signature.format (ty : Signature Identifier Ty) [Std.ToFormat Ty] : Std.Format :=
   match ty with
@@ -44,6 +47,9 @@ def Signature.format (ty : Signature Identifier Ty) [Std.ToFormat Ty] : Std.Form
     f!"({k} : {v}) " ++ Signature.format rest
 
 abbrev LMonoTySignature := Signature Identifier LMonoTy
+
+instance [Hashable Identifier] [Hashable LMonoTy]: Hashable (Signature Identifier LMonoTy) where
+  hash s := hash s
 
 abbrev LTySignature := Signature Identifier LTy
 
@@ -89,6 +95,9 @@ structure LFunc (Identifier : Type) where
   attr     : Array String := #[]
   denote   : Option ((LExpr Identifier) → List (LExpr Identifier) → (LExpr Identifier)) := .none
   axioms   : List (LExpr Identifier) := []  -- For axiomatic definitions
+
+instance : Hashable (LFunc Identifier) where
+  hash f := hash (f.name, f.typeArgs, f.inputs, f.output, f.body, f.attr, f.axioms)
 
 instance : Inhabited (LFunc Identifier) where
   default := { name := Inhabited.default, inputs := [], output := LMonoTy.bool }
@@ -146,7 +155,14 @@ Identifier)` -- lambdas are our only tool. `Factory` gives us a way to add
 support for concrete/symbolic evaluation and type checking for `FunFactory`
 functions without actually modifying any core logic or the ASTs.
 -/
-def Factory := Array (LFunc Identifier)
+abbrev Factory := Array (LFunc Identifier)
+
+instance : Hashable (Array (LFunc Identifier)) where
+ hash a := hash a
+
+instance [Hashable Identifier] : Hashable (@Factory Identifier) where
+   hash a := hash (a : Array (LFunc Identifier))
+
 
 def Factory.default : @Factory Identifier := #[]
 

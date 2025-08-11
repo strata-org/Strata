@@ -22,7 +22,7 @@ open Std (ToFormat Format format)
 inductive QuantifierKind
   | all
   | exist
-  deriving Repr, DecidableEq
+  deriving Repr, DecidableEq, Hashable
 
 /--
 Lambda Expressions with Quantifiers.
@@ -57,7 +57,7 @@ inductive LExpr (Identifier : Type) : Type where
   | ite     (c t e : LExpr Identifier)
   /-- `.eq e1 e2`: equality expression. -/
   | eq      (e1 e2 : LExpr Identifier)
-  deriving Repr, DecidableEq
+  deriving Repr, DecidableEq, Hashable
 
 def LExpr.all {Identifier : Type} := @LExpr.quant Identifier .all
 def LExpr.exist {Identifier : Type} := @LExpr.quant Identifier .exist

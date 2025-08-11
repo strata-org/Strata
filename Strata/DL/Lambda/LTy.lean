@@ -33,7 +33,7 @@ inductive LMonoTy : Type where
   -- Type constructor.
   | tcons (name : String) (args : List LMonoTy)
   | bitvec (size : Nat)
-  deriving Inhabited, Repr
+  deriving Inhabited, Repr, Hashable
 
 abbrev LMonoTys := List LMonoTy
 
@@ -108,7 +108,7 @@ Type schemes (poly-types) in Lambda.
 -/
 inductive LTy : Type where
   | forAll (vars : List TyIdentifier) (ty : LMonoTy)
-  deriving Inhabited, Repr
+  deriving Inhabited, Repr, Hashable
 
 abbrev LTys := List LTy
 

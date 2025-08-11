@@ -17,6 +17,12 @@ A simple Map-like type based on lists
 
 abbrev Map (α : Type u) (β : Type v) := List (α × β)
 
+instance [Hashable α] [Hashable β] : Hashable (Map α β) where
+  hash m := match m with
+    | [] => 0
+    | (k,v) :: rest => mixHash (mixHash (hash k) (hash v)) (hash rest)
+
+
 instance [BEq α] [BEq β] : BEq (Map α β) where
   beq m1 m2 := go m1 m2 where
   go m1 m2 :=

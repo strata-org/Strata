@@ -25,6 +25,13 @@ open Std (ToFormat Format format)
 /-- Substitution mapping type variables to `LMonoTy`. -/
 abbrev Subst := Map TyIdentifier LMonoTy
 
+instance : Hashable (Subst) where
+  hash m := match m with
+    | [] => 0
+    | (k,v) :: rest => mixHash (mixHash (hash k) (hash v)) (hash rest)
+
+
+
 private def formatSubst (S : Subst) : Format :=
   match S with
   | [] => ""

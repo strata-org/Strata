@@ -13,6 +13,6 @@ modify along with our code transformation functions.
 -/
 structure Info where
   value : String
-  deriving DecidableEq, Repr
+  deriving DecidableEq, Repr, Hashable
 
 end Lambda
