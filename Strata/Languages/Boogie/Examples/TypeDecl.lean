@@ -9,7 +9,7 @@ import Strata.Languages.Boogie.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def typeDeclEnv1 : Environment :=
+def typeDeclEnv1 : Program :=
 #strata
 program Boogie;
 type Foo (a : Type, b : Type);
@@ -52,7 +52,7 @@ Result: verified
 error: Expression has type Foo bool int when Foo bool bool expected.
 -/
 #guard_msgs in
-def typeDeclEnv2 : Environment :=
+def typeDeclPgm2 :=
 #strata
 program Boogie;
 
@@ -67,7 +67,7 @@ procedure P () returns () {
 
 --------------------------------------------------------------------
 
-def typeDeclEnv3 : Environment :=
+def typeDeclPgm3 : Program :=
 #strata
 program Boogie;
 type Foo (a : Type, b : Type);
@@ -85,7 +85,7 @@ procedure P () returns () {
 
 /-- info: #[] -/
 #guard_msgs in
-#eval TransM.run (translateProgram (typeDeclEnv3.commands)) |>.snd
+#eval TransM.run (translateProgram (typeDeclPgm3.commands)) |>.snd
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -106,7 +106,7 @@ Obligation: fooAssertion
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" typeDeclEnv3
+#eval verify "cvc5" typeDeclPgm3
 
 
 --------------------------------------------------------------------

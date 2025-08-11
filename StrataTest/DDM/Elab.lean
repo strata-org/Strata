@@ -16,7 +16,11 @@ op decimal (v : Decimal) : Command => "decimal " v ";";
 
 def testProgram := #strata program Test; decimal 1e99; #end
 
-#guard toString testProgram.format == "decimal 1e99;"
+/--
+info: "program Test;\ndecimal 1e99;"
+-/
+#guard_msgs in
+#eval toString testProgram.format
 
 /--
 error: P already declared.

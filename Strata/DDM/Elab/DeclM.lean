@@ -203,7 +203,7 @@ namespace DeclState
 def addParserToCat! (s : DeclState) (dp : DeclParser) : DeclState :=
   assert! dp.category ∈ s.parserMap
   { s with
-      tokenTable := s.tokenTable.addTokens dp.parser
+      tokenTable := s.tokenTable.addParser dp.parser
       parserMap := s.parserMap.addParserToCat! dp
   }
 
@@ -220,7 +220,7 @@ def openParserDialect! (s : DeclState) (loader : LoadedDialects) (dialect : Dial
   { s with
     metadataDeclMap := s.metadataDeclMap.addDialect dialect
     parserMap := s.parserMap.addDialect! dialect parsers
-    tokenTable := parsers.foldl (init := s.tokenTable) (·.addTokens ·.parser)
+    tokenTable := parsers.foldl (init := s.tokenTable) (·.addParser ·.parser)
   }
 
 mutual

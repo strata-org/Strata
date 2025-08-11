@@ -34,6 +34,8 @@ def testRoundtrip (v : List (Ion SymbolId)) : Bool :=
 #guard testRoundtrip [.float 1e-3, .float 3]
 #guard testRoundtrip [.decimal ⟨0, 0 ⟩, .decimal ⟨1, 3 ⟩, .decimal ⟨0, 0 ⟩]
 #guard testRoundtrip [.string "", .string "⟨"]
+#guard testRoundtrip [.string "this_is_a_long_name"]
+
 #guard testRoundtrip [.symbol (.mk 0), .symbol (.mk 1)]
 #guard testRoundtrip [.list #[], .list #[.int 1]]
 #guard testRoundtrip [.sexp #[], .sexp #[.int 1]]

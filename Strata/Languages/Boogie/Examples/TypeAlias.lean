@@ -15,7 +15,7 @@ error: Expression has type FooAlias (Foo int int) when Foo bool int expected.
 error: Expression has type FooAlias (Foo int int) when Foo bool int expected.
 -/
 #guard_msgs in
-def badTypeAliasEnv : Environment :=
+def badTypeAlias : Program :=
 #strata
 program Boogie;
 type Foo (a : Type, b : Type);
@@ -34,7 +34,7 @@ procedure P () returns () {
 
 --------------------------------------------------------------------
 
-def goodTypeAliasEnv : Environment :=
+def goodTypeAlias : Program :=
 #strata
 program Boogie;
 type Foo (a : Type, b : Type);
@@ -54,7 +54,7 @@ procedure P () returns () {
 
 /-- info: #[] -/
 #guard_msgs in
-#eval TransM.run (translateProgram (goodTypeAliasEnv.commands)) |>.snd
+#eval TransM.run (translateProgram (goodTypeAlias.commands)) |>.snd
 
 /--
 info: type Boogie.Boundedness.Infinite Foo [_, _]
@@ -72,7 +72,7 @@ assume [fooConst2_value] (~fooConst2 == ~fooVal)
 assert [fooAssertion] (~fooConst1 == ~fooConst2)
 -/
 #guard_msgs in
-#eval TransM.run (translateProgram (goodTypeAliasEnv.commands)) |>.fst
+#eval TransM.run (translateProgram (goodTypeAlias.commands)) |>.fst
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -93,6 +93,6 @@ Obligation: fooAssertion
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" goodTypeAliasEnv
+#eval verify "cvc5" goodTypeAlias
 
 --------------------------------------------------------------------

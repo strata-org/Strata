@@ -11,7 +11,7 @@ namespace Strata
 namespace Elab
 
 def initTokenTable : Lean.Parser.TokenTable :=
-  initParsers.fixedParsers.fold (init := {}) fun tt _ p => tt.addTokens p
+  initParsers.fixedParsers.fold (init := {}) fun tt _ p => tt.addParser p
 
 namespace DeclState
 

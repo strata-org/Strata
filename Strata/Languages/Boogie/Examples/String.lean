@@ -14,7 +14,7 @@ namespace Strata
 
 -- (TODO) Add support for :builtin attribute?
 
-def strEnv : Environment :=
+def strEnv :=
 #strata
 program Boogie;
 

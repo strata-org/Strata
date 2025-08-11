@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+import Lean.Elab.Command
 
 import Strata.Languages.Boogie.Identifiers
 import Strata.Languages.Boogie.Expressions
@@ -178,6 +179,18 @@ def mapUpdateFunc : LFunc BoogieIdent :=
      ]
    }
 
+
+private def BVOpNames := ["Add", "Sub", "Mul", "Neg", "Lt", "Le", "Gt", "Ge"]
+
+open Lean in
+macro "ExpandBVOpFuncNames" "[" sizes:num,* "]" : term => do
+  let mut allOps := #[]
+  for size in sizes.getElems do
+    let s := size.getNat.repr
+    let ops := BVOpNames.map (mkIdent ∘ (.str (.str .anonymous "Boogie")) ∘ (s!"bv{s}" ++ · ++ "Func"))
+    allOps := allOps ++ ops.toArray
+  `([$(allOps),*])
+
 def Factory : @Factory BoogieIdent := #[
   intAddFunc,
   intSubFunc,
@@ -190,51 +203,6 @@ def Factory : @Factory BoogieIdent := #[
   intLeFunc,
   intGtFunc,
   intGeFunc,
-
-  bv1AddFunc,
-  bv1SubFunc,
-  bv1MulFunc,
-  bv1NegFunc,
-  bv1LtFunc,
-  bv1LeFunc,
-  bv1GtFunc,
-  bv1GeFunc,
-
-  bv8AddFunc,
-  bv8SubFunc,
-  bv8MulFunc,
-  bv8NegFunc,
-  bv8LtFunc,
-  bv8LeFunc,
-  bv8GtFunc,
-  bv8GeFunc,
-
-  bv16AddFunc,
-  bv16SubFunc,
-  bv16MulFunc,
-  bv16NegFunc,
-  bv16LtFunc,
-  bv16LeFunc,
-  bv16GtFunc,
-  bv16GeFunc,
-
-  bv32AddFunc,
-  bv32SubFunc,
-  bv32MulFunc,
-  bv32NegFunc,
-  bv32LtFunc,
-  bv32LeFunc,
-  bv32GtFunc,
-  bv32GeFunc,
-
-  bv64AddFunc,
-  bv64SubFunc,
-  bv64MulFunc,
-  bv64NegFunc,
-  bv64LtFunc,
-  bv64LeFunc,
-  bv64GtFunc,
-  bv64GeFunc,
 
   realAddFunc,
   realSubFunc,
@@ -259,7 +227,18 @@ def Factory : @Factory BoogieIdent := #[
 
   mapSelectFunc,
   mapUpdateFunc,
-]
+] ++ ExpandBVOpFuncNames [1,8,16,32,64]
+
+open Lean Elab Command in
+elab "DefBVOpFuncExprs" "[" sizes:num,* "]" : command => do
+  for size in sizes.getElems do
+    let s := size.getNat.repr
+    for op in BVOpNames do
+      let opName := mkIdent (.str .anonymous s!"bv{s}{op}Op")
+      let funcName := mkIdent (.str (.str .anonymous "Boogie") s!"bv{s}{op}Func")
+      elabCommand (← `(def $opName : LExpr BoogieIdent := ($funcName).opExpr))
+
+DefBVOpFuncExprs [1, 8, 16, 32, 64]
 
 def intAddOp : LExpr LMonoTy BoogieIdent := intAddFunc.opExpr
 def intSubOp : LExpr LMonoTy BoogieIdent := intSubFunc.opExpr
@@ -271,46 +250,6 @@ def intLtOp : LExpr LMonoTy BoogieIdent := intLtFunc.opExpr
 def intLeOp : LExpr LMonoTy BoogieIdent := intLeFunc.opExpr
 def intGtOp : LExpr LMonoTy BoogieIdent := intGtFunc.opExpr
 def intGeOp : LExpr LMonoTy BoogieIdent := intGeFunc.opExpr
-def bv1AddOp : LExpr LMonoTy BoogieIdent := bv1AddFunc.opExpr
-def bv1SubOp : LExpr LMonoTy BoogieIdent := bv1SubFunc.opExpr
-def bv1MulOp : LExpr LMonoTy BoogieIdent := bv1MulFunc.opExpr
-def bv1NegOp : LExpr LMonoTy BoogieIdent := bv1NegFunc.opExpr
-def bv1LtOp : LExpr LMonoTy BoogieIdent := bv1LtFunc.opExpr
-def bv1LeOp : LExpr LMonoTy BoogieIdent := bv1LeFunc.opExpr
-def bv1GtOp : LExpr LMonoTy BoogieIdent := bv1GtFunc.opExpr
-def bv1GeOp : LExpr LMonoTy BoogieIdent := bv1GeFunc.opExpr
-def bv8AddOp : LExpr LMonoTy BoogieIdent := bv8AddFunc.opExpr
-def bv8SubOp : LExpr LMonoTy BoogieIdent := bv8SubFunc.opExpr
-def bv8MulOp : LExpr LMonoTy BoogieIdent := bv8MulFunc.opExpr
-def bv8NegOp : LExpr LMonoTy BoogieIdent := bv8NegFunc.opExpr
-def bv8LtOp : LExpr LMonoTy BoogieIdent := bv8LtFunc.opExpr
-def bv8LeOp : LExpr LMonoTy BoogieIdent := bv8LeFunc.opExpr
-def bv8GtOp : LExpr LMonoTy BoogieIdent := bv8GtFunc.opExpr
-def bv8GeOp : LExpr LMonoTy BoogieIdent := bv8GeFunc.opExpr
-def bv16AddOp : LExpr LMonoTy BoogieIdent := bv16AddFunc.opExpr
-def bv16SubOp : LExpr LMonoTy BoogieIdent := bv16SubFunc.opExpr
-def bv16MulOp : LExpr LMonoTy BoogieIdent := bv16MulFunc.opExpr
-def bv16NegOp : LExpr LMonoTy BoogieIdent := bv16NegFunc.opExpr
-def bv16LtOp : LExpr LMonoTy BoogieIdent := bv16LtFunc.opExpr
-def bv16LeOp : LExpr LMonoTy BoogieIdent := bv16LeFunc.opExpr
-def bv16GtOp : LExpr LMonoTy BoogieIdent := bv16GtFunc.opExpr
-def bv16GeOp : LExpr LMonoTy BoogieIdent := bv16GeFunc.opExpr
-def bv32AddOp : LExpr LMonoTy BoogieIdent := bv32AddFunc.opExpr
-def bv32SubOp : LExpr LMonoTy BoogieIdent := bv32SubFunc.opExpr
-def bv32MulOp : LExpr LMonoTy BoogieIdent := bv32MulFunc.opExpr
-def bv32NegOp : LExpr LMonoTy BoogieIdent := bv32NegFunc.opExpr
-def bv32LtOp : LExpr LMonoTy BoogieIdent := bv32LtFunc.opExpr
-def bv32LeOp : LExpr LMonoTy BoogieIdent := bv32LeFunc.opExpr
-def bv32GtOp : LExpr LMonoTy BoogieIdent := bv32GtFunc.opExpr
-def bv32GeOp : LExpr LMonoTy BoogieIdent := bv32GeFunc.opExpr
-def bv64AddOp : LExpr LMonoTy BoogieIdent := bv64AddFunc.opExpr
-def bv64SubOp : LExpr LMonoTy BoogieIdent := bv64SubFunc.opExpr
-def bv64MulOp : LExpr LMonoTy BoogieIdent := bv64MulFunc.opExpr
-def bv64NegOp : LExpr LMonoTy BoogieIdent := bv64NegFunc.opExpr
-def bv64LtOp : LExpr LMonoTy BoogieIdent := bv64LtFunc.opExpr
-def bv64LeOp : LExpr LMonoTy BoogieIdent := bv64LeFunc.opExpr
-def bv64GtOp : LExpr LMonoTy BoogieIdent := bv64GtFunc.opExpr
-def bv64GeOp : LExpr LMonoTy BoogieIdent := bv64GeFunc.opExpr
 def realAddOp : LExpr LMonoTy BoogieIdent := realAddFunc.opExpr
 def realSubOp : LExpr LMonoTy BoogieIdent := realSubFunc.opExpr
 def realMulOp : LExpr LMonoTy BoogieIdent := realMulFunc.opExpr
