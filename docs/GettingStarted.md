@@ -33,7 +33,7 @@ op assert (label : Label, c : bool) : Command => "assert " label c ";\n";
 We can now write programs in DDM's environment using our concrete
 syntax, as follows:
 ```bash
-private def testEnv :=
+private def testPgm :=
 #strata
 program ArithPrograms;
 init x : num := 0;

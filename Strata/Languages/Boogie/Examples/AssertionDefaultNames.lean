@@ -9,7 +9,7 @@ import Strata.Languages.Boogie.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def assertionNames : Environment :=
+def assertionNames :=
 #strata
 program Boogie;
 procedure Test(x : int) returns ()

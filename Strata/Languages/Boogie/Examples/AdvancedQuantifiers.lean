@@ -9,7 +9,7 @@ import Strata.Languages.Boogie.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def advQuantEnv : Environment :=
+def advQuantPgm :=
 #strata
 program Boogie;
 axiom [mapAllValues0]: forall m: (Map int int), k: int :: m[k] == 0;
@@ -52,4 +52,4 @@ Obligation: Update_ensures_0
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" advQuantEnv
+#eval verify "cvc5" advQuantPgm
