@@ -9,7 +9,7 @@ import Strata.Languages.Boogie.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def funcEnv : Environment :=
+def funcPgm : Program :=
 #strata
 program Boogie;
 const fooConst : int;
@@ -51,6 +51,6 @@ Obligation: fooEq
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" funcEnv
+#eval verify "cvc5" funcPgm
 
 ---------------------------------------------------------------------

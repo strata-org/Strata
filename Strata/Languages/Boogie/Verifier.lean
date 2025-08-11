@@ -256,7 +256,7 @@ end Boogie
 
 namespace Strata
 
-def verify (smtsolver : String) (env : Environment)
+def verify (smtsolver : String) (env : Program)
     (options : Options := Options.default) : IO Boogie.VCResults := do
   let (program, errors) := TransM.run (translateProgram env.commands)
   if errors.isEmpty then
