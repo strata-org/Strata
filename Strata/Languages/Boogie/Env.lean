@@ -243,7 +243,7 @@ def PathCondition.merge (cond : Expression.Expr) (pc1 pc2 : PathCondition Expres
   let pc1' := pc1.map (fun (label, e) => (label, mkImplies cond e))
   let pc2' := pc2.map (fun (label, e) => (label, mkImplies (LExpr.ite cond LExpr.false LExpr.true) e))
   pc1' ++ pc2'
-  where mkImplies (ant con : LExpr BoogieIdent) : (LExpr BoogieIdent) :=
+  where mkImplies (ant con : LExpr LMonoTy BoogieIdent) : (LExpr LMonoTy BoogieIdent) :=
   LExpr.ite ant con LExpr.true
 
 def Env.performMerge (cond : Expression.Expr) (E1 E2 : Env)

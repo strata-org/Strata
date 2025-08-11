@@ -312,7 +312,6 @@ def elabLConstMono (Identifier : Type) [MkIdent Identifier] : Lean.Syntax → Me
   | `(lconst| #$n:num)  => do
     let none ← mkNone (mkConst ``LMonoTy)
     let typeTypeExpr := mkConst ``LMonoTy
-    let typeTypeExpr := mkConst ``LMonoTy
     return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit (toString n.getNat), none]
   | `(lconst| (#$n:num : $ty:lmonoty)) => do
     let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy ty
