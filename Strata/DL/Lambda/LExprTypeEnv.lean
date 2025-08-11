@@ -49,7 +49,7 @@ cycles in the map.
 structure TContext (Identifier : Type) where
   types   :  Maps Identifier LTy := []
   aliases :  List TypeAlias := []
-  deriving DecidableEq, Repr, Hashable
+  deriving DecidableEq, Repr, Hashable, BEq
 
 instance : ToFormat (TContext Identifier) where
   format ctx :=
@@ -201,6 +201,9 @@ structure TEnv (Identifier : Type) where
   functions : @Factory Identifier
   knownTypes : KnownTypes
 deriving Hashable
+
+instance : BEq (TEnv Identifier) where
+  beq a b := a.context == b.context && a.state == b.state && a.functions == b.functions && a.knownTypes == b.knownTypes
 
 def TEnv.default : TEnv Identifier :=
   open LTy.Syntax in

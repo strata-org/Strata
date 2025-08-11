@@ -99,6 +99,9 @@ structure LFunc (Identifier : Type) where
 instance : Hashable (LFunc Identifier) where
   hash f := hash (f.name, f.typeArgs, f.inputs, f.output, f.body, f.attr, f.axioms)
 
+instance : BEq (LFunc Identifier) where
+  beq a b := a.name == b.name && a.typeArgs == b.typeArgs && a.inputs == b.inputs && a.output == b.output && a.body == b.body && a.attr == b.attr && a.axioms == b.axioms
+
 instance : Inhabited (LFunc Identifier) where
   default := { name := Inhabited.default, inputs := [], output := LMonoTy.bool }
 
@@ -157,11 +160,11 @@ functions without actually modifying any core logic or the ASTs.
 -/
 abbrev Factory := Array (LFunc Identifier)
 
-instance : Hashable (Array (LFunc Identifier)) where
- hash a := hash a
-
 instance [Hashable Identifier] : Hashable (@Factory Identifier) where
    hash a := hash (a : Array (LFunc Identifier))
+
+instance [BEq Identifier] : BEq (@Factory Identifier) where
+  beq a b := a == b
 
 
 def Factory.default : @Factory Identifier := #[]

@@ -38,7 +38,7 @@ inductive LExprT (Identifier : Type): Type where
   | app (fn e : LExprT Identifier) (ty : LMonoTy)
   | ite (c t e : LExprT Identifier) (ty : LMonoTy)
   | eq (e1 e2 : LExprT Identifier) (ty : LMonoTy)
-  deriving Repr, DecidableEq
+  deriving Repr, DecidableEq, Hashable
 
 partial def LExprT.format (et : (LExprT Identifier)) : Std.Format :=
   match et with
@@ -256,6 +256,9 @@ def inferConst (T : (TEnv Identifier)) (c : String) (cty : Option LMonoTy) :
     else
       .error f!"Cannot infer the type of this constant: \
                 {@LExpr.const Identifier c cty}"
+
+structure FromLExprAuxCache [Hashable Identifier] where
+  cache : IO.Ref (Std.HashMap ((TEnv Identifier) × (LExpr Identifier)) (Except Format ((LExprT Identifier) × (TEnv Identifier))))
 
 mutual
 partial def fromLExprAux (T : (TEnv Identifier)) (e : (LExpr Identifier)) :
