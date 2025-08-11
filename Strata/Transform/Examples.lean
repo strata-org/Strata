@@ -20,7 +20,7 @@ open Strata
 /-! ## Call Elimination Examples -/
 section CallElimExamples
 
-def CallElimTest1 : Environment :=
+def CallElimTest1 :=
 #strata
 program Boogie;
 var i : bool;
@@ -41,7 +41,7 @@ procedure h() returns () spec {
 };
 #end
 
-def CallElimTest1Ans : Environment :=
+def CallElimTest1Ans :=
 #strata
 program Boogie;
 var i : bool;
@@ -68,7 +68,7 @@ procedure h() returns () spec {
 };
 #end
 
-def CallElimTest2 : Environment :=
+def CallElimTest2 :=
 #strata
 program Boogie;
 var i : bool;
@@ -90,7 +90,7 @@ procedure h() returns () spec {
 };
 #end
 
-def CallElimTest2Ans : Environment :=
+def CallElimTest2Ans :=
 #strata
 program Boogie;
 var i : bool;
@@ -121,7 +121,7 @@ procedure h() returns () spec {
 };
 #end
 
-def CallElimTest3 : Environment :=
+def CallElimTest3 :=
 #strata
 program Boogie;
 var i : bool;
@@ -143,7 +143,7 @@ procedure h() returns () spec {
 };
 #end
 
-def CallElimTest3Ans : Environment :=
+def CallElimTest3Ans :=
 #strata
 program Boogie;
 var i : bool;
@@ -174,24 +174,24 @@ procedure h() returns () spec {
 };
 #end
 
-def translate (t : Environment) : Program := (TransM.run (translateProgram t.commands)).fst
+def translate (t : Strata.Program) : Boogie.Program := (TransM.run (translateProgram t.commands)).fst
 
 def env := (Lambda.TEnv.default.addFactoryFunctions Boogie.Factory)
 
-def translateWF (t : Environment) : WF.WFProgram :=
+def translateWF (t : Strata.Program) : WF.WFProgram :=
   let p := translate t
   match H: Program.typeCheck env p with
   | .error e => panic! "Well, " ++ Std.format e |> toString
   | .ok res => { self := p, prop := by exact WF.Program.typeCheckWF H }
 
-def tests : List (Program × Program) := [
+def tests : List (Boogie.Program × Boogie.Program) := [
   (CallElimTest1, CallElimTest1Ans),
   (CallElimTest2, CallElimTest2Ans),
   (CallElimTest3, CallElimTest3Ans),
 ].map (Prod.map translate translate)
 
-def callElim (p : Program)
-  : Program :=
+def callElim (p : Boogie.Program)
+  : Boogie.Program :=
   match (runCallElim p callElim') with
   | .ok res => res
   | .error e => panic! e
