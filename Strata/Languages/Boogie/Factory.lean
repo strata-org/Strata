@@ -236,7 +236,7 @@ elab "DefBVOpFuncExprs" "[" sizes:num,* "]" : command => do
     for op in BVOpNames do
       let opName := mkIdent (.str .anonymous s!"bv{s}{op}Op")
       let funcName := mkIdent (.str (.str .anonymous "Boogie") s!"bv{s}{op}Func")
-      elabCommand (← `(def $opName : LExpr BoogieIdent := ($funcName).opExpr))
+      elabCommand (← `(def $opName : LExpr LMonoTy BoogieIdent := ($funcName).opExpr))
 
 DefBVOpFuncExprs [1, 8, 16, 32, 64]
 
