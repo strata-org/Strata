@@ -1,0 +1,17 @@
+name: Manual Test
+
+on:
+  workflow_dispatch:  # manual run from the Actions tab only
+
+jobs:
+  run_conformance_tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Say hello
+        run: echo "Hello there. Aren't you looking good today"
+
+      - name: Show date
+        run: date
