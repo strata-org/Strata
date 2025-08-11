@@ -460,7 +460,20 @@ def translateQuantifier
     -- Handle triggers if present
     let triggers ← match triggersa with
       | none => pure LExpr.noTrigger
-      | some tsa => translateExpr xbindings tsa
+      | some tsa => -- pure LExpr.noTrigger
+        match tsa with
+        | .op {name := {dialect := _, name := "triggersAtom"}, args := #[tr]} =>
+            match tr with
+            | .op {name := {dialect := _, name := "trigger"}, args := #[tr2]} =>
+              match tr2 with
+              | .commaSepList #[uniqueTrigger] =>
+                translateExpr xbindings uniqueTrigger
+              | _ =>
+              panic! s!"Currently Boogie supports only single-expression triggers, but got {repr tr2}"
+            | _ =>
+              panic! s!"Currently Boogie supports only one trigger, but got {repr tr}"
+        | _ =>
+          panic! s!"Currently Boogie supports only one trigger, but got {repr tsa}"
 
     -- Create one quantifier constructor per variable
     -- Trigger attached to only the innermost quantifier
