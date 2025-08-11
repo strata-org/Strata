@@ -74,7 +74,7 @@ def Scope.merge (cond : (LExpr LMonoTy Identifier)) (m1 m2 : (Scope Identifier))
     else (LExpr.ite cond tru fals)
 
 section Scope.merge.tests
-open LTy.Syntax LExpr.Syntax
+open LTy.Syntax LExpr.SyntaxMono
 
 /--
 info: (x : int) → (#8 : int)

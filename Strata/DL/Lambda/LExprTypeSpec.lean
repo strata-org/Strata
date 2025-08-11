@@ -151,7 +151,7 @@ section Tests
 
 -- Examples of typing derivations using the `HasType` relation.
 
-open LExpr.Syntax LTy.Syntax
+open LExpr.SyntaxMono LTy.Syntax
 
 example : LExpr.HasType {} esM[#true] t[bool] := by
   apply LExpr.HasType.tbool_const_t

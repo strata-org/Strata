@@ -277,80 +277,79 @@ instance [ToFormat Identifier] [ToFormat TypeType] : ToFormat (LExpr TypeType Id
   format := formatLExpr
 
 /-
-Syntax for conveniently building `LExpr` terms, scoped under the namespace
-`LExpr.Syntax`.
+Syntax for conveniently building `LExpr` terms with `LMonoTy`, scoped under the namespace
+`LExpr.SyntaxMono`.
 -/
-namespace Syntax
+namespace SyntaxMono
 open Lean Elab Meta
 
 class MkIdent (Identifier : Type) where
   elabIdent : Lean.Syntax → MetaM Expr
   toExpr : Expr
 
-declare_syntax_cat lident
+declare_syntax_cat lidentmono
 
-declare_syntax_cat lexpr
+declare_syntax_cat lexprmono
 
 -- We expect that `LExpr` will support at least Boolean constants because
 -- it includes an if-then-else construct. Here we define a syntactic category
 -- for booleans, and also -- for practical reasons -- integers as well.
-declare_syntax_cat lconst
-declare_syntax_cat lnum
-scoped syntax "#" noWs num : lnum
-scoped syntax "#" noWs "-" noWs num : lnum
-scoped syntax lnum : lconst
-declare_syntax_cat lbool
-scoped syntax "#true" : lbool
-scoped syntax "#false" : lbool
-scoped syntax lbool : lconst
-scoped syntax "#" noWs ident : lconst
-scoped syntax "(" lconst ":" lmonoty ")" : lconst
-scoped syntax "(" lconst ":" lty ")" : lconst
-scoped syntax lconst : lexpr
+declare_syntax_cat lconstmono
+declare_syntax_cat lnummono
+scoped syntax "#" noWs num : lnummono
+scoped syntax "#" noWs "-" noWs num : lnummono
+scoped syntax lnummono : lconstmono
+declare_syntax_cat lboolmono
+scoped syntax "#true" : lboolmono
+scoped syntax "#false" : lboolmono
+scoped syntax lboolmono : lconstmono
+scoped syntax "#" noWs ident : lconstmono
+scoped syntax "(" lconstmono ":" lmonoty ")" : lconstmono
+scoped syntax lconstmono : lexprmono
 
 def elabLConstMono (Identifier : Type) [MkIdent Identifier] : Lean.Syntax → MetaM Expr
-  | `(lconst| #$n:num)  => do
+  | `(lconstmono| #$n:num)  => do
     let none ← mkNone (mkConst ``LMonoTy)
     let typeTypeExpr := mkConst ``LMonoTy
     return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit (toString n.getNat), none]
-  | `(lconst| (#$n:num : $ty:lmonoty)) => do
+  | `(lconstmono| (#$n:num : $ty:lmonoty)) => do
     let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy ty
     let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
     let typeTypeExpr := mkConst ``LMonoTy
     return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit (toString n.getNat), lmonoty]
-  | `(lconst| #-$n:num) => do
+  | `(lconstmono| #-$n:num) => do
     let none ← mkNone (mkConst ``LMonoTy)
     let typeTypeExpr := mkConst ``LMonoTy
     return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit ("-" ++ (toString n.getNat)), none]
-  | `(lconst| (#-$n:num : $ty:lmonoty)) => do
+  | `(lconstmono| (#-$n:num : $ty:lmonoty)) => do
     let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy ty
     let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
     let typeTypeExpr := mkConst ``LMonoTy
     return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit ("-" ++ (toString n.getNat)), lmonoty]
-  | `(lconst| #true)    => do
+  | `(lconstmono| #true)    => do
     let none ← mkNone (mkConst ``LMonoTy)
     let typeTypeExpr := mkConst ``LMonoTy
     return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit "true", none]
-  | `(lconst| (#true : $ty:lmonoty))    => do
+  | `(lconstmono| (#true : $ty:lmonoty))    => do
     let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy ty
     let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
     let typeTypeExpr := mkConst ``LMonoTy
     return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit "true", lmonoty]
-  | `(lconst| #false)   =>  do
+  | `(lconstmono| #false)   =>  do
     let none ← mkNone (mkConst ``LMonoTy)
     let typeTypeExpr := mkConst ``LMonoTy
     return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit "false", none]
-  | `(lconst| (#false : $ty:lmonoty))    => do
+  | `(lconstmono| (#false : $ty:lmonoty))    => do
     let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy ty
     let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
     let typeTypeExpr := mkConst ``LMonoTy
     return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit "false", lmonoty]
-  | `(lconst| #$s:ident) => do
+  | `(lconstmono| #$s:ident) => do
     let none ← mkNone (mkConst ``LMonoTy)
     let s := toString s.getId
     let typeTypeExpr := mkConst ``LMonoTy
     return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit s, none]
-  | `(lconst| (#$s:ident : $ty:lmonoty)) => do
+  | `(lconstmono| (#$s:ident : $ty:lmonoty)) => do
     let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy ty
     let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
     let s := toString s.getId
@@ -358,72 +357,72 @@ def elabLConstMono (Identifier : Type) [MkIdent Identifier] : Lean.Syntax → Me
     return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit s, lmonoty]
   | _ => throwUnsupportedSyntax
 
-declare_syntax_cat lop
-scoped syntax "~" noWs lident : lop
-scoped syntax "(" lop ":" lmonoty ")" : lop
-scoped syntax lop : lexpr
+declare_syntax_cat lopmono
+scoped syntax "~" noWs lidentmono : lopmono
+scoped syntax "(" lopmono ":" lmonoty ")" : lopmono
+scoped syntax lopmono : lexprmono
 
 def elabLOpMono (Identifier : Type) [MkIdent Identifier] : Lean.Syntax → MetaM Expr
-  | `(lop| ~$s:lident)  => do
+  | `(lopmono| ~$s:lidentmono)  => do
     let none ← mkNone (mkConst ``LMonoTy)
     let ident ← MkIdent.elabIdent Identifier s
     let typeTypeExpr := mkConst ``LMonoTy
     return mkAppN (.const ``LExpr.op []) #[typeTypeExpr, MkIdent.toExpr Identifier, ident, none]
-  | `(lop| (~$s:lident : $ty:lmonoty)) => do
+  | `(lopmono| (~$s:lidentmono : $ty:lmonoty)) => do
     let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy ty
     let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
     mkAppM ``LExpr.op #[← MkIdent.elabIdent Identifier s, lmonoty]
   | _ => throwUnsupportedSyntax
 
-declare_syntax_cat lbvar
-scoped syntax "%" noWs num : lbvar
+declare_syntax_cat lbvarmono
+scoped syntax "%" noWs num : lbvarmono
 def elabLBVarMono (Identifier : Type) [MkIdent Identifier] : Lean.Syntax → MetaM Expr
-  | `(lbvar| %$n:num) =>
+  | `(lbvarmono| %$n:num) =>
     let typeTypeExpr := mkConst ``LMonoTy
     return mkAppN (.const ``LExpr.bvar []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkNatLit n.getNat]
   | _ => throwUnsupportedSyntax
-scoped syntax lbvar : lexpr
+scoped syntax lbvarmono : lexprmono
 
-declare_syntax_cat lfvar
-scoped syntax lident : lfvar
-scoped syntax "(" lident ":" lmonoty ")" : lfvar
+declare_syntax_cat lfvarmono
+scoped syntax lidentmono : lfvarmono
+scoped syntax "(" lidentmono ":" lmonoty ")" : lfvarmono
 
 def elabLFVarMono (Identifier : Type) [MkIdent Identifier] : Lean.Syntax → MetaM Expr
-  | `(lfvar| $i:lident) => do
+  | `(lfvarmono| $i:lidentmono) => do
     let none ← mkNone (mkConst ``LMonoTy)
     mkAppM ``LExpr.fvar #[← MkIdent.elabIdent Identifier i, none]
-  | `(lfvar| ($i:lident : $ty:lmonoty)) => do
+  | `(lfvarmono| ($i:lidentmono : $ty:lmonoty)) => do
     let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy ty
     let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
     mkAppM ``LExpr.fvar #[← MkIdent.elabIdent Identifier i, lmonoty]
   | _ => throwUnsupportedSyntax
-scoped syntax lfvar : lexpr
+scoped syntax lfvarmono : lexprmono
 
-declare_syntax_cat mabs
-declare_syntax_cat mall
-declare_syntax_cat mexist
-scoped syntax "λ" lexpr : mabs
-scoped syntax "λ" "(" lmonoty ")" ":" lexpr : mabs
-scoped syntax "∀" lexpr : mall
-scoped syntax "∀" "(" lmonoty ")" ":" lexpr : mall
-scoped syntax "∃" lexpr : mexist
-scoped syntax "∃" "(" lmonoty ")" ":" lexpr : mexist
-scoped syntax mabs : lexpr
-scoped syntax mall : lexpr
-scoped syntax mexist : lexpr
-declare_syntax_cat mapp
-scoped syntax "(" lexpr lexpr ")" : mapp
-scoped syntax mapp : lexpr
-declare_syntax_cat meq
-scoped syntax "==" : meq
-scoped syntax lexpr meq lexpr : lexpr
-declare_syntax_cat mif
-scoped syntax "if" : mif
-scoped syntax "then" : mif
-scoped syntax "else" : mif
-scoped syntax mif lexpr mif lexpr mif lexpr : lexpr
+declare_syntax_cat mabsmono
+declare_syntax_cat mallmono
+declare_syntax_cat mexistmono
+scoped syntax "λ" lexprmono : mabsmono
+scoped syntax "λ" "(" lmonoty ")" ":" lexprmono : mabsmono
+scoped syntax "∀" lexprmono : mallmono
+scoped syntax "∀" "(" lmonoty ")" ":" lexprmono : mallmono
+scoped syntax "∃" lexprmono : mexistmono
+scoped syntax "∃" "(" lmonoty ")" ":" lexprmono : mexistmono
+scoped syntax mabsmono : lexprmono
+scoped syntax mallmono : lexprmono
+scoped syntax mexistmono : lexprmono
+declare_syntax_cat mappmono
+scoped syntax "(" lexprmono lexprmono ")" : mappmono
+scoped syntax mappmono : lexprmono
+declare_syntax_cat meqmono
+scoped syntax "==" : meqmono
+scoped syntax lexprmono meqmono lexprmono : lexprmono
+declare_syntax_cat mifmono
+scoped syntax "if" : mifmono
+scoped syntax "then" : mifmono
+scoped syntax "else" : mifmono
+scoped syntax mifmono lexprmono mifmono lexprmono mifmono lexprmono : lexprmono
 
-scoped syntax "(" lexpr ")" : lexpr
+scoped syntax "(" lexprmono ")" : lexprmono
 
 open LTy.Syntax in
 /-- Elaborator for Lambda expressions.
@@ -433,62 +432,62 @@ user's responsibility to ensure correct usage of type variables (i.e., they're
 unique).
 -/
 partial def elabLExprMono (Identifier : Type) [MkIdent Identifier] : Lean.Syntax → MetaM Expr
-  | `(lexpr| $c:lconst) => elabLConstMono Identifier c
-  | `(lexpr| $o:lop) => elabLOpMono Identifier o
-  | `(lexpr| $b:lbvar) => elabLBVarMono Identifier b
-  | `(lexpr| $f:lfvar) => elabLFVarMono Identifier f
-  | `(lexpr| λ $e:lexpr) => do
+  | `(lexprmono| $c:lconstmono) => elabLConstMono Identifier c
+  | `(lexprmono| $o:lopmono) => elabLOpMono Identifier o
+  | `(lexprmono| $b:lbvarmono) => elabLBVarMono Identifier b
+  | `(lexprmono| $f:lfvarmono) => elabLFVarMono Identifier f
+  | `(lexprmono| λ $e:lexprmono) => do
      let e' ← elabLExprMono Identifier e
      let typeTypeExpr := mkConst ``LMonoTy
      return mkAppN (.const ``LExpr.absUntyped []) #[typeTypeExpr, MkIdent.toExpr Identifier, e']
-  | `(lexpr| λ ($mty:lmonoty): $e:lexpr) => do
+  | `(lexprmono| λ ($mty:lmonoty): $e:lexprmono) => do
      let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy mty
      let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
      let e' ← elabLExprMono Identifier e
      let typeTypeExpr := mkConst ``LMonoTy
      return mkAppN (.const ``LExpr.abs []) #[typeTypeExpr, MkIdent.toExpr Identifier, lmonoty, e']
-  | `(lexpr| ∀ $e:lexpr) => do
+  | `(lexprmono| ∀ $e:lexprmono) => do
      let e' ← elabLExprMono Identifier e
      let typeTypeExpr := mkConst ``LMonoTy
      return mkAppN (.const ``LExpr.allUntyped []) #[typeTypeExpr, MkIdent.toExpr Identifier, e']
-  | `(lexpr| ∀ ($mty:lmonoty): $e:lexpr) => do
+  | `(lexprmono| ∀ ($mty:lmonoty): $e:lexprmono) => do
      let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy mty
      let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
      let e' ← elabLExprMono Identifier e
      let typeTypeExpr := mkConst ``LMonoTy
      return mkAppN (.const ``LExpr.all []) #[typeTypeExpr, MkIdent.toExpr Identifier, lmonoty, e']
-  | `(lexpr| ∃ ($mty:lmonoty): $e:lexpr) => do
+  | `(lexprmono| ∃ ($mty:lmonoty): $e:lexprmono) => do
      let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy mty
      let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
      let e' ← elabLExprMono Identifier e
      let typeTypeExpr := mkConst ``LMonoTy
      return mkAppN (.const ``LExpr.exist []) #[typeTypeExpr, MkIdent.toExpr Identifier, lmonoty, e']
-  | `(lexpr| ∃ $e:lexpr) => do
+  | `(lexprmono| ∃ $e:lexprmono) => do
      let e' ← elabLExprMono Identifier e
      mkAppM ``LExpr.existUntyped #[e']
-  | `(lexpr| ($e1:lexpr $e2:lexpr)) => do
+  | `(lexprmono| ($e1:lexprmono $e2:lexprmono)) => do
      let e1' ← elabLExprMono Identifier e1
      let e2' ← elabLExprMono Identifier e2
      let typeTypeExpr := mkConst ``LMonoTy
      return mkAppN (.const ``LExpr.app []) #[typeTypeExpr, MkIdent.toExpr Identifier, e1', e2']
-  | `(lexpr| $e1:lexpr == $e2:lexpr) => do
+  | `(lexprmono| $e1:lexprmono == $e2:lexprmono) => do
      let e1' ← elabLExprMono Identifier e1
      let e2' ← elabLExprMono Identifier e2
      let typeTypeExpr := mkConst ``LMonoTy
      return mkAppN (.const ``LExpr.eq []) #[typeTypeExpr, MkIdent.toExpr Identifier, e1', e2']
-  | `(lexpr| if $e1:lexpr then $e2:lexpr else $e3:lexpr) => do
+  | `(lexprmono| if $e1:lexprmono then $e2:lexprmono else $e3:lexprmono) => do
      let e1' ← elabLExprMono Identifier e1
      let e2' ← elabLExprMono Identifier e2
      let e3' ← elabLExprMono Identifier e3
      let typeTypeExpr := mkConst ``LMonoTy
      return mkAppN (.const ``LExpr.ite []) #[typeTypeExpr, MkIdent.toExpr Identifier, e1', e2', e3']
-  | `(lexpr| ($e:lexpr)) => elabLExprMono Identifier e
+  | `(lexprmono| ($e:lexprmono)) => elabLExprMono Identifier e
   | _ => throwUnsupportedSyntax
 
-scoped syntax ident : lident
+scoped syntax ident : lidentmono
 /-- Elaborator for String identifiers, construct a String instance -/
 def elabStrIdent : Lean.Syntax → MetaM Expr
-  | `(lident| $s:ident) => do
+  | `(lidentmono| $s:ident) => do
     let s := s.getId
     return mkStrLit s.toString
   | _ => throwUnsupportedSyntax
@@ -497,7 +496,7 @@ instance : MkIdent String where
   elabIdent := elabStrIdent
   toExpr := .const ``String []
 
-elab "esM[" e:lexpr "]" : term => elabLExprMono (Identifier:=String) e
+elab "esM[" e:lexprmono "]" : term => elabLExprMono (Identifier:=String) e
 
 open LTy.Syntax
 
@@ -575,6 +574,318 @@ info: Lambda.LExpr.quant
 #guard_msgs in
 #eval
   esM[∀ (Map %k %v):
+            (∀ (%k):
+               (∀ (%v):
+                  (((~select : Map %k %v → %k → %v)
+                     ((((~update : Map %k %v → %k → %v → Map %k %v) %2) %1) %0)) %1) == %0))]
+
+end SyntaxMono
+
+
+
+/-
+Syntax for conveniently building `LExpr` terms with `LTy`, scoped under the namespace
+`LExpr.Syntax`.
+-/
+namespace Syntax
+open Lean Elab Meta
+
+class MkIdent (Identifier : Type) where
+  elabIdent : Lean.Syntax → MetaM Expr
+  toExpr : Expr
+
+declare_syntax_cat lident
+
+declare_syntax_cat lexpr
+
+-- We expect that `LExpr` will support at least Boolean constants because
+-- it includes an if-then-else construct. Here we define a syntactic category
+-- for booleans, and also -- for practical reasons -- integers as well.
+declare_syntax_cat lconst
+declare_syntax_cat lnum
+scoped syntax "#" noWs num : lnum
+scoped syntax "#" noWs "-" noWs num : lnum
+scoped syntax lnum : lconst
+declare_syntax_cat lbool
+scoped syntax "#true" : lbool
+scoped syntax "#false" : lbool
+scoped syntax lbool : lconst
+scoped syntax "#" noWs ident : lconst
+scoped syntax "(" lconst ":" lty ")" : lconst
+scoped syntax lconst : lexpr
+
+def elabLConst (Identifier : Type) [MkIdent Identifier] : Lean.Syntax → MetaM Expr
+  | `(lconst| #$n:num)  => do
+    let none ← mkNone (mkConst ``LTy)
+    let typeTypeExpr := mkConst ``LTy
+    return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit (toString n.getNat), none]
+  | `(lconst| (#$n:num : $ty:lty)) => do
+    let lty ← Lambda.LTy.Syntax.elabLTy ty
+    let lty ← mkSome (mkConst ``LTy) lty
+    let typeTypeExpr := mkConst ``LTy
+    return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit (toString n.getNat), lty]
+  | `(lconst| #-$n:num) => do
+    let none ← mkNone (mkConst ``LTy)
+    let typeTypeExpr := mkConst ``LTy
+    return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit ("-" ++ (toString n.getNat)), none]
+  | `(lconst| (#-$n:num : $ty:lty)) => do
+    let lty ← Lambda.LTy.Syntax.elabLTy ty
+    let lty ← mkSome (mkConst ``LTy) lty
+    let typeTypeExpr := mkConst ``LTy
+    return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit ("-" ++ (toString n.getNat)), lty]
+  | `(lconst| #true)    => do
+    let none ← mkNone (mkConst ``LTy)
+    let typeTypeExpr := mkConst ``LTy
+    return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit "true", none]
+  | `(lconst| (#true : $ty:lty))    => do
+    let lty ← Lambda.LTy.Syntax.elabLTy ty
+    let lty ← mkSome (mkConst ``LTy) lty
+    let typeTypeExpr := mkConst ``LTy
+    return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit "true", lty]
+  | `(lconst| #false)   =>  do
+    let none ← mkNone (mkConst ``LTy)
+    let typeTypeExpr := mkConst ``LTy
+    return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit "false", none]
+  | `(lconst| (#false : $ty:lty))    => do
+    let lty ← Lambda.LTy.Syntax.elabLTy ty
+    let lty ← mkSome (mkConst ``LTy) lty
+    let typeTypeExpr := mkConst ``LTy
+    return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit "false", lty]
+  | `(lconst| #$s:ident) => do
+    let none ← mkNone (mkConst ``LTy)
+    let s := toString s.getId
+    let typeTypeExpr := mkConst ``LTy
+    return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit s, none]
+  | `(lconst| (#$s:ident : $ty:lty)) => do
+    let lty ← Lambda.LTy.Syntax.elabLTy ty
+    let lty ← mkSome (mkConst ``LTy) lty
+    let s := toString s.getId
+    let typeTypeExpr := mkConst ``LTy
+    return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit s, lty]
+  | _ => throwUnsupportedSyntax
+
+declare_syntax_cat lop
+scoped syntax "~" noWs lident : lop
+scoped syntax "(" lop ":" lty ")" : lop
+scoped syntax lop : lexpr
+
+def elabLOp (Identifier : Type) [MkIdent Identifier] : Lean.Syntax → MetaM Expr
+  | `(lop| ~$s:lident)  => do
+    let none ← mkNone (mkConst ``LTy)
+    let ident ← MkIdent.elabIdent Identifier s
+    let typeTypeExpr := mkConst ``LTy
+    return mkAppN (.const ``LExpr.op []) #[typeTypeExpr, MkIdent.toExpr Identifier, ident, none]
+  | `(lop| (~$s:lident : $ty:lty)) => do
+    let lty ← Lambda.LTy.Syntax.elabLTy ty
+    let lty ← mkSome (mkConst ``LTy) lty
+    mkAppM ``LExpr.op #[← MkIdent.elabIdent Identifier s, lty]
+  | _ => throwUnsupportedSyntax
+
+declare_syntax_cat lbvar
+scoped syntax "%" noWs num : lbvar
+def elabLBVar (Identifier : Type) [MkIdent Identifier] : Lean.Syntax → MetaM Expr
+  | `(lbvar| %$n:num) =>
+    let typeTypeExpr := mkConst ``LTy
+    return mkAppN (.const ``LExpr.bvar []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkNatLit n.getNat]
+  | _ => throwUnsupportedSyntax
+scoped syntax lbvar : lexpr
+
+declare_syntax_cat lfvar
+scoped syntax lident : lfvar
+scoped syntax "(" lident ":" lty ")" : lfvar
+
+def elabLFVar (Identifier : Type) [MkIdent Identifier] : Lean.Syntax → MetaM Expr
+  | `(lfvar| $i:lident) => do
+    let none ← mkNone (mkConst ``LTy)
+    mkAppM ``LExpr.fvar #[← MkIdent.elabIdent Identifier i, none]
+  | `(lfvar| ($i:lident : $ty:lty)) => do
+    let lty ← Lambda.LTy.Syntax.elabLTy ty
+    let lty ← mkSome (mkConst ``LTy) lty
+    mkAppM ``LExpr.fvar #[← MkIdent.elabIdent Identifier i, lty]
+  | _ => throwUnsupportedSyntax
+scoped syntax lfvar : lexpr
+
+declare_syntax_cat mabs
+declare_syntax_cat mall
+declare_syntax_cat mexist
+scoped syntax "λ" lexpr : mabs
+scoped syntax "λ" "(" lty ")" ":" lexpr : mabs
+scoped syntax "∀" lexpr : mall
+scoped syntax "∀" "(" lty ")" ":" lexpr : mall
+scoped syntax "∃" lexpr : mexist
+scoped syntax "∃" "(" lty ")" ":" lexpr : mexist
+scoped syntax mabs : lexpr
+scoped syntax mall : lexpr
+scoped syntax mexist : lexpr
+declare_syntax_cat mapp
+scoped syntax "(" lexpr lexpr ")" : mapp
+scoped syntax mapp : lexpr
+declare_syntax_cat meq
+scoped syntax "==" : meq
+scoped syntax lexpr meq lexpr : lexpr
+declare_syntax_cat mif
+scoped syntax "if" : mif
+scoped syntax "then" : mif
+scoped syntax "else" : mif
+scoped syntax mif lexpr mif lexpr mif lexpr : lexpr
+
+scoped syntax "(" lexpr ")" : lexpr
+
+open LTy.Syntax in
+/-- Elaborator for Lambda expressions.
+
+It's the user's responsibility to ensure correct usage of type variables (i.e., they're
+unique).
+-/
+partial def elabLExpr (Identifier : Type) [MkIdent Identifier] : Lean.Syntax → MetaM Expr
+  | `(lexpr| $c:lconst) => elabLConst Identifier c
+  | `(lexpr| $o:lop) => elabLOp Identifier o
+  | `(lexpr| $b:lbvar) => elabLBVar Identifier b
+  | `(lexpr| $f:lfvar) => elabLFVar Identifier f
+  | `(lexpr| λ $e:lexpr) => do
+     let e' ← elabLExpr Identifier e
+     let typeTypeExpr := mkConst ``LTy
+     return mkAppN (.const ``LExpr.absUntyped []) #[typeTypeExpr, MkIdent.toExpr Identifier, e']
+  | `(lexpr| λ ($mty:lty): $e:lexpr) => do
+     let lty ← Lambda.LTy.Syntax.elabLTy mty
+     let lty ← mkSome (mkConst ``LTy) lty
+     let e' ← elabLExpr Identifier e
+     let typeTypeExpr := mkConst ``LTy
+     return mkAppN (.const ``LExpr.abs []) #[typeTypeExpr, MkIdent.toExpr Identifier, lty, e']
+  | `(lexpr| ∀ $e:lexpr) => do
+     let e' ← elabLExpr Identifier e
+     let typeTypeExpr := mkConst ``LTy
+     return mkAppN (.const ``LExpr.allUntyped []) #[typeTypeExpr, MkIdent.toExpr Identifier, e']
+  | `(lexpr| ∀ ($mty:lty): $e:lexpr) => do
+     let lty ← Lambda.LTy.Syntax.elabLTy mty
+     let lty ← mkSome (mkConst ``LTy) lty
+     let e' ← elabLExpr Identifier e
+     let typeTypeExpr := mkConst ``LTy
+     return mkAppN (.const ``LExpr.all []) #[typeTypeExpr, MkIdent.toExpr Identifier, lty, e']
+  | `(lexpr| ∃ ($mty:lty): $e:lexpr) => do
+     let lty ← Lambda.LTy.Syntax.elabLTy mty
+     let lty ← mkSome (mkConst ``LTy) lty
+     let e' ← elabLExpr Identifier e
+     let typeTypeExpr := mkConst ``LTy
+     return mkAppN (.const ``LExpr.exist []) #[typeTypeExpr, MkIdent.toExpr Identifier, lty, e']
+  | `(lexpr| ∃ $e:lexpr) => do
+     let e' ← elabLExpr Identifier e
+     mkAppM ``LExpr.existUntyped #[e']
+  | `(lexpr| ($e1:lexpr $e2:lexpr)) => do
+     let e1' ← elabLExpr Identifier e1
+     let e2' ← elabLExpr Identifier e2
+     let typeTypeExpr := mkConst ``LTy
+     return mkAppN (.const ``LExpr.app []) #[typeTypeExpr, MkIdent.toExpr Identifier, e1', e2']
+  | `(lexpr| $e1:lexpr == $e2:lexpr) => do
+     let e1' ← elabLExpr Identifier e1
+     let e2' ← elabLExpr Identifier e2
+     let typeTypeExpr := mkConst ``LTy
+     return mkAppN (.const ``LExpr.eq []) #[typeTypeExpr, MkIdent.toExpr Identifier, e1', e2']
+  | `(lexpr| if $e1:lexpr then $e2:lexpr else $e3:lexpr) => do
+     let e1' ← elabLExpr Identifier e1
+     let e2' ← elabLExpr Identifier e2
+     let e3' ← elabLExpr Identifier e3
+     let typeTypeExpr := mkConst ``LTy
+     return mkAppN (.const ``LExpr.ite []) #[typeTypeExpr, MkIdent.toExpr Identifier, e1', e2', e3']
+  | `(lexpr| ($e:lexpr)) => elabLExpr Identifier e
+  | _ => throwUnsupportedSyntax
+
+scoped syntax ident : lident
+/-- Elaborator for String identifiers, construct a String instance -/
+def elabStrIdent : Lean.Syntax → MetaM Expr
+  | `(lident| $s:ident) => do
+    let s := s.getId
+    return mkStrLit s.toString
+  | _ => throwUnsupportedSyntax
+
+instance : MkIdent String where
+  elabIdent := elabStrIdent
+  toExpr := .const ``String []
+
+elab "es[" e:lexpr "]" : term => elabLExpr (Identifier:=String) e
+
+open LTy.Syntax
+
+/-- info: (bvar 0).absUntyped.app (const "5" none) : LExpr LTy String -/
+#guard_msgs in
+#check es[((λ %0) #5)]
+
+/-- info: (abs (some (LTy.forAll [] (LMonoTy.tcons "bool" []))) (bvar 0)).app (const "true" none) : LExpr LTy String -/
+#guard_msgs in
+#check es[((λ (bool): %0) #true)]
+
+/-- info: ((bvar 0).eq (const "5" none)).allUntyped : LExpr LTy String -/
+#guard_msgs in
+#check es[(∀ %0 == #5)]
+
+/-- info: ((bvar 0).eq (const "5" none)).existUntyped : LExpr LTy String -/
+#guard_msgs in
+#check es[(∃ %0 == #5)]
+
+/-- info: exist (some (LTy.forAll [] (LMonoTy.tcons "int" []))) ((bvar 0).eq (const "5" none)) : LExpr LTy String -/
+#guard_msgs in
+#check es[(∃ (int): %0 == #5)]
+
+/-- info: fvar "x" (some (LTy.forAll [] (LMonoTy.tcons "bool" []))) : LExpr LTy String -/
+#guard_msgs in
+#check es[(x : bool)]
+
+-- axiom [updateSelect]: forall m: Map k v, kk: k, vv: v :: m[kk := vv][kk] == vv;
+/--
+info: Lambda.LExpr.quant
+  (Lambda.QuantifierKind.all)
+  (some (Lambda.LTy.forAll [] (Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"])))
+  (Lambda.LExpr.quant
+    (Lambda.QuantifierKind.all)
+    (some (Lambda.LTy.forAll [] (Lambda.LMonoTy.ftvar "k")))
+    (Lambda.LExpr.quant
+      (Lambda.QuantifierKind.all)
+      (some (Lambda.LTy.forAll [] (Lambda.LMonoTy.ftvar "v")))
+      (Lambda.LExpr.eq
+        (Lambda.LExpr.app
+          (Lambda.LExpr.app
+            (Lambda.LExpr.op
+              "select"
+              (some (Lambda.LTy.forAll
+                 []
+                 (Lambda.LMonoTy.tcons
+                   "Map"
+                   [Lambda.LMonoTy.ftvar "k",
+                    Lambda.LMonoTy.tcons
+                      "arrow"
+                      [Lambda.LMonoTy.ftvar "v",
+                       Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]]]))))
+            (Lambda.LExpr.app
+              (Lambda.LExpr.app
+                (Lambda.LExpr.app
+                  (Lambda.LExpr.op
+                    "update"
+                    (some (Lambda.LTy.forAll
+                       []
+                       (Lambda.LMonoTy.tcons
+                         "Map"
+                         [Lambda.LMonoTy.ftvar "k",
+                          Lambda.LMonoTy.tcons
+                            "arrow"
+                            [Lambda.LMonoTy.ftvar "v",
+                             Lambda.LMonoTy.tcons
+                               "arrow"
+                               [Lambda.LMonoTy.ftvar "k",
+                                Lambda.LMonoTy.tcons
+                                  "arrow"
+                                  [Lambda.LMonoTy.ftvar "v",
+                                   Lambda.LMonoTy.tcons
+                                     "Map"
+                                     [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]]]]]))))
+                  (Lambda.LExpr.bvar 2))
+                (Lambda.LExpr.bvar 1))
+              (Lambda.LExpr.bvar 0)))
+          (Lambda.LExpr.bvar 1))
+        (Lambda.LExpr.bvar 0))))
+-/
+#guard_msgs in
+#eval
+  es[∀ (Map %k %v):
             (∀ (%k):
                (∀ (%v):
                   (((~select : Map %k %v → %k → %v)

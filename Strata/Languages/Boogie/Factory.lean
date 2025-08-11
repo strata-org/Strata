@@ -11,7 +11,7 @@ import Strata.DL.Lambda.IntBoolFactory
 ---------------------------------------------------------------------
 
 namespace Boogie
-open Lambda LTy.Syntax LExpr.Syntax
+open Lambda LTy.Syntax LExpr.SyntaxMono
 
 @[match_pattern]
 def mapTy (keyTy : LMonoTy) (valTy : LMonoTy) : LMonoTy :=

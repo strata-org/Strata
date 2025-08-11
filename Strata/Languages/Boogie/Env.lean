@@ -64,7 +64,7 @@ def ProofObligation.create
   (label : String) (assumptions : PathConditions Expression)
   (obligation : Procedure.Check) (md : MetaData Expression := #[]):
   Option (ProofObligation Expression) :=
-  open Lambda.LExpr.Syntax in
+  open Lambda.LExpr.SyntaxMono in
   if obligation.attr == .Free then
     dbg_trace f!"{Format.line}Obligation {label} is free!{Format.line}"
     none
