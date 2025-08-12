@@ -5,7 +5,7 @@
 -/
 
 import Strata.Languages.Boogie.DDMTransform.Parse
-import Strata.Languages.Boogie.Names
+import Strata.Languages.Boogie.BoogieGen
 
 
 ---------------------------------------------------------------------
@@ -651,7 +651,7 @@ def initVarStmts (tpids : Map Expression.Ident LTy) (bindings : TransBindings) :
   match tpids with
   | [] => return ([], bindings)
   | (id, tp) :: rest =>
-    let s := Boogie.Statement.init id tp (Names.initVarValue id ("_" ++ (toString bindings.gen)))
+    let s := Boogie.Statement.init id tp (Names.initVarValue (id.2 ++ "_" ++ (toString bindings.gen)))
     let bindings := incrGen bindings
     let (stmts, bindings) ← initVarStmts rest bindings
     return ((s :: stmts), bindings)
@@ -962,7 +962,7 @@ def translateGlobalVar (bindings : TransBindings) (op : Operation) :
   let _ ← @checkOp (Boogie.Decl × TransBindings) op q`Boogie.command_var 1
   let (id, targs, mty) ← translateBindMk bindings op.args[0]!
   let ty := LTy.forAll targs mty
-  let decl := (.var id ty (Names.initVarValue id ("_" ++ (toString bindings.gen))))
+  let decl := (.var id ty (Names.initVarValue (id.2 ++ "_" ++ (toString bindings.gen))))
   let bindings := incrGen bindings
   return (decl, { bindings with freeVars := bindings.freeVars.push decl})
 

@@ -4,7 +4,13 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-/-
+import Strata.DL.Util.ListUtils
+import Strata.Languages.Boogie.ProgramType
+import Strata.Languages.Boogie.WF
+import Strata.Languages.Boogie.StatementWF
+import Strata.Languages.Boogie.ProcedureWF
+
+/-! ## Well-Formedness for Programs
   This file is the entry point of typechecker correctness proofs. Specifically,
  `Program.typeCheckWF` states that if a program successfully type checks,
  then it is also well-formed.
@@ -13,15 +19,30 @@
  checker should be updated to check all WF conditions defined in `WF.lean`, and
  the admitted goals should be discharged by their corresponding proofs. Here is
  a list of the properties admitted, and they are also documented in the proof
- next to the admit/sorry tactic.
+ next to the admit/sorry tactic. As proofs for the list items are completed, the
+ number can be replaced with a '+' for documentation purposes. If a
+ well-formedness condition is not needed, it is denoted by '-'.
 
- 1. All modified variables in a procedure are declared in the program.
+ 1. All `modifies` variables in a procedure are declared in the program.
  2. All declared global variables are `BoogieIdent.glob`.
- 3. All local variable declarations in a procedure are `BoogieIdent.locl`.
+ -  All local variable declarations in a procedure are `BoogieIdent.locl`.
  4. All local variable declarations in a procedure have no duplicates.
  5. All variables in post-conditions and pre-conditions are either `BoogieIdent.locl` or `BoogieIdent.glob`.
  6. Postconditions in a procedure are all `ValidExpression`s (c.f., `OldExpressions.lean`),
     that is, the old predicates do not occur on the right hand side of an `.app`.
+ 7. The `lhs` of a call statement contain no duplicates and are `BoogieIdent.locl`.
+    This is to avoid overlapping with global variables that occurs in pre/post conditions, because call elimination directly substitutes `lhs` into the
+    pre/post conditions, they must not already exist in the pre/post conditions.
+    If a `lhs` needs to be global, a separate transformation can be implemented to create/substitute temporary variables before the call statement, and insert an assignment statement to
+ +  The `outputs` list of a procedure contains no duplicates
+ 9. All variables mentioned in `args` of a call statement are either `BoogieIdent.locl` or `BoogieIdent.glob`.
+ +  The `inputs` list of a procedure contains no duplicates
+ 11. All `modifies` variables have no duplicates.
+ 12. The `inputs` list of a procedure is disjoint from the `outputs` list of the procedure
+ 13. The `lhs` of a call statement is disjoint from `modifies`, `outputs`, and `inputs` of the procedure
+ 14. The `inputs` list of a procedure are all `BoogieIdent.locl`
+ 15. The `outputs` list of a procedure are all `BoogieIdent.locl`
+ 16. All variables in pre/post conditions that are `.locl` must be in `outputs` or `inputs` of the procedure
 
  In order to fully prove the type checker's properties, it might be necessary to
  establish a connection (currently not implemented) between the `TyEnv` instance
@@ -52,12 +73,6 @@
  the program is type-checked.
 -/
 
-import Strata.DL.Util.Props
-import Strata.Languages.Boogie.ProgramType
-import Strata.Languages.Boogie.WF
-import Strata.Languages.Boogie.StatementWF
-import Strata.Languages.Boogie.ProcedureWF
-
 namespace Boogie
 namespace WF
 
@@ -78,7 +93,6 @@ instance : Inhabited WFProgram where
 instance : ToFormat WFProgram where
   format wfp := format wfp.self
 
-set_option warn.sorry false in
 /--
 Auxiliary lemma for Program.typeCheck.goWF
 -/
@@ -207,7 +221,7 @@ theorem Program.typeCheck.goWF : Program.typeCheck.go p T ds = .ok (ds', T') →
   | nil => simp [Program.typeCheck.go] at tcok
            cases tcok; constructor <;> try assumption
   | cons h t t_ih =>
-    apply (forall_cons (WF.WFDeclProp p) h t).mpr
+    apply (List.Forall_cons (WF.WFDeclProp p) h t).mpr
     constructor
     . apply (Program.typeCheck.goWF' tcok).1
     . have H := (Program.typeCheck.goWF' tcok).2

@@ -4,8 +4,6 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-
-
 import Strata.DL.Imperative.PureExpr
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Imperative.HasVars
@@ -117,7 +115,7 @@ def Cmds.definedVars (cs : Cmds P) : List P.Ident :=
 /-- Get all variables modified by the command `c`. -/
 def Cmd.modifiedVars (c : Cmd P) : List P.Ident :=
   match c with
-  | .init name _ _ _ => [name]
+  | .init _ _ _ _ => []
   | .set name _ _ => [name]
   | .havoc name _ => [name]
   | .assert _ _ _ => []

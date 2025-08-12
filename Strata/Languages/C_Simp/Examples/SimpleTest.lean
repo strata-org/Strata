@@ -30,7 +30,8 @@ procedure simpleTest (x: int, y: int) -> int
 #end
 
 /--
-info: proceduresimpleTest(x:int, y:int)->int@pre(y)>(#(0))@posttrue({
+info: program C_Simp;
+proceduresimpleTest(x:int, y:int)->int@pre(y)>(#(0))@posttrue({
   varz:int;
   (z):=(x)+(y);
   @assert[test_assert](z)>(x);

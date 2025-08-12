@@ -100,9 +100,10 @@ structure ElabContext where
   typeOrCatDeclMap : TypeOrCatDeclMap
   /-- Map for looking up metadata by name. -/
   metadataDeclMap : MetadataDeclMap
-  globalContext : GlobalContext
+  /-- Syntax elaboration functions. -/
+  syntaxElabs : SyntaxElabMap
   inputContext : InputContext
-  syntaxElabs : Std.HashMap QualifiedIdent SyntaxElaborator
+  globalContext : GlobalContext
 
 structure ElabState where
   -- Errors found in elaboration.
@@ -1163,6 +1164,23 @@ partial def runSyntaxElaborator
       treesr[idx].resultContext
   return (treesr, tctx)
 
+partial def elabType (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
+  let (tree, success) ← runChecked <| elabOperation tctx stx
+  if !success then
+    return default
+  assert! tree.isSpecificOp q`Init.mkType
+  assert! tree.children.size = 1
+  let t := tree[0]!
+  let (tree, success) ← runChecked <| translateTypeTree t
+  if !success then
+    return default
+  match tree.info with
+  | .ofTypeInfo _ =>
+    pure ()
+  | _ =>
+    logErrorMF stx mf!"Expected a type."
+  pure tree
+
 partial def catElaborator (c : SyntaxCat) : TypingContext → Syntax → ElabM Tree :=
   match c with
   | .atom q`Init.Expr =>
@@ -1196,23 +1214,7 @@ partial def catElaborator (c : SyntaxCat) : TypingContext → Syntax → ElabM T
         pure <| .node (.ofStrlitInfo info) #[]
       | none =>
         panic! s!"String not supported {stx} {stx.isStrLit?}"
-  | .atom q`Init.Type =>
-      fun tctx stx => do
-        let (tree, success) ← runChecked <| elabOperation tctx stx
-        if !success then
-          return default
-        assert! tree.isSpecificOp q`Init.mkType
-        assert! tree.children.size = 1
-        let t := tree[0]!
-        let (tree, success) ← runChecked <| translateTypeTree t
-        if !success then
-          return default
-        match tree.info with
-        | .ofTypeInfo _ =>
-          pure ()
-        | _ =>
-          logErrorMF stx mf!"Expected a type instead of {c}"
-        pure tree
+  | .atom q`Init.Type => elabType
   | .atom q`Init.TypeP =>
       fun tctx stx => do
         let (tree, true) ← runChecked <| elabOperation tctx stx
@@ -1341,10 +1343,11 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree :=
 end
 
 def runElab [Inhabited α] (action : ElabM α) : DeclM α := do
+  let loader := (← read).loader
   let s ← get
   let ctx : ElabContext := {
-        dialects := s.loader.dialects,
-        syntaxElabs := s.loader.syntaxElabMap,
+        dialects := loader.dialects,
+        syntaxElabs := loader.syntaxElabMap,
         openDialectSet := s.openDialectSet,
         typeOrCatDeclMap := s.typeOrCatDeclMap,
         metadataDeclMap := s.metadataDeclMap,
@@ -1508,14 +1511,6 @@ def translateSyntaxDef (params : DeclBindingsMap) (mdTree tree : Tree) : ElabM S
       return default
 
   return { atoms, prec }
-
-def getParsers! (d : Dialect) : DeclM (Array DeclParser) := do
-  match (←get).fixedParsers.mkDialectParsers d with
-  | .error msg =>
-    panic! s!"Could not add open dialect: {eformat msg |>.pretty}"
-    return #[]
-  | .ok parsers =>
-    pure parsers
 
 def resolveDeclTypeBinding  (name : String)
     (binding : TypingContext.VarBinding) (args : Array (Syntaxed DeclBindingKind)) : ElabM DeclBindingKind := do
