@@ -9,6 +9,23 @@ This file contains auxillary definitions for Lean core types that could be
 potentially useful to add.
 -/
 
+namespace Strata
+
+private def escapeStringLitAux (acc : String) (c : Char) : String :=
+  if c == '"' then
+    acc ++ "\\\""
+  else if c == '\\' then
+    acc ++ "\\\\"
+  else if c == '\n' then
+    acc ++ "\\n"
+  else
+    acc.push c
+
+def escapeStringLit (s : String) : String :=
+  s.foldl escapeStringLitAux "\"" ++ "\""
+
+end Strata
+
 namespace String
 
 /--
@@ -61,43 +78,29 @@ def indexOf (s sub : String) (b : Pos := 0) : Option Pos :=
   else
     indexOfAux s sub b 0
 
-end String
-
-inductive TokenType where
-| whitespace
-| token
-deriving Repr
-
-def TokenType.pred : TokenType → Char → Bool
-| .whitespace => (·.isWhitespace)
-| .token => (!·.isWhitespace)
-
-@[reducible]
-def Tokens := Array (TokenType × String.Pos)
-
-theorem String.le_def (p q : String.Pos) : p ≤ q ↔ p.byteIdx ≤ q.byteIdx := by
+theorem le_def (p q : String.Pos) : p ≤ q ↔ p.byteIdx ≤ q.byteIdx := by
   trivial
 
-theorem String.Pos.le_of_lt {p q : String.Pos} (a : p < q) : p ≤ q := by
+theorem Pos.le_of_lt {p q : String.Pos} (a : p < q) : p ≤ q := by
   simp at a
   simp [String.le_def]
   omega
 
 @[simp]
-theorem String.pos_le_refl (pos : String.Pos) : pos ≤ pos := by
+theorem pos_le_refl (pos : String.Pos) : pos ≤ pos := by
   unfold LE.le
   simp [instLEPos]
 
-theorem String.Pos.le_trans {p q : String.Pos} (a : p ≤ q) (b : q ≤ r) : p ≤ r := by
+theorem Pos.le_trans {p q : String.Pos} (a : p ≤ q) (b : q ≤ r) : p ≤ r := by
   simp [String.le_def] at *
   omega
 
-theorem String.next_mono (s : String) (p : String.Pos) : p < s.next p := by
+theorem next_mono (s : String) (p : String.Pos) : p < s.next p := by
   simp [String.next, Char.utf8Size]
   repeat (split; omega)
   omega
 
-theorem String.findAux_mono (s : String) (pred : Char → Bool) (stop p : String.Pos)
+theorem findAux_mono (s : String) (pred : Char → Bool) (stop p : String.Pos)
   : p ≤ s.findAux pred stop p := by
   unfold String.findAux
   split
@@ -120,23 +123,18 @@ theorem String.findAux_mono (s : String) (pred : Char → Bool) (stop p : String
       apply String.findAux_mono
   termination_by (stop - p)
 
-def tokenizeAux (s : String) (prev : Tokens) (pos : String.Pos) : Tokens :=
-  if atEnd : s.atEnd pos then
-    prev
-  else
-    let c := s.get pos
-    let tt : TokenType := if c.isWhitespace then .whitespace else .token
-    let nextPos := s.findAux (!tt.pred ·)  (stopPos := s.endPos) (pos := s.next pos)
-    let tokens := prev.push (tt, nextPos)
-    have q : pos.byteIdx < s.endPos.byteIdx := by
-      simp [String.atEnd] at atEnd
-      exact atEnd
-    have p : pos.byteIdx < nextPos.byteIdx := by
-      exact Nat.lt_of_lt_of_le (String.next_mono _ _) (String.findAux_mono _ _ _ _)
-    have _ : sizeOf (s.endPos - nextPos) < sizeOf (s.endPos - pos) := by
-      simp [sizeOf, String.Pos._sizeOf_1]
-      omega
-    tokenizeAux s tokens nextPos
-termination_by s.endPos - pos
+def splitLines (s : String) := s.split (· ∈  ['\n', '\r'])
 
-def tokenize (s : String) : Tokens := tokenizeAux s #[] 0
+/--
+info: [" ab", "cd", "", "de", ""]
+-/
+#guard_msgs in
+#eval " ab\ncd\n\nde\n".splitLines
+
+/--
+info: [""]
+-/
+#guard_msgs in
+#eval "".splitLines
+
+end String

@@ -782,9 +782,10 @@ A dialect definition.
 structure Dialect where
   name : DialectName
   -- Names of dialects that are imported into this dialect
-  imports : Array DialectName := #[]
+  imports : Array DialectName
   declarations : Array Decl := #[]
-  cache : Std.HashMap String Decl := {}
+  cache : Std.HashMap String Decl :=
+    declarations.foldl (init := {}) fun m d => m.insert d.name d
 deriving Inhabited
 
 namespace Dialect
@@ -948,6 +949,30 @@ def opDecl! (dm : DialectMap) (ident : QualifiedIdent) : OpDecl :=
   | .op decl => decl
   | _ => panic! s!"Unknown operation {ident.fullName}"
 
+/--
+Return set of all dialects that are imported by `dialect`.
+
+This includes transitive imports.
+-/
+partial def importedDialects! (map : DialectMap) (dialect : DialectName) : DialectMap := aux (.ofList [(d.name, d)]) [d]
+  where d :=
+          match map[dialect]? with
+          | none => panic! s!"Unknown dialect {dialect}"
+          | some d => d
+        aux (all : Std.HashMap DialectName Dialect) (next : List Dialect) : DialectMap :=
+          match next with
+          | d :: next =>
+            let (all, next) := d.imports.foldl (init := (all, next)) fun (all, next) i =>
+              if i ∈ all then
+                (all, next)
+              else
+                let d := match map[i]? with
+                          | none => panic! s!"Unknown dialect {i}"
+                          | some d => d
+               (all.insert i d, d :: next)
+            aux all next
+          | [] => DialectMap.mk all
+
 end DialectMap
 
 mutual
@@ -1110,46 +1135,37 @@ def addCommand (dialects : DialectMap) (init : GlobalContext) (op : Operation) :
 
 end GlobalContext
 
-structure Environment where
+structure Program where
   mk ::
-  -- Map from dialect names to the dialect definition
-  dialects : DialectMap := {}
-  -- Dialects considered open for pretty-printing purposes.
-  openDialects : Array DialectName := #["Init"]
-  -- Top level commands in file.
+  /-- Map from dialect names to the dialect definition. -/
+  dialects : DialectMap
+  /-- Main dialect for program. -/
+  dialect : DialectName
+  /-- Top level commands in file. -/
   commands : Array Operation := #[]
-  -- Operations at the top command level.
-  globalContext : GlobalContext
+  /-- Final global context for program. -/
+  globalContext : GlobalContext :=
+    commands.foldl (init := {}) (·.addCommand dialects ·)
 
-namespace Environment
+namespace Program
 
-def empty : Environment := {
-  globalContext := {}
-}
+instance : Inhabited Program where
+  default := { dialects := {}, dialect := default }
 
-instance : Inhabited Environment where
-  default := .empty
-
-def addCommand (env : Environment) (cmd : Operation) : Environment :=
+def addCommand (env : Program) (cmd : Operation) : Program :=
   { env with
     commands := env.commands.push cmd,
     globalContext := env.globalContext.addCommand env.dialects cmd
   }
 
-def create (dialects : DialectMap) (openDialects : Array DialectName) (commands : Array Operation) : Environment :=
-  { dialects,
-    openDialects,
-    commands := commands,
-    globalContext := commands.foldl (init := {}) (·.addCommand dialects ·)
-  }
+/--
+This creates a program.  It is added in addition to `Program.mk` to simplify the
+`ToExpr Program` instance.
+-/
+def create (dialects : DialectMap) (dialect : DialectName) (commands : Array Operation) : Program :=
+  { dialects, dialect, commands }
 
-def openDialect (env : Environment) (d : DialectName) : Environment :=
-  if d ∈ env.openDialects then
-    env
-  else
-    { env with openDialects := env.openDialects.push d }
-
-end Environment
+end Program
 
 theorem sizeOf_lt_of_op_arg {e : Arg} {op : Operation} (p : e ∈ op.args) : sizeOf e < sizeOf op := by
   cases op with

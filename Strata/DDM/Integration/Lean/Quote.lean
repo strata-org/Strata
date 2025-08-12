@@ -224,12 +224,12 @@ instance : Quote DialectMap where
 
 end DialectMap
 
-instance : Quote Environment where
-  quote ms : Term :=
-    Syntax.mkCApp ``Environment.create #[
-      quote ms.dialects,
-      quote ms.openDialects,
-      quote ms.commands
+instance : Quote Program where
+  quote p : Term :=
+    Syntax.mkCApp ``Program.create #[
+      quote p.dialects,
+      quote p.dialect,
+      quote p.commands
     ]
 
 end Strata

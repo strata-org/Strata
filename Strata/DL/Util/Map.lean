@@ -4,8 +4,6 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-
-
 -- [STOPGAP] Should be replaced by Std.HashMap.
 
 -- Copied over from LNSym
@@ -311,5 +309,17 @@ theorem Map.disjointp_tail [DecidableEq α] (m1 m2 : Map α β)
     rwa [Map.find?_rest] at h'
     exact Ne.symm hk
   done
+
+@[simp]
+theorem Map.keys.length :
+  (Map.keys ls).length = ls.length := by
+  induction ls <;> simp [keys]
+  case cons h t ih => assumption
+
+@[simp]
+theorem Map.values.length :
+  (Map.values ls).length = ls.length := by
+  induction ls <;> simp [values]
+  case cons h t ih => assumption
 
 -------------------------------------------------------------------------------

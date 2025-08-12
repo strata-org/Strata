@@ -3,6 +3,9 @@ name: Build
 on:
   pull_request:
 
+env:
+  SOLUTION: Tools/BoogieToStrata/BoogieToStrata.sln
+
 jobs:
   get-branch-name:
     runs-on: ubuntu-latest
@@ -25,11 +28,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Install Lean
-        shell: bash
-        run: |
-              wget https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh
-              bash elan-init.sh -y
       - name: Install cvc5
         shell: bash
         run: |
@@ -65,15 +63,18 @@ jobs:
               unzip "${ARCHIVE_NAME}.zip"
               chmod +x "${ARCHIVE_NAME}/bin/z3"
               echo "$GITHUB_WORKSPACE/${ARCHIVE_NAME}/bin/" >> $GITHUB_PATH
-      - name: Download dependencies
-        shell: bash
-        run: source ~/.profile && lake -R -Kenv=dev update
-      - name: Build
-        shell: bash
-        run: source ~/.profile && lake build
-      - name: Test
-        shell: bash
-        run: source ~/.profile && lake test
+      - name: Install .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Build and test Strata
+        uses: leanprover/lean-action@v1
+      - name: Build and run StrataVerify
+        run: lake exe StrataVerify Examples/SimpleProc.boogie.st
+      - name: Build BoogieToStrata
+        run: dotnet build -warnaserror ${SOLUTION}
+      - name: Test BoogieToStrata
+        run: dotnet test ${SOLUTION}
 
   lint_checks:
     name: Run lint checks

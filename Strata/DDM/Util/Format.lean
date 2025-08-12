@@ -4,21 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DDM.Format
-
-def String.splitLines (s : String) := s.split fun c => c == '\r' || c == '\n'
-
-/--
-info: [" ab", "cd", "", "de", ""]
--/
-#guard_msgs in
-#eval " ab\ncd\n\nde\n".splitLines
-
-/--
-info: [""]
--/
-#guard_msgs in
-#eval "".splitLines
+import Strata.DDM.Util.String
 
 namespace Std.Format
 
@@ -38,12 +24,6 @@ def repr (fmt : Std.Format) (indent : Nat) : String :=
   | .append x y => repr x indent ++ repr y indent
   | .group f _ => sline "group" indent ++ repr f (indent + 2)
   | .tag n f => sline s!"tag {n}" indent ++ repr f (indent + 2)
-
-/--
-repr instance for Std.Format for debugging purposes.
--/
-instance : Repr Std.Format where
-  reprPrec fmt _ := fmt.repr 0
 
 structure RenderState where
   soFar : String

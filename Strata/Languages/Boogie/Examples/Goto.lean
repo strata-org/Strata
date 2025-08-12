@@ -10,7 +10,7 @@ import Strata.Languages.Boogie.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def gotoEnv : Environment :=
+def gotoPgm : Program :=
 #strata
 program Boogie;
 var g : bool;
@@ -138,4 +138,4 @@ Obligation: a7
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" gotoEnv
+#eval verify "cvc5" gotoPgm
