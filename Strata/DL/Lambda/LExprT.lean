@@ -408,16 +408,393 @@ partial def fromLExprAux.app (T : (TEnv Identifier)) (e1 e2 : (LExpr Identifier)
 end
 
 structure FromLExprAuxCache (Identifier: Type) [ToString Identifier] [DecidableEq Identifier] [ToFormat Identifier] [HasGen Identifier] [Hashable Identifier] where
-  cache : IO.Ref (Std.HashMap ((TEnv Identifier) × (LExpr Identifier)) (Except Format ((LExprT Identifier) × (TEnv Identifier))))
-  valid : IO Prop := do
-    let hashMap ← cache.get
-    return ∀ (k : (TEnv Identifier) × (LExpr Identifier)) (v : Except Format ((LExprT Identifier) × (TEnv Identifier))),
-      hashMap.get? k = some v → v = fromLExprAux k.1 k.2
+  cache : (Std.HashMap ((TEnv Identifier) × (LExpr Identifier)) (((LExprT Identifier) × (TEnv Identifier))))
+  valid : Prop :=
+    let hashMap := cache
+    ∀ (k : (TEnv Identifier) × (LExpr Identifier)) (v : ((LExprT Identifier) × (TEnv Identifier))),
+      hashMap.get? k = some v →
+        (match fromLExprAux k.1 k.2 with
+          | .ok vv => vv = v
+          | .error _ => false
+        )
+mutual
+partial def fromLExprAuxMem (cache : FromLExprAuxCache Identifier) (T : (TEnv Identifier)) (e : (LExpr Identifier)) :
+    Except Format ((LExprT Identifier) × (TEnv Identifier)) :=
+  open LTy.Syntax in do
+
+  let key := (T, e)
+
+  let hashMap := cache.cache
+  match hashMap.get? key with
+    | some result => return result
+    | none => do
+      let result ← match e with
+      | .mdata m e =>
+        let (et, T) ← fromLExprAuxMem cache T e
+        .ok ((.mdata m et), T)
+      | .const c cty =>
+        let (ty, T) ← inferConst T c cty
+        .ok (.const c ty, T)
+      | .op o oty =>
+        let (ty, T) ← inferOp T o oty
+        .ok (.op o ty, T)
+      | .bvar _ => .error f!"Cannot infer the type of this bvar: {e}"
+      | .fvar x fty =>
+        let (ty, T) ← inferFVar T x fty
+        .ok (.fvar x ty, T)
+      | .app e1 e2   => fromLExprAuxMem.app T e1 e2
+      | .abs ty e    => fromLExprAuxMem.abs T ty e
+      | .quant qk ty e => fromLExprAuxMem.quant T qk ty e
+      | .eq e1 e2    => fromLExprAuxMem.eq T e1 e2
+      | .ite c th el => fromLExprAuxMem.ite T c th el
+
+      -- Update cache
+      let currentMap := cache.cache
+      let newMap := (currentMap.insert key result)
+      let newCache: FromLExprAuxCache Identifier := {cache := newMap}
+      return result
+
+/-- Infer the type of an operation `.op o oty`, where an operation is defined in
+  the factory. -/
+partial def inferOpMem (T : (TEnv Identifier)) (o : Identifier) (oty : Option LMonoTy) :
+  Except Format (LMonoTy × (TEnv Identifier)) :=
+  open LTy.Syntax in
+  match T.functions.find? (fun fn => fn.name == o) with
+  | none =>
+    .error f!"{toString $ T.functions.getFunctionNames} Cannot infer the type of this operation: \
+              {LExpr.op (toString o) oty}"
+  | some func => do
+      -- `LFunc.type` below will also catch any ill-formed functions (e.g.,
+      -- where there are duplicates in the formals, etc.).
+      let type ← func.type
+      let (ty, T) ← LTy.instantiateWithCheck type T
+      let T ←
+        match func.body with
+        | none => .ok T
+        | some body =>
+          if body.freeVars.keys.all (fun k => k ∈ func.inputs.keys) then
+            -- Temporarily add formals in the context.
+            let T := T.pushEmptyContext
+            let T := T.addToContext func.inputPolyTypes
+            -- Type check the body and ensure that it unifies with the return type.
+            -- let (bodyty, T) ← infer T body
+            let (body_typed, T) ← fromLExprAuxMem T body
+            let bodyty := body_typed.toLMonoTy
+            let (retty, T) ← func.outputPolyType.instantiateWithCheck T
+            let S ← Constraints.unify [(retty, bodyty)] T.state.subst
+            let T := T.updateSubst S
+            let T := T.popContext
+            .ok T
+          else
+            .error f!"Function body contains free variables!\n\
+                      {func}"
+      match oty with
+      | none => .ok (ty, T)
+      | some cty =>
+        let S ← Constraints.unify [(cty, ty)] T.state.subst
+        .ok (ty, TEnv.updateSubst T S)
+
+partial def fromLExprAuxMem.ite (T : (TEnv Identifier)) (c th el : (LExpr Identifier)) := do
+  let (ct, T) ← fromLExprAuxMem T c
+  let (tt, T) ← fromLExprAuxMem T th
+  let (et, T) ← fromLExprAuxMem T el
+  let cty := ct.toLMonoTy
+  let tty := tt.toLMonoTy
+  let ety := et.toLMonoTy
+  let S ← Constraints.unify [(cty, LMonoTy.bool), (tty, ety)] T.state.subst
+  .ok (.ite ct tt et tty, TEnv.updateSubst T S)
+
+partial def fromLExprAuxMem.eq (T : (TEnv Identifier)) (e1 e2 : (LExpr Identifier)) := do
+  -- `.eq A B` is well-typed if there is some instantiation of
+  -- type parameters in `A` and `B` that makes them have the same type.
+  let (e1t, T) ← fromLExprAux T e1
+  let (e2t, T) ← fromLExprAux T e2
+  let ty1 := e1t.toLMonoTy
+  let ty2 := e2t.toLMonoTy
+  let S ← Constraints.unify [(ty1, ty2)] T.state.subst
+  .ok (.eq e1t e2t LMonoTy.bool, TEnv.updateSubst T S)
+
+partial def fromLExprAuxMem.abs (T : (TEnv Identifier)) (oty : Option LMonoTy) (e : (LExpr Identifier)) := do
+  let (xv, T) := HasGen.genVar T
+  let (xt', T) := TEnv.genTyVar T
+  let xt := .forAll [] (.ftvar xt')
+  let T := T.insertInContext xv xt
+  let e' := LExpr.varOpen 0 (xv, some (.ftvar xt')) e
+  let (et, T) ← fromLExprAuxMem T e'
+  let ety := et.toLMonoTy
+  let etclosed := .varClose 0 xv et
+  let T := T.eraseFromContext xv
+  let ty := (.tcons "arrow" [(.ftvar xt'), ety])
+  let mty := LMonoTy.subst T.state.subst ty
+  match mty, oty with
+  | .arrow aty _, .some ty =>
+    if aty == ty
+    then .ok ()
+    else .error "Type annotation on LTerm.abs doesn't match inferred argument type"
+  | _, _ => .ok ()
+  .ok (.abs etclosed mty, T)
+
+partial def fromLExprAuxMem.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (oty : Option LMonoTy) (e : (LExpr Identifier)) := do
+  let (xv, T) := HasGen.genVar T
+  let (xt', T) := TEnv.genTyVar T
+  let xt := .forAll [] (.ftvar xt')
+  let S ← match oty with
+  | .some ty =>
+    let (optTyy, T) := (ty.aliasInst T)
+    (Constraints.unify [(.ftvar xt', optTyy.getD ty)] T.state.subst)
+  | .none =>
+    .ok T.state.subst
+
+  let T := TEnv.updateSubst T S
+
+  let T := T.insertInContext xv xt
+  let e' := LExpr.varOpen 0 (xv, some (.ftvar xt')) e
+  let (et, T) ← fromLExprAuxMem T e'
+  let ety := et.toLMonoTy
+  let mty := LMonoTy.subst T.state.subst (.ftvar xt')
+  match oty with
+  | .some ty =>
+    let (optTyy, _) := (ty.aliasInst T)
+    if optTyy.getD ty == mty
+    then .ok ()
+    else .error f!"Type annotation on LTerm.quant {ty} (alias for {optTyy.getD ty}) doesn't match inferred argument type"
+  | _ => .ok ()
+  if ety = LMonoTy.bool then do
+    let etclosed := .varClose 0 xv et
+    let T := T.eraseFromContext xv
+    .ok (.quant qk mty etclosed, T)
+  else
+    .error f!"Quantifier body has non-Boolean type: {ety}"
+
+partial def fromLExprAuxMem.app (T : (TEnv Identifier)) (e1 e2 : (LExpr Identifier)) := do
+  let (e1t, T) ← fromLExprAuxMem T e1
+  let ty1 := e1t.toLMonoTy
+  let (e2t, T) ← fromLExprAuxMem T e2
+  let ty2 := e2t.toLMonoTy
+  let (fresh_name, T) := TEnv.genTyVar T
+  let freshty := (.ftvar fresh_name)
+  let S ← Constraints.unify [(ty1, (.tcons "arrow" [ty2, freshty]))] T.state.subst
+  let mty := LMonoTy.subst S freshty
+  .ok (.app e1t e2t mty, TEnv.updateSubst T S)
+
+end
+-- mutual
+-- partial def fromLExprAuxMem (cache : FromLExprAuxCache Identifier) (T : (TEnv Identifier)) (e : (LExpr Identifier)) :
+--     IO (Except Format ((LExprT Identifier) × (TEnv Identifier))) :=
+--   open LTy.Syntax in do
+--   let key := (T, e)
+
+--   -- Check cache first
+--   let hashMap ← cache.cache.get
+--   match hashMap.get? key with
+--   | some result => return result
+--   | none => do
+--     -- Compute result
+--     let result ← match e with
+--       | .mdata m e => do
+--         let etResult ← fromLExprAuxMem cache T e
+--         match etResult with
+--         | .error err => return .error err
+--         | .ok (et, T) => return .ok ((.mdata m et), T)
+--       | .const c cty => do
+--         let tyResult := inferConst T c cty
+--         match tyResult with
+--         | .error err => return .error err
+--         | .ok (ty, T) => return .ok (.const c ty, T)
+--       | .op o oty => do
+--         let tyResult := inferOpMem cache T o oty
+--         match tyResult with
+--         | .error err => return .error err
+--         | .ok (ty, T) => return .ok (.op o ty, T)
+--       | .bvar _ => return .error f!"Cannot infer the type of this bvar: {e}"
+--       | .fvar x fty => do
+--         let tyResult := inferFVar T x fty
+--         match tyResult with
+--         | .error err => return .error err
+--         | .ok (ty, T) => return .ok (.fvar x ty, T)
+--       | .app e1 e2   => fromLExprAuxMem.app cache T e1 e2
+--       | .abs ty e    => fromLExprAuxMem.abs cache T ty e
+--       | .quant qk ty e => fromLExprAuxMem.quant cache T qk ty e
+--       | .eq e1 e2    => fromLExprAuxMem.eq cache T e1 e2
+--       | .ite c th el => fromLExprAuxMem.ite cache T c th el
+
+--     -- Update cache
+--     let currentMap ← cache.cache.get
+--     let newMap := currentMap.insert key result
+--     cache.cache.set newMap
+--     return result
+
+-- partial def inferOpMem (cache : FromLExprAuxCache Identifier) (T : (TEnv Identifier)) (o : Identifier) (oty : Option LMonoTy) :
+--   IO (Except Format (LMonoTy × (TEnv Identifier))) := do
+--   open LTy.Syntax in
+--   match T.functions.find? (fun fn => fn.name == o) with
+--   | none =>
+--     return .error f!"{toString $ T.functions.getFunctionNames} Cannot infer the type of this operation: \
+--               {LExpr.op (toString o) oty}"
+--   | some func => do
+--       let typeResult := func.type
+--       match typeResult with
+--       | .error err => return .error err
+--       | .ok type => do
+--         let tyResult := LTy.instantiateWithCheck type T
+--         match tyResult with
+--         | .error err => return .error err
+--         | .ok (ty, T) => do
+--           let TResult ←
+--             match func.body with
+--             | none => return .ok T
+--             | some body =>
+--               if body.freeVars.keys.all (fun k => k ∈ func.inputs.keys) then
+--                 let T := T.pushEmptyContext
+--                 let T := T.addToContext func.inputPolyTypes
+--                 let bodyResult ← fromLExprAuxMem cache T body
+--                 match bodyResult with
+--                 | .error err => return .error err
+--                 | .ok (body_typed, T) => do
+--                   let bodyty := body_typed.toLMonoTy
+--                   let rettyResult := func.outputPolyType.instantiateWithCheck T
+--                   match rettyResult with
+--                   | .error err => return .error err
+--                   | .ok (retty, T) => do
+--                     let SResult := Constraints.unify [(retty, bodyty)] T.state.subst
+--                     match SResult with
+--                     | .error err => return .error err
+--                     | .ok S => do
+--                       let T := T.updateSubst S
+--                       let T := T.popContext
+--                       return .ok T
+--               else
+--                 return .error f!"Function body contains free variables!\n\
+--                           {func}"
+--           match TResult with
+--           | .error err => return .error err
+--           | .ok T => do
+--             match oty with
+--             | none => return .ok (ty, T)
+--             | some cty =>
+--               let SResult := Constraints.unify [(cty, ty)] T.state.subst
+--               match SResult with
+--               | .error err => return .error err
+--               | .ok S => return .ok (ty, TEnv.updateSubst T S)
+
+-- partial def fromLExprAuxMem.ite (cache : FromLExprAuxCache Identifier) (T : (TEnv Identifier)) (c th el : (LExpr Identifier)) : IO (Except Format ((LExprT Identifier) × (TEnv Identifier))) := do
+--   let ctResult ← fromLExprAuxMem cache T c
+--   match ctResult with
+--   | .error err => return .error err
+--   | .ok (ct, T) => do
+--     let ttResult ← fromLExprAuxMem cache T th
+--     match ttResult with
+--     | .error err => return .error err
+--     | .ok (tt, T) => do
+--       let etResult ← fromLExprAuxMem cache T el
+--       match etResult with
+--       | .error err => return .error err
+--       | .ok (et, T) => do
+--         let tty := tt.toLMonoTy
+--         let ety := et.toLMonoTy
+--         let SResult := Constraints.unify [(tty, ety)] T.state.subst
+--         match SResult with
+--         | .error err => return .error err
+--         | .ok S => return .ok (.ite ct tt et tty, TEnv.updateSubst T S)
+
+-- partial def fromLExprAuxMem.eq (cache : FromLExprAuxCache Identifier) (T : (TEnv Identifier)) (e1 e2 : (LExpr Identifier)) : IO (Except Format ((LExprT Identifier) × (TEnv Identifier))) := do
+--   let e1Result ← fromLExprAuxMem cache T e1
+--   match e1Result with
+--   | .error err => return .error err
+--   | .ok (e1t, T) => do
+--     let e2Result ← fromLExprAuxMem cache T e2
+--     match e2Result with
+--     | .error err => return .error err
+--     | .ok (e2t, T) => do
+--       let e1ty := e1t.toLMonoTy
+--       let e2ty := e2t.toLMonoTy
+--       let SResult := Constraints.unify [(e1ty, e2ty)] T.state.subst
+--       match SResult with
+--       | .error err => return .error err
+--       | .ok S => return .ok (.eq e1t e2t LMonoTy.bool, TEnv.updateSubst T S)
+
+-- partial def fromLExprAuxMem.abs (cache : FromLExprAuxCache Identifier) (T : (TEnv Identifier)) (oty : Option LMonoTy) (e : (LExpr Identifier)) : IO (Except Format ((LExprT Identifier) × (TEnv Identifier))) := do
+--   let (xv, T) := HasGen.genVar T
+--   let (xt', T) := TEnv.genTyVar T
+--   let xt := .ftvar xt'
+--   let T := T.insertInContext xv (.forAll [] xt)
+--   let eopen := e.varOpen 0 (.fvar xv none)
+--   let etResult ← fromLExprAuxMem cache T eopen
+--   match etResult with
+--   | .error err => return .error err
+--   | .ok (et, T) => do
+--     let ety := et.toLMonoTy
+--     let mty := .arrow xt ety
+--     let T := T.eraseFromContext xv
+--     let etclosed := et.varClose 0 xv
+--     match oty with
+--     | none => return .ok (.abs etclosed mty, T)
+--     | some aty => do
+--       let SResult := Constraints.unify [(aty, mty)] T.state.subst
+--       match SResult with
+--       | .error err => return .error err
+--       | .ok S => return .ok (.abs etclosed mty, T)
+
+-- partial def fromLExprAuxMem.quant (cache : FromLExprAuxCache Identifier) (T : (TEnv Identifier)) (qk : QuantifierKind) (oty : Option LMonoTy) (e : (LExpr Identifier)) : IO (Except Format ((LExprT Identifier) × (TEnv Identifier))) := do
+--   let (xv, T) := HasGen.genVar T
+--   let (xt', T) := TEnv.genTyVar T
+--   let xt := .ftvar xt'
+--   let T := T.insertInContext xv (.forAll [] xt)
+--   let eopen := e.varOpen 0 (.fvar xv none)
+--   let etResult ← fromLExprAuxMem cache T eopen
+--   match etResult with
+--   | .error err => return .error err
+--   | .ok (et, T) => do
+--     let ety := et.toLMonoTy
+--     let T := T.eraseFromContext xv
+--     let etclosed := et.varClose 0 xv
+--     match oty with
+--     | none =>
+--       if ety == LMonoTy.bool then
+--         return .ok (.quant qk etclosed LMonoTy.bool, T)
+--       else
+--         return .error f!"Quantifier body has non-Boolean type: {ety}"
+--     | some aty => do
+--       let SResult := Constraints.unify [(aty, LMonoTy.bool)] T.state.subst
+--       match SResult with
+--       | .error err => return .error err
+--       | .ok S => do
+--         let T := TEnv.updateSubst T S
+--         if ety == LMonoTy.bool then
+--           return .ok (.quant qk etclosed LMonoTy.bool, T)
+--         else
+--           return .error f!"Quantifier body has non-Boolean type: {ety}"
+
+-- partial def fromLExprAuxMem.app (cache : FromLExprAuxCache Identifier) (T : (TEnv Identifier)) (e1 e2 : (LExpr Identifier)) : IO (Except Format ((LExprT Identifier) × (TEnv Identifier))) := do
+--   let e1Result ← fromLExprAuxMem cache T e1
+--   match e1Result with
+--   | .error err => return .error err
+--   | .ok (e1t, T) => do
+--     let ty1 := e1t.toLMonoTy
+--     let e2Result ← fromLExprAuxMem cache T e2
+--     match e2Result with
+--     | .error err => return .error err
+--     | .ok (e2t, T) => do
+--       let ty2 := e2t.toLMonoTy
+--       let (retty', T) := TEnv.genTyVar T
+--       let retty := .ftvar retty'
+--       let SResult := Constraints.unify [(ty1, .arrow ty2 retty)] T.state.subst
+--       match SResult with
+--       | .error err => return .error err
+--       | .ok S => return .ok (.app e1t e2t retty, TEnv.updateSubst T S)
+-- end
 
 protected def fromLExpr (T : (TEnv Identifier)) (e : (LExpr Identifier)) :
     Except Format ((LExprT Identifier) × (TEnv Identifier)) := do
   let (et, T) ← fromLExprAux T e
   .ok (LExprT.applySubst et T.state.subst, T)
+
+protected def fromLExprMem (cache : FromLExprAuxCache Identifier) (T : (TEnv Identifier)) (e : (LExpr Identifier)) :
+    IO (Except Format ((LExprT Identifier) × (TEnv Identifier))) := do
+  let etResult ← fromLExprAuxMem cache T e
+  match etResult with
+  | .error err => return .error err
+  | .ok (et, T) => return .ok (LExprT.applySubst et T.state.subst, T)
 
 protected def fromLExprs (T : (TEnv Identifier)) (es : List (LExpr Identifier)) :
     Except Format (List (LExprT Identifier) × (TEnv Identifier)) := do
