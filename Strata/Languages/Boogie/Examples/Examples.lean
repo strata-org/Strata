@@ -21,7 +21,6 @@ import Strata.Languages.Boogie.Examples.OldExpressions
 import Strata.Languages.Boogie.Examples.PrecedenceCheck
 import Strata.Languages.Boogie.Examples.ProcedureCall
 import Strata.Languages.Boogie.Examples.Quantifiers
-import Strata.Languages.Boogie.Examples.QuantifiersWithTypeAliases
 import Strata.Languages.Boogie.Examples.RealBitVector
 import Strata.Languages.Boogie.Examples.RecursiveProcIte
 import Strata.Languages.Boogie.Examples.SimpleProc

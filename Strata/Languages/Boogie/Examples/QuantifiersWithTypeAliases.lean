@@ -61,7 +61,24 @@ FIXME.  The code below triggers a unification error due to
 lack of alias support (see PR #39).
 
 /--
-error: [Strata.Boogie] Type checking error: Cannot unify differently named type constructors (Map Field int) and Struct!
+info: [Strata.Boogie] Type checking succeeded.
+
+
+VCs:
+Label: assert: (((~select ((~select newH) ref)) field) == ((~Int.Add ((~select ((~select h) ref)) field)) (#1 : int)))
+Assumptions:
+(TODO, (∀ (∀ (∀ (((~select (((~update %2) %1) %0)) %1) == %0)))))
+(TODO, (∀ (∀ (∀ (∀ ((~Bool.Implies (~Bool.Not (%2 == %1))) (((~select %3) %2) == ((~select (((~update %3) %1) %0)) %2))))))))
+(TODO, (∀ (∀ (∀ (((~select (((~update %2) %1) %0)) %1) == %0)))))
+(TODO, (∀ (∀ (∀ (∀ ((~Bool.Implies (~Bool.Not (%2 == %1))) (((~select %3) %2) == ((~select (((~update %3) %1) %0)) %2))))))))
+Proof Obligation:
+(((~select ((~select (((~update $__h0) $__ref1) (((~update ((~select $__h0) $__ref1)) $__field2) ((~Int.Add ((~select ((~select $__h0) $__ref1)) $__field2)) #1)))) $__ref1)) $__field2) == ((~Int.Add ((~select ((~select $__h0) $__ref1)) $__field2)) #1))
+
+Wrote problem to vcs/assert: (((~select ((~select newH) ref)) field) == ((~Int.Add ((~select ((~select h) ref)) field)) (#1 : int))).smt2.
+---
+info:
+Obligation: assert: (((~select ((~select newH) ref)) field) == ((~Int.Add ((~select ((~select h) ref)) field)) (#1 : int)))
+Result: verified
 -/
 #guard_msgs in
 #eval verify "cvc5" QuantTypeAliases
