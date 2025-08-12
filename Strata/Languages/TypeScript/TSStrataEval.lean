@@ -16,33 +16,11 @@ open Heap
 open CallHeap
 open Lambda (LState)
 
--- Simple runner for testing with statement list
+-- Simple runner for testing with statement list (uses shared CallHeap JSON output)
 def run_ts_program (statements: List TS_Statement) : IO Unit := do
   let (translationCtx, tsStrataStatements) := translate_program statements
-  IO.println s!"Translated {tsStrataStatements.length} statements"
-  IO.println s!"Found {translationCtx.functionCount} functions"
-  IO.println "=== TSStrata Statements ==="
-  for (stmt, i) in tsStrataStatements.zip (List.range tsStrataStatements.length) do
-    IO.println s!"[{i}] {describeTSStrataStatement stmt}"
-  
-  -- Use the generic CallHeap evaluator with translation context
-  let final_ctx := evalCallHeapTranslatedProgram translationCtx tsStrataStatements
-  
-  -- Show results
-  IO.println "\n=== Execution Results ==="
-  IO.println s!"Final heap size: {final_ctx.hstate.heap.size}"
-  IO.println s!"Variables: {final_ctx.hstate.heapVars.size} heap vars"
-  
-  -- Print heap variable values
-  for (name, (ty, value)) in final_ctx.hstate.heapVars.toList do
-    IO.println s!"  {name}: {repr value}"
-  
-  -- Print lambda state variables
-  let knownVars := final_ctx.hstate.lambdaState.knownVars
-  for name in knownVars do
-    match Heap.HState.getVar final_ctx.hstate name with
-    | some value => IO.println s!"  {name}: {repr value}"
-    | none => continue
+  -- Use the shared CallHeap JSON output function
+  runCallHeapAndShowJSONWithTranslation translationCtx tsStrataStatements
 
 -- Simple runner for testing with full Program
 def run_full_ts_program (prog: TS_Program) : IO Unit := do

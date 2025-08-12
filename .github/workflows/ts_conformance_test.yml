@@ -1,0 +1,53 @@
+name: TypeScript Conformance Testing
+
+on:
+  workflow_dispatch:  # manual run from the Actions tab only
+
+jobs:
+  run_conformance_tests:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'latest'
+
+      - name: Install Node.js dependencies
+        run: |
+          npm install -g ts-node typescript
+          npm install @babel/parser @babel/types
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          pip install tqdm
+
+      - name: Install Lean
+        shell: bash
+        run: |
+          wget https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh
+          bash elan-init.sh -y
+
+      - name: Build Strata
+        run: |
+          source ~/.profile && lake build StrataTypeScriptRunner
+
+      - name: Run TypeScript Conformance Tests
+        run: |
+          cd conformance_testing
+          source ~/.profile && python3 conformance_cli.py test ../StrataTest/Languages/TypeScript -l typescript -v
+
+      - name: Upload failed test files
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failed-typescript-tests
+          path: conformance_testing/failures/
+          if-no-files-found: ignore
