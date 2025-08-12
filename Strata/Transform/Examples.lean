@@ -174,7 +174,7 @@ procedure h() returns () spec {
 };
 #end
 
-def translate (t : Strata.Program) : Boogie.Program := (TransM.run (translateProgram t.commands)).fst
+def translate (t : Strata.Program) : Boogie.Program := (TransM.run (translateProgram t)).fst
 
 def env := (Lambda.TEnv.default.addFactoryFunctions Boogie.Factory)
 

@@ -33,7 +33,7 @@ procedure test(h: Heap, ref: Ref, field: Field) returns ()
 
 #end
 
-#guard TransM.run (translateProgram (QuantTypeAliases.commands)) |>.snd |>.isEmpty
+#guard TransM.run (translateProgram QuantTypeAliases) |>.snd |>.isEmpty
 
 /--
 info: type Boogie.Boundedness.Infinite Ref []
@@ -54,31 +54,14 @@ assert [assert: ((((~select : (arrow (Map Field int) (arrow Field int))) (((~sel
 Errors: #[]
 -/
 #guard_msgs in
-#eval TransM.run (translateProgram (QuantTypeAliases.commands))
+#eval TransM.run (translateProgram QuantTypeAliases)
 
 /-
 FIXME.  The code below triggers a unification error due to
 lack of alias support (see PR #39).
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
-
-
-VCs:
-Label: assert: (((~select ((~select newH) ref)) field) == ((~Int.Add ((~select ((~select h) ref)) field)) (#1 : int)))
-Assumptions:
-(TODO, (∀ (∀ (∀ (((~select (((~update %2) %1) %0)) %1) == %0)))))
-(TODO, (∀ (∀ (∀ (∀ ((~Bool.Implies (~Bool.Not (%2 == %1))) (((~select %3) %2) == ((~select (((~update %3) %1) %0)) %2))))))))
-(TODO, (∀ (∀ (∀ (((~select (((~update %2) %1) %0)) %1) == %0)))))
-(TODO, (∀ (∀ (∀ (∀ ((~Bool.Implies (~Bool.Not (%2 == %1))) (((~select %3) %2) == ((~select (((~update %3) %1) %0)) %2))))))))
-Proof Obligation:
-(((~select ((~select (((~update $__h0) $__ref1) (((~update ((~select $__h0) $__ref1)) $__field2) ((~Int.Add ((~select ((~select $__h0) $__ref1)) $__field2)) #1)))) $__ref1)) $__field2) == ((~Int.Add ((~select ((~select $__h0) $__ref1)) $__field2)) #1))
-
-Wrote problem to vcs/assert: (((~select ((~select newH) ref)) field) == ((~Int.Add ((~select ((~select h) ref)) field)) (#1 : int))).smt2.
----
-info:
-Obligation: assert: (((~select ((~select newH) ref)) field) == ((~Int.Add ((~select ((~select h) ref)) field)) (#1 : int)))
-Result: verified
+error: [Strata.Boogie] Type checking error: Cannot unify differently named type constructors (Map Field int) and Struct!
 -/
 #guard_msgs in
 #eval verify "cvc5" QuantTypeAliases
