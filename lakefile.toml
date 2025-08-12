@@ -20,3 +20,11 @@ globs = ["StrataTest.+"]
 
 [[lean_exe]]
 name = "StrataVerify"
+
+[[lean_exe]]
+name = "StrataPythonRunner"
+root = "runners.lean.StrataPythonRunner"
+
+[[lean_exe]]
+name = "StrataTypeScriptRunner"
+root = "runners.lean.StrataTypeScriptRunner"

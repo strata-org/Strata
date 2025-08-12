@@ -106,14 +106,14 @@ end
 
 
 -- Helper to get all Lambda variable names from LState
-private def getLambdaVarNames (lambdaState : LState String) : List String :=
+def getLambdaVarNames (lambdaState : LState String) : List String :=
   -- Collect variable names from all scopes
   lambdaState.state.foldl (fun acc scope =>
     acc ++ scope.keys
   ) []
 
 -- Helper to lookup a variable in Lambda state (duplicate from HState for access)
-private def lookupInLambdaState (lambdaState : LState String) (name : String) : Option (Lambda.LExpr String) :=
+def lookupInLambdaState (lambdaState : LState String) (name : String) : Option (Lambda.LExpr String) :=
   -- Search through the scope stack (most recent first)
   lambdaState.state.findSome? fun scope =>
     match scope.find? name with

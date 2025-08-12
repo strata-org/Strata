@@ -6,6 +6,7 @@ Adapted from the MIDI HeapMidiEval but with Call dialect separated
 import Strata.DL.CallHeap.CallHeapStrataStatement
 import Strata.DL.Heap.HState
 import Strata.DL.Heap.HEval
+import Strata.DL.Heap.HeapStrataEval
 import Strata.DL.Lambda.LState
 import Strata.DL.Heap.Heap
 
@@ -186,18 +187,84 @@ def evalCallHeapTranslatedProgram (transCtx : CallHeapTranslationContext) (stmts
   let evalCtx := callHeapTranslationContextToEvalContext transCtx
   evalProgramWithContext stmts evalCtx
 
+-- JSON output function with TranslationContext (matching MIDI pattern)
+def runCallHeapAndShowJSONWithTranslation (transCtx : CallHeapTranslationContext) (stmts : List CallHeapStrataStatement) : IO Unit := do
+  let finalContext := evalCallHeapTranslatedProgram transCtx stmts
+  let finalState := finalContext.hstate
+
+  let mut jsonFields : List (String × Lean.Json) := []
+
+  -- Extract heap variables
+  for varName in finalState.getHeapVarNames do
+    match finalState.getHeapVar varName with
+    | some (_, value) =>
+      match extractConcreteValueWithState finalState value with
+      | some jsonValue =>
+        jsonFields := (varName, jsonValue) :: jsonFields
+      | none => continue
+    | none => continue
+
+  -- Extract Lambda variables
+  let lambdaVars := getLambdaVarNames finalState.lambdaState
+  for varName in lambdaVars do
+    match lookupInLambdaState finalState.lambdaState varName with
+    | some expr =>
+      match extractConcreteValueWithState finalState (.lambda expr) with
+      | some jsonValue =>
+        jsonFields := (varName, jsonValue) :: jsonFields
+      | none => continue
+    | none => continue
+
+  -- Create JSON object and output (sorted for consistency)
+  let sortedFields := jsonFields.toArray.qsort (fun a b => a.1 < b.1) |>.toList
+  let jsonObj := Lean.Json.mkObj sortedFields
+  IO.println jsonObj.compress  -- Use compress for compact output like {"x": 5, "y": 15}
+
+-- Legacy JSON output function for programs without functions
+def runCallHeapAndShowJSON (stmts : List CallHeapStrataStatement) : IO Unit := do
+  let finalContext := evalCallHeapProgram stmts
+  let finalState := finalContext.hstate
+
+  let mut jsonFields : List (String × Lean.Json) := []
+
+  -- Extract heap variables
+  for varName in finalState.getHeapVarNames do
+    match finalState.getHeapVar varName with
+    | some (_, value) =>
+      match extractConcreteValueWithState finalState value with
+      | some jsonValue =>
+        jsonFields := (varName, jsonValue) :: jsonFields
+      | none => continue
+    | none => continue
+
+  -- Extract Lambda variables
+  let lambdaVars := getLambdaVarNames finalState.lambdaState
+  for varName in lambdaVars do
+    match lookupInLambdaState finalState.lambdaState varName with
+    | some expr =>
+      match extractConcreteValueWithState finalState (.lambda expr) with
+      | some jsonValue =>
+        jsonFields := (varName, jsonValue) :: jsonFields
+      | none => continue
+    | none => continue
+
+  -- Create JSON object and output (sorted for consistency)
+  let sortedFields := jsonFields.toArray.qsort (fun a b => a.1 < b.1) |>.toList
+  let jsonObj := Lean.Json.mkObj sortedFields
+  IO.println jsonObj.compress
+
 -- Helper to describe a CallHeap statement (adapted from Python version)
 def describeCallHeapStatement (stmt: CallHeapStrataStatement) : String :=
   match stmt with
-  | .cmd (.imperativeCmd (.init name ty expr _)) => 
+  | .cmd (.imperativeCmd (.init name ty expr _)) =>
     s!"init {name} : {repr ty} = {repr expr}"
-  | .cmd (.imperativeCmd (.set name expr _)) => 
+  | .cmd (.imperativeCmd (.set name expr _)) =>
     s!"set {name} = {repr expr}"
-  | .cmd (.imperativeCmd (.havoc name _)) => 
+  | .cmd (.imperativeCmd (.havoc name _)) =>
     s!"havoc {name}"
-  | .cmd (.imperativeCmd (.assume name expr _)) => 
+  | .cmd (.imperativeCmd (.assume name expr _)) =>
     s!"assume {name} : {repr expr}"
-  | .cmd (.imperativeCmd (.assert name expr _)) => 
+  | .cmd (.imperativeCmd (.assert name expr _)) =>
     s!"assert {name} : {repr expr}"
   | .cmd (.directCall lhs funcName args) =>
     let lhsStr := if lhs.isEmpty then "" else s!"{String.intercalate ", " lhs} = "
