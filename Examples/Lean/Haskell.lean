@@ -49,7 +49,7 @@ op eqDecl (name : Ident, bindings : Bindings, tp : Type, @[scope(bindings)] rhs 
   : Command => name bindings "=" rhs ";";
 #end
 
---Here is a Haskell program and its’s representation in Strata using the above dialect.
+--Here is a Haskell program and its representation in Strata using the above dialect.
 -- reverse :: [a] -> [a]
 -- reverse l = foldl (\r a -> a : r) [] l
 
