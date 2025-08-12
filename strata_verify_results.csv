@@ -1,1 +1,19 @@
-filename,line_count,execution_time_seconds
+filename,line_count,iteration,execution_time_seconds
+ContainerHeapAffine12.boogie.st,     290,1,81.678897000
+ContainerHeapAffine12.boogie.st,     290,2,53.551030000
+ContainerHeapAffine12.boogie.st,     290,3,53.050099000
+ContainerHeapAffine12.boogie.st,     290,4,53.410591000
+ContainerHeapAffine12.boogie.st,     290,5,53.748275000
+ContainerHeapAffine20.boogie.st,     335,1,95.548223000
+ContainerHeapAffine20.boogie.st,     335,2,93.501798000
+ContainerHeapAffine20.boogie.st,     335,3,94.778622000
+ContainerHeapAffine20.boogie.st,     335,4,94.582460000
+ContainerHeapAffine20.boogie.st,     335,5,93.504953000
+ContainerHeapAffine4.boogie.st,     244,1,32.592097000
+ContainerHeapAffine4.boogie.st,     244,2,32.466322000
+ContainerHeapAffine4.boogie.st,     244,3,32.872808000
+ContainerHeapAffine4.boogie.st,     244,4,32.414226000
+ContainerHeapAffine4.boogie.st,     244,5,32.359724000
+ContainerHeapAffine8.boogie.st,     268,1,41.829943000
+ContainerHeapAffine8.boogie.st,     268,2,41.871886000
+ContainerHeapAffine8.boogie.st,     268,3,41.912873000
