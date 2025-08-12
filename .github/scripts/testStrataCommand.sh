@@ -12,7 +12,7 @@ trap exiting exit
 # Convert dialect to Ion
 lake exe strata toIon --include Examples/dialects Examples/dialects/Arith.dialect.st "$temp_dir/Arith.dialect.st.ion"
 
-# Pretty print dialect so to remove spacing.
+# Pretty print dialect to remove spacing.
 lake exe strata print --include Examples/dialects Examples/dialects/Arith.dialect.st > "$temp_dir/Arith.dialect.st"
 
 # Print ion file and compare with previous run
