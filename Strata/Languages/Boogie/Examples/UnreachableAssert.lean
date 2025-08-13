@@ -9,7 +9,7 @@ import Strata.Languages.Boogie.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def unreachableAssertEnv : Program :=
+def unreachableAssertPgm :=
 #strata
 program Boogie;
 procedure R() returns ()
@@ -68,6 +68,6 @@ Obligation: x_eq_y
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" unreachableAssertEnv
+#eval verify "cvc5" unreachableAssertPgm
 
 ---------------------------------------------------------------------
