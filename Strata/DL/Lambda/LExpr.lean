@@ -32,10 +32,14 @@ representation for this abstract syntax.
 See this [paper](https://chargueraud.org/research/2009/ln/main.pdf)
 for details.
 
-We leave placeholders for (mono)type annotations only for constants
+We leave placeholders for type annotations only for constants
 (`.const`), operations (`.op`), binders (`.abs`, `.quant`), and free
-variables (`.fvar`). For a fully (mono)type annotated AST, see `LExprT`
-that is created after the type inference transform.
+variables (`.fvar`).
+
+LExpr is parameterized by `TypeType`, which represents
+user-allowed type annotations (which are allowed to be missing),
+and `Identifier` for allowed identifiers. For a fully annotated AST,
+see `LExprT` that is created after the type inference transform.
 -/
 inductive LExpr (TypeType: Type) (Identifier : Type) : Type where
   /-- `.const c ty`: constants (in the sense of literals). -/
