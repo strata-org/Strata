@@ -75,6 +75,8 @@ jobs:
         run: dotnet build -warnaserror ${SOLUTION}
       - name: Test BoogieToStrata
         run: dotnet test ${SOLUTION}
+      - name: Test Strata Command line
+        run: .github/scripts/testStrataCommand.sh        
 
   lint_checks:
     name: Run lint checks

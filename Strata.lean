@@ -9,7 +9,6 @@
 /- DDM -/
 import Strata.DDM.Integration.Lean
 import Strata.DDM.Ion
-import Strata.DDM.Example
 
 /- Dialect Library -/
 import Strata.DL.SMT.SMT
