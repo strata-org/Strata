@@ -42,7 +42,7 @@ def preprocess (T : TEnv BoogieIdent) (ty : LTy) : Except Format (LTy × TEnv Bo
 
 def postprocess (T : TEnv BoogieIdent) (ty : LTy) : Except Format (LTy × TEnv BoogieIdent) := do
   if h: ty.isMonoType then
-    let ty := LMonoTy.subst T.state.subst (ty.toMonoType h)
+    let ty := LMonoTy.subst T.state.substInfo.subst (ty.toMonoType h)
     .ok (.forAll [] ty, T)
   else
     .error f!"[postprocess] Expected mono-type; instead got {ty}"
@@ -88,7 +88,7 @@ def canonicalizeConstraints (constraints : List (LTy × LTy)) : Except Format Co
 
 def unifyTypes (T : TEnv BoogieIdent) (constraints : List (LTy × LTy)) : Except Format (TEnv BoogieIdent) := do
   let constraints ← canonicalizeConstraints constraints
-  let S ← Constraints.unify constraints T.state.subst
+  let S ← Constraints.unify constraints T.state.substInfo
   let T := T.updateSubst S
   return T
 
