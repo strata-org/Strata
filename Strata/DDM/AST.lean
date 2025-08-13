@@ -31,7 +31,7 @@ section
 open _root_.Lean
 
 instance : Quote QualifiedIdent where
-  quote i :=  Syntax.mkCApp ``QualifiedIdent.mk #[quote i.dialect, quote i.name]
+  quote i := Syntax.mkCApp ``QualifiedIdent.mk #[quote i.dialect, quote i.name]
 
 @[macro quoteIdent] def quoteIdentImpl : Macro
   | `(q`$l:ident ) =>
@@ -255,20 +255,20 @@ deriving Inhabited, Repr, BEq
 
 namespace MetadataAttr
 
-def scopeName := q`StrataDD.scope
+def scopeName := q`StrataDDL.scope
 
 /-- Create scope using deBrujin index of environment. -/
 def scope (idx : Nat) : MetadataAttr :=
   { ident := scopeName, args := #[.catbvar idx ] }
 
 def declare (varIndex typeIndex : Nat) : MetadataAttr :=
-  { ident := q`StrataDD.declare, args := #[.catbvar varIndex, .catbvar typeIndex]}
+  { ident := q`StrataDDL.declare, args := #[.catbvar varIndex, .catbvar typeIndex]}
 
 def declareFn (varIndex bindingsIndex typeIndex : Nat) : MetadataAttr :=
-  { ident := q`StrataDD.declareFn, args := #[.catbvar varIndex, .catbvar bindingsIndex, .catbvar typeIndex]}
+  { ident := q`StrataDDL.declareFn, args := #[.catbvar varIndex, .catbvar bindingsIndex, .catbvar typeIndex]}
 
 def declareMD (varIndex typeIndex metadataIndex : Nat) : MetadataAttr :=
-  { ident := q`StrataDD.declareMD, args := #[.catbvar varIndex, .catbvar typeIndex, .catbvar metadataIndex]}
+  { ident := q`StrataDDL.declareMD, args := #[.catbvar varIndex, .catbvar typeIndex, .catbvar metadataIndex]}
 
 end MetadataAttr
 
@@ -503,7 +503,7 @@ private def mkValueBindingSpec
 def parseNewBindings (md : Metadata) (bindings : DeclBindings) : Array (BindingSpec bindings) × Array String :=
   let ins (attr : MetadataAttr) : NewBindingM (Option (BindingSpec bindings)) := do
         match attr.ident with
-        | q`StrataDD.declare => do
+        | q`StrataDDL.declare => do
           let #[.catbvar nameIndex, .catbvar typeIndex] := attr.args
             | newBindingErr "declare does not have expected 2 arguments."; return none
           let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < bindings.size))
@@ -511,7 +511,7 @@ def parseNewBindings (md : Metadata) (bindings : DeclBindings) : Array (BindingS
           let .isTrue typeP := inferInstanceAs (Decidable (typeIndex < bindings.size))
             | return panic! "Invalid name index"
           some <$> .value <$> mkValueBindingSpec bindings ⟨nameIndex, nameP⟩ ⟨typeIndex, typeP⟩
-        | q`StrataDD.declareMD => do
+        | q`StrataDDL.declareMD => do
           let #[.catbvar nameIndex, .catbvar typeIndex, .catbvar metadataIndex ] := attr.args
             | newBindingErr "declareMD missing required arguments."; return none
           let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < bindings.size))
@@ -521,7 +521,7 @@ def parseNewBindings (md : Metadata) (bindings : DeclBindings) : Array (BindingS
           let .isTrue mdP := inferInstanceAs (Decidable (metadataIndex < bindings.size))
             | return panic! "Invalid metadata index"
           some <$> .value <$> mkValueBindingSpec bindings ⟨nameIndex, nameP⟩ ⟨typeIndex, typeP⟩ (metadataIndex := .some ⟨metadataIndex, mdP⟩)
-        | q`StrataDD.declareFn => do
+        | q`StrataDDL.declareFn => do
           let #[.catbvar nameIndex, .catbvar argsIndex, .catbvar typeIndex] := attr.args
             | newBindingErr "declareFn missing required arguments."; return none
           let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < bindings.size))
@@ -531,7 +531,7 @@ def parseNewBindings (md : Metadata) (bindings : DeclBindings) : Array (BindingS
           let .isTrue typeP := inferInstanceAs (Decidable (typeIndex < bindings.size))
             | return panic! "Invalid name index"
           some <$> .value <$> mkValueBindingSpec bindings ⟨nameIndex, nameP⟩ ⟨typeIndex, typeP⟩ (argsIndex := some ⟨argsIndex, argsP⟩)
-        | q`StrataDD.declareType => do
+        | q`StrataDDL.declareType => do
           let #[.catbvar nameIndex, .option mArgsArg ] := attr.args
             | newBindingErr s!"declareType has bad arguments {repr attr.args}."; return none
           let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < bindings.size))
@@ -547,7 +547,7 @@ def parseNewBindings (md : Metadata) (bindings : DeclBindings) : Array (BindingS
                   pure <| some ⟨idx, argsP⟩
                 | _ => newBindingErr "declareType args invalid."; return none
           some <$> .type <$> pure { nameIndex, argsIndex, defIndex := none }
-        | q`StrataDD.aliasType => do
+        | q`StrataDDL.aliasType => do
           let #[.catbvar nameIndex, .option mArgsArg, .catbvar defIndex] := attr.args
             | newBindingErr "aliasType missing arguments."; return none
           let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < bindings.size))
@@ -782,9 +782,10 @@ A dialect definition.
 structure Dialect where
   name : DialectName
   -- Names of dialects that are imported into this dialect
-  imports : Array DialectName := #[]
+  imports : Array DialectName
   declarations : Array Decl := #[]
-  cache : Std.HashMap String Decl := {}
+  cache : Std.HashMap String Decl :=
+    declarations.foldl (init := {}) fun m d => m.insert d.name d
 deriving Inhabited
 
 namespace Dialect
@@ -948,6 +949,30 @@ def opDecl! (dm : DialectMap) (ident : QualifiedIdent) : OpDecl :=
   | .op decl => decl
   | _ => panic! s!"Unknown operation {ident.fullName}"
 
+/--
+Return set of all dialects that are imported by `dialect`.
+
+This includes transitive imports.
+-/
+partial def importedDialects! (map : DialectMap) (dialect : DialectName) : DialectMap := aux (.ofList [(d.name, d)]) [d]
+  where d :=
+          match map[dialect]? with
+          | none => panic! s!"Unknown dialect {dialect}"
+          | some d => d
+        aux (all : Std.HashMap DialectName Dialect) (next : List Dialect) : DialectMap :=
+          match next with
+          | d :: next =>
+            let (all, next) := d.imports.foldl (init := (all, next)) fun (all, next) i =>
+              if i ∈ all then
+                (all, next)
+              else
+                let d := match map[i]? with
+                          | none => panic! s!"Unknown dialect {i}"
+                          | some d => d
+               (all.insert i d, d :: next)
+            aux all next
+          | [] => DialectMap.mk all
+
 end DialectMap
 
 mutual
@@ -1110,46 +1135,37 @@ def addCommand (dialects : DialectMap) (init : GlobalContext) (op : Operation) :
 
 end GlobalContext
 
-structure Environment where
+structure Program where
   mk ::
-  -- Map from dialect names to the dialect definition
-  dialects : DialectMap := {}
-  -- Dialects considered open for pretty-printing purposes.
-  openDialects : Array DialectName := #["Init"]
-  -- Top level commands in file.
+  /-- Map from dialect names to the dialect definition. -/
+  dialects : DialectMap
+  /-- Main dialect for program. -/
+  dialect : DialectName
+  /-- Top level commands in file. -/
   commands : Array Operation := #[]
-  -- Operations at the top command level.
-  globalContext : GlobalContext
+  /-- Final global context for program. -/
+  globalContext : GlobalContext :=
+    commands.foldl (init := {}) (·.addCommand dialects ·)
 
-namespace Environment
+namespace Program
 
-def empty : Environment := {
-  globalContext := {}
-}
+instance : Inhabited Program where
+  default := { dialects := {}, dialect := default }
 
-instance : Inhabited Environment where
-  default := .empty
-
-def addCommand (env : Environment) (cmd : Operation) : Environment :=
+def addCommand (env : Program) (cmd : Operation) : Program :=
   { env with
     commands := env.commands.push cmd,
     globalContext := env.globalContext.addCommand env.dialects cmd
   }
 
-def create (dialects : DialectMap) (openDialects : Array DialectName) (commands : Array Operation) : Environment :=
-  { dialects,
-    openDialects,
-    commands := commands,
-    globalContext := commands.foldl (init := {}) (·.addCommand dialects ·)
-  }
+/--
+This creates a program.  It is added in addition to `Program.mk` to simplify the
+`ToExpr Program` instance.
+-/
+def create (dialects : DialectMap) (dialect : DialectName) (commands : Array Operation) : Program :=
+  { dialects, dialect, commands }
 
-def openDialect (env : Environment) (d : DialectName) : Environment :=
-  if d ∈ env.openDialects then
-    env
-  else
-    { env with openDialects := env.openDialects.push d }
-
-end Environment
+end Program
 
 theorem sizeOf_lt_of_op_arg {e : Arg} {op : Operation} (p : e ∈ op.args) : sizeOf e < sizeOf op := by
   cases op with

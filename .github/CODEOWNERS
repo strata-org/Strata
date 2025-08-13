@@ -3,36 +3,36 @@
 *       @strata-org/reviewers
 
 # CSimp dialect files
-*.csimp.st    @andrewmwells-amazon
+*.csimp.st    @andrewmwells-amazon @shigoel
 
 # Boogie dialect files
-*.boogie.st    @atomb
+*.boogie.st    @atomb @MikaelMayer
 
 # Tools
-/Tools/BoogieToStrata/ @atomb
+/Tools/BoogieToStrata/ @atomb @MikaelMayer
 
 # DDM
-/Strata/DDM/ @joehendrix
-/StrataTest/DDM/ @joehendrix
+/Strata/DDM/ @joehendrix @shigoel
+/StrataTest/DDM/ @joehendrix @shigoel 
 
 # Dialects
-/Strata/DL/Lambda/ @shigoel
-/StrataTest/DL/Lambda/ @shigoel
+/Strata/DL/Lambda/ @shigoel @atomb
+/StrataTest/DL/Lambda/ @shigoel @atomb
 
 /Strata/DL/Imperative/ @atomb @shigoel
 /StrataTest/DL/Imperative/ @atomb @shigoel
 
-/Strata/DL/SMT/ @andrewmwells-amazon
+/Strata/DL/SMT/ @andrewmwells-amazon @atomb
 
-/Strata/DL/Utils/ @shigoel
+/Strata/DL/Utils/ @shigoel @atomb
 
 # Languages
 /Strata/Languages/Boogie/ @atomb @shigoel
 /StrataTest/Languages/Boogie/ @atomb @shigoel
 
-/Strata/Languages/C_Simp/ @andrewmwells-amazon
+/Strata/Languages/C_Simp/ @andrewmwells-amazon @shigoel
 
-/Strata/Transform/ @atomb
+/Strata/Transform/ @atomb @andrewmwells-amazon 
 
 # Documentation
-/docs/ddm/ @joehendrix
+/docs/ddm/ @joehendrix @shigoel 

@@ -7,15 +7,15 @@
 import Strata.Languages.C_Simp.C_Simp
 import Strata.Languages.C_Simp.Verify
 
-def MinEnv :=
+def MinPgm :=
 #strata
 program C_Simp;
 
-procedure min (a: int, b: int) -> int
-  @pre true
-  @post true
+int procedure min (a: int, b: int)
+  //@pre true;
+  //@post true;
 {
-  if (a < b) then {
+  if (a < b) {
     return a;
   } else {
     return b;
@@ -25,8 +25,11 @@ procedure min (a: int, b: int) -> int
 #end
 
 /--
-info: proceduremin(a:int, b:int)->int@pretrue@posttrue({
-  if((a)<(b))then{
+info: program C_Simp;
+(int)proceduremin(a:int, b:int)//@pretrue;
+//@posttrue;
+  ({
+  if((a)<(b)){
   returna;
   }
   (else({
@@ -36,7 +39,7 @@ info: proceduremin(a:int, b:int)->int@pretrue@posttrue({
   )
 -/
 #guard_msgs in
-#eval IO.println MinEnv.format.render
+#eval IO.println MinPgm.format.render
 
 /--
 info: function min {
@@ -50,7 +53,7 @@ Errors: #[]
 -/
 #guard_msgs in
 open Strata.C_Simp in
-#eval TransM.run (translateProgram (MinEnv.commands))
+#eval TransM.run (translateProgram (MinPgm.commands))
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -71,4 +74,4 @@ Obligation: post
 Result: verified
 -/
 #guard_msgs in
-#eval Strata.C_Simp.verify "cvc5" MinEnv
+#eval Strata.C_Simp.verify "cvc5" MinPgm

@@ -37,7 +37,7 @@ JVM-based languages, Rust, Python and JavaScript/TypeScript.
 # Strata Dialect Definitions
 
 Dialects are the core mechanism in Strata used to declare and extend program
-intermediata representations.   A Strata dialect defines new syntactic categories,
+intermediate representations.   A Strata dialect defines new syntactic categories,
 operations, types, functions and metadata.  Strata dialects are composable and
 can be used to define extensions that can be used in multiple languages.  There
 is a builtin dialect, called `Init` that provides some basic declarations that
@@ -124,7 +124,7 @@ commands for assertions and defining functions:
 
 ```
 dialect AssertLang;
-import Arith; // Automatically imports Bool dependency of Arirth
+import Arith; // Automatically imports Bool dependency of Arith
 
 // This introduces a new operator into the Command category.
 op assert (b : Bool) : Command => "assert " b ";";
@@ -265,7 +265,7 @@ creation of typed IRs in Strata.
    type inference that allows it to automatically infer type arguments as long as
    an expression argument uses that type.
  * Unlike categories, user types may contain parameters and parameters may themselves
-   by variables.  This allows more general functions than can be supported by operators
+   be variables.  This allows more general functions than can be supported by operators
    such as a polymorphic length function over lists.
  * Types use a standardized syntax that do not require syntax definitions for each type.
  * After parsing, expressions are type checked to ensure that the syntax is well
@@ -278,7 +278,7 @@ creation of typed IRs in Strata.
 Declares a new type with optional parameters with names given by the identifiers
 _id1_, _id2_, ...
 
-The code below declares a type `Bool` for Booleans and a.
+The code below declares a type `Bool` and a polymorphic Map type.
 ```
 type Bool;
 type Map (dom : Type, range : Type);  -- Ex. Map Nat Bool
@@ -303,7 +303,7 @@ tag := "metadata"
 %%%
 
 The Stata `Init` dialect provides a builtin `Init.Metadata` category that allows metadata
-to be declared, and attached to other declarations in dialects.  Predefined metadata attributes
+to be declared and attached to other declarations in dialects.  Predefined metadata attributes
 are used in dialect definitions for
 [defining precedence and type checking](#parsing_typechecking), but additional metadata
 attributes can be declared in dialects to build new capabilities on top of Strata.  The goal
@@ -425,7 +425,7 @@ be defined in user definable dialects.
 * Parsing for primitive literals and identifiers cannot be directly in syntax definitions.
   To accomodate this, the `Init` dialect introduces the syntactic categories for this:
 
-  * `Init.Ident` represents to identifiers.  These are alphanumeric sequences that start with
+  * `Init.Ident` represents identifiers.  These are alphanumeric sequences that start with
     a letter that are not otherwise used as keywords in a dialect.
 
   * `Init.Str` represents string literals.  These are delimited by double quotes and use escaping

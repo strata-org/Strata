@@ -28,7 +28,7 @@ op command_fndecl (name : Ident, b : Bindings, r : Type) : Command => "function 
 op command_assert (b : bool) : Command => "assert " b ";\n";
 #end
 
-def testDeclareFnEnv :=
+def testDeclareFnPgm :=
 #strata
 program TestDeclareFn;
 function f(b : bool, i : int) : bool;
@@ -36,11 +36,12 @@ assert f(true, 2);
 #end
 
 /--
-info: function f(b:bool, i:int) : bool;
+info: program TestDeclareFn;
+function f(b:bool, i:int) : bool;
 assert f(true, 2);
 -/
 #guard_msgs in
-#eval testDeclareFnEnv.format
+#eval IO.println testDeclareFnPgm
 
 #dialect
 dialect TestDeclareType;
@@ -71,7 +72,7 @@ op checkVar (tp : Type, v : tp) : Command => "check " v " : " tp ";\n";
 
 #end
 
-def testDeclareTypeEnv :=
+def testDeclareTypePgm :=
 #strata
 program TestDeclareType;
 type Int;
@@ -91,7 +92,8 @@ check a : F Int;
 #end
 
 /--
-info: type Int;
+info: program TestDeclareType;
+type Int;
 type_fn Nat;
 type_fn Array(name:Type);
 type_fn Array2(a:Type, b:Type);
@@ -104,4 +106,4 @@ check_type F Int;
 check a : F Int;
 -/
 #guard_msgs in
-#eval testDeclareTypeEnv.format
+#eval IO.println testDeclareTypePgm

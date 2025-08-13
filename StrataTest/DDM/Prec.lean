@@ -20,10 +20,12 @@ fn xor (a : bool, b : bool) : bool => @[prec(12)] a " ^^ " b;
 op assert (b : bool) : Command => "assert " b ";\n";
 #end
 
-def ppParen (env : Strata.Environment) := env |>.format {alwaysParen := true }
+def ppParen (pgm : Strata.Program) :=
+  IO.println <| toString <| pgm |>.format {alwaysParen := true }
 
 /--
-info: assert ((t) && (t)) && (t);
+info: program TestPrec;
+assert ((t) && (t)) && (t);
 -/
 #guard_msgs in
 #eval ppParen #strata
@@ -32,7 +34,8 @@ assert t && t && t;
 #end
 
 /--
-info: assert (t) => ((t) => (t));
+info: program TestPrec;
+assert (t) => ((t) => (t));
 -/
 #guard_msgs in
 #eval ppParen #strata
@@ -41,7 +44,8 @@ assert t => t => t;
 #end
 
 /--
-info: assert (f) ^^ (f);
+info: program TestPrec;
+assert (f) ^^ (f);
 -/
 #guard_msgs in
 #eval ppParen #strata
@@ -60,7 +64,8 @@ assert f ^^ f ^^ f;
 #end
 
 /--
-info: assert ((t) && (t)) || (t);
+info: program TestPrec;
+assert ((t) && (t)) || (t);
 -/
 #guard_msgs in
 #eval ppParen #strata
@@ -69,7 +74,8 @@ assert t && t || t;
 #end
 
 /--
-info: assert (t) || ((t) && (t));
+info: program TestPrec;
+assert (t) || ((t) && (t));
 -/
 #guard_msgs in
 #eval ppParen #strata
@@ -78,7 +84,8 @@ assert t || t && t;
 #end
 
 /--
-info: assert ((t) || (f)) => (t);
+info: program TestPrec;
+assert ((t) || (f)) => (t);
 -/
 #guard_msgs in
 #eval ppParen #strata

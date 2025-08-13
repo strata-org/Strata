@@ -9,7 +9,7 @@ import Strata.Languages.Boogie.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def gaussEnv : Environment :=
+def gaussPgm :=
 #strata
 program Boogie;
 
@@ -75,9 +75,9 @@ Obligation: sum_ensures_1
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" gaussEnv
+#eval verify "cvc5" gaussPgm
 
-def nestedEnv : Environment :=
+def nestedPgm :=
 #strata
 program Boogie;
 
@@ -171,4 +171,4 @@ Obligation: arbitrary_iter_maintain_invariant_0
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" nestedEnv
+#eval verify "cvc5" nestedPgm

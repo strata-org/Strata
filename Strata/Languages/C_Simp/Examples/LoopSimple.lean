@@ -7,49 +7,53 @@
 import Strata.Languages.C_Simp.C_Simp
 import Strata.Languages.C_Simp.Verify
 
-def LoopSimpleEnv :=
+def LoopSimplePgm :=
 #strata
 program C_Simp;
 
-procedure loopSimple (n: int) -> int
-  @pre (n >= #0)
-  @post true
+int procedure loopSimple (n: int)
+  //@pre (n >= 0);
+  //@post true;
 {
   var sum : int;
   var i : int;
 
-  sum := #0;
-  i := #0;
+  sum = 0;
+  i = 0;
   while(i < n)
-  @decreases (n-i)
-  @invariant (i <= n && ((i * (i-#1))/#2 == sum))
+  //@decreases (n-i)
+  //@invariant (i <= n && ((i * (i-1))/2 == sum))
   {
-    sum := sum + i;
-    i := i + #1;
+    sum = sum + i;
+    i = i + 1;
   }
-  @assert [sum_assert] ((n * (n-#1))/#2 == sum);
+  //@assert [sum_assert] ((n * (n-1))/2 == sum);
   return sum;
 }
 
 #end
 
 /--
-info: procedureloopSimple(n:int)->int@pre(n)>=(#(0))@posttrue({
+info: program C_Simp;
+(int)procedureloopSimple(n:int)//@pre(n)>=(0);
+//@posttrue;
+  ({
   varsum:int;
   vari:int;
-  (sum):=#(0);
-  (i):=#(0);
-  while((i)<(n))@decreases((n)-(i))@invariant(((i)<=(n))&&((((i)*((i)-(#(1))))/(#(2)))==(sum)))({
-  (sum):=(sum)+(i);
-  (i):=(i)+(#(1));
+  (sum)=0;
+  (i)=0;
+  while((i)<(n))
+  //@decreases((n)-(i))//@invariant(((i)<=(n))&&((((i)*((i)-(1)))/(2))==(sum)))({
+  (sum)=(sum)+(i);
+  (i)=(i)+(1);
   }
-  )@assert[sum_assert](((n)*((n)-(#(1))))/(#(2)))==(sum);
+  )//@assert [sum_assert](((n)*((n)-(1)))/(2))==(sum);
   returnsum;
   }
   )
 -/
 #guard_msgs in
-#eval IO.println LoopSimpleEnv.format.render
+#eval IO.println LoopSimplePgm.format.render
 
 /--
 info: function loopSimple {
@@ -67,7 +71,7 @@ return := sum
 }
 -/
 #guard_msgs in
-#eval Strata.C_Simp.get_program LoopSimpleEnv
+#eval Strata.C_Simp.get_program LoopSimplePgm
 
 /--
 info: (procedure loopSimple :  ((n : int)) → ((return : int)))
@@ -100,7 +104,7 @@ assert [sum_assert] (((~Int.Div ((~Int.Mul n) ((~Int.Sub n) #1))) #2) == sum)
 return := sum
 -/
 #guard_msgs in
-#eval Strata.to_boogie (Strata.C_Simp.get_program LoopSimpleEnv)
+#eval Strata.to_boogie (Strata.C_Simp.get_program LoopSimplePgm)
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -190,4 +194,4 @@ Obligation: post
 Result: verified
 -/
 #guard_msgs in
-#eval Strata.C_Simp.verify "cvc5" LoopSimpleEnv
+#eval Strata.C_Simp.verify "cvc5" LoopSimplePgm

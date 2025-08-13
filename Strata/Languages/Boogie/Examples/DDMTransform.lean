@@ -9,7 +9,7 @@ import Strata.Languages.Boogie.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def msEnv : Environment :=
+def msPgm : Program :=
 #strata
 program Boogie;
 // Running example from Mutual Summaries paper

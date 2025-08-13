@@ -4,14 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-
-
-
-import Strata.DL.Imperative.CmdSemantics
 import Strata.DL.Imperative.StmtSemantics
-import Strata.DL.Imperative.HasVars
-import Strata.Languages.Boogie.Procedure
-import Strata.Languages.Boogie.Statement
 import Strata.Languages.Boogie.OldExpressions
 
 ---------------------------------------------------------------------
@@ -44,6 +37,7 @@ instance : HasBool Boogie.Expression where
   tt := Boogie.true
   ff := Boogie.false
 
+/-- TODO: extend this to handle non-constants -/
 instance : HasBoolNeg Boogie.Expression where
   neg
   | Boogie.true => Boogie.false
@@ -98,9 +92,9 @@ inductive UpdateStates : SemanticStore P → List P.Ident → List P.Expr → Se
     UpdateStates σ (x :: xs) (v :: vs) σ''
 
 inductive InitStates : SemanticStore P → List P.Ident → List P.Expr → SemanticStore P → Prop where
-  | update_none :
+  | init_none :
     InitStates σ [] [] σ
-  | update_some :
+  | init_some :
     InitState P σ x v σ' →
     InitStates σ' xs vs σ'' →
     InitStates σ (x :: xs) (v :: vs) σ''
@@ -199,10 +193,11 @@ inductive EvalCommand : (String → Option Procedure)  → BoogieEval → Boogie
   Here's a Zulip thread that can shed some light on this error message:
   https://leanprover-community.github.io/archive/stream/270676-lean4/topic/nested.20inductive.20datatypes.20parameters.20cannot.20contain.20local.20v.html
   -/
-  | call_sem {π δ σ₀ σ args vals σA σAO δP σR n p modvals lhs σ'} :
+  | call_sem {π δ σ₀ σ args vals oVals σA σAO δP σR n p modvals lhs σ'} :
     π n = .some p →
     EvalExpressions (P:=Expression) δ σ₀ σ args vals →
-    WellFormedSemanticEvalVal δ σ₀ σ →
+    ReadValues σ lhs oVals →
+    WellFormedSemanticEvalVal δ →
     WellFormedSemanticEvalVar δ →
     WellFormedSemanticEvalBool δ δP →
     WellFormedBoogieEvalTwoState δ σ₀ σ →
@@ -213,7 +208,9 @@ inductive EvalCommand : (String → Option Procedure)  → BoogieEval → Boogie
     -- this can't change semantics. Caller names that aren't visible to the callee won't be used. Caller
     -- names that overlap with callee names will be replaced.
     InitStates σ (Map.keys (p.header.inputs)) vals σA →
-    InitVars σA (Map.keys (p.header.outputs)) σAO →
+
+    -- need to initialize to the values of lhs, due to output variables possibly occuring in preconditions
+    InitStates σA (Map.keys (p.header.outputs)) oVals σAO →
 
     -- Preconditions, if any, must be satisfied for execution to continue.
     (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
@@ -245,10 +242,11 @@ inductive EvalCommandContract : (String → Option Procedure)  → BoogieEval �
     ----
     EvalCommandContract π δ δP σ₀ σ (CmdExt.cmd c) σ'
 
-  | call_sem {π δ σ₀ σ args vals σA σAO σO δP σR n p modvals lhs σ'} :
+  | call_sem {π δ σ₀ σ args oVals vals σA σAO σO δP σR n p modvals lhs σ'} :
     π n = .some p →
     EvalExpressions (P:=Boogie.Expression) δ σ₀ σ args vals →
-    WellFormedSemanticEvalVal δ σ₀ σ →
+    ReadValues σ lhs oVals →
+    WellFormedSemanticEvalVal δ →
     WellFormedSemanticEvalVar δ →
     WellFormedSemanticEvalBool δ δP →
     WellFormedBoogieEvalTwoState δ σ₀ σ →
@@ -259,10 +257,9 @@ inductive EvalCommandContract : (String → Option Procedure)  → BoogieEval �
     -- this can't change semantics. Caller names that aren't visible to the callee won't be used. Caller
     -- names that overlap with callee names will be replaced.
     InitStates σ (Map.keys (p.header.inputs)) vals σA →
-    -- Q: Maybe that should be updates into value of lhs prior to call.
-    -- That would make the structure more consistent, and we will know the exact value of the store
-    -- But perhaps we don't need that
-    InitVars σA (Map.keys (p.header.outputs)) σAO →
+
+    -- need to initialize to the values of lhs, due to output variables possibly occuring in preconditions
+    InitStates σA (Map.keys (p.header.outputs)) oVals σAO →
 
     -- Preconditions, if any, must be satisfied for execution to continue.
     (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →

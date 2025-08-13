@@ -7,45 +7,49 @@
 import Strata.Languages.C_Simp.C_Simp
 import Strata.Languages.C_Simp.Verify
 
-def LoopTrivialEnv :=
+def LoopTrivialPgm :=
 #strata
 program C_Simp;
 
-procedure loopTrivial (n: int) -> int
-  @pre (n >= #0)
-  @post true
+int procedure loopTrivial (n: int)
+  //@pre (n >= 0);
+  //@post true;
 {
   var i : int;
 
-  i := #0;
+  i = 0;
   while
   (i < n)
-  @decreases (n-i)
-  @invariant (i <= n)
+  //@decreases (n-i)
+  //@invariant (i <= n)
   {
-    i := i + #1;
+    i = i + 1;
   }
 
-  @assert [i_eq_n] (i == n);
+  //@assert [i_eq_n] (i == n);
   return i;
 }
 
 #end
 
 /--
-info: procedureloopTrivial(n:int)->int@pre(n)>=(#(0))@posttrue({
+info: program C_Simp;
+(int)procedureloopTrivial(n:int)//@pre(n)>=(0);
+//@posttrue;
+  ({
   vari:int;
-  (i):=#(0);
-  while((i)<(n))@decreases((n)-(i))@invariant((i)<=(n))({
-  (i):=(i)+(#(1));
+  (i)=0;
+  while((i)<(n))
+  //@decreases((n)-(i))//@invariant((i)<=(n))({
+  (i)=(i)+(1);
   }
-  )@assert[i_eq_n](i)==(n);
+  )//@assert [i_eq_n](i)==(n);
   returni;
   }
   )
 -/
 #guard_msgs in
-#eval IO.println LoopTrivialEnv.format.render
+#eval IO.println LoopTrivialPgm.format.render
 
 /--
 info: function loopTrivial {
@@ -62,7 +66,7 @@ Errors: #[]
 -/
 #guard_msgs in
 open Strata.C_Simp in
-#eval TransM.run (translateProgram (LoopTrivialEnv.commands))
+#eval TransM.run (translateProgram (LoopTrivialPgm.commands))
 
 /--
 info: (procedure loopTrivial :  ((n : int)) → ((return : int)))
@@ -90,7 +94,7 @@ assert [i_eq_n] (i == n)
 return := i
 -/
 #guard_msgs in
-#eval Strata.to_boogie (Strata.C_Simp.get_program LoopTrivialEnv)
+#eval Strata.to_boogie (Strata.C_Simp.get_program LoopTrivialPgm)
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -180,4 +184,4 @@ Obligation: post
 Result: verified
 -/
 #guard_msgs in
-#eval Strata.C_Simp.verify "cvc5" LoopTrivialEnv
+#eval Strata.C_Simp.verify "cvc5" LoopTrivialPgm

@@ -9,7 +9,7 @@ import Strata.Languages.Boogie.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def simpleProcEnv : Environment :=
+def simpleProcPgm : Program :=
 #strata
 program Boogie;
 var g : bool;
@@ -29,7 +29,7 @@ spec {
 /-- info: true -/
 #guard_msgs in
 -- No errors in translation.
-#eval TransM.run (translateProgram (simpleProcEnv.commands)) |>.snd |>.isEmpty
+#eval TransM.run (translateProgram (simpleProcPgm.commands)) |>.snd |>.isEmpty
 
 /--
 info: var (g : bool) := init_g_0
@@ -42,7 +42,7 @@ body: y := (((~Bool.Or : (arrow bool (arrow bool bool))) x) x)
 Errors: #[]
 -/
 #guard_msgs in
-#eval TransM.run (translateProgram (simpleProcEnv.commands))
+#eval TransM.run (translateProgram (simpleProcPgm.commands))
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -79,6 +79,6 @@ Obligation: Test_ensures_2
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" simpleProcEnv
+#eval verify "cvc5" simpleProcPgm
 
 ---------------------------------------------------------------------

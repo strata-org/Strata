@@ -9,7 +9,7 @@ import Strata.Languages.Boogie.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def freeReqEnsEnv : Environment :=
+def freeReqEnsPgm : Program :=
 #strata
 program Boogie;
 var g : int;
@@ -100,6 +100,6 @@ Result: failed
 CEx: ($__g2, 0)
 -/
 #guard_msgs in
-#eval verify "cvc5" freeReqEnsEnv
+#eval verify "cvc5" freeReqEnsPgm
 
 ---------------------------------------------------------------------

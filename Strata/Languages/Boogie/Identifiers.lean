@@ -33,7 +33,7 @@ open Std
  is the responsibility of the variable generator to ensure that the generated
  names themselves are unique (i.e., do not have duplicates).
 
- TODO: add link to LabelGen after those are added.
+ See `BoogieGenState` for a unique generator for Boogie Identifiers.
 -/
 inductive Visibility where
   | unres

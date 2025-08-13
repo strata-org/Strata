@@ -321,11 +321,11 @@ instance : ToExpr DialectMap where
 
 end DialectMap
 
-instance Environment.instToExpr : ToExpr Environment where
-  toTypeExpr := mkConst ``Environment
-  toExpr ms := mkApp3 (mkConst ``Environment.create)
+instance Program.instToExpr : ToExpr Program where
+  toTypeExpr := mkConst ``Program
+  toExpr ms := mkApp3 (mkConst ``Program.create)
     (toExpr ms.dialects)
-    (toExpr ms.openDialects)
+    (toExpr ms.dialect)
     (toExpr ms.commands)
 
 end Strata
