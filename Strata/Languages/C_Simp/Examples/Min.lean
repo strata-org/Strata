@@ -11,11 +11,11 @@ def MinPgm :=
 #strata
 program C_Simp;
 
-procedure min (a: int, b: int) -> int
-  @pre true
-  @post true
+int procedure min (a: int, b: int)
+  //@pre true;
+  //@post true;
 {
-  if (a < b) then {
+  if (a < b) {
     return a;
   } else {
     return b;
@@ -26,8 +26,10 @@ procedure min (a: int, b: int) -> int
 
 /--
 info: program C_Simp;
-proceduremin(a:int, b:int)->int@pretrue@posttrue({
-  if((a)<(b))then{
+(int)proceduremin(a:int, b:int)//@pretrue;
+//@posttrue;
+  ({
+  if((a)<(b)){
   returna;
   }
   (else({

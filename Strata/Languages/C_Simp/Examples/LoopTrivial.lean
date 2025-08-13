@@ -11,22 +11,22 @@ def LoopTrivialPgm :=
 #strata
 program C_Simp;
 
-procedure loopTrivial (n: int) -> int
-  @pre (n >= #0)
-  @post true
+int procedure loopTrivial (n: int)
+  //@pre (n >= 0);
+  //@post true;
 {
   var i : int;
 
-  i := #0;
+  i = 0;
   while
   (i < n)
-  @decreases (n-i)
-  @invariant (i <= n)
+  //@decreases (n-i)
+  //@invariant (i <= n)
   {
-    i := i + #1;
+    i = i + 1;
   }
 
-  @assert [i_eq_n] (i == n);
+  //@assert [i_eq_n] (i == n);
   return i;
 }
 
@@ -34,13 +34,16 @@ procedure loopTrivial (n: int) -> int
 
 /--
 info: program C_Simp;
-procedureloopTrivial(n:int)->int@pre(n)>=(#(0))@posttrue({
+(int)procedureloopTrivial(n:int)//@pre(n)>=(0);
+//@posttrue;
+  ({
   vari:int;
-  (i):=#(0);
-  while((i)<(n))@decreases((n)-(i))@invariant((i)<=(n))({
-  (i):=(i)+(#(1));
+  (i)=0;
+  while((i)<(n))
+  //@decreases((n)-(i))//@invariant((i)<=(n))({
+  (i)=(i)+(1);
   }
-  )@assert[i_eq_n](i)==(n);
+  )//@assert [i_eq_n](i)==(n);
   returni;
   }
   )
