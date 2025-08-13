@@ -11,23 +11,24 @@ def CoprimePgm :=
 #strata
 program C_Simp;
 
-procedure coprime (a: int, b: int) -> bool
-  @pre ((a > #0) && (b > #0))
-  @post true
+bool procedure coprime (a: int, b: int)
+  //@pre ((a > 0) && (b > 0));
+  //@post true;
 {
-  var (i: int) := a;
-  if (b < a) then {
-    i := b;
+  var i : int;
+  i = a;
+  if (b < a) {
+    i = b;
   }
 
-  while (i > #1)
-    @decreases i
-    @invariant true
+  while (i > 1)
+    //@decreases i
+    //@invariant true
   {
-    if (((b % i) == #0) && ((a % i) == #0)) then {
+    if (((b % i) == 0) && ((a % i) == 0)) {
       return false;
     }
-    i := i - #1;
+    i = i - 1;
   }
   return true;
 }
@@ -36,16 +37,20 @@ procedure coprime (a: int, b: int) -> bool
 
 /--
 info: program C_Simp;
-procedurecoprime(a:int, b:int)->bool@pre((a)>(#(0)))&&((b)>(#(0)))@posttrue({
-  var(i:int):=a;
-  if((b)<(a))then{
-  (i):=b;
+(bool)procedurecoprime(a:int, b:int)//@pre((a)>(0))&&((b)>(0));
+//@posttrue;
+  ({
+  vari:int;
+  (i)=a;
+  if((b)<(a)){
+  (i)=b;
   }
-  ()while((i)>(#(1)))@decreases(i)@invariant(true)({
-  if((((b)%(i))==(#(0)))&&(((a)%(i))==(#(0))))then{
+  ()while((i)>(1))
+  //@decreases(i)//@invariant(true)({
+  if((((b)%(i))==(0))&&(((a)%(i))==(0))){
   returnfalse;
   }
-  ()(i):=(i)-(#(1));
+  ()(i)=(i)-(1);
   }
   )returntrue;
   }
@@ -60,7 +65,8 @@ info: function coprime {
   pre: ((~Bool.And ((~Int.Gt a) #0)) ((~Int.Gt b) #0))
   post: #true
   body:
-init (i : int) := a
+init (i : int) := init_i
+i := a
 if ((~Int.Lt b) a) then {i := b}
 else{}
 while (((~Int.Gt i) #1)) (some i) (some #true) {if ((~Bool.And (((~Int.Mod b) i) == #0)) (((~Int.Mod a) i) == #0)) then {return := #false}
@@ -79,7 +85,8 @@ info: (procedure coprime :  ((a : int) (b : int)) → ((return : bool)))
 modifies: []
 preconditions: (pre, ((~Bool.And ((~Int.Gt a) #0)) ((~Int.Gt b) #0)))
 postconditions: (post, #true)
-body: init (i : int) := a
+body: init (i : int) := init_i
+i := a
 if ((~Int.Lt b) a) then {i := b}
 else{}
 if ((~Int.Gt i) #1) then {first_iter_asserts : {assert [entry_invariant] #true

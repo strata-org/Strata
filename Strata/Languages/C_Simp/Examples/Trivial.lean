@@ -11,9 +11,9 @@ def TrivialPgm :=
 #strata
 program C_Simp;
 
-procedure trivial () -> bool
-  @pre true
-  @post true
+bool procedure trivial ()
+  //@pre true;
+  //@post true;
 {
   return true;
 }
@@ -22,7 +22,9 @@ procedure trivial () -> bool
 
 /--
 info: program C_Simp;
-proceduretrivial()->bool@pretrue@posttrue({
+(bool)proceduretrivial()//@pretrue;
+//@posttrue;
+  ({
   returntrue;
   }
   )

@@ -377,14 +377,6 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     let id ← translateIdent ida
     let val ← translateExpr bindings ea
     return ([(.cmd (.set id val))], bindings)
-  | q`C_Simp.assert, #[la, ca] =>
-    let l ← translateIdent la
-    let c ← translateExpr bindings ca
-    return ([(.cmd (.assert l c))], bindings)
-  | q`C_Simp.assume, #[la, ca] =>
-    let l ← translateIdent la
-    let c ← translateExpr bindings ca
-    return ([(.cmd (.assume l c))], bindings)
   | q`C_Simp.if_command, #[ca, ta, fa] =>
     let c ← translateExpr bindings ca
     let t := { ss := ← translateBlock bindings ta }
@@ -398,6 +390,19 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     -- TODO: I don't think this works if we have functions with different return types
     let val ← translateExpr bindings ea
     return ([(.cmd (.set "return" val))], bindings)
+  | q`C_Simp.annotation, #[a] =>
+    let .op a_op := a
+      | TransM.error s!"Annotation expected op {repr a}"
+    match a_op.name, a_op.args with
+    | q`C_Simp.assert, #[la, ca] =>
+      let l ← translateIdent la
+      let c ← translateExpr bindings ca
+      return ([(.cmd (.assert l c))], bindings)
+    | q`C_Simp.assume, #[la, ca] =>
+      let l ← translateIdent la
+      let c ← translateExpr bindings ca
+      return ([(.cmd (.assume l c))], bindings)
+    | _,_ => TransM.error s!"Unexpected annotation."
   | name, args => TransM.error s!"Unexpected statement {name.fullName} with {args.size} arguments."
 
 partial def translateBlock (bindings : TransBindings) (arg : Arg) :
