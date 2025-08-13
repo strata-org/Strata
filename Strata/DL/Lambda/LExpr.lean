@@ -530,53 +530,34 @@ open LTy.Syntax
 
 -- axiom [updateSelect]: forall m: Map k v, kk: k, vv: v :: m[kk := vv][kk] == vv;
 /--
-info: Lambda.LExpr.quant
-  (Lambda.QuantifierKind.all)
-  (some (Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]))
-  (Lambda.LExpr.quant
-    (Lambda.QuantifierKind.all)
-    (some (Lambda.LMonoTy.ftvar "k"))
-    (Lambda.LExpr.quant
-      (Lambda.QuantifierKind.all)
-      (some (Lambda.LMonoTy.ftvar "v"))
-      (Lambda.LExpr.eq
-        (Lambda.LExpr.app
-          (Lambda.LExpr.app
-            (Lambda.LExpr.op
-              "select"
-              (some (Lambda.LMonoTy.tcons
-                 "Map"
-                 [Lambda.LMonoTy.ftvar "k",
-                  Lambda.LMonoTy.tcons
-                    "arrow"
-                    [Lambda.LMonoTy.ftvar "v",
-                     Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]]])))
-            (Lambda.LExpr.app
-              (Lambda.LExpr.app
-                (Lambda.LExpr.app
-                  (Lambda.LExpr.op
-                    "update"
-                    (some (Lambda.LMonoTy.tcons
-                       "Map"
-                       [Lambda.LMonoTy.ftvar "k",
-                        Lambda.LMonoTy.tcons
-                          "arrow"
-                          [Lambda.LMonoTy.ftvar "v",
-                           Lambda.LMonoTy.tcons
-                             "arrow"
-                             [Lambda.LMonoTy.ftvar "k",
-                              Lambda.LMonoTy.tcons
-                                "arrow"
-                                [Lambda.LMonoTy.ftvar "v",
-                                 Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]]]]])))
-                  (Lambda.LExpr.bvar 2))
-                (Lambda.LExpr.bvar 1))
-              (Lambda.LExpr.bvar 0)))
-          (Lambda.LExpr.bvar 1))
-        (Lambda.LExpr.bvar 0))))
+info: all (some (LMonoTy.tcons "Map" [LMonoTy.ftvar "k", LMonoTy.ftvar "v"]))
+  (all (some (LMonoTy.ftvar "k"))
+    (all (some (LMonoTy.ftvar "v"))
+      ((((op "select"
+                    (some
+                      (LMonoTy.tcons "Map"
+                        [LMonoTy.ftvar "k",
+                          LMonoTy.tcons "arrow"
+                            [LMonoTy.ftvar "v", LMonoTy.tcons "arrow" [LMonoTy.ftvar "k", LMonoTy.ftvar "v"]]]))).app
+                ((((op "update"
+                              (some
+                                (LMonoTy.tcons "Map"
+                                  [LMonoTy.ftvar "k",
+                                    LMonoTy.tcons "arrow"
+                                      [LMonoTy.ftvar "v",
+                                        LMonoTy.tcons "arrow"
+                                          [LMonoTy.ftvar "k",
+                                            LMonoTy.tcons "arrow"
+                                              [LMonoTy.ftvar "v",
+                                                LMonoTy.tcons "Map" [LMonoTy.ftvar "k", LMonoTy.ftvar "v"]]]]]))).app
+                          (bvar 2)).app
+                      (bvar 1)).app
+                  (bvar 0))).app
+            (bvar 1)).eq
+        (bvar 0)))) : LExpr LMonoTy String
 -/
 #guard_msgs in
-#eval
+#check
   esM[∀ (Map %k %v):
             (∀ (%k):
                (∀ (%v):
@@ -836,59 +817,36 @@ open LTy.Syntax
 
 -- axiom [updateSelect]: forall m: Map k v, kk: k, vv: v :: m[kk := vv][kk] == vv;
 /--
-info: Lambda.LExpr.quant
-  (Lambda.QuantifierKind.all)
-  (some (Lambda.LTy.forAll [] (Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"])))
-  (Lambda.LExpr.quant
-    (Lambda.QuantifierKind.all)
-    (some (Lambda.LTy.forAll [] (Lambda.LMonoTy.ftvar "k")))
-    (Lambda.LExpr.quant
-      (Lambda.QuantifierKind.all)
-      (some (Lambda.LTy.forAll [] (Lambda.LMonoTy.ftvar "v")))
-      (Lambda.LExpr.eq
-        (Lambda.LExpr.app
-          (Lambda.LExpr.app
-            (Lambda.LExpr.op
-              "select"
-              (some (Lambda.LTy.forAll
-                 []
-                 (Lambda.LMonoTy.tcons
-                   "Map"
-                   [Lambda.LMonoTy.ftvar "k",
-                    Lambda.LMonoTy.tcons
-                      "arrow"
-                      [Lambda.LMonoTy.ftvar "v",
-                       Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]]]))))
-            (Lambda.LExpr.app
-              (Lambda.LExpr.app
-                (Lambda.LExpr.app
-                  (Lambda.LExpr.op
-                    "update"
-                    (some (Lambda.LTy.forAll
-                       []
-                       (Lambda.LMonoTy.tcons
-                         "Map"
-                         [Lambda.LMonoTy.ftvar "k",
-                          Lambda.LMonoTy.tcons
-                            "arrow"
-                            [Lambda.LMonoTy.ftvar "v",
-                             Lambda.LMonoTy.tcons
-                               "arrow"
-                               [Lambda.LMonoTy.ftvar "k",
-                                Lambda.LMonoTy.tcons
-                                  "arrow"
-                                  [Lambda.LMonoTy.ftvar "v",
-                                   Lambda.LMonoTy.tcons
-                                     "Map"
-                                     [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]]]]]))))
-                  (Lambda.LExpr.bvar 2))
-                (Lambda.LExpr.bvar 1))
-              (Lambda.LExpr.bvar 0)))
-          (Lambda.LExpr.bvar 1))
-        (Lambda.LExpr.bvar 0))))
+info: all (some (LTy.forAll [] (LMonoTy.tcons "Map" [LMonoTy.ftvar "k", LMonoTy.ftvar "v"])))
+  (all (some (LTy.forAll [] (LMonoTy.ftvar "k")))
+    (all (some (LTy.forAll [] (LMonoTy.ftvar "v")))
+      ((((op "select"
+                    (some
+                      (LTy.forAll []
+                        (LMonoTy.tcons "Map"
+                          [LMonoTy.ftvar "k",
+                            LMonoTy.tcons "arrow"
+                              [LMonoTy.ftvar "v", LMonoTy.tcons "arrow" [LMonoTy.ftvar "k", LMonoTy.ftvar "v"]]])))).app
+                ((((op "update"
+                              (some
+                                (LTy.forAll []
+                                  (LMonoTy.tcons "Map"
+                                    [LMonoTy.ftvar "k",
+                                      LMonoTy.tcons "arrow"
+                                        [LMonoTy.ftvar "v",
+                                          LMonoTy.tcons "arrow"
+                                            [LMonoTy.ftvar "k",
+                                              LMonoTy.tcons "arrow"
+                                                [LMonoTy.ftvar "v",
+                                                  LMonoTy.tcons "Map" [LMonoTy.ftvar "k", LMonoTy.ftvar "v"]]]]])))).app
+                          (bvar 2)).app
+                      (bvar 1)).app
+                  (bvar 0))).app
+            (bvar 1)).eq
+        (bvar 0)))) : LExpr LTy String
 -/
 #guard_msgs in
-#eval
+#check
   es[∀ (Map %k %v):
             (∀ (%k):
                (∀ (%v):
