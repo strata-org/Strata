@@ -380,7 +380,7 @@ def toSMTTermString (e : (LExpr BoogieIdent)) (E : Env := Env.init) (ctx : SMT.C
    (.eq (.bvar 0) (.fvar "x" (.some .int))))
 
 /--
-info: "; f\n(declare-fun f0 (Int) Int)\n; \"x\"\n(declare-const t0 Int)\n(define-fun t1 () Bool (exists (($__bv0 Int)) (! (= $__bv0 t0) !pattern (f0 $__bv0))))\n"
+info: "; f\n(declare-fun f0 (Int) Int)\n; \"x\"\n(declare-const t0 Int)\n(define-fun t1 () Bool (exists (($__bv0 Int)) (! (= $__bv0 t0) :pattern ((f0 $__bv0)))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -389,7 +389,7 @@ info: "; f\n(declare-fun f0 (Int) Int)\n; \"x\"\n(declare-const t0 Int)\n(define
 
 
 /--
-info: "; f\n(declare-fun f0 (Int) Int)\n; \"x\"\n(declare-const t0 Int)\n(define-fun t1 () Bool (exists (($__bv0 Int)) (! (= (f0 $__bv0) t0) !pattern (f0 $__bv0))))\n"
+info: "; f\n(declare-fun f0 (Int) Int)\n; \"x\"\n(declare-const t0 Int)\n(define-fun t1 () Bool (exists (($__bv0 Int)) (! (= (f0 $__bv0) t0) :pattern ((f0 $__bv0)))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -403,7 +403,7 @@ info: "; f\n(declare-fun f0 (Int) Int)\n; \"x\"\n(declare-const t0 Int)\n(define
    (.eq (.app (.fvar "f" (.some (.arrow .int .int))) (.bvar 0)) (.fvar "x" (.some .int))))
 
 /--
-info: "; \"f\"\n(declare-const t0 (arrow Int Int))\n; f\n(declare-fun f0 (Int) Int)\n; \"x\"\n(declare-const t1 Int)\n(define-fun t2 () Bool (exists (($__bv0 Int)) (! (= (f0 $__bv0) t1) !pattern t0)))\n"
+info: "; \"f\"\n(declare-const t0 (arrow Int Int))\n; f\n(declare-fun f0 (Int) Int)\n; \"x\"\n(declare-const t1 Int)\n(define-fun t2 () Bool (exists (($__bv0 Int)) (! (= (f0 $__bv0) t1) :pattern (t0))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -412,7 +412,7 @@ info: "; \"f\"\n(declare-const t0 (arrow Int Int))\n; f\n(declare-fun f0 (Int) I
 
 
 /--
-info: "; f\n(declare-fun f0 (Int Int) Int)\n; \"x\"\n(declare-const t0 Int)\n(define-fun t1 () Bool (forall (($__bv0 Int) ($__bv1 Int)) (! (= (f0 $__bv1 $__bv0) t0) !pattern (f0 $__bv1 $__bv0))))\n"
+info: "; f\n(declare-fun f0 (Int Int) Int)\n; \"x\"\n(declare-const t0 Int)\n(define-fun t1 () Bool (forall (($__bv0 Int) ($__bv1 Int)) (! (= (f0 $__bv1 $__bv0) t0) :pattern ((f0 $__bv1 $__bv0)))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString

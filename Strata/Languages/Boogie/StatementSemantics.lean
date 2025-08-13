@@ -49,11 +49,11 @@ abbrev BoogieEvalBool := SemanticEvalBool Expression
 abbrev BoogieStore := SemanticStore Expression
 
 def WellFormedBoogieEvalCong (δ : BoogieEval) : Prop :=
-    (∀ e₁ e₁' tr tr' σ₀ σ σ₀' σ',
+    (∀ e₁ e₁' σ₀ σ σ₀' σ',
       δ σ₀ σ e₁ = δ σ₀' σ' e₁' →
       (∀ ty, δ σ₀ σ (.abs ty e₁) = δ σ₀' σ' (.abs ty e₁')) ∧
       (∀ info, δ σ₀ σ (.mdata info e₁) = δ σ₀' σ' (.mdata info e₁')) ∧
-      (∀ k ty, δ σ₀ σ (.quant k ty tr e₁) = δ σ₀' σ' (.quant k ty tr' e₁')) ∧
+      (∀ k ty tr tr', δ σ₀ σ (.quant k ty tr e₁) = δ σ₀' σ' (.quant k ty tr' e₁')) ∧
     -- binary congruence
     (∀ e₂ e₂',
       δ σ₀ σ e₂ = δ σ₀' σ' e₂' →

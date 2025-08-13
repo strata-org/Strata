@@ -51,7 +51,7 @@ Assumptions:
 Proof Obligation:
 ($__x0 == #1)
 
-Wrote problem to vcs/assert:_(x_eq_(#1_:_int)).smt2.
+Wrote problem to vcs/assert-_(x_eq_(#1_-_int)).smt2.
 ---
 info:
 Obligation: assert: (x == (#1 : int))

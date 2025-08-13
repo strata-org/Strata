@@ -69,7 +69,7 @@ def replaceTypesByFTV (expr: Lambda.LExpr Boogie.BoogieIdent) (to_replace: List 
     | .fvar name oty => .fvar name (oty.map (fun t => transformSimpleTypeToFreeVariable t to_replace))
     | .mdata info e => .mdata info (replaceTypesByFTV e to_replace)
     | .abs oty e => .abs (oty.map (fun t => transformSimpleTypeToFreeVariable t to_replace)) (replaceTypesByFTV e to_replace)
-    | .quant k oty e => .quant k (oty.map (fun t => transformSimpleTypeToFreeVariable t to_replace)) (replaceTypesByFTV e to_replace)
+    | .quant k oty tr e => .quant k (oty.map (fun t => transformSimpleTypeToFreeVariable t to_replace)) (replaceTypesByFTV tr to_replace) (replaceTypesByFTV e to_replace)
     | .app fn e => .app (replaceTypesByFTV fn to_replace) (replaceTypesByFTV e to_replace)
     | .ite c t e => .ite (replaceTypesByFTV c to_replace) (replaceTypesByFTV t to_replace) (replaceTypesByFTV e to_replace)
     | .eq e1 e2 => .eq (replaceTypesByFTV e1 to_replace) (replaceTypesByFTV e2 to_replace)
@@ -241,12 +241,15 @@ info: #[{ name := { dialect := "Boogie", name := "command_typedecl" },
 info: [Lambda.LExpr.quant
    (Lambda.QuantifierKind.all)
    (some (Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]))
+   (Lambda.LExpr.bvar 0)
    (Lambda.LExpr.quant
      (Lambda.QuantifierKind.all)
      (some (Lambda.LMonoTy.ftvar "k"))
+     (Lambda.LExpr.bvar 0)
      (Lambda.LExpr.quant
        (Lambda.QuantifierKind.all)
        (some (Lambda.LMonoTy.ftvar "v"))
+       (Lambda.LExpr.bvar 0)
        (Lambda.LExpr.eq
          (Lambda.LExpr.app
            (Lambda.LExpr.app
@@ -279,15 +282,19 @@ info: [Lambda.LExpr.quant
  Lambda.LExpr.quant
    (Lambda.QuantifierKind.all)
    (some (Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]))
+   (Lambda.LExpr.bvar 0)
    (Lambda.LExpr.quant
      (Lambda.QuantifierKind.all)
      (some (Lambda.LMonoTy.ftvar "k"))
+     (Lambda.LExpr.bvar 0)
      (Lambda.LExpr.quant
        (Lambda.QuantifierKind.all)
        (some (Lambda.LMonoTy.ftvar "k"))
+       (Lambda.LExpr.bvar 0)
        (Lambda.LExpr.quant
          (Lambda.QuantifierKind.all)
          (some (Lambda.LMonoTy.ftvar "v"))
+         (Lambda.LExpr.bvar 0)
          (Lambda.LExpr.eq
            (Lambda.LExpr.app
              (Lambda.LExpr.app

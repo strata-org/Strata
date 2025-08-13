@@ -169,7 +169,7 @@ def defineQuantifierHelper (inBinder : Bool) (quantKind : String) (varDecls : St
     | .none =>
       s!"({quantKind} ({varDecls}) {tEnc})"
     | .some trEnc =>
-      s!"({quantKind} ({varDecls}) (! {tEnc} !pattern {trEnc}))"
+      s!"({quantKind} ({varDecls}) (! {tEnc} :pattern ({trEnc})))"
 
 def defineMultiAll (inBinder : Bool) (args : List (String × TermType)) (trEnc: String) (tEnc : String) : EncoderM String := do
   let varDecls ← args.mapM (fun (x, ty) => do
