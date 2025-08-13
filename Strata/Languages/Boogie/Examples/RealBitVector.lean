@@ -9,7 +9,7 @@ import Strata.Languages.Boogie.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def realEnv : Program :=
+def realPgm : Program :=
 #strata
 program Boogie;
 
@@ -29,7 +29,7 @@ procedure P() returns ()
 /-- info: true -/
 #guard_msgs in
 -- No errors in translation.
-#eval TransM.run (translateProgram (realEnv.commands)) |>.snd |>.isEmpty
+#eval TransM.run (translateProgram (realPgm.commands)) |>.snd |>.isEmpty
 
 /--
 info: func x :  () → real;
@@ -46,7 +46,7 @@ assert [real_add_ge_bad] (((~Real.Ge : (arrow real (arrow real bool))) (((~Real.
 Errors: #[]
 -/
 #guard_msgs in
-#eval TransM.run (translateProgram (realEnv.commands))
+#eval TransM.run (translateProgram (realPgm.commands))
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -98,11 +98,11 @@ Result: failed
 CEx:
 -/
 #guard_msgs in
-#eval verify "cvc5" realEnv
+#eval verify "cvc5" realPgm
 
 ---------------------------------------------------------------------
 
-def bvEnv : Program :=
+def bvPgm : Program :=
 #strata
 program Boogie;
 
@@ -128,7 +128,7 @@ spec {
 /-- info: true -/
 #guard_msgs in
 -- No errors in translation.
-#eval TransM.run (translateProgram (bvEnv.commands)) |>.snd |>.isEmpty
+#eval TransM.run (translateProgram (bvPgm.commands)) |>.snd |>.isEmpty
 
 /--
 info: func x :  () → bv8;
@@ -150,7 +150,7 @@ body: r := (((~Bv1.Add : (arrow bv1 (arrow bv1 bv1))) x) x)
 Errors: #[]
 -/
 #guard_msgs in
-#eval TransM.run (translateProgram (bvEnv.commands))
+#eval TransM.run (translateProgram (bvPgm.commands))
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -181,4 +181,4 @@ Obligation: Q_ensures_0
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" bvEnv
+#eval verify "cvc5" bvPgm

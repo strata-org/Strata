@@ -8,9 +8,9 @@
 import Strata.Languages.Boogie.Verifier
 
 ---------------------------------------------------------------------
-namespace Strata
+open Strata
 
-def mapEnv : Environment :=
+private def mapPgm :=
 #strata
 program Boogie;
 
@@ -40,7 +40,7 @@ spec {
 /-- info: true -/
 #guard_msgs in
 -- No errors in translation.
-#eval TransM.run (translateProgram (mapEnv.commands)) |>.snd |>.isEmpty
+#eval TransM.run (translateProgram (mapPgm.commands)) |>.snd |>.isEmpty
 
 /--
 info: var (a : (Map int int)) := init_a_0
@@ -61,7 +61,7 @@ assert [mix] ((((~select : (arrow (Map int int) (arrow int int))) a) (#1 : int))
 Errors: #[]
 -/
 #guard_msgs in
-#eval TransM.run (translateProgram (mapEnv.commands))
+#eval TransM.run (translateProgram (mapPgm.commands))
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -121,6 +121,6 @@ Obligation: mix
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" mapEnv
+#eval verify "cvc5" mapPgm
 
 ---------------------------------------------------------------------

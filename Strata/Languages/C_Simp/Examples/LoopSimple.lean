@@ -7,7 +7,7 @@
 import Strata.Languages.C_Simp.C_Simp
 import Strata.Languages.C_Simp.Verify
 
-def LoopSimpleEnv :=
+def LoopSimplePgm :=
 #strata
 program C_Simp;
 
@@ -50,7 +50,7 @@ procedureloopSimple(n:int)->int@pre(n)>=(#(0))@posttrue({
   )
 -/
 #guard_msgs in
-#eval IO.println LoopSimpleEnv.format.render
+#eval IO.println LoopSimplePgm.format.render
 
 /--
 info: function loopSimple {
@@ -68,7 +68,7 @@ return := sum
 }
 -/
 #guard_msgs in
-#eval Strata.C_Simp.get_program LoopSimpleEnv
+#eval Strata.C_Simp.get_program LoopSimplePgm
 
 /--
 info: (procedure loopSimple :  ((n : int)) → ((return : int)))
@@ -101,7 +101,7 @@ assert [sum_assert] (((~Int.Div ((~Int.Mul n) ((~Int.Sub n) #1))) #2) == sum)
 return := sum
 -/
 #guard_msgs in
-#eval Strata.to_boogie (Strata.C_Simp.get_program LoopSimpleEnv)
+#eval Strata.to_boogie (Strata.C_Simp.get_program LoopSimplePgm)
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -191,4 +191,4 @@ Obligation: post
 Result: verified
 -/
 #guard_msgs in
-#eval Strata.C_Simp.verify "cvc5" LoopSimpleEnv
+#eval Strata.C_Simp.verify "cvc5" LoopSimplePgm
