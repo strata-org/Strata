@@ -7,7 +7,7 @@
 import Strata.Languages.C_Simp.C_Simp
 import Strata.Languages.C_Simp.Verify
 
-def CoprimeEnv :=
+def CoprimePgm :=
 #strata
 program C_Simp;
 
@@ -57,7 +57,7 @@ info: program C_Simp;
   )
 -/
 #guard_msgs in
-#eval IO.println CoprimeEnv.format.render
+#eval IO.println CoprimePgm.format.render
 
 
 /--
@@ -78,7 +78,7 @@ Errors: #[]
 -/
 #guard_msgs in
 open Strata.C_Simp in
-#eval TransM.run (translateProgram (CoprimeEnv.commands))
+#eval TransM.run (translateProgram (CoprimePgm.commands))
 
 /--
 info: (procedure coprime :  ((a : int) (b : int)) → ((return : bool)))
@@ -111,4 +111,4 @@ else{}
 return := #true
 -/
 #guard_msgs in
-#eval Strata.to_boogie (Strata.C_Simp.get_program CoprimeEnv)
+#eval Strata.to_boogie (Strata.C_Simp.get_program CoprimePgm)

@@ -7,7 +7,7 @@
 import Strata.Languages.C_Simp.C_Simp
 import Strata.Languages.C_Simp.Verify
 
-def TrivialEnv :=
+def TrivialPgm :=
 #strata
 program C_Simp;
 
@@ -30,7 +30,7 @@ info: program C_Simp;
   )
 -/
 #guard_msgs in
-#eval IO.println TrivialEnv.format.render
+#eval IO.println TrivialPgm.format.render
 
 /--
 info: function trivial {
@@ -42,7 +42,7 @@ return := #true
 Errors: #[]
 -/
 #guard_msgs in
-#eval Strata.C_Simp.TransM.run (Strata.C_Simp.translateProgram (TrivialEnv.commands))
+#eval Strata.C_Simp.TransM.run (Strata.C_Simp.translateProgram (TrivialPgm.commands))
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -61,4 +61,4 @@ Obligation: post
 Result: verified
 -/
 #guard_msgs in
-#eval Strata.C_Simp.verify "cvc5" TrivialEnv
+#eval Strata.C_Simp.verify "cvc5" TrivialPgm

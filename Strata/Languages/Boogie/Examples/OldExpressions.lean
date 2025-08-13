@@ -9,7 +9,7 @@ import Strata.Languages.Boogie.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def oldExprEnv : Program :=
+def oldExprPgm : Program :=
 #strata
 program Boogie;
 var g : bool;
@@ -155,6 +155,6 @@ Obligation: T2_b_eq_false
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" oldExprEnv
+#eval verify "cvc5" oldExprPgm
 
 ---------------------------------------------------------------------

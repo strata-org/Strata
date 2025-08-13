@@ -7,7 +7,7 @@
 import Strata.Languages.C_Simp.C_Simp
 import Strata.Languages.C_Simp.Verify
 
-def MinEnv :=
+def MinPgm :=
 #strata
 program C_Simp;
 
@@ -39,7 +39,7 @@ info: program C_Simp;
   )
 -/
 #guard_msgs in
-#eval IO.println MinEnv.format.render
+#eval IO.println MinPgm.format.render
 
 /--
 info: function min {
@@ -53,7 +53,7 @@ Errors: #[]
 -/
 #guard_msgs in
 open Strata.C_Simp in
-#eval TransM.run (translateProgram (MinEnv.commands))
+#eval TransM.run (translateProgram (MinPgm.commands))
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -74,4 +74,4 @@ Obligation: post
 Result: verified
 -/
 #guard_msgs in
-#eval Strata.C_Simp.verify "cvc5" MinEnv
+#eval Strata.C_Simp.verify "cvc5" MinPgm

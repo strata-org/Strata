@@ -9,7 +9,7 @@ import Strata.Languages.Boogie.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def typeDeclEnv1 : Program :=
+private def typeDeclPgm1 : Program :=
 #strata
 program Boogie;
 type Foo (a : Type, b : Type);
@@ -25,7 +25,7 @@ procedure P () returns () {
 
 /-- info: #[] -/
 #guard_msgs in
-#eval TransM.run (translateProgram (typeDeclEnv1.commands)) |>.snd
+#eval TransM.run (translateProgram (typeDeclPgm1.commands)) |>.snd
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -44,7 +44,7 @@ Obligation: f_test
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" typeDeclEnv1
+#eval verify "cvc5" typeDeclPgm1
 
 --------------------------------------------------------------------
 
