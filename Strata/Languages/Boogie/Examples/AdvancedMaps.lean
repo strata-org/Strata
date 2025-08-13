@@ -53,7 +53,7 @@ spec {
 #eval TransM.run (translateProgram (mapPgm.commands)) |>.snd |>.isEmpty
 
 /--
-type MapII := (Map int int)
+info: type MapII := (Map int int)
 type MapIMapII := (Map int MapII)
 var (a : MapII) := init_a_0
 var (b : (Map bool int)) := init_b_1
@@ -61,7 +61,7 @@ var (c : (Map int MapII)) := init_c_2
 (procedure P :  () → ())
 modifies: [a, b, c]
 preconditions: (P_requires_3, ((((~select : (arrow (Map int int) (arrow int int))) a) (#0 : int)) == (#0 : int))) (P_requires_4, ((((~select : (arrow (Map int MapII) (arrow int MapII))) c) (#0 : int)) == a))
-postconditions:
+postconditions: ⏎
 body: assert [c_0_eq_a] ((((~select : (arrow (Map int MapII) (arrow int MapII))) c) (#0 : int)) == a)
 c := ((((~update : (arrow (Map int MapII) (arrow int (arrow MapII (Map int MapII))))) c) (#1 : int)) a)
 assert [c_1_eq_a] ((((~select : (arrow (Map int MapII) (arrow int MapII))) c) (#1 : int)) == a)
