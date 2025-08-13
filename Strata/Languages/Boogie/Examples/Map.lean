@@ -6,10 +6,10 @@
 
 import Strata.Languages.Boogie.Verifier
 
----------------------------------------------------------------------
-namespace Strata
+open Strata
 
-def mapPgm : Program :=
+---------------------------------------------------------------------
+private def mapPgm :=
 #strata
 program Boogie;
 

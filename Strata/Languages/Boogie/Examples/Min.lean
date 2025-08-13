@@ -9,7 +9,7 @@ import Strata.Languages.Boogie.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def testEnv : Program :=
+private def testPgm : Program :=
 #strata
 program Boogie;
 
@@ -41,6 +41,6 @@ Obligation: min_ensures_0
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" testEnv
+#eval verify "cvc5" testPgm
 
 ---------------------------------------------------------------------
