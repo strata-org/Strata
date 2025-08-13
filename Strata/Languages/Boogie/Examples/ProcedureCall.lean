@@ -9,7 +9,7 @@ import Strata.Languages.Boogie.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def globalCounterEnv : Program :=
+def globalCounterPgm : Program :=
 #strata
 program Boogie;
 
@@ -116,7 +116,7 @@ Obligation: assert: (#true : bool)
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" globalCounterEnv
+#eval verify "cvc5" globalCounterPgm
 
 ---------------------------------------------------------------------
 
