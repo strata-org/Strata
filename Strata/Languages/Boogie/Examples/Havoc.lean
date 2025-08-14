@@ -24,7 +24,7 @@ procedure S() returns ()
 /-- info: true -/
 #guard_msgs in
 -- No errors in translation.
-#eval TransM.run (translateProgram (havocPgm.commands)) |>.snd |>.isEmpty
+#eval TransM.run (translateProgram havocPgm) |>.snd |>.isEmpty
 
 /--
 info: (procedure S :  () → ())
@@ -39,7 +39,7 @@ assert [x_eq_1] (x == (#1 : int))
 Errors: #[]
 -/
 #guard_msgs in
-#eval TransM.run (translateProgram (havocPgm.commands))
+#eval TransM.run (translateProgram havocPgm)
 
 /--
 info: [Strata.Boogie] Type checking succeeded.

@@ -63,7 +63,7 @@ fn and (x : bool, y : bool) : bool => x "&&" y;
 fn or  (x : bool, y : bool) : bool => x "||" y;
 
 
-fn to_int (n : Num) : int => "#" n;
+fn to_int (n : Num) : int => n;
 
 fn len (a : intArr) : int => "len(" a ")";
 fn get (a : intArr, i: int) : int => "get(" a "," i ")";
@@ -76,15 +76,8 @@ op block (stmts : Seq Statement) : Block => "{\n" stmts "}\n";
 @[declare(v, tp)]
 op init_decl (v : Ident, tp : Type) : Statement => "var" v ":" tp ";\n";
 
-@[declare(v, tp)]
-op init_def (v : Ident, tp : Type, val : tp) : Statement => "var" "(" v ":" tp ")" ":=" val ";\n";
-
-op assert (lbl : Ident, c : bool) : Statement => "@assert" "[" lbl "]" c ";\n";
-
-op assume (lbl : Ident, c : bool) : Statement => "@assume" "[" lbl "]" c ";\n";
-
 category Else;
-op if_command (c : bool, t : Block, f : Else) : Statement => "if" "(" c ")" "then" t f;
+op if_command (c : bool, t : Block, f : Else) : Statement => "if" "(" c ")" t f;
 op else1 (f : Block) : Else => "else" f;
 op else0 () : Else =>;
 
@@ -97,17 +90,17 @@ category Bindings;
 op mkBindings (bindings : CommaSepBy Binding) : Bindings => "(" bindings ")";
 
 category MeasureCat;
-op measure (e : int) : MeasureCat => "@decreases" e;
+op measure (e : int) : MeasureCat => "//@decreases" e;
 
 category InvariantCat;
-op invariant (e : bool) : InvariantCat => "@invariant" e;
+op invariant (e : bool) : InvariantCat => "//@invariant" e;
 
 op while_command (g : bool,
                   measure: Option MeasureCat,
                   invariant: Option InvariantCat,
-                  b : Block) : Statement => "while"  "(" g ")" measure invariant b;
+                  b : Block) : Statement => "while"  "(" g ")\n" measure invariant b;
 
-op assign (tp : Type, v : Ident, val : tp) : Statement => v ":=" val ";\n";
+op assign (tp : Type, v : Ident, val : tp) : Statement => v "=" val ";\n";
 op return (tp: Type, e : tp) : Statement => "return" e ";\n";
 
 op procedure (retType: Type,
@@ -116,8 +109,38 @@ op procedure (retType: Type,
               name : Ident,
               @[scope(b)] pre: bool,
               @[scope(b)] post: bool,
-              @[scope(b)] body : Block) : Command => "procedure" name typeArgs b "->" retType
-                                                     "@pre" indent(2, pre)
-                                                     "@post" indent(2, post)
+              @[scope(b)] body : Block) : Command => retType "procedure" name typeArgs b
+                                                     "//@pre" indent(2, pre) ";\n"
+                                                     "//@post" indent(2, post) ";\n"
                                                      indent(2, body);
+
+category Annotation;
+op assert (lbl : Ident, c: bool) : Annotation => "//@assert [" lbl "]" c";\n";
+op assume (lbl : Ident, c: bool) : Annotation => "//@assume [" lbl "]" c";\n";
+op annotation (a : Annotation) : Statement => a;
+
+#end
+
+
+-- Test
+private def testPrg :=
+#strata
+program C_Simp;
+
+int procedure simpleTest (x: int, y: int)
+  //@pre y > 0;
+  //@post true;
+{
+  var z : int;
+  z = x + y;
+  //@assert [test_assert] z > x;
+  if (z > 10) {
+    z = z - 1;
+  } else {
+    z = z + 1;
+  }
+  //@assume [test_assume] z > 0;
+  return 0;
+}
+
 #end

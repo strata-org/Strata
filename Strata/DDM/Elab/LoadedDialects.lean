@@ -69,3 +69,5 @@ def ofDialects! (ds : Array Dialect) : LoadedDialects :=
   ds.foldl (init := .empty) (·.addDialect! ·)
 
 end LoadedDialects
+
+abbrev LoadDialectCallback := DialectName → StateT LoadedDialects BaseIO (Except String Dialect)

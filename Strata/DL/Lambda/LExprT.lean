@@ -174,7 +174,7 @@ def inferFVar (T : (TEnv Identifier)) (x : Identifier) (fty : Option LMonoTy) :
     | some fty =>
       -- We do not support expressions to be annotated with type synonyms yet.
       -- As such, if `fty` is a synonym, then the following may raise an error.
-      let S ← Constraints.unify [(fty, ty)] T.state.subst
+      let S ← Constraints.unify [(fty, ty)] T.state.substInfo
       .ok (ty, TEnv.updateSubst T S)
 
 /--
@@ -308,7 +308,7 @@ partial def inferOp (T : (TEnv Identifier)) (o : Identifier) (oty : Option LMono
             let (body_typed, T) ← fromLExprAux T body
             let bodyty := body_typed.toLMonoTy
             let (retty, T) ← func.outputPolyType.instantiateWithCheck T
-            let S ← Constraints.unify [(retty, bodyty)] T.state.subst
+            let S ← Constraints.unify [(retty, bodyty)] T.state.substInfo
             let T := T.updateSubst S
             let T := T.popContext
             .ok T
@@ -318,7 +318,7 @@ partial def inferOp (T : (TEnv Identifier)) (o : Identifier) (oty : Option LMono
       match oty with
       | none => .ok (ty, T)
       | some cty =>
-        let S ← Constraints.unify [(cty, ty)] T.state.subst
+        let S ← Constraints.unify [(cty, ty)] T.state.substInfo
         .ok (ty, TEnv.updateSubst T S)
 
 partial def fromLExprAux.ite (T : (TEnv Identifier)) (c th el : (LExpr Identifier)) := do
@@ -328,7 +328,7 @@ partial def fromLExprAux.ite (T : (TEnv Identifier)) (c th el : (LExpr Identifie
   let cty := ct.toLMonoTy
   let tty := tt.toLMonoTy
   let ety := et.toLMonoTy
-  let S ← Constraints.unify [(cty, LMonoTy.bool), (tty, ety)] T.state.subst
+  let S ← Constraints.unify [(cty, LMonoTy.bool), (tty, ety)] T.state.substInfo
   .ok (.ite ct tt et tty, TEnv.updateSubst T S)
 
 partial def fromLExprAux.eq (T : (TEnv Identifier)) (e1 e2 : (LExpr Identifier)) := do
@@ -338,7 +338,7 @@ partial def fromLExprAux.eq (T : (TEnv Identifier)) (e1 e2 : (LExpr Identifier))
   let (e2t, T) ← fromLExprAux T e2
   let ty1 := e1t.toLMonoTy
   let ty2 := e2t.toLMonoTy
-  let S ← Constraints.unify [(ty1, ty2)] T.state.subst
+  let S ← Constraints.unify [(ty1, ty2)] T.state.substInfo
   .ok (.eq e1t e2t LMonoTy.bool, TEnv.updateSubst T S)
 
 partial def fromLExprAux.abs (T : (TEnv Identifier)) (oty : Option LMonoTy) (e : (LExpr Identifier)) := do
@@ -352,7 +352,7 @@ partial def fromLExprAux.abs (T : (TEnv Identifier)) (oty : Option LMonoTy) (e :
   let etclosed := .varClose 0 xv et
   let T := T.eraseFromContext xv
   let ty := (.tcons "arrow" [(.ftvar xt'), ety])
-  let mty := LMonoTy.subst T.state.subst ty
+  let mty := LMonoTy.subst T.state.substInfo.subst ty
   match mty, oty with
   | .arrow aty _, .some ty =>
     if aty == ty
@@ -368,9 +368,9 @@ partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (ot
   let S ← match oty with
   | .some ty =>
     let (optTyy, T) := (ty.aliasInst T)
-    (Constraints.unify [(.ftvar xt', optTyy.getD ty)] T.state.subst)
+    (Constraints.unify [(.ftvar xt', optTyy.getD ty)] T.state.substInfo)
   | .none =>
-    .ok T.state.subst
+    .ok T.state.substInfo
 
   let T := TEnv.updateSubst T S
 
@@ -378,7 +378,7 @@ partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (ot
   let e' := LExpr.varOpen 0 (xv, some (.ftvar xt')) e
   let (et, T) ← fromLExprAux T e'
   let ety := et.toLMonoTy
-  let mty := LMonoTy.subst T.state.subst (.ftvar xt')
+  let mty := LMonoTy.subst T.state.substInfo.subst (.ftvar xt')
   match oty with
   | .some ty =>
     let (optTyy, _) := (ty.aliasInst T)
@@ -400,8 +400,8 @@ partial def fromLExprAux.app (T : (TEnv Identifier)) (e1 e2 : (LExpr Identifier)
   let ty2 := e2t.toLMonoTy
   let (fresh_name, T) := TEnv.genTyVar T
   let freshty := (.ftvar fresh_name)
-  let S ← Constraints.unify [(ty1, (.tcons "arrow" [ty2, freshty]))] T.state.subst
-  let mty := LMonoTy.subst S freshty
+  let S ← Constraints.unify [(ty1, (.tcons "arrow" [ty2, freshty]))] T.state.substInfo
+  let mty := LMonoTy.subst S.subst freshty
   .ok (.app e1t e2t mty, TEnv.updateSubst T S)
 
 end
@@ -409,7 +409,7 @@ end
 protected def fromLExpr (T : (TEnv Identifier)) (e : (LExpr Identifier)) :
     Except Format ((LExprT Identifier) × (TEnv Identifier)) := do
   let (et, T) ← fromLExprAux T e
-  .ok (LExprT.applySubst et T.state.subst, T)
+  .ok (LExprT.applySubst et T.state.substInfo.subst, T)
 
 protected def fromLExprs (T : (TEnv Identifier)) (es : List (LExpr Identifier)) :
     Except Format (List (LExprT Identifier) × (TEnv Identifier)) := do
