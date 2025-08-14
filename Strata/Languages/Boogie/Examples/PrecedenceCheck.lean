@@ -9,7 +9,7 @@ import Strata.Languages.Boogie.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def precEnv : Program :=
+def precPgm : Program :=
 #strata
 program Boogie;
 
@@ -86,7 +86,7 @@ Obligation: implies_equiv
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" precEnv
+#eval verify "cvc5" precPgm
 
 end Strata
 

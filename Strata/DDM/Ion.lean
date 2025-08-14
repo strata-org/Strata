@@ -46,7 +46,6 @@ end StructArgMap
 
 structure FromIonContext where
   symbols : Ion.SymbolTable
-  dialects : DialectMap
 
 def FromIonM := ReaderT FromIonContext (Except String)
   deriving Monad
@@ -58,7 +57,6 @@ instance : MonadExcept String FromIonM :=
 
 instance : MonadReader FromIonContext FromIonM :=
   inferInstanceAs (MonadReader _ (ReaderT _ _))
-
 
 def readSymbolTable : FromIonM Ion.SymbolTable :=
   return (← read).symbols
@@ -178,7 +176,7 @@ def mapFields {size} (args : Array (SymbolId × Ion SymbolId)) (m : StructArgMap
     let (a, assigned) ← args.attach.foldlM (init := (a, assigned)) fun (a, assigned) ⟨(fldIdx, arg), argp⟩ => do
       let fld ← .lookupSymbol fldIdx
       let some idx := m[fld]?
-        | throw s!"Unknown field {fld}: {m.map.keys}"
+        | throw s!"Unknown field {fld} ({fldIdx.value}): {m.map.keys}"
       if assigned[idx] then
         throw s!"Field {fld} already assigned."
       let assigned := assigned.set idx true
@@ -192,16 +190,7 @@ def asFieldStruct {size} (v : Ion SymbolId) (m : StructArgMap size) : FromIonM (
   let ⟨args, _⟩ ← asStruct v
   mapFields args m
 
-end FromIonM
-
-class FromIon (α : Type) where
-  fromIon : Ion SymbolId → FromIonM α
-
-export Strata.FromIon (fromIon)
-
-namespace FromIon
-
-def deserialize {α} [FromIon α] (dialects : DialectMap) (bs : ByteArray) : Except String α := do
+def deserializeValue {α} (bs : ByteArray) (act : Ion SymbolId → FromIonM α) : Except String α := do
   let a ←
     match Ion.deserialize bs with
     | .error (off, msg) =>
@@ -217,11 +206,24 @@ def deserialize {α} [FromIon α] (dialects : DialectMap) (bs : ByteArray) : Exc
         | .error (p, msg) => throw s!"Error at {p}: {msg}"
         | .ok symbols => pure symbols
   let ionv : Ion SymbolId := entries[1]!
-  match FromIon.fromIon ionv { symbols := symbols, dialects := dialects }with
+  match act ionv { symbols := symbols }with
   | .error msg =>
     throw s!"Error decoding {msg}"
   | .ok res =>
     pure res
+
+
+end FromIonM
+
+class FromIon (α : Type) where
+  fromIon : Ion SymbolId → FromIonM α
+
+export Strata.FromIon (fromIon)
+
+namespace FromIon
+
+def deserialize {α} [FromIon α] (bs : ByteArray) : Except String α :=
+  FromIonM.deserializeValue bs FromIon.fromIon
 
 end FromIon
 
@@ -766,11 +768,11 @@ protected def fromIon (fields : Array (SymbolId × Ion SymbolId)) : FromIonM OpD
   let m := .fromList! ["type", "name", "bindings", "category", "syntax", "metadata"]
   let args ← .mapFields fields m
   pure {
-    name := ← fromIon args[1],
-    argDecls := ← fromIon args[2],
-    category := ← fromIon args[3],
-    syntaxDef := ← fromIon args[4],
-    metadata := ← fromIon args[5],
+    name := ← fromIon args[1]
+    argDecls := ← fromIon args[2]
+    category := ← fromIon args[3]
+    syntaxDef := ← fromIon args[4]
+    metadata := ← fromIon args[5]
   }
 
 end OpDecl
@@ -789,8 +791,8 @@ protected def fromIon (fields : Array (SymbolId × Ion SymbolId)) : FromIonM Typ
   let m := .fromList! ["type", "name", "argNames"]
   let args ← .mapFields fields m
   pure {
-    name := ← fromIon args[1],
-    argNames := ← fromIon args[2],
+    name := ← fromIon args[1]
+    argNames := ← fromIon args[2]
   }
 
 end TypeDecl
@@ -802,7 +804,7 @@ instance : CachedToIon FunctionDecl where
     return .struct #[
       (ionSymbol! "type", ionSymbol! "fn"),
       (ionSymbol! "name", .string d.name),
-      (ionSymbol! "bindings", ← ionRef! d.argDecls),
+      (ionSymbol! "bindings", ← CachedToIon.cachedToIon (ionRefEntry! d.argDecls[0]!) d.argDecls),
       (ionSymbol! "result", ← ionRef! d.result),
       (ionSymbol! "schema", ← ionRef! d.syntaxDef),
       (ionSymbol! "metadata", ← ionRef! d.metadata)
@@ -812,11 +814,11 @@ protected def fromIon (fields : Array (SymbolId × Ion SymbolId)) : FromIonM Fun
   let m := .fromList! ["type", "name", "bindings", "result", "schema", "metadata"]
   let args ← .mapFields fields m
   pure {
-    name := ← fromIon args[1],
-    argDecls := ← fromIon args[2],
-    result := ← fromIon args[3],
-    syntaxDef := ← fromIon args[4],
-    metadata := ← fromIon args[5],
+    name := ← fromIon args[1]
+    argDecls := ← fromIon args[2]
+    result := ← fromIon args[3]
+    syntaxDef := ← fromIon args[4]
+    metadata := ← fromIon args[5]
   }
 
 end FunctionDecl
@@ -835,8 +837,8 @@ protected def fromIon (fields : Array (SymbolId × Ion SymbolId)) : FromIonM Met
   let m := .fromList! ["type", "name", "args"]
   let args ← .mapFields fields m
   pure {
-    name := ← fromIon args[1],
-    args := ← fromIon args[2],
+    name := ← fromIon args[1]
+    args := ← fromIon args[2]
   }
 
 end MetadataDecl
@@ -1075,10 +1077,7 @@ instance : CachedToIon Program where
 
 #declareIonSymbolTable Program
 
-def fromIonDecls (dialect : DialectName) (args : Array (Ion SymbolId)) (start : Nat := 0) : FromIonM Program := do
-  let dialects := (← read).dialects
-  if dialect ∉ dialects then
-    throw s!"Unknown dialect {dialect}."
+def fromIonDecls (dialects : DialectMap) (dialect : DialectName) (args : Array (Ion SymbolId)) (start : Nat := 0) : FromIonM Program := do
   let commands ← args.foldlM (init := #[]) (start := start) fun cmds u => do
     cmds.push <$> Operation.fromIon u
   return {
@@ -1087,15 +1086,14 @@ def fromIonDecls (dialect : DialectName) (args : Array (Ion SymbolId)) (start : 
     commands := commands
   }
 
-instance : FromIon Program where
-  fromIon v := do
-    let ⟨args, _⟩ ← .asList v
-    let .isTrue ne := inferInstanceAs (Decidable (args.size ≥ 1))
-      | throw s!"Expected header"
-    match ← Header.fromIon args[0] with
-    | .program dialect =>
-      fromIonDecls dialect args (start := 1)
-    | .dialect _ =>
-      throw s!"Expected program"
+protected def fromIon (dialects : DialectMap) (v : Ion SymbolId) : FromIonM Program := do
+  let ⟨args, _⟩ ← .asList v
+  let .isTrue ne := inferInstanceAs (Decidable (args.size ≥ 1))
+    | throw s!"Expected header"
+  match ← Header.fromIon args[0] with
+  | .program dialect =>
+    fromIonDecls dialects dialect args (start := 1)
+  | .dialect _ =>
+    throw s!"Expected program"
 
 end Program

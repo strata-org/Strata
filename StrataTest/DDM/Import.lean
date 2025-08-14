@@ -11,12 +11,12 @@ import StrataTest.DDM.Elab
 error: Unknown dialect FailTest.
 -/
 #guard_msgs in
-def testEnvFail :=
+def testPgmFail :=
 #strata
 program FailTest;
 #end
 
-def testEnv :=
+def testPgm :=
 #strata
 program Test;
 assert;

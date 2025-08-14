@@ -37,7 +37,7 @@ JVM-based languages, Rust, Python and JavaScript/TypeScript.
 # Strata Dialect Definitions
 
 Dialects are the core mechanism in Strata used to declare and extend program
-intermediata representations.   A Strata dialect defines new syntactic categories,
+intermediate representations.   A Strata dialect defines new syntactic categories,
 operations, types, functions and metadata.  Strata dialects are composable and
 can be used to define extensions that can be used in multiple languages.  There
 is a builtin dialect, called `Init` that provides some basic declarations that
@@ -79,7 +79,7 @@ the example code.  The [Strata Dialect Language Reference](#reference)
 contains additional detail on the commands.
 
 ```
-#dialect Bool;
+dialect Bool;
 // Introduce Boolean type
 type Bool;
 
@@ -89,19 +89,19 @@ fn false_lit : Bool => "false";
 
 // Introduce basic Boolean operations.
 fn not_expr (tp : Type, a : tp) : tp => "-" a;
-fn and (a : bool, b : bool) : bool => @[prec(10), leftassoc] a " && " b;
-fn or (a : bool, b : bool) : bool => @[prec(8), leftassoc] a " || " b;
-fn imp (a : bool, b : bool) : bool => @[prec(8), leftassoc] a " ==> " b;
+fn and (a : Bool, b : Bool) : Bool => @[prec(10), leftassoc] a " && " b;
+fn or (a : Bool, b : Bool) : Bool => @[prec(8), leftassoc] a " || " b;
+fn imp (a : Bool, b : Bool) : Bool => @[prec(8), leftassoc] a " ==> " b;
 
 // Introduce equality operations that work for arbitrary types.
 // The type is inferred.
-fn equal (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a " == " b;
-fn not_equal (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a " != " b;
+fn equal (tp : Type, a : tp, b : tp) : Bool => @[prec(15)] a " == " b;
+fn not_equal (tp : Type, a : tp, b : tp) : Bool => @[prec(15)] a " != " b;
 ```
 
 We can then extend thse operations with an Integer type and operations.
 ```
-#dialect Arith;
+dialect Arith;
 import Bool;
 
 type Int;
@@ -111,10 +111,10 @@ fn sub_expr (a : Int, b : Int) : Int => @[prec(25), leftassoc] a " - " b;
 fn mul_expr (a : Int, b : Int) : Int => @[prec(30), leftassoc] a " * " b;
 fn exp_expr (a : Int, b : Int) : Int => @[prec(32), rightassoc] a " ^ " b;
 
-fn le (a : Int, b : Int) : bool => @[prec(15)] a " <= " b;
-fn lt (a : Int, b : Int) : bool => @[prec(15)] a " < " b;
-fn ge (a : Int, b : Int) : bool => @[prec(15)] a " >= " b;
-fn gt (a : Int, b : Int) : bool => @[prec(15)] a " > " b;
+fn le (a : Int, b : Int) : Bool => @[prec(15)] a " <= " b;
+fn lt (a : Int, b : Int) : Bool => @[prec(15)] a " < " b;
+fn ge (a : Int, b : Int) : Bool => @[prec(15)] a " >= " b;
+fn gt (a : Int, b : Int) : Bool => @[prec(15)] a " > " b;
 ```
 
 By itself, these dialects do not define a new language.  To define a
@@ -124,7 +124,7 @@ commands for assertions and defining functions:
 
 ```
 dialect AssertLang;
-import Arith; // Automatically imports Bool dependency of Arirth
+import Arith; // Automatically imports Bool dependency of Arith
 
 // This introduces a new operator into the Command category.
 op assert (b : Bool) : Command => "assert " b ";";
@@ -265,7 +265,7 @@ creation of typed IRs in Strata.
    type inference that allows it to automatically infer type arguments as long as
    an expression argument uses that type.
  * Unlike categories, user types may contain parameters and parameters may themselves
-   by variables.  This allows more general functions than can be supported by operators
+   be variables.  This allows more general functions than can be supported by operators
    such as a polymorphic length function over lists.
  * Types use a standardized syntax that do not require syntax definitions for each type.
  * After parsing, expressions are type checked to ensure that the syntax is well
@@ -278,7 +278,7 @@ creation of typed IRs in Strata.
 Declares a new type with optional parameters with names given by the identifiers
 _id1_, _id2_, ...
 
-The code below declares a type `Bool` for Booleans and a.
+The code below declares a type `Bool` and a polymorphic Map type.
 ```
 type Bool;
 type Map (dom : Type, range : Type);  -- Ex. Map Nat Bool
@@ -303,7 +303,7 @@ tag := "metadata"
 %%%
 
 The Stata `Init` dialect provides a builtin `Init.Metadata` category that allows metadata
-to be declared, and attached to other declarations in dialects.  Predefined metadata attributes
+to be declared and attached to other declarations in dialects.  Predefined metadata attributes
 are used in dialect definitions for
 [defining precedence and type checking](#parsing_typechecking), but additional metadata
 attributes can be declared in dialects to build new capabilities on top of Strata.  The goal
@@ -425,7 +425,7 @@ be defined in user definable dialects.
 * Parsing for primitive literals and identifiers cannot be directly in syntax definitions.
   To accomodate this, the `Init` dialect introduces the syntactic categories for this:
 
-  * `Init.Ident` represents to identifiers.  These are alphanumeric sequences that start with
+  * `Init.Ident` represents identifiers.  These are alphanumeric sequences that start with
     a letter that are not otherwise used as keywords in a dialect.
 
   * `Init.Str` represents string literals.  These are delimited by double quotes and use escaping

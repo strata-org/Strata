@@ -147,8 +147,8 @@ structure TState where
   tyPrefix : String := "$__ty"
   exprGen : Nat := 0
   exprPrefix : String := "$__var"
-  subst : Subst := []
-  deriving DecidableEq, Repr
+  substInfo : SubstInfo := SubstInfo.empty
+  deriving Repr
 
 def TState.init : TState := {}
 
@@ -176,7 +176,7 @@ instance : ToFormat TState where
        tyPrefix: {ts.tyPrefix}{Format.line}\
        exprGen: {ts.exprGen}{Format.line}\
        exprPrefix: {ts.exprPrefix}{Format.line}\
-       subst: {ts.subst}"
+       subst: {ts.substInfo.subst}"
 
 ---------------------------------------------------------------------
 
@@ -225,8 +225,8 @@ def TEnv.addFactoryFunctions (T : TEnv Identifier) (fact : @Factory Identifier) 
 /--
 Replace the global substitution in `T.state.subst` with `S`.
 -/
-def TEnv.updateSubst (T : (TEnv Identifier)) (S : Subst) : (TEnv Identifier) :=
-  { T with state := { T.state with subst := S }}
+def TEnv.updateSubst (T : (TEnv Identifier)) (S : SubstInfo) : (TEnv Identifier) :=
+  { T with state := { T.state with substInfo := S }}
 
 def TEnv.pushEmptyContext (T : (TEnv Identifier)) : (TEnv Identifier) :=
   let ctx := T.context
@@ -392,9 +392,9 @@ def LTy.aliasDef? (mty : LMonoTy) (T : (TEnv Identifier)) : (Option LMonoTy × (
     let (mtys, T) := LMonoTys.instantiate args [lhs, rhs] T
     match mtys with
     | [lhsty, rhsty] =>
-      match Constraints.unify [(mty, lhsty)] T.state.subst with
+      match Constraints.unify [(mty, lhsty)] T.state.substInfo with
       | .error _ => go mty arest T
-      | .ok S => (rhsty.subst S, T)
+      | .ok S => (rhsty.subst S.subst, T)
     | _ =>
       -- panic s!"[LTy.aliasBaseDef?] Implementation error!"
       -- (FIXME) Prove that the following is unreachable.
@@ -502,7 +502,7 @@ Is `ty` an instance of a previously registered type?
 -/
 def isInstanceOfKnownType (ty : LMonoTy) (T : (TEnv Identifier)) : Bool :=
   let tys := ty.getTyConstructors
-  tys.all (fun ty => go ty T.knownTypes T.state.subst T)
+  tys.all (fun ty => go ty T.knownTypes T.state.substInfo T)
   where go ty (knownTys : KnownTypes) S T : Bool :=
     match knownTys with
     | [] => false
@@ -562,7 +562,7 @@ it.
 -/
 def LTy.instantiateAndSubst (ty : LTy) (T : (TEnv Identifier)) : Except Format (LMonoTy × (TEnv Identifier)) := do
   let (mty, T) ← LTy.instantiateWithCheck ty T
-  let mty := LMonoTy.subst T.state.subst mty
+  let mty := LMonoTy.subst T.state.substInfo.subst mty
   return (mty, T)
 
 def LTy.instantiateAndSubsts (tys : List LTy) (T : (TEnv Identifier)) :
