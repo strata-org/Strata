@@ -24,6 +24,9 @@ if ! command -v lake &> /dev/null; then
     exit 1
 fi
 
+echo "Cleaning and building Strata ..."
+lake clean && lake build
+
 # Create CSV file with header
 CSV_FILE="strata_verify_results.csv"
 echo "filename,line_count,iteration,execution_time_seconds,z3_total_time_seconds" > "$CSV_FILE"
@@ -56,7 +59,7 @@ for file in "$DIR"/*.boogie.st; do
             # Measure execution time and run the command
             start_time=$(date +%s.%N)
             
-            if lake exe StrataVerify "$file" > /dev/null 2>&1; then
+            if ./.lake/build/bin/StrataVerify "$file" > /dev/null 2>&1; then
                 status="✓"
             else
                 status="✗"
