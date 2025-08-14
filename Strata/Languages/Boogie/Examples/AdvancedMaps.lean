@@ -50,7 +50,7 @@ spec {
 /-- info: true -/
 #guard_msgs in
 -- No errors in translation.
-#eval TransM.run (translateProgram (mapPgm.commands)) |>.snd |>.isEmpty
+#eval TransM.run (translateProgram mapPgm) |>.snd |>.isEmpty
 
 /--
 info: type MapII := (Map int int)
@@ -77,7 +77,7 @@ assert [mix] ((((~select : (arrow (Map int int) (arrow int int))) a) (#1 : int))
 Errors: #[]
 -/
 #guard_msgs in
-#eval TransM.run (translateProgram (mapPgm.commands))
+#eval TransM.run (translateProgram mapPgm)
 
 /--
 info: [Strata.Boogie] Type checking succeeded.

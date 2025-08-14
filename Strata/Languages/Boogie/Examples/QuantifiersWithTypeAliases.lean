@@ -33,7 +33,7 @@ procedure test(h: Heap, ref: Ref, field: Field) returns ()
 
 #end
 
-#guard TransM.run (translateProgram (QuantTypeAliases.commands)) |>.snd |>.isEmpty
+#guard TransM.run (translateProgram QuantTypeAliases) |>.snd |>.isEmpty
 
 /--
 info: type Boogie.Boundedness.Infinite Ref []
@@ -54,7 +54,7 @@ assert [assert: ((((~select : (arrow (Map Field int) (arrow Field int))) (((~sel
 Errors: #[]
 -/
 #guard_msgs in
-#eval TransM.run (translateProgram (QuantTypeAliases.commands))
+#eval TransM.run (translateProgram QuantTypeAliases)
 
 /-
 FIXME.  The code below triggers a unification error due to
