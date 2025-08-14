@@ -42,7 +42,7 @@ match ine with
     | .fvar name oty => .fvar (BoogieIdent.unres name) oty
     | .mdata info e => .mdata info (ToBoogieIdent e)
     | .abs oty e => .abs oty (ToBoogieIdent e)
-    | .quant k oty e => .quant k oty (ToBoogieIdent e)
+    | .quant k oty tr e => .quant k oty (ToBoogieIdent tr) (ToBoogieIdent e)
     | .app fn e => .app (ToBoogieIdent fn) (ToBoogieIdent e)
     | .ite c t e => .ite (ToBoogieIdent c) (ToBoogieIdent t) (ToBoogieIdent e)
     | .eq e1 e2 => .eq (ToBoogieIdent e1) (ToBoogieIdent e2)
