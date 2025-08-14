@@ -421,16 +421,23 @@ public class StrataGenerator : ReadOnlyVisitor {
             refExpr = expr.Args[1];
             fieldExpr = expr.Args[2];
         }
-        var heapTypeMatches = heapExpr?.Type is TypeSynonymAnnotation typeSyn && typeSyn.Decl == _heapTypeSyn;
-        var refTypeMatches = refExpr is not null && refExpr.Type.IsCtor && refExpr.Type.AsCtor?.Decl.Name == _refTypeCtor?.Name;
-        var fieldTypeMatches = fieldExpr is not null && fieldExpr.Type.IsCtor && fieldExpr.Type.AsCtor?.Decl.Name == _fieldTypeCtor?.Name;
+
+        if (heapExpr is null || refExpr is null || fieldExpr is null) {
+            return false;
+        }
+
+        var heapTypeMatches = heapExpr.Type is TypeSynonymAnnotation typeSyn && typeSyn.Decl == _heapTypeSyn;
+        var refTypeMatches = refExpr.Type.IsCtor && refExpr.Type.AsCtor?.Decl.Name == _refTypeCtor?.Name;
+        var fieldTypeMatches = fieldExpr.Type.IsCtor && fieldExpr.Type.AsCtor?.Decl.Name == _fieldTypeCtor?.Name;
+
         if (!heapTypeMatches || !refTypeMatches || !fieldTypeMatches) {
             return false;
         }
 
         var tyStr = expr.Type.ToString();
+        IEnumerable <Expr> args = [heapExpr, refExpr, fieldExpr];
         WriteText($"StrataHeapSelect_{tyStr}(");
-        EmitSeparated([heapExpr, refExpr, fieldExpr], e => VisitExpr(e), ", ");
+        EmitSeparated(args, e => VisitExpr(e), ", ");
         WriteText(")");
         return true;
     }
