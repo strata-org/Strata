@@ -70,7 +70,7 @@ inductive Term : Type where
   | none    : TermType → Term
   | some    : Term → Term
   | app     : Op → (args: List Term) → (retTy: TermType) → Term
-  | quant   : QuantifierKind → String → TermType → Term → Term
+  | quant   : QuantifierKind → (args: List (String × TermType)) → (tr: Term) → (body: Term) → Term
 deriving instance Repr, Inhabited for Term
 
 def Term.isVar (t : Term) : Bool :=
@@ -100,8 +100,8 @@ def Term.hasDecEq (t t' : Term) : Decidable (t = t') := by
     | isTrue h₁, isTrue h₂, isTrue h₃ => isTrue (by rw [h₁, h₂, h₃])
     | isFalse h₁, _, _ | _, isFalse h₁, _ | _, _, isFalse h₁ =>
       isFalse (by intro h₂; simp [h₁] at h₂)
-  case quant.quant qk x ty t qk' x' ty' t' =>
-    exact match decEq qk qk', decEq x x', decEq ty ty', Term.hasDecEq t t' with
+  case quant.quant qk args tr t qk' args' tr' t' =>
+    exact match decEq qk qk', decEq args args', Term.hasDecEq tr tr', Term.hasDecEq t t' with
     | isTrue h₁, isTrue h₂, isTrue h₃, isTrue h₄ => isTrue (by rw [h₁, h₂, h₃, h₄])
     | isFalse h₁, _, _, _ | _, isFalse h₁, _, _ | _, _, isFalse h₁, _ | _, _, _, isFalse h₁ =>
       isFalse (by intro h₂; simp [h₁] at h₂)
