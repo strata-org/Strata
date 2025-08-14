@@ -925,7 +925,7 @@ public class StrataGenerator : ReadOnlyVisitor {
         } else if (cmd is BreakCmd breakCmd) {
             Indent();
             if (breakCmd.Label != null) {
-                IndentLine($"goto {breakCmd.Label};");
+                IndentLine($"goto {Name(breakCmd.Label)};");
             } else if (_breakLabels.TryPeek(out var label)) {
                 IndentLine($"goto {label};");
             } else {
