@@ -127,16 +127,16 @@ instance : Quote MetadataAttr where
 instance : Quote Metadata where
   quote m := Syntax.mkCApp ``Metadata.ofArray #[quote m.toArray]
 
-namespace DeclBindingKind
+namespace ArgDeclKind
 
-instance : Quote DeclBindingKind where
+instance : Quote ArgDeclKind where
   quote
-  | .expr tp => Syntax.mkCApp ``expr #[quote tp]
+  | .type tp => Syntax.mkCApp ``type #[quote tp]
   | .cat c => Syntax.mkCApp ``cat #[quote c]
 
-end DeclBindingKind
+end ArgDeclKind
 
-instance DeclBinding.instQuote : Quote DeclBinding where
+instance ArgDecl.instQuote : Quote ArgDecl where
   quote b := Syntax.mkCApp ``mk #[quote b.ident, quote b.kind, quote b.metadata]
 
 namespace SyntaxDefAtom
