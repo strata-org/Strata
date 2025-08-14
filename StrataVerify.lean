@@ -27,6 +27,7 @@ def parseOptions (args : List String) : Except Std.Format (Options × String) :=
       go : Options → List String → Except Std.Format (Options × String)
       | opts, "--verbose" :: rest => go {opts with verbose := true} rest
       | opts, "--check" :: rest => go {opts with checkOnly := true} rest
+      | opts, "--parse-only" :: rest => go {opts with parseOnly := true} rest
       | opts, "--solver-timeout" :: secondsStr :: rest =>
          let n? := String.toNat? secondsStr
          match n? with
@@ -37,7 +38,7 @@ def parseOptions (args : List String) : Except Std.Format (Options × String) :=
       | _, args => .error f!"Unknown options: {args}"
 
 def usageMessage : String :=
-  "Usage: StrataVerify [--verbose] [--check] [--solver-timeout <seconds>] <file.{boogie, csimp}.st>"
+  "Usage: StrataVerify [--verbose] [--parse-only] [--check] [--solver-timeout <seconds>] <file.{boogie, csimp}.st>"
 
 def main (args : List String) : IO UInt32 := do
   let parseResult := parseOptions args
@@ -53,6 +54,8 @@ def main (args : List String) : IO UInt32 := do
     match Strata.Elab.elabProgram dctx leanEnv inputCtx with
     | .ok pgm =>
       println! s!"Successfully parsed {file}"
+      if opts.parseOnly then
+          return 0
       let vcResults ← if file.endsWith ".csimp.st" then
         C_Simp.verify "z3" pgm opts
       else
