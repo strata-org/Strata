@@ -1,3 +1,4 @@
+using System.Reflection.Metadata.Ecma335;
 using Microsoft.Boogie;
 using Type = Microsoft.Boogie.Type;
 
@@ -7,8 +8,7 @@ internal class StrataConversionException(IToken tok, string s) : Exception {
     public string Msg { get; } = $"{tok.filename}({tok.line},{tok.col}): {s}";
 }
 
-public class FieldTypeCollector : ReadOnlyVisitor
-{
+public class FieldTypeCollector : ReadOnlyVisitor {
     private readonly HashSet<Type> _usedTypes = [];
 
     public IEnumerable<Type> UsedTypes => _usedTypes.AsEnumerable();
@@ -222,30 +222,36 @@ public class StrataGenerator : ReadOnlyVisitor {
         WriteLine();
     }
 
+    private void EmitHeapFunctionsForType(Type ty) {
+        WriteLine($"// Select function for {ty}");
+        WriteText($"function StrataHeapSelect_{ty}(h: StrataHeap, r: StrataRef, f: StrataField ");
+        VisitType(ty);
+        WriteText(") : ");
+        VisitType(ty);
+        WriteLine(";");
+        WriteLine($"// Update function for {ty}");
+        WriteLine($"function StrataHeapUpdate_{ty}(h: StrataHeap, r: StrataRef, f: StrataField ");
+        VisitType(ty);
+        WriteText(", v: ");
+        VisitType(ty);
+        WriteLine(") : StrataHeap;");
+    }
+
     private void EmitHeapFunctions(FieldTypeCollector fieldTypeCollector) {
         if (!fieldTypeCollector.UsedTypes.Any()) {
             return;
         }
         WriteLine();
-        foreach (var ty in fieldTypeCollector.UsedTypes)
-        {
+        foreach (var ty in fieldTypeCollector.UsedTypes) {
             if (ty is TypeVariable) {
                 continue;
             }
-            WriteLine($"// Select function for {ty}");
-            WriteText($"function StrataHeapSelect_{ty}(h: StrataHeap, r: StrataRef, f: StrataField ");
-            VisitType(ty);
-            WriteText(") : ");
-            VisitType(ty);
-            WriteLine(";");
-            WriteLine($"// Update function for {ty}");
-            WriteLine($"function StrataHeapUpdate_{ty}(h: StrataHeap, r: StrataRef, f: StrataField ");
-            VisitType(ty);
-            WriteText(", v: ");
-            VisitType(ty);
-            WriteLine(") : StrataHeap;");
-        }
 
+            EmitHeapFunctionsForType(ty);
+            if (ty is TypeSynonymAnnotation typeSynonymAnnotation) {
+                EmitHeapFunctionsForType(typeSynonymAnnotation.ExpandedType);
+            }
+        }
     }
 
     private void EmitFooter() { }
@@ -412,7 +418,7 @@ public class StrataGenerator : ReadOnlyVisitor {
         var heapTypeMatches = heapExpr.Type is TypeSynonymAnnotation typeSyn && typeSyn.Decl == _heapTypeSyn;
         var refTypeMatches = refExpr.Type.IsCtor && refExpr.Type.AsCtor?.Decl.Name == _refTypeCtor?.Name;
         var fieldTypeMatches = fieldExpr == null || fieldExpr.Type.IsCtor && fieldExpr.Type.AsCtor?.Decl.Name == _fieldTypeCtor?.Name;
-        return heapTypeMatches && refTypeMatches && fieldTypeMatches; 
+        return heapTypeMatches && refTypeMatches && fieldTypeMatches;
     }
 
     private void EmitHeapCall(string function, IEnumerable<Expr> args) {
@@ -454,7 +460,7 @@ public class StrataGenerator : ReadOnlyVisitor {
         if (heapExpr is null || refExpr is null || fieldExpr is null) {
             return false;
         }
-        
+
         if (!ValidHeapArgs(heapExpr, refExpr, fieldExpr)) {
             return false;
         }
