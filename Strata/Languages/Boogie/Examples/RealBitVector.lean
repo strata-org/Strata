@@ -29,7 +29,7 @@ procedure P() returns ()
 /-- info: true -/
 #guard_msgs in
 -- No errors in translation.
-#eval TransM.run (translateProgram (realPgm.commands)) |>.snd |>.isEmpty
+#eval TransM.run (translateProgram realPgm) |>.snd |>.isEmpty
 
 /--
 info: func x :  () → real;
@@ -46,7 +46,7 @@ assert [real_add_ge_bad] (((~Real.Ge : (arrow real (arrow real bool))) (((~Real.
 Errors: #[]
 -/
 #guard_msgs in
-#eval TransM.run (translateProgram (realPgm.commands))
+#eval TransM.run (translateProgram realPgm)
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -128,7 +128,7 @@ spec {
 /-- info: true -/
 #guard_msgs in
 -- No errors in translation.
-#eval TransM.run (translateProgram (bvPgm.commands)) |>.snd |>.isEmpty
+#eval TransM.run (translateProgram bvPgm) |>.snd |>.isEmpty
 
 /--
 info: func x :  () → bv8;
@@ -150,7 +150,7 @@ body: r := (((~Bv1.Add : (arrow bv1 (arrow bv1 bv1))) x) x)
 Errors: #[]
 -/
 #guard_msgs in
-#eval TransM.run (translateProgram (bvPgm.commands))
+#eval TransM.run (translateProgram bvPgm)
 
 /--
 info: [Strata.Boogie] Type checking succeeded.

@@ -26,7 +26,7 @@ procedure P() returns ()
 /-- info: true -/
 #guard_msgs in
 -- No errors in translation.
-#eval TransM.run (translateProgram (mapPgm.commands)) |>.snd |>.isEmpty
+#eval TransM.run (translateProgram mapPgm) |>.snd |>.isEmpty
 
 /--
 info: func a :  () → (Map int bool);
@@ -41,7 +41,7 @@ assert [a_one_true] (((~select : (arrow (Map int bool) (arrow int bool))) ~a) (#
 Errors: #[]
 -/
 #guard_msgs in
-#eval TransM.run (translateProgram (mapPgm.commands))
+#eval TransM.run (translateProgram mapPgm)
 
 /--
 info: [Strata.Boogie] Type checking succeeded.

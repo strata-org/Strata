@@ -26,7 +26,7 @@ spec {
 /-- info: true -/
 #guard_msgs in
 -- No errors in translation.
-#eval TransM.run (translateProgram (assertionNames.commands)) |>.snd |>.isEmpty
+#eval TransM.run (translateProgram assertionNames) |>.snd |>.isEmpty
 
 /--
 info: (procedure Test :  ((x : int)) → ())
@@ -38,7 +38,7 @@ body: assert [assert: (x == (#1 : int))] (x == (#1 : int))
 Errors: #[]
 -/
 #guard_msgs in
-#eval TransM.run (translateProgram (assertionNames.commands))
+#eval TransM.run (translateProgram assertionNames)
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
