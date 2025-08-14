@@ -26,7 +26,7 @@ fi
 
 # Create CSV file with header
 CSV_FILE="strata_verify_results.csv"
-echo "filename,line_count,iteration,execution_time_seconds" > "$CSV_FILE"
+echo "filename,line_count,iteration,execution_time_seconds,z3_total_time_seconds" > "$CSV_FILE"
 
 echo "Processing .boogie.st files in directory: $DIR"
 echo "Running each file $ITERATIONS time(s)"
@@ -50,6 +50,9 @@ for file in "$DIR"/*.boogie.st; do
         for ((i=1; i<=ITERATIONS; i++)); do
             echo "  Iteration $i/$ITERATIONS"
             
+            # Clean vcs directory before each iteration
+            rm -rf ./vcs/*
+            
             # Measure execution time and run the command
             start_time=$(date +%s.%N)
             
@@ -62,10 +65,24 @@ for file in "$DIR"/*.boogie.st; do
             end_time=$(date +%s.%N)
             execution_time=$(echo "$end_time - $start_time" | bc -l)
             
-            # Write result to CSV immediately
-            echo "$filename,$line_count,$i,$execution_time" >> "$CSV_FILE"
+            # Run z3 on all files in ./vcs and measure total time
+            z3_start_time=$(date +%s.%N)
+            z3_all_unsat=true
+            for vc_file in ./vcs/*; do
+                if [ -f "$vc_file" ]; then
+                    z3_output=$(z3 "$vc_file" 2>/dev/null | head -1)
+                    if [ "$z3_output" != "unsat" ]; then
+                        z3_all_unsat=false
+                    fi
+                fi
+            done
+            z3_end_time=$(date +%s.%N)
+            z3_total_time=$(echo "$z3_end_time - $z3_start_time" | bc -l)
             
-            printf "  %s Iteration %d - Time: %.3fs\n" "$status" "$i" "$execution_time"
+            # Write result to CSV immediately
+            echo "$filename,$line_count,$i,$execution_time,$z3_total_time" >> "$CSV_FILE"
+            
+            printf "  %s Iteration %d - StrataVerify: %.3fs, Z3 total: %.3fs %s\n" "$status" "$i" "$execution_time" "$z3_total_time" "$([ "$z3_all_unsat" = true ] && echo "(all unsat)" || echo "(some not unsat)")"
         done
         
         echo "----------------------------------------"

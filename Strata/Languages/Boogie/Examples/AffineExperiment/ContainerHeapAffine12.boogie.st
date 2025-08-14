@@ -11,12 +11,7 @@ const null: Ref;
 
 
 
-// Map axiomatization
-axiom forall m: (Map Field Box), okk: Field, kk: Field, vv: Box :: okk != kk ==> m[okk] == m[kk := vv][okk];
-axiom forall m: (Map Field Box), kk: Field, vv: Box :: m[kk := vv][kk] == vv;
 
-axiom forall m: (Map Ref (Map Field Box)), okk: Ref, kk: Ref, vv: (Map Field Box) :: okk != kk ==> m[okk] == m[kk := vv][okk];
-axiom forall m: (Map Ref (Map Field Box)), kk: Ref, vv: (Map Field Box) :: m[kk := vv][kk] == vv;
 
 
 function isInt(v: Box): bool;
@@ -28,30 +23,30 @@ function isRef(v: Box): bool;
 var tickingClock: int;
 function allocationTime(r: Ref): int;
 
-axiom [allocationTimeOfNullIsSmallerThanEverything]: forall r: Ref :: allocationTime(null) == -1;
+axiom [allocationTimeOfNullIsSmallerThanEverything]: allocationTime(null) == -1;
 
 
 // Monomorphized boxing unboxing functions
 // int
 function BoxingInt(v: int): Box;
 function UnboxingInt(b: Box): int;
-axiom [BoxingUnboxingInverseInt]: forall v: int :: isInt(BoxingInt(v)) && UnboxingInt(BoxingInt(v)) == v;
-axiom [UnboxingBoxingInverseInt]: forall b: Box :: isInt(b) ==> BoxingInt(UnboxingInt(b)) == b;
+axiom [BoxingUnboxingInverseInt]: forall v: int :: { BoxingInt(v) } isInt(BoxingInt(v)) && UnboxingInt(BoxingInt(v)) == v;
+axiom [UnboxingBoxingInverseInt]: forall b: Box :: { isInt(b) } isInt(b) ==> BoxingInt(UnboxingInt(b)) == b;
 // bool
 function BoxingBool(v: bool): Box;
 function UnboxingBool(b: Box): bool;
-axiom [BoxingUnboxingInverseBool]: forall v: bool :: isBool(BoxingBool(v)) && UnboxingBool(BoxingBool(v)) == v;
-axiom [UnboxingBoxingInverseBool]: forall b: Box :: isBool(b) ==> BoxingBool(UnboxingBool(b)) == b;
+axiom [BoxingUnboxingInverseBool]: forall v: bool :: { BoxingBool(v) } isBool(BoxingBool(v)) && UnboxingBool(BoxingBool(v)) == v;
+axiom [UnboxingBoxingInverseBool]: forall b: Box :: { isBool(b) } isBool(b) ==> BoxingBool(UnboxingBool(b)) == b;
 // string
 function BoxingStr(v: string): Box;
 function UnboxingStr(b: Box): string;
-axiom [BoxingUnboxingInverseStr]: forall v: string :: isString(BoxingStr(v)) && UnboxingStr(BoxingStr(v)) == v;
-axiom [UnboxingBoxingInverseStr]: forall b: Box :: isString(b) ==> BoxingStr(UnboxingStr(b)) == b;
+axiom [BoxingUnboxingInverseStr]: forall v: string :: { BoxingStr(v) } isString(BoxingStr(v)) && UnboxingStr(BoxingStr(v)) == v;
+axiom [UnboxingBoxingInverseStr]: forall b: Box :: { isString(b) } isString(b) ==> BoxingStr(UnboxingStr(b)) == b;
 // refs
 function BoxingRef(v: Ref): Box;
 function UnboxingRef(b: Box): Ref;
-axiom [BoxingUnboxingInverseRef]: forall v: Ref :: isRef(BoxingRef(v)) && UnboxingRef(BoxingRef(v)) == v;
-axiom [UnboxingBoxingInverseRef]: forall b: Box :: isRef(b) ==> BoxingRef(UnboxingRef(b)) == b;
+axiom [BoxingUnboxingInverseRef]: forall v: Ref :: { BoxingRef(v) } isRef(BoxingRef(v)) && UnboxingRef(BoxingRef(v)) == v;
+axiom [UnboxingBoxingInverseRef]: forall b: Box :: { isRef(b) } isRef(b) ==> BoxingRef(UnboxingRef(b)) == b;
 // Prelude end ----------------------------------------------------
 
 // Can try (Map Ref (Map Field Box)): Map Ref -> Box. Box can contain structs. (Map Field Box)s would be axiomatized with the boxing unboxing functions
@@ -64,10 +59,10 @@ const pineappleField: Field;        // int
 const nextField: Field;             // Ref to a Container
 axiom [ContainerFieldsAreDifferent1]: lycheeField != pineappleField && lycheeField != nextField && pineappleField != nextField;
 
-axiom [ContainerstructType]: forall h: (Map Ref (Map Field Box)), r: Ref :: isContainer(r) ==> isContainerStruct(h[r]);
-axiom [lycheeFieldType]: forall s: (Map Field Box) :: isContainerStruct(s) ==> isInt(s[lycheeField]);
-axiom [pineappleFieldType]: forall s: (Map Field Box) :: isContainerStruct(s) ==> isInt(s[pineappleField]);
-axiom [nextFieldType]: forall s: (Map Field Box) :: isContainerStruct(s) ==> (isRef(s[nextField]) && isContainer(UnboxingRef(s[nextField])));
+axiom [ContainerstructType]: forall h:(Map Ref (Map Field Box)), r: Ref :: { h[r] } isContainer(r) ==> isContainerStruct(h[r]);
+axiom [lycheeFieldType]: forall s: (Map Field Box) :: { s[lycheeField] } isContainerStruct(s) ==> isInt(s[lycheeField]);
+axiom [pineappleFieldType]: forall s: (Map Field Box) :: { s[pineappleField] } isContainerStruct(s) ==> isInt(s[pineappleField]);
+axiom [nextFieldType]: forall s: (Map Field Box) :: { s[nextField] } isContainerStruct(s) ==> (isRef(s[nextField]) && isContainer(UnboxingRef(s[nextField])));
 
 
 // Modifies frame for Container_ctor (manual lambda lifting)

@@ -319,8 +319,10 @@ partial def inferOp (T : (TEnv Identifier)) (o : Identifier) (oty : Option LMono
       match oty with
       | none => .ok (ty, T)
       | some cty =>
-        let S ← Constraints.unify [(cty, ty)] T.state.substInfo
-        .ok (ty, TEnv.updateSubst T S)
+        let (optTyy, T) := (cty.aliasInst T)
+        let S ← Constraints.unify [(ty, optTyy.getD cty )] T.state.substInfo
+        let T := TEnv.updateSubst T S
+        .ok (ty, T)
 
 partial def fromLExprAux.ite (T : (TEnv Identifier)) (c th el : (LExpr Identifier)) := do
   let (ct, T) ← fromLExprAux T c
@@ -408,7 +410,19 @@ partial def fromLExprAux.app (T : (TEnv Identifier)) (e1 e2 : (LExpr Identifier)
   let ty2 := e2t.toLMonoTy
   let (fresh_name, T) := TEnv.genTyVar T
   let freshty := (.ftvar fresh_name)
-  let S ← Constraints.unify [(ty1, (.tcons "arrow" [ty2, freshty]))] T.state.substInfo
+  -- Indirection for type aliases
+  let (optTyy1, T) := (ty1.aliasInst T)
+  let (fresh_name1, T) := TEnv.genTyVar T
+  let freshty1: LMonoTy := (.ftvar fresh_name1)
+  let (optTyy2, T) := (ty2.aliasInst T)
+  let (fresh_name2, T) := TEnv.genTyVar T
+  let freshty2: LMonoTy := (.ftvar fresh_name2)
+  let S ← Constraints.unify [(freshty1, optTyy1.getD ty1 )] T.state.substInfo
+  let T := TEnv.updateSubst T S
+  let S ← Constraints.unify [(freshty2, optTyy2.getD ty1 )] T.state.substInfo
+  let T := TEnv.updateSubst T S
+
+  let S ← Constraints.unify [(freshty1, (.tcons "arrow" [freshty2, freshty]))] T.state.substInfo
   let mty := LMonoTy.subst S.subst freshty
   .ok (.app e1t e2t mty, TEnv.updateSubst T S)
 
