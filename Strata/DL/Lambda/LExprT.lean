@@ -320,7 +320,6 @@ partial def inferOp (T : (TEnv Identifier)) (o : Identifier) (oty : Option LMono
       | some cty =>
         let (optTyy, T) := (cty.aliasInst T)
         let S ← Constraints.unify [(ty, optTyy.getD cty )] T.state.substInfo
-        let T := TEnv.updateSubst T S
         .ok (ty, T)
 
 partial def fromLExprAux.ite (T : (TEnv Identifier)) (c th el : (LExpr Identifier)) := do
