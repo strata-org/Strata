@@ -58,8 +58,6 @@ instance : ElabClass DialectM where
   logErrorMessage stx msg :=
     modifyDeclState fun s => { s with errors := s.errors.push (stx, msg) }
 
-abbrev DialectElab := Tree → DialectM Unit
-
 private def checkTypeDeclarationArgs (tree : Tree) : ElabM (Array String) := do
   let bindings := tree.optBindings!
   let mut m := ArgDeclsMap.empty bindings.size
@@ -73,49 +71,76 @@ private def checkTypeDeclarationArgs (tree : Tree) : ElabM (Array String) := do
     m := addBinding m arg
   return m.decls.map (·.val.ident)
 
-private def elabTypeCommand (tree : Tree) : DialectM Unit := do
+def checkTreeSize (tree : Tree) (size : Nat) : Decidable (tree.children.size = size) := inferInstance
+
+abbrev DialectElab := Tree → DialectM Unit
+
+def elabDialectImportCommand : DialectElab := fun tree => do
+  let .isTrue _ := checkTreeSize tree 1
+    | panic! "Invalid tree size"
+  let identTree := tree[0].info
+  let name := identTree.asIdent!.val
+  let d ←
+    match (← get).loaded.dialects[name]? with
+    | some d =>
+      pure d
+    | none =>
+      let loadCallback ← (·.loadDialect) <$> read
+      let r ← fun _ ref => do
+        let loaded := (← ref.get).loaded
+        assert! "StrataDDL" ∈ loaded.dialects.map.keys
+        let (r, loaded) ← loadCallback name loaded
+        ref.modify fun s => { s with loaded := loaded }
+        pure r
+      match r with
+      | .ok d =>
+        pure d
+      | .error msg =>
+        logError identTree.stx msg
+        return
+  if name ∈ (←getDeclState).openDialectSet then
+    logError identTree.stx <| s!"Dialect {name} already open."
+    return
+  modify fun s => { s with declState := s.declState.openLoadedDialect! s.loaded d }
+  modifyDialect fun d => { d with imports := d.imports.push name }
+
+private def elabCategoryCommand : DialectElab := fun tree => do
+  let .isTrue p := checkTreeSize tree 1
+    | return panic! "Unexpected tree size."
   let d ← getCurrentDialect
-  assert! tree.children.size = 2
-
-  -- Get arguments
-  let ((name, argNames), success) ← runElab <| runChecked <| do
-    -- Get name
-    let .node (.ofIdentInfo nameInfo) _ := tree[0]!
-      | panic! "Expected identifier"
-    let name := nameInfo.val
-    if name ∈ d.cache then
-      logError nameInfo.stx  s!"{name} already declared."
-    let args ← checkTypeDeclarationArgs tree[1]!
-    pure (name, args)
-
-  if success then
-    let decl := { name, argNames }
-    addTypeOrCatDecl d.name (.type decl)
-    addDeclToDialect (.type decl)
+  let name := tree.children[0].info.asIdent!
+  if name.val ∈ d.cache then
+    logError name.stx  s!"Category {name.val} already declared."
+    return
+  let decl : SynCatDecl := { name := name.val, argNames := #[] }
+  addDeclToDialect (.syncat decl)
+  addTypeOrCatDecl d.name (.syncat decl)
+  modifyDeclState (·.addSynCat! d.name decl)
 
 /- Add a new operator. -/
-def elabOpCommand (tree : Tree) : DialectM Unit := do
+def elabOpCommand : DialectElab := fun tree => do
+  let .isTrue _ := checkTreeSize tree 6
+    | return panic! "Unexpected tree size."
   let d ← getCurrentDialect
-  assert! tree.children.size = 6
-  let nameInfo := tree[0]!.info.asIdent!
+  let nameInfo := tree[0].info.asIdent!
   let name := nameInfo.val
   if name ∈ d.cache then
     logError nameInfo.stx s!"{name} already declared."; return
 
-  let argDeclsTree := tree[1]!
+  let argDeclsTree := tree[1]
   let (argDecls, argDeclsSuccess) ← runElab <| runChecked <| translateArgDecls argDeclsTree
 
-  let categoryTree := tree[2]!
+  let categoryTree := tree[2]
   let (category, categorySuccess) ← runElab <| runChecked <| translateSyntaxCat categoryTree.asBindingType!
 
-  let opMetadataTree := tree[3]!
+  let opMetadataTree := tree[3]
   let (opMetadata, opMetadataSuccess) ← runElab <| runChecked <| translateOptMetadata! argDecls opMetadataTree
 
   if !argDeclsSuccess then
     return
 
-  let opMdTree := tree[4]!
-  let opStxTree := tree[5]!
+  let opMdTree := tree[4]
+  let opStxTree := tree[5]
   let (opStx, opStxSuccess) ← runElab <| runChecked <| translateSyntaxDef argDecls opMdTree opStxTree
 
   -- FIXME. Change this to use stxArgDecls so we get better error messages.
@@ -158,53 +183,33 @@ def elabOpCommand (tree : Tree) : DialectM Unit := do
   }
   addDeclToDialect (.op decl)
 
-def elabDialectImportCommand (tree : Tree) : DialectM Unit := do
-  assert! tree.children.size = 1
-  let identTree := tree[0]!.info
-  let name := identTree.asIdent!.val
-  let d ←
-    match (← get).loaded.dialects[name]? with
-    | some d =>
-      pure d
-    | none =>
-      let loadCallback ← (·.loadDialect) <$> read
-      let r ← fun _ ref => do
-        let loaded := (← ref.get).loaded
-        assert! "StrataDDL" ∈ loaded.dialects.map.keys
-        let (r, loaded) ← loadCallback name loaded
-        ref.modify fun s => { s with loaded := loaded }
-        pure r
-      match r with
-      | .ok d =>
-        pure d
-      | .error msg =>
-        logError identTree.stx msg
-        return
-  if name ∈ (←getDeclState).openDialectSet then
-    logError identTree.stx <| s!"Dialect {name} already open."
-    return
-  modify fun s => { s with declState := s.declState.openLoadedDialect! s.loaded d }
-  modifyDialect fun d => { d with imports := d.imports.push name }
-
-private def elabCategoryCommand (tree : Tree) : DialectM Unit := do
+private def elabTypeCommand : DialectElab := fun tree => do
+  let .isTrue _ := checkTreeSize tree 2
+    | return panic! "Unexpected tree size."
   let d ← getCurrentDialect
-  assert! d.name ∈ (← getDeclState).openDialectSet
-  assert! tree.children.size = 1
-  let name := tree.children[0]!.info.asIdent!
-  if name.val ∈ d.cache then
-    logError name.stx  s!"Category {name.val} already declared."
-    return
-  let decl : SynCatDecl := { name := name.val, argNames := #[] }
-  addDeclToDialect (.syncat decl)
-  addTypeOrCatDecl d.name (.syncat decl)
-  modifyDeclState (·.addSynCat! d.name decl)
+
+  -- Get arguments
+  let ((name, argNames), success) ← runElab <| runChecked <| do
+    -- Get name
+    let .node (.ofIdentInfo nameInfo) _ := tree[0]
+      | panic! "Expected identifier"
+    let name := nameInfo.val
+    if name ∈ d.cache then
+      logError nameInfo.stx  s!"{name} already declared."
+    let args ← checkTypeDeclarationArgs tree[1]
+    pure (name, args)
+  if success then
+    let decl := { name, argNames }
+    addTypeOrCatDecl d.name (.type decl)
+    addDeclToDialect (.type decl)
 
 /- Evaluate a function. -/
-def elabFnCommand (tree : Tree) : DialectM Unit := do
-  let d ← getCurrentDialect
-  assert! tree.children.size = 6
+def elabFnCommand : DialectElab := fun tree => do
+  let .isTrue _ := checkTreeSize tree 6
+    | return panic! "Unexpected tree size."
 
-  let .ofIdentInfo nameInfo := tree[0]!.info
+  let d ← getCurrentDialect
+  let .ofIdentInfo nameInfo := tree[0].info
     | panic! "Expected identifier"
   let name := nameInfo.val
   if name ∈ d.cache then
@@ -213,18 +218,18 @@ def elabFnCommand (tree : Tree) : DialectM Unit := do
   let argsTree := tree[1]!
   let (params, argDeclsSuccess) ← runElab <| runChecked <| translateArgDecls argsTree
 
-  let returnTypeTree := tree[2]!.asBindingType!
-  let isType : Array Bool := params.decls.map (·.val.kind.isType)
-  let (result, resultSuccess) ← runElab <| runChecked <| translateTypeExpr params.argIndexMap isType.size (fun lvl => isType[lvl]!) returnTypeTree
+  let returnTypeTree := tree[2].asBindingType!
+  let isType (lvl : Nat) := params.decls[lvl]!.val.kind.isType
+  let (result, resultSuccess) ← runElab <| runChecked <| translateTypeExpr params.argIndexMap params.decls.size isType returnTypeTree
 
-  let opMetadataTree := tree[3]!
+  let opMetadataTree := tree[3]
   let (opMetadata, opMetadataSuccess) ← runElab <| runChecked <| translateOptMetadata! params opMetadataTree
 
   if !argDeclsSuccess then
     return
 
-  let opMdTree := tree[4]!
-  let opStxTree := tree[5]!
+  let opMdTree := tree[4]
+  let opStxTree := tree[5]
   let (opStx, stxSuccess) ← runElab <| runChecked <| translateSyntaxDef params opMdTree opStxTree
 
   if !stxSuccess then
@@ -250,17 +255,18 @@ def elabFnCommand (tree : Tree) : DialectM Unit := do
     }
     addDeclToDialect (.function decl)
 
-def elabMdCommand (tree : Tree) : DialectM Unit := do
+def elabMdCommand : DialectElab := fun tree => do
+  let .isTrue p := checkTreeSize tree 2
+    | return panic! "Unexpected tree size."
   let d ← getCurrentDialect
-  assert! tree.children.size = 2
 
-  let .ofIdentInfo nameInfo := tree[0]!.info
+  let .ofIdentInfo nameInfo := tree[0].info
     | panic! "Expected identifier"
   let name := nameInfo.val
   if name ∈ d.cache then
     logError nameInfo.stx s!"{name} already declared."; return
 
-  let optBindingsTree := tree[1]!
+  let optBindingsTree := tree[1]
 
   let (argDecls, success) ← runChecked <| do
         let bindings := optBindingsTree.optBindings!
