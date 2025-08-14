@@ -364,6 +364,19 @@ deriving BEq, Inhabited, Repr
 def maxPrec := eval_prec max
 
 /--
+Precedence of an explicit function call `f(..)`.
+
+This specifically addresses the priority between f and the open paren.
+-/
+def callPrec := 200
+
+/-- Precedence of the empty application operator `f x` in expressions and types. -/
+def appPrec := 20
+
+/-- Precedence of the arrow operator `t -> u` in types. -/
+def arrowPrec :=  17
+
+/--
 This describes how to format an operator.
 -/
 inductive SyntaxDefAtom
@@ -381,9 +394,32 @@ structure SyntaxDef where
   prec : Nat
 deriving Repr, Inhabited, BEq
 
-def SyntaxDef.ofList (atoms : List SyntaxDefAtom) (prec : Nat := maxPrec): SyntaxDef where
+namespace SyntaxDef
+
+/--
+Creates syntax of the form `name(arg1, ..., argn)`.
+
+If `n` is 0, then this is just `name`.
+-/
+def mkFunApp (name : String) (n : Nat) : SyntaxDef :=
+  let atoms : Array SyntaxDefAtom :=
+    if n = 0 then
+      #[.str name]
+    else
+      let atoms := #[.str name, .str "(", .ident 0 0]
+      let atoms := (n-1).fold (init := atoms) fun i _ a =>
+        a |>.push (.str ", ") |>.push (.ident (i+1) 0)
+      atoms.push (.str ")")
+  {
+    atoms := atoms
+    prec := appPrec
+  }
+
+def ofList (atoms : List SyntaxDefAtom) (prec : Nat := maxPrec): SyntaxDef where
   atoms := atoms.toArray
   prec := prec
+
+end SyntaxDef
 
 /-- Structure that defines a binding introduced by an operation or function. -/
 inductive SyntaxElabType

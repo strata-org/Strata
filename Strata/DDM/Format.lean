@@ -77,15 +77,6 @@ structure FormatState where
   openDialects : Std.HashSet String
   bindings : Array String := #[]
 
-/-- Precedence of an explicit function call `f(..)`. -/
-def callPrec := 30
-
-/-- Precedence of the empty application operator `f x` in expressions and types. -/
-def appPrec := 20
-
-/-- Precedence of the arrow operator `t -> u` in types. -/
-def arrowPrec :=  17
-
 namespace FormatState
 
 /-- A format context that uses no syntactic sugar. -/
