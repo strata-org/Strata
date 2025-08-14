@@ -361,7 +361,7 @@ Imperative.WellFormedSemanticEvalVal δ →
   case abs ty e ih =>
     apply ((Hwfc e e σ₀ (updatedState σ k v) σ₀ σ) ?_).1
     apply ih ; simp_all
-  case quant kk ty e tr ih =>
+  case quant kk ty e ih =>
     sorry
     --apply ((Hwfc e e σ₀ (updatedState σ k v) σ₀ σ) ?_).2.2.1
     --apply ih
