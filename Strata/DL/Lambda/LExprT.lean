@@ -410,7 +410,7 @@ partial def fromLExprAux.app (T : (TEnv Identifier)) (e1 e2 : (LExpr Identifier)
   let freshty2: LMonoTy := (.ftvar fresh_name2)
   let S ← Constraints.unify [(freshty1, optTyy1.getD ty1 )] T.state.substInfo
   let T := TEnv.updateSubst T S
-  let S ← Constraints.unify [(freshty2, optTyy2.getD ty1 )] T.state.substInfo
+  let S ← Constraints.unify [(freshty2, optTyy2.getD ty2 )] T.state.substInfo
   let T := TEnv.updateSubst T S
 
   let S ← Constraints.unify [(freshty1, (.tcons "arrow" [freshty2, freshty]))] T.state.substInfo
