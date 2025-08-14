@@ -363,7 +363,7 @@ partial def fromLExprAux.abs (T : (TEnv Identifier)) (oty : Option LMonoTy) (e :
   | _, _ => .ok ()
   .ok (.abs etclosed mty, T)
 
-partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (oty : Option LMonoTy) (e : (LExpr Identifier)) := do
+partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (oty : Option LMonoTy) (triggers : LExpr Identifier) (e : (LExpr Identifier)) := do
   let (xv, T) := HasGen.genVar T
   let (xt', T) := TEnv.genTyVar T
   let xt := .forAll [] (.ftvar xt')
@@ -385,9 +385,7 @@ partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (ot
   let mty := LMonoTy.subst T.state.substInfo.subst (.ftvar xt')
   match oty with
   | .some ty =>
-    -- DEALIASING: introducing a dramatic slow down, should be removed
-    -- let (optTyy, _) := (ty.aliasInst T)
-    let optTyy := Option.some ty
+    let (optTyy, _) := (ty.aliasInst T)
     if optTyy.getD ty == mty
     then .ok ()
     else .error f!"Type annotation on LTerm.quant {ty} (alias for {optTyy.getD ty}) doesn't match inferred argument type"
@@ -407,7 +405,19 @@ partial def fromLExprAux.app (T : (TEnv Identifier)) (e1 e2 : (LExpr LMonoTy Ide
   let ty2 := e2t.toLMonoTy
   let (fresh_name, T) := TEnv.genTyVar T
   let freshty := (.ftvar fresh_name)
-  let S ← Constraints.unify [(ty1, (.tcons "arrow" [ty2, freshty]))] T.state.substInfo
+  -- Indirection for type aliases
+  let (optTyy1, T) := (ty1.aliasInst T)
+  let (fresh_name1, T) := TEnv.genTyVar T
+  let freshty1: LMonoTy := (.ftvar fresh_name1)
+  let (optTyy2, T) := (ty2.aliasInst T)
+  let (fresh_name2, T) := TEnv.genTyVar T
+  let freshty2: LMonoTy := (.ftvar fresh_name2)
+  let S ← Constraints.unify [(freshty1, optTyy1.getD ty1 )] T.state.substInfo
+  let T := TEnv.updateSubst T S
+  let S ← Constraints.unify [(freshty2, optTyy2.getD ty1 )] T.state.substInfo
+  let T := TEnv.updateSubst T S
+
+  let S ← Constraints.unify [(freshty1, (.tcons "arrow" [freshty2, freshty]))] T.state.substInfo
   let mty := LMonoTy.subst S.subst freshty
   .ok (.app e1t e2t mty, TEnv.updateSubst T S)
 
