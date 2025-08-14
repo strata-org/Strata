@@ -405,40 +405,67 @@ public class StrataGenerator : ReadOnlyVisitor {
         return trigger;
     }
 
-    private bool EmitHeapSelect(NAryExpr expr) {
+    private bool ValidHeapArgs(Expr? heapExpr, Expr? refExpr, Expr? fieldExpr) {
+        if (heapExpr is null || refExpr is null) {
+            return false;
+        }
+        var heapTypeMatches = heapExpr.Type is TypeSynonymAnnotation typeSyn && typeSyn.Decl == _heapTypeSyn;
+        var refTypeMatches = refExpr.Type.IsCtor && refExpr.Type.AsCtor?.Decl.Name == _refTypeCtor?.Name;
+        var fieldTypeMatches = fieldExpr == null || fieldExpr.Type.IsCtor && fieldExpr.Type.AsCtor?.Decl.Name == _fieldTypeCtor?.Name;
+        return heapTypeMatches && refTypeMatches && fieldTypeMatches; 
+    }
+
+    private void EmitHeapCall(string function, IEnumerable<Expr> args) {
+        WriteText($"{function}(");
+        EmitSeparated(args, e => VisitExpr(e), ", ");
+        WriteText(")");
+    }
+
+    private bool EmitHeapOperation(NAryExpr expr, bool isUpdate) {
         Expr? heapExpr = null;
         Expr? refExpr = null;
         Expr? fieldExpr = null;
-        if (expr.Args.Count == 2 && expr.Fun is MapSelect outerSelect && expr.Args[0] is NAryExpr { Fun: MapSelect innerSelect } innerExpr) {
-            if (expr.Args.Count != 2 | innerExpr.Args.Count != 2) {
+        Expr? valueExpr = null;
+        var shortCount = isUpdate ? 3 : 2;
+        var longCount = isUpdate ? 4 : 3;
+
+        if (expr.Args.Count == shortCount && expr.Fun is MapSelect outerSelect &&
+            expr.Args[0] is NAryExpr { Fun: MapSelect innerSelect } innerSelectExpr) {
+            if (expr.Args.Count != 2 | innerSelectExpr.Args.Count != 2) {
                 return false;
             }
-            heapExpr = innerExpr.Args[0];
-            refExpr = innerExpr.Args[1];
+
+            heapExpr = innerSelectExpr.Args[0];
+            refExpr = innerSelectExpr.Args[1];
             fieldExpr = expr.Args[1];
-        } else if (expr.Args.Count == 3) {
+        } else if (expr.Args.Count == shortCount && expr.Fun is MapStore outerStore &&
+                   expr.Args[2] is NAryExpr { Fun: MapStore innerStore } innerStoreExpr) {
+            heapExpr = expr.Args[0];
+            refExpr = expr.Args[1];
+            fieldExpr = innerStoreExpr.Args[1];
+            valueExpr = innerStoreExpr.Args[2];
+        } else if (expr.Args.Count == longCount) {
             heapExpr = expr.Args[0];
             refExpr = expr.Args[1];
             fieldExpr = expr.Args[2];
+            valueExpr = isUpdate ? expr.Args[3] : null;
         }
 
         if (heapExpr is null || refExpr is null || fieldExpr is null) {
             return false;
         }
-
-        var heapTypeMatches = heapExpr.Type is TypeSynonymAnnotation typeSyn && typeSyn.Decl == _heapTypeSyn;
-        var refTypeMatches = refExpr.Type.IsCtor && refExpr.Type.AsCtor?.Decl.Name == _refTypeCtor?.Name;
-        var fieldTypeMatches = fieldExpr.Type.IsCtor && fieldExpr.Type.AsCtor?.Decl.Name == _fieldTypeCtor?.Name;
-
-        if (!heapTypeMatches || !refTypeMatches || !fieldTypeMatches) {
+        
+        if (!ValidHeapArgs(heapExpr, refExpr, fieldExpr)) {
             return false;
         }
 
-        var tyStr = expr.Type.ToString();
-        IEnumerable <Expr> args = [heapExpr, refExpr, fieldExpr];
-        WriteText($"StrataHeapSelect_{tyStr}(");
-        EmitSeparated(args, e => VisitExpr(e), ", ");
-        WriteText(")");
+        if (isUpdate && valueExpr is not null) {
+            var tyStr = valueExpr.Type.ToString();
+            EmitHeapCall($"StrataHeapUpdate_{tyStr}", [heapExpr, refExpr, fieldExpr, valueExpr]);
+        } else {
+            var tyStr = expr.Type.ToString();
+            EmitHeapCall($"StrataHeapSelect_{tyStr}", [heapExpr, refExpr, fieldExpr]);
+        }
         return true;
     }
 
@@ -507,7 +534,7 @@ public class StrataGenerator : ReadOnlyVisitor {
                         break;
                     }
                     case MapSelect: {
-                        if (!EmitHeapSelect(nAryExpr)) {
+                        if (!EmitHeapOperation(nAryExpr, false)) {
                             VisitExpr(args[0]);
                             WriteText("[");
                             EmitSeparated(args.Skip(1), e => VisitExpr(e), "][");
@@ -517,7 +544,8 @@ public class StrataGenerator : ReadOnlyVisitor {
                         break;
                     }
                     case MapStore:
-                        if (args.Count == 3) {
+                        var emittedHeapOperation = EmitHeapOperation(nAryExpr, true);
+                        if (args.Count == 3 && !emittedHeapOperation) {
                             WriteText("(");
                             VisitExpr(args[0]);
                             WriteText("[");
@@ -525,7 +553,7 @@ public class StrataGenerator : ReadOnlyVisitor {
                             WriteText(" := ");
                             VisitExpr(args[2]);
                             WriteText("])");
-                        } else if (args.Count == 4) {
+                        } else if (args.Count == 4 && !emittedHeapOperation) {
                             var map = args[0];
                             var idx1 = args[1];
                             var idx2 = args[2];
@@ -543,7 +571,7 @@ public class StrataGenerator : ReadOnlyVisitor {
                             WriteText(" := ");
                             VisitExpr(rhs);
                             WriteText("]])");
-                        } else {
+                        } else if (!emittedHeapOperation) {
                             throw new StrataConversionException(node.tok,
                                 $"Unsupported map store argument count: {args.Count}");
                         }
@@ -748,7 +776,7 @@ public class StrataGenerator : ReadOnlyVisitor {
 
     public override GotoCmd VisitGotoCmd(GotoCmd node) {
         if (node.LabelTargets.Count == 1) {
-            IndentLine($"goto {node.LabelTargets[0].Label};");
+            IndentLine($"goto {Name(node.LabelTargets[0].Label)};");
         } else if (node.LabelTargets.Count == 2) {
             var thenBlock = node.LabelTargets[0];
             var elseBlock = node.LabelTargets[1];
@@ -756,7 +784,7 @@ public class StrataGenerator : ReadOnlyVisitor {
             if (cond != null) {
                 Indent("if (");
                 VisitExpr(cond);
-                WriteLine($") {{ goto {thenBlock.Label}; }} else {{ goto {elseBlock.Label}; }}");
+                WriteLine($") {{ goto {Name(thenBlock.Label)}; }} else {{ goto {Name(elseBlock.Label)}; }}");
             } else {
                 throw new StrataConversionException(node.tok, "Unsupported: goto with two targets that aren't obvious inverses");
             }
