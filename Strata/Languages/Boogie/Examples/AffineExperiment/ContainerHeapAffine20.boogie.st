@@ -9,7 +9,8 @@ type Box;
 const null: Ref;
 
 
-
+type Struct := Map Field Box;
+type Heap := Map Ref Struct;
 
 
 
@@ -48,27 +49,27 @@ axiom [BoxingUnboxingInverseRef]: forall v: Ref :: { BoxingRef(v) } isRef(Boxing
 axiom [UnboxingBoxingInverseRef]: forall b: Box :: { isRef(b) } isRef(b) ==> BoxingRef(UnboxingRef(b)) == b;
 // Prelude end ----------------------------------------------------
 
-// Can try (Map Ref (Map Field Box)): Map Ref -> Box. Box can contain structs. (Map Field Box)s would be axiomatized with the boxing unboxing functions
+// Can try Heap: Map Ref -> Box. Box can contain structs. Structs would be axiomatized with the boxing unboxing functions
 // Container struct axioms ----------------------------------------
 function isContainer(r: Ref): bool;
-function isContainerStruct(s: (Map Field Box)): bool;
+function isContainerStruct(s: Struct): bool;
 
 const lycheeField: Field;           // int
 const pineappleField: Field;        // int
 const nextField: Field;             // Ref to a Container
 axiom [ContainerFieldsAreDifferent1]: lycheeField != pineappleField && lycheeField != nextField && pineappleField != nextField;
 
-axiom [ContainerstructType]: forall h:(Map Ref (Map Field Box)), r: Ref :: { h[r] } isContainer(r) ==> isContainerStruct(h[r]);
-axiom [lycheeFieldType]: forall s: (Map Field Box) :: { s[lycheeField] } isContainerStruct(s) ==> isInt(s[lycheeField]);
-axiom [pineappleFieldType]: forall s: (Map Field Box) :: { s[pineappleField] } isContainerStruct(s) ==> isInt(s[pineappleField]);
-axiom [nextFieldType]: forall s: (Map Field Box) :: { s[nextField] } isContainerStruct(s) ==> (isRef(s[nextField]) && isContainer(UnboxingRef(s[nextField])));
+axiom [ContainerstructType]: forall h:Heap, r: Ref :: { h[r] } isContainer(r) ==> isContainerStruct(h[r]);
+axiom [lycheeFieldType]: forall s: Struct :: { s[lycheeField] } isContainerStruct(s) ==> isInt(s[lycheeField]);
+axiom [pineappleFieldType]: forall s: Struct :: { s[pineappleField] } isContainerStruct(s) ==> isInt(s[pineappleField]);
+axiom [nextFieldType]: forall s: Struct :: { s[nextField] } isContainerStruct(s) ==> (isRef(s[nextField]) && isContainer(UnboxingRef(s[nextField])));
 
 
 // Modifies frame for Container_ctor (manual lambda lifting)
-function Container_ctorModifiesFrame(h: (Map Ref (Map Field Box)), testedRef: Ref, r: Ref, methodEntryTime: int): bool {
+function Container_ctorModifiesFrame(h: Heap, testedRef: Ref, r: Ref, methodEntryTime: int): bool {
   testedRef == r || (allocationTime(testedRef) >= methodEntryTime)
 }
-procedure Container_ctor(heap: (Map Ref (Map Field Box)), r: Ref, initialLychee: int, initialPineapple: int, initialNext: Ref) returns (newHeap: (Map Ref (Map Field Box)))
+procedure Container_ctor(heap: Heap, r: Ref, initialLychee: int, initialPineapple: int, initialNext: Ref) returns (newHeap: Heap)
 spec {
   // Refs are allocated
   free requires tickingClock >= 0;
@@ -92,7 +93,7 @@ spec {
 
 }
 {
-  var heap_var: (Map Ref (Map Field Box)) := heap;
+  var heap_var: Heap := heap;
   var methodEntryTime: int := tickingClock;
 
   // r.lychee = initialLychee
@@ -115,12 +116,12 @@ spec {
 };
 
 // Modifies frame for UpdateContainers (manual lambda lifting)
-function UpdateContainersModifiesFrame(h: (Map Ref (Map Field Box)), testedRef: Ref, ref1: Ref, ref2: Ref, methodEntryTime: int): bool {
+function UpdateContainersModifiesFrame(h: Heap, testedRef: Ref, ref1: Ref, ref2: Ref, methodEntryTime: int): bool {
   testedRef == ref1 || testedRef == ref2 || (allocationTime(testedRef) >= methodEntryTime)
 }
 
 // Annotated with "modifies ref1, ref2"
-procedure UpdateContainers(heap: (Map Ref (Map Field Box)), ref1Struct: (Map Field Box), ref2Struct: (Map Field Box)) returns (newRef1Struct: (Map Field Box), newRef2Struct: (Map Field Box), newHeap: (Map Ref (Map Field Box)))
+procedure UpdateContainers(heap: Heap, ref1Struct: Struct, ref2Struct: Struct) returns (newRef1Struct: Struct, newRef2Struct: Struct, newHeap: Heap)
 spec {
   // Refs are allocated
   free requires tickingClock >= 0;
@@ -149,9 +150,9 @@ spec {
 
 }
 {
-  var heap_var: (Map Ref (Map Field Box)) := heap;
-  var ref1Struct_var: (Map Field Box) := ref1Struct;
-  var ref2Struct_var: (Map Field Box) := ref2Struct;
+  var heap_var: Heap := heap;
+  var ref1Struct_var: Struct := ref1Struct;
+  var ref2Struct_var: Struct := ref2Struct;
   var methodEntryTime: int := tickingClock;
 
   // ref1.lychee += 1
@@ -272,12 +273,12 @@ spec {
 };
 
 // Modifies frame for Main (manual lambda lifting)
-function MainModifiesFrame(h: (Map Ref (Map Field Box)), testedRef: Ref, methodEntryTime: int): bool {
+function MainModifiesFrame(h: Heap, testedRef: Ref, methodEntryTime: int): bool {
   (allocationTime(testedRef) >= methodEntryTime)
 }
 
 // annotated with "modifies {}"
-procedure Main(heap: (Map Ref (Map Field Box))) returns (newHeap: (Map Ref (Map Field Box)))
+procedure Main(heap: Heap) returns (newHeap: Heap)
 spec {
   modifies tickingClock;
 
@@ -290,7 +291,7 @@ spec {
        ==> (newHeap[o] == heap[o]));
 }
 {
-  var heap_var: (Map Ref (Map Field Box)) := heap;
+  var heap_var: Heap := heap;
   var methodEntryTime: int := tickingClock;
 
   // instantiate c1 (i.e., new Container(0, 1, null))
@@ -310,8 +311,8 @@ spec {
   tickingClock := tickingClock + 1;           // After allocation: increase the tick
   call heap_var := Container_ctor(heap_var, c2, 0, 0, null);
 
-  var c1Struct : (Map Field Box) := heap_var[c1];
-  var c2Struct : (Map Field Box) := heap_var[c2];
+  var c1Struct : Struct := heap_var[c1];
+  var c2Struct : Struct := heap_var[c2];
 
   call c1Struct, c2Struct, heap_var := UpdateContainers(heap_var,  c1Struct, c2Struct);
 
