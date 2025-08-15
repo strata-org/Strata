@@ -28,7 +28,7 @@ axiom forall m: Heap, kk: Ref, vv: Struct :: m[kk := vv][kk] == vv;
 procedure test(h: Heap, ref: Ref, field: Field) returns ()
 {
   var newH: Heap := h[ref := h[ref][field := h[ref][field] + 1]];
-  assert newH[ref][field] == h[ref][field] + 1;
+  assert [assert0]: newH[ref][field] == h[ref][field] + 1;
 };
 
 #end
@@ -49,23 +49,20 @@ modifies: []
 preconditions: ⏎
 postconditions: ⏎
 body: init (newH : Heap) := ((((~update : (arrow (Map Ref Struct) (arrow Ref (arrow Struct (Map Ref Struct))))) h) ref) ((((~update : (arrow (Map Field int) (arrow Field (arrow int (Map Field int))))) (((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) h) ref)) field) (((~Int.Add : (arrow int (arrow int int))) (((~select : (arrow (Map Field int) (arrow Field int))) (((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) h) ref)) field)) (#1 : int))))
-assert [assert: ((((~select : (arrow (Map Field int) (arrow Field int))) (((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) newH) ref)) field) == (((~Int.Add : (arrow int (arrow int int))) (((~select : (arrow (Map Field int) (arrow Field int))) (((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) h) ref)) field)) (#1 : int)))] ((((~select : (arrow (Map Field int) (arrow Field int))) (((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) newH) ref)) field) == (((~Int.Add : (arrow int (arrow int int))) (((~select : (arrow (Map Field int) (arrow Field int))) (((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) h) ref)) field)) (#1 : int)))
+assert [assert0] ((((~select : (arrow (Map Field int) (arrow Field int))) (((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) newH) ref)) field) == (((~Int.Add : (arrow int (arrow int int))) (((~select : (arrow (Map Field int) (arrow Field int))) (((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) h) ref)) field)) (#1 : int)))
 
 Errors: #[]
 -/
 #guard_msgs in
 #eval TransM.run (translateProgram QuantTypeAliases)
 
-/-
-FIXME.  The code below triggers a unification error due to
-lack of alias support (see PR #39).
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
 
 
 VCs:
-Label: assert: (((~select ((~select newH) ref)) field) == ((~Int.Add ((~select ((~select h) ref)) field)) (#1 : int)))
+Label: assert0
 Assumptions:
 (TODO, (∀ (∀ (∀ (((~select (((~update %2) %1) %0)) %1) == %0)))))
 (TODO, (∀ (∀ (∀ (∀ ((~Bool.Implies (~Bool.Not (%2 == %1))) (((~select %3) %2) == ((~select (((~update %3) %1) %0)) %2))))))))
@@ -74,12 +71,11 @@ Assumptions:
 Proof Obligation:
 (((~select ((~select (((~update $__h0) $__ref1) (((~update ((~select $__h0) $__ref1)) $__field2) ((~Int.Add ((~select ((~select $__h0) $__ref1)) $__field2)) #1)))) $__ref1)) $__field2) == ((~Int.Add ((~select ((~select $__h0) $__ref1)) $__field2)) #1))
 
-Wrote problem to vcs/assert: (((~select ((~select newH) ref)) field) == ((~Int.Add ((~select ((~select h) ref)) field)) (#1 : int))).smt2.
+Wrote problem to vcs/assert0.smt2.
 ---
 info:
-Obligation: assert: (((~select ((~select newH) ref)) field) == ((~Int.Add ((~select ((~select h) ref)) field)) (#1 : int)))
+Obligation: assert0
 Result: verified
 -/
 #guard_msgs in
 #eval verify "cvc5" QuantTypeAliases
--/
