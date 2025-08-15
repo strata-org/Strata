@@ -76,7 +76,7 @@ def ProofObligation.create
 
 def ProofObligations.create
   (assumptions : PathConditions Expression)
-  (obligations : Map String Procedure.Check) (md : MetaData Expression := #[])
+  (obligations : ListMap String Procedure.Check) (md : MetaData Expression := #[])
   : ProofObligations Expression :=
   match obligations with
   | [] => #[]
