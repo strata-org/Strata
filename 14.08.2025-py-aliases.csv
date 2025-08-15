@@ -1,0 +1,7 @@
+filename,iteration,lake_time_seconds,smt2_replay_time_seconds,sat_count,unsat_count,unknown_count,error_count,status
+Strata/Languages/Boogie/Examples/AffineExperiment/ContainerHeapAffine10.boogie.st,1,2.6527318954467773,0.47140932083129883,0,29,0,0,ok_29_0
+Strata/Languages/Boogie/Examples/AffineExperiment/ContainerHeapAffine12.boogie.st,1,1.9016611576080322,0.5217273235321045,0,29,0,0,ok_29_0
+Strata/Languages/Boogie/Examples/AffineExperiment/ContainerHeapAffine20.boogie.st,1,16.0171959400177,0.4960000514984131,0,29,0,0,ok_29_0
+Strata/Languages/Boogie/Examples/AffineExperiment/ContainerHeapAffine4.boogie.st,1,1.2238872051239014,0.4934272766113281,0,29,0,0,ok_29_0
+Strata/Languages/Boogie/Examples/AffineExperiment/ContainerHeapAffine8.boogie.st,1,1.389591932296753,0.49268412590026855,0,29,0,0,ok_29_0
+Strata/Languages/Boogie/Examples/AffineExperiment/ContainerHeapAffine9.boogie.st,1,1.4705049991607666,0.5324296951293945,0,29,0,0,ok_29_0
