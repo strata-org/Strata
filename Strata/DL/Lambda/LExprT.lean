@@ -363,7 +363,7 @@ partial def fromLExprAux.abs (T : (TEnv Identifier)) (oty : Option LMonoTy) (e :
   | _, _ => .ok ()
   .ok (.abs etclosed mty, T)
 
-partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (oty : Option LMonoTy) (triggers : LExpr Identifier) (e : (LExpr LMonoTy Identifier)) := do
+partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (oty : Option LMonoTy) (triggers : LExpr LMonoTy Identifier) (e : (LExpr LMonoTy Identifier)) := do
   let (xv, T) := HasGen.genVar T
   let (xt', T) := TEnv.genTyVar T
   let xt := .forAll [] (.ftvar xt')

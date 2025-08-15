@@ -164,14 +164,18 @@ def mapUpdateFunc : LFunc BoogieIdent :=
       -- updateSelect
       ToBoogieIdent esM[∀(Map %k %v):
           (∀ (%k):
-            (∀ (%v):
+            (∀ (%v):{
+              (((~select : (Map %k %v) → %k → %v)
+                ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %2) %1) %0)) %1)}
               (((~select : (Map %k %v) → %k → %v)
                 ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %2) %1) %0)) %1) == %0))],
       -- update preserves
       ToBoogieIdent esM[∀ (Map %k %v):
           (∀ (%k):
             (∀ (%k):
-              (∀ (%v):
+              (∀ (%v):{
+                  (((~select : (Map %k %v) → %k → %v)
+                    ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %3) %1) %0)) %2)}
                   (((~select : (Map %k %v) → %k → %v)
                     ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %3) %1) %0)) %2)
                   ==
