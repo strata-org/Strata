@@ -13,7 +13,7 @@ namespace Boogie
 
 namespace OldExpressions
 
-open Lambda.LExpr.Syntax Lambda.LTy.Syntax Boogie.Syntax
+open Lambda.LExpr.SyntaxMono Lambda.LTy.Syntax Boogie.Syntax
 
 /-! ## Old Expressions in Boogie
 

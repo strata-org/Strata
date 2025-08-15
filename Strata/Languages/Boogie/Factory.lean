@@ -12,7 +12,7 @@ import Strata.DL.Lambda.IntBoolFactory
 ---------------------------------------------------------------------
 
 namespace Boogie
-open Lambda LTy.Syntax LExpr.Syntax
+open Lambda LTy.Syntax LExpr.SyntaxMono
 
 @[match_pattern]
 def mapTy (keyTy : LMonoTy) (valTy : LMonoTy) : LMonoTy :=
@@ -31,10 +31,10 @@ def KnownTypes : List LTy :=
    t[∀a b. %a → %b],
    t[∀a b. Map %a %b]]
 /--
-  Convert an LExpr String to an LExpr BoogieIdent
+  Convert an LExpr LMonoTy String to an LExpr LMonoTy BoogieIdent
   TODO: Remove when Lambda elaborator offers parametric identifier type
 -/
-def ToBoogieIdent (ine: LExpr String): (LExpr BoogieIdent) :=
+def ToBoogieIdent (ine: LExpr LMonoTy String): (LExpr LMonoTy BoogieIdent) :=
 match ine with
     | .const c ty => .const c ty
     | .op o oty => .op (BoogieIdent.unres o) oty
@@ -162,13 +162,13 @@ def mapUpdateFunc : LFunc BoogieIdent :=
      axioms :=
      [
       -- updateSelect
-      ToBoogieIdent es[∀(Map %k %v):
+      ToBoogieIdent esM[∀(Map %k %v):
           (∀ (%k):
             (∀ (%v):
               (((~select : (Map %k %v) → %k → %v)
                 ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %2) %1) %0)) %1) == %0))],
       -- update preserves
-      ToBoogieIdent es[∀ (Map %k %v):
+      ToBoogieIdent esM[∀ (Map %k %v):
           (∀ (%k):
             (∀ (%k):
               (∀ (%v):
@@ -236,38 +236,38 @@ elab "DefBVOpFuncExprs" "[" sizes:num,* "]" : command => do
     for op in BVOpNames do
       let opName := mkIdent (.str .anonymous s!"bv{s}{op}Op")
       let funcName := mkIdent (.str (.str .anonymous "Boogie") s!"bv{s}{op}Func")
-      elabCommand (← `(def $opName : LExpr BoogieIdent := ($funcName).opExpr))
+      elabCommand (← `(def $opName : LExpr LMonoTy BoogieIdent := ($funcName).opExpr))
 
 DefBVOpFuncExprs [1, 8, 16, 32, 64]
 
-def intAddOp : LExpr BoogieIdent := intAddFunc.opExpr
-def intSubOp : LExpr BoogieIdent := intSubFunc.opExpr
-def intMulOp : LExpr BoogieIdent := intMulFunc.opExpr
-def intDivOp : LExpr BoogieIdent := intDivFunc.opExpr
-def intModOp : LExpr BoogieIdent := intModFunc.opExpr
-def intNegOp : LExpr BoogieIdent := intNegFunc.opExpr
-def intLtOp : LExpr BoogieIdent := intLtFunc.opExpr
-def intLeOp : LExpr BoogieIdent := intLeFunc.opExpr
-def intGtOp : LExpr BoogieIdent := intGtFunc.opExpr
-def intGeOp : LExpr BoogieIdent := intGeFunc.opExpr
-def realAddOp : LExpr BoogieIdent := realAddFunc.opExpr
-def realSubOp : LExpr BoogieIdent := realSubFunc.opExpr
-def realMulOp : LExpr BoogieIdent := realMulFunc.opExpr
-def realDivOp : LExpr BoogieIdent := realDivFunc.opExpr
-def realNegOp : LExpr BoogieIdent := realNegFunc.opExpr
-def realLtOp : LExpr BoogieIdent := realLtFunc.opExpr
-def realLeOp : LExpr BoogieIdent := realLeFunc.opExpr
-def realGtOp : LExpr BoogieIdent := realGtFunc.opExpr
-def realGeOp : LExpr BoogieIdent := realGeFunc.opExpr
-def boolAndOp : LExpr BoogieIdent := boolAndFunc.opExpr
-def boolOrOp : LExpr BoogieIdent := boolOrFunc.opExpr
-def boolImpliesOp : LExpr BoogieIdent := boolImpliesFunc.opExpr
-def boolEquivOp : LExpr BoogieIdent := boolEquivFunc.opExpr
-def boolNotOp : LExpr BoogieIdent := boolNotFunc.opExpr
-def strLengthOp : LExpr BoogieIdent := strLengthFunc.opExpr
-def strConcatOp : LExpr BoogieIdent := strConcatFunc.opExpr
-def polyOldOp : LExpr BoogieIdent := polyOldFunc.opExpr
-def mapSelectOp : LExpr BoogieIdent := mapSelectFunc.opExpr
-def mapUpdateOp : LExpr BoogieIdent := mapUpdateFunc.opExpr
+def intAddOp : LExpr LMonoTy BoogieIdent := intAddFunc.opExpr
+def intSubOp : LExpr LMonoTy BoogieIdent := intSubFunc.opExpr
+def intMulOp : LExpr LMonoTy BoogieIdent := intMulFunc.opExpr
+def intDivOp : LExpr LMonoTy BoogieIdent := intDivFunc.opExpr
+def intModOp : LExpr LMonoTy BoogieIdent := intModFunc.opExpr
+def intNegOp : LExpr LMonoTy BoogieIdent := intNegFunc.opExpr
+def intLtOp : LExpr LMonoTy BoogieIdent := intLtFunc.opExpr
+def intLeOp : LExpr LMonoTy BoogieIdent := intLeFunc.opExpr
+def intGtOp : LExpr LMonoTy BoogieIdent := intGtFunc.opExpr
+def intGeOp : LExpr LMonoTy BoogieIdent := intGeFunc.opExpr
+def realAddOp : LExpr LMonoTy BoogieIdent := realAddFunc.opExpr
+def realSubOp : LExpr LMonoTy BoogieIdent := realSubFunc.opExpr
+def realMulOp : LExpr LMonoTy BoogieIdent := realMulFunc.opExpr
+def realDivOp : LExpr LMonoTy BoogieIdent := realDivFunc.opExpr
+def realNegOp : LExpr LMonoTy BoogieIdent := realNegFunc.opExpr
+def realLtOp : LExpr LMonoTy BoogieIdent := realLtFunc.opExpr
+def realLeOp : LExpr LMonoTy BoogieIdent := realLeFunc.opExpr
+def realGtOp : LExpr LMonoTy BoogieIdent := realGtFunc.opExpr
+def realGeOp : LExpr LMonoTy BoogieIdent := realGeFunc.opExpr
+def boolAndOp : LExpr LMonoTy BoogieIdent := boolAndFunc.opExpr
+def boolOrOp : LExpr LMonoTy BoogieIdent := boolOrFunc.opExpr
+def boolImpliesOp : LExpr LMonoTy BoogieIdent := boolImpliesFunc.opExpr
+def boolEquivOp : LExpr LMonoTy BoogieIdent := boolEquivFunc.opExpr
+def boolNotOp : LExpr LMonoTy BoogieIdent := boolNotFunc.opExpr
+def strLengthOp : LExpr LMonoTy BoogieIdent := strLengthFunc.opExpr
+def strConcatOp : LExpr LMonoTy BoogieIdent := strConcatFunc.opExpr
+def polyOldOp : LExpr LMonoTy BoogieIdent := polyOldFunc.opExpr
+def mapSelectOp : LExpr LMonoTy BoogieIdent := mapSelectFunc.opExpr
+def mapUpdateOp : LExpr LMonoTy BoogieIdent := mapUpdateFunc.opExpr
 
 end Boogie
