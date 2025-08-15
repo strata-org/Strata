@@ -15,7 +15,7 @@ open Std (ToFormat Format format)
 A simple Map-like type based on lists
 -/
 
-abbrev Map (α : Type u) (β : Type v) := List (α × β)
+def Map (α : Type u) (β : Type v) := List (α × β)
 
 instance [BEq α] [BEq β] : BEq (Map α β) where
   beq m1 m2 := go m1 m2 where
@@ -26,8 +26,24 @@ instance [BEq α] [BEq β] : BEq (Map α β) where
       x == y && go xrest yrest
     | _, _ => false
 
+instance : Inhabited (Map α β) where
+  default := []
+
+instance : EmptyCollection (Map α β) where
+  emptyCollection := []
+
+instance : HAppend (Map α β) (Map α β) (Map α β) where
+  hAppend := List.append
+
+instance [DecidableEq α] [DecidableEq β] [LawfulBEq α] [LawfulBEq β] : DecidableEq (Map α β) :=
+  List.hasDecEq
+
 instance [x : Repr (List (α × β))] : Repr (Map α β) where
   reprPrec := x.reprPrec
+
+def Map.ofList (l : List (α × β)) : Map α β := l
+
+def Map.toList (m : Map α β) : List (α × β) := m
 
 def Map.format' [ToFormat α] [ToFormat β] (m : Map α β) : Format :=
   match m with

@@ -17,14 +17,17 @@ namespace WF
 
 open Lambda
 
-theorem snd_values_mem :
-  x ∈ ps →
+theorem snd_values_mem {ps : Map BoogieLabel Procedure.Check} :
+  x ∈ ps.toList →
   x.snd ∈ Map.values ps := by
   intros Hin
-  induction ps <;> simp_all
+  induction ps
   case cons h t ih =>
-  simp [Map.values]
-  cases Hin <;> simp_all
+    simp_all [Map.toList, Map.values]
+    cases Hin
+    case inl eq => left ; rw [eq]
+    case inr mem => right ; exact (ih mem)
+  case nil => cases Hin
 
 set_option warn.sorry false in
 /--

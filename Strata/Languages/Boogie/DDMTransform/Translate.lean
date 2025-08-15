@@ -332,8 +332,8 @@ partial def translateDeclList (bindings : TransBindings) (arg : Arg) :
     let args ← checkOpArg arg q`Boogie.declPush 2
     let fst ← translateDeclList bindings args[0]!
     let (id, targs, mty) ← translateBindMk bindings args[1]!
-    let lty := .forAll targs mty
-    pure (fst ++ [(id, lty)])
+    let lty : LTy := .forAll targs mty
+    pure (fst ++ Map.ofList [(id, lty)])
   | _ => TransM.error s!"translateDeclList unimplemented for {repr op}"
 
 partial def translateMonoDeclList (bindings : TransBindings) (arg : Arg) :
@@ -349,7 +349,7 @@ partial def translateMonoDeclList (bindings : TransBindings) (arg : Arg) :
     let args ← checkOpArg arg q`Boogie.monoDeclPush 2
     let fst ← translateMonoDeclList bindings args[0]!
     let (id, mty) ← translateMonoBindMk bindings args[1]!
-    pure (fst ++ [(id, mty)])
+    pure (fst ++ Map.ofList [(id, mty)])
   | _ => TransM.error s!"translateMonoDeclList unimplemented for {repr op}"
 
 def translateOptionMonoDeclList (bindings : TransBindings) (arg : Arg) :

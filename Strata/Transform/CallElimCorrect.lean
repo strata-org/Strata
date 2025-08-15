@@ -297,7 +297,7 @@ theorem postconditions_subst_unwrap :
       symm
       exact Hin.2
 
-theorem prepostconditions_unwrap :
+theorem prepostconditions_unwrap {ps : List (BoogieLabel × Procedure.Check)} :
 post ∈ List.map Procedure.Check.expr (Map.values ps) →
 ∃ label attr, (label, { expr := post, attr : Procedure.Check }) ∈ ps := by
   intros H
