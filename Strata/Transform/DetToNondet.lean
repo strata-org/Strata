@@ -24,8 +24,8 @@ def StmtToNondetStmt {P : PureExpr} [Imperative.HasBool P] [Imperative.HasBoolNe
   | .block  _ b _ => StmtsToNondetStmt b.ss
   | .ite    cond  thenb elseb md =>
     .choice
-      (.seq (.assert "true_cond" cond md) (StmtsToNondetStmt thenb.ss))
-      (.seq ((.assert "false_cond" (Imperative.HasBoolNeg.neg cond) md)) (StmtsToNondetStmt elseb.ss))
+      (.seq (.assume "true_cond" cond md) (StmtsToNondetStmt thenb.ss))
+      (.seq ((.assume "false_cond" (Imperative.HasBoolNeg.neg cond) md)) (StmtsToNondetStmt elseb.ss))
   | .loop   guard _measure _inv body md =>
     .loop (.seq (.assume "guard" guard md) (StmtsToNondetStmt body.ss))
   | .goto _ _ => (.assume "skip" Imperative.HasBool.tt)
