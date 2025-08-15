@@ -154,6 +154,11 @@ spec {
   var heap_var: Heap := heap;
   var methodEntryTime: int := tickingClock;
 
+  // ref1.lychee += 1
+  assert [modifiesFrameRef1]: UpdateContainersModifiesFrame(heap_var, ref1, ref1, ref2, methodEntryTime);
+  var rhs1: Box := BoxingInt(UnboxingInt(heap_var[ref1][lycheeField]) + 1);
+  heap_var := heap_var[ref1 := heap_var[ref1][lycheeField := rhs1]];
+
   // ref1.pineapple += 1
   assert [modifiesFrameRef1]: UpdateContainersModifiesFrame(heap_var, ref1, ref1, ref2, methodEntryTime);
   var rhs2: Box := BoxingInt(UnboxingInt(heap_var[ref1][pineappleField]) + 1);
@@ -171,10 +176,6 @@ spec {
 
   // -----------------------------------------------------------------------------------------------------------------------
 
-  // ref1.lychee += 1
-  assert [modifiesFrameRef1]: UpdateContainersModifiesFrame(heap_var, ref1, ref1, ref2, methodEntryTime);
-  var rhs5: Box := BoxingInt(UnboxingInt(heap_var[ref1][lycheeField]) + 1);
-  heap_var := heap_var[ref1 := heap_var[ref1][lycheeField := rhs5]];
 
   // ref1.pineapple += 1
   assert [modifiesFrameRef1]: UpdateContainersModifiesFrame(heap_var, ref1, ref1, ref2, methodEntryTime);
