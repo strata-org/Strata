@@ -27,7 +27,7 @@ of Lambda expressions in isolation, the stack can contain a single scope.
 
 variable {Identifier : Type} [DecidableEq Identifier] [ToFormat Identifier]
 
-abbrev Scope (Identifier : Type) := (Map Identifier (Option LMonoTy × (LExpr Identifier)))
+abbrev Scope (Identifier : Type) := (Map Identifier (Option LMonoTy × (LExpr LMonoTy Identifier)))
 
 instance : BEq (Scope Identifier) where
   beq m1 m2 := m1 == m2
@@ -53,7 +53,7 @@ instance : ToFormat (Scope Identifier) where
 Merge two maps `m1` and `m2`, where `m1` is assumed to be the map if `cond`
 is `true` and `m2` when it is false.
 -/
-def Scope.merge (cond : (LExpr Identifier)) (m1 m2 : (Scope Identifier)) : (Scope Identifier) :=
+def Scope.merge (cond : (LExpr LMonoTy Identifier)) (m1 m2 : (Scope Identifier)) : (Scope Identifier) :=
   match m1 with
   | [] => m2.map (fun (i, (ty, e)) => (i, (ty, mkIte cond (.fvar i ty) e)))
   | (k, (ty1, e1)) :: rest =>
@@ -69,12 +69,12 @@ def Scope.merge (cond : (LExpr Identifier)) (m1 m2 : (Scope Identifier)) : (Scop
       else
         (k, (ty1, mkIte cond e1 e2)) ::
       Scope.merge cond rest (m2.erase k)
-  where mkIte (cond tru fals : (LExpr Identifier)) : (LExpr Identifier) :=
+  where mkIte (cond tru fals : (LExpr LMonoTy Identifier)) : (LExpr LMonoTy Identifier) :=
     if tru == fals then tru
     else (LExpr.ite cond tru fals)
 
 section Scope.merge.tests
-open LTy.Syntax LExpr.Syntax
+open LTy.Syntax LExpr.SyntaxMono
 
 /--
 info: (x : int) → (#8 : int)
@@ -128,13 +128,13 @@ end Scope.merge.tests
 A stack of scopes, where each scope maps the free variables
 to their `LExpr` values.
 -/
-abbrev Scopes (Identifier : Type) := Maps Identifier (Option LMonoTy × LExpr Identifier)
+abbrev Scopes (Identifier : Type) := Maps Identifier (Option LMonoTy × LExpr LMonoTy Identifier)
 
 /--
 Merge two scopes, where `s1` is assumed to be the scope if `cond` is true, and
 `s2` otherwise.
 -/
-def Scopes.merge (cond : LExpr Identifier) (s1 s2 : Scopes Identifier) : Scopes Identifier :=
+def Scopes.merge (cond : LExpr LMonoTy Identifier) (s1 s2 : Scopes Identifier) : Scopes Identifier :=
   match s1, s2 with
   | [], _ => s2
   | _, [] => s1

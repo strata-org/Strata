@@ -55,7 +55,7 @@ Typing relation for `LExpr`s.
 (TODO) Add the introduction and elimination rules for `.tcons`.
 -/
 inductive HasType {Identifier : Type} [DecidableEq Identifier]:
-  (TContext Identifier) → (LExpr Identifier) → LTy → Prop where
+  (TContext Identifier) → (LExpr LMonoTy Identifier) → LTy → Prop where
   | tmdata : ∀ Γ info e ty, HasType Γ e ty →
                             HasType Γ (.mdata info e) ty
 
@@ -151,17 +151,17 @@ section Tests
 
 -- Examples of typing derivations using the `HasType` relation.
 
-open LExpr.Syntax LTy.Syntax
+open LExpr.SyntaxMono LTy.Syntax
 
-example : LExpr.HasType {} es[#true] t[bool] := by
+example : LExpr.HasType {} esM[#true] t[bool] := by
   apply LExpr.HasType.tbool_const_t
 
-example : LExpr.HasType {} es[#-1] t[int] := by
+example : LExpr.HasType {} esM[#-1] t[int] := by
   apply LExpr.HasType.tint_const
   simp +ground
 
-example : LExpr.HasType { types := [[("x", t[∀a. %a])]]} es[x] t[int] := by
-  have h_tinst := @LExpr.HasType.tinst (Identifier := String) _ { types := [[("x", t[∀a. %a])]]} es[x] t[∀a. %a] t[int] "a" mty[int]
+example : LExpr.HasType { types := [[("x", t[∀a. %a])]]} esM[x] t[int] := by
+  have h_tinst := @LExpr.HasType.tinst (Identifier := String) _ { types := [[("x", t[∀a. %a])]]} esM[x] t[∀a. %a] t[int] "a" mty[int]
   have h_tvar := @LExpr.HasType.tvar (Identifier := String) _ { types := [[("x", t[∀a. %a])]]} "x" t[∀a. %a]
   simp +ground at h_tvar
   simp [h_tvar] at h_tinst
@@ -169,7 +169,7 @@ example : LExpr.HasType { types := [[("x", t[∀a. %a])]]} es[x] t[int] := by
   assumption
 
 example : LExpr.HasType { types := [[("m", t[∀a. %a → int])]]}
-                        es[(m #true)]
+                        esM[(m #true)]
                         t[int] := by
   apply LExpr.HasType.tapp _ _ _ _ t[bool] <;> (try simp +ground)
   <;> try apply LExpr.HasType.tbool_const_t
@@ -179,14 +179,14 @@ example : LExpr.HasType { types := [[("m", t[∀a. %a → int])]]}
   · simp +ground
   done
 
-example : LExpr.HasType {} es[λ %0] t[∀a. %a → %a] := by
-  have h_tabs := @LExpr.HasType.tabs (Identifier := String) _ {} ("a", none) t[%a] es[%0] t[%a]
+example : LExpr.HasType {} esM[λ %0] t[∀a. %a → %a] := by
+  have h_tabs := @LExpr.HasType.tabs (Identifier := String) _ {} ("a", none) t[%a] esM[%0] t[%a]
   simp +ground at h_tabs
   have h_tvar := @LExpr.HasType.tvar (Identifier := String) _ { types := [[("a", t[%a])]] }
                  "a" t[%a]
   simp [Maps.find?, Map.find?] at h_tvar
   simp [h_tvar, LTy.toMonoType] at h_tabs
-  have h_tgen := @LExpr.HasType.tgen (Identifier := String) _ {} es[λ %0] "a"
+  have h_tgen := @LExpr.HasType.tgen (Identifier := String) _ {} esM[λ %0] "a"
                  t[%a → %a]
                  h_tabs
   simp +ground [Maps.find?] at h_tgen

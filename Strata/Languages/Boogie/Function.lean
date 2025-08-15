@@ -19,7 +19,7 @@ open Lambda
 
 abbrev Function := Lambda.LFunc BoogieIdent
 
-open LTy.Syntax LExpr.Syntax in
+open LTy.Syntax LExpr.SyntaxMono in
 /-- info: ok: ∀[a, b]. (arrow int (arrow a (arrow b (arrow a a)))) -/
 #guard_msgs in
 #eval do let type ← LFunc.type (Identifier:=BoogieIdent)

@@ -112,7 +112,7 @@ instance : ToFormat (Cmds Expression × Env) where
 
 ---------------------------------------------------------------------
 
-open LExpr.Syntax LTy.Syntax Boogie.Syntax
+open LExpr.SyntaxMono LTy.Syntax Boogie.Syntax
 private def testProgram1 : Cmds Expression :=
   [.init "x" t[int] eb[#0],
    .set "x" eb[#10],

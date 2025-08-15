@@ -24,7 +24,7 @@ namespace C_Simp
 -- Our expression language is `DL/Lambda`
 abbrev Expression : Imperative.PureExpr := {
   Ident := String,
-  Expr := Lambda.LExpr String,
+  Expr := Lambda.LExpr Lambda.LMonoTy String,
   Ty := Lambda.LTy,
   TyEnv := Lambda.TEnv String,
   EvalEnv := Lambda.LState String,

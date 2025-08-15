@@ -12,7 +12,7 @@ namespace Boogie
 section Tests
 
 open Std (ToFormat Format format)
-open Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.Syntax Boogie.Syntax
+open Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Boogie.Syntax
 
 /--
 info: Error:

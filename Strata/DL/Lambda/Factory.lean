@@ -83,12 +83,12 @@ structure LFunc (Identifier : Type) where
   typeArgs : List TyIdentifier := []
   inputs   : @LMonoTySignature Identifier
   output   : LMonoTy
-  body     : Option (LExpr Identifier) := .none
+  body     : Option (LExpr LMonoTy Identifier) := .none
   -- (TODO): Add support for a fixed set of attributes (e.g., whether to inline
   -- a function, etc.).
   attr     : Array String := #[]
-  denote   : Option ((LExpr Identifier) → List (LExpr Identifier) → (LExpr Identifier)) := .none
-  axioms   : List (LExpr Identifier) := []  -- For axiomatic definitions
+  denote   : Option ((LExpr LMonoTy Identifier) → List (LExpr LMonoTy Identifier) → (LExpr LMonoTy Identifier)) := .none
+  axioms   : List (LExpr LMonoTy Identifier) := []  -- For axiomatic definitions
 
 instance : Inhabited (LFunc Identifier) where
   default := { name := Inhabited.default, inputs := [], output := LMonoTy.bool }
@@ -123,7 +123,7 @@ def LFunc.type (f : (LFunc Identifier)) : Except Format LTy := do
   | ity :: irest =>
     .ok (.forAll f.typeArgs (Lambda.LMonoTy.mkArrow ity (irest ++ output_tys)))
 
-def LFunc.opExpr (f: LFunc Identifier) : LExpr Identifier :=
+def LFunc.opExpr (f: LFunc Identifier) : LExpr LMonoTy Identifier :=
   let input_tys := f.inputs.values
   let output_tys := Lambda.LMonoTy.destructArrow f.output
   let ty := match input_tys with
@@ -178,15 +178,15 @@ along the way.
 def Factory.addFactory (F newF : @Factory Identifier) : Except Format (@Factory Identifier) :=
   Array.foldlM (fun factory func => factory.addFactoryFunc func) F newF
 
-def getLFuncCall (e : (LExpr Identifier)) : (LExpr Identifier) × List (LExpr Identifier) :=
+def getLFuncCall (e : (LExpr LMonoTy Identifier)) : (LExpr LMonoTy Identifier) × List (LExpr LMonoTy Identifier) :=
   go e []
-  where go e (acc : List (LExpr Identifier)) :=
+  where go e (acc : List (LExpr LMonoTy Identifier)) :=
   match e with
   | .app (.app  e' arg1) arg2 =>  go e' ([arg1, arg2] ++ acc)
   | .app (.op  fn  fnty) arg1 =>  ((.op fn fnty), ([arg1] ++ acc))
   | _ => (e, acc)
 
-def getConcreteLFuncCall (e : (LExpr Identifier)) : (LExpr Identifier) × List (LExpr Identifier) :=
+def getConcreteLFuncCall (e : (LExpr LMonoTy Identifier)) : (LExpr LMonoTy Identifier) × List (LExpr LMonoTy Identifier) :=
   let (op, args) := getLFuncCall e
   if args.all LExpr.isConst then (op, args) else (e, [])
 
@@ -194,7 +194,7 @@ def getConcreteLFuncCall (e : (LExpr Identifier)) : (LExpr Identifier) × List (
 If `e` is a call of a factory function, get the operator (`.op`), a list
 of all the actuals, and the `(LFunc Identifier)`.
 -/
-def Factory.callOfLFunc (F : @Factory Identifier) (e : (LExpr Identifier)) : Option ((LExpr Identifier) × List (LExpr Identifier) × (LFunc Identifier)) :=
+def Factory.callOfLFunc (F : @Factory Identifier) (e : (LExpr LMonoTy Identifier)) : Option ((LExpr LMonoTy Identifier) × List (LExpr LMonoTy Identifier) × (LFunc Identifier)) :=
   let (op, args) := getLFuncCall e
   match op with
   | .op name _ =>

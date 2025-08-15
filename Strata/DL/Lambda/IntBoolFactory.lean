@@ -22,7 +22,7 @@ section IntBoolFactory
 def unaryOp [Coe String Ident]
             (n : Ident)
             (ty : LMonoTy)
-            (denote : Option (LExpr Ident → List (LExpr Ident) → LExpr Ident)) : LFunc Ident :=
+            (denote : Option (LExpr LMonoTy Ident → List (LExpr LMonoTy Ident) → LExpr LMonoTy Ident)) : LFunc Ident :=
   { name := n,
     inputs := [("x", ty)],
     output := ty,
@@ -31,7 +31,7 @@ def unaryOp [Coe String Ident]
 def binaryOp [Coe String Ident]
              (n : Ident)
              (ty : LMonoTy)
-             (denote : Option (LExpr Ident → List (LExpr Ident) → LExpr Ident)) : LFunc Ident :=
+             (denote : Option (LExpr LMonoTy Ident → List (LExpr LMonoTy Ident) → LExpr LMonoTy Ident)) : LFunc Ident :=
   { name := n,
     inputs := [("x", ty), ("y", ty)],
     output := ty,
@@ -40,16 +40,16 @@ def binaryOp [Coe String Ident]
 def binaryPredicate [Coe String Ident]
                     (n : Ident)
                     (ty : LMonoTy)
-                    (denote : Option (LExpr Ident → List (LExpr Ident) → LExpr Ident)) : LFunc Ident :=
+                    (denote : Option (LExpr LMonoTy Ident → List (LExpr LMonoTy Ident) → LExpr LMonoTy Ident)) : LFunc Ident :=
   { name := n,
     inputs := [("x", ty), ("y", ty)],
     output := .bool,
     denote := denote }
 
 def unOpDenote  {Identifier : Type} (InTy OutTy : Type) [ToString OutTy]
-                (denoteInTy : (LExpr Identifier) → Option InTy) (op : InTy → OutTy)
+                (denoteInTy : (LExpr LMonoTy Identifier) → Option InTy) (op : InTy → OutTy)
                 (ty : LMonoTy) :
-                (LExpr Identifier) → List (LExpr Identifier) → (LExpr Identifier) :=
+                (LExpr LMonoTy Identifier) → List (LExpr LMonoTy Identifier) → (LExpr LMonoTy Identifier) :=
   (fun e args => match args with
    | [e1] =>
      let e1i := denoteInTy e1
@@ -59,9 +59,9 @@ def unOpDenote  {Identifier : Type} (InTy OutTy : Type) [ToString OutTy]
    | _ => e)
 
 def binOpDenote {Identifier : Type} (InTy OutTy : Type) [ToString OutTy]
-                (denoteInTy : (LExpr Identifier) → Option InTy) (op : InTy → InTy → OutTy)
+                (denoteInTy : (LExpr LMonoTy Identifier) → Option InTy) (op : InTy → InTy → OutTy)
                 (ty : LMonoTy) :
-                (LExpr Identifier) → List (LExpr Identifier) → (LExpr Identifier) :=
+                (LExpr LMonoTy Identifier) → List (LExpr LMonoTy Identifier) → (LExpr LMonoTy Identifier) :=
   (fun e args => match args with
    | [e1, e2] =>
      let e1i := denoteInTy e1
@@ -73,7 +73,7 @@ def binOpDenote {Identifier : Type} (InTy OutTy : Type) [ToString OutTy]
 
 -- We hand-code a denotation for `Int.Div` to leave the expression
 -- unchanged if we have `0` for the denominator.
-def denoteIntDiv (e : LExpr Ident) (args : List (LExpr Ident)) : LExpr Ident :=
+def denoteIntDiv (e : LExpr LMonoTy Ident) (args : List (LExpr LMonoTy Ident)) : LExpr LMonoTy Ident :=
   match args with
   | [e1, e2] =>
     let e1i := LExpr.denoteInt e1
@@ -86,7 +86,7 @@ def denoteIntDiv (e : LExpr Ident) (args : List (LExpr Ident)) : LExpr Ident :=
 
 -- We hand-code a denotation for `Int.Mod` to leave the expression
 -- unchanged if we have `0` for the denominator.
-def denoteIntMod (e : LExpr Ident) (args : List (LExpr Ident)) : LExpr Ident :=
+def denoteIntMod (e : LExpr LMonoTy Ident) (args : List (LExpr LMonoTy Ident)) : LExpr LMonoTy Ident :=
   match args with
   | [e1, e2] =>
     let e1i := LExpr.denoteInt e1
