@@ -123,7 +123,7 @@ instance : DecidableEq Term := Term.hasDecEq
 
 def hashTerm (t: Term): UInt64 :=
   match t with
-    | .prim _ => 1
+    | .prim _ => 2
     | .var _ => 3
     | .none _ => 5
     | .some _ => 7
