@@ -11,7 +11,7 @@ namespace Strata
 open Elab
 
 def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
-  let Ident : DeclBindingKind := .cat <| .atom q`Init.Ident
+  let Ident : ArgDeclKind := .cat <| .atom q`Init.Ident
   let BindingType := q`Init.BindingType
   let Command := q`Init.Command
   let Metadata := q`Init.Metadata

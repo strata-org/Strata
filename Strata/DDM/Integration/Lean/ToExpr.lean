@@ -162,23 +162,23 @@ instance Metadata.instToExpr : ToExpr Metadata where
   toTypeExpr := mkConst ``Metadata
   toExpr m := mkAppN (mkConst ``Metadata.ofArray) #[toExpr m.toArray]
 
-namespace DeclBindingKind
+namespace ArgDeclKind
 
-instance : ToExpr DeclBindingKind where
-  toTypeExpr := mkConst ``DeclBindingKind
+instance : ToExpr ArgDeclKind where
+  toTypeExpr := mkConst ``ArgDeclKind
   toExpr
-  | .expr tp => mkApp (mkConst ``expr) (toExpr tp)
   | .cat c => mkApp (mkConst ``cat) (toExpr c)
+  | .type tp => mkApp (mkConst ``type) (toExpr tp)
 
-end DeclBindingKind
+end ArgDeclKind
 
-namespace DeclBinding
+namespace ArgDecl
 
-instance : ToExpr DeclBinding where
-  toTypeExpr := mkConst ``DeclBinding
-  toExpr  b := mkAppN (mkConst ``DeclBinding.mk) #[toExpr b.ident, toExpr b.kind, toExpr b.metadata]
+instance : ToExpr ArgDecl where
+  toTypeExpr := mkConst ``ArgDecl
+  toExpr  b := mkAppN (mkConst ``mk) #[toExpr b.ident, toExpr b.kind, toExpr b.metadata]
 
-end DeclBinding
+end ArgDecl
 
 namespace SyntaxDefAtom
 
