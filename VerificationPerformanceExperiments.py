@@ -21,7 +21,7 @@ def run_command_with_timing(command, cwd=None):
             cwd=cwd,
             capture_output=True, 
             text=True, 
-            timeout=8*60  # 8min timeout
+            timeout=12*60  # 12min timeout
         )
         duration = time.time() - start_time
         return result.returncode == 0, duration, result.stdout, result.stderr, result.returncode
