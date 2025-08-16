@@ -62,9 +62,9 @@ abbrev DialectElab := Tree → DialectM Unit
 
 private def checkTypeDeclarationArgs (tree : Tree) : ElabM (Array String) := do
   let bindings := tree.optBindings!
-  let mut m := DeclBindingsMap.empty bindings.size
+  let mut m := ArgDeclsMap.empty bindings.size
   for t in bindings do
-    let (arg, success) ← runChecked <| translateDeclBinding m t
+    let (arg, success) ← runChecked <| translateArgDecl m t
     if !success then
       return default
     if !arg.val.kind.isType then
@@ -103,7 +103,7 @@ def elabOpCommand (tree : Tree) : DialectM Unit := do
     logError nameInfo.stx s!"{name} already declared."; return
 
   let argDeclsTree := tree[1]!
-  let (argDecls, argDeclsSuccess) ← runElab <| runChecked <| translateDeclBindings argDeclsTree
+  let (argDecls, argDeclsSuccess) ← runElab <| runChecked <| translateArgDecls argDeclsTree
 
   let categoryTree := tree[2]!
   let (category, categorySuccess) ← runElab <| runChecked <| translateSyntaxCat categoryTree.asBindingType!
@@ -210,8 +210,8 @@ def elabFnCommand (tree : Tree) : DialectM Unit := do
   if name ∈ d.cache then
     logError nameInfo.stx s!"{name} already declared."; return
 
-  let bindingsTree := tree[1]!
-  let (params, argDeclsSuccess) ← runElab <| runChecked <| translateDeclBindings bindingsTree
+  let argsTree := tree[1]!
+  let (params, argDeclsSuccess) ← runElab <| runChecked <| translateArgDecls argsTree
 
   let returnTypeTree := tree[2]!.asBindingType!
   let isType : Array Bool := params.decls.map (·.val.kind.isType)

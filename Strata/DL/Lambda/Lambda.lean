@@ -34,8 +34,8 @@ dialect.
 -/
 def typeCheckAndPartialEval
   (f : Factory (Identifier:=Identifier) := Factory.default)
-  (e : (LExpr Identifier)) :
-  Except Std.Format (LExpr Identifier) := do
+  (e : (LExpr LMonoTy Identifier)) :
+  Except Std.Format (LExpr LMonoTy Identifier) := do
   let T := TEnv.default.addFactoryFunctions f
   let (et, _T) ← LExpr.annotate T e
   dbg_trace f!"Annotated expression:{Format.line}{et}{Format.line}"

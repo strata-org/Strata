@@ -643,17 +643,18 @@ precedence ≥ prec.  The remaining syntax is given.
 deriving Inhabited
 
 private partial
-def checkLeftRec (thisCatName : QualifiedIdent) (b : DeclBindings) (as : List SyntaxDefAtom) : LhsRec :=
+def checkLeftRec (thisCatName : QualifiedIdent) (argDecls : ArgDecls) (as : List SyntaxDefAtom) : LhsRec :=
   match as with
   | [] =>
     .isLeading []
   | .indent _ as :: bs =>
-    checkLeftRec thisCatName b (as.toList ++ bs)
+    checkLeftRec thisCatName argDecls (as.toList ++ bs)
   | .str _ :: _ =>
     .isLeading as
-  | .ident v argPrec :: rest =>
-    assert! v < b.size
-    match b[v]!.kind.categoryOf with
+  | .ident v argPrec :: rest => Id.run do
+    let .isTrue lt := inferInstanceAs (Decidable (v < argDecls.size))
+      | return panic! "Invalid index"
+    match argDecls[v].kind.categoryOf with
     | .app (.atom (q`Init.CommaSepBy)) (.atom c) =>
       if c == thisCatName then
         .invalid mf!"Leading symbol cannot be recursive call to {c}"
@@ -714,15 +715,15 @@ This walks the SyntaxDefAtomParser and prepends extracted parser to state.
 This is essentially a right-to-left fold and is implemented so that the parser starts with
 the first symbol.
 -/
-private def prependSyntaxDefAtomParser [Inhabited α] (ctx : ParsingContext) (b : DeclBindings) (prepend : Parser -> α → α) (o : SyntaxDefAtom) (r : α) : α :=
+private def prependSyntaxDefAtomParser [Inhabited α] (ctx : ParsingContext) (argDecls : ArgDecls) (prepend : Parser -> α → α) (o : SyntaxDefAtom) (r : α) : α :=
   match o with
   | .ident v prec => Id.run do
-    if v ≥ b.size then
-      return panic! s!"Invalid ident index {v} in bindings {eformat b}"
+    let .isTrue lt := inferInstanceAs (Decidable (v < argDecls.size))
+      | return panic! s!"Invalid ident index {v} in bindings {eformat argDecls}"
     let addParser (p : Parser) :=
       let q : Parser := Lean.Parser.adaptCacheableContext ({ · with prec }) p
       prepend q r
-    match b[v]!.kind.categoryOf with
+    match argDecls[v].kind.categoryOf with
     | .app (.atom (q`Init.CommaSepBy)) (.atom c) =>
       addParser <| sepByNoAntiquot (catParser ctx c) (symbolNoAntiquot ",")
     | .app (.atom (q`Init.Option)) (.atom c) =>
@@ -740,24 +741,24 @@ private def prependSyntaxDefAtomParser [Inhabited α] (ctx : ParsingContext) (b 
     else
       prepend (symbolNoAntiquot l) r
   | .indent _ p =>
-    p.attach.foldr (init := r) fun ⟨e, _⟩ r => prependSyntaxDefAtomParser ctx b prepend e r
+    p.attach.foldr (init := r) fun ⟨e, _⟩ r => prependSyntaxDefAtomParser ctx argDecls prepend e r
 
-private def liftToKind (ctx : ParsingContext) (o : List SyntaxDefAtom) (b : DeclBindings) : Parser :=
-  o.foldr (init := skip) (prependSyntaxDefAtomParser ctx b (· >> ·))
+private def liftToKind (ctx : ParsingContext) (o : List SyntaxDefAtom) (argDecls : ArgDecls) : Parser :=
+  o.foldr (init := skip) (prependSyntaxDefAtomParser ctx argDecls (· >> ·))
 
 def opSyntaxParser (ctx : ParsingContext)
                    (category : QualifiedIdent)
                    (ident : QualifiedIdent)
-                   (bindings : DeclBindings)
+                   (argDecls : ArgDecls)
                    (opStx : SyntaxDef) : Except StrataFormat DeclParser := do
   let n := identName ident
   let prec := opStx.prec
-  match checkLeftRec category bindings opStx.atoms.toList with
+  match checkLeftRec category argDecls opStx.atoms.toList with
   | .invalid mf => throw mf
   | .isTrailing minLeftPrec args =>
     if args.isEmpty then
       throw mf!"invalid atomic left recursive syntax"
-    let p := liftToKind ctx args bindings
+    let p := liftToKind ctx args argDecls
     -- Run parsers so far and append parser for next op.
     -- Parser for creating top level node
     pure {
@@ -774,7 +775,7 @@ def opSyntaxParser (ctx : ParsingContext)
       parser := node n { fn := fun _ s => s.pushSyntax (.atom .none "") } >> setLhsPrec prec
     }
   | .isLeading args =>
-    let p := liftToKind ctx args bindings
+    let p := liftToKind ctx args argDecls
     -- Parser for creating top level node
     pure {
       category,

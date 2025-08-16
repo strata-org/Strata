@@ -79,7 +79,7 @@ def LExpr.const.toExpr (c : String) (mty : Option LMonoTy) : MetaM Lean.Expr := 
       return (mkStrLit c)
     | _ => throwError f!"Unexpected constant: {c}"
 
-def LExpr.toExprNoFVars (e : LExpr String) : MetaM Lean.Expr := do
+def LExpr.toExprNoFVars (e : LExpr LMonoTy String) : MetaM Lean.Expr := do
   match e with
   | .const c mty =>
     let expr ← LExpr.const.toExpr c mty
@@ -152,7 +152,7 @@ def LExpr.toExprNoFVars (e : LExpr String) : MetaM Lean.Expr := do
     let expr ← mkAppM ``BEq.beq #[e1Expr, e2Expr]
     return expr
 
-def LExpr.toExpr (e : LExpr String) : MetaM Lean.Expr := do
+def LExpr.toExpr (e : LExpr LMonoTy String) : MetaM Lean.Expr := do
   let idTs := e.freeVars
   let decls : List (Name × (Array Lean.Expr → MetaM Lean.Expr)) ←
     idTs.mapM fun idT => do
@@ -230,7 +230,7 @@ elab "test2" : term => do
 
 elab "elaborate_lexpr" "[" e:term "]" : term => unsafe do
   let expr ← Term.elabTerm e none
-  let lexpr ← Lean.Meta.evalExpr (LExpr String) (mkApp (mkConst ``LExpr) (mkConst ``String)) expr
+  let lexpr ← Lean.Meta.evalExpr (LExpr LMonoTy String) (mkApp (mkConst ``LExpr) (mkConst ``String)) expr
   let result ← liftM (LExpr.toExpr lexpr)
   return result
 

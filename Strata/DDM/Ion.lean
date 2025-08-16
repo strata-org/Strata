@@ -577,44 +577,44 @@ instance : FromIon PreType where
 
 end PreType
 
-namespace DeclBindingKind
+namespace ArgDeclKind
 
-instance : CachedToIon DeclBindingKind where
-  cachedToIon refs tpc := ionScope! DeclBindingKind refs :
+instance : CachedToIon ArgDeclKind where
+  cachedToIon refs tpc := ionScope! ArgDeclKind refs :
   match tpc with
   | .cat k =>
     return .sexp #[ionSymbol! "category", ← CachedToIon.cachedToIon refs k]
-  | .expr tp =>
-    return .sexp #[ionSymbol! "expr", ← ionRef! tp]
+  | .type tp =>
+    return .sexp #[ionSymbol! "type", ← ionRef! tp]
 
-protected def fromIon (v : Ion SymbolId) : FromIonM DeclBindingKind := do
+protected def fromIon (v : Ion SymbolId) : FromIonM ArgDeclKind := do
   let ⟨args, argsp⟩ ← .asSexp v
   match ← .asSymbolString args[0] with
   | "category" => do
     let ⟨p⟩ ← .checkArgCount "category" args 2
     .cat <$> fromIon args[1]
-  | "expr" => do
-    let ⟨p⟩ ← .checkArgCount "expr" args 2
-    .expr <$> fromIon args[1]
+  | "type" => do
+    let ⟨p⟩ ← .checkArgCount "type" args 2
+    .type <$> fromIon args[1]
   | s =>
     throw s!"Unexpected binding kind {s}"
 
-instance : FromIon DeclBindingKind where
-  fromIon := DeclBindingKind.fromIon
+instance : FromIon ArgDeclKind where
+  fromIon := ArgDeclKind.fromIon
 
-end DeclBindingKind
+end ArgDeclKind
 
-namespace DeclBinding
+namespace ArgDecl
 
-instance : CachedToIon DeclBinding where
-  cachedToIon refs b := ionScope! DeclBinding refs :
+instance : CachedToIon ArgDecl where
+  cachedToIon refs b := ionScope! ArgDecl refs : do
     return .struct #[
       (ionSymbol! "name", .string b.ident),
       (ionSymbol! "type", ←ionRef! b.kind),
       (ionSymbol! "metadata", ←ionRef! b.metadata)
     ]
 
-instance : FromIon DeclBinding where
+instance : FromIon ArgDecl where
   fromIon v := do
     let ⟨args, p⟩ ← .asFieldStruct (size := 3) v (.fromList! ["name", "type", "metadata"])
     pure {
@@ -623,7 +623,7 @@ instance : FromIon DeclBinding where
         metadata := ← fromIon args[2],
     }
 
-end DeclBinding
+end ArgDecl
 
 namespace SyntaxDefAtom
 

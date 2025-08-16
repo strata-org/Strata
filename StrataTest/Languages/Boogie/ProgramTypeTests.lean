@@ -12,7 +12,7 @@ namespace Boogie
 
 section Tests
 open Std (ToFormat Format format)
-open Lambda.LTy.Syntax Lambda.LExpr.Syntax Boogie.Syntax
+open Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Boogie.Syntax
 
 def bad_prog : Program := { decls := [
       -- type Foo _ _;
