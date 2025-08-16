@@ -104,7 +104,7 @@ inductive Op : Type where
   | str_concat
   ---------- Core ADT operators with a trusted mapping to SMT ----------
   | option.get
-deriving Repr, DecidableEq, Inhabited
+deriving Repr, DecidableEq, Inhabited, Hashable
 
 
 def Op.mkName : Op → String
