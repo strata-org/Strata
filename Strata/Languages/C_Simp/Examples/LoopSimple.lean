@@ -83,7 +83,7 @@ init (i : int) := init_i
 sum := #0
 i := #0
 if ((~Int.Lt i) n) then {first_iter_asserts : {assert [entry_invariant] ((~Bool.And ((~Int.Le i) n)) (((~Int.Div ((~Int.Mul i) ((~Int.Sub i) #1))) #2) == sum))
-  assert [assert measure_pos] ((~Int.Ge ((~Int.Sub n) i)) #0)}
+  assert [assert_measure_pos] ((~Int.Ge ((~Int.Sub n) i)) #0)}
  arbitrary iter facts : {loop havoc : {havoc sum
    havoc i}
   arbitrary_iter_assumes : {assume [assume_guard] ((~Int.Lt i) n)
@@ -118,7 +118,7 @@ Assumptions:
 Proof Obligation:
 ((~Bool.And ((~Int.Le #0) $__n0)) #true)
 
-Label: assert measure_pos
+Label: assert_measure_pos
 Assumptions:
 (<label_ite_cond_true: ((~Int.Lt i) n)>, ((~Int.Lt #0) $__n0))
 (pre, ((~Int.Ge $__n0) #0))
@@ -175,7 +175,7 @@ info:
 Obligation: entry_invariant
 Result: verified
 
-Obligation: assert measure_pos
+Obligation: assert_measure_pos
 Result: verified
 
 Obligation: measure_decreases

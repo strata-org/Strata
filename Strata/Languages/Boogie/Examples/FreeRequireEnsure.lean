@@ -36,7 +36,7 @@ procedure ProcCaller () returns (x : int) {
 info: [Strata.Boogie] Type checking succeeded.
 
 
-Obligation <Origin:Proc_Requires>g_eq_15 is free!
+Obligation (Origin_Proc_Requires)g_eq_15 is free!
 
 
 VCs:
@@ -54,7 +54,7 @@ Proof Obligation:
 
 Label: g_eq_15_internal
 Assumptions:
-(<Origin:Proc_Ensures>g_lt_10, ((~Int.Lt $__g2) #10))
+((Origin_Proc_Ensures)g_lt_10, ((~Int.Lt $__g2) #10))
 Proof Obligation:
 ($__g2 == #15)
 
