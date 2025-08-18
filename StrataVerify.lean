@@ -67,7 +67,7 @@ def main (args : List String) : IO UInt32 := do
         println! f!"Proved all {vcResults.size} goals."
         return 0
       else if success && opts.checkOnly then
-        println! f!"Skipping verification,"
+        println! f!"Skipping verification."
         return 0
       else
         let provedGoalCount := (vcResults.filter isSuccessVCResult).size
