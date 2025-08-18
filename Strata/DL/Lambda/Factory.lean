@@ -53,11 +53,12 @@ A Lambda factory function, where the body can be optional. Universally
 quantified type identifiers, if any, appear before this signature and can
 quantify over the type identifiers in it.
 
-A optional denotation function can be provided in the `denote` field for each
-factory function. Such a function should take two inputs: a function call
-expression and also -- somewhat redundantly, but perhaps more conveniently --
-the list of arguments in this expression.  Here's an example of a `denote`
-function for `Int.Add`:
+A optional evaluation function can be provided in the `concreteEval` field for
+each factory function to allow the partial evaluator to do constant propagation
+when all the arguments of a function are concrete. Such a function should take
+two inputs: a function call expression and also -- somewhat redundantly, but
+perhaps more conveniently -- the list of arguments in this expression.  Here's
+an example of a `concreteEval` function for `Int.Add`:
 
 ```
 (fun e args => match args with
@@ -71,7 +72,7 @@ function for `Int.Add`:
 ```
 
 Note that if there is an arity mismatch or if the arguments are not
-concrete/constants and `denoteInt` fails, we return the original term `e`.
+concrete/constants, this fails and we return the original term `e`.
 
 (TODO) Can we enforce well-formedness of the denotation function? E.g., that it
 has the right number and type of arguments, etc.?
@@ -87,7 +88,7 @@ structure LFunc (Identifier : Type) where
   -- (TODO): Add support for a fixed set of attributes (e.g., whether to inline
   -- a function, etc.).
   attr     : Array String := #[]
-  denote   : Option ((LExpr LMonoTy Identifier) → List (LExpr LMonoTy Identifier) → (LExpr LMonoTy Identifier)) := .none
+  concreteEval : Option ((LExpr LMonoTy Identifier) → List (LExpr LMonoTy Identifier) → (LExpr LMonoTy Identifier)) := .none
   axioms   : List (LExpr LMonoTy Identifier) := []  -- For axiomatic definitions
 
 instance : Inhabited (LFunc Identifier) where

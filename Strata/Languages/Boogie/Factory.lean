@@ -127,17 +127,17 @@ def strLengthFunc : LFunc BoogieIdent :=
       typeArgs := [],
       inputs := [("x", mty[string])]
       output := mty[int],
-      denote := some (unOpDenote String Int LExpr.denoteString
-                        (fun s => (Int.ofNat (String.length s)))
-                        mty[int])}
+      concreteEval := some (unOpCeval String Int LExpr.denoteString
+                            (fun s => (Int.ofNat (String.length s)))
+                            mty[int])}
 
 def strConcatFunc : LFunc BoogieIdent :=
     { name := "Str.Concat",
       typeArgs := [],
       inputs := [("x", mty[string]), ("y", mty[string])]
       output := mty[string],
-      denote := some (binOpDenote String String LExpr.denoteString
-                       String.append mty[string])}
+      concreteEval := some (binOpCeval String String LExpr.denoteString
+                            String.append mty[string])}
 
 /- A polymorphic `old` function with type `∀a. a → a`. -/
 def polyOldFunc : LFunc BoogieIdent :=
