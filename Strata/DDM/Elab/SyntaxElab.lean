@@ -22,16 +22,16 @@ structure ArgElaborator where
   contextLevel : Option (Fin argLevel) := .none
 deriving Inhabited, Repr
 
-def mkArgElab (bindings : DeclBindings) (syntaxLevel : Nat) (argLevel : Fin bindings.size) : ArgElaborator :=
-  let contextLevel : Option (Fin argLevel) := bindings.argScopeLevel argLevel
+def mkArgElab (argDecls : ArgDecls) (syntaxLevel : Nat) (argLevel : Fin argDecls.size) : ArgElaborator :=
+  let contextLevel : Option (Fin argLevel) := argDecls.argScopeLevel argLevel
   { argLevel := argLevel.val, syntaxLevel, contextLevel }
 
-def addElaborators (bindings : DeclBindings) (p : Nat × Array ArgElaborator) (a : SyntaxDefAtom) : Nat × Array ArgElaborator :=
+def addElaborators (argDecls : ArgDecls) (p : Nat × Array ArgElaborator) (a : SyntaxDefAtom) : Nat × Array ArgElaborator :=
   match a with
   | .ident level _prec =>
     let (si, es) := p
-    if h : level < bindings.size then
-      let argElab := mkArgElab bindings si ⟨level, h⟩
+    if h : level < argDecls.size then
+      let argElab := mkArgElab argDecls si ⟨level, h⟩
       (si + 1, es.push argElab)
     else
       panic! "Invalid index"
@@ -39,7 +39,7 @@ def addElaborators (bindings : DeclBindings) (p : Nat × Array ArgElaborator) (a
     let (si, es) := p
     (si + 1, es)
   | .indent _ as =>
-    as.attach.foldl (init := p) (fun p ⟨a, _⟩ => addElaborators bindings p a)
+    as.attach.foldl (init := p) (fun p ⟨a, _⟩ => addElaborators argDecls p a)
 
 /-- Information needed to elaborator operations or functions. -/
 structure SyntaxElaborator where
@@ -47,14 +47,14 @@ structure SyntaxElaborator where
   resultScope : Option Nat
 deriving Inhabited, Repr
 
-def mkElaborators (bindings : DeclBindings) (as : Array SyntaxDefAtom) : Array ArgElaborator :=
-  let init : Array ArgElaborator := Array.mkEmpty bindings.size
-  let (_, es) := as.foldl (init := (0, init)) (addElaborators bindings)
+def mkElaborators (argDecls : ArgDecls) (as : Array SyntaxDefAtom) : Array ArgElaborator :=
+  let init : Array ArgElaborator := Array.mkEmpty argDecls.size
+  let (_, es) := as.foldl (init := (0, init)) (addElaborators argDecls)
   es.qsort (fun x y => x.argLevel < y.argLevel)
 
-def mkSyntaxElab (bindings : DeclBindings) (stx : SyntaxDef) (opMd : Metadata) : SyntaxElaborator := {
-    argElaborators := mkElaborators bindings stx.atoms,
-    resultScope := opMd.resultLevel bindings.size,
+def mkSyntaxElab (argDecls : ArgDecls) (stx : SyntaxDef) (opMd : Metadata) : SyntaxElaborator := {
+    argElaborators := mkElaborators argDecls stx.atoms,
+    resultScope := opMd.resultLevel argDecls.size,
   }
 
 def opDeclElaborator (decl : OpDecl) : SyntaxElaborator :=

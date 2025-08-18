@@ -161,21 +161,29 @@ def mapUpdateFunc : LFunc BoogieIdent :=
      output := mapTy mty[%k] mty[%v],
      axioms :=
      [
-      -- updateSelect
+      -- updateSelect: forall m: Map k v, kk: k, vv: v :: m[kk := vv][kk] == vv
       ToBoogieIdent esM[∀(Map %k %v):
           (∀ (%k):
             (∀ (%v):
               (((~select : (Map %k %v) → %k → %v)
                 ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %2) %1) %0)) %1) == %0))],
-      -- update preserves
-      ToBoogieIdent esM[∀ (Map %k %v):
-          (∀ (%k):
-            (∀ (%k):
-              (∀ (%v):
-                  (((~select : (Map %k %v) → %k → %v)
-                    ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %3) %1) %0)) %2)
-                  ==
-                  ((((~select : (Map %k %v) → %k → %v) %3) %2)))))]
+      -- updatePreserve: forall m: Map k v, okk: k, kk: k, vv: v :: okk != kk ==> m[kk := vv][okk] == m[okk]
+      ToBoogieIdent esM[∀ (Map %k %v): -- %3 m
+          (∀ (%k): -- %2 okk
+            (∀ (%k): -- %1 kk
+              (∀ (%v): -- %0 vv
+                  -- okk != kk ==> ...
+                  (if (%2 == %1) then
+                      #true
+                  else
+                    -- if keys are different, the value of the other key one remains unchanged
+                    -- (select (update m kk vv) okk) ==  (select m okk)
+                    ((((~select : (Map %k %v) → %k → %v)
+                        ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %3) %1) %0)
+                      ) %2)
+                    ==
+                    ((((~select : (Map %k %v) → %k → %v) %3) %2)))
+                    ))))]
      ]
    }
 

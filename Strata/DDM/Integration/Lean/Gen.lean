@@ -149,31 +149,32 @@ partial def checkCat (op : QualifiedIdent) (c : SyntaxCat) : Except String Unit 
   if f ∈ forbiddenCategories then
     throw s!"{op.fullName} refers to unsupported category {f.fullName}."
 
-def ofDeclBinding (op : QualifiedIdent) (b : DeclBinding) : Except String (String × SyntaxCat) := do
+def ofArgDecl (op : QualifiedIdent) (d : ArgDecl) : Except String (String × SyntaxCat) := do
   let cat ←
-    match b.kind with
-    | .expr _ =>
+    match d.kind with
+    | .type _ =>
       pure <| .atom q`Init.Expr
     | .cat c =>
       checkCat op c
       pure c
-  pure ⟨b.ident, cat⟩
+  pure ⟨d.ident, cat⟩
 
 def ofOpDecl (d : DialectName) (o : OpDecl) : Except String CatOp := do
   let name := ⟨d, o.name⟩
-  let argDecls ← o.argDecls |>.mapM (ofDeclBinding name)
+  let argDecls ← o.argDecls |>.mapM (ofArgDecl name)
   return { name, argDecls }
 
-end CatOp
-
-def CatOp.ofTypeDecl (d : DialectName) (o : TypeDecl) : CatOp := {
+def ofTypeDecl (d : DialectName) (o : TypeDecl) : CatOp := {
   name := ⟨d, o.name⟩
   argDecls := o.argNames |>.map fun nm => ⟨nm, .atom q`Init.Type⟩
 }
 
+end CatOp
+
+
 def CatOp.ofFunctionDecl (d : DialectName) (o : FunctionDecl) : Except String CatOp := do
   let name := ⟨d, o.name⟩
-  let argDecls ← o.argDecls |>.mapM (ofDeclBinding name)
+  let argDecls ← o.argDecls |>.mapM (ofArgDecl name)
   return { name, argDecls }
 
 /--
@@ -321,8 +322,8 @@ def WorkSet.pop [BEq α] [Hashable α] (s : WorkSet α) : Option (WorkSet α × 
 /--
 Add all atomic categories in bindings to set.
 -/
-private def addArgCategories (s : CategorySet) (bs : DeclBindings) : CategorySet :=
-  bs.foldl (init := s) fun s b =>
+private def addArgCategories (s : CategorySet) (args : ArgDecls) : CategorySet :=
+  args.foldl (init := s) fun s b =>
     b.kind.categoryOf.foldOverAtomicCategories (init := s) (·.insert ·)
 
 partial def mkUsedCategories.aux (m : CatOpMap) (s : WorkSet CategoryName) : CategorySet :=
