@@ -20,3 +20,6 @@ root = "runners.lean.StrataPythonRunner"
 [[lean_exe]]
 name = "StrataTypeScriptRunner"
 root = "runners.lean.StrataTypeScriptRunner"
+
+[[lean_exe]]
+name = "StrataTypeScriptASTLoader"

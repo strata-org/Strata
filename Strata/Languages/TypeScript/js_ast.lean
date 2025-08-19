@@ -31,9 +31,13 @@ deriving Repr, Lean.FromJson, Lean.ToJson
 structure TS_TSBooleanKeyword extends BaseNode where
 deriving Repr, Lean.FromJson, Lean.ToJson
 
+structure TS_TSStringKeyword extends BaseNode where
+deriving Repr, Lean.FromJson, Lean.ToJson
+
 inductive TS_TSTypeKeyword where
   | TS_TSNumberKeyword : TS_TSNumberKeyword → TS_TSTypeKeyword
   | TS_TSBooleanKeyword : TS_TSBooleanKeyword → TS_TSTypeKeyword
+  | TS_TSStringKeyword : TS_TSStringKeyword → TS_TSTypeKeyword
 deriving Repr, Lean.FromJson, Lean.ToJson
 
 structure TS_TSTypeAnnotation extends BaseNode where
@@ -64,6 +68,10 @@ deriving Repr, Lean.FromJson, Lean.ToJson
 
 structure TS_BooleanLiteral extends BaseNode where
   value: Bool
+deriving Repr, Lean.FromJson, Lean.ToJson
+
+structure TS_StringLiteral extends BaseNode where
+  value: String
 deriving Repr, Lean.FromJson, Lean.ToJson
 
 structure TS_NullLiteral extends BaseNode where
@@ -134,6 +142,7 @@ mutual
     | TS_AssignmentExpression : TS_AssignmentExpression → TS_Expression
     | TS_NumericLiteral : TS_NumericLiteral → TS_Expression
     | TS_BooleanLiteral : TS_BooleanLiteral → TS_Expression
+    | TS_StringLiteral : TS_StringLiteral → TS_Expression
     | TS_NullLiteral : TS_NullLiteral → TS_Expression
     | TS_IdExpression : TS_Identifier → TS_Expression
     | TS_UnaryExpression: TS_UnaryExpression → TS_Expression
