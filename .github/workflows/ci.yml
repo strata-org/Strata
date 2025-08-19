@@ -77,6 +77,12 @@ jobs:
         run: dotnet test ${SOLUTION}
       - name: Test Strata Command line
         run: .github/scripts/testStrataCommand.sh        
+      - name: Verify examples
+        shell: bash
+        run: |
+              find "Examples" -maxdepth 1 -type f -name "*.st" | while IFS= read -r file; do
+                  source ~/.profile && lake exe StrataVerify "$file"
+              done
 
   lint_checks:
     name: Run lint checks
