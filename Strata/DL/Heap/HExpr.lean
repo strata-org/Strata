@@ -58,6 +58,10 @@ protected def false : HExpr := .lambda (LExpr.false : LExpr String)
 def int (n : Int) : HExpr :=
   .lambda (LExpr.const (toString n) (some LMonoTy.int) : LExpr String)
 
+-- String constants
+def string (s : String) : HExpr :=
+  .lambda (LExpr.const s (some LMonoTy.string) : LExpr String)
+
 -- Convert Lambda expression to Heap expression
 def ofLambda (e : LExpr String) : HExpr := .lambda e
 
