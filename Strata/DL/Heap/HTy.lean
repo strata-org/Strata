@@ -37,6 +37,9 @@ def HMonoTy.bool : HMonoTy := .lambda LMonoTy.bool
 @[match_pattern]
 def HMonoTy.int : HMonoTy := .lambda LMonoTy.int
 
+@[match_pattern]
+def HMonoTy.string : HMonoTy := .lambda LMonoTy.string
+
 -- Helper function to create object types
 def HMonoTy.mkObj (fieldCount : Nat) (fieldType : HMonoTy) : HMonoTy :=
   .obj fieldCount fieldType
