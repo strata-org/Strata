@@ -30,6 +30,7 @@ def TS_type_to_HMonoTy (ty: String) : Heap.HMonoTy :=
   match ty with
   | "TS_TSNumberKeyword" => Heap.HMonoTy.int
   | "TS_TSBooleanKeyword" => Heap.HMonoTy.bool
+  | "TS_TSStringKeyword" => Heap.HMonoTy.string
   | _ => panic! s!"Unsupported type: {ty}"
 
 def Option_TS_TSTypeKeyword_to_str (i: Option TS_TSTypeKeyword) : String :=
@@ -37,6 +38,7 @@ def Option_TS_TSTypeKeyword_to_str (i: Option TS_TSTypeKeyword) : String :=
   | .some s => match s with
     | .TS_TSNumberKeyword _ => "TS_TSNumberKeyword"
     | .TS_TSBooleanKeyword _ => "TS_TSBooleanKeyword"
+    | .TS_TSStringKeyword _ => "TS_TSStringKeyword"
   | .none => panic! "Unimplemented"
 
 -- Helper to extract type from optional type annotation
@@ -104,6 +106,9 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
 
   | .TS_BooleanLiteral b =>
     if b.value then Heap.HExpr.true else Heap.HExpr.false
+
+  | .TS_StringLiteral s =>
+    Heap.HExpr.string s.value
 
   | .TS_IdExpression id =>
     -- Simple variable reference
