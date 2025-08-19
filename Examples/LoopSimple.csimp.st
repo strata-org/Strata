@@ -17,5 +17,6 @@ int procedure loopSimple (n: int)
     i = i + 1;
   }
   //@assert [sum_assert] ((n * (n-1))/2 == sum);
+  //@assert [neg_cond] (i == n);
   return sum;
 }

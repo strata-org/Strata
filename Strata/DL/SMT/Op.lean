@@ -88,12 +88,20 @@ inductive Op : Type where
   | bvadd
   | bvsub
   | bvmul
+  | bvnot
+  | bvand
+  | bvor
+  | bvxor
   | bvshl
   | bvlshr
   | bvslt
   | bvsle
   | bvult
   | bvule
+  | bvugt
+  | bvuge
+  | bvudiv
+  | bvurem
   | bvnego  -- bit-vector negation overflow predicate
   | bvsaddo -- bit-vector signed addition overflow predicate
   | bvssubo -- bit-vector signed subtraction overflow predicate
@@ -119,6 +127,10 @@ def Op.mkName : Op → String
   | .sub           => "-"
   | .add           => "+"
   | .mul           => "*"
+  | .bvnot         => "bvnot"
+  | .bvand         => "bvand"
+  | .bvor          => "bvor"
+  | .bvxor         => "bvxor"
   | .div           => "div"
   | .mod           => "mod"
   | .abs           => "abs"
@@ -136,6 +148,10 @@ def Op.mkName : Op → String
   | .bvsle         => "bvsle"
   | .bvult         => "bvult"
   | .bvule         => "bvule"
+  | .bvugt         => "bvugt"
+  | .bvuge         => "bvuge"
+  | .bvudiv        => "bvudiv"
+  | .bvurem        => "bvurem"
   | .bvnego        => "bvnego"
   | .bvsaddo       => "bvsaddo"
   | .bvssubo       => "bvssubo"
