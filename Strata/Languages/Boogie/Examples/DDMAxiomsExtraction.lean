@@ -12,7 +12,7 @@ import Strata.Languages.Boogie.Verifier
 namespace Strata
 
 -- Example Boogie program with axioms
-def exampleEnv : Environment :=
+def examplePgm :=
 #strata
 program Boogie;
 type k;
@@ -37,7 +37,7 @@ def extractAxiomsDecl (prg: Boogie.Program) : (List Boogie.Decl) :=
 /--
   Extract the body LExpr from the axiom declaration
 -/
-def extractExpr (axDecl: Boogie.Decl): (Lambda.LExpr Boogie.BoogieIdent) :=
+def extractExpr (axDecl: Boogie.Decl): (Lambda.LExpr Lambda.LMonoTy Boogie.BoogieIdent) :=
   match axDecl with
     | .ax a _ => a.e
     | _ => panic "Can be called only on axiom declaration"
@@ -62,7 +62,7 @@ def transformSimpleTypeToFreeVariable (ty: Lambda.LMonoTy) (to_replace: List Str
   Transform all occurences of types of the form LMonoTy.tcons name [] into ftvar name, if name is in to_replace
   in the given expression
 -/
-def replaceTypesByFTV (expr: Lambda.LExpr Boogie.BoogieIdent) (to_replace: List String): Lambda.LExpr Boogie.BoogieIdent :=
+def replaceTypesByFTV (expr: Lambda.LExpr Lambda.LMonoTy Boogie.BoogieIdent) (to_replace: List String): Lambda.LExpr Lambda.LMonoTy Boogie.BoogieIdent :=
   match expr with
     | .const c oty => .const c (oty.map (fun t => transformSimpleTypeToFreeVariable t to_replace))
     | .op o oty => .op o (oty.map (fun t => transformSimpleTypeToFreeVariable t to_replace))
@@ -79,20 +79,21 @@ def replaceTypesByFTV (expr: Lambda.LExpr Boogie.BoogieIdent) (to_replace: List 
   Extract all axioms from the given environment by first translating it into a Boogie Program.
   It then extracts LExpr body from the axioms, and replace all occurences of the typeArgs by a ftvar with the same name
 -/
-def extractAxiomsWithFreeTypeVars (env: Environment) (typeArgs: List String): (List (Lambda.LExpr Boogie.BoogieIdent)) :=
-  let prg: Boogie.Program := (TransM.run (translateProgram (env.commands))).fst
+def extractAxiomsWithFreeTypeVars (pgm: Program) (typeArgs: List String): (List (Lambda.LExpr Lambda.LMonoTy Boogie.BoogieIdent)) :=
+  let prg: Boogie.Program := (TransM.run (translateProgram pgm)).fst
   let axiomsDecls := extractAxiomsDecl prg
   let axioms := axiomsDecls.map extractExpr
   axioms.map (fun a => replaceTypesByFTV a typeArgs)
 
 /--
-info: type k;
+info: program Boogie;
+type k;
 type v;
 axiom [updateSelect]:forall(((m):(Map v k)),((kk):(k))),((vv):(v))::((m)[kk:=vv])[kk]==vv;
 axiom [updatePreserves]:forall((((m):(Map v k)),((okk):(k))),((kk):(k))),((vv):(v))::((m)[kk:=vv])[okk]==(m)[okk];
 -/
 #guard_msgs in
-#eval IO.println exampleEnv.format.render
+#eval IO.println examplePgm.format.render
 
 /--
 info: #[{ name := { dialect := "Boogie", name := "command_typedecl" },
@@ -234,7 +235,7 @@ info: #[{ name := { dialect := "Boogie", name := "command_typedecl" },
                     (Arg.expr (Expr.bvar 2)))))))) }]
 -/
 #guard_msgs in
-#eval exampleEnv.commands
+#eval examplePgm.commands
 
 /--
 info: [Lambda.LExpr.quant
@@ -328,4 +329,4 @@ info: [Lambda.LExpr.quant
 -/
 #guard_msgs in
 #eval
-  extractAxiomsWithFreeTypeVars exampleEnv ["k", "v"]
+  extractAxiomsWithFreeTypeVars examplePgm ["k", "v"]

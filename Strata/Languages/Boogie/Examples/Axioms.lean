@@ -10,7 +10,7 @@ import Strata.Languages.Boogie.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def axiomEnv : Environment :=
+def axiomPgm :=
 #strata
 program Boogie;
 
@@ -66,4 +66,4 @@ Obligation: use_f1
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" axiomEnv
+#eval verify "cvc5" axiomPgm

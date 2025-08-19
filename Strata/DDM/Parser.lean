@@ -27,7 +27,7 @@ end Lean.Parser.SyntaxStack
 
 namespace Lean.Parser.TokenTable
 
-def addTokens (tt : TokenTable) (p : Parser) : TokenTable :=
+def addParser (tt : TokenTable) (p : Parser) : TokenTable :=
   let tkns := p.info.collectTokens []
   tkns.foldl (λtt t => tt.insert t t) tt
 
@@ -83,6 +83,14 @@ export Lean.Parser (
     skip
     )
 
+/--
+Create an input context from a string.
+-/
+def stringInputContext (contents : String) : InputContext where
+  input    := contents
+  fileName := "placeholder"
+  fileMap  := FileMap.ofString contents
+
 private def isIdFirstOrBeginEscape (c : Char) : Bool :=
   isIdFirst c || isIdBeginEscape c
 
@@ -93,19 +101,6 @@ private def isToken (idStartPos idStopPos : String.Pos) (tk : Option Token) : Bo
      -- if a token is both a symbol and a valid identifier (i.e. a keyword),
      -- we want it to be recognized as a symbol
     tk.endPos ≥ idStopPos - idStartPos
-
-def ppIf (cat : QualifiedIdent) (s : α) (msg : Thunk String): α :=
-  if cat == q`Init.Expr then
-    @panic _ ⟨s⟩ msg.get
-  else
-    s
-
-def ppAux (cat : QualifiedIdent) (pre : String) (c : ParserContext) (s : ParserState) : ParserState :=
-  ppIf cat s <| .mk fun () =>
-    if let some msg := s.errorMsg then
-      s!"{pre} {cat.fullName}: pos := {s.pos}, prec := {c.prec}, lhsPrec := {s.lhsPrec}, stxStack.size := {s.stxStack.size}, error := {toString msg}"
-    else
-      s!"{pre} {cat.fullName}: pos := {s.pos}, prec := {c.prec}, lhsPrec := {s.lhsPrec}, stxStack.size := {s.stxStack.size}, back := {toString s.stxStack.back}"
 
 /--
 Create a trailing node
@@ -486,27 +481,6 @@ def strLit : Parser := {
   info := mkAtomicInfo "str"
 }
 
-def runParser (source : String) (p : Parser) : IO ParserState := do
-  let emptyEnv ← mkEmptyEnvironment 0
-  let ictx : InputContext := {
-    input    := source,
-    fileName := "placehodler"
-    fileMap  := FileMap.ofString source
-  }
-
-  let pmctx : ParserModuleContext := { env := emptyEnv, options := {} }
-  let tokens : TokenTable := .empty
-  let tokens := tokens.addTokens p
-  let s : ParserState := {
-      pos      := 0
-      cache    := {
-        tokenCache := { startPos := source.endPos + ' ' }
-        parserCache := {}
-    }
-  }
-  let s := p.fn.run ictx pmctx tokens s
-  pure s
-
 def identName (nm : QualifiedIdent) : Lean.Name :=
   Name.anonymous |>.str nm.dialect |>.str nm.name
 
@@ -598,7 +572,6 @@ partial def trailingLoop (cat : QualifiedIdent) (tables : PrattParsingTables) (c
   let iniPos := s.pos
   let (s, ps)       := indexed tables.trailingTable c s LeadingIdentBehavior.default
   if s.hasError then
-    let s := ppAux cat "trailingLoop indexed error" c s
     -- Discard token parse errors and break the trailing loop instead.
     -- The error will be flagged when the next leading position is parsed, unless the token
     -- is in fact valid there (e.g. EOI at command level, no-longer forbidden token)
@@ -670,17 +643,18 @@ precedence ≥ prec.  The remaining syntax is given.
 deriving Inhabited
 
 private partial
-def checkLeftRec (thisCatName : QualifiedIdent) (b : DeclBindings) (as : List SyntaxDefAtom) : LhsRec :=
+def checkLeftRec (thisCatName : QualifiedIdent) (argDecls : ArgDecls) (as : List SyntaxDefAtom) : LhsRec :=
   match as with
   | [] =>
     .isLeading []
   | .indent _ as :: bs =>
-    checkLeftRec thisCatName b (as.toList ++ bs)
+    checkLeftRec thisCatName argDecls (as.toList ++ bs)
   | .str _ :: _ =>
     .isLeading as
-  | .ident v argPrec :: rest =>
-    assert! v < b.size
-    match b[v]!.kind.categoryOf with
+  | .ident v argPrec :: rest => Id.run do
+    let .isTrue lt := inferInstanceAs (Decidable (v < argDecls.size))
+      | return panic! "Invalid index"
+    match argDecls[v].kind.categoryOf with
     | .app (.atom (q`Init.CommaSepBy)) (.atom c) =>
       if c == thisCatName then
         .invalid mf!"Leading symbol cannot be recursive call to {c}"
@@ -741,15 +715,15 @@ This walks the SyntaxDefAtomParser and prepends extracted parser to state.
 This is essentially a right-to-left fold and is implemented so that the parser starts with
 the first symbol.
 -/
-private def prependSyntaxDefAtomParser [Inhabited α] (ctx : ParsingContext) (b : DeclBindings) (prepend : Parser -> α → α) (o : SyntaxDefAtom) (r : α) : α :=
+private def prependSyntaxDefAtomParser [Inhabited α] (ctx : ParsingContext) (argDecls : ArgDecls) (prepend : Parser -> α → α) (o : SyntaxDefAtom) (r : α) : α :=
   match o with
   | .ident v prec => Id.run do
-    if v ≥ b.size then
-      return panic! s!"Invalid ident index {v} in bindings {eformat b}"
+    let .isTrue lt := inferInstanceAs (Decidable (v < argDecls.size))
+      | return panic! s!"Invalid ident index {v} in bindings {eformat argDecls}"
     let addParser (p : Parser) :=
       let q : Parser := Lean.Parser.adaptCacheableContext ({ · with prec }) p
       prepend q r
-    match b[v]!.kind.categoryOf with
+    match argDecls[v].kind.categoryOf with
     | .app (.atom (q`Init.CommaSepBy)) (.atom c) =>
       addParser <| sepByNoAntiquot (catParser ctx c) (symbolNoAntiquot ",")
     | .app (.atom (q`Init.Option)) (.atom c) =>
@@ -767,24 +741,24 @@ private def prependSyntaxDefAtomParser [Inhabited α] (ctx : ParsingContext) (b 
     else
       prepend (symbolNoAntiquot l) r
   | .indent _ p =>
-    p.attach.foldr (init := r) fun ⟨e, _⟩ r => prependSyntaxDefAtomParser ctx b prepend e r
+    p.attach.foldr (init := r) fun ⟨e, _⟩ r => prependSyntaxDefAtomParser ctx argDecls prepend e r
 
-private def liftToKind (ctx : ParsingContext) (o : List SyntaxDefAtom) (b : DeclBindings) : Parser :=
-  o.foldr (init := skip) (prependSyntaxDefAtomParser ctx b (· >> ·))
+private def liftToKind (ctx : ParsingContext) (o : List SyntaxDefAtom) (argDecls : ArgDecls) : Parser :=
+  o.foldr (init := skip) (prependSyntaxDefAtomParser ctx argDecls (· >> ·))
 
 def opSyntaxParser (ctx : ParsingContext)
                    (category : QualifiedIdent)
                    (ident : QualifiedIdent)
-                   (bindings : DeclBindings)
+                   (argDecls : ArgDecls)
                    (opStx : SyntaxDef) : Except StrataFormat DeclParser := do
   let n := identName ident
   let prec := opStx.prec
-  match checkLeftRec category bindings opStx.atoms.toList with
+  match checkLeftRec category argDecls opStx.atoms.toList with
   | .invalid mf => throw mf
   | .isTrailing minLeftPrec args =>
     if args.isEmpty then
       throw mf!"invalid atomic left recursive syntax"
-    let p := liftToKind ctx args bindings
+    let p := liftToKind ctx args argDecls
     -- Run parsers so far and append parser for next op.
     -- Parser for creating top level node
     pure {
@@ -801,7 +775,7 @@ def opSyntaxParser (ctx : ParsingContext)
       parser := node n { fn := fun _ s => s.pushSyntax (.atom .none "") } >> setLhsPrec prec
     }
   | .isLeading args =>
-    let p := liftToKind ctx args bindings
+    let p := liftToKind ctx args argDecls
     -- Parser for creating top level node
     pure {
       category,

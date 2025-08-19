@@ -256,9 +256,9 @@ end Boogie
 
 namespace Strata
 
-def verify (smtsolver : String) (env : Environment)
+def verify (smtsolver : String) (env : Program)
     (options : Options := Options.default) : IO Boogie.VCResults := do
-  let (program, errors) := TransM.run (translateProgram env.commands)
+  let (program, errors) := TransM.run (translateProgram env)
   if errors.isEmpty then
     -- dbg_trace f!"AST: {program}"
     EIO.toIO (fun f => IO.Error.userError (toString f))

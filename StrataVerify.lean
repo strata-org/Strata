@@ -27,6 +27,7 @@ def parseOptions (args : List String) : Except Std.Format (Options × String) :=
       go : Options → List String → Except Std.Format (Options × String)
       | opts, "--verbose" :: rest => go {opts with verbose := true} rest
       | opts, "--check" :: rest => go {opts with checkOnly := true} rest
+      | opts, "--parse-only" :: rest => go {opts with parseOnly := true} rest
       | opts, "--solver-timeout" :: secondsStr :: rest =>
          let n? := String.toNat? secondsStr
          match n? with
@@ -37,7 +38,7 @@ def parseOptions (args : List String) : Except Std.Format (Options × String) :=
       | _, args => .error f!"Unknown options: {args}"
 
 def usageMessage : String :=
-  "Usage: StrataVerify [--verbose] [--check] [--solver-timeout <seconds>] <file.{boogie, csimp}.st>"
+  "Usage: StrataVerify [--verbose] [--parse-only] [--check] [--solver-timeout <seconds>] <file.{boogie, csimp}.st>"
 
 def main (args : List String) : IO UInt32 := do
   let parseResult := parseOptions args
@@ -46,17 +47,19 @@ def main (args : List String) : IO UInt32 := do
     println! f!"Loading {file}"
     let text ← IO.FS.readFile file
     let inputCtx := Lean.Parser.mkInputContext text file
-    let emptyEnv ← Lean.mkEmptyEnvironment 0
     let dctx := Elab.LoadedDialects.builtin
     let dctx := dctx.addDialect! Boogie
     let dctx := dctx.addDialect! C_Simp
-    match Strata.Elab.elabProgram dctx emptyEnv inputCtx with
-    | .ok env =>
+    let leanEnv ← Lean.mkEmptyEnvironment 0
+    match Strata.Elab.elabProgram dctx leanEnv inputCtx with
+    | .ok pgm =>
       println! s!"Successfully parsed {file}"
+      if opts.parseOnly then
+          return 0
       let vcResults ← if file.endsWith ".csimp.st" then
-        C_Simp.verify "z3" env opts
+        C_Simp.verify "z3" pgm opts
       else
-        verify "z3" env opts
+        verify "z3" pgm opts
       for vcResult in vcResults do
         println! f!"{vcResult.obligation.label}: {vcResult.result}"
       let success := vcResults.all isSuccessVCResult
@@ -64,7 +67,7 @@ def main (args : List String) : IO UInt32 := do
         println! f!"Proved all {vcResults.size} goals."
         return 0
       else if success && opts.checkOnly then
-        println! f!"Skipping verification,"
+        println! f!"Skipping verification."
         return 0
       else
         let provedGoalCount := (vcResults.filter isSuccessVCResult).size

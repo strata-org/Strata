@@ -9,7 +9,7 @@ import Strata.Languages.Boogie.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def globalCounterEnv : Environment :=
+def globalCounterPgm : Program :=
 #strata
 program Boogie;
 
@@ -91,10 +91,10 @@ Proof Obligation:
 
 Wrote problem to vcs/new_g_value.smt2.
 Wrote problem to vcs/old_g_property.smt2.
-Wrote problem to vcs/<Origin:Inc_Requires>a_positive.smt2.
-Wrote problem to vcs/<Origin:Inc_Requires>a_positive.smt2.
+Wrote problem to vcs/(Origin-Inc_Requires)a_positive.smt2.
+Wrote problem to vcs/(Origin-Inc_Requires)a_positive.smt2.
 Wrote problem to vcs/return_value_lemma.smt2.
-Wrote problem to vcs/assert:_(#true_:_bool).smt2.
+Wrote problem to vcs/assert-_(#true_-_bool).smt2.
 ---
 info:
 Obligation: new_g_value
@@ -116,7 +116,7 @@ Obligation: assert: (#true : bool)
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" globalCounterEnv
+#eval verify "cvc5" globalCounterPgm
 
 ---------------------------------------------------------------------
 

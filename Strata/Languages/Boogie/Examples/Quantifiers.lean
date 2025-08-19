@@ -9,7 +9,7 @@ import Strata.Languages.Boogie.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def quantEnv : Environment :=
+def quantPgm :=
 #strata
 program Boogie;
 procedure Test(x : int) returns (r : int)
@@ -23,7 +23,7 @@ spec {
 };
 #end
 
-def triggerEnv : Environment :=
+def triggerPgm :=
 #strata
 program Boogie;
 
@@ -96,7 +96,7 @@ Result: failed
 CEx: ($__x0, 0)
 -/
 #guard_msgs in
-#eval verify "cvc5" quantEnv Options.default
+#eval verify "cvc5" quantPgm Options.default
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -128,4 +128,4 @@ Obligation: f_and_g
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" triggerEnv
+#eval verify "cvc5" triggerPgm

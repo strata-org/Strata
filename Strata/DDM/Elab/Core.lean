@@ -25,16 +25,6 @@ def qualIdentKind (stx : Syntax) : Option QualifiedIdent :=
   else
     none
 
-def SyntaxCat.isType (c : SyntaxCat) :=
-  match c with
-  | .atom q`Init.Type => true
-  | _ => false
-
-def DeclBindingKind.isType (k : DeclBindingKind) :=
-  match k with
-  | .cat c => c.isType
-  | _ => false
-
 namespace PreType
 
 /-
@@ -350,7 +340,7 @@ partial def checkExpressionType (tctx : TypingContext) (itype rtype : TypeExpr) 
 mutual
 
 partial def unifyTypeVectors
-  (b : DeclBindings)
+  (b : ArgDecls)
   (argLevel0 : Fin b.size)
   (ea : Array TypeExpr)
   (tctx : TypingContext)
@@ -382,7 +372,7 @@ inferred.
    new arguments are returned.
 -/
 partial def unifyTypes
-    (b : DeclBindings)
+    (b : ArgDecls)
     (argLevel0 : Fin b.size)
     (expectedType : TypeExpr)
     (tctx : TypingContext)
@@ -483,50 +473,47 @@ def elabMetadataName (stx : Syntax) (mi : MaybeQualifiedIdent) : ElabM (Qualifie
 /-- Map from variable names to their position. -/
 abbrev ArgIndexMap := Std.HashMap String Nat
 
-structure Syntaxed (α : Type _) where
-  stx : Syntax
-  val : α
-  deriving Inhabited, Repr
-
-structure SyntaxedDeclBinding where
+structure SyntaxedArgDecl where
   nameStx : Syntax
   typeStx : Syntax
-  val : DeclBinding
+  val : ArgDecl
   deriving Inhabited
 
-abbrev SyntaxedDeclBindings := Array SyntaxedDeclBinding
+abbrev SyntaxedArgDecls := Array SyntaxedArgDecl
 
-structure DeclBindingsMap where
+/--
+-/
+structure ArgDeclsMap where
   argIndexMap : ArgIndexMap
-  decls : SyntaxedDeclBindings
+  decls : SyntaxedArgDecls
   deriving Inhabited
 
-namespace DeclBindingsMap
+namespace ArgDeclsMap
 
-def empty (size : Nat := 0) : DeclBindingsMap := {
+def empty (size : Nat := 0) : ArgDeclsMap := {
   argIndexMap := {}, decls := .mkEmpty size
 }
 
-protected def push (m : DeclBindingsMap) (b : SyntaxedDeclBinding) : DeclBindingsMap := {
-  argIndexMap := m.argIndexMap.insert b.val.ident m.decls.size,
-  decls := m.decls.push b
+protected def push (m : ArgDeclsMap) (d : SyntaxedArgDecl) : ArgDeclsMap := {
+  argIndexMap := m.argIndexMap.insert d.val.ident m.decls.size,
+  decls := m.decls.push d
 }
 
-def size (m : DeclBindingsMap) := m.decls.size
+def size (m : ArgDeclsMap) := m.decls.size
 
-def ofBindings (bindings : DeclBindings) : DeclBindingsMap := {
-  argIndexMap := bindings.size.fold (init := {}) fun i _ m =>
-                m.insert bindings[i].ident i
-  decls := bindings.map fun b => {
+def ofBindings (argDecls : ArgDecls) : ArgDeclsMap := {
+  argIndexMap := argDecls.size.fold (init := {}) fun i _ m =>
+                m.insert argDecls[i].ident i
+  decls := argDecls.map fun b => {
     nameStx := .missing,
     typeStx := .missing,
     val := b
   }
 }
 
-end DeclBindingsMap
+end ArgDeclsMap
 
-partial def translateMetadataArg (params : DeclBindingsMap) (argName : String) (expected : MetadataArgType) (tree : Tree) : ElabM MetadataArg := do
+partial def translateMetadataArg (argDecls : ArgDeclsMap) (argName : String) (expected : MetadataArgType) (tree : Tree) : ElabM MetadataArg := do
   let .ofOperationInfo argInfo := tree.info
     | panic! "Expected an operator"
   match argInfo.op.name with
@@ -541,11 +528,11 @@ partial def translateMetadataArg (params : DeclBindingsMap) (argName : String) (
     | _ =>
       logErrorMF nameInfo.stx mf!"Unexpected identifier."
     let name := nameInfo.val
-    let some lvl := params.argIndexMap[name]?
-      | logErrorMF nameInfo.stx mf!"Unknown variable {name} for {argName} in {repr params.argIndexMap.keys}"; return default
-    let idx := params.size - lvl - 1
-    let b := params.decls[lvl]!
-    if let .expr tp := b.val.kind then
+    let some lvl := argDecls.argIndexMap[name]?
+      | logErrorMF nameInfo.stx mf!"Unknown variable {name} for {argName} in {repr argDecls.argIndexMap.keys}"; return default
+    let idx := argDecls.size - lvl - 1
+    let b := argDecls.decls[lvl]!
+    if let .type tp := b.val.kind then
       logErrorMF nameInfo.stx mf!"{name} refers to expression with type {tp} when category is required."
       return default
     return .catbvar idx
@@ -566,12 +553,12 @@ partial def translateMetadataArg (params : DeclBindingsMap) (argName : String) (
     return .bool true
   | q`Init.MetadataArgParen =>
     assert! tree.children.size = 1
-    translateMetadataArg params argName expected tree[0]!
+    translateMetadataArg argDecls argName expected tree[0]!
   | q`Init.MetadataArgSome =>
     match expected with
     | .opt tp =>
       assert! tree.children.size = 1
-      let a ← translateMetadataArg params argName tp tree[0]!
+      let a ← translateMetadataArg argDecls argName tp tree[0]!
       return .option (some a)
     | _ =>
       logErrorMF argInfo.stx mf!"Expected option type."
@@ -586,7 +573,7 @@ partial def translateMetadataArg (params : DeclBindingsMap) (argName : String) (
   | name =>
     panic! s!"Unknown metadata arg kind {name.fullName}"
 
-def translateMetadataArgs (params : DeclBindingsMap) (decl : MetadataDecl) (op : Tree) : ElabM (Array MetadataArg) := do
+def translateMetadataArgs (argDecls : ArgDeclsMap) (decl : MetadataDecl) (op : Tree) : ElabM (Array MetadataArg) := do
   assert! op.isSpecificOp q`Init.MetadataArgsMk
   assert! op.children.size = 1
   let tree := op[0]!
@@ -598,13 +585,13 @@ def translateMetadataArgs (params : DeclBindingsMap) (decl : MetadataDecl) (op :
     return default
   let mut res : Array MetadataArg := #[]
   for ({ ident := argName, type := argType }, tree) in Array.zip decl.args actuals do
-    let (arg, success) ← runChecked <| translateMetadataArg params argName argType tree
+    let (arg, success) ← runChecked <| translateMetadataArg argDecls argName argType tree
     if !success then
       return default
     res := res.push arg
   return res
 
-def translateMetadataAttr (params : DeclBindingsMap) (t : Tree) : ElabM MetadataAttr := do
+def translateMetadataAttr (argDecls : ArgDeclsMap) (t : Tree) : ElabM MetadataAttr := do
   let #[identInfo, argTree] := t.children
     | panic! "badArgs"
   let ((ident, decl),success) ← runChecked <| elabMetadataName identInfo.info.stx (translateQualifiedIdent identInfo)
@@ -617,29 +604,29 @@ def translateMetadataAttr (params : DeclBindingsMap) (t : Tree) : ElabM Metadata
                   return default
                 pure #[]
              | #[t] =>
-              translateMetadataArgs params decl t
+              translateMetadataArgs argDecls decl t
              | _ => panic! s!"Expected arg sequence"
   return { ident, args }
 
 /-- This parses an optional metadata -/
-def translateMetadata (params : DeclBindingsMap) (tree : Tree) : ElabM Metadata := do
+def translateMetadata (argDecls : ArgDeclsMap) (tree : Tree) : ElabM Metadata := do
   assert! tree.isSpecificOp q`Init.MetadataMk
   assert! tree.children.size = 1
   match tree[0]!.asCommaSepInfo? with
   | none => panic! s!"translateMetadata given {repr tree[0]!.info}"
-  | some args => .ofArray <$> args.mapM (translateMetadataAttr params)
+  | some args => .ofArray <$> args.mapM (translateMetadataAttr argDecls)
 
 /-- Translate metadata if it is optional. -/
-def translateOptMetadata (params : DeclBindingsMap) (tree : Option Tree) : ElabM Metadata := do
+def translateOptMetadata (argDecls : ArgDeclsMap) (tree : Option Tree) : ElabM Metadata := do
   match tree with
   | none => pure .empty
-  | some tree => translateMetadata params tree
+  | some tree => translateMetadata argDecls tree
 
 /-- Translate metadata if it is optional. -/
-def translateOptMetadata! (params : DeclBindingsMap) (tree : Tree) : ElabM Metadata := do
+def translateOptMetadata! (argDecls : ArgDeclsMap) (tree : Tree) : ElabM Metadata := do
   match tree.asOption? with
   | none => panic! "Expected option"
-  | some mtree => translateOptMetadata params mtree
+  | some mtree => translateOptMetadata argDecls mtree
 
 def evalBindingNameIndex (trees : Vector Tree n) (idx : DebruijnIndex n) : String :=
   match trees[idx.toLevel].info with
@@ -859,7 +846,7 @@ partial def translateSyntaxCat (tree : Tree) : ElabM SyntaxCat := do
 /--
 Evaluate the tree as a type expression.
 -/
-partial def translateBindingKind (params : DeclBindingsMap) (tree : Tree) : ElabM DeclBindingKind := do
+partial def translateArgDeclKind (params : ArgDeclsMap) (tree : Tree) : ElabM ArgDeclKind := do
   let (⟨argInfo, argChildren⟩, args) := flattenTypeApp tree #[]
   let op :=
         match argInfo with
@@ -871,7 +858,7 @@ partial def translateBindingKind (params : DeclBindingsMap) (tree : Tree) : Elab
     let varCount := params.size
     let isType lvl := params.decls[lvl]!.val.kind.isType
     if let some tp ← asTypeVar params.argIndexMap varCount isType ident.info.stx tpId args then
-      return .expr tp
+      return .type tp
     let ((qname, decl), true) ← runChecked <| resolveTypeOrCat ident.info.stx tpId
       | return default
     match decl with
@@ -880,7 +867,7 @@ partial def translateBindingKind (params : DeclBindingsMap) (tree : Tree) : Elab
       let varCount := params.size
       let isType lvl := params.decls[lvl]!.val.kind.isType
       let args ← args.mapM (translateTypeExpr params.argIndexMap varCount isType)
-      return .expr <| .ident qname args
+      return .type <| .ident qname args
     | .syncat decl =>
       checkArgSize argInfo.stx qname decl.argNames.size args
       let r : SyntaxCat := .atom qname
@@ -894,20 +881,20 @@ partial def translateBindingKind (params : DeclBindingsMap) (tree : Tree) : Elab
     let isType lvl := params.decls[lvl]!.val.kind.isType
     let aType ← translateTypeExpr params.argIndexMap varCount isType aTree
     let rType ← translateTypeExpr params.argIndexMap varCount isType rTree
-    return .expr (.arrow aType rType)
+    return .type (.arrow aType rType)
 
   | q`StrataDDL.TypeFn, #[bindingsTree, valTree] => do
     let varCount := params.size
     let isType lvl := params.decls[lvl]!.val.kind.isType
     let rType ← translateTypeExpr params.argIndexMap varCount isType valTree
-    .expr <$> translateFunMacro params.argIndexMap varCount isType bindingsTree rType
+    .type <$> translateFunMacro params.argIndexMap varCount isType bindingsTree rType
   | _, _ =>
-    logInternalError argInfo.stx s!"translateBindingKind given invalid kind {op}"
+    logInternalError argInfo.stx s!"translateArgDeclKind given invalid kind {op}"
     return default
 
 def evalNewBinding
     {bindings}
-    (params : DeclBindingsMap) --FIXME: Remove bindings in favor of params
+    (argDeclsMap : ArgDeclsMap) --FIXME: Remove bindings in favor of params
     (initSize : Nat)
     (args : Vector Tree bindings.size)
     (b : BindingSpec bindings)
@@ -928,8 +915,8 @@ def evalNewBinding
           | some idx =>
             let t := args[idx.toLevel]
             match t.info with
-            | .ofOptionInfo _ => translateOptMetadata! params t
-            | _ => translateMetadata params t
+            | .ofOptionInfo _ => translateOptMetadata! argDeclsMap t
+            | _ => translateMetadata argDeclsMap t
     if !success then
       return default
     let typeTree := args[b.typeIndex.toLevel]
@@ -947,12 +934,12 @@ def evalNewBinding
             else
               pure <| .cat info.cat
           | .ofOperationInfo info => do
-            let params : DeclBindingsMap := .empty
-            let kind ← translateBindingKind params typeTree.asBindingType!
+            let argDecls : ArgDeclsMap := .empty
+            let kind ← translateArgDeclKind argDecls typeTree.asBindingType!
             match kind with
             | .cat c =>
               pure (.cat c)
-            | .expr tp =>
+            | .type tp =>
               match expandMacros {} tp (fun _ => none) with
               | .error () =>
                 logError info.stx s!"Macros not supported"
@@ -1103,16 +1090,16 @@ partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := 
     return default
   let newBindings := decl.newBindings
   -- FIXME: Store this in operation decl
-  let params : DeclBindingsMap := .ofBindings decl.argDecls
+  let argDeclsMap : ArgDeclsMap := .ofBindings decl.argDecls
   let resultCtx ← newBindings.foldlM (init := newCtx) <| fun ctx spec => do
-    ctx.push <$> evalNewBinding params initSize args spec
+    ctx.push <$> evalNewBinding argDeclsMap initSize args spec
   let op : Operation := { name := i, args := args.toArray.map (·.arg) }
   let info : OperationInfo := { stx := stx, inputCtx := tctx, op, resultCtx }
   return .node (.ofOperationInfo info) args.toArray
 
 partial def runSyntaxElaborator
   (se : SyntaxElaborator)
-  (b : DeclBindings)
+  (b : ArgDecls)
   (tctx0 : TypingContext)
   (args : Array Syntax) : ElabM (Vector Tree b.size × TypingContext) := do
   let mut trees : Vector (Option Tree) b.size := .replicate b.size none
@@ -1132,7 +1119,7 @@ partial def runSyntaxElaborator
     let astx := args[ae.syntaxLevel]
     let expectedKind := b[argLevel].kind
     match expectedKind with
-    | .expr expectedType =>
+    | .type expectedType =>
       let (tree, success) ← runChecked <| elabExpr tctx astx
       -- If elaboration is successful, then we run type inference to see if we
       -- can resolve additional type arguments.
@@ -1294,7 +1281,7 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree :=
               | .ok (argTypes, r) =>
                 let b := Array.ofFn fun (i : Fin args.size) => {
                   ident := ""
-                  kind := .expr (.ofType argTypes[i])
+                  kind := .type (.ofType argTypes[i])
                 }
                 pure (idx, b)
               | .error (a, r) =>
@@ -1367,17 +1354,17 @@ inductive ArgSetStatus
 | implicit
 | explicit
 
-partial def checkIdentUsedArgs (bindings : SyntaxedDeclBindings) (argLevel : Fin bindings.size) : StateT (Std.HashMap Nat ArgSetStatus) ElabM Unit := do
+partial def checkIdentUsedArgs (argDecls : SyntaxedArgDecls) (argLevel : Fin argDecls.size) : StateT (Std.HashMap Nat ArgSetStatus) ElabM Unit := do
   match (← get)[argLevel]? with
   | some .explicit => do
-    let b := bindings[argLevel]
+    let b := argDecls[argLevel]
     .lift <| logError b.nameStx s!"{b.val.ident} appears multiple times."
   | some .implicit =>
     modify (·.insert argLevel .explicit)
   | none =>
     -- If this argument is an expression, then all type variables in expression
     -- can be inferred if not already assigned.
-    if let .expr tp := bindings[argLevel].val.kind then
+    if let .type tp := argDecls[argLevel].val.kind then
       modify fun usedArgs =>
         tp.foldBoundTypeVars usedArgs fun s idx =>
           assert! idx < argLevel
@@ -1385,7 +1372,7 @@ partial def checkIdentUsedArgs (bindings : SyntaxedDeclBindings) (argLevel : Fin
     modify (·.insert argLevel .explicit)
 
 partial
-def elabSyntaxDefAtom (bindings : SyntaxedDeclBindings) (varLevelMap : Std.HashMap String (Fin bindings.size)) (defaultPrec : Nat) (arg : Tree) : StateT (Std.HashMap Nat ArgSetStatus) ElabM SyntaxDefAtom := do
+def elabSyntaxDefAtom (argDecls : SyntaxedArgDecls) (varLevelMap : Std.HashMap String (Fin argDecls.size)) (defaultPrec : Nat) (arg : Tree) : StateT (Std.HashMap Nat ArgSetStatus) ElabM SyntaxDefAtom := do
   let .node (.ofOperationInfo info) children := arg
       | return panic! s!"Unexpected argument type {eformat arg.arg}"
   match info.op.name, children with
@@ -1405,24 +1392,24 @@ def elabSyntaxDefAtom (bindings : SyntaxedDeclBindings) (varLevelMap : Std.HashM
             p.val
           | _ =>
             panic! s!"elabSyntaxDefAtom invalid prec {eformat children[1]!.arg}"
-    checkIdentUsedArgs bindings argLevel
+    checkIdentUsedArgs argDecls argLevel
     return .ident argLevel prec
   | q`Init.syntaxAtomString, #[.node (.ofStrlitInfo info) #[] ] =>
     return .str info.val
   | q`Init.syntaxAtomIndent, #[.node (.ofNumInfo nInfo) #[], .node (.ofSeqInfo _) args ] => do
-    let r ← args.mapM fun a => elabSyntaxDefAtom bindings varLevelMap defaultPrec a
+    let r ← args.mapM fun a => elabSyntaxDefAtom argDecls varLevelMap defaultPrec a
     return .indent nInfo.val r
   | nm, _ =>
     return panic! s!"Syntax {nm.fullName} {children.size} {eformat info.op}"
 
-def addBinding (m : DeclBindingsMap) (b : SyntaxedDeclBinding) : DeclBindingsMap :=
+def addBinding (m : ArgDeclsMap) (b : SyntaxedArgDecl) : ArgDeclsMap :=
   m.push b
 
-def translateDeclBinding (newBindings : DeclBindingsMap) (t: Tree) : ElabM SyntaxedDeclBinding := do
+def translateArgDecl (newArgs : ArgDeclsMap) (t: Tree) : ElabM SyntaxedArgDecl := do
   let (name, tpTree, mdTree) := t.binding!
-  let kind ← translateBindingKind newBindings tpTree
-  let metadata : Metadata ← translateOptMetadata newBindings mdTree
-  let b : DeclBinding := {
+  let kind ← translateArgDeclKind newArgs tpTree
+  let metadata : Metadata ← translateOptMetadata newArgs mdTree
+  let b : ArgDecl := {
     ident := name.val,
     kind := kind,
     metadata := metadata
@@ -1433,33 +1420,33 @@ def translateDeclBinding (newBindings : DeclBindingsMap) (t: Tree) : ElabM Synta
     val := b
   }
 
-def addDeclBinding (newBindings : DeclBindingsMap) (t: Tree) : ElabM DeclBindingsMap := do
-  newBindings.push <$> translateDeclBinding newBindings t
+def addArgDecl (newArgs : ArgDeclsMap) (t: Tree) : ElabM ArgDeclsMap := do
+  newArgs.push <$> translateArgDecl newArgs t
 
-def translateDeclBindings (tree : Tree) : ElabM DeclBindingsMap := do
+def translateArgDecls (tree : Tree) : ElabM ArgDeclsMap := do
   let bindings := tree.optBindings!
-  bindings.foldlM (init := .empty bindings.size) addDeclBinding
+  bindings.foldlM (init := .empty bindings.size) addArgDecl
 
 /--
 Create a map from variable name to index.
 -/
-def mkVarLevelMap (bindings : SyntaxedDeclBindings) : ElabM (Std.HashMap String (Fin bindings.size)) := do
+def mkVarLevelMap (argDecls : SyntaxedArgDecls) : ElabM (Std.HashMap String (Fin argDecls.size)) := do
   let mut m := {}
-  for i in Fin.range bindings.size do
-    let sb := bindings[i]
+  for i in Fin.range argDecls.size do
+    let sb := argDecls[i]
     let name := sb.val.ident
     if name ∈ m then
       logError sb.nameStx s!"Variable {name} already appears in bindings."
     m := m.insert name i
   return m
 
-def translateSyntaxDef (params : DeclBindingsMap) (mdTree tree : Tree) : ElabM SyntaxDef := do
-  let (syntaxMetadata, success) ← runChecked <| translateOptMetadata! params mdTree
+def translateSyntaxDef (argDecls : ArgDeclsMap) (mdTree tree : Tree) : ElabM SyntaxDef := do
+  let (syntaxMetadata, success) ← runChecked <| translateOptMetadata! argDecls mdTree
   if !success then
     return default
 
   -- FIXME: Use name map
-  let varLevelMap ← mkVarLevelMap params.decls
+  let varLevelMap ← mkVarLevelMap argDecls.decls
 
   let prec : Nat :=
       match syntaxMetadata[q`StrataDDL.prec]? with
@@ -1495,7 +1482,7 @@ def translateSyntaxDef (params : DeclBindingsMap) (mdTree tree : Tree) : ElabM S
           prec
         else
           0
-    let ((a, newUsedArgs), thisSuccess) ← runChecked <| elabSyntaxDefAtom params.decls varLevelMap defaultPrec args[i]  usedArgs
+    let ((a, newUsedArgs), thisSuccess) ← runChecked <| elabSyntaxDefAtom argDecls.decls varLevelMap defaultPrec args[i]  usedArgs
     usedArgs := newUsedArgs
     atoms := atoms.push a
     if !thisSuccess then
@@ -1505,30 +1492,12 @@ def translateSyntaxDef (params : DeclBindingsMap) (mdTree tree : Tree) : ElabM S
     return default
 
   -- Check every argument is used.
-  for i in Fin.range params.decls.size do
+  for i in Fin.range argDecls.decls.size do
     if i.val ∉ usedArgs then
-      logError params.decls[i].nameStx s!"Argument is not elaborated."
+      logError argDecls.decls[i].nameStx s!"Argument is not elaborated."
       return default
 
   return { atoms, prec }
-
-def resolveDeclTypeBinding  (name : String)
-    (binding : TypingContext.VarBinding) (args : Array (Syntaxed DeclBindingKind)) : ElabM DeclBindingKind := do
-  match binding with
-  | .bvar idx k =>
-    if let some a := args[0]? then
-      logErrorMF a.stx mf!"Unexpected arguments to {name}."
-      return default
-    match k with
-    | .expr _ =>
-       panic! "Expected empty global context."
-    | .type params _ =>
-      assert! params.isEmpty
-      return .expr (.bvar idx)
-    | .cat c =>
-      return .cat c
-  | .fvar _ _ =>
-    panic! "Expected empty global context."
 
 def elabMetadataArgCatType (stx : Syntax) (ci : SyntaxCat) : DeclM MetadataArgType := do
   match ci with

@@ -16,7 +16,7 @@ namespace Strata
 -- 2. Running SymExec of Lambda and Imp
 
 
-def translate_expr (e : C_Simp.Expression.Expr) : Lambda.LExpr Boogie.BoogieIdent :=
+def translate_expr (e : C_Simp.Expression.Expr) : Lambda.LExpr Lambda.LMonoTy Boogie.BoogieIdent :=
   match e with
   | .const c ty => .const c ty
   | .op o ty => .op (.unres, o) ty
@@ -29,7 +29,7 @@ def translate_expr (e : C_Simp.Expression.Expr) : Lambda.LExpr Boogie.BoogieIden
   | .ite c t e => .ite (translate_expr c) (translate_expr t) (translate_expr e)
   | .eq e1 e2 => .eq (translate_expr e1) (translate_expr e2)
 
-def translate_opt_expr (e : Option C_Simp.Expression.Expr) : Option (Lambda.LExpr Boogie.BoogieIdent) :=
+def translate_opt_expr (e : Option C_Simp.Expression.Expr) : Option (Lambda.LExpr Lambda.LMonoTy Boogie.BoogieIdent) :=
   match e with
   | some e => translate_expr e
   | none => none
@@ -120,12 +120,12 @@ def loop_elimination(program : C_Simp.Program) : Boogie.Program :=
 def to_boogie(program : C_Simp.Program) : Boogie.Program :=
   loop_elimination program
 
-def C_Simp.get_program (env: Environment) : C_Simp.Program :=
-  (Strata.C_Simp.TransM.run (Strata.C_Simp.translateProgram (env.commands))).fst
+def C_Simp.get_program (p : Strata.Program) : C_Simp.Program :=
+  (Strata.C_Simp.TransM.run (Strata.C_Simp.translateProgram (p.commands))).fst
 
-def C_Simp.verify (smtsolver : String) (env : Environment) (options : Options := Options.default):
+def C_Simp.verify (smtsolver : String) (p : Strata.Program) (options : Options := Options.default):
   IO Boogie.VCResults := do
-  let program := C_Simp.get_program env
+  let program := C_Simp.get_program p
   EIO.toIO (fun f => IO.Error.userError (toString f))
     (Boogie.verify smtsolver (to_boogie program) options)
 

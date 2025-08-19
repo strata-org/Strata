@@ -144,14 +144,11 @@ op else0 () : Else =>;
 op else1 (f : Block) : Else => "else" f;
 op havoc_statement (v : Ident) : Statement => "havoc " v ";\n";
 
-category Measure;
-op measure (e : Expr) : Measure => "decreases" e ";";
-
 category Invariant;
 op invariant (e : Expr) : Invariant => "invariant" e ";";
 
-op while_statement (c : bool, m : Option Measure, i : Option Invariant, body : Block) : Statement =>
-  "while" "(" c ")" m i body;
+op while_statement (c : bool, i : Option Invariant, body : Block) : Statement =>
+  "while" "(" c ")" i body;
 
 op call_statement (vs : CommaSepBy Ident, f : Ident, expr : CommaSepBy Expr) : Statement =>
    "call" vs ":=" f "(" expr ")" ";\n";

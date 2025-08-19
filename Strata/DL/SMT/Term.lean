@@ -62,7 +62,7 @@ instance TermPrim.decLt (x y : TermPrim) : Decidable (x < y) :=
 inductive QuantifierKind
   | all
   | exist
-deriving Repr, DecidableEq
+deriving Repr, DecidableEq, Hashable
 
 inductive Term : Type where
   | prim    : TermPrim → Term
@@ -121,8 +121,17 @@ end
 
 instance : DecidableEq Term := Term.hasDecEq
 
+def hashTerm (t: Term): UInt64 :=
+  match t with
+    | .prim _ => 2
+    | .var _ => 3
+    | .none _ => 5
+    | .some _ => 7
+    | .app op _ retTy => 11 * (hash op) * (hash retTy)
+    | .quant qk args _ _ => 13 * (hash qk) * (hash args)
+
 instance : Hashable Term where
-  hash := λ a => hash s!"{repr a}"
+  hash := hashTerm
 
 def Term.mkName : Term → String
   | .prim _     => "prim"

@@ -18,7 +18,36 @@ inductive StringOrSexp (v : Ion SymbolId) where
 | string (s : String)
 | sexp (a : Array (Ion SymbolId)) (p : sizeOf a < sizeOf v)
 
-def FromIonM := ReaderT Ion.SymbolTable (Except String)
+structure StructArgMap (size : Nat) where
+  map : Std.HashMap String (Fin size) := {}
+
+namespace StructArgMap
+
+instance : Membership String (StructArgMap size) where
+  mem m nm := nm ∈ m.map
+
+instance : GetElem? (StructArgMap size) String (Fin size) (fun m nm => nm ∈ m) where
+  getElem m nm p := m.map[nm]
+  getElem! m nm := m.map[nm]!
+  getElem? m nm := m.map[nm]?
+
+def fromList! (as : List String) : StructArgMap as.length :=
+  let size := as.length
+  let m := as.foldl (init := {}) fun m nm =>
+    if nm ∈ m then
+      panic! s!"Duplicate name {nm}"
+    else if p : m.size < size then
+      m.insert nm ⟨m.size, p⟩
+    else
+      panic! "Invalid index"
+  { map := m }
+
+end StructArgMap
+
+structure FromIonContext where
+  symbols : Ion.SymbolTable
+
+def FromIonM := ReaderT FromIonContext (Except String)
   deriving Monad
 
 namespace FromIonM
@@ -26,11 +55,14 @@ namespace FromIonM
 instance : MonadExcept String FromIonM :=
   inferInstanceAs (MonadExcept _ (ReaderT _ _))
 
-instance : MonadReader Ion.SymbolTable FromIonM :=
+instance : MonadReader FromIonContext FromIonM :=
   inferInstanceAs (MonadReader _ (ReaderT _ _))
 
+def readSymbolTable : FromIonM Ion.SymbolTable :=
+  return (← read).symbols
+
 protected def lookupSymbol (sym : SymbolId) : FromIonM String := do
-  let some fullname := (←read)[sym]?
+  let some fullname := (←readSymbolTable)[sym]?
     | throw s!"Could not find symbol {sym.value}"
   pure fullname
 
@@ -100,41 +132,6 @@ def asArray (v : Ion SymbolId) : FromIonM (Array (Ion SymbolId)) :=
   | .list a => pure a
   | _ => throw "Expected a list"
 
-end FromIonM
-
-structure StructArgMap (size : Nat) where
-  map : Std.HashMap String (Fin size) := {}
-
-namespace StructArgMap
-
-instance : Membership String (StructArgMap size) where
-  mem m nm := nm ∈ m.map
-
-instance : GetElem? (StructArgMap size) String (Fin size) (fun m nm => nm ∈ m) where
-  getElem m nm p := m.map[nm]
-  getElem! m nm := m.map[nm]!
-  getElem? m nm := m.map[nm]?
-
-def fromList! (as : List String) : StructArgMap as.length :=
-  let size := as.length
-  let m := as.foldl (init := {}) fun m nm =>
-    if nm ∈ m then
-      panic! s!"Duplicate name {nm}"
-    else if p : m.size < size then
-      m.insert nm ⟨m.size, p⟩
-    else
-      panic! "Invalid index"
-  { map := m }
-
-end StructArgMap
-
-abbrev BoundTerm (α : Type _) [SizeOf α] {β : Type _} [SizeOf β] (bound : β) :=
-  { u : α // sizeOf u < sizeOf bound}
-
-abbrev SubIon (v : Ion SymbolId) := BoundTerm (Ion SymbolId) v
-
-namespace FromIonM
-
 def asStruct0 (v : Ion SymbolId) : FromIonM (Array (SymbolId × Ion SymbolId)) := do
   match v with
   | .mk (.struct args) => pure args
@@ -179,7 +176,7 @@ def mapFields {size} (args : Array (SymbolId × Ion SymbolId)) (m : StructArgMap
     let (a, assigned) ← args.attach.foldlM (init := (a, assigned)) fun (a, assigned) ⟨(fldIdx, arg), argp⟩ => do
       let fld ← .lookupSymbol fldIdx
       let some idx := m[fld]?
-        | throw s!"Unknown field {fld}: {m.map.keys}"
+        | throw s!"Unknown field {fld} ({fldIdx.value}): {m.map.keys}"
       if assigned[idx] then
         throw s!"Field {fld} already assigned."
       let assigned := assigned.set idx true
@@ -193,12 +190,42 @@ def asFieldStruct {size} (v : Ion SymbolId) (m : StructArgMap size) : FromIonM (
   let ⟨args, _⟩ ← asStruct v
   mapFields args m
 
+def deserializeValue {α} (bs : ByteArray) (act : Ion SymbolId → FromIonM α) : Except String α := do
+  let a ←
+    match Ion.deserialize bs with
+    | .error (off, msg) =>
+      throw s!"Error reading Ion: {msg} (offset = {off})"
+    | .ok a => pure a
+  let .isTrue p := inferInstanceAs (Decidable (a.size = 1))
+    | throw s!"Expected single Ion value."
+  let entries := a[0]
+  let .isTrue p := inferInstanceAs (Decidable (entries.size = 2))
+    | throw s!"Expected symbol table and value in dialect."
+  let symbols ←
+        match SymbolTable.ofLocalSymbolTable entries[0] with
+        | .error (p, msg) => throw s!"Error at {p}: {msg}"
+        | .ok symbols => pure symbols
+  let ionv : Ion SymbolId := entries[1]!
+  match act ionv { symbols := symbols }with
+  | .error msg =>
+    throw s!"Error decoding {msg}"
+  | .ok res =>
+    pure res
+
+
 end FromIonM
 
 class FromIon (α : Type) where
   fromIon : Ion SymbolId → FromIonM α
 
 export Strata.FromIon (fromIon)
+
+namespace FromIon
+
+def deserialize {α} [FromIon α] (bs : ByteArray) : Except String α :=
+  FromIonM.deserializeValue bs FromIon.fromIon
+
+end FromIon
 
 instance : FromIon String where
   fromIon := .asString
@@ -246,8 +273,8 @@ def toIon : SyntaxCat → Array (Ion SymbolId) → Ion.InternM (Ion SymbolId)
 | .app f x, a => do
   f.toIon <| a.push <| ←x.toIon #[]
 
-instance : ToIon SyntaxCat where
-  toIon _ c := c.toIon #[]
+instance : CachedToIon SyntaxCat where
+  cachedToIon _ c := c.toIon #[]
 
 protected def fromIon (v : Ion SymbolId) : FromIonM SyntaxCat := do
   match ← .asSymbolOrSexp v with
@@ -324,8 +351,8 @@ protected def toIon (refs : SymbolIdCache) (tpe : TypeExpr) : InternM (Ion Symbo
     · decreasing_tactic
     · simp; omega
 
-instance : ToIon TypeExpr where
-  toIon refs tp := tp.toIon refs
+instance : CachedToIon TypeExpr where
+  cachedToIon refs tp := tp.toIon refs
 
 def fromIon (v : Ion SymbolId) : FromIonM TypeExpr := do
   match ← .asSymbolOrSexp v with
@@ -387,8 +414,8 @@ protected def toIon (refs : SymbolIdCache) (a : MetadataArg) : InternM (Ion Symb
       | some a => return .sexp #[ionSymbol! "some", ← a.toIon refs]
       | none => return .sexp #[ionSymbol! "none"]
 
-instance : ToIon MetadataArg where
-  toIon := MetadataArg.toIon
+instance : CachedToIon MetadataArg where
+  cachedToIon := MetadataArg.toIon
 
 protected def fromIon (v : Ion SymbolId) : FromIonM MetadataArg := do
   let ⟨args, argp⟩ ← .asSexp v
@@ -413,8 +440,8 @@ end MetadataArg
 
 namespace MetadataAttr
 
-instance : ToIon MetadataAttr where
-  toIon refs md := ionScope! MetadataAttr refs : do
+instance : CachedToIon MetadataAttr where
+  cachedToIon refs md := ionScope! MetadataAttr refs : do
     let args : Array (Ion SymbolId) := .mkEmpty (1 + md.args.size)
     let args := args.push (←md.ident.toIon)
     let args ← md.args.mapM_off (init := args) fun a => ionRef! a
@@ -432,8 +459,8 @@ end MetadataAttr
 
 namespace Metadata
 
-instance : ToIon Metadata where
-  toIon refs md := ionScope! Metadata refs : ionRef! md.toArray
+instance : CachedToIon Metadata where
+  cachedToIon refs md := ionScope! Metadata refs : ionRef! md.toArray
 
 instance : FromIon Metadata where
   fromIon v := .ofArray <$> fromIon v
@@ -498,8 +525,8 @@ protected def toIon (refs : SymbolIdCache) (tpe : PreType) : InternM (Ion Symbol
     · simp; omega
     · decreasing_tactic
 
-instance : ToIon PreType where
-  toIon refs tp := tp.toIon refs
+instance : CachedToIon PreType where
+  cachedToIon refs tp := tp.toIon refs
 
 def fromIon (v : Ion SymbolId) : FromIonM PreType := do
   match ← .asSymbolOrSexp v with
@@ -550,44 +577,44 @@ instance : FromIon PreType where
 
 end PreType
 
-namespace DeclBindingKind
+namespace ArgDeclKind
 
-instance : ToIon DeclBindingKind where
-  toIon refs tpc := ionScope! DeclBindingKind refs :
+instance : CachedToIon ArgDeclKind where
+  cachedToIon refs tpc := ionScope! ArgDeclKind refs :
   match tpc with
   | .cat k =>
-    return .sexp #[ionSymbol! "category", ← toIon refs k]
-  | .expr tp =>
-    return .sexp #[ionSymbol! "expr", ← ionRef! tp]
+    return .sexp #[ionSymbol! "category", ← CachedToIon.cachedToIon refs k]
+  | .type tp =>
+    return .sexp #[ionSymbol! "type", ← ionRef! tp]
 
-protected def fromIon (v : Ion SymbolId) : FromIonM DeclBindingKind := do
+protected def fromIon (v : Ion SymbolId) : FromIonM ArgDeclKind := do
   let ⟨args, argsp⟩ ← .asSexp v
   match ← .asSymbolString args[0] with
   | "category" => do
     let ⟨p⟩ ← .checkArgCount "category" args 2
     .cat <$> fromIon args[1]
-  | "expr" => do
-    let ⟨p⟩ ← .checkArgCount "expr" args 2
-    .expr <$> fromIon args[1]
+  | "type" => do
+    let ⟨p⟩ ← .checkArgCount "type" args 2
+    .type <$> fromIon args[1]
   | s =>
     throw s!"Unexpected binding kind {s}"
 
-instance : FromIon DeclBindingKind where
-  fromIon := DeclBindingKind.fromIon
+instance : FromIon ArgDeclKind where
+  fromIon := ArgDeclKind.fromIon
 
-end DeclBindingKind
+end ArgDeclKind
 
-namespace DeclBinding
+namespace ArgDecl
 
-instance : ToIon DeclBinding where
-  toIon refs b := ionScope! DeclBinding refs :
+instance : CachedToIon ArgDecl where
+  cachedToIon refs b := ionScope! ArgDecl refs : do
     return .struct #[
       (ionSymbol! "name", .string b.ident),
       (ionSymbol! "type", ←ionRef! b.kind),
       (ionSymbol! "metadata", ←ionRef! b.metadata)
     ]
 
-instance : FromIon DeclBinding where
+instance : FromIon ArgDecl where
   fromIon v := do
     let ⟨args, p⟩ ← .asFieldStruct (size := 3) v (.fromList! ["name", "type", "metadata"])
     pure {
@@ -596,7 +623,7 @@ instance : FromIon DeclBinding where
         metadata := ← fromIon args[2],
     }
 
-end DeclBinding
+end ArgDecl
 
 namespace SyntaxDefAtom
 
@@ -611,8 +638,8 @@ protected def toIon (refs : SymbolIdCache) (a : SyntaxDefAtom) : InternM (Ion Sy
       return .sexp <| #[.symbol ionSymbol! "indent", .int n]
           ++ (← args.attach.mapM (fun ⟨a, _⟩  => a.toIon refs))
 
-instance : ToIon SyntaxDefAtom where
-  toIon := SyntaxDefAtom.toIon
+instance : CachedToIon SyntaxDefAtom where
+  cachedToIon := SyntaxDefAtom.toIon
 
 protected def fromIon (v : Ion SymbolId) : FromIonM SyntaxDefAtom := do
   let ⟨args, argsp⟩ ← .asSexp v
@@ -638,8 +665,8 @@ end SyntaxDefAtom
 
 namespace SyntaxDef
 
-instance : ToIon SyntaxDef where
-  toIon refs d := ionScope! SyntaxDef refs :
+instance : CachedToIon SyntaxDef where
+  cachedToIon refs d := ionScope! SyntaxDef refs :
     return .struct #[
       (ionSymbol! "atoms", .list (←d.atoms.mapM (fun (a : SyntaxDefAtom) => ionRef! a))),
       (ionSymbol! "prec", .int d.prec)
@@ -665,8 +692,8 @@ protected def toIon (refs : SymbolIdCache) (tp : MetadataArgType) : Ion SymbolId
     | .ident => ionSymbol! "ident"
     | .opt tp => .sexp #[ ionSymbol! "opt", tp.toIon refs]
 
-instance : ToIon MetadataArgType where
-  toIon refs tp := return tp.toIon refs
+instance : CachedToIon MetadataArgType where
+  cachedToIon refs tp := return tp.toIon refs
 
 protected def fromIon (v : Ion SymbolId) : FromIonM MetadataArgType := do
   match ← .asSymbolOrSexp v with
@@ -693,8 +720,8 @@ end MetadataArgType
 
 namespace MetadataArgDecl
 
-instance : ToIon MetadataArgDecl where
-  toIon refs d := ionScope! MetadataArgDecl refs :
+instance : CachedToIon MetadataArgDecl where
+  cachedToIon refs d := ionScope! MetadataArgDecl refs :
     return .sexp #[.string d.ident, ← ionRef! d.type ]
 
 instance : FromIon MetadataArgDecl where
@@ -707,8 +734,8 @@ end MetadataArgDecl
 
 namespace SynCatDecl
 
-instance  : ToIon SynCatDecl where
-  toIon refs d := ionScope! SynCatDecl refs :
+instance  : CachedToIon SynCatDecl where
+  cachedToIon refs d := ionScope! SynCatDecl refs :
     return .struct #[
       (ionSymbol! "type", ionSymbol! "syncat"),
       (ionSymbol! "name", .string d.name),
@@ -726,12 +753,12 @@ end SynCatDecl
 
 namespace OpDecl
 
-instance : ToIon OpDecl where
-  toIon refs d := ionScope! OpDecl refs :
+instance : CachedToIon OpDecl where
+  cachedToIon refs d := ionScope! OpDecl refs :
     return .struct #[
       (ionSymbol! "type", ionSymbol! "op"),
       (ionSymbol! "name", .string d.name),
-      (ionSymbol! "bindings", ←  toIon (ionRefEntry! d.argDecls[0]!) d.argDecls),
+      (ionSymbol! "bindings", ← CachedToIon.cachedToIon (ionRefEntry! d.argDecls[0]!) d.argDecls),
       (ionSymbol! "category", ← d.category.toIon),
       (ionSymbol! "syntax",   ← ionRef! d.syntaxDef),
       (ionSymbol! "metadata", ← ionRef! d.metadata)
@@ -741,19 +768,19 @@ protected def fromIon (fields : Array (SymbolId × Ion SymbolId)) : FromIonM OpD
   let m := .fromList! ["type", "name", "bindings", "category", "syntax", "metadata"]
   let args ← .mapFields fields m
   pure {
-    name := ← fromIon args[1],
-    argDecls := ← fromIon args[2],
-    category := ← fromIon args[3],
-    syntaxDef := ← fromIon args[4],
-    metadata := ← fromIon args[5],
+    name := ← fromIon args[1]
+    argDecls := ← fromIon args[2]
+    category := ← fromIon args[3]
+    syntaxDef := ← fromIon args[4]
+    metadata := ← fromIon args[5]
   }
 
 end OpDecl
 
 namespace TypeDecl
 
-instance : ToIon TypeDecl where
-  toIon refs d := ionScope! TypeDecl refs :
+instance : CachedToIon TypeDecl where
+  cachedToIon refs d := ionScope! TypeDecl refs :
     return .struct #[
       (ionSymbol! "type", ionSymbol! "type"),
       (ionSymbol! "name", .string d.name),
@@ -764,20 +791,20 @@ protected def fromIon (fields : Array (SymbolId × Ion SymbolId)) : FromIonM Typ
   let m := .fromList! ["type", "name", "argNames"]
   let args ← .mapFields fields m
   pure {
-    name := ← fromIon args[1],
-    argNames := ← fromIon args[2],
+    name := ← fromIon args[1]
+    argNames := ← fromIon args[2]
   }
 
 end TypeDecl
 
 namespace FunctionDecl
 
-instance : ToIon FunctionDecl where
-  toIon refs d := ionScope! FunctionDecl refs :
+instance : CachedToIon FunctionDecl where
+  cachedToIon refs d := ionScope! FunctionDecl refs :
     return .struct #[
       (ionSymbol! "type", ionSymbol! "fn"),
       (ionSymbol! "name", .string d.name),
-      (ionSymbol! "bindings", ← ionRef! d.argDecls),
+      (ionSymbol! "bindings", ← CachedToIon.cachedToIon (ionRefEntry! d.argDecls[0]!) d.argDecls),
       (ionSymbol! "result", ← ionRef! d.result),
       (ionSymbol! "schema", ← ionRef! d.syntaxDef),
       (ionSymbol! "metadata", ← ionRef! d.metadata)
@@ -787,19 +814,19 @@ protected def fromIon (fields : Array (SymbolId × Ion SymbolId)) : FromIonM Fun
   let m := .fromList! ["type", "name", "bindings", "result", "schema", "metadata"]
   let args ← .mapFields fields m
   pure {
-    name := ← fromIon args[1],
-    argDecls := ← fromIon args[2],
-    result := ← fromIon args[3],
-    syntaxDef := ← fromIon args[4],
-    metadata := ← fromIon args[5],
+    name := ← fromIon args[1]
+    argDecls := ← fromIon args[2]
+    result := ← fromIon args[3]
+    syntaxDef := ← fromIon args[4]
+    metadata := ← fromIon args[5]
   }
 
 end FunctionDecl
 
 namespace MetadataDecl
 
-instance : ToIon MetadataDecl where
-  toIon refs d := ionScope! MetadataDecl refs :
+instance : CachedToIon MetadataDecl where
+  cachedToIon refs d := ionScope! MetadataDecl refs :
     return .struct #[
       (ionSymbol! "type", ionSymbol! "metadata"),
       (ionSymbol! "name", .string d.name),
@@ -810,16 +837,16 @@ protected def fromIon (fields : Array (SymbolId × Ion SymbolId)) : FromIonM Met
   let m := .fromList! ["type", "name", "args"]
   let args ← .mapFields fields m
   pure {
-    name := ← fromIon args[1],
-    args := ← fromIon args[2],
+    name := ← fromIon args[1]
+    args := ← fromIon args[2]
   }
 
 end MetadataDecl
 
 namespace Decl
 
-instance : ToIon Decl where
-  toIon refs d := ionScope! Decl refs :
+instance : CachedToIon Decl where
+  cachedToIon refs d := ionScope! Decl refs :
   match d with
   | .syncat d   => ionRef! d
   | .op d       => ionRef! d
@@ -827,13 +854,8 @@ instance : ToIon Decl where
   | .function d => ionRef! d
   | .metadata d => ionRef! d
 
-def getTypeId : FromIonM SymbolId := return (← read).symbolId! "type"
-
-def fromIon (typeId : SymbolId) (v : Ion SymbolId) : FromIonM Decl := do
-  let fields ← .asStruct0 v
-  let some (_, val) := fields.find? (·.fst == typeId)
-    | throw "Could not find type"
-  match ← .asSymbolString val with
+def fromIonFields (typeVal : String) (fields : Array (SymbolId × Ion SymbolId)) : FromIonM Decl := do
+  match typeVal with
   | "syncat" => .syncat <$> SynCatDecl.fromIon fields
   | "op" => .op <$> OpDecl.fromIon fields
   | "type" => .type <$> TypeDecl.fromIon fields
@@ -841,27 +863,75 @@ def fromIon (typeId : SymbolId) (v : Ion SymbolId) : FromIonM Decl := do
   | "metadata" => .metadata <$> MetadataDecl.fromIon fields
   | typeVal => throw s!"Unknown type {typeVal}"
 
+
+def fromIon (typeId : SymbolId) (v : Ion SymbolId) : FromIonM Decl := do
+  let fields ← .asStruct0 v
+  let some (_, val) := fields.find? (·.fst == typeId)
+    | throw "Could not find type"
+  fromIonFields (← .asSymbolString val) fields
+
 end Decl
+
+private inductive Header
+| dialect : DialectName → Header
+| program : DialectName → Header
+
+def Header.fromIon (v : Ion SymbolId) : FromIonM Header := do
+  let ⟨hdr, _⟩ ← .asSexp v
+  let .isTrue ne := inferInstanceAs (Decidable (hdr.size ≥ 2))
+    | throw s!"Expected header to have two elements."
+  match ← .asSymbolString hdr[0] with
+  | "dialect" => .dialect <$> .asString hdr[1]
+  | "program" => .program <$> .asString hdr[1]
+  | op => throw s!"Expected 'program' or 'dialect' instead of {op}."
 
 namespace Dialect
 
-instance : ToIon Dialect where
-  toIon refs d := ionScope! Dialect refs :
-    return .struct #[
-      (ionSymbol! "name", .string d.name),
-      (ionSymbol! "imports", .list (.string <$> d.imports)),
-      (ionSymbol! "decls", ← ionRef! d.declarations)
-    ]
+instance : CachedToIon Dialect where
+  cachedToIon refs d := ionScope! Dialect refs : do
+    let c := ionSymbol! "dialect"
+    let hdr := .sexp #[ c, .string d.name ]
+    let mut a : Array (Ion SymbolId) := #[ hdr ]
+    for i in d.imports do
+      a := a.push <| .struct #[(ionSymbol! "type", ionSymbol! "import"),
+                               (ionSymbol! "name", .string i)]
+    for decl in d.declarations do
+      a := a.push <| (← ionRef! decl)
+    return .list a
+
+def fromIonDecls (dialect : DialectName) (args : Array (Ion SymbolId)) (start : Nat := 0) : FromIonM Dialect := do
+  let tbl ← .readSymbolTable
+  let typeId := tbl.symbolId! "type"
+  let nameId := tbl.symbolId! "name"
+  let (imports, decls) ← args.foldlM (init := (#[], #[])) (start := start) fun (imports, decls) v => do
+    let fields ← .asStruct0 v
+    let some (_, val) := fields.find? (·.fst == typeId)
+      | throw "Could not find type"
+    match ← .asSymbolString val with
+    | "import" =>
+      let some (_, val) := fields.find? (·.fst == nameId)
+        | throw "Could not find import"
+      let i ← .asString val
+      pure (imports.push i, decls)
+    | name =>
+      let decl ← Decl.fromIonFields name fields
+      pure (imports, decls.push decl)
+  return {
+    name := dialect
+    imports := imports
+    declarations :=  decls
+  }
 
 instance : FromIon Dialect where
   fromIon v := do
-    let ⟨args, p⟩ ← .asFieldStruct (size := 3) v (.fromList! ["name", "imports", "decls"])
-    let typeId ← Decl.getTypeId
-    pure {
-        name := ← fromIon args[0],
-        imports := ← fromIon args[1],
-        declarations := ← (← .asArray args[2]).mapM (Decl.fromIon typeId),
-    }
+    let ⟨args, _⟩ ← .asList v
+    let .isTrue ne := inferInstanceAs (Decidable (args.size ≥ 1))
+      | throw s!"Expected header"
+    match ← Header.fromIon args[0] with
+    | .dialect dialect =>
+      fromIonDecls dialect args (start := 1)
+    | .program _ =>
+      throw s!"Expected dialect"
 
 #declareIonSymbolTable Dialect
 
@@ -871,7 +941,7 @@ mutual
 
 protected def Operation.toIonAux (refs : SymbolIdCache) (op : Operation) : InternM (Ion SymbolId) :=
   ionScope! Operation refs : do
-    let argEntry := ionRefEntry! (sorry : Arg)
+    let argEntry := ionRefEntry! (default : Arg)
     let args ← op.args.attach.mapM fun ⟨a, _⟩ => a.toIon argEntry
     return .sexp <| Array.append #[ ← op.name.toIon ] args
 
@@ -915,15 +985,14 @@ end
 mutual
 
 protected def Operation.fromIon (v : Ion SymbolId) : FromIonM Operation := do
+  -- FIXME.  Make sure each command is well-formed with respect to the dialect map.
   let ⟨sexp, sexpP⟩ ← .asSexp v
+  let name ← fromIon sexp[0]
   let args ← sexp.attach.mapM_off (start := 1) fun ⟨a, _⟩ =>
     have _ : sizeOf a < sizeOf sexp := by decreasing_tactic
     Strata.Arg.fromIon a
-  return {
-    name := ← fromIon sexp[0],
-    args := args
-  }
-  termination_by v
+  return { name := name, args := args }
+termination_by v
 
 protected def Expr.fromIon (v : Ion SymbolId) : FromIonM Expr := do
   let ⟨sexp, sexpP⟩ ← .asSexp v
@@ -990,22 +1059,41 @@ end
 
 namespace Operation
 
-instance : ToIon Operation where
-  toIon := Operation.toIonAux
+instance : CachedToIon Operation where
+  cachedToIon := Operation.toIonAux
 
 end Operation
 
 #declareIonSymbolTable Operation
 
-namespace Environment
+namespace Program
 
-/-- Write the operations to Ion. -/
-def toIon (e : Environment) : InternM (Ion SymbolId) :=
-  .list <$> e.commands.mapM (Operation.toIonAux Operation.ionSymbolCache)
+instance : CachedToIon Program where
+  cachedToIon refs pgm :=
+    ionScope! Program refs : do
+      let hdr := Ion.sexp #[ ionSymbol! "program", .string pgm.dialect ]
+      let l ← pgm.commands.mapM_off (init := #[hdr]) fun cmd => ionRef! cmd
+      return .list l
 
-def addCommandsFromIon (env : Environment) (v : Ion SymbolId) : FromIonM Environment := do
+#declareIonSymbolTable Program
+
+def fromIonDecls (dialects : DialectMap) (dialect : DialectName) (args : Array (Ion SymbolId)) (start : Nat := 0) : FromIonM Program := do
+  let commands ← args.foldlM (init := #[]) (start := start) fun cmds u => do
+    cmds.push <$> Operation.fromIon u
+  return {
+    dialects := dialects.importedDialects! dialect
+    dialect := dialect
+    commands := commands
+  }
+
+protected def fromIon (dialects : DialectMap) (v : Ion SymbolId) : FromIonM Program := do
   let ⟨args, _⟩ ← .asList v
-  args.foldlM (init := env) fun env u => do
-    env.addCommand <$> Operation.fromIon u
+  let .isTrue ne := inferInstanceAs (Decidable (args.size ≥ 1))
+    | throw s!"Expected header"
+  match ← Header.fromIon args[0] with
+  | .program dialect =>
+    fromIonDecls dialects dialect args (start := 1)
+  | .dialect _ =>
+    throw s!"Expected program"
 
-end Environment
+end Program
