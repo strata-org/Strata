@@ -11,13 +11,6 @@ type Heap := Map Ref Struct;
 
 const null: Ref;
 
-// Map axiomatization TODO Remove when fixed
-// axiom forall m: Struct, okk: Field, kk: Field, vv: Box :: okk != kk ==> m[okk] == m[kk := vv][okk];
-// axiom forall m: Struct, kk: Field, vv: Box :: m[kk := vv][kk] == vv;
-
-// axiom forall m: Heap, okk: Ref, kk: Ref, vv: Struct :: okk != kk ==> m[okk] == m[kk := vv][okk];
-// axiom forall m: Heap, kk: Ref, vv: Struct :: m[kk := vv][kk] == vv;
-
 
 function isInt(v: Box): bool;
 function isBool(v: Box): bool;
