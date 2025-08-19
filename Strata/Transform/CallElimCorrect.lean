@@ -1619,31 +1619,46 @@ theorem createAssertsCorrect :
   EvalStatementsContract π δ δP σ₀ σ' (createAsserts pres (ks.zip (createFvars ks'))) σ' := by
    intros Hwfb Hwfvr Hwfvl Hwfc Hlen Hnd Hdef Hpres Heval Hrd Hsubst2
    simp [createAsserts]
-   induction pres
+   -- Make index parameter `i` explicit so that we can induct generalizing `i`.
+   suffices h : ∀ (i : Nat) (l : List Expression.Expr),
+     (∀ pre, pre ∈ l →
+       Imperative.invStores σA σ'
+         ((Imperative.HasVarsPure.getVars (P:=Expression) pre).removeAll (ks ++ ks')) ∧
+       ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) pre) ∧
+       δP σA σA pre = some true) →
+     EvalStatementsContract π δ δP σ₀ σ'
+       (List.mapIdx (fun j pred => Statement.assert s!"assert_{i + j}"
+         (Lambda.LExpr.substFvars pred (ks.zip (createFvars ks')))) l) σ'
+   by
+    have := @h 0 pres Hpres
+    simp at this; exact this
+   intros i l Hl
+   induction l generalizing i
    case nil =>
-    simp; constructor
+     simp; constructor
    case cons st sts ih =>
-    simp ; constructor ; constructor ; constructor ; constructor
-    specialize Hpres st (by simp)
-    . have Heq : δ σA σA st = δ σ₀ σ' (Lambda.LExpr.substFvars st (ks.zip (createFvars ks'))) := by
-        apply Lambda.LExpr.substFvarsCorrect Hwfc Hwfvr Hwfvl Hlen Hdef Hnd ?_ Hpres.2.1 Hpres.1
-        . apply Imperative.substStoresFlip'
-          simp [Imperative.substSwap, zip_swap]
-          assumption
-      simp [Imperative.WellFormedSemanticEvalBool] at Hwfb
-      rw [(Hwfb _ _ _).1.1.mp]
-      have Hpres' := (Hwfb _ _ _).1.1.mpr Hpres.2.2
-      simp [← Hpres']
-      exact Eq.symm Heq
-    . assumption
-    . simp [Imperative.isDefinedOver, Command.modifiedVars,
-            Imperative.Cmd.modifiedVars,
-            Imperative.HasVarsImp.modifiedVars,
-            Imperative.isDefined]
-    . apply ih
-      intros pre Hin
-      apply Hpres
-      simp_all
+     simp; constructor; constructor; constructor; constructor
+     specialize Hl st (by simp)
+     . have Heq : δ σA σA st = δ σ₀ σ' (Lambda.LExpr.substFvars st (ks.zip (createFvars ks'))) := by
+         apply Lambda.LExpr.substFvarsCorrect Hwfc Hwfvr Hwfvl Hlen Hdef Hnd ?_ Hl.2.1 Hl.1
+         . apply Imperative.substStoresFlip'
+           simp [Imperative.substSwap, zip_swap]
+           assumption
+       simp [Imperative.WellFormedSemanticEvalBool] at Hwfb
+       rw [(Hwfb _ _ _).1.1.mp]
+       have Hl' := (Hwfb _ _ _).1.1.mpr Hl.2.2
+       simp [← Hl']
+       exact Eq.symm Heq
+     . assumption
+     . simp [Imperative.isDefinedOver, Command.modifiedVars,
+             Imperative.Cmd.modifiedVars,
+             Imperative.HasVarsImp.modifiedVars,
+             Imperative.isDefined]
+     . have ih' := ih (i + 1)
+       ac_nf at ih'
+       apply ih'
+       intros pre Hin
+       simp_all
 
 theorem createAssumesCorrect :
   Imperative.WellFormedSemanticEvalBool δ δP →
@@ -1662,17 +1677,31 @@ theorem createAssumesCorrect :
   EvalStatementsContract π δ δP σ₀ σ' (createAssumes posts (ks.zip (createFvars ks'))) σ' := by
    intros Hwfb Hwfvr Hwfvl Hwfc Hlen Hnd Hdef Hposts Hsubst2
    simp [createAssumes]
-   induction posts
+   -- Make index parameter `i` explicit so that we can induct generalizing `i`.
+   suffices h : ∀ (i : Nat) (l : List Expression.Expr),
+     (∀ post, post ∈ l →
+       Imperative.invStores σA σ'
+         ((Imperative.HasVarsPure.getVars (P:=Expression) post).removeAll (ks ++ ks')) ∧
+       ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) post) ∧
+       δP σ₀' σA post = some true) →
+     EvalStatementsContract π δ δP σ₀ σ'
+       (List.mapIdx (fun j pred => Statement.assume s!"assume_{i + j}"
+         (Lambda.LExpr.substFvars pred (ks.zip (createFvars ks')))) l) σ'
+   by
+    have := @h 0 posts Hposts
+    simp at this; exact this
+   intros i l Hl
+   induction l generalizing i
    case nil =>
     simp; constructor
    case cons st sts ih =>
     simp ; constructor ; constructor ; constructor ; constructor
-    specialize Hposts st (by simp)
-    . have Heq : δ σ₀' σA st = δ σ₀ σ' (Lambda.LExpr.substFvars st (ks.zip (createFvars ks'))) :=
-        Lambda.LExpr.substFvarsCorrect Hwfc Hwfvr Hwfvl Hlen Hdef Hnd Hsubst2 Hposts.2.1 Hposts.1
+    specialize Hl st (by simp)
+    . have Heq : δ σ₀' σA st = δ σ₀ σ' (Lambda.LExpr.substFvars st (ks.zip (createFvars ks'))) := by
+        apply Lambda.LExpr.substFvarsCorrect Hwfc Hwfvr Hwfvl Hlen Hdef Hnd Hsubst2 Hl.2.1 Hl.1
       simp [Imperative.WellFormedSemanticEvalBool] at Hwfb
       rw [(Hwfb _ _ _).1.1.mp]
-      have Hposts' := (Hwfb _ _ _).1.1.mpr Hposts.2.2
+      have Hposts' := (Hwfb _ _ _).1.1.mpr Hl.2.2
       simp [← Hposts']
       exact Eq.symm Heq
     . assumption
@@ -1680,9 +1709,10 @@ theorem createAssumesCorrect :
             Imperative.Cmd.modifiedVars,
             Imperative.HasVarsImp.modifiedVars,
             Imperative.isDefined]
-    . apply ih
+    . have ih' := ih (i + 1)
+      ac_nf at ih'
+      apply ih'
       intros post Hin
-      apply Hposts
       simp_all
 
 theorem SubstPostsMem :

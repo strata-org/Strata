@@ -168,20 +168,18 @@ def createAsserts
     (pres : List Expression.Expr)
     (subst : Map Expression.Ident Expression.Expr)
     : List Statement
-    := pres |> List.map (λ pred ↦ Lambda.LExpr.substFvars pred subst)
-           |> List.map
-             (λ pred : Expression.Expr ↦
-               Statement.assert s!"assert: {Std.format pred}" pred)
+    := pres |> List.mapIdx
+                (λ i pred ↦
+                    Statement.assert s!"assert_{i}" (Lambda.LExpr.substFvars pred subst))
 
 /-- turns a list of preconditions into assumes with substitution -/
 def createAssumes
     (posts : List Expression.Expr)
     (subst : Map Expression.Ident Expression.Expr)
     : List Statement
-    := posts |> List.map (λ pred ↦ Lambda.LExpr.substFvars pred subst)
-            |> List.map
-              (λ pred : Expression.Expr ↦
-                Statement.assume s!"assume: {Std.format pred}" pred)
+    := posts |> List.mapIdx
+                  (λ i pred ↦
+                      Statement.assume s!"assume_{i}" (Lambda.LExpr.substFvars pred subst))
 
 /--
 Generate the substitution pairs needed for the body of the procedure

@@ -215,11 +215,13 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
         --            {Std.Format.joinSep ifids.toList Std.Format.line}\
         --            {Format.line}"
         -- if !(ufids.isEmpty && ifids.isEmpty) then dbg_trace f!"{ufs}{ifs}"
+        -- let rand_suffix ← IO.rand 0 0xFFFFFFFF
         let ans ←
             IO.toEIO
               (fun e => f!"{e}")
               (dischargeObligation options
-                (ProofObligation.getVars obligation) smtsolver (Imperative.smt2_filename obligation.label)
+                (ProofObligation.getVars obligation) smtsolver
+                  (Imperative.smt2_filename obligation.label)
                 terms ctx)
         match ans with
         | .ok (result, estate) =>

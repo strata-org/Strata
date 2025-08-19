@@ -37,11 +37,11 @@ We leave placeholders for type annotations only for constants
 variables (`.fvar`).
 
 LExpr is parameterized by `TypeType`, which represents
-user-allowed type annotations (which are allowed to be missing),
-and `Identifier` for allowed identifiers. For a fully annotated AST,
-see `LExprT` that is created after the type inference transform.
+user-allowed type annotations (optional), and `Identifier` for allowed
+identifiers. For a fully annotated AST, see `LExprT` that is created after the
+type inference transform.
 -/
-inductive LExpr (TypeType: Type) (Identifier : Type) : Type where
+inductive LExpr (TypeType : Type) (Identifier : Type) : Type where
   /-- `.const c ty`: constants (in the sense of literals). -/
   | const   (c : String) (ty : Option TypeType)
   /-- `.op c ty`: operation names. -/
@@ -249,9 +249,11 @@ def eraseTypes (e : (LExpr TypeType Identifier)) : (LExpr TypeType Identifier) :
 
 /- Formatting and Parsing of Lambda Expressions -/
 
-instance (Identifier : Type) [Repr Identifier] [Repr TypeType] : ToString (LExpr TypeType Identifier) where toString a := toString (repr a)
+instance (Identifier : Type) [Repr Identifier] [Repr TypeType] : ToString (LExpr TypeType Identifier) where
+   toString a := toString (repr a)
 
-private def formatLExpr [ToFormat Identifier] [ToFormat TypeType] (e : (LExpr TypeType Identifier)) : Format :=
+private def formatLExpr [ToFormat Identifier] [ToFormat TypeType] (e : (LExpr TypeType Identifier)) :
+    Format :=
   match e with
   | .const c ty =>
     match ty with
