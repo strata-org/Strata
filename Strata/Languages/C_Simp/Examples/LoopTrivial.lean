@@ -76,7 +76,7 @@ postconditions: (post, #true)
 body: init (i : int) := init_i
 i := #0
 if ((~Int.Lt i) n) then {first_iter_asserts : {assert [entry_invariant] ((~Int.Le i) n)
-  assert [assert measure_pos] ((~Int.Ge ((~Int.Sub n) i)) #0)}
+  assert [assert_measure_pos] ((~Int.Ge ((~Int.Sub n) i)) #0)}
  arbitrary iter facts : {loop havoc : {havoc i}
   arbitrary_iter_assumes : {assume [assume_guard] ((~Int.Lt i) n)
    assume [assume_invariant] ((~Int.Le i) n)
@@ -108,7 +108,7 @@ Assumptions:
 Proof Obligation:
 ((~Int.Le #0) $__n0)
 
-Label: assert measure_pos
+Label: assert_measure_pos
 Assumptions:
 (<label_ite_cond_true: ((~Int.Lt i) n)>, ((~Int.Lt #0) $__n0))
 (pre, ((~Int.Ge $__n0) #0))
@@ -165,7 +165,7 @@ info:
 Obligation: entry_invariant
 Result: verified
 
-Obligation: assert measure_pos
+Obligation: assert_measure_pos
 Result: verified
 
 Obligation: measure_decreases

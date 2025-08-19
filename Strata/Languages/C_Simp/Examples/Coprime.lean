@@ -90,7 +90,7 @@ i := a
 if ((~Int.Lt b) a) then {i := b}
 else{}
 if ((~Int.Gt i) #1) then {first_iter_asserts : {assert [entry_invariant] #true
-  assert [assert measure_pos] ((~Int.Ge i) #0)}
+  assert [assert_measure_pos] ((~Int.Ge i) #0)}
  arbitrary iter facts : {loop havoc : {havoc return
    havoc i}
   arbitrary_iter_assumes : {assume [assume_guard] ((~Int.Gt i) #1)

@@ -112,14 +112,35 @@ def translateReal (arg : Arg) : TransM Decimal := do
 
 ---------------------------------------------------------------------
 
+inductive GenKind where
+  | var_def | axiom_def | assume_def | assert_def
+  deriving DecidableEq
+
+/--
+Counters for assigning default names for various definitions.
+-/
+structure GenNum where
+  var_def : Nat
+  axiom_def : Nat
+  assume_def : Nat
+  assert_def : Nat
+  deriving Repr
+
 structure TransBindings where
   boundTypeVars : Array TyIdentifier := #[]
   boundVars : Array (LExpr LMonoTy BoogieIdent) := #[]
   freeVars  : Array Boogie.Decl := #[]
-  gen : Nat := 0
+  gen : GenNum := (GenNum.mk 0 0 0 0)
 
-def incrGen (b : TransBindings) : TransBindings :=
-  { b with gen := b.gen + 1 }
+def incrNum (gen_kind : GenKind) (b : TransBindings) : TransBindings :=
+  let gen := b.gen
+  let new_gen :=
+    match gen_kind with
+    | .var_def => { gen with var_def := gen.var_def + 1 }
+    | .axiom_def => { gen with axiom_def := gen.axiom_def + 1 }
+    | .assume_def => { gen with assume_def := gen.assume_def + 1 }
+    | .assert_def => { gen with assert_def := gen.assert_def + 1 }
+  { b with gen := new_gen }
 
 instance : ToFormat TransBindings where
   format b := f!"BoundTypeVars: {b.boundTypeVars}\
@@ -128,7 +149,7 @@ instance : ToFormat TransBindings where
                 {Format.line}\
                 FreeVars: {b.freeVars}\
                 {Format.line}\
-                Gen: {b.gen}"
+                Gen: {repr b.gen}"
 
 instance : Inhabited (List Boogie.Statement × TransBindings) where
   default := ([], {})
@@ -712,8 +733,8 @@ def initVarStmts (tpids : Map Expression.Ident LTy) (bindings : TransBindings) :
   match tpids with
   | [] => return ([], bindings)
   | (id, tp) :: rest =>
-    let s := Boogie.Statement.init id tp (Names.initVarValue (id.2 ++ "_" ++ (toString bindings.gen)))
-    let bindings := incrGen bindings
+    let s := Boogie.Statement.init id tp (Names.initVarValue (id.2 ++ "_" ++ (toString bindings.gen.var_def)))
+    let bindings := incrNum .var_def bindings
     let (stmts, bindings) ← initVarStmts rest bindings
     return ((s :: stmts), bindings)
 
@@ -761,11 +782,15 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     return ([.havoc id], bindings)
   | q`Boogie.assert, #[la, ca] =>
     let c ← translateExpr p bindings ca
-    let l ← translateOptionLabel s!"assert: {Std.format c}" la
+    let default_name := s!"assert_{bindings.gen.assert_def}"
+    let bindings := incrNum .assert_def bindings
+    let l ← translateOptionLabel default_name la
     return ([.assert l c], bindings)
   | q`Boogie.assume, #[la, ca] =>
     let c ← translateExpr p bindings ca
-    let l ← translateOptionLabel s!"assume: {Std.format c}" la
+    let default_name := s!"assume_{bindings.gen.assume_def}"
+    let bindings := incrNum .assume_def bindings
+    let l ← translateOptionLabel default_name la
     return ([.assume l c], bindings)
   | q`Boogie.if_statement, #[ca, ta, fa] =>
     let c ← translateExpr p bindings ca
@@ -926,7 +951,7 @@ def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation)
   let .option bodya := op.args[5]!
     | TransM.error s!"translateProcedure body expected here: {repr op.args[4]!}"
   let (body, bindings) ← if bodya.isSome then translateBlock p bindings bodya.get! else pure ([], bindings)
-  let origBindings := {origBindings with gen := bindings.gen}
+  let origBindings := { origBindings with gen := bindings.gen }
   return (.proc { header := { name := pname,
                               typeArgs := typeArgs.toList,
                               inputs := sig,
@@ -958,7 +983,9 @@ def translateConstant (bindings : TransBindings) (op : Operation) :
 def translateAxiom (p : Program) (bindings : TransBindings) (op : Operation) :
   TransM (Boogie.Decl × TransBindings) := do
   let _ ← @checkOp (Boogie.Decl × TransBindings) op q`Boogie.command_axiom 2
-  let l ← translateOptionLabel s!"TODO" op.args[0]!
+  let default_name := s!"axiom_{bindings.gen.axiom_def}"
+  let bindings := incrNum .axiom_def bindings
+  let l ← translateOptionLabel default_name op.args[0]!
   let e ← translateExpr p bindings op.args[1]!
   return (.ax (Axiom.mk l e), bindings)
 
@@ -1023,8 +1050,8 @@ def translateGlobalVar (bindings : TransBindings) (op : Operation) :
   let _ ← @checkOp (Boogie.Decl × TransBindings) op q`Boogie.command_var 1
   let (id, targs, mty) ← translateBindMk bindings op.args[0]!
   let ty := LTy.forAll targs mty
-  let decl := (.var id ty (Names.initVarValue (id.2 ++ "_" ++ (toString bindings.gen))))
-  let bindings := incrGen bindings
+  let decl := (.var id ty (Names.initVarValue (id.2 ++ "_" ++ (toString bindings.gen.var_def))))
+  let bindings := incrNum .var_def bindings
   return (decl, { bindings with freeVars := bindings.freeVars.push decl})
 
 ---------------------------------------------------------------------

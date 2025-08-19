@@ -81,7 +81,7 @@ postconditions: (post, #true)
 body: init (idx : int) := init_idx
 idx := #0
 if ((~Int.Lt idx) (~Array.Len arr)) then {first_iter_asserts : {assert [entry_invariant] #true
-  assert [assert measure_pos] ((~Int.Ge ((~Int.Sub (~Array.Len arr)) idx)) #0)}
+  assert [assert_measure_pos] ((~Int.Ge ((~Int.Sub (~Array.Len arr)) idx)) #0)}
  arbitrary iter facts : {loop havoc : {havoc return
    havoc idx}
   arbitrary_iter_assumes : {assume [assume_guard] ((~Int.Lt idx) (~Array.Len arr))
