@@ -13,6 +13,7 @@ import Strata.Languages.Boogie.Examples.DDMTransform
 import Strata.Languages.Boogie.Examples.FreeRequireEnsure
 import Strata.Languages.Boogie.Examples.Functions
 import Strata.Languages.Boogie.Examples.Goto
+import Strata.Languages.Boogie.Examples.GeneratedLabels
 import Strata.Languages.Boogie.Examples.Havoc
 import Strata.Languages.Boogie.Examples.Loops
 import Strata.Languages.Boogie.Examples.Map

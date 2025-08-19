@@ -71,7 +71,7 @@ private def testBuiltIn : @Factory String :=
   #[{ name := "Int.Add",
       inputs := [("x", mty[int]), ("y", mty[int])],
       output := mty[int],
-      denote := some (fun e args => match args with
+      concreteEval := some (fun e args => match args with
                         | [e1, e2] =>
                           let e1i := LExpr.denoteInt e1
                           let e2i := LExpr.denoteInt e2
@@ -82,7 +82,7 @@ private def testBuiltIn : @Factory String :=
     { name := "Int.Div",
       inputs := [("x", mty[int]), ("y", mty[int])],
       output := mty[int],
-      denote :=  some (fun e args => match args with
+      concreteEval :=  some (fun e args => match args with
                           | [e1, e2] =>
                             let e1i := LExpr.denoteInt e1
                             let e2i := LExpr.denoteInt e2
@@ -94,7 +94,7 @@ private def testBuiltIn : @Factory String :=
     { name := "Int.Neg",
       inputs := [("x", mty[int])],
       output := mty[int],
-      denote :=  some (fun e args => match args with
+      concreteEval :=  some (fun e args => match args with
                               | [e1] =>
                                 let e1i := LExpr.denoteInt e1
                                 match e1i with

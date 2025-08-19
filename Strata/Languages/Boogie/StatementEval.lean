@@ -42,7 +42,7 @@ def callConditions (proc : Procedure)
                    (subst :  Map (Lambda.IdentT BoogieIdent) Expression.Expr) :
                    Map String Procedure.Check :=
   let names := List.map
-               (fun k => s!"<Origin:{proc.header.name.2}_{condType}>{k}")
+               (fun k => s!"(Origin_{proc.header.name.2}_{condType}){k}")
                conditions.keys
   let exprs := List.map
                 (fun p =>

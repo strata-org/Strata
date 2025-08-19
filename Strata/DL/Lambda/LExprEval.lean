@@ -114,8 +114,8 @@ def eval (n : Nat) (σ : (LState Identifier)) (e : (LExpr LMonoTy Identifier)) :
             -- All arguments in the function call are concrete.
             -- We can, provided a denotation function, evaluate this function
             -- call.
-            match lfunc.denote with
-            | none => new_e | some denote => denote new_e args
+            match lfunc.concreteEval with
+            | none => new_e | some ceval => ceval new_e args
           else
             -- At least one argument in the function call is symbolic.
             new_e
