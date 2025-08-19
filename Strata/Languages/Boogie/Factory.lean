@@ -47,11 +47,19 @@ match ine with
     | .ite c t e => .ite (ToBoogieIdent c) (ToBoogieIdent t) (ToBoogieIdent e)
     | .eq e1 e2 => .eq (ToBoogieIdent e1) (ToBoogieIdent e2)
 
-/- Bv1 Arithmetic Operations -/
+/- Bv1 Arithmetic/Logical Operations -/
+def bv1NegFunc : LFunc BoogieIdent := unaryOp "Bv1.Neg" mty[bv1] none
 def bv1AddFunc : LFunc BoogieIdent := binaryOp "Bv1.Add" mty[bv1] none
 def bv1SubFunc : LFunc BoogieIdent := binaryOp "Bv1.Sub" mty[bv1] none
 def bv1MulFunc : LFunc BoogieIdent := binaryOp "Bv1.Mul" mty[bv1] none
-def bv1NegFunc : LFunc BoogieIdent := unaryOp "Bv1.Neg" mty[bv1] none
+def bv1DivFunc : LFunc BoogieIdent := binaryOp "Bv1.Div" mty[bv1] none
+def bv1ModFunc : LFunc BoogieIdent := binaryOp "Bv1.Mod" mty[bv1] none
+def bv1NotFunc : LFunc BoogieIdent := unaryOp "Bv1.Not" mty[bv1] none
+def bv1AndFunc : LFunc BoogieIdent := binaryOp "Bv1.And" mty[bv1] none
+def bv1OrFunc : LFunc BoogieIdent := binaryOp "Bv1.Or" mty[bv1] none
+def bv1XorFunc : LFunc BoogieIdent := binaryOp "Bv1.Xor" mty[bv1] none
+def bv1ShlFunc : LFunc BoogieIdent := binaryOp "Bv1.Shl" mty[bv1] none
+def bv1UShrFunc : LFunc BoogieIdent := binaryOp "Bv1.UShr" mty[bv1] none
 
 /- Bv1 Comparison Operations -/
 def bv1LtFunc : LFunc BoogieIdent := binaryPredicate "Bv1.Lt" mty[bv1] none
@@ -59,11 +67,19 @@ def bv1LeFunc : LFunc BoogieIdent := binaryPredicate "Bv1.Le" mty[bv1] none
 def bv1GtFunc : LFunc BoogieIdent := binaryPredicate "Bv1.Gt" mty[bv1] none
 def bv1GeFunc : LFunc BoogieIdent := binaryPredicate "Bv1.Ge" mty[bv1] none
 
-/- Bv8 Arithmetic Operations -/
+/- Bv8 Arithmetic/Logical Operations -/
+def bv8NegFunc : LFunc BoogieIdent := unaryOp "Bv8.Neg" mty[bv8] none
 def bv8AddFunc : LFunc BoogieIdent := binaryOp "Bv8.Add" mty[bv8] none
 def bv8SubFunc : LFunc BoogieIdent := binaryOp "Bv8.Sub" mty[bv8] none
 def bv8MulFunc : LFunc BoogieIdent := binaryOp "Bv8.Mul" mty[bv8] none
-def bv8NegFunc : LFunc BoogieIdent := unaryOp "Bv8.Neg" mty[bv8] none
+def bv8DivFunc : LFunc BoogieIdent := binaryOp "Bv8.Div" mty[bv8] none
+def bv8ModFunc : LFunc BoogieIdent := binaryOp "Bv8.Mod" mty[bv8] none
+def bv8NotFunc : LFunc BoogieIdent := unaryOp "Bv8.Not" mty[bv8] none
+def bv8AndFunc : LFunc BoogieIdent := binaryOp "Bv8.And" mty[bv8] none
+def bv8OrFunc : LFunc BoogieIdent := binaryOp "Bv8.Or" mty[bv8] none
+def bv8XorFunc : LFunc BoogieIdent := binaryOp "Bv8.Xor" mty[bv8] none
+def bv8ShlFunc : LFunc BoogieIdent := binaryOp "Bv8.Shl" mty[bv8] none
+def bv8UShrFunc : LFunc BoogieIdent := binaryOp "Bv8.UShr" mty[bv8] none
 
 /- Bv8 Comparison Operations -/
 def bv8LtFunc : LFunc BoogieIdent := binaryPredicate "Bv8.Lt" mty[bv8] none
@@ -71,11 +87,19 @@ def bv8LeFunc : LFunc BoogieIdent := binaryPredicate "Bv8.Le" mty[bv8] none
 def bv8GtFunc : LFunc BoogieIdent := binaryPredicate "Bv8.Gt" mty[bv8] none
 def bv8GeFunc : LFunc BoogieIdent := binaryPredicate "Bv8.Ge" mty[bv8] none
 
-/- Bv16 Arithmetic Operations -/
+/- Bv16 Arithmetic/Logical Operations -/
+def bv16NegFunc : LFunc BoogieIdent := unaryOp "Bv16.Neg" mty[bv16] none
 def bv16AddFunc : LFunc BoogieIdent := binaryOp "Bv16.Add" mty[bv16] none
 def bv16SubFunc : LFunc BoogieIdent := binaryOp "Bv16.Sub" mty[bv16] none
 def bv16MulFunc : LFunc BoogieIdent := binaryOp "Bv16.Mul" mty[bv16] none
-def bv16NegFunc : LFunc BoogieIdent := unaryOp "Bv16.Neg" mty[bv16] none
+def bv16DivFunc : LFunc BoogieIdent := binaryOp "Bv16.Div" mty[bv16] none
+def bv16ModFunc : LFunc BoogieIdent := binaryOp "Bv16.Mod" mty[bv16] none
+def bv16NotFunc : LFunc BoogieIdent := unaryOp "Bv16.Not" mty[bv16] none
+def bv16AndFunc : LFunc BoogieIdent := binaryOp "Bv16.And" mty[bv16] none
+def bv16OrFunc : LFunc BoogieIdent := binaryOp "Bv16.Or" mty[bv16] none
+def bv16XorFunc : LFunc BoogieIdent := binaryOp "Bv16.Xor" mty[bv16] none
+def bv16ShlFunc : LFunc BoogieIdent := binaryOp "Bv16.Shl" mty[bv16] none
+def bv16UShrFunc : LFunc BoogieIdent := binaryOp "Bv16.UShr" mty[bv16] none
 
 /- Bv16 Comparison Operations -/
 def bv16LtFunc : LFunc BoogieIdent := binaryPredicate "Bv16.Lt" mty[bv16] none
@@ -83,11 +107,19 @@ def bv16LeFunc : LFunc BoogieIdent := binaryPredicate "Bv16.Le" mty[bv16] none
 def bv16GtFunc : LFunc BoogieIdent := binaryPredicate "Bv16.Gt" mty[bv16] none
 def bv16GeFunc : LFunc BoogieIdent := binaryPredicate "Bv16.Ge" mty[bv16] none
 
-/- Bv32 Arithmetic Operations -/
+/- Bv32 Arithmetic/Logical Operations -/
+def bv32NegFunc : LFunc BoogieIdent := unaryOp "Bv32.Neg" mty[bv32] none
 def bv32AddFunc : LFunc BoogieIdent := binaryOp "Bv32.Add" mty[bv32] none
 def bv32SubFunc : LFunc BoogieIdent := binaryOp "Bv32.Sub" mty[bv32] none
 def bv32MulFunc : LFunc BoogieIdent := binaryOp "Bv32.Mul" mty[bv32] none
-def bv32NegFunc : LFunc BoogieIdent := unaryOp "Bv32.Neg" mty[bv32] none
+def bv32DivFunc : LFunc BoogieIdent := binaryOp "Bv32.Div" mty[bv32] none
+def bv32ModFunc : LFunc BoogieIdent := binaryOp "Bv32.Mod" mty[bv32] none
+def bv32NotFunc : LFunc BoogieIdent := unaryOp "Bv32.Not" mty[bv32] none
+def bv32AndFunc : LFunc BoogieIdent := binaryOp "Bv32.And" mty[bv32] none
+def bv32OrFunc : LFunc BoogieIdent := binaryOp "Bv32.Or" mty[bv32] none
+def bv32XorFunc : LFunc BoogieIdent := binaryOp "Bv32.Xor" mty[bv32] none
+def bv32ShlFunc : LFunc BoogieIdent := binaryOp "Bv32.Shl" mty[bv32] none
+def bv32UShrFunc : LFunc BoogieIdent := binaryOp "Bv32.UShr" mty[bv32] none
 
 /- Bv32 Comparison Operations -/
 def bv32LtFunc : LFunc BoogieIdent := binaryPredicate "Bv32.Lt" mty[bv32] none
@@ -95,11 +127,19 @@ def bv32LeFunc : LFunc BoogieIdent := binaryPredicate "Bv32.Le" mty[bv32] none
 def bv32GtFunc : LFunc BoogieIdent := binaryPredicate "Bv32.Gt" mty[bv32] none
 def bv32GeFunc : LFunc BoogieIdent := binaryPredicate "Bv32.Ge" mty[bv32] none
 
-/- Bv64 Arithmetic Operations -/
+/- Bv64 Arithmetic/Logical Operations -/
+def bv64NegFunc : LFunc BoogieIdent := unaryOp "Bv64.Neg" mty[bv64] none
 def bv64AddFunc : LFunc BoogieIdent := binaryOp "Bv64.Add" mty[bv64] none
 def bv64SubFunc : LFunc BoogieIdent := binaryOp "Bv64.Sub" mty[bv64] none
 def bv64MulFunc : LFunc BoogieIdent := binaryOp "Bv64.Mul" mty[bv64] none
-def bv64NegFunc : LFunc BoogieIdent := unaryOp "Bv64.Neg" mty[bv64] none
+def bv64DivFunc : LFunc BoogieIdent := binaryOp "Bv64.Div" mty[bv64] none
+def bv64ModFunc : LFunc BoogieIdent := binaryOp "Bv64.Mod" mty[bv64] none
+def bv64NotFunc : LFunc BoogieIdent := unaryOp "Bv64.Not" mty[bv64] none
+def bv64AndFunc : LFunc BoogieIdent := binaryOp "Bv64.And" mty[bv64] none
+def bv64OrFunc : LFunc BoogieIdent := binaryOp "Bv64.Or" mty[bv64] none
+def bv64XorFunc : LFunc BoogieIdent := binaryOp "Bv64.Xor" mty[bv64] none
+def bv64ShlFunc : LFunc BoogieIdent := binaryOp "Bv64.Shl" mty[bv64] none
+def bv64UShrFunc : LFunc BoogieIdent := binaryOp "Bv64.UShr" mty[bv64] none
 
 /- Bv64 Comparison Operations -/
 def bv64LtFunc : LFunc BoogieIdent := binaryPredicate "Bv64.Lt" mty[bv64] none
@@ -188,7 +228,10 @@ def mapUpdateFunc : LFunc BoogieIdent :=
    }
 
 
-private def BVOpNames := ["Add", "Sub", "Mul", "Neg", "Lt", "Le", "Gt", "Ge"]
+private def BVOpNames :=
+  ["Neg", "Add", "Sub", "Mul", "Div", "Mod",
+   "Not", "And", "Or", "Xor", "Shl", "UShr",
+   "Lt", "Le", "Gt", "Ge"]
 
 open Lean in
 macro "ExpandBVOpFuncNames" "[" sizes:num,* "]" : term => do
