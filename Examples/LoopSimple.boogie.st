@@ -10,7 +10,6 @@ spec {
   sum := 0;
   i := 0;
   while(i < n)
-    decreases (n-i);
     invariant (i <= n && ((i * (i-1)) div 2 == sum));
   {
     sum := sum + i;
