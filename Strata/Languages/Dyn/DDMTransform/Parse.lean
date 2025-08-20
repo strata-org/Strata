@@ -70,14 +70,18 @@ fn and (x : Any, y : Any) : Any => x "and" y;
 fn or (x : Any, y : Any) : Any => x "or" y;
 
 // List operations
-fn list_get (tp : Type, lst : tp, idx : Any) : tp => lst "[" idx "]";
-fn list_len (tp : Type, lst : tp) : Any => "len(" lst ")";
+fn list_get (lst : Any, idx : Any) : Any => lst "[" idx "]";
+fn list_set (lst: Any, idx : Any, val : Any) : bool => lst "[" idx "] = " val;
+fn list_len (lst : Any) : Any => "len(" lst ")";
 fn list_create () : Any => "[]";
+fn list_resize (lst : Any, new_size : Any) : bool => "list_resize(" lst ", " new_size")";
 
 // Dict operations
 fn dict_get (dict : Any, key : Any) : Any => dict "[" key "]";
 fn dict_set (dict : Any, key : Any, val : Any) : Any => dict "[" key "]" "=" val;
 fn dict_create () : Any => "{}";
+fn dict_list_keys (dict : Any) : Any => "dict_list_keys(" dict ")";
+fn dict_has_key (dict : Any, key: Any) : bool => "dict_has_key(" dict ", " key ")";
 
 // Function calls with dynamic arguments
 fn func_call (func : Any, args : CommaSepBy Expr) : Any =>  "call("func "," args ")";
@@ -140,3 +144,6 @@ op function_def (ret_type : Type,
   "def" name params "->" ret_type body;
 
 #end
+
+-- Generate AST
+#strata_gen Dyn

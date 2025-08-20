@@ -22,7 +22,7 @@ import Strata.Languages.Boogie.StatementSemantics
 /- CSimp -/
 import Strata.Languages.C_Simp.Examples.Examples
 
-/- CSimp -/
+/- Dyn -/
 import Strata.Languages.Dyn.Examples.Examples
 
 
