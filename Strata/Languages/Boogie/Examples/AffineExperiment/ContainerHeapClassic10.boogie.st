@@ -147,7 +147,7 @@ spec {
   ensures UnboxingInt(newHeap[ref1][lycheeField]) == 2;
   ensures UnboxingInt(newHeap[ref1][pineappleField]) == 2;
   ensures UnboxingInt(newHeap[ref2][lycheeField]) == 2;
-  ensures UnboxingInt(newHeap[ref2][pineappleField]) == 4;
+  ensures UnboxingInt(newHeap[ref2][pineappleField]) == 2;
 
 }
 {
@@ -177,6 +177,11 @@ spec {
   // -----------------------------------------------------------------------------------------------------------------------
 
 
+  // ref1.lychee += 1
+  assert [modifiesFrameRef1]: UpdateContainersModifiesFrame(heap_var, ref1, ref1, ref2, methodEntryTime);
+  var rhs5: Box := BoxingInt(UnboxingInt(heap_var[ref1][lycheeField]) + 1);
+  heap_var := heap_var[ref1 := heap_var[ref1][lycheeField := rhs5]];
+
   // ref1.pineapple += 1
   assert [modifiesFrameRef1]: UpdateContainersModifiesFrame(heap_var, ref1, ref1, ref2, methodEntryTime);
   var rhs6: Box := BoxingInt(UnboxingInt(heap_var[ref1][pineappleField]) + 1);
@@ -191,16 +196,6 @@ spec {
   assert [modifiesFrameRef1]: UpdateContainersModifiesFrame(heap_var, ref2, ref1, ref2, methodEntryTime);
   var rhs8: Box := BoxingInt(UnboxingInt(heap_var[ref2][pineappleField]) + 1);
   heap_var := heap_var[ref2 := heap_var[ref2][pineappleField := rhs8]];
-
-  // ref2.pineapple += 1
-  assert [modifiesFrameRef1]: UpdateContainersModifiesFrame(heap_var, ref2, ref1, ref2, methodEntryTime);
-  var rhs9: Box := BoxingInt(UnboxingInt(heap_var[ref2][pineappleField]) + 1);
-  heap_var := heap_var[ref2 := heap_var[ref2][pineappleField := rhs9]];
-
-  // ref2.pineapple += 1
-  assert [modifiesFrameRef1]: UpdateContainersModifiesFrame(heap_var, ref2, ref1, ref2, methodEntryTime);
-  var rhs10: Box := BoxingInt(UnboxingInt(heap_var[ref2][pineappleField]) + 1);
-  heap_var := heap_var[ref2 := heap_var[ref2][pineappleField := rhs10]];
   
   // -----------------------------------------------------------------------------------------------------------------------
 
@@ -253,7 +248,7 @@ spec {
   assert [c1Lychees1]: isContainer(c1) && UnboxingInt(heap_var[c1][lycheeField]) == 2;
   assert [c1Pineapple2]: isContainer(c1) && UnboxingInt(heap_var[c1][pineappleField]) == 2;
   assert [c2Lychees0]: isContainer(c2) && UnboxingInt(heap_var[c2][lycheeField]) == 2;
-  assert [c2Pineapple0]: isContainer(c2) && UnboxingInt(heap_var[c2][pineappleField]) == 4;
+  assert [c2Pineapple0]: isContainer(c2) && UnboxingInt(heap_var[c2][pineappleField]) == 2;
 
   // Return the new heap
   newHeap := heap_var;
