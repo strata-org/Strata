@@ -1,5 +1,6 @@
 # Strata
 
+
 Strata offers a unified platform for formalizing language syntax and
 semantics, and implementing automated reasoning applications. Strata
 provides a family of intermediate representations via _dialects_ that
