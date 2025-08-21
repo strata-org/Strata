@@ -86,6 +86,13 @@ class ConformanceTestRunner:
             with tempfile.NamedTemporaryFile(mode='w', suffix=self.processor.file_extension, delete=False) as f:
                 f.write(instrumented_code)
                 f.flush()
+                
+                # Debug: print file contents
+                print(f"DEBUG: Running file {f.name} with contents:")
+                print("=" * 50)
+                print(instrumented_code)
+                print("=" * 50)
+                
                 # Run the instrumented code
                 result = subprocess.run(
                     self.processor.get_native_execution_command(f.name),
