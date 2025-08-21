@@ -41,10 +41,21 @@ jobs:
         run: |
           source ~/.profile && lake build StrataTypeScriptRunner
 
+      - name: Debug with upterm (before tests)
+        uses: lhotari/action-upterm@v1
+        with:
+          limit-access-to-actor: true
+
       - name: Run TypeScript Conformance Tests
         run: |
           cd conformance_testing
           source ~/.profile && python3 conformance_cli.py test ../StrataTest/Languages/TypeScript -l typescript -v
+
+      - name: Debug with upterm (on failure)
+        if: failure()
+        uses: lhotari/action-upterm@v1
+        with:
+          limit-access-to-actor: true
 
       - name: Upload failed test files
         if: always()
