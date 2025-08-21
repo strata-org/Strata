@@ -48,7 +48,7 @@ instance : ToFormat State where
   format s :=
   f!"error: {s.error}{Format.line}\
      deferred: {s.deferred}{Format.line}\
-     pathConditions: {s.pathConditions}{Format.line}\
+     pathConditions: {PathConditions.format' s.pathConditions}{Format.line}\
      env: {s.env}{Format.line}\
      genNum: {s.genNum}{Format.line}"
 

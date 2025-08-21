@@ -265,7 +265,7 @@ def TEnv.eraseFromContext (T : (TEnv Identifier)) (x : Identifier) : (TEnv Ident
 
 def TEnv.freeVarCheck (T : (TEnv Identifier)) (e : LExpr LMonoTy Identifier) (msg : Format) :
   Except Format Unit :=
-  let efv := e.freeVars.keys
+  let efv := e.freeVars.map (fun (x, _) => x)
   let knownVars := T.context.knownVars
   let freeVars := List.filter (fun v => v ∉ knownVars) efv
   match freeVars with
