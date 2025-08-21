@@ -1,0 +1,13 @@
+{
+  "name": "strata-runners",
+  "version": "1.0.0",
+  "description": "JavaScript/TypeScript AST conversion utilities for Strata",
+  "private": true,
+  "dependencies": {
+    "@babel/parser": "^7.22.0",
+    "@babel/types": "^7.22.0"
+  },
+  "scripts": {
+    "install-deps": "npm install"
+  }
+}
