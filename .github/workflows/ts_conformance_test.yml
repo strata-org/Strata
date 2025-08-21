@@ -20,7 +20,7 @@ jobs:
       - name: Install Node.js dependencies
         run: |
           npm install -g ts-node typescript
-          npm install @babel/parser @babel/types
+          npm install @babel/parser @babel/types @babel/traverse @babel/generator
 
       - name: Setup Python
         uses: actions/setup-python@v4
