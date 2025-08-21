@@ -1,7 +1,9 @@
 name: TypeScript Conformance Testing
 
 on:
-  workflow_dispatch:  # manual run from the Actions tab only
+  push:
+    branches: [michael/javascript-front-end]  # Add your branch name here
+  workflow_dispatch:  # Keep manual option too
 
 jobs:
   run_conformance_tests:
