@@ -109,7 +109,7 @@ theorem Program.typeCheck.goWF' : Program.typeCheck.go p T (d :: ds) = .ok (ds',
     | error _ => simp_all
     | ok res =>
       simp_all
-      cases Heq2: Statement.Statement.subst.go res.snd.state.subst res.fst with
+      cases Heq2: Statement.Statement.subst.go res.snd.state.substInfo.subst res.fst with
       | nil => simp_all
       | cons h t =>
         simp_all
@@ -134,7 +134,7 @@ theorem Program.typeCheck.goWF' : Program.typeCheck.go p T (d :: ds) = .ok (ds',
                   -- 2. All declared global variables are `BoogieIdent.glob`.
                   sorry
                 . exists v.1, {
-                  context := res.snd.context.subst res.snd.state.subst,
+                  context := res.snd.context.subst res.snd.state.substInfo.subst,
                   state := res.snd.state, functions := res.snd.functions,
                   knownTypes := res.snd.knownTypes }, v.2
             | _ => simp_all

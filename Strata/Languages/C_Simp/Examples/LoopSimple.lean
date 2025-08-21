@@ -11,23 +11,23 @@ def LoopSimplePgm :=
 #strata
 program C_Simp;
 
-procedure loopSimple (n: int) -> int
-  @pre (n >= #0)
-  @post true
+int procedure loopSimple (n: int)
+  //@pre (n >= 0);
+  //@post true;
 {
   var sum : int;
   var i : int;
 
-  sum := #0;
-  i := #0;
+  sum = 0;
+  i = 0;
   while(i < n)
-  @decreases (n-i)
-  @invariant (i <= n && ((i * (i-#1))/#2 == sum))
+  //@decreases (n-i)
+  //@invariant (i <= n && ((i * (i-1))/2 == sum))
   {
-    sum := sum + i;
-    i := i + #1;
+    sum = sum + i;
+    i = i + 1;
   }
-  @assert [sum_assert] ((n * (n-#1))/#2 == sum);
+  //@assert [sum_assert] ((n * (n-1))/2 == sum);
   return sum;
 }
 
@@ -35,16 +35,19 @@ procedure loopSimple (n: int) -> int
 
 /--
 info: program C_Simp;
-procedureloopSimple(n:int)->int@pre(n)>=(#(0))@posttrue({
+(int)procedureloopSimple(n:int)//@pre(n)>=(0);
+//@posttrue;
+  ({
   varsum:int;
   vari:int;
-  (sum):=#(0);
-  (i):=#(0);
-  while((i)<(n))@decreases((n)-(i))@invariant(((i)<=(n))&&((((i)*((i)-(#(1))))/(#(2)))==(sum)))({
-  (sum):=(sum)+(i);
-  (i):=(i)+(#(1));
+  (sum)=0;
+  (i)=0;
+  while((i)<(n))
+  //@decreases((n)-(i))//@invariant(((i)<=(n))&&((((i)*((i)-(1)))/(2))==(sum)))({
+  (sum)=(sum)+(i);
+  (i)=(i)+(1);
   }
-  )@assert[sum_assert](((n)*((n)-(#(1))))/(#(2)))==(sum);
+  )//@assert [sum_assert](((n)*((n)-(1)))/(2))==(sum);
   returnsum;
   }
   )
@@ -80,7 +83,7 @@ init (i : int) := init_i
 sum := #0
 i := #0
 if ((~Int.Lt i) n) then {first_iter_asserts : {assert [entry_invariant] ((~Bool.And ((~Int.Le i) n)) (((~Int.Div ((~Int.Mul i) ((~Int.Sub i) #1))) #2) == sum))
-  assert [assert measure_pos] ((~Int.Ge ((~Int.Sub n) i)) #0)}
+  assert [assert_measure_pos] ((~Int.Ge ((~Int.Sub n) i)) #0)}
  arbitrary iter facts : {loop havoc : {havoc sum
    havoc i}
   arbitrary_iter_assumes : {assume [assume_guard] ((~Int.Lt i) n)
@@ -115,7 +118,7 @@ Assumptions:
 Proof Obligation:
 ((~Bool.And ((~Int.Le #0) $__n0)) #true)
 
-Label: assert measure_pos
+Label: assert_measure_pos
 Assumptions:
 (<label_ite_cond_true: ((~Int.Lt i) n)>, ((~Int.Lt #0) $__n0))
 (pre, ((~Int.Ge $__n0) #0))
@@ -172,7 +175,7 @@ info:
 Obligation: entry_invariant
 Result: verified
 
-Obligation: assert measure_pos
+Obligation: assert_measure_pos
 Result: verified
 
 Obligation: measure_decreases

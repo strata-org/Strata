@@ -11,22 +11,22 @@ def LinearSearchEnv :=
 #strata
 program C_Simp;
 
-procedure linearSearch (arr: intArr, e: int) -> bool
-  @pre true
-  @post true
+bool procedure linearSearch (arr: intArr, e: int)
+  //@pre true;
+  //@post true;
 {
   var idx : int;
 
-  idx := #0;
+  idx = 0;
   while
   (idx < len(arr))
-  @decreases (len(arr)-idx)
-  @invariant true
+  //@decreases (len(arr)-idx)
+  //@invariant true
   {
-    if (e == get(arr, idx)) then {
+    if (e == get(arr, idx)) {
       return true;
     }
-    idx := idx + #1;
+    idx = idx + 1;
   }
 
   return false;
@@ -36,14 +36,17 @@ procedure linearSearch (arr: intArr, e: int) -> bool
 
 /--
 info: program C_Simp;
-procedurelinearSearch(arr:intArr, e:int)->bool@pretrue@posttrue({
+(bool)procedurelinearSearch(arr:intArr, e:int)//@pretrue;
+//@posttrue;
+  ({
   varidx:int;
-  (idx):=#(0);
-  while((idx)<(len(arr)))@decreases((len(arr))-(idx))@invariant(true)({
-  if((e)==(get(arr,idx)))then{
+  (idx)=0;
+  while((idx)<(len(arr)))
+  //@decreases((len(arr))-(idx))//@invariant(true)({
+  if((e)==(get(arr,idx))){
   returntrue;
   }
-  ()(idx):=(idx)+(#(1));
+  ()(idx)=(idx)+(1);
   }
   )returnfalse;
   }
@@ -78,7 +81,7 @@ postconditions: (post, #true)
 body: init (idx : int) := init_idx
 idx := #0
 if ((~Int.Lt idx) (~Array.Len arr)) then {first_iter_asserts : {assert [entry_invariant] #true
-  assert [assert measure_pos] ((~Int.Ge ((~Int.Sub (~Array.Len arr)) idx)) #0)}
+  assert [assert_measure_pos] ((~Int.Ge ((~Int.Sub (~Array.Len arr)) idx)) #0)}
  arbitrary iter facts : {loop havoc : {havoc return
    havoc idx}
   arbitrary_iter_assumes : {assume [assume_guard] ((~Int.Lt idx) (~Array.Len arr))

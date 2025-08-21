@@ -28,7 +28,7 @@ def lookup (T : (TEnv BoogieIdent)) (x : BoogieIdent) : Option LTy :=
 def update (T : TEnv BoogieIdent) (x : BoogieIdent) (ty : LTy) : TEnv BoogieIdent :=
   T.insertInContext x ty
 
-def freeVars (e : (LExpr BoogieIdent)) : List BoogieIdent :=
+def freeVars (e : (LExpr LMonoTy BoogieIdent)) : List BoogieIdent :=
   (LExpr.freeVars e).map (fun (i, _) => i)
 
 /--
@@ -42,7 +42,7 @@ def preprocess (T : TEnv BoogieIdent) (ty : LTy) : Except Format (LTy × TEnv Bo
 
 def postprocess (T : TEnv BoogieIdent) (ty : LTy) : Except Format (LTy × TEnv BoogieIdent) := do
   if h: ty.isMonoType then
-    let ty := LMonoTy.subst T.state.subst (ty.toMonoType h)
+    let ty := LMonoTy.subst T.state.substInfo.subst (ty.toMonoType h)
     .ok (.forAll [] ty, T)
   else
     .error f!"[postprocess] Expected mono-type; instead got {ty}"
@@ -51,8 +51,8 @@ def postprocess (T : TEnv BoogieIdent) (ty : LTy) : Except Format (LTy × TEnv B
 The inferred type of `e` will be an `LMonoTy`, but we return an `LTy` with no
 bound variables.
 -/
-def inferType (T : TEnv BoogieIdent) (c : Cmd Expression) (e : (LExpr BoogieIdent)) :
-    Except Format ((LExpr BoogieIdent) × LTy × TEnv BoogieIdent) := do
+def inferType (T : TEnv BoogieIdent) (c : Cmd Expression) (e : (LExpr LMonoTy BoogieIdent)) :
+    Except Format ((LExpr LMonoTy BoogieIdent) × LTy × TEnv BoogieIdent) := do
   -- We only allow free variables to appear in `init` statements. Any other
   -- occurrence leads to an error.
   let T ← match c with
@@ -88,7 +88,7 @@ def canonicalizeConstraints (constraints : List (LTy × LTy)) : Except Format Co
 
 def unifyTypes (T : TEnv BoogieIdent) (constraints : List (LTy × LTy)) : Except Format (TEnv BoogieIdent) := do
   let constraints ← canonicalizeConstraints constraints
-  let S ← Constraints.unify constraints T.state.subst
+  let S ← Constraints.unify constraints T.state.substInfo
   let T := T.updateSubst S
   return T
 

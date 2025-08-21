@@ -25,7 +25,7 @@ procedure P () returns () {
 
 /-- info: #[] -/
 #guard_msgs in
-#eval TransM.run (translateProgram (typeDeclPgm1.commands)) |>.snd
+#eval TransM.run (translateProgram typeDeclPgm1) |>.snd
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -85,7 +85,7 @@ procedure P () returns () {
 
 /-- info: #[] -/
 #guard_msgs in
-#eval TransM.run (translateProgram (typeDeclPgm3.commands)) |>.snd
+#eval TransM.run (translateProgram typeDeclPgm3) |>.snd
 
 /--
 info: [Strata.Boogie] Type checking succeeded.

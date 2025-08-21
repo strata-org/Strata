@@ -16,7 +16,7 @@ namespace Strata
 -- 2. Running SymExec of Lambda and Imp
 
 
-def translate_expr (e : C_Simp.Expression.Expr) : Lambda.LExpr Boogie.BoogieIdent :=
+def translate_expr (e : C_Simp.Expression.Expr) : Lambda.LExpr Lambda.LMonoTy Boogie.BoogieIdent :=
   match e with
   | .const c ty => .const c ty
   | .op o ty => .op (.unres, o) ty
@@ -29,7 +29,7 @@ def translate_expr (e : C_Simp.Expression.Expr) : Lambda.LExpr Boogie.BoogieIden
   | .ite c t e => .ite (translate_expr c) (translate_expr t) (translate_expr e)
   | .eq e1 e2 => .eq (translate_expr e1) (translate_expr e2)
 
-def translate_opt_expr (e : Option C_Simp.Expression.Expr) : Option (Lambda.LExpr Boogie.BoogieIdent) :=
+def translate_opt_expr (e : Option C_Simp.Expression.Expr) : Option (Lambda.LExpr Lambda.LMonoTy Boogie.BoogieIdent) :=
   match e with
   | some e => translate_expr e
   | none => none
@@ -82,7 +82,7 @@ def loop_elimination_statement(s : C_Simp.Statement) : Boogie.Statement :=
       let measure_pos := (.app (.app (.op "Int.Ge" none) (translate_expr measure)) (.const "0" none))
 
       let entry_invariant : Boogie.Statement := .assert "entry_invariant" (translate_expr invariant) {}
-      let assert_measure_positive : Boogie.Statement := .assert "assert measure_pos" measure_pos {}
+      let assert_measure_positive : Boogie.Statement := .assert "assert_measure_pos" measure_pos {}
       let first_iter_facts : Boogie.Statement := .block "first_iter_asserts" {ss := [entry_invariant, assert_measure_positive]} {}
 
       let arbitrary_iter_assumes := .block "arbitrary_iter_assumes" {ss := [(Boogie.Statement.assume "assume_guard" (translate_expr guard) {}), (Boogie.Statement.assume "assume_invariant" (translate_expr invariant) {}), (Boogie.Statement.assume "assume_measure_pos" measure_pos {})]} {}

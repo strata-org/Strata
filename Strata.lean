@@ -9,7 +9,6 @@
 /- DDM -/
 import Strata.DDM.Integration.Lean
 import Strata.DDM.Ion
-import Strata.DDM.Example
 
 /- Dialect Library -/
 import Strata.DL.SMT.SMT
@@ -22,6 +21,10 @@ import Strata.Languages.Boogie.StatementSemantics
 
 /- CSimp -/
 import Strata.Languages.C_Simp.Examples.Examples
+
+/- Dyn -/
+import Strata.Languages.Dyn.Examples.Examples
+
 
 /- Code Transforms -/
 import Strata.Transform.Examples

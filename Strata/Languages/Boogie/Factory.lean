@@ -12,7 +12,7 @@ import Strata.DL.Lambda.IntBoolFactory
 ---------------------------------------------------------------------
 
 namespace Boogie
-open Lambda LTy.Syntax LExpr.Syntax
+open Lambda LTy.Syntax LExpr.SyntaxMono
 
 @[match_pattern]
 def mapTy (keyTy : LMonoTy) (valTy : LMonoTy) : LMonoTy :=
@@ -31,10 +31,10 @@ def KnownTypes : List LTy :=
    t[∀a b. %a → %b],
    t[∀a b. Map %a %b]]
 /--
-  Convert an LExpr String to an LExpr BoogieIdent
+  Convert an LExpr LMonoTy String to an LExpr LMonoTy BoogieIdent
   TODO: Remove when Lambda elaborator offers parametric identifier type
 -/
-def ToBoogieIdent (ine: LExpr String): (LExpr BoogieIdent) :=
+def ToBoogieIdent (ine: LExpr LMonoTy String): (LExpr LMonoTy BoogieIdent) :=
 match ine with
     | .const c ty => .const c ty
     | .op o oty => .op (BoogieIdent.unres o) oty
@@ -47,11 +47,19 @@ match ine with
     | .ite c t e => .ite (ToBoogieIdent c) (ToBoogieIdent t) (ToBoogieIdent e)
     | .eq e1 e2 => .eq (ToBoogieIdent e1) (ToBoogieIdent e2)
 
-/- Bv1 Arithmetic Operations -/
+/- Bv1 Arithmetic/Logical Operations -/
+def bv1NegFunc : LFunc BoogieIdent := unaryOp "Bv1.Neg" mty[bv1] none
 def bv1AddFunc : LFunc BoogieIdent := binaryOp "Bv1.Add" mty[bv1] none
 def bv1SubFunc : LFunc BoogieIdent := binaryOp "Bv1.Sub" mty[bv1] none
 def bv1MulFunc : LFunc BoogieIdent := binaryOp "Bv1.Mul" mty[bv1] none
-def bv1NegFunc : LFunc BoogieIdent := unaryOp "Bv1.Neg" mty[bv1] none
+def bv1DivFunc : LFunc BoogieIdent := binaryOp "Bv1.Div" mty[bv1] none
+def bv1ModFunc : LFunc BoogieIdent := binaryOp "Bv1.Mod" mty[bv1] none
+def bv1NotFunc : LFunc BoogieIdent := unaryOp "Bv1.Not" mty[bv1] none
+def bv1AndFunc : LFunc BoogieIdent := binaryOp "Bv1.And" mty[bv1] none
+def bv1OrFunc : LFunc BoogieIdent := binaryOp "Bv1.Or" mty[bv1] none
+def bv1XorFunc : LFunc BoogieIdent := binaryOp "Bv1.Xor" mty[bv1] none
+def bv1ShlFunc : LFunc BoogieIdent := binaryOp "Bv1.Shl" mty[bv1] none
+def bv1UShrFunc : LFunc BoogieIdent := binaryOp "Bv1.UShr" mty[bv1] none
 
 /- Bv1 Comparison Operations -/
 def bv1LtFunc : LFunc BoogieIdent := binaryPredicate "Bv1.Lt" mty[bv1] none
@@ -59,11 +67,19 @@ def bv1LeFunc : LFunc BoogieIdent := binaryPredicate "Bv1.Le" mty[bv1] none
 def bv1GtFunc : LFunc BoogieIdent := binaryPredicate "Bv1.Gt" mty[bv1] none
 def bv1GeFunc : LFunc BoogieIdent := binaryPredicate "Bv1.Ge" mty[bv1] none
 
-/- Bv8 Arithmetic Operations -/
+/- Bv8 Arithmetic/Logical Operations -/
+def bv8NegFunc : LFunc BoogieIdent := unaryOp "Bv8.Neg" mty[bv8] none
 def bv8AddFunc : LFunc BoogieIdent := binaryOp "Bv8.Add" mty[bv8] none
 def bv8SubFunc : LFunc BoogieIdent := binaryOp "Bv8.Sub" mty[bv8] none
 def bv8MulFunc : LFunc BoogieIdent := binaryOp "Bv8.Mul" mty[bv8] none
-def bv8NegFunc : LFunc BoogieIdent := unaryOp "Bv8.Neg" mty[bv8] none
+def bv8DivFunc : LFunc BoogieIdent := binaryOp "Bv8.Div" mty[bv8] none
+def bv8ModFunc : LFunc BoogieIdent := binaryOp "Bv8.Mod" mty[bv8] none
+def bv8NotFunc : LFunc BoogieIdent := unaryOp "Bv8.Not" mty[bv8] none
+def bv8AndFunc : LFunc BoogieIdent := binaryOp "Bv8.And" mty[bv8] none
+def bv8OrFunc : LFunc BoogieIdent := binaryOp "Bv8.Or" mty[bv8] none
+def bv8XorFunc : LFunc BoogieIdent := binaryOp "Bv8.Xor" mty[bv8] none
+def bv8ShlFunc : LFunc BoogieIdent := binaryOp "Bv8.Shl" mty[bv8] none
+def bv8UShrFunc : LFunc BoogieIdent := binaryOp "Bv8.UShr" mty[bv8] none
 
 /- Bv8 Comparison Operations -/
 def bv8LtFunc : LFunc BoogieIdent := binaryPredicate "Bv8.Lt" mty[bv8] none
@@ -71,11 +87,19 @@ def bv8LeFunc : LFunc BoogieIdent := binaryPredicate "Bv8.Le" mty[bv8] none
 def bv8GtFunc : LFunc BoogieIdent := binaryPredicate "Bv8.Gt" mty[bv8] none
 def bv8GeFunc : LFunc BoogieIdent := binaryPredicate "Bv8.Ge" mty[bv8] none
 
-/- Bv16 Arithmetic Operations -/
+/- Bv16 Arithmetic/Logical Operations -/
+def bv16NegFunc : LFunc BoogieIdent := unaryOp "Bv16.Neg" mty[bv16] none
 def bv16AddFunc : LFunc BoogieIdent := binaryOp "Bv16.Add" mty[bv16] none
 def bv16SubFunc : LFunc BoogieIdent := binaryOp "Bv16.Sub" mty[bv16] none
 def bv16MulFunc : LFunc BoogieIdent := binaryOp "Bv16.Mul" mty[bv16] none
-def bv16NegFunc : LFunc BoogieIdent := unaryOp "Bv16.Neg" mty[bv16] none
+def bv16DivFunc : LFunc BoogieIdent := binaryOp "Bv16.Div" mty[bv16] none
+def bv16ModFunc : LFunc BoogieIdent := binaryOp "Bv16.Mod" mty[bv16] none
+def bv16NotFunc : LFunc BoogieIdent := unaryOp "Bv16.Not" mty[bv16] none
+def bv16AndFunc : LFunc BoogieIdent := binaryOp "Bv16.And" mty[bv16] none
+def bv16OrFunc : LFunc BoogieIdent := binaryOp "Bv16.Or" mty[bv16] none
+def bv16XorFunc : LFunc BoogieIdent := binaryOp "Bv16.Xor" mty[bv16] none
+def bv16ShlFunc : LFunc BoogieIdent := binaryOp "Bv16.Shl" mty[bv16] none
+def bv16UShrFunc : LFunc BoogieIdent := binaryOp "Bv16.UShr" mty[bv16] none
 
 /- Bv16 Comparison Operations -/
 def bv16LtFunc : LFunc BoogieIdent := binaryPredicate "Bv16.Lt" mty[bv16] none
@@ -83,11 +107,19 @@ def bv16LeFunc : LFunc BoogieIdent := binaryPredicate "Bv16.Le" mty[bv16] none
 def bv16GtFunc : LFunc BoogieIdent := binaryPredicate "Bv16.Gt" mty[bv16] none
 def bv16GeFunc : LFunc BoogieIdent := binaryPredicate "Bv16.Ge" mty[bv16] none
 
-/- Bv32 Arithmetic Operations -/
+/- Bv32 Arithmetic/Logical Operations -/
+def bv32NegFunc : LFunc BoogieIdent := unaryOp "Bv32.Neg" mty[bv32] none
 def bv32AddFunc : LFunc BoogieIdent := binaryOp "Bv32.Add" mty[bv32] none
 def bv32SubFunc : LFunc BoogieIdent := binaryOp "Bv32.Sub" mty[bv32] none
 def bv32MulFunc : LFunc BoogieIdent := binaryOp "Bv32.Mul" mty[bv32] none
-def bv32NegFunc : LFunc BoogieIdent := unaryOp "Bv32.Neg" mty[bv32] none
+def bv32DivFunc : LFunc BoogieIdent := binaryOp "Bv32.Div" mty[bv32] none
+def bv32ModFunc : LFunc BoogieIdent := binaryOp "Bv32.Mod" mty[bv32] none
+def bv32NotFunc : LFunc BoogieIdent := unaryOp "Bv32.Not" mty[bv32] none
+def bv32AndFunc : LFunc BoogieIdent := binaryOp "Bv32.And" mty[bv32] none
+def bv32OrFunc : LFunc BoogieIdent := binaryOp "Bv32.Or" mty[bv32] none
+def bv32XorFunc : LFunc BoogieIdent := binaryOp "Bv32.Xor" mty[bv32] none
+def bv32ShlFunc : LFunc BoogieIdent := binaryOp "Bv32.Shl" mty[bv32] none
+def bv32UShrFunc : LFunc BoogieIdent := binaryOp "Bv32.UShr" mty[bv32] none
 
 /- Bv32 Comparison Operations -/
 def bv32LtFunc : LFunc BoogieIdent := binaryPredicate "Bv32.Lt" mty[bv32] none
@@ -95,11 +127,19 @@ def bv32LeFunc : LFunc BoogieIdent := binaryPredicate "Bv32.Le" mty[bv32] none
 def bv32GtFunc : LFunc BoogieIdent := binaryPredicate "Bv32.Gt" mty[bv32] none
 def bv32GeFunc : LFunc BoogieIdent := binaryPredicate "Bv32.Ge" mty[bv32] none
 
-/- Bv64 Arithmetic Operations -/
+/- Bv64 Arithmetic/Logical Operations -/
+def bv64NegFunc : LFunc BoogieIdent := unaryOp "Bv64.Neg" mty[bv64] none
 def bv64AddFunc : LFunc BoogieIdent := binaryOp "Bv64.Add" mty[bv64] none
 def bv64SubFunc : LFunc BoogieIdent := binaryOp "Bv64.Sub" mty[bv64] none
 def bv64MulFunc : LFunc BoogieIdent := binaryOp "Bv64.Mul" mty[bv64] none
-def bv64NegFunc : LFunc BoogieIdent := unaryOp "Bv64.Neg" mty[bv64] none
+def bv64DivFunc : LFunc BoogieIdent := binaryOp "Bv64.Div" mty[bv64] none
+def bv64ModFunc : LFunc BoogieIdent := binaryOp "Bv64.Mod" mty[bv64] none
+def bv64NotFunc : LFunc BoogieIdent := unaryOp "Bv64.Not" mty[bv64] none
+def bv64AndFunc : LFunc BoogieIdent := binaryOp "Bv64.And" mty[bv64] none
+def bv64OrFunc : LFunc BoogieIdent := binaryOp "Bv64.Or" mty[bv64] none
+def bv64XorFunc : LFunc BoogieIdent := binaryOp "Bv64.Xor" mty[bv64] none
+def bv64ShlFunc : LFunc BoogieIdent := binaryOp "Bv64.Shl" mty[bv64] none
+def bv64UShrFunc : LFunc BoogieIdent := binaryOp "Bv64.UShr" mty[bv64] none
 
 /- Bv64 Comparison Operations -/
 def bv64LtFunc : LFunc BoogieIdent := binaryPredicate "Bv64.Lt" mty[bv64] none
@@ -127,17 +167,17 @@ def strLengthFunc : LFunc BoogieIdent :=
       typeArgs := [],
       inputs := [("x", mty[string])]
       output := mty[int],
-      denote := some (unOpDenote String Int LExpr.denoteString
-                        (fun s => (Int.ofNat (String.length s)))
-                        mty[int])}
+      concreteEval := some (unOpCeval String Int LExpr.denoteString
+                            (fun s => (Int.ofNat (String.length s)))
+                            mty[int])}
 
 def strConcatFunc : LFunc BoogieIdent :=
     { name := "Str.Concat",
       typeArgs := [],
       inputs := [("x", mty[string]), ("y", mty[string])]
       output := mty[string],
-      denote := some (binOpDenote String String LExpr.denoteString
-                       String.append mty[string])}
+      concreteEval := some (binOpCeval String String LExpr.denoteString
+                            String.append mty[string])}
 
 /- A polymorphic `old` function with type `∀a. a → a`. -/
 def polyOldFunc : LFunc BoogieIdent :=
@@ -161,26 +201,37 @@ def mapUpdateFunc : LFunc BoogieIdent :=
      output := mapTy mty[%k] mty[%v],
      axioms :=
      [
-      -- updateSelect
-      ToBoogieIdent es[∀(Map %k %v):
+      -- updateSelect: forall m: Map k v, kk: k, vv: v :: m[kk := vv][kk] == vv
+      ToBoogieIdent esM[∀(Map %k %v):
           (∀ (%k):
             (∀ (%v):
               (((~select : (Map %k %v) → %k → %v)
                 ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %2) %1) %0)) %1) == %0))],
-      -- update preserves
-      ToBoogieIdent es[∀ (Map %k %v):
-          (∀ (%k):
-            (∀ (%k):
-              (∀ (%v):
-                  (((~select : (Map %k %v) → %k → %v)
-                    ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %3) %1) %0)) %2)
-                  ==
-                  ((((~select : (Map %k %v) → %k → %v) %3) %2)))))]
+      -- updatePreserve: forall m: Map k v, okk: k, kk: k, vv: v :: okk != kk ==> m[kk := vv][okk] == m[okk]
+      ToBoogieIdent esM[∀ (Map %k %v): -- %3 m
+          (∀ (%k): -- %2 okk
+            (∀ (%k): -- %1 kk
+              (∀ (%v): -- %0 vv
+                  -- okk != kk ==> ...
+                  (if (%2 == %1) then
+                      #true
+                  else
+                    -- if keys are different, the value of the other key one remains unchanged
+                    -- (select (update m kk vv) okk) ==  (select m okk)
+                    ((((~select : (Map %k %v) → %k → %v)
+                        ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %3) %1) %0)
+                      ) %2)
+                    ==
+                    ((((~select : (Map %k %v) → %k → %v) %3) %2)))
+                    ))))]
      ]
    }
 
 
-private def BVOpNames := ["Add", "Sub", "Mul", "Neg", "Lt", "Le", "Gt", "Ge"]
+private def BVOpNames :=
+  ["Neg", "Add", "Sub", "Mul", "Div", "Mod",
+   "Not", "And", "Or", "Xor", "Shl", "UShr",
+   "Lt", "Le", "Gt", "Ge"]
 
 open Lean in
 macro "ExpandBVOpFuncNames" "[" sizes:num,* "]" : term => do
@@ -236,38 +287,38 @@ elab "DefBVOpFuncExprs" "[" sizes:num,* "]" : command => do
     for op in BVOpNames do
       let opName := mkIdent (.str .anonymous s!"bv{s}{op}Op")
       let funcName := mkIdent (.str (.str .anonymous "Boogie") s!"bv{s}{op}Func")
-      elabCommand (← `(def $opName : LExpr BoogieIdent := ($funcName).opExpr))
+      elabCommand (← `(def $opName : LExpr LMonoTy BoogieIdent := ($funcName).opExpr))
 
 DefBVOpFuncExprs [1, 8, 16, 32, 64]
 
-def intAddOp : LExpr BoogieIdent := intAddFunc.opExpr
-def intSubOp : LExpr BoogieIdent := intSubFunc.opExpr
-def intMulOp : LExpr BoogieIdent := intMulFunc.opExpr
-def intDivOp : LExpr BoogieIdent := intDivFunc.opExpr
-def intModOp : LExpr BoogieIdent := intModFunc.opExpr
-def intNegOp : LExpr BoogieIdent := intNegFunc.opExpr
-def intLtOp : LExpr BoogieIdent := intLtFunc.opExpr
-def intLeOp : LExpr BoogieIdent := intLeFunc.opExpr
-def intGtOp : LExpr BoogieIdent := intGtFunc.opExpr
-def intGeOp : LExpr BoogieIdent := intGeFunc.opExpr
-def realAddOp : LExpr BoogieIdent := realAddFunc.opExpr
-def realSubOp : LExpr BoogieIdent := realSubFunc.opExpr
-def realMulOp : LExpr BoogieIdent := realMulFunc.opExpr
-def realDivOp : LExpr BoogieIdent := realDivFunc.opExpr
-def realNegOp : LExpr BoogieIdent := realNegFunc.opExpr
-def realLtOp : LExpr BoogieIdent := realLtFunc.opExpr
-def realLeOp : LExpr BoogieIdent := realLeFunc.opExpr
-def realGtOp : LExpr BoogieIdent := realGtFunc.opExpr
-def realGeOp : LExpr BoogieIdent := realGeFunc.opExpr
-def boolAndOp : LExpr BoogieIdent := boolAndFunc.opExpr
-def boolOrOp : LExpr BoogieIdent := boolOrFunc.opExpr
-def boolImpliesOp : LExpr BoogieIdent := boolImpliesFunc.opExpr
-def boolEquivOp : LExpr BoogieIdent := boolEquivFunc.opExpr
-def boolNotOp : LExpr BoogieIdent := boolNotFunc.opExpr
-def strLengthOp : LExpr BoogieIdent := strLengthFunc.opExpr
-def strConcatOp : LExpr BoogieIdent := strConcatFunc.opExpr
-def polyOldOp : LExpr BoogieIdent := polyOldFunc.opExpr
-def mapSelectOp : LExpr BoogieIdent := mapSelectFunc.opExpr
-def mapUpdateOp : LExpr BoogieIdent := mapUpdateFunc.opExpr
+def intAddOp : LExpr LMonoTy BoogieIdent := intAddFunc.opExpr
+def intSubOp : LExpr LMonoTy BoogieIdent := intSubFunc.opExpr
+def intMulOp : LExpr LMonoTy BoogieIdent := intMulFunc.opExpr
+def intDivOp : LExpr LMonoTy BoogieIdent := intDivFunc.opExpr
+def intModOp : LExpr LMonoTy BoogieIdent := intModFunc.opExpr
+def intNegOp : LExpr LMonoTy BoogieIdent := intNegFunc.opExpr
+def intLtOp : LExpr LMonoTy BoogieIdent := intLtFunc.opExpr
+def intLeOp : LExpr LMonoTy BoogieIdent := intLeFunc.opExpr
+def intGtOp : LExpr LMonoTy BoogieIdent := intGtFunc.opExpr
+def intGeOp : LExpr LMonoTy BoogieIdent := intGeFunc.opExpr
+def realAddOp : LExpr LMonoTy BoogieIdent := realAddFunc.opExpr
+def realSubOp : LExpr LMonoTy BoogieIdent := realSubFunc.opExpr
+def realMulOp : LExpr LMonoTy BoogieIdent := realMulFunc.opExpr
+def realDivOp : LExpr LMonoTy BoogieIdent := realDivFunc.opExpr
+def realNegOp : LExpr LMonoTy BoogieIdent := realNegFunc.opExpr
+def realLtOp : LExpr LMonoTy BoogieIdent := realLtFunc.opExpr
+def realLeOp : LExpr LMonoTy BoogieIdent := realLeFunc.opExpr
+def realGtOp : LExpr LMonoTy BoogieIdent := realGtFunc.opExpr
+def realGeOp : LExpr LMonoTy BoogieIdent := realGeFunc.opExpr
+def boolAndOp : LExpr LMonoTy BoogieIdent := boolAndFunc.opExpr
+def boolOrOp : LExpr LMonoTy BoogieIdent := boolOrFunc.opExpr
+def boolImpliesOp : LExpr LMonoTy BoogieIdent := boolImpliesFunc.opExpr
+def boolEquivOp : LExpr LMonoTy BoogieIdent := boolEquivFunc.opExpr
+def boolNotOp : LExpr LMonoTy BoogieIdent := boolNotFunc.opExpr
+def strLengthOp : LExpr LMonoTy BoogieIdent := strLengthFunc.opExpr
+def strConcatOp : LExpr LMonoTy BoogieIdent := strConcatFunc.opExpr
+def polyOldOp : LExpr LMonoTy BoogieIdent := polyOldFunc.opExpr
+def mapSelectOp : LExpr LMonoTy BoogieIdent := mapSelectFunc.opExpr
+def mapUpdateOp : LExpr LMonoTy BoogieIdent := mapUpdateFunc.opExpr
 
 end Boogie

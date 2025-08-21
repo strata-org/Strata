@@ -96,6 +96,10 @@ theorem SubstWF.single_subst (id : TyIdentifier) (h : ¬id ∈ ty.freeVars) :
   simp_all
   done
 
+@[simp]
+theorem SubstWF_of_empty : SubstWF [] := by
+  simp [SubstWF]
+
 /--
 A type substitution, along with a proof that it is well-formed.
 -/
@@ -103,6 +107,10 @@ structure SubstInfo where
   subst : Subst
   isWF : SubstWF subst
   deriving Repr
+
+def SubstInfo.empty : SubstInfo :=
+  { subst := [],
+    isWF := SubstWF_of_empty }
 
 mutual
 /--
@@ -922,13 +930,10 @@ bottom-up Hindley-Milner style algorithm that finds the most general type
 (principal type) of an expression by finding a substitution that makes all the
 types in the input constraints equal.
 -/
-def Constraints.unify (constraints : Constraints) (S : Subst) : Except Format Subst := do
-  if h: SubstWF S then
-    let relS ← Constraints.unifyCore constraints ⟨S, h⟩
-    .ok relS.newS.subst
-  else
-    .error f!"[Constraints.unify] Input substitution map not well-formed!\n\
-              Map: {S}"
+def Constraints.unify (constraints : Constraints) (S : SubstInfo) :
+    Except Format SubstInfo := do
+    let relS ← Constraints.unifyCore constraints S
+    .ok relS.newS
 
 /--
 info: ok: (b, (arrow c d))
@@ -936,8 +941,8 @@ info: ok: (b, (arrow c d))
 -/
 #guard_msgs in
 open LTy.Syntax in
-#eval  do let S ← Constraints.unify [(mty[%a → %b], mty[int → (%c → %d)])] []
-          return (format S)
+#eval  do let S ← Constraints.unify [(mty[%a → %b], mty[int → (%c → %d)])] SubstInfo.empty
+          return (format S.subst)
 
 ---------------------------------------------------------------------
 

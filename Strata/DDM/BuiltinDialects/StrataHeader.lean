@@ -10,10 +10,8 @@ namespace Strata
 
 open Elab
 
-def StrataHeader : String := "StrataHeader"
-
-def headerDialect : Dialect := BuiltinM.create! StrataHeader #[initDialect] do
-  let Ident : DeclBindingKind := .cat <| .atom q`Init.Ident
+def headerDialect : Dialect := BuiltinM.create! "StrataHeader" #[initDialect] do
+  let Ident : ArgDeclKind := .cat <| .atom q`Init.Ident
   let Command := q`Init.Command
 
   declareOp {

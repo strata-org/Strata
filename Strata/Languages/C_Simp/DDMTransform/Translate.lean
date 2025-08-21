@@ -22,7 +22,7 @@ open Std (ToFormat Format format)
 
 ---------------------------------------------------------------------
 
-def initVarValue (id : String) : LExpr String :=
+def initVarValue (id : String) : LExpr LMonoTy String :=
   .fvar ("init_" ++ id) none
 
 ---------------------------------------------------------------------
@@ -103,7 +103,7 @@ def translateNat (arg : Arg) : TransM Nat := do
 
 structure TransBindings where
   boundTypeVars : Array String := #[]
-  boundVars : Array (LExpr String) := #[]
+  boundVars : Array (LExpr LMonoTy String) := #[]
   freeVars  : Array String := #["return"] -- There's a global variable "return" for return values
 
 instance : ToFormat TransBindings where
@@ -160,7 +160,7 @@ end
 
 ---------------------------------------------------------------------
 
-def translateFn (q : QualifiedIdent) : TransM (LExpr String) :=
+def translateFn (q : QualifiedIdent) : TransM (LExpr LMonoTy String) :=
   match q with
   | q`C_Simp.and      => return (.op "Bool.And"     none)
   | q`C_Simp.or       => return (.op "Bool.Or"      none)
@@ -180,7 +180,7 @@ def translateFn (q : QualifiedIdent) : TransM (LExpr String) :=
 
 mutual
 partial def translateExpr (bindings : TransBindings) (arg : Arg) :
-  TransM (LExpr String) := do
+  TransM (LExpr LMonoTy String) := do
   let .expr expr := arg
     | TransM.error s!"translateExpr expected expr {repr arg}"
   let (op, args) := expr.flatten
@@ -239,11 +239,11 @@ partial def translateExpr (bindings : TransBindings) (arg : Arg) :
                      Bindings: {format bindings}}"
 
 partial def translateExprs (bindings : TransBindings) (args : Array Arg) :
-  TransM (Array (LExpr String)) :=
+  TransM (Array (LExpr LMonoTy String)) :=
   args.mapM (fun a => translateExpr bindings a)
 end
 
-def translateMeasure (bindings : TransBindings) (arg : Arg) : TransM (Option (LExpr String)) := do
+def translateMeasure (bindings : TransBindings) (arg : Arg) : TransM (Option (LExpr LMonoTy String)) := do
   translateOption (fun maybe_arg => do
                     match maybe_arg with
                     | none => return none
@@ -253,7 +253,7 @@ def translateMeasure (bindings : TransBindings) (arg : Arg) : TransM (Option (LE
                       return some (← translateExpr bindings e[0]!))
                   arg
 
-def translateInvariant (bindings : TransBindings) (arg : Arg) : TransM (Option (LExpr String)) := do
+def translateInvariant (bindings : TransBindings) (arg : Arg) : TransM (Option (LExpr LMonoTy String)) := do
   translateOption (fun maybe_arg => do
                     match maybe_arg with
                     | none => return none
@@ -358,7 +358,8 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     let id ← translateIdent ida
     let tp ← translateLMonoTy bindings tpa
     let ty := (.forAll [] tp)
-    let bbindings := bindings.boundVars ++ [LExpr.fvar id none]
+    let newFVar: LExpr LMonoTy String := LExpr.fvar id none
+    let bbindings := bindings.boundVars ++ [newFVar]
     let newBindings := { bindings with
                          boundVars := bbindings,
                          freeVars := bindings.freeVars.push id }
@@ -368,7 +369,8 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     let tp ← translateLMonoTy bindings tpa
     let val ← translateExpr bindings ea
     let ty := (.forAll [] tp)
-    let bbindings := bindings.boundVars ++ [LExpr.fvar id none]
+    let newFVar: LExpr LMonoTy String := LExpr.fvar id none
+    let bbindings := bindings.boundVars ++ [newFVar]
     let newBindings := { bindings with
                          boundVars := bbindings,
                          freeVars := bindings.freeVars.push id }
@@ -377,14 +379,6 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     let id ← translateIdent ida
     let val ← translateExpr bindings ea
     return ([(.cmd (.set id val))], bindings)
-  | q`C_Simp.assert, #[la, ca] =>
-    let l ← translateIdent la
-    let c ← translateExpr bindings ca
-    return ([(.cmd (.assert l c))], bindings)
-  | q`C_Simp.assume, #[la, ca] =>
-    let l ← translateIdent la
-    let c ← translateExpr bindings ca
-    return ([(.cmd (.assume l c))], bindings)
   | q`C_Simp.if_command, #[ca, ta, fa] =>
     let c ← translateExpr bindings ca
     let t := { ss := ← translateBlock bindings ta }
@@ -398,6 +392,19 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     -- TODO: I don't think this works if we have functions with different return types
     let val ← translateExpr bindings ea
     return ([(.cmd (.set "return" val))], bindings)
+  | q`C_Simp.annotation, #[a] =>
+    let .op a_op := a
+      | TransM.error s!"Annotation expected op {repr a}"
+    match a_op.name, a_op.args with
+    | q`C_Simp.assert, #[la, ca] =>
+      let l ← translateIdent la
+      let c ← translateExpr bindings ca
+      return ([(.cmd (.assert l c))], bindings)
+    | q`C_Simp.assume, #[la, ca] =>
+      let l ← translateIdent la
+      let c ← translateExpr bindings ca
+      return ([(.cmd (.assume l c))], bindings)
+    | _,_ => TransM.error s!"Unexpected annotation."
   | name, args => TransM.error s!"Unexpected statement {name.fullName} with {args.size} arguments."
 
 partial def translateBlock (bindings : TransBindings) (arg : Arg) :

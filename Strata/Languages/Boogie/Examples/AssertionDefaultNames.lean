@@ -26,35 +26,35 @@ spec {
 /-- info: true -/
 #guard_msgs in
 -- No errors in translation.
-#eval TransM.run (translateProgram (assertionNames.commands)) |>.snd |>.isEmpty
+#eval TransM.run (translateProgram assertionNames) |>.snd |>.isEmpty
 
 /--
 info: (procedure Test :  ((x : int)) → ())
 modifies: []
 preconditions: (Test_requires_0, (x == (#1 : int)))
 postconditions: ⏎
-body: assert [assert: (x == (#1 : int))] (x == (#1 : int))
+body: assert [assert_0] (x == (#1 : int))
 
 Errors: #[]
 -/
 #guard_msgs in
-#eval TransM.run (translateProgram (assertionNames.commands))
+#eval TransM.run (translateProgram assertionNames)
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
 
 
 VCs:
-Label: assert: (x == (#1 : int))
+Label: assert_0
 Assumptions:
 (Test_requires_0, ($__x0 == #1))
 Proof Obligation:
 ($__x0 == #1)
 
-Wrote problem to vcs/assert:_(x_eq_(#1_:_int)).smt2.
+Wrote problem to vcs/assert_0.smt2.
 ---
 info:
-Obligation: assert: (x == (#1 : int))
+Obligation: assert_0
 Result: verified
 -/
 #guard_msgs in
