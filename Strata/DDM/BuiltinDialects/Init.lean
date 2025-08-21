@@ -12,7 +12,7 @@ open Elab
 open Parser (minPrec)
 
 def initDialect : Dialect := BuiltinM.create! "Init" #[] do
-  let Ident : DeclBindingKind := .cat <| .atom q`Init.Ident
+  let Ident : ArgDeclKind := .cat <| .atom q`Init.Ident
   let Num : SyntaxCat := .atom q`Init.Num
   let Str : SyntaxCat := .atom q`Init.Str
 
@@ -57,7 +57,7 @@ def initDialect : Dialect := BuiltinM.create! "Init" #[] do
   }
 
   let TypeExprId := q`Init.TypeExpr
-  let TypeExpr : DeclBindingKind := .cat (.atom TypeExprId)
+  let TypeExpr : ArgDeclKind := .cat (.atom TypeExprId)
   declareCat TypeExprId
   declareOp {
     name := "TypeIdent",

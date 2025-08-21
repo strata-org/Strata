@@ -12,7 +12,7 @@ namespace Boogie
 section Tests
 
 open Std (ToFormat Format format)
-open Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.Syntax Boogie.Syntax
+open Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Boogie.Syntax
 
 /--
 info: Error:
@@ -254,7 +254,9 @@ Factory Functions:
 
 
 Path Conditions:
-[(z_false, (zinit == #false)) (<label_ite_cond_true: (z == #false)>, (if (zinit == #false) then (zinit == #false) else (#true : bool))) (<label_ite_cond_false: !(z == #false)>, (if (if (zinit == #false) then (#false : bool) else (#true : bool)) then (if (zinit == #false) then (#false : bool) else (#true : bool)) else (#true : bool)))]
+(z_false, (zinit == #false))
+(<label_ite_cond_true: (z == #false)>, (if (zinit == #false) then (zinit == #false) else (#true : bool))) (<label_ite_cond_false: !(z == #false)>, (if (if (zinit == #false) then (#false : bool) else (#true : bool)) then (if (zinit == #false) then (#false : bool) else (#true : bool)) else (#true : bool)))
+
 
 Deferred Proof Obligations:
 Label: trivial

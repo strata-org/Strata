@@ -18,7 +18,7 @@ open LExpr LTy
 
 
 section Test
-open LState LExpr LExpr.Syntax
+open LState LExpr LExpr.SyntaxMono
 
 /--
 info: error: A function of name Int.Add already exists! Redefinitions are not allowed.
@@ -29,7 +29,7 @@ New Function:func Int.Add :  () → int;
 #eval do let F ← IntBoolFactory.addFactoryFunc { name := "Int.Add",
                                                  inputs := [],
                                                  output := .tcons "int" [] }
-         let ans ← typeCheckAndPartialEval F es[((~Int.Le ((~Int.Div #300) ((~Int.Add #2) #1))) #100)]
+         let ans ← typeCheckAndPartialEval F esM[((~Int.Le ((~Int.Div #300) ((~Int.Add #2) #1))) #100)]
          return format ans
 
 /--
@@ -41,7 +41,7 @@ info: (#true : bool)
 -/
 #guard_msgs in
 #eval format $ typeCheckAndPartialEval IntBoolFactory
-                es[((~Int.Le ((~Int.Div #300) ((~Int.Add #2) #1))) #100)]
+                esM[((~Int.Le ((~Int.Div #300) ((~Int.Add #2) #1))) #100)]
 
 /--
 info: Annotated expression:
@@ -52,7 +52,7 @@ info: (λ (((~Int.Div : (arrow int (arrow int int))) (#3 : int)) %0))
 -/
 #guard_msgs in
 #eval format $ typeCheckAndPartialEval IntBoolFactory
-               es[((~Int.Div ((~Int.Add #2) #1)))]
+               esM[((~Int.Div ((~Int.Add #2) #1)))]
 /--
 info: Annotated expression:
 ((λ (%0 (#2 : int))) ((~Int.Div : (arrow int (arrow int int))) (#300 : int)))
@@ -62,7 +62,7 @@ info: (#150 : int)
 -/
 #guard_msgs in
 #eval format $ typeCheckAndPartialEval IntBoolFactory
-                es[((λ (%0 #2)) (~Int.Div #300))]
+                esM[((λ (%0 #2)) (~Int.Div #300))]
 
 end Test
 

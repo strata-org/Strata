@@ -146,7 +146,7 @@ instance : ToFormat (Identifier × LState Identifier) where
 /--
 Substitute `.fvar`s in `e` by looking up their values in `σ`.
 -/
-def LExpr.substFvarsFromState (σ : (LState Identifier)) (e : (LExpr Identifier)) : (LExpr Identifier) :=
+def LExpr.substFvarsFromState (σ : (LState Identifier)) (e : (LExpr LMonoTy Identifier)) : (LExpr LMonoTy Identifier) :=
   let sm := σ.state.toSingleMap.map (fun (x, (_, v)) => (x, v))
   Lambda.LExpr.substFvars e sm
 

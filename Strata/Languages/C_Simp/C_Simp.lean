@@ -24,7 +24,7 @@ namespace C_Simp
 -- Our expression language is `DL/Lambda`
 abbrev Expression : Imperative.PureExpr := {
   Ident := String,
-  Expr := Lambda.LExpr String,
+  Expr := Lambda.LExpr Lambda.LMonoTy String,
   Ty := Lambda.LTy,
   TyEnv := Lambda.TEnv String,
   EvalEnv := Lambda.LState String,
@@ -50,7 +50,7 @@ structure Function where
   post : Expression.Expr
   body : List Statement
   ret_ty : Lambda.LMonoTy
-  inputs : Map Expression.Ident Lambda.LMonoTy
+  inputs : ListMap Expression.Ident Lambda.LMonoTy
 deriving Inhabited
 
 structure Program where

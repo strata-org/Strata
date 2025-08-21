@@ -20,7 +20,7 @@ section Identifiers
 Identifiers, optionally with their inferred monotype.
 -/
 abbrev IdentT (Identifier : Type) := Identifier × Option LMonoTy
-abbrev IdentTs (Identifier : Type) := Map Identifier (Option LMonoTy)
+abbrev IdentTs (Identifier : Type) := List (IdentT Identifier)
 
 instance {Identifier : Type} [ToFormat Identifier] : ToFormat (IdentT Identifier) where
   format i := match i.snd with
@@ -34,10 +34,10 @@ def IdentT.monoty? (x : (IdentT Identifier)) : Option LMonoTy :=
   x.snd
 
 def IdentTs.idents (xs : (IdentTs Identifier)) : List Identifier :=
-  xs.keys
+  xs.map Prod.fst
 
 def IdentTs.monotys? (xs : (IdentTs Identifier)) : List (Option LMonoTy) :=
-  xs.values
+  xs.map Prod.snd
 
 ---------------------------------------------------------------------
 

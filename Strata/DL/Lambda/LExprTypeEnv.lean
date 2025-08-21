@@ -263,9 +263,9 @@ def TEnv.eraseFromContext (T : (TEnv Identifier)) (x : Identifier) : (TEnv Ident
   let ctx' := { ctx with types := ctx.types.erase x }
   { T with context := ctx' }
 
-def TEnv.freeVarCheck (T : (TEnv Identifier)) (e : LExpr Identifier) (msg : Format) :
+def TEnv.freeVarCheck (T : (TEnv Identifier)) (e : LExpr LMonoTy Identifier) (msg : Format) :
   Except Format Unit :=
-  let efv := e.freeVars.keys
+  let efv := e.freeVars.map (fun (x, _) => x)
   let knownVars := T.context.knownVars
   let freeVars := List.filter (fun v => v ∉ knownVars) efv
   match freeVars with
@@ -275,7 +275,7 @@ def TEnv.freeVarCheck (T : (TEnv Identifier)) (e : LExpr Identifier) (msg : Form
               {Format.line}\
               Free Variables: {freeVars}"
 
-def TEnv.freeVarChecks (T : (TEnv Identifier)) (es : List (LExpr Identifier)) : Except Format Unit :=
+def TEnv.freeVarChecks (T : (TEnv Identifier)) (es : List (LExpr LMonoTy Identifier)) : Except Format Unit :=
   match es with
   | [] => .ok ()
   | e :: erest => do

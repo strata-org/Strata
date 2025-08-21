@@ -117,7 +117,7 @@ def convertQuantifierKind : Lambda.QuantifierKind -> Strata.SMT.QuantifierKind
 
 mutual
 
-partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr BoogieIdent) (ctx : SMT.Context)
+partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr LMonoTy BoogieIdent) (ctx : SMT.Context)
   : Except Format (Term × SMT.Context) := do
   match e with
   | .const "true" _ => .ok ((Term.bool true), ctx)
@@ -201,7 +201,7 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr BoogieIdent) (ctx :
 
   | .app _ _ => appToSMTTerm E bvs e [] ctx
 
-partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : (LExpr BoogieIdent)) (acc : List Term) (ctx : SMT.Context) :
+partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : (LExpr LMonoTy BoogieIdent)) (acc : List Term) (ctx : SMT.Context) :
   Except Format (Term × SMT.Context) := do
   match e with
   | .app (.app fn e1) e2 => do
@@ -234,6 +234,7 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
     | "Bool.Not"     => .ok (Op.not,        .bool,   ctx)
     | "Bool.Implies" => .ok (Op.implies,    .bool,   ctx)
     | "Bool.Equiv"   => .ok (Op.eq,         .bool,   ctx)
+
     | "Int.Neg"      => .ok (Op.neg,        .int ,   ctx)
     | "Int.Add"      => .ok (Op.add,        .int ,   ctx)
     | "Int.Sub"      => .ok (Op.sub,        .int ,   ctx)
@@ -244,6 +245,7 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
     | "Int.Le"       => .ok (Op.le,         .bool,   ctx)
     | "Int.Gt"       => .ok (Op.gt,         .bool,   ctx)
     | "Int.Ge"       => .ok (Op.ge,         .bool,   ctx)
+
     | "Real.Neg"     => .ok (Op.neg,        .real,   ctx)
     | "Real.Add"     => .ok (Op.add,        .real,   ctx)
     | "Real.Sub"     => .ok (Op.sub,        .real,   ctx)
@@ -253,36 +255,92 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
     | "Real.Le"      => .ok (Op.le,         .bool,   ctx)
     | "Real.Gt"      => .ok (Op.gt,         .bool,   ctx)
     | "Real.Ge"      => .ok (Op.ge,         .bool,   ctx)
+
     | "Bv1.Neg"     => .ok (Op.bvneg,      .bitvec 1, ctx)
     | "Bv1.Add"     => .ok (Op.bvadd,      .bitvec 1, ctx)
     | "Bv1.Sub"     => .ok (Op.bvsub,      .bitvec 1, ctx)
     | "Bv1.Mul"     => .ok (Op.bvmul,      .bitvec 1, ctx)
+    | "Bv1.Div"     => .ok (Op.bvudiv,     .bitvec 1, ctx)
+    | "Bv1.Mod"     => .ok (Op.bvurem,     .bitvec 1, ctx)
+    | "Bv1.Not"     => .ok (Op.bvnot,      .bitvec 1, ctx)
+    | "Bv1.And"     => .ok (Op.bvand,      .bitvec 1, ctx)
+    | "Bv1.Or"     =>  .ok (Op.bvor,       .bitvec 1, ctx)
+    | "Bv1.Xor"     => .ok (Op.bvxor,      .bitvec 1, ctx)
+    | "Bv1.Shl"     => .ok (Op.bvshl,      .bitvec 1, ctx)
+    | "Bv1.UShr"    => .ok (Op.bvlshr,     .bitvec 1, ctx)
     | "Bv1.Lt"      => .ok (Op.bvult,      .bool,   ctx)
     | "Bv1.Le"      => .ok (Op.bvule,      .bool,   ctx)
+    | "Bv1.Gt"      => .ok (Op.bvugt,      .bool,   ctx)
+    | "Bv1.Ge"      => .ok (Op.bvuge,      .bool,   ctx)
+
     | "Bv8.Neg"     => .ok (Op.bvneg,      .bitvec 8, ctx)
     | "Bv8.Add"     => .ok (Op.bvadd,      .bitvec 8, ctx)
     | "Bv8.Sub"     => .ok (Op.bvsub,      .bitvec 8, ctx)
     | "Bv8.Mul"     => .ok (Op.bvmul,      .bitvec 8, ctx)
+    | "Bv8.Div"     => .ok (Op.bvudiv,     .bitvec 8, ctx)
+    | "Bv8.Mod"     => .ok (Op.bvurem,     .bitvec 8, ctx)
+    | "Bv8.Not"     => .ok (Op.bvnot,      .bitvec 8, ctx)
+    | "Bv8.And"     => .ok (Op.bvand,      .bitvec 8, ctx)
+    | "Bv8.Or"     =>  .ok (Op.bvor,       .bitvec 8, ctx)
+    | "Bv8.Xor"     => .ok (Op.bvxor,      .bitvec 8, ctx)
+    | "Bv8.Shl"     => .ok (Op.bvshl,      .bitvec 8, ctx)
+    | "Bv8.UShr"    => .ok (Op.bvlshr,     .bitvec 8, ctx)
     | "Bv8.Lt"      => .ok (Op.bvult,      .bool,   ctx)
     | "Bv8.Le"      => .ok (Op.bvule,      .bool,   ctx)
+    | "Bv8.Gt"      => .ok (Op.bvugt,      .bool,   ctx)
+    | "Bv8.Ge"      => .ok (Op.bvuge,      .bool,   ctx)
+
     | "Bv16.Neg"     => .ok (Op.bvneg,      .bitvec 16, ctx)
     | "Bv16.Add"     => .ok (Op.bvadd,      .bitvec 16, ctx)
     | "Bv16.Sub"     => .ok (Op.bvsub,      .bitvec 16, ctx)
     | "Bv16.Mul"     => .ok (Op.bvmul,      .bitvec 16, ctx)
+    | "Bv16.Div"     => .ok (Op.bvudiv,     .bitvec 16, ctx)
+    | "Bv16.Mod"     => .ok (Op.bvurem,     .bitvec 16, ctx)
+    | "Bv16.Not"     => .ok (Op.bvnot,      .bitvec 16, ctx)
+    | "Bv16.And"     => .ok (Op.bvand,      .bitvec 16, ctx)
+    | "Bv16.Or"     =>  .ok (Op.bvor,       .bitvec 16, ctx)
+    | "Bv16.Xor"     => .ok (Op.bvxor,      .bitvec 16, ctx)
+    | "Bv16.Shl"     => .ok (Op.bvshl,      .bitvec 16, ctx)
+    | "Bv16.UShr"    => .ok (Op.bvlshr,     .bitvec 16, ctx)
     | "Bv16.Lt"      => .ok (Op.bvult,      .bool,   ctx)
     | "Bv16.Le"      => .ok (Op.bvule,      .bool,   ctx)
+    | "Bv16.Gt"      => .ok (Op.bvugt,      .bool,   ctx)
+    | "Bv16.Ge"      => .ok (Op.bvuge,      .bool,   ctx)
+
     | "Bv32.Neg"     => .ok (Op.bvneg,      .bitvec 32, ctx)
     | "Bv32.Add"     => .ok (Op.bvadd,      .bitvec 32, ctx)
     | "Bv32.Sub"     => .ok (Op.bvsub,      .bitvec 32, ctx)
     | "Bv32.Mul"     => .ok (Op.bvmul,      .bitvec 32, ctx)
+    | "Bv32.Div"     => .ok (Op.bvudiv,     .bitvec 32, ctx)
+    | "Bv32.Mod"     => .ok (Op.bvurem,     .bitvec 32, ctx)
+    | "Bv32.Not"     => .ok (Op.bvnot,      .bitvec 32, ctx)
+    | "Bv32.And"     => .ok (Op.bvand,      .bitvec 32, ctx)
+    | "Bv32.Or"     =>  .ok (Op.bvor,       .bitvec 32, ctx)
+    | "Bv32.Xor"     => .ok (Op.bvxor,      .bitvec 32, ctx)
+    | "Bv32.Shl"     => .ok (Op.bvshl,      .bitvec 32, ctx)
+    | "Bv32.UShr"    => .ok (Op.bvlshr,     .bitvec 32, ctx)
     | "Bv32.Lt"      => .ok (Op.bvult,      .bool,   ctx)
     | "Bv32.Le"      => .ok (Op.bvule,      .bool,   ctx)
+    | "Bv32.Gt"      => .ok (Op.bvugt,      .bool,   ctx)
+    | "Bv32.Ge"      => .ok (Op.bvuge,      .bool,   ctx)
+
     | "Bv64.Neg"     => .ok (Op.bvneg,      .bitvec 64, ctx)
     | "Bv64.Add"     => .ok (Op.bvadd,      .bitvec 64, ctx)
     | "Bv64.Sub"     => .ok (Op.bvsub,      .bitvec 64, ctx)
     | "Bv64.Mul"     => .ok (Op.bvmul,      .bitvec 64, ctx)
+    | "Bv64.Div"     => .ok (Op.bvudiv,     .bitvec 64, ctx)
+    | "Bv64.Mod"     => .ok (Op.bvurem,     .bitvec 64, ctx)
+    | "Bv64.Not"     => .ok (Op.bvnot,      .bitvec 64, ctx)
+    | "Bv64.And"     => .ok (Op.bvand,      .bitvec 64, ctx)
+    | "Bv64.Or"     =>  .ok (Op.bvor,       .bitvec 64, ctx)
+    | "Bv64.Xor"     => .ok (Op.bvxor,      .bitvec 64, ctx)
+    | "Bv64.Shl"     => .ok (Op.bvshl,      .bitvec 64, ctx)
+    | "Bv64.UShr"    => .ok (Op.bvlshr,     .bitvec 64, ctx)
     | "Bv64.Lt"      => .ok (Op.bvult,      .bool,   ctx)
     | "Bv64.Le"      => .ok (Op.bvule,      .bool,   ctx)
+    | "Bv64.Gt"      => .ok (Op.bvugt,      .bool,   ctx)
+    | "Bv64.Ge"      => .ok (Op.bvuge,      .bool,   ctx)
+
     | "Str.Length"   => .ok (Op.str_length, .int,    ctx)
     | "Str.Concat"   => .ok (Op.str_concat, .string, ctx)
     | _ => do
@@ -320,7 +378,7 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
           .ok (acc_map.insert tyVar smtTy)
         ) Map.empty
         -- Add all axioms for this function to the context, with types binding for the type variables in the expr
-        let ctx ← func.axioms.foldlM (fun acc_ctx (ax: LExpr BoogieIdent) => do
+        let ctx ← func.axioms.foldlM (fun acc_ctx (ax: LExpr LMonoTy BoogieIdent) => do
           let current_axiom_ctx := acc_ctx.addSubst smt_ty_inst
             let (axiom_term, new_ctx) ← toSMTTerm E [] ax current_axiom_ctx
             .ok (new_ctx.addAxiom axiom_term)
@@ -331,7 +389,7 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
         .ok (Op.uf uf, smt_outty, ctx)
 end
 
-def toSMTTerms (E : Env) (es : List (LExpr BoogieIdent)) (ctx : SMT.Context) :
+def toSMTTerms (E : Env) (es : List (LExpr LMonoTy BoogieIdent)) (ctx : SMT.Context) :
   Except Format ((List Term) × SMT.Context) := do
   match es with
   | [] => .ok ([], ctx)
@@ -352,7 +410,7 @@ def ProofObligation.toSMTTerms (E : Env)
 ---------------------------------------------------------------------
 
 /-- Convert an expression of type LExpr to a String representation in SMT-Lib syntax, for testing. -/
-def toSMTTermString (e : (LExpr BoogieIdent)) (E : Env := Env.init) (ctx : SMT.Context := SMT.Context.default)
+def toSMTTermString (e : (LExpr LMonoTy BoogieIdent)) (E : Env := Env.init) (ctx : SMT.Context := SMT.Context.default)
   : IO String := do
   let smtctx := toSMTTerm E [] e ctx
   match smtctx with

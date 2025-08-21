@@ -22,7 +22,7 @@ open Std (ToFormat Format format)
 
 ---------------------------------------------------------------------
 
-def initVarValue (id : String) : LExpr String :=
+def initVarValue (id : String) : LExpr LMonoTy String :=
   .fvar ("init_" ++ id) none
 
 ---------------------------------------------------------------------
@@ -103,7 +103,7 @@ def translateNat (arg : Arg) : TransM Nat := do
 
 structure TransBindings where
   boundTypeVars : Array String := #[]
-  boundVars : Array (LExpr String) := #[]
+  boundVars : Array (LExpr LMonoTy String) := #[]
   freeVars  : Array String := #["return"] -- There's a global variable "return" for return values
 
 instance : ToFormat TransBindings where
@@ -160,7 +160,7 @@ end
 
 ---------------------------------------------------------------------
 
-def translateFn (q : QualifiedIdent) : TransM (LExpr String) :=
+def translateFn (q : QualifiedIdent) : TransM (LExpr LMonoTy String) :=
   match q with
   | q`C_Simp.and      => return (.op "Bool.And"     none)
   | q`C_Simp.or       => return (.op "Bool.Or"      none)
@@ -180,7 +180,7 @@ def translateFn (q : QualifiedIdent) : TransM (LExpr String) :=
 
 mutual
 partial def translateExpr (bindings : TransBindings) (arg : Arg) :
-  TransM (LExpr String) := do
+  TransM (LExpr LMonoTy String) := do
   let .expr expr := arg
     | TransM.error s!"translateExpr expected expr {repr arg}"
   let (op, args) := expr.flatten
@@ -239,11 +239,11 @@ partial def translateExpr (bindings : TransBindings) (arg : Arg) :
                      Bindings: {format bindings}}"
 
 partial def translateExprs (bindings : TransBindings) (args : Array Arg) :
-  TransM (Array (LExpr String)) :=
+  TransM (Array (LExpr LMonoTy String)) :=
   args.mapM (fun a => translateExpr bindings a)
 end
 
-def translateMeasure (bindings : TransBindings) (arg : Arg) : TransM (Option (LExpr String)) := do
+def translateMeasure (bindings : TransBindings) (arg : Arg) : TransM (Option (LExpr LMonoTy String)) := do
   translateOption (fun maybe_arg => do
                     match maybe_arg with
                     | none => return none
@@ -253,7 +253,7 @@ def translateMeasure (bindings : TransBindings) (arg : Arg) : TransM (Option (LE
                       return some (← translateExpr bindings e[0]!))
                   arg
 
-def translateInvariant (bindings : TransBindings) (arg : Arg) : TransM (Option (LExpr String)) := do
+def translateInvariant (bindings : TransBindings) (arg : Arg) : TransM (Option (LExpr LMonoTy String)) := do
   translateOption (fun maybe_arg => do
                     match maybe_arg with
                     | none => return none
@@ -299,7 +299,7 @@ def translateMonoBindMk (bindings : TransBindings) (arg : Arg) :
     TransM.error s!"translateMonoBindMk unimplemented for {repr arg}"
 
 partial def translateDeclList (bindings : TransBindings) (arg : Arg) :
-  TransM (Map Expression.Ident LTy) := do
+  TransM (ListMap Expression.Ident LTy) := do
   let .op op := arg
     | TransM.error s!"translateDeclList expects an op {repr arg}"
   match op.name with
@@ -312,12 +312,12 @@ partial def translateDeclList (bindings : TransBindings) (arg : Arg) :
     let args ← checkOpArg arg q`C_Simp.declPush 2
     let fst ← translateDeclList bindings args[0]!
     let (id, targs, mty) ← translateBindMk bindings args[1]!
-    let lty := .forAll targs mty
-    pure (fst ++ [(id, lty)])
+    let lty : LTy := .forAll targs mty
+    pure (fst ++ ListMap.ofList [(id, lty)])
   | _ => TransM.error s!"translateDeclList unimplemented for {repr op}"
 
 partial def translateMonoDeclList (bindings : TransBindings) (arg : Arg) :
-  TransM (Map Expression.Ident LMonoTy) := do
+  TransM (ListMap Expression.Ident LMonoTy) := do
   let .op op := arg
     | TransM.error s!"translateMonoDeclList expects an op {repr arg}"
   match op.name with
@@ -329,11 +329,11 @@ partial def translateMonoDeclList (bindings : TransBindings) (arg : Arg) :
     let args ← checkOpArg arg q`C_Simp.monoDeclPush 2
     let fst ← translateMonoDeclList bindings args[0]!
     let (id, mty) ← translateMonoBindMk bindings args[1]!
-    pure (fst ++ [(id, mty)])
+    pure (fst ++ ListMap.ofList [(id, mty)])
   | _ => TransM.error s!"translateMonoDeclList unimplemented for {repr op}"
 
 def translateBindings (bindings : TransBindings) (op : Arg) :
-  TransM (Map String LMonoTy) := do
+  TransM (ListMap String LMonoTy) := do
   let bargs ← checkOpArg op q`C_Simp.mkBindings 1
   match bargs[0]! with
   | .commaSepList args =>
@@ -358,7 +358,8 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     let id ← translateIdent ida
     let tp ← translateLMonoTy bindings tpa
     let ty := (.forAll [] tp)
-    let bbindings := bindings.boundVars ++ [LExpr.fvar id none]
+    let newFVar: LExpr LMonoTy String := LExpr.fvar id none
+    let bbindings := bindings.boundVars ++ [newFVar]
     let newBindings := { bindings with
                          boundVars := bbindings,
                          freeVars := bindings.freeVars.push id }
@@ -368,7 +369,8 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     let tp ← translateLMonoTy bindings tpa
     let val ← translateExpr bindings ea
     let ty := (.forAll [] tp)
-    let bbindings := bindings.boundVars ++ [LExpr.fvar id none]
+    let newFVar: LExpr LMonoTy String := LExpr.fvar id none
+    let bbindings := bindings.boundVars ++ [newFVar]
     let newBindings := { bindings with
                          boundVars := bbindings,
                          freeVars := bindings.freeVars.push id }

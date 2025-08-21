@@ -112,12 +112,12 @@ instance : Lambda.HasGen BoogieIdent where
 
 namespace Syntax
 
-open Lean Elab Meta Lambda.LExpr.Syntax
+open Lean Elab Meta Lambda.LExpr.SyntaxMono
 
-scoped syntax ident : lident
+scoped syntax ident : lidentmono
 /-- Elaborator for String identifiers, construct a String instance -/
 def elabBoogieIdent : Syntax → MetaM Expr
-  | `(lident| $s:ident) => do
+  | `(lidentmono| $s:ident) => do
     let s := toString s.getId
     return ← mkAppM ``BoogieIdent.unres #[mkStrLit s]
   | _ => throwUnsupportedSyntax
@@ -126,21 +126,22 @@ instance : MkIdent BoogieIdent where
   elabIdent := elabBoogieIdent
   toExpr := .const ``BoogieIdent []
 
-elab "eb[" e:lexpr "]" : term => elabLExpr (Identifier:=BoogieIdent) e
+elab "eb[" e:lexprmono "]" : term => elabLExprMono (Identifier:=BoogieIdent) e
 
-/-- info: Lambda.LExpr.op (BoogieIdent.unres "old") none : Lambda.LExpr (Visibility × String) -/
+/-- info: Lambda.LExpr.op (BoogieIdent.unres "old") none : Lambda.LExpr Lambda.LMonoTy BoogieIdent -/
 #guard_msgs in
 #check eb[~old]
 
 /--
 info: (Lambda.LExpr.op (BoogieIdent.unres "old") none).app
-  (Lambda.LExpr.fvar (BoogieIdent.unres "a") none) : Lambda.LExpr (Visibility × String)
+  (Lambda.LExpr.fvar (BoogieIdent.unres "a") none) : Lambda.LExpr Lambda.LMonoTy BoogieIdent
 -/
 #guard_msgs in
 #check eb[(~old a)]
 
 open Lambda.LTy.Syntax in
-/-- info: Lambda.LExpr.fvar (BoogieIdent.unres "x") (some (Lambda.LMonoTy.tcons "bool" [])) : Lambda.LExpr (Visibility × String) -/
+/-- info: Lambda.LExpr.fvar (BoogieIdent.unres "x")
+  (some (Lambda.LMonoTy.tcons "bool" [])) : Lambda.LExpr Lambda.LMonoTy (Visibility × String)  -/
 #guard_msgs in
 #check eb[(x : bool)]
 

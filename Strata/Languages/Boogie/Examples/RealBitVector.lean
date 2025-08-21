@@ -182,3 +182,52 @@ Result: verified
 -/
 #guard_msgs in
 #eval verify "cvc5" bvPgm
+
+def bvMoreOpsPgm : Program :=
+#strata
+program Boogie;
+
+procedure P(x: bv8, y: bv8, z: bv8) returns () {
+  assert [add_comm]: x + y == y + x;
+  assert [xor_cancel]: x ^ x == bv{8}(0);
+  assert [div_shift]: x div bv{8}(2) == x >> bv{8}(1);
+  assert [mul_shift]: x * bv{8}(2) == x << bv{8}(1);
+  assert [demorgan]: ~(x & y) == ~x | ~y;
+  assert [mod_and]: x mod bv{8}(2) == x & bv{8}(1);
+  assert [bad_shift]: x >> y == x << y;
+};
+#end
+
+/--
+info:
+
+Obligation bad_shift: could not be proved!
+
+Result: failed
+CEx: ($__x0, #b10011001) ($__y1, #b00000010)
+---
+info:
+Obligation: add_comm
+Result: verified
+
+Obligation: xor_cancel
+Result: verified
+
+Obligation: div_shift
+Result: verified
+
+Obligation: mul_shift
+Result: verified
+
+Obligation: demorgan
+Result: verified
+
+Obligation: mod_and
+Result: verified
+
+Obligation: bad_shift
+Result: failed
+CEx: ($__x0, #b10011001) ($__y1, #b00000010)
+-/
+#guard_msgs in
+#eval verify "cvc5" bvMoreOpsPgm Options.quiet
