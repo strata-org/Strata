@@ -1,0 +1,8 @@
+{
+  "name": "typescript-strata",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "@babel/types": "^7.23.0"
+  }
+}
