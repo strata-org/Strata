@@ -1,4 +1,3 @@
-using System.Reflection.Metadata.Ecma335;
 using Microsoft.Boogie;
 using Type = Microsoft.Boogie.Type;
 
