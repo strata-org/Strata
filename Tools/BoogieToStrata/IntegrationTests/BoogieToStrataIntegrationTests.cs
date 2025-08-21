@@ -113,20 +113,35 @@ public class BoogieToStrataIntegrationTests(ITestOutputHelper output) {
         Assert.Equal(0, exitCode);
         Assert.True(standardOutput.Length > 0, "Expected some output from BoogieToStrata");
         Assert.True(errorOutput.Length == 0, "Expected no error output from BoogieToStrata");
-        var tempFile = Path.GetTempFileName() + ".boogie.st";
-        File.WriteAllText(tempFile, standardOutput);
+        var strataFile = Path.GetTempFileName() + ".boogie.st";
+        File.WriteAllText(strataFile, standardOutput);
+        var expectFile = Path.ChangeExtension(filePath, "expect");
+        string? expectString = null;
+        if (File.Exists(expectFile)) {
+            expectString = File.ReadAllText(expectFile);
+        }
+
+        var strataArgs = "";
+        if (expectString is null || expectString.Contains("Skipping verification")) {
+            strataArgs += " --check";
+        }
         using var proc = new Process();
         proc.StartInfo.FileName = GetVerifierPath();
-        proc.StartInfo.Arguments = $"--verbose --check {tempFile}";
+        proc.StartInfo.Arguments = $"{strataArgs} {strataFile}";
         proc.StartInfo.RedirectStandardOutput = true;
         proc.StartInfo.RedirectStandardError = true;
         proc.Start();
         proc.WaitForExit();
-        File.Delete(tempFile);
+        File.Delete(strataFile);
         Directory.Delete(vcsDirectory, true);
         var stdout = proc.StandardOutput.ReadToEnd();
         var stderr = proc.StandardError.ReadToEnd();
-        Assert.Contains("Skipping verification", stdout);
+        if (expectString is null) {
+            Assert.Contains("Skipping verification", stdout);
+        } else {
+            Console.WriteLine("Checking expected output");
+            Assert.Equal(expectString, stdout);
+        }
         Assert.Equal(0, proc.ExitCode);
     }
 

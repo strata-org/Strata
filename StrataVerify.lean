@@ -44,7 +44,6 @@ def main (args : List String) : IO UInt32 := do
   let parseResult := parseOptions args
   match parseResult with
   | .ok (opts, file) => do
-    println! f!"Loading {file}"
     let text ← IO.FS.readFile file
     let inputCtx := Lean.Parser.mkInputContext text file
     let dctx := Elab.LoadedDialects.builtin
@@ -53,7 +52,7 @@ def main (args : List String) : IO UInt32 := do
     let leanEnv ← Lean.mkEmptyEnvironment 0
     match Strata.Elab.elabProgram dctx leanEnv inputCtx with
     | .ok pgm =>
-      println! s!"Successfully parsed {file}"
+      println! s!"Successfully parsed."
       if opts.parseOnly then
           return 0
       let vcResults ← if file.endsWith ".csimp.st" then

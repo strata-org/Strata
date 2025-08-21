@@ -106,6 +106,7 @@ inductive Op : Type where
   | bvsaddo -- bit-vector signed addition overflow predicate
   | bvssubo -- bit-vector signed subtraction overflow predicate
   | bvsmulo -- bit-vector signed multiplication overflow predicate
+  | bvconcat
   | zero_extend : Nat → Op
   ---------- SMTLib theory of unicode strings (`Strings`) ----------
   | str_length
@@ -156,6 +157,7 @@ def Op.mkName : Op → String
   | .bvsaddo       => "bvsaddo"
   | .bvssubo       => "bvssubo"
   | .bvsmulo       => "bvsmulo"
+  | .bvconcat      => "concat"
   | .zero_extend _ => "zero_extend"
   | .str_length    => "str.len"
   | .str_concat    => "str.++"
