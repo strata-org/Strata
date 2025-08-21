@@ -270,9 +270,6 @@ def declare (varIndex typeIndex : Nat) : MetadataAttr :=
 def declareFn (varIndex bindingsIndex typeIndex : Nat) : MetadataAttr :=
   { ident := q`StrataDDL.declareFn, args := #[.catbvar varIndex, .catbvar bindingsIndex, .catbvar typeIndex]}
 
-def declareMD (varIndex typeIndex metadataIndex : Nat) : MetadataAttr :=
-  { ident := q`StrataDDL.declareMD, args := #[.catbvar varIndex, .catbvar typeIndex, .catbvar metadataIndex]}
-
 end MetadataAttr
 
 structure Metadata where
@@ -360,6 +357,17 @@ inductive PreType where
   /-- A function created from a reference to bindings and a result type. -/
 | funMacro (bindingsIndex : Nat) (res : PreType)
 deriving BEq, Inhabited, Repr
+
+namespace PreType
+
+def ofType : TypeExpr → PreType
+| .ident name args => .ident name (args.attach.map fun ⟨a, _⟩ => .ofType a)
+| .bvar idx => .bvar idx
+| .fvar idx args => .fvar idx (args.attach.map fun ⟨a, _⟩ => .ofType a)
+| .arrow a r => .arrow (.ofType a) (.ofType r)
+termination_by tp => tp
+
+end PreType
 
 def maxPrec := eval_prec max
 
@@ -506,8 +514,6 @@ structure ValueBindingSpec (bindings : ArgDecls) where
   argsIndex : Option (DebruijnIndex bindings.size)
   -- deBrujin index of type or a type/cat literal.
   typeIndex : DebruijnIndex bindings.size
-  -- deBrujin index of metadata
-  metadataIndex : Option (DebruijnIndex bindings.size)
   -- Whether categories are allowed
   allowCat : Bool
 deriving Repr
@@ -558,7 +564,6 @@ private def mkValueBindingSpec
             (nameIndex : DebruijnIndex args.size)
             (typeIndex : DebruijnIndex args.size)
             (argsIndex : Option (DebruijnIndex args.size) := none)
-            (metadataIndex : Option (DebruijnIndex args.size) := none)
             : NewBindingM (ValueBindingSpec args) := do
   checkNameIndexIsIdent args nameIndex
   let typeBinding := args[typeIndex.toLevel]
@@ -573,7 +578,7 @@ private def mkValueBindingSpec
           pure default
   if allowCat && argsIndex.isSome then
     newBindingErr "Arguments only allowed when result is a type."
-  return { nameIndex, argsIndex, typeIndex, metadataIndex, allowCat }
+  return { nameIndex, argsIndex, typeIndex, allowCat }
 
 def parseNewBindings (md : Metadata) (args : ArgDecls) : Array (BindingSpec args) × Array String :=
   let ins (attr : MetadataAttr) : NewBindingM (Option (BindingSpec args)) := do
@@ -586,16 +591,6 @@ def parseNewBindings (md : Metadata) (args : ArgDecls) : Array (BindingSpec args
           let .isTrue typeP := inferInstanceAs (Decidable (typeIndex < args.size))
             | return panic! "Invalid name index"
           some <$> .value <$> mkValueBindingSpec args ⟨nameIndex, nameP⟩ ⟨typeIndex, typeP⟩
-        | q`StrataDDL.declareMD => do
-          let #[.catbvar nameIndex, .catbvar typeIndex, .catbvar metadataIndex ] := attr.args
-            | newBindingErr "declareMD missing required arguments."; return none
-          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < args.size))
-            | return panic! "Invalid name index"
-          let .isTrue typeP := inferInstanceAs (Decidable (typeIndex < args.size))
-            | return panic! "Invalid name index"
-          let .isTrue mdP := inferInstanceAs (Decidable (metadataIndex < args.size))
-            | return panic! "Invalid metadata index"
-          some <$> .value <$> mkValueBindingSpec args ⟨nameIndex, nameP⟩ ⟨typeIndex, typeP⟩ (metadataIndex := .some ⟨metadataIndex, mdP⟩)
         | q`StrataDDL.declareFn => do
           let #[.catbvar nameIndex, .catbvar argsIndex, .catbvar typeIndex] := attr.args
             | newBindingErr "declareFn missing required arguments."; return none
