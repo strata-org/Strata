@@ -1,3 +1,9 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+-- Dialect with some SQL commands for example purposes.
 import Strata
 
 #dialect
