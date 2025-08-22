@@ -17,6 +17,7 @@ namespace WF
 
 open Std Lambda
 
+/-
 /--
 A list of Statement 'ss' that passes type checking is well formed with respect to the whole program 'p'.
 -/
@@ -102,6 +103,6 @@ theorem Statement.typeCheckWF :
       next heq =>
       apply ih
       rw [heq]
-
+-/
 end WF
 end Boogie

@@ -401,19 +401,16 @@ partial def fromLExprAux.app (T : (TEnv Identifier)) (e1 e2 : (LExpr LMonoTy Ide
   let ty2 := e2t.toLMonoTy
   let (fresh_name, T) := TEnv.genTyVar T
   let freshty := (.ftvar fresh_name)
-  -- Indirection for type aliases
+  -- Batch alias resolution and unification
   let (optTyy1, T) := (ty1.aliasInst T)
-  let (fresh_name1, T) := TEnv.genTyVar T
-  let freshty1: LMonoTy := (.ftvar fresh_name1)
   let (optTyy2, T) := (ty2.aliasInst T)
-  let (fresh_name2, T) := TEnv.genTyVar T
-  let freshty2: LMonoTy := (.ftvar fresh_name2)
-  let S ← Constraints.unify [(freshty1, optTyy1.getD ty1 )] T.state.substInfo
-  let T := TEnv.updateSubst T S
-  let S ← Constraints.unify [(freshty2, optTyy2.getD ty2 )] T.state.substInfo
-  let T := TEnv.updateSubst T S
-
-  let S ← Constraints.unify [(freshty1, (.tcons "arrow" [freshty2, freshty]))] T.state.substInfo
+  -- Batch all unification constraints
+  let constraints := [
+    (ty1, optTyy1.getD ty1),
+    (ty2, optTyy2.getD ty2),
+    (ty1, (.tcons "arrow" [ty2, freshty]))
+  ]
+  let S ← Constraints.unify constraints T.state.substInfo
   let mty := LMonoTy.subst S.subst freshty
   .ok (.app e1t e2t mty, TEnv.updateSubst T S)
 
@@ -426,12 +423,15 @@ protected def fromLExpr (T : (TEnv Identifier)) (e : (LExpr LMonoTy Identifier))
 
 protected def fromLExprs (T : (TEnv Identifier)) (es : List (LExpr LMonoTy Identifier)) :
     Except Format (List (LExprT Identifier) × (TEnv Identifier)) := do
-  match es with
-  | [] => .ok ([], T)
-  | e :: erest =>
-    let (et, T) ← LExprT.fromLExpr T e
-    let (erestt, T) ← LExprT.fromLExprs T erest
-    .ok ((et :: erestt), T)
+  go T es []
+  where
+    go (T : TEnv Identifier) (rest : List (LExpr LMonoTy Identifier))
+        (acc : List (LExprT Identifier)) := do
+      match rest with
+      | [] => .ok (acc.reverse, T)
+      | e :: erest =>
+        let (et, T) ← LExprT.fromLExpr T e
+        go T erest (et :: acc)
 
 end LExprT
 

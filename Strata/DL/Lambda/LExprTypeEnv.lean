@@ -183,6 +183,27 @@ instance : ToFormat TState where
 /-- Track registered types. -/
 abbrev KnownTypes := List LTy
 
+mutual
+def LMonoTy.keywords (ty : LMonoTy) : List String :=
+  match ty with
+  | .tcons name args => name :: (LMonoTys.keywords args)
+  | .bitvec _ => []
+  | .ftvar _ => []
+
+def LMonoTys.keywords (ltys : List LMonoTy) : List String :=
+  match ltys with
+  | [] => []
+  | lty :: lrest =>
+    LMonoTy.keywords lty ++ LMonoTys.keywords lrest
+end
+
+def LTy.keywords (ty : LTy) : List String :=
+  let .forAll _ mty := ty
+  LMonoTy.keywords mty
+
+def KnownTypes.keywords (ks : KnownTypes) : List String :=
+  (ks.flatMap (fun k => k.keywords)).dedup
+
 /--
 A type environment `TEnv` contains a stack of contexts `TContext` to track `LExpr`
 variables and their types, a typing state `TState` to track the global
@@ -226,7 +247,7 @@ def TEnv.addFactoryFunctions (T : TEnv Identifier) (fact : @Factory Identifier) 
 Replace the global substitution in `T.state.subst` with `S`.
 -/
 def TEnv.updateSubst (T : (TEnv Identifier)) (S : SubstInfo) : (TEnv Identifier) :=
-  { T with state := { T.state with substInfo := S }}
+  { T with state.substInfo := S }
 
 def TEnv.pushEmptyContext (T : (TEnv Identifier)) : (TEnv Identifier) :=
   let ctx := T.context
@@ -355,8 +376,8 @@ def LMonoTys.instantiate (ids : List TyIdentifier) (mtys : LMonoTys) (T : (TEnv 
 omit [DecidableEq Identifier] in
 theorem LMonoTys.instantiate_length :
   (LMonoTys.instantiate (Identifier:=Identifier) ids mty T).fst.length == mty.length := by
-  simp [instantiate]
-  induction mty <;> simp_all [subst]
+  simp [instantiate, LMonoTys.subst_eq_substLogic]
+  induction mty <;> simp_all [substLogic]
 
 /--
 Instantiate the scheme `ty` by filling in fresh type variables for all
@@ -408,7 +429,6 @@ open LTy.Syntax in
                                           lhs := mty[myInt %x %y],
                                           rhs := mty[int] }] }}
       |>.fst |>.format
-
 
 /-- info: some int -/
 #guard_msgs in
@@ -512,6 +532,31 @@ def isInstanceOfKnownType (ty : LMonoTy) (T : (TEnv Identifier)) : Bool :=
       | .error _ => go ty krest S T
       | .ok _ => true
 
+/-
+mutual
+partial def LTy.knownInstance (ty : LMonoTy) (knownTys origKnownTys : KnownTypes) (T : (TEnv Identifier)) : Bool :=
+  match ty with
+  | .ftvar _ | .bitvec _ => true
+  | _ => match knownTys with
+  | [] => false
+  | k :: krest =>
+    let (km, T) := LTy.instantiate k T
+    match Constraints.unify [(km, ty)] T.state.substInfo with
+    | .error _ => LTy.knownInstance ty krest origKnownTys T
+    | .ok S =>
+      LTys.knownInstances S.subst.values origKnownTys T
+
+partial def LTys.knownInstances (tys : LMonoTys) (origKnownTys : KnownTypes) (T : TEnv Identifier) : Bool :=
+  match tys with
+  | [] => true
+  | ty :: trest =>
+    LTy.knownInstance ty origKnownTys origKnownTys T && LTys.knownInstances trest origKnownTys T
+end
+
+def isInstanceOfKnownType1 (mty : LMonoTy) (T : (TEnv Identifier)) : Bool :=
+  LTy.knownInstance mty T.knownTypes T.knownTypes T
+-/
+
 /--
 Instantiate `ty`, with resolution of type aliases to type definitions and checks
 for registered types.
@@ -533,10 +578,6 @@ open LTy.Syntax
 #guard_msgs in
 #eval isInstanceOfKnownType mty[myTy (myTy)]
                             { @TEnv.default String with knownTypes := [t[∀a. myTy %a], t[int]] }
-
-/-- info: true -/
-#guard_msgs in
-#eval isInstanceOfKnownType mty[%a → %a] (@TEnv.default String)
 
 /-- info: false -/
 #guard_msgs in
