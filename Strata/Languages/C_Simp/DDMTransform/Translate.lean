@@ -299,7 +299,7 @@ def translateMonoBindMk (bindings : TransBindings) (arg : Arg) :
     TransM.error s!"translateMonoBindMk unimplemented for {repr arg}"
 
 partial def translateDeclList (bindings : TransBindings) (arg : Arg) :
-  TransM (Map Expression.Ident LTy) := do
+  TransM (ListMap Expression.Ident LTy) := do
   let .op op := arg
     | TransM.error s!"translateDeclList expects an op {repr arg}"
   match op.name with
@@ -312,12 +312,12 @@ partial def translateDeclList (bindings : TransBindings) (arg : Arg) :
     let args ← checkOpArg arg q`C_Simp.declPush 2
     let fst ← translateDeclList bindings args[0]!
     let (id, targs, mty) ← translateBindMk bindings args[1]!
-    let lty := .forAll targs mty
-    pure (fst ++ [(id, lty)])
+    let lty : LTy := .forAll targs mty
+    pure (fst ++ ListMap.ofList [(id, lty)])
   | _ => TransM.error s!"translateDeclList unimplemented for {repr op}"
 
 partial def translateMonoDeclList (bindings : TransBindings) (arg : Arg) :
-  TransM (Map Expression.Ident LMonoTy) := do
+  TransM (ListMap Expression.Ident LMonoTy) := do
   let .op op := arg
     | TransM.error s!"translateMonoDeclList expects an op {repr arg}"
   match op.name with
@@ -329,11 +329,11 @@ partial def translateMonoDeclList (bindings : TransBindings) (arg : Arg) :
     let args ← checkOpArg arg q`C_Simp.monoDeclPush 2
     let fst ← translateMonoDeclList bindings args[0]!
     let (id, mty) ← translateMonoBindMk bindings args[1]!
-    pure (fst ++ [(id, mty)])
+    pure (fst ++ ListMap.ofList [(id, mty)])
   | _ => TransM.error s!"translateMonoDeclList unimplemented for {repr op}"
 
 def translateBindings (bindings : TransBindings) (op : Arg) :
-  TransM (Map String LMonoTy) := do
+  TransM (ListMap String LMonoTy) := do
   let bargs ← checkOpArg op q`C_Simp.mkBindings 1
   match bargs[0]! with
   | .commaSepList args =>

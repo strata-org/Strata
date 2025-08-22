@@ -78,7 +78,7 @@ theorem StmtToNondetCorrect [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [H
         refine EvalNondetStmt.choice_left_sem ?_ Hwfb
         apply EvalNondetStmt.seq_sem
         . apply EvalNondetStmt.cmd_sem
-          exact EvalCmd.eval_assert Htrue Hwfb
+          exact EvalCmd.eval_assume Htrue Hwfb
           simp [isDefinedOver, HasVarsImp.modifiedVars, Cmd.modifiedVars, isDefined]
         . apply (ih _ _ _).2
           omega
@@ -91,7 +91,7 @@ theorem StmtToNondetCorrect [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [H
         refine EvalNondetStmt.choice_right_sem ?_ Hwfb
         apply EvalNondetStmt.seq_sem
         . apply EvalNondetStmt.cmd_sem
-          refine EvalCmd.eval_assert ?_ Hwfb
+          refine EvalCmd.eval_assume ?_ Hwfb
           simp [WellFormedSemanticEvalBool] at Hwfb
           have HH := (Hwfb σ₀ σ c).1.2.2.mp Hfalse
           assumption

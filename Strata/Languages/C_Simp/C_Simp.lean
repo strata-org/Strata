@@ -50,7 +50,7 @@ structure Function where
   post : Expression.Expr
   body : List Statement
   ret_ty : Lambda.LMonoTy
-  inputs : Map Expression.Ident Lambda.LMonoTy
+  inputs : ListMap Expression.Ident Lambda.LMonoTy
 deriving Inhabited
 
 structure Program where

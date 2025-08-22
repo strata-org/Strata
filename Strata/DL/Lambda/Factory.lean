@@ -6,6 +6,7 @@
 
 import Strata.DL.Lambda.LExprWF
 import Strata.DL.Lambda.LTy
+import Strata.DL.Util.ListMap
 
 /-!
 ## Lambda's Factory
@@ -34,7 +35,7 @@ variable {Identifier : Type} [DecidableEq Identifier] [ToFormat Identifier] [Inh
 /--
 A signature is a map from variable identifiers to types.
 -/
-abbrev Signature (Identifier : Type) (Ty : Type) := Map Identifier Ty
+abbrev Signature (Identifier : Type) (Ty : Type) := ListMap Identifier Ty
 
 def Signature.format (ty : Signature Identifier Ty) [Std.ToFormat Ty] : Std.Format :=
   match ty with

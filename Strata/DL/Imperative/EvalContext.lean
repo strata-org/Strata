@@ -8,6 +8,7 @@
 
 import Strata.DL.Imperative.EvalError
 import Strata.DL.Imperative.MetaData
+import Strata.DL.Util.ListMap
 import Strata.DL.Util.Maps
 
 namespace Imperative
@@ -15,8 +16,8 @@ open Std (ToFormat Format format)
 
 ---------------------------------------------------------------------
 
-abbrev PathCondition (P : PureExpr)  := Map String P.Expr
-abbrev PathConditions (P : PureExpr) := Maps String P.Expr
+abbrev PathCondition (P : PureExpr)  := ListMap String P.Expr
+abbrev PathConditions (P : PureExpr) := List (PathCondition P)
 
 def PathCondition.format' {P} [ToFormat P.Expr] (m : PathCondition P) : Format :=
   match m with
@@ -38,6 +39,29 @@ instance [ToFormat P.Expr] : ToFormat (PathCondition P) where
 
 instance [ToFormat P.Expr] : ToFormat (PathConditions P) where
   format p := PathConditions.format' p
+
+def PathConditions.newest (ps : PathConditions P) : PathCondition P :=
+  match ps with
+  | [] => .empty
+  | p :: _ => p
+
+def PathConditions.pop (ps : PathConditions P) : PathConditions P :=
+  match ps with
+  | [] => []
+  | _ :: rest => rest
+
+def PathConditions.push (ps : PathConditions P) (p : PathCondition P): PathConditions P :=
+  p :: ps
+
+def PathConditions.insert (ps : PathConditions P) (l : String) (e : P.Expr) :=
+  match ps with
+  | [] => [Map.ofList [(l, e)]]
+  | p :: ps => Map.insert p l e :: ps
+
+def PathConditions.addInNewest (ps : PathConditions P) (m : PathCondition P) : PathConditions P :=
+  let new := ps.newest ++ m
+  let ps := ps.pop
+  ps.push new
 
 /--
 A proof obligation can be discharged by some backend solver or a dedicated
