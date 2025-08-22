@@ -229,7 +229,6 @@ def ValueBindingSpec.toExpr {bindings} (b : ValueBindingSpec bindings) (bindings
     toExpr b.nameIndex,
     toExpr b.argsIndex,
     toExpr b.typeIndex,
-    toExpr b.metadataIndex,
     toExpr b.allowCat
   ]
 

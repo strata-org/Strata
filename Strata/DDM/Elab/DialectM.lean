@@ -8,7 +8,469 @@ import Strata.DDM.Elab.DeclM
 import Strata.DDM.Elab.Tree
 import Strata.DDM.Elab.Core
 
-namespace Strata.Elab
+namespace Strata
+
+namespace PreType
+
+/-
+Apply a function f over all bound variables in expression.
+
+Note this does not return variables referenced by .funMacro.
+-/
+private def foldBoundTypeVars (tp : PreType) (init : α) (f : α → Nat → α) : α :=
+  match tp with
+  | .ident _ a => a.attach.foldl (init := init) fun r ⟨e, _⟩ => e.foldBoundTypeVars r f
+  | .fvar _ a => a.attach.foldl (init := init) fun r ⟨e, _⟩ => e.foldBoundTypeVars r f
+  | .bvar i => f init i
+  | .arrow a r => r.foldBoundTypeVars (a.foldBoundTypeVars init f) f
+  | .funMacro _ r => r.foldBoundTypeVars init f
+
+end PreType
+
+namespace Elab
+
+structure SyntaxedArgDecl where
+  nameStx : Lean.Syntax
+  typeStx : Lean.Syntax
+  val : ArgDecl
+  deriving Inhabited
+
+/--
+Map for arg declarations.
+-/
+structure ArgDeclsMap (argc : Nat) where
+  argIndexMap : Std.HashMap String Nat
+  decls : Vector SyntaxedArgDecl argc
+  argIndexMapSize : argIndexMap.size = argc
+  mapIndicesValid : ∀(v : String) (p : v ∈ argIndexMap), argIndexMap[v] < argc
+
+namespace ArgDeclsMap
+
+def isType {argc} (m : ArgDeclsMap argc) (lvl : Fin argc) := m.decls[lvl].val.kind.isType
+
+def empty (capacity : Nat := 0) : ArgDeclsMap 0 := {
+  argIndexMap := {},
+  decls := .emptyWithCapacity capacity,
+  argIndexMapSize := rfl
+  mapIndicesValid := fun v p => by simp at p
+}
+
+/--
+Adds an additional declaration to the list of arguments.
+
+Requires proof the name is new.
+-/
+protected def push (m : ArgDeclsMap n) (d : SyntaxedArgDecl) (isUnused : d.val.ident ∉ m.argIndexMap) : ArgDeclsMap (n + 1) := {
+  argIndexMap := m.argIndexMap.insert d.val.ident m.decls.size,
+  decls := m.decls.push d
+  argIndexMapSize := by
+    have p := m.argIndexMapSize
+    grind
+  mapIndicesValid := by
+    intro x mem
+    simp [Std.HashMap.getElem_insert]
+    if eq : d.val.ident = x then
+      simp [eq]
+    else
+      simp [Std.HashMap.mem_insert, eq] at mem
+      have v := m.mapIndicesValid x mem
+      grind
+}
+
+def argLevel? {argc} (argDecls : ArgDeclsMap argc) (name : String) : Option (Fin argc) :=
+  match r : argDecls.argIndexMap[name]? with
+  | none => none
+  | some lvl =>
+    have lvlP : lvl < argc := by
+      have q := argDecls.mapIndicesValid name;
+      grind
+    some ⟨lvl, lvlP⟩
+
+end ArgDeclsMap
+
+def asTypeVar {argc : Nat} (argDecls : ArgDeclsMap argc) (stx : Lean.Syntax) (tpId : MaybeQualifiedIdent) (argChildren : Array Tree) : ElabM (Option PreType) := do
+  if let .name name := tpId then
+    if let some lvl := argDecls.argLevel? name then
+      if !(argDecls.isType lvl) then
+        logError stx s!"Expected type."
+      else if let some _ := argChildren[0]? then
+        logError stx s!"{name} does not have arguments. {repr argChildren}"
+      let idx := argc - lvl - 1
+      return some (.bvar idx)
+  return none
+
+def translateFunMacro {argc : Nat} (argDecls : ArgDeclsMap argc) (bindingsTree : Tree) (rType : PreType) : ElabM PreType := do
+  let .ofIdentInfo nameInfo := bindingsTree.info
+    | panic! "Expected identifier"
+  let .some lvl := argDecls.argLevel? nameInfo.val
+    | logError nameInfo.stx s!"Unknown variable {nameInfo.val}"; return default
+  if argDecls.isType lvl then
+    logError nameInfo.stx s!"Expected type that creates variables."
+    return default
+  return .funMacro (argc - lvl - 1) rType
+
+/--
+Evaluate the tree as a type expression.
+-/
+def translatePreType {argc : Nat} (argDecls : ArgDeclsMap argc) (tree : Tree) : ElabM PreType := do
+  match feq : flattenTypeApp tree #[] with
+  | (⟨argInfo, argChildren⟩, args) =>
+  have argcP : sizeOf argChildren < sizeOf tree := by
+    have p := flattenTypeApp_size tree #[]
+    have q := Array.sizeOf_min args
+    simp [feq] at p
+    omega
+  have argsP : sizeOf args ≤ sizeOf tree := by
+    have p := flattenTypeApp_size tree #[]
+    have q := Array.sizeOf_min argChildren
+    simp [feq] at p
+    omega
+  let op :=
+        match argInfo with
+        | .ofOperationInfo info => info.op.name
+        | _ => panic! s!"translateBindingTypeExpr expected operator, type or cat {repr argInfo}"
+  match op, argC_eq : argChildren with
+  | q`Init.TypeIdent, #[ident] => do
+    let tpId := translateQualifiedIdent ident
+    if let some tp ← asTypeVar argDecls ident.info.stx tpId args then
+      return tp
+    let some (qname, decl) ← resolveTypeOrCat ident.info.stx tpId
+      | return default
+    match decl with
+    | .type decl =>
+      checkArgSize argInfo.stx qname decl.argNames.size args
+      let args ← args.attach.mapM fun ⟨a, _⟩ =>
+        have p : sizeOf a < sizeOf args := by decreasing_tactic
+        translatePreType argDecls a
+      return .ident qname args
+    | _ =>
+      logError ident.info.stx s!"Expected type"; pure default
+  | q`Init.TypeArrow, #[aTree, rTree] => do
+    have p : sizeOf aTree < sizeOf argChildren := by decreasing_tactic
+    let aType ← translatePreType argDecls aTree
+    have p : sizeOf rTree < sizeOf argChildren := by decreasing_tactic
+    let rType ← translatePreType argDecls rTree
+    return .arrow aType rType
+
+  | q`StrataDDL.TypeFn, #[bindingsTree, valTree] =>
+    have p : sizeOf valTree < sizeOf argChildren := by decreasing_tactic
+    let rType ← translatePreType argDecls valTree
+    translateFunMacro argDecls bindingsTree rType
+  | _, _ =>
+    logInternalError argInfo.stx s!"translatePreType given invalid syntax {repr op}"
+    return default
+  termination_by tree
+
+/--
+Evaluate the tree as a type expression.
+-/
+partial def translateArgDeclKind {argc} (argDecls : ArgDeclsMap argc) (tree : Tree) : ElabM ArgDeclKind := do
+  let (⟨argInfo, argChildren⟩, args) := flattenTypeApp tree #[]
+  let op :=
+        match argInfo with
+        | .ofOperationInfo info => info.op.name
+        | _ => panic! s!"translateBindingTypeExpr expected operator, type or cat {repr argInfo}"
+  match op, argChildren with
+  | q`Init.TypeIdent, #[ident] => do
+    let tpId := translateQualifiedIdent ident
+    if let some tp ← asTypeVar argDecls ident.info.stx tpId args then
+      return .type tp
+    let some (qname, decl) ← resolveTypeOrCat ident.info.stx tpId
+      | return default
+    match decl with
+    | .type decl =>
+      checkArgSize argInfo.stx qname decl.argNames.size args
+      let args ← args.mapM (translatePreType argDecls)
+      return .type <| .ident qname args
+    | .syncat decl =>
+      checkArgSize argInfo.stx qname decl.argNames.size args
+      let r : SyntaxCat := .atom qname
+      let r ← args.attach.foldlM (init := r) fun r ⟨a, _⟩ => do
+        have p : sizeOf a < sizeOf args := by decreasing_tactic
+        return .app r (← translateSyntaxCat a)
+      return .cat r
+
+  | q`Init.TypeArrow, #[aTree, rTree] => do
+    let aType ← translatePreType argDecls aTree
+    let rType ← translatePreType argDecls rTree
+    return .type (.arrow aType rType)
+
+  | q`StrataDDL.TypeFn, #[bindingsTree, valTree] => do
+    let rType ← translatePreType argDecls valTree
+    .type <$> translateFunMacro argDecls bindingsTree rType
+  | _, _ =>
+    logInternalError argInfo.stx s!"translateArgDeclKind given invalid kind {op}"
+    return default
+
+def elabMetadataName (stx : Lean.Syntax) (mi : MaybeQualifiedIdent) : ElabM (QualifiedIdent × MetadataDecl) := do
+  match mi with
+  | .qid q =>
+    logErrorMF stx mf!"Qualified ident {q} not yet supported." -- FIXME
+    return default
+  | .name ident =>
+    let decls := (←read).metadataDeclMap.get ident
+    let some (d, decl) := decls[0]?
+      | logError stx s!"Unknown metadata attribute {ident}"
+        return default
+    -- Check if there is another possibility
+    if let some (d_alt, _) := decls[1]? then
+      logError stx s!"{ident} is ambiguous; declared in {d} and {d_alt}"
+    return ({ dialect := d, name := ident }, decl.val)
+
+partial def translateMetadataArg {argc} (args : ArgDeclsMap argc) (argName : String) (expected : MetadataArgType) (tree : Tree) : ElabM MetadataArg := do
+  let .ofOperationInfo argInfo := tree.info
+    | panic! "Expected an operator"
+  match argInfo.op.name with
+  | q`Init.MetadataArgIdent =>
+    let .ofIdentInfo nameInfo := tree[0]!.info
+      | panic! "Invalid term"
+    match expected with
+    | .ident  =>
+      pure ()
+    | .opt _ =>
+      logErrorMF nameInfo.stx mf!"Expected optional value."
+    | _ =>
+      logErrorMF nameInfo.stx mf!"Unexpected identifier."
+    let name := nameInfo.val
+    let some lvl := args.argLevel? name
+      | logErrorMF nameInfo.stx mf!"Unknown variable {name} for {argName}.}"; return default
+    if let .type tp := args.decls[lvl].val.kind then
+      logErrorMF nameInfo.stx mf!"{name} refers to expression with type {tp} when category is required."
+      return default
+    return .catbvar (argc - lvl - 1)
+  | q`Init.MetadataArgNum =>
+    let .ofNumInfo numInfo := tree[0]!.info
+      | panic! "Invalid term"
+    match expected with
+    | .num =>
+      pure ()
+    | _ =>
+      logErrorMF numInfo.stx mf!"Expected numeric literal."
+    return .num numInfo.val
+  | q`Init.MetadataArgFalse =>
+    assert! tree.children.size = 0
+    return .bool false
+  | q`Init.MetadataArgTrue =>
+    assert! tree.children.size = 0
+    return .bool true
+  | q`Init.MetadataArgParen =>
+    assert! tree.children.size = 1
+    translateMetadataArg args argName expected tree[0]!
+  | q`Init.MetadataArgSome =>
+    match expected with
+    | .opt tp =>
+      assert! tree.children.size = 1
+      let a ← translateMetadataArg args argName tp tree[0]!
+      return .option (some a)
+    | _ =>
+      logErrorMF argInfo.stx mf!"Expected option type."
+      return default
+  | q`Init.MetadataArgNone =>
+    match expected with
+    | .opt _ =>
+      return .option none
+    | _ =>
+      logErrorMF argInfo.stx mf!"Expected {expected} value."
+      return default
+  | name =>
+    panic! s!"Unknown metadata arg kind {name.fullName}"
+
+def translateMetadataArgs {argc} (argDecls : ArgDeclsMap argc) (decl : MetadataDecl) (op : Tree) : ElabM (Array MetadataArg) := do
+  assert! op.isSpecificOp q`Init.MetadataArgsMk
+  assert! op.children.size = 1
+  let tree := op[0]!
+  let some actuals := tree.asCommaSepInfo?
+    | return panic! "Expected comma sep info"
+  -- This could really be a panic
+  let (_, success) ← runChecked <| checkArgSize op.info.stx decl.name decl.args.size actuals
+  if !success then
+    return default
+  let mut res : Array MetadataArg := #[]
+  for ({ ident := argName, type := argType }, tree) in Array.zip decl.args actuals do
+    let (arg, success) ← runChecked <| translateMetadataArg argDecls argName argType tree
+    if !success then
+      return default
+    res := res.push arg
+  return res
+
+def translateMetadataAttr {argc} (args : ArgDeclsMap argc) (t : Tree) : ElabM MetadataAttr := do
+  let #[identInfo, argTree] := t.children
+    | panic! "badArgs"
+  let ((ident, decl),success) ← runChecked <| elabMetadataName identInfo.info.stx (translateQualifiedIdent identInfo)
+  if !success then
+    return default
+  let args ← match argTree.children with
+             | #[] =>
+                if !decl.args.isEmpty then
+                  logError .missing s!"Missing arguments to {decl.name}"
+                  return default
+                pure #[]
+             | #[t] =>
+              translateMetadataArgs args decl t
+             | _ => panic! s!"Expected arg sequence"
+  return { ident, args }
+
+/-- This parses an optional metadata -/
+def translateMetadata {argc} (argDecls : ArgDeclsMap argc) (tree : Tree) : ElabM Metadata := do
+  assert! tree.isSpecificOp q`Init.MetadataMk
+  assert! tree.children.size = 1
+  match tree[0]!.asCommaSepInfo? with
+  | none => panic! s!"translateMetadata given {repr tree[0]!.info}"
+  | some args => .ofArray <$> args.mapM (translateMetadataAttr argDecls)
+
+/-- Translate metadata if it is optional. -/
+def translateOptMetadata {argc} (argDecls : ArgDeclsMap argc) (tree : Option Tree) : ElabM Metadata := do
+  match tree with
+  | none => pure .empty
+  | some tree => translateMetadata argDecls tree
+
+/-- Translate metadata if it is optional. -/
+def translateOptMetadata! {argc} (argDecls : ArgDeclsMap argc) (tree : Tree) : ElabM Metadata := do
+  match tree.asOption? with
+  | none => panic! "Expected option"
+  | some mtree => translateOptMetadata argDecls mtree
+
+def translateArgDecl {argc} (argDecls : ArgDeclsMap argc) (t: Tree) : ElabM SyntaxedArgDecl := do
+  let (name, tpTree, mdTree) := t.binding!
+  let kind ← translateArgDeclKind argDecls tpTree
+  let metadata : Metadata ← translateOptMetadata argDecls mdTree
+  let b : ArgDecl := {
+    ident := name.val,
+    kind := kind,
+    metadata := metadata
+  }
+  return {
+    nameStx := name.stx,
+    typeStx := tpTree.info.stx,
+    val := b
+  }
+
+def translateArgDecls (tree : Tree) : ElabM (Σ argc, ArgDeclsMap argc) := do
+  let bindings := tree.optBindings!
+  let s : Σ argc, ArgDeclsMap argc := ⟨0, .empty bindings.size⟩
+  bindings.foldlM (init := s) fun ⟨c, newArgs⟩ t => do
+    let d ← translateArgDecl newArgs t
+    if p : d.val.ident ∈ newArgs.argIndexMap then
+      logError d.nameStx s!"{d.val.ident} already declared."
+      pure ⟨c, newArgs⟩
+    else
+      pure ⟨c+1, newArgs.push d p⟩
+
+def elabMetadataArgCatType (stx : Lean.Syntax) (ci : SyntaxCat) : DeclM MetadataArgType := do
+  match ci with
+  | .atom q`Init.Bool => pure .bool
+  | .atom q`Init.Num => pure .num
+  | .atom q`Init.Ident => pure .ident
+  | .app (.atom q`Init.Option) e => .opt <$> elabMetadataArgCatType stx e
+  | c =>
+    logErrorMF stx mf!"Unsupported metadata category {c}"
+    pure default
+
+/- Flag indicating if argument was set explicitly or implicitly. -/
+inductive ArgSetStatus
+| implicit
+| explicit
+
+partial def checkIdentUsedArgs {argc} (argDecls : Vector SyntaxedArgDecl argc) (argLevel : Fin argc) : StateT (Std.HashMap Nat ArgSetStatus) ElabM Unit := do
+  match (← get)[argLevel]? with
+  | some .explicit => do
+    let b := argDecls[argLevel]
+    .lift <| logError b.nameStx s!"{b.val.ident} appears multiple times."
+  | some .implicit =>
+    modify (·.insert argLevel .explicit)
+  | none =>
+    -- If this argument is an expression, then all type variables in expression
+    -- can be inferred if not already assigned.
+    if let .type tp := argDecls[argLevel].val.kind then
+      modify fun usedArgs =>
+        tp.foldBoundTypeVars usedArgs fun s idx =>
+          assert! idx < argLevel
+          s.insert (argLevel - (idx + 1)) .implicit
+    modify (·.insert argLevel .explicit)
+
+partial
+def elabSyntaxDefAtom (argDecls : ArgDeclsMap argc) (defaultPrec : Nat) (arg : Tree) : StateT (Std.HashMap Nat ArgSetStatus) ElabM SyntaxDefAtom := do
+  let .node (.ofOperationInfo info) children := arg
+      | return panic! s!"Unexpected argument type {eformat arg.arg}"
+  match info.op.name, children with
+  | q`Init.syntaxAtomIdent, #[.node (.ofIdentInfo vInfo) #[], .node (.ofOptionInfo _) precArgs ] =>
+    let v := vInfo.val
+    let some argLevel := argDecls.argLevel? v
+      | .lift <| logError vInfo.stx s!"Unknown variable {v}"
+        return default
+    let prec : Nat :=
+          match precArgs with
+          | #[] => defaultPrec
+          | #[.node (.ofOperationInfo info) #[.node (.ofNumInfo p) #[]]] =>
+            assert! info.op.name = q`Init.syntaxAtomPrec
+            p.val
+          | _ =>
+            panic! s!"elabSyntaxDefAtom invalid prec {eformat children[1]!.arg}"
+    checkIdentUsedArgs argDecls.decls argLevel
+    return .ident argLevel prec
+  | q`Init.syntaxAtomString, #[.node (.ofStrlitInfo info) #[] ] =>
+    return .str info.val
+  | q`Init.syntaxAtomIndent, #[.node (.ofNumInfo nInfo) #[], .node (.ofSeqInfo _) args ] => do
+    let r ← args.mapM fun a => elabSyntaxDefAtom argDecls defaultPrec a
+    return .indent nInfo.val r
+  | nm, _ =>
+    return panic! s!"Syntax {nm.fullName} {children.size} {eformat info.op}"
+
+def translateSyntaxDef (argDecls : ArgDeclsMap argc) (mdTree tree : Tree) : ElabM SyntaxDef := do
+  let (syntaxMetadata, success) ← runChecked <| translateOptMetadata! argDecls mdTree
+  if !success then
+    return default
+
+  let prec : Nat :=
+      match syntaxMetadata[q`StrataDDL.prec]? with
+      | some #[.num l] => l
+      | some _ => panic! "Unexpected precedence" -- FIXME
+      | none => maxPrec
+  let op := tree.info.asOp!.op
+
+  assert! tree.children.size = 1
+  let .node (.ofSeqInfo _) args := tree[0]!
+    | panic! s!"Expected many args"
+
+  let isLeftAssoc := q`StrataDDL.leftassoc ∈ syntaxMetadata
+  let isRightAssoc := q`StrataDDL.rightassoc ∈ syntaxMetadata
+
+  let mut atoms : Array SyntaxDefAtom := #[]
+  let mut usedArgs : Std.HashMap Nat ArgSetStatus := {}
+  let mut success : Bool := true
+  for ⟨i, _ilt⟩ in Fin.range args.size do
+    let defaultPrec :=
+      if isLeftAssoc  then
+        if i = 0 then
+          prec - 1
+        else
+          prec
+      else if isRightAssoc then
+        if i + 1 = args.size then
+          prec - 1
+        else
+          prec
+      else
+        if args.size > 1 ∧ (i = 0 ∨ i + 1 = args.size) then
+          prec
+        else
+          0
+    let ((a, newUsedArgs), thisSuccess) ← runChecked <| elabSyntaxDefAtom argDecls defaultPrec args[i] usedArgs
+    usedArgs := newUsedArgs
+    atoms := atoms.push a
+    if !thisSuccess then
+      success := false
+
+  if !success then
+    return default
+
+  -- Check every argument is used.
+  for i in Fin.range argDecls.decls.size do
+    if i.val ∉ usedArgs then
+      logError argDecls.decls[i].nameStx s!"Argument is not elaborated."
+      return default
+
+  return { atoms, prec }
 
 structure DialectContext where
   /-- Callback to load dialects dynamically upon demand. -/
@@ -58,109 +520,24 @@ instance : ElabClass DialectM where
   logErrorMessage stx msg :=
     modifyDeclState fun s => { s with errors := s.errors.push (stx, msg) }
 
-abbrev DialectElab := Tree → DialectM Unit
-
 private def checkTypeDeclarationArgs (tree : Tree) : ElabM (Array String) := do
-  let bindings := tree.optBindings!
-  let mut m := ArgDeclsMap.empty bindings.size
-  for t in bindings do
-    let (arg, success) ← runChecked <| translateArgDecl m t
+  let (⟨_, argDecls⟩, success) ← runChecked <| translateArgDecls tree
     if !success then
       return default
+  for arg in argDecls.decls do
     if !arg.val.kind.isType then
       logErrorMF arg.typeStx mf!"Parameters for a type declaration must have category {q`Init.Type}."
       return default
-    m := addBinding m arg
-  return m.decls.map (·.val.ident)
+  return argDecls.decls.toArray.map (·.val.ident)
 
-private def elabTypeCommand (tree : Tree) : DialectM Unit := do
-  let d ← getCurrentDialect
-  assert! tree.children.size = 2
+def checkTreeSize (tree : Tree) (size : Nat) : Decidable (tree.children.size = size) := inferInstance
 
-  -- Get arguments
-  let ((name, argNames), success) ← runElab <| runChecked <| do
-    -- Get name
-    let .node (.ofIdentInfo nameInfo) _ := tree[0]!
-      | panic! "Expected identifier"
-    let name := nameInfo.val
-    if name ∈ d.cache then
-      logError nameInfo.stx  s!"{name} already declared."
-    let args ← checkTypeDeclarationArgs tree[1]!
-    pure (name, args)
+abbrev DialectElab := Tree → DialectM Unit
 
-  if success then
-    let decl := { name, argNames }
-    addTypeOrCatDecl d.name (.type decl)
-    addDeclToDialect (.type decl)
-
-/- Add a new operator. -/
-def elabOpCommand (tree : Tree) : DialectM Unit := do
-  let d ← getCurrentDialect
-  assert! tree.children.size = 6
-  let nameInfo := tree[0]!.info.asIdent!
-  let name := nameInfo.val
-  if name ∈ d.cache then
-    logError nameInfo.stx s!"{name} already declared."; return
-
-  let argDeclsTree := tree[1]!
-  let (argDecls, argDeclsSuccess) ← runElab <| runChecked <| translateArgDecls argDeclsTree
-
-  let categoryTree := tree[2]!
-  let (category, categorySuccess) ← runElab <| runChecked <| translateSyntaxCat categoryTree.asBindingType!
-
-  let opMetadataTree := tree[3]!
-  let (opMetadata, opMetadataSuccess) ← runElab <| runChecked <| translateOptMetadata! argDecls opMetadataTree
-
-  if !argDeclsSuccess then
-    return
-
-  let opMdTree := tree[4]!
-  let opStxTree := tree[5]!
-  let (opStx, opStxSuccess) ← runElab <| runChecked <| translateSyntaxDef argDecls opMdTree opStxTree
-
-  -- FIXME. Change this to use stxArgDecls so we get better error messages.
-  let argDecls := argDecls.decls.map (·.val)
-  let (newBindings, newBindingErrors) := parseNewBindings opMetadata argDecls
-  for err in newBindingErrors do
-    logError opMetadataTree.info.stx err
-
-  if !categorySuccess then
-    return
-  if !opStxSuccess then
-    return
-
-  let category ←
-      match category with
-      | .atom c =>
-        pure c
-      | .app _ _ =>
-        logError categoryTree.info.stx s!"Expected atomic category"
-        return
-
-  let ctx := (←getDeclState).fixedParsers
-  let ident : QualifiedIdent := { dialect := d.name, name }
-  match ctx.opSyntaxParser category ident argDecls opStx with
-  | .error msg =>
-    logErrorMF opStxTree.info.stx msg
-    return
-  | .ok _ => pure ()
-  if !opMetadataSuccess then
-    return
-  if !newBindingErrors.isEmpty then
-    return
-  let decl : OpDecl := {
-    name,
-    argDecls,
-    category,
-    syntaxDef := opStx,
-    metadata := opMetadata,
-    newBindings := newBindings
-  }
-  addDeclToDialect (.op decl)
-
-def elabDialectImportCommand (tree : Tree) : DialectM Unit := do
-  assert! tree.children.size = 1
-  let identTree := tree[0]!.info
+def elabDialectImportCommand : DialectElab := fun tree => do
+  let .isTrue _ := checkTreeSize tree 1
+    | panic! "Invalid tree size"
+  let identTree := tree[0].info
   let name := identTree.asIdent!.val
   let d ←
     match (← get).loaded.dialects[name]? with
@@ -186,11 +563,11 @@ def elabDialectImportCommand (tree : Tree) : DialectM Unit := do
   modify fun s => { s with declState := s.declState.openLoadedDialect! s.loaded d }
   modifyDialect fun d => { d with imports := d.imports.push name }
 
-private def elabCategoryCommand (tree : Tree) : DialectM Unit := do
+private def elabCategoryCommand : DialectElab := fun tree => do
+  let .isTrue p := checkTreeSize tree 1
+    | return panic! "Unexpected tree size."
   let d ← getCurrentDialect
-  assert! d.name ∈ (← getDeclState).openDialectSet
-  assert! tree.children.size = 1
-  let name := tree.children[0]!.info.asIdent!
+  let name := tree.children[0].info.asIdent!
   if name.val ∈ d.cache then
     logError name.stx  s!"Category {name.val} already declared."
     return
@@ -199,38 +576,123 @@ private def elabCategoryCommand (tree : Tree) : DialectM Unit := do
   addTypeOrCatDecl d.name (.syncat decl)
   modifyDeclState (·.addSynCat! d.name decl)
 
-/- Evaluate a function. -/
-def elabFnCommand (tree : Tree) : DialectM Unit := do
+/- Add a new operator. -/
+def elabOpCommand : DialectElab := fun tree => do
+  let .isTrue _ := checkTreeSize tree 6
+    | return panic! "Unexpected tree size."
   let d ← getCurrentDialect
-  assert! tree.children.size = 6
+  let nameInfo := tree[0].info.asIdent!
+  let name := nameInfo.val
+  if name ∈ d.cache then
+    logError nameInfo.stx s!"{name} already declared."; return
 
-  let .ofIdentInfo nameInfo := tree[0]!.info
+  let argDeclsTree := tree[1]
+  let (⟨_, argDeclMap⟩, argDeclsSuccess) ← runElab <| runChecked <| translateArgDecls argDeclsTree
+
+  let categoryTree := tree[2]
+  let (category, categorySuccess) ← runElab <| runChecked <| translateSyntaxCat categoryTree.asBindingType!
+
+  let opMetadataTree := tree[3]
+  let (opMetadata, opMetadataSuccess) ← runElab <| runChecked <| translateOptMetadata! argDeclMap opMetadataTree
+
+  if !argDeclsSuccess then
+    return
+
+  let opMdTree := tree[4]
+  let opStxTree := tree[5]
+  let (syntaxDef, opStxSuccess) ← runElab <| runChecked <| translateSyntaxDef argDeclMap opMdTree opStxTree
+
+  -- FIXME. Change this to use stxArgDecls so we get better error messages.
+  let argDecls : ArgDecls := argDeclMap.decls.toArray.map (·.val)
+  let (newBindings, newBindingErrors) := parseNewBindings opMetadata argDecls
+  for err in newBindingErrors do
+    logError opMetadataTree.info.stx err
+
+  if !categorySuccess then
+    return
+  if !opStxSuccess then
+    return
+
+  let category ←
+      match category with
+      | .atom c =>
+        pure c
+      | .app _ _ =>
+        logError categoryTree.info.stx s!"Expected atomic category"
+        return
+
+  let ctx := (←getDeclState).fixedParsers
+  let ident : QualifiedIdent := { dialect := d.name, name }
+  match ctx.opSyntaxParser category ident argDecls syntaxDef with
+  | .error msg =>
+    logErrorMF opStxTree.info.stx msg
+    return
+  | .ok _ => pure ()
+  if !opMetadataSuccess then
+    return
+  if !newBindingErrors.isEmpty then
+    return
+  let decl : OpDecl := {
+    name,
+    argDecls,
+    category,
+    syntaxDef := syntaxDef,
+    metadata := opMetadata,
+    newBindings := newBindings
+  }
+  addDeclToDialect (.op decl)
+
+private def elabTypeCommand : DialectElab := fun tree => do
+  let .isTrue _ := checkTreeSize tree 2
+    | return panic! "Unexpected tree size."
+  let d ← getCurrentDialect
+
+  -- Get arguments
+  let ((name, argNames), success) ← runElab <| runChecked <| do
+    -- Get name
+    let .node (.ofIdentInfo nameInfo) _ := tree[0]
+      | panic! "Expected identifier"
+    let name := nameInfo.val
+    if name ∈ d.cache then
+      logError nameInfo.stx  s!"{name} already declared."
+    let args ← checkTypeDeclarationArgs tree[1]
+    pure (name, args)
+  if success then
+    let decl := { name, argNames }
+    addTypeOrCatDecl d.name (.type decl)
+    addDeclToDialect (.type decl)
+
+/- Evaluate a function. -/
+def elabFnCommand : DialectElab := fun tree => do
+  let .isTrue _ := checkTreeSize tree 6
+    | return panic! "Unexpected tree size."
+
+  let d ← getCurrentDialect
+  let .ofIdentInfo nameInfo := tree[0].info
     | panic! "Expected identifier"
   let name := nameInfo.val
   if name ∈ d.cache then
     logError nameInfo.stx s!"{name} already declared."; return
 
   let argsTree := tree[1]!
-  let (params, argDeclsSuccess) ← runElab <| runChecked <| translateArgDecls argsTree
+  let (⟨argc, argDeclsMap⟩, argDeclsSuccess) ← runElab <| runChecked <| translateArgDecls argsTree
+  let argDecls : ArgDecls := argDeclsMap.decls.toArray.map (·.val)
 
-  let returnTypeTree := tree[2]!.asBindingType!
-  let isType : Array Bool := params.decls.map (·.val.kind.isType)
-  let (result, resultSuccess) ← runElab <| runChecked <| translateTypeExpr params.argIndexMap isType.size (fun lvl => isType[lvl]!) returnTypeTree
+  let returnTypeTree := tree[2].asBindingType!
+  let (result, resultSuccess) ← runElab <| runChecked <| translatePreType argDeclsMap returnTypeTree
 
-  let opMetadataTree := tree[3]!
-  let (opMetadata, opMetadataSuccess) ← runElab <| runChecked <| translateOptMetadata! params opMetadataTree
+  let opMetadataTree := tree[3]
+  let (opMetadata, opMetadataSuccess) ← runElab <| runChecked <| translateOptMetadata! argDeclsMap opMetadataTree
 
   if !argDeclsSuccess then
     return
 
-  let opMdTree := tree[4]!
-  let opStxTree := tree[5]!
-  let (opStx, stxSuccess) ← runElab <| runChecked <| translateSyntaxDef params opMdTree opStxTree
+  let opMdTree := tree[4]
+  let opStxTree := tree[5]
+  let (opStx, stxSuccess) ← runElab <| runChecked <| translateSyntaxDef argDeclsMap opMdTree opStxTree
 
   if !stxSuccess then
     return
-
-  let argDecls := params.decls.map (·.val)
 
   let ident := { dialect := d.name, name }
   match (←getDeclState).fixedParsers.opSyntaxParser q`Init.Expr ident argDecls opStx with
@@ -243,24 +705,25 @@ def elabFnCommand (tree : Tree) : DialectM Unit := do
       return
     let decl : FunctionDecl := {
       name,
-      argDecls := argDecls,
-      result := result,
-      syntaxDef := opStx,
-      metadata := opMetadata,
+      argDecls,
+      result := result
+      syntaxDef := opStx
+      metadata := opMetadata
     }
     addDeclToDialect (.function decl)
 
-def elabMdCommand (tree : Tree) : DialectM Unit := do
+def elabMdCommand : DialectElab := fun tree => do
+  let .isTrue p := checkTreeSize tree 2
+    | return panic! "Unexpected tree size."
   let d ← getCurrentDialect
-  assert! tree.children.size = 2
 
-  let .ofIdentInfo nameInfo := tree[0]!.info
+  let .ofIdentInfo nameInfo := tree[0].info
     | panic! "Expected identifier"
   let name := nameInfo.val
   if name ∈ d.cache then
     logError nameInfo.stx s!"{name} already declared."; return
 
-  let optBindingsTree := tree[1]!
+  let optBindingsTree := tree[1]
 
   let (argDecls, success) ← runChecked <| do
         let bindings := optBindingsTree.optBindings!
