@@ -247,9 +247,9 @@ def callElimStmt (st: Statement) (p : Program)
 
         -- construct substitutions for argument and return
         let arg_subst : List (Expression.Ident × Expression.Expr)
-                      := (Map.keys proc.header.inputs).zip $ createFvars argTrips.unzip.fst.unzip.fst
+                      := (ListMap.keys proc.header.inputs).zip $ createFvars argTrips.unzip.fst.unzip.fst
         let ret_subst : List (Expression.Ident × Expression.Expr)
-                      := (Map.keys proc.header.outputs).zip $ createFvars lhs
+                      := (ListMap.keys proc.header.outputs).zip $ createFvars lhs
 
         -- construct assumes and asserts in place of pre/post conditions
         -- generate asserts based on pre-conditions, substituting procedure arguments

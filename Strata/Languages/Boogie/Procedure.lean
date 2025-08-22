@@ -58,8 +58,8 @@ instance : ToFormat Procedure.Check where
 
 structure Procedure.Spec where
   modifies       : List Expression.Ident
-  preconditions  : Map BoogieLabel Procedure.Check
-  postconditions : Map BoogieLabel Procedure.Check
+  preconditions  : ListMap BoogieLabel Procedure.Check
+  postconditions : ListMap BoogieLabel Procedure.Check
   deriving Repr, DecidableEq
 
 instance : ToFormat Procedure.Spec where
@@ -68,14 +68,14 @@ instance : ToFormat Procedure.Spec where
        preconditions: {format p.preconditions}\n\
        postconditions: {format p.postconditions}"
 
-def Procedure.Spec.getCheckExprs (conds : Map BoogieLabel Procedure.Check) :
+def Procedure.Spec.getCheckExprs (conds : ListMap BoogieLabel Procedure.Check) :
   List Expression.Expr :=
   let checks := conds.values
   checks.map (fun c => c.expr)
 
 def Procedure.Spec.updateCheckExprs
-  (es : List Expression.Expr) (conds : Map BoogieLabel Procedure.Check) :
-  Map BoogieLabel Procedure.Check :=
+  (es : List Expression.Expr) (conds : ListMap BoogieLabel Procedure.Check) :
+  ListMap BoogieLabel Procedure.Check :=
   let checks := go es conds.values
   conds.keys.zip checks
   where go (es : List Expression.Expr) (checks : List Procedure.Check) :=
