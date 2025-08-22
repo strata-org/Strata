@@ -997,7 +997,7 @@ def fromIon (typeId : SymbolId) (v : Ion SymbolId) : FromIonM Decl := do
 
 end Decl
 
-private inductive Header
+inductive Header
 | dialect : DialectName → Header
 | program : DialectName → Header
 

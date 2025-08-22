@@ -148,7 +148,7 @@ def encodeUF (uf : UF) : EncoderM String := do
  def encodeOp : Op → String
   | .eq            => "="
   | .zero_extend n => s!"(_ zero_extend {n})"
-  | .option.get    => "val"
+  | .option_get    => "val"
   | op             => op.mkName
 
 def defineApp (inBinder : Bool) (tyEnc : String) (op : Op) (tEncs : List String) (_ts : List Term): EncoderM String := do

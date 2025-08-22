@@ -11,6 +11,12 @@ import Std.Data.HashSet
 
 open Std (Format format)
 
+@[inline] def Nat.foldlM {α : Type u} {m : Type u → Type v} [Monad m] (n : Nat) (f : (i : Nat) → i < n → α → m α) (init : α) (start : Nat := 0) : m α :=
+  if p : start < n then
+    f start p init >>= n.foldlM f (start := start + 1)
+  else
+    pure init
+
 namespace Strata
 
 structure PrecFormat where
@@ -277,6 +283,7 @@ abbrev FormatM := ReaderT FormatContext (StateM FormatState)
 def pformat [ToStrataFormat α] (a : α) : FormatM PrecFormat :=
   fun c s => (mformat a c s, s)
 
+
 mutual
 
 /- Renders expression to format and precedence of outmost operator. -/
@@ -325,10 +332,9 @@ private partial def Arg.mformatM : Arg → FormatM PrecFormat
   if z : entries.size = 0 then
     pure (.atom .nil)
   else do
-    let p : entries.size - 1 ≤ entries.size := by omega
     let f i q s := return s ++ ", " ++ (← entries[i].mformatM).format
     let a := (← entries[0].mformatM).format
-    .atom <$> Nat.foldM.loop entries.size f (i := entries.size - 1) p a
+    .atom <$> entries.size.foldlM f (start := 1) a
 
 private partial def ppArgs (f : StrataFormat) (rargs : Array Arg) : FormatM PrecFormat :=
   if rargs.isEmpty then

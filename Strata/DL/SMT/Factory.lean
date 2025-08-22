@@ -210,7 +210,7 @@ def option.get : Term → Term
   | .some t  => t
   | t        =>
     match t.typeOf with
-    | .option ty => .app .option.get [t] ty
+    | .option ty => .app .option_get [t] ty
     | _          => t
 
 end Factory

@@ -129,8 +129,11 @@ def translatePreType {argc : Nat} (argDecls : ArgDeclsMap argc) (tree : Tree) : 
         match argInfo with
         | .ofOperationInfo info => info.op.name
         | _ => panic! s!"translateBindingTypeExpr expected operator, type or cat {repr argInfo}"
-  match op, argC_eq : argChildren with
-  | q`Init.TypeIdent, #[ident] => do
+  match op with
+  | q`Init.TypeIdent => do
+    let isTrue p := inferInstanceAs (Decidable (argChildren.size = 1))
+      | return panic! "Invalid arguments to Init.TypeIdent"
+    let ident := argChildren[0]
     let tpId := translateQualifiedIdent ident
     if let some tp ← asTypeVar argDecls ident.info.stx tpId args then
       return tp
@@ -145,22 +148,35 @@ def translatePreType {argc : Nat} (argDecls : ArgDeclsMap argc) (tree : Tree) : 
       return .ident qname args
     | _ =>
       logError ident.info.stx s!"Expected type"; pure default
-  | q`Init.TypeArrow, #[aTree, rTree] => do
-    have p : sizeOf aTree < sizeOf argChildren := by decreasing_tactic
+  | q`Init.TypeArrow => do
+    let isTrue p := inferInstanceAs (Decidable (argChildren.size = 2))
+      | return panic! "Invalid arguments to Init.TypeArrow"
+    let aTree := argChildren[0]
+    let rTree := argChildren[1]
     let aType ← translatePreType argDecls aTree
-    have p : sizeOf rTree < sizeOf argChildren := by decreasing_tactic
     let rType ← translatePreType argDecls rTree
     return .arrow aType rType
 
-  | q`StrataDDL.TypeFn, #[bindingsTree, valTree] =>
+  | q`StrataDDL.TypeFn =>
+    let isTrue p := inferInstanceAs (Decidable (argChildren.size = 2))
+      | return panic! "Invalid arguments to Init.TypeArrow"
+    let bindingsTree := argChildren[0]
+    let valTree := argChildren[1]
     have p : sizeOf valTree < sizeOf argChildren := by decreasing_tactic
     let rType ← translatePreType argDecls valTree
     translateFunMacro argDecls bindingsTree rType
-  | _, _ =>
+  | _ =>
     logInternalError argInfo.stx s!"translatePreType given invalid syntax {repr op}"
     return default
   termination_by tree
-
+  decreasing_by
+    · decreasing_tactic
+    · have p : sizeOf argChildren[0] < sizeOf argChildren := by decreasing_tactic
+      decreasing_tactic
+    · have p : sizeOf argChildren[1] < sizeOf argChildren := by decreasing_tactic
+      decreasing_tactic
+    · have p : sizeOf argChildren[1] < sizeOf argChildren := by decreasing_tactic
+      decreasing_tactic
 /--
 Evaluate the tree as a type expression.
 -/

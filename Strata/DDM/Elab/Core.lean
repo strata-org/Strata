@@ -588,8 +588,11 @@ def translateTypeExpr (tree : Tree) : ElabM TypeExpr := do
         match argInfo with
         | .ofOperationInfo info => info.op.name
         | _ => panic! s!"translateBindingTypeExpr expected operator, type or cat {repr argInfo}"
-  match op, argC_eq : argChildren with
-  | q`Init.TypeIdent, #[ident] => do
+  match op with
+  | q`Init.TypeIdent => do
+    let isTrue p := inferInstanceAs (Decidable (argChildren.size = 1))
+      | return panic! "Invalid arguments to Init.TypeIdent"
+    let ident := argChildren[0]
     let tpId := translateQualifiedIdent ident
     let some (qname, decl) ← resolveTypeOrCat ident.info.stx tpId
       | return default
@@ -602,20 +605,27 @@ def translateTypeExpr (tree : Tree) : ElabM TypeExpr := do
       return .ident qname args
     | _ =>
       logError ident.info.stx s!"Expected type"; pure default
-  | q`Init.TypeArrow, #[aTree, rTree] => do
-    have p : sizeOf aTree < sizeOf argChildren := by decreasing_tactic
+  | q`Init.TypeArrow => do
+    let isTrue p := inferInstanceAs (Decidable (argChildren.size = 2))
+      | return panic! "Invalid arguments to Init.TypeArrow"
+    let aTree := argChildren[0]
+    let rTree := argChildren[1]
     let aType ← translateTypeExpr aTree
-    have p : sizeOf rTree < sizeOf argChildren := by decreasing_tactic
     let rType ← translateTypeExpr rTree
     return .arrow aType rType
-
-  | q`StrataDDL.TypeFn, #[bindingsTree, valTree] =>
+  | q`StrataDDL.TypeFn =>
     logError argInfo.stx s!"Macros not supported"
     return default
-  | _, _ =>
-    logInternalError argInfo.stx s!"translateTypeExpr given invalid syntax {repr op}"
+  | nm =>
+    logInternalError argInfo.stx s!"translateTypeExpr given unknown constructor {nm}"
     return default
   termination_by tree
+  decreasing_by
+    · decreasing_tactic
+    · have p : sizeOf argChildren[0] < sizeOf argChildren := by decreasing_tactic
+      decreasing_tactic
+    · have p : sizeOf argChildren[1] < sizeOf argChildren := by decreasing_tactic
+      decreasing_tactic
 
 /--
 Evaluate the tree as a type expression.
