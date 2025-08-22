@@ -2,7 +2,7 @@ name: TypeScript Conformance Testing
 
 on:
   push:
-    branches: [michael/javascript-front-end]  # Add your branch name here
+    branches: [typescript-frontend]  
   workflow_dispatch:  # Keep manual option too
 
 jobs:
