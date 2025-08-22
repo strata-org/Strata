@@ -180,29 +180,31 @@ instance : ToFormat TState where
 
 ---------------------------------------------------------------------
 
-/-- Track registered types. -/
-abbrev KnownTypes := List LTy
+/-- Name and arity of a registered type. -/
+structure KnownType where
+  name : String
+  arity : Nat := 0
+  deriving Inhabited, Repr, DecidableEq
 
-mutual
-def LMonoTy.keywords (ty : LMonoTy) : List String :=
-  match ty with
-  | .tcons name args => name :: (LMonoTys.keywords args)
-  | .bitvec _ => []
-  | .ftvar _ => []
+def KnownType.toLTy (k : KnownType) : LTy :=
+  let bvars := (List.range k.arity).map (fun a => toString a)
+  let args := bvars.map (fun b => .ftvar b)
+  .forAll bvars (.tcons k.name args)
 
-def LMonoTys.keywords (ltys : List LMonoTy) : List String :=
-  match ltys with
-  | [] => []
-  | lty :: lrest =>
-    LMonoTy.keywords lty ++ LMonoTys.keywords lrest
-end
+def LTy.toKnownType! (lty : LTy) : KnownType :=
+  match lty with
+  | .forAll _ (.tcons name args) => { name, arity := args.length }
+  | .forAll [] (.bitvec _) => { name := "bitvec", arity := 1 }
+  | _ => panic! s!"Unsupported known type: {lty}"
 
-def LTy.keywords (ty : LTy) : List String :=
-  let .forAll _ mty := ty
-  LMonoTy.keywords mty
+instance : ToFormat KnownType where
+  format k := f!"{k.toLTy}"
+
+/-- Registered types. -/
+abbrev KnownTypes := List KnownType
 
 def KnownTypes.keywords (ks : KnownTypes) : List String :=
-  (ks.flatMap (fun k => k.keywords)).dedup
+  ks.map (fun k => k.name)
 
 /--
 A type environment `TEnv` contains a stack of contexts `TContext` to track `LExpr`
@@ -222,10 +224,17 @@ def TEnv.default : TEnv Identifier :=
   { context := {},
     state := TState.init,
     functions := #[],
+    /-
     knownTypes := [t[∀a b. %a → %b],
                    t[bool],
                    t[int],
                    t[string]] }
+    -/
+    knownTypes := [{name := "arrow",  arity := 2},
+                   {name := "bool",   arity := 0},
+                   {name := "int",    arity := 0},
+                   {name := "string", arity := 0}]
+  }
 
 instance : ToFormat (TEnv Identifier) where
   format s := f!"context:{Format.line}{s.context}\
@@ -234,8 +243,8 @@ instance : ToFormat (TEnv Identifier) where
                  {Format.line}\
                  known types:{Format.line}{s.knownTypes}"
 
-def TEnv.addKnownType (T : TEnv Identifier) (lty : LTy) : TEnv Identifier :=
-  { T with knownTypes := lty :: T.knownTypes }
+def TEnv.addKnownType (T : TEnv Identifier) (k : KnownType) : TEnv Identifier :=
+  { T with knownTypes := k :: T.knownTypes }
 
 def TEnv.addFactoryFunction (T : TEnv Identifier) (fn : LFunc Identifier) : TEnv Identifier :=
   { T with functions := T.functions.push fn }
@@ -470,7 +479,8 @@ open LTy.Syntax in
                         args := ["a", "b"],
                         lhs := mty[myInt %a %b],
                         rhs := mty[myTy %a]}] },
-                      knownTypes := [t[∀a. myTy %a], t[int]] }
+                      knownTypes := [{ name := "myTy", arity := 1 },
+                                     { name := "int", arity := 0 }] }
       |>.fst |>.format
 
 mutual
@@ -517,45 +527,23 @@ open LTy.Syntax in
                                         rhs := mty[bool]}]} }
       |>.fst |>.format
 
-/--
-Is `ty` an instance of a previously registered type?
--/
-def isInstanceOfKnownType (ty : LMonoTy) (T : (TEnv Identifier)) : Bool :=
-  let tys := ty.getTyConstructors
-  tys.all (fun ty => go ty T.knownTypes T.state.substInfo T)
-  where go ty (knownTys : KnownTypes) S T : Bool :=
-    match knownTys with
-    | [] => false
-    | k :: krest =>
-      let (km, T) := LTy.instantiate k T
-      match Constraints.unify [(km, ty)] S with
-      | .error _ => go ty krest S T
-      | .ok _ => true
-
-/-
 mutual
-partial def LTy.knownInstance (ty : LMonoTy) (knownTys origKnownTys : KnownTypes) (T : (TEnv Identifier)) : Bool :=
+def LMonoTy.knownInstance (ty : LMonoTy) (ks : KnownTypes) : Bool :=
   match ty with
   | .ftvar _ | .bitvec _ => true
-  | _ => match knownTys with
-  | [] => false
-  | k :: krest =>
-    let (km, T) := LTy.instantiate k T
-    match Constraints.unify [(km, ty)] T.state.substInfo with
-    | .error _ => LTy.knownInstance ty krest origKnownTys T
-    | .ok S =>
-      LTys.knownInstances S.subst.values origKnownTys T
+  | .tcons name args =>
+    (ks.contains { name := name, arity := args.length }) &&
+    LMonoTys.knownInstances args ks
 
-partial def LTys.knownInstances (tys : LMonoTys) (origKnownTys : KnownTypes) (T : TEnv Identifier) : Bool :=
+def LMonoTys.knownInstances (tys : LMonoTys) (ks : KnownTypes) : Bool :=
   match tys with
   | [] => true
   | ty :: trest =>
-    LTy.knownInstance ty origKnownTys origKnownTys T && LTys.knownInstances trest origKnownTys T
+    if LMonoTy.knownInstance ty ks then LMonoTys.knownInstances trest ks else false
 end
 
-def isInstanceOfKnownType1 (mty : LMonoTy) (T : (TEnv Identifier)) : Bool :=
-  LTy.knownInstance mty T.knownTypes T.knownTypes T
--/
+def isInstanceOfKnownType (ty : LMonoTy) (T : TEnv Identifier) : Bool :=
+  LMonoTy.knownInstance ty T.knownTypes
 
 /--
 Instantiate `ty`, with resolution of type aliases to type definitions and checks
@@ -577,7 +565,9 @@ open LTy.Syntax
 /-- info: false -/
 #guard_msgs in
 #eval isInstanceOfKnownType mty[myTy (myTy)]
-                            { @TEnv.default String with knownTypes := [t[∀a. myTy %a], t[int]] }
+                            { @TEnv.default String with
+                                knownTypes := [LTy.toKnownType! t[∀a. myTy %a],
+                                               LTy.toKnownType! t[int]] }
 
 /-- info: false -/
 #guard_msgs in
@@ -585,7 +575,7 @@ open LTy.Syntax
 
 /--
 info: error: Type (arrow int Foo) is not an instance of a previously registered type!
-Known Types: [∀[a, b]. (arrow a b), bool, int, string]
+Known Types: [∀[0, 1]. (arrow 0 1), bool, int, string]
 -/
 #guard_msgs in
 #eval do let ans ← t[int → Foo].instantiateWithCheck (@TEnv.default TyIdentifier)

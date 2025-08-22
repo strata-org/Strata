@@ -72,8 +72,7 @@ def typeCheck (T : Boogie.Expression.TyEnv) (program : Program) :
                       {T.knownTypes.keywords}"
           else match td with
           | .con tc =>
-            let ty := tc.toType
-            let T := T.addKnownType ty
+            let T := T.addKnownType { name := tc.name, arity := tc.numargs }
             .ok (.type td, T)
           | .syn ts =>
             if !ts.typeArgs.Nodup then
