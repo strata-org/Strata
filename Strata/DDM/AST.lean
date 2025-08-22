@@ -270,9 +270,6 @@ def declare (varIndex typeIndex : Nat) : MetadataAttr :=
 def declareFn (varIndex bindingsIndex typeIndex : Nat) : MetadataAttr :=
   { ident := q`StrataDDL.declareFn, args := #[.catbvar varIndex, .catbvar bindingsIndex, .catbvar typeIndex]}
 
-def declareMD (varIndex typeIndex metadataIndex : Nat) : MetadataAttr :=
-  { ident := q`StrataDDL.declareMD, args := #[.catbvar varIndex, .catbvar typeIndex, .catbvar metadataIndex]}
-
 end MetadataAttr
 
 structure Metadata where
@@ -361,7 +358,31 @@ inductive PreType where
 | funMacro (bindingsIndex : Nat) (res : PreType)
 deriving BEq, Inhabited, Repr
 
+namespace PreType
+
+def ofType : TypeExpr → PreType
+| .ident name args => .ident name (args.attach.map fun ⟨a, _⟩ => .ofType a)
+| .bvar idx => .bvar idx
+| .fvar idx args => .fvar idx (args.attach.map fun ⟨a, _⟩ => .ofType a)
+| .arrow a r => .arrow (.ofType a) (.ofType r)
+termination_by tp => tp
+
+end PreType
+
 def maxPrec := eval_prec max
+
+/--
+Precedence of an explicit function call `f(..)`.
+
+This specifically addresses the priority between f and the open paren.
+-/
+def callPrec := 200
+
+/-- Precedence of the empty application operator `f x` in expressions and types. -/
+def appPrec := 20
+
+/-- Precedence of the arrow operator `t -> u` in types. -/
+def arrowPrec :=  17
 
 /--
 This describes how to format an operator.
@@ -381,9 +402,32 @@ structure SyntaxDef where
   prec : Nat
 deriving Repr, Inhabited, BEq
 
-def SyntaxDef.ofList (atoms : List SyntaxDefAtom) (prec : Nat := maxPrec): SyntaxDef where
+namespace SyntaxDef
+
+/--
+Creates syntax of the form `name(arg1, ..., argn)`.
+
+If `n` is 0, then this is just `name`.
+-/
+def mkFunApp (name : String) (n : Nat) : SyntaxDef :=
+  let atoms : Array SyntaxDefAtom :=
+    if n = 0 then
+      #[.str name]
+    else
+      let atoms := #[.str name, .str "(", .ident 0 0]
+      let atoms := (n-1).fold (init := atoms) fun i _ a =>
+        a |>.push (.str ", ") |>.push (.ident (i+1) 0)
+      atoms.push (.str ")")
+  {
+    atoms := atoms
+    prec := appPrec
+  }
+
+def ofList (atoms : List SyntaxDefAtom) (prec : Nat := maxPrec): SyntaxDef where
   atoms := atoms.toArray
   prec := prec
+
+end SyntaxDef
 
 /-- Structure that defines a binding introduced by an operation or function. -/
 inductive SyntaxElabType
@@ -470,8 +514,6 @@ structure ValueBindingSpec (bindings : ArgDecls) where
   argsIndex : Option (DebruijnIndex bindings.size)
   -- deBrujin index of type or a type/cat literal.
   typeIndex : DebruijnIndex bindings.size
-  -- deBrujin index of metadata
-  metadataIndex : Option (DebruijnIndex bindings.size)
   -- Whether categories are allowed
   allowCat : Bool
 deriving Repr
@@ -522,7 +564,6 @@ private def mkValueBindingSpec
             (nameIndex : DebruijnIndex args.size)
             (typeIndex : DebruijnIndex args.size)
             (argsIndex : Option (DebruijnIndex args.size) := none)
-            (metadataIndex : Option (DebruijnIndex args.size) := none)
             : NewBindingM (ValueBindingSpec args) := do
   checkNameIndexIsIdent args nameIndex
   let typeBinding := args[typeIndex.toLevel]
@@ -537,7 +578,7 @@ private def mkValueBindingSpec
           pure default
   if allowCat && argsIndex.isSome then
     newBindingErr "Arguments only allowed when result is a type."
-  return { nameIndex, argsIndex, typeIndex, metadataIndex, allowCat }
+  return { nameIndex, argsIndex, typeIndex, allowCat }
 
 def parseNewBindings (md : Metadata) (args : ArgDecls) : Array (BindingSpec args) × Array String :=
   let ins (attr : MetadataAttr) : NewBindingM (Option (BindingSpec args)) := do
@@ -550,16 +591,6 @@ def parseNewBindings (md : Metadata) (args : ArgDecls) : Array (BindingSpec args
           let .isTrue typeP := inferInstanceAs (Decidable (typeIndex < args.size))
             | return panic! "Invalid name index"
           some <$> .value <$> mkValueBindingSpec args ⟨nameIndex, nameP⟩ ⟨typeIndex, typeP⟩
-        | q`StrataDDL.declareMD => do
-          let #[.catbvar nameIndex, .catbvar typeIndex, .catbvar metadataIndex ] := attr.args
-            | newBindingErr "declareMD missing required arguments."; return none
-          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < args.size))
-            | return panic! "Invalid name index"
-          let .isTrue typeP := inferInstanceAs (Decidable (typeIndex < args.size))
-            | return panic! "Invalid name index"
-          let .isTrue mdP := inferInstanceAs (Decidable (metadataIndex < args.size))
-            | return panic! "Invalid metadata index"
-          some <$> .value <$> mkValueBindingSpec args ⟨nameIndex, nameP⟩ ⟨typeIndex, typeP⟩ (metadataIndex := .some ⟨metadataIndex, mdP⟩)
         | q`StrataDDL.declareFn => do
           let #[.catbvar nameIndex, .catbvar argsIndex, .catbvar typeIndex] := attr.args
             | newBindingErr "declareFn missing required arguments."; return none

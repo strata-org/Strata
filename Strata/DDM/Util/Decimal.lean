@@ -19,6 +19,8 @@ namespace Decimal
 
 def zero : Decimal := { mantissa := 0, exponent := 0 }
 
+protected def ofInt (x : Int) : Decimal := { mantissa := x, exponent := 0 }
+
 opaque maxPrettyExponent : Int := 5
 
 opaque minPrettyExponent : Int := -5
