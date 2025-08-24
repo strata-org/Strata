@@ -303,8 +303,8 @@ class TypeScriptProcessor(LanguageProcessor):
                 tmp.flush()
                 
                 # Debug: print what we're trying to instrument
-                print(f"DEBUG: Instrumenting file {tmp.name}")
-                print(f"DEBUG: Instrumentation script: {self.base_dir / 'add_instrumentation.js'}")
+                #print(f"DEBUG: Instrumenting file {tmp.name}")
+                #print(f"DEBUG: Instrumentation script: {self.base_dir / 'add_instrumentation.js'}")
                 
                 # Run the instrumentation script
                 result = subprocess.run(
@@ -314,14 +314,14 @@ class TypeScriptProcessor(LanguageProcessor):
                     timeout=10
                 )
                 
-                print(f"DEBUG: Instrumentation result: returncode={result.returncode}")
-                print(f"DEBUG: Instrumentation stdout: {result.stdout}")
-                print(f"DEBUG: Instrumentation stderr: {result.stderr}")
+                #print(f"DEBUG: Instrumentation result: returncode={result.returncode}")
+                #print(f"DEBUG: Instrumentation stdout: {result.stdout}")
+                #print(f"DEBUG: Instrumentation stderr: {result.stderr}")
                 
                 if result.returncode == 0:
                     # Read the instrumented code
                     instrumented_code = open(tmp.name, 'r').read()
-                    print(f"DEBUG: Instrumented code length: {len(instrumented_code)} vs original: {len(code)}")
+                    #print(f"DEBUG: Instrumented code length: {len(instrumented_code)} vs original: {len(code)}")
                     os.unlink(tmp.name)
                     return instrumented_code
                 else:
