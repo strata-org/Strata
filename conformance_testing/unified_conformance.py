@@ -88,10 +88,10 @@ class ConformanceTestRunner:
                 f.flush()
                 
                 # Debug: print file contents
-                print(f"DEBUG: Running file {f.name} with contents:")
-                print("=" * 50)
-                print(instrumented_code)
-                print("=" * 50)
+                #print(f"DEBUG: Running file {f.name} with contents:")
+                #print("=" * 50)
+                #print(instrumented_code)
+                #print("=" * 50)
                 
                 # Run the instrumented code
                 result = subprocess.run(
@@ -104,7 +104,7 @@ class ConformanceTestRunner:
                 
                 if result.returncode != 0:
                     return False, f"Native execution failed: {result.stderr}"
-                print(result)
+                #print(result)
                 return True, result.stdout.strip()
                 
         except subprocess.TimeoutExpired:
