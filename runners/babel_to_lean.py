@@ -279,7 +279,7 @@ def parse_statement(j):
 
 
 def parse_identifier(j):
-    assert j['type'] == "Identifier", "Node expected to be an identifier"
+    assert j['type'] == "Identifier", f"Node expected to be an identifie {j}"
     target_j = {}
     if "typeAnnotation" in j:
         target_j["typeAnnotation"] = parse_type_annotation(j["typeAnnotation"])
@@ -294,7 +294,7 @@ def parse_function_declarations(j):
     target_j = {
         "id": parse_identifier(j['id']),
         "params": parse_function_params(j['params']),
-        "returnType": parse_type_annotation(j['returnType']),
+        "returnType": parse_type_annotation(j['returnType']) if 'returnType' in j else "any",
         "body": parse_statement(j['body'])
     }
     add_missing_node_info(j, target_j)

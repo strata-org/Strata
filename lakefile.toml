@@ -23,3 +23,6 @@ root = "runners.lean.StrataTypeScriptRunner"
 
 [[lean_exe]]
 name = "StrataTypeScriptASTLoader"
+
+[[lean_exe]]
+name = "TypeScriptTaintAnalysis"

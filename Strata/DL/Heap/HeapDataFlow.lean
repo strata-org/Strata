@@ -30,6 +30,7 @@ def extractDataLocation (expr : HExpr) : DataLocation :=
     DataLocation.heapField objName fieldIndex
   | .address addr => DataLocation.literal (toString addr)
   | .null => DataLocation.literal "null"
+  | .app _ _ => DataLocation.variable "app_result"
   | _ => DataLocation.literal "unknown"
 
 -- Helper function to extract variable name from lambda expression

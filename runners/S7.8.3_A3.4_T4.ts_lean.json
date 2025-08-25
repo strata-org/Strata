@@ -1,0 +1,4403 @@
+{
+  "program": {
+    "body": [
+      {
+        "TS_VariableDeclaration": {
+          "declarations": [
+            {
+              "id": {
+                "type": "Identifier",
+                "start_loc": 247,
+                "end_loc": 259,
+                "loc": {
+                  "start_loc": {
+                    "line": 9,
+                    "column": 4,
+                    "index": 247
+                  },
+                  "end_loc": {
+                    "line": 9,
+                    "column": 16,
+                    "index": 259
+                  },
+                  "identifierName": "__errorCount"
+                },
+                "name": "__errorCount"
+              },
+              "init": {
+                "TS_NumericLiteral": {
+                  "type": "NumericLiteral",
+                  "start_loc": 262,
+                  "end_loc": 263,
+                  "loc": {
+                    "start_loc": {
+                      "line": 9,
+                      "column": 19,
+                      "index": 262
+                    },
+                    "end_loc": {
+                      "line": 9,
+                      "column": 20,
+                      "index": 263
+                    }
+                  },
+                  "extra": {
+                    "rawValue": 0,
+                    "raw": "0"
+                  },
+                  "value": 0
+                }
+              },
+              "type": "VariableDeclarator",
+              "start_loc": 247,
+              "end_loc": 263,
+              "loc": {
+                "start_loc": {
+                  "line": 9,
+                  "column": 4,
+                  "index": 247
+                },
+                "end_loc": {
+                  "line": 9,
+                  "column": 20,
+                  "index": 263
+                }
+              }
+            }
+          ],
+          "type": "VariableDeclaration",
+          "start_loc": 243,
+          "end_loc": 264,
+          "loc": {
+            "start_loc": {
+              "line": 9,
+              "column": 0,
+              "index": 243
+            },
+            "end_loc": {
+              "line": 9,
+              "column": 21,
+              "index": 264
+            }
+          },
+          "kind": "var",
+          "leadingComments": [
+            {
+              "type": "CommentLine",
+              "value": " Copyright (C) 2017 Ecma International.  All rights reserved.",
+              "start_loc": 0,
+              "end_loc": 63,
+              "loc": {
+                "start_loc": {
+                  "line": 1,
+                  "column": 0,
+                  "index": 0
+                },
+                "end_loc": {
+                  "line": 1,
+                  "column": 63,
+                  "index": 63
+                }
+              }
+            },
+            {
+              "type": "CommentLine",
+              "value": " This code is governed by the BSD license found in the LICENSE file.",
+              "start_loc": 64,
+              "end_loc": 134,
+              "loc": {
+                "start_loc": {
+                  "line": 2,
+                  "column": 0,
+                  "index": 64
+                },
+                "end_loc": {
+                  "line": 2,
+                  "column": 70,
+                  "index": 134
+                }
+              }
+            },
+            {
+              "type": "CommentBlock",
+              "value": "---\ndescription: |\n    Collection of assertion functions used throughout test262\ndefines: [assert]\n---",
+              "start_loc": 135,
+              "end_loc": 241,
+              "loc": {
+                "start_loc": {
+                  "line": 3,
+                  "column": 0,
+                  "index": 135
+                },
+                "end_loc": {
+                  "line": 7,
+                  "column": 5,
+                  "index": 241
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "TS_FunctionDeclaration": {
+          "id": {
+            "type": "Identifier",
+            "start_loc": 275,
+            "end_loc": 281,
+            "loc": {
+              "start_loc": {
+                "line": 11,
+                "column": 9,
+                "index": 275
+              },
+              "end_loc": {
+                "line": 11,
+                "column": 15,
+                "index": 281
+              },
+              "identifierName": "assert"
+            },
+            "name": "assert"
+          },
+          "params": [
+            {
+              "typeAnnotation": {
+                "typeAnnotation": null,
+                "type": "TSTypeAnnotation",
+                "start_loc": 292,
+                "end_loc": 297,
+                "loc": {
+                  "start_loc": {
+                    "line": 11,
+                    "column": 26,
+                    "index": 292
+                  },
+                  "end_loc": {
+                    "line": 11,
+                    "column": 31,
+                    "index": 297
+                  }
+                }
+              },
+              "type": "Identifier",
+              "start_loc": 282,
+              "end_loc": 297,
+              "loc": {
+                "start_loc": {
+                  "line": 11,
+                  "column": 16,
+                  "index": 282
+                },
+                "end_loc": {
+                  "line": 11,
+                  "column": 31,
+                  "index": 297
+                },
+                "identifierName": "mustBeTrue"
+              },
+              "name": "mustBeTrue"
+            },
+            {
+              "typeAnnotation": {
+                "typeAnnotation": null,
+                "type": "TSTypeAnnotation",
+                "start_loc": 306,
+                "end_loc": 311,
+                "loc": {
+                  "start_loc": {
+                    "line": 11,
+                    "column": 40,
+                    "index": 306
+                  },
+                  "end_loc": {
+                    "line": 11,
+                    "column": 45,
+                    "index": 311
+                  }
+                }
+              },
+              "type": "Identifier",
+              "start_loc": 299,
+              "end_loc": 311,
+              "loc": {
+                "start_loc": {
+                  "line": 11,
+                  "column": 33,
+                  "index": 299
+                },
+                "end_loc": {
+                  "line": 11,
+                  "column": 45,
+                  "index": 311
+                },
+                "identifierName": "message"
+              },
+              "name": "message"
+            }
+          ],
+          "returnType": "any",
+          "body": {
+            "TS_BlockStatement": {
+              "body": [
+                {
+                  "TS_IfStatement": {
+                    "test": {
+                      "TS_BinaryExpression": {
+                        "left": {
+                          "TS_IdExpression": {
+                            "type": "Identifier",
+                            "start_loc": 321,
+                            "end_loc": 331,
+                            "loc": {
+                              "start_loc": {
+                                "line": 12,
+                                "column": 6,
+                                "index": 321
+                              },
+                              "end_loc": {
+                                "line": 12,
+                                "column": 16,
+                                "index": 331
+                              },
+                              "identifierName": "mustBeTrue"
+                            },
+                            "name": "mustBeTrue"
+                          }
+                        },
+                        "right": {
+                          "TS_BooleanLiteral": {
+                            "type": "BooleanLiteral",
+                            "start_loc": 336,
+                            "end_loc": 340,
+                            "loc": {
+                              "start_loc": {
+                                "line": 12,
+                                "column": 21,
+                                "index": 336
+                              },
+                              "end_loc": {
+                                "line": 12,
+                                "column": 25,
+                                "index": 340
+                              }
+                            },
+                            "value": true
+                          }
+                        },
+                        "type": "BinaryExpression",
+                        "start_loc": 321,
+                        "end_loc": 340,
+                        "loc": {
+                          "start_loc": {
+                            "line": 12,
+                            "column": 6,
+                            "index": 321
+                          },
+                          "end_loc": {
+                            "line": 12,
+                            "column": 25,
+                            "index": 340
+                          }
+                        },
+                        "operator": "==="
+                      }
+                    },
+                    "consequent": {
+                      "TS_BlockStatement": {
+                        "body": [
+                          {
+                            "TS_ReturnStatement": {
+                              "argument": null,
+                              "type": "ReturnStatement",
+                              "start_loc": 348,
+                              "end_loc": 355,
+                              "loc": {
+                                "start_loc": {
+                                  "line": 13,
+                                  "column": 4,
+                                  "index": 348
+                                },
+                                "end_loc": {
+                                  "line": 13,
+                                  "column": 11,
+                                  "index": 355
+                                }
+                              }
+                            }
+                          }
+                        ],
+                        "type": "BlockStatement",
+                        "start_loc": 342,
+                        "end_loc": 359,
+                        "loc": {
+                          "start_loc": {
+                            "line": 12,
+                            "column": 27,
+                            "index": 342
+                          },
+                          "end_loc": {
+                            "line": 14,
+                            "column": 3,
+                            "index": 359
+                          }
+                        },
+                        "directives": []
+                      }
+                    },
+                    "alternate": null,
+                    "type": "IfStatement",
+                    "start_loc": 317,
+                    "end_loc": 359,
+                    "loc": {
+                      "start_loc": {
+                        "line": 12,
+                        "column": 2,
+                        "index": 317
+                      },
+                      "end_loc": {
+                        "line": 14,
+                        "column": 3,
+                        "index": 359
+                      }
+                    }
+                  }
+                },
+                {
+                  "TS_ExpressionStatement": {
+                    "expression": {
+                      "type": "UpdateExpression",
+                      "start_loc": 363,
+                      "end_loc": 377,
+                      "loc": {
+                        "start_loc": {
+                          "line": 16,
+                          "column": 2,
+                          "index": 363
+                        },
+                        "end_loc": {
+                          "line": 16,
+                          "column": 16,
+                          "index": 377
+                        }
+                      },
+                      "operator": "++",
+                      "prefix": false,
+                      "argument": {
+                        "type": "Identifier",
+                        "start_loc": 363,
+                        "end_loc": 375,
+                        "loc": {
+                          "start_loc": {
+                            "line": 16,
+                            "column": 2,
+                            "index": 363
+                          },
+                          "end_loc": {
+                            "line": 16,
+                            "column": 14,
+                            "index": 375
+                          },
+                          "identifierName": "__errorCount"
+                        },
+                        "name": "__errorCount"
+                      }
+                    },
+                    "type": "ExpressionStatement",
+                    "start_loc": 363,
+                    "end_loc": 378,
+                    "loc": {
+                      "start_loc": {
+                        "line": 16,
+                        "column": 2,
+                        "index": 363
+                      },
+                      "end_loc": {
+                        "line": 16,
+                        "column": 17,
+                        "index": 378
+                      }
+                    }
+                  }
+                }
+              ],
+              "type": "BlockStatement",
+              "start_loc": 313,
+              "end_loc": 380,
+              "loc": {
+                "start_loc": {
+                  "line": 11,
+                  "column": 47,
+                  "index": 313
+                },
+                "end_loc": {
+                  "line": 17,
+                  "column": 1,
+                  "index": 380
+                }
+              },
+              "directives": []
+            }
+          },
+          "type": "FunctionDeclaration",
+          "start_loc": 266,
+          "end_loc": 380,
+          "loc": {
+            "start_loc": {
+              "line": 11,
+              "column": 0,
+              "index": 266
+            },
+            "end_loc": {
+              "line": 17,
+              "column": 1,
+              "index": 380
+            }
+          },
+          "generator": false,
+          "async": false
+        }
+      },
+      {
+        "TS_FunctionDeclaration": {
+          "id": {
+            "type": "Identifier",
+            "start_loc": 391,
+            "end_loc": 403,
+            "loc": {
+              "start_loc": {
+                "line": 19,
+                "column": 9,
+                "index": 391
+              },
+              "end_loc": {
+                "line": 19,
+                "column": 21,
+                "index": 403
+              },
+              "identifierName": "_isSameValue"
+            },
+            "name": "_isSameValue"
+          },
+          "params": [
+            {
+              "type": "Identifier",
+              "start_loc": 404,
+              "end_loc": 405,
+              "loc": {
+                "start_loc": {
+                  "line": 19,
+                  "column": 22,
+                  "index": 404
+                },
+                "end_loc": {
+                  "line": 19,
+                  "column": 23,
+                  "index": 405
+                },
+                "identifierName": "a"
+              },
+              "name": "a"
+            },
+            {
+              "type": "Identifier",
+              "start_loc": 407,
+              "end_loc": 408,
+              "loc": {
+                "start_loc": {
+                  "line": 19,
+                  "column": 25,
+                  "index": 407
+                },
+                "end_loc": {
+                  "line": 19,
+                  "column": 26,
+                  "index": 408
+                },
+                "identifierName": "b"
+              },
+              "name": "b"
+            }
+          ],
+          "returnType": "any",
+          "body": {
+            "TS_BlockStatement": {
+              "body": [
+                {
+                  "TS_IfStatement": {
+                    "test": {
+                      "TS_BinaryExpression": {
+                        "left": {
+                          "TS_IdExpression": {
+                            "type": "Identifier",
+                            "start_loc": 418,
+                            "end_loc": 419,
+                            "loc": {
+                              "start_loc": {
+                                "line": 20,
+                                "column": 6,
+                                "index": 418
+                              },
+                              "end_loc": {
+                                "line": 20,
+                                "column": 7,
+                                "index": 419
+                              },
+                              "identifierName": "a"
+                            },
+                            "name": "a"
+                          }
+                        },
+                        "right": {
+                          "TS_IdExpression": {
+                            "type": "Identifier",
+                            "start_loc": 424,
+                            "end_loc": 425,
+                            "loc": {
+                              "start_loc": {
+                                "line": 20,
+                                "column": 12,
+                                "index": 424
+                              },
+                              "end_loc": {
+                                "line": 20,
+                                "column": 13,
+                                "index": 425
+                              },
+                              "identifierName": "b"
+                            },
+                            "name": "b"
+                          }
+                        },
+                        "type": "BinaryExpression",
+                        "start_loc": 418,
+                        "end_loc": 425,
+                        "loc": {
+                          "start_loc": {
+                            "line": 20,
+                            "column": 6,
+                            "index": 418
+                          },
+                          "end_loc": {
+                            "line": 20,
+                            "column": 13,
+                            "index": 425
+                          }
+                        },
+                        "operator": "==="
+                      }
+                    },
+                    "consequent": {
+                      "TS_BlockStatement": {
+                        "body": [
+                          {
+                            "TS_ReturnStatement": {
+                              "argument": {
+                                "TS_LogicalExpression": {
+                                  "left": {
+                                    "TS_BinaryExpression": {
+                                      "left": {
+                                        "TS_IdExpression": {
+                                          "type": "Identifier",
+                                          "start_loc": 468,
+                                          "end_loc": 469,
+                                          "loc": {
+                                            "start_loc": {
+                                              "line": 22,
+                                              "column": 11,
+                                              "index": 468
+                                            },
+                                            "end_loc": {
+                                              "line": 22,
+                                              "column": 12,
+                                              "index": 469
+                                            },
+                                            "identifierName": "a"
+                                          },
+                                          "name": "a"
+                                        }
+                                      },
+                                      "right": {
+                                        "TS_NumericLiteral": {
+                                          "type": "NumericLiteral",
+                                          "start_loc": 474,
+                                          "end_loc": 475,
+                                          "loc": {
+                                            "start_loc": {
+                                              "line": 22,
+                                              "column": 17,
+                                              "index": 474
+                                            },
+                                            "end_loc": {
+                                              "line": 22,
+                                              "column": 18,
+                                              "index": 475
+                                            }
+                                          },
+                                          "extra": {
+                                            "rawValue": 0,
+                                            "raw": "0"
+                                          },
+                                          "value": 0
+                                        }
+                                      },
+                                      "type": "BinaryExpression",
+                                      "start_loc": 468,
+                                      "end_loc": 475,
+                                      "loc": {
+                                        "start_loc": {
+                                          "line": 22,
+                                          "column": 11,
+                                          "index": 468
+                                        },
+                                        "end_loc": {
+                                          "line": 22,
+                                          "column": 18,
+                                          "index": 475
+                                        }
+                                      },
+                                      "operator": "!=="
+                                    }
+                                  },
+                                  "right": {
+                                    "TS_BinaryExpression": {
+                                      "left": {
+                                        "TS_BinaryExpression": {
+                                          "left": {
+                                            "TS_NumericLiteral": {
+                                              "type": "NumericLiteral",
+                                              "start_loc": 479,
+                                              "end_loc": 480,
+                                              "loc": {
+                                                "start_loc": {
+                                                  "line": 22,
+                                                  "column": 22,
+                                                  "index": 479
+                                                },
+                                                "end_loc": {
+                                                  "line": 22,
+                                                  "column": 23,
+                                                  "index": 480
+                                                }
+                                              },
+                                              "extra": {
+                                                "rawValue": 1,
+                                                "raw": "1"
+                                              },
+                                              "value": 1
+                                            }
+                                          },
+                                          "right": {
+                                            "TS_IdExpression": {
+                                              "type": "Identifier",
+                                              "start_loc": 483,
+                                              "end_loc": 484,
+                                              "loc": {
+                                                "start_loc": {
+                                                  "line": 22,
+                                                  "column": 26,
+                                                  "index": 483
+                                                },
+                                                "end_loc": {
+                                                  "line": 22,
+                                                  "column": 27,
+                                                  "index": 484
+                                                },
+                                                "identifierName": "a"
+                                              },
+                                              "name": "a"
+                                            }
+                                          },
+                                          "type": "BinaryExpression",
+                                          "start_loc": 479,
+                                          "end_loc": 484,
+                                          "loc": {
+                                            "start_loc": {
+                                              "line": 22,
+                                              "column": 22,
+                                              "index": 479
+                                            },
+                                            "end_loc": {
+                                              "line": 22,
+                                              "column": 27,
+                                              "index": 484
+                                            }
+                                          },
+                                          "operator": "/"
+                                        }
+                                      },
+                                      "right": {
+                                        "TS_BinaryExpression": {
+                                          "left": {
+                                            "TS_NumericLiteral": {
+                                              "type": "NumericLiteral",
+                                              "start_loc": 489,
+                                              "end_loc": 490,
+                                              "loc": {
+                                                "start_loc": {
+                                                  "line": 22,
+                                                  "column": 32,
+                                                  "index": 489
+                                                },
+                                                "end_loc": {
+                                                  "line": 22,
+                                                  "column": 33,
+                                                  "index": 490
+                                                }
+                                              },
+                                              "extra": {
+                                                "rawValue": 1,
+                                                "raw": "1"
+                                              },
+                                              "value": 1
+                                            }
+                                          },
+                                          "right": {
+                                            "TS_IdExpression": {
+                                              "type": "Identifier",
+                                              "start_loc": 493,
+                                              "end_loc": 494,
+                                              "loc": {
+                                                "start_loc": {
+                                                  "line": 22,
+                                                  "column": 36,
+                                                  "index": 493
+                                                },
+                                                "end_loc": {
+                                                  "line": 22,
+                                                  "column": 37,
+                                                  "index": 494
+                                                },
+                                                "identifierName": "b"
+                                              },
+                                              "name": "b"
+                                            }
+                                          },
+                                          "type": "BinaryExpression",
+                                          "start_loc": 489,
+                                          "end_loc": 494,
+                                          "loc": {
+                                            "start_loc": {
+                                              "line": 22,
+                                              "column": 32,
+                                              "index": 489
+                                            },
+                                            "end_loc": {
+                                              "line": 22,
+                                              "column": 37,
+                                              "index": 494
+                                            }
+                                          },
+                                          "operator": "/"
+                                        }
+                                      },
+                                      "type": "BinaryExpression",
+                                      "start_loc": 479,
+                                      "end_loc": 494,
+                                      "loc": {
+                                        "start_loc": {
+                                          "line": 22,
+                                          "column": 22,
+                                          "index": 479
+                                        },
+                                        "end_loc": {
+                                          "line": 22,
+                                          "column": 37,
+                                          "index": 494
+                                        }
+                                      },
+                                      "operator": "==="
+                                    }
+                                  },
+                                  "type": "LogicalExpression",
+                                  "start_loc": 468,
+                                  "end_loc": 494,
+                                  "loc": {
+                                    "start_loc": {
+                                      "line": 22,
+                                      "column": 11,
+                                      "index": 468
+                                    },
+                                    "end_loc": {
+                                      "line": 22,
+                                      "column": 37,
+                                      "index": 494
+                                    }
+                                  },
+                                  "operator": "||"
+                                }
+                              },
+                              "type": "ReturnStatement",
+                              "start_loc": 461,
+                              "end_loc": 495,
+                              "loc": {
+                                "start_loc": {
+                                  "line": 22,
+                                  "column": 4,
+                                  "index": 461
+                                },
+                                "end_loc": {
+                                  "line": 22,
+                                  "column": 38,
+                                  "index": 495
+                                }
+                              },
+                              "leadingComments": [
+                                {
+                                  "type": "CommentLine",
+                                  "value": " Handle +/-0 vs. -/+0",
+                                  "start_loc": 433,
+                                  "end_loc": 456,
+                                  "loc": {
+                                    "start_loc": {
+                                      "line": 21,
+                                      "column": 4,
+                                      "index": 433
+                                    },
+                                    "end_loc": {
+                                      "line": 21,
+                                      "column": 27,
+                                      "index": 456
+                                    }
+                                  }
+                                }
+                              ]
+                            }
+                          }
+                        ],
+                        "type": "BlockStatement",
+                        "start_loc": 427,
+                        "end_loc": 499,
+                        "loc": {
+                          "start_loc": {
+                            "line": 20,
+                            "column": 15,
+                            "index": 427
+                          },
+                          "end_loc": {
+                            "line": 23,
+                            "column": 3,
+                            "index": 499
+                          }
+                        },
+                        "directives": []
+                      }
+                    },
+                    "alternate": null,
+                    "type": "IfStatement",
+                    "start_loc": 414,
+                    "end_loc": 499,
+                    "loc": {
+                      "start_loc": {
+                        "line": 20,
+                        "column": 2,
+                        "index": 414
+                      },
+                      "end_loc": {
+                        "line": 23,
+                        "column": 3,
+                        "index": 499
+                      }
+                    },
+                    "trailingComments": [
+                      {
+                        "type": "CommentLine",
+                        "value": " Handle NaN vs. NaN",
+                        "start_loc": 503,
+                        "end_loc": 524,
+                        "loc": {
+                          "start_loc": {
+                            "line": 25,
+                            "column": 2,
+                            "index": 503
+                          },
+                          "end_loc": {
+                            "line": 25,
+                            "column": 23,
+                            "index": 524
+                          }
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "TS_ReturnStatement": {
+                    "argument": {
+                      "TS_LogicalExpression": {
+                        "left": {
+                          "TS_BinaryExpression": {
+                            "left": {
+                              "TS_IdExpression": {
+                                "type": "Identifier",
+                                "start_loc": 534,
+                                "end_loc": 535,
+                                "loc": {
+                                  "start_loc": {
+                                    "line": 26,
+                                    "column": 9,
+                                    "index": 534
+                                  },
+                                  "end_loc": {
+                                    "line": 26,
+                                    "column": 10,
+                                    "index": 535
+                                  },
+                                  "identifierName": "a"
+                                },
+                                "name": "a"
+                              }
+                            },
+                            "right": {
+                              "TS_IdExpression": {
+                                "type": "Identifier",
+                                "start_loc": 540,
+                                "end_loc": 541,
+                                "loc": {
+                                  "start_loc": {
+                                    "line": 26,
+                                    "column": 15,
+                                    "index": 540
+                                  },
+                                  "end_loc": {
+                                    "line": 26,
+                                    "column": 16,
+                                    "index": 541
+                                  },
+                                  "identifierName": "a"
+                                },
+                                "name": "a"
+                              }
+                            },
+                            "type": "BinaryExpression",
+                            "start_loc": 534,
+                            "end_loc": 541,
+                            "loc": {
+                              "start_loc": {
+                                "line": 26,
+                                "column": 9,
+                                "index": 534
+                              },
+                              "end_loc": {
+                                "line": 26,
+                                "column": 16,
+                                "index": 541
+                              }
+                            },
+                            "operator": "!=="
+                          }
+                        },
+                        "right": {
+                          "TS_BinaryExpression": {
+                            "left": {
+                              "TS_IdExpression": {
+                                "type": "Identifier",
+                                "start_loc": 545,
+                                "end_loc": 546,
+                                "loc": {
+                                  "start_loc": {
+                                    "line": 26,
+                                    "column": 20,
+                                    "index": 545
+                                  },
+                                  "end_loc": {
+                                    "line": 26,
+                                    "column": 21,
+                                    "index": 546
+                                  },
+                                  "identifierName": "b"
+                                },
+                                "name": "b"
+                              }
+                            },
+                            "right": {
+                              "TS_IdExpression": {
+                                "type": "Identifier",
+                                "start_loc": 551,
+                                "end_loc": 552,
+                                "loc": {
+                                  "start_loc": {
+                                    "line": 26,
+                                    "column": 26,
+                                    "index": 551
+                                  },
+                                  "end_loc": {
+                                    "line": 26,
+                                    "column": 27,
+                                    "index": 552
+                                  },
+                                  "identifierName": "b"
+                                },
+                                "name": "b"
+                              }
+                            },
+                            "type": "BinaryExpression",
+                            "start_loc": 545,
+                            "end_loc": 552,
+                            "loc": {
+                              "start_loc": {
+                                "line": 26,
+                                "column": 20,
+                                "index": 545
+                              },
+                              "end_loc": {
+                                "line": 26,
+                                "column": 27,
+                                "index": 552
+                              }
+                            },
+                            "operator": "!=="
+                          }
+                        },
+                        "type": "LogicalExpression",
+                        "start_loc": 534,
+                        "end_loc": 552,
+                        "loc": {
+                          "start_loc": {
+                            "line": 26,
+                            "column": 9,
+                            "index": 534
+                          },
+                          "end_loc": {
+                            "line": 26,
+                            "column": 27,
+                            "index": 552
+                          }
+                        },
+                        "operator": "&&"
+                      }
+                    },
+                    "type": "ReturnStatement",
+                    "start_loc": 527,
+                    "end_loc": 553,
+                    "loc": {
+                      "start_loc": {
+                        "line": 26,
+                        "column": 2,
+                        "index": 527
+                      },
+                      "end_loc": {
+                        "line": 26,
+                        "column": 28,
+                        "index": 553
+                      }
+                    },
+                    "leadingComments": [
+                      {
+                        "type": "CommentLine",
+                        "value": " Handle NaN vs. NaN",
+                        "start_loc": 503,
+                        "end_loc": 524,
+                        "loc": {
+                          "start_loc": {
+                            "line": 25,
+                            "column": 2,
+                            "index": 503
+                          },
+                          "end_loc": {
+                            "line": 25,
+                            "column": 23,
+                            "index": 524
+                          }
+                        }
+                      }
+                    ]
+                  }
+                }
+              ],
+              "type": "BlockStatement",
+              "start_loc": 410,
+              "end_loc": 555,
+              "loc": {
+                "start_loc": {
+                  "line": 19,
+                  "column": 28,
+                  "index": 410
+                },
+                "end_loc": {
+                  "line": 27,
+                  "column": 1,
+                  "index": 555
+                }
+              },
+              "directives": []
+            }
+          },
+          "type": "FunctionDeclaration",
+          "start_loc": 382,
+          "end_loc": 555,
+          "loc": {
+            "start_loc": {
+              "line": 19,
+              "column": 0,
+              "index": 382
+            },
+            "end_loc": {
+              "line": 27,
+              "column": 1,
+              "index": 555
+            }
+          },
+          "generator": false,
+          "async": false
+        }
+      },
+      {
+        "type": "EmptyStatement",
+        "start_loc": 555,
+        "end_loc": 556,
+        "loc": {
+          "start_loc": {
+            "line": 27,
+            "column": 1,
+            "index": 555
+          },
+          "end_loc": {
+            "line": 27,
+            "column": 2,
+            "index": 556
+          }
+        }
+      },
+      {
+        "TS_FunctionDeclaration": {
+          "id": {
+            "type": "Identifier",
+            "start_loc": 567,
+            "end_loc": 582,
+            "loc": {
+              "start_loc": {
+                "line": 29,
+                "column": 9,
+                "index": 567
+              },
+              "end_loc": {
+                "line": 29,
+                "column": 24,
+                "index": 582
+              },
+              "identifierName": "assertSameValue"
+            },
+            "name": "assertSameValue"
+          },
+          "params": [
+            {
+              "type": "Identifier",
+              "start_loc": 583,
+              "end_loc": 589,
+              "loc": {
+                "start_loc": {
+                  "line": 29,
+                  "column": 25,
+                  "index": 583
+                },
+                "end_loc": {
+                  "line": 29,
+                  "column": 31,
+                  "index": 589
+                },
+                "identifierName": "actual"
+              },
+              "name": "actual"
+            },
+            {
+              "type": "Identifier",
+              "start_loc": 591,
+              "end_loc": 599,
+              "loc": {
+                "start_loc": {
+                  "line": 29,
+                  "column": 33,
+                  "index": 591
+                },
+                "end_loc": {
+                  "line": 29,
+                  "column": 41,
+                  "index": 599
+                },
+                "identifierName": "expected"
+              },
+              "name": "expected"
+            },
+            {
+              "type": "Identifier",
+              "start_loc": 601,
+              "end_loc": 608,
+              "loc": {
+                "start_loc": {
+                  "line": 29,
+                  "column": 43,
+                  "index": 601
+                },
+                "end_loc": {
+                  "line": 29,
+                  "column": 50,
+                  "index": 608
+                },
+                "identifierName": "message"
+              },
+              "name": "message"
+            }
+          ],
+          "returnType": "any",
+          "body": {
+            "TS_BlockStatement": {
+              "body": [
+                {
+                  "TS_IfStatement": {
+                    "test": {
+                      "TS_UnaryExpression": {
+                        "argument": {
+                          "TS_CallExpression": {
+                            "callee": {
+                              "type": "Identifier",
+                              "start_loc": 619,
+                              "end_loc": 631,
+                              "loc": {
+                                "start_loc": {
+                                  "line": 30,
+                                  "column": 7,
+                                  "index": 619
+                                },
+                                "end_loc": {
+                                  "line": 30,
+                                  "column": 19,
+                                  "index": 631
+                                },
+                                "identifierName": "_isSameValue"
+                              },
+                              "name": "_isSameValue"
+                            },
+                            "arguments": [
+                              {
+                                "TS_IdExpression": {
+                                  "type": "Identifier",
+                                  "start_loc": 632,
+                                  "end_loc": 638,
+                                  "loc": {
+                                    "start_loc": {
+                                      "line": 30,
+                                      "column": 20,
+                                      "index": 632
+                                    },
+                                    "end_loc": {
+                                      "line": 30,
+                                      "column": 26,
+                                      "index": 638
+                                    },
+                                    "identifierName": "actual"
+                                  },
+                                  "name": "actual"
+                                }
+                              },
+                              {
+                                "TS_IdExpression": {
+                                  "type": "Identifier",
+                                  "start_loc": 640,
+                                  "end_loc": 648,
+                                  "loc": {
+                                    "start_loc": {
+                                      "line": 30,
+                                      "column": 28,
+                                      "index": 640
+                                    },
+                                    "end_loc": {
+                                      "line": 30,
+                                      "column": 36,
+                                      "index": 648
+                                    },
+                                    "identifierName": "expected"
+                                  },
+                                  "name": "expected"
+                                }
+                              }
+                            ],
+                            "type": "CallExpression",
+                            "start_loc": 619,
+                            "end_loc": 649,
+                            "loc": {
+                              "start_loc": {
+                                "line": 30,
+                                "column": 7,
+                                "index": 619
+                              },
+                              "end_loc": {
+                                "line": 30,
+                                "column": 37,
+                                "index": 649
+                              }
+                            }
+                          }
+                        },
+                        "type": "UnaryExpression",
+                        "start_loc": 618,
+                        "end_loc": 649,
+                        "loc": {
+                          "start_loc": {
+                            "line": 30,
+                            "column": 6,
+                            "index": 618
+                          },
+                          "end_loc": {
+                            "line": 30,
+                            "column": 37,
+                            "index": 649
+                          }
+                        },
+                        "operator": "!",
+                        "prefix": true
+                      }
+                    },
+                    "consequent": {
+                      "TS_BlockStatement": {
+                        "body": [
+                          {
+                            "TS_ExpressionStatement": {
+                              "expression": {
+                                "type": "UpdateExpression",
+                                "start_loc": 657,
+                                "end_loc": 671,
+                                "loc": {
+                                  "start_loc": {
+                                    "line": 31,
+                                    "column": 4,
+                                    "index": 657
+                                  },
+                                  "end_loc": {
+                                    "line": 31,
+                                    "column": 18,
+                                    "index": 671
+                                  }
+                                },
+                                "operator": "++",
+                                "prefix": false,
+                                "argument": {
+                                  "type": "Identifier",
+                                  "start_loc": 657,
+                                  "end_loc": 669,
+                                  "loc": {
+                                    "start_loc": {
+                                      "line": 31,
+                                      "column": 4,
+                                      "index": 657
+                                    },
+                                    "end_loc": {
+                                      "line": 31,
+                                      "column": 16,
+                                      "index": 669
+                                    },
+                                    "identifierName": "__errorCount"
+                                  },
+                                  "name": "__errorCount"
+                                }
+                              },
+                              "type": "ExpressionStatement",
+                              "start_loc": 657,
+                              "end_loc": 672,
+                              "loc": {
+                                "start_loc": {
+                                  "line": 31,
+                                  "column": 4,
+                                  "index": 657
+                                },
+                                "end_loc": {
+                                  "line": 31,
+                                  "column": 19,
+                                  "index": 672
+                                }
+                              }
+                            }
+                          }
+                        ],
+                        "type": "BlockStatement",
+                        "start_loc": 651,
+                        "end_loc": 676,
+                        "loc": {
+                          "start_loc": {
+                            "line": 30,
+                            "column": 39,
+                            "index": 651
+                          },
+                          "end_loc": {
+                            "line": 32,
+                            "column": 3,
+                            "index": 676
+                          }
+                        },
+                        "directives": []
+                      }
+                    },
+                    "alternate": null,
+                    "type": "IfStatement",
+                    "start_loc": 614,
+                    "end_loc": 676,
+                    "loc": {
+                      "start_loc": {
+                        "line": 30,
+                        "column": 2,
+                        "index": 614
+                      },
+                      "end_loc": {
+                        "line": 32,
+                        "column": 3,
+                        "index": 676
+                      }
+                    }
+                  }
+                }
+              ],
+              "type": "BlockStatement",
+              "start_loc": 610,
+              "end_loc": 678,
+              "loc": {
+                "start_loc": {
+                  "line": 29,
+                  "column": 52,
+                  "index": 610
+                },
+                "end_loc": {
+                  "line": 33,
+                  "column": 1,
+                  "index": 678
+                }
+              },
+              "directives": []
+            }
+          },
+          "type": "FunctionDeclaration",
+          "start_loc": 558,
+          "end_loc": 678,
+          "loc": {
+            "start_loc": {
+              "line": 29,
+              "column": 0,
+              "index": 558
+            },
+            "end_loc": {
+              "line": 33,
+              "column": 1,
+              "index": 678
+            }
+          },
+          "generator": false,
+          "async": false
+        }
+      },
+      {
+        "TS_FunctionDeclaration": {
+          "id": {
+            "type": "Identifier",
+            "start_loc": 690,
+            "end_loc": 708,
+            "loc": {
+              "start_loc": {
+                "line": 36,
+                "column": 9,
+                "index": 690
+              },
+              "end_loc": {
+                "line": 36,
+                "column": 27,
+                "index": 708
+              },
+              "identifierName": "assertNotSameValue"
+            },
+            "name": "assertNotSameValue"
+          },
+          "params": [
+            {
+              "type": "Identifier",
+              "start_loc": 710,
+              "end_loc": 716,
+              "loc": {
+                "start_loc": {
+                  "line": 36,
+                  "column": 29,
+                  "index": 710
+                },
+                "end_loc": {
+                  "line": 36,
+                  "column": 35,
+                  "index": 716
+                },
+                "identifierName": "actual"
+              },
+              "name": "actual"
+            },
+            {
+              "type": "Identifier",
+              "start_loc": 718,
+              "end_loc": 728,
+              "loc": {
+                "start_loc": {
+                  "line": 36,
+                  "column": 37,
+                  "index": 718
+                },
+                "end_loc": {
+                  "line": 36,
+                  "column": 47,
+                  "index": 728
+                },
+                "identifierName": "unexpected"
+              },
+              "name": "unexpected"
+            },
+            {
+              "type": "Identifier",
+              "start_loc": 730,
+              "end_loc": 737,
+              "loc": {
+                "start_loc": {
+                  "line": 36,
+                  "column": 49,
+                  "index": 730
+                },
+                "end_loc": {
+                  "line": 36,
+                  "column": 56,
+                  "index": 737
+                },
+                "identifierName": "message"
+              },
+              "name": "message"
+            }
+          ],
+          "returnType": "any",
+          "body": {
+            "TS_BlockStatement": {
+              "body": [
+                {
+                  "TS_IfStatement": {
+                    "test": {
+                      "TS_CallExpression": {
+                        "callee": {
+                          "type": "Identifier",
+                          "start_loc": 747,
+                          "end_loc": 759,
+                          "loc": {
+                            "start_loc": {
+                              "line": 37,
+                              "column": 6,
+                              "index": 747
+                            },
+                            "end_loc": {
+                              "line": 37,
+                              "column": 18,
+                              "index": 759
+                            },
+                            "identifierName": "_isSameValue"
+                          },
+                          "name": "_isSameValue"
+                        },
+                        "arguments": [
+                          {
+                            "TS_IdExpression": {
+                              "type": "Identifier",
+                              "start_loc": 760,
+                              "end_loc": 766,
+                              "loc": {
+                                "start_loc": {
+                                  "line": 37,
+                                  "column": 19,
+                                  "index": 760
+                                },
+                                "end_loc": {
+                                  "line": 37,
+                                  "column": 25,
+                                  "index": 766
+                                },
+                                "identifierName": "actual"
+                              },
+                              "name": "actual"
+                            }
+                          },
+                          {
+                            "TS_IdExpression": {
+                              "type": "Identifier",
+                              "start_loc": 768,
+                              "end_loc": 778,
+                              "loc": {
+                                "start_loc": {
+                                  "line": 37,
+                                  "column": 27,
+                                  "index": 768
+                                },
+                                "end_loc": {
+                                  "line": 37,
+                                  "column": 37,
+                                  "index": 778
+                                },
+                                "identifierName": "unexpected"
+                              },
+                              "name": "unexpected"
+                            }
+                          }
+                        ],
+                        "type": "CallExpression",
+                        "start_loc": 747,
+                        "end_loc": 779,
+                        "loc": {
+                          "start_loc": {
+                            "line": 37,
+                            "column": 6,
+                            "index": 747
+                          },
+                          "end_loc": {
+                            "line": 37,
+                            "column": 38,
+                            "index": 779
+                          }
+                        }
+                      }
+                    },
+                    "consequent": {
+                      "TS_BlockStatement": {
+                        "body": [
+                          {
+                            "TS_ExpressionStatement": {
+                              "expression": {
+                                "type": "UpdateExpression",
+                                "start_loc": 787,
+                                "end_loc": 801,
+                                "loc": {
+                                  "start_loc": {
+                                    "line": 38,
+                                    "column": 4,
+                                    "index": 787
+                                  },
+                                  "end_loc": {
+                                    "line": 38,
+                                    "column": 18,
+                                    "index": 801
+                                  }
+                                },
+                                "operator": "++",
+                                "prefix": false,
+                                "argument": {
+                                  "type": "Identifier",
+                                  "start_loc": 787,
+                                  "end_loc": 799,
+                                  "loc": {
+                                    "start_loc": {
+                                      "line": 38,
+                                      "column": 4,
+                                      "index": 787
+                                    },
+                                    "end_loc": {
+                                      "line": 38,
+                                      "column": 16,
+                                      "index": 799
+                                    },
+                                    "identifierName": "__errorCount"
+                                  },
+                                  "name": "__errorCount"
+                                }
+                              },
+                              "type": "ExpressionStatement",
+                              "start_loc": 787,
+                              "end_loc": 802,
+                              "loc": {
+                                "start_loc": {
+                                  "line": 38,
+                                  "column": 4,
+                                  "index": 787
+                                },
+                                "end_loc": {
+                                  "line": 38,
+                                  "column": 19,
+                                  "index": 802
+                                }
+                              }
+                            }
+                          }
+                        ],
+                        "type": "BlockStatement",
+                        "start_loc": 781,
+                        "end_loc": 806,
+                        "loc": {
+                          "start_loc": {
+                            "line": 37,
+                            "column": 40,
+                            "index": 781
+                          },
+                          "end_loc": {
+                            "line": 39,
+                            "column": 3,
+                            "index": 806
+                          }
+                        },
+                        "directives": []
+                      }
+                    },
+                    "alternate": null,
+                    "type": "IfStatement",
+                    "start_loc": 743,
+                    "end_loc": 806,
+                    "loc": {
+                      "start_loc": {
+                        "line": 37,
+                        "column": 2,
+                        "index": 743
+                      },
+                      "end_loc": {
+                        "line": 39,
+                        "column": 3,
+                        "index": 806
+                      }
+                    }
+                  }
+                }
+              ],
+              "type": "BlockStatement",
+              "start_loc": 739,
+              "end_loc": 809,
+              "loc": {
+                "start_loc": {
+                  "line": 36,
+                  "column": 58,
+                  "index": 739
+                },
+                "end_loc": {
+                  "line": 40,
+                  "column": 1,
+                  "index": 809
+                }
+              },
+              "directives": []
+            }
+          },
+          "type": "FunctionDeclaration",
+          "start_loc": 681,
+          "end_loc": 809,
+          "loc": {
+            "start_loc": {
+              "line": 36,
+              "column": 0,
+              "index": 681
+            },
+            "end_loc": {
+              "line": 40,
+              "column": 1,
+              "index": 809
+            }
+          },
+          "generator": false,
+          "async": false
+        }
+      },
+      {
+        "type": "EmptyStatement",
+        "start_loc": 809,
+        "end_loc": 810,
+        "loc": {
+          "start_loc": {
+            "line": 40,
+            "column": 1,
+            "index": 809
+          },
+          "end_loc": {
+            "line": 40,
+            "column": 2,
+            "index": 810
+          }
+        },
+        "trailingComments": [
+          {
+            "type": "CommentBlock",
+            "value": "\nfunction assertThrows(expectedErrorConstructor, func, message) {\n  var expectedName, actualName;\n  if (typeof func !== \"function\") {\n    __errorCount++;\n    return;\n  }\n  if (message === undefined) {\n    message = '';\n  } else {\n    message += ' ';\n  }\n\n  try {\n    func();\n  } catch (thrown) {\n    if (typeof thrown !== 'object' || thrown === null) {\n      __errorCount++;\n    } else if (thrown.constructor !== expectedErrorConstructor) {\n      __errorCount++;\n    }\n    return;\n  }\n\n  __errorCount++;\n};\n",
+            "start_loc": 811,
+            "end_loc": 1322,
+            "loc": {
+              "start_loc": {
+                "line": 41,
+                "column": 0,
+                "index": 811
+              },
+              "end_loc": {
+                "line": 67,
+                "column": 2,
+                "index": 1322
+              }
+            }
+          },
+          {
+            "type": "CommentLine",
+            "value": " Copyright 2009 the Sputnik authors.  All rights reserved.",
+            "start_loc": 1324,
+            "end_loc": 1384,
+            "loc": {
+              "start_loc": {
+                "line": 69,
+                "column": 0,
+                "index": 1324
+              },
+              "end_loc": {
+                "line": 69,
+                "column": 60,
+                "index": 1384
+              }
+            }
+          },
+          {
+            "type": "CommentLine",
+            "value": " This code is governed by the BSD license found in the LICENSE file.",
+            "start_loc": 1385,
+            "end_loc": 1455,
+            "loc": {
+              "start_loc": {
+                "line": 70,
+                "column": 0,
+                "index": 1385
+              },
+              "end_loc": {
+                "line": 70,
+                "column": 70,
+                "index": 1455
+              }
+            }
+          },
+          {
+            "type": "CommentBlock",
+            "value": "---\ninfo: \"DecimalLiteral :: DecimalIntegerLiteral. DecimalDigigts ExponentPart\"\nes5id: 7.8.3_A3.4_T4\ndescription: \"ExponentPart :: E -DecimalDigits\"\n---",
+            "start_loc": 1457,
+            "end_loc": 1614,
+            "loc": {
+              "start_loc": {
+                "line": 72,
+                "column": 0,
+                "index": 1457
+              },
+              "end_loc": {
+                "line": 76,
+                "column": 5,
+                "index": 1614
+              }
+            }
+          },
+          {
+            "type": "CommentLine",
+            "value": "CHECK#0",
+            "start_loc": 1616,
+            "end_loc": 1625,
+            "loc": {
+              "start_loc": {
+                "line": 78,
+                "column": 0,
+                "index": 1616
+              },
+              "end_loc": {
+                "line": 78,
+                "column": 9,
+                "index": 1625
+              }
+            }
+          }
+        ]
+      },
+      {
+        "TS_IfStatement": {
+          "test": {
+            "TS_BinaryExpression": {
+              "left": {
+                "TS_NumericLiteral": {
+                  "type": "NumericLiteral",
+                  "start_loc": 1630,
+                  "end_loc": 1636,
+                  "loc": {
+                    "start_loc": {
+                      "line": 79,
+                      "column": 4,
+                      "index": 1630
+                    },
+                    "end_loc": {
+                      "line": 79,
+                      "column": 10,
+                      "index": 1636
+                    }
+                  },
+                  "extra": {
+                    "rawValue": 0,
+                    "raw": "0.0E-1"
+                  },
+                  "value": 0
+                }
+              },
+              "right": {
+                "TS_NumericLiteral": {
+                  "type": "NumericLiteral",
+                  "start_loc": 1641,
+                  "end_loc": 1642,
+                  "loc": {
+                    "start_loc": {
+                      "line": 79,
+                      "column": 15,
+                      "index": 1641
+                    },
+                    "end_loc": {
+                      "line": 79,
+                      "column": 16,
+                      "index": 1642
+                    }
+                  },
+                  "extra": {
+                    "rawValue": 0,
+                    "raw": "0"
+                  },
+                  "value": 0
+                }
+              },
+              "type": "BinaryExpression",
+              "start_loc": 1630,
+              "end_loc": 1642,
+              "loc": {
+                "start_loc": {
+                  "line": 79,
+                  "column": 4,
+                  "index": 1630
+                },
+                "end_loc": {
+                  "line": 79,
+                  "column": 16,
+                  "index": 1642
+                }
+              },
+              "operator": "!=="
+            }
+          },
+          "consequent": {
+            "TS_BlockStatement": {
+              "body": [
+                {
+                  "TS_ExpressionStatement": {
+                    "expression": {
+                      "type": "UpdateExpression",
+                      "start_loc": 1645,
+                      "end_loc": 1659,
+                      "loc": {
+                        "start_loc": {
+                          "line": 79,
+                          "column": 19,
+                          "index": 1645
+                        },
+                        "end_loc": {
+                          "line": 79,
+                          "column": 33,
+                          "index": 1659
+                        }
+                      },
+                      "operator": "++",
+                      "prefix": false,
+                      "argument": {
+                        "type": "Identifier",
+                        "start_loc": 1645,
+                        "end_loc": 1657,
+                        "loc": {
+                          "start_loc": {
+                            "line": 79,
+                            "column": 19,
+                            "index": 1645
+                          },
+                          "end_loc": {
+                            "line": 79,
+                            "column": 31,
+                            "index": 1657
+                          },
+                          "identifierName": "__errorCount"
+                        },
+                        "name": "__errorCount"
+                      }
+                    },
+                    "type": "ExpressionStatement",
+                    "start_loc": 1645,
+                    "end_loc": 1660,
+                    "loc": {
+                      "start_loc": {
+                        "line": 79,
+                        "column": 19,
+                        "index": 1645
+                      },
+                      "end_loc": {
+                        "line": 79,
+                        "column": 34,
+                        "index": 1660
+                      }
+                    }
+                  }
+                }
+              ],
+              "type": "BlockStatement",
+              "start_loc": 1644,
+              "end_loc": 1663,
+              "loc": {
+                "start_loc": {
+                  "line": 79,
+                  "column": 18,
+                  "index": 1644
+                },
+                "end_loc": {
+                  "line": 81,
+                  "column": 1,
+                  "index": 1663
+                }
+              },
+              "directives": []
+            }
+          },
+          "alternate": null,
+          "type": "IfStatement",
+          "start_loc": 1626,
+          "end_loc": 1663,
+          "loc": {
+            "start_loc": {
+              "line": 79,
+              "column": 0,
+              "index": 1626
+            },
+            "end_loc": {
+              "line": 81,
+              "column": 1,
+              "index": 1663
+            }
+          },
+          "trailingComments": [
+            {
+              "type": "CommentLine",
+              "value": "CHECK#1",
+              "start_loc": 1665,
+              "end_loc": 1674,
+              "loc": {
+                "start_loc": {
+                  "line": 83,
+                  "column": 0,
+                  "index": 1665
+                },
+                "end_loc": {
+                  "line": 83,
+                  "column": 9,
+                  "index": 1674
+                }
+              }
+            }
+          ],
+          "leadingComments": [
+            {
+              "type": "CommentBlock",
+              "value": "\nfunction assertThrows(expectedErrorConstructor, func, message) {\n  var expectedName, actualName;\n  if (typeof func !== \"function\") {\n    __errorCount++;\n    return;\n  }\n  if (message === undefined) {\n    message = '';\n  } else {\n    message += ' ';\n  }\n\n  try {\n    func();\n  } catch (thrown) {\n    if (typeof thrown !== 'object' || thrown === null) {\n      __errorCount++;\n    } else if (thrown.constructor !== expectedErrorConstructor) {\n      __errorCount++;\n    }\n    return;\n  }\n\n  __errorCount++;\n};\n",
+              "start_loc": 811,
+              "end_loc": 1322,
+              "loc": {
+                "start_loc": {
+                  "line": 41,
+                  "column": 0,
+                  "index": 811
+                },
+                "end_loc": {
+                  "line": 67,
+                  "column": 2,
+                  "index": 1322
+                }
+              }
+            },
+            {
+              "type": "CommentLine",
+              "value": " Copyright 2009 the Sputnik authors.  All rights reserved.",
+              "start_loc": 1324,
+              "end_loc": 1384,
+              "loc": {
+                "start_loc": {
+                  "line": 69,
+                  "column": 0,
+                  "index": 1324
+                },
+                "end_loc": {
+                  "line": 69,
+                  "column": 60,
+                  "index": 1384
+                }
+              }
+            },
+            {
+              "type": "CommentLine",
+              "value": " This code is governed by the BSD license found in the LICENSE file.",
+              "start_loc": 1385,
+              "end_loc": 1455,
+              "loc": {
+                "start_loc": {
+                  "line": 70,
+                  "column": 0,
+                  "index": 1385
+                },
+                "end_loc": {
+                  "line": 70,
+                  "column": 70,
+                  "index": 1455
+                }
+              }
+            },
+            {
+              "type": "CommentBlock",
+              "value": "---\ninfo: \"DecimalLiteral :: DecimalIntegerLiteral. DecimalDigigts ExponentPart\"\nes5id: 7.8.3_A3.4_T4\ndescription: \"ExponentPart :: E -DecimalDigits\"\n---",
+              "start_loc": 1457,
+              "end_loc": 1614,
+              "loc": {
+                "start_loc": {
+                  "line": 72,
+                  "column": 0,
+                  "index": 1457
+                },
+                "end_loc": {
+                  "line": 76,
+                  "column": 5,
+                  "index": 1614
+                }
+              }
+            },
+            {
+              "type": "CommentLine",
+              "value": "CHECK#0",
+              "start_loc": 1616,
+              "end_loc": 1625,
+              "loc": {
+                "start_loc": {
+                  "line": 78,
+                  "column": 0,
+                  "index": 1616
+                },
+                "end_loc": {
+                  "line": 78,
+                  "column": 9,
+                  "index": 1625
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "TS_IfStatement": {
+          "test": {
+            "TS_BinaryExpression": {
+              "left": {
+                "TS_NumericLiteral": {
+                  "type": "NumericLiteral",
+                  "start_loc": 1679,
+                  "end_loc": 1685,
+                  "loc": {
+                    "start_loc": {
+                      "line": 84,
+                      "column": 4,
+                      "index": 1679
+                    },
+                    "end_loc": {
+                      "line": 84,
+                      "column": 10,
+                      "index": 1685
+                    }
+                  },
+                  "extra": {
+                    "rawValue": 0.11,
+                    "raw": "1.1E-1"
+                  },
+                  "value": 0.11
+                }
+              },
+              "right": {
+                "TS_NumericLiteral": {
+                  "type": "NumericLiteral",
+                  "start_loc": 1690,
+                  "end_loc": 1694,
+                  "loc": {
+                    "start_loc": {
+                      "line": 84,
+                      "column": 15,
+                      "index": 1690
+                    },
+                    "end_loc": {
+                      "line": 84,
+                      "column": 19,
+                      "index": 1694
+                    }
+                  },
+                  "extra": {
+                    "rawValue": 0.11,
+                    "raw": "0.11"
+                  },
+                  "value": 0.11
+                }
+              },
+              "type": "BinaryExpression",
+              "start_loc": 1679,
+              "end_loc": 1694,
+              "loc": {
+                "start_loc": {
+                  "line": 84,
+                  "column": 4,
+                  "index": 1679
+                },
+                "end_loc": {
+                  "line": 84,
+                  "column": 19,
+                  "index": 1694
+                }
+              },
+              "operator": "!=="
+            }
+          },
+          "consequent": {
+            "TS_BlockStatement": {
+              "body": [
+                {
+                  "TS_ExpressionStatement": {
+                    "expression": {
+                      "type": "UpdateExpression",
+                      "start_loc": 1697,
+                      "end_loc": 1711,
+                      "loc": {
+                        "start_loc": {
+                          "line": 84,
+                          "column": 22,
+                          "index": 1697
+                        },
+                        "end_loc": {
+                          "line": 84,
+                          "column": 36,
+                          "index": 1711
+                        }
+                      },
+                      "operator": "++",
+                      "prefix": false,
+                      "argument": {
+                        "type": "Identifier",
+                        "start_loc": 1697,
+                        "end_loc": 1709,
+                        "loc": {
+                          "start_loc": {
+                            "line": 84,
+                            "column": 22,
+                            "index": 1697
+                          },
+                          "end_loc": {
+                            "line": 84,
+                            "column": 34,
+                            "index": 1709
+                          },
+                          "identifierName": "__errorCount"
+                        },
+                        "name": "__errorCount"
+                      }
+                    },
+                    "type": "ExpressionStatement",
+                    "start_loc": 1697,
+                    "end_loc": 1712,
+                    "loc": {
+                      "start_loc": {
+                        "line": 84,
+                        "column": 22,
+                        "index": 1697
+                      },
+                      "end_loc": {
+                        "line": 84,
+                        "column": 37,
+                        "index": 1712
+                      }
+                    }
+                  }
+                }
+              ],
+              "type": "BlockStatement",
+              "start_loc": 1696,
+              "end_loc": 1715,
+              "loc": {
+                "start_loc": {
+                  "line": 84,
+                  "column": 21,
+                  "index": 1696
+                },
+                "end_loc": {
+                  "line": 86,
+                  "column": 1,
+                  "index": 1715
+                }
+              },
+              "directives": []
+            }
+          },
+          "alternate": null,
+          "type": "IfStatement",
+          "start_loc": 1675,
+          "end_loc": 1715,
+          "loc": {
+            "start_loc": {
+              "line": 84,
+              "column": 0,
+              "index": 1675
+            },
+            "end_loc": {
+              "line": 86,
+              "column": 1,
+              "index": 1715
+            }
+          },
+          "trailingComments": [
+            {
+              "type": "CommentLine",
+              "value": "CHECK#2",
+              "start_loc": 1717,
+              "end_loc": 1726,
+              "loc": {
+                "start_loc": {
+                  "line": 88,
+                  "column": 0,
+                  "index": 1717
+                },
+                "end_loc": {
+                  "line": 88,
+                  "column": 9,
+                  "index": 1726
+                }
+              }
+            }
+          ],
+          "leadingComments": [
+            {
+              "type": "CommentLine",
+              "value": "CHECK#1",
+              "start_loc": 1665,
+              "end_loc": 1674,
+              "loc": {
+                "start_loc": {
+                  "line": 83,
+                  "column": 0,
+                  "index": 1665
+                },
+                "end_loc": {
+                  "line": 83,
+                  "column": 9,
+                  "index": 1674
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "TS_IfStatement": {
+          "test": {
+            "TS_BinaryExpression": {
+              "left": {
+                "TS_NumericLiteral": {
+                  "type": "NumericLiteral",
+                  "start_loc": 1731,
+                  "end_loc": 1737,
+                  "loc": {
+                    "start_loc": {
+                      "line": 89,
+                      "column": 4,
+                      "index": 1731
+                    },
+                    "end_loc": {
+                      "line": 89,
+                      "column": 10,
+                      "index": 1737
+                    }
+                  },
+                  "extra": {
+                    "rawValue": 0.22,
+                    "raw": "2.2E-1"
+                  },
+                  "value": 0.22
+                }
+              },
+              "right": {
+                "TS_NumericLiteral": {
+                  "type": "NumericLiteral",
+                  "start_loc": 1742,
+                  "end_loc": 1746,
+                  "loc": {
+                    "start_loc": {
+                      "line": 89,
+                      "column": 15,
+                      "index": 1742
+                    },
+                    "end_loc": {
+                      "line": 89,
+                      "column": 19,
+                      "index": 1746
+                    }
+                  },
+                  "extra": {
+                    "rawValue": 0.22,
+                    "raw": "0.22"
+                  },
+                  "value": 0.22
+                }
+              },
+              "type": "BinaryExpression",
+              "start_loc": 1731,
+              "end_loc": 1746,
+              "loc": {
+                "start_loc": {
+                  "line": 89,
+                  "column": 4,
+                  "index": 1731
+                },
+                "end_loc": {
+                  "line": 89,
+                  "column": 19,
+                  "index": 1746
+                }
+              },
+              "operator": "!=="
+            }
+          },
+          "consequent": {
+            "TS_BlockStatement": {
+              "body": [
+                {
+                  "TS_ExpressionStatement": {
+                    "expression": {
+                      "type": "UpdateExpression",
+                      "start_loc": 1749,
+                      "end_loc": 1763,
+                      "loc": {
+                        "start_loc": {
+                          "line": 89,
+                          "column": 22,
+                          "index": 1749
+                        },
+                        "end_loc": {
+                          "line": 89,
+                          "column": 36,
+                          "index": 1763
+                        }
+                      },
+                      "operator": "++",
+                      "prefix": false,
+                      "argument": {
+                        "type": "Identifier",
+                        "start_loc": 1749,
+                        "end_loc": 1761,
+                        "loc": {
+                          "start_loc": {
+                            "line": 89,
+                            "column": 22,
+                            "index": 1749
+                          },
+                          "end_loc": {
+                            "line": 89,
+                            "column": 34,
+                            "index": 1761
+                          },
+                          "identifierName": "__errorCount"
+                        },
+                        "name": "__errorCount"
+                      }
+                    },
+                    "type": "ExpressionStatement",
+                    "start_loc": 1749,
+                    "end_loc": 1764,
+                    "loc": {
+                      "start_loc": {
+                        "line": 89,
+                        "column": 22,
+                        "index": 1749
+                      },
+                      "end_loc": {
+                        "line": 89,
+                        "column": 37,
+                        "index": 1764
+                      }
+                    }
+                  }
+                }
+              ],
+              "type": "BlockStatement",
+              "start_loc": 1748,
+              "end_loc": 1767,
+              "loc": {
+                "start_loc": {
+                  "line": 89,
+                  "column": 21,
+                  "index": 1748
+                },
+                "end_loc": {
+                  "line": 91,
+                  "column": 1,
+                  "index": 1767
+                }
+              },
+              "directives": []
+            }
+          },
+          "alternate": null,
+          "type": "IfStatement",
+          "start_loc": 1727,
+          "end_loc": 1767,
+          "loc": {
+            "start_loc": {
+              "line": 89,
+              "column": 0,
+              "index": 1727
+            },
+            "end_loc": {
+              "line": 91,
+              "column": 1,
+              "index": 1767
+            }
+          },
+          "trailingComments": [
+            {
+              "type": "CommentLine",
+              "value": "CHECK#3",
+              "start_loc": 1769,
+              "end_loc": 1778,
+              "loc": {
+                "start_loc": {
+                  "line": 93,
+                  "column": 0,
+                  "index": 1769
+                },
+                "end_loc": {
+                  "line": 93,
+                  "column": 9,
+                  "index": 1778
+                }
+              }
+            }
+          ],
+          "leadingComments": [
+            {
+              "type": "CommentLine",
+              "value": "CHECK#2",
+              "start_loc": 1717,
+              "end_loc": 1726,
+              "loc": {
+                "start_loc": {
+                  "line": 88,
+                  "column": 0,
+                  "index": 1717
+                },
+                "end_loc": {
+                  "line": 88,
+                  "column": 9,
+                  "index": 1726
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "TS_IfStatement": {
+          "test": {
+            "TS_BinaryExpression": {
+              "left": {
+                "TS_NumericLiteral": {
+                  "type": "NumericLiteral",
+                  "start_loc": 1783,
+                  "end_loc": 1789,
+                  "loc": {
+                    "start_loc": {
+                      "line": 94,
+                      "column": 4,
+                      "index": 1783
+                    },
+                    "end_loc": {
+                      "line": 94,
+                      "column": 10,
+                      "index": 1789
+                    }
+                  },
+                  "extra": {
+                    "rawValue": 0.33,
+                    "raw": "3.3E-1"
+                  },
+                  "value": 0.33
+                }
+              },
+              "right": {
+                "TS_NumericLiteral": {
+                  "type": "NumericLiteral",
+                  "start_loc": 1794,
+                  "end_loc": 1798,
+                  "loc": {
+                    "start_loc": {
+                      "line": 94,
+                      "column": 15,
+                      "index": 1794
+                    },
+                    "end_loc": {
+                      "line": 94,
+                      "column": 19,
+                      "index": 1798
+                    }
+                  },
+                  "extra": {
+                    "rawValue": 0.33,
+                    "raw": "0.33"
+                  },
+                  "value": 0.33
+                }
+              },
+              "type": "BinaryExpression",
+              "start_loc": 1783,
+              "end_loc": 1798,
+              "loc": {
+                "start_loc": {
+                  "line": 94,
+                  "column": 4,
+                  "index": 1783
+                },
+                "end_loc": {
+                  "line": 94,
+                  "column": 19,
+                  "index": 1798
+                }
+              },
+              "operator": "!=="
+            }
+          },
+          "consequent": {
+            "TS_BlockStatement": {
+              "body": [
+                {
+                  "TS_ExpressionStatement": {
+                    "expression": {
+                      "type": "UpdateExpression",
+                      "start_loc": 1801,
+                      "end_loc": 1815,
+                      "loc": {
+                        "start_loc": {
+                          "line": 94,
+                          "column": 22,
+                          "index": 1801
+                        },
+                        "end_loc": {
+                          "line": 94,
+                          "column": 36,
+                          "index": 1815
+                        }
+                      },
+                      "operator": "++",
+                      "prefix": false,
+                      "argument": {
+                        "type": "Identifier",
+                        "start_loc": 1801,
+                        "end_loc": 1813,
+                        "loc": {
+                          "start_loc": {
+                            "line": 94,
+                            "column": 22,
+                            "index": 1801
+                          },
+                          "end_loc": {
+                            "line": 94,
+                            "column": 34,
+                            "index": 1813
+                          },
+                          "identifierName": "__errorCount"
+                        },
+                        "name": "__errorCount"
+                      }
+                    },
+                    "type": "ExpressionStatement",
+                    "start_loc": 1801,
+                    "end_loc": 1816,
+                    "loc": {
+                      "start_loc": {
+                        "line": 94,
+                        "column": 22,
+                        "index": 1801
+                      },
+                      "end_loc": {
+                        "line": 94,
+                        "column": 37,
+                        "index": 1816
+                      }
+                    }
+                  }
+                }
+              ],
+              "type": "BlockStatement",
+              "start_loc": 1800,
+              "end_loc": 1819,
+              "loc": {
+                "start_loc": {
+                  "line": 94,
+                  "column": 21,
+                  "index": 1800
+                },
+                "end_loc": {
+                  "line": 96,
+                  "column": 1,
+                  "index": 1819
+                }
+              },
+              "directives": []
+            }
+          },
+          "alternate": null,
+          "type": "IfStatement",
+          "start_loc": 1779,
+          "end_loc": 1819,
+          "loc": {
+            "start_loc": {
+              "line": 94,
+              "column": 0,
+              "index": 1779
+            },
+            "end_loc": {
+              "line": 96,
+              "column": 1,
+              "index": 1819
+            }
+          },
+          "trailingComments": [
+            {
+              "type": "CommentLine",
+              "value": "CHECK#4",
+              "start_loc": 1821,
+              "end_loc": 1830,
+              "loc": {
+                "start_loc": {
+                  "line": 98,
+                  "column": 0,
+                  "index": 1821
+                },
+                "end_loc": {
+                  "line": 98,
+                  "column": 9,
+                  "index": 1830
+                }
+              }
+            }
+          ],
+          "leadingComments": [
+            {
+              "type": "CommentLine",
+              "value": "CHECK#3",
+              "start_loc": 1769,
+              "end_loc": 1778,
+              "loc": {
+                "start_loc": {
+                  "line": 93,
+                  "column": 0,
+                  "index": 1769
+                },
+                "end_loc": {
+                  "line": 93,
+                  "column": 9,
+                  "index": 1778
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "TS_IfStatement": {
+          "test": {
+            "TS_BinaryExpression": {
+              "left": {
+                "TS_NumericLiteral": {
+                  "type": "NumericLiteral",
+                  "start_loc": 1835,
+                  "end_loc": 1841,
+                  "loc": {
+                    "start_loc": {
+                      "line": 99,
+                      "column": 4,
+                      "index": 1835
+                    },
+                    "end_loc": {
+                      "line": 99,
+                      "column": 10,
+                      "index": 1841
+                    }
+                  },
+                  "extra": {
+                    "rawValue": 0.44,
+                    "raw": "4.4E-1"
+                  },
+                  "value": 0.44
+                }
+              },
+              "right": {
+                "TS_NumericLiteral": {
+                  "type": "NumericLiteral",
+                  "start_loc": 1846,
+                  "end_loc": 1850,
+                  "loc": {
+                    "start_loc": {
+                      "line": 99,
+                      "column": 15,
+                      "index": 1846
+                    },
+                    "end_loc": {
+                      "line": 99,
+                      "column": 19,
+                      "index": 1850
+                    }
+                  },
+                  "extra": {
+                    "rawValue": 0.44,
+                    "raw": "0.44"
+                  },
+                  "value": 0.44
+                }
+              },
+              "type": "BinaryExpression",
+              "start_loc": 1835,
+              "end_loc": 1850,
+              "loc": {
+                "start_loc": {
+                  "line": 99,
+                  "column": 4,
+                  "index": 1835
+                },
+                "end_loc": {
+                  "line": 99,
+                  "column": 19,
+                  "index": 1850
+                }
+              },
+              "operator": "!=="
+            }
+          },
+          "consequent": {
+            "TS_BlockStatement": {
+              "body": [
+                {
+                  "TS_ExpressionStatement": {
+                    "expression": {
+                      "type": "UpdateExpression",
+                      "start_loc": 1853,
+                      "end_loc": 1867,
+                      "loc": {
+                        "start_loc": {
+                          "line": 99,
+                          "column": 22,
+                          "index": 1853
+                        },
+                        "end_loc": {
+                          "line": 99,
+                          "column": 36,
+                          "index": 1867
+                        }
+                      },
+                      "operator": "++",
+                      "prefix": false,
+                      "argument": {
+                        "type": "Identifier",
+                        "start_loc": 1853,
+                        "end_loc": 1865,
+                        "loc": {
+                          "start_loc": {
+                            "line": 99,
+                            "column": 22,
+                            "index": 1853
+                          },
+                          "end_loc": {
+                            "line": 99,
+                            "column": 34,
+                            "index": 1865
+                          },
+                          "identifierName": "__errorCount"
+                        },
+                        "name": "__errorCount"
+                      }
+                    },
+                    "type": "ExpressionStatement",
+                    "start_loc": 1853,
+                    "end_loc": 1868,
+                    "loc": {
+                      "start_loc": {
+                        "line": 99,
+                        "column": 22,
+                        "index": 1853
+                      },
+                      "end_loc": {
+                        "line": 99,
+                        "column": 37,
+                        "index": 1868
+                      }
+                    }
+                  }
+                }
+              ],
+              "type": "BlockStatement",
+              "start_loc": 1852,
+              "end_loc": 1871,
+              "loc": {
+                "start_loc": {
+                  "line": 99,
+                  "column": 21,
+                  "index": 1852
+                },
+                "end_loc": {
+                  "line": 101,
+                  "column": 1,
+                  "index": 1871
+                }
+              },
+              "directives": []
+            }
+          },
+          "alternate": null,
+          "type": "IfStatement",
+          "start_loc": 1831,
+          "end_loc": 1871,
+          "loc": {
+            "start_loc": {
+              "line": 99,
+              "column": 0,
+              "index": 1831
+            },
+            "end_loc": {
+              "line": 101,
+              "column": 1,
+              "index": 1871
+            }
+          },
+          "trailingComments": [
+            {
+              "type": "CommentLine",
+              "value": "CHECK#5",
+              "start_loc": 1873,
+              "end_loc": 1882,
+              "loc": {
+                "start_loc": {
+                  "line": 103,
+                  "column": 0,
+                  "index": 1873
+                },
+                "end_loc": {
+                  "line": 103,
+                  "column": 9,
+                  "index": 1882
+                }
+              }
+            }
+          ],
+          "leadingComments": [
+            {
+              "type": "CommentLine",
+              "value": "CHECK#4",
+              "start_loc": 1821,
+              "end_loc": 1830,
+              "loc": {
+                "start_loc": {
+                  "line": 98,
+                  "column": 0,
+                  "index": 1821
+                },
+                "end_loc": {
+                  "line": 98,
+                  "column": 9,
+                  "index": 1830
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "TS_IfStatement": {
+          "test": {
+            "TS_BinaryExpression": {
+              "left": {
+                "TS_NumericLiteral": {
+                  "type": "NumericLiteral",
+                  "start_loc": 1887,
+                  "end_loc": 1893,
+                  "loc": {
+                    "start_loc": {
+                      "line": 104,
+                      "column": 4,
+                      "index": 1887
+                    },
+                    "end_loc": {
+                      "line": 104,
+                      "column": 10,
+                      "index": 1893
+                    }
+                  },
+                  "extra": {
+                    "rawValue": 0.55,
+                    "raw": "5.5E-1"
+                  },
+                  "value": 0.55
+                }
+              },
+              "right": {
+                "TS_NumericLiteral": {
+                  "type": "NumericLiteral",
+                  "start_loc": 1898,
+                  "end_loc": 1902,
+                  "loc": {
+                    "start_loc": {
+                      "line": 104,
+                      "column": 15,
+                      "index": 1898
+                    },
+                    "end_loc": {
+                      "line": 104,
+                      "column": 19,
+                      "index": 1902
+                    }
+                  },
+                  "extra": {
+                    "rawValue": 0.55,
+                    "raw": "0.55"
+                  },
+                  "value": 0.55
+                }
+              },
+              "type": "BinaryExpression",
+              "start_loc": 1887,
+              "end_loc": 1902,
+              "loc": {
+                "start_loc": {
+                  "line": 104,
+                  "column": 4,
+                  "index": 1887
+                },
+                "end_loc": {
+                  "line": 104,
+                  "column": 19,
+                  "index": 1902
+                }
+              },
+              "operator": "!=="
+            }
+          },
+          "consequent": {
+            "TS_BlockStatement": {
+              "body": [
+                {
+                  "TS_ExpressionStatement": {
+                    "expression": {
+                      "type": "UpdateExpression",
+                      "start_loc": 1905,
+                      "end_loc": 1919,
+                      "loc": {
+                        "start_loc": {
+                          "line": 104,
+                          "column": 22,
+                          "index": 1905
+                        },
+                        "end_loc": {
+                          "line": 104,
+                          "column": 36,
+                          "index": 1919
+                        }
+                      },
+                      "operator": "++",
+                      "prefix": false,
+                      "argument": {
+                        "type": "Identifier",
+                        "start_loc": 1905,
+                        "end_loc": 1917,
+                        "loc": {
+                          "start_loc": {
+                            "line": 104,
+                            "column": 22,
+                            "index": 1905
+                          },
+                          "end_loc": {
+                            "line": 104,
+                            "column": 34,
+                            "index": 1917
+                          },
+                          "identifierName": "__errorCount"
+                        },
+                        "name": "__errorCount"
+                      }
+                    },
+                    "type": "ExpressionStatement",
+                    "start_loc": 1905,
+                    "end_loc": 1920,
+                    "loc": {
+                      "start_loc": {
+                        "line": 104,
+                        "column": 22,
+                        "index": 1905
+                      },
+                      "end_loc": {
+                        "line": 104,
+                        "column": 37,
+                        "index": 1920
+                      }
+                    }
+                  }
+                }
+              ],
+              "type": "BlockStatement",
+              "start_loc": 1904,
+              "end_loc": 1923,
+              "loc": {
+                "start_loc": {
+                  "line": 104,
+                  "column": 21,
+                  "index": 1904
+                },
+                "end_loc": {
+                  "line": 106,
+                  "column": 1,
+                  "index": 1923
+                }
+              },
+              "directives": []
+            }
+          },
+          "alternate": null,
+          "type": "IfStatement",
+          "start_loc": 1883,
+          "end_loc": 1923,
+          "loc": {
+            "start_loc": {
+              "line": 104,
+              "column": 0,
+              "index": 1883
+            },
+            "end_loc": {
+              "line": 106,
+              "column": 1,
+              "index": 1923
+            }
+          },
+          "trailingComments": [
+            {
+              "type": "CommentLine",
+              "value": "CHECK#6",
+              "start_loc": 1925,
+              "end_loc": 1934,
+              "loc": {
+                "start_loc": {
+                  "line": 108,
+                  "column": 0,
+                  "index": 1925
+                },
+                "end_loc": {
+                  "line": 108,
+                  "column": 9,
+                  "index": 1934
+                }
+              }
+            }
+          ],
+          "leadingComments": [
+            {
+              "type": "CommentLine",
+              "value": "CHECK#5",
+              "start_loc": 1873,
+              "end_loc": 1882,
+              "loc": {
+                "start_loc": {
+                  "line": 103,
+                  "column": 0,
+                  "index": 1873
+                },
+                "end_loc": {
+                  "line": 103,
+                  "column": 9,
+                  "index": 1882
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "TS_IfStatement": {
+          "test": {
+            "TS_BinaryExpression": {
+              "left": {
+                "TS_NumericLiteral": {
+                  "type": "NumericLiteral",
+                  "start_loc": 1939,
+                  "end_loc": 1945,
+                  "loc": {
+                    "start_loc": {
+                      "line": 109,
+                      "column": 4,
+                      "index": 1939
+                    },
+                    "end_loc": {
+                      "line": 109,
+                      "column": 10,
+                      "index": 1945
+                    }
+                  },
+                  "extra": {
+                    "rawValue": 0.66,
+                    "raw": "6.6E-1"
+                  },
+                  "value": 0.66
+                }
+              },
+              "right": {
+                "TS_NumericLiteral": {
+                  "type": "NumericLiteral",
+                  "start_loc": 1950,
+                  "end_loc": 1954,
+                  "loc": {
+                    "start_loc": {
+                      "line": 109,
+                      "column": 15,
+                      "index": 1950
+                    },
+                    "end_loc": {
+                      "line": 109,
+                      "column": 19,
+                      "index": 1954
+                    }
+                  },
+                  "extra": {
+                    "rawValue": 0.66,
+                    "raw": "0.66"
+                  },
+                  "value": 0.66
+                }
+              },
+              "type": "BinaryExpression",
+              "start_loc": 1939,
+              "end_loc": 1954,
+              "loc": {
+                "start_loc": {
+                  "line": 109,
+                  "column": 4,
+                  "index": 1939
+                },
+                "end_loc": {
+                  "line": 109,
+                  "column": 19,
+                  "index": 1954
+                }
+              },
+              "operator": "!=="
+            }
+          },
+          "consequent": {
+            "TS_BlockStatement": {
+              "body": [
+                {
+                  "TS_ExpressionStatement": {
+                    "expression": {
+                      "type": "UpdateExpression",
+                      "start_loc": 1957,
+                      "end_loc": 1971,
+                      "loc": {
+                        "start_loc": {
+                          "line": 109,
+                          "column": 22,
+                          "index": 1957
+                        },
+                        "end_loc": {
+                          "line": 109,
+                          "column": 36,
+                          "index": 1971
+                        }
+                      },
+                      "operator": "++",
+                      "prefix": false,
+                      "argument": {
+                        "type": "Identifier",
+                        "start_loc": 1957,
+                        "end_loc": 1969,
+                        "loc": {
+                          "start_loc": {
+                            "line": 109,
+                            "column": 22,
+                            "index": 1957
+                          },
+                          "end_loc": {
+                            "line": 109,
+                            "column": 34,
+                            "index": 1969
+                          },
+                          "identifierName": "__errorCount"
+                        },
+                        "name": "__errorCount"
+                      }
+                    },
+                    "type": "ExpressionStatement",
+                    "start_loc": 1957,
+                    "end_loc": 1972,
+                    "loc": {
+                      "start_loc": {
+                        "line": 109,
+                        "column": 22,
+                        "index": 1957
+                      },
+                      "end_loc": {
+                        "line": 109,
+                        "column": 37,
+                        "index": 1972
+                      }
+                    }
+                  }
+                }
+              ],
+              "type": "BlockStatement",
+              "start_loc": 1956,
+              "end_loc": 1975,
+              "loc": {
+                "start_loc": {
+                  "line": 109,
+                  "column": 21,
+                  "index": 1956
+                },
+                "end_loc": {
+                  "line": 111,
+                  "column": 1,
+                  "index": 1975
+                }
+              },
+              "directives": []
+            }
+          },
+          "alternate": null,
+          "type": "IfStatement",
+          "start_loc": 1935,
+          "end_loc": 1975,
+          "loc": {
+            "start_loc": {
+              "line": 109,
+              "column": 0,
+              "index": 1935
+            },
+            "end_loc": {
+              "line": 111,
+              "column": 1,
+              "index": 1975
+            }
+          },
+          "trailingComments": [
+            {
+              "type": "CommentLine",
+              "value": "CHECK#7",
+              "start_loc": 1977,
+              "end_loc": 1986,
+              "loc": {
+                "start_loc": {
+                  "line": 113,
+                  "column": 0,
+                  "index": 1977
+                },
+                "end_loc": {
+                  "line": 113,
+                  "column": 9,
+                  "index": 1986
+                }
+              }
+            }
+          ],
+          "leadingComments": [
+            {
+              "type": "CommentLine",
+              "value": "CHECK#6",
+              "start_loc": 1925,
+              "end_loc": 1934,
+              "loc": {
+                "start_loc": {
+                  "line": 108,
+                  "column": 0,
+                  "index": 1925
+                },
+                "end_loc": {
+                  "line": 108,
+                  "column": 9,
+                  "index": 1934
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "TS_IfStatement": {
+          "test": {
+            "TS_BinaryExpression": {
+              "left": {
+                "TS_NumericLiteral": {
+                  "type": "NumericLiteral",
+                  "start_loc": 1991,
+                  "end_loc": 1997,
+                  "loc": {
+                    "start_loc": {
+                      "line": 114,
+                      "column": 4,
+                      "index": 1991
+                    },
+                    "end_loc": {
+                      "line": 114,
+                      "column": 10,
+                      "index": 1997
+                    }
+                  },
+                  "extra": {
+                    "rawValue": 0.77,
+                    "raw": "7.7E-1"
+                  },
+                  "value": 0.77
+                }
+              },
+              "right": {
+                "TS_NumericLiteral": {
+                  "type": "NumericLiteral",
+                  "start_loc": 2002,
+                  "end_loc": 2006,
+                  "loc": {
+                    "start_loc": {
+                      "line": 114,
+                      "column": 15,
+                      "index": 2002
+                    },
+                    "end_loc": {
+                      "line": 114,
+                      "column": 19,
+                      "index": 2006
+                    }
+                  },
+                  "extra": {
+                    "rawValue": 0.77,
+                    "raw": "0.77"
+                  },
+                  "value": 0.77
+                }
+              },
+              "type": "BinaryExpression",
+              "start_loc": 1991,
+              "end_loc": 2006,
+              "loc": {
+                "start_loc": {
+                  "line": 114,
+                  "column": 4,
+                  "index": 1991
+                },
+                "end_loc": {
+                  "line": 114,
+                  "column": 19,
+                  "index": 2006
+                }
+              },
+              "operator": "!=="
+            }
+          },
+          "consequent": {
+            "TS_BlockStatement": {
+              "body": [
+                {
+                  "TS_ExpressionStatement": {
+                    "expression": {
+                      "type": "UpdateExpression",
+                      "start_loc": 2009,
+                      "end_loc": 2023,
+                      "loc": {
+                        "start_loc": {
+                          "line": 114,
+                          "column": 22,
+                          "index": 2009
+                        },
+                        "end_loc": {
+                          "line": 114,
+                          "column": 36,
+                          "index": 2023
+                        }
+                      },
+                      "operator": "++",
+                      "prefix": false,
+                      "argument": {
+                        "type": "Identifier",
+                        "start_loc": 2009,
+                        "end_loc": 2021,
+                        "loc": {
+                          "start_loc": {
+                            "line": 114,
+                            "column": 22,
+                            "index": 2009
+                          },
+                          "end_loc": {
+                            "line": 114,
+                            "column": 34,
+                            "index": 2021
+                          },
+                          "identifierName": "__errorCount"
+                        },
+                        "name": "__errorCount"
+                      }
+                    },
+                    "type": "ExpressionStatement",
+                    "start_loc": 2009,
+                    "end_loc": 2024,
+                    "loc": {
+                      "start_loc": {
+                        "line": 114,
+                        "column": 22,
+                        "index": 2009
+                      },
+                      "end_loc": {
+                        "line": 114,
+                        "column": 37,
+                        "index": 2024
+                      }
+                    }
+                  }
+                }
+              ],
+              "type": "BlockStatement",
+              "start_loc": 2008,
+              "end_loc": 2027,
+              "loc": {
+                "start_loc": {
+                  "line": 114,
+                  "column": 21,
+                  "index": 2008
+                },
+                "end_loc": {
+                  "line": 116,
+                  "column": 1,
+                  "index": 2027
+                }
+              },
+              "directives": []
+            }
+          },
+          "alternate": null,
+          "type": "IfStatement",
+          "start_loc": 1987,
+          "end_loc": 2027,
+          "loc": {
+            "start_loc": {
+              "line": 114,
+              "column": 0,
+              "index": 1987
+            },
+            "end_loc": {
+              "line": 116,
+              "column": 1,
+              "index": 2027
+            }
+          },
+          "trailingComments": [
+            {
+              "type": "CommentLine",
+              "value": "CHECK#8",
+              "start_loc": 2029,
+              "end_loc": 2038,
+              "loc": {
+                "start_loc": {
+                  "line": 118,
+                  "column": 0,
+                  "index": 2029
+                },
+                "end_loc": {
+                  "line": 118,
+                  "column": 9,
+                  "index": 2038
+                }
+              }
+            }
+          ],
+          "leadingComments": [
+            {
+              "type": "CommentLine",
+              "value": "CHECK#7",
+              "start_loc": 1977,
+              "end_loc": 1986,
+              "loc": {
+                "start_loc": {
+                  "line": 113,
+                  "column": 0,
+                  "index": 1977
+                },
+                "end_loc": {
+                  "line": 113,
+                  "column": 9,
+                  "index": 1986
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "TS_IfStatement": {
+          "test": {
+            "TS_BinaryExpression": {
+              "left": {
+                "TS_NumericLiteral": {
+                  "type": "NumericLiteral",
+                  "start_loc": 2043,
+                  "end_loc": 2049,
+                  "loc": {
+                    "start_loc": {
+                      "line": 119,
+                      "column": 4,
+                      "index": 2043
+                    },
+                    "end_loc": {
+                      "line": 119,
+                      "column": 10,
+                      "index": 2049
+                    }
+                  },
+                  "extra": {
+                    "rawValue": 0.88,
+                    "raw": "8.8E-1"
+                  },
+                  "value": 0.88
+                }
+              },
+              "right": {
+                "TS_NumericLiteral": {
+                  "type": "NumericLiteral",
+                  "start_loc": 2054,
+                  "end_loc": 2058,
+                  "loc": {
+                    "start_loc": {
+                      "line": 119,
+                      "column": 15,
+                      "index": 2054
+                    },
+                    "end_loc": {
+                      "line": 119,
+                      "column": 19,
+                      "index": 2058
+                    }
+                  },
+                  "extra": {
+                    "rawValue": 0.88,
+                    "raw": "0.88"
+                  },
+                  "value": 0.88
+                }
+              },
+              "type": "BinaryExpression",
+              "start_loc": 2043,
+              "end_loc": 2058,
+              "loc": {
+                "start_loc": {
+                  "line": 119,
+                  "column": 4,
+                  "index": 2043
+                },
+                "end_loc": {
+                  "line": 119,
+                  "column": 19,
+                  "index": 2058
+                }
+              },
+              "operator": "!=="
+            }
+          },
+          "consequent": {
+            "TS_BlockStatement": {
+              "body": [
+                {
+                  "TS_ExpressionStatement": {
+                    "expression": {
+                      "type": "UpdateExpression",
+                      "start_loc": 2061,
+                      "end_loc": 2075,
+                      "loc": {
+                        "start_loc": {
+                          "line": 119,
+                          "column": 22,
+                          "index": 2061
+                        },
+                        "end_loc": {
+                          "line": 119,
+                          "column": 36,
+                          "index": 2075
+                        }
+                      },
+                      "operator": "++",
+                      "prefix": false,
+                      "argument": {
+                        "type": "Identifier",
+                        "start_loc": 2061,
+                        "end_loc": 2073,
+                        "loc": {
+                          "start_loc": {
+                            "line": 119,
+                            "column": 22,
+                            "index": 2061
+                          },
+                          "end_loc": {
+                            "line": 119,
+                            "column": 34,
+                            "index": 2073
+                          },
+                          "identifierName": "__errorCount"
+                        },
+                        "name": "__errorCount"
+                      }
+                    },
+                    "type": "ExpressionStatement",
+                    "start_loc": 2061,
+                    "end_loc": 2076,
+                    "loc": {
+                      "start_loc": {
+                        "line": 119,
+                        "column": 22,
+                        "index": 2061
+                      },
+                      "end_loc": {
+                        "line": 119,
+                        "column": 37,
+                        "index": 2076
+                      }
+                    }
+                  }
+                }
+              ],
+              "type": "BlockStatement",
+              "start_loc": 2060,
+              "end_loc": 2079,
+              "loc": {
+                "start_loc": {
+                  "line": 119,
+                  "column": 21,
+                  "index": 2060
+                },
+                "end_loc": {
+                  "line": 121,
+                  "column": 1,
+                  "index": 2079
+                }
+              },
+              "directives": []
+            }
+          },
+          "alternate": null,
+          "type": "IfStatement",
+          "start_loc": 2039,
+          "end_loc": 2079,
+          "loc": {
+            "start_loc": {
+              "line": 119,
+              "column": 0,
+              "index": 2039
+            },
+            "end_loc": {
+              "line": 121,
+              "column": 1,
+              "index": 2079
+            }
+          },
+          "trailingComments": [
+            {
+              "type": "CommentLine",
+              "value": "CHECK#9",
+              "start_loc": 2081,
+              "end_loc": 2090,
+              "loc": {
+                "start_loc": {
+                  "line": 123,
+                  "column": 0,
+                  "index": 2081
+                },
+                "end_loc": {
+                  "line": 123,
+                  "column": 9,
+                  "index": 2090
+                }
+              }
+            }
+          ],
+          "leadingComments": [
+            {
+              "type": "CommentLine",
+              "value": "CHECK#8",
+              "start_loc": 2029,
+              "end_loc": 2038,
+              "loc": {
+                "start_loc": {
+                  "line": 118,
+                  "column": 0,
+                  "index": 2029
+                },
+                "end_loc": {
+                  "line": 118,
+                  "column": 9,
+                  "index": 2038
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "TS_IfStatement": {
+          "test": {
+            "TS_BinaryExpression": {
+              "left": {
+                "TS_NumericLiteral": {
+                  "type": "NumericLiteral",
+                  "start_loc": 2095,
+                  "end_loc": 2101,
+                  "loc": {
+                    "start_loc": {
+                      "line": 124,
+                      "column": 4,
+                      "index": 2095
+                    },
+                    "end_loc": {
+                      "line": 124,
+                      "column": 10,
+                      "index": 2101
+                    }
+                  },
+                  "extra": {
+                    "rawValue": 0.99,
+                    "raw": "9.9E-1"
+                  },
+                  "value": 0.99
+                }
+              },
+              "right": {
+                "TS_NumericLiteral": {
+                  "type": "NumericLiteral",
+                  "start_loc": 2106,
+                  "end_loc": 2110,
+                  "loc": {
+                    "start_loc": {
+                      "line": 124,
+                      "column": 15,
+                      "index": 2106
+                    },
+                    "end_loc": {
+                      "line": 124,
+                      "column": 19,
+                      "index": 2110
+                    }
+                  },
+                  "extra": {
+                    "rawValue": 0.99,
+                    "raw": "0.99"
+                  },
+                  "value": 0.99
+                }
+              },
+              "type": "BinaryExpression",
+              "start_loc": 2095,
+              "end_loc": 2110,
+              "loc": {
+                "start_loc": {
+                  "line": 124,
+                  "column": 4,
+                  "index": 2095
+                },
+                "end_loc": {
+                  "line": 124,
+                  "column": 19,
+                  "index": 2110
+                }
+              },
+              "operator": "!=="
+            }
+          },
+          "consequent": {
+            "TS_BlockStatement": {
+              "body": [
+                {
+                  "TS_ExpressionStatement": {
+                    "expression": {
+                      "type": "UpdateExpression",
+                      "start_loc": 2113,
+                      "end_loc": 2127,
+                      "loc": {
+                        "start_loc": {
+                          "line": 124,
+                          "column": 22,
+                          "index": 2113
+                        },
+                        "end_loc": {
+                          "line": 124,
+                          "column": 36,
+                          "index": 2127
+                        }
+                      },
+                      "operator": "++",
+                      "prefix": false,
+                      "argument": {
+                        "type": "Identifier",
+                        "start_loc": 2113,
+                        "end_loc": 2125,
+                        "loc": {
+                          "start_loc": {
+                            "line": 124,
+                            "column": 22,
+                            "index": 2113
+                          },
+                          "end_loc": {
+                            "line": 124,
+                            "column": 34,
+                            "index": 2125
+                          },
+                          "identifierName": "__errorCount"
+                        },
+                        "name": "__errorCount"
+                      }
+                    },
+                    "type": "ExpressionStatement",
+                    "start_loc": 2113,
+                    "end_loc": 2128,
+                    "loc": {
+                      "start_loc": {
+                        "line": 124,
+                        "column": 22,
+                        "index": 2113
+                      },
+                      "end_loc": {
+                        "line": 124,
+                        "column": 37,
+                        "index": 2128
+                      }
+                    }
+                  }
+                }
+              ],
+              "type": "BlockStatement",
+              "start_loc": 2112,
+              "end_loc": 2131,
+              "loc": {
+                "start_loc": {
+                  "line": 124,
+                  "column": 21,
+                  "index": 2112
+                },
+                "end_loc": {
+                  "line": 126,
+                  "column": 1,
+                  "index": 2131
+                }
+              },
+              "directives": []
+            }
+          },
+          "alternate": null,
+          "type": "IfStatement",
+          "start_loc": 2091,
+          "end_loc": 2131,
+          "loc": {
+            "start_loc": {
+              "line": 124,
+              "column": 0,
+              "index": 2091
+            },
+            "end_loc": {
+              "line": 126,
+              "column": 1,
+              "index": 2131
+            }
+          },
+          "leadingComments": [
+            {
+              "type": "CommentLine",
+              "value": "CHECK#9",
+              "start_loc": 2081,
+              "end_loc": 2090,
+              "loc": {
+                "start_loc": {
+                  "line": 123,
+                  "column": 0,
+                  "index": 2081
+                },
+                "end_loc": {
+                  "line": 123,
+                  "column": 9,
+                  "index": 2090
+                }
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "type": "Program",
+    "start_loc": 0,
+    "end_loc": 2132,
+    "loc": {
+      "start_loc": {
+        "line": 1,
+        "column": 0,
+        "index": 0
+      },
+      "end_loc": {
+        "line": 127,
+        "column": 0,
+        "index": 2132
+      }
+    },
+    "sourceType": "module",
+    "interpreter": null,
+    "directives": [],
+    "extra": {
+      "topLevelAwait": false
+    }
+  },
+  "type": "File",
+  "start_loc": 0,
+  "end_loc": 2132,
+  "loc": {
+    "start_loc": {
+      "line": 1,
+      "column": 0,
+      "index": 0
+    },
+    "end_loc": {
+      "line": 127,
+      "column": 0,
+      "index": 2132
+    }
+  },
+  "errors": [],
+  "comments": [
+    {
+      "type": "CommentLine",
+      "value": " Copyright (C) 2017 Ecma International.  All rights reserved.",
+      "start_loc": 0,
+      "end_loc": 63,
+      "loc": {
+        "start_loc": {
+          "line": 1,
+          "column": 0,
+          "index": 0
+        },
+        "end_loc": {
+          "line": 1,
+          "column": 63,
+          "index": 63
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": " This code is governed by the BSD license found in the LICENSE file.",
+      "start_loc": 64,
+      "end_loc": 134,
+      "loc": {
+        "start_loc": {
+          "line": 2,
+          "column": 0,
+          "index": 64
+        },
+        "end_loc": {
+          "line": 2,
+          "column": 70,
+          "index": 134
+        }
+      }
+    },
+    {
+      "type": "CommentBlock",
+      "value": "---\ndescription: |\n    Collection of assertion functions used throughout test262\ndefines: [assert]\n---",
+      "start_loc": 135,
+      "end_loc": 241,
+      "loc": {
+        "start_loc": {
+          "line": 3,
+          "column": 0,
+          "index": 135
+        },
+        "end_loc": {
+          "line": 7,
+          "column": 5,
+          "index": 241
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": " Handle +/-0 vs. -/+0",
+      "start_loc": 433,
+      "end_loc": 456,
+      "loc": {
+        "start_loc": {
+          "line": 21,
+          "column": 4,
+          "index": 433
+        },
+        "end_loc": {
+          "line": 21,
+          "column": 27,
+          "index": 456
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": " Handle NaN vs. NaN",
+      "start_loc": 503,
+      "end_loc": 524,
+      "loc": {
+        "start_loc": {
+          "line": 25,
+          "column": 2,
+          "index": 503
+        },
+        "end_loc": {
+          "line": 25,
+          "column": 23,
+          "index": 524
+        }
+      }
+    },
+    {
+      "type": "CommentBlock",
+      "value": "\nfunction assertThrows(expectedErrorConstructor, func, message) {\n  var expectedName, actualName;\n  if (typeof func !== \"function\") {\n    __errorCount++;\n    return;\n  }\n  if (message === undefined) {\n    message = '';\n  } else {\n    message += ' ';\n  }\n\n  try {\n    func();\n  } catch (thrown) {\n    if (typeof thrown !== 'object' || thrown === null) {\n      __errorCount++;\n    } else if (thrown.constructor !== expectedErrorConstructor) {\n      __errorCount++;\n    }\n    return;\n  }\n\n  __errorCount++;\n};\n",
+      "start_loc": 811,
+      "end_loc": 1322,
+      "loc": {
+        "start_loc": {
+          "line": 41,
+          "column": 0,
+          "index": 811
+        },
+        "end_loc": {
+          "line": 67,
+          "column": 2,
+          "index": 1322
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": " Copyright 2009 the Sputnik authors.  All rights reserved.",
+      "start_loc": 1324,
+      "end_loc": 1384,
+      "loc": {
+        "start_loc": {
+          "line": 69,
+          "column": 0,
+          "index": 1324
+        },
+        "end_loc": {
+          "line": 69,
+          "column": 60,
+          "index": 1384
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": " This code is governed by the BSD license found in the LICENSE file.",
+      "start_loc": 1385,
+      "end_loc": 1455,
+      "loc": {
+        "start_loc": {
+          "line": 70,
+          "column": 0,
+          "index": 1385
+        },
+        "end_loc": {
+          "line": 70,
+          "column": 70,
+          "index": 1455
+        }
+      }
+    },
+    {
+      "type": "CommentBlock",
+      "value": "---\ninfo: \"DecimalLiteral :: DecimalIntegerLiteral. DecimalDigigts ExponentPart\"\nes5id: 7.8.3_A3.4_T4\ndescription: \"ExponentPart :: E -DecimalDigits\"\n---",
+      "start_loc": 1457,
+      "end_loc": 1614,
+      "loc": {
+        "start_loc": {
+          "line": 72,
+          "column": 0,
+          "index": 1457
+        },
+        "end_loc": {
+          "line": 76,
+          "column": 5,
+          "index": 1614
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": "CHECK#0",
+      "start_loc": 1616,
+      "end_loc": 1625,
+      "loc": {
+        "start_loc": {
+          "line": 78,
+          "column": 0,
+          "index": 1616
+        },
+        "end_loc": {
+          "line": 78,
+          "column": 9,
+          "index": 1625
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": "CHECK#1",
+      "start_loc": 1665,
+      "end_loc": 1674,
+      "loc": {
+        "start_loc": {
+          "line": 83,
+          "column": 0,
+          "index": 1665
+        },
+        "end_loc": {
+          "line": 83,
+          "column": 9,
+          "index": 1674
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": "CHECK#2",
+      "start_loc": 1717,
+      "end_loc": 1726,
+      "loc": {
+        "start_loc": {
+          "line": 88,
+          "column": 0,
+          "index": 1717
+        },
+        "end_loc": {
+          "line": 88,
+          "column": 9,
+          "index": 1726
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": "CHECK#3",
+      "start_loc": 1769,
+      "end_loc": 1778,
+      "loc": {
+        "start_loc": {
+          "line": 93,
+          "column": 0,
+          "index": 1769
+        },
+        "end_loc": {
+          "line": 93,
+          "column": 9,
+          "index": 1778
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": "CHECK#4",
+      "start_loc": 1821,
+      "end_loc": 1830,
+      "loc": {
+        "start_loc": {
+          "line": 98,
+          "column": 0,
+          "index": 1821
+        },
+        "end_loc": {
+          "line": 98,
+          "column": 9,
+          "index": 1830
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": "CHECK#5",
+      "start_loc": 1873,
+      "end_loc": 1882,
+      "loc": {
+        "start_loc": {
+          "line": 103,
+          "column": 0,
+          "index": 1873
+        },
+        "end_loc": {
+          "line": 103,
+          "column": 9,
+          "index": 1882
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": "CHECK#6",
+      "start_loc": 1925,
+      "end_loc": 1934,
+      "loc": {
+        "start_loc": {
+          "line": 108,
+          "column": 0,
+          "index": 1925
+        },
+        "end_loc": {
+          "line": 108,
+          "column": 9,
+          "index": 1934
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": "CHECK#7",
+      "start_loc": 1977,
+      "end_loc": 1986,
+      "loc": {
+        "start_loc": {
+          "line": 113,
+          "column": 0,
+          "index": 1977
+        },
+        "end_loc": {
+          "line": 113,
+          "column": 9,
+          "index": 1986
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": "CHECK#8",
+      "start_loc": 2029,
+      "end_loc": 2038,
+      "loc": {
+        "start_loc": {
+          "line": 118,
+          "column": 0,
+          "index": 2029
+        },
+        "end_loc": {
+          "line": 118,
+          "column": 9,
+          "index": 2038
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": "CHECK#9",
+      "start_loc": 2081,
+      "end_loc": 2090,
+      "loc": {
+        "start_loc": {
+          "line": 123,
+          "column": 0,
+          "index": 2081
+        },
+        "end_loc": {
+          "line": 123,
+          "column": 9,
+          "index": 2090
+        }
+      }
+    }
+  ]
+}

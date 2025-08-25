@@ -1,0 +1,2586 @@
+{
+  "program": {
+    "body": [
+      {
+        "TS_VariableDeclaration": {
+          "declarations": [
+            {
+              "id": {
+                "typeAnnotation": {
+                  "typeAnnotation": {
+                    "TS_TSNumberKeyword": {
+                      "type": "TSNumberKeyword",
+                      "start_loc": 201,
+                      "end_loc": 207,
+                      "loc": {
+                        "start_loc": {
+                          "line": 5,
+                          "column": 15,
+                          "index": 201
+                        },
+                        "end_loc": {
+                          "line": 5,
+                          "column": 21,
+                          "index": 207
+                        }
+                      }
+                    }
+                  },
+                  "type": "TSTypeAnnotation",
+                  "start_loc": 199,
+                  "end_loc": 207,
+                  "loc": {
+                    "start_loc": {
+                      "line": 5,
+                      "column": 13,
+                      "index": 199
+                    },
+                    "end_loc": {
+                      "line": 5,
+                      "column": 21,
+                      "index": 207
+                    }
+                  }
+                },
+                "type": "Identifier",
+                "start_loc": 190,
+                "end_loc": 207,
+                "loc": {
+                  "start_loc": {
+                    "line": 5,
+                    "column": 4,
+                    "index": 190
+                  },
+                  "end_loc": {
+                    "line": 5,
+                    "column": 21,
+                    "index": 207
+                  },
+                  "identifierName": "userInput"
+                },
+                "name": "userInput"
+              },
+              "init": {
+                "TS_CallExpression": {
+                  "callee": {
+                    "TS_IdExpression": {
+                      "type": "Identifier",
+                      "start_loc": 210,
+                      "end_loc": 222,
+                      "loc": {
+                        "start_loc": {
+                          "line": 5,
+                          "column": 24,
+                          "index": 210
+                        },
+                        "end_loc": {
+                          "line": 5,
+                          "column": 36,
+                          "index": 222
+                        },
+                        "identifierName": "getUserInput"
+                      },
+                      "name": "getUserInput"
+                    }
+                  },
+                  "arguments": [],
+                  "type": "CallExpression",
+                  "start_loc": 210,
+                  "end_loc": 224,
+                  "loc": {
+                    "start_loc": {
+                      "line": 5,
+                      "column": 24,
+                      "index": 210
+                    },
+                    "end_loc": {
+                      "line": 5,
+                      "column": 38,
+                      "index": 224
+                    }
+                  }
+                }
+              },
+              "type": "VariableDeclarator",
+              "start_loc": 190,
+              "end_loc": 224,
+              "loc": {
+                "start_loc": {
+                  "line": 5,
+                  "column": 4,
+                  "index": 190
+                },
+                "end_loc": {
+                  "line": 5,
+                  "column": 38,
+                  "index": 224
+                }
+              }
+            }
+          ],
+          "type": "VariableDeclaration",
+          "start_loc": 186,
+          "end_loc": 225,
+          "loc": {
+            "start_loc": {
+              "line": 5,
+              "column": 0,
+              "index": 186
+            },
+            "end_loc": {
+              "line": 5,
+              "column": 39,
+              "index": 225
+            }
+          },
+          "kind": "let",
+          "trailingComments": [
+            {
+              "type": "CommentLine",
+              "value": " : TAINTED ",
+              "start_loc": 233,
+              "end_loc": 246,
+              "loc": {
+                "start_loc": {
+                  "line": 5,
+                  "column": 47,
+                  "index": 233
+                },
+                "end_loc": {
+                  "line": 5,
+                  "column": 60,
+                  "index": 246
+                }
+              }
+            }
+          ],
+          "leadingComments": [
+            {
+              "type": "CommentLine",
+              "value": " Test program for taint analysis",
+              "start_loc": 0,
+              "end_loc": 34,
+              "loc": {
+                "start_loc": {
+                  "line": 1,
+                  "column": 0,
+                  "index": 0
+                },
+                "end_loc": {
+                  "line": 1,
+                  "column": 34,
+                  "index": 34
+                }
+              }
+            },
+            {
+              "type": "CommentLine",
+              "value": " Shows how external function calls taint variables and propagate through assignments",
+              "start_loc": 35,
+              "end_loc": 121,
+              "loc": {
+                "start_loc": {
+                  "line": 2,
+                  "column": 0,
+                  "index": 35
+                },
+                "end_loc": {
+                  "line": 2,
+                  "column": 86,
+                  "index": 121
+                }
+              }
+            },
+            {
+              "type": "CommentLine",
+              "value": " External function calls - these should be marked as tainted",
+              "start_loc": 123,
+              "end_loc": 185,
+              "loc": {
+                "start_loc": {
+                  "line": 4,
+                  "column": 0,
+                  "index": 123
+                },
+                "end_loc": {
+                  "line": 4,
+                  "column": 62,
+                  "index": 185
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "TS_VariableDeclaration": {
+          "declarations": [
+            {
+              "id": {
+                "typeAnnotation": {
+                  "typeAnnotation": {
+                    "TS_TSStringKeyword": {
+                      "type": "TSStringKeyword",
+                      "start_loc": 261,
+                      "end_loc": 267,
+                      "loc": {
+                        "start_loc": {
+                          "line": 6,
+                          "column": 14,
+                          "index": 261
+                        },
+                        "end_loc": {
+                          "line": 6,
+                          "column": 20,
+                          "index": 267
+                        }
+                      }
+                    }
+                  },
+                  "type": "TSTypeAnnotation",
+                  "start_loc": 259,
+                  "end_loc": 267,
+                  "loc": {
+                    "start_loc": {
+                      "line": 6,
+                      "column": 12,
+                      "index": 259
+                    },
+                    "end_loc": {
+                      "line": 6,
+                      "column": 20,
+                      "index": 267
+                    }
+                  }
+                },
+                "type": "Identifier",
+                "start_loc": 251,
+                "end_loc": 267,
+                "loc": {
+                  "start_loc": {
+                    "line": 6,
+                    "column": 4,
+                    "index": 251
+                  },
+                  "end_loc": {
+                    "line": 6,
+                    "column": 20,
+                    "index": 267
+                  },
+                  "identifierName": "fileData"
+                },
+                "name": "fileData"
+              },
+              "init": {
+                "TS_CallExpression": {
+                  "callee": {
+                    "TS_IdExpression": {
+                      "type": "Identifier",
+                      "start_loc": 270,
+                      "end_loc": 278,
+                      "loc": {
+                        "start_loc": {
+                          "line": 6,
+                          "column": 23,
+                          "index": 270
+                        },
+                        "end_loc": {
+                          "line": 6,
+                          "column": 31,
+                          "index": 278
+                        },
+                        "identifierName": "readFile"
+                      },
+                      "name": "readFile"
+                    }
+                  },
+                  "arguments": [],
+                  "type": "CallExpression",
+                  "start_loc": 270,
+                  "end_loc": 280,
+                  "loc": {
+                    "start_loc": {
+                      "line": 6,
+                      "column": 23,
+                      "index": 270
+                    },
+                    "end_loc": {
+                      "line": 6,
+                      "column": 33,
+                      "index": 280
+                    }
+                  }
+                }
+              },
+              "type": "VariableDeclarator",
+              "start_loc": 251,
+              "end_loc": 280,
+              "loc": {
+                "start_loc": {
+                  "line": 6,
+                  "column": 4,
+                  "index": 251
+                },
+                "end_loc": {
+                  "line": 6,
+                  "column": 33,
+                  "index": 280
+                }
+              }
+            }
+          ],
+          "type": "VariableDeclaration",
+          "start_loc": 247,
+          "end_loc": 281,
+          "loc": {
+            "start_loc": {
+              "line": 6,
+              "column": 0,
+              "index": 247
+            },
+            "end_loc": {
+              "line": 6,
+              "column": 34,
+              "index": 281
+            }
+          },
+          "kind": "let",
+          "trailingComments": [
+            {
+              "type": "CommentLine",
+              "value": " : TAINTED  ",
+              "start_loc": 286,
+              "end_loc": 300,
+              "loc": {
+                "start_loc": {
+                  "line": 6,
+                  "column": 39,
+                  "index": 286
+                },
+                "end_loc": {
+                  "line": 6,
+                  "column": 53,
+                  "index": 300
+                }
+              }
+            }
+          ],
+          "leadingComments": [
+            {
+              "type": "CommentLine",
+              "value": " : TAINTED ",
+              "start_loc": 233,
+              "end_loc": 246,
+              "loc": {
+                "start_loc": {
+                  "line": 5,
+                  "column": 47,
+                  "index": 233
+                },
+                "end_loc": {
+                  "line": 5,
+                  "column": 60,
+                  "index": 246
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "TS_VariableDeclaration": {
+          "declarations": [
+            {
+              "id": {
+                "typeAnnotation": {
+                  "typeAnnotation": null,
+                  "type": "TSTypeAnnotation",
+                  "start_loc": 312,
+                  "end_loc": 317,
+                  "loc": {
+                    "start_loc": {
+                      "line": 7,
+                      "column": 11,
+                      "index": 312
+                    },
+                    "end_loc": {
+                      "line": 7,
+                      "column": 16,
+                      "index": 317
+                    }
+                  }
+                },
+                "type": "Identifier",
+                "start_loc": 305,
+                "end_loc": 317,
+                "loc": {
+                  "start_loc": {
+                    "line": 7,
+                    "column": 4,
+                    "index": 305
+                  },
+                  "end_loc": {
+                    "line": 7,
+                    "column": 16,
+                    "index": 317
+                  },
+                  "identifierName": "apiData"
+                },
+                "name": "apiData"
+              },
+              "init": {
+                "TS_CallExpression": {
+                  "callee": {
+                    "TS_IdExpression": {
+                      "type": "Identifier",
+                      "start_loc": 320,
+                      "end_loc": 325,
+                      "loc": {
+                        "start_loc": {
+                          "line": 7,
+                          "column": 19,
+                          "index": 320
+                        },
+                        "end_loc": {
+                          "line": 7,
+                          "column": 24,
+                          "index": 325
+                        },
+                        "identifierName": "fetch"
+                      },
+                      "name": "fetch"
+                    }
+                  },
+                  "arguments": [],
+                  "type": "CallExpression",
+                  "start_loc": 320,
+                  "end_loc": 327,
+                  "loc": {
+                    "start_loc": {
+                      "line": 7,
+                      "column": 19,
+                      "index": 320
+                    },
+                    "end_loc": {
+                      "line": 7,
+                      "column": 26,
+                      "index": 327
+                    }
+                  }
+                }
+              },
+              "type": "VariableDeclarator",
+              "start_loc": 305,
+              "end_loc": 327,
+              "loc": {
+                "start_loc": {
+                  "line": 7,
+                  "column": 4,
+                  "index": 305
+                },
+                "end_loc": {
+                  "line": 7,
+                  "column": 26,
+                  "index": 327
+                }
+              }
+            }
+          ],
+          "type": "VariableDeclaration",
+          "start_loc": 301,
+          "end_loc": 328,
+          "loc": {
+            "start_loc": {
+              "line": 7,
+              "column": 0,
+              "index": 301
+            },
+            "end_loc": {
+              "line": 7,
+              "column": 27,
+              "index": 328
+            }
+          },
+          "kind": "let",
+          "trailingComments": [
+            {
+              "type": "CommentLine",
+              "value": " : TAINTED ",
+              "start_loc": 337,
+              "end_loc": 350,
+              "loc": {
+                "start_loc": {
+                  "line": 7,
+                  "column": 36,
+                  "index": 337
+                },
+                "end_loc": {
+                  "line": 7,
+                  "column": 49,
+                  "index": 350
+                }
+              }
+            },
+            {
+              "type": "CommentLine",
+              "value": " Clean values",
+              "start_loc": 353,
+              "end_loc": 368,
+              "loc": {
+                "start_loc": {
+                  "line": 10,
+                  "column": 0,
+                  "index": 353
+                },
+                "end_loc": {
+                  "line": 10,
+                  "column": 15,
+                  "index": 368
+                }
+              }
+            }
+          ],
+          "leadingComments": [
+            {
+              "type": "CommentLine",
+              "value": " : TAINTED  ",
+              "start_loc": 286,
+              "end_loc": 300,
+              "loc": {
+                "start_loc": {
+                  "line": 6,
+                  "column": 39,
+                  "index": 286
+                },
+                "end_loc": {
+                  "line": 6,
+                  "column": 53,
+                  "index": 300
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "TS_VariableDeclaration": {
+          "declarations": [
+            {
+              "id": {
+                "typeAnnotation": {
+                  "typeAnnotation": {
+                    "TS_TSNumberKeyword": {
+                      "type": "TSNumberKeyword",
+                      "start_loc": 380,
+                      "end_loc": 386,
+                      "loc": {
+                        "start_loc": {
+                          "line": 11,
+                          "column": 11,
+                          "index": 380
+                        },
+                        "end_loc": {
+                          "line": 11,
+                          "column": 17,
+                          "index": 386
+                        }
+                      }
+                    }
+                  },
+                  "type": "TSTypeAnnotation",
+                  "start_loc": 378,
+                  "end_loc": 386,
+                  "loc": {
+                    "start_loc": {
+                      "line": 11,
+                      "column": 9,
+                      "index": 378
+                    },
+                    "end_loc": {
+                      "line": 11,
+                      "column": 17,
+                      "index": 386
+                    }
+                  }
+                },
+                "type": "Identifier",
+                "start_loc": 373,
+                "end_loc": 386,
+                "loc": {
+                  "start_loc": {
+                    "line": 11,
+                    "column": 4,
+                    "index": 373
+                  },
+                  "end_loc": {
+                    "line": 11,
+                    "column": 17,
+                    "index": 386
+                  },
+                  "identifierName": "clean"
+                },
+                "name": "clean"
+              },
+              "init": {
+                "TS_NumericLiteral": {
+                  "type": "NumericLiteral",
+                  "start_loc": 389,
+                  "end_loc": 391,
+                  "loc": {
+                    "start_loc": {
+                      "line": 11,
+                      "column": 20,
+                      "index": 389
+                    },
+                    "end_loc": {
+                      "line": 11,
+                      "column": 22,
+                      "index": 391
+                    }
+                  },
+                  "extra": {
+                    "rawValue": 42,
+                    "raw": "42"
+                  },
+                  "value": 42
+                }
+              },
+              "type": "VariableDeclarator",
+              "start_loc": 373,
+              "end_loc": 391,
+              "loc": {
+                "start_loc": {
+                  "line": 11,
+                  "column": 4,
+                  "index": 373
+                },
+                "end_loc": {
+                  "line": 11,
+                  "column": 22,
+                  "index": 391
+                }
+              }
+            }
+          ],
+          "type": "VariableDeclaration",
+          "start_loc": 369,
+          "end_loc": 392,
+          "loc": {
+            "start_loc": {
+              "line": 11,
+              "column": 0,
+              "index": 369
+            },
+            "end_loc": {
+              "line": 11,
+              "column": 23,
+              "index": 392
+            }
+          },
+          "kind": "let",
+          "trailingComments": [
+            {
+              "type": "CommentLine",
+              "value": " clean: CLEAN (literal)",
+              "start_loc": 416,
+              "end_loc": 441,
+              "loc": {
+                "start_loc": {
+                  "line": 11,
+                  "column": 47,
+                  "index": 416
+                },
+                "end_loc": {
+                  "line": 11,
+                  "column": 72,
+                  "index": 441
+                }
+              }
+            },
+            {
+              "type": "CommentLine",
+              "value": " Object with mixed taint",
+              "start_loc": 443,
+              "end_loc": 469,
+              "loc": {
+                "start_loc": {
+                  "line": 13,
+                  "column": 0,
+                  "index": 443
+                },
+                "end_loc": {
+                  "line": 13,
+                  "column": 26,
+                  "index": 469
+                }
+              }
+            }
+          ],
+          "leadingComments": [
+            {
+              "type": "CommentLine",
+              "value": " : TAINTED ",
+              "start_loc": 337,
+              "end_loc": 350,
+              "loc": {
+                "start_loc": {
+                  "line": 7,
+                  "column": 36,
+                  "index": 337
+                },
+                "end_loc": {
+                  "line": 7,
+                  "column": 49,
+                  "index": 350
+                }
+              }
+            },
+            {
+              "type": "CommentLine",
+              "value": " Clean values",
+              "start_loc": 353,
+              "end_loc": 368,
+              "loc": {
+                "start_loc": {
+                  "line": 10,
+                  "column": 0,
+                  "index": 353
+                },
+                "end_loc": {
+                  "line": 10,
+                  "column": 15,
+                  "index": 368
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "TS_VariableDeclaration": {
+          "declarations": [
+            {
+              "id": {
+                "type": "Identifier",
+                "start_loc": 474,
+                "end_loc": 481,
+                "loc": {
+                  "start_loc": {
+                    "line": 14,
+                    "column": 4,
+                    "index": 474
+                  },
+                  "end_loc": {
+                    "line": 14,
+                    "column": 11,
+                    "index": 481
+                  },
+                  "identifierName": "profile"
+                },
+                "name": "profile"
+              },
+              "init": {
+                "TS_ObjectExpression": {
+                  "properties": [
+                    {
+                      "key": {
+                        "TS_NumericLiteral": {
+                          "type": "NumericLiteral",
+                          "start_loc": 490,
+                          "end_loc": 491,
+                          "loc": {
+                            "start_loc": {
+                              "line": 15,
+                              "column": 4,
+                              "index": 490
+                            },
+                            "end_loc": {
+                              "line": 15,
+                              "column": 5,
+                              "index": 491
+                            }
+                          },
+                          "extra": {
+                            "rawValue": 1,
+                            "raw": "1"
+                          },
+                          "value": 1
+                        }
+                      },
+                      "value": {
+                        "TS_IdExpression": {
+                          "type": "Identifier",
+                          "start_loc": 493,
+                          "end_loc": 502,
+                          "loc": {
+                            "start_loc": {
+                              "line": 15,
+                              "column": 7,
+                              "index": 493
+                            },
+                            "end_loc": {
+                              "line": 15,
+                              "column": 16,
+                              "index": 502
+                            },
+                            "identifierName": "userInput"
+                          },
+                          "name": "userInput"
+                        }
+                      },
+                      "type": "ObjectProperty",
+                      "start_loc": 490,
+                      "end_loc": 502,
+                      "loc": {
+                        "start_loc": {
+                          "line": 15,
+                          "column": 4,
+                          "index": 490
+                        },
+                        "end_loc": {
+                          "line": 15,
+                          "column": 16,
+                          "index": 502
+                        }
+                      },
+                      "method": false,
+                      "computed": false,
+                      "shorthand": false
+                    },
+                    {
+                      "key": {
+                        "TS_NumericLiteral": {
+                          "type": "NumericLiteral",
+                          "start_loc": 547,
+                          "end_loc": 548,
+                          "loc": {
+                            "start_loc": {
+                              "line": 16,
+                              "column": 4,
+                              "index": 547
+                            },
+                            "end_loc": {
+                              "line": 16,
+                              "column": 5,
+                              "index": 548
+                            }
+                          },
+                          "extra": {
+                            "rawValue": 2,
+                            "raw": "2"
+                          },
+                          "value": 2
+                        }
+                      },
+                      "value": {
+                        "TS_IdExpression": {
+                          "type": "Identifier",
+                          "start_loc": 550,
+                          "end_loc": 555,
+                          "loc": {
+                            "start_loc": {
+                              "line": 16,
+                              "column": 7,
+                              "index": 550
+                            },
+                            "end_loc": {
+                              "line": 16,
+                              "column": 12,
+                              "index": 555
+                            },
+                            "identifierName": "clean"
+                          },
+                          "name": "clean"
+                        }
+                      },
+                      "type": "ObjectProperty",
+                      "start_loc": 547,
+                      "end_loc": 555,
+                      "loc": {
+                        "start_loc": {
+                          "line": 16,
+                          "column": 4,
+                          "index": 547
+                        },
+                        "end_loc": {
+                          "line": 16,
+                          "column": 12,
+                          "index": 555
+                        }
+                      },
+                      "method": false,
+                      "computed": false,
+                      "shorthand": false,
+                      "leadingComments": [
+                        {
+                          "type": "CommentLine",
+                          "value": " [1]: TAINTED (from getUserInput)",
+                          "start_loc": 507,
+                          "end_loc": 542,
+                          "loc": {
+                            "start_loc": {
+                              "line": 15,
+                              "column": 21,
+                              "index": 507
+                            },
+                            "end_loc": {
+                              "line": 15,
+                              "column": 56,
+                              "index": 542
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "key": {
+                        "TS_NumericLiteral": {
+                          "type": "NumericLiteral",
+                          "start_loc": 582,
+                          "end_loc": 583,
+                          "loc": {
+                            "start_loc": {
+                              "line": 17,
+                              "column": 4,
+                              "index": 582
+                            },
+                            "end_loc": {
+                              "line": 17,
+                              "column": 5,
+                              "index": 583
+                            }
+                          },
+                          "extra": {
+                            "rawValue": 3,
+                            "raw": "3"
+                          },
+                          "value": 3
+                        }
+                      },
+                      "value": {
+                        "TS_IdExpression": {
+                          "type": "Identifier",
+                          "start_loc": 585,
+                          "end_loc": 593,
+                          "loc": {
+                            "start_loc": {
+                              "line": 17,
+                              "column": 7,
+                              "index": 585
+                            },
+                            "end_loc": {
+                              "line": 17,
+                              "column": 15,
+                              "index": 593
+                            },
+                            "identifierName": "fileData"
+                          },
+                          "name": "fileData"
+                        }
+                      },
+                      "type": "ObjectProperty",
+                      "start_loc": 582,
+                      "end_loc": 593,
+                      "loc": {
+                        "start_loc": {
+                          "line": 17,
+                          "column": 4,
+                          "index": 582
+                        },
+                        "end_loc": {
+                          "line": 17,
+                          "column": 15,
+                          "index": 593
+                        }
+                      },
+                      "method": false,
+                      "computed": false,
+                      "shorthand": false,
+                      "leadingComments": [
+                        {
+                          "type": "CommentLine",
+                          "value": " [2]: CLEAN",
+                          "start_loc": 564,
+                          "end_loc": 577,
+                          "loc": {
+                            "start_loc": {
+                              "line": 16,
+                              "column": 21,
+                              "index": 564
+                            },
+                            "end_loc": {
+                              "line": 16,
+                              "column": 34,
+                              "index": 577
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "key": {
+                        "TS_NumericLiteral": {
+                          "type": "NumericLiteral",
+                          "start_loc": 635,
+                          "end_loc": 636,
+                          "loc": {
+                            "start_loc": {
+                              "line": 18,
+                              "column": 4,
+                              "index": 635
+                            },
+                            "end_loc": {
+                              "line": 18,
+                              "column": 5,
+                              "index": 636
+                            }
+                          },
+                          "extra": {
+                            "rawValue": 4,
+                            "raw": "4"
+                          },
+                          "value": 4
+                        }
+                      },
+                      "value": {
+                        "TS_IdExpression": {
+                          "type": "Identifier",
+                          "start_loc": 638,
+                          "end_loc": 645,
+                          "loc": {
+                            "start_loc": {
+                              "line": 18,
+                              "column": 7,
+                              "index": 638
+                            },
+                            "end_loc": {
+                              "line": 18,
+                              "column": 14,
+                              "index": 645
+                            },
+                            "identifierName": "apiData"
+                          },
+                          "name": "apiData"
+                        }
+                      },
+                      "type": "ObjectProperty",
+                      "start_loc": 635,
+                      "end_loc": 645,
+                      "loc": {
+                        "start_loc": {
+                          "line": 18,
+                          "column": 4,
+                          "index": 635
+                        },
+                        "end_loc": {
+                          "line": 18,
+                          "column": 14,
+                          "index": 645
+                        }
+                      },
+                      "method": false,
+                      "computed": false,
+                      "shorthand": false,
+                      "trailingComments": [
+                        {
+                          "type": "CommentLine",
+                          "value": " [4]: TAINTED (from fetch)",
+                          "start_loc": 652,
+                          "end_loc": 680,
+                          "loc": {
+                            "start_loc": {
+                              "line": 18,
+                              "column": 21,
+                              "index": 652
+                            },
+                            "end_loc": {
+                              "line": 18,
+                              "column": 49,
+                              "index": 680
+                            }
+                          }
+                        }
+                      ],
+                      "leadingComments": [
+                        {
+                          "type": "CommentLine",
+                          "value": " [3]: TAINTED (from readFile)",
+                          "start_loc": 599,
+                          "end_loc": 630,
+                          "loc": {
+                            "start_loc": {
+                              "line": 17,
+                              "column": 21,
+                              "index": 599
+                            },
+                            "end_loc": {
+                              "line": 17,
+                              "column": 52,
+                              "index": 630
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ],
+                  "type": "ObjectExpression",
+                  "start_loc": 484,
+                  "end_loc": 682,
+                  "loc": {
+                    "start_loc": {
+                      "line": 14,
+                      "column": 14,
+                      "index": 484
+                    },
+                    "end_loc": {
+                      "line": 19,
+                      "column": 1,
+                      "index": 682
+                    }
+                  }
+                }
+              },
+              "type": "VariableDeclarator",
+              "start_loc": 474,
+              "end_loc": 682,
+              "loc": {
+                "start_loc": {
+                  "line": 14,
+                  "column": 4,
+                  "index": 474
+                },
+                "end_loc": {
+                  "line": 19,
+                  "column": 1,
+                  "index": 682
+                }
+              }
+            }
+          ],
+          "type": "VariableDeclaration",
+          "start_loc": 470,
+          "end_loc": 683,
+          "loc": {
+            "start_loc": {
+              "line": 14,
+              "column": 0,
+              "index": 470
+            },
+            "end_loc": {
+              "line": 19,
+              "column": 2,
+              "index": 683
+            }
+          },
+          "kind": "let",
+          "trailingComments": [
+            {
+              "type": "CommentLine",
+              "value": " Taint propagation through assignments",
+              "start_loc": 685,
+              "end_loc": 725,
+              "loc": {
+                "start_loc": {
+                  "line": 21,
+                  "column": 0,
+                  "index": 685
+                },
+                "end_loc": {
+                  "line": 21,
+                  "column": 40,
+                  "index": 725
+                }
+              }
+            }
+          ],
+          "leadingComments": [
+            {
+              "type": "CommentLine",
+              "value": " clean: CLEAN (literal)",
+              "start_loc": 416,
+              "end_loc": 441,
+              "loc": {
+                "start_loc": {
+                  "line": 11,
+                  "column": 47,
+                  "index": 416
+                },
+                "end_loc": {
+                  "line": 11,
+                  "column": 72,
+                  "index": 441
+                }
+              }
+            },
+            {
+              "type": "CommentLine",
+              "value": " Object with mixed taint",
+              "start_loc": 443,
+              "end_loc": 469,
+              "loc": {
+                "start_loc": {
+                  "line": 13,
+                  "column": 0,
+                  "index": 443
+                },
+                "end_loc": {
+                  "line": 13,
+                  "column": 26,
+                  "index": 469
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "TS_VariableDeclaration": {
+          "declarations": [
+            {
+              "id": {
+                "type": "Identifier",
+                "start_loc": 730,
+                "end_loc": 742,
+                "loc": {
+                  "start_loc": {
+                    "line": 22,
+                    "column": 4,
+                    "index": 730
+                  },
+                  "end_loc": {
+                    "line": 22,
+                    "column": 16,
+                    "index": 742
+                  },
+                  "identifierName": "taintedValue"
+                },
+                "name": "taintedValue"
+              },
+              "init": {
+                "TS_MemberExpression": {
+                  "object": {
+                    "TS_IdExpression": {
+                      "type": "Identifier",
+                      "start_loc": 745,
+                      "end_loc": 752,
+                      "loc": {
+                        "start_loc": {
+                          "line": 22,
+                          "column": 19,
+                          "index": 745
+                        },
+                        "end_loc": {
+                          "line": 22,
+                          "column": 26,
+                          "index": 752
+                        },
+                        "identifierName": "profile"
+                      },
+                      "name": "profile"
+                    }
+                  },
+                  "property": {
+                    "TS_NumericLiteral": {
+                      "type": "NumericLiteral",
+                      "start_loc": 753,
+                      "end_loc": 754,
+                      "loc": {
+                        "start_loc": {
+                          "line": 22,
+                          "column": 27,
+                          "index": 753
+                        },
+                        "end_loc": {
+                          "line": 22,
+                          "column": 28,
+                          "index": 754
+                        }
+                      },
+                      "extra": {
+                        "rawValue": 1,
+                        "raw": "1"
+                      },
+                      "value": 1
+                    }
+                  },
+                  "type": "MemberExpression",
+                  "start_loc": 745,
+                  "end_loc": 755,
+                  "loc": {
+                    "start_loc": {
+                      "line": 22,
+                      "column": 19,
+                      "index": 745
+                    },
+                    "end_loc": {
+                      "line": 22,
+                      "column": 29,
+                      "index": 755
+                    }
+                  },
+                  "computed": true
+                }
+              },
+              "type": "VariableDeclarator",
+              "start_loc": 730,
+              "end_loc": 755,
+              "loc": {
+                "start_loc": {
+                  "line": 22,
+                  "column": 4,
+                  "index": 730
+                },
+                "end_loc": {
+                  "line": 22,
+                  "column": 29,
+                  "index": 755
+                }
+              }
+            }
+          ],
+          "type": "VariableDeclaration",
+          "start_loc": 726,
+          "end_loc": 756,
+          "loc": {
+            "start_loc": {
+              "line": 22,
+              "column": 0,
+              "index": 726
+            },
+            "end_loc": {
+              "line": 22,
+              "column": 30,
+              "index": 756
+            }
+          },
+          "kind": "let",
+          "trailingComments": [
+            {
+              "type": "CommentLine",
+              "value": " TAINTED (from getUserInput)",
+              "start_loc": 768,
+              "end_loc": 798,
+              "loc": {
+                "start_loc": {
+                  "line": 22,
+                  "column": 42,
+                  "index": 768
+                },
+                "end_loc": {
+                  "line": 22,
+                  "column": 72,
+                  "index": 798
+                }
+              }
+            }
+          ],
+          "leadingComments": [
+            {
+              "type": "CommentLine",
+              "value": " Taint propagation through assignments",
+              "start_loc": 685,
+              "end_loc": 725,
+              "loc": {
+                "start_loc": {
+                  "line": 21,
+                  "column": 0,
+                  "index": 685
+                },
+                "end_loc": {
+                  "line": 21,
+                  "column": 40,
+                  "index": 725
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "TS_VariableDeclaration": {
+          "declarations": [
+            {
+              "id": {
+                "type": "Identifier",
+                "start_loc": 803,
+                "end_loc": 813,
+                "loc": {
+                  "start_loc": {
+                    "line": 23,
+                    "column": 4,
+                    "index": 803
+                  },
+                  "end_loc": {
+                    "line": 23,
+                    "column": 14,
+                    "index": 813
+                  },
+                  "identifierName": "cleanValue"
+                },
+                "name": "cleanValue"
+              },
+              "init": {
+                "TS_MemberExpression": {
+                  "object": {
+                    "TS_IdExpression": {
+                      "type": "Identifier",
+                      "start_loc": 816,
+                      "end_loc": 823,
+                      "loc": {
+                        "start_loc": {
+                          "line": 23,
+                          "column": 17,
+                          "index": 816
+                        },
+                        "end_loc": {
+                          "line": 23,
+                          "column": 24,
+                          "index": 823
+                        },
+                        "identifierName": "profile"
+                      },
+                      "name": "profile"
+                    }
+                  },
+                  "property": {
+                    "TS_NumericLiteral": {
+                      "type": "NumericLiteral",
+                      "start_loc": 824,
+                      "end_loc": 825,
+                      "loc": {
+                        "start_loc": {
+                          "line": 23,
+                          "column": 25,
+                          "index": 824
+                        },
+                        "end_loc": {
+                          "line": 23,
+                          "column": 26,
+                          "index": 825
+                        }
+                      },
+                      "extra": {
+                        "rawValue": 2,
+                        "raw": "2"
+                      },
+                      "value": 2
+                    }
+                  },
+                  "type": "MemberExpression",
+                  "start_loc": 816,
+                  "end_loc": 826,
+                  "loc": {
+                    "start_loc": {
+                      "line": 23,
+                      "column": 17,
+                      "index": 816
+                    },
+                    "end_loc": {
+                      "line": 23,
+                      "column": 27,
+                      "index": 826
+                    }
+                  },
+                  "computed": true
+                }
+              },
+              "type": "VariableDeclarator",
+              "start_loc": 803,
+              "end_loc": 826,
+              "loc": {
+                "start_loc": {
+                  "line": 23,
+                  "column": 4,
+                  "index": 803
+                },
+                "end_loc": {
+                  "line": 23,
+                  "column": 27,
+                  "index": 826
+                }
+              }
+            }
+          ],
+          "type": "VariableDeclaration",
+          "start_loc": 799,
+          "end_loc": 827,
+          "loc": {
+            "start_loc": {
+              "line": 23,
+              "column": 0,
+              "index": 799
+            },
+            "end_loc": {
+              "line": 23,
+              "column": 28,
+              "index": 827
+            }
+          },
+          "kind": "let",
+          "trailingComments": [
+            {
+              "type": "CommentLine",
+              "value": " CLEAN",
+              "start_loc": 841,
+              "end_loc": 849,
+              "loc": {
+                "start_loc": {
+                  "line": 23,
+                  "column": 42,
+                  "index": 841
+                },
+                "end_loc": {
+                  "line": 23,
+                  "column": 50,
+                  "index": 849
+                }
+              }
+            }
+          ],
+          "leadingComments": [
+            {
+              "type": "CommentLine",
+              "value": " TAINTED (from getUserInput)",
+              "start_loc": 768,
+              "end_loc": 798,
+              "loc": {
+                "start_loc": {
+                  "line": 22,
+                  "column": 42,
+                  "index": 768
+                },
+                "end_loc": {
+                  "line": 22,
+                  "column": 72,
+                  "index": 798
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "TS_VariableDeclaration": {
+          "declarations": [
+            {
+              "id": {
+                "type": "Identifier",
+                "start_loc": 854,
+                "end_loc": 860,
+                "loc": {
+                  "start_loc": {
+                    "line": 24,
+                    "column": 4,
+                    "index": 854
+                  },
+                  "end_loc": {
+                    "line": 24,
+                    "column": 10,
+                    "index": 860
+                  },
+                  "identifierName": "result"
+                },
+                "name": "result"
+              },
+              "init": {
+                "TS_BinaryExpression": {
+                  "left": {
+                    "TS_IdExpression": {
+                      "type": "Identifier",
+                      "start_loc": 863,
+                      "end_loc": 875,
+                      "loc": {
+                        "start_loc": {
+                          "line": 24,
+                          "column": 13,
+                          "index": 863
+                        },
+                        "end_loc": {
+                          "line": 24,
+                          "column": 25,
+                          "index": 875
+                        },
+                        "identifierName": "taintedValue"
+                      },
+                      "name": "taintedValue"
+                    }
+                  },
+                  "right": {
+                    "TS_NumericLiteral": {
+                      "type": "NumericLiteral",
+                      "start_loc": 878,
+                      "end_loc": 879,
+                      "loc": {
+                        "start_loc": {
+                          "line": 24,
+                          "column": 28,
+                          "index": 878
+                        },
+                        "end_loc": {
+                          "line": 24,
+                          "column": 29,
+                          "index": 879
+                        }
+                      },
+                      "extra": {
+                        "rawValue": 5,
+                        "raw": "5"
+                      },
+                      "value": 5
+                    }
+                  },
+                  "type": "BinaryExpression",
+                  "start_loc": 863,
+                  "end_loc": 879,
+                  "loc": {
+                    "start_loc": {
+                      "line": 24,
+                      "column": 13,
+                      "index": 863
+                    },
+                    "end_loc": {
+                      "line": 24,
+                      "column": 29,
+                      "index": 879
+                    }
+                  },
+                  "operator": "+"
+                }
+              },
+              "type": "VariableDeclarator",
+              "start_loc": 854,
+              "end_loc": 879,
+              "loc": {
+                "start_loc": {
+                  "line": 24,
+                  "column": 4,
+                  "index": 854
+                },
+                "end_loc": {
+                  "line": 24,
+                  "column": 29,
+                  "index": 879
+                }
+              }
+            }
+          ],
+          "type": "VariableDeclaration",
+          "start_loc": 850,
+          "end_loc": 880,
+          "loc": {
+            "start_loc": {
+              "line": 24,
+              "column": 0,
+              "index": 850
+            },
+            "end_loc": {
+              "line": 24,
+              "column": 30,
+              "index": 880
+            }
+          },
+          "kind": "let",
+          "trailingComments": [
+            {
+              "type": "CommentLine",
+              "value": " TAINTED (operation on tainted data)",
+              "start_loc": 892,
+              "end_loc": 930,
+              "loc": {
+                "start_loc": {
+                  "line": 24,
+                  "column": 42,
+                  "index": 892
+                },
+                "end_loc": {
+                  "line": 24,
+                  "column": 80,
+                  "index": 930
+                }
+              }
+            },
+            {
+              "type": "CommentLine",
+              "value": " Dynamic field access with tainted index",
+              "start_loc": 933,
+              "end_loc": 975,
+              "loc": {
+                "start_loc": {
+                  "line": 27,
+                  "column": 0,
+                  "index": 933
+                },
+                "end_loc": {
+                  "line": 27,
+                  "column": 42,
+                  "index": 975
+                }
+              }
+            }
+          ],
+          "leadingComments": [
+            {
+              "type": "CommentLine",
+              "value": " CLEAN",
+              "start_loc": 841,
+              "end_loc": 849,
+              "loc": {
+                "start_loc": {
+                  "line": 23,
+                  "column": 42,
+                  "index": 841
+                },
+                "end_loc": {
+                  "line": 23,
+                  "column": 50,
+                  "index": 849
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "TS_VariableDeclaration": {
+          "declarations": [
+            {
+              "id": {
+                "type": "Identifier",
+                "start_loc": 980,
+                "end_loc": 992,
+                "loc": {
+                  "start_loc": {
+                    "line": 28,
+                    "column": 4,
+                    "index": 980
+                  },
+                  "end_loc": {
+                    "line": 28,
+                    "column": 16,
+                    "index": 992
+                  },
+                  "identifierName": "dynamicIndex"
+                },
+                "name": "dynamicIndex"
+              },
+              "init": {
+                "TS_IdExpression": {
+                  "type": "Identifier",
+                  "start_loc": 995,
+                  "end_loc": 1004,
+                  "loc": {
+                    "start_loc": {
+                      "line": 28,
+                      "column": 19,
+                      "index": 995
+                    },
+                    "end_loc": {
+                      "line": 28,
+                      "column": 28,
+                      "index": 1004
+                    },
+                    "identifierName": "userInput"
+                  },
+                  "name": "userInput"
+                }
+              },
+              "type": "VariableDeclarator",
+              "start_loc": 980,
+              "end_loc": 1004,
+              "loc": {
+                "start_loc": {
+                  "line": 28,
+                  "column": 4,
+                  "index": 980
+                },
+                "end_loc": {
+                  "line": 28,
+                  "column": 28,
+                  "index": 1004
+                }
+              }
+            }
+          ],
+          "type": "VariableDeclaration",
+          "start_loc": 976,
+          "end_loc": 1005,
+          "loc": {
+            "start_loc": {
+              "line": 28,
+              "column": 0,
+              "index": 976
+            },
+            "end_loc": {
+              "line": 28,
+              "column": 29,
+              "index": 1005
+            }
+          },
+          "kind": "let",
+          "trailingComments": [
+            {
+              "type": "CommentLine",
+              "value": "TAINTED",
+              "start_loc": 1018,
+              "end_loc": 1027,
+              "loc": {
+                "start_loc": {
+                  "line": 28,
+                  "column": 42,
+                  "index": 1018
+                },
+                "end_loc": {
+                  "line": 28,
+                  "column": 51,
+                  "index": 1027
+                }
+              }
+            }
+          ],
+          "leadingComments": [
+            {
+              "type": "CommentLine",
+              "value": " TAINTED (operation on tainted data)",
+              "start_loc": 892,
+              "end_loc": 930,
+              "loc": {
+                "start_loc": {
+                  "line": 24,
+                  "column": 42,
+                  "index": 892
+                },
+                "end_loc": {
+                  "line": 24,
+                  "column": 80,
+                  "index": 930
+                }
+              }
+            },
+            {
+              "type": "CommentLine",
+              "value": " Dynamic field access with tainted index",
+              "start_loc": 933,
+              "end_loc": 975,
+              "loc": {
+                "start_loc": {
+                  "line": 27,
+                  "column": 0,
+                  "index": 933
+                },
+                "end_loc": {
+                  "line": 27,
+                  "column": 42,
+                  "index": 975
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "TS_VariableDeclaration": {
+          "declarations": [
+            {
+              "id": {
+                "type": "Identifier",
+                "start_loc": 1032,
+                "end_loc": 1045,
+                "loc": {
+                  "start_loc": {
+                    "line": 29,
+                    "column": 4,
+                    "index": 1032
+                  },
+                  "end_loc": {
+                    "line": 29,
+                    "column": 17,
+                    "index": 1045
+                  },
+                  "identifierName": "dynamicAccess"
+                },
+                "name": "dynamicAccess"
+              },
+              "init": {
+                "TS_MemberExpression": {
+                  "object": {
+                    "TS_IdExpression": {
+                      "type": "Identifier",
+                      "start_loc": 1048,
+                      "end_loc": 1055,
+                      "loc": {
+                        "start_loc": {
+                          "line": 29,
+                          "column": 20,
+                          "index": 1048
+                        },
+                        "end_loc": {
+                          "line": 29,
+                          "column": 27,
+                          "index": 1055
+                        },
+                        "identifierName": "profile"
+                      },
+                      "name": "profile"
+                    }
+                  },
+                  "property": {
+                    "TS_IdExpression": {
+                      "type": "Identifier",
+                      "start_loc": 1056,
+                      "end_loc": 1068,
+                      "loc": {
+                        "start_loc": {
+                          "line": 29,
+                          "column": 28,
+                          "index": 1056
+                        },
+                        "end_loc": {
+                          "line": 29,
+                          "column": 40,
+                          "index": 1068
+                        },
+                        "identifierName": "dynamicIndex"
+                      },
+                      "name": "dynamicIndex"
+                    }
+                  },
+                  "type": "MemberExpression",
+                  "start_loc": 1048,
+                  "end_loc": 1069,
+                  "loc": {
+                    "start_loc": {
+                      "line": 29,
+                      "column": 20,
+                      "index": 1048
+                    },
+                    "end_loc": {
+                      "line": 29,
+                      "column": 41,
+                      "index": 1069
+                    }
+                  },
+                  "computed": true
+                }
+              },
+              "type": "VariableDeclarator",
+              "start_loc": 1032,
+              "end_loc": 1069,
+              "loc": {
+                "start_loc": {
+                  "line": 29,
+                  "column": 4,
+                  "index": 1032
+                },
+                "end_loc": {
+                  "line": 29,
+                  "column": 41,
+                  "index": 1069
+                }
+              }
+            }
+          ],
+          "type": "VariableDeclaration",
+          "start_loc": 1028,
+          "end_loc": 1070,
+          "loc": {
+            "start_loc": {
+              "line": 29,
+              "column": 0,
+              "index": 1028
+            },
+            "end_loc": {
+              "line": 29,
+              "column": 42,
+              "index": 1070
+            }
+          },
+          "kind": "let",
+          "trailingComments": [
+            {
+              "type": "CommentLine",
+              "value": "  TAINTED (tainted index)",
+              "start_loc": 1071,
+              "end_loc": 1098,
+              "loc": {
+                "start_loc": {
+                  "line": 29,
+                  "column": 43,
+                  "index": 1071
+                },
+                "end_loc": {
+                  "line": 29,
+                  "column": 70,
+                  "index": 1098
+                }
+              }
+            }
+          ],
+          "leadingComments": [
+            {
+              "type": "CommentLine",
+              "value": "TAINTED",
+              "start_loc": 1018,
+              "end_loc": 1027,
+              "loc": {
+                "start_loc": {
+                  "line": 28,
+                  "column": 42,
+                  "index": 1018
+                },
+                "end_loc": {
+                  "line": 28,
+                  "column": 51,
+                  "index": 1027
+                }
+              }
+            }
+          ]
+        }
+      },
+      {
+        "TS_ExpressionStatement": {
+          "expression": {
+            "TS_AssignmentExpression": {
+              "left": {
+                "TS_MemberExpression": {
+                  "object": {
+                    "TS_IdExpression": {
+                      "type": "Identifier",
+                      "start_loc": 1099,
+                      "end_loc": 1106,
+                      "loc": {
+                        "start_loc": {
+                          "line": 30,
+                          "column": 0,
+                          "index": 1099
+                        },
+                        "end_loc": {
+                          "line": 30,
+                          "column": 7,
+                          "index": 1106
+                        },
+                        "identifierName": "profile"
+                      },
+                      "name": "profile"
+                    }
+                  },
+                  "property": {
+                    "TS_NumericLiteral": {
+                      "type": "NumericLiteral",
+                      "start_loc": 1107,
+                      "end_loc": 1108,
+                      "loc": {
+                        "start_loc": {
+                          "line": 30,
+                          "column": 8,
+                          "index": 1107
+                        },
+                        "end_loc": {
+                          "line": 30,
+                          "column": 9,
+                          "index": 1108
+                        }
+                      },
+                      "extra": {
+                        "rawValue": 5,
+                        "raw": "5"
+                      },
+                      "value": 5
+                    }
+                  },
+                  "type": "MemberExpression",
+                  "start_loc": 1099,
+                  "end_loc": 1109,
+                  "loc": {
+                    "start_loc": {
+                      "line": 30,
+                      "column": 0,
+                      "index": 1099
+                    },
+                    "end_loc": {
+                      "line": 30,
+                      "column": 10,
+                      "index": 1109
+                    }
+                  },
+                  "computed": true
+                }
+              },
+              "right": {
+                "TS_IdExpression": {
+                  "type": "Identifier",
+                  "start_loc": 1112,
+                  "end_loc": 1121,
+                  "loc": {
+                    "start_loc": {
+                      "line": 30,
+                      "column": 13,
+                      "index": 1112
+                    },
+                    "end_loc": {
+                      "line": 30,
+                      "column": 22,
+                      "index": 1121
+                    },
+                    "identifierName": "userInput"
+                  },
+                  "name": "userInput"
+                }
+              },
+              "type": "AssignmentExpression",
+              "start_loc": 1099,
+              "end_loc": 1121,
+              "loc": {
+                "start_loc": {
+                  "line": 30,
+                  "column": 0,
+                  "index": 1099
+                },
+                "end_loc": {
+                  "line": 30,
+                  "column": 22,
+                  "index": 1121
+                }
+              },
+              "operator": "="
+            }
+          },
+          "type": "ExpressionStatement",
+          "start_loc": 1099,
+          "end_loc": 1122,
+          "loc": {
+            "start_loc": {
+              "line": 30,
+              "column": 0,
+              "index": 1099
+            },
+            "end_loc": {
+              "line": 30,
+              "column": 23,
+              "index": 1122
+            }
+          },
+          "leadingComments": [
+            {
+              "type": "CommentLine",
+              "value": "  TAINTED (tainted index)",
+              "start_loc": 1071,
+              "end_loc": 1098,
+              "loc": {
+                "start_loc": {
+                  "line": 29,
+                  "column": 43,
+                  "index": 1071
+                },
+                "end_loc": {
+                  "line": 29,
+                  "column": 70,
+                  "index": 1098
+                }
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "type": "Program",
+    "start_loc": 0,
+    "end_loc": 1124,
+    "loc": {
+      "start_loc": {
+        "line": 1,
+        "column": 0,
+        "index": 0
+      },
+      "end_loc": {
+        "line": 32,
+        "column": 0,
+        "index": 1124
+      }
+    },
+    "sourceType": "module",
+    "interpreter": null,
+    "directives": [],
+    "extra": {
+      "topLevelAwait": false
+    }
+  },
+  "type": "File",
+  "start_loc": 0,
+  "end_loc": 1124,
+  "loc": {
+    "start_loc": {
+      "line": 1,
+      "column": 0,
+      "index": 0
+    },
+    "end_loc": {
+      "line": 32,
+      "column": 0,
+      "index": 1124
+    }
+  },
+  "errors": [],
+  "comments": [
+    {
+      "type": "CommentLine",
+      "value": " Test program for taint analysis",
+      "start_loc": 0,
+      "end_loc": 34,
+      "loc": {
+        "start_loc": {
+          "line": 1,
+          "column": 0,
+          "index": 0
+        },
+        "end_loc": {
+          "line": 1,
+          "column": 34,
+          "index": 34
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": " Shows how external function calls taint variables and propagate through assignments",
+      "start_loc": 35,
+      "end_loc": 121,
+      "loc": {
+        "start_loc": {
+          "line": 2,
+          "column": 0,
+          "index": 35
+        },
+        "end_loc": {
+          "line": 2,
+          "column": 86,
+          "index": 121
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": " External function calls - these should be marked as tainted",
+      "start_loc": 123,
+      "end_loc": 185,
+      "loc": {
+        "start_loc": {
+          "line": 4,
+          "column": 0,
+          "index": 123
+        },
+        "end_loc": {
+          "line": 4,
+          "column": 62,
+          "index": 185
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": " : TAINTED ",
+      "start_loc": 233,
+      "end_loc": 246,
+      "loc": {
+        "start_loc": {
+          "line": 5,
+          "column": 47,
+          "index": 233
+        },
+        "end_loc": {
+          "line": 5,
+          "column": 60,
+          "index": 246
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": " : TAINTED  ",
+      "start_loc": 286,
+      "end_loc": 300,
+      "loc": {
+        "start_loc": {
+          "line": 6,
+          "column": 39,
+          "index": 286
+        },
+        "end_loc": {
+          "line": 6,
+          "column": 53,
+          "index": 300
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": " : TAINTED ",
+      "start_loc": 337,
+      "end_loc": 350,
+      "loc": {
+        "start_loc": {
+          "line": 7,
+          "column": 36,
+          "index": 337
+        },
+        "end_loc": {
+          "line": 7,
+          "column": 49,
+          "index": 350
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": " Clean values",
+      "start_loc": 353,
+      "end_loc": 368,
+      "loc": {
+        "start_loc": {
+          "line": 10,
+          "column": 0,
+          "index": 353
+        },
+        "end_loc": {
+          "line": 10,
+          "column": 15,
+          "index": 368
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": " clean: CLEAN (literal)",
+      "start_loc": 416,
+      "end_loc": 441,
+      "loc": {
+        "start_loc": {
+          "line": 11,
+          "column": 47,
+          "index": 416
+        },
+        "end_loc": {
+          "line": 11,
+          "column": 72,
+          "index": 441
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": " Object with mixed taint",
+      "start_loc": 443,
+      "end_loc": 469,
+      "loc": {
+        "start_loc": {
+          "line": 13,
+          "column": 0,
+          "index": 443
+        },
+        "end_loc": {
+          "line": 13,
+          "column": 26,
+          "index": 469
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": " [1]: TAINTED (from getUserInput)",
+      "start_loc": 507,
+      "end_loc": 542,
+      "loc": {
+        "start_loc": {
+          "line": 15,
+          "column": 21,
+          "index": 507
+        },
+        "end_loc": {
+          "line": 15,
+          "column": 56,
+          "index": 542
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": " [2]: CLEAN",
+      "start_loc": 564,
+      "end_loc": 577,
+      "loc": {
+        "start_loc": {
+          "line": 16,
+          "column": 21,
+          "index": 564
+        },
+        "end_loc": {
+          "line": 16,
+          "column": 34,
+          "index": 577
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": " [3]: TAINTED (from readFile)",
+      "start_loc": 599,
+      "end_loc": 630,
+      "loc": {
+        "start_loc": {
+          "line": 17,
+          "column": 21,
+          "index": 599
+        },
+        "end_loc": {
+          "line": 17,
+          "column": 52,
+          "index": 630
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": " [4]: TAINTED (from fetch)",
+      "start_loc": 652,
+      "end_loc": 680,
+      "loc": {
+        "start_loc": {
+          "line": 18,
+          "column": 21,
+          "index": 652
+        },
+        "end_loc": {
+          "line": 18,
+          "column": 49,
+          "index": 680
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": " Taint propagation through assignments",
+      "start_loc": 685,
+      "end_loc": 725,
+      "loc": {
+        "start_loc": {
+          "line": 21,
+          "column": 0,
+          "index": 685
+        },
+        "end_loc": {
+          "line": 21,
+          "column": 40,
+          "index": 725
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": " TAINTED (from getUserInput)",
+      "start_loc": 768,
+      "end_loc": 798,
+      "loc": {
+        "start_loc": {
+          "line": 22,
+          "column": 42,
+          "index": 768
+        },
+        "end_loc": {
+          "line": 22,
+          "column": 72,
+          "index": 798
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": " CLEAN",
+      "start_loc": 841,
+      "end_loc": 849,
+      "loc": {
+        "start_loc": {
+          "line": 23,
+          "column": 42,
+          "index": 841
+        },
+        "end_loc": {
+          "line": 23,
+          "column": 50,
+          "index": 849
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": " TAINTED (operation on tainted data)",
+      "start_loc": 892,
+      "end_loc": 930,
+      "loc": {
+        "start_loc": {
+          "line": 24,
+          "column": 42,
+          "index": 892
+        },
+        "end_loc": {
+          "line": 24,
+          "column": 80,
+          "index": 930
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": " Dynamic field access with tainted index",
+      "start_loc": 933,
+      "end_loc": 975,
+      "loc": {
+        "start_loc": {
+          "line": 27,
+          "column": 0,
+          "index": 933
+        },
+        "end_loc": {
+          "line": 27,
+          "column": 42,
+          "index": 975
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": "TAINTED",
+      "start_loc": 1018,
+      "end_loc": 1027,
+      "loc": {
+        "start_loc": {
+          "line": 28,
+          "column": 42,
+          "index": 1018
+        },
+        "end_loc": {
+          "line": 28,
+          "column": 51,
+          "index": 1027
+        }
+      }
+    },
+    {
+      "type": "CommentLine",
+      "value": "  TAINTED (tainted index)",
+      "start_loc": 1071,
+      "end_loc": 1098,
+      "loc": {
+        "start_loc": {
+          "line": 29,
+          "column": 43,
+          "index": 1071
+        },
+        "end_loc": {
+          "line": 29,
+          "column": 70,
+          "index": 1098
+        }
+      }
+    }
+  ]
+}
