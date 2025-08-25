@@ -126,13 +126,15 @@ structure DefaultCtor where
 
   This is guaranteed to be unique for the category.
   -/
-  leanName : String
+  leanNameStr : String
   /--
   The name in the Strata dialect for this constructor.  If `none`, then
   this must be an auto generated constructor.
   -/
   strataName : Option QualifiedIdent
   argDecls : Array (String × SyntaxCat)
+
+def DefaultCtor.leanName (c : DefaultCtor) : Name := .str .anonymous c.leanNameStr
 
 /--
 An operation at the category level.
@@ -196,6 +198,11 @@ def CatOpM.addError (msg : String) : CatOpM Unit :=
 def mkRootIdent (name : Name) : Ident :=
   let rootName := `_root_ ++ name
   .mk (.ident .none name.toString.toSubstring rootName [.decl name []])
+
+structure Ann (Base : Type) (α : Type) where
+  val : Base
+  ann : α
+deriving Inhabited, Repr
 
 /--
 This maps category names in the Init that are already declared to their
@@ -358,10 +365,8 @@ def mkUsedCategories (m : CatOpMap) (d : Dialect) : CategorySet :=
 def mkStandardCtors (exprHasEta : Bool) (cat : QualifiedIdent) : Array DefaultCtor :=
   match cat with
   | q`Init.Expr =>
-    let fvarCtor : DefaultCtor := .mk "fvar" none #[("idx", .atom q`Init.Num)]
     if exprHasEta then
       #[
-        fvarCtor,
         .mk "bvar" none #[("idx", .atom q`Init.Num)],
         .mk "lambda" none #[
           ("var", .atom q`Init.Str),
@@ -370,68 +375,56 @@ def mkStandardCtors (exprHasEta : Bool) (cat : QualifiedIdent) : Array DefaultCt
         ]
       ]
     else
-      #[
-        fvarCtor
-      ]
-      /-
-  | q`Init.TypeP =>
-    #[ .mk "type" none #[],
-       .mk "expr" none #[("type", .atom q`Init.Type)]
-    ]-/
+      #[]
   | _ =>
     #[]
 
-def countSimilar {α} {β} [BEq β] [Hashable β] (as : Array α) (init : Std.HashMap β Nat := {}) (f : α → β) : Std.HashMap β Nat :=
-  as.foldl (init := init) fun m a =>
-    m.alter (f a) (fun old => some (old.getD 0 + 1))
+partial def genFreshName (s : Std.HashSet String) (base : String) (i : Nat) :=
+  let name := s!"{base}_{i}"
+  if name ∈ s then
+    genFreshName s base (i+1)
+  else
+    name
 
-def mkOpGroups (standardCtors : Array DefaultCtor) (ops : Array CatOp) : Std.HashMap String Nat :=
-  let opGroups : Std.HashMap String Nat :=
-        standardCtors.foldl (init := {}) fun m c =>
-          assert! c.leanName ∉ m
-          m.insert c.leanName 1
-  countSimilar ops (init := opGroups) (·.name.name)
-
-def toDefaultOp (disambiguateCtor : String → Bool) (op : CatOp) : DefaultCtor :=
+def toDefaultOp (s : Std.HashSet String) (op : CatOp) : DefaultCtor :=
   let name := op.name
   let leanName :=
-        if disambiguateCtor name.name then
-          -- FIXME: We should ensure this is actually unique.
-          s!"{name.dialect}_{name.name}"
-        else
-          name.name
+    if name.name ∈ s then
+      let leanName := s!"{name.dialect}_{name.name}"
+      if leanName ∈ s then
+        genFreshName s name.name 0
+      else
+        leanName
+    else
+      name.name
   {
-    leanName := leanName,
-    strataName := some name,
+    leanNameStr := leanName,
+    strataName := some op.name,
     argDecls := op.argDecls
   }
-
-
-def mkCategoryCtors (standardCtors : Array DefaultCtor) (ops : Array CatOp) : Array DefaultCtor :=
-  let opGroups := mkOpGroups standardCtors ops
-  standardCtors ++ ops.map (toDefaultOp (opGroups.getD · 0 > 1))
-
-def mkCategories (catMap : CatOpMap) (exprHasEta : Bool) : Array (QualifiedIdent × Array DefaultCtor) :=
-  catMap.fold (init := #[]) fun a cat ops =>
-    if cat ∈ declaredCategories then
-      a
-    else
-      let standardCtors := mkStandardCtors exprHasEta cat
-      let allCtors := mkCategoryCtors standardCtors ops
-      a.push (cat, allCtors)
 
 def CatOpMap.onlyUsedCategories (m : CatOpMap) (d : Dialect) (exprHasEta : Bool) : Array (QualifiedIdent × Array DefaultCtor) :=
   let usedSet := mkUsedCategories m d
   m.fold (init := #[]) fun a cat ops =>
     if cat ∉ declaredCategories ∧ cat ∈ usedSet then
+      let usedNames : Std.HashSet String :=
+            match cat with
+            | q`Init.Expr => { "fvar" }
+            | _ => {}
       let standardCtors := mkStandardCtors exprHasEta cat
-      let allCtors := mkCategoryCtors standardCtors ops
+      let usedNames : Std.HashSet String :=
+        standardCtors.foldl (init := usedNames) fun m c =>
+          assert! c.leanNameStr ∉ m
+          m.insert c.leanNameStr
+      let (allCtors, _) := ops.foldl (init := (standardCtors, usedNames)) fun (a, s) op =>
+            let dOp := toDefaultOp s op
+            (a.push dOp, s.insert dOp.leanNameStr)
       a.push (cat, allCtors)
     else
       a
 
-/- Creates a local variable name from a string -/
-def mkLocalIdent (name : String) : Ident :=
+/- Returns an identifier from a string. -/
+def localIdent (name : String) : Ident :=
   let dName := .anonymous |>.str name
   .mk (.ident .none name.toSubstring dName [])
 
@@ -457,7 +450,7 @@ def orderedSyncatGroups (categories : Array (QualifiedIdent × Array DefaultCtor
             | panic! s!"Unknown category {cat.fullName}"
           ops.foldl (init := g) fun g op =>
             op.argDecls.foldl (init := g) fun g (_, c) =>
-              addArgIndices cat op.leanName c g resIdx
+              addArgIndices cat op.leanNameStr c g resIdx
   let indices := OutGraph.tarjan g
   indices.map (·.map (categories[·]))
 
@@ -484,11 +477,16 @@ def mkCategoryIdent (scope : Name) (name : Name) : Ident :=
 /--
 Prepend the current namespace to the Lean name and convert to an identifier.
 -/
-def mkScopedIdent (subName : Lean.Name) : CommandElabM Ident := do
-  let scope ← getCurrNamespace
+def scopedIdent (scope subName : Lean.Name) : Ident :=
   let name := scope ++ subName
   let nameStr := toString subName
-  return .mk (.ident .none nameStr.toSubstring subName [.decl name []])
+  .mk (.ident .none nameStr.toSubstring subName [.decl name []])
+
+/--
+Prepend the current namespace to the Lean name and convert to an identifier.
+-/
+def mkScopedIdent {m} [Monad m] [Lean.MonadResolveName m] (subName : Lean.Name) : m Ident :=
+  (scopedIdent · subName) <$> getCurrNamespace
 
 /-- Return identifier for operator with given name to suport category. -/
 def getCategoryScopedName (cat : QualifiedIdent) : GenM Name := do
@@ -498,23 +496,26 @@ def getCategoryScopedName (cat : QualifiedIdent) : GenM Name := do
   | none =>
     return panic! s!"getCategoryScopedName given {cat}"
 
-/-- Return identifier for type that implements given category. -/
-def getCategoryIdent (cat : QualifiedIdent) : GenM Ident := do
-  if let some nm := declaredCategories[cat]? then
-    return mkRootIdent nm
-  mkScopedIdent (← getCategoryScopedName cat)
+def getCategoryTerm (cat : QualifiedIdent) (annType : Ident) : GenM Term := do
+  let catIdent ← mkScopedIdent (← getCategoryScopedName cat)
+  return Lean.Syntax.mkApp catIdent #[annType]
 
 /-- Return identifier for operator with given name to suport category. -/
-def getCategoryOpIdent (cat : QualifiedIdent) (name : String) : GenM Ident := do
-  mkScopedIdent <| (← getCategoryScopedName cat) |>.str name
+def getCategoryOpIdent (cat : QualifiedIdent) (name : Name) : GenM Ident := do
+  mkScopedIdent <| (← getCategoryScopedName cat) ++ name
 
-partial def ppCat (c : SyntaxCat) : GenM Term := do
-  let args ← c.args.mapM ppCat
-  match c.head, args with
-  | q`Init.CommaSepBy, #[c] => ``(Array $c)
-  | q`Init.Option, #[c] => ``(Option $c)
-  | q`Init.Seq, #[c] => ``(Array $c)
-  | cat, #[] => getCategoryIdent cat
+partial def ppCat (annType : Ident) (c : SyntaxCat) : GenM Term := do
+  let args ← c.args.mapM (ppCat annType)
+  match c.head, eq : args.size with
+  | q`Init.CommaSepBy, 1 => ``(Array $(args[0]))
+  | q`Init.Option, 1 =>  ``(Option $(args[0]))
+  | q`Init.Seq, 1 => ``(Array $(args[0]))
+  | cat, 0 =>
+    match declaredCategories[cat]? with
+    | some nm =>
+      pure <| Lean.Syntax.mkCApp ``Ann #[mkRootIdent nm, annType]
+    | none => do
+      getCategoryTerm cat annType
   | f, _ => throwError "Unsupported {f.fullName}"
 
 def elabCommands (commands : Array Command) : CommandElabM Unit := do
@@ -546,71 +547,83 @@ def elabCommands (commands : Array Command) : CommandElabM Unit := do
 
 abbrev BracketedBinder := TSyntax ``Lean.Parser.Term.bracketedBinder
 
-def genBinder (name : String) (typeStx : Term) : CommandElabM BracketedBinder := do
-  let nameStx := mkLocalIdent name
+def explicitBinder (name : String) (typeStx : Term) : CommandElabM BracketedBinder := do
+  let nameStx := localIdent name
   `(bracketedBinderF| ($nameStx : $typeStx))
 
-def genCtor (op : DefaultCtor) : GenM (TSyntax ``ctor) := do
-  let ctorId : Ident := mkLocalIdent op.leanName
+def genCtor (annType : Ident) (op : DefaultCtor) : GenM (TSyntax ``ctor) := do
+  let ctorId : Ident := localIdent op.leanNameStr
   let binders ← op.argDecls.mapM fun (name, tp) => do
-        genBinder name (← ppCat tp)
-  `(ctor| | $ctorId:ident $binders:bracketedBinder* )
+        explicitBinder name (← ppCat annType tp)
+  `(ctor| | $ctorId:ident (ann : $annType) $binders:bracketedBinder* )
 
 def mkInductive (cat : QualifiedIdent) (ctors : Array DefaultCtor) : GenM Command := do
-  let ident ←  getCategoryIdent cat
+  assert! cat ∉ declaredCategories
+  let ident ← mkScopedIdent (← getCategoryScopedName cat)
   trace[Strata.generator] "Generating {ident}"
-  `(inductive $ident : Type where
-    $(← ctors.mapM genCtor):ctor*
+  let annType := localIdent "α"
+  let builtinCtors : Array (TSyntax ``ctor) ←
+        match cat with
+        | q`Init.Expr => do
+            let fvar ← `(ctor| | $(localIdent "fvar"):ident (ann : $annType) (idx : Nat))
+            pure #[fvar]
+        | _ =>
+          pure #[]
+  `(inductive $ident ($annType : Type) : Type where
+    $builtinCtors:ctor*
+    $(← ctors.mapM (genCtor annType)):ctor*
     deriving Repr)
 
-def categoryToAstTypeIdent (cat : QualifiedIdent) : Ident :=
-  mkRootIdent <|
+def categoryToAstTypeIdent (cat : QualifiedIdent) (annType : Term) : Term :=
+  let ident :=
     match cat with
-    | q`Init.Expr => ``Strata.Expr
-    | q`Init.Type => ``Strata.TypeExpr
-    | q`Init.TypeP => ``Strata.Arg
-    | _ => ``Strata.Operation
+    | q`Init.Expr => ``Strata.ExprF
+    | q`Init.Type => ``Strata.TypeExprF
+    | q`Init.TypeP => ``Strata.ArgF
+    | _ => ``Strata.OperationF
+  Lean.Syntax.mkApp (mkRootIdent ident) #[annType]
+
 
 structure ToOp where
   name : String
   argDecls : Array (String × SyntaxCat)
 
 def toAstIdentM (cat : QualifiedIdent) : GenM Ident := do
-  mkScopedIdent <| (← getCategoryScopedName cat) ++ `toAst
+  getCategoryOpIdent cat `toAst
 
 def ofAstIdentM (cat : QualifiedIdent) : GenM Ident := do
-  mkScopedIdent <| (← getCategoryScopedName cat) ++ `ofAst
+  getCategoryOpIdent cat `ofAst
 
 def argCtor (v : Ident) (i : SyntaxCat) : GenM Term :=
   match i with
   | .atom qid@q`Init.Expr => do
     let toAst ← toAstIdentM qid
-    ``(Arg.expr ($toAst $v))
-  | .atom q`Init.Ident => ``(Arg.ident $v)
-  | .atom q`Init.Num => ``(Arg.num $v)
-  | .atom q`Init.Decimal => ``(Arg.decimal $v)
-  | .atom q`Init.Str => ``(Arg.strlit $v)
+    return Lean.Syntax.mkCApp `ArgF.expr #[Lean.Syntax.mkApp toAst #[v]]
+  | .atom q`Init.Ident => ``(ArgF.ident $v)
+  | .atom q`Init.Num => ``(ArgF.num $v)
+  | .atom q`Init.Decimal => ``(ArgF.decimal $v)
+  | .atom q`Init.Str => ``(ArgF.strlit $v)
   | .atom qid@q`Init.Type => do
     let toAst ← toAstIdentM qid
-    ``(Arg.type ($toAst $v))
+    ``(ArgF.type ($toAst $v))
   | .atom qid@q`Init.TypeP => do
     let toAst ← toAstIdentM qid
     ``($toAst $v)
   | .atom qid => do
     let toAst ← toAstIdentM qid
-    ``(Arg.op ($toAst $v))
+    ``(ArgF.op ($toAst $v))
   | .app (.atom q`Init.CommaSepBy) c => do
-    let e ← mkFreshIdent (mkLocalIdent "e")
+    let e ← mkFreshIdent (localIdent "e")
     let t ← argCtor e c
-    ``(Arg.commaSepList (Array.map (fun ⟨$e, _⟩ => $t) (Array.attach $v)))
+    ``(ArgF.commaSepList (Array.map (fun ⟨$e, _⟩ => $t) (Array.attach $v)))
   | .app (.atom q`Init.Option) c => do
-    let e ← mkFreshIdent (mkLocalIdent "e")
+    let e ← mkFreshIdent (localIdent "e")
     let t ← argCtor e c
-    ``(Arg.option (Option.map (fun ⟨$e, _⟩ => $t) (Option.attach $v)))
+    ``(ArgF.option (Option.map (fun ⟨$e, _⟩ => $t) (Option.attach $v)))
   | .app (.atom q`Init.Seq) c => do
-    let e ← mkFreshIdent (mkLocalIdent "e")
+    let e ← mkFreshIdent (localIdent "e")
     let t ← argCtor e c
-    ``(Arg.seq (Array.map (fun ⟨$e, _⟩ => $t) (Array.attach $v)))
+    ``(ArgF.seq (Array.map (fun ⟨$e, _⟩ => $t) (Array.attach $v)))
   | _ =>
     throwError s!"Unexpected category {repr i}"
 
@@ -618,33 +631,37 @@ abbrev MatchAlt := TSyntax ``Lean.Parser.Term.matchAlt
 
 def toAstMatch (cat : QualifiedIdent) (op : DefaultCtor) : GenM MatchAlt := do
   let argDecls := op.argDecls
+  let ann ← mkFreshIdent (localIdent "ann")
   let ctor : Ident ← getCategoryOpIdent cat op.leanName
   let args : Array (Ident × SyntaxCat) ← argDecls.mapM fun (nm, c) =>
-    return (← mkFreshIdent (mkLocalIdent nm), c)
-  let pat : Term ← ``($ctor $(args.map (·.fst)):term*)
+    return (← mkFreshIdent (localIdent nm), c)
+  let pat : Term ← ``($ctor $ann $(args.map (·.fst)):term*)
   let rhs : Term ←
         match cat with
         | q`Init.Expr =>
-          match op.leanName with
+          match op.leanNameStr with
           | "fvar" =>
             assert! args.size = 1
-            ``(Expr.fvar $(args[0]!.fst))
+            ``(ExprF.fvar $(args[0]!.fst))
           | lname =>
             let some nm := op.strataName
               | return panic! s!"Unexpected builtin expression {lname}"
-            let init ← ``(Expr.fn $(quote nm))
+            let init ← ``(ExprF.fn $(quote nm))
             args.foldlM (init := init) fun a (nm, tp) => do
               let e ← argCtor nm tp
-              ``(Expr.app $a $e)
+              return Lean.Syntax.mkCApp `ExprF.app #[a, e]
         | q`Init.Type => do
           let some nm := op.strataName
             | return panic! "Expected type name"
           let toAst ← toAstIdentM cat
-          let argTerms : Array Term ← args.mapM fun (v, _) => ``($toAst $v)
-          ``(TypeExpr.ident $(quote nm) $(← arrayLit argTerms))
+          let argTerms ← arrayLit <| args.map fun (v, c) =>
+            assert! c == SyntaxCat.atom q`Init.Type
+            Lean.Syntax.mkApp toAst #[v]
+          pure <| Lean.Syntax.mkCApp ``TypeExprF.ident #[ann, quote nm, argTerms]
         | q`Init.TypeP => do
-          match op.leanName with
-          | "type" => ``(Arg.cat (SyntaxCat.atom $(quote q`Init.Type)))
+          match op.leanNameStr with
+          | "type" =>
+            ``(ArgF.cat (SyntaxCat.atom $(quote q`Init.Type)))
           | "expr" =>
             assert! args.size = 1
             let (nm, tp) := args[0]!
@@ -657,29 +674,30 @@ def toAstMatch (cat : QualifiedIdent) (op : DefaultCtor) : GenM MatchAlt := do
             | some n => pure n
             | none => throwError s!"Internal: Operation requires strata name"
           let argTerms : Array Term ← args.mapM fun (nm, tp) => argCtor nm tp
-          ``(Operation.mk $(quote mName) $(← arrayLit argTerms))
+          ``(OperationF.mk sorry $(quote mName) $(← arrayLit argTerms))
   `(matchAltExpr| | $pat => $rhs)
 
 def genToAst (cat : QualifiedIdent) (ops : Array DefaultCtor) (isRecursive : Bool) : GenM Command := do
-  let catIdent ← getCategoryIdent cat
-  let astType := categoryToAstTypeIdent cat
+  let annType := localIdent "α"
+  let catTerm ← getCategoryTerm cat annType
+  let astType : Term := categoryToAstTypeIdent cat annType
   let cases : Array MatchAlt ← ops.mapM (toAstMatch cat)
   let toAst ← toAstIdentM cat
   trace[Strata.generator] "Generating {toAst}"
-  let v ← mkFreshIdent (mkLocalIdent "v")
+  let v ← mkFreshIdent (localIdent "v")
   let t ←
     if isRecursive then
       `(suffix|termination_by sizeOf $v)
     else
       `(suffix|)
-  `(def $toAst ($v : $catIdent) : $astType :=
+  `(def $toAst {$annType : Type} ($v : $catTerm) : $astType :=
       match $v:ident with $cases:matchAlt*
       $t:suffix)
 
 def getOfIdentArg (vnm : String) (c : SyntaxCat) : GenM Term :=
   match c with
   | .atom cid@q`Init.Expr => do
-    let vi ← mkFreshIdent <| mkLocalIdent <| vnm ++ "_inner"
+    let vi ← mkFreshIdent <| localIdent <| vnm ++ "_inner"
     let ofAst ← ofAstIdentM cid
     ``(OfAstM.ofExpressionM fun ⟨$vi, _⟩ => $ofAst $vi)
   | .atom q`Init.Ident => do
@@ -691,15 +709,15 @@ def getOfIdentArg (vnm : String) (c : SyntaxCat) : GenM Term :=
   | .atom q`Init.Str => do
     ``(OfAstM.ofStrlitM)
   | .atom cid@q`Init.Type => do
-    let vi ← mkFreshIdent <| mkLocalIdent <| vnm ++ "_inner"
+    let vi ← mkFreshIdent <| localIdent <| vnm ++ "_inner"
     let ofAst ← ofAstIdentM cid
     ``(OfAstM.ofTypeM fun ⟨$vi, _⟩ => $ofAst $vi)
   | .atom cid@q`Init.TypeP => do
-    let vi ← mkFreshIdent <| mkLocalIdent <| vnm ++ "_inner"
+    let vi ← mkFreshIdent <| localIdent <| vnm ++ "_inner"
     let ofAst ← ofAstIdentM cid
     ``(fun ⟨$vi, _⟩ => $ofAst $vi)
   | .atom cid => do
-    let vi ← mkFreshIdent <| mkLocalIdent <| vnm ++ "_inner"
+    let vi ← mkFreshIdent <| localIdent <| vnm ++ "_inner"
     let ofAst ← ofAstIdentM cid
     ``(OfAstM.ofOperationM fun ⟨$vi, _⟩ => $ofAst $vi)
   | .app (.atom q`Init.CommaSepBy) c => do
@@ -718,7 +736,7 @@ def ofAstArgs (argDecls : Array (String × SyntaxCat)) (argsVar : Ident) : GenM 
   let argCount := argDecls.size
   let args ← Array.ofFnM (n := argCount) fun ⟨i, _isLt⟩  => do
     let (vnm, c) := argDecls[i]
-    let v ← mkFreshIdent <| mkLocalIdent <| vnm ++ "_bind"
+    let v ← mkFreshIdent <| localIdent <| vnm ++ "_bind"
     let rhs0 ← getOfIdentArg vnm c
     let rhs ← ``(OfAstM.atArg $argsVar $(quote i) $rhs0)
     let stmt ← `(doSeqItem| let $v ← $rhs:term)
@@ -727,7 +745,7 @@ def ofAstArgs (argDecls : Array (String × SyntaxCat)) (argsVar : Ident) : GenM 
 
 def ofAstMatch (nameIndexMap : Std.HashMap QualifiedIdent Nat) (op : DefaultCtor) (rhs : Term) : GenM MatchAlt := do
   let some name := op.strataName
-    | return panic! s!"Unexpected operator {op.leanName}"
+    | return panic! s!"Unexpected operator {op.leanNameStr}"
   let some nameIndex := nameIndexMap[name]?
     | return panic! s!"Unbound operator name {name}"
   `(matchAltExpr| | Option.some $(quote nameIndex) => $rhs)
@@ -748,7 +766,7 @@ def ofAstExprMatchRhs (cat : QualifiedIdent) (argsVar : Ident) (op : DefaultCtor
 
 def ofAstExprMatch (nameIndexMap : Std.HashMap QualifiedIdent Nat)
       (cat : QualifiedIdent) (argsVar : Ident) (op : DefaultCtor) : GenM (Option MatchAlt) := do
-  match op.leanName with
+  match op.leanNameStr with
   | "fvar" =>
     pure none
   | _ => do
@@ -760,7 +778,7 @@ def ofAstTypeArgs (argDecls : Array (String × SyntaxCat)) (argsVar : Ident) : G
   let ofAst ← ofAstIdentM q`Init.Type
   let args ← Array.ofFnM (n := argCount) fun ⟨i, _isLt⟩  => do
     let (vnm, _) := argDecls[i]
-    let v ← mkFreshIdent <| mkLocalIdent vnm
+    let v ← mkFreshIdent <| localIdent vnm
     let rhs ← ``($ofAst $argsVar[$(quote i)])
     let stmt ← `(doSeqItem| let $v ← $rhs:term)
     return (v, stmt)
@@ -778,7 +796,7 @@ def ofAstTypeMatchRhs (cat : QualifiedIdent) (argsVar : Ident) (op : DefaultCtor
 
 def ofAstOpMatchRhs (cat : QualifiedIdent) (argsVar : Ident) (op : DefaultCtor) : GenM Term := do
   let some name := op.strataName
-    | return panic! s!"Unexpected operator {op.leanName}"
+    | return panic! s!"Unexpected operator {op.leanNameStr}"
   let ctorIdent ← getCategoryOpIdent cat op.leanName
   let argDecls := op.argDecls
   let argCount := argDecls.size
@@ -798,77 +816,82 @@ def createNameIndexMap (cat : QualifiedIdent) (ops : Array DefaultCtor) : GenM (
     match op.strataName with
     | none => map  -- Skip operators without a name
     | some name => map.insert name map.size  -- Assign the next available index
-  let ofAstNameMap ← mkScopedIdent <| (← getCategoryScopedName cat) ++ `ofAst.map
+  let ofAstNameMap ← getCategoryOpIdent cat `ofAst.map
   let cmd ← `(def $ofAstNameMap : Std.HashMap Strata.QualifiedIdent Nat := Std.HashMap.ofList $(quote nameIndexMap.toList))
   pure (nameIndexMap, ofAstNameMap, cmd)
 
 def mkOfAstDef (cat : QualifiedIdent) (ofAst : Ident) (v : Ident) (rhs : Term) (isRecursive : Bool) : GenM Command := do
-  let catIdent ← getCategoryIdent cat
+  let annType := localIdent "α"
+  let catTerm ← getCategoryTerm cat annType
   let t ←
     if isRecursive ∧ false then
       `(suffix|termination_by sizeOf $v)
     else
       `(suffix|)
-  `(partial def $ofAst ($v : $(categoryToAstTypeIdent cat)) : OfAstM $catIdent := $rhs $t:suffix)
+  `(partial def $ofAst ($v : $(categoryToAstTypeIdent cat annType)) : OfAstM $catTerm := $rhs $t:suffix)
+
+def matchTypeParamOrType {α β} [Repr α] (a : ArgF α) (onTypeParam : OfAstM β) (onType : TypeExprF α → OfAstM β) : OfAstM β :=
+  match a with
+  | .cat (.atom q`Init.Type) => onTypeParam
+  | .type tp => onType tp
+  | _ => .throwExpected "Type parameter or type expression" a
 
 def genOfAst (cat : QualifiedIdent) (ops : Array DefaultCtor) (isRecursive : Bool) : GenM (Array Command × Command) := do
   let ofAst ← ofAstIdentM cat
   trace[Strata.generator] "Generating {ofAst}"
-  let v ← mkFreshIdent (mkLocalIdent "v")
   match cat with
   | q`Init.Expr =>
-    let argsVar ← mkFreshIdent (mkLocalIdent "args")
+    let v ← mkFreshIdent (localIdent "v")
+    let argsVar ← mkFreshIdent (localIdent "args")
     let (nameIndexMap, ofAstNameMap, cmd) ← createNameIndexMap cat ops
-    let fvarCtorIdent ← getCategoryOpIdent cat "fvar"
+    let fvarCtorIdent ← getCategoryOpIdent cat `fvar
     let cases : Array MatchAlt ← ops.filterMapM (ofAstExprMatch nameIndexMap cat argsVar)
     let rhs ←
       `(let vnf := ($v).hnf
         let $argsVar := vnf.args
         match (vnf.fn) with
-        | Strata.Expr.fvar i => pure ($fvarCtorIdent i)
-        | Strata.Expr.fn fnId =>
+        | Strata.ExprF.fvar i => pure ($fvarCtorIdent i)
+        | Strata.ExprF.fn fnId =>
           (match ($ofAstNameMap[fnId]?) with
           $cases:matchAlt*
           | _ => OfAstM.throwUnknownIdentifier $(quote cat) fnId)
         | _ => pure (panic! "Unexpected argument"))
     pure (#[cmd], ← mkOfAstDef cat ofAst v rhs isRecursive)
   | q`Init.Type =>
-    let argsVar ← mkFreshIdent (mkLocalIdent "args")
+    let v ← mkFreshIdent (localIdent "v")
+    let argsVar ← mkFreshIdent (localIdent "args")
     let (nameIndexMap, ofAstNameMap, cmd) ← createNameIndexMap cat ops
     let cases : Array MatchAlt ← ops.mapM fun op =>
       ofAstMatch nameIndexMap op =<< ofAstTypeMatchRhs cat argsVar op
     let rhs ← `(match ($v) with
-      | Strata.TypeExpr.ident typeIdent $argsVar =>
+      | Strata.TypeExprF.ident _ typeIdent $argsVar =>
         (match ($ofAstNameMap[typeIdent]?) with
         $cases:matchAlt*
         | _ => OfAstM.throwUnknownIdentifier $(quote cat) typeIdent)
-      | _ => OfAstM.throwExpected "Expected type" (Arg.type $v))
+      | _ => OfAstM.throwExpected "Expected type" (ArgF.type $v))
     pure (#[cmd], ← mkOfAstDef cat ofAst v rhs isRecursive)
   | q`Init.TypeP =>
-    let catCtorIdent ← getCategoryOpIdent cat "type"
-    let exprCtorIdent ← getCategoryOpIdent cat "expr"
+    let v ← mkFreshIdent (localIdent "v")
+    let catCtorIdent ← getCategoryOpIdent cat `type
+    let exprCtorIdent ← getCategoryOpIdent cat `expr
     let typeOfAst ← ofAstIdentM q`Init.Type
-    let rhs ← `(match $v:term with
-      | Arg.cat (SyntaxCat.atom $(quote q`Init.Type)) =>
-        return $catCtorIdent
-      | Arg.type strataType => do
-        let tp ← $typeOfAst:term strataType
-        return $exprCtorIdent tp
-      | a =>
-        OfAstM.throwExpected "Type parameter or type expression" a)
+    let rhs ← ``(
+      matchTypeParamOrType $v $catCtorIdent (fun tp => $exprCtorIdent <$> $typeOfAst tp)
+    )
     pure (#[], ← mkOfAstDef cat ofAst v rhs isRecursive)
   | _ =>
-    let argsVar ← mkFreshIdent (mkLocalIdent "args")
+    let v ← mkFreshIdent (localIdent "v")
+    let argsVar ← mkFreshIdent (localIdent "args")
     let (nameIndexMap, ofAstNameMap, cmd) ← createNameIndexMap cat ops
     let cases : Array MatchAlt ← ops.mapM fun op =>
       ofAstMatch nameIndexMap op =<< ofAstOpMatchRhs cat argsVar op
     let rhs ← `(
-      let $argsVar : Strata.SizeBounded (Array Arg) $v 1 := Subtype.mk (Operation.args $v) (by
-            simp only [Strata.Operation.sizeOf_spec $v]
+      let $argsVar : Strata.SizeBounded (Array Arg) $v 1 := Subtype.mk (OperationF.args $v) (by
+            simp only [Strata.OperationF.sizeOf_spec $v]
             omega)
-      match ($ofAstNameMap[Operation.name $v]?) with
+      match ($ofAstNameMap[OperationF.name $v]?) with
       $cases:matchAlt*
-      | _ => OfAstM.throwUnknownIdentifier $(quote cat) (Operation.name $v))
+      | _ => OfAstM.throwUnknownIdentifier $(quote cat) (OperationF.name $v))
     pure (#[cmd], ← mkOfAstDef cat ofAst v rhs isRecursive)
 
 abbrev InhabitedSet := Std.HashSet QualifiedIdent
@@ -876,7 +899,8 @@ abbrev InhabitedSet := Std.HashSet QualifiedIdent
 def checkInhabited (cat : QualifiedIdent) (ops : Array DefaultCtor) : StateT InhabitedSet GenM Unit := do
   if cat ∈ (←get) then
     return ()
-  let catIdent ← getCategoryIdent cat
+  let annType := localIdent "α"
+  let catTerm ← getCategoryTerm cat annType
   for op in ops do
     let inhabited ← get
     let isInhabited := op.argDecls.all fun (_, c) =>
@@ -888,13 +912,15 @@ def checkInhabited (cat : QualifiedIdent) (ops : Array DefaultCtor) : StateT Inh
         | _ => panic! s!"Unknown category {repr c}"
     if !isInhabited then
       continue
-    let ctor ← getCategoryOpIdent cat op.leanName
-    let d ← `(default)
-    let e ← op.argDecls.size.foldM (init := ctor) fun _ _ e => `($e $d)
+    let ctor : Term ← getCategoryOpIdent cat op.leanName
+    let d := Lean.mkCIdent ``default
+    let e := Lean.Syntax.mkApp ctor (Array.replicate (op.argDecls.size + 1) d)
     StateT.lift <| runCmd <|
-      elabCommand =<< `(instance : Inhabited $catIdent where default := $e)
+      elabCommand =<< `(instance [Inhabited $annType] : Inhabited $catTerm where default := $e)
     modify (·.insert cat)
     break
+
+#eval Array.replicate 4 3
 
 partial def addInhabited (group : Array (QualifiedIdent × Array DefaultCtor)) (s : InhabitedSet) : GenM InhabitedSet := do
   let initSize := s.size
@@ -938,6 +964,7 @@ def gen (categories : Array (QualifiedIdent × Array DefaultCtor)) : GenM Unit :
           let toAstDefs ← allCtors.mapM fun (cat, ctors) => do
             genToAst cat ctors (isRecursive := isRecursive)
           runCmd <| elabCommands toAstDefs
+/-
         profileitM Lean.Exception s!"Generating ofAstDefs {cats}" (← getOptions) do
           let ofAstDefs ← allCtors.mapM fun (cat, ctors) => do
             let (cmds, d) ← genOfAst cat ctors (isRecursive := isRecursive)
@@ -946,6 +973,7 @@ def gen (categories : Array (QualifiedIdent × Array DefaultCtor)) : GenM Unit :
           runCmd <| elabCommands ofAstDefs
         pure inhabitedCats
     inhabitedCats := s
+-/
 
 def runGenM (pref : String) (catNames : Array QualifiedIdent) (exprHasEta : Bool) (m : GenM α) : CommandElabM α := do
   let catNameCounts : Std.HashMap String Nat :=

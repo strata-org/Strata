@@ -220,29 +220,29 @@ instance : ToStrataFormat QualifiedIdent where
     else
       .atom f!"{ident.dialect}.{ident.name}"
 
-namespace TypeExpr
+namespace TypeExprF
 
-protected def mformat : TypeExpr → StrataFormat
-| .ident tp a => a.attach.foldl (init := mformat tp) fun m ⟨e, _⟩ =>
+protected def mformat : TypeExprF α → StrataFormat
+| .ident _ tp a => a.attach.foldl (init := mformat tp) fun m ⟨e, _⟩ =>
   mf!"{m} {e.mformat.ensurePrec (appPrec + 1)}".setPrec appPrec
-| .bvar idx => .bvar idx
-| .fvar idx a => a.attach.foldl (init := .fvar idx) fun m ⟨e, _⟩ =>
+| .bvar _ idx => .bvar idx
+| .fvar _ idx a => a.attach.foldl (init := .fvar idx) fun m ⟨e, _⟩ =>
   mf!"{m} {e.mformat.ensurePrec (appPrec + 1)}".setPrec appPrec
-| .arrow a r => mf!"{a.mformat.ensurePrec (arrowPrec+1)} -> {r.mformat.ensurePrec arrowPrec}"
+| .arrow _ a r => mf!"{a.mformat.ensurePrec (arrowPrec+1)} -> {r.mformat.ensurePrec arrowPrec}"
 
-instance : ToStrataFormat TypeExpr where
+instance : ToStrataFormat (TypeExprF α) where
   mformat e := e.mformat
 
-end TypeExpr
+end TypeExprF
 
 namespace PreType
 
 protected def mformat : PreType → StrataFormat
-| .ident tp a => a.attach.foldl (init := mformat tp) (fun m ⟨e, _⟩ => mf!"{m} {e.mformat}")
-| .bvar idx => .bvar idx
-| .fvar idx a => a.attach.foldl (init := .fvar idx) (fun m ⟨e, _⟩ => mf!"{m} {e.mformat}")
-| .arrow a r => mf!"{a.mformat} -> {r.mformat}"
-| .funMacro idx r => mf!"fnOf({StrataFormat.bvar idx}, {r.mformat})"
+| .ident _ tp a => a.attach.foldl (init := mformat tp) (fun m ⟨e, _⟩ => mf!"{m} {e.mformat}")
+| .bvar _ idx => .bvar idx
+| .fvar _ idx a => a.attach.foldl (init := .fvar idx) (fun m ⟨e, _⟩ => mf!"{m} {e.mformat}")
+| .arrow _ a r => mf!"{a.mformat} -> {r.mformat}"
+| .funMacro _ idx r => mf!"fnOf({StrataFormat.bvar idx}, {r.mformat})"
 
 instance : ToStrataFormat PreType where
   mformat := PreType.mformat
@@ -288,7 +288,7 @@ def pformat [ToStrataFormat α] (a : α) : FormatM PrecFormat :=
 mutual
 
 /- Renders expression to format and precedence of outmost operator. -/
-private partial def Expr.mformatM (e : Expr) (rargs : Array Arg := #[]) : FormatM PrecFormat :=
+private partial def ExprF.mformatM (e : ExprF α) (rargs : Array (ArgF α)  := #[]) : FormatM PrecFormat :=
   let ppArgs (f : Format) : FormatM PrecFormat :=
         if rargs.isEmpty then
           pure <| .atom f
@@ -313,7 +313,7 @@ private partial def Expr.mformatM (e : Expr) (rargs : Array Arg := #[]) : Format
       | none => ppArgs f.fullName
   | .app f a => f.mformatM (rargs.push a)
 
-private partial def Arg.mformatM : Arg → FormatM PrecFormat
+private partial def ArgF.mformatM : ArgF α → FormatM PrecFormat
 | .op o => o.mformatM
 | .expr e => e.mformatM
 | .type e => pformat e
@@ -348,7 +348,7 @@ private partial def ppArgs (f : StrataFormat) (rargs : Array Arg) : FormatM Prec
     let r ← rargs.foldrM (init := init) (fun a r => return f!"{r},{(←a.mformatM).format})")
     pure <| .atom f!"{r})"
 
-private partial def formatArguments (c : FormatContext) (initState : FormatState) (argDecls : ArgDecls) (args : Vector Arg argDecls.size) :=
+private partial def formatArguments (c : FormatContext) (initState : FormatState) (argDecls : ArgDecls) (args : Vector (ArgF α) argDecls.size) :=
   let rec aux (a : Array (PrecFormat × FormatState)) :=
         let lvl := a.size
         if h : lvl < argDecls.size then
@@ -364,27 +364,30 @@ private partial def formatArguments (c : FormatContext) (initState : FormatState
           a
   aux (.mkEmpty argDecls.size)
 
-private partial def Operation.mformatM (op : Operation) : FormatM PrecFormat := do
+private partial def OperationF.mformatM (op : OperationF α) : FormatM PrecFormat := do
   match (← read).getOpDecl op.name with
   | some decl =>
     let bindings := decl.argDecls
-    let args := op.args
-    let .isTrue bsize := decEq args.size bindings.size
+    let .isTrue bsize := decEq op.args.size bindings.size
           | return panic! "Mismatch betweeen binding and arg size"
-    let argsV : Vector Arg bindings.size := ⟨args, bsize⟩
-    let argResults := formatArguments (← read) (← get) bindings argsV
+    let args : Vector _ bindings.size := ⟨op.args, bsize⟩
+    let argResults := formatArguments (← read) (← get) bindings args
     let fmt := ppOp (← read).opts decl.syntaxDef (Prod.fst <$> argResults)
     match decl.metadata.resultLevel bindings.size with
     | some idx => set argResults[idx]!.snd
     | none => pure ()
     for b in decl.newBindings do
-      modify (·.pushBinding <| b.varName argsV)
+      match args[b.nameIndex.toLevel] with
+      | .ident e =>
+        modify (·.pushBinding e)
+      | _ =>
+        return panic! s!"Expected ident at {b.nameIndex.toLevel}."
     return fmt
   | none =>
     -- FIXME: Consider reporting error here.
     let initCtx ← read
     let initState ← get
-    let args := op.args |>.map (Arg.mformatM · initCtx initState |>.fst |>.format) |>.toList
+    let args := op.args |>.map (ArgF.mformatM · initCtx initState |>.fst |>.format) |>.toList
     return .atom f!"{op.name.fullName}({Format.joinSep args ", "});"
 
 end

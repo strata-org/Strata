@@ -23,45 +23,30 @@ private def quoteArray (a : Array Term) : Term :=
     let e := Syntax.mkCApp ``Array.mkEmpty #[quote a.size]
     a.foldl (init := e) fun t a => Syntax.mkCApp ``Array.push #[t, a]
 
-namespace TypeExpr
+namespace TypeExprF
 
-protected def quote : TypeExpr → Term
-| .ident nm a =>
+protected def quote {α} [Quote α] : TypeExprF α → Term
+| .ident n nm a =>
   let a := a.map (·.quote)
-  Syntax.mkCApp ``ident #[quote nm, quoteArray a]
-| .bvar idx => Syntax.mkCApp ``bvar #[quote idx]
-| .fvar idx a =>
+  Syntax.mkCApp ``ident #[quote n, quote nm, quoteArray a]
+| .bvar n idx => Syntax.mkCApp ``bvar #[quote n, quote idx]
+| .fvar n idx a =>
   let a := a.map (·.quote)
-  Syntax.mkCApp ``fvar #[quote idx, quoteArray a]
-| .arrow a r => Syntax.mkCApp ``arrow #[a.quote, r.quote]
+  Syntax.mkCApp ``fvar #[quote n, quote idx, quoteArray a]
+| .arrow n a r => Syntax.mkCApp ``arrow #[quote n, a.quote, r.quote]
 termination_by e => e
 
-instance : Quote TypeExpr where
-  quote := TypeExpr.quote
+instance {α} [Quote α] : Quote (TypeExprF α) where
+  quote := TypeExprF.quote
 
-end TypeExpr
-
-namespace PreType
-
-protected def quote : PreType → Term
-| .ident nm a =>
-  Syntax.mkCApp ``ident #[quote nm, quoteArray (a.map (·.quote))]
-| .bvar idx => Syntax.mkCApp ``bvar #[quote idx]
-| .fvar idx a =>
-  Syntax.mkCApp ``fvar #[quote idx, quoteArray (a.map (·.quote))]
-| .arrow a r => Syntax.mkCApp ``arrow #[a.quote, r.quote]
-| .funMacro i r =>
-  Syntax.mkCApp ``funMacro #[quote i, r.quote]
-
-instance : Quote PreType where
-  quote := PreType.quote
-
-end PreType
+end TypeExprF
 
 namespace SyntaxCat
 
+def metaAtom (a : Term) : Term := Syntax.mkCApp ``atom #[a]
+
 protected def quote : SyntaxCat → Term
-| .atom a => Syntax.mkCApp ``SyntaxCat.atom #[quote a]
+| .atom a => metaAtom (quote a)
 | .app f a => Syntax.mkCApp ``SyntaxCat.app #[f.quote, a.quote]
 
 instance : Quote SyntaxCat where
@@ -69,44 +54,78 @@ instance : Quote SyntaxCat where
 
 end SyntaxCat
 
+namespace ArgF
+
+def metaCat (t:Term) : Term := Syntax.mkCApp ``cat #[t]
+
+end ArgF
+
 mutual
 
-protected def Expr.quote : Expr → Term
-| .bvar s => Syntax.mkCApp ``Expr.bvar #[quote s]
-| .fvar idx => Syntax.mkCApp ``Expr.fvar #[quote idx]
-| .fn ident => Syntax.mkCApp ``Expr.fn #[quote ident]
-| .app f a => Syntax.mkCApp ``Expr.app #[f.quote, a.quote ]
-termination_by e => sizeOf e
-
-protected def Arg.quote : Arg → Term
-| .op o => Syntax.mkCApp ``Arg.op #[o.quote]
-| .expr e     => Syntax.mkCApp ``Arg.expr #[e.quote]
-| .type e     => Syntax.mkCApp ``Arg.type #[quote e]
-| .cat e      => Syntax.mkCApp ``Arg.cat #[quote e]
-| .ident e    => Syntax.mkCApp ``Arg.ident #[quote e]
-| .num e    => Syntax.mkCApp ``Arg.num #[quote e]
-| .decimal e => Syntax.mkCApp ``Arg.decimal #[quote e]
-| .strlit e   => Syntax.mkCApp ``Arg.strlit #[quote e]
-| .option a => Syntax.mkCApp ``Arg.option #[quoteOption (a.attach.map (fun ⟨e, _⟩ => e.quote))]
-| .seq a => Syntax.mkCApp ``Arg.seq #[quoteArray (a.map (·.quote))]
-| .commaSepList a => Syntax.mkCApp ``Arg.commaSepList #[quoteArray (a.map (·.quote))]
+protected def ArgF.quote {α} [Quote α] : ArgF α → Term
+| .op o => Syntax.mkCApp ``ArgF.op #[o.quote]
+| .expr e     => Syntax.mkCApp ``ArgF.expr #[e.quote]
+| .type e     => Syntax.mkCApp ``ArgF.type #[quote e]
+| .cat e      => Syntax.mkCApp ``ArgF.cat #[quote e]
+| .ident e    => Syntax.mkCApp ``ArgF.ident #[quote e]
+| .num e    => Syntax.mkCApp ``ArgF.num #[quote e]
+| .decimal e => Syntax.mkCApp ``ArgF.decimal #[quote e]
+| .strlit e   => Syntax.mkCApp ``ArgF.strlit #[quote e]
+| .option a => Syntax.mkCApp ``ArgF.option #[quoteOption (a.attach.map (fun ⟨e, _⟩ => e.quote))]
+| .seq a => Syntax.mkCApp ``ArgF.seq #[quoteArray (a.map (·.quote))]
+| .commaSepList a => Syntax.mkCApp ``ArgF.commaSepList #[quoteArray (a.map (·.quote))]
 termination_by a => sizeOf a
 
-def Operation.quote (op : Operation) : Term :=
-  let r := quoteArray (op.args.map (·.quote))
-  Syntax.mkCApp ``Operation.mk #[quote op.name, r]
+
+protected def ExprF.quote {α} [Quote α] : ExprF α → Term
+| .bvar s => Syntax.mkCApp ``ExprF.bvar #[quote s]
+| .fvar idx => Syntax.mkCApp ``ExprF.fvar #[quote idx]
+| .fn ident => Syntax.mkCApp ``ExprF.fn #[quote ident]
+| .app f a => Syntax.mkCApp ``ExprF.app #[f.quote, a.quote ]
+termination_by e => sizeOf e
+
+def OperationF.quote {α} [Quote α] (op : OperationF α) : Term :=
+  let r := quoteArray <| op.args.map fun x => x.quote
+  Syntax.mkCApp ``OperationF.mk #[quote op.ann, quote op.name, r]
 termination_by sizeOf op
+decreasing_by
+  simp [OperationF.sizeOf_spec]
+  decreasing_tactic
 
 end
 
-instance : Quote Expr where
-  quote := Expr.quote
+instance {α} [Quote α] : Quote (ArgF α) where
+  quote := ArgF.quote
 
-instance : Quote Arg where
-  quote := Arg.quote
+instance {α} [Quote α] : Quote (ExprF α) where
+  quote := ExprF.quote
 
-instance : Quote Operation where
-  quote := Operation.quote
+instance {α} [Quote α] : Quote (OperationF α) where
+  quote := OperationF.quote
+
+namespace SourceLoc
+
+instance : Quote SourceLoc where
+  quote x := Syntax.mkCApp ``SourceLoc.mk #[quote x.start, quote x.stop]
+
+end SourceLoc
+
+namespace PreType
+
+protected def quote : PreType → Term
+| .ident ann nm a =>
+  Syntax.mkCApp ``ident #[quote ann, quote nm, quoteArray (a.map (·.quote))]
+| .bvar ann idx => Syntax.mkCApp ``bvar #[quote ann, quote idx]
+| .fvar ann idx a =>
+  Syntax.mkCApp ``fvar #[quote ann, quote idx, quoteArray (a.map (·.quote))]
+| .arrow ann a r => Syntax.mkCApp ``arrow #[quote ann, a.quote, r.quote]
+| .funMacro ann i r =>
+  Syntax.mkCApp ``funMacro #[quote ann, quote i, r.quote]
+
+instance : Quote PreType where
+  quote := PreType.quote
+
+end PreType
 
 namespace MetadataArg
 

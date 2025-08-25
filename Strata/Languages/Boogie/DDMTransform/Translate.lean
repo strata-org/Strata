@@ -202,15 +202,15 @@ partial def translateLMonoTy (bindings : TransBindings) (arg : Arg) :
   let .type tp := arg
     | TransM.error s!"translateLMonoTy expected type {repr arg}"
   match tp with
-  | .ident q`Boogie.bv1 #[] => pure <| .bitvec 1
-  | .ident q`Boogie.bv8 #[] => pure <| .bitvec 8
-  | .ident q`Boogie.bv16 #[] => pure <| .bitvec 16
-  | .ident q`Boogie.bv32 #[] => pure <| .bitvec 32
-  | .ident q`Boogie.bv64 #[] => pure <| .bitvec 64
-  | .ident i argst =>
-      let argst' ← translateLMonoTys bindings (argst.map Arg.type)
+  | .ident _ q`Boogie.bv1 #[] => pure <| .bitvec 1
+  | .ident _ q`Boogie.bv8 #[] => pure <| .bitvec 8
+  | .ident _ q`Boogie.bv16 #[] => pure <| .bitvec 16
+  | .ident _ q`Boogie.bv32 #[] => pure <| .bitvec 32
+  | .ident _ q`Boogie.bv64 #[] => pure <| .bitvec 64
+  | .ident _ i argst =>
+      let argst' ← translateLMonoTys bindings (argst.map ArgF.type)
       pure <| (.tcons i.name argst'.toList.reverse)
-  | .fvar i argst =>
+  | .fvar _ i argst =>
     assert! i < bindings.freeVars.size
     let decl := bindings.freeVars[i]!
     let ty_core ← match decl with
@@ -232,12 +232,12 @@ partial def translateLMonoTy (bindings : TransBindings) (arg : Arg) :
     match argst with
     | #[] => return ty_core
     | _ =>
-      let argst' ← translateLMonoTys bindings (argst.map Arg.type)
+      let argst' ← translateLMonoTys bindings (argst.map ArgF.type)
       match ty_core with
       -- (TODO) Is ignoring the args of `.tcons` safe here?
       | .tcons name _ => return (.tcons name argst'.toList.reverse)
       | _ => TransM.error s!"translateLMonoTy not yet implemented {repr tp}"
-  | .bvar i =>
+  | .bvar _ i =>
     assert! i < bindings.boundTypeVars.size
     let var := bindings.boundTypeVars[bindings.boundTypeVars.size - (i+1)]!
     return (.ftvar var)
@@ -384,7 +384,7 @@ def translateOptionMonoDeclList (bindings : TransBindings) (arg : Arg) :
 
 partial def dealiasTypeExpr (p : Program) (te : TypeExpr) : TypeExpr :=
   match te with
-  | (.fvar idx #[]) =>
+  | (.fvar _ idx #[]) =>
     match p.globalContext.vars[idx]! with
     | (_, (.expr te)) => te
     | (_, (.type [] (.some te))) => te

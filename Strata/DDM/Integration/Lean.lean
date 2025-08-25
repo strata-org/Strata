@@ -56,7 +56,7 @@ def strataDialectImpl: Lean.Elab.Command.CommandElab := fun (stx : Syntax) => do
   let loadFn (dialect : String) := pure (Except.error s!"Unknown dialect {dialect}.")
   let (d, s, _) ← Elab.elabDialect emptyLeanEnv loadFn dialects inputCtx p e
   if !s.errors.isEmpty then
-    for (stx, e) in s.errors do
+    for e in s.errors do
       logMessage e
     return
   -- Add dialect to command
@@ -81,7 +81,7 @@ def strataProgramImpl : TermElab := fun stx tp => do
   | .ok pgm =>
     return toExpr pgm
   | .error errors =>
-    for (stx, e) in errors do
+    for e in errors do
       logMessage e
     return mkApp2 (mkConst ``sorryAx [1]) (toTypeExpr Program) (toExpr true)
 

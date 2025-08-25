@@ -53,7 +53,7 @@ def throwUnknownType (e : TypeExpr) : OfAstM α :=
 /--
 Raise error when passed an argument that is not an expression when expression expected.
 -/
-def throwExpected (cat : String) (a : Arg) : OfAstM α :=
+def throwExpected {Ann α} [Repr Ann] (cat : String) (a : ArgF Ann) : OfAstM α :=
   Except.error s!"Expected {cat} {repr a}."
 
 /--
@@ -120,10 +120,10 @@ def ofTypeM {α β} [SizeOf α] {e : α} {c : Int}
 | ⟨.type a1, p⟩ => act ⟨a1, by simp at p; omega⟩
 | a => .throwExpected "type" a.val
 
-def ofOperationM {α β} [SizeOf α] {e : α} {c : Int}
-        (act : SizeBounded Operation e c → OfAstM β)
-      : SizeBounded Arg e c → OfAstM β
-| ⟨.op a1, p⟩ => act ⟨a1, by simp only [Arg.op.sizeOf_spec] at p; omega⟩
+def ofOperationM {α β Ann} [Repr Ann] [SizeOf α] {e : α} {c : Int}
+        (act : SizeBounded (OperationF Ann) e c → OfAstM β)
+      : SizeBounded (ArgF Ann) e c → OfAstM β
+| ⟨.op a1, p⟩ => act ⟨a1, by simp only [ArgF.op.sizeOf_spec] at p; omega⟩
 | a => .throwExpected "operation" a.val
 
 def ofIdentM {α} [SizeOf α] {e : α} {c : Int}
