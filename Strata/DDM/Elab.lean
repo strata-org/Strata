@@ -48,8 +48,8 @@ def initDeclState : DeclState :=
 end DeclState
 
 inductive Header where
-| dialect (stx : Syntax) (name : DialectName)
-| program (stx : Syntax) (name : DialectName)
+| dialect (loc : SourceLoc) (name : DialectName)
+| program (loc : SourceLoc) (name : DialectName)
 deriving Inhabited
 
 /- Elaborate a Strata program -/
@@ -58,7 +58,7 @@ partial def elabHeader
     (inputContext : InputContext)
     (startPos : String.Pos := 0)
     (stopPos : String.Pos := inputContext.input.endPos)
-     : Header × Array (Syntax × Message) × String.Pos :=
+     : Header × Array Message × String.Pos :=
   let s : DeclState := .initDeclState
   let s := s.openLoadedDialect! .builtin headerDialect
   let s := { s with pos := startPos }
@@ -73,8 +73,8 @@ partial def elabHeader
       let name := tree[0]!.info.asIdent!
       let header :=
         match cmd.op.name.name with
-        | "dialectCommand" => .dialect cmd.stx name.val
-        | "programCommand" => .program cmd.stx name.val
+        | "dialectCommand" => .dialect cmd.loc name.val
+        | "programCommand" => .program cmd.loc name.val
         | _ => panic! s!"Unknown command {cmd.op.name}"
       (header, #[], s.pos)
   else
@@ -97,14 +97,13 @@ def elabProgramRest
     (loader : LoadedDialects)
     (leanEnv : Lean.Environment)
     (inputContext : InputContext)
-    (stx : Lean.Syntax)
+    (loc : SourceLoc)
     (dialect : DialectName)
     (startPos : String.Pos)
     (stopPos : String.Pos := inputContext.input.endPos)
-    : Except (Array (Syntax × Message)) Program := do
+    : Except (Array Message) Program := do
   let some d := loader.dialects[dialect]?
-    | let pos := stx.getPos? |>.getD 0
-      .error #[(stx, Lean.mkStringMessage inputContext pos s!"Unknown dialect {dialect}.")]
+    | .error #[Lean.mkStringMessage inputContext ⟨loc.start⟩ s!"Unknown dialect {dialect}."]
   let s := DeclState.initDeclState
   let s := { s with pos := startPos }
   let s := s.openLoadedDialect! loader d
@@ -122,18 +121,17 @@ partial def elabProgram
     (leanEnv : Lean.Environment)
     (inputContext : InputContext)
     (startPos : String.Pos := 0)
-    (stopPos : String.Pos := inputContext.input.endPos) : Except (Array (Syntax × Message)) Program :=
+    (stopPos : String.Pos := inputContext.input.endPos) : Except (Array Message) Program :=
   assert! "Init" ∈ loader.dialects
   let (header, errors, startPos) := elabHeader leanEnv inputContext startPos stopPos
   if errors.size > 0 then
     .error errors
   else
     match header with
-    | .dialect stx _ =>
-      let pos := stx.getPos? |>.getD 0
-      .error #[(stx, Lean.mkStringMessage inputContext pos "Expected program name")]
-    | .program stx dialect => do
-      elabProgramRest loader leanEnv inputContext stx dialect startPos stopPos
+    | .dialect loc _ =>
+      .error #[Lean.mkStringMessage inputContext ⟨loc.start⟩ "Expected program name"]
+    | .program loc dialect => do
+      elabProgramRest loader leanEnv inputContext loc dialect startPos stopPos
 
 private def asText{m} [Monad m] [MonadExcept String m] (path : System.FilePath) (bytes : ByteArray) : m String :=
   match String.fromUTF8? bytes with
@@ -142,9 +140,9 @@ private def asText{m} [Monad m] [MonadExcept String m] (path : System.FilePath) 
   | none =>
     throw s!"{path} is not an Ion file and contains non UTF-8 data"
 
-private def mkErrorReport (path : System.FilePath) (errors : Array (Lean.Syntax × Lean.Message)) : BaseIO String := do
+private def mkErrorReport (path : System.FilePath) (errors : Array Lean.Message) : BaseIO String := do
   let msg : String := s!"{errors.size} error(s) reading {path}:\n"
-  let msg ← errors.foldlM (init := msg) fun msg (_, e) =>
+  let msg ← errors.foldlM (init := msg) fun msg e =>
     return s!"{msg}  {e.pos.line}:{e.pos.column}: {← e.data.toString}\n"
   return toString msg
 
@@ -272,9 +270,8 @@ def readDialectTextfile
   if errors.size > 0 then
     return (ld, .error (← mkErrorReport input errors))
   match header with
-  | .program stx _ =>
-    let pos := stx.getPos? |>.getD 0
-    return (ld, .error s!"{pos}: Expected dialect.")
+  | .program loc _ =>
+    return (ld, .error s!"{loc.start}: Expected dialect.")
   | .dialect stx dialect =>
     if let .error msg := checkDialectName ld dialect expected then
       return (ld, .error msg)
@@ -295,7 +292,7 @@ partial def elabDialectRest
       (dialects : LoadedDialects)
       (stk : Array DialectName)
       (inputContext : Parser.InputContext)
-      (stx : Syntax)
+      (loc : SourceLoc)
       (dialect : DialectName)
       (startPos : String.Pos := 0)
       (stopPos : String.Pos := inputContext.input.endPos)
@@ -305,7 +302,7 @@ partial def elabDialectRest
     | .ok env => pure env
     | .error _ =>
       let m : Message := mkStringMessage inputContext 0 "Failed to create Lean environment."
-      return (dialects, default, { errors := #[(.missing, m)] })
+      return (dialects, default, { errors := #[m] })
 
   assert! "StrataDDL" ∈ dialects.dialects.map
   let rec run : DialectM Unit := do
@@ -323,7 +320,7 @@ partial def elabDialectRest
   }
   let act : DialectM Unit := do
         if dialect ∈ (← get).loaded.dialects then
-          logError stx[1] s!"Dialect {dialect} already declared."
+          logError loc s!"Dialect {dialect} already declared."
         else
           run
   let dctx : DialectContext := {
@@ -376,16 +373,15 @@ def elabDialect
     | .ok env => pure env
     | .error _ =>
       let m : Message := Lean.mkStringMessage inputContext 0 "Failed to create Lean environment."
-      return (dialects, default, { errors := #[(.missing, m)] })
+      return (dialects, default, { errors := #[m] })
   let (header, errors, startPos) := elabHeader leanEnv inputContext startPos stopPos
   if errors.size > 0 then
     return (dialects, default, { errors := errors })
   match header with
-  | .program stx _ =>
-    let pos := stx.getPos? |>.getD 0
-    let msg := Lean.mkStringMessage inputContext pos "Expected dialect name"
-    return (dialects, default, { errors := #[(stx, msg)] })
-  | .dialect stx dialect =>
-    elabDialectRest fm dialects #[] inputContext stx dialect startPos stopPos
+  | .program loc _ =>
+    let msg := Lean.mkStringMessage inputContext ⟨loc.start⟩ "Expected dialect name"
+    return (dialects, default, { errors := #[msg] })
+  | .dialect loc dialect =>
+    elabDialectRest fm dialects #[] inputContext loc dialect startPos stopPos
 
 end Strata.Elab

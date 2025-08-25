@@ -655,29 +655,29 @@ def checkLeftRec (thisCatName : QualifiedIdent) (argDecls : ArgDecls) (as : List
     let .isTrue lt := inferInstanceAs (Decidable (v < argDecls.size))
       | return panic! "Invalid index"
     match argDecls[v].kind.categoryOf with
-    | .app (.atom (q`Init.CommaSepBy)) (.atom c) =>
+    | .app _ (.atom _ (q`Init.CommaSepBy)) (.atom _ c) =>
       if c == thisCatName then
         .invalid mf!"Leading symbol cannot be recursive call to {c}"
       else
         .isLeading as
-    | .app (.atom (q`Init.Many)) (.atom c) =>
+    | .app _ (.atom _ (q`Init.Many)) (.atom _ c) =>
       if c == thisCatName then
         .invalid mf!"Leading symbol cannot be recursive call to {c}"
       else
         .isLeading as
-    | .app (.atom (q`Init.Option)) (.atom c) =>
+    | .app _ (.atom _ (q`Init.Option)) (.atom _ c) =>
       if c == thisCatName then
         .invalid mf!"Leading symbol cannot be recursive call to {c}"
       else
         .isLeading as
-    | .app (.atom (q`Init.Seq)) (.atom c) =>
+    | .app _ (.atom _ q`Init.Seq) (.atom _ c) =>
       if c == thisCatName then
         .invalid mf!"Leading symbol cannot be recursive call to {c}"
       else
         .isLeading as
-    | .app c _ =>
+    | .app _ c _ =>
       panic! s!"Unknown parametric category '{eformat c}' is not supported."
-    | .atom qid =>
+    | .atom _ qid =>
       if qid == thisCatName then
         .isTrailing (min (argPrec+1) maxPrec) rest
       else
@@ -712,13 +712,13 @@ def atomCatParser (ctx : ParsingContext) (cat : QualifiedIdent) : Parser :=
 /-- Parser function for given syntax category -/
 def catParser (ctx : ParsingContext) (cat : SyntaxCat) : Except SyntaxCat Parser :=
   match cat with
-  | .app (.atom (q`Init.CommaSepBy)) c =>
+  | .app _ (.atom _ q`Init.CommaSepBy) c =>
     (sepByNoAntiquot · (symbolNoAntiquot ",")) <$> catParser ctx c
-  | .app (.atom (q`Init.Option)) c =>
+  | .app _ (.atom _ q`Init.Option) c =>
     optionalNoAntiquot <$> catParser ctx c
-  | .app (.atom (q`Init.Seq)) c =>
+  | .app _ (.atom _ q`Init.Seq) c =>
     manyNoAntiquot <$> catParser ctx c
-  | .atom c =>
+  | .atom _ c =>
     .ok (atomCatParser ctx c)
   | c =>
     .error c

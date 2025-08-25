@@ -199,10 +199,16 @@ def checkArgCount (name : String) (args : Array Size) (n : Nat) : FromIonM (PLif
     else
       throw s!"{name} expects {n} arguments"
 
-def asArray (v : Ion SymbolId) : FromIonM (Array (Ion SymbolId)) :=
+def checkArgMin {Size} (name : String) (args : Array Size) (n : Nat) : FromIonM (PLift (args.size ≥ n)) := do
+    if p : args.size ≥ n then
+      pure ⟨p⟩
+    else
+      throw s!"{name} expects {n} arguments"
+
+def asArray (s : String) (v : Ion SymbolId) : FromIonM (Array (Ion SymbolId)) :=
   match v with
   | .list a => pure a
-  | _ => throw "Expected a list"
+  | _ => throw s!"{s} expects a list."
 
 def asStruct (type : String) (v : Ion SymbolId) : FromIonM { a : Array (SymbolId × Ion SymbolId) // sizeOf a < sizeOf v } := do
   match v with
@@ -295,8 +301,8 @@ end FromIon
 instance : FromIon String where
   fromIon := .asString
 
-instance [FromIon α] : FromIon (Array α) where
-  fromIon v := .asArray v >>= Array.mapM fromIon
+instance {α} [FromIon α] : FromIon (Array α) where
+  fromIon v := .asArray "Array" v >>= Array.mapM fromIon
 
 namespace QualifiedIdent
 
@@ -327,375 +333,127 @@ private def _root_.Ion.Ion.addArgs {α} (f : Ion α) (ra : Array (Ion α)) : Ion
   else
     .sexp (ra |>.push f |>.reverse)
 
-namespace SyntaxCat
+class ToIon (α : Type) where
+  toIon : α → InternM (Ion SymbolId)
 
-def toIon : SyntaxCat → Array (Ion SymbolId) → Ion.InternM (Ion SymbolId)
-| (.atom sym), a =>
-  return (← sym.toIon) |>.addArgs a
-| .app f x, a => do
-  f.toIon <| a.push <| ←x.toIon #[]
+open ToIon (toIon)
 
-instance : CachedToIon SyntaxCat where
-  cachedToIon _ c := c.toIon #[]
+namespace SyntaxCatF
 
-protected def fromIon (v : Ion SymbolId) : FromIonM SyntaxCat := do
-  match ← .asSymbolOrSexp v with
-  | .string s =>
-    .atom <$> QualifiedIdent.fromIonStringSymbol s
-  | .sexp args p => do
-    let args ← args.attach.mapM fun ⟨u, _⟩ =>
-      have r : sizeOf u < sizeOf args := by decreasing_tactic
-      SyntaxCat.fromIon u
-    if p : args.size = 0 then
-      throw s!"Expected arguments to sexp"
-    else do
-      return args.foldl (start := 1) .app (init := args[0])
+protected def toIon {α} [ToIon α] (refs : SymbolIdCache) (sc : SyntaxCatF α) : Ion.InternM (Ion SymbolId) :=
+  ionScope! SyntaxCatF refs :
+    match sc with
+    | .atom ann sym =>
+      return .sexp #[ ionSymbol! "atom", ← toIon ann, ← sym.toIon ]
+    | .app ann f x =>
+      return .sexp #[ ionSymbol! "app", ← toIon ann, ← f.toIon refs, ← x.toIon refs ]
+
+instance {α} [ToIon α] : CachedToIon (SyntaxCatF α) where
+  cachedToIon := SyntaxCatF.toIon
+
+protected def fromIon {α} [FromIon α] (v : Ion SymbolId) : FromIonM (SyntaxCatF α) := do
+  let ⟨args, p⟩ ← .asSexp "SyntaxCatF" v
+  match ← .asSymbolString args[0] with
+  | "atom" => do
+    let ⟨p⟩ ← .checkArgCount "SyntaxCat.atom" args 3
+    let ann ← fromIon args[1]
+    let sym ← fromIon args[2]
+    return .atom ann sym
+  | "app" =>
+    let ⟨p⟩ ← .checkArgCount "SyntaxCat.app" args 4
+    let ann ← fromIon args[1]
+    let f ← SyntaxCatF.fromIon args[2]
+    let x ← SyntaxCatF.fromIon args[3]
+    return .app ann f x
+  | s => do
+    throw s!"Unexpected category {s}"
   termination_by v
+  decreasing_by
+    · have p : sizeOf args[2] < sizeOf args := by decreasing_tactic
+      decreasing_tactic
+    · have p : sizeOf args[3] < sizeOf args := by decreasing_tactic
+      decreasing_tactic
 
-instance : FromIon SyntaxCat where
-  fromIon := SyntaxCat.fromIon
+instance {α} [FromIon α] : FromIon (SyntaxCatF α)  where
+  fromIon := SyntaxCatF.fromIon
 
-end SyntaxCat
+end SyntaxCatF
 
-namespace TypeExpr
+namespace TypeExprF
 
-def flattenArrow : Array TypeExpr → TypeExpr → Array TypeExpr
-| a, .arrow l r => flattenArrow (a.push l) r
-| a, r => a.push r
-
-theorem flattenArrow_size (args : Array TypeExpr) (r : TypeExpr) :
-  sizeOf (flattenArrow args r) = 1 + sizeOf args + sizeOf r := by
-  unfold flattenArrow
-  split
-  case h_1 =>
-    rename_i l r
-    simp [flattenArrow_size _ r]
-    omega
-  case h_2 =>
-    decreasing_tactic
-  termination_by r
-
-protected def toIon (refs : SymbolIdCache) (tpe : TypeExpr) : InternM (Ion SymbolId) :=
-  ionScope! TypeExpr refs :
-    match p : tpe with
-    | .ident name a => do
+protected def toIon {α} [ToIon α] (refs : SymbolIdCache) (tpe : TypeExprF α) : InternM (Ion SymbolId) :=
+  ionScope! TypeExprF refs :
+    match tpe with
+    | .ident ann name a => do
       let v ← name.toIon
-      if a.isEmpty then
-        pure v
-      else
-        Ion.sexp <$> a.attach.mapM_off (init := #[v]) fun ⟨e, ep⟩ =>
-          e.toIon refs
+      let args : Array (Ion SymbolId) := #[ionSymbol! "ident", ← toIon ann, v]
+      Ion.sexp <$> a.attach.mapM_off (init := args) fun ⟨e, _⟩ =>
+        e.toIon refs
     -- A bound type variable with the given index.
-    | .bvar vidx =>
-      return Ion.sexp #[ionSymbol! "bvar", .int vidx]
-    | .fvar idx a => do
-      let s : Array (Ion SymbolId) := #[ionSymbol! "fvar", .int idx]
+    | .bvar ann vidx =>
+      return Ion.sexp #[ionSymbol! "bvar", ← toIon ann, .int vidx]
+    | .fvar ann idx a => do
+      let s : Array (Ion SymbolId) := #[ionSymbol! "fvar", ← toIon ann, .int idx]
       let s ← a.attach.mapM_off (init := s) fun ⟨e, _⟩ =>
         e.toIon refs
       return Ion.sexp s
-    | .arrow l r => do
-      let fv := flattenArrow #[] r
-      let res : Array (Ion SymbolId) := Array.mkEmpty (2 + fv.size)
-      let res := res.push (.symbol ionSymbol! "arrow")
-      let res := res.push (← l.toIon refs)
-      have fvp := flattenArrow_size #[] r
-      let res ← fv.attach.mapM_off (init := res) fun ⟨v, vp⟩ =>
-        have q := Array.sizeOf_lt_of_mem_strict vp
-        have : sizeOf fv ≤ sizeOf l + sizeOf r + 3 := by
-          simp [fv, flattenArrow_size]
-          omega
-        v.toIon refs
-      return Ion.sexp res
+    | .arrow ann l r => do
+      return Ion.sexp #[
+        .symbol ionSymbol! "arrow",
+        ← toIon ann,
+        ← l.toIon refs,
+        ← r.toIon refs
+      ]
   termination_by tpe
-  decreasing_by
-    · decreasing_tactic
-    · decreasing_tactic
-    · decreasing_tactic
-    · simp; omega
 
-instance : CachedToIon TypeExpr where
+instance {α} [ToIon α] : CachedToIon (TypeExprF α) where
   cachedToIon refs tp := tp.toIon refs
 
-def fromIon (v : Ion SymbolId) : FromIonM TypeExpr := do
-  match ← .asSymbolOrSexp v with
-  | .string s =>
-    return .ident (← QualifiedIdent.fromIonStringSymbol s) #[]
-  | .sexp args ap => do
-    if p : args.size = 0 then
-      throw s!"Expected arguments to sexp"
-    else
-      match ← .asSymbolString args[0] with
-      | "arrow" => do
-        if p : args.size < 3 then
-          throw s!"arrow expects at least three arguments."
-        else
-          have r : sizeOf args[args.size - 1] < sizeOf args := by decreasing_tactic
-          let init ← TypeExpr.fromIon args[args.size - 1]
-          args.attach.foldrM (start := 1) (stop := args.size - 1) (init := init) fun ⟨v, _⟩ r =>
-            have _ : sizeOf v < sizeOf args := by decreasing_tactic
-            (.arrow · r) <$> TypeExpr.fromIon v
-      | "bvar" =>
-        if p : args.size ≠ 2 then
-          throw s!"bvar exprects two arguments."
-        else
-          .bvar <$> .asNat "TypeExpr bvar" args[1]
-      | "fvar" =>
-        if p : args.size < 2 then
-          throw s!"fvar exprects two arguments."
-        else
-          let idx ← .asNat "TypeExpr fvar" args[1]
-          let a ← args.attach.mapM_off (start := 2) fun ⟨e, _⟩ =>
-            have p : sizeOf e < sizeOf args := by decreasing_tactic
-            TypeExpr.fromIon e
-          pure <| .fvar idx a
-      | sym => do
-        let a ← args.attach.mapM_off (start := 1) fun ⟨v, _⟩ =>
-          have _ : sizeOf v < sizeOf args := by decreasing_tactic
-          TypeExpr.fromIon v
-        pure <| .ident (← QualifiedIdent.fromIonStringSymbol sym) a
-  termination_by v
-
-instance : FromIon TypeExpr where
-  fromIon := TypeExpr.fromIon
-
-end TypeExpr
-
-namespace MetadataArg
-
-protected def toIon (refs : SymbolIdCache) (a : MetadataArg) : InternM (Ion SymbolId) :=
-  ionScope! MetadataArg refs :
-    match a with
-    | .bool b =>
-      return .bool b
-    | .catbvar idx =>
-      return .sexp #[ionSymbol! "category", .int idx]
-    | .num v =>
-      return .int v
-    | .option ma =>
-      match ma with
-      | some a => return .sexp #[ionSymbol! "some", ← a.toIon refs]
-      | none => return .null
-
-instance : CachedToIon MetadataArg where
-  cachedToIon := MetadataArg.toIon
-
-protected def fromIon (v : Ion SymbolId) : FromIonM MetadataArg := do
-  if let .null _ := v then
-    return .option none
-  if let .bool b := v then
-    return .bool b
-  if let some i := v.asNat? then
-    return .num i
-  let ⟨args, argp⟩ ← .asSexp "MetadataArg" v
+protected def fromIon {α} [FromIon α] (v : Ion SymbolId) : FromIonM (TypeExprF α) := do
+  let ⟨args, ap⟩ ← .asSexp "TypeExpr" v
   match ← .asSymbolString args[0] with
-  | "category" =>
-    let ⟨p⟩ ← .checkArgCount "category" args 2
-    .catbvar <$> .asNat "MetadataArg catbvar" args[1]
-  | "some" => do
-    let ⟨p⟩ ← .checkArgCount "some" args 2
-    have _ : sizeOf args[1] < sizeOf args := by decreasing_tactic
-    (.option ∘ some) <$> MetadataArg.fromIon args[1]
-  | s => throw s!"Unexepected arg {s}"
-
-instance : FromIon MetadataArg where
-  fromIon := MetadataArg.fromIon
-
-end MetadataArg
-
-namespace MetadataAttr
-
-instance : CachedToIon MetadataAttr where
-  cachedToIon refs md := ionScope! MetadataAttr refs : do
-    let args : Array (Ion SymbolId) := .mkEmpty (1 + md.args.size)
-    let args := args.push (←md.ident.toIon)
-    let args ← md.args.mapM_off (init := args) fun a => ionRef! a
-    return .sexp args
-
-instance : FromIon MetadataAttr where
-  fromIon v := do
-    let ⟨args, argsp⟩ ← .asSexp "MetadataAttr" v
-    return {
-      ident := ← fromIon args[0],
-      args := ← args.mapM_off (start := 1) fromIon
-    }
-
-end MetadataAttr
-
-namespace Metadata
-
-instance : CachedToIon Metadata where
-  cachedToIon refs md := ionScope! Metadata refs : ionRef! md.toArray
-
-instance : FromIon Metadata where
-  fromIon v := .ofArray <$> fromIon v
-
-end Metadata
-
-namespace PreType
-
-def flattenArrow : Array PreType → PreType → Array PreType
-| a, .arrow l r => PreType.flattenArrow (a.push l) r
-| a, r => a.push r
-
-theorem flattenArrow_size (args : Array PreType) (r : PreType) :
-  sizeOf (flattenArrow args r) = 1 + sizeOf args + sizeOf r := by
-  unfold flattenArrow
-  split
-  case h_1 =>
-    rename_i l r
-    simp [flattenArrow_size _ r]
-    omega
-  case h_2 =>
+  | "arrow" => do
+    let ⟨p⟩ ← .checkArgCount "TypeExpr.arrow" args 4
+    let ann ← fromIon args[1]
+    let l ← TypeExprF.fromIon args[2]
+    let r ← TypeExprF.fromIon args[3]
+    return .arrow ann l r
+  | "bvar" =>
+    let ⟨p⟩ ← .checkArgCount "TypeExpr bvar" args 3
+    .bvar
+      <$> fromIon args[1]
+      <*> .asNat "TypeExpr bvar" args[1]
+  | "fvar" =>
+    let ⟨p⟩ ← .checkArgMin "TypeExpr fvar" args 3
+    let ann ← fromIon args[1]
+    let idx ← .asNat "TypeExpr fvar" args[2]
+    let a ← args.attach.mapM_off (start := 3) fun ⟨e, _⟩ =>
+      TypeExprF.fromIon e
+    pure <| .fvar ann idx a
+  | "ident" =>
+    let ⟨p⟩ ← .checkArgMin "TypeExpr.ident" args 3
+    let ann ← fromIon args[1]
+    let name ← fromIon args[2]
+    let args ← args.attach.mapM_off (start := 3) fun ⟨e, _⟩ =>
+      TypeExprF.fromIon e
+    return .ident ann name args
+  | s => do
+    throw s!"Unexpected type expression {s}"
+termination_by v
+decreasing_by
+  · have p : sizeOf args[2] < sizeOf args := by decreasing_tactic
     decreasing_tactic
-  termination_by r
+  · have p : sizeOf args[3] < sizeOf args := by decreasing_tactic
+    decreasing_tactic
+  · have p : sizeOf e < sizeOf args := by decreasing_tactic
+    decreasing_tactic
+  · have p : sizeOf e < sizeOf args := by decreasing_tactic
+    decreasing_tactic
 
-protected def toIon (refs : SymbolIdCache) (tpe : PreType) : InternM (Ion SymbolId) :=
-  ionScope! PreType refs :
-    match tpe with
-    | .ident name a => do
-      let v ← name.toIon
-      if a.isEmpty then
-        pure v
-      else
-        .sexp <$> a.attach.mapM_off (init := #[v]) fun ⟨e, _⟩ =>
-          e.toIon refs
-    -- A bound type variable with the given index.
-    | .bvar vidx =>
-      return Ion.sexp #[ionSymbol! "bvar", .int vidx] |>.addArgs #[]
-    | .fvar idx a => do
-      let s : Array (Ion SymbolId) := #[ionSymbol! "fvar", .int idx]
-      let s ← a.attach.mapM_off (init := s) fun ⟨e, ep⟩ => e.toIon refs
-      return Ion.sexp s
-    | .arrow l r => do
-      let fv := r.flattenArrow #[]
-      let res : Array (Ion SymbolId) := Array.mkEmpty (2 + fv.size)
-      let res := res.push (.symbol ionSymbol! "arrow")
-      let res := res.push (← l.toIon refs)
-      have fvp := flattenArrow_size #[] r
-      let res ← fv.attach.mapM_off (init := res) fun ⟨v, vp⟩ =>
-        have q := Array.sizeOf_lt_of_mem_strict vp
-        have : sizeOf fv ≤ sizeOf l + sizeOf r + 3 := by
-          simp [fv, flattenArrow_size]
-          omega
-        v.toIon refs
-      return Ion.sexp res
-    | .funMacro i r =>
-      return Ion.sexp <| #[.symbol ionSymbol! "funMacro", .int i, ← r.toIon refs]
-  termination_by tpe
-  decreasing_by
-    · decreasing_tactic
-    · decreasing_tactic
-    · decreasing_tactic
-    · simp; omega
-    · decreasing_tactic
+instance {α} [FromIon α] : FromIon (TypeExprF α) where
+  fromIon := TypeExprF.fromIon
 
-instance : CachedToIon PreType where
-  cachedToIon refs tp := tp.toIon refs
-
-def fromIon (v : Ion SymbolId) : FromIonM PreType := do
-  match ← .asSymbolOrSexp v with
-  | .string s =>
-    return .ident (← QualifiedIdent.fromIonStringSymbol s) #[]
-  | .sexp args ap => do
-    if args_ne : args.size = 0 then
-      throw s!"Expected arguments to sexp"
-    else
-      match ← .asSymbolString args[0] with
-      | "arrow" => do
-        if p : args.size < 3 then
-          throw s!"arrow expects at least three arguments."
-        else
-          let init ← PreType.fromIon args[args.size - 1]
-          args.attach.foldrM (start := 1) (stop := args.size - 1) (init := init) fun ⟨e, emem⟩ r =>
-            (.arrow · r) <$> PreType.fromIon e
-      | "bvar" =>
-        if p : args.size ≠ 2 then
-          throw s!"bvar exprects two arguments."
-        else
-          .bvar <$> .asNat "PreType bvar" args[1]
-      | "fvar" =>
-        if p : args.size < 2 then
-          throw s!"fvar exprects two arguments."
-        else
-          let idx ← .asNat "Pretype fvar" args[1]
-          let a ← args.attach.mapM_off (start := 2) fun ⟨e, _⟩ =>
-            PreType.fromIon e
-          pure <| .fvar idx a
-      | sym => do
-        let a ← args.attach.mapM_off (start := 1) fun ⟨v, _⟩ =>
-          PreType.fromIon v
-        pure <| .ident (← QualifiedIdent.fromIonStringSymbol sym) a
-  termination_by v
-  decreasing_by
-    · have _ : sizeOf args[args.size - 1] < sizeOf args := by decreasing_tactic
-      decreasing_tactic
-    · have _ : sizeOf e < sizeOf args := by decreasing_tactic
-      decreasing_tactic
-    · have _ : sizeOf e < sizeOf args := by decreasing_tactic
-      decreasing_tactic
-    · have _ : sizeOf v < sizeOf args := by decreasing_tactic
-      decreasing_tactic
-
-instance : FromIon PreType where
-  fromIon := PreType.fromIon
-
-end PreType
-
-namespace ArgDeclKind
-
-instance : CachedToIon ArgDeclKind where
-  cachedToIon refs tpc := ionScope! ArgDeclKind refs :
-  match tpc with
-  | .cat k =>
-    return .sexp #[ionSymbol! "category", ← CachedToIon.cachedToIon refs k]
-  | .type tp =>
-    return .sexp #[ionSymbol! "type", ← ionRef! tp]
-
-protected def fromIon (v : Ion SymbolId) : FromIonM ArgDeclKind := do
-  let ⟨args, argsp⟩ ← .asSexp "ArgDeclKind" v
-  match ← .asSymbolString args[0] with
-  | "category" => do
-    let ⟨p⟩ ← .checkArgCount "category" args 2
-    .cat <$> fromIon args[1]
-  | "type" => do
-    let ⟨p⟩ ← .checkArgCount "type" args 2
-    .type <$> fromIon args[1]
-  | s =>
-    throw s!"Unexpected binding kind {s}"
-
-instance : FromIon ArgDeclKind where
-  fromIon := ArgDeclKind.fromIon
-
-end ArgDeclKind
-
-namespace ArgDecl
-
-instance : CachedToIon ArgDecl where
-  cachedToIon refs b := ionScope! ArgDecl refs : do
-    let mut flds := #[
-      (ionSymbol! "name", .string b.ident),
-      (ionSymbol! "type", ←ionRef! b.kind),
-    ]
-    if !b.metadata.isEmpty then
-      flds := flds.push (ionSymbol! "metadata", ← ionRef! b.metadata)
-    return .struct flds
-
-instance : FromIon ArgDecl where
-  fromIon v := do
-    let m := .fromOptList! [("name", .req), ("type", .req), ("metadata", .opt)]
-    let ⟨fldArgs, p⟩ ← .asFieldStruct (size := 3) v "ArgDecl" m
-
-    let metadata ←
-          match fldArgs[2] with
-          | .null _ => pure .empty
-          | v => fromIon v
-    pure {
-        ident := ← fromIon fldArgs[0]
-        kind := ← fromIon fldArgs[1]
-        metadata := metadata
-    }
-
-end ArgDecl
+end TypeExprF
 
 namespace SyntaxDefAtom
 
@@ -756,6 +514,445 @@ instance : FromIon SyntaxDef where
 
 end SyntaxDef
 
+mutual
+
+protected def OperationF.toIon {α} [SizeOf α] [ToIon α] (refs : SymbolIdCache) (op : OperationF α) : InternM (Ion SymbolId) :=
+  ionScope! Operation refs : do
+    let argEntry := ionRefEntry! ``ArgF
+    let args := #[ ← op.name.toIon, ← ToIon.toIon op.ann ]
+    let args ← op.args.attach.mapM_off (init := args) fun ⟨a, _⟩ =>
+      a.toIon argEntry
+    return .sexp args
+termination_by sizeOf op
+decreasing_by
+  · simp [Strata.OperationF.sizeOf_spec]
+    decreasing_tactic
+
+protected def ExprF.toIon {α} [SizeOf α] [ToIon α] (refs : SymbolIdCache) (e : ExprF α) : InternM (Ion SymbolId) :=
+  ionScope! Expr refs :
+    match e with
+    | .bvar ann idx => do
+      return .sexp #[ ionSymbol! "bvar", ← toIon ann, .int idx ]
+    | .fvar ann lvl => do
+      return .sexp #[ ionSymbol! "fvar", ← toIon ann, .int lvl ]
+    | .fn ann ident =>
+      return .sexp #[ ionSymbol! "fn", ← toIon ann, ← ident.toIon ]
+    | .app ann f a => do
+      return .sexp #[ ionSymbol! "app", ← toIon ann, ← f.toIon refs, ← a.toIon (ionRefEntry! ``Arg) ]
+  termination_by sizeOf e
+  decreasing_by
+    · decreasing_tactic
+    · decreasing_tactic
+
+protected def ArgF.toIon {α} [SizeOf α] [ToIon α] (refs : SymbolIdCache) (arg : ArgF α) : InternM (Ion SymbolId) :=
+  ionScope! ArgF refs :
+    match arg with
+    | .op o =>
+      return .sexp #[ ionSymbol! "op", ← o.toIon (ionRefEntry! ``Operation) ]
+    | .expr e =>
+      return .sexp #[ ionSymbol! "expr", ← e.toIon (ionRefEntry! ``Expr) ]
+    | .cat c =>
+      return .sexp #[ ionSymbol! "cat", ← CachedToIon.cachedToIon (ionRefEntry! ``SyntaxCatF) c ]
+    | .type e =>
+      return .sexp #[ ionSymbol! "type", ← CachedToIon.cachedToIon (ionRefEntry! ``TypeExprF) e ]
+    | .ident ann s  =>
+      return .sexp #[ ionSymbol! "ident", ← toIon ann, ← internSymbol s ]
+    | .num ann n    =>
+      return .sexp #[ ionSymbol! "num", ← toIon ann, .int n ]
+    | .decimal ann d =>
+      return .sexp #[ ionSymbol! "decimal", ← toIon ann, .decimal d]
+    | .strlit ann s =>
+      return .sexp #[ ionSymbol! "strlit", ← toIon ann, .string s]
+    | .option ann o => do
+      let mut args : Array (Ion _) := #[ ionSymbol! "option", ← toIon ann ]
+      match o with
+      | none => pure ()
+      | some a =>
+        args := args.push (← a.toIon refs )
+      return .sexp args
+    | .seq ann l => do
+      let args : Array (Ion _) := #[ ionSymbol! "seq", ← toIon ann ]
+      let args ← l.attach.mapM_off (init := args) fun ⟨v, _⟩ => v.toIon refs
+      return .sexp args
+    | .commaSepList ann l => do
+      let args : Array (Ion _) := #[ ionSymbol! "commaSepList", ← toIon ann ]
+      let args ← l.attach.mapM_off (init := args) fun ⟨v, _⟩ => v.toIon refs
+      return .sexp args
+  termination_by sizeOf arg
+  decreasing_by
+    · decreasing_tactic
+    · decreasing_tactic
+    · decreasing_tactic
+    · decreasing_tactic
+    · decreasing_tactic
+
+end
+
+mutual
+
+protected def OperationF.fromIon {α} [FromIon α] (v : Ion SymbolId) : FromIonM (OperationF α)  := do
+  let ⟨sexp, sexpP⟩ ← .asSexp "Operation" v
+  let ⟨m⟩ ← .checkArgMin "operation" sexp 2
+  let name ← fromIon sexp[0]
+  let ann ← fromIon (α := α) sexp[1]
+  let args ← sexp.attach.mapM_off (start := 2) fun ⟨a, a_in⟩ =>
+    Strata.ArgF.fromIon a
+  return { ann := ann, name := name, args := args }
+termination_by v
+decreasing_by
+    have _ : sizeOf a < sizeOf sexp := by decreasing_tactic
+    decreasing_tactic
+
+protected def ExprF.fromIon {α} [FromIon α] (v : Ion SymbolId) : FromIonM (ExprF α) := do
+  let ⟨sexp, sexpP⟩ ← .asSexp "Expr" v
+  match ← .asSymbolString sexp[0] with
+  | "bvar" =>
+    let ⟨p⟩ ← .checkArgCount "bvar" sexp 3
+    let ann ← fromIon (α := α) sexp[1]
+    .bvar ann <$> .asNat "Expr bvar" sexp[2]
+  | "fvar" =>
+    let ⟨p⟩ ← .checkArgCount "fvar" sexp 3
+    let ann ← fromIon (α := α) sexp[1]
+    .fvar ann <$> .asNat "Expr fvar" sexp[2]
+  | "fn" =>
+    let ⟨p⟩ ← .checkArgCount "fn" sexp 3
+    let ann ← fromIon (α := α) sexp[1]
+    let ident ← fromIon sexp[2]
+    return .fn ann ident
+  | "app" =>
+    let ⟨p⟩ ← .checkArgCount "app" sexp 4
+    let ann ← fromIon (α := α) sexp[1]
+    let f ← Strata.ExprF.fromIon sexp[2]
+    let x ← Strata.ArgF.fromIon sexp[3]
+    return .app ann f x
+  | str =>
+    throw s!"Unexpected identifier {str}"
+termination_by v
+decreasing_by
+  · have _ : sizeOf sexp[2] < sizeOf sexp := by decreasing_tactic
+    decreasing_tactic
+  · have _ : sizeOf sexp[3] < sizeOf sexp := by decreasing_tactic
+    decreasing_tactic
+
+protected def ArgF.fromIon {α} [FromIon α] (v : Ion SymbolId) : FromIonM (ArgF α)  := do
+  let ⟨sexp, sexpP⟩ ← .asSexp "Arg" v
+  match ← .asSymbolString sexp[0] with
+  | "op" =>
+    let ⟨p⟩ ← .checkArgCount "op" sexp 2
+    .op <$> Strata.OperationF.fromIon sexp[1]
+  | "expr" =>
+    let ⟨p⟩ ← .checkArgCount "expr" sexp 2
+    .expr <$> Strata.ExprF.fromIon sexp[1]
+  | "cat" =>
+    let ⟨p⟩ ← .checkArgCount "cat" sexp 2
+    .cat <$> fromIon sexp[1]
+  | "type" =>
+    let ⟨p⟩ ← .checkArgCount "type" sexp 2
+    .type <$> fromIon sexp[1]
+  | "ident" =>
+    let ⟨p⟩ ← .checkArgCount "ident" sexp 3
+    .ident <$> fromIon sexp[1]
+           <*> fromIon sexp[2]
+  | "num" =>
+    let ⟨p⟩ ← .checkArgCount "num" sexp 3
+    let ann ← fromIon sexp[1]
+    let some x := sexp[2].asNat?
+      | throw s!"Arg num given {repr sexp}."
+    pure <| .num ann x
+  | "decimal" =>
+    let ⟨p⟩ ← .checkArgCount "num" sexp 3
+    let ann ← fromIon sexp[1]
+    let some d := sexp[2].asDecimal?
+      | throw "decimal arg expects a decimal number."
+    pure <| .decimal ann d
+  | "strlit" =>
+    let ⟨p⟩ ← .checkArgCount "strlit" sexp 3
+    .strlit <$> fromIon sexp[1] <*> fromIon sexp[2]
+  | "option" =>
+    let ⟨p⟩ ← .checkArgMin "strlit" sexp 2
+    let ann ← fromIon sexp[1]
+    let v ←
+      match p : sexp.size with
+      | 2 => pure none
+      | 3 => some <$> Strata.ArgF.fromIon sexp[2]
+      | _ => throw "Option expects at most one value."
+    return .option ann v
+  | "seq" => do
+    let ⟨p⟩ ← .checkArgMin "seq" sexp 2
+    let ann ← fromIon sexp[1]
+    let args ← sexp.attach.mapM_off (start := 2) fun ⟨u, _⟩ =>
+      Strata.ArgF.fromIon u
+    return .seq ann args
+  | "commaSepList" => do
+    let ⟨p⟩ ← .checkArgMin "seq" sexp 2
+    let ann ← fromIon sexp[1]
+    let args ← sexp.attach.mapM_off (start := 2) fun ⟨u, _⟩ =>
+      Strata.ArgF.fromIon u
+    return .commaSepList ann args
+  | str =>
+    throw s!"Unexpected identifier {str}"
+termination_by v
+decreasing_by
+  · have _ : sizeOf sexp[1] < sizeOf sexp := by decreasing_tactic
+    decreasing_tactic
+  · have _ : sizeOf sexp[1] < sizeOf sexp := by decreasing_tactic
+    decreasing_tactic
+  · have _ : sizeOf sexp[2] < sizeOf sexp := by decreasing_tactic
+    decreasing_tactic
+  · have _ : sizeOf u < sizeOf sexp := by decreasing_tactic
+    decreasing_tactic
+  · have _ : sizeOf u < sizeOf sexp := by decreasing_tactic
+    decreasing_tactic
+
+end
+
+namespace OperationF
+
+instance {α} [ToIon α] : CachedToIon (OperationF α)  where
+  cachedToIon := OperationF.toIon
+
+end OperationF
+
+namespace SourceLoc
+
+instance : ToIon SourceLoc where
+  toIon v :=
+    return .sexp #[.int v.start, .int v.stop ]
+
+instance : FromIon SourceLoc where
+  fromIon v := do
+    let ⟨exp, _⟩ ← .asSexp "SourceLoc" v
+    let ⟨p⟩ ← .checkArgCount "SourceLoc" exp 2
+    return {
+        start := ← .asNat "SourceLoc start" exp[0]
+        stop := ← .asNat "SourceLoc stop" exp[1]
+    }
+
+end SourceLoc
+
+namespace MetadataArg
+
+protected def toIon (refs : SymbolIdCache) (a : MetadataArg) : InternM (Ion SymbolId) :=
+  ionScope! MetadataArg refs :
+    match a with
+    | .bool b =>
+      return .bool b
+    | .catbvar idx =>
+      return .sexp #[ionSymbol! "category", .int idx]
+    | .num v =>
+      return .int v
+    | .option ma =>
+      match ma with
+      | some a => return .sexp #[ionSymbol! "some", ← a.toIon refs]
+      | none => return .null
+
+instance : CachedToIon MetadataArg where
+  cachedToIon := MetadataArg.toIon
+
+protected def fromIon (v : Ion SymbolId) : FromIonM MetadataArg := do
+  if let .null _ := v then
+    return .option none
+  if let .bool b := v then
+    return .bool b
+  if let some i := v.asNat? then
+    return .num i
+  let ⟨args, argp⟩ ← .asSexp "MetadataArg" v
+  match ← .asSymbolString args[0] with
+  | "category" =>
+    let ⟨p⟩ ← .checkArgCount "MetadataArg.category" args 2
+    .catbvar <$> .asNat "MetadataArg catbvar" args[1]
+  | "some" => do
+    let ⟨p⟩ ← .checkArgCount "some" args 2
+    have _ : sizeOf args[1] < sizeOf args := by decreasing_tactic
+    (.option ∘ some) <$> MetadataArg.fromIon args[1]
+  | s => throw s!"Unexepected arg {s}"
+
+instance : FromIon MetadataArg where
+  fromIon := MetadataArg.fromIon
+
+end MetadataArg
+
+namespace MetadataAttr
+
+instance : CachedToIon MetadataAttr where
+  cachedToIon refs md := ionScope! MetadataAttr refs : do
+    let args : Array (Ion SymbolId) := .mkEmpty (1 + md.args.size)
+    let args := args.push (←md.ident.toIon)
+    let args ← md.args.mapM_off (init := args) fun a => ionRef! a
+    return .sexp args
+
+instance : FromIon MetadataAttr where
+  fromIon v := do
+    let ⟨args, argsp⟩ ← .asSexp "MetadataAttr" v
+    return {
+      ident := ← fromIon args[0],
+      args := ← args.mapM_off (start := 1) fromIon
+    }
+
+end MetadataAttr
+
+namespace Metadata
+
+instance : CachedToIon Metadata where
+  cachedToIon refs md := ionScope! Metadata refs : ionRef! md.toArray
+
+instance : FromIon Metadata where
+  fromIon v := .ofArray <$> fromIon v
+
+end Metadata
+
+namespace PreType
+
+def flattenArrow : Array PreType → PreType → Array PreType
+| a, .arrow _ l r => PreType.flattenArrow (a.push l) r
+| a, r => a.push r
+
+theorem flattenArrow_size (args : Array PreType) (r : PreType) :
+  sizeOf (flattenArrow args r) ≤ 1 + sizeOf args + sizeOf r := by
+  unfold flattenArrow
+  split
+  case h_1 =>
+    rename_i l r
+    have lt := flattenArrow_size (args.push l) r
+    simp at *
+    omega
+  case h_2 =>
+    decreasing_tactic
+  termination_by r
+
+protected def toIon (refs : SymbolIdCache) (tpe : PreType) : InternM (Ion SymbolId) :=
+  ionScope! PreType refs :
+    match tpe with
+    | .ident loc name a => do
+      let args : Array (Ion SymbolId) := #[ionSymbol! "ident", ← toIon loc, ← name.toIon]
+      .sexp <$> a.attach.mapM_off (init := args) fun ⟨e, _⟩ => e.toIon refs
+    -- A bound type variable with the given index.
+    | .bvar loc vidx =>
+      return Ion.sexp #[ionSymbol! "bvar", ← toIon loc, .int vidx] |>.addArgs #[]
+    | .fvar loc idx a => do
+      let s : Array (Ion SymbolId) := #[ionSymbol! "fvar", ← toIon loc, .int idx]
+      let s ← a.attach.mapM_off (init := s) fun ⟨e, _⟩ => e.toIon refs
+      return Ion.sexp s
+    | .arrow loc l r => do
+      return Ion.sexp #[ionSymbol! "arrow", ← toIon loc, ← l.toIon refs, ← r.toIon refs]
+    | .funMacro loc i r =>
+      return Ion.sexp <| #[ionSymbol! "funMacro", ← toIon loc, .int i, ← r.toIon refs]
+  termination_by tpe
+
+instance : CachedToIon PreType where
+  cachedToIon refs tp := tp.toIon refs
+
+protected def fromIon (v : Ion SymbolId) : FromIonM PreType := do
+  let ⟨args, ap⟩ ← .asSexp "PreType" v
+  match ← .asSymbolString args[0] with
+  | "arrow" => do
+    let ⟨p⟩ ← .checkArgCount "TypeExpr.arrow" args 4
+    let ann ← fromIon args[1]
+    let l ← PreType.fromIon args[2]
+    let r ← PreType.fromIon args[3]
+    return .arrow ann l r
+  | "bvar" =>
+    let ⟨p⟩ ← .checkArgCount "PreType bvar" args 3
+    PreType.bvar
+      <$> fromIon args[1]
+      <*> .asNat "TypeExpr bvar" args[2]
+  | "fvar" =>
+    let ⟨p⟩ ← .checkArgMin "fvar" args 3
+    let ann ← fromIon args[1]
+    let idx ← .asNat "fvar" args[2]
+    let a ← args.attach.mapM_off (start := 3) fun ⟨e, _⟩ =>
+      PreType.fromIon e
+    pure <| .fvar ann idx a
+  | "ident" =>
+    let ⟨p⟩ ← .checkArgMin "ident" args 3
+    let ann ← fromIon args[1]
+    let name ← fromIon args[2]
+    let args ← args.attach.mapM_off (start := 3) fun ⟨e, _⟩ =>
+      PreType.fromIon e
+    return .ident ann name args
+  | "funMacro" =>
+    let ⟨p⟩ ← .checkArgCount "PreType funMacro" args 4
+    let ann ← fromIon args[1]
+    let idx ← .asNat "funMacro idx" args[2]
+    let res ← PreType.fromIon args[3]
+    return .funMacro ann idx res
+  | s => do
+    throw s!"Unexpected PreType {s}"
+termination_by v
+  decreasing_by
+    · have p : sizeOf args[2] < sizeOf args := by decreasing_tactic
+      decreasing_tactic
+    · have p : sizeOf args[3] < sizeOf args := by decreasing_tactic
+      decreasing_tactic
+    · have p : sizeOf e < sizeOf args := by decreasing_tactic
+      decreasing_tactic
+    · have p : sizeOf e < sizeOf args := by decreasing_tactic
+      decreasing_tactic
+    · have p : sizeOf args[3] < sizeOf args := by decreasing_tactic
+      decreasing_tactic
+
+instance : FromIon PreType where
+  fromIon := PreType.fromIon
+
+end PreType
+
+namespace ArgDeclKind
+
+instance : CachedToIon ArgDeclKind where
+  cachedToIon refs tpc := ionScope! ArgDeclKind refs :
+  match tpc with
+  | .cat k => do
+    let ki ← CachedToIon.cachedToIon (ionRefEntry! ``SyntaxCatF) k
+    return .sexp #[ionSymbol! "category", ki]
+  | .type tp =>
+    return .sexp #[ionSymbol! "type", ← ionRef! tp]
+
+protected def fromIon (v : Ion SymbolId) : FromIonM ArgDeclKind := do
+  let ⟨args, argsp⟩ ← .asSexp "ArgDeclKind" v
+  match ← .asSymbolString args[0] with
+  | "category" => do
+    let ⟨p⟩ ← .checkArgCount "category" args 2
+    .cat <$> fromIon args[1]
+  | "type" => do
+    let ⟨p⟩ ← .checkArgCount "type" args 2
+    .type <$> fromIon args[1]
+  | s =>
+    throw s!"Unexpected binding kind {s}"
+
+instance : FromIon ArgDeclKind where
+  fromIon := ArgDeclKind.fromIon
+
+end ArgDeclKind
+
+namespace ArgDecl
+
+instance : CachedToIon ArgDecl where
+  cachedToIon refs b := ionScope! ArgDecl refs : do
+    let mut flds := #[
+      (ionSymbol! "name", .string b.ident),
+      (ionSymbol! "type", ←ionRef! b.kind),
+    ]
+    if !b.metadata.isEmpty then
+      flds := flds.push (ionSymbol! "metadata", ← ionRef! b.metadata)
+    return .struct flds
+
+instance : FromIon ArgDecl where
+  fromIon v := do
+    let m := .fromOptList! [("name", .req), ("type", .req), ("metadata", .opt)]
+    let ⟨fldArgs, p⟩ ← .asFieldStruct (size := 3) v "ArgDecl" m
+
+    let metadata ←
+          match fldArgs[2] with
+          | .null _ => pure .empty
+          | v => fromIon v
+    pure {
+        ident := ← fromIon fldArgs[0]
+        kind := ← fromIon fldArgs[1]
+        metadata := metadata
+    }
+
+end ArgDecl
+
 namespace MetadataArgType
 
 protected def toIon (refs : SymbolIdCache) (tp : MetadataArgType) : Ion SymbolId :=
@@ -801,7 +998,7 @@ instance : CachedToIon MetadataArgDecl where
 instance : FromIon MetadataArgDecl where
   fromIon v := do
     let ⟨args, argsp⟩ ← .asSexp "MetadataArgDecl" v
-    let ⟨p⟩ ← .checkArgCount "category" args 2
+    let ⟨p⟩ ← .checkArgCount "MetadataArgDecl" args 2
     pure { ident := ← fromIon args[0], type := ← fromIon args[1] }
 
 end MetadataArgDecl
@@ -833,8 +1030,8 @@ instance : CachedToIon OpDecl where
       (ionSymbol! "type", ionSymbol! "op"),
       (ionSymbol! "name", .string d.name),
     ]
-    if p : d.argDecls.size > 0 then
-      let v ← CachedToIon.cachedToIon (ionRefEntry! d.argDecls[0]) d.argDecls
+    if d.argDecls.size > 0 then
+      let v ← CachedToIon.cachedToIon (ionRefEntry! ``ArgDecl) d.argDecls
       flds := flds.push (ionSymbol! "args", v)
     flds := flds.push (ionSymbol! "result", ← d.category.toIon)
     flds := flds.push (ionSymbol! "syntax",   ← ionRef! d.syntaxDef)
@@ -879,19 +1076,26 @@ end OpDecl
 namespace TypeDecl
 
 instance : CachedToIon TypeDecl where
-  cachedToIon refs d := ionScope! TypeDecl refs :
+  cachedToIon refs d := ionScope! TypeDecl refs : do
+    let args ← d.argNames |>.mapM fun a =>
+      return .sexp #[← toIon a.ann, .string a.val]
     return .struct #[
       (ionSymbol! "type", ionSymbol! "type"),
       (ionSymbol! "name", .string d.name),
-      (ionSymbol! "argNames", .list (d.argNames |>.map .string))
+      (ionSymbol! "argNames", .list args)
     ]
 
 protected def fromIon (fields : Array (SymbolId × Ion SymbolId)) : FromIonM TypeDecl := do
   let m := .fromList! ["type", "name", "argNames"]
   let args ← .mapFields fields m
+  let argVs ← .asArray "TypeDecl.argNames" args[2]
+  let argNames ← argVs.mapM fun v => do
+    let ⟨argPair, _⟩ ← .asSexp "Header" v
+    let ⟨eq⟩ ← .checkArgCount "TypeDecl.typenames" argPair 2
+    pure { ann := ← fromIon argPair[0], val := ← fromIon argPair[1] }
   pure {
     name := ← fromIon args[1]
-    argNames := ← fromIon args[2]
+    argNames := argNames
   }
 
 end TypeDecl
@@ -904,8 +1108,8 @@ instance : CachedToIon FunctionDecl where
       (ionSymbol! "type", .symbol ionSymbol! "fn"),
       (ionSymbol! "name", .string d.name),
     ]
-    if p : d.argDecls.size > 0 then
-      let v ← CachedToIon.cachedToIon (ionRefEntry! d.argDecls[0]) d.argDecls
+    if d.argDecls.size > 0 then
+      let v ← CachedToIon.cachedToIon (ionRefEntry! ``ArgDecl) d.argDecls
       flds := flds.push (ionSymbol! "args", v)
     flds := flds.push (ionSymbol! "returns", ← ionRef! d.result)
     flds := flds.push (ionSymbol! "syntax", ← ionRef! d.syntaxDef)
@@ -986,7 +1190,6 @@ def fromIonFields (typeVal : String) (fields : Array (SymbolId × Ion SymbolId))
   | "fn" => .function <$> FunctionDecl.fromIon fields
   | "metadata" => .metadata <$> MetadataDecl.fromIon fields
   | typeVal => throw s!"Unknown type {typeVal}"
-
 
 def fromIon (typeId : SymbolId) (v : Ion SymbolId) : FromIonM Decl := do
   let fields ← .asStruct0 v
@@ -1087,141 +1290,6 @@ instance : FromIon Dialect where
 
 end Dialect
 
-mutual
-
-protected def Operation.toIon (refs : SymbolIdCache) (op : Operation) : InternM (Ion SymbolId) :=
-  ionScope! Operation refs : do
-    let argEntry := ionRefEntry! (default : Arg)
-    let args ← op.args.attach.mapM_off (init := #[ ← op.name.toIon ]) fun ⟨a, _⟩ =>
-      a.toIon argEntry
-    return .sexp args
-
-protected def Expr.toIon (refs : SymbolIdCache) (e : Expr) (revArgs : Array (Ion SymbolId)) : InternM (Ion SymbolId) :=
-  ionScope! Expr refs :
-    match e with
-    | .bvar idx => do
-      return Ion.sexp #[ ionSymbol! "bvar", .int idx ] |>.addArgs revArgs
-    | .fvar lvl =>
-      return Ion.sexp #[ ionSymbol! "fvar", .int lvl ] |>.addArgs revArgs
-    | .fn ident =>
-      return (← ident.toIon) |>.addArgs revArgs
-    | .app f a => do
-      let av ← a.toIon (ionRefEntry! a)
-      f.toIon refs (revArgs.push av)
-
-protected def Arg.toIon (refs : SymbolIdCache) (arg : Arg) : InternM (Ion SymbolId) :=
-  ionScope! Arg refs :
-    match arg with
-    | .op o     => return .sexp #[ ionSymbol! "op", ← o.toIon (ionRefEntry! o) ]
-    | .expr e   => return .sexp #[ ionSymbol! "expr", ← e.toIon (ionRefEntry! e) #[] ]
-    | .cat c    => return .sexp #[ ionSymbol! "cat", ← ionRef! c ]
-    | .type e   => return .sexp #[ ionSymbol! "type", ← ionRef! e ]
-    | .ident s  => return .sexp #[ ionSymbol! "ident", ← internSymbol s ]
-    | .num n    => return .sexp #[ ionSymbol! "num", .int n ]
-    | .decimal d => return .sexp #[ ionSymbol! "decimal", .decimal d]
-    | .strlit s => return .sexp #[ ionSymbol! "strlit", .string s]
-    | .option o =>
-      match o with
-      | none => return .sexp #[ ionSymbol! "option" ]
-      | some a => return .sexp #[ ionSymbol! "option", ← a.toIon refs ]
-    | .seq l => do
-      let lv ← l.attach.mapM fun ⟨v, _⟩ => v.toIon refs
-      return .sexp <| Array.append #[ ionSymbol! "seq" ] lv
-    | .commaSepList l => do
-      let lv ← l.attach.mapM fun ⟨v, _⟩ => v.toIon refs
-      return .sexp <| Array.append #[ ionSymbol! "commaSepList" ] lv
-
-end
-
-mutual
-
-protected def Operation.fromIon (v : Ion SymbolId) : FromIonM Operation := do
-  -- FIXME.  Make sure each command is well-formed with respect to the dialect map.
-  let ⟨sexp, sexpP⟩ ← .asSexp "Operation" v
-  let name ← fromIon sexp[0]
-  let args ← sexp.attach.mapM_off (start := 1) fun ⟨a, _⟩ =>
-    have _ : sizeOf a < sizeOf sexp := by decreasing_tactic
-    Strata.Arg.fromIon a
-  return { name := name, args := args }
-termination_by v
-
-protected def Expr.fromIon (v : Ion SymbolId) : FromIonM Expr := do
-  let ⟨sexp, sexpP⟩ ← .asSexp "Expr" v
-  match ← .asSymbolString sexp[0] with
-  | "bvar" =>
-    let ⟨p⟩ ← .checkArgCount "bvar" sexp 2
-    .bvar <$> .asNat "Expr bvar" sexp[1]
-  | "fvar" =>
-    let ⟨p⟩ ← .checkArgCount "fvar" sexp 2
-    .fvar <$> .asNat "Expr fvar" sexp[1]
-  | s => do
-    let ident ← QualifiedIdent.fromIonStringSymbol s
-    sexp.attach.foldlM (start := 1) (init := Expr.fn ident) fun f ⟨a, p⟩ =>
-      have _ : sizeOf a < sizeOf sexp := by decreasing_tactic
-      .app f <$> Strata.Arg.fromIon a
-  termination_by v
-
-protected def Arg.fromIon (v : Ion SymbolId) : FromIonM Arg := do
-  let ⟨sexp, sexpP⟩ ← .asSexp "Arg" v
-  match ← .asSymbolString sexp[0] with
-  | "op" =>
-    let ⟨p⟩ ← .checkArgCount "op" sexp 2
-    have _ : sizeOf sexp[1] < sizeOf sexp := by decreasing_tactic
-    .op <$> Strata.Operation.fromIon sexp[1]
-  | "expr" =>
-    let ⟨p⟩ ← .checkArgCount "expr" sexp 2
-    have _ : sizeOf sexp[1] < sizeOf sexp := by decreasing_tactic
-    .expr <$> Strata.Expr.fromIon sexp[1]
-  | "cat" =>
-    let ⟨p⟩ ← .checkArgCount "cat" sexp 2
-    .cat <$> fromIon sexp[1]
-  | "type" =>
-    let ⟨p⟩ ← .checkArgCount "type" sexp 2
-    .type <$> fromIon sexp[1]
-  | "ident" =>
-    let ⟨p⟩ ← .checkArgCount "ident" sexp 2
-    .ident <$> fromIon sexp[1]
-  | "num" =>
-    let ⟨p⟩ ← .checkArgCount "num" sexp 2
-    match sexp[1].asNat? with
-    | some x => pure <| .num x
-    | none => throw s!"Arg num given {repr sexp}."
-  | "decimal" =>
-    let ⟨p⟩ ← .checkArgCount "num" sexp 2
-    match sexp[1].asDecimal? with
-    | some d => pure <| .decimal d
-    | none => throw "decimal arg expects a decimal number."
-  | "strlit" =>
-    let ⟨p⟩ ← .checkArgCount "strlit" sexp 2
-    .strlit <$> fromIon sexp[1]
-  | "option" =>
-    match p : sexp.size with
-    | 1 => return .option none
-    | 2 =>
-      have _ : sizeOf sexp[1] < sizeOf sexp := by decreasing_tactic
-      .option <$> Strata.Arg.fromIon sexp[1]
-    | _ => throw "Option expects at most one argument."
-  | "seq" => do
-    .seq <$> sexp.attach.mapM_off (start := 1) fun ⟨u, _⟩ =>
-      have _ : sizeOf u < sizeOf sexp := by decreasing_tactic
-      Strata.Arg.fromIon u
-  | "commaSepList" => do
-    .commaSepList <$> sexp.attach.mapM_off (start := 1) fun ⟨u, _⟩ =>
-      have _ : sizeOf u < sizeOf sexp := by decreasing_tactic
-      Strata.Arg.fromIon u
-  | str =>
-    throw s!"Unexpected identifier {str}"
-  termination_by v
-
-end
-
-namespace Operation
-
-instance : CachedToIon Operation where
-  cachedToIon := Operation.toIon
-
-end Operation
-
 namespace Program
 
 instance : CachedToIon Program where
@@ -1236,7 +1304,7 @@ instance : CachedToIon Program where
 def fromIonFragment (f : Ion.Fragment) (dialects : DialectMap) (dialect : DialectName) : Except String Program := do
   let ctx : FromIonContext := ⟨f.symbols⟩
   let commands ← f.values.foldlM (init := #[]) (start := f.offset) fun cmds u => do
-    cmds.push <$> Operation.fromIon u ctx
+    cmds.push <$> OperationF.fromIon u ctx
   return {
     dialects := dialects.importedDialects! dialect
     dialect := dialect

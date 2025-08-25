@@ -21,9 +21,9 @@ def asText {m} [Monad m] [MonadExcept String m] (path : System.FilePath) (bytes 
   | none =>
     throw s!"{path} is not an Ion file and contains non UTF-8 data"
 
-def mkErrorReport (path : System.FilePath) (errors : Array (Lean.Syntax × Lean.Message)) : BaseIO String := do
+def mkErrorReport (path : System.FilePath) (errors : Array Lean.Message) : BaseIO String := do
   let msg : String := s!"{errors.size} error(s) reading {path}:\n"
-  let msg ← errors.foldlM (init := msg) fun msg (_, e) =>
+  let msg ← errors.foldlM (init := msg) fun msg e =>
     return s!"{msg}  {e.pos.line}:{e.pos.column}: {← e.data.toString}\n"
   return toString msg
 
