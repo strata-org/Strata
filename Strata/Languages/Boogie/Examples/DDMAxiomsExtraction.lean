@@ -95,143 +95,204 @@ axiom [updatePreserves]:forall((((m):(Map v k)),((okk):(k))),((kk):(k))),((vv):(
 #eval IO.println examplePgm.format.render
 
 /--
-info: #[{ name := { dialect := "Boogie", name := "command_typedecl" },
-    args := ((Array.mkEmpty 2).push (Arg.ident "k")).push (Arg.option none) },
-  { name := { dialect := "Boogie", name := "command_typedecl" },
-    args := ((Array.mkEmpty 2).push (Arg.ident "v")).push (Arg.option none) },
-  { name := { dialect := "Boogie", name := "command_axiom" },
+info: #[{ ann := { start := 0, stop := 0 }, name := { dialect := "Boogie", name := "command_typedecl" },
+    args :=
+      ((Array.mkEmpty 2).push (ArgF.ident { start := 300, stop := 301 } "k")).push
+        (ArgF.option { start := 0, stop := 0 } none) },
+  { ann := { start := 0, stop := 0 }, name := { dialect := "Boogie", name := "command_typedecl" },
+    args :=
+      ((Array.mkEmpty 2).push (ArgF.ident { start := 308, stop := 309 } "v")).push
+        (ArgF.option { start := 0, stop := 0 } none) },
+  { ann := { start := 0, stop := 0 }, name := { dialect := "Boogie", name := "command_axiom" },
     args :=
       ((Array.mkEmpty 2).push
-            (Arg.option
+            (ArgF.option { start := 0, stop := 0 }
               (some
-                (Arg.op
-                  { name := { dialect := "Boogie", name := "label" },
-                    args := (Array.mkEmpty 1).push (Arg.ident "updateSelect") })))).push
-        (Arg.expr
-          (((Expr.fn { dialect := "Boogie", name := "forall" }).app
-                (Arg.op
-                  { name := { dialect := "Boogie", name := "declPush" },
-                    args :=
-                      ((Array.mkEmpty 2).push
-                            (Arg.op
-                              { name := { dialect := "Boogie", name := "declPush" },
-                                args :=
-                                  ((Array.mkEmpty 2).push
-                                        (Arg.op
-                                          { name := { dialect := "Boogie", name := "declAtom" },
-                                            args :=
-                                              (Array.mkEmpty 1).push
-                                                (Arg.op
-                                                  { name := { dialect := "Boogie", name := "bind_mk" },
-                                                    args :=
-                                                      (((Array.mkEmpty 3).push (Arg.ident "m")).push
-                                                            (Arg.option none)).push
-                                                        (Arg.type
-                                                          (TypeExpr.ident { dialect := "Boogie", name := "Map" }
-                                                            (((Array.mkEmpty 2).push
-                                                                  (TypeExpr.fvar 1 (Array.mkEmpty 0))).push
-                                                              (TypeExpr.fvar 0 (Array.mkEmpty 0))))) }) })).push
-                                    (Arg.op
-                                      { name := { dialect := "Boogie", name := "bind_mk" },
-                                        args :=
-                                          (((Array.mkEmpty 3).push (Arg.ident "kk")).push (Arg.option none)).push
-                                            (Arg.type (TypeExpr.fvar 0 (Array.mkEmpty 0))) }) })).push
-                        (Arg.op
-                          { name := { dialect := "Boogie", name := "bind_mk" },
-                            args :=
-                              (((Array.mkEmpty 3).push (Arg.ident "vv")).push (Arg.option none)).push
-                                (Arg.type (TypeExpr.fvar 1 (Array.mkEmpty 0))) }) })).app
-            (Arg.expr
-              ((((Expr.fn { dialect := "Boogie", name := "equal" }).app
-                        (Arg.type (TypeExpr.fvar 1 (Array.mkEmpty 0)))).app
-                    (Arg.expr
-                      (((((Expr.fn { dialect := "Boogie", name := "map_get" }).app
-                                    (Arg.type (TypeExpr.fvar 0 (Array.mkEmpty 0)))).app
-                                (Arg.type (TypeExpr.fvar 1 (Array.mkEmpty 0)))).app
-                            (Arg.expr
-                              ((((((Expr.fn { dialect := "Boogie", name := "map_set" }).app
-                                                (Arg.type (TypeExpr.fvar 0 (Array.mkEmpty 0)))).app
-                                            (Arg.type (TypeExpr.fvar 1 (Array.mkEmpty 0)))).app
-                                        (Arg.expr (Expr.bvar 2))).app
-                                    (Arg.expr (Expr.bvar 1))).app
-                                (Arg.expr (Expr.bvar 0))))).app
-                        (Arg.expr (Expr.bvar 1))))).app
-                (Arg.expr (Expr.bvar 0)))))) },
-  { name := { dialect := "Boogie", name := "command_axiom" },
+                (ArgF.op
+                  { ann := { start := 0, stop := 0 }, name := { dialect := "Boogie", name := "label" },
+                    args := (Array.mkEmpty 1).push (ArgF.ident { start := 318, stop := 330 } "updateSelect") })))).push
+        (ArgF.expr
+          (ExprF.app { start := 0, stop := 0 }
+            (ExprF.app { start := 0, stop := 0 }
+              (ExprF.fn { start := 0, stop := 0 } { dialect := "Boogie", name := "forall" })
+              (ArgF.op
+                { ann := { start := 0, stop := 0 }, name := { dialect := "Boogie", name := "declPush" },
+                  args :=
+                    ((Array.mkEmpty 2).push
+                          (ArgF.op
+                            { ann := { start := 0, stop := 0 }, name := { dialect := "Boogie", name := "declPush" },
+                              args :=
+                                ((Array.mkEmpty 2).push
+                                      (ArgF.op
+                                        { ann := { start := 0, stop := 0 },
+                                          name := { dialect := "Boogie", name := "declAtom" },
+                                          args :=
+                                            (Array.mkEmpty 1).push
+                                              (ArgF.op
+                                                { ann := { start := 0, stop := 0 },
+                                                  name := { dialect := "Boogie", name := "bind_mk" },
+                                                  args :=
+                                                    (((Array.mkEmpty 3).push
+                                                              (ArgF.ident { start := 340, stop := 341 } "m")).push
+                                                          (ArgF.option { start := 0, stop := 0 } none)).push
+                                                      (ArgF.type
+                                                        (TypeExprF.ident { start := 0, stop := 0 }
+                                                          { dialect := "Boogie", name := "Map" }
+                                                          (((Array.mkEmpty 2).push
+                                                                (TypeExprF.fvar { start := 0, stop := 0 } 1
+                                                                  (Array.mkEmpty 0))).push
+                                                            (TypeExprF.fvar { start := 0, stop := 0 } 0
+                                                              (Array.mkEmpty 0))))) }) })).push
+                                  (ArgF.op
+                                    { ann := { start := 0, stop := 0 },
+                                      name := { dialect := "Boogie", name := "bind_mk" },
+                                      args :=
+                                        (((Array.mkEmpty 3).push (ArgF.ident { start := 352, stop := 354 } "kk")).push
+                                              (ArgF.option { start := 0, stop := 0 } none)).push
+                                          (ArgF.type
+                                            (TypeExprF.fvar { start := 0, stop := 0 } 0 (Array.mkEmpty 0))) }) })).push
+                      (ArgF.op
+                        { ann := { start := 0, stop := 0 }, name := { dialect := "Boogie", name := "bind_mk" },
+                          args :=
+                            (((Array.mkEmpty 3).push (ArgF.ident { start := 359, stop := 361 } "vv")).push
+                                  (ArgF.option { start := 0, stop := 0 } none)).push
+                              (ArgF.type (TypeExprF.fvar { start := 0, stop := 0 } 1 (Array.mkEmpty 0))) }) }))
+            (ArgF.expr
+              (ExprF.app { start := 0, stop := 0 }
+                (ExprF.app { start := 0, stop := 0 }
+                  (ExprF.app { start := 0, stop := 0 }
+                    (ExprF.fn { start := 0, stop := 0 } { dialect := "Boogie", name := "equal" })
+                    (ArgF.type (TypeExprF.fvar { start := 0, stop := 0 } 1 (Array.mkEmpty 0))))
+                  (ArgF.expr
+                    (ExprF.app { start := 0, stop := 0 }
+                      (ExprF.app { start := 0, stop := 0 }
+                        (ExprF.app { start := 0, stop := 0 }
+                          (ExprF.app { start := 0, stop := 0 }
+                            (ExprF.fn { start := 0, stop := 0 } { dialect := "Boogie", name := "map_get" })
+                            (ArgF.type (TypeExprF.fvar { start := 0, stop := 0 } 0 (Array.mkEmpty 0))))
+                          (ArgF.type (TypeExprF.fvar { start := 0, stop := 0 } 1 (Array.mkEmpty 0))))
+                        (ArgF.expr
+                          (ExprF.app { start := 0, stop := 0 }
+                            (ExprF.app { start := 0, stop := 0 }
+                              (ExprF.app { start := 0, stop := 0 }
+                                (ExprF.app { start := 0, stop := 0 }
+                                  (ExprF.app { start := 0, stop := 0 }
+                                    (ExprF.fn { start := 0, stop := 0 } { dialect := "Boogie", name := "map_set" })
+                                    (ArgF.type (TypeExprF.fvar { start := 0, stop := 0 } 0 (Array.mkEmpty 0))))
+                                  (ArgF.type (TypeExprF.fvar { start := 0, stop := 0 } 1 (Array.mkEmpty 0))))
+                                (ArgF.expr (ExprF.bvar { start := 0, stop := 0 } 2)))
+                              (ArgF.expr (ExprF.bvar { start := 0, stop := 0 } 1)))
+                            (ArgF.expr (ExprF.bvar { start := 0, stop := 0 } 0)))))
+                      (ArgF.expr (ExprF.bvar { start := 0, stop := 0 } 1)))))
+                (ArgF.expr (ExprF.bvar { start := 0, stop := 0 } 0)))))) },
+  { ann := { start := 0, stop := 0 }, name := { dialect := "Boogie", name := "command_axiom" },
     args :=
       ((Array.mkEmpty 2).push
-            (Arg.option
+            (ArgF.option { start := 0, stop := 0 }
               (some
-                (Arg.op
-                  { name := { dialect := "Boogie", name := "label" },
-                    args := (Array.mkEmpty 1).push (Arg.ident "updatePreserves") })))).push
-        (Arg.expr
-          (((Expr.fn { dialect := "Boogie", name := "forall" }).app
-                (Arg.op
-                  { name := { dialect := "Boogie", name := "declPush" },
+                (ArgF.op
+                  { ann := { start := 0, stop := 0 }, name := { dialect := "Boogie", name := "label" },
                     args :=
-                      ((Array.mkEmpty 2).push
-                            (Arg.op
-                              { name := { dialect := "Boogie", name := "declPush" },
-                                args :=
-                                  ((Array.mkEmpty 2).push
-                                        (Arg.op
-                                          { name := { dialect := "Boogie", name := "declPush" },
-                                            args :=
-                                              ((Array.mkEmpty 2).push
-                                                    (Arg.op
-                                                      { name := { dialect := "Boogie", name := "declAtom" },
-                                                        args :=
-                                                          (Array.mkEmpty 1).push
-                                                            (Arg.op
-                                                              { name := { dialect := "Boogie", name := "bind_mk" },
-                                                                args :=
-                                                                  (((Array.mkEmpty 3).push (Arg.ident "m")).push
-                                                                        (Arg.option none)).push
-                                                                    (Arg.type
-                                                                      (TypeExpr.ident
-                                                                        { dialect := "Boogie", name := "Map" }
-                                                                        (((Array.mkEmpty 2).push
-                                                                              (TypeExpr.fvar 1 (Array.mkEmpty 0))).push
-                                                                          (TypeExpr.fvar 0
-                                                                            (Array.mkEmpty 0))))) }) })).push
-                                                (Arg.op
-                                                  { name := { dialect := "Boogie", name := "bind_mk" },
-                                                    args :=
-                                                      (((Array.mkEmpty 3).push (Arg.ident "okk")).push
-                                                            (Arg.option none)).push
-                                                        (Arg.type (TypeExpr.fvar 0 (Array.mkEmpty 0))) }) })).push
-                                    (Arg.op
-                                      { name := { dialect := "Boogie", name := "bind_mk" },
-                                        args :=
-                                          (((Array.mkEmpty 3).push (Arg.ident "kk")).push (Arg.option none)).push
-                                            (Arg.type (TypeExpr.fvar 0 (Array.mkEmpty 0))) }) })).push
-                        (Arg.op
-                          { name := { dialect := "Boogie", name := "bind_mk" },
-                            args :=
-                              (((Array.mkEmpty 3).push (Arg.ident "vv")).push (Arg.option none)).push
-                                (Arg.type (TypeExpr.fvar 1 (Array.mkEmpty 0))) }) })).app
-            (Arg.expr
-              ((((Expr.fn { dialect := "Boogie", name := "equal" }).app
-                        (Arg.type (TypeExpr.fvar 1 (Array.mkEmpty 0)))).app
-                    (Arg.expr
-                      (((((Expr.fn { dialect := "Boogie", name := "map_get" }).app
-                                    (Arg.type (TypeExpr.fvar 0 (Array.mkEmpty 0)))).app
-                                (Arg.type (TypeExpr.fvar 1 (Array.mkEmpty 0)))).app
-                            (Arg.expr
-                              ((((((Expr.fn { dialect := "Boogie", name := "map_set" }).app
-                                                (Arg.type (TypeExpr.fvar 0 (Array.mkEmpty 0)))).app
-                                            (Arg.type (TypeExpr.fvar 1 (Array.mkEmpty 0)))).app
-                                        (Arg.expr (Expr.bvar 3))).app
-                                    (Arg.expr (Expr.bvar 1))).app
-                                (Arg.expr (Expr.bvar 0))))).app
-                        (Arg.expr (Expr.bvar 2))))).app
-                (Arg.expr
-                  (((((Expr.fn { dialect := "Boogie", name := "map_get" }).app
-                                (Arg.type (TypeExpr.fvar 0 (Array.mkEmpty 0)))).app
-                            (Arg.type (TypeExpr.fvar 1 (Array.mkEmpty 0)))).app
-                        (Arg.expr (Expr.bvar 3))).app
-                    (Arg.expr (Expr.bvar 2)))))))) }]
+                      (Array.mkEmpty 1).push (ArgF.ident { start := 398, stop := 413 } "updatePreserves") })))).push
+        (ArgF.expr
+          (ExprF.app { start := 0, stop := 0 }
+            (ExprF.app { start := 0, stop := 0 }
+              (ExprF.fn { start := 0, stop := 0 } { dialect := "Boogie", name := "forall" })
+              (ArgF.op
+                { ann := { start := 0, stop := 0 }, name := { dialect := "Boogie", name := "declPush" },
+                  args :=
+                    ((Array.mkEmpty 2).push
+                          (ArgF.op
+                            { ann := { start := 0, stop := 0 }, name := { dialect := "Boogie", name := "declPush" },
+                              args :=
+                                ((Array.mkEmpty 2).push
+                                      (ArgF.op
+                                        { ann := { start := 0, stop := 0 },
+                                          name := { dialect := "Boogie", name := "declPush" },
+                                          args :=
+                                            ((Array.mkEmpty 2).push
+                                                  (ArgF.op
+                                                    { ann := { start := 0, stop := 0 },
+                                                      name := { dialect := "Boogie", name := "declAtom" },
+                                                      args :=
+                                                        (Array.mkEmpty 1).push
+                                                          (ArgF.op
+                                                            { ann := { start := 0, stop := 0 },
+                                                              name := { dialect := "Boogie", name := "bind_mk" },
+                                                              args :=
+                                                                (((Array.mkEmpty 3).push
+                                                                          (ArgF.ident { start := 423, stop := 424 }
+                                                                            "m")).push
+                                                                      (ArgF.option { start := 0, stop := 0 } none)).push
+                                                                  (ArgF.type
+                                                                    (TypeExprF.ident { start := 0, stop := 0 }
+                                                                      { dialect := "Boogie", name := "Map" }
+                                                                      (((Array.mkEmpty 2).push
+                                                                            (TypeExprF.fvar { start := 0, stop := 0 } 1
+                                                                              (Array.mkEmpty 0))).push
+                                                                        (TypeExprF.fvar { start := 0, stop := 0 } 0
+                                                                          (Array.mkEmpty 0))))) }) })).push
+                                              (ArgF.op
+                                                { ann := { start := 0, stop := 0 },
+                                                  name := { dialect := "Boogie", name := "bind_mk" },
+                                                  args :=
+                                                    (((Array.mkEmpty 3).push
+                                                              (ArgF.ident { start := 435, stop := 438 } "okk")).push
+                                                          (ArgF.option { start := 0, stop := 0 } none)).push
+                                                      (ArgF.type
+                                                        (TypeExprF.fvar { start := 0, stop := 0 } 0
+                                                          (Array.mkEmpty 0))) }) })).push
+                                  (ArgF.op
+                                    { ann := { start := 0, stop := 0 },
+                                      name := { dialect := "Boogie", name := "bind_mk" },
+                                      args :=
+                                        (((Array.mkEmpty 3).push (ArgF.ident { start := 443, stop := 445 } "kk")).push
+                                              (ArgF.option { start := 0, stop := 0 } none)).push
+                                          (ArgF.type
+                                            (TypeExprF.fvar { start := 0, stop := 0 } 0 (Array.mkEmpty 0))) }) })).push
+                      (ArgF.op
+                        { ann := { start := 0, stop := 0 }, name := { dialect := "Boogie", name := "bind_mk" },
+                          args :=
+                            (((Array.mkEmpty 3).push (ArgF.ident { start := 450, stop := 452 } "vv")).push
+                                  (ArgF.option { start := 0, stop := 0 } none)).push
+                              (ArgF.type (TypeExprF.fvar { start := 0, stop := 0 } 1 (Array.mkEmpty 0))) }) }))
+            (ArgF.expr
+              (ExprF.app { start := 0, stop := 0 }
+                (ExprF.app { start := 0, stop := 0 }
+                  (ExprF.app { start := 0, stop := 0 }
+                    (ExprF.fn { start := 0, stop := 0 } { dialect := "Boogie", name := "equal" })
+                    (ArgF.type (TypeExprF.fvar { start := 0, stop := 0 } 1 (Array.mkEmpty 0))))
+                  (ArgF.expr
+                    (ExprF.app { start := 0, stop := 0 }
+                      (ExprF.app { start := 0, stop := 0 }
+                        (ExprF.app { start := 0, stop := 0 }
+                          (ExprF.app { start := 0, stop := 0 }
+                            (ExprF.fn { start := 0, stop := 0 } { dialect := "Boogie", name := "map_get" })
+                            (ArgF.type (TypeExprF.fvar { start := 0, stop := 0 } 0 (Array.mkEmpty 0))))
+                          (ArgF.type (TypeExprF.fvar { start := 0, stop := 0 } 1 (Array.mkEmpty 0))))
+                        (ArgF.expr
+                          (ExprF.app { start := 0, stop := 0 }
+                            (ExprF.app { start := 0, stop := 0 }
+                              (ExprF.app { start := 0, stop := 0 }
+                                (ExprF.app { start := 0, stop := 0 }
+                                  (ExprF.app { start := 0, stop := 0 }
+                                    (ExprF.fn { start := 0, stop := 0 } { dialect := "Boogie", name := "map_set" })
+                                    (ArgF.type (TypeExprF.fvar { start := 0, stop := 0 } 0 (Array.mkEmpty 0))))
+                                  (ArgF.type (TypeExprF.fvar { start := 0, stop := 0 } 1 (Array.mkEmpty 0))))
+                                (ArgF.expr (ExprF.bvar { start := 0, stop := 0 } 3)))
+                              (ArgF.expr (ExprF.bvar { start := 0, stop := 0 } 1)))
+                            (ArgF.expr (ExprF.bvar { start := 0, stop := 0 } 0)))))
+                      (ArgF.expr (ExprF.bvar { start := 0, stop := 0 } 2)))))
+                (ArgF.expr
+                  (ExprF.app { start := 0, stop := 0 }
+                    (ExprF.app { start := 0, stop := 0 }
+                      (ExprF.app { start := 0, stop := 0 }
+                        (ExprF.app { start := 0, stop := 0 }
+                          (ExprF.fn { start := 0, stop := 0 } { dialect := "Boogie", name := "map_get" })
+                          (ArgF.type (TypeExprF.fvar { start := 0, stop := 0 } 0 (Array.mkEmpty 0))))
+                        (ArgF.type (TypeExprF.fvar { start := 0, stop := 0 } 1 (Array.mkEmpty 0))))
+                      (ArgF.expr (ExprF.bvar { start := 0, stop := 0 } 3)))
+                    (ArgF.expr (ExprF.bvar { start := 0, stop := 0 } 2)))))))) }]
 -/
 #guard_msgs in
 #eval examplePgm.commands
