@@ -47,9 +47,11 @@ def lookup (E : Env) (v : Expression.Ident) : Option Expression.TypedExpr :=
   | none => none
 
 def preprocess (E : Env) (e : Expression.Expr) : Expression.Expr × Env :=
-  let e := OldExpressions.substsOld (oldVarSubst E.substMap E) e
-  let E := E.insertFreeVarsInOldestScope e.freeVars
-  (e, E)
+  let freeVars := e.freeVars
+  let substMap := oldVarSubst E.substMap E
+  let e' := OldExpressions.substsOld substMap e
+  let E' := E.insertFreeVarsInOldestScope freeVars
+  (e', E')
 
 def genFreeVar (E : Env) (x : Expression.Ident) (ty : Expression.Ty) : Expression.Expr × Env :=
   if h : ty.isMonoType then
