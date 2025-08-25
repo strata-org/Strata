@@ -7,15 +7,10 @@
 import Strata.DDM.AST
 import Strata.DDM.Util.Fin
 import Strata.DDM.Util.Format
+import Strata.DDM.Util.Nat
 import Std.Data.HashSet
 
 open Std (Format format)
-
-@[inline] def Nat.foldlM {α : Type u} {m : Type u → Type v} [Monad m] (n : Nat) (f : (i : Nat) → i < n → α → m α) (init : α) (start : Nat := 0) : m α :=
-  if p : start < n then
-    f start p init >>= n.foldlM f (start := start + 1)
-  else
-    pure init
 
 namespace Strata
 
@@ -282,7 +277,6 @@ abbrev FormatM := ReaderT FormatContext (StateM FormatState)
 
 def pformat [ToStrataFormat α] (a : α) : FormatM PrecFormat :=
   fun c s => (mformat a c s, s)
-
 
 mutual
 
