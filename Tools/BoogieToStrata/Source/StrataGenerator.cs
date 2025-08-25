@@ -7,15 +7,31 @@ internal class StrataConversionException(IToken tok, string s) : Exception {
     public string Msg { get; } = $"{tok.filename}({tok.line},{tok.col}): {s}";
 }
 
+public class FieldTypeCollector : ReadOnlyVisitor {
+    private readonly HashSet<Type> _usedTypes = [];
+
+    public IEnumerable<Type> UsedTypes => _usedTypes.AsEnumerable();
+
+    public override CtorType VisitCtorType(CtorType node) {
+        if (node.Decl.Name.Contains("field", StringComparison.CurrentCultureIgnoreCase) && node.Arguments.Count == 1) {
+            _usedTypes.Add(node.Arguments[0]);
+        }
+        return base.VisitCtorType(node);
+    }
+}
+
 public class StrataGenerator : ReadOnlyVisitor {
     private readonly Stack<string> _breakLabels = new();
     private readonly VCGenOptions _options;
     private readonly Program _program;
     private readonly Dictionary<Type, HashSet<string>> _uniqueConstants = new();
-    private readonly List<string> _userAxiomNames = new();
+    private readonly List<string> _userAxiomNames = [];
     private readonly TokenTextWriter _writer;
     private int _breakLabelCount;
     private int _indentLevel;
+    private TypeCtorDecl? _refTypeCtor;
+    private TypeCtorDecl? _fieldTypeCtor;
+    private TypeSynonymDecl? _heapTypeSyn;
 
     private StrataGenerator(VCGenOptions options, TokenTextWriter writer, Program program) {
         _options = options;
@@ -25,6 +41,9 @@ public class StrataGenerator : ReadOnlyVisitor {
 
     public static void EmitProgramAsStrata(VCGenOptions options, Program p, TokenTextWriter writer) {
         var generator = new StrataGenerator(options, writer, p);
+
+        var fieldTypeCollector = new FieldTypeCollector();
+        fieldTypeCollector.Visit(p);
         generator.EmitHeader();
         try {
             var allBlocks = p.Implementations.SelectMany(i => i.Blocks);
@@ -32,6 +51,8 @@ public class StrataGenerator : ReadOnlyVisitor {
                 !options.Prune
                     ? p.TopLevelDeclarations
                     : Pruner.GetLiveDeclarations(options, p, allBlocks.ToList()).LiveDeclarations.ToList();
+
+            generator.FindSpecialTypes();
 
             var typeConstructors = p.TopLevelDeclarations.OfType<TypeCtorDecl>().ToList();
             if (typeConstructors.Count != 0) {
@@ -41,7 +62,10 @@ public class StrataGenerator : ReadOnlyVisitor {
                 generator.WriteLine();
             }
 
-            var typeSynonyms = liveDeclarations.OfType<TypeSynonymDecl>().ToList();
+            var typeSynonyms = liveDeclarations
+                .OfType<TypeSynonymDecl>()
+                .OrderBy(s => s.Body.IsMap ? 1 : 0)
+                .ToList();
             if (typeSynonyms.Count != 0) {
                 generator.WriteLine("// Type synonyms");
                 typeSynonyms.ForEach(tcd => generator.VisitTypeSynonymDecl(tcd));
@@ -54,6 +78,8 @@ public class StrataGenerator : ReadOnlyVisitor {
                 constants.ForEach(c => generator.VisitConstant(c));
                 generator.WriteLine();
             }
+
+            generator.EmitHeapFunctions(fieldTypeCollector);
 
             var functions = liveDeclarations.OfType<Function>().ToList();
             if (functions.Count != 0) {
@@ -100,6 +126,59 @@ public class StrataGenerator : ReadOnlyVisitor {
         }
     }
 
+    private bool IsPolyFieldType(TypeVariable var, Type toCheck) {
+        return toCheck is CtorType checkCtor &&
+               checkCtor.Decl == _fieldTypeCtor &&
+               checkCtor.Arguments.Count == 1 &&
+               checkCtor.Arguments[0] is TypeVariable typeVar &&
+               typeVar.Name == var.Name;
+    }
+
+    private void FindSpecialTypes() {
+        var typeCtorDecls =_program.TopLevelDeclarations.OfType<TypeCtorDecl>().ToList();
+        foreach (var typeCtor in typeCtorDecls) {
+            if (typeCtor.Name.Contains("ref", StringComparison.CurrentCultureIgnoreCase) && typeCtor.Arity == 0) {
+                _refTypeCtor = typeCtor;
+            }
+            if (typeCtor.Name.Contains("field", StringComparison.CurrentCultureIgnoreCase) && typeCtor.Arity == 1) {
+                _fieldTypeCtor = typeCtor;
+            }
+        }
+
+        var typeSynDecls =_program.TopLevelDeclarations.OfType<TypeSynonymDecl>().ToList();
+        foreach (var typeSyn
+                 in typeSynDecls) {
+            if (!typeSyn.Name.Contains("heap", StringComparison.CurrentCultureIgnoreCase) ||
+                typeSyn.Body is not MapType mapType ||
+                mapType.TypeParameters.Count != 1) {
+                continue;
+            }
+
+            var typeParam = mapType.TypeParameters[0];
+            if (mapType.Arguments.Count == 1) {
+                var refArg = mapType.Arguments[0];
+                var isRef = refArg is CtorType ctorType && ctorType.Decl == _refTypeCtor;
+                var secondMapFieldIndexed = mapType.Result is MapType secondMap &&
+                                            secondMap.Arguments.Count == 1 &&
+                                            IsPolyFieldType(typeParam, secondMap.Arguments[0]) &&
+                                            secondMap.Result is TypeVariable typeVar &&
+                                            typeVar.Name == typeParam.Name;
+                if (isRef && secondMapFieldIndexed) {
+                    _heapTypeSyn = typeSyn;
+                }
+            } else if (mapType.Arguments.Count == 2) {
+                var refArg = mapType.Arguments[0];
+                var fieldArg = mapType.Arguments[1];
+                var isRef = refArg is CtorType refArgCtor && refArgCtor.Decl == _refTypeCtor;
+                var isField = IsPolyFieldType(typeParam, fieldArg);
+                var isResult = mapType.Result is TypeVariable typeVar && typeVar.Name == typeParam.Name;
+                if (isRef && isField && isResult) {
+                    _heapTypeSyn = typeSyn;
+                }
+            }
+        }
+    }
+
     private static string SanitizeNameForStrata(string name) {
         return name
             .Replace('@', '_')
@@ -136,7 +215,42 @@ public class StrataGenerator : ReadOnlyVisitor {
 
     private void EmitHeader() {
         WriteLine("program Boogie;");
+        WriteLine("type StrataHeap;");
+        WriteLine("type StrataRef;");
+        WriteLine("type StrataField (t: Type);");
         WriteLine();
+    }
+
+    private void EmitHeapFunctionsForType(Type ty) {
+        WriteLine($"// Select function for {ty}");
+        WriteText($"function StrataHeapSelect_{ty}(h: StrataHeap, r: StrataRef, f: StrataField ");
+        VisitType(ty);
+        WriteText(") : ");
+        VisitType(ty);
+        WriteLine(";");
+        WriteLine($"// Update function for {ty}");
+        WriteLine($"function StrataHeapUpdate_{ty}(h: StrataHeap, r: StrataRef, f: StrataField ");
+        VisitType(ty);
+        WriteText(", v: ");
+        VisitType(ty);
+        WriteLine(") : StrataHeap;");
+    }
+
+    private void EmitHeapFunctions(FieldTypeCollector fieldTypeCollector) {
+        if (!fieldTypeCollector.UsedTypes.Any()) {
+            return;
+        }
+        WriteLine();
+        foreach (var ty in fieldTypeCollector.UsedTypes) {
+            if (ty is TypeVariable) {
+                continue;
+            }
+
+            EmitHeapFunctionsForType(ty);
+            if (ty is TypeSynonymAnnotation typeSynonymAnnotation) {
+                EmitHeapFunctionsForType(typeSynonymAnnotation.ExpandedType);
+            }
+        }
     }
 
     private void EmitFooter() { }
@@ -223,6 +337,14 @@ public class StrataGenerator : ReadOnlyVisitor {
             WriteText("(");
         }
 
+        if (name == _refTypeCtor?.Name) {
+            name = "StrataRef";
+        } else if (name == _fieldTypeCtor?.Name) {
+            name = "StrataField";
+        } else if (name == _heapTypeSyn?.Name) {
+            name = "StrataHeap";
+        }
+
         WriteText(Name(name));
         foreach (var t in arguments) {
             WriteText(" ");
@@ -263,8 +385,10 @@ public class StrataGenerator : ReadOnlyVisitor {
                     WriteText("string");
                 } else if (basicType.IsReal) {
                     WriteText("real");
+                } else if (basicType.IsBv) {
+                    WriteText($"bv{basicType.BvBits}");
                 } else {
-                    throw new StrataConversionException(node.tok, $"Unknown type: {node.GetType()}");
+                    throw new StrataConversionException(node.tok, $"Unknown basic type: {node.GetType()}");
                 }
 
                 break;
@@ -284,6 +408,70 @@ public class StrataGenerator : ReadOnlyVisitor {
         }
 
         return trigger;
+    }
+
+    private bool ValidHeapArgs(Expr? heapExpr, Expr? refExpr, Expr? fieldExpr) {
+        if (heapExpr is null || refExpr is null) {
+            return false;
+        }
+        var heapTypeMatches = heapExpr.Type is TypeSynonymAnnotation typeSyn && typeSyn.Decl == _heapTypeSyn;
+        var refTypeMatches = refExpr.Type.IsCtor && refExpr.Type.AsCtor?.Decl.Name == _refTypeCtor?.Name;
+        var fieldTypeMatches = fieldExpr == null || fieldExpr.Type.IsCtor && fieldExpr.Type.AsCtor?.Decl.Name == _fieldTypeCtor?.Name;
+        return heapTypeMatches && refTypeMatches && fieldTypeMatches;
+    }
+
+    private void EmitHeapCall(string function, IEnumerable<Expr> args) {
+        WriteText($"{function}(");
+        EmitSeparated(args, e => VisitExpr(e), ", ");
+        WriteText(")");
+    }
+
+    private bool EmitHeapOperation(NAryExpr expr, bool isUpdate) {
+        Expr? heapExpr = null;
+        Expr? refExpr = null;
+        Expr? fieldExpr = null;
+        Expr? valueExpr = null;
+        var shortCount = isUpdate ? 3 : 2;
+        var longCount = isUpdate ? 4 : 3;
+
+        if (expr.Args.Count == shortCount && expr.Fun is MapSelect outerSelect &&
+            expr.Args[0] is NAryExpr { Fun: MapSelect innerSelect } innerSelectExpr) {
+            if (expr.Args.Count != 2 | innerSelectExpr.Args.Count != 2) {
+                return false;
+            }
+
+            heapExpr = innerSelectExpr.Args[0];
+            refExpr = innerSelectExpr.Args[1];
+            fieldExpr = expr.Args[1];
+        } else if (expr.Args.Count == shortCount && expr.Fun is MapStore outerStore &&
+                   expr.Args[2] is NAryExpr { Fun: MapStore innerStore } innerStoreExpr) {
+            heapExpr = expr.Args[0];
+            refExpr = expr.Args[1];
+            fieldExpr = innerStoreExpr.Args[1];
+            valueExpr = innerStoreExpr.Args[2];
+        } else if (expr.Args.Count == longCount) {
+            heapExpr = expr.Args[0];
+            refExpr = expr.Args[1];
+            fieldExpr = expr.Args[2];
+            valueExpr = isUpdate ? expr.Args[3] : null;
+        }
+
+        if (heapExpr is null || refExpr is null || fieldExpr is null) {
+            return false;
+        }
+
+        if (!ValidHeapArgs(heapExpr, refExpr, fieldExpr)) {
+            return false;
+        }
+
+        if (isUpdate && valueExpr is not null) {
+            var tyStr = valueExpr.Type.ToString();
+            EmitHeapCall($"StrataHeapUpdate_{tyStr}", [heapExpr, refExpr, fieldExpr, valueExpr]);
+        } else {
+            var tyStr = expr.Type.ToString();
+            EmitHeapCall($"StrataHeapSelect_{tyStr}", [heapExpr, refExpr, fieldExpr]);
+        }
+        return true;
     }
 
     public override Expr VisitExpr(Expr node) {
@@ -351,14 +539,18 @@ public class StrataGenerator : ReadOnlyVisitor {
                         break;
                     }
                     case MapSelect: {
-                        VisitExpr(args[0]);
-                        WriteText("[");
-                        EmitSeparated(args.Skip(1), e => VisitExpr(e), "][");
-                        WriteText("]");
+                        if (!EmitHeapOperation(nAryExpr, false)) {
+                            VisitExpr(args[0]);
+                            WriteText("[");
+                            EmitSeparated(args.Skip(1), e => VisitExpr(e), "][");
+                            WriteText("]");
+                        }
+
                         break;
                     }
                     case MapStore:
-                        if (args.Count == 3) {
+                        var emittedHeapOperation = EmitHeapOperation(nAryExpr, true);
+                        if (args.Count == 3 && !emittedHeapOperation) {
                             WriteText("(");
                             VisitExpr(args[0]);
                             WriteText("[");
@@ -366,7 +558,7 @@ public class StrataGenerator : ReadOnlyVisitor {
                             WriteText(" := ");
                             VisitExpr(args[2]);
                             WriteText("])");
-                        } else if (args.Count == 4) {
+                        } else if (args.Count == 4 && !emittedHeapOperation) {
                             var map = args[0];
                             var idx1 = args[1];
                             var idx2 = args[2];
@@ -384,7 +576,7 @@ public class StrataGenerator : ReadOnlyVisitor {
                             WriteText(" := ");
                             VisitExpr(rhs);
                             WriteText("]])");
-                        } else {
+                        } else if (!emittedHeapOperation) {
                             throw new StrataConversionException(node.tok,
                                 $"Unsupported map store argument count: {args.Count}");
                         }
@@ -589,15 +781,15 @@ public class StrataGenerator : ReadOnlyVisitor {
 
     public override GotoCmd VisitGotoCmd(GotoCmd node) {
         if (node.LabelTargets.Count == 1) {
-            IndentLine($"goto {node.LabelTargets[0].Label};");
+            IndentLine($"goto {Name(node.LabelTargets[0].Label)};");
         } else if (node.LabelTargets.Count == 2) {
             var thenBlock = node.LabelTargets[0];
             var elseBlock = node.LabelTargets[1];
             var cond = OppositeBlockCondition(thenBlock, elseBlock);
             if (cond != null) {
-                Indent("if ");
+                Indent("if (");
                 VisitExpr(cond);
-                WriteLine($" {{ goto {thenBlock.Label}; }} else {{ goto {elseBlock.Label}; }}");
+                WriteLine($") {{ goto {Name(thenBlock.Label)}; }} else {{ goto {Name(elseBlock.Label)}; }}");
             } else {
                 throw new StrataConversionException(node.tok, "Unsupported: goto with two targets that aren't obvious inverses");
             }
@@ -738,7 +930,7 @@ public class StrataGenerator : ReadOnlyVisitor {
         } else if (cmd is BreakCmd breakCmd) {
             Indent();
             if (breakCmd.Label != null) {
-                IndentLine($"goto {breakCmd.Label};");
+                IndentLine($"goto {Name(breakCmd.Label)};");
             } else if (_breakLabels.TryPeek(out var label)) {
                 IndentLine($"goto {label};");
             } else {
@@ -818,6 +1010,12 @@ public class StrataGenerator : ReadOnlyVisitor {
     }
 
     public override Declaration VisitTypeCtorDecl(TypeCtorDecl node) {
+        // Don't emit these special types if we've found them. They'll
+        // be pre-declared.
+        if (node == _refTypeCtor || node == _fieldTypeCtor) {
+            return node;
+        }
+
         WriteText($"type {Name(node.Name)}");
         if (node.Arity > 0) {
             WriteText(" (");
@@ -837,6 +1035,12 @@ public class StrataGenerator : ReadOnlyVisitor {
     }
 
     public override Declaration VisitTypeSynonymDecl(TypeSynonymDecl node) {
+        // Don't emit this special type if we've found it. It'll be
+        // pre-declared.
+        if (node == _heapTypeSyn) {
+           return node;
+        }
+
         WriteText($"type {Name(node.Name)}");
         if (node.TypeParameters.Count > 0) {
             WriteText(" (");
@@ -900,6 +1104,14 @@ public class StrataGenerator : ReadOnlyVisitor {
         return Name(b.Label);
     }
 
+    private bool UnsupportedQuantifier(Expr expr) {
+        if (expr is QuantifierExpr quantifierExpr) {
+            return quantifierExpr.TypeParameters.Any();
+        }
+
+        return false;
+    }
+
     private void WriteProcedureHeader(Procedure proc) {
         WriteText($"procedure {Name(proc.Name)}");
         EmitTypeParameters(proc.TypeParameters);
@@ -918,15 +1130,27 @@ public class StrataGenerator : ReadOnlyVisitor {
             }
 
             foreach (var req in proc.Requires) {
-                var free = req.Free ? "free " : "";
-                Indent($"{free}requires ");
+                Indent();
+                if (UnsupportedQuantifier(req.Condition)) {
+                    WriteText("// ");
+                }
+                if (req.Free) {
+                    WriteText("free ");
+                }
+                WriteText("requires ");
                 VisitExpr(req.Condition);
                 WriteLine(";");
             }
 
             foreach (var ens in proc.Ensures) {
-                var free = ens.Free ? "free " : "";
-                Indent($"{free}ensures ");
+                Indent();
+                if (UnsupportedQuantifier(ens.Condition)) {
+                    WriteText("// ");
+                }
+                if (ens.Free) {
+                    WriteText("free ");
+                }
+                WriteText("ensures ");
                 VisitExpr(ens.Condition);
                 WriteLine(";");
             }
