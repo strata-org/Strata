@@ -132,13 +132,19 @@ def Maps.insert [DecidableEq α] (ms : Maps α β) (x : α) (v : β) : Maps α �
 Insert `(x, v)` in the oldest map in `ms`. Do nothing if `x` is already in `ms`.
 -/
 def Maps.insertInOldest [DecidableEq α] (ms : Maps α β) (x : α) (v : β) : Maps α β :=
-  match Maps.find? ms x with
-  | some _ => ms
-  | none =>
-    let oldest := ms.oldest
-    let oldest' := oldest ++ [(x, v)]
-    let ms' := ms.dropOldest
-    ms' ++ [oldest']
+  let rec go (acc : Maps α β) : Maps α β → Maps α β
+    | [] =>
+      if acc.isEmpty then [[(x, v)]]
+      else acc.reverse ++ [[(x, v)]]
+    | [m] =>
+      match m.find? x with
+      | some _ => acc.reverse ++ [m]
+      | none => acc.reverse ++ [m ++ [(x, v)]]
+    | m :: rest =>
+      match m.find? x with
+      | some _ => acc.reverse ++ (m :: rest)
+      | none => go (m :: acc) rest
+  go [] ms
 
 /--
 Insert `(xi, vi)` -- where `xi` and `vi` are corresponding elements of `xs` and

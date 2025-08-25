@@ -46,12 +46,19 @@ def lookup (E : Env) (v : Expression.Ident) : Option Expression.TypedExpr :=
     | none => some (e, .forAll ["α"] (.ftvar "α"))
   | none => none
 
-def preprocess (E : Env) (e : Expression.Expr) : Expression.Expr × Env :=
-  let freeVars := e.freeVars
+def preprocess (E : Env) (c : Cmd Expression) (e : Expression.Expr) : Expression.Expr × Env :=
   let substMap := oldVarSubst E.substMap E
   let e' := OldExpressions.substsOld substMap e
-  let E' := E.insertFreeVarsInOldestScope freeVars
-  (e', E')
+  match c with
+  | .init _ _ _ _ =>
+    -- The type checker only allows free variables to appear in `init`
+    -- statements, so we only need to compute them when we see an `init`
+    -- command.
+    -- See `CmdType.lean` for details.
+    let freeVars := e.freeVars
+    let E' := E.insertFreeVarsInOldestScope freeVars
+    (e', E')
+  | _ => (e', E)
 
 def genFreeVar (E : Env) (x : Expression.Ident) (ty : Expression.Ty) : Expression.Expr × Env :=
   if h : ty.isMonoType then
@@ -156,14 +163,12 @@ Proof Obligation:
 #eval format $ Imperative.Cmds.eval Env.init testProgram1
 
 private def testProgram2 : Cmds Expression :=
-  [.init "x" t[int] eb[#0],
-   .set "x" eb[(y : int)],
+  [.init "x" t[int] eb[(y : int)],
    .assert "x_eq_12" eb[x == #12]]
 
 /--
 info: Commands:
-init (x : int) := #0
-x := (y : int)
+init (x : int) := (y : int)
 assert [x_eq_12] ((y : int) == #12)
 
 State:
@@ -173,8 +178,8 @@ Subst Map:
 
 Expression Env:
 State:
-[(x : int) → (y : int)
-(y : int) → (y : int)]
+[(y : int) → (y : int)
+(x : int) → (y : int)]
 
 Evaluation Config:
 Eval Depth: 200
