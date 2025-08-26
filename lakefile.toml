@@ -26,3 +26,6 @@ name = "StrataTypeScriptASTLoader"
 
 [[lean_exe]]
 name = "TypeScriptTaintAnalysis"
+
+[[lean_exe]]
+name = "TypeScriptHeapHigherOrderTaintAnalysis"

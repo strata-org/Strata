@@ -29,8 +29,10 @@ def extractFunctionResultFlows (expr : HOExpr) (targetVar : String) : List DataF
       (DataLocation.variable targetVar)
       "function_result_flow"]
   | HOExpr.app func arg =>
-    -- Nested application - check both sides for function references
-    extractFunctionResultFlows func targetVar ++ extractFunctionResultFlows arg targetVar
+    -- Nested application - extract flows from both function and argument
+    let funcFlows := extractFunctionResultFlows func targetVar
+    let argFlows := extractFunctionResultFlows arg targetVar
+    funcFlows ++ argFlows
   | _ => []
 
 -- Implementation of DataFlowCapable for HigherOrder expressions

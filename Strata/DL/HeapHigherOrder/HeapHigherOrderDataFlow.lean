@@ -1,33 +1,21 @@
 import Strata.DL.HeapHigherOrder.HeapHigherOrder
-import Strata.DL.Heap.HeapStrataDataFlow
-import Strata.DL.HigherOrder.HigherOrderDataFlow
+import Strata.DL.CallHeap.CallHeapDataFlow
+import Strata.DL.CallHigherOrder.CallHigherOrderDataFlow
 import Strata.DL.DataFlow
 
-namespace HeapHigherOrder
+namespace CallHeapHigherOrder
 
-open DataFlow
-
--- Extract data flows from HeapHigherOrderStatement
-def extractStatementDataFlows (stmt : HeapHigherOrderStatement) : List DataFlow :=
+def getDataFlowsForCallHeapHigherOrderStatement (stmt: CallHeapHigherOrderStrataStatement) : List DataFlow.DataFlow :=
   match stmt with
-  | .heapStmt heapStmt => 
-    -- Delegate to Heap dialect DataFlow
-    Heap.extractStatementDataFlows heapStmt
-  | .higherOrderStmt hoStmt =>
-    -- Delegate to HigherOrder dialect DataFlow  
-    HigherOrder.extractStatementDataFlows hoStmt
+    | .callHeap callHeapStmt => CallHeap.extractCallHeapStatementDataFlows callHeapStmt
+    | .callHigherOrder callHOStmt => CallHigherOrder.extractStatementDataFlows callHOStmt
 
--- DataFlowCapable instance for HeapHigherOrderStatement
-instance : DataFlowCapable HeapHigherOrderStatement where
-  getDataFlows := extractStatementDataFlows
+-- Combined dialect implements DataFlowCapable by delegating to the constituent dialects
+instance : DataFlow.DataFlowCapable CallHeapHigherOrderStrataStatement where
+  getDataFlows := getDataFlowsForCallHeapHigherOrderStatement
 
-  getExternalCalls := fun stmt =>
-    match stmt with
-    | .heapStmt heapStmt =>
-      -- Delegate to Heap dialect external call detection
-      DataFlowCapable.getExternalCalls heapStmt
-    | .higherOrderStmt hoStmt =>
-      -- Delegate to HigherOrder dialect external call detection
-      DataFlowCapable.getExternalCalls hoStmt
+  getExternalCalls stmt := match stmt with
+    | .callHeap callHeapStmt => DataFlow.DataFlowCapable.getExternalCalls callHeapStmt  
+    | .callHigherOrder callHOStmt => DataFlow.DataFlowCapable.getExternalCalls callHOStmt
 
-end HeapHigherOrder
+end CallHeapHigherOrder
