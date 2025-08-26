@@ -1,4 +1,5 @@
 import Strata.DL.DataFlow
+import Strata.DL.Generic.TranslationContext
 
 /-! ## Generic Taint Analysis for Strata
 
@@ -111,8 +112,11 @@ def processDataFlow (state : TaintState) (flow : DataFlow) : TaintState :=
     | _ => sourceTaint
 
   match actualSourceTaint with
-  | TaintValue.clean => state
+  | TaintValue.clean =>
+    dbg_trace s!"[DEBUG] No taint propagation: {dataLocationToKey flow.source} is clean"
+    state
   | TaintValue.tainted source =>
+    dbg_trace s!"[DEBUG] Propagating taint: {dataLocationToKey flow.source} -> {dataLocationToKey flow.target} (source: {source})"
     -- Propagate taint to target
     let stateWithTaint := setTaintValue state flow.target actualSourceTaint
     -- Add violation for tainted target (like MIDI does)
@@ -121,13 +125,77 @@ def processDataFlow (state : TaintState) (flow : DataFlow) : TaintState :=
 -- Process external function calls to introduce taint and violations
 def processExternalCalls (state : TaintState) (externalCalls : List (String × List DataLocation × List DataLocation)) : TaintState :=
   externalCalls.foldl (fun s (funcName, _args, results) =>
+    dbg_trace s!"[DEBUG] External function detected: {funcName}"
     -- Mark all result locations as tainted from this external function
     results.foldl (fun s' resultLoc =>
+      dbg_trace s!"[DEBUG]   Marking {dataLocationToKey resultLoc} as tainted from {funcName}"
       let stateWithTaint := setTaintValue s' resultLoc (TaintValue.tainted funcName)
       -- Add violation for each tainted result from external call
       addViolation stateWithTaint resultLoc funcName "external_call"
     ) s
   ) state
+
+-- Extract data flows from function bodies (like MIDI)
+def extractFunctionBodyDataFlows [DataFlowCapable S] (func : Generic.StrataFunction S T) : List DataFlow :=
+  let bodyFlows := func.body.flatMap DataFlowCapable.getDataFlows
+
+  dbg_trace s!"[DEBUG] Analyzing function body for: {func.name} with {func.body.length} statements"
+  dbg_trace s!"[DEBUG] Function body flows: {bodyFlows.length}"
+
+
+
+  bodyFlows.filterMap (fun flow =>
+    match flow.target with
+    | DataLocation.variable "return_value" =>
+      dbg_trace s!"[DEBUG] Function body flow: {dataLocationToKey flow.source} -> result:{func.name} (return)"
+      -- Direct return statement - map source to function result
+      some (DataFlow.mk flow.source (DataLocation.functionResult func.name) "function_return")
+    | _ =>
+      -- For other flows within the function body
+      match flow.source with
+      | DataLocation.variable varName =>
+        dbg_trace s!"[DEBUG] Function body flow: {dataLocationToKey flow.source} -> result:{func.name} (body reference)"
+        -- Variable referenced in function body flows to function result
+        some (DataFlow.mk flow.source (DataLocation.functionResult func.name) "function_body_reference")
+      | _ =>
+        dbg_trace s!"[DEBUG] Skipping function body flow: {dataLocationToKey flow.source} -> {dataLocationToKey flow.target}"
+        none
+  )
+
+-- Process all functions in context to extract their data flows
+def extractAllFunctionDataFlows [DataFlowCapable S] (ctx : Generic.TranslationContext S T) : List DataFlow :=
+  ctx.functions.flatMap extractFunctionBodyDataFlows
+
+
+-- Main analysis function following MIDI's analyzeGenericProgram pattern
+def analyzeGenericProgram [DataFlowCapable S] (ctx : Generic.TranslationContext S T) (stmts : List S) : AnalysisResult :=
+  let initialState := TaintState.empty
+
+  -- Process all statements to collect data flows and external calls
+  let allFlows := stmts.flatMap DataFlowCapable.getDataFlows
+  let allExternalCalls := stmts.flatMap DataFlowCapable.getExternalCalls
+
+  dbg_trace s!"[DEBUG] Found {allFlows.length} data flows and {allExternalCalls.length} external calls"
+  dbg_trace s!"[DEBUG] Functions in context: {ctx.functions.map (·.name)}"
+
+  -- First, process external calls to introduce taint and violations
+  let stateAfterExternalCalls := processExternalCalls initialState allExternalCalls
+
+  -- First pass: process regular data flows to establish initial taint
+  dbg_trace s!"[DEBUG] === FIRST PASS: Processing regular flows ==="
+  let stateAfterFirstPass := allFlows.foldl processDataFlow stateAfterExternalCalls
+
+  -- Process function body data flows (now that variables may be tainted)
+  dbg_trace s!"[DEBUG] === Processing function body flows ==="
+  let functionFlows := extractAllFunctionDataFlows ctx
+  dbg_trace s!"[DEBUG] Extracted {functionFlows.length} function body flows"
+  let stateAfterFunctionFlows := functionFlows.foldl processDataFlow stateAfterFirstPass
+
+  -- Second pass: process regular data flows again to catch flows from newly tainted function results
+  dbg_trace s!"[DEBUG] === SECOND PASS: Processing regular flows again ==="
+  let finalState := allFlows.foldl processDataFlow stateAfterFunctionFlows
+
+  AnalysisResult.mk finalState.violations
 
 -- Analyze any type that implements DataFlowCapable
 def analyzeDataFlows [DataFlowCapable D] (items : List D) : AnalysisResult :=

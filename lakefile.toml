@@ -29,3 +29,6 @@ name = "TypeScriptTaintAnalysis"
 
 [[lean_exe]]
 name = "TypeScriptHeapHigherOrderTaintAnalysis"
+
+[[lean_exe]]
+name = "TypeScriptValueValidation"
