@@ -502,23 +502,23 @@ def peekToken (c : ParserContext) (s : ParserState) : ParserState × Except Pars
 
 def indexed {α : Type} (map : TokenMap α) (c : ParserContext) (s : ParserState) (behavior : LeadingIdentBehavior) : ParserState × List α :=
   let (s, stx) := peekToken c s
-  let find (n : Name) : ParserState × List α := (s,  map.findD n [])
+  let find (n : Name) : ParserState × List α := (s,  map.getD n [])
   match stx with
   | .ok (.atom _ sym)      => find (.mkSimple sym)
   | .ok (.ident _ _ val _) =>
     match behavior with
     | .default => find identKind
     | .symbol =>
-      match map.find? val with
+      match map.get? val with
       | some as => (s, as)
       | none    => find identKind
     | .both =>
-      match map.find? val with
+      match map.get? val with
       | some as =>
         if val == identKind then
           (s, as)  -- avoid running the same parsers twice
         else
-          match map.find? identKind with
+          match map.get? identKind with
           | some as' => (s, as ++ as')
           | _        => (s, as)
       | none    => find identKind

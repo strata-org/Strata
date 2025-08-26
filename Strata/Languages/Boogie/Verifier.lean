@@ -4,7 +4,6 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Boogie.DDMTransform.Parse
 import Strata.Languages.Boogie.DDMTransform.Translate
 import Strata.Languages.Boogie.Options
 import Strata.Languages.Boogie.SMTEncoder

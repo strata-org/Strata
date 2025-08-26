@@ -7,6 +7,7 @@
 import Strata.DDM.AST
 import Strata.DDM.Util.Fin
 import Strata.DDM.Util.Format
+import Strata.DDM.Util.Nat
 import Std.Data.HashSet
 
 open Std (Format format)
@@ -76,15 +77,6 @@ end FormatContext
 structure FormatState where
   openDialects : Std.HashSet String
   bindings : Array String := #[]
-
-/-- Precedence of an explicit function call `f(..)`. -/
-def callPrec := 30
-
-/-- Precedence of the empty application operator `f x` in expressions and types. -/
-def appPrec := 20
-
-/-- Precedence of the arrow operator `t -> u` in types. -/
-def arrowPrec :=  17
 
 namespace FormatState
 
@@ -334,10 +326,9 @@ private partial def Arg.mformatM : Arg → FormatM PrecFormat
   if z : entries.size = 0 then
     pure (.atom .nil)
   else do
-    let p : entries.size - 1 ≤ entries.size := by omega
     let f i q s := return s ++ ", " ++ (← entries[i].mformatM).format
     let a := (← entries[0].mformatM).format
-    .atom <$> Nat.foldM.loop entries.size f (i := entries.size - 1) p a
+    .atom <$> entries.size.foldlM f (start := 1) a
 
 private partial def ppArgs (f : StrataFormat) (rargs : Array Arg) : FormatM PrecFormat :=
   if rargs.isEmpty then

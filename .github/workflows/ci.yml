@@ -120,3 +120,26 @@ jobs:
       - name: Build Documentation
         run: lake exe docs 
         working-directory: docs/ddm
+
+  build_python:
+    name: Build and test Python package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+    - name: Build using pip
+      run: pip install .
+      working-directory: Tools/Python
+    - name: Build Lean strata executable for testing purposes.
+      uses: leanprover/lean-action@v1
+      with:
+        auto-config: false
+        build: true
+        build-args: "strata:exe"
+    - name: Run test script
+      run: ./scripts/run_test.sh
+      working-directory: Tools/Python

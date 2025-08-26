@@ -297,8 +297,8 @@ theorem postconditions_subst_unwrap :
       symm
       exact Hin.2
 
-theorem prepostconditions_unwrap :
-post ∈ List.map Procedure.Check.expr (Map.values ps) →
+theorem prepostconditions_unwrap {ps : List (BoogieLabel × Procedure.Check)} :
+post ∈ List.map Procedure.Check.expr (ListMap.values ps) →
 ∃ label attr, (label, { expr := post, attr : Procedure.Check }) ∈ ps := by
   intros H
   induction ps
@@ -308,7 +308,7 @@ post ∈ List.map Procedure.Check.expr (Map.values ps) →
     simp at H
     cases H with
     | intro c Hc
-    simp [Map.values] at Hc
+    simp [ListMap.values] at Hc
     cases Hc.1 with
     | inl Hin =>
       simp_all
@@ -3382,7 +3382,7 @@ theorem callElimStatementCorrect :
                       oldTrips.unzip.fst.unzip.fst).Nodup := by
         simp only [List.append_assoc] at Hgennd' ⊢
         exact (List.nodup_append.mp Hgennd').2.1
-      have Hinoutnd : (Map.keys proc.header.inputs ++ Map.keys proc.header.outputs).Nodup := by
+      have Hinoutnd : (ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs).Nodup := by
         apply List.Disjoint_Nodup_iff.mp
         refine ⟨Hinnd, Houtnd, ?_⟩
         . exact Hiodisj
@@ -3442,7 +3442,7 @@ theorem callElimStatementCorrect :
         calc outTrips.length
           _ = outTrips.unzip.snd.length := by simp [List.unzip_eq_map]
           _ = lhs.length := by simp [← Heqouts]
-          _ = (Map.keys proc.header.outputs).length := by simp_all [Map.keys.length]
+          _ = (ListMap.keys proc.header.outputs).length := by simp_all [ListMap.keys.length]
           _ = outVals.length := ReadValuesLength Hrdout
       have Holdtriplen : oldTrips.length = oldVals.length :=
         calc oldTrips.length
@@ -3651,13 +3651,13 @@ theorem callElimStatementCorrect :
             . simp [List.append_assoc]
               apply EvalStatementsContractApp
               . -- asserts
-                have Hrdin : ReadValues σAO (Map.keys proc.header.inputs) argVals := by
+                have Hrdin : ReadValues σAO (ListMap.keys proc.header.inputs) argVals := by
                   apply InitStatesReadValuesMonotone (σ:=σA) ?_ Hinitout
                   exact InitStatesReadValues Hinitin
                 have Hrdinout : ReadValues σAO
-                      (Map.keys proc.header.inputs ++ Map.keys proc.header.outputs)
+                      (ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs)
                       (argVals ++ outVals) := ReadValuesApp Hrdin Hrdout
-                have Hlen : (Map.keys proc.header.inputs).length =
+                have Hlen : (ListMap.keys proc.header.inputs).length =
                             (createFvars (List.map (Prod.fst ∘ Prod.fst) argTrips)).length := by calc
                             _ = argVals.length := InitStatesLength Hinitin
                             _ = argTrips.length := by simp_all
@@ -3711,12 +3711,12 @@ theorem callElimStatementCorrect :
                   apply And.intro
                   . cases Hmem.1 with
                     | inl Hmem =>
-                    have Hdef : Imperative.isDefined σAO (Map.keys proc.header.inputs) := by
+                    have Hdef : Imperative.isDefined σAO (ListMap.keys proc.header.inputs) := by
                       apply InitStatesDefMonotone ?_ Hinitout
                       exact InitStatesDefined Hinitin
                     exact Hdef k1 Hmem
                     | inr Hmem =>
-                    have Hdef : Imperative.isDefined σAO (Map.keys proc.header.outputs) := by
+                    have Hdef : Imperative.isDefined σAO (ListMap.keys proc.header.outputs) := by
                       exact InitStatesDefined Hinitout
                     exact Hdef k1 Hmem
                   . cases Hmem.2 with
@@ -3742,16 +3742,16 @@ theorem callElimStatementCorrect :
                     apply Imperative.invStoresExceptComm
                     apply InvStoresExceptUpdated
                     apply Imperative.invStoresExceptComm
-                    apply InvStoresExceptInitStates (σ:=σA) (ks':=Map.keys proc.header.outputs)
-                    apply InvStoresExceptInitStates (σ:=σ) (ks':=Map.keys proc.header.inputs)
+                    apply InvStoresExceptInitStates (σ:=σA) (ks':=ListMap.keys proc.header.outputs)
+                    apply InvStoresExceptInitStates (σ:=σ) (ks':=ListMap.keys proc.header.inputs)
                     exact InvStoresExceptEmpty
                     exact Hinitin
                     exact Hinitout
                     simp_all
                     simp_all
                     simp [← List.append_assoc]
-                    generalize Map.keys proc.header.inputs ++
-                               Map.keys proc.header.outputs ++
+                    generalize ListMap.keys proc.header.inputs ++
+                               ListMap.keys proc.header.outputs ++
                                List.map (Prod.fst ∘ Prod.fst) argTrips
                                = inoutarg
                     simp [List.append_assoc]
@@ -3807,7 +3807,7 @@ theorem callElimStatementCorrect :
                         apply Hlhsdisj Hin1
                         simp_all
                 . apply createFvarsSubstStores (σ:=σ₁') (σA:=σAO)
-                        (ks2:=(Map.keys proc.header.inputs) ++ (Map.keys proc.header.outputs))
+                        (ks2:=(ListMap.keys proc.header.inputs) ++ (ListMap.keys proc.header.outputs))
                   . -- length
                     simp_all
                     rw [createFvarsLength]
@@ -4020,7 +4020,7 @@ theorem callElimStatementCorrect :
                   -- inputs and outputs defined in σR
                   . cases Hmem.1 with
                     | inl Hmem =>
-                    have Hdef : Imperative.isDefined σR₁ (Map.keys proc.header.inputs) := by
+                    have Hdef : Imperative.isDefined σR₁ (ListMap.keys proc.header.inputs) := by
                       simp [← HσR₁]
                       apply updatedStatesDefMonotone
                       apply updatedStatesDefMonotone
@@ -4030,7 +4030,7 @@ theorem callElimStatementCorrect :
                       exact InitStatesDefined Hinitin
                     exact Hdef k1 Hmem
                     | inr Hmem =>
-                    have Hdef : Imperative.isDefined σR₁ (Map.keys proc.header.outputs) := by
+                    have Hdef : Imperative.isDefined σR₁ (ListMap.keys proc.header.outputs) := by
                       simp [← HσR₁]
                       apply updatedStatesDefMonotone
                       apply updatedStatesDefMonotone
@@ -4053,7 +4053,7 @@ theorem callElimStatementCorrect :
                 . intros substPost HinSubst
                   refine ⟨?_, ?_, ?_⟩
                   . -- store invariant
-                    have Hndrd1 : (Map.keys proc.header.outputs ++ proc.spec.modifies).Nodup := by
+                    have Hndrd1 : (ListMap.keys proc.header.outputs ++ proc.spec.modifies).Nodup := by
                       refine List.Disjoint_Nodup_iff.mp ⟨Houtnd, Hmodsnd, ?_⟩
                       -- disjoint between local and global
                       apply List.PredDisjoint_Disjoint
@@ -4067,8 +4067,8 @@ theorem callElimStatementCorrect :
                     have Heq2 := ReadValuesInjective Hrd2 Hrd'.2.2
                     -- start reducing the update operation
                     apply InvStoresExceptInvStores (ks:=
-                          (Map.keys proc.header.inputs ++
-                          Map.keys proc.header.outputs ++
+                          (ListMap.keys proc.header.inputs ++
+                          ListMap.keys proc.header.outputs ++
                           (List.map (Prod.fst ∘ Prod.fst) argTrips ++
                           List.map Prod.snd outTrips)))
                     . apply Imperative.invStoresExceptComm
