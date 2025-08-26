@@ -87,18 +87,27 @@ fn equiv (a : bool, b : bool) : bool => @[prec(4)] a "<==>" b;
 fn implies (a : bool, b : bool) : bool => @[prec(5), rightassoc] a "==>" b;
 fn and (a : bool, b : bool) : bool => @[prec(10), leftassoc] a "&&" b;
 fn or (a : bool, b : bool) : bool => @[prec(8), leftassoc] a "||" b;
+
 fn equal (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a "==" b;
 fn not_equal (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a "!=" b;
 fn le (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a "<=" b;
 fn lt (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a "<" b;
 fn ge (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a ">=" b;
 fn gt (tp : Type, a : tp, b : tp) : bool => @[prec(15)] a ">" b;
+
 fn neg_expr (tp : Type, a : tp) : tp => "-" a;
 fn add_expr (tp : Type, a : tp, b : tp) : tp => @[prec(25), leftassoc] a "+" b;
 fn sub_expr (tp : Type, a : tp, b : tp) : tp => @[prec(25), leftassoc] a "-" b;
 fn mul_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a "*" b;
 fn div_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a "div" b;
 fn mod_expr (tp : Type, a : tp, b : tp) : tp => @[prec(30), leftassoc] a "mod" b;
+
+fn bvnot (tp : Type, a : tp) : tp => "~" a;
+fn bvand (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a "&" b;
+fn bvor (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a "|" b;
+fn bvxor (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a "^" b;
+fn bvshl (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a "<<" b;
+fn bvushr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a ">>" b;
 
 category Trigger;
 category Triggers;
@@ -144,14 +153,11 @@ op else0 () : Else =>;
 op else1 (f : Block) : Else => "else" f;
 op havoc_statement (v : Ident) : Statement => "havoc " v ";\n";
 
-category Measure;
-op measure (e : Expr) : Measure => "decreases" e ";";
-
 category Invariant;
 op invariant (e : Expr) : Invariant => "invariant" e ";";
 
-op while_statement (c : bool, m : Option Measure, i : Option Invariant, body : Block) : Statement =>
-  "while" "(" c ")" m i body;
+op while_statement (c : bool, i : Option Invariant, body : Block) : Statement =>
+  "while" "(" c ")" i body;
 
 op call_statement (vs : CommaSepBy Ident, f : Ident, expr : CommaSepBy Expr) : Statement =>
    "call" vs ":=" f "(" expr ")" ";\n";

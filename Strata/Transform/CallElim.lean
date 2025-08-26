@@ -168,20 +168,18 @@ def createAsserts
     (pres : List Expression.Expr)
     (subst : Map Expression.Ident Expression.Expr)
     : List Statement
-    := pres |> List.map (λ pred ↦ Lambda.LExpr.substFvars pred subst)
-           |> List.map
-             (λ pred : Expression.Expr ↦
-               Statement.assert s!"assert: {Std.format pred}" pred)
+    := pres |> List.mapIdx
+                (λ i pred ↦
+                    Statement.assert s!"assert_{i}" (Lambda.LExpr.substFvars pred subst))
 
 /-- turns a list of preconditions into assumes with substitution -/
 def createAssumes
     (posts : List Expression.Expr)
     (subst : Map Expression.Ident Expression.Expr)
     : List Statement
-    := posts |> List.map (λ pred ↦ Lambda.LExpr.substFvars pred subst)
-            |> List.map
-              (λ pred : Expression.Expr ↦
-                Statement.assume s!"assume: {Std.format pred}" pred)
+    := posts |> List.mapIdx
+                  (λ i pred ↦
+                      Statement.assume s!"assume_{i}" (Lambda.LExpr.substFvars pred subst))
 
 /--
 Generate the substitution pairs needed for the body of the procedure
@@ -249,9 +247,9 @@ def callElimStmt (st: Statement) (p : Program)
 
         -- construct substitutions for argument and return
         let arg_subst : List (Expression.Ident × Expression.Expr)
-                      := (Map.keys proc.header.inputs).zip $ createFvars argTrips.unzip.fst.unzip.fst
+                      := (ListMap.keys proc.header.inputs).zip $ createFvars argTrips.unzip.fst.unzip.fst
         let ret_subst : List (Expression.Ident × Expression.Expr)
-                      := (Map.keys proc.header.outputs).zip $ createFvars lhs
+                      := (ListMap.keys proc.header.outputs).zip $ createFvars lhs
 
         -- construct assumes and asserts in place of pre/post conditions
         -- generate asserts based on pre-conditions, substituting procedure arguments

@@ -7,6 +7,7 @@
 import Strata.DDM.AST
 import Strata.DDM.Util.Fin
 import Strata.DDM.Util.Format
+import Strata.DDM.Util.Nat
 import Std.Data.HashSet
 
 open Std (Format format)
@@ -76,15 +77,6 @@ end FormatContext
 structure FormatState where
   openDialects : Std.HashSet String
   bindings : Array String := #[]
-
-/-- Precedence of an explicit function call `f(..)`. -/
-def callPrec := 30
-
-/-- Precedence of the empty application operator `f x` in expressions and types. -/
-def appPrec := 20
-
-/-- Precedence of the arrow operator `t -> u` in types. -/
-def arrowPrec :=  17
 
 namespace FormatState
 
@@ -334,10 +326,9 @@ private partial def Arg.mformatM : Arg → FormatM PrecFormat
   if z : entries.size = 0 then
     pure (.atom .nil)
   else do
-    let p : entries.size - 1 ≤ entries.size := by omega
     let f i q s := return s ++ ", " ++ (← entries[i].mformatM).format
     let a := (← entries[0].mformatM).format
-    .atom <$> Nat.foldM.loop entries.size f (i := entries.size - 1) p a
+    .atom <$> entries.size.foldlM f (start := 1) a
 
 private partial def ppArgs (f : StrataFormat) (rargs : Array Arg) : FormatM PrecFormat :=
   if rargs.isEmpty then
@@ -350,12 +341,12 @@ private partial def ppArgs (f : StrataFormat) (rargs : Array Arg) : FormatM Prec
     let r ← rargs.foldrM (init := init) (fun a r => return f!"{r},{(←a.mformatM).format})")
     pure <| .atom f!"{r})"
 
-private partial def formatArguments (c : FormatContext) (initState : FormatState) (bindings : DeclBindings) (args : Vector Arg bindings.size) :=
+private partial def formatArguments (c : FormatContext) (initState : FormatState) (argDecls : ArgDecls) (args : Vector Arg argDecls.size) :=
   let rec aux (a : Array (PrecFormat × FormatState)) :=
         let lvl := a.size
-        if h : lvl < bindings.size then
+        if h : lvl < argDecls.size then
           let s :=
-                match bindings.argScopeLevel ⟨lvl, h⟩ with
+                match argDecls.argScopeLevel ⟨lvl, h⟩ with
                 | none =>
                   initState
                 | some ⟨alvl, aisLt⟩  =>
@@ -364,7 +355,7 @@ private partial def formatArguments (c : FormatContext) (initState : FormatState
           aux (a.push (args[lvl].mformatM c s))
         else
           a
-  aux (.mkEmpty bindings.size)
+  aux (.mkEmpty argDecls.size)
 
 private partial def Operation.mformatM (op : Operation) : FormatM PrecFormat := do
   match (← read).getOpDecl op.name with
@@ -434,12 +425,18 @@ instance Metadata.instToStrataFormat : ToStrataFormat Metadata where
     else
       mf!"@[{StrataFormat.sepBy m.toArray ", "}]"
 
-instance DeclBindingKind.instToStrataFormat : ToStrataFormat DeclBindingKind where
-  mformat
-  | .expr tp => mformat tp
-  | .cat c => mformat c
+namespace ArgDeclKind
 
-instance DeclBinding.instToStrataFormat : ToStrataFormat DeclBinding where
+instance : ToStrataFormat ArgDeclKind where
+  mformat
+  | .cat c => mformat c
+  | .type tp => mformat tp
+
+end ArgDeclKind
+
+namespace ArgDecl
+
+instance : ToStrataFormat ArgDecl where
   mformat b :=
     let r := mf!"{b.ident} : {b.kind}"
     if b.metadata.isEmpty then
@@ -447,30 +444,32 @@ instance DeclBinding.instToStrataFormat : ToStrataFormat DeclBinding where
     else
       mf!"{b.metadata} {r}"
 
-namespace DeclBindings
+end ArgDecl
 
-private def mformatAux (f : Format) (c : FormatContext) (s : FormatState) (a : Array DeclBinding) (idx : Nat) : Format × FormatState :=
+namespace ArgDecls
+
+private def mformatAux (f : Format) (c : FormatContext) (s : FormatState) (a : Array ArgDecl) (idx : Nat) : Format × FormatState :=
   if h : idx < a.size then
     let b := a[idx]
     mformatAux (f ++ ", " ++ cformat b c s) c (s.pushBinding b.ident) a (idx + 1)
   else
     (f ++ ")", s)
 
-protected def mformat (c : FormatContext) (s : FormatState) (l : DeclBindings) : Format × FormatState :=
+protected def mformat (c : FormatContext) (s : FormatState) (l : ArgDecls) : Format × FormatState :=
   if h : 0 < l.size then
     let b := l[0]
     mformatAux ("(" ++ cformat b c s) c (s.pushBinding b.ident) l 1
   else
     ("()", s)
 
-instance : ToStrataFormat DeclBindings where
-  mformat l c s := .atom (DeclBindings.mformat c s l |>.fst)
+instance : ToStrataFormat ArgDecls where
+  mformat l c s := .atom (l.mformat c s |>.fst)
 
 /- Format `fmt` in a context with additional bindings `b`. -/
-protected def formatIn [ToStrataFormat α] (b : DeclBindings) (fmt : α) : StrataFormat := fun c s =>
+protected def formatIn [ToStrataFormat α] (b : ArgDecls) (fmt : α) : StrataFormat := fun c s =>
   mformat fmt c (b.foldl (init := s) (·.pushBinding ·.ident))
 
-end DeclBindings
+end ArgDecls
 
 namespace SyntaxDefAtom
 

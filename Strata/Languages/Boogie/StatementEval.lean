@@ -38,11 +38,11 @@ a `.call` statement.
 -/
 def callConditions (proc : Procedure)
                    (condType : CondType)
-                   (conditions : Map String Procedure.Check)
+                   (conditions : ListMap String Procedure.Check)
                    (subst :  Map (Lambda.IdentT BoogieIdent) Expression.Expr) :
-                   Map String Procedure.Check :=
+                   ListMap String Procedure.Check :=
   let names := List.map
-               (fun k => s!"<Origin:{proc.header.name.2}_{condType}>{k}")
+               (fun k => s!"(Origin_{proc.header.name.2}_{condType}){k}")
                conditions.keys
   let exprs := List.map
                 (fun p =>

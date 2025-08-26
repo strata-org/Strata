@@ -1,0 +1,18 @@
+[project]
+name = "strata"
+version = "0.0.1"
+description = 'Python support for Strata.'
+requires-python = ">= 3.13"
+dependencies = [
+    "amazon.ion"
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["strata"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.scripts]
+gen = "strata.gen:main"

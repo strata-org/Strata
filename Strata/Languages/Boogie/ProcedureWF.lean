@@ -17,14 +17,17 @@ namespace WF
 
 open Lambda
 
-theorem snd_values_mem :
-  x ∈ ps →
-  x.snd ∈ Map.values ps := by
+theorem snd_values_mem {ps : ListMap BoogieLabel Procedure.Check} :
+  x ∈ ps.toList →
+  x.snd ∈ ListMap.values ps := by
   intros Hin
-  induction ps <;> simp_all
+  induction ps
   case cons h t ih =>
-  simp [Map.values]
-  cases Hin <;> simp_all
+    simp_all [ListMap.toList, ListMap.values]
+    cases Hin
+    case inl eq => left ; rw [eq]
+    case inr mem => right ; exact (ih mem)
+  case nil => cases Hin
 
 set_option warn.sorry false in
 /--
@@ -33,15 +36,15 @@ A Procedure 'pp' that passes type checking is well formed with respect to the wh
 theorem Procedure.typeCheckWF : Procedure.typeCheck T p pp = Except.ok (pp', T') → WFProcedureProp p pp := by
   intros tcok
   simp only [Procedure.typeCheck] at tcok
-  generalize Hc1 : (!decide (Map.keys pp.header.inputs).Nodup) = if1 at tcok
-  generalize Hc2 : (!decide (Map.keys pp.header.outputs).Nodup) = if2 at tcok
+  generalize Hc1 : (!decide (ListMap.keys pp.header.inputs).Nodup) = if1 at tcok
+  generalize Hc2 : (!decide (ListMap.keys pp.header.outputs).Nodup) = if2 at tcok
   generalize Hc3 : (!decide pp.spec.modifies.Nodup) = if3 at tcok
-  generalize Hc4 : (pp.spec.modifies.any fun v => decide (v ∈ Map.keys pp.header.inputs)) = if4 at tcok
-  generalize Hc6 : (pp.spec.modifies.any fun v => decide (v ∈ Map.keys pp.header.outputs)) = if6 at tcok
-  generalize Hc7 : ((Map.keys pp.header.inputs).any fun v => decide (v ∈ Map.keys pp.header.outputs)) = if7 at tcok
+  generalize Hc4 : (pp.spec.modifies.any fun v => decide (v ∈ ListMap.keys pp.header.inputs)) = if4 at tcok
+  generalize Hc6 : (pp.spec.modifies.any fun v => decide (v ∈ ListMap.keys pp.header.outputs)) = if6 at tcok
+  generalize Hc7 : ((ListMap.keys pp.header.inputs).any fun v => decide (v ∈ ListMap.keys pp.header.outputs)) = if7 at tcok
   generalize Hc8 : (pp.spec.modifies.any fun v => (Maps.find? T.context.types v).isNone) = if8 at tcok
   generalize Hc9 : ((Imperative.Stmts.modifiedVars pp.body).eraseDups.any fun v =>
-                    decide ¬v ∈ Map.keys pp.header.outputs ++ pp.spec.modifies ++
+                    decide ¬v ∈ ListMap.keys pp.header.outputs ++ pp.spec.modifies ++
                     (Imperative.Stmts.definedVars pp.body).eraseDups) = if9 at tcok
   generalize Hc10: ((Procedure.Spec.getCheckExprs pp.spec.preconditions).any fun p =>
                           OldExpressions.containsOldExpr p) = if10 at tcok
@@ -111,6 +114,5 @@ theorem Procedure.typeCheckWF : Procedure.typeCheck T p pp = Except.ok (pp', T')
       -- 1. All modified variables in a procedure are declared in the program.
       sorry
   done
-
 end WF
 end Boogie

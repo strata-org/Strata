@@ -5,7 +5,6 @@
 -/
 
 
-import Strata.Languages.Boogie.DDMTransform.Parse
 import Strata.Languages.Boogie.Verifier
 
 ---------------------------------------------------------------------

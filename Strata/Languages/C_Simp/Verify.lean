@@ -82,7 +82,7 @@ def loop_elimination_statement(s : C_Simp.Statement) : Boogie.Statement :=
       let measure_pos := (.app (.app (.op "Int.Ge" none) (translate_expr measure)) (.const "0" none))
 
       let entry_invariant : Boogie.Statement := .assert "entry_invariant" (translate_expr invariant) {}
-      let assert_measure_positive : Boogie.Statement := .assert "assert measure_pos" measure_pos {}
+      let assert_measure_positive : Boogie.Statement := .assert "assert_measure_pos" measure_pos {}
       let first_iter_facts : Boogie.Statement := .block "first_iter_asserts" {ss := [entry_invariant, assert_measure_positive]} {}
 
       let arbitrary_iter_assumes := .block "arbitrary_iter_assumes" {ss := [(Boogie.Statement.assume "assume_guard" (translate_expr guard) {}), (Boogie.Statement.assume "assume_invariant" (translate_expr invariant) {}), (Boogie.Statement.assume "assume_measure_pos" measure_pos {})]} {}

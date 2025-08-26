@@ -45,11 +45,32 @@ end
 
 end QualifiedIdent
 
+#guard q`A.C = { dialect := "A", name := "C" }
+
+inductive SyntaxCat where
+| atom (ident : QualifiedIdent)
+| app (h : SyntaxCat) (a : SyntaxCat)
+deriving Inhabited, Repr, DecidableEq
+
+namespace SyntaxCat
+
+protected def head : SyntaxCat → QualifiedIdent
+| .atom i => i
+| .app h _ => h.head
+
+protected def args : SyntaxCat → Array SyntaxCat
+| .atom _ => #[]
+| .app h a => h.args |>.push a
+
 /--
-info: { dialect := "A", name := "C" }
+Return true if this corresponds to builtin category `Init.Type`
 -/
-#guard_msgs in
-#eval q`A.C
+def isType (c : SyntaxCat) :=
+  match c with
+  | .atom q`Init.Type => true
+  | _ => false
+
+end SyntaxCat
 
 /-- This refers to a value introduced in the program. -/
 abbrev FreeVarIndex := Nat
@@ -119,24 +140,6 @@ protected def instTypeM [Monad m] (d : TypeExpr) (bindings : Nat → m TypeExpr)
 termination_by d
 
 end TypeExpr
-
-inductive SyntaxCat where
-| atom (ident : QualifiedIdent)
-| app (h : SyntaxCat) (a : SyntaxCat)
-deriving Inhabited, Repr, DecidableEq
-
-namespace SyntaxCat
-
-protected def head : SyntaxCat → QualifiedIdent
-| .atom i => i
-| .app h _ => h.head
-
-protected def args : SyntaxCat → Array SyntaxCat
-| .atom _ => #[]
-| .app h a => h.args |>.push a
-
-end SyntaxCat
-
 
 mutual
 
@@ -242,8 +245,8 @@ def asCommaSepList : Arg → Array Arg
 end Arg
 
 inductive MetadataArg where
-| catbvar (index : Nat) -- This is a deBrujin index into current typing environment.
 | bool (e : Bool)
+| catbvar (index : Nat) -- This is a deBrujin index into current typing environment.
 | num (e : Nat)
 | option (a : Option MetadataArg)
 deriving Inhabited, Repr, BEq
@@ -266,9 +269,6 @@ def declare (varIndex typeIndex : Nat) : MetadataAttr :=
 
 def declareFn (varIndex bindingsIndex typeIndex : Nat) : MetadataAttr :=
   { ident := q`StrataDDL.declareFn, args := #[.catbvar varIndex, .catbvar bindingsIndex, .catbvar typeIndex]}
-
-def declareMD (varIndex typeIndex metadataIndex : Nat) : MetadataAttr :=
-  { ident := q`StrataDDL.declareMD, args := #[.catbvar varIndex, .catbvar typeIndex, .catbvar metadataIndex]}
 
 end MetadataAttr
 
@@ -318,6 +318,16 @@ def resultIndex (metadata : Metadata) : Option Nat :=
     pure idx
   | _ => panic! "Unexpected argument to {MetadataAttr.scopeName.fullName}"
 
+/-- Returns the index of the value in the binding for the given variable of the scope to use. -/
+def resultLevel (varCount : Nat) (metadata : Metadata) : Option (Fin varCount) :=
+  match metadata.resultIndex with
+  | none => none
+  | some idx =>
+    if _ : idx < varCount then
+      some ⟨varCount - (idx + 1), by omega⟩
+    else
+      panic! s!"Scope index {idx} out of bounds (varCount = {varCount})"
+
 end Metadata
 
 abbrev Var := String
@@ -348,7 +358,31 @@ inductive PreType where
 | funMacro (bindingsIndex : Nat) (res : PreType)
 deriving BEq, Inhabited, Repr
 
+namespace PreType
+
+def ofType : TypeExpr → PreType
+| .ident name args => .ident name (args.attach.map fun ⟨a, _⟩ => .ofType a)
+| .bvar idx => .bvar idx
+| .fvar idx args => .fvar idx (args.attach.map fun ⟨a, _⟩ => .ofType a)
+| .arrow a r => .arrow (.ofType a) (.ofType r)
+termination_by tp => tp
+
+end PreType
+
 def maxPrec := eval_prec max
+
+/--
+Precedence of an explicit function call `f(..)`.
+
+This specifically addresses the priority between f and the open paren.
+-/
+def callPrec := 200
+
+/-- Precedence of the empty application operator `f x` in expressions and types. -/
+def appPrec := 20
+
+/-- Precedence of the arrow operator `t -> u` in types. -/
+def arrowPrec :=  17
 
 /--
 This describes how to format an operator.
@@ -368,9 +402,32 @@ structure SyntaxDef where
   prec : Nat
 deriving Repr, Inhabited, BEq
 
-def SyntaxDef.ofList (atoms : List SyntaxDefAtom) (prec : Nat := maxPrec): SyntaxDef where
+namespace SyntaxDef
+
+/--
+Creates syntax of the form `name(arg1, ..., argn)`.
+
+If `n` is 0, then this is just `name`.
+-/
+def mkFunApp (name : String) (n : Nat) : SyntaxDef :=
+  let atoms : Array SyntaxDefAtom :=
+    if n = 0 then
+      #[.str name]
+    else
+      let atoms := #[.str name, .str "(", .ident 0 0]
+      let atoms := (n-1).fold (init := atoms) fun i _ a =>
+        a |>.push (.str ", ") |>.push (.ident (i+1) 0)
+      atoms.push (.str ")")
+  {
+    atoms := atoms
+    prec := appPrec
+  }
+
+def ofList (atoms : List SyntaxDefAtom) (prec : Nat := maxPrec): SyntaxDef where
   atoms := atoms.toArray
   prec := prec
+
+end SyntaxDef
 
 /-- Structure that defines a binding introduced by an operation or function. -/
 inductive SyntaxElabType
@@ -394,45 +451,69 @@ private def varNameByIndex {n} (args : Vector Arg n) (idx : DebruijnIndex n) : S
   | .ident e => e
   | a => panic! s!"Expected ident at {idx.val} {repr a}"
 
-inductive DeclBindingKind where
+/--
+This is the type information for an operator or function declaration.
+-/
+inductive ArgDeclKind where
 /-- Variable is an expression with the given type. -/
-| expr (tp : PreType)
+| type (tp : PreType)
 /-- Variable belongs to the particular category -/
 | cat (k : SyntaxCat)
 deriving BEq, Inhabited, Repr
 
-namespace DeclBindingKind
+namespace ArgDeclKind
 
-def categoryOf : DeclBindingKind → SyntaxCat
-| .expr _ => .atom q`Init.Expr
+def categoryOf : ArgDeclKind → SyntaxCat
+| .type _ => .atom q`Init.Expr
 | .cat c => c
 
-end DeclBindingKind
+/--
+Return true if this corresponds to builtin category `Init.Type`
+-/
+def isType (k : ArgDeclKind) :=
+  match k with
+  | .cat c => c.isType
+  | _ => false
+
+end ArgDeclKind
 
 /--
-A single binder may declare multiple identifiers, but they
-all have the same type and metadata.
+An argument declaration in an operator or function.
 -/
-structure DeclBinding where
+structure ArgDecl where
   ident : Var
-  kind : DeclBindingKind
+  kind : ArgDeclKind
   metadata : Metadata := .empty
 deriving Inhabited, Repr, BEq
 
-abbrev DeclBindings := Array DeclBinding
+abbrev ArgDecls := Array ArgDecl
+
+namespace ArgDecls
+
+/-- Returns the index of the value in the binding for the given variable of the scope to use. -/
+def argScopeLevel (bindings : ArgDecls) (level : Fin bindings.size) : Option (Fin level.val) :=
+  match bindings[level].metadata.scopeIndex with
+  | none => none
+  | some idx =>
+    if h : idx < level.val then
+      some ⟨level.val - (idx + 1), by omega⟩
+    else
+      -- TODO: Validate this is checked when attribute parsing occurs.
+      let varCount := bindings.size
+      panic! s!"Scope index {idx} out of bounds ({level.val}, varCount = {varCount})"
+
+end ArgDecls
 
 /--
 Indices for introducing a new expression or operation.
 -/
-structure ValueBindingSpec (bindings : DeclBindings) where
+structure ValueBindingSpec (bindings : ArgDecls) where
   -- deBrujin level of variable name.
   nameIndex : DebruijnIndex bindings.size
   -- deBrujin index of arguments if this is declaring a function (or none) if this declares a constant.
   argsIndex : Option (DebruijnIndex bindings.size)
   -- deBrujin index of type or a type/cat literal.
   typeIndex : DebruijnIndex bindings.size
-  -- deBrujin index of metadata
-  metadataIndex : Option (DebruijnIndex bindings.size)
   -- Whether categories are allowed
   allowCat : Bool
 deriving Repr
@@ -440,7 +521,7 @@ deriving Repr
 /--
 Indices for introducing a new type binding.
 -/
-structure TypeBindingSpec (bindings : DeclBindings) where
+structure TypeBindingSpec (bindings : ArgDecls) where
   nameIndex : DebruijnIndex bindings.size
   argsIndex : Option (DebruijnIndex bindings.size)
   defIndex : Option (DebruijnIndex bindings.size)
@@ -449,7 +530,7 @@ deriving Repr
 /-
 A spec for introducing a new binding into a type context.
 -/
-inductive BindingSpec (bindings : DeclBindings) where
+inductive BindingSpec (bindings : ArgDecls) where
 | value (_ : ValueBindingSpec bindings)
 | type (_ : TypeBindingSpec bindings)
 deriving Repr
@@ -470,8 +551,8 @@ abbrev NewBindingM := StateM (Array String)
 private def newBindingErr (msg : String) : NewBindingM Unit :=
   modify (·.push msg)
 
-private def checkNameIndexIsIdent (bindings : DeclBindings) (nameIndex : DebruijnIndex bindings.size) : NewBindingM Unit :=
-  let b := bindings[nameIndex.toLevel]
+private def checkNameIndexIsIdent (args : ArgDecls) (nameIndex : DebruijnIndex args.size) : NewBindingM Unit :=
+  let b := args[nameIndex.toLevel]
   match b.kind with
   | .cat (.atom q`Init.Ident) =>
     pure ()
@@ -479,14 +560,13 @@ private def checkNameIndexIsIdent (bindings : DeclBindings) (nameIndex : Debruij
     newBindingErr s!"Expected {b.ident} to be an Ident."
 
 private def mkValueBindingSpec
-            (bindings : DeclBindings)
-            (nameIndex : DebruijnIndex bindings.size)
-            (typeIndex : DebruijnIndex bindings.size)
-            (argsIndex : Option (DebruijnIndex bindings.size) := none)
-            (metadataIndex : Option (DebruijnIndex bindings.size) := none)
-            : NewBindingM (ValueBindingSpec bindings) := do
-  checkNameIndexIsIdent bindings nameIndex
-  let typeBinding := bindings[typeIndex.toLevel]
+            (args : ArgDecls)
+            (nameIndex : DebruijnIndex args.size)
+            (typeIndex : DebruijnIndex args.size)
+            (argsIndex : Option (DebruijnIndex args.size) := none)
+            : NewBindingM (ValueBindingSpec args) := do
+  checkNameIndexIsIdent args nameIndex
+  let typeBinding := args[typeIndex.toLevel]
   let allowCat ←
         match typeBinding.kind with
         | .cat (.atom q`Init.Type) =>
@@ -498,51 +578,41 @@ private def mkValueBindingSpec
           pure default
   if allowCat && argsIndex.isSome then
     newBindingErr "Arguments only allowed when result is a type."
-  return { nameIndex, argsIndex, typeIndex, metadataIndex, allowCat }
+  return { nameIndex, argsIndex, typeIndex, allowCat }
 
-def parseNewBindings (md : Metadata) (bindings : DeclBindings) : Array (BindingSpec bindings) × Array String :=
-  let ins (attr : MetadataAttr) : NewBindingM (Option (BindingSpec bindings)) := do
+def parseNewBindings (md : Metadata) (args : ArgDecls) : Array (BindingSpec args) × Array String :=
+  let ins (attr : MetadataAttr) : NewBindingM (Option (BindingSpec args)) := do
         match attr.ident with
         | q`StrataDDL.declare => do
           let #[.catbvar nameIndex, .catbvar typeIndex] := attr.args
             | newBindingErr "declare does not have expected 2 arguments."; return none
-          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < bindings.size))
+          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < args.size))
             | return panic! "Invalid name index"
-          let .isTrue typeP := inferInstanceAs (Decidable (typeIndex < bindings.size))
+          let .isTrue typeP := inferInstanceAs (Decidable (typeIndex < args.size))
             | return panic! "Invalid name index"
-          some <$> .value <$> mkValueBindingSpec bindings ⟨nameIndex, nameP⟩ ⟨typeIndex, typeP⟩
-        | q`StrataDDL.declareMD => do
-          let #[.catbvar nameIndex, .catbvar typeIndex, .catbvar metadataIndex ] := attr.args
-            | newBindingErr "declareMD missing required arguments."; return none
-          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < bindings.size))
-            | return panic! "Invalid name index"
-          let .isTrue typeP := inferInstanceAs (Decidable (typeIndex < bindings.size))
-            | return panic! "Invalid name index"
-          let .isTrue mdP := inferInstanceAs (Decidable (metadataIndex < bindings.size))
-            | return panic! "Invalid metadata index"
-          some <$> .value <$> mkValueBindingSpec bindings ⟨nameIndex, nameP⟩ ⟨typeIndex, typeP⟩ (metadataIndex := .some ⟨metadataIndex, mdP⟩)
+          some <$> .value <$> mkValueBindingSpec args ⟨nameIndex, nameP⟩ ⟨typeIndex, typeP⟩
         | q`StrataDDL.declareFn => do
           let #[.catbvar nameIndex, .catbvar argsIndex, .catbvar typeIndex] := attr.args
             | newBindingErr "declareFn missing required arguments."; return none
-          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < bindings.size))
+          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < args.size))
             | return panic! "Invalid name index"
-          let .isTrue argsP := inferInstanceAs (Decidable (argsIndex < bindings.size))
+          let .isTrue argsP := inferInstanceAs (Decidable (argsIndex < args.size))
             | return panic! "Invalid arg index"
-          let .isTrue typeP := inferInstanceAs (Decidable (typeIndex < bindings.size))
+          let .isTrue typeP := inferInstanceAs (Decidable (typeIndex < args.size))
             | return panic! "Invalid name index"
-          some <$> .value <$> mkValueBindingSpec bindings ⟨nameIndex, nameP⟩ ⟨typeIndex, typeP⟩ (argsIndex := some ⟨argsIndex, argsP⟩)
+          some <$> .value <$> mkValueBindingSpec args ⟨nameIndex, nameP⟩ ⟨typeIndex, typeP⟩ (argsIndex := some ⟨argsIndex, argsP⟩)
         | q`StrataDDL.declareType => do
           let #[.catbvar nameIndex, .option mArgsArg ] := attr.args
             | newBindingErr s!"declareType has bad arguments {repr attr.args}."; return none
-          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < bindings.size))
+          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < args.size))
             | return panic! "Invalid name index"
           let nameIndex := ⟨nameIndex, nameP⟩
-          checkNameIndexIsIdent bindings nameIndex
+          checkNameIndexIsIdent args nameIndex
           let argsIndex ←
                 match mArgsArg with
                 | none => pure none
                 | some (.catbvar idx) =>
-                  let .isTrue argsP := inferInstanceAs (Decidable (idx < bindings.size))
+                  let .isTrue argsP := inferInstanceAs (Decidable (idx < args.size))
                     | return panic! "Invalid arg index"
                   pure <| some ⟨idx, argsP⟩
                 | _ => newBindingErr "declareType args invalid."; return none
@@ -550,21 +620,21 @@ def parseNewBindings (md : Metadata) (bindings : DeclBindings) : Array (BindingS
         | q`StrataDDL.aliasType => do
           let #[.catbvar nameIndex, .option mArgsArg, .catbvar defIndex] := attr.args
             | newBindingErr "aliasType missing arguments."; return none
-          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < bindings.size))
+          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < args.size))
             | return panic! "Invalid name index"
           let nameIndex := ⟨nameIndex, nameP⟩
-          checkNameIndexIsIdent bindings nameIndex
+          checkNameIndexIsIdent args nameIndex
           let argsIndex ←
                 match mArgsArg with
                 | none => pure none
                 | some (.catbvar idx) =>
-                  let .isTrue argsP := inferInstanceAs (Decidable (idx < bindings.size))
+                  let .isTrue argsP := inferInstanceAs (Decidable (idx < args.size))
                     | return panic! "Invalid arg index"
                   pure <| some ⟨idx, argsP⟩
                 | _ => newBindingErr "aliasType args invalid."; return none
-          let .isTrue defP := inferInstanceAs (Decidable (defIndex < bindings.size))
+          let .isTrue defP := inferInstanceAs (Decidable (defIndex < args.size))
             | return panic! "Invalid def index"
-          let defBinding := bindings[bindings.size - (defIndex+1)]
+          let defBinding := args[args.size - (defIndex+1)]
           match defBinding.kind with
           | .cat (.atom q`Init.Type) =>
             pure ()
@@ -582,8 +652,8 @@ def parseNewBindings (md : Metadata) (bindings : DeclBindings) : Array (BindingS
           pure none
   (md.toArray.filterMapM ins) #[]
 
-def parseNewBindings! (md : Metadata) (bindings : DeclBindings) : Array (BindingSpec bindings) :=
-  let (r, errs) := parseNewBindings md bindings
+def parseNewBindings! (md : Metadata) (args : ArgDecls) : Array (BindingSpec args) :=
+  let (r, errs) := parseNewBindings md args
   if let some msg := errs[0]? then
     panic! msg
   else
@@ -607,7 +677,7 @@ structure OpDecl where
   /-- Name of operator -/
   name : String
   /-- Arguments to operator. -/
-  argDecls : DeclBindings
+  argDecls : ArgDecls
   /-- Syntactic category of operator -/
   category : QualifiedIdent
   /-- Schema for operator -/
@@ -630,7 +700,7 @@ instance : BEq OpDecl where
 
 def mk1
   (name : String)
-  (argDecls : DeclBindings)
+  (argDecls : ArgDecls)
   (category : QualifiedIdent)
   (syntaxDef : SyntaxDef)
   (metadata : Metadata) : OpDecl :=
@@ -642,7 +712,7 @@ abbrev FnName := String
 
 structure FunctionDecl where
   name : FnName
-  argDecls : DeclBindings
+  argDecls : ArgDecls
   result : PreType
   syntaxDef : SyntaxDef
   metadata : Metadata := .empty
@@ -870,32 +940,6 @@ instance (nm : String) (d : Dialect) : Decidable (nm ∈ d) :=
 
 end Dialect
 
-namespace DeclBindings
-
-/-- Returns the index of the value in the binding for the given variable of the scope to use. -/
-def argScopeLevel (bindings : DeclBindings) (level : Fin bindings.size) : Option (Fin level.val) :=
-  match bindings[level].metadata.scopeIndex with
-  | none => none
-  | some idx =>
-    if h : idx < level.val then
-      some ⟨level.val - (idx + 1), by omega⟩
-    else
-      -- TODO: Validate this is checked when attribute parsing occurs.
-      let varCount := bindings.size
-      panic! s!"Scope index {idx} out of bounds ({level.val}, varCount = {varCount})"
-
-end DeclBindings
-
-/-- Returns the index of the value in the binding for the given variable of the scope to use. -/
-def Metadata.resultLevel (varCount : Nat) (metadata : Metadata) : Option (Fin varCount) :=
-  match metadata.resultIndex with
-  | none => none
-  | some idx =>
-    if _ : idx < varCount then
-      some ⟨varCount - (idx + 1), by omega⟩
-    else
-      panic! s!"Scope index {idx} out of bounds (varCount = {varCount})"
-
 structure DialectMap where
   map : Std.HashMap DialectName Dialect
   deriving Inhabited
@@ -983,7 +1027,7 @@ so that a result type context can be constructed.
 -/
 partial def foldArgBindingSpecs
     (m : DialectMap)
-    (f : α → ∀(bindings : DeclBindings), BindingSpec bindings → Vector Arg bindings.size → α)
+    (f : α → ∀(argDecls : ArgDecls), BindingSpec argDecls → Vector Arg argDecls.size → α)
     (init : α)
     (a : Arg)
     : α :=
@@ -1001,20 +1045,20 @@ so that a result type context can be constructed.
 -/
 partial def foldOverOpBindings
     (m : DialectMap)
-    (f : α → ∀(bindings : DeclBindings), BindingSpec bindings → Vector Arg bindings.size → α)
+    (f : α → ∀{argDecls : ArgDecls}, BindingSpec argDecls → Vector Arg argDecls.size → α)
     (init : α)
     (op : Operation)
     : α :=
   let decl := m.opDecl! op.name
-  let bindings := decl.argDecls
+  let argDecls := decl.argDecls
   let args := op.args
-  if h : args.size = bindings.size then
-    let argsV : Vector Arg bindings.size := ⟨args, h⟩
+  if h : args.size = argDecls.size then
+    let argsV : Vector Arg argDecls.size := ⟨args, h⟩
     let init :=
-      match decl.metadata.resultLevel bindings.size with
+      match decl.metadata.resultLevel argDecls.size with
       | none => init
-      | some lvl => foldOverArgAtLevel m f init bindings argsV lvl
-    decl.newBindings.foldl (init := init) (fun a b => f a bindings b ⟨args, by omega⟩)
+      | some lvl => foldOverArgAtLevel m f init argDecls argsV lvl
+    decl.newBindings.foldl (init := init) (fun a b => f a b ⟨args, by omega⟩)
   else
     @panic _ ⟨init⟩ "Expected arguments to match bindings"
 
@@ -1024,9 +1068,9 @@ the result context for that argument can be constructed.
 -/
 partial def foldOverArgAtLevel
     (m : DialectMap)
-    (f : α → ∀(bindings : DeclBindings), BindingSpec bindings → Vector Arg bindings.size → α)
+    (f : α → ∀{argDecls : ArgDecls}, BindingSpec argDecls → Vector Arg argDecls.size → α)
     (init : α)
-    (bindings : DeclBindings)
+    (bindings : ArgDecls)
     (args : Vector Arg bindings.size)
     (level : Fin bindings.size)
     : α :=
@@ -1052,7 +1096,7 @@ partial def resolveBindingType (m : DialectMap) (b : BindingSpec bindings) (args
   | .type _ _ => panic! s!"Expecbted binding to be expression."
 
 /-- Resolves a binding spec into a global kind. -/
-partial def resolveBindingIndices (m : DialectMap) (b : BindingSpec bindings) (argsV : Vector Arg bindings.size) : GlobalKind :=
+partial def resolveBindingIndices { args } (m : DialectMap) (b : BindingSpec args) (argsV : Vector Arg args.size) : GlobalKind :=
   match b with
   | .value b =>
     let fnBindings : Array (String × TypeExpr) :=
@@ -1060,11 +1104,11 @@ partial def resolveBindingIndices (m : DialectMap) (b : BindingSpec bindings) (a
       | none =>
         #[]
       | some idx =>
-        let f (a : Array _) (bindings : DeclBindings) (b : BindingSpec bindings) argsV :=
+        let f (a : Array _) {args : ArgDecls} (b : BindingSpec args) argsV :=
               let name := varNameByIndex argsV b.nameIndex
               let type := resolveBindingType m b argsV
               a.push (name, type)
-        foldOverArgAtLevel m f #[] bindings argsV idx.toLevel
+        foldOverArgAtLevel m f #[] args argsV idx.toLevel
     match argsV[b.typeIndex.toLevel] with
       | .type tp => .expr (.mkFunType fnBindings tp)
       | .cat (.atom q`Init.Type) => .type [] none
@@ -1074,9 +1118,9 @@ partial def resolveBindingIndices (m : DialectMap) (b : BindingSpec bindings) (a
         match b.argsIndex with
         | none => #[]
         | some idx =>
-          let addBinding (a : Array String) (bindings : _) (b : BindingSpec bindings) (argsV : Vector Arg bindings.size) :=
+          let addBinding (a : Array String) {args : _} (b : BindingSpec args) (argsV : Vector Arg args.size) :=
               a.push (varNameByIndex argsV b.nameIndex)
-          foldOverArgAtLevel m addBinding #[] bindings argsV idx.toLevel
+          foldOverArgAtLevel m addBinding #[] args argsV idx.toLevel
     let value :=
             match b.defIndex with
             | none => none

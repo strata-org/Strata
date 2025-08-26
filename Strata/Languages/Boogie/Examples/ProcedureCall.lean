@@ -65,36 +65,36 @@ Assumptions:
 Proof Obligation:
 (((~Int.Sub ((~Int.Add $__counter0) $__a1)) $__a1) == $__counter0)
 
-Label: <Origin:Inc_Requires>a_positive
+Label: (Origin_Inc_Requires)a_positive
 Assumptions:
 Proof Obligation:
 #true
 
-Label: <Origin:Inc_Requires>a_positive
+Label: (Origin_Inc_Requires)a_positive
 Assumptions:
-(<Origin:Inc_Ensures>new_g_value, ($__counter6 == ((~Int.Add $__counter3) #8)))
-(<Origin:Inc_Ensures>old_g_property, (((~Int.Sub $__b5) #8) == $__counter3))
+((Origin_Inc_Ensures)new_g_value, ($__counter6 == ((~Int.Add $__counter3) #8)))
+((Origin_Inc_Ensures)old_g_property, (((~Int.Sub $__b5) #8) == $__counter3))
 Proof Obligation:
 #true
 
 Label: return_value_lemma
 Assumptions:
-(<Origin:Inc_Ensures>new_g_value, ($__counter6 == ((~Int.Add $__counter3) #8)))
-(<Origin:Inc_Ensures>old_g_property, (((~Int.Sub $__b5) #8) == $__counter3)) (<Origin:Inc_Ensures>new_g_value, ($__counter8 == ((~Int.Add $__counter6) #8))) (<Origin:Inc_Ensures>old_g_property, (((~Int.Sub $__b7) #8) == $__counter6))
+((Origin_Inc_Ensures)new_g_value, ($__counter6 == ((~Int.Add $__counter3) #8)))
+((Origin_Inc_Ensures)old_g_property, (((~Int.Sub $__b5) #8) == $__counter3)) ((Origin_Inc_Ensures)new_g_value, ($__counter8 == ((~Int.Add $__counter6) #8))) ((Origin_Inc_Ensures)old_g_property, (((~Int.Sub $__b7) #8) == $__counter6))
 Proof Obligation:
 ($__b7 == ((~Int.Add $__counter3) #16))
 
-Label: assert: (#true : bool)
+Label: assert_0
 Assumptions:
 Proof Obligation:
 #true
 
 Wrote problem to vcs/new_g_value.smt2.
 Wrote problem to vcs/old_g_property.smt2.
-Wrote problem to vcs/(Origin-Inc_Requires)a_positive.smt2.
-Wrote problem to vcs/(Origin-Inc_Requires)a_positive.smt2.
+Wrote problem to vcs/(Origin_Inc_Requires)a_positive.smt2.
+Wrote problem to vcs/(Origin_Inc_Requires)a_positive.smt2.
 Wrote problem to vcs/return_value_lemma.smt2.
-Wrote problem to vcs/assert-_(#true_-_bool).smt2.
+Wrote problem to vcs/assert_0.smt2.
 ---
 info:
 Obligation: new_g_value
@@ -103,16 +103,16 @@ Result: verified
 Obligation: old_g_property
 Result: verified
 
-Obligation: <Origin:Inc_Requires>a_positive
+Obligation: (Origin_Inc_Requires)a_positive
 Result: verified
 
-Obligation: <Origin:Inc_Requires>a_positive
+Obligation: (Origin_Inc_Requires)a_positive
 Result: verified
 
 Obligation: return_value_lemma
 Result: verified
 
-Obligation: assert: (#true : bool)
+Obligation: assert_0
 Result: verified
 -/
 #guard_msgs in

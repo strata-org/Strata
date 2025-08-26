@@ -54,7 +54,7 @@ structure WFcallProp (p : Program) (lhs : List Expression.Ident) (procName : Str
   outlen : (Program.Procedure.find? p (.unres procName) = some proc) →
           proc.header.outputs.length = lhs.length
   lhsDisj : (Program.Procedure.find? p (.unres procName) = some proc) →
-          lhs.Disjoint (proc.spec.modifies ++ Map.keys proc.header.inputs ++ Map.keys proc.header.outputs)
+          lhs.Disjoint (proc.spec.modifies ++ ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs)
   lhsWF : lhs.Nodup ∧ Forall (BoogieIdent.isLocl ·) lhs
   wfargs : Forall (WFargProp p) args
 
@@ -94,7 +94,7 @@ structure WFPrePostProp (p : Program) (d : Procedure) (pp : BoogieLabel × Proce
   glvars : Forall (BoogieIdent.isGlobOrLocl ·) (HasVarsPure.getVars (P:=Expression) pp.2.expr)
   lvars : Forall (fun x =>
             (BoogieIdent.isLocl x) →
-            (x ∈ (Map.keys d.header.inputs) ++ (Map.keys d.header.outputs)))
+            (x ∈ (ListMap.keys d.header.inputs) ++ (ListMap.keys d.header.outputs)))
           (HasVarsPure.getVars (P:=Expression) pp.2.expr)
 
 structure WFPreProp (p : Program) (d : Procedure) (pp : BoogieLabel × Procedure.Check)
@@ -136,12 +136,12 @@ structure WFAxiomDeclarationProp (p : Program) (f : Axiom) : Prop where
 structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
   wfstmts : WFStatementsProp p d.body
   wfloclnd : (HasVarsImp.definedVars (P:=Expression) d.body).Nodup
-  ioDisjoint : (Map.keys d.header.inputs).Disjoint (Map.keys d.header.outputs)
-  inputsNodup : (Map.keys d.header.inputs).Nodup
-  outputsNodup : (Map.keys d.header.outputs).Nodup
+  ioDisjoint : (ListMap.keys d.header.inputs).Disjoint (ListMap.keys d.header.outputs)
+  inputsNodup : (ListMap.keys d.header.inputs).Nodup
+  outputsNodup : (ListMap.keys d.header.outputs).Nodup
   modNodup : d.spec.modifies.Nodup
-  inputsLocl : Forall (BoogieIdent.isLocl ·) (Map.keys d.header.inputs)
-  outputsLocl : Forall (BoogieIdent.isLocl ·) (Map.keys d.header.outputs)
+  inputsLocl : Forall (BoogieIdent.isLocl ·) (ListMap.keys d.header.inputs)
+  outputsLocl : Forall (BoogieIdent.isLocl ·) (ListMap.keys d.header.outputs)
   wfspec : WFSpecProp p d.spec d
 structure WFFunctionProp (p : Program) (f : Function) : Prop where
 

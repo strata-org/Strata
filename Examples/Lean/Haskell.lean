@@ -9,7 +9,7 @@ import Strata
 
 #dialect
 dialect Haskell;
-// This intreoduces natural numbers and a polymorphic list type.
+// This introduces natural numbers and a polymorphic list type.
 // The dialect is functioning as hardcoding features of Haskell's prelude.
 // It would be an interesting exersise to see if we can move away from this.
 type List (tp : Type);

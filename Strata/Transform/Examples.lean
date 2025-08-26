@@ -60,11 +60,11 @@ procedure h() returns () spec {
   var b : bool;
   var tmp_arg_0 : bool := k;
   var tmp_b_1 : bool := b;
-  assert i == !tmp_arg_0;
+  assert [assert_0]: i == !tmp_arg_0;
   havoc b;
   havoc j;
-  assume b == tmp_arg_0;
-  assume b == j;
+  assume [assume_0]: b == tmp_arg_0;
+  assume [assume_1]: b == j;
 };
 #end
 
@@ -113,11 +113,11 @@ procedure h() returns () spec {
   var tmp_b_2 : bool := b;
   var old_k_3 : bool := k;
   var old_j_4 : bool := j;
-  assert i == !tmp_arg_0;
+  assert [assert_0]: i == !tmp_arg_0;
   havoc b;
   havoc j;
-  assume b == (old_k_3 && old_j_4);
-  assume b == old_j_4;
+  assume [assume_0]: b == (old_k_3 && old_j_4);
+  assume [assume_1]: b == old_j_4;
 };
 #end
 
@@ -166,11 +166,11 @@ procedure h() returns () spec {
   var tmp_b_2 : bool := b;
   var old_k_3 : bool := k;
   var old_j_4 : bool := j;
-  assert i == !tmp_arg_0;
+  assert [assert_0]: i == !tmp_arg_0;
   havoc b;
   havoc j;
-  assume b == (old_k_3 && old_j_4);
-  assume b == old_j_4;
+  assume [assume_0]: b == (old_k_3 && old_j_4);
+  assume [assume_1]: b == old_j_4;
 };
 #end
 
@@ -221,8 +221,8 @@ def NondetTest1 : Stmt Expression (Cmd Expression) :=
 
 def NondetTest1Ans : NondetStmt Expression (Cmd Expression) :=
   .choice
-    (.seq (.cmd (.assert "true_cond" Boogie.true)) (.seq (.cmd $ .havoc "x") (.assume "skip" Imperative.HasBool.tt)))
-    (.seq (.cmd (.assert "false_cond" Boogie.false)) (.seq (.cmd $ .havoc "y") (.assume "skip" Imperative.HasBool.tt)))
+    (.seq (.cmd (.assume "true_cond" Boogie.true)) (.seq (.cmd $ .havoc "x") (.assume "skip" Imperative.HasBool.tt)))
+    (.seq (.cmd (.assume "false_cond" Boogie.false)) (.seq (.cmd $ .havoc "y") (.assume "skip" Imperative.HasBool.tt)))
 
 
 -- #eval toString $ Std.format (StmtToNondetStmt NondetTest1)

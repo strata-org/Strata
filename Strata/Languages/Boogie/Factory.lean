@@ -47,65 +47,40 @@ match ine with
     | .ite c t e => .ite (ToBoogieIdent c) (ToBoogieIdent t) (ToBoogieIdent e)
     | .eq e1 e2 => .eq (ToBoogieIdent e1) (ToBoogieIdent e2)
 
-/- Bv1 Arithmetic Operations -/
-def bv1AddFunc : LFunc BoogieIdent := binaryOp "Bv1.Add" mty[bv1] none
-def bv1SubFunc : LFunc BoogieIdent := binaryOp "Bv1.Sub" mty[bv1] none
-def bv1MulFunc : LFunc BoogieIdent := binaryOp "Bv1.Mul" mty[bv1] none
-def bv1NegFunc : LFunc BoogieIdent := unaryOp "Bv1.Neg" mty[bv1] none
+private def BVOpNames :=
+  ["Neg", "Add", "Sub", "Mul", "Div", "Mod",
+   "Not", "And", "Or", "Xor", "Shl", "UShr",
+   "Lt", "Le", "Gt", "Ge"]
 
-/- Bv1 Comparison Operations -/
-def bv1LtFunc : LFunc BoogieIdent := binaryPredicate "Bv1.Lt" mty[bv1] none
-def bv1LeFunc : LFunc BoogieIdent := binaryPredicate "Bv1.Le" mty[bv1] none
-def bv1GtFunc : LFunc BoogieIdent := binaryPredicate "Bv1.Gt" mty[bv1] none
-def bv1GeFunc : LFunc BoogieIdent := binaryPredicate "Bv1.Ge" mty[bv1] none
+private def BVCompNames := ["Lt", "Le", "Gt", "Ge"]
 
-/- Bv8 Arithmetic Operations -/
-def bv8AddFunc : LFunc BoogieIdent := binaryOp "Bv8.Add" mty[bv8] none
-def bv8SubFunc : LFunc BoogieIdent := binaryOp "Bv8.Sub" mty[bv8] none
-def bv8MulFunc : LFunc BoogieIdent := binaryOp "Bv8.Mul" mty[bv8] none
-def bv8NegFunc : LFunc BoogieIdent := unaryOp "Bv8.Neg" mty[bv8] none
+private def BVOpAritys := ["unaryOp", "binaryOp", "binaryOp", "binaryOp",
+                           "binaryOp", "binaryOp", "unaryOp", "binaryOp",
+                           "binaryOp", "binaryOp", "binaryOp", "binaryOp",
+                           "binaryPredicate", "binaryPredicate", "binaryPredicate", "binaryPredicate", ]
 
-/- Bv8 Comparison Operations -/
-def bv8LtFunc : LFunc BoogieIdent := binaryPredicate "Bv8.Lt" mty[bv8] none
-def bv8LeFunc : LFunc BoogieIdent := binaryPredicate "Bv8.Le" mty[bv8] none
-def bv8GtFunc : LFunc BoogieIdent := binaryPredicate "Bv8.Gt" mty[bv8] none
-def bv8GeFunc : LFunc BoogieIdent := binaryPredicate "Bv8.Ge" mty[bv8] none
+/--
+info: [("Neg", "unaryOp"), ("Add", "binaryOp"), ("Sub", "binaryOp"), ("Mul", "binaryOp"), ("Div", "binaryOp"),
+  ("Mod", "binaryOp"), ("Not", "unaryOp"), ("And", "binaryOp"), ("Or", "binaryOp"), ("Xor", "binaryOp"),
+  ("Shl", "binaryOp"), ("UShr", "binaryOp"), ("Lt", "binaryPredicate"), ("Le", "binaryPredicate"),
+  ("Gt", "binaryPredicate"), ("Ge", "binaryPredicate")]
+-/
+#guard_msgs in
+#eval List.zip (BVOpNames ++ BVCompNames) BVOpAritys
 
-/- Bv16 Arithmetic Operations -/
-def bv16AddFunc : LFunc BoogieIdent := binaryOp "Bv16.Add" mty[bv16] none
-def bv16SubFunc : LFunc BoogieIdent := binaryOp "Bv16.Sub" mty[bv16] none
-def bv16MulFunc : LFunc BoogieIdent := binaryOp "Bv16.Mul" mty[bv16] none
-def bv16NegFunc : LFunc BoogieIdent := unaryOp "Bv16.Neg" mty[bv16] none
+open Lean Elab Command in
+elab "ExpandBVOpFuncDefs" "[" sizes:num,* "]" : command => do
+  for size in sizes.getElems do
+    let s := size.getNat.repr
+    for (op, arity) in List.zip (BVOpNames ++ BVCompNames) BVOpAritys do
+      let funcName := mkIdent (.str .anonymous s!"bv{s}{op}Func")
+      let funcArity := mkIdent (.str (.str .anonymous "Lambda") arity)
+      let opName := Syntax.mkStrLit s!"Bv{s}.{op}"
+      let bvTypeName := Name.mkSimple s!"bv{s}"
+      elabCommand (← `(def $funcName : LFunc BoogieIdent := $funcArity $opName mty[$(mkIdent bvTypeName):ident] none))
 
-/- Bv16 Comparison Operations -/
-def bv16LtFunc : LFunc BoogieIdent := binaryPredicate "Bv16.Lt" mty[bv16] none
-def bv16LeFunc : LFunc BoogieIdent := binaryPredicate "Bv16.Le" mty[bv16] none
-def bv16GtFunc : LFunc BoogieIdent := binaryPredicate "Bv16.Gt" mty[bv16] none
-def bv16GeFunc : LFunc BoogieIdent := binaryPredicate "Bv16.Ge" mty[bv16] none
-
-/- Bv32 Arithmetic Operations -/
-def bv32AddFunc : LFunc BoogieIdent := binaryOp "Bv32.Add" mty[bv32] none
-def bv32SubFunc : LFunc BoogieIdent := binaryOp "Bv32.Sub" mty[bv32] none
-def bv32MulFunc : LFunc BoogieIdent := binaryOp "Bv32.Mul" mty[bv32] none
-def bv32NegFunc : LFunc BoogieIdent := unaryOp "Bv32.Neg" mty[bv32] none
-
-/- Bv32 Comparison Operations -/
-def bv32LtFunc : LFunc BoogieIdent := binaryPredicate "Bv32.Lt" mty[bv32] none
-def bv32LeFunc : LFunc BoogieIdent := binaryPredicate "Bv32.Le" mty[bv32] none
-def bv32GtFunc : LFunc BoogieIdent := binaryPredicate "Bv32.Gt" mty[bv32] none
-def bv32GeFunc : LFunc BoogieIdent := binaryPredicate "Bv32.Ge" mty[bv32] none
-
-/- Bv64 Arithmetic Operations -/
-def bv64AddFunc : LFunc BoogieIdent := binaryOp "Bv64.Add" mty[bv64] none
-def bv64SubFunc : LFunc BoogieIdent := binaryOp "Bv64.Sub" mty[bv64] none
-def bv64MulFunc : LFunc BoogieIdent := binaryOp "Bv64.Mul" mty[bv64] none
-def bv64NegFunc : LFunc BoogieIdent := unaryOp "Bv64.Neg" mty[bv64] none
-
-/- Bv64 Comparison Operations -/
-def bv64LtFunc : LFunc BoogieIdent := binaryPredicate "Bv64.Lt" mty[bv64] none
-def bv64LeFunc : LFunc BoogieIdent := binaryPredicate "Bv64.Le" mty[bv64] none
-def bv64GtFunc : LFunc BoogieIdent := binaryPredicate "Bv64.Gt" mty[bv64] none
-def bv64GeFunc : LFunc BoogieIdent := binaryPredicate "Bv64.Ge" mty[bv64] none
+-- def bv1AddOp : LExpr BoogieIdent := bv1AddFunc.opExpr
+ExpandBVOpFuncDefs[1, 2, 8, 16, 32, 64]
 
 /- Real Arithmetic Operations -/
 
@@ -127,17 +102,17 @@ def strLengthFunc : LFunc BoogieIdent :=
       typeArgs := [],
       inputs := [("x", mty[string])]
       output := mty[int],
-      denote := some (unOpDenote String Int LExpr.denoteString
-                        (fun s => (Int.ofNat (String.length s)))
-                        mty[int])}
+      concreteEval := some (unOpCeval String Int LExpr.denoteString
+                            (fun s => (Int.ofNat (String.length s)))
+                            mty[int])}
 
 def strConcatFunc : LFunc BoogieIdent :=
     { name := "Str.Concat",
       typeArgs := [],
       inputs := [("x", mty[string]), ("y", mty[string])]
       output := mty[string],
-      denote := some (binOpDenote String String LExpr.denoteString
-                       String.append mty[string])}
+      concreteEval := some (binOpCeval String String LExpr.denoteString
+                            String.append mty[string])}
 
 /- A polymorphic `old` function with type `∀a. a → a`. -/
 def polyOldFunc : LFunc BoogieIdent :=
@@ -161,7 +136,7 @@ def mapUpdateFunc : LFunc BoogieIdent :=
      output := mapTy mty[%k] mty[%v],
      axioms :=
      [
-      -- updateSelect
+      -- updateSelect: forall m: Map k v, kk: k, vv: v :: m[kk := vv][kk] == vv
       ToBoogieIdent esM[∀(Map %k %v):
           (∀ (%k):
             (∀ (%v):{
@@ -169,22 +144,25 @@ def mapUpdateFunc : LFunc BoogieIdent :=
                 ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %2) %1) %0)) %1)}
               (((~select : (Map %k %v) → %k → %v)
                 ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %2) %1) %0)) %1) == %0))],
-      -- update preserves
-      ToBoogieIdent esM[∀ (Map %k %v):
-          (∀ (%k):
-            (∀ (%k):
-              (∀ (%v):{
-                  (((~select : (Map %k %v) → %k → %v)
-                    ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %3) %1) %0)) %2)}
-                  (((~select : (Map %k %v) → %k → %v)
-                    ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %3) %1) %0)) %2)
-                  ==
-                  ((((~select : (Map %k %v) → %k → %v) %3) %2)))))]
+      -- updatePreserve: forall m: Map k v, okk: k, kk: k, vv: v :: okk != kk ==> m[kk := vv][okk] == m[okk]
+      ToBoogieIdent esM[∀ (Map %k %v): -- %3 m
+          (∀ (%k): -- %2 okk
+            (∀ (%k): -- %1 kk
+              (∀ (%v): -- %0 vv
+                  -- okk != kk ==> ...
+                  (if (%2 == %1) then
+                      #true
+                  else
+                    -- if keys are different, the value of the other key one remains unchanged
+                    -- (select (update m kk vv) okk) ==  (select m okk)
+                    ((((~select : (Map %k %v) → %k → %v)
+                        ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %3) %1) %0)
+                      ) %2)
+                    ==
+                    ((((~select : (Map %k %v) → %k → %v) %3) %2)))
+                    ))))]
      ]
    }
-
-
-private def BVOpNames := ["Add", "Sub", "Mul", "Neg", "Lt", "Le", "Gt", "Ge"]
 
 open Lean in
 macro "ExpandBVOpFuncNames" "[" sizes:num,* "]" : term => do
