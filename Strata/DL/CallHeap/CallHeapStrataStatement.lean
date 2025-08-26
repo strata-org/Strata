@@ -1,4 +1,10 @@
 /-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
+/-
 CallHeap Strata Statement: Generic statements combining Call and Heap dialects in Strata
 -/
 

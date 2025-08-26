@@ -1,4 +1,10 @@
 /-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
+/-
 CallHeap Evaluator: Generic evaluator for CallHeap statements in Strata
 Adapted from the MIDI HeapMidiEval but with Call dialect separated
 -/

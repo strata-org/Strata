@@ -1,3 +1,9 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
 import Strata.Languages.TypeScript.js_ast
 import Strata.Languages.TypeScript.TSStrataStatement
 -- import Strata.Languages.TypeScript.TSFunction  -- Commented out until function architecture is ready
