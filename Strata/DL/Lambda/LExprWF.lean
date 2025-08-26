@@ -323,7 +323,7 @@ def substFvar {Identifier: Type} [DecidableEq Identifier] (e : LExpr LMonoTy Ide
   | .fvar  name _ => if name == fr then to else e
   | .mdata info e' => .mdata info (substFvar e' fr to)
   | .abs   ty e' => .abs ty (substFvar e' fr to)
-  | .quant qk ty tr e' => .quant qk ty tr (substFvar e' fr to)
+  | .quant qk ty tr' e' => .quant qk ty (substFvar tr' fr to) (substFvar e' fr to)
   | .app   fn e' => .app (substFvar fn fr to) (substFvar e' fr to)
   | .ite   c t e' => .ite (substFvar c fr to) (substFvar t fr to) (substFvar e' fr to)
   | .eq    e1 e2 => .eq (substFvar e1 fr to) (substFvar e2 fr to)

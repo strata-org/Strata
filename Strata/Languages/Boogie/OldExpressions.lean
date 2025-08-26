@@ -257,7 +257,8 @@ inductive NormalizedOldExpr : Expression.Expr → Prop where
   | fvar :   NormalizedOldExpr (.fvar _ _)
   | abs :    NormalizedOldExpr e →
              NormalizedOldExpr (.abs ty e)
-  | quant :  NormalizedOldExpr e →
+  | quant :  NormalizedOldExpr tr →
+             NormalizedOldExpr e →
              NormalizedOldExpr (.quant k ty tr e)
   | app :    NormalizedOldExpr fn →
              NormalizedOldExpr e →
@@ -280,7 +281,7 @@ inductive ValidExpression : Expression.Expr → Prop where
   | fvar :   ValidExpression (.fvar _ _)
   | abs :    ValidExpression e →
              ValidExpression (.abs ty e)
-  | quant :  ValidExpression e →
+  | quant :  ValidExpression tr → ValidExpression e →
              ValidExpression (.quant k ty tr e)
   | app :    ValidExpression fn →
              ValidExpression e →
@@ -427,10 +428,15 @@ case abs ty e e_ih =>
   apply e_ih
   . cases Hval <;> assumption
   . cases Hnorm <;> assumption
-case quant k ty e e_ih =>
-  apply e_ih
-  . cases Hval <;> assumption
-  . cases Hnorm <;> assumption
+case quant k ty tr e tr_ih e_ih =>
+  . apply tr_ih
+    . cases Hval <;> assumption
+    . cases Hnorm <;> assumption
+case quant k ty tr e tr_ih e_ih =>
+  . apply e_ih
+    . cases Hval <;> assumption
+    . cases Hnorm <;> assumption
+
 case app fn e fn_ih e_ih =>
   unfold normalizeOldExpr
   split <;> simp_all
@@ -555,10 +561,10 @@ theorem normalizeOldExprSound :
     constructor
     apply e_ih
     cases Hvalid <;> assumption
-  case quant k ty e e_ih =>
+  case quant k ty tr e tr_ih e_ih =>
     constructor
-    apply e_ih
-    cases Hvalid <;> assumption
+    apply tr_ih <;> cases Hvalid <;> assumption
+    apply e_ih <;> cases Hvalid <;> assumption
   case ite c t e c_ih t_ih e_ih =>
     cases Hvalid
     constructor
@@ -603,11 +609,11 @@ case abs ty e e_ih =>
   apply e_ih
   cases Hnorm
   assumption
-case quant k ty e e_ih =>
+case quant k ty tr e tr_ih e_ih =>
   constructor
-  apply e_ih
-  cases Hnorm
-  assumption
+  apply tr_ih <;> cases Hnorm <;> assumption
+  apply e_ih <;> cases Hnorm <;> assumption
+
 case app =>
   split
   split <;> simp_all
