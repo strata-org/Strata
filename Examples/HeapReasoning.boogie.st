@@ -72,8 +72,8 @@ procedure Container_ctor(heap: Heap, r: Ref, initialLychee: int, initialPineappl
 spec {
   // Refs are allocated
   free requires tickingClock >= 0;
-  free requires allocationTime(r) < tickingClock;
-  free requires allocationTime(initialNext) < tickingClock;
+  requires allocationTime(r) < tickingClock;
+  requires allocationTime(initialNext) < tickingClock;
   requires isContainer(r);
 
   free ensures (forall o: Ref :: 
@@ -124,8 +124,8 @@ procedure UpdateContainers(heap: Heap, ref1: Ref, ref2: Ref) returns (newHeap: H
 spec {
   // Refs are allocated
   free requires tickingClock >= 0;
-  free requires allocationTime(ref1) < tickingClock;
-  free requires allocationTime(ref2) < tickingClock;
+  requires allocationTime(ref1) < tickingClock;
+  requires allocationTime(ref2) < tickingClock;
 
   requires isContainer(ref1);
   requires isContainer(ref2);

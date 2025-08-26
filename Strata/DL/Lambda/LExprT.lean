@@ -299,7 +299,7 @@ partial def inferOp (T : (TEnv Identifier)) (o : Identifier) (oty : Option LMono
         match func.body with
         | none => .ok T
         | some body =>
-          if body.freeVars.keys.all (fun k => k ∈ func.inputs.keys) then
+          if body.freeVars.idents.all (fun k => k ∈ func.inputs.keys) then
             -- Temporarily add formals in the context.
             let T := T.pushEmptyContext
             let T := T.addToContext func.inputPolyTypes

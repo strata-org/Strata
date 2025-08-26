@@ -207,10 +207,10 @@ inductive EvalCommand : (String → Option Procedure)  → BoogieEval → Boogie
     -- Note: this puts caller and callee names in the same store. If the program is type correct, however,
     -- this can't change semantics. Caller names that aren't visible to the callee won't be used. Caller
     -- names that overlap with callee names will be replaced.
-    InitStates σ (Map.keys (p.header.inputs)) vals σA →
+    InitStates σ (ListMap.keys (p.header.inputs)) vals σA →
 
     -- need to initialize to the values of lhs, due to output variables possibly occuring in preconditions
-    InitStates σA (Map.keys (p.header.outputs)) oVals σAO →
+    InitStates σA (ListMap.keys (p.header.outputs)) oVals σAO →
 
     -- Preconditions, if any, must be satisfied for execution to continue.
     (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
@@ -222,7 +222,7 @@ inductive EvalCommand : (String → Option Procedure)  → BoogieEval → Boogie
       isDefinedOver (HasVarsPure.getVars) σAO post ∧
       δP σAO σR post = .some true) →
 
-    ReadValues σR (Map.keys (p.header.outputs) ++ p.spec.modifies) modvals →
+    ReadValues σR (ListMap.keys (p.header.outputs) ++ p.spec.modifies) modvals →
     UpdateStates σ (lhs ++ p.spec.modifies) modvals σ' →
     ----
     EvalCommand π δ δP σ₀ σ (CmdExt.call lhs n args) σ'
@@ -256,22 +256,22 @@ inductive EvalCommandContract : (String → Option Procedure)  → BoogieEval �
     -- Note: this puts caller and callee names in the same store. If the program is type correct, however,
     -- this can't change semantics. Caller names that aren't visible to the callee won't be used. Caller
     -- names that overlap with callee names will be replaced.
-    InitStates σ (Map.keys (p.header.inputs)) vals σA →
+    InitStates σ (ListMap.keys (p.header.inputs)) vals σA →
 
     -- need to initialize to the values of lhs, due to output variables possibly occuring in preconditions
-    InitStates σA (Map.keys (p.header.outputs)) oVals σAO →
+    InitStates σA (ListMap.keys (p.header.outputs)) oVals σAO →
 
     -- Preconditions, if any, must be satisfied for execution to continue.
     (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
       isDefinedOver (HasVarsPure.getVars) σAO pre ∧
       δP σAO σAO pre = .some true) →
-    HavocVars σAO (Map.keys p.header.outputs) σO →
+    HavocVars σAO (ListMap.keys p.header.outputs) σO →
     HavocVars σO p.spec.modifies σR →
     -- Postconditions, if any, must be satisfied for execution to continue.
     (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
       isDefinedOver (HasVarsPure.getVars) σAO post ∧
       δP σO σR post = .some true) →
-    ReadValues σR (Map.keys (p.header.outputs) ++ p.spec.modifies) modvals →
+    ReadValues σR (ListMap.keys (p.header.outputs) ++ p.spec.modifies) modvals →
     UpdateStates σ (lhs ++ p.spec.modifies) modvals σ' →
     ----
     EvalCommandContract π δ δP σ₀ σ (.call lhs n args) σ'

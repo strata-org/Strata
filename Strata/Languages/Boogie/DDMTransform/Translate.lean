@@ -340,7 +340,7 @@ def translateMonoBindMk (bindings : TransBindings) (arg : Arg) :
     TransM.error s!"translateMonoBindMk unimplemented for {repr arg}"
 
 partial def translateDeclList (bindings : TransBindings) (arg : Arg) :
-  TransM (Map Expression.Ident LTy) := do
+  TransM (ListMap Expression.Ident LTy) := do
   let .op op := arg
     | TransM.error s!"translateDeclList expects an op {repr arg}"
   match op.name with
@@ -353,12 +353,12 @@ partial def translateDeclList (bindings : TransBindings) (arg : Arg) :
     let args ← checkOpArg arg q`Boogie.declPush 2
     let fst ← translateDeclList bindings args[0]!
     let (id, targs, mty) ← translateBindMk bindings args[1]!
-    let lty := .forAll targs mty
-    pure (fst ++ [(id, lty)])
+    let lty : LTy := .forAll targs mty
+    pure (fst ++ ListMap.ofList [(id, lty)])
   | _ => TransM.error s!"translateDeclList unimplemented for {repr op}"
 
 partial def translateMonoDeclList (bindings : TransBindings) (arg : Arg) :
-  TransM (Map Expression.Ident LMonoTy) := do
+  TransM (ListMap Expression.Ident LMonoTy) := do
   let .op op := arg
     | TransM.error s!"translateMonoDeclList expects an op {repr arg}"
   match op.name with
@@ -370,11 +370,11 @@ partial def translateMonoDeclList (bindings : TransBindings) (arg : Arg) :
     let args ← checkOpArg arg q`Boogie.monoDeclPush 2
     let fst ← translateMonoDeclList bindings args[0]!
     let (id, mty) ← translateMonoBindMk bindings args[1]!
-    pure (fst ++ [(id, mty)])
+    pure (fst ++ ListMap.ofList [(id, mty)])
   | _ => TransM.error s!"translateMonoDeclList unimplemented for {repr op}"
 
 def translateOptionMonoDeclList (bindings : TransBindings) (arg : Arg) :
-  TransM (Map Expression.Ident LMonoTy) :=
+  TransM (ListMap Expression.Ident LMonoTy) :=
   translateOption
     (fun maybedecls => do match maybedecls with
         | none => return []
@@ -728,7 +728,7 @@ def translateInvariant (p : Program) (bindings : TransBindings) (arg : Arg) : Tr
     translateExpr p bindings args[0]!
   | _ => pure none
 
-def initVarStmts (tpids : Map Expression.Ident LTy) (bindings : TransBindings) :
+def initVarStmts (tpids : ListMap Expression.Ident LTy) (bindings : TransBindings) :
   TransM ((List Boogie.Statement) × TransBindings) := do
   match tpids with
   | [] => return ([], bindings)
@@ -860,7 +860,7 @@ def translateInitMkBindings (bindings : TransBindings) (ops : Array Arg) :
   ops.mapM (fun op => translateInitMkBinding bindings op)
 
 def translateBindings (bindings : TransBindings) (op : Arg) :
-  TransM (Map BoogieIdent LMonoTy) := do
+  TransM (ListMap BoogieIdent LMonoTy) := do
   let bargs ← checkOpArg op q`Boogie.mkBindings 1
   match bargs[0]! with
   | .commaSepList args =>
@@ -883,7 +883,7 @@ def translateOptionFree (arg : Arg) : TransM Procedure.CheckAttr := do
   | none => return .Default
 
 def translateRequires (p : Program) (name : BoogieIdent) (count : Nat) (bindings : TransBindings) (arg : Arg) :
-  TransM (Map BoogieLabel Procedure.Check) := do
+  TransM (ListMap BoogieLabel Procedure.Check) := do
   let args ← checkOpArg arg q`Boogie.requires_spec 3
   let l ← translateOptionLabel s!"{name.2}_requires_{count}" args[0]!
   let free? ← translateOptionFree args[1]!
@@ -891,7 +891,7 @@ def translateRequires (p : Program) (name : BoogieIdent) (count : Nat) (bindings
   return [(l, { expr := e, attr := free? })]
 
 def translateEnsures (p : Program) (name : BoogieIdent) (count : Nat) (bindings : TransBindings) (arg : Arg) :
-  TransM (Map BoogieLabel Procedure.Check) := do
+  TransM (ListMap BoogieLabel Procedure.Check) := do
   let args ← checkOpArg arg q`Boogie.ensures_spec 3
   let l ← translateOptionLabel s!"{name.2}_ensures_{count}" args[0]!
   let free? ← translateOptionFree args[1]!
@@ -899,7 +899,7 @@ def translateEnsures (p : Program) (name : BoogieIdent) (count : Nat) (bindings 
   return [(l, { expr := e, attr := free? })]
 
 def translateSpecElem (p : Program) (name : BoogieIdent) (count : Nat) (bindings : TransBindings) (arg : Arg) :
-  TransM (List BoogieIdent × Map BoogieLabel Procedure.Check × Map BoogieLabel Procedure.Check) := do
+  TransM (List BoogieIdent × ListMap BoogieLabel Procedure.Check × ListMap BoogieLabel Procedure.Check) := do
   let .op op := arg
     | TransM.error s!"translateSpecElem expects an op {repr arg}"
   match op.name with
@@ -916,7 +916,7 @@ def translateSpecElem (p : Program) (name : BoogieIdent) (count : Nat) (bindings
     TransM.error s!"translateSpecElem unimplemented for {repr arg}"
 
 partial def translateSpec (p : Program) (name : BoogieIdent) (bindings : TransBindings) (arg : Arg) :
-  TransM (List BoogieIdent × Map BoogieLabel Procedure.Check × Map BoogieLabel Procedure.Check) := do
+  TransM (List BoogieIdent × ListMap BoogieLabel Procedure.Check × ListMap BoogieLabel Procedure.Check) := do
   let sargs ← checkOpArg arg q`Boogie.spec_mk 1
   let .seq args := sargs[0]!
     | TransM.error s!"Invalid specs {repr sargs[0]!}"

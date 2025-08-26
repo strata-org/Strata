@@ -373,7 +373,6 @@ metadata scope(name : Ident);
 metadata declare(name : Ident, type : TypeOrCat);
 -- Declares a new variable in the resulting scope with metadata determined
 -- by an argument.
-metadata declareMD(name : Ident, type : TypeOrCat, metadata : Ident);
 ```
 
 As an example, Boogie variable declaration syntax can be defined in Strata using the

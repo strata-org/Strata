@@ -55,7 +55,7 @@ def toJson : Ion String → Lean.Json
 | .string s => .str s
 | .symbol s => .str s
 | .struct a => .obj <| a.attach.foldl (init := {}) fun m ⟨(nm, v), _⟩ =>
-  m.insert compare nm v.toJson
+  m.insert nm v.toJson
 | .sexp l | .list l => .arr <| l.map (·.toJson)
 | .annotation _ v => v.toJson
   termination_by t => t
@@ -72,7 +72,7 @@ partial def ofJson : Lean.Json → Ion String
 | .bool b => .bool b
 | .num n => .decimal <| .ofJsonNumber n
 | .str s => .string s
-| .obj m => .struct <| m.fold (init := #[]) fun a nm v => a.push (nm, .ofJson v)
+| .obj m => .struct <| m.foldl (init := #[]) fun a nm v => a.push (nm, .ofJson v)
 | .arr a => .list <| a.map fun v => .ofJson v
 
 end Ion

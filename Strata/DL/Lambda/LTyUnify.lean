@@ -149,7 +149,8 @@ def LMonoTys.substLogic (S : Subst) (mtys : LMonoTys) : LMonoTys :=
 theorem LMonoTys.subst_eq_substLogic (S : Subst) (mtys : LMonoTys) :
     LMonoTys.subst S mtys = LMonoTys.substLogic S mtys := by
   simp [LMonoTys.subst]
-  suffices h : ∀ acc, LMonoTys.subst.substAux S mtys acc = acc.reverse ++ LMonoTys.substLogic S mtys by
+  suffices h : ∀ acc, LMonoTys.subst.substAux S mtys acc =
+                      acc.reverse ++ LMonoTys.substLogic S mtys by
     have := h []
     simp at this
     exact this
@@ -252,7 +253,7 @@ Apply the `new` substitution to the `old` one.
 def Subst.apply (new : Subst) (old : Subst) : Subst :=
   applyAux new old []
 where
-  applyAux new old acc : Subst :=
+  applyAux (new old acc : Subst) : Subst :=
   match old with
   | [] => acc.reverse
   | (id, lty) :: rest =>
@@ -270,7 +271,9 @@ def Subst.applyLogic (new : Subst) (old : Subst) : Subst :=
 theorem Subst.apply_eq_applyLogic (new old : Subst) :
     Subst.apply new old = Subst.applyLogic new old := by
   simp [Subst.apply]
-  suffices h : ∀ acc, Subst.apply.applyAux new old acc = acc.reverse ++ Subst.applyLogic new old by
+  suffices h : ∀ acc, Subst.apply.applyAux new old acc =
+                  @HAppend.hAppend Subst Subst Subst _
+                    acc.reverse (Subst.applyLogic new old) by
     have := h []
     simp at this
     exact this
@@ -278,10 +281,13 @@ theorem Subst.apply_eq_applyLogic (new old : Subst) :
   induction old generalizing acc with
   | nil =>
     simp [Subst.applyLogic, apply.applyAux]
+    unfold HAppend.hAppend instHAppendMap
+    simp_all
   | cons mty mrest ih =>
     simp [Subst.apply.applyAux, Subst.applyLogic]
-    rw [ih]
-    simp
+    rw [ih]; simp
+    unfold HAppend.hAppend instHAppendMap instHAppendOfAppend Append.append List.instAppend
+    simp_all
     done
 
 @[simp]

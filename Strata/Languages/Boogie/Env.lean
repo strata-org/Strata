@@ -20,7 +20,7 @@ def PathCondition.format (p : PathCondition Expression) : Format :=
   | [] => ""
   | [(k, v)] => f!"({k}, {v.eraseTypes})"
   | (k, v) :: rest =>
-    (f!"({k}, {v.eraseTypes}){Format.line}") ++ Map.format' rest
+    (f!"({k}, {v.eraseTypes}){Format.line}") ++ ListMap.format' rest
 
 def PathConditions.format (ps : PathConditions Expression) : Format :=
   match ps with
@@ -54,7 +54,7 @@ instance : ToFormat (ProofObligation Expression) where
     let assumptions := PathConditions.format o.assumptions
     f!"Label: {o.label}{Format.line}\
        Assumptions:{Format.line}{assumptions}\
-       Proof Obligation:{Format.line}{o.obligation}{Format.line}"
+       Proof Obligation:{Format.line}{format o.obligation}{Format.line}"
 
 instance : ToFormat (ProofObligations Expression) where
   format os := Std.Format.joinSep (Array.map format os).toList Format.line
@@ -76,7 +76,7 @@ def ProofObligation.create
 
 def ProofObligations.create
   (assumptions : PathConditions Expression)
-  (obligations : Map String Procedure.Check) (md : MetaData Expression := #[])
+  (obligations : ListMap String Procedure.Check) (md : MetaData Expression := #[])
   : ProofObligations Expression :=
   match obligations with
   | [] => #[]
@@ -121,7 +121,7 @@ instance : ToFormat Env where
     format f!"Error:{Format.line}{error}{Format.line}\
               Subst Map:{Format.line}{substMap}{Format.line}\
               Expression Env:{Format.line}{exprEnv}{Format.line}\
-              Path Conditions:{Format.line}{pathConditions}{Format.line}{Format.line}\
+              Path Conditions:{Format.line}{PathConditions.format pathConditions}{Format.line}{Format.line}\
               Deferred Proof Obligations:{Format.line}{deferred}{Format.line}"
 
 /--

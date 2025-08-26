@@ -60,7 +60,6 @@ all have the same type and metadata.
 structure Binding where
   ident : Var
   kind : BindingKind
-  metadata : Metadata := .empty
 deriving Inhabited, Repr, BEq
 
 /--

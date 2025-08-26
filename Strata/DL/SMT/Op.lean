@@ -111,7 +111,7 @@ inductive Op : Type where
   | str_length
   | str_concat
   ---------- Core ADT operators with a trusted mapping to SMT ----------
-  | option.get
+  | option_get
 deriving Repr, DecidableEq, Inhabited, Hashable
 
 
@@ -159,7 +159,7 @@ def Op.mkName : Op → String
   | .zero_extend _ => "zero_extend"
   | .str_length    => "str.len"
   | .str_concat    => "str.++"
-  | .option.get    => "option.get"
+  | .option_get    => "option.get"
 
 def Op.LT : Op → Op → Bool
   | .uf f₁, uf f₂                    => f₁ < f₂

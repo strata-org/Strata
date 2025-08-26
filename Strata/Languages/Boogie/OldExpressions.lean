@@ -149,7 +149,7 @@ def normalizeOldExprs (sm : List Expression.Expr) :=
 def normalizeOldCheck (c : Procedure.Check) : Procedure.Check :=
   { expr := normalizeOldExpr c.expr, attr := c.attr }
 
-def normalizeOldChecks (c : Map String Procedure.Check) : Map String Procedure.Check :=
+def normalizeOldChecks (c : ListMap String Procedure.Check) : ListMap String Procedure.Check :=
   c.map (λ p ↦ (p.fst, normalizeOldCheck p.snd))
 
 /--
@@ -268,8 +268,8 @@ protected def substsOldInProcChecks (sm : Map Expression.Ident Expression.Expr)
 
 
 protected def substsOldChecks (sm : Map Expression.Ident Expression.Expr)
-  (conds : Map String Procedure.Check) :
-  Map Expression.Ident Procedure.Check :=
+  (conds : ListMap String Procedure.Check) :
+  ListMap Expression.Ident Procedure.Check :=
   conds.map (fun (label, c) =>
                  (label, { expr := substsOldExpr sm c.expr, attr := c.attr }))
 
