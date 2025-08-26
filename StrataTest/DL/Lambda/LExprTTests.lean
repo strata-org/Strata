@@ -175,9 +175,9 @@ Known Types: [∀[0, 1]. (arrow 0 1), bool, int, string]
                     { (@TEnv.default String)
                     with functions := testIntFns,
                                           context :=
-                                          { aliases := [{args := [],
-                                                         lhs := mty[myInt],
-                                                         rhs := mty[int]}]} }
+                                          { aliases := [{typeArgs := [],
+                                                         name := "myInt",
+                                                         type := mty[int]}]} }
                              esM[((~SynonymTest #20) #30)]
          return (format $ ans.fst.toLMonoTy)
 

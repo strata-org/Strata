@@ -75,31 +75,8 @@ def typeCheck (T : Boogie.Expression.TyEnv) (program : Program) :
             let T := T.addKnownType { name := tc.name, arity := tc.numargs }
             .ok (.type td, T)
           | .syn ts =>
-            if !ts.typeArgs.Nodup then
-              .error f!"[Type Synonym] Duplicates found in the type arguments!\n\
-                        {decl}"
-            else if !((ts.type.freeVars ⊆ ts.typeArgs) &&
-                      (ts.toLHSLTy.freeVars ⊆ ts.typeArgs)) then
-              .error f!"[Type Synonym] Type definition contains free type arguments!\n\
-                        {decl}"
-            else
-              let (mtys, T) := Lambda.LMonoTys.instantiate ts.typeArgs [ts.toLHSLMonoTy, ts.type] T
-              match mtys with
-              | [lhs, rhs] =>
-                let newTyArgs := lhs.freeVars
-                -- We expect `ts.type` to be a known, legal type, hence the use of
-                -- `instantiateWithCheck` below. Note that we only store type
-                -- declarations -- not synonyms -- as values in the alias table;
-                -- i.e., we don't store a type alias mapped to another type alias.
-                let (rhsmty, _) ← (Lambda.LTy.forAll [] rhs).instantiateWithCheck T
-                let new_aliases := { args := newTyArgs,
-                                     lhs := lhs,
-                                     rhs := rhsmty } :: T.context.aliases
-                let context := { T.context with aliases := new_aliases }
-                let T := { T with context := context }
-                .ok (.type td, T)
-              | _ => .error f!"[Type Synonym] Implementation error! \n\
-                               {decl}"
+            let T ← TEnv.addTypeAlias { typeArgs := ts.typeArgs, name := ts.name, type := ts.type } T
+            .ok (.type td, T)
 
       | .ax a _ =>
         let (ae, T) ← LExprT.fromLExpr T a.e

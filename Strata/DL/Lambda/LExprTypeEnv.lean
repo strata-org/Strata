@@ -23,16 +23,33 @@ open LExpr
 
 ---------------------------------------------------------------------
 
+/--
+A type alias is syntactic sugar for a type definition. E.g.,
+`∀α. FooAlias α := Foo α` is represented in `TypeAlias` as follows; note that
+`α` is common to both the alias and its definition.
+```
+{
+  name := "FooAlias"
+  typeArgs := ["α"]
+  type := LMonoTy.tcons "Foo" [.ftvar "α"]
+}
+```
+
+IMPORTANT: we expect the type definition to not be an alias itself, to avoid any
+cycles. See function `TEnv.addTypeAlias` for a canonical way of adding
+well-formed type aliases to the context.
+-/
 structure TypeAlias where
-  args : List TyIdentifier
-  lhs  : LMonoTy
-  rhs  : LMonoTy
-  deriving DecidableEq, Repr
+  name : String
+  typeArgs : List TyIdentifier
+  type : LMonoTy
+  deriving DecidableEq, Repr, Inhabited
+
+def TypeAlias.toAliasLTy (a : TypeAlias) : LTy :=
+  .forAll a.typeArgs (.tcons a.name (a.typeArgs.map (fun i => .ftvar i)))
 
 instance : ToFormat TypeAlias where
-  format a :=
-    let pfx := if a.args.isEmpty then f!"" else f!"∀{Std.Format.joinSep a.args " "}."
-    f!"{pfx}{a.lhs} := {a.rhs}"
+  format t := f!"{t.toAliasLTy} := {t.type}"
 
 variable {Identifier : Type} [DecidableEq Identifier] [ToFormat Identifier]
 
@@ -44,7 +61,7 @@ their type schemes. This is essentially a stack to account for variable scopes.
 
 The `aliases` field maps type synonyms to their corresponding type definitions.
 We expect these type definitions to not be aliases themselves, to avoid any
-cycles in the map.
+cycles in the map (see `TEnv.addTypeAlias`).
 -/
 structure TContext (Identifier : Type) where
   types   :  Maps Identifier LTy := []
@@ -64,14 +81,6 @@ def TContext.knownVars (ctx : (TContext Identifier)) : List Identifier :=
   where go types :=
   match types with
   | [] => [] | m :: rest => m.keys ++ go rest
-
-/--
-Get all non-global variables in `ctx`, i.e., those that are not in the oldest
-context.
--/
-def TContext.nonGlobalVars (ctx : (TContext Identifier)) : List Identifier :=
-  let nonglobals := ctx.types.dropOldest
-  TContext.knownVars.go nonglobals
 
 def TContext.types.knownTypeVars (types : Maps Identifier LTy) : List TyIdentifier :=
   match types with
@@ -115,21 +124,11 @@ def TContext.types.subst (types : Maps Identifier LTy) (S : Subst) :
     | (x, ty) :: mrest =>
       (x, LTy.subst S ty) :: go mrest
 
-def TContext.aliases.subst (aliases : List TypeAlias) (S : Subst) :
-  List TypeAlias :=
-  match aliases with
-  | [] => []
-  | { args, lhs, rhs} :: arest =>
-    let lhs := (LTy.forAll args lhs).subst S |>.toMonoTypeUnsafe
-    let rhs := (LTy.forAll args rhs).subst S |>.toMonoTypeUnsafe
-    {args, lhs, rhs} :: aliases.subst arest S
-
 /--
 Apply a substitution `S` to the context.
 -/
 def TContext.subst (T : TContext Identifier) (S : Subst) : TContext Identifier :=
-  { T with types := types.subst T.types S,
-           aliases := aliases.subst T.aliases S }
+  { T with types := types.subst T.types S }
 
 ---------------------------------------------------------------------
 
@@ -404,11 +403,15 @@ def LTy.instantiate (ty : LTy) (T : (TEnv Identifier)) : LMonoTy × (TEnv Identi
     let S := List.zip xs (List.map (fun tv => (.ftvar tv)) freshtvs)
     (LMonoTy.subst S lty', T)
 
+instance : Inhabited (Option LMonoTy × TEnv Identifier) where
+  default := (none, TEnv.default)
+
 /--
-Return the definition of `ty` if it is a type alias registered in the typing
-environment `T`. This function does not descend into the subtrees of `mty`.
+Return the instantiated definition of `ty` if it is a type alias registered in
+the typing environment `T`. This function does not descend into the subtrees of
+`mty`.
 -/
-def LMonoTy.aliasDef? (mty : LMonoTy) (T : (TEnv Identifier)) : (Option LMonoTy × (TEnv Identifier)) :=
+def LMonoTy.aliasDef? (mty : LMonoTy) (T : (TEnv Identifier)) : (Option LMonoTy × TEnv Identifier) :=
   match mty with
   | .ftvar _ =>
     -- We can't have a free variable be the LHS of an alias definition because
@@ -417,38 +420,35 @@ def LMonoTy.aliasDef? (mty : LMonoTy) (T : (TEnv Identifier)) : (Option LMonoTy 
   | .bitvec _ =>
     -- A bitvector cannot be a type alias.
     (none, T)
-  | .tcons _ _ => go mty T.context.aliases T
-  where go (mty : LMonoTy) (aliases : List TypeAlias) (T : (TEnv Identifier)) :=
-  match aliases with
-  | [] => (none, T)
-  | { args, lhs, rhs } :: arest =>
-    let (mtys, T) := LMonoTys.instantiate args [lhs, rhs] T
-    match mtys with
-    | [lhsty, rhsty] =>
-      match Constraints.unify [(mty, lhsty)] T.state.substInfo with
-      | .error _ => go mty arest T
-      | .ok S => (rhsty.subst S.subst, T)
-    | _ =>
-      -- panic s!"[LTy.aliasBaseDef?] Implementation error!"
-      -- (FIXME) Prove that the following is unreachable.
-      (none, T)
+  | .tcons name args =>
+    match T.context.aliases.find? (fun a => a.name == name && a.typeArgs.length == args.length) with
+    | none => (none, T)
+    | some alias =>
+      let (lst, T) := LMonoTys.instantiate alias.typeArgs [(.tcons name (alias.typeArgs.map (fun a => .ftvar a))), alias.type] T
+      -- (FIXME): Use `LMonoTys.instantiate_length` to remove the `!` below.
+      let alias_inst := lst[0]!
+      let alias_def := lst[1]!
+      match Constraints.unify [(mty, alias_inst)] T.state.substInfo with
+      | .error e =>
+        panic! s!"[LMonoTy.aliasDef?] {e}"
+      | .ok S => (alias_def.subst S.subst, T)
 
 /-- info: none -/
 #guard_msgs in
 open LTy.Syntax in
 #eval LMonoTy.aliasDef? mty[%__ty0] { @TEnv.default String with
-              context := { aliases := [{ args := ["x", "y"],
-                                          lhs := mty[myInt %x %y],
-                                          rhs := mty[int] }] }}
+              context := { aliases := [{ typeArgs := ["x", "y"],
+                                         name := "myInt",
+                                         type := mty[int] }] }}
       |>.fst |>.format
 
 /-- info: some int -/
 #guard_msgs in
 open LTy.Syntax in
 #eval LMonoTy.aliasDef? mty[myInt] { @TEnv.default String with
-          context := { aliases := [{ args := [],
-                                      lhs := mty[myInt],
-                                      rhs := mty[int]}]} }
+          context := { aliases := [{ typeArgs := [],
+                                     name := "myInt",
+                                     type := mty[int]}]} }
       |>.fst |>.format
 
 /-- info: some bool -/
@@ -457,9 +457,9 @@ open LTy.Syntax in
 #eval LMonoTy.aliasDef?
         mty[FooAlias %p %q]
         { @TEnv.default String with
-          context := { aliases := [{ args := ["x", "y"],
-                                      lhs := mty[FooAlias %x %y],
-                                      rhs := mty[bool]}]} }
+          context := { aliases := [{ typeArgs := ["x", "y"],
+                                     name := "FooAlias",
+                                     type := mty[bool]}]} }
       |>.fst |>.format
 
 /-- info: none -/
@@ -467,9 +467,9 @@ open LTy.Syntax in
 open LTy.Syntax in
 #eval LMonoTy.aliasDef? mty[myInt]
                     { @TEnv.default String with context := { aliases := [{
-                        args := ["a"],
-                         lhs := mty[myInt %a],
-                         rhs := mty[int]}] } }
+                         typeArgs := ["a"],
+                         name := "myInt",
+                         type := mty[int]}] } }
       |>.fst |>.format
 
 /-- info: some (myTy int) -/
@@ -479,9 +479,9 @@ open LTy.Syntax in
                     { @TEnv.default String with
                     context := {
                       aliases := [{
-                        args := ["a", "b"],
-                        lhs := mty[myInt %a %b],
-                        rhs := mty[myTy %a]}] },
+                        typeArgs := ["a", "b"],
+                        name := "myInt",
+                        type := mty[myTy %a]}] },
                       knownTypes := [{ name := "myTy", arity := 1 },
                                      { name := "int", arity := 0 }] }
       |>.fst |>.format
@@ -533,9 +533,9 @@ open LTy.Syntax in
 #eval LTy.resolveAliases
         t[∀x. (FooAlias %x %x) → %x]
         { @TEnv.default String with context := { aliases := [{
-                                        args := ["x", "y"],
-                                        lhs := mty[FooAlias %x %y],
-                                        rhs := mty[bool]}]} }
+                                        typeArgs := ["x", "y"],
+                                        name := "FooAlias",
+                                        type := mty[bool]}]} }
       |>.fst |>.format
 
 mutual
@@ -681,9 +681,9 @@ info: ok: (x : $__ty0) (y : int) (z : $__ty0)
 open LTy.Syntax in
 #eval do let ans ← (LMonoTySignature.instantiate
                     { @TEnv.default TyIdentifier with context :=
-                                          { aliases := [{ args := ["a", "b"],
-                                                          lhs := mty[myInt %a %b],
-                                                          rhs := mty[int]}] }}
+                                          { aliases := [{ typeArgs := ["a", "b"],
+                                                          name := "myInt",
+                                                          type := mty[int]}] }}
                     ["a", "b"]
                     [("x", mty[%a]), ("y", mty[myInt %a %b]), ("z", mty[%a])])
          return Signature.format ans.fst
@@ -724,6 +724,41 @@ def TEnv.addInOldestContext (fvs : (IdentTs Identifier)) (T : (TEnv Identifier))
   let tys := monotys.map (fun mty => LTy.forAll [] mty)
   let types := T.context.types.addInOldest fvs.idents tys
   { T with context := { T.context with types := types } }
+
+/--
+Add a well-formed `alias` to the context, where the type definition is first
+de-aliased.
+-/
+def TEnv.addTypeAlias (alias : TypeAlias) (T : TEnv Identifier) : Except Format (TEnv Identifier) := do
+  let alias_lty := alias.toAliasLTy
+  if !alias.typeArgs.Nodup then
+    .error f!"[TEnv.addTypeAlias] Duplicates found in the type arguments!\n\
+               Name: {alias.name}\n\
+               Type Arguments: {alias.typeArgs}\n\
+               Type Definition: {alias.type}"
+  else if !((alias.type.freeVars ⊆ alias.typeArgs) &&
+            (alias_lty.freeVars ⊆ alias.typeArgs)) then
+    .error f!"[TEnv.addTypeAlias] Type definition contains free type arguments!\n\
+              Name: {alias.name}\n\
+              Type Arguments: {alias.typeArgs}\n\
+              Type Definition: {alias.type}"
+  else
+    let (mtys, T) := LMonoTys.instantiate alias.typeArgs [alias_lty.toMonoTypeUnsafe, alias.type] T
+    match mtys with
+    | [lhs, rhs] =>
+      let newTyArgs := lhs.freeVars
+      -- We expect `alias.type` to be a known, legal type, hence the use of
+      -- `instantiateWithCheck` below. Note that we only store type
+      -- declarations -- not synonyms -- as values in the alias table;
+      -- i.e., we don't store a type alias mapped to another type alias.
+      let (rhsmty, _) ← (LTy.forAll [] rhs).instantiateWithCheck T
+      let new_aliases := { typeArgs := newTyArgs,
+                           name := alias.name,
+                           type := rhsmty } :: T.context.aliases
+      let context := { T.context with aliases := new_aliases }
+      .ok { T with context := context }
+    | _ => .error f!"[TEnv.addTypeAlias] Implementation error! \n\
+                      {alias}"
 
 ---------------------------------------------------------------------
 
