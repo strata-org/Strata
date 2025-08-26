@@ -68,7 +68,7 @@ if any, report models for the variables present in the problem.
 
 ## When running unit tests: "error: no such file or directory (error code: 2)"
 
-This is likely due to `cvc5` not to be on the PATH environment variable. Add it and try again.
+This is likely due to `cvc5` or `z3` not being in the PATH environment variable. Add them and try again.
 
 ## License
 
