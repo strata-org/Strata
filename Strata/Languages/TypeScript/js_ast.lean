@@ -1,3 +1,9 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
 import Lean.Data.Json
 import Lean.Data.Json.Parser
 import Lean.Data.RBTree

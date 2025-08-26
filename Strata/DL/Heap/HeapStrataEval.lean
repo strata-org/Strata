@@ -1,3 +1,9 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
 import Strata.DL.Heap.HState
 import Strata.DL.Heap.HEval
 import Strata.DL.Lambda.LState
