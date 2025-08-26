@@ -74,7 +74,7 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
   match Program.Procedure.find? E.program pname with
   | some proc =>
     -- Create a mapping from the formals to the evaluated actuals.
-    let args' := List.map (fun a => E.exprEval (OldExpressions.substsOld old_var_subst a)) args
+    let args' := List.map (fun a => E.exprEval (OldExpressions.substsOldExpr old_var_subst a)) args
     let formal_tys := proc.header.inputs.keys.map (fun k => ((k, none) : (Lambda.IdentT BoogieIdent)))
     let formal_arg_subst := List.zip formal_tys args'
     -- Generate fresh variables for the LHS, and then create a mapping

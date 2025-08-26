@@ -225,6 +225,10 @@ def substOld (var : Expression.Ident) (s e : Expression.Expr) :
                       (substOld var s t) (substOld var s f)
   | .eq e1 e2 => .eq (substOld var s e1) (substOld var s e2)
 
+/--
+For each `(var, val)` in `sm`, substitute `old(var)` in expression `e` with
+`val`.
+-/
 def substsOldExpr (sm : Map Expression.Ident Expression.Expr) (e : Expression.Expr)
   : Expression.Expr :=
   if sm.isEmpty then e else
@@ -244,17 +248,12 @@ def substsOldExpr (sm : Map Expression.Ident Expression.Expr) (e : Expression.Ex
                       (substsOldExpr sm t) (substsOldExpr sm f)
   | .eq e1 e2 => .eq (substsOldExpr sm e1) (substsOldExpr sm e2)
 
+/--
+For each `(var, val)` in `sm`, substitute `old(var)` in each expression `es`
+with `val`.
+-/
 def substsOldExprs (sm : Map Expression.Ident Expression.Expr) (es : List Expression.Expr) :=
   es.map $ substsOldExpr sm
-
-/--
-For each `(var, val)` in `sm`, substitute `old(var)` in expression `e` with
-`val`.
--/
-def substsOld (sm : Map Expression.Ident Expression.Expr) (e : Expression.Expr)
-  : Expression.Expr :=
-  -- List.foldl (fun e (var, s) => substOld var s e) e sm
-  substsOldExpr sm e
 
 /--
 For each `(var, expr)` pair in `sm`, substitute `old(var)` with `expr` in
@@ -264,7 +263,7 @@ protected def substsOldInProcChecks (sm : Map Expression.Ident Expression.Expr)
   (conds : Map String Procedure.Check) :
   Map String Procedure.Check :=
   conds.map (fun (label, c) =>
-                 (label, { expr := substsOld sm c.expr, attr := c.attr }))
+                 (label, { expr := substsOldExpr sm c.expr, attr := c.attr }))
 
 
 protected def substsOldChecks (sm : Map Expression.Ident Expression.Expr)

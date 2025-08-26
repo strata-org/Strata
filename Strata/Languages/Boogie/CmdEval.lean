@@ -48,7 +48,7 @@ def lookup (E : Env) (v : Expression.Ident) : Option Expression.TypedExpr :=
 
 def preprocess (E : Env) (c : Cmd Expression) (e : Expression.Expr) : Expression.Expr × Env :=
   let substMap := oldVarSubst E.substMap E
-  let e' := OldExpressions.substsOld substMap e
+  let e' := OldExpressions.substsOldExpr substMap e
   match c with
   | .init _ _ _ _ =>
     -- The type checker only allows free variables to appear in `init`

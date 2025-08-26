@@ -115,7 +115,7 @@ theorem Procedure.typeCheckWF : Procedure.typeCheck T p pp = Except.ok (pp', T')
       -- 1. All modified variables in a procedure are declared in the program.
       sorry
   done
--/  
+-/
 
 end WF
 end Boogie
