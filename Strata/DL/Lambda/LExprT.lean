@@ -318,7 +318,7 @@ partial def inferOp (T : (TEnv Identifier)) (o : Identifier) (oty : Option LMono
       match oty with
       | none => .ok (ty, T)
       | some cty =>
-        let (optTyy, T) := (cty.aliasInst T)
+        let (optTyy, T) := (cty.resolveAliases T)
         let S ← Constraints.unify [(ty, optTyy.getD cty )] T.state.substInfo
         .ok (ty, TEnv.updateSubst T S)
 
@@ -368,13 +368,11 @@ partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (ot
   let xt := .forAll [] (.ftvar xt')
   let S ← match oty with
   | .some ty =>
-    let (optTyy, T) := (ty.aliasInst T)
+    let (optTyy, T) := (ty.resolveAliases T)
     (Constraints.unify [(.ftvar xt', optTyy.getD ty)] T.state.substInfo)
   | .none =>
     .ok T.state.substInfo
-
   let T := TEnv.updateSubst T S
-
   let T := T.insertInContext xv xt
   let e' := LExpr.varOpen 0 (xv, some (.ftvar xt')) e
   let (et, T) ← fromLExprAux T e'
@@ -382,7 +380,7 @@ partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (ot
   let mty := LMonoTy.subst T.state.substInfo.subst (.ftvar xt')
   match oty with
   | .some ty =>
-    let (optTyy, _) := (ty.aliasInst T)
+    let (optTyy, _) := (ty.resolveAliases T)
     if optTyy.getD ty == mty
     then .ok ()
     else .error f!"Type annotation on LTerm.quant {ty} (alias for {optTyy.getD ty}) doesn't match inferred argument type"
@@ -401,9 +399,8 @@ partial def fromLExprAux.app (T : (TEnv Identifier)) (e1 e2 : (LExpr LMonoTy Ide
   let ty2 := e2t.toLMonoTy
   let (fresh_name, T) := TEnv.genTyVar T
   let freshty := (.ftvar fresh_name)
-  -- Batch alias resolution and unification
-  let (optTyy1, T) := (ty1.aliasInst T)
-  let (optTyy2, T) := (ty2.aliasInst T)
+  let (optTyy1, T) := (ty1.resolveAliases T)
+  let (optTyy2, T) := (ty2.resolveAliases T)
   -- Batch all unification constraints
   let constraints := [
     (ty1, optTyy1.getD ty1),

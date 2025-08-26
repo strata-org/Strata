@@ -406,15 +406,18 @@ def LTy.instantiate (ty : LTy) (T : (TEnv Identifier)) : LMonoTy × (TEnv Identi
 
 /--
 Return the definition of `ty` if it is a type alias registered in the typing
-environment `T`.
+environment `T`. This function does not descend into the subtrees of `mty`.
 -/
-def LTy.aliasDef? (mty : LMonoTy) (T : (TEnv Identifier)) : (Option LMonoTy × (TEnv Identifier)) :=
+def LMonoTy.aliasDef? (mty : LMonoTy) (T : (TEnv Identifier)) : (Option LMonoTy × (TEnv Identifier)) :=
   match mty with
   | .ftvar _ =>
     -- We can't have a free variable be the LHS of an alias definition because
     -- then it will unify with every type.
     (none, T)
-  | _ => go mty T.context.aliases T
+  | .bitvec _ =>
+    -- A bitvector cannot be a type alias.
+    (none, T)
+  | .tcons _ _ => go mty T.context.aliases T
   where go (mty : LMonoTy) (aliases : List TypeAlias) (T : (TEnv Identifier)) :=
   match aliases with
   | [] => (none, T)
@@ -433,7 +436,7 @@ def LTy.aliasDef? (mty : LMonoTy) (T : (TEnv Identifier)) : (Option LMonoTy × (
 /-- info: none -/
 #guard_msgs in
 open LTy.Syntax in
-#eval LTy.aliasDef? mty[%__ty0] { @TEnv.default String with
+#eval LMonoTy.aliasDef? mty[%__ty0] { @TEnv.default String with
               context := { aliases := [{ args := ["x", "y"],
                                           lhs := mty[myInt %x %y],
                                           rhs := mty[int] }] }}
@@ -442,7 +445,7 @@ open LTy.Syntax in
 /-- info: some int -/
 #guard_msgs in
 open LTy.Syntax in
-#eval LTy.aliasDef? mty[myInt] { @TEnv.default String with
+#eval LMonoTy.aliasDef? mty[myInt] { @TEnv.default String with
           context := { aliases := [{ args := [],
                                       lhs := mty[myInt],
                                       rhs := mty[int]}]} }
@@ -451,7 +454,7 @@ open LTy.Syntax in
 /-- info: some bool -/
 #guard_msgs in
 open LTy.Syntax in
-#eval LTy.aliasDef?
+#eval LMonoTy.aliasDef?
         mty[FooAlias %p %q]
         { @TEnv.default String with
           context := { aliases := [{ args := ["x", "y"],
@@ -462,7 +465,7 @@ open LTy.Syntax in
 /-- info: none -/
 #guard_msgs in
 open LTy.Syntax in
-#eval LTy.aliasDef? mty[myInt]
+#eval LMonoTy.aliasDef? mty[myInt]
                     { @TEnv.default String with context := { aliases := [{
                         args := ["a"],
                          lhs := mty[myInt %a],
@@ -472,7 +475,7 @@ open LTy.Syntax in
 /-- info: some (myTy int) -/
 #guard_msgs in
 open LTy.Syntax in
-#eval LTy.aliasDef? mty[myInt int bool]
+#eval LMonoTy.aliasDef? mty[myInt int bool]
                     { @TEnv.default String with
                     context := {
                       aliases := [{
@@ -484,8 +487,11 @@ open LTy.Syntax in
       |>.fst |>.format
 
 mutual
-def LMonoTy.aliasInst (mty : LMonoTy) (T : TEnv Identifier) : (Option LMonoTy × TEnv Identifier) :=
-  let (maybe_mty, T) := LTy.aliasDef? mty T
+/--
+De-alias `mty`, including at the subtrees.
+-/
+def LMonoTy.resolveAliases (mty : LMonoTy) (T : TEnv Identifier) : (Option LMonoTy × TEnv Identifier) :=
+  let (maybe_mty, T) := LMonoTy.aliasDef? mty T
   match maybe_mty with
   | some mty => (some mty, T)
   | none =>
@@ -493,33 +499,38 @@ def LMonoTy.aliasInst (mty : LMonoTy) (T : TEnv Identifier) : (Option LMonoTy ×
     | .ftvar _ => (some mty, T)
     | .bitvec _ => (some mty, T)
     | .tcons name mtys =>
-      let (maybe_mtys, T) := LMonoTys.aliasInst mtys T.context.aliases T
+      let (maybe_mtys, T) := LMonoTys.resolveAliases mtys T.context.aliases T
       match maybe_mtys with
       | none => (none, T)
       | some mtys' => (some (.tcons name mtys'), T)
 
-def LMonoTys.aliasInst (mtys : LMonoTys) (aliases : List TypeAlias) (T : (TEnv Identifier)) :
+/--
+De-alias `mtys`, including at the subtrees.
+-/
+def LMonoTys.resolveAliases (mtys : LMonoTys) (aliases : List TypeAlias) (T : (TEnv Identifier)) :
     (Option LMonoTys × (TEnv Identifier)) :=
     match mtys with
     | [] => (some [], T)
     | mty :: mrest =>
-      let (mty', T) := LMonoTy.aliasInst mty T
-      let (mrest', T) := LMonoTys.aliasInst mrest aliases T
+      let (mty', T) := LMonoTy.resolveAliases mty T
+      let (mrest', T) := LMonoTys.resolveAliases mrest aliases T
       if h : mty'.isSome && mrest'.isSome then
         ((mty'.get (by simp_all) :: mrest'.get (by simp_all)), T)
       else
         (none, T)
 end
 
-def LTy.aliasInst (ty : LTy) (T : (TEnv Identifier)) : (Option LMonoTy × (TEnv Identifier)) :=
+/--
+Instantiate and de-alias `ty`, including at the subtrees.
+-/
+def LTy.resolveAliases (ty : LTy) (T : (TEnv Identifier)) : (Option LMonoTy × (TEnv Identifier)) :=
   let (mty, T) := ty.instantiate T
-  LMonoTy.aliasInst mty T
-
+  LMonoTy.resolveAliases mty T
 
 /-- info: some (arrow bool $__ty0) -/
 #guard_msgs in
 open LTy.Syntax in
-#eval LTy.aliasInst
+#eval LTy.resolveAliases
         t[∀x. (FooAlias %x %x) → %x]
         { @TEnv.default String with context := { aliases := [{
                                         args := ["x", "y"],
@@ -528,6 +539,10 @@ open LTy.Syntax in
       |>.fst |>.format
 
 mutual
+/--
+Is `ty` an instance of a known type in `ks`? We expect `ty` to be
+de-aliased.
+-/
 def LMonoTy.knownInstance (ty : LMonoTy) (ks : KnownTypes) : Bool :=
   match ty with
   | .ftvar _ | .bitvec _ => true
@@ -535,6 +550,10 @@ def LMonoTy.knownInstance (ty : LMonoTy) (ks : KnownTypes) : Bool :=
     (ks.contains { name := name, arity := args.length }) &&
     LMonoTys.knownInstances args ks
 
+/--
+Are `tys` instances of some known type in `ks`? We expect all types in
+`tys` to be de-aliased.
+-/
 def LMonoTys.knownInstances (tys : LMonoTys) (ks : KnownTypes) : Bool :=
   match tys with
   | [] => true
@@ -550,7 +569,7 @@ Instantiate `ty`, with resolution of type aliases to type definitions and checks
 for registered types.
 -/
 def LTy.instantiateWithCheck (ty : LTy) (T : (TEnv Identifier)) : Except Format (LMonoTy × (TEnv Identifier)) := do
-  let (mty, T) := match ty.aliasInst T with
+  let (mty, T) := match ty.resolveAliases T with
                   | (some ty', T) => (ty', T)
                   | (none, T) => ty.instantiate T
   if isInstanceOfKnownType mty T
