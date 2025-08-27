@@ -99,6 +99,7 @@ structure Env where
   substMap : SubstMap
   exprEnv : Expression.EvalEnv
   pathConditions : Imperative.PathConditions Expression
+  warnings : List (Imperative.EvalWarning Expression)
   deferred : Imperative.ProofObligations Expression
 
 def Env.init : Env :=
@@ -107,6 +108,7 @@ def Env.init : Env :=
     substMap := [],
     exprEnv := ∅,
     pathConditions := [],
+    warnings := []
     deferred := ∅ }
 
 instance : EmptyCollection Env where
@@ -117,11 +119,12 @@ instance : Inhabited Env where
 
 instance : ToFormat Env where
   format s :=
-    let { error, program := _, substMap, exprEnv, pathConditions, deferred }  := s
+    let { error, program := _, substMap, exprEnv, pathConditions, warnings, deferred }  := s
     format f!"Error:{Format.line}{error}{Format.line}\
               Subst Map:{Format.line}{substMap}{Format.line}\
               Expression Env:{Format.line}{exprEnv}{Format.line}\
               Path Conditions:{Format.line}{PathConditions.format pathConditions}{Format.line}{Format.line}\
+              Warnings:{Format.line}{warnings}{Format.line}\
               Deferred Proof Obligations:{Format.line}{deferred}{Format.line}"
 
 /--
