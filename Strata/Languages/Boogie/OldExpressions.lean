@@ -236,7 +236,7 @@ def substsOldExpr (sm : Map Expression.Ident Expression.Expr) (e : Expression.Ex
   | .const _ _ | .fvar _ _ | .bvar _ | .op _ _ => e
   | .mdata m e' => .mdata m (substsOldExpr sm e')
   | .abs ty e' => .abs ty (substsOldExpr sm e')
-  | .quant qk ty e' => .quant qk ty (substsOldExpr sm e')
+  | .quant qk ty tr' e' => .quant qk ty (substsOldExpr sm tr') (substsOldExpr sm e')
   | .app e1 e2 =>
     match e1, e2 with
     | .op (.unres "old") _, .fvar x _ =>
