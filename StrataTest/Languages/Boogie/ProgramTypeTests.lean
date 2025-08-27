@@ -215,6 +215,8 @@ info: ok: [(type Boogie.Boundedness.Infinite Foo [_, _]
   Path Conditions:
   ⏎
   ⏎
+  Warnings:
+  []
   Deferred Proof Obligations:
   Label: test
   Assumptions:
