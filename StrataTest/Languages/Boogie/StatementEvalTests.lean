@@ -34,6 +34,8 @@ Factory Functions:
 Path Conditions:
 
 
+Warnings:
+[]
 Deferred Proof Obligations:
 Label: x_eq_18
 Assumptions:
@@ -66,6 +68,8 @@ Factory Functions:
 Path Conditions:
 
 
+Warnings:
+[]
 Deferred Proof Obligations:
 Label: x_eq_12
 Assumptions:
@@ -99,6 +103,8 @@ Factory Functions:
 Path Conditions:
 
 
+Warnings:
+[]
 Deferred Proof Obligations:
 -/
 #guard_msgs in
@@ -131,6 +137,8 @@ Factory Functions:
 Path Conditions:
 
 
+Warnings:
+[]
 Deferred Proof Obligations:
 Label: m_5_eq_50
 Assumptions:
@@ -181,6 +189,8 @@ Factory Functions:
 Path Conditions:
 
 
+Warnings:
+[]
 Deferred Proof Obligations:
 Label: m_5_eq_50
 Assumptions:
@@ -258,6 +268,8 @@ Path Conditions:
 (<label_ite_cond_true: (z == #false)>, (if (zinit == #false) then (zinit == #false) else (#true : bool))) (<label_ite_cond_false: !(z == #false)>, (if (if (zinit == #false) then (#false : bool) else (#true : bool)) then (if (zinit == #false) then (#false : bool) else (#true : bool)) else (#true : bool)))
 
 
+Warnings:
+[]
 Deferred Proof Obligations:
 Label: trivial
 Assumptions:
@@ -324,6 +336,8 @@ Factory Functions:
 Path Conditions:
 
 
+Warnings:
+[]
 Deferred Proof Obligations:
 Label: x_eq_1
 Assumptions:

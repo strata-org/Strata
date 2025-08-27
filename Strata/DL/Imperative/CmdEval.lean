@@ -78,7 +78,8 @@ def Cmd.eval [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P × S :=
         -- dbg_trace f!"[assume] {label} satisfied via evaluation.\n"
         (c', σ)
       | some false =>
-        (c', EC.updateError σ (.AssumeFail label e))
+        let σ := EC.addWarning σ (.AssumeFail label e)
+        (c', EC.addPathCondition σ [(label, e)])
       | none =>
         (c', EC.addPathCondition σ [(label, e)])
 

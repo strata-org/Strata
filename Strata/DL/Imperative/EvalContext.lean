@@ -101,6 +101,8 @@ class EvalContext (P : PureExpr) (State : Type) where
   genFreeVar        : State → P.Ident → P.Ty → (P.Expr × State)
   denoteBool        : P.Expr → Option Bool
 
+  addWarning        : State → EvalWarning P → State
+
   /- Path conditions and proof obligations collected during evaluation -/
   getPathConditions : State → (PathConditions P)
   addPathCondition  : State → (PathCondition P) → State
