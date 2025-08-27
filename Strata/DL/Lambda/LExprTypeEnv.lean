@@ -218,21 +218,19 @@ structure TEnv (Identifier : Type) where
   functions : @Factory Identifier
   knownTypes : KnownTypes
 
+def KnownTypes.default : KnownTypes :=
+  open LTy.Syntax in
+  [t[∀a b. %a → %b],
+   t[bool],
+   t[int],
+   t[string]].map (fun k => k.toKnownType!)
+
 def TEnv.default : TEnv Identifier :=
   open LTy.Syntax in
   { context := {},
     state := TState.init,
     functions := #[],
-    /-
-    knownTypes := [t[∀a b. %a → %b],
-                   t[bool],
-                   t[int],
-                   t[string]] }
-    -/
-    knownTypes := [{name := "arrow",  arity := 2},
-                   {name := "bool",   arity := 0},
-                   {name := "int",    arity := 0},
-                   {name := "string", arity := 0}]
+    knownTypes := KnownTypes.default
   }
 
 instance : ToFormat (TEnv Identifier) where
