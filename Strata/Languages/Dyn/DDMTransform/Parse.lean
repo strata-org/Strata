@@ -7,6 +7,8 @@
 import Strata.DDM.Integration.Lean
 import Strata.DDM.Util.Format
 
+namespace Strata
+
 #dialect
 dialect Dyn;
 
@@ -146,4 +148,6 @@ op function_def (ret_type : Type,
 #end
 
 -- Generate AST
+namespace Dyn
 #strata_gen Dyn
+end Dyn
