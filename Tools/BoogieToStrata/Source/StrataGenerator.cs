@@ -184,6 +184,7 @@ public class StrataGenerator : ReadOnlyVisitor {
             .Replace('@', '_')
             .Replace('.', '_')
             .Replace('#', '_')
+            .Replace('^', '_')
             .Replace("$", "_");
     }
 
@@ -604,6 +605,25 @@ public class StrataGenerator : ReadOnlyVisitor {
                         throw new StrataConversionException(node.tok, $"Unsupported function in NAryExpr: {fun}");
                 }
 
+                break;
+            }
+            case BvConcatExpr bvConcatExpr: {
+                var e0 = bvConcatExpr.E0;
+                var e1 = bvConcatExpr.E1;
+                var e0size = e0.Type.BvBits;
+                var e1size = e1.Type.BvBits;
+                var rsize = bvConcatExpr.Type.BvBits;
+                WriteText($"bvconcat{{{e0size}}}{{{e1size}}}(");
+                VisitExpr(e0);
+                WriteText(", ");
+                VisitExpr(e1);
+                WriteText(")");
+                break;
+            }
+            case BvExtractExpr bvExtractExpr: {
+                WriteText($"bvextract{{{bvExtractExpr.End}}}{{{bvExtractExpr.Start}}}(");
+                VisitExpr(bvExtractExpr.Bitvector);
+                WriteText(")");
                 break;
             }
             case OldExpr oldExpr:
@@ -1075,6 +1095,68 @@ public class StrataGenerator : ReadOnlyVisitor {
         return node;
     }
 
+    private void EmitUnopBody(Function function, string op) {
+        var sanitizedArgs =
+            function.InParams.Select(i => SanitizeNameForStrata(i.Name)).ToArray();
+        WriteLine($" {{ {op} {sanitizedArgs[0]} }}");
+    }
+
+    private void EmitBinopBody(Function function, string op) {
+        var sanitizedArgs =
+            function.InParams.Select(i => SanitizeNameForStrata(i.Name)).ToArray();
+        WriteLine($" {{ {sanitizedArgs[0]} {op} {sanitizedArgs[1]} }}");
+    }
+
+    private void EmitCallBody(Function function, string fn) {
+        var sanitizedArgs =
+            function.InParams.Select(i => SanitizeNameForStrata(i.Name));
+        var argStr = string.Join(", ", sanitizedArgs);
+        WriteLine($" {{ {fn}({argStr}) }}");
+    }
+
+    // If the function has an SMT builtin attribute, emit a body
+    // that calls that builtin.
+    private void MaybeEmitBuiltinBody(Function function) {
+        var builtinAttr = QKeyValue.FindStringAttribute(function.Attributes, "bvbuiltin");
+        switch (builtinAttr) {
+            case "bvneg": EmitUnopBody(function, "-"); break;
+            case "bvadd": EmitBinopBody(function, "+"); break;
+            case "bvsub": EmitBinopBody(function, "-"); break;
+            case "bvmul": EmitBinopBody(function, "*"); break;
+            case "bvsdiv": EmitBinopBody(function, "sdiv"); break;
+            case "bvsrem": EmitBinopBody(function, "smod"); break;
+            case "bvudiv": EmitBinopBody(function, "div"); break;
+            case "bvurem": EmitBinopBody(function, "mod"); break;
+            case "bvand": EmitBinopBody(function, "&"); break;
+            case "bvor": EmitBinopBody(function, "|"); break;
+            case "bvxor": EmitBinopBody(function, "^"); break;
+            case "bvnot": EmitUnopBody(function, "~"); break;
+            case "bvshl": EmitBinopBody(function, "<<"); break;
+            case "bvlshr": EmitBinopBody(function, ">>"); break;
+            case "bvashr": EmitBinopBody(function, ">>>"); break;
+            case "bvslt": EmitBinopBody(function, "<s"); break;
+            case "bvsle": EmitBinopBody(function, "<=s"); break;
+            case "bvsgt": EmitBinopBody(function, ">s"); break;
+            case "bvsge": EmitBinopBody(function, ">=s"); break;
+            case "bvult": EmitBinopBody(function, "<"); break;
+            case "bvule": EmitBinopBody(function, "<="); break;
+            case "bvugt": EmitBinopBody(function, ">"); break;
+            case "bvuge": EmitBinopBody(function, ">="); break;
+            case "concat": EmitCallBody(function, "bvconcat"); break;
+            case null: WriteLine(";"); break;
+            default:
+                if (builtinAttr.StartsWith("(_ extract ")) {
+                    var words = builtinAttr.Split();
+                    var hi = words[2];
+                    var lo = words[3].Replace(")", "");
+                    EmitCallBody(function, $"bvextract{{{hi}}}{{{lo}}}");
+                } else {
+                    WriteLine($"; // Unsupported builtin function {builtinAttr}");
+                }
+                break;
+        }
+    }
+
     public override Function VisitFunction(Function node) {
         WriteText($"function {Name(node.Name)}");
         EmitTypeParameters(node.TypeParameters);
@@ -1086,7 +1168,7 @@ public class StrataGenerator : ReadOnlyVisitor {
         WriteText(")");
 
         if (node.Body is null) {
-            WriteLine(";");
+            MaybeEmitBuiltinBody(node);
             return node;
         }
 
