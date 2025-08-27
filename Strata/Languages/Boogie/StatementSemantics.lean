@@ -53,12 +53,12 @@ def WellFormedBoogieEvalCong (δ : BoogieEval) : Prop :=
       δ σ₀ σ e₁ = δ σ₀' σ' e₁' →
       (∀ ty, δ σ₀ σ (.abs ty e₁) = δ σ₀' σ' (.abs ty e₁')) ∧
       (∀ info, δ σ₀ σ (.mdata info e₁) = δ σ₀' σ' (.mdata info e₁')) ∧
-      (∀ k ty, δ σ₀ σ (.quant k ty e₁) = δ σ₀' σ' (.quant k ty e₁')) ∧
     -- binary congruence
     (∀ e₂ e₂',
       δ σ₀ σ e₂ = δ σ₀' σ' e₂' →
       δ σ₀ σ (.app e₁ e₂) = δ σ₀' σ' (.app e₁' e₂') ∧
       δ σ₀ σ (.eq e₁ e₂) = δ σ₀' σ' (.eq e₁' e₂') ∧
+      (∀ k ty, δ σ₀ σ (.quant k ty e₁ e₂) = δ σ₀' σ' (.quant k ty e₁' e₂')) ∧
     -- ternary congruence
     (∀ e₃ e₃',
       δ σ₀ σ e₃ = δ σ₀' σ' e₃' →

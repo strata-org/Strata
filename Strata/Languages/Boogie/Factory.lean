@@ -42,7 +42,7 @@ match ine with
     | .fvar name oty => .fvar (BoogieIdent.unres name) oty
     | .mdata info e => .mdata info (ToBoogieIdent e)
     | .abs oty e => .abs oty (ToBoogieIdent e)
-    | .quant k oty e => .quant k oty (ToBoogieIdent e)
+    | .quant k oty tr e => .quant k oty (ToBoogieIdent tr) (ToBoogieIdent e)
     | .app fn e => .app (ToBoogieIdent fn) (ToBoogieIdent e)
     | .ite c t e => .ite (ToBoogieIdent c) (ToBoogieIdent t) (ToBoogieIdent e)
     | .eq e1 e2 => .eq (ToBoogieIdent e1) (ToBoogieIdent e2)
@@ -139,7 +139,9 @@ def mapUpdateFunc : LFunc BoogieIdent :=
       -- updateSelect: forall m: Map k v, kk: k, vv: v :: m[kk := vv][kk] == vv
       ToBoogieIdent esM[∀(Map %k %v):
           (∀ (%k):
-            (∀ (%v):
+            (∀ (%v):{
+              (((~select : (Map %k %v) → %k → %v)
+                ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %2) %1) %0)) %1)}
               (((~select : (Map %k %v) → %k → %v)
                 ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %2) %1) %0)) %1) == %0))],
       -- updatePreserve: forall m: Map k v, okk: k, kk: k, vv: v :: okk != kk ==> m[kk := vv][okk] == m[okk]

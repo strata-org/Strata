@@ -34,7 +34,7 @@ inductive LExprT (Identifier : Type): Type where
   | fvar (name : Identifier) (ty : LMonoTy)
   | mdata (info : Info) (e : LExprT Identifier)
   | abs (e : LExprT Identifier) (ty : LMonoTy)
-  | quant (k : QuantifierKind) (argTy : LMonoTy) (e : LExprT Identifier)
+  | quant (k : QuantifierKind) (argTy : LMonoTy) (triggers : LExprT Identifier) (e : LExprT Identifier)
   | app (fn e : LExprT Identifier) (ty : LMonoTy)
   | ite (c t e : LExprT Identifier) (ty : LMonoTy)
   | eq (e1 e2 : LExprT Identifier) (ty : LMonoTy)
@@ -48,8 +48,8 @@ partial def LExprT.format (et : (LExprT Identifier)) : Std.Format :=
   | .fvar x ty => f!"({x} : {ty})"
   | .mdata m e => f!"(.mdata {repr m} {LExprT.format e})"
   | .abs e ty => f!"((λ {LExprT.format e}) : {ty})"
-  | .quant .all ty e => f!"(∀({ty}) {LExprT.format e})"
-  | .quant .exist ty e => f!"(∃({ty}) {LExprT.format e})"
+  | .quant .all ty _ e => f!"(∀({ty}) {LExprT.format e})"
+  | .quant .exist ty _ e => f!"(∃({ty}) {LExprT.format e})"
   | .app e1 e2 ty => f!"({LExprT.format e1} {LExprT.format e2}) : {ty})"
   | .ite c t f ty => f!"(if {LExprT.format c} then \
                             {LExprT.format t} else \
@@ -70,7 +70,7 @@ def toLMonoTy (e : (LExprT Identifier)) : LMonoTy :=
   match e with
   | .const _ ty | .op _ ty | .bvar _ ty | .fvar _ ty
   | .app _ _ ty | .abs _ ty | .ite _ _ _ ty | .eq _ _ ty => ty
-  | .quant _ _ _ => LMonoTy.bool
+  | .quant _ _ _ _ => LMonoTy.bool
   | .mdata _ et => LExprT.toLMonoTy et
 
 /--
@@ -88,7 +88,7 @@ def toLExpr (e : (LExprT Identifier)) : (LExpr LMonoTy Identifier) :=
     .app e1.toLExpr e2.toLExpr
   | .abs e (.arrow aty _) => .abs aty e.toLExpr
   | .abs e _ => .abs .none e.toLExpr
-  | .quant qk ty e => .quant qk ty e.toLExpr
+  | .quant qk ty tr e => .quant qk ty tr.toLExpr e.toLExpr
   | .ite c t f _ => .ite c.toLExpr t.toLExpr f.toLExpr
   | .eq e1 e2 _ => .eq e1.toLExpr e2.toLExpr
   | .mdata m e => .mdata m e.toLExpr
@@ -119,9 +119,10 @@ def applySubst (e : (LExprT Identifier)) (S : Subst) : (LExprT Identifier) :=
     let e := LExprT.applySubst e S
     let ty := LMonoTy.subst S ty
     .abs e ty
-  | .quant qk ty e =>
+  | .quant qk ty tr e =>
     let e := LExprT.applySubst e S
-    .quant qk ty e
+    let tr := LExprT.applySubst tr S
+    .quant qk ty tr e
   | .ite c t f ty =>
     let c := LExprT.applySubst c S
     let t := LExprT.applySubst t S
@@ -154,7 +155,7 @@ protected def varClose (k : Nat) (x : Identifier) (e : (LExprT Identifier)) : (L
                                else (.fvar y yty)
   | .mdata info e' => .mdata info (.varClose k x e')
   | .abs e' ty => .abs (.varClose (k + 1) x e') ty
-  | .quant qk ty e' => .quant qk ty (.varClose (k + 1) x e')
+  | .quant qk ty tr' e' => .quant qk ty (.varClose (k + 1) x tr') (.varClose (k + 1) x e')
   | .app e1 e2 ty => .app (.varClose k x e1) (.varClose k x e2) ty
   | .ite c t e ty => .ite (.varClose k x c) (.varClose k x t) (.varClose k x e) ty
   | .eq e1 e2 ty => .eq (.varClose k x e1) (.varClose k x e2) ty
@@ -277,7 +278,7 @@ partial def fromLExprAux (T : (TEnv Identifier)) (e : (LExpr LMonoTy Identifier)
     .ok (.fvar x ty, T)
   | .app e1 e2   => fromLExprAux.app T e1 e2
   | .abs ty e    => fromLExprAux.abs T ty e
-  | .quant qk ty e => fromLExprAux.quant T qk ty e
+  | .quant qk ty tr e => fromLExprAux.quant T qk ty tr e
   | .eq e1 e2    => fromLExprAux.eq T e1 e2
   | .ite c th el => fromLExprAux.ite T c th el
 
@@ -362,7 +363,7 @@ partial def fromLExprAux.abs (T : (TEnv Identifier)) (oty : Option LMonoTy) (e :
   | _, _ => .ok ()
   .ok (.abs etclosed mty, T)
 
-partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (oty : Option LMonoTy) (e : (LExpr LMonoTy Identifier)) := do
+partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (oty : Option LMonoTy) (triggers : LExpr LMonoTy Identifier) (e : (LExpr LMonoTy Identifier)) := do
   let (xv, T) := HasGen.genVar T
   let (xt', T) := TEnv.genTyVar T
   let xt := .forAll [] (.ftvar xt')
@@ -377,7 +378,9 @@ partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (ot
 
   let T := T.insertInContext xv xt
   let e' := LExpr.varOpen 0 (xv, some (.ftvar xt')) e
+  let triggers' := LExpr.varOpen 0 (xv, some (.ftvar xt')) triggers
   let (et, T) ← fromLExprAux T e'
+  let (triggersT, T) ← fromLExprAux T triggers'
   let ety := et.toLMonoTy
   let mty := LMonoTy.subst T.state.substInfo.subst (.ftvar xt')
   match oty with
@@ -389,8 +392,9 @@ partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (ot
   | _ => .ok ()
   if ety = LMonoTy.bool then do
     let etclosed := .varClose 0 xv et
+    let triggersClosed := .varClose 0 xv triggersT
     let T := T.eraseFromContext xv
-    .ok (.quant qk mty etclosed, T)
+    .ok (.quant qk mty triggersClosed etclosed, T)
   else
     .error f!"Quantifier body has non-Boolean type: {ety}"
 
@@ -470,7 +474,7 @@ def LExpr.applySubst (e : (LExpr LMonoTy Identifier)) (S : Subst) : (LExpr LMono
       .fvar x ty
   | .bvar _ => e
   | .abs ty e => .abs ty (e.applySubst S)
-  | .quant qk ty e => .quant qk ty (e.applySubst S)
+  | .quant qk ty tr e => .quant qk ty (tr.applySubst S) (e.applySubst S)
   | .app e1 e2 => .app (e1.applySubst S) (e2.applySubst S)
   | .ite c t f => .ite (c.applySubst S) (t.applySubst S) (f.applySubst S)
   | .eq e1 e2 => .eq (e1.applySubst S) (e2.applySubst S)
