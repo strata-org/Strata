@@ -128,6 +128,9 @@ info: ok: [(type Boogie.Boundedness.Infinite Foo [_, _]
   func old : ∀[a]. ((x : a)) → a;
   func select : ∀[k, v]. ((m : (Map k v)) (i : k)) → v;
   func update : ∀[k, v]. ((m : (Map k v)) (i : k) (x : v)) → (Map k v);
+  func Bv8.Concat :  ((x : bv8) (y : bv8)) → bv16;
+  func Bv16.Concat :  ((x : bv16) (y : bv16)) → bv32;
+  func Bv32.Concat :  ((x : bv32) (y : bv32)) → bv64;
   func Bv1.Neg :  ((x : bv1)) → bv1;
   func Bv1.Add :  ((x : bv1) (y : bv1)) → bv1;
   func Bv1.Sub :  ((x : bv1) (y : bv1)) → bv1;

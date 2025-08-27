@@ -173,6 +173,27 @@ macro "ExpandBVOpFuncNames" "[" sizes:num,* "]" : term => do
     allOps := allOps ++ ops.toArray
   `([$(allOps),*])
 
+def bv8ConcatFunc : LFunc BoogieIdent :=
+    { name := "Bv8.Concat",
+      typeArgs := [],
+      inputs := [("x", mty[bv8]), ("y", mty[bv8])]
+      output := mty[bv16],
+      concreteEval := none }
+
+def bv16ConcatFunc : LFunc BoogieIdent :=
+    { name := "Bv16.Concat",
+      typeArgs := [],
+      inputs := [("x", mty[bv16]), ("y", mty[bv16])]
+      output := mty[bv32],
+      concreteEval := none }
+
+def bv32ConcatFunc : LFunc BoogieIdent :=
+    { name := "Bv32.Concat",
+      typeArgs := [],
+      inputs := [("x", mty[bv32]), ("y", mty[bv32])]
+      output := mty[bv64],
+      concreteEval := none }
+
 def Factory : @Factory BoogieIdent := #[
   intAddFunc,
   intSubFunc,
@@ -209,6 +230,10 @@ def Factory : @Factory BoogieIdent := #[
 
   mapSelectFunc,
   mapUpdateFunc,
+
+  bv8ConcatFunc,
+  bv16ConcatFunc,
+  bv32ConcatFunc,
 ] ++ ExpandBVOpFuncNames [1,8,16,32,64]
 
 open Lean Elab Command in
@@ -218,38 +243,42 @@ elab "DefBVOpFuncExprs" "[" sizes:num,* "]" : command => do
     for op in BVOpNames do
       let opName := mkIdent (.str .anonymous s!"bv{s}{op}Op")
       let funcName := mkIdent (.str (.str .anonymous "Boogie") s!"bv{s}{op}Func")
-      elabCommand (← `(def $opName : LExpr LMonoTy BoogieIdent := ($funcName).opExpr))
+      elabCommand (← `(def $opName : Expression.Expr := ($funcName).opExpr))
 
 DefBVOpFuncExprs [1, 8, 16, 32, 64]
 
-def intAddOp : LExpr LMonoTy BoogieIdent := intAddFunc.opExpr
-def intSubOp : LExpr LMonoTy BoogieIdent := intSubFunc.opExpr
-def intMulOp : LExpr LMonoTy BoogieIdent := intMulFunc.opExpr
-def intDivOp : LExpr LMonoTy BoogieIdent := intDivFunc.opExpr
-def intModOp : LExpr LMonoTy BoogieIdent := intModFunc.opExpr
-def intNegOp : LExpr LMonoTy BoogieIdent := intNegFunc.opExpr
-def intLtOp : LExpr LMonoTy BoogieIdent := intLtFunc.opExpr
-def intLeOp : LExpr LMonoTy BoogieIdent := intLeFunc.opExpr
-def intGtOp : LExpr LMonoTy BoogieIdent := intGtFunc.opExpr
-def intGeOp : LExpr LMonoTy BoogieIdent := intGeFunc.opExpr
-def realAddOp : LExpr LMonoTy BoogieIdent := realAddFunc.opExpr
-def realSubOp : LExpr LMonoTy BoogieIdent := realSubFunc.opExpr
-def realMulOp : LExpr LMonoTy BoogieIdent := realMulFunc.opExpr
-def realDivOp : LExpr LMonoTy BoogieIdent := realDivFunc.opExpr
-def realNegOp : LExpr LMonoTy BoogieIdent := realNegFunc.opExpr
-def realLtOp : LExpr LMonoTy BoogieIdent := realLtFunc.opExpr
-def realLeOp : LExpr LMonoTy BoogieIdent := realLeFunc.opExpr
-def realGtOp : LExpr LMonoTy BoogieIdent := realGtFunc.opExpr
-def realGeOp : LExpr LMonoTy BoogieIdent := realGeFunc.opExpr
-def boolAndOp : LExpr LMonoTy BoogieIdent := boolAndFunc.opExpr
-def boolOrOp : LExpr LMonoTy BoogieIdent := boolOrFunc.opExpr
-def boolImpliesOp : LExpr LMonoTy BoogieIdent := boolImpliesFunc.opExpr
-def boolEquivOp : LExpr LMonoTy BoogieIdent := boolEquivFunc.opExpr
-def boolNotOp : LExpr LMonoTy BoogieIdent := boolNotFunc.opExpr
-def strLengthOp : LExpr LMonoTy BoogieIdent := strLengthFunc.opExpr
-def strConcatOp : LExpr LMonoTy BoogieIdent := strConcatFunc.opExpr
-def polyOldOp : LExpr LMonoTy BoogieIdent := polyOldFunc.opExpr
-def mapSelectOp : LExpr LMonoTy BoogieIdent := mapSelectFunc.opExpr
-def mapUpdateOp : LExpr LMonoTy BoogieIdent := mapUpdateFunc.opExpr
+def bv8ConcatOp : Expression.Expr := bv8ConcatFunc.opExpr
+def bv16ConcatOp : Expression.Expr := bv16ConcatFunc.opExpr
+def bv32ConcatOp : Expression.Expr := bv32ConcatFunc.opExpr
+
+def intAddOp : Expression.Expr := intAddFunc.opExpr
+def intSubOp : Expression.Expr := intSubFunc.opExpr
+def intMulOp : Expression.Expr := intMulFunc.opExpr
+def intDivOp : Expression.Expr := intDivFunc.opExpr
+def intModOp : Expression.Expr := intModFunc.opExpr
+def intNegOp : Expression.Expr := intNegFunc.opExpr
+def intLtOp : Expression.Expr := intLtFunc.opExpr
+def intLeOp : Expression.Expr := intLeFunc.opExpr
+def intGtOp : Expression.Expr := intGtFunc.opExpr
+def intGeOp : Expression.Expr := intGeFunc.opExpr
+def realAddOp : Expression.Expr := realAddFunc.opExpr
+def realSubOp : Expression.Expr := realSubFunc.opExpr
+def realMulOp : Expression.Expr := realMulFunc.opExpr
+def realDivOp : Expression.Expr := realDivFunc.opExpr
+def realNegOp : Expression.Expr := realNegFunc.opExpr
+def realLtOp : Expression.Expr := realLtFunc.opExpr
+def realLeOp : Expression.Expr := realLeFunc.opExpr
+def realGtOp : Expression.Expr := realGtFunc.opExpr
+def realGeOp : Expression.Expr := realGeFunc.opExpr
+def boolAndOp : Expression.Expr := boolAndFunc.opExpr
+def boolOrOp : Expression.Expr := boolOrFunc.opExpr
+def boolImpliesOp : Expression.Expr := boolImpliesFunc.opExpr
+def boolEquivOp : Expression.Expr := boolEquivFunc.opExpr
+def boolNotOp : Expression.Expr := boolNotFunc.opExpr
+def strLengthOp : Expression.Expr := strLengthFunc.opExpr
+def strConcatOp : Expression.Expr := strConcatFunc.opExpr
+def polyOldOp : Expression.Expr := polyOldFunc.opExpr
+def mapSelectOp : Expression.Expr := mapSelectFunc.opExpr
+def mapUpdateOp : Expression.Expr := mapUpdateFunc.opExpr
 
 end Boogie

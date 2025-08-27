@@ -516,6 +516,10 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Boogie.Expr
   | .some .bv64, q`Boogie.bvshl    => return bv64ShlOp
   | .some .bv64, q`Boogie.bvushr   => return bv64UShrOp
 
+  | _, q`Boogie.bvconcat8 => return bv8ConcatOp
+  | _, q`Boogie.bvconcat16 => return bv16ConcatOp
+  | _, q`Boogie.bvconcat32 => return bv32ConcatOp
+
   | _, q`Boogie.old      => return polyOldOp
   | _, _              => TransM.error s!"translateFn: Unknown/unimplemented function {repr q} at type {repr ty?}"
 

@@ -195,6 +195,9 @@ procedure P(x: bv8, y: bv8, z: bv8) returns () {
   assert [demorgan]: ~(x & y) == ~x | ~y;
   assert [mod_and]: x mod bv{8}(2) == x & bv{8}(1);
   assert [bad_shift]: x >> y == x << y;
+  var xy : bv16 := bvconcat{8}{8}(x, y);
+  var xy2 : bv32 := bvconcat{16}{16}(xy, xy);
+  var xy4 : bv64 := bvconcat{32}{32}(xy2, xy2);
 };
 #end
 

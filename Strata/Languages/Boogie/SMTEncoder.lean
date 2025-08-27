@@ -348,6 +348,10 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
     | "Bv64.Gt"      => .ok (Op.bvugt,      .bool,   ctx)
     | "Bv64.Ge"      => .ok (Op.bvuge,      .bool,   ctx)
 
+    | "Bv8.Concat"   => .ok (Op.bvconcat,   .bitvec 16, ctx)
+    | "Bv16.Concat"  => .ok (Op.bvconcat,   .bitvec 32, ctx)
+    | "Bv32.Concat"  => .ok (Op.bvconcat,   .bitvec 64, ctx)
+
     | "Str.Length"   => .ok (Op.str_length, .int,    ctx)
     | "Str.Concat"   => .ok (Op.str_concat, .string, ctx)
     | _ => do

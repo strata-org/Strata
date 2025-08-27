@@ -30,6 +30,7 @@ assert [x_value_eq] ($__x0 : Num) = (y : Num)
 
 State:
 error: none
+warnings: []
 deferred: #[Label: x_value_eq
  Assumptions: ⏎
  Obligation: ($__x0 : Num) = (y : Num)
@@ -57,6 +58,7 @@ assert [x_value_eq] true
 
 State:
 error: none
+warnings: []
 deferred: #[Label: x_value_eq
  Assumptions: ⏎
  Obligation: true
