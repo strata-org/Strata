@@ -69,6 +69,9 @@ def genFreeVar (E : Env) (x : Expression.Ident) (ty : Expression.Ty) : Expressio
 def denoteBool (e : Expression.Expr) : Option Bool :=
   Lambda.LExpr.denoteBool e
 
+def addWarning (E : Env) (w : EvalWarning Expression) : Env :=
+  { E with warnings := w :: E.warnings }
+
 def getPathConditions (E : Env) : PathConditions Expression :=
   E.pathConditions
 
@@ -107,6 +110,7 @@ instance : EvalContext Expression Env where
   preprocess        := CmdEval.preprocess
   genFreeVar        := CmdEval.genFreeVar
   denoteBool        := CmdEval.denoteBool
+  addWarning        := CmdEval.addWarning
   getPathConditions := CmdEval.getPathConditions
   addPathCondition  := CmdEval.addPathCondition
   deferObligation   := CmdEval.deferObligation
@@ -153,6 +157,8 @@ Factory Functions:
 Path Conditions:
 
 
+Warnings:
+[]
 Deferred Proof Obligations:
 Label: x_value_eq
 Assumptions:
@@ -192,6 +198,8 @@ Factory Functions:
 Path Conditions:
 
 
+Warnings:
+[]
 Deferred Proof Obligations:
 Label: x_eq_12
 Assumptions:

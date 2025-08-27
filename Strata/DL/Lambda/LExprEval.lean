@@ -134,7 +134,7 @@ def evalCore (n' : Nat) (σ : (LState Identifier)) (e : (LExpr LMonoTy Identifie
    -- Note: closed .abs terms are canonical values; we'll be here if .abs
    -- contains free variables.
   | .abs _ _   => substFvarsFromState σ e
-  | .quant _ _ _ => substFvarsFromState σ e
+  | .quant _ _ _ _ => substFvarsFromState σ e
   | .app e1 e2 => evalApp n' σ e e1 e2
   | .eq  e1 e2 => evalEq n' σ e1 e2
   | .ite c t f => evalIte n' σ c t f

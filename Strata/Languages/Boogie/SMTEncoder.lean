@@ -181,13 +181,13 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr LMonoTy BoogieIdent
 
   | .abs ty e => .error f!"Cannot encode lambda abstraction {e}"
 
-  | .quant _ .none _ => .error f!"Cannot encode untyped quantifier {e}"
-  | .quant qk (.some ty) e =>
+  | .quant _ .none _ _ => .error f!"Cannot encode untyped quantifier {e}"
+  | .quant qk (.some ty) tr e =>
     let x := s!"$__bv{bvs.length}"
     let (ety, ctx) ← LMonoTy.toSMTType ty ctx
+    let (trt, ctx) ← toSMTTerm E ((x, ety) :: bvs) tr ctx
     let (et, ctx) ← toSMTTerm E ((x, ety) :: bvs) e ctx
-    .ok ((Factory.quant (convertQuantifierKind qk) x ety et), ctx)
-
+    .ok ((Factory.quant (convertQuantifierKind qk) x ety trt et), ctx)
   | .eq e1 e2 =>
     let (e1t, ctx) ← toSMTTerm E bvs e1 ctx
     let (e2t, ctx) ← toSMTTerm E bvs e2 ctx
@@ -199,7 +199,8 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr LMonoTy BoogieIdent
     let (ft, ctx) ← toSMTTerm E bvs f ctx
     .ok ((Factory.ite ct tt ft), ctx)
 
-  | .app _ _ => appToSMTTerm E bvs e [] ctx
+  | .app _ _ =>
+    appToSMTTerm E bvs e [] ctx
 
 partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : (LExpr LMonoTy BoogieIdent)) (acc : List Term) (ctx : SMT.Context) :
   Except Format (Term × SMT.Context) := do
@@ -216,7 +217,13 @@ partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : (LExpr LMonoTy BoogieI
       let (op, retty, ctx) ← toSMTOp E fn fnty ctx
       let (e1t, ctx) ← toSMTTerm E bvs e1 ctx
       .ok ((Term.app op (e1t :: acc) retty), ctx)
-
+  | .app (.fvar fn (.some (.arrow intty outty))) e1 => do
+    let (smt_outty, ctx) ← LMonoTy.toSMTType outty ctx
+    let (smt_intty, ctx) ← LMonoTy.toSMTType intty ctx
+    let argvars := [TermVar.mk true (toString $ format intty) smt_intty]
+    let (e1t, ctx) ← toSMTTerm E bvs e1 ctx
+    let uf := UF.mk (id := (toString $ format fn)) (args := argvars) (out := smt_outty)
+    .ok (((Term.app (.uf uf) [e1t] smt_outty)), ctx)
   | .app _ _ =>
     .error f!"Cannot encode expression {e}"
 
@@ -420,14 +427,82 @@ def toSMTTermString (e : (LExpr LMonoTy BoogieIdent)) (E : Env := Env.init) (ctx
 /-- info: "(define-fun t0 () Bool (forall (($__bv0 Int)) (exists (($__bv1 Int)) (= $__bv0 $__bv1))))\n" -/
 #guard_msgs in
 #eval toSMTTermString
-  (.quant .all (.some .int)
-   (.quant .exist (.some .int)
+  (.quant .all (.some .int) LExpr.noTrigger
+   (.quant .exist (.some .int) LExpr.noTrigger
    (.eq (.bvar 1) (.bvar 0))))
 
 /-- info: "; \"x\"\n(declare-const t0 Int)\n(define-fun t1 () Bool (exists (($__bv0 Int)) (= $__bv0 t0)))\n" -/
 #guard_msgs in
 #eval toSMTTermString
-   (.quant .exist (.some .int)
+   (.quant .exist (.some .int) LExpr.noTrigger
    (.eq (.bvar 0) (.fvar "x" (.some .int))))
+
+/--
+info: "; f\n(declare-fun f0 (Int) Int)\n; \"x\"\n(declare-const t0 Int)\n(define-fun t1 () Bool (exists (($__bv0 Int)) (! (= $__bv0 t0) :pattern ((f0 $__bv0)))))\n"
+-/
+#guard_msgs in
+#eval toSMTTermString
+   (.quant .exist (.some .int) (.app (.fvar "f" (.some (.arrow .int .int))) (.bvar 0))
+   (.eq (.bvar 0) (.fvar "x" (.some .int))))
+
+
+/--
+info: "; f\n(declare-fun f0 (Int) Int)\n; \"x\"\n(declare-const t0 Int)\n(define-fun t1 () Bool (exists (($__bv0 Int)) (! (= (f0 $__bv0) t0) :pattern ((f0 $__bv0)))))\n"
+-/
+#guard_msgs in
+#eval toSMTTermString
+   (.quant .exist (.some .int) (.app (.fvar "f" (.some (.arrow .int .int))) (.bvar 0))
+   (.eq (.app (.fvar "f" (.some (.arrow .int .int))) (.bvar 0)) (.fvar "x" (.some .int))))
+
+/-- info: "Cannot encode expression (f %0)" -/
+#guard_msgs in
+#eval toSMTTermString
+   (.quant .exist (.some .int) (.app (.fvar "f" (.none)) (.bvar 0))
+   (.eq (.app (.fvar "f" (.some (.arrow .int .int))) (.bvar 0)) (.fvar "x" (.some .int))))
+
+/--
+info: "; \"f\"\n(declare-const t0 (arrow Int Int))\n; f\n(declare-fun f0 (Int) Int)\n; \"x\"\n(declare-const t1 Int)\n(define-fun t2 () Bool (exists (($__bv0 Int)) (! (= (f0 $__bv0) t1) :pattern (t0))))\n"
+-/
+#guard_msgs in
+#eval toSMTTermString
+   (.quant .exist (.some .int) (.fvar "f" (.(.some (.arrow .int .int))))
+   (.eq (.app (.fvar "f" (.some (.arrow .int .int))) (.bvar 0)) (.fvar "x" (.some .int))))
+
+
+/--
+info: "; f\n(declare-fun f0 (Int Int) Int)\n; \"x\"\n(declare-const t0 Int)\n(define-fun t1 () Bool (forall (($__bv0 Int) ($__bv1 Int)) (! (= (f0 $__bv1 $__bv0) t0) :pattern ((f0 $__bv1 $__bv0)))))\n"
+-/
+#guard_msgs in
+#eval toSMTTermString
+   (.quant .all (.some .int) (.bvar 0) (.quant .all (.some .int) (.app (.app (.op "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar 0)) (.bvar 1))
+   (.eq (.app (.app (.op "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar 0)) (.bvar 1)) (.fvar "x" (.some .int)))))
+   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk false "m" TermType.int) ::(TermVar.mk false "n" TermType.int) :: []) TermType.int] #[] #[] [])
+   (E := {Env.init with exprEnv := {
+    Env.init.exprEnv with
+      config := { Env.init.exprEnv.config with
+        factory :=
+          Env.init.exprEnv.config.factory.push $
+          LFunc.mk "f" [] [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none []
+      }
+   }})
+
+
+/--
+info: "; f\n(declare-fun f0 (Int Int) Int)\n; \"x\"\n(declare-const t0 Int)\n(define-fun t1 () Bool (forall (($__bv0 Int) ($__bv1 Int)) (= (f0 $__bv1 $__bv0) t0)))\n"
+-/
+#guard_msgs in -- No valid trigger
+#eval toSMTTermString
+   (.quant .all (.some .int) (.bvar 0) (.quant .all (.some .int) (.bvar 0)
+   (.eq (.app (.app (.op "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar 0)) (.bvar 1)) (.fvar "x" (.some .int)))))
+   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk false "m" TermType.int) ::(TermVar.mk false "n" TermType.int) :: []) TermType.int] #[] #[] [])
+   (E := {Env.init with exprEnv := {
+    Env.init.exprEnv with
+      config := { Env.init.exprEnv.config with
+        factory :=
+          Env.init.exprEnv.config.factory.push $
+          LFunc.mk "f" [] [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none []
+      }
+   }})
+
 
 end Boogie

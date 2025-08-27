@@ -35,6 +35,8 @@ structure State where
   env : Env := []
   /-- Error, if any, encountered during evaluation. -/
   error : Option (EvalError PureExpr) := .none
+  /-- Any warnings encountered during evaluation. -/
+  warnings : List (EvalWarning PureExpr) := []
   /-- Accrued path conditions. -/
   pathConditions : PathConditions PureExpr := []
   /-- Deferred proof obligations obtained during evaluation, intended to be
@@ -47,6 +49,7 @@ def State.init : State := {}
 instance : ToFormat State where
   format s :=
   f!"error: {s.error}{Format.line}\
+     warnings: {s.warnings}{Format.line}\
      deferred: {s.deferred}{Format.line}\
      pathConditions: {PathConditions.format' s.pathConditions}{Format.line}\
      env: {s.env}{Format.line}\
@@ -108,6 +111,9 @@ def denoteBool (e : Expr) : Option Bool :=
   | .Bool b => some b
   | .Var _ _ | .Plus _ _ | .Mul _ _ | .Eq _ _ | .Num _ => none
 
+def addWarning (s : State) (w : EvalWarning PureExpr) : State :=
+  { s with warnings := w :: s.warnings }
+
 def getPathConditions (s : State) : PathConditions PureExpr :=
   s.pathConditions
 
@@ -146,6 +152,7 @@ instance : EvalContext PureExpr State where
   preprocess := Arith.Eval.preprocess
   genFreeVar := Arith.Eval.genFreeVar
   denoteBool := Arith.Eval.denoteBool
+  addWarning := Arith.Eval.addWarning
   getPathConditions := Arith.Eval.getPathConditions
   addPathCondition := Arith.Eval.addPathCondition
   deferObligation := Arith.Eval.deferObligation
@@ -175,6 +182,7 @@ assert [x_value_eq] true
 
 State:
 error: none
+warnings: []
 deferred: #[Label: x_value_eq
  Assumptions: ⏎
  Obligation: true
@@ -201,6 +209,7 @@ assert [x_value_eq] ($__x0 : Num) = 100
 
 State:
 error: none
+warnings: []
 deferred: #[Label: x_value_eq
  Assumptions: ⏎
  Obligation: ($__x0 : Num) = 100

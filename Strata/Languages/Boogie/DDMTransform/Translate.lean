@@ -524,9 +524,8 @@ mutual
 partial
 def translateQuantifier
   (qk: QuantifierKind)
-  -- TODO: don't ignore triggers
   (p : Program)
-  (bindings : TransBindings) (xsa : Arg) (_triggersa: Option Arg) (bodya: Arg) :
+  (bindings : TransBindings) (xsa : Arg) (triggersa: Option Arg) (bodya: Arg) :
   TransM Boogie.Expression.Expr := do
     let xsArray ← translateDeclList bindings xsa
     -- Note: the indices in the following are placeholders
@@ -534,12 +533,38 @@ def translateQuantifier
     let boundVars' := bindings.boundVars ++ newBoundVars
     let xbindings := { bindings with boundVars := boundVars' }
     let b ← translateExpr p xbindings bodya
+
+    -- Handle triggers if present
+    let triggers ← match triggersa with
+      | none => pure LExpr.noTrigger
+      | some tsa => -- pure LExpr.noTrigger
+        match tsa with
+        | .op {name := {dialect := _, name := "triggersAtom"}, args := #[tr]} =>
+            match tr with
+            | .op {name := {dialect := _, name := "trigger"}, args := #[tr2]} =>
+              match tr2 with
+              | .commaSepList #[uniqueTrigger] =>
+                translateExpr p xbindings uniqueTrigger
+              | _ =>
+              panic! s!"Currently Boogie supports only single-expression triggers, but got {repr tr2}"
+            | _ =>
+              panic! s!"Currently Boogie supports only one trigger, but got {repr tr}"
+        | _ =>
+          panic! s!"Currently Boogie supports only one trigger, but got {repr tsa}"
+
     -- Create one quantifier constructor per variable
-    return xsArray.foldr (fun (_, ty) e =>
+    -- Trigger attached to only the innermost quantifier
+    let buildQuantifier := fun (_, ty) (e, first) =>
       match ty with
       | .forAll [] mty =>
-        .quant qk (.some mty) e
-      | _ => panic! s!"Expected monomorphic type in quantifier, got: {ty}") b
+        let triggers := if first then
+            triggers
+          else
+            LExpr.noTrigger
+        (.quant qk (.some mty) triggers e, false)
+      | _ => panic! s!"Expected monomorphic type in quantifier, got: {ty}"
+
+    return xsArray.foldr buildQuantifier (init := (b, true)) |>.1
 
 partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   TransM Boogie.Expression.Expr := do

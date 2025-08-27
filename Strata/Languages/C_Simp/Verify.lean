@@ -24,7 +24,7 @@ def translate_expr (e : C_Simp.Expression.Expr) : Lambda.LExpr Lambda.LMonoTy Bo
   | .fvar n ty => .fvar (.unres, n) ty
   | .mdata i e => .mdata i (translate_expr e)
   | .abs ty e => .abs ty (translate_expr e)
-  | .quant k ty e => .quant k ty (translate_expr e)
+  | .quant k ty tr e => .quant k ty (translate_expr tr) (translate_expr e)
   | .app fn e => .app (translate_expr fn) (translate_expr e)
   | .ite c t e => .ite (translate_expr c) (translate_expr t) (translate_expr e)
   | .eq e1 e2 => .eq (translate_expr e1) (translate_expr e2)

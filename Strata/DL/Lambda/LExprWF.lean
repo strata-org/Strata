@@ -35,7 +35,7 @@ def freeVars (e : LExpr LMonoTy Identifier) : IdentTs Identifier :=
   | .fvar x ty => [(x, ty)]
   | .mdata _ e1 => freeVars e1
   | .abs _ e1 => freeVars e1
-  | .quant _ _ e1 => freeVars e1
+  | .quant _ _ tr e1 => freeVars tr ++ freeVars e1
   | .app e1 e2 => freeVars e1 ++ freeVars e2
   | .ite c t e => freeVars c ++ freeVars t ++ freeVars e
   | .eq e1 e2 => freeVars e1 ++ freeVars e2
@@ -103,7 +103,7 @@ def substK (k : Nat) (s : LExpr LMonoTy Identifier) (e : LExpr LMonoTy Identifie
   | .fvar y ty => .fvar y ty
   | .mdata info e' => .mdata info (substK k s e')
   | .abs ty e' => .abs ty (substK (k + 1) s e')
-  | .quant qk ty e' => .quant qk ty (substK (k + 1) s e')
+  | .quant qk ty tr' e' => .quant qk ty (substK (k + 1) s tr') (substK (k + 1) s e')
   | .app e1 e2 => .app (substK k s e1) (substK k s e2)
   | .ite c t e => .ite (substK k s c) (substK k s t) (substK k s e)
   | .eq e1 e2 => .eq (substK k s e1) (substK k s e2)
@@ -158,7 +158,7 @@ def varClose (k : Nat) (x : IdentT Identifier) (e : LExpr LMonoTy Identifier) : 
                       (.bvar k) else (.fvar y yty)
   | .mdata info e' => .mdata info (varClose k x e')
   | .abs ty e' => .abs ty (varClose (k + 1) x e')
-  | .quant qk ty e' => .quant qk ty (varClose (k + 1) x e')
+  | .quant qk ty tr' e' => .quant qk ty (varClose (k + 1) x tr') (varClose (k + 1) x e')
   | .app e1 e2 => .app (varClose k x e1) (varClose k x e2)
   | .ite c t e => .ite (varClose k x c) (varClose k x t) (varClose k x e)
   | .eq e1 e2 => .eq (varClose k x e1) (varClose k x e2)
@@ -195,7 +195,7 @@ def lcAt (k : Nat) (e : LExpr LMonoTy Identifier) : Bool :=
   | .fvar _ _ => true
   | .mdata _ e1 => lcAt k e1
   | .abs _ e1 => lcAt (k + 1) e1
-  | .quant _ _ e1 => lcAt (k + 1) e1
+  | .quant _ _ tr e1 => lcAt (k + 1) tr && lcAt (k + 1) e1
   | .app e1 e2 => lcAt k e1 && lcAt k e2
   | .ite c t e' => lcAt k c && lcAt k t && lcAt k e'
   | .eq e1 e2 => lcAt k e1 && lcAt k e2
@@ -220,9 +220,9 @@ theorem varOpen_varClose_when_lcAt
   case abs e e_ih =>
     simp_all [lcAt, varOpen, substK, varClose]
     simp_all [@e_ih (k + 1) (i + 1) x.fst]
-  case quant qk e e_ih =>
+  case quant qk e tr_ih e_ih =>
     simp_all [lcAt, varOpen, substK, varClose]
-    simp_all [@e_ih (k + 1) (i + 1) x.fst]
+    simp_all [@e_ih (k + 1) (i + 1) x.fst, @tr_ih (k + 1) (i + 1) x.fst]
   case app fn e fn_ih e_ih =>
     simp_all [lcAt, varOpen, substK, varClose]
     simp_all [@e_ih k i x.fst, @fn_ih k i x.fst]
@@ -252,10 +252,26 @@ theorem lcAt_varOpen_abs (h1 : fresh (Identifier:=Identifier) x y)
     simp [substK, lcAt] at h2
     have e_ih' := @e_ih (k + 1) (i + 1) h2 (by omega)
     simp_all [lcAt]
-  case quant qk e e_ih =>
+  case quant tr e tr_ih e_ih =>
     simp_all [varOpen]
     simp [substK, lcAt] at h2
-    have e_ih' := @e_ih (k + 1) (i + 1) h1 (by exact h2)
+    rw [fresh] at h1
+    cases h2
+    rename_i h2_tr h2_e
+    have h1_e : fresh x e = true := by
+      rw [fresh]
+      rw [freeVars] at h1
+      simp
+      simp at h1
+      exact h1.2
+    have h1_tr : fresh x tr = true := by
+      rw [fresh]
+      rw [freeVars] at h1
+      simp
+      simp at h1
+      exact h1.1
+    have e_ih' := @e_ih (k + 1) (i + 1) h1_e (by exact h2_e)
+    have tr_ih' := @tr_ih (k + 1) (i + 1) h1_tr (by exact h2_tr)
     simp_all [lcAt]
   case app fn e fn_ih e_ih =>
     simp_all [varOpen, lcAt, substK, fresh, freeVars]
@@ -307,7 +323,7 @@ def substFvar {Identifier: Type} [DecidableEq Identifier] (e : LExpr LMonoTy Ide
   | .fvar  name _ => if name == fr then to else e
   | .mdata info e' => .mdata info (substFvar e' fr to)
   | .abs   ty e' => .abs ty (substFvar e' fr to)
-  | .quant qk ty e' => .quant qk ty (substFvar e' fr to)
+  | .quant qk ty tr' e' => .quant qk ty (substFvar tr' fr to) (substFvar e' fr to)
   | .app   fn e' => .app (substFvar fn fr to) (substFvar e' fr to)
   | .ite   c t e' => .ite (substFvar c fr to) (substFvar t fr to) (substFvar e' fr to)
   | .eq    e1 e2 => .eq (substFvar e1 fr to) (substFvar e2 fr to)
