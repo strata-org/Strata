@@ -95,7 +95,7 @@ def lookup (s : State) (v : String) : Option Arith.PureExpr.TypedExpr :=
 Add free variables to the environment, where the free variable is mapped to
 itself (i.e., `v ↦ .Var v ty`).
 -/
-def preprocess (s : State) (e : Expr) : Expr × State :=
+def preprocess (s : State) (_c : Command) (e : Expr) : Expr × State :=
   let freeVars := e.freeVars.filter (fun (v, _ty) => not (s.env.contains v))
   let new_env := List.foldl (fun env (v, ty) => Map.insert env v (.Num, (Expr.Var v ty))) s.env freeVars
   let s := { s with env := new_env }

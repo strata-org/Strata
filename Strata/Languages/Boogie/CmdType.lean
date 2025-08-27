@@ -37,7 +37,7 @@ Preprocess a user-facing type in Boogie amounts to converting a poly-type (i.e.,
 `LTy`, with no bound variables.
 -/
 def preprocess (T : TEnv BoogieIdent) (ty : LTy) : Except Format (LTy × TEnv BoogieIdent) := do
-  let (mty, T) ← ty.instantiateAndSubst T
+  let (mty, T) ← ty.instantiateWithCheck T
   return (.forAll [] mty, T)
 
 def postprocess (T : TEnv BoogieIdent) (ty : LTy) : Except Format (LTy × TEnv BoogieIdent) := do

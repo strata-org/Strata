@@ -225,12 +225,46 @@ def substOld (var : Expression.Ident) (s e : Expression.Expr) :
                       (substOld var s t) (substOld var s f)
   | .eq e1 e2 => .eq (substOld var s e1) (substOld var s e2)
 
+/--
+For each `(var, val)` in `sm`, substitute `old(var)` in expression `e` with
+`val`.
+-/
 def substsOldExpr (sm : Map Expression.Ident Expression.Expr) (e : Expression.Expr)
   : Expression.Expr :=
-  List.foldl (fun e (var, s) => substOld var s e) e sm
+  if sm.isEmpty then e else
+  match e with
+  | .const _ _ | .fvar _ _ | .bvar _ | .op _ _ => e
+  | .mdata m e' => .mdata m (substsOldExpr sm e')
+  | .abs ty e' => .abs ty (substsOldExpr sm e')
+  | .quant qk ty tr' e' => .quant qk ty (substsOldExpr sm tr') (substsOldExpr sm e')
+  | .app e1 e2 =>
+    match e1, e2 with
+    | .op (.unres "old") _, .fvar x _ =>
+      match sm.find? x with
+      | some s => s
+      | none => e
+    | _, _ => .app (substsOldExpr sm e1) (substsOldExpr sm e2)
+  | .ite c t f => .ite (substsOldExpr sm c)
+                      (substsOldExpr sm t) (substsOldExpr sm f)
+  | .eq e1 e2 => .eq (substsOldExpr sm e1) (substsOldExpr sm e2)
 
+/--
+For each `(var, val)` in `sm`, substitute `old(var)` in each expression `es`
+with `val`.
+-/
 def substsOldExprs (sm : Map Expression.Ident Expression.Expr) (es : List Expression.Expr) :=
   es.map $ substsOldExpr sm
+
+/--
+For each `(var, expr)` pair in `sm`, substitute `old(var)` with `expr` in
+`conds`.
+-/
+protected def substsOldInProcChecks (sm : Map Expression.Ident Expression.Expr)
+  (conds : Map String Procedure.Check) :
+  Map String Procedure.Check :=
+  conds.map (fun (label, c) =>
+                 (label, { expr := substsOldExpr sm c.expr, attr := c.attr }))
+
 
 protected def substsOldChecks (sm : Map Expression.Ident Expression.Expr)
   (conds : ListMap String Procedure.Check) :
@@ -670,24 +704,6 @@ inductive ContainsOldVar : Expression.Expr → Prop where
   | ite_3 : ContainsOldVar e → ContainsOldVar (.ite c t e)
   | eq_1  : ContainsOldVar e1 → ContainsOldVar (.eq e1 e2)
   | eq_2  : ContainsOldVar e2 → ContainsOldVar (.eq e1 e2)
-
-/--
-For each `(var, val)` in `sm`, substitute `old(var)` in expression `e` with
-`val`.
--/
-def substsOld (sm : Map Expression.Ident Expression.Expr) (e : Expression.Expr)
-  : Expression.Expr :=
-  List.foldl (fun e (var, s) => substOld var s e) e sm
-
-/--
-For each `(var, expr)` pair in `sm`, substitute `old(var)` with `expr` in
-`conds`.
--/
-protected def substsOldInProcChecks (sm : Map Expression.Ident Expression.Expr)
-  (conds : ListMap String Procedure.Check) :
-  ListMap String Procedure.Check :=
-  conds.map (fun (label, c) =>
-                 (label, { expr := substsOld sm c.expr, attr := c.attr }))
 
 end OldExpressions
 end Boogie

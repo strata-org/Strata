@@ -25,7 +25,7 @@ def Cmd.eval [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P × S :=
     | .init x ty e md =>
       match EC.lookup σ x with
       | none =>
-        let (e, σ) := EC.preprocess σ e
+        let (e, σ) := EC.preprocess σ c e
         let e := EC.eval σ e
         let σ := EC.update σ x ty e
         let c' := .init x ty e md
@@ -36,7 +36,7 @@ def Cmd.eval [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P × S :=
       match EC.lookup σ x with
       | none => (c, EC.updateError σ (.AssignVarNotExists x e))
       | some (_xv, xty) =>
-        let (e, σ) := EC.preprocess σ e
+        let (e, σ) := EC.preprocess σ c e
         let e := EC.eval σ e
         let σ := EC.update σ x xty e
         let c' := .set x e md
@@ -52,7 +52,7 @@ def Cmd.eval [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P × S :=
         (c', σ)
 
     | .assert label e md =>
-      let (e, σ) := EC.preprocess σ e
+      let (e, σ) := EC.preprocess σ c e
       let e := EC.eval σ e
       let assumptions := EC.getPathConditions σ
       let c' := .assert label e md
@@ -70,7 +70,7 @@ def Cmd.eval [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P × S :=
         (c', EC.deferObligation σ (ProofObligation.mk label assumptions e md))
 
     | .assume label e md =>
-      let (e, σ) := EC.preprocess σ e
+      let (e, σ) := EC.preprocess σ c e
       let e := EC.eval σ e
       let c' := .assume label e md
       match EC.denoteBool e with

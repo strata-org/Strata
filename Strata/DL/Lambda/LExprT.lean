@@ -199,7 +199,7 @@ def inferConst (T : (TEnv Identifier)) (c : String) (cty : Option LMonoTy) :
   -- Unannotated Booleans: note that `(.const "true" none)` and
   -- `(.const "false" none)` will be interpreted as booleans.
   | "true", none | "false", none =>
-    if t[bool] ∈ T.knownTypes then
+    if { name := "bool" } ∈ T.knownTypes then
       .ok (mty[bool], T)
     else
       .error f!"Booleans are not registered in the known types.\n\
@@ -208,7 +208,7 @@ def inferConst (T : (TEnv Identifier)) (c : String) (cty : Option LMonoTy) :
                 Known Types: {T.knownTypes}"
   -- Annotated Integers
   | c, some LMonoTy.int =>
-    if t[int] ∈ T.knownTypes then
+    if { name := "int" } ∈ T.knownTypes then
       if c.isInt then .ok (mty[int], T)
                  else .error f!"Constant annotated as an integer, but it is not.\n\
                                 {@LExpr.const LMonoTy Identifier c cty}"
@@ -219,7 +219,7 @@ def inferConst (T : (TEnv Identifier)) (c : String) (cty : Option LMonoTy) :
                 Known Types: {T.knownTypes}"
   -- Annotated Reals
   | c, some LMonoTy.real =>
-    if t[real] ∈ T.knownTypes then
+    if { name := "real" } ∈ T.knownTypes then
       .ok (mty[real], T)
     else
       .error f!"Reals are not registered in the known types.\n\
@@ -229,7 +229,7 @@ def inferConst (T : (TEnv Identifier)) (c : String) (cty : Option LMonoTy) :
   -- Annotated BitVecs
   | c, some (LMonoTy.bitvec n) =>
     let ty := LMonoTy.bitvec n
-    if .forAll [] ty ∈ T.knownTypes then
+    if { name := "bitvec", arity := 1 } ∈ T.knownTypes then
       (.ok (ty, T))
     else
       .error f!"Bit vectors of size {n} are not registered in the known types.\n\
@@ -238,7 +238,7 @@ def inferConst (T : (TEnv Identifier)) (c : String) (cty : Option LMonoTy) :
                 Known Types: {T.knownTypes}"
   -- Annotated Strings
   | c, some LMonoTy.string =>
-    if t[string] ∈ T.knownTypes then
+    if { name := "string" } ∈ T.knownTypes then
       .ok (mty[string], T)
     else
       .error f!"Strings are not registered in the known types.\n\
@@ -248,7 +248,7 @@ def inferConst (T : (TEnv Identifier)) (c : String) (cty : Option LMonoTy) :
   | _, _ =>
   -- Unannotated Integers
     if c.isInt then
-      if t[int] ∈ T.knownTypes then
+      if { name := "int" } ∈ T.knownTypes then
         .ok (mty[int], T)
       else
         .error f!"Integers are not registered in the known types.\n\
@@ -319,7 +319,7 @@ partial def inferOp (T : (TEnv Identifier)) (o : Identifier) (oty : Option LMono
       match oty with
       | none => .ok (ty, T)
       | some cty =>
-        let (optTyy, T) := (cty.aliasInst T)
+        let (optTyy, T) := (cty.resolveAliases T)
         let S ← Constraints.unify [(ty, optTyy.getD cty )] T.state.substInfo
         .ok (ty, TEnv.updateSubst T S)
 
@@ -369,13 +369,11 @@ partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (ot
   let xt := .forAll [] (.ftvar xt')
   let S ← match oty with
   | .some ty =>
-    let (optTyy, T) := (ty.aliasInst T)
+    let (optTyy, T) := (ty.resolveAliases T)
     (Constraints.unify [(.ftvar xt', optTyy.getD ty)] T.state.substInfo)
   | .none =>
     .ok T.state.substInfo
-
   let T := TEnv.updateSubst T S
-
   let T := T.insertInContext xv xt
   let e' := LExpr.varOpen 0 (xv, some (.ftvar xt')) e
   let triggers' := LExpr.varOpen 0 (xv, some (.ftvar xt')) triggers
@@ -385,7 +383,7 @@ partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (ot
   let mty := LMonoTy.subst T.state.substInfo.subst (.ftvar xt')
   match oty with
   | .some ty =>
-    let (optTyy, _) := (ty.aliasInst T)
+    let (optTyy, _) := (ty.resolveAliases T)
     if optTyy.getD ty == mty
     then .ok ()
     else .error f!"Type annotation on LTerm.quant {ty} (alias for {optTyy.getD ty}) doesn't match inferred argument type"
@@ -405,19 +403,15 @@ partial def fromLExprAux.app (T : (TEnv Identifier)) (e1 e2 : (LExpr LMonoTy Ide
   let ty2 := e2t.toLMonoTy
   let (fresh_name, T) := TEnv.genTyVar T
   let freshty := (.ftvar fresh_name)
-  -- Indirection for type aliases
-  let (optTyy1, T) := (ty1.aliasInst T)
-  let (fresh_name1, T) := TEnv.genTyVar T
-  let freshty1: LMonoTy := (.ftvar fresh_name1)
-  let (optTyy2, T) := (ty2.aliasInst T)
-  let (fresh_name2, T) := TEnv.genTyVar T
-  let freshty2: LMonoTy := (.ftvar fresh_name2)
-  let S ← Constraints.unify [(freshty1, optTyy1.getD ty1 )] T.state.substInfo
-  let T := TEnv.updateSubst T S
-  let S ← Constraints.unify [(freshty2, optTyy2.getD ty2 )] T.state.substInfo
-  let T := TEnv.updateSubst T S
-
-  let S ← Constraints.unify [(freshty1, (.tcons "arrow" [freshty2, freshty]))] T.state.substInfo
+  let (optTyy1, T) := (ty1.resolveAliases T)
+  let (optTyy2, T) := (ty2.resolveAliases T)
+  -- Batch all unification constraints
+  let constraints := [
+    (ty1, optTyy1.getD ty1),
+    (ty2, optTyy2.getD ty2),
+    (ty1, (.tcons "arrow" [ty2, freshty]))
+  ]
+  let S ← Constraints.unify constraints T.state.substInfo
   let mty := LMonoTy.subst S.subst freshty
   .ok (.app e1t e2t mty, TEnv.updateSubst T S)
 
@@ -430,12 +424,15 @@ protected def fromLExpr (T : (TEnv Identifier)) (e : (LExpr LMonoTy Identifier))
 
 protected def fromLExprs (T : (TEnv Identifier)) (es : List (LExpr LMonoTy Identifier)) :
     Except Format (List (LExprT Identifier) × (TEnv Identifier)) := do
-  match es with
-  | [] => .ok ([], T)
-  | e :: erest =>
-    let (et, T) ← LExprT.fromLExpr T e
-    let (erestt, T) ← LExprT.fromLExprs T erest
-    .ok ((et :: erestt), T)
+  go T es []
+  where
+    go (T : TEnv Identifier) (rest : List (LExpr LMonoTy Identifier))
+        (acc : List (LExprT Identifier)) := do
+      match rest with
+      | [] => .ok (acc.reverse, T)
+      | e :: erest =>
+        let (et, T) ← LExprT.fromLExpr T e
+        go T erest (et :: acc)
 
 end LExprT
 

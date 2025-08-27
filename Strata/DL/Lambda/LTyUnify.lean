@@ -127,9 +127,42 @@ def LMonoTy.subst (S : Subst) (mty : LMonoTy) : LMonoTy :=
 Apply substitution `S` to monotypes `mtys`.
 -/
 def LMonoTys.subst (S : Subst) (mtys : LMonoTys) : LMonoTys :=
-    match mtys with
-    | [] => [] | ty :: rest => LMonoTy.subst S ty :: LMonoTys.subst S rest
+  substAux S mtys []
+where
+  substAux S mtys acc : LMonoTys :=
+  match mtys with
+  | [] => acc.reverse
+  | ty :: rest => substAux S rest (LMonoTy.subst S ty :: acc)
 end
+
+/--
+Non tail-recursive version of `LMonoTys.subst`, useful for proofs.
+
+See theorem `LMonoTys.subst_eq_substLogic`.
+-/
+def LMonoTys.substLogic (S : Subst) (mtys : LMonoTys) : LMonoTys :=
+  match mtys with
+  | [] => []
+  | mty :: mrest =>
+    LMonoTy.subst S mty :: LMonoTys.substLogic S mrest
+
+theorem LMonoTys.subst_eq_substLogic (S : Subst) (mtys : LMonoTys) :
+    LMonoTys.subst S mtys = LMonoTys.substLogic S mtys := by
+  simp [LMonoTys.subst]
+  suffices h : ∀ acc, LMonoTys.subst.substAux S mtys acc =
+                      acc.reverse ++ LMonoTys.substLogic S mtys by
+    have := h []
+    simp at this
+    exact this
+  intro acc
+  induction mtys generalizing acc with
+  | nil =>
+    simp [LMonoTys.substLogic, subst.substAux]
+  | cons mty mrest ih =>
+    simp [LMonoTys.subst.substAux, LMonoTys.substLogic]
+    rw [ih]
+    simp
+    done
 
 /--
 No key (i.e., type identifier) in a well-formed substitution `S` can appear as a
@@ -158,13 +191,14 @@ theorem LMonoTy.subst_keys_not_in_substituted_type (h : SubstWF S) :
     simp_all
     simp [subst]
     induction args
-    case nil => simp_all [LMonoTys.subst, LMonoTys.freeVars, LMonoTy.freeVars]
+    case nil =>
+      simp_all [LMonoTys.subst_eq_substLogic, LMonoTys.substLogic, LMonoTys.freeVars, LMonoTy.freeVars]
     case cons head tail tail_ih =>
       simp_all
       obtain ⟨h1, h2⟩ := h1
       intro x hx
       have h1' := h1 x hx
-      simp [LMonoTy.freeVars, LMonoTys.subst] at tail_ih ⊢
+      simp [LMonoTy.freeVars, LMonoTys.subst_eq_substLogic, LMonoTys.substLogic] at tail_ih ⊢
       simp [h1']
       exact tail_ih x hx
   done
@@ -193,15 +227,15 @@ theorem LMonoTy.freeVars_of_subst_subset (S : Subst) (mty : LMonoTy) :
   case tcons name args ih =>
     simp [LMonoTy.subst, LMonoTy.freeVars]
     induction args
-    case nil => simp_all [LMonoTys.freeVars, LMonoTys.subst]
+    case nil => simp_all [LMonoTys.freeVars, LMonoTys.subst_eq_substLogic, LMonoTys.substLogic]
     case cons mty mtys mtys_ih =>
-      simp_all
-      simp [LMonoTys.subst]
+      simp_all [LMonoTys.subst_eq_substLogic]
+      simp [LMonoTys.substLogic]
       generalize (subst S mty).freeVars = x at mtys_ih ih
       generalize mty.freeVars = a at mtys_ih ih
       generalize LMonoTys.freeVars mtys = b at mtys_ih ih
       generalize List.flatMap freeVars (Map.values S) = c at mtys_ih ih
-      generalize (LMonoTys.subst S mtys).freeVars = d at mtys_ih ih
+      generalize (LMonoTys.substLogic S mtys).freeVars = d at mtys_ih ih
       obtain ⟨ih1, ih2⟩ := ih
       apply And.intro
       case left =>
@@ -217,15 +251,49 @@ theorem LMonoTy.freeVars_of_subst_subset (S : Subst) (mty : LMonoTy) :
 Apply the `new` substitution to the `old` one.
 -/
 def Subst.apply (new : Subst) (old : Subst) : Subst :=
+  applyAux new old []
+where
+  applyAux (new old acc : Subst) : Subst :=
+  match old with
+  | [] => acc.reverse
+  | (id, lty) :: rest =>
+    applyAux new rest ((id, LMonoTy.subst new lty) :: acc)
+
+/--
+Non tail-recursive version of `Subst.apply`, useful for proofs.
+-/
+def Subst.applyLogic (new : Subst) (old : Subst) : Subst :=
   match old with
   | [] => []
   | (id, lty) :: rest =>
-    (id, LMonoTy.subst new lty) :: Subst.apply new rest
+    (id, LMonoTy.subst new lty) :: Subst.applyLogic new rest
+
+theorem Subst.apply_eq_applyLogic (new old : Subst) :
+    Subst.apply new old = Subst.applyLogic new old := by
+  simp [Subst.apply]
+  suffices h : ∀ acc, Subst.apply.applyAux new old acc =
+                  @HAppend.hAppend Subst Subst Subst _
+                    acc.reverse (Subst.applyLogic new old) by
+    have := h []
+    simp at this
+    exact this
+  intro acc
+  induction old generalizing acc with
+  | nil =>
+    simp [Subst.applyLogic, apply.applyAux]
+    unfold HAppend.hAppend instHAppendMap
+    simp_all
+  | cons mty mrest ih =>
+    simp [Subst.apply.applyAux, Subst.applyLogic]
+    rw [ih]; simp
+    unfold HAppend.hAppend instHAppendMap instHAppendOfAppend Append.append List.instAppend
+    simp_all
+    done
 
 @[simp]
 theorem Subst.keys_of_apply_eq :
     Map.keys (Subst.apply new old) = Map.keys old := by
-  induction old <;> simp_all [Map.keys, Subst.apply]
+  induction old <;> simp_all [Map.keys, Subst.apply_eq_applyLogic, Subst.applyLogic]
 
 /--
 No key in a well-formed substitution `newS` appears in the free variables of a
@@ -236,9 +304,9 @@ theorem Subst.keys_not_in_apply (h : SubstWF newS) :
     newS.keys.all (fun k => k ∉ Subst.freeVars (Subst.apply newS oldS)) := by
   simp [Subst.freeVars]
   induction oldS
-  case nil => simp_all [Subst.apply, Map.values]
+  case nil => simp_all [Subst.apply_eq_applyLogic, Subst.applyLogic, Map.values]
   case cons head tail tail_ih =>
-    simp_all [Subst.apply]
+    simp_all [Subst.apply_eq_applyLogic, Subst.applyLogic]
     intro i hi ty hty
     simp [Map.values] at hty
     cases hty
@@ -257,9 +325,9 @@ theorem Subst.freeVars_of_apply_subset (newS S : Subst) (mty : LMonoTy)
     (h : mty ∈ Map.values (Subst.apply newS S)) :
     LMonoTy.freeVars mty ⊆ Subst.freeVars newS ++ Subst.freeVars S := by
   induction S generalizing mty newS
-  case nil => simp_all [Map.values, Subst.apply]
+  case nil => simp_all [Map.values, Subst.apply_eq_applyLogic, Subst.applyLogic]
   case cons head tail tail_ih =>
-    simp [Subst.apply, Map.values] at h
+    simp [Subst.apply_eq_applyLogic, Subst.applyLogic, Map.values] at h
     cases h with
     | inl h_head =>
       subst mty
@@ -276,6 +344,7 @@ theorem Subst.freeVars_of_apply_subset (newS S : Subst) (mty : LMonoTy)
     | inr h_tail =>
       have : freeVars newS ++ freeVars tail ⊆ freeVars newS ++ freeVars (head :: tail) := by
         simp_all
+      simp [Subst.apply_eq_applyLogic] at tail_ih
       exact List.Subset.trans (tail_ih newS mty h_tail) this
   done
 

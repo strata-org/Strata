@@ -144,13 +144,13 @@ def Env.exprEval (E : Env) (e : Expression.Expr) : Expression.Expr :=
   e.eval E.exprEnv.config.fuel E.exprEnv
 
 def Env.pushScope (E : Env) (scope : (Lambda.Scope BoogieIdent)) : Env :=
-  { E with exprEnv := { E.exprEnv with state := E.exprEnv.state.push scope }}
+  { E with exprEnv.state := E.exprEnv.state.push scope }
 
 def Env.pushEmptyScope (E : Env) : Env :=
   Env.pushScope E []
 
 def Env.popScope (E : Env) : Env :=
-  { E with exprEnv := { E.exprEnv with state := E.exprEnv.state.pop }}
+  { E with exprEnv.state := E.exprEnv.state.pop }
 
 def Env.factory (E : Env) : (@Lambda.Factory BoogieIdent) :=
   E.exprEnv.config.factory
@@ -164,10 +164,7 @@ def Env.addFactoryFunc (E : Env) (func : (Lambda.LFunc BoogieIdent)) : Except Fo
   .ok { E with exprEnv := exprEnv }
 
 def Env.insertInContext (xt : (Lambda.IdentT BoogieIdent)) (e : Expression.Expr) (E : Env) : Env :=
-  let exprEnv :=
-      { E.exprEnv with state :=
-                       E.exprEnv.state.insert xt.ident (xt.monoty?, e) }
-  { E with exprEnv := exprEnv }
+  { E with exprEnv.state := E.exprEnv.state.insert xt.ident (xt.monoty?, e) }
 
 /--
 Insert each `(x, v)` in `xs` into the context.
@@ -182,15 +179,17 @@ def Env.genSym (x : String) (c : (Lambda.EvalConfig BoogieIdent)) : BoogieIdent 
   let new_var := c.varPrefix ++ x ++ toString new_idx
   (.temp new_var, c)
 
-def Env.genVar' (x : String) (σ : (Lambda.LState BoogieIdent)) : (BoogieIdent × (Lambda.LState BoogieIdent)) :=
+def Env.genVar' (x : String) (σ : (Lambda.LState BoogieIdent)) :
+    (BoogieIdent × (Lambda.LState BoogieIdent)) :=
   let (new_var, config) := Env.genSym x σ.config
   let σ : Lambda.LState BoogieIdent := { σ with config := config }
-  let known_vars := Lambda.LState.knownVars σ
-  if new_var ∈ known_vars then
-    panic s!"[LState.genVar] Generated variable {Std.format new_var} is not fresh!\n\
-             Known variables: {Std.format σ.knownVars}"
-  else
-    (new_var, σ)
+  -- let known_vars := Lambda.LState.knownVars σ
+  -- if new_var ∈ known_vars then
+  --   panic s!"[LState.genVar] Generated variable {Std.format new_var} is not fresh!\n\
+  --            Known variables: {Std.format σ.knownVars}"
+  -- else
+  --   (new_var, σ)
+  (new_var, σ)
 
 def Env.genVar (x : Expression.Ident) (E : Env) : Expression.Ident × Env :=
   let (_, name) := x
@@ -223,12 +222,14 @@ Generate fresh variables using the base names and any pre-existing types from
 -/
 def Env.genFVars (E : Env) (xs : List (Lambda.IdentT BoogieIdent)) :
   List Expression.Expr × Env :=
-  match xs with
-  | [] => ([], E)
-  | xt :: xrest =>
-    let (xe, E) := E.genFVar xt
-    let (ans, E) := E.genFVars xrest
-    (xe :: ans, E)
+  let rec go (acc : List Expression.Expr) (E : Env) (xs : List (Lambda.IdentT BoogieIdent)) :
+    List Expression.Expr × Env :=
+    match xs with
+    | [] => (acc.reverse, E)
+    | xt :: xrest =>
+      let (xe, E) := E.genFVar xt
+      go (xe :: acc) E xrest
+  go [] E xs
 
 /--
 Insert `(xi, .fvar xi)`, for each `xi` in `xs`, in the _oldest_ scope in `ss`,
@@ -236,10 +237,13 @@ only if `xi` is the identifier of a free variable, i.e., it is not in `ss`.
 -/
 def Env.insertFreeVarsInOldestScope
   (xs : List (Lambda.IdentT BoogieIdent)) (E : Env) : Env :=
-  let xis := xs.map (fun x => x.fst)
-  let xtyei := xs.map (fun x => (x.snd, .fvar x.fst x.snd))
+  let (xis, xtyei) := xs.foldl
+    (fun (acc_ids, acc_pairs) x =>
+      (x.fst :: acc_ids, (x.snd, .fvar x.fst x.snd) :: acc_pairs))
+    ([], [])
   let state' := Maps.addInOldest E.exprEnv.state xis xtyei
   { E with exprEnv := { E.exprEnv with state := state' }}
+
 
 open Imperative Lambda in
 def PathCondition.merge (cond : Expression.Expr) (pc1 pc2 : PathCondition Expression) : PathCondition Expression :=

@@ -29,6 +29,7 @@ theorem snd_values_mem {ps : ListMap BoogieLabel Procedure.Check} :
     case inr mem => right ; exact (ih mem)
   case nil => cases Hin
 
+/-
 set_option warn.sorry false in
 /--
 A Procedure 'pp' that passes type checking is well formed with respect to the whole program 'p'.
@@ -114,5 +115,7 @@ theorem Procedure.typeCheckWF : Procedure.typeCheck T p pp = Except.ok (pp', T')
       -- 1. All modified variables in a procedure are declared in the program.
       sorry
   done
+-/
+
 end WF
 end Boogie

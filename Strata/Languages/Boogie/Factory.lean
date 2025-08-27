@@ -18,18 +18,28 @@ open Lambda LTy.Syntax LExpr.SyntaxMono
 def mapTy (keyTy : LMonoTy) (valTy : LMonoTy) : LMonoTy :=
   .tcons "Map" [keyTy, valTy]
 
-def KnownTypes : List LTy :=
+def KnownLTys : LTys :=
   [t[bool],
    t[int],
    t[string],
    t[real],
+   /-
    t[bv1],
    t[bv8],
    t[bv16],
    t[bv32],
    t[bv64],
+   ...
+   -/
+   -- Note: t[bv<n>] elaborates to (.forAll [] .tcons "bitvec" <n>).
+   -- We can simply add the following here.
+   t[∀n. bitvec n],
    t[∀a b. %a → %b],
    t[∀a b. Map %a %b]]
+
+def KnownTypes : KnownTypes :=
+  KnownLTys.map (fun ty => ty.toKnownType!)
+
 /--
   Convert an LExpr LMonoTy String to an LExpr LMonoTy BoogieIdent
   TODO: Remove when Lambda elaborator offers parametric identifier type
