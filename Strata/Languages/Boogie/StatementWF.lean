@@ -17,9 +17,47 @@ namespace WF
 
 open Std Lambda
 
+theorem Statement.typeCheckAux_go_WF :
+  Statement.typeCheckAux.go p proc T ss acc = Except.ok (pp', T') →
+  WF.WFStatementsProp p acc →
+  WF.WFStatementsProp p (acc ++ ss) := by
+  intros tcok h_acc_ok
+  induction ss generalizing acc T pp' T' with
+  | nil => simp_all
+  | cons h t ih =>
+    unfold Statement.typeCheckAux.go at tcok
+    simp [bind] at tcok
+    cases h with
+    | cmd c =>
+      cases c with
+      | call lhs procName args md =>
+        -- Show that the called procedure is declared.
+        sorry
+      | cmd cmd =>
+        simp [Except.bind] at tcok
+        split at tcok <;> try simp_all
+        sorry
+    | block label bss md => sorry
+    | ite c t e md => sorry
+    | goto l => sorry
+    | loop g m i b md => sorry
+
 /--
-A list of Statement 'ss' that passes type checking is well formed with respect to the whole program 'p'.
+A list of Statement `ss` that passes type checking is well formed with respect
+to the whole program `p`.
 -/
+theorem Statement.typeCheckAuxWF :
+  Statement.typeCheck T p proc ss = Except.ok (pp', T') →
+  WF.WFStatementsProp p ss := by
+  intros tcok
+  simp [Statement.typeCheck, Statement.typeCheckAux, bind, Except.bind] at tcok
+  split at tcok <;> simp_all
+  rename_i x v heq
+  have h_tc_go := @Statement.typeCheckAux_go_WF p proc T ss [] v.fst v.snd
+  simp_all [WFStatementsProp, Forall]
+  done
+
+/-
 theorem Statement.typeCheckWF :
   Statement.typeCheck T p proc ss = Except.ok (pp', T') →
   WF.WFStatementsProp p ss := by
@@ -28,9 +66,10 @@ theorem Statement.typeCheckWF :
   induction ss generalizing T pp' T' with
   | nil => constructor
   | cons h t ih =>
+  unfold Statement.typeCheckAux at ih
   apply (List.Forall_cons (WF.WFStatementProp p) h t).mpr
   apply And.intro
-  . unfold Statement.typeCheckAux at tcok
+  . unfold Statement.typeCheckAux Statement.typeCheckAux.go at tcok
     simp only [bind] at tcok
     cases h with
     | cmd c =>
@@ -64,14 +103,16 @@ theorem Statement.typeCheckWF :
     done
   . split at tcok <;> simp_all
     next Htc =>
-    unfold Statement.typeCheckAux at Htc
+    unfold Statement.typeCheckAux Statement.typeCheckAux.go at Htc
     simp only [bind, Except.bind] at Htc
     cases h with
     | cmd c =>
       simp only at Htc
+      rename_i _ ss_Tss
       split at Htc <;> try simp_all
-      split at Htc <;> try simp_all
+      -- split at Htc <;> try simp_all
       next Htc3 =>
+      rename_i _ c_Tc
       apply ih
       rw [Htc3]
     | block l b md =>
@@ -102,6 +143,7 @@ theorem Statement.typeCheckWF :
       next heq =>
       apply ih
       rw [heq]
+-/
 
 end WF
 end Boogie

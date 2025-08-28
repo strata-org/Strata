@@ -54,7 +54,7 @@ exprGen: 0
 exprPrefix: $__var
 subst: ⏎
 known types:
-[∀[a, b]. (arrow a b), bool, int, string]
+[∀[0, 1]. (arrow 0 1), bool, int, string]
 -/
 #guard_msgs in
 #eval do let ans ← typeCheck { TEnv.default with
@@ -116,7 +116,7 @@ exprPrefix: $__var
 subst: ($__ty0, int)
 
 known types:
-[∀[a, b]. (arrow a b), bool, int, string]
+[∀[0, 1]. (arrow 0 1), bool, int, string]
 -/
 #guard_msgs in
 #eval do let ans ← typeCheck TEnv.default Program.init none
@@ -152,24 +152,20 @@ info: ok: context:
 types:   [(fn, ∀[a]. (arrow a a)) (m1, (arrow int int)) (m2, (arrow (arrow bool int) int))]
 aliases: []
 state:
-tyGen: 13
+tyGen: 9
 tyPrefix: $__ty
 exprGen: 1
 exprPrefix: $__var
-subst: ($__ty10, int)
+subst: ($__ty8, int)
 ($__ty3, (arrow bool int))
 ($__ty5, (arrow bool int))
-($__ty12, bool)
-($__ty11, (arrow bool int))
 ($__ty7, bool)
 ($__ty6, bool)
-($__ty9, bool)
-($__ty8, (arrow bool bool))
 ($__ty2, int)
 ($__ty0, int)
 
 known types:
-[∀[a, b]. (arrow a b), bool, int, string]
+[∀[0, 1]. (arrow 0 1), bool, int, string]
 -/
 #guard_msgs in
 #eval do let ans ← typeCheck { TEnv.default with

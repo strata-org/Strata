@@ -46,10 +46,19 @@ def lookup (E : Env) (v : Expression.Ident) : Option Expression.TypedExpr :=
     | none => some (e, .forAll ["α"] (.ftvar "α"))
   | none => none
 
-def preprocess (E : Env) (e : Expression.Expr) : Expression.Expr × Env :=
-  let e := OldExpressions.substsOld (oldVarSubst E.substMap E) e
-  let E := E.insertFreeVarsInOldestScope e.freeVars
-  (e, E)
+def preprocess (E : Env) (c : Cmd Expression) (e : Expression.Expr) : Expression.Expr × Env :=
+  let substMap := oldVarSubst E.substMap E
+  let e' := OldExpressions.substsOldExpr substMap e
+  match c with
+  | .init _ _ _ _ =>
+    -- The type checker only allows free variables to appear in `init`
+    -- statements, so we only need to compute them when we see an `init`
+    -- command.
+    -- See `CmdType.lean` for details.
+    let freeVars := e.freeVars
+    let E' := E.insertFreeVarsInOldestScope freeVars
+    (e', E')
+  | _ => (e', E)
 
 def genFreeVar (E : Env) (x : Expression.Ident) (ty : Expression.Ty) : Expression.Expr × Env :=
   if h : ty.isMonoType then
@@ -59,6 +68,9 @@ def genFreeVar (E : Env) (x : Expression.Ident) (ty : Expression.Ty) : Expressio
 
 def denoteBool (e : Expression.Expr) : Option Bool :=
   Lambda.LExpr.denoteBool e
+
+def addWarning (E : Env) (w : EvalWarning Expression) : Env :=
+  { E with warnings := w :: E.warnings }
 
 def getPathConditions (E : Env) : PathConditions Expression :=
   E.pathConditions
@@ -98,6 +110,7 @@ instance : EvalContext Expression Env where
   preprocess        := CmdEval.preprocess
   genFreeVar        := CmdEval.genFreeVar
   denoteBool        := CmdEval.denoteBool
+  addWarning        := CmdEval.addWarning
   getPathConditions := CmdEval.getPathConditions
   addPathCondition  := CmdEval.addPathCondition
   deferObligation   := CmdEval.deferObligation
@@ -144,6 +157,8 @@ Factory Functions:
 Path Conditions:
 
 
+Warnings:
+[]
 Deferred Proof Obligations:
 Label: x_value_eq
 Assumptions:
@@ -154,14 +169,12 @@ Proof Obligation:
 #eval format $ Imperative.Cmds.eval Env.init testProgram1
 
 private def testProgram2 : Cmds Expression :=
-  [.init "x" t[int] eb[#0],
-   .set "x" eb[(y : int)],
+  [.init "x" t[int] eb[(y : int)],
    .assert "x_eq_12" eb[x == #12]]
 
 /--
 info: Commands:
-init (x : int) := #0
-x := (y : int)
+init (x : int) := (y : int)
 assert [x_eq_12] ((y : int) == #12)
 
 State:
@@ -171,8 +184,8 @@ Subst Map:
 
 Expression Env:
 State:
-[(x : int) → (y : int)
-(y : int) → (y : int)]
+[(y : int) → (y : int)
+(x : int) → (y : int)]
 
 Evaluation Config:
 Eval Depth: 200
@@ -185,6 +198,8 @@ Factory Functions:
 Path Conditions:
 
 
+Warnings:
+[]
 Deferred Proof Obligations:
 Label: x_eq_12
 Assumptions:

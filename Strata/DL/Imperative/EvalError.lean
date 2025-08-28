@@ -22,7 +22,6 @@ inductive EvalError (P : PureExpr) where
   | AssignVarNotExists (tid : P.Ident) (value : P.Expr)
   | HavocVarNotExists (tid : P.Ident)
   | AssertFail (label : String) (b : P.Expr)
-  | AssumeFail (label : String) (b : P.Expr)
   | LabelNotExists (label : String)
   | Misc (f : Format)
   | OutOfFuel
@@ -40,8 +39,6 @@ def EvalError.toFormat [ToFormat P.Expr] [ToFormat P.Ident] [ToFormat P.Ty]
        cannot be havocked.")
   | AssertFail label b =>
     (f!"[ASSERT ERROR] Assertion {label} failed!{Format.line}{b}")
-  | AssumeFail label b =>
-    (f!"[ASSUME ERROR] Assumption {label} falsified!{Format.line}{b}")
   | LabelNotExists label =>
     (f!"[GOTO ERROR] Label {label} does not exist later in the program.")
   | OutOfFuel =>
@@ -51,6 +48,18 @@ def EvalError.toFormat [ToFormat P.Expr] [ToFormat P.Ident] [ToFormat P.Ty]
 
 instance [ToFormat P.Expr] [ToFormat P.Ident] [ToFormat P.Ty] : ToFormat (EvalError P) where
   format := EvalError.toFormat
+
+inductive EvalWarning (P : PureExpr) where
+  | AssumeFail (label : String) (b : P.Expr)
+
+def EvalWarning.toFormat [ToFormat P.Expr] [ToFormat P.Ident] [ToFormat P.Ty]
+    (w : EvalWarning P) : Format :=
+  match w with
+  | AssumeFail label b =>
+    (f!"Assumption {label} is false!{Format.line}{b}")
+
+instance [ToFormat P.Expr] [ToFormat P.Ident] [ToFormat P.Ty] : ToFormat (EvalWarning P) where
+  format := EvalWarning.toFormat
 
 ---------------------------------------------------------------------
 

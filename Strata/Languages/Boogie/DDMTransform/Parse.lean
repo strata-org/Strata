@@ -109,6 +109,10 @@ fn bvxor (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a "^" b;
 fn bvshl (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a "<<" b;
 fn bvushr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a ">>" b;
 
+fn bvconcat8 (a : bv8, b : bv8) : bv16 => "bvconcat{8}{8}" "(" a "," b ")";
+fn bvconcat16 (a : bv16, b : bv16) : bv32 => "bvconcat{16}{16}" "(" a "," b ")";
+fn bvconcat32 (a : bv32, b : bv32) : bv64 => "bvconcat{32}{32}" "(" a "," b ")";
+
 category Trigger;
 category Triggers;
 op trigger (exprs : CommaSepBy Expr) : Trigger =>

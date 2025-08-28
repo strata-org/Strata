@@ -74,7 +74,7 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
   match Program.Procedure.find? E.program pname with
   | some proc =>
     -- Create a mapping from the formals to the evaluated actuals.
-    let args' := List.map (fun a => E.exprEval (OldExpressions.substsOld old_var_subst a)) args
+    let args' := List.map (fun a => E.exprEval (OldExpressions.substsOldExpr old_var_subst a)) args
     let formal_tys := proc.header.inputs.keys.map (fun k => ((k, none) : (Lambda.IdentT BoogieIdent)))
     let formal_arg_subst := List.zip formal_tys args'
     -- Generate fresh variables for the LHS, and then create a mapping
@@ -180,6 +180,8 @@ structure EnvWithNext where
 /--
 Drop statements up to the given label, and indicate whether goto
 needs to propagate up.
+
+NOTE: We only allow forward-gotos right now.
 -/
 def processGoto : Statements → Option String → (Statements × Option String)
 | rest, .none => (rest, .none)
@@ -192,9 +194,7 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
   List EnvWithNext :=
   open LTy.Syntax in
   go (Imperative.Stmts.sizeOf ss) (EnvWithNext.mk E .none []) ss optLabel
-  where go (steps : Nat) (Ewn : EnvWithNext)
-           (ss : Statements) (optLabel : Option String) :
-    List EnvWithNext :=
+  where go steps Ewn ss optLabel :=
   match steps, Ewn.env.error with
   | _, some _ => [{Ewn with nextLabel := .none}]
   | 0, none => [{Ewn with env := { Ewn.env with error := some .OutOfFuel}, nextLabel := .none}]
@@ -280,7 +280,9 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
                 Ewns_t ++ Ewns_f
 
           | .loop _ _ _ _ _ =>
-            panic! "Cannot evaluate `loop` statement. Please transform your program to eleminate loops before calling Boogie.Statement.evalAux"
+            panic! "Cannot evaluate `loop` statement. \
+                    Please transform your program to eliminate loops before \
+                    calling Boogie.Statement.evalAux"
 
           | .goto l md => [{ Ewn with stk := Ewn.stk.appendToTop [.goto l md], nextLabel := (some l)}]
 
@@ -299,6 +301,7 @@ to their pre-state value in the enclosing procedure of `ss`.
 -/
 def eval (E : Env) (old_var_subst : SubstMap) (ss : Statements) : List (Statements × Env) :=
   (evalAux E old_var_subst ss .none).map gotoToError
+  -- (evalAuxTailRec E old_var_subst ss .none).map gotoToError
 
 /--
 Partial evaluator for statements yielding one environment and transformed

@@ -6,6 +6,7 @@
 
 
 
+import Strata.DL.Imperative.Cmd
 import Strata.DL.Imperative.EvalError
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Util.ListMap
@@ -97,9 +98,11 @@ class EvalContext (P : PureExpr) (State : Type) where
   lookupError       : State → Option (EvalError P)
   update            : State → P.Ident → P.Ty → P.Expr → State
   lookup            : State → P.Ident → Option P.TypedExpr
-  preprocess        : State → P.Expr → (P.Expr × State)
+  preprocess        : State → Cmd P → P.Expr → (P.Expr × State)
   genFreeVar        : State → P.Ident → P.Ty → (P.Expr × State)
   denoteBool        : P.Expr → Option Bool
+
+  addWarning        : State → EvalWarning P → State
 
   /- Path conditions and proof obligations collected during evaluation -/
   getPathConditions : State → (PathConditions P)

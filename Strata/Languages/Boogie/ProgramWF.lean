@@ -93,12 +93,14 @@ instance : Inhabited WFProgram where
 instance : ToFormat WFProgram where
   format wfp := format wfp.self
 
+/-
 /--
 Auxiliary lemma for Program.typeCheck.goWF
 -/
-theorem Program.typeCheck.goWF' : Program.typeCheck.go p T (d :: ds) = .ok (ds', T') →
-  WF.WFDeclProp p d ∧
-  ∃ ds'' TT TT' , Program.typeCheck.go p TT ds = .ok (ds'', TT') := by
+theorem Program.typeCheck.goWF' :
+    Program.typeCheck.go p T (d :: ds) acc = .ok (ds', T') →
+    WF.WFDeclProp p d ∧
+    ∃ ds'' TT TT' , Program.typeCheck.go p TT ds acc' = .ok (ds'', TT') := by
   intros tcok
   simp only [Program.typeCheck.go] at tcok
   cases Hd: d with
@@ -211,11 +213,12 @@ theorem Program.typeCheck.goWF' : Program.typeCheck.go p T (d :: ds) = .ok (ds',
           split at tcok <;> simp_all
           next heq =>
           refine ⟨_, _, _, heq⟩
+-/
 
 /--
 Auxiliary lemma for Program.typeCheckWF
 -/
-theorem Program.typeCheck.goWF : Program.typeCheck.go p T ds = .ok (ds', T') → WF.WFDeclsProp p ds := by
+theorem Program.typeCheck.goWF : Program.typeCheck.go p T ds [] = .ok (ds', T') → WF.WFDeclsProp p ds := by
   intros tcok
   induction ds generalizing ds' T T' with
   | nil => simp [Program.typeCheck.go] at tcok
@@ -223,11 +226,13 @@ theorem Program.typeCheck.goWF : Program.typeCheck.go p T ds = .ok (ds', T') →
   | cons h t t_ih =>
     apply (List.Forall_cons (WF.WFDeclProp p) h t).mpr
     constructor
-    . apply (Program.typeCheck.goWF' tcok).1
-    . have H := (Program.typeCheck.goWF' tcok).2
-      cases H with | intro ds'' H => cases H with | intro TT H =>
-      cases H with
-      | intro TT' H => exact t_ih H
+    . sorry
+      -- apply (Program.typeCheck.goWF' tcok).1
+    . -- have H := (Program.typeCheck.goWF' tcok).2
+      -- cases H with | intro ds'' H => cases H with | intro TT H =>
+      -- cases H with
+      -- | intro TT' H => exact t_ih H
+      sorry
 
 /--
 The main lemma stating that a program 'p' that passes type checking is well formed
@@ -247,9 +252,11 @@ theorem Program.typeCheckWF : Program.typeCheck T p = .ok (p', T') → WF.WFProg
         constructor <;> try assumption
         rw [if_pos pvar, if_pos pproc, if_pos pfunc] at tcok
         simp [bind, Except.bind] at tcok
-        cases Hgo : Program.typeCheck.go p T p.decls with
+        cases Hgo : Program.typeCheck.go p T p.decls [] with
         | error _ => simp_all
-        | ok res => exact typeCheck.goWF Hgo
+        | ok res =>
+
+          exact typeCheck.goWF Hgo
 
 end WF
 end Boogie

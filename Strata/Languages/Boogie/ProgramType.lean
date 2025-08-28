@@ -39,11 +39,12 @@ def typeCheck (T : Boogie.Expression.TyEnv) (program : Program) :
               List of function names:{Format.line}\
               {funcNames}"
   else
-    let (decls, T) ← go T program.decls
+    let (decls, T) ← go T program.decls []
     .ok ({ decls }, T)
-  where go T decls : Except Format (Decls × Boogie.Expression.TyEnv) :=
-  match decls with
-  | [] => .ok ([], T)
+
+  where go T remaining acc : Except Format (Decls × Boogie.Expression.TyEnv) :=
+  match remaining with
+  | [] => .ok (acc.reverse, T)
   | decl :: drest => do
     let (decl', T) ←
       match decl with
@@ -59,37 +60,23 @@ def typeCheck (T : Boogie.Expression.TyEnv) (program : Program) :
                          Declaration: {decl}"
 
       | .type td _ =>
-        match td with
-        | .con tc =>
-          let ty := tc.toType
-          let T := T.addKnownType ty
-          .ok (.type td, T)
-        | .syn ts =>
-          if !ts.typeArgs.Nodup then
-            .error f!"[Type Synonym] Duplicates found in the type arguments!\n\
-                      {decl}"
-          else if !((ts.type.freeVars ⊆ ts.typeArgs) &&
-                    (ts.toLHSLTy.freeVars ⊆ ts.typeArgs)) then
-            .error f!"[Type Synonym] Type definition contains free type arguments!\n\
-                      {decl}"
-          else
-            let (mtys, T) := Lambda.LMonoTys.instantiate ts.typeArgs [ts.toLHSLMonoTy, ts.type] T
-            match mtys with
-            | [lhs, rhs] =>
-              let newTyArgs := lhs.freeVars
-              -- We expect `ts.type` to be a known, legal type, hence the use of
-              -- `instantiateWithCheck` below. Note that we only store type
-              -- declarations -- not synonyms -- as values in the alias table;
-              -- i.e., we don't store a type alias mapped to another type alias.
-              let (rhsmty, _) ← (Lambda.LTy.forAll [] rhs).instantiateWithCheck T
-              let new_aliases := { args := newTyArgs,
-                                   lhs := lhs,
-                                   rhs := rhsmty } :: T.context.aliases
-              let context := { T.context with aliases := new_aliases }
-              let T := { T with context := context }
-              .ok (.type td, T)
-            | _ => .error f!"[Type Synonym] Implementation error! \n\
-                             {decl}"
+        match Program.find?.go .type td.name acc with
+        | some decl =>
+          .error f!"Type declaration of the same name already exists!\n\
+                    {decl}"
+        | none =>
+          if td.name.snd ∈ T.knownTypes.keywords then
+            .error f!"This type declaration's name is reserved!\n\
+                      {td}\n\
+                      KnownTypes' names:\n\
+                      {T.knownTypes.keywords}"
+          else match td with
+          | .con tc =>
+            let T := T.addKnownType { name := tc.name, arity := tc.numargs }
+            .ok (.type td, T)
+          | .syn ts =>
+            let T ← TEnv.addTypeAlias { typeArgs := ts.typeArgs, name := ts.name, type := ts.type } T
+            .ok (.type td, T)
 
       | .ax a _ =>
         let (ae, T) ← LExprT.fromLExpr T a.e
@@ -106,8 +93,7 @@ def typeCheck (T : Boogie.Expression.TyEnv) (program : Program) :
         let T := T.addFactoryFunction func'
         .ok (.func func', T)
 
-    let (drest', T) ← go T drest
-    .ok ((decl' :: drest'), T)
+    go T drest (decl' :: acc)
 
 ---------------------------------------------------------------------
 

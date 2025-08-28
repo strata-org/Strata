@@ -25,29 +25,17 @@ info: ok: ((procedure P :  ((x : int)) → ((y : int)))
  types:   ⏎
  aliases: []
  state:
- tyGen: 18
+ tyGen: 6
  tyPrefix: $__ty
  exprGen: 0
  exprPrefix: $__var
- subst: ($__ty15, int)
- ($__ty17, int)
- ($__ty16, (arrow int int))
- ($__ty12, (arrow int int))
- ($__ty14, int)
- ($__ty13, (arrow int (arrow int int)))
- ($__ty9, bool)
- ($__ty11, int)
- ($__ty10, (arrow int bool))
- ($__ty6, (arrow int bool))
- ($__ty8, int)
- ($__ty7, (arrow int (arrow int bool)))
+ subst: ($__ty5, int)
+ ($__ty4, (arrow int int))
  ($__ty3, bool)
- ($__ty5, int)
- ($__ty4, (arrow int bool))
+ ($__ty2, (arrow int bool))
+ ($__ty1, bool)
  ($__ty0, (arrow int bool))
- ($__ty2, int)
- ($__ty1, (arrow int (arrow int bool)))
-  known types: [∀[a, b]. (arrow a b), bool, int, string])
+  known types: [∀[0, 1]. (arrow 0 1), bool, int, string])
 -/
 #guard_msgs in
 #eval do let ans ← typeCheck { TEnv.default with functions := Boogie.Factory }
