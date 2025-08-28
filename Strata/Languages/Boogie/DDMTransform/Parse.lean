@@ -113,14 +113,14 @@ fn bvconcat8 (a : bv8, b : bv8) : bv16 => "bvconcat{8}{8}" "(" a "," b ")";
 fn bvconcat16 (a : bv16, b : bv16) : bv32 => "bvconcat{16}{16}" "(" a "," b ")";
 fn bvconcat32 (a : bv32, b : bv32) : bv64 => "bvconcat{32}{32}" "(" a "," b ")";
 
-category Trigger;
+category TriggerGroup;
 category Triggers;
-op trigger (exprs : CommaSepBy Expr) : Trigger =>
+op trigger (exprs : CommaSepBy Expr) : TriggerGroup =>
   "{" exprs "}";
-op triggersAtom (trigger : Trigger) : Triggers =>
-  trigger;
-op triggersPush (triggers : Triggers, trigger : Trigger) : Triggers =>
-  triggers trigger;
+op triggersAtom (group : TriggerGroup) : Triggers =>
+  group;
+op triggersPush (triggers : Triggers, group : TriggerGroup) : Triggers =>
+  triggers group;
 
 // Quantifiers without triggers
 fn forall (d : DeclList, @[scope(d)] b : bool) : bool =>

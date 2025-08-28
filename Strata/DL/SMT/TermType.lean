@@ -19,6 +19,7 @@ inductive TermPrimType where
   | real
   | bitvec (n : Nat)
   | string
+  | trigger
 deriving instance Repr, Inhabited, DecidableEq for TermPrimType
 
 def TermPrimType.mkName : TermPrimType → String
@@ -27,6 +28,7 @@ def TermPrimType.mkName : TermPrimType → String
   | .real     => "real"
   | .bitvec _ => "bitvec"
   | .string   => "string"
+  | .trigger  => "trigger"
 
 def TermPrimType.lt : TermPrimType → TermPrimType → Bool
   | .bitvec n₁, .bitvec n₂     => n₁ < n₂
@@ -166,6 +168,7 @@ abbrev TermType.int  : TermType := .prim .int
 abbrev TermType.real : TermType := .prim .real
 abbrev TermType.bitvec (n : Nat) : TermType := .prim (.bitvec n)
 abbrev TermType.string : TermType := .prim .string
+abbrev TermType.trigger : TermType := .prim .trigger
 
 def TermType.isPrimType : TermType → Bool
   | .prim _ => true
