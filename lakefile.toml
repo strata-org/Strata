@@ -1,6 +1,6 @@
 name = "Strata"
 version = "0.1.0"
-defaultTargets = ["Strata", "StrataMain", "StrataVerify"]
+defaultTargets = ["Strata", "StrataMain", "StrataVerify", "StrataTypeScriptRunner", "StrataTypeScriptASTLoader"]
 testDriver = "StrataTest"
 
 [[lean_lib]]
