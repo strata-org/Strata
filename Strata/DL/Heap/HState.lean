@@ -7,6 +7,7 @@
 import Strata.DL.Heap.HExpr
 import Strata.DL.Heap.HTy
 import Strata.DL.Lambda.LState
+import Strata.DL.Lambda.LTy
 import Strata.DL.Lambda.IntBoolFactory
 import Std.Data.HashMap
 import Lean
@@ -52,7 +53,7 @@ instance : Repr HState where
 namespace HState
 
 -- Helper function to add a variable to Lambda state
-private def addToLambdaState (lambdaState : LState String) (name : String) (ty : Option Lambda.LMonoTy) (expr : Lambda.LExpr String) : LState String :=
+private def addToLambdaState (lambdaState : LState String) (name : String) (ty : Option Lambda.LMonoTy) (expr : Lambda.LExpr Lambda.LMonoTy String) : LState String :=
   -- Add to the top scope (most recent scope)
   match lambdaState.state with
   | [] =>
@@ -64,7 +65,7 @@ private def addToLambdaState (lambdaState : LState String) (name : String) (ty :
     { lambdaState with state := newTopScope :: restScopes }
 
 -- Helper function to lookup a variable in Lambda state
-private def lookupInLambdaState (lambdaState : LState String) (name : String) : Option (Lambda.LExpr String) :=
+private def lookupInLambdaState (lambdaState : LState String) (name : String) : Option (Lambda.LExpr Lambda.LMonoTy String) :=
   -- Search through the scope stack (most recent first)
   lambdaState.state.findSome? fun scope =>
     match scope.find? name with

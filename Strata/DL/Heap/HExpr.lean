@@ -33,7 +33,7 @@ But for now we'll just keep it together.
 -/
 inductive HExpr : Type where
   -- Include all Lambda expressions (using String as Identifier)
-  | lambda (e : LExpr String)
+  | lambda (e : LExpr LMonoTy String)
   -- New heap-specific expressions
   | alloc  (objTy : HMonoTy) (fields : List (Nat × HExpr))   -- Allocate object with (index, value) pairs
   | deref  (addr : HExpr) (field : Nat)                      -- Field access: addr[field]
@@ -55,24 +55,24 @@ instance : Inhabited HExpr where
 
 -- Boolean constants
 @[match_pattern]
-protected def true : HExpr := .lambda (LExpr.true : LExpr String)
+protected def true : HExpr := .lambda (LExpr.true : LExpr LMonoTy String)
 
 @[match_pattern]
-protected def false : HExpr := .lambda (LExpr.false : LExpr String)
+protected def false : HExpr := .lambda (LExpr.false : LExpr LMonoTy String)
 
 -- Integer constants
 def int (n : Int) : HExpr :=
-  .lambda (LExpr.const (toString n) (some LMonoTy.int) : LExpr String)
+  .lambda (LExpr.const (toString n) (some LMonoTy.int) : LExpr LMonoTy String)
 
 -- String constants
 def string (s : String) : HExpr :=
-  .lambda (LExpr.const s (some LMonoTy.string) : LExpr String)
+  .lambda (LExpr.const s (some LMonoTy.string) : LExpr LMonoTy String)
 
 -- Convert Lambda expression to Heap expression
-def ofLambda (e : LExpr String) : HExpr := .lambda e
+def ofLambda (e : LExpr LMonoTy String) : HExpr := .lambda e
 
 -- Extract Lambda expression if possible
-def toLambda? (e : HExpr) : Option (LExpr String) :=
+def toLambda? (e : HExpr) : Option (LExpr LMonoTy String) :=
   match e with
   | .lambda le => some le
   | _ => none
