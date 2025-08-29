@@ -34,14 +34,14 @@ procedure P() returns ()
 /--
 info: func x :  () → real;
 func y :  () → real;
-axiom real_x_ge_1: (((~Real.Ge : (arrow real (arrow real bool))) ~x) (#1.0 : real));
-axiom real_y_ge_2: (((~Real.Ge : (arrow real (arrow real bool))) ~y) (#2.0 : real));
+axiom real_x_ge_1: (((~Real.Ge : (arrow real (arrow real bool))) (~x : real)) (#1.0 : real));
+axiom real_y_ge_2: (((~Real.Ge : (arrow real (arrow real bool))) (~y : real)) (#2.0 : real));
 (procedure P :  () → ())
 modifies: []
 preconditions: ⏎
 postconditions: ⏎
-body: assert [real_add_ge_good] (((~Real.Ge : (arrow real (arrow real bool))) (((~Real.Add : (arrow real (arrow real real))) ~x) ~y)) (#3.0 : real))
-assert [real_add_ge_bad] (((~Real.Ge : (arrow real (arrow real bool))) (((~Real.Add : (arrow real (arrow real real))) ~x) ~y)) (#4.0 : real))
+body: assert [real_add_ge_good] (((~Real.Ge : (arrow real (arrow real bool))) (((~Real.Add : (arrow real (arrow real real))) (~x : real)) (~y : real))) (#3.0 : real))
+assert [real_add_ge_bad] (((~Real.Ge : (arrow real (arrow real bool))) (((~Real.Add : (arrow real (arrow real real))) (~x : real)) (~y : real))) (#4.0 : real))
 
 Errors: #[]
 -/
@@ -133,19 +133,19 @@ spec {
 /--
 info: func x :  () → bv8;
 func y :  () → bv8;
-axiom bv_x_ge_1: (((~Bv8.Le : (arrow bv8 (arrow bv8 bool))) (#1 : bv8)) ~x);
-axiom bv_y_ge_2: (((~Bv8.Le : (arrow bv8 (arrow bv8 bool))) (#2 : bv8)) ~y);
+axiom bv_x_ge_1: (((~Bv8.Le : (arrow bv8 (arrow bv8 bool))) (#1 : bv8)) (~x : bv8));
+axiom bv_y_ge_2: (((~Bv8.Le : (arrow bv8 (arrow bv8 bool))) (#2 : bv8)) (~y : bv8));
 (procedure P :  () → ())
 modifies: []
 preconditions: ⏎
 postconditions: ⏎
-body: assert [bv_add_ge] ((((~Bv8.Add : (arrow bv8 (arrow bv8 bv8))) ~x) ~y) == (((~Bv8.Add : (arrow bv8 (arrow bv8 bv8))) ~y) ~x))
+body: assert [bv_add_ge] ((((~Bv8.Add : (arrow bv8 (arrow bv8 bv8))) (~x : bv8)) (~y : bv8)) == (((~Bv8.Add : (arrow bv8 (arrow bv8 bv8))) (~y : bv8)) (~x : bv8)))
 
 (procedure Q :  ((x : bv1)) → ((r : bv1)))
 modifies: []
 preconditions: ⏎
-postconditions: (Q_ensures_0, (r == (((~Bv1.Sub : (arrow bv1 (arrow bv1 bv1))) x) x)))
-body: r := (((~Bv1.Add : (arrow bv1 (arrow bv1 bv1))) x) x)
+postconditions: (Q_ensures_0, ((r : bv1) == (((~Bv1.Sub : (arrow bv1 (arrow bv1 bv1))) (x : bv1)) (x : bv1))))
+body: r := (((~Bv1.Add : (arrow bv1 (arrow bv1 bv1))) (x : bv1)) (x : bv1))
 
 Errors: #[]
 -/
