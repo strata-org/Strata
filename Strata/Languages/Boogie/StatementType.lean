@@ -106,25 +106,27 @@ where
           let _ ← T.freeVarCheck guard f!"[{s}]"
           let (conda, T) ← LExprT.fromLExpr T guard
           let condty := conda.toLMonoTy
-          let (mty, T) ← match measure with
+          let (mt, T) ← match measure with
           | .some m => do
             let _ ← T.freeVarCheck m f!"[{s}]"
             let (ma, T) ← LExprT.fromLExpr T m
-            .ok ((some ma.toLMonoTy), T)
+            .ok (some ma, T)
           | _ => .ok (none, T)
-          let (ity, T) ← match invariant with
+          let (it, T) ← match invariant with
           | .some i => do
             let _ ← T.freeVarCheck i f!"[{s}]"
             let (ia, T) ← LExprT.fromLExpr T i
-            .ok ((some ia.toLMonoTy), T)
+            .ok (some ia, T)
           | _ => .ok (none, T)
+          let mty := mt.map LExprT.toLMonoTy
+          let ity := it.map LExprT.toLMonoTy
           match (condty, mty, ity) with
           | (.tcons "bool" [], none, none)
           | (.tcons "bool" [], some (.tcons "int" []), none)
           | (.tcons "bool" [], none, some (.tcons "bool" []))
           | (.tcons "bool" [], some (.tcons "int" []), some (.tcons "bool" [])) =>
             let (tb, T) ← go T [(.block "$$_loop_body" body #[])] []
-            let s' := .loop conda.toLExpr measure invariant ⟨tb⟩ md
+            let s' := .loop conda.toLExpr (mt.map LExprT.toLExpr) (it.map LExprT.toLExpr) ⟨tb⟩ md
             .ok (s', T)
           | _ =>
             match condty with
