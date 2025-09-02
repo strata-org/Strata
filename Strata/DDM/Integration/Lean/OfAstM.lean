@@ -128,22 +128,22 @@ def ofOperationM {α β Ann} [Repr Ann] [SizeOf α] {e : α} {c : Int}
 
 def ofIdentM {α} [SizeOf α] {e : α} {c : Int}
       : SizeBounded Arg e c → OfAstM String
-| ⟨.ident a, _⟩ => pure a
+| ⟨.ident _ a, _⟩ => pure a
 | a => .throwExpected "identifier" a.val
 
 def ofNumM {α} [SizeOf α] {e : α} {c : Int}
       : SizeBounded Arg e c → OfAstM Nat
-| ⟨.num a, _⟩ => pure a
+| ⟨.num _ a, _⟩ => pure a
 | a => .throwExpected "numeric literal" a.val
 
 def ofDecimalM {α} [SizeOf α] {e : α} {c : Int}
       : SizeBounded Arg e c → OfAstM Decimal
-| ⟨.decimal a, _⟩ => pure a
+| ⟨.decimal _ a, _⟩ => pure a
 | a => .throwExpected "scientific literal" a.val
 
 def ofStrlitM {α} [SizeOf α] {e : α} {c : Int}
       : SizeBounded Arg e c → OfAstM String
-| ⟨.strlit a, _⟩ => pure a
+| ⟨.strlit _ a, _⟩ => pure a
 | a => .throwExpected "string literal" a.val
 
 def ofOptionM {α} [SizeOf α] {e : α} {c : Int}
@@ -151,10 +151,14 @@ def ofOptionM {α} [SizeOf α] {e : α} {c : Int}
       (a : SizeBounded Arg e c)
       : OfAstM (Option β) :=
   match a with
-  | ⟨.option none, _⟩ => pure none
-  | ⟨.option (some v), bndP⟩ => some <$> act ⟨v, by
-    simp at bndP
-    omega⟩
+  | ⟨.option _ mv, bndP⟩ =>
+    match mv with
+    | none => pure none
+    | some v =>
+      have p : sizeOf v ≤ sizeOf e + c := by
+        apply Int.le_trans _ bndP
+        decreasing_tactic
+      some <$> act ⟨v, p⟩
   | _ => throwExpected "option" a.val
 
 def ofCommaSepByM {α} [SizeOf α] {e : α} {c : Int}
@@ -162,12 +166,13 @@ def ofCommaSepByM {α} [SizeOf α] {e : α} {c : Int}
       (arg : SizeBounded Arg e c)
       : OfAstM (Array β) :=
   match arg with
-  | ⟨.commaSepList a, bndP⟩ =>
-    a.attach.mapM fun ⟨v, vp⟩  => do
-      act ⟨v, by
-        have p := Array.sizeOf_lt_of_mem_strict vp
-        simp at bndP
-        omega⟩
+  | ⟨.commaSepList _ a, bndP⟩ =>
+    a.attach.mapM fun ⟨v, vIn⟩  => do
+      have bnd : sizeOf v ≤ sizeOf e + c := by
+        have p := Array.sizeOf_lt_of_mem_strict vIn
+        apply Int.le_trans _ bndP
+        decreasing_tactic
+      act ⟨v, bnd⟩
   | _ => throwExpected "seq" arg.val
 
 def ofSeqM {α} [SizeOf α] {e : α} {c : Int}
@@ -175,12 +180,13 @@ def ofSeqM {α} [SizeOf α] {e : α} {c : Int}
       (arg : SizeBounded Arg e c)
       : OfAstM (Array β) :=
   match arg with
-  | ⟨.seq a, bndP⟩ =>
-    a.attach.mapM fun ⟨v, vp⟩  => do
-      act ⟨v, by
-        have p := Array.sizeOf_lt_of_mem_strict vp
-        simp at bndP
-        omega⟩
+  | ⟨.seq _ a, bndP⟩ =>
+    a.attach.mapM fun ⟨v, vIn⟩  => do
+      have bnd : sizeOf v ≤ sizeOf e + c := by
+        have p := Array.sizeOf_lt_of_mem_strict vIn
+        apply Int.le_trans _ bndP
+        decreasing_tactic
+      act ⟨v, bnd⟩
   | _ => throwExpected "seq" arg.val
 
 /--

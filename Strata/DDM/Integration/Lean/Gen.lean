@@ -154,8 +154,8 @@ partial def checkCat (op : QualifiedIdent) (c : SyntaxCat) : Except String Unit 
 def ofArgDecl (op : QualifiedIdent) (d : ArgDecl) : Except String (String × SyntaxCat) := do
   let cat ←
     match d.kind with
-    | .type _ =>
-      pure <| .atom q`Init.Expr
+    | .type tp =>
+      pure <| .atom tp.ann q`Init.Expr
     | .cat c =>
       checkCat op c
       pure c
@@ -168,16 +168,15 @@ def ofOpDecl (d : DialectName) (o : OpDecl) : Except String CatOp := do
 
 def ofTypeDecl (d : DialectName) (o : TypeDecl) : CatOp := {
   name := ⟨d, o.name⟩
-  argDecls := o.argNames |>.map fun nm => ⟨nm, .atom q`Init.Type⟩
+  argDecls := o.argNames |>.map fun anm => ⟨anm.val, .atom .none q`Init.Type⟩
 }
 
-end CatOp
-
-
-def CatOp.ofFunctionDecl (d : DialectName) (o : FunctionDecl) : Except String CatOp := do
+def ofFunctionDecl (d : DialectName) (o : FunctionDecl) : Except String CatOp := do
   let name := ⟨d, o.name⟩
   let argDecls ← o.argDecls |>.mapM (ofArgDecl name)
   return { name, argDecls }
+
+end CatOp
 
 /--
 This maps names of categories that we are going to declare to
@@ -198,11 +197,6 @@ def CatOpM.addError (msg : String) : CatOpM Unit :=
 def mkRootIdent (name : Name) : Ident :=
   let rootName := `_root_ ++ name
   .mk (.ident .none name.toString.toSubstring rootName [.decl name []])
-
-structure Ann (Base : Type) (α : Type) where
-  val : Base
-  ann : α
-deriving Inhabited, Repr
 
 /--
 This maps category names in the Init that are already declared to their
@@ -249,7 +243,7 @@ def addDecl (d : DialectName) (decl : Decl) : CatOpM Unit :=
       let cat := q`Init.TypeP
       addCatM ⟨d, decl.name⟩
       addOpM cat { name := q`Init.type, argDecls := #[] }
-      addOpM cat { name := q`Init.expr, argDecls := #[("type", .atom q`Init.Type)] }
+      addOpM cat { name := q`Init.expr, argDecls := #[("type", .atom .none q`Init.Type)] }
     else
       addCatM ⟨d, decl.name⟩
   | .op decl => do
@@ -291,7 +285,7 @@ A set of categories.
 -/
 abbrev CategorySet := Std.HashSet CategoryName
 
-namespace SyntaxCat
+namespace SyntaxCatF
 
 /--
 Invoke `f` over all atomic (no argument) category names in `c`.
@@ -300,10 +294,10 @@ private
 def foldOverAtomicCategories {α} (c : SyntaxCat) (init : α)  (f : α  → QualifiedIdent → α) : α := aux c init false
   where aux (c : SyntaxCat) (init : α) (hasArg : Bool) :=
           match c with
-          | .atom i => if hasArg then init else f init i
-          | .app d e => aux d (aux e init false) true
+          | .atom _ i => if hasArg then init else f init i
+          | .app _ d e => aux d (aux e init false) true
 
-end SyntaxCat
+end SyntaxCatF
 
 structure WorkSet (α : Type _) [BEq α] [Hashable α] where
   set : Std.HashSet α
@@ -367,11 +361,11 @@ def mkStandardCtors (exprHasEta : Bool) (cat : QualifiedIdent) : Array DefaultCt
   | q`Init.Expr =>
     if exprHasEta then
       #[
-        .mk "bvar" none #[("idx", .atom q`Init.Num)],
+        .mk "bvar" none #[("idx", .atom .none q`Init.Num)],
         .mk "lambda" none #[
-          ("var", .atom q`Init.Str),
-          ("type", .atom q`Init.Type),
-          ("fn", .atom cat)
+          ("var", .atom .none q`Init.Str),
+          ("type", .atom .none q`Init.Type),
+          ("fn", .atom .none cat)
         ]
       ]
     else
@@ -508,7 +502,7 @@ partial def ppCat (annType : Ident) (c : SyntaxCat) : GenM Term := do
   let args ← c.args.mapM (ppCat annType)
   match c.head, eq : args.size with
   | q`Init.CommaSepBy, 1 => ``(Array $(args[0]))
-  | q`Init.Option, 1 =>  ``(Option $(args[0]))
+  | q`Init.Option, 1 => ``(Option $(args[0]))
   | q`Init.Seq, 1 => ``(Array $(args[0]))
   | cat, 0 =>
     match declaredCategories[cat]? with
@@ -596,31 +590,31 @@ def ofAstIdentM (cat : QualifiedIdent) : GenM Ident := do
 
 def argCtor (v : Ident) (i : SyntaxCat) : GenM Term :=
   match i with
-  | .atom qid@q`Init.Expr => do
+  | .atom _ qid@q`Init.Expr => do
     let toAst ← toAstIdentM qid
     return Lean.Syntax.mkCApp `ArgF.expr #[Lean.Syntax.mkApp toAst #[v]]
-  | .atom q`Init.Ident => ``(ArgF.ident $v)
-  | .atom q`Init.Num => ``(ArgF.num $v)
-  | .atom q`Init.Decimal => ``(ArgF.decimal $v)
-  | .atom q`Init.Str => ``(ArgF.strlit $v)
-  | .atom qid@q`Init.Type => do
+  | .atom _ q`Init.Ident => ``(ArgF.ident $v)
+  | .atom _ q`Init.Num => ``(ArgF.num $v)
+  | .atom _ q`Init.Decimal => ``(ArgF.decimal $v)
+  | .atom _ q`Init.Str => ``(ArgF.strlit $v)
+  | .atom _ qid@q`Init.Type => do
     let toAst ← toAstIdentM qid
     ``(ArgF.type ($toAst $v))
-  | .atom qid@q`Init.TypeP => do
+  | .atom _ qid@q`Init.TypeP => do
     let toAst ← toAstIdentM qid
     ``($toAst $v)
-  | .atom qid => do
+  | .atom _ qid => do
     let toAst ← toAstIdentM qid
     ``(ArgF.op ($toAst $v))
-  | .app (.atom q`Init.CommaSepBy) c => do
+  | .app _ (.atom _ q`Init.CommaSepBy) c => do
     let e ← mkFreshIdent (localIdent "e")
     let t ← argCtor e c
     ``(ArgF.commaSepList (Array.map (fun ⟨$e, _⟩ => $t) (Array.attach $v)))
-  | .app (.atom q`Init.Option) c => do
+  | .app _ (.atom _ q`Init.Option) c => do
     let e ← mkFreshIdent (localIdent "e")
     let t ← argCtor e c
     ``(ArgF.option (Option.map (fun ⟨$e, _⟩ => $t) (Option.attach $v)))
-  | .app (.atom q`Init.Seq) c => do
+  | .app _ (.atom _ q`Init.Seq) c => do
     let e ← mkFreshIdent (localIdent "e")
     let t ← argCtor e c
     ``(ArgF.seq (Array.map (fun ⟨$e, _⟩ => $t) (Array.attach $v)))
@@ -635,6 +629,8 @@ def toAstMatch (cat : QualifiedIdent) (op : DefaultCtor) : GenM MatchAlt := do
   let ctor : Ident ← getCategoryOpIdent cat op.leanName
   let args : Array (Ident × SyntaxCat) ← argDecls.mapM fun (nm, c) =>
     return (← mkFreshIdent (localIdent nm), c)
+  dbg_trace "TOAST: {argDecls.map (·.fst)}" pure ()
+  dbg_trace "TOASTY: {args.map (·.fst)}" pure ()
   let pat : Term ← ``($ctor $ann $(args.map (·.fst)):term*)
   let rhs : Term ←
         match cat with
@@ -655,7 +651,7 @@ def toAstMatch (cat : QualifiedIdent) (op : DefaultCtor) : GenM MatchAlt := do
             | return panic! "Expected type name"
           let toAst ← toAstIdentM cat
           let argTerms ← arrayLit <| args.map fun (v, c) =>
-            assert! c == SyntaxCat.atom q`Init.Type
+            assert! c.isType
             Lean.Syntax.mkApp toAst #[v]
           pure <| Lean.Syntax.mkCApp ``TypeExprF.ident #[ann, quote nm, argTerms]
         | q`Init.TypeP => do
@@ -696,37 +692,37 @@ def genToAst (cat : QualifiedIdent) (ops : Array DefaultCtor) (isRecursive : Boo
 
 def getOfIdentArg (vnm : String) (c : SyntaxCat) : GenM Term :=
   match c with
-  | .atom cid@q`Init.Expr => do
+  | .atom _ cid@q`Init.Expr => do
     let vi ← mkFreshIdent <| localIdent <| vnm ++ "_inner"
     let ofAst ← ofAstIdentM cid
     ``(OfAstM.ofExpressionM fun ⟨$vi, _⟩ => $ofAst $vi)
-  | .atom q`Init.Ident => do
+  | .atom _ q`Init.Ident => do
     ``(OfAstM.ofIdentM)
-  | .atom q`Init.Num => do
+  | .atom _ q`Init.Num => do
     ``(OfAstM.ofNumM)
-  | .atom q`Init.Decimal => do
+  | .atom _ q`Init.Decimal => do
     ``(OfAstM.ofDecimalM)
-  | .atom q`Init.Str => do
+  | .atom _ q`Init.Str => do
     ``(OfAstM.ofStrlitM)
-  | .atom cid@q`Init.Type => do
+  | .atom _ cid@q`Init.Type => do
     let vi ← mkFreshIdent <| localIdent <| vnm ++ "_inner"
     let ofAst ← ofAstIdentM cid
     ``(OfAstM.ofTypeM fun ⟨$vi, _⟩ => $ofAst $vi)
-  | .atom cid@q`Init.TypeP => do
+  | .atom _ cid@q`Init.TypeP => do
     let vi ← mkFreshIdent <| localIdent <| vnm ++ "_inner"
     let ofAst ← ofAstIdentM cid
     ``(fun ⟨$vi, _⟩ => $ofAst $vi)
-  | .atom cid => do
+  | .atom _ cid => do
     let vi ← mkFreshIdent <| localIdent <| vnm ++ "_inner"
     let ofAst ← ofAstIdentM cid
     ``(OfAstM.ofOperationM fun ⟨$vi, _⟩ => $ofAst $vi)
-  | .app (.atom q`Init.CommaSepBy) c => do
+  | .app _ (.atom _ q`Init.CommaSepBy) c => do
     let f ← getOfIdentArg (vnm ++ "_e") c
     ``(OfAstM.ofCommaSepByM $f)
-  | .app (.atom q`Init.Option) c => do
+  | .app _ (.atom _ q`Init.Option) c => do
     let f ← getOfIdentArg (vnm ++ "_e") c
     ``(OfAstM.ofOptionM $f)
-  | .app (.atom q`Init.Seq) c => do
+  | .app _ (.atom _ q`Init.Seq) c => do
     let f ← getOfIdentArg (vnm ++ "_e") c
     ``(OfAstM.ofSeqM $f)
   | _ =>
@@ -832,7 +828,7 @@ def mkOfAstDef (cat : QualifiedIdent) (ofAst : Ident) (v : Ident) (rhs : Term) (
 
 def matchTypeParamOrType {α β} [Repr α] (a : ArgF α) (onTypeParam : OfAstM β) (onType : TypeExprF α → OfAstM β) : OfAstM β :=
   match a with
-  | .cat (.atom q`Init.Type) => onTypeParam
+  | .cat (.atom _ q`Init.Type) => onTypeParam
   | .type tp => onType tp
   | _ => .throwExpected "Type parameter or type expression" a
 
@@ -905,10 +901,10 @@ def checkInhabited (cat : QualifiedIdent) (ops : Array DefaultCtor) : StateT Inh
     let inhabited ← get
     let isInhabited := op.argDecls.all fun (_, c) =>
         match c with
-        | .atom c => c ∈ inhabited
-        | .app (.atom q`Init.Seq) _ => true
-        | .app (.atom q`Init.CommaSepBy) _ => true
-        | .app (.atom q`Init.Option) _ => true
+        | .atom _ c => c ∈ inhabited
+        | .app _ (.atom _ q`Init.Seq) _ => true
+        | .app _ (.atom _ q`Init.CommaSepBy) _ => true
+        | .app _ (.atom _ q`Init.Option) _ => true
         | _ => panic! s!"Unknown category {repr c}"
     if !isInhabited then
       continue
@@ -919,8 +915,6 @@ def checkInhabited (cat : QualifiedIdent) (ops : Array DefaultCtor) : StateT Inh
       elabCommand =<< `(instance [Inhabited $annType] : Inhabited $catTerm where default := $e)
     modify (·.insert cat)
     break
-
-#eval Array.replicate 4 3
 
 partial def addInhabited (group : Array (QualifiedIdent × Array DefaultCtor)) (s : InhabitedSet) : GenM InhabitedSet := do
   let initSize := s.size
@@ -971,9 +965,10 @@ def gen (categories : Array (QualifiedIdent × Array DefaultCtor)) : GenM Unit :
             (cmds.forM elabCommand : CommandElabM Unit)
             pure d
           runCmd <| elabCommands ofAstDefs
+          -/
         pure inhabitedCats
     inhabitedCats := s
--/
+
 
 def runGenM (pref : String) (catNames : Array QualifiedIdent) (exprHasEta : Bool) (m : GenM α) : CommandElabM α := do
   let catNameCounts : Std.HashMap String Nat :=

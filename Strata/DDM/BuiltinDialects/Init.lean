@@ -12,9 +12,9 @@ open Elab
 open Parser (minPrec)
 
 def initDialect : Dialect := BuiltinM.create! "Init" #[] do
-  let Ident : ArgDeclKind := .cat <| .atom q`Init.Ident
-  let Num : SyntaxCat := .atom q`Init.Num
-  let Str : SyntaxCat := .atom q`Init.Str
+  let Ident : ArgDeclKind := .cat <| .atom .none q`Init.Ident
+  let Num : SyntaxCat := .atom .none q`Init.Num
+  let Str : SyntaxCat := .atom .none q`Init.Str
 
   declareAtomicCat q`Init.Ident
   declareAtomicCat q`Init.Num
@@ -22,13 +22,13 @@ def initDialect : Dialect := BuiltinM.create! "Init" #[] do
   declareAtomicCat q`Init.Str
 
   declareCat q`Init.Option #["a"]
-  let mkOpt (c:SyntaxCat) : SyntaxCat := .app (.atom q`Init.Option) c
+  let mkOpt (c:SyntaxCat) : SyntaxCat := .app .none (.atom .none q`Init.Option) c
 
   declareCat q`Init.Seq #["a"]
-  let mkSeq (c:SyntaxCat) : SyntaxCat := .app (.atom q`Init.Seq) c
+  let mkSeq (c:SyntaxCat) : SyntaxCat := .app .none (.atom .none q`Init.Seq) c
 
   declareCat q`Init.CommaSepBy #["a"]
-  let mkCommaSepBy (c:SyntaxCat) : SyntaxCat := .app (.atom q`Init.CommaSepBy) c
+  let mkCommaSepBy (c:SyntaxCat) : SyntaxCat := .app .none (.atom .none q`Init.CommaSepBy) c
 
   let QualifiedIdent := q`Init.QualifiedIdent
   declareCat QualifiedIdent
@@ -57,12 +57,12 @@ def initDialect : Dialect := BuiltinM.create! "Init" #[] do
   }
 
   let TypeExprId := q`Init.TypeExpr
-  let TypeExpr : ArgDeclKind := .cat (.atom TypeExprId)
+  let TypeExpr : ArgDeclKind := .cat (.atom .none TypeExprId)
   declareCat TypeExprId
   declareOp {
     name := "TypeIdent",
     argDecls := #[
-      { ident := "value", kind := .cat <| .atom QualifiedIdent }
+      { ident := "value", kind := .cat <| .atom .none QualifiedIdent }
     ]
     category := TypeExprId,
     syntaxDef := .ofList [.ident 0 maxPrec]
@@ -118,7 +118,7 @@ def initDialect : Dialect := BuiltinM.create! "Init" #[] do
   declareOp {
     name := "exprParen",
     argDecls := #[
-      { ident := "value", kind := .cat (.atom Expr) }
+      { ident := "value", kind := .cat (.atom .none Expr) }
     ],
     category := Expr,
     syntaxDef := .ofList [.str "(", .ident 0 0, .str ")"]
@@ -127,7 +127,7 @@ def initDialect : Dialect := BuiltinM.create! "Init" #[] do
     name := "exprApp",
     argDecls := #[
       { ident := "function", kind := Ident },
-      { ident := "args", kind := .cat <| mkCommaSepBy (.atom Expr) }
+      { ident := "args", kind := .cat <| mkCommaSepBy (.atom .none Expr) }
     ],
     category := Expr,
     syntaxDef := .ofList [.ident 0 0, .str "(", .ident 1 0, .str ")"]
@@ -138,7 +138,7 @@ def initDialect : Dialect := BuiltinM.create! "Init" #[] do
   declareOp {
     name := "MetadataArgParen",
     argDecls := #[
-      { ident := "value", kind := .cat (.atom MetadataArg) }
+      { ident := "value", kind := .cat (.atom .none MetadataArg) }
     ],
     category := MetadataArg,
     syntaxDef := .ofList [.str "(", .ident 0 0, .str ")"]
@@ -174,7 +174,7 @@ def initDialect : Dialect := BuiltinM.create! "Init" #[] do
   declareOp {
     name := "MetadataArgSome",
     argDecls := #[
-      { ident := "value", kind := .cat (.atom MetadataArg) }
+      { ident := "value", kind := .cat (.atom .none MetadataArg) }
     ],
     category := MetadataArg,
     syntaxDef := .ofList [.str "some", .ident 0 appPrec]
@@ -191,7 +191,7 @@ def initDialect : Dialect := BuiltinM.create! "Init" #[] do
   declareOp {
     name := "MetadataArgsMk",
     argDecls := #[
-      { ident := "args", kind := .cat <| mkCommaSepBy <| .atom MetadataArg }
+      { ident := "args", kind := .cat <| mkCommaSepBy <| .atom .none MetadataArg }
     ],
     category := MetadataArgs,
     syntaxDef := .ofList [.str "(", .ident 0 0, .str ")"]
@@ -202,8 +202,8 @@ def initDialect : Dialect := BuiltinM.create! "Init" #[] do
   declareOp {
     name := "MetadataAttrMk",
     argDecls := #[
-      { ident := "name", kind := .cat <| .atom QualifiedIdent },
-      { ident := "args", kind := .cat <| mkOpt <| .atom MetadataArgs }
+      { ident := "name", kind := .cat <| .atom .none QualifiedIdent },
+      { ident := "args", kind := .cat <| mkOpt <| .atom .none MetadataArgs }
     ],
     category := MetadataAttr,
     syntaxDef := .ofList [.ident 0 0, .ident 1 0]
@@ -214,7 +214,7 @@ def initDialect : Dialect := BuiltinM.create! "Init" #[] do
   declareOp {
     name := "MetadataMk",
     argDecls := #[
-      { ident := "attrs", kind := .cat <| mkCommaSepBy <| .atom MetadataAttr }
+      { ident := "attrs", kind := .cat <| mkCommaSepBy <| .atom .none MetadataAttr }
     ],
     category := Metadata,
     syntaxDef := .ofList [.str "@[", .ident 0 0, .str "]"]
@@ -263,7 +263,7 @@ def initDialect : Dialect := BuiltinM.create! "Init" #[] do
     name := "syntaxAtomIdent",
     argDecls := #[
       { ident := "ident", kind := Ident },
-      { ident := "prec", kind := .cat <| mkOpt <| .atom SyntaxAtomPrec }
+      { ident := "prec", kind := .cat <| mkOpt <| .atom .none SyntaxAtomPrec }
     ],
     category := SyntaxAtom,
     syntaxDef := .ofList [.ident 0 0, .ident 1 0],
@@ -281,7 +281,7 @@ def initDialect : Dialect := BuiltinM.create! "Init" #[] do
     name := "syntaxAtomIndent",
     argDecls := #[
       { ident := "indent", kind := .cat Num },
-      { ident := "args", kind := .cat <| mkSeq <| .atom SyntaxAtom }
+      { ident := "args", kind := .cat <| mkSeq <| .atom .none SyntaxAtom }
     ],
     category := SyntaxAtom,
     syntaxDef := .ofList [.str "indent", .str "(", .ident 0 0, .str ", ", .ident 1 0, .str ")"],
@@ -292,7 +292,7 @@ def initDialect : Dialect := BuiltinM.create! "Init" #[] do
   declareOp {
     name := "mkSyntaxDef",
     argDecls := #[
-      { ident := "args", kind := .cat <| mkSeq (.atom SyntaxAtom) }
+      { ident := "args", kind := .cat <| mkSeq (.atom .none SyntaxAtom) }
     ],
     category := SyntaxDef,
     syntaxDef := .ofList [.ident 0 0],

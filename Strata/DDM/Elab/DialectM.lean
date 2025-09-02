@@ -133,7 +133,6 @@ def translatePreType {argc : Nat} (argDecls : ArgDeclsMap argc) (tree : Tree) : 
     | .type decl =>
       checkArgSize argInfo.loc qname decl.argNames.size args
       let args ← args.attach.mapM fun ⟨a, _⟩ =>
-        have p : sizeOf a < sizeOf args := by decreasing_tactic
         translatePreType argDecls a
       return .ident opInfo.loc qname args
     | _ =>
@@ -152,7 +151,6 @@ def translatePreType {argc : Nat} (argDecls : ArgDeclsMap argc) (tree : Tree) : 
       | return panic! "Invalid arguments to Init.TypeArrow"
     let bindingsTree := argChildren[0]
     let valTree := argChildren[1]
-    have p : sizeOf valTree < sizeOf argChildren := by decreasing_tactic
     let rType ← translatePreType argDecls valTree
     translateFunMacro opInfo.loc argDecls bindingsTree rType
   | _ =>
@@ -160,7 +158,8 @@ def translatePreType {argc : Nat} (argDecls : ArgDeclsMap argc) (tree : Tree) : 
     return default
   termination_by tree
   decreasing_by
-    · have argsP : sizeOf args ≤ sizeOf tree := by
+    · have p : sizeOf a < sizeOf args := by decreasing_tactic
+      have argsP : sizeOf args ≤ sizeOf tree := by
         have p := flattenTypeApp_size tree #[]
         have q := Array.sizeOf_min argChildren
         simp [feq] at p
@@ -199,23 +198,24 @@ partial def translateArgDeclKind {argc} (argDecls : ArgDeclsMap argc) (tree : Tr
   match op with
   | q`Init.TypeIdent => do
     assert! argChildren.size = 1
-    let ident := argChildren[0]!
-    let tpId := translateQualifiedIdent ident
-    if let some tp ← asTypeVar argDecls ident.info.loc tpId args then
+    let identTree := argChildren[0]!
+    let identLoc := identTree.info.loc
+    let tpId := translateQualifiedIdent identTree
+    if let some tp ← asTypeVar argDecls identLoc tpId args then
       return .type tp
-    let some (qname, decl) ← resolveTypeOrCat ident.info.loc tpId
+    let some (ident, decl) ← resolveTypeOrCat identLoc tpId
       | return default
     match decl with
     | .type decl =>
-      checkArgSize argInfo.loc qname decl.argNames.size args
+      checkArgSize argInfo.loc ident decl.argNames.size args
       let args ← args.mapM (translatePreType argDecls)
-      return .type <| .ident opInfo.loc qname args
+      return .type <| .ident opInfo.loc ident args
     | .syncat decl =>
-      checkArgSize argInfo.loc qname decl.argNames.size args
-      let r : SyntaxCat := .atom qname
+      checkArgSize argInfo.loc ident decl.argNames.size args
+      let r : SyntaxCat := .atom identLoc ident
       let r ← args.attach.foldlM (init := r) fun r ⟨a, _⟩ => do
-        have p : sizeOf a < sizeOf args := by decreasing_tactic
-        return .app r (← translateSyntaxCat a)
+        let appLoc := { start := identLoc.start, stop := a.info.loc.stop }
+        return .app appLoc r (← translateSyntaxCat a)
       return .cat r
   | q`Init.TypeArrow => do
     assert! argChildren.size = 2
@@ -387,10 +387,10 @@ def translateArgDecls (tree : Tree) : ElabM (Σ argc, ArgDeclsMap argc) := do
 
 def elabMetadataArgCatType (loc : SourceLoc) (ci : SyntaxCat) : DeclM MetadataArgType := do
   match ci with
-  | .atom q`Init.Bool => pure .bool
-  | .atom q`Init.Num => pure .num
-  | .atom q`Init.Ident => pure .ident
-  | .app (.atom q`Init.Option) e => .opt <$> elabMetadataArgCatType loc e
+  | .atom _ q`Init.Bool => pure .bool
+  | .atom _ q`Init.Num => pure .num
+  | .atom _ q`Init.Ident => pure .ident
+  | .app _ (.atom _ q`Init.Option) e => .opt <$> elabMetadataArgCatType loc e
   | c =>
     logErrorMF loc mf!"Unsupported metadata category {c}"
     pure default
@@ -549,7 +549,7 @@ instance : ElabClass DialectM where
   logErrorMessage msg :=
     modifyDeclState fun s => { s with errors := s.errors.push msg }
 
-private def checkTypeDeclarationArgs (tree : Tree) : ElabM (Array String) := do
+private def checkTypeDeclarationArgs (tree : Tree) : ElabM (Array (Ann String SourceLoc)) := do
   let (⟨_, argDecls⟩, success) ← runChecked <| translateArgDecls tree
     if !success then
       return default
@@ -557,7 +557,8 @@ private def checkTypeDeclarationArgs (tree : Tree) : ElabM (Array String) := do
     if !arg.val.kind.isType then
       logErrorMF arg.typeLoc mf!"Parameters for a type declaration must have category {q`Init.Type}."
       return default
-  return argDecls.decls.toArray.map (·.val.ident)
+  return argDecls.decls.toArray.map fun a =>
+    { ann := a.nameLoc, val := a.val.ident }
 
 def checkTreeSize (tree : Tree) (size : Nat) : Decidable (tree.children.size = size) := inferInstance
 
@@ -644,9 +645,9 @@ def elabOpCommand : DialectElab := fun tree => do
 
   let category ←
       match category with
-      | .atom c =>
+      | .atom _ c =>
         pure c
-      | .app _ _ =>
+      | .app .. =>
         logError categoryTree.info.loc s!"Expected atomic category"
         return
 
@@ -677,7 +678,7 @@ private def elabTypeCommand : DialectElab := fun tree => do
   let d ← getCurrentDialect
 
   -- Get arguments
-  let ((name, argNames), success) ← runElab <| runChecked <| do
+  let (decl, success) ← runElab <| runChecked <| do
     -- Get name
     let .node (.ofIdentInfo nameInfo) _ := tree[0]
       | panic! "Expected identifier"
@@ -685,9 +686,8 @@ private def elabTypeCommand : DialectElab := fun tree => do
     if name ∈ d.cache then
       logError nameInfo.loc  s!"{name} already declared."
     let args ← checkTypeDeclarationArgs tree[1]
-    pure (name, args)
+    pure ({ name, argNames := args } : TypeDecl)
   if success then
-    let decl := { name, argNames }
     addTypeOrCatDecl d.name (.type decl)
     addDeclToDialect (.type decl)
 

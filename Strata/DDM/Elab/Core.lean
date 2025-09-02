@@ -117,7 +117,7 @@ def resolveTypeBinding (tctx : TypingContext) (loc : SourceLoc) (name : String)
     if let some a := args[0]? then
       logErrorMF a.info.loc mf!"Unexpected arguments to {name}."
       return default
-    if let .type [] _ := k then
+    if let .type _ [] _ := k then
       let info : TypeInfo := { inputCtx := tctx, loc := loc, typeExpr := .bvar loc idx, isInferred := false }
       return .node (.ofTypeInfo info) #[]
     else
@@ -183,12 +183,19 @@ def resolveTypeOrCat (loc : SourceLoc) (tpId : MaybeQualifiedIdent) : ElabM (Opt
 
 def translateQualifiedIdent (t : Tree) : MaybeQualifiedIdent :=
   let op := t.info.asOp!.op
-  match op.name, op.args with
-  | q`Init.qualifiedIdentImplicit, #[.ident name] =>
+  let args := op.args
+  match op.name, sz : args.size with
+  | q`Init.qualifiedIdentImplicit, 1 => Id.run do
+    let .ident _ name := args[0]
+      | return panic! "Expected ident"
     .name name
-  | q`Init.qualifiedIdentExplicit, #[.ident dialect, .ident name] =>
+  | q`Init.qualifiedIdentExplicit, 2 => Id.run do
+    let .ident _ dialect := args[0]
+      | return panic! "Expected ident"
+    let .ident _ name := args[1]
+      | return panic! "Expected ident"
     .qid { dialect, name }
-  | q`Init.qualifiedIdentType, #[] =>
+  | q`Init.qualifiedIdentType, 0 =>
     .qid { dialect := "Init", name := "Type" }
   | name, _ =>
     panic! s!"Unknown qualified ident {name.fullName}"
@@ -209,7 +216,7 @@ def checkArgSize {α} [ToStrataFormat α] (loc : SourceLoc) (name : α) (expecte
 
 /--
 This resolves a type identifer using the name of the type (as `name`) and the
-arguments (as `args`) passed into it.
+arguments (as `arSyntaxCatFed into it.
 -/
 def translateTypeIdent (elabInfo : ElabInfo) (qualIdentInfo : Tree) (args : Array Tree) : ElabM Tree := do
   let loc := qualIdentInfo.info.loc
@@ -234,11 +241,12 @@ def translateTypeIdent (elabInfo : ElabInfo) (qualIdentInfo : Tree) (args : Arra
     let (_, success) ← runChecked <| checkArgSize loc ident decl.argNames.size args
     if !success then
       return default
-    let mut sc : SyntaxCat := .atom ident
+    let mut sc : SyntaxCat := .atom loc ident
+    let start := loc.start
     for a in args do
       match a.info with
       | .ofCatInfo info =>
-        sc := .app sc info.cat
+        sc := .app { start := start, stop := info.loc.stop } sc info.cat
       | _ =>
         logError a.info.loc "Expected category."
         return default
@@ -286,11 +294,11 @@ partial def rnf (tctx : TypingContext) (e : TypeExpr) : TypeExpr :=
     | .type _ none => e
   | .bvar _ idx =>
     match tctx.bindings[tctx.bindings.size - 1 - idx]!.kind with
-    | .type params (some d) =>
+    | .type _ params (some d) =>
       assert! params.isEmpty
       assert! d.isGround
       rnf (tctx.drop (idx + 1)) d
-    | .type _ none => e
+    | .type _ _ none => e
     | _ => panic! "Expected a type"
 
 /--
@@ -569,19 +577,21 @@ partial def translateSyntaxCat (tree : Tree) : ElabM SyntaxCat := do
         | .ofOperationInfo info => info.op.name
         | _ => panic! s!"translateBindingTypeExpr expected operator, type or cat {repr argInfo}"
   match op, argChildren with
-  | q`Init.TypeIdent, #[ident] => do
-    let tpId := translateQualifiedIdent ident
-    let some (qname, decl) ← resolveTypeOrCat ident.info.loc tpId
+  | q`Init.TypeIdent, #[identTree] => do
+    let tpId := translateQualifiedIdent identTree
+    let identLoc := identTree.info.loc
+    let some (ident, decl) ← resolveTypeOrCat identLoc tpId
       | return default
     match decl with
     | .syncat decl =>
-      checkArgSize argInfo.loc qname decl.argNames.size args
-      let r : SyntaxCat := .atom qname
+      checkArgSize argInfo.loc ident decl.argNames.size args
+      let identStart := identLoc.start
+      let r : SyntaxCat := .atom identLoc ident
       args.attach.foldlM (init := r) fun r ⟨a, _⟩ => do
-        have p : sizeOf a < sizeOf args := by decreasing_tactic
-        return .app r (← translateSyntaxCat a)
+        let appLoc := { start := identStart, stop := a.info.loc.stop }
+        return .app appLoc r (← translateSyntaxCat a)
     | _ =>
-      logError ident.info.loc s!"Expected category"; pure default
+      logError identLoc s!"Expected category"; pure default
 
   | q`StrataDDL.TypeFn, _ => do
     logError argInfo.loc s!"Expected category"
@@ -597,16 +607,6 @@ Evaluate the tree as a type expression.
 def translateTypeExpr (tree : Tree) : ElabM TypeExpr := do
   match feq : flattenTypeApp tree #[] with
   | (⟨argInfo, argChildren⟩, args) =>
-  have argcP : sizeOf argChildren < sizeOf tree := by
-    have p := flattenTypeApp_size tree #[]
-    have q := Array.sizeOf_min args
-    simp [feq] at p
-    omega
-  have argsP : sizeOf args ≤ sizeOf tree := by
-    have p := flattenTypeApp_size tree #[]
-    have q := Array.sizeOf_min argChildren
-    simp [feq] at p
-    omega
   let opInfo :=
         match argInfo with
         | .ofOperationInfo info => info
@@ -624,7 +624,6 @@ def translateTypeExpr (tree : Tree) : ElabM TypeExpr := do
     | .type decl =>
       checkArgSize opInfo.loc qname decl.argNames.size args
       let args ← args.attach.mapM fun ⟨a, _⟩ =>
-        have p : sizeOf a < sizeOf args := by decreasing_tactic
         translateTypeExpr a
       return .ident opInfo.loc qname args
     | _ =>
@@ -645,10 +644,26 @@ def translateTypeExpr (tree : Tree) : ElabM TypeExpr := do
     return default
   termination_by tree
   decreasing_by
-    · decreasing_tactic
-    · have p : sizeOf argChildren[0] < sizeOf argChildren := by decreasing_tactic
+    · have argsP : sizeOf args ≤ sizeOf tree := by
+          have p := flattenTypeApp_size tree #[]
+          have q := Array.sizeOf_min argChildren
+          simp [feq] at p
+          omega
+      have p : sizeOf a < sizeOf args := by decreasing_tactic
       decreasing_tactic
-    · have p : sizeOf argChildren[1] < sizeOf argChildren := by decreasing_tactic
+    · have argcP : sizeOf argChildren < sizeOf tree := by
+        have p := flattenTypeApp_size tree #[]
+        have q := Array.sizeOf_min args
+        simp [feq] at p
+        omega
+      have p : sizeOf argChildren[0] < sizeOf argChildren := by decreasing_tactic
+      decreasing_tactic
+    · have argcP : sizeOf argChildren < sizeOf tree := by
+        have p := flattenTypeApp_size tree #[]
+        have q := Array.sizeOf_min args
+        simp [feq] at p
+        omega
+      have p : sizeOf argChildren[1] < sizeOf argChildren := by decreasing_tactic
       decreasing_tactic
 
 /--
@@ -660,26 +675,28 @@ partial def translateBindingKind (tree : Tree) : ElabM BindingKind := do
         match argInfo with
         | .ofOperationInfo info => info
         | _ => panic! s!"translateBindingTypeExpr expected operator, type or cat {repr argInfo}"
-  match opInfo.op.name, argChildren with
-  | q`Init.TypeIdent, #[ident] => do
-    let tpId := translateQualifiedIdent ident
-    let loc := ident.info.loc
-    let some (qname, decl) ← resolveTypeOrCat loc tpId
+  match opInfo.op.name, szp : argChildren.size with
+  | q`Init.TypeIdent, 1 => do
+    let identTree := argChildren[0]
+    let tpId := translateQualifiedIdent identTree
+    let identLoc := identTree.info.loc
+    let some (ident, decl) ← resolveTypeOrCat identLoc tpId
       | return default
     match decl with
     | .type decl =>
-      checkArgSize argInfo.loc qname decl.argNames.size args
+      checkArgSize argInfo.loc ident decl.argNames.size args
       let args ← args.mapM translateTypeExpr
-      return .expr (.ident loc qname args)
+      return .expr (.ident identLoc ident args)
     | .syncat decl =>
-      checkArgSize argInfo.loc qname decl.argNames.size args
-      let r : SyntaxCat := .atom qname
+      checkArgSize argInfo.loc ident decl.argNames.size args
+      let r : SyntaxCat := .atom identLoc ident
       let r ← args.foldlM (init := r) fun r a => do
-        return .app r (← translateSyntaxCat a)
+        let appLoc := { start := identLoc.start, stop := a.info.loc.stop }
+        return .app appLoc r (← translateSyntaxCat a)
       return .cat r
-  | q`Init.TypeArrow, #[aTree, rTree] => do
-    let aType ← translateTypeExpr aTree
-    let rType ← translateTypeExpr rTree
+  | q`Init.TypeArrow, 2 => do
+    let aType ← translateTypeExpr argChildren[0]
+    let rType ← translateTypeExpr argChildren[1]
     pure <| .expr <| .arrow opInfo.loc aType rType
   | q`StrataDDL.TypeFn, _ => do
     logError argInfo.loc s!"Macros not supported"
@@ -704,8 +721,8 @@ def evalBindingSpec
     let (bindings, success) ← runChecked <| elabArgIndex initSize args b.argsIndex fun loc b =>
           match b.kind with
           | .expr tp =>
-            return (b.ident, tp)
-          | .type _ _ | .cat _ => do
+            pure (b.ident, tp)
+          | .type .. | .cat _ => do
             logError loc "Expecting expressions in variable binding"
             pure default
     if !success then
@@ -720,8 +737,8 @@ def evalBindingSpec
               panic! s!"Cannot bind {ident} unexpected category {repr info.cat}"
             else if !bindings.isEmpty then
               panic! s!"Arguments not allowed on category."
-            else if let .atom q`Init.Type := info.cat then
-              pure <| .type [] none
+            else if let .atom loc q`Init.Type := info.cat then
+              pure <| .type loc [] none
             else
               pure <| .cat info.cat
           | .ofOperationInfo _ => do
@@ -734,9 +751,9 @@ def evalBindingSpec
     let ident := evalBindingNameIndex args b.nameIndex
     let params ← elabArgIndex initSize args b.argsIndex fun loc b => do
           match b.kind with
-          | .type [] _ =>
+          | .type _ [] _ =>
             pure ()
-          | .type _ _ | .expr _ | .cat _ => do
+          | .type .. | .expr _ | .cat _ => do
             logError loc s!"{b.ident} must be have type Type instead of {repr b.kind}."
           return b.ident
     let value : Option TypeExpr :=
@@ -748,7 +765,7 @@ def evalBindingSpec
               some info.typeExpr
             | _ =>
               panic! "Bad arg"
-    pure { ident, kind := .type params.toList value }
+    pure { ident, kind := .type loc params.toList value }
 
 namespace TypingContext
 
@@ -787,7 +804,7 @@ partial def inferType (tctx : TypingContext) (e : Expr) : ElabM TypeExpr := do
   -- Compute head normal form of e.
   let ⟨f, a⟩ := e.hnf
   match f with
-  | .bvar idx => do
+  | .bvar _ idx => do
     let .isTrue idxP := inferInstanceAs (Decidable (idx < tctx.bindings.size))
       | return panic! "Invalid index {idx}"
     let lvl := tctx.bindings.size - 1 - idx
@@ -797,12 +814,12 @@ partial def inferType (tctx : TypingContext) (e : Expr) : ElabM TypeExpr := do
       -- Arguments in the type context
       return resultType! tctx (tp.incIndices (idx + 1)) a.val.size
     | _ => panic! "Expected an expression"
-  | .fvar idx =>
+  | .fvar _ idx =>
     match tctx.globalContext.kindOf! idx with
     | .expr tp =>
       return resultType! tctx tp a.val.size
     | .type _ _ => panic! "Expected expression instead of type."
-  | .fn ident => do
+  | .fn _ ident => do
     let dm := (← read).dialects
     let .function decl := dm.decl! ident
       | panic! s!"Expected {ident} to be a function"
@@ -822,7 +839,7 @@ partial def inferType (tctx : TypingContext) (e : Expr) : ElabM TypeExpr := do
         | arg =>
            panic! s!"Cannot instantiate type {repr tp} with args {repr a}"
     return resultType! tctx tp (a.val.size - fnArgCount)
-  | .app f a => panic! "Invalid app in result of Expr.hnf"
+  | .app _ f a => panic! "Invalid app in result of Expr.hnf"
 
 /--
 Given a tree from operations with category `Init.TypeExpr`, build a tree with the type or category
@@ -914,7 +931,7 @@ partial def runSyntaxElaborator
             Tree.arg <$> trees[argLevel - i - 1]!
         match expandMacros dialects expectedType resolveArg with
         | .error () =>
-          logError (mkSourceLoc astx) s!"Could not infer type."
+          logError expectedType.ann "Could not infer type."
         | .ok expectedType => do
           trees ← unifyTypes b ⟨argLevel, argLevelP⟩ expectedType tctx astx inferredType trees
           assert! trees[argLevel].isNone
@@ -952,13 +969,13 @@ partial def elabType (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
 
 partial def catElaborator (c : SyntaxCat) : TypingContext → Syntax → ElabM Tree :=
   match c with
-  | .atom q`Init.Expr =>
+  | .atom _ q`Init.Expr =>
     elabExpr
-  | .atom q`Init.Ident =>
+  | .atom _ q`Init.Ident =>
     fun tctx stx =>
       let info : IdentInfo := { inputCtx := tctx, loc := mkSourceLoc stx, val := stx.getId.toString }
       pure <| .node (.ofIdentInfo info) #[]
-  | .atom q`Init.Num =>
+  | .atom _ q`Init.Num =>
     fun tctx stx =>
       match stx.isNatLit? with
       | some v =>
@@ -966,7 +983,7 @@ partial def catElaborator (c : SyntaxCat) : TypingContext → Syntax → ElabM T
         pure <| .node (.ofNumInfo info) #[]
       | none =>
         panic! s!"Invalid Init.Num {repr stx}"
-  | .atom q`Init.Decimal =>
+  | .atom _ q`Init.Decimal =>
     fun tctx stx =>
       match stx.isScientificLit? with
       | some (m, eIsNeg, e) =>
@@ -975,7 +992,7 @@ partial def catElaborator (c : SyntaxCat) : TypingContext → Syntax → ElabM T
         pure <| .node (.ofDecimalInfo info) #[]
       | none =>
         panic! s!"Invalid Init.Num {repr stx}"
-  | .atom q`Init.Str =>
+  | .atom _ q`Init.Str =>
     fun tctx stx =>
       match stx.isStrLit? with
       | some s =>
@@ -983,8 +1000,8 @@ partial def catElaborator (c : SyntaxCat) : TypingContext → Syntax → ElabM T
         pure <| .node (.ofStrlitInfo info) #[]
       | none =>
         panic! s!"String not supported {stx} {stx.isStrLit?}"
-  | .atom q`Init.Type => elabType
-  | .atom q`Init.TypeP =>
+  | .atom _ q`Init.Type => elabType
+  | .atom _ q`Init.TypeP =>
       fun tctx stx => do
         let (tree, true) ← runChecked <| elabOperation tctx stx
           | return default
@@ -995,104 +1012,98 @@ partial def catElaborator (c : SyntaxCat) : TypingContext → Syntax → ElabM T
         let ok :=
               match tree.info with
               | .ofTypeInfo _ => true
-              | .ofCatInfo info => info.cat = .atom q`Init.Type
+              | .ofCatInfo info => info.cat.isType
               | _ => false
         if !ok then
           logErrorMF (mkSourceLoc stx) mf!"Expected a type or Type instead of {c}"
         pure tree
-  | .app (.atom q`Init.Option) a =>
+  | .app _ (.atom _ q`Init.Option) a =>
     elabOption (catElaborator a)
-  | .app (.atom q`Init.Seq) a =>
+  | .app _ (.atom _ q`Init.Seq) a =>
     let f := elabManyElement (catElaborator a)
     fun tctx stx => do
       let (args, resultCtx) ← stx.getArgs.foldlM f (#[], tctx)
       let info : SeqInfo := { inputCtx := tctx, loc := mkSourceLoc stx, args := args.map (·.arg), resultCtx }
       pure <| .node (.ofSeqInfo info) args
-  | .app (.atom q`Init.CommaSepBy) a =>
+  | .app _ (.atom _ q`Init.CommaSepBy) a =>
     let f := elabManyElement (catElaborator a)
     fun tctx stx => do
       let (args, resultCtx) ← stx.getSepArgs.foldlM f (#[], tctx)
       let info : CommaSepInfo := { inputCtx := tctx, loc := mkSourceLoc stx, args := args.map (·.arg), resultCtx }
       pure <| .node (.ofCommaSepInfo info) args
-  | .atom _ =>
+  | .atom .. =>
     elabOperation
   | _ =>
     panic! s!"Unsupport category {eformat c}"
 
 partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree :=
+  let loc := mkSourceLoc stx
+  let einfo : ElabInfo := { loc := loc, inputCtx := tctx }
   match stx.getKind with
   | `Init.exprParen =>
     elabExpr tctx stx[1]
-  | `Init.exprIdent =>
+  | `Init.exprIdent => do
     let name := elabIdent stx[0]
-    if let some binding := tctx.lookupVar name then
-      let einfo : ElabInfo := { loc := mkSourceLoc stx, inputCtx := tctx }
-      match binding with
-      | .bvar idx k => do
-        match k with
-        | .expr _ =>
-          let info : ExprInfo := { toElabInfo := einfo, expr := .bvar idx }
-          return .node (.ofExprInfo info) #[]
-        | .type _params _ =>
-          logErrorMF (mkSourceLoc stx) mf!"{name} is a type when an expression is required."
+    let some binding := tctx.lookupVar name
+      | logError loc s!"Unknown expr identifier {name}"
+        return default
+    match binding with
+    | .bvar idx k => do
+      match k with
+      | .expr _ =>
+        let info : ExprInfo := { toElabInfo := einfo, expr := .bvar loc idx }
+        return .node (.ofExprInfo info) #[]
+      | .type _ _params _ =>
+        logErrorMF loc mf!"{name} is a type when an expression is required."
+        return default
+      | .cat c =>
+        logErrorMF loc mf!"{name} has category {c} when an expression is required."
+        return default
+    | .fvar idx k =>
+      let .expr _ := k
+        | logError loc s!"{name} is a type when expression required."
           return default
-        | .cat c =>
-          logErrorMF (mkSourceLoc stx) mf!"{name} has category {c} when an expression is required."
-          return default
-      | .fvar idx k =>
-        match k with
-        | .expr _ =>
-          let info : ExprInfo := { toElabInfo := einfo, expr := .fvar idx }
-          return .node (.ofExprInfo info) #[]
-        | _ => do
-          logError (mkSourceLoc stx) s!"{name} is a type when expression required."
-          return default
-    else do
-      logError (mkSourceLoc stx) s!"Unknown expr identifier {name}"
-      return default
+      let info : ExprInfo := { toElabInfo := einfo, expr := .fvar loc idx }
+      return .node (.ofExprInfo info) #[]
   | `Init.exprApp => do
     let fnLoc := mkSourceLoc stx[0]
     let fn := elabIdent stx[0]
     let args := stx[2].getSepArgs
-    let ((fvar, bindings), success) ← runChecked <| do
-          match tctx.lookupVar fn with
-          | some (.fvar idx k) =>
-            match k with
-            | .expr tp =>
-              let tctx : TypingContext := .empty tctx.globalContext
-              match tctx.applyNArgs tp args.size with
-              | .ok (argTypes, r) =>
-                let b := Array.ofFn fun (i : Fin args.size) => {
-                  ident := ""
-                  kind := .type (.ofType argTypes[i])
-                }
-                pure (idx, b)
-              | .error (a, r) =>
-                if a.size = 0 then
-                  logError fnLoc s!"Expected function"
-                else
-                  logError fnLoc s!"Expected function with {a.size} arguments."
-                return default
-            | .type _ _ =>
-              logError fnLoc s!"Expression expected."
-              return default
-          | some (.bvar idx tp) =>
-            logError fnLoc s!"Bound functions not yet supported."
-            return default
-          | none =>
-            logError fnLoc s!"Unknown variable {fn}"
-            return default
-    if !success then
-      return default
+    let (fvar, k) ←
+      match tctx.lookupVar fn with
+      | some (.fvar idx k) =>
+        pure (ExprF.fvar fnLoc idx, k)
+      | some (.bvar idx tp) =>
+        logError fnLoc s!"Bound functions not yet supported."
+        return default
+      | none =>
+        logError fnLoc s!"Unknown variable {fn}"
+        return default
+    let .expr tp := k
+      | logError fnLoc s!"Expression expected."
+        return default
+    let (argTypes, r) ← do
+      let tctx := TypingContext.empty tctx.globalContext
+      match tctx.applyNArgs tp args.size with
+      | .error (a, r) =>
+        if a.size = 0 then
+          logError fnLoc s!"Expected function"
+        else
+          logError fnLoc s!"Expected function with {a.size} arguments."
+        return default
+      | .ok p =>
+        pure p
+    let bindings := argTypes.toArray.map fun tp =>
+      { ident := "", kind := .type (.ofType tp) }
     let se : SyntaxElaborator := {
             argElaborators := Array.ofFn fun (⟨lvl, _⟩ : Fin args.size) =>
                { syntaxLevel := lvl, argLevel := lvl }
             resultScope := none
           }
     let (args, _) ← runSyntaxElaborator se bindings tctx args
-    let e : Expr := ExprF.fvar fvar
-    let e := args.toArray.foldl (init := e) fun e t => .app e t.arg
-    let info : ExprInfo := { loc := mkSourceLoc stx, inputCtx := tctx, expr := e }
+    let e := args.toArray.foldl (init := fvar) fun e t =>
+      .app { start := fnLoc.start, stop := t.info.loc.stop } e t.arg
+    let info : ExprInfo := { toElabInfo := einfo, expr := e }
     return .node (.ofExprInfo info) args.toArray
   | _ => do
     let some i := qualIdentKind stx
@@ -1106,8 +1117,9 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree :=
     let ((args, _), success) ← runChecked <| runSyntaxElaborator se fn.argDecls tctx stx.getArgs
     if !success then
       return default
-    let e := args.toArray.foldl (init := ExprF.fn i) fun e t => .app e t.arg
-    let info : ExprInfo := { loc := mkSourceLoc stx, inputCtx := tctx, expr := e }
+    -- N.B. Every subterm gets the function location.
+    let e := args.toArray.foldl (init := ExprF.fn loc i) fun e t => .app loc e t.arg
+    let info : ExprInfo := { toElabInfo := einfo, expr := e }
     return .node (.ofExprInfo info) args.toArray
 
 end

@@ -5,6 +5,9 @@
 -/
 
 import Strata.DDM.AST
+import Strata.DDM.Util.Lean
+import Lean.Elab.Term
+import Lean.Elab.InfoTree.Main
 
 namespace Strata
 
@@ -23,17 +26,66 @@ private def quoteArray (a : Array Term) : Term :=
     let e := Syntax.mkCApp ``Array.mkEmpty #[quote a.size]
     a.foldl (init := e) fun t a => Syntax.mkCApp ``Array.push #[t, a]
 
+section
+open Lean.Elab
+
+/--
+Lift a DDM AST constructor that takes a polymorphic annotation value to
+the syntax level with the correct number of arguments.
+
+For example, `astQuote! ArgF.ident ann (quote e)` returns syntax for (ArgF.ident ann e).
+-/
+syntax:max (name := astQuoteElab) "astQuote!" ident term* : term
+
+@[term_elab astQuoteElab]
+def astQuoteElabImpl : Elab.Term.TermElab := fun stx _expectedType => do
+  match stx with
+  | `(astQuote! $ident $ann:term $terms:term*) => do
+    let ctor ← realizeGlobalConstNoOverloadWithInfo ident
+    let cv ← getConstVal ctor
+    let argc := cv.type.getForallBinderNames.length
+    if argc ≠ 2 + terms.size then
+      throwErrorAt ident "Expected {argc-1} arguments; found {terms.size + 1} arguments."
+    let ann ← Term.elabTerm ann none
+    let annType ← Meta.inferType ann
+    let termExpr := toExpr `term
+    let annTypeInst ← Meta.synthInstance (mkApp2 (mkConst ``Quote) annType termExpr)
+    let .sort (.succ .zero) ←  Meta.inferType annType
+      | throwError "Annotation must have type Type."
+    let annExpr := mkApp4 (mkConst ``quote) annType termExpr annTypeInst ann
+    let mut a : Array Lean.Expr := #[annExpr]
+    let eltType := mkApp (mkConst ``TSyntax) (toExpr [`term])
+    for ts in terms do
+      let t ← Term.elabTerm ts (some eltType)
+      a := a.push t
+
+    return mkApp2 (mkConst ``Lean.Syntax.mkCApp) (toExpr ctor) (arrayToExpr eltType a)
+  | _ => do
+    throwUnsupportedSyntax
+end
+
+namespace SyntaxCatF
+
+protected def quote {α} [Quote α] : SyntaxCatF α → Term
+| .atom ann a => astQuote! atom ann (quote a)
+| .app ann f a => astQuote! app ann f.quote a.quote
+
+instance {α} [Quote α] : Quote (SyntaxCatF α)  where
+  quote := SyntaxCatF.quote
+
+end SyntaxCatF
+
 namespace TypeExprF
 
 protected def quote {α} [Quote α] : TypeExprF α → Term
-| .ident n nm a =>
-  let a := a.map (·.quote)
-  Syntax.mkCApp ``ident #[quote n, quote nm, quoteArray a]
-| .bvar n idx => Syntax.mkCApp ``bvar #[quote n, quote idx]
-| .fvar n idx a =>
-  let a := a.map (·.quote)
-  Syntax.mkCApp ``fvar #[quote n, quote idx, quoteArray a]
-| .arrow n a r => Syntax.mkCApp ``arrow #[quote n, a.quote, r.quote]
+| .ident ann nm a =>
+  astQuote! ident ann (quote nm) (quoteArray (a.map (·.quote)))
+| .bvar ann idx =>
+  astQuote! bvar ann (quote idx)
+| .fvar ann idx a =>
+  astQuote! fvar ann (quote idx) (quoteArray (a.map (·.quote)))
+| .arrow ann a r =>
+  astQuote! arrow ann a.quote r.quote
 termination_by e => e
 
 instance {α} [Quote α] : Quote (TypeExprF α) where
@@ -41,52 +93,32 @@ instance {α} [Quote α] : Quote (TypeExprF α) where
 
 end TypeExprF
 
-namespace SyntaxCat
-
-def metaAtom (a : Term) : Term := Syntax.mkCApp ``atom #[a]
-
-protected def quote : SyntaxCat → Term
-| .atom a => metaAtom (quote a)
-| .app f a => Syntax.mkCApp ``SyntaxCat.app #[f.quote, a.quote]
-
-instance : Quote SyntaxCat where
-  quote := SyntaxCat.quote
-
-end SyntaxCat
-
-namespace ArgF
-
-def metaCat (t:Term) : Term := Syntax.mkCApp ``cat #[t]
-
-end ArgF
-
 mutual
 
 protected def ArgF.quote {α} [Quote α] : ArgF α → Term
 | .op o => Syntax.mkCApp ``ArgF.op #[o.quote]
-| .expr e     => Syntax.mkCApp ``ArgF.expr #[e.quote]
-| .type e     => Syntax.mkCApp ``ArgF.type #[quote e]
-| .cat e      => Syntax.mkCApp ``ArgF.cat #[quote e]
-| .ident e    => Syntax.mkCApp ``ArgF.ident #[quote e]
-| .num e    => Syntax.mkCApp ``ArgF.num #[quote e]
-| .decimal e => Syntax.mkCApp ``ArgF.decimal #[quote e]
-| .strlit e   => Syntax.mkCApp ``ArgF.strlit #[quote e]
-| .option a => Syntax.mkCApp ``ArgF.option #[quoteOption (a.attach.map (fun ⟨e, _⟩ => e.quote))]
-| .seq a => Syntax.mkCApp ``ArgF.seq #[quoteArray (a.map (·.quote))]
-| .commaSepList a => Syntax.mkCApp ``ArgF.commaSepList #[quoteArray (a.map (·.quote))]
+| .expr e => Syntax.mkCApp ``ArgF.expr #[e.quote]
+| .type e => Syntax.mkCApp ``ArgF.type #[quote e]
+| .cat e => Syntax.mkCApp ``ArgF.cat #[quote e]
+| .ident ann e => astQuote! ArgF.ident ann (quote e)
+| .num ann e => astQuote! ArgF.num ann (quote e)
+| .decimal ann e => astQuote! ArgF.decimal ann (quote e)
+| .strlit ann e => astQuote! ArgF.strlit ann (quote e)
+| .option ann a => astQuote! ArgF.option ann (quoteOption (a.attach.map (fun ⟨e, _⟩ => e.quote)))
+| .seq ann a => astQuote! ArgF.seq ann (quoteArray (a.map (·.quote)))
+| .commaSepList ann a => astQuote! ArgF.commaSepList ann (quoteArray (a.map (·.quote)))
 termination_by a => sizeOf a
 
-
 protected def ExprF.quote {α} [Quote α] : ExprF α → Term
-| .bvar s => Syntax.mkCApp ``ExprF.bvar #[quote s]
-| .fvar idx => Syntax.mkCApp ``ExprF.fvar #[quote idx]
-| .fn ident => Syntax.mkCApp ``ExprF.fn #[quote ident]
-| .app f a => Syntax.mkCApp ``ExprF.app #[f.quote, a.quote ]
+| .bvar ann s => astQuote! ExprF.bvar ann (quote s)
+| .fvar ann idx => astQuote! ExprF.fvar ann (quote idx)
+| .fn ann ident => astQuote! ExprF.fn ann (quote ident)
+| .app ann f a => astQuote! ExprF.app ann f.quote a.quote
 termination_by e => sizeOf e
 
 def OperationF.quote {α} [Quote α] (op : OperationF α) : Term :=
   let r := quoteArray <| op.args.map fun x => x.quote
-  Syntax.mkCApp ``OperationF.mk #[quote op.ann, quote op.name, r]
+  astQuote! OperationF.mk op.ann (quote op.name) r
 termination_by sizeOf op
 decreasing_by
   simp [OperationF.sizeOf_spec]
@@ -188,6 +220,9 @@ instance : Quote OpDecl where
     quote d.syntaxDef,
     quote d.metadata
   ]
+
+instance [Quote α] [Quote β] : Quote (Ann α β) where
+  quote p := Syntax.mkCApp ``Ann.mk #[quote p.ann, quote p.val]
 
 instance : Quote TypeDecl where
   quote d := Syntax.mkCApp ``TypeDecl.mk #[quote d.name, quote d.argNames]

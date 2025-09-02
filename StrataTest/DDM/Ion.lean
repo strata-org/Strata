@@ -6,7 +6,7 @@
 
 import Strata.DDM.Ion
 import Strata.DDM.BuiltinDialects.StrataDDL
-import Strata.DDM.Integration.Lean
+--import Strata.DDM.Integration.Lean
 
 namespace Strata
 

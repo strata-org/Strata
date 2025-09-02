@@ -34,7 +34,7 @@ instance : Quote QualifiedIdent where
   quote i := Syntax.mkCApp ``QualifiedIdent.mk #[quote i.dialect, quote i.name]
 
 @[macro quoteIdent] def quoteIdentImpl : Macro
-  | `(q`$l:ident ) =>
+  | `(q`$l:ident) =>
     if let .str (.str .anonymous d) suf := l.getId then
       pure (quote (QualifiedIdent.mk d suf) : Term)
     else
@@ -50,30 +50,30 @@ end QualifiedIdent
 /--
 Denotes a fully specified syntax category in the Strata dialect.
 -/
-inductive SyntaxCat where
-| atom (ident : QualifiedIdent)
-| app (h : SyntaxCat) (a : SyntaxCat)
-deriving Inhabited, Repr, DecidableEq
+inductive SyntaxCatF (α : Type) where
+| atom (ann : α) (ident : QualifiedIdent)
+| app (ann : α) (h : SyntaxCatF α) (a : SyntaxCatF α)
+deriving BEq, Inhabited, Repr, DecidableEq
 
-namespace SyntaxCat
+namespace SyntaxCatF
 
-protected def head : SyntaxCat → QualifiedIdent
-| .atom i => i
-| .app h _ => h.head
+protected def head : SyntaxCatF α → QualifiedIdent
+| .atom _ i => i
+| .app _ h _ => h.head
 
-protected def args : SyntaxCat → Array SyntaxCat
-| .atom _ => #[]
-| .app h a => h.args |>.push a
+protected def args : SyntaxCatF α → Array (SyntaxCatF α)
+| .atom _ _ => #[]
+| .app _ h a => h.args |>.push a
 
 /--
 Return true if this corresponds to builtin category `Init.Type`
 -/
-def isType (c : SyntaxCat) :=
+def isType (c : SyntaxCatF α) :=
   match c with
-  | .atom q`Init.Type => true
+  | .atom _ q`Init.Type => true
   | _ => false
 
-end SyntaxCat
+end SyntaxCatF
 
 /-- This refers to a value introduced in the program. -/
 abbrev FreeVarIndex := Nat
@@ -92,10 +92,16 @@ deriving Inhabited, Repr
 
 namespace TypeExprF
 
-def mkFunType (n : α) (bindings : Array (String × TypeExprF α)) (res : TypeExprF α) : TypeExprF α :=
+def ann {α} : TypeExprF α → α
+| .ident ann _ _ => ann
+| .bvar ann _ => ann
+| .fvar ann _ _ => ann
+| .arrow ann _ _ => ann
+
+def mkFunType {α} (n : α) (bindings : Array (String × TypeExprF α)) (res : TypeExprF α) : TypeExprF α :=
   bindings.foldr (init := res) fun (_, argType) tp => .arrow n argType tp
 
-protected def incIndices (tp : TypeExprF α) (count : Nat) : TypeExprF α :=
+protected def incIndices {α} (tp : TypeExprF α) (count : Nat) : TypeExprF α :=
   match tp with
   | .ident n i args => .ident n i (args.attach.map fun ⟨e, _⟩ => e.incIndices count)
   | .fvar n f args => .fvar n f (args.attach.map fun ⟨e, _⟩ => e.incIndices count)
@@ -127,7 +133,6 @@ protected def instTypeM {m α} [Monad m] (d : TypeExprF α) (bindings : α → N
   | .arrow n a b => .arrow n <$> a.instTypeM bindings <*> b.instTypeM bindings
 termination_by d
 
-
 def flattenArrow : Array (TypeExprF α) → TypeExprF α → Array (TypeExprF α)
 | a, .arrow _ l r => flattenArrow (a.push l) r
 | a, r => a.push r
@@ -150,10 +155,10 @@ end TypeExprF
 mutual
 
 inductive ExprF (α : Type) : Type where
-| bvar (idx : Nat)
-| fvar (idx : FreeVarIndex)
-| fn (ident : QualifiedIdent)
-| app (e : ExprF α) (a : ArgF α)
+| bvar (ann : α) (idx : Nat)
+| fvar (ann : α) (idx : FreeVarIndex)
+| fn (ann : α) (ident : QualifiedIdent)
+| app (ann : α) (e : ExprF α) (a : ArgF α)
 deriving Inhabited, Repr
 
 structure OperationF (α : Type) : Type where
@@ -164,7 +169,7 @@ deriving Inhabited, Repr
 
 inductive ArgF (α : Type) : Type where
 | op (o : OperationF α)
-| cat (c : SyntaxCat)
+| cat (c : SyntaxCatF α)
 | expr (e : ExprF α)
 | type (e : TypeExprF α)
 | ident (ann : α) (i : String)
@@ -210,13 +215,15 @@ protected def hnf (e0 : ExprF α) : HNF e0 :=
   let rec aux (e : ExprF α) (args : Array (ArgF α) := #[])
               (szP : sizeOf e + sizeOf args ≤ sizeOf e0 + 2): HNF e0 :=
     match e with
-    | .bvar _ | .fvar _ | .fn _ => { fn := e, args := ⟨args.reverse, by simp at szP; simp; omega⟩ }
-    | .app f a => aux f (args.push a) (by simp at *; omega)
+    | .bvar .. | .fvar .. | .fn .. =>
+      { fn := e, args := ⟨args.reverse, by simp at szP; simp; omega⟩ }
+    | .app _ f a =>
+      aux f (args.push a) (by simp at *; omega)
   aux e0 #[] (by simp)
 
 partial def flatten (e : ExprF α) (prev : List (ArgF α) := []) : ExprF α × List (ArgF α) :=
   match e with
-  | .app f e => f.flatten (e :: prev)
+  | .app _ f e => f.flatten (e :: prev)
   | _ => (e, prev)
 
 end ExprF
@@ -227,11 +234,11 @@ def asOp! {α} [Inhabited α] [Repr α] : ArgF α → OperationF α
 | .op a => a
 | a => panic! s!"{repr a} is not an operation."
 
-def asCat! {α} [Repr α] : ArgF α → SyntaxCat
+def asCat! {α} [Inhabited α] [Repr α] : ArgF α → SyntaxCatF α
 | .cat a => a
 | a => panic! s!"{repr a} is not a syntax category."
 
-def asExpr! {α} [Repr α] : ArgF α → ExprF α
+def asExpr! {α} [Inhabited α] [Repr α] : ArgF α → ExprF α
 | .expr a => a
 | a => panic! s!"{repr a} is not an expression."
 
@@ -268,7 +275,7 @@ Line/column information can be construced from a
 structure SourceLoc where
   start : Nat
   stop : Nat
-deriving Inhabited, Repr
+deriving BEq, Inhabited, Repr
 
 namespace SourceLoc
 
@@ -282,6 +289,7 @@ end SourceLoc
 abbrev Arg := ArgF SourceLoc
 abbrev Expr := ExprF SourceLoc
 abbrev Operation := OperationF SourceLoc
+abbrev SyntaxCat := SyntaxCatF SourceLoc
 abbrev TypeExpr := TypeExprF SourceLoc
 
 inductive MetadataArg where
@@ -396,9 +404,17 @@ inductive PreType where
 | arrow (ann : SourceLoc) (arg : PreType) (res : PreType)
   /-- A function created from a reference to bindings and a result type. -/
 | funMacro (ann : SourceLoc) (bindingsIndex : Nat) (res : PreType)
-deriving Inhabited, Repr
+deriving BEq, Inhabited, Repr
 
 namespace PreType
+
+/-- Return annotation on pretype. -/
+def ann : PreType → SourceLoc
+| .ident ann _ _ => ann
+| .bvar ann _ => ann
+| .fvar ann _ _ => ann
+| .arrow ann _ _ => ann
+| .funMacro ann _ _ => ann
 
 def ofType : TypeExprF SourceLoc → PreType
 | .ident loc name args => .ident loc name (args.map fun a => .ofType a)
@@ -494,12 +510,12 @@ inductive ArgDeclKind where
 | type (tp : PreType)
 /-- Variable belongs to the particular category -/
 | cat (k : SyntaxCat)
-deriving Inhabited, Repr
+deriving BEq, Inhabited, Repr
 
 namespace ArgDeclKind
 
 def categoryOf : ArgDeclKind → SyntaxCat
-| .type _ => .atom q`Init.Expr
+| .type tp => .atom tp.ann q`Init.Expr
 | .cat c => c
 
 /--
@@ -519,7 +535,7 @@ structure ArgDecl where
   ident : Var
   kind : ArgDeclKind
   metadata : Metadata := .empty
-deriving Inhabited, Repr
+deriving BEq, Inhabited, Repr
 
 abbrev ArgDecls := Array ArgDecl
 
@@ -586,7 +602,7 @@ private def newBindingErr (msg : String) : NewBindingM Unit :=
 private def checkNameIndexIsIdent (args : ArgDecls) (nameIndex : DebruijnIndex args.size) : NewBindingM Unit :=
   let b := args[nameIndex.toLevel]
   match b.kind with
-  | .cat (.atom q`Init.Ident) =>
+  | .cat (.atom _ q`Init.Ident) =>
     pure ()
   | _ =>
     newBindingErr s!"Expected {b.ident} to be an Ident."
@@ -601,9 +617,9 @@ private def mkValueBindingSpec
   let typeBinding := argDecls[typeIndex.toLevel]
   let allowCat ←
         match typeBinding.kind with
-        | .cat (.atom q`Init.Type) =>
+        | .cat (.atom _ q`Init.Type) =>
           pure false
-        | .cat (.atom q`Init.TypeP) =>
+        | .cat (.atom _ q`Init.TypeP) =>
           pure true
         | _ =>
           newBindingErr "Expected reference to type variable."
@@ -656,7 +672,7 @@ def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec 
             | return panic! "Invalid name index"
           let nameIndex := ⟨nameIndex, nameP⟩
           checkNameIndexIsIdent argDecls nameIndex
-          let argsIndex ←
+          let argsIndex : DebruijnIndex argDecls.size ←
                 match mArgsArg with
                 | none => pure none
                 | some (.catbvar idx) =>
@@ -668,7 +684,7 @@ def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec 
             | return panic! "Invalid def index"
           let defBinding := argDecls[argDecls.size - (defIndex+1)]
           match defBinding.kind with
-          | .cat (.atom q`Init.Type) =>
+          | .cat (.atom _ q`Init.Type) =>
             pure ()
           | _ =>
             newBindingErr s!"Expected {defBinding.ident} to be a Type."
@@ -696,13 +712,18 @@ structure SynCatDecl where
   argNames : Array String := #[]
 deriving Repr, DecidableEq, Inhabited
 
+structure Ann (Base : Type) (α : Type) where
+  ann : α
+  val : Base
+deriving BEq, Inhabited, Repr
+
 /--
 A declaration of an algebraic data type.
 -/
 structure TypeDecl where
   name : String
-  argNames : Array String
-deriving Repr, DecidableEq, Inhabited
+  argNames : Array (Ann String SourceLoc)
+deriving BEq, Repr, Inhabited
 
 /-- Operator declaration -/
 structure OpDecl where
@@ -722,7 +743,6 @@ deriving Inhabited, Repr
 
 namespace OpDecl
 
-/-
 instance : BEq OpDecl where
   beq x y :=
     x.name = y.name
@@ -730,7 +750,6 @@ instance : BEq OpDecl where
     && x.category = y.category
     && x.syntaxDef == y.syntaxDef
     && x.metadata == y.metadata
--/
 
 def mk1
   (name : String)
@@ -750,7 +769,7 @@ structure FunctionDecl where
   result : PreType
   syntaxDef : SyntaxDef
   metadata : Metadata := .empty
-deriving Inhabited, Repr
+deriving BEq, Inhabited, Repr
 
 inductive MetadataArgType
 | num
@@ -783,7 +802,7 @@ inductive Decl where
 | type (d : TypeDecl)
 | function (d : FunctionDecl)
 | metadata (d : MetadataDecl)
-deriving Repr, Inhabited
+deriving BEq, Repr, Inhabited
 
 namespace Decl
 
@@ -894,6 +913,12 @@ deriving Inhabited
 
 namespace Dialect
 
+instance : BEq Dialect where
+  beq x y :=
+    x.name == y.name
+    && x.imports == y.imports
+    && x.declarations == y.declarations
+
 def syncats (d : Dialect) : Collection SynCatDecl where
   declarations := d.declarations
   cache := d.cache
@@ -957,7 +982,7 @@ def addDecl (d : Dialect) (decl : Decl) : Dialect :=
 def declareSyntaxCat (d : Dialect) (decl : SynCatDecl) :=
   d.addDecl (.syncat decl)
 
-def declareType (d : Dialect) (name : String) (argNames : Array String) :=
+def declareType (d : Dialect) (name : String) (argNames : Array (Ann String SourceLoc)) :=
   d.addDecl (.type { name, argNames })
 
 def declareMetadata (d : Dialect) (decl : MetadataDecl) : Dialect :=
@@ -1135,7 +1160,7 @@ partial def resolveBindingIndices { argDecls : ArgDecls } (m : DialectMap) (src 
         let fnBindings : Array TypeExpr :=
           foldOverArgAtLevel m f #[] argDecls args idx.toLevel
         .expr <| fnBindings.foldr (init := tp) fun argType tp => .arrow src argType tp
-    | .cat (.atom q`Init.Type) => .type [] none
+    | .cat (.atom _ q`Init.Type) => .type [] none
     | a => panic! s!"Expected new binding to be bound to type instead of {repr a}."
   | .type b =>
     let params : Array String :=
