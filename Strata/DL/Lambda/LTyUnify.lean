@@ -117,6 +117,7 @@ mutual
 Apply substitution `S` to monotype `mty`.
 -/
 def LMonoTy.subst (S : Subst) (mty : LMonoTy) : LMonoTy :=
+  if S.isEmpty then mty else
   match mty with
   | .ftvar x => match S.find? x with
                 | some sty => sty | none => mty
@@ -127,7 +128,7 @@ def LMonoTy.subst (S : Subst) (mty : LMonoTy) : LMonoTy :=
 Apply substitution `S` to monotypes `mtys`.
 -/
 def LMonoTys.subst (S : Subst) (mtys : LMonoTys) : LMonoTys :=
-  substAux S mtys []
+  if S.isEmpty then mtys else substAux S mtys []
 where
   substAux S mtys acc : LMonoTys :=
   match mtys with
@@ -141,6 +142,7 @@ Non tail-recursive version of `LMonoTys.subst`, useful for proofs.
 See theorem `LMonoTys.subst_eq_substLogic`.
 -/
 def LMonoTys.substLogic (S : Subst) (mtys : LMonoTys) : LMonoTys :=
+  if S.isEmpty then mtys else
   match mtys with
   | [] => []
   | mty :: mrest =>
@@ -148,7 +150,12 @@ def LMonoTys.substLogic (S : Subst) (mtys : LMonoTys) : LMonoTys :=
 
 theorem LMonoTys.subst_eq_substLogic (S : Subst) (mtys : LMonoTys) :
     LMonoTys.subst S mtys = LMonoTys.substLogic S mtys := by
-  simp [LMonoTys.subst]
+  by_cases hSEmpty : S.isEmpty
+  case pos =>
+    unfold LMonoTys.substLogic
+    simp_all [subst]
+  case neg =>
+  simp_all [LMonoTys.subst]
   suffices h : ∀ acc, LMonoTys.subst.substAux S mtys acc =
                       acc.reverse ++ LMonoTys.substLogic S mtys by
     have := h []
@@ -161,7 +168,7 @@ theorem LMonoTys.subst_eq_substLogic (S : Subst) (mtys : LMonoTys) :
   | cons mty mrest ih =>
     simp [LMonoTys.subst.substAux, LMonoTys.substLogic]
     rw [ih]
-    simp
+    simp_all
     done
 
 /--
@@ -170,6 +177,12 @@ free variable in a substituted type (i.e., in `LMonoTy.subst S ty`).
 -/
 theorem LMonoTy.subst_keys_not_in_substituted_type (h : SubstWF S) :
     S.keys.all (fun k => k ∉ LMonoTy.freeVars (LMonoTy.subst S ty)) := by
+  by_cases hSEmpty : S.isEmpty
+  case pos =>
+    simp_all
+    intro tyid h_tyid_S
+    simp_all [Map.isEmpty]; split at hSEmpty <;> simp_all [Map.keys]
+  case neg =>
   induction ty
   case ftvar i =>
     simp_all [LMonoTy.subst]
@@ -199,7 +212,7 @@ theorem LMonoTy.subst_keys_not_in_substituted_type (h : SubstWF S) :
       intro x hx
       have h1' := h1 x hx
       simp [LMonoTy.freeVars, LMonoTys.subst_eq_substLogic, LMonoTys.substLogic] at tail_ih ⊢
-      simp [h1']
+      rw [hSEmpty]; simp [h1']
       exact tail_ih x hx
   done
 
@@ -210,10 +223,16 @@ are a subset of the free variables in `mty` and the free variables in `S`.
 theorem LMonoTy.freeVars_of_subst_subset (S : Subst) (mty : LMonoTy) :
     LMonoTy.freeVars (LMonoTy.subst S mty) ⊆
     LMonoTy.freeVars mty ++ Subst.freeVars S := by
+  by_cases hSEmpty : S.isEmpty
+  case pos =>
+    simp_all [Map.isEmpty]
+    split at hSEmpty <;> simp_all
+    unfold subst; simp_all [Map.isEmpty]
+  case neg =>
   simp [Subst.freeVars]
   induction mty
   case ftvar x =>
-    simp [subst]
+    simp_all [subst]
     split
     · -- Case: S.find? x = some sty
       rename_i sty h_find
@@ -227,10 +246,12 @@ theorem LMonoTy.freeVars_of_subst_subset (S : Subst) (mty : LMonoTy) :
   case tcons name args ih =>
     simp [LMonoTy.subst, LMonoTy.freeVars]
     induction args
-    case nil => simp_all [LMonoTys.freeVars, LMonoTys.subst_eq_substLogic, LMonoTys.substLogic]
+    case nil =>
+      simp_all [LMonoTys.freeVars, LMonoTy.freeVars, LMonoTys.subst_eq_substLogic, LMonoTys.substLogic]
     case cons mty mtys mtys_ih =>
-      simp_all [LMonoTys.subst_eq_substLogic]
-      simp [LMonoTys.substLogic]
+      simp at hSEmpty
+      simp_all [LMonoTys.subst_eq_substLogic, LMonoTys.substLogic]
+      simp [freeVars] at *
       generalize (subst S mty).freeVars = x at mtys_ih ih
       generalize mty.freeVars = a at mtys_ih ih
       generalize LMonoTys.freeVars mtys = b at mtys_ih ih
