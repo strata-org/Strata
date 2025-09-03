@@ -29,4 +29,5 @@ import Strata.Languages.Boogie.Examples.SimpleProc
 import Strata.Languages.Boogie.Examples.String
 import Strata.Languages.Boogie.Examples.TypeAlias
 import Strata.Languages.Boogie.Examples.TypeDecl
+import Strata.Languages.Boogie.Examples.TypeVarImplicitlyQuantified
 import Strata.Languages.Boogie.Examples.UnreachableAssert

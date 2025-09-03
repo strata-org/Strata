@@ -630,6 +630,23 @@ def isInstanceOfKnownType (ty : LMonoTy) (T : TEnv Identifier) : Bool :=
   LMonoTy.knownInstance ty T.knownTypes
 
 /--
+Instantiate `mty` by replacing all free type variables with fresh ones, and then
+perform resolution of type aliases and subsequent checks for registered types.
+-/
+def LMonoTy.instantiateWithCheck (mty : LMonoTy) (T : (TEnv Identifier)) :
+    Except Format (LMonoTy × (TEnv Identifier)) := do
+  let ftvs := mty.freeVars
+  let (mtys, T) := LMonoTys.instantiate ftvs [mty] T
+  let mtyi := mtys[0]!
+  let (mtyi, T) := match mtyi.resolveAliases T with
+                  | (some ty', T) => (ty', T)
+                  | (none, T) => (mtyi, T)
+  if isInstanceOfKnownType mtyi T
+  then return (mtyi, T)
+  else .error f!"Type {mty} is not an instance of a previously registered type!\n\
+                 Known Types: {T.knownTypes}"
+
+/--
 Instantiate `ty`, with resolution of type aliases to type definitions and checks
 for registered types.
 -/

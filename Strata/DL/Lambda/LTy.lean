@@ -26,7 +26,8 @@ instance : Coe String TyIdentifier where
   coe := id
 
 /--
-Types in Lambda: these are mono-types.
+Types in Lambda: these are mono-types. Note that all free type variables
+(`.ftvar`) are implicitly universally quantified.
 -/
 inductive LMonoTy : Type where
   /-- Type variable. -/
