@@ -35,6 +35,8 @@ structure State where
   env : Env := []
   /-- Error, if any, encountered during evaluation. -/
   error : Option (EvalError PureExpr) := .none
+  /-- Any warnings encountered during evaluation. -/
+  warnings : List (EvalWarning PureExpr) := []
   /-- Accrued path conditions. -/
   pathConditions : PathConditions PureExpr := []
   /-- Deferred proof obligations obtained during evaluation, intended to be
@@ -47,6 +49,7 @@ def State.init : State := {}
 instance : ToFormat State where
   format s :=
   f!"error: {s.error}{Format.line}\
+     warnings: {s.warnings}{Format.line}\
      deferred: {s.deferred}{Format.line}\
      pathConditions: {PathConditions.format' s.pathConditions}{Format.line}\
      env: {s.env}{Format.line}\
@@ -92,7 +95,7 @@ def lookup (s : State) (v : String) : Option Arith.PureExpr.TypedExpr :=
 Add free variables to the environment, where the free variable is mapped to
 itself (i.e., `v ↦ .Var v ty`).
 -/
-def preprocess (s : State) (e : Expr) : Expr × State :=
+def preprocess (s : State) (_c : Command) (e : Expr) : Expr × State :=
   let freeVars := e.freeVars.filter (fun (v, _ty) => not (s.env.contains v))
   let new_env := List.foldl (fun env (v, ty) => Map.insert env v (.Num, (Expr.Var v ty))) s.env freeVars
   let s := { s with env := new_env }
@@ -107,6 +110,9 @@ def denoteBool (e : Expr) : Option Bool :=
   match e with
   | .Bool b => some b
   | .Var _ _ | .Plus _ _ | .Mul _ _ | .Eq _ _ | .Num _ => none
+
+def addWarning (s : State) (w : EvalWarning PureExpr) : State :=
+  { s with warnings := w :: s.warnings }
 
 def getPathConditions (s : State) : PathConditions PureExpr :=
   s.pathConditions
@@ -146,6 +152,7 @@ instance : EvalContext PureExpr State where
   preprocess := Arith.Eval.preprocess
   genFreeVar := Arith.Eval.genFreeVar
   denoteBool := Arith.Eval.denoteBool
+  addWarning := Arith.Eval.addWarning
   getPathConditions := Arith.Eval.getPathConditions
   addPathCondition := Arith.Eval.addPathCondition
   deferObligation := Arith.Eval.deferObligation
@@ -175,6 +182,7 @@ assert [x_value_eq] true
 
 State:
 error: none
+warnings: []
 deferred: #[Label: x_value_eq
  Assumptions: ⏎
  Obligation: true
@@ -201,6 +209,7 @@ assert [x_value_eq] ($__x0 : Num) = 100
 
 State:
 error: none
+warnings: []
 deferred: #[Label: x_value_eq
  Assumptions: ⏎
  Obligation: ($__x0 : Num) = 100

@@ -110,3 +110,20 @@ Result: verified
 
 
 --------------------------------------------------------------------
+
+def typeDeclPgm4 :=
+#strata
+program Boogie;
+type int := bool;
+#end
+
+/--
+error: [Strata.Boogie] Type checking error: This type declaration's name is reserved!
+type int := bool
+KnownTypes' names:
+[bool, int, string, real, bitvec, arrow, Map]
+-/
+#guard_msgs in
+#eval verify "cvc5" typeDeclPgm4
+
+--------------------------------------------------------------------

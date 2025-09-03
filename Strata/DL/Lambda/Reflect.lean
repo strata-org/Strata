@@ -113,7 +113,7 @@ def LExpr.toExprNoFVars (e : LExpr LMonoTy String) : MetaM Lean.Expr := do
         let bodyExpr ← LExpr.toExprNoFVars e'
         mkLambdaFVars #[x] bodyExpr
 
-  | .quant qk mty e =>
+  | .quant qk mty tr e =>
     match mty with
     | none => throwError f!"[LExpr.toExprNoFVars] Cannot reflect untyped quantifier!"
     | some ty =>
@@ -175,7 +175,7 @@ open LTy.Syntax LExpr.Syntax
 
 def test1 : MetaM Lean.Expr :=
   LExpr.toExpr
-    (.quant .all (some mty[int]) (.eq (.fvar "x" mty[int]) (.bvar 0)))
+    (.quant .all (some mty[int]) LExpr.noTrigger (.eq (.fvar "x" mty[int]) (.bvar 0)))
 
 /--
 info: Lean.Expr.forallE

@@ -103,7 +103,7 @@ open LTy.Syntax LExpr.SyntaxMono LExpr LMonoTy
                             esM[λ(%0 %0)]
          return (format $ ans.fst)
 
-/-- info: ok: (arrow (arrow $__ty3 $__ty6) (arrow (arrow $__ty2 $__ty3) (arrow $__ty2 $__ty6))) -/
+/-- info: ok: (arrow (arrow $__ty3 $__ty4) (arrow (arrow $__ty2 $__ty3) (arrow $__ty2 $__ty4))) -/
 #guard_msgs in
 -- Term: fun f -> (fun g -> (fun x -> (f (g x))))
 -- Expected type: ('a -> 'b) -> ('c -> 'a) -> 'c -> 'b
@@ -111,7 +111,7 @@ open LTy.Syntax LExpr.SyntaxMono LExpr LMonoTy
                             esM[λλλ(%2 (%1 %0))]
          return (format $ ans.fst.toLMonoTy)
 
-/-- info: ok: (arrow (arrow $__ty5 $__ty5) (arrow $__ty5 $__ty5)) -/
+/-- info: ok: (arrow (arrow $__ty3 $__ty3) (arrow $__ty3 $__ty3)) -/
 #guard_msgs in
 -- Term: fun f -> (fun x -> (f (f x)))
 -- Expected type: ('a -> 'a) -> 'a -> 'a
@@ -120,7 +120,7 @@ open LTy.Syntax LExpr.SyntaxMono LExpr LMonoTy
          return (format $ ans.fst.toLMonoTy)
 
 /--
-info: ok: (arrow (arrow $__ty2 (arrow $__ty6 $__ty9)) (arrow (arrow $__ty2 $__ty6) (arrow $__ty2 $__ty9)))
+info: ok: (arrow (arrow $__ty2 (arrow $__ty4 $__ty5)) (arrow (arrow $__ty2 $__ty4) (arrow $__ty2 $__ty5)))
 -/
 #guard_msgs in
 -- Function: fun f -> (fun g -> (fun x -> ((f x) (g x))))
@@ -155,7 +155,7 @@ private def testIntFns : (@Factory String) :=
 
 /--
 info: error: Type unit is not an instance of a previously registered type!
-Known Types: [∀[a, b]. (arrow a b), bool, int, string]
+Known Types: [∀[0, 1]. (arrow 0 1), bool, int, string]
 -/
 #guard_msgs in
 #eval do let ans ← LExprT.fromLExpr { TEnv.default with functions := testIntFns }
@@ -165,7 +165,7 @@ Known Types: [∀[a, b]. (arrow a b), bool, int, string]
 /-- info: ok: (~unit : unit) -/
 #guard_msgs in
 #eval do let ans ← LExprT.fromLExpr { TEnv.default with functions := testIntFns,
-                                                        knownTypes := [t[unit]] }
+                                                        knownTypes := [t[unit].toKnownType!] }
                              esM[~unit]
          return (format $ ans.fst)
 
@@ -175,9 +175,9 @@ Known Types: [∀[a, b]. (arrow a b), bool, int, string]
                     { (@TEnv.default String)
                     with functions := testIntFns,
                                           context :=
-                                          { aliases := [{args := [],
-                                                         lhs := mty[myInt],
-                                                         rhs := mty[int]}]} }
+                                          { aliases := [{typeArgs := [],
+                                                         name := "myInt",
+                                                         type := mty[int]}]} }
                              esM[((~SynonymTest #20) #30)]
          return (format $ ans.fst.toLMonoTy)
 
@@ -234,7 +234,7 @@ info: ok: (((~Int.Add : (arrow int (arrow int int))) (x : int)) ((~Int.Neg : (ar
          return (format $ ans.fst)
 
 /--
-info: ok: ((λ ((%0 : (arrow bool $__ty5)) ((fn : (arrow bool bool)) (#true : bool)) : bool)) : $__ty5)) : (arrow (arrow bool $__ty5) $__ty5))
+info: ok: ((λ ((%0 : (arrow bool $__ty3)) ((fn : (arrow bool bool)) (#true : bool)) : bool)) : $__ty3)) : (arrow (arrow bool $__ty3) $__ty3))
 -/
 #guard_msgs in
 #eval do let ans ← LExprT.fromLExpr { (@TEnv.default String)

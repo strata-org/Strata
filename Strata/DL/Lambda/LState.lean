@@ -104,11 +104,11 @@ def LState.addFactory (σ : (LState Identifier)) (F : @Factory Identifier) : Exc
 Get all the known variables from the scopes in state `σ`.
 -/
 def LState.knownVars (σ : (LState Identifier)) : List Identifier :=
-  go σ.state
-  where go (s : Scopes Identifier) :=
+  go σ.state []
+  where go (s : Scopes Identifier) (acc : List Identifier) :=
   match s with
-  | [] => []
-  | m :: rest => m.keys ++ go rest
+  | [] => acc
+  | m :: rest => go rest (acc ++ m.keys)
 
 /--
 Generate a fresh (internal) identifier with the base name
@@ -128,12 +128,14 @@ def LState.genVar (x : String) (σ : (LState String)) : (String × (LState Strin
 Generate fresh identifiers, each with the base name in `xs`.
 -/
 def LState.genVars (xs : List String) (σ : (LState String)) : (List String × (LState String)) :=
-  match xs with
-  | [] => ([], σ)
-  | x :: rest =>
-    let (x', σ) := LState.genVar x σ
-    let (xrest', σ) := LState.genVars rest σ
-    (x' :: xrest', σ)
+  let (vars, σ') := go xs σ []
+  (vars.reverse, σ')
+  where go (xs : List String) (σ : LState String) (acc : List String) :=
+    match xs with
+    | [] => (acc, σ)
+    | x :: rest =>
+      let (x', σ) := LState.genVar x σ
+      go rest σ (x' :: acc)
 
 instance : ToFormat (Identifier × LState Identifier) where
   format im :=

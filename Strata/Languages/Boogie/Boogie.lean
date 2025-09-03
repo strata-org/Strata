@@ -34,15 +34,17 @@ namespace Boogie
    types.
 -/
 
-def typeCheckAndPartialEval (options : Options) (program : Program) :
-  Except Std.Format (List (Program × Env)) := do
-  let factory := Boogie.Factory
-  let known_types := Boogie.KnownTypes
-  let T := { Lambda.TEnv.default with functions := factory, knownTypes := known_types }
+def typeCheck (options : Options) (program : Program) := do
+  let T := { Lambda.TEnv.default with functions := Boogie.Factory, knownTypes := Boogie.KnownTypes }
   let (program, _T) ← Program.typeCheck T program
   -- dbg_trace f!"[Strata.Boogie] Annotated program:\n{program}"
   if options.verbose then dbg_trace f!"[Strata.Boogie] Type checking succeeded.\n"
-  let σ ← (Lambda.LState.init).addFactory factory
+  return program
+
+def typeCheckAndPartialEval (options : Options) (program : Program) :
+  Except Std.Format (List (Program × Env)) := do
+  let program ← typeCheck options program
+  let σ ← (Lambda.LState.init).addFactory Boogie.Factory
   let E := { Env.init with exprEnv := σ,
                            program := program }
   let pEs := Program.eval E
