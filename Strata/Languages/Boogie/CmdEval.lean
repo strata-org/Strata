@@ -29,21 +29,14 @@ def lookupError (E : Env) : Option (EvalError Expression) :=
   E.error
 
 def update (E : Env) (v : Expression.Ident) (ty : Expression.Ty) (e : Expression.Expr) : Env :=
-  -- We typically do PE after type inference is in place, which is why we
-  -- expect `ty` to be a monotype. However, if it is not, we assume -- for
-  -- now -- that we are working with untyped expressions.
-  -- (TODO): What are the pitfalls of this decision?
-  if h : ty.isMonoType then
-    E.insertInContext (v, ty.toMonoType h) e
-  else
-    E.insertInContext (v, none) e
+  E.insertInContext (v, ty) e
 
 def lookup (E : Env) (v : Expression.Ident) : Option Expression.TypedExpr :=
   match E.exprEnv.state.find? v with
   | some (ty, e) =>
     match ty with
-    | some mty => some (e, .forAll [] mty)
-    | none => some (e, .forAll ["α"] (.ftvar "α"))
+    | some mty => some (e, mty)
+    | none => some (e, .univType)
   | none => none
 
 def preprocess (E : Env) (c : Cmd Expression) (e : Expression.Expr) : Expression.Expr × Env :=
@@ -61,10 +54,7 @@ def preprocess (E : Env) (c : Cmd Expression) (e : Expression.Expr) : Expression
   | _ => (e', E)
 
 def genFreeVar (E : Env) (x : Expression.Ident) (ty : Expression.Ty) : Expression.Expr × Env :=
-  if h : ty.isMonoType then
-    E.genFVar (x, ty.toMonoType h)
-  else
-    E.genFVar (x, none)
+  E.genFVar (x, ty)
 
 def denoteBool (e : Expression.Expr) : Option Bool :=
   Lambda.LExpr.denoteBool e
@@ -125,7 +115,7 @@ instance : ToFormat (Cmds Expression × Env) where
 
 ---------------------------------------------------------------------
 
-open LExpr.SyntaxMono LTy.Syntax Boogie.Syntax
+open LExpr.Syntax LTy.Syntax Boogie.Syntax
 private def testProgram1 : Cmds Expression :=
   [.init "x" t[int] eb[#0],
    .set "x" eb[#10],

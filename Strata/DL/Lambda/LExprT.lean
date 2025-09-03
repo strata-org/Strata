@@ -74,21 +74,22 @@ def toLMonoTy (e : (LExprT Identifier)) : LMonoTy :=
   | .mdata _ et => LExprT.toLMonoTy et
 
 /--
-Obtain an `LExpr` from an `LExprT`. We erase type annotations for all
-expressions, except the constants `.const`s, `.op`s, and free variables
-`.fvar`s.
+Obtain an `LExpr` from an `LExprT`.
+
+We erase type annotations for all expressions, except the constants `.const`s,
+`.op`s, and free variables `.fvar`s.
 -/
-def toLExpr (e : (LExprT Identifier)) : (LExpr LMonoTy Identifier) :=
+def toLExpr (e : (LExprT Identifier)) : (LExpr Identifier) :=
   match e with
-  | .const c ty => .const c ty
-  | .op o ty => .op o ty
+  | .const c ty => .const c ty.toLTy
+  | .op o ty => .op o ty.toLTy
   | .bvar b _ => .bvar b
-  | .fvar f ty => .fvar f ty
+  | .fvar f ty => .fvar f ty.toLTy
   | .app e1 e2 _ =>
     .app e1.toLExpr e2.toLExpr
-  | .abs e (.arrow aty _) => .abs aty e.toLExpr
+  | .abs e (.arrow aty _) => .abs aty.toLTy e.toLExpr
   | .abs e _ => .abs .none e.toLExpr
-  | .quant qk ty tr e => .quant qk ty tr.toLExpr e.toLExpr
+  | .quant qk ty tr e => .quant qk ty.toLTy tr.toLExpr e.toLExpr
   | .ite c t f _ => .ite c.toLExpr t.toLExpr f.toLExpr
   | .eq e1 e2 _ => .eq e1.toLExpr e2.toLExpr
   | .mdata m e => .mdata m e.toLExpr
@@ -163,7 +164,7 @@ protected def varClose (k : Nat) (x : Identifier) (e : (LExprT Identifier)) : (L
 ---------------------------------------------------------------------
 
 /-- Infer the type of `.fvar x fty`. -/
-def inferFVar (T : (TEnv Identifier)) (x : Identifier) (fty : Option LMonoTy) :
+def inferFVar (T : (TEnv Identifier)) (x : Identifier) (fty : Option LTy) :
   Except Format (LMonoTy × (TEnv Identifier)) :=
   match T.context.types.find? x with
   | none => .error f!"Cannot find this fvar in the context! \
@@ -173,8 +174,7 @@ def inferFVar (T : (TEnv Identifier)) (x : Identifier) (fty : Option LMonoTy) :
     match fty with
     | none => .ok (ty, T)
     | some fty =>
-      -- We do not support expressions to be annotated with type synonyms yet.
-      -- As such, if `fty` is a synonym, then the following may raise an error.
+      let (fty, T) ← LTy.instantiateWithCheck fty T
       let S ← Constraints.unify [(fty, ty)] T.state.substInfo
       .ok (ty, TEnv.updateSubst T S)
 
@@ -190,12 +190,12 @@ for some kinds of constants, especially for types with really large or infinite
 members (e.g., bitvectors, natural numbers, etc.). `.const` is the place to do
 that.
 -/
-def inferConst (T : (TEnv Identifier)) (c : String) (cty : Option LMonoTy) :
+def inferConst (T : (TEnv Identifier)) (c : String) (cty : Option LTy) :
   Except Format (LMonoTy × (TEnv Identifier)) :=
   open LTy.Syntax in
   match c, cty with
   -- Annotated Booleans
-  | "true", some LMonoTy.bool | "false", some LMonoTy.bool => .ok (mty[bool], T)
+  | "true", some .bool | "false", some .bool => .ok (mty[bool], T)
   -- Unannotated Booleans: note that `(.const "true" none)` and
   -- `(.const "false" none)` will be interpreted as booleans.
   | "true", none | "false", none =>
@@ -204,46 +204,46 @@ def inferConst (T : (TEnv Identifier)) (c : String) (cty : Option LMonoTy) :
     else
       .error f!"Booleans are not registered in the known types.\n\
                 Don't know how to interpret the following constant:\n\
-                {@LExpr.const LMonoTy Identifier c cty}\n\
+                {@LExpr.const Identifier c cty}\n\
                 Known Types: {T.knownTypes}"
   -- Annotated Integers
-  | c, some LMonoTy.int =>
+  | c, some .int =>
     if { name := "int" } ∈ T.knownTypes then
       if c.isInt then .ok (mty[int], T)
                  else .error f!"Constant annotated as an integer, but it is not.\n\
-                                {@LExpr.const LMonoTy Identifier c cty}"
+                                {@LExpr.const Identifier c cty}"
     else
       .error f!"Integers are not registered in the known types.\n\
                 Don't know how to interpret the following constant:\n\
-                {@LExpr.const LMonoTy Identifier c cty}\n\
+                {@LExpr.const Identifier c cty}\n\
                 Known Types: {T.knownTypes}"
   -- Annotated Reals
-  | c, some LMonoTy.real =>
+  | c, some .real =>
     if { name := "real" } ∈ T.knownTypes then
       .ok (mty[real], T)
     else
       .error f!"Reals are not registered in the known types.\n\
                 Don't know how to interpret the following constant:\n\
-                {@LExpr.const LMonoTy Identifier c cty}\n\
+                {@LExpr.const Identifier c cty}\n\
                 Known Types: {T.knownTypes}"
   -- Annotated BitVecs
-  | c, some (LMonoTy.bitvec n) =>
-    let ty := LMonoTy.bitvec n
+  | c, some (.forAll [] (.bitvec n)) =>
+    let ty := .bitvec n
     if { name := "bitvec", arity := 1 } ∈ T.knownTypes then
       (.ok (ty, T))
     else
       .error f!"Bit vectors of size {n} are not registered in the known types.\n\
                 Don't know how to interpret the following constant:\n\
-                {@LExpr.const LMonoTy Identifier c cty}\n\
+                {@LExpr.const Identifier c cty}\n\
                 Known Types: {T.knownTypes}"
   -- Annotated Strings
-  | c, some LMonoTy.string =>
+  | c, some .string =>
     if { name := "string" } ∈ T.knownTypes then
       .ok (mty[string], T)
     else
       .error f!"Strings are not registered in the known types.\n\
                 Don't know how to interpret the following constant:\n\
-                {@LExpr.const LMonoTy Identifier c cty}\n\
+                {@LExpr.const Identifier c cty}\n\
                 Known Types: {T.knownTypes}"
   | _, _ =>
   -- Unannotated Integers
@@ -252,14 +252,14 @@ def inferConst (T : (TEnv Identifier)) (c : String) (cty : Option LMonoTy) :
         .ok (mty[int], T)
       else
         .error f!"Integers are not registered in the known types.\n\
-                  Constant {@LExpr.const LMonoTy Identifier c cty}\n\
+                  Constant {@LExpr.const Identifier c cty}\n\
                   Known Types: {T.knownTypes}"
     else
       .error f!"Cannot infer the type of this constant: \
-                {@LExpr.const LMonoTy Identifier c cty}"
+                {@LExpr.const Identifier c cty}"
 
 mutual
-partial def fromLExprAux (T : (TEnv Identifier)) (e : (LExpr LMonoTy Identifier)) :
+partial def fromLExprAux (T : (TEnv Identifier)) (e : (LExpr Identifier)) :
     Except Format ((LExprT Identifier) × (TEnv Identifier)) :=
   open LTy.Syntax in do
   match e with
@@ -284,7 +284,7 @@ partial def fromLExprAux (T : (TEnv Identifier)) (e : (LExpr LMonoTy Identifier)
 
 /-- Infer the type of an operation `.op o oty`, where an operation is defined in
   the factory. -/
-partial def inferOp (T : (TEnv Identifier)) (o : Identifier) (oty : Option LMonoTy) :
+partial def inferOp (T : (TEnv Identifier)) (o : Identifier) (oty : Option LTy) :
   Except Format (LMonoTy × (TEnv Identifier)) :=
   open LTy.Syntax in
   match T.functions.find? (fun fn => fn.name == o) with
@@ -318,12 +318,13 @@ partial def inferOp (T : (TEnv Identifier)) (o : Identifier) (oty : Option LMono
                       {func}"
       match oty with
       | none => .ok (ty, T)
-      | some cty =>
-        let (optTyy, T) := (cty.resolveAliases T)
-        let S ← Constraints.unify [(ty, optTyy.getD cty )] T.state.substInfo
+      | some oty =>
+        let (oty, T) ← LTy.instantiateWithCheck oty T
+        let (optTyy, T) := (oty.resolveAliases T)
+        let S ← Constraints.unify [(ty, optTyy.getD oty)] T.state.substInfo
         .ok (ty, TEnv.updateSubst T S)
 
-partial def fromLExprAux.ite (T : (TEnv Identifier)) (c th el : (LExpr LMonoTy Identifier)) := do
+partial def fromLExprAux.ite (T : (TEnv Identifier)) (c th el : (LExpr Identifier)) := do
   let (ct, T) ← fromLExprAux T c
   let (tt, T) ← fromLExprAux T th
   let (et, T) ← fromLExprAux T el
@@ -333,7 +334,7 @@ partial def fromLExprAux.ite (T : (TEnv Identifier)) (c th el : (LExpr LMonoTy I
   let S ← Constraints.unify [(cty, LMonoTy.bool), (tty, ety)] T.state.substInfo
   .ok (.ite ct tt et tty, TEnv.updateSubst T S)
 
-partial def fromLExprAux.eq (T : (TEnv Identifier)) (e1 e2 : (LExpr LMonoTy Identifier)) := do
+partial def fromLExprAux.eq (T : (TEnv Identifier)) (e1 e2 : (LExpr Identifier)) := do
   -- `.eq A B` is well-typed if there is some instantiation of
   -- type parameters in `A` and `B` that makes them have the same type.
   let (e1t, T) ← fromLExprAux T e1
@@ -343,60 +344,63 @@ partial def fromLExprAux.eq (T : (TEnv Identifier)) (e1 e2 : (LExpr LMonoTy Iden
   let S ← Constraints.unify [(ty1, ty2)] T.state.substInfo
   .ok (.eq e1t e2t LMonoTy.bool, TEnv.updateSubst T S)
 
-partial def fromLExprAux.abs (T : (TEnv Identifier)) (oty : Option LMonoTy) (e : (LExpr LMonoTy Identifier)) := do
+partial def fromLExprAux.abs (T : (TEnv Identifier)) (bty : Option LTy) (e : (LExpr Identifier)) := do
+  -- Generate a fresh expression variable to stand in for the bound variable.
   let (xv, T) := HasGen.genVar T
+  -- Generate a fresh type variable to stand in for the type of the bound
+  -- variable.
   let (xt', T) := TEnv.genTyVar T
   let xt := .forAll [] (.ftvar xt')
   let T := T.insertInContext xv xt
-  let e' := LExpr.varOpen 0 (xv, some (.ftvar xt')) e
+  -- Construct `e'` from `e`, where the bound variable has been replaced by
+  -- `xv`.
+  let e' := LExpr.varOpen 0 (xv, some xt) e
   let (et, T) ← fromLExprAux T e'
   let ety := et.toLMonoTy
   let etclosed := .varClose 0 xv et
+  -- Safe to erase fresh variable from context after closing the expressions.
   let T := T.eraseFromContext xv
   let ty := (.tcons "arrow" [(.ftvar xt'), ety])
   let mty := LMonoTy.subst T.state.substInfo.subst ty
-  match mty, oty with
-  | .arrow aty _, .some ty =>
-    if aty == ty
-    then .ok ()
-    else .error "Type annotation on LTerm.abs doesn't match inferred argument type"
-  | _, _ => .ok ()
-  .ok (.abs etclosed mty, T)
+  match bty with
+  | none => .ok ((.abs etclosed mty), T)
+  | some bty =>
+    let (bty, T) ← instantiateWithCheck bty T
+    let S ← Constraints.unify [(mty, bty)] T.state.substInfo
+    .ok (.abs etclosed mty, TEnv.updateSubst T S)
 
-partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (oty : Option LMonoTy) (triggers : LExpr LMonoTy Identifier) (e : (LExpr LMonoTy Identifier)) := do
+partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (bty : Option LTy)
+    (triggers : LExpr Identifier) (e : (LExpr Identifier)) := do
+  -- Generate a fresh variable to stand in for the bound variable.
   let (xv, T) := HasGen.genVar T
+  -- Generate a fresh type variable to stand in for the type of the bound
+  -- variable.
   let (xt', T) := TEnv.genTyVar T
   let xt := .forAll [] (.ftvar xt')
-  let S ← match oty with
-  | .some ty =>
-    let (optTyy, T) := (ty.resolveAliases T)
-    (Constraints.unify [(.ftvar xt', optTyy.getD ty)] T.state.substInfo)
-  | .none =>
-    .ok T.state.substInfo
-  let T := TEnv.updateSubst T S
   let T := T.insertInContext xv xt
-  let e' := LExpr.varOpen 0 (xv, some (.ftvar xt')) e
-  let triggers' := LExpr.varOpen 0 (xv, some (.ftvar xt')) triggers
+  -- Construct new expressions, where the bound variable has been replaced by
+  -- `xv`.
+  let e' := LExpr.varOpen 0 (xv, some xt) e
+  let triggers' := LExpr.varOpen 0 (xv, some xt) triggers
   let (et, T) ← fromLExprAux T e'
   let (triggersT, T) ← fromLExprAux T triggers'
   let ety := et.toLMonoTy
   let mty := LMonoTy.subst T.state.substInfo.subst (.ftvar xt')
-  match oty with
-  | .some ty =>
-    let (optTyy, _) := (ty.resolveAliases T)
-    if optTyy.getD ty == mty
-    then .ok ()
-    else .error f!"Type annotation on LTerm.quant {ty} (alias for {optTyy.getD ty}) doesn't match inferred argument type"
-  | _ => .ok ()
-  if ety = LMonoTy.bool then do
-    let etclosed := .varClose 0 xv et
-    let triggersClosed := .varClose 0 xv triggersT
-    let T := T.eraseFromContext xv
-    .ok (.quant qk mty triggersClosed etclosed, T)
-  else
+  let etclosed := LExprT.varClose 0 xv et
+  let triggersClosed := LExprT.varClose 0 xv triggersT
+  -- Safe to erase fresh variable from context after closing the expressions.
+  let T := T.eraseFromContext xv
+  if ety != LMonoTy.bool then do
     .error f!"Quantifier body has non-Boolean type: {ety}"
+  else
+    match bty with
+    | none =>  .ok (.quant qk mty triggersClosed etclosed, T)
+    | some bty =>
+      let (bty, T) ← instantiateWithCheck bty T
+      let S ← Constraints.unify [(mty, bty)] T.state.substInfo
+      .ok (.quant qk mty triggersClosed etclosed, TEnv.updateSubst T S)
 
-partial def fromLExprAux.app (T : (TEnv Identifier)) (e1 e2 : (LExpr LMonoTy Identifier)) := do
+partial def fromLExprAux.app (T : (TEnv Identifier)) (e1 e2 : (LExpr Identifier)) := do
   let (e1t, T) ← fromLExprAux T e1
   let ty1 := e1t.toLMonoTy
   let (e2t, T) ← fromLExprAux T e2
@@ -414,19 +418,18 @@ partial def fromLExprAux.app (T : (TEnv Identifier)) (e1 e2 : (LExpr LMonoTy Ide
   let S ← Constraints.unify constraints T.state.substInfo
   let mty := LMonoTy.subst S.subst freshty
   .ok (.app e1t e2t mty, TEnv.updateSubst T S)
-
 end
 
-protected def fromLExpr (T : (TEnv Identifier)) (e : (LExpr LMonoTy Identifier)) :
+protected def fromLExpr (T : (TEnv Identifier)) (e : (LExpr Identifier)) :
     Except Format ((LExprT Identifier) × (TEnv Identifier)) := do
   let (et, T) ← fromLExprAux T e
   .ok (LExprT.applySubst et T.state.substInfo.subst, T)
 
-protected def fromLExprs (T : (TEnv Identifier)) (es : List (LExpr LMonoTy Identifier)) :
+protected def fromLExprs (T : (TEnv Identifier)) (es : List (LExpr Identifier)) :
     Except Format (List (LExprT Identifier) × (TEnv Identifier)) := do
   go T es []
   where
-    go (T : TEnv Identifier) (rest : List (LExpr LMonoTy Identifier))
+    go (T : TEnv Identifier) (rest : List (LExpr Identifier))
         (acc : List (LExprT Identifier)) := do
       match rest with
       | [] => .ok (acc.reverse, T)
@@ -441,33 +444,33 @@ end LExprT
 /--
 Annotate an `LExpr e` with inferred monotypes.
 -/
-def LExpr.annotate (T : (TEnv Identifier)) (e : (LExpr LMonoTy Identifier)) :
-    Except Format ((LExpr LMonoTy Identifier) × (TEnv Identifier)) := do
+def LExpr.annotate (T : (TEnv Identifier)) (e : (LExpr Identifier)) :
+    Except Format ((LExpr Identifier) × (TEnv Identifier)) := do
   let (e_a, T) ← LExprT.fromLExpr T e
   return (LExprT.toLExpr e_a, T)
 
 /--
 Apply type substitution `S` to `LExpr e`.
 -/
-def LExpr.applySubst (e : (LExpr LMonoTy Identifier)) (S : Subst) : (LExpr LMonoTy Identifier) :=
+def LExpr.applySubst (e : (LExpr Identifier)) (S : Subst) : (LExpr Identifier) :=
   match e with
   | .const c ty =>
     match ty with
     | none => e
     | some ty =>
-      let ty := LMonoTy.subst S ty
+      let ty := LTy.subst S ty
       .const c ty
   | .op o ty =>
     match ty with
     | none => e
     | some ty =>
-      let ty := LMonoTy.subst S ty
+      let ty := LTy.subst S ty
       .op o ty
   | .fvar x ty =>
       match ty with
     | none => e
     | some ty =>
-      let ty := LMonoTy.subst S ty
+      let ty := LTy.subst S ty
       .fvar x ty
   | .bvar _ => e
   | .abs ty e => .abs ty (e.applySubst S)

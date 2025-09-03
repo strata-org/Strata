@@ -290,7 +290,7 @@ def TEnv.eraseFromContext (T : (TEnv Identifier)) (x : Identifier) : (TEnv Ident
   let ctx' := { ctx with types := ctx.types.erase x }
   { T with context := ctx' }
 
-def TEnv.freeVarCheck (T : (TEnv Identifier)) (e : LExpr LMonoTy Identifier) (msg : Format) :
+def TEnv.freeVarCheck (T : (TEnv Identifier)) (e : LExpr Identifier) (msg : Format) :
   Except Format Unit :=
   let efv := e.freeVars.map (fun (x, _) => x)
   let knownVars := T.context.knownVars
@@ -302,7 +302,8 @@ def TEnv.freeVarCheck (T : (TEnv Identifier)) (e : LExpr LMonoTy Identifier) (ms
               {Format.line}\
               Free Variables: {freeVars}"
 
-def TEnv.freeVarChecks (T : (TEnv Identifier)) (es : List (LExpr LMonoTy Identifier)) : Except Format Unit :=
+def TEnv.freeVarChecks (T : (TEnv Identifier)) (es : List (LExpr Identifier)) :
+    Except Format Unit :=
   match es with
   | [] => .ok ()
   | e :: erest => do
@@ -761,32 +762,15 @@ def LMonoTySignature.toTrivialLTy (s : @LMonoTySignature Identifier) : @LTySigna
   s.map (fun (x, ty) => (x, .forAll [] ty))
 
 /--
-Generate fresh type variables only for unnannotated identifiers in `ids`,
-retaining any pre-existing type annotations.
--/
-def TEnv.maybeGenMonoTypes (T : (TEnv Identifier)) (ids : (IdentTs Identifier)) : List LMonoTy × (TEnv Identifier) :=
-  match ids with
-  | [] => ([], T)
-  | (_x, ty) :: irest =>
-    match ty with
-    | none =>
-      let (xty_id, T) := TEnv.genTyVar T
-      let xty := .ftvar xty_id
-      let (ans, T) := maybeGenMonoTypes T irest
-      (xty :: ans, T)
-    | some xty =>
-      let (ans, T) := maybeGenMonoTypes T irest
-      (xty :: ans, T)
-
-/--
 Insert `fvi` (where `fvi` is the `i`-th element of `fvs`) in the oldest context
 in `T`, only if `fvi` doesn't already exist in some context in `T`.
 
 If `fvi` has no type annotation, a fresh type variable is put in the context.
 -/
-def TEnv.addInOldestContext (fvs : (IdentTs Identifier)) (T : (TEnv Identifier)) : (TEnv Identifier) :=
-  let (monotys, T) := maybeGenMonoTypes T fvs
-  let tys := monotys.map (fun mty => LTy.forAll [] mty)
+def TEnv.addInOldestContext (fvs : (IdentTs Identifier LTy)) (T : (TEnv Identifier)) :
+    (TEnv Identifier) :=
+  let tys := fvs.map (fun (_, ty) =>
+                        if h : ty.isSome then ty.get h else LTy.univType)
   let types := T.context.types.addInOldest fvs.idents tys
   { T with context := { T.context with types := types } }
 

@@ -13,7 +13,7 @@ namespace Boogie
 
 namespace OldExpressions
 
-open Lambda.LExpr.SyntaxMono Lambda.LTy.Syntax Boogie.Syntax
+open Lambda.LTy.Syntax Lambda.LExpr.Syntax Boogie.Syntax
 
 /-! ## Old Expressions in Boogie
 
@@ -54,16 +54,16 @@ are only left with `old(var)` expressions:
 
 @[match_pattern]
 def oldExpr
-  {tyold : Option Lambda.LMonoTy}
+  {tyold : Option Lambda.LTy}
   (e : Expression.Expr)
   : Expression.Expr
   := .app (.op (.unres "old") tyold) e
 
 @[match_pattern]
 def oldVar
-  {tyold : Option Lambda.LMonoTy}
+  {tyold : Option Lambda.LTy}
   (v : Expression.Ident)
-  {tyv : Option Lambda.LMonoTy}
+  {tyv : Option Lambda.LTy}
   : Expression.Expr
   := @oldExpr tyold (.fvar v tyv)
 

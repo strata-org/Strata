@@ -4,9 +4,6 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-
-
-import Strata.DL.Lambda.LTy
 import Strata.DL.Util.Map
 
 ---------------------------------------------------------------------
@@ -17,26 +14,31 @@ open Std (ToFormat Format format)
 section Identifiers
 
 /--
-Identifiers, optionally with their inferred monotype.
+Identifiers, optionally with their type.
 -/
-abbrev IdentT (Identifier : Type) := Identifier × Option LMonoTy
-abbrev IdentTs (Identifier : Type) := List (IdentT Identifier)
+abbrev IdentT (Identifier : Type) (TypeType : Type) := Identifier × Option TypeType
+abbrev IdentTs (Identifier : Type) (TypeType : Type) := List (IdentT Identifier TypeType)
 
-instance {Identifier : Type} [ToFormat Identifier] : ToFormat (IdentT Identifier) where
+instance {Identifier : Type} [ToFormat Identifier]
+         {TypeType : Type} [ToFormat TypeType]:
+    ToFormat (IdentT Identifier TypeType) where
   format i := match i.snd with
     | none => f!"{i.fst}"
     | some ty => f!"({i.fst} : {ty})"
 
-def IdentT.ident (x : (IdentT Identifier)) : Identifier :=
+def IdentT.ident {Identifier TypeType} (x : (IdentT Identifier TypeType)) : Identifier :=
   x.fst
 
-def IdentT.monoty? (x : (IdentT Identifier)) : Option LMonoTy :=
+def IdentT.type? {Identifier TypeType} (x : (IdentT Identifier TypeType)) :
+    Option TypeType :=
   x.snd
 
-def IdentTs.idents (xs : (IdentTs Identifier)) : List Identifier :=
+def IdentTs.idents {Identifier TypeType} (xs : (IdentTs Identifier TypeType)) :
+    List Identifier :=
   xs.map Prod.fst
 
-def IdentTs.monotys? (xs : (IdentTs Identifier)) : List (Option LMonoTy) :=
+def IdentTs.types? {Identifier TypeType} (xs : (IdentTs Identifier TypeType)) :
+    List (Option TypeType) :=
   xs.map Prod.snd
 
 ---------------------------------------------------------------------

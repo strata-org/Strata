@@ -128,7 +128,7 @@ structure GenNum where
 
 structure TransBindings where
   boundTypeVars : Array TyIdentifier := #[]
-  boundVars : Array (LExpr LMonoTy BoogieIdent) := #[]
+  boundVars : Array (LExpr BoogieIdent) := #[]
   freeVars  : Array Boogie.Decl := #[]
   gen : GenNum := (GenNum.mk 0 0 0 0)
 
@@ -547,12 +547,12 @@ def translateQuantifier
     -- Trigger attached to only the innermost quantifier
     let buildQuantifier := fun (_, ty) (e, first) =>
       match ty with
-      | .forAll [] mty =>
+      | .forAll [] _ =>
         let triggers := if first then
             triggers
           else
             LExpr.noTrigger
-        (.quant qk (.some mty) triggers e, false)
+        (.quant qk (.some ty) triggers e, false)
       | _ => panic! s!"Expected monomorphic type in quantifier, got: {ty}"
 
     return xsArray.foldr buildQuantifier (init := (b, true)) |>.1
@@ -591,33 +591,33 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   match op, args with
   -- Constants/Literals
   | .fn q`Boogie.btrue, [] =>
-    return .const "true" Lambda.LMonoTy.bool
+    return .const "true" Lambda.LTy.bool
   | .fn q`Boogie.bfalse, [] =>
-    return .const "false" Lambda.LMonoTy.bool
+    return .const "false" Lambda.LTy.bool
   | .fn q`Boogie.natToInt, [xa] =>
     let n ← translateNat xa
-    return .const (toString n) Lambda.LMonoTy.int
+    return .const (toString n) Lambda.LTy.int
   | .fn q`Boogie.bv1Lit, [xa] =>
     let n ← translateNat xa
-    return .const (toString n) Lambda.LMonoTy.bv1
+    return .const (toString n) Lambda.LTy.bv1
   | .fn q`Boogie.bv8Lit, [xa] =>
     let n ← translateNat xa
-    return .const (toString n) Lambda.LMonoTy.bv8
+    return .const (toString n) Lambda.LTy.bv8
   | .fn q`Boogie.bv16Lit, [xa] =>
     let n ← translateNat xa
-    return .const (toString n) Lambda.LMonoTy.bv16
+    return .const (toString n) Lambda.LTy.bv16
   | .fn q`Boogie.bv32Lit, [xa] =>
     let n ← translateNat xa
-    return .const (toString n) Lambda.LMonoTy.bv32
+    return .const (toString n) Lambda.LTy.bv32
   | .fn q`Boogie.bv64Lit, [xa] =>
     let n ← translateNat xa
-    return .const (toString n) Lambda.LMonoTy.bv64
+    return .const (toString n) Lambda.LTy.bv64
   | .fn q`Boogie.strLit, [xa] =>
     let x ← translateStr xa
-    return .const x Lambda.LMonoTy.string
+    return .const x Lambda.LTy.string
   | .fn q`Boogie.realLit, [xa] =>
     let x ← translateReal xa
-    return .const (toString x) Lambda.LMonoTy.real
+    return .const (toString x) Lambda.LTy.real
   -- Equality
   | .fn q`Boogie.equal, [_tpa, xa, ya] =>
     let x ← translateExpr p bindings xa
@@ -626,12 +626,12 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   | .fn q`Boogie.not_equal, [_tpa, xa, ya] =>
     let x ← translateExpr p bindings xa
     let y ← translateExpr p bindings ya
-    let fn : LExpr LMonoTy BoogieIdent := (LExpr.op (.unres "Bool.Not") none)
+    let fn : LExpr BoogieIdent := (LExpr.op (.unres "Bool.Not") none)
     return (.app fn (.eq x y))
   | .fn q`Boogie.bvnot, [tpa, xa] =>
     let tp ← translateLMonoTy bindings tpa
     let x ← translateExpr p bindings xa
-    let fn : LExpr LMonoTy BoogieIdent ←
+    let fn : LExpr BoogieIdent ←
       translateFn (.some tp) q`Boogie.bvnot
     return (.app fn x)
   -- If-then-else expression
@@ -642,38 +642,42 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     return .ite c t f
   -- Unary function applications
   | .fn q`Boogie.not, [xa] =>
-    let fn : LExpr LMonoTy BoogieIdent := (LExpr.op (.unres "Bool.Not") none)
+    let fn : LExpr BoogieIdent := (LExpr.op (.unres "Bool.Not") none)
     let x ← translateExpr p bindings xa
     return .mkApp fn [x]
   | .fn q`Boogie.neg_expr, [_ta, xa] =>
-    let fn : LExpr LMonoTy BoogieIdent := (LExpr.op (.unres "Int.Neg") none)
+    let fn : LExpr BoogieIdent := (LExpr.op (.unres "Int.Neg") none)
     let x ← translateExpr p bindings xa
     return .mkApp fn [x]
   -- Strings
   | .fn q`Boogie.str_len, [xa] =>
-     let fn : LExpr LMonoTy BoogieIdent := (LExpr.op "Str.Length" none)
+     let fn : LExpr BoogieIdent := (LExpr.op "Str.Length" none)
      let x ← translateExpr p bindings xa
      return .mkApp fn [x]
   | .fn q`Boogie.str_concat, [xa, ya] =>
-     let fn : LExpr LMonoTy BoogieIdent := (LExpr.op "Str.Concat" none)
+     let fn : LExpr BoogieIdent := (LExpr.op "Str.Concat" none)
      let x ← translateExpr p bindings xa
      let y ← translateExpr p bindings ya
      return .mkApp fn [x, y]
   | .fn q`Boogie.old, [_tp, xa] =>
-     let fn : LExpr LMonoTy BoogieIdent := (LExpr.op (.unres "old") none)
+     let fn : LExpr BoogieIdent := (LExpr.op (.unres "old") none)
      let x ← translateExpr p bindings xa
      return .mkApp fn [x]
   | .fn q`Boogie.map_get, [_ktp, _vtp, ma, ia] =>
      let kty ← translateLMonoTy bindings _ktp
      let vty ← translateLMonoTy bindings _vtp
-     let fn : LExpr LMonoTy BoogieIdent := (LExpr.op "select" (.some (LMonoTy.mkArrow (mapTy kty vty) [kty, vty])))
+     -- (FIXME)
+     let ty := .forAll [] (LMonoTy.mkArrow (mapTy kty vty) [kty, vty])
+     let fn : LExpr BoogieIdent := (LExpr.op "select" (.some ty))
      let m ← translateExpr p bindings ma
      let i ← translateExpr p bindings ia
      return .mkApp fn [m, i]
   | .fn q`Boogie.map_set, [_ktp, _vtp, ma, ia, xa] =>
      let kty ← translateLMonoTy bindings _ktp
      let vty ← translateLMonoTy bindings _vtp
-     let fn : LExpr LMonoTy BoogieIdent := (LExpr.op "update" (.some (LMonoTy.mkArrow (mapTy kty vty) [kty, vty, mapTy kty vty])))
+     -- (FIXME)
+     let ty := .forAll [] (LMonoTy.mkArrow (mapTy kty vty) [kty, vty, mapTy kty vty])
+     let fn : LExpr BoogieIdent := (LExpr.op "update" (.some ty))
      let m ← translateExpr p bindings ma
      let i ← translateExpr p bindings ia
      let x ← translateExpr p bindings xa
@@ -788,7 +792,7 @@ def translateVarStatement (bindings : TransBindings) (decls : Array Arg) :
     let tpids ← translateDeclList bindings decls[0]!
     let (stmts, bindings) ← initVarStmts tpids bindings
     let bbindings := bindings.boundVars ++
-                     tpids.map (fun (id, _) => ((LExpr.fvar id none): LExpr LMonoTy Expression.Ident))
+                     tpids.map (fun (id, _) => ((LExpr.fvar id none): LExpr Expression.Ident))
     return (stmts, { bindings with boundVars := bbindings })
 
 def translateInitStatement (p : Program) (bindings : TransBindings) (args : Array Arg) :
@@ -800,7 +804,7 @@ def translateInitStatement (p : Program) (bindings : TransBindings) (args : Arra
     let lhs ← translateIdent BoogieIdent args[1]!
     let val ← translateExpr p bindings args[2]!
     let ty := (.forAll [] mty)
-    let newBinding: LExpr LMonoTy Expression.Ident := LExpr.fvar lhs none
+    let newBinding: LExpr Expression.Ident := LExpr.fvar lhs none
     let bbindings := bindings.boundVars ++ [newBinding]
     return ([.init lhs ty val], { bindings with boundVars := bbindings })
 

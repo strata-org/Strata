@@ -28,13 +28,13 @@ def PathConditions.format (ps : PathConditions Expression) : Format :=
   | p :: prest =>
     f!"{PathCondition.format p}{Format.line}" ++ PathConditions.format prest
 
-def PathCondition.getVars (p : PathCondition Expression) : List (Lambda.IdentT BoogieIdent) :=
+def PathCondition.getVars (p : PathCondition Expression) : List (Lambda.IdentT BoogieIdent Lambda.LTy) :=
   p.map (fun (_, e) => Lambda.LExpr.freeVars e) |> .flatten |> .eraseDups
 
-def PathConditions.getVars (ps : PathConditions Expression) : List (Lambda.IdentT BoogieIdent) :=
+def PathConditions.getVars (ps : PathConditions Expression) : List (Lambda.IdentT BoogieIdent Lambda.LTy) :=
   ps.map (fun p => PathCondition.getVars p) |> .flatten |> .eraseDups
 
-def ProofObligation.getVars (d : ProofObligation Expression) : List (Lambda.IdentT BoogieIdent) :=
+def ProofObligation.getVars (d : ProofObligation Expression) : List (Lambda.IdentT BoogieIdent Lambda.LTy) :=
   let o_vars := Lambda.LExpr.freeVars d.obligation
   let pc_vars := PathConditions.getVars d.assumptions
   (o_vars ++ pc_vars).eraseDups
@@ -64,7 +64,6 @@ def ProofObligation.create
   (label : String) (assumptions : PathConditions Expression)
   (obligation : Procedure.Check) (md : MetaData Expression := #[]):
   Option (ProofObligation Expression) :=
-  open Lambda.LExpr.SyntaxMono in
   if obligation.attr == .Free then
     dbg_trace f!"{Format.line}Obligation {label} is free!{Format.line}"
     none
@@ -163,13 +162,13 @@ def Env.addFactoryFunc (E : Env) (func : (Lambda.LFunc BoogieIdent)) : Except Fo
   let exprEnv ← E.exprEnv.addFactoryFunc func
   .ok { E with exprEnv := exprEnv }
 
-def Env.insertInContext (xt : (Lambda.IdentT BoogieIdent)) (e : Expression.Expr) (E : Env) : Env :=
-  { E with exprEnv.state := E.exprEnv.state.insert xt.ident (xt.monoty?, e) }
+def Env.insertInContext (xt : (Lambda.IdentT BoogieIdent Lambda.LTy)) (e : Expression.Expr) (E : Env) : Env :=
+  { E with exprEnv.state := E.exprEnv.state.insert xt.ident (xt.type?, e) }
 
 /--
 Insert each `(x, v)` in `xs` into the context.
 -/
-def Env.addToContext (xs : Map (Lambda.IdentT BoogieIdent) Expression.Expr) (E : Env) : Env :=
+def Env.addToContext (xs : Map (Lambda.IdentT BoogieIdent Lambda.LTy) Expression.Expr) (E : Env) : Env :=
   List.foldl (fun E (x, v) => E.insertInContext x v) E xs
 
 -- TODO: prove uniqueness, add different prefix
@@ -208,10 +207,10 @@ def Env.genVars (xs : List String) (σ : (Lambda.LState BoogieIdent)) : (List Bo
 Generate a fresh variable using the base name and pre-existing type, if any,
 from `xt`.
 -/
-def Env.genFVar (E : Env) (xt : (Lambda.IdentT BoogieIdent)) :
+def Env.genFVar (E : Env) (xt : (Lambda.IdentT BoogieIdent Lambda.LTy)) :
   Expression.Expr × Env :=
   let (xid, E) := E.genVar xt.ident
-  let xe := match xt.monoty? with
+  let xe := match xt.type? with
             | none => .fvar xid none
             | some xty => .fvar xid xty
   (xe, E)
@@ -220,9 +219,9 @@ def Env.genFVar (E : Env) (xt : (Lambda.IdentT BoogieIdent)) :
 Generate fresh variables using the base names and any pre-existing types from
 `xs`.
 -/
-def Env.genFVars (E : Env) (xs : List (Lambda.IdentT BoogieIdent)) :
+def Env.genFVars (E : Env) (xs : List (Lambda.IdentT BoogieIdent Lambda.LTy)) :
   List Expression.Expr × Env :=
-  let rec go (acc : List Expression.Expr) (E : Env) (xs : List (Lambda.IdentT BoogieIdent)) :
+  let rec go (acc : List Expression.Expr) (E : Env) (xs : List (Lambda.IdentT BoogieIdent Lambda.LTy)) :
     List Expression.Expr × Env :=
     match xs with
     | [] => (acc.reverse, E)
@@ -236,7 +235,7 @@ Insert `(xi, .fvar xi)`, for each `xi` in `xs`, in the _oldest_ scope in `ss`,
 only if `xi` is the identifier of a free variable, i.e., it is not in `ss`.
 -/
 def Env.insertFreeVarsInOldestScope
-  (xs : List (Lambda.IdentT BoogieIdent)) (E : Env) : Env :=
+  (xs : List (Lambda.IdentT BoogieIdent Lambda.LTy)) (E : Env) : Env :=
   let (xis, xtyei) := xs.foldl
     (fun (acc_ids, acc_pairs) x =>
       (x.fst :: acc_ids, (x.snd, .fvar x.fst x.snd) :: acc_pairs))
@@ -250,7 +249,7 @@ def PathCondition.merge (cond : Expression.Expr) (pc1 pc2 : PathCondition Expres
   let pc1' := pc1.map (fun (label, e) => (label, mkImplies cond e))
   let pc2' := pc2.map (fun (label, e) => (label, mkImplies (LExpr.ite cond LExpr.false LExpr.true) e))
   pc1' ++ pc2'
-  where mkImplies (ant con : LExpr LMonoTy BoogieIdent) : (LExpr LMonoTy BoogieIdent) :=
+  where mkImplies (ant con : LExpr BoogieIdent) : (LExpr BoogieIdent) :=
   LExpr.ite ant con LExpr.true
 
 def Env.performMerge (cond : Expression.Expr) (E1 E2 : Env)

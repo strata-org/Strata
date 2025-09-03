@@ -17,7 +17,7 @@ open Std (ToFormat Format format)
 
 abbrev Expression : Imperative.PureExpr :=
    { Ident := BoogieIdent,
-     Expr := Lambda.LExpr Lambda.LMonoTy BoogieIdent,
+     Expr := Lambda.LExpr BoogieIdent,
      Ty := Lambda.LTy,
      TyEnv := @Lambda.TEnv BoogieIdent,
      EvalEnv := Lambda.LState BoogieIdent

@@ -17,6 +17,7 @@ namespace Lambda
 open Std (ToFormat Format format)
 
 variable {Identifier : Type} [DecidableEq Identifier] [ToFormat Identifier]
+
 ---------------------------------------------------------------------
 
 /-
@@ -87,7 +88,8 @@ instance : ToFormat (LState Identifier) where
 Add function `func` to the existing factory of functions in `σ`. Redefinitions
 are not allowed.
 -/
-def LState.addFactoryFunc (σ : LState Identifier) (func : (LFunc Identifier)) : Except Format (LState Identifier) := do
+def LState.addFactoryFunc (σ : LState Identifier) (func : (LFunc Identifier)) :
+    Except Format (LState Identifier) := do
   let F ← σ.config.factory.addFactoryFunc func
   .ok { σ with config := { σ.config with factory := F }}
 
@@ -95,7 +97,8 @@ def LState.addFactoryFunc (σ : LState Identifier) (func : (LFunc Identifier)) :
 Append `Factory f` to the existing factory of functions in `σ`, checking for
 redefinitions.
 -/
-def LState.addFactory (σ : (LState Identifier)) (F : @Factory Identifier) : Except Format (LState Identifier) := do
+def LState.addFactory (σ : (LState Identifier)) (F : @Factory Identifier) :
+    Except Format (LState Identifier) := do
   let oldF := σ.config.factory
   let newF ← oldF.addFactory F
   .ok { σ with config := { σ.config with factory := newF } }
@@ -127,7 +130,8 @@ def LState.genVar (x : String) (σ : (LState String)) : (String × (LState Strin
 /--
 Generate fresh identifiers, each with the base name in `xs`.
 -/
-def LState.genVars (xs : List String) (σ : (LState String)) : (List String × (LState String)) :=
+def LState.genVars (xs : List String) (σ : (LState String)) :
+    (List String × (LState String)) :=
   let (vars, σ') := go xs σ []
   (vars.reverse, σ')
   where go (xs : List String) (σ : LState String) (acc : List String) :=
@@ -148,7 +152,8 @@ instance : ToFormat (Identifier × LState Identifier) where
 /--
 Substitute `.fvar`s in `e` by looking up their values in `σ`.
 -/
-def LExpr.substFvarsFromState (σ : (LState Identifier)) (e : (LExpr LMonoTy Identifier)) : (LExpr LMonoTy Identifier) :=
+def LExpr.substFvarsFromState (σ : (LState Identifier)) (e : (LExpr Identifier))
+    : (LExpr Identifier) :=
   let sm := σ.state.toSingleMap.map (fun (x, (_, v)) => (x, v))
   Lambda.LExpr.substFvars e sm
 

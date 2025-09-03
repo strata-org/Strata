@@ -21,35 +21,41 @@ section IntBoolFactory
 
 def unaryOp [Coe String Ident]
             (n : Ident)
+            (typeArgs : List TyIdentifier)
             (ty : LMonoTy)
-            (ceval : Option (LExpr LMonoTy Ident → List (LExpr LMonoTy Ident) → LExpr LMonoTy Ident)) : LFunc Ident :=
+            (ceval : Option (LExpr Ident → List (LExpr Ident) → LExpr Ident)) : LFunc Ident :=
   { name := n,
+    typeArgs := typeArgs,
     inputs := [("x", ty)],
     output := ty,
     concreteEval := ceval }
 
 def binaryOp [Coe String Ident]
              (n : Ident)
+             (typeArgs : List TyIdentifier)
              (ty : LMonoTy)
-             (ceval : Option (LExpr LMonoTy Ident → List (LExpr LMonoTy Ident) → LExpr LMonoTy Ident)) : LFunc Ident :=
+             (ceval : Option (LExpr Ident → List (LExpr Ident) → LExpr Ident)) : LFunc Ident :=
   { name := n,
+    typeArgs := typeArgs,
     inputs := [("x", ty), ("y", ty)],
     output := ty,
     concreteEval := ceval }
 
 def binaryPredicate [Coe String Ident]
                     (n : Ident)
+                    (typeArgs : List TyIdentifier)
                     (ty : LMonoTy)
-                    (ceval : Option (LExpr LMonoTy Ident → List (LExpr LMonoTy Ident) → LExpr LMonoTy Ident)) : LFunc Ident :=
+                    (ceval : Option (LExpr Ident → List (LExpr Ident) → LExpr Ident)) : LFunc Ident :=
   { name := n,
+    typeArgs := typeArgs,
     inputs := [("x", ty), ("y", ty)],
     output := .bool,
     concreteEval := ceval }
 
 def unOpCeval  {Identifier : Type} (InTy OutTy : Type) [ToString OutTy]
-                (cevalInTy : (LExpr LMonoTy Identifier) → Option InTy) (op : InTy → OutTy)
-                (ty : LMonoTy) :
-                (LExpr LMonoTy Identifier) → List (LExpr LMonoTy Identifier) → (LExpr LMonoTy Identifier) :=
+                (cevalInTy : (LExpr Identifier) → Option InTy) (op : InTy → OutTy)
+                (ty : LTy) :
+                (LExpr Identifier) → List (LExpr Identifier) → (LExpr Identifier) :=
   (fun e args => match args with
    | [e1] =>
      let e1i := cevalInTy e1
@@ -59,9 +65,9 @@ def unOpCeval  {Identifier : Type} (InTy OutTy : Type) [ToString OutTy]
    | _ => e)
 
 def binOpCeval {Identifier : Type} (InTy OutTy : Type) [ToString OutTy]
-                (cevalInTy : (LExpr LMonoTy Identifier) → Option InTy) (op : InTy → InTy → OutTy)
-                (ty : LMonoTy) :
-                (LExpr LMonoTy Identifier) → List (LExpr LMonoTy Identifier) → (LExpr LMonoTy Identifier) :=
+                (cevalInTy : (LExpr Identifier) → Option InTy) (op : InTy → InTy → OutTy)
+                (ty : LTy) :
+                (LExpr Identifier) → List (LExpr Identifier) → (LExpr Identifier) :=
   (fun e args => match args with
    | [e1, e2] =>
      let e1i := cevalInTy e1
@@ -73,7 +79,7 @@ def binOpCeval {Identifier : Type} (InTy OutTy : Type) [ToString OutTy]
 
 -- We hand-code a denotation for `Int.Div` to leave the expression
 -- unchanged if we have `0` for the denominator.
-def cevalIntDiv (e : LExpr LMonoTy Ident) (args : List (LExpr LMonoTy Ident)) : LExpr LMonoTy Ident :=
+def cevalIntDiv (e : LExpr Ident) (args : List (LExpr Ident)) : LExpr Ident :=
   match args with
   | [e1, e2] =>
     let e1i := LExpr.denoteInt e1
@@ -86,7 +92,7 @@ def cevalIntDiv (e : LExpr LMonoTy Ident) (args : List (LExpr LMonoTy Ident)) : 
 
 -- We hand-code a denotation for `Int.Mod` to leave the expression
 -- unchanged if we have `0` for the denominator.
-def cevalIntMod (e : LExpr LMonoTy Ident) (args : List (LExpr LMonoTy Ident)) : LExpr LMonoTy Ident :=
+def cevalIntMod (e : LExpr Ident) (args : List (LExpr Ident)) : LExpr Ident :=
   match args with
   | [e1, e2] =>
     let e1i := LExpr.denoteInt e1
@@ -100,64 +106,64 @@ def cevalIntMod (e : LExpr LMonoTy Ident) (args : List (LExpr LMonoTy Ident)) : 
 /- Integer Arithmetic Operations -/
 
 def intAddFunc [Coe String Ident] : LFunc Ident :=
-  binaryOp "Int.Add" .int
+  binaryOp "Int.Add" [] .int
   (some (binOpCeval Int Int LExpr.denoteInt Int.add .int))
 
 def intSubFunc [Coe String Ident] : LFunc Ident :=
-  binaryOp "Int.Sub" .int
+  binaryOp "Int.Sub" [] .int
   (some (binOpCeval Int Int LExpr.denoteInt Int.sub .int))
 
 def intMulFunc [Coe String Ident] : LFunc Ident :=
-  binaryOp "Int.Mul" .int
+  binaryOp "Int.Mul" [] .int
   (some (binOpCeval Int Int LExpr.denoteInt Int.mul .int))
 
 def intDivFunc [Coe String Ident] : LFunc Ident :=
-  binaryOp "Int.Div" .int
+  binaryOp "Int.Div" [] .int
   (some cevalIntDiv)
 
 def intModFunc [Coe String Ident] : LFunc Ident :=
-  binaryOp "Int.Mod" .int
+  binaryOp "Int.Mod" [] .int
   (some cevalIntMod)
 
 def intNegFunc [Coe String Ident] : LFunc Ident :=
-  unaryOp "Int.Neg" .int
+  unaryOp "Int.Neg" [] .int
   (some (unOpCeval Int Int LExpr.denoteInt Int.neg .int))
 
 def intLtFunc [Coe String Ident] : LFunc Ident :=
-  binaryPredicate "Int.Lt" .int
+  binaryPredicate "Int.Lt" [] .int
   (some (binOpCeval Int Bool LExpr.denoteInt (fun x y => x < y) .bool))
 
 def intLeFunc [Coe String Ident] : LFunc Ident :=
-  binaryPredicate "Int.Le" .int
+  binaryPredicate "Int.Le" [] .int
   (some (binOpCeval Int Bool LExpr.denoteInt (fun x y => x <= y) .bool))
 
 def intGtFunc [Coe String Ident] : LFunc Ident :=
-  binaryPredicate "Int.Gt" .int
+  binaryPredicate "Int.Gt" [] .int
   (some (binOpCeval Int Bool LExpr.denoteInt (fun x y => x > y) .bool))
 
 def intGeFunc [Coe String Ident] : LFunc Ident :=
-  binaryPredicate "Int.Ge" .int
+  binaryPredicate "Int.Ge" [] .int
   (some (binOpCeval Int Bool LExpr.denoteInt (fun x y => x >= y) .bool))
 
 /- Boolean Operations -/
 def boolAndFunc [Coe String Ident] : LFunc Ident :=
-  binaryOp "Bool.And" .bool
+  binaryOp "Bool.And" [] .bool
   (some (binOpCeval Bool Bool LExpr.denoteBool Bool.and .bool))
 
 def boolOrFunc [Coe String Ident] : LFunc Ident :=
-  binaryOp "Bool.Or" .bool
+  binaryOp "Bool.Or" [] .bool
   (some (binOpCeval Bool Bool LExpr.denoteBool Bool.or .bool))
 
 def boolImpliesFunc [Coe String Ident] : LFunc Ident :=
-  binaryOp "Bool.Implies" .bool
+  binaryOp "Bool.Implies" [] .bool
   (some (binOpCeval Bool Bool LExpr.denoteBool (fun x y => ((not x) || y)) .bool))
 
 def boolEquivFunc [Coe String Ident] : LFunc Ident :=
-  binaryOp "Bool.Equiv" .bool
+  binaryOp "Bool.Equiv" [] .bool
   (some (binOpCeval Bool Bool LExpr.denoteBool (fun x y => (x == y)) .bool))
 
 def boolNotFunc [Coe String Ident] : LFunc Ident :=
-  unaryOp "Bool.Not" .bool
+  unaryOp "Bool.Not" [] .bool
   (some (unOpCeval Bool Bool LExpr.denoteBool Bool.not .bool))
 
 def IntBoolFactory : @Factory String :=

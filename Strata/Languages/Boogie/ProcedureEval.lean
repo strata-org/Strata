@@ -39,7 +39,7 @@ def eval (E : Env) (p : Procedure) : List (Procedure × Env) :=
   -- scope at the end of this procedure.
   let vars := p.header.inputs.keys ++ p.header.outputs.keys
   let var_tys := p.header.inputs.values ++ p.header.outputs.values
-  let var_tys := var_tys.map (fun ty => some ty)
+  let var_tys := var_tys.map (fun ty => some (ty.toLTy p.header.typeArgs))
   let (vals, E) := E.genFVars (vars.zip var_tys)
   let pVarMap := List.zip vars (var_tys.zip vals)
   let E := E.pushScope pVarMap

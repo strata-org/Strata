@@ -4,8 +4,6 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-
-
 import Strata.DL.Lambda.LExpr
 
 /-! ## Well-formedness of Lambda Expressions
@@ -27,7 +25,7 @@ variable {Identifier : Type} [DecidableEq Identifier]
 Compute the free variables in an `LExpr`, which are simply all the `LExpr.fvar`s
 in it.
 -/
-def freeVars (e : LExpr LMonoTy Identifier) : IdentTs Identifier :=
+def freeVars (e : LExpr Identifier) : IdentTs Identifier LTy :=
   match e with
   | .const _ _ => []
   | .op _ _ => []
@@ -43,11 +41,11 @@ def freeVars (e : LExpr LMonoTy Identifier) : IdentTs Identifier :=
 /--
 Is `x` is a fresh variable w.r.t. `e`?
 -/
-def fresh (x : IdentT Identifier) (e : LExpr LMonoTy Identifier) : Bool :=
+def fresh (x : IdentT Identifier LTy) (e : LExpr Identifier) : Bool :=
   x ∉ (freeVars e)
 
 /-- An expression `e` is closed if has no free variables. -/
-def closed (e : LExpr LMonoTy Identifier) : Bool :=
+def closed (e : LExpr Identifier) : Bool :=
   freeVars e |>.isEmpty
 
 @[simp]
@@ -95,7 +93,8 @@ This function replaces some bound variables in `e` by an arbitrary expression
 `substK k s e` keeps track of the number `k` of abstractions that have passed
 by; it replaces all leaves of the form `(.bvar k)` with `s`.
 -/
-def substK (k : Nat) (s : LExpr LMonoTy Identifier) (e : LExpr LMonoTy Identifier) : LExpr LMonoTy Identifier :=
+def substK (k : Nat) (s : LExpr Identifier) (e : LExpr Identifier) :
+    LExpr Identifier :=
   match e with
   | .const c ty => .const c ty
   | .op o ty => .op o ty
@@ -129,7 +128,8 @@ to avoid such issues:
 
 `(λλ 1 0) (λ b) --β--> (λ (λ b) 0)`
 -/
-def subst (s : LExpr LMonoTy Identifier) (e : LExpr LMonoTy Identifier) : LExpr LMonoTy Identifier :=
+def subst (s : LExpr Identifier) (e : LExpr Identifier) :
+    LExpr Identifier :=
   substK 0 s e
 
 /--
@@ -140,8 +140,14 @@ with `(.fvar x)`.
 
 Note that `x` is expected to be a fresh variable w.r.t. `e`.
 -/
-def varOpen (k : Nat) (x : IdentT Identifier) (e : LExpr LMonoTy Identifier) : LExpr LMonoTy Identifier :=
+def varOpen (k : Nat) (x : IdentT Identifier LTy) (e : LExpr Identifier) :
+    LExpr Identifier :=
   substK k (.fvar x.fst x.snd) e
+
+/-- info: (x : int) -/
+#guard_msgs in
+open LTy.Syntax LExpr.Syntax in
+#eval format $ varOpen 0 ("x", t[int]) es[(%0)]
 
 /--
 This function turns some free variables into bound variables to build an
@@ -149,7 +155,8 @@ abstraction, given its body. `varClose k x e` keeps track of the number `k`
 of abstractions that have passed by; it replaces all `(.fvar x)` with
 `(.bvar k)`.
 -/
-def varClose (k : Nat) (x : IdentT Identifier) (e : LExpr LMonoTy Identifier) : LExpr LMonoTy Identifier :=
+def varClose (k : Nat) (x : IdentT Identifier LTy) (e : LExpr Identifier) :
+    LExpr Identifier :=
   match e with
   | .const c ty => .const c ty
   | .op o ty => .op o ty
@@ -163,6 +170,10 @@ def varClose (k : Nat) (x : IdentT Identifier) (e : LExpr LMonoTy Identifier) : 
   | .ite c t e => .ite (varClose k x c) (varClose k x t) (varClose k x e)
   | .eq e1 e2 => .eq (varClose k x e1) (varClose k x e2)
 
+/-- info: %0 -/
+#guard_msgs in
+open LTy.Syntax LExpr.Syntax in
+#eval format $ varClose 0 ("x", t[int]) es[(x : int)]
 
 theorem varClose_of_varOpen (h : fresh x e) :
   varClose (Identifier:=Identifier) i x (varOpen i x e) = e := by
@@ -187,7 +198,7 @@ variables.
 
 Example of a term that is not locally closed: `(.abs "x" (.bvar 1))`.
 -/
-def lcAt (k : Nat) (e : LExpr LMonoTy Identifier) : Bool :=
+def lcAt (k : Nat) (e : LExpr Identifier) : Bool :=
   match e with
   | .const _ _ => true
   | .op _ _ => true
@@ -295,7 +306,7 @@ An `LExpr e` is well-formed if it has no dangling bound variables.
 We expect the type system to guarantee the well-formedness of an `LExpr`, i.e.,
 we will prove a _regularity_ lemma; see lemma `HasType.regularity`.
 -/
-def WF (e : LExpr LMonoTy Identifier) : Bool :=
+def WF (e : LExpr Identifier) : Bool :=
   lcAt 0 e
 
 theorem varOpen_of_varClose (h : LExpr.WF e) :
@@ -316,8 +327,8 @@ and `varOpen`, this function is agnostic of types.
 Also see function `subst`, where `subst s e` substitutes the outermost _bound_
 variable in `e` with `s`.
 -/
-def substFvar {Identifier: Type} [DecidableEq Identifier] (e : LExpr LMonoTy Identifier) (fr : Identifier) (to : LExpr LMonoTy Identifier)
-  : (LExpr LMonoTy Identifier) :=
+def substFvar (e : LExpr Identifier) (fr : Identifier) (to : LExpr Identifier) :
+    (LExpr Identifier) :=
   match e with
   | .const _ _ => e | .bvar _ => e | .op _ _ => e
   | .fvar  name _ => if name == fr then to else e
@@ -328,8 +339,8 @@ def substFvar {Identifier: Type} [DecidableEq Identifier] (e : LExpr LMonoTy Ide
   | .ite   c t e' => .ite (substFvar c fr to) (substFvar t fr to) (substFvar e' fr to)
   | .eq    e1 e2 => .eq (substFvar e1 fr to) (substFvar e2 fr to)
 
-def substFvars {Identifier: Type} [DecidableEq Identifier] (e : LExpr LMonoTy Identifier) (sm : Map Identifier (LExpr LMonoTy Identifier))
-  : LExpr LMonoTy Identifier :=
+def substFvars (e : LExpr Identifier) (sm : Map Identifier (LExpr Identifier))
+  : LExpr Identifier :=
   List.foldl (fun e (var, s) => substFvar e var s) e sm
 
 ---------------------------------------------------------------------

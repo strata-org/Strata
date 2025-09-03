@@ -39,41 +39,52 @@ inductive LMonoTy : Type where
 
 abbrev LMonoTys := List LMonoTy
 
-@[match_pattern]
-def LMonoTy.bool : LMonoTy :=
-  .tcons "bool" []
+/--
+Type schemes (poly-types) in Lambda.
+-/
+inductive LTy : Type where
+  | forAll (vars : List TyIdentifier) (ty : LMonoTy)
+  deriving Inhabited, Repr
+
+def LMonoTy.toLTy (mty : LMonoTy) (args : List TyIdentifier := []) : LTy :=
+  .forAll args mty
 
 @[match_pattern]
-def LMonoTy.int : LMonoTy :=
-  .tcons "int" []
-
+def LMonoTy.bool : LMonoTy := .tcons "bool" []
 @[match_pattern]
-def LMonoTy.real : LMonoTy :=
-  .tcons "real" []
-
+def LTy.bool : LTy := LMonoTy.bool.toLTy
 @[match_pattern]
-def LMonoTy.bv1 : LMonoTy :=
-  .bitvec 1
-
+def LMonoTy.int : LMonoTy := .tcons "int" []
 @[match_pattern]
-def LMonoTy.bv8 : LMonoTy :=
-  .bitvec 8
-
+def LTy.int : LTy := LMonoTy.int.toLTy
 @[match_pattern]
-def LMonoTy.bv16 : LMonoTy :=
-  .bitvec 16
-
+def LMonoTy.real : LMonoTy := .tcons "real" []
 @[match_pattern]
-def LMonoTy.bv32 : LMonoTy :=
-  .bitvec 32
-
+def LTy.real : LTy := LMonoTy.real.toLTy
 @[match_pattern]
-def LMonoTy.bv64 : LMonoTy :=
-  .bitvec 64
-
+def LMonoTy.string : LMonoTy := .tcons "string" []
 @[match_pattern]
-def LMonoTy.string : LMonoTy :=
-  .tcons "string" []
+def LTy.string : LTy := LMonoTy.string.toLTy
+@[match_pattern]
+def LMonoTy.bv1 : LMonoTy := .bitvec 1
+@[match_pattern]
+def LTy.bv1 : LTy := LMonoTy.bv1.toLTy
+@[match_pattern]
+def LMonoTy.bv8 : LMonoTy := .bitvec 8
+@[match_pattern]
+def LTy.bv8 : LTy := LMonoTy.bv8.toLTy
+@[match_pattern]
+def LMonoTy.bv16 : LMonoTy := .bitvec 16
+@[match_pattern]
+def LTy.bv16 : LTy := LMonoTy.bv16.toLTy
+@[match_pattern]
+def LMonoTy.bv32 : LMonoTy := .bitvec 32
+@[match_pattern]
+def LTy.bv32 : LTy := LMonoTy.bv32.toLTy
+@[match_pattern]
+def LMonoTy.bv64 : LMonoTy := .bitvec 64
+@[match_pattern]
+def LTy.bv64 : LTy := LMonoTy.bv64.toLTy
 
 def LMonoTy.arrow (t1 t2 : LMonoTy) : LMonoTy :=
   .tcons "arrow" [t1, t2]
@@ -105,12 +116,9 @@ theorem LMonoTy.destructArrow_non_empty (mty : LMonoTy) :
   (mty.destructArrow) ≠ [] := by
   unfold destructArrow; split <;> simp_all
 
-/--
-Type schemes (poly-types) in Lambda.
--/
-inductive LTy : Type where
-  | forAll (vars : List TyIdentifier) (ty : LMonoTy)
-  deriving Inhabited, Repr
+@[match_pattern]
+def LTy.univType : LTy :=
+  LTy.forAll ["α"] (.ftvar "α")
 
 abbrev LTys := List LTy
 
@@ -343,6 +351,16 @@ Unsafe coerce from a type scheme to a mono-type.
 def LTy.toMonoTypeUnsafe (ty : LTy) : LMonoTy :=
   match ty with
   | .forAll _ lty => lty
+
+def LTy.toMonoTypeErr (ty : LTy) (msg : Format := f!"") :
+    Except Format LMonoTy :=
+  match ty with
+  | .forAll [] mty => .ok mty
+  | _ =>
+    if msg.isEmpty then
+      .error f!"Expected mono-type; encountered: {ty}"
+    else
+      .error msg
 
 ---------------------------------------------------------------------
 

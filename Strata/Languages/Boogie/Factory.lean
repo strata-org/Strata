@@ -12,7 +12,7 @@ import Strata.DL.Lambda.IntBoolFactory
 ---------------------------------------------------------------------
 
 namespace Boogie
-open Lambda LTy.Syntax LExpr.SyntaxMono
+open Lambda LTy.Syntax
 
 @[match_pattern]
 def mapTy (keyTy : LMonoTy) (valTy : LMonoTy) : LMonoTy :=
@@ -35,10 +35,10 @@ def KnownTypes : KnownTypes :=
   KnownLTys.map (fun ty => ty.toKnownType!)
 
 /--
-  Convert an LExpr LMonoTy String to an LExpr LMonoTy BoogieIdent
+  Convert an LExpr String to an LExpr BoogieIdent
   TODO: Remove when Lambda elaborator offers parametric identifier type
 -/
-def ToBoogieIdent (ine: LExpr LMonoTy String): (LExpr LMonoTy BoogieIdent) :=
+def ToBoogieIdent (ine: LExpr String): (LExpr BoogieIdent) :=
 match ine with
     | .const c ty => .const c ty
     | .op o oty => .op (BoogieIdent.unres o) oty
@@ -81,24 +81,24 @@ elab "ExpandBVOpFuncDefs" "[" sizes:num,* "]" : command => do
       let funcArity := mkIdent (.str (.str .anonymous "Lambda") arity)
       let opName := Syntax.mkStrLit s!"Bv{s}.{op}"
       let bvTypeName := Name.mkSimple s!"bv{s}"
-      elabCommand (← `(def $funcName : LFunc BoogieIdent := $funcArity $opName mty[$(mkIdent bvTypeName):ident] none))
+      elabCommand (← `(def $funcName : LFunc BoogieIdent := $funcArity $opName [] mty[$(mkIdent bvTypeName):ident] none))
 
 -- def bv1AddOp : LExpr BoogieIdent := bv1AddFunc.opExpr
 ExpandBVOpFuncDefs[1, 2, 8, 16, 32, 64]
 
 /- Real Arithmetic Operations -/
 
-def realAddFunc : LFunc BoogieIdent := binaryOp "Real.Add" mty[real] none
-def realSubFunc : LFunc BoogieIdent := binaryOp "Real.Sub" mty[real] none
-def realMulFunc : LFunc BoogieIdent := binaryOp "Real.Mul" mty[real] none
-def realDivFunc : LFunc BoogieIdent := binaryOp "Real.Div" mty[real] none
-def realNegFunc : LFunc BoogieIdent := unaryOp "Real.Neg" mty[real] none
+def realAddFunc : LFunc BoogieIdent := binaryOp "Real.Add" [] mty[real] none
+def realSubFunc : LFunc BoogieIdent := binaryOp "Real.Sub" [] mty[real] none
+def realMulFunc : LFunc BoogieIdent := binaryOp "Real.Mul" [] mty[real] none
+def realDivFunc : LFunc BoogieIdent := binaryOp "Real.Div" [] mty[real] none
+def realNegFunc : LFunc BoogieIdent := unaryOp "Real.Neg" [] mty[real] none
 
 /- Real Comparison Operations -/
-def realLtFunc : LFunc BoogieIdent := binaryPredicate "Real.Lt" mty[real] none
-def realLeFunc : LFunc BoogieIdent := binaryPredicate "Real.Le" mty[real] none
-def realGtFunc : LFunc BoogieIdent := binaryPredicate "Real.Gt" mty[real] none
-def realGeFunc : LFunc BoogieIdent := binaryPredicate "Real.Ge" mty[real] none
+def realLtFunc : LFunc BoogieIdent := binaryPredicate "Real.Lt" [] mty[real] none
+def realLeFunc : LFunc BoogieIdent := binaryPredicate "Real.Le" [] mty[real] none
+def realGtFunc : LFunc BoogieIdent := binaryPredicate "Real.Gt" [] mty[real] none
+def realGeFunc : LFunc BoogieIdent := binaryPredicate "Real.Ge" [] mty[real] none
 
 /- String Operations -/
 def strLengthFunc : LFunc BoogieIdent :=
@@ -108,7 +108,7 @@ def strLengthFunc : LFunc BoogieIdent :=
       output := mty[int],
       concreteEval := some (unOpCeval String Int LExpr.denoteString
                             (fun s => (Int.ofNat (String.length s)))
-                            mty[int])}
+                            t[int])}
 
 def strConcatFunc : LFunc BoogieIdent :=
     { name := "Str.Concat",
@@ -116,7 +116,7 @@ def strConcatFunc : LFunc BoogieIdent :=
       inputs := [("x", mty[string]), ("y", mty[string])]
       output := mty[string],
       concreteEval := some (binOpCeval String String LExpr.denoteString
-                            String.append mty[string])}
+                            String.append t[string])}
 
 /- A polymorphic `old` function with type `∀a. a → a`. -/
 def polyOldFunc : LFunc BoogieIdent :=
@@ -138,6 +138,7 @@ def mapUpdateFunc : LFunc BoogieIdent :=
      typeArgs := ["k", "v"],
      inputs := [("m", mapTy mty[%k] mty[%v]), ("i", mty[%k]), ("x", mty[%v])],
      output := mapTy mty[%k] mty[%v],
+     /-
      axioms :=
      [
       -- updateSelect: forall m: Map k v, kk: k, vv: v :: m[kk := vv][kk] == vv
@@ -166,6 +167,7 @@ def mapUpdateFunc : LFunc BoogieIdent :=
                     ((((~select : (Map %k %v) → %k → %v) %3) %2)))
                     ))))]
      ]
+    -/
    }
 
 def emptyTriggersFunc : LFunc BoogieIdent :=
@@ -328,6 +330,7 @@ def mkTriggerGroup (ts : List Expression.Expr) : Expression.Expr :=
 
 def mkTriggerExpr (ts : List (List Expression.Expr)) : Expression.Expr :=
   let groups := ts.map mkTriggerGroup
-  groups.foldl (fun gs g => .app (.app addTriggerGroupOp g) gs) emptyTriggersOp
+  let expr := groups.foldl (fun gs g => .app (.app addTriggerGroupOp g) gs) emptyTriggersOp
+  expr
 
 end Boogie
