@@ -85,3 +85,54 @@ Result: err Cannot find model for id: t0
 #eval verify "cvc5" failing
 
 ---------------------------------------------------------------------
+
+private def failingThrice :=
+#strata
+program Boogie;
+
+procedure P(x : int) returns ()
+spec {
+  requires x != 0;
+}
+{
+  assert x == 1;
+  assert x == 2;
+  assert x != 7;
+};
+#end
+
+/--
+info:
+
+Obligation assert_0: could not be proved!
+
+Result: failed
+CEx: ($__x0, (- 1))
+
+
+Obligation assert_1: could not be proved!
+
+Result: failed
+CEx: ($__x0, (- 1))
+
+
+Obligation assert_2: could not be proved!
+
+Result: failed
+CEx: ($__x0, 7)
+---
+info:
+Obligation: assert_0
+Result: failed
+CEx: ($__x0, (- 1))
+
+Obligation: assert_1
+Result: failed
+CEx: ($__x0, (- 1))
+
+Obligation: assert_2
+Result: failed
+CEx: ($__x0, 7)
+-/
+#guard_msgs in
+#eval verify "cvc5" failingThrice Options.quiet
