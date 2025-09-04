@@ -27,9 +27,16 @@ Representation of identifiers specific to binary expressions
 E.g., `Plus` below corresponds to IRep ID `ID_plus`, and so on.
 -/
 inductive Binary where
-  | Plus | Minus
+  | Plus
+  | Minus
   | Equal
   deriving Repr, Inhabited, DecidableEq
+
+instance : ToFormat Binary where
+  format b := match b with
+    | .Plus => "+"
+    | .Minus => "-"
+    | .Equal => "=="
 
 /--
 Data structure for representing an arbitrary statement in a program. This is
@@ -48,6 +55,20 @@ inductive Code where
   | Label
   | Return
   deriving Repr, Inhabited, DecidableEq
+
+instance : ToFormat Code where
+  format c := match c with
+    | .Assert => "Assert"
+    | .Assign => "Assign"
+    | .Assume => "Assume"
+    | .Block => "Block"
+    | .Break => "Break"
+    | .Continue => "Continue"
+    | .Dead => "Dead"
+    | .Decl => "Decl"
+    | .Goto => "Goto"
+    | .Label => "Label"
+    | .Return => "Return"
 
 end Identifier
 
@@ -70,6 +91,15 @@ inductive Identifier where
   | bin (b : Identifier.Binary)
   deriving Repr, Inhabited, DecidableEq
 
+instance : ToFormat Identifier where
+  format i :=
+    match i with
+    | .symbol name => name
+    | .constant value => value
+    | .nondet => "nondet"
+    | .code c => f!"{c}"
+    | .bin b => f!"{b}"
+
 end Expr
 -------------------------------------------------------------------------------
 
@@ -87,6 +117,27 @@ structure Expr where
   operands : List Expr := []
   -- TODO: Source Location
   deriving Repr, Inhabited
+
+partial def Expr.BEq (x y : Expr) : Bool :=
+  x.id == y.id && x.type == y.type &&
+  go x.operands y.operands
+  where go xs ys :=
+  match xs, ys with
+  | [], [] => true
+  | _, [] | [], _ => false
+  | x :: xrest, y :: yrest =>
+    Expr.BEq x y && go xrest yrest
+
+partial def formatExpr (e : Expr) : Format :=
+  let operands := e.operands.map (fun o => formatExpr o)
+  let operands := Format.joinSep operands f!" "
+  if operands.isEmpty then
+    f!"({e.id} : {e.type})"
+  else
+  f!"(({e.id} {operands}) : {e.type})"
+
+instance : ToFormat Expr where
+  format e := formatExpr e
 
 def true_expr : Expr :=
   { id := .constant "true", type := .Boolean }
@@ -115,6 +166,10 @@ private def add_expr : Expr :=
     operands := [s_expr, one_expr]
   }
 
+/-- info: ((+ (s : unsignedbv[32]) (1 : unsignedbv[32])) : unsignedbv[32]) -/
+#guard_msgs in
+#eval format add_expr
+
 -- DECL s : bv32
 private def decl_code : Expr :=
   {
@@ -122,6 +177,10 @@ private def decl_code : Expr :=
     type := .BitVector (.UnsignedBV 32),
     operands := [s_expr]
   }
+
+/-- info: ((Decl (s : unsignedbv[32])) : unsignedbv[32]) -/
+#guard_msgs in
+#eval format decl_code
 
 end Examples
 

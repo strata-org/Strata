@@ -71,7 +71,9 @@ structure Program where
 instance : ToFormat Instruction where
   format i :=
     let itype := f!"{repr i.instrType}"
-    f!"{i.locationNum} {itype}"
+    let guard := if Expr.BEq i.guard true_expr then f!"" else f!"GUARD: {i.guard}"
+    let targets := if i.targets.isEmpty then f!"" else f!"TARGETS: {repr i.targets}"
+    f!"{i.locationNum}: {itype} {i.code} {guard} {targets}"
 
 -------------------------------------------------------------------------------
 
