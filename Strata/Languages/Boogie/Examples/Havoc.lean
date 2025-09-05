@@ -34,7 +34,7 @@ postconditions: ⏎
 body: init (x : int) := init_x_0
 x := (#1 : int)
 havoc x
-assert [x_eq_1] (x == (#1 : int))
+assert [x_eq_1] ((x : int) == (#1 : int))
 
 Errors: #[]
 -/
