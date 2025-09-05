@@ -10,10 +10,11 @@
 
 # Tools
 /Tools/BoogieToStrata/ @atomb @MikaelMayer
+/Tools/Python @andrewmwells-amazon @aqjune-aws @joehendrix
 
 # DDM
-/Strata/DDM/ @joehendrix @shigoel
-/StrataTest/DDM/ @joehendrix @shigoel 
+/Strata/DDM/ @joehendrix @shigoel @aqjune-aws
+/StrataTest/DDM/ @joehendrix @shigoel @aqjune-aws
 
 # Dialects
 /Strata/DL/Lambda/ @shigoel @atomb
@@ -32,7 +33,7 @@
 
 /Strata/Languages/C_Simp/ @andrewmwells-amazon @shigoel
 
-/Strata/Transform/ @atomb @andrewmwells-amazon 
+/Strata/Transform/ @atomb @andrewmwells-amazon
 
 # Documentation
-/docs/ddm/ @joehendrix @shigoel 
+/docs/ddm/ @joehendrix @shigoel
