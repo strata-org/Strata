@@ -93,6 +93,9 @@ private def emitln (str : String) : SolverM Unit := do
 def setLogic (logic : String) : SolverM Unit :=
   emitln s!"(set-logic {logic})"
 
+def setOption (name value : String) : SolverM Unit :=
+  emitln s!"(set-option :{name} {value})"
+
 def comment (comment : String) : SolverM Unit :=
   let inline := comment.replace "\n" " "
   emitln s!"; {inline}"

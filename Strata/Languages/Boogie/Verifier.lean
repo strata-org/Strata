@@ -17,10 +17,11 @@ namespace Strata.SMT.Encoder
 open Strata.SMT.Encoder
 
 -- Derived from Strata.SMT.Encoder.encode.
-def encodeBoogie (ctx : Boogie.SMT.Context) (ts : List Term) :
+def encodeBoogie (ctx : Boogie.SMT.Context) (prelude : SolverM Unit) (ts : List Term) :
   SolverM (List String × EncoderState) := do
   Solver.reset
   Solver.setLogic "ALL"
+  prelude
   let _ ← ctx.sorts.mapM (fun s => Solver.declareSort s.name s.arity)
   let (_ufs, estate) ← ctx.ufs.mapM (fun uf => encodeUF uf) |>.run EncoderState.init
   let (_ifs, estate) ← ctx.ifs.mapM (fun fn => encodeFunction fn.uf fn.body) |>.run estate
@@ -150,6 +151,30 @@ instance : ToFormat VCResults where
 instance : ToString VCResults where
   toString rs := toString (VCResults.format rs)
 
+def getSolverPrelude : String → SolverM Unit
+| "z3" => do
+  -- These options are set by the standard Boogie implementation and are
+  -- generally good for the Boogie dialect, too, though we may want to
+  -- have more fine-grained criteria for when to use them.
+  Solver.setOption "smt.mbqi" "false"
+  Solver.setOption "auto_config" "false"
+| "cvc5" => return ()
+| _ => return ()
+
+def getSolverFlags (options : Options) (solver : String) : Array String :=
+  let produceModels :=
+    match solver with
+    | "cvc5" => #["--produce-models"]
+    -- No need to specify -model for Z3 because we already have `get-value`
+    -- in the generated SMT file.
+    | _ => #[]
+  let setTimeout :=
+    match solver with
+    | "cvc5" => #[s!"--tlimit={options.solverTimeout*1000}"]
+    | "z3" => #[s!"-t:{options.solverTimeout*1000}"]
+    | _ => #[]
+  produceModels ++ setTimeout
+
 def dischargeObligation
   (options : Options)
   (vars : List (IdentT BoogieIdent)) (smtsolver filename : String)
@@ -160,26 +185,12 @@ def dischargeObligation
   let filename := s!"{VC_folder_name}/{filename}"
   let handle ← IO.FS.Handle.mk filename IO.FS.Mode.write
   let solver ← Solver.fileWriter handle
-  let (ids, estate) ← Strata.SMT.Encoder.encodeBoogie ctx terms solver
+  let prelude := getSolverPrelude smtsolver
+  let (ids, estate) ← Strata.SMT.Encoder.encodeBoogie ctx prelude terms solver
   let _ ← solver.checkSat ids -- Will return unknown for Solver.fileWriter
   if options.verbose then IO.println s!"Wrote problem to {filename}."
-  let produce_models ←
-    if smtsolver.endsWith "z3" then
-      -- No need to specify -model because we already have `get-value` in the
-      -- generated SMT file.
-      .ok ""
-    else if smtsolver.endsWith "cvc5" then
-      .ok "--produce-models"
-    else
-      return .error f!"Unsupported SMT solver: {smtsolver}"
-  let timeout ←
-    if smtsolver.endsWith "z3" then
-      .ok s!"-t:{options.solverTimeout*1000}"
-    else if smtsolver.endsWith "cvc5" then
-      .ok  s!"--tlimit={options.solverTimeout*1000}"
-    else
-      return .error f!"Unsupported SMT solver: {smtsolver}"
-  let solver_out ← runSolver smtsolver #[filename, produce_models, timeout]
+  let flags := getSolverFlags options smtsolver
+  let solver_out ← runSolver smtsolver (#[filename] ++ flags)
   match solverResult vars solver_out ctx estate with
   | .error e => return .error e
   | .ok result => return .ok (result, estate)
