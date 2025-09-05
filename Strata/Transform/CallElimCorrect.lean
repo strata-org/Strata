@@ -624,7 +624,7 @@ theorem EvalStatementContractInitVar :
   Imperative.WellFormedSemanticEvalVar δ →
   σ v = some vv →
   σ v' = none →
-  EvalStatementContract π δ δP σ₀ σ
+  EvalStatementContract π δ σ₀ σ
     (createInitVar ((v', ty), v))
     (updatedState σ v' vv) := by
   intros Hwf Hsome Hnone
@@ -653,7 +653,7 @@ theorem EvalStatementsContractInitVars :
   List.Nodup ((trips.unzip.fst.unzip.fst) ++ (trips.unzip.snd)) →
   ReadValues σ (trips.unzip.snd) vvs →
   Imperative.isNotDefined σ (trips.unzip.fst.unzip.fst) →
-  EvalStatementsContract π δ δP σ₀ σ
+  EvalStatementsContract π δ σ₀ σ
     (createInitVars trips)
     (updatedStates σ
       (trips.unzip.fst.unzip.fst) vvs) := by
@@ -694,7 +694,7 @@ theorem EvalStatementContractInit :
   Imperative.WellFormedSemanticEvalVar δ →
   δ σ₀ σ e = some vv →
   σ v' = none →
-  EvalStatementContract π δ δP σ₀ σ
+  EvalStatementContract π δ σ₀ σ
     (createInit ((v', ty), e))
     (updatedState σ v' vv) := by
   intros Hwf Hsome Hnone
@@ -724,7 +724,7 @@ theorem EvalStatementsContractInits :
   EvalExpressions (P:=Boogie.Expression) δ σ₀ σ (trips.unzip.2) vvs →
   -- ReadValues σ (trips.unzip.2) vvs →
   Imperative.isNotDefined σ (trips.unzip.1.unzip.1) →
-  EvalStatementsContract π δ δP σ₀ σ
+  EvalStatementsContract π δ σ₀ σ
     (createInits trips)
     (updatedStates σ
       (trips.unzip.1.unzip.1) vvs) := by
@@ -765,7 +765,7 @@ theorem EvalStatementContractHavocUpdated :
   ∀ vv,
   Imperative.WellFormedSemanticEvalVar δ →
   σ v = some vv' →
-  EvalStatementContract π δ δP σ₀ σ
+  EvalStatementContract π δ σ₀ σ
     (createHavoc v)
     (updatedState σ v vv) := by
   intros vv Hwf Hsome
@@ -853,7 +853,7 @@ theorem EvalStatementsContractHavocVars :
   Imperative.WellFormedSemanticEvalVar δ →
   Imperative.isDefined σ vs →
   HavocVars σ vs σ' →
-  EvalStatementsContract π δ δP σ₀ σ
+  EvalStatementsContract π δ σ₀ σ
     (createHavocs vs) σ' := by
   intros Hwfv Hdef Hhav
   simp [createHavocs]
@@ -1633,7 +1633,7 @@ theorem Lambda.LExpr.substFvarsCorrect :
       exact invStoresSubstHead Hsubst' Hnin.1
 
 theorem createAssertsCorrect :
-  Imperative.WellFormedSemanticEvalBool δ δP →
+  Imperative.WellFormedSemanticEvalBool δ →
   Imperative.WellFormedSemanticEvalVar δ →
   Imperative.WellFormedSemanticEvalVal δ →
   -- TODO: remove congruence of old expressions, and require pre to contain no old expressions
@@ -1645,11 +1645,11 @@ theorem createAssertsCorrect :
     Imperative.invStores σA σ'
       ((Imperative.HasVarsPure.getVars (P:=Expression) pre).removeAll (ks ++ ks')) ∧
     ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) pre) ∧
-    δP σA σA pre = some true) →
+    δ σA σA pre = some Imperative.HasBool.tt) →
   EvalExpressions δ σ₀ σ (createFvars ks') vals →
   ReadValues σA ks vals →
   Imperative.substStores σ' σA (ks'.zip ks) →
-  EvalStatementsContract π δ δP σ₀ σ' (createAsserts pres (ks.zip (createFvars ks'))) σ' := by
+  EvalStatementsContract π δ σ₀ σ' (createAsserts pres (ks.zip (createFvars ks'))) σ' := by
    intros Hwfb Hwfvr Hwfvl Hwfc Hlen Hnd Hdef Hpres Heval Hrd Hsubst2
    simp [createAsserts]
    -- Make index parameter `i` explicit so that we can induct generalizing `i`.
@@ -1658,8 +1658,8 @@ theorem createAssertsCorrect :
        Imperative.invStores σA σ'
          ((Imperative.HasVarsPure.getVars (P:=Expression) pre).removeAll (ks ++ ks')) ∧
        ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) pre) ∧
-       δP σA σA pre = some true) →
-     EvalStatementsContract π δ δP σ₀ σ'
+       δ σA σA pre = some Imperative.HasBool.tt) →
+     EvalStatementsContract π δ σ₀ σ'
        (List.mapIdx (fun j pred => Statement.assert s!"assert_{i + j}"
          (Lambda.LExpr.substFvars pred (ks.zip (createFvars ks')))) l) σ'
    by
@@ -1678,10 +1678,8 @@ theorem createAssertsCorrect :
            simp [Imperative.substSwap, zip_swap]
            assumption
        simp [Imperative.WellFormedSemanticEvalBool] at Hwfb
-       rw [(Hwfb _ _ _).1.1.mp]
-       have Hl' := (Hwfb _ _ _).1.1.mpr Hl.2.2
-       simp [← Hl']
-       exact Eq.symm Heq
+       rw [← Heq]
+       exact Hl.2.2
      . assumption
      . simp [Imperative.isDefinedOver, Command.modifiedVars,
              Imperative.Cmd.modifiedVars,
@@ -1694,7 +1692,7 @@ theorem createAssertsCorrect :
        simp_all
 
 theorem createAssumesCorrect :
-  Imperative.WellFormedSemanticEvalBool δ δP →
+  Imperative.WellFormedSemanticEvalBool δ →
   Imperative.WellFormedSemanticEvalVar δ →
   Imperative.WellFormedSemanticEvalVal δ →
   Boogie.WellFormedBoogieEvalCong δ →
@@ -1705,9 +1703,9 @@ theorem createAssumesCorrect :
     Imperative.invStores σA σ'
       ((Imperative.HasVarsPure.getVars (P:=Expression) post).removeAll (ks ++ ks')) ∧
     ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) post) ∧
-    δP σ₀' σA post = some true) →
+    δ σ₀' σA post = some Imperative.HasBool.tt) →
   Imperative.substStores σA σ' (ks.zip ks') →
-  EvalStatementsContract π δ δP σ₀ σ' (createAssumes posts (ks.zip (createFvars ks'))) σ' := by
+  EvalStatementsContract π δ σ₀ σ' (createAssumes posts (ks.zip (createFvars ks'))) σ' := by
    intros Hwfb Hwfvr Hwfvl Hwfc Hlen Hnd Hdef Hposts Hsubst2
    simp [createAssumes]
    -- Make index parameter `i` explicit so that we can induct generalizing `i`.
@@ -1716,8 +1714,8 @@ theorem createAssumesCorrect :
        Imperative.invStores σA σ'
          ((Imperative.HasVarsPure.getVars (P:=Expression) post).removeAll (ks ++ ks')) ∧
        ks'.Disjoint (Imperative.HasVarsPure.getVars (P:=Expression) post) ∧
-       δP σ₀' σA post = some true) →
-     EvalStatementsContract π δ δP σ₀ σ'
+       δ σ₀' σA post = some Imperative.HasBool.tt) →
+     EvalStatementsContract π δ σ₀ σ'
        (List.mapIdx (fun j pred => Statement.assume s!"assume_{i + j}"
          (Lambda.LExpr.substFvars pred (ks.zip (createFvars ks')))) l) σ'
    by
@@ -1732,11 +1730,8 @@ theorem createAssumesCorrect :
     specialize Hl st (by simp)
     . have Heq : δ σ₀' σA st = δ σ₀ σ' (Lambda.LExpr.substFvars st (ks.zip (createFvars ks'))) := by
         apply Lambda.LExpr.substFvarsCorrect Hwfc Hwfvr Hwfvl Hlen Hdef Hnd Hsubst2 Hl.2.1 Hl.1
-      simp [Imperative.WellFormedSemanticEvalBool] at Hwfb
-      rw [(Hwfb _ _ _).1.1.mp]
-      have Hposts' := (Hwfb _ _ _).1.1.mpr Hl.2.2
-      simp [← Hposts']
-      exact Eq.symm Heq
+      rw [← Heq]
+      exact Hl.2.2
     . assumption
     . simp [Imperative.isDefinedOver, Command.modifiedVars,
             Imperative.Cmd.modifiedVars,
@@ -3327,7 +3322,7 @@ theorem callElimStatementCorrect :
   (∀ pname, π pname = (Program.Procedure.find? p (.unres pname))) →
   -- all global variables in p exist in σ
   (∀ gk, (p.find? .var gk).isSome → (σ gk).isSome) →
-  EvalStatementsContract π δ δP σ₀ σ [st] σ' →
+  EvalStatementsContract π δ σ₀ σ [st] σ' →
   WellFormedBoogieEvalCong δ →
   WF.WFStatementsProp p [st] →
   WF.WFProgramProp p →
@@ -3337,7 +3332,7 @@ theorem callElimStatementCorrect :
   -- NOTE: The theorem does not expect the same store due to inserting new temp variables
   exists σ'',
     Inits σ' σ'' ∧
-    EvalStatementsContract π δ δP σ₀ σ sts σ''
+    EvalStatementsContract π δ σ₀ σ sts σ''
     := by
   intros Hp Hgv Heval Hwfc Hwf Hwfp Hwfgen Hwfgenst Helim
   cases st <;>
@@ -4317,8 +4312,8 @@ theorem callElimStatementCorrect :
                     | intro post Hin =>
                     specialize Hpost post Hin.1
                     simp [Hin.2]
-                    simp [Imperative.WellFormedSemanticEvalBool] at Hwfb
-                    apply (Hwfb _ _ _).1.1.mp
+                    -- simp [Imperative.WellFormedSemanticEvalBool] at Hwfb
+                    -- apply (Hwfb _ _ _).1.1.mp
                     have Hsubst' :
                       δ σO σR₁ post =
                       δ σ₁ σR₁ (OldExpressions.substsOldExpr (createOldVarsSubst oldTrips) (OldExpressions.normalizeOldExpr post))
@@ -4522,7 +4517,6 @@ theorem callElimStatementCorrect :
                         simp at Hwf
                         exact Hwf
                       . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-                    apply (Hwfb _ _ _).1.1.mpr
                     exact Hpost.2
                 . -- substStores, provable
                   apply ReadValuesSubstStores (vs:=argVals ++ v1)
