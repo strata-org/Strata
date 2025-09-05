@@ -5,3 +5,9 @@
 vcs/*.smt2
 
 Strata.code-workspace
+
+# For run_cbmc.sh
+foo.json
+full.goto
+full.json
+full_checking.goto
