@@ -1,0 +1,8 @@
+Successfully parsed.
+T_from_E_ensures_1: verified
+T_from_E_ensures_2: verified
+T_from_E_ensures_3: verified
+E_from_T_ensures_1: verified
+E_from_T_ensures_2: verified
+E_from_T_ensures_3: verified
+Proved all 6 goals.

@@ -1,0 +1,6 @@
+Successfully parsed.
+assert_0: verified
+assert_1: verified
+assert_2: failed
+CEx: 
+Finished with 2 goals proved, 1 failed.

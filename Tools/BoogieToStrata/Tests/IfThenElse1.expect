@@ -1,0 +1,10 @@
+Successfully parsed.
+assert_0: verified
+assert_1: verified
+assert_2: verified
+assert_3: verified
+assert_4: failed
+CEx: (init_x_9, 1) (init_b_8, false) (init_y_10, 0)
+assert_5: failed
+CEx: (init_x_12, 1) (init_y_13, 0)
+Finished with 4 goals proved, 2 failed.
