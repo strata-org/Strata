@@ -1,0 +1,720 @@
+{
+  "_type": "Module",
+  "body": [
+    {
+      "Py_Assign": {
+        "targets": [
+          {
+            "Py_Name": {
+              "id": "taintedInput",
+              "ctx": {
+                "Store": {
+                  "_type": "Store"
+                }
+              },
+              "_type": "Name",
+              "col_offset": 0,
+              "end_col_offset": 12,
+              "end_lineno": 1,
+              "lineno": 1
+            }
+          }
+        ],
+        "value": {
+          "Py_Call": {
+            "func": {
+              "Py_Name": {
+                "id": "user_input",
+                "ctx": {
+                  "Load": {
+                    "_type": "Load"
+                  }
+                },
+                "_type": "Name",
+                "col_offset": 15,
+                "end_col_offset": 25,
+                "end_lineno": 1,
+                "lineno": 1
+              }
+            },
+            "args": [],
+            "keywords": [],
+            "_type": "Call",
+            "col_offset": 15,
+            "end_col_offset": 27,
+            "end_lineno": 1,
+            "lineno": 1
+          }
+        },
+        "type_comment": null,
+        "_type": "Assign",
+        "col_offset": 0,
+        "end_col_offset": 27,
+        "end_lineno": 1,
+        "lineno": 1
+      }
+    },
+    {
+      "Py_Assign": {
+        "targets": [
+          {
+            "Py_Name": {
+              "id": "taintedObj1",
+              "ctx": {
+                "Store": {
+                  "_type": "Store"
+                }
+              },
+              "_type": "Name",
+              "col_offset": 0,
+              "end_col_offset": 11,
+              "end_lineno": 2,
+              "lineno": 2
+            }
+          }
+        ],
+        "value": {
+          "Py_Dict": {
+            "keys": [
+              {
+                "Py_Constant": {
+                  "_type": "Constant",
+                  "col_offset": 2,
+                  "end_col_offset": 3,
+                  "end_lineno": 3,
+                  "kind": null,
+                  "lineno": 3,
+                  "n": 1,
+                  "s": 1,
+                  "value": 1
+                }
+              }
+            ],
+            "values": [
+              {
+                "Py_Name": {
+                  "id": "taintedInput",
+                  "ctx": {
+                    "Load": {
+                      "_type": "Load"
+                    }
+                  },
+                  "_type": "Name",
+                  "col_offset": 5,
+                  "end_col_offset": 17,
+                  "end_lineno": 3,
+                  "lineno": 3
+                }
+              }
+            ],
+            "_type": "Dict",
+            "col_offset": 14,
+            "end_col_offset": 1,
+            "end_lineno": 4,
+            "lineno": 2
+          }
+        },
+        "type_comment": null,
+        "_type": "Assign",
+        "col_offset": 0,
+        "end_col_offset": 1,
+        "end_lineno": 4,
+        "lineno": 2
+      }
+    },
+    {
+      "Py_Assign": {
+        "targets": [
+          {
+            "Py_Name": {
+              "id": "taintedValue",
+              "ctx": {
+                "Store": {
+                  "_type": "Store"
+                }
+              },
+              "_type": "Name",
+              "col_offset": 0,
+              "end_col_offset": 12,
+              "end_lineno": 5,
+              "lineno": 5
+            }
+          }
+        ],
+        "value": {
+          "Py_Subscript": {
+            "value": {
+              "Py_Name": {
+                "id": "taintedObj1",
+                "ctx": {
+                  "Load": {
+                    "_type": "Load"
+                  }
+                },
+                "_type": "Name",
+                "col_offset": 15,
+                "end_col_offset": 26,
+                "end_lineno": 5,
+                "lineno": 5
+              }
+            },
+            "slice": {
+              "Py_Constant": {
+                "_type": "Constant",
+                "col_offset": 27,
+                "end_col_offset": 28,
+                "end_lineno": 5,
+                "kind": null,
+                "lineno": 5,
+                "n": 1,
+                "s": 1,
+                "value": 1
+              }
+            },
+            "ctx": {
+              "Load": {
+                "_type": "Load"
+              }
+            },
+            "_type": "Subscript",
+            "col_offset": 15,
+            "end_col_offset": 29,
+            "end_lineno": 5,
+            "lineno": 5
+          }
+        },
+        "type_comment": null,
+        "_type": "Assign",
+        "col_offset": 0,
+        "end_col_offset": 29,
+        "end_lineno": 5,
+        "lineno": 5
+      }
+    },
+    {
+      "Py_FunctionDef": {
+        "name": "addUserInput",
+        "args": [
+          "y"
+        ],
+        "body": [
+          {
+            "Py_Return": {
+              "value": {
+                "Py_BinOp": {
+                  "left": {
+                    "Py_Name": {
+                      "id": "y",
+                      "ctx": {
+                        "Load": {
+                          "_type": "Load"
+                        }
+                      },
+                      "_type": "Name",
+                      "col_offset": 9,
+                      "end_col_offset": 10,
+                      "end_lineno": 8,
+                      "lineno": 8
+                    }
+                  },
+                  "op": {
+                    "Add": {
+                      "_type": "Add"
+                    }
+                  },
+                  "right": {
+                    "Py_Name": {
+                      "id": "taintedValue",
+                      "ctx": {
+                        "Load": {
+                          "_type": "Load"
+                        }
+                      },
+                      "_type": "Name",
+                      "col_offset": 13,
+                      "end_col_offset": 25,
+                      "end_lineno": 8,
+                      "lineno": 8
+                    }
+                  },
+                  "_type": "BinOp",
+                  "col_offset": 9,
+                  "end_col_offset": 25,
+                  "end_lineno": 8,
+                  "lineno": 8
+                }
+              },
+              "_type": "Return",
+              "col_offset": 2,
+              "end_col_offset": 25,
+              "end_lineno": 8,
+              "lineno": 8
+            }
+          }
+        ],
+        "returns": null,
+        "_type": "FunctionDef",
+        "col_offset": 0,
+        "decorator_list": [],
+        "end_col_offset": 25,
+        "end_lineno": 8,
+        "lineno": 7,
+        "type_comment": null
+      }
+    },
+    {
+      "Py_FunctionDef": {
+        "name": "applyTwice",
+        "args": [
+          "f",
+          "x"
+        ],
+        "body": [
+          {
+            "Py_Return": {
+              "value": {
+                "Py_Call": {
+                  "func": {
+                    "Py_Name": {
+                      "id": "f",
+                      "ctx": {
+                        "Load": {
+                          "_type": "Load"
+                        }
+                      },
+                      "_type": "Name",
+                      "col_offset": 9,
+                      "end_col_offset": 10,
+                      "end_lineno": 11,
+                      "lineno": 11
+                    }
+                  },
+                  "args": [
+                    {
+                      "Py_Call": {
+                        "func": {
+                          "Py_Name": {
+                            "id": "f",
+                            "ctx": {
+                              "Load": {
+                                "_type": "Load"
+                              }
+                            },
+                            "_type": "Name",
+                            "col_offset": 11,
+                            "end_col_offset": 12,
+                            "end_lineno": 11,
+                            "lineno": 11
+                          }
+                        },
+                        "args": [
+                          {
+                            "Py_Name": {
+                              "id": "x",
+                              "ctx": {
+                                "Load": {
+                                  "_type": "Load"
+                                }
+                              },
+                              "_type": "Name",
+                              "col_offset": 13,
+                              "end_col_offset": 14,
+                              "end_lineno": 11,
+                              "lineno": 11
+                            }
+                          }
+                        ],
+                        "keywords": [],
+                        "_type": "Call",
+                        "col_offset": 11,
+                        "end_col_offset": 15,
+                        "end_lineno": 11,
+                        "lineno": 11
+                      }
+                    }
+                  ],
+                  "keywords": [],
+                  "_type": "Call",
+                  "col_offset": 9,
+                  "end_col_offset": 16,
+                  "end_lineno": 11,
+                  "lineno": 11
+                }
+              },
+              "_type": "Return",
+              "col_offset": 2,
+              "end_col_offset": 16,
+              "end_lineno": 11,
+              "lineno": 11
+            }
+          }
+        ],
+        "returns": null,
+        "_type": "FunctionDef",
+        "col_offset": 0,
+        "decorator_list": [],
+        "end_col_offset": 16,
+        "end_lineno": 11,
+        "lineno": 10,
+        "type_comment": null
+      }
+    },
+    {
+      "Py_Assign": {
+        "targets": [
+          {
+            "Py_Name": {
+              "id": "HOResult1",
+              "ctx": {
+                "Store": {
+                  "_type": "Store"
+                }
+              },
+              "_type": "Name",
+              "col_offset": 0,
+              "end_col_offset": 9,
+              "end_lineno": 14,
+              "lineno": 14
+            }
+          }
+        ],
+        "value": {
+          "Py_Call": {
+            "func": {
+              "Py_Name": {
+                "id": "applyTwice",
+                "ctx": {
+                  "Load": {
+                    "_type": "Load"
+                  }
+                },
+                "_type": "Name",
+                "col_offset": 12,
+                "end_col_offset": 22,
+                "end_lineno": 14,
+                "lineno": 14
+              }
+            },
+            "args": [
+              {
+                "Py_Name": {
+                  "id": "addUserInput",
+                  "ctx": {
+                    "Load": {
+                      "_type": "Load"
+                    }
+                  },
+                  "_type": "Name",
+                  "col_offset": 23,
+                  "end_col_offset": 35,
+                  "end_lineno": 14,
+                  "lineno": 14
+                }
+              },
+              {
+                "Py_Constant": {
+                  "_type": "Constant",
+                  "col_offset": 37,
+                  "end_col_offset": 38,
+                  "end_lineno": 14,
+                  "kind": null,
+                  "lineno": 14,
+                  "n": 1,
+                  "s": 1,
+                  "value": 1
+                }
+              }
+            ],
+            "keywords": [],
+            "_type": "Call",
+            "col_offset": 12,
+            "end_col_offset": 39,
+            "end_lineno": 14,
+            "lineno": 14
+          }
+        },
+        "type_comment": null,
+        "_type": "Assign",
+        "col_offset": 0,
+        "end_col_offset": 39,
+        "end_lineno": 14,
+        "lineno": 14
+      }
+    },
+    {
+      "Py_Assign": {
+        "targets": [
+          {
+            "Py_Name": {
+              "id": "clean",
+              "ctx": {
+                "Store": {
+                  "_type": "Store"
+                }
+              },
+              "_type": "Name",
+              "col_offset": 0,
+              "end_col_offset": 5,
+              "end_lineno": 15,
+              "lineno": 15
+            }
+          }
+        ],
+        "value": {
+          "Py_Constant": {
+            "_type": "Constant",
+            "col_offset": 8,
+            "end_col_offset": 10,
+            "end_lineno": 15,
+            "kind": null,
+            "lineno": 15,
+            "n": 42,
+            "s": 42,
+            "value": 42
+          }
+        },
+        "type_comment": null,
+        "_type": "Assign",
+        "col_offset": 0,
+        "end_col_offset": 10,
+        "end_lineno": 15,
+        "lineno": 15
+      }
+    },
+    {
+      "Py_Assign": {
+        "targets": [
+          {
+            "Py_Name": {
+              "id": "profile",
+              "ctx": {
+                "Store": {
+                  "_type": "Store"
+                }
+              },
+              "_type": "Name",
+              "col_offset": 0,
+              "end_col_offset": 7,
+              "end_lineno": 16,
+              "lineno": 16
+            }
+          }
+        ],
+        "value": {
+          "Py_Dict": {
+            "keys": [
+              {
+                "Py_Constant": {
+                  "_type": "Constant",
+                  "col_offset": 4,
+                  "end_col_offset": 5,
+                  "end_lineno": 17,
+                  "kind": null,
+                  "lineno": 17,
+                  "n": 1,
+                  "s": 1,
+                  "value": 1
+                }
+              },
+              {
+                "Py_Constant": {
+                  "_type": "Constant",
+                  "col_offset": 4,
+                  "end_col_offset": 5,
+                  "end_lineno": 18,
+                  "kind": null,
+                  "lineno": 18,
+                  "n": 2,
+                  "s": 2,
+                  "value": 2
+                }
+              }
+            ],
+            "values": [
+              {
+                "Py_Name": {
+                  "id": "HOResult1",
+                  "ctx": {
+                    "Load": {
+                      "_type": "Load"
+                    }
+                  },
+                  "_type": "Name",
+                  "col_offset": 7,
+                  "end_col_offset": 16,
+                  "end_lineno": 17,
+                  "lineno": 17
+                }
+              },
+              {
+                "Py_Name": {
+                  "id": "clean",
+                  "ctx": {
+                    "Load": {
+                      "_type": "Load"
+                    }
+                  },
+                  "_type": "Name",
+                  "col_offset": 7,
+                  "end_col_offset": 12,
+                  "end_lineno": 18,
+                  "lineno": 18
+                }
+              }
+            ],
+            "_type": "Dict",
+            "col_offset": 10,
+            "end_col_offset": 1,
+            "end_lineno": 19,
+            "lineno": 16
+          }
+        },
+        "type_comment": null,
+        "_type": "Assign",
+        "col_offset": 0,
+        "end_col_offset": 1,
+        "end_lineno": 19,
+        "lineno": 16
+      }
+    },
+    {
+      "Py_Assign": {
+        "targets": [
+          {
+            "Py_Name": {
+              "id": "var1",
+              "ctx": {
+                "Store": {
+                  "_type": "Store"
+                }
+              },
+              "_type": "Name",
+              "col_offset": 0,
+              "end_col_offset": 4,
+              "end_lineno": 21,
+              "lineno": 21
+            }
+          }
+        ],
+        "value": {
+          "Py_Subscript": {
+            "value": {
+              "Py_Name": {
+                "id": "profile",
+                "ctx": {
+                  "Load": {
+                    "_type": "Load"
+                  }
+                },
+                "_type": "Name",
+                "col_offset": 7,
+                "end_col_offset": 14,
+                "end_lineno": 21,
+                "lineno": 21
+              }
+            },
+            "slice": {
+              "Py_Constant": {
+                "_type": "Constant",
+                "col_offset": 15,
+                "end_col_offset": 16,
+                "end_lineno": 21,
+                "kind": null,
+                "lineno": 21,
+                "n": 1,
+                "s": 1,
+                "value": 1
+              }
+            },
+            "ctx": {
+              "Load": {
+                "_type": "Load"
+              }
+            },
+            "_type": "Subscript",
+            "col_offset": 7,
+            "end_col_offset": 17,
+            "end_lineno": 21,
+            "lineno": 21
+          }
+        },
+        "type_comment": null,
+        "_type": "Assign",
+        "col_offset": 0,
+        "end_col_offset": 17,
+        "end_lineno": 21,
+        "lineno": 21
+      }
+    },
+    {
+      "Py_Assign": {
+        "targets": [
+          {
+            "Py_Name": {
+              "id": "var2",
+              "ctx": {
+                "Store": {
+                  "_type": "Store"
+                }
+              },
+              "_type": "Name",
+              "col_offset": 0,
+              "end_col_offset": 4,
+              "end_lineno": 22,
+              "lineno": 22
+            }
+          }
+        ],
+        "value": {
+          "Py_Subscript": {
+            "value": {
+              "Py_Name": {
+                "id": "profile",
+                "ctx": {
+                  "Load": {
+                    "_type": "Load"
+                  }
+                },
+                "_type": "Name",
+                "col_offset": 7,
+                "end_col_offset": 14,
+                "end_lineno": 22,
+                "lineno": 22
+              }
+            },
+            "slice": {
+              "Py_Constant": {
+                "_type": "Constant",
+                "col_offset": 15,
+                "end_col_offset": 16,
+                "end_lineno": 22,
+                "kind": null,
+                "lineno": 22,
+                "n": 2,
+                "s": 2,
+                "value": 2
+              }
+            },
+            "ctx": {
+              "Load": {
+                "_type": "Load"
+              }
+            },
+            "_type": "Subscript",
+            "col_offset": 7,
+            "end_col_offset": 17,
+            "end_lineno": 22,
+            "lineno": 22
+          }
+        },
+        "type_comment": null,
+        "_type": "Assign",
+        "col_offset": 0,
+        "end_col_offset": 17,
+        "end_lineno": 22,
+        "lineno": 22
+      }
+    }
+  ],
+  "type_ignores": []
+}

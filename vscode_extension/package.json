@@ -1,0 +1,97 @@
+{
+  "name": "strata-analysis",
+  "displayName": "Strata Analysis",
+  "description": "TypeScript static analysis using Strata framework",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:typescript",
+    "onLanguage:python"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "strata.runTaintAnalysis",
+        "title": "Strata: Run Taint Analysis"
+      },
+      {
+        "command": "strata.runHeapHigherOrderTaintAnalysis",
+        "title": "Strata: Run Heap Higher Order Taint Analysis"
+      },
+      {
+        "command": "strata.runUninitializedFieldAccess",
+        "title": "Strata: Run Uninitialized Field Access Analysis"
+      },
+      {
+        "command": "strata.runValueValidation",
+        "title": "Strata: Run Value Validation Analysis"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "strata.runTaintAnalysis",
+        "key": "ctrl+shift+s",
+        "mac": "cmd+shift+s",
+        "when": "editorTextFocus && (resourceExtname == .ts || resourceExtname == .py)"
+      },
+      {
+        "command": "strata.runHeapHigherOrderTaintAnalysis",
+        "key": "ctrl+shift+h",
+        "mac": "cmd+shift+h",
+        "when": "editorTextFocus && (resourceExtname == .ts || resourceExtname == .py)"
+      },
+      {
+        "command": "strata.runUninitializedFieldAccess",
+        "key": "ctrl+shift+u",
+        "mac": "cmd+shift+u",
+        "when": "editorTextFocus && (resourceExtname == .ts || resourceExtname == .py)"
+      },
+      {
+        "command": "strata.runValueValidation",
+        "key": "ctrl+shift+v",
+        "mac": "cmd+shift+v",
+        "when": "editorTextFocus && (resourceExtname == .ts || resourceExtname == .py)"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "strata.runTaintAnalysis",
+          "when": "resourceExtname == .ts || resourceExtname == .py",
+          "group": "strata@1"
+        },
+        {
+          "command": "strata.runHeapHigherOrderTaintAnalysis",
+          "when": "resourceExtname == .ts || resourceExtname == .py",
+          "group": "strata@2"
+        },
+        {
+          "command": "strata.runUninitializedFieldAccess",
+          "when": "resourceExtname == .ts || resourceExtname == .py",
+          "group": "strata@3"
+        },
+        {
+          "command": "strata.runValueValidation",
+          "when": "resourceExtname == .ts || resourceExtname == .py",
+          "group": "strata@4"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.74.0",
+    "@types/node": "16.x",
+    "typescript": "^4.9.4"
+  }
+}

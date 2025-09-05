@@ -44,3 +44,6 @@ name = "PythonValueValidation"
 
 [[lean_exe]]
 name = "PythonHeapHigherOrderTaintAnalysis"
+
+[[lean_exe]]
+name = "PythonTaintAnalysis"
