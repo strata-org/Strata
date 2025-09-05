@@ -205,22 +205,11 @@ def createSymbol (baseName : String) (line : String) (isParameter : Bool) (isSta
 
   {
     baseName := baseName,
-    isAuxiliary := false,
-    isExported := false,
-    isExtern := false,
     isFileLocal := true,
-    isInput := false,
     isLvalue := true,
-    isMacro := false,
-    isOutput := false,
     isParameter := isParameter,
-    isProperty := false,
     isStateVar := isStateVar,
-    isStaticLifetime := false,
     isThreadLocal := true,
-    isType := false,
-    isVolatile := false,
-    isWeak := false,
     location := location,
     mode := "C",
     module := "from_andrew",
@@ -314,22 +303,32 @@ def mkLvalueSymbol (identifier : String) (line : String) (functionName : String)
     ])
   ]
 
+def opToStr (op: String) : String :=
+  match op with
+  | "Int.Gt" => ">"
+  | "Int.Lt" => "<"
+  | "Int.Ge" => ">="
+  | "Int.Le" => "<="
+  | "Int.Add" => "+"
+  | "Int.Sub" => "-"
+  | _ => panic! "Unimplemented"
+
+def opToOutTypeJson (op: String) : Json :=
+  match op with
+  | ">" => boolType
+  | "<" => boolType
+  | ">=" => boolType
+  | "<=" => boolType
+  | "+" => mkIntType
+  | "-" => mkIntType
+  | _ => panic! "Unimplemented"
+
 def mkBinaryOp (op : String) (line : String) (functionName : String) (left : Json) (right : Json) (config : CBMCConfig := defaultConfig) : Json :=
   Json.mkObj [
     ("id", op),
     ("namedSub", Json.mkObj [
       ("#source_location", mkSourceLocation config.sourceFile functionName line config),
-      ("type", mkIntType config)
-    ]),
-    ("sub", Json.arr #[left, right])
-  ]
-
-def mkComparison (op : String) (line : String) (functionName : String) (left : Json) (right : Json) (config : CBMCConfig := defaultConfig) : Json :=
-  Json.mkObj [
-    ("id", op),
-    ("namedSub", Json.mkObj [
-      ("#source_location", mkSourceLocation config.sourceFile functionName line config),
-      ("type", boolType)
+      ("type", (opToOutTypeJson op))
     ]),
     ("sub", Json.arr #[left, right])
   ]
@@ -442,8 +441,6 @@ def mkStringConstant (value : String) (line : String) (functionName : String) (c
     ])
   ]
 
-
-
 def createParameterSymbol (baseName : String) (functionName : String := "simpleTest") : CBMCSymbol :=
   createSymbol baseName "1" true true s!"{functionName}::" functionName
 
@@ -454,19 +451,11 @@ def createLocalSymbol (baseName : String) (functionName : String := "simpleTest"
 instance : ToJson (Map String CBMCSymbol) where
   toJson m := Json.mkObj (m.map fun (k, v) => (k, toJson v))
 
-def opToStr (op: String) : String :=
-  match op with
-  | "Int.Gt" => ">"
-  | "Int.Lt" => "<"
-  | "Int.Ge" => ">="
-  | "Int.Le" => "<="
-  | _ => panic! "Unimplemented"
-
 -- Convert LExpr to CBMC JSON format for contracts
 def lexprToCBMC (expr : Strata.C_Simp.Expression.Expr) (functionName : String) : Json :=
   match expr with
   | .app (.app (.op op _) (.fvar varName _)) (.const value _) =>
-    mkComparison (opToStr op) "2" functionName
+    mkBinaryOp (opToStr op) "2" functionName
       (Json.mkObj [
         ("id", "symbol"),
         ("namedSub", Json.mkObj [
@@ -497,7 +486,7 @@ def lexprToCBMC (expr : Strata.C_Simp.Expression.Expr) (functionName : String) :
         ]
       ])
     ]
-  | _ => Json.mkObj [("id", "true")]
+  | _ => panic! "Unimplemented"
 
 def createContractSymbolFromAST (func : Strata.C_Simp.Function) : CBMCSymbol :=
   let location : Location := {
@@ -623,28 +612,16 @@ def returnStmt (functionName : String) (config : CBMCConfig := defaultConfig): J
 
 def exprToJson (e : Strata.C_Simp.Expression.Expr) (loc: SourceLoc) : Json :=
   match e with
-  | .app (.app (.op "Int.Add" _) (.fvar "x" _)) (.fvar "y" _) =>
-    mkBinaryOp "+" "6" loc.functionName
-      (mkLvalueSymbol s!"{loc.functionName}::x" "6" loc.functionName)
-      (mkLvalueSymbol s!"{loc.functionName}::y" "6" loc.functionName)
-  | .app (.app (.op "Int.Sub" _) (.fvar "z" _)) (.const n _) =>
-    mkBinaryOp "-" "9" loc.functionName
-      (mkLvalueSymbol s!"{loc.functionName}::1::z" "9" loc.functionName)
-      (mkConstant n "10" (mkSourceLocation "from_andrew.c" loc.functionName "9"))
-  | .app (.app (.op "Int.Add" _) (.fvar "z" _)) (.const n _) =>
-    mkBinaryOp "+" "11" loc.functionName
-      (mkLvalueSymbol s!"{loc.functionName}::1::z" "11" loc.functionName)
-      (mkConstant n "10" (mkSourceLocation "from_andrew.c" loc.functionName "11"))
   | .app (.app (.op op _) left) right =>
     let leftJson := match left with
       | .fvar "z" _ => mkLvalueSymbol s!"{loc.functionName}::1::z" loc.lineNum loc.functionName
       | .fvar varName _ => mkLvalueSymbol s!"{loc.functionName}::{varName}" loc.lineNum loc.functionName
       | _ => exprToJson left loc
     let rightJson := match right with
-      | .fvar "x" _ => mkLvalueSymbol s!"{loc.functionName}::x" loc.lineNum loc.functionName
+      | .fvar varName _ => mkLvalueSymbol s!"{loc.functionName}::{varName}" loc.lineNum loc.functionName
       | .const value _ => mkConstant value "10" (mkSourceLocation "from_andrew.c" loc.functionName loc.lineNum)
       | _ => exprToJson right loc
-    mkComparison (opToStr op) loc.lineNum loc.functionName leftJson rightJson
+    mkBinaryOp (opToStr op) loc.lineNum loc.functionName leftJson rightJson
   | .const n _ =>
     mkConstant n "10" (mkSourceLocation "from_andrew.c" loc.functionName "14")
   | _ => panic! "Unimplemented"
