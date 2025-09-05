@@ -159,7 +159,7 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr LMonoTy BoogieIdent
     | some fnty =>
       -- 0-ary Operation.
       let (op, retty, ctx) ← toSMTOp E fn fnty ctx
-      .ok ((Term.app op [] retty), ctx)
+      .ok (op [] retty, ctx)
 
   | .bvar i =>
     if h: i < bvs.length
@@ -185,9 +185,9 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr LMonoTy BoogieIdent
   | .quant qk (.some ty) tr e =>
     let x := s!"$__bv{bvs.length}"
     let (ety, ctx) ← LMonoTy.toSMTType ty ctx
-    let (trt, ctx) ← toSMTTerm E ((x, ety) :: bvs) tr ctx
+    let (trt, ctx) ← appToSMTTerm E ((x, ety) :: bvs) tr [] ctx
     let (et, ctx) ← toSMTTerm E ((x, ety) :: bvs) e ctx
-    .ok ((Factory.quant (convertQuantifierKind qk) x ety trt et), ctx)
+    .ok (Factory.quant (convertQuantifierKind qk) x ety trt et, ctx)
   | .eq e1 e2 =>
     let (e1t, ctx) ← toSMTTerm E bvs e1 ctx
     let (e2t, ctx) ← toSMTTerm E bvs e2 ctx
@@ -206,8 +206,10 @@ partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : (LExpr LMonoTy BoogieI
   Except Format (Term × SMT.Context) := do
   match e with
   | .app (.app fn e1) e2 => do
-    let (e2t, ctx) ← toSMTTerm E bvs e2 ctx
-    appToSMTTerm E bvs (.app fn e1) (e2t :: acc) ctx
+    match e1, e2 with
+    | _, _ =>
+      let (e2t, ctx) ← toSMTTerm E bvs e2 ctx
+      appToSMTTerm E bvs (.app fn e1) (e2t :: acc) ctx
 
   | .app (.op fn fnty) e1 => do
     match fnty with
@@ -216,7 +218,7 @@ partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : (LExpr LMonoTy BoogieI
     | some fnty =>
       let (op, retty, ctx) ← toSMTOp E fn fnty ctx
       let (e1t, ctx) ← toSMTTerm E bvs e1 ctx
-      .ok ((Term.app op (e1t :: acc) retty), ctx)
+      .ok (op (e1t :: acc) retty, ctx)
   | .app (.fvar fn (.some (.arrow intty outty))) e1 => do
     let (smt_outty, ctx) ← LMonoTy.toSMTType outty ctx
     let (smt_intty, ctx) ← LMonoTy.toSMTType intty ctx
@@ -230,130 +232,134 @@ partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : (LExpr LMonoTy BoogieI
   | _ => toSMTTerm E bvs e ctx
 
 partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Context) :
-  Except Format (Op × TermType × SMT.Context) :=
+  Except Format ((List Term → TermType → Term) × TermType × SMT.Context) :=
   open LTy.Syntax in
   match E.factory.getFactoryLFunc fn with
   | none => .error f!"Cannot find function {fn} in Boogie's Factory!"
   | some func =>
     match func.name.2 with
-    | "Bool.And"     => .ok (Op.and,        .bool,   ctx)
-    | "Bool.Or"      => .ok (Op.or,         .bool,   ctx)
-    | "Bool.Not"     => .ok (Op.not,        .bool,   ctx)
-    | "Bool.Implies" => .ok (Op.implies,    .bool,   ctx)
-    | "Bool.Equiv"   => .ok (Op.eq,         .bool,   ctx)
+    | "Bool.And"     => .ok (.app Op.and,        .bool,   ctx)
+    | "Bool.Or"      => .ok (.app Op.or,         .bool,   ctx)
+    | "Bool.Not"     => .ok (.app Op.not,        .bool,   ctx)
+    | "Bool.Implies" => .ok (.app Op.implies,    .bool,   ctx)
+    | "Bool.Equiv"   => .ok (.app Op.eq,         .bool,   ctx)
 
-    | "Int.Neg"      => .ok (Op.neg,        .int ,   ctx)
-    | "Int.Add"      => .ok (Op.add,        .int ,   ctx)
-    | "Int.Sub"      => .ok (Op.sub,        .int ,   ctx)
-    | "Int.Mul"      => .ok (Op.mul,        .int ,   ctx)
-    | "Int.Div"      => .ok (Op.div,        .int ,   ctx)
-    | "Int.Mod"      => .ok (Op.mod,        .int ,   ctx)
-    | "Int.Lt"       => .ok (Op.lt,         .bool,   ctx)
-    | "Int.Le"       => .ok (Op.le,         .bool,   ctx)
-    | "Int.Gt"       => .ok (Op.gt,         .bool,   ctx)
-    | "Int.Ge"       => .ok (Op.ge,         .bool,   ctx)
+    | "Int.Neg"      => .ok (.app Op.neg,        .int ,   ctx)
+    | "Int.Add"      => .ok (.app Op.add,        .int ,   ctx)
+    | "Int.Sub"      => .ok (.app Op.sub,        .int ,   ctx)
+    | "Int.Mul"      => .ok (.app Op.mul,        .int ,   ctx)
+    | "Int.Div"      => .ok (.app Op.div,        .int ,   ctx)
+    | "Int.Mod"      => .ok (.app Op.mod,        .int ,   ctx)
+    | "Int.Lt"       => .ok (.app Op.lt,         .bool,   ctx)
+    | "Int.Le"       => .ok (.app Op.le,         .bool,   ctx)
+    | "Int.Gt"       => .ok (.app Op.gt,         .bool,   ctx)
+    | "Int.Ge"       => .ok (.app Op.ge,         .bool,   ctx)
 
-    | "Real.Neg"     => .ok (Op.neg,        .real,   ctx)
-    | "Real.Add"     => .ok (Op.add,        .real,   ctx)
-    | "Real.Sub"     => .ok (Op.sub,        .real,   ctx)
-    | "Real.Mul"     => .ok (Op.mul,        .real,   ctx)
-    | "Real.Div"     => .ok (Op.div,        .real,   ctx)
-    | "Real.Lt"      => .ok (Op.lt,         .bool,   ctx)
-    | "Real.Le"      => .ok (Op.le,         .bool,   ctx)
-    | "Real.Gt"      => .ok (Op.gt,         .bool,   ctx)
-    | "Real.Ge"      => .ok (Op.ge,         .bool,   ctx)
+    | "Real.Neg"     => .ok (.app Op.neg,        .real,   ctx)
+    | "Real.Add"     => .ok (.app Op.add,        .real,   ctx)
+    | "Real.Sub"     => .ok (.app Op.sub,        .real,   ctx)
+    | "Real.Mul"     => .ok (.app Op.mul,        .real,   ctx)
+    | "Real.Div"     => .ok (.app Op.div,        .real,   ctx)
+    | "Real.Lt"      => .ok (.app Op.lt,         .bool,   ctx)
+    | "Real.Le"      => .ok (.app Op.le,         .bool,   ctx)
+    | "Real.Gt"      => .ok (.app Op.gt,         .bool,   ctx)
+    | "Real.Ge"      => .ok (.app Op.ge,         .bool,   ctx)
 
-    | "Bv1.Neg"     => .ok (Op.bvneg,      .bitvec 1, ctx)
-    | "Bv1.Add"     => .ok (Op.bvadd,      .bitvec 1, ctx)
-    | "Bv1.Sub"     => .ok (Op.bvsub,      .bitvec 1, ctx)
-    | "Bv1.Mul"     => .ok (Op.bvmul,      .bitvec 1, ctx)
-    | "Bv1.Div"     => .ok (Op.bvudiv,     .bitvec 1, ctx)
-    | "Bv1.Mod"     => .ok (Op.bvurem,     .bitvec 1, ctx)
-    | "Bv1.Not"     => .ok (Op.bvnot,      .bitvec 1, ctx)
-    | "Bv1.And"     => .ok (Op.bvand,      .bitvec 1, ctx)
-    | "Bv1.Or"     =>  .ok (Op.bvor,       .bitvec 1, ctx)
-    | "Bv1.Xor"     => .ok (Op.bvxor,      .bitvec 1, ctx)
-    | "Bv1.Shl"     => .ok (Op.bvshl,      .bitvec 1, ctx)
-    | "Bv1.UShr"    => .ok (Op.bvlshr,     .bitvec 1, ctx)
-    | "Bv1.Lt"      => .ok (Op.bvult,      .bool,   ctx)
-    | "Bv1.Le"      => .ok (Op.bvule,      .bool,   ctx)
-    | "Bv1.Gt"      => .ok (Op.bvugt,      .bool,   ctx)
-    | "Bv1.Ge"      => .ok (Op.bvuge,      .bool,   ctx)
+    | "Bv1.Neg"     => .ok (.app Op.bvneg,      .bitvec 1, ctx)
+    | "Bv1.Add"     => .ok (.app Op.bvadd,      .bitvec 1, ctx)
+    | "Bv1.Sub"     => .ok (.app Op.bvsub,      .bitvec 1, ctx)
+    | "Bv1.Mul"     => .ok (.app Op.bvmul,      .bitvec 1, ctx)
+    | "Bv1.Div"     => .ok (.app Op.bvudiv,     .bitvec 1, ctx)
+    | "Bv1.Mod"     => .ok (.app Op.bvurem,     .bitvec 1, ctx)
+    | "Bv1.Not"     => .ok (.app Op.bvnot,      .bitvec 1, ctx)
+    | "Bv1.And"     => .ok (.app Op.bvand,      .bitvec 1, ctx)
+    | "Bv1.Or"     =>  .ok (.app Op.bvor,       .bitvec 1, ctx)
+    | "Bv1.Xor"     => .ok (.app Op.bvxor,      .bitvec 1, ctx)
+    | "Bv1.Shl"     => .ok (.app Op.bvshl,      .bitvec 1, ctx)
+    | "Bv1.UShr"    => .ok (.app Op.bvlshr,     .bitvec 1, ctx)
+    | "Bv1.Lt"      => .ok (.app Op.bvult,      .bool,   ctx)
+    | "Bv1.Le"      => .ok (.app Op.bvule,      .bool,   ctx)
+    | "Bv1.Gt"      => .ok (.app Op.bvugt,      .bool,   ctx)
+    | "Bv1.Ge"      => .ok (.app Op.bvuge,      .bool,   ctx)
 
-    | "Bv8.Neg"     => .ok (Op.bvneg,      .bitvec 8, ctx)
-    | "Bv8.Add"     => .ok (Op.bvadd,      .bitvec 8, ctx)
-    | "Bv8.Sub"     => .ok (Op.bvsub,      .bitvec 8, ctx)
-    | "Bv8.Mul"     => .ok (Op.bvmul,      .bitvec 8, ctx)
-    | "Bv8.Div"     => .ok (Op.bvudiv,     .bitvec 8, ctx)
-    | "Bv8.Mod"     => .ok (Op.bvurem,     .bitvec 8, ctx)
-    | "Bv8.Not"     => .ok (Op.bvnot,      .bitvec 8, ctx)
-    | "Bv8.And"     => .ok (Op.bvand,      .bitvec 8, ctx)
-    | "Bv8.Or"     =>  .ok (Op.bvor,       .bitvec 8, ctx)
-    | "Bv8.Xor"     => .ok (Op.bvxor,      .bitvec 8, ctx)
-    | "Bv8.Shl"     => .ok (Op.bvshl,      .bitvec 8, ctx)
-    | "Bv8.UShr"    => .ok (Op.bvlshr,     .bitvec 8, ctx)
-    | "Bv8.Lt"      => .ok (Op.bvult,      .bool,   ctx)
-    | "Bv8.Le"      => .ok (Op.bvule,      .bool,   ctx)
-    | "Bv8.Gt"      => .ok (Op.bvugt,      .bool,   ctx)
-    | "Bv8.Ge"      => .ok (Op.bvuge,      .bool,   ctx)
+    | "Bv8.Neg"     => .ok (.app Op.bvneg,      .bitvec 8, ctx)
+    | "Bv8.Add"     => .ok (.app Op.bvadd,      .bitvec 8, ctx)
+    | "Bv8.Sub"     => .ok (.app Op.bvsub,      .bitvec 8, ctx)
+    | "Bv8.Mul"     => .ok (.app Op.bvmul,      .bitvec 8, ctx)
+    | "Bv8.Div"     => .ok (.app Op.bvudiv,     .bitvec 8, ctx)
+    | "Bv8.Mod"     => .ok (.app Op.bvurem,     .bitvec 8, ctx)
+    | "Bv8.Not"     => .ok (.app Op.bvnot,      .bitvec 8, ctx)
+    | "Bv8.And"     => .ok (.app Op.bvand,      .bitvec 8, ctx)
+    | "Bv8.Or"     =>  .ok (.app Op.bvor,       .bitvec 8, ctx)
+    | "Bv8.Xor"     => .ok (.app Op.bvxor,      .bitvec 8, ctx)
+    | "Bv8.Shl"     => .ok (.app Op.bvshl,      .bitvec 8, ctx)
+    | "Bv8.UShr"    => .ok (.app Op.bvlshr,     .bitvec 8, ctx)
+    | "Bv8.Lt"      => .ok (.app Op.bvult,      .bool,   ctx)
+    | "Bv8.Le"      => .ok (.app Op.bvule,      .bool,   ctx)
+    | "Bv8.Gt"      => .ok (.app Op.bvugt,      .bool,   ctx)
+    | "Bv8.Ge"      => .ok (.app Op.bvuge,      .bool,   ctx)
 
-    | "Bv16.Neg"     => .ok (Op.bvneg,      .bitvec 16, ctx)
-    | "Bv16.Add"     => .ok (Op.bvadd,      .bitvec 16, ctx)
-    | "Bv16.Sub"     => .ok (Op.bvsub,      .bitvec 16, ctx)
-    | "Bv16.Mul"     => .ok (Op.bvmul,      .bitvec 16, ctx)
-    | "Bv16.Div"     => .ok (Op.bvudiv,     .bitvec 16, ctx)
-    | "Bv16.Mod"     => .ok (Op.bvurem,     .bitvec 16, ctx)
-    | "Bv16.Not"     => .ok (Op.bvnot,      .bitvec 16, ctx)
-    | "Bv16.And"     => .ok (Op.bvand,      .bitvec 16, ctx)
-    | "Bv16.Or"     =>  .ok (Op.bvor,       .bitvec 16, ctx)
-    | "Bv16.Xor"     => .ok (Op.bvxor,      .bitvec 16, ctx)
-    | "Bv16.Shl"     => .ok (Op.bvshl,      .bitvec 16, ctx)
-    | "Bv16.UShr"    => .ok (Op.bvlshr,     .bitvec 16, ctx)
-    | "Bv16.Lt"      => .ok (Op.bvult,      .bool,   ctx)
-    | "Bv16.Le"      => .ok (Op.bvule,      .bool,   ctx)
-    | "Bv16.Gt"      => .ok (Op.bvugt,      .bool,   ctx)
-    | "Bv16.Ge"      => .ok (Op.bvuge,      .bool,   ctx)
+    | "Bv16.Neg"     => .ok (.app Op.bvneg,      .bitvec 16, ctx)
+    | "Bv16.Add"     => .ok (.app Op.bvadd,      .bitvec 16, ctx)
+    | "Bv16.Sub"     => .ok (.app Op.bvsub,      .bitvec 16, ctx)
+    | "Bv16.Mul"     => .ok (.app Op.bvmul,      .bitvec 16, ctx)
+    | "Bv16.Div"     => .ok (.app Op.bvudiv,     .bitvec 16, ctx)
+    | "Bv16.Mod"     => .ok (.app Op.bvurem,     .bitvec 16, ctx)
+    | "Bv16.Not"     => .ok (.app Op.bvnot,      .bitvec 16, ctx)
+    | "Bv16.And"     => .ok (.app Op.bvand,      .bitvec 16, ctx)
+    | "Bv16.Or"     =>  .ok (.app Op.bvor,       .bitvec 16, ctx)
+    | "Bv16.Xor"     => .ok (.app Op.bvxor,      .bitvec 16, ctx)
+    | "Bv16.Shl"     => .ok (.app Op.bvshl,      .bitvec 16, ctx)
+    | "Bv16.UShr"    => .ok (.app Op.bvlshr,     .bitvec 16, ctx)
+    | "Bv16.Lt"      => .ok (.app Op.bvult,      .bool,   ctx)
+    | "Bv16.Le"      => .ok (.app Op.bvule,      .bool,   ctx)
+    | "Bv16.Gt"      => .ok (.app Op.bvugt,      .bool,   ctx)
+    | "Bv16.Ge"      => .ok (.app Op.bvuge,      .bool,   ctx)
 
-    | "Bv32.Neg"     => .ok (Op.bvneg,      .bitvec 32, ctx)
-    | "Bv32.Add"     => .ok (Op.bvadd,      .bitvec 32, ctx)
-    | "Bv32.Sub"     => .ok (Op.bvsub,      .bitvec 32, ctx)
-    | "Bv32.Mul"     => .ok (Op.bvmul,      .bitvec 32, ctx)
-    | "Bv32.Div"     => .ok (Op.bvudiv,     .bitvec 32, ctx)
-    | "Bv32.Mod"     => .ok (Op.bvurem,     .bitvec 32, ctx)
-    | "Bv32.Not"     => .ok (Op.bvnot,      .bitvec 32, ctx)
-    | "Bv32.And"     => .ok (Op.bvand,      .bitvec 32, ctx)
-    | "Bv32.Or"     =>  .ok (Op.bvor,       .bitvec 32, ctx)
-    | "Bv32.Xor"     => .ok (Op.bvxor,      .bitvec 32, ctx)
-    | "Bv32.Shl"     => .ok (Op.bvshl,      .bitvec 32, ctx)
-    | "Bv32.UShr"    => .ok (Op.bvlshr,     .bitvec 32, ctx)
-    | "Bv32.Lt"      => .ok (Op.bvult,      .bool,   ctx)
-    | "Bv32.Le"      => .ok (Op.bvule,      .bool,   ctx)
-    | "Bv32.Gt"      => .ok (Op.bvugt,      .bool,   ctx)
-    | "Bv32.Ge"      => .ok (Op.bvuge,      .bool,   ctx)
+    | "Bv32.Neg"     => .ok (.app Op.bvneg,      .bitvec 32, ctx)
+    | "Bv32.Add"     => .ok (.app Op.bvadd,      .bitvec 32, ctx)
+    | "Bv32.Sub"     => .ok (.app Op.bvsub,      .bitvec 32, ctx)
+    | "Bv32.Mul"     => .ok (.app Op.bvmul,      .bitvec 32, ctx)
+    | "Bv32.Div"     => .ok (.app Op.bvudiv,     .bitvec 32, ctx)
+    | "Bv32.Mod"     => .ok (.app Op.bvurem,     .bitvec 32, ctx)
+    | "Bv32.Not"     => .ok (.app Op.bvnot,      .bitvec 32, ctx)
+    | "Bv32.And"     => .ok (.app Op.bvand,      .bitvec 32, ctx)
+    | "Bv32.Or"     =>  .ok (.app Op.bvor,       .bitvec 32, ctx)
+    | "Bv32.Xor"     => .ok (.app Op.bvxor,      .bitvec 32, ctx)
+    | "Bv32.Shl"     => .ok (.app Op.bvshl,      .bitvec 32, ctx)
+    | "Bv32.UShr"    => .ok (.app Op.bvlshr,     .bitvec 32, ctx)
+    | "Bv32.Lt"      => .ok (.app Op.bvult,      .bool,   ctx)
+    | "Bv32.Le"      => .ok (.app Op.bvule,      .bool,   ctx)
+    | "Bv32.Gt"      => .ok (.app Op.bvugt,      .bool,   ctx)
+    | "Bv32.Ge"      => .ok (.app Op.bvuge,      .bool,   ctx)
 
-    | "Bv64.Neg"     => .ok (Op.bvneg,      .bitvec 64, ctx)
-    | "Bv64.Add"     => .ok (Op.bvadd,      .bitvec 64, ctx)
-    | "Bv64.Sub"     => .ok (Op.bvsub,      .bitvec 64, ctx)
-    | "Bv64.Mul"     => .ok (Op.bvmul,      .bitvec 64, ctx)
-    | "Bv64.Div"     => .ok (Op.bvudiv,     .bitvec 64, ctx)
-    | "Bv64.Mod"     => .ok (Op.bvurem,     .bitvec 64, ctx)
-    | "Bv64.Not"     => .ok (Op.bvnot,      .bitvec 64, ctx)
-    | "Bv64.And"     => .ok (Op.bvand,      .bitvec 64, ctx)
-    | "Bv64.Or"     =>  .ok (Op.bvor,       .bitvec 64, ctx)
-    | "Bv64.Xor"     => .ok (Op.bvxor,      .bitvec 64, ctx)
-    | "Bv64.Shl"     => .ok (Op.bvshl,      .bitvec 64, ctx)
-    | "Bv64.UShr"    => .ok (Op.bvlshr,     .bitvec 64, ctx)
-    | "Bv64.Lt"      => .ok (Op.bvult,      .bool,   ctx)
-    | "Bv64.Le"      => .ok (Op.bvule,      .bool,   ctx)
-    | "Bv64.Gt"      => .ok (Op.bvugt,      .bool,   ctx)
-    | "Bv64.Ge"      => .ok (Op.bvuge,      .bool,   ctx)
+    | "Bv64.Neg"     => .ok (.app Op.bvneg,      .bitvec 64, ctx)
+    | "Bv64.Add"     => .ok (.app Op.bvadd,      .bitvec 64, ctx)
+    | "Bv64.Sub"     => .ok (.app Op.bvsub,      .bitvec 64, ctx)
+    | "Bv64.Mul"     => .ok (.app Op.bvmul,      .bitvec 64, ctx)
+    | "Bv64.Div"     => .ok (.app Op.bvudiv,     .bitvec 64, ctx)
+    | "Bv64.Mod"     => .ok (.app Op.bvurem,     .bitvec 64, ctx)
+    | "Bv64.Not"     => .ok (.app Op.bvnot,      .bitvec 64, ctx)
+    | "Bv64.And"     => .ok (.app Op.bvand,      .bitvec 64, ctx)
+    | "Bv64.Or"     =>  .ok (.app Op.bvor,       .bitvec 64, ctx)
+    | "Bv64.Xor"     => .ok (.app Op.bvxor,      .bitvec 64, ctx)
+    | "Bv64.Shl"     => .ok (.app Op.bvshl,      .bitvec 64, ctx)
+    | "Bv64.UShr"    => .ok (.app Op.bvlshr,     .bitvec 64, ctx)
+    | "Bv64.Lt"      => .ok (.app Op.bvult,      .bool,   ctx)
+    | "Bv64.Le"      => .ok (.app Op.bvule,      .bool,   ctx)
+    | "Bv64.Gt"      => .ok (.app Op.bvugt,      .bool,   ctx)
+    | "Bv64.Ge"      => .ok (.app Op.bvuge,      .bool,   ctx)
 
-    | "Bv8.Concat"   => .ok (Op.bvconcat,   .bitvec 16, ctx)
-    | "Bv16.Concat"  => .ok (Op.bvconcat,   .bitvec 32, ctx)
-    | "Bv32.Concat"  => .ok (Op.bvconcat,   .bitvec 64, ctx)
+    | "Bv8.Concat"   => .ok (.app Op.bvconcat,   .bitvec 16, ctx)
+    | "Bv16.Concat"  => .ok (.app Op.bvconcat,   .bitvec 32, ctx)
+    | "Bv32.Concat"  => .ok (.app Op.bvconcat,   .bitvec 64, ctx)
 
-    | "Str.Length"   => .ok (Op.str_length, .int,    ctx)
-    | "Str.Concat"   => .ok (Op.str_concat, .string, ctx)
+    | "Str.Length"   => .ok (.app Op.str_length, .int,    ctx)
+    | "Str.Concat"   => .ok (.app Op.str_concat, .string, ctx)
+    | "Triggers.empty"          => .ok (.app Op.triggers, .trigger, ctx)
+    | "TriggerGroup.empty"      => .ok (.app Op.triggers, .trigger, ctx)
+    | "TriggerGroup.addTrigger" => .ok (Factory.addTriggerList, .trigger, ctx)
+    | "Triggers.addGroup"       => .ok (Factory.addTriggerList, .trigger, ctx)
     | _ => do
       let formals := func.inputs.keys
       let formalStrs := formals.map (toString ∘ format)
@@ -395,9 +401,9 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
             .ok (new_ctx.addAxiom axiom_term)
         ) ctx
         let ctx := ctx.removeSubst smt_ty_inst
-        .ok (Op.uf uf, smt_outty, ctx)
+        .ok (.app (Op.uf uf), smt_outty, ctx)
       else
-        .ok (Op.uf uf, smt_outty, ctx)
+        .ok (.app (Op.uf uf), smt_outty, ctx)
 end
 
 def toSMTTerms (E : Env) (es : List (LExpr LMonoTy BoogieIdent)) (ctx : SMT.Context) :
@@ -469,9 +475,16 @@ info: "; \"f\"\n(declare-const t0 (arrow Int Int))\n; f\n(declare-fun f0 (Int) I
 -/
 #guard_msgs in
 #eval toSMTTermString
-   (.quant .exist (.some .int) (.fvar "f" (.(.some (.arrow .int .int))))
+   (.quant .exist (.some .int)
+   (mkTriggerExpr [[.fvar "f" (.some (.arrow .int .int))]])
    (.eq (.app (.fvar "f" (.some (.arrow .int .int))) (.bvar 0)) (.fvar "x" (.some .int))))
-
+   (ctx := SMT.Context.default)
+   (E := {Env.init with exprEnv := {
+    Env.init.exprEnv with
+      config := { Env.init.exprEnv.config with
+        factory := Boogie.Factory
+      }
+   }})
 
 /--
 info: "; f\n(declare-fun f0 (Int Int) Int)\n; \"x\"\n(declare-const t0 Int)\n(define-fun t1 () Bool (forall (($__bv0 Int) ($__bv1 Int)) (! (= (f0 $__bv1 $__bv0) t0) :pattern ((f0 $__bv1 $__bv0)))))\n"

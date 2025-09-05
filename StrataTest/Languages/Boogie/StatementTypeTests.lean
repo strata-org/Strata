@@ -152,15 +152,16 @@ info: ok: context:
 types:   [(fn, ∀[a]. (arrow a a)) (m1, (arrow int int)) (m2, (arrow (arrow bool int) int))]
 aliases: []
 state:
-tyGen: 9
+tyGen: 10
 tyPrefix: $__ty
 exprGen: 1
 exprPrefix: $__var
-subst: ($__ty8, int)
+subst: ($__ty9, int)
 ($__ty3, (arrow bool int))
 ($__ty5, (arrow bool int))
+($__ty8, bool)
 ($__ty7, bool)
-($__ty6, bool)
+($__ty6, (arrow bool int))
 ($__ty2, int)
 ($__ty0, int)
 

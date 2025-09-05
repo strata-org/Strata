@@ -83,6 +83,7 @@ def encodeType (ty : TermType) : EncoderM String := do
     | .int              => return "Int"
     | .real             => return "Real"
     | .string           => return "String"
+    | .trigger          => return "Trigger"
     | .bitvec n         => return s!"(_ BitVec {n})"
     | .option oty       => return s!"(Option {← encodeType oty})"
     | .constr id targs  =>
@@ -151,6 +152,20 @@ def encodeUF (uf : UF) : EncoderM String := do
   | .option_get    => "val"
   | op             => op.mkName
 
+def extractTriggerGroup : Term -> List Term
+| .app .triggers ts .trigger => ts
+| e => [e]
+
+def extractTriggers : Term -> List (List Term)
+| .app .triggers ts .trigger => ts.map extractTriggerGroup
+| e => [[e]]
+
+def encodeTriggerGroup (trEncs : List String) : String :=
+  s!":pattern ({String.intercalate " " trEncs})"
+
+def encodeTriggers (trs : List (List String)) : String :=
+  String.intercalate " " (trs.map encodeTriggerGroup)
+
 def defineApp (inBinder : Bool) (tyEnc : String) (op : Op) (tEncs : List String) (_ts : List Term): EncoderM String := do
   let args := String.intercalate " " tEncs
   match op with
@@ -163,49 +178,42 @@ def defineApp (inBinder : Bool) (tyEnc : String) (op : Op) (tEncs : List String)
   | _              => defineTerm inBinder tyEnc s!"({encodeOp op} {args})"
 
 -- Helper function for quantifier generation
-def defineQuantifierHelper (inBinder : Bool) (quantKind : String) (varDecls : String) (trEnc: Option String) (tEnc : String) : EncoderM String :=
+def defineQuantifierHelper (inBinder : Bool) (quantKind : String) (varDecls : String) (trEncs: List (List String)) (tEnc : String) : EncoderM String :=
   defineTerm inBinder "Bool" $
-    match trEnc with
-    | .none =>
+    match trEncs with
+    | [] =>
       s!"({quantKind} ({varDecls}) {tEnc})"
-    | .some trEnc =>
-      s!"({quantKind} ({varDecls}) (! {tEnc} :pattern ({trEnc})))"
+    | _ =>
+      s!"({quantKind} ({varDecls}) (! {tEnc} {encodeTriggers trEncs}))"
 
-def defineMultiAll (inBinder : Bool) (args : List (String × TermType)) (trEnc: String) (tEnc : String) : EncoderM String := do
+def defineMultiAll (inBinder : Bool) (args : List (String × TermType)) (trEncs: List (List String)) (tEnc : String) : EncoderM String := do
   let varDecls ← args.mapM (fun (x, ty) => do
     let tyEnc ← encodeType ty
     return s!"({x} {tyEnc})")
   let varDeclsStr := String.intercalate " " varDecls
-  let trEnc: Option String := match args with
-    | (v1, _) :: _ => if trEnc = s!"{v1}" then .none else .some trEnc
-    | _ => .some trEnc
   -- For multi-variable, we check if trigger equals the variable declarations string
-  defineQuantifierHelper inBinder "forall" varDeclsStr trEnc tEnc
+  defineQuantifierHelper inBinder "forall" varDeclsStr trEncs tEnc
 
-def defineMultiExist (inBinder : Bool) (args : List (String × TermType)) (trEnc: String) (tEnc : String) : EncoderM String := do
+def defineMultiExist (inBinder : Bool) (args : List (String × TermType)) (trEncs: List (List String)) (tEnc : String) : EncoderM String := do
   let varDecls ← args.mapM (fun (x, ty) => do
     let tyEnc ← encodeType ty
     return s!"({x} {tyEnc})")
   let varDeclsStr := String.intercalate " " varDecls
-  let trEnc: Option String := match args with
-    | (v1, _) :: _ => if trEnc = s!"{v1}" then .none else .some trEnc
-    | _ => .some trEnc
   -- For multi-variable, we check if trigger equals the variable declarations string
-  defineQuantifierHelper inBinder "exists" varDeclsStr trEnc tEnc
+  defineQuantifierHelper inBinder "exists" varDeclsStr trEncs tEnc
 
 -- Convenience wrappers for single-variable quantifiers - implemented in terms of helper
-def defineAll (inBinder : Bool) (xEnc : String) (tyEnc : String) (trEnc: String) (tEnc : String) : EncoderM String :=
-  let trEnc := if xEnc == trEnc then .none else .some trEnc
-  defineQuantifierHelper inBinder "forall" s!"({xEnc} {tyEnc})" trEnc tEnc
+def defineAll (inBinder : Bool) (xEnc : String) (tyEnc : String) (trEncs: List (List String)) (tEnc : String) : EncoderM String :=
+  defineQuantifierHelper inBinder "forall" s!"({xEnc} {tyEnc})" trEncs tEnc
 
-def defineExist (inBinder : Bool) (xEnc : String) (tyEnc : String) (trEnc: String) (tEnc : String) : EncoderM String :=
-  let trEnc := if xEnc == trEnc then .none else .some trEnc
-  defineQuantifierHelper inBinder "exists" s!"({xEnc} {tyEnc})" trEnc tEnc
+def defineExist (inBinder : Bool) (xEnc : String) (tyEnc : String) (trEncs: List (List String)) (tEnc : String) : EncoderM String :=
+  defineQuantifierHelper inBinder "exists" s!"({xEnc} {tyEnc})" trEncs tEnc
 
 def mapM₁ {m : Type u → Type v} [Monad m] {α : Type w} {β : Type u}
   (xs : List α) (f : {x : α // x ∈ xs} → m β) : m (List β) :=
   xs.attach.mapM f
 
+partial
 def encodeTerm (inBinder : Bool) (t : Term) : EncoderM String := do
   if let (.some enc) := (← get).terms.get? t then return enc
   let tyEnc ← encodeType t.typeOf
@@ -235,14 +243,14 @@ def encodeTerm (inBinder : Bool) (t : Term) : EncoderM String := do
         -- applied to Terms of type .bitvec
         return "false"
     | .app op ts _         => defineApp inBinder tyEnc op (← mapM₁ ts (λ ⟨tᵢ, _⟩ => encodeTerm inBinder tᵢ)) ts
-    | .quant .all args tr t =>
-      match args with
-      | [(x, ty)] => defineAll inBinder x (← encodeType ty) (← encodeTerm True tr) (← encodeTerm True t)
-      | _ => defineMultiAll inBinder args (← encodeTerm True tr) (← encodeTerm True t)
-    | .quant .exist args tr t =>
-      match args with
-      | [(x, ty)] => defineExist inBinder x (← encodeType ty) (← encodeTerm True tr) (← encodeTerm True t)
-      | _ => defineMultiExist inBinder args (← encodeTerm True tr) (← encodeTerm True t)
+    | .quant qk args tr t =>
+      let trExprs := if Factory.isSimpleTrigger tr then [] else extractTriggers tr
+      let trEncs ← mapM₁ trExprs (fun ⟨ts, _⟩ => mapM₁ ts (fun ⟨t, _⟩ => encodeTerm True t))
+      match qk, args with
+      | .all, [(x, ty)] => defineAll inBinder x (← encodeType ty) trEncs (← encodeTerm True t)
+      | .all, _ => defineMultiAll inBinder args trEncs (← encodeTerm True t)
+      | .exist, [(x, ty)] => defineExist inBinder x (← encodeType ty) trEncs (← encodeTerm True t)
+      | .exist, _ => defineMultiExist inBinder args trEncs (← encodeTerm True t)
   if inBinder && !t.isFreeVar
   then pure enc
   else modifyGet λ state => (enc, {state with terms := state.terms.insert t enc})

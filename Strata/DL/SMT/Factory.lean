@@ -97,6 +97,15 @@ def ite (t₁ t₂ t₃ : Term) : Term :=
   | _, _ =>
     .app .ite [t₁, t₂, t₃] t₂.typeOf
 
+def addTrigger : Term → Term → Term
+| t, .app .triggers ts .trigger =>  .app .triggers (t :: ts) .trigger
+| t, _ => t
+
+def addTriggerList (args : List Term) (ty : TermType) : Term  :=
+  match args with
+  | [t, ts] => addTrigger t ts
+  | _ => .app .triggers args ty
+
 /-
 Returns the result of applying function to a list of terms.
 
@@ -104,6 +113,18 @@ Returns the result of applying function to a list of terms.
 -/
 def app : Function → List Term → Term
   | .uf f, ts => .app (.uf f) ts f.out
+
+def isSimpleTrigger : Term → Bool
+| .var v => v.isBound
+| .app .triggers [] .trigger => true
+| .app .triggers [t] .trigger => isSimpleTrigger t
+| _ => false
+
+def mkSimpleTrigger (x : String) (ty : TermType) : Term :=
+  .app .triggers [.var (TermVar.mk true x ty)] .trigger -- TODO: empty list instead?
+
+theorem mkSimpleTriggerIsSimple: isSimpleTrigger (mkSimpleTrigger x ty) := by
+  simp [isSimpleTrigger, mkSimpleTrigger]
 
 -- Note: we could coalesce nested quantifiers here, since SMT-Lib allows multiple variables to be bound at once.
 def quant (qk : QuantifierKind) (x : String) (ty : TermType) (tr : Term) (e : Term) : Term :=
@@ -113,17 +134,10 @@ def quant (qk : QuantifierKind) (x : String) (ty : TermType) (tr : Term) (e : Te
     -- Coalesce if:
     -- 1. Same quantifier kind
     -- 2. Outer trigger is just a bound variable (indicating no meaningful trigger)
-    let isSimpleTrigger := match tr with
-      | .var v => v.isBound  -- Check if it's a bound variable
-      | _ => false
-    let isInnerSimpleTrigger := match tr2 with
-      | .var v =>
-        v.isBound  -- Check if inner trigger is also a bound variable
-      | _ => false
-    if qk = qk2 && isSimpleTrigger then
+    if qk = qk2 && isSimpleTrigger tr then
       -- If both triggers are simple, use the first variable as trigger
       -- Otherwise use the inner trigger (which is more meaningful)
-      let coalescedTrigger := if isInnerSimpleTrigger then .var (TermVar.mk true x ty) else tr2
+      let coalescedTrigger := if isSimpleTrigger tr2 then (mkSimpleTrigger x ty) else tr2
       .quant qk ([(x, ty)] ++ args2) coalescedTrigger e2
     else
       .quant qk [(x, ty)] tr e

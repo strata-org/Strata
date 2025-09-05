@@ -23,7 +23,7 @@ structure Procedure.Header where
   typeArgs : List TyIdentifier
   inputs   : @LMonoTySignature BoogieIdent
   outputs  : @LMonoTySignature BoogieIdent
-  deriving Repr, DecidableEq
+  deriving Repr, DecidableEq, Inhabited
 
 instance : ToFormat Procedure.Header where
   format p :=
@@ -60,7 +60,7 @@ structure Procedure.Spec where
   modifies       : List Expression.Ident
   preconditions  : ListMap BoogieLabel Procedure.Check
   postconditions : ListMap BoogieLabel Procedure.Check
-  deriving Repr, DecidableEq
+  deriving Repr, DecidableEq, Inhabited
 
 instance : ToFormat Procedure.Spec where
   format p :=
@@ -88,6 +88,7 @@ structure Procedure where
   header : Procedure.Header
   spec   : Procedure.Spec
   body   : List Statement
+  deriving Inhabited
 
 instance : ToFormat Procedure where
   format p :=

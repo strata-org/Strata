@@ -26,12 +26,15 @@ instance : Coe String TyIdentifier where
   coe := id
 
 /--
-Types in Lambda: these are mono-types.
+Types in Lambda: these are mono-types. Note that all free type variables
+(`.ftvar`) are implicitly universally quantified.
 -/
 inductive LMonoTy : Type where
+  /-- Type variable. -/
   | ftvar (name : TyIdentifier)
-  -- Type constructor.
+  /-- Type constructor. -/
   | tcons (name : String) (args : List LMonoTy)
+  /-- Special support for bitvector types of every size. -/
   | bitvec (size : Nat)
   deriving Inhabited, Repr
 
@@ -349,7 +352,7 @@ def LTy.toMonoTypeUnsafe (ty : LTy) : LMonoTy :=
 instance : ToString LMonoTy where
   toString x := toString (repr x)
 
-private partial def formatLMonoTy (lmonoty : LMonoTy) : Format :=
+private def formatLMonoTy (lmonoty : LMonoTy) : Format :=
   match lmonoty with
   | .ftvar x => toString x
   | .bitvec n => f!"bv{n}"
