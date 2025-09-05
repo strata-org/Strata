@@ -298,6 +298,25 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasBoolNeg P] :
 
 end section
 
+theorem InitStateDefCons
+  {P : PureExpr} {σ σ' : SemanticStore P}
+  {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
+  isDefined σ vs →
+  InitState P σ v e σ' →
+  isDefined σ' (v::vs) := by
+  intros Hdef Heval
+  cases Heval with
+  | init Hold HH Hsome =>
+  simp [isDefined, HH] at *
+  intros v' Hv'
+  have Heq: ¬ v = v' :=by
+    false_or_by_contra; rename_i Heq
+    specialize Hdef v' Hv'
+    simp_all
+  specialize Hsome v' Heq
+  specialize Hdef v'
+  simp_all
+
 theorem InitStateDefMonotone
   {P : PureExpr} {σ σ' : SemanticStore P}
   {vs : List P.Ident} {e : P.Expr} {v : P.Ident} :
@@ -305,20 +324,17 @@ theorem InitStateDefMonotone
   InitState P σ v e σ' →
   isDefined σ' vs := by
   intros Hdef Heval
+  exact (isDefinedCons' (InitStateDefCons Hdef Heval)).right
+
+theorem UpdateStateDef
+  {P : PureExpr} {σ σ' : SemanticStore P}
+  {e : P.Expr} {v : P.Ident} :
+  UpdateState P σ v e σ' →
+  isDefined σ [v] ∧ isDefined σ' [v] := by
+  intro Heval
   cases Heval with
-  | init Hold HH Hsome =>
-  simp [isDefined] at *
-  intros v' Hv'
-  by_cases Heq: (v = v')
-  case pos =>
-    simp [Option.isSome]
-    simp [Heq] at *
-    split <;> simp_all
-  case neg =>
-    specialize Hsome v' Heq
-    specialize Hdef v'
-    simp [Hsome]
-    exact Hdef Hv'
+  | update Hold HH Hsome =>
+  simp_all [isDefined]
 
 theorem UpdateStateDefMonotone
   {P : PureExpr} {σ σ' : SemanticStore P}

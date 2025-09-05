@@ -29,29 +29,41 @@ theorem eval_stmts_assert_store_cst
       cases H2 with
       | stmts_none_sem => exact eval_assert_store_cst H3
 
+theorem eval_stmt_assert_eq_of_pure_expr_eq
+  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasFvar P] [HasVal P] [HasBool P] [HasBoolNeg P] :
+  WellFormedSemanticEvalBool δ δP →
+  (EvalStmt P (Cmd P) (EvalCmd P) δ δP σ₀ σ (.cmd (Cmd.assert l1 e md1)) σ' ↔
+  EvalStmt P (Cmd P) (EvalCmd P) δ δP σ₀ σ (.cmd (Cmd.assert l2 e md2)) σ') := by
+  intro Hwf
+  constructor <;>
+  (
+    intro Heval
+    rw [← eval_stmt_assert_store_cst Heval]
+    cases Heval
+    apply EvalStmt.cmd_sem _ (by assumption)
+    rename_i Heval
+    cases Heval
+    exact EvalCmd.eval_assert (by assumption) Hwf
+  )
+
+theorem eval_stmts_assert_elim
+  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasFvar P] [HasVal P] [HasBool P] [HasBoolNeg P] :
+  WellFormedSemanticEvalBool δ δP →
+  EvalStmts P (Cmd P) (EvalCmd P) δ δP σ₀ σ (.cmd (.assert l1 e md1) :: cmds) σ' →
+  EvalStmts P (Cmd P) (EvalCmd P) δ δP σ₀ σ cmds σ' := by
+  intros Hwf Heval
+  cases Heval with
+  | @stmts_some_sem _ _ _ _ _ σ1 _ _ Has1 Has2 =>
+    rw [← eval_stmt_assert_store_cst Has1] at Has2
+    assumption
+
 theorem assert_elim
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasFvar P] [HasVal P] [HasBool P] [HasBoolNeg P] :
   WellFormedSemanticEvalBool δ δP →
   EvalStmts P (Cmd P) (EvalCmd P) δ δP σ₀ σ (.cmd (.assert l1 e md1) :: [.cmd (.assert l2 e md2)]) σ' →
   EvalStmts P (Cmd P) (EvalCmd P) δ δP σ₀ σ [.cmd (.assert l3 e md3)] σ' := by
-  intros Hwf Heval
-  cases Heval with
-  | @stmts_some_sem _ _ _ _ _ σ1 _ _ Has1 Has2 =>
-    cases Has1 with
-    | cmd_sem Hcmd =>
-      have H : EvalStmts P (Cmd P) (EvalCmd P) δ δP σ₀ σ' [] σ' := .stmts_none_sem
-      apply EvalStmts.stmts_some_sem _ H
-      apply EvalStmt.cmd_sem
-      . cases Has2 with
-        | @stmts_some_sem _ _ _ _ _ σ2 _ _ H1 H2 =>
-          have Heq2 : σ2 = σ' := by cases H2 <;> rfl
-          have Heq1 : σ1 = σ2 := by exact eval_stmt_assert_store_cst H1
-          have Heq0 : σ = σ1 := by exact eval_assert_store_cst Hcmd
-          simp [Heq0, Heq1, Heq2] at *
-          apply EvalCmd.eval_assert
-          cases Hcmd; assumption
-          assumption
-      . next Hdef =>
-        intros v Hin
-        apply Hdef v
-        simp [HasVarsImp.modifiedVars, Cmd.modifiedVars] at *
+  intro Hwf Heval
+  have Heval := eval_stmts_assert_elim Hwf Heval
+  rw [eval_stmts_singleton] at *
+  exact (eval_stmt_assert_eq_of_pure_expr_eq Hwf).mp Heval
+
