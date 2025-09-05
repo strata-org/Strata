@@ -234,6 +234,8 @@ def WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
 def WellFormedSemanticEvalVar {P : PureExpr} [HasFvar P] (δ : SemanticEval P)
     : Prop := (∀ e v σ₀ σ, HasFvar.getFvar e = some v → δ σ₀ σ e = σ v)
 
+def WellFormedSemanticEvalExprCongr {P : PureExpr} [HasVarsPure P P.Expr] (δ : SemanticEval P)
+    : Prop := ∀ e σ₀ σ σ', (∀ x ∈ HasVarsPure.getVars e, σ x = σ' x) → δ σ₀ σ e = δ σ₀ σ' e
 /--
 An inductive rule for state update.
 -/
@@ -357,3 +359,37 @@ theorem UpdateStateDefMonotone
     specialize Hdef v'
     simp [Hsome]
     exact Hdef Hv'
+
+theorem UpdateStateUniqueResult
+  {P : PureExpr} {σ σ' σ'': SemanticStore P}
+  {e : P.Expr} {v : P.Ident} :
+  UpdateState P σ v e σ' →
+  UpdateState P σ v e σ'' →
+  σ' = σ'' := by
+  intro Hu1 Hu2
+  cases Hu1; cases Hu2
+  rename_i Hfa1 _ _ _ Hfa2 _
+  ext v' e'
+  by_cases h: v' = v
+  simp_all
+  rw[eq_comm] at h
+  specialize Hfa1 v' h
+  specialize Hfa2 v' h
+  simp_all
+
+theorem InitStateUniqueResult
+  {P : PureExpr} {σ σ' σ'': SemanticStore P}
+  {e : P.Expr} {v : P.Ident} :
+  InitState P σ v e σ' →
+  InitState P σ v e σ'' →
+  σ' = σ'' := by
+  intro Hu1 Hu2
+  cases Hu1; cases Hu2
+  rename_i Hfa1 _ _ Hfa2 _
+  ext v' e'
+  by_cases h: v' = v
+  simp_all
+  rw[eq_comm] at h
+  specialize Hfa1 v' h
+  specialize Hfa2 v' h
+  simp_all
