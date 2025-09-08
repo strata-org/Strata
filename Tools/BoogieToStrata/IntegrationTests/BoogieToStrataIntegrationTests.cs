@@ -136,15 +136,15 @@ public class BoogieToStrataIntegrationTests(ITestOutputHelper output) {
         Directory.Delete(vcsDirectory, true);
         var stdout = proc.StandardOutput.ReadToEnd();
         var stderr = proc.StandardError.ReadToEnd();
+        var expectedExitCode = 0;
         if (expectString is null) {
             Assert.Contains("Skipping verification", stdout);
         } else {
             Console.WriteLine("Checking expected output");
             Assert.Equal(expectString, stdout);
-        }
-        var expectedExitCode = 0;
-        if (expectString.Contains("failed")) {
-            expectedExitCode = 1;
+            if (expectString.Contains("failed")) {
+                expectedExitCode = 1;
+            }
         }
         Assert.Equal(expectedExitCode, proc.ExitCode);
     }
