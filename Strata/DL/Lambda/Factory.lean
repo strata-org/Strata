@@ -80,22 +80,22 @@ has the right number and type of arguments, etc.?
 (TODO) Use `.bvar`s in the body to correspond to the formals instead of using
 `.fvar`s.
 -/
-structure LFunc (Identifier : Type) where
+structure LFunc (MetadataType : Type) (Identifier : Type) where
   name     : Identifier
   typeArgs : List TyIdentifier := []
   inputs   : @LMonoTySignature Identifier
   output   : LMonoTy
-  body     : Option (LExpr LMonoTy Identifier) := .none
+  body     : Option (LExpr MetadataType LMonoTy Identifier) := .none
   -- (TODO): Add support for a fixed set of attributes (e.g., whether to inline
   -- a function, etc.).
   attr     : Array String := #[]
-  concreteEval : Option ((LExpr LMonoTy Identifier) → List (LExpr LMonoTy Identifier) → (LExpr LMonoTy Identifier)) := .none
-  axioms   : List (LExpr LMonoTy Identifier) := []  -- For axiomatic definitions
+  concreteEval : Option ((LExpr MetadataType LMonoTy Identifier) → List (LExpr MetadataType LMonoTy Identifier) → (LExpr MetadataType LMonoTy Identifier)) := .none
+  axioms   : List (LExpr MetadataType LMonoTy Identifier) := []  -- For axiomatic definitions
 
-instance : Inhabited (LFunc Identifier) where
+instance [Inhabited MetadataType] [Inhabited Identifier] : Inhabited (LFunc MetadataType Identifier) where
   default := { name := Inhabited.default, inputs := [], output := LMonoTy.bool }
 
-instance : ToFormat (LFunc Identifier) where
+instance : ToFormat (LFunc MetadataType Identifier) where
   format f :=
     let attr := if f.attr.isEmpty then f!"" else f!"@[{f.attr}]{Format.line}"
     let typeArgs := if f.typeArgs.isEmpty
@@ -125,18 +125,18 @@ def LFunc.type (f : (LFunc Identifier)) : Except Format LTy := do
   | ity :: irest =>
     .ok (.forAll f.typeArgs (Lambda.LMonoTy.mkArrow ity (irest ++ output_tys)))
 
-def LFunc.opExpr (f: LFunc Identifier) : LExpr LMonoTy Identifier :=
+def LFunc.opExpr [Inhabited MetadataType] (f: LFunc MetadataType Identifier) : LExpr MetadataType LMonoTy Identifier :=
   let input_tys := f.inputs.values
   let output_tys := Lambda.LMonoTy.destructArrow f.output
   let ty := match input_tys with
             | [] => f.output
             | ity :: irest => Lambda.LMonoTy.mkArrow ity (irest ++ output_tys)
-  .op f.name ty
+  .op default f.name (some ty)
 
-def LFunc.inputPolyTypes (f : (LFunc Identifier)) : @LTySignature Identifier :=
+def LFunc.inputPolyTypes (f : (LFunc MetadataType Identifier)) : @LTySignature Identifier :=
   f.inputs.map (fun (id, mty) => (id, .forAll f.typeArgs mty))
 
-def LFunc.outputPolyType (f : (LFunc Identifier)) : LTy :=
+def LFunc.outputPolyType (f : (LFunc MetadataType Identifier)) : LTy :=
   .forAll f.typeArgs f.output
 
 /--
@@ -148,23 +148,23 @@ Identifier)` -- lambdas are our only tool. `Factory` gives us a way to add
 support for concrete/symbolic evaluation and type checking for `FunFactory`
 functions without actually modifying any core logic or the ASTs.
 -/
-def Factory := Array (LFunc Identifier)
+def Factory (MetadataType : Type) (Identifier : Type) := Array (LFunc MetadataType Identifier)
 
-def Factory.default : @Factory Identifier := #[]
+def Factory.default : @Factory MetadataType Identifier := #[]
 
-instance : Inhabited (@Factory Identifier) where
-  default := @Factory.default Identifier
+instance : Inhabited (@Factory MetadataType Identifier) where
+  default := @Factory.default MetadataType Identifier
 
-def Factory.getFunctionNames (F : @Factory Identifier) : Array Identifier :=
+def Factory.getFunctionNames (F : @Factory MetadataType Identifier) : Array Identifier :=
   F.map (fun f => f.name)
 
-def Factory.getFactoryLFunc (F : @Factory Identifier) (name : Identifier) : Option (LFunc Identifier) :=
+def Factory.getFactoryLFunc (F : @Factory MetadataType Identifier) (name : Identifier) : Option (LFunc MetadataType Identifier) :=
   F.find? (fun fn => fn.name == name)
 
 /--
 Add a function `func` to the factory `F`. Redefinitions are not allowed.
 -/
-def Factory.addFactoryFunc (F : @Factory Identifier) (func : (LFunc Identifier)) : Except Format (@Factory Identifier) :=
+def Factory.addFactoryFunc (F : @Factory MetadataType Identifier) (func : (LFunc MetadataType Identifier)) : Except Format (@Factory MetadataType Identifier) :=
   match F.getFactoryLFunc func.name with
   | none => .ok (F.push func)
   | some func' =>
@@ -177,18 +177,18 @@ def Factory.addFactoryFunc (F : @Factory Identifier) (func : (LFunc Identifier))
 Append a factory `newF` to an existing factory `F`, checking for redefinitions
 along the way.
 -/
-def Factory.addFactory (F newF : @Factory Identifier) : Except Format (@Factory Identifier) :=
+def Factory.addFactory (F newF : @Factory MetadataType Identifier) : Except Format (@Factory MetadataType Identifier) :=
   Array.foldlM (fun factory func => factory.addFactoryFunc func) F newF
 
-def getLFuncCall (e : (LExpr LMonoTy Identifier)) : (LExpr LMonoTy Identifier) × List (LExpr LMonoTy Identifier) :=
+def getLFuncCall (e : (LExpr MetadataType LMonoTy Identifier)) : (LExpr MetadataType LMonoTy Identifier) × List (LExpr MetadataType LMonoTy Identifier) :=
   go e []
-  where go e (acc : List (LExpr LMonoTy Identifier)) :=
+  where go e (acc : List (LExpr MetadataType LMonoTy Identifier)) :=
   match e with
-  | .app (.app  e' arg1) arg2 =>  go e' ([arg1, arg2] ++ acc)
-  | .app (.op  fn  fnty) arg1 =>  ((.op fn fnty), ([arg1] ++ acc))
+  | .app _ (.app _ e' arg1) arg2 =>  go e' ([arg1, arg2] ++ acc)
+  | .app _ (.op _ fn  fnty) arg1 =>  ((.op default fn fnty), ([arg1] ++ acc))
   | _ => (e, acc)
 
-def getConcreteLFuncCall (e : (LExpr LMonoTy Identifier)) : (LExpr LMonoTy Identifier) × List (LExpr LMonoTy Identifier) :=
+def getConcreteLFuncCall (e : (LExpr MetadataType LMonoTy Identifier)) : (LExpr MetadataType LMonoTy Identifier) × List (LExpr MetadataType LMonoTy Identifier) :=
   let (op, args) := getLFuncCall e
   if args.all LExpr.isConst then (op, args) else (e, [])
 
@@ -196,7 +196,7 @@ def getConcreteLFuncCall (e : (LExpr LMonoTy Identifier)) : (LExpr LMonoTy Ident
 If `e` is a call of a factory function, get the operator (`.op`), a list
 of all the actuals, and the `(LFunc Identifier)`.
 -/
-def Factory.callOfLFunc (F : @Factory Identifier) (e : (LExpr LMonoTy Identifier)) : Option ((LExpr LMonoTy Identifier) × List (LExpr LMonoTy Identifier) × (LFunc Identifier)) :=
+def Factory.callOfLFunc (F : @Factory MetadataType Identifier) (e : (LExpr MetadataType LMonoTy Identifier)) : Option ((LExpr MetadataType LMonoTy Identifier) × List (LExpr MetadataType LMonoTy Identifier) × (LFunc MetadataType Identifier)) :=
   let (op, args) := getLFuncCall e
   match op with
   | .op name _ =>

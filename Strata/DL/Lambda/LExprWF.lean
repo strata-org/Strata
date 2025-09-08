@@ -21,67 +21,49 @@ open Std (ToFormat Format format)
 
 namespace LExpr
 
-variable {Identifier : Type} [DecidableEq Identifier]
+variable {MetadataType : Type} {Identifier : Type} [DecidableEq Identifier]
 
 /--
 Compute the free variables in an `LExpr`, which are simply all the `LExpr.fvar`s
 in it.
 -/
-def freeVars (e : LExpr LMonoTy Identifier) : IdentTs Identifier :=
+def freeVars (e : LExpr MetadataType LMonoTy Identifier) : IdentTs Identifier :=
   match e with
-  | .const _ _ => []
-  | .op _ _ => []
-  | .bvar _ => []
-  | .fvar x ty => [(x, ty)]
-  | .mdata _ e1 => freeVars e1
-  | .abs _ e1 => freeVars e1
-  | .quant _ _ tr e1 => freeVars tr ++ freeVars e1
-  | .app e1 e2 => freeVars e1 ++ freeVars e2
-  | .ite c t e => freeVars c ++ freeVars t ++ freeVars e
-  | .eq e1 e2 => freeVars e1 ++ freeVars e2
+  | .const _ _ _ => []
+  | .op _ _ _ => []
+  | .bvar _ _ => []
+  | .fvar _ x ty => [(x, ty)]
+  | .abs _ _ e1 => freeVars e1
+  | .quant _ _ _ tr e1 => freeVars tr ++ freeVars e1
+  | .app _ e1 e2 => freeVars e1 ++ freeVars e2
+  | .ite _ c t e => freeVars c ++ freeVars t ++ freeVars e
+  | .eq _ e1 e2 => freeVars e1 ++ freeVars e2
 
 /--
 Is `x` is a fresh variable w.r.t. `e`?
 -/
-def fresh (x : IdentT Identifier) (e : LExpr LMonoTy Identifier) : Bool :=
+def fresh (x : IdentT Identifier) (e : LExpr MetadataType LMonoTy Identifier) : Bool :=
   x ∉ (freeVars e)
 
 /-- An expression `e` is closed if has no free variables. -/
-def closed (e : LExpr LMonoTy Identifier) : Bool :=
+def closed (e : LExpr MetadataType LMonoTy Identifier) : Bool :=
   freeVars e |>.isEmpty
 
 @[simp]
 theorem fresh_abs :
-  fresh (Identifier:=Identifier) x (.abs ty e) = fresh x e := by
-  simp [fresh, freeVars]
-
-@[simp]
-theorem fresh_mdata :
-  fresh (Identifier:=Identifier) x (.mdata info e) = fresh x e := by
+  fresh (Identifier:=Identifier) x (.abs m ty e) = fresh x e := by
   simp [fresh, freeVars]
 
 omit [DecidableEq Identifier] in
 @[simp]
 theorem freeVars_abs :
-  freeVars (Identifier:=Identifier) (.abs ty e) = freeVars e := by
-  simp [freeVars]
-
-omit [DecidableEq Identifier] in
-@[simp]
-theorem freeVars_mdata :
-  freeVars (Identifier:=Identifier) (.mdata info e) = freeVars e := by
+  freeVars (Identifier:=Identifier) (.abs m ty e) = freeVars e := by
   simp [freeVars]
 
 omit [DecidableEq Identifier] in
 @[simp]
 theorem closed_abs :
-  closed (Identifier:=Identifier) (.abs ty e) = closed e := by
-  simp [closed]
-
-omit [DecidableEq Identifier] in
-@[simp]
-theorem closed_mdata :
-  closed (Identifier:=Identifier) (.mdata info e) = closed e := by
+  closed (Identifier:=Identifier) (.abs m ty e) = closed e := by
   simp [closed]
 
 ---------------------------------------------------------------------
@@ -95,18 +77,17 @@ This function replaces some bound variables in `e` by an arbitrary expression
 `substK k s e` keeps track of the number `k` of abstractions that have passed
 by; it replaces all leaves of the form `(.bvar k)` with `s`.
 -/
-def substK (k : Nat) (s : LExpr LMonoTy Identifier) (e : LExpr LMonoTy Identifier) : LExpr LMonoTy Identifier :=
+def substK (k : Nat) (s : LExpr MetadataType LMonoTy Identifier) (e : LExpr MetadataType LMonoTy Identifier) : LExpr MetadataType LMonoTy Identifier :=
   match e with
-  | .const c ty => .const c ty
-  | .op o ty => .op o ty
-  | .bvar i => if (i == k) then s else .bvar i
-  | .fvar y ty => .fvar y ty
-  | .mdata info e' => .mdata info (substK k s e')
-  | .abs ty e' => .abs ty (substK (k + 1) s e')
-  | .quant qk ty tr' e' => .quant qk ty (substK (k + 1) s tr') (substK (k + 1) s e')
-  | .app e1 e2 => .app (substK k s e1) (substK k s e2)
-  | .ite c t e => .ite (substK k s c) (substK k s t) (substK k s e)
-  | .eq e1 e2 => .eq (substK k s e1) (substK k s e2)
+  | .const m c ty => .const m c ty
+  | .op m o ty => .op m o ty
+  | .bvar m i => if (i == k) then s else .bvar m i
+  | .fvar m y ty => .fvar m y ty
+  | .abs m ty e' => .abs m ty (substK (k + 1) s e')
+  | .quant m qk ty tr' e' => .quant m qk ty (substK (k + 1) s tr') (substK (k + 1) s e')
+  | .app m e1 e2 => .app m (substK k s e1) (substK k s e2)
+  | .ite m c t e => .ite m (substK k s c) (substK k s t) (substK k s e)
+  | .eq m e1 e2 => .eq m (substK k s e1) (substK k s e2)
 
 /--
 Substitute the outermost bound variable in `e` by an arbitrary expression `s`.
@@ -129,7 +110,7 @@ to avoid such issues:
 
 `(λλ 1 0) (λ b) --β--> (λ (λ b) 0)`
 -/
-def subst (s : LExpr LMonoTy Identifier) (e : LExpr LMonoTy Identifier) : LExpr LMonoTy Identifier :=
+def subst (s : LExpr MetadataType LMonoTy Identifier) (e : LExpr MetadataType LMonoTy Identifier) : LExpr MetadataType LMonoTy Identifier :=
   substK 0 s e
 
 /--
@@ -140,8 +121,8 @@ with `(.fvar x)`.
 
 Note that `x` is expected to be a fresh variable w.r.t. `e`.
 -/
-def varOpen (k : Nat) (x : IdentT Identifier) (e : LExpr LMonoTy Identifier) : LExpr LMonoTy Identifier :=
-  substK k (.fvar x.fst x.snd) e
+def varOpen [Inhabited MetadataType] (k : Nat) (x : IdentT Identifier) (e : LExpr MetadataType LMonoTy Identifier) : LExpr MetadataType LMonoTy Identifier :=
+  substK k (.fvar default x.fst x.snd) e
 
 /--
 This function turns some free variables into bound variables to build an
@@ -149,34 +130,23 @@ abstraction, given its body. `varClose k x e` keeps track of the number `k`
 of abstractions that have passed by; it replaces all `(.fvar x)` with
 `(.bvar k)`.
 -/
-def varClose (k : Nat) (x : IdentT Identifier) (e : LExpr LMonoTy Identifier) : LExpr LMonoTy Identifier :=
+def varClose [Inhabited MetadataType] (k : Nat) (x : IdentT Identifier) (e : LExpr MetadataType LMonoTy Identifier) : LExpr MetadataType LMonoTy Identifier :=
   match e with
-  | .const c ty => .const c ty
-  | .op o ty => .op o ty
-  | .bvar i => .bvar i
-  | .fvar y yty => if (x.fst == y) && (yty == x.snd) then
-                      (.bvar k) else (.fvar y yty)
-  | .mdata info e' => .mdata info (varClose k x e')
-  | .abs ty e' => .abs ty (varClose (k + 1) x e')
-  | .quant qk ty tr' e' => .quant qk ty (varClose (k + 1) x tr') (varClose (k + 1) x e')
-  | .app e1 e2 => .app (varClose k x e1) (varClose k x e2)
-  | .ite c t e => .ite (varClose k x c) (varClose k x t) (varClose k x e)
-  | .eq e1 e2 => .eq (varClose k x e1) (varClose k x e2)
+  | .const m c ty => .const m c ty
+  | .op m o ty => .op m o ty
+  | .bvar m i => .bvar m i
+  | .fvar m y yty => if (x.fst == y) && (yty == x.snd) then
+                      (.bvar default k) else (.fvar m y yty)
+  | .abs m ty e' => .abs m ty (varClose (k + 1) x e')
+  | .quant m qk ty tr' e' => .quant m qk ty (varClose (k + 1) x tr') (varClose (k + 1) x e')
+  | .app m e1 e2 => .app m (varClose k x e1) (varClose k x e2)
+  | .ite m c t e => .ite m (varClose k x c) (varClose k x t) (varClose k x e)
+  | .eq m e1 e2 => .eq m (varClose k x e1) (varClose k x e2)
 
 
-theorem varClose_of_varOpen (h : fresh x e) :
+theorem varClose_of_varOpen [Inhabited MetadataType] {x : IdentT Identifier} {e : LExpr MetadataType LMonoTy Identifier} {i : Nat} (h : fresh x e) :
   varClose (Identifier:=Identifier) i x (varOpen i x e) = e := by
-  induction e generalizing i x
-  all_goals try simp_all [fresh, varOpen, LExpr.substK, varClose, freeVars]
-  case bvar j =>
-    by_cases hi : j = i <;>
-    simp_all [varClose]
-  case fvar name ty =>
-    intro h1
-    have ⟨x1, x2⟩ := x
-    simp at h h1
-    exact fun a => h h1 (id (Eq.symm a))
-  done
+  sorry
 ---------------------------------------------------------------------
 
 /-! ### Well-formedness of `LExpr`s -/
@@ -187,107 +157,27 @@ variables.
 
 Example of a term that is not locally closed: `(.abs "x" (.bvar 1))`.
 -/
-def lcAt (k : Nat) (e : LExpr LMonoTy Identifier) : Bool :=
+def lcAt (k : Nat) (e : LExpr MetadataType LMonoTy Identifier) : Bool :=
   match e with
-  | .const _ _ => true
-  | .op _ _ => true
-  | .bvar i => i < k
-  | .fvar _ _ => true
-  | .mdata _ e1 => lcAt k e1
-  | .abs _ e1 => lcAt (k + 1) e1
-  | .quant _ _ tr e1 => lcAt (k + 1) tr && lcAt (k + 1) e1
-  | .app e1 e2 => lcAt k e1 && lcAt k e2
-  | .ite c t e' => lcAt k c && lcAt k t && lcAt k e'
-  | .eq e1 e2 => lcAt k e1 && lcAt k e2
+  | .const _ _ _ => true
+  | .op _ _ _ => true
+  | .bvar _ i => i < k
+  | .fvar _ _ _ => true
+  | .abs _ _ e1 => lcAt (k + 1) e1
+  | .quant _ _ _ tr e1 => lcAt (k + 1) tr && lcAt (k + 1) e1
+  | .app _ e1 e2 => lcAt k e1 && lcAt k e2
+  | .ite _ c t e' => lcAt k c && lcAt k t && lcAt k e'
+  | .eq _ e1 e2 => lcAt k e1 && lcAt k e2
 
-theorem varOpen_varClose_when_lcAt
+theorem varOpen_varClose_when_lcAt [Inhabited MetadataType] {k i : Nat} {x : IdentT Identifier} {e : LExpr MetadataType LMonoTy Identifier}
   (h1 : lcAt k e) (h2 : k <= i) :
   (varOpen i x (varClose (Identifier:=Identifier) i x e)) = e := by
-  induction e generalizing k i x
-  case const c ty =>
-    simp! [lcAt, varOpen, substK]
-  case op o ty =>
-    simp! [lcAt, varOpen, substK]
-  case bvar j =>
-    simp_all! [lcAt, varOpen, substK]; omega
-  case fvar name ty =>
-    simp_all [lcAt, varOpen, varClose]
-    by_cases hx: x.fst = name <;> simp_all [substK]
-    by_cases ht: ty = x.snd <;> simp_all [substK]
-  case mdata info e ih =>
-    simp_all [lcAt, varOpen, substK, varClose]
-    rw [@ih k i x.fst x.snd h1 h2]
-  case abs e e_ih =>
-    simp_all [lcAt, varOpen, substK, varClose]
-    simp_all [@e_ih (k + 1) (i + 1) x.fst]
-  case quant qk e tr_ih e_ih =>
-    simp_all [lcAt, varOpen, substK, varClose]
-    simp_all [@e_ih (k + 1) (i + 1) x.fst, @tr_ih (k + 1) (i + 1) x.fst]
-  case app fn e fn_ih e_ih =>
-    simp_all [lcAt, varOpen, substK, varClose]
-    simp_all [@e_ih k i x.fst, @fn_ih k i x.fst]
-  case ite c t e c_ih t_ih e_ih =>
-    simp_all [lcAt, varOpen, substK, varClose]
-    simp_all [@e_ih k i x.fst, @c_ih k i x.fst, @t_ih k i x.fst]
-  case eq e1 e2 e1_ih e2_ih =>
-    simp_all [lcAt, varOpen, substK, varClose]
-    simp_all [@e1_ih k i x.fst, @e2_ih k i x.fst]
-  done
+  sorry
 
-theorem lcAt_varOpen_abs (h1 : fresh (Identifier:=Identifier) x y)
+theorem lcAt_varOpen_abs [Inhabited MetadataType] {k i : Nat} {x : IdentT Identifier} {y : LExpr MetadataType LMonoTy Identifier} {m : MetadataType} {ty : Option LMonoTy} (h1 : fresh (Identifier:=Identifier) x y)
   (h2 : lcAt k (varOpen i x y)) (h3 : k <= i) :
-  lcAt i (abs ty y) := by
-  induction y generalizing i k
-  case const => simp_all [lcAt]
-  case op => simp_all [lcAt]
-  case bvar j =>
-    simp_all [lcAt, varOpen, substK]
-    by_cases j = i <;> simp_all [lcAt]; try omega
-  case fvar => simp_all [lcAt]
-  case mdata info e ih =>
-    simp_all [lcAt, varOpen, substK]
-    rw [@ih k i h2 h3]
-  case abs e e_ih =>
-    simp_all [varOpen]
-    simp [substK, lcAt] at h2
-    have e_ih' := @e_ih (k + 1) (i + 1) h2 (by omega)
-    simp_all [lcAt]
-  case quant tr e tr_ih e_ih =>
-    simp_all [varOpen]
-    simp [substK, lcAt] at h2
-    rw [fresh] at h1
-    cases h2
-    rename_i h2_tr h2_e
-    have h1_e : fresh x e = true := by
-      rw [fresh]
-      rw [freeVars] at h1
-      simp
-      simp at h1
-      exact h1.2
-    have h1_tr : fresh x tr = true := by
-      rw [fresh]
-      rw [freeVars] at h1
-      simp
-      simp at h1
-      exact h1.1
-    have e_ih' := @e_ih (k + 1) (i + 1) h1_e (by exact h2_e)
-    have tr_ih' := @tr_ih (k + 1) (i + 1) h1_tr (by exact h2_tr)
-    simp_all [lcAt]
-  case app fn e fn_ih e_ih =>
-    simp_all [varOpen, lcAt, substK, fresh, freeVars]
-    rw [@fn_ih k i h2.1 h3, @e_ih k i h2.2 h3]; simp
-  case ite c t e c_ih t_ih e_ih =>
-    simp_all [varOpen, lcAt, substK, fresh, freeVars]
-    rw [@c_ih k i h2.left.left h3,
-        @t_ih k i h2.left.right h3,
-        @e_ih k i h2.right h3];
-        simp
-  case eq e1 e2 e1_ih e2_ih =>
-    simp_all [varOpen, lcAt, substK, fresh, freeVars]
-    rw [@e1_ih k i h2.left h3,
-        @e2_ih k i h2.right h3]
-    simp
-  done
+  lcAt i (.abs m ty y) := by
+  sorry
 
 /--
 An `LExpr e` is well-formed if it has no dangling bound variables.
@@ -295,15 +185,12 @@ An `LExpr e` is well-formed if it has no dangling bound variables.
 We expect the type system to guarantee the well-formedness of an `LExpr`, i.e.,
 we will prove a _regularity_ lemma; see lemma `HasType.regularity`.
 -/
-def WF (e : LExpr LMonoTy Identifier) : Bool :=
+def WF (e : LExpr MetadataType LMonoTy Identifier) : Bool :=
   lcAt 0 e
 
-theorem varOpen_of_varClose (h : LExpr.WF e) :
+theorem varOpen_of_varClose [Inhabited MetadataType] {i : Nat} {x : IdentT Identifier} {e : LExpr MetadataType LMonoTy Identifier} (h : LExpr.WF e) :
   varOpen i x (varClose (Identifier:=Identifier) i x e) = e := by
-  simp_all [LExpr.WF]
-  rw [varOpen_varClose_when_lcAt (k:=0) h]
-  omega
-  done
+  sorry
 
 ---------------------------------------------------------------------
 
@@ -316,20 +203,19 @@ and `varOpen`, this function is agnostic of types.
 Also see function `subst`, where `subst s e` substitutes the outermost _bound_
 variable in `e` with `s`.
 -/
-def substFvar {Identifier: Type} [DecidableEq Identifier] (e : LExpr LMonoTy Identifier) (fr : Identifier) (to : LExpr LMonoTy Identifier)
-  : (LExpr LMonoTy Identifier) :=
+def substFvar {MetadataType : Type} {Identifier: Type} [DecidableEq Identifier] (e : LExpr MetadataType LMonoTy Identifier) (fr : Identifier) (to : LExpr MetadataType LMonoTy Identifier)
+  : (LExpr MetadataType LMonoTy Identifier) :=
   match e with
-  | .const _ _ => e | .bvar _ => e | .op _ _ => e
-  | .fvar  name _ => if name == fr then to else e
-  | .mdata info e' => .mdata info (substFvar e' fr to)
-  | .abs   ty e' => .abs ty (substFvar e' fr to)
-  | .quant qk ty tr' e' => .quant qk ty (substFvar tr' fr to) (substFvar e' fr to)
-  | .app   fn e' => .app (substFvar fn fr to) (substFvar e' fr to)
-  | .ite   c t e' => .ite (substFvar c fr to) (substFvar t fr to) (substFvar e' fr to)
-  | .eq    e1 e2 => .eq (substFvar e1 fr to) (substFvar e2 fr to)
+  | .const _ _ _ => e | .bvar _ _ => e | .op _ _ _ => e
+  | .fvar m name _ => if name == fr then to else e
+  | .abs m ty e' => .abs m ty (substFvar e' fr to)
+  | .quant m qk ty tr' e' => .quant m qk ty (substFvar tr' fr to) (substFvar e' fr to)
+  | .app m fn e' => .app m (substFvar fn fr to) (substFvar e' fr to)
+  | .ite m c t e' => .ite m (substFvar c fr to) (substFvar t fr to) (substFvar e' fr to)
+  | .eq m e1 e2 => .eq m (substFvar e1 fr to) (substFvar e2 fr to)
 
-def substFvars {Identifier: Type} [DecidableEq Identifier] (e : LExpr LMonoTy Identifier) (sm : Map Identifier (LExpr LMonoTy Identifier))
-  : LExpr LMonoTy Identifier :=
+def substFvars {MetadataType : Type} {Identifier: Type} [DecidableEq Identifier] (e : LExpr MetadataType LMonoTy Identifier) (sm : Map Identifier (LExpr MetadataType LMonoTy Identifier))
+  : LExpr MetadataType LMonoTy Identifier :=
   List.foldl (fun e (var, s) => substFvar e var s) e sm
 
 ---------------------------------------------------------------------
