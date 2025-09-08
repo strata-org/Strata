@@ -166,6 +166,7 @@ example : LExpr.HasType { types := [[("x", t[∀a. %a])]]} esM[x] t[int] := by
   simp +ground at h_tvar
   simp [h_tvar] at h_tinst
   simp +ground at h_tinst
+  simp [Map.isEmpty, Bool.decEq] at h_tinst
   assumption
 
 example : LExpr.HasType { types := [[("m", t[∀a. %a → int])]]}
@@ -177,6 +178,7 @@ example : LExpr.HasType { types := [[("m", t[∀a. %a → int])]]}
   · apply LExpr.HasType.tvar
     simp +ground
   · simp +ground
+    simp [Map.isEmpty, Bool.decEq]
   done
 
 example : LExpr.HasType {} esM[λ %0] t[∀a. %a → %a] := by

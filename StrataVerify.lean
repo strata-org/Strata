@@ -28,6 +28,7 @@ def parseOptions (args : List String) : Except Std.Format (Options × String) :=
       | opts, "--verbose" :: rest => go {opts with verbose := true} rest
       | opts, "--check" :: rest => go {opts with checkOnly := true} rest
       | opts, "--parse-only" :: rest => go {opts with parseOnly := true} rest
+      | opts, "--stop-on-first-error" :: rest => go {opts with stopOnFirstError := true} rest
       | opts, "--solver-timeout" :: secondsStr :: rest =>
          let n? := String.toNat? secondsStr
          match n? with
@@ -37,8 +38,16 @@ def parseOptions (args : List String) : Except Std.Format (Options × String) :=
       | _, [] => .error "StrataVerify requires a file as input"
       | _, args => .error f!"Unknown options: {args}"
 
-def usageMessage : String :=
-  "Usage: StrataVerify [--verbose] [--parse-only] [--check] [--solver-timeout <seconds>] <file.{boogie, csimp}.st>"
+def usageMessage : Std.Format :=
+  f!"Usage: StrataVerify [OPTIONS] <file.\{boogie, csimp}.st>{Std.Format.line}\
+  {Std.Format.line}\
+  Options:{Std.Format.line}\
+  {Std.Format.line}  \
+  --verbose                   Print extra information during analysis.{Std.Format.line}  \
+  --check                     Exit after Lambda type checking.{Std.Format.line}  \
+  --parse-only                Exit after DDM parsing and type checking.{Std.Format.line}  \
+  --stop-on-first-error       Exit after the first verification error.{Std.Format.line}  \
+  --solver-timeout <seconds>  Set the solver time limit per proof goal."
 
 def main (args : List String) : IO UInt32 := do
   let parseResult := parseOptions args

@@ -111,6 +111,8 @@ inductive Op : Type where
   ---------- SMTLib theory of unicode strings (`Strings`) ----------
   | str_length
   | str_concat
+  ---------- An operator to group triggers together
+  | triggers
   ---------- Core ADT operators with a trusted mapping to SMT ----------
   | option_get
 deriving Repr, DecidableEq, Inhabited, Hashable
@@ -161,6 +163,7 @@ def Op.mkName : Op → String
   | .zero_extend _ => "zero_extend"
   | .str_length    => "str.len"
   | .str_concat    => "str.++"
+  | .triggers      => "triggers"
   | .option_get    => "option.get"
 
 def Op.LT : Op → Op → Bool

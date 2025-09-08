@@ -541,20 +541,7 @@ def translateQuantifier
     -- Handle triggers if present
     let triggers ← match triggersa with
       | none => pure LExpr.noTrigger
-      | some tsa => -- pure LExpr.noTrigger
-        match tsa with
-        | .op {name := {dialect := _, name := "triggersAtom"}, args := #[tr]} =>
-            match tr with
-            | .op {name := {dialect := _, name := "trigger"}, args := #[tr2]} =>
-              match tr2 with
-              | .commaSepList #[uniqueTrigger] =>
-                translateExpr p xbindings uniqueTrigger
-              | _ =>
-              panic! s!"Currently Boogie supports only single-expression triggers, but got {repr tr2}"
-            | _ =>
-              panic! s!"Currently Boogie supports only one trigger, but got {repr tr}"
-        | _ =>
-          panic! s!"Currently Boogie supports only one trigger, but got {repr tsa}"
+      | some tsa => translateTriggers p xbindings tsa
 
     -- Create one quantifier constructor per variable
     -- Trigger attached to only the innermost quantifier
@@ -569,6 +556,32 @@ def translateQuantifier
       | _ => panic! s!"Expected monomorphic type in quantifier, got: {ty}"
 
     return xsArray.foldr buildQuantifier (init := (b, true)) |>.1
+
+partial
+def translateTriggerGroup (p: Program) (bindings : TransBindings) (arg : Arg) :
+  TransM Boogie.Expression.Expr := do
+  let .op op := arg
+    | TransM.error s!"translateTriggerGroup expected op, got {repr arg}"
+  match op.name, op.args with
+  | q`Boogie.trigger, #[tsa] => do
+   let ts  ← translateCommaSep (fun t => translateExpr p bindings t) tsa
+   return ts.foldl (fun g t => .app (.app addTriggerOp t) g) emptyTriggerGroupOp
+  | _, _ => panic! s!"Unexpected operator in trigger group"
+
+partial
+def translateTriggers (p: Program) (bindings : TransBindings) (arg : Arg) :
+  TransM Boogie.Expression.Expr := do
+  let .op op := arg
+    | TransM.error s!"translateTriggers expected op, got: {repr arg}"
+  match op.name, op.args with
+  | q`Boogie.triggersAtom, #[group] =>
+    let g ← translateTriggerGroup p bindings group
+    return .app (.app addTriggerGroupOp g) emptyTriggersOp
+  | q`Boogie.triggersPush, #[triggers, group] => do
+    let ts ← translateTriggers p bindings triggers
+    let g ← translateTriggerGroup p bindings group
+    return .app (.app addTriggerGroupOp g) ts
+  | _, _ => panic! s!"Unexpected operator in trigger"
 
 partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   TransM Boogie.Expression.Expr := do

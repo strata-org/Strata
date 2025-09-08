@@ -203,7 +203,7 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
                      Evaluated program: {p}\n\n"
         let _ ← dbg_trace msg
         results := results.push { obligation, result := .err msg }
-        break
+        if options.stopOnFirstError then break
       | .ok (terms, ctx) =>
         -- let ufids := (ctx.ufs.map (fun f => f.id))
         -- let ufs := f!"Uninterpreted Functions:{Format.line}\
@@ -230,14 +230,14 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
             dbg_trace f!"\n\nObligation {obligation.label}: could not be proved!\
                          \n\nResult: {result}\
                          {if options.verbose then prog else ""}"
-            break
+           if options.stopOnFirstError then break
         | .error e =>
            results := results.push { obligation, result := .err (toString e) }
            let prog := f!"\n\nEvaluated program:\n{p}"
            dbg_trace f!"\n\nObligation {obligation.label}: solver error!\
                         \n\nError: {e}\
                         {if options.verbose then prog else ""}"
-           break
+           if options.stopOnFirstError then break
     return results
 
 def verify (smtsolver : String) (program : Program) (options : Options := Options.default) : EIO Format VCResults := do

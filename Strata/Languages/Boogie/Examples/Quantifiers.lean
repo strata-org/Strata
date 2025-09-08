@@ -32,6 +32,8 @@ function g(x : int, y : int): int;
 
 axiom [f_pos]: forall x : int :: { f(x) } f(x) > 0;
 axiom [g_neg]: forall x : int, y : int :: { g(x, y) } x > 0 ==> g(x, y) < 0;
+axiom [f_and_g]: forall x : int, y : int :: { g(x, y) } { f(x) } g(x, y) < f(x);
+axiom [f_and_g2]: forall x : int, y : int :: { g(x, y), f(x) } g(x, y) < f(x);
 
 procedure TestTriggers(x : int) returns (r : int)
 spec {
@@ -39,6 +41,7 @@ spec {
 }
 {
   assert [trigger_assert]: f(x) > 0;
+  assert [multi_trigger_assert]: forall y : int :: g(x, y) < f(x);
   r := g(f(x), x);
 };
 #end
@@ -105,23 +108,40 @@ info: [Strata.Boogie] Type checking succeeded.
 VCs:
 Label: trigger_assert
 Assumptions:
+(f_and_g2, (∀ (∀ ((~Int.Lt ((~g %1) %0)) (~f %1)))))
+(f_and_g, (∀ (∀ ((~Int.Lt ((~g %1) %0)) (~f %1)))))
 (g_neg, (∀ (∀ ((~Bool.Implies ((~Int.Gt %1) #0)) ((~Int.Lt ((~g %1) %0)) #0)))))
 (f_pos, (∀ ((~Int.Gt (~f %0)) #0)))
 Proof Obligation:
 ((~Int.Gt (~f $__x0)) #0)
 
+Label: multi_trigger_assert
+Assumptions:
+(f_and_g2, (∀ (∀ ((~Int.Lt ((~g %1) %0)) (~f %1)))))
+(f_and_g, (∀ (∀ ((~Int.Lt ((~g %1) %0)) (~f %1)))))
+(g_neg, (∀ (∀ ((~Bool.Implies ((~Int.Gt %1) #0)) ((~Int.Lt ((~g %1) %0)) #0)))))
+(f_pos, (∀ ((~Int.Gt (~f %0)) #0)))
+Proof Obligation:
+(∀ ((~Int.Lt ((~g $__x0) %0)) (~f $__x0)))
+
 Label: f_and_g
 Assumptions:
+(f_and_g2, (∀ (∀ ((~Int.Lt ((~g %1) %0)) (~f %1)))))
+(f_and_g, (∀ (∀ ((~Int.Lt ((~g %1) %0)) (~f %1)))))
 (g_neg, (∀ (∀ ((~Bool.Implies ((~Int.Gt %1) #0)) ((~Int.Lt ((~g %1) %0)) #0)))))
 (f_pos, (∀ ((~Int.Gt (~f %0)) #0)))
 Proof Obligation:
 ((~Int.Lt ((~g (~f $__x0)) $__x0)) #0)
 
 Wrote problem to vcs/trigger_assert.smt2.
+Wrote problem to vcs/multi_trigger_assert.smt2.
 Wrote problem to vcs/f_and_g.smt2.
 ---
 info:
 Obligation: trigger_assert
+Result: verified
+
+Obligation: multi_trigger_assert
 Result: verified
 
 Obligation: f_and_g

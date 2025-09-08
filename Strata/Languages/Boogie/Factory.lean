@@ -23,14 +23,8 @@ def KnownLTys : LTys :=
    t[int],
    t[string],
    t[real],
-   /-
-   t[bv1],
-   t[bv8],
-   t[bv16],
-   t[bv32],
-   t[bv64],
-   ...
-   -/
+   t[Triggers],
+   t[TriggerGroup],
    -- Note: t[bv<n>] elaborates to (.forAll [] .tcons "bitvec" <n>).
    -- We can simply add the following here.
    t[∀n. bitvec n],
@@ -174,6 +168,34 @@ def mapUpdateFunc : LFunc BoogieIdent :=
      ]
    }
 
+def emptyTriggersFunc : LFunc BoogieIdent :=
+    { name := "Triggers.empty",
+      typeArgs := [],
+      inputs := [],
+      output := mty[Triggers],
+      concreteEval := none }
+
+def addTriggerGroupFunc : LFunc BoogieIdent :=
+    { name := "Triggers.addGroup",
+      typeArgs := [],
+      inputs := [("g", mty[TriggerGroup]), ("t", mty[Triggers])],
+      output := mty[Triggers],
+      concreteEval := none }
+
+def emptyTriggerGroupFunc : LFunc BoogieIdent :=
+    { name := "TriggerGroup.empty",
+      typeArgs := [],
+      inputs := [],
+      output := mty[TriggerGroup],
+      concreteEval := none }
+
+def addTriggerFunc : LFunc BoogieIdent :=
+    { name := "TriggerGroup.addTrigger",
+      typeArgs := ["a"],
+      inputs := [("x", mty[%a]), ("t", mty[TriggerGroup])],
+      output := mty[TriggerGroup],
+      concreteEval := none }
+
 open Lean in
 macro "ExpandBVOpFuncNames" "[" sizes:num,* "]" : term => do
   let mut allOps := #[]
@@ -241,6 +263,11 @@ def Factory : @Factory BoogieIdent := #[
   mapSelectFunc,
   mapUpdateFunc,
 
+  emptyTriggersFunc,
+  addTriggerGroupFunc,
+  emptyTriggerGroupFunc,
+  addTriggerFunc,
+
   bv8ConcatFunc,
   bv16ConcatFunc,
   bv32ConcatFunc,
@@ -260,6 +287,11 @@ DefBVOpFuncExprs [1, 8, 16, 32, 64]
 def bv8ConcatOp : Expression.Expr := bv8ConcatFunc.opExpr
 def bv16ConcatOp : Expression.Expr := bv16ConcatFunc.opExpr
 def bv32ConcatOp : Expression.Expr := bv32ConcatFunc.opExpr
+
+def emptyTriggersOp : Expression.Expr := emptyTriggersFunc.opExpr
+def addTriggerGroupOp : Expression.Expr := addTriggerGroupFunc.opExpr
+def emptyTriggerGroupOp : Expression.Expr :=  emptyTriggerGroupFunc.opExpr
+def addTriggerOp : Expression.Expr := addTriggerFunc.opExpr
 
 def intAddOp : Expression.Expr := intAddFunc.opExpr
 def intSubOp : Expression.Expr := intSubFunc.opExpr
@@ -290,5 +322,12 @@ def strConcatOp : Expression.Expr := strConcatFunc.opExpr
 def polyOldOp : Expression.Expr := polyOldFunc.opExpr
 def mapSelectOp : Expression.Expr := mapSelectFunc.opExpr
 def mapUpdateOp : Expression.Expr := mapUpdateFunc.opExpr
+
+def mkTriggerGroup (ts : List Expression.Expr) : Expression.Expr :=
+  ts.foldl (fun g t => .app (.app addTriggerOp t) g) emptyTriggerGroupOp
+
+def mkTriggerExpr (ts : List (List Expression.Expr)) : Expression.Expr :=
+  let groups := ts.map mkTriggerGroup
+  groups.foldl (fun gs g => .app (.app addTriggerGroupOp g) gs) emptyTriggersOp
 
 end Boogie
