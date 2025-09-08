@@ -78,18 +78,18 @@ end
 
 theorem eval_stmts_singleton
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvar P] [HasVal P] [HasBool P] [HasBoolNeg P] :
-  EvalStmts P (Cmd P) (EvalCmd P) δ δP σ₀ σ [cmd] σ' ↔
-  EvalStmt P (Cmd P) (EvalCmd P) δ δP σ₀ σ cmd σ' := by
+  EvalStmts P (Cmd P) (EvalCmd P) δ σ₀ σ [cmd] σ' ↔
+  EvalStmt P (Cmd P) (EvalCmd P) δ σ₀ σ cmd σ' := by
   constructor <;> intro Heval
-  cases Heval with | @stmts_some_sem _ _ _ _ _ σ1 _ _ Heval Hempty =>
+  cases Heval with | @stmts_some_sem _ _ _ _ σ1 _ _ Heval Hempty =>
     cases Hempty; assumption
   apply EvalStmts.stmts_some_sem Heval (EvalStmts.stmts_none_sem)
 
 theorem eval_stmts_concat
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasFvar P] [HasVal P] [HasBool P] [HasBoolNeg P] :
-  EvalStmts P (Cmd P) (EvalCmd P) δ δP σ₀ σ cmds1 σ' →
-  EvalStmts P (Cmd P) (EvalCmd P) δ δP σ₀ σ' cmds2 σ'' →
-  EvalStmts P (Cmd P) (EvalCmd P) δ δP σ₀ σ (cmds1 ++ cmds2) σ'' := by
+  EvalStmts P (Cmd P) (EvalCmd P) δ σ₀ σ cmds1 σ' →
+  EvalStmts P (Cmd P) (EvalCmd P) δ σ₀ σ' cmds2 σ'' →
+  EvalStmts P (Cmd P) (EvalCmd P) δ σ₀ σ (cmds1 ++ cmds2) σ'' := by
   intro Heval1 Heval2
   induction cmds1 generalizing cmds2 σ
   simp only [List.nil_append]
