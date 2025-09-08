@@ -49,6 +49,9 @@ for c in ast.AST.__subclasses__():
         decl = Python.add_syncat(name)
     Python_catmap[c] = decl()
 
+Python.add_syncat("opt_expr")
+some_expr = Python.add_op("some_expr", [ArgDecl("x", Python.expr())], Python.opt_expr())
+missing_expr = Python.add_op("missing_expr", [], Python.opt_expr())
 
 op_renamings = {
     'op': 'mk_op',
@@ -85,14 +88,16 @@ def translate_op(name : str, op : type, category : SyntaxCat):
                 assert origin is list
                 args = typing.get_args(tp)
                 assert len(args) == 1
-                cat = Init.Seq(Init.Option(as_atom_type(args[0])))
+                assert args[0] is ast.expr
+                cat = Init.Seq(Python.opt_expr())
             elif op is ast.Dict and f == 'keys':
                 assert isinstance(tp, types.GenericAlias)
                 origin = typing.get_origin(tp)
                 assert origin is list
                 args = typing.get_args(tp)
                 assert len(args) == 1
-                cat = Init.Seq(Init.Option(as_atom_type(args[0])))
+                assert args[0] is ast.expr
+                cat = Init.Seq(Python.opt_expr())
             elif isinstance(tp, types.UnionType):
                 args = typing.get_args(tp)
                 assert len(args) == 2
@@ -124,48 +129,62 @@ for (cat, cat_ref) in Python_catmap.items():
     else:
         translate_op(f"mk_{cat.__name__}", cat, cat_ref)
 
-def ast_to_arg(t : object, cat : SyntaxCat) -> strata.Arg:
+def ast_to_arg(v : object, cat : SyntaxCat) -> strata.Arg:
     match cat.ident:
         case Init.Option.ident:
-            if t is None:
+            if v is None:
                 return None
             else:
-                return strata.SomeArg(ast_to_arg(t, cat.args[0]))
+                return strata.SomeArg(ast_to_arg(v, cat.args[0]))
         case Python.int.ident:
-            assert isinstance(t, int)
-            if t >= 0:
-                return Python.IntPos(strata.NumLit(t))
+            assert isinstance(v, int)
+            if v >= 0:
+                return Python.IntPos(strata.NumLit(v))
             else:
-                return Python.IntNeg(strata.NumLit(-t))
+                return Python.IntNeg(strata.NumLit(-v))
         case Init.Str.ident:
-            assert isinstance(t, str)
-            return strata.StrLit(t)
+            assert isinstance(v, str)
+            return strata.StrLit(v)
         case Python.constant.ident:
-            if isinstance(t, bool):
-                if t:
+            if isinstance(v, bool):
+                if v:
                     return Python.ConTrue()
                 else:
                     return Python.ConFalse()
-            elif isinstance(t, int):
-                if t >= 0:
-                    return Python.ConPos(strata.NumLit(t))
+            elif isinstance(v, int):
+                if v >= 0:
+                    return Python.ConPos(strata.NumLit(v))
                 else:
-                    return Python.ConNeg(strata.NumLit(-t))
-            elif isinstance(t, str):
-                return Python.ConString(strata.StrLit(t))
-            elif t is None:
+                    return Python.ConNeg(strata.NumLit(-v))
+            elif isinstance(v, str):
+                return Python.ConString(strata.StrLit(v))
+            elif v is None:
                 return Python.ConNone()
-            elif isinstance(t, float):
-                return Python.ConFloat(strata.StrLit(str(t)))
-            elif isinstance(t, types.EllipsisType):
+            elif isinstance(v, float):
+                return Python.ConFloat(strata.StrLit(str(v)))
+            elif isinstance(v, types.EllipsisType):
                 return Python.ConEllipsis()
-            elif isinstance(t, bytes):
+            elif isinstance(v, bytes):
                 return Python.ConEllipsis() # FIXME
             else:
-                raise ValueError(f"Unsupported constant type {type(t)}")
+                raise ValueError(f"Unsupported constant type {type(v)}")
+        case Python.opt_expr.ident:
+            if v is None:
+                return Python.missing_expr()
+            else:
+                return Python.some_expr(ast_to_arg(v, Python.expr()))
+        case Init.Option.ident:
+            if v is None:
+                return None
+            else:
+                return strata.SomeArg(ast_to_arg(v, cat.args[0]))
+        case Init.Seq.ident:
+            assert isinstance(v, list)
+            arg_cat = cat.args[0]
+            return strata.Seq([ ast_to_arg(e, arg_cat) for e in v])
         case ident:
-            assert t is not None, f'None passed to {ident}'
-            return ast_to_op(t)
+            assert v is not None, f'None passed to {ident}'
+            return ast_to_op(v)
 
 def ast_to_op(t : object) -> strata.Operation:
     assert t is not None
@@ -174,22 +193,7 @@ def ast_to_op(t : object) -> strata.Operation:
     args = []
     for a in op.args:
         v = getattr(t, a.name)
-        cat = a.cat
-        match cat.ident:
-            case Init.Option.ident:
-                if v is None:
-                    r = None
-                else:
-                    r = strata.SomeArg(ast_to_arg(v, cat.args[0]))
-            case Init.Seq.ident:
-                assert isinstance(v, list)
-                arg_cat = cat.args[0]
-                if arg_cat.ident != Init.Option.ident:
-                    assert None not in v, f'{type(t).__name__}.{a.name}: : {v} passed to ast_to_arg {str(arg_cat)}'
-                r = strata.Seq([ ast_to_arg(e, arg_cat) for e in v])
-            case _:
-                r = ast_to_arg(v, cat)
-        args.append(r)
+        args.append(ast_to_arg(v, a.cat))
     return decl(*args)
 
 def parse_ast(ast : object) -> strata.Program:

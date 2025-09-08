@@ -46,6 +46,9 @@ class QualifiedIdent:
             assert '.' not in self.dialect
             assert '.' not in self.name
 
+    def __hash__(self) -> int:
+        return hash((self.dialect, self.name))
+
     def __str__(self) -> str:
         return f"{self.dialect}.{self.name}"
 
@@ -77,11 +80,11 @@ class TypeExpr:
 
 @dataclass
 class TypeIdent(TypeExpr):
-    name: QualifiedIdent
+    ident: QualifiedIdent
     args: list[TypeExpr]
 
     def to_ion(self):
-        v = self.name.to_ion()
+        v = self.ident.to_ion()
         return append_args(v, self.args)
 
 @dataclass
@@ -160,6 +163,9 @@ class SomeArg:
 
     def to_ion(self):
         return ["option", arg_to_ion(self.value)]
+
+    def __str__(self):
+        return f'SomeArg({self.value})'
 
 @dataclass
 class Seq:
@@ -516,9 +522,15 @@ class Dialect:
             r.append(d.to_ion())
         return r
 
+# FIXME: See if we can find way to keep this in sync with Lean implementation.
+# Perhaps we can have Lean implementation export the dialect as a Ion file and
+# ship it with Python library so we can read it in.
 Init : typing.Any = Dialect('Init')
 Init.add_syncat('Command')
+Init.add_syncat('Expr')
 Init.add_syncat('Num')
 Init.add_syncat('Str')
+Init.add_syncat('Type')
+Init.add_syncat('CommaSepList', ['x'])
 Init.add_syncat('Option', ['x'])
 Init.add_syncat('Seq', ['x'])

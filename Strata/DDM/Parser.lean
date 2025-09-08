@@ -703,11 +703,25 @@ def add (ctx : ParsingContext) (cat : QualifiedIdent) (p : Parser) : ParsingCont
   { fixedParsers := ctx.fixedParsers.insert cat p }
 
 /-- Parser function for given syntax category -/
-def catParser (ctx : ParsingContext) (cat : QualifiedIdent) : Parser :=
+def atomCatParser (ctx : ParsingContext) (cat : QualifiedIdent) : Parser :=
   if let some p := ctx.fixedParsers[cat]? then
     p
   else
     dynamicParser cat
+
+/-- Parser function for given syntax category -/
+def catParser (ctx : ParsingContext) (cat : SyntaxCat) : Except SyntaxCat Parser :=
+  match cat with
+  | .app (.atom (q`Init.CommaSepBy)) c =>
+    (sepByNoAntiquot · (symbolNoAntiquot ",")) <$> catParser ctx c
+  | .app (.atom (q`Init.Option)) c =>
+    optionalNoAntiquot <$> catParser ctx c
+  | .app (.atom (q`Init.Seq)) c =>
+    manyNoAntiquot <$> catParser ctx c
+  | .atom c =>
+    .ok (atomCatParser ctx c)
+  | c =>
+    .error c
 
 /-
 This walks the SyntaxDefAtomParser and prepends extracted parser to state.
@@ -715,36 +729,30 @@ This walks the SyntaxDefAtomParser and prepends extracted parser to state.
 This is essentially a right-to-left fold and is implemented so that the parser starts with
 the first symbol.
 -/
-private def prependSyntaxDefAtomParser [Inhabited α] (ctx : ParsingContext) (argDecls : ArgDecls) (prepend : Parser -> α → α) (o : SyntaxDefAtom) (r : α) : α :=
+private def prependSyntaxDefAtomParser (ctx : ParsingContext) (argDecls : ArgDecls) (o : SyntaxDefAtom) (r : Parser) : Parser :=
   match o with
   | .ident v prec => Id.run do
     let .isTrue lt := inferInstanceAs (Decidable (v < argDecls.size))
       | return panic! s!"Invalid ident index {v} in bindings {eformat argDecls}"
     let addParser (p : Parser) :=
       let q : Parser := Lean.Parser.adaptCacheableContext ({ · with prec }) p
-      prepend q r
-    match argDecls[v].kind.categoryOf with
-    | .app (.atom (q`Init.CommaSepBy)) (.atom c) =>
-      addParser <| sepByNoAntiquot (catParser ctx c) (symbolNoAntiquot ",")
-    | .app (.atom (q`Init.Option)) (.atom c) =>
-      addParser <| optionalNoAntiquot (catParser ctx c)
-    | .app (.atom (q`Init.Seq)) (.atom c) =>
-      addParser <| manyNoAntiquot (catParser ctx c)
-    | .atom c =>
-      addParser <| catParser ctx c
-    | c =>
+      q >> r
+    match catParser ctx argDecls[v].kind.categoryOf with
+    | .ok p =>
+      addParser p
+    | .error c =>
       panic! s!"Category '{eformat c}' is not supported."
   | .str l =>
     let l := l.trim
     if l.isEmpty then
       r
     else
-      prepend (symbolNoAntiquot l) r
+      symbolNoAntiquot l >> r
   | .indent _ p =>
-    p.attach.foldr (init := r) fun ⟨e, _⟩ r => prependSyntaxDefAtomParser ctx argDecls prepend e r
+    p.attach.foldr (init := r) fun ⟨e, _⟩ r => prependSyntaxDefAtomParser ctx argDecls e r
 
 private def liftToKind (ctx : ParsingContext) (o : List SyntaxDefAtom) (argDecls : ArgDecls) : Parser :=
-  o.foldr (init := skip) (prependSyntaxDefAtomParser ctx argDecls (· >> ·))
+  o.foldr (init := skip) (prependSyntaxDefAtomParser ctx argDecls)
 
 def opSyntaxParser (ctx : ParsingContext)
                    (category : QualifiedIdent)
