@@ -33,7 +33,6 @@ class HasBool (P : PureExpr) where
 
 class HasBoolNeg (P : PureExpr) [HasBool P] where
   neg : P.Expr → P.Expr
-  wf : neg HasBool.tt = HasBool.ff ∧ neg HasBool.ff = HasBool.tt
 
 class HasFvar (P : PureExpr) where
   mkFvar : P.Ident → P.Expr

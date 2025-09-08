@@ -43,8 +43,6 @@ instance : HasBoolNeg Boogie.Expression where
   | Boogie.true => Boogie.false
   | Boogie.false => Boogie.true
   | _ => panic! "neg expects either tt or ff"
-  wf := by
-    simp [HasBool.tt, HasBool.ff, Boogie.true, Boogie.false, Lambda.LMonoTy.bool]
 
 abbrev BoogieEval := SemanticEval Expression
 abbrev BoogieStore := SemanticStore Expression
