@@ -29,10 +29,10 @@ strata check "dialect_dir/Python.dialect.st.ion"
 
 The `parse` subcommand will translate a Python file into a Strata file.
 
-To translate `sample.py` into `sample.python.st.ion`, run the following:
+As an example, we should using strata.gen to translate `strata/base.py` into Strata below:
 
 ```
-python -m strata.gen parse sample.py sample.python.st.ion
+python -m strata.gen parse strata/base.py base.python.st.ion
 ```
 
 This can be checked using the Strata CLI tools:
