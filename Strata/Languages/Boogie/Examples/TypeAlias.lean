@@ -83,6 +83,7 @@ Label: fooAssertion
 Assumptions:
 (fooConst1_value, (~fooConst1 == ~fooVal))
 (fooConst2_value, (~fooConst2 == ~fooVal))
+
 Proof Obligation:
 (~fooConst1 == ~fooConst2)
 

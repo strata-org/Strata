@@ -59,10 +59,9 @@ info: [Strata.Boogie] Type checking succeeded.
 VCs:
 Label: assert_0
 Assumptions:
-(axiom_3, (∀ (∀ (∀ (((~select (((~update %2) %1) %0)) %1) == %0)))))
-(axiom_2, (∀ (∀ (∀ (∀ ((~Bool.Implies (~Bool.Not (%2 == %1))) (((~select %3) %2) == ((~select (((~update %3) %1) %0)) %2))))))))
-(axiom_1, (∀ (∀ (∀ (((~select (((~update %2) %1) %0)) %1) == %0)))))
+
 (axiom_0, (∀ (∀ (∀ (∀ ((~Bool.Implies (~Bool.Not (%2 == %1))) (((~select %3) %2) == ((~select (((~update %3) %1) %0)) %2))))))))
+(axiom_1, (∀ (∀ (∀ (((~select (((~update %2) %1) %0)) %1) == %0))))) (axiom_2, (∀ (∀ (∀ (∀ ((~Bool.Implies (~Bool.Not (%2 == %1))) (((~select %3) %2) == ((~select (((~update %3) %1) %0)) %2)))))))) (axiom_3, (∀ (∀ (∀ (((~select (((~update %2) %1) %0)) %1) == %0)))))
 Proof Obligation:
 (((~select ((~select (((~update $__h0) $__ref1) (((~update ((~select $__h0) $__ref1)) $__field2) ((~Int.Add ((~select ((~select $__h0) $__ref1)) $__field2)) #1)))) $__ref1)) $__field2) == ((~Int.Add ((~select ((~select $__h0) $__ref1)) $__field2)) #1))
 
