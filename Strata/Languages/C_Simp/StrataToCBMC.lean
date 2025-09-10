@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Backends.CBMC.JSONUtils
+import Strata.Backends.CBMC.JsonUtils
 import Strata.DL.Util.Map
 import Strata.Languages.C_Simp.C_Simp
 import Strata.Languages.C_Simp.Verify
@@ -37,7 +37,7 @@ int procedure simpleTest (x: int, y: int)
 
 #end
 
-open CProverJSON Lean
+open CProverJson Lean
 
 open Strata.C_Simp in
 def SimpleTestEnvAST := TransM.run (translateProgram (SimpleTestEnv.commands))
@@ -58,7 +58,7 @@ structure LambdaExpr where
   sub : Array Json
   deriving FromJson, ToJson
 
-instance : ToJson (Map String CProverJSON.CBMCSymbol) where
+instance : ToJson (Map String CProverJson.CBMCSymbol) where
   toJson m := Json.mkObj (m.map fun (k, v) => (k, toJson v))
 
 -- Convert LExpr to CBMC JSON format for contracts
@@ -98,7 +98,7 @@ def lexprToCBMC (expr : Strata.C_Simp.Expression.Expr) (functionName : String) :
     ]
   | _ => panic! "Unimplemented"
 
-def createContractSymbolFromAST (func : Strata.C_Simp.Function) : CProverJSON.CBMCSymbol :=
+def createContractSymbolFromAST (func : Strata.C_Simp.Function) : CProverJson.CBMCSymbol :=
   let location : Location := {
     id := "",
     namedSub := some (Json.mkObj [
@@ -351,7 +351,7 @@ partial def stmtToJson (e : Strata.C_Simp.Statement) (loc: SourceLoc) : Json :=
   | _ => panic! "Unimplemented"
 end
 
-def createImplementationSymbolFromAST (func : Strata.C_Simp.Function) : CProverJSON.CBMCSymbol :=
+def createImplementationSymbolFromAST (func : Strata.C_Simp.Function) : CProverJson.CBMCSymbol :=
   let location : Location := {
     namedSub := some (Json.mkObj [
       ("file", Json.mkObj [("id", "from_andrew.c")]),
@@ -413,7 +413,7 @@ def testSymbols : String := Id.run do
   let zSymbol := createLocalSymbol "z" "simpleTest" defaultConfig
 
   -- Build symbol map
-  let mut m : Map String CProverJSON.CBMCSymbol := Map.empty
+  let mut m : Map String CProverJson.CBMCSymbol := Map.empty
   m := m.insert s!"contract::{myFunc.name}" contractSymbol
   m := m.insert myFunc.name implSymbol
 

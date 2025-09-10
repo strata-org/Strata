@@ -5,11 +5,11 @@
 -/
 
 import Strata.Backends.CBMC.GOTO.Program
-import Strata.Backends.CBMC.StrataToCBMC
+import Strata.Backends.CBMC.JsonUtils
 
 namespace CProverGOTO
 open Lean
-open CProverJSON
+open CProverJson
 
 -------------------------------------------------------------------------------
 

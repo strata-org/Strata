@@ -18,7 +18,7 @@ def main (args : List String) : IO Unit := do
       | .ok arr =>
         let symbols := arr.filterMap fun j =>
           match Lean.fromJson? j with
-          | .ok (s : CProverJSON.CBMCSymbol) => some s
+          | .ok (s : CProverJson.CBMCSymbol) => some s
           | .error _ => none
         IO.println s!"Successfully parsed {symbols.size} symbols"
         for symbol in symbols do

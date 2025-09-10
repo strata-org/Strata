@@ -9,7 +9,7 @@ import Strata.DL.Util.Map
 
 -------------------------------------------------------------------------------
 
-namespace CProverJSON
+namespace CProverJson
 open Lean
 
 /-- Configuration for CBMC output -/
