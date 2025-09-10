@@ -200,10 +200,10 @@ def callElim (p : Boogie.Program)
 info: true
 -/
 #guard_msgs in
-#eval tests.all (λ (test, ans) ↦ (toString (callElim test)) == (toString ans))
+#eval tests.all (λ (test, ans) ↦ (toString (callElim test).eraseTypes) == (toString ans.eraseTypes))
 
--- #eval callElim tests[1].fst
--- #eval tests[1].snd
+--#eval callElim tests[1].fst
+--#eval tests[1].snd
 
 end CallElimExamples
 
