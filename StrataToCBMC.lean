@@ -5,7 +5,7 @@
 -/
 import Lean.Data.Json
 
-import Strata.Backends.CBMC.StrataToCBMC
+import Strata.Languages.C_Simp.StrataToCBMC
 
 def main (args : List String) : IO Unit := do
   match args with
@@ -18,7 +18,7 @@ def main (args : List String) : IO Unit := do
       | .ok arr =>
         let symbols := arr.filterMap fun j =>
           match Lean.fromJson? j with
-          | .ok (s : CBMCSymbol) => some s
+          | .ok (s : CProverJSON.CBMCSymbol) => some s
           | .error _ => none
         IO.println s!"Successfully parsed {symbols.size} symbols"
         for symbol in symbols do
