@@ -90,6 +90,7 @@ Label: c_0_eq_a
 Assumptions:
 (P_requires_3, (((~select $__a0) #0) == #0))
 (P_requires_4, (((~select $__c2) #0) == $__a0))
+
 Proof Obligation:
 (((~select $__c2) #0) == $__a0)
 
@@ -97,6 +98,7 @@ Label: c_1_eq_a
 Assumptions:
 (P_requires_3, (((~select $__a0) #0) == #0))
 (P_requires_4, (((~select $__c2) #0) == $__a0))
+
 Proof Obligation:
 (((~select (((~update $__c2) #1) $__a0)) #1) == $__a0)
 
@@ -104,6 +106,7 @@ Label: a0eq0
 Assumptions:
 (P_requires_3, (((~select $__a0) #0) == #0))
 (P_requires_4, (((~select $__c2) #0) == $__a0))
+
 Proof Obligation:
 (((~select $__a0) #0) == #0)
 
@@ -111,6 +114,7 @@ Label: a1eq1
 Assumptions:
 (P_requires_3, (((~select $__a0) #0) == #0))
 (P_requires_4, (((~select $__c2) #0) == $__a0))
+
 Proof Obligation:
 (((~select (((~update $__a0) #1) #1)) #1) == #1)
 
@@ -118,6 +122,7 @@ Label: a0eq1
 Assumptions:
 (P_requires_3, (((~select $__a0) #0) == #0))
 (P_requires_4, (((~select $__c2) #0) == $__a0))
+
 Proof Obligation:
 (((~select (((~update (((~update $__a0) #1) #1)) #0) #1)) #0) == #1)
 
@@ -125,6 +130,7 @@ Label: a0neq2
 Assumptions:
 (P_requires_3, (((~select $__a0) #0) == #0))
 (P_requires_4, (((~select $__c2) #0) == $__a0))
+
 Proof Obligation:
 (~Bool.Not (((~select (((~update (((~update $__a0) #1) #1)) #0) #1)) #0) == #2))
 
@@ -132,6 +138,7 @@ Label: bTrueEqTrue
 Assumptions:
 (P_requires_3, (((~select $__a0) #0) == #0))
 (P_requires_4, (((~select $__c2) #0) == $__a0))
+
 Proof Obligation:
 (((~select (((~update $__b1) #true) #-1)) #true) == #-1)
 
@@ -139,6 +146,7 @@ Label: mix
 Assumptions:
 (P_requires_3, (((~select $__a0) #0) == #0))
 (P_requires_4, (((~select $__c2) #0) == $__a0))
+
 Proof Obligation:
 (((~select (((~update (((~update $__a0) #1) #1)) #0) #1)) #1) == (~Int.Neg ((~select (((~update $__b1) #true) #-1)) #true)))
 

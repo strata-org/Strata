@@ -31,12 +31,14 @@ info: [Strata.Boogie] Type checking succeeded.
 VCs:
 Label: a
 Assumptions:
+
 (mapAllValues0, (∀ (∀ (((~select %1) %0) == #0))))
 Proof Obligation:
 (((~select $__mArg0) $__kArg1) == #0)
 
 Label: Update_ensures_0
 Assumptions:
+
 (mapAllValues0, (∀ (∀ (((~select %1) %0) == #0))))
 Proof Obligation:
 (((~select $__mArg0) $__kArg1) == #0)

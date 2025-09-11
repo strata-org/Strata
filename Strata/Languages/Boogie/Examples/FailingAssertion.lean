@@ -56,6 +56,7 @@ VCs:
 Label: assert_0
 Assumptions:
 (P_requires_1, (((~select $__a0) #0) == #0))
+
 Proof Obligation:
 (((~select $__a0) #0) == #1)
 

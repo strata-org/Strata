@@ -51,6 +51,8 @@ info: [Strata.Boogie] Type checking succeeded.
 VCs:
 Label: post
 Assumptions:
+
+
 Proof Obligation:
 #true
 

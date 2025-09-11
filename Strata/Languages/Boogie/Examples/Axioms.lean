@@ -32,6 +32,12 @@ procedure P() returns (ret : int)
   ret := f(x + y);
 };
 
+procedure P2() returns ()
+{
+  assert [use_a1_again]: y == 2;
+  assert [use_a2_again]: f(y) > y;
+};
+
 #end
 
 /--
@@ -41,28 +47,52 @@ info: [Strata.Boogie] Type checking succeeded.
 VCs:
 Label: use_a1_a2
 Assumptions:
-(f1, (∀ ((~Int.Gt (~f %0)) %0)))
-(a2, (~y == #2))
+
 (a1, (~x == #5))
+(a2, (~y == #2)) (f1, (∀ ((~Int.Gt (~f %0)) %0)))
 Proof Obligation:
 ((~Int.Gt ~x) ~y)
 
 Label: use_f1
 Assumptions:
-(f1, (∀ ((~Int.Gt (~f %0)) %0)))
-(a2, (~y == #2))
+
 (a1, (~x == #5))
+(a2, (~y == #2)) (f1, (∀ ((~Int.Gt (~f %0)) %0)))
 Proof Obligation:
 ((~Int.Gt (~f ((~Int.Add ~x) ~y))) #7)
 
+Label: use_a1_again
+Assumptions:
+
+(a1, (~x == #5))
+(a2, (~y == #2)) (f1, (∀ ((~Int.Gt (~f %0)) %0)))
+Proof Obligation:
+(~y == #2)
+
+Label: use_a2_again
+Assumptions:
+
+(a1, (~x == #5))
+(a2, (~y == #2)) (f1, (∀ ((~Int.Gt (~f %0)) %0)))
+Proof Obligation:
+((~Int.Gt (~f ~y)) ~y)
+
 Wrote problem to vcs/use_a1_a2.smt2.
 Wrote problem to vcs/use_f1.smt2.
+Wrote problem to vcs/use_a1_again.smt2.
+Wrote problem to vcs/use_a2_again.smt2.
 ---
 info:
 Obligation: use_a1_a2
 Result: verified
 
 Obligation: use_f1
+Result: verified
+
+Obligation: use_a1_again
+Result: verified
+
+Obligation: use_a2_again
 Result: verified
 -/
 #guard_msgs in
