@@ -72,9 +72,9 @@ assert [a1eq1] ((((~select : (arrow (Map int int) (arrow int int))) a) (#1 : int
 a := ((((~update : (arrow (Map int int) (arrow int (arrow int (Map int int))))) a) (#0 : int)) (#1 : int))
 assert [a0eq1] ((((~select : (arrow (Map int int) (arrow int int))) a) (#0 : int)) == (#1 : int))
 assert [a0neq2] (~Bool.Not ((((~select : (arrow (Map int int) (arrow int int))) a) (#0 : int)) == (#2 : int)))
-b := ((((~update : (arrow (Map bool int) (arrow bool (arrow int (Map bool int))))) b) (#true : bool)) (~Int.Neg (#1 : int)))
-assert [bTrueEqTrue] ((((~select : (arrow (Map bool int) (arrow bool int))) b) (#true : bool)) == (~Int.Neg (#1 : int)))
-assert [mix] ((((~select : (arrow (Map int int) (arrow int int))) a) (#1 : int)) == (~Int.Neg (((~select : (arrow (Map bool int) (arrow bool int))) b) (#true : bool))))
+b := ((((~update : (arrow (Map bool int) (arrow bool (arrow int (Map bool int))))) b) (#true : bool)) ((~Int.Neg : (arrow int int)) (#1 : int)))
+assert [bTrueEqTrue] ((((~select : (arrow (Map bool int) (arrow bool int))) b) (#true : bool)) == ((~Int.Neg : (arrow int int)) (#1 : int)))
+assert [mix] ((((~select : (arrow (Map int int) (arrow int int))) a) (#1 : int)) == ((~Int.Neg : (arrow int int)) (((~select : (arrow (Map bool int) (arrow bool int))) b) (#true : bool))))
 
 Errors: #[]
 -/

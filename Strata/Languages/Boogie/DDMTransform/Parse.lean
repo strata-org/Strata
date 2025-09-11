@@ -108,10 +108,27 @@ fn bvor (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a "|" b;
 fn bvxor (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a "^" b;
 fn bvshl (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a "<<" b;
 fn bvushr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a ">>" b;
+fn bvsshr (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a ">>s" b;
+fn bvsdiv (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a "sdiv" b;
+fn bvsmod (tp : Type, a : tp, b : tp) : tp => @[prec(20), leftassoc] a "smod" b;
+fn bvslt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a "<s" b;
+fn bvsle (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a "<=s" b;
+fn bvsgt (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a ">s" b;
+fn bvsge (tp : Type, a : tp, b : tp) : bool => @[prec(20), leftassoc] a ">=s" b;
 
 fn bvconcat8 (a : bv8, b : bv8) : bv16 => "bvconcat{8}{8}" "(" a "," b ")";
 fn bvconcat16 (a : bv16, b : bv16) : bv32 => "bvconcat{16}{16}" "(" a "," b ")";
 fn bvconcat32 (a : bv32, b : bv32) : bv64 => "bvconcat{32}{32}" "(" a "," b ")";
+
+fn bvextract_7_7 (a : bv8) : bv1 => "bvextract{7}{7}{8}" "(" a ")";
+fn bvextract_15_15 (a : bv16) : bv1 => "bvextract{15}{15}{16}" "(" a ")";
+fn bvextract_31_31 (a : bv32) : bv1 => "bvextract{31}{31}{32}" "(" a ")";
+fn bvextract_7_0_16 (a : bv16) : bv8 => "bvextract{7}{0}{16}" "(" a ")";
+fn bvextract_7_0_32 (a : bv32) : bv8 => "bvextract{7}{0}{32}" "(" a ")";
+fn bvextract_15_0_32 (a : bv32) : bv16 => "bvextract{15}{0}{32}" "(" a ")";
+fn bvextract_7_0_64 (a : bv64) : bv8 => "bvextract{7}{0}{64}" "(" a ")";
+fn bvextract_15_0_64 (a : bv64) : bv16 => "bvextract{15}{0}{64}" "(" a ")";
+fn bvextract_31_0_64 (a : bv64) : bv32 => "bvextract{31}{0}{64}" "(" a ")";
 
 category TriggerGroup;
 category Triggers;
