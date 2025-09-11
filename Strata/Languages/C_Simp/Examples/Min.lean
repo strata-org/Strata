@@ -67,7 +67,6 @@ Assumptions:
 Proof Obligation:
 #true
 
-Wrote problem to vcs/post.smt2.
 ---
 info:
 Obligation: post
