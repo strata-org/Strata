@@ -1,0 +1,24 @@
+Successfully parsed.
+assert_0: verified
+assert_1: failed
+CEx: 
+assert_2: verified
+assert_3: failed
+CEx: 
+assert_4: failed
+CEx: ($__x0, 3)
+assert_5: failed
+CEx: ($__x0, 3)
+assert_6: failed
+CEx: ($__x1, 3)
+assert_7: failed
+CEx: ($__x1, 3)
+assert_8: failed
+CEx: ($__x2, 3)
+assert_9: failed
+CEx: ($__x2, 3)
+assert_10: failed
+CEx: ($__x3, 3)
+assert_11: failed
+CEx: ($__x3, 3)
+Finished with 2 goals proved, 10 failed.

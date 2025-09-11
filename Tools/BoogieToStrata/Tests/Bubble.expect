@@ -1,0 +1,26 @@
+Successfully parsed.
+entry_invariant_1: verified
+arbitrary_iter_maintain_invariant_1: verified
+entry_invariant_1: verified
+BubbleSort_ensures_1: verified
+BubbleSort_ensures_2: verified
+BubbleSort_ensures_3: verified
+BubbleSort_ensures_4: verified
+entry_invariant_1: verified
+arbitrary_iter_maintain_invariant_1: verified
+entry_invariant_1: verified
+entry_invariant_10: verified
+entry_invariant_1: verified
+arbitrary_iter_maintain_invariant_1: verified
+entry_invariant_1: verified
+entry_invariant_10: verified
+arbitrary_iter_maintain_invariant_10: verified
+entry_invariant_1: verified
+arbitrary_iter_maintain_invariant_1: verified
+entry_invariant_1: verified
+arbitrary_iter_maintain_invariant_1: verified
+BubbleSort_ensures_1: verified
+BubbleSort_ensures_2: verified
+BubbleSort_ensures_3: verified
+BubbleSort_ensures_4: verified
+Proved all 24 goals.
