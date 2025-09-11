@@ -1,3 +1,7 @@
+# Copyright Strata Contributors
+#
+#  SPDX-License-Identifier: Apache-2.0 OR MIT
+
 """
 Strata Python dialect and `parse_ast` function for creating Strata programs.
 """

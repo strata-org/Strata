@@ -1,23 +1,14 @@
-copyright_header = """/-
-  Copyright Strata Contributors
-
-  SPDX-License-Identifier: Apache-2.0 OR MIT
--/"""
-
-
-def file_starts_with_header(file_name: str) -> bool:
-    with open(file_name, "r") as f:
-        contents = f.read()
-    return contents.startswith(copyright_header)
-
-import os
 import sys
 from pathlib import Path
 
+def file_starts_with_header(path : Path, header: str) -> bool:
+    with path.open("r") as f:
+        contents = f.read()
+    return contents.startswith(header)
 
-def check_all_lean_files(directory_path: str) -> bool:
+def check_all_source_files(directory: Path, ext: str, header: str) -> bool:
     """
-    Recursively check all .lean files in the given directory for copyright headers.
+    Recursively check all files with extension `ext` in the given directory for copyright headers.
     
     Args:
         directory_path: Path to the directory to check
@@ -25,44 +16,54 @@ def check_all_lean_files(directory_path: str) -> bool:
     Returns:
         True if all files have the correct header, False otherwise
     """
-    directory = Path(directory_path)
-    
+
     if not directory.exists():
-        print(f"Error: Directory '{directory_path}' does not exist")
+        print(f"Error: Directory '{directory}' does not exist")
         return False
-    
+
     if not directory.is_dir():
-        print(f"Error: '{directory_path}' is not a directory")
+        print(f"Error: '{directory}' is not a directory")
         return False
-    
+
     # Find all .lean files recursively
-    lean_files = list(directory.rglob("*.lean"))
-    
-    if not lean_files:
-        print(f"No .lean files found in '{directory_path}'")
+    source_files = list(directory.rglob(f"*{ext}"))
+
+    if not source_files:
+        print(f"No {ext} files found in '{directory}'")
         return True
-    
-    print(f"Checking {len(lean_files)} .lean files in '{directory_path}'...")
-    
+
+    print(f"Checking {len(source_files)} {ext} files in '{directory}'...")
+
     files_without_header = []
-    
-    for lean_file in lean_files:
+
+    for path in source_files:
         try:
-            if not file_starts_with_header(str(lean_file)):
-                files_without_header.append(lean_file)
+            if not file_starts_with_header(path, header):
+                files_without_header.append(path)
         except Exception as e:
-            print(f"Error reading file '{lean_file}': {e}")
-            files_without_header.append(lean_file)
-    
+            print(f"Error reading file '{path}': {e}")
+            files_without_header.append(path)
+
     if files_without_header:
         print(f"\nFound {len(files_without_header)} files without proper copyright header:")
         for file_path in files_without_header:
             print(f"  - {file_path}")
         return False
     else:
-        print("All .lean files have the correct copyright header!")
+        print(f"All {ext} files have the correct copyright header!")
         return True
 
+lean_copyright_header = """/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/"""
+
+python_copyright_header = """\
+# Copyright Strata Contributors
+#
+#  SPDX-License-Identifier: Apache-2.0 OR MIT
+"""
 
 def main():
     """Main function to handle command line arguments"""
@@ -70,16 +71,18 @@ def main():
         print("Usage: python check_copyright_headers.py <directory_path>")
         print("Example: python check_copyright_headers.py /path/to/lean/project")
         sys.exit(1)
-    
-    directory_path = sys.argv[1]
-    success = check_all_lean_files(directory_path)
-    
+
+    directory_path = Path(sys.argv[1])
+    success = True
+
+    if not check_all_source_files(directory_path, ext=".lean", header=lean_copyright_header):
+        success = False
+
+    if not check_all_source_files(directory_path / 'Tools', ext=".py", header=python_copyright_header):
+        success = False
+
     # Exit with appropriate code
     sys.exit(0 if success else 1)
 
-
 if __name__ == "__main__":
     main()
-
-
-
