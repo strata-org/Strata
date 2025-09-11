@@ -51,13 +51,12 @@ match ine with
     | .ite c t e => .ite (ToBoogieIdent c) (ToBoogieIdent t) (ToBoogieIdent e)
     | .eq e1 e2 => .eq (ToBoogieIdent e1) (ToBoogieIdent e2)
 
+
 private def BVOpNames :=
   ["Neg", "Add", "Sub", "Mul", "UDiv", "UMod", "SDiv", "SMod",
    "Not", "And", "Or", "Xor", "Shl", "UShr", "SShr",
    "ULt", "ULe", "UGt", "UGe",
    "SLt", "SLe", "SGt", "SGe"]
-
-private def BVCompNames := ["Lt", "Le", "Gt", "Ge"]
 
 private def BVOpAritys :=
   ["unaryOp", "binaryOp", "binaryOp", "binaryOp", "binaryOp", "binaryOp", "binaryOp", "binaryOp",
@@ -73,13 +72,13 @@ info: [("Neg", "unaryOp"), ("Add", "binaryOp"), ("Sub", "binaryOp"), ("Mul", "bi
   ("SLt", "binaryPredicate"), ("SLe", "binaryPredicate"), ("SGt", "binaryPredicate"), ("SGe", "binaryPredicate")]
 -/
 #guard_msgs in
-#eval List.zip (BVOpNames ++ BVCompNames) BVOpAritys
+#eval List.zip BVOpNames BVOpAritys
 
 open Lean Elab Command in
 elab "ExpandBVOpFuncDefs" "[" sizes:num,* "]" : command => do
   for size in sizes.getElems do
     let s := size.getNat.repr
-    for (op, arity) in List.zip (BVOpNames ++ BVCompNames) BVOpAritys do
+    for (op, arity) in List.zip BVOpNames BVOpAritys do
       let funcName := mkIdent (.str .anonymous s!"bv{s}{op}Func")
       let funcArity := mkIdent (.str (.str .anonymous "Lambda") arity)
       let opName := Syntax.mkStrLit s!"Bv{s}.{op}"
