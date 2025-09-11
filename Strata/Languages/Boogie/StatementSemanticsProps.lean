@@ -40,17 +40,17 @@ theorem TouchVarsEmpty :
   intros H; cases H <;> simp
 
 theorem EvalStmtsEmpty {P : PureExpr} {Cmd : Type} {EvalCmd : EvalCmdParam P Cmd}
-  { σ σ' σ₀: SemanticStore P } { δ : SemanticEval P } { δP: SemanticEvalBool P }
+  { σ σ' σ₀: SemanticStore P } { δ : SemanticEval P }
   [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasBoolNeg P] :
-  EvalStmts P Cmd EvalCmd δ δP σ₀ σ ([]: (List (Stmt P Cmd))) σ' → σ = σ' := by
+  EvalStmts P Cmd EvalCmd δ σ₀ σ ([]: (List (Stmt P Cmd))) σ' → σ = σ' := by
   intros H; cases H <;> simp
 
 theorem EvalStatementsEmpty :
-  EvalStatements π δ δP σ₀ σ [] σ' → σ = σ' := by
+  EvalStatements π δ σ₀ σ [] σ' → σ = σ' := by
   intros H; cases H <;> simp
 
 theorem EvalStatementsContractEmpty :
-  EvalStatementsContract π δ δP σ₀ σ [] σ' → σ = σ' := by
+  EvalStatementsContract π δ σ₀ σ [] σ' → σ = σ' := by
   intros H; cases H <;> simp
 
 theorem UpdateStateNotDefMonotone
@@ -1311,10 +1311,10 @@ theorem ReadValuesSubstStores :
     . exact ih Ht Ht'
 
 theorem EvalStatementsContractApp' :
-  EvalStatementsContract π δ δP σ₀ σ (ss₁ ++ ss₂) σ'' →
+  EvalStatementsContract π δ σ₀ σ (ss₁ ++ ss₂) σ'' →
   ∃ σ',
-    EvalStatementsContract π δ δP σ₀ σ ss₁ σ' ∧
-    EvalStatementsContract π δ δP σ₀ σ' ss₂ σ'' := by
+    EvalStatementsContract π δ σ₀ σ ss₁ σ' ∧
+    EvalStatementsContract π δ σ₀ σ' ss₂ σ'' := by
   intros Heval
   induction ss₁ generalizing σ <;> simp_all
   case nil =>
@@ -1332,9 +1332,9 @@ theorem EvalStatementsContractApp' :
     exact EvalStmts.stmts_some_sem Hh Heval.1
 
 theorem EvalStatementsContractApp :
-  EvalStatementsContract π δ δP σ₀ σ ss₁ σ' →
-  EvalStatementsContract π δ δP σ₀ σ' ss₂ σ'' →
-  EvalStatementsContract π δ δP σ₀ σ (ss₁ ++ ss₂) σ'' := by
+  EvalStatementsContract π δ σ₀ σ ss₁ σ' →
+  EvalStatementsContract π δ σ₀ σ' ss₂ σ'' →
+  EvalStatementsContract π δ σ₀ σ (ss₁ ++ ss₂) σ'' := by
   intros Heval1 Heval2
   induction ss₁ generalizing σ <;> simp_all
   case nil =>
@@ -1349,16 +1349,16 @@ theorem EvalStatementsContractApp :
       exact Heval'
 
 theorem EvalStatementsApp :
-  EvalStatements π δ δP σ₀ σ ss₁ σ' →
-  EvalStatements π δ δP σ₀ σ' ss₂ σ'' →
-  EvalStatements π δ δP σ₀ σ (ss₁ ++ ss₂) σ'' := by
+  EvalStatements π δ σ₀ σ ss₁ σ' →
+  EvalStatements π δ σ₀ σ' ss₂ σ'' →
+  EvalStatements π δ σ₀ σ (ss₁ ++ ss₂) σ'' := by
   apply Nat.strongRecOn
     (motive := λ m ↦
       ∀ ss₁ ss₂ σ σ' σ'',
       sizeOf (ss₁ ++ ss₂) = m →
-      EvalStatements π δ δP σ₀ σ ss₁ σ' →
-      EvalStatements π δ δP σ₀ σ' ss₂ σ'' →
-      EvalStatements π δ δP σ₀ σ (ss₁ ++ ss₂) σ'')
+      EvalStatements π δ σ₀ σ ss₁ σ' →
+      EvalStatements π δ σ₀ σ' ss₂ σ'' →
+      EvalStatements π δ σ₀ σ (ss₁ ++ ss₂) σ'')
     (sizeOf (ss₁ ++ ss₂))
   intros n ih ss₁ ss₂ σ σ' σ'' Hsize Heval1 Heval2
   . cases Heval1 with
@@ -1707,7 +1707,7 @@ theorem HavocVarsDefined :
 
 theorem EvalCmdDefMonotone :
   isDefined σ v →
-  EvalCmd Boogie.Expression δ δP σ₀ σ c σ' →
+  EvalCmd Boogie.Expression δ σ₀ σ c σ' →
   isDefined σ' v := by
   intros Hdef Heval
   cases Heval <;> try exact Hdef
@@ -1717,16 +1717,16 @@ theorem EvalCmdDefMonotone :
 
 theorem EvalCmdTouch
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasBoolNeg P] :
-  EvalCmd P δ δP σ₀ σ c σ' →
+  EvalCmd P δ σ₀ σ c σ' →
   TouchVars σ (HasVarsImp.touchedVars c) σ' := by
   intro Heval
   induction Heval <;> simp [HasVarsImp.touchedVars, Cmd.definedVars, Cmd.modifiedVars]
-  case eval_init x' δ σ x v σ' δP σ₀ e Hsm Hup Hwf =>
+  case eval_init x' δ σ x v σ' σ₀ e Hsm Hup Hwf =>
     apply TouchVars.init_some Hup
     constructor
-  case eval_set δ σ x v σ' δP σ₀ e Hsm Hup Hwf =>
+  case eval_set δ σ x v σ' σ₀ e Hsm Hup Hwf =>
     exact TouchVars.update_some Hup TouchVars.none
-  case eval_havoc x v σ' δP σ₀ e Hsm Hup Hwf =>
+  case eval_havoc x v σ' σ₀ e Hsm Hup Hwf =>
     exact TouchVars.update_some Hup TouchVars.none
   case eval_assert => exact TouchVars.none
   case eval_assume => exact TouchVars.none
@@ -1766,8 +1766,8 @@ theorem UpdateStatesTouchVars : UpdateStates σ vars modvals σ' → TouchVars �
     apply Hup2
 
 theorem EvalCmdRefinesContract :
-EvalCmd Expression δ δP σ₀ σ c σ' →
-EvalCommandContract π δ δP σ₀ σ (CmdExt.cmd c) σ' := by
+EvalCmd Expression δ σ₀ σ c σ' →
+EvalCommandContract π δ σ₀ σ (CmdExt.cmd c) σ' := by
 intros H; constructor; assumption
 
 theorem InvStoresUpdatedStateDisjRightMono :
@@ -2017,19 +2017,19 @@ NOTE:
   variables (that is, lhs ++ modifies)
 -/
 theorem EvalCallBodyRefinesContract :
-  ∀ {π δ δP σ₀ σ lhs n args σ' p},
+  ∀ {π δ σ₀ σ lhs n args σ' p},
   π n = .some p →
   p.spec.modifies = Imperative.HasVarsTrans.modifiedVarsTrans π p.body →
-  EvalCommand π δ δP σ₀ σ (CmdExt.call lhs n args) σ' →
-  EvalCommandContract π δ δP σ₀ σ (CmdExt.call lhs n args) σ' := by
-  intros π δ δP σ₀ σ lhs n args σ' p pFound modValid H
+  EvalCommand π δ σ₀ σ (CmdExt.call lhs n args) σ' →
+  EvalCommandContract π δ σ₀ σ (CmdExt.call lhs n args) σ' := by
+  intros π δ σ₀ σ lhs n args σ' p pFound modValid H
   cases H with
   | call_sem lkup Heval Hwfval Hwfvars Hwfb Hwf Hwf2 Hup Hhav Hpre Heval2 Hpost Hrd Hup2 =>
     sorry
 
 theorem EvalCommandRefinesContract :
-EvalCommand π δ δP σ₀ σ c σ' →
-EvalCommandContract π δ δP σ₀ σ c σ' := by
+EvalCommand π δ σ₀ σ c σ' →
+EvalCommandContract π δ σ₀ σ c σ' := by
   intros H
   cases H with
   | cmd_sem H => exact EvalCommandContract.cmd_sem H
@@ -2042,8 +2042,8 @@ EvalCommandContract π δ δP σ₀ σ c σ' := by
 /-- NOTE: should follow the same approach as `DetToNondetCorrect` to prove this
   mutually recursive theorem due to meta variable bug -/
 theorem EvalStmtsRefinesContract :
-  EvalStmts Expression Command (EvalCommand π) δ δP σ₀ σ ss σ' →
-  EvalStmts Expression Command (EvalCommandContract π) δ δP σ₀ σ ss σ' := by
+  EvalStmts Expression Command (EvalCommand π) δ σ₀ σ ss σ' →
+  EvalStmts Expression Command (EvalCommandContract π) δ σ₀ σ ss σ' := by
   intros Heval
   cases ss
   case nil =>
@@ -2063,8 +2063,8 @@ theorem EvalStmtsRefinesContract :
     all_goals simp_all <;> omega
 
 theorem EvalStmtRefinesContract :
-  EvalStmt Expression Command (EvalCommand π) δ δP σ₀ σ s σ' →
-  EvalStmt Expression Command (EvalCommandContract π) δ δP σ₀ σ s σ' := by
+  EvalStmt Expression Command (EvalCommand π) δ σ₀ σ s σ' →
+  EvalStmt Expression Command (EvalCommandContract π) δ σ₀ σ s σ' := by
   intros H
   cases H with
   | cmd_sem Hdef Heval =>
@@ -2075,12 +2075,12 @@ theorem EvalStmtRefinesContract :
     constructor
     cases Heval
     apply EvalStmtsRefinesContract <;> assumption
-  | ite_true_sem Hdef Heval =>
+  | ite_true_sem Hdef Hwf Heval =>
     cases Heval
     apply EvalStmt.ite_true_sem <;> try assumption
     constructor
     apply EvalStmtsRefinesContract <;> assumption
-  | ite_false_sem Hdef Heval =>
+  | ite_false_sem Hdef Hwf Heval =>
     cases Heval
     apply EvalStmt.ite_false_sem <;> try assumption
     constructor

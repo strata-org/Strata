@@ -45,7 +45,6 @@ instance : HasBoolNeg Boogie.Expression where
   | _ => panic! "neg expects either tt or ff"
 
 abbrev BoogieEval := SemanticEval Expression
-abbrev BoogieEvalBool := SemanticEvalBool Expression
 abbrev BoogieStore := SemanticStore Expression
 
 def WellFormedBoogieEvalCong (δ : BoogieEval) : Prop :=
@@ -175,12 +174,12 @@ def WellFormedBoogieEvalTwoState (δ : BoogieEval) (σ₀ σ : BoogieStore) : Pr
       -- Might not be needed if we assume all expressions are normalized
       (∀ e σ₀ σ, δ σ₀ σ e = δ σ₀ σ (normalizeOldExpr e))
 
-inductive EvalCommand : (String → Option Procedure)  → BoogieEval → BoogieEvalBool →
+inductive EvalCommand : (String → Option Procedure)  → BoogieEval →
   BoogieStore → BoogieStore → Command → BoogieStore → Prop where
-  | cmd_sem {π δ δP σ₀ σ c σ'} :
-    Imperative.EvalCmd (P:=Expression) δ δP σ₀ σ c σ' →
+  | cmd_sem {π δ σ₀ σ c σ'} :
+    Imperative.EvalCmd (P:=Expression) δ σ₀ σ c σ' →
     ----
-    EvalCommand π δ δP σ₀ σ (CmdExt.cmd c) σ'
+    EvalCommand π δ σ₀ σ (CmdExt.cmd c) σ'
 
   /-
   NOTE: If π is NOT the first implicit variable below, Lean complains as
@@ -193,13 +192,13 @@ inductive EvalCommand : (String → Option Procedure)  → BoogieEval → Boogie
   Here's a Zulip thread that can shed some light on this error message:
   https://leanprover-community.github.io/archive/stream/270676-lean4/topic/nested.20inductive.20datatypes.20parameters.20cannot.20contain.20local.20v.html
   -/
-  | call_sem {π δ σ₀ σ args vals oVals σA σAO δP σR n p modvals lhs σ'} :
+  | call_sem {π δ σ₀ σ args vals oVals σA σAO σR n p modvals lhs σ'} :
     π n = .some p →
     EvalExpressions (P:=Expression) δ σ₀ σ args vals →
     ReadValues σ lhs oVals →
     WellFormedSemanticEvalVal δ →
     WellFormedSemanticEvalVar δ →
-    WellFormedSemanticEvalBool δ δP →
+    WellFormedSemanticEvalBool δ →
     WellFormedBoogieEvalTwoState δ σ₀ σ →
 
     isDefinedOver (HasVarsTrans.allVarsTrans π) σ (Statement.call lhs n args) →
@@ -215,40 +214,40 @@ inductive EvalCommand : (String → Option Procedure)  → BoogieEval → Boogie
     -- Preconditions, if any, must be satisfied for execution to continue.
     (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
       isDefinedOver (HasVarsPure.getVars) σAO pre ∧
-      δP σAO σAO pre = .some true) →
-    @Imperative.EvalStmts Expression Command (EvalCommand π) _ _ _ _ _ _ δ δP σAO σAO p.body σR →
+      δ σAO σAO pre = .some HasBool.tt) →
+    @Imperative.EvalStmts Expression Command (EvalCommand π) _ _ _ _ _ _ δ σAO σAO p.body σR →
     -- Postconditions, if any, must be satisfied for execution to continue.
     (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
       isDefinedOver (HasVarsPure.getVars) σAO post ∧
-      δP σAO σR post = .some true) →
+      δ σAO σR post = .some HasBool.tt) →
 
     ReadValues σR (ListMap.keys (p.header.outputs) ++ p.spec.modifies) modvals →
     UpdateStates σ (lhs ++ p.spec.modifies) modvals σ' →
     ----
-    EvalCommand π δ δP σ₀ σ (CmdExt.call lhs n args) σ'
+    EvalCommand π δ σ₀ σ (CmdExt.call lhs n args) σ'
 
-abbrev EvalStatement (π : String → Option Procedure) : BoogieEval → BoogieEvalBool →
+abbrev EvalStatement (π : String → Option Procedure) : BoogieEval →
     BoogieStore → BoogieStore → Statement → BoogieStore → Prop :=
   Imperative.EvalStmt Expression Command (EvalCommand π)
 
-abbrev EvalStatements (π : String → Option Procedure) : BoogieEval → BoogieEvalBool →
+abbrev EvalStatements (π : String → Option Procedure) : BoogieEval →
     BoogieStore → BoogieStore → List Statement → BoogieStore → Prop :=
   Imperative.EvalStmts Expression Command (EvalCommand π)
 
-inductive EvalCommandContract : (String → Option Procedure)  → BoogieEval → BoogieEvalBool →
+inductive EvalCommandContract : (String → Option Procedure)  → BoogieEval →
   BoogieStore → BoogieStore → Command → BoogieStore → Prop where
-  | cmd_sem {π δ δP σ₀ σ c σ'} :
-    Imperative.EvalCmd (P:=Expression) δ δP σ₀ σ c σ' →
+  | cmd_sem {π δ σ₀ σ c σ'} :
+    Imperative.EvalCmd (P:=Expression) δ σ₀ σ c σ' →
     ----
-    EvalCommandContract π δ δP σ₀ σ (CmdExt.cmd c) σ'
+    EvalCommandContract π δ σ₀ σ (CmdExt.cmd c) σ'
 
-  | call_sem {π δ σ₀ σ args oVals vals σA σAO σO δP σR n p modvals lhs σ'} :
+  | call_sem {π δ σ₀ σ args oVals vals σA σAO σO σR n p modvals lhs σ'} :
     π n = .some p →
     EvalExpressions (P:=Boogie.Expression) δ σ₀ σ args vals →
     ReadValues σ lhs oVals →
     WellFormedSemanticEvalVal δ →
     WellFormedSemanticEvalVar δ →
-    WellFormedSemanticEvalBool δ δP →
+    WellFormedSemanticEvalBool δ →
     WellFormedBoogieEvalTwoState δ σ₀ σ →
 
     isDefinedOver (HasVarsTrans.allVarsTrans π) σ (Statement.call lhs n args) →
@@ -264,22 +263,22 @@ inductive EvalCommandContract : (String → Option Procedure)  → BoogieEval �
     -- Preconditions, if any, must be satisfied for execution to continue.
     (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
       isDefinedOver (HasVarsPure.getVars) σAO pre ∧
-      δP σAO σAO pre = .some true) →
+      δ σAO σAO pre = .some HasBool.tt) →
     HavocVars σAO (ListMap.keys p.header.outputs) σO →
     HavocVars σO p.spec.modifies σR →
     -- Postconditions, if any, must be satisfied for execution to continue.
     (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
       isDefinedOver (HasVarsPure.getVars) σAO post ∧
-      δP σO σR post = .some true) →
+      δ σO σR post = .some HasBool.tt) →
     ReadValues σR (ListMap.keys (p.header.outputs) ++ p.spec.modifies) modvals →
     UpdateStates σ (lhs ++ p.spec.modifies) modvals σ' →
     ----
-    EvalCommandContract π δ δP σ₀ σ (.call lhs n args) σ'
+    EvalCommandContract π δ σ₀ σ (.call lhs n args) σ'
 
-abbrev EvalStatementContract (π : String → Option Procedure) : BoogieEval → BoogieEvalBool →
+abbrev EvalStatementContract (π : String → Option Procedure) : BoogieEval →
     BoogieStore → BoogieStore → Statement → BoogieStore → Prop :=
   Imperative.EvalStmt Expression Command (EvalCommandContract π)
 
-abbrev EvalStatementsContract (π : String → Option Procedure) : BoogieEval → BoogieEvalBool →
+abbrev EvalStatementsContract (π : String → Option Procedure) : BoogieEval →
     BoogieStore → BoogieStore → List Statement → BoogieStore → Prop :=
   Imperative.EvalStmts Expression Command (EvalCommandContract π)
