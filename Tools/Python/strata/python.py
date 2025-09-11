@@ -226,6 +226,5 @@ def parse_module(source : str, filename : str | PathLike = "<unknown>") -> tuple
     assert isinstance(a, ast.Module)
 
     p = strata.Program(Python.name)
-    for stmt in a.body:
-        p.add(ast_to_op(m, stmt))
+    p.add(ast_to_op(m, a))
     return (m, p)
