@@ -871,6 +871,12 @@ public class StrataGenerator : ReadOnlyVisitor {
     public override Cmd VisitHavocCmd(HavocCmd node) {
         foreach (var x in node.Vars) {
             IndentLine($"havoc {Name(x.Name)};");
+        }
+
+        // All assumptions come after all havocs! This allows where clauses
+        // to relate variables and then to havoc them in such a way as to
+        // preserve those relationships.
+        foreach (var x in node.Vars) {
             EmitWhereAssumption(x.Decl.TypedIdent);
         }
 
