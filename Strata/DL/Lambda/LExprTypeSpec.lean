@@ -136,8 +136,7 @@ theorem HasType.regularity (h : HasType (Identifier:=Identifier) Γ e ty) :
   case tmdata => simp_all [WF, lcAt]
   case tabs T x x_ty e e_ty hx h_x_mono h_e_mono ht ih =>
     simp_all [WF]
-    have := @lcAt_varOpen_abs (Identifier:=Identifier) _ x e 0 0
-    simp_all
+    exact lcAt_varOpen_abs ih (by simp)
   case tapp => simp_all [WF, lcAt]
   case tif => simp_all [WF, lcAt]
   case teq => simp_all [WF, lcAt]
