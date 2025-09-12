@@ -1,3 +1,5 @@
 __pycache__
 /.python-version
 /test_results
+cpython-3.12
+report.txt
