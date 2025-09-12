@@ -198,19 +198,25 @@ public class StrataGenerator : ReadOnlyVisitor {
     }
 
     private void EmitUniqueConstAxioms() {
-        var i = 0;
         foreach (var kv in _uniqueConstants) {
             if (kv.Value.Count == 1) {
                 continue;
             }
 
-            var axiomName = $"unique{i}";
+            var axiomName = $"unique_{Name(kv.Key.ToString())}";
             _userAxiomNames.Add(axiomName);
-            // TODO: uncomment these axioms once Strata.Boogie supports them
-            WriteText($"// axiom {axiomName}: distinct ");
-            WriteList(kv.Value);
+            WriteText($"axiom [{axiomName}]: ");
+            var cs = kv.Value.ToArray();
+            var n = kv.Value.Count;
+            for (var j = 0; j < n; j++) {
+                for (int k = j + 1; k < n; k++) {
+                    if (j > 0 || k > j + 1) {
+                        WriteText(" && ");
+                    }
+                    WriteText($"{cs[j]} != {cs[k]}");
+                }
+            }
             WriteLine(";");
-            i++;
         }
     }
 
