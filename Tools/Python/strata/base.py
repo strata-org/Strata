@@ -5,9 +5,11 @@
 """
 Description: Core Strata AST datatypes.
 """
+from bisect import bisect_right
 from dataclasses import dataclass
 from decimal import Decimal
 import typing
+from typing import Any
 
 import amazon.ion.simpleion as ion
 
@@ -28,6 +30,47 @@ def ion_sexp(*args):
     for a in args:
         h.append(a)
     return h
+
+@dataclass
+class SourceRange:
+    offset : int
+    end_offset : int
+
+class SourcePos:
+    line : int
+    col : int
+
+    def __init__(self, line : int, col : int):
+        self.line = line
+        self.col = col
+
+    def __str__(self) -> str:
+        return f'{self.line}:{self.col}'
+
+class FileMapping:
+    line_offsets : list[int]
+
+    def __init__(self, source : str):
+        bytes = source.encode()
+
+        self.line_offsets = [0]
+        for i, b in enumerate(bytes):
+            if b == ord('\n'):
+                self.line_offsets.append(i + 1)
+
+    def byte_offset(self, line : int, col : int) -> int:
+        assert line > 0
+        assert line - 1 < len(self.line_offsets)
+        return self.line_offsets[line - 1] + col
+
+    def position(self, index : int) -> SourcePos:
+        lineno = bisect_right(self.line_offsets, index)
+
+        off = self.line_offsets[lineno - 1]
+        assert index >= off
+        col_offset = index - off
+        return SourcePos(lineno, col_offset + 1)
+
 
 @dataclass
 class QualifiedIdent:
@@ -61,10 +104,12 @@ class QualifiedIdent:
 
 @dataclass
 class SyntaxCat:
+    ann : Any
     ident : QualifiedIdent
     args: list['SyntaxCat']
 
-    def __init__(self, ident: QualifiedIdent, args: list['SyntaxCat'] | None = None):
+    def __init__(self, ident: QualifiedIdent, args: list['SyntaxCat'] | None = None, *, ann = None):
+        self.ann = ann
         self.ident = ident
         self.args = [] if args is None else args
 
@@ -79,29 +124,47 @@ class SyntaxCat:
         return append_args(self.ident.to_ion(), self.args)
 
 class TypeExpr:
+    ann : Any
+
+    def __init__(self, *, ann=None) -> None:
+        self.ann = ann
+
     def to_ion(self):
         raise NotImplementedError
 
-@dataclass
 class TypeIdent(TypeExpr):
     ident: QualifiedIdent
     args: list[TypeExpr]
+
+    def __init__(self, ident: QualifiedIdent, args: list[TypeExpr] | None = None, *, ann = None):
+        super().__init__(ann=ann)
+        self.ident = ident
+        self.args = [] if args is None else args
 
     def to_ion(self):
         v = self.ident.to_ion()
         return append_args(v, self.args)
 
-@dataclass
 class TypeBVar(TypeExpr):
     index: int
+
+    def __init__(self, index : int, *, ann=None) -> None:
+        super().__init__(ann=ann)
+        self.index = index
+
     bvarSym = ion_symbol("bvar")
+
     def to_ion(self):
         return [self.bvarSym, self.index]
 
-@dataclass
 class TypeFVar(TypeExpr):
     index: int
     args: list[TypeExpr]
+
+    def __init__(self, index: int, args: list[TypeExpr] | None = None, *, ann = None):
+        super().__init__(ann=ann)
+        self.index = index
+        self.args = [] if args is None else args
 
     fvarSym = ion_symbol("fvar")
 
@@ -111,48 +174,67 @@ class TypeFVar(TypeExpr):
             l.append(a.to_ion())
         return l
 
-@dataclass
 class TypeArrow(TypeExpr):
     arg: TypeExpr
     res: TypeExpr
+
+    def __init__(self, arg: TypeExpr, res: TypeExpr, *, ann = None):
+        super().__init__(ann=ann)
+        self.arg = arg
+        self.res = res
 
     arrowSym = ion_symbol("arrow")
 
     def to_ion(self):
         return [self.arrowSym, self.arg, self.res]
 
-@dataclass
 class TypeFunMacro(TypeExpr):
     bindingsIndex: int
     res: TypeExpr
 
+    def __init__(self, bindingsIndex: int, res: TypeExpr, *, ann = None):
+        super().__init__(ann=ann)
+        self.bindingsIndex = bindingsIndex
+        self.res = res
+
     funMacroSym = ion_symbol("funMacro")
+
     def to_ion(self):
         return [self.funMacroSym, self.bindingsIndex, self.res]
 
 @dataclass
 class Ident:
+    ann : Any
     value: str
+
+    def __init__(self, value: str, *, ann = None):
+        self.ann = ann
+        self.value = value
 
 @dataclass
 class NumLit:
+    ann : Any
     value: int
 
-    numSym = ion_symbol("num")
-
-    def __init__(self, value: int):
+    def __init__(self, value: int, *, ann = None):
         assert isinstance(value, int)
         assert value >= 0
+
+        self.ann = ann
         self.value = value
+
+    numSym = ion_symbol("num")
 
     def to_ion(self):
         return [self.numSym, self.value]
 
 @dataclass
 class StrLit:
+    ann : Any
     value: str
 
-    def __init__(self, value: str):
+    def __init__(self, value: str, *, ann = None):
+        self.ann = ann
         self.value = value
 
     def __str__(self):
@@ -160,9 +242,11 @@ class StrLit:
 
 @dataclass
 class SomeArg:
+    ann : Any
     value: 'Arg'
 
-    def __init__(self, value: 'Arg'):
+    def __init__(self, value: 'Arg', *, ann = None):
+        self.ann = ann
         self.value = value
 
     def to_ion(self):
@@ -173,9 +257,11 @@ class SomeArg:
 
 @dataclass
 class Seq:
+    ann : Any
     values: list['Arg']
 
-    def __init__(self, values: list['Arg']):
+    def __init__(self, values: list['Arg'], *, ann = None):
+        self.ann = ann
         self.values = values
 
     def __str__(self) -> str:
@@ -183,51 +269,74 @@ class Seq:
 
 @dataclass
 class CommaSepList:
+    ann : Any
     values: list['Arg']
 
-    def __init__(self, values: list['Arg']):
+    def __init__(self, values: list['Arg'], *, ann = None):
+        self.ann = ann
         self.values = values
 
 class Expr:
+    ann : Any
+
+    def __init__(self, *, ann=None):
+        self.ann = ann
+
     def to_ion(self):
         raise NotImplementedError
 
-@dataclass
 class ExprBVar(Expr):
     idx : int
     args : list['Arg']
+
+    def __init__(self, idx : int, args : list['Arg'], *, ann=None):
+        super().__init__(ann=ann)
+        self.idx = idx
+        self.args = args
+
     def to_ion(self):
         l = [ "bvar", self.idx ]
         for a in self.args:
             l.append(arg_to_ion(a))
         return l
 
-@dataclass
 class ExprFVar(Expr):
     level : int
     args : list['Arg']
+
+    def __init__(self, level : int, args : list['Arg']|None = None, *, ann=None):
+        super().__init__(ann=ann)
+        self.level = level
+        self.args = [] if args is None else args
+
     def to_ion(self):
         l = [ "fvar", self.level ]
         for a in self.args:
             l.append(arg_to_ion(a))
         return l
 
-dataclass
 class ExprIdent(Expr):
     ident : QualifiedIdent
     args : list['Arg']
+
+    def __init__(self, ident : QualifiedIdent, args : list['Arg'], *, ann=None):
+        super().__init__(ann=ann)
+        self.ident = ident
+        self.args = args
+
     def to_ion(self):
         l : list[object] = [ self.ident.to_ion() ]
         for a in self.args:
             l.append(arg_to_ion(a))
         return l
 
-@dataclass
 class Operation:
+    ann : Any
     decl : 'OpDecl'
     args : dict[str, 'Arg']
 
-    def __init__(self, decl : 'OpDecl', args : list['Arg']|None = None):
+    def __init__(self, decl : 'OpDecl', args : list['Arg']|None = None, *, ann = None):
+        self.ann = ann
         self.decl = decl
         if args is None:
             args = []
@@ -450,9 +559,9 @@ class OpDecl:
         self.metadata = [] if metadata is None else metadata
         self.syntax = syntax
 
-    def __call__(self, *args):
+    def __call__(self, *args, ann=None):
         assert len(args) == len(self.args), f"{self.ident} given {len(args)} argument(s) when {len(self.args)} expected ({args})"
-        return Operation(self, list(args))
+        return Operation(self, list(args), ann=ann)
 
     def to_ion(self):
         flds = {
