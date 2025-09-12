@@ -20,4 +20,4 @@ for i in `find cpython-3.12/Lib/test -name "*.py"`; do
   count=$((count + 1))
 done 2>&1 | tee report.txt
 
-! grep "diff" report.txt
+! grep "Two programs are different" report.txt
