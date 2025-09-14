@@ -211,6 +211,11 @@ mutual
     body : TS_Statement
   deriving Repr, Lean.FromJson, Lean.ToJson
 
+  structure TS_WhileStatement extends BaseNode where
+    test: TS_Expression
+    body: TS_Statement
+  deriving Repr, Lean.FromJson, Lean.ToJson
+
   /- TODO: Add support for for(let a=0, b=0;a!=0 and b!=0;a++,b++) -/
   structure TS_ForStatement extends BaseNode where
     init: Option TS_VariableDeclaration
@@ -241,6 +246,7 @@ mutual
     | TS_ForStatement : TS_ForStatement → TS_Statement
     | TS_BreakStatement : TS_BreakStatement → TS_Statement
     | TS_SwitchStatement : TS_SwitchStatement → TS_Statement
+    | TS_WhileStatement: TS_WhileStatement -> TS_Statement
   deriving Repr, Lean.FromJson, Lean.ToJson
 end
 
