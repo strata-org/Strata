@@ -127,8 +127,8 @@ def TContext.types.subst (types : Maps Identifier LTy) (S : Subst) :
 /--
 Apply a substitution `S` to the context.
 -/
-def TContext.subst (T : TContext Identifier) (S : Subst) : TContext Identifier :=
-  { T with types := types.subst T.types S }
+def TContext.subst (ctx : TContext Identifier) (S : Subst) : TContext Identifier :=
+  { ctx with types := types.subst ctx.types S }
 
 ---------------------------------------------------------------------
 
@@ -215,7 +215,7 @@ factory of user-specified functions, which is used during type checking.
 structure TEnv (Identifier : Type) where
   context : TContext Identifier
   state : TState
-  functions : @Factory Identifier
+  functions : Array (LFunc ⟨Unit, Identifier⟩)
   knownTypes : KnownTypes
 
 def KnownTypes.default : KnownTypes :=
@@ -225,7 +225,7 @@ def KnownTypes.default : KnownTypes :=
    t[int],
    t[string]].map (fun k => k.toKnownType!)
 
-def TEnv.default : TEnv Identifier :=
+def TEnv.default {Identifier : Type} : TEnv Identifier :=
   open LTy.Syntax in
   { context := {},
     state := TState.init,
@@ -233,7 +233,7 @@ def TEnv.default : TEnv Identifier :=
     knownTypes := KnownTypes.default
   }
 
-instance : ToFormat (TEnv Identifier) where
+instance {Identifier : Type} [ToFormat Identifier] : ToFormat (TEnv Identifier) where
   format s := f!"context:{Format.line}{s.context}\
                  {Format.line}\
                  state:{Format.line}{s.state}\
@@ -243,56 +243,56 @@ instance : ToFormat (TEnv Identifier) where
 def TEnv.addKnownType (T : TEnv Identifier) (k : KnownType) : TEnv Identifier :=
   { T with knownTypes := k :: T.knownTypes }
 
-def TEnv.addFactoryFunction (T : TEnv Identifier) (fn : LFunc Identifier) : TEnv Identifier :=
+def TEnv.addFactoryFunction (T : TEnv Identifier) (fn : LFunc ⟨Unit, Identifier⟩) : TEnv Identifier :=
   { T with functions := T.functions.push fn }
 
-def TEnv.addFactoryFunctions (T : TEnv Identifier) (fact : @Factory Identifier) : TEnv Identifier :=
+def TEnv.addFactoryFunctions (T : TEnv Identifier) (fact : Array (LFunc ⟨Unit, Identifier⟩)) : TEnv Identifier :=
   { T with functions := T.functions.append fact }
 
 /--
 Replace the global substitution in `T.state.subst` with `S`.
 -/
-def TEnv.updateSubst (T : (TEnv Identifier)) (S : SubstInfo) : (TEnv Identifier) :=
-  { T with state.substInfo := S }
+def TEnv.updateSubst {Identifier : Type} (env : (TEnv Identifier)) (S : SubstInfo) : (TEnv Identifier) :=
+  { env with state.substInfo := S }
 
-def TEnv.pushEmptyContext (T : (TEnv Identifier)) : (TEnv Identifier) :=
-  let ctx := T.context
+def TEnv.pushEmptyContext {Identifier : Type} [DecidableEq Identifier] (env : (TEnv Identifier)) : (TEnv Identifier) :=
+  let ctx := env.context
   let ctx' := { ctx with types := ctx.types.push [] }
-  { T with context := ctx' }
+  { env with context := ctx' }
 
-def TEnv.popContext (T : (TEnv Identifier)) : (TEnv Identifier) :=
-  let ctx := T.context
+def TEnv.popContext {Identifier : Type} (env : (TEnv Identifier)) : (TEnv Identifier) :=
+  let ctx := env.context
   let ctx' := { ctx with types := ctx.types.pop }
-  { T with context := ctx' }
+  { env with context := ctx' }
 
 /--
 Insert `(x, ty)` in `T.context`.
 -/
-def TEnv.insertInContext (T : (TEnv Identifier)) (x : Identifier) (ty : LTy) : (TEnv Identifier) :=
-  let ctx := T.context
+def TEnv.insertInContext {Identifier : Type} [DecidableEq Identifier] (env : (TEnv Identifier)) (x : Identifier) (ty : LTy) : (TEnv Identifier) :=
+  let ctx := env.context
   let ctx' := { ctx with types := ctx.types.insert x ty }
-  { T with context := ctx' }
+  { env with context := ctx' }
 
 /--
 Insert each element in `map` in `T.context`.
 -/
-def TEnv.addToContext (T : (TEnv Identifier)) (map : Map Identifier LTy) : (TEnv Identifier) :=
-  let ctx := T.context
+def TEnv.addToContext {Identifier : Type} [DecidableEq Identifier] (env : (TEnv Identifier)) (map : Map Identifier LTy) : (TEnv Identifier) :=
+  let ctx := env.context
   let types := List.foldl (fun m (x, v) => m.insert x v) ctx.types map
   let ctx' := { ctx with types := types }
-  { T with context := ctx' }
+  { env with context := ctx' }
 
 /--
 Erase entry for `x` from `T.context`.
 -/
-def TEnv.eraseFromContext (T : (TEnv Identifier)) (x : Identifier) : (TEnv Identifier) :=
-  let ctx := T.context
+def TEnv.eraseFromContext {Identifier : Type} [DecidableEq Identifier] (env : (TEnv Identifier)) (x : Identifier) : (TEnv Identifier) :=
+  let ctx := env.context
   let ctx' := { ctx with types := ctx.types.erase x }
-  { T with context := ctx' }
+  { env with context := ctx' }
 
-def TEnv.freeVarCheck (T : (TEnv Identifier)) (e : LExpr LMonoTy Identifier) (msg : Format) :
+def TEnv.freeVarCheck [DecidableEq Identifier] (T : (TEnv Identifier)) (e : LExpr ⟨⟨Unit, Identifier⟩, LMonoTy⟩) (msg : Format) :
   Except Format Unit :=
-  let efv := e.freeVars.map (fun (x, _) => x)
+  let efv := (@freeVars ⟨Unit, Identifier⟩ e).map Prod.fst
   let knownVars := T.context.knownVars
   let freeVars := List.filter (fun v => v ∉ knownVars) efv
   match freeVars with
@@ -302,7 +302,7 @@ def TEnv.freeVarCheck (T : (TEnv Identifier)) (e : LExpr LMonoTy Identifier) (ms
               {Format.line}\
               Free Variables: {freeVars}"
 
-def TEnv.freeVarChecks (T : (TEnv Identifier)) (es : List (LExpr LMonoTy Identifier)) : Except Format Unit :=
+def TEnv.freeVarChecks [DecidableEq Identifier] (T : (TEnv Identifier)) (es : List (LExpr ⟨⟨Unit, Identifier⟩, LMonoTy⟩)) : Except Format Unit :=
   match es with
   | [] => .ok ()
   | e :: erest => do

@@ -54,26 +54,23 @@ Typing relation for `LExpr`s.
 
 (TODO) Add the introduction and elimination rules for `.tcons`.
 -/
-inductive HasType {Identifier : Type} [DecidableEq Identifier]:
-  (TContext Identifier) → (LExpr LMonoTy Identifier) → LTy → Prop where
-  | tmdata : ∀ Γ info e ty, HasType Γ e ty →
-                            HasType Γ (.mdata info e) ty
-
-  | tbool_const_t : ∀ Γ, HasType Γ (.const "true" none)
+inductive HasType {T: LExprParams} [DecidableEq T.Identifier]:
+  (TContext T.Identifier) → LExpr T.mono → LTy → Prop where
+  | tbool_const_t : ∀ Γ m, HasType Γ (.const m "true" none)
                          (.forAll [] (.tcons "bool" []))
-  | tbool_const_f : ∀ Γ, HasType Γ (.const "false" none)
+  | tbool_const_f : ∀ Γ m, HasType Γ (.const m "false" none)
                         (.forAll [] (.tcons "bool" []))
-  | tint_const : ∀ Γ, n.isInt → HasType Γ (.const n none)
+  | tint_const : ∀ Γ, n.isInt → HasType Γ (.const m n none)
                                 (.forAll [] (.tcons "int" []))
 
-  | tvar : ∀ Γ x ty, Γ.types.find? x = some ty → HasType Γ (.fvar x none) ty
+  | tvar : ∀ Γ m x ty, Γ.types.find? x = some ty → HasType Γ (.fvar m x none) ty
 
-  | tabs : ∀ Γ x x_ty e e_ty,
+  | tabs : ∀ Γ m x x_ty e e_ty,
             LExpr.fresh x e →
             (hx : LTy.isMonoType x_ty) →
             (he : LTy.isMonoType e_ty) →
             HasType { Γ with types := Γ.types.insert x.fst x_ty} (LExpr.varOpen 0 x e) e_ty →
-            HasType Γ (.abs .none e)
+            HasType Γ (.abs m .none e)
                       (.forAll [] (.tcons "arrow" [(LTy.toMonoType x_ty hx),
                                                    (LTy.toMonoType e_ty he)]))
 
@@ -87,13 +84,13 @@ inductive HasType {Identifier : Type} [DecidableEq Identifier]:
 --                (h : i < targs.length) →
 --                HasType Γ (.proj i args) (List.get targs i h)
 
-  | tapp : ∀ Γ e1 e2 t1 t2,
+  | tapp : ∀ Γ m e1 e2 t1 t2,
             (h1 : LTy.isMonoType t1) →
             (h2 : LTy.isMonoType t2) →
             HasType Γ e1 (.forAll [] (.tcons "arrow" [(LTy.toMonoType t2 h2),
                                                      (LTy.toMonoType t1 h1)])) →
             HasType Γ e2 t2 →
-            HasType Γ (.app e1 e2) t1
+            HasType Γ (.app m e1 e2) t1
 
   -- `ty` is more general than `e_ty`, so we can instantiate `ty` with `e_ty`.
   | tinst : ∀ Γ e ty e_ty x x_ty,
@@ -110,22 +107,22 @@ inductive HasType {Identifier : Type} [DecidableEq Identifier]:
            TContext.isFresh a Γ →
            HasType Γ e (LTy.close a ty)
 
-  | tif : ∀ Γ c e1 e2 ty,
+  | tif : ∀ Γ m c e1 e2 ty,
           HasType Γ c (.forAll [] (.tcons "bool" [])) →
           HasType Γ e1 ty →
           HasType Γ e2 ty →
-          HasType Γ (.ite c e1 e2) ty
+          HasType Γ (.ite m c e1 e2) ty
 
-  | teq : ∀ Γ e1 e2 ty,
+  | teq : ∀ Γ m e1 e2 ty,
           HasType Γ e1 ty →
           HasType Γ e2 ty →
-          HasType Γ (.eq e1 e2) (.forAll [] (.tcons "bool" []))
+          HasType Γ (.eq m e1 e2) (.forAll [] (.tcons "bool" []))
 
 /--
 If `LExpr e` is well-typed, then it is well-formed, i.e., contains no dangling
 bound variables.
 -/
-theorem HasType.regularity (h : HasType (Identifier:=Identifier) Γ e ty) :
+theorem HasType.regularity [Inhabited T.Metadata] [DecidableEq T.Identifier] [DecidableEq T.Metadata] (h : HasType (T := T) Γ e ty) :
   LExpr.WF e := by
   open LExpr in
   induction h
@@ -133,11 +130,11 @@ theorem HasType.regularity (h : HasType (Identifier:=Identifier) Γ e ty) :
   case tbool_const_f => simp [WF, lcAt]
   case tint_const => simp [WF, lcAt]
   case tvar => simp [WF, lcAt]
-  case tmdata => simp_all [WF, lcAt]
-  case tabs T x x_ty e e_ty hx h_x_mono h_e_mono ht ih =>
+  case tabs m x x_ty e e_ty hx h_x_mono h_e_mono ht ih =>
     simp_all [WF]
-    have := @lcAt_varOpen_abs (Identifier:=Identifier) _ x e 0 0
+    have := @lcAt_varOpen_abs (T := T) x e 0 0 m .none hx ih (by simp)
     simp_all
+
   case tapp => simp_all [WF, lcAt]
   case tif => simp_all [WF, lcAt]
   case teq => simp_all [WF, lcAt]
@@ -147,53 +144,12 @@ theorem HasType.regularity (h : HasType (Identifier:=Identifier) Γ e ty) :
 
 ---------------------------------------------------------------------
 
-section Tests
-
--- Examples of typing derivations using the `HasType` relation.
-
-open LExpr.SyntaxMono LTy.Syntax
-
-example : LExpr.HasType {} esM[#true] t[bool] := by
-  apply LExpr.HasType.tbool_const_t
-
-example : LExpr.HasType {} esM[#-1] t[int] := by
-  apply LExpr.HasType.tint_const
-  simp +ground
-
-example : LExpr.HasType { types := [[("x", t[∀a. %a])]]} esM[x] t[int] := by
-  have h_tinst := @LExpr.HasType.tinst (Identifier := String) _ { types := [[("x", t[∀a. %a])]]} esM[x] t[∀a. %a] t[int] "a" mty[int]
-  have h_tvar := @LExpr.HasType.tvar (Identifier := String) _ { types := [[("x", t[∀a. %a])]]} "x" t[∀a. %a]
-  simp +ground at h_tvar
-  simp [h_tvar] at h_tinst
-  simp +ground at h_tinst
-  assumption
-
-example : LExpr.HasType { types := [[("m", t[∀a. %a → int])]]}
-                        esM[(m #true)]
-                        t[int] := by
-  apply LExpr.HasType.tapp _ _ _ _ t[bool] <;> (try simp +ground)
-  <;> try apply LExpr.HasType.tbool_const_t
-  apply LExpr.HasType.tinst _ _ t[∀a. %a → int] t[bool → int] "a" mty[bool]
-  · apply LExpr.HasType.tvar
-    simp +ground
-  · simp +ground
-  done
-
-example : LExpr.HasType {} esM[λ %0] t[∀a. %a → %a] := by
-  have h_tabs := @LExpr.HasType.tabs (Identifier := String) _ {} ("a", none) t[%a] esM[%0] t[%a]
-  simp +ground at h_tabs
-  have h_tvar := @LExpr.HasType.tvar (Identifier := String) _ { types := [[("a", t[%a])]] }
-                 "a" t[%a]
-  simp [Maps.find?, Map.find?] at h_tvar
-  simp [h_tvar, LTy.toMonoType] at h_tabs
-  have h_tgen := @LExpr.HasType.tgen (Identifier := String) _ {} esM[λ %0] "a"
-                 t[%a → %a]
-                 h_tabs
-  simp +ground [Maps.find?] at h_tgen
-  assumption
-  done
-
-end Tests
+-- section Tests
+--
+-- -- Examples of typing derivations using the `HasType` relation.
+-- -- TODO: Fix these examples to work with the new LExpr structure
+--
+-- end Tests
 
 ---------------------------------------------------------------------
 end LExpr

@@ -25,17 +25,17 @@ scopes, other dialects that include Lambda may need to do so. For the evaluation
 of Lambda expressions in isolation, the stack can contain a single scope.
 -/
 
-variable {Identifier : Type} [DecidableEq Identifier] [ToFormat Identifier]
+variable {T : LExprParams} [Inhabited T.Metadata] [BEq T.Metadata] [DecidableEq T.Identifier] [BEq T.Identifier] [ToFormat T.Identifier] [BEq (LExpr T.mono)] [ToFormat (LExpr T.mono)]
 
-abbrev Scope (Identifier : Type) := (Map Identifier (Option LMonoTy × (LExpr LMonoTy Identifier)))
+abbrev Scope (T : LExprParams) := (Map T.Identifier (Option LMonoTy × (LExpr T.mono)))
 
-instance : BEq (Scope Identifier) where
+instance : BEq (Scope T) where
   beq m1 m2 := m1 == m2
 
-instance : Inhabited (Scope Identifier) where
+instance : Inhabited (Scope T) where
   default := []
 
-private def Scope.format (m : (Scope Identifier)) : Std.Format :=
+private def Scope.format (m : (Scope T)) : Std.Format :=
   match m with
   | [] => ""
   | [(k, (ty, v))] => go k ty v
@@ -46,20 +46,20 @@ private def Scope.format (m : (Scope Identifier)) : Std.Format :=
     | some ty => f!"({k} : {ty}) → {v}"
     | none => f!"{k} → {v}"
 
-instance : ToFormat (Scope Identifier) where
+instance : ToFormat (Scope T) where
   format := Scope.format
 
 /--
 Merge two maps `m1` and `m2`, where `m1` is assumed to be the map if `cond`
 is `true` and `m2` when it is false.
 -/
-def Scope.merge (cond : (LExpr LMonoTy Identifier)) (m1 m2 : (Scope Identifier)) : (Scope Identifier) :=
+def Scope.merge (cond : (LExpr T.mono)) (m1 m2 : (Scope T)) : (Scope T) :=
   match m1 with
-  | [] => m2.map (fun (i, (ty, e)) => (i, (ty, mkIte cond (.fvar i ty) e)))
+  | [] => m2.map (fun (i, (ty, e)) => (i, (ty, mkIte cond (.fvar (default : T.Metadata) i ty) e)))
   | (k, (ty1, e1)) :: rest =>
     match m2.find? k with
     | none =>
-      (k, (ty1, mkIte cond e1 (.fvar k ty1))) ::
+      (k, (ty1, mkIte cond e1 (.fvar (default : T.Metadata) k ty1))) ::
       Scope.merge cond rest m2
     | some (ty2, e2) =>
       if ty1 ≠ ty2 then
@@ -69,10 +69,11 @@ def Scope.merge (cond : (LExpr LMonoTy Identifier)) (m1 m2 : (Scope Identifier))
       else
         (k, (ty1, mkIte cond e1 e2)) ::
       Scope.merge cond rest (m2.erase k)
-  where mkIte (cond tru fals : (LExpr LMonoTy Identifier)) : (LExpr LMonoTy Identifier) :=
+  where mkIte (cond tru fals : (LExpr T.mono)) : (LExpr T.mono) :=
     if tru == fals then tru
-    else (LExpr.ite cond tru fals)
+    else (LExpr.ite (default : T.Metadata) cond tru fals)
 
+/-
 section Scope.merge.tests
 open LTy.Syntax LExpr.SyntaxMono
 
@@ -123,23 +124,24 @@ info: (a : int) → (if (#true : bool) then (#8 : int) else (a : int))
                  (("z"), (mty[int], (.const "100" mty[int])))]
 
 end Scope.merge.tests
+-/
 
 /--
 A stack of scopes, where each scope maps the free variables
 to their `LExpr` values.
 -/
-abbrev Scopes (Identifier : Type) := Maps Identifier (Option LMonoTy × LExpr LMonoTy Identifier)
+abbrev Scopes (T : LExprParams) := Maps T.Identifier (Option LMonoTy × LExpr T.mono)
 
 /--
 Merge two scopes, where `s1` is assumed to be the scope if `cond` is true, and
 `s2` otherwise.
 -/
-def Scopes.merge (cond : LExpr LMonoTy Identifier) (s1 s2 : Scopes Identifier) : Scopes Identifier :=
+def Scopes.merge (cond : LExpr T.mono) (s1 s2 : Scopes T) : Scopes T :=
   match s1, s2 with
   | [], _ => s2
   | _, [] => s1
   | x :: xrest, y :: yrest =>
-    Scope.merge (Identifier := Identifier) cond x y :: Scopes.merge cond xrest yrest
+    Scope.merge cond x y :: Scopes.merge cond xrest yrest
 
 --------------------------------------------------------------------
 

@@ -27,17 +27,16 @@ variable {Identifier : Type} [ToString Identifier] [DecidableEq Identifier] [ToF
 Monotype-annotated Lambda expressions, obtained after a type inference transform
 from Lambda expressions `LExpr`.
 -/
-inductive LExprT (Identifier : Type): Type where
-  | const (c : String) (ty : LMonoTy)
-  | op    (c : Identifier) (ty : LMonoTy)
-  | bvar (deBruijnIndex : Nat) (ty : LMonoTy)
-  | fvar (name : Identifier) (ty : LMonoTy)
-  | mdata (info : Info) (e : LExprT Identifier)
-  | abs (e : LExprT Identifier) (ty : LMonoTy)
-  | quant (k : QuantifierKind) (argTy : LMonoTy) (triggers : LExprT Identifier) (e : LExprT Identifier)
-  | app (fn e : LExprT Identifier) (ty : LMonoTy)
-  | ite (c t e : LExprT Identifier) (ty : LMonoTy)
-  | eq (e1 e2 : LExprT Identifier) (ty : LMonoTy)
+inductive LExprT (T : LExprParams): Type where
+  | const (m: T.Metadata) (c : String) (ty : LMonoTy)
+  | op    (m: T.Metadata) (c : T.Identifier) (ty : LMonoTy)
+  | bvar (m: T.Metadata) (deBruijnIndex : Nat) (ty : LMonoTy)
+  | fvar (m: T.Metadata) (name : T.Identifier) (ty : LMonoTy)
+  | abs (m: T.Metadata) (e : LExprT T) (ty : LMonoTy)
+  | quant (m: T.Metadata) (k : QuantifierKind) (argTy : LMonoTy) (triggers : LExprT T) (e : LExprT T)
+  | app (m: T.Metadata) (fn e : LExprT T) (ty : LMonoTy)
+  | ite (m: T.Metadata) (c t e : LExprT T) (ty : LMonoTy)
+  | eq (m: T.Metadata) (e1 e2 : LExprT T) (ty : LMonoTy)
   deriving Repr, DecidableEq
 
 partial def LExprT.format (et : (LExprT Identifier)) : Std.Format :=
@@ -78,20 +77,20 @@ Obtain an `LExpr` from an `LExprT`. We erase type annotations for all
 expressions, except the constants `.const`s, `.op`s, and free variables
 `.fvar`s.
 -/
-def toLExpr (e : (LExprT Identifier)) : (LExpr LMonoTy Identifier) :=
+def toLExpr (e : (LExprT Identifier)) : (LExpr ⟨Unit, LMonoTy, Identifier⟩) :=
   match e with
-  | .const c ty => .const c ty
-  | .op o ty => .op o ty
-  | .bvar b _ => .bvar b
-  | .fvar f ty => .fvar f ty
+  | .const c ty => .const () c (some ty)
+  | .op o ty => .op () o (some ty)
+  | .bvar b ty => .bvar () b
+  | .fvar f ty => .fvar () f (some ty)
   | .app e1 e2 _ =>
-    .app e1.toLExpr e2.toLExpr
-  | .abs e (.arrow aty _) => .abs aty e.toLExpr
-  | .abs e _ => .abs .none e.toLExpr
-  | .quant qk ty tr e => .quant qk ty tr.toLExpr e.toLExpr
-  | .ite c t f _ => .ite c.toLExpr t.toLExpr f.toLExpr
-  | .eq e1 e2 _ => .eq e1.toLExpr e2.toLExpr
-  | .mdata m e => .mdata m e.toLExpr
+    .app () e1.toLExpr e2.toLExpr
+  | .abs e (.arrow aty _) => .abs () (some aty) e.toLExpr
+  | .abs e _ => .abs () .none e.toLExpr
+  | .quant qk ty tr e => .quant () qk (some ty) tr.toLExpr e.toLExpr
+  | .ite c t f _ => .ite () c.toLExpr t.toLExpr f.toLExpr
+  | .eq e1 e2 _ => .eq () e1.toLExpr e2.toLExpr
+  | .mdata m e => e.toLExpr
 
 /--
 Apply type substitution `S` to `LExprT e`.
@@ -167,7 +166,7 @@ def inferFVar (T : (TEnv Identifier)) (x : Identifier) (fty : Option LMonoTy) :
   Except Format (LMonoTy × (TEnv Identifier)) :=
   match T.context.types.find? x with
   | none => .error f!"Cannot find this fvar in the context! \
-                      {LExpr.fvar x fty}"
+                      {LExpr.fvar () x fty}"
   | some ty => do
     let (ty, T) ← LTy.instantiateWithCheck ty T
     match fty with
@@ -204,18 +203,18 @@ def inferConst (T : (TEnv Identifier)) (c : String) (cty : Option LMonoTy) :
     else
       .error f!"Booleans are not registered in the known types.\n\
                 Don't know how to interpret the following constant:\n\
-                {@LExpr.const LMonoTy Identifier c cty}\n\
+                {LExpr.const () c cty}\n\
                 Known Types: {T.knownTypes}"
   -- Annotated Integers
   | c, some LMonoTy.int =>
     if { name := "int" } ∈ T.knownTypes then
       if c.isInt then .ok (mty[int], T)
                  else .error f!"Constant annotated as an integer, but it is not.\n\
-                                {@LExpr.const LMonoTy Identifier c cty}"
+                                {LExpr.const () c cty}"
     else
       .error f!"Integers are not registered in the known types.\n\
                 Don't know how to interpret the following constant:\n\
-                {@LExpr.const LMonoTy Identifier c cty}\n\
+                {LExpr.const () c cty}\n\
                 Known Types: {T.knownTypes}"
   -- Annotated Reals
   | c, some LMonoTy.real =>
@@ -224,7 +223,7 @@ def inferConst (T : (TEnv Identifier)) (c : String) (cty : Option LMonoTy) :
     else
       .error f!"Reals are not registered in the known types.\n\
                 Don't know how to interpret the following constant:\n\
-                {@LExpr.const LMonoTy Identifier c cty}\n\
+                {LExpr.const () c cty}\n\
                 Known Types: {T.knownTypes}"
   -- Annotated BitVecs
   | c, some (LMonoTy.bitvec n) =>
@@ -234,7 +233,7 @@ def inferConst (T : (TEnv Identifier)) (c : String) (cty : Option LMonoTy) :
     else
       .error f!"Bit vectors of size {n} are not registered in the known types.\n\
                 Don't know how to interpret the following constant:\n\
-                {@LExpr.const LMonoTy Identifier c cty}\n\
+                {LExpr.const () c cty}\n\
                 Known Types: {T.knownTypes}"
   -- Annotated Strings
   | c, some LMonoTy.string =>
@@ -243,7 +242,7 @@ def inferConst (T : (TEnv Identifier)) (c : String) (cty : Option LMonoTy) :
     else
       .error f!"Strings are not registered in the known types.\n\
                 Don't know how to interpret the following constant:\n\
-                {@LExpr.const LMonoTy Identifier c cty}\n\
+                {LExpr.const () c cty}\n\
                 Known Types: {T.knownTypes}"
   | _, _ =>
   -- Unannotated Integers
@@ -252,20 +251,18 @@ def inferConst (T : (TEnv Identifier)) (c : String) (cty : Option LMonoTy) :
         .ok (mty[int], T)
       else
         .error f!"Integers are not registered in the known types.\n\
-                  Constant {@LExpr.const LMonoTy Identifier c cty}\n\
+                  Constant {LExpr.const () c cty}\n\
                   Known Types: {T.knownTypes}"
     else
       .error f!"Cannot infer the type of this constant: \
-                {@LExpr.const LMonoTy Identifier c cty}"
+                {LExpr.const () c cty}"
 
 mutual
-partial def fromLExprAux (T : (TEnv Identifier)) (e : (LExpr LMonoTy Identifier)) :
+partial def fromLExprAux (T : (TEnv Identifier)) (e : (LExpr ⟨Unit, LMonoTy, Identifier⟩)) :
     Except Format ((LExprT Identifier) × (TEnv Identifier)) :=
   open LTy.Syntax in do
   match e with
-  | .mdata m e =>
-    let (et, T) ← fromLExprAux T e
-    .ok ((.mdata m et), T)
+
   | .const c cty =>
     let (ty, T) ← inferConst T c cty
     .ok (.const c ty, T)
@@ -289,8 +286,8 @@ partial def inferOp (T : (TEnv Identifier)) (o : Identifier) (oty : Option LMono
   open LTy.Syntax in
   match T.functions.find? (fun fn => fn.name == o) with
   | none =>
-    .error f!"{toString $ T.functions.getFunctionNames} Cannot infer the type of this operation: \
-              {LExpr.op (toString o) oty}"
+    .error f!"Cannot infer the type of this operation: \
+              {LExpr.op () o oty}"
   | some func => do
       -- `LFunc.type` below will also catch any ill-formed functions (e.g.,
       -- where there are duplicates in the formals, etc.).
@@ -323,7 +320,7 @@ partial def inferOp (T : (TEnv Identifier)) (o : Identifier) (oty : Option LMono
         let S ← Constraints.unify [(ty, optTyy.getD cty )] T.state.substInfo
         .ok (ty, TEnv.updateSubst T S)
 
-partial def fromLExprAux.ite (T : (TEnv Identifier)) (c th el : (LExpr LMonoTy Identifier)) := do
+partial def fromLExprAux.ite (T : (TEnv Identifier)) (c th el : (LExpr ⟨Unit, LMonoTy, Identifier⟩)) := do
   let (ct, T) ← fromLExprAux T c
   let (tt, T) ← fromLExprAux T th
   let (et, T) ← fromLExprAux T el
@@ -333,7 +330,7 @@ partial def fromLExprAux.ite (T : (TEnv Identifier)) (c th el : (LExpr LMonoTy I
   let S ← Constraints.unify [(cty, LMonoTy.bool), (tty, ety)] T.state.substInfo
   .ok (.ite ct tt et tty, TEnv.updateSubst T S)
 
-partial def fromLExprAux.eq (T : (TEnv Identifier)) (e1 e2 : (LExpr LMonoTy Identifier)) := do
+partial def fromLExprAux.eq (T : (TEnv Identifier)) (e1 e2 : (LExpr ⟨Unit, LMonoTy, Identifier⟩)) := do
   -- `.eq A B` is well-typed if there is some instantiation of
   -- type parameters in `A` and `B` that makes them have the same type.
   let (e1t, T) ← fromLExprAux T e1
@@ -343,7 +340,7 @@ partial def fromLExprAux.eq (T : (TEnv Identifier)) (e1 e2 : (LExpr LMonoTy Iden
   let S ← Constraints.unify [(ty1, ty2)] T.state.substInfo
   .ok (.eq e1t e2t LMonoTy.bool, TEnv.updateSubst T S)
 
-partial def fromLExprAux.abs (T : (TEnv Identifier)) (oty : Option LMonoTy) (e : (LExpr LMonoTy Identifier)) := do
+partial def fromLExprAux.abs (T : (TEnv Identifier)) (oty : Option LMonoTy) (e : (LExpr ⟨Unit, LMonoTy, Identifier⟩)) := do
   let (xv, T) := HasGen.genVar T
   let (xt', T) := TEnv.genTyVar T
   let xt := .forAll [] (.ftvar xt')
@@ -363,7 +360,7 @@ partial def fromLExprAux.abs (T : (TEnv Identifier)) (oty : Option LMonoTy) (e :
   | _, _ => .ok ()
   .ok (.abs etclosed mty, T)
 
-partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (oty : Option LMonoTy) (triggers : LExpr LMonoTy Identifier) (e : (LExpr LMonoTy Identifier)) := do
+partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (oty : Option LMonoTy) (triggers : LExpr ⟨Unit, LMonoTy, Identifier⟩) (e : (LExpr ⟨Unit, LMonoTy, Identifier⟩)) := do
   let (xv, T) := HasGen.genVar T
   let (xt', T) := TEnv.genTyVar T
   let xt := .forAll [] (.ftvar xt')
@@ -396,7 +393,7 @@ partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (ot
   else
     .error f!"Quantifier body has non-Boolean type: {ety}"
 
-partial def fromLExprAux.app (T : (TEnv Identifier)) (e1 e2 : (LExpr LMonoTy Identifier)) := do
+partial def fromLExprAux.app (T : (TEnv Identifier)) (e1 e2 : (LExpr ⟨Unit, LMonoTy, Identifier⟩)) := do
   let (e1t, T) ← fromLExprAux T e1
   let ty1 := e1t.toLMonoTy
   let (e2t, T) ← fromLExprAux T e2
@@ -415,18 +412,18 @@ partial def fromLExprAux.app (T : (TEnv Identifier)) (e1 e2 : (LExpr LMonoTy Ide
   let mty := LMonoTy.subst S.subst freshty
   .ok (.app e1t e2t mty, TEnv.updateSubst T S)
 
-end
-
-protected def fromLExpr (T : (TEnv Identifier)) (e : (LExpr LMonoTy Identifier)) :
+protected def fromLExpr (T : (TEnv Identifier)) (e : (LExpr ⟨Unit, LMonoTy, Identifier⟩)) :
     Except Format ((LExprT Identifier) × (TEnv Identifier)) := do
   let (et, T) ← fromLExprAux T e
   .ok (LExprT.applySubst et T.state.substInfo.subst, T)
 
-protected def fromLExprs (T : (TEnv Identifier)) (es : List (LExpr LMonoTy Identifier)) :
+end
+
+protected def fromLExprs (T : (TEnv Identifier)) (es : List (LExpr ⟨Unit, LMonoTy, Identifier⟩)) :
     Except Format (List (LExprT Identifier) × (TEnv Identifier)) := do
   go T es []
   where
-    go (T : TEnv Identifier) (rest : List (LExpr LMonoTy Identifier))
+    go (T : TEnv Identifier) (rest : List (LExpr ⟨Unit, LMonoTy, Identifier⟩))
         (acc : List (LExprT Identifier)) := do
       match rest with
       | [] => .ok (acc.reverse, T)
@@ -441,41 +438,40 @@ end LExprT
 /--
 Annotate an `LExpr e` with inferred monotypes.
 -/
-def LExpr.annotate (T : (TEnv Identifier)) (e : (LExpr LMonoTy Identifier)) :
-    Except Format ((LExpr LMonoTy Identifier) × (TEnv Identifier)) := do
+def LExpr.annotate (T : (TEnv Identifier)) (e : (LExpr ⟨Unit, LMonoTy, Identifier⟩)) :
+    Except Format ((LExpr ⟨Unit, LMonoTy, Identifier⟩) × (TEnv Identifier)) := do
   let (e_a, T) ← LExprT.fromLExpr T e
   return (LExprT.toLExpr e_a, T)
 
 /--
 Apply type substitution `S` to `LExpr e`.
 -/
-def LExpr.applySubst (e : (LExpr LMonoTy Identifier)) (S : Subst) : (LExpr LMonoTy Identifier) :=
+def LExpr.applySubst (e : (LExpr ⟨Unit, LMonoTy, Identifier⟩)) (S : Subst) : (LExpr ⟨Unit, LMonoTy, Identifier⟩) :=
   match e with
   | .const c ty =>
     match ty with
     | none => e
     | some ty =>
       let ty := LMonoTy.subst S ty
-      .const c ty
+      .const () c (some ty)
   | .op o ty =>
     match ty with
     | none => e
     | some ty =>
       let ty := LMonoTy.subst S ty
-      .op o ty
+      .op () o (some ty)
   | .fvar x ty =>
       match ty with
     | none => e
     | some ty =>
       let ty := LMonoTy.subst S ty
-      .fvar x ty
+      .fvar () x (some ty)
   | .bvar _ => e
-  | .abs ty e => .abs ty (e.applySubst S)
-  | .quant qk ty tr e => .quant qk ty (tr.applySubst S) (e.applySubst S)
-  | .app e1 e2 => .app (e1.applySubst S) (e2.applySubst S)
-  | .ite c t f => .ite (c.applySubst S) (t.applySubst S) (f.applySubst S)
-  | .eq e1 e2 => .eq (e1.applySubst S) (e2.applySubst S)
-  | .mdata m e => .mdata m (e.applySubst S)
+  | .abs m ty e => .abs m ty (e.applySubst S)
+  | .quant m qk ty tr e => .quant m qk ty (tr.applySubst S) (e.applySubst S)
+  | .app m e1 e2 => .app m (e1.applySubst S) (e2.applySubst S)
+  | .ite m c t f => .ite m (c.applySubst S) (t.applySubst S) (f.applySubst S)
+  | .eq m e1 e2 => .eq m (e1.applySubst S) (e2.applySubst S)
 
 ---------------------------------------------------------------------
 

@@ -184,6 +184,8 @@ theorem LMonoTy.BEq_refl : LMonoTy.BEq ty ty := by
     simp_all [LMonoTy.BEq.go]
   done
 
+
+
 instance : DecidableEq LMonoTy :=
   fun x y =>
     if h: LMonoTy.BEq x y then
