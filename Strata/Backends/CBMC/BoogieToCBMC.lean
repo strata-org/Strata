@@ -21,13 +21,13 @@ program Boogie;
 procedure simpleTest(x : int, y : int) returns (ret : int)
 spec {
   requires [x_positive]:    (x > 0);
-  ensures  [ret_positive]:  (ret > 0);
 }
 {
   var z : int;
   z := x;
+  //assume [foo]: z < 10;
   z := z + 1;
-  ret := z;
+  ret := 0;
 };
 #end
 
@@ -463,7 +463,7 @@ def lexprToCBMC (expr : Boogie.Expression.Expr) (functionName : String) : Json :
           ("#id_class", Json.mkObj [("id", "1")]),
           ("#lvalue", Json.mkObj [("id", "1")]),
           ("#source_location", mkSourceLocation "from_andrew.c" functionName "2"),
-          ("identifier", Json.mkObj [("id", s!"{functionName}::{varName}")]),
+          ("identifier", Json.mkObj [("id", s!"{functionName}::{boogieIdentToStr varName}")]),
           ("type", mkIntType)
         ])
       ])
@@ -619,15 +619,17 @@ def exprToJson (e : Boogie.Expression.Expr) (loc: SourceLoc) : Json :=
   | .app (.app (.op op _) left) right =>
     let leftJson := match left with
       | .fvar "z" _ => mkLvalueSymbol s!"{loc.functionName}::1::z" loc.lineNum loc.functionName
-      | .fvar varName _ => mkLvalueSymbol s!"{loc.functionName}::{varName}" loc.lineNum loc.functionName
+      | .fvar varName _ => mkLvalueSymbol s!"{loc.functionName}::{boogieIdentToStr varName}" loc.lineNum loc.functionName
       | _ => exprToJson left loc
     let rightJson := match right with
-      | .fvar varName _ => mkLvalueSymbol s!"{loc.functionName}::{varName}" loc.lineNum loc.functionName
+      | .fvar varName _ => mkLvalueSymbol s!"{loc.functionName}::{boogieIdentToStr varName}" loc.lineNum loc.functionName
       | .const value _ => mkConstant value "10" (mkSourceLocation "from_andrew.c" loc.functionName loc.lineNum)
       | _ => exprToJson right loc
     mkBinaryOp (opToStr (boogieIdentToStr op)) loc.lineNum loc.functionName leftJson rightJson
   | .const n _ =>
     mkConstant n "10" (mkSourceLocation "from_andrew.c" loc.functionName "14")
+  | .fvar name _ =>
+    mkLvalueSymbol s!"{loc.functionName}::{boogieIdentToStr name}" loc.lineNum loc.functionName
   | _ => panic! "Unimplemented"
 
 def cmdToJson (e : Boogie.Command) (loc: SourceLoc) : Json :=
@@ -641,17 +643,18 @@ def cmdToJson (e : Boogie.Command) (loc: SourceLoc) : Json :=
           ("id", "symbol"),
           ("namedSub", Json.mkObj [
             ("#source_location", mkSourceLocation "from_andrew.c" loc.functionName "5"),
-            ("identifier", Json.mkObj [("id", s!"{loc.functionName}::1::{name}")]),
+            ("identifier", Json.mkObj [("id", s!"{loc.functionName}::1::{boogieIdentToStr name}")]),
             ("type", mkIntType)
           ])
         ]
       ]
-    | .set ("return") _ _ => returnStmt loc.functionName
+    | .set ("ret") _ _ =>
+      returnStmt loc.functionName
     | .set name expr _ =>
       let exprLoc : SourceLoc := { functionName := loc.functionName, lineNum := "6" }
       mkCodeBlock "expression" "6" loc.functionName #[
         mkSideEffect "assign" "6" loc.functionName mkIntType #[
-          mkLvalueSymbol s!"{loc.functionName}::1::{name}" "6" loc.functionName,
+          mkLvalueSymbol s!"{loc.functionName}::1::{boogieIdentToStr name}" "6" loc.functionName,
           exprToJson expr exprLoc
         ]
       ]
@@ -795,12 +798,10 @@ def createImplementationSymbolFromAST (func : Boogie.Procedure) : CBMCSymbol :=
     value := implValue
   }
 
-def testSymbols : String := Id.run do
+def testSymbols : IO Unit := do
   -- Generate symbols using AST data
   let contractSymbol := createContractSymbolFromAST myFunc
   let implSymbol := createImplementationSymbolFromAST myFunc
-
-
 
   -- Get parameter names from AST
   let paramNames : List String := myFunc.header.inputs.keys.map (λ p => p.snd)
@@ -811,7 +812,7 @@ def testSymbols : String := Id.run do
   -- Build symbol map
   let mut m : Map String CBMCSymbol := Map.empty
   m := m.insert s!"contract::{myFunc.header.name.snd}" contractSymbol
-  -- m := m.insert myFunc.header.name.snd implSymbol
+  m := m.insert myFunc.header.name.snd implSymbol
 
   -- Add parameter symbols
   for paramName in paramNames do
@@ -820,5 +821,4 @@ def testSymbols : String := Id.run do
 
   -- Add local variable
   m := m.insert s!"{myFunc.header.name.snd}::1::z" zSymbol
-
-  toString (toJson m)
+  IO.println (toString (toJson m))
