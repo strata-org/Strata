@@ -9,7 +9,7 @@ import Strata.Backends.CBMC.BoogieToCBMC
 
 def main (args : List String) : IO Unit := do
   match args with
-  | ["test"] => IO.println testSymbols
+  | ["test"] => testSymbols
   | [filename] =>
     let content ← IO.FS.readFile filename
     match Lean.Json.parse content with
@@ -25,4 +25,4 @@ def main (args : List String) : IO Unit := do
           IO.println s!"Symbol: {symbol.name} (type: {symbol.prettyType})"
       | .error e => IO.println s!"Error getting array: {e}"
     | .error e => IO.println s!"Error parsing JSON: {e}"
-  | _ => IO.println "Usage: StrataToCBMC filename or StrataToCBMC test"
+  | _ => IO.println "Usage: BoogieToCBMC filename or BoogieToCBMC test"
