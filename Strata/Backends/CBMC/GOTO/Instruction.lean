@@ -70,6 +70,9 @@ deriving Repr, Inhabited, DecidableEq
 instance {n} : OfNat Target n := ⟨n⟩
 def Target.toNat (t : Target) : Nat := t
 
+instance : ToString Target where
+  toString t := toString $ repr t
+
 -------------------------------------------------------------------------------
 
 /--
@@ -78,21 +81,33 @@ GOTO instruction, corresponds to
 -/
 structure Instruction where
   type        : InstructionType := .NO_INSTRUCTION_TYPE
+  -- (FIXME) Many instructions ignore the `guard` field. Should we consider making
+  -- `guard` an `Option Expr` instead?
   guard       : Expr            := .true
+  -- (FIXME) Many instructions ignore the `code` field. Should we consider
+  -- making `code` an `Option Code` instead?
+  -- (FIXME) Maybe `guard` and `code` usage is really an XOR?
   code        : Code            := Code.skip
-  targets     : List Target     := []
+  /--
+  Invariant: A target should only contain a known `locationNum` within the same
+  procedure.
+  -/
+  target      : Option Target   := .none
   sourceLoc   : SourceLocation  := .nil
   /--
   A globally unique number to identify a program location.
   It's guaranteed to be ordered in program order within
-  one goto program.
+  one goto program (a single procedure).
   -/
-  locationNum : Nat             := 0
+  locationNum : Target             := 0
   /--
-  A number to identify branch targets. This is used to assign each target a
-  unique index.
+  Corresponds to `labelst`.
+  Use within CProver: users can specify which loop to unwind using these labels.
+  For now, think of these as a set of labels instead of a list.
+  (FIXME) Maybe put `labels` in `sourceLoc`? It doesn't affect the semantics, so
+  feels like it should belong in the metadata.
   -/
-  targetNum   : Nat             := 0
+  labels : List String := []
   deriving Repr, Inhabited
 
 instance : ToString Instruction where

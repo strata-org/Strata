@@ -154,6 +154,9 @@ end Expr
 GOTO [Expressions](https://diffblue.github.io/cbmc/classexprt.html)
 
 For now, we have primarily focused on `expr_protectedt` class.
+
+We will also confine ourselves to expressions that can appear at the lowest
+level of CProver IRs -- i.e., GOTO assembly instructions.
 -/
 structure Expr where
   /--
