@@ -26,7 +26,6 @@ class Op:
         self.decl = decl
         self.args = args
 
-
 Python : typing.Any = strata.Dialect('Python')
 Python.add_import("Init")
 Python.add_syncat("int")

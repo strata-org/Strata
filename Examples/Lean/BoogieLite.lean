@@ -302,7 +302,8 @@ procedure add (x : Int, y : Int, c : Bool) {
 #end
 
 /--
-info: procedure add(x:Int, y:Int, c:Bool) {
+info: program ArithFn;
+procedure add(x:Int, y:Int, c:Bool) {
   assign(a, c);
   if (a) {
     assign(b, a);

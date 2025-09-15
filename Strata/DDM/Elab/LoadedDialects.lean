@@ -70,4 +70,75 @@ def ofDialects! (ds : Array Dialect) : LoadedDialects :=
 
 end LoadedDialects
 
-abbrev LoadDialectCallback := DialectName → StateT LoadedDialects BaseIO (Except String Dialect)
+abbrev LoadDialectCallback := LoadedDialects → DialectName → BaseIO (LoadedDialects × Except String Dialect)
+
+end Elab
+
+inductive DialectFileMap.Encoding
+| ion
+| text
+
+/--
+The dialect file mapping maintains a mapping from dialect names to the
+file to read for loading this dialect.
+
+It is used to identify where to find dialects that have not yet been
+loaded into `LoadedDialects`.
+
+The general principal of the map is
+-/
+structure DialectFileMap where
+  map : Std.HashMap DialectName (IO.FS.SystemTime × DialectFileMap.Encoding × System.FilePath) := {}
+
+namespace DialectFileMap
+
+def strata_dialect_ext : String := ".dialect.st"
+
+def strata_ion_dialect_ext : String := ".dialect.st.ion"
+
+def matchExt (path : String) (ext : String) : Option String :=
+  if path.endsWith ext then
+    some (path.dropRight ext.length)
+  else
+    none
+
+def addEntry (m : DialectFileMap) (stem : DialectName) (enc : Encoding) (path : System.FilePath) : BaseIO DialectFileMap := do
+  let modTime ←
+    match ← path.metadata |>.toBaseIO with
+    | .error _ => return m
+    | .ok md => pure md.modified
+  pure <| {
+    map := m.map.alter stem fun o =>
+      let isNewer :=
+            match o with
+            | none => true
+            | some (prevTime, _) => modTime > prevTime
+      if isNewer then
+        some (modTime, enc, path)
+      else
+        o
+  }
+
+def add (m : DialectFileMap) (dir : System.FilePath) : EIO String DialectFileMap := do
+  let entries ←
+    match ← dir.readDir |>.toBaseIO with
+    | .error e => throw s!"Could not read {dir}: {e}"
+    | .ok e => pure e
+  entries.foldlM (init := m) fun m entry => do
+    if let some stem := matchExt entry.fileName strata_dialect_ext then
+      m.addEntry stem .text entry.path
+    else if let some stem := matchExt entry.fileName strata_ion_dialect_ext then
+      m.addEntry stem .ion entry.path
+    else do
+      let _ ← IO.eprintln s!"Skipping {dir / entry.fileName}" |>.toBaseIO
+      pure m
+
+def ofDirs (dirs : Array System.FilePath) : EIO String DialectFileMap :=
+  dirs.foldlM (init := {}) fun m dir => m.add dir
+
+def findPath (m : DialectFileMap) (name : DialectName) : Option System.FilePath :=
+  match m.map[name]? with
+  | none => none
+  | some (_, _, path) => pure path
+
+end DialectFileMap

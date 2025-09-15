@@ -25,6 +25,26 @@ open Lean.Syntax (mkStrLit)
 
 namespace Strata
 
+namespace Lean
+
+/--
+Prepend the current namespace to the Lean name and convert to an identifier.
+-/
+def mkScopedIdent (scope : Name) (subName : Lean.Name) : Ident :=
+  let fullName := scope ++ subName
+  let nameStr := toString subName
+  .mk (.ident .none nameStr.toSubstring subName [.decl fullName []])
+
+/--
+Prepend the current namespace to the Lean name and convert to an identifier.
+-/
+def currScopedIdent {m} [Monad m] [Lean.MonadResolveName m] (subName : Lean.Name) : m Ident := do
+  (mkScopedIdent · subName) <$> getCurrNamespace
+
+end Lean
+
+open Lean (currScopedIdent)
+
 private def arrayLit [Monad m] [Lean.MonadQuotation m] (as : Array Term) : m Term := do
   ``( (#[ $as:term,* ] : Array _) )
 
@@ -481,15 +501,6 @@ def mkCategoryIdent (scope : Name) (name : Name) : Ident :=
         aux p' (.str .anonymous v :: r)
   aux name []
 
-/--
-Prepend the current namespace to the Lean name and convert to an identifier.
--/
-def mkScopedIdent (subName : Lean.Name) : CommandElabM Ident := do
-  let scope ← getCurrNamespace
-  let name := scope ++ subName
-  let nameStr := toString subName
-  return .mk (.ident .none nameStr.toSubstring subName [.decl name []])
-
 /-- Return identifier for operator with given name to suport category. -/
 def getCategoryScopedName (cat : QualifiedIdent) : GenM Name := do
   match (←read).categoryNameMap[cat]? with
@@ -502,11 +513,11 @@ def getCategoryScopedName (cat : QualifiedIdent) : GenM Name := do
 def getCategoryIdent (cat : QualifiedIdent) : GenM Ident := do
   if let some nm := declaredCategories[cat]? then
     return mkRootIdent nm
-  mkScopedIdent (← getCategoryScopedName cat)
+  currScopedIdent (← getCategoryScopedName cat)
 
 /-- Return identifier for operator with given name to suport category. -/
 def getCategoryOpIdent (cat : QualifiedIdent) (name : String) : GenM Ident := do
-  mkScopedIdent <| (← getCategoryScopedName cat) |>.str name
+  currScopedIdent <| (← getCategoryScopedName cat) |>.str name
 
 partial def ppCat (c : SyntaxCat) : GenM Term := do
   let args ← c.args.mapM ppCat
@@ -576,10 +587,10 @@ structure ToOp where
   argDecls : Array (String × SyntaxCat)
 
 def toAstIdentM (cat : QualifiedIdent) : GenM Ident := do
-  mkScopedIdent <| (← getCategoryScopedName cat) ++ `toAst
+  currScopedIdent <| (← getCategoryScopedName cat) ++ `toAst
 
 def ofAstIdentM (cat : QualifiedIdent) : GenM Ident := do
-  mkScopedIdent <| (← getCategoryScopedName cat) ++ `ofAst
+  currScopedIdent <| (← getCategoryScopedName cat) ++ `ofAst
 
 def argCtor (v : Ident) (i : SyntaxCat) : GenM Term :=
   match i with
@@ -798,7 +809,7 @@ def createNameIndexMap (cat : QualifiedIdent) (ops : Array DefaultCtor) : GenM (
     match op.strataName with
     | none => map  -- Skip operators without a name
     | some name => map.insert name map.size  -- Assign the next available index
-  let ofAstNameMap ← mkScopedIdent <| (← getCategoryScopedName cat) ++ `ofAst.map
+  let ofAstNameMap ← currScopedIdent <| (← getCategoryScopedName cat) ++ `ofAst.map
   let cmd ← `(def $ofAstNameMap : Std.HashMap Strata.QualifiedIdent Nat := Std.HashMap.ofList $(quote nameIndexMap.toList))
   pure (nameIndexMap, ofAstNameMap, cmd)
 
