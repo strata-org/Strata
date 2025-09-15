@@ -48,7 +48,7 @@ def compare_objs(o1, o2, path=""):
         all_keys = set(o1.keys()) | set(o2.keys())
         for key in all_keys:
             # Ignore locations since we can't generate them from Strata
-            if key == "#source_location" or key == "#end_location":
+            if key == "#source_location" or key == "#end_location" or key == "file" or key == "working_directory" or key == "module":
                 continue
             current_path = f"{path}.{key}" if path else key
             if key not in o1:
