@@ -37,4 +37,5 @@ default_keys = [
 "__CPROVER_architecture_pointer_width",
 "__CPROVER_architecture_long_double_width",
 "__CPROVER_architecture_char_is_unsigned",
+"simpleTest",
 ]

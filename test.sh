@@ -13,4 +13,4 @@ $CBMC_DIR/goto-instrument --enforce-contract simpleTest full.goto full_checking.
 $CBMC_DIR/cbmc full_checking.goto --function simpleTest --trace
 
 
-# rm foo.json full.json full.goto full_checking.goto
+rm foo.json full.json full.goto full_checking.goto
