@@ -116,7 +116,7 @@ open Lambda.LTy.Syntax in
 def transformToGoto (boogie : Boogie.Program) : Except Format (CProverGOTO.Program) := do
   let T := { Lambda.TEnv.default with functions := Boogie.Factory, knownTypes := Boogie.KnownTypes }
   let (boogie, _T) ← Boogie.Program.typeCheck T boogie
-  -- dbg_trace f!"[Strata.Boogie] Annotated program:\n{program}"
+  dbg_trace f!"[Strata.Boogie] Type Checking Succeeded!"
   let decl := boogie.decls[0]!
   match decl.getProc? with
   | none => .error f!""
