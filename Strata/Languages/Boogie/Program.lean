@@ -89,6 +89,13 @@ def Decl.getFunc? (d : Decl) : Option Function :=
 def Decl.getFunc (d : Decl) (H: d.kind = .func): Function :=
   let .func f _ := d; f
 
+def Decl.eraseTypes (d : Decl) : Decl :=
+  match d with
+  | .ax a md     => .ax a.eraseTypes md
+  | .proc p md   => .proc p.eraseTypes md
+  | .func f md   => .func f.eraseTypes md
+  | _ => d
+
 instance : ToFormat Decl where
   format d := match d with
     | .var name ty e md => f!"{md}var ({name} : {ty}) := {e}"
@@ -111,6 +118,9 @@ instance : ToFormat Program where
 
 instance : Inhabited Program where
   default := .init
+
+def Program.eraseTypes (p : Program) : Program :=
+  { p with decls := p.decls.map Decl.eraseTypes }
 
 ---------------------------------------------------------------------
 

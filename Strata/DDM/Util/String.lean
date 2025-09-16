@@ -11,6 +11,12 @@ potentially useful to add.
 
 namespace Strata
 
+/--
+Return true if this is a non-printable 8-bit character
+-/
+private def useXHex ( c : Char) : Bool :=
+  c < '\x20' ∨ '\x7f' ≤ c ∧ (c < '\xa1' ∨ c == '\xad')
+
 private def escapeStringLitAux (acc : String) (c : Char) : String :=
   if c == '"' then
     acc ++ "\\\""
@@ -18,6 +24,18 @@ private def escapeStringLitAux (acc : String) (c : Char) : String :=
     acc ++ "\\\\"
   else if c == '\n' then
     acc ++ "\\n"
+  else if c == '\r' then
+    acc ++ "\\r"
+  else if c == '\t' then
+    acc ++ "\\t"
+  else if useXHex c then
+    let i := c.toNat
+    let digits := Nat.toDigits 16 i
+    if i < 16 then
+      s!"{acc}\\x0{digits[0]!}"
+    else
+      assert! digits.length = 2
+      s!"{acc}\\x{digits[0]!}{digits[1]!}"
   else
     acc.push c
 
