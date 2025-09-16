@@ -54,12 +54,17 @@ def eval (E : Env) : List (Program × Env) :=
       go rest { declsE with xdecls := declsE.xdecls ++ [decl] }
 
     | .ax a _ =>
-       -- All axioms go into the top-level path condition before anything is executed.
-       let declsE := { declsE with
-                        env := { declsE.env with pathConditions :=
-                                              declsE.env.pathConditions.insert (toString $ a.name) a.e },
-                        xdecls := declsE.xdecls ++ [decl] }
-       go rest declsE
+      -- All axioms go into the top-level path condition before anything is executed.
+      -- There should be exactly one entry in the path condition stack at this point.
+      if declsE.env.pathConditions.length != 1 then
+        panic! "Internal error: path condition stack misaligned when adding axiom"
+      else
+        let declsE := {
+          declsE with
+            env := { declsE.env with pathConditions :=
+                      declsE.env.pathConditions.insert (toString $ a.name) a.e },
+                    xdecls := declsE.xdecls ++ [decl] }
+        go rest declsE
 
     | .proc proc _ =>
       let pEs := Procedure.eval declsE.env proc
