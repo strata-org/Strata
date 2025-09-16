@@ -39,9 +39,9 @@ info: type MapII := (Map int int)
 var (a : MapII) := init_a_0
 (procedure P :  () → ())
 modifies: [a]
-preconditions: (P_requires_1, ((((~select : (arrow (Map int int) (arrow int int))) a) (#0 : int)) == (#0 : int)))
+preconditions: (P_requires_1, ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) (#0 : int)) == (#0 : int)))
 postconditions: ⏎
-body: assert [assert_0] ((((~select : (arrow (Map int int) (arrow int int))) a) (#0 : int)) == (#1 : int))
+body: assert [assert_0] ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) (#0 : int)) == (#1 : int))
 
 Errors: #[]
 -/

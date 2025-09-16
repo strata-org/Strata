@@ -29,27 +29,27 @@ open Imperative Boogie
   error message similar to "(kernel) application type mismatch".
 -/
 theorem StmtToNondetCorrect [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasBoolNeg P] :
-  WellFormedSemanticEvalBool δ δP →
+  WellFormedSemanticEvalBool δ →
   WellFormedSemanticEvalVal δ →
   (∀ st,
     Stmt.sizeOf st ≤ m →
-    EvalStmt P (Cmd P) (EvalCmd P) δ δP σ₀ σ st σ' →
-    EvalNondetStmt P (Cmd P) (EvalCmd P) δ δP σ₀ σ (StmtToNondetStmt st) σ') ∧
+    EvalStmt P (Cmd P) (EvalCmd P) δ σ₀ σ st σ' →
+    EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ₀ σ (StmtToNondetStmt st) σ') ∧
   (∀ ss,
     Stmts.sizeOf ss ≤ m →
-    EvalStmts P (Cmd P) (EvalCmd P) δ δP σ₀ σ ss σ' →
-    EvalNondetStmt P (Cmd P) (EvalCmd P) δ δP σ₀ σ (StmtsToNondetStmt ss) σ') := by
+    EvalStmts P (Cmd P) (EvalCmd P) δ σ₀ σ ss σ' →
+    EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ₀ σ (StmtsToNondetStmt ss) σ') := by
   intros Hwfb Hwfvl
   apply Nat.strongRecOn (motive := λ m ↦
     ∀ σ₀ σ σ',
     (∀ st,
       Stmt.sizeOf st ≤ m →
-      EvalStmt P (Cmd P) (EvalCmd P) δ δP σ₀ σ st σ' →
-      EvalNondetStmt P (Cmd P) (EvalCmd P) δ δP σ₀ σ (StmtToNondetStmt st) σ') ∧
+      EvalStmt P (Cmd P) (EvalCmd P) δ σ₀ σ st σ' →
+      EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ₀ σ (StmtToNondetStmt st) σ') ∧
     (∀ ss,
       Stmts.sizeOf ss ≤ m →
-      EvalStmts P (Cmd P) (EvalCmd P) δ δP σ₀ σ ss σ' →
-      EvalNondetStmt P (Cmd P) (EvalCmd P) δ δP σ₀ σ (StmtsToNondetStmt ss) σ')
+      EvalStmts P (Cmd P) (EvalCmd P) δ σ₀ σ ss σ' →
+      EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ₀ σ (StmtsToNondetStmt ss) σ')
   )
   intros n ih σ₀ σ σ'
   refine ⟨?_, ?_⟩
@@ -70,12 +70,12 @@ theorem StmtToNondetCorrect [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [H
       assumption
     case ite =>
       cases Heval with
-      | ite_true_sem Htrue Heval Hwf =>
+      | ite_true_sem Htrue Hwfb Heval =>
         next c t e =>
         cases Heval with
         | block_sem Heval =>
         specialize ih (Stmts.sizeOf t.ss) (by simp_all; omega)
-        refine EvalNondetStmt.choice_left_sem ?_ Hwfb
+        refine EvalNondetStmt.choice_left_sem Hwfb ?_
         apply EvalNondetStmt.seq_sem
         . apply EvalNondetStmt.cmd_sem
           exact EvalCmd.eval_assume Htrue Hwfb
@@ -83,18 +83,17 @@ theorem StmtToNondetCorrect [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [H
         . apply (ih _ _ _).2
           omega
           assumption
-      | ite_false_sem Hfalse Heval Hwf =>
+      | ite_false_sem Hfalse Hwfb Heval =>
         next c t e =>
         cases Heval with
         | block_sem Heval =>
         specialize ih (Stmts.sizeOf e.ss) (by simp_all; omega)
-        refine EvalNondetStmt.choice_right_sem ?_ Hwfb
+        refine EvalNondetStmt.choice_right_sem Hwfb ?_
         apply EvalNondetStmt.seq_sem
         . apply EvalNondetStmt.cmd_sem
           refine EvalCmd.eval_assume ?_ Hwfb
           simp [WellFormedSemanticEvalBool] at Hwfb
-          have HH := (Hwfb σ₀ σ c).1.2.2.mp Hfalse
-          assumption
+          exact (Hwfb σ₀ σ c).2.mp Hfalse
           simp [isDefinedOver, HasVarsImp.modifiedVars, Cmd.modifiedVars, isDefined]
         . apply (ih _ _ _).2
           omega
@@ -114,12 +113,10 @@ theorem StmtToNondetCorrect [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [H
       constructor
       next wfvl wffv wfb wfbv wfn =>
         expose_names
-        simp [WellFormedSemanticEvalBool] at Hwfb
         simp [WellFormedSemanticEvalVal] at Hwfvl
         have Hval := wfbv.bool_is_val.1
         have Hv := Hwfvl.2 HasBool.tt σ₀ σ Hval
-        have Heq := (Hwfb σ₀ σ HasBool.tt).2.1
-        exact Heq.mp Hv
+        exact Hv
       assumption
       intros id Hin
       simp [HasVarsImp.modifiedVars, Cmd.modifiedVars] at Hin
@@ -139,10 +136,10 @@ theorem StmtToNondetCorrect [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [H
 for a single (deterministic) statement -/
 theorem StmtToNondetStmtCorrect
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasBoolNeg P] :
-  WellFormedSemanticEvalBool δ δP →
+  WellFormedSemanticEvalBool δ →
   WellFormedSemanticEvalVal δ →
-  EvalStmt P (Cmd P) (EvalCmd P) δ δP σ₀ σ st σ' →
-  EvalNondetStmt P (Cmd P) (EvalCmd P) δ δP σ₀ σ (StmtToNondetStmt st) σ' := by
+  EvalStmt P (Cmd P) (EvalCmd P) δ σ₀ σ st σ' →
+  EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ₀ σ (StmtToNondetStmt st) σ' := by
   intros Hwfb Hwfv Heval
   apply (StmtToNondetCorrect Hwfb Hwfv (m:=st.sizeOf)).1 <;> simp_all
 
@@ -150,9 +147,9 @@ theorem StmtToNondetStmtCorrect
 for multiple (deterministic) statements -/
 theorem StmtsToNondetStmtCorrect
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasBoolNeg P] :
-  WellFormedSemanticEvalBool δ δP →
+  WellFormedSemanticEvalBool δ →
   WellFormedSemanticEvalVal δ →
-  EvalStmts P (Cmd P) (EvalCmd P) δ δP σ₀ σ ss σ' →
-  EvalNondetStmt P (Cmd P) (EvalCmd P) δ δP σ₀ σ (StmtsToNondetStmt ss) σ' := by
+  EvalStmts P (Cmd P) (EvalCmd P) δ σ₀ σ ss σ' →
+  EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ₀ σ (StmtsToNondetStmt ss) σ' := by
   intros Hwfb Hwfv Heval
   apply (StmtToNondetCorrect Hwfb Hwfv (m:=Stmts.sizeOf ss)).2 <;> simp_all
