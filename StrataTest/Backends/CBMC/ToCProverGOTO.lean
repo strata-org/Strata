@@ -26,7 +26,8 @@ abbrev LExprTP : Imperative.PureExpr :=
 /--
 Commands, parameterized by type-annotated Lambda expressions.
 
-We assume in this test that the Lambda expressions are well-typed.
+We assume in this test that the Lambda expressions are well-typed. In practice,
+these should after Lambda's type inference pass.
 -/
 abbrev Cmd := Imperative.Cmd LExprTP
 
@@ -66,16 +67,19 @@ info: ok: #[DECL (decl (s : unsignedbv[32])),
 #eval do let ans ← Imperative.Cmds.toGotoTransform Lambda.TEnv.default ExampleProgram1
           return format ans.instructions
 
+-------------------------------------------------------------------------------
+
+
 /- (100 : bv32) + (200 : bv32) -/
-private def addNumsLExpr :=
+private def addBV32LExpr (op1 op2 : Lambda.LExprT String) :=
   (Lambda.LExprT.app
-    (.app (.op "bv32AddOp" mty[bv32 → bv32 → bv32]) (.const "100" mty[bv32]) mty[bv32 → bv32])
-    (.const "200" mty[bv32])
-       mty[bv32])
+    (.app (.op "bv32AddOp" mty[bv32 → bv32 → bv32]) op1 mty[bv32 → bv32])
+    op2
+    mty[bv32])
 
 def ExampleProgram2 : Imperative.Cmds LExprTP :=
   [.init "s" mty[bv32] (.const "0" mty[bv32]),
-   .set "s" addNumsLExpr]
+   .set "s" (addBV32LExpr (.const "100" mty[bv32]) (.const "200" mty[bv32]))]
 
 /--
 info: ok: #[DECL (decl (s : unsignedbv[32])),
@@ -87,5 +91,33 @@ info: ok: #[DECL (decl (s : unsignedbv[32])),
           return format ans.instructions
 
 -------------------------------------------------------------------------------
+
+-- (FIXME) Is this the right way to deal with non-det. expressions?
+
+def ExampleProgram3 : Imperative.Cmds LExprTP :=
+  [.init "x" mty[bv32] (.const "0" mty[bv32]),
+   .init "y" mty[bv32] (.const "0" mty[bv32]),
+   .havoc "x",
+   .havoc "y",
+   .init "z" mty[bv32] (addBV32LExpr (.fvar "x" mty[bv32]) (.fvar "y" mty[bv32]))]
+
+/--
+info: ok: #[DECL (decl (x : unsignedbv[32])),
+ ASSIGN (assign (x : unsignedbv[32]) (0 : unsignedbv[32])),
+ DECL (decl (y : unsignedbv[32])),
+ ASSIGN (assign (y : unsignedbv[32]) (0 : unsignedbv[32])),
+ ASSIGN (assign (x : unsignedbv[32]) (nondet : unsignedbv[32])),
+ ASSIGN (assign (y : unsignedbv[32]) (nondet : unsignedbv[32])),
+ DECL (decl (z : unsignedbv[32])),
+ ASSIGN (assign (z : unsignedbv[32]) (((x : unsignedbv[32]) + (y : unsignedbv[32])) : unsignedbv[32]))]
+-/
+#guard_msgs in
+#eval do let ans ← Imperative.Cmds.toGotoTransform Lambda.TEnv.default ExampleProgram3
+          return format ans.instructions
+
+-------------------------------------------------------------------------------
+
+-- #eval writeProgramsToFile "StrataTest/Backends/CBMC/SimpleAdd/Unsigned/function.json"
+--         [("simpleAddUnsigned", simpleAddUnsignedProgram)]
 
 end

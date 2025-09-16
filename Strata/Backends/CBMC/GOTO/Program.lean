@@ -15,4 +15,6 @@ open Std (ToFormat Format format)
   [`goto_programt`](https://diffblue.github.io/cbmc/classgoto__programt.html) -/
 structure Program where
   instructions : Array Instruction
+  isInternal : Bool := false
+  isBodyAvailable : Bool := true
 deriving Repr

@@ -27,6 +27,8 @@ def LExprT.getGotoType {Identifier} (e : LExprT Identifier) :
 def fnToGotoID (fn : String) : Except Format CProverGOTO.Expr.Identifier :=
   match fn with
   | "bv32AddOp" => .ok (.multiary .Plus)
+  | "Bv32.Add" => .ok (.multiary .Plus)
+  | "Bv32.Lt" => .ok (.binary .Lt)
   | _ => .error f!"[fnToGotoID] Not yet implemented: fn: {fn}"
 
 /--
@@ -60,6 +62,43 @@ def LExprT.toGotoExpr {Identifier} [ToString Identifier] (e : LExprT Identifier)
     return { id := op, type := gty, operands := [e1g] }
   -- Equality
   | .eq e1 e2 _ =>
+    let e1g ← toGotoExpr e1
+    let e2g ← toGotoExpr e2
+    return { id := .binary .Equal, type := .Boolean, operands := [e1g, e2g] }
+  | _ => .error f!"[toGotoExpr] Not yet implemented: {e}"
+
+/--
+Mapping `LExpr` to GOTO expressions.
+-/
+def LExpr.toGotoExpr {Identifier} [ToString Identifier] (e : LExpr LMonoTy Identifier) :
+    Except Format CProverGOTO.Expr :=
+  open CProverGOTO in
+  do match e with
+  -- Constants
+  | .const c (some ty) =>
+    let gty ← ty.toGotoType
+    return (Expr.constant c gty)
+  -- Variables
+  | .fvar v (some ty) =>
+    let gty ← ty.toGotoType
+    return (Expr.symbol (toString v) gty)
+  -- Binary Functions
+  | .app (.app (.op fn (some ty)) e1) e2 =>
+    let op ← fnToGotoID (toString fn)
+    let retty := ty.destructArrow.getLast!
+    let gty ← retty.toGotoType
+    let e1g ← toGotoExpr e1
+    let e2g ← toGotoExpr e2
+    return { id := op, type := gty, operands := [e1g, e2g] }
+  -- Unary Functions
+  | .app (.op fn (some ty)) e1 =>
+    let op ← fnToGotoID (toString fn)
+    let retty := ty.destructArrow.getLast!
+    let gty ← retty.toGotoType
+    let e1g ← toGotoExpr e1
+    return { id := op, type := gty, operands := [e1g] }
+  -- Equality
+  | .eq e1 e2 =>
     let e1g ← toGotoExpr e1
     let e2g ← toGotoExpr e2
     return { id := .binary .Equal, type := .Boolean, operands := [e1g, e2g] }
