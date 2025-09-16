@@ -174,7 +174,7 @@ partial def evalApp (n' : Nat) (σ : LState T) (e e1 e2 : LExpr T.mono) : LExpr 
   match e1' with
   | .abs mAbs _ e1' =>
     let replacer := fun (replacementVar: T.Metadata) =>
-     (@LExpr.replaceMetadata (T := T.mono) (
+     (@replaceMetadata1 (T := T.mono) (
       Traceable.combine
       [(EvalProvenance.Original,       e2'.metadata),
        (EvalProvenance.ReplacementVar, replacementVar),

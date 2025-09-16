@@ -66,6 +66,16 @@ Dot notation syntax: T.mono transforms LExprParams into LExprParamsT with LMonoT
 abbrev LExprParams.mono (T : LExprParams) : LExprParamsT :=
   ⟨T, LMonoTy⟩
 
+structure Typed (T: Type) where
+  underlying: T
+  type: LMonoTy
+
+-- Metadata annotated with a type
+abbrev LExprParams.typed (T: LExprParams): LExprParams :=
+  ⟨ Typed T.Metadata, T.Identifier ⟩
+
+abbrev LExprParamsT.typed (T: LExprParamsT): LExprParamsT :=
+  ⟨T.base.typed, LMonoTy⟩
 
 /--
 Lambda Expressions with Quantifiers.
@@ -502,7 +512,7 @@ def metadata {T : LExprParamsT} (e : LExpr T) : T.base.Metadata :=
   | .eq m _ _ => m
 
 
-def replaceMetadata {T : LExprParamsT} (r: T.base.Metadata) (e : LExpr T) : LExpr T :=
+def replaceMetadata1 {T : LExprParamsT} (r: T.base.Metadata) (e : LExpr T) : LExpr T :=
   match e with
   | .const _ c ty => .const r c ty
   | .op _ o ty => .op r o ty
@@ -513,7 +523,6 @@ def replaceMetadata {T : LExprParamsT} (r: T.base.Metadata) (e : LExpr T) : LExp
   | .app _ e1 e2 => .app r e1 e2
   | .ite _ c t e' => .ite r c t e'
   | .eq _ e1 e2 => .eq r e1 e2
-
 
 /--
 Compute the size of `e` as a tree.
