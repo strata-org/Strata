@@ -251,40 +251,31 @@ Decidable equality definitions of Expr, Operation and Arg.
 They cannot be naturally derived from 'deriving DecidableEq'. It seems the
 fact that their constructors use Array of themselves makes this hard.
 -/
-def Expr.beq (e1 e2:Expr):Bool :=
+def Expr.beq (e1 e2 : Expr) : Bool :=
   match e1, e2 with
   | .bvar i1, .bvar i2
   | .fvar i1, .fvar i2
   | .fn i1, .fn i2 => i1 = i2
   | .app e1 a1, .app e2 a2 => Expr.beq e1 e2 && Arg.beq a1 a2
   | _, _ => false
-  termination_by (sizeOf e1, sizeOf e2, 0)
+termination_by sizeOf e1
 
-def Operation.beq (o1 o2:Operation):Bool :=
+def Operation.beq (o1 o2 : Operation) : Bool :=
   o1.name = o2.name &&
-  -- Equality of two Array is equivalent to equality of two Lists.
-  -- See also: Array.toList_inj
-  -- If we directly use Array.isEqv and not convert it to List, the resulting
-  -- measure expression loses the fact that the comparing Arg element was a part
-  -- of the larger Array.
-  have h: sizeOf o1.args.toList < sizeOf o1 := by
-    have h': sizeOf o1.args.toList < sizeOf o1.args := by simp [Array.sizeOf_toList];
-    apply (Nat.lt_trans h')
-    rw [Operation.sizeOf_spec]
-    omega
-  arglist_beq o1.args.toList o2.args.toList
-  termination_by (sizeOf o1, sizeOf o2, 1)
+  Arg.array_beq o1.args o2.args
+termination_by sizeOf o1
+decreasing_by
+  simp [Operation.sizeOf_spec]
+  omega
 
--- This is reimplementation of List.beq as well as List.isEqv but with a
--- custom measure.
-private def arglist_beq (a1 a2:List Arg): Bool :=
-  match a1, a2 with
-  | h1::t1, h2::t2 => Arg.beq h1 h2 && arglist_beq t1 t2
-  | [], [] => true
-  | _, _ => false
-  termination_by (sizeOf a1, sizeOf a2, 2)
+def Arg.array_beq (a1 a2 : Array Arg) : Bool :=
+  if size_eq : a1.size = a2.size then
+    a1.size.all fun i p => Arg.beq a1[i] a2[i]
+  else
+    false
+termination_by sizeOf a1
 
-def Arg.beq (a1 a2:Arg):Bool :=
+def Arg.beq (a1 a2 : Arg) : Bool :=
   match a1, a2 with
   | .op o1, .op o2 => Operation.beq o1 o2
   | .cat c1, .cat c2 => c1 == c2
@@ -300,23 +291,11 @@ def Arg.beq (a1 a2:Arg):Bool :=
     | .some a1, .some a2 => Arg.beq a1 a2
     | _, _ => false
   | .seq a1, .seq a2 =>
-    arglist_beq a1.toList a2.toList
+    Arg.array_beq a1 a2
   | .commaSepList a1, .commaSepList a2 =>
-    arglist_beq a1.toList a2.toList
+    Arg.array_beq a1 a2
   | _, _ => false
-  termination_by (sizeOf a1, sizeOf a2, 3)
-  decreasing_by
-    · decreasing_tactic
-    · decreasing_tactic
-    · decreasing_tactic
-    · apply Prod.Lex.left
-      have h: sizeOf a1.toList < sizeOf a1 := by rw [Array.sizeOf_toList]; omega
-      apply (Nat.lt_trans h)
-      simp
-    · apply Prod.Lex.left
-      have h: sizeOf a1.toList < sizeOf a1 := by rw [Array.sizeOf_toList]; omega
-      apply (Nat.lt_trans h)
-      simp
+termination_by sizeOf a1
 
 end
 
@@ -1025,11 +1004,13 @@ end Dialect
 
 /-- BEq between two Std HashMap; checked by doing inclusion test twice -/
 instance [BEq α] [Hashable α] [BEq β]: BEq (Std.HashMap α β) where
-  beq x y :=
-    let includes (x y:Std.HashMap α β) :=
-      let l := x.toList
-      l.all (fun (k,v) => y.get? k == .some v)
-    includes x y && includes y x
+  beq x y := Id.run do
+    if x.size ≠ y.size then
+      return false
+    for (k, v) in x do
+      if y.get? k != Option.some v then
+        return false
+    return true
 
 
 structure DialectMap where
