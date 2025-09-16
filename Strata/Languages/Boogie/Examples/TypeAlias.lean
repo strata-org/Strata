@@ -67,9 +67,9 @@ func fooConst2 :  () → (Foo int bool);
 modifies: []
 preconditions: ⏎
 postconditions: ⏎
-body: assume [fooConst1_value] (~fooConst1 == ~fooVal)
-assume [fooConst2_value] (~fooConst2 == ~fooVal)
-assert [fooAssertion] (~fooConst1 == ~fooConst2)
+body: assume [fooConst1_value] ((~fooConst1 : (Foo int bool)) == (~fooVal : (FooAlias2 (Foo int int))))
+assume [fooConst2_value] ((~fooConst2 : (Foo int bool)) == (~fooVal : (FooAlias2 (Foo int int))))
+assert [fooAssertion] ((~fooConst1 : (Foo int bool)) == (~fooConst2 : (Foo int bool)))
 -/
 #guard_msgs in
 #eval TransM.run (translateProgram goodTypeAlias) |>.fst

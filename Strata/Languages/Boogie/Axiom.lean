@@ -28,3 +28,6 @@ structure Axiom where
 
 instance : ToFormat Axiom where
   format a := f!"axiom {a.name}: {a.e};"
+
+def Axiom.eraseTypes (a : Axiom) : Axiom :=
+  { a with e := a.e.eraseTypes }
