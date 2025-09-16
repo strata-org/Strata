@@ -288,6 +288,37 @@ partial def translate_statement (s: TS_Statement) (ctx : TranslationContext) : T
     let (bodyCtx, bodyStmts) := translate_statement whileStmt.body ctx
     let bodyBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := bodyStmts }
     (bodyCtx, [.loop testExpr none none bodyBlock])
+  | .TS_ForStatement forStmt =>
+    -- init phase
+    let (_, initStmts) :=
+      match forStmt.init with
+      | some initDecl =>
+        -- Reuse existing TS_VariableDeclaration translation
+        translate_statement (.TS_VariableDeclaration initDecl) ctx
+      | none => (ctx, [])
+
+    -- guard (test)
+    let guard :=
+      match forStmt.test with
+      | some testExpr => translate_expr testExpr
+      | none => Heap.HExpr.true
+
+    -- body (first translate loop body)
+    let (ctx1, bodyStmts) := translate_statement forStmt.body ctx
+
+    -- update (translate expression into statements following ExpressionStatement style)
+    let (_, updateStmts) :=
+      match forStmt.update with
+      | some updStmt => translate_statement (.TS_ExpressionStatement updStmt) ctx1
+      | _ => panic! s!"for-update only supports assignment expression statements now"
+
+    -- assemble loop body (body + update)
+    let loopBody : Imperative.Block TSStrataExpression TSStrataCommand :=
+      { ss := bodyStmts ++ updateStmts }
+
+    -- output: init statements first, then a loop statement
+    (ctx1, initStmts ++ [.loop guard none none loopBody])
+
   | _ => panic! s!"Unimplemented statement: {repr s}"
 
 -- Translate list of TypeScript statements with context
