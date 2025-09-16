@@ -3,14 +3,15 @@
 #  SPDX-License-Identifier: Apache-2.0 OR MIT
 
 """
-Description: Strata Python dialect and `parse_ast` function for creating Strata programs.
+Strata Python dialect and `parse_ast` function for creating Strata programs.
 """
 import ast
 from dataclasses import dataclass
+from os import PathLike
 import typing
 import types
 import strata
-from strata import ArgDecl, Init, SyntaxCat
+from .base import ArgDecl, FileMapping, Init, SourceRange, SyntaxCat
 
 @dataclass
 class OpArg:
@@ -61,7 +62,6 @@ op_renamings = {
     'op': 'mk_op',
     'type': 'mk_type'
 }
-
 
 Python_opmap : dict[type, Op] = {}
 
@@ -133,13 +133,31 @@ for (cat, cat_ref) in Python_catmap.items():
     else:
         translate_op(f"mk_{cat.__name__}", cat, cat_ref)
 
-def ast_to_arg(v : object, cat : SyntaxCat) -> strata.Arg:
+def source_range(mapping : FileMapping, t : object) -> SourceRange|None:
+    lineno = getattr(t, 'lineno', None)
+    col_offset = getattr(t, 'col_offset', None)
+    end_lineno = getattr(t, 'end_lineno', None)
+    end_col_offset = getattr(t, 'end_col_offset', None)
+    if lineno is None:
+        assert col_offset is None
+        assert end_lineno is None
+        assert end_col_offset is None
+        return None
+    else:
+        assert col_offset is not None
+        assert end_lineno is not None
+        assert end_col_offset is not None
+        off = mapping.byte_offset(lineno, col_offset)
+        end_off = mapping.byte_offset(end_lineno, end_col_offset)
+        return SourceRange(off, end_off)
+
+def ast_to_arg(mapping : FileMapping, v : object, cat : SyntaxCat) -> strata.Arg:
     match cat.ident:
         case Init.Option.ident:
             if v is None:
                 return None
             else:
-                return strata.SomeArg(ast_to_arg(v, cat.args[0]))
+                return strata.SomeArg(ast_to_arg(mapping, v, cat.args[0]))
         case Python.int.ident:
             assert isinstance(v, int)
             if v >= 0:
@@ -176,31 +194,41 @@ def ast_to_arg(v : object, cat : SyntaxCat) -> strata.Arg:
             if v is None:
                 return Python.missing_expr()
             else:
-                return Python.some_expr(ast_to_arg(v, Python.expr()))
+                assert isinstance(v, ast.expr)
+                return Python.some_expr(ast_to_arg(mapping, v, Python.expr()))
         case Init.Option.ident:
             if v is None:
                 return None
             else:
-                return strata.SomeArg(ast_to_arg(v, cat.args[0]))
+                return strata.SomeArg(ast_to_arg(mapping, v, cat.args[0]), ann=None)
         case Init.Seq.ident:
             assert isinstance(v, list)
             arg_cat = cat.args[0]
-            return strata.Seq([ ast_to_arg(e, arg_cat) for e in v])
+            return strata.Seq([ ast_to_arg(mapping, e, arg_cat) for e in v])
         case ident:
             assert v is not None, f'None passed to {ident}'
-            return ast_to_op(v)
+            return ast_to_op(mapping, v)
 
-def ast_to_op(t : object) -> strata.Operation:
+def ast_to_op(mapping : FileMapping, t : object) -> strata.Operation:
     assert t is not None
     op = Python_opmap[type(t)]
+    src = source_range(mapping, t)
     decl = op.decl
     args = []
     for a in op.args:
         v = getattr(t, a.name)
-        args.append(ast_to_arg(v, a.cat))
-    return decl(*args)
+        args.append(ast_to_arg(mapping, v, a.cat))
+    return decl(*args, ann=src)
 
-def parse_ast(ast : object) -> strata.Program:
+def parse_module(source : str, filename : str | PathLike = "<unknown>") -> tuple[FileMapping, strata.Program]:
+    """
+    Parse the Python source into a Strata program.
+    The Strata program will contain a single top-level
+    """
+    m = FileMapping(source)
+    a = ast.parse(source, mode='exec', filename=filename)
+    assert isinstance(a, ast.Module)
+
     p = strata.Program(Python.name)
-    p.add(ast_to_op(ast))
-    return p
+    p.add(ast_to_op(m, a))
+    return (m, p)

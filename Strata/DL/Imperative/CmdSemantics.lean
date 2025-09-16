@@ -33,7 +33,7 @@ Evaluation relation of an Imperative command `Cmd`.
 -/
 -- (FIXME) Change to a type class?
 abbrev EvalCmdParam (P : PureExpr) (Cmd : Type) :=
-  SemanticEval P → SemanticEvalBool P → SemanticStore P → SemanticStore P → Cmd →
+  SemanticEval P → SemanticStore P → SemanticStore P → Cmd →
   SemanticStore P → Prop
 
 /-- ### Well-Formedness of `SemanticStore`s -/
@@ -218,11 +218,10 @@ theorem invStoresExceptComm :
 -- or that when δ evaluates to none, δP evaluates to False
   -/
 def WellFormedSemanticEvalBool {P : PureExpr} [HasBool P] [HasBoolNeg P]
-    (δ : SemanticEval P) (δP : SemanticEvalBool P) : Prop :=
-    ∀ σ₀ σ e b,
-      (δ σ₀ σ e = some Imperative.HasBool.tt ↔ δP σ₀ σ e = (some true)) ∧
-      (δ σ₀ σ e = some Imperative.HasBool.ff ↔ δP σ₀ σ e = (some false)) ∧
-      (δP σ₀ σ e = (some b) ↔ δP σ₀ σ (Imperative.HasBoolNeg.neg e) = (some (not b)))
+    (δ : SemanticEval P) : Prop :=
+    ∀ σ₀ σ e,
+      (δ σ₀ σ e = some Imperative.HasBool.tt ↔ δ σ₀ σ (Imperative.HasBoolNeg.neg e) = (some HasBool.ff)) ∧
+      (δ σ₀ σ e = some Imperative.HasBool.ff ↔ δ σ₀ σ (Imperative.HasBoolNeg.neg e) = (some HasBool.tt))
 
 def WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
     (δ : SemanticEval P) : Prop :=
@@ -234,6 +233,8 @@ def WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
 def WellFormedSemanticEvalVar {P : PureExpr} [HasFvar P] (δ : SemanticEval P)
     : Prop := (∀ e v σ₀ σ, HasFvar.getFvar e = some v → δ σ₀ σ e = σ v)
 
+def WellFormedSemanticEvalExprCongr {P : PureExpr} [HasVarsPure P P.Expr] (δ : SemanticEval P)
+    : Prop := ∀ e σ₀ σ σ', (∀ x ∈ HasVarsPure.getVars e, σ x = σ' x) → δ σ₀ σ e = δ σ₀ σ' e
 /--
 An inductive rule for state update.
 -/
@@ -261,40 +262,38 @@ An inductively-defined operational semantics that depends on
 environment lookup and evaluation functions for expressions.
 -/
 inductive EvalCmd [HasFvar P] [HasBool P] [HasBoolNeg P] :
-  SemanticEval P → SemanticEvalBool P →
-  SemanticStore P → SemanticStore P →
-  Cmd P → SemanticStore P → Prop where
+  SemanticEval P → SemanticStore P → SemanticStore P → Cmd P → SemanticStore P → Prop where
   | eval_init :
     δ σ₀ σ e = .some v →
     InitState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
     ---
-    EvalCmd δ δP σ₀ σ (.init x _ e _) σ'
+    EvalCmd δ σ₀ σ (.init x _ e _) σ'
 
   | eval_set :
     δ σ₀ σ e = .some v →
     UpdateState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
     ----
-    EvalCmd δ δP σ₀ σ (.set x e _) σ'
+    EvalCmd δ σ₀ σ (.set x e _) σ'
 
   | eval_havoc :
     UpdateState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
     ----
-    EvalCmd δ δP σ₀ σ (.havoc x _) σ'
+    EvalCmd δ σ₀ σ (.havoc x _) σ'
 
   | eval_assert :
-    δP σ₀ σ e = .some true →
-    WellFormedSemanticEvalBool δ δP →
+    δ σ₀ σ e = .some HasBool.tt →
+    WellFormedSemanticEvalBool δ →
     ----
-    EvalCmd δ δP σ₀ σ (.assert _ e _) σ
+    EvalCmd δ σ₀ σ (.assert _ e _) σ
 
   | eval_assume :
-    δP σ₀ σ e = .some true →
-    WellFormedSemanticEvalBool δ δP →
+    δ σ₀ σ e = .some HasBool.tt →
+    WellFormedSemanticEvalBool δ →
     ----
-    EvalCmd δ δP σ₀ σ (.assume _ e _) σ
+    EvalCmd δ σ₀ σ (.assume _ e _) σ
 
 end section
 
@@ -357,3 +356,37 @@ theorem UpdateStateDefMonotone
     specialize Hdef v'
     simp [Hsome]
     exact Hdef Hv'
+
+theorem UpdateStateUniqueResult
+  {P : PureExpr} {σ σ' σ'': SemanticStore P}
+  {e : P.Expr} {v : P.Ident} :
+  UpdateState P σ v e σ' →
+  UpdateState P σ v e σ'' →
+  σ' = σ'' := by
+  intro Hu1 Hu2
+  cases Hu1; cases Hu2
+  rename_i Hfa1 _ _ _ Hfa2 _
+  ext v' e'
+  by_cases h: v' = v
+  simp_all
+  rw[eq_comm] at h
+  specialize Hfa1 v' h
+  specialize Hfa2 v' h
+  simp_all
+
+theorem InitStateUniqueResult
+  {P : PureExpr} {σ σ' σ'': SemanticStore P}
+  {e : P.Expr} {v : P.Ident} :
+  InitState P σ v e σ' →
+  InitState P σ v e σ'' →
+  σ' = σ'' := by
+  intro Hu1 Hu2
+  cases Hu1; cases Hu2
+  rename_i Hfa1 _ _ Hfa2 _
+  ext v' e'
+  by_cases h: v' = v
+  simp_all
+  rw[eq_comm] at h
+  specialize Hfa1 v' h
+  specialize Hfa2 v' h
+  simp_all
