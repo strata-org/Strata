@@ -322,51 +322,51 @@ scoped syntax lconstmono : lexprmono
 
 def elabLConstMono (Identifier : Type) [MkIdent Identifier] : Lean.Syntax → MetaM Expr
   | `(lconstmono| #$n:num)  => do
-    let none ← mkNone (mkConst ``LMonoTy)
-    let typeTypeExpr := mkConst ``LMonoTy
+    let none ← mkNone (.app (mkConst ``LMonoTy) (mkConst `Unit))
+    let typeTypeExpr := (.app (mkConst ``LMonoTy) (mkConst `Unit))
     return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit (toString n.getNat), none]
   | `(lconstmono| (#$n:num : $ty:lmonoty)) => do
     let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy ty
-    let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
-    let typeTypeExpr := mkConst ``LMonoTy
+    let lmonoty ← mkSome (.app (mkConst ``LMonoTy) (mkConst `Unit)) lmonoty
+    let typeTypeExpr := (.app (mkConst ``LMonoTy) (mkConst `Unit))
     return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit (toString n.getNat), lmonoty]
   | `(lconstmono| #-$n:num) => do
-    let none ← mkNone (mkConst ``LMonoTy)
-    let typeTypeExpr := mkConst ``LMonoTy
+    let none ← mkNone (.app (mkConst ``LMonoTy) (mkConst `Unit))
+    let typeTypeExpr := (.app (mkConst ``LMonoTy) (mkConst `Unit))
     return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit ("-" ++ (toString n.getNat)), none]
   | `(lconstmono| (#-$n:num : $ty:lmonoty)) => do
     let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy ty
-    let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
-    let typeTypeExpr := mkConst ``LMonoTy
+    let lmonoty ← mkSome (.app (mkConst ``LMonoTy) (mkConst `Unit)) lmonoty
+    let typeTypeExpr := (.app (mkConst ``LMonoTy) (mkConst `Unit))
     return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit ("-" ++ (toString n.getNat)), lmonoty]
   | `(lconstmono| #true)    => do
-    let none ← mkNone (mkConst ``LMonoTy)
-    let typeTypeExpr := mkConst ``LMonoTy
+    let none ← mkNone (.app (mkConst ``LMonoTy) (mkConst `Unit))
+    let typeTypeExpr := (.app (mkConst ``LMonoTy) (mkConst `Unit))
     return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit "true", none]
   | `(lconstmono| (#true : $ty:lmonoty))    => do
     let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy ty
-    let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
-    let typeTypeExpr := mkConst ``LMonoTy
+    let lmonoty ← mkSome (.app (mkConst ``LMonoTy) (mkConst `Unit)) lmonoty
+    let typeTypeExpr := (.app (mkConst ``LMonoTy) (mkConst `Unit))
     return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit "true", lmonoty]
   | `(lconstmono| #false)   =>  do
-    let none ← mkNone (mkConst ``LMonoTy)
-    let typeTypeExpr := mkConst ``LMonoTy
+    let none ← mkNone (.app (mkConst ``LMonoTy) (mkConst `Unit))
+    let typeTypeExpr := (.app (mkConst ``LMonoTy) (mkConst `Unit))
     return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit "false", none]
   | `(lconstmono| (#false : $ty:lmonoty))    => do
     let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy ty
-    let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
-    let typeTypeExpr := mkConst ``LMonoTy
+    let lmonoty ← mkSome (.app (mkConst ``LMonoTy) (mkConst `Unit)) lmonoty
+    let typeTypeExpr := (.app (mkConst ``LMonoTy) (mkConst `Unit))
     return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit "false", lmonoty]
   | `(lconstmono| #$s:ident) => do
-    let none ← mkNone (mkConst ``LMonoTy)
+    let none ← mkNone (.app (mkConst ``LMonoTy) (mkConst `Unit))
     let s := toString s.getId
-    let typeTypeExpr := mkConst ``LMonoTy
+    let typeTypeExpr := (.app (mkConst ``LMonoTy) (mkConst `Unit))
     return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit s, none]
   | `(lconstmono| (#$s:ident : $ty:lmonoty)) => do
     let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy ty
-    let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
+    let lmonoty ← mkSome (.app (mkConst ``LMonoTy) (mkConst `Unit)) lmonoty
     let s := toString s.getId
-    let typeTypeExpr := mkConst ``LMonoTy
+    let typeTypeExpr := (.app (mkConst ``LMonoTy) (mkConst `Unit))
     return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkStrLit s, lmonoty]
   | _ => throwUnsupportedSyntax
 
@@ -377,13 +377,13 @@ scoped syntax lopmono : lexprmono
 
 def elabLOpMono (Identifier : Type) [MkIdent Identifier] : Lean.Syntax → MetaM Expr
   | `(lopmono| ~$s:lidentmono)  => do
-    let none ← mkNone (mkConst ``LMonoTy)
+    let none ← mkNone (.app (mkConst ``LMonoTy) (mkConst `Unit))
     let ident ← MkIdent.elabIdent Identifier s
-    let typeTypeExpr := mkConst ``LMonoTy
+    let typeTypeExpr := (.app (mkConst ``LMonoTy) (mkConst `Unit))
     return mkAppN (.const ``LExpr.op []) #[typeTypeExpr, MkIdent.toExpr Identifier, ident, none]
   | `(lopmono| (~$s:lidentmono : $ty:lmonoty)) => do
     let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy ty
-    let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
+    let lmonoty ← mkSome (.app (mkConst ``LMonoTy) (mkConst `Unit)) lmonoty
     mkAppM ``LExpr.op #[← MkIdent.elabIdent Identifier s, lmonoty]
   | _ => throwUnsupportedSyntax
 
@@ -391,7 +391,7 @@ declare_syntax_cat lbvarmono
 scoped syntax "%" noWs num : lbvarmono
 def elabLBVarMono (Identifier : Type) [MkIdent Identifier] : Lean.Syntax → MetaM Expr
   | `(lbvarmono| %$n:num) =>
-    let typeTypeExpr := mkConst ``LMonoTy
+    let typeTypeExpr := (.app (mkConst ``LMonoTy) (mkConst `Unit))
     return mkAppN (.const ``LExpr.bvar []) #[typeTypeExpr, MkIdent.toExpr Identifier, mkNatLit n.getNat]
   | _ => throwUnsupportedSyntax
 scoped syntax lbvarmono : lexprmono
@@ -402,11 +402,11 @@ scoped syntax "(" lidentmono ":" lmonoty ")" : lfvarmono
 
 def elabLFVarMono (Identifier : Type) [MkIdent Identifier] : Lean.Syntax → MetaM Expr
   | `(lfvarmono| $i:lidentmono) => do
-    let none ← mkNone (mkConst ``LMonoTy)
+    let none ← mkNone (.app (mkConst ``LMonoTy) (mkConst `Unit))
     mkAppM ``LExpr.fvar #[← MkIdent.elabIdent Identifier i, none]
   | `(lfvarmono| ($i:lidentmono : $ty:lmonoty)) => do
     let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy ty
-    let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
+    let lmonoty ← mkSome (.app (mkConst ``LMonoTy) (mkConst `Unit)) lmonoty
     mkAppM ``LExpr.fvar #[← MkIdent.elabIdent Identifier i, lmonoty]
   | _ => throwUnsupportedSyntax
 scoped syntax lfvarmono : lexprmono
@@ -455,48 +455,48 @@ partial def elabLExprMono (Identifier : Type) [MkIdent Identifier] : Lean.Syntax
   | `(lexprmono| $f:lfvarmono) => elabLFVarMono Identifier f
   | `(lexprmono| λ $e:lexprmono) => do
      let e' ← elabLExprMono Identifier e
-     let typeTypeExpr := mkConst ``LMonoTy
+     let typeTypeExpr := (.app (mkConst ``LMonoTy) (mkConst `Unit))
      return mkAppN (.const ``LExpr.absUntyped []) #[typeTypeExpr, MkIdent.toExpr Identifier, e']
   | `(lexprmono| λ ($mty:lmonoty): $e:lexprmono) => do
      let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy mty
-     let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
+     let lmonoty ← mkSome (.app (mkConst ``LMonoTy) (mkConst `Unit)) lmonoty
      let e' ← elabLExprMono Identifier e
-     let typeTypeExpr := mkConst ``LMonoTy
+     let typeTypeExpr := (.app (mkConst ``LMonoTy) (mkConst `Unit))
      return mkAppN (.const ``LExpr.abs []) #[typeTypeExpr, MkIdent.toExpr Identifier, lmonoty, e']
   | `(lexprmono| ∀ $e:lexprmono) => do
      let e' ← elabLExprMono Identifier e
-     let typeTypeExpr := mkConst ``LMonoTy
+     let typeTypeExpr := (.app (mkConst ``LMonoTy) (mkConst `Unit))
      return mkAppN (.const ``LExpr.allUntyped []) #[typeTypeExpr, MkIdent.toExpr Identifier, e']
   | `(lexprmono| ∀ {$tr}$e:lexprmono) => do
      let e' ← elabLExprMono Identifier e
      let tr' ← elabLExprMono Identifier tr
-     let typeTypeExpr := mkConst ``LMonoTy
+     let typeTypeExpr := (.app (mkConst ``LMonoTy) (mkConst `Unit))
      return mkAppN (.const ``LExpr.allUntypedTr []) #[typeTypeExpr, MkIdent.toExpr Identifier, tr', e']
   | `(lexprmono| ∀ ($mty:lmonoty): $e:lexprmono) => do
      let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy mty
-     let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
+     let lmonoty ← mkSome (.app (mkConst ``LMonoTy) (mkConst `Unit)) lmonoty
      let e' ← elabLExprMono Identifier e
-     let typeTypeExpr := mkConst ``LMonoTy
+     let typeTypeExpr := (.app (mkConst ``LMonoTy) (mkConst `Unit))
      return mkAppN (.const ``LExpr.all []) #[typeTypeExpr, MkIdent.toExpr Identifier, lmonoty, e']
   | `(lexprmono| ∀ ($mty:lmonoty):{$tr} $e:lexprmono) => do
      let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy mty
-     let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
+     let lmonoty ← mkSome (.app (mkConst ``LMonoTy) (mkConst `Unit)) lmonoty
      let e' ← elabLExprMono Identifier e
      let tr' ← elabLExprMono Identifier tr
-     let typeTypeExpr := mkConst ``LMonoTy
+     let typeTypeExpr := (.app (mkConst ``LMonoTy) (mkConst `Unit))
      return mkAppN (.const ``LExpr.allTr []) #[typeTypeExpr, MkIdent.toExpr Identifier, lmonoty, tr', e']
   | `(lexprmono| ∃ ($mty:lmonoty): $e:lexprmono) => do
      let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy mty
-     let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
+     let lmonoty ← mkSome (.app (mkConst ``LMonoTy) (mkConst `Unit)) lmonoty
      let e' ← elabLExprMono Identifier e
-     let typeTypeExpr := mkConst ``LMonoTy
+     let typeTypeExpr := (.app (mkConst ``LMonoTy) (mkConst `Unit))
      return mkAppN (.const ``LExpr.exist []) #[typeTypeExpr, MkIdent.toExpr Identifier, lmonoty, e']
   | `(lexprmono| ∃ ($mty:lmonoty):{$tr} $e:lexprmono) => do
      let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy mty
-     let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
+     let lmonoty ← mkSome (.app (mkConst ``LMonoTy) (mkConst `Unit)) lmonoty
      let e' ← elabLExprMono Identifier e
      let tr' ← elabLExprMono Identifier tr
-     let typeTypeExpr := mkConst ``LMonoTy
+     let typeTypeExpr := (.app (mkConst ``LMonoTy) (mkConst `Unit))
      return mkAppN (.const ``LExpr.existTr []) #[typeTypeExpr, MkIdent.toExpr Identifier, lmonoty, tr', e']
   | `(lexprmono| ∃ $e:lexprmono) => do
      let e' ← elabLExprMono Identifier e
@@ -508,18 +508,18 @@ partial def elabLExprMono (Identifier : Type) [MkIdent Identifier] : Lean.Syntax
   | `(lexprmono| ($e1:lexprmono $e2:lexprmono)) => do
      let e1' ← elabLExprMono Identifier e1
      let e2' ← elabLExprMono Identifier e2
-     let typeTypeExpr := mkConst ``LMonoTy
+     let typeTypeExpr := (.app (mkConst ``LMonoTy) (mkConst `Unit))
      return mkAppN (.const ``LExpr.app []) #[typeTypeExpr, MkIdent.toExpr Identifier, e1', e2']
   | `(lexprmono| $e1:lexprmono == $e2:lexprmono) => do
      let e1' ← elabLExprMono Identifier e1
      let e2' ← elabLExprMono Identifier e2
-     let typeTypeExpr := mkConst ``LMonoTy
+     let typeTypeExpr := (.app (mkConst ``LMonoTy) (mkConst `Unit))
      return mkAppN (.const ``LExpr.eq []) #[typeTypeExpr, MkIdent.toExpr Identifier, e1', e2']
   | `(lexprmono| if $e1:lexprmono then $e2:lexprmono else $e3:lexprmono) => do
      let e1' ← elabLExprMono Identifier e1
      let e2' ← elabLExprMono Identifier e2
      let e3' ← elabLExprMono Identifier e3
-     let typeTypeExpr := mkConst ``LMonoTy
+     let typeTypeExpr := (.app (mkConst ``LMonoTy) (mkConst `Unit))
      return mkAppN (.const ``LExpr.ite []) #[typeTypeExpr, MkIdent.toExpr Identifier, e1', e2', e3']
   | `(lexprmono| ($e:lexprmono)) => elabLExprMono Identifier e
   | _ => throwUnsupportedSyntax
@@ -544,7 +544,7 @@ open LTy.Syntax
 #guard_msgs in
 #check esM[((λ %0) #5)]
 
-/-- info: (abs (some (LMonoTy.tcons "bool" [])) (bvar 0)).app (const "true" none) : LExpr LMonoTy String -/
+/-- info: (abs (some (LMonoTy.tcons Unit "bool" [] ())) (bvar 0)).app (const "true" none) : LExpr LMonoTy String -/
 #guard_msgs in
 #check esM[((λ (bool): %0) #true)]
 
@@ -556,36 +556,44 @@ open LTy.Syntax
 #guard_msgs in
 #check esM[(∃ %0 == #5)]
 
-/-- info: exist (some (LMonoTy.tcons "int" [])) ((bvar 0).eq (const "5" none)) : LExpr LMonoTy String -/
+/-- info: exist (some (LMonoTy.tcons Unit "int" [] ())) ((bvar 0).eq (const "5" none)) : LExpr LMonoTy String -/
 #guard_msgs in
 #check esM[(∃ (int): %0 == #5)]
 
-/-- info: fvar "x" (some (LMonoTy.tcons "bool" [])) : LExpr LMonoTy String -/
+/-- info: fvar "x" (some (LMonoTy.tcons Unit "bool" [] ())) : LExpr LMonoTy String -/
 #guard_msgs in
 #check esM[(x : bool)]
 
 -- axiom [updateSelect]: forall m: Map k v, kk: k, vv: v :: m[kk := vv][kk] == vv;
 /--
-info: all (some (LMonoTy.tcons "Map" [LMonoTy.ftvar "k", LMonoTy.ftvar "v"]))
-  (all (some (LMonoTy.ftvar "k"))
-    (all (some (LMonoTy.ftvar "v"))
+info: all (some (LMonoTy.tcons Unit "Map" [LMonoTy.ftvar Unit "k", LMonoTy.ftvar Unit "v"] ()))
+  (all (some (LMonoTy.ftvar Unit "k"))
+    (all (some (LMonoTy.ftvar Unit "v"))
       ((((op "select"
                     (some
-                      (LMonoTy.tcons "Map"
-                        [LMonoTy.ftvar "k",
-                          LMonoTy.tcons "arrow"
-                            [LMonoTy.ftvar "v", LMonoTy.tcons "arrow" [LMonoTy.ftvar "k", LMonoTy.ftvar "v"]]]))).app
+                      (LMonoTy.tcons Unit "Map"
+                        [LMonoTy.ftvar Unit "k",
+                          LMonoTy.tcons Unit "arrow"
+                            [LMonoTy.ftvar Unit "v",
+                              LMonoTy.tcons Unit "arrow" [LMonoTy.ftvar Unit "k", LMonoTy.ftvar Unit "v"] ()]
+                            ()]
+                        ()))).app
                 ((((op "update"
                               (some
-                                (LMonoTy.tcons "Map"
-                                  [LMonoTy.ftvar "k",
-                                    LMonoTy.tcons "arrow"
-                                      [LMonoTy.ftvar "v",
-                                        LMonoTy.tcons "arrow"
-                                          [LMonoTy.ftvar "k",
-                                            LMonoTy.tcons "arrow"
-                                              [LMonoTy.ftvar "v",
-                                                LMonoTy.tcons "Map" [LMonoTy.ftvar "k", LMonoTy.ftvar "v"]]]]]))).app
+                                (LMonoTy.tcons Unit "Map"
+                                  [LMonoTy.ftvar Unit "k",
+                                    LMonoTy.tcons Unit "arrow"
+                                      [LMonoTy.ftvar Unit "v",
+                                        LMonoTy.tcons Unit "arrow"
+                                          [LMonoTy.ftvar Unit "k",
+                                            LMonoTy.tcons Unit "arrow"
+                                              [LMonoTy.ftvar Unit "v",
+                                                LMonoTy.tcons Unit "Map"
+                                                  [LMonoTy.ftvar Unit "k", LMonoTy.ftvar Unit "v"] ()]
+                                              ()]
+                                          ()]
+                                      ()]
+                                  ()))).app
                           (bvar 2)).app
                       (bvar 1)).app
                   (bvar 0))).app
@@ -858,7 +866,7 @@ open LTy.Syntax
 #guard_msgs in
 #check es[((λ %0) #5)]
 
-/-- info: (abs (some (LTy.forAll [] (LMonoTy.tcons "bool" []))) (bvar 0)).app (const "true" none) : LExpr LTy String -/
+/-- info: (abs (some (LTy.forAll [] (LMonoTy.tcons Unit "bool" [] ()))) (bvar 0)).app (const "true" none) : LExpr LTy String -/
 #guard_msgs in
 #check es[((λ (bool): %0) #true)]
 
@@ -870,38 +878,46 @@ open LTy.Syntax
 #guard_msgs in
 #check es[(∃ %0 == #5)]
 
-/-- info: exist (some (LTy.forAll [] (LMonoTy.tcons "int" []))) ((bvar 0).eq (const "5" none)) : LExpr LTy String -/
+/-- info: exist (some (LTy.forAll [] (LMonoTy.tcons Unit "int" [] ()))) ((bvar 0).eq (const "5" none)) : LExpr LTy String -/
 #guard_msgs in
 #check es[(∃ (int): %0 == #5)]
 
-/-- info: fvar "x" (some (LTy.forAll [] (LMonoTy.tcons "bool" []))) : LExpr LTy String -/
+/-- info: fvar "x" (some (LTy.forAll [] (LMonoTy.tcons Unit "bool" [] ()))) : LExpr LTy String -/
 #guard_msgs in
 #check es[(x : bool)]
 
 -- axiom [updateSelect]: forall m: Map k v, kk: k, vv: v :: m[kk := vv][kk] == vv;
 /--
-info: all (some (LTy.forAll [] (LMonoTy.tcons "Map" [LMonoTy.ftvar "k", LMonoTy.ftvar "v"])))
-  (all (some (LTy.forAll [] (LMonoTy.ftvar "k")))
-    (all (some (LTy.forAll [] (LMonoTy.ftvar "v")))
+info: all (some (LTy.forAll [] (LMonoTy.tcons Unit "Map" [LMonoTy.ftvar Unit "k", LMonoTy.ftvar Unit "v"] ())))
+  (all (some (LTy.forAll [] (LMonoTy.ftvar Unit "k")))
+    (all (some (LTy.forAll [] (LMonoTy.ftvar Unit "v")))
       ((((op "select"
                     (some
                       (LTy.forAll []
-                        (LMonoTy.tcons "Map"
-                          [LMonoTy.ftvar "k",
-                            LMonoTy.tcons "arrow"
-                              [LMonoTy.ftvar "v", LMonoTy.tcons "arrow" [LMonoTy.ftvar "k", LMonoTy.ftvar "v"]]])))).app
+                        (LMonoTy.tcons Unit "Map"
+                          [LMonoTy.ftvar Unit "k",
+                            LMonoTy.tcons Unit "arrow"
+                              [LMonoTy.ftvar Unit "v",
+                                LMonoTy.tcons Unit "arrow" [LMonoTy.ftvar Unit "k", LMonoTy.ftvar Unit "v"] ()]
+                              ()]
+                          ())))).app
                 ((((op "update"
                               (some
                                 (LTy.forAll []
-                                  (LMonoTy.tcons "Map"
-                                    [LMonoTy.ftvar "k",
-                                      LMonoTy.tcons "arrow"
-                                        [LMonoTy.ftvar "v",
-                                          LMonoTy.tcons "arrow"
-                                            [LMonoTy.ftvar "k",
-                                              LMonoTy.tcons "arrow"
-                                                [LMonoTy.ftvar "v",
-                                                  LMonoTy.tcons "Map" [LMonoTy.ftvar "k", LMonoTy.ftvar "v"]]]]])))).app
+                                  (LMonoTy.tcons Unit "Map"
+                                    [LMonoTy.ftvar Unit "k",
+                                      LMonoTy.tcons Unit "arrow"
+                                        [LMonoTy.ftvar Unit "v",
+                                          LMonoTy.tcons Unit "arrow"
+                                            [LMonoTy.ftvar Unit "k",
+                                              LMonoTy.tcons Unit "arrow"
+                                                [LMonoTy.ftvar Unit "v",
+                                                  LMonoTy.tcons Unit "Map"
+                                                    [LMonoTy.ftvar Unit "k", LMonoTy.ftvar Unit "v"] ()]
+                                                ()]
+                                            ()]
+                                        ()]
+                                    ())))).app
                           (bvar 2)).app
                       (bvar 1)).app
                   (bvar 0))).app

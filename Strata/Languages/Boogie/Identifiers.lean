@@ -141,7 +141,7 @@ info: (Lambda.LExpr.op (BoogieIdent.unres "old") none).app
 
 open Lambda.LTy.Syntax in
 /-- info: Lambda.LExpr.fvar (BoogieIdent.unres "x")
-  (some (Lambda.LMonoTy.tcons "bool" [])) : Lambda.LExpr Lambda.LMonoTy (Visibility × String)  -/
+  (some (Lambda.LMonoTy.tcons Unit "bool" [] ())) : Lambda.LExpr Lambda.LMonoTy (Visibility × String)  -/
 #guard_msgs in
 #check eb[(x : bool)]
 

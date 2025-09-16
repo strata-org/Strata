@@ -122,8 +122,8 @@ def LMonoTy.subst (S : Subst) (mty : LMonoTy) : LMonoTy :=
   | .ftvar x => match S.find? x with
                 | some sty => sty | none => mty
   | .bitvec _ => mty
-  | .tcons name ltys =>
-    .tcons name (LMonoTys.subst S ltys)
+  | .tcons name ltys r =>
+    .tcons name (LMonoTys.subst S ltys) r
 /--
 Apply substitution `S` to monotypes `mtys`.
 -/
@@ -200,7 +200,7 @@ theorem LMonoTy.subst_keys_not_in_substituted_type (h : SubstWF S) :
     simp_all [LMonoTy.subst]
     unfold LMonoTy.freeVars
     simp
-  case tcons name args h1 =>
+  case tcons name args r h1 =>
     simp_all
     simp [subst]
     induction args
@@ -243,7 +243,7 @@ theorem LMonoTy.freeVars_of_subst_subset (S : Subst) (mty : LMonoTy) :
       simp [freeVars]
   case bitvec n =>
     simp [subst]
-  case tcons name args ih =>
+  case tcons name args r ih =>
     simp [LMonoTy.subst, LMonoTy.freeVars]
     induction args
     case nil =>
