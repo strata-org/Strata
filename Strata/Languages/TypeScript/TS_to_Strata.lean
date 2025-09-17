@@ -108,7 +108,6 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
     Heap.HExpr.deferredIte guard consequent alternate
 
   | .TS_NumericLiteral n =>
-    dbg_trace s!"[DEBUG] Translating numeric literal value={n.value}, raw={n.extra.raw}, rawValue={n.extra.rawValue}"
     Heap.HExpr.int n.extra.raw.toInt!
 
   | .TS_BooleanLiteral b =>
@@ -234,7 +233,6 @@ partial def translate_statement (s: TS_Statement) (ctx : TranslationContext) : T
       | .TS_Identifier id =>
         -- Handle identifier assignment: x = value
         let value := translate_expr assgn.right
-        dbg_trace s!"[DEBUG] Assignment: {id.name} = {repr value}"
         (ctx, [.cmd (.set id.name value)])
       | .TS_MemberExpression member =>
         -- Handle field assignment: obj[field] = value
@@ -290,6 +288,7 @@ partial def translate_statement (s: TS_Statement) (ctx : TranslationContext) : T
     let (bodyCtx, bodyStmts) := translate_statement whileStmt.body ctx
     let bodyBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := bodyStmts }
     (bodyCtx, [.loop testExpr none none bodyBlock])
+
   | .TS_ForStatement forStmt =>
     -- init phase
     let (_, initStmts) :=
@@ -321,6 +320,38 @@ partial def translate_statement (s: TS_Statement) (ctx : TranslationContext) : T
     -- output: init statements first, then a loop statement
     (ctx1, initStmts ++ [.loop guard none none loopBody])
 
+  | .TS_SwitchStatement switchStmt =>
+    -- Handle switch statement: switch discriminant { cases }
+    let discrimExpr := translate_expr switchStmt.discriminant
+    let caseStmts := switchStmt.cases.toList.map (fun case =>
+      let testExpr := match case.test with
+        | some expr => translate_expr expr
+        | none => Heap.HExpr.true  -- Default case
+      let (caseCtx, stmts) := case.consequent.foldl (fun (accCtx, accStmts) stmt =>
+        let (newCtx, newStmts) := translate_statement stmt accCtx
+        (newCtx, accStmts ++ newStmts)) (ctx, [])
+      (testExpr, stmts))
+
+    -- Build nested if-then-else structure for cases
+    let rec build_cases (cases: List (Heap.HExpr × List TSStrataStatement)) : TSStrataStatement :=
+      match cases with
+      | [] => panic! "Switch statement must have at least one case"
+      | [(test, stmts)] =>
+        let thenBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := stmts }
+        let elseBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [] }
+        .ite test thenBlock elseBlock
+      | (test, stmts) :: rest =>
+        let thenBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := stmts }
+        let elseBlock := build_cases rest
+        let elseBlockWrapped : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [elseBlock] }
+        .ite test thenBlock elseBlockWrapped
+
+    let switchStructure := build_cases caseStmts
+    (ctx, [switchStructure])
+
+  -- | .TS_BreakStatement breakStmt =>
+  --   let label := breakStmt.label.map translate_expr
+  --   (ctx, [.cmd (.break label)])
   | _ => panic! s!"Unimplemented statement: {repr s}"
 
 -- Translate list of TypeScript statements with context
