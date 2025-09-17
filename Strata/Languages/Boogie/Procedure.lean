@@ -56,6 +56,9 @@ structure Procedure.Check where
 instance : ToFormat Procedure.Check where
   format c := f!"{c.expr}{c.attr}"
 
+def Procedure.Check.eraseTypes (c : Procedure.Check) : Procedure.Check :=
+  { c with expr := c.expr.eraseTypes }
+
 structure Procedure.Spec where
   modifies       : List Expression.Ident
   preconditions  : ListMap BoogieLabel Procedure.Check
@@ -67,6 +70,12 @@ instance : ToFormat Procedure.Spec where
     f!"modifies: {format p.modifies}\n\
        preconditions: {format p.preconditions}\n\
        postconditions: {format p.postconditions}"
+
+def Procedure.Spec.eraseTypes (s : Procedure.Spec) : Procedure.Spec :=
+  { s with
+    preconditions := s.preconditions.map (fun (l, c) => (l, c.eraseTypes)),
+    postconditions := s.postconditions.map (fun (l, c) => (l, c.eraseTypes))
+  }
 
 def Procedure.Spec.getCheckExprs (conds : ListMap BoogieLabel Procedure.Check) :
   List Expression.Expr :=
@@ -115,6 +124,9 @@ instance : HasVarsPure Expression Procedure where
 instance : HasVarsImp Expression Procedure where
   definedVars := Procedure.definedVars
   modifiedVars := Procedure.modifiedVars
+
+def Procedure.eraseTypes (p : Procedure) : Procedure :=
+  { p with body := Statements.eraseTypes p.body, spec := p.spec }
 
 /-- Transitive variable lookup for procedures.
     This is a version that looks into the body,
