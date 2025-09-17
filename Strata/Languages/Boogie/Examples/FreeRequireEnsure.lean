@@ -43,18 +43,21 @@ VCs:
 Label: g_gt_10_internal
 Assumptions:
 (g_eq_15, ($__g0 == #15))
+
 Proof Obligation:
 ((~Int.Gt $__g0) #10)
 
 Label: g_lt_10
 Assumptions:
 (g_eq_15, ($__g0 == #15))
+
 Proof Obligation:
 #true
 
 Label: g_eq_15_internal
 Assumptions:
 ((Origin_Proc_Ensures)g_lt_10, ((~Int.Lt $__g2) #10))
+
 Proof Obligation:
 ($__g2 == #15)
 

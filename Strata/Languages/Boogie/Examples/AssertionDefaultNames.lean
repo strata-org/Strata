@@ -48,6 +48,7 @@ VCs:
 Label: assert_0
 Assumptions:
 (Test_requires_0, ($__x0 == #1))
+
 Proof Obligation:
 ($__x0 == #1)
 

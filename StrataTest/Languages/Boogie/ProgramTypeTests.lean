@@ -72,6 +72,8 @@ info: [Strata.Boogie] Type checking succeeded.
 VCs:
 Label: test
 Assumptions:
+
+
 Proof Obligation:
 (~fooAliasVal == ~fooVal)
 
@@ -266,11 +268,14 @@ info: ok: [(type Boogie.Boundedness.Infinite Foo [_, _]
   Path Conditions:
   ⏎
   ⏎
+  ⏎
   Warnings:
   []
   Deferred Proof Obligations:
   Label: test
   Assumptions:
+  ⏎
+  ⏎
   Proof Obligation:
   ((~fooAliasVal : (Foo int bool)) == (~fooVal : (Foo int bool)))
   ⏎

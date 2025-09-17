@@ -3,20 +3,12 @@ assert_0: verified
 assert_1: unknown
 assert_2: verified
 assert_3: unknown
-assert_4: failed
-CEx: ($__x0, 3)
-assert_5: failed
-CEx: ($__x0, 3)
-assert_6: failed
-CEx: ($__x1, 3)
-assert_7: failed
-CEx: ($__x1, 3)
-assert_8: failed
-CEx: ($__x2, 3)
-assert_9: failed
-CEx: ($__x2, 3)
-assert_10: failed
-CEx: ($__x3, 3)
-assert_11: failed
-CEx: ($__x3, 3)
+assert_4: unknown
+assert_5: unknown
+assert_6: unknown
+assert_7: unknown
+assert_8: unknown
+assert_9: unknown
+assert_10: unknown
+assert_11: unknown
 Finished with 2 goals proved, 10 failed.

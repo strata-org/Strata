@@ -48,6 +48,8 @@ info: [Strata.Boogie] Type checking succeeded.
 VCs:
 Label: x_eq_1
 Assumptions:
+
+
 Proof Obligation:
 ($__x0 == #1)
 

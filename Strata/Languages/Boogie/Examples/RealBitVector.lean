@@ -55,15 +55,17 @@ info: [Strata.Boogie] Type checking succeeded.
 VCs:
 Label: real_add_ge_good
 Assumptions:
-(real_y_ge_2, ((~Real.Ge ~y) #2.0))
+
 (real_x_ge_1, ((~Real.Ge ~x) #1.0))
+(real_y_ge_2, ((~Real.Ge ~y) #2.0))
 Proof Obligation:
 ((~Real.Ge ((~Real.Add ~x) ~y)) #3.0)
 
 Label: real_add_ge_bad
 Assumptions:
-(real_y_ge_2, ((~Real.Ge ~y) #2.0))
+
 (real_x_ge_1, ((~Real.Ge ~x) #1.0))
+(real_y_ge_2, ((~Real.Ge ~y) #2.0))
 Proof Obligation:
 ((~Real.Ge ((~Real.Add ~x) ~y)) #4.0)
 
@@ -159,14 +161,17 @@ info: [Strata.Boogie] Type checking succeeded.
 VCs:
 Label: bv_add_ge
 Assumptions:
-(bv_y_ge_2, ((~Bv8.ULe #2) ~y))
+
 (bv_x_ge_1, ((~Bv8.ULe #1) ~x))
+(bv_y_ge_2, ((~Bv8.ULe #2) ~y))
 Proof Obligation:
 (((~Bv8.Add ~x) ~y) == ((~Bv8.Add ~y) ~x))
 
 Label: Q_ensures_0
 Assumptions:
+
 (bv_x_ge_1, ((~Bv8.ULe #1) ~x))
+(bv_y_ge_2, ((~Bv8.ULe #2) ~y))
 Proof Obligation:
 (((~Bv1.Add $__x0) $__x0) == ((~Bv1.Sub $__x0) $__x0))
 
