@@ -40,26 +40,36 @@ info: [Strata.Boogie] Type checking succeeded.
 VCs:
 Label: implies_and_eq_not_or_1
 Assumptions:
+
+
 Proof Obligation:
 (((~Bool.And ((~Bool.Implies init_a_0) init_b_1)) ((~Bool.Implies init_c_2) init_d_3)) == ((((~foo init_a_0) init_b_1) init_c_2) init_d_3))
 
 Label: implies_and_eq_not_or_2
 Assumptions:
+
+
 Proof Obligation:
 (((~Bool.And ((~Bool.Implies init_a_0) init_b_1)) ((~Bool.Implies init_c_2) init_d_3)) == ((((~foo init_a_0) init_b_1) init_c_2) init_d_3))
 
 Label: implies_and_eq_not_or_3
 Assumptions:
+
+
 Proof Obligation:
 (((~Bool.And ((~Bool.Implies init_a_0) init_b_1)) ((~Bool.Implies init_c_2) init_d_3)) == ((((~foo init_a_0) init_b_1) init_c_2) init_d_3))
 
 Label: implies_and_eq_not_or_4
 Assumptions:
+
+
 Proof Obligation:
 (((~Bool.And ((~Bool.Implies init_a_0) init_b_1)) ((~Bool.Implies init_c_2) init_d_3)) == ((((~foo init_a_0) init_b_1) init_c_2) init_d_3))
 
 Label: implies_equiv
 Assumptions:
+
+
 Proof Obligation:
 ((~Bool.Equiv ((~Bool.Implies init_a_0) init_b_1)) ((~Bool.Or (~Bool.Not init_a_0)) init_b_1))
 
