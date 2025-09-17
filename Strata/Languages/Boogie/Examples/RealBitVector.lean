@@ -133,8 +133,8 @@ spec {
 /--
 info: func x :  () → bv8;
 func y :  () → bv8;
-axiom bv_x_ge_1: (((~Bv8.Le : (arrow bv8 (arrow bv8 bool))) (#1 : bv8)) (~x : bv8));
-axiom bv_y_ge_2: (((~Bv8.Le : (arrow bv8 (arrow bv8 bool))) (#2 : bv8)) (~y : bv8));
+axiom bv_x_ge_1: (((~Bv8.ULe : (arrow bv8 (arrow bv8 bool))) (#1 : bv8)) (~x : bv8));
+axiom bv_y_ge_2: (((~Bv8.ULe : (arrow bv8 (arrow bv8 bool))) (#2 : bv8)) (~y : bv8));
 (procedure P :  () → ())
 modifies: []
 preconditions: ⏎
@@ -159,14 +159,14 @@ info: [Strata.Boogie] Type checking succeeded.
 VCs:
 Label: bv_add_ge
 Assumptions:
-(bv_y_ge_2, ((~Bv8.Le #2) ~y))
-(bv_x_ge_1, ((~Bv8.Le #1) ~x))
+(bv_y_ge_2, ((~Bv8.ULe #2) ~y))
+(bv_x_ge_1, ((~Bv8.ULe #1) ~x))
 Proof Obligation:
 (((~Bv8.Add ~x) ~y) == ((~Bv8.Add ~y) ~x))
 
 Label: Q_ensures_0
 Assumptions:
-(bv_x_ge_1, ((~Bv8.Le #1) ~x))
+(bv_x_ge_1, ((~Bv8.ULe #1) ~x))
 Proof Obligation:
 (((~Bv1.Add $__x0) $__x0) == ((~Bv1.Sub $__x0) $__x0))
 

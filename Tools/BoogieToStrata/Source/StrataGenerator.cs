@@ -871,6 +871,12 @@ public class StrataGenerator : ReadOnlyVisitor {
     public override Cmd VisitHavocCmd(HavocCmd node) {
         foreach (var x in node.Vars) {
             IndentLine($"havoc {Name(x.Name)};");
+        }
+
+        // All assumptions come after all havocs! This allows where clauses
+        // to relate variables and then to havoc them in such a way as to
+        // preserve those relationships.
+        foreach (var x in node.Vars) {
             EmitWhereAssumption(x.Decl.TypedIdent);
         }
 
@@ -1118,6 +1124,7 @@ public class StrataGenerator : ReadOnlyVisitor {
     // that calls that builtin.
     private void MaybeEmitBuiltinBody(Function function) {
         var builtinAttr = QKeyValue.FindStringAttribute(function.Attributes, "bvbuiltin");
+        var inParamTypes = function.InParams.Select(i => i.TypedIdent.Type).ToArray();
         switch (builtinAttr) {
             case "bvneg": EmitUnopBody(function, "-"); break;
             case "bvadd": EmitBinopBody(function, "+"); break;
@@ -1133,7 +1140,7 @@ public class StrataGenerator : ReadOnlyVisitor {
             case "bvnot": EmitUnopBody(function, "~"); break;
             case "bvshl": EmitBinopBody(function, "<<"); break;
             case "bvlshr": EmitBinopBody(function, ">>"); break;
-            case "bvashr": EmitBinopBody(function, ">>>"); break;
+            case "bvashr": EmitBinopBody(function, ">>s"); break;
             case "bvslt": EmitBinopBody(function, "<s"); break;
             case "bvsle": EmitBinopBody(function, "<=s"); break;
             case "bvsgt": EmitBinopBody(function, ">s"); break;
@@ -1142,14 +1149,36 @@ public class StrataGenerator : ReadOnlyVisitor {
             case "bvule": EmitBinopBody(function, "<="); break;
             case "bvugt": EmitBinopBody(function, ">"); break;
             case "bvuge": EmitBinopBody(function, ">="); break;
-            case "concat": EmitCallBody(function, "bvconcat"); break;
+            case "concat": {
+                if (inParamTypes.Length != 2) {
+                    throw new StrataConversionException(function.tok,
+                        $"Function {function.Name} binds to SMT-Lib operator `bvconcat` but has the wrong number of arguments.");
+                }
+                if (inParamTypes.Any(t => !t.IsBv)) {
+                    throw new StrataConversionException(function.tok,
+                        $"Function {function.Name} binds to SMT-Lib operator `bvconcat` but has non-bitvector argument.");
+                }
+                var e0Size = inParamTypes[0].BvBits;
+                var e1Size = inParamTypes[1].BvBits;
+                EmitCallBody(function, $"bvconcat{{{e0Size}}}{{{e1Size}}}");
+                break;
+            }
             case null: WriteLine(";"); break;
             default:
                 if (builtinAttr.StartsWith("(_ extract ")) {
+                    if (inParamTypes.Length != 1) {
+                        throw new StrataConversionException(function.tok,
+                            $"Function {function.Name} binds to SMT-Lib operator `extract` but has the wrong number of arguments.");
+                    }
+                    if (inParamTypes.Any(t => !t.IsBv)) {
+                        throw new StrataConversionException(function.tok,
+                            $"Function {function.Name} binds to SMT-Lib operator `extract` but has non-bitvector argument.");
+                    }
+                    var inpSize = inParamTypes[0].BvBits;
                     var words = builtinAttr.Split();
                     var hi = words[2];
                     var lo = words[3].Replace(")", "");
-                    EmitCallBody(function, $"bvextract{{{hi}}}{{{lo}}}");
+                    EmitCallBody(function, $"bvextract{{{hi}}}{{{lo}}}{{{inpSize}}}");
                 } else {
                     WriteLine($"; // Unsupported builtin function {builtinAttr}");
                 }
