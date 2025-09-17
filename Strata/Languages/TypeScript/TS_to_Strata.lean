@@ -108,6 +108,7 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
     Heap.HExpr.deferredIte guard consequent alternate
 
   | .TS_NumericLiteral n =>
+    dbg_trace s!"[DEBUG] Translating numeric literal value={n.value}, raw={n.extra.raw}, rawValue={n.extra.rawValue}"
     Heap.HExpr.int n.extra.raw.toInt!
 
   | .TS_BooleanLiteral b =>
@@ -233,6 +234,7 @@ partial def translate_statement (s: TS_Statement) (ctx : TranslationContext) : T
       | .TS_Identifier id =>
         -- Handle identifier assignment: x = value
         let value := translate_expr assgn.right
+        dbg_trace s!"[DEBUG] Assignment: {id.name} = {repr value}"
         (ctx, [.cmd (.set id.name value)])
       | .TS_MemberExpression member =>
         -- Handle field assignment: obj[field] = value
