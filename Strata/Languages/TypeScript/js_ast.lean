@@ -215,7 +215,7 @@ mutual
   structure TS_ForStatement extends BaseNode where
     init: Option TS_VariableDeclaration
     test: Option TS_Expression
-    update: Option TS_Expression
+    update: Option TS_ExpressionStatement
     body: TS_Statement
   deriving Repr, Lean.FromJson, Lean.ToJson
 

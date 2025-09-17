@@ -285,7 +285,7 @@ partial def translate_statement (s: TS_Statement) (ctx : TranslationContext) : T
 
   | .TS_ForStatement forStmt =>
     -- init phase
-    let (ctx1, initStmts) :=
+    let (_, initStmts) :=
       match forStmt.init with
       | some initDecl =>
         -- Reuse existing TS_VariableDeclaration translation
@@ -299,24 +299,20 @@ partial def translate_statement (s: TS_Statement) (ctx : TranslationContext) : T
       | none => Heap.HExpr.true
 
     -- body (first translate loop body)
-    let (ctx2, bodyStmts) := translate_statement forStmt.body ctx1
+    let (ctx1, bodyStmts) := translate_statement forStmt.body ctx
 
     -- update (translate expression into statements following ExpressionStatement style)
-    let updateStmts :=
+    let (_, updateStmts) :=
       match forStmt.update with
-      | some upd =>
-          -- Other update expressions: evaluate and sink to temp to preserve effects/order
-          -- TODO: add support for increment/decrement operators
-          let e := translate_expr upd
-          [.cmd (.set "temp_update_result" e)]
-      | none => []
+      | some updStmt => translate_statement (.TS_ExpressionStatement updStmt) ctx1
+      | _ => panic! s!"for-update only supports assignment expression statements now"
 
     -- assemble loop body (body + update)
     let loopBody : Imperative.Block TSStrataExpression TSStrataCommand :=
       { ss := bodyStmts ++ updateStmts }
 
     -- output: init statements first, then a loop statement
-    (ctx2, initStmts ++ [.loop guard none none loopBody])
+    (ctx1, initStmts ++ [.loop guard none none loopBody])
 
   | .TS_SwitchStatement switchStmt =>
     -- Handle switch statement: switch discriminant { cases }
