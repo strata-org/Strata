@@ -249,6 +249,14 @@ def parse_while_statement(j):
     }
     add_missing_node_info(j, target_j)
     return target_j
+
+def parse_continue_statement(j):
+    label = j.get("label")
+    target_j = {
+        "label": None if label is None else parse_identifier(label)
+    }
+    add_missing_node_info(j, target_j)
+    return target_j
     
 def parse_for_statement(j):
     target_body = parse_statement(j['body'])
@@ -282,7 +290,8 @@ def parse_statement(j):
         # case "WithStatement":
         # case "LabeledStatement":
         # case "BreakStatement":
-        # case "ContinueStatement":
+        case "ContinueStatement":
+            return {"TS_ContinueStatement": parse_continue_statement(j)}
         # case "SwitchStatement":
         # case "TryStatement":
         case "WhileStatement":

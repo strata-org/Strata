@@ -5,3 +5,7 @@
 vcs/*.smt2
 
 Strata.code-workspace
+
+conformance_testing/failures/*
+package.json
+package-lock.json
