@@ -44,18 +44,20 @@ def KnownTypes : KnownTypes :=
   Convert an LExpr LMonoTy String to an LExpr LMonoTy BoogieIdent
   TODO: Remove when Lambda elaborator offers parametric identifier type
 -/
-def ToBoogieIdent (ine: LExpr LMonoTy String): (LExpr LMonoTy BoogieIdent) :=
+
+def TImplicit {Metadata: Type} (Identifier: Type): LExprParamsT := ({Metadata := Metadata, Identifier}: LExprParams).mono
+
+def ToBoogieIdent {M: Type} (ine: LExpr (@TImplicit M String)): LExpr (@TImplicit M BoogieIdent) :=
 match ine with
-    | .const c ty => .const c ty
-    | .op o oty => .op (BoogieIdent.unres o) oty
-    | .bvar deBruijnIndex => .bvar deBruijnIndex
-    | .fvar name oty => .fvar (BoogieIdent.unres name) oty
-    | .mdata info e => .mdata info (ToBoogieIdent e)
-    | .abs oty e => .abs oty (ToBoogieIdent e)
-    | .quant k oty tr e => .quant k oty (ToBoogieIdent tr) (ToBoogieIdent e)
-    | .app fn e => .app (ToBoogieIdent fn) (ToBoogieIdent e)
-    | .ite c t e => .ite (ToBoogieIdent c) (ToBoogieIdent t) (ToBoogieIdent e)
-    | .eq e1 e2 => .eq (ToBoogieIdent e1) (ToBoogieIdent e2)
+    | .const m c ty => .const m c ty
+    | .op m o oty => .op m (BoogieIdent.unres o) oty
+    | .bvar m deBruijnIndex => .bvar m deBruijnIndex
+    | .fvar m name oty => .fvar m (BoogieIdent.unres name) oty
+    | .abs m oty e => .abs m oty (ToBoogieIdent e)
+    | .quant m k oty tr e => .quant m k oty (ToBoogieIdent tr) (ToBoogieIdent e)
+    | .app m fn e => .app m (ToBoogieIdent fn) (ToBoogieIdent e)
+    | .ite m c t e => .ite m (ToBoogieIdent c) (ToBoogieIdent t) (ToBoogieIdent e)
+    | .eq m e1 e2 => .eq m (ToBoogieIdent e1) (ToBoogieIdent e2)
 
 private def BVOpNames :=
   ["Neg", "Add", "Sub", "Mul", "Div", "Mod",
@@ -78,6 +80,10 @@ info: [("Neg", "unaryOp"), ("Add", "binaryOp"), ("Sub", "binaryOp"), ("Mul", "bi
 #guard_msgs in
 #eval List.zip (BVOpNames ++ BVCompNames) BVOpAritys
 
+abbrev MetadataBoogieIdent: LExprParams := ⟨Unit, BoogieIdent⟩
+
+variable [Coe String MetadataBoogieIdent.Identifier]
+
 open Lean Elab Command in
 elab "ExpandBVOpFuncDefs" "[" sizes:num,* "]" : command => do
   for size in sizes.getElems do
@@ -87,59 +93,59 @@ elab "ExpandBVOpFuncDefs" "[" sizes:num,* "]" : command => do
       let funcArity := mkIdent (.str (.str .anonymous "Lambda") arity)
       let opName := Syntax.mkStrLit s!"Bv{s}.{op}"
       let bvTypeName := Name.mkSimple s!"bv{s}"
-      elabCommand (← `(def $funcName : LFunc BoogieIdent := $funcArity $opName mty[$(mkIdent bvTypeName):ident] none))
+      elabCommand (← `(def $funcName : LFunc MetadataBoogieIdent := $funcArity $opName mty[$(mkIdent bvTypeName):ident] none))
 
 -- def bv1AddOp : LExpr BoogieIdent := bv1AddFunc.opExpr
 ExpandBVOpFuncDefs[1, 2, 8, 16, 32, 64]
 
 /- Real Arithmetic Operations -/
 
-def realAddFunc : LFunc BoogieIdent := binaryOp "Real.Add" mty[real] none
-def realSubFunc : LFunc BoogieIdent := binaryOp "Real.Sub" mty[real] none
-def realMulFunc : LFunc BoogieIdent := binaryOp "Real.Mul" mty[real] none
-def realDivFunc : LFunc BoogieIdent := binaryOp "Real.Div" mty[real] none
-def realNegFunc : LFunc BoogieIdent := unaryOp "Real.Neg" mty[real] none
+def realAddFunc : LFunc MetadataBoogieIdent := binaryOp "Real.Add" mty[real] none
+def realSubFunc : LFunc MetadataBoogieIdent := binaryOp "Real.Sub" mty[real] none
+def realMulFunc : LFunc MetadataBoogieIdent := binaryOp "Real.Mul" mty[real] none
+def realDivFunc : LFunc MetadataBoogieIdent := binaryOp "Real.Div" mty[real] none
+def realNegFunc : LFunc MetadataBoogieIdent := unaryOp "Real.Neg" mty[real] none
 
 /- Real Comparison Operations -/
-def realLtFunc : LFunc BoogieIdent := binaryPredicate "Real.Lt" mty[real] none
-def realLeFunc : LFunc BoogieIdent := binaryPredicate "Real.Le" mty[real] none
-def realGtFunc : LFunc BoogieIdent := binaryPredicate "Real.Gt" mty[real] none
-def realGeFunc : LFunc BoogieIdent := binaryPredicate "Real.Ge" mty[real] none
+def realLtFunc : LFunc MetadataBoogieIdent := binaryPredicate "Real.Lt" mty[real] none
+def realLeFunc : LFunc MetadataBoogieIdent := binaryPredicate "Real.Le" mty[real] none
+def realGtFunc : LFunc MetadataBoogieIdent := binaryPredicate "Real.Gt" mty[real] none
+def realGeFunc : LFunc MetadataBoogieIdent := binaryPredicate "Real.Ge" mty[real] none
 
 /- String Operations -/
-def strLengthFunc : LFunc BoogieIdent :=
+def strLengthFunc : LFunc MetadataBoogieIdent :=
     { name := "Str.Length",
       typeArgs := [],
       inputs := [("x", mty[string])]
       output := mty[int],
-      concreteEval := some (unOpCeval String Int LExpr.denoteString
+      concreteEval := some (unOpCeval String Int (@LExpr.denoteString MetadataBoogieIdent)
                             (fun s => (Int.ofNat (String.length s)))
                             mty[int])}
 
-def strConcatFunc : LFunc BoogieIdent :=
+def strConcatFunc : LFunc MetadataBoogieIdent :=
     { name := "Str.Concat",
       typeArgs := [],
       inputs := [("x", mty[string]), ("y", mty[string])]
       output := mty[string],
-      concreteEval := some (binOpCeval String String LExpr.denoteString
+      concreteEval := some (binOpCeval String String (@LExpr.denoteString MetadataBoogieIdent)
                             String.append mty[string])}
 
 /- A polymorphic `old` function with type `∀a. a → a`. -/
-def polyOldFunc : LFunc BoogieIdent :=
+def polyOldFunc : LFunc MetadataBoogieIdent :=
     { name := "old",
       typeArgs := ["a"],
       inputs := [((.locl, "x"), mty[%a])]
       output := mty[%a]}
 
 /- A `Map` selection function with type `∀k, v. Map k v → k → v`. -/
-def mapSelectFunc : LFunc BoogieIdent :=
+def mapSelectFunc : LFunc MetadataBoogieIdent :=
    { name := "select",
      typeArgs := ["k", "v"],
      inputs := [("m", mapTy mty[%k] mty[%v]), ("i", mty[%k])],
      output := mty[%v] }
 
 /- A `Map` update function with type `∀k, v. Map k v → k → v → Map k v`. -/
-def mapUpdateFunc : LFunc BoogieIdent :=
+def mapUpdateFunc : LFunc MetadataBoogieIdent :=
    { name := "update",
      typeArgs := ["k", "v"],
      inputs := [("m", mapTy mty[%k] mty[%v]), ("i", mty[%k]), ("x", mty[%v])],
@@ -183,39 +189,39 @@ macro "ExpandBVOpFuncNames" "[" sizes:num,* "]" : term => do
     allOps := allOps ++ ops.toArray
   `([$(allOps),*])
 
-def bv8ConcatFunc : LFunc BoogieIdent :=
+def bv8ConcatFunc : LFunc MetadataBoogieIdent :=
     { name := "Bv8.Concat",
       typeArgs := [],
       inputs := [("x", mty[bv8]), ("y", mty[bv8])]
       output := mty[bv16],
       concreteEval := none }
 
-def bv16ConcatFunc : LFunc BoogieIdent :=
+def bv16ConcatFunc : LFunc MetadataBoogieIdent :=
     { name := "Bv16.Concat",
       typeArgs := [],
       inputs := [("x", mty[bv16]), ("y", mty[bv16])]
       output := mty[bv32],
       concreteEval := none }
 
-def bv32ConcatFunc : LFunc BoogieIdent :=
+def bv32ConcatFunc : LFunc MetadataBoogieIdent :=
     { name := "Bv32.Concat",
       typeArgs := [],
       inputs := [("x", mty[bv32]), ("y", mty[bv32])]
       output := mty[bv64],
       concreteEval := none }
 
-def Factory : @Factory BoogieIdent := #[
-  intAddFunc,
-  intSubFunc,
-  intMulFunc,
-  intDivFunc,
-  intModFunc,
-  intNegFunc,
+def Factory : @Factory MetadataBoogieIdent := #[
+  @intAddFunc MetadataBoogieIdent _,
+  @intSubFunc MetadataBoogieIdent _,
+  @intMulFunc MetadataBoogieIdent _,
+  @intDivFunc MetadataBoogieIdent _,
+  @intModFunc MetadataBoogieIdent _,
+  @intNegFunc MetadataBoogieIdent _,
 
-  intLtFunc,
-  intLeFunc,
-  intGtFunc,
-  intGeFunc,
+  @intLtFunc MetadataBoogieIdent _,
+  @intLeFunc MetadataBoogieIdent _,
+  @intGtFunc MetadataBoogieIdent _,
+  @intGeFunc MetadataBoogieIdent _,
 
   realAddFunc,
   realSubFunc,
@@ -227,11 +233,11 @@ def Factory : @Factory BoogieIdent := #[
   realGtFunc,
   realGeFunc,
 
-  boolAndFunc,
-  boolOrFunc,
-  boolImpliesFunc,
-  boolEquivFunc,
-  boolNotFunc,
+  @boolAndFunc MetadataBoogieIdent _,
+  @boolOrFunc MetadataBoogieIdent _,
+  @boolImpliesFunc MetadataBoogieIdent _,
+  @boolEquivFunc MetadataBoogieIdent _,
+  @boolNotFunc MetadataBoogieIdent _,
 
   strLengthFunc,
   strConcatFunc,
@@ -261,16 +267,16 @@ def bv8ConcatOp : Expression.Expr := bv8ConcatFunc.opExpr
 def bv16ConcatOp : Expression.Expr := bv16ConcatFunc.opExpr
 def bv32ConcatOp : Expression.Expr := bv32ConcatFunc.opExpr
 
-def intAddOp : Expression.Expr := intAddFunc.opExpr
-def intSubOp : Expression.Expr := intSubFunc.opExpr
-def intMulOp : Expression.Expr := intMulFunc.opExpr
-def intDivOp : Expression.Expr := intDivFunc.opExpr
-def intModOp : Expression.Expr := intModFunc.opExpr
-def intNegOp : Expression.Expr := intNegFunc.opExpr
-def intLtOp : Expression.Expr := intLtFunc.opExpr
-def intLeOp : Expression.Expr := intLeFunc.opExpr
-def intGtOp : Expression.Expr := intGtFunc.opExpr
-def intGeOp : Expression.Expr := intGeFunc.opExpr
+def intAddOp : Expression.Expr := @intAddFunc.opExpr MetadataBoogieIdent _
+def intSubOp : Expression.Expr := @intSubFunc.opExpr MetadataBoogieIdent _
+def intMulOp : Expression.Expr := @intMulFunc.opExpr MetadataBoogieIdent _
+def intDivOp : Expression.Expr := @intDivFunc.opExpr MetadataBoogieIdent _
+def intModOp : Expression.Expr := @intModFunc.opExpr MetadataBoogieIdent _
+def intNegOp : Expression.Expr := @intNegFunc.opExpr MetadataBoogieIdent _
+def intLtOp : Expression.Expr := @intLtFunc.opExpr MetadataBoogieIdent _
+def intLeOp : Expression.Expr := @intLeFunc.opExpr MetadataBoogieIdent _
+def intGtOp : Expression.Expr := @intGtFunc.opExpr MetadataBoogieIdent _
+def intGeOp : Expression.Expr := @intGeFunc.opExpr MetadataBoogieIdent _
 def realAddOp : Expression.Expr := realAddFunc.opExpr
 def realSubOp : Expression.Expr := realSubFunc.opExpr
 def realMulOp : Expression.Expr := realMulFunc.opExpr
@@ -280,11 +286,11 @@ def realLtOp : Expression.Expr := realLtFunc.opExpr
 def realLeOp : Expression.Expr := realLeFunc.opExpr
 def realGtOp : Expression.Expr := realGtFunc.opExpr
 def realGeOp : Expression.Expr := realGeFunc.opExpr
-def boolAndOp : Expression.Expr := boolAndFunc.opExpr
-def boolOrOp : Expression.Expr := boolOrFunc.opExpr
-def boolImpliesOp : Expression.Expr := boolImpliesFunc.opExpr
-def boolEquivOp : Expression.Expr := boolEquivFunc.opExpr
-def boolNotOp : Expression.Expr := boolNotFunc.opExpr
+def boolAndOp : Expression.Expr := @boolAndFunc.opExpr MetadataBoogieIdent _
+def boolOrOp : Expression.Expr := @boolOrFunc.opExpr MetadataBoogieIdent _
+def boolImpliesOp : Expression.Expr := @boolImpliesFunc.opExpr MetadataBoogieIdent _
+def boolEquivOp : Expression.Expr := @boolEquivFunc.opExpr MetadataBoogieIdent _
+def boolNotOp : Expression.Expr := @boolNotFunc.opExpr MetadataBoogieIdent _
 def strLengthOp : Expression.Expr := strLengthFunc.opExpr
 def strConcatOp : Expression.Expr := strConcatFunc.opExpr
 def polyOldOp : Expression.Expr := polyOldFunc.opExpr

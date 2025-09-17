@@ -65,7 +65,7 @@ def inferType (T : TEnv BoogieIdent) (c : Cmd Expression) (e : (LExpr LMonoTy Bo
   let e := OldExpressions.normalizeOldExpr e
   let (ea, T) ← LExprT.fromLExpr T e
   let ety := ea.toLMonoTy
-  return (ea.toLExpr, (.forAll [] ety), T)
+  return (ea.unresolved, (.forAll [] ety), T)
 
 /--
 Type constraints come from functions `inferType` and `preprocess`, both of which

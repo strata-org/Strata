@@ -50,6 +50,8 @@ instance : ToFormat Visibility where
   | .temp => "t:"
 
 def BoogieIdent := Visibility × String
+def BoogieExprMetadata := Unit
+def BoogieLParams: Lambda.LExprParams := {Metadata := BoogieExprMetadata, Identifier := BoogieIdent}
 abbrev BoogieLabel := String
 
 @[match_pattern]
@@ -106,7 +108,7 @@ instance : Repr BoogieIdent where
 instance : Inhabited BoogieIdent where
   default := (.unres, "_")
 
-instance : Lambda.HasGen BoogieIdent where
+instance : Lambda.HasGen BoogieLParams where
   genVar T := let (sym, state') := (Lambda.TState.genExprSym T.state)
               (BoogieIdent.temp sym, { T with state := state' })
 
@@ -122,7 +124,7 @@ def elabBoogieIdent : Syntax → MetaM Expr
     return ← mkAppM ``BoogieIdent.unres #[mkStrLit s]
   | _ => throwUnsupportedSyntax
 
-instance : MkIdent BoogieIdent where
+instance : MkLExprParams BoogieIdent where
   elabIdent := elabBoogieIdent
   toExpr := .const ``BoogieIdent []
 

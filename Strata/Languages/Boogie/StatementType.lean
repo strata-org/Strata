@@ -59,7 +59,7 @@ def typeCheckCmd (T : (TEnv BoogieIdent)) (P : Program) (c : Command) :
            -- procedure's formals.
            let (argsa, T) ← Lambda.LExprT.fromLExprs T args
            let args_tys := argsa.map LExprT.toLMonoTy
-           let args' := argsa.map $ LExprT.toLExpr
+           let args' := argsa.map $ LExprT.unresolved
            let (inp_sig, T) ← LMonoTySignature.instantiate T proc.header.typeArgs proc.header.inputs
            let inp_mtys := LMonoTys.subst T.state.substInfo.subst inp_sig.values
            let lhs_inp_constraints := (args_tys.zip inp_mtys)
@@ -98,7 +98,7 @@ where
           | .tcons "bool" [] =>
             let (tb, T) ← go T [(.block "$$_then" thenb #[])] []
             let (eb, T) ← go T [(.block "$$_else" elseb #[])] []
-            let s' := .ite conda.toLExpr ⟨tb⟩ ⟨eb⟩ md
+            let s' := .ite conda.unresolved ⟨tb⟩ ⟨eb⟩ md
             .ok (s', T)
           | _ => .error f!"[{s}]: If's condition {cond} is not of type `bool`!"
 
@@ -126,7 +126,7 @@ where
           | (.tcons "bool" [], none, some (.tcons "bool" []))
           | (.tcons "bool" [], some (.tcons "int" []), some (.tcons "bool" [])) =>
             let (tb, T) ← go T [(.block "$$_loop_body" body #[])] []
-            let s' := .loop conda.toLExpr (mt.map LExprT.toLExpr) (it.map LExprT.toLExpr) ⟨tb⟩ md
+            let s' := .loop conda.unresolved (mt.map LExprT.unresolved) (it.map LExprT.unresolved) ⟨tb⟩ md
             .ok (s', T)
           | _ =>
             match condty with

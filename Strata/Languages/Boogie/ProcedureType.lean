@@ -72,10 +72,10 @@ def typeCheck (T : Boogie.Expression.TyEnv) (p : Program) (proc : Procedure) :
       let postconditions := postcondition_checks.map (fun (_, { expr := expr, attr := _ }) => expr)
       let (preconditions_a, T) ← Lambda.LExprT.fromLExprs T preconditions
       let pre_tys := preconditions_a.map Lambda.LExprT.toLMonoTy
-      let preconditions := preconditions_a.map Lambda.LExprT.toLExpr
+      let preconditions := preconditions_a.map Lambda.LExprT.unresolved
       let (postconditions_a, T) ← Lambda.LExprT.fromLExprs T postconditions
       let post_tys := postconditions_a.map Lambda.LExprT.toLMonoTy
-      let postconditions := postconditions_a.map Lambda.LExprT.toLExpr
+      let postconditions := postconditions_a.map Lambda.LExprT.unresolved
       if (pre_tys ++ post_tys).any (fun ty => ty != .tcons "bool" []) then
         .error f!"Expected pre- and post-conditions to be of type Bool!"
       else

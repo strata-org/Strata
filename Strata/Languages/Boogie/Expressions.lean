@@ -15,12 +15,14 @@ namespace Boogie
 open Std (ToFormat Format format)
 ---------------------------------------------------------------------
 
+def ExpressionMetadata := Unit
+
 abbrev Expression : Imperative.PureExpr :=
    { Ident := BoogieIdent,
-     Expr := Lambda.LExpr Lambda.LMonoTy BoogieIdent,
+     Expr := Lambda.LExpr ⟨⟨ExpressionMetadata, BoogieIdent⟩, Lambda.LMonoTy⟩,
      Ty := Lambda.LTy,
-     TyEnv := @Lambda.TEnv BoogieIdent,
-     EvalEnv := Lambda.LState BoogieIdent
+     TyEnv := @Lambda.TEnv ⟨ExpressionMetadata, BoogieIdent⟩,
+     EvalEnv := Lambda.LState ⟨ExpressionMetadata, BoogieIdent⟩
      EqIdent := instDecidableEqBoogieIdent }
 
 instance : Imperative.HasVarsPure Expression Expression.Expr where

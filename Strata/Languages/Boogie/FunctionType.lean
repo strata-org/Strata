@@ -41,7 +41,7 @@ def typeCheck (T : Boogie.Expression.TyEnv) (func : Function) :
     let S ← Constraints.unify [(retty, bodyty)] T.state.substInfo
     let T := T.updateSubst S
     let T := T.popContext
-    let new_func := { func with body := bodya.toLExpr }
+    let new_func := { func with body := bodya.unresolved }
     .ok (new_func, T)
 
 end Function

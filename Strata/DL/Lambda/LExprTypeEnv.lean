@@ -380,6 +380,7 @@ def LMonoTys.instantiate (ids : List TyIdentifier) (mtys : LMonoTys) (Env : TEnv
   (LMonoTys.subst S mtys, Env)
 
 omit [DecidableEq T.Identifier] in
+omit [ToFormat T.Metadata] in
 theorem LMonoTys.instantiate_length:
   (LMonoTys.instantiate (T:=T) ids mty Env).fst.length == mty.length := by
   simp [instantiate, LMonoTys.subst_eq_substLogic]

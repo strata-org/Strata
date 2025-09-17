@@ -81,7 +81,7 @@ def typeCheck (T : Boogie.Expression.TyEnv) (program : Program) :
       | .ax a _ =>
         let (ae, T) ← LExprT.fromLExpr T a.e
         match ae.toLMonoTy with
-        | .bool => .ok (.ax { a with e := ae.toLExpr } , T)
+        | .bool => .ok (.ax { a with e := ae.unresolved } , T)
         | _ => .error f!"Axiom has non-boolean type: {a}"
 
       | .proc proc _ =>
