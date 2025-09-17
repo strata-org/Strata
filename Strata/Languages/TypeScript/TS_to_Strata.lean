@@ -280,7 +280,41 @@ partial def translate_statement (s: TS_Statement) (ctx : TranslationContext) : T
     -- For now, we'll use the then context (could be more sophisticated)
     (thenCtx, [.ite testExpr thenBlock elseBlock])
 
+  | .TS_SwitchStatement switchStmt =>
+    -- Handle switch statement: switch discriminant { cases }
+    let discrimExpr := translate_expr switchStmt.discriminant
+    let caseStmts := switchStmt.cases.toList.map (fun case =>
+      let testExpr := match case.test with
+        | some expr => translate_expr expr
+        | none => Heap.HExpr.true  -- Default case
+      let (caseCtx, stmts) := case.consequent.foldl (fun (accCtx, accStmts) stmt =>
+        let (newCtx, newStmts) := translate_statement stmt accCtx
+        (newCtx, accStmts ++ newStmts)) (ctx, [])
+      (testExpr, stmts))
+
+    -- Build nested if-then-else structure for cases
+    let rec build_cases (cases: List (Heap.HExpr × List TSStrataStatement)) : TSStrataStatement :=
+      match cases with
+      | [] => panic! "Switch statement must have at least one case"
+      | [(test, stmts)] =>
+        let thenBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := stmts }
+        let elseBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [] }
+        .ite test thenBlock elseBlock
+      | (test, stmts) :: rest =>
+        let thenBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := stmts }
+        let elseBlock := build_cases rest
+        let elseBlockWrapped : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [elseBlock] }
+        .ite test thenBlock elseBlockWrapped
+
+    let switchStructure := build_cases caseStmts
+    (ctx, [switchStructure])
+
+  -- | .TS_BreakStatement breakStmt =>
+  --   let label := breakStmt.label.map translate_expr
+  --   (ctx, [.cmd (.break label)])
   | _ => panic! s!"Unimplemented statement: {repr s}"
+
+  -- Handle break statement: break;
 
 -- Translate list of TypeScript statements with context
 def translate_program (statements: List TS_Statement) : TranslationContext × List TSStrataStatement :=

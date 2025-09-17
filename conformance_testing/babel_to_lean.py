@@ -241,6 +241,34 @@ def parse_throw_statement(j):
     add_missing_node_info(j, target_j)
     return target_j
 
+def parse_switch_statement(j):
+    target_j = {
+        "discriminant": parse_expression(j['discriminant']),
+        "cases": [parse_switch_case(ji) for ji in j['cases']]
+    }
+    add_missing_node_info(j, target_j)
+    return target_j
+
+def parse_switch_case(j):
+    source_test = j.get("test")
+    target_test = None
+    if source_test is not None:
+        target_test = parse_expression(source_test)
+
+    target_j = {
+        "test": target_test,
+        "consequent": [parse_statement(ji) for ji in j['consequent']]
+    }
+    add_missing_node_info(j, target_j)
+    return target_j
+
+def parse_break_statement(j):
+    target_j = {
+        "label": parse_identifier(j['label']) if j.get('label') else None
+    }
+    add_missing_node_info(j, target_j)
+    return target_j
+
 def parse_statement(j):
     match j['type']:
         case "ExpressionStatement":
@@ -257,13 +285,15 @@ def parse_statement(j):
             return {"TS_ThrowStatement": parse_throw_statement(j)}
         case "FunctionDeclaration":
             return {"TS_FunctionDeclaration": parse_function_declarations(j)}
+        case "SwitchStatement":
+            return {"TS_SwitchStatement": parse_switch_statement(j)}
+        case "BreakStatement":
+            return {"TS_BreakStatement": parse_break_statement(j)}
         # case "EmptyStatement":
         # case "DebuggerStatement":
         # case "WithStatement":
         # case "LabeledStatement":
-        # case "BreakStatement":
         # case "ContinueStatement":
-        # case "SwitchStatement":
         # case "TryStatement":
         # case "WhileStatement":
         # case "DoWhileStatement":
