@@ -193,7 +193,7 @@ def KnownType.toLTy (k : KnownType) : LTy :=
 def LTy.toKnownType! (lty : LTy) : KnownType :=
   match lty with
   | .forAll _ (.tcons name args) => { name, arity := args.length }
-  | .forAll [] (.bitvec _) => { name := "bitvec", arity := 1 }
+  | .forAll [] (bitvec _) => { name := "bitvec", arity := 1 }
   | _ => panic! s!"Unsupported known type: {lty}"
 
 instance : ToFormat KnownType where
@@ -421,10 +421,10 @@ def LMonoTy.aliasDef? (mty : LMonoTy) (T : (TEnv Identifier)) : (Option LMonoTy 
     -- We can't have a free variable be the LHS of an alias definition because
     -- then it will unify with every type.
     (none, T)
-  | .bitvec _ =>
+  | bitvec _ =>
     -- A bitvector cannot be a type alias.
     (none, T)
-  | .tcons name args =>
+  | .tcons name args r =>
     match T.context.aliases.find? (fun a => a.name == name && a.typeArgs.length == args.length) with
     | none => (none, T)
     | some alias =>
@@ -538,12 +538,12 @@ partial def LMonoTy.resolveAliases (mty : LMonoTy) (T : TEnv Identifier) : (Opti
   | none =>
     match mty with
     | .ftvar _ => (some mty, T)
-    | .bitvec _ => (some mty, T)
-    | .tcons name mtys =>
+    | bitvec _ => (some mty, T)
+    | .tcons name mtys r =>
       let (maybe_mtys, T) := LMonoTys.resolveAliases mtys T.context.aliases T
       match maybe_mtys with
       | none => (none, T)
-      | some mtys' => (some (.tcons name mtys'), T)
+      | some mtys' => (some (.tcons name mtys' r), T)
 
 /--
 De-alias `mtys`, including at the subtrees.
@@ -610,8 +610,8 @@ de-aliased.
 -/
 def LMonoTy.knownInstance (ty : LMonoTy) (ks : KnownTypes) : Bool :=
   match ty with
-  | .ftvar _ | .bitvec _ => true
-  | .tcons name args =>
+  | .ftvar _ | bitvec _ => true
+  | .tcons name args _ =>
     (ks.contains { name := name, arity := args.length }) &&
     LMonoTys.knownInstances args ks
 

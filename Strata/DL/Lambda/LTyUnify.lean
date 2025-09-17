@@ -121,7 +121,6 @@ def LMonoTy.subst (S : Subst) (mty : LMonoTy) : LMonoTy :=
   match mty with
   | .ftvar x => match S.find? x with
                 | some sty => sty | none => mty
-  | .bitvec _ => mty
   | .tcons name ltys r =>
     .tcons name (LMonoTys.subst S ltys) r
 /--
@@ -196,10 +195,6 @@ theorem LMonoTy.subst_keys_not_in_substituted_type (h : SubstWF S) :
       have := @Map.find?_of_not_mem_values _ _ i _ S
       simp_all
       exact ne_of_mem_of_not_mem hid this
-  case bitvec n =>
-    simp_all [LMonoTy.subst]
-    unfold LMonoTy.freeVars
-    simp
   case tcons name args r h1 =>
     simp_all
     simp [subst]
@@ -241,8 +236,6 @@ theorem LMonoTy.freeVars_of_subst_subset (S : Subst) (mty : LMonoTy) :
       apply @Map.find?_mem_values _ _ x sty _ S h_find
     · -- Case: S.find? x = none
       simp [freeVars]
-  case bitvec n =>
-    simp [subst]
   case tcons name args r ih =>
     simp [LMonoTy.subst, LMonoTy.freeVars]
     induction args
@@ -963,25 +956,25 @@ def Constraint.unifyOne (c : Constraint) (S : SubstInfo) :
           have h_sub2 : Subst.freeVars_subset_prop [(orig_lty, LMonoTy.ftvar id)] newS S := by
             simp_all [Subst.freeVars_subset_prop_single_constraint_comm]
           .ok { newS := newS, goodSubset := by all_goals simp [h_sub1, h_sub2] }
-    | .bitvec n1, .bitvec n2 =>
+    | bitvec n1, bitvec n2 =>
       if _h7 : n1 == n2 then
         .ok { newS := SubstInfo.mk [] (by simp [SubstWF]), goodSubset := by grind }
       else
         .error f!"Cannot unify differently sized bitvector types {t1} and {t2}!"
-    | .tcons name1 args1, .tcons name2 args2 => do
+    | bitvec _, .tcons _ _ _ =>
+        .error f!"Cannot unify bv type {t1} and type constructor {t2}!"
+    | .tcons _ _ _, bitvec _ =>
+        .error f!"Cannot unify type constructor {t1} and bv type {t2}!"
+    | .tcons name1 args1 r1, .tcons name2 args2 r2 => do
       if _h6 : name1 == name2 && args1.length == args2.length then
        let new_constraints := List.zip args1 args2
        let relS ← Constraints.unifyCore new_constraints S
        have h_sub : Subst.freeVars_subset_prop
-                    [(LMonoTy.tcons name1 args1, LMonoTy.tcons name2 args2)] relS.newS S := by
+                    [(LMonoTy.tcons name1 args1 r1, LMonoTy.tcons name2 args2 r2)] relS.newS S := by
          exact Subst.freeVars_subset_prop_of_tcons S name1 name2 args1 args2 rfl relS
        .ok { newS := relS.newS, goodSubset := by simp [h_sub] }
       else
         .error f!"Cannot unify differently named type constructors {t1} and {t2}!"
-    | .bitvec _, .tcons _ _ =>
-        .error f!"Cannot unify bv type {t1} and type constructor {t2}!"
-    | .tcons _ _, .bitvec _ =>
-        .error f!"Cannot unify type constructor {t1} and bv type {t2}!"
   termination_by ((((Constraints.freeVars [c]) ++ S.subst.freeVars).dedup.length),
                   Constraints.size [c],
                   0)

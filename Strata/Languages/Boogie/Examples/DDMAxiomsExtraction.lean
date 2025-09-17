@@ -239,7 +239,7 @@ info: #[{ name := { dialect := "Boogie", name := "command_typedecl" },
 /--
 info: [Lambda.LExpr.quant
    (Lambda.QuantifierKind.all)
-   (some (Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"] ()))
+   (some (Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"] (Lambda.LTyRestrict.nodata)))
    (Lambda.LExpr.bvar 0)
    (Lambda.LExpr.quant
      (Lambda.QuantifierKind.all)
@@ -256,9 +256,15 @@ info: [Lambda.LExpr.quant
                u:select
                (some (Lambda.LMonoTy.tcons
                   "arrow"
-                  [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"] (),
-                   Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"] ()]
-                  ())))
+                  [Lambda.LMonoTy.tcons
+                     "Map"
+                     [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]
+                     (Lambda.LTyRestrict.nodata),
+                   Lambda.LMonoTy.tcons
+                     "arrow"
+                     [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]
+                     (Lambda.LTyRestrict.nodata)]
+                  (Lambda.LTyRestrict.nodata))))
              (Lambda.LExpr.app
                (Lambda.LExpr.app
                  (Lambda.LExpr.app
@@ -266,17 +272,23 @@ info: [Lambda.LExpr.quant
                      u:update
                      (some (Lambda.LMonoTy.tcons
                         "arrow"
-                        [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"] (),
+                        [Lambda.LMonoTy.tcons
+                           "Map"
+                           [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]
+                           (Lambda.LTyRestrict.nodata),
                          Lambda.LMonoTy.tcons
                            "arrow"
                            [Lambda.LMonoTy.ftvar "k",
                             Lambda.LMonoTy.tcons
                               "arrow"
                               [Lambda.LMonoTy.ftvar "v",
-                               Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"] ()]
-                              ()]
-                           ()]
-                        ())))
+                               Lambda.LMonoTy.tcons
+                                 "Map"
+                                 [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]
+                                 (Lambda.LTyRestrict.nodata)]
+                              (Lambda.LTyRestrict.nodata)]
+                           (Lambda.LTyRestrict.nodata)]
+                        (Lambda.LTyRestrict.nodata))))
                    (Lambda.LExpr.bvar 2))
                  (Lambda.LExpr.bvar 1))
                (Lambda.LExpr.bvar 0)))
@@ -284,7 +296,7 @@ info: [Lambda.LExpr.quant
          (Lambda.LExpr.bvar 0)))),
  Lambda.LExpr.quant
    (Lambda.QuantifierKind.all)
-   (some (Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"] ()))
+   (some (Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"] (Lambda.LTyRestrict.nodata)))
    (Lambda.LExpr.bvar 0)
    (Lambda.LExpr.quant
      (Lambda.QuantifierKind.all)
@@ -305,9 +317,15 @@ info: [Lambda.LExpr.quant
                  u:select
                  (some (Lambda.LMonoTy.tcons
                     "arrow"
-                    [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"] (),
-                     Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"] ()]
-                    ())))
+                    [Lambda.LMonoTy.tcons
+                       "Map"
+                       [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]
+                       (Lambda.LTyRestrict.nodata),
+                     Lambda.LMonoTy.tcons
+                       "arrow"
+                       [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]
+                       (Lambda.LTyRestrict.nodata)]
+                    (Lambda.LTyRestrict.nodata))))
                (Lambda.LExpr.app
                  (Lambda.LExpr.app
                    (Lambda.LExpr.app
@@ -315,17 +333,23 @@ info: [Lambda.LExpr.quant
                        u:update
                        (some (Lambda.LMonoTy.tcons
                           "arrow"
-                          [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"] (),
+                          [Lambda.LMonoTy.tcons
+                             "Map"
+                             [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]
+                             (Lambda.LTyRestrict.nodata),
                            Lambda.LMonoTy.tcons
                              "arrow"
                              [Lambda.LMonoTy.ftvar "k",
                               Lambda.LMonoTy.tcons
                                 "arrow"
                                 [Lambda.LMonoTy.ftvar "v",
-                                 Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"] ()]
-                                ()]
-                             ()]
-                          ())))
+                                 Lambda.LMonoTy.tcons
+                                   "Map"
+                                   [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]
+                                   (Lambda.LTyRestrict.nodata)]
+                                (Lambda.LTyRestrict.nodata)]
+                             (Lambda.LTyRestrict.nodata)]
+                          (Lambda.LTyRestrict.nodata))))
                      (Lambda.LExpr.bvar 3))
                    (Lambda.LExpr.bvar 1))
                  (Lambda.LExpr.bvar 0)))
@@ -336,9 +360,15 @@ info: [Lambda.LExpr.quant
                  u:select
                  (some (Lambda.LMonoTy.tcons
                     "arrow"
-                    [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"] (),
-                     Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"] ()]
-                    ())))
+                    [Lambda.LMonoTy.tcons
+                       "Map"
+                       [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]
+                       (Lambda.LTyRestrict.nodata),
+                     Lambda.LMonoTy.tcons
+                       "arrow"
+                       [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]
+                       (Lambda.LTyRestrict.nodata)]
+                    (Lambda.LTyRestrict.nodata))))
                (Lambda.LExpr.bvar 3))
              (Lambda.LExpr.bvar 2))))))]
 -/

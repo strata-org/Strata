@@ -87,12 +87,12 @@ mutual
 def LMonoTy.toSMTType (ty : LMonoTy) (ctx : SMT.Context) :
   Except Format (TermType × SMT.Context) := do
   match ty with
-  | .bitvec n => .ok (.bitvec n, ctx)
-  | .tcons "bool" [] => .ok (.bool, ctx)
-  | .tcons "int"  [] => .ok (.int, ctx)
-  | .tcons "real" [] => .ok (.real, ctx)
-  | .tcons "string"  [] => .ok (.string, ctx)
-  | .tcons id args =>
+  | bitvec n => .ok (TermType.bitvec n, ctx)
+  | .tcons "bool" [] _ => .ok (.bool, ctx)
+  | .tcons "int"  [] _ => .ok (.int, ctx)
+  | .tcons "real" [] _ => .ok (.real, ctx)
+  | .tcons "string"  [] _ => .ok (.string, ctx)
+  | .tcons id args _ =>
     let ctx := ctx.addSort { name := id, arity := args.length }
     let (args', ctx) ← LMonoTys.toSMTType args ctx
     .ok ((.constr id args'), ctx)
@@ -141,7 +141,7 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr LMonoTy BoogieIdent
           | none =>
             .error f!"Unexpected real constant {e}"
           | some r => .ok ((Term.real r), ctx)
-        | .bitvec n =>
+        | bitvec n =>
           match e.denoteBitVec n with
           | none =>
             .error f!"Unexpected bv constant {e}"

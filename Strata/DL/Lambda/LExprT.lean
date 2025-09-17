@@ -226,8 +226,8 @@ def inferConst (T : (TEnv Identifier)) (c : String) (cty : Option LMonoTy) :
                 {@LExpr.const LMonoTy Identifier c cty}\n\
                 Known Types: {T.knownTypes}"
   -- Annotated BitVecs
-  | c, some (LMonoTy.bitvec n) =>
-    let ty := LMonoTy.bitvec n
+  | c, some (bitvec n) =>
+    let ty := bitvec n
     if { name := "bitvec", arity := 1 } ∈ T.knownTypes then
       (.ok (ty, T))
     else
