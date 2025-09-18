@@ -206,6 +206,9 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
   | _ =>
     let mut results := (#[] : VCResults)
     for obligation in E.deferred do
+      if obligation.obligation.isTrue then
+        results := results.push { obligation, result := .unsat }
+        continue
       let maybeTerms := ProofObligation.toSMTTerms E obligation
       match maybeTerms with
       | .error err =>
