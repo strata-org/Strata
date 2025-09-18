@@ -72,7 +72,6 @@ Proof Obligation:
 
 Wrote problem to vcs/Test_ensures_0.smt2.
 Wrote problem to vcs/Test_ensures_1.smt2.
-Wrote problem to vcs/Test_ensures_2.smt2.
 ---
 info:
 Obligation: Test_ensures_0

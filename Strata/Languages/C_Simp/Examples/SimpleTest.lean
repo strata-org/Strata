@@ -100,7 +100,6 @@ Proof Obligation:
 
 Wrote problem to vcs/test_assert.smt2.
 Wrote problem to vcs/test_assert.smt2.
-Wrote problem to vcs/post.smt2.
 ---
 info:
 Obligation: test_assert

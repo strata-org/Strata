@@ -166,7 +166,6 @@ Wrote problem to vcs/measure_decreases.smt2.
 Wrote problem to vcs/measure_imp_not_guard.smt2.
 Wrote problem to vcs/arbitrary_iter_maintain_invariant.smt2.
 Wrote problem to vcs/i_eq_n.smt2.
-Wrote problem to vcs/post.smt2.
 ---
 info:
 Obligation: entry_invariant
