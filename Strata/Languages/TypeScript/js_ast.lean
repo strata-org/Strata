@@ -210,9 +210,9 @@ mutual
 
   /- TODO: Add support for for(let a=0, b=0;a!=0 and b!=0;a++,b++) -/
   structure TS_ForStatement extends BaseNode where
-    init: Option TS_VariableDeclaration
-    test: Option TS_Expression
-    update: Option TS_ExpressionStatement
+    init: TS_VariableDeclaration
+    test: TS_Expression
+    update: TS_AssignmentExpression
     body: TS_Statement
   deriving Repr, Lean.FromJson, Lean.ToJson
 

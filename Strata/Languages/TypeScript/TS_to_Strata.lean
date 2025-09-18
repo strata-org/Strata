@@ -284,28 +284,14 @@ partial def translate_statement (s: TS_Statement) (ctx : TranslationContext) : T
 
   | .TS_ForStatement forStmt =>
     -- init phase
-    let (_, initStmts) :=
-      match forStmt.init with
-      | some initDecl =>
-        -- Reuse existing TS_VariableDeclaration translation
-        translate_statement (.TS_VariableDeclaration initDecl) ctx
-      | none => (ctx, [])
-
+    let (_, initStmts) := translate_statement (.TS_VariableDeclaration forStmt.init) ctx
     -- guard (test)
-    let guard :=
-      match forStmt.test with
-      | some testExpr => translate_expr testExpr
-      | none => Heap.HExpr.true
-
+    let guard := translate_expr forStmt.test
     -- body (first translate loop body)
     let (ctx1, bodyStmts) := translate_statement forStmt.body ctx
-
     -- update (translate expression into statements following ExpressionStatement style)
     let (_, updateStmts) :=
-      match forStmt.update with
-      | some updStmt => translate_statement (.TS_ExpressionStatement updStmt) ctx1
-      | _ => panic! s!"for-update only supports assignment expression statements now"
-
+      translate_statement (.TS_ExpressionStatement { expression := .TS_AssignmentExpression forStmt.update, start_loc := forStmt.start_loc, end_loc := forStmt.end_loc, loc:= forStmt.loc, type := "TS_AssignmentExpression" }) ctx1
     -- assemble loop body (body + update)
     let loopBody : Imperative.Block TSStrataExpression TSStrataCommand :=
       { ss := bodyStmts ++ updateStmts }
