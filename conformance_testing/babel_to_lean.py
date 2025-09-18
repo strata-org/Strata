@@ -241,6 +241,17 @@ def parse_throw_statement(j):
     add_missing_node_info(j, target_j)
     return target_j
 
+def parse_for_statement(j):
+    target_body = parse_statement(j['body'])
+    target_j = {
+        "init": parse_variable_declaration(j['init']),
+        "test": parse_expression(j['test']),
+        "update": parse_assignment_expression(j['update']),
+        "body": target_body
+    }
+    add_missing_node_info(j, target_j)
+    return target_j
+
 def parse_statement(j):
     match j['type']:
         case "ExpressionStatement":
@@ -265,9 +276,10 @@ def parse_statement(j):
         # case "ContinueStatement":
         # case "SwitchStatement":
         # case "TryStatement":
-        # case "WhileStatement":
         # case "DoWhileStatement":
-        # case "ForStatement":
+        # case "WhileStatement":
+        case "ForStatement":
+            return {"TS_ForStatement": parse_for_statement(j)}
         # case "ForInStatement":
         # case "ForOfStatement":
         # case "ClassDeclaration":
