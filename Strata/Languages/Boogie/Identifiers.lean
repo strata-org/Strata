@@ -124,28 +124,34 @@ def elabBoogieIdent : Syntax → MetaM Expr
     return ← mkAppM ``BoogieIdent.unres #[mkStrLit s]
   | _ => throwUnsupportedSyntax
 
-instance : MkLExprParams BoogieIdent where
+instance : MkLExprParams BoogieLParams where
   elabIdent := elabBoogieIdent
-  toExpr := .const ``BoogieIdent []
+  toExpr := mkApp2 (mkConst ``Lambda.LExprParams.mk) (mkConst ``BoogieExprMetadata) (mkConst ``BoogieIdent)
 
-elab "eb[" e:lexprmono "]" : term => elabLExprMono (Identifier:=BoogieIdent) e
+elab "eb[" e:lexprmono "]" : term => elabLExprMono (T:=BoogieLParams) e
 
--- Temporarily comment out these tests until the syntax is fixed
--- /-- info: Lambda.LExpr.op () (BoogieIdent.unres "old") none : Lambda.LExpr { Metadata := Unit, TypeType := Lambda.LMonoTy, Identifier := BoogieIdent } -/
--- #guard_msgs in
--- #check eb[~old]
+/--
+info: Lambda.LExpr.op () (BoogieIdent.unres "old")
+  none : Lambda.LExpr { Metadata := BoogieExprMetadata, Identifier := BoogieIdent }.mono
+-/
+#guard_msgs in
+#check eb[~old]
 
--- /--
--- info: Lambda.LExpr.app () (Lambda.LExpr.op () (BoogieIdent.unres "old") none)
---   (Lambda.LExpr.fvar () (BoogieIdent.unres "a") none) : Lambda.LExpr { Metadata := Unit, TypeType := Lambda.LMonoTy, Identifier := BoogieIdent }
--- -/
--- #guard_msgs in
--- #check eb[(~old a)]
+/--
+info: Lambda.LExpr.app () (Lambda.LExpr.op () (BoogieIdent.unres "old") none)
+  (Lambda.LExpr.fvar () (BoogieIdent.unres "a")
+    none) : Lambda.LExpr { Metadata := BoogieExprMetadata, Identifier := BoogieIdent }.mono
+-/
+#guard_msgs in
+#check eb[(~old a)]
 
--- open Lambda.LTy.Syntax in
--- /-- info: Lambda.LExpr.fvar () (BoogieIdent.unres "x")
---   (some (Lambda.LMonoTy.tcons "bool" [])) : Lambda.LExpr { Metadata := Unit, TypeType := Lambda.LMonoTy, Identifier := BoogieIdent } -/
--- #guard_msgs in
--- #check eb[(x : bool)]
+open Lambda.LTy.Syntax in
+/--
+info: Lambda.LExpr.fvar () (BoogieIdent.unres "x")
+  (some
+    (Lambda.LMonoTy.tcons "bool" [])) : Lambda.LExpr { Metadata := BoogieExprMetadata, Identifier := BoogieIdent }.mono
+-/
+#guard_msgs in
+#check eb[(x : bool)]
 
 end Syntax

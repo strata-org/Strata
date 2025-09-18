@@ -24,10 +24,10 @@ namespace C_Simp
 -- Our expression language is `DL/Lambda`
 abbrev Expression : Imperative.PureExpr := {
   Ident := String,
-  Expr := Lambda.LExpr Lambda.LMonoTy String,
+  Expr := Lambda.LExpr ⟨⟨Unit, String⟩, Lambda.LMonoTy⟩,
   Ty := Lambda.LTy,
-  TyEnv := Lambda.TEnv String,
-  EvalEnv := Lambda.LState String,
+  TyEnv := Lambda.TEnv ⟨Unit, String⟩,
+  EvalEnv := Lambda.LState ⟨Unit, String⟩,
   EqIdent := String.decEq
 }
 

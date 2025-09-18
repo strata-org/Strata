@@ -545,17 +545,17 @@ def size (T : LExprParamsT) (e : LExpr T) : Nat :=
 /--
 Erase all type annotations from `e`.
 -/
-def eraseTypes (T : LExprParamsT) (e : LExpr T) : LExpr T :=
+def eraseTypes {T : LExprParamsT} (e : LExpr T) : LExpr T :=
   match e with
   | .const m c _ => .const m c none
   | .op m o _ => .op m o none
   | .fvar m x _ => .fvar m x none
   | .bvar _ _ => e
-  | .abs m ty e => .abs m ty (eraseTypes T e)
-  | .quant m qk ty tr e => .quant m qk ty (eraseTypes T tr) (eraseTypes T e)
-  | .app m e1 e2 => .app m (eraseTypes T e1) (eraseTypes T e2)
-  | .ite m c t f => .ite m (eraseTypes T c) (eraseTypes T t) (eraseTypes T f)
-  | .eq m e1 e2 => .eq m (eraseTypes T e1) (eraseTypes T e2)
+  | .abs m ty e => .abs m ty (eraseTypes e)
+  | .quant m qk ty tr e => .quant m qk ty (eraseTypes tr) (eraseTypes e)
+  | .app m e1 e2 => .app m (eraseTypes e1) (eraseTypes e2)
+  | .ite m c t f => .ite m (eraseTypes c) (eraseTypes t) (eraseTypes f)
+  | .eq m e1 e2 => .eq m (eraseTypes e1) (eraseTypes e2)
 
 ---------------------------------------------------------------------
 
