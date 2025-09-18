@@ -41,7 +41,6 @@ Assumptions:
 Proof Obligation:
 #false
 
-Wrote problem to vcs/bitvec32_test.smt2.
 Wrote problem to vcs/bitvec64_test.smt2.
 
 
