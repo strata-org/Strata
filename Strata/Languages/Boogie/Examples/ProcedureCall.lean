@@ -48,6 +48,23 @@ procedure Q2() returns () {
 };
 #end
 
+/-
+def p : Boogie.Program :=
+   TransM.run (translateProgram (globalCounterPgm)) |>.fst
+
+open Boogie in
+def Boogie.typeCheckDbg (options : Options) (program : Boogie.Program) := do
+  let T := { Lambda.TEnv.default with functions := Boogie.Factory, knownTypes := Boogie.KnownTypes }
+  let (program, T) ← Program.typeCheck T program
+  dbg_trace f!"T.subst:\n{T.state.substInfo.subst}"
+  dbg_trace f!"T.subst Length:\n{T.state.substInfo.subst.length}"
+  -- dbg_trace f!"[Strata.Boogie] Annotated program:\n{program}"
+  if options.verbose then dbg_trace f!"[Strata.Boogie] Type checking succeeded.\n"
+  return program
+
+#eval! Boogie.typeCheckDbg Options.default p
+-/
+
 /--
 info: [Strata.Boogie] Type checking succeeded.
 

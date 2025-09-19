@@ -24,6 +24,37 @@ open LTy
 variable {Identifier : Type} [ToString Identifier] [DecidableEq Identifier] [ToFormat Identifier] [HasGen Identifier]
 
 /--
+Apply type substitution `S` to `LExpr e`.
+-/
+def LExpr.applySubst (e : (LExpr LMonoTy Identifier)) (S : Subst) : (LExpr LMonoTy Identifier) :=
+  match e with
+  | .const c ty =>
+    match ty with
+    | none => e
+    | some ty =>
+      let ty := LMonoTy.subst S ty
+      .const c ty
+  | .op o ty =>
+    match ty with
+    | none => e
+    | some ty =>
+      let ty := LMonoTy.subst S ty
+      .op o ty
+  | .fvar x ty =>
+      match ty with
+    | none => e
+    | some ty =>
+      let ty := LMonoTy.subst S ty
+      .fvar x ty
+  | .bvar _ => e
+  | .abs ty e => .abs ty (e.applySubst S)
+  | .quant qk ty tr e => .quant qk ty (tr.applySubst S) (e.applySubst S)
+  | .app e1 e2 => .app (e1.applySubst S) (e2.applySubst S)
+  | .ite c t f => .ite (c.applySubst S) (t.applySubst S) (f.applySubst S)
+  | .eq e1 e2 => .eq (e1.applySubst S) (e2.applySubst S)
+  | .mdata m e => .mdata m (e.applySubst S)
+
+/--
 Monotype-annotated Lambda expressions, obtained after a type inference transform
 from Lambda expressions `LExpr`.
 -/
@@ -343,73 +374,133 @@ partial def fromLExprAux.eq (T : (TEnv Identifier)) (e1 e2 : (LExpr LMonoTy Iden
   .ok (.eq e1t e2t LMonoTy.bool, TEnv.updateSubst T S)
 
 partial def fromLExprAux.abs (T : (TEnv Identifier)) (bty : Option LMonoTy) (e : (LExpr LMonoTy Identifier)) := do
-  -- Generate a fresh expression variable to stand in for the bound variable
+  -- Generate a fresh expression variable to stand in for the bound variable.
   let (xv, T) := HasGen.genVar T
-  -- Generate a fresh type variable to stand in for the type of the bound
-  -- variable.
-  let (xt', T) := TEnv.genTyVar T
-  let xmt := (.ftvar xt')
-  let xt := .forAll [] xmt
-  let T := T.insertInContext xv xt
+  -- For the bound variable, use type annotation if present. Otherwise,
+  -- generate a fresh type variable.
+  let (xty, T) ← match bty with
+    | some bty =>
+      let ans := LMonoTy.instantiateWithCheck bty T
+      match ans with
+      | .error e => .error e
+      | .ok (bty, T) => .ok (bty, T)
+    | none =>
+      let (xtyid, T) := TEnv.genTyVar T
+      -- dbg_trace f!"[fromLExprAux.abs]\n e: {e}\n xtyid: {xtyid}"
+      let xty := (LMonoTy.ftvar xtyid)
+      .ok (xty, T)
+  -- let (xtyid, T) := TEnv.genTyVar T
+  -- -- dbg_trace f!"[fromLExprAux.abs]\n e: {e}\n xtyid: {xtyid}"
+  -- let xty := (LMonoTy.ftvar xtyid)
+  -- let T ← match bty with
+  --   | none => .ok T
+  --   | some bty =>
+  --     let ans := LMonoTy.instantiateWithCheck bty T
+  --     match ans with
+  --     | .error e => .error e
+  --     | .ok (bty, T) =>
+  --         let constraints := [(xty, bty)]
+  --         let S ← Constraints.unify constraints T.state.substInfo
+  --         .ok (T.updateSubst S)
+  let T := T.insertInContext xv (.forAll [] xty)
   -- Construct `e'` from `e`, where the bound variable has been replaced by
   -- `xv`.
-  let e' := LExpr.varOpen 0 (xv, some xmt) e
+  let e' := LExpr.varOpen 0 (xv, some xty) e
   let (et, T) ← fromLExprAux T e'
-  let ety := et.toLMonoTy
   let etclosed := .varClose 0 xv et
+  -- let etclosed := LExprT.applySubst etclosed T.state.substInfo.subst
+  let ety := etclosed.toLMonoTy
+  -- dbg_trace f!"[fromLExprAux.abs]\n S: {T.state.substInfo.subst}"
+  -- dbg_trace f!"[fromLExprAux.abs]\n mty: {(LMonoTy.tcons "arrow" [xty, ety])}"
+  let mty := LMonoTy.subst T.state.substInfo.subst (.tcons "arrow" [xty, ety])
   -- Safe to erase fresh variable from context after closing the expressions.
   let T := T.eraseFromContext xv
-  let ty := (.tcons "arrow" [xmt, ety])
-  let mty := LMonoTy.subst T.state.substInfo.subst ty
-  match bty with
-  | none => .ok ((.abs etclosed mty), T)
-  | some bty =>
-    let (bty, T) ← LMonoTy.instantiateWithCheck bty T
-    let S ← Constraints.unify [(mty, bty)] T.state.substInfo
-    .ok (.abs etclosed mty, TEnv.updateSubst T S)
+  -- Also safe to erase fresh type variable, if one was needed.
+  -- let T := match fresh_name with
+  --   | none => T
+  --   | some fresh_name =>
+  --     have hWF : SubstWF (Map.remove T.state.substInfo.subst fresh_name) := by
+  --       apply @SubstWF_of_remove T.state.substInfo.subst fresh_name T.state.substInfo.isWF
+  --    { T with state.substInfo.subst := T.state.substInfo.subst.remove fresh_name,
+  --             state.substInfo.isWF := hWF }
+  .ok ((.abs etclosed mty), T)
 
 partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (bty : Option LMonoTy)
     (triggers : LExpr LMonoTy Identifier) (e : (LExpr LMonoTy Identifier)) := do
   -- Generate a fresh variable to stand in for the bound variable.
   let (xv, T) := HasGen.genVar T
-  -- Generate a fresh type variable to stand in for the type of the bound
-  -- variable.
-  let (xt', T) := TEnv.genTyVar T
-  let xmt := (.ftvar xt')
-  let xt := .forAll [] xmt
-  let T := T.insertInContext xv xt
+  -- For the bound variable, use type annotation if present. Otherwise,
+  -- generate a fresh type variable.
+  let (_fresh_name, xty, T) ← match bty with
+    | some bty =>
+      let ans := LMonoTy.instantiateWithCheck bty T
+      match ans with
+      | .error e => .error e
+      | .ok (bty, T) => .ok (none, bty, T)
+    | none =>
+      let (xtyid, T) := TEnv.genTyVar T
+      -- dbg_trace f!"[fromLExprAux.quant]\n e: {e}\n xt': {xtyid}"
+      let xty := (LMonoTy.ftvar xtyid)
+      .ok (some xtyid, xty, T)
+  -- let (xtyid, T) := TEnv.genTyVar T
+  -- dbg_trace f!"[fromLExprAux.quant]\n e: {e}\n xtyid: {xtyid}"
+  -- let xty := (LMonoTy.ftvar xtyid)
+  -- let T ← match bty with
+  --   | none => .ok T
+  --   | some bty =>
+  --     let ans := LMonoTy.instantiateWithCheck bty T
+  --     match ans with
+  --     | .error e => .error e
+  --     | .ok (bty, T) =>
+  --         let constraints := [(xty, bty)]
+  --         let S ← Constraints.unify constraints T.state.substInfo
+  --         .ok (T.updateSubst S)
+  let T := T.insertInContext xv (.forAll [] xty)
   -- Construct new expressions, where the bound variable has been replaced by
   -- `xv`.
-  let e' := LExpr.varOpen 0 (xv, some xmt) e
-  let triggers' := LExpr.varOpen 0 (xv, some xmt) triggers
+  let e' := LExpr.varOpen 0 (xv, some xty) e
+  let triggers' := LExpr.varOpen 0 (xv, some xty) triggers
   let (et, T) ← fromLExprAux T e'
   let (triggersT, T) ← fromLExprAux T triggers'
+  -- let et := LExprT.applySubst et T.state.substInfo.subst
+  -- let triggersT := LExprT.applySubst triggersT T.state.substInfo.subst
   let ety := et.toLMonoTy
-  let mty := LMonoTy.subst T.state.substInfo.subst xmt
+  let xty := LMonoTy.subst T.state.substInfo.subst xty
   let etclosed := LExprT.varClose 0 xv et
   let triggersClosed := LExprT.varClose 0 xv triggersT
   -- Safe to erase fresh variable from context after closing the expressions.
   let T := T.eraseFromContext xv
+  -- Also safe to erase fresh type variable, if one was needed.
+  -- let T :=
+  --     have hWF : SubstWF (Map.remove T.state.substInfo.subst xtyid) := by
+  --       apply @SubstWF_of_remove T.state.substInfo.subst xtyid T.state.substInfo.isWF
+  --    { T with state.substInfo.subst := T.state.substInfo.subst.remove xtyid,
+  --             state.substInfo.isWF := hWF }
   if ety != LMonoTy.bool then do
     .error f!"Quantifier body has non-Boolean type: {ety}"
   else
-    match bty with
-    | none => .ok (.quant qk mty triggersClosed etclosed, T)
-    | some bty =>
-      let (bty, T) ← LMonoTy.instantiateWithCheck bty T
-      let S ← Constraints.unify [(mty, bty)] T.state.substInfo
-      .ok (.quant qk mty triggersClosed etclosed, TEnv.updateSubst T S)
+    .ok (.quant qk xty triggersClosed etclosed, T)
 
 partial def fromLExprAux.app (T : (TEnv Identifier)) (e1 e2 : (LExpr LMonoTy Identifier)) := do
   let (e1t, T) ← fromLExprAux T e1
   let ty1 := e1t.toLMonoTy
   let (e2t, T) ← fromLExprAux T e2
   let ty2 := e2t.toLMonoTy
+  -- `freshty` is the type variable whose identifier is `fresh_name`. It denotes
+  -- the type of `(.app e1 e2)`.
   let (fresh_name, T) := TEnv.genTyVar T
+  -- dbg_trace f!"[fromLExprAux.app]\n e1: {e1}\n e2: {e2}\n fresh_name: {fresh_name}"
   let freshty := (.ftvar fresh_name)
+  -- `ty1` must be of the form `ty2 → freshty`.
   let constraints := [(ty1, (.tcons "arrow" [ty2, freshty]))]
   let S ← Constraints.unify constraints T.state.substInfo
+  -- The type of `(.app e1 e2)` is `freshty`, with appropriate substitutions
+  -- applied.
   let mty := LMonoTy.subst S.subst freshty
+  -- `freshty` can now be safely removed from the substitutions.
+  have hWF : SubstWF (Map.remove S.subst fresh_name) := by
+    apply @SubstWF_of_remove S.subst fresh_name S.isWF
+  let S := { S with subst := S.subst.remove fresh_name, isWF := hWF }
   .ok (.app e1t e2t mty, TEnv.updateSubst T S)
 
 end
@@ -442,37 +533,6 @@ def LExpr.annotate (T : (TEnv Identifier)) (e : (LExpr LMonoTy Identifier)) :
     Except Format ((LExpr LMonoTy Identifier) × (TEnv Identifier)) := do
   let (e_a, T) ← LExprT.fromLExpr T e
   return (LExprT.toLExpr e_a, T)
-
-/--
-Apply type substitution `S` to `LExpr e`.
--/
-def LExpr.applySubst (e : (LExpr LMonoTy Identifier)) (S : Subst) : (LExpr LMonoTy Identifier) :=
-  match e with
-  | .const c ty =>
-    match ty with
-    | none => e
-    | some ty =>
-      let ty := LMonoTy.subst S ty
-      .const c ty
-  | .op o ty =>
-    match ty with
-    | none => e
-    | some ty =>
-      let ty := LMonoTy.subst S ty
-      .op o ty
-  | .fvar x ty =>
-      match ty with
-    | none => e
-    | some ty =>
-      let ty := LMonoTy.subst S ty
-      .fvar x ty
-  | .bvar _ => e
-  | .abs ty e => .abs ty (e.applySubst S)
-  | .quant qk ty tr e => .quant qk ty (tr.applySubst S) (e.applySubst S)
-  | .app e1 e2 => .app (e1.applySubst S) (e2.applySubst S)
-  | .ite c t f => .ite (c.applySubst S) (t.applySubst S) (f.applySubst S)
-  | .eq e1 e2 => .eq (e1.applySubst S) (e2.applySubst S)
-  | .mdata m e => .mdata m (e.applySubst S)
 
 ---------------------------------------------------------------------
 
