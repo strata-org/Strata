@@ -36,7 +36,8 @@ namespace Boogie
 
 def typeCheck (options : Options) (program : Program) := do
   let T := { Lambda.TEnv.default with functions := Boogie.Factory, knownTypes := Boogie.KnownTypes }
-  let (program, _T) ← Program.typeCheck T program
+  let (program, T) ← Program.typeCheck T program
+  -- dbg_trace f!"[Strata.Boogie] Type variables:\n{T.state.substInfo.subst.length}"
   -- dbg_trace f!"[Strata.Boogie] Annotated program:\n{program}"
   if options.verbose then dbg_trace f!"[Strata.Boogie] Type checking succeeded.\n"
   return program

@@ -27,6 +27,7 @@ def parseOptions (args : List String) : Except Std.Format (Options × String) :=
       go : Options → List String → Except Std.Format (Options × String)
       | opts, "--verbose" :: rest => go {opts with verbose := true} rest
       | opts, "--check" :: rest => go {opts with checkOnly := true} rest
+      | opts, "--type-check" :: rest => go {opts with typeCheckOnly := true} rest
       | opts, "--parse-only" :: rest => go {opts with parseOnly := true} rest
       | opts, "--stop-on-first-error" :: rest => go {opts with stopOnFirstError := true} rest
       | opts, "--solver-timeout" :: secondsStr :: rest =>
@@ -44,7 +45,8 @@ def usageMessage : Std.Format :=
   Options:{Std.Format.line}\
   {Std.Format.line}  \
   --verbose                   Print extra information during analysis.{Std.Format.line}  \
-  --check                     Exit after Lambda type checking.{Std.Format.line}  \
+  --check                     Process up until SMT generation, but don't solve.{Std.Format.line} \
+  --type-check                Exit after Lambda type inference.{Std.Format.line} \
   --parse-only                Exit after DDM parsing and type checking.{Std.Format.line}  \
   --stop-on-first-error       Exit after the first verification error.{Std.Format.line}  \
   --solver-timeout <seconds>  Set the solver time limit per proof goal."
@@ -67,7 +69,24 @@ def main (args : List String) : IO UInt32 := do
       let vcResults ← if file.endsWith ".csimp.st" then
         C_Simp.verify "z3" pgm opts
       else
-        verify "z3" pgm opts
+        -- Boogie.
+        if opts.typeCheckOnly then
+          let (program, errors) := TransM.run (translateProgram pgm)
+          if !errors.isEmpty then
+            println! f!"DDM translation error: {errors}"
+            return 1
+          else
+            if opts.verbose then println! f!"DDM translation done."
+            let ans := Boogie.typeCheck opts program
+            match ans with
+            | .error e =>
+              println! f!"Type checking error: {e}"
+              return 1
+            | .ok _ =>
+              println! f!"Program typechecked."
+              return 0
+        else -- !typeCheckOnly
+          verify "z3" pgm opts
       for vcResult in vcResults do
         println! f!"{vcResult.obligation.label}: {vcResult.result}"
       let success := vcResults.all isSuccessVCResult
