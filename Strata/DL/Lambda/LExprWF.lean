@@ -234,8 +234,8 @@ theorem varOpen_varClose_when_lcAt
     simp_all [@e1_ih k i x.fst, @e2_ih k i x.fst]
   done
 
-theorem lcAt_varOpen_abs (h1 : fresh (Identifier:=Identifier) x y)
-  (h2 : lcAt k (varOpen i x y)) (h3 : k <= i) :
+theorem lcAt_varOpen_abs
+  (h1 : lcAt k (varOpen i x y)) (h2 : k <= i) :
   lcAt i (abs ty y) := by
   induction y generalizing i k
   case const => simp_all [lcAt]
@@ -246,46 +246,33 @@ theorem lcAt_varOpen_abs (h1 : fresh (Identifier:=Identifier) x y)
   case fvar => simp_all [lcAt]
   case mdata info e ih =>
     simp_all [lcAt, varOpen, substK]
-    rw [@ih k i h2 h3]
+    rw [@ih k i h1 h2]
   case abs e e_ih =>
     simp_all [varOpen]
-    simp [substK, lcAt] at h2
-    have e_ih' := @e_ih (k + 1) (i + 1) h2 (by omega)
+    simp [substK, lcAt] at h1
+    have e_ih' := @e_ih (k + 1) (i + 1) h1 (by omega)
     simp_all [lcAt]
   case quant tr e tr_ih e_ih =>
     simp_all [varOpen]
-    simp [substK, lcAt] at h2
-    rw [fresh] at h1
-    cases h2
-    rename_i h2_tr h2_e
-    have h1_e : fresh x e = true := by
-      rw [fresh]
-      rw [freeVars] at h1
-      simp
-      simp at h1
-      exact h1.2
-    have h1_tr : fresh x tr = true := by
-      rw [fresh]
-      rw [freeVars] at h1
-      simp
-      simp at h1
-      exact h1.1
-    have e_ih' := @e_ih (k + 1) (i + 1) h1_e (by exact h2_e)
-    have tr_ih' := @tr_ih (k + 1) (i + 1) h1_tr (by exact h2_tr)
-    simp_all [lcAt]
+    simp_all [substK, lcAt]
+    have e_ih' := @e_ih (k + 1) (i + 1)
+    have tr_ih' := @tr_ih (k + 1) (i + 1)
+    constructor
+    exact tr_ih' h1.left (by omega)
+    exact e_ih' h1.right (by omega)
   case app fn e fn_ih e_ih =>
-    simp_all [varOpen, lcAt, substK, fresh, freeVars]
-    rw [@fn_ih k i h2.1 h3, @e_ih k i h2.2 h3]; simp
+    simp_all [varOpen, lcAt, substK]
+    rw [@fn_ih k i h1.1 h2, @e_ih k i h1.2 h2]; simp
   case ite c t e c_ih t_ih e_ih =>
-    simp_all [varOpen, lcAt, substK, fresh, freeVars]
-    rw [@c_ih k i h2.left.left h3,
-        @t_ih k i h2.left.right h3,
-        @e_ih k i h2.right h3];
+    simp_all [varOpen, lcAt, substK]
+    rw [@c_ih k i h1.left.left h2,
+        @t_ih k i h1.left.right h2,
+        @e_ih k i h1.right h2];
         simp
   case eq e1 e2 e1_ih e2_ih =>
-    simp_all [varOpen, lcAt, substK, fresh, freeVars]
-    rw [@e1_ih k i h2.left h3,
-        @e2_ih k i h2.right h3]
+    simp_all [varOpen, lcAt, substK]
+    rw [@e1_ih k i h1.left h2,
+        @e2_ih k i h1.right h2]
     simp
   done
 
