@@ -25,8 +25,8 @@ Type checker for Boogie commands.
 Note that this function needs the entire program to type-check `call`
 commands by looking up the corresponding procedure's information.
 -/
-def typeCheckCmd (T : (TEnv BoogieIdent)) (P : Program) (c : Command) :
-  Except Format (Command × (TEnv BoogieIdent)) := do
+def typeCheckCmd (T : TEnv BoogieLParams) (P : Program) (c : Command) :
+  Except Format (Command × TEnv BoogieLParams) := do
   match c with
   | .cmd c =>
     let (c, T) ← Imperative.Cmd.typeCheck T c
@@ -57,9 +57,9 @@ def typeCheckCmd (T : (TEnv BoogieIdent)) (P : Program) (c : Command) :
            let ret_lhs_constraints := lhs_tys.zip ret_mtys
            -- Infer the types of the actuals and unify with the types of the
            -- procedure's formals.
-           let (argsa, T) ← Lambda.LExprT.fromLExprs T args
-           let args_tys := argsa.map LExprT.toLMonoTy
-           let args' := argsa.map $ LExprT.unresolved
+           let (argsa, T) ← Lambda.LExpr.fromLExprs T args
+           let args_tys := argsa.map LExpr.toLMonoTy
+           let args' := argsa.map $ LExpr.unresolved
            let (inp_sig, T) ← LMonoTySignature.instantiate T proc.header.typeArgs proc.header.inputs
            let inp_mtys := LMonoTys.subst T.state.substInfo.subst inp_sig.values
            let lhs_inp_constraints := (args_tys.zip inp_mtys)
@@ -69,30 +69,30 @@ def typeCheckCmd (T : (TEnv BoogieIdent)) (P : Program) (c : Command) :
            .ok (s', T)
 
 
-def typeCheckAux (T : (TEnv BoogieIdent)) (P : Program) (op : Option Procedure) (ss : List Statement) :
-  Except Format (List Statement × (TEnv BoogieIdent)) :=
-  go T ss []
+def typeCheckAux (Env : TEnv BoogieLParams) (P : Program) (op : Option Procedure) (ss : List Statement) :
+  Except Format (List Statement × TEnv BoogieLParams) :=
+  go Env ss []
 where
-  go (T : TEnv BoogieIdent) (ss : List Statement) (acc : List Statement) :
-    Except Format (List Statement × (TEnv BoogieIdent)) :=
+  go (Env : TEnv BoogieLParams) (ss : List Statement) (acc : List Statement) :
+    Except Format (List Statement × TEnv BoogieLParams) :=
     match ss with
-    | [] => .ok (acc.reverse, T)
+    | [] => .ok (acc.reverse, Env)
     | s :: srest => do
-      let (s', T) ←
+      let (s', Env) ←
         match s with
         | .cmd cmd => do
-          let (c', T) ← typeCheckCmd T P cmd
-          .ok (.cmd c', T)
+          let (c', Env) ← typeCheckCmd Env P cmd
+          .ok (.cmd c', Env)
 
         | .block label blk md => do
-          let T := T.pushEmptyContext
+          let T := Env.pushEmptyContext
           let (ss', T) ← go T blk.ss []
           let s' := .block label ⟨ss'⟩ md
           .ok (s', T.popContext)
 
         | .ite cond thenb elseb md => do
-          let _ ← T.freeVarCheck cond f!"[{s}]"
-          let (conda, T) ← LExprT.fromLExpr T cond
+          let _ ← Env.freeVarCheck cond f!"[{s}]"
+          let (conda, T) ← LExpr.fromLExpr Env cond
           let condty := conda.toLMonoTy
           match condty with
           | .tcons "bool" [] =>
@@ -103,30 +103,30 @@ where
           | _ => .error f!"[{s}]: If's condition {cond} is not of type `bool`!"
 
         | .loop guard measure invariant body md => do
-          let _ ← T.freeVarCheck guard f!"[{s}]"
-          let (conda, T) ← LExprT.fromLExpr T guard
+          let _ ← Env.freeVarCheck guard f!"[{s}]"
+          let (conda, T) ← LExpr.fromLExpr Env guard
           let condty := conda.toLMonoTy
           let (mt, T) ← match measure with
           | .some m => do
             let _ ← T.freeVarCheck m f!"[{s}]"
-            let (ma, T) ← LExprT.fromLExpr T m
+            let (ma, T) ← LExpr.fromLExpr T m
             .ok (some ma, T)
           | _ => .ok (none, T)
           let (it, T) ← match invariant with
           | .some i => do
             let _ ← T.freeVarCheck i f!"[{s}]"
-            let (ia, T) ← LExprT.fromLExpr T i
+            let (ia, T) ← LExpr.fromLExpr T i
             .ok (some ia, T)
           | _ => .ok (none, T)
-          let mty := mt.map LExprT.toLMonoTy
-          let ity := it.map LExprT.toLMonoTy
+          let mty := mt.map LExpr.toLMonoTy
+          let ity := it.map LExpr.toLMonoTy
           match (condty, mty, ity) with
           | (.tcons "bool" [], none, none)
           | (.tcons "bool" [], some (.tcons "int" []), none)
           | (.tcons "bool" [], none, some (.tcons "bool" []))
           | (.tcons "bool" [], some (.tcons "int" []), some (.tcons "bool" [])) =>
             let (tb, T) ← go T [(.block "$$_loop_body" body #[])] []
-            let s' := .loop conda.unresolved (mt.map LExprT.unresolved) (it.map LExprT.unresolved) ⟨tb⟩ md
+            let s' := .loop conda.unresolved (mt.map LExpr.unresolved) (it.map LExpr.unresolved) ⟨tb⟩ md
             .ok (s', T)
           | _ =>
             match condty with
@@ -143,12 +143,12 @@ where
           match op with
           | .some p =>
             if Stmts.hasLabelInside label p.body then
-              .ok (s, T)
+              .ok (s, Env)
             else
               .error f!"Label {label} does not exist in the body of {p.header.name}"
           | .none => .error f!"{s} occurs outside a procedure."
 
-      go T srest (s' :: acc)
+      go Env srest (s' :: acc)
     termination_by Stmts.sizeOf ss
     decreasing_by
     all_goals simp_wf <;> omega
@@ -162,18 +162,18 @@ def Command.subst (S : Subst) (c : Command) : Command :=
     | .init x ty e md =>
       .cmd $ .init x (LTy.subst S ty) (e.applySubst S) md
     | .set x e md =>
-      .cmd $ .set x (e.applySubst S) md
+      .cmd $ .set x (Lambda.LExpr.applySubst e S) md
     | .havoc _ _ => .cmd $ c
     | .assert label b md =>
-      .cmd $ .assert label (b.applySubst S) md
+      .cmd $ .assert label (Lambda.LExpr.applySubst b S) md
     | .assume label b md =>
-      .cmd $ .assume label (b.applySubst S) md
+      .cmd $ .assume label (Lambda.LExpr.applySubst b S) md
   | .call lhs pname args md =>
-    .call lhs pname (args.map (fun a => a.applySubst S)) md
+    .call lhs pname (args.map (fun a => Lambda.LExpr.applySubst a S)) md
 
 private def substOptionExpr (S : Subst) (oe : Option Expression.Expr) : Option Expression.Expr :=
   match oe with
-  | some e => some (LExpr.applySubst e S)
+  | some e => some (Lambda.LExpr.applySubst e S)
   | none => none
 
 /--
@@ -185,9 +185,9 @@ def Statement.subst (S : Subst) (s : Statement) : Statement :=
   | .block label b md =>
     .block label ⟨go S b.ss []⟩ md
   | .ite cond thenb elseb md =>
-    .ite (cond.applySubst S) ⟨go S thenb.ss []⟩ ⟨go S elseb.ss []⟩ md
+    .ite (Lambda.LExpr.applySubst cond S) ⟨go S thenb.ss []⟩ ⟨go S elseb.ss []⟩ md
   | .loop guard m i body md =>
-    .loop (guard.applySubst S) (substOptionExpr S m) (substOptionExpr S i) ⟨go S body.ss []⟩ md
+    .loop (Lambda.LExpr.applySubst guard S) (substOptionExpr S m) (substOptionExpr S i) ⟨go S body.ss []⟩ md
   | .goto _ _ => s
   termination_by (Stmt.sizeOf s)
   decreasing_by

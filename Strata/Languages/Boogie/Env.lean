@@ -13,6 +13,19 @@ namespace Boogie
 open Std (ToFormat Format format)
 open Imperative
 
+-- Type class instances needed for this file
+instance : ToFormat Expression.EvalEnv where
+  format _ := "⟨EvalEnv⟩"
+
+instance : Inhabited ExpressionMetadata :=
+  show Inhabited Unit from inferInstance
+
+instance : Lambda.Traceable Lambda.LExpr.EvalProvenance ExpressionMetadata where
+  combine _ := ()
+
+instance : Inhabited (Lambda.LExpr ⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩) :=
+  show Inhabited (Lambda.LExpr ⟨⟨Unit, BoogieIdent⟩, LMonoTy⟩) from inferInstance
+
 ---------------------------------------------------------------------
 
 def PathCondition.format (p : PathCondition Expression) : Format :=
@@ -143,7 +156,7 @@ def oldVarSubst (subst :  SubstMap) (E : Env) : SubstMap :=
 def Env.exprEval (E : Env) (e : Expression.Expr) : Expression.Expr :=
   e.eval E.exprEnv.config.fuel E.exprEnv
 
-def Env.pushScope (E : Env) (scope : (Lambda.Scope BoogieIdent)) : Env :=
+def Env.pushScope (E : Env) (scope : (Lambda.Scope BoogieLParams)) : Env :=
   { E with exprEnv.state := E.exprEnv.state.push scope }
 
 def Env.pushEmptyScope (E : Env) : Env :=
@@ -152,14 +165,14 @@ def Env.pushEmptyScope (E : Env) : Env :=
 def Env.popScope (E : Env) : Env :=
   { E with exprEnv.state := E.exprEnv.state.pop }
 
-def Env.factory (E : Env) : (@Lambda.Factory BoogieIdent) :=
+def Env.factory (E : Env) : (@Lambda.Factory BoogieLParams) :=
   E.exprEnv.config.factory
 
-def Env.addFactory (E : Env) (f : (@Lambda.Factory BoogieIdent)) : Except Format Env := do
+def Env.addFactory (E : Env) (f : (@Lambda.Factory BoogieLParams)) : Except Format Env := do
   let exprEnv ← E.exprEnv.addFactory f
   .ok { E with exprEnv := exprEnv }
 
-def Env.addFactoryFunc (E : Env) (func : (Lambda.LFunc BoogieIdent)) : Except Format Env := do
+def Env.addFactoryFunc (E : Env) (func : (Lambda.LFunc BoogieLParams)) : Except Format Env := do
   let exprEnv ← E.exprEnv.addFactoryFunc func
   .ok { E with exprEnv := exprEnv }
 
@@ -173,16 +186,16 @@ def Env.addToContext (xs : Map (Lambda.IdentT BoogieIdent) Expression.Expr) (E :
   List.foldl (fun E (x, v) => E.insertInContext x v) E xs
 
 -- TODO: prove uniqueness, add different prefix
-def Env.genSym (x : String) (c : (Lambda.EvalConfig BoogieIdent)) : BoogieIdent × (Lambda.EvalConfig BoogieIdent) :=
+def Env.genSym (x : String) (c : (Lambda.EvalConfig BoogieLParams)) : BoogieIdent × (Lambda.EvalConfig BoogieLParams) :=
   let new_idx := c.gen
   let c := c.incGen
   let new_var := c.varPrefix ++ x ++ toString new_idx
   (.temp new_var, c)
 
-def Env.genVar' (x : String) (σ : (Lambda.LState BoogieIdent)) :
-    (BoogieIdent × (Lambda.LState BoogieIdent)) :=
+def Env.genVar' (x : String) (σ : (Lambda.LState BoogieLParams)) :
+    (BoogieIdent × (Lambda.LState BoogieLParams)) :=
   let (new_var, config) := Env.genSym x σ.config
-  let σ : Lambda.LState BoogieIdent := { σ with config := config }
+  let σ : Lambda.LState BoogieLParams := { σ with config := config }
   -- let known_vars := Lambda.LState.knownVars σ
   -- if new_var ∈ known_vars then
   --   panic s!"[LState.genVar] Generated variable {Std.format new_var} is not fresh!\n\
@@ -196,7 +209,7 @@ def Env.genVar (x : Expression.Ident) (E : Env) : Expression.Ident × Env :=
   let (var, σ) := Env.genVar' name E.exprEnv
   (var, { E with exprEnv := σ })
 
-def Env.genVars (xs : List String) (σ : (Lambda.LState BoogieIdent)) : (List BoogieIdent × (Lambda.LState BoogieIdent)) :=
+def Env.genVars (xs : List String) (σ : (Lambda.LState BoogieLParams)) : (List BoogieIdent × (Lambda.LState BoogieLParams)) :=
   match xs with
   | [] => ([], σ)
   | x :: rest =>
@@ -212,8 +225,8 @@ def Env.genFVar (E : Env) (xt : (Lambda.IdentT BoogieIdent)) :
   Expression.Expr × Env :=
   let (xid, E) := E.genVar xt.ident
   let xe := match xt.monoty? with
-            | none => .fvar xid none
-            | some xty => .fvar xid xty
+            | none => .fvar () xid none
+            | some xty => .fvar () xid (some xty)
   (xe, E)
 
 /--
@@ -239,7 +252,7 @@ def Env.insertFreeVarsInOldestScope
   (xs : List (Lambda.IdentT BoogieIdent)) (E : Env) : Env :=
   let (xis, xtyei) := xs.foldl
     (fun (acc_ids, acc_pairs) x =>
-      (x.fst :: acc_ids, (x.snd, .fvar x.fst x.snd) :: acc_pairs))
+      (x.fst :: acc_ids, (x.snd, .fvar () x.fst x.snd) :: acc_pairs))
     ([], [])
   let state' := Maps.addInOldest E.exprEnv.state xis xtyei
   { E with exprEnv := { E.exprEnv with state := state' }}
@@ -248,10 +261,10 @@ def Env.insertFreeVarsInOldestScope
 open Imperative Lambda in
 def PathCondition.merge (cond : Expression.Expr) (pc1 pc2 : PathCondition Expression) : PathCondition Expression :=
   let pc1' := pc1.map (fun (label, e) => (label, mkImplies cond e))
-  let pc2' := pc2.map (fun (label, e) => (label, mkImplies (LExpr.ite cond LExpr.false LExpr.true) e))
+  let pc2' := pc2.map (fun (label, e) => (label, mkImplies (LExpr.ite () cond (LExpr.false ()) (LExpr.true ())) e))
   pc1' ++ pc2'
-  where mkImplies (ant con : LExpr LMonoTy BoogieIdent) : (LExpr LMonoTy BoogieIdent) :=
-  LExpr.ite ant con LExpr.true
+  where mkImplies (ant con : Expression.Expr) : Expression.Expr :=
+  LExpr.ite () ant con (LExpr.true ())
 
 def Env.performMerge (cond : Expression.Expr) (E1 E2 : Env)
     (_h1 : E1.error.isNone) (_h2 : E2.error.isNone) : Env :=

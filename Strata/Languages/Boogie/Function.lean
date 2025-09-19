@@ -17,17 +17,24 @@ open Lambda
 
 /-! # Boogie Functions -/
 
-abbrev Function := Lambda.LFunc BoogieIdent
+abbrev Function := Lambda.LFunc BoogieLParams
+
+-- Type class instances to enable type class resolution for BoogieLParams.Identifier
+instance : DecidableEq BoogieLParams.Identifier :=
+  show DecidableEq BoogieIdent from inferInstance
+
+instance : ToFormat BoogieLParams.Identifier :=
+  show ToFormat BoogieIdent from inferInstance
 
 open LTy.Syntax LExpr.SyntaxMono in
 /-- info: ok: ∀[a, b]. (arrow int (arrow a (arrow b (arrow a a)))) -/
 #guard_msgs in
-#eval do let type ← LFunc.type (Identifier:=BoogieIdent)
-                     ({ name := (.unres, "Foo"),
+#eval do let type ← LFunc.type (T:=BoogieLParams)
+                     ({ name := BoogieIdent.unres "Foo",
                         typeArgs := ["a", "b"],
-                        inputs := [((.locl, "w"), mty[int]), ((.locl, "x"), mty[%a]), ((.locl, "y"), mty[%b]), ((.locl, "z"), mty[%a])],
+                        inputs := [(BoogieIdent.locl "w", mty[int]), (BoogieIdent.locl "x", mty[%a]), (BoogieIdent.locl "y", mty[%b]), (BoogieIdent.locl "z", mty[%a])],
                         output := mty[%a],
-                        body := some (.fvar (.locl, "x") none) } : Function)
+                        body := some (LExpr.fvar () (BoogieIdent.locl "x") none) } : Function)
          return format type
 
 ---------------------------------------------------------------------

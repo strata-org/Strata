@@ -160,11 +160,11 @@ partial def evalEq (n' : Nat) (σ : LState T) (m: T.Metadata) (e1 e2 : LExpr T.m
   let e2' := eval n' σ e2
   if eqModuloTypes e1' e2' then
     -- Short-circuit: e1' and e2' are syntactically the same after type erasure.
-    LExpr.true T m
+    LExpr.true m
   else if h: isCanonicalValue e1' ∧ isCanonicalValue e2' then
       if eql e1' e2' h.left h.right then
-        LExpr.true T m
-      else LExpr.false T m
+        LExpr.true m
+      else LExpr.false m
   else
     .eq m e1' e2'
 

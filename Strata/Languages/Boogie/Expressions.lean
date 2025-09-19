@@ -28,6 +28,9 @@ abbrev Expression : Imperative.PureExpr :=
 instance : Imperative.HasVarsPure Expression Expression.Expr where
   getVars := Lambda.LExpr.LExpr.getVars
 
+instance : Inhabited Expression.Expr where
+  default := .const () "default" none
+
 ---------------------------------------------------------------------
 
 end Boogie

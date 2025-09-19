@@ -24,9 +24,9 @@ def Statement.removeLoopsM (s : Boogie.Statement) : StateM Nat Boogie.Statement 
   let incState : StateM Nat Unit := StateT.modifyGet (fun x => ((), x + 1))
   match s with
   | .loop guard _ invariant? body _ => do
-    let invariant := invariant?.getD LExpr.true
+    let invariant := invariant?.getD (LExpr.true ())
     let loop_num ← StateT.get
-    let neg_guard : Expression.Expr := .app boolNotOp guard
+    let neg_guard : Expression.Expr := .app () boolNotOp guard
     let assigned_vars := (Stmts.modifiedVars body.ss).map (λ s => s.2)
     let havocd : Statement :=
       .block s!"loop_havoc_{loop_num}" {

@@ -7,6 +7,7 @@
 
 
 import Strata.DL.Lambda.LExprTypeEnv
+import Strata.DL.Lambda.Factory
 namespace Boogie
 
 open Std
@@ -89,6 +90,15 @@ def BoogieIdent.toPretty (x : BoogieIdent) : String :=
   We ignore the visibility part so that the output can be parsed again -/
 instance : ToFormat BoogieIdent where
   format i := BoogieIdent.toPretty i
+
+-- Explicit instances for BoogieLParams field access
+instance : ToFormat BoogieLParams.Identifier :=
+  show ToFormat BoogieIdent from inferInstance
+
+instance : DecidableEq BoogieLParams.Identifier :=
+  show DecidableEq BoogieIdent from inferInstance
+
+
 
 /-- Full representation of Boogie Identifier with scope.
   This can be useful for both debugging and generating "unique" strings,

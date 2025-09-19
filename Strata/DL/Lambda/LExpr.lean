@@ -423,10 +423,10 @@ def isConst (T : LExprParamsT) (e : LExpr T) : Bool :=
   | _ => false
 
 @[match_pattern]
-protected def true (T : LExprParams) (m : T.Metadata) : LExpr T.mono := .const m "true"  (some (.tcons "bool" []))
+protected def true {T : LExprParams} (m : T.Metadata) : LExpr T.mono := .const m "true"  (some (.tcons "bool" []))
 
 @[match_pattern]
-protected def false (T : LExprParams) (m : T.Metadata) : LExpr T.mono := .const m "false"  (some (.tcons "bool" []))
+protected def false {T : LExprParams} (m : T.Metadata) : LExpr T.mono := .const m "false"  (some (.tcons "bool" []))
 
 def isTrue (T : LExprParamsT) (e : LExpr T) : Bool :=
   match e with

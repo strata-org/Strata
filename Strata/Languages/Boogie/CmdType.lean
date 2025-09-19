@@ -9,10 +9,15 @@
 import Strata.Languages.Boogie.OldExpressions
 import Strata.Languages.Boogie.Expressions
 import Strata.DL.Imperative.TypeContext
+import Strata.DL.Lambda.Factory
 
 namespace Boogie
 open Lambda Imperative
 open Std (ToFormat Format format)
+
+-- Local instance for LFunc formatting
+instance : ToFormat (LFunc BoogieLParams) where
+  format f := f!"func {f.name}"
 ---------------------------------------------------------------------
 
 namespace CmdType
@@ -22,13 +27,13 @@ def isBoolType (ty : LTy) : Bool :=
   | .forAll [] LMonoTy.bool => true
   | _ => false
 
-def lookup (T : (TEnv BoogieIdent)) (x : BoogieIdent) : Option LTy :=
-  T.context.types.find? x
+def lookup (Env : (TEnv BoogieLParams)) (x : BoogieIdent) : Option LTy :=
+  Env.context.types.find? x
 
-def update (T : TEnv BoogieIdent) (x : BoogieIdent) (ty : LTy) : TEnv BoogieIdent :=
-  T.insertInContext x ty
+def update (Env : TEnv BoogieLParams) (x : BoogieIdent) (ty : LTy) : TEnv BoogieLParams :=
+  Env.insertInContext x ty
 
-def freeVars (e : (LExpr LMonoTy BoogieIdent)) : List BoogieIdent :=
+def freeVars (e : (LExpr BoogieLParams.mono)) : List BoogieIdent :=
   (LExpr.freeVars e).map (fun (i, _) => i)
 
 /--
@@ -36,14 +41,14 @@ Preprocess a user-facing type in Boogie amounts to converting a poly-type (i.e.,
 `LTy`) to a mono-type (i.e., `LMonoTy`) via instantiation. We still return an
 `LTy`, with no bound variables.
 -/
-def preprocess (T : TEnv BoogieIdent) (ty : LTy) : Except Format (LTy × TEnv BoogieIdent) := do
-  let (mty, T) ← ty.instantiateWithCheck T
-  return (.forAll [] mty, T)
+def preprocess (Env : TEnv BoogieLParams) (ty : LTy) : Except Format (LTy × TEnv BoogieLParams) := do
+  let (mty, Env) ← ty.instantiateWithCheck Env
+  return (.forAll [] mty, Env)
 
-def postprocess (T : TEnv BoogieIdent) (ty : LTy) : Except Format (LTy × TEnv BoogieIdent) := do
+def postprocess (Env: TEnv BoogieLParams) (ty : LTy) : Except Format (LTy × TEnv BoogieLParams) := do
   if h: ty.isMonoType then
-    let ty := LMonoTy.subst T.state.substInfo.subst (ty.toMonoType h)
-    .ok (.forAll [] ty, T)
+    let ty := LMonoTy.subst Env.state.substInfo.subst (ty.toMonoType h)
+    .ok (.forAll [] ty, Env)
   else
     .error f!"[postprocess] Expected mono-type; instead got {ty}"
 
@@ -51,19 +56,19 @@ def postprocess (T : TEnv BoogieIdent) (ty : LTy) : Except Format (LTy × TEnv B
 The inferred type of `e` will be an `LMonoTy`, but we return an `LTy` with no
 bound variables.
 -/
-def inferType (T : TEnv BoogieIdent) (c : Cmd Expression) (e : (LExpr LMonoTy BoogieIdent)) :
-    Except Format ((LExpr LMonoTy BoogieIdent) × LTy × TEnv BoogieIdent) := do
+def inferType (Env: TEnv BoogieLParams) (c : Cmd Expression) (e : (LExpr BoogieLParams.mono)) :
+    Except Format ((LExpr BoogieLParams.mono) × LTy × TEnv BoogieLParams) := do
   -- We only allow free variables to appear in `init` statements. Any other
   -- occurrence leads to an error.
   let T ← match c with
     | .init _ _ _ _ =>
       let efv := LExpr.freeVars e
-      .ok (T.addInOldestContext efv)
+      .ok (Env.addInOldestContext efv)
     | _ =>
-      let _ ← T.freeVarCheck e f!"[{c}]"
-      .ok T
+      let _ ← Env.freeVarCheck e f!"[{c}]"
+      .ok Env
   let e := OldExpressions.normalizeOldExpr e
-  let (ea, T) ← LExprT.fromLExpr T e
+  let (ea, T) ← LExpr.fromLExpr T e
   let ety := ea.toLMonoTy
   return (ea.unresolved, (.forAll [] ety), T)
 
@@ -86,15 +91,15 @@ def canonicalizeConstraints (constraints : List (LTy × LTy)) : Except Format Co
                 type constraints, but found the following instead:\n\
                 t1: {t1}\nt2: {t2}\n"
 
-def unifyTypes (T : TEnv BoogieIdent) (constraints : List (LTy × LTy)) : Except Format (TEnv BoogieIdent) := do
+def unifyTypes (Env: TEnv BoogieLParams) (constraints : List (LTy × LTy)) : Except Format (TEnv BoogieLParams) := do
   let constraints ← canonicalizeConstraints constraints
-  let S ← Constraints.unify constraints T.state.substInfo
-  let T := T.updateSubst S
-  return T
+  let S ← Constraints.unify constraints Env.state.substInfo
+  let Env := Env.updateSubst S
+  return Env
 
 ---------------------------------------------------------------------
 
-instance : Imperative.TypeContext Expression (TEnv BoogieIdent) where
+instance : Imperative.TypeContext Expression (TEnv BoogieLParams) where
   isBoolType  := CmdType.isBoolType
   freeVars    := CmdType.freeVars
   preprocess  := CmdType.preprocess
