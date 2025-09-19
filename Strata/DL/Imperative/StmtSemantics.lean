@@ -131,15 +131,15 @@ theorem EvalStmtDefMonotone
   | .block l ⟨ bss ⟩  _ =>
     cases Heval; next Hwf Hup => cases Hup; next Hup =>
     apply EvalStmtsDefMonotone (ss:=bss) <;> try assumption
-  |.ite c ⟨ tss ⟩ ⟨ bss ⟩ _ => cases Heval with
+  | .ite c ⟨ tss ⟩ ⟨ bss ⟩ _ => cases Heval with
     | ite_true_sem Hsome Hwf Heval =>
       cases Heval; next Heval =>
       apply EvalStmtsDefMonotone (ss:=tss) <;> try assumption
     | ite_false_sem Hsome Hwf Heval =>
       cases Heval; next Heval =>
       apply EvalStmtsDefMonotone (ss:=bss) <;> try assumption
-  |.goto _ _ => cases Heval
-  |.loop _ _ _ _ _ => cases Heval
+  | .goto _ _ => cases Heval
+  | .loop _ _ _ _ _ => cases Heval
   termination_by (Stmt.sizeOf s)
   decreasing_by all_goals simp [*] at * <;> omega
 

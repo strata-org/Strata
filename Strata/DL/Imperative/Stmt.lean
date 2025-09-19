@@ -49,9 +49,9 @@ mutual
 def Stmt.sizeOf (s : Imperative.Stmt P C) : Nat :=
   match s with
   | .cmd c => 1 + sizeOf c
-  | .block _ b _ => 1 + Block.sizeOf b
-  | .ite c t e _ => 3 + sizeOf c + Block.sizeOf t + Block.sizeOf e
-  | .loop g _ _ b _ => 3 + sizeOf g + Block.sizeOf b
+  | .block _ ⟨ bss ⟩ _ => 1 + Stmts.sizeOf bss
+  | .ite c ⟨ tss ⟩ ⟨ ess ⟩ _ => 3 + sizeOf c + Stmts.sizeOf tss + Stmts.sizeOf ess
+  | .loop g _ _ ⟨ bss ⟩ _ => 3 + sizeOf g + Stmts.sizeOf bss
   | .goto _ _ => 1
 
 @[simp]
@@ -65,12 +65,6 @@ def Block.sizeOf : Imperative.Block P C →  Nat
   | ⟨ bss ⟩ => 1 + Stmts.sizeOf bss
 
 end
-
-@[simp]
-theorem blockSizeGtStmts : Stmts.sizeOf b.ss < Block.sizeOf b := by
-  unfold Block.sizeOf
-  unfold Stmts.sizeOf
-  grind
 
 instance (P : PureExpr) : SizeOf (Imperative.Stmt P C) where
   sizeOf := Stmt.sizeOf
