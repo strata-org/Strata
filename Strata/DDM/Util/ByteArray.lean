@@ -33,6 +33,12 @@ def asHex (a : ByteArray) : String :=
     let cl := if cl.length < 2 then '0' :: cl else cl
     s ++ cl.asString
 
+def startsWith (a pre : ByteArray) :=
+  if isLt : a.size < pre.size then
+    false
+  else
+    pre.size.all fun i _ => a[i] = pre[i]
+
 end ByteArray
 
 #guard (ByteArray.empty |>.back!) = default

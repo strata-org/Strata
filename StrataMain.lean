@@ -12,75 +12,14 @@ def exitFailure (message : String) : IO α := do
   IO.eprintln (message  ++ "\n\nRun strata --help for additional help.")
   IO.Process.exit 1
 
-def ByteArray.startsWith (a pre : ByteArray) :=
-  if isLt : a.size < pre.size then
-    false
-  else
-    pre.size.all fun i _ => a[i] = pre[i]
-
 namespace Strata
 
-inductive Encoding
-| ion
-| text
-
-
-abbrev FileMap := Std.HashMap DialectName (IO.FS.SystemTime × Encoding × System.FilePath)
-
-namespace FileMap
-
-def strata_dialect_ext : String := ".dialect.st"
-
-def strata_ion_dialect_ext : String := ".dialect.st.ion"
-
-def matchExt (path : String) (ext : String) : Option String :=
-  if path.endsWith ext then
-    some (path.dropRight ext.length)
-  else
-    none
-
-def addEntry (m : FileMap) (stem : DialectName) (enc : Encoding) (path : System.FilePath) : BaseIO FileMap := do
-  -- TODO: Check stem is a legal dialect name
-  let modTime ←
-    match ← path.metadata |>.toBaseIO with
-    | .error _ => return m
-    | .ok md => pure md.modified
-  pure <| m.alter stem fun o =>
-    let isNewer :=
-          match o with
-          | none => true
-          | some (prevTime, _) => modTime > prevTime
-    if isNewer then
-      some (modTime, enc, path)
-    else
-      o
-
-def add (m : FileMap) (dir : System.FilePath) : EIO String FileMap := do
-  let entries ←
-    match ← dir.readDir |>.toBaseIO with
-    | .error e => throw s!"Could not read {dir}: {e}"
-    | .ok e => pure e
-  entries.foldlM (init := m) fun m entry => do
-    if let some stem := matchExt entry.fileName strata_dialect_ext then
-      m.addEntry stem .text entry.path
-    else if let some stem := matchExt entry.fileName strata_ion_dialect_ext then
-      m.addEntry stem .ion entry.path
-    else do
-      let _ ← IO.eprintln s!"Skipping {dir / entry.fileName}" |>.toBaseIO
-      pure m
-
-def ofDirs (dirs : Array System.FilePath) : EIO String FileMap :=
-  dirs.foldlM (init := {}) fun m dir => m.add dir
-
-end FileMap
-
-def asText [Monad m] [MonadExcept String m] (path : System.FilePath) (bytes : ByteArray) : m String :=
+def asText {m} [Monad m] [MonadExcept String m] (path : System.FilePath) (bytes : ByteArray) : m String :=
   match String.fromUTF8? bytes with
   | some s =>
     pure s
   | none =>
     throw s!"{path} is not an Ion file and contains non UTF-8 data"
-
 
 def mkErrorReport (path : System.FilePath) (errors : Array (Lean.Syntax × Lean.Message)) : BaseIO String := do
   let msg : String := s!"{errors.size} error(s) reading {path}:\n"
@@ -88,68 +27,14 @@ def mkErrorReport (path : System.FilePath) (errors : Array (Lean.Syntax × Lean.
     return s!"{msg}  {e.pos.line}:{e.pos.column}: {← e.data.toString}\n"
   return toString msg
 
-mutual
-
-partial def recordDialect (searchMap : FileMap) (env : Lean.Environment) (d : Dialect) (stk : Array DialectName) : ExceptT String (StateT Elab.LoadedDialects BaseIO) Unit := do
-  let stk := stk.push d.name
-  d.imports.forM fun i => do
-    let _ ← loadDialect searchMap env stk i
-    pure ()
-  modify (·.addDialect! d)
-
-partial def loadDialect (searchMap : FileMap) (env : Lean.Environment) (stk : Array DialectName) (name : Strata.DialectName) :
-    ExceptT String (StateT Elab.LoadedDialects BaseIO) Strata.Dialect := do
-  if let some d := (← get).dialects[name]? then
-    return d
-
-  let (_, _, path) ←
-        match searchMap[name]? with
-        | none => throw s!"Unknown dialect {name}: {searchMap.keys}"
-        | some path => pure path
-  let bytes ←
-    match ← IO.FS.readBinFile path |>.toBaseIO with
-    | .error _ =>
-      throw s!"Error reading {path}."
-    | .ok c =>
-      pure c
-  let stk := stk.push name
-  if bytes.startsWith Ion.binaryVersionMarker then
-    let d ← FromIonM.deserializeValue bytes FromIon.fromIon
-    recordDialect searchMap env d stk
-    pure d
-  else
-    let contents ← asText path bytes
-    readDialectTextfile searchMap env path contents stk
-
-partial def readDialectTextfile (searchMap : FileMap) (leanEnv : Lean.Environment) (input : System.FilePath) (contents : String) (stk : Array DialectName := #[]) : ExceptT String (StateT Elab.LoadedDialects BaseIO) Dialect := do
-  let inputContext := Strata.Parser.stringInputContext contents
-  let (header, errors, startPos) := Elab.elabHeader leanEnv inputContext
-  if errors.size > 0 then
-    throw  (← mkErrorReport input errors)
-  match header with
-  | .program stx _ =>
-    let pos := stx.getPos? |>.getD 0
-    throw s!"{pos}: Expected dialect."
-  | .dialect stx dialect =>
-    let stk := stk.push dialect
-    fun ld => do
-      let (d, s, loaded) ← Elab.elabDialectRest leanEnv (loadDialect searchMap leanEnv stk) ld
-            inputContext stx dialect startPos
-      if s.errors.size > 0 then
-        let msg ← mkErrorReport input s.errors
-        pure (.error (toString msg), loaded)
-      else
-        pure (.ok d, loaded.addDialect! d)
-
-end
-
 inductive DialectOrProgram
 | dialect (d : Dialect)
 | program (pgm : Program)
 
 end Strata
 
-def readStrataText (searchPath : Strata.FileMap) (input : System.FilePath) (bytes : ByteArray) : IO (Strata.DialectOrProgram × Strata.Elab.LoadedDialects) := do
+def readStrataText (fm : Strata.DialectFileMap) (input : System.FilePath) (bytes : ByteArray)
+    : IO (Strata.Elab.LoadedDialects × Strata.DialectOrProgram) := do
   let leanEnv ← Lean.mkEmptyEnvironment 0
   let contents ←
     match Strata.asText input bytes with
@@ -162,70 +47,60 @@ def readStrataText (searchPath : Strata.FileMap) (input : System.FilePath) (byte
   match header with
   | .program stx dialect =>
     let dialects ←
-      match ← Strata.loadDialect searchPath leanEnv #[] dialect .builtin with
-      | (.ok _, dialects) => pure dialects
-      | (.error msg, _) => exitFailure msg
+      match ← Strata.Elab.loadDialect fm .builtin dialect with
+      | (dialects, .ok _) => pure dialects
+      | (_, .error msg) => exitFailure msg
     match Strata.Elab.elabProgramRest dialects leanEnv inputContext stx dialect startPos with
-    | .ok program => pure (.program program, dialects)
+    | .ok program => pure (dialects, .program program)
     | .error errors =>     exitFailure  (← Strata.mkErrorReport input errors)
   | .dialect stx dialect =>
-    let (d, s, loaded) ←
-      Strata.Elab.elabDialectRest leanEnv (Strata.loadDialect searchPath leanEnv #[])
-        .builtin inputContext stx dialect startPos
+    let (loaded, d, s) ←
+      Strata.Elab.elabDialectRest fm .builtin #[] inputContext stx dialect startPos
     if s.errors.size > 0 then
       exitFailure (← Strata.mkErrorReport input s.errors)
-    pure (.dialect d, loaded.addDialect! d)
+    pure (loaded.addDialect! d, .dialect d)
 
+def readStrataIon (fm : Strata.DialectFileMap) (bytes : ByteArray) : IO (Strata.Elab.LoadedDialects × Strata.DialectOrProgram) := do
+  let (hdr, frag) ←
+    match Strata.Ion.Header.parse bytes with
+    | .error msg =>
+      exitFailure msg
+    | .ok p =>
+      pure p
+  match hdr with
+  | .dialect dialect =>
+    match ← Strata.Elab.loadDialectFromIonFragment fm .builtin #[] dialect frag with
+    | (_, .error msg) =>
+      exitFailure msg
+    | (dialects, .ok d) =>
+      pure (dialects, .dialect d)
+  | .program dialect => do
+    let dialects ←
+      match ← Strata.Elab.loadDialect fm .builtin dialect with
+      | (loaded, .ok _) => pure loaded
+      | (_, .error msg) => exitFailure msg
+    match Strata.Program.fromIonFragment frag dialects.dialects dialect with
+    | .ok pgm =>
+      pure (dialects, .program pgm)
+    | .error msg =>
+      exitFailure msg
 
-def readStrataIon (searchPath : Strata.FileMap) (bytes : ByteArray) : IO (Strata.DialectOrProgram × Strata.Elab.LoadedDialects) := do
-  let leanEnv ← Lean.mkEmptyEnvironment 0
-  let act v := do
-    let ⟨args, _⟩ ← .asList v
-    let .isTrue ne := inferInstanceAs (Decidable (args.size ≥ 1))
-      | throw s!"Expected header"
-    return (← read, ← Strata.Header.fromIon args[0], args)
-  match Strata.FromIonM.deserializeValue bytes act with
-  | .error msg =>
-    exitFailure msg
-  | .ok (ionCtx, hdr, args) =>
-    match hdr with
-    | .dialect dialect =>
-      match Strata.Dialect.fromIonDecls dialect args (start := 1) ionCtx with
-      | .error msg =>
-        exitFailure msg
-      | .ok d =>
-        match ← Strata.recordDialect searchPath leanEnv d #[] .builtin with
-        | (.ok (), dialects) =>
-          pure (.dialect d, dialects)
-        | (.error msg, dialects) =>
-          exitFailure msg
-    | .program dialect => do
-      let dialects ←
-        match ← Strata.loadDialect searchPath leanEnv #[] dialect .builtin with
-        | (.ok _, loaded) => pure loaded
-        | (.error msg, loaded) => exitFailure msg
-      match Strata.Program.fromIonDecls dialects.dialects dialect args (start := 1) ionCtx with
-      | .ok pgm =>
-        pure (.program pgm, dialects)
-      | .error msg =>
-        exitFailure msg
-
-def readFile (searchPath : Strata.FileMap) (path : System.FilePath) : IO (Strata.DialectOrProgram × Strata.Elab.LoadedDialects) := do
+def readFile (fm : Strata.DialectFileMap) (path : System.FilePath) : IO (Strata.Elab.LoadedDialects × Strata.DialectOrProgram) := do
   let bytes ←
     match ← IO.FS.readBinFile path |>.toBaseIO with
     | .error _ =>
       exitFailure s!"Error reading {path}."
     | .ok c => pure c
   if bytes.startsWith Ion.binaryVersionMarker then
-    readStrataIon searchPath bytes
+    readStrataIon fm bytes
   else
-    readStrataText searchPath path bytes
+    readStrataText fm path bytes
 
 structure Command where
   name : String
   args : List String
   help : String
-  callback : Strata.FileMap → Vector String args.length → IO Unit
+  callback : Strata.DialectFileMap → Vector String args.length → IO Unit
 
 def checkCommand : Command where
   name := "check"
@@ -240,7 +115,7 @@ def toIonCommand : Command where
   args := [ "input", "output" ]
   help := "Read a Strata text file and translate into Ion."
   callback := fun searchPath v => do
-    let (pd, _) ← readFile searchPath v[0]
+    let (_, pd) ← readFile searchPath v[0]
     match pd with
     | .dialect d =>
       IO.FS.writeBinFile v[1] d.toIon
@@ -252,7 +127,7 @@ def printCommand : Command where
   args := [ "file" ]
   help := "Write a Strata text or Ion file to standard output."
   callback := fun searchPath v => do
-    let (pd, ld) ← readFile searchPath v[0]
+    let (ld, pd) ← readFile searchPath v[0]
     match pd with
     | .dialect d =>
       IO.print <| d.format ld.dialects
@@ -264,8 +139,8 @@ def diffCommand : Command where
   args := [ "file1", "file2" ]
   help := "Check if two program files are syntactically equal."
   callback := fun fm v => do
-    let ⟨p1,_⟩ ← readFile fm v[0]
-    let ⟨p2,_⟩ ← readFile fm v[1]
+    let ⟨_, p1⟩ ← readFile fm v[0]
+    let ⟨_, p2⟩ ← readFile fm v[1]
     match p1, p2 with
     | .program p1, .program p2 =>
       if p1 == p2 then return ()
@@ -297,7 +172,7 @@ def main (args : List String) : IO Unit := do
     | none => exitFailure s!"Unknown command {cmd}"
     | some cmd =>
       let expectedArgs := cmd.args.length
-      let rec process (sp : Strata.FileMap) args (cmdArgs : List String) : IO _ := do
+      let rec process (sp : Strata.DialectFileMap) args (cmdArgs : List String) : IO _ := do
             match cmdArgs with
             | cmd :: cmdArgs =>
               match cmd with

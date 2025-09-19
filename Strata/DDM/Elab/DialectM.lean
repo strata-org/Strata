@@ -490,7 +490,7 @@ def translateSyntaxDef (argDecls : ArgDeclsMap argc) (mdTree tree : Tree) : Elab
 
 structure DialectContext where
   /-- Callback to load dialects dynamically upon demand. -/
-  loadDialect : DialectName → StateT LoadedDialects BaseIO (Except String Dialect)
+  loadDialect : LoadDialectCallback
   inputContext : Parser.InputContext
   stopPos : String.Pos
 
@@ -564,7 +564,7 @@ def elabDialectImportCommand : DialectElab := fun tree => do
       let r ← fun _ ref => do
         let loaded := (← ref.get).loaded
         assert! "StrataDDL" ∈ loaded.dialects.map.keys
-        let (r, loaded) ← loadCallback name loaded
+        let (loaded, r) ← loadCallback loaded name
         ref.modify fun s => { s with loaded := loaded }
         pure r
       match r with
