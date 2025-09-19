@@ -85,7 +85,10 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
     | "-" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Sub" none) lhs) rhs
     | "*" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Mul" none) lhs) rhs
     | "/" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Div" none) lhs) rhs
+    -- TODO: handle weak and strict equality properly
+    | "===" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Eq" none) lhs) rhs
     | "==" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Eq" none) lhs) rhs
+    --------------------------------------------------------
     | "<=" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Le" none) lhs) rhs
     | "<" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Lt" none) lhs) rhs
     | ">=" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Ge" none) lhs) rhs
@@ -282,36 +285,55 @@ partial def translate_statement (s: TS_Statement) (ctx : TranslationContext) : T
 
   | .TS_SwitchStatement switchStmt =>
     -- Handle switch statement: switch discriminant { cases }
-    let discrimExpr := translate_expr switchStmt.discriminant
-    let caseStmts := switchStmt.cases.toList.map (fun case =>
-      let testExpr := match case.test with
-        | some expr => translate_expr expr
-        | none => Heap.HExpr.true  -- Default case
-      let (caseCtx, stmts) := case.consequent.foldl (fun (accCtx, accStmts) stmt =>
-        let (newCtx, newStmts) := translate_statement stmt accCtx
-        (newCtx, accStmts ++ newStmts)) (ctx, [])
-      (testExpr, stmts))
 
-    -- Build nested if-then-else structure for cases
-    let rec build_cases (cases: List (Heap.HExpr × List TSStrataStatement)) : TSStrataStatement :=
+    -- Process all cases in their original order, separating regular from default
+    let allCases := switchStmt.cases.toList
+    let (regularCaseStmts, defaultStmts) := allCases.foldl (fun (regCases, defStmts) case =>
+      match case.test with
+      | some expr =>
+        -- Regular case
+        let discrimExpr := translate_expr switchStmt.discriminant
+        let caseValue := translate_expr expr
+        let testExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Eq" none) discrimExpr) caseValue
+        let (caseCtx, stmts) := case.consequent.foldl (fun (accCtx, accStmts) stmt =>
+          let (newCtx, newStmts) := translate_statement stmt accCtx
+          (newCtx, accStmts ++ newStmts)) (ctx, [])
+        (regCases ++ [(testExpr, stmts)], defStmts)
+      | none =>
+        -- Default case
+        let (defaultCtx, stmts) := case.consequent.foldl (fun (accCtx, accStmts) stmt =>
+          let (newCtx, newStmts) := translate_statement stmt accCtx
+          (newCtx, accStmts ++ newStmts)) (ctx, [])
+        (regCases, stmts)
+    ) ([], [])
+
+    -- Build nested if-then-else structure for regular cases
+    let rec build_cases (cases: List (Heap.HExpr × List TSStrataStatement)) (defaultStmts: List TSStrataStatement) : TSStrataStatement :=
       match cases with
-      | [] => panic! "Switch statement must have at least one case"
+      | [] =>
+        -- No regular cases, just execute default if it exists
+        let defaultBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := defaultStmts }
+        .block "default" defaultBlock
       | [(test, stmts)] =>
         let thenBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := stmts }
-        let elseBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [] }
+        let elseBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := defaultStmts }
         .ite test thenBlock elseBlock
       | (test, stmts) :: rest =>
         let thenBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := stmts }
-        let elseBlock := build_cases rest
+        let elseBlock := build_cases rest defaultStmts
         let elseBlockWrapped : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [elseBlock] }
         .ite test thenBlock elseBlockWrapped
 
-    let switchStructure := build_cases caseStmts
+    let switchStructure := build_cases regularCaseStmts defaultStmts
     (ctx, [switchStructure])
 
-  -- | .TS_BreakStatement breakStmt =>
-  --   let label := breakStmt.label.map translate_expr
-  --   (ctx, [.cmd (.break label)])
+  | .TS_BreakStatement breakStmt =>
+    -- Handle break statement: break [label];
+    let label := match breakStmt.label with
+      | some labelId => labelId.name
+      | none => "break_exit"  -- Default label for unlabeled breaks
+    (ctx, [.goto label])
+
   | _ => panic! s!"Unimplemented statement: {repr s}"
 
   -- Handle break statement: break;

@@ -4,7 +4,6 @@ let result: string = "initial";
 switch (day) {
   case 0:
     result = "Sunday";
-    break;
   case 6:
     result = "Saturday";
     break;
