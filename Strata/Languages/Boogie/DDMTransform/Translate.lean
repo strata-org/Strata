@@ -100,6 +100,11 @@ def translateNat (arg : Arg) : TransM Nat := do
     | TransM.error s!"translateNat expects num lit"
   return n
 
+def translateBitVec (width : Nat) (arg : Arg) : TransM Nat := do
+  let .num n := arg
+    | TransM.error s!"translateBitVec expects num lit"
+  return (n % (2 ^ width))
+
 def translateStr (arg : Arg) : TransM String := do
   let .strlit s := arg
     | TransM.error s!"translateStr expects string lit"
@@ -641,19 +646,19 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     let n ← translateNat xa
     return .const (toString n) Lambda.LMonoTy.int
   | .fn q`Boogie.bv1Lit, [xa] =>
-    let n ← translateNat xa
+    let n ← translateBitVec 1 xa
     return .const (toString n) Lambda.LMonoTy.bv1
   | .fn q`Boogie.bv8Lit, [xa] =>
-    let n ← translateNat xa
+    let n ← translateBitVec 8 xa
     return .const (toString n) Lambda.LMonoTy.bv8
   | .fn q`Boogie.bv16Lit, [xa] =>
-    let n ← translateNat xa
+    let n ← translateBitVec 16 xa
     return .const (toString n) Lambda.LMonoTy.bv16
   | .fn q`Boogie.bv32Lit, [xa] =>
-    let n ← translateNat xa
+    let n ← translateBitVec 32 xa
     return .const (toString n) Lambda.LMonoTy.bv32
   | .fn q`Boogie.bv64Lit, [xa] =>
-    let n ← translateNat xa
+    let n ← translateBitVec 64 xa
     return .const (toString n) Lambda.LMonoTy.bv64
   | .fn q`Boogie.strLit, [xa] =>
     let x ← translateStr xa
