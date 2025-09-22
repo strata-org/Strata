@@ -1,0 +1,14 @@
+Successfully parsed.
+P0_ensures_2: verified
+P0_ensures_3: verified
+P1_ensures_1: verified
+P2_ensures_1: unknown
+Q0_ensures_2: verified
+Q0_ensures_3: verified
+Q1_ensures_1: verified
+Q2_ensures_2: verified
+Q3_ensures_2: verified
+Q4_ensures_1: unknown
+Skip0_ensures_2: verified
+Skip0_ensures_3: verified
+Finished with 10 goals proved, 2 failed.

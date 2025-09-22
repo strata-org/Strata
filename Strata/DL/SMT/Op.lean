@@ -94,14 +94,19 @@ inductive Op : Type where
   | bvxor
   | bvshl
   | bvlshr
+  | bvashr
   | bvslt
   | bvsle
   | bvult
+  | bvsge
+  | bvsgt
   | bvule
   | bvugt
   | bvuge
   | bvudiv
   | bvurem
+  | bvsdiv
+  | bvsrem
   | bvnego  -- bit-vector negation overflow predicate
   | bvsaddo -- bit-vector signed addition overflow predicate
   | bvssubo -- bit-vector signed subtraction overflow predicate
@@ -111,6 +116,8 @@ inductive Op : Type where
   ---------- SMTLib theory of unicode strings (`Strings`) ----------
   | str_length
   | str_concat
+  ---------- An operator to group triggers together
+  | triggers
   ---------- Core ADT operators with a trusted mapping to SMT ----------
   | option_get
 deriving Repr, DecidableEq, Inhabited, Hashable
@@ -144,15 +151,20 @@ def Op.mkName : Op → String
   | .bvsub         => "bvsub"
   | .bvmul         => "bvmul"
   | .bvshl         => "bvshl"
+  | .bvashr        => "bvashr"
   | .bvlshr        => "bvlshr"
   | .bvslt         => "bvslt"
   | .bvsle         => "bvsle"
+  | .bvsgt         => "bvsgt"
+  | .bvsge         => "bvsge"
   | .bvult         => "bvult"
   | .bvule         => "bvule"
   | .bvugt         => "bvugt"
   | .bvuge         => "bvuge"
   | .bvudiv        => "bvudiv"
   | .bvurem        => "bvurem"
+  | .bvsdiv        => "bvsdiv"
+  | .bvsrem        => "bvsrem"
   | .bvnego        => "bvnego"
   | .bvsaddo       => "bvsaddo"
   | .bvssubo       => "bvssubo"
@@ -161,6 +173,7 @@ def Op.mkName : Op → String
   | .zero_extend _ => "zero_extend"
   | .str_length    => "str.len"
   | .str_concat    => "str.++"
+  | .triggers      => "triggers"
   | .option_get    => "option.get"
 
 def Op.LT : Op → Op → Bool

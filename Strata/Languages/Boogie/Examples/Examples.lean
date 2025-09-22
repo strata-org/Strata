@@ -8,6 +8,7 @@ import Strata.Languages.Boogie.Examples.AdvancedMaps
 import Strata.Languages.Boogie.Examples.AdvancedQuantifiers
 import Strata.Languages.Boogie.Examples.AssertionDefaultNames
 import Strata.Languages.Boogie.Examples.Axioms
+import Strata.Languages.Boogie.Examples.BitVecParse
 import Strata.Languages.Boogie.Examples.DDMAxiomsExtraction
 import Strata.Languages.Boogie.Examples.DDMTransform
 import Strata.Languages.Boogie.Examples.FreeRequireEnsure
@@ -29,4 +30,5 @@ import Strata.Languages.Boogie.Examples.SimpleProc
 import Strata.Languages.Boogie.Examples.String
 import Strata.Languages.Boogie.Examples.TypeAlias
 import Strata.Languages.Boogie.Examples.TypeDecl
+import Strata.Languages.Boogie.Examples.TypeVarImplicitlyQuantified
 import Strata.Languages.Boogie.Examples.UnreachableAssert

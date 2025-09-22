@@ -1,0 +1,5 @@
+Successfully parsed.
+entry_invariant_1: verified
+arbitrary_iter_maintain_invariant_1: verified
+sum_ensures_1: verified
+Proved all 3 goals.

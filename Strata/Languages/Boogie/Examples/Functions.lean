@@ -32,16 +32,19 @@ info: [Strata.Boogie] Type checking succeeded.
 VCs:
 Label: barEq
 Assumptions:
+
+
 Proof Obligation:
 ((~barTest1 $__a0) == $__a0)
 
 Label: fooEq
 Assumptions:
+
+
 Proof Obligation:
 #true
 
 Wrote problem to vcs/barEq.smt2.
-Wrote problem to vcs/fooEq.smt2.
 ---
 info:
 Obligation: barEq

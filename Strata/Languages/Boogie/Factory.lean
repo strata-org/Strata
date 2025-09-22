@@ -23,14 +23,8 @@ def KnownLTys : LTys :=
    t[int],
    t[string],
    t[real],
-   /-
-   t[bv1],
-   t[bv8],
-   t[bv16],
-   t[bv32],
-   t[bv64],
-   ...
-   -/
+   t[Triggers],
+   t[TriggerGroup],
    -- Note: t[bv<n>] elaborates to (.forAll [] .tcons "bitvec" <n>).
    -- We can simply add the following here.
    t[∀n. bitvec n],
@@ -59,26 +53,28 @@ match ine with
     | .ite m c t e => .ite m (ToBoogieIdent c) (ToBoogieIdent t) (ToBoogieIdent e)
     | .eq m e1 e2 => .eq m (ToBoogieIdent e1) (ToBoogieIdent e2)
 
+
 private def BVOpNames :=
-  ["Neg", "Add", "Sub", "Mul", "Div", "Mod",
-   "Not", "And", "Or", "Xor", "Shl", "UShr",
-   "Lt", "Le", "Gt", "Ge"]
+  ["Neg", "Add", "Sub", "Mul", "UDiv", "UMod", "SDiv", "SMod",
+   "Not", "And", "Or", "Xor", "Shl", "UShr", "SShr",
+   "ULt", "ULe", "UGt", "UGe",
+   "SLt", "SLe", "SGt", "SGe"]
 
-private def BVCompNames := ["Lt", "Le", "Gt", "Ge"]
-
-private def BVOpAritys := ["unaryOp", "binaryOp", "binaryOp", "binaryOp",
-                           "binaryOp", "binaryOp", "unaryOp", "binaryOp",
-                           "binaryOp", "binaryOp", "binaryOp", "binaryOp",
-                           "binaryPredicate", "binaryPredicate", "binaryPredicate", "binaryPredicate", ]
+private def BVOpAritys :=
+  ["unaryOp", "binaryOp", "binaryOp", "binaryOp", "binaryOp", "binaryOp", "binaryOp", "binaryOp",
+   "unaryOp", "binaryOp", "binaryOp", "binaryOp", "binaryOp", "binaryOp", "binaryOp",
+   "binaryPredicate", "binaryPredicate", "binaryPredicate", "binaryPredicate",
+   "binaryPredicate", "binaryPredicate", "binaryPredicate", "binaryPredicate" ]
 
 /--
-info: [("Neg", "unaryOp"), ("Add", "binaryOp"), ("Sub", "binaryOp"), ("Mul", "binaryOp"), ("Div", "binaryOp"),
-  ("Mod", "binaryOp"), ("Not", "unaryOp"), ("And", "binaryOp"), ("Or", "binaryOp"), ("Xor", "binaryOp"),
-  ("Shl", "binaryOp"), ("UShr", "binaryOp"), ("Lt", "binaryPredicate"), ("Le", "binaryPredicate"),
-  ("Gt", "binaryPredicate"), ("Ge", "binaryPredicate")]
+info: [("Neg", "unaryOp"), ("Add", "binaryOp"), ("Sub", "binaryOp"), ("Mul", "binaryOp"), ("UDiv", "binaryOp"),
+  ("UMod", "binaryOp"), ("SDiv", "binaryOp"), ("SMod", "binaryOp"), ("Not", "unaryOp"), ("And", "binaryOp"),
+  ("Or", "binaryOp"), ("Xor", "binaryOp"), ("Shl", "binaryOp"), ("UShr", "binaryOp"), ("SShr", "binaryOp"),
+  ("ULt", "binaryPredicate"), ("ULe", "binaryPredicate"), ("UGt", "binaryPredicate"), ("UGe", "binaryPredicate"),
+  ("SLt", "binaryPredicate"), ("SLe", "binaryPredicate"), ("SGt", "binaryPredicate"), ("SGe", "binaryPredicate")]
 -/
 #guard_msgs in
-#eval List.zip (BVOpNames ++ BVCompNames) BVOpAritys
+#eval List.zip BVOpNames BVOpAritys
 
 abbrev MetadataBoogieIdent: LExprParams := ⟨Unit, BoogieIdent⟩
 
@@ -88,14 +84,13 @@ open Lean Elab Command in
 elab "ExpandBVOpFuncDefs" "[" sizes:num,* "]" : command => do
   for size in sizes.getElems do
     let s := size.getNat.repr
-    for (op, arity) in List.zip (BVOpNames ++ BVCompNames) BVOpAritys do
+    for (op, arity) in List.zip BVOpNames BVOpAritys do
       let funcName := mkIdent (.str .anonymous s!"bv{s}{op}Func")
       let funcArity := mkIdent (.str (.str .anonymous "Lambda") arity)
       let opName := Syntax.mkStrLit s!"Bv{s}.{op}"
       let bvTypeName := Name.mkSimple s!"bv{s}"
       elabCommand (← `(def $funcName : LFunc MetadataBoogieIdent := $funcArity $opName mty[$(mkIdent bvTypeName):ident] none))
 
--- def bv1AddOp : LExpr BoogieIdent := bv1AddFunc.opExpr
 ExpandBVOpFuncDefs[1, 2, 8, 16, 32, 64]
 
 /- Real Arithmetic Operations -/
@@ -180,6 +175,34 @@ def mapUpdateFunc : LFunc MetadataBoogieIdent :=
      ]
    }
 
+def emptyTriggersFunc : LFunc BoogieIdent :=
+    { name := "Triggers.empty",
+      typeArgs := [],
+      inputs := [],
+      output := mty[Triggers],
+      concreteEval := none }
+
+def addTriggerGroupFunc : LFunc BoogieIdent :=
+    { name := "Triggers.addGroup",
+      typeArgs := [],
+      inputs := [("g", mty[TriggerGroup]), ("t", mty[Triggers])],
+      output := mty[Triggers],
+      concreteEval := none }
+
+def emptyTriggerGroupFunc : LFunc BoogieIdent :=
+    { name := "TriggerGroup.empty",
+      typeArgs := [],
+      inputs := [],
+      output := mty[TriggerGroup],
+      concreteEval := none }
+
+def addTriggerFunc : LFunc BoogieIdent :=
+    { name := "TriggerGroup.addTrigger",
+      typeArgs := ["a"],
+      inputs := [("x", mty[%a]), ("t", mty[TriggerGroup])],
+      output := mty[TriggerGroup],
+      concreteEval := none }
+
 open Lean in
 macro "ExpandBVOpFuncNames" "[" sizes:num,* "]" : term => do
   let mut allOps := #[]
@@ -189,26 +212,33 @@ macro "ExpandBVOpFuncNames" "[" sizes:num,* "]" : term => do
     allOps := allOps ++ ops.toArray
   `([$(allOps),*])
 
-def bv8ConcatFunc : LFunc MetadataBoogieIdent :=
-    { name := "Bv8.Concat",
-      typeArgs := [],
-      inputs := [("x", mty[bv8]), ("y", mty[bv8])]
-      output := mty[bv16],
-      concreteEval := none }
+def bvConcatFunc (size : Nat) : LFunc BoogieIdent :=
+  { name := s!"Bv{size}.Concat",
+    typeArgs := [],
+    inputs := [("x", .bitvec size), ("y", .bitvec size)]
+    output := .bitvec (size*2),
+    concreteEval := none }
 
-def bv16ConcatFunc : LFunc MetadataBoogieIdent :=
-    { name := "Bv16.Concat",
-      typeArgs := [],
-      inputs := [("x", mty[bv16]), ("y", mty[bv16])]
-      output := mty[bv32],
-      concreteEval := none }
+def bvExtractFunc (size hi lo: Nat) : LFunc BoogieIdent :=
+  { name := s!"Bv{size}.Extract_{hi}_{lo}",
+    typeArgs := [],
+    inputs := [("x", .bitvec size)]
+    output := .bitvec (hi + 1 - lo),
+    concreteEval := none }
 
-def bv32ConcatFunc : LFunc MetadataBoogieIdent :=
-    { name := "Bv32.Concat",
-      typeArgs := [],
-      inputs := [("x", mty[bv32]), ("y", mty[bv32])]
-      output := mty[bv64],
-      concreteEval := none }
+def bv8ConcatFunc := bvConcatFunc 8
+def bv16ConcatFunc := bvConcatFunc 16
+def bv32ConcatFunc := bvConcatFunc 32
+
+def bv8Extract_7_7_Func    := bvExtractFunc  8  7  7
+def bv16Extract_15_15_Func := bvExtractFunc 16 15 15
+def bv16Extract_7_0_Func   := bvExtractFunc 16  7  0
+def bv32Extract_31_31_Func := bvExtractFunc 32 31 31
+def bv32Extract_15_0_Func  := bvExtractFunc 32 15  0
+def bv32Extract_7_0_Func   := bvExtractFunc 32  7  0
+def bv64Extract_31_0_Func  := bvExtractFunc 64 31  0
+def bv64Extract_15_0_Func  := bvExtractFunc 64 15  0
+def bv64Extract_7_0_Func   := bvExtractFunc 64  7  0
 
 def Factory : @Factory MetadataBoogieIdent := #[
   @intAddFunc MetadataBoogieIdent _,
@@ -247,9 +277,23 @@ def Factory : @Factory MetadataBoogieIdent := #[
   mapSelectFunc,
   mapUpdateFunc,
 
+  emptyTriggersFunc,
+  addTriggerGroupFunc,
+  emptyTriggerGroupFunc,
+  addTriggerFunc,
+
   bv8ConcatFunc,
   bv16ConcatFunc,
   bv32ConcatFunc,
+  bv8Extract_7_7_Func,
+  bv16Extract_15_15_Func,
+  bv16Extract_7_0_Func,
+  bv32Extract_31_31_Func,
+  bv32Extract_15_0_Func,
+  bv32Extract_7_0_Func,
+  bv64Extract_31_0_Func,
+  bv64Extract_15_0_Func,
+  bv64Extract_7_0_Func,
 ] ++ ExpandBVOpFuncNames [1,8,16,32,64]
 
 open Lean Elab Command in
@@ -267,16 +311,31 @@ def bv8ConcatOp : Expression.Expr := bv8ConcatFunc.opExpr
 def bv16ConcatOp : Expression.Expr := bv16ConcatFunc.opExpr
 def bv32ConcatOp : Expression.Expr := bv32ConcatFunc.opExpr
 
-def intAddOp : Expression.Expr := @intAddFunc.opExpr MetadataBoogieIdent _
-def intSubOp : Expression.Expr := @intSubFunc.opExpr MetadataBoogieIdent _
-def intMulOp : Expression.Expr := @intMulFunc.opExpr MetadataBoogieIdent _
-def intDivOp : Expression.Expr := @intDivFunc.opExpr MetadataBoogieIdent _
-def intModOp : Expression.Expr := @intModFunc.opExpr MetadataBoogieIdent _
-def intNegOp : Expression.Expr := @intNegFunc.opExpr MetadataBoogieIdent _
-def intLtOp : Expression.Expr := @intLtFunc.opExpr MetadataBoogieIdent _
-def intLeOp : Expression.Expr := @intLeFunc.opExpr MetadataBoogieIdent _
-def intGtOp : Expression.Expr := @intGtFunc.opExpr MetadataBoogieIdent _
-def intGeOp : Expression.Expr := @intGeFunc.opExpr MetadataBoogieIdent _
+def bv8Extract_7_7_Op    := bv8Extract_7_7_Func.opExpr
+def bv16Extract_15_15_Op := bv16Extract_15_15_Func.opExpr
+def bv16Extract_7_0_Op   := bv16Extract_7_0_Func.opExpr
+def bv32Extract_31_31_Op := bv32Extract_31_31_Func.opExpr
+def bv32Extract_15_0_Op  := bv32Extract_15_0_Func.opExpr
+def bv32Extract_7_0_Op   := bv32Extract_7_0_Func.opExpr
+def bv64Extract_31_0_Op  := bv64Extract_31_0_Func.opExpr
+def bv64Extract_15_0_Op  := bv64Extract_15_0_Func.opExpr
+def bv64Extract_7_0_Op   := bv64Extract_7_0_Func.opExpr
+
+def emptyTriggersOp : Expression.Expr := emptyTriggersFunc.opExpr
+def addTriggerGroupOp : Expression.Expr := addTriggerGroupFunc.opExpr
+def emptyTriggerGroupOp : Expression.Expr :=  emptyTriggerGroupFunc.opExpr
+def addTriggerOp : Expression.Expr := addTriggerFunc.opExpr
+
+def intAddOp : Expression.Expr := intAddFunc.opExpr
+def intSubOp : Expression.Expr := intSubFunc.opExpr
+def intMulOp : Expression.Expr := intMulFunc.opExpr
+def intDivOp : Expression.Expr := intDivFunc.opExpr
+def intModOp : Expression.Expr := intModFunc.opExpr
+def intNegOp : Expression.Expr := intNegFunc.opExpr
+def intLtOp : Expression.Expr := intLtFunc.opExpr
+def intLeOp : Expression.Expr := intLeFunc.opExpr
+def intGtOp : Expression.Expr := intGtFunc.opExpr
+def intGeOp : Expression.Expr := intGeFunc.opExpr
 def realAddOp : Expression.Expr := realAddFunc.opExpr
 def realSubOp : Expression.Expr := realSubFunc.opExpr
 def realMulOp : Expression.Expr := realMulFunc.opExpr
@@ -296,5 +355,12 @@ def strConcatOp : Expression.Expr := strConcatFunc.opExpr
 def polyOldOp : Expression.Expr := polyOldFunc.opExpr
 def mapSelectOp : Expression.Expr := mapSelectFunc.opExpr
 def mapUpdateOp : Expression.Expr := mapUpdateFunc.opExpr
+
+def mkTriggerGroup (ts : List Expression.Expr) : Expression.Expr :=
+  ts.foldl (fun g t => .app (.app addTriggerOp t) g) emptyTriggerGroupOp
+
+def mkTriggerExpr (ts : List (List Expression.Expr)) : Expression.Expr :=
+  let groups := ts.map mkTriggerGroup
+  groups.foldl (fun gs g => .app (.app addTriggerGroupOp g) gs) emptyTriggersOp
 
 end Boogie

@@ -33,3 +33,6 @@ instance : ToFormat (⟨BoogieLParams, LMonoTy⟩ : LExprParamsT).base.Identifie
 
 instance : ToFormat Axiom where
   format a := f!"axiom {a.name}: {a.e};"
+
+def Axiom.eraseTypes (a : Axiom) : Axiom :=
+  { a with e := a.e.eraseTypes }

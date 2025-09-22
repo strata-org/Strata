@@ -8,6 +8,7 @@ structure Options where
   verbose : Bool
   parseOnly : Bool
   checkOnly : Bool
+  stopOnFirstError : Bool
   /-- Solver time limit in seconds -/
   solverTimeout : Nat
 
@@ -15,6 +16,7 @@ def Options.default : Options := {
   verbose := true,
   parseOnly := false,
   checkOnly := false,
+  stopOnFirstError := false,
   solverTimeout := 10
 }
 

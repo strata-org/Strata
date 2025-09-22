@@ -153,10 +153,9 @@ def inferFVar (Env : TEnv T) (x : T.Identifier) (fty : Option LMonoTy) :
     match fty with
     | none => .ok (ty, Env)
     | some fty =>
-      -- We do not support expressions to be annotated with type synonyms yet.
-      -- As such, if `fty` is a synonym, then the following may raise an error.
-      let S ← Constraints.unify [(fty, ty)] Env.state.substInfo
-      .ok (ty, TEnv.updateSubst Env S)
+      let (fty, T) ← LMonoTy.instantiateWithCheck fty T
+      let S ← Constraints.unify [(fty, ty)] T.state.substInfo
+      .ok (ty, TEnv.updateSubst T S)
 
 /--
 Infer the type of `.const c cty`. Here, we use the term "constant" in the same
@@ -295,11 +294,11 @@ partial def inferOp (Env : TEnv T) (o : T.Identifier) (oty : Option LMonoTy) :
             .error f!"Function body contains free variables!\n\
                       {func}"
       match oty with
-      | none => .ok (ty, Env)
-      | some cty =>
-        let (optTyy, Env) := (cty.resolveAliases Env)
-        let S ← Constraints.unify [(ty, optTyy.getD cty )] Env.state.substInfo
-        .ok (ty, Env.updateSubst S)
+      | none => .ok (ty, T)
+      | some oty =>
+        let (oty, T) ← LMonoTy.instantiateWithCheck oty T
+        let S ← Constraints.unify [(ty, oty)] T.state.substInfo
+        .ok (ty, TEnv.updateSubst T S)
 
 partial def fromLExprAux.ite (Env : TEnv T) (m : T.Metadata) (c th el : LExpr ⟨T, LMonoTy⟩) := do
   let (ct, Env) ← fromLExprAux Env c
@@ -321,58 +320,63 @@ partial def fromLExprAux.eq (Env : TEnv T) (m: T.Metadata) (e1 e2 : LExpr T.mono
   let S ← Constraints.unify [(ty1, ty2)] Env.state.substInfo
   .ok (.eq ⟨m, LMonoTy.bool⟩ e1t e2t, TEnv.updateSubst Env S)
 
-partial def fromLExprAux.abs (Env : TEnv T) (m: T.Metadata) (oty : Option LMonoTy) (e : (LExpr T.mono)) := do
-  let (xv, Env) := HasGen.genVar Env
-  let (xt', Env) := TEnv.genTyVar Env
-  let xt := .forAll [] (.ftvar xt')
-  let Env := Env.insertInContext xv xt
-  let e' := LExpr.varOpen 0 (xv, some (.ftvar xt')) e
-  let (et, Env) ← fromLExprAux Env e'
+partial def fromLExprAux.abs (T : (TEnv Identifier)) (bty : Option LMonoTy) (e : (LExpr LMonoTy Identifier)) := do
+  -- Generate a fresh expression variable to stand in for the bound variable
+  let (xv, T) := HasGen.genVar T
+  -- Generate a fresh type variable to stand in for the type of the bound
+  -- variable.
+  let (xt', T) := TEnv.genTyVar T
+  let xmt := (.ftvar xt')
+  let xt := .forAll [] xmt
+  let T := T.insertInContext xv xt
+  -- Construct `e'` from `e`, where the bound variable has been replaced by
+  -- `xv`.
+  let e' := LExpr.varOpen 0 (xv, some xmt) e
+  let (et, T) ← fromLExprAux T e'
   let ety := et.toLMonoTy
-  let etclosed := LExpr.varCloseT 0 xv et
-  let Env := Env.eraseFromContext xv
-  let ty := (.tcons "arrow" [(.ftvar xt'), ety])
-  let mty := LMonoTy.subst Env.state.substInfo.subst ty
-  match mty, oty with
-  | .arrow aty _, .some ty =>
-    if aty == ty
-    then .ok ()
-    else .error "Type annotation on LTerm.abs doesn't match inferred argument type"
-  | _, _ => .ok ()
-  .ok (.abs ⟨m, mty⟩ oty etclosed, Env)
+  let etclosed := .varClose 0 xv et
+  -- Safe to erase fresh variable from context after closing the expressions.
+  let T := T.eraseFromContext xv
+  let ty := (.tcons "arrow" [xmt, ety])
+  let mty := LMonoTy.subst T.state.substInfo.subst ty
+  match bty with
+  | none => .ok ((.abs etclosed mty), T)
+  | some bty =>
+    let (bty, T) ← LMonoTy.instantiateWithCheck bty T
+    let S ← Constraints.unify [(mty, bty)] T.state.substInfo
+    .ok (.abs etclosed mty, TEnv.updateSubst T S)
 
-partial def fromLExprAux.quant (Env : TEnv T) (m: T.Metadata) (qk : QuantifierKind) (oty : Option LMonoTy) (triggers : LExpr T.mono) (e : LExpr T.mono) := do
-  let (xv, Env) := HasGen.genVar Env
-  let (xt', Env) := TEnv.genTyVar Env
-  let xt := .forAll [] (.ftvar xt')
-  let S ← match oty with
-  | .some ty =>
-    let (optTyy, Env) := (ty.resolveAliases Env)
-    (Constraints.unify [(.ftvar xt', optTyy.getD ty)] Env.state.substInfo)
-  | .none =>
-    .ok Env.state.substInfo
-  let Env := TEnv.updateSubst Env S
-  let Env := Env.insertInContext xv xt
-  let e' := LExpr.varOpen 0 (xv, some (.ftvar xt')) e
-  let triggers' := LExpr.varOpen 0 (xv, some (.ftvar xt')) triggers
-  let (et, Env) ← fromLExprAux Env e'
-  let (triggersT, Env) ← fromLExprAux Env triggers'
+partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (bty : Option LMonoTy)
+    (triggers : LExpr LMonoTy Identifier) (e : (LExpr LMonoTy Identifier)) := do
+  -- Generate a fresh variable to stand in for the bound variable.
+  let (xv, T) := HasGen.genVar T
+  -- Generate a fresh type variable to stand in for the type of the bound
+  -- variable.
+  let (xt', T) := TEnv.genTyVar T
+  let xmt := (.ftvar xt')
+  let xt := .forAll [] xmt
+  let T := T.insertInContext xv xt
+  -- Construct new expressions, where the bound variable has been replaced by
+  -- `xv`.
+  let e' := LExpr.varOpen 0 (xv, some xmt) e
+  let triggers' := LExpr.varOpen 0 (xv, some xmt) triggers
+  let (et, T) ← fromLExprAux T e'
+  let (triggersT, T) ← fromLExprAux T triggers'
   let ety := et.toLMonoTy
-  let mty := LMonoTy.subst Env.state.substInfo.subst (.ftvar xt')
-  match oty with
-  | .some ty =>
-    let (optTyy, _) := (ty.resolveAliases Env)
-    if optTyy.getD ty == mty
-    then .ok ()
-    else .error f!"Type annotation on LTerm.quant {ty} (alias for {optTyy.getD ty}) doesn't match inferred argument type"
-  | _ => .ok ()
-  if ety = LMonoTy.bool then do
-    let etclosed := LExpr.varCloseT 0 xv et
-    let triggersClosed := LExpr.varCloseT 0 xv triggersT
-    let Env := Env.eraseFromContext xv
-    .ok (LExpr.quant ⟨m, mty⟩ qk mty triggersClosed etclosed, Env)
-  else
+  let mty := LMonoTy.subst T.state.substInfo.subst xmt
+  let etclosed := LExprT.varClose 0 xv et
+  let triggersClosed := LExprT.varClose 0 xv triggersT
+  -- Safe to erase fresh variable from context after closing the expressions.
+  let T := T.eraseFromContext xv
+  if ety != LMonoTy.bool then do
     .error f!"Quantifier body has non-Boolean type: {ety}"
+  else
+    match bty with
+    | none => .ok (.quant qk mty triggersClosed etclosed, T)
+    | some bty =>
+      let (bty, T) ← LMonoTy.instantiateWithCheck bty T
+      let S ← Constraints.unify [(mty, bty)] T.state.substInfo
+      .ok (.quant qk mty triggersClosed etclosed, TEnv.updateSubst T S)
 
 partial def fromLExprAux.app (Env : TEnv T) (m: T.Metadata) (e1 e2 : LExpr T.mono) := do
   let (e1t, Env) ← fromLExprAux Env e1
@@ -381,15 +385,8 @@ partial def fromLExprAux.app (Env : TEnv T) (m: T.Metadata) (e1 e2 : LExpr T.mon
   let ty2 := e2t.toLMonoTy
   let (fresh_name, Env) := TEnv.genTyVar Env
   let freshty := (.ftvar fresh_name)
-  let (optTyy1, Env) := (ty1.resolveAliases Env)
-  let (optTyy2, Env) := (ty2.resolveAliases Env)
-  -- Batch all unification constraints
-  let constraints := [
-    (ty1, optTyy1.getD ty1),
-    (ty2, optTyy2.getD ty2),
-    (ty1, (.tcons "arrow" [ty2, freshty]))
-  ]
-  let S ← Constraints.unify constraints Env.state.substInfo
+  let constraints := [(ty1, (.tcons "arrow" [ty2, freshty]))]
+  let S ← Constraints.unify constraints T.state.substInfo
   let mty := LMonoTy.subst S.subst freshty
   .ok (.app ⟨m, mty⟩ e1t e2t, TEnv.updateSubst Env S)
 

@@ -34,10 +34,11 @@ info: [Strata.Boogie] Type checking succeeded.
 VCs:
 Label: f_test
 Assumptions:
+
+
 Proof Obligation:
 #true
 
-Wrote problem to vcs/f_test.smt2.
 ---
 info:
 Obligation: f_test
@@ -96,6 +97,7 @@ Label: fooAssertion
 Assumptions:
 (fooConst1_value, (~fooConst1 == ~fooVal))
 (fooConst2_value, (~fooConst2 == ~fooVal))
+
 Proof Obligation:
 (~fooConst1 == ~fooConst2)
 
@@ -121,7 +123,7 @@ type int := bool;
 error: [Strata.Boogie] Type checking error: This type declaration's name is reserved!
 type int := bool
 KnownTypes' names:
-[bool, int, string, real, bitvec, arrow, Map]
+[bool, int, string, real, Triggers, TriggerGroup, bitvec, arrow, Map]
 -/
 #guard_msgs in
 #eval verify "cvc5" typeDeclPgm4
