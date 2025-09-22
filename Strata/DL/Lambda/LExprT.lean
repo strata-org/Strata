@@ -193,6 +193,27 @@ protected def varClose (k : Nat) (x : Identifier) (e : (LExprT Identifier)) : (L
 
 ---------------------------------------------------------------------
 
+/--
+Generate a fresh identifier `xv` for a bound variable. Use the type annotation
+`ty` if present, otherwise generate a fresh type variable. Add `xv` along with
+its type to the type context.
+-/
+def typeBoundVar (T : TEnv Identifier) (ty : Option LMonoTy) :
+  Except Format (Identifier × LMonoTy × TEnv Identifier) := do
+  let (xv, T) := HasGen.genVar T
+  let (xty, T) ← match ty with
+    | some bty =>
+      let ans := LMonoTy.instantiateWithCheck bty T
+      match ans with
+      | .error e => .error e
+      | .ok (bty, T) => .ok (bty, T)
+    | none =>
+      let (xtyid, T) := TEnv.genTyVar T
+      let xty := (LMonoTy.ftvar xtyid)
+      .ok (xty, T)
+  let T := T.insertInContext xv (.forAll [] xty)
+  return (xv, xty, T)
+
 /-- Infer the type of `.fvar x fty`. -/
 def inferFVar (T : (TEnv Identifier)) (x : Identifier) (fty : Option LMonoTy) :
   Except Format (LMonoTy × (TEnv Identifier)) :=
@@ -375,20 +396,9 @@ partial def fromLExprAux.eq (T : (TEnv Identifier)) (e1 e2 : (LExpr LMonoTy Iden
 
 partial def fromLExprAux.abs (T : (TEnv Identifier)) (bty : Option LMonoTy) (e : (LExpr LMonoTy Identifier)) := do
   -- Generate a fresh expression variable to stand in for the bound variable.
-  let (xv, T) := HasGen.genVar T
   -- For the bound variable, use type annotation if present. Otherwise,
   -- generate a fresh type variable.
-  let (xty, T) ← match bty with
-    | some bty =>
-      let ans := LMonoTy.instantiateWithCheck bty T
-      match ans with
-      | .error e => .error e
-      | .ok (bty, T) => .ok (bty, T)
-    | none =>
-      let (xtyid, T) := TEnv.genTyVar T
-      let xty := (LMonoTy.ftvar xtyid)
-      .ok (xty, T)
-  let T := T.insertInContext xv (.forAll [] xty)
+  let (xv, xty, T) ← typeBoundVar T bty
   -- Construct `e'` from `e`, where the bound variable has been replaced by
   -- `xv`.
   let e' := LExpr.varOpen 0 (xv, some xty) e
@@ -406,24 +416,10 @@ partial def fromLExprAux.abs (T : (TEnv Identifier)) (bty : Option LMonoTy) (e :
 
 partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (bty : Option LMonoTy)
     (triggers : LExpr LMonoTy Identifier) (e : (LExpr LMonoTy Identifier)) := do
-  -- Generate a fresh variable to stand in for the bound variable.
-  let (xv, T) := HasGen.genVar T
-  -- For the bound variable, use type annotation if present. Otherwise,
-  -- generate a fresh type variable.
-  let (xty, T) ← match bty with
-    | some bty =>
-      let ans := LMonoTy.instantiateWithCheck bty T
-      match ans with
-      | .error e => .error e
-      | .ok (bty, T) => .ok (bty, T)
-    | none =>
-      let (xtyid, T) := TEnv.genTyVar T
-      let xty := (LMonoTy.ftvar xtyid)
-      .ok (xty, T)
-  let T := T.insertInContext xv (.forAll [] xty)
-  -- Construct new expressions, where the bound variable has been replaced by
-  -- `xv`.
+  let (xv, xty, T) ← typeBoundVar T bty
   let e' := LExpr.varOpen 0 (xv, some xty) e
+  -- Construct `e'` from `e`, where the bound variable has been replaced by
+  -- `xv`.
   let triggers' := LExpr.varOpen 0 (xv, some xty) triggers
   let (et, T) ← fromLExprAux T e'
   let (triggersT, T) ← fromLExprAux T triggers'
