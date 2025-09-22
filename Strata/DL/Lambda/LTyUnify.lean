@@ -979,14 +979,14 @@ def Constraint.unifyOne (c : Constraint) (S : SubstInfo) :
           have h_sub2 : Subst.freeVars_subset_prop [(orig_lty, LMonoTy.ftvar id)] newS S := by
             simp_all [Subst.freeVars_subset_prop_single_constraint_comm]
           .ok { newS := newS, goodSubset := by all_goals simp [h_sub1, h_sub2] }
-    | bitvec n1, bitvec n2 =>
+    | .bitvec n1, .bitvec n2 =>
       if _h7 : n1 == n2 then
         .ok { newS := SubstInfo.mk [] (by simp [SubstWF]), goodSubset := by grind }
       else
         .error f!"Cannot unify differently sized bitvector types {t1} and {t2}!"
-    | bitvec _, .tcons _ _ _ =>
+    | .bitvec _, .tcons _ _ _ =>
         .error f!"Cannot unify bv type {t1} and type constructor {t2}!"
-    | .tcons _ _ _, bitvec _ =>
+    | .tcons _ _ _, .bitvec _ =>
         .error f!"Cannot unify type constructor {t1} and bv type {t2}!"
     | .tcons name1 args1 r1, .tcons name2 args2 r2 => do
       if _h6 : name1 == name2 && args1.length == args2.length then

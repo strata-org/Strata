@@ -50,7 +50,7 @@ inductive LMonoTy (TypeRestrictions: Type := LTyRestrict) : Type where
 abbrev LMonoTys := List LMonoTy
 
 @[match_pattern]
-def bitvec (n: Nat) := LMonoTy.tcons "bitvec" [] (LTyRestrict.bitvecdata n)
+def LMonoTy.bitvec (n: Nat) := LMonoTy.tcons "bitvec" [] (LTyRestrict.bitvecdata n)
 
 @[match_pattern]
 def LMonoTy.bool : LMonoTy :=
@@ -361,7 +361,7 @@ instance : ToString LMonoTy where
 private def formatLMonoTy (lmonoty : LMonoTy) : Format :=
   match lmonoty with
   | .ftvar x => toString x
-  | bitvec n => f!"bv{n}"
+  | .bitvec n => f!"bv{n}"
   | .tcons name tys _ =>
     if tys.isEmpty then
       f!"{name}"

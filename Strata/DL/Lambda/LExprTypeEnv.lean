@@ -192,8 +192,8 @@ def KnownType.toLTy (k : KnownType) : LTy :=
 
 def LTy.toKnownType! (lty : LTy) : KnownType :=
   match lty with
+  | .forAll [] (.bitvec _) => { name := "bitvec", arity := 1 }
   | .forAll _ (.tcons name args) => { name, arity := args.length }
-  | .forAll [] (bitvec _) => { name := "bitvec", arity := 1 }
   | _ => panic! s!"Unsupported known type: {lty}"
 
 instance : ToFormat KnownType where
@@ -538,7 +538,7 @@ partial def LMonoTy.resolveAliases (mty : LMonoTy) (T : TEnv Identifier) : (Opti
   | none =>
     match mty with
     | .ftvar _ => (some mty, T)
-    | bitvec _ => (some mty, T)
+    | .bitvec _ => (some mty, T)
     | .tcons name mtys r =>
       let (maybe_mtys, T) := LMonoTys.resolveAliases mtys T.context.aliases T
       match maybe_mtys with
@@ -610,7 +610,7 @@ de-aliased.
 -/
 def LMonoTy.knownInstance (ty : LMonoTy) (ks : KnownTypes) : Bool :=
   match ty with
-  | .ftvar _ | bitvec _ => true
+  | .ftvar _ | .bitvec _ => true
   | .tcons name args _ =>
     (ks.contains { name := name, arity := args.length }) &&
     LMonoTys.knownInstances args ks

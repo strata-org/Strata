@@ -168,7 +168,7 @@ Note that we are type-agnostic here.
 -/
 def denoteBitVec (n : Nat) (e : (LExpr LMonoTy Identifier)) : Option (BitVec n) :=
   match e with
-  | .const x (.some (bitvec n')) =>
+  | .const x (.some (.bitvec n')) =>
     if n == n' then .map (.ofNat n) x.toNat? else none
   | .const x none => .map (.ofNat n) x.toNat?
   | _ => none

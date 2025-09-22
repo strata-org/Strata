@@ -207,11 +207,11 @@ partial def translateLMonoTy (bindings : TransBindings) (arg : Arg) :
   let .type tp := arg
     | TransM.error s!"translateLMonoTy expected type {repr arg}"
   match tp with
-  | .ident q`Boogie.bv1 #[] => pure <| bitvec 1
-  | .ident q`Boogie.bv8 #[] => pure <| bitvec 8
-  | .ident q`Boogie.bv16 #[] => pure <| bitvec 16
-  | .ident q`Boogie.bv32 #[] => pure <| bitvec 32
-  | .ident q`Boogie.bv64 #[] => pure <| bitvec 64
+  | .ident q`Boogie.bv1 #[] => pure <| .bitvec 1
+  | .ident q`Boogie.bv8 #[] => pure <| .bitvec 8
+  | .ident q`Boogie.bv16 #[] => pure <| .bitvec 16
+  | .ident q`Boogie.bv32 #[] => pure <| .bitvec 32
+  | .ident q`Boogie.bv64 #[] => pure <| .bitvec 64
   | .ident i argst =>
       let argst' ← translateLMonoTys bindings (argst.map Arg.type)
       pure <| (.tcons i.name argst'.toList.reverse)
@@ -402,7 +402,7 @@ def dealiasTypeArg (p : Program) (a : Arg) : Arg :=
 def isArithTy : LMonoTy → Bool
 | .int => true
 | .real => true
-| bitvec _ => true
+| .bitvec _ => true
 | _ => false
 
 def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Boogie.Expression.Expr :=
