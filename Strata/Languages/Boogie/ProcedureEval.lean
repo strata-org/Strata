@@ -43,6 +43,7 @@ def eval (E : Env) (p : Procedure) : List (Procedure × Env) :=
   let (vals, E) := E.genFVars (vars.zip var_tys)
   let pVarMap := List.zip vars (var_tys.zip vals)
   let E := E.pushScope pVarMap
+  let E := { E with pathConditions := E.pathConditions.push [] }
   -- Note that the type checker has already done some transformations to ensure
   -- that we only have `old` expressions left for variables.
   -- With `old_var_subst`, we substitute `old <var>` expressions for globals
@@ -74,12 +75,7 @@ def eval (E : Env) (p : Procedure) : List (Procedure × Env) :=
     List.map (fun (label, check) => (.assume label check.expr)) p.spec.preconditions
   let body' := p.body.map Statement.removeLoops
   let ssEs := Statement.eval E old_var_subst (precond_assumes ++ body' ++ postcond_asserts)
-  ssEs.map (fun (ss, sE) =>
-    let proc := { p with body := ss }
-    match sE.error with
-    | none => (proc, { sE with exprEnv.state := sE.exprEnv.state.pop,
-                               pathConditions := sE.pathConditions.pop })
-    | some _ => (proc, sE))
+  ssEs.map (fun (ss, sE) => ({ p with body := ss }, fixupError sE))
 
 ---------------------------------------------------------------------
 

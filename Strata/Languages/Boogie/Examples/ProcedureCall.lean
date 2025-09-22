@@ -56,17 +56,21 @@ VCs:
 Label: new_g_value
 Assumptions:
 (a_positive, ((~Int.Gt $__a1) #0))
+
 Proof Obligation:
 #true
 
 Label: old_g_property
 Assumptions:
 (a_positive, ((~Int.Gt $__a1) #0))
+
 Proof Obligation:
 (((~Int.Sub ((~Int.Add $__counter0) $__a1)) $__a1) == $__counter0)
 
 Label: (Origin_Inc_Requires)a_positive
 Assumptions:
+
+
 Proof Obligation:
 #true
 
@@ -74,6 +78,7 @@ Label: (Origin_Inc_Requires)a_positive
 Assumptions:
 ((Origin_Inc_Ensures)new_g_value, ($__counter6 == ((~Int.Add $__counter3) #8)))
 ((Origin_Inc_Ensures)old_g_property, (((~Int.Sub $__b5) #8) == $__counter3))
+
 Proof Obligation:
 #true
 
@@ -81,20 +86,19 @@ Label: return_value_lemma
 Assumptions:
 ((Origin_Inc_Ensures)new_g_value, ($__counter6 == ((~Int.Add $__counter3) #8)))
 ((Origin_Inc_Ensures)old_g_property, (((~Int.Sub $__b5) #8) == $__counter3)) ((Origin_Inc_Ensures)new_g_value, ($__counter8 == ((~Int.Add $__counter6) #8))) ((Origin_Inc_Ensures)old_g_property, (((~Int.Sub $__b7) #8) == $__counter6))
+
 Proof Obligation:
 ($__b7 == ((~Int.Add $__counter3) #16))
 
 Label: assert_0
 Assumptions:
+
+
 Proof Obligation:
 #true
 
-Wrote problem to vcs/new_g_value.smt2.
 Wrote problem to vcs/old_g_property.smt2.
-Wrote problem to vcs/(Origin_Inc_Requires)a_positive.smt2.
-Wrote problem to vcs/(Origin_Inc_Requires)a_positive.smt2.
 Wrote problem to vcs/return_value_lemma.smt2.
-Wrote problem to vcs/assert_0.smt2.
 ---
 info:
 Obligation: new_g_value

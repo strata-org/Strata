@@ -51,10 +51,11 @@ info: [Strata.Boogie] Type checking succeeded.
 VCs:
 Label: post
 Assumptions:
+
+
 Proof Obligation:
 #true
 
-Wrote problem to vcs/post.smt2.
 ---
 info:
 Obligation: post

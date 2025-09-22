@@ -139,6 +139,12 @@ def LFunc.inputPolyTypes (f : (LFunc Identifier)) : @LTySignature Identifier :=
 def LFunc.outputPolyType (f : (LFunc Identifier)) : LTy :=
   .forAll f.typeArgs f.output
 
+def LFunc.eraseTypes (f : LFunc Identifier) : LFunc Identifier :=
+  { f with
+    body := f.body.map LExpr.eraseTypes,
+    axioms := f.axioms.map LExpr.eraseTypes
+  }
+
 /--
 The type checker and partial evaluator for Lambda is parameterizable by
 a user-provided `Factory`.

@@ -36,8 +36,8 @@ info: var (g : bool) := init_g_0
 (procedure Test :  ((x : bool)) → ((y : bool)))
 modifies: []
 preconditions: ⏎
-postconditions: (Test_ensures_0, (y == x)) (Test_ensures_1, (x == y)) (Test_ensures_2, (g == (~old g)))
-body: y := (((~Bool.Or : (arrow bool (arrow bool bool))) x) x)
+postconditions: (Test_ensures_0, ((y : bool) == (x : bool))) (Test_ensures_1, ((x : bool) == (y : bool))) (Test_ensures_2, ((g : bool) == ((~old : (arrow a a)) (g : bool))))
+body: y := (((~Bool.Or : (arrow bool (arrow bool bool))) (x : bool)) (x : bool))
 
 Errors: #[]
 -/
@@ -51,22 +51,27 @@ info: [Strata.Boogie] Type checking succeeded.
 VCs:
 Label: Test_ensures_0
 Assumptions:
+
+
 Proof Obligation:
 (((~Bool.Or $__x0) $__x0) == $__x0)
 
 Label: Test_ensures_1
 Assumptions:
+
+
 Proof Obligation:
 ($__x0 == ((~Bool.Or $__x0) $__x0))
 
 Label: Test_ensures_2
 Assumptions:
+
+
 Proof Obligation:
 #true
 
 Wrote problem to vcs/Test_ensures_0.smt2.
 Wrote problem to vcs/Test_ensures_1.smt2.
-Wrote problem to vcs/Test_ensures_2.smt2.
 ---
 info:
 Obligation: Test_ensures_0

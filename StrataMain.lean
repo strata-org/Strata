@@ -259,13 +259,29 @@ def printCommand : Command where
     | .program pgm =>
       IO.print <| toString pgm
 
+def diffCommand : Command where
+  name := "diff"
+  args := [ "file1", "file2" ]
+  help := "Check if two program files are syntactically equal."
+  callback := fun fm v => do
+    let ⟨p1,_⟩ ← readFile fm v[0]
+    let ⟨p2,_⟩ ← readFile fm v[1]
+    match p1, p2 with
+    | .program p1, .program p2 =>
+      if p1 == p2 then return ()
+      else exitFailure "Two programs are different"
+    | _, _ =>
+      exitFailure "Cannot compare dialect def with another dialect/program."
+
 def commandList : List Command := [
       checkCommand,
       toIonCommand,
       printCommand,
+      diffCommand,
     ]
 
-def commandMap : Std.HashMap String Command := commandList.foldl (init := {}) fun m c => m.insert c.name c
+def commandMap : Std.HashMap String Command :=
+  commandList.foldl (init := {}) fun m c => m.insert c.name c
 
 def main (args : List String) : IO Unit := do
   match args with

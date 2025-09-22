@@ -53,16 +53,22 @@ info: [Strata.Boogie] Type checking succeeded.
 VCs:
 Label: good_assert
 Assumptions:
+
+
 Proof Obligation:
 (∀ (~Bool.Not (%0 == ((~Int.Add %0) #1))))
 
 Label: good
 Assumptions:
+
+
 Proof Obligation:
 (∀ (∃ (((~Int.Add ((~Int.Add $__x0) #1)) ((~Int.Add %0) %1)) == ((~Int.Add %1) ((~Int.Add %0) ((~Int.Add $__x0) #1))))))
 
 Label: bad
 Assumptions:
+
+
 Proof Obligation:
 (∀ ((~Int.Lt %0) $__x0))
 
@@ -108,28 +114,25 @@ info: [Strata.Boogie] Type checking succeeded.
 VCs:
 Label: trigger_assert
 Assumptions:
-(f_and_g2, (∀ (∀ ((~Int.Lt ((~g %1) %0)) (~f %1)))))
-(f_and_g, (∀ (∀ ((~Int.Lt ((~g %1) %0)) (~f %1)))))
-(g_neg, (∀ (∀ ((~Bool.Implies ((~Int.Gt %1) #0)) ((~Int.Lt ((~g %1) %0)) #0)))))
+
 (f_pos, (∀ ((~Int.Gt (~f %0)) #0)))
+(g_neg, (∀ (∀ ((~Bool.Implies ((~Int.Gt %1) #0)) ((~Int.Lt ((~g %1) %0)) #0))))) (f_and_g, (∀ (∀ ((~Int.Lt ((~g %1) %0)) (~f %1))))) (f_and_g2, (∀ (∀ ((~Int.Lt ((~g %1) %0)) (~f %1)))))
 Proof Obligation:
 ((~Int.Gt (~f $__x0)) #0)
 
 Label: multi_trigger_assert
 Assumptions:
-(f_and_g2, (∀ (∀ ((~Int.Lt ((~g %1) %0)) (~f %1)))))
-(f_and_g, (∀ (∀ ((~Int.Lt ((~g %1) %0)) (~f %1)))))
-(g_neg, (∀ (∀ ((~Bool.Implies ((~Int.Gt %1) #0)) ((~Int.Lt ((~g %1) %0)) #0)))))
+
 (f_pos, (∀ ((~Int.Gt (~f %0)) #0)))
+(g_neg, (∀ (∀ ((~Bool.Implies ((~Int.Gt %1) #0)) ((~Int.Lt ((~g %1) %0)) #0))))) (f_and_g, (∀ (∀ ((~Int.Lt ((~g %1) %0)) (~f %1))))) (f_and_g2, (∀ (∀ ((~Int.Lt ((~g %1) %0)) (~f %1)))))
 Proof Obligation:
 (∀ ((~Int.Lt ((~g $__x0) %0)) (~f $__x0)))
 
 Label: f_and_g
 Assumptions:
-(f_and_g2, (∀ (∀ ((~Int.Lt ((~g %1) %0)) (~f %1)))))
-(f_and_g, (∀ (∀ ((~Int.Lt ((~g %1) %0)) (~f %1)))))
-(g_neg, (∀ (∀ ((~Bool.Implies ((~Int.Gt %1) #0)) ((~Int.Lt ((~g %1) %0)) #0)))))
+
 (f_pos, (∀ ((~Int.Gt (~f %0)) #0)))
+(g_neg, (∀ (∀ ((~Bool.Implies ((~Int.Gt %1) #0)) ((~Int.Lt ((~g %1) %0)) #0))))) (f_and_g, (∀ (∀ ((~Int.Lt ((~g %1) %0)) (~f %1))))) (f_and_g2, (∀ (∀ ((~Int.Lt ((~g %1) %0)) (~f %1)))))
 Proof Obligation:
 ((~Int.Lt ((~g (~f $__x0)) $__x0)) #0)
 
