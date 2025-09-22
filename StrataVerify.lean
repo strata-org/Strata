@@ -68,10 +68,10 @@ def main (args : List String) : IO UInt32 := do
           return 0
       else if opts.typeCheckOnly then
         let ans := if file.endsWith ".csimp.st" then
-                    C_Simp.typeCheck pgm opts
+                     C_Simp.typeCheck pgm opts
                    else
-                    -- Boogie.
-                    typeCheck pgm opts
+                     -- Boogie.
+                     typeCheck pgm opts
         match ans with
         | .error e =>
           println! f!"Type checking error: {e}"
