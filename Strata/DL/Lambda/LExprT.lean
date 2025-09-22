@@ -386,43 +386,22 @@ partial def fromLExprAux.abs (T : (TEnv Identifier)) (bty : Option LMonoTy) (e :
       | .ok (bty, T) => .ok (bty, T)
     | none =>
       let (xtyid, T) := TEnv.genTyVar T
-      -- dbg_trace f!"[fromLExprAux.abs]\n e: {e}\n xtyid: {xtyid}"
       let xty := (LMonoTy.ftvar xtyid)
       .ok (xty, T)
-  -- let (xtyid, T) := TEnv.genTyVar T
-  -- -- dbg_trace f!"[fromLExprAux.abs]\n e: {e}\n xtyid: {xtyid}"
-  -- let xty := (LMonoTy.ftvar xtyid)
-  -- let T ← match bty with
-  --   | none => .ok T
-  --   | some bty =>
-  --     let ans := LMonoTy.instantiateWithCheck bty T
-  --     match ans with
-  --     | .error e => .error e
-  --     | .ok (bty, T) =>
-  --         let constraints := [(xty, bty)]
-  --         let S ← Constraints.unify constraints T.state.substInfo
-  --         .ok (T.updateSubst S)
   let T := T.insertInContext xv (.forAll [] xty)
   -- Construct `e'` from `e`, where the bound variable has been replaced by
   -- `xv`.
   let e' := LExpr.varOpen 0 (xv, some xty) e
   let (et, T) ← fromLExprAux T e'
   let etclosed := .varClose 0 xv et
-  -- let etclosed := LExprT.applySubst etclosed T.state.substInfo.subst
   let ety := etclosed.toLMonoTy
-  -- dbg_trace f!"[fromLExprAux.abs]\n S: {T.state.substInfo.subst}"
-  -- dbg_trace f!"[fromLExprAux.abs]\n mty: {(LMonoTy.tcons "arrow" [xty, ety])}"
   let mty := LMonoTy.subst T.state.substInfo.subst (.tcons "arrow" [xty, ety])
   -- Safe to erase fresh variable from context after closing the expressions.
+  -- Note that we don't erase `xtyid` (if it was created) from the substitution
+  -- list because it may occur in `etclosed`, which hasn't undergone a
+  -- substitution. We could, of course, substitute `xtyid` in `etclosed`, but
+  -- that'd require crawling over that expression, which could be expensive.
   let T := T.eraseFromContext xv
-  -- Also safe to erase fresh type variable, if one was needed.
-  -- let T := match fresh_name with
-  --   | none => T
-  --   | some fresh_name =>
-  --     have hWF : SubstWF (Map.remove T.state.substInfo.subst fresh_name) := by
-  --       apply @SubstWF_of_remove T.state.substInfo.subst fresh_name T.state.substInfo.isWF
-  --    { T with state.substInfo.subst := T.state.substInfo.subst.remove fresh_name,
-  --             state.substInfo.isWF := hWF }
   .ok ((.abs etclosed mty), T)
 
 partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (bty : Option LMonoTy)
@@ -431,30 +410,16 @@ partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (bt
   let (xv, T) := HasGen.genVar T
   -- For the bound variable, use type annotation if present. Otherwise,
   -- generate a fresh type variable.
-  let (_fresh_name, xty, T) ← match bty with
+  let (xty, T) ← match bty with
     | some bty =>
       let ans := LMonoTy.instantiateWithCheck bty T
       match ans with
       | .error e => .error e
-      | .ok (bty, T) => .ok (none, bty, T)
+      | .ok (bty, T) => .ok (bty, T)
     | none =>
       let (xtyid, T) := TEnv.genTyVar T
-      -- dbg_trace f!"[fromLExprAux.quant]\n e: {e}\n xt': {xtyid}"
       let xty := (LMonoTy.ftvar xtyid)
-      .ok (some xtyid, xty, T)
-  -- let (xtyid, T) := TEnv.genTyVar T
-  -- dbg_trace f!"[fromLExprAux.quant]\n e: {e}\n xtyid: {xtyid}"
-  -- let xty := (LMonoTy.ftvar xtyid)
-  -- let T ← match bty with
-  --   | none => .ok T
-  --   | some bty =>
-  --     let ans := LMonoTy.instantiateWithCheck bty T
-  --     match ans with
-  --     | .error e => .error e
-  --     | .ok (bty, T) =>
-  --         let constraints := [(xty, bty)]
-  --         let S ← Constraints.unify constraints T.state.substInfo
-  --         .ok (T.updateSubst S)
+      .ok (xty, T)
   let T := T.insertInContext xv (.forAll [] xty)
   -- Construct new expressions, where the bound variable has been replaced by
   -- `xv`.
@@ -462,20 +427,14 @@ partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (bt
   let triggers' := LExpr.varOpen 0 (xv, some xty) triggers
   let (et, T) ← fromLExprAux T e'
   let (triggersT, T) ← fromLExprAux T triggers'
-  -- let et := LExprT.applySubst et T.state.substInfo.subst
-  -- let triggersT := LExprT.applySubst triggersT T.state.substInfo.subst
   let ety := et.toLMonoTy
   let xty := LMonoTy.subst T.state.substInfo.subst xty
   let etclosed := LExprT.varClose 0 xv et
   let triggersClosed := LExprT.varClose 0 xv triggersT
   -- Safe to erase fresh variable from context after closing the expressions.
+  -- Again, as in `abs`, we do not erase `xtyid` (if it was created) from the
+  -- substitution list.
   let T := T.eraseFromContext xv
-  -- Also safe to erase fresh type variable, if one was needed.
-  -- let T :=
-  --     have hWF : SubstWF (Map.remove T.state.substInfo.subst xtyid) := by
-  --       apply @SubstWF_of_remove T.state.substInfo.subst xtyid T.state.substInfo.isWF
-  --    { T with state.substInfo.subst := T.state.substInfo.subst.remove xtyid,
-  --             state.substInfo.isWF := hWF }
   if ety != LMonoTy.bool then do
     .error f!"Quantifier body has non-Boolean type: {ety}"
   else
@@ -489,7 +448,6 @@ partial def fromLExprAux.app (T : (TEnv Identifier)) (e1 e2 : (LExpr LMonoTy Ide
   -- `freshty` is the type variable whose identifier is `fresh_name`. It denotes
   -- the type of `(.app e1 e2)`.
   let (fresh_name, T) := TEnv.genTyVar T
-  -- dbg_trace f!"[fromLExprAux.app]\n e1: {e1}\n e2: {e2}\n fresh_name: {fresh_name}"
   let freshty := (.ftvar fresh_name)
   -- `ty1` must be of the form `ty2 → freshty`.
   let constraints := [(ty1, (.tcons "arrow" [ty2, freshty]))]
@@ -497,7 +455,7 @@ partial def fromLExprAux.app (T : (TEnv Identifier)) (e1 e2 : (LExpr LMonoTy Ide
   -- The type of `(.app e1 e2)` is `freshty`, with appropriate substitutions
   -- applied.
   let mty := LMonoTy.subst S.subst freshty
-  -- `freshty` can now be safely removed from the substitutions.
+  -- `freshty` can now be safely removed from the substitution list.
   have hWF : SubstWF (Map.remove S.subst fresh_name) := by
     apply @SubstWF_of_remove S.subst fresh_name S.isWF
   let S := { S with subst := S.subst.remove fresh_name, isWF := hWF }

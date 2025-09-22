@@ -271,6 +271,15 @@ end Boogie
 
 namespace Strata
 
+def typeCheck (env : Program) (options : Options := Options.default) :
+  Except Std.Format Boogie.Program := do
+  let (program, errors) := TransM.run (translateProgram env)
+  if errors.isEmpty then
+    -- dbg_trace f!"AST: {program}"
+    Boogie.typeCheck options program
+  else
+    .error s!"DDM Transform Error: {repr errors}"
+
 def verify (smtsolver : String) (env : Program)
     (options : Options := Options.default) : IO Boogie.VCResults := do
   let (program, errors) := TransM.run (translateProgram env)

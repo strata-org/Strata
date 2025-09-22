@@ -123,6 +123,11 @@ def to_boogie(program : C_Simp.Program) : Boogie.Program :=
 def C_Simp.get_program (p : Strata.Program) : C_Simp.Program :=
   (Strata.C_Simp.TransM.run (Strata.C_Simp.translateProgram (p.commands))).fst
 
+def C_Simp.typeCheck (p : Strata.Program) (options : Options := Options.default):
+  Except Std.Format Boogie.Program := do
+  let program := C_Simp.get_program p
+  Boogie.typeCheck options (to_boogie program)
+
 def C_Simp.verify (smtsolver : String) (p : Strata.Program) (options : Options := Options.default):
   IO Boogie.VCResults := do
   let program := C_Simp.get_program p

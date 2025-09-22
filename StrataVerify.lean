@@ -46,7 +46,7 @@ def usageMessage : Std.Format :=
   {Std.Format.line}  \
   --verbose                   Print extra information during analysis.{Std.Format.line}  \
   --check                     Process up until SMT generation, but don't solve.{Std.Format.line} \
-  --type-check                Exit after Lambda type inference.{Std.Format.line} \
+  --type-check                Exit after semantic dialect's type inference/checking.{Std.Format.line} \
   --parse-only                Exit after DDM parsing and type checking.{Std.Format.line}  \
   --stop-on-first-error       Exit after the first verification error.{Std.Format.line}  \
   --solver-timeout <seconds>  Set the solver time limit per proof goal."
@@ -66,47 +66,47 @@ def main (args : List String) : IO UInt32 := do
       println! s!"Successfully parsed."
       if opts.parseOnly then
           return 0
-      let vcResults ← if file.endsWith ".csimp.st" then
-        C_Simp.verify "z3" pgm opts
-      else
-        -- Boogie.
-        if opts.typeCheckOnly then
-          let (program, errors) := TransM.run (translateProgram pgm)
-          if !errors.isEmpty then
-            println! f!"DDM translation error: {errors}"
-            return 1
-          else
-            if opts.verbose then println! f!"DDM translation done."
-            let ans := Boogie.typeCheck opts program
-            match ans with
-            | .error e =>
-              println! f!"Type checking error: {e}"
-              return 1
-            | .ok _ =>
-              println! f!"Program typechecked."
-              return 0
-        else -- !typeCheckOnly
-          verify "z3" pgm opts
-      for vcResult in vcResults do
-        println! f!"{vcResult.obligation.label}: {vcResult.result}"
-      let success := vcResults.all isSuccessVCResult
-      if success && !opts.checkOnly then
-        println! f!"Proved all {vcResults.size} goals."
-        return 0
-      else if success && opts.checkOnly then
-        println! f!"Skipping verification."
-        return 0
-      else
-        let provedGoalCount := (vcResults.filter isSuccessVCResult).size
-        let failedGoalCount := (vcResults.filter isFailureVCResult).size
-        println! f!"Finished with {provedGoalCount} goals proved, {failedGoalCount} failed."
-        return 1
+      else if opts.typeCheckOnly then
+        let ans := if file.endsWith ".csimp.st" then
+                    C_Simp.typeCheck pgm opts
+                   else
+                    -- Boogie.
+                    typeCheck pgm opts
+        match ans with
+        | .error e =>
+          println! f!"Type checking error: {e}"
+          return 1
+        | .ok _ =>
+          println! f!"Program typechecked."
+          return 0
+      else -- !typeCheckOnly
+        let vcResults ←
+            if file.endsWith ".csimp.st" then
+              C_Simp.verify "z3" pgm opts
+            else
+              verify "z3" pgm opts
+        for vcResult in vcResults do
+          println! f!"{vcResult.obligation.label}: {vcResult.result}"
+        let success := vcResults.all isSuccessVCResult
+        if success && !opts.checkOnly then
+          println! f!"Proved all {vcResults.size} goals."
+          return 0
+        else if success && opts.checkOnly then
+          println! f!"Skipping verification."
+          return 0
+        else
+          let provedGoalCount := (vcResults.filter isSuccessVCResult).size
+          let failedGoalCount := (vcResults.filter isFailureVCResult).size
+          println! f!"Finished with {provedGoalCount} goals proved, {failedGoalCount} failed."
+          return 1
+    -- Strata.Elab.elabProgram
     | .error errors =>
       for (_, e) in errors do
         let msg ← e.toString
         println! s!"Error: {msg}"
       println! f!"Finished with {errors.size} errors."
       return 1
+  -- parseResult
   | .error msg => do
     println! msg
     println! usageMessage
