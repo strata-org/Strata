@@ -208,8 +208,8 @@ Note that this function needs the entire program to type-check statements to
 check whether `goto` targets exist (or .none for statements that don't occur
 inside a procedure).
 -/
-def typeCheck (T : TEnv BoogieIdent) (P : Program) (op : Option Procedure) (ss : List Statement) :
-  Except Format (List Statement × TEnv BoogieIdent) := do
+def typeCheck (T : TEnv BoogieLParams) (P : Program) (op : Option Procedure) (ss : List Statement) :
+  Except Format (List Statement × TEnv BoogieLParams) := do
   let (ss', T) ← typeCheckAux T P op ss
   let context := TContext.subst T.context T.state.substInfo.subst
   let T := { T with context := context }

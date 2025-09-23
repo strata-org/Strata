@@ -31,6 +31,11 @@ instance : Imperative.HasVarsPure Expression Expression.Expr where
 instance : Inhabited Expression.Expr where
   default := .const () "default" none
 
+-- HasGen instance for the Expression type structure
+instance : Lambda.HasGen ⟨ExpressionMetadata, BoogieIdent⟩ where
+  genVar T := let (sym, state') := (Lambda.TState.genExprSym T.state)
+              (BoogieIdent.temp sym, { T with state := state' })
+
 ---------------------------------------------------------------------
 
 end Boogie

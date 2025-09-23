@@ -113,11 +113,42 @@ def replaceMetadata {T : LExprParamsT} (e : LExpr T) (f : T.base.Metadata → T.
     let e2 := replaceMetadata e2 f
     .eq (f m) e1 e2
 
+def replaceUserProvidedType {T : LExprParamsT} (e : LExpr T) (f : T.TypeType → T.TypeType) : LExpr T :=
+  match e with
+  | .const m c uty =>
+    .const m c (uty.map f)
+  | .op m o uty =>
+    .op m o (uty.map f)
+  | .bvar m b =>
+    .bvar m b
+  | .fvar m x uty =>
+    .fvar m x (uty.map f)
+  | .app m e1 e2 =>
+    let e1 := replaceUserProvidedType e1 f
+    let e2 := replaceUserProvidedType e2 f
+    .app m e1 e2
+  | .abs m uty e =>
+    let e := replaceUserProvidedType e f
+    .abs m (uty.map f) e
+  | .quant m qk argTy tr e =>
+    let e := replaceUserProvidedType e f
+    let tr := replaceUserProvidedType tr f
+    .quant m qk (argTy.map f) tr e
+  | .ite m c t f_expr =>
+    let c := replaceUserProvidedType c f
+    let t := replaceUserProvidedType t f
+    let f_expr := replaceUserProvidedType f_expr f
+    .ite m c t f_expr
+  | .eq m e1 e2 =>
+    let e1 := replaceUserProvidedType e1 f
+    let e2 := replaceUserProvidedType e2 f
+    .eq m e1 e2
+
 /--
-Apply type substitution `S` to `LExprT e`.
+Apply type substitution `S` to `LExpr e`.
 -/
-def applySubst {T : LExprParamsT} (e : LExprT T) (S : Subst) : LExprT T :=
-  replaceMetadata e (fun m: T.typed.base.Metadata => {m with type := LMonoTy.subst S m.type})
+def applySubst {T : LExprParams} (e : LExpr T.mono) (S : Subst) : LExpr T.mono :=
+  replaceUserProvidedType e (fun t: LMonoTy => LMonoTy.subst S t)
 
 /--
 This function turns some free variables into bound variables to build an
