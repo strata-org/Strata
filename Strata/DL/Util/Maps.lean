@@ -24,6 +24,21 @@ def Maps.format' [ToFormat (Map α β)] (ms : Maps α β) : Format :=
 instance[ToFormat (Map α β)] : ToFormat (Maps α β) where
   format := Maps.format'
 
+def Maps.keys (ms : Maps α β) : List α :=
+  match ms with
+  | [] => []
+  | m :: mrest => m.keys ++ Maps.keys mrest
+
+def Maps.values (ms : Maps α β) : List β :=
+  match ms with
+  | [] => []
+  | m :: mrest => m.values ++ Maps.values mrest
+
+def Maps.isEmpty (m : Maps α β) : Bool :=
+  match m with
+  | [] => true
+  | _ => false
+
 /--
 Add Map `m` to the beginning of Maps `ms`.
 -/
@@ -97,6 +112,20 @@ def Maps.findD [DecidableEq α] (ms : Maps α β) (x : α) (d : β) : β :=
     | some v => v
 
 /--
+Remove the first occurence of element with key `a'` in `m`, starting from the
+newest map.
+-/
+def Maps.remove [DecidableEq α] [BEq (Map α β)] (m : Maps α β) (a' : α) : Maps α β :=
+  match m with
+  | [] => []
+  | m :: mrest =>
+    let m' := Map.remove m a'
+    if m' == m then
+      m :: (remove mrest a')
+    else
+      m' :: (remove mrest a')
+
+/--
 Erase `x` and its associated value from `ms`.
 -/
 def Maps.erase [DecidableEq α] (ms : Maps α β) (x : α) : Maps α β :=
@@ -159,5 +188,48 @@ def Maps.addInOldest [DecidableEq α] (ms : Maps α β) (xs : List α) (vs : Lis
   | x :: xrest, v :: vrest =>
     let ms := Maps.insertInOldest ms x v
     Maps.addInOldest ms xrest vrest
+
+---------------------------------------------------------------------
+
+theorem Maps.find?_mem_keys [DecidableEq α] (m : Maps α β)
+  (h : Maps.find? m k = some v) :
+  k ∈ Maps.keys m := by
+  induction m with
+  | nil => simp_all [Maps.find?]
+  | cons head tail ih =>
+    simp [Maps.find?] at h
+    split at h
+    · simp [Maps.keys]; simp_all
+    · rename_i _ v1 heq
+      simp at h; subst v1
+      simp [Maps.keys]
+      have := @Map.find?_mem_keys α β k v _ head heq
+      simp_all
+  done
+
+theorem Maps.find?_mem_values [DecidableEq α] (m : Maps α β)
+  (h : Maps.find? m k = some v) :
+  v ∈ Maps.values m := by
+  induction m with
+  | nil => simp [Maps.find?] at h
+  | cons head tail ih =>
+    simp [Maps.find?] at h
+    split at h
+    · simp [Maps.values]; simp_all
+    · rename_i _ v1 heq
+      simp at h; subst v1
+      simp [Maps.values]
+      have := @Map.find?_mem_values α β k v _ head heq
+      simp_all
+
+theorem Maps.find?_of_not_mem_values [DecidableEq α] (S : Maps α β)
+  (h1 : Maps.find? S i = none) : i ∉ Maps.keys S := by
+  induction S; all_goals simp_all [Maps.keys]
+  rename_i _ head tail ih
+  simp [Maps.find?] at h1
+  split at h1 <;> simp_all
+  rename_i h
+  exact Map.find?_of_not_mem_values head h
+  done
 
 ---------------------------------------------------------------------

@@ -255,6 +255,16 @@ Replace the global substitution in `T.state.subst` with `S`.
 def TEnv.updateSubst (T : (TEnv Identifier)) (S : SubstInfo) : (TEnv Identifier) :=
   { T with state.substInfo := S }
 
+def TEnv.pushEmptySubstScope (T : (TEnv Identifier)) : (TEnv Identifier) :=
+  let new_subst := T.state.substInfo.subst.push []
+  let newS := { subst := new_subst, isWF := sorry }
+  { T with state.substInfo := newS }
+
+def TEnv.popSubstScope (T : (TEnv Identifier)) : (TEnv Identifier) :=
+  let new_subst := T.state.substInfo.subst.pop
+  let newS := { subst := new_subst, isWF := sorry }
+  { T with state.substInfo := newS }
+
 def TEnv.pushEmptyContext (T : (TEnv Identifier)) : (TEnv Identifier) :=
   let ctx := T.context
   let ctx' := { ctx with types := ctx.types.push [] }
@@ -377,7 +387,7 @@ def LMonoTys.instantiate (ids : List TyIdentifier) (mtys : LMonoTys) (T : (TEnv 
   LMonoTys × (TEnv Identifier) :=
   let (freshtvs, T) := TEnv.genTyVars ids.length T
   let S := List.zip ids (List.map (fun tv => (LMonoTy.ftvar tv)) freshtvs)
-  (LMonoTys.subst S mtys, T)
+  (LMonoTys.subst [S] mtys, T)
 
 omit [DecidableEq Identifier] in
 theorem LMonoTys.instantiate_length :
@@ -402,7 +412,7 @@ def LTy.instantiate (ty : LTy) (T : (TEnv Identifier)) : LMonoTy × (TEnv Identi
   | .forAll xs lty' =>
     let (freshtvs, T) := TEnv.genTyVars xs.length T
     let S := List.zip xs (List.map (fun tv => (.ftvar tv)) freshtvs)
-    (LMonoTy.subst S lty', T)
+    (LMonoTy.subst [S] lty', T)
 
 instance : Inhabited (Option LMonoTy × TEnv Identifier) where
   default := (none, TEnv.default)
@@ -444,12 +454,11 @@ def LMonoTy.aliasDef? (mty : LMonoTy) (T : (TEnv Identifier)) : (Option LMonoTy 
 /--
 info: Ans: some (Foo $__ty0 (BarAlias $__ty0 $__ty0))
 Subst:
-($__ty1, (BarAlias $__ty0 $__ty0))
-(p, $__ty0)
+[(p, $__ty0) ($__ty1, (BarAlias $__ty0 $__ty0))]
 -/
 #guard_msgs in
 open LTy.Syntax in
-#eval let (ans, T) := LMonoTy.aliasDef?
+#eval! let (ans, T) := LMonoTy.aliasDef?
         mty[FooAlias %p (BarAlias %p %p)]
         { @TEnv.default String with
           context := { aliases := [{ typeArgs := ["x", "y"],
@@ -466,7 +475,7 @@ open LTy.Syntax in
 /-- info: some (Foo $__ty0 (BarAlias q $__ty0)) -/
 #guard_msgs in
 open LTy.Syntax in
-#eval LMonoTy.aliasDef?
+#eval! LMonoTy.aliasDef?
         mty[FooAlias %p (BarAlias %q %p)]
         { @TEnv.default String with
           context := { aliases := [{ typeArgs := ["x", "y"],
@@ -482,7 +491,7 @@ open LTy.Syntax in
 /-- info: some int -/
 #guard_msgs in
 open LTy.Syntax in
-#eval LMonoTy.aliasDef? mty[myInt]
+#eval! LMonoTy.aliasDef? mty[myInt]
       { @TEnv.default String with context :=
                   { aliases := [{ typeArgs := [],
                                   name := "myInt",
@@ -492,7 +501,7 @@ open LTy.Syntax in
 /-- info: some bool -/
 #guard_msgs in
 open LTy.Syntax in
-#eval LMonoTy.aliasDef?
+#eval! LMonoTy.aliasDef?
         mty[BadBoolAlias %p %q]
         { @TEnv.default String with
           context := { aliases := [{ typeArgs := ["x", "y"],
@@ -503,7 +512,7 @@ open LTy.Syntax in
 /-- info: none -/
 #guard_msgs in
 open LTy.Syntax in
-#eval LMonoTy.aliasDef? mty[myInt]
+#eval! LMonoTy.aliasDef? mty[myInt]
                     { @TEnv.default String with context := { aliases := [{
                          typeArgs := ["a"],
                          name := "myInt",
@@ -513,7 +522,7 @@ open LTy.Syntax in
 /-- info: some (myDef int) -/
 #guard_msgs in
 open LTy.Syntax in
-#eval LMonoTy.aliasDef? mty[myAlias int bool]
+#eval! LMonoTy.aliasDef? mty[myAlias int bool]
                     { @TEnv.default String with
                     context := {
                       aliases := [{
@@ -564,14 +573,11 @@ end
 /--
 info: De-aliased type: some (Foo $__ty0 (Bar $__ty3 $__ty3))
 Subst:
-($__ty2, $__ty3)
-($__ty0, $__ty3)
-($__ty1, (BarAlias $__ty3 $__ty3))
-(p, $__ty3)
+[(p, $__ty3) ($__ty1, (BarAlias $__ty3 $__ty3)) ($__ty0, $__ty3) ($__ty2, $__ty3)]
 -/
 #guard_msgs in
 open LTy.Syntax in
-#eval let (ty, T) := LMonoTy.resolveAliases
+#eval! let (ty, T) := LMonoTy.resolveAliases
         mty[FooAlias %p (BarAlias %p %p)]
         { @TEnv.default String with
           context := { aliases := [{ typeArgs := ["x", "y"],
