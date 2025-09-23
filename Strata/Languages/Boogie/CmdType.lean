@@ -15,9 +15,6 @@ namespace Boogie
 open Lambda Imperative
 open Std (ToFormat Format format)
 
--- Local instance for LFunc formatting
-instance : ToFormat (LFunc BoogieLParams) where
-  format f := f!"func {f.name}"
 ---------------------------------------------------------------------
 
 namespace CmdType
