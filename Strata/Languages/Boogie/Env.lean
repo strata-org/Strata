@@ -13,9 +13,28 @@ namespace Boogie
 open Std (ToFormat Format format)
 open Imperative
 
--- Type class instances needed for this file
-instance : ToFormat Expression.EvalEnv where
-  format _ := "⟨EvalEnv⟩"
+instance : ToFormat ExpressionMetadata :=
+  show ToFormat Unit from inferInstance
+
+-- ToFormat instance for Expression.Expr
+instance : ToFormat Expression.Expr := by
+  show ToFormat (Lambda.LExpr ⟨⟨ExpressionMetadata, BoogieIdent⟩, Lambda.LMonoTy⟩)
+  infer_instance
+
+-- Custom ToFormat instance for our specific Scope type to get the desired formatting
+private def formatScope (m : Map BoogieIdent (Option Lambda.LMonoTy × Expression.Expr)) : Std.Format :=
+  match m with
+  | [] => ""
+  | [(k, (ty, v))] => go k ty v
+  | (k, (ty, v)) :: rest =>
+    go k ty v ++ Format.line ++ formatScope rest
+  where go k ty v :=
+    match ty with
+    | some ty => f!"({k} : {ty}) → {v}"
+    | none => f!"{k} → {v}"
+
+instance : ToFormat (Map BoogieIdent (Option Lambda.LMonoTy × Expression.Expr)) where
+  format := formatScope
 
 instance : Inhabited ExpressionMetadata :=
   show Inhabited Unit from inferInstance

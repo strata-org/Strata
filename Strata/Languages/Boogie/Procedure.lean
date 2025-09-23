@@ -41,6 +41,9 @@ instance : Repr (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : LExprPar
 instance : Repr (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : LExprParamsT).TypeType :=
   show Repr LMonoTy from inferInstance
 
+instance : Repr Expression.Expr :=
+  show Repr Expression.Expr from inferInstance
+
 /-! # Boogie Procedures -/
 
 structure Procedure.Header where

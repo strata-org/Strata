@@ -174,29 +174,31 @@ def mapUpdateFunc : LFunc MetadataBoogieIdent :=
                     ))))]
      ]
    }
+instance : Coe String BoogieLParams.Identifier where
+  coe | s => .unres s
 
-def emptyTriggersFunc : LFunc BoogieIdent :=
+def emptyTriggersFunc : LFunc BoogieLParams :=
     { name := "Triggers.empty",
       typeArgs := [],
       inputs := [],
       output := mty[Triggers],
       concreteEval := none }
 
-def addTriggerGroupFunc : LFunc BoogieIdent :=
+def addTriggerGroupFunc : LFunc BoogieLParams :=
     { name := "Triggers.addGroup",
       typeArgs := [],
       inputs := [("g", mty[TriggerGroup]), ("t", mty[Triggers])],
       output := mty[Triggers],
       concreteEval := none }
 
-def emptyTriggerGroupFunc : LFunc BoogieIdent :=
+def emptyTriggerGroupFunc : LFunc BoogieLParams :=
     { name := "TriggerGroup.empty",
       typeArgs := [],
       inputs := [],
       output := mty[TriggerGroup],
       concreteEval := none }
 
-def addTriggerFunc : LFunc BoogieIdent :=
+def addTriggerFunc : LFunc BoogieLParams :=
     { name := "TriggerGroup.addTrigger",
       typeArgs := ["a"],
       inputs := [("x", mty[%a]), ("t", mty[TriggerGroup])],
@@ -212,14 +214,14 @@ macro "ExpandBVOpFuncNames" "[" sizes:num,* "]" : term => do
     allOps := allOps ++ ops.toArray
   `([$(allOps),*])
 
-def bvConcatFunc (size : Nat) : LFunc BoogieIdent :=
+def bvConcatFunc (size : Nat) : LFunc BoogieLParams :=
   { name := s!"Bv{size}.Concat",
     typeArgs := [],
     inputs := [("x", .bitvec size), ("y", .bitvec size)]
     output := .bitvec (size*2),
     concreteEval := none }
 
-def bvExtractFunc (size hi lo: Nat) : LFunc BoogieIdent :=
+def bvExtractFunc (size hi lo: Nat) : LFunc BoogieLParams :=
   { name := s!"Bv{size}.Extract_{hi}_{lo}",
     typeArgs := [],
     inputs := [("x", .bitvec size)]
@@ -306,6 +308,8 @@ elab "DefBVOpFuncExprs" "[" sizes:num,* "]" : command => do
       elabCommand (← `(def $opName : Expression.Expr := ($funcName).opExpr))
 
 DefBVOpFuncExprs [1, 8, 16, 32, 64]
+instance : Inhabited BoogieLParams.Metadata where
+  default := ()
 
 def bv8ConcatOp : Expression.Expr := bv8ConcatFunc.opExpr
 def bv16ConcatOp : Expression.Expr := bv16ConcatFunc.opExpr
@@ -325,6 +329,9 @@ def emptyTriggersOp : Expression.Expr := emptyTriggersFunc.opExpr
 def addTriggerGroupOp : Expression.Expr := addTriggerGroupFunc.opExpr
 def emptyTriggerGroupOp : Expression.Expr :=  emptyTriggerGroupFunc.opExpr
 def addTriggerOp : Expression.Expr := addTriggerFunc.opExpr
+
+instance : Inhabited (⟨ExpressionMetadata, BoogieIdent⟩: LExprParams).Metadata where
+  default := ()
 
 def intAddOp : Expression.Expr := intAddFunc.opExpr
 def intSubOp : Expression.Expr := intSubFunc.opExpr
@@ -357,10 +364,10 @@ def mapSelectOp : Expression.Expr := mapSelectFunc.opExpr
 def mapUpdateOp : Expression.Expr := mapUpdateFunc.opExpr
 
 def mkTriggerGroup (ts : List Expression.Expr) : Expression.Expr :=
-  ts.foldl (fun g t => .app (.app addTriggerOp t) g) emptyTriggerGroupOp
+  ts.foldl (fun g t => .app () (.app () addTriggerOp t) g) emptyTriggerGroupOp
 
 def mkTriggerExpr (ts : List (List Expression.Expr)) : Expression.Expr :=
   let groups := ts.map mkTriggerGroup
-  groups.foldl (fun gs g => .app (.app addTriggerGroupOp g) gs) emptyTriggersOp
+  groups.foldl (fun gs g => .app () (.app () addTriggerGroupOp g) gs) emptyTriggersOp
 
 end Boogie

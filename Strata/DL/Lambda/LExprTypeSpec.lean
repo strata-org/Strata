@@ -158,8 +158,8 @@ example : LExpr.HasType {} esM[#-1] t[int] := by
   simp +ground
 
 example : LExpr.HasType { types := [[("x", t[∀a. %a])]]} esM[x] t[int] := by
-  have h_tinst := @LExpr.HasType.tinst (Identifier := String) _ { types := [[("x", t[∀a. %a])]]} esM[x] t[∀a. %a] t[int] "a" mty[int]
-  have h_tvar := @LExpr.HasType.tvar (Identifier := String) _ { types := [[("x", t[∀a. %a])]]} "x" t[∀a. %a]
+  have h_tinst := @LExpr.HasType.tinst (T := ⟨Unit, String⟩) _ { types := [[("x", t[∀a. %a])]]} esM[x] t[∀a. %a] t[int] "a" mty[int]
+  have h_tvar := @LExpr.HasType.tvar (T := ⟨Unit, String⟩) _ { types := [[("x", t[∀a. %a])]]} () "x" t[∀a. %a]
   simp +ground at h_tvar
   simp [h_tvar] at h_tinst
   simp +ground at h_tinst
@@ -169,7 +169,7 @@ example : LExpr.HasType { types := [[("x", t[∀a. %a])]]} esM[x] t[int] := by
 example : LExpr.HasType { types := [[("m", t[∀a. %a → int])]]}
                         esM[(m #true)]
                         t[int] := by
-  apply LExpr.HasType.tapp _ _ _ _ t[bool] <;> (try simp +ground)
+  apply LExpr.HasType.tapp _ _ _ _ _ t[bool] <;> (try simp +ground)
   <;> try apply LExpr.HasType.tbool_const_t
   apply LExpr.HasType.tinst _ _ t[∀a. %a → int] t[bool → int] "a" mty[bool]
   · apply LExpr.HasType.tvar
@@ -179,13 +179,20 @@ example : LExpr.HasType { types := [[("m", t[∀a. %a → int])]]}
   done
 
 example : LExpr.HasType {} esM[λ %0] t[∀a. %a → %a] := by
-  have h_tabs := @LExpr.HasType.tabs (Identifier := String) _ {} ("a", none) t[%a] esM[%0] t[%a]
+  have h_tabs := @LExpr.HasType.tabs (T := ⟨Unit, String⟩) _ {} () ("a", none) t[%a] esM[%0] t[%a]
   simp +ground at h_tabs
-  have h_tvar := @LExpr.HasType.tvar (Identifier := String) _ { types := [[("a", t[%a])]] }
-                 "a" t[%a]
+  have h_tvar := @LExpr.HasType.tvar (T := ⟨Unit, String⟩) _ { types := [[("a", t[%a])]] }
+                 () "a" t[%a]
   simp [Maps.find?, Map.find?] at h_tvar
   simp [h_tvar, LTy.toMonoType] at h_tabs
-  have h_tgen := @LExpr.HasType.tgen (Identifier := String) _ {} esM[λ %0] "a"
+  have empty_is_empty: ¬@List.Mem (String × Option LMonoTy) ("a", none) [] := by
+    intro ifMem
+    have h: ("a", (none: Option LMonoTy)) ∈ [] := ifMem
+    have e := List.elem_eq_true_of_mem h
+    rw [List.elem] at e
+    simp at e
+  have h_tabs := h_tabs empty_is_empty
+  have h_tgen := @LExpr.HasType.tgen (T := ⟨Unit, String⟩) _ {} esM[λ %0] "a"
                  t[%a → %a]
                  h_tabs
   simp +ground [Maps.find?] at h_tgen

@@ -277,9 +277,12 @@ we will prove a _regularity_ lemma; see lemma `HasType.regularity`.
 def WF (e : LExpr T.mono) : Bool :=
   lcAt 0 e
 
-theorem varOpen_of_varClose {i : Nat} {x : IdentT T.Identifier} {e : LExpr T.mono} [BEq T.Identifier] (h : LExpr.WF e) :
+theorem varOpen_of_varClose [BEq T.Metadata] [LawfulBEq T.Metadata] [BEq T.Identifier] [LawfulBEq T.Identifier] {i : Nat} {x : IdentT T.Identifier} {e : LExpr T.mono} (h : LExpr.WF e) :
   varOpen i x (varClose i x e) = e := by
-  sorry
+  simp_all [LExpr.WF]
+  rw [varOpen_varClose_when_lcAt (k:=0) h]
+  omega
+  done
 
 ---------------------------------------------------------------------
 

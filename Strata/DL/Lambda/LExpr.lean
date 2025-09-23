@@ -442,7 +442,7 @@ def isFalse (T : LExprParamsT) (e : LExpr T) : Bool :=
 If `e` is an `LExpr` boolean, then denote that into a Lean `Bool`.
 Note that we are type-agnostic here.
 -/
-def denoteBool (T : LExprParams) (e : LExpr T.mono) : Option Bool :=
+def denoteBool {T : LExprParams} (e : LExpr T.mono) : Option Bool :=
   match e with
   | .const _ "true"  (some (.tcons "bool" [])) => some true
   | .const _ "true"  none => some true
@@ -454,7 +454,7 @@ def denoteBool (T : LExprParams) (e : LExpr T.mono) : Option Bool :=
 If `e` is an `LExpr` integer, then denote that into a Lean `Int`.
 Note that we are type-agnostic here.
 -/
-def denoteInt (T : LExprParams) (e : LExpr T.mono) : Option Int :=
+def denoteInt {T : LExprParams} (e : LExpr T.mono) : Option Int :=
   match e with
   | .const _ x (some (.tcons "int" [])) => x.toInt?
   | .const _ x none => x.toInt?
@@ -464,7 +464,7 @@ def denoteInt (T : LExprParams) (e : LExpr T.mono) : Option Int :=
 If `e` is an `LExpr` real, then denote that into a Lean `String`.
 Note that we are type-agnostic here.
 -/
-def denoteReal (T : LExprParams) (e : LExpr T.mono) : Option String :=
+def denoteReal {T : LExprParams} (e : LExpr T.mono) : Option String :=
   match e with
   | .const _ x (some (.tcons "real" [])) => .some x
   | .const _ x none => .some x
@@ -474,7 +474,7 @@ def denoteReal (T : LExprParams) (e : LExpr T.mono) : Option String :=
 If `e` is an `LExpr` bv<n>, then denote that into a Lean `BitVec n`.
 Note that we are type-agnostic here.
 -/
-def denoteBitVec (T : LExprParams) (n : Nat) (e : LExpr T.mono) : Option (BitVec n) :=
+def denoteBitVec {T : LExprParams} (n : Nat) (e : LExpr T.mono) : Option (BitVec n) :=
   match e with
   | .const _ x (.some (.bitvec n')) =>
     if n == n' then .map (.ofNat n) x.toNat? else none
