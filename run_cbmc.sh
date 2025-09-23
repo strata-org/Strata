@@ -4,7 +4,7 @@
 #`export CBMC_DIR=$HOME/Development/cbmc/build/bin/`
 
 
-lake exe BoogieToCBMC test > foo.json
+lake exe StrataToCBMC Strata/Backends/CBMC/tests/simpleTest.csimp.st > foo.json
 python3 Strata/Backends/CBMC/resources/process_json.py combine Strata/Backends/CBMC/resources/defaults.json foo.json > full.json
 # python3 Strata/Backends/CBMC/resources/process_json.py compare StrataTest/Backends/CBMC/simple_test_goto.json full.json
 
@@ -13,4 +13,4 @@ $CBMC_DIR/goto-instrument --enforce-contract simpleTest full.goto full_checking.
 $CBMC_DIR/cbmc full_checking.goto --function simpleTest --trace
 
 
-# rm foo.json full.json full.goto full_checking.goto
+rm foo.json full.json full.goto full_checking.goto

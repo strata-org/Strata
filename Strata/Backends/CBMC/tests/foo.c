@@ -4,6 +4,7 @@ int simpleTest(int x, int y)
 {
   int z;
   z = x;
+  //assume [foo]: z < 10;
   z = z + 1;
   return z;
 }
