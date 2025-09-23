@@ -202,18 +202,18 @@ partial def translateExpr (bindings : TransBindings) (arg : Arg) :
   | .fn q`C_Simp.not, [xa] =>
     let fn := (@LExpr.op ⟨⟨Unit, String⟩, LMonoTy⟩ () "Bool.Not" none)
     let x ← translateExpr bindings xa
-    return .mkApp ⟨⟨Unit, String⟩, LMonoTy⟩ () fn [x]
+    return .mkApp () fn [x]
   -- Unary array operations
   | .fn q`C_Simp.len, [xa] =>
     let fn ← translateFn q`C_Simp.len
     let x ← translateExpr bindings xa
-    return .mkApp ⟨⟨Unit, String⟩, LMonoTy⟩ () fn [x]
+    return .mkApp () fn [x]
   -- Binary function applications
   | .fn fni, [xa, ya] =>
     let fn ← translateFn fni
     let x ← translateExpr bindings xa
     let y ← translateExpr bindings ya
-    return .mkApp ⟨⟨Unit, String⟩, LMonoTy⟩ () fn [x, y]
+    return .mkApp () fn [x, y]
   -- NOTE: Bound and free variables are numbered differently. Bound variables
   -- ascending order (so closer to deBrujin levels).
   | .bvar i, [] =>
@@ -231,7 +231,7 @@ partial def translateExpr (bindings : TransBindings) (arg : Arg) :
     assert! i < bindings.freeVars.size
     let name := bindings.freeVars[i]!
     let args ← translateExprs bindings argsa.toArray
-    return .mkApp ⟨⟨Unit, String⟩, LMonoTy⟩ () (.op () name none) args.toList
+    return .mkApp () (.op () name none) args.toList
   | op, args =>
     TransM.error s!"translateExpr unimplemented op:\n\
                      Op: {repr op}\n\

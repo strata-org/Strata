@@ -490,11 +490,11 @@ def denoteString {T : LExprParams} (e : LExpr T.mono) : Option String :=
   | .const _ c  (some (.tcons "string" [])) => some c
   | _ => none
 
-def mkApp (T : LExprParamsT) (m : T.base.Metadata) (fn : LExpr T) (args : List (LExpr T)) : LExpr T :=
+def mkApp {T : LExprParamsT} (m : T.base.Metadata) (fn : LExpr T) (args : List (LExpr T)) : LExpr T :=
   match args with
   | [] => fn
   | a :: rest =>
-    mkApp T m (.app m fn a) rest
+    mkApp m (.app m fn a) rest
 
 /--
 Returns the metadata of `e`.
