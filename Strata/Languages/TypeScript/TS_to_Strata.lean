@@ -108,6 +108,7 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
     Heap.HExpr.deferredIte guard consequent alternate
 
   | .TS_NumericLiteral n =>
+    dbg_trace s!"[DEBUG] Translating numeric literal value={n.value}, raw={n.extra.raw}, rawValue={n.extra.rawValue}"
     Heap.HExpr.int n.extra.raw.toInt!
 
   | .TS_BooleanLiteral b =>
@@ -200,7 +201,7 @@ partial def translate_statement (s: TS_Statement) (ctx : TranslationContext) : T
       (ctx, [.cmd (.set "return_value" (Heap.HExpr.int 1))])
 
   | .TS_VariableDeclaration decl =>
-    match decl.declarations.get? 0 with
+    match decl.declarations[0]? with
     | .none => panic! "VariableDeclarations should have at least one declaration"
     | .some d =>
       -- Check if this is a function call assignment
@@ -233,6 +234,7 @@ partial def translate_statement (s: TS_Statement) (ctx : TranslationContext) : T
       | .TS_Identifier id =>
         -- Handle identifier assignment: x = value
         let value := translate_expr assgn.right
+        dbg_trace s!"[DEBUG] Assignment: {id.name} = {repr value}"
         (ctx, [.cmd (.set id.name value)])
       | .TS_MemberExpression member =>
         -- Handle field assignment: obj[field] = value
@@ -280,6 +282,31 @@ partial def translate_statement (s: TS_Statement) (ctx : TranslationContext) : T
     -- For now, we'll use the then context (could be more sophisticated)
     (thenCtx, [.ite testExpr thenBlock elseBlock])
 
+  | .TS_ForStatement forStmt =>
+    -- init phase
+    let (_, initStmts) := translate_statement (.TS_VariableDeclaration forStmt.init) ctx
+    -- guard (test)
+    let guard := translate_expr forStmt.test
+    -- body (first translate loop body)
+    let (ctx1, bodyStmts) := translate_statement forStmt.body ctx
+    -- update (translate expression into statements following ExpressionStatement style)
+    let (_, updateStmts) :=
+      translate_statement (.TS_ExpressionStatement { expression := .TS_AssignmentExpression forStmt.update, start_loc := forStmt.start_loc, end_loc := forStmt.end_loc, loc:= forStmt.loc, type := "TS_AssignmentExpression" }) ctx1
+    -- assemble loop body (body + update)
+    let loopBody : Imperative.Block TSStrataExpression TSStrataCommand :=
+      { ss := bodyStmts ++ updateStmts }
+
+    -- output: init statements first, then a loop statement
+    (ctx1, initStmts ++ [.loop guard none none loopBody])
+
+  | .TS_WhileStatement whileStmt =>
+    dbg_trace s!"[DEBUG] Translating while statement at loc {whileStmt.start_loc}-{whileStmt.end_loc}"
+    dbg_trace s!"[DEBUG] While test: {repr whileStmt.test}"
+    dbg_trace s!"[DEBUG] While body: {repr whileStmt.body}"
+    let testExpr := translate_expr whileStmt.test
+    let (bodyCtx, bodyStmts) := translate_statement whileStmt.body ctx
+    let bodyBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := bodyStmts }
+    (bodyCtx, [.loop testExpr none none bodyBlock])
   | _ => panic! s!"Unimplemented statement: {repr s}"
 
 -- Translate list of TypeScript statements with context
