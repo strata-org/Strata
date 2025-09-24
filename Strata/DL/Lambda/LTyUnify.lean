@@ -100,23 +100,15 @@ theorem SubstWF.single_subst (id : TyIdentifier) (h : ¬id ∈ ty.freeVars) :
   simp_all
   done
 
-/-
-theorem SubstWF_mk_cons
-    (h_s_not_in_S_values : s.fst ∉ S.freeVars)
-    (h_s_not_in_S_keys : S.keys.all (fun k => k ∉ s.snd.freeVars))
-    (h_s_WF : SubstWF [s])
-    (h_S_WF : SubstWF S) :
-    SubstWF (s :: S) := by
-  simp_all [SubstWF, Map.values, Map.keys, Subst.freeVars]
-  done
 
-
-theorem Subst.mem_freeVars_of_mem_freeVars_remove (s : Subst) (id : TyIdentifier)
-  (h : xty ∈ Subst.freeVars (Map.remove s id)) :
+theorem Subst.mem_freeVars_of_mem_freeVars_remove (S : Subst) (id : TyIdentifier)
+  (h : xty ∈ Subst.freeVars (Maps.remove S id)) :
   xty ∈ Subst.freeVars s := by
-  induction s
-  case nil => simp_all [Map.remove]
+  induction S
+  case nil => simp_all [Maps.remove]
   case cons head tail tail_ih =>
+    sorry
+    stop
     by_cases h_id_head : head.fst = id
     case pos =>
       simp_all [Map.remove]
@@ -124,15 +116,15 @@ theorem Subst.mem_freeVars_of_mem_freeVars_remove (s : Subst) (id : TyIdentifier
       simp_all [Map.remove]
       cases h <;> try simp_all
 
-theorem SubstWF_of_remove (id : TyIdentifier) (h : SubstWF s) :
-  SubstWF (Map.remove s id) := by
-  simp_all [SubstWF]
-  intro xty h_xty_in_keys h_xty_in_fvs
-  have h_xty_in_s_keys := @Map.mem_keys_of_mem_keys_remove _ _ _ s id xty h_xty_in_keys
-  have h_xty_not_in_fvs := @h xty h_xty_in_s_keys
-  have := @Subst.mem_freeVars_of_mem_freeVars_remove xty s id h_xty_in_fvs
-  contradiction
--/
+theorem SubstWF_of_remove (id : TyIdentifier) (h : SubstWF S) :
+  SubstWF (Maps.remove S id) := by
+  -- simp_all [SubstWF]
+  -- intro xty h_xty_in_keys h_xty_in_fvs
+  -- have h_xty_in_s_keys := @Map.mem_keys_of_mem_keys_remove _ _ _ s id xty h_xty_in_keys
+  -- have h_xty_not_in_fvs := @h xty h_xty_in_s_keys
+  -- have := @Subst.mem_freeVars_of_mem_freeVars_remove xty s id h_xty_in_fvs
+  -- contradiction
+  sorry
 
 /--
 A type substitution, along with a proof that it is well-formed.

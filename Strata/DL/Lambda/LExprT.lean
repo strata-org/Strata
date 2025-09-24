@@ -450,10 +450,10 @@ partial def fromLExprAux.app (T : (TEnv Identifier)) (e1 e2 : (LExpr LMonoTy Ide
   -- applied.
   let mty := LMonoTy.subst S.subst freshty
   -- `freshty` can now be safely removed from the substitution list.
-  -- have hWF : SubstWF (Map.remove S.subst fresh_name) := by
-  --   apply @SubstWF_of_remove S.subst fresh_name S.isWF
-  -- let S := { S with subst := S.subst.remove fresh_name, isWF := hWF }
-  let S := { S with subst := S.subst.remove fresh_name, isWF := sorry }
+  have hWF : SubstWF (Maps.remove S.subst fresh_name) := by
+    -- apply @SubstWF_of_remove S.subst fresh_name S.isWF
+    sorry
+  let S := { S with subst := S.subst.remove fresh_name, isWF := hWF }
   .ok (.app e1t e2t mty, TEnv.updateSubst T S)
 
 end
