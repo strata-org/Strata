@@ -7,7 +7,6 @@ Command line script for exporting Python dialect and program to files.
 """
 #!/usr/bin/env python3
 import argparse
-import ast
 import os
 import amazon.ion.simpleion as ion
 from strata import python as stratap

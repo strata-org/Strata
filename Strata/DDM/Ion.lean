@@ -272,12 +272,11 @@ def deserializeValue {α} (bs : ByteArray) (act : Ion SymbolId → FromIonM α) 
         | .error (p, msg) => throw s!"Error at {p}: {msg}"
         | .ok symbols => pure symbols
   let ionv : Ion SymbolId := entries[1]!
-  match act ionv { symbols := symbols }with
+  match act ionv { symbols := symbols } with
   | .error msg =>
     throw s!"Error decoding {msg}"
   | .ok res =>
     pure res
-
 
 end FromIonM
 
@@ -997,11 +996,23 @@ def fromIon (typeId : SymbolId) (v : Ion SymbolId) : FromIonM Decl := do
 
 end Decl
 
+namespace Ion
+
+/--
+This contains information from a partially parsed Ion File.
+-/
+structure Fragment where
+  symbols : Ion.SymbolTable
+  values : Array (Ion.Ion Ion.SymbolId)
+  offset : Nat
+
 inductive Header
 | dialect : DialectName → Header
 | program : DialectName → Header
 
-def Header.fromIon (v : Ion SymbolId) : FromIonM Header := do
+namespace Header
+
+def fromIon (v : Ion SymbolId) : FromIonM Header := do
   let ⟨hdr, _⟩ ← .asSexp "Header" v
   let .isTrue ne := inferInstanceAs (Decidable (hdr.size ≥ 2))
     | throw s!"Expected header to have two elements."
@@ -1009,6 +1020,18 @@ def Header.fromIon (v : Ion SymbolId) : FromIonM Header := do
   | "dialect" => .dialect <$> .asString hdr[1]
   | "program" => .program <$> .asString hdr[1]
   | op => throw s!"Expected 'program' or 'dialect' instead of {op}."
+
+def parse (bytes : ByteArray) : Except String (Header × Fragment) := do
+  FromIonM.deserializeValue bytes $ fun v => do
+    let tbl := (← read).symbols
+    let ⟨args, _⟩ ← .asList v
+    let .isTrue ne := inferInstanceAs (Decidable (args.size ≥ 1))
+      | throw s!"Expected header"
+    return (← fromIon args[0], { symbols := tbl, values := args, offset := 1 })
+
+end Header
+
+end Ion
 
 namespace Dialect
 
@@ -1024,22 +1047,23 @@ instance : CachedToIon Dialect where
       a := a.push <| (← ionRef! decl)
     return .list a
 
-def fromIonDecls (dialect : DialectName) (args : Array (Ion SymbolId)) (start : Nat := 0) : FromIonM Dialect := do
-  let tbl ← .readSymbolTable
+def fromIonFragment (dialect : DialectName) (f : Ion.Fragment) : Except String Dialect := do
+  let ctx : FromIonContext := ⟨f.symbols⟩
+  let tbl := f.symbols
   let typeId := tbl.symbolId! "type"
   let nameId := tbl.symbolId! "name"
-  let (imports, decls) ← args.foldlM (init := (#[], #[])) (start := start) fun (imports, decls) v => do
-    let fields ← .asStruct0 v
+  let (imports, decls) ← f.values.foldlM (init := (#[], #[])) (start := f.offset) fun (imports, decls) v => do
+    let fields ← FromIonM.asStruct0 v ⟨f.symbols⟩
     let some (_, val) := fields.find? (·.fst == typeId)
       | throw "Could not find type"
-    match ← .asSymbolString val with
+    match ← FromIonM.asSymbolString val ctx with
     | "import" =>
       let some (_, val) := fields.find? (·.fst == nameId)
         | throw "Could not find import"
-      let i ← .asString val
+      let i ← FromIonM.asString val ctx
       pure (imports.push i, decls)
     | name =>
-      let decl ← Decl.fromIonFields name fields
+      let decl ← Decl.fromIonFields name fields ctx
       pure (imports, decls.push decl)
   return {
     name := dialect
@@ -1052,9 +1076,10 @@ instance : FromIon Dialect where
     let ⟨args, _⟩ ← .asList v
     let .isTrue ne := inferInstanceAs (Decidable (args.size ≥ 1))
       | throw s!"Expected header"
-    match ← Header.fromIon args[0] with
-    | .dialect dialect =>
-      fromIonDecls dialect args (start := 1)
+    match ← Ion.Header.fromIon args[0] with
+    | .dialect dialect => fun ctx =>
+      (let f : Ion.Fragment := { symbols := ctx.symbols, values := args, offset := 1 }
+      fromIonFragment dialect f)
     | .program _ =>
       throw s!"Expected dialect"
 
@@ -1208,23 +1233,14 @@ instance : CachedToIon Program where
 
 #declareIonSymbolTable Program
 
-def fromIonDecls (dialects : DialectMap) (dialect : DialectName) (args : Array (Ion SymbolId)) (start : Nat := 0) : FromIonM Program := do
-  let commands ← args.foldlM (init := #[]) (start := start) fun cmds u => do
-    cmds.push <$> Operation.fromIon u
+def fromIonFragment (f : Ion.Fragment) (dialects : DialectMap) (dialect : DialectName) : Except String Program := do
+  let ctx : FromIonContext := ⟨f.symbols⟩
+  let commands ← f.values.foldlM (init := #[]) (start := f.offset) fun cmds u => do
+    cmds.push <$> Operation.fromIon u ctx
   return {
     dialects := dialects.importedDialects! dialect
     dialect := dialect
     commands := commands
   }
-
-protected def fromIon (dialects : DialectMap) (v : Ion SymbolId) : FromIonM Program := do
-  let ⟨args, _⟩ ← .asList v
-  let .isTrue ne := inferInstanceAs (Decidable (args.size ≥ 1))
-    | throw s!"Expected header"
-  match ← Header.fromIon args[0] with
-  | .program dialect =>
-    fromIonDecls dialects dialect args (start := 1)
-  | .dialect _ =>
-    throw s!"Expected program"
 
 end Program
