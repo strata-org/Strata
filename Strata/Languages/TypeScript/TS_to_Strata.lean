@@ -282,6 +282,23 @@ partial def translate_statement (s: TS_Statement) (ctx : TranslationContext) : T
     -- For now, we'll use the then context (could be more sophisticated)
     (thenCtx, [.ite testExpr thenBlock elseBlock])
 
+  | .TS_ForStatement forStmt =>
+    -- init phase
+    let (_, initStmts) := translate_statement (.TS_VariableDeclaration forStmt.init) ctx
+    -- guard (test)
+    let guard := translate_expr forStmt.test
+    -- body (first translate loop body)
+    let (ctx1, bodyStmts) := translate_statement forStmt.body ctx
+    -- update (translate expression into statements following ExpressionStatement style)
+    let (_, updateStmts) :=
+      translate_statement (.TS_ExpressionStatement { expression := .TS_AssignmentExpression forStmt.update, start_loc := forStmt.start_loc, end_loc := forStmt.end_loc, loc:= forStmt.loc, type := "TS_AssignmentExpression" }) ctx1
+    -- assemble loop body (body + update)
+    let loopBody : Imperative.Block TSStrataExpression TSStrataCommand :=
+      { ss := bodyStmts ++ updateStmts }
+
+    -- output: init statements first, then a loop statement
+    (ctx1, initStmts ++ [.loop guard none none loopBody])
+
   | .TS_WhileStatement whileStmt =>
     dbg_trace s!"[DEBUG] Translating while statement at loc {whileStmt.start_loc}-{whileStmt.end_loc}"
     dbg_trace s!"[DEBUG] While test: {repr whileStmt.test}"
