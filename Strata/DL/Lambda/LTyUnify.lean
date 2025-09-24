@@ -25,17 +25,38 @@ open Std (ToFormat Format format)
 
 /-- Substitution mapping type variables to `LMonoTy`. -/
 abbrev SubstOne := Map TyIdentifier LMonoTy
+abbrev SubstOne.empty : SubstOne := []
+
 /--
 Substitution mapping type variables to `LMonoTy`, taking scopes into
 account. The oldest scope can be obtained via `Maps.oldest`.
 -/
 abbrev Subst := Maps TyIdentifier LMonoTy
+abbrev Subst.empty : Subst := []
+/--
+A `Subst` with an empty scope, typically meant for storing global type
+substitutions.
+-/
+abbrev Subst.emptyScope : Subst := [[]]
 
 instance : ToFormat Subst where
   format := Maps.format'
 
-def Subst.isEmpty (S : Subst) : Bool :=
+/--
+Check if `Subst` contains only empty scopes.
+-/
+def Subst.hasEmptyScopes (S : Subst) : Bool :=
   S.all (fun s => s.isEmpty)
+
+@[simp]
+theorem Subst.hasEmptyScopes_empty :
+  Subst.hasEmptyScopes Subst.empty := by
+  simp +ground
+
+@[simp]
+theorem Subst.hasEmptyScopes_emptyScope :
+  Subst.hasEmptyScopes Subst.emptyScope := by
+  simp +ground
 
 /--
 The free variables in a substitution `S` are the union of the free variables in
@@ -48,7 +69,7 @@ def Subst.freeVars (S : Subst) : List TyIdentifier :=
 
 @[simp]
 theorem Subst.freeVars_empty :
-    Subst.freeVars [] = [] := by
+    Subst.freeVars Subst.empty = [] := by
   simp [Subst.freeVars, Maps.values]
 
 @[simp]
@@ -72,14 +93,14 @@ def SubstWF (S : Subst) : Bool :=
   S.keys.all (fun k => k ∉ Subst.freeVars S)
 
 @[simp]
-theorem SubstWF_of_empty : SubstWF [] := by
+theorem SubstWF_of_empty : SubstWF Subst.empty := by
   simp [SubstWF]
 
-theorem SubstWF_of_empty_empty : SubstWF [[]] := by
+@[simp]
+theorem SubstWF_of_empty_empty : SubstWF Subst.emptyScope := by
   unfold SubstWF List.all Maps.keys Map.keys
   unfold Maps.keys
   split <;> simp_all
-
 
 theorem SubstWF_of_cons (h : SubstWF (s :: S)) :
     SubstWF [s] ∧ SubstWF S := by
@@ -127,7 +148,7 @@ structure SubstInfo where
   deriving Repr
 
 def SubstInfo.empty : SubstInfo :=
-  { subst := [],
+  { subst := Subst.empty,
     isWF := SubstWF_of_empty }
 
 mutual
@@ -135,7 +156,7 @@ mutual
 Apply substitution `S` to monotype `mty`.
 -/
 def LMonoTy.subst (S : Subst) (mty : LMonoTy) : LMonoTy :=
-  if Subst.isEmpty S then mty else
+  if Subst.hasEmptyScopes S then mty else
   match mty with
   | .ftvar x => match S.find? x with
                 | some sty => sty | none => mty
@@ -146,7 +167,7 @@ def LMonoTy.subst (S : Subst) (mty : LMonoTy) : LMonoTy :=
 Apply substitution `S` to monotypes `mtys`.
 -/
 def LMonoTys.subst (S : Subst) (mtys : LMonoTys) : LMonoTys :=
-  if Subst.isEmpty S then mtys else substAux S mtys []
+  if Subst.hasEmptyScopes S then mtys else substAux S mtys []
 where
   substAux S mtys acc : LMonoTys :=
   match mtys with
@@ -160,7 +181,7 @@ Non tail-recursive version of `LMonoTys.subst`, useful for proofs.
 See theorem `LMonoTys.subst_eq_substLogic`.
 -/
 def LMonoTys.substLogic (S : Subst) (mtys : LMonoTys) : LMonoTys :=
-  if S.isEmpty then mtys else
+  if S.hasEmptyScopes then mtys else
   match mtys with
   | [] => []
   | mty :: mrest =>
@@ -168,7 +189,7 @@ def LMonoTys.substLogic (S : Subst) (mtys : LMonoTys) : LMonoTys :=
 
 theorem LMonoTys.subst_eq_substLogic (S : Subst) (mtys : LMonoTys) :
     LMonoTys.subst S mtys = LMonoTys.substLogic S mtys := by
-  by_cases hSEmpty : S.isEmpty
+  by_cases hSEmpty : S.hasEmptyScopes
   case pos =>
     unfold LMonoTys.substLogic
     simp_all [subst]
@@ -189,19 +210,19 @@ theorem LMonoTys.subst_eq_substLogic (S : Subst) (mtys : LMonoTys) :
     simp_all
     done
 
-theorem LMonoTys.substLogic_emptyS (h : S.isEmpty) :
+theorem LMonoTys.substLogic_emptyS (h : S.hasEmptyScopes) :
   LMonoTys.substLogic S mtys = mtys := by
   induction mtys <;> simp_all [substLogic]
 
-theorem LMonoTy.subst_emptyS (h : S.isEmpty) :
+theorem LMonoTy.subst_emptyS (h : S.hasEmptyScopes) :
   LMonoTy.subst S ty = ty := by
   unfold LMonoTy.subst
   simp_all
   done
 
-theorem Subst.isEmpty_implies_keys_empty (h : Subst.isEmpty S) :
+theorem Subst.isEmpty_implies_keys_empty (h : Subst.hasEmptyScopes S) :
   (Maps.keys S) = [] := by
-  induction S <;> simp_all [Maps.keys, Subst.isEmpty, Map.isEmpty]
+  induction S <;> simp_all [Maps.keys, Subst.hasEmptyScopes, Map.isEmpty]
   split at h <;> simp_all [Map.keys]
   done
 
@@ -211,7 +232,7 @@ free variable in a substituted type (i.e., in `LMonoTy.subst S ty`).
 -/
 theorem LMonoTy.subst_keys_not_in_substituted_type (h : SubstWF S) :
     S.keys.all (fun k => k ∉ LMonoTy.freeVars (LMonoTy.subst S ty)) := by
-  by_cases hSEmpty : S.isEmpty
+  by_cases hSEmpty : S.hasEmptyScopes
   case pos =>
     simp_all [@Subst.isEmpty_implies_keys_empty S hSEmpty]
   case neg =>
@@ -255,9 +276,9 @@ are a subset of the free variables in `mty` and the free variables in `S`.
 theorem LMonoTy.freeVars_of_subst_subset (S : Subst) (mty : LMonoTy) :
     LMonoTy.freeVars (LMonoTy.subst S mty) ⊆
     LMonoTy.freeVars mty ++ Subst.freeVars S := by
-  by_cases hSEmpty : S.isEmpty
+  by_cases hSEmpty : S.hasEmptyScopes
   case pos =>
-    unfold subst; simp_all [Subst.isEmpty]
+    unfold subst; simp_all [Subst.hasEmptyScopes]
   case neg =>
   simp [Subst.freeVars]
   induction mty
@@ -346,8 +367,8 @@ theorem SubstOne.applyLogic_empty_new (h : new.isEmpty) :
   case nil => simp [applyLogic]
   case cons head tail ih =>
     simp [applyLogic]
-    have : Subst.isEmpty [new] := by
-      unfold Subst.isEmpty; simp_all [Map.isEmpty]
+    have : Subst.hasEmptyScopes [new] := by
+      unfold Subst.hasEmptyScopes; simp_all [Map.isEmpty]
     have := @LMonoTy.subst_emptyS [new] head.snd (by assumption)
     simp_all
   done
