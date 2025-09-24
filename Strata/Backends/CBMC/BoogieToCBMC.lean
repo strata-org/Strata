@@ -37,164 +37,16 @@ spec {
 open Boogie in
 def SimpleTestEnvAST := Strata.TransM.run (Strata.translateProgram (SimpleTestEnv))
 
-def myFunc : Boogie.Procedure := match SimpleTestEnvAST.fst.decls.head! with
-  | .proc f => f
-  | _ => panic! "Expected function"
+def myProc : Boogie.Procedure := match SimpleTestEnvAST.fst.decls.head!.getProc? with
+  | .some p => p
+  | .none => panic! "Expected procedure"
 
-def boogieIdentToStr (id: Boogie.BoogieIdent) : String :=
-  id.snd
-
--- Convert LExpr to CBMC JSON format for contracts
-def lexprToCBMC (expr : Boogie.Expression.Expr) (functionName : String) : Json :=
-  match expr with
-  | .app (.app (.op op _) (.fvar varName _)) (.const value _) =>
-    mkBinaryOp (opToStr (boogieIdentToStr op)) "2" functionName
-      (Json.mkObj [
-        ("id", "symbol"),
-        ("namedSub", Json.mkObj [
-          ("#base_name", Json.mkObj [("id", (boogieIdentToStr varName))]),
-          ("#id_class", Json.mkObj [("id", "1")]),
-          ("#lvalue", Json.mkObj [("id", "1")]),
-          ("#source_location", mkSourceLocation "from_andrew.c" functionName "2"),
-          ("identifier", Json.mkObj [("id", s!"{functionName}::{boogieIdentToStr varName}")]),
-          ("type", mkIntType)
-        ])
-      ])
-      (mkConstant value "10" (mkSourceLocation "from_andrew.c" functionName "2"))
-  | .const "true" _ =>
-    Json.mkObj [
-      ("id", "notequal"),
-      ("namedSub", Json.mkObj [
-        ("#source_location", mkSourceLocation "from_andrew.c" functionName "3"),
-        ("type", Json.mkObj [("id", "bool")])
-      ]),
-      ("sub", Json.arr #[
-        mkConstant "1" "10" (mkSourceLocation "from_andrew.c" functionName "3"),
-        Json.mkObj [
-          ("id", "constant"),
-          ("namedSub", Json.mkObj [
-            ("type", mkIntType),
-            ("value", Json.mkObj [("id", "0")])
-          ])
-        ]
-      ])
-    ]
-  | _ => panic! "Unimplemented"
-
-def listToExpr (l: ListMap BoogieLabel Boogie.Procedure.Check) : Boogie.Expression.Expr :=
-  match l with
-  | _ => .const "true" none
-
-def createContractSymbolFromAST (func : Boogie.Procedure) : CBMCSymbol :=
-  let location : Location := {
-    id := "",
-    namedSub := some (Json.mkObj [
-      ("file", Json.mkObj [("id", "from_andrew.c")]),
-      ("function", Json.mkObj [("id", "")]),
-      ("line", Json.mkObj [("id", "1")]),
-      ("working_directory", Json.mkObj [("id", "/home/ub-backup/tautschn/cbmc-github.git")])
-    ])
-  }
-
-  let sourceLocation := mkSourceLocation "from_andrew.c" (boogieIdentToStr func.header.name) "2"
-  let ensuresSourceLocation := mkSourceLocation "from_andrew.c" (boogieIdentToStr func.header.name) "3"
-
-  let mathFunctionType := Json.mkObj [
-    ("id", "mathematical_function"),
-    ("sub", Json.arr #[
-      Json.mkObj [
-        ("id", ""),
-        ("sub", Json.arr #[mkIntType, mkIntType, mkIntType])
-      ],
-      Json.mkObj [("id", "bool")]
-    ])
-  ]
-
-  let parameterTuple := Json.mkObj [
-    ("id", "tuple"),
-    ("namedSub", Json.mkObj [("type", Json.mkObj [("id", "tuple")])]),
-    ("sub", Json.arr #[
-      mkSymbol "__CPROVER_return_value" mkIntType,
-      mkSymbol s!"{boogieIdentToStr func.header.name}::x" mkIntType,
-      mkSymbol s!"{boogieIdentToStr func.header.name}::y" mkIntType
-    ])
-  ]
-
-  let requiresLambda := Json.mkObj [
-    ("id", "lambda"),
-    ("namedSub", Json.mkObj [
-      ("#source_location", sourceLocation),
-      ("type", mathFunctionType)
-    ]),
-    ("sub", Json.arr #[
-      parameterTuple,
-      lexprToCBMC (listToExpr func.spec.preconditions) (boogieIdentToStr func.header.name)
-    ])
-  ]
-
-  let ensuresLambda := Json.mkObj [
-    ("id", "lambda"),
-    ("namedSub", Json.mkObj [
-      ("#source_location", ensuresSourceLocation),
-      ("type", mathFunctionType)
-    ]),
-    ("sub", Json.arr #[
-      parameterTuple,
-      lexprToCBMC (listToExpr func.spec.postconditions) (boogieIdentToStr func.header.name)
-    ])
-  ]
-
-  let parameters := Json.mkObj [
-    ("id", ""),
-    ("sub", Json.arr #[
-      mkParameter "x" (boogieIdentToStr func.header.name) "1",
-      mkParameter "y" (boogieIdentToStr func.header.name) "1"
-    ])
-  ]
-
-  let contractType := Json.mkObj [
-    ("id", "code"),
-    ("namedSub", Json.mkObj [
-      ("#source_location", mkSourceLocation "from_andrew.c" "" "1"),
-      ("#spec_assigns", Json.mkObj [("id", "")]),
-      ("#spec_ensures", Json.mkObj [
-        ("id", ""),
-        ("sub", Json.arr #[ensuresLambda])
-      ]),
-      ("#spec_frees", Json.mkObj [("id", "")]),
-      ("#spec_requires", Json.mkObj [
-        ("id", ""),
-        ("sub", Json.arr #[requiresLambda])
-      ]),
-      ("parameters", parameters),
-      ("return_type", mkIntType)
-    ])
-  ]
-
-  {
-    baseName := (boogieIdentToStr func.header.name),
-    isProperty := true,
-    location := location,
-    mode := "C",
-    module := "from_andrew",
-    name := s!"contract::{(boogieIdentToStr func.header.name)}",
-    prettyName := (boogieIdentToStr func.header.name),
-    prettyType := "signed int (signed int x, signed int y)",
-    type := contractType,
-    value := Json.mkObj [("id", "nil")]
-  }
-
-def getParamJson(func: Boogie.Procedure) : Json :=
-  Json.mkObj [
-    ("id", ""),
-    ("sub", Json.arr (func.header.inputs.map (λ i => mkParameter i.fst.snd (boogieIdentToStr func.header.name) "1")).toArray)
-  ]
 
 class IdentToStr (I : Type) where
   toStr : I → String
 
 instance : IdentToStr BoogieIdent where
-  toStr := boogieIdentToStr
+  toStr id := id.toPretty
 
 instance : IdentToStr String where
   toStr := id
@@ -205,7 +57,7 @@ class HasLExpr (P : Imperative.PureExpr) (I : Type) where
 instance : HasLExpr Boogie.Expression BoogieIdent where
   expr_eq := rfl
 
-def exprToJson {I : Type} [IdentToStr I] (e : Lambda.LExpr Lambda.LMonoTy I) (loc: SourceLoc) : Json :=
+def exprToJson (I : Type) [IdentToStr I] (e : Lambda.LExpr Lambda.LMonoTy I) (loc: SourceLoc) : Json :=
   match e with
   | .app (.app (.op op _) left) right =>
     let leftJson := match left with
@@ -214,12 +66,13 @@ def exprToJson {I : Type} [IdentToStr I] (e : Lambda.LExpr Lambda.LMonoTy I) (lo
           mkLvalueSymbol s!"{loc.functionName}::1::z" loc.lineNum loc.functionName
         else
           mkLvalueSymbol s!"{loc.functionName}::{IdentToStr.toStr varName}" loc.lineNum loc.functionName
-      | _ => exprToJson left loc
+      | _ => exprToJson (I:=I) left loc
     let rightJson := match right with
       | .fvar varName _ => mkLvalueSymbol s!"{loc.functionName}::{IdentToStr.toStr varName}" loc.lineNum loc.functionName
       | .const value _ => mkConstant value "10" (mkSourceLocation "from_andrew.c" loc.functionName loc.lineNum)
-      | _ => exprToJson right loc
+      | _ => exprToJson (I:=I) right loc
     mkBinaryOp (opToStr (IdentToStr.toStr op)) loc.lineNum loc.functionName leftJson rightJson
+  | .const "true" _ => mkConstantTrue (mkSourceLocation "from_andrew.c" loc.functionName "3")
   | .const n _ =>
     mkConstant n "10" (mkSourceLocation "from_andrew.c" loc.functionName "14")
   | .fvar name _ =>
@@ -237,7 +90,7 @@ def cmdToJson (e : Boogie.Command) (loc: SourceLoc) : Json :=
           ("id", "symbol"),
           ("namedSub", Json.mkObj [
             ("#source_location", mkSourceLocation "from_andrew.c" loc.functionName "5"),
-            ("identifier", Json.mkObj [("id", s!"{loc.functionName}::1::{boogieIdentToStr name}")]),
+            ("identifier", Json.mkObj [("id", s!"{loc.functionName}::1::{name.toPretty}")]),
             ("type", mkIntType)
           ])
         ]
@@ -248,8 +101,8 @@ def cmdToJson (e : Boogie.Command) (loc: SourceLoc) : Json :=
       let exprLoc : SourceLoc := { functionName := loc.functionName, lineNum := "6" }
       mkCodeBlock "expression" "6" loc.functionName #[
         mkSideEffect "assign" "6" loc.functionName mkIntType #[
-          mkLvalueSymbol s!"{loc.functionName}::1::{boogieIdentToStr name}" "6" loc.functionName,
-          exprToJson expr exprLoc
+          mkLvalueSymbol s!"{loc.functionName}::1::{name.toPretty}" "6" loc.functionName,
+          exprToJson (I:=BoogieIdent) expr exprLoc
         ]
       ]
     | .assert label expr _ =>
@@ -274,7 +127,7 @@ def cmdToJson (e : Boogie.Command) (loc: SourceLoc) : Json :=
           Json.mkObj [
             ("id", "arguments"),
             ("sub", Json.arr #[
-              exprToJson expr exprLoc,
+              exprToJson (I:=BoogieIdent) expr exprLoc,
               mkStringConstant label "7" loc.functionName
             ])
           ]
@@ -302,7 +155,7 @@ def cmdToJson (e : Boogie.Command) (loc: SourceLoc) : Json :=
           Json.mkObj [
             ("id", "arguments"),
             ("sub", Json.arr #[
-              exprToJson expr exprLoc
+              exprToJson (I:=BoogieIdent) expr exprLoc
             ])
           ]
         ]
@@ -310,7 +163,7 @@ def cmdToJson (e : Boogie.Command) (loc: SourceLoc) : Json :=
     | .havoc _ _ => panic! "Unimplemented"
 
 mutual
-partial def blockToJson {P : Imperative.PureExpr} {I : Type} [IdentToStr I] [HasLExpr P I]
+partial def blockToJson {P : Imperative.PureExpr} (I : Type) [IdentToStr I] [HasLExpr P I]
   (b: Imperative.Block P Command) (loc: SourceLoc) : Json :=
   Json.mkObj [
     ("id", "code"),
@@ -320,15 +173,15 @@ partial def blockToJson {P : Imperative.PureExpr} {I : Type} [IdentToStr I] [Has
       ("statement", Json.mkObj [("id", "block")]),
       ("type", emptyType)
     ]),
-    ("sub", Json.arr (b.ss.map (λ s => @stmtToJson P I _ _ s loc)).toArray)
+    ("sub", Json.arr (b.ss.map (stmtToJson (I:=I) · loc)).toArray)
   ]
 
-partial def stmtToJson {P : Imperative.PureExpr} {I : Type} [IdentToStr I] [HasLExpr P I]
+partial def stmtToJson {P : Imperative.PureExpr} (I : Type) [IdentToStr I] [HasLExpr P I]
   (e : Imperative.Stmt P Command) (loc: SourceLoc) : Json :=
   match e with
   | .cmd cmd => cmdToJson cmd loc
   | .ite cond thenb elseb _ =>
-    let converted_cond : Lambda.LExpr Lambda.LMonoTy I := @HasLExpr.expr_eq P I _ ▸ cond
+    let converted_cond : Lambda.LExpr Lambda.LMonoTy I := @HasLExpr.expr_eq P (I:=I) _ ▸ cond
     Json.mkObj [
       ("id", "code"),
       ("namedSub", Json.mkObj [
@@ -337,13 +190,123 @@ partial def stmtToJson {P : Imperative.PureExpr} {I : Type} [IdentToStr I] [HasL
         ("type", emptyType)
       ]),
       ("sub", Json.arr #[
-        exprToJson converted_cond loc,
-        @blockToJson P I _ _ thenb loc,
-        @blockToJson P I _ _ elseb loc,
+        exprToJson (I:=I) converted_cond loc,
+        blockToJson (I:=I) thenb loc,
+        blockToJson (I:=I) elseb loc,
       ])
     ]
   | _ => panic! "Unimplemented"
 end
+
+def listToExpr (l: ListMap BoogieLabel Boogie.Procedure.Check) : Boogie.Expression.Expr :=
+  match l with
+  | _ => .const "true" none
+
+def createContractSymbolFromAST (func : Boogie.Procedure) : CBMCSymbol :=
+  let location : Location := {
+    id := "",
+    namedSub := some (Json.mkObj [
+      ("file", Json.mkObj [("id", "from_andrew.c")]),
+      ("function", Json.mkObj [("id", "")]),
+      ("line", Json.mkObj [("id", "1")]),
+      ("working_directory", Json.mkObj [("id", "/home/ub-backup/tautschn/cbmc-github.git")])
+    ])
+  }
+
+  let sourceLocation := mkSourceLocation "from_andrew.c" (func.header.name.toPretty) "2"
+  let ensuresSourceLocation := mkSourceLocation "from_andrew.c" (func.header.name.toPretty) "3"
+
+  let mathFunctionType := Json.mkObj [
+    ("id", "mathematical_function"),
+    ("sub", Json.arr #[
+      Json.mkObj [
+        ("id", ""),
+        ("sub", Json.arr #[mkIntType, mkIntType, mkIntType])
+      ],
+      Json.mkObj [("id", "bool")]
+    ])
+  ]
+
+  let parameterTuple := Json.mkObj [
+    ("id", "tuple"),
+    ("namedSub", Json.mkObj [("type", Json.mkObj [("id", "tuple")])]),
+    ("sub", Json.arr #[
+      mkSymbol "__CPROVER_return_value" mkIntType,
+      mkSymbol s!"{func.header.name.toPretty}::x" mkIntType,
+      mkSymbol s!"{func.header.name.toPretty}::y" mkIntType
+    ])
+  ]
+
+  let requiresLambda := Json.mkObj [
+    ("id", "lambda"),
+    ("namedSub", Json.mkObj [
+      ("#source_location", sourceLocation),
+      ("type", mathFunctionType)
+    ]),
+    ("sub", Json.arr #[
+      parameterTuple,
+      exprToJson (I:=BoogieIdent) (listToExpr func.spec.preconditions) {functionName := func.header.name.toPretty, lineNum := "2"}
+    ])
+  ]
+
+  let ensuresLambda := Json.mkObj [
+    ("id", "lambda"),
+    ("namedSub", Json.mkObj [
+      ("#source_location", ensuresSourceLocation),
+      ("type", mathFunctionType)
+    ]),
+    ("sub", Json.arr #[
+      parameterTuple,
+      exprToJson (I:=BoogieIdent) (listToExpr func.spec.postconditions) {functionName := func.header.name.toPretty, lineNum := "2"}
+    ])
+  ]
+
+  let parameters := Json.mkObj [
+    ("id", ""),
+    ("sub", Json.arr #[
+      mkParameter "x" (func.header.name.toPretty) "1",
+      mkParameter "y" (func.header.name.toPretty) "1"
+    ])
+  ]
+
+  let contractType := Json.mkObj [
+    ("id", "code"),
+    ("namedSub", Json.mkObj [
+      ("#source_location", mkSourceLocation "from_andrew.c" "" "1"),
+      ("#spec_assigns", Json.mkObj [("id", "")]),
+      ("#spec_ensures", Json.mkObj [
+        ("id", ""),
+        ("sub", Json.arr #[ensuresLambda])
+      ]),
+      ("#spec_frees", Json.mkObj [("id", "")]),
+      ("#spec_requires", Json.mkObj [
+        ("id", ""),
+        ("sub", Json.arr #[requiresLambda])
+      ]),
+      ("parameters", parameters),
+      ("return_type", mkIntType)
+    ])
+  ]
+
+  {
+    baseName := (func.header.name.toPretty),
+    isProperty := true,
+    location := location,
+    mode := "C",
+    module := "from_andrew",
+    name := s!"contract::{(func.header.name.toPretty)}",
+    prettyName := (func.header.name.toPretty),
+    prettyType := "signed int (signed int x, signed int y)",
+    type := contractType,
+    value := Json.mkObj [("id", "nil")]
+  }
+
+def getParamJson(func: Boogie.Procedure) : Json :=
+  Json.mkObj [
+    ("id", ""),
+    ("sub", Json.arr (func.header.inputs.map (λ i => mkParameter i.fst.snd (func.header.name.toPretty) "1")).toArray)
+  ]
+
 
 def createImplementationSymbolFromAST (func : Boogie.Procedure) : CBMCSymbol :=
   let location : Location := {
@@ -367,14 +330,14 @@ def createImplementationSymbolFromAST (func : Boogie.Procedure) : CBMCSymbol :=
   ]
 
   -- For now, keep the hardcoded implementation but use function name from AST
-  let loc : SourceLoc := { functionName := (boogieIdentToStr func.header.name), lineNum := "1" }
-  let stmtJsons := (func.body.map (λ s: Imperative.Stmt Boogie.Expression Boogie.Command => @stmtToJson Boogie.Expression BoogieIdent _ _ s loc))
+  let loc : SourceLoc := { functionName := (func.header.name.toPretty), lineNum := "1" }
+  let stmtJsons := (func.body.map (stmtToJson (I:=BoogieIdent) · loc))
 
   let implValue := Json.mkObj [
     ("id", "code"),
     ("namedSub", Json.mkObj [
-      ("#end_location", mkSourceLocation "from_andrew.c" (boogieIdentToStr func.header.name) "15"),
-      ("#source_location", mkSourceLocation "from_andrew.c" (boogieIdentToStr func.header.name) "4"),
+      ("#end_location", mkSourceLocation "from_andrew.c" (func.header.name.toPretty) "15"),
+      ("#source_location", mkSourceLocation "from_andrew.c" (func.header.name.toPretty) "4"),
       ("statement", Json.mkObj [("id", "block")]),
       ("type", emptyType)
     ]),
@@ -382,42 +345,42 @@ def createImplementationSymbolFromAST (func : Boogie.Procedure) : CBMCSymbol :=
   ]
 
   {
-    baseName := (boogieIdentToStr func.header.name),
+    baseName := (func.header.name.toPretty),
     isLvalue := true,
     location := location,
     mode := "C",
     module := "from_andrew",
-    name := (boogieIdentToStr func.header.name),
-    prettyName := (boogieIdentToStr func.header.name),
+    name := (func.header.name.toPretty),
+    prettyName := (func.header.name.toPretty),
     prettyType := s!"signed int (signed int {String.intercalate ", signed int " (func.header.inputs.keys.map (λ p => p.snd))})",
     prettyValue := "{\n  signed int z;\n  z = x;\n  z = z + 1;\n  return z;\n}",
     type := implType,
     value := implValue
   }
 
-def testSymbols (myFunc: Boogie.Procedure) : String := Id.run do
+def testSymbols (proc: Boogie.Procedure) : String := Id.run do
   -- Generate symbols using AST data
-  let contractSymbol := createContractSymbolFromAST myFunc
-  let implSymbol := createImplementationSymbolFromAST myFunc
+  let contractSymbol := createContractSymbolFromAST proc
+  let implSymbol := createImplementationSymbolFromAST proc
 
   -- Get parameter names from AST
-  let paramNames : List String := myFunc.header.inputs.keys.map (λ p => p.snd)
+  let paramNames : List String := proc.header.inputs.keys.map (λ p => p.snd)
 
   -- Hardcode local variable for now
   let zSymbol := createLocalSymbol "z"
 
   -- Build symbol map
   let mut m : Map String CBMCSymbol := Map.empty
-  m := m.insert s!"contract::{myFunc.header.name.snd}" contractSymbol
-  m := m.insert myFunc.header.name.snd implSymbol
+  m := m.insert s!"contract::{proc.header.name.snd}" contractSymbol
+  m := m.insert proc.header.name.snd implSymbol
 
   -- Add parameter symbols
   for paramName in paramNames do
     let paramSymbol := createParameterSymbol paramName
-    m := m.insert s!"{myFunc.header.name.snd}::{paramName}" paramSymbol
+    m := m.insert s!"{proc.header.name.snd}::{paramName}" paramSymbol
 
   -- Add local variable
-  m := m.insert s!"{myFunc.header.name.snd}::1::z" zSymbol
+  m := m.insert s!"{proc.header.name.snd}::1::z" zSymbol
   toString (toJson m)
 
 end Boogie

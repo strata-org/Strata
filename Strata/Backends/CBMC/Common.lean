@@ -241,6 +241,25 @@ def mkConstant (value : String) (base : String) (sourceLocation : Json) (config 
     ])
   ]
 
+def mkConstantTrue (sourceLocation : Json) : Json :=
+    Json.mkObj [
+      ("id", "notequal"),
+      ("namedSub", Json.mkObj [
+        ("#source_location", sourceLocation),
+        ("type", Json.mkObj [("id", "bool")])
+      ]),
+      ("sub", Json.arr #[
+        mkConstant "1" "10" sourceLocation,
+        Json.mkObj [
+          ("id", "constant"),
+          ("namedSub", Json.mkObj [
+            ("type", mkIntType),
+            ("value", Json.mkObj [("id", "0")])
+          ])
+        ]
+      ])
+    ]
+
 def mkCodeBlock (statement : String) (line : String) (functionName : String) (sub : Array Json) (config : CBMCConfig := defaultConfig) : Json :=
   Json.mkObj [
     ("id", "code"),
