@@ -166,4 +166,28 @@ theorem Map.mem_keys_of_mem_keys_remove [DecidableEq α] (s : Map α β) (id xty
       simp_all [Map.remove, Map.keys]
       cases h <;> try simp_all
 
+theorem Map.insert_keys [DecidableEq α] (m : Map α β) :
+  (Map.insert m key val).keys ⊆ key :: Map.keys m := by
+  induction m
+  case nil => simp_all [Map.insert, Map.keys]
+  case cons hd tl ih =>
+    simp_all [Map.insert]
+    split
+    · simp_all [Map.keys]
+    · simp_all [Map.keys]
+      grind
+  done
+
+theorem Map.insert_values [DecidableEq α] (m : Map α β) :
+  (Map.insert m key val).values ⊆ val :: Map.values m := by
+  induction m
+  case nil => simp_all [Map.insert, Map.values]
+  case cons hd tl ih =>
+    simp_all [Map.insert]
+    split
+    · simp_all [Map.values]
+    · simp_all [Map.values]
+      grind
+  done
+
 -------------------------------------------------------------------------------
