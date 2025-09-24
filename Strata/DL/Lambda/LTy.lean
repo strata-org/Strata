@@ -26,6 +26,30 @@ instance : Coe String TyIdentifier where
   coe := id
 
 /--
+Bounded integer expressions: the grammar allows expressions like
+a <= b /\ b < c, where a, b, and c are integer constants or a (single) variable. This lets us express types like {x | 0 <= x < 2^32}
+-/
+inductive BoundVal : Type where
+  /-- The bounded variable -/
+  | bvar
+  /-- Integer constants -/
+  | bconst (val: Int)
+deriving Inhabited, Repr, DecidableEq
+
+inductive BoundExpr : Type where
+  /-- b1 = b2 -/
+  | beq (b1 b2: BoundVal)
+  /-- b1 < b2 -/
+  | blt (e1 e2: BoundVal)
+  /-- b1 <= b2 -/
+  | ble (e1 e2: BoundVal)
+  /-- e1 /\ e2 -/
+  | band (e1 e2: BoundExpr)
+  /-- not e -/
+  | bnot (e: BoundExpr)
+deriving Inhabited, Repr, DecidableEq
+
+/--
 An additional parameter that restricts the values of a type
 or attaches additional metadata to a type.
 For now, only bitvectors are supported.
@@ -33,6 +57,8 @@ For now, only bitvectors are supported.
 inductive LTyRestrict : Type where
   /-- Special support for bitvector types of every size. -/
   | bitvecdata (size: Nat)
+  /-- Bounded integers -/
+  | bounddata (b: BoundExpr)
   | nodata
 deriving Inhabited, Repr, DecidableEq
 
@@ -63,6 +89,10 @@ def LMonoTy.int : LMonoTy :=
 @[match_pattern]
 def LMonoTy.real : LMonoTy :=
   .tcons "real" []
+
+@[match_pattern]
+def LMonoTy.bounded (b: BoundExpr) : LMonoTy :=
+  .tcons "int" [] (LTyRestrict.bounddata b)
 
 @[match_pattern]
 def LMonoTy.bv1 : LMonoTy :=
@@ -271,6 +301,7 @@ Get all type constructors in monotype `mty`.
 def LMonoTy.getTyConstructors (mty : LMonoTy) : List LMonoTy :=
   match mty with
   | .ftvar _ => []
+  | bitvec _ => []
   | .tcons name mtys _ =>
     let typeargs :=  List.replicate mtys.length "_dummy"
     let args := typeargs.mapIdx (fun i elem => LMonoTy.ftvar (elem ++ toString i))

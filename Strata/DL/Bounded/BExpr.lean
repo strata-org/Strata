@@ -147,10 +147,12 @@ def translateBounded [Coe String Identifier] (e: LExprT Identifier) (assumptions
     -- safe to add all assumptions, including recursive ones, nothing to propagate up
     (addAssumptions (assumptions ++ e1'.2 ++ e2'.2) (.app e1'.1 e2'.1 (removeBound ty)), [])
     else
+    -- if the application has bounded type, need to add assumption further up the chain
     --just recursive, may need assumptions in both but do not need assumptions from 1 in another
     let e1' := translateBounded e1 assumptions;
     let e2' := translateBounded e2 assumptions;
-    (.app e1'.1 e2'.1 (removeBound ty), e1'.2 ++ e2'.2)
+    let e' := .app e1'.1 e2'.1 (removeBound ty);
+    (e', e1'.2 ++ e2'.2 ++ ((isBounded ty).bind (fun b => BoundExprToLExprT b e')).toList)
   -- abstraction: probably the trickiest one.
   -- 1. if the body has bool type, easier, add assumptions (including new one) and translate
   -- 2. Otherwise, need to add assumption and increase bvars of all in "assumptions" list (as they are passing through binder)
@@ -213,10 +215,618 @@ def translateBounded [Coe String Identifier] (e: LExprT Identifier) (assumptions
     let e' := translateBounded e assumptions;
     (.mdata m e'.1, e'.2)
 
--- TODO: test this with all examples from above
+def translateBounded' [Coe String Identifier]  (e: LExprT Identifier) : LExprT Identifier :=
+  (translateBounded e []).1
+
+-- Tests
+
+-- NOTE: with a semantics for LExpr/LExprT, we could prove the equivalences mentioned above
+
+def natTy : LMonoTy := LMonoTy.bounded (.ble (.bconst 0) .bvar)
+def leOp (e1 e2: LExprT String) : LExprT String := .app (.app (LFunc.opExprT intLeFunc) e1 (.arrow .int .bool)) e2 .bool
+
+def geOp (e1 e2: LExprT String) : LExprT String := .app (.app (LFunc.opExprT intGeFunc) e1 (.arrow .int .bool)) e2 .bool
+
+def addOp (e1 e2: LExprT String) : LExprT String := .app (.app (LFunc.opExprT intAddFunc) e1 (.arrow .int .int)) e2 .int
+
+def notOp (e: LExprT String) : LExprT String := .app (LFunc.opExprT boolNotFunc) e .bool
+
+-- 1. ∀ (x: Nat), 0 <= x (quantified assumption)
+
+def test1 := (@LExprT.quant String .all natTy (.bvar 0 natTy) (leOp (.const "0" .int) (.bvar 0 .int)))
+
+#eval translateBounded' test1
+
+--easier to read
+#eval (LExpr.eraseTypes (LExprT.toLExpr (translateBounded' test1)))
+
+/-- info: Lambda.LExpr.quant
+  (Lambda.QuantifierKind.all)
+  (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))
+  (Lambda.LExpr.bvar 0)
+  (Lambda.LExpr.app
+    (Lambda.LExpr.app
+      (Lambda.LExpr.op
+        "Bool.Implies"
+        (some (Lambda.LMonoTy.tcons
+           "arrow"
+           [Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata),
+            Lambda.LMonoTy.tcons
+              "arrow"
+              [Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata),
+               Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+              (Lambda.LTyRestrict.nodata)]
+           (Lambda.LTyRestrict.nodata))))
+      (Lambda.LExpr.app
+        (Lambda.LExpr.app
+          (Lambda.LExpr.op
+            "Int.Le"
+            (some (Lambda.LMonoTy.tcons
+               "arrow"
+               [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                Lambda.LMonoTy.tcons
+                  "arrow"
+                  [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                   Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+                  (Lambda.LTyRestrict.nodata)]
+               (Lambda.LTyRestrict.nodata))))
+          (Lambda.LExpr.const "0" (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))))
+        (Lambda.LExpr.bvar 0)))
+    (Lambda.LExpr.app
+      (Lambda.LExpr.app
+        (Lambda.LExpr.op
+          "Int.Le"
+          (some (Lambda.LMonoTy.tcons
+             "arrow"
+             [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+              Lambda.LMonoTy.tcons
+                "arrow"
+                [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                 Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+                (Lambda.LTyRestrict.nodata)]
+             (Lambda.LTyRestrict.nodata))))
+        (Lambda.LExpr.const "0" (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))))
+      (Lambda.LExpr.bvar 0)))
+-/
+#guard_msgs in
+#eval (LExprT.toLExpr (translateBounded' test1))
+
+-- 2. λ(x: Nat), if 0 <= x then 1 else 0 (assumption inside ite)
+
+def test2 : LExprT String := .abs (.ite (leOp (.const "0" .int) (.bvar 0 .int)) (.const "1" .int) (.const "2" .int) .int) (.arrow natTy .int)
+
+#eval translateBounded' test2
+
+#eval (LExpr.eraseTypes (LExprT.toLExpr (translateBounded' test2)))
+
+/-- info: Lambda.LExpr.abs
+  (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))
+  (Lambda.LExpr.ite
+    (Lambda.LExpr.app
+      (Lambda.LExpr.app
+        (Lambda.LExpr.op
+          "Bool.Implies"
+          (some (Lambda.LMonoTy.tcons
+             "arrow"
+             [Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata),
+              Lambda.LMonoTy.tcons
+                "arrow"
+                [Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata),
+                 Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+                (Lambda.LTyRestrict.nodata)]
+             (Lambda.LTyRestrict.nodata))))
+        (Lambda.LExpr.app
+          (Lambda.LExpr.app
+            (Lambda.LExpr.op
+              "Int.Le"
+              (some (Lambda.LMonoTy.tcons
+                 "arrow"
+                 [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                  Lambda.LMonoTy.tcons
+                    "arrow"
+                    [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                     Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+                    (Lambda.LTyRestrict.nodata)]
+                 (Lambda.LTyRestrict.nodata))))
+            (Lambda.LExpr.const "0" (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))))
+          (Lambda.LExpr.bvar 0)))
+      (Lambda.LExpr.app
+        (Lambda.LExpr.app
+          (Lambda.LExpr.op
+            "Int.Le"
+            (some (Lambda.LMonoTy.tcons
+               "arrow"
+               [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                Lambda.LMonoTy.tcons
+                  "arrow"
+                  [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                   Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+                  (Lambda.LTyRestrict.nodata)]
+               (Lambda.LTyRestrict.nodata))))
+          (Lambda.LExpr.const "0" (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))))
+        (Lambda.LExpr.bvar 0)))
+    (Lambda.LExpr.const "1" (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata))))
+    (Lambda.LExpr.const "2" (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata))))) -/
+#guard_msgs in
+#eval (LExprT.toLExpr (translateBounded' test2))
+
+-- 3. λ(x: int), if foo x >= 0 then 1 else 0 (for foo: int -> Nat) (propagate op/application information)
+
+def test3 : LExprT String := .abs (.ite (geOp (.app (.op "foo" (.arrow .int natTy)) (.bvar 0 .int) natTy) (.const "0" .int)) (.const "1" .int) (.const "0" .int) .int) (.arrow .int .int)
+
+#eval translateBounded' test3
+
+#eval (LExpr.eraseTypes (LExprT.toLExpr (translateBounded' test3)))
+
+/--
+info: Lambda.LExpr.abs
+  (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))
+  (Lambda.LExpr.ite
+    (Lambda.LExpr.app
+      (Lambda.LExpr.app
+        (Lambda.LExpr.op
+          "Bool.Implies"
+          (some (Lambda.LMonoTy.tcons
+             "arrow"
+             [Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata),
+              Lambda.LMonoTy.tcons
+                "arrow"
+                [Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata),
+                 Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+                (Lambda.LTyRestrict.nodata)]
+             (Lambda.LTyRestrict.nodata))))
+        (Lambda.LExpr.app
+          (Lambda.LExpr.app
+            (Lambda.LExpr.op
+              "Int.Le"
+              (some (Lambda.LMonoTy.tcons
+                 "arrow"
+                 [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                  Lambda.LMonoTy.tcons
+                    "arrow"
+                    [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                     Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+                    (Lambda.LTyRestrict.nodata)]
+                 (Lambda.LTyRestrict.nodata))))
+            (Lambda.LExpr.const "0" (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))))
+          (Lambda.LExpr.app
+            (Lambda.LExpr.op
+              "foo"
+              (some (Lambda.LMonoTy.tcons
+                 "arrow"
+                 [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                  Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)]
+                 (Lambda.LTyRestrict.nodata))))
+            (Lambda.LExpr.bvar 0))))
+      (Lambda.LExpr.app
+        (Lambda.LExpr.app
+          (Lambda.LExpr.op
+            "Int.Ge"
+            (some (Lambda.LMonoTy.tcons
+               "arrow"
+               [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                Lambda.LMonoTy.tcons
+                  "arrow"
+                  [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                   Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+                  (Lambda.LTyRestrict.nodata)]
+               (Lambda.LTyRestrict.nodata))))
+          (Lambda.LExpr.app
+            (Lambda.LExpr.op
+              "foo"
+              (some (Lambda.LMonoTy.tcons
+                 "arrow"
+                 [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                  Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)]
+                 (Lambda.LTyRestrict.nodata))))
+            (Lambda.LExpr.bvar 0)))
+        (Lambda.LExpr.const "0" (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata))))))
+    (Lambda.LExpr.const "1" (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata))))
+    (Lambda.LExpr.const "0" (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))))
+    -/
+#guard_msgs in
+#eval (LExprT.toLExpr (translateBounded' test3))
+
+-- 4. (x: Nat) + (y: Nat) >= 0 (free variable bounds)
+
+def test4 : LExprT String := geOp (addOp (.fvar "x" natTy) (.fvar "y" natTy)) (.const "0" .int)
+
+#eval translateBounded' test4
+
+#eval (LExpr.eraseTypes (LExprT.toLExpr (translateBounded' test4)))
+
+/--
+info: Lambda.LExpr.app
+  (Lambda.LExpr.app
+    (Lambda.LExpr.op
+      "Bool.Implies"
+      (some (Lambda.LMonoTy.tcons
+         "arrow"
+         [Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata),
+          Lambda.LMonoTy.tcons
+            "arrow"
+            [Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata),
+             Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+            (Lambda.LTyRestrict.nodata)]
+         (Lambda.LTyRestrict.nodata))))
+    (Lambda.LExpr.app
+      (Lambda.LExpr.app
+        (Lambda.LExpr.op
+          "Int.Le"
+          (some (Lambda.LMonoTy.tcons
+             "arrow"
+             [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+              Lambda.LMonoTy.tcons
+                "arrow"
+                [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                 Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+                (Lambda.LTyRestrict.nodata)]
+             (Lambda.LTyRestrict.nodata))))
+        (Lambda.LExpr.const "0" (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))))
+      (Lambda.LExpr.fvar "x" (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata))))))
+  (Lambda.LExpr.app
+    (Lambda.LExpr.app
+      (Lambda.LExpr.op
+        "Bool.Implies"
+        (some (Lambda.LMonoTy.tcons
+           "arrow"
+           [Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata),
+            Lambda.LMonoTy.tcons
+              "arrow"
+              [Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata),
+               Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+              (Lambda.LTyRestrict.nodata)]
+           (Lambda.LTyRestrict.nodata))))
+      (Lambda.LExpr.app
+        (Lambda.LExpr.app
+          (Lambda.LExpr.op
+            "Int.Le"
+            (some (Lambda.LMonoTy.tcons
+               "arrow"
+               [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                Lambda.LMonoTy.tcons
+                  "arrow"
+                  [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                   Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+                  (Lambda.LTyRestrict.nodata)]
+               (Lambda.LTyRestrict.nodata))))
+          (Lambda.LExpr.const "0" (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))))
+        (Lambda.LExpr.fvar "y" (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata))))))
+    (Lambda.LExpr.app
+      (Lambda.LExpr.app
+        (Lambda.LExpr.op
+          "Int.Ge"
+          (some (Lambda.LMonoTy.tcons
+             "arrow"
+             [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+              Lambda.LMonoTy.tcons
+                "arrow"
+                [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                 Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+                (Lambda.LTyRestrict.nodata)]
+             (Lambda.LTyRestrict.nodata))))
+        (Lambda.LExpr.app
+          (Lambda.LExpr.app
+            (Lambda.LExpr.op
+              "Int.Add"
+              (some (Lambda.LMonoTy.tcons
+                 "arrow"
+                 [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                  Lambda.LMonoTy.tcons
+                    "arrow"
+                    [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                     Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)]
+                    (Lambda.LTyRestrict.nodata)]
+                 (Lambda.LTyRestrict.nodata))))
+            (Lambda.LExpr.fvar "x" (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))))
+          (Lambda.LExpr.fvar "y" (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata))))))
+      (Lambda.LExpr.const "0" (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))))) -/
+#guard_msgs in
+#eval (LExprT.toLExpr (translateBounded' test4))
+
+-- 5. λ (x: Nat). λ (y: Nat). x + y >= 0 (multiple bound vars)
+
+def test5 : LExprT String := .abs (.abs (geOp (addOp (.bvar 1 .int) (.bvar 0 .int)) (.const "0" .int)) (.arrow natTy .bool)) (.arrow natTy (.arrow natTy .bool))
+
+#eval translateBounded' test5
+
+#eval (LExpr.eraseTypes (LExprT.toLExpr (translateBounded' test5)))
+
+/--
+info: Lambda.LExpr.abs
+  (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))
+  (Lambda.LExpr.abs
+    (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))
+    (Lambda.LExpr.app
+      (Lambda.LExpr.app
+        (Lambda.LExpr.op
+          "Bool.Implies"
+          (some (Lambda.LMonoTy.tcons
+             "arrow"
+             [Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata),
+              Lambda.LMonoTy.tcons
+                "arrow"
+                [Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata),
+                 Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+                (Lambda.LTyRestrict.nodata)]
+             (Lambda.LTyRestrict.nodata))))
+        (Lambda.LExpr.app
+          (Lambda.LExpr.app
+            (Lambda.LExpr.op
+              "Int.Le"
+              (some (Lambda.LMonoTy.tcons
+                 "arrow"
+                 [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                  Lambda.LMonoTy.tcons
+                    "arrow"
+                    [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                     Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+                    (Lambda.LTyRestrict.nodata)]
+                 (Lambda.LTyRestrict.nodata))))
+            (Lambda.LExpr.const "0" (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))))
+          (Lambda.LExpr.bvar 0)))
+      (Lambda.LExpr.app
+        (Lambda.LExpr.app
+          (Lambda.LExpr.op
+            "Bool.Implies"
+            (some (Lambda.LMonoTy.tcons
+               "arrow"
+               [Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata),
+                Lambda.LMonoTy.tcons
+                  "arrow"
+                  [Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata),
+                   Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+                  (Lambda.LTyRestrict.nodata)]
+               (Lambda.LTyRestrict.nodata))))
+          (Lambda.LExpr.app
+            (Lambda.LExpr.app
+              (Lambda.LExpr.op
+                "Int.Le"
+                (some (Lambda.LMonoTy.tcons
+                   "arrow"
+                   [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                    Lambda.LMonoTy.tcons
+                      "arrow"
+                      [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                       Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+                      (Lambda.LTyRestrict.nodata)]
+                   (Lambda.LTyRestrict.nodata))))
+              (Lambda.LExpr.const "0" (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))))
+            (Lambda.LExpr.bvar 1)))
+        (Lambda.LExpr.app
+          (Lambda.LExpr.app
+            (Lambda.LExpr.op
+              "Int.Ge"
+              (some (Lambda.LMonoTy.tcons
+                 "arrow"
+                 [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                  Lambda.LMonoTy.tcons
+                    "arrow"
+                    [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                     Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+                    (Lambda.LTyRestrict.nodata)]
+                 (Lambda.LTyRestrict.nodata))))
+            (Lambda.LExpr.app
+              (Lambda.LExpr.app
+                (Lambda.LExpr.op
+                  "Int.Add"
+                  (some (Lambda.LMonoTy.tcons
+                     "arrow"
+                     [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                      Lambda.LMonoTy.tcons
+                        "arrow"
+                        [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                         Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)]
+                        (Lambda.LTyRestrict.nodata)]
+                     (Lambda.LTyRestrict.nodata))))
+                (Lambda.LExpr.bvar 1))
+              (Lambda.LExpr.bvar 0)))
+          (Lambda.LExpr.const "0" (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata))))))))
+-/
+#guard_msgs in
+#eval (LExprT.toLExpr (translateBounded' test5))
 
 
+-- 6. λ (x: Nat), if foo then λ (y: Nat). not (x = -1) else λ (y: Nat). x + y >= 0 (propagate inside branches of if-then-else)
 
+def test6 : LExprT String := .abs (.ite (.op "foo" .bool) (.abs (notOp (.eq (.bvar 1 .int) (.const "-1" .int) .bool)) (.arrow natTy .bool)) (.abs (geOp (addOp (.bvar 1 .int) (.bvar 0 .int)) (.const "0" .int)) (.arrow natTy .bool)) (.arrow natTy .bool)) (.arrow natTy (.arrow natTy .bool))
+
+#eval translateBounded' test6
+
+#eval (LExpr.eraseTypes (LExprT.toLExpr (translateBounded' test6)))
+
+/--
+info: Lambda.LExpr.abs
+  (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))
+  (Lambda.LExpr.ite
+    (Lambda.LExpr.app
+      (Lambda.LExpr.app
+        (Lambda.LExpr.op
+          "Bool.Implies"
+          (some (Lambda.LMonoTy.tcons
+             "arrow"
+             [Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata),
+              Lambda.LMonoTy.tcons
+                "arrow"
+                [Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata),
+                 Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+                (Lambda.LTyRestrict.nodata)]
+             (Lambda.LTyRestrict.nodata))))
+        (Lambda.LExpr.app
+          (Lambda.LExpr.app
+            (Lambda.LExpr.op
+              "Int.Le"
+              (some (Lambda.LMonoTy.tcons
+                 "arrow"
+                 [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                  Lambda.LMonoTy.tcons
+                    "arrow"
+                    [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                     Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+                    (Lambda.LTyRestrict.nodata)]
+                 (Lambda.LTyRestrict.nodata))))
+            (Lambda.LExpr.const "0" (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))))
+          (Lambda.LExpr.bvar 0)))
+      (Lambda.LExpr.op "foo" (some (Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)))))
+    (Lambda.LExpr.abs
+      (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))
+      (Lambda.LExpr.app
+        (Lambda.LExpr.app
+          (Lambda.LExpr.op
+            "Bool.Implies"
+            (some (Lambda.LMonoTy.tcons
+               "arrow"
+               [Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata),
+                Lambda.LMonoTy.tcons
+                  "arrow"
+                  [Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata),
+                   Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+                  (Lambda.LTyRestrict.nodata)]
+               (Lambda.LTyRestrict.nodata))))
+          (Lambda.LExpr.app
+            (Lambda.LExpr.app
+              (Lambda.LExpr.op
+                "Int.Le"
+                (some (Lambda.LMonoTy.tcons
+                   "arrow"
+                   [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                    Lambda.LMonoTy.tcons
+                      "arrow"
+                      [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                       Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+                      (Lambda.LTyRestrict.nodata)]
+                   (Lambda.LTyRestrict.nodata))))
+              (Lambda.LExpr.const "0" (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))))
+            (Lambda.LExpr.bvar 0)))
+        (Lambda.LExpr.app
+          (Lambda.LExpr.app
+            (Lambda.LExpr.op
+              "Bool.Implies"
+              (some (Lambda.LMonoTy.tcons
+                 "arrow"
+                 [Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata),
+                  Lambda.LMonoTy.tcons
+                    "arrow"
+                    [Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata),
+                     Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+                    (Lambda.LTyRestrict.nodata)]
+                 (Lambda.LTyRestrict.nodata))))
+            (Lambda.LExpr.app
+              (Lambda.LExpr.app
+                (Lambda.LExpr.op
+                  "Int.Le"
+                  (some (Lambda.LMonoTy.tcons
+                     "arrow"
+                     [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                      Lambda.LMonoTy.tcons
+                        "arrow"
+                        [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                         Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+                        (Lambda.LTyRestrict.nodata)]
+                     (Lambda.LTyRestrict.nodata))))
+                (Lambda.LExpr.const "0" (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))))
+              (Lambda.LExpr.bvar 1)))
+          (Lambda.LExpr.app
+            (Lambda.LExpr.op
+              "Bool.Not"
+              (some (Lambda.LMonoTy.tcons
+                 "arrow"
+                 [Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata),
+                  Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+                 (Lambda.LTyRestrict.nodata))))
+            (Lambda.LExpr.eq
+              (Lambda.LExpr.bvar 1)
+              (Lambda.LExpr.const "-1" (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))))))))
+    (Lambda.LExpr.abs
+      (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))
+      (Lambda.LExpr.app
+        (Lambda.LExpr.app
+          (Lambda.LExpr.op
+            "Bool.Implies"
+            (some (Lambda.LMonoTy.tcons
+               "arrow"
+               [Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata),
+                Lambda.LMonoTy.tcons
+                  "arrow"
+                  [Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata),
+                   Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+                  (Lambda.LTyRestrict.nodata)]
+               (Lambda.LTyRestrict.nodata))))
+          (Lambda.LExpr.app
+            (Lambda.LExpr.app
+              (Lambda.LExpr.op
+                "Int.Le"
+                (some (Lambda.LMonoTy.tcons
+                   "arrow"
+                   [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                    Lambda.LMonoTy.tcons
+                      "arrow"
+                      [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                       Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+                      (Lambda.LTyRestrict.nodata)]
+                   (Lambda.LTyRestrict.nodata))))
+              (Lambda.LExpr.const "0" (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))))
+            (Lambda.LExpr.bvar 0)))
+        (Lambda.LExpr.app
+          (Lambda.LExpr.app
+            (Lambda.LExpr.op
+              "Bool.Implies"
+              (some (Lambda.LMonoTy.tcons
+                 "arrow"
+                 [Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata),
+                  Lambda.LMonoTy.tcons
+                    "arrow"
+                    [Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata),
+                     Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+                    (Lambda.LTyRestrict.nodata)]
+                 (Lambda.LTyRestrict.nodata))))
+            (Lambda.LExpr.app
+              (Lambda.LExpr.app
+                (Lambda.LExpr.op
+                  "Int.Le"
+                  (some (Lambda.LMonoTy.tcons
+                     "arrow"
+                     [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                      Lambda.LMonoTy.tcons
+                        "arrow"
+                        [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                         Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+                        (Lambda.LTyRestrict.nodata)]
+                     (Lambda.LTyRestrict.nodata))))
+                (Lambda.LExpr.const "0" (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))))
+              (Lambda.LExpr.bvar 1)))
+          (Lambda.LExpr.app
+            (Lambda.LExpr.app
+              (Lambda.LExpr.op
+                "Int.Ge"
+                (some (Lambda.LMonoTy.tcons
+                   "arrow"
+                   [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                    Lambda.LMonoTy.tcons
+                      "arrow"
+                      [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                       Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)]
+                      (Lambda.LTyRestrict.nodata)]
+                   (Lambda.LTyRestrict.nodata))))
+              (Lambda.LExpr.app
+                (Lambda.LExpr.app
+                  (Lambda.LExpr.op
+                    "Int.Add"
+                    (some (Lambda.LMonoTy.tcons
+                       "arrow"
+                       [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                        Lambda.LMonoTy.tcons
+                          "arrow"
+                          [Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata),
+                           Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)]
+                          (Lambda.LTyRestrict.nodata)]
+                       (Lambda.LTyRestrict.nodata))))
+                  (Lambda.LExpr.bvar 1))
+                (Lambda.LExpr.bvar 0)))
+            (Lambda.LExpr.const "0" (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))))))))
+            -/
+#guard_msgs in
+#eval (LExprT.toLExpr (translateBounded' test6))
 
 
 /--
