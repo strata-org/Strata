@@ -36,7 +36,7 @@ def extractAxiomsDecl (prg: Boogie.Program) : (List Boogie.Decl) :=
 /--
   Extract the body LExpr from the axiom declaration
 -/
-def extractExpr (axDecl: Boogie.Decl): (Lambda.LExpr Lambda.LMonoTy Boogie.BoogieIdent) :=
+def extractExpr (axDecl: Boogie.Decl): Boogie.Expression.Expr :=
   match axDecl with
     | .ax a _ => a.e
     | _ => panic "Can be called only on axiom declaration"
@@ -61,24 +61,23 @@ def transformSimpleTypeToFreeVariable (ty: Lambda.LMonoTy) (to_replace: List Str
   Transform all occurences of types of the form LMonoTy.tcons name [] into ftvar name, if name is in to_replace
   in the given expression
 -/
-def replaceTypesByFTV (expr: Lambda.LExpr Lambda.LMonoTy Boogie.BoogieIdent) (to_replace: List String): Lambda.LExpr Lambda.LMonoTy Boogie.BoogieIdent :=
+def replaceTypesByFTV (expr: Boogie.Expression.Expr) (to_replace: List String): Boogie.Expression.Expr :=
   match expr with
-    | .const c oty => .const c (oty.map (fun t => transformSimpleTypeToFreeVariable t to_replace))
-    | .op o oty => .op o (oty.map (fun t => transformSimpleTypeToFreeVariable t to_replace))
-    | .fvar name oty => .fvar name (oty.map (fun t => transformSimpleTypeToFreeVariable t to_replace))
-    | .mdata info e => .mdata info (replaceTypesByFTV e to_replace)
-    | .abs oty e => .abs (oty.map (fun t => transformSimpleTypeToFreeVariable t to_replace)) (replaceTypesByFTV e to_replace)
-    | .quant k oty tr e => .quant k (oty.map (fun t => transformSimpleTypeToFreeVariable t to_replace)) (replaceTypesByFTV tr to_replace) (replaceTypesByFTV e to_replace)
-    | .app fn e => .app (replaceTypesByFTV fn to_replace) (replaceTypesByFTV e to_replace)
-    | .ite c t e => .ite (replaceTypesByFTV c to_replace) (replaceTypesByFTV t to_replace) (replaceTypesByFTV e to_replace)
-    | .eq e1 e2 => .eq (replaceTypesByFTV e1 to_replace) (replaceTypesByFTV e2 to_replace)
-    | _ => expr
+    | .const m c oty => .const m c (oty.map (fun t => transformSimpleTypeToFreeVariable t to_replace))
+    | .op m o oty => .op m o (oty.map (fun t => transformSimpleTypeToFreeVariable t to_replace))
+    | .fvar m name oty => .fvar m name (oty.map (fun t => transformSimpleTypeToFreeVariable t to_replace))
+    | .bvar m i => .bvar m i
+    | .abs m oty e => .abs m (oty.map (fun t => transformSimpleTypeToFreeVariable t to_replace)) (replaceTypesByFTV e to_replace)
+    | .quant m k oty tr e => .quant m k (oty.map (fun t => transformSimpleTypeToFreeVariable t to_replace)) (replaceTypesByFTV tr to_replace) (replaceTypesByFTV e to_replace)
+    | .app m fn e => .app m (replaceTypesByFTV fn to_replace) (replaceTypesByFTV e to_replace)
+    | .ite m c t e => .ite m (replaceTypesByFTV c to_replace) (replaceTypesByFTV t to_replace) (replaceTypesByFTV e to_replace)
+    | .eq m e1 e2 => .eq m (replaceTypesByFTV e1 to_replace) (replaceTypesByFTV e2 to_replace)
 
 /--
   Extract all axioms from the given environment by first translating it into a Boogie Program.
   It then extracts LExpr body from the axioms, and replace all occurences of the typeArgs by a ftvar with the same name
 -/
-def extractAxiomsWithFreeTypeVars (pgm: Program) (typeArgs: List String): (List (Lambda.LExpr Lambda.LMonoTy Boogie.BoogieIdent)) :=
+def extractAxiomsWithFreeTypeVars (pgm: Program) (typeArgs: List String): (List Boogie.Expression.Expr) :=
   let prg: Boogie.Program := (TransM.run (translateProgram pgm)).fst
   let axiomsDecls := extractAxiomsDecl prg
   let axioms := axiomsDecls.map extractExpr
