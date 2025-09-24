@@ -302,4 +302,40 @@ theorem Maps.insert_values_subset [DecidableEq α] (ms : Maps α β) :
   have h2 := @Maps.insert_key_update_subset_value _ _ key val _ ms
   grind
 
+@[simp]
+theorem Maps.keys_of_push_empty :
+  (Maps.push ms []).keys = ms.keys := by
+  simp_all [Maps.push, Maps.keys, Map.keys]
+
+@[simp]
+theorem Maps.values_of_push_empty :
+  (Maps.push ms []).values = ms.values := by
+  simp_all [Maps.push, Maps.values, Map.values]
+
+theorem Maps.mem_keys_of_mem_keys_remove [DecidableEq α] [BEq (Map α β)]
+  (ms : Maps α β) (k1 k2 : α) (h : k2 ∈ (Maps.remove ms k1).keys) :
+  k2 ∈ ms.keys := by
+  induction ms
+  case nil => simp_all [Maps.keys, Maps.remove]
+  case cons m ms ih =>
+    simp_all [Maps.remove, Maps.keys]
+    split at h <;> simp_all [Maps.keys]
+    · grind
+    · cases h
+      · simp [@Map.mem_keys_of_mem_keys_remove _ _ _ m k1 k2 (by assumption)]
+      · simp_all
+
+theorem Maps.mem_values_of_mem_keys_remove [DecidableEq α] [BEq (Map α β)]
+  (ms : Maps α β) (k : α) (v : β) (h : v ∈ (Maps.remove ms k).values) :
+  v ∈ ms.values := by
+  induction ms
+  case nil => simp_all [Maps.values, Maps.remove]
+  case cons m ms ih =>
+    simp_all [Maps.remove, Maps.values]
+    split at h <;> simp_all [Maps.values]
+    · grind
+    · cases h
+      · simp [@Map.mem_values_of_mem_keys_remove _ _ _ m k v (by assumption)]
+      · simp_all
+
 ---------------------------------------------------------------------
