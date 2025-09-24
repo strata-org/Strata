@@ -100,6 +100,29 @@ theorem SubstWF.single_subst (id : TyIdentifier) (h : ¬id ∈ ty.freeVars) :
 theorem SubstWF_of_empty : SubstWF [] := by
   simp [SubstWF]
 
+
+theorem Subst.mem_freeVars_of_mem_freeVars_remove (s : Subst) (id : TyIdentifier)
+  (h : xty ∈ Subst.freeVars (Map.remove s id)) :
+  xty ∈ Subst.freeVars s := by
+  induction s
+  case nil => simp_all [Map.remove]
+  case cons head tail tail_ih =>
+    by_cases h_id_head : head.fst = id
+    case pos =>
+      simp_all [Map.remove]
+    case neg =>
+      simp_all [Map.remove]
+      cases h <;> try simp_all
+
+theorem SubstWF_of_remove (id : TyIdentifier) (h : SubstWF s) :
+  SubstWF (Map.remove s id) := by
+  simp_all [SubstWF]
+  intro xty h_xty_in_keys h_xty_in_fvs
+  have h_xty_in_s_keys := @Map.mem_keys_of_mem_keys_remove _ _ _ s id xty h_xty_in_keys
+  have h_xty_not_in_fvs := @h xty h_xty_in_s_keys
+  have := @Subst.mem_freeVars_of_mem_freeVars_remove xty s id h_xty_in_fvs
+  contradiction
+
 /--
 A type substitution, along with a proof that it is well-formed.
 -/

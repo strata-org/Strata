@@ -159,7 +159,6 @@ exprPrefix: $__var
 subst: ($__ty9, int)
 ($__ty3, (arrow bool int))
 ($__ty5, (arrow bool int))
-($__ty8, bool)
 ($__ty7, bool)
 ($__ty6, (arrow bool int))
 ($__ty2, int)
