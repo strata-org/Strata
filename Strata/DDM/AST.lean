@@ -244,6 +244,67 @@ def asCommaSepList : Arg → Array Arg
 
 end Arg
 
+
+mutual
+/--
+Decidable equality definitions of Expr, Operation and Arg.
+They cannot be naturally derived from 'deriving DecidableEq'. It seems the
+fact that their constructors use Array of themselves makes this hard.
+-/
+def Expr.beq (e1 e2 : Expr) : Bool :=
+  match e1, e2 with
+  | .bvar i1, .bvar i2
+  | .fvar i1, .fvar i2
+  | .fn i1, .fn i2 => i1 = i2
+  | .app e1 a1, .app e2 a2 => Expr.beq e1 e2 && Arg.beq a1 a2
+  | _, _ => false
+termination_by sizeOf e1
+
+def Operation.beq (o1 o2 : Operation) : Bool :=
+  o1.name = o2.name &&
+  Arg.array_beq o1.args o2.args
+termination_by sizeOf o1
+decreasing_by
+  simp [Operation.sizeOf_spec]
+  omega
+
+def Arg.array_beq (a1 a2 : Array Arg) : Bool :=
+  if size_eq : a1.size = a2.size then
+    a1.size.all fun i p => Arg.beq a1[i] a2[i]
+  else
+    false
+termination_by sizeOf a1
+
+def Arg.beq (a1 a2 : Arg) : Bool :=
+  match a1, a2 with
+  | .op o1, .op o2 => Operation.beq o1 o2
+  | .cat c1, .cat c2 => c1 == c2
+  | .expr e1, .expr e2 => Expr.beq e1 e2
+  | .type t1, .type t2 => t1 == t2
+  | .ident i1, .ident i2 => i1 == i2
+  | .num n1, .num n2 => n1 == n2
+  | .decimal v1, .decimal v2 => v1 == v2
+  | .strlit i1, .strlit i2 => i1 == i2
+  | .option o1, .option o2 =>
+    match o1,o2 with
+    | .none, .none => true
+    | .some a1, .some a2 => Arg.beq a1 a2
+    | _, _ => false
+  | .seq a1, .seq a2 =>
+    Arg.array_beq a1 a2
+  | .commaSepList a1, .commaSepList a2 =>
+    Arg.array_beq a1 a2
+  | _, _ => false
+termination_by sizeOf a1
+
+end
+
+-- TODO: extend these to LawfulBEq!
+instance: BEq Expr where beq := Expr.beq
+instance: BEq Operation where beq := Operation.beq
+instance: BEq Arg where beq := Arg.beq
+
+
 inductive MetadataArg where
 | bool (e : Bool)
 | catbvar (index : Nat) -- This is a deBrujin index into current typing environment.
@@ -940,9 +1001,21 @@ instance (nm : String) (d : Dialect) : Decidable (nm ∈ d) :=
 
 end Dialect
 
+
+/-- BEq between two Std HashMap; checked by doing inclusion test twice -/
+instance [BEq α] [Hashable α] [BEq β]: BEq (Std.HashMap α β) where
+  beq x y := Id.run do
+    if x.size ≠ y.size then
+      return false
+    for (k, v) in x do
+      if y.get? k != Option.some v then
+        return false
+    return true
+
+
 structure DialectMap where
   map : Std.HashMap DialectName Dialect
-  deriving Inhabited
+deriving Inhabited, BEq
 
 namespace DialectMap
 
@@ -1085,7 +1158,7 @@ end
 inductive GlobalKind where
 | expr (tp : TypeExpr)
 | type (params : List String) (definition : Option TypeExpr)
-deriving Inhabited, Repr
+deriving Inhabited, Repr, BEq
 
 mutual
 
@@ -1139,7 +1212,7 @@ Typing environment created from declarations in an environment.
 structure GlobalContext where
   nameMap : Std.HashMap Var FreeVarIndex := {}
   vars : Array (Var × GlobalKind) := #[]
-deriving Repr
+deriving Repr, BEq
 
 namespace GlobalContext
 
@@ -1190,6 +1263,7 @@ structure Program where
   /-- Final global context for program. -/
   globalContext : GlobalContext :=
     commands.foldl (init := {}) (·.addCommand dialects ·)
+deriving BEq
 
 namespace Program
 

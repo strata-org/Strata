@@ -154,4 +154,16 @@ theorem Map.keys.length :
   induction ls <;> simp [keys]
   case cons h t ih => assumption
 
+theorem Map.mem_keys_of_mem_keys_remove [DecidableEq α] (s : Map α β) (id xty : α)
+  (h : xty ∈ (Map.remove s id).keys) : xty ∈ s.keys := by
+  induction s
+  case nil => simp_all [Map.keys, Map.remove]
+  case cons head tail tail_ih =>
+    by_cases h_id_head : head.fst = id
+    case pos =>
+      simp_all [Map.remove, Map.keys]
+    case neg =>
+      simp_all [Map.remove, Map.keys]
+      cases h <;> try simp_all
+
 -------------------------------------------------------------------------------

@@ -45,7 +45,6 @@ Proof Obligation:
 #true
 
 Wrote problem to vcs/barEq.smt2.
-Wrote problem to vcs/fooEq.smt2.
 ---
 info:
 Obligation: barEq

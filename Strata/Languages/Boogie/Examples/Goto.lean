@@ -119,13 +119,7 @@ Assumptions:
 Proof Obligation:
 ((~Int.Le $__x2) #0)
 
-Wrote problem to vcs/a1.smt2.
-Wrote problem to vcs/a3.smt2.
-Wrote problem to vcs/a4.smt2.
 Wrote problem to vcs/a6.smt2.
-Wrote problem to vcs/a1.smt2.
-Wrote problem to vcs/a3.smt2.
-Wrote problem to vcs/a4.smt2.
 Wrote problem to vcs/a7.smt2.
 ---
 info:

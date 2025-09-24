@@ -52,7 +52,6 @@ Assumptions:
 Proof Obligation:
 (((~Int.Add (~Str.Length init_s1_0)) (~Str.Length init_s2_1)) == (~Str.Length init_s3_2))
 
-Wrote problem to vcs/concrete_string_test.smt2.
 Wrote problem to vcs/s1_s2_len_sum_eq_s3_len.smt2.
 ---
 info:

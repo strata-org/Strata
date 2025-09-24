@@ -39,7 +39,6 @@ Assumptions:
 Proof Obligation:
 #true
 
-Wrote problem to vcs/f_test.smt2.
 ---
 info:
 Obligation: f_test

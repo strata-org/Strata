@@ -128,14 +128,7 @@ Assumptions:
 Proof Obligation:
 ($__b6 == #false)
 
-Wrote problem to vcs/T1_z_eq_g.smt2.
-Wrote problem to vcs/T1_z_eq_old_g2.smt2.
-Wrote problem to vcs/T1_g_unchanged.smt2.
-Wrote problem to vcs/T1_g2_eq_old_g.smt2.
-Wrote problem to vcs/T1_y_eq_old_g2.smt2.
-Wrote problem to vcs/T1_z_eq_y.smt2.
 Wrote problem to vcs/T2_g2_eq_g.smt2.
-Wrote problem to vcs/T2_g_true.smt2.
 Wrote problem to vcs/T2_a_eq_false.smt2.
 Wrote problem to vcs/T2_b_eq_false.smt2.
 ---

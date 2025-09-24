@@ -206,6 +206,9 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
   | _ =>
     let mut results := (#[] : VCResults)
     for obligation in E.deferred do
+      if obligation.obligation.isTrue then
+        results := results.push { obligation, result := .unsat }
+        continue
       let maybeTerms := ProofObligation.toSMTTerms E obligation
       match maybeTerms with
       | .error err =>
@@ -267,6 +270,15 @@ end Boogie
 ---------------------------------------------------------------------
 
 namespace Strata
+
+def typeCheck (env : Program) (options : Options := Options.default) :
+  Except Std.Format Boogie.Program := do
+  let (program, errors) := TransM.run (translateProgram env)
+  if errors.isEmpty then
+    -- dbg_trace f!"AST: {program}"
+    Boogie.typeCheck options program
+  else
+    .error s!"DDM Transform Error: {repr errors}"
 
 def verify (smtsolver : String) (env : Program)
     (options : Options := Options.default) : IO Boogie.VCResults := do

@@ -29,13 +29,9 @@ info: ok: ((procedure P :  ((x : int)) → ((y : int)))
  tyPrefix: $__ty
  exprGen: 0
  exprPrefix: $__var
- subst: ($__ty5, int)
- ($__ty4, (arrow int int))
- ($__ty3, bool)
- ($__ty2, (arrow int bool))
- ($__ty1, bool)
- ($__ty0, (arrow int bool))
-  known types: [∀[0, 1]. (arrow 0 1), bool, int, string])
+ subst: ⏎
+ known types:
+ [∀[0, 1]. (arrow 0 1), bool, int, string])
 -/
 #guard_msgs in
 #eval do let ans ← typeCheck { TEnv.default with functions := Boogie.Factory }
