@@ -20,7 +20,7 @@ error: Could not find file INVALID!
 
 -- This tests that dialects must be loaded in order.
 /--
-error: 5 error(s) reading ../../Examples/dialects/Arith.dialect.st:
+error: 5 error(s) in ../../Examples/dialects/Arith.dialect.st:
   2:7: Unknown dialect Bool
   11:27: Undeclared type or category Bool.
   12:27: Undeclared type or category Bool.

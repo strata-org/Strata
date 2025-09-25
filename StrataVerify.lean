@@ -101,7 +101,7 @@ def main (args : List String) : IO UInt32 := do
           return 1
     -- Strata.Elab.elabProgram
     | .error errors =>
-      for (_, e) in errors do
+      for e in errors do
         let msg ← e.toString
         println! s!"Error: {msg}"
       println! f!"Finished with {errors.size} errors."

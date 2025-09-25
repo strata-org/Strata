@@ -8,11 +8,69 @@ import Strata.DDM.Elab.LoadedDialects
 import Strata.DDM.Parser
 import Strata.DDM.Util.Lean
 
+set_option autoImplicit false
+
 open Lean (Syntax Message)
 
 open Strata.Parser (DeclParser InputContext Parser ParsingContext ParserState)
 
 namespace Strata
+
+def infoSourceRange (info : Lean.SourceInfo) : Option SourceRange :=
+  match info with
+  | .original (pos := pos) (endPos := endPos) ..
+  | .synthetic (pos := pos) (endPos := endPos) .. =>
+    some { start := pos, stop := endPos }
+  | .none  => none
+
+def sourceLocPos (stx:Syntax) : Option String.Pos :=
+  match stx with
+  | .atom info .. | .ident info .. =>
+    infoSourceRange info |>.map (·.start)
+  | .node info _kind args  =>
+    match infoSourceRange info with
+    | some loc =>
+      some loc.start
+    | .none  =>
+      if h : args.size > 0 then
+        sourceLocPos args[0]
+      else
+        none
+  | .missing => none
+
+def sourceLocEnd (stx:Syntax) : Option String.Pos :=
+  match stx with
+  | .atom info ..  | .ident info .. =>
+    infoSourceRange info |>.map (·.stop)
+  | .node info _kind args  =>
+    match infoSourceRange info with
+    | some loc =>
+      some loc.stop
+    | .none  =>
+      if h : args.size > 0 then
+        sourceLocEnd args[args.size - 1]
+      else
+        none
+  | .missing => none
+
+def mkSourceRange? (stx:Syntax) : Option SourceRange :=
+  match stx with
+  | .atom info ..  | .ident info .. =>
+    infoSourceRange info
+  | .node info _kind args  =>
+    match infoSourceRange info with
+    | some loc => some loc
+    | none  =>
+      match h : args.size with
+      | 0 => none
+      | 1 => mkSourceRange? args[0]
+      | Nat.succ n => Id.run do
+        let some s := sourceLocPos args[0]
+          | return none
+        let some t := sourceLocEnd args[n]
+          | return none
+        some { start := s, stop := t }
+  | .missing => none
 
 namespace PrattParsingTableMap
 
@@ -54,7 +112,7 @@ class ElabClass (m : Type → Type) extends Monad m where
   getOpenDialects : m (Std.HashSet DialectName)
   getGlobalContext : m GlobalContext
   getErrorCount : m Nat
-  logErrorMessage : Syntax → Message → m Unit
+  logErrorMessage : Message → m Unit
 
 export ElabClass (logErrorMessage)
 
@@ -62,20 +120,21 @@ export ElabClass (logErrorMessage)
 Runs action and returns result along with Bool that is true if
 action ran without producing errors.
 -/
-def runChecked [ElabClass m] (action : m α) : m (α × Bool) := do
+def runChecked {m α} [ElabClass m] (action : m α) : m (α × Bool) := do
   let errorCount ← ElabClass.getErrorCount
   let r ← action
   return (r, errorCount = (← ElabClass.getErrorCount))
 
-def logError [ElabClass m] (stx : Syntax) (msg : String) : m Unit := do
-  let pos := stx.getHeadInfo.getPos?.getD 0
+def logError {m} [ElabClass m] (loc : SourceRange) (msg : String) : m Unit := do
   let inputCtx ← ElabClass.getInputContext
-  logErrorMessage stx <| Lean.mkStringMessage inputCtx pos msg
+  let m := Lean.mkStringMessage inputCtx loc.start msg
+  let m := if loc.isNone then m else { m with endPos := inputCtx.fileMap.toPosition loc.stop }
+  logErrorMessage m
 
-def logErrorMF [ElabClass m] (stx : Syntax) (msg : StrataFormat) : m Unit := do
+def logErrorMF {m} [ElabClass m] (loc : SourceRange) (msg : StrataFormat) : m Unit := do
   let c : FormatContext := .ofDialects (← ElabClass.getDialects) (← ElabClass.getGlobalContext) {}
   let s : FormatState := { openDialects := ← ElabClass.getOpenDialects }
-  logError stx (msg c s |>.format |>.pretty)
+  logError loc (msg c s |>.format |>.pretty)
 
 -- DeclM
 
@@ -195,7 +254,7 @@ structure DeclState where
   -- String position in file.
   pos : String.Pos := 0
   -- Errors found in elaboration.
-  errors : Array (Syntax × Message) := #[]
+  errors : Array Message := #[]
   deriving Inhabited
 
 namespace DeclState
@@ -272,11 +331,8 @@ instance : ElabClass DeclM where
   getOpenDialects := return (←get).openDialectSet
   getGlobalContext := return (←get).globalContext
   getErrorCount := return (←get).errors.size
-  logErrorMessage stx msg :=
-    modify fun s => { s with errors := s.errors.push (stx, msg) }
-
-def run (action : DeclM Unit) (init : DeclState) : DeclState :=
-  (action DeclContext.empty init).snd
+  logErrorMessage msg :=
+    modify fun s => { s with errors := s.errors.push msg }
 
 end DeclM
 
