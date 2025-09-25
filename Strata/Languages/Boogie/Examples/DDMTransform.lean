@@ -8,6 +8,7 @@ import Strata.Languages.Boogie.Verifier
 
 ---------------------------------------------------------------------
 namespace Strata
+set_option maxRecDepth 10000
 
 def msPgm : Program :=
 #strata
