@@ -29,7 +29,7 @@ info: ok: ((procedure P :  ((x : int)) → ((y : int)))
  tyPrefix: $__ty
  exprGen: 0
  exprPrefix: $__var
- subst: ⏎
+ subst: []
  known types:
  [∀[0, 1]. (arrow 0 1), bool, int, string])
 -/
