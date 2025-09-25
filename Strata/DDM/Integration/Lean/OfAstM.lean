@@ -53,13 +53,13 @@ def throwUnknownType (e : TypeExpr) : OfAstM α :=
 /--
 Raise error when passed an argument that is not an expression when expression expected.
 -/
-def throwExpected {α} (cat : String) (a : Arg) : OfAstM α :=
+def throwExpected {Ann α} [Repr Ann] (cat : String) (a : ArgF Ann) : OfAstM α :=
   Except.error s!"Expected {cat} {repr a}."
 
 /--
 Raise error when passed an argument that is not an expression when expression expected.
 -/
-def throwExpectedExpr (a : Arg) : OfAstM α :=
+def throwExpectedExpr {Ann α} [Repr Ann] (a : ArgF Ann) : OfAstM α :=
   throwExpected "expression" a
 
 /--
@@ -108,76 +108,78 @@ protected def checkEtaExprArgCount
   else
     .throwUnexpectedArgCount tp expected.size args.size
 
-def ofExpressionM {β} (val : Arg) (act : ∀(e : Expr), sizeOf e < sizeOf val → OfAstM β)
+def ofExpressionM {α β} [Repr α] [SizeOf α] (val : ArgF α) (act : ∀(e : ExprF α), sizeOf e < sizeOf val → OfAstM β)
   : OfAstM β :=
   match val with
   | .expr a1 => act a1 (by decreasing_tactic)
   | a => .throwExpected "expression" a
 
-def ofTypeM {β}
-      (val : Arg)
-      (act : ∀(e : TypeExpr), sizeOf e < sizeOf val → OfAstM β)
+def ofTypeM {α β} [Repr α] [SizeOf α]
+      (val : ArgF α)
+      (act : ∀(e : TypeExprF α), sizeOf e < sizeOf val → OfAstM β)
       : OfAstM β :=
   match val with
   | .type a1 => act a1 (by decreasing_tactic)
   | a => .throwExpected "type" a
 
-def ofOperationM {β}
-        (val : Arg)
-        (act : ∀(o : Operation), sizeOf o < sizeOf val → OfAstM β)
+def ofOperationM {α β} [Repr α] [SizeOf α]
+        (val : ArgF α)
+        (act : ∀(o : OperationF α), sizeOf o < sizeOf val → OfAstM β)
       : OfAstM β :=
   match val with
   | .op a1 => act a1 (by decreasing_tactic)
   | a => .throwExpected "operation" a
 
-def ofIdentM : Arg → OfAstM String
-| .ident val => pure val
+def ofIdentM {α} [Repr α] : ArgF α → OfAstM (Ann String α)
+| .ident ann val => pure { ann := ann, val := val }
 | a => .throwExpected "identifier" a
 
-def ofNumM : Arg → OfAstM Nat
-| .num val => pure val
+def ofNumM {α} [Repr α] : ArgF α → OfAstM (Ann Nat α)
+| .num ann val => pure { ann := ann, val := val }
 | a => .throwExpected "numeric literal" a
 
-def ofDecimalM : Arg → OfAstM Decimal
-| .decimal val => pure val
+def ofDecimalM {α} [Repr α] : ArgF α → OfAstM (Ann Decimal α)
+| .decimal ann val => pure { ann := ann, val := val }
 | a => .throwExpected "scientific literal" a
 
-def ofStrlitM : Arg → OfAstM String
-| .strlit val => pure val
+def ofStrlitM {α} [Repr α]
+      : ArgF α → OfAstM (Ann String α)
+| .strlit ann val => pure { ann := ann, val := val }
 | a => .throwExpected "string literal" a
 
-def ofOptionM {β}
-      (arg : Arg)
-      (act : ∀(e : Arg), sizeOf e < sizeOf arg → OfAstM β)
-      : OfAstM (Option β) :=
+def ofOptionM {α β} [Repr α] [SizeOf α]
+      (arg : ArgF α)
+      (act : ∀(e : ArgF α), sizeOf e < sizeOf arg → OfAstM β)
+      : OfAstM (Ann (Option β) α) :=
   match arg with
-  | .option mv =>
+  | .option ann mv =>
     match mv with
     | none =>
-      pure none
+      pure { ann := ann, val := none }
     | some v =>
-      some <$> act v (by decreasing_tactic)
+      (fun v => { ann := ann, val := some v }) <$> act v (by decreasing_tactic)
   | _ => throwExpected "option" arg
 
-def ofCommaSepByM {β}
-      (arg : Arg)
-      (act : ∀(e : Arg), sizeOf e < sizeOf arg → OfAstM β)
-      : OfAstM (Array β) :=
+def ofCommaSepByM {α β} [Repr α] [SizeOf α]
+      (arg : ArgF α)
+      (act : ∀(e : ArgF α), sizeOf e < sizeOf arg → OfAstM β)
+      : OfAstM (Ann (Array β) α) :=
   match arg with
-  | .commaSepList a => do
+  | .commaSepList ann a => do
     let val ← a.attach.mapM fun ⟨v, vIn⟩  => do
       act v (by decreasing_tactic)
-    pure val
+    pure { ann := ann, val := val }
   | _ => throwExpected "seq" arg
 
-def ofSeqM {β}
-      (arg : Arg)
-      (act : ∀(e : Arg), sizeOf e < sizeOf arg → OfAstM β)
-      : OfAstM (Array β) :=
+def ofSeqM {α β} [Repr α] [SizeOf α]
+      (arg : ArgF α)
+      (act : ∀(e : ArgF α), sizeOf e < sizeOf arg → OfAstM β)
+      : OfAstM (Ann (Array β) α) :=
   match arg with
-  | .seq a => do
-    a.attach.mapM fun ⟨v, vIn⟩ =>
+  | .seq ann a => do
+    let val ← a.attach.mapM fun ⟨v, vIn⟩ =>
       act v (by decreasing_tactic)
+    pure { ann := ann, val := val }
   | _ => throwExpected "seq" arg
 
 /--
@@ -185,8 +187,8 @@ Get the expression at index `lvl` in the arguments.
 
 Note that in conversion, we will
 -/
-def atArg {α β} [SizeOf α] {e : α} (as : SizeBounded (Array Arg) e 1) (lvl : Nat)
-        (act : (s : SizeBounded Arg e (-1)) → OfAstM β)
+def atArg {Ann α β} [SizeOf α] {e : α} (as : SizeBounded (Array (ArgF Ann)) e 1) (lvl : Nat)
+        (act : (s : SizeBounded (ArgF Ann) e (-1)) → OfAstM β)
         (lvlP : lvl < as.val.size := by get_elem_tactic) :
         OfAstM β :=
   have lvlP : lvl < as.val.size := by omega
@@ -202,8 +204,8 @@ Get the expression at index `lvl` in the arguments.
 
 Note that in conversion, we will
 -/
-def exprEtaArg{α T} [HasEta α T] {e : Expr} {n : Nat} (as : SizeBounded (Array Arg) e 1) (_ : as.val.size ≤ n) (lvl : Nat)
-        (act : (s : Expr) → sizeOf s < sizeOf e → OfAstM α) :
+def exprEtaArg{Ann α T} [Repr Ann] [HasEta α T] {e : Expr} {n : Nat} (as : SizeBounded (Array (ArgF Ann)) e 1) (_ : as.val.size ≤ n) (lvl : Nat)
+        (act : (s : ExprF Ann) → sizeOf s < sizeOf e → OfAstM α) :
         OfAstM α :=
   if lvlP : lvl < as.val.size then
     let i := as.val.size - 1 - lvl

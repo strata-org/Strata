@@ -11,7 +11,7 @@ namespace Strata
 open Elab
 
 def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
-  let Ident : ArgDeclKind := .cat <| .atom q`Init.Ident
+  let Ident : ArgDeclKind := .cat <| .atom .none q`Init.Ident
   let BindingType := q`Init.BindingType
   let Command := q`Init.Command
   let Metadata := q`Init.Metadata
@@ -24,7 +24,7 @@ def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
     name := "TypeFn",
     argDecls := .ofArray #[
       { ident := "bindings", kind := Ident },
-      { ident := "val", kind := .cat <| .atom TypeExpr }
+      { ident := "val", kind := .cat <| .atom .none TypeExpr }
     ]
     category := TypeExpr,
     syntaxDef := .ofList [.str "fnOf(", .ident 0 0, .str ", ", .ident 1 0, .str ")"]
@@ -36,8 +36,8 @@ def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
       name := "mkBinding",
       argDecls := .ofArray #[
         { ident := "name", kind := Ident, },
-        { ident := "type", kind := .cat <| .atom BindingType, },
-        { ident := "metadata", kind := .cat <| .mkOpt (.atom Metadata), }
+        { ident := "type", kind := .cat <| .atom .none BindingType, },
+        { ident := "metadata", kind := .cat <| .mkOpt (.atom .none Metadata), }
       ],
       category := Binding,
       syntaxDef := .ofList [.ident 2 0, .ident 0 0, .str ":", .ident 1 0],
@@ -48,7 +48,7 @@ def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
   declareOp {
       name := "mkBindings",
       argDecls := .ofArray #[
-        { ident := "bs", kind := .cat <| .mkCommaSepBy <| .atom Binding }
+        { ident := "bs", kind := .cat <| .mkCommaSepBy <| .atom .none Binding }
       ],
       category := Bindings,
       syntaxDef := .ofList [.str "(", .ident 0 0, .str ")" ],
@@ -77,22 +77,22 @@ def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
         kind := Ident
       },
       { ident := "args",
-        kind := .cat (.mkOpt (.atom Bindings))
+        kind := .cat (.mkOpt (.atom .none Bindings))
       },
       { ident := "cat",
-        kind := .cat (.atom BindingType),
+        kind := .cat (.atom .none BindingType),
         metadata := md{ .scope 0 }
       },
       { ident := "opMetadata",
-        kind := .cat (.mkOpt (.atom Metadata)),
+        kind := .cat (.mkOpt (.atom .none Metadata)),
         metadata := md{ .scope 1 }
       },
       { ident := "synMetadata",
-        kind := .cat (.mkOpt (.atom Metadata)),
+        kind := .cat (.mkOpt (.atom .none Metadata)),
         metadata := md{ .scope 2 }
       },
       { ident := "opSyntax",
-        kind := .cat (.atom SyntaxDef),
+        kind := .cat (.atom .none SyntaxDef),
         metadata := md{ .scope 3 }
       }
     ],
@@ -103,7 +103,7 @@ def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
     name := "typeCommand",
     argDecls := .ofArray #[
       { ident := "name", kind := Ident },
-      { ident := "args", kind := .cat (.mkOpt (.atom Bindings)) }
+      { ident := "args", kind := .cat (.mkOpt (.atom .none Bindings)) }
     ],
     category := Command,
     syntaxDef := .ofList [.str "type", .ident 0 0, .ident 1 0, .str ";"]
@@ -115,22 +115,22 @@ def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
         kind := Ident
       },
       { ident := "args",
-        kind := .cat (.mkOpt (.atom Bindings))
+        kind := .cat (.mkOpt (.atom .none Bindings))
       },
       { ident := "returnType",
-        kind := .cat (.atom BindingType),
+        kind := .cat (.atom .none BindingType),
         metadata := md{ .scope 0 }
       },
       { ident := "opMetadata",
-        kind := .cat (.mkOpt (.atom Metadata)),
+        kind := .cat (.mkOpt (.atom .none Metadata)),
         metadata := md{ .scope 1 }
       },
       { ident := "synMetadata",
-        kind := .cat (.mkOpt (.atom Metadata))
+        kind := .cat (.mkOpt (.atom .none Metadata))
         metadata := md{ .scope 2 },
       },
       { ident := "opSyntax",
-        kind := .cat (.atom SyntaxDef),
+        kind := .cat (.atom .none SyntaxDef),
         metadata := md{ .scope 3 },
       }
     ],
@@ -141,7 +141,7 @@ def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
     name := "mdCommand",
     argDecls := .ofArray #[
       { ident := "name", kind := Ident },
-      { ident := "args", kind := .cat (.mkOpt (.atom Bindings)) }
+      { ident := "args", kind := .cat (.mkOpt (.atom .none Bindings)) }
     ],
     category := Command,
     syntaxDef := .ofList [.str "metadata", .ident 0 0, .ident 1 0, .str ";"]
