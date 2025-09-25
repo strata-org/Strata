@@ -120,6 +120,7 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
     -- TODO: handle weak and strict equality properly
     | "===" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Eq" none) lhs) rhs
     | "==" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Eq" none) lhs) rhs
+    --------------------------------------------------------
     | "<=" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Le" none) lhs) rhs
     | "<" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Lt" none) lhs) rhs
     | ">=" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Ge" none) lhs) rhs
@@ -199,6 +200,13 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
     -- For now, create a placeholder that will be handled during call statement processing
     Heap.HExpr.lambda (.fvar s!"call_{call.callee.name}" none)
 
+  | .TS_FunctionExpression e =>
+  -- Translate function definition
+    dbg_trace s!"[DEBUG] Translating TypeScript function expression at loc {e.start_loc}-{e.end_loc}"
+    let funcName := s!"__anon_func_{e.start_loc}_{e.end_loc}"
+    -- just return a heap lambda placeholder
+    Heap.HExpr.lambda (.fvar funcName none)
+
   | _ => panic! s!"Unimplemented expression: {repr e}"
 
 partial def translate_statement_core
@@ -256,6 +264,26 @@ partial def translate_statement_core
             dbg_trace s!"[DEBUG] Function call has {args.length} arguments"
             let lhs := [d.id.name]  -- Left-hand side variables to store result
             (ctx, [.cmd (.directCall lhs call.callee.name args)])
+          | .TS_FunctionExpression funcExpr =>
+            -- Handle function expression assignment: let x = function(...) { ... }
+            let funcName := d.id.name
+            let funcBody := match funcExpr.body with
+              | .TS_BlockStatement blockStmt =>
+                (blockStmt.body.toList.map (fun stmt => translate_statement_core stmt ctx ct |>.snd)).flatten
+              | _ => panic! s!"Expected block statement as function body, got: {repr funcExpr.body}"
+            dbg_trace s!"[DEBUG] Translating TypeScript function expression assignment: {d.id.name} = function(...)"
+            let strataFunc : CallHeapStrataFunction := {
+              name := funcName,
+              params := funcExpr.params.toList.map (·.name),
+              body := funcBody,
+              returnType := none  -- We'll infer this later if needed
+            }
+            let newCtx := ctx.addFunction strataFunc
+            dbg_trace s!"[DEBUG] Added function '{funcName}' to context"
+            -- Initialize variable to the function reference
+            let ty := get_var_type d.id.typeAnnotation d.init
+            let funcRef := Heap.HExpr.lambda (.fvar funcName none)
+            (newCtx, [.cmd (.init d.id.name ty funcRef)])
           | _ =>
             -- Handle simple variable declaration: let x = value
             let value := translate_expr d.init
@@ -276,32 +304,100 @@ partial def translate_statement_core
           match assgn.left with
           | .TS_Identifier id =>
             -- Handle identifier assignment: x = value
-            let value := translate_expr assgn.right
-            dbg_trace s!"[DEBUG] Assignment: {id.name} = {repr value}"
-            (ctx, [.cmd (.set id.name value)])
+            match assgn.right with
+            | .TS_FunctionExpression funcExpr =>
+              -- Capture parameters and body here (since translate_expr is kept pure)
+              let funcName := id.name
+              let funcBody := match funcExpr.body with
+                | .TS_BlockStatement blockStmt =>
+                  (blockStmt.body.toList.map (fun stmt => translate_statement_core stmt ctx ct |>.snd)).flatten
+                | _ => panic! s!"Expected block statement as function body, got: {repr funcExpr.body}"
+              let strataFunc : CallHeapStrataFunction := {
+                name := funcName,
+                params := funcExpr.params.toList.map (·.name),
+                body := funcBody,
+                returnType := none
+              }
+              let newCtx := ctx.addFunction strataFunc
+              dbg_trace s!"[DEBUG] Added anonymous function '{funcName}' to context (assignment to identifier)"
+              let funcRef := Heap.HExpr.lambda (.fvar funcName none)
+              (newCtx, [.cmd (.set id.name funcRef)])
+            | otherExpr =>
+              let value := translate_expr otherExpr
+              dbg_trace s!"[DEBUG] Assignment: {id.name} = {repr value}"
+              (ctx, [.cmd (.set id.name value)])
           | .TS_MemberExpression member =>
             -- Handle field assignment: obj[field] = value
             let objExpr := translate_expr member.object
-            let valueExpr := translate_expr assgn.right
 
-            -- Handle both static and dynamic field assignment
-            match member.property with
-            | .TS_NumericLiteral numLit =>
-              -- Static field assignment: obj[5] = value
-              let fieldIndex := Float.floor numLit.value |>.toUInt64.toNat
-              let assignExpr := Heap.HExpr.assign objExpr fieldIndex valueExpr
-              (ctx, [.cmd (.set "temp_assign_result" assignExpr)])
-            | .TS_IdExpression id =>
-              -- Dynamic field assignment: obj[variable] = value
-              let fieldExpr := translate_expr (.TS_IdExpression id)
-              let assignExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAssign" none) objExpr) fieldExpr) valueExpr
-              (ctx, [.cmd (.set "temp_assign_result" assignExpr)])
-            | _ =>
-              -- Other dynamic field assignment: obj[expr] = value
-              let fieldExpr := translate_expr member.property
-              let assignExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAssign" none) objExpr) fieldExpr) valueExpr
-              (ctx, [.cmd (.set "temp_assign_result" assignExpr)])
+            -- If RHS is a function expression, capture params/body now and bind funcRef
+            match assgn.right with
+            | .TS_FunctionExpression funcExpr =>
+              let funcName := s!"__anon_func_{funcExpr.start_loc}_{funcExpr.end_loc}"
+              let funcBody := match funcExpr.body with
+                | .TS_BlockStatement blockStmt =>
+                  (blockStmt.body.toList.map (fun stmt => translate_statement_core stmt ctx ct |>.snd)).flatten
+                | _ => panic! s!"Expected block statement as function body, got: {repr funcExpr.body}"
+              let strataFunc : CallHeapStrataFunction := {
+                name := funcName,
+                params := funcExpr.params.toList.map (·.name),
+                body := funcBody,
+                returnType := none
+              }
+              let newCtx := ctx.addFunction strataFunc
+              dbg_trace s!"[DEBUG] Added anonymous function '{funcName}' to context (assignment to member)"
+              let funcRef := Heap.HExpr.lambda (.fvar funcName none)
+              -- Handle both static and dynamic field assignment using funcRef
+              match member.property with
+              | .TS_NumericLiteral numLit =>
+                let fieldIndex := Float.floor numLit.value |>.toUInt64.toNat
+                let assignExpr := Heap.HExpr.assign objExpr fieldIndex funcRef
+                (newCtx, [.cmd (.set "temp_assign_result" assignExpr)])
+              | .TS_IdExpression id =>
+                let fieldExpr := translate_expr (.TS_IdExpression id)
+                let assignExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAssign" none) objExpr) fieldExpr) funcRef
+                (newCtx, [.cmd (.set "temp_assign_result" assignExpr)])
+              | _ =>
+                let fieldExpr := translate_expr member.property
+                let assignExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAssign" none) objExpr) fieldExpr) funcRef
+                (newCtx, [.cmd (.set "temp_assign_result" assignExpr)])
+            | otherExpr =>
+              let valueExpr := translate_expr otherExpr
+              -- Handle both static and dynamic field assignment with normal RHS
+              match member.property with
+              | .TS_NumericLiteral numLit =>
+                -- Static field assignment: obj[5] = value
+                let fieldIndex := Float.floor numLit.value |>.toUInt64.toNat
+                let assignExpr := Heap.HExpr.assign objExpr fieldIndex valueExpr
+                (ctx, [.cmd (.set "temp_assign_result" assignExpr)])
+              | .TS_IdExpression id =>
+                -- Dynamic field assignment: obj[variable] = value
+                let fieldExpr := translate_expr (.TS_IdExpression id)
+                let assignExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAssign" none) objExpr) fieldExpr) valueExpr
+                (ctx, [.cmd (.set "temp_assign_result" assignExpr)])
+              | _ =>
+                -- Other dynamic field assignment: obj[expr] = value
+                let fieldExpr := translate_expr member.property
+                let assignExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAssign" none) objExpr) fieldExpr) valueExpr
+                (ctx, [.cmd (.set "temp_assign_result" assignExpr)])
           --| _ => panic! s!"Unsupported assignment target: {repr assgn.left}"
+        | .TS_FunctionExpression funcExpr =>
+          -- Handle standalone function expression (immediately invoked function expression - IIFE)
+          let funcName := s!"__anon_func_{funcExpr.start_loc}_{funcExpr.end_loc}"
+          let funcBody := match funcExpr.body with
+            | .TS_BlockStatement blockStmt =>
+              (blockStmt.body.toList.map (fun stmt => translate_statement_core stmt ctx ct |>.snd)).flatten
+            | _ => panic! s!"Expected block statement as function body, got: {repr funcExpr.body}"
+          let strataFunc : CallHeapStrataFunction := {
+            name := funcName,
+            params := funcExpr.params.toList.map (·.name),
+            body := funcBody,
+            returnType := none  -- We'll infer this later if needed
+          }
+          let newCtx := ctx.addFunction strataFunc
+          dbg_trace s!"[DEBUG] Added anonymous function '{funcName}' to context"
+          -- For now, we don't execute the function; just define it
+          (newCtx, [])
         | _ =>
           -- Other expression statements - ignore for now
           (ctx, [])
@@ -362,8 +458,8 @@ partial def translate_statement_core
               let (tailCtx, tailStmts) :=
                 tail.foldl
                   (fun (p, accS) stmt =>
-                     let (p2, ss2) := translate_statement_core stmt p ct
-                     (p2, accS ++ ss2))
+                    let (p2, ss2) := translate_statement_core stmt p ct
+                    (p2, accS ++ ss2))
                   (accCtx, [])
               let cond := translate_expr ifs.test
               let thenBlk : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [] }
@@ -375,8 +471,8 @@ partial def translate_statement_core
               let (tailCtx, tailStmts) :=
                 tail.foldl
                   (fun (p, accS) stmt =>
-                     let (p2, ss2) := translate_statement_core stmt p ct
-                     (p2, accS ++ ss2))
+                    let (p2, ss2) := translate_statement_core stmt p ct
+                    (p2, accS ++ ss2))
                   (accCtx, [])
               let cond := translate_expr ifs.test
               let setBreakFlag : TSStrataStatement := .cmd (.set breakFlagVar Heap.HExpr.true)

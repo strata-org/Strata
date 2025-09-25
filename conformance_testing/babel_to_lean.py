@@ -143,6 +143,14 @@ def parse_array_expression(j):
     add_missing_node_info(j, target_j)
     return target_j
 
+def parse_function_expression(j):
+    target_j = {
+        'params': [parse_identifier(ji) for ji in j['params']],
+        'body': parse_statement(j['body'])
+    }
+    add_missing_node_info(j, target_j)
+    return target_j
+
 def parse_expression(j):
     match j['type']:
         case "Identifier":
@@ -180,7 +188,8 @@ def parse_expression(j):
             return {"TS_ArrayExpression": parse_array_expression(j)}
         # case "RecordExpression":
         # case "TupleExpression":
-        # case "FunctionExpression":
+        case "FunctionExpression":
+            return {"TS_FunctionExpression": parse_function_expression(j)}
         # case "UnaryExpression":
         # case "UpdateExpression":
         # case "BindExpression":
@@ -286,7 +295,7 @@ def parse_continue_statement(j):
     }
     add_missing_node_info(j, target_j)
     return target_j
-
+    
 def parse_for_statement(j):
     target_body = parse_statement(j['body'])
     target_j = {
