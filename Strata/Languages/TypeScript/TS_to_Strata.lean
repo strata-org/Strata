@@ -127,37 +127,37 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
     | ">" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Gt" none) lhs) rhs
     | _ => panic! s!"Unsupported binary operator: {e.operator}"
 
-  | .TS_LogicalExpression e =>
-    let lhs := translate_expr e.left
-    let rhs := translate_expr e.right
-    match e.operator with
-    | "&&" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Bool.And" none) lhs) rhs
-    | "||" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Bool.Or" none) lhs) rhs
-    | _ => panic! s!"Unsupported logical operator: {e.operator}"
+    | .TS_LogicalExpression e =>
+      let lhs := translate_expr e.left
+      let rhs := translate_expr e.right
+      match e.operator with
+      | "&&" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Bool.And" none) lhs) rhs
+      | "||" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Bool.Or" none) lhs) rhs
+      | _ => panic! s!"Unsupported logical operator: {e.operator}"
 
-  | .TS_ConditionalExpression e =>
-    let guard := translate_expr e.test
-    let consequent := translate_expr e.consequent
-    let alternate := translate_expr e.alternate
-    -- Use deferred conditional instead of toLambda? checks
-    Heap.HExpr.deferredIte guard consequent alternate
+    | .TS_ConditionalExpression e =>
+      let guard := translate_expr e.test
+      let consequent := translate_expr e.consequent
+      let alternate := translate_expr e.alternate
+      -- Use deferred conditional instead of toLambda? checks
+      Heap.HExpr.deferredIte guard consequent alternate
 
-  | .TS_NumericLiteral n =>
-    dbg_trace s!"[DEBUG] Translating numeric literal value={n.value}, raw={n.extra.raw}, rawValue={n.extra.rawValue}"
-    Heap.HExpr.int n.extra.raw.toInt!
+    | .TS_NumericLiteral n =>
+      dbg_trace s!"[DEBUG] Translating numeric literal value={n.value}, raw={n.extra.raw}, rawValue={n.extra.rawValue}"
+      Heap.HExpr.int n.extra.raw.toInt!
 
-  | .TS_BooleanLiteral b =>
-    if b.value then Heap.HExpr.true else Heap.HExpr.false
+    | .TS_BooleanLiteral b =>
+      if b.value then Heap.HExpr.true else Heap.HExpr.false
 
-  | .TS_StringLiteral s =>
-    Heap.HExpr.string s.value
+    | .TS_StringLiteral s =>
+      Heap.HExpr.string s.value
 
-  | .TS_IdExpression id =>
-    -- Simple variable reference
-    Heap.HExpr.lambda (.fvar id.name none)
+    | .TS_IdExpression id =>
+      -- Simple variable reference
+      Heap.HExpr.lambda (.fvar id.name none)
 
-  | .TS_NullLiteral _ =>
-    Heap.HExpr.null
+    | .TS_NullLiteral _ =>
+      Heap.HExpr.null
 
   -- | .TS_ArrayExpression arr =>
     -- -- Translate [value1, value2, value3] to heap allocation with numeric indices
@@ -184,23 +184,42 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
       let fieldExpr := translate_expr e.property
       Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAccess" none) objExpr) fieldExpr
 
-  | .TS_ObjectExpression e =>
-    -- Translate {1: value1, 5: value5} to heap allocation
-    let fields := e.properties.toList.map (fun prop =>
-      let key := match prop.key with
-        | .TS_NumericLiteral numLit => Float.floor numLit.value |>.toUInt64.toNat
-        | _ => panic! s!"Expected numeric literal as object key, got: {repr prop.key}"
-      let value := translate_expr prop.value
-      (key, value))
-    -- Use allocSimple which handles the object type automatically
-    Heap.HExpr.allocSimple fields
+    | .TS_ObjectExpression e =>
+      -- Translate {1: value1, 5: value5} to heap allocation
+      let fields := e.properties.toList.map (fun prop =>
+        let key := match prop.key with
+          | .TS_NumericLiteral numLit => Float.floor numLit.value |>.toUInt64.toNat
+          | _ => panic! s!"Expected numeric literal as object key, got: {repr prop.key}"
+        let value := translate_expr prop.value
+        (key, value))
+      -- Use allocSimple which handles the object type automatically
+      Heap.HExpr.allocSimple fields
 
-  | .TS_CallExpression call =>
-    -- Handle function calls - translate to expressions for now
-    -- For now, create a placeholder that will be handled during call statement processing
-    Heap.HExpr.lambda (.fvar s!"call_{call.callee.name}" none)
+    | .TS_CallExpression call =>
+      -- Handle function calls - translate to expressions for now
+      -- For now, create a placeholder that will be handled during call statement processing
+      Heap.HExpr.lambda (.fvar s!"call_{call.callee.name}" none)
 
-  | _ => panic! s!"Unimplemented expression: {repr e}"
+    | .TS_FunctionExpression e =>
+    -- Translate function definition
+      dbg_trace s!"[DEBUG] Function parameters: {e.params.toList.map (·.name)}"
+      dbg_trace s!"[DEBUG] Function body has statements"
+
+      -- let funcName := "anonymous_function"
+
+      -- let funcBody := e.body.body.toList.map (fun stmt =>
+      --   translate_statement stmt ctx |>.snd).flatten
+
+      -- let strataFunc : CallHeapStrataFunction := {
+      --   name := "anonymous_function",
+      --   params := e.params.toList.map (·.name),
+      --   body := funcBody,
+      --   returnType := none  -- We'll infer this later if needed
+      -- }
+
+      Heap.HExpr.lambda (.fvar s!"__anon_func_{e.start_loc}_{e.end_loc}" none)
+
+    | _ => panic! s!"Unimplemented expression: {repr e}"
 
 partial def translate_statement_core
   (s: TS_Statement)

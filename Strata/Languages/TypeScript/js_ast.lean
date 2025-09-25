@@ -153,6 +153,15 @@ mutual
     arguments : Array TS_Expression
   deriving Repr, Lean.FromJson, Lean.ToJson
 
+  structure TS_FunctionExpression extends BaseNode where
+    -- id : TS_Identifier
+    -- expression : Bool
+    -- generator : Bool
+    -- async : Bool
+    params : Array TS_Identifier
+    body: TS_Statement
+  deriving Repr, Lean.FromJson, Lean.ToJson
+
   inductive TS_Expression where
     | TS_BinaryExpression : TS_BinaryExpression → TS_Expression
     | TS_ConditionalExpression : TS_ConditionalExpression → TS_Expression
@@ -168,31 +177,32 @@ mutual
     -- | TS_ArrayExpression: TS_ArrayExpression → TS_Expression
     | TS_MemberExpression: TS_MemberExpression → TS_Expression
     | TS_CallExpression: TS_CallExpression → TS_Expression
+    | TS_FunctionExpression: TS_FunctionExpression → TS_Expression
   deriving Repr, Lean.FromJson, Lean.ToJson
-end
 
-structure TS_VariableDeclarator extends BaseNode where
-  id : TS_Identifier
-  init: TS_Expression
-deriving Repr, Lean.FromJson, Lean.ToJson
 
-structure TS_VariableDeclaration extends BaseNode where
-  declarations : Array TS_VariableDeclarator := #[]
-  kind : Option String
-deriving Repr, Lean.FromJson, Lean.ToJson
+  structure TS_VariableDeclarator extends BaseNode where
+    id : TS_Identifier
+    init: TS_Expression
+  deriving Repr, Lean.FromJson, Lean.ToJson
 
-structure TS_EmptyStatement extends BaseNode where
-deriving Repr, Lean.FromJson, Lean.ToJson
+  structure TS_VariableDeclaration extends BaseNode where
+    declarations : Array TS_VariableDeclarator := #[]
+    kind : Option String
+  deriving Repr, Lean.FromJson, Lean.ToJson
 
-structure TS_ExpressionStatement extends BaseNode where
-  expression : TS_Expression
-deriving Repr, Lean.FromJson, Lean.ToJson
+  structure TS_EmptyStatement extends BaseNode where
+  deriving Repr, Lean.FromJson, Lean.ToJson
 
-structure TS_ThrowStatement extends BaseNode where
-  argument: TS_Expression
-deriving Repr, Lean.FromJson, Lean.ToJson
+  structure TS_ExpressionStatement extends BaseNode where
+    expression : TS_Expression
+  deriving Repr, Lean.FromJson, Lean.ToJson
 
-mutual
+  structure TS_ThrowStatement extends BaseNode where
+    argument: TS_Expression
+  deriving Repr, Lean.FromJson, Lean.ToJson
+
+
   structure TS_BlockStatement extends BaseNode where
     body : Array TS_Statement
     directives : Array String := #[]
