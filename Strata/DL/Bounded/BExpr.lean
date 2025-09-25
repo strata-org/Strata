@@ -106,6 +106,39 @@ def increaseBVar (e: LExprT Identifier) : LExprT Identifier :=
 def increaseBVars (l: List (LExprT Identifier)) : List (LExprT Identifier) :=
   List.map increaseBVar l
 
+/- Do translation and wf generation in 1 go - need same assumptions, expesive to compute both-/
+structure translationRes Identifier where
+(translate : LExprT Identifier)
+(wfCond : List (LExprT Identifier))
+(assume : List (LExprT Identifier))
+
+-- more aux functions
+
+-- evaluate expression at bound if type is bounded
+def boundExprIfType [Coe String Identifier] (ty: LMonoTy) (e: LExprT Identifier) : List (LExprT Identifier) :=
+  ((isBounded ty).map (fun b => BoundExprToLExprT b e)).toList
+
+-- Generate WF condition for calling e1 with argument e2 if bounded type expected
+def wfCallCondition [Coe String Identifier] (assume : List (LExprT Identifier)) (e1 e2: LExprT Identifier) :=
+  match LExprT.toLMonoTy e1 with
+  | .arrow (.bounded b) _ =>
+    -- check that translated e2 satisfies precondition under assumptions
+    [addAssumptions assume (BoundExprToLExprT b e2)]
+  | _ => []
+
+--TODO: change to avoid quantifier
+-- NOTE: l1 includes assumptions, l2 does not
+def addBoundedWf [Coe String Identifier] (assume: List (LExprT Identifier)) (l1 l2: List (LExprT Identifier)) : List (LExprT Identifier) :=
+  List.map (fun e => .quant .all .int (.bvar 0 .int) (addAssumptions assume e)) l1 ++ List.map (.quant .all .int (.bvar 0 .int)) l2
+
+def addBoundedWfAssume [Coe String Identifier] (assume: List (LExprT Identifier)) (l: List (LExprT Identifier)) :=
+  addBoundedWf assume l []
+
+-- for bounded-valued terms, need to generate condition that body satisfies bound
+-- def wfBoundedBody [Coe String Identifier] (ty: LMonoTy) (e: LExprT Identifier) :=
+--   ((isBounded ty).map (fun b => BoundExprToLExprT b e)).toList
+
+
 /--
 Translate expression to one without bounded ints.
 This is a non-trivial translation, as we want to preserve the semantics of the resulting term.
@@ -128,50 +161,74 @@ Note that we do NOT have to worry about the fact that the new functions have a l
 Invariant: assumptions must not have bounded types (TODO enforce this), same for inputs
 Invariant (I think): All assumptions are of form: b(bvar #x)
 -/
-def translateBounded [Coe String Identifier] (e: LExprT Identifier) (assumptions: List (LExprT Identifier)) : LExprT Identifier × List (LExprT Identifier) :=
+def translateBounded [Coe String Identifier] (e: LExprT Identifier) (assume: List (LExprT Identifier)) : translationRes Identifier :=
   match e with
-  | .const c ty => (.const c (removeBound ty), [])
-  -- an op adds an assumption if it has bounded type (otherwise, its application may add an assumption further up the chain)
-  | .op o ty => let e1 := .op o (removeBound ty);
-  (if isBool ty then addAssumptions assumptions e1 else e1, ((isBounded ty).bind (fun b => BoundExprToLExprT b e1)).toList)
-  -- bvars should already have been handled if needed
-  | .bvar b ty => (.bvar b (removeBound ty), [])
-  -- fvars should be given back to the caller as a potential assumption
-  | .fvar f ty => let e1 := .fvar f (removeBound ty);  (e1, ((isBounded ty).bind (fun b => BoundExprToLExprT b e1)).toList)
-  -- application: if the entire application has bool type, add assumptions (and remove from recursive call)
-  -- need to collect assumptions from both recursive calls and add if needed
+  -- constants do not need assumptions; they produce a wf goal if bounded
+  | .const c ty =>
+    let res := .const c (removeBound ty);
+    ⟨res, boundExprIfType ty res, []⟩
+  -- an op adds a bottom-up assumption if it has bounded type; its wf is assumed
+  | .op o ty =>
+    let res := .op o (removeBound ty);
+    ⟨if isBool ty then addAssumptions assume res else res, [], boundExprIfType ty res⟩
+  -- bvars are handled when bound
+  | .bvar b ty => ⟨ .bvar b (removeBound ty), [], [] ⟩
+  -- fvars generate bottom-up assumptions if bounded
+  | .fvar f ty =>
+    let res := .fvar f (removeBound ty);
+    ⟨res, [], boundExprIfType ty res⟩
+  /-
+  Application has several cases:
+  1. If the entire application has boolean type, assumptions can be added
+  2. Otherwise, if the application has bounded type, it produces a bottom-up assumption. There is a subtle case. If the function has type (t -> int), then we must generate a wf condition. Otherwise, the bound will be assumed (for external operators) or checked (for abstraction/if-then-else/etc)
+  3. In either case, we produce a wf condition if the argument should have bounded type
+  -/
   | .app e1 e2 ty =>
     if isBool ty then
-    let e1' := translateBounded e1 [];
-    let e2' := translateBounded e2 [];
-    -- safe to add all assumptions, including recursive ones, nothing to propagate up
-    (addAssumptions (assumptions ++ e1'.2 ++ e2'.2) (.app e1'.1 e2'.1 (removeBound ty)), [])
+      let e1' := translateBounded e1 [];
+      let e2' := translateBounded e2 [];
+      let all_assumes := assume ++ e1'.assume ++ e2'.assume;
+      let res := addAssumptions all_assumes (.app e1'.translate e2'.translate (removeBound ty));
+      ⟨res, (wfCallCondition (assume ++ e2'.assume) e1 e2'.translate) ++ e1'.wfCond ++ e2'.wfCond, []⟩
     else
-    -- if the application has bounded type, need to add assumption further up the chain
-    --just recursive, may need assumptions in both but do not need assumptions from 1 in another
-    let e1' := translateBounded e1 assumptions;
-    let e2' := translateBounded e2 assumptions;
-    let e' := .app e1'.1 e2'.1 (removeBound ty);
-    (e', e1'.2 ++ e2'.2 ++ ((isBounded ty).bind (fun b => BoundExprToLExprT b e')).toList)
-  -- abstraction: probably the trickiest one.
-  -- 1. if the body has bool type, easier, add assumptions (including new one) and translate
-  -- 2. Otherwise, need to add assumption and increase bvars of all in "assumptions" list (as they are passing through binder)
+      let e1' := translateBounded e1 assume;
+      let e2' := translateBounded e2 assume;
+      let e' := .app e1'.translate e2'.translate (removeBound ty);
+      let extraWf :=
+        match LExprT.toLMonoTy e1, ty with
+        | .arrow _ .int, .bounded _ =>
+          boundExprIfType ty e'
+        | _, _ => [];
+      ⟨e', (wfCallCondition (assume ++ e2'.assume) e1 e2'.translate) ++ extraWf ++ e1'.wfCond ++ e2'.wfCond, e1'.assume ++ e2'.assume ++ boundExprIfType ty e'⟩
+  /-
+  Abstraction is the most complex case:
+  1. If the argument is bounded, add as top-down assumption
+  2. If the body has type bool, add assumptions and translate
+  3. Otherwise, add assumptions and increase bvars of all in "assume" list, as they are passing through a binder
+  3. WF: prove body satisfies bound if needed with same assumptions (but without new binder)
+  -/
   | .abs e ty =>
-    --get new assumption (if variable is bounded)
     let newAssumption :=
       match ty with
       | .arrow (.bounded b) _ =>
         [BoundExprToLExprT b (.bvar 0 .int)]
       | _ => [];
-    -- case 1: body has bool type
     match ty with
     | .arrow _ .bool =>
       let e' := translateBounded e [];
-      (.abs (addAssumptions (newAssumption ++ (increaseBVars assumptions) ++ e'.2) e'.1) (removeBound ty), [])
-    -- otherwise, propagate the assumptions, adding a new one
-    | _ => let e' := translateBounded e (newAssumption ++ (increaseBVars assumptions));
-      (.abs e'.1 (removeBound ty), e'.2)
-  -- quantifiers are complex but a bit simpler because we know they are boolean-valued
+      let all_assume := newAssumption ++ (increaseBVars assume) ++ e'.assume;
+      -- TODO: change
+      ⟨.abs (addAssumptions all_assume e'.translate) (removeBound ty), addBoundedWfAssume all_assume e'.wfCond, []⟩
+    | .arrow _ ty1 =>
+      let all_assume := newAssumption ++ (increaseBVars assume);
+      let e' := translateBounded e all_assume;
+      let e'' := .abs e'.translate (removeBound ty);
+      -- Note: don't add assumptions to e'.wfCond, already included
+      ⟨e'', addBoundedWf all_assume (boundExprIfType ty1 e'') e'.wfCond, e'.assume⟩
+    | _ => ⟨.const "0" .int, [], []⟩ -- error case
+  /-
+  Quantifiers are simpler because they are boolean-valued. ∀ (x : nat). e adds an assumption x >= 0 -> ..., while ∃ (x: nat). e results in x >= 0 ∧ ..
+  -/
   | .quant .all ty tr e =>
     let newAssumption :=
       match ty with
@@ -180,8 +237,9 @@ def translateBounded [Coe String Identifier] (e: LExprT Identifier) (assumptions
       | _ => [];
     let e' := translateBounded e [];
     let tr' := translateBounded tr []; --TODO: need "clean" one here
-    (.quant .all (removeBound ty) tr'.1 (addAssumptions (newAssumption ++ (increaseBVars assumptions) ++ e'.2) e'.1), [])
-  -- only difference: need exists x, b(x) /\ (assumptions -> e)
+    let all_assume := (newAssumption ++ (increaseBVars assume) ++ e'.assume);
+    -- TODO: factor out quant part
+    ⟨.quant .all (removeBound ty) tr'.translate (addAssumptions all_assume e'.translate), addBoundedWfAssume all_assume e'.wfCond, []⟩
   | .quant .exist ty tr e =>
     let newAssumption :=
       match ty with
@@ -190,35 +248,45 @@ def translateBounded [Coe String Identifier] (e: LExprT Identifier) (assumptions
       | _ => none;
     let e' := translateBounded e [];
     let tr' := translateBounded tr []; --TODO: need "clean" one here
-    let add_and x : LExprT Identifier := match newAssumption with
+    let add_and x : LExprT Identifier :=
+      match newAssumption with
       | .some f => (.app (.app (LFunc.opExprT boolAndFunc) f (LMonoTy.arrow LMonoTy.bool LMonoTy.bool)) x LMonoTy.bool)
       | .none => x;
-    (.quant .exist (removeBound ty) tr'.1 (add_and (addAssumptions ((increaseBVars assumptions) ++ e'.2) e'.1)), [])
-  -- if-then-else is recursive, but we can add the assumptions to the condition. Likewise, we can test if the result is boolean-valued to see if we add to result
+    ⟨.quant .exist (removeBound ty) tr'.translate (add_and (addAssumptions ((increaseBVars assume) ++ e'.assume) e'.translate)), addBoundedWfAssume (newAssumption.toList ++ (increaseBVars assume) ++ e'.assume) e'.wfCond, []⟩
+  /-
+  For if-then-else, we add assumptions to the condition, which is always bool-valued. For a bool-valued result, we can add the conditions freely. For a bounded-valued term, we produce a wf condition proving this.
+  -/
   | .ite c t f .bool =>
     let c' := translateBounded c [];
     let t' := translateBounded t [];
     let f' := translateBounded f [];
-    (.ite (addAssumptions (assumptions ++ c'.2) c'.1) (addAssumptions (assumptions ++ t'.2) t'.1) (addAssumptions (assumptions ++ f'.2) f'.1) .bool, [])
+    ⟨.ite (addAssumptions (assume ++ c'.assume) c'.translate) (addAssumptions (assume ++ t'.assume) t'.translate) (addAssumptions (assume ++ f'.assume) f'.translate) .bool, c'.wfCond ++ t'.wfCond ++ f'.wfCond ,[]⟩
   | .ite c t f ty =>
     let c' := translateBounded c [];
-    let t' := translateBounded t assumptions;
-    let f' := translateBounded f assumptions;
-    (.ite (addAssumptions (assumptions ++ c'.2) c'.1) t'.1 f'.1 ty, t'.2 ++ f'.2)
-  -- eq is bool so easy
-  | .eq e1 e2 ty => --shouldnt' need to check bool
+    let t' := translateBounded t assume;
+    let f' := translateBounded f assume;
+    let e' := .ite (addAssumptions (assume ++ c'.assume) c'.translate) t'.translate f'.translate ty;
+    ⟨e', (boundExprIfType ty e) ++ c'.wfCond ++ t'.wfCond ++ f'.wfCond, t'.assume ++ f'.assume⟩
+  -- Equality is always bool-valued, so we can add assumptions
+  | .eq e1 e2 ty =>
     let e1' := translateBounded e1 [];
     let e2' := translateBounded e2 [];
-    (addAssumptions (assumptions ++ e1'.2 ++ e2'.2) (.eq e1'.1 e2'.1 ty), [])
-  -- metadata just recursive
+    ⟨addAssumptions (assume ++ e1'.assume ++ e2'.assume) (.eq e1'.translate e2'.translate ty), e1'.wfCond ++ e2'.wfCond, []⟩
   | .mdata m e =>
-    let e' := translateBounded e assumptions;
-    (.mdata m e'.1, e'.2)
+    let e' := translateBounded e assume;
+    ⟨.mdata m e'.translate, e'.wfCond, e'.assume⟩
 
 def translateBounded' [Coe String Identifier]  (e: LExprT Identifier) : LExprT Identifier :=
-  (translateBounded e []).1
+  (translateBounded e []).translate
+
+def boundedWfConditions [Coe String Identifier]  (e: LExprT Identifier) : List (LExprT Identifier) :=
+  (translateBounded e []).wfCond
+
+-- NOTE: the assumptions are useful: they show us the "axioms" that we depend on (assumptions about external ops and free variables)
 
 -- Tests
+
+namespace Test
 
 -- NOTE: with a semantics for LExpr/LExprT, we could prove the equivalences mentioned above
 
@@ -229,7 +297,17 @@ def geOp (e1 e2: LExprT String) : LExprT String := .app (.app (LFunc.opExprT int
 
 def addOp (e1 e2: LExprT String) : LExprT String := .app (.app (LFunc.opExprT intAddFunc) e1 (.arrow .int .int)) e2 .int
 
+def mulOp (e1 e2: LExprT String) : LExprT String := .app (.app (LFunc.opExprT intMulFunc) e1 (.arrow .int .int)) e2 .int
+
 def notOp (e: LExprT String) : LExprT String := .app (LFunc.opExprT boolNotFunc) e .bool
+
+-- easier to read
+def eraseTy (x: LExprT String) :=
+  LExpr.eraseTypes (LExprT.toLExpr x)
+
+def eraseTys l := List.map eraseTy l
+
+namespace TranslateTest
 
 -- 1. ∀ (x: Nat), 0 <= x (quantified assumption)
 
@@ -238,7 +316,7 @@ def test1 := (@LExprT.quant String .all natTy (.bvar 0 natTy) (leOp (.const "0" 
 #eval translateBounded' test1
 
 --easier to read
-#eval (LExpr.eraseTypes (LExprT.toLExpr (translateBounded' test1)))
+#eval (eraseTy (translateBounded' test1) )
 
 /-- info: Lambda.LExpr.quant
   (Lambda.QuantifierKind.all)
@@ -828,29 +906,242 @@ info: Lambda.LExpr.abs
 #guard_msgs in
 #eval (LExprT.toLExpr (translateBounded' test6))
 
+end TranslateTest
 
-/--
-Generate the constraints for a bounded lambda expression. They are:
-1. For any int constant c : {x | b (x)}, generate constraint b(c)
-2. For .app e1 e2, if e1 has type {x : b(x)} -> t, generate constraint b(e2)
-3. For fvar
-We also get information (NOTE: BOTH for translation and constraints):
-3. For forall {x | b(x)} tr e have forall x, b(x) -> e
-4. For exists {x | b(x)} tr e, have exists x, b(x) /\ e
-For any free variables in the term, we add the assumption from their bound
-(for example, suppose we have forall (x: Nat), x * (y: Nat) >= 0,
-  this results in y >= 0 -> forall (x: int), x * y >= 0)
--/
-def bounded_constraints [Coe String Identifier]
-(e: Lambda.LExpr BMonoTy Identifier) : List (Lambda.LExpr Lambda.LMonoTy Identifier) :=
-  match e with
-  | .const x (some (.boundint b)) =>
-    -- Constant must be int
-    match x.toInt? with
-    | some i => [bound_to_expr b (.const x LMonoTy.int )]
-    | none => [] --this will be caught during typechecking
-  | .app e1 e2 =>
-  --problem: need to be at given type but dont have types yet
+-- Tests for wf conditions
+
+namespace WFTest
+
+-- 1. constant: (1: Nat)
+-- Expected: 0 <= 1
+
+def test1 : LExprT String := .const "1" natTy
+
+/--info: [Lambda.LExpr.app
+   (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+   (Lambda.LExpr.const "1" none)]
+   -/
+#guard_msgs in
+#eval eraseTys (boundedWfConditions test1)
+
+-- 2. application: (λ x: Nat. x) 1
+-- Expected: 0 <= 1
+
+def test2 : LExprT String := .app (.abs (.bvar 0 .int) (.arrow natTy .int)) (.const "1" .int) .int
+
+#eval eraseTys (boundedWfConditions test2)
+
+-- 3. application with assumption (bottom up): (λ x: Nat. x) (foo : Nat)
+-- Expected: 0 <= foo -> 0 <= foo
+
+def test3 : LExprT String := .app (.abs (.bvar 0 .int) (.arrow natTy .int)) (.op "foo" natTy) .int
+
+#eval eraseTys (boundedWfConditions test3)
+
+-- 4. application with assumption (top down): (λ x: Nat. (λ y: Nat. y) x)
+-- Expected: 0 <= x -> 0 <= x
+
+def test4 : LExprT String := .abs (.app (.abs (.bvar 0 .int) (.arrow natTy .int)) (.bvar 0 .int) .int) (.arrow natTy .int)
+
+#eval eraseTys (boundedWfConditions test4)
+
+-- 5. abstraction with assumption: (λ x: Nat. foo (x + 1)) (foo: Nat -> int)
+-- Expected: 0 <= x -> 0 <= x + 1
+
+def test5 : LExprT String := .abs (.app (.op "foo" (.arrow natTy .int)) (addOp (.bvar 0 .int) (.const "1" .int)) .int) (.arrow natTy .int)
+
+#eval eraseTys (boundedWfConditions test5)
+
+-- 6. quantified assumption: (∃ x: Nat. foo x) where (foo: Nat -> int)
+-- Expected: 0 <= x -> 0 <= x
+
+def test6 : LExprT String := .quant .exist natTy (.bvar 0 .int) (.app (.op "foo" (.arrow natTy .int)) (.bvar 0 .int) .int)
+
+#eval eraseTys (boundedWfConditions test6)
+
+-- 7. Lambda with bounded body (λ x: Nat. (x + 1: Nat))
+-- Expected: 0 <= x -> 0 <= x + 1
+
+def test7 : LExprT String := .abs (addOp (.bvar 0 .int) (.const "1" .int)) (.arrow natTy natTy)
+
+#eval eraseTys (boundedWfConditions test7)
+
+
+-- 8. Application with bounded body: (foo x) : Nat where foo: int -> Nat
+-- Expected: [] (foo assumed)
+
+def test8 : LExprT String := .app (.op "foo" (.arrow .int natTy)) (.fvar "x" .int) natTy
+
+#eval eraseTys (boundedWfConditions test8)
+
+-- 9. Application with bounded body, no assumption: (λ (x: int) . x * x) 1 : Nat
+-- Expected: 0 <= (λ (x: int) . x * x) 1
+
+def test9 : LExprT String := .app (.abs (mulOp (.bvar 0 .int) (.bvar 0 .int)) (.arrow .int .int)) (.const "1" .int) natTy
+
+#eval eraseTys (boundedWfConditions test9)
+
+-- 10. If-then-else with bounded body: if b then 1 else 0 : Nat
+-- Expected: 0 <= if b then 1 else 0
+
+def test10 : LExprT String := .ite (.const "b" .bool) (.const "1" .int) (.const "0" .int) natTy
+
+#eval eraseTys (boundedWfConditions test10)
+
+-- 11. If-then-else with bound functions: if b then λ (x: int). x * x : Nat else λ (y: int). 0 : Nat (whole type int -> Nat)
+-- Expected: 0 <= x * x; 0 <= 0
+
+def test11 : LExprT String := .ite (.const "b" .bool) (.abs (mulOp (.bvar 0 .int) (.bvar 0 .int)) (.arrow .int natTy)) (.abs (.const "0" .int) (.arrow .int natTy)) (.arrow .int natTy)
+
+#eval eraseTys (boundedWfConditions test11)
+
+end WFTest
+
+--tests with more sophisticated bounded types (mostly AI generated)
+
+namespace OtherTest
+
+-- Test 1: Nested bounded function applications
+-- Input: add : {x < 10} → {y < 5} → {z < 15}, applied to (3 : {x < 10}) and (2 : {x < 5})
+-- Expected: translate = add 3 2, wfCond = [3 < 10, 2 < 5] (note: there are duplicates, should fix - change to Set)
+
+def testNestedBoundedApps : LExprT String :=
+  .app (.app (.op "add" (.arrow (.bounded (.blt (.bvar) (.bconst 10)))
+                               (.arrow (.bounded (.blt (.bvar) (.bconst 5)))
+                                      (.bounded (.blt (.bvar) (.bconst 15))))))
+            (.const "3" (.bounded (.blt (.bvar) (.bconst 10))))
+            (.arrow (.bounded (.blt (.bvar) (.bconst 5))) (.bounded (.blt (.bvar) (.bconst 15)))))
+       (.const "2" (.bounded (.blt (.bvar) (.bconst 5))))
+       (.bounded (.blt (.bvar) (.bconst 15)))
+
+#eval eraseTys (boundedWfConditions testNestedBoundedApps)
+#eval eraseTy (translateBounded' testNestedBoundedApps)
+
+-- Test 2: Bounded variable in quantifier with complex bound expression
+-- Input: ∀ (x : {x < 100 ∧ 0 ≤ x}). x = 42
+-- Expected: translate = ∀ x:int. (x < 100 ∧ 0 ≤ x) → (x = 42), wfCond = []
+
+def testComplexBoundInQuantifier : LExprT String :=
+  .quant .all (.bounded (.band (.blt (.bvar) (.bconst 100))
+                              (.ble (.bconst 0) (.bvar))))
+         (.bvar 0 (.bounded (.band (.blt (.bvar) (.bconst 100))
+                                  (.ble (.bconst 0) (.bvar)))))
+         (.eq (.bvar 0 (.bounded (.band (.blt (.bvar) (.bconst 100))
+                                       (.ble (.bconst 0) (.bvar)))))
+              (.const "42" .int) .bool)
+
+#eval eraseTys (boundedWfConditions testComplexBoundInQuantifier)
+#eval eraseTy (translateBounded' testComplexBoundInQuantifier)
+
+-- Test 3: If-then-else with bounded branches and boolean condition
+-- Input: if ((getValue 5 : {0 ≤ x}) > 0) then (1 : {x < 10}) else (0 : {x < 10}) : {x < 10}
+-- Expected: translate = if (0 ≤ getValue 5) → (getValue 5 > 0) then 1 else 0, wfCond = [1 < 10, 0 < 10, (if (getValue 5) then 1 else 0) < 10]
+def testBoundedIte : LExprT String :=
+  .ite (.app (.app (LFunc.opExprT intLtFunc)
+                   (.const "0" .int)
+                   (.arrow .int .bool))
+             (.app (.op "getValue" (.arrow .int (.bounded (.ble (.bconst 0) (.bvar)))))
+                   (.const "5" .int)
+                   (.bounded (.ble (.bconst 0) (.bvar))))
+             .bool)
+       (.const "1" (.bounded (.blt (.bvar) (.bconst 10))))
+       (.const "0" (.bounded (.blt (.bvar) (.bconst 10))))
+       (.bounded (.blt (.bvar) (.bconst 10)))
+
+#eval eraseTys (boundedWfConditions testBoundedIte)
+#eval eraseTy (translateBounded' testBoundedIte)
+
+-- Test 4: Lambda with bounded parameter and bounded return type
+-- Input: λ (x : {0 ≤ x}). increment x : {y < 100}
+-- Expected: translate = λ x:int. increment x, wfCond = [∀ x:int. 0 ≤ x → increment x < 100; 0 <= x -> 0 <= x]
+def testBoundedLambda : LExprT String :=
+  .abs (.app (.op "increment" (.arrow (.bounded (.ble (.bconst 0) (.bvar)))
+                                     (.bounded (.blt (.bvar) (.bconst 100)))))
+             (.bvar 0 (.bounded (.ble (.bconst 0) (.bvar))))
+             (.bounded (.blt (.bvar) (.bconst 100))))
+       (.arrow (.bounded (.ble (.bconst 0) (.bvar)))
+               (.bounded (.blt (.bvar) (.bconst 100))))
+
+#eval eraseTys (boundedWfConditions testBoundedLambda)
+#eval eraseTy (translateBounded' testBoundedLambda)
+
+-- Test 5: Equality between bounded expressions
+-- Input: (square (3 : {-10 ≤ x ≤ 10}) : {0 ≤ y}) = (9 : {0 ≤ z})
+-- Expected: translate = square 3 = 9, wfCond = [-10 ≤ 3 ≤ 10, 0 ≤ 9]
+def testBoundedEquality : LExprT String :=
+  .eq (.app (.op "square" (.arrow (.bounded (.band (.ble (.bconst (-10)) (.bvar))
+                                                  (.ble (.bvar) (.bconst 10))))
+                                 (.bounded (.ble (.bconst 0) (.bvar)))))
+            (.const "3" (.bounded (.band (.ble (.bconst (-10)) (.bvar))
+                                        (.ble (.bvar) (.bconst 10)))))
+            (.bounded (.ble (.bconst 0) (.bvar))))
+      (.const "9" (.bounded (.ble (.bconst 0) (.bvar))))
+      .bool
+
+#eval eraseTys (boundedWfConditions testBoundedEquality)
+#eval eraseTy (translateBounded' testBoundedEquality)
+
+-- Test 6: Free variable with bounded type in assumptions
+-- Input: compare (x : {x < 50}) 25, with assumption [x < 50]
+-- Expected: translate = (x < 50) → compare x 25, wfCond = []
+def testFreeVarWithAssumptions : LExprT String :=
+  .app (.app (.op "compare" (.arrow .int (.arrow .int .bool)))
+             (.fvar "x" (.bounded (.blt (.bvar) (.bconst 50))))
+             (.arrow .int .bool))
+       (.const "25" .int)
+       .bool
+
+#eval eraseTys (boundedWfConditions testFreeVarWithAssumptions)
+#eval eraseTy (translateBounded' testFreeVarWithAssumptions)
+
+-- Test 7: Metadata preservation with bounded types
+-- Input: @metadata(42 : {0 ≤ x < 100})
+-- Expected: translate = @metadata(42), wfCond = [0 ≤ 42 < 100]
+def testMetadataWithBounds : LExprT String :=
+  .mdata (Info.mk "test_info")
+         (.const "42" (.bounded (.band (.ble (.bconst 0) (.bvar))
+                                      (.blt (.bvar) (.bconst 100)))))
+
+#eval eraseTys (boundedWfConditions testMetadataWithBounds)
+#eval eraseTy (translateBounded' testMetadataWithBounds)
+
+-- Test 8: Chain of bounded function applications
+-- Input: f3 (f2 (f1 5 : {x < 10}) : {x < 20}) : {x < 30}
+-- Expected: translate = f3 (f2 (f1 5)), wfCond = [f1 5 < 10 → f2 (f1 5) < 20 -> f2 (f1 5) < 20, f1 5 < 10 -> f1 5 < 10]
+def testBoundedChain : LExprT String :=
+  .app (.op "f3" (.arrow (.bounded (.blt (.bvar) (.bconst 20)))
+                        (.bounded (.blt (.bvar) (.bconst 30)))))
+       (.app (.op "f2" (.arrow (.bounded (.blt (.bvar) (.bconst 10)))
+                              (.bounded (.blt (.bvar) (.bconst 20)))))
+             (.app (.op "f1" (.arrow .int (.bounded (.blt (.bvar) (.bconst 10)))))
+                   (.const "5" .int)
+                   (.bounded (.blt (.bvar) (.bconst 10))))
+             (.bounded (.blt (.bvar) (.bconst 20))))
+       (.bounded (.blt (.bvar) (.bconst 30)))
+
+#eval eraseTys (boundedWfConditions testBoundedChain)
+#eval eraseTy (translateBounded' testBoundedChain)
+
+-- Test 9: Bounded type in boolean context with negation
+-- Input: ¬((getValue 10 : {0 ≤ x}) < 5)
+-- Expected: translate = (0 ≤ getValue 10) → ¬(getValue 10 < 5), wfCond = []
+def testBoundedInBoolContext : LExprT String :=
+  .app (LFunc.opExprT boolNotFunc)
+       (.app (.app (LFunc.opExprT intLtFunc)
+                   (.app (.op "getValue" (.arrow .int (.bounded (.ble (.bconst 0) (.bvar)))))
+                         (.const "10" .int)
+                         (.bounded (.ble (.bconst 0) (.bvar))))
+                   (.arrow .int .bool))
+             (.const "5" .int)
+             .bool)
+       .bool
+
+#eval eraseTys (boundedWfConditions testBoundedInBoolContext)
+#eval eraseTy (translateBounded' testBoundedInBoolContext)
+
+end OtherTest
+
+end Test
 
 
 end Bounded
