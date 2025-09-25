@@ -14,7 +14,9 @@ open Std (ToFormat Format format)
 /-- A GOTO program; corresponds to
   [`goto_programt`](https://diffblue.github.io/cbmc/classgoto__programt.html) -/
 structure Program where
-  instructions : Array Instruction
+  name : String := "main"
+  parameterIdentifiers : Array String := #[]
+  instructions : Array Instruction := #[]
   isInternal : Bool := false
   isBodyAvailable : Bool := true
 deriving Repr

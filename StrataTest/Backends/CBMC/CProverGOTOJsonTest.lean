@@ -43,31 +43,31 @@ def defaultCProverInitialize (locationNum : Nat) : Program := {
     -- ASSIGN __CPROVER_dead_object := NULL
     { type := .ASSIGN, locationNum := locationNum + 1,
       code := Code.assign (Expr.symbol "__CPROVER_dead_object" (Ty.UnsignedBV 64)) (Expr.constant "NULL" (Ty.UnsignedBV 64)),
-      sourceLoc := {function := "__CPROVER_initialize", line := 8, file := "<built-in-additions>", workingDir := ""}},
+      sourceLoc := {function := "__CPROVER_initialize", line := 8, file := "<built-in-additions>", workingDir := "",  comment := ""}},
 
     -- ASSIGN __CPROVER_deallocated := NULL
     { type := .ASSIGN, locationNum := locationNum + 2,
       code := Code.assign (Expr.symbol "__CPROVER_deallocated" (Ty.UnsignedBV 64)) (Expr.constant "NULL" (Ty.UnsignedBV 64)),
-      sourceLoc := {function := "__CPROVER_initialize", line := 7, file := "<built-in-additions>", workingDir := ""}},
+      sourceLoc := {function := "__CPROVER_initialize", line := 7, file := "<built-in-additions>", workingDir := "",  comment := ""}},
 
     -- ASSIGN __CPROVER_max_malloc_size := 36028797018963968
     { type := .ASSIGN, locationNum := locationNum + 3,
       code := Code.assign (Expr.symbol "__CPROVER_max_malloc_size" (Ty.UnsignedBV 64)) (Expr.constant "36028797018963968" (Ty.UnsignedBV 64)),
-      sourceLoc := {function := "__CPROVER_initialize", line := 12, file := "<built-in-additions>", workingDir := ""}},
+      sourceLoc := {function := "__CPROVER_initialize", line := 12, file := "<built-in-additions>", workingDir := "",  comment := ""}},
 
     -- ASSIGN __CPROVER_memory_leak := NULL
     { type := .ASSIGN, locationNum := locationNum + 4,
       code := Code.assign (Expr.symbol "__CPROVER_memory_leak" (Ty.UnsignedBV 64)) (Expr.constant "NULL" (Ty.UnsignedBV 64)),
-      sourceLoc := {function := "__CPROVER_initialize", line := 9, file := "<built-in-additions>", workingDir := ""}},
+      sourceLoc := {function := "__CPROVER_initialize", line := 9, file := "<built-in-additions>", workingDir := "",  comment := ""}},
 
     -- ASSIGN __CPROVER_rounding_mode := 0
     { type := .ASSIGN, locationNum := locationNum + 5,
       code := Code.assign (Expr.symbol "__CPROVER_rounding_mode" (Ty.SignedBV 32)) (Expr.constant "0" (Ty.SignedBV 32)),
-      sourceLoc := {function := "__CPROVER_initialize", line := 16, file := "<built-in-additions>", workingDir := ""}},
+      sourceLoc := {function := "__CPROVER_initialize", line := 16, file := "<built-in-additions>", workingDir := "",  comment := ""}},
 
     -- END_FUNCTION
     { type := .END_FUNCTION, locationNum := locationNum + 6,
-      sourceLoc := {function := "__CPROVER_initialize", line := 0, file := "", workingDir := ""}}
+      sourceLoc := {function := "__CPROVER_initialize", line := 0, file := "", workingDir := "",  comment := ""}}
   ]
 }
 
@@ -112,14 +112,14 @@ def genCProverStart (funcName : String) (args : List (String × Ty)) (locationNu
       -- DECL __CPROVER__start::argName : argTy
       { type := .DECL, locationNum := locationNum,
         code := Code.decl (Expr.symbol s!"__CPROVER__start::{argName}" argTy),
-        sourceLoc := {function := funcName, line := 5, file := s!"{funcName}.c", workingDir := ""}},
+        sourceLoc := {function := funcName, line := 5, file := s!"{funcName}.c", workingDir := "",  comment := ""}},
       -- ASSIGN __CPROVER__start::argName := side_effect
       { type := .ASSIGN, locationNum := locationNum + 1,
         code := Code.assign (Expr.symbol s!"__CPROVER__start::{argName}" argTy) (Expr.side_effect_nondet [("statement", Expr.constant "nondet" Ty.String), ("is_nondet_nullable", Expr.constant "1" Ty.String)]),
-        sourceLoc := {function := funcName, line := 5, file := s!"{funcName}.c", workingDir := ""}},
+        sourceLoc := {function := funcName, line := 5, file := s!"{funcName}.c", workingDir := "",  comment := ""}},
       -- INPUT address_of(argName) __CPROVER__start::argName
       { type := .OTHER, locationNum := locationNum + 2,
-        sourceLoc := {function := funcName, line := 5, file := s!"{funcName}.c", workingDir := ""}}
+        sourceLoc := {function := funcName, line := 5, file := s!"{funcName}.c", workingDir := "",  comment := ""}}
     ]
   let argInstructions := (args.mapIdx (fun i (argName, argTy) =>
       let baseIdx := locationNum + 2 + i * 3
@@ -128,7 +128,7 @@ def genCProverStart (funcName : String) (args : List (String × Ty)) (locationNu
   let deadInstructions := args.mapIdx fun i (argName, argTy) =>
     { type := .DEAD, locationNum := callIdx + 2 + i,
       code := Code.dead (Expr.symbol s!"__CPROVER__start::{argName}" argTy),
-      sourceLoc := {function := "", line := 0, file := "", workingDir := ""}}
+      sourceLoc := {function := "", line := 0, file := "", workingDir := "",  comment := ""}}
   {
     instructions := (#[
     -- CALL __CPROVER_initialize()
@@ -138,7 +138,7 @@ def genCProverStart (funcName : String) (args : List (String × Ty)) (locationNu
         { id := .nullary (.symbol "__CPROVER_initialize"), type := { id := .primitive .empty } },
         { id := .nullary (.symbol "arguments"), type := Ty.Empty }
       ]},
-      sourceLoc := {function := "__CPROVER_initialize", line := 24, file := "<built-in-additions>", workingDir := ""}}
+      sourceLoc := {function := "__CPROVER_initialize", line := 24, file := "<built-in-additions>", workingDir := "",  comment := ""}}
   ] ++ argInstructions.toArray ++ #[
     -- CALL return' := funcName(args...)
     { type := .FUNCTION_CALL, locationNum := callIdx,
@@ -147,14 +147,14 @@ def genCProverStart (funcName : String) (args : List (String × Ty)) (locationNu
         { id := .nullary (.symbol funcName), type := { id := .primitive .empty } },
         { id := .nullary (.symbol "arguments"), type := Ty.Empty }
       ]},
-      sourceLoc := {function := funcName, line := 5, file := s!"{funcName}.c", workingDir := ""}},
+      sourceLoc := {function := funcName, line := 5, file := s!"{funcName}.c", workingDir := "",  comment := ""}},
     -- OUTPUT address_of("return'")
     { type := .OTHER, locationNum := callIdx + 1,
-      sourceLoc := {function := funcName, line := 5, file := s!"{funcName}.c", workingDir := ""}}
+      sourceLoc := {function := funcName, line := 5, file := s!"{funcName}.c", workingDir := "",  comment := ""}}
   ] ++ deadInstructions.toArray ++ #[
     -- END_FUNCTION
     { type := .END_FUNCTION, locationNum := callIdx + 2 + args.length,
-      sourceLoc := {function := "", line := 0, file := "", workingDir := ""}}
+      sourceLoc := {function := "", line := 0, file := "", workingDir := "",  comment := ""}}
   ]) }
 
 
@@ -206,43 +206,43 @@ private def simpleAddProgram : Program := {
     { type := .ASSUME, locationNum := 0,
       guard := Expr.and [(Expr.gt (Expr.symbol "simpleAdd::x" (Ty.SignedBV 32)) (Expr.constant "0" (Ty.SignedBV 32))),
                          (Expr.lt (Expr.symbol "simpleAdd::x" (Ty.SignedBV 32)) (Expr.constant "251658240" (Ty.SignedBV 32)))],
-      sourceLoc := {function := "simpleAdd", line := 6, file := "simpleAdd.c", workingDir := ""}},
+      sourceLoc := {function := "simpleAdd", line := 6, file := "simpleAdd.c", workingDir := "",  comment := ""}},
 
     -- ASSUME simpleAdd::y > 0 ∧ simpleAdd::y < 251658240
     { type := .ASSUME, locationNum := 1,
       guard := Expr.and [(Expr.gt (Expr.symbol "simpleAdd::y" (Ty.SignedBV 32)) (Expr.constant "0" (Ty.SignedBV 32))),
                          (Expr.lt (Expr.symbol "simpleAdd::y" (Ty.SignedBV 32)) (Expr.constant "251658240" (Ty.SignedBV 32)))],
-      sourceLoc := {function := "simpleAdd", line := 7, file := "simpleAdd.c", workingDir := ""}},
+      sourceLoc := {function := "simpleAdd", line := 7, file := "simpleAdd.c", workingDir := "",  comment := ""}},
 
     -- DECL simpleAdd::1::z : signedbv[32]
     { type := .DECL, locationNum := 2,
       code := Code.decl (Expr.symbol "simpleAdd::1::z" (Ty.SignedBV 32)),
-      sourceLoc := {function := "simpleAdd", line := 8, file := "simpleAdd.c", workingDir := ""}},
+      sourceLoc := {function := "simpleAdd", line := 8, file := "simpleAdd.c", workingDir := "",  comment := ""}},
 
     -- ASSERT ¬(overflow-+(simpleAdd::x, simpleAdd::y))
     { type := .ASSERT, locationNum := 3,
       guard := Expr.not (Expr.plus_overflow (Expr.symbol "simpleAdd::x" (Ty.SignedBV 32)) (Expr.symbol "simpleAdd::y" (Ty.SignedBV 32))),
-      sourceLoc := {function := "simpleAdd", line := 8, file := "simpleAdd.c", workingDir := ""}},
+      sourceLoc := {function := "simpleAdd", line := 8, file := "simpleAdd.c", workingDir := "",  comment := ""}},
 
     -- ASSIGN simpleAdd::1::z := simpleAdd::x + simpleAdd::y
     { type := .ASSIGN, locationNum := 4,
       code := Code.assign (Expr.symbol "simpleAdd::1::z" (Ty.SignedBV 32))
                           (Expr.add [Expr.symbol "simpleAdd::x" (Ty.SignedBV 32), Expr.symbol "simpleAdd::y" (Ty.SignedBV 32)]),
-      sourceLoc := {function := "simpleAdd", line := 8, file := "simpleAdd.c", workingDir := ""}},
+      sourceLoc := {function := "simpleAdd", line := 8, file := "simpleAdd.c", workingDir := "",  comment := ""}},
 
     -- SET RETURN VALUE simpleAdd::1::z
     { type := .SET_RETURN_VALUE, locationNum := 5,
       code := Code.set_return_value (Expr.symbol "simpleAdd::1::z" (Ty.SignedBV 32)),
-      sourceLoc := {function := "simpleAdd", line := 9, file := "simpleAdd.c", workingDir := ""} },
+      sourceLoc := {function := "simpleAdd", line := 9, file := "simpleAdd.c", workingDir := "",  comment := ""} },
 
     -- DEAD simpleAdd::1::z
     { type := .DEAD, locationNum := 6,
       code := Code.dead (Expr.symbol "simpleAdd::1::z" (Ty.SignedBV 32)),
-      sourceLoc := {function := "simpleAdd", line := 9, file := "simpleAdd.c", workingDir := ""} },
+      sourceLoc := {function := "simpleAdd", line := 9, file := "simpleAdd.c", workingDir := "",  comment := ""} },
 
     -- END_FUNCTION
     { type := .END_FUNCTION, locationNum := 7,
-      sourceLoc := {function := "simpleAdd", line := 10, file := "simpleAdd.c", workingDir := ""}}
+      sourceLoc := {function := "simpleAdd", line := 10, file := "simpleAdd.c", workingDir := "",  comment := ""}}
   ]
 }
 
@@ -264,42 +264,42 @@ private def simpleAddUnsignedProgram : Program := {
     -- simpleAddUnsigned::x < 4294901760
     { type := .ASSUME, locationNum := 0,
       guard := Expr.lt (Expr.symbol "simpleAddUnsigned::x" (Ty.UnsignedBV 32)) (Expr.constant "4294901760" (Ty.UnsignedBV 32)),
-      sourceLoc := {function := "simpleAddUnsigned", line := 6, file := "simpleAddUnsigned.c", workingDir := ""}},
+      sourceLoc := {function := "simpleAddUnsigned", line := 6, file := "simpleAddUnsigned.c", workingDir := "",  comment := ""}},
 
     -- ASSUME simpleAddUnsigned::y < 4369
     { type := .ASSUME, locationNum := 1,
       guard := (Expr.lt (Expr.symbol "simpleAddUnsigned::y" (Ty.UnsignedBV 32)) (Expr.constant "4369" (Ty.UnsignedBV 32))),
-      sourceLoc := {function := "simpleAddUnsigned", line := 7, file := "simpleAddUnsigned.c", workingDir := ""}},
+      sourceLoc := {function := "simpleAddUnsigned", line := 7, file := "simpleAddUnsigned.c", workingDir := "",  comment := ""}},
 
     -- DECL simpleAddUnsigned::1::z : signedbv[32]
     { type := .DECL, locationNum := 2,
       code := Code.decl (Expr.symbol "simpleAddUnsigned::1::z" (Ty.UnsignedBV 32)),
-      sourceLoc := {function := "simpleAddUnsigned", line := 8, file := "simpleAddUnsigned.c", workingDir := ""}},
+      sourceLoc := {function := "simpleAddUnsigned", line := 8, file := "simpleAddUnsigned.c", workingDir := "",  comment := ""}},
 
     -- ASSIGN simpleAddUnsigned::1::z := simpleAddUnsigned::x + simpleAddUnsigned::y
     { type := .ASSIGN, locationNum := 4,
       code := Code.assign (Expr.symbol "simpleAddUnsigned::1::z" (Ty.UnsignedBV 32))
                           (Expr.add [Expr.symbol "simpleAddUnsigned::x" (Ty.UnsignedBV 32), Expr.symbol "simpleAddUnsigned::y" (Ty.UnsignedBV 32)]),
-      sourceLoc := {function := "simpleAddUnsigned", line := 8, file := "simpleAddUnsigned.c", workingDir := ""}},
+      sourceLoc := {function := "simpleAddUnsigned", line := 8, file := "simpleAddUnsigned.c", workingDir := "",  comment := ""}},
 
     -- ASSERT simpleAddUnsignedUnsigned::1::z < 4294906128
     { type := .ASSERT, locationNum := 3,
       guard := (Expr.lt (Expr.symbol "simpleAddUnsigned::1::z" (Ty.UnsignedBV 32)) (Expr.constant "4294906128" (Ty.UnsignedBV 32))),
-      sourceLoc := {function := "simpleAddUnsigned", line := 8, file := "simpleAddUnsigned.c", workingDir := ""}},
+      sourceLoc := {function := "simpleAddUnsigned", line := 8, file := "simpleAddUnsigned.c", workingDir := "",  comment := ""}},
 
     -- SET RETURN VALUE simpleAddUnsigned::1::z
     { type := .SET_RETURN_VALUE, locationNum := 5,
       code := Code.set_return_value (Expr.symbol "simpleAddUnsigned::1::z" (Ty.UnsignedBV 32)),
-      sourceLoc := {function := "simpleAddUnsigned", line := 9, file := "simpleAddUnsigned.c", workingDir := ""} },
+      sourceLoc := {function := "simpleAddUnsigned", line := 9, file := "simpleAddUnsigned.c", workingDir := "",  comment := ""} },
 
     -- DEAD simpleAddUnsigned::1::z
     { type := .DEAD, locationNum := 6,
       code := Code.dead (Expr.symbol "simpleAddUnsigned::1::z" (Ty.UnsignedBV 32)),
-      sourceLoc := {function := "simpleAddUnsigned", line := 9, file := "simpleAddUnsigned.c", workingDir := ""} },
+      sourceLoc := {function := "simpleAddUnsigned", line := 9, file := "simpleAddUnsigned.c", workingDir := "",  comment := ""} },
 
     -- END_FUNCTION
     { type := .END_FUNCTION, locationNum := 7,
-      sourceLoc := {function := "simpleAddUnsigned", line := 10, file := "simpleAddUnsigned.c", workingDir := ""}}
+      sourceLoc := {function := "simpleAddUnsigned", line := 10, file := "simpleAddUnsigned.c", workingDir := "",  comment := ""}}
   ]
 }
 

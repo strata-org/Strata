@@ -38,7 +38,8 @@ open CProverGOTO in
 Convert an `Imperative` command to one or more `CProverGOTO.Instruction`s.
 
 (TODO): Populate `CProverGOTO.Instruction`'s source location from the metadata
-field of the Imperative command.
+field of the Imperative command. For now, we just populate source location's
+"comment" field with assertion/assumption names.
 -/
 def Cmd.toGotoInstructions {P} [G: ToGoto P]
     (T : P.TyEnv) (c : Cmd P) (trans : GotoTransform P.TyEnv) :
@@ -72,21 +73,21 @@ def Cmd.toGotoInstructions {P} [G: ToGoto P]
              instructions := trans.instructions.push assign_inst,
              nextLoc := trans.nextLoc + 1,
              T := T }
-  | .assert _name b _md =>
-    -- (FIXME) Where does the `name` go?
+  | .assert name b _md =>
     let expr ← G.toGotoExpr b
     let assert_inst :=
     { type := .ASSERT, locationNum := trans.nextLoc,
+      sourceLoc := { SourceLocation.nil with comment := name }
       guard := expr }
     return { trans with
               instructions := trans.instructions.push assert_inst,
               nextLoc := trans.nextLoc + 1,
               T := T }
-  | .assume _name b _md =>
-    -- (FIXME) Where does the `name` go?
+  | .assume name b _md =>
     let expr ← G.toGotoExpr b
     let assume_inst :=
     { type := .ASSUME, locationNum := trans.nextLoc,
+      sourceLoc := { SourceLocation.nil with comment := name }
       guard := expr }
     return { trans with
               instructions := trans.instructions.push assume_inst,

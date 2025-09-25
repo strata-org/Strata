@@ -16,18 +16,19 @@ open Strata.CBMC
 /--
 Convert SourceLocation to JSON.
 
-(FIXME) `--show-goto-functions` renders source location using the named field
-`sourceLocation`, which is different from `#source_location` rendered by
+NOTE: CBMC's `--show-goto-functions` renders source location using the named
+field `sourceLocation`, which is different from `#source_location` rendered by
 `--show-symbol-table`.
 -/
 def sourceLocationToJson (loc : SourceLocation) : String × Json :=
   ("sourceLocation",
-  if loc.file.isEmpty then "unknown" else
+  if loc == .nil then Json.mkObj [] else
   Json.mkObj [
     ("file", Json.str loc.file),
     ("function", Json.str loc.function),
     ("line", Json.str (toString loc.line)),
-    ("workingDirectory", Json.str loc.workingDir)
+    ("workingDirectory", Json.str loc.workingDir),
+    ("comment", Json.str loc.comment),
   ])
 
 def mkSymbolWithSourceLocation (identifier : String) (symbolType : Json) (loc : SourceLocation) : Json :=
@@ -118,14 +119,19 @@ partial def exprToJson (expr : Expr) : Json :=
     | _ => panic s!"[exprToJson] Unsupported expr: {format expr}"
   exprObj
 
-/-- Convert `Code` to operands list -/
-def codeToOperands (code : Code) : List Json :=
-  code.operands.map exprToJson
+/-- Convert `Code` to Json -/
+def codeToJson (code : Code) : Json :=
+  let namedSub := ("namedSub",
+        (Json.mkObj [
+              ("statement", Json.mkObj [("id", s!"{format code.id}")]),
+              ("type", Json.mkObj [("id", "empty")])]))
+  let sourceField := sourceLocationToJson code.sourceLoc
+  let sub := ("sub", Json.arr (code.operands.map exprToJson).toArray)
+  let obj := Json.mkObj ([("id", Json.str "code"), namedSub, sub, sourceField])
+  obj
 
 /--
-Generate instruction string for display
-(FIXME) This doesn't quite match the CBMC pretty-printing right now.
--/
+Generate instruction string for display-/
 def instructionToString (inst : Instruction) : String :=
   let comment := s!"        // {inst.locationNum} file {inst.sourceLoc.file} line {inst.sourceLoc.line} function {inst.sourceLoc.function}\n"
   let instrStr := match inst.type with
@@ -138,17 +144,19 @@ def instructionToString (inst : Instruction) : String :=
 def instructionToJson (inst : Instruction) : Json :=
   let baseFields := [
     ("instruction", Json.str (instructionToString inst)),
-    ("instructionId", Json.str (toString inst.type))
+    ("instructionId", Json.str (toString inst.type)),
+    ("locationNumber", Json.num inst.locationNum.toNat)
   ]
   let guardField := if Expr.beq inst.guard Expr.true then [] else [("guard", exprToJson inst.guard)]
-  let operandsField := if inst.code.operands.isEmpty then [] else [("operands", Json.arr (codeToOperands inst.code).toArray)]
+  let codeField := if inst.code == Code.skip then [] else [("code", codeToJson inst.code)]
   let sourceField :=  [sourceLocationToJson inst.sourceLoc]
-  Json.mkObj (baseFields ++ guardField ++ operandsField ++ sourceField)
+  Json.mkObj (baseFields ++ guardField ++ codeField ++ sourceField)
 
 def programToJson (name : String) (program : Program) : Json :=
   let body :=
       Json.mkObj [
         ("instructions", Json.arr (program.instructions.map instructionToJson)),
+        ("parameterIdentifiers", Json.arr (program.parameterIdentifiers.map toJson)),
         ("isBodyAvailable", program.isBodyAvailable),
         ("isInternal", program.isInternal),
         ("name", name)

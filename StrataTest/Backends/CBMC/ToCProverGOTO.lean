@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Lambda.ToCProverGOTO
+import StrataTest.Backends.CBMC.LambdaToCProverGOTO
 import Strata.DL.Imperative.ToCProverGOTO
 
 -------------------------------------------------------------------------------
@@ -73,7 +73,7 @@ info: ok: #[DECL (decl (s : unsignedbv[32])),
 /- (100 : bv32) + (200 : bv32) -/
 private def addBV32LExpr (op1 op2 : Lambda.LExprT String) :=
   (Lambda.LExprT.app
-    (.app (.op "bv32AddOp" mty[bv32 → bv32 → bv32]) op1 mty[bv32 → bv32])
+    (.app (.op "Bv32.Add" mty[bv32 → bv32 → bv32]) op1 mty[bv32 → bv32])
     op2
     mty[bv32])
 

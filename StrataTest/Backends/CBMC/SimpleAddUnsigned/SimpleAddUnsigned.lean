@@ -22,10 +22,17 @@ procedure simpleAddUnsigned (x : bv32, y : bv32) returns () {
   var z : bv32 := bv{32}(0);
   z := x + y;
 
-  assert (z < bv{32}(4294906128)); // 0xFFFF1110
+  assert [z_assertion]: (z < bv{32}(0xFFFF1110));
 
 };
 #end
+
+-- #eval BoogieToGOTO.printToGotoJson "simpleAddUnsigned" Strata.simpleAddUnsigned
+
+-- #eval BoogieToGOTO.writeToGotoJson
+--   "StrataTest/Backends/CBMC/SimpleAddUnsigned/function.json"
+--   "simpleAddUnsigned"
+--   Strata.simpleAddUnsigned
 
 end Strata
 

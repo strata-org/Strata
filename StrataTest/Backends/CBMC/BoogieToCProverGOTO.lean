@@ -6,10 +6,19 @@
 
 import Strata.Languages.Boogie.Verifier
 import Strata.Backends.CBMC.GOTO.InstToJson
-
 import StrataTest.Backends.CBMC.ToCProverGOTO
 
 open Std (ToFormat Format format)
+
+/-
+We map Boogie's procedures to a CProverGOTO program, which is then written to
+CBMC-compatible JSON files that contain all the necessary information to
+construct a GOTO binary.
+
+Also see `mkGotoBin.sh`, where we use CBMC's `symtab2gb` to construct and
+model-check a Strata-generated GOTO binary.
+-/
+
 -------------------------------------------------------------------------------
 
 abbrev Boogie.ExprStr : Imperative.PureExpr :=
@@ -117,25 +126,61 @@ def transformToGoto (boogie : Boogie.Program) : Except Format (CProverGOTO.Progr
   let T := { Lambda.TEnv.default with functions := Boogie.Factory, knownTypes := Boogie.KnownTypes }
   let (boogie, _T) ← Boogie.Program.typeCheck T boogie
   dbg_trace f!"[Strata.Boogie] Type Checking Succeeded!"
-  let decl := boogie.decls[0]!
-  match decl.getProc? with
-  | none => .error f!""
-  | some p =>
-    let cmds := p.body.map (fun b => match b with | .cmd (.cmd c) => c | _ => .havoc "error")
-    let cmds := Boogie.Cmds.renameVars [("x", "simpleAddUnsigned::x"),
-                                        ("y", "simpleAddUnsigned::y"),
-                                        ("z", "simpleAddUnsigned::1::z")] cmds
-    let ans ← @Imperative.Cmds.toGotoTransform Boogie.ExprStr BoogieToGOTO.instToGotoExprStr T cmds (loc := 10)
-    let ending_insts : Array CProverGOTO.Instruction :=
-      #[{ type := .DEAD, locationNum := ans.nextLoc + 1,
-          code := .dead (.symbol "simpleAddUnsigned::1::z" (.UnsignedBV 32))},
-        { type := .END_FUNCTION, locationNum := ans.nextLoc + 2}]
-    let insts := ans.instructions ++ ending_insts
-    let _ := format f!"cmds: {cmds}"
-    return { instructions := insts }
+  if h : boogie.decls.length = 1 then
+    let decl := boogie.decls[0]'(by exact Nat.lt_of_sub_eq_succ h)
+    match decl.getProc? with
+    | none => .error f!"[transformToGoto] We can process only Boogie procedures at this time. \
+                        Declaration encountered: {decl}"
+    | some p =>
+      let pname := Boogie.BoogieIdent.toPretty p.header.name
+      let cmds ← p.body.mapM
+        (fun b => match b with
+          | .cmd (.cmd c) => return c
+          | _ => .error f!"[transformToGoto] We can process Boogie commands only, not statements! \
+                           Statement encountered: {b}")
+      let formals := p.header.inputs.keys.map Boogie.BoogieIdent.toPretty
+      -- CBMC expects formals to be in the namespace of the program.
+      -- So, e.g., `x` appears as `program::x`.
+      let formals_renamed := formals.map (fun f => (f, pname ++ "::" ++ f))
+      let locals := (Imperative.Stmts.definedVars p.body).map Boogie.BoogieIdent.toPretty
+      -- Local variables use `program::1::<var>` notation.
+      -- (FIXME): Does `1` refer to the scope depth?
+      let locals_renamed := locals.map (fun l => (l, pname ++ "::1::" ++ l))
+      let args_renamed := formals_renamed ++ locals_renamed
+      let cmds := Boogie.Cmds.renameVars args_renamed cmds
+      let ans ← @Imperative.Cmds.toGotoTransform Boogie.ExprStr
+                    BoogieToGOTO.instToGotoExprStr T cmds (loc := 0)
+      let ending_insts : Array CProverGOTO.Instruction := #[
+        -- (FIXME): Add lifetime markers.
+        -- { type := .DEAD, locationNum := ans.nextLoc + 1,
+        --     code := .dead (.symbol "simpleAddUnsigned::1::z" (.UnsignedBV 32))},
+          { type := .END_FUNCTION, locationNum := ans.nextLoc + 1}]
+      let insts := ans.instructions ++ ending_insts
+      let _ := format f!"cmds: {cmds}"
+      return {
+        name := Boogie.BoogieIdent.toPretty p.header.name,
+        parameterIdentifiers := (formals_renamed.map (fun f => f.snd)).toArray,
+        instructions := insts
+        }
+  else
+    .error f!"[transformToGoto] We can transform a single Boogie procedure to \
+              GOTO at this time!"
 
 -- #eval do let ans ← transformToGoto boogie
 --           return CProverGOTO.programToJson "simpleAddUnsigned" ans
+
+open Strata in
+def printToGotoJson (programName : String) (env : Program) : IO Lean.Json := do
+  let (program, errors) := TransM.run (translateProgram env)
+  if errors.isEmpty then
+    (match (BoogieToGOTO.transformToGoto program) with
+      | .error e =>
+        dbg_trace s!"{e}"
+        return (Lean.Json.null)
+      | .ok ans =>
+        return (CProverGOTO.programToJson programName ans))
+  else
+    panic! s!"DDM Transform Error: {repr errors}"
 
 open Strata in
 def writeToGotoJson (fileName programName : String) (env : Program) : IO Unit := do

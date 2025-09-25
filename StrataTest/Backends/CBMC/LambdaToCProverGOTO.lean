@@ -26,9 +26,8 @@ def LExprT.getGotoType {Identifier} (e : LExprT Identifier) :
 
 def fnToGotoID (fn : String) : Except Format CProverGOTO.Expr.Identifier :=
   match fn with
-  | "bv32AddOp" => .ok (.multiary .Plus)
   | "Bv32.Add" => .ok (.multiary .Plus)
-  | "Bv32.Lt" => .ok (.binary .Lt)
+  | "Bv32.Lt" | "Bv32.ULt" => .ok (.binary .Lt)
   | _ => .error f!"[fnToGotoID] Not yet implemented: fn: {fn}"
 
 /--
@@ -109,9 +108,9 @@ open LTy.Syntax LExpr.Syntax in
 info: ok: { id := CProverGOTO.Expr.Identifier.nullary (CProverGOTO.Expr.Identifier.Nullary.constant "1"),
   type := { id := CProverGOTO.Ty.Identifier.primitive (CProverGOTO.Ty.Identifier.Primitive.integer),
             subtypes := [],
-            sourceLoc := { file := "", line := 0, column := 0, function := "", workingDir := "" } },
+            sourceLoc := { file := "", line := 0, column := 0, function := "", workingDir := "", comment := "" } },
   operands := [],
-  sourceLoc := { file := "", line := 0, column := 0, function := "", workingDir := "" },
+  sourceLoc := { file := "", line := 0, column := 0, function := "", workingDir := "", comment := "" },
   namedFields := [] }
 -/
 #guard_msgs in
