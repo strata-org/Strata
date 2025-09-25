@@ -11,7 +11,7 @@ import Strata.Backends.CBMC.GOTO.InstToJson
 section Tests
 namespace CProverGOTO
 open Lean
-open CProverJson
+open Strata
 
 /--
 GOTO Function for `__CPROVER_initialize`:

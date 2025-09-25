@@ -367,7 +367,7 @@ def testSymbols (proc: Boogie.Procedure) : String := Id.run do
   let paramNames : List String := proc.header.inputs.keys.map (λ p => p.snd)
 
   -- Hardcode local variable for now
-  let zSymbol := createLocalSymbol "z"
+  let zSymbol := createLocalSymbol "z" ""
 
   -- Build symbol map
   let mut m : Map String CBMCSymbol := Map.empty
@@ -376,7 +376,7 @@ def testSymbols (proc: Boogie.Procedure) : String := Id.run do
 
   -- Add parameter symbols
   for paramName in paramNames do
-    let paramSymbol := createParameterSymbol paramName
+    let paramSymbol := createParameterSymbol paramName ""
     m := m.insert s!"{proc.header.name.snd}::{paramName}" paramSymbol
 
   -- Add local variable
