@@ -13,26 +13,44 @@ def add_missing_node_info(source_j, target_j):
         if source_key not in target_j:
             target_j[source_key] = source_j[source_key]
 
+
+def parse_ts_type(j):
+    """
+    Parse a Babel TS type node into the tagged union Lean expects.
+    Returns either a tagged dict (e.g. {"TS_TSNumberKeyword": {...}})
+    or None (for TSAnyKeyword / missing).
+    """
+    if j is None:
+        return None
+    t = j.get('type')
+    if t == "TSNumberKeyword":
+        return {"TS_TSNumberKeyword": j}
+    elif t == "TSBooleanKeyword":
+        return {"TS_TSBooleanKeyword": j}
+    elif t == "TSStringKeyword":
+        return {"TS_TSStringKeyword": j}
+    elif t == "TSArrayType":
+        # Recursively tag the elementType
+        elem = j.get('elementType')
+        tagged_elem = parse_ts_type(elem) if elem is not None else None
+        inner = {"elementType": tagged_elem}
+        add_missing_node_info(j, inner)
+        return {"TS_TSArrayType": inner}
+    elif t == "TSAnyKeyword" or t is None:
+        return None
+    else:
+        print("Unsupported type annotation type: " + str(t), file=sys.stderr)
+        return None
+
+
 def parse_type_annotation(j):
-    innerTypeAnnotation = None
-    match j['typeAnnotation'].get('type'):
-        case "TSNumberKeyword":
-            innerTypeAnnotation = {"TS_TSNumberKeyword": j['typeAnnotation']}
-        case "TSBooleanKeyword":
-            innerTypeAnnotation = {"TS_TSBooleanKeyword": j['typeAnnotation']}
-        case "TSAnyKeyword":
-            # TODO: Is TSAnyKeyword different than not stating any type?
-            innerTypeAnnotation = None
-        case None:
-            innerTypeAnnotation = None
-        case _:
-            print("Unsupported type annotation type: " + j['typeAnnotation'].get('type'), file=sys.stderr)
-    target_j = {
-        "typeAnnotation": innerTypeAnnotation
-    }
+    # j is a TSTypeAnnotation node; its 'typeAnnotation' holds the inner TS* node
+    inner = j.get('typeAnnotation')
+    tagged = parse_ts_type(inner) if inner is not None else None
+    target_j = {"typeAnnotation": tagged}
     add_missing_node_info(j, target_j)
     return target_j
-    
+
 
 def parse_binary_expression(j):
     target_j = {
@@ -115,6 +133,16 @@ def parse_member_expression(j):
     add_missing_node_info(j, target_j)
     return target_j
 
+def parse_array_expression(j):
+    # Normalize Babel ArrayExpression: keep only non-null elements and parse each
+    elems = []
+    for e in j.get('elements', []):
+        if e is not None:
+            elems.append(parse_expression(e))
+    target_j = {"elements": elems}
+    add_missing_node_info(j, target_j)
+    return target_j
+
 def parse_expression(j):
     match j['type']:
         case "Identifier":
@@ -148,7 +176,8 @@ def parse_expression(j):
         # case "ArrowFunctionExpression":
         # case "YieldExpression":
         # case "AwaitExpression":
-        # case "ArrayExpression":
+        case "ArrayExpression":
+            return {"TS_ArrayExpression": parse_array_expression(j)}
         # case "RecordExpression":
         # case "TupleExpression":
         # case "FunctionExpression":
