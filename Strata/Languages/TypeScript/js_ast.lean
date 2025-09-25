@@ -51,11 +51,6 @@ mutual
   structure TS_TSArrayType extends BaseNode where
     elementType : TS_TSTypeKeyword
   deriving Repr, Lean.FromJson, Lean.ToJson
-
-  -- TODO: Array not as a type?
-  -- structure TS_TSArrayType extends BaseNode where
-    -- elementType : TS_TSTypeKeyword
-  -- deriving Repr, Lean.FromJson, Lean.ToJson
 end
 
 structure TS_TSTypeAnnotation extends BaseNode where
