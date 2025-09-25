@@ -9,3 +9,6 @@ Strata.code-workspace
 conformance_testing/failures/*
 package.json
 package-lock.json
+
+conformance_testing/__pycache__
+conformance_testing/failures
