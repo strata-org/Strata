@@ -14,8 +14,12 @@ let index: number = 2;
 let element: number = numbers[index];
 
 // Array element assignment
-// numbers[0] = 10;
-// numbers[index] = 30;
+numbers[0] = 10;
+numbers[index] = 30;
+
+// Array in expressions
+let sum: number = numbers[0] + numbers[1];
+let isEqual: boolean = numbers[2] == 3
 
 // Mixed with objects
 // let data: number[] = [100, 200, 300];
@@ -23,7 +27,3 @@ let element: number = numbers[index];
 
 // Nested arrays
 // let matrix: number[][] = [[1, 2], [3, 4]];
-
-// Array in expressions
-// let sum: number = numbers[0] + numbers[1];
-// let isEqual: boolean = numbers[2] == 3
