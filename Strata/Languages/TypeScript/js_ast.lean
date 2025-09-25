@@ -40,11 +40,18 @@ deriving Repr, Lean.FromJson, Lean.ToJson
 structure TS_TSStringKeyword extends BaseNode where
 deriving Repr, Lean.FromJson, Lean.ToJson
 
-inductive TS_TSTypeKeyword where
-  | TS_TSNumberKeyword : TS_TSNumberKeyword → TS_TSTypeKeyword
-  | TS_TSBooleanKeyword : TS_TSBooleanKeyword → TS_TSTypeKeyword
-  | TS_TSStringKeyword : TS_TSStringKeyword → TS_TSTypeKeyword
-deriving Repr, Lean.FromJson, Lean.ToJson
+mutual
+  inductive TS_TSTypeKeyword where
+    | TS_TSNumberKeyword : TS_TSNumberKeyword → TS_TSTypeKeyword
+    | TS_TSBooleanKeyword : TS_TSBooleanKeyword → TS_TSTypeKeyword
+    | TS_TSStringKeyword : TS_TSStringKeyword → TS_TSTypeKeyword
+    | TS_TSArrayType : TS_TSArrayType → TS_TSTypeKeyword
+  deriving Repr, Lean.FromJson, Lean.ToJson
+
+  structure TS_TSArrayType extends BaseNode where
+    elementType : TS_TSTypeKeyword
+  deriving Repr, Lean.FromJson, Lean.ToJson
+end
 
 structure TS_TSTypeAnnotation extends BaseNode where
   typeAnnotation : Option TS_TSTypeKeyword
@@ -136,6 +143,10 @@ mutual
     properties: Array TS_ObjectProperty
   deriving Repr, Lean.FromJson, Lean.ToJson
 
+  structure TS_ArrayExpression extends BaseNode where
+    elements : Array TS_Expression
+  deriving Repr, Lean.FromJson, Lean.ToJson
+
   structure TS_CallExpression extends BaseNode where
     callee : TS_Identifier
     arguments : Array TS_Expression
@@ -153,6 +164,7 @@ mutual
     | TS_IdExpression : TS_Identifier → TS_Expression
     | TS_UnaryExpression: TS_UnaryExpression → TS_Expression
     | TS_ObjectExpression: TS_ObjectExpression → TS_Expression
+    | TS_ArrayExpression: TS_ArrayExpression → TS_Expression
     | TS_MemberExpression: TS_MemberExpression → TS_Expression
     | TS_CallExpression: TS_CallExpression → TS_Expression
   deriving Repr, Lean.FromJson, Lean.ToJson
