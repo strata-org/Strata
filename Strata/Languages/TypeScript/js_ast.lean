@@ -225,6 +225,19 @@ mutual
     label: Option TS_Identifier
   deriving Repr, Lean.FromJson, Lean.ToJson
 
+  /- TODO: Add support for for(let a=0, b=0;a!=0 and b!=0;a++,b++) -/
+  structure TS_ForStatement extends BaseNode where
+    init: TS_VariableDeclaration
+    test: TS_Expression
+    update: TS_AssignmentExpression
+    body: TS_Statement
+  deriving Repr, Lean.FromJson, Lean.ToJson
+
+  /-- `break;` (labels optional; ESTree uses null when absent) -/
+  structure TS_BreakStatement extends BaseNode where
+    label : Option TS_Identifier := none
+  deriving Repr, Lean.FromJson, Lean.ToJson
+
   inductive TS_Statement where
     | TS_IfStatement : TS_IfStatement → TS_Statement
     | TS_VariableDeclaration : TS_VariableDeclaration → TS_Statement
@@ -233,8 +246,10 @@ mutual
     | TS_ThrowStatement : TS_ThrowStatement → TS_Statement
     | TS_ReturnStatement : TS_ReturnStatement → TS_Statement
     | TS_FunctionDeclaration : TS_FunctionDeclaration → TS_Statement
-    | TS_WhileStatement: TS_WhileStatement -> TS_Statement
-    | TS_ContinueStatement: TS_ContinueStatement -> TS_Statement
+    | TS_WhileStatement: TS_WhileStatement → TS_Statement
+    | TS_ContinueStatement: TS_ContinueStatement → TS_Statement
+    | TS_BreakStatement: TS_BreakStatement → TS_Statement
+    | TS_ForStatement : TS_ForStatement → TS_Statement
   deriving Repr, Lean.FromJson, Lean.ToJson
 end
 
