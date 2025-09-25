@@ -12,20 +12,21 @@ In the short term, Strata intends to support deductive verification with largely
 
 ## Dialect Definition Mechanism
 
-Dialects are intended to be the building blocks for complete languages. As such, each typically contains a small number of constructs, and sometimes as little as a single construct.
+The Dialect Definition Mechanism (DDM), in the [`Strata.DDM`](../Strata/DDM/) namespace, provides an embedded DSL within Lean to define syntax and typing rules for a dialect. It then can produce an AST type, parser, pretty printer, and preliminary type checker. The parser can be used for processing either snippets embedded in a Lean source file or text read from external files.
 
-Each dialect has a concrete syntax and a simple type system. The Dialect Definition Mechanism (DDM), in the [`Strata.DDM`](../Strata/DDM/) namespace, provides an embedded DSL within Lean to define syntax and typing rules, which then produces a parser and preliminary type checker that can be used for processing either snippets embedded in a Lean source file or text read from external files.
+The immediate result of processing text written in a specific dialect is a generic and very flexible [AST](../Strata/DDM/AST.lean) that captures all of the constructs possible in Strata. This representation allows flexibility, but is not particularly well-suited to concise traversals and transformations. Therefore, each dialect may have either an auto-generated or a hand-written Lean AST, as well, and a transformation from the generic syntax into dialect-specialized syntax. This transformation can be automated when using the auto-generated AST for the dialect.
 
-The result of processing text written in a specific dialect is a generic and very flexible [AST](../Strata/DDM/AST.lean) that captures all of the constructs possible in Strata. This representation allows flexibility, but is not particularly well-suited to concise traversals and transformations. Therefore, each dialect may have either an auto-generated or a hand-written Lean AST, as well, and a transformation from the generic syntax into dialect-specialized syntax.
+Not all dialects need to be defined with the DDM, but it is convenient for any dialect that will need to be serialized and exchanged with any other program. In this context, it both lowers development effort and clarifies external interfaces.
 
 ## Dialect Composition and Transformation
 
-In the current implementation of Strata, composition of dialects can occur in two places:
+In the current implementation of Strata, composition of dialects can occur in two primary places:
 
 * In the definition of the syntax of a dialect in the DDM, one dialect can be imported into another, using the `import` directive at the top of a dialect definition, and the syntactic categories of the imported dialect can then be used in the dialect being defined.
+
 * In the context of analysis, the hand-written ASTs for the current dialects have been implemented with an eye toward generality. Each of them is highly parameterized, allowing a variety of combinations. Expressions are parametric in the type of identifiers and the set of built-in functions. Commands and statements are parameterized by the type of expressions, and statements are parameterized by the type of commands.
 
-Transformations (located in [`Strata.Transform`](../Strata/Transform/)) are a central part of the Strata infrastructure. The semantics of some dialects are canonically defined in terms of reduction into other dialects. For other dialects, transformation of constructs from one form to another can make certain analyses more straightforward. For example, some analyses work better on structured programs and some are easier to implement on unstructured programs. Or some analyses might work best with imperative assignments preserved, while some forms of verification condition generation work better on “passive” programs consisting of only assertions and assumptions.
+Transformations (located in [`Strata.Transform`](../Strata/Transform/)) are a central part of the Strata infrastructure. For some dialects, semantics can be canonically defined in terms of reduction into simpler dialects. For other dialects, transformation of constructs from one form to another can make certain analyses more straightforward. For example, some analyses work better on structured programs and some are easier to implement on unstructured programs. Or some analyses might work best with imperative assignments preserved, while some forms of verification condition generation work better on “passive” programs consisting of only assertions and assumptions.
 
 ## Dialect Library
 
@@ -62,9 +63,9 @@ It currently provides the following features:
 
 The `Imperative` dialect also includes a verification condition generator (VCG) based on partial evaluation that produces a proof obligation for each assertion that appears in a statement or list of statements. It currently produces expressions in the `Lambda` dialect, but could be generalized as it depends only on the `.ite` expression constructor, which could equivalently be Boolean negation.
 
-### CSimp
+### C_Simp
 
-The CSimp dialect ([`Strata.Languages.C_Simp`](../Strata//Languages/C_Simp/) is a vaguely C-like language intended to show how to model common programming language constructs in Strata. There are many examples in `C_Simp/Examples`. CSimp builds on the `Imperative` dialect parameterized by the `Lambda` dialect.
+The C_Simp dialect ([`Strata.Languages.C_Simp`](../Strata//Languages/C_Simp/) is a vaguely C-like language intended to show how to model common programming language constructs in Strata. There are many examples in `C_Simp/Examples`. C_Simp builds on the `Imperative` dialect parameterized by the `Lambda` dialect.
 
 `C_Simp/Verify.lean` demonstrates verification via transformation to Boogie. A loop elimination pass is first run to transform loops into the appropriate `assume` and `assert` commands, and then Boogie’s VCG, described above, is used to verify the program.
 
