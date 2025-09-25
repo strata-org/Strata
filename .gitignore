@@ -5,3 +5,6 @@
 vcs/*.smt2
 
 Strata.code-workspace
+
+conformance_testing/__pycache__
+conformance_testing/failures
