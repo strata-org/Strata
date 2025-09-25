@@ -32,6 +32,8 @@ def initStmtToGlobalVarDecl (s : Statement) : Decl :=
   | _ => panic s!"Expected a variable initialization; found {format s} instead."
 
 def eval (E : Env) : List (Program × Env) :=
+  -- Push a path condition scope to store axioms
+  let E := { E with pathConditions := E.pathConditions.push [] }
   let declsEnv := go E.program.decls { env := E }
   declsEnv.map (fun (decls, E) => ({ decls }, E))
   where go (decls : Decls) (declsE : DeclsEnv) : List (Decls × Env) :=
@@ -52,12 +54,17 @@ def eval (E : Env) : List (Program × Env) :=
       go rest { declsE with xdecls := declsE.xdecls ++ [decl] }
 
     | .ax a _ =>
-       -- All axioms go into the list of assumptions before anything is executed.
-       let declsE := { declsE with
-                        env := { declsE.env with pathConditions :=
-                                              declsE.env.pathConditions.push [(toString $ a.name, a.e)] },
-                        xdecls := declsE.xdecls ++ [decl] }
-       go rest declsE
+      -- All axioms go into the top-level path condition before anything is executed.
+      -- There should be exactly one entry in the path condition stack at this point.
+      if declsE.env.pathConditions.length != 1 then
+        panic! "Internal error: path condition stack misaligned when adding axiom"
+      else
+        let declsE := {
+          declsE with
+            env := { declsE.env with pathConditions :=
+                      declsE.env.pathConditions.insert (toString $ a.name) a.e },
+                    xdecls := declsE.xdecls ++ [decl] }
+        go rest declsE
 
     | .proc proc _ =>
       let pEs := Procedure.eval declsE.env proc

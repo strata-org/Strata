@@ -45,7 +45,7 @@ def LTy.open (x : TyIdentifier) (xty : LMonoTy) (ty : LTy) : LTy :=
   | .forAll vars lty =>
     if x ∈ vars then
       let S := [(x, xty)]
-      .forAll (vars.removeAll [x]) (LMonoTy.subst S lty)
+      .forAll (vars.removeAll [x]) (LMonoTy.subst [S] lty)
     else
       ty
 
@@ -136,8 +136,7 @@ theorem HasType.regularity (h : HasType (Identifier:=Identifier) Γ e ty) :
   case tmdata => simp_all [WF, lcAt]
   case tabs T x x_ty e e_ty hx h_x_mono h_e_mono ht ih =>
     simp_all [WF]
-    have := @lcAt_varOpen_abs (Identifier:=Identifier) _ x e 0 0
-    simp_all
+    exact lcAt_varOpen_abs ih (by simp)
   case tapp => simp_all [WF, lcAt]
   case tif => simp_all [WF, lcAt]
   case teq => simp_all [WF, lcAt]
@@ -166,8 +165,7 @@ example : LExpr.HasType { types := [[("x", t[∀a. %a])]]} esM[x] t[int] := by
   simp +ground at h_tvar
   simp [h_tvar] at h_tinst
   simp +ground at h_tinst
-  simp [Map.isEmpty, Bool.decEq] at h_tinst
-  assumption
+  exact h_tinst rfl
 
 example : LExpr.HasType { types := [[("m", t[∀a. %a → int])]]}
                         esM[(m #true)]
@@ -178,7 +176,7 @@ example : LExpr.HasType { types := [[("m", t[∀a. %a → int])]]}
   · apply LExpr.HasType.tvar
     simp +ground
   · simp +ground
-    simp [Map.isEmpty, Bool.decEq]
+    exact rfl
   done
 
 example : LExpr.HasType {} esM[λ %0] t[∀a. %a → %a] := by

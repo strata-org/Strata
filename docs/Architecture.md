@@ -6,7 +6,7 @@ Strata is an extensible language and analysis definition environment intended to
 
 Strata achieves this broad scope by defining an extensible set of orthogonal *dialects* (inspired by the [same concept in MLIR](https://mlir.llvm.org/docs/DefiningDialects/)) and allowing them to be extended and combined to achieve the purposes of specific use cases. The core dialects included in Strata are intended to be small, simple building blocks that, when appropriately combined and extended, can allow most existing languages to be modeled with high fidelity and without substantial loss of abstraction.
 
-Strata is implemented in Lean to enable both verification of its own implementation as well as, in the long term, to enable the use of Lean to reason about programs written in Strata itself. However, we aim for the general structure of the various Strata dialects and languages, as well as the majority of its implementations, to be such that replicating them in other languages is straightforward. To accelerate the development of tools in a variety of languages, Strata can  automatically generate dialect-specific ASTs, serializers, and deserializers.
+Strata is implemented in Lean to enable both verification of its own implementation as well as, in the long term, to enable the use of Lean to reason about programs written in Strata dialects. However, we aim for the general structure of the various Strata dialects and languages, as well as the majority of its implementations, to be such that replicating them in other languages is straightforward. To accelerate the development of tools in a variety of languages, Strata can automatically generate dialect-specific ASTs, serializers, and deserializers.
 
 In the short term, Strata intends to support deductive verification with largely the same capabilities as the Boogie Intermediate Verification Language. In the longer term, we aim for Strata to be useful for most, if not all, program and specification analysis use cases.
 
@@ -14,15 +14,15 @@ In the short term, Strata intends to support deductive verification with largely
 
 Dialects are intended to be the building blocks for complete languages. As such, each typically contains a small number of constructs, and sometimes as little as a single construct.
 
-Each dialect has a concrete syntax and a simple type system. The Dialect Definition Mechanism (DDM), in the [`Strata.DDM`](../Strata/DDM/) namespace, provides an embedded DSL within Lean to define the syntax and typing rules, which then produces a parser and preliminary type checker that can be used for processing either snippets embedded in a Lean source file or text read from external files.
+Each dialect has a concrete syntax and a simple type system. The Dialect Definition Mechanism (DDM), in the [`Strata.DDM`](../Strata/DDM/) namespace, provides an embedded DSL within Lean to define syntax and typing rules, which then produces a parser and preliminary type checker that can be used for processing either snippets embedded in a Lean source file or text read from external files.
 
-The result of processing text written in a specific dialect is a generic and very flexible AST that captures all of the constructs possible in Strata. This representation allows flexibility, but is not particularly well-suited to concise traversals and transformations. Therefore, each dialect may have either an auto-generated or a hand-written Lean AST, as well, and a transformation from the generic syntax into dialect-specialized syntax.
+The result of processing text written in a specific dialect is a generic and very flexible [AST](../Strata/DDM/AST.lean) that captures all of the constructs possible in Strata. This representation allows flexibility, but is not particularly well-suited to concise traversals and transformations. Therefore, each dialect may have either an auto-generated or a hand-written Lean AST, as well, and a transformation from the generic syntax into dialect-specialized syntax.
 
 ## Dialect Composition and Transformation
 
 In the current implementation of Strata, composition of dialects can occur in two places:
 
-* In the definition of the syntax of a dialect in the DDM, one dialect can be imported into another, using the `open` directive at the top of a dialect definition, and the syntactic categories of the imported dialect can then be used in the dialect being defined.
+* In the definition of the syntax of a dialect in the DDM, one dialect can be imported into another, using the `import` directive at the top of a dialect definition, and the syntactic categories of the imported dialect can then be used in the dialect being defined.
 * In the context of analysis, the hand-written ASTs for the current dialects have been implemented with an eye toward generality. Each of them is highly parameterized, allowing a variety of combinations. Expressions are parametric in the type of identifiers and the set of built-in functions. Commands and statements are parameterized by the type of expressions, and statements are parameterized by the type of commands.
 
 Transformations (located in [`Strata.Transform`](../Strata/Transform/)) are a central part of the Strata infrastructure. The semantics of some dialects are canonically defined in terms of reduction into other dialects. For other dialects, transformation of constructs from one form to another can make certain analyses more straightforward. For example, some analyses work better on structured programs and some are easier to implement on unstructured programs. Or some analyses might work best with imperative assignments preserved, while some forms of verification condition generation work better on “passive” programs consisting of only assertions and assumptions.
@@ -37,7 +37,7 @@ The `Lambda` dialect ([`Strata.DL.Lambda`](../Strata/DL/Lambda/)) is intended to
 
 ### Imperative
 
-The `Imperative` dialect ([`Strata.DL.Imperative`](../Strata/DL/Imperative/)) is intended to represent imperative statements of the sort that appear in most programming languages. It is built of commands, which execute atomically, and currently has two mechanisms for combining commands:
+The `Imperative` dialect ([`Strata.DL.Imperative`](../Strata/DL/Imperative/)) is intended to represent imperative statements of the sort that appear in many programming languages. It is built of commands, which execute atomically, and currently has two mechanisms for combining commands:
 
 * deterministic structured statements (if and while statements with explicit conditions), 
 * non-deterministic structured statements (choice and repetition, with conditions encoded using assumptions), 
@@ -47,7 +47,7 @@ The `Imperative` dialect ([`Strata.DL.Imperative`](../Strata/DL/Imperative/)) is
 The Boogie dialect ([`Strata.Languages.Boogie`](../Strata/Languages/Boogie/)) is intended to roughly mirror the capabilities of the [Boogie Intermediate Verification Language](https://github.com/boogie-org/boogie). As its foundation, it uses the `Imperative` dialect parameterized by the `Lambda` dialect. It specializes these dialects in several ways:
 
 * It defines a type of identifiers that include scoping information, which is a parameter to `Lambda`.
-* It introduces data types to represent procedures with contracts.
+* It introduces data types to represent named functions and procedures with contracts.
 * It extends the language of commands from the `Imperative` dialect to include procedure calls, and uses this extended set of commands as a parameter to the various statement types.
 
 It currently provides the following features:
@@ -55,7 +55,7 @@ It currently provides the following features:
 * Declaration of abstract types and type synonyms.
 * Declaration of axioms.
 * Declaration of global constants and variables.
-* Built-in types for Booleans, unbounded integers, and maps.
+* Built-in types for Booleans, several sizes of bit vectors, unbounded integers, and maps.
 * Built-in operators and functions roughly mirroring what is available in SMT-Lib for the supported types.
 * Declaration and optionally definition of pure functions
 * Declaration and optionally definition of procedures with local variables, multiple outputs, preconditions, postconditions, and frame conditions.
@@ -75,7 +75,7 @@ Our intent is that analysis implementations in Strata become highly reusable by 
 * An analysis can be defined over, for instance, imperative control flow graphs, while being generic over the types of commands and expressions that may appear in them, other than requiring that certain operations exist on them. This allows it to straightforwardly be applied to various instantiations of that type.
 * An analysis can be defined on one dialect, and transformations can move from other dialects into that one. This allows a single analysis implementation to be applied to multiple languages.
 
-The current Strata implementation includes only one analysis: the Boogie dialect VCG. However, you can add your own analyses on top of the existing dialects. The Imperative dialect includes an inductively-defined small-step operational semantics that can be used as a basis for verifying the correctness of analyses.
+The current Strata implementation includes only one analysis: the Boogie dialect VCG. However, you can add your own analyses on top of the existing dialects. The Imperative dialect includes an inductively-defined operational semantics that can be used as a basis for verifying the correctness of analyses.
 
 ## External Reasoning Tools
 

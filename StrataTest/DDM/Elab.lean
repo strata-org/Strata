@@ -12,6 +12,7 @@ import Strata.DDM.Integration.Lean
 dialect Test;
 op assert : Command => "assert" ";";
 op decimal (v : Decimal) : Command => "decimal " v ";";
+op str (v : Str) : Command => "str " v ";\n";
 #end
 
 def testProgram := #strata program Test; decimal 1e99; #end
@@ -99,4 +100,18 @@ eval ((fun (x : bool) => x)) : int;
 
 // Should succeed.
 eval ((fun (x : bool) => x)) : bool -> bool;
+#end
+
+-- Test escaping in string literals.
+
+/--
+info: program Test;
+str "\r€•\x9d\n\t";
+str "\\n\"";
+-/
+#guard_msgs in
+#eval IO.println #strata
+program Test;
+str "\r\u20ac\u2022\x9d\n\t";
+str "\\n\"";
 #end

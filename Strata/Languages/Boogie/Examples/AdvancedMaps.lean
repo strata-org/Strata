@@ -61,20 +61,20 @@ var (b : (Map bool int)) := init_b_1
 var (c : (Map int MapII)) := init_c_2
 (procedure P :  () → ())
 modifies: [a, b, c]
-preconditions: (P_requires_3, ((((~select : (arrow (Map int int) (arrow int int))) a) (#0 : int)) == (#0 : int))) (P_requires_4, ((((~select : (arrow (Map int MapII) (arrow int MapII))) c) (#0 : int)) == a))
+preconditions: (P_requires_3, ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) (#0 : int)) == (#0 : int))) (P_requires_4, ((((~select : (arrow (Map int MapII) (arrow int MapII))) (c : (Map int MapII))) (#0 : int)) == (a : MapII)))
 postconditions: ⏎
-body: assert [c_0_eq_a] ((((~select : (arrow (Map int MapII) (arrow int MapII))) c) (#0 : int)) == a)
-c := ((((~update : (arrow (Map int MapII) (arrow int (arrow MapII (Map int MapII))))) c) (#1 : int)) a)
-assert [c_1_eq_a] ((((~select : (arrow (Map int MapII) (arrow int MapII))) c) (#1 : int)) == a)
-assert [a0eq0] ((((~select : (arrow (Map int int) (arrow int int))) a) (#0 : int)) == (#0 : int))
-a := ((((~update : (arrow (Map int int) (arrow int (arrow int (Map int int))))) a) (#1 : int)) (#1 : int))
-assert [a1eq1] ((((~select : (arrow (Map int int) (arrow int int))) a) (#1 : int)) == (#1 : int))
-a := ((((~update : (arrow (Map int int) (arrow int (arrow int (Map int int))))) a) (#0 : int)) (#1 : int))
-assert [a0eq1] ((((~select : (arrow (Map int int) (arrow int int))) a) (#0 : int)) == (#1 : int))
-assert [a0neq2] (~Bool.Not ((((~select : (arrow (Map int int) (arrow int int))) a) (#0 : int)) == (#2 : int)))
-b := ((((~update : (arrow (Map bool int) (arrow bool (arrow int (Map bool int))))) b) (#true : bool)) (~Int.Neg (#1 : int)))
-assert [bTrueEqTrue] ((((~select : (arrow (Map bool int) (arrow bool int))) b) (#true : bool)) == (~Int.Neg (#1 : int)))
-assert [mix] ((((~select : (arrow (Map int int) (arrow int int))) a) (#1 : int)) == (~Int.Neg (((~select : (arrow (Map bool int) (arrow bool int))) b) (#true : bool))))
+body: assert [c_0_eq_a] ((((~select : (arrow (Map int MapII) (arrow int MapII))) (c : (Map int MapII))) (#0 : int)) == (a : MapII))
+c := ((((~update : (arrow (Map int MapII) (arrow int (arrow MapII (Map int MapII))))) (c : (Map int MapII))) (#1 : int)) (a : MapII))
+assert [c_1_eq_a] ((((~select : (arrow (Map int MapII) (arrow int MapII))) (c : (Map int MapII))) (#1 : int)) == (a : MapII))
+assert [a0eq0] ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) (#0 : int)) == (#0 : int))
+a := ((((~update : (arrow (Map int int) (arrow int (arrow int (Map int int))))) (a : MapII)) (#1 : int)) (#1 : int))
+assert [a1eq1] ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) (#1 : int)) == (#1 : int))
+a := ((((~update : (arrow (Map int int) (arrow int (arrow int (Map int int))))) (a : MapII)) (#0 : int)) (#1 : int))
+assert [a0eq1] ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) (#0 : int)) == (#1 : int))
+assert [a0neq2] ((~Bool.Not : (arrow bool bool)) ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) (#0 : int)) == (#2 : int)))
+b := ((((~update : (arrow (Map bool int) (arrow bool (arrow int (Map bool int))))) (b : (Map bool int))) (#true : bool)) ((~Int.Neg : (arrow int int)) (#1 : int)))
+assert [bTrueEqTrue] ((((~select : (arrow (Map bool int) (arrow bool int))) (b : (Map bool int))) (#true : bool)) == ((~Int.Neg : (arrow int int)) (#1 : int)))
+assert [mix] ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) (#1 : int)) == ((~Int.Neg : (arrow int int)) (((~select : (arrow (Map bool int) (arrow bool int))) (b : (Map bool int))) (#true : bool))))
 
 Errors: #[]
 -/
@@ -90,6 +90,7 @@ Label: c_0_eq_a
 Assumptions:
 (P_requires_3, (((~select $__a0) #0) == #0))
 (P_requires_4, (((~select $__c2) #0) == $__a0))
+
 Proof Obligation:
 (((~select $__c2) #0) == $__a0)
 
@@ -97,6 +98,7 @@ Label: c_1_eq_a
 Assumptions:
 (P_requires_3, (((~select $__a0) #0) == #0))
 (P_requires_4, (((~select $__c2) #0) == $__a0))
+
 Proof Obligation:
 (((~select (((~update $__c2) #1) $__a0)) #1) == $__a0)
 
@@ -104,6 +106,7 @@ Label: a0eq0
 Assumptions:
 (P_requires_3, (((~select $__a0) #0) == #0))
 (P_requires_4, (((~select $__c2) #0) == $__a0))
+
 Proof Obligation:
 (((~select $__a0) #0) == #0)
 
@@ -111,6 +114,7 @@ Label: a1eq1
 Assumptions:
 (P_requires_3, (((~select $__a0) #0) == #0))
 (P_requires_4, (((~select $__c2) #0) == $__a0))
+
 Proof Obligation:
 (((~select (((~update $__a0) #1) #1)) #1) == #1)
 
@@ -118,6 +122,7 @@ Label: a0eq1
 Assumptions:
 (P_requires_3, (((~select $__a0) #0) == #0))
 (P_requires_4, (((~select $__c2) #0) == $__a0))
+
 Proof Obligation:
 (((~select (((~update (((~update $__a0) #1) #1)) #0) #1)) #0) == #1)
 
@@ -125,6 +130,7 @@ Label: a0neq2
 Assumptions:
 (P_requires_3, (((~select $__a0) #0) == #0))
 (P_requires_4, (((~select $__c2) #0) == $__a0))
+
 Proof Obligation:
 (~Bool.Not (((~select (((~update (((~update $__a0) #1) #1)) #0) #1)) #0) == #2))
 
@@ -132,6 +138,7 @@ Label: bTrueEqTrue
 Assumptions:
 (P_requires_3, (((~select $__a0) #0) == #0))
 (P_requires_4, (((~select $__c2) #0) == $__a0))
+
 Proof Obligation:
 (((~select (((~update $__b1) #true) #-1)) #true) == #-1)
 
@@ -139,6 +146,7 @@ Label: mix
 Assumptions:
 (P_requires_3, (((~select $__a0) #0) == #0))
 (P_requires_4, (((~select $__c2) #0) == $__a0))
+
 Proof Obligation:
 (((~select (((~update (((~update $__a0) #1) #1)) #0) #1)) #1) == (~Int.Neg ((~select (((~update $__b1) #true) #-1)) #true)))
 

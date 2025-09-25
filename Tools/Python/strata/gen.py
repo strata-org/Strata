@@ -7,7 +7,6 @@ Command line script for exporting Python dialect and program to files.
 """
 #!/usr/bin/env python3
 import argparse
-import ast
 import os
 import amazon.ion.simpleion as ion
 from strata import python as stratap
@@ -24,8 +23,7 @@ def gen_dialect_imp(args):
 
 def parse_python_imp(args):
     with open(args.python, 'r') as r:
-        t = ast.parse(r.read())
-    p = stratap.parse_ast(t)
+        (_, p) = stratap.parse_module(r.read(), args.python)
     with open(args.output, 'wb') as w:
         ion.dump(p.to_ion(), w, binary=True)
 

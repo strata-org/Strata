@@ -34,10 +34,11 @@ info: [Strata.Boogie] Type checking succeeded.
 VCs:
 Label: f_test
 Assumptions:
+
+
 Proof Obligation:
 #true
 
-Wrote problem to vcs/f_test.smt2.
 ---
 info:
 Obligation: f_test
@@ -96,6 +97,7 @@ Label: fooAssertion
 Assumptions:
 (fooConst1_value, (~fooConst1 == ~fooVal))
 (fooConst2_value, (~fooConst2 == ~fooVal))
+
 Proof Obligation:
 (~fooConst1 == ~fooConst2)
 

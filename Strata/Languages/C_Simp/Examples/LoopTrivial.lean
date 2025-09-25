@@ -105,6 +105,7 @@ Label: entry_invariant
 Assumptions:
 (<label_ite_cond_true: ((~Int.Lt i) n)>, ((~Int.Lt #0) $__n0))
 (pre, ((~Int.Ge $__n0) #0))
+
 Proof Obligation:
 ((~Int.Le #0) $__n0)
 
@@ -112,6 +113,7 @@ Label: assert_measure_pos
 Assumptions:
 (<label_ite_cond_true: ((~Int.Lt i) n)>, ((~Int.Lt #0) $__n0))
 (pre, ((~Int.Ge $__n0) #0))
+
 Proof Obligation:
 ((~Int.Ge ((~Int.Sub $__n0) #0)) #0)
 
@@ -120,6 +122,7 @@ Assumptions:
 (<label_ite_cond_true: ((~Int.Lt i) n)>, ((~Int.Lt #0) $__n0))
 (assume_guard, ((~Int.Lt $__i2) $__n0)) (assume_invariant, ((~Int.Le $__i2) $__n0)) (assume_measure_pos, ((~Int.Ge ((~Int.Sub $__n0) $__i2)) #0))
 (pre, ((~Int.Ge $__n0) #0))
+
 Proof Obligation:
 ((~Int.Lt ((~Int.Sub $__n0) ((~Int.Add $__i2) #1))) ((~Int.Sub $__n0) $__i2))
 
@@ -128,6 +131,7 @@ Assumptions:
 (<label_ite_cond_true: ((~Int.Lt i) n)>, ((~Int.Lt #0) $__n0))
 (assume_guard, ((~Int.Lt $__i2) $__n0)) (assume_invariant, ((~Int.Le $__i2) $__n0)) (assume_measure_pos, ((~Int.Ge ((~Int.Sub $__n0) $__i2)) #0))
 (pre, ((~Int.Ge $__n0) #0))
+
 Proof Obligation:
 (if ((~Int.Le ((~Int.Sub $__n0) ((~Int.Add $__i2) #1))) #0) then (~Bool.Not ((~Int.Lt ((~Int.Add $__i2) #1)) $__n0)) else #true)
 
@@ -136,6 +140,7 @@ Assumptions:
 (<label_ite_cond_true: ((~Int.Lt i) n)>, ((~Int.Lt #0) $__n0))
 (assume_guard, ((~Int.Lt $__i2) $__n0)) (assume_invariant, ((~Int.Le $__i2) $__n0)) (assume_measure_pos, ((~Int.Ge ((~Int.Sub $__n0) $__i2)) #0))
 (pre, ((~Int.Ge $__n0) #0))
+
 Proof Obligation:
 ((~Int.Le ((~Int.Add $__i2) #1)) $__n0)
 
@@ -143,6 +148,7 @@ Label: i_eq_n
 Assumptions:
 (pre, ((~Int.Ge $__n0) #0))
 (<label_ite_cond_true: ((~Int.Lt i) n)>, (if ((~Int.Lt #0) $__n0) then ((~Int.Lt #0) $__n0) else #true)) (assume_guard, (if ((~Int.Lt #0) $__n0) then ((~Int.Lt $__i2) $__n0) else #true)) (assume_invariant, (if ((~Int.Lt #0) $__n0) then ((~Int.Le $__i2) $__n0) else #true)) (assume_measure_pos, (if ((~Int.Lt #0) $__n0) then ((~Int.Ge ((~Int.Sub $__n0) $__i2)) #0) else #true)) (not_guard, (if ((~Int.Lt #0) $__n0) then (~Bool.Not ((~Int.Lt $__i3) $__n0)) else #true)) (invariant, (if ((~Int.Lt #0) $__n0) then ((~Int.Le $__i3) $__n0) else #true)) (<label_ite_cond_false: !((~Int.Lt i) n)>, (if (if ((~Int.Lt #0) $__n0) then #false else #true) then (if ((~Int.Lt #0) $__n0) then #false else #true) else #true))
+
 Proof Obligation:
 ((if ((~Int.Lt #0) $__n0) then $__i3 else #0) == $__n0)
 
@@ -150,6 +156,7 @@ Label: post
 Assumptions:
 (pre, ((~Int.Ge $__n0) #0))
 (<label_ite_cond_true: ((~Int.Lt i) n)>, (if ((~Int.Lt #0) $__n0) then ((~Int.Lt #0) $__n0) else #true)) (assume_guard, (if ((~Int.Lt #0) $__n0) then ((~Int.Lt $__i2) $__n0) else #true)) (assume_invariant, (if ((~Int.Lt #0) $__n0) then ((~Int.Le $__i2) $__n0) else #true)) (assume_measure_pos, (if ((~Int.Lt #0) $__n0) then ((~Int.Ge ((~Int.Sub $__n0) $__i2)) #0) else #true)) (not_guard, (if ((~Int.Lt #0) $__n0) then (~Bool.Not ((~Int.Lt $__i3) $__n0)) else #true)) (invariant, (if ((~Int.Lt #0) $__n0) then ((~Int.Le $__i3) $__n0) else #true)) (<label_ite_cond_false: !((~Int.Lt i) n)>, (if (if ((~Int.Lt #0) $__n0) then #false else #true) then (if ((~Int.Lt #0) $__n0) then #false else #true) else #true))
+
 Proof Obligation:
 #true
 
@@ -159,7 +166,6 @@ Wrote problem to vcs/measure_decreases.smt2.
 Wrote problem to vcs/measure_imp_not_guard.smt2.
 Wrote problem to vcs/arbitrary_iter_maintain_invariant.smt2.
 Wrote problem to vcs/i_eq_n.smt2.
-Wrote problem to vcs/post.smt2.
 ---
 info:
 Obligation: entry_invariant
