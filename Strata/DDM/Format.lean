@@ -214,48 +214,48 @@ instance : ToStrataFormat QualifiedIdent where
     else
       .atom f!"{ident.dialect}.{ident.name}"
 
-namespace TypeExpr
+namespace TypeExprF
 
-protected def mformat : TypeExpr → StrataFormat
-| .ident tp a => a.attach.foldl (init := mformat tp) fun m ⟨e, _⟩ =>
+protected def mformat : TypeExprF α → StrataFormat
+| .ident _ tp a => a.attach.foldl (init := mformat tp) fun m ⟨e, _⟩ =>
   mf!"{m} {e.mformat.ensurePrec (appPrec + 1)}".setPrec appPrec
-| .bvar idx => .bvar idx
-| .fvar idx a => a.attach.foldl (init := .fvar idx) fun m ⟨e, _⟩ =>
+| .bvar _ idx => .bvar idx
+| .fvar _ idx a => a.attach.foldl (init := .fvar idx) fun m ⟨e, _⟩ =>
   mf!"{m} {e.mformat.ensurePrec (appPrec + 1)}".setPrec appPrec
-| .arrow a r => mf!"{a.mformat.ensurePrec (arrowPrec+1)} -> {r.mformat.ensurePrec arrowPrec}"
+| .arrow _ a r => mf!"{a.mformat.ensurePrec (arrowPrec+1)} -> {r.mformat.ensurePrec arrowPrec}"
 
-instance : ToStrataFormat TypeExpr where
+instance : ToStrataFormat (TypeExprF α) where
   mformat e := e.mformat
 
-end TypeExpr
+end TypeExprF
 
 namespace PreType
 
 protected def mformat : PreType → StrataFormat
-| .ident tp a => a.attach.foldl (init := mformat tp) (fun m ⟨e, _⟩ => mf!"{m} {e.mformat}")
-| .bvar idx => .bvar idx
-| .fvar idx a => a.attach.foldl (init := .fvar idx) (fun m ⟨e, _⟩ => mf!"{m} {e.mformat}")
-| .arrow a r => mf!"{a.mformat} -> {r.mformat}"
-| .funMacro idx r => mf!"fnOf({StrataFormat.bvar idx}, {r.mformat})"
+| .ident _ tp a => a.attach.foldl (init := mformat tp) (fun m ⟨e, _⟩ => mf!"{m} {e.mformat}")
+| .bvar _ idx => .bvar idx
+| .fvar _ idx a => a.attach.foldl (init := .fvar idx) (fun m ⟨e, _⟩ => mf!"{m} {e.mformat}")
+| .arrow _ a r => mf!"{a.mformat} -> {r.mformat}"
+| .funMacro _ idx r => mf!"fnOf({StrataFormat.bvar idx}, {r.mformat})"
 
 instance : ToStrataFormat PreType where
   mformat := PreType.mformat
 
 end PreType
 
-namespace SyntaxCat
+namespace SyntaxCatF
 
-protected def mformat (cat : SyntaxCat) : StrataFormat :=
+protected def mformat {α} (cat : SyntaxCatF α) : StrataFormat :=
   let init := mformat cat.name
   cat.args.foldl (init := init) (fun f a => mf!"{f} {a.mformat.ensurePrec (appPrec+1)}")
   decreasing_by
-    rw [SyntaxCat.sizeOf_spec cat]
+    rw [SyntaxCatF.sizeOf_spec cat]
     decreasing_tactic
 
-instance : ToStrataFormat SyntaxCat where
-  mformat := SyntaxCat.mformat
+instance {α} : ToStrataFormat (SyntaxCatF α)  where
+  mformat := SyntaxCatF.mformat
 
-end SyntaxCat
+end SyntaxCatF
 
 /--
 This pretty prints the argument an op atom has.
@@ -284,7 +284,7 @@ def pformat [ToStrataFormat α] (a : α) : FormatM PrecFormat :=
 mutual
 
 /- Renders expression to format and precedence of outmost operator. -/
-private partial def Expr.mformatM (e : Expr) (rargs : Array Arg := #[]) : FormatM PrecFormat :=
+private partial def ExprF.mformatM (e : ExprF α) (rargs : Array (ArgF α)  := #[]) : FormatM PrecFormat :=
   let ppArgs (f : Format) : FormatM PrecFormat :=
         if rargs.isEmpty then
           pure <| .atom f
@@ -293,11 +293,11 @@ private partial def Expr.mformatM (e : Expr) (rargs : Array Arg := #[]) : Format
           let args := Format.joinSep args.toList f!", "
           pure <| .mk f!"{f}({args})" callPrec
   match e with
-  | .bvar idx => do
+  | .bvar _ idx => do
     ppArgs (← pformat (StrataFormat.bvar idx)).format
-  | .fvar idx => do
+  | .fvar _ idx => do
     ppArgs (← pformat (StrataFormat.fvar idx)).format
-  | .fn f => do
+  | .fn _ f => do
       match (←read).getFnDecl f with
       | some op =>
         let args := rargs.reverse
@@ -307,25 +307,25 @@ private partial def Expr.mformatM (e : Expr) (rargs : Array Arg := #[]) : Format
         let argResults := formatArguments (← read) (← get) bindings ⟨args, bsize⟩
         pure <| ppOp (← read).opts op.syntaxDef (Prod.fst <$> argResults)
       | none => ppArgs f.fullName
-  | .app f a => f.mformatM (rargs.push a)
+  | .app _ f a => f.mformatM (rargs.push a)
 
-private partial def Arg.mformatM : Arg → FormatM PrecFormat
+private partial def ArgF.mformatM : ArgF α → FormatM PrecFormat
 | .op o => o.mformatM
 | .expr e => e.mformatM
 | .type e => pformat e
 | .cat e => pformat e
-| .ident x => pformat x
-| .num x => pformat x
-| .decimal v => pformat v
-| .strlit s => return .atom (.text <| escapeStringLit s)
-| .option ma =>
+| .ident _ x => pformat x
+| .num _ x => pformat x
+| .decimal _ v => pformat v
+| .strlit _ s => return .atom (.text <| escapeStringLit s)
+| .option _ ma =>
   match ma with
   | none => pure (.atom .nil)
   | some a => a.mformatM
-| .seq entries => do
+| .seq _ entries => do
   .atom <$> entries.foldlM (init := .nil) fun p a =>
     return (p ++ (← a.mformatM).format)
-| .commaSepList entries => do
+| .commaSepList _ entries => do
   if z : entries.size = 0 then
     pure (.atom .nil)
   else do
@@ -344,7 +344,7 @@ private partial def ppArgs (f : StrataFormat) (rargs : Array Arg) : FormatM Prec
     let r ← rargs.foldrM (init := init) (fun a r => return f!"{r},{(←a.mformatM).format})")
     pure <| .atom f!"{r})"
 
-private partial def formatArguments (c : FormatContext) (initState : FormatState) (argDecls : ArgDecls) (args : Vector Arg argDecls.size) :=
+private partial def formatArguments (c : FormatContext) (initState : FormatState) (argDecls : ArgDecls) (args : Vector (ArgF α) argDecls.size) :=
   let rec aux (a : Array (PrecFormat × FormatState)) :=
         let lvl := a.size
         if h : lvl < argDecls.size then
@@ -360,7 +360,7 @@ private partial def formatArguments (c : FormatContext) (initState : FormatState
           a
   aux (.mkEmpty argDecls.size)
 
-private partial def Operation.mformatM (op : Operation) : FormatM PrecFormat := do
+private partial def OperationF.mformatM (op : OperationF α) : FormatM PrecFormat := do
   match (← read).getOpDecl op.name with
   | some decl =>
     let bindings := decl.argDecls
@@ -374,7 +374,7 @@ private partial def Operation.mformatM (op : Operation) : FormatM PrecFormat := 
     | none => pure ()
     for b in decl.newBindings do
       match args[b.nameIndex.toLevel] with
-      | .ident e =>
+      | .ident _ e =>
         modify (·.pushBinding e)
       | _ =>
         return panic! s!"Expected ident at {b.nameIndex.toLevel}."
@@ -383,7 +383,7 @@ private partial def Operation.mformatM (op : Operation) : FormatM PrecFormat := 
     -- FIXME: Consider reporting error here.
     let initCtx ← read
     let initState ← get
-    let args := op.args |>.map (Arg.mformatM · initCtx initState |>.fst |>.format) |>.toList
+    let args := op.args |>.map (ArgF.mformatM · initCtx initState |>.fst |>.format) |>.toList
     return .atom f!"{op.name.fullName}({Format.joinSep args ", "});"
 
 end
@@ -521,7 +521,7 @@ instance TypeDecl.instToStrataFormat : ToStrataFormat TypeDecl where
     let params := if params.isEmpty then
                     mf!""
                   else
-                    let p := d.argNames.map fun nm => mf!"{nm} : Type"
+                    let p := d.argNames.map fun anm => mf!"{anm.val} : Type"
                     mf! " " ++ StrataFormat.sepBy p ", "
     mf!"type {d.name}{params};\n"
 
