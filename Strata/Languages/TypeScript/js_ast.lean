@@ -51,6 +51,11 @@ mutual
   structure TS_TSArrayType extends BaseNode where
     elementType : TS_TSTypeKeyword
   deriving Repr, Lean.FromJson, Lean.ToJson
+
+  -- TODO: Array not as a type?
+  -- structure TS_TSArrayType extends BaseNode where
+    -- elementType : TS_TSTypeKeyword
+  -- deriving Repr, Lean.FromJson, Lean.ToJson
 end
 
 structure TS_TSTypeAnnotation extends BaseNode where
@@ -228,15 +233,16 @@ mutual
     body: TS_Statement
   deriving Repr, Lean.FromJson, Lean.ToJson
 
+  structure TS_ContinueStatement extends BaseNode where
+    label: Option TS_Identifier
+  deriving Repr, Lean.FromJson, Lean.ToJson
+
+  /- TODO: Add support for for(let a=0, b=0;a!=0 and b!=0;a++,b++) -/
   structure TS_ForStatement extends BaseNode where
     init: TS_VariableDeclaration
     test: TS_Expression
     update: TS_AssignmentExpression
     body: TS_Statement
-  deriving Repr, Lean.FromJson, Lean.ToJson
-
-  structure TS_ContinueStatement extends BaseNode where
-    label: Option TS_Identifier
   deriving Repr, Lean.FromJson, Lean.ToJson
 
   /-- `break;` (labels optional; ESTree uses null when absent) -/
