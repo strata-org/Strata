@@ -39,6 +39,25 @@ structure ControlTargets where
   breakLabel? : Option String := none
 deriving Inhabited
 
+private def isBareContinueStmt (s : TS_Statement) : Bool :=
+  match s with
+  | .TS_ContinueStatement _ => true
+  | _ => false
+
+private def isIfWithBareContinue (s : TS_Statement) : Option TS_IfStatement :=
+  match s with
+  | .TS_IfStatement ifs =>
+      let conseqIsBare :=
+        match ifs.consequent with
+        | .TS_ContinueStatement _ => true
+        | .TS_BlockStatement b =>
+            -- exactly one statement and it is `continue`
+            match b.body.toList with
+            | [one] => isBareContinueStmt one
+            | _     => false
+        | _ => false
+      if conseqIsBare && ifs.alternate.isNone then some ifs else none
+  | _ => none
 
 def TS_type_to_HMonoTy (ty: String) : Heap.HMonoTy :=
   match ty with
@@ -72,7 +91,7 @@ partial def infer_type_from_expr (expr: TS_Expression) : Heap.HMonoTy :=
   | .TS_BooleanLiteral _ => Heap.HMonoTy.bool
   | .TS_BinaryExpression e =>
     match e.operator with
-    | "+" | "-" | "*" | "/" => Heap.HMonoTy.int
+    | "+" | "-" | "*" | "/" | "%" => Heap.HMonoTy.int
     | "==" | "<=" | "<" | ">=" | ">" => Heap.HMonoTy.bool
     | _ => Heap.HMonoTy.int  -- Default
   | .TS_LogicalExpression _ => Heap.HMonoTy.bool
@@ -96,6 +115,7 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
     | "-" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Sub" none) lhs) rhs
     | "*" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Mul" none) lhs) rhs
     | "/" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Div" none) lhs) rhs
+    | "%" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Mod" none) lhs) rhs
     | "==" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Eq" none) lhs) rhs
     | "<=" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Le" none) lhs) rhs
     | "<" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Lt" none) lhs) rhs
@@ -283,12 +303,53 @@ partial def translate_statement_core
           -- Other expression statements - ignore for now
           (ctx, [])
 
-      | .TS_BlockStatement block =>
-        -- Handle block statement: { stmt1; stmt2; ... }
-        let (finalCtx, allStmts) := block.body.toList.foldl (fun (accCtx, accStmts) stmt =>
-          let (newCtx, stmts) := translate_statement_core stmt accCtx ct
-          (newCtx, accStmts ++ stmts)) (ctx, [])
-        (finalCtx, allStmts)
+       | .TS_BlockStatement block =>
+         -- lower inside loops:  if (cond) { continue; }  ==>  if (cond) { } else { <rest> }
+         let stmts := block.body.toList
+
+         -- consequent is exactly a bare `continue`
+         let isBareContinueStmt : TS_Statement → Bool
+           | .TS_ContinueStatement _ => true
+           | _ => false
+
+         let isIfWithBareContinue : TS_Statement → Option TS_IfStatement
+           | .TS_IfStatement ifs =>
+               let conseqIsBare :=
+                 match ifs.consequent with
+                 | .TS_ContinueStatement _ => true
+                 | .TS_BlockStatement b =>
+                     match b.body.toList with
+                     | [one] => isBareContinueStmt one
+                     | _     => false
+                 | _ => false
+               if conseqIsBare && ifs.alternate.isNone then some ifs else none
+           | _ => none
+
+         -- when we hit the pattern (in a loop), guard the tail with `else`
+         let rec go (accCtx : TranslationContext) (acc : List TSStrataStatement) (rest : List TS_Statement)
+           : TranslationContext × List TSStrataStatement :=
+           match rest with
+           | [] => (accCtx, acc)
+           | s :: tail =>
+             match ct.continueLabel?, isIfWithBareContinue s with
+             | some _, some ifs =>
+               -- Translate the tail (everything after the `if`) under the `else` branch
+               let (tailCtx, tailStmts) :=
+                 tail.foldl
+                   (fun (p, accS) stmt =>
+                      let (p2, ss2) := translate_statement_core stmt p ct
+                      (p2, accS ++ ss2))
+                   (accCtx, [])
+               let cond := translate_expr ifs.test
+               let thenBlk : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [] }
+               let elseBlk : Imperative.Block TSStrataExpression TSStrataCommand := { ss := tailStmts }
+               -- Emit one conditional and STOP
+               (tailCtx, acc ++ [ .ite cond thenBlk elseBlk ])
+             | _, _ =>
+               let (newCtx, ss) := translate_statement_core s accCtx ct
+               go newCtx (acc ++ ss) tail
+
+         go ctx [] stmts
 
       | .TS_IfStatement ifStmt =>
         -- Handle if statement: if test then consequent else alternate
@@ -306,10 +367,13 @@ partial def translate_statement_core
         dbg_trace s!"[DEBUG] Translating while statement at loc {whileStmt.start_loc}-{whileStmt.end_loc}"
         dbg_trace s!"[DEBUG] While test: {repr whileStmt.test}"
         dbg_trace s!"[DEBUG] While body: {repr whileStmt.body}"
+
         let testExpr := translate_expr whileStmt.test
-        let (bodyCtx, bodyStmts) := translate_statement_core whileStmt.body ctx ct
+        let (bodyCtx, bodyStmts) :=
+          translate_statement_core whileStmt.body ctx { ct with continueLabel? := some s!"__in_loop_{whileStmt.start_loc}" }
+
         let bodyBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := bodyStmts }
-        (bodyCtx, [.loop testExpr none none bodyBlock])
+        (bodyCtx, [ .loop testExpr none none bodyBlock ])
 
       | .TS_ContinueStatement cont =>
         let tgt :=
