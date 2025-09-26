@@ -121,8 +121,37 @@ def Boogie.Cmds.renameVars (frto : Map String String)
   | [] => []
   | c :: crest => [(Boogie.Cmd.renameVars frto c)] ++ (renameVars frto crest)
 
+-------------------------------------------------------------------------------
+
+structure CProverGOTO.Context where
+  program : CProverGOTO.Program
+  locals : List String
+  formals : Map String CProverGOTO.Ty
+  ret : CProverGOTO.Ty
+
+structure CProverGOTO.Json where
+  symtab : Lean.Json := .null
+  goto   : Lean.Json := .null
+
+open Strata in
+def CProverGOTO.Context.toJson (programName : String) (ctx : CProverGOTO.Context) :
+  CProverGOTO.Json :=
+  let fn_symbol : Map String CProverGOTO.CBMCSymbol :=
+    [CProverGOTO.createFunctionSymbol programName ctx.formals ctx.ret]
+  let formals : Map String CProverGOTO.CBMCSymbol :=
+    ctx.formals.map (fun (name, ty) =>
+        CProverGOTO.createGOTOSymbol programName name (CProverGOTO.mkFormalSymbol programName name)
+          (isParameter := true) (isStateVar := true) (ty := some ty))
+  let locals : Map String CProverGOTO.CBMCSymbol :=
+    ctx.locals.map (fun name =>
+        CProverGOTO.createGOTOSymbol programName name (CProverGOTO.mkLocalSymbol programName name)
+          (isParameter := false) (isStateVar := false) (ty := none))
+  let symbols := Lean.toJson (fn_symbol ++ formals ++ locals)
+  let goto_functions := CProverGOTO.programsToJson [(programName, ctx.program)]
+  { symtab := symbols, goto := goto_functions }
+
 open Lambda.LTy.Syntax in
-def transformToGoto (boogie : Boogie.Program) : Except Format (CProverGOTO.Program) := do
+def transformToGoto (boogie : Boogie.Program) : Except Format CProverGOTO.Context := do
   let T := { Lambda.TEnv.default with functions := Boogie.Factory, knownTypes := Boogie.KnownTypes }
   let (boogie, _T) ← Boogie.Program.typeCheck T boogie
   dbg_trace f!"[Strata.Boogie] Type Checking Succeeded!"
@@ -133,66 +162,73 @@ def transformToGoto (boogie : Boogie.Program) : Except Format (CProverGOTO.Progr
                         Declaration encountered: {decl}"
     | some p =>
       let pname := Boogie.BoogieIdent.toPretty p.header.name
+
+      if !p.header.typeArgs.isEmpty then
+        .error f!"[transformToGoto] Translation for polymorphic Boogie procedures is unimplemented."
+
       let cmds ← p.body.mapM
         (fun b => match b with
           | .cmd (.cmd c) => return c
           | _ => .error f!"[transformToGoto] We can process Boogie commands only, not statements! \
                            Statement encountered: {b}")
+
+      if 1 < p.header.outputs.length then
+        .error f!"[transformToGoto] Translation for multi-return value Boogie procedures is unimplemented."
+      let ret_tys ← p.header.outputs.values.mapM (fun ty => Lambda.LMonoTy.toGotoType ty)
+      let ret_ty := if ret_tys.isEmpty then CProverGOTO.Ty.Empty else ret_tys[0]!
+
       let formals := p.header.inputs.keys.map Boogie.BoogieIdent.toPretty
-      -- CBMC expects formals to be in the namespace of the program.
-      -- So, e.g., `x` appears as `program::x`.
-      let formals_renamed := formals.map (fun f => (f, pname ++ "::" ++ f))
+      let formals_tys ← p.header.inputs.values.mapM (fun ty => Lambda.LMonoTy.toGotoType ty)
+      let new_formals := formals.map (fun f => CProverGOTO.mkFormalSymbol pname f)
+      let formals_renamed := formals.zip new_formals
+      let formals_tys : Map String CProverGOTO.Ty := formals.zip formals_tys
+
       let locals := (Imperative.Stmts.definedVars p.body).map Boogie.BoogieIdent.toPretty
-      -- Local variables use `program::1::<var>` notation.
-      -- (FIXME): Does `1` refer to the scope depth?
-      let locals_renamed := locals.map (fun l => (l, pname ++ "::1::" ++ l))
+      let new_locals := locals.map (fun l => CProverGOTO.mkLocalSymbol pname l)
+      let locals_renamed := locals.zip new_locals
+
       let args_renamed := formals_renamed ++ locals_renamed
       let cmds := Boogie.Cmds.renameVars args_renamed cmds
+
       let ans ← @Imperative.Cmds.toGotoTransform Boogie.ExprStr
-                    BoogieToGOTO.instToGotoExprStr T cmds (loc := 0)
+                    BoogieToGOTO.instToGotoExprStr T pname cmds (loc := 0)
       let ending_insts : Array CProverGOTO.Instruction := #[
         -- (FIXME): Add lifetime markers.
         -- { type := .DEAD, locationNum := ans.nextLoc + 1,
         --     code := .dead (.symbol "simpleAddUnsigned::1::z" (.UnsignedBV 32))},
           { type := .END_FUNCTION, locationNum := ans.nextLoc + 1}]
       let insts := ans.instructions ++ ending_insts
-      let _ := format f!"cmds: {cmds}"
-      return {
-        name := Boogie.BoogieIdent.toPretty p.header.name,
-        parameterIdentifiers := (formals_renamed.map (fun f => f.snd)).toArray,
-        instructions := insts
-        }
-  else
-    .error f!"[transformToGoto] We can transform a single Boogie procedure to \
-              GOTO at this time!"
 
--- #eval do let ans ← transformToGoto boogie
---           return CProverGOTO.programToJson "simpleAddUnsigned" ans
+      let pgm := {  name := Boogie.BoogieIdent.toPretty p.header.name,
+                    parameterIdentifiers := new_formals.toArray,
+                    instructions := insts
+                    }
+      return { program := pgm,
+               formals := formals_tys,
+               ret := ret_ty,
+               locals := locals }
+  else
+    .error f!"[transformToGoto] We can transform only a single Boogie procedure to \
+              GOTO at a time!"
 
 open Strata in
-def printToGotoJson (programName : String) (env : Program) : IO Lean.Json := do
+def getGotoJson (programName : String) (env : Program) : IO CProverGOTO.Json := do
   let (program, errors) := TransM.run (translateProgram env)
   if errors.isEmpty then
     (match (BoogieToGOTO.transformToGoto program) with
       | .error e =>
         dbg_trace s!"{e}"
-        return (Lean.Json.null)
-      | .ok ans =>
-        return (CProverGOTO.programToJson programName ans))
+        return {}
+      | .ok ctx =>
+        return (CProverGOTO.Context.toJson programName ctx))
   else
     panic! s!"DDM Transform Error: {repr errors}"
 
 open Strata in
-def writeToGotoJson (fileName programName : String) (env : Program) : IO Unit := do
-  let (program, errors) := TransM.run (translateProgram env)
-  if errors.isEmpty then
-    (match (transformToGoto program) with
-      | .error _e => return ()
-      | .ok ans =>
-        CProverGOTO.writeProgramToFile
-          fileName programName ans)
-  else
-    panic! s!"DDM Transform Error: {repr errors}"
+def writeToGotoJson (programName symTabFileName gotoFileName : String) (env : Program) : IO Unit := do
+  let json ← getGotoJson programName env
+  IO.FS.writeFile symTabFileName json.symtab.pretty
+  IO.FS.writeFile gotoFileName json.goto.pretty
 
 end BoogieToGOTO
 

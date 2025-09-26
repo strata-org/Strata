@@ -5,14 +5,14 @@
 -/
 import Lean.Data.Json
 
-import StrataTest.Backends.CBMC.SimpleAddUnsigned.SimpleAddUnsigned
+import StrataTest.Backends.CBMC.SimpleAdd.SimpleAdd
 
 def main (args : List String) : IO Unit := do
   match args with
-  | ["writeFile"] =>
-    BoogieToGOTO.writeToGotoJson
-      "StrataTest/Backends/CBMC/SimpleAddUnsigned/function.json"
-      "simpleAddUnsigned"
-      Strata.simpleAddUnsigned
-    IO.println "Written file: StrataTest/Backends/CBMC/SimpleAddUnsigned/function.json"
+  | ["writeFiles"] =>
+    BoogieToGOTO.writeToGotoJson (programName := "simpleAdd")
+      (symTabFileName := "StrataTest/Backends/CBMC/SimpleAdd/simpleAdd.symtab.json")
+      (gotoFileName := "StrataTest/Backends/CBMC/SimpleAdd/simpleAdd.goto.json")
+      Strata.simpleAdd
+    IO.println "Written JSON files in StrataTest/Backends/CBMC/SimpleAdd/"
   | _ => IO.println "Bad usage of BoogieToGoto"

@@ -180,3 +180,133 @@ def writeProgramsToFile (fileName : String) (programs : List (String × Program)
   IO.FS.writeFile fileName json.pretty
 
 -------------------------------------------------------------------------------
+
+/-
+Utilities to create symbol table entries for symbols in a GOTO Assembly
+program
+-/
+
+-- TODO: Sync with Common.lean
+structure CBMCSymbol where
+  baseName : String
+  isAuxiliary : Bool := false
+  isExported : Bool := false
+  isExtern : Bool := false
+  isFileLocal : Bool := false
+  isInput : Bool := false
+  isLvalue : Bool := false
+  isMacro : Bool := false
+  isOutput : Bool := false
+  isParameter : Bool := false
+  isProperty : Bool := false
+  isStateVar : Bool := false
+  isStaticLifetime : Bool := false
+  isThreadLocal : Bool := false
+  isType : Bool := false
+  isVolatile : Bool := false
+  isWeak : Bool := false
+  -- (FIXME)
+  -- location : SourceLocation := .nil
+  mode : String
+  module : String
+  name : String
+  prettyName : String := ""
+  prettyType : String := ""
+  prettyValue : String := ""
+  type : Json
+  value : Json
+  deriving FromJson, ToJson
+
+instance : ToJson (Map String CBMCSymbol) where
+  toJson m := Json.mkObj (m.map fun (k, v) => (k, toJson v))
+
+/--
+CBMC expects formals to be in the namespace of the program.
+So, e.g., `x` appears as `program::x`.
+-/
+def mkFormalSymbol (pname base : String) : String :=
+  pname ++ "::" ++ base
+
+/--
+Local variables use `program::<depth>::<var>` notation.
+(FIXME): Does `depth` refer to the scope level?
+-/
+def mkLocalSymbol (pname base : String) (depth : Nat := 1) : String :=
+  pname ++ "::" ++ toString depth ++ "::" ++ base
+
+/--
+A symbol table entry for a variable (e.g., a function argument or a local
+variable) can be fairly sparse in details at the level of GOTO instructions.
+
+We can elide the type for a local variable. However, we must provide the correct
+type for a function parameter (i.e., a formal).
+-/
+def createGOTOSymbol (programName baseName fullName : String)
+  (isParameter isStateVar : Bool) (ty : Option Ty)
+  : String × CBMCSymbol :=
+  let tyJson := match ty with
+    | none => Json.mkObj [("id", "nil")]
+    | some ty => tyToJson ty
+  (fullName,
+  {
+    baseName := baseName,
+    isFileLocal := true,
+    isLvalue := true,
+    isParameter := isParameter,
+    -- What's a "StateVar"? So far, function arguments (i.e., for which
+    -- `isParameter` is true) appear to have `isStateVar` true too.
+    isStateVar := isStateVar,
+    isThreadLocal := true,
+    -- location := .nil,
+    mode := "C",
+    module := programName,
+    name := fullName,
+    prettyName := baseName,
+    prettyType := "unknown",
+    prettyValue := "",
+    type := tyJson,
+    value := Json.mkObj [("id", "nil")]
+  })
+
+-- (FIXME) Sync. with mkParameter.
+def mkParam (baseName : String) (fullName : String) (ty : Ty) : Json :=
+  Json.mkObj [
+    ("id", "parameter"),
+    ("namedSub", Json.mkObj [
+      ("#base_name", Json.mkObj [("id", baseName)]),
+      ("#identifier", Json.mkObj [("id", fullName)]),
+      ("type", tyToJson ty)
+    ])
+  ]
+
+def createFunctionSymbol (programName : String) (formals : Map String Ty) (ret : Ty) :
+  String × CBMCSymbol :=
+  let code_type :=
+  -- (FIXME) Sync. with mkBuiltinFunction.
+    Json.mkObj [
+    ("id", "code"),
+    ("namedSub", Json.mkObj [
+      ("parameters", Json.mkObj [
+        ("sub", Json.arr
+                (formals.map (fun (name, ty) =>
+                                mkParam name (mkFormalSymbol programName name) ty)).toArray)
+      ]),
+      ("return_type", tyToJson ret)
+      ])
+  ]
+  (programName,
+  {
+    baseName := programName,
+    isLvalue := true,
+    -- location := .nil,
+    mode := "C",
+    module := programName,
+    name := programName,
+    prettyName := programName,
+    prettyType := "unknown",
+    prettyValue := "",
+    type := code_type
+    value := Json.mkObj [("id", "compiled")]
+  })
+
+-------------------------------------------------------------------------------

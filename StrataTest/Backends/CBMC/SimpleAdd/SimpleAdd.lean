@@ -11,10 +11,10 @@ open Std (ToFormat Format format)
 
 namespace Strata
 
-protected def simpleAddUnsigned : Program :=
+protected def simpleAdd : Program :=
 #strata
 program Boogie;
-procedure simpleAddUnsigned (x : bv32, y : bv32) returns () {
+procedure simpleAdd (x : bv32, y : bv32) returns () {
 
   assume (x < bv{32}(0xFFFF0000));
   assume (y < bv{32}(0x00001111));
@@ -27,12 +27,12 @@ procedure simpleAddUnsigned (x : bv32, y : bv32) returns () {
 };
 #end
 
--- #eval BoogieToGOTO.printToGotoJson "simpleAddUnsigned" Strata.simpleAddUnsigned
+-- #eval BoogieToGOTO.getGotoJson "simpleAddU" Strata.simpleAddU
 
--- #eval BoogieToGOTO.writeToGotoJson
---   "StrataTest/Backends/CBMC/SimpleAddUnsigned/function.json"
---   "simpleAddUnsigned"
---   Strata.simpleAddUnsigned
+-- #eval BoogieToGOTO.writeToGotoJson (programName := "simpleAdd")
+--       (symTabFileName := "StrataTest/Backends/CBMC/SimpleAdd/simpleAdd.symtab.json")
+--       (gotoFileName := "StrataTest/Backends/CBMC/SimpleAdd/simpleAdd.goto.json")
+--       Strata.simpleAdd
 
 end Strata
 

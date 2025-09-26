@@ -4,6 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+import Lean.Data.Json
+
 namespace CProverGOTO
 -------------------------------------------------------------------------------
 
@@ -15,7 +17,7 @@ structure SourceLocation where
   function : String
   workingDir : String
   comment : String
-deriving Repr, DecidableEq, Inhabited
+deriving Repr, DecidableEq, Inhabited, Lean.ToJson, Lean.FromJson
 
 def SourceLocation.nil : SourceLocation :=
   { file := "", line := 0, column := 0, function := "", workingDir := "", comment := "" }

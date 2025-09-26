@@ -64,7 +64,7 @@ info: ok: #[DECL (decl (s : unsignedbv[32])),
  ASSIGN (assign (s : unsignedbv[32]) (100 : unsignedbv[32]))]
 -/
 #guard_msgs in
-#eval do let ans ← Imperative.Cmds.toGotoTransform Lambda.TEnv.default ExampleProgram1
+#eval do let ans ← Imperative.Cmds.toGotoTransform Lambda.TEnv.default "one" ExampleProgram1
           return format ans.instructions
 
 -------------------------------------------------------------------------------
@@ -87,7 +87,7 @@ info: ok: #[DECL (decl (s : unsignedbv[32])),
  ASSIGN (assign (s : unsignedbv[32]) (((100 : unsignedbv[32]) + (200 : unsignedbv[32])) : unsignedbv[32]))]
 -/
 #guard_msgs in
-#eval do let ans ← Imperative.Cmds.toGotoTransform Lambda.TEnv.default ExampleProgram2
+#eval do let ans ← Imperative.Cmds.toGotoTransform Lambda.TEnv.default "two" ExampleProgram2
           return format ans.instructions
 
 -------------------------------------------------------------------------------
@@ -112,12 +112,9 @@ info: ok: #[DECL (decl (x : unsignedbv[32])),
  ASSIGN (assign (z : unsignedbv[32]) (((x : unsignedbv[32]) + (y : unsignedbv[32])) : unsignedbv[32]))]
 -/
 #guard_msgs in
-#eval do let ans ← Imperative.Cmds.toGotoTransform Lambda.TEnv.default ExampleProgram3
+#eval do let ans ← Imperative.Cmds.toGotoTransform Lambda.TEnv.default "three" ExampleProgram3
           return format ans.instructions
 
 -------------------------------------------------------------------------------
-
--- #eval writeProgramsToFile "StrataTest/Backends/CBMC/SimpleAdd/Unsigned/function.json"
---         [("simpleAddUnsigned", simpleAddUnsignedProgram)]
 
 end
