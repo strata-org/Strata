@@ -4,13 +4,10 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DDM.Elab
-import Strata.DDM.Integration.Lean.Env
 import Strata.DDM.Integration.Lean.Gen
 import Strata.DDM.Integration.Lean.Quote
 import Strata.DDM.Integration.Lean.ToExpr
 import Strata.DDM.TaggedRegions
-import Strata.DDM.Util.Lean
 
 open Lean
 open Elab (throwIllFormedSyntax throwUnsupportedSyntax)
@@ -77,7 +74,7 @@ def strataDialectImpl: Lean.Elab.Command.CommandElab := fun (stx : Syntax) => do
   let loaded := (dialectExt.getState (←Lean.getEnv)).loaded
   let (_, d, s) ← Strata.Elab.elabDialect {} loaded inputCtx p e
   if !s.errors.isEmpty then
-    for (stx, e) in s.errors do
+    for e in s.errors do
       logMessage e
     return
   -- Add dialect to command environment
@@ -98,7 +95,7 @@ def strataProgramImpl : TermElab := fun stx tp => do
   | .ok pgm =>
     return toExpr pgm
   | .error errors =>
-    for (stx, e) in errors do
+    for e in errors do
       logMessage e
     return mkApp2 (mkConst ``sorryAx [1]) (toTypeExpr Program) (toExpr true)
 
@@ -129,8 +126,9 @@ def loadDialectImpl: CommandElab := fun (stx : Syntax) => do
     match r with
     | .ok d =>
         declareDialect d
-    | .error msg =>
-      throwError msg
+    | .error errorMessages =>
+      assert! errorMessages.size > 0
+      throwError (← Elab.mkErrorReport errorMessages)
   | _ =>
     throwUnsupportedSyntax
 
