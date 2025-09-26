@@ -1,5 +1,9 @@
 #!/bin/zsh
 
+echo "Cleaning any previous artifacts:"
+rm -f *.json
+rm -f *.gb
+
 echo "Writing out JSON files from a Strata.Boogie program SimpleAdd"
 pushd ../../../../
 lake exe BoogieToGoto writeFiles
@@ -11,7 +15,7 @@ jq -s '.[0].symbolTable += .[1] | .[0]' ../symtab_cprover_intrinsics.json simple
 ls -l *.json
 
 echo "Constructing a GOTO binary from the JSON files:"
-symtab2gb simpleAdd.symTab.full.json --goto-functions simpleAdd.goto.json --out newSimpleAdd.gb
+symtab2gb simpleAdd.symtab.full.json --goto-functions simpleAdd.goto.json --out newSimpleAdd.gb
 
 echo "Running CBMC on the GOTO binary:"
 
