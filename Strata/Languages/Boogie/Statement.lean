@@ -38,6 +38,13 @@ We parameterize Boogie's Commands with Lambda dialect's expressions.
 -/
 abbrev Command := CmdExt Expression
 
+instance : HasPassiveCmds Expression Command where
+  assert l e := .cmd (.assert l e)
+  assume l e := .cmd (.assume l e)
+
+instance : HasHavoc Expression Command where
+  havoc x := .cmd (.havoc x)
+
 def CmdExt.sizeOf (c : CmdExt P) : Nat :=
   match c with
   | .cmd c => SizeOf.sizeOf c

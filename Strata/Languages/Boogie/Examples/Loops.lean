@@ -114,10 +114,10 @@ info:
 Obligation: entry_invariant_0
 Result: verified
 
-Obligation: entry_invariant_2
+Obligation: entry_invariant_1
 Result: verified
 
-Obligation: arbitrary_iter_maintain_invariant_2
+Obligation: arbitrary_iter_maintain_invariant_1
 Result: verified
 
 Obligation: entry_invariant_0
