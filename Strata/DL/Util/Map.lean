@@ -154,16 +154,52 @@ theorem Map.keys.length :
   induction ls <;> simp [keys]
   case cons h t ih => assumption
 
-theorem Map.mem_keys_of_mem_keys_remove [DecidableEq α] (s : Map α β) (id xty : α)
-  (h : xty ∈ (Map.remove s id).keys) : xty ∈ s.keys := by
-  induction s
+theorem Map.mem_keys_of_mem_keys_remove [DecidableEq α] (m : Map α β) (k1 k2 : α)
+  (h : k2 ∈ (Map.remove m k1).keys) : k2 ∈ m.keys := by
+  induction m
   case nil => simp_all [Map.keys, Map.remove]
   case cons head tail tail_ih =>
-    by_cases h_id_head : head.fst = id
+    by_cases h_id_head : head.fst = k1
     case pos =>
       simp_all [Map.remove, Map.keys]
     case neg =>
       simp_all [Map.remove, Map.keys]
       cases h <;> try simp_all
+
+theorem Map.mem_values_of_mem_keys_remove [DecidableEq α] (m : Map α β) (k : α) (v : β)
+  (h : v ∈ (Map.remove m k).values) : v ∈ m.values := by
+  induction m
+  case nil => simp_all [Map.values, Map.remove]
+  case cons head tail tail_ih =>
+    by_cases h_id_head : head.fst = k
+    case pos =>
+      simp_all [Map.remove, Map.values]
+    case neg =>
+      simp_all [Map.remove, Map.values]
+      cases h <;> try simp_all
+
+theorem Map.insert_keys [DecidableEq α] (m : Map α β) :
+  (Map.insert m key val).keys ⊆ key :: Map.keys m := by
+  induction m
+  case nil => simp_all [Map.insert, Map.keys]
+  case cons hd tl ih =>
+    simp_all [Map.insert]
+    split
+    · simp_all [Map.keys]
+    · simp_all [Map.keys]
+      grind
+  done
+
+theorem Map.insert_values [DecidableEq α] (m : Map α β) :
+  (Map.insert m key val).values ⊆ val :: Map.values m := by
+  induction m
+  case nil => simp_all [Map.insert, Map.values]
+  case cons hd tl ih =>
+    simp_all [Map.insert]
+    split
+    · simp_all [Map.values]
+    · simp_all [Map.values]
+      grind
+  done
 
 -------------------------------------------------------------------------------

@@ -252,11 +252,9 @@ theorem Program.typeCheckWF : Program.typeCheck T p = .ok (p', T') → WF.WFProg
         constructor <;> try assumption
         rw [if_pos pvar, if_pos pproc, if_pos pfunc] at tcok
         simp [bind, Except.bind] at tcok
-        cases Hgo : Program.typeCheck.go p T p.decls [] with
+        cases Hgo : Program.typeCheck.go p (TEnv.updateSubst T { subst := [[]], isWF := SubstWF_of_empty_empty }) p.decls [] with
         | error _ => simp_all
-        | ok res =>
-
-          exact typeCheck.goWF Hgo
+        | ok res => exact typeCheck.goWF Hgo
 
 end WF
 end Boogie
