@@ -381,7 +381,7 @@ def testSymbols (myFunc: Strata.C_Simp.Function) : String := Id.run do
   let paramNames := myFunc.inputs.keys
 
   -- Hardcode local variable for now
-  let zSymbol := createLocalSymbol "z" ""
+  let zSymbol := createLocalSymbol "z" myFunc.name
 
   -- Build symbol map
   let mut m : Map String CBMCSymbol := Map.empty
@@ -390,7 +390,7 @@ def testSymbols (myFunc: Strata.C_Simp.Function) : String := Id.run do
 
   -- Add parameter symbols
   for paramName in paramNames do
-    let paramSymbol := createParameterSymbol paramName ""
+    let paramSymbol := createParameterSymbol paramName myFunc.name
     m := m.insert s!"{myFunc.name}::{paramName}" paramSymbol
 
   -- Add local variable
