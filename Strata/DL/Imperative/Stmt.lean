@@ -48,25 +48,22 @@ mutual
 @[simp]
 def Stmt.sizeOf (s : Imperative.Stmt P C) : Nat :=
   match s with
-  | .cmd c => 1 + SizeOf.sizeOf c
-  | .block l b _ => 1 + Stmts.sizeOf b.ss
-  | .ite c t e _ => 3 + sizeOf c + Stmts.sizeOf t.ss + Stmts.sizeOf e.ss
-  | .loop g _ _ b _ => 3 + sizeOf g + Stmts.sizeOf b.ss
-  | .goto l _ => 1 + l.length
-  termination_by (sizeOf s)
-  decreasing_by
-  all_goals simp_wf
-  cases b; simp; omega
-  cases t; simp; omega
-  cases e; simp; omega
-  cases b; simp; omega
+  | .cmd c => 1 + sizeOf c
+  | .block _ ⟨ bss ⟩ _ => 1 + Stmts.sizeOf bss
+  | .ite c ⟨ tss ⟩ ⟨ ess ⟩ _ => 3 + sizeOf c + Stmts.sizeOf tss + Stmts.sizeOf ess
+  | .loop g _ _ ⟨ bss ⟩ _ => 3 + sizeOf g + Stmts.sizeOf bss
+  | .goto _ _ => 1
 
 @[simp]
 def Stmts.sizeOf (ss : Imperative.Stmts P C) : Nat :=
   match ss with
   | [] => 1
-  | s :: srest => 1 + Imperative.Stmt.sizeOf s + Stmts.sizeOf srest
-  termination_by (sizeOf ss)
+  | s :: srest => 1 + Stmt.sizeOf s + Stmts.sizeOf srest
+
+@[simp]
+def Block.sizeOf : Imperative.Block P C →  Nat
+  | ⟨ bss ⟩ => 1 + Stmts.sizeOf bss
+
 end
 
 instance (P : PureExpr) : SizeOf (Imperative.Stmt P C) where
@@ -74,6 +71,9 @@ instance (P : PureExpr) : SizeOf (Imperative.Stmt P C) where
 
 instance (P : PureExpr) : SizeOf (Imperative.Stmts P C) where
   sizeOf := Stmts.sizeOf
+
+instance (P : PureExpr) : SizeOf (Imperative.Block P C) where
+  sizeOf := Block.sizeOf
 
 ---------------------------------------------------------------------
 
@@ -88,12 +88,10 @@ mutual
 /-- Does statement `s` contain any block labeled `label`? -/
 def Stmt.hasLabelInside (label : String) (s : Stmt P C) : Bool :=
   match s with
-  |  .block label' b _ => label = label' || Stmts.hasLabelInside label b.ss
-  |  .ite _ t e _ => Stmts.hasLabelInside label t.ss || Stmts.hasLabelInside label e.ss
+  |  .block label' ⟨ bss ⟩ _ => label = label' || Stmts.hasLabelInside label bss
+  |  .ite _ ⟨ tss ⟩ ⟨ ess ⟩  _ => Stmts.hasLabelInside label tss || Stmts.hasLabelInside label ess
   |  _ => false
   termination_by (Stmt.sizeOf s)
-  decreasing_by
-  all_goals simp_wf <;> omega
 
 /--
 Do statements `ss` contain any block labeled `label`?
@@ -114,13 +112,11 @@ mutual
 def Stmt.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (s : Stmt P C) : List P.Ident :=
   match s with
   | .cmd cmd => HasVarsPure.getVars cmd
-  | .block _ b _ => Stmts.getVars b.ss
-  | .ite _ tb eb _ => Stmts.getVars tb.ss ++ Stmts.getVars eb.ss
-  | .loop _ _ _ b _ => Stmts.getVars b.ss
+  | .block _ ⟨ bss ⟩ _ => Stmts.getVars bss
+  | .ite _ ⟨ tbss ⟩ ⟨ ebss ⟩ _ => Stmts.getVars tbss ++ Stmts.getVars ebss
+  | .loop _ _ _ ⟨ bss ⟩ _ => Stmts.getVars bss
   | .goto _ _  => []
   termination_by (Stmt.sizeOf s)
-  decreasing_by
-  all_goals simp_wf <;> omega
 
 def Stmts.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (ss : Stmts P C) : List P.Ident :=
   match ss with
@@ -142,14 +138,10 @@ mutual
 def Stmt.definedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   match s with
   | .cmd cmd => HasVarsImp.definedVars cmd
-  | .block _ b _ => Stmts.definedVars b.ss
-  | .ite _ tb eb _ => Stmts.definedVars tb.ss ++ Stmts.definedVars eb.ss
+  | .block _ ⟨ bss ⟩  _ => Stmts.definedVars bss
+  | .ite _ ⟨ tbss ⟩ ⟨ ebss ⟩ _ => Stmts.definedVars tbss ++ Stmts.definedVars ebss
   | _ => []
   termination_by (Stmt.sizeOf s)
-  decreasing_by
-  all_goals simp_wf
-  cases tb; omega
-  cases eb; omega
 
 def Stmts.definedVars [HasVarsImp P C] (ss : Stmts P C) : List P.Ident :=
   match ss with
@@ -164,14 +156,10 @@ def Stmt.modifiedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   match s with
   | .cmd cmd => HasVarsImp.modifiedVars cmd
   | .goto _ _ => []
-  | .block _ b _ => Stmts.modifiedVars b.ss
-  | .ite _ tb eb _ => Stmts.modifiedVars tb.ss ++ Stmts.modifiedVars eb.ss
-  | .loop _ _ _ b _ => Stmts.modifiedVars b.ss
+  | .block _ ⟨ bss ⟩ _ => Stmts.modifiedVars bss
+  | .ite _ ⟨ tbss ⟩ ⟨ ebss ⟩ _ => Stmts.modifiedVars tbss ++ Stmts.modifiedVars ebss
+  | .loop _ _ _ ⟨ bss ⟩ _ => Stmts.modifiedVars bss
   termination_by (Stmt.sizeOf s)
-  decreasing_by
-  all_goals simp_wf
-  cases tb; omega
-  cases eb; omega
 
 def Stmts.modifiedVars [HasVarsImp P C] (ss : Stmts P C) : List P.Ident :=
   match ss with
@@ -187,12 +175,10 @@ mutual
 @[simp]
 def Stmt.touchedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   match s with
-  | .block _ b _ => Stmts.touchedVars b.ss
-  | .ite _ tb eb _ => Stmts.touchedVars tb.ss ++ Stmts.touchedVars eb.ss
+  | .block _ ⟨ bss ⟩ _ => Stmts.touchedVars bss
+  | .ite _ ⟨ tbss ⟩ ⟨ ebss ⟩ _ => Stmts.touchedVars tbss ++ Stmts.touchedVars ebss
   | _ => Stmt.definedVars s ++ Stmt.modifiedVars s
   termination_by (Stmt.sizeOf s)
-  decreasing_by
-  all_goals simp_wf <;> omega
 
 @[simp]
 def Stmts.touchedVars [HasVarsImp P C] (ss : Stmts P C) : List P.Ident :=
