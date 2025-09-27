@@ -11,12 +11,12 @@ namespace Strata
 open Elab
 
 def headerDialect : Dialect := BuiltinM.create! "StrataHeader" #[initDialect] do
-  let Ident : ArgDeclKind := .cat <| .atom q`Init.Ident
+  let Ident : ArgDeclKind := .cat <| .atom .none q`Init.Ident
   let Command := q`Init.Command
 
   declareOp {
      name := "dialectCommand",
-     argDecls := #[
+     argDecls := .ofArray #[
         { ident := "name", kind := Ident }
      ],
      category := Command,
@@ -24,7 +24,7 @@ def headerDialect : Dialect := BuiltinM.create! "StrataHeader" #[initDialect] do
   }
   declareOp {
      name := "programCommand",
-     argDecls := #[
+     argDecls := .ofArray #[
         { ident := "name", kind := Ident }
      ],
      category := Command,

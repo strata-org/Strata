@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 import Strata.DDM.Format
+set_option autoImplicit false
 
 open Lean (Syntax)
 
@@ -22,12 +23,12 @@ Type variables may be declared as synonyms for existing
 types.  In this case, the value is a type expression
 over the parameters.
 -/
-| type (params : List String) (value : Option TypeExpr)
+| type (ann : SourceRange) (params : List String) (value : Option TypeExpr)
 /--
 Variable belongs to the particular category below.
 -/
 | cat (k : SyntaxCat)
-deriving BEq, Inhabited, Repr
+deriving Inhabited, Repr
 
 namespace BindingKind
 
@@ -36,19 +37,19 @@ instance : Coe TypeExpr BindingKind where
 
 def ofCat (c : SyntaxCat) : BindingKind :=
   match c with
-  | .atom q`Init.Expr => panic! "Init.Expr may not appear as a category."
-  | .atom q`Init.Type => .type [] .none
+  | .atom _ q`Init.Expr => panic! "Init.Expr may not appear as a category."
+  | .atom loc q`Init.Type => .type loc [] .none
   | c => .cat c
 
 def categoryOf : BindingKind → SyntaxCat
-| .expr _ => .atom q`Init.Expr
-| .type _ _ => .atom q`Init.Type
+| .expr tp => .atom tp.ann q`Init.Expr
+| .type loc _ _ => .atom loc q`Init.Type
 | .cat c => c
 
 instance : ToStrataFormat BindingKind where
   mformat
   | .expr tp => mformat tp
-  | .type params _ => mformat (params.foldr (init := f!"Type") (fun a f => f!"({a} : Type) -> {f}"))
+  | .type _ params _ => mformat (params.foldr (init := f!"Type") (fun a f => f!"({a} : Type) -> {f}"))
   | .cat c => mformat c
 
 end BindingKind
@@ -60,7 +61,7 @@ all have the same type and metadata.
 structure Binding where
   ident : Var
   kind : BindingKind
-deriving Inhabited, Repr, BEq
+deriving Inhabited, Repr
 
 /--
 A sequence of bindings.
@@ -71,7 +72,6 @@ index of the binder for them.
 structure Bindings where
   ofArray ::
   toArray : Array Binding
-  deriving BEq
 
 namespace Bindings
 
@@ -183,12 +183,13 @@ end TypingContext
 -----------------------------------------------------------------------
 -- ElabInfo/Tree
 
+/--
+Common information for each node in the Strata info tree.
+-/
 structure ElabInfo where
-  /-- The piece of syntax that the elaborator created this info for.
-  Note that this also implicitly stores the code position in the syntax's SourceInfo. -/
-  stx : Syntax
-  /-- The piece of syntax that the elaborator created this info for.
-  Note that this also implicitly stores the code position in the syntax's SourceInfo. -/
+  /-- Source location information. -/
+  loc : SourceRange
+  /-- The typing context for node. -/
   inputCtx : TypingContext
 deriving Inhabited, Repr
 
@@ -292,7 +293,7 @@ def elabInfo (info : Info) : ElabInfo :=
 
 def inputCtx (info : Info) : TypingContext := info.elabInfo.inputCtx
 
-def stx (info : Info) : Syntax := info.elabInfo.stx
+def loc (info : Info) : SourceRange := info.elabInfo.loc
 
 end Info
 
@@ -322,17 +323,19 @@ def arg : Tree → Arg
   | .ofCatInfo info => .cat info.cat
   | .ofExprInfo info => .expr info.expr
   | .ofTypeInfo info => .type info.typeExpr
-  | .ofIdentInfo info => .ident info.val
-  | .ofNumInfo info => .num info.val
-  | .ofDecimalInfo info => .decimal info.val
-  | .ofStrlitInfo info => .strlit info.val
+  | .ofIdentInfo info => .ident info.loc info.val
+  | .ofNumInfo info => .num info.loc info.val
+  | .ofDecimalInfo info => .decimal info.loc info.val
+  | .ofStrlitInfo info => .strlit info.loc info.val
   | .ofOptionInfo _ =>
-    match children with
-    | #[] => .option none
-    | #[x] => .option x.arg
-    | _ => panic! "Unexpected option"
-  | .ofSeqInfo info => .seq info.args
-  | .ofCommaSepInfo info => .commaSepList info.args
+    let r :=
+      match children with
+      | #[] => none
+      | #[x] => some x.arg
+      | _ => panic! "Unexpected option"
+    .option info.loc r
+  | .ofSeqInfo info => .seq info.loc info.args
+  | .ofCommaSepInfo info => .commaSepList info.loc info.args
 
 theorem sizeOf_children (t : Tree) (i : Nat) (p : i < t.children.size) : sizeOf t[i] < sizeOf t := by
   match t with
@@ -403,7 +406,7 @@ def binding! (tree : Tree) : IdentInfo × Tree × Option Tree := Id.run do
   assert! tree.isSpecificOp q`StrataDDL.mkBinding
   assert! tree.children.size = 3
   let .ofIdentInfo nameInfo := tree[0]!.info
-    | panic! s!"Expected identifier {repr tree.info.stx.getKind}"
+    | panic! s!"Expected identifier {repr tree.info}"
   let some mdTree := tree[2]!.asOption?
       | panic! s!"Expected metadata to be option."
   return (nameInfo, tree[1]!.asBindingType!, mdTree)
