@@ -22,7 +22,7 @@ def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
   -- from bindings name and type.
   declareOp {
     name := "TypeFn",
-    argDecls := #[
+    argDecls := .ofArray #[
       { ident := "bindings", kind := Ident },
       { ident := "val", kind := .cat <| .atom TypeExpr }
     ]
@@ -34,7 +34,7 @@ def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
   declareCat Binding
   declareOp {
       name := "mkBinding",
-      argDecls := #[
+      argDecls := .ofArray #[
         { ident := "name", kind := Ident, },
         { ident := "type", kind := .cat <| .atom BindingType, },
         { ident := "metadata", kind := .cat <| .mkOpt (.atom Metadata), }
@@ -47,7 +47,7 @@ def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
   declareCat Bindings
   declareOp {
       name := "mkBindings",
-      argDecls := #[
+      argDecls := .ofArray #[
         { ident := "bs", kind := .cat <| .mkCommaSepBy <| .atom Binding }
       ],
       category := Bindings,
@@ -56,7 +56,7 @@ def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
 
   declareOp {
     name := "importCommand",
-    argDecls := #[
+    argDecls := .ofArray #[
       { ident := "name", kind := Ident }
     ],
     category := Command,
@@ -64,7 +64,7 @@ def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
   }
   declareOp {
     name := "categoryCommand",
-    argDecls := #[
+    argDecls := .ofArray #[
       { ident := "name", kind := Ident }
     ],
     category := Command,
@@ -72,7 +72,7 @@ def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
   }
   declareOp {
     name := "opCommand",
-    argDecls := #[
+    argDecls := .ofArray #[
       { ident := "name",
         kind := Ident
       },
@@ -101,7 +101,7 @@ def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
   }
   declareOp {
     name := "typeCommand",
-    argDecls := #[
+    argDecls := .ofArray #[
       { ident := "name", kind := Ident },
       { ident := "args", kind := .cat (.mkOpt (.atom Bindings)) }
     ],
@@ -110,7 +110,7 @@ def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
   }
   declareOp {
     name := "fnCommand",
-    argDecls := #[
+    argDecls := .ofArray #[
       { ident := "name",
         kind := Ident
       },
@@ -139,7 +139,7 @@ def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
   }
   declareOp {
     name := "mdCommand",
-    argDecls := #[
+    argDecls := .ofArray #[
       { ident := "name", kind := Ident },
       { ident := "args", kind := .cat (.mkOpt (.atom Bindings)) }
     ],
