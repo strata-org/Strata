@@ -53,7 +53,7 @@ def throwUnknownType (e : TypeExpr) : OfAstM α :=
 /--
 Raise error when passed an argument that is not an expression when expression expected.
 -/
-def throwExpected (cat : String) (a : Arg) : OfAstM α :=
+def throwExpected {α} (cat : String) (a : Arg) : OfAstM α :=
   Except.error s!"Expected {cat} {repr a}."
 
 /--
@@ -80,7 +80,7 @@ def throwUnknownIdentifier (tp : QualifiedIdent) (f: QualifiedIdent) : OfAstM α
 
 protected def checkTypeArgCount
     (expected : Nat)
-    (args : Array TypeExpr)
+    (args : Array α)
     : OfAstM (PLift (args.size = expected)) :=
   if p : args.size = expected then
     return .up p
@@ -90,7 +90,7 @@ protected def checkTypeArgCount
 protected def checkArgCount
     (tp : QualifiedIdent)
     (expected : Nat)
-    (args : Array Arg)
+    (args : Array α)
     : OfAstM (PLift (args.size = expected)) :=
   if p : args.size = expected then
     return .up p
@@ -108,80 +108,77 @@ protected def checkEtaExprArgCount
   else
     .throwUnexpectedArgCount tp expected.size args.size
 
-def ofExpressionM {α β} [SizeOf α] {e : α} {c : Int}
-        (act : SizeBounded Expr e c → OfAstM β)
-      : SizeBounded Arg e c → OfAstM β
-| ⟨.expr a1, p⟩ => act ⟨a1, by simp at p; omega⟩
-| a => .throwExpected "expression" a.val
+def ofExpressionM {β} (val : Arg) (act : ∀(e : Expr), sizeOf e < sizeOf val → OfAstM β)
+  : OfAstM β :=
+  match val with
+  | .expr a1 => act a1 (by decreasing_tactic)
+  | a => .throwExpected "expression" a
 
-def ofTypeM {α β} [SizeOf α] {e : α} {c : Int}
-        (act : SizeBounded TypeExpr e c → OfAstM β)
-      : SizeBounded Arg e c → OfAstM β
-| ⟨.type a1, p⟩ => act ⟨a1, by simp at p; omega⟩
-| a => .throwExpected "type" a.val
+def ofTypeM {β}
+      (val : Arg)
+      (act : ∀(e : TypeExpr), sizeOf e < sizeOf val → OfAstM β)
+      : OfAstM β :=
+  match val with
+  | .type a1 => act a1 (by decreasing_tactic)
+  | a => .throwExpected "type" a
 
-def ofOperationM {α β} [SizeOf α] {e : α} {c : Int}
-        (act : SizeBounded Operation e c → OfAstM β)
-      : SizeBounded Arg e c → OfAstM β
-| ⟨.op a1, p⟩ => act ⟨a1, by simp only [Arg.op.sizeOf_spec] at p; omega⟩
-| a => .throwExpected "operation" a.val
+def ofOperationM {β}
+        (val : Arg)
+        (act : ∀(o : Operation), sizeOf o < sizeOf val → OfAstM β)
+      : OfAstM β :=
+  match val with
+  | .op a1 => act a1 (by decreasing_tactic)
+  | a => .throwExpected "operation" a
 
-def ofIdentM {α} [SizeOf α] {e : α} {c : Int}
-      : SizeBounded Arg e c → OfAstM String
-| ⟨.ident a, _⟩ => pure a
-| a => .throwExpected "identifier" a.val
+def ofIdentM : Arg → OfAstM String
+| .ident val => pure val
+| a => .throwExpected "identifier" a
 
-def ofNumM {α} [SizeOf α] {e : α} {c : Int}
-      : SizeBounded Arg e c → OfAstM Nat
-| ⟨.num a, _⟩ => pure a
-| a => .throwExpected "numeric literal" a.val
+def ofNumM : Arg → OfAstM Nat
+| .num val => pure val
+| a => .throwExpected "numeric literal" a
 
-def ofDecimalM {α} [SizeOf α] {e : α} {c : Int}
-      : SizeBounded Arg e c → OfAstM Decimal
-| ⟨.decimal a, _⟩ => pure a
-| a => .throwExpected "scientific literal" a.val
+def ofDecimalM : Arg → OfAstM Decimal
+| .decimal val => pure val
+| a => .throwExpected "scientific literal" a
 
-def ofStrlitM {α} [SizeOf α] {e : α} {c : Int}
-      : SizeBounded Arg e c → OfAstM String
-| ⟨.strlit a, _⟩ => pure a
-| a => .throwExpected "string literal" a.val
+def ofStrlitM : Arg → OfAstM String
+| .strlit val => pure val
+| a => .throwExpected "string literal" a
 
-def ofOptionM {α} [SizeOf α] {e : α} {c : Int}
-      (act : SizeBounded Arg e c → OfAstM β)
-      (a : SizeBounded Arg e c)
+def ofOptionM {β}
+      (arg : Arg)
+      (act : ∀(e : Arg), sizeOf e < sizeOf arg → OfAstM β)
       : OfAstM (Option β) :=
-  match a with
-  | ⟨.option none, _⟩ => pure none
-  | ⟨.option (some v), bndP⟩ => some <$> act ⟨v, by
-    simp at bndP
-    omega⟩
-  | _ => throwExpected "option" a.val
+  match arg with
+  | .option mv =>
+    match mv with
+    | none =>
+      pure none
+    | some v =>
+      some <$> act v (by decreasing_tactic)
+  | _ => throwExpected "option" arg
 
-def ofCommaSepByM {α} [SizeOf α] {e : α} {c : Int}
-      (act : SizeBounded Arg e c → OfAstM β)
-      (arg : SizeBounded Arg e c)
+def ofCommaSepByM {β}
+      (arg : Arg)
+      (act : ∀(e : Arg), sizeOf e < sizeOf arg → OfAstM β)
       : OfAstM (Array β) :=
   match arg with
-  | ⟨.commaSepList a, bndP⟩ =>
-    a.attach.mapM fun ⟨v, vp⟩  => do
-      act ⟨v, by
-        have p := Array.sizeOf_lt_of_mem_strict vp
-        simp at bndP
-        omega⟩
-  | _ => throwExpected "seq" arg.val
+  | .commaSepList a => do
+    let val ← a.attach.mapM fun ⟨v, vIn⟩  => do
+      act v (by decreasing_tactic)
+    pure val
+  | _ => throwExpected "seq" arg
 
-def ofSeqM {α} [SizeOf α] {e : α} {c : Int}
-      (act : SizeBounded Arg e c → OfAstM β)
-      (arg : SizeBounded Arg e c)
+def ofSeqM {β}
+      (arg : Arg)
+      (act : ∀(e : Arg), sizeOf e < sizeOf arg → OfAstM β)
       : OfAstM (Array β) :=
   match arg with
-  | ⟨.seq a, bndP⟩ =>
-    a.attach.mapM fun ⟨v, vp⟩  => do
-      act ⟨v, by
-        have p := Array.sizeOf_lt_of_mem_strict vp
-        simp at bndP
-        omega⟩
-  | _ => throwExpected "seq" arg.val
+  | .seq a => do
+    a.attach.mapM fun ⟨v, vIn⟩ =>
+      act v (by decreasing_tactic)
+  | _ => throwExpected "seq" arg
 
 /--
 Get the expression at index `lvl` in the arguments.
@@ -205,7 +202,7 @@ Get the expression at index `lvl` in the arguments.
 
 Note that in conversion, we will
 -/
-def exprEtaArg [HasEta α T] {e : Expr} {n : Nat} (as : SizeBounded (Array Arg) e 1) (_ : as.val.size ≤ n) (lvl : Nat)
+def exprEtaArg{α T} [HasEta α T] {e : Expr} {n : Nat} (as : SizeBounded (Array Arg) e 1) (_ : as.val.size ≤ n) (lvl : Nat)
         (act : (s : Expr) → sizeOf s < sizeOf e → OfAstM α) :
         OfAstM α :=
   if lvlP : lvl < as.val.size then

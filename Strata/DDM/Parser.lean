@@ -53,18 +53,18 @@ open Parser (
     getNext
     runLongestMatchParser
     longestMatchStep
+    noFirstTokenInfo
+    manyFn
     manyNoAntiquot
-    many1NoAntiquot
-    maxPrec
     mkAtomicInfo
     mkEmptySubstringAt
     mkIdent
     nodeInfo
-    optionalNoAntiquot
+    optionalInfo
     quotedCharFn
     quotedStringFn
-    sepByNoAntiquot
-    sepBy1NoAntiquot
+    sepByInfo
+    sepByFn
     setLhsPrec
     symbolInfo
     takeUntilFn
@@ -79,16 +79,47 @@ export Lean.Parser (
     Parser
     maxPrec
     minPrec
-    node
     skip
     )
+
+def nodeFn (n : SyntaxNodeKind) (p : ParserFn) : ParserFn := fun c s =>
+  let iniSz := s.stackSize
+  let s     := p c s
+  s.mkNode n iniSz
+
+private def emptySourceInfo (c : ParserContext) (pos : String.Pos) : SourceInfo :=
+  let empty := mkEmptySubstringAt c.input pos
+  .original empty pos empty pos
+
+private def optionalFn (p : ParserFn) : ParserFn := fun c s =>
+  let iniSz  := s.stackSize
+  let iniPos := s.pos
+  let s      := p c s
+  let s      := if s.hasError && s.pos == iniPos then s.restore iniSz iniPos else s
+  if s.stackSize == iniSz then
+    if s.pos != iniPos then
+      @panic _ ⟨s⟩ "Unexpected position"
+    else
+      s.pushSyntax <| .node (emptySourceInfo c s.pos) nullKind #[]
+  else
+    s.mkNode nullKind iniSz
+
+private def optionalNoAntiquot (p : Parser) : Parser := {
+  info := optionalInfo p.info
+  fn   := optionalFn p.fn
+}
+
+private def node (n : SyntaxNodeKind) (p : Parser) : Parser := {
+  info := nodeInfo n p.info,
+  fn   := nodeFn n p.fn
+}
 
 /--
 Create an input context from a string.
 -/
-def stringInputContext (contents : String) : InputContext where
+def stringInputContext (fileName : System.FilePath) (contents : String) : InputContext where
   input    := contents
-  fileName := "placeholder"
+  fileName := fileName.toString
   fileMap  := FileMap.ofString contents
 
 private def isIdFirstOrBeginEscape (c : Char) : Bool :=
@@ -526,10 +557,6 @@ def indexed {α : Type} (map : TokenMap α) (c : ParserContext) (s : ParserState
   | .ok _             => (s, [])
   | .error s'         => (s', [])
 
-private def mkResult (s : ParserState) (iniSz : Nat) : ParserState :=
-  if s.stackSize == iniSz + 1 then s
-  else s.mkNode nullKind iniSz -- throw error instead?
-
 def longestMatchMkResult (startSize : Nat) (s : ParserState) : ParserState :=
   if s.stackSize > startSize + 1 then s.mkNode choiceKind startSize else s
 
@@ -565,7 +592,10 @@ def leadingParserAux (cat : QualifiedIdent) (tables : PrattParsingTables) (behav
       return s
     return s.mkUnexpectedTokenError cat.fullName
   let s := longestMatchFn none ps c s
-  mkResult s iniSz
+  if s.stackSize == iniSz + 1 then
+    s
+  else
+    s.setError (panic! "Unexpected stack size")
 
 partial def trailingLoop (cat : QualifiedIdent) (tables : PrattParsingTables) (c : ParserContext) (s : ParserState) : ParserState := Id.run do
   let iniSz  := s.stackSize
@@ -654,30 +684,32 @@ def checkLeftRec (thisCatName : QualifiedIdent) (argDecls : ArgDecls) (as : List
   | .ident v argPrec :: rest => Id.run do
     let .isTrue lt := inferInstanceAs (Decidable (v < argDecls.size))
       | return panic! "Invalid index"
-    match argDecls[v].kind.categoryOf with
-    | .app (.atom (q`Init.CommaSepBy)) (.atom c) =>
-      if c == thisCatName then
+    let cat := argDecls[v].kind.categoryOf
+    match cat.name with
+    | q`Init.CommaSepBy =>
+      assert! cat.args.size = 1
+      let c := cat.args[0]!
+      if c.name == thisCatName then
         .invalid mf!"Leading symbol cannot be recursive call to {c}"
       else
         .isLeading as
-    | .app (.atom (q`Init.Many)) (.atom c) =>
-      if c == thisCatName then
+    | q`Init.Option =>
+      assert! cat.args.size = 1
+      let c := cat.args[0]!
+      if c.name == thisCatName then
         .invalid mf!"Leading symbol cannot be recursive call to {c}"
       else
         .isLeading as
-    | .app (.atom (q`Init.Option)) (.atom c) =>
-      if c == thisCatName then
+    | q`Init.Seq =>
+      assert! cat.args.size = 1
+      let c := cat.args[0]!
+      if c.name == thisCatName then
         .invalid mf!"Leading symbol cannot be recursive call to {c}"
       else
         .isLeading as
-    | .app (.atom (q`Init.Seq)) (.atom c) =>
-      if c == thisCatName then
-        .invalid mf!"Leading symbol cannot be recursive call to {c}"
-      else
-        .isLeading as
-    | .app c _ =>
-      panic! s!"Unknown parametric category '{eformat c}' is not supported."
-    | .atom qid =>
+    | qid =>
+      if cat.args.size > 0 then
+        panic! s!"Unknown parametric category '{eformat cat}' is not supported."
       if qid == thisCatName then
         .isTrailing (min (argPrec+1) maxPrec) rest
       else
@@ -709,20 +741,57 @@ def atomCatParser (ctx : ParsingContext) (cat : QualifiedIdent) : Parser :=
   else
     dynamicParser cat
 
-/-- Parser function for given syntax category -/
-def catParser (ctx : ParsingContext) (cat : SyntaxCat) : Except SyntaxCat Parser :=
-  match cat with
-  | .app (.atom (q`Init.CommaSepBy)) c =>
-    (sepByNoAntiquot · (symbolNoAntiquot ",")) <$> catParser ctx c
-  | .app (.atom (q`Init.Option)) c =>
-    optionalNoAntiquot <$> catParser ctx c
-  | .app (.atom (q`Init.Seq)) c =>
-    manyNoAntiquot <$> catParser ctx c
-  | .atom c =>
-    .ok (atomCatParser ctx c)
-  | c =>
-    .error c
+private def sepByParser (p sep : Parser) (allowTrailingSep : Bool := false) : Parser := {
+  info := sepByInfo p.info sep.info
+  fn   := fun c s =>
+    let s := sepByFn allowTrailingSep p.fn sep.fn c s
+    if s.hasError then
+      s
+    else
+      match s.stxStack.back with
+      | .node .none k args =>
+        if args.isEmpty then
+          s.popSyntax.pushSyntax (.node (emptySourceInfo c s.pos) k args)
+        else
+          s
+      | _ =>
+        s
+}
 
+def manyParser (p : Parser) : Parser := {
+  info := noFirstTokenInfo p.info
+  fn   := fun c s =>
+    let s := manyFn p.fn c s
+    if s.hasError then
+      s
+    else
+      match s.stxStack.back with
+      | .node .none k args =>
+        if args.isEmpty then
+          s.popSyntax.pushSyntax (.node (emptySourceInfo c s.pos) k args)
+        else
+          s
+      | _ =>
+        s
+}
+
+/-- Parser function for given syntax category -/
+partial def catParser (ctx : ParsingContext) (cat : SyntaxCat) : Except SyntaxCat Parser :=
+  match cat.name with
+  | q`Init.CommaSepBy =>
+    assert! cat.args.size = 1
+    (sepByParser · (symbolNoAntiquot ",")) <$> catParser ctx cat.args[0]!
+  | q`Init.Option =>
+    assert! cat.args.size = 1
+    optionalNoAntiquot <$> catParser ctx cat.args[0]!
+  | q`Init.Seq =>
+    assert! cat.args.size = 1
+    manyParser <$> catParser ctx cat.args[0]!
+  | qid =>
+    if cat.args.isEmpty then
+      .ok (atomCatParser ctx qid)
+    else
+      .error cat
 /-
 This walks the SyntaxDefAtomParser and prepends extracted parser to state.
 
@@ -776,11 +845,13 @@ def opSyntaxParser (ctx : ParsingContext)
       parser := trailingNode n prec minLeftPrec p
     }
   | .isLeading [] =>
+    let fn (c : ParserContext) (s : ParserState) : ParserState :=
+      s.pushSyntax (.atom (emptySourceInfo c s.pos) "")
     pure {
       category,
       outerPrec := prec,
       isLeading := true,
-      parser := node n { fn := fun _ s => s.pushSyntax (.atom .none "") } >> setLhsPrec prec
+      parser := node n { fn := fn } >> setLhsPrec prec
     }
   | .isLeading args =>
     let p := liftToKind ctx args argDecls
