@@ -151,12 +151,12 @@ def source_range(mapping : FileMapping, t : object) -> SourceRange|None:
         return SourceRange(off, end_off)
 
 def ast_to_arg(mapping : FileMapping, v : object, cat : SyntaxCat) -> strata.Arg:
-    match cat.ident:
+    match cat.name:
         case Init.Option.ident:
             if v is None:
-                return None
+                return strata.OptionArg(None)
             else:
-                return strata.SomeArg(ast_to_arg(mapping, v, cat.args[0]))
+                return strata.OptionArg(ast_to_arg(mapping, v, cat.args[0]))
         case Python.int.ident:
             assert isinstance(v, int)
             if v >= 0:
@@ -197,9 +197,9 @@ def ast_to_arg(mapping : FileMapping, v : object, cat : SyntaxCat) -> strata.Arg
                 return Python.some_expr(ast_to_arg(mapping, v, Python.expr()))
         case Init.Option.ident:
             if v is None:
-                return None
+                return strata.OptionArg(None)
             else:
-                return strata.SomeArg(ast_to_arg(mapping, v, cat.args[0]), ann=None)
+                return strata.OptionArg(ast_to_arg(mapping, v, cat.args[0]))
         case Init.Seq.ident:
             assert isinstance(v, list)
             arg_cat = cat.args[0]
