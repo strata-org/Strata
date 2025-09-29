@@ -54,4 +54,16 @@ instance : Quote Int where
   | Int.ofNat n => Syntax.mkCApp ``Int.ofNat #[quote n]
   | Int.negSucc n => Syntax.mkCApp ``Int.negSucc #[quote n]
 
+@[inline]
+def optionToExpr (type : Lean.Expr) (a : Option Lean.Expr) : Lean.Expr :=
+  match a with
+  | none => mkApp (mkConst ``Option.none [levelZero]) type
+  | some a => mkApp2 (mkConst ``Option.some [levelZero]) type a
+
+@[inline]
+def arrayToExpr (type : Lean.Expr) (a : Array Lean.Expr) : Lean.Expr :=
+  let init := mkApp2 (mkConst ``Array.mkEmpty [levelZero]) type (toExpr a.size)
+  let pushFn := mkApp (mkConst ``Array.push [levelZero]) type
+  a.foldl (init := init) (mkApp2 pushFn)
+
 end Lean
