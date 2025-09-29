@@ -173,8 +173,21 @@ Note that we do NOT have to worry about the fact that the new functions have a l
 
 Invariant: assumptions must not have bounded types (TODO enforce this), same for inputs
 Invariant (I think): All assumptions are of form: b(bvar #x)
+
+There is one more complication. When propagating bottom-up assumptions, we cannot just add them at the first bool expression encountered. To see why, consider the example:
+~ ((x: Nat) < 0)
+This must become
+0 <= x -> ~ (x < 0)
+NOT
+~ (0 <= x -> x < 0)
+basically, this should occur any time we are on the left of an implication. Thus, we must add assumptions at any top-level boolean expression. To keep track of this, we use the parameter inBool which becomes false once we have passed at least one bool-valued expression. We only add assumptions if inBool is
+
+We need to keep track of positivity. We cannot add assumptions (e.g) on the LHS of an implication; we need to propagate a level above. This is annoying because connectives are not built in to Lambda.
+
 -/
-def translateBounded [Coe String Identifier] [DecidableEq Identifier] (e: LExprT Identifier) (assume: List (LExprT Identifier)) : translationRes Identifier :=
+def translateBounded [Coe String Identifier] [DecidableEq Identifier] (e: LExprT Identifier) (assume: List (LExprT Identifier))
+--(pos : Bool)
+: translationRes Identifier :=
   match e with
   -- constants do not need assumptions; they produce a wf goal if bounded
   | .const c ty =>
@@ -279,7 +292,7 @@ def translateBounded [Coe String Identifier] [DecidableEq Identifier] (e: LExprT
     let t' := translateBounded t assume;
     let f' := translateBounded f assume;
     let e' := .ite (addAssumptions (assume ++ c'.assume) c'.translate) t'.translate f'.translate ty;
-    ⟨e', ListSet.union [boundExprIfType ty e, c'.wfCond, t'.wfCond, f'.wfCond], t'.assume ++ f'.assume⟩
+    ⟨e', ListSet.union [boundExprIfType ty e', c'.wfCond, t'.wfCond, f'.wfCond], t'.assume ++ f'.assume⟩
   -- Equality is always bool-valued, so we can add assumptions
   | .eq e1 e2 ty =>
     let e1' := translateBounded e1 [];

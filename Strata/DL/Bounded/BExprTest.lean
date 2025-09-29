@@ -479,8 +479,14 @@ def testBoundedIte : LExprT String :=
     (Lambda.LExpr.op "Int.Lt" none)
     (Lambda.LExpr.ite
       (Lambda.LExpr.app
-        (Lambda.LExpr.app (Lambda.LExpr.op "Int.Lt" none) (Lambda.LExpr.const "0" none))
-        (Lambda.LExpr.app (Lambda.LExpr.op "getValue" none) (Lambda.LExpr.const "5" none)))
+        (Lambda.LExpr.app
+          (Lambda.LExpr.op "Bool.Implies" none)
+          (Lambda.LExpr.app
+            (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+            (Lambda.LExpr.app (Lambda.LExpr.op "getValue" none) (Lambda.LExpr.const "5" none))))
+        (Lambda.LExpr.app
+          (Lambda.LExpr.app (Lambda.LExpr.op "Int.Lt" none) (Lambda.LExpr.const "0" none))
+          (Lambda.LExpr.app (Lambda.LExpr.op "getValue" none) (Lambda.LExpr.const "5" none))))
       (Lambda.LExpr.const "1" none)
       (Lambda.LExpr.const "0" none)))
   (Lambda.LExpr.const "10" none), Lambda.LExpr.app
