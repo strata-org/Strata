@@ -125,18 +125,24 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
     Heap.HExpr.null
 
   | .TS_MemberExpression e =>
-    -- Translate obj[index] to heap dereference
+    -- Translate str.length/obj[index] to heap dereference
     let objExpr := translate_expr e.object
-    -- Handle both static and dynamic field access
     match e.property with
     | .TS_NumericLiteral numLit =>
       -- Static field access: obj[5]
       let field := Float.floor numLit.value |>.toUInt64.toNat
       Heap.HExpr.deref objExpr field
     | .TS_IdExpression id =>
-      -- Dynamic field access: obj[variable]
-      let varExpr := translate_expr (.TS_IdExpression id)
-      Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAccess" none) objExpr) varExpr
+      let keyName := id.name
+      if !e.computed && keyName == "length" then
+        -- String dot access: str.length
+        let keyExpr := Heap.HExpr.string keyName
+        Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "StringFieldAccess" none) objExpr) keyExpr
+      else
+        -- Dynamic field access: obj[variable]
+        let varExpr := translate_expr (.TS_IdExpression id)
+        Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAccess" none) objExpr) varExpr
+
     | _ =>
       -- Other dynamic expressions: obj[expr]
       let fieldExpr := translate_expr e.property
