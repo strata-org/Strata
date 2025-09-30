@@ -187,6 +187,8 @@ def ast_to_arg(mapping : FileMapping, v : object, cat : SyntaxCat) -> strata.Arg
                 return Python.ConEllipsis()
             elif isinstance(v, bytes):
                 return Python.ConEllipsis() # FIXME
+            elif isinstance(v, complex):
+                return Python.ConEllipsis() # FIXME
             else:
                 raise ValueError(f"Unsupported constant type {type(v)}")
         case Python.opt_expr.ident:
@@ -219,7 +221,7 @@ def ast_to_op(mapping : FileMapping, t : object) -> strata.Operation:
         args.append(ast_to_arg(mapping, v, a.cat))
     return decl(*args, ann=src)
 
-def parse_module(source : str, filename : str | PathLike = "<unknown>") -> tuple[FileMapping, strata.Program]:
+def parse_module(source : bytes, filename : str | PathLike = "<unknown>") -> tuple[FileMapping, strata.Program]:
     """
     Parse the Python source into a Strata program.
     The Strata program will contain a single top-level

@@ -40,9 +40,7 @@ class SourcePos:
 class FileMapping:
     line_offsets : list[int]
 
-    def __init__(self, source : str):
-        bytes = source.encode()
-
+    def __init__(self, bytes : bytes):
         self.line_offsets = [0]
         for i, b in enumerate(bytes):
             if b == ord('\n'):
