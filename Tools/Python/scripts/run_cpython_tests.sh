@@ -1,4 +1,10 @@
 #!/bin/bash
+set -euo pipefail
+
+if [ "${BASH_VERSINFO}" -lt 4 ]; then
+  echo "Bash version 4 or higher is required."
+  exit 1
+fi
 
 if [ ! -f "scripts/run_test.sh" ]; then
   echo "File does not exist: scripts/run_test.sh"
@@ -8,16 +14,40 @@ elif [ ! -f "scripts/gen_dialect.sh" ]; then
   exit 1
 fi
 
-rm -rf cpython-3.12
-git clone https://github.com/python/cpython.git --branch 3.12 --depth 1 cpython-3.12
+rm -rf cpython-3.13
+git clone https://github.com/python/cpython.git --branch 3.13 --depth 1 cpython-3.13
 
 ./scripts/gen_dialect.sh
 
-count=1
-for i in `find cpython-3.12/Lib/test -name "*.py"`; do
-  echo "$count : $i"
-  ./scripts/run_test.sh $i
-  count=$((count + 1))
-done 2>&1 | tee report.txt
+declare -A expected_failures
+expected_failures["cpython-3.13/Lib/test/tokenizedata/bad_coding.py"]=1
+expected_failures["cpython-3.13/Lib/test/tokenizedata/bad_coding2.py"]=1
+expected_failures["cpython-3.13/Lib/test/tokenizedata/badsyntax_3131.py"]=1
+expected_failures["cpython-3.13/Lib/test/tokenizedata/badsyntax_pep3120.py"]=1
 
-! grep "Two programs are different" report.txt
+echo "Generating report in report.xt" | tee report.txt
+count=1
+for i in `find cpython-3.13/Lib/test -name "*.py"`; do
+  should_fail=${#expected_failures[$i]}
+  if [[ $should_fail -ne 0 ]]; then
+    echo "$count : $i (expecting failure)" | tee -a report.txt
+  else
+    echo "$count : $i" | tee -a report.txt
+  fi
+  set +e
+  ./scripts/run_test.sh $i 2>>report.txt >> report.txt
+  status=$?
+  set -e
+  if [ $should_fail -ne 0 ]; then
+    if [ "$status" -eq 0 ]; then
+      echo "Expected failure.  See report.txt"
+      exit 1
+    fi
+  else
+    if [ "$status" -ne 0 ]; then
+      echo "FAILED.  See report.txt"
+      exit 1
+    fi
+  fi
+  count=$((count + 1))
+done
