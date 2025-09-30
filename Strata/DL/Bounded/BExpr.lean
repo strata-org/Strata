@@ -137,7 +137,9 @@ structure translationRes Identifier where
 def boundExprIfType [Coe String Identifier] (ty: LMonoTy) (e: LExprT Identifier) : List (LExprT Identifier) :=
   ((isBounded ty).map (fun b => BoundExprToLExprT b e)).toList
 
--- Generate WF condition for calling e1 with argument e2 if bounded type expected
+/--
+Generate WF condition for calling e1 with argument e2 if bounded type expected
+-/
 def wfCallCondition [Coe String Identifier] (assume : List (LExprT Identifier)) (e1 e2: LExprT Identifier) :=
   match LExprT.toLMonoTy e1 with
   | .arrow (.bounded b) _ =>
@@ -151,6 +153,54 @@ def addBoundedWf [Coe String Identifier] (assume: List (LExprT Identifier)) (l1 
 
 def addBoundedWfAssume [Coe String Identifier] (assume: List (LExprT Identifier)) (l: List (LExprT Identifier)) :=
   addBoundedWf assume l []
+
+/--
+Determines if a term uses a particular bound variable at the top level
+-/
+def hasBvar (e: LExprT Identifier) (n: Nat) : Bool :=
+  match e with
+  | .bvar m _ => n == m
+  | .app e1 e2 _ => hasBvar e1 n || hasBvar e2 n
+  | .abs e _ => hasBvar e (n + 1)
+  | .quant _ _ _ e => hasBvar e (n + 1)
+  | .eq e1 e2 _ => hasBvar e1 n || hasBvar e2 n
+  | .mdata _ e => hasBvar e n
+  | .ite e1 e2 e3 _ => hasBvar e1 n || hasBvar e2 n || hasBvar e3 n
+  | _ => false
+
+/--
+When passing an assumption through a binder, we need to quantify the bound variable if used.
+-/
+def quantifyAssumptions (ty: LMonoTy)  (e: LExprT Identifier): LExprT Identifier :=
+  --TODO: triggers?
+  if hasBvar e 0 then .quant .all ty (.bvar 0 ty) e else e
+
+-- We don't have pattern matching on operators (yet) because of the abstract metadata, so we resort to the follow workaround
+-- def isNot [Coe String Identifier] (e: LExprT Identifier) : Option (LExprT Identifier) :=
+--   match e with
+--   | .app (.op o _) e2 _ =>
+--     if o == boolNotFunc.name then some e2 else none
+--   | _ => none
+
+-- def isImpl [Coe String Identifier] (e: LExprT Identifier) : Option (LExprT Identifier × LExprT Identifier) :=
+--   match e with
+--   | .app (.app (.op o _) e1 _) e2 _ =>
+--     if o == boolImpliesFunc.name then some (e1, e2) else none
+--   | _ => none
+
+-- Ugh, need to know how to 1. combine results to produce new term
+-- 2. produce wf conditions (should it just be app Bool case) START HERE
+-- def boolCase [Coe String Identifier] (assume: List (LExprT Identifier)) (l: List (translationRes Identifier)) (comb: List (LExprT Identifier) -> LExprT Identifier) (pos: Bool) :=
+--   let all_assumes := assume ++ List.flatten (List.map translationRes.assume l);
+--   let res := (if pos then addAssumptions all_assumes else addAssumptions assume) (comb (List.map translationRes.translate l));
+--   (res, )
+
+
+--   let e1' := translateBounded e1 [] false;
+--       let e2' := translateBounded e2 [] false;
+--       let all_assumes := assume ++ e1'.assume ++ e2'.assume;
+--       let res := addAssumptions all_assumes (.app e1'.translate e2'.translate .bool);
+--       ⟨res, ListSet.union [wfCallCondition (assume ++ e2'.assume) e1 e2'.translate, e1'.wfCond, e2'.wfCond], []⟩
 
 /--
 Translate expression to one without bounded ints.
@@ -184,10 +234,12 @@ basically, this should occur any time we are on the left of an implication. Thus
 
 We need to keep track of positivity. We cannot add assumptions (e.g) on the LHS of an implication; we need to propagate a level above. This is annoying because connectives are not built in to Lambda.
 
+Idea: if positive, can add all assumptions, if not, can add top-down but propagae bottom-up. Other complication - if we propagate, look through, if uses unbound bvar 0, add quantifier at beginning (only for lambda, quantifier case)
+
+Need to make sure - ALWAYS safe to add top-down assumptions
+
 -/
-def translateBounded [Coe String Identifier] [DecidableEq Identifier] (e: LExprT Identifier) (assume: List (LExprT Identifier))
---(pos : Bool)
-: translationRes Identifier :=
+def translateBounded [Coe String Identifier] [DecidableEq Identifier] (e: LExprT Identifier) (assume: List (LExprT Identifier)) (pos : Bool) : translationRes Identifier :=
   match e with
   -- constants do not need assumptions; they produce a wf goal if bounded
   | .const c ty =>
@@ -208,17 +260,56 @@ def translateBounded [Coe String Identifier] [DecidableEq Identifier] (e: LExprT
   1. If the entire application has boolean type, assumptions can be added
   2. Otherwise, if the application has bounded type, it produces a bottom-up assumption. There is a subtle case. If the function has type (t -> int), then we must generate a wf condition. Otherwise, the bound will be assumed (for external operators) or checked (for abstraction/if-then-else/etc)
   3. In either case, we produce a wf condition if the argument should have bounded type
+
+  TODO: factor out boolean cases - need to say: if !pos, then propagate bottom-up assumptions (do NOT add); we can still add top-down ones (these are always safe to add) otherwise, add assumptions as right now
+
   -/
-  | .app e1 e2 ty =>
-    if isBool ty then
-      let e1' := translateBounded e1 [];
-      let e2' := translateBounded e2 [];
-      let all_assumes := assume ++ e1'.assume ++ e2'.assume;
-      let res := addAssumptions all_assumes (.app e1'.translate e2'.translate (removeBound ty));
-      ⟨res, ListSet.union [wfCallCondition (assume ++ e2'.assume) e1 e2'.translate, e1'.wfCond, e2'.wfCond], []⟩
+  | .app (.op o ty1) e2 .bool =>
+    if o == boolNotFunc.name then
+    -- inside "not" - not positive
+      let e2' := translateBounded e2 [] false;
+      let all_assumes := if pos then (assume ++ e2'.assume) else assume;
+      let res := addAssumptions all_assumes (.app (.op o ty1) e2'.translate .bool);
+      ⟨res, [], if pos then [] else e2'.assume⟩
     else
-      let e1' := translateBounded e1 assume;
-      let e2' := translateBounded e2 assume;
+      -- Here, safe to keep same positivity
+      -- let e1' := translateBounded e1 [] pos;
+      let e2' := translateBounded e2 [] pos;
+      let all_assumes := if pos then (assume ++ e2'.assume) else assume;
+      let res := addAssumptions all_assumes (.app (.op o (removeBound ty1)) e2'.translate .bool);
+      ⟨res, ListSet.union [wfCallCondition (assume ++ e2'.assume) (.op o ty1) e2'.translate, e2'.wfCond], if pos then [] else e2'.assume⟩
+  | .app (.app (.op o ty1) e1 ty2) e2 .bool =>
+    -- Case 1: First argument NOT positive, second keeps positivity
+      if o == boolImpliesFunc.name then
+        let e1' := translateBounded e1 [] false;
+        let e2' := translateBounded e2 [] pos;
+        let all_assumes := if pos then (assume ++ e1'.assume ++ e2'.assume) else assume; -- TODO: factor out
+        let res := addAssumptions all_assumes (.app (.app (.op o (removeBound ty1)) e1'.translate (removeBound ty2)) e2'.translate .bool);
+        ⟨res, ListSet.union [e1'.wfCond, e2'.wfCond], if pos then [] else e1'.assume ++ e2'.assume⟩
+      -- Case 2: Both arguments keep same positivity
+      else if o == boolAndFunc.name || o == boolOrFunc.name then
+        let e1' := translateBounded e1 [] pos;
+        let e2' := translateBounded e2 [] pos;
+        let all_assumes := if pos then (assume ++ e1'.assume ++ e2'.assume) else assume;
+        let res := addAssumptions all_assumes (.app (.app (.op o (removeBound ty1)) e1'.translate (removeBound ty2)) e2'.translate .bool);
+        ⟨res, ListSet.union [e1'.wfCond, e2'.wfCond], if pos then [] else e1'.assume ++ e2'.assume⟩
+      -- Case 3: Both arguments cannot be assumed positive (equality and everything else - need because someone could define their own implication/equivalence; we know nothing about meaning)
+      else
+        let e1' := translateBounded e1 [] false;
+        let e2' := translateBounded e2 [] false;
+        let all_assumes := if pos then (assume ++ e1'.assume ++ e2'.assume) else assume;
+        let res := addAssumptions all_assumes (.app (.app (.op o (removeBound ty1)) e1'.translate (removeBound ty2)) e2'.translate .bool);
+        ⟨res, ListSet.union [wfCallCondition (assume ++ e2'.assume) e1 e2'.translate, e1'.wfCond, e2'.wfCond], if pos then [] else e1'.assume ++ e2'.assume⟩
+  | .app e1 e2 .bool =>
+    --Anything else we cannot assume is positive
+      let e1' := translateBounded e1 [] false;
+      let e2' := translateBounded e2 [] false;
+      let all_assumes := if pos then (assume ++ e1'.assume ++ e2'.assume) else assume;
+      let res := addAssumptions all_assumes (.app e1'.translate e2'.translate .bool);
+      ⟨res, ListSet.union [wfCallCondition (assume ++ e2'.assume) e1 e2'.translate, e1'.wfCond, e2'.wfCond], if pos then [] else e1'.assume ++ e2'.assume⟩
+  | .app e1 e2 ty =>
+      let e1' := translateBounded e1 assume pos;
+      let e2' := translateBounded e2 assume pos;
       let e' := .app e1'.translate e2'.translate (removeBound ty);
       let extraWf :=
         match LExprT.toLMonoTy e1, ty with
@@ -240,17 +331,17 @@ def translateBounded [Coe String Identifier] [DecidableEq Identifier] (e: LExprT
         [BoundExprToLExprT b (.bvar 0 .int)]
       | _ => [];
     match ty with
-    | .arrow _ .bool =>
-      let e' := translateBounded e [];
-      let all_assume := newAssumption ++ (increaseBVars assume) ++ e'.assume;
+    | .arrow ty1 .bool =>
+      let e' := translateBounded e [] pos;
+      let all_assume := newAssumption ++ (increaseBVars assume) ++ (if pos then e'.assume else []);
       -- TODO: change
-      ⟨.abs (addAssumptions all_assume e'.translate) (removeBound ty), addBoundedWfAssume all_assume e'.wfCond, []⟩
-    | .arrow _ ty1 =>
+      ⟨.abs (addAssumptions all_assume e'.translate) (removeBound ty), addBoundedWfAssume all_assume e'.wfCond, if pos then [] else List.map (quantifyAssumptions ty1) e'.assume⟩
+    | .arrow ty1 ty2 =>
       let all_assume := newAssumption ++ (increaseBVars assume);
-      let e' := translateBounded e all_assume;
+      let e' := translateBounded e all_assume pos;
       let e'' := .abs e'.translate (removeBound ty);
       -- Note: don't add assumptions to e'.wfCond, already included
-      ⟨e'', addBoundedWf all_assume (boundExprIfType ty1 e'.translate) e'.wfCond, e'.assume⟩
+      ⟨e'', addBoundedWf all_assume (boundExprIfType ty2 e'.translate) e'.wfCond, List.map (quantifyAssumptions ty1) e'.assume⟩
     | _ => ⟨.const "0" .int, [], []⟩ -- error case
   /-
   Quantifiers are simpler because they are boolean-valued. ∀ (x : nat). e adds an assumption x >= 0 -> ..., while ∃ (x: nat). e results in x >= 0 ∧ ..
@@ -261,50 +352,55 @@ def translateBounded [Coe String Identifier] [DecidableEq Identifier] (e: LExprT
       | .bounded b =>
         [BoundExprToLExprT b (.bvar 0 .int)]
       | _ => [];
-    let e' := translateBounded e [];
-    let tr' := translateBounded tr []; --TODO: need "clean" one here
-    let all_assume := (newAssumption ++ (increaseBVars assume) ++ e'.assume);
+    let e' := translateBounded e [] pos;
+    let tr' := translateBounded tr [] pos; --TODO: need "clean" one here
+    let all_assume := (newAssumption ++ (increaseBVars assume) ++ (if pos then e'.assume else []));
     -- TODO: factor out quant part
-    ⟨.quant .all (removeBound ty) tr'.translate (addAssumptions all_assume e'.translate), addBoundedWfAssume all_assume e'.wfCond, []⟩
+    ⟨.quant .all (removeBound ty) tr'.translate (addAssumptions all_assume e'.translate), addBoundedWfAssume all_assume e'.wfCond, if pos then [] else List.map (quantifyAssumptions ty) e'.assume⟩
   | .quant .exist ty tr e =>
     let newAssumption :=
       match ty with
       | .bounded b =>
         some (BoundExprToLExprT b (.bvar 0 .int))
       | _ => none;
-    let e' := translateBounded e [];
-    let tr' := translateBounded tr []; --TODO: need "clean" one here
+    let e' := translateBounded e [] pos;
+    let tr' := translateBounded tr [] pos; --TODO: need "clean" one here
     let add_and x : LExprT Identifier :=
       match newAssumption with
       | .some f => (.app (.app (LFunc.opExprT boolAndFunc) f (LMonoTy.arrow LMonoTy.bool LMonoTy.bool)) x LMonoTy.bool)
       | .none => x;
-    ⟨.quant .exist (removeBound ty) tr'.translate (add_and (addAssumptions ((increaseBVars assume) ++ e'.assume) e'.translate)), addBoundedWfAssume (newAssumption.toList ++ (increaseBVars assume) ++ e'.assume) e'.wfCond, []⟩
+    let all_assume := (increaseBVars assume) ++ if pos then e'.assume else [];
+    ⟨.quant .exist (removeBound ty) tr'.translate (add_and (addAssumptions all_assume e'.translate)), addBoundedWfAssume (newAssumption.toList ++ all_assume) e'.wfCond, if pos then [] else List.map (quantifyAssumptions ty) e'.assume⟩
   /-
   For if-then-else, we add assumptions to the condition, which is always bool-valued. For a bool-valued result, we can add the conditions freely. For a bounded-valued term, we produce a wf condition proving this.
   -/
   | .ite c t f .bool =>
-    let c' := translateBounded c [];
-    let t' := translateBounded t [];
-    let f' := translateBounded f [];
-    ⟨.ite (addAssumptions (assume ++ c'.assume) c'.translate) (addAssumptions (assume ++ t'.assume) t'.translate) (addAssumptions (assume ++ f'.assume) f'.translate) .bool, ListSet.union [c'.wfCond, t'.wfCond, f'.wfCond] ,[]⟩
+    -- c is NOT positive; equivalent to c -> t /\ ~c -> f
+    let c' := translateBounded c [] false;
+    let t' := translateBounded t [] pos;
+    let f' := translateBounded f [] pos;
+    -- NOTE: VERY ugly
+    ⟨(if pos then addAssumptions c'.assume else id) (.ite (addAssumptions assume c'.translate) (addAssumptions (assume ++ if pos then t'.assume else []) t'.translate) (addAssumptions (assume ++ if pos then f'.assume else []) f'.translate) .bool), ListSet.union [c'.wfCond, t'.wfCond, f'.wfCond] , c'.assume ++ if pos then [] else t'.assume ++ f'.assume⟩
   | .ite c t f ty =>
-    let c' := translateBounded c [];
-    let t' := translateBounded t assume;
-    let f' := translateBounded f assume;
-    let e' := .ite (addAssumptions (assume ++ c'.assume) c'.translate) t'.translate f'.translate ty;
-    ⟨e', ListSet.union [boundExprIfType ty e', c'.wfCond, t'.wfCond, f'.wfCond], t'.assume ++ f'.assume⟩
+    let c' := translateBounded c [] pos;
+    let t' := translateBounded t assume pos;
+    let f' := translateBounded f assume pos;
+    -- here can add inside if positive, never add outside
+    let e' := .ite (addAssumptions (assume ++ if pos then c'.assume else []) c'.translate) t'.translate f'.translate ty;
+    ⟨e', ListSet.union [boundExprIfType ty e', c'.wfCond, t'.wfCond, f'.wfCond], if pos then [] else c'.assume ++ t'.assume ++ f'.assume⟩
   -- Equality is always bool-valued, so we can add assumptions
+  -- equality and iff are equivalent, NOT positive
   | .eq e1 e2 ty =>
-    let e1' := translateBounded e1 [];
-    let e2' := translateBounded e2 [];
-    ⟨addAssumptions (assume ++ e1'.assume ++ e2'.assume) (.eq e1'.translate e2'.translate ty), ListSet.union [e1'.wfCond, e2'.wfCond], []⟩
+    let e1' := translateBounded e1 [] false;
+    let e2' := translateBounded e2 [] false;
+    ⟨addAssumptions (assume ++ (if pos then e1'.assume ++ e2'.assume else [])) (.eq e1'.translate e2'.translate ty), ListSet.union [e1'.wfCond, e2'.wfCond], if pos then [] else e1'.assume ++ e2'.assume⟩
   | .mdata m e =>
-    let e' := translateBounded e assume;
+    let e' := translateBounded e assume pos;
     ⟨.mdata m e'.translate, e'.wfCond, e'.assume⟩
 
 -- TODO: name
 def translateBounded' [Coe String Identifier] (e: LExprT Identifier) : LExprT Identifier :=
-  (translateBounded e []).translate
+  (translateBounded e [] true).translate
 
 -- TEMPORARY until LExpr/LExprT are unified
 def LExprT.substK (k : Nat) (s : LExprT Identifier) (e : LExprT Identifier) : LExprT Identifier :=
@@ -342,7 +438,7 @@ def removeLeadingForalls (T : TEnv Identifier) (l: List (LExprT Identifier)) : E
 
 -- Functional version with extra quantifiers
 def boundedWfConditions' [Coe String Identifier] (e: LExprT Identifier) : List (LExprT Identifier) :=
-  (translateBounded e []).wfCond
+  (translateBounded e [] true).wfCond
 
 -- Stateful version without extra quantifiers
 def boundedWfConditions [Coe String Identifier] (T : TEnv Identifier) (e: LExprT Identifier) : Except Format (List (LExprT Identifier) × TEnv Identifier) := removeLeadingForalls T (boundedWfConditions' e)

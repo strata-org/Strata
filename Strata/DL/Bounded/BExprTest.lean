@@ -702,43 +702,377 @@ def testBoundedChain : LExprT String :=
 #guard_msgs in
 #eval eraseTy (translateBounded' testBoundedChain)
 
--- Test 9: Bounded type in boolean context with negation
--- Input: ¬((getValue 10 : {0 ≤ x}) < 5)
--- Expected: translate = (0 ≤ getValue 10) → ¬(getValue 10 < 5), wfCond = []
-def testBoundedInBoolContext : LExprT String :=
-  .app (LFunc.opExprT boolNotFunc)
-       (.app (.app (LFunc.opExprT intLtFunc)
-                   (.app (.op "getValue" (.arrow .int (.bounded (.ble (.bconst 0) (.bvar)))))
-                         (.const "10" .int)
-                         (.bounded (.ble (.bconst 0) (.bvar))))
-                   (.arrow .int .bool))
-             (.const "5" .int)
-             .bool)
+end OtherTest
+
+-- Tests relating to positivity
+
+-- section PositiveTest
+
+-- -- Test 9: Bounded type in boolean context with negation
+-- -- Input: ¬((getValue 10 : {0 ≤ x}) < 5)
+-- -- Expected: translate = (0 ≤ getValue 10) → ¬(getValue 10 < 5), wfCond = []
+-- def testBoundedInBoolContext : LExprT String :=
+--   .app (LFunc.opExprT boolNotFunc)
+--        (.app (.app (LFunc.opExprT intLtFunc)
+--                    (.app (.op "getValue" (.arrow .int (.bounded (.ble (.bconst 0) (.bvar)))))
+--                          (.const "10" .int)
+--                          (.bounded (.ble (.bconst 0) (.bvar))))
+--                    (.arrow .int .bool))
+--              (.const "5" .int)
+--              .bool)
+--        .bool
+
+-- def foo : LExprT String := (.app (.app (LFunc.opExprT intLtFunc)
+--                    (.app (.op "getValue" (.arrow .int (.bounded (.ble (.bconst 0) (.bvar)))))
+--                          (.const "10" .int)
+--                          (.bounded (.ble (.bconst 0) (.bvar))))
+--                    (.arrow .int .bool))
+--              (.const "5" .int)
+--              .bool)
+
+-- #eval (eraseTys (translateBounded foo [] true).assume)
+
+
+-- -- NOTE: all bottom-up assumptions need to be kept, even in boolean-valued terms, since they have to go to the top level
+
+-- --ex: not (foo x < 0) for foo: int -> nat
+-- -- want (I think): 0 <= foo x -> not (foo x < 0) - TRUE
+-- -- we do NOT want: not (0 <= foo x -> foo x < 0) - this is FALSE
+-- -- think we need to collect bottom-up assumptions differently
+
+-- /-- info: ok: []-/
+-- #guard_msgs in
+-- #eval runWFTest testBoundedInBoolContext
+-- #eval (translateBounded testBoundedInBoolContext [] true).assume
+-- #eval eraseTy (translateBounded' testBoundedInBoolContext)
+
+-- test: (foo x < 0 -> False) should be same as above
+
+-- not (forall (x: int), foo x < 0)
+
+-- (λ x y. x -> y) (foo x < 0) false
+-- should be (forall x, foo x >= 0) -> (λ x y. x -> y) (foo x < 0) false
+
+/-
+Here we have several tests for positivity. For many, we have the main test (e.g. Test 1) as well as an auxilliary test (Test 1a) showing the ordinary (i.e. no positivity complications) version. This demonstrates that we can create better translations when we know that there are no positivity restrictions.
+-/
+
+namespace PositiveTest
+
+def ltOp (e1 e2: LExprT String) : LExprT String := .app (.app (LFunc.opExprT intLtFunc) e1 (.arrow .int .bool)) e2 .bool
+def impliesOp (e1 e2: LExprT String) : LExprT String := .app (.app (LFunc.opExprT boolImpliesFunc) e1 (.arrow .bool .bool)) e2 .bool
+
+-- 1. not (foo 1 < 0) where foo: int -> nat
+-- Expected: 0 <= foo 1 -> not (foo 1 < 0)
+def test1 : LExprT String :=
+  notOp (ltOp (.app (.op "foo" (.arrow .int natTy)) (.const "1" .int) natTy) (.const "0" .int))
+
+/-- info: Lambda.LExpr.app
+  (Lambda.LExpr.app
+    (Lambda.LExpr.op "Bool.Implies" none)
+    (Lambda.LExpr.app
+      (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+      (Lambda.LExpr.app (Lambda.LExpr.op "foo" none) (Lambda.LExpr.const "1" none))))
+  (Lambda.LExpr.app
+    (Lambda.LExpr.op "Bool.Not" none)
+    (Lambda.LExpr.app
+      (Lambda.LExpr.app
+        (Lambda.LExpr.op "Int.Lt" none)
+        (Lambda.LExpr.app (Lambda.LExpr.op "foo" none) (Lambda.LExpr.const "1" none)))
+      (Lambda.LExpr.const "0" none))) -/
+#guard_msgs in
+#eval eraseTy (translateBounded' test1)
+
+-- 1a. (foo 1 < 0) where foo: int -> nat
+-- Expected: 0 <= foo 1 -> foo 1 < 0
+def test1a : LExprT String :=
+  ltOp (.app (.op "foo" (.arrow .int natTy)) (.const "1" .int) natTy) (.const "0" .int)
+
+/--
+info: Lambda.LExpr.app
+  (Lambda.LExpr.app
+    (Lambda.LExpr.op "Bool.Implies" none)
+    (Lambda.LExpr.app
+      (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+      (Lambda.LExpr.app (Lambda.LExpr.op "foo" none) (Lambda.LExpr.const "1" none))))
+  (Lambda.LExpr.app
+    (Lambda.LExpr.app
+      (Lambda.LExpr.op "Int.Lt" none)
+      (Lambda.LExpr.app (Lambda.LExpr.op "foo" none) (Lambda.LExpr.const "1" none)))
+    (Lambda.LExpr.const "0" none))-/
+#guard_msgs in
+#eval eraseTy (translateBounded' test1a)
+
+
+-- 2. not (forall (x: int), foo x < 0) for foo of same type
+-- Expected: (forall (x: int), 0 <= foo x) -> not (forall (x: int), foo x < 0)
+def test2 : LExprT String :=
+  notOp (.quant .all .int (.bvar 0 .int)
+    (ltOp (.app (.op "foo" (.arrow .int natTy)) (.bvar 0 .int) natTy) (.const "0" .int)))
+
+
+/-- info: Lambda.LExpr.app
+  (Lambda.LExpr.app
+    (Lambda.LExpr.op "Bool.Implies" none)
+    (Lambda.LExpr.quant
+      (Lambda.QuantifierKind.all)
+      (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))
+      (Lambda.LExpr.bvar 0)
+      (Lambda.LExpr.app
+        (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+        (Lambda.LExpr.app (Lambda.LExpr.op "foo" none) (Lambda.LExpr.bvar 0)))))
+  (Lambda.LExpr.app
+    (Lambda.LExpr.op "Bool.Not" none)
+    (Lambda.LExpr.quant
+      (Lambda.QuantifierKind.all)
+      (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))
+      (Lambda.LExpr.bvar 0)
+      (Lambda.LExpr.app
+        (Lambda.LExpr.app
+          (Lambda.LExpr.op "Int.Lt" none)
+          (Lambda.LExpr.app (Lambda.LExpr.op "foo" none) (Lambda.LExpr.bvar 0)))
+        (Lambda.LExpr.const "0" none)))) -/
+#guard_msgs in
+#eval eraseTy (translateBounded' test2)
+
+-- 2a. (forall (x: int), foo x < 0) for foo: int -> nat
+-- Expected: forall (x: int), 0 <= foo x -> foo x < 0
+def test2a : LExprT String :=
+  .quant .all .int (.bvar 0 .int)
+    (ltOp (.app (.op "foo" (.arrow .int natTy)) (.bvar 0 .int) natTy) (.const "0" .int))
+
+/-- info: Lambda.LExpr.quant
+  (Lambda.QuantifierKind.all)
+  (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))
+  (Lambda.LExpr.bvar 0)
+  (Lambda.LExpr.app
+    (Lambda.LExpr.app
+      (Lambda.LExpr.op "Bool.Implies" none)
+      (Lambda.LExpr.app
+        (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+        (Lambda.LExpr.app (Lambda.LExpr.op "foo" none) (Lambda.LExpr.bvar 0))))
+    (Lambda.LExpr.app
+      (Lambda.LExpr.app
+        (Lambda.LExpr.op "Int.Lt" none)
+        (Lambda.LExpr.app (Lambda.LExpr.op "foo" none) (Lambda.LExpr.bvar 0)))
+      (Lambda.LExpr.const "0" none)))-/
+#guard_msgs in
+#eval eraseTy (translateBounded' test2a)
+
+-- 3. (foo 1 < 0 -> false)
+-- Expected: 0 <= foo 1 -> (foo 1 < 0 -> false)
+def test3 : LExprT String :=
+  impliesOp (ltOp (.app (.op "foo" (.arrow .int natTy)) (.const "1" .int) natTy) (.const "0" .int))
+            (.const "false" .bool)
+
+/-- info: Lambda.LExpr.app
+  (Lambda.LExpr.app
+    (Lambda.LExpr.op "Bool.Implies" none)
+    (Lambda.LExpr.app
+      (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+      (Lambda.LExpr.app (Lambda.LExpr.op "foo" none) (Lambda.LExpr.const "1" none))))
+  (Lambda.LExpr.app
+    (Lambda.LExpr.app
+      (Lambda.LExpr.op "Bool.Implies" none)
+      (Lambda.LExpr.app
+        (Lambda.LExpr.app
+          (Lambda.LExpr.op "Int.Lt" none)
+          (Lambda.LExpr.app (Lambda.LExpr.op "foo" none) (Lambda.LExpr.const "1" none)))
+        (Lambda.LExpr.const "0" none)))
+    (Lambda.LExpr.const "false" none))-/
+#guard_msgs in
+#eval eraseTy (translateBounded' test3)
+
+-- 3a. (b -> foo 1 < 0) for boolean constant b where foo: int -> nat
+-- Expected: b -> 0 <= foo 1 -> foo 1 < 0
+def test3a : LExprT String :=
+  impliesOp (.const "b" .bool)
+            (ltOp (.app (.op "foo" (.arrow .int natTy)) (.const "1" .int) natTy) (.const "0" .int))
+
+/-- info: Lambda.LExpr.app
+  (Lambda.LExpr.app (Lambda.LExpr.op "Bool.Implies" none) (Lambda.LExpr.const "b" none))
+  (Lambda.LExpr.app
+    (Lambda.LExpr.app
+      (Lambda.LExpr.op "Bool.Implies" none)
+      (Lambda.LExpr.app
+        (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+        (Lambda.LExpr.app (Lambda.LExpr.op "foo" none) (Lambda.LExpr.const "1" none))))
+    (Lambda.LExpr.app
+      (Lambda.LExpr.app
+        (Lambda.LExpr.op "Int.Lt" none)
+        (Lambda.LExpr.app (Lambda.LExpr.op "foo" none) (Lambda.LExpr.const "1" none)))
+      (Lambda.LExpr.const "0" none)))-/
+#guard_msgs in
+#eval eraseTy (translateBounded' test3a)
+
+
+-- 4. (\x y. x -> y) (foo x < 0) false
+-- Expected: (forall x, 0 <= foo x) -> (\x y: bool. x -> y) (foo x < 0) false
+def test4 : LExprT String :=
+  .app (.app (.abs (.abs (impliesOp (.bvar 1 .bool) (.bvar 0 .bool)) (.arrow .bool .bool)) (.arrow .bool (.arrow .bool .bool)))
+             (ltOp (.app (.op "foo" (.arrow .int natTy)) (.fvar "x" .int) natTy) (.const "0" .int))
+             (.arrow .bool .bool))
+       (.const "false" .bool)
        .bool
 
-def foo : LExprT String := (.app (.app (LFunc.opExprT intLtFunc)
-                   (.app (.op "getValue" (.arrow .int (.bounded (.ble (.bconst 0) (.bvar)))))
-                         (.const "10" .int)
-                         (.bounded (.ble (.bconst 0) (.bvar))))
-                   (.arrow .int .bool))
-             (.const "5" .int)
-             .bool)
-
-#eval (eraseTys (translateBounded foo []).assume)
-
--- NOTE: all bottom-up assumptions need to be kept, even in boolean-valued terms, since they have to go to the top level
-
---ex: not (foo x < 0) for foo: int -> nat
--- want (I think): 0 <= foo x -> not (foo x < 0) - TRUE
--- we do NOT want: not (0 <= foo x -> foo x < 0) - this is FALSE
--- think we need to collect bottom-up assumptions differently
-
-/-- info: ok: []-/
+/-- info: Lambda.LExpr.app
+  (Lambda.LExpr.app
+    (Lambda.LExpr.op "Bool.Implies" none)
+    (Lambda.LExpr.app
+      (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+      (Lambda.LExpr.app (Lambda.LExpr.op "foo" none) (Lambda.LExpr.fvar "x" none))))
+  (Lambda.LExpr.app
+    (Lambda.LExpr.app
+      (Lambda.LExpr.abs
+        (some (Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)))
+        (Lambda.LExpr.abs
+          (some (Lambda.LMonoTy.tcons "bool" [] (Lambda.LTyRestrict.nodata)))
+          (Lambda.LExpr.app
+            (Lambda.LExpr.app (Lambda.LExpr.op "Bool.Implies" none) (Lambda.LExpr.bvar 1))
+            (Lambda.LExpr.bvar 0))))
+      (Lambda.LExpr.app
+        (Lambda.LExpr.app
+          (Lambda.LExpr.op "Int.Lt" none)
+          (Lambda.LExpr.app (Lambda.LExpr.op "foo" none) (Lambda.LExpr.fvar "x" none)))
+        (Lambda.LExpr.const "0" none)))
+    (Lambda.LExpr.const "false" none))-/
 #guard_msgs in
-#eval runWFTest testBoundedInBoolContext
-#eval (translateBounded testBoundedInBoolContext []).assume
-#eval eraseTy (translateBounded' testBoundedInBoolContext)
+#eval eraseTy (translateBounded' test4)
 
-end OtherTest
+-- 5. (\x. foo x < 0) 1
+-- Expected: (forall x, 0 <= foo x) -> (\x. foo x < 0) 1
+def test5 : LExprT String :=
+  .app (.abs (ltOp (.app (.op "foo" (.arrow .int natTy)) (.bvar 0 .int) natTy) (.const "0" .int)) (.arrow .int .bool))
+       (.const "1" .int)
+       .bool
+
+/-- info: Lambda.LExpr.app
+  (Lambda.LExpr.app
+    (Lambda.LExpr.op "Bool.Implies" none)
+    (Lambda.LExpr.quant
+      (Lambda.QuantifierKind.all)
+      (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))
+      (Lambda.LExpr.bvar 0)
+      (Lambda.LExpr.app
+        (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+        (Lambda.LExpr.app (Lambda.LExpr.op "foo" none) (Lambda.LExpr.bvar 0)))))
+  (Lambda.LExpr.app
+    (Lambda.LExpr.abs
+      (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))
+      (Lambda.LExpr.app
+        (Lambda.LExpr.app
+          (Lambda.LExpr.op "Int.Lt" none)
+          (Lambda.LExpr.app (Lambda.LExpr.op "foo" none) (Lambda.LExpr.bvar 0)))
+        (Lambda.LExpr.const "0" none)))
+    (Lambda.LExpr.const "1" none)) -/
+#guard_msgs in
+#eval eraseTy (translateBounded' test5)
+
+-- 5a. (\x. foo y < 0) 1 where foo: int -> nat and y is a free variable
+-- Expected: 0 <= foo y -> (\x. foo y < 0) 1
+def test5a : LExprT String :=
+  .app (.abs (ltOp (.app (.op "foo" (.arrow .int natTy)) (.fvar "y" .int) natTy) (.const "0" .int)) (.arrow .int .bool))
+       (.const "1" .int)
+       .bool
+
+/-- info: Lambda.LExpr.app
+  (Lambda.LExpr.app
+    (Lambda.LExpr.op "Bool.Implies" none)
+    (Lambda.LExpr.app
+      (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+      (Lambda.LExpr.app (Lambda.LExpr.op "foo" none) (Lambda.LExpr.fvar "y" none))))
+  (Lambda.LExpr.app
+    (Lambda.LExpr.abs
+      (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))
+      (Lambda.LExpr.app
+        (Lambda.LExpr.app
+          (Lambda.LExpr.op "Int.Lt" none)
+          (Lambda.LExpr.app (Lambda.LExpr.op "foo" none) (Lambda.LExpr.fvar "y" none)))
+        (Lambda.LExpr.const "0" none)))
+    (Lambda.LExpr.const "1" none))-/
+#guard_msgs in
+#eval eraseTy (translateBounded' test5a)
+
+
+-- 6. (\x. foo x) 1 >= 0
+-- Expected: 0 <= (\x. foo x) 1 -> (forall x, 0 <= foo x) -> (\x. foo x) 1 >= 0
+def test6 : LExprT String :=
+  geOp (.app (.abs (.app (.op "foo" (.arrow .int natTy)) (.bvar 0 .int) natTy) (.arrow .int natTy))
+             (.const "1" .int)
+             natTy)
+       (.const "0" .int)
+
+/-- info: Lambda.LExpr.app
+  (Lambda.LExpr.app
+    (Lambda.LExpr.op "Bool.Implies" none)
+    (Lambda.LExpr.app
+      (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+      (Lambda.LExpr.app
+        (Lambda.LExpr.abs
+          (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))
+          (Lambda.LExpr.app (Lambda.LExpr.op "foo" none) (Lambda.LExpr.bvar 0)))
+        (Lambda.LExpr.const "1" none))))
+  (Lambda.LExpr.app
+    (Lambda.LExpr.app
+      (Lambda.LExpr.op "Bool.Implies" none)
+      (Lambda.LExpr.quant
+        (Lambda.QuantifierKind.all)
+        (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))
+        (Lambda.LExpr.bvar 0)
+        (Lambda.LExpr.app
+          (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+          (Lambda.LExpr.app (Lambda.LExpr.op "foo" none) (Lambda.LExpr.bvar 0)))))
+    (Lambda.LExpr.app
+      (Lambda.LExpr.app
+        (Lambda.LExpr.op "Int.Ge" none)
+        (Lambda.LExpr.app
+          (Lambda.LExpr.abs
+            (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))
+            (Lambda.LExpr.app (Lambda.LExpr.op "foo" none) (Lambda.LExpr.bvar 0)))
+          (Lambda.LExpr.const "1" none)))
+      (Lambda.LExpr.const "0" none)))-/
+#guard_msgs in
+#eval eraseTy (translateBounded' test6)
+
+-- 7. (if foo x < 0 then bar == 1 else baz > 0) where bar and baz have type nat
+-- Expected: 0 <= foo x -> if foo x < 0 then 0 <= bar -> bar == 1 else 0 <= baz -> baz > 0
+def test7 : LExprT String :=
+  .ite (ltOp (.app (.op "foo" (.arrow .int natTy)) (.fvar "x" .int) natTy) (.const "0" .int))
+       (.eq (.fvar "bar" natTy) (.const "1" .int) .bool)
+       (.app (.app (LFunc.opExprT intGtFunc) (.fvar "baz" natTy) (.arrow .int .bool)) (.const "0" .int) .bool)
+       .bool
+
+/-- info: Lambda.LExpr.app
+  (Lambda.LExpr.app
+    (Lambda.LExpr.op "Bool.Implies" none)
+    (Lambda.LExpr.app
+      (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+      (Lambda.LExpr.app (Lambda.LExpr.op "foo" none) (Lambda.LExpr.fvar "x" none))))
+  (Lambda.LExpr.ite
+    (Lambda.LExpr.app
+      (Lambda.LExpr.app
+        (Lambda.LExpr.op "Int.Lt" none)
+        (Lambda.LExpr.app (Lambda.LExpr.op "foo" none) (Lambda.LExpr.fvar "x" none)))
+      (Lambda.LExpr.const "0" none))
+    (Lambda.LExpr.app
+      (Lambda.LExpr.app
+        (Lambda.LExpr.op "Bool.Implies" none)
+        (Lambda.LExpr.app
+          (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+          (Lambda.LExpr.fvar "bar" none)))
+      (Lambda.LExpr.eq (Lambda.LExpr.fvar "bar" none) (Lambda.LExpr.const "1" none)))
+    (Lambda.LExpr.app
+      (Lambda.LExpr.app
+        (Lambda.LExpr.op "Bool.Implies" none)
+        (Lambda.LExpr.app
+          (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+          (Lambda.LExpr.fvar "baz" none)))
+      (Lambda.LExpr.app
+        (Lambda.LExpr.app (Lambda.LExpr.op "Int.Gt" none) (Lambda.LExpr.fvar "baz" none))
+        (Lambda.LExpr.const "0" none))))-/
+#guard_msgs in
+#eval eraseTy (translateBounded' test7)
+
+end PositiveTest
 
 end Test
