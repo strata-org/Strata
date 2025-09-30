@@ -1,5 +1,5 @@
-// Test switch statement with fallthrough
-let x: number = 2;
+// Test switch where only default matches
+let x: number = 99;
 let result: number = 0;
 
 switch (x) {
@@ -12,3 +12,6 @@ switch (x) {
   default:
     result = 40;
 }
+
+result;
+

@@ -468,6 +468,118 @@ partial def translate_statement_core
             | none     => "__unbound_break"
           (ctx, [ .goto tgt ])
 
+      | .TS_SwitchStatement switchStmt =>
+        -- Handle switch statement with fallthrough semantics
+        dbg_trace s!"[DEBUG] Translating switch statement at loc {switchStmt.start_loc}-{switchStmt.end_loc}"
+        
+        -- Step 1: Evaluate discriminant once and store in temp variable
+        let discriminantVar := s!"switch_discriminant_{switchStmt.start_loc}"
+        let discriminantExpr := translate_expr switchStmt.discriminant
+        let discriminantTy := infer_type_from_expr switchStmt.discriminant
+        let initDiscriminant : TSStrataStatement := .cmd (.init discriminantVar discriminantTy discriminantExpr)
+        
+        -- Step 2: Create fallthrough flag
+        let fallthroughVar := s!"switch_fallthrough_{switchStmt.start_loc}"
+        let initFallthrough : TSStrataStatement := .cmd (.init fallthroughVar Heap.HMonoTy.bool Heap.HExpr.false)
+        
+        -- Step 3: Build nested if-else chain for each case
+        let cases := switchStmt.cases.toList
+        
+        -- Helper to build case statements recursively
+        let rec buildCases (remainingCases : List TS_SwitchCase) (accCtx : TranslationContext) : TranslationContext × TSStrataStatement :=
+          match remainingCases with
+          | [] =>
+            -- No more cases, return empty block
+            let emptyBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [] }
+            (accCtx, .ite Heap.HExpr.false emptyBlock emptyBlock)
+          | [lastCase] =>
+            -- Last case (might be default)
+            match lastCase.test with
+            | none =>
+              -- Default case: execute if fallthrough is true or always
+              let (caseCtx, caseStmts) := lastCase.consequent.toList.foldl
+                (fun (c, acc) stmt =>
+                  let (c2, ss) := translate_statement_core stmt c ct
+                  (c2, acc ++ ss))
+                (accCtx, [])
+              let caseBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := caseStmts }
+              let emptyBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [] }
+              -- Always execute default case if we reach it
+              (caseCtx, .ite Heap.HExpr.true caseBlock emptyBlock)
+            | some testExpr =>
+              -- Regular case: check discriminant match OR fallthrough flag
+              let testVal := translate_expr testExpr
+              let discriminantRef := Heap.HExpr.lambda (.fvar discriminantVar none)
+              let fallthroughRef := Heap.HExpr.lambda (.fvar fallthroughVar none)
+              
+              -- Translate case statements
+              let (caseCtx, caseStmts) := lastCase.consequent.toList.foldl
+                (fun (c, acc) stmt =>
+                  let (c2, ss) := translate_statement_core stmt c ct
+                  (c2, acc ++ ss))
+                (accCtx, [])
+              
+              -- Add statement to set fallthrough flag
+              let setFallthrough : TSStrataStatement := .cmd (.set fallthroughVar Heap.HExpr.true)
+              
+              -- Condition: (discriminant == testVal) || fallthrough
+              let matchCondition := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Eq" none) discriminantRef) testVal
+              let condition := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Bool.Or" none) fallthroughRef) matchCondition
+              
+              let thenBlock : Imperative.Block TSStrataExpression TSStrataCommand := 
+                { ss := setFallthrough :: caseStmts }
+              let elseBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [] }
+              
+              (caseCtx, .ite condition thenBlock elseBlock)
+          | currentCase :: restCases =>
+            -- Process current case and chain with rest
+            match currentCase.test with
+            | none =>
+              -- Default case in the middle: execute and continue to rest
+              let (caseCtx, caseStmts) := currentCase.consequent.toList.foldl
+                (fun (c, acc) stmt =>
+                  let (c2, ss) := translate_statement_core stmt c ct
+                  (c2, acc ++ ss))
+                (accCtx, [])
+              let setFallthrough : TSStrataStatement := .cmd (.set fallthroughVar Heap.HExpr.true)
+              let (restCtx, restStmt) := buildCases restCases caseCtx
+              
+              -- Execute default and then rest
+              let thenBlock : Imperative.Block TSStrataExpression TSStrataCommand := 
+                { ss := setFallthrough :: caseStmts ++ [restStmt] }
+              let emptyBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [] }
+              (restCtx, .ite Heap.HExpr.true thenBlock emptyBlock)
+            | some testExpr =>
+              -- Regular case: check condition and chain with rest
+              let testVal := translate_expr testExpr
+              let discriminantRef := Heap.HExpr.lambda (.fvar discriminantVar none)
+              let fallthroughRef := Heap.HExpr.lambda (.fvar fallthroughVar none)
+              
+              -- Translate case statements
+              let (caseCtx, caseStmts) := currentCase.consequent.toList.foldl
+                (fun (c, acc) stmt =>
+                  let (c2, ss) := translate_statement_core stmt c ct
+                  (c2, acc ++ ss))
+                (accCtx, [])
+              
+              let setFallthrough : TSStrataStatement := .cmd (.set fallthroughVar Heap.HExpr.true)
+              let (restCtx, restStmt) := buildCases restCases caseCtx
+              
+              -- Condition: (discriminant == testVal) || fallthrough
+              let matchCondition := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Eq" none) discriminantRef) testVal
+              let condition := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Bool.Or" none) fallthroughRef) matchCondition
+              
+              let thenBlock : Imperative.Block TSStrataExpression TSStrataCommand := 
+                { ss := setFallthrough :: caseStmts ++ [restStmt] }
+              let elseBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [restStmt] }
+              
+              (restCtx, .ite condition thenBlock elseBlock)
+        
+        let (finalCtx, switchBody) := buildCases cases ctx
+        
+        dbg_trace s!"[DEBUG] Switch statement translated with {cases.length} cases"
+        (finalCtx, [initDiscriminant, initFallthrough, switchBody])
+
       | _ => panic! s!"Unimplemented statement: {repr s}"
 
 -- Translate TypeScript statements to TypeScript-Strata statements

@@ -264,7 +264,7 @@ mutual
     | TS_ContinueStatement: TS_ContinueStatement → TS_Statement
     | TS_BreakStatement: TS_BreakStatement → TS_Statement
     | TS_ForStatement : TS_ForStatement → TS_Statement
-    | TS_SwitchStatemen: TS_SwitchStatement → TS_Statement
+    | TS_SwitchStatement: TS_SwitchStatement → TS_Statement
   deriving Repr, Lean.FromJson, Lean.ToJson
 end
 
