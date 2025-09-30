@@ -56,5 +56,5 @@ op eqDecl (name : Ident, bindings : Bindings, tp : Type, @[scope(bindings)] rhs 
 def example1 := #strata
 program Haskell;
 reverse (a : Type) (v : List a) :: List a;
-reverse (a : Type) (l : List a) = foldl (\(r : List a) (h : a) -> (h : r)) (nil a) l;
+//reverse (a : Type) (l : List a) = foldl (\(r : List a) (h : a) -> (h : r)) (nil a) l;
 #end
