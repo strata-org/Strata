@@ -156,6 +156,12 @@ partial def evalApp (state : HState) (originalExpr e1 e2 : HExpr) : HState × HE
     -- Second application to StringFieldAccess - return partially applied
     -- This handles str.fieldName where fieldName is a string literal
     evalStringFieldAccess state2 objExpr e2'
+  | .deferredOp "LengthAccess" _ =>
+    -- First application to LengthAccess - return partially applied
+    (state2, .app (.deferredOp "LengthAccess" none) e2')
+  | .app (.deferredOp "LengthAccess" _) objExpr =>
+    -- Second application to LengthAccess - evaluate
+    evalLengthAccess state2 objExpr e2'
   | .deferredOp op _ =>
     -- First application to a deferred operation - return partially applied
     (state2, .app (.deferredOp op none) e2')
@@ -218,6 +224,31 @@ partial def evalStringFieldAccess (state : HState) (objExpr fieldExpr : HExpr) :
   | _ =>
     -- Field is not a string literal
     (state, .lambda (LExpr.const "error_non_literal_string_field" none))
+
+-- Handle length access for both strings and arrays
+partial def evalLengthAccess (state : HState) (objExpr fieldExpr : HExpr) : HState × HExpr :=
+  match fieldExpr with
+  | .lambda (LExpr.const key _) =>
+    if key == "length" then
+      match objExpr with
+      | .lambda (LExpr.const s _) =>
+        -- String length
+        let len := s.length
+        (state, .lambda (LExpr.const (toString len) (some Lambda.LMonoTy.int)))
+      | .address addr =>
+        -- Array length
+        match state.heap.get? addr with
+        | some obj =>
+          let len := obj.size
+          (state, .lambda (LExpr.const (toString len) (some Lambda.LMonoTy.int)))
+        | none =>
+          (state, .lambda (LExpr.const "error_invalid_address" none))
+      | _ =>
+        (state, .lambda (LExpr.const "error_not_string_or_array" none))
+    else
+      (state, .lambda (LExpr.const "error_unknown_length_property" none))
+  | _ =>
+    (state, .lambda (LExpr.const "error_non_literal_field" none))
 
 -- Extract a numeric field index from an expression
 partial def extractFieldIndex (expr : HExpr) : Option Nat :=

@@ -177,9 +177,9 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
     | .TS_IdExpression id =>
       let keyName := id.name
       if !e.computed && keyName == "length" then
-        -- String dot access: str.length
+        -- .length property access - use unified operation that handles both strings and arrays
         let keyExpr := Heap.HExpr.string keyName
-        Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "StringFieldAccess" none) objExpr) keyExpr
+        Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "LengthAccess" none) objExpr) keyExpr
       else
         -- Dynamic field access: obj[variable]
         let varExpr := translate_expr (.TS_IdExpression id)
