@@ -469,7 +469,7 @@ partial def translate_statement_core
           (ctx, [ .goto tgt ])
 
       | .TS_SwitchStatement switchStmt =>
-        -- Handle switch statement with fallthrough semantics
+        -- Handle switch statement with fallthrough and break semantics
         dbg_trace s!"[DEBUG] Translating switch statement at loc {switchStmt.start_loc}-{switchStmt.end_loc}"
         
         -- Step 1: Evaluate discriminant once and store in temp variable
@@ -478,12 +478,33 @@ partial def translate_statement_core
         let discriminantTy := infer_type_from_expr switchStmt.discriminant
         let initDiscriminant : TSStrataStatement := .cmd (.init discriminantVar discriminantTy discriminantExpr)
         
-        -- Step 2: Create fallthrough flag
+        -- Step 2: Create fallthrough flag (tracks if we've entered a case)
         let fallthroughVar := s!"switch_fallthrough_{switchStmt.start_loc}"
         let initFallthrough : TSStrataStatement := .cmd (.init fallthroughVar Heap.HMonoTy.bool Heap.HExpr.false)
         
-        -- Step 3: Build nested if-else chain for each case
+        -- Step 3: Create break flag (tracks if break was encountered)
+        let breakFlagVar := s!"switch_break_{switchStmt.start_loc}"
+        let initBreakFlag : TSStrataStatement := .cmd (.init breakFlagVar Heap.HMonoTy.bool Heap.HExpr.false)
+        
+        -- Step 4: Build nested if-else chain for each case
         let cases := switchStmt.cases.toList
+        
+        -- Helper to check if a statement is a break statement
+        let isBreakStmt : TS_Statement → Bool
+          | .TS_BreakStatement _ => true
+          | _ => false
+        
+        -- Helper to check if consequent contains a break and split statements
+        let splitAtBreak (stmts : List TS_Statement) : List TS_Statement × Bool :=
+          let rec splitLoop (acc : List TS_Statement) (rest : List TS_Statement) : List TS_Statement × Bool :=
+            match rest with
+            | [] => (acc.reverse, false)
+            | s :: tail =>
+              if isBreakStmt s then
+                (acc.reverse, true)  -- Found break, don't include it or anything after
+              else
+                splitLoop (s :: acc) tail
+          splitLoop [] stmts
         
         -- Helper to build case statements recursively
         let rec buildCases (remainingCases : List TS_SwitchCase) (accCtx : TranslationContext) : TranslationContext × TSStrataStatement :=
@@ -494,91 +515,138 @@ partial def translate_statement_core
             (accCtx, .ite Heap.HExpr.false emptyBlock emptyBlock)
           | [lastCase] =>
             -- Last case (might be default)
+            let breakFlagRef := Heap.HExpr.lambda (.fvar breakFlagVar none)
+            
             match lastCase.test with
             | none =>
-              -- Default case: execute if fallthrough is true or always
-              let (caseCtx, caseStmts) := lastCase.consequent.toList.foldl
+              -- Default case: execute if not already broken
+              let (stmtsBeforeBreak, hasBreak) := splitAtBreak lastCase.consequent.toList
+              let (caseCtx, caseStmts) := stmtsBeforeBreak.foldl
                 (fun (c, acc) stmt =>
                   let (c2, ss) := translate_statement_core stmt c ct
                   (c2, acc ++ ss))
                 (accCtx, [])
-              let caseBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := caseStmts }
+              
+              -- Add break flag set if this case has break
+              let finalStmts := if hasBreak then
+                caseStmts ++ [.cmd (.set breakFlagVar Heap.HExpr.true)]
+              else
+                caseStmts
+              
+              let caseBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := finalStmts }
               let emptyBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [] }
-              -- Always execute default case if we reach it
-              (caseCtx, .ite Heap.HExpr.true caseBlock emptyBlock)
+              
+              -- Condition: execute if !break_flag (using if break_flag then false else true)
+              let notBreakCond := Heap.HExpr.deferredIte breakFlagRef Heap.HExpr.false Heap.HExpr.true
+              (caseCtx, .ite notBreakCond caseBlock emptyBlock)
             | some testExpr =>
-              -- Regular case: check discriminant match OR fallthrough flag
+              -- Regular last case: check if not broken and (discriminant matches or fallthrough)
               let testVal := translate_expr testExpr
               let discriminantRef := Heap.HExpr.lambda (.fvar discriminantVar none)
               let fallthroughRef := Heap.HExpr.lambda (.fvar fallthroughVar none)
               
+              -- Split statements at break
+              let (stmtsBeforeBreak, hasBreak) := splitAtBreak lastCase.consequent.toList
+              
               -- Translate case statements
-              let (caseCtx, caseStmts) := lastCase.consequent.toList.foldl
+              let (caseCtx, caseStmts) := stmtsBeforeBreak.foldl
                 (fun (c, acc) stmt =>
                   let (c2, ss) := translate_statement_core stmt c ct
                   (c2, acc ++ ss))
                 (accCtx, [])
               
-              -- Add statement to set fallthrough flag
+              -- Add statement to set fallthrough flag (at the start)
               let setFallthrough : TSStrataStatement := .cmd (.set fallthroughVar Heap.HExpr.true)
               
-              -- Condition: (discriminant == testVal) || fallthrough
+              -- Add break flag set if this case has break (at the end)
+              let finalStmts := if hasBreak then
+                setFallthrough :: caseStmts ++ [.cmd (.set breakFlagVar Heap.HExpr.true)]
+              else
+                setFallthrough :: caseStmts
+              
+              -- Condition: if break_flag then false else ((discriminant == testVal) || fallthrough)
               let matchCondition := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Eq" none) discriminantRef) testVal
-              let condition := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Bool.Or" none) fallthroughRef) matchCondition
+              let matchOrFallthrough := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Bool.Or" none) fallthroughRef) matchCondition
+              let condition := Heap.HExpr.deferredIte breakFlagRef Heap.HExpr.false matchOrFallthrough
               
               let thenBlock : Imperative.Block TSStrataExpression TSStrataCommand := 
-                { ss := setFallthrough :: caseStmts }
+                { ss := finalStmts }
               let elseBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [] }
               
               (caseCtx, .ite condition thenBlock elseBlock)
           | currentCase :: restCases =>
             -- Process current case and chain with rest
+            let breakFlagRef := Heap.HExpr.lambda (.fvar breakFlagVar none)
+            
             match currentCase.test with
             | none =>
-              -- Default case in the middle: execute and continue to rest
-              let (caseCtx, caseStmts) := currentCase.consequent.toList.foldl
+              -- Default case in the middle: execute if not broken, and continue to rest
+              let (stmtsBeforeBreak, hasBreak) := splitAtBreak currentCase.consequent.toList
+              let (caseCtx, caseStmts) := stmtsBeforeBreak.foldl
                 (fun (c, acc) stmt =>
                   let (c2, ss) := translate_statement_core stmt c ct
                   (c2, acc ++ ss))
                 (accCtx, [])
+              
               let setFallthrough : TSStrataStatement := .cmd (.set fallthroughVar Heap.HExpr.true)
+              
+              -- Add break flag set if this case has break
+              let finalStmts := if hasBreak then
+                setFallthrough :: caseStmts ++ [.cmd (.set breakFlagVar Heap.HExpr.true)]
+              else
+                setFallthrough :: caseStmts
+              
               let (restCtx, restStmt) := buildCases restCases caseCtx
               
-              -- Execute default and then rest
+              -- Condition: execute if !break_flag (using if break_flag then false else true)
+              let notBreakCond := Heap.HExpr.deferredIte breakFlagRef Heap.HExpr.false Heap.HExpr.true
+              
+              -- Execute default and then rest (if not broken)
               let thenBlock : Imperative.Block TSStrataExpression TSStrataCommand := 
-                { ss := setFallthrough :: caseStmts ++ [restStmt] }
-              let emptyBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [] }
-              (restCtx, .ite Heap.HExpr.true thenBlock emptyBlock)
+                { ss := finalStmts ++ [restStmt] }
+              let elseBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [restStmt] }
+              (restCtx, .ite notBreakCond thenBlock elseBlock)
             | some testExpr =>
-              -- Regular case: check condition and chain with rest
+              -- Regular case: check condition, execute if not broken, and chain with rest
               let testVal := translate_expr testExpr
               let discriminantRef := Heap.HExpr.lambda (.fvar discriminantVar none)
               let fallthroughRef := Heap.HExpr.lambda (.fvar fallthroughVar none)
               
+              -- Split statements at break
+              let (stmtsBeforeBreak, hasBreak) := splitAtBreak currentCase.consequent.toList
+              
               -- Translate case statements
-              let (caseCtx, caseStmts) := currentCase.consequent.toList.foldl
+              let (caseCtx, caseStmts) := stmtsBeforeBreak.foldl
                 (fun (c, acc) stmt =>
                   let (c2, ss) := translate_statement_core stmt c ct
                   (c2, acc ++ ss))
                 (accCtx, [])
               
               let setFallthrough : TSStrataStatement := .cmd (.set fallthroughVar Heap.HExpr.true)
+              
+              -- Add break flag set if this case has break
+              let finalStmts := if hasBreak then
+                setFallthrough :: caseStmts ++ [.cmd (.set breakFlagVar Heap.HExpr.true)]
+              else
+                setFallthrough :: caseStmts
+              
               let (restCtx, restStmt) := buildCases restCases caseCtx
               
-              -- Condition: (discriminant == testVal) || fallthrough
+              -- Condition: if break_flag then false else ((discriminant == testVal) || fallthrough)
               let matchCondition := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Eq" none) discriminantRef) testVal
-              let condition := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Bool.Or" none) fallthroughRef) matchCondition
+              let matchOrFallthrough := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Bool.Or" none) fallthroughRef) matchCondition
+              let condition := Heap.HExpr.deferredIte breakFlagRef Heap.HExpr.false matchOrFallthrough
               
               let thenBlock : Imperative.Block TSStrataExpression TSStrataCommand := 
-                { ss := setFallthrough :: caseStmts ++ [restStmt] }
+                { ss := finalStmts ++ [restStmt] }
               let elseBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [restStmt] }
               
               (restCtx, .ite condition thenBlock elseBlock)
         
         let (finalCtx, switchBody) := buildCases cases ctx
         
-        dbg_trace s!"[DEBUG] Switch statement translated with {cases.length} cases"
-        (finalCtx, [initDiscriminant, initFallthrough, switchBody])
+        dbg_trace s!"[DEBUG] Switch statement translated with {cases.length} cases (with break support)"
+        (finalCtx, [initDiscriminant, initFallthrough, initBreakFlag, switchBody])
 
       | _ => panic! s!"Unimplemented statement: {repr s}"
 
