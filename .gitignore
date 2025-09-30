@@ -12,3 +12,5 @@ package-lock.json
 
 conformance_testing/__pycache__
 conformance_testing/failures
+
+test_single_file.sh

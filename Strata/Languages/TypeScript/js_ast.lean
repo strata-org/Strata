@@ -205,6 +205,14 @@ mutual
     alternate : Option TS_Statement
   deriving Repr, Lean.FromJson, Lean.ToJson
 
+  /-- A single `case` (or `default` when `test = none`) inside a switch. -/
+  structure TS_SwitchCase extends BaseNode where
+    /-- `some expr` for `case expr:`, `none` for `default:` --/
+    test : Option TS_Expression
+    /-- statements executed for this case (often end with a BreakStatement) --/
+    consequent : Array TS_Statement
+  deriving Repr, Lean.FromJson, Lean.ToJson
+
   structure TS_ReturnStatement extends BaseNode where
     argument : Option TS_Expression
   deriving Repr, Lean.FromJson, Lean.ToJson
@@ -238,6 +246,12 @@ mutual
     label : Option TS_Identifier := none
   deriving Repr, Lean.FromJson, Lean.ToJson
 
+  /-- `switch (discriminant) { cases... }` -/
+  structure TS_SwitchStatement extends BaseNode where
+    discriminant : TS_Expression
+    cases : Array TS_SwitchCase
+  deriving Repr, Lean.FromJson, Lean.ToJson
+
   inductive TS_Statement where
     | TS_IfStatement : TS_IfStatement → TS_Statement
     | TS_VariableDeclaration : TS_VariableDeclaration → TS_Statement
@@ -250,6 +264,7 @@ mutual
     | TS_ContinueStatement: TS_ContinueStatement → TS_Statement
     | TS_BreakStatement: TS_BreakStatement → TS_Statement
     | TS_ForStatement : TS_ForStatement → TS_Statement
+    | TS_SwitchStatemen: TS_SwitchStatement → TS_Statement
   deriving Repr, Lean.FromJson, Lean.ToJson
 end
 
