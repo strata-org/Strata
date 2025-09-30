@@ -13,8 +13,14 @@ fi
 
 mkdir -p "$test_dir/dialects"
 
-python3 -m strata.gen dialect "$test_dir/dialects"
-$strata print "$test_dir/dialects/Python.dialect.st.ion" > "$test_dir/dialects/Python.dialect.st"
+python3 -Xgil=0 -m strata.gen dialect PythonAST "$test_dir/dialects"
+$strata print "$test_dir/dialects/PythonAST.dialect.st.ion" > "$test_dir/dialects/PythonAST.dialect.st"
 
-$strata check "$test_dir/dialects/Python.dialect.st.ion"
-$strata check "$test_dir/dialects/Python.dialect.st"
+$strata check "$test_dir/dialects/PythonAST.dialect.st.ion"
+$strata check "$test_dir/dialects/PythonAST.dialect.st"
+
+python3 -Xgil=0 -m strata.gen dialect PythonSSA "$test_dir/dialects"
+$strata print "$test_dir/dialects/PythonSSA.dialect.st.ion" > "$test_dir/dialects/PythonSSA.dialect.st"
+
+$strata check "$test_dir/dialects/PythonSSA.dialect.st.ion"
+$strata check "$test_dir/dialects/PythonSSA.dialect.st"
