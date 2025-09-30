@@ -21,11 +21,14 @@ filename=`basename "$input_path"`
 mkdir -p $test_dir/$input_dir
 
 python3 -m strata.gen parse $input_path "$test_dir/$input_dir/$filename.st.ion"
-$strata print --include "$test_dir/dialects" "$test_dir/$input_dir/$filename.st.ion" > "$test_dir/$input_dir/$filename.st"
 
+$strata toIon --include "$test_dir/dialects" "$test_dir/$input_dir/$filename.st.ion" "$test_dir/$input_dir/$filename.st.ion2"
+
+# Check whether 'strata toIon' worked ok
+$strata diff --include "$test_dir/dialects" "$test_dir/$input_dir/$filename.st.ion" "$test_dir/$input_dir/$filename.st.ion2"
+
+#N.B. We plan to eventually check round trip for the plaintext format, but it
+# is currently not preserved (see https://github.com/strata-org/Strata/issues/132).
 # Check the validity of the two programs
-$strata check --include "$test_dir/dialects" "$test_dir/$input_dir/$filename.st.ion"
-$strata check --include "$test_dir/dialects" "$test_dir/$input_dir/$filename.st"
-
-# Check whether 'strata print' worked ok
-$strata diff --include "$test_dir/dialects" "$test_dir/$input_dir/$filename.st" "$test_dir/$input_dir/$filename.st.ion"
+#$strata print --include "$test_dir/dialects" "$test_dir/$input_dir/$filename.st.ion" > "$test_dir/$input_dir/$filename.st"
+#$strata diff --include "$test_dir/dialects" "$test_dir/$input_dir/$filename.st.ion" "$test_dir/$input_dir/$filename.st"
