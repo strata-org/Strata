@@ -684,30 +684,32 @@ def checkLeftRec (thisCatName : QualifiedIdent) (argDecls : ArgDecls) (as : List
   | .ident v argPrec :: rest => Id.run do
     let .isTrue lt := inferInstanceAs (Decidable (v < argDecls.size))
       | return panic! "Invalid index"
-    match argDecls[v].kind.categoryOf with
-    | .app (.atom (q`Init.CommaSepBy)) (.atom c) =>
-      if c == thisCatName then
+    let cat := argDecls[v].kind.categoryOf
+    match cat.name with
+    | q`Init.CommaSepBy =>
+      assert! cat.args.size = 1
+      let c := cat.args[0]!
+      if c.name == thisCatName then
         .invalid mf!"Leading symbol cannot be recursive call to {c}"
       else
         .isLeading as
-    | .app (.atom (q`Init.Many)) (.atom c) =>
-      if c == thisCatName then
+    | q`Init.Option =>
+      assert! cat.args.size = 1
+      let c := cat.args[0]!
+      if c.name == thisCatName then
         .invalid mf!"Leading symbol cannot be recursive call to {c}"
       else
         .isLeading as
-    | .app (.atom (q`Init.Option)) (.atom c) =>
-      if c == thisCatName then
+    | q`Init.Seq =>
+      assert! cat.args.size = 1
+      let c := cat.args[0]!
+      if c.name == thisCatName then
         .invalid mf!"Leading symbol cannot be recursive call to {c}"
       else
         .isLeading as
-    | .app (.atom (q`Init.Seq)) (.atom c) =>
-      if c == thisCatName then
-        .invalid mf!"Leading symbol cannot be recursive call to {c}"
-      else
-        .isLeading as
-    | .app c _ =>
-      panic! s!"Unknown parametric category '{eformat c}' is not supported."
-    | .atom qid =>
+    | qid =>
+      if cat.args.size > 0 then
+        panic! s!"Unknown parametric category '{eformat cat}' is not supported."
       if qid == thisCatName then
         .isTrailing (min (argPrec+1) maxPrec) rest
       else
@@ -774,19 +776,22 @@ def manyParser (p : Parser) : Parser := {
 }
 
 /-- Parser function for given syntax category -/
-def catParser (ctx : ParsingContext) (cat : SyntaxCat) : Except SyntaxCat Parser :=
-  match cat with
-  | .app (.atom (q`Init.CommaSepBy)) c =>
-    (sepByParser · (symbolNoAntiquot ",")) <$> catParser ctx c
-  | .app (.atom (q`Init.Option)) c =>
-    optionalNoAntiquot <$> catParser ctx c
-  | .app (.atom (q`Init.Seq)) c =>
-    manyParser <$> catParser ctx c
-  | .atom c =>
-    .ok (atomCatParser ctx c)
-  | c =>
-    .error c
-
+partial def catParser (ctx : ParsingContext) (cat : SyntaxCat) : Except SyntaxCat Parser :=
+  match cat.name with
+  | q`Init.CommaSepBy =>
+    assert! cat.args.size = 1
+    (sepByParser · (symbolNoAntiquot ",")) <$> catParser ctx cat.args[0]!
+  | q`Init.Option =>
+    assert! cat.args.size = 1
+    optionalNoAntiquot <$> catParser ctx cat.args[0]!
+  | q`Init.Seq =>
+    assert! cat.args.size = 1
+    manyParser <$> catParser ctx cat.args[0]!
+  | qid =>
+    if cat.args.isEmpty then
+      .ok (atomCatParser ctx qid)
+    else
+      .error cat
 /-
 This walks the SyntaxDefAtomParser and prepends extracted parser to state.
 
