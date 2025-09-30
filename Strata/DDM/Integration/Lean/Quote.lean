@@ -56,9 +56,13 @@ end
 
 namespace SyntaxCat
 
-protected def quote : SyntaxCat → Term
-| .atom a => Syntax.mkCApp ``SyntaxCat.atom #[quote a]
-| .app f a => Syntax.mkCApp ``SyntaxCat.app #[f.quote, a.quote]
+protected def quote (cat : SyntaxCat) : Term :=
+  let r := quoteArray <| cat.args.map fun x => x.quote
+  astQuote! SyntaxCat.mk (quote cat.name) r
+termination_by sizeOf cat
+decreasing_by
+  simp [sizeOf_spec cat]
+  decreasing_tactic
 
 instance : Quote SyntaxCat where
   quote := SyntaxCat.quote
@@ -191,6 +195,9 @@ instance : Quote SyntaxDef where
   quote s := Syntax.mkCApp ``SyntaxDef.mk #[quote s.atoms, quote s.prec]
 
 end SyntaxDef
+
+instance : Quote ArgDecls where
+  quote a :=  Syntax.mkCApp ``ArgDecls.ofArray #[quote a.toArray]
 
 instance : Quote SynCatDecl where
   quote d :=  Syntax.mkCApp ``SynCatDecl.mk #[quote d.name, quote d.argNames]
