@@ -19,6 +19,12 @@ from typing import Tuple, Optional
 
 from language_processor import get_language_processor, LanguageProcessor
 
+def _to_strata_heap_value(v):
+    if isinstance(v, list):
+        return {str(i): _to_strata_heap_value(x) for i, x in enumerate(v)}
+    if isinstance(v, dict):
+        return {k: _to_strata_heap_value(x) for k, x in v.items()}
+    return v
 
 class ConformanceTestRunner:
     """Language-neutral conformance test runner."""
@@ -55,6 +61,8 @@ class ConformanceTestRunner:
             print("strata json", strata_json)
             native_data = json.loads(native_json.strip())
             strata_data = json.loads(strata_json.strip())
+
+            native_data = {k: _to_strata_heap_value(v) for k, v in native_data.items()}
             
             mismatches = []
             missing_keys = []
