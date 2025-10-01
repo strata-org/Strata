@@ -1073,6 +1073,8 @@ def test7 : LExprT String :=
 #guard_msgs in
 #eval eraseTy (translateBounded' test7)
 
+--TODO: test and/or
+
 end PositiveTest
 
 end Test
