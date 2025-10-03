@@ -26,15 +26,15 @@ structure Callable: Type where
   typeParameters : List TypeParameter
   inputs : List Parameter
   output : HighType
-  precondition : StmtExpr true
-  decreases : StmtExpr true
-  reads : StmtExpr true
+  precondition : StmtExpr
+  decreases : StmtExpr
+  reads : StmtExpr
   purity : Purity
-  body : Body true /- TODO fix -/
+  body : Body
 
-inductive Purity: Type where
+inductive Purity where
   | Pure
-  | Impure (modifies : StmtExpr false)
+  | Impure (modifies : Expression)
 
 structure Parameter where
   name : Identifier
@@ -65,46 +65,40 @@ structure TypeParameter where
   bounds : List HighType /- Java has bounded type parameters -/
 
 /- No support for something like function-by-method yet -/
-inductive Body : (isPure: Bool) -> Type where
-  /- Maybe we can allow the body to be impure as well, but for now we don't -/
-  | Transparent (body : StmtExpr true): Body true
-  /- Without an implementation, the postcondition is assumed -/
-  /- | Opaque (postcondition : StmtExpr true) (implementation : Option (StmtExpr isPure)) : Body isPure -/
-  /- An abstract body is useful for types that are extending.
+inductive Body where
+  | Transparent (body : StmtExpr)
+/- Without an implementation, the postcondition is assumed -/
+  | Opaque (postcondition : StmtExpr) (implementation : Option StmtExpr)
+/- An abstract body is useful for types that are extending.
     A type containing any members with abstract bodies can not be instantiated. -/
-  | Abstract (postcondition : StmtExpr true) : Body isPure
+  | Abstract (postcondition : StmtExpr)
 
 /-
 A StmtExpr contains both constructs that we typically find in statements and those in expressions.
 By using a single datatype we prevent duplication of constructs that can be used in both contexts,
 such a conditionals and variable declarations
 -/
-inductive StmtExpr : (isPure: Bool) -> Type where
+inductive StmtExpr : Type where
 /- Statement like -/
-  | IfThenElse (cond : StmtExpr isPure) (thenBranch : StmtExpr isPure) (elseBranch : Option (StmtExpr isPure)): StmtExpr isPure
-  | Block (statements : List (StmtExpr isPure)) : StmtExpr isPure
-  | LocalVariable (name : Identifier) (type : HighType) (initializer : Option (StmtExpr isPure))
-    : StmtExpr (initializer.isSome && isPure)
+  | IfThenElse (cond : StmtExpr) (thenBranch : StmtExpr) (elseBranch : Option StmtExpr)
+  | Block (statements : List StmtExpr)
+  | LocalVariable (name : Identifier) (type : HighType) (initializer : Option StmtExpr)
   /- While is only allowed in an impure context
     The invariant and decreases are always pure
   -/
-  | While (label: Option Identifier) (cond : StmtExpr isPure)
-    (invariant : Option (StmtExpr true))
-    (decreases: Option (StmtExpr true))
-    (body : StmtExpr isPure)
-    : StmtExpr false
-  | Jump (label : Identifier) (type : JumpType): StmtExpr false
-  | Return (value : Option (StmtExpr isPure)): StmtExpr isPure
+  | While (label: Option Identifier) (cond : StmtExpr) (invariant : Option StmtExpr) (decreases: Option StmtExpr) (body : StmtExpr)
+  | Jump (label : Identifier) (type : JumpType)
+  | Return (value : Option StmtExpr)
 /- Expression like -/
-  | Identifier (name : Identifier): StmtExpr isPure
+  | Identifier (name : Identifier)
   /- Assign is only allowed in an impure context -/
-  | Assign (target : StmtExpr isPure) (value : StmtExpr isPure): StmtExpr false
-  | StaticFieldSelect (target : StmtExpr isPure) (fieldName : Identifier): StmtExpr isPure
-  | PureFieldUpdate (target : StmtExpr isPure) (fieldName : Identifier) (newValue : StmtExpr isPure): StmtExpr isPure
-  | StaticInvocation (callee : Identifier) (arguments : List (StmtExpr isPure)): StmtExpr isPure
-  | PrimitiveOp (operator: Operation) (arguments : List (StmtExpr isPure)): StmtExpr isPure
+  | Assign (target : StmtExpr) (value : StmtExpr)
+  | StaticFieldSelect (target : StmtExpr) (fieldName : Identifier)
+  | PureFieldUpdate (target : StmtExpr) (fieldName : Identifier) (newValue : StmtExpr)
+  | StaticInvocation (callee : Identifier) (arguments : List StmtExpr)
+  | PrimitiveOp (operator: Operation) (arguments : List StmtExpr)
 /- Instance related -/
-  | This: StmtExpr isPure
+  | This
   /- IsType works both with dynamic
      The newBinding parameter allows bringing a new variable into scope that has the checked type
      The scope where newBinding becomes available depends on where IsType is used
@@ -113,35 +107,35 @@ inductive StmtExpr : (isPure: Bool) -> Type where
 
      Together with IfThenElse, IsType replaces the need for other pattern matching constructs
   -/
-  | IsType (target : StmtExpr isPure) (type: HighType) (newBinding : Option Identifier): StmtExpr isPure
-  | InstanceInvocation (target : StmtExpr isPure) (callee : Identifier) (arguments : List (StmtExpr isPure)): StmtExpr isPure
+  | IsType (target : StmtExpr) (type: HighType) (newBinding : Option Identifier)
+  | InstanceInvocation (target : StmtExpr) (callee : Identifier) (arguments : List StmtExpr)
 /- Verification specific -/
-  | Assigned (name : StmtExpr isPure): StmtExpr isPure
-  | Old (value : StmtExpr isPure): StmtExpr isPure
+  | Assigned (name : StmtExpr)
+  | Old (value : StmtExpr)
   /- Fresh may only target impure composite types -/
-  | Fresh(value : StmtExpr isPure): StmtExpr isPure
+  | Fresh(value : StmtExpr)
 
 /- Related to creation of objects -/
   /- Create returns a partial type, whose fields are still unassigned and whose type invariants are not guaranteed to hold. -/
   /- In a pure context, may only create pure types -/
-  | Create (type : Identifier): StmtExpr isPure
+  | Create (type : Identifier)
   /- Takes an expression of a partial type, checks that all its fields are assigned and its type invariants hold,
   and return the complete type.
   In case the partial type contained members with partial values, then those are completed as well, recursively.
   This way, you can safely construct cyclic object graphs. -/
-  | Complete (value : StmtExpr isPure): StmtExpr isPure
+  | Complete (value : StmtExpr)
 
 /- Related to dynamic language features -/
-  | DynamicInvocation (callable : StmtExpr isPure) (arguments : List (StmtExpr isPure)): StmtExpr isPure
+  | DynamicInvocation (callable : StmtExpr) (arguments : List StmtExpr)
   /- alternatively, we could have a closure that takes a CompositeType, like Java's inner classes
      This would be more powerful but slightly more of a hassle to use when creating callable closures -/
-  | Closure (callable: Callable): StmtExpr isPure
+  | Closure (callable: Callable)
   /- The next two could be defined using a library -/
-  | DynamicFieldAccess (target : StmtExpr isPure) (fieldName : StmtExpr isPure): StmtExpr isPure
-  | DynamicFieldUpdate (target : StmtExpr isPure) (fieldName : StmtExpr isPure) (newValue : StmtExpr isPure): StmtExpr isPure
+  | DynamicFieldAccess (target : StmtExpr) (fieldName : StmtExpr)
+  | DynamicFieldUpdate (target : StmtExpr) (fieldName : StmtExpr) (newValue : StmtExpr)
 
 /- Hole has a dynamic type and is useful when programs are only partially available -/
-  | Hole: StmtExpr isPure
+  | Hole
 end
 
 inductive JumpType where | Continue | Break
