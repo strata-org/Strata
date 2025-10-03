@@ -8,6 +8,8 @@
 import Strata.DDM.Elab
 import Strata.DDM.Ion
 
+import Strata.Languages.Python.Python
+
 def exitFailure (message : String) : IO α := do
   IO.eprintln (message  ++ "\n\nRun strata --help for additional help.")
   IO.Process.exit 1
@@ -148,11 +150,24 @@ def diffCommand : Command where
     | _, _ =>
       exitFailure "Cannot compare dialect def with another dialect/program."
 
+def verifyCommand : Command where
+  name := "verify"
+  args := [ "file" ]
+  help := "Verify a Strata text or Ion file. Write results to stdout."
+  callback := fun searchPath v => do
+    let (ld, pd) ← readFile searchPath v[0]
+    match pd with
+    | .dialect d =>
+      IO.print <| d.format ld.dialects
+    | .program pgm =>
+      IO.print <| (Strata.pythonVerify pgm)
+
 def commandList : List Command := [
       checkCommand,
       toIonCommand,
       printCommand,
       diffCommand,
+      verifyCommand,
     ]
 
 def commandMap : Std.HashMap String Command :=
