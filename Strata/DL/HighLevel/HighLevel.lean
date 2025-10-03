@@ -1,13 +1,31 @@
+/- TODO figure out the tags on composite types and dynamic interaction -/
+/-
+The high strata language is supposed to serve as an intermediate verification language for at least Java, Python, JavaScript.
+
+It enables doing various forms of verification:
+- Deductive verification
+- Property based testing
+- Data-flow analysis
+
+Language features:
+- An important concept is that of purety, both code and types can be pure or impure.
+Code in contracts must always be pure. Inside pure code, only pure types can be instantiated.
+- There is no concept of namespaces so all references need to be fully qualified.
+
+-/
+
 structure Program where
   staticCallables : List Callable
   types : List TypeDefinition
 
+abbrev Identifier := String /- Potentially this could be an Int to save resources. -/
+
 mutual
 structure Callable: Type where
-  name : String
+  name : Identifier
   typeParameters : List TypeParameter
   inputs : List Parameter
-  output : Parameter
+  output : HighType
   precondition : StmtExpr
   decreases : StmtExpr
   reads : StmtExpr
@@ -19,16 +37,17 @@ inductive Purity where
   | Impure (modifies : Expression)
 
 structure Parameter where
-  name : String
+  name : Identifier
   type : HighType
 
 inductive HighType : Type where
+  | Void
   | Bool
   | Int
   | Real
   | Float64 /- Required for JavaScript (number). Used by Python (float) and Java (double) as well -/
-  | UserDefined (name: String)
-  | Dynamic /- Like TypeScript's 'any' -/
+  | UserDefined (name: Identifier)
+  | Dynamic /- A value of type `Dynamic` is a tuple consisting of a type and an expression -/
   | Applied (base : TypeBase) (typeArguments : List HighType)
   /- Partial represents a composite type with unassigned fields and whose type invariants might not hold.
      Can be represented as a Map that contains a subset of the fields of the composite type -/
@@ -42,7 +61,7 @@ inductive HighType : Type where
   | Union (types : List HighType) /- I'm not sure we need Union. Seems like it could be replaced by predicate types -/
 
 structure TypeParameter where
-  name : String
+  name : Identifier
   bounds : List HighType /- Java has bounded type parameters -/
 
 /- No support for something like function-by-method yet -/
@@ -61,29 +80,45 @@ such a conditionals and variable declarations
 -/
 inductive StmtExpr : Type where
 /- Statement like -/
-  | IfThenElse (cond : StmtExpr) (thenBranch : StmtExpr) (elseBranch : StmtExpr)
+  | IfThenElse (cond : StmtExpr) (thenBranch : StmtExpr) (elseBranch : Option StmtExpr)
   | Block (statements : List StmtExpr)
-  | LocalVariable (name : String) (type : HighType) (initializer : Option StmtExpr)
-  | While (cond : StmtExpr) (invariant : Option StmtExpr) (decreases: Option StmtExpr) (body : StmtExpr)
+  | LocalVariable (name : Identifier) (type : HighType) (initializer : Option StmtExpr)
+  /- While is only allowed in an impure context
+    The invariant and decreases are always pure
+  -/
+  | While (label: Option Identifier) (cond : StmtExpr) (invariant : Option StmtExpr) (decreases: Option StmtExpr) (body : StmtExpr)
+  | Jump (label : Identifier) (type : JumpType)
+  | Return (value : Option StmtExpr)
 /- Expression like -/
-  | Identifier (name : String)
-  | Assign (taregt : StmtExpr) (value : StmtExpr)
-  | StaticFieldSelect (target : StmtExpr) (fieldName : String)
-  | PureFieldUpdate (target : StmtExpr) (fieldName : String) (newValue : StmtExpr)
-  | StaticInvocation (callee : String) (arguments : List StmtExpr)
+  | Identifier (name : Identifier)
+  /- Assign is only allowed in an impure context -/
+  | Assign (target : StmtExpr) (value : StmtExpr)
+  | StaticFieldSelect (target : StmtExpr) (fieldName : Identifier)
+  | PureFieldUpdate (target : StmtExpr) (fieldName : Identifier) (newValue : StmtExpr)
+  | StaticInvocation (callee : Identifier) (arguments : List StmtExpr)
   | PrimitiveOp (operator: Operation) (arguments : List StmtExpr)
 /- Instance related -/
   | This
-  /- IsType works both with dynamic and with tagged composite types -/
-  | IsType (target : StmtExpr) (typeName : String)
-  | InstanceInvocation (target : StmtExpr) (callee : String) (arguments : List StmtExpr)
+  /- IsType works both with dynamic
+     The newBinding parameter allows bringing a new variable into scope that has the checked type
+     The scope where newBinding becomes available depends on where IsType is used
+     Example 1: `x is <SomeType> newVar && newVar.someField` here the variable `newVar` became in scope in the RHS of the &&
+     Example 2: `if x is <SomeType> newVar then newVar.someField else ...` here the variable `newVar` became in scope in the then branch
+
+     Together with IfThenElse, IsType replaces the need for other pattern matching constructs
+  -/
+  | IsType (target : StmtExpr) (type: HighType) (newBinding : Option Identifier)
+  | InstanceInvocation (target : StmtExpr) (callee : Identifier) (arguments : List StmtExpr)
 /- Verification specific -/
   | Assigned (name : StmtExpr)
   | Old (value : StmtExpr)
+  /- Fresh may only target impure composite types -/
+  | Fresh(value : StmtExpr)
 
 /- Related to creation of objects -/
   /- Create returns a partial type, whose fields are still unassigned and whose type invariants are not guaranteed to hold. -/
-  | Create (type : String)
+  /- In a pure context, may only create pure types -/
+  | Create (type : Identifier)
   /- Takes an expression of a partial type, checks that all its fields are assigned and its type invariants hold,
   and return the complete type.
   In case the partial type contained members with partial values, then those are completed as well, recursively.
@@ -103,6 +138,8 @@ inductive StmtExpr : Type where
   | Hole
 end
 
+inductive JumpType where | Continue | Break
+
 /- We will support these operations for dynamic types as well -/
 /- The 'truthy' concept from JavaScript should be implemented using a library function -/
 inductive Operation: Type where
@@ -114,27 +151,38 @@ inductive Operation: Type where
   | Neg | Add | Sub | Mul | Div | Mod
   | Lt | Leq | Gt | Geq
 
+/-
+Note that there are no explicit 'inductive datatypes'. Typed unions are created by
+creating a CompositeType for each constructor, and a ConstrainedType for their union.
+
+Example 1:
+`composite Some<T> { value: T }`
+`constrained Option<T> = value: Dynamic | value is Some<T> || value is Unit`
+
+Example 2:
+`composite Cons<T> { head: T, tail: List<T> }`
+`constrained List<T> = value: Dynamic | value is Cons<T> || value is Unit`
+ -/
 inductive TypeDefinition where
   | Composite (ty : CompositeType)
-  | Predicate (ty : PredicateType)
+  | Constrainted (ty : ConstrainedType)
 
 structure CompositeType where
-  name : String
+  name : Identifier
   typeParameters : List TypeParameter
-  extending : List String
+  extending : List Identifier
   fields : List Field
   isPure : Bool /- A pure type may not have mutable fields, and does not support reference equality -/
   instanceCallables : List Callable
-  tagged : Bool /- Whether an instance of this composite knows its type -/
 
 structure PredicateType where
-  name : String
+  name : Identifier
   base : HighType
-  valueName : String
+  valueName : Identifier
   constraint : StmtExpr
   witness : StmtExpr
 
 structure Field where
-  name : String
+  name : Identifier
   isMutable : Bool
   type : HighType
