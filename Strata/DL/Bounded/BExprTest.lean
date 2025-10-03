@@ -9,9 +9,8 @@ open Std (ToFormat Format format)
 open Lambda
 open Bounded
 
--- NOTE: with a semantics for LExpr/LExprT, we could prove the equivalences mentioned above
-
 def natTy : LMonoTy := LMonoTy.bounded (.ble (.bconst 0) .bvar)
+
 def leOp (e1 e2: LExprT String) : LExprT String := .app (.app (LFunc.opExprT intLeFunc) e1 (.arrow .int .bool)) e2 .bool
 
 def geOp (e1 e2: LExprT String) : LExprT String := .app (.app (LFunc.opExprT intGeFunc) e1 (.arrow .int .bool)) e2 .bool
@@ -50,7 +49,7 @@ def test1 := (@LExprT.quant String .all natTy (.bvar 0 natTy) (leOp (.const "0" 
       (Lambda.LExpr.bvar 0)))
       -/
 #guard_msgs in
-#eval (eraseTy (translateBounded' test1) )
+#eval (eraseTy (translateBoundedExpr test1) )
 
 -- 2. λ(x: Nat), if 0 <= x then 1 else 2 (assumption inside ite)
 -- Expected: λ (x: int), if 0 <= x -> 0 <= x then 1 else 2
@@ -72,7 +71,7 @@ def test2 : LExprT String := .abs (.ite (leOp (.const "0" .int) (.bvar 0 .int)) 
     (Lambda.LExpr.const "1" none)
     (Lambda.LExpr.const "2" none))-/
 #guard_msgs in
-#eval (eraseTy (translateBounded' test2))
+#eval (eraseTy (translateBoundedExpr test2))
 
 -- 3. λ(x: int), if foo x >= 0 then 1 else 0 (for foo: int -> Nat) (propagate op/application information)
 -- Expected: λ (x: int), if 0 <= foo x -> foo x >= 0 then 1 else 0
@@ -96,7 +95,7 @@ def test3 : LExprT String := .abs (.ite (geOp (.app (.op "foo" (.arrow .int natT
     (Lambda.LExpr.const "1" none)
     (Lambda.LExpr.const "0" none))-/
 #guard_msgs in
-#eval (eraseTy (translateBounded' test3))
+#eval (eraseTy (translateBoundedExpr test3))
 
 -- 4. (x: Nat) + (y: Nat) >= 0 (free variable bounds)
 -- Expected: 0 <= (x: int) -> 0 <= (y : int) -> x + y >= 0
@@ -123,7 +122,7 @@ def test4 : LExprT String := geOp (addOp (.fvar "x" natTy) (.fvar "y" natTy)) (.
           (Lambda.LExpr.fvar "y" none)))
       (Lambda.LExpr.const "0" none)))-/
 #guard_msgs in
-#eval eraseTy (translateBounded' test4)
+#eval eraseTy (translateBoundedExpr test4)
 
 -- 5. λ (x: Nat). λ (y: Nat). x + y >= 0 (multiple bound vars)
 -- Expected: λ (x: int). λ (y: int). 0 <= y -> 0 <= x -> x + y >= 0
@@ -154,7 +153,7 @@ def test5 : LExprT String := .abs (.abs (geOp (addOp (.bvar 1 .int) (.bvar 0 .in
               (Lambda.LExpr.bvar 0)))
           (Lambda.LExpr.const "0" none)))))-/
 #guard_msgs in
-#eval eraseTy (translateBounded' test5)
+#eval eraseTy (translateBoundedExpr test5)
 
 -- 6. λ (x: Nat), if foo then λ (y: Nat). not (x = -1) else λ (y: Nat). x + y >= 0 (propagate inside branches of if-then-else)
 --Expected: λ (x: int), if 0 <= x -> foo then λ (y: int), 0 <= y -> 0 <= x -> not (x = -1) else λ (y: int). 0 <= y -> 0 <= x -> x + y >= 0
@@ -210,7 +209,7 @@ def test6 : LExprT String := .abs (.ite (.op "foo" .bool) (.abs (notOp (.eq (.bv
                 (Lambda.LExpr.bvar 0)))
             (Lambda.LExpr.const "0" none))))))-/
 #guard_msgs in
-#eval eraseTy (translateBounded' test6)
+#eval eraseTy (translateBoundedExpr test6)
 
 end TranslateTest
 
@@ -419,7 +418,7 @@ def testNestedBoundedApps : LExprT String :=
   (Lambda.LExpr.app (Lambda.LExpr.op "add" none) (Lambda.LExpr.const "3" none))
   (Lambda.LExpr.const "2" none)-/
 #guard_msgs in
-#eval eraseTy (translateBounded' testNestedBoundedApps)
+#eval eraseTy (translateBoundedExpr testNestedBoundedApps)
 
 -- Test 2: Bounded variable in quantifier with complex bound expression
 -- Input: ∀ (x : {x < 100 ∧ 0 ≤ x}). x = 42
@@ -457,7 +456,7 @@ def testComplexBoundInQuantifier : LExprT String :=
     (Lambda.LExpr.eq (Lambda.LExpr.bvar 0) (Lambda.LExpr.const "42" none)))
 -/
 #guard_msgs in
-#eval eraseTy (translateBounded' testComplexBoundInQuantifier)
+#eval eraseTy (translateBoundedExpr testComplexBoundInQuantifier)
 
 -- Test 3: If-then-else with bounded branches and boolean condition
 -- Input: if (0 < (getValue 5 : {0 ≤ x})) then (1 : {x < 10}) else (0 : {x < 10}) : {x < 10}
@@ -510,7 +509,7 @@ def testBoundedIte : LExprT String :=
   (Lambda.LExpr.const "1" none)
   (Lambda.LExpr.const "0" none)-/
 #guard_msgs in
-#eval eraseTy (translateBounded' testBoundedIte)
+#eval eraseTy (translateBoundedExpr testBoundedIte)
 
 -- Test 4: Lambda with bounded parameter and bounded return type
 -- Input: λ (x : {0 ≤ x}). increment x : {y < 100}
@@ -549,7 +548,7 @@ def testBoundedLambda : LExprT String :=
   (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))
   (Lambda.LExpr.app (Lambda.LExpr.op "increment" none) (Lambda.LExpr.bvar 0))-/
 #guard_msgs in
-#eval eraseTy (translateBounded' testBoundedLambda)
+#eval eraseTy (translateBoundedExpr testBoundedLambda)
 
 -- Test 5: Equality between bounded expressions
 -- Input: (square (3 : {-10 ≤ x ≤ 10}) : {0 ≤ y}) = (9 : {0 ≤ z})
@@ -588,7 +587,7 @@ def testBoundedEquality : LExprT String :=
     (Lambda.LExpr.app (Lambda.LExpr.op "square" none) (Lambda.LExpr.const "3" none))
     (Lambda.LExpr.const "9" none))-/
 #guard_msgs in
-#eval eraseTy (translateBounded' testBoundedEquality)
+#eval eraseTy (translateBoundedExpr testBoundedEquality)
 
 -- Test 6: Free variable with bounded type in assumptions
 -- Input: compare (x : {x < 50}) 25, with assumption [x < 50]
@@ -614,7 +613,7 @@ def testFreeVarWithAssumptions : LExprT String :=
     (Lambda.LExpr.app (Lambda.LExpr.op "compare" none) (Lambda.LExpr.fvar "x" none))
     (Lambda.LExpr.const "25" none))-/
 #guard_msgs in
-#eval eraseTy (translateBounded' testFreeVarWithAssumptions)
+#eval eraseTy (translateBoundedExpr testFreeVarWithAssumptions)
 
 -- Test 7: Metadata preservation with bounded types
 -- Input: @metadata(42 : {0 ≤ x < 100})
@@ -638,7 +637,7 @@ def testMetadataWithBounds : LExprT String :=
 
 /-- info: Lambda.LExpr.mdata { value := "test_info" } (Lambda.LExpr.const "42" none)-/
 #guard_msgs in
-#eval eraseTy (translateBounded' testMetadataWithBounds)
+#eval eraseTy (translateBoundedExpr testMetadataWithBounds)
 
 -- Test 8: Chain of bounded function applications
 -- Input: f3 (f2 (f1 5 : {x < 10}) : {x < 20}) : {x < 30}
@@ -700,7 +699,7 @@ def testBoundedChain : LExprT String :=
     (Lambda.LExpr.op "f2" none)
     (Lambda.LExpr.app (Lambda.LExpr.op "f1" none) (Lambda.LExpr.const "5" none)))-/
 #guard_msgs in
-#eval eraseTy (translateBounded' testBoundedChain)
+#eval eraseTy (translateBoundedExpr testBoundedChain)
 
 end OtherTest
 
@@ -744,7 +743,7 @@ end OtherTest
 -- #guard_msgs in
 -- #eval runWFTest testBoundedInBoolContext
 -- #eval (translateBounded testBoundedInBoolContext [] true).assume
--- #eval eraseTy (translateBounded' testBoundedInBoolContext)
+-- #eval eraseTy (translateBoundedExpr testBoundedInBoolContext)
 
 -- test: (foo x < 0 -> False) should be same as above
 
@@ -781,7 +780,7 @@ def test1 : LExprT String :=
         (Lambda.LExpr.app (Lambda.LExpr.op "foo" none) (Lambda.LExpr.const "1" none)))
       (Lambda.LExpr.const "0" none))) -/
 #guard_msgs in
-#eval eraseTy (translateBounded' test1)
+#eval eraseTy (translateBoundedExpr test1)
 
 -- 1a. (foo 1 < 0) where foo: int -> nat
 -- Expected: 0 <= foo 1 -> foo 1 < 0
@@ -801,7 +800,7 @@ info: Lambda.LExpr.app
       (Lambda.LExpr.app (Lambda.LExpr.op "foo" none) (Lambda.LExpr.const "1" none)))
     (Lambda.LExpr.const "0" none))-/
 #guard_msgs in
-#eval eraseTy (translateBounded' test1a)
+#eval eraseTy (translateBoundedExpr test1a)
 
 
 -- 2. not (forall (x: int), foo x < 0) for foo of same type
@@ -833,7 +832,7 @@ def test2 : LExprT String :=
           (Lambda.LExpr.app (Lambda.LExpr.op "foo" none) (Lambda.LExpr.bvar 0)))
         (Lambda.LExpr.const "0" none)))) -/
 #guard_msgs in
-#eval eraseTy (translateBounded' test2)
+#eval eraseTy (translateBoundedExpr test2)
 
 -- 2a. (forall (x: int), foo x < 0) for foo: int -> nat
 -- Expected: forall (x: int), 0 <= foo x -> foo x < 0
@@ -857,7 +856,7 @@ def test2a : LExprT String :=
         (Lambda.LExpr.app (Lambda.LExpr.op "foo" none) (Lambda.LExpr.bvar 0)))
       (Lambda.LExpr.const "0" none)))-/
 #guard_msgs in
-#eval eraseTy (translateBounded' test2a)
+#eval eraseTy (translateBoundedExpr test2a)
 
 -- 3. (foo 1 < 0 -> false)
 -- Expected: 0 <= foo 1 -> (foo 1 < 0 -> false)
@@ -881,7 +880,7 @@ def test3 : LExprT String :=
         (Lambda.LExpr.const "0" none)))
     (Lambda.LExpr.const "false" none))-/
 #guard_msgs in
-#eval eraseTy (translateBounded' test3)
+#eval eraseTy (translateBoundedExpr test3)
 
 -- 3a. (b -> foo 1 < 0) for boolean constant b where foo: int -> nat
 -- Expected: b -> 0 <= foo 1 -> foo 1 < 0
@@ -903,7 +902,7 @@ def test3a : LExprT String :=
         (Lambda.LExpr.app (Lambda.LExpr.op "foo" none) (Lambda.LExpr.const "1" none)))
       (Lambda.LExpr.const "0" none)))-/
 #guard_msgs in
-#eval eraseTy (translateBounded' test3a)
+#eval eraseTy (translateBoundedExpr test3a)
 
 
 -- 4. (\x y. x -> y) (foo x < 0) false
@@ -937,7 +936,7 @@ def test4 : LExprT String :=
         (Lambda.LExpr.const "0" none)))
     (Lambda.LExpr.const "false" none))-/
 #guard_msgs in
-#eval eraseTy (translateBounded' test4)
+#eval eraseTy (translateBoundedExpr test4)
 
 -- 5. (\x. foo x < 0) 1
 -- Expected: (forall x, 0 <= foo x) -> (\x. foo x < 0) 1
@@ -966,7 +965,7 @@ def test5 : LExprT String :=
         (Lambda.LExpr.const "0" none)))
     (Lambda.LExpr.const "1" none)) -/
 #guard_msgs in
-#eval eraseTy (translateBounded' test5)
+#eval eraseTy (translateBoundedExpr test5)
 
 -- 5a. (\x. foo y < 0) 1 where foo: int -> nat and y is a free variable
 -- Expected: 0 <= foo y -> (\x. foo y < 0) 1
@@ -991,7 +990,7 @@ def test5a : LExprT String :=
         (Lambda.LExpr.const "0" none)))
     (Lambda.LExpr.const "1" none))-/
 #guard_msgs in
-#eval eraseTy (translateBounded' test5a)
+#eval eraseTy (translateBoundedExpr test5a)
 
 
 -- 6. (\x. foo x) 1 >= 0
@@ -1032,7 +1031,7 @@ def test6 : LExprT String :=
           (Lambda.LExpr.const "1" none)))
       (Lambda.LExpr.const "0" none)))-/
 #guard_msgs in
-#eval eraseTy (translateBounded' test6)
+#eval eraseTy (translateBoundedExpr test6)
 
 -- 7. (if foo x < 0 then bar == 1 else baz > 0) where bar and baz have type nat
 -- Expected: 0 <= foo x -> if foo x < 0 then 0 <= bar -> bar == 1 else 0 <= baz -> baz > 0
@@ -1071,7 +1070,7 @@ def test7 : LExprT String :=
         (Lambda.LExpr.app (Lambda.LExpr.op "Int.Gt" none) (Lambda.LExpr.fvar "baz" none))
         (Lambda.LExpr.const "0" none))))-/
 #guard_msgs in
-#eval eraseTy (translateBounded' test7)
+#eval eraseTy (translateBoundedExpr test7)
 
 --TODO: test and/or
 
