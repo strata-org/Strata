@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 import Strata.DDM.Format
+set_option autoImplicit false
 
 open Lean (Syntax)
 
@@ -27,7 +28,7 @@ over the parameters.
 Variable belongs to the particular category below.
 -/
 | cat (k : SyntaxCat)
-deriving BEq, Inhabited, Repr
+deriving Inhabited, Repr
 
 namespace BindingKind
 
@@ -60,7 +61,7 @@ all have the same type and metadata.
 structure Binding where
   ident : Var
   kind : BindingKind
-deriving Inhabited, Repr, BEq
+deriving Inhabited, Repr
 
 /--
 A sequence of bindings.
@@ -71,7 +72,6 @@ index of the binder for them.
 structure Bindings where
   ofArray ::
   toArray : Array Binding
-  deriving BEq
 
 namespace Bindings
 
@@ -183,12 +183,13 @@ end TypingContext
 -----------------------------------------------------------------------
 -- ElabInfo/Tree
 
+/--
+Common information for each node in the Strata info tree.
+-/
 structure ElabInfo where
-  /-- The piece of syntax that the elaborator created this info for.
-  Note that this also implicitly stores the code position in the syntax's SourceInfo. -/
-  stx : Syntax
-  /-- The piece of syntax that the elaborator created this info for.
-  Note that this also implicitly stores the code position in the syntax's SourceInfo. -/
+  /-- Source location information. -/
+  loc : SourceRange
+  /-- The typing context for node. -/
   inputCtx : TypingContext
 deriving Inhabited, Repr
 
@@ -292,7 +293,7 @@ def elabInfo (info : Info) : ElabInfo :=
 
 def inputCtx (info : Info) : TypingContext := info.elabInfo.inputCtx
 
-def stx (info : Info) : Syntax := info.elabInfo.stx
+def loc (info : Info) : SourceRange := info.elabInfo.loc
 
 end Info
 
@@ -403,7 +404,7 @@ def binding! (tree : Tree) : IdentInfo × Tree × Option Tree := Id.run do
   assert! tree.isSpecificOp q`StrataDDL.mkBinding
   assert! tree.children.size = 3
   let .ofIdentInfo nameInfo := tree[0]!.info
-    | panic! s!"Expected identifier {repr tree.info.stx.getKind}"
+    | panic! s!"Expected identifier {repr tree.info}"
   let some mdTree := tree[2]!.asOption?
       | panic! s!"Expected metadata to be option."
   return (nameInfo, tree[1]!.asBindingType!, mdTree)
