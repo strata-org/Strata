@@ -927,7 +927,6 @@ abbrev example_ctx : TContext Unit := ⟨[[]], []⟩
 -- abbrev example_ty : LTy := .forAll [] <| .tcons "bool" []
 abbrev example_ty : LTy := .forAll [] <| .tcons "arrow" [.tcons "bool" [], .tcons "bool" []]
 
--- FIXME
 /-- info: [[({ name := "y", metadata := () }, Lambda.LTy.forAll [] (Lambda.LMonoTy.tcons "int" []))]] -/
 #guard_msgs(info) in
 #eval
