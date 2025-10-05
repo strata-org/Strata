@@ -434,15 +434,27 @@ partial def translate_statement_core
         (bodyCtx, [ initBreakFlag, .loop combinedCondition none none bodyBlock ])
 
         | .TS_ForStatement forStmt =>
+          let continueLabel := s!"for_continue_{forStmt.start_loc}"
           -- init phase
           let (_, initStmts) := translate_statement_core (.TS_VariableDeclaration forStmt.init) ctx
           -- guard (test)
           let guard := translate_expr forStmt.test
           -- body (first translate loop body)
-          let (ctx1, bodyStmts) := translate_statement_core forStmt.body ctx
+          let (ctx1, bodyStmts) :=
+              translate_statement_core forStmt.body ctx
+                { continueLabel? := some continueLabel }
           -- update (translate expression into statements following ExpressionStatement style)
           let (_, updateStmts) :=
-            translate_statement_core (.TS_ExpressionStatement { expression := .TS_AssignmentExpression forStmt.update, start_loc := forStmt.start_loc, end_loc := forStmt.end_loc, loc:= forStmt.loc, type := "TS_AssignmentExpression" }) ctx1
+              translate_statement_core
+                (.TS_ExpressionStatement {
+                  expression := .TS_AssignmentExpression forStmt.update,
+                  start_loc := forStmt.start_loc,
+                  end_loc := forStmt.end_loc,
+                  loc := forStmt.loc,
+                  type := "TS_AssignmentExpression"
+                }) ctx1
+
+
           -- assemble loop body (body + update)
           let loopBody : Imperative.Block TSStrataExpression TSStrataCommand :=
             { ss := bodyStmts ++ updateStmts }
