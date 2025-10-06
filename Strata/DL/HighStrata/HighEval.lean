@@ -1,8 +1,6 @@
 /-
 This file defines the behavior of both a type checker and a verifier for the High strata language.
 Both are defined using the 'eval' function. It will only return a single type or verification error at a time.
-The result is defined for a given input, which makes this usable as a specification
-for a type checker or verifier, but not as an implementation.
 -/
 import Strata.DL.HighStrata.HighStrata
 import Std.Data.HashMap.Basic
@@ -59,7 +57,7 @@ def Value.asObject! : Value → Identifier × AssocList Identifier Value
 
 -- Environment for variable bindings
 structure Env where
-  locals: AssocList Identifier TypedValue
+  locals: List (AssocList Identifier TypedValue)
   statics: HashMap Identifier Callable
   heap: HashMap Int Value
   returnType : HighType
@@ -81,17 +79,31 @@ inductive EvalResult (value: Type u) : Type u where
 
 def Eval (value: Type u): Type u := Env → EvalResult value × Env
 def getLocal (name: Identifier) : Eval TypedValue :=
-  fun env => match env.locals.find? name with
+  let rec getInLocal (locals: List (AssocList Identifier TypedValue)) :=
+    match locals with
+    | [] => none
+    | top :: rest =>
+      match top.find? name with
+      | some result => some result
+      | none => getInLocal rest
+
+  fun env => match getInLocal env.locals with
     | some result => (EvalResult.Success result, env)
     | none => (EvalResult.TypeError s!"Undefined variable: {name}", env)
 
 def getEnv : Eval Env := fun env => (EvalResult.Success env, env)
+def setEnv (newEnv: Env) : Eval PUnit := fun _ => (EvalResult.Success PUnit.unit, newEnv)
 
 def voidTv : TypedValue :=
   { val := Value.VVoid, ty := HighType.TVoid }
 
-def setLocal (name: Identifier) (typedValue: TypedValue): Eval TypedValue :=
-  fun env => (EvalResult.Success voidTv, { env with locals := env.locals.insert name typedValue })
+def setLocal (name: Identifier) (typedValue: TypedValue): Eval PUnit :=
+  fun env => (EvalResult.Success PUnit.unit, { env with locals := (env.locals.head!.insert name typedValue :: env.locals.tail) })
+
+def pushStack: Eval PUnit :=
+  fun env => (EvalResult.Success PUnit.unit, { env with locals := AssocList.empty :: env.locals })
+def popStack: Eval PUnit :=
+  fun env => (EvalResult.Success PUnit.unit, { env with locals := env.locals.tail })
 
 def assertBool (tv: TypedValue) : Eval PUnit := fun env =>
   if (tv.ty.isBool) then
@@ -112,7 +124,7 @@ instance : Monad Eval where
     | EvalResult.TypeError msg => (EvalResult.TypeError msg, env')
     | EvalResult.VerficationError et msg => (EvalResult.VerficationError et msg, env')
 
-def withResult (r : EvalResult TypedValue) : Eval TypedValue :=
+def withResult {u: Type} (r : EvalResult u) : Eval u :=
   fun env => (r, env)
 
 def evalOpWithoutDynamic (op : Operation) (args : List TypedValue) : Except (EvalResult TypedValue) TypedValue :=
@@ -173,14 +185,37 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
     match env.statics.get? callee with
       | none => withResult <| EvalResult.TypeError s!"Undefined static method: {callee}"
       | some callable => do
-        let precondition ← eval callable.precondition
-        -- TODO, handle decreases
-        assertBool precondition
         if callable.inputs.length != argumentsExprs.length then
           withResult <| (EvalResult.TypeError s!"Static invocation of {callee} with wrong number of arguments")
         else
           let arguments ← argumentsExprs.mapM (fun arg => eval arg)
-          argumentsExprs
+          let mod ← match callable.purity with
+            | Purity.Impure modifies => eval modifies
+            | Purity.Pure reads => pure { val := [], ty := }
+          let env ← getEnv
+          setEnv { env with heap := env.heap  } -- TODO: apply mod
+
+          pushStack
+          arguments.zip callable.inputs |>.forM (fun (arg, param) =>
+              if param.type != arg.ty then
+                withResult <| EvalResult.TypeError s!"Static invocation of {callee} with wrong type for argument {param.name}"
+              else
+                setLocal param.name arg
+            )
+          let precondition ← eval callable.precondition
+          assertBool precondition
+          -- TODO, handle decreases
+
+          match callable.body with
+            | Body.Transparent bodyExpr => do
+              let transparantResult ← eval bodyExpr
+              if transparantResult.ty != callable.output then
+                withResult <| EvalResult.TypeError s!"Static invocation of {callee} with wrong return type"
+              else
+          popStack
+          pure result
+            | Body.Opaque (postcondition: StmtExpr) _ => panic! "not implemented: opaque body"
+            | Body.Abstract (postcondition: StmtExpr) => panic! "not implemented: opaque body"
 
 -- Statements
   | StmtExpr.Block stmts label => evalBlock label stmts
@@ -189,11 +224,15 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
   | StmtExpr.LocalVariable name _ (some init) => do
       let value ← eval init
       setLocal name value
-  | StmtExpr.LocalVariable name type none => setLocal name (TypedValue.mk Value.VUnknown type)
+      return voidTv
+  | StmtExpr.LocalVariable name type none => do
+    setLocal name (TypedValue.mk Value.VUnknown type)
+    return voidTv
   | StmtExpr.Assign (StmtExpr.Identifier localName) valueExpr => do
     let value ← eval valueExpr
     let oldTypedValue ← getLocal localName
     setLocal localName (TypedValue.mk value.val oldTypedValue.ty)
+    pure voidTv
 -- Jumps
   | StmtExpr.Return (some valExpr) => do
     let tv ← eval valExpr

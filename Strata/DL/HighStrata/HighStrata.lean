@@ -16,12 +16,13 @@ Design choices:
   - Constrained types are defined by a base type and a constraint over that type.
   - Algebriac datatypes do not exist directly but can be encoded using composited and constrained types.
 - The base type for all Composite types is Dynamic, which is a type that can be type tested.
-  A type that is not Dynamic, such as a primitive can be autoamatically casted to Dynamic.
-  It can be casted back to its original type using a type test.
-  This works well for languages such as JavaScript.
-- Instead of break and continue statements, we have a labelled block then can be exited from using an exit statement inside of it.
-  This can be used to model break statements and continue statements from both while and for loops.
-  We only have a while loop, but this can be used to compile do-while and for loops as well.
+  For all primitive types there is an implicit composite type that wraps around the primitive,
+  so primitives can be boxed to become the Dynamic type. They can be unboxed using a type test.
+  This is useful for source languages such as JavaScript.
+  The operators that work on primitives also work on the Dynamic type and well automatically unbox it when useful.
+- HighStrat only has a while loop, but this can be used to compile do-while and for loops to as well.
+- Instead of break and continue statements, there is a labelled block that can be exited from using an exit statement inside of it.
+  This can be used to model break statements and continue statements for both while and for loops.
 
 - There is no match-case construct, but there are type tests with pattern matching that enable the same functionality but more generally.
 - There is no concept of constructors, but there is a partial type that represents an object whose fields
@@ -29,6 +30,9 @@ Design choices:
   A partial type can be completed to a full type once all fields are assigned and the type invariants are known to hold.
 - There is no concept of namespaces so all references need to be fully qualified.
 - Callables can have opaque or transparant bodies, but only the opaque ones may have a postcondition.
+
+TODO: static fields
+TODO: implicit casting from primitives types to Dynamic
 -/
 
 structure Program where
@@ -41,17 +45,12 @@ mutual
 structure Callable: Type where
   name : Identifier
   typeParameters : List TypeParameter
-  inputs : Array Parameter
+  inputs : List Parameter
   output : HighType
   precondition : StmtExpr
   decreases : StmtExpr
-  reads : StmtExpr
   purity : Purity
   body : Body
-
-inductive Purity where
-  | Pure
-  | Impure (modifies : Expression)
 
 structure Parameter where
   name : Identifier
@@ -77,14 +76,21 @@ inductive HighType : Type where
     such as in a member access or when assigned to a variable of the base type -/
   | Nullable (base : HighType)
   /- Java has implicit intersection types.
-     Example: `<cond> ? RustanLeino : AndersHejlsberg` could be typed `Scientist & Scandinavian`-/
+     Example: `<cond> ? RustanLeino : AndersHejlsberg` could be typed as `Scientist & Scandinavian`-/
   | Intersection (types : List HighType)
-  | Union (types : List HighType) /- I'm not sure we need Union. Seems like it could be replaced by predicate types -/
   deriving Repr
 
 structure TypeParameter where
   name : Identifier
   bounds : List HighType /- Java has bounded type parameters -/
+
+inductive Purity: Type where
+/-
+Since a reads clause is used to determine when the result of a call changes,
+a reads clause is only useful for deterministic callables.
+-/
+  | Pure (reads : StmtExpr)
+  | Impure (modifies : StmtExpr)
 
 /- No support for something like function-by-method yet -/
 inductive Body where
@@ -186,6 +192,25 @@ inductive StmtExpr : Type where
 /- Hole has a dynamic type and is useful when programs are only partially available -/
   | Hole
 end
+
+partial def highEq (a: HighType) (b: HighType) : Bool := match a, b with
+  | HighType.TVoid, HighType.TVoid => true
+  | HighType.TBool, HighType.TBool => true
+  | HighType.TInt, HighType.TInt => true
+  | HighType.TReal, HighType.TReal => true
+  | HighType.TFloat64, HighType.TFloat64 => true
+  | HighType.Dynamic, HighType.Dynamic => true
+  | HighType.UserDefined n1, HighType.UserDefined n2 => n1 == n2
+  | HighType.Applied b1 args1, HighType.Applied b2 args2 =>
+      highEq b1 b2 && args1.length == args2.length && (args1.zip args2 |>.all (fun (a1, a2) => highEq a1 a2))
+  | HighType.Partial b1, HighType.Partial b2 => highEq b1 b2
+  | HighType.Nullable b1, HighType.Nullable b2 => highEq b1 b2
+  | HighType.Intersection ts1, HighType.Intersection ts2 =>
+      ts1.length == ts2.length && (ts1.zip ts2 |>.all (fun (t1, t2) => highEq t1 t2))
+  | _, _ => false
+
+instance : BEq HighType where
+  beq := highEq
 
 def HighType.isDynamic : HighType → Bool
   | Dynamic => true
