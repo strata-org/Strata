@@ -560,13 +560,13 @@ class OpDecl:
                 *,
                 syntax : SyntaxDef|None = None,
                 metadata : Metadata|None = None):
-        assert all( isinstance(a, ArgDecl) for a in args)
+        assert all(isinstance(a, ArgDecl) for a in args)
+        assert isinstance(result, SyntaxCat)
+        assert len(result.args) == 0
         self.dialect = dialect
         self.name = name
         self.ident = QualifiedIdent(dialect, name)
         self.args = args
-        assert isinstance(result, SyntaxCat)
-        assert len(result.args) == 0
         self.result = result.name
         self.metadata = [] if metadata is None else metadata
         self.syntax = syntax

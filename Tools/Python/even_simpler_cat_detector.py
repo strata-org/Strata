@@ -3,7 +3,7 @@
 import boto3
 import sys
 
-BUCKET_NAME = 'pet-images'
+BUCKET_NAME : str = 'pet-images'
 
 class CatDetector:
     def __init__(self):
@@ -19,10 +19,9 @@ class CatDetector:
         for page in paginator.paginate(Bucket=BUCKET_NAME):
             if 'Contents' in page:
                 images.extend([obj['Key'] for obj in page['Contents']])
-
         return images
 
-    def has_cat(self, image_key):
+    def has_cat(self, image_key : str):
         """Check if image contains a cat"""
         response = self.rekognition.detect_labels(
             Image={'S3Object': {'Bucket': BUCKET_NAME, 'Name': image_key}}
