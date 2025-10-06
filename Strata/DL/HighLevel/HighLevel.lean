@@ -102,6 +102,12 @@ inductive Operation: Type where
   | Neg | Add | Sub | Mul | Div | Mod
   | Lt | Leq | Gt | Geq
 
+inductive JumpType where | Continue | Break
+
+structure Jump where
+ label : Option Identifier -- no label means we target the innermost loop
+ type : JumpType
+
 /-
 A StmtExpr contains both constructs that we typically find in statements and those in expressions.
 By using a single datatype we prevent duplication of constructs that can be used in both contexts,
@@ -123,7 +129,7 @@ inductive StmtExpr : Type where
     The invariant and decreases are always pure
   -/
   | While (label: Option Identifier) (cond : StmtExpr) (invariant : Option StmtExpr) (decreases: Option StmtExpr) (body : StmtExpr)
-  | Jump (label : Identifier) (type : JumpType)
+  | DoJump (jump : Jump)
   | Return (value : Option StmtExpr)
 /- Expression like -/
   | LiteralInt (value: Int)
@@ -149,6 +155,7 @@ inductive StmtExpr : Type where
   | IsType (target : StmtExpr) (type: HighType) (newBinding : Option Identifier)
   | InstanceInvocation (target : StmtExpr) (callee : Identifier) (arguments : List StmtExpr)
 /- Verification specific -/
+-- TODO: Add forall and exists
   | Assigned (name : StmtExpr)
   | Old (value : StmtExpr)
   /- Fresh may only target impure composite types -/
@@ -185,7 +192,9 @@ def HighType.isDynamic : HighType → Bool
   | Dynamic => true
   | _ => false
 
-inductive JumpType where | Continue | Break
+def HighType.isBool : HighType → Bool
+  | TBool => true
+  | _ => false
 
 /-
 Note that there are no explicit 'inductive datatypes'. Typed unions are created by

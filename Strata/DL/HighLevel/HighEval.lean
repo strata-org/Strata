@@ -1,3 +1,9 @@
+/-
+This file defines the behavior of both a type checker and a verifier for the High strata language.
+Both are defined using the 'eval' function. It will only return a single type or verification error at a time.
+The result is defined for a given input, which makes this usable as a specification
+for a type checker or verifier, but not as an implementation.
+-/
 import Strata.DL.HighLevel.HighLevel
 import Std.Data.HashMap.Basic
 import Lean.Data.AssocList
@@ -55,60 +61,70 @@ def Value.asObject! : Value → Identifier × AssocList Identifier Value
 structure Env where
   locals: AssocList Identifier TypedValue
   heap: HashMap Int Value
-
--- Evaluation result
-inductive EvalResult : Type u where
-  | Success : TypedValue → Env → EvalResult
-  | Return : Value → EvalResult
-  | Break : EvalResult
-  | Continue : EvalResult
-  | TypeError : String → EvalResult
-  | VerficationError : VerificationErrorType → String → EvalResult
-deriving Nonempty, Inhabited
+  returnType : HighType
 
 inductive VerificationErrorType : Type where
-  | PreconditionFailed : String → VerificationErrorType
-  | PostconditionFailed : String → VerificationErrorType
-  | InvariantFailed : String → VerificationErrorType
-  | DecreasesFailed : String → VerificationErrorType
-  | ReadEffectFailed : String → VerificationErrorType
+  | PreconditionFailed : VerificationErrorType
+  | PostconditionFailed : VerificationErrorType
+  | InvariantFailed : VerificationErrorType
+  | DecreasesFailed : VerificationErrorType
+  | ReadEffectFailed : VerificationErrorType
 
-def bind : EvalResult → (TypedValue → Env → EvalResult) → EvalResult
-  | EvalResult.Success tv env, f => f tv env
-  | EvalResult.Return v, _ => EvalResult.Return v
-  | EvalResult.Break, _ => EvalResult.Break
-  | EvalResult.Continue, _ => EvalResult.Continue
-  | EvalResult.TypeError msg, _ => EvalResult.TypeError msg
-  | EvalResult.VerficationError et msg, _ => EvalResult.VerficationError et msg
+-- Evaluation result
+inductive EvalResult (value: Type u) : Type u where
+  | Success : value → EvalResult value
+  | Return : Value → EvalResult value
+  | Jumping : (jump: Jump) → EvalResult value
+  | TypeError : String → EvalResult value
+  | VerficationError : VerificationErrorType → String → EvalResult value
 
--- Helper functions
-def lookupVar (name : Identifier) (env : Env) : Option TypedValue :=
-  env.locals.find? name
+def Eval (value: Type u): Type u := Env → EvalResult value × Env
+def getLocal (name: Identifier) : Eval TypedValue :=
+  fun env => match env.locals.find? name with
+    | some result => (EvalResult.Success result, env)
+    | none => (EvalResult.TypeError s!"Undefined variable: {name}", env)
 
 def voidTv : TypedValue :=
   { val := Value.VVoid, ty := HighType.TVoid }
 
-def evalOpWithoutDynamic (op : Operation) (args : List TypedValue) : Except EvalResult Value :=
+def setLocal (name: Identifier) (typedValue: TypedValue): Eval TypedValue :=
+  fun env => (EvalResult.Success voidTv, { env with locals := env.locals.insert name typedValue })
+
+instance : Monad Eval where
+  pure x := fun e => (EvalResult.Success x, e)
+  bind := fun r f => fun env =>
+    let (r', env') := r env
+    match r' with
+    | EvalResult.Success sm => f sm env'
+    | EvalResult.Return v => (EvalResult.Return v, env')
+    | EvalResult.Jumping jump => (EvalResult.Jumping jump, env')
+    | EvalResult.TypeError msg => (EvalResult.TypeError msg, env')
+    | EvalResult.VerficationError et msg => (EvalResult.VerficationError et msg, env')
+
+def withResult (r : EvalResult TypedValue) : Eval TypedValue :=
+  fun env => (r, env)
+
+def evalOpWithoutDynamic (op : Operation) (args : List TypedValue) : Except (EvalResult TypedValue) TypedValue :=
   let argTypes := args.map (fun a => a.ty)
   match args with
   | [arg1, arg2] =>
     match op with
     | Operation.Add =>
         match argTypes with
-        | [HighType.TInt, HighType.TInt] => Except.ok <| Value.VInt (arg1.val.asInt! + arg2.val.asInt!)
-        | [HighType.TFloat64, HighType.TFloat64] => Except.ok <| Value.VFloat64 (arg1.val.asFloat64! + arg2.val.asFloat64!)
+        | [HighType.TInt, HighType.TInt] => Except.ok <| TypedValue.mk (Value.VInt (arg1.val.asInt! + arg2.val.asInt!)) HighType.TInt
+        | [HighType.TFloat64, HighType.TFloat64] => Except.ok <| TypedValue.mk (Value.VFloat64 (arg1.val.asFloat64! + arg2.val.asFloat64!)) HighType.TFloat64
         -- TOOD add other types
         | _ => Except.error <| EvalResult.TypeError "Invalid types for Add"
 
     | Operation.Eq =>
       match argTypes with
-      | [HighType.TInt, HighType.TInt] => Except.ok <| Value.VBool (arg1.val.asInt! == arg2.val.asInt!)
-      | [HighType.TBool, HighType.TBool] => Except.ok <| Value.VBool (arg1.val.asBool! == arg2.val.asBool!)
+      | [HighType.TInt, HighType.TInt] => Except.ok <| { val := Value.VBool (arg1.val.asInt! == arg2.val.asInt!), ty := HighType.TBool }
+      | [HighType.TBool, HighType.TBool] => Except.ok <| { val := Value.VBool (arg1.val.asBool! == arg2.val.asBool!), ty := HighType.TBool }
       | _ => Except.error <| EvalResult.TypeError "Invalid types for Eq"
     | _ => Except.error <| EvalResult.TypeError "Operation not implemented"
   | _ => Except.error <| EvalResult.TypeError s!"No operator with {args.length} arguments"
 
-def evalOp (op : Operation) (args : List TypedValue) : Except EvalResult Value :=
+def evalOp (op : Operation) (args : List TypedValue) : Except (EvalResult TypedValue) TypedValue :=
   if (args.all fun a => a.ty.isDynamic) then
     match evalOpWithoutDynamic op (args.map fun a => a.val.asBoxed!) with
       | Except.ok v => Except.ok v
@@ -118,76 +134,145 @@ def evalOp (op : Operation) (args : List TypedValue) : Except EvalResult Value :
   else
     evalOpWithoutDynamic op args
 
--- Main evaluator
-partial def eval (expr : StmtExpr) (env : Env) : EvalResult :=
+partial def eval (expr : StmtExpr) : Eval TypedValue :=
   match expr with
-  | StmtExpr.LiteralBool b => EvalResult.Success (TypedValue.mk (Value.VBool b) HighType.TBool) env
-  | StmtExpr.LiteralInt i => EvalResult.Success (TypedValue.mk (Value.VInt i) HighType.TInt) env
+-- Expressions
+  | StmtExpr.LiteralBool b => pure <| TypedValue.mk (Value.VBool b) HighType.TBool
+  | StmtExpr.LiteralInt i => pure <| TypedValue.mk (Value.VInt i) HighType.TInt
   | StmtExpr.LiteralReal r => panic! "not implemented" -- EvalResult.Success (TypedValue.mk (Value.VReal r) HighType.TReal) env
-  | StmtExpr.Identifier name =>
-    match lookupVar name env with
-    | some tv => EvalResult.Success tv env
-    | none => EvalResult.TypeError s!"Undefined variable: {name}"
-  | StmtExpr.LocalVariable name _ (some init) =>
-    match eval init env with
-    | EvalResult.Success tv env' => EvalResult.Success voidTv { env' with locals := env'.locals.insertNew name tv }
-    | result => result
-  | StmtExpr.LocalVariable name type none => EvalResult.Success voidTv
-      { env with locals := env.locals.insertNew name (TypedValue.mk Value.VUnknown type) }
-  | StmtExpr.Assign target value =>
-    match eval value env with
-    | EvalResult.Success tv env' =>
-      match target with
-        | StmtExpr.Identifier name =>
-          match lookupVar name env' with
-          | some _ => EvalResult.Success voidTv (env'.locals.insertNew name (TypedValue.mk tv.val HighType.Dynamic))
-          | none => EvalResult.TypeError s!"Undefined variable: {name}"
-        | StmtExpr.StaticFieldSelect obj fieldName =>
-          match eval obj env' with
-          | EvalResult.Success { val := Value.VObject type fields, ty := _ } env'' =>
-            let newFields := fields.insertNew fieldName tv.val
-            let newObj := Value.VObject type newFields
-            EvalResult.Success voidTv env''.insertNew "_temp" (TypedValue.mk newObj HighType.Dynamic) -- TODO update variable holding the object
-          | EvalResult.Success _ _ => EvalResult.TypeError "Target is not an object"
-          | result => result
-/- TODO Support DynamicFieldSelect as well -/
+  | StmtExpr.Identifier name => getLocal name
 
-        | _ => EvalResult.TypeError "Invalid assignment target"
-    | result => result
+  | StmtExpr.IfThenElse condExpr thenBranch elseBranch => do
+    let cond <- eval condExpr
+    if (cond.ty.isBool) then
+      withResult <| EvalResult.TypeError "Condition must be boolean"
+    else
+      if cond.val.asBool! then eval thenBranch else
+        match elseBranch with
+        | some elseStmt => eval elseStmt
+        | none => pure voidTv
 
-  | StmtExpr.Block stmts => evalBlock stmts env
-  | StmtExpr.IfThenElse cond thenBranch elseBranch =>
-    match eval cond env with
-    | EvalResult.Success (Value.VBool true) env' => eval thenBranch env'
-    | EvalResult.Success (Value.VBool false) env' =>
-      match elseBranch with
-      | some elseStmt => eval elseStmt env'
-      | none => EvalResult.Success Value.VVoid env'
-    | EvalResult.Success _ _ => EvalResult.Error "Condition must be boolean"
-    | result => result
-  | StmtExpr.PrimitiveOp op args =>
-    let evalArgs := args.map (fun arg => match eval arg env with
-      | EvalResult.Success v _ => v
-      | _ => Value.VVoid) /- TODO handle errors and control flow -/
+  | StmtExpr.PrimitiveOp op args => do
+    let evalArgs ← args.mapM (fun arg => eval arg)
     match evalOp op evalArgs with
-    | Except.ok val => EvalResult.Success val env
-    | Except.error msg => EvalResult.Error msg
-  | StmtExpr.Return (some val) =>
-    match eval val env with
-    | EvalResult.Success v _ => EvalResult.Return v
-    | result => result
-  | StmtExpr.Return none => EvalResult.Return Value.VVoid
-  | StmtExpr.Create typeName => EvalResult.Success (Value.VObject typeName AssocList.nil) env
-  | StmtExpr.Hole => EvalResult.Success Value.VVoid env
-  | _ => EvalResult.Error "Unsupported expression"
+    | Except.ok val => pure val
+    | Except.error msg => withResult msg
+  | StmtExpr.StaticInvocation _ _ => panic! "not implemented: StaticInvocation"
+
+-- Statements
+  | StmtExpr.Block stmts => evalBlock stmts
+
+-- Support locals
+  | StmtExpr.LocalVariable name _ (some init) => do
+      let value ← eval init
+      setLocal name value
+  | StmtExpr.LocalVariable name type none => setLocal name (TypedValue.mk Value.VUnknown type)
+  | StmtExpr.Assign (StmtExpr.Identifier localName) valueExpr => do
+    let value ← eval valueExpr
+    let oldTypedValue ← getLocal localName
+    setLocal localName (TypedValue.mk value.val oldTypedValue.ty)
+-- Jumps
+  | StmtExpr.Return (some valExpr) => do
+    let tv ← eval valExpr
+    withResult (EvalResult.Return tv.val)
+  | StmtExpr.Return none => fun env => (EvalResult.Success { val := Value.VVoid, ty := env.returnType }, env)
+  | StmtExpr.While _ _ none _ _  => withResult <| EvalResult.TypeError "While invariant was not derived"
+  | StmtExpr.While _ _ _ none _  => withResult <| EvalResult.TypeError "While decreases was not derived"
+  | StmtExpr.While labelOption condExpr (some invariantExpr) (some decreasedExpr) bodyExpr => do
+    let rec loop : Eval TypedValue := do
+      let cond ← eval condExpr
+      if (cond.ty.isBool) then
+        withResult <| EvalResult.TypeError "Condition must be boolean"
+      else if cond.val.asBool! then
+        let invariant ← eval invariantExpr
+        if (invariant.ty.isBool) then
+          withResult <| EvalResult.TypeError "Invariant must be boolean"
+        else if (!invariant.val.asBool!) then
+          withResult <| EvalResult.VerficationError VerificationErrorType.InvariantFailed "While invariant does not hold"
+        else
+        -- TODO handle decreases
+          fun env => match eval bodyExpr env with
+            | (EvalResult.Jumping jump, env') =>
+              let targetsMe := jump.label == none || jump.label == labelOption
+              if targetsMe then
+                match jump.type with
+                | JumpType.Continue => loop env'
+                | JumpType.Break => (EvalResult.Success voidTv, env')
+              else
+                (EvalResult.Jumping jump, env')
+            | (EvalResult.Success _, env') => loop env'
+            | other => other
+      else
+        pure voidTv
+    loop
+  | StmtExpr.DoJump jump => withResult <| EvalResult.Jumping jump
+
+-- Support non-heap objects
+  | StmtExpr.PureFieldUpdate _ _ _ => panic! "not implemented: PureFieldUpdate"
+  | StmtExpr.StaticFieldSelect _ _ => panic! "not implemented: StaticFieldSelect"
+
+-- Support heap objects
+  | StmtExpr.Assign (StmtExpr.StaticFieldSelect objExpr fieldName) valueExpr =>
+    panic! "not implemented"
+  -- do
+  --     let objTv ← eval objExpr
+  --     match objTv.ty with
+  --     | HighType.UserDefined targetName => ()
+  --     if (objTv.ty != HighType.) then
+  --       return EvalResult.TypeError "Target object must be of type Dynamic"
+  --     match objTv.typ with
+  --     | EvalResult.Success { val := Value.VObject type fields, ty := _ } env'' =>
+  --       let newFields := fields.insertNew fieldName tv.val
+  --       let newObj := Value.VObject type newFields
+  --       EvalResult.Success voidTv env''.insertNew "_temp" (TypedValue.mk newObj HighType.Dynamic) -- TODO update variable holding the object
+  --     | EvalResult.Success _ _ => EvalResult.TypeError "Target is not an object"
+  --     | result => result
+  --    | _ => EvalResult.TypeError "Invalid assignment target"
+  | StmtExpr.Assign (StmtExpr.DynamicFieldAccess objExpr fieldName) valueExpr => panic! "not implemented"
+  | StmtExpr.Assign _ valueExpr => withResult <| EvalResult.TypeError "Invalid assignment target"
+
+-- Instance related
+  | StmtExpr.This => panic! "not implemented: This"
+  | StmtExpr.IsType _ _ _ => panic! "not implemented: IsType"
+  | StmtExpr.InstanceInvocation _ _ _ => panic! "not implemented: InstanceInvocation"
+
+-- Dynamic
+  | StmtExpr.Closure _ => panic! "not implemented: Closure"
+  | StmtExpr.DynamicInvocation _ _ => panic! "not implemented: DynamicInvocation"
+  | StmtExpr.DynamicFieldAccess _ _ => panic! "not implemented: DynamicFieldAccess"
+  | StmtExpr.DynamicFieldUpdate _ _ _ => panic! "not implemented: DynamicFieldUpdate"
+
+-- Verification statements
+  | StmtExpr.Assert condExpr => do
+    let cond ← eval condExpr
+    if cond.ty.isBool then
+      withResult <| EvalResult.TypeError "Condition must be boolean"
+    else if cond.val.asBool! then
+      pure voidTv
+    else
+      withResult <| EvalResult.VerficationError VerificationErrorType.PreconditionFailed "Assertion failed"
+  | StmtExpr.Assume _ => panic! "not implemented: Assume"
+  | StmtExpr.ProveBy _ _ => panic! "not implemented: ProveBy"
+  | StmtExpr.Assigned _ => panic! "not implemented: Assigned"
+
+-- Heap verification statements
+  | StmtExpr.Old _ => panic! "not implemented: Old"
+  | StmtExpr.Fresh _ => panic! "not implemented: Fresh"
+
+-- Construction
+  | StmtExpr.Create _ => panic! "not implemented: Create"
+  | StmtExpr.Complete _ => panic! "not implemented: Complete"
+
+-- Used for incomplete code during development
+  | StmtExpr.Hole => pure <| TypedValue.mk Value.VUnknown HighType.Dynamic
+
 
 where
-  evalBlock (stmts : List StmtExpr) (env : Env) : EvalResult :=
+  evalBlock (stmts : List StmtExpr) : Eval TypedValue :=
     match stmts with
-    | [] => EvalResult.Success Value.VVoid env
-    | stmt :: rest =>
-      match eval stmt env with
-      | EvalResult.Success _ env' => evalBlock rest env'
-      | result => result
+    | [] => pure <| TypedValue.mk Value.VVoid HighType.TVoid
+    | stmt :: rest => do
+      let _ <- eval stmt
+      evalBlock rest
 
 end HighLevel
