@@ -60,6 +60,7 @@ def Value.asObject! : Value → Identifier × AssocList Identifier Value
 -- Environment for variable bindings
 structure Env where
   locals: AssocList Identifier TypedValue
+  statics: HashMap Identifier Callable
   heap: HashMap Int Value
   returnType : HighType
 
@@ -84,11 +85,21 @@ def getLocal (name: Identifier) : Eval TypedValue :=
     | some result => (EvalResult.Success result, env)
     | none => (EvalResult.TypeError s!"Undefined variable: {name}", env)
 
+def getEnv : Eval Env := fun env => (EvalResult.Success env, env)
+
 def voidTv : TypedValue :=
   { val := Value.VVoid, ty := HighType.TVoid }
 
 def setLocal (name: Identifier) (typedValue: TypedValue): Eval TypedValue :=
   fun env => (EvalResult.Success voidTv, { env with locals := env.locals.insert name typedValue })
+
+def assertBool (tv: TypedValue) : Eval PUnit := fun env =>
+  if (tv.ty.isBool) then
+    (EvalResult.TypeError "Precondition must be boolean", env)
+  else if (tv.val.asBool!) then
+    (EvalResult.VerficationError VerificationErrorType.PreconditionFailed "Precondition does not hold", env)
+  else
+    (EvalResult.Success PUnit.unit, env)
 
 instance : Monad Eval where
   pure x := fun e => (EvalResult.Success x, e)
@@ -157,7 +168,19 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
     match evalOp op evalArgs with
     | Except.ok val => pure val
     | Except.error msg => withResult msg
-  | StmtExpr.StaticInvocation _ _ => panic! "not implemented: StaticInvocation"
+  | StmtExpr.StaticInvocation callee argumentsExprs => do
+    let env ← getEnv
+    match env.statics.get? callee with
+      | none => withResult <| EvalResult.TypeError s!"Undefined static method: {callee}"
+      | some callable => do
+        let precondition ← eval callable.precondition
+        -- TODO, handle decreases
+        assertBool precondition
+        if callable.inputs.length != argumentsExprs.length then
+          withResult <| (EvalResult.TypeError s!"Static invocation of {callee} with wrong number of arguments")
+        else
+          let arguments ← argumentsExprs.mapM (fun arg => eval arg)
+          argumentsExprs
 
 -- Statements
   | StmtExpr.Block stmts label => evalBlock label stmts

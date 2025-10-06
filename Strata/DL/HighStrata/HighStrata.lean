@@ -41,7 +41,7 @@ mutual
 structure Callable: Type where
   name : Identifier
   typeParameters : List TypeParameter
-  inputs : List Parameter
+  inputs : Array Parameter
   output : HighType
   precondition : StmtExpr
   decreases : StmtExpr
@@ -137,6 +137,7 @@ inductive StmtExpr : Type where
   /- Assign is only allowed in an impure context -/
   | Assign (target : StmtExpr) (value : StmtExpr)
   | StaticFieldSelect (target : StmtExpr) (fieldName : Identifier)
+  /- PureFieldUpdate is the only way to assign values to fields of pure types -/
   | PureFieldUpdate (target : StmtExpr) (fieldName : Identifier) (newValue : StmtExpr)
   | StaticInvocation (callee : Identifier) (arguments : List StmtExpr)
   | PrimitiveOp (operator: Operation) (arguments : List StmtExpr)
