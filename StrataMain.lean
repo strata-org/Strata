@@ -60,7 +60,13 @@ def readStrataText (fm : Strata.DialectFileMap) (input : System.FilePath) (bytes
       exitFailure (← Strata.mkErrorReport input s.errors)
     pure (loaded.addDialect! d, .dialect d)
 
-def readStrataIon (fm : Strata.DialectFileMap) (bytes : ByteArray) : IO (Strata.Elab.LoadedDialects × Strata.DialectOrProgram) := do
+def fileReadError {α} (path : System.FilePath) (msg : String) : IO α := do
+  IO.eprintln s!"Error reading {path}:"
+  IO.eprintln s!"  {msg}\n"
+  IO.eprintln s!"Either the file is invalid or there is a bug in Strata."
+  IO.Process.exit 1
+
+def readStrataIon (fm : Strata.DialectFileMap) (path : System.FilePath) (bytes : ByteArray) : IO (Strata.Elab.LoadedDialects × Strata.DialectOrProgram) := do
   let (hdr, frag) ←
     match Strata.Ion.Header.parse bytes with
     | .error msg =>
@@ -71,7 +77,7 @@ def readStrataIon (fm : Strata.DialectFileMap) (bytes : ByteArray) : IO (Strata.
   | .dialect dialect =>
     match ← Strata.Elab.loadDialectFromIonFragment fm .builtin #[] dialect frag with
     | (_, .error msg) =>
-      exitFailure msg
+      fileReadError path msg
     | (dialects, .ok d) =>
       pure (dialects, .dialect d)
   | .program dialect => do
@@ -83,7 +89,7 @@ def readStrataIon (fm : Strata.DialectFileMap) (bytes : ByteArray) : IO (Strata.
     | .ok pgm =>
       pure (dialects, .program pgm)
     | .error msg =>
-      exitFailure msg
+      fileReadError path msg
 
 def readFile (fm : Strata.DialectFileMap) (path : System.FilePath) : IO (Strata.Elab.LoadedDialects × Strata.DialectOrProgram) := do
   let bytes ←
@@ -92,7 +98,7 @@ def readFile (fm : Strata.DialectFileMap) (path : System.FilePath) : IO (Strata.
       exitFailure s!"Error reading {path}."
     | .ok c => pure c
   if bytes.startsWith Ion.binaryVersionMarker then
-    readStrataIon fm bytes
+    readStrataIon fm path bytes
   else
     readStrataText fm path bytes
 
