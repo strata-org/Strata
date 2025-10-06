@@ -31,13 +31,7 @@ Design choices:
 - There is no concept of namespaces so all references need to be fully qualified.
 - Callables can have opaque or transparant bodies, but only the opaque ones may have a postcondition.
 
-TODO: static fields
-TODO: implicit casting from primitives types to Dynamic
 -/
-
-structure Program where
-  staticCallables : List Callable
-  types : List TypeDefinition
 
 abbrev Identifier := String /- Potentially this could be an Int to save resources. -/
 
@@ -138,7 +132,8 @@ inductive StmtExpr : Type where
 /- Expression like -/
   | LiteralInt (value: Int)
   | LiteralBool (value: Bool)
-  | LiteralReal (value: Real)
+  -- Commented out since this needs MathLib
+  -- | LiteralReal {Rat} (value: Rat)
   | Identifier (name : Identifier)
   /- Assign is only allowed in an impure context -/
   | Assign (target : StmtExpr) (value : StmtExpr)
@@ -220,6 +215,26 @@ def HighType.isBool : HighType → Bool
   | TBool => true
   | _ => false
 
+structure Field where
+  name : Identifier
+  isMutable : Bool
+  type : HighType
+
+structure CompositeType where
+  name : Identifier
+  typeParameters : List TypeParameter
+  extending : List Identifier
+  fields : List Field
+  isPure : Bool /- A pure type may not have mutable fields, and does not support reference equality -/
+  instanceCallables : List Callable
+
+structure ConstrainedType where
+  name : Identifier
+  base : HighType
+  valueName : Identifier
+  constraint : StmtExpr
+  witness : StmtExpr
+
 /-
 Note that there are no explicit 'inductive datatypes'. Typed unions are created by
 creating a CompositeType for each constructor, and a ConstrainedType for their union.
@@ -234,24 +249,9 @@ Example 2:
  -/
 inductive TypeDefinition where
   | Composite (ty : CompositeType)
-  | Constrainted (ty : ConstrainedType)
+  | Constrainted {ConstrainedType} (ty : ConstrainedType)
 
-structure CompositeType where
-  name : Identifier
-  typeParameters : List TypeParameter
-  extending : List Identifier
-  fields : List Field
-  isPure : Bool /- A pure type may not have mutable fields, and does not support reference equality -/
-  instanceCallables : List Callable
-
-structure PredicateType where
-  name : Identifier
-  base : HighType
-  valueName : Identifier
-  constraint : StmtExpr
-  witness : StmtExpr
-
-structure Field where
-  name : Identifier
-  isMutable : Bool
-  type : HighType
+structure Program where
+  staticCallables : List Callable
+  staticFields : List Field
+  types : List TypeDefinition
