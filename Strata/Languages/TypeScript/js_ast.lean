@@ -162,6 +162,11 @@ mutual
     body: TS_Statement
   deriving Repr, Lean.FromJson, Lean.ToJson
 
+  structure TS_ArrowFunctionExpression extends BaseNode where
+    params : Array TS_Identifier
+    body: TS_Statement
+  deriving Repr, Lean.FromJson, Lean.ToJson
+
   inductive TS_Expression where
     | TS_BinaryExpression : TS_BinaryExpression → TS_Expression
     | TS_ConditionalExpression : TS_ConditionalExpression → TS_Expression
@@ -178,6 +183,7 @@ mutual
     | TS_MemberExpression: TS_MemberExpression → TS_Expression
     | TS_CallExpression: TS_CallExpression → TS_Expression
     | TS_FunctionExpression: TS_FunctionExpression → TS_Expression
+    | TS_ArrowFunctionExpression: TS_ArrowFunctionExpression → TS_Expression
   deriving Repr, Lean.FromJson, Lean.ToJson
 
 
