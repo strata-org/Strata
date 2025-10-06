@@ -300,9 +300,9 @@ def translateBounded [Coe String Identifier] [DecidableEq Identifier] (e: LExprT
     let extraWf :=
       match LExprT.toLMonoTy e1, ty with
       | .arrow _ .int, .bounded _ =>
-        boundExprIfType ty e'
+        boundExprIfType ty res
       | _, _ => [];
-    ⟨res, ListSet.union [wfCallCondition (assume ++ e2'.assume) e1 e2'.translate, extraWf, e1'.wfCond, e2'.wfCond], boundExprIfType ty e' ++ e1'.assume ++ e2'.assume⟩
+    ⟨res, ListSet.union [wfCallCondition (assume ++ e2'.assume) e1 e2'.translate, extraWf, e1'.wfCond, e2'.wfCond], boundExprIfType ty res ++ e1'.assume ++ e2'.assume⟩
   /-
   Lambda abstraction:
   1. If the argument is bounded, add as top-down assumption

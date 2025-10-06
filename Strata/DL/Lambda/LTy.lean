@@ -92,23 +92,23 @@ def LMonoTy.bounded (b: BoundExpr) : LMonoTy :=
 
 @[match_pattern]
 def LMonoTy.bv1 : LMonoTy :=
-  bitvec 1
+  .bitvec 1
 
 @[match_pattern]
 def LMonoTy.bv8 : LMonoTy :=
-  bitvec 8
+  .bitvec 8
 
 @[match_pattern]
 def LMonoTy.bv16 : LMonoTy :=
-  bitvec 16
+  .bitvec 16
 
 @[match_pattern]
 def LMonoTy.bv32 : LMonoTy :=
-  bitvec 32
+  .bitvec 32
 
 @[match_pattern]
 def LMonoTy.bv64 : LMonoTy :=
-  bitvec 64
+  .bitvec 64
 
 @[match_pattern]
 def LMonoTy.string : LMonoTy :=
@@ -162,7 +162,7 @@ Lean's default `induction` tactic does not support nested or mutual inductive
 types. So we define our own induction principle below.
 -/
 @[induction_eliminator]
-theorem LMonoTy.induct {Meta: Type} {P : LMonoTy Meta → Prop}
+theorem LMonoTy.induct {R: Type} {P : LMonoTy R → Prop}
   (ftvar : ∀f, P (.ftvar f))
   (bitvec : ∀n, P (.bitvec n))
   (tcons : ∀name args r, (∀ ty ∈ args, P ty) → P (.tcons name args r)) :
@@ -305,7 +305,7 @@ Get all type constructors in monotype `mty`.
 def LMonoTy.getTyConstructors (mty : LMonoTy) : List LMonoTy :=
   match mty with
   | .ftvar _ => []
-  | bitvec _ => []
+  | .bitvec _ => []
   | .tcons name mtys _ =>
     let typeargs :=  List.replicate mtys.length "_dummy"
     let args := typeargs.mapIdx (fun i elem => LMonoTy.ftvar (elem ++ toString i))

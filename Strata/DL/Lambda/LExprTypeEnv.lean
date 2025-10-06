@@ -192,8 +192,8 @@ def KnownType.toLTy (k : KnownType) : LTy :=
 
 def LTy.toKnownType! (lty : LTy) : KnownType :=
   match lty with
-  | .forAll [] (.bitvec _) => { name := "bitvec", arity := 1 }
   | .forAll _ (.tcons name args) => { name, arity := args.length }
+  | .forAll [] (.bitvec _) => { name := "bitvec", arity := 1 }
   | _ => panic! s!"Unsupported known type: {lty}"
 
 instance : ToFormat KnownType where
@@ -451,7 +451,7 @@ def LMonoTy.aliasDef? (mty : LMonoTy) (T : (TEnv Identifier)) : (Option LMonoTy 
     -- We can't have a free variable be the LHS of an alias definition because
     -- then it will unify with every type.
     (none, T)
-  | bitvec _ =>
+  | .bitvec _ =>
     -- A bitvector cannot be a type alias.
     (none, T)
   | .tcons name args r =>
