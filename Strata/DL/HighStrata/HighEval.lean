@@ -4,7 +4,7 @@ Both are defined using the 'eval' function. It will only return a single type or
 The result is defined for a given input, which makes this usable as a specification
 for a type checker or verifier, but not as an implementation.
 -/
-import Strata.DL.HighLevel.HighLevel
+import Strata.DL.HighStrata.HighStrata
 import Std.Data.HashMap.Basic
 import Lean.Data.AssocList
 
