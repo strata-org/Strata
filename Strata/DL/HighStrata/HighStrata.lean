@@ -1,6 +1,6 @@
 /-
 The high strata language is supposed to serve as an intermediate verification language for at least Java, Python, JavaScript.
-
+/
 It enables doing various forms of verification:
 - Deductive verification
 - Property based testing
@@ -19,6 +19,10 @@ Design choices:
   A type that is not Dynamic, such as a primitive can be autoamatically casted to Dynamic.
   It can be casted back to its original type using a type test.
   This works well for languages such as JavaScript.
+- Instead of break and continue statements, we have a labelled block then can be exited from using an exit statement inside of it.
+  This can be used to model break statements and continue statements from both while and for loops.
+  We only have a while loop, but this can be used to compile do-while and for loops as well.
+
 - There is no match-case construct, but there are type tests with pattern matching that enable the same functionality but more generally.
 - There is no concept of constructors, but there is a partial type that represents an object whose fields
   are not yet assigned and whose type invariants might not hold.
@@ -102,12 +106,6 @@ inductive Operation: Type where
   | Neg | Add | Sub | Mul | Div | Mod
   | Lt | Leq | Gt | Geq
 
-inductive JumpType where | Continue | Break
-
-structure Jump where
- label : Option Identifier -- no label means we target the innermost loop
- type : JumpType
-
 /-
 A StmtExpr contains both constructs that we typically find in statements and those in expressions.
 By using a single datatype we prevent duplication of constructs that can be used in both contexts,
@@ -122,14 +120,14 @@ for example in `Option (StmtExpr isPure)`
 inductive StmtExpr : Type where
 /- Statement like -/
   | IfThenElse (cond : StmtExpr) (thenBranch : StmtExpr) (elseBranch : Option StmtExpr)
-  | Block (statements : List StmtExpr)
+  | Block (statements : List StmtExpr) (label : Option Identifier)
   /- The initializer must be set if this StmtExpr is pure -/
   | LocalVariable (name : Identifier) (type : HighType) (initializer : Option StmtExpr)
   /- While is only allowed in an impure context
     The invariant and decreases are always pure
   -/
-  | While (label: Option Identifier) (cond : StmtExpr) (invariant : Option StmtExpr) (decreases: Option StmtExpr) (body : StmtExpr)
-  | DoJump (jump : Jump)
+  | While (cond : StmtExpr) (invariant : Option StmtExpr) (decreases: Option StmtExpr) (body : StmtExpr)
+  | Exit (target: Identifier)
   | Return (value : Option StmtExpr)
 /- Expression like -/
   | LiteralInt (value: Int)

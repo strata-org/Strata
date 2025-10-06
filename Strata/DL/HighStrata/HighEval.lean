@@ -74,7 +74,7 @@ inductive VerificationErrorType : Type where
 inductive EvalResult (value: Type u) : Type u where
   | Success : value → EvalResult value
   | Return : Value → EvalResult value
-  | Jumping : (jump: Jump) → EvalResult value
+  | Exitting : (target: Identifier) → EvalResult value
   | TypeError : String → EvalResult value
   | VerficationError : VerificationErrorType → String → EvalResult value
 
@@ -97,7 +97,7 @@ instance : Monad Eval where
     match r' with
     | EvalResult.Success sm => f sm env'
     | EvalResult.Return v => (EvalResult.Return v, env')
-    | EvalResult.Jumping jump => (EvalResult.Jumping jump, env')
+    | EvalResult.Exitting target => (EvalResult.Exitting target, env')
     | EvalResult.TypeError msg => (EvalResult.TypeError msg, env')
     | EvalResult.VerficationError et msg => (EvalResult.VerficationError et msg, env')
 
@@ -160,7 +160,7 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
   | StmtExpr.StaticInvocation _ _ => panic! "not implemented: StaticInvocation"
 
 -- Statements
-  | StmtExpr.Block stmts => evalBlock stmts
+  | StmtExpr.Block stmts label => evalBlock label stmts
 
 -- Support locals
   | StmtExpr.LocalVariable name _ (some init) => do
@@ -176,9 +176,9 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
     let tv ← eval valExpr
     withResult (EvalResult.Return tv.val)
   | StmtExpr.Return none => fun env => (EvalResult.Success { val := Value.VVoid, ty := env.returnType }, env)
-  | StmtExpr.While _ _ none _ _  => withResult <| EvalResult.TypeError "While invariant was not derived"
-  | StmtExpr.While _ _ _ none _  => withResult <| EvalResult.TypeError "While decreases was not derived"
-  | StmtExpr.While labelOption condExpr (some invariantExpr) (some decreasedExpr) bodyExpr => do
+  | StmtExpr.While _ none _ _  => withResult <| EvalResult.TypeError "While invariant was not derived"
+  | StmtExpr.While _ _ none _  => withResult <| EvalResult.TypeError "While decreases was not derived"
+  | StmtExpr.While condExpr (some invariantExpr) (some decreasedExpr) bodyExpr => do
     let rec loop : Eval TypedValue := do
       let cond ← eval condExpr
       if (cond.ty.isBool) then
@@ -192,20 +192,12 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
         else
         -- TODO handle decreases
           fun env => match eval bodyExpr env with
-            | (EvalResult.Jumping jump, env') =>
-              let targetsMe := jump.label == none || jump.label == labelOption
-              if targetsMe then
-                match jump.type with
-                | JumpType.Continue => loop env'
-                | JumpType.Break => (EvalResult.Success voidTv, env')
-              else
-                (EvalResult.Jumping jump, env')
             | (EvalResult.Success _, env') => loop env'
             | other => other
       else
         pure voidTv
     loop
-  | StmtExpr.DoJump jump => withResult <| EvalResult.Jumping jump
+  | StmtExpr.Exit target => withResult <| EvalResult.Exitting target
 
 -- Support non-heap objects
   | StmtExpr.PureFieldUpdate _ _ _ => panic! "not implemented: PureFieldUpdate"
@@ -268,11 +260,17 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
 
 
 where
-  evalBlock (stmts : List StmtExpr) : Eval TypedValue :=
+  evalBlock (labelOption: Option Identifier) (stmts : List StmtExpr) : Eval TypedValue :=
     match stmts with
     | [] => pure <| TypedValue.mk Value.VVoid HighType.TVoid
-    | stmt :: rest => do
-      let _ <- eval stmt
-      evalBlock rest
+    | stmt :: rest => fun env => match eval stmt env with
+      | (EvalResult.Exitting target, env') =>
+        let targetsMe := some target == labelOption
+        if targetsMe then
+          (EvalResult.Success voidTv, env')
+        else
+          evalBlock labelOption rest env'
+      | (EvalResult.Success _, env') => evalBlock labelOption rest env'
+      | other => other
 
 end HighLevel
