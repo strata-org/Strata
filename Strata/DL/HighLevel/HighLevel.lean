@@ -54,28 +54,29 @@ structure Parameter where
   type : HighType
 
 inductive HighType : Type where
-  | Void
-  | Bool
-  | Int
-  | Real
-  | Float64 /- Required for JavaScript (number). Used by Python (float) and Java (double) as well -/
+  | TVoid
+  | TBool
+  | TInt
+  | TReal
+  | TFloat64 /- Required for JavaScript (number). Used by Python (float) and Java (double) as well -/
   /- A value of type `Dynamic` is a tuple consisting of a type and an expression.
      Values are automatically casted to and from `Dynamic`
      Example: `var x: Dynamic = 3; return x is Int` returns `True`
    -/
   | Dynamic
   | UserDefined (name: Identifier)
-  | Applied (base : TypeBase) (typeArguments : List HighType)
+  | Applied (base : HighType) (typeArguments : List HighType)
   /- Partial represents a composite type with unassigned fields and whose type invariants might not hold.
      Can be represented as a Map that contains a subset of the fields of the composite type -/
-  | Partial (base : TypeBase)
+  | Partial (base : HighType)
   /- A nullable type is implicitly cast to its base when required,
     such as in a member access or when assigned to a variable of the base type -/
-  | Nullable (base : TypeBase)
+  | Nullable (base : HighType)
   /- Java has implicit intersection types.
      Example: `<cond> ? RustanLeino : AndersHejlsberg` could be typed `Scientist & Scandinavian`-/
   | Intersection (types : List HighType)
   | Union (types : List HighType) /- I'm not sure we need Union. Seems like it could be replaced by predicate types -/
+  deriving Repr
 
 structure TypeParameter where
   name : Identifier
@@ -179,6 +180,10 @@ inductive StmtExpr : Type where
 /- Hole has a dynamic type and is useful when programs are only partially available -/
   | Hole
 end
+
+def HighType.isDynamic : HighType → Bool
+  | Dynamic => true
+  | _ => false
 
 inductive JumpType where | Continue | Break
 

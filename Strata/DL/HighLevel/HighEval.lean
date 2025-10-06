@@ -1,23 +1,35 @@
 import Strata.DL.HighLevel.HighLevel
 import Std.Data.HashMap.Basic
 import Lean.Data.AssocList
-import Mathlib.Data.Rat.Basic
 
 namespace HighLevel
 
+open Std
+open Lean
+open HighLevel
 
+mutual
 -- Runtime values with explicit universe level
 inductive Value : Type where
   | VUnknown : Value
   | VVoid : Value
   | VBool : Bool → Value
   | VInt : Int → Value
-  | VReal : Rat → Value
+  -- | VReal : Rat → Value -- Skipped for now, as Lean's Rat requires importing MathLib
   | VFloat64 : Float → Value
-  | VBoxed : HighType → Value → Value
-  | VObject : (type: Identifier) → (field: Lean.AssocList Identifier Value) → Value
+  | VBoxed : TypedValue → Value
+  | VObject : (type: Identifier) → (field: AssocList Identifier Value) → Value
   | VNull : Value
   | VClosure : Callable → Value
+
+structure TypedValue where
+  val : Value
+  ty : HighType
+
+end
+
+instance : Inhabited TypedValue where
+  default := { val := Value.VVoid, ty := HighType.TVoid }
 
 def Value.asBool! : Value → Bool
   | VBool b => b
@@ -27,32 +39,22 @@ def Value.asInt! : Value → Int
   | VInt i => i
   | _ => panic! "expected VInt"
 
-def Value.asReal! {Rat} : Value → Rat
-  | VReal r => r
-  | _ => panic! "expected VReal"
-
 def Value.asFloat64! : Value → Float
   | VFloat64 f => f
   | _ => panic! "expected VFloat64"
 
-def Value.asBoxed! : Value → HighType × Value
-  | VBoxed ty v => (ty, v)
+def Value.asBoxed! : Value → TypedValue
+  | VBoxed tv => tv
   | _ => panic! "expected VBoxed"
 
 def Value.asObject! : Value → Identifier × AssocList Identifier Value
   | VObject ty fields => (ty, fields)
   | _ => panic! "expected VObject"
 
-def Value.asClosure! : Value → Callable
-  | VClosure c => c
-  | _ => panic! "expected VClosure"
-
-structure TypedValue where
-  val : Value
-  ty : HighType
-
 -- Environment for variable bindings
-abbrev Env := AssocList Identifier TypedValue
+structure Env where
+  locals: AssocList Identifier TypedValue
+  heap: HashMap Int Value
 
 -- Evaluation result
 inductive EvalResult : Type u where
@@ -62,7 +64,7 @@ inductive EvalResult : Type u where
   | Continue : EvalResult
   | TypeError : String → EvalResult
   | VerficationError : VerificationErrorType → String → EvalResult
-deriving Nonempty
+deriving Nonempty, Inhabited
 
 inductive VerificationErrorType : Type where
   | PreconditionFailed : String → VerificationErrorType
@@ -81,50 +83,64 @@ def bind : EvalResult → (TypedValue → Env → EvalResult) → EvalResult
 
 -- Helper functions
 def lookupVar (name : Identifier) (env : Env) : Option TypedValue :=
-  env.find? name
+  env.locals.find? name
 
 def voidTv : TypedValue :=
-  { val := Value.VVoid, ty := HighType.Void }
+  { val := Value.VVoid, ty := HighType.TVoid }
 
-/- TODO take type arguments as well, although this needs a type checking/inference phase.
-   handle all the operations, and all the types including dynamic. -/
+def evalOpWithoutDynamic (op : Operation) (args : List TypedValue) : Except EvalResult Value :=
+  let argTypes := args.map (fun a => a.ty)
+  match args with
+  | [arg1, arg2] =>
+    match op with
+    | Operation.Add =>
+        match argTypes with
+        | [HighType.TInt, HighType.TInt] => Except.ok <| Value.VInt (arg1.val.asInt! + arg2.val.asInt!)
+        | [HighType.TFloat64, HighType.TFloat64] => Except.ok <| Value.VFloat64 (arg1.val.asFloat64! + arg2.val.asFloat64!)
+        -- TOOD add other types
+        | _ => Except.error <| EvalResult.TypeError "Invalid types for Add"
+
+    | Operation.Eq =>
+      match argTypes with
+      | [HighType.TInt, HighType.TInt] => Except.ok <| Value.VBool (arg1.val.asInt! == arg2.val.asInt!)
+      | [HighType.TBool, HighType.TBool] => Except.ok <| Value.VBool (arg1.val.asBool! == arg2.val.asBool!)
+      | _ => Except.error <| EvalResult.TypeError "Invalid types for Eq"
+    | _ => Except.error <| EvalResult.TypeError "Operation not implemented"
+  | _ => Except.error <| EvalResult.TypeError s!"No operator with {args.length} arguments"
+
 def evalOp (op : Operation) (args : List TypedValue) : Except EvalResult Value :=
-  match op with
-  | Operation.Add =>
-    match args.map fun a => a.ty with
-    | [HighType.Dynamic, HighType.Dynamic] => Except.ok <| Value.VInt (a + b)
-    | [{ val := Value.VInt a }, { val := Value.VInt b }] => Except.ok <| Value.VInt (a + b)
-    | _ => Except.error <| EvalResult.TypeError "Invalid types for Add"
-  | Operation.Eq =>
-    match args with
-    | [Value.VInt a, Value.VInt b] => Except.ok <| Value.VBool (a == b)
-    | [Value.VBool a, Value.VBool b] => Except.ok <| Value.VBool (a == b)
-    | _ => Except.error "Invalid arguments for Eq"
-  | _ => Except.error "Operation not implemented"
+  if (args.all fun a => a.ty.isDynamic) then
+    match evalOpWithoutDynamic op (args.map fun a => a.val.asBoxed!) with
+      | Except.ok v => Except.ok v
+      | Except.error (EvalResult.TypeError msg) =>
+          Except.error (EvalResult.VerficationError VerificationErrorType.PreconditionFailed msg)
+      | Except.error e => Except.error e
+  else
+    evalOpWithoutDynamic op args
 
 -- Main evaluator
 partial def eval (expr : StmtExpr) (env : Env) : EvalResult :=
   match expr with
-  | StmtExpr.LiteralBool b => EvalResult.Success (TypedValue.mk (Value.VBool b) HighType.Bool) env
-  | StmtExpr.LiteralInt i => EvalResult.Success (TypedValue.mk (Value.VInt i) HighType.Int) env
-  | StmtExpr.LiteralReal r => EvalResult.Success (TypedValue.mk (Value.VReal r) HighType.Real) env
+  | StmtExpr.LiteralBool b => EvalResult.Success (TypedValue.mk (Value.VBool b) HighType.TBool) env
+  | StmtExpr.LiteralInt i => EvalResult.Success (TypedValue.mk (Value.VInt i) HighType.TInt) env
+  | StmtExpr.LiteralReal r => panic! "not implemented" -- EvalResult.Success (TypedValue.mk (Value.VReal r) HighType.TReal) env
   | StmtExpr.Identifier name =>
     match lookupVar name env with
     | some tv => EvalResult.Success tv env
     | none => EvalResult.TypeError s!"Undefined variable: {name}"
   | StmtExpr.LocalVariable name _ (some init) =>
     match eval init env with
-    | EvalResult.Success tv env' => EvalResult.Success voidTv (env'.insertNew name tv)
+    | EvalResult.Success tv env' => EvalResult.Success voidTv { env' with locals := env'.locals.insertNew name tv }
     | result => result
-  | StmtExpr.LocalVariable name type none => EvalResult.Success voidTv <| env.insertNew name (TypedValue.mk Value.VUnknown type)
-/- TODO Support assign to a field as well -/
+  | StmtExpr.LocalVariable name type none => EvalResult.Success voidTv
+      { env with locals := env.locals.insertNew name (TypedValue.mk Value.VUnknown type) }
   | StmtExpr.Assign target value =>
     match eval value env with
     | EvalResult.Success tv env' =>
       match target with
         | StmtExpr.Identifier name =>
           match lookupVar name env' with
-          | some _ => EvalResult.Success voidTv (env'.insertNew name (TypedValue.mk tv.val HighType.Dynamic))
+          | some _ => EvalResult.Success voidTv (env'.locals.insertNew name (TypedValue.mk tv.val HighType.Dynamic))
           | none => EvalResult.TypeError s!"Undefined variable: {name}"
         | StmtExpr.StaticFieldSelect obj fieldName =>
           match eval obj env' with
@@ -134,6 +150,7 @@ partial def eval (expr : StmtExpr) (env : Env) : EvalResult :=
             EvalResult.Success voidTv env''.insertNew "_temp" (TypedValue.mk newObj HighType.Dynamic) -- TODO update variable holding the object
           | EvalResult.Success _ _ => EvalResult.TypeError "Target is not an object"
           | result => result
+/- TODO Support DynamicFieldSelect as well -/
 
         | _ => EvalResult.TypeError "Invalid assignment target"
     | result => result
