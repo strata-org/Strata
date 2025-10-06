@@ -65,7 +65,7 @@ def TS_type_to_HMonoTy (ty: String) : Heap.HMonoTy :=
   | "TS_TSNumberKeyword" => Heap.HMonoTy.int
   | "TS_TSBooleanKeyword" => Heap.HMonoTy.bool
   | "TS_TSStringKeyword" => Heap.HMonoTy.string
-  -- | "TS_TSArrayType" => Heap.HMonoTy.addr
+  | "TS_TSArrayType" => Heap.HMonoTy.addr
   | _ => panic! s!"Unsupported type: {ty}"
 
 def Option_TS_TSTypeKeyword_to_str (i: Option TS_TSTypeKeyword) : String :=
@@ -74,7 +74,7 @@ def Option_TS_TSTypeKeyword_to_str (i: Option TS_TSTypeKeyword) : String :=
     | .TS_TSNumberKeyword _ => "TS_TSNumberKeyword"
     | .TS_TSBooleanKeyword _ => "TS_TSBooleanKeyword"
     | .TS_TSStringKeyword _ => "TS_TSStringKeyword"
-    -- | .TS_TSArrayType _ => "TS_TSArrayType"
+    | .TS_TSArrayType _ => "TS_TSArrayType"
   | .none => panic! "Unimplemented"
 
 -- Helper to extract type from optional type annotation
@@ -87,7 +87,7 @@ def extract_type_from_annotation (ann: Option TS_TSTypeAnnotation) : String :=
 partial def infer_type_from_expr (expr: TS_Expression) : Heap.HMonoTy :=
   match expr with
   | .TS_ObjectExpression _ => Heap.HMonoTy.addr  -- Objects are addresses
-  -- | .TS_ArrayExpression _ => Heap.HMonoTy.addr   -- Arrays are addresses
+  | .TS_ArrayExpression _ => Heap.HMonoTy.addr   -- Arrays are addresses
   | .TS_NumericLiteral _ => Heap.HMonoTy.int
   | .TS_BooleanLiteral _ => Heap.HMonoTy.bool
   | .TS_BinaryExpression e =>
@@ -159,26 +159,32 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
   | .TS_NullLiteral _ =>
     Heap.HExpr.null
 
-  -- | .TS_ArrayExpression arr =>
-    -- -- Translate [value1, value2, value3] to heap allocation with numeric indices
-    -- let fields := arr.elements.toList.mapIdx (fun idx elem =>
-      -- (idx, translate_expr elem))
-    -- -- Arrays store elements at numeric indices: 0->value1, 1->value2, etc.
-    -- Heap.HExpr.allocSimple fields
+  | .TS_ArrayExpression arr =>
+    -- Translate [value1, value2, value3] to heap allocation with numeric indices
+    let fields := arr.elements.toList.mapIdx (fun idx elem =>
+      (idx, translate_expr elem))
+    -- Arrays store elements at numeric indices: 0->value1, 1->value2, etc.
+    Heap.HExpr.allocSimple fields
 
   | .TS_MemberExpression e =>
-    -- Translate obj[index] to heap dereference
+    -- Translate str.length/obj[index] to heap dereference
     let objExpr := translate_expr e.object
-    -- Handle both static and dynamic field access
     match e.property with
     | .TS_NumericLiteral numLit =>
       -- Static field access: obj[5]
       let field := Float.floor numLit.value |>.toUInt64.toNat
       Heap.HExpr.deref objExpr field
     | .TS_IdExpression id =>
-      -- Dynamic field access: obj[variable]
-      let varExpr := translate_expr (.TS_IdExpression id)
-      Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAccess" none) objExpr) varExpr
+      let keyName := id.name
+      if !e.computed && keyName == "length" then
+        -- String dot access: str.length
+        let keyExpr := Heap.HExpr.string keyName
+        Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "StringFieldAccess" none) objExpr) keyExpr
+      else
+        -- Dynamic field access: obj[variable]
+        let varExpr := translate_expr (.TS_IdExpression id)
+        Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAccess" none) objExpr) varExpr
+
     | _ =>
       -- Other dynamic expressions: obj[expr]
       let fieldExpr := translate_expr e.property
