@@ -32,6 +32,7 @@ structure BoogieGenState where
 
 def BoogieGenState.WF (σ : BoogieGenState)
   := StringGenState.WF σ.cs ∧
+    List.map Boogie.BoogieIdent.temp σ.cs.generated.unzip.snd = σ.generated ∧
     σ.generated.Nodup ∧
     Forall (BoogieIdent.isTemp ·) σ.generated
 
@@ -63,51 +64,38 @@ theorem BoogieGenState.WFMono' :
   BoogieGenState.gen pf s = (l, s') →
   BoogieGenState.WF s' := by
   intros Hwf Hgen
+  unfold BoogieGenState.WF at Hwf
   simp [gen] at Hgen
-  refine ⟨?_, ?_, ?_⟩
-  . -- StringGen WF
-    rw [← Hgen.2]
-    simp_all
-    cases Hwf with
-    | intro left right =>
-    apply StringGenState.WFMono (n:=(StringGenState.gen pf.snd s.cs).fst)
-    exact left
-    rfl
-  . -- nodup
-    simp [← Hgen]
-    have Hwfs : StringGenState.WF (StringGenState.gen pf.snd s.cs).snd := by
-      apply StringGenState.WFMono
-      simp [WF] at Hwf
-      apply Hwf.1
-      rfl
-    simp [StringGenState.WF] at Hwfs
-    /- The generated Boogie identifier does not occur in the list of already
-    generated identifiers -/
-    sorry
-  . -- is temp
-    refine List.Forall_mem_iff.mpr ?_
-    intros x Hin
-    rw [← Hgen.2] at Hin
-    simp at Hin
-    cases Hin
-    case inl HH =>
-      simp [HH]
-      constructor
-    case inr HH =>
-    . simp [WF] at Hwf
-      exact List.Forall_mem_iff.mp Hwf.2.2 _ HH
+  simp [← Hgen]
+  generalize h1 : (StringGenState.gen pf.snd s.cs).fst = st
+  generalize h2 : (StringGenState.gen pf.snd s.cs).snd = stg
+  have Hstrgen: StringGenState.gen pf.snd s.cs = (st, stg) := by simp [← h1, ← h2]
+  have Hwf':= StringGenState.WFMono Hwf.left Hstrgen
+  simp [StringGenState.gen] at Hstrgen
+  constructor <;> simp [*]
+  constructor
+  simp_all
+  simp [← Hwf.right.left, ← Hgen.left, ← Hstrgen.right, ← Hstrgen.left]
+  constructor <;> try simp [BoogieIdent.isTemp]
+  simp [← Hwf.right.left]
+  intro x str Hx
+  false_or_by_contra
+  have: str = st := by injections
+  have Hnodup := Hwf'.right.right.left
+  simp [← Hstrgen.right, Hstrgen.left] at Hnodup
+  have Hnodup := Hnodup.left x
+  simp_all
 
 theorem BoogieGenState.WFMono : ∀ (γ γ' : BoogieGenState) (pf l : BoogieIdent),
   BoogieGenState.gen pf γ = (l, γ') → WF γ → WF γ' ∧ l ∈ γ'.generated ∧ γ ⊆ γ' := by
   intros γ γ' pf l Hgen Hwf
+  have Hwf':= WFMono' Hwf Hgen
+  simp [gen] at Hgen
   refine ⟨?_, ?_, ?_⟩
-  . exact WFMono' Hwf Hgen
-  . /- The generated Boogie identifier is in the new state, should be provable by
-    propagating this fact from StringGen and Counter generator -/
-    sorry
-  . /- After generating a new Boogie identifier, the new state is a super set of
-    the old state -/
-    sorry
+  assumption
+  simp [← Hgen.right, ← Hgen.left]
+  simp [Subset, ← Hgen.right]
+  apply List.subset_cons_self
 
 /-- BoogieLabelGen guarantees that all labels are .temp -/
 instance : LabelGen.WFLabelGen BoogieIdent BoogieGenState where
