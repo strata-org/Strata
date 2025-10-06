@@ -90,6 +90,17 @@ inductive Body where
     A type containing any members with abstract bodies can not be instantiated. -/
   | Abstract (postcondition : StmtExpr)
 
+/- We will support these operations for dynamic types as well -/
+/- The 'truthy' concept from JavaScript should be implemented using a library function -/
+inductive Operation: Type where
+  /- Works on Bool -/
+    /- Equality on composite types uses reference equality for impure types, and structural equality for pure ones -/
+  | Eq | Neq
+  | And | Or | Not
+  /- Works on Int/Real/Float64 -/
+  | Neg | Add | Sub | Mul | Div | Mod
+  | Lt | Leq | Gt | Geq
+
 /-
 A StmtExpr contains both constructs that we typically find in statements and those in expressions.
 By using a single datatype we prevent duplication of constructs that can be used in both contexts,
@@ -170,17 +181,6 @@ inductive StmtExpr : Type where
 end
 
 inductive JumpType where | Continue | Break
-
-/- We will support these operations for dynamic types as well -/
-/- The 'truthy' concept from JavaScript should be implemented using a library function -/
-inductive Operation: Type where
-  /- Works on Bool -/
-    /- Equality on composite types uses reference equality for impure types, and structural equality for pure ones -/
-  | Eq | Neq
-  | And | Or | Not
-  /- Works on Int/Real/Float64 -/
-  | Neg | Add | Sub | Mul | Div | Mod
-  | Lt | Leq | Gt | Geq
 
 /-
 Note that there are no explicit 'inductive datatypes'. Typed unions are created by
