@@ -46,24 +46,17 @@ def SimpleTestEnvAST := TransM.run (translateProgram (SimpleTestEnv.commands))
 
 def myFunc : Strata.C_Simp.Function := SimpleTestEnvAST.fst.funcs.head!
 
+def getIdent (varName: String) (functionName: String) : String :=
+  if varName == "x" ∨ varName == "y" then
+    s!"{functionName}::{varName}"
+  else
+    s!"{functionName}::1::{varName}"
+
+
 -- Convert LExpr to CBMC JSON format for contracts
 def lexprToCBMC (expr : Strata.C_Simp.Expression.Expr) (functionName : String) : Json :=
   let cfg := CBMCConfig.empty
   match expr with
-  | .app (.app (.op op _) (.fvar varName _)) (.const value _) =>
-    mkBinaryOp (opToStr op) "2" functionName (config := cfg)
-      (Json.mkObj [
-        ("id", "symbol"),
-        ("namedSub", Json.mkObj [
-          ("#base_name", Json.mkObj [("id", varName)]),
-          ("#id_class", Json.mkObj [("id", "1")]),
-          ("#lvalue", Json.mkObj [("id", "1")]),
-          ("#source_location", mkSourceLocation "from_andrew.c" functionName "2" cfg),
-          ("identifier", Json.mkObj [("id", s!"{functionName}::{varName}")]),
-          ("type", mkIntType cfg)
-        ])
-      ])
-      (mkConstant value "10" (mkSourceLocation "from_andrew.c" functionName "2" cfg) cfg)
   | .const "true" _ =>
     Json.mkObj [
       ("id", "notequal"),
@@ -82,7 +75,23 @@ def lexprToCBMC (expr : Strata.C_Simp.Expression.Expr) (functionName : String) :
         ]
       ])
     ]
-  | _ => panic! "Unimplemented"
+  | (.const value _) => (mkConstant value "10" (mkSourceLocation "from_andrew.c" functionName "2" cfg) cfg)
+  | (.fvar varName _) => (Json.mkObj [
+        ("id", "symbol"),
+        ("namedSub", Json.mkObj [
+          ("#base_name", Json.mkObj [("id", varName)]),
+          ("#id_class", Json.mkObj [("id", "1")]),
+          ("#lvalue", Json.mkObj [("id", "1")]),
+          ("#source_location", mkSourceLocation "from_andrew.c" functionName "2" cfg),
+          ("identifier", Json.mkObj [("id", getIdent varName functionName)]),
+          ("type", mkIntType cfg)
+        ])
+      ])
+  | .app (.app (.op op _) lhs) rhs =>
+    mkBinaryOp (opToStr op) "2" functionName (config := cfg)
+      (lexprToCBMC lhs functionName)
+      (lexprToCBMC rhs functionName)
+  | _ => panic! s!"Unimplemented {expr}"
 
 def createContractSymbolFromAST (func : Strata.C_Simp.Function) : CBMCSymbol :=
   let cfg := CBMCConfig.empty
@@ -196,11 +205,10 @@ def exprToJson (e : Strata.C_Simp.Expression.Expr) (loc: SourceLoc) : Json :=
   match e with
   | .app (.app (.op op _) left) right =>
     let leftJson := match left with
-      | .fvar "z" _ => mkLvalueSymbol s!"{loc.functionName}::1::z" loc.lineNum loc.functionName cfg
-      | .fvar varName _ => mkLvalueSymbol s!"{loc.functionName}::{varName}" loc.lineNum loc.functionName cfg
+      | .fvar varName _ => mkLvalueSymbol (getIdent varName loc.functionName) loc.lineNum loc.functionName cfg
       | _ => exprToJson left loc
     let rightJson := match right with
-      | .fvar varName _ => mkLvalueSymbol s!"{loc.functionName}::{varName}" loc.lineNum loc.functionName cfg
+      | .fvar varName _ => mkLvalueSymbol (getIdent varName loc.functionName) loc.lineNum loc.functionName cfg
       | .const value _ => mkConstant value "10" (mkSourceLocation "from_andrew.c" loc.functionName loc.lineNum cfg) cfg
       | _ => exprToJson right loc
     mkBinaryOp (opToStr op) loc.lineNum loc.functionName leftJson rightJson cfg
@@ -319,6 +327,21 @@ partial def stmtToJson (e : Strata.C_Simp.Statement) (loc: SourceLoc) : Json :=
         blockToJson elseb loc,
       ])
     ]
+  -- TODO: fix this
+  | .loop guard _ _ body _ =>
+    Json.mkObj [
+      ("id", "code"),
+      ("namedSub", Json.mkObj [
+        ("#source_location", mkSourceLocation "from_andrew.c" loc.functionName "8"),
+        ("statement", Json.mkObj [("id", "ifthenelse")]),
+        ("type", emptyType)
+      ]),
+      ("sub", Json.arr #[
+        exprToJson guard loc,
+        blockToJson body loc,
+        blockToJson body loc,
+      ])
+    ]
   | _ => panic! "Unimplemented"
 end
 
@@ -382,6 +405,8 @@ def testSymbols (myFunc: Strata.C_Simp.Function) : String := Id.run do
 
   -- Hardcode local variable for now
   let zSymbol := createLocalSymbol "z" myFunc.name
+  let sumSymbol := createLocalSymbol "sum" myFunc.name
+  let countSymbol := createLocalSymbol "count" myFunc.name
 
   -- Build symbol map
   let mut m : Map String CBMCSymbol := Map.empty
@@ -395,6 +420,8 @@ def testSymbols (myFunc: Strata.C_Simp.Function) : String := Id.run do
 
   -- Add local variable
   m := m.insert s!"{myFunc.name}::1::z" zSymbol
+  m := m.insert s!"{myFunc.name}::1::sum" sumSymbol
+  m := m.insert s!"{myFunc.name}::1::count" countSymbol
 
   toString (toJson m)
 

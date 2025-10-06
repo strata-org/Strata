@@ -429,7 +429,9 @@ def opToStr (op: String) : String :=
   | "Int.Le" => "<="
   | "Int.Add" => "+"
   | "Int.Sub" => "-"
-  | _ => panic! "Unimplemented"
+  | "Bool.And" => "&&"
+  | "Bool.Or" => "||"
+  | _ => panic! s!"Unimplemented: {op}"
 
 def opToOutTypeJson (op: String) (config : CBMCConfig := .empty): Json :=
   match op with
@@ -439,7 +441,9 @@ def opToOutTypeJson (op: String) (config : CBMCConfig := .empty): Json :=
   | "<=" => boolType
   | "+" => mkIntType config
   | "-" => mkIntType config
-  | _ => panic! "Unimplemented"
+  | "&&" => boolType
+  | "||" => boolType
+  | _ => panic! s!"Unimplemented: {op}"
 
 
 def mkBinaryOp (op : String) (line : String) (functionName : String) (left : Json) (right : Json) (config : CBMCConfig := .empty) : Json :=
