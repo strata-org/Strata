@@ -326,21 +326,25 @@ end QualifiedIdent
 
 namespace SyntaxCat
 
-def toIon : SyntaxCat → Array (Ion SymbolId) → Ion.InternM (Ion SymbolId)
-| .atom sym, a =>
-  return .sexp (#[(← sym.toIon)] ++ a)
-| .app f x, a => do
-  f.toIon <| a.push <| ←x.toIon #[]
+protected def toIon (cat : SyntaxCat) : Ion.InternM (Ion SymbolId) := do
+  let args := #[ ← cat.name.toIon ]
+  let args ← cat.args.attach.mapM_off (init := args) fun ⟨e, _⟩ => e.toIon
+  return .sexp args
+decreasing_by
+  rw [SyntaxCat.sizeOf_spec cat]
+  decreasing_tactic
 
 protected def fromIon (v : Ion SymbolId) : FromIonM SyntaxCat := do
-  let ⟨args, p⟩ ← .asSexp "Category" v
-  let init ← .atom <$> QualifiedIdent.fromIon "Category name" args[0]
-  args.attach.foldlM (start := 1) (init := init) fun a ⟨u, _⟩ => do
-    let c ← SyntaxCat.fromIon u
-    return .app a c
+  let ⟨args, p⟩ ← .asSexp "Category reference" v
+  let name ← QualifiedIdent.fromIon "Category name" args[0]
+  let args ← args.attach.mapM_off (start := 1) fun ⟨e, _⟩ => SyntaxCat.fromIon e
+  return {
+    name := name
+    args := args
+  }
 termination_by v
 decreasing_by
-  have _ : sizeOf u < sizeOf args := by decreasing_tactic
+  have p : sizeOf e < sizeOf args := by decreasing_tactic
   decreasing_tactic
 
 instance : FromIon SyntaxCat where
@@ -456,7 +460,7 @@ protected def Arg.toIon (refs : SymbolIdCache) (arg : Arg) : InternM (Ion Symbol
     | .expr e =>
       return .sexp #[ ionSymbol! "expr", ← e.toIon (ionRefEntry! ``Expr) ]
     | .cat c =>
-      return .sexp #[ ionSymbol! "cat", ← c.toIon #[] ]
+      return .sexp #[ ionSymbol! "cat", ← c.toIon ]
     | .type e =>
       return .sexp #[ ionSymbol! "type", ← e.toIon (ionRefEntry! ``TypeExpr) ]
     | .ident s  =>
@@ -812,7 +816,7 @@ instance : CachedToIon ArgDeclKind where
   cachedToIon refs tpc := ionScope! ArgDeclKind refs :
   match tpc with
   | .cat k =>
-    return .sexp #[ionSymbol! "category", ← k.toIon #[]]
+    return .sexp #[ionSymbol! "category", ← k.toIon]
   | .type tp =>
     return .sexp #[ionSymbol! "type", ← ionRef! tp]
 
@@ -943,7 +947,7 @@ instance : CachedToIon OpDecl where
       (ionSymbol! "name", .string d.name),
     ]
     if d.argDecls.size > 0 then
-      let v ← d.argDecls.mapM (fun (de : ArgDecl) => ionRef! de)
+      let v ← d.argDecls.toArray.mapM (fun (de : ArgDecl) => ionRef! de)
       flds := flds.push (ionSymbol! "args", .list v)
     flds := flds.push (ionSymbol! "result", ← d.category.toIon)
     flds := flds.push (ionSymbol! "syntax",   ← ionRef! d.syntaxDef)
@@ -965,7 +969,7 @@ protected def fromIon (fields : Array (SymbolId × Ion SymbolId)) : FromIonM OpD
   let argDecls ←
         match fldArgs[2] with
         | .null _ => pure .empty
-        | v => .asListOf "Op declaration arguments" v fromIon
+        | v => ArgDecls.ofArray <$> .asListOf "Op declaration arguments" v fromIon
   let category ← QualifiedIdent.fromIon "Op declaration result" fldArgs[3]
   let syntaxDef ←
         match fldArgs[4] with
@@ -1015,7 +1019,7 @@ instance : CachedToIon FunctionDecl where
       (ionSymbol! "name", .string d.name),
     ]
     if d.argDecls.size > 0 then
-      let v ← d.argDecls.mapM (fun (de : ArgDecl) => ionRef! de)
+      let v ← d.argDecls.toArray.mapM (fun (de : ArgDecl) => ionRef! de)
       flds := flds.push (ionSymbol! "args", .list v)
     flds := flds.push (ionSymbol! "returns", ← ionRef! d.result)
     flds := flds.push (ionSymbol! "syntax", ← ionRef! d.syntaxDef)
@@ -1036,7 +1040,7 @@ protected def fromIon (fields : Array (SymbolId × Ion SymbolId)) : FromIonM Fun
   let argDecls ←
         match fldArgs[2] with
         | .null _ => pure .empty
-        | .list a => Array.mapM fromIon a
+        | .list a => ArgDecls.ofArray <$> Array.mapM fromIon a
         | r => throw s!"OpDecl.args expected a list."
   let returns ← fromIon fldArgs[3]
   let syntaxDef ←

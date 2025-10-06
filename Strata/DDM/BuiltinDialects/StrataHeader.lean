@@ -16,7 +16,7 @@ def headerDialect : Dialect := BuiltinM.create! "StrataHeader" #[initDialect] do
 
   declareOp {
      name := "dialectCommand",
-     argDecls := #[
+     argDecls := .ofArray #[
         { ident := "name", kind := Ident }
      ],
      category := Command,
@@ -24,7 +24,7 @@ def headerDialect : Dialect := BuiltinM.create! "StrataHeader" #[initDialect] do
   }
   declareOp {
      name := "programCommand",
-     argDecls := #[
+     argDecls := .ofArray #[
         { ident := "name", kind := Ident }
      ],
      category := Command,

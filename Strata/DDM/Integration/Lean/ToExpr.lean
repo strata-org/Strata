@@ -59,12 +59,17 @@ end
 
 namespace SyntaxCat
 
-protected def toExpr : SyntaxCat → Lean.Expr
-| .atom a => mkApp (mkConst ``SyntaxCat.atom) (toExpr a)
-| .app f a => mkApp2 (mkConst ``SyntaxCat.app) (f.toExpr) (a.toExpr)
+protected def typeExpr : Lean.Expr := mkConst ``SyntaxCat
+
+protected def toExpr (cat : SyntaxCat) : Lean.Expr :=
+  let args := arrayToExpr SyntaxCat.typeExpr (cat.args.map fun e => e.toExpr)
+  astExpr! SyntaxCat.mk (toExpr cat.name) args
+decreasing_by
+  simp [SyntaxCat.sizeOf_spec cat]
+  decreasing_tactic
 
 instance : ToExpr SyntaxCat where
-  toTypeExpr := mkConst ``SyntaxCat
+  toTypeExpr := SyntaxCat.typeExpr
   toExpr := SyntaxCat.toExpr
 
 end SyntaxCat
@@ -191,7 +196,10 @@ instance MetadataAttr.instToExpr : ToExpr MetadataAttr where
 
 instance Metadata.instToExpr : ToExpr Metadata where
   toTypeExpr := mkConst ``Metadata
-  toExpr m := mkAppN (mkConst ``Metadata.ofArray) #[toExpr m.toArray]
+  toExpr m :=
+    let init := mkConst ``Metadata.empty
+    let push := (mkConst ``Metadata.push)
+    m.toArray.foldl (init := init) fun m a => mkApp2 push m (toExpr a)
 
 namespace ArgDeclKind
 
@@ -288,6 +296,10 @@ def toExpr (bi : BindingSpec bindings) (bindingsExpr : Lean.Expr) : Lean.Expr :=
   | .type b => mkApp2 (mkConst ``type) bindingsExpr (b.toExpr bindingsExpr)
 
 end BindingSpec
+
+instance ArgDecls.instToExpr : ToExpr ArgDecls where
+  toTypeExpr := mkConst ``ArgDecls
+  toExpr a := mkApp (mkConst ``ArgDecls.ofArray) (toExpr a.toArray)
 
 namespace OpDecl
 
