@@ -4,17 +4,70 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+import Lean.Elab.Term
 import Strata.DDM.AST
-import Lean.Elab.App
 
 namespace Strata
 
 open Lean
 
+namespace QualifiedIdent
 
 instance : ToExpr QualifiedIdent where
   toTypeExpr := mkConst ``QualifiedIdent
   toExpr i := mkApp2 (mkConst ``QualifiedIdent.mk) (toExpr i.dialect) (toExpr i.name)
+
+end QualifiedIdent
+
+section
+
+open Lean.Elab
+
+private def rootIdent (name : Name) : Ident :=
+  .mk (.ident .none name.toString.toSubstring name [.decl name []])
+
+private def emptyLevel : Lean.Expr := mkApp (mkConst ``List.nil [.zero]) (mkConst ``Level)
+
+/--
+Lift a DDM AST constructor that takes a polymorphic annotation value to
+the expression level with the correct number of arguments.
+
+For example, `astExpr! ArgF.ident ann` returns a function that expects one
+Lean expression and returns another.
+-/
+syntax:max (name := astExprElab) "astExpr!" ident : term
+
+@[term_elab astExprElab]
+def astExprElabImpl : Term.TermElab := fun stx _expectedType => do
+  match stx with
+  | `(astExpr! $ident) => do
+    let ctor ← realizeGlobalConstNoOverloadWithInfo ident
+    let cv ← getConstVal ctor
+    let argc := cv.type.getForallBinderNames.length
+    assert! argc ≥ 1 ∧ argc ≤ 10
+    let mkAppName : Name :=
+      if argc = 1 then
+        `Lean |>.str s!"mkApp"
+      else
+        `Lean |>.str s!"mkApp{argc}"
+    let ctorExpr := mkApp2 (mkConst ``mkConst) (toExpr ctor) emptyLevel
+    return mkApp (mkConst mkAppName) ctorExpr
+  | _ => do
+    throwUnsupportedSyntax
+
+end
+
+namespace SyntaxCat
+
+protected def toExpr : SyntaxCat → Lean.Expr
+| .atom a => mkApp (mkConst ``SyntaxCat.atom) (toExpr a)
+| .app f a => mkApp2 (mkConst ``SyntaxCat.app) (f.toExpr) (a.toExpr)
+
+instance : ToExpr SyntaxCat where
+  toTypeExpr := mkConst ``SyntaxCat
+  toExpr := SyntaxCat.toExpr
+
+end SyntaxCat
 
 namespace TypeExpr
 
@@ -22,23 +75,72 @@ protected def typeExpr : Lean.Expr := mkConst ``TypeExpr
 
 protected def toExpr : TypeExpr → Lean.Expr
 | .ident nm a =>
-  mkApp2
-    (mkConst ``TypeExpr.ident)
-    (toExpr nm)
-    (arrayToExpr TypeExpr.typeExpr (a.map (·.toExpr)))
-| .bvar idx => mkApp (mkConst ``TypeExpr.bvar) (toExpr idx)
+  let ae := arrayToExpr TypeExpr.typeExpr (a.map (·.toExpr))
+  astExpr! ident (toExpr nm) ae
+| .bvar idx =>
+  astExpr! bvar (toExpr idx)
 | .fvar idx a =>
-  mkApp2
-    (mkConst ``TypeExpr.fvar)
-    (toExpr idx)
-    (arrayToExpr TypeExpr.typeExpr (a.map (·.toExpr)))
-| .arrow a r => mkApp2 (mkConst ``arrow) a.toExpr r.toExpr
+  let ae := arrayToExpr TypeExpr.typeExpr (a.map (·.toExpr))
+  astExpr! fvar (toExpr idx) ae
+| .arrow a r =>
+  astExpr! arrow a.toExpr r.toExpr
 
-instance : ToExpr TypeExpr where
+instance  : ToExpr TypeExpr where
   toTypeExpr := TypeExpr.typeExpr
   toExpr := TypeExpr.toExpr
 
 end TypeExpr
+
+protected def Expr.typeExpr := mkConst ``Expr
+
+protected def Arg.typeExpr := mkConst ``Arg
+
+protected def Operation.typeExpr := mkConst ``Operation
+
+mutual
+
+protected def Expr.toExpr : Expr → Lean.Expr
+| .bvar i => astExpr!  Expr.bvar (toExpr i)
+| .fvar idx => astExpr! Expr.fvar (toExpr idx)
+| .fn ident => astExpr! Expr.fn (toExpr ident)
+| .app f a => astExpr! Expr.app f.toExpr a.toExpr
+termination_by e => sizeOf e
+
+def Arg.toExpr : Arg → Lean.Expr
+| .op o => astExpr! Arg.op o.toExpr
+| .expr e => astExpr! Arg.expr (e.toExpr)
+| .type e => astExpr! Arg.type  (toExpr e)
+| .cat e => astExpr! Arg.cat (toExpr e)
+| .ident e => astExpr! Arg.ident (toExpr e)
+| .num e => astExpr! Arg.num (toExpr e)
+| .decimal e => astExpr! Arg.decimal (toExpr e)
+| .strlit e => astExpr! Arg.strlit (toExpr e)
+| .option a => astExpr! Arg.option (optionToExpr Arg.typeExpr (a.attach.map (fun ⟨e, _⟩ => e.toExpr)))
+| .seq a => astExpr! Arg.seq (arrayToExpr Arg.typeExpr (a.map (·.toExpr)))
+| .commaSepList a => astExpr! Arg.commaSepList (arrayToExpr Arg.typeExpr (a.map (·.toExpr)))
+termination_by a => sizeOf a
+
+protected def Operation.toExpr (op : Operation) : Lean.Expr :=
+  let args := arrayToExpr Arg.typeExpr (op.args.map (·.toExpr))
+  astExpr! Operation.mk (toExpr op.name) args
+termination_by sizeOf op
+decreasing_by
+  simp only [Operation.sizeOf_spec]
+  decreasing_tactic
+
+end
+
+instance Expr.instToExpr : ToExpr Expr where
+  toTypeExpr := Expr.typeExpr
+  toExpr := (·.toExpr)
+
+instance Art.instToExpr : ToExpr Arg where
+  toTypeExpr := Arg.typeExpr
+  toExpr := Arg.toExpr
+
+instance Operation.instToExpr : ToExpr Operation where
+  toTypeExpr := Operation.typeExpr
+  toExpr := Operation.toExpr
 
 namespace PreType
 
@@ -64,66 +166,6 @@ instance : ToExpr PreType where
   toExpr := PreType.toExpr
 
 end PreType
-
-namespace SyntaxCat
-
-protected def toExpr : SyntaxCat → Lean.Expr
-| .atom a => mkApp (mkConst ``SyntaxCat.atom) (toExpr a)
-| .app f a => mkApp2 (mkConst ``SyntaxCat.app) (f.toExpr) (a.toExpr)
-
-instance : ToExpr SyntaxCat where
-  toTypeExpr := mkConst ``SyntaxCat
-  toExpr := SyntaxCat.toExpr
-
-end SyntaxCat
-
-protected def Expr.typeExpr := mkConst ``Expr
-
-protected def Arg.typeExpr := mkConst ``Arg
-
-protected def Operation.typeExpr := mkConst ``Operation
-
-mutual
-
-protected def Expr.toExpr : Expr → Lean.Expr
-| .bvar i => mkApp (mkConst ``Expr.bvar) (toExpr i)
-| .fvar idx => mkApp (mkConst ``Expr.fvar) (toExpr idx)
-| .fn ident => mkApp (mkConst ``Expr.fn) (toExpr ident)
-| .app f a => mkApp2 (mkConst ``Expr.app) f.toExpr a.toExpr
-termination_by e => sizeOf e
-
-def Arg.toExpr : Arg → Lean.Expr
-| .op o => mkApp (mkConst ``Arg.op) o.toExpr
-| .expr e     => mkApp (mkConst ``Arg.expr)  (e.toExpr)
-| .type e     => mkApp (mkConst ``Arg.type)  (toExpr e)
-| .cat e      => mkApp (mkConst ``Arg.cat)   (toExpr e)
-| .ident e    => mkApp (mkConst ``Arg.ident) (toExpr e)
-| .num e      => mkApp (mkConst ``Arg.num) (toExpr e)
-| .decimal e  => mkApp (mkConst ``Arg.decimal) (toExpr e)
-| .strlit e    => mkApp (mkConst ``Arg.strlit) (toExpr e)
-| .option a => mkApp (mkConst ``Arg.option) (optionToExpr Arg.typeExpr (a.attach.map (fun ⟨e, _⟩ => e.toExpr)))
-| .seq a => mkApp (mkConst ``Arg.seq) (arrayToExpr Arg.typeExpr (a.map (·.toExpr)))
-| .commaSepList a => mkApp (mkConst ``Arg.commaSepList) (arrayToExpr Arg.typeExpr (a.map (·.toExpr)))
-termination_by a => sizeOf a
-
-protected def Operation.toExpr (op : Operation) : Lean.Expr :=
-  let args := arrayToExpr Arg.typeExpr (op.args.map (·.toExpr))
-  mkApp2 (mkConst ``Operation.mk) (toExpr op.name) args
-termination_by sizeOf op
-
-end
-
-instance Expr.instToExpr : ToExpr Expr where
-  toTypeExpr := Expr.typeExpr
-  toExpr := (·.toExpr)
-
-instance Art.instToExpr : ToExpr Arg where
-  toTypeExpr := Arg.typeExpr
-  toExpr := Arg.toExpr
-
-instance Operation.instToExpr : ToExpr Operation where
-  toTypeExpr := Operation.typeExpr
-  toExpr := Operation.toExpr
 
 namespace MetadataArg
 
@@ -211,8 +253,9 @@ instance : ToExpr (DebruijnIndex n) where
 
 end DebruijnIndex
 
-protected
-def ValueBindingSpec.toExpr {bindings} (b : ValueBindingSpec bindings) (bindingsExpr : Lean.Expr) : Lean.Expr :=
+namespace ValueBindingSpec
+
+protected def toExpr {argDecls} (b : ValueBindingSpec argDecls) (bindingsExpr : Lean.Expr) : Lean.Expr :=
   mkAppN (mkConst ``ValueBindingSpec.mk) #[
     bindingsExpr,
     toExpr b.nameIndex,
@@ -221,14 +264,19 @@ def ValueBindingSpec.toExpr {bindings} (b : ValueBindingSpec bindings) (bindings
     toExpr b.allowCat
   ]
 
-protected
-def TypeBindingSpec.toExpr (b : TypeBindingSpec bindings) (bindingsExpr : Lean.Expr) : Lean.Expr :=
+end ValueBindingSpec
+
+namespace TypeBindingSpec
+
+protected def toExpr (b : TypeBindingSpec bindings) (bindingsExpr : Lean.Expr) : Lean.Expr :=
   mkAppN (mkConst ``TypeBindingSpec.mk) #[
     bindingsExpr,
     toExpr b.nameIndex,
     toExpr b.argsIndex,
     toExpr b.defIndex
   ]
+
+end TypeBindingSpec
 
 namespace BindingSpec
 
@@ -241,7 +289,9 @@ def toExpr (bi : BindingSpec bindings) (bindingsExpr : Lean.Expr) : Lean.Expr :=
 
 end BindingSpec
 
-instance OpDecl.instToExpr : ToExpr OpDecl where
+namespace OpDecl
+
+instance : ToExpr OpDecl where
   toTypeExpr := mkConst ``OpDecl
   toExpr d :=
     let be := toExpr d.argDecls
@@ -254,13 +304,23 @@ instance OpDecl.instToExpr : ToExpr OpDecl where
       arrayToExpr (BindingSpec.typeExpr be) (d.newBindings.map (·.toExpr be))
     ]
 
-instance TypeDecl.instToExpr : ToExpr TypeDecl where
-  toTypeExpr := mkConst ``TypeDecl
-  toExpr d := mkApp2 (mkConst ``TypeDecl.mk) (toExpr d.name) (toExpr d.argNames)
+end OpDecl
 
-instance FunctionDecl.instToExpr : ToExpr FunctionDecl where
+namespace TypeDecl
+
+instance : ToExpr TypeDecl where
+  toTypeExpr := mkConst ``TypeDecl
+  toExpr d := mkApp2 (mkConst ``mk) (toExpr d.name) (toExpr d.argNames)
+
+end TypeDecl
+
+namespace FunctionDecl
+
+instance : ToExpr FunctionDecl where
   toTypeExpr := mkConst ``FunctionDecl
-  toExpr d := mkAppN (mkConst ``FunctionDecl.mk) #[toExpr d.name, toExpr d.argDecls, toExpr d.result, toExpr d.syntaxDef, toExpr d.metadata]
+  toExpr d := mkAppN (mkConst ``mk) #[toExpr d.name, toExpr d.argDecls, toExpr d.result, toExpr d.syntaxDef, toExpr d.metadata]
+
+end FunctionDecl
 
 namespace MetadataArgType
 
