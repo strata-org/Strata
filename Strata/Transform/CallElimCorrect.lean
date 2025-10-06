@@ -3439,7 +3439,7 @@ theorem callElimStatementCorrect :
       have Hgenolds := genOldExprIdentsTripGeneratedWF Heqold
       have HargTemp : Forall (BoogieIdent.isTemp ·) argTrips.unzip.1.unzip.1 := by
         simp [BoogieGenState.WF] at Hwfgenargs
-        have HH := List.Forall_mem_iff.mp Hwfgenargs.2.2
+        have HH := List.Forall_mem_iff.mp Hwfgenargs.2.2.2
         simp only [← Hgenargs] at HH
         refine List.Forall_mem_iff.mpr ?_
         intros x Hin
@@ -3447,7 +3447,7 @@ theorem callElimStatementCorrect :
         exact List.mem_append_left γ.generated (List.mem_reverse.mpr Hin)
       have HoutTemp : Forall (BoogieIdent.isTemp ·) outTrips.unzip.1.unzip.1 := by
         simp [BoogieGenState.WF] at Hwfgenouts
-        have HH := List.Forall_mem_iff.mp Hwfgenouts.2.2
+        have HH := List.Forall_mem_iff.mp Hwfgenouts.2.2.2
         simp only [← Hgenouts] at HH
         refine List.Forall_mem_iff.mpr ?_
         intros x Hin
@@ -3455,7 +3455,7 @@ theorem callElimStatementCorrect :
         exact List.mem_append_left s_arg.generated (List.mem_reverse.mpr Hin)
       have HoldTemp : Forall (BoogieIdent.isTemp ·) oldTrips.unzip.1.unzip.1 := by
         simp [BoogieGenState.WF] at Hwfgenolds
-        have HH := List.Forall_mem_iff.mp Hwfgenolds.2.2
+        have HH := List.Forall_mem_iff.mp Hwfgenolds.2.2.2
         simp only [← Hgenolds] at HH
         refine List.Forall_mem_iff.mpr ?_
         intros x Hin
@@ -3472,7 +3472,7 @@ theorem callElimStatementCorrect :
                       outTrips.unzip.fst.unzip.fst ++
                       oldTrips.unzip.fst.unzip.fst).Nodup := by
         simp [BoogieGenState.WF] at Hwfgenolds
-        have Hnd := nodup_reverse Hwfgenolds.2.1
+        have Hnd := nodup_reverse Hwfgenolds.2.2.1
         simp only [List.reverse_append, List.reverse_reverse, ← List.append_assoc,
                   ← Hgenargs,← Hgenouts,← Hgenolds] at Hnd
         exact Hnd

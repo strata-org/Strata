@@ -255,6 +255,36 @@ Replace the global substitution in `T.state.subst` with `S`.
 def TEnv.updateSubst (T : (TEnv Identifier)) (S : SubstInfo) : (TEnv Identifier) :=
   { T with state.substInfo := S }
 
+omit [DecidableEq Identifier] [ToFormat Identifier] in
+theorem TEnv.SubstWF_of_pushemptySubstScope (T : TEnv Identifier) :
+  SubstWF (Maps.push T.state.substInfo.subst []) := by
+  have h_SubstWF : SubstWF T.state.substInfo.subst := by
+    apply T.state.substInfo.isWF
+  generalize T.state.substInfo.subst = S at *
+  simp_all [SubstWF, Subst.freeVars]
+  done
+
+def TEnv.pushEmptySubstScope (T : (TEnv Identifier)) : (TEnv Identifier) :=
+  let new_subst := T.state.substInfo.subst.push []
+  let newS := { subst := new_subst, isWF := (by rw [TEnv.SubstWF_of_pushemptySubstScope]) }
+  { T with state.substInfo := newS }
+
+omit [DecidableEq Identifier] [ToFormat Identifier] in
+theorem TEnv.SubstWF_of_popSubstScope (T : TEnv Identifier) :
+  SubstWF (Maps.pop T.state.substInfo.subst) := by
+  have h_SubstWF : SubstWF T.state.substInfo.subst := by
+    apply T.state.substInfo.isWF
+  generalize T.state.substInfo.subst = S at *
+  simp_all [Maps.pop]
+  split <;> try simp_all
+  rename_i ms m mrest
+  simp [@SubstWF_of_cons m mrest (by assumption)]
+
+def TEnv.popSubstScope (T : (TEnv Identifier)) : (TEnv Identifier) :=
+  let new_subst := T.state.substInfo.subst.pop
+  let newS := { subst := new_subst, isWF := (by rw [TEnv.SubstWF_of_popSubstScope]) }
+  { T with state.substInfo := newS }
+
 def TEnv.pushEmptyContext (T : (TEnv Identifier)) : (TEnv Identifier) :=
   let ctx := T.context
   let ctx' := { ctx with types := ctx.types.push [] }
@@ -377,7 +407,7 @@ def LMonoTys.instantiate (ids : List TyIdentifier) (mtys : LMonoTys) (T : (TEnv 
   LMonoTys × (TEnv Identifier) :=
   let (freshtvs, T) := TEnv.genTyVars ids.length T
   let S := List.zip ids (List.map (fun tv => (LMonoTy.ftvar tv)) freshtvs)
-  (LMonoTys.subst S mtys, T)
+  (LMonoTys.subst [S] mtys, T)
 
 omit [DecidableEq Identifier] in
 theorem LMonoTys.instantiate_length :
@@ -402,7 +432,7 @@ def LTy.instantiate (ty : LTy) (T : (TEnv Identifier)) : LMonoTy × (TEnv Identi
   | .forAll xs lty' =>
     let (freshtvs, T) := TEnv.genTyVars xs.length T
     let S := List.zip xs (List.map (fun tv => (.ftvar tv)) freshtvs)
-    (LMonoTy.subst S lty', T)
+    (LMonoTy.subst [S] lty', T)
 
 instance : Inhabited (Option LMonoTy × TEnv Identifier) where
   default := (none, TEnv.default)
@@ -444,8 +474,7 @@ def LMonoTy.aliasDef? (mty : LMonoTy) (T : (TEnv Identifier)) : (Option LMonoTy 
 /--
 info: Ans: some (Foo $__ty0 (BarAlias $__ty0 $__ty0))
 Subst:
-($__ty1, (BarAlias $__ty0 $__ty0))
-(p, $__ty0)
+[(p, $__ty0) ($__ty1, (BarAlias $__ty0 $__ty0))]
 -/
 #guard_msgs in
 open LTy.Syntax in
@@ -564,10 +593,7 @@ end
 /--
 info: De-aliased type: some (Foo $__ty0 (Bar $__ty3 $__ty3))
 Subst:
-($__ty2, $__ty3)
-($__ty0, $__ty3)
-($__ty1, (BarAlias $__ty3 $__ty3))
-(p, $__ty3)
+[(p, $__ty3) ($__ty1, (BarAlias $__ty3 $__ty3)) ($__ty0, $__ty3) ($__ty2, $__ty3)]
 -/
 #guard_msgs in
 open LTy.Syntax in

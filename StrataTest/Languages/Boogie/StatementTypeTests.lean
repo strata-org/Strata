@@ -113,8 +113,7 @@ tyGen: 2
 tyPrefix: $__ty
 exprGen: 0
 exprPrefix: $__var
-subst: ($__ty0, int)
-
+subst: [($__ty0, int)]
 known types:
 [∀[0, 1]. (arrow 0 1), bool, int, string]
 -/
@@ -156,14 +155,7 @@ tyGen: 10
 tyPrefix: $__ty
 exprGen: 1
 exprPrefix: $__var
-subst: ($__ty9, int)
-($__ty3, (arrow bool int))
-($__ty5, (arrow bool int))
-($__ty7, bool)
-($__ty6, (arrow bool int))
-($__ty2, int)
-($__ty0, int)
-
+subst: [($__ty0, int) ($__ty2, int) ($__ty6, (arrow bool int)) ($__ty7, bool) ($__ty5, (arrow bool int)) ($__ty3, (arrow bool int)) ($__ty9, int)]
 known types:
 [∀[0, 1]. (arrow 0 1), bool, int, string]
 -/

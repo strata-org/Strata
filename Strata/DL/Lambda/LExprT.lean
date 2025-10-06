@@ -407,9 +407,9 @@ partial def fromLExprAux.abs (T : (TEnv Identifier)) (bty : Option LMonoTy) (e :
   let ety := etclosed.toLMonoTy
   let mty := LMonoTy.subst T.state.substInfo.subst (.tcons "arrow" [xty, ety])
   -- Safe to erase fresh variable from context after closing the expressions.
-  -- Note that we don't erase `xtyid` (if it was created) from the substitution
+  -- Note that we don't erase `xty` (if it was a fresh type variable) from the substitution
   -- list because it may occur in `etclosed`, which hasn't undergone a
-  -- substitution. We could, of course, substitute `xtyid` in `etclosed`, but
+  -- substitution. We could, of course, substitute `xty` in `etclosed`, but
   -- that'd require crawling over that expression, which could be expensive.
   let T := T.eraseFromContext xv
   .ok ((.abs etclosed mty), T)
@@ -418,8 +418,6 @@ partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (bt
     (triggers : LExpr LMonoTy Identifier) (e : (LExpr LMonoTy Identifier)) := do
   let (xv, xty, T) ← typeBoundVar T bty
   let e' := LExpr.varOpen 0 (xv, some xty) e
-  -- Construct `e'` from `e`, where the bound variable has been replaced by
-  -- `xv`.
   let triggers' := LExpr.varOpen 0 (xv, some xty) triggers
   let (et, T) ← fromLExprAux T e'
   let (triggersT, T) ← fromLExprAux T triggers'
@@ -428,7 +426,7 @@ partial def fromLExprAux.quant (T : (TEnv Identifier)) (qk : QuantifierKind) (bt
   let etclosed := LExprT.varClose 0 xv et
   let triggersClosed := LExprT.varClose 0 xv triggersT
   -- Safe to erase fresh variable from context after closing the expressions.
-  -- Again, as in `abs`, we do not erase `xtyid` (if it was created) from the
+  -- Again, as in `abs`, we do not erase `xty` (if it was a fresh variable) from the
   -- substitution list.
   let T := T.eraseFromContext xv
   if ety != LMonoTy.bool then do
@@ -452,7 +450,7 @@ partial def fromLExprAux.app (T : (TEnv Identifier)) (e1 e2 : (LExpr LMonoTy Ide
   -- applied.
   let mty := LMonoTy.subst S.subst freshty
   -- `freshty` can now be safely removed from the substitution list.
-  have hWF : SubstWF (Map.remove S.subst fresh_name) := by
+  have hWF : SubstWF (Maps.remove S.subst fresh_name) := by
     apply @SubstWF_of_remove S.subst fresh_name S.isWF
   let S := { S with subst := S.subst.remove fresh_name, isWF := hWF }
   .ok (.app e1t e2t mty, TEnv.updateSubst T S)

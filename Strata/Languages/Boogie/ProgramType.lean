@@ -18,6 +18,7 @@ namespace Boogie
 open Std (ToFormat Format format)
 open Lambda
 
+
 namespace Program
 
 def typeCheck (T : Boogie.Expression.TyEnv) (program : Program) :
@@ -39,6 +40,8 @@ def typeCheck (T : Boogie.Expression.TyEnv) (program : Program) :
               List of function names:{Format.line}\
               {funcNames}"
   else
+    -- Push a type substitution scope to store global type variables.
+    let T := T.updateSubst { subst := [[]], isWF := SubstWF_of_empty_empty }
     let (decls, T) ← go T program.decls []
     .ok ({ decls }, T)
 
@@ -85,12 +88,16 @@ def typeCheck (T : Boogie.Expression.TyEnv) (program : Program) :
         | _ => .error f!"Axiom has non-boolean type: {a}"
 
       | .proc proc _ =>
+        let T := T.pushEmptySubstScope
         let (proc', T) ← Procedure.typeCheck T program proc
+        let T := T.popSubstScope
         .ok (.proc proc', T)
 
       | .func func _ =>
+        let T := T.pushEmptySubstScope
         let (func', T) ← Function.typeCheck T func
         let T := T.addFactoryFunction func'
+        let T := T.popSubstScope
         .ok (.func func', T)
 
     go T drest (decl' :: acc)
