@@ -52,11 +52,8 @@ deriving Inhabited, Repr, DecidableEq
 /--
 An additional parameter that restricts the values of a type
 or attaches additional metadata to a type.
-For now, only bitvectors are supported.
 -/
 inductive LTyRestrict : Type where
-  /-- Special support for bitvector types of every size. -/
-  | bitvecdata (size: Nat)
   /-- Bounded integers -/
   | bounddata (b: BoundExpr)
   | nodata
@@ -71,12 +68,11 @@ inductive LMonoTy (TypeRestrictions: Type := LTyRestrict) : Type where
   | ftvar (name : TyIdentifier)
   /-- Type constructor. -/
   | tcons (name : String) (args : List (LMonoTy TypeRestrictions)) (r: TypeRestrictions := by exact .nodata)
+  /-- Special support for bitvector types of every size. -/
+  | bitvec (size : Nat)
   deriving Inhabited, Repr
 
 abbrev LMonoTys := List LMonoTy
-
-@[match_pattern]
-def LMonoTy.bitvec (n: Nat) := LMonoTy.tcons "bitvec" [] (LTyRestrict.bitvecdata n)
 
 @[match_pattern]
 def LMonoTy.bool : LMonoTy :=
@@ -168,6 +164,7 @@ types. So we define our own induction principle below.
 @[induction_eliminator]
 theorem LMonoTy.induct {Meta: Type} {P : LMonoTy Meta → Prop}
   (ftvar : ∀f, P (.ftvar f))
+  (bitvec : ∀n, P (.bitvec n))
   (tcons : ∀name args r, (∀ ty ∈ args, P ty) → P (.tcons name args r)) :
   ∀ ty, P ty := by
   intro n
@@ -186,6 +183,7 @@ def LMonoTy.size (ty : LMonoTy) : Nat :=
   match ty with
   | .ftvar _ => 1
   | .tcons _ args _ => 1 + LMonoTys.size args
+  | .bitvec _ => 1
 
 def LMonoTys.size (args : LMonoTys) : Nat :=
     match args with
@@ -205,6 +203,7 @@ Boolean equality for `LMonoTy`.
 def LMonoTy.BEq (x y : LMonoTy) : Bool :=
   match x, y with
   | .ftvar i, .ftvar j => i == j
+  | .bitvec i, .bitvec j => i == j
   | .tcons i1 j1 r1, .tcons i2 j2 r2 =>
     i1 == i2 && j1.length == j2.length && r1 == r2 && go j1 j2
   | _, _ => false
@@ -233,6 +232,8 @@ instance : DecidableEq LMonoTy :=
                 induction x generalizing y
                 case ftvar =>
                   unfold LMonoTy.BEq at h <;> split at h <;> try simp_all
+                case bitvec =>
+                  unfold LMonoTy.BEq at h <;> split at h <;> try simp_all
                 case tcons =>
                   rename_i name args r ih
                   cases y <;> try simp_all [LMonoTy.BEq]
@@ -249,6 +250,8 @@ instance : DecidableEq LMonoTy :=
     else
       isFalse (by induction x generalizing y
                   case ftvar =>
+                    cases y <;> try simp_all [LMonoTy.BEq]
+                  case bitvec n =>
                     cases y <;> try simp_all [LMonoTy.BEq]
                   case tcons name args r ih =>
                     cases y <;> try simp_all [LMonoTy.BEq]
@@ -279,6 +282,7 @@ it.
 def LMonoTy.freeVars (mty : LMonoTy) : List TyIdentifier :=
   match mty with
   | .ftvar x => [x]
+  | .bitvec _ => []
   | .tcons _ ltys _ => LMonoTys.freeVars ltys
 
 /--
