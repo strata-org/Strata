@@ -327,19 +327,17 @@ partial def stmtToJson (e : Strata.C_Simp.Statement) (loc: SourceLoc) : Json :=
         blockToJson elseb loc,
       ])
     ]
-  -- TODO: fix this
   | .loop guard _ _ body _ =>
     Json.mkObj [
       ("id", "code"),
       ("namedSub", Json.mkObj [
         ("#source_location", mkSourceLocation "from_andrew.c" loc.functionName "8"),
-        ("statement", Json.mkObj [("id", "ifthenelse")]),
+        ("statement", Json.mkObj [("id", "while")]),
         ("type", emptyType)
       ]),
       ("sub", Json.arr #[
         exprToJson guard loc,
-        blockToJson body loc,
-        blockToJson body loc,
+        blockToJson body loc
       ])
     ]
   | _ => panic! "Unimplemented"

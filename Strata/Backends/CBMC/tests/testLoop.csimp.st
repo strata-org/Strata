@@ -13,7 +13,7 @@ int procedure simpleTest (x: int, y: int)
   while
   (count < 5)
   //@decreases (5-count)
-  //@invariant (count <= 5)
+  //@invariant (count <= 5 && (sum == (count * x)))
   {
     count = count + 1;
     sum = sum + x;
