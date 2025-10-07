@@ -23,3 +23,6 @@ name = "StrataVerify"
 
 [[lean_exe]]
 name = "StrataToCBMC"
+
+[[lean_exe]]
+name = "BoogieToGoto"
