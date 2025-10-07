@@ -22,8 +22,13 @@ def gen_dialect_imp(args):
     print(f"Wrote Python dialect to {output}")
 
 def parse_python_imp(args):
-    with open(args.python, 'r') as r:
-        (_, p) = stratap.parse_module(r.read(), args.python)
+    path = args.python
+    with open(path, 'rb') as r:
+        try:
+            (_, p) = stratap.parse_module(r.read(), path)
+        except SyntaxError as e:
+            print(f"Error parsing {path}:\n  {e}", file=sys.stderr)
+            exit(1)
     with open(args.output, 'wb') as w:
         ion.dump(p.to_ion(), w, binary=True)
 

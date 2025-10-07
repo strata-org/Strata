@@ -39,5 +39,8 @@ def main (args : List String) : IO Unit := do
             | _ => IO.println "Error: expected boogie procedure"
         else
           IO.println "Error: Unrecognized file extension"
-    | .error e => IO.println s!"Error: Parsing : {e.toList.map (λ p => p.fst)}"
+    | .error errors =>
+      for e in errors do
+        let msg ← e.toString
+        println! s!"Error: {msg}"
   | _ => IO.println "Error: incorrect usage. Usage: StrataToCBMC filename or StrataToCBMC test"
