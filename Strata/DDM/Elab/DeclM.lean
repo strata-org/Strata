@@ -125,16 +125,16 @@ def runChecked {m α} [ElabClass m] (action : m α) : m (α × Bool) := do
   let r ← action
   return (r, errorCount = (← ElabClass.getErrorCount))
 
-def logError {m} [ElabClass m] (loc : SourceRange) (msg : String) : m Unit := do
+def logError {m} [ElabClass m] (loc : SourceRange) (msg : String) (isSilent : Bool := false): m Unit := do
   let inputCtx ← ElabClass.getInputContext
-  let m := Lean.mkStringMessage inputCtx loc.start msg
+  let m := Lean.mkStringMessage inputCtx loc.start msg (isSilent := isSilent)
   let m := if loc.isNone then m else { m with endPos := inputCtx.fileMap.toPosition loc.stop }
   logErrorMessage m
 
-def logErrorMF {m} [ElabClass m] (loc : SourceRange) (msg : StrataFormat) : m Unit := do
+def logErrorMF {m} [ElabClass m] (loc : SourceRange) (msg : StrataFormat) (isSilent : Bool := false) : m Unit := do
   let c : FormatContext := .ofDialects (← ElabClass.getDialects) (← ElabClass.getGlobalContext) {}
   let s : FormatState := { openDialects := ← ElabClass.getOpenDialects }
-  logError loc (msg c s |>.format |>.pretty)
+  logError loc (msg c s |>.format |>.pretty) (isSilent := isSilent)
 
 -- DeclM
 
@@ -143,6 +143,8 @@ structure DeclContext where
   stopPos : String.Pos
   -- Map from dialect names to the dialect definition
   loader : LoadedDialects
+  /-- Flag indicating imports are missing (silences some errors). -/
+  missingImport : Bool
 
 namespace DeclContext
 
@@ -150,6 +152,7 @@ def empty : DeclContext where
   inputContext := default
   loader := .empty
   stopPos := 0
+  missingImport := false
 
 end DeclContext
 
