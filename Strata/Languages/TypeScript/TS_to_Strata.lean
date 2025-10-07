@@ -552,15 +552,23 @@ partial def translate_statement_core
         (bodyCtx, [ initBreakFlag, .loop combinedCondition none none bodyBlock ])
 
         | .TS_ForStatement forStmt =>
+          dbg_trace s!"[DEBUG] Translating for statement at loc {forStmt.start_loc}-{forStmt.end_loc}"
+          
           let continueLabel := s!"for_continue_{forStmt.start_loc}"
+          let breakLabel := s!"for_break_{forStmt.start_loc}"
+          let breakFlagVar := s!"for_break_flag_{forStmt.start_loc}"
+
+          -- Initialize break flag to false
+          let initBreakFlag : TSStrataStatement := .cmd (.init breakFlagVar Heap.HMonoTy.bool Heap.HExpr.false)
+
           -- init phase
           let (_, initStmts) := translate_statement_core (.TS_VariableDeclaration forStmt.init) ctx
           -- guard (test)
           let guard := translate_expr forStmt.test
-          -- body (first translate loop body)
+          -- body (first translate loop body with break support)
           let (ctx1, bodyStmts) :=
               translate_statement_core forStmt.body ctx
-                { continueLabel? := some continueLabel }
+                { continueLabel? := some continueLabel, breakLabel? := some breakLabel, breakFlagVar? := some breakFlagVar }
           -- update (translate expression into statements following ExpressionStatement style)
           let (_, updateStmts) :=
               translate_statement_core
@@ -572,13 +580,16 @@ partial def translate_statement_core
                   type := "TS_AssignmentExpression"
                 }) ctx1
 
+          -- Modify loop condition to include break flag check: (original_condition && !break_flag)
+          let breakFlagExpr := Heap.HExpr.lambda (.fvar breakFlagVar none)
+          let combinedCondition := Heap.HExpr.deferredIte breakFlagExpr Heap.HExpr.false guard
 
           -- assemble loop body (body + update)
           let loopBody : Imperative.Block TSStrataExpression TSStrataCommand :=
             { ss := bodyStmts ++ updateStmts }
 
-          -- output: init statements first, then a loop statement
-          (ctx1, initStmts ++ [ .loop guard none none loopBody])
+          -- output: init break flag, init statements, then a loop statement
+          (ctx1, [initBreakFlag] ++ initStmts ++ [ .loop combinedCondition none none loopBody])
 
         | .TS_SwitchStatement switchStmt =>
           -- Handle switch statement: switch discriminant { cases }
