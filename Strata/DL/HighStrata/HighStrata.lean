@@ -152,12 +152,6 @@ inductive StmtExpr : Type where
   -/
   | IsType (target : StmtExpr) (type: HighType) (newBinding : Option Identifier)
   | InstanceInvocation (target : StmtExpr) (callee : Identifier) (arguments : List StmtExpr)
-/- Verification specific -/
--- TODO: Add forall and exists
-  | Assigned (name : StmtExpr)
-  | Old (value : StmtExpr)
-  /- Fresh may only target impure composite types -/
-  | Fresh(value : StmtExpr)
 
 /- Related to creation of objects -/
   /- Create returns a partial type, whose fields are still unassigned and whose type invariants are not guaranteed to hold. -/
@@ -177,6 +171,13 @@ inductive StmtExpr : Type where
   /- The next two could be defined using a library -/
   | DynamicFieldAccess (target : StmtExpr) (fieldName : StmtExpr)
   | DynamicFieldUpdate (target : StmtExpr) (fieldName : StmtExpr) (newValue : StmtExpr)
+
+/- Verification specific -/
+-- TODO: Add forall and exists
+  | Assigned (name : StmtExpr)
+  | Old (value : StmtExpr)
+  /- Fresh may only target impure composite types -/
+  | Fresh(value : StmtExpr)
 
 /- Related to proofs -/
   | Assert (condition: StmtExpr)
