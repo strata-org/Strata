@@ -7,29 +7,27 @@ It enables doing various forms of verification:
 - Data-flow analysis
 
 Design choices:
-- Contracts may only contain pure code. Pure code does not modify the heap, neither by modifying existing objects are creating new ones.
-- Naming wise: instead of functions/methods/procudures we have callables.
-  They can be mathematical like functions or associated with a type like methods, but they do not have to be.
-- Statements and expressions are part of the same type
+- Pure contracts: contracts may only contain pure code. Pure code does not modify the heap, neither by modifying existing objects are creating new ones.
+- Callables: instead of functions and methods we have a single more general concept called a 'callable'.
+- Purity: Callables can be marked as pure or impure. Pure callables have a reads clause while impure ones have a modifies clause.
+  A reads clause is currently not usefulf or impure callables, since reads clauses are used to determine when the output changes, but impure callables can be non-determinismic so the output can always change.
+- Opacity: callables can have a body that's transparant or opaque. Only an opaque body may declare a postcondition. A transparant callable must be pure.
+- StmtExpr: Statements and expressions are part of the same type. This reduces duplication since the same concepts are needed in both, such as conditions and variable declarations.
+- Loops: The only loop is a while, but this can be used to compile do-while and for loops to as well.
+- Jumps: Instead of break and continue statements, there is a labelled block that can be exited from using an exit statement inside of it.
+  This can be used to model break statements and continue statements for both while and for loops.
+- Pattern matching: there is no match-case construct, but there are type tests with pattern matching that enable the same functionality but more generally.
+
 - User defined types consist of two categories: composite types and constrained types.
   - Composite types have fields and callables, and may extend other composite types.
   - Constrained types are defined by a base type and a constraint over that type.
   - Algebriac datatypes do not exist directly but can be encoded using composited and constrained types.
-- The base type for all Composite types is Dynamic, which is a type that can be type tested.
-  For all primitive types there is an implicit composite type that wraps around the primitive,
-  so primitives can be boxed to become the Dynamic type. They can be unboxed using a type test.
-  This is useful for source languages such as JavaScript.
-  The operators that work on primitives also work on the Dynamic type and well automatically unbox it when useful.
-- HighStrat only has a while loop, but this can be used to compile do-while and for loops to as well.
-- Instead of break and continue statements, there is a labelled block that can be exited from using an exit statement inside of it.
-  This can be used to model break statements and continue statements for both while and for loops.
-
-- There is no match-case construct, but there are type tests with pattern matching that enable the same functionality but more generally.
-- There is no concept of constructors, but there is a partial type that represents an object whose fields
+- The base type for all composite types is dynamic, which is a type that can be type tested.
+  For all primitive types there is an implicit composite type that wraps around the primitive, so primitives can be boxed to become the Dynamic type. They can be unboxed using a type test. This is useful for source languages such as JavaScript. The operators that work on primitives also work on the dynamic type, although they can error if the types do not align.
+- There is no concept of constructors, but each composite type has a partial variant that represents an object of that type whose fields
   are not yet assigned and whose type invariants might not hold.
   A partial type can be completed to a full type once all fields are assigned and the type invariants are known to hold.
 - There is no concept of namespaces so all references need to be fully qualified.
-- Callables can have opaque or transparant bodies, but only the opaque ones may have a postcondition.
 
 -/
 
