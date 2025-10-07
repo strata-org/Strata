@@ -160,7 +160,6 @@ def LMonoTy.subst (S : Subst) (mty : LMonoTy) : LMonoTy :=
   match mty with
   | .ftvar x => match S.find? x with
                 | some sty => sty | none => mty
-  | .bitvec _ => mty
   | .tcons name ltys r =>
     .tcons name (LMonoTys.subst S ltys) r
 /--
@@ -249,10 +248,6 @@ theorem LMonoTy.subst_keys_not_in_substituted_type (h : SubstWF S) :
       have := @Maps.find?_of_not_mem_values _ _ i _ S
       simp_all
       exact ne_of_mem_of_not_mem hid this
-  case bitvec n =>
-    simp_all [LMonoTy.subst]
-    unfold LMonoTy.freeVars
-    simp
   case tcons name args r h1 =>
     simp_all
     simp [subst]
@@ -292,8 +287,6 @@ theorem LMonoTy.freeVars_of_subst_subset (S : Subst) (mty : LMonoTy) :
       apply @Maps.find?_mem_values _ _ x sty _ S h_find
     · -- Case: S.find? x = none
       simp [freeVars]
-  case bitvec n =>
-    simp [subst]
   case tcons name args r ih =>
     simp [LMonoTy.subst, LMonoTy.freeVars]
     induction args

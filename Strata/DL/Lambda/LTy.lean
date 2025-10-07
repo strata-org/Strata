@@ -49,13 +49,19 @@ inductive BoundExpr : Type where
   | bnot (e: BoundExpr)
 deriving Inhabited, Repr, DecidableEq
 
-/--
+/-
 An additional parameter that restricts the values of a type
 or attaches additional metadata to a type.
 -/
-inductive LTyRestrict : Type where
+inductive BoundTyRestrict : Type where
   /-- Bounded integers -/
   | bounddata (b: BoundExpr)
+deriving Inhabited, Repr, DecidableEq
+
+inductive LTyRestrict (ExtraRestrict : Type) : Type where
+  /-- Special support for bitvector types of every size. -/
+  | bitvecdata (size: Nat)
+  | extradata (e: ExtraRestrict)
   | nodata
 deriving Inhabited, Repr, DecidableEq
 
@@ -63,16 +69,17 @@ deriving Inhabited, Repr, DecidableEq
 Types in Lambda: these are mono-types. Note that all free type variables
 (`.ftvar`) are implicitly universally quantified.
 -/
-inductive LMonoTy (TypeRestrictions: Type := LTyRestrict) : Type where
+inductive LMonoTy (ExtraRestrict: Type := BoundTyRestrict) : Type where
   /-- Type variable. -/
   | ftvar (name : TyIdentifier)
   /-- Type constructor. -/
-  | tcons (name : String) (args : List (LMonoTy TypeRestrictions)) (r: TypeRestrictions := by exact .nodata)
-  /-- Special support for bitvector types of every size. -/
-  | bitvec (size : Nat)
+  | tcons (name : String) (args : List (LMonoTy ExtraRestrict)) (r: LTyRestrict ExtraRestrict := by exact .nodata)
   deriving Inhabited, Repr
 
 abbrev LMonoTys := List LMonoTy
+
+@[match_pattern]
+def LMonoTy.bitvec (n: Nat) : LMonoTy := LMonoTy.tcons "bitvec" [] (LTyRestrict.bitvecdata n)
 
 @[match_pattern]
 def LMonoTy.bool : LMonoTy :=
@@ -88,7 +95,7 @@ def LMonoTy.real : LMonoTy :=
 
 @[match_pattern]
 def LMonoTy.bounded (b: BoundExpr) : LMonoTy :=
-  .tcons "int" [] (LTyRestrict.bounddata b)
+  .tcons "int" [] (.extradata (.bounddata b))
 
 @[match_pattern]
 def LMonoTy.bv1 : LMonoTy :=
@@ -164,7 +171,6 @@ types. So we define our own induction principle below.
 @[induction_eliminator]
 theorem LMonoTy.induct {R: Type} {P : LMonoTy R → Prop}
   (ftvar : ∀f, P (.ftvar f))
-  (bitvec : ∀n, P (.bitvec n))
   (tcons : ∀name args r, (∀ ty ∈ args, P ty) → P (.tcons name args r)) :
   ∀ ty, P ty := by
   intro n
@@ -183,7 +189,6 @@ def LMonoTy.size (ty : LMonoTy) : Nat :=
   match ty with
   | .ftvar _ => 1
   | .tcons _ args _ => 1 + LMonoTys.size args
-  | .bitvec _ => 1
 
 def LMonoTys.size (args : LMonoTys) : Nat :=
     match args with
@@ -203,7 +208,6 @@ Boolean equality for `LMonoTy`.
 def LMonoTy.BEq (x y : LMonoTy) : Bool :=
   match x, y with
   | .ftvar i, .ftvar j => i == j
-  | .bitvec i, .bitvec j => i == j
   | .tcons i1 j1 r1, .tcons i2 j2 r2 =>
     i1 == i2 && j1.length == j2.length && r1 == r2 && go j1 j2
   | _, _ => false
@@ -232,8 +236,6 @@ instance : DecidableEq LMonoTy :=
                 induction x generalizing y
                 case ftvar =>
                   unfold LMonoTy.BEq at h <;> split at h <;> try simp_all
-                case bitvec =>
-                  unfold LMonoTy.BEq at h <;> split at h <;> try simp_all
                 case tcons =>
                   rename_i name args r ih
                   cases y <;> try simp_all [LMonoTy.BEq]
@@ -250,8 +252,6 @@ instance : DecidableEq LMonoTy :=
     else
       isFalse (by induction x generalizing y
                   case ftvar =>
-                    cases y <;> try simp_all [LMonoTy.BEq]
-                  case bitvec n =>
                     cases y <;> try simp_all [LMonoTy.BEq]
                   case tcons name args r ih =>
                     cases y <;> try simp_all [LMonoTy.BEq]
@@ -282,7 +282,6 @@ it.
 def LMonoTy.freeVars (mty : LMonoTy) : List TyIdentifier :=
   match mty with
   | .ftvar x => [x]
-  | .bitvec _ => []
   | .tcons _ ltys _ => LMonoTys.freeVars ltys
 
 /--
@@ -449,18 +448,18 @@ scoped syntax "(" lmonoty ")" : lmonoty
 open Lean Elab Meta in
 partial def elabLMonoTy : Lean.Syntax → MetaM Expr
   | `(lmonoty| %$f:ident) => do
-     mkAppOptM ``LMonoTy.ftvar #[mkConst `Lambda.LTyRestrict, mkStrLit (toString f.getId)]
+     mkAppOptM ``LMonoTy.ftvar #[mkConst `Lambda.BoundTyRestrict, mkStrLit (toString f.getId)]
   | `(lmonoty| $ty1:lmonoty → $ty2:lmonoty) => do
      let ty1' ← elabLMonoTy ty1
      let ty2' ← elabLMonoTy ty2
-     let tys ← mkListLit (.app (mkConst ``LMonoTy) (mkConst `Lambda.LTyRestrict)) [ty1', ty2']
-     mkAppM ``LMonoTy.tcons #[(mkStrLit "arrow"), tys, (mkConst `Lambda.LTyRestrict.nodata)]
+     let tys ← mkListLit (.app (mkConst ``LMonoTy) (mkConst `Lambda.BoundTyRestrict)) [ty1', ty2']
+     mkAppM ``LMonoTy.tcons #[(mkStrLit "arrow"), tys, (.app (mkConst `Lambda.LTyRestrict.nodata) (mkConst `Lambda.BoundTyRestrict))]
   | `(lmonoty| int) => do
-    let argslist ← mkListLit (.app (mkConst ``LMonoTy) (mkConst `Lambda.LTyRestrict)) []
-    mkAppM ``LMonoTy.tcons #[(mkStrLit "int"), argslist, (mkConst `Lambda.LTyRestrict.nodata)]
+    let argslist ← mkListLit (.app (mkConst ``LMonoTy) (mkConst `Lambda.BoundTyRestrict)) []
+    mkAppM ``LMonoTy.tcons #[(mkStrLit "int"), argslist, (.app (mkConst `Lambda.LTyRestrict.nodata) (mkConst `Lambda.BoundTyRestrict))]
   | `(lmonoty| bool) => do
-    let argslist ← mkListLit (.app (mkConst ``LMonoTy) (mkConst `Lambda.LTyRestrict)) []
-    mkAppM ``LMonoTy.tcons #[(mkStrLit "bool"), argslist, (mkConst `Lambda.LTyRestrict.nodata)]
+    let argslist ← mkListLit (.app (mkConst ``LMonoTy) (mkConst `Lambda.BoundTyRestrict)) []
+    mkAppM ``LMonoTy.tcons #[(mkStrLit "bool"), argslist, (.app (mkConst `Lambda.LTyRestrict.nodata) (mkConst `Lambda.BoundTyRestrict))]
   | `(lmonoty| bv1) =>  mkAppM ``LMonoTy.bv1 #[]
   | `(lmonoty| bv8) =>  mkAppM ``LMonoTy.bv8 #[]
   | `(lmonoty| bv16) => mkAppM ``LMonoTy.bv16 #[]
@@ -468,8 +467,8 @@ partial def elabLMonoTy : Lean.Syntax → MetaM Expr
   | `(lmonoty| bv64) => mkAppM ``LMonoTy.bv64 #[]
   | `(lmonoty| $i:ident $args:lmonoty*) => do
     let args' ← go args
-    let argslist ← mkListLit (.app (mkConst ``LMonoTy) (mkConst `Lambda.LTyRestrict)) args'.toList
-    mkAppM ``LMonoTy.tcons #[(mkStrLit (toString i.getId)), argslist, (mkConst `Lambda.LTyRestrict.nodata)]
+    let argslist ← mkListLit (.app (mkConst ``LMonoTy) (mkConst `Lambda.BoundTyRestrict)) args'.toList
+    mkAppM ``LMonoTy.tcons #[(mkStrLit (toString i.getId)), argslist, (.app (mkConst `Lambda.LTyRestrict.nodata) (mkConst `Lambda.BoundTyRestrict))]
   | `(lmonoty| ($ty:lmonoty)) => elabLMonoTy ty
   | _ => throwUnsupportedSyntax
   where go (args : TSyntaxArray `lmonoty) : MetaM (Array Expr) := do
@@ -481,31 +480,35 @@ partial def elabLMonoTy : Lean.Syntax → MetaM Expr
 
 elab "mty[" ty:lmonoty "]" : term => elabLMonoTy ty
 
-/-- info: LMonoTy.tcons LTyRestrict "list" [LMonoTy.tcons LTyRestrict "int" [] LTyRestrict.nodata] LTyRestrict.nodata : LMonoTy -/
+/-- info: LMonoTy.tcons BoundTyRestrict "list" [LMonoTy.tcons BoundTyRestrict "int" [] LTyRestrict.nodata]
+  LTyRestrict.nodata : LMonoTy -/
 #guard_msgs in
 #check mty[list int]
 
-/-- info: LMonoTy.tcons LTyRestrict "pair"
-  [LMonoTy.tcons LTyRestrict "int" [] LTyRestrict.nodata, LMonoTy.tcons LTyRestrict "bool" [] LTyRestrict.nodata]
+/-- info: LMonoTy.tcons BoundTyRestrict "pair"
+  [LMonoTy.tcons BoundTyRestrict "int" [] LTyRestrict.nodata,
+    LMonoTy.tcons BoundTyRestrict "bool" [] LTyRestrict.nodata]
   LTyRestrict.nodata : LMonoTy -/
 #guard_msgs in
 #check mty[pair int bool]
 
 /--
-info: LMonoTy.tcons LTyRestrict "arrow"
-  [LMonoTy.tcons LTyRestrict "Map" [LMonoTy.ftvar LTyRestrict "k", LMonoTy.ftvar LTyRestrict "v"] LTyRestrict.nodata,
-    LMonoTy.tcons LTyRestrict "arrow" [LMonoTy.ftvar LTyRestrict "k", LMonoTy.ftvar LTyRestrict "v"] LTyRestrict.nodata]
+info: LMonoTy.tcons BoundTyRestrict "arrow"
+  [LMonoTy.tcons BoundTyRestrict "Map" [LMonoTy.ftvar BoundTyRestrict "k", LMonoTy.ftvar BoundTyRestrict "v"]
+      LTyRestrict.nodata,
+    LMonoTy.tcons BoundTyRestrict "arrow" [LMonoTy.ftvar BoundTyRestrict "k", LMonoTy.ftvar BoundTyRestrict "v"]
+      LTyRestrict.nodata]
   LTyRestrict.nodata : LMonoTy
 -/
 #guard_msgs in
 #check mty[(Map %k %v) → %k → %v]
 
 /--
-info: LMonoTy.tcons LTyRestrict "arrow"
-  [LMonoTy.ftvar LTyRestrict "a",
-    LMonoTy.tcons LTyRestrict "arrow"
-      [LMonoTy.ftvar LTyRestrict "b",
-        LMonoTy.tcons LTyRestrict "arrow" [LMonoTy.ftvar LTyRestrict "c", LMonoTy.ftvar LTyRestrict "d"]
+info: LMonoTy.tcons BoundTyRestrict "arrow"
+  [LMonoTy.ftvar BoundTyRestrict "a",
+    LMonoTy.tcons BoundTyRestrict "arrow"
+      [LMonoTy.ftvar BoundTyRestrict "b",
+        LMonoTy.tcons BoundTyRestrict "arrow" [LMonoTy.ftvar BoundTyRestrict "c", LMonoTy.ftvar BoundTyRestrict "d"]
           LTyRestrict.nodata]
       LTyRestrict.nodata]
   LTyRestrict.nodata : LMonoTy
@@ -534,16 +537,17 @@ partial def elabLTy : Lean.Syntax → MetaM Expr
 
 elab "t[" lsch:lty "]" : term => elabLTy lsch
 
-/-- info: forAll ["α"] (LMonoTy.tcons LTyRestrict "myType" [LMonoTy.ftvar LTyRestrict "α"] LTyRestrict.nodata) : LTy -/
+/-- info: forAll ["α"] (LMonoTy.tcons BoundTyRestrict "myType" [LMonoTy.ftvar BoundTyRestrict "α"] LTyRestrict.nodata) : LTy -/
 #guard_msgs in
 #check t[∀α. myType %α]
 
 /--
 info: forAll ["α"]
-  (LMonoTy.tcons LTyRestrict "arrow"
-    [LMonoTy.ftvar LTyRestrict "α",
-      LMonoTy.tcons LTyRestrict "arrow"
-        [LMonoTy.ftvar LTyRestrict "α", LMonoTy.tcons LTyRestrict "int" [] LTyRestrict.nodata] LTyRestrict.nodata]
+  (LMonoTy.tcons BoundTyRestrict "arrow"
+    [LMonoTy.ftvar BoundTyRestrict "α",
+      LMonoTy.tcons BoundTyRestrict "arrow"
+        [LMonoTy.ftvar BoundTyRestrict "α", LMonoTy.tcons BoundTyRestrict "int" [] LTyRestrict.nodata]
+        LTyRestrict.nodata]
     LTyRestrict.nodata) : LTy
 -/
 #guard_msgs in
