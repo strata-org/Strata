@@ -10,7 +10,7 @@ Design choices:
 - Pure contracts: contracts may only contain pure code. Pure code does not modify the heap, neither by modifying existing objects are creating new ones.
 - Callables: instead of functions and methods we have a single more general concept called a 'callable'.
 - Purity: Callables can be marked as pure or impure. Pure callables have a reads clause while impure ones have a modifies clause.
-  A reads clause is currently not usefulf or impure callables, since reads clauses are used to determine when the output changes, but impure callables can be non-determinismic so the output can always change.
+  A reads clause is currently not useful for impure callables, since reads clauses are used to determine when the output changes, but impure callables can be non-determinismic so the output can always change.
 - Opacity: callables can have a body that's transparant or opaque. Only an opaque body may declare a postcondition. A transparant callable must be pure.
 - StmtExpr: Statements and expressions are part of the same type. This reduces duplication since the same concepts are needed in both, such as conditions and variable declarations.
 - Loops: The only loop is a while, but this can be used to compile do-while and for loops to as well.
