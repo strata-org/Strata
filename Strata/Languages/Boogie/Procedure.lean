@@ -21,8 +21,8 @@ open Lambda
 structure Procedure.Header where
   name     : BoogieIdent
   typeArgs : List TyIdentifier
-  inputs   : @LMonoTySignature BoogieIdent
-  outputs  : @LMonoTySignature BoogieIdent
+  inputs   : @LMonoTySignature BoogieIdent Empty
+  outputs  : @LMonoTySignature BoogieIdent Empty
   deriving Repr, DecidableEq, Inhabited
 
 instance : ToFormat Procedure.Header where

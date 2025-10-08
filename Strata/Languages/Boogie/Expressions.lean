@@ -19,7 +19,7 @@ abbrev Expression : Imperative.PureExpr :=
    { Ident := BoogieIdent,
      Expr := Lambda.LExpr Lambda.LMonoTy BoogieIdent,
      Ty := Lambda.LTy,
-     TyEnv := @Lambda.TEnv BoogieIdent,
+     TyEnv := @Lambda.TEnv BoogieIdent Empty,
      EvalEnv := Lambda.LState BoogieIdent
      EqIdent := instDecidableEqBoogieIdent }
 

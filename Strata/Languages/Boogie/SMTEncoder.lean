@@ -403,7 +403,7 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
       let (smt_intys, ctx) ← LMonoTys.toSMTType intys ctx
       let bvs := formalStrs.zip smt_intys
       let argvars := bvs.map (fun a => TermVar.mk true (toString $ format a.fst) a.snd)
-      let outty := tys.getLast (by exact @LMonoTy.destructArrow_non_empty fnty)
+      let outty := tys.getLast (by exact @LMonoTy.destructArrow_non_empty _ fnty)
       let (smt_outty, ctx) ← LMonoTy.toSMTType outty ctx
       let uf := ({id := (toString $ format fn), args := argvars, out := smt_outty})
       let (ctx, isNew) ←

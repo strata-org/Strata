@@ -26,16 +26,16 @@ See module `Strata.DL.Lambda.LExpr` for the formalization of expressions,
 `Strata.DL.Lambda.LExprEval` for the partial evaluator.
 -/
 
-variable {Identifier : Type} [ToString Identifier] [DecidableEq Identifier] [ToFormat Identifier] [HasGen Identifier]
+variable {Identifier : Type} [ToString Identifier] [DecidableEq Identifier] [ToFormat Identifier] {ExtraRestrict: Type} [DecidableEq ExtraRestrict] [HasGen Identifier ExtraRestrict]
 
 /--
 Top-level type checking and partial evaluation function for the Lambda
 dialect.
 -/
 def typeCheckAndPartialEval
-  (f : Factory (Identifier:=Identifier) := Factory.default)
-  (e : (LExpr LMonoTy Identifier)) :
-  Except Std.Format (LExpr LMonoTy Identifier) := do
+  (f : Factory (Identifier:=Identifier) (ExtraRestrict:=ExtraRestrict) := Factory.default)
+  (e : (LExpr (LMonoTy ExtraRestrict) Identifier)) :
+  Except Std.Format (LExpr (LMonoTy ExtraRestrict) Identifier) := do
   let T := TEnv.default.addFactoryFunctions f
   let (et, _T) ← LExpr.annotate T e
   dbg_trace f!"Annotated expression:{Format.line}{et}{Format.line}"

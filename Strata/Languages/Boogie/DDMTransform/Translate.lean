@@ -639,33 +639,33 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   match op, args with
   -- Constants/Literals
   | .fn q`Boogie.btrue, [] =>
-    return .const "true" Lambda.LMonoTy.bool
+    return .const "true" (@Lambda.LMonoTy.bool Empty)
   | .fn q`Boogie.bfalse, [] =>
-    return .const "false" Lambda.LMonoTy.bool
+    return .const "false" (@Lambda.LMonoTy.bool Empty)
   | .fn q`Boogie.natToInt, [xa] =>
     let n ← translateNat xa
-    return .const (toString n) Lambda.LMonoTy.int
+    return .const (toString n) (@Lambda.LMonoTy.int Empty)
   | .fn q`Boogie.bv1Lit, [xa] =>
     let n ← translateBitVec 1 xa
-    return .const (toString n) Lambda.LMonoTy.bv1
+    return .const (toString n) (@Lambda.LMonoTy.bv1 Empty)
   | .fn q`Boogie.bv8Lit, [xa] =>
     let n ← translateBitVec 8 xa
-    return .const (toString n) Lambda.LMonoTy.bv8
+    return .const (toString n) (@Lambda.LMonoTy.bv8 Empty)
   | .fn q`Boogie.bv16Lit, [xa] =>
     let n ← translateBitVec 16 xa
-    return .const (toString n) Lambda.LMonoTy.bv16
+    return .const (toString n) (@Lambda.LMonoTy.bv16 Empty)
   | .fn q`Boogie.bv32Lit, [xa] =>
     let n ← translateBitVec 32 xa
-    return .const (toString n) Lambda.LMonoTy.bv32
+    return .const (toString n) (@Lambda.LMonoTy.bv32 Empty)
   | .fn q`Boogie.bv64Lit, [xa] =>
     let n ← translateBitVec 64 xa
-    return .const (toString n) Lambda.LMonoTy.bv64
+    return .const (toString n) (@Lambda.LMonoTy.bv64 Empty)
   | .fn q`Boogie.strLit, [xa] =>
     let x ← translateStr xa
-    return .const x Lambda.LMonoTy.string
+    return .const x (@Lambda.LMonoTy.string Empty)
   | .fn q`Boogie.realLit, [xa] =>
     let x ← translateReal xa
-    return .const (toString x) Lambda.LMonoTy.real
+    return .const (toString x) (@Lambda.LMonoTy.real Empty)
   -- Equality
   | .fn q`Boogie.equal, [_tpa, xa, ya] =>
     let x ← translateExpr p bindings xa

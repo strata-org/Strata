@@ -19,24 +19,24 @@ section Identifiers
 /--
 Identifiers, optionally with their inferred monotype.
 -/
-abbrev IdentT (Identifier : Type) := Identifier × Option LMonoTy
-abbrev IdentTs (Identifier : Type) := List (IdentT Identifier)
+abbrev IdentT (Identifier : Type) (ExtraRestrict : Type := Empty) := Identifier × Option (LMonoTy ExtraRestrict)
+abbrev IdentTs (Identifier ExtraRestrict : Type) := List (IdentT Identifier ExtraRestrict)
 
-instance {Identifier : Type} [ToFormat Identifier] : ToFormat (IdentT Identifier) where
+instance {Identifier ExtraRestrict : Type} [ToFormat Identifier] : ToFormat (IdentT Identifier ExtraRestrict) where
   format i := match i.snd with
     | none => f!"{i.fst}"
     | some ty => f!"({i.fst} : {ty})"
 
-def IdentT.ident (x : (IdentT Identifier)) : Identifier :=
+def IdentT.ident (x : (IdentT Identifier ExtraRestrict)) : Identifier :=
   x.fst
 
-def IdentT.monoty? (x : (IdentT Identifier)) : Option LMonoTy :=
+def IdentT.monoty? (x : (IdentT Identifier ExtraRestrict)) : Option (LMonoTy ExtraRestrict) :=
   x.snd
 
-def IdentTs.idents (xs : (IdentTs Identifier)) : List Identifier :=
+def IdentTs.idents (xs : (IdentTs Identifier ExtraRestrict)) : List Identifier :=
   xs.map Prod.fst
 
-def IdentTs.monotys? (xs : (IdentTs Identifier)) : List (Option LMonoTy) :=
+def IdentTs.monotys? (xs : (IdentTs Identifier ExtraRestrict)) : List (Option (LMonoTy ExtraRestrict)) :=
   xs.map Prod.snd
 
 ---------------------------------------------------------------------

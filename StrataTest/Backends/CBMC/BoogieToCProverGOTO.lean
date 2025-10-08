@@ -25,7 +25,7 @@ abbrev Boogie.ExprStr : Imperative.PureExpr :=
    { Ident := String,
      Expr := Lambda.LExpr Lambda.LMonoTy String,
      Ty := Lambda.LTy,
-     TyEnv := @Lambda.TEnv BoogieIdent,
+     TyEnv := @Lambda.TEnv BoogieIdent Empty,
      EvalEnv := Lambda.LState BoogieIdent
      EqIdent := instDecidableEqString }
 

@@ -106,7 +106,7 @@ instance : Repr BoogieIdent where
 instance : Inhabited BoogieIdent where
   default := (.unres, "_")
 
-instance : Lambda.HasGen BoogieIdent where
+instance : Lambda.HasGen BoogieIdent Empty where
   genVar T := let (sym, state') := (Lambda.TState.genExprSym T.state)
               (BoogieIdent.temp sym, { T with state := state' })
 
@@ -142,7 +142,7 @@ info: (Lambda.LExpr.op (BoogieIdent.unres "old") none).app
 open Lambda.LTy.Syntax in
 /-- info: Lambda.LExpr.fvar (BoogieIdent.unres "x")
   (some
-    (Lambda.LMonoTy.tcons Lambda.BoundTyRestrict "bool" []
+    (Lambda.LMonoTy.tcons Empty "bool" []
       Lambda.LTyRestrict.nodata)) : Lambda.LExpr Lambda.LMonoTy (Visibility × String)  -/
 #guard_msgs in
 #check eb[(x : bool)]

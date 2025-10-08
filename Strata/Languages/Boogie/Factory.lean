@@ -234,7 +234,7 @@ def bv64Extract_31_0_Func  := bvExtractFunc 64 31  0
 def bv64Extract_15_0_Func  := bvExtractFunc 64 15  0
 def bv64Extract_7_0_Func   := bvExtractFunc 64  7  0
 
-def Factory : @Factory BoogieIdent := #[
+def Factory : @Factory BoogieIdent Empty := #[
   intAddFunc,
   intSubFunc,
   intMulFunc,

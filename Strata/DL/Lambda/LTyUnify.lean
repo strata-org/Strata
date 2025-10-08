@@ -20,43 +20,42 @@ to Algorithm J in Hindley-Milner systems.
 namespace Lambda
 
 open Std (ToFormat Format format)
-
 /-! ### Type Substitution -/
 
 /-- Substitution mapping type variables to `LMonoTy`. -/
-abbrev SubstOne := Map TyIdentifier LMonoTy
-abbrev SubstOne.empty : SubstOne := []
+abbrev SubstOne (ExtraRestrict : Type) := Map TyIdentifier (LMonoTy ExtraRestrict)
+abbrev SubstOne.empty (ExtraRestrict : Type) : SubstOne ExtraRestrict := []
 
 /--
 Substitution mapping type variables to `LMonoTy`, taking scopes into
 account. The oldest scope can be obtained via `Maps.oldest`.
 -/
-abbrev Subst := Maps TyIdentifier LMonoTy
-abbrev Subst.empty : Subst := []
+abbrev Subst (ExtraRestrict : Type := Empty) := Maps TyIdentifier (LMonoTy ExtraRestrict)
+abbrev Subst.empty (ExtraRestrict: Type) : Subst ExtraRestrict := []
 /--
 A `Subst` with an empty scope, typically meant for storing global type
 substitutions.
 -/
-abbrev Subst.emptyScope : Subst := [[]]
+abbrev Subst.emptyScope (ExtraRestrict : Type) : Subst ExtraRestrict := [[]]
 
-instance : ToFormat Subst where
+instance : ToFormat (Subst ExtraRestrict) where
   format := Maps.format'
 
 /--
 Check if `Subst` contains only empty scopes.
 -/
-def Subst.hasEmptyScopes (S : Subst) : Bool :=
+def Subst.hasEmptyScopes {ExtraRestrict : Type} (S : Subst ExtraRestrict) : Bool :=
   S.all (fun s => s.isEmpty)
 
 @[simp]
-theorem Subst.hasEmptyScopes_empty :
-  Subst.hasEmptyScopes Subst.empty := by
-  simp +ground
+theorem Subst.hasEmptyScopes_empty (ExtraRestrict : Type) :
+  @Subst.hasEmptyScopes ExtraRestrict (Subst.empty ExtraRestrict) := by rfl
 
 @[simp]
-theorem Subst.hasEmptyScopes_emptyScope :
-  Subst.hasEmptyScopes Subst.emptyScope := by
-  simp +ground
+theorem Subst.hasEmptyScopes_emptyScope (ExtraRestrict : Type) :
+  @Subst.hasEmptyScopes ExtraRestrict (Subst.emptyScope ExtraRestrict) := by rfl
+
+variable {ExtraRestrict : Type}
 
 /--
 The free variables in a substitution `S` are the union of the free variables in
@@ -64,20 +63,20 @@ every type in `S`.
 
 Note that we do not deduplicate the resulting list.
 -/
-def Subst.freeVars (S : Subst) : List TyIdentifier :=
+def Subst.freeVars (S : Subst ExtraRestrict) : List TyIdentifier :=
   S.values.flatMap LMonoTy.freeVars
 
 @[simp]
 theorem Subst.freeVars_empty :
-    Subst.freeVars Subst.empty = [] := by
+    Subst.freeVars (Subst.empty ExtraRestrict) = [] := by
   simp [Subst.freeVars, Maps.values]
 
 @[simp]
-theorem Subst.freeVars_cons (S : Subst) :
+theorem Subst.freeVars_cons (S : Subst ExtraRestrict) :
     Subst.freeVars (s :: S) = Subst.freeVars [s] ++ S.freeVars := by
   simp [Subst.freeVars, Maps.values]
 
-theorem Subst.freeVars_of_find_subset (S : Subst) (hi : Maps.find? S i = some sty) :
+theorem Subst.freeVars_of_find_subset (S : Subst ExtraRestrict) (hi : Maps.find? S i = some sty) :
     LMonoTy.freeVars sty ⊆ Subst.freeVars S := by
   have h_sty_map_value := @Maps.find?_mem_values _ _ i sty _ S hi
   simp [List.instHasSubset, List.Subset, Subst.freeVars]
@@ -89,15 +88,15 @@ theorem Subst.freeVars_of_find_subset (S : Subst) (hi : Maps.find? S i = some st
 A substitution map `S` is well-formed if no key appears in the free type
 variables of the values.
 -/
-def SubstWF (S : Subst) : Bool :=
+def SubstWF (S : Subst ExtraRestrict) : Bool :=
   S.keys.all (fun k => k ∉ Subst.freeVars S)
 
 @[simp]
-theorem SubstWF_of_empty : SubstWF Subst.empty := by
+theorem SubstWF_of_empty : SubstWF (Subst.empty ExtraRestrict) := by
   simp [SubstWF]
 
 @[simp]
-theorem SubstWF_of_empty_empty : SubstWF Subst.emptyScope := by
+theorem SubstWF_of_empty_empty : SubstWF (Subst.emptyScope ExtraRestrict) := by
   unfold SubstWF List.all Maps.keys Map.keys
   unfold Maps.keys
   split <;> simp_all
@@ -122,7 +121,7 @@ theorem SubstWF.single_subst (id : TyIdentifier) (h : ¬id ∈ ty.freeVars) :
   done
 
 
-theorem Subst.mem_freeVars_of_mem_freeVars_remove (S : Subst) (id : TyIdentifier)
+theorem Subst.mem_freeVars_of_mem_freeVars_remove [DecidableEq ExtraRestrict] (S : Subst ExtraRestrict) (id : TyIdentifier)
   (h : xty ∈ Subst.freeVars (Maps.remove S id)) :
   xty ∈ Subst.freeVars S := by
   simp_all [Subst.freeVars]
@@ -130,32 +129,35 @@ theorem Subst.mem_freeVars_of_mem_freeVars_remove (S : Subst) (id : TyIdentifier
   apply Exists.intro aty; simp_all
   simp [@Maps.mem_values_of_mem_keys_remove _ _ _ _ S id aty h1]
 
-theorem SubstWF_of_remove (id : TyIdentifier) (h : SubstWF S) :
+theorem SubstWF_of_remove [DecidableEq ExtraRestrict] {S: Subst ExtraRestrict} (id : TyIdentifier) (h : SubstWF S) :
   SubstWF (Maps.remove S id) := by
   simp_all [SubstWF]
   intro xty h_xty_in_keys h_xty_in_fvs
   have h_xty_in_s_keys := @Maps.mem_keys_of_mem_keys_remove _ _ _ _ S id xty h_xty_in_keys
   have h_xty_not_in_fvs := @h xty h_xty_in_s_keys
-  have := @Subst.mem_freeVars_of_mem_freeVars_remove xty S id h_xty_in_fvs
+  have := @Subst.mem_freeVars_of_mem_freeVars_remove _ xty _ S id h_xty_in_fvs
   contradiction
 
 /--
 A type substitution, along with a proof that it is well-formed.
 -/
-structure SubstInfo where
-  subst : Subst
+structure SubstInfo ExtraRestrict where
+  subst : Subst ExtraRestrict
   isWF : SubstWF subst
   deriving Repr
 
-def SubstInfo.empty : SubstInfo :=
-  { subst := Subst.empty,
+def SubstInfo.empty : SubstInfo ExtraRestrict :=
+  { subst := Subst.empty ExtraRestrict,
     isWF := SubstWF_of_empty }
+
+instance : Inhabited (SubstInfo ExtraRestrict) where
+  default := SubstInfo.empty
 
 mutual
 /--
 Apply substitution `S` to monotype `mty`.
 -/
-def LMonoTy.subst (S : Subst) (mty : LMonoTy) : LMonoTy :=
+def LMonoTy.subst (S : Subst ExtraRestrict) (mty : LMonoTy ExtraRestrict) : LMonoTy ExtraRestrict :=
   if Subst.hasEmptyScopes S then mty else
   match mty with
   | .ftvar x => match S.find? x with
@@ -165,10 +167,10 @@ def LMonoTy.subst (S : Subst) (mty : LMonoTy) : LMonoTy :=
 /--
 Apply substitution `S` to monotypes `mtys`.
 -/
-def LMonoTys.subst (S : Subst) (mtys : LMonoTys) : LMonoTys :=
+def LMonoTys.subst (S : Subst ExtraRestrict) (mtys : LMonoTys ExtraRestrict) : LMonoTys ExtraRestrict :=
   if Subst.hasEmptyScopes S then mtys else substAux S mtys []
 where
-  substAux S mtys acc : LMonoTys :=
+  substAux S mtys acc : LMonoTys ExtraRestrict :=
   match mtys with
   | [] => acc.reverse
   | ty :: rest => substAux S rest (LMonoTy.subst S ty :: acc)
@@ -179,14 +181,14 @@ Non tail-recursive version of `LMonoTys.subst`, useful for proofs.
 
 See theorem `LMonoTys.subst_eq_substLogic`.
 -/
-def LMonoTys.substLogic (S : Subst) (mtys : LMonoTys) : LMonoTys :=
+def LMonoTys.substLogic (S : Subst ExtraRestrict) (mtys : LMonoTys ExtraRestrict) : LMonoTys ExtraRestrict :=
   if S.hasEmptyScopes then mtys else
   match mtys with
   | [] => []
   | mty :: mrest =>
     LMonoTy.subst S mty :: LMonoTys.substLogic S mrest
 
-theorem LMonoTys.subst_eq_substLogic (S : Subst) (mtys : LMonoTys) :
+theorem LMonoTys.subst_eq_substLogic (S : Subst ExtraRestrict) (mtys : LMonoTys ExtraRestrict) :
     LMonoTys.subst S mtys = LMonoTys.substLogic S mtys := by
   by_cases hSEmpty : S.hasEmptyScopes
   case pos =>
@@ -209,17 +211,17 @@ theorem LMonoTys.subst_eq_substLogic (S : Subst) (mtys : LMonoTys) :
     simp_all
     done
 
-theorem LMonoTys.substLogic_emptyS (h : S.hasEmptyScopes) :
+theorem LMonoTys.substLogic_emptyS {S: Subst ExtraRestrict} (h : S.hasEmptyScopes) :
   LMonoTys.substLogic S mtys = mtys := by
   induction mtys <;> simp_all [substLogic]
 
-theorem LMonoTy.subst_emptyS (h : S.hasEmptyScopes) :
+theorem LMonoTy.subst_emptyS {S: Subst ExtraRestrict} {ty} (h : S.hasEmptyScopes) :
   LMonoTy.subst S ty = ty := by
   unfold LMonoTy.subst
   simp_all
   done
 
-theorem Subst.isEmpty_implies_keys_empty (h : Subst.hasEmptyScopes S) :
+theorem Subst.isEmpty_implies_keys_empty {S: Subst ExtraRestrict} (h : Subst.hasEmptyScopes S) :
   (Maps.keys S) = [] := by
   induction S <;> simp_all [Maps.keys, Subst.hasEmptyScopes, Map.isEmpty]
   split at h <;> simp_all [Map.keys]
@@ -229,11 +231,11 @@ theorem Subst.isEmpty_implies_keys_empty (h : Subst.hasEmptyScopes S) :
 No key (i.e., type identifier) in a well-formed substitution `S` can appear as a
 free variable in a substituted type (i.e., in `LMonoTy.subst S ty`).
 -/
-theorem LMonoTy.subst_keys_not_in_substituted_type (h : SubstWF S) :
+theorem LMonoTy.subst_keys_not_in_substituted_type {S: Subst ExtraRestrict} {ty : LMonoTy ExtraRestrict}  (h : SubstWF S) :
     S.keys.all (fun k => k ∉ LMonoTy.freeVars (LMonoTy.subst S ty)) := by
   by_cases hSEmpty : S.hasEmptyScopes
   case pos =>
-    simp_all [@Subst.isEmpty_implies_keys_empty S hSEmpty]
+    simp_all [@Subst.isEmpty_implies_keys_empty _ S hSEmpty]
   case neg =>
   induction ty
   case ftvar i =>
@@ -268,7 +270,7 @@ theorem LMonoTy.subst_keys_not_in_substituted_type (h : SubstWF S) :
 The free variables in a type `mty` after the application of a substitution `S`
 are a subset of the free variables in `mty` and the free variables in `S`.
 -/
-theorem LMonoTy.freeVars_of_subst_subset (S : Subst) (mty : LMonoTy) :
+theorem LMonoTy.freeVars_of_subst_subset (S : Subst ExtraRestrict) (mty : LMonoTy ExtraRestrict) :
     LMonoTy.freeVars (LMonoTy.subst S mty) ⊆
     LMonoTy.freeVars mty ++ Subst.freeVars S := by
   by_cases hSEmpty : S.hasEmptyScopes
@@ -315,9 +317,9 @@ theorem LMonoTy.freeVars_of_subst_subset (S : Subst) (mty : LMonoTy) :
 /--
 Apply `new` to `old` substitution.
 -/
-def SubstOne.apply (new old : SubstOne) : SubstOne :=
+def SubstOne.apply (new old : SubstOne ExtraRestrict) : SubstOne ExtraRestrict :=
   applyAux new old []
-  where applyAux (new old acc : SubstOne) : SubstOne :=
+  where applyAux (new old acc : SubstOne ExtraRestrict) : SubstOne ExtraRestrict :=
   match old with
   | [] => acc.reverse
   | (id, lty) :: rest =>
@@ -326,17 +328,17 @@ def SubstOne.apply (new old : SubstOne) : SubstOne :=
 /--
 Non tail-recursive version of `SubstOne.apply`, useful for proofs.
 -/
-def SubstOne.applyLogic (new old : SubstOne) : SubstOne :=
+def SubstOne.applyLogic (new old : SubstOne ExtraRestrict) : SubstOne ExtraRestrict :=
   match old with
   | [] => []
   | (id, lty) :: rest =>
     (id, LMonoTy.subst [new] lty) :: SubstOne.applyLogic new rest
 
-theorem SubstOne.apply_eq_applyLogic (new old : SubstOne) :
+theorem SubstOne.apply_eq_applyLogic (new old : SubstOne ExtraRestrict) :
     SubstOne.apply new old = SubstOne.applyLogic new old := by
   simp [SubstOne.apply]
   suffices h : ∀ acc, SubstOne.apply.applyAux new old acc =
-                  @HAppend.hAppend SubstOne SubstOne SubstOne _
+                  @HAppend.hAppend (SubstOne _) (SubstOne _) (SubstOne _) _
                     acc.reverse (SubstOne.applyLogic new old) by
     have := h []
     simp at this
@@ -354,7 +356,7 @@ theorem SubstOne.apply_eq_applyLogic (new old : SubstOne) :
     simp_all
     done
 
-theorem SubstOne.applyLogic_empty_new (h : new.isEmpty) :
+theorem SubstOne.applyLogic_empty_new {new old : SubstOne ExtraRestrict} (h : new.isEmpty) :
   SubstOne.applyLogic new old = old := by
   induction old
   case nil => simp [applyLogic]
@@ -362,25 +364,25 @@ theorem SubstOne.applyLogic_empty_new (h : new.isEmpty) :
     simp [applyLogic]
     have : Subst.hasEmptyScopes [new] := by
       unfold Subst.hasEmptyScopes; simp_all [Map.isEmpty]
-    have := @LMonoTy.subst_emptyS [new] head.snd (by assumption)
+    have := @LMonoTy.subst_emptyS _ [new] head.snd (by assumption)
     simp_all
   done
 
 @[simp]
-theorem SubstOne.keys_of_apply_eq :
+theorem SubstOne.keys_of_apply_eq {new old : SubstOne ExtraRestrict}  :
     Map.keys (SubstOne.apply new old) = Map.keys old := by
   induction old <;> simp_all [Map.keys, SubstOne.apply_eq_applyLogic, SubstOne.applyLogic]
 
 /--
 Apply the `new` substitution to the `old` one.
 -/
-def Subst.apply (new : SubstOne) (old : Subst) : Subst :=
+def Subst.apply (new : SubstOne ExtraRestrict) (old : Subst ExtraRestrict) : Subst ExtraRestrict :=
   match old with
   | [] => old
   | o :: orest => SubstOne.apply new o :: (Subst.apply new orest)
 
 @[simp]
-theorem Subst.keys_of_apply_eq :
+theorem Subst.keys_of_apply_eq {new : SubstOne ExtraRestrict} {old: Subst ExtraRestrict}  :
     Maps.keys (Subst.apply new old) = Maps.keys old := by
   induction old
   case nil => simp [Maps.keys, apply]
@@ -392,7 +394,7 @@ No key in a well-formed substitution `newS` appears in the free variables of a
 composed substitution `(Subst.apply newS oldS)`. Note that there are no
 restrictions on `oldS` here.
 -/
-theorem Subst.keys_not_in_apply (h : SubstWF [newS]) :
+theorem Subst.keys_not_in_apply {newS: SubstOne ExtraRestrict} {oldS: Subst ExtraRestrict} (h : SubstWF [newS]) :
     newS.keys.all (fun k => k ∉ Subst.freeVars (Subst.apply newS oldS)) := by
   simp [Subst.freeVars]
   induction oldS
@@ -408,7 +410,7 @@ theorem Subst.keys_not_in_apply (h : SubstWF [newS]) :
       case cons head tail tail_ih =>
         simp [SubstOne.applyLogic, Map.values] at h1
         cases h1 <;> try simp_all
-        have h2' := @LMonoTy.subst_keys_not_in_substituted_type [newS] head.snd h
+        have h2' := @LMonoTy.subst_keys_not_in_substituted_type _ [newS] head.snd h
         simp_all [Maps.keys]
     case inr h1 =>
       exact ih i hi ty h1
@@ -418,7 +420,7 @@ theorem Subst.keys_not_in_apply (h : SubstWF [newS]) :
 For all types `mty` in a substitution `(Subst.apply newS S)`, the free variables
 in `mty` are a subset of those in `newS` and `S`.
 -/
-theorem Subst.freeVars_of_apply_subset (newS : SubstOne) (S : Subst) (mty : LMonoTy)
+theorem Subst.freeVars_of_apply_subset (newS : SubstOne ExtraRestrict) (S : Subst ExtraRestrict) (mty : LMonoTy ExtraRestrict)
     (h : mty ∈ Maps.values (Subst.apply newS S)) :
     LMonoTy.freeVars mty ⊆ Subst.freeVars [newS] ++ Subst.freeVars S := by
   induction S generalizing mty newS
@@ -440,7 +442,7 @@ theorem Subst.freeVars_of_apply_subset (newS : SubstOne) (S : Subst) (mty : LMon
         simp [SubstOne.applyLogic, Map.values] at h_head
         cases h_head
         · rename_i h
-          have h_subset := @LMonoTy.freeVars_of_subst_subset [newS] hd.snd
+          have h_subset := @LMonoTy.freeVars_of_subst_subset _ [newS] hd.snd
           simp [freeVars, Maps.values, ←h] at h_subset
           grind
         · grind
@@ -450,22 +452,22 @@ theorem Subst.freeVars_of_apply_subset (newS : SubstOne) (S : Subst) (mty : LMon
 The free variables in `(Subst.apply newS S)` are a subset of those in `newS` and
 `S`.
 -/
-theorem Subst.freeVars_of_apply_subset_alt (newS : SubstOne) (S : Subst) :
+theorem Subst.freeVars_of_apply_subset_alt (newS : SubstOne ExtraRestrict) (S : Subst ExtraRestrict) :
     Subst.freeVars (Subst.apply newS S) ⊆
     Subst.freeVars [newS] ++ Subst.freeVars S := by
-  have h := @Subst.freeVars_of_apply_subset newS S
+  have h := @Subst.freeVars_of_apply_subset _ newS S
   simp_all [Subst.freeVars, Maps.values]
   grind
   done
 
-theorem SubstWF.apply_one_substituted_type (S : SubstInfo) (id : TyIdentifier) (ty : LMonoTy) :
+theorem SubstWF.apply_one_substituted_type (S : SubstInfo ExtraRestrict) (id : TyIdentifier) (ty : LMonoTy ExtraRestrict) :
     SubstWF (Subst.apply [(id, LMonoTy.subst S.subst ty)] S.subst) := by
   simp [SubstWF]; intro i hi
   generalize h_new_ty : LMonoTy.subst S.subst ty = new_ty at *
   have h1 : S.subst.keys.all (fun k => k ∉ new_ty.freeVars) := by
-    have := @LMonoTy.subst_keys_not_in_substituted_type S.subst ty S.isWF
+    have := @LMonoTy.subst_keys_not_in_substituted_type _ S.subst ty S.isWF
     simp; simp_all
-  have hsubset := @Subst.freeVars_of_apply_subset_alt [(id, new_ty)] S.subst
+  have hsubset := @Subst.freeVars_of_apply_subset_alt _ [(id, new_ty)] S.subst
   have h_id_new_ty : Subst.freeVars [[(id, new_ty)]] = new_ty.freeVars := by
     simp [Subst.freeVars, Maps.values, Map.values]
   rw [h_id_new_ty] at hsubset
@@ -482,7 +484,7 @@ theorem SubstWF.apply_one_substituted_type (S : SubstInfo) (id : TyIdentifier) (
   exact fun a => h_i_not_in_union (hsubset a)
   done
 
-theorem SubstWF_mk_insert
+theorem SubstWF_mk_insert{S: Subst ExtraRestrict}
     (h_s_not_in_S_values : i ∉ S.freeVars)
     (h_s_not_in_S_keys : S.keys.all (fun k => k ∉ ty.freeVars))
     (h_s_WF : SubstWF [[(i, ty)]])
@@ -495,26 +497,26 @@ theorem SubstWF_mk_insert
   grind
   done
 
-theorem SubstWF.cons_of_subst_apply (S : SubstInfo) (id : TyIdentifier) (ty newty : LMonoTy)
+theorem SubstWF.cons_of_subst_apply (S : SubstInfo ExtraRestrict) (id : TyIdentifier) (ty newty : LMonoTy ExtraRestrict)
     (h_newty : newty = LMonoTy.subst S.subst ty)
     (h_id_newty_WF : SubstWF [[(id, newty)]])
     (h_subst_apply_WF : SubstWF (Subst.apply [(id, newty)] S.subst)) :
     SubstWF (Maps.insert (Subst.apply [(id, newty)] S.subst) id newty) := by
   have h_id_not_in_apply : id ∉ (Subst.apply [(id, newty)] S.subst).freeVars := by
     simp_all
-    have := @Subst.keys_not_in_apply [(id, newty)] S.subst
+    have := @Subst.keys_not_in_apply _ [(id, newty)] S.subst
     simp_all [Map.keys]
   have h : (∀ (x : TyIdentifier), x ∈ Maps.keys S.subst → ¬x ∈ newty.freeVars) := by
-    have := @LMonoTy.subst_keys_not_in_substituted_type S.subst ty S.isWF
+    have := @LMonoTy.subst_keys_not_in_substituted_type _ S.subst ty S.isWF
     simp [h_newty]; simp_all
-  have h_insert := @SubstWF_mk_insert id newty (Subst.apply [(id, newty)] S.subst)
+  have h_insert := @SubstWF_mk_insert _ id newty (Subst.apply [(id, newty)] S.subst)
   simp_all
   done
 
 /--
 Apply substitution `S` to the free type variables in `ty`.
 -/
-def LTy.subst (S : Subst) (ty : LTy) : LTy :=
+def LTy.subst (S : Subst ExtraRestrict) (ty : LTy ExtraRestrict) : LTy ExtraRestrict :=
   match ty with
   | .forAll xs ty =>
     let S' := go xs S
@@ -531,45 +533,45 @@ def LTy.subst (S : Subst) (ty : LTy) : LTy :=
 A type constraint `(ty1, ty2)` that records that `ty1` and `ty2` must
 have a common substitution instance.
 -/
-abbrev Constraint := (LMonoTy × LMonoTy)
+abbrev Constraint (ExtraRestrict: Type) := (LMonoTy ExtraRestrict × LMonoTy ExtraRestrict)
 /--
 A list of type constraints. These should really be viewed as a set.
 -/
-abbrev Constraints := List Constraint
+abbrev Constraints (ExtraRestrict: Type := Empty) := List (Constraint ExtraRestrict)
 
 /--
 Get the free type variables in the type constraint `c`.
 -/
-def Constraint.freeVars (c : Constraint) : List TyIdentifier :=
+def Constraint.freeVars (c : Constraint ExtraRestrict) : List TyIdentifier :=
   let (t1, t2) := c
   LMonoTy.freeVars t1 ++ LMonoTy.freeVars t2
 
 /--
 Get the free type variables in type constraints `cs`.
 -/
-def Constraints.freeVars (cs : Constraints) : List TyIdentifier :=
+def Constraints.freeVars (cs : Constraints ExtraRestrict) : List TyIdentifier :=
   match cs with
   | [] => []
   | c :: c_rest =>
     c.freeVars ++ Constraints.freeVars c_rest
 
-theorem Constraints.freeVars_length_cons :
+theorem Constraints.freeVars_length_cons {cs: Constraints ExtraRestrict} {c: Constraint ExtraRestrict} :
     (freeVars cs).length < (freeVars (c :: cs)).length ∨
     (freeVars cs).length = (freeVars (c :: cs)).length := by
   simp [freeVars, Constraint.freeVars]
   omega
 
-theorem Constraints.freeVars_single_constraint_comm_subset :
+theorem Constraints.freeVars_single_constraint_comm_subset {t1 t2: LMonoTy ExtraRestrict} :
     Constraints.freeVars [(t1, t2)] ⊆ Constraints.freeVars [(t2, t1)] := by
   simp [Constraints.freeVars, Constraint.freeVars]
 
 @[simp]
-theorem Constraints.freeVars_of_cons_zip :
+theorem Constraints.freeVars_of_cons_zip {a: LMonoTy ExtraRestrict} {as: List (LMonoTy ExtraRestrict)} {b: LMonoTy ExtraRestrict} {bs: List (LMonoTy ExtraRestrict)} :
     Constraints.freeVars ((a :: as).zip (b :: bs)) =
     LMonoTy.freeVars a ++ LMonoTy.freeVars b ++ Constraints.freeVars (as.zip bs) := by
   simp [Constraints.freeVars, Constraint.freeVars]
 
-theorem Constraints.freeVars_of_zip_subset :
+theorem Constraints.freeVars_of_zip_subset {args1 args2: LMonoTys ExtraRestrict} :
     (Constraints.freeVars (args1.zip args2)) ⊆
     (LMonoTys.freeVars args1 ++ LMonoTys.freeVars args2) := by
   induction args1 generalizing args2 with
@@ -595,7 +597,7 @@ theorem Constraints.freeVars_of_zip_subset :
     · simp_all [freeVars]
   done
 
-theorem Constraints.freeVars_of_zip_superset (h : args1.length = args2.length) :
+theorem Constraints.freeVars_of_zip_superset {args1 args2: LMonoTys ExtraRestrict} (h : args1.length = args2.length) :
     (LMonoTys.freeVars args1 ++ LMonoTys.freeVars args2) ⊆
     (Constraints.freeVars (args1.zip args2)) := by
   induction args1 generalizing args2 with
@@ -617,11 +619,11 @@ theorem Constraints.freeVars_of_zip_superset (h : args1.length = args2.length) :
       simp_all (config := {maxDischargeDepth := 10})
     done
 
-theorem Constraints.freeVars_zip_dedup_length (h : args1.length = args2.length) :
+theorem Constraints.freeVars_zip_dedup_length {args1 args2: LMonoTys ExtraRestrict} (h : args1.length = args2.length) :
   (Constraints.freeVars (args1.zip args2)).dedup.length =
   (LMonoTys.freeVars args1 ++ LMonoTys.freeVars args2).dedup.length := by
-  have h1 := @Constraints.freeVars_of_zip_superset args1 args2 h
-  have h2 := @Constraints.freeVars_of_zip_subset args1 args2
+  have h1 := @Constraints.freeVars_of_zip_superset _ args1 args2 h
+  have h2 := @Constraints.freeVars_of_zip_subset _ args1 args2
   have h3 := @List.length_dedup_subset_eq _ _
               (args1.freeVars ++ args2.freeVars) (freeVars (List.zip args1 args2)) h1 h2
   exact id (Eq.symm h3)
@@ -629,40 +631,40 @@ theorem Constraints.freeVars_zip_dedup_length (h : args1.length = args2.length) 
 /--
 The size of a constraint, useful for termination arguments.
 -/
-def Constraint.size (c : Constraint) : Nat :=
+def Constraint.size (c : Constraint ExtraRestrict) : Nat :=
   c.fst.size + c.snd.size
 
 @[simp]
-theorem Constraint.size_gt_zero : 0 < Constraint.size c := by
+theorem Constraint.size_gt_zero {c : Constraint ExtraRestrict} : 0 < Constraint.size c := by
   simp_all [Constraint.size]
-  have := @LMonoTy.size_gt_zero c.fst
+  have := @LMonoTy.size_gt_zero _ c.fst
   omega
 
 /--
 The size of a set of constraint, where each constituent type is sized as a tree.
 -/
-def Constraints.size (cs : Constraints) : Nat :=
+def Constraints.size (cs : Constraints ExtraRestrict) : Nat :=
   match cs with
   | [] => 0
   | c :: rest => c.size + Constraints.size rest
 
 @[simp]
-theorem Constraints.size_cons :
+theorem Constraints.size_cons {rest : Constraints ExtraRestrict} {c: Constraint ExtraRestrict} :
     Constraints.size rest < Constraints.size (c :: rest) := by
   simp [Constraints.size, Constraint.size]
-  have := @LMonoTy.size_gt_zero c.fst
-  have := @LMonoTy.size_gt_zero c.snd
+  have := @LMonoTy.size_gt_zero _ c.fst
+  have := @LMonoTy.size_gt_zero _ c.snd
   omega
 
 @[simp]
-theorem Constraints.size_append :
+theorem Constraints.size_append {xs ys: Constraints ExtraRestrict}:
     Constraints.size (xs ++ ys) = Constraints.size xs + Constraints.size ys := by
   induction xs
   case nil => simp_all [size]
   case cons x xs ih =>
     simp_all [size]; omega
 
-theorem Constraints.size_zip_eq (h : args1.length = args2.length) :
+theorem Constraints.size_zip_eq {args1 args2: LMonoTys ExtraRestrict} (h : args1.length = args2.length) :
     Constraints.size (args1.zip args2) = LMonoTys.size args1 + LMonoTys.size args2 := by
   induction args1 generalizing args2
   case nil =>
@@ -679,7 +681,7 @@ theorem Constraints.size_zip_eq (h : args1.length = args2.length) :
 /--
 Apply substitution `S` to type constraints `cs`.
 -/
-def Constraints.subst (S : Subst) (cs : Constraints) : Constraints :=
+def Constraints.subst (S : Subst ExtraRestrict) (cs : Constraints ExtraRestrict) : Constraints ExtraRestrict :=
   match cs with
   | [] => []
   | (lty1, lty2) :: rest =>
@@ -687,7 +689,7 @@ def Constraints.subst (S : Subst) (cs : Constraints) : Constraints :=
     Constraints.subst S rest
 
 @[simp]
-theorem Constraints.subst.length_same : (Constraints.subst S cs).length = cs.length := by
+theorem Constraints.subst.length_same {S: Subst ExtraRestrict} : (Constraints.subst S cs).length = cs.length := by
   induction cs <;> simp_all [subst]
 
 ---------------------------------------------------------------------
@@ -698,7 +700,7 @@ theorem Constraints.subst.length_same : (Constraints.subst S cs).length = cs.len
 Function encoding the property that the free variables in a substitution `newS`
 are a subset of those in constraints `cs` and substitution `oldS`.
 -/
-def Subst.freeVars_subset_prop (cs : Constraints) (newS oldS : SubstInfo) : Prop :=
+def Subst.freeVars_subset_prop (cs : Constraints ExtraRestrict) (newS oldS : SubstInfo ExtraRestrict) : Prop :=
   Subst.freeVars newS.subst ⊆
   Constraints.freeVars cs ++ Subst.freeVars oldS.subst
 
@@ -707,16 +709,16 @@ The free variables in a well-formed type substitution (i.e., `newS.subst` and
 `newS.isWF`) are bounded by those in the type constraints `cs` and in the old
 substitution `oldS`.
 -/
-structure ValidSubstRelation (cs : Constraints) (oldS : SubstInfo) where
-  newS : SubstInfo
+structure ValidSubstRelation (cs : Constraints ExtraRestrict) (oldS : SubstInfo ExtraRestrict) where
+  newS : SubstInfo ExtraRestrict
   goodSubset : Subst.freeVars_subset_prop cs newS oldS
 
 @[simp]
-theorem Subst.freeVars_subset_prop_of_empty (S : SubstInfo) :
+theorem Subst.freeVars_subset_prop_of_empty (S : SubstInfo ExtraRestrict) :
     Subst.freeVars_subset_prop [] S S := by
   simp [Subst.freeVars_subset_prop]
 
-theorem Subst.freeVars_subset_prop_single_constraint_comm :
+theorem Subst.freeVars_subset_prop_single_constraint_comm {t1 t2: LMonoTy ExtraRestrict} {newS oldS: SubstInfo ExtraRestrict} :
     Subst.freeVars_subset_prop [(t1, t2)] newS oldS =
     Subst.freeVars_subset_prop [(t2, t1)] newS oldS := by
   simp [Subst.freeVars_subset_prop, Constraints.freeVars, Constraint.freeVars]
@@ -733,7 +735,7 @@ theorem Subst.freeVars_subset_prop_single_constraint_comm :
     exact fun _ x => this (h x)
   done
 
-private theorem Subst.freeVars_subset_prop_mk_cons
+private theorem Subst.freeVars_subset_prop_mk_cons {c: Constraint ExtraRestrict} {S: SubstInfo ExtraRestrict} {c_rest: Constraints ExtraRestrict}
     (R1 : ValidSubstRelation [c] S)
     (R2 : ValidSubstRelation c_rest R1.newS) :
     Subst.freeVars_subset_prop (c :: c_rest) R2.newS S := by
@@ -772,8 +774,8 @@ private theorem ugly_subset_lemma {α : Type} [DecidableEq α]
   exact fun _ a_1 => h4 (h3 a_1)
   done
 
-theorem Subst.freeVars_subset_prop_of_ftvar_id_when_id_in_S (S : SubstInfo) (id : TyIdentifier)
-    (orig_lty sty lty : LMonoTy)
+theorem Subst.freeVars_subset_prop_of_ftvar_id_when_id_in_S (S : SubstInfo ExtraRestrict) (id : TyIdentifier)
+    (orig_lty sty lty : LMonoTy ExtraRestrict)
     (h_lty : lty = LMonoTy.subst S.subst orig_lty)
     (_h4 : ¬id ∈ lty.freeVars)
     (_h5 : Maps.find? S.subst id = some sty)
@@ -782,8 +784,8 @@ theorem Subst.freeVars_subset_prop_of_ftvar_id_when_id_in_S (S : SubstInfo) (id 
   obtain ⟨newS, h_newS_subset⟩ := relS
   simp [h_lty, Subst.freeVars_subset_prop, Constraints.freeVars, Constraint.freeVars]
     at h_newS_subset ⊢
-  have h_sty := @Subst.freeVars_of_find_subset id sty S.subst _h5
-  have h_lty := @LMonoTy.freeVars_of_subst_subset S.subst orig_lty
+  have h_sty := @Subst.freeVars_of_find_subset _ id sty S.subst _h5
+  have h_lty := @LMonoTy.freeVars_of_subst_subset _ S.subst orig_lty
   apply List.subset_append_of_subset_right (LMonoTy.ftvar id).freeVars
   simp_all
   generalize Subst.freeVars newS.subst = newS at *
@@ -793,7 +795,7 @@ theorem Subst.freeVars_subset_prop_of_ftvar_id_when_id_in_S (S : SubstInfo) (id 
   assumption
   done
 
-theorem Subst.freeVars_of_insert (S : Subst) (id : TyIdentifier) (ty : LMonoTy) :
+theorem Subst.freeVars_of_insert (S : Subst ExtraRestrict) (id : TyIdentifier) (ty : LMonoTy ExtraRestrict) :
   Subst.freeVars (Maps.insert S id ty) ⊆ Subst.freeVars S ++ LMonoTy.freeVars ty := by
   have h_insert_vals := @Maps.insert_values_subset _ _ id ty _ S
   simp [freeVars]
@@ -801,7 +803,7 @@ theorem Subst.freeVars_of_insert (S : Subst) (id : TyIdentifier) (ty : LMonoTy) 
   done
 
 theorem Subst.freeVars_subset_prop_of_single_constraint
-    (S newS : SubstInfo) (new_subst : Subst) (id : TyIdentifier) (orig_lty lty : LMonoTy)
+    (S newS : SubstInfo ExtraRestrict) (new_subst : Subst ExtraRestrict) (id : TyIdentifier) (orig_lty lty : LMonoTy ExtraRestrict)
     (h_lty : lty = LMonoTy.subst S.subst orig_lty)
     (h_new_subst : new_subst = Maps.insert (Subst.apply [(id, lty)] S.subst) id lty)
     (h' : SubstWF new_subst)
@@ -809,10 +811,10 @@ theorem Subst.freeVars_subset_prop_of_single_constraint
     Subst.freeVars_subset_prop [(LMonoTy.ftvar id, orig_lty)] newS S := by
   simp_all [Subst.freeVars_subset_prop]
   simp [Constraints.freeVars]
-  have h_orig_lty_subset := @LMonoTy.freeVars_of_subst_subset S.subst orig_lty
-  have h_subset := @Subst.freeVars_of_apply_subset_alt
+  have h_orig_lty_subset := @LMonoTy.freeVars_of_subst_subset _ S.subst orig_lty
+  have h_subset := @Subst.freeVars_of_apply_subset_alt _
                  [(id, LMonoTy.subst S.subst orig_lty)] S.subst
-  have h_freevars := @Subst.freeVars_of_insert (apply [(id, LMonoTy.subst S.subst orig_lty)] S.subst)
+  have h_freevars := @Subst.freeVars_of_insert _ (apply [(id, LMonoTy.subst S.subst orig_lty)] S.subst)
                       id (LMonoTy.subst S.subst orig_lty)
   simp [Constraint.freeVars, LMonoTy.freeVars]
   apply List.subset_cons_of_subset id
@@ -820,8 +822,8 @@ theorem Subst.freeVars_subset_prop_of_single_constraint
   grind
   done
 
-theorem Subst.freeVars_subset_prop_of_tcons (S : SubstInfo)
-    (name1 name2 : String) (args1 args2 : List LMonoTy)
+theorem Subst.freeVars_subset_prop_of_tcons (S : SubstInfo ExtraRestrict)
+    (name1 name2 : String) (args1 args2 : List (LMonoTy ExtraRestrict))
     (h_new_constraints : new_constraints = args1.zip args2)
     (relS : ValidSubstRelation new_constraints S)  :
     Subst.freeVars_subset_prop
@@ -829,7 +831,7 @@ theorem Subst.freeVars_subset_prop_of_tcons (S : SubstInfo)
   obtain ⟨newS, h_newS_subset⟩ := relS
   simp [Subst.freeVars_subset_prop, h_new_constraints] at h_newS_subset
   simp_all [Subst.freeVars_subset_prop, Constraints.freeVars]
-  have h := @Constraints.freeVars_of_zip_subset args1 args2
+  have h := @Constraints.freeVars_of_zip_subset _ args1 args2
   simp [Constraint.freeVars, LMonoTy.freeVars]
   have : LMonoTys.freeVars args1 ++ (LMonoTys.freeVars args2 ++ (Subst.freeVars S.subst)) =
          LMonoTys.freeVars args1 ++  LMonoTys.freeVars args2 ++ (Subst.freeVars S.subst) := by
@@ -843,8 +845,8 @@ theorem Subst.freeVars_subset_prop_of_tcons (S : SubstInfo)
   exact fun _ x => this (h_newS_subset x)
 
 private theorem Constraint.unify_termination_goal_1
-    (S : SubstInfo) (id : TyIdentifier)
-    (orig_lty lty sty : LMonoTy)
+    (S : SubstInfo ExtraRestrict) (id : TyIdentifier)
+    (orig_lty lty sty : LMonoTy ExtraRestrict)
     (h_lty : lty = LMonoTy.subst S.subst orig_lty)
     (_h4 : ¬id ∈ lty.freeVars)
     (_h5 : Maps.find? S.subst id = some sty) :
@@ -854,8 +856,8 @@ private theorem Constraint.unify_termination_goal_1
     (Constraints.freeVars [(LMonoTy.ftvar id, orig_lty)] ++ S.subst.freeVars).dedup.length ∧
     Constraints.size [(sty, LMonoTy.subst S.subst orig_lty)] <
     Constraints.size [(LMonoTy.ftvar id, orig_lty)] := by
-  have h_sty := @Subst.freeVars_of_find_subset id sty S.subst _h5
-  have h_subst_orig_lty := @LMonoTy.freeVars_of_subst_subset S.subst orig_lty
+  have h_sty := @Subst.freeVars_of_find_subset _ id sty S.subst _h5
+  have h_subst_orig_lty := @LMonoTy.freeVars_of_subst_subset _ S.subst orig_lty
   have h_subset :
         (id :: (sty.freeVars ++
                ((LMonoTy.subst S.subst orig_lty).freeVars ++ S.subst.freeVars))) ⊆
@@ -887,8 +889,8 @@ private theorem Constraint.unify_termination_goal_1
 -- `Constraints.size [(t1, t2)] == Constraints.size [(t2, t1)]`
 -- and similarly, `Constraints.freeVars_single_constraint_comm_subset`.
 private theorem Constraint.unify_termination_goal_2
-    (S : SubstInfo) (id : TyIdentifier)
-    (orig_lty lty sty : LMonoTy)
+    (S : SubstInfo ExtraRestrict) (id : TyIdentifier)
+    (orig_lty lty sty : LMonoTy ExtraRestrict)
     (h_lty : lty = LMonoTy.subst S.subst orig_lty)
     (_h4 : ¬id ∈ lty.freeVars)
     (_h5 : Maps.find? S.subst id = some sty) :
@@ -898,9 +900,9 @@ private theorem Constraint.unify_termination_goal_2
     (Constraints.freeVars [(orig_lty, LMonoTy.ftvar id)] ++ S.subst.freeVars).dedup.length ∧
     Constraints.size [(sty, LMonoTy.subst S.subst orig_lty)] <
     Constraints.size [(orig_lty, LMonoTy.ftvar id)] := by
-  have h1 := @Constraints.freeVars_single_constraint_comm_subset orig_lty (LMonoTy.ftvar id)
-  have h2 := @Constraints.freeVars_single_constraint_comm_subset (LMonoTy.ftvar id) orig_lty
-  have h3 := @Constraint.unify_termination_goal_1 S id orig_lty lty sty h_lty _h4 _h5
+  have h1 := @Constraints.freeVars_single_constraint_comm_subset _ orig_lty (LMonoTy.ftvar id)
+  have h2 := @Constraints.freeVars_single_constraint_comm_subset _ (LMonoTy.ftvar id) orig_lty
+  have h3 := @Constraint.unify_termination_goal_1 _ S id orig_lty lty sty h_lty _h4 _h5
   generalize Constraints.freeVars [(orig_lty, LMonoTy.ftvar id)] = A at *
   generalize Constraints.freeVars [(LMonoTy.ftvar id, orig_lty)] = B at *
   generalize Constraints.freeVars [(sty, LMonoTy.subst S.subst orig_lty)] = X at *
@@ -915,7 +917,7 @@ private theorem Constraint.unify_termination_goal_2
   done
 
 private theorem Constraint.unify_termination_goal_3
-    (S : SubstInfo) (name1 name2 : String) (args1 args2 : List LMonoTy)
+    (S : SubstInfo ExtraRestrict) (name1 name2 : String) (args1 args2 : List (LMonoTy ExtraRestrict))
     (h_tcons : name1 = name2 ∧ args1.length = args2.length) :
     (Constraints.freeVars (args1.zip args2) ++ S.subst.freeVars).dedup.length <
     (Constraints.freeVars [(LMonoTy.tcons name2 args1, LMonoTy.tcons name2 args2)] ++
@@ -925,9 +927,9 @@ private theorem Constraint.unify_termination_goal_3
      S.subst.freeVars).dedup.length ∧
     Constraints.size (args1.zip args2) <
     Constraints.size [(LMonoTy.tcons name2 args1, LMonoTy.tcons name2 args2)] := by
-  have h_zip_fvs_super := @Constraints.freeVars_of_zip_superset args1 args2 h_tcons.right
-  have h_zip_fvs_sub := @Constraints.freeVars_of_zip_subset args1 args2
-  have h_zip_size := @Constraints.size_zip_eq args1 args2 h_tcons.right
+  have h_zip_fvs_super := @Constraints.freeVars_of_zip_superset _ args1 args2 h_tcons.right
+  have h_zip_fvs_sub := @Constraints.freeVars_of_zip_subset _ args1 args2
+  have h_zip_size := @Constraints.size_zip_eq _ args1 args2 h_tcons.right
   have h_fvs_tcons :
     Constraints.freeVars [(LMonoTy.tcons name2 args1, LMonoTy.tcons name2 args2)] =
     LMonoTys.freeVars args1 ++ LMonoTys.freeVars args2 := by
@@ -954,7 +956,7 @@ private theorem Constraint.unify_termination_goal_3
   done
 
 private theorem Constraints.unify_termination_goal_1
-    (cs : Constraints) (c : Constraint) (S : SubstInfo) :
+    (cs : Constraints ExtraRestrict) (c : Constraint ExtraRestrict) (S : SubstInfo ExtraRestrict) :
     (Constraints.freeVars [c] ++ S.subst.freeVars).dedup.length <
       (Constraints.freeVars (c :: cs) ++ S.subst.freeVars).dedup.length ∨
     (Constraints.freeVars [c] ++ S.subst.freeVars).dedup.length =
@@ -975,7 +977,7 @@ private theorem Constraints.unify_termination_goal_1
   done
 
 private theorem Constraints.unify_termination_goal_2
-    (cs : Constraints) (c : Constraint) (S : SubstInfo)
+    (cs : Constraints ExtraRestrict) (c : Constraint ExtraRestrict) (S : SubstInfo ExtraRestrict)
     (relS : ValidSubstRelation [c] S) :
     (Constraints.freeVars cs ++ relS.newS.subst.freeVars).dedup.length <
     (Constraints.freeVars (c :: cs) ++ S.subst.freeVars).dedup.length ∨
@@ -1001,7 +1003,7 @@ private theorem Constraints.unify_termination_goal_2
   done
 
 mutual
-def Constraint.unifyOne (c : Constraint) (S : SubstInfo) :
+def Constraint.unifyOne [DecidableEq ExtraRestrict] (c : Constraint ExtraRestrict) (S : SubstInfo ExtraRestrict) :
   Except Format (ValidSubstRelation [c] S) :=
   let (t1, t2) := c
   if _h1: t1 == t2 then
@@ -1078,13 +1080,13 @@ def Constraint.unifyOne (c : Constraint) (S : SubstInfo) :
   decreasing_by
     all_goals simp_all [Prod.lex_def]
     -- Subgoal 1
-    · exact @Constraint.unify_termination_goal_1 S id orig_lty lty sty (by exact rfl) _h4 _h5
+    · exact @Constraint.unify_termination_goal_1 _ S id orig_lty lty sty (by exact rfl) _h4 _h5
     -- Subgoal 2
-    · exact @Constraint.unify_termination_goal_2 S id orig_lty lty sty (by exact rfl) _h4 _h5
+    · exact @Constraint.unify_termination_goal_2 _ S id orig_lty lty sty (by exact rfl) _h4 _h5
     -- Subgoal 3
-    · exact @Constraint.unify_termination_goal_3 S name1 name2 args1 args2 _h6
+    · exact @Constraint.unify_termination_goal_3 _ S name1 name2 args1 args2 _h6
 
-def Constraints.unifyCore (cs : Constraints) (S : SubstInfo) :
+def Constraints.unifyCore [DecidableEq ExtraRestrict] (cs : Constraints ExtraRestrict) (S : SubstInfo ExtraRestrict) :
     Except Format (ValidSubstRelation cs S) := do
   match _h0 : cs with
   | [] => .ok { newS := S, goodSubset := by simp [Subst.freeVars_subset_prop_of_empty] }
@@ -1099,9 +1101,9 @@ def Constraints.unifyCore (cs : Constraints) (S : SubstInfo) :
   decreasing_by
     all_goals simp_all [Prod.lex_def]
     -- Subgoal 1
-    · exact @Constraints.unify_termination_goal_1 c_rest c S
+    · exact @Constraints.unify_termination_goal_1 _ c_rest c S
     -- Subgoal 2
-    · exact @Constraints.unify_termination_goal_2 c_rest c S relS
+    · exact @Constraints.unify_termination_goal_2 _ c_rest c S relS
 end
 
 /--
@@ -1110,15 +1112,15 @@ bottom-up Hindley-Milner style algorithm that finds the most general type
 (principal type) of an expression by finding a substitution that makes all the
 types in the input constraints equal.
 -/
-def Constraints.unify (constraints : Constraints) (S : SubstInfo) :
-    Except Format SubstInfo := do
+def Constraints.unify [DecidableEq ExtraRestrict] (constraints : Constraints ExtraRestrict) (S : SubstInfo ExtraRestrict) :
+    Except Format (SubstInfo ExtraRestrict) := do
     let relS ← Constraints.unifyCore constraints S
     .ok relS.newS
 
 /-- info: ok: [(a, int) (b, (arrow c d))] -/
 #guard_msgs in
 open LTy.Syntax in
-#eval  do let S ← Constraints.unify [(mty[%a → %b], mty[int → (%c → %d)])] SubstInfo.empty
+#eval  do let S ← Constraints.unify [(mty[%a → %b], mty[int → (%c → %d)])] (SubstInfo.empty)
            return (format S.subst)
 
 ---------------------------------------------------------------------

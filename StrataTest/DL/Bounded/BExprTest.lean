@@ -9,20 +9,20 @@ open Std (ToFormat Format format)
 open Lambda
 open Bounded
 
-def natTy : LMonoTy := LMonoTy.bounded (.ble (.bconst 0) .bvar)
+def natTy : LMonoTy BoundTyRestrict := LMonoTy.bounded (.ble (.bconst 0) .bvar)
 
-def leOp (e1 e2: LExprT String) : LExprT String := .app (.app (LFunc.opExprT intLeFunc) e1 (.arrow .int .bool)) e2 .bool
+def leOp (e1 e2: LExprT String BoundTyRestrict) : LExprT String BoundTyRestrict := .app (.app (LFunc.opExprT intLeFunc) e1 (.arrow .int .bool)) e2 .bool
 
-def geOp (e1 e2: LExprT String) : LExprT String := .app (.app (LFunc.opExprT intGeFunc) e1 (.arrow .int .bool)) e2 .bool
+def geOp (e1 e2: LExprT String BoundTyRestrict) : LExprT String BoundTyRestrict := .app (.app (LFunc.opExprT intGeFunc) e1 (.arrow .int .bool)) e2 .bool
 
-def addOp (e1 e2: LExprT String) : LExprT String := .app (.app (LFunc.opExprT intAddFunc) e1 (.arrow .int .int)) e2 .int
+def addOp (e1 e2: LExprT String BoundTyRestrict) : LExprT String BoundTyRestrict := .app (.app (LFunc.opExprT intAddFunc) e1 (.arrow .int .int)) e2 .int
 
-def mulOp (e1 e2: LExprT String) : LExprT String := .app (.app (LFunc.opExprT intMulFunc) e1 (.arrow .int .int)) e2 .int
+def mulOp (e1 e2: LExprT String BoundTyRestrict) : LExprT String BoundTyRestrict := .app (.app (LFunc.opExprT intMulFunc) e1 (.arrow .int .int)) e2 .int
 
-def notOp (e: LExprT String) : LExprT String := .app (LFunc.opExprT boolNotFunc) e .bool
+def notOp (e: LExprT String BoundTyRestrict) : LExprT String BoundTyRestrict := .app (LFunc.opExprT boolNotFunc) e .bool
 
 -- easier to read without huge type ASTs
-def eraseTy (x: LExprT String) :=
+def eraseTy (x: LExprT String Empty) :=
   LExpr.eraseTypes (LExprT.toLExpr x)
 
 def eraseTys l := List.map eraseTy l
@@ -32,7 +32,7 @@ namespace TranslateTest
 -- 1. ∀ (x: Nat), 0 <= x (quantified assumption)
 -- Expected: ∀ (x: int), 0 <= x -> 0 <= x
 
-def testQuantAssume := (@LExprT.quant String .all natTy (.bvar 0 natTy) (leOp (.const "0" .int) (.bvar 0 .int)))
+def testQuantAssume : LExprT String BoundTyRestrict := LExprT.quant .all natTy (.bvar 0 natTy) (leOp (.const "0" .int) (.bvar 0 .int))
 
 /-- info: Lambda.LExpr.quant
   (Lambda.QuantifierKind.all)
@@ -54,7 +54,7 @@ def testQuantAssume := (@LExprT.quant String .all natTy (.bvar 0 natTy) (leOp (.
 -- 2. λ(x: Nat), if 0 <= x then 1 else 2 (assumption inside ite)
 -- Expected: λ (x: int), if 0 <= x -> 0 <= x then 1 else 2
 
-def testAssumeIte : LExprT String := .abs (.ite (leOp (.const "0" .int) (.bvar 0 .int)) (.const "1" .int) (.const "2" .int) .int) (.arrow natTy .int)
+def testAssumeIte : LExprT String BoundTyRestrict := .abs (.ite (leOp (.const "0" .int) (.bvar 0 .int)) (.const "1" .int) (.const "2" .int) .int) (.arrow natTy .int)
 
 /-- info: Lambda.LExpr.abs
   (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))
@@ -76,7 +76,7 @@ def testAssumeIte : LExprT String := .abs (.ite (leOp (.const "0" .int) (.bvar 0
 -- 3. λ(x: int), if foo x >= 0 then 1 else 0 (for foo: int -> Nat) (propagate op/application information)
 -- Expected: λ (x: int), if 0 <= foo x -> foo x >= 0 then 1 else 0
 
-def testAppAssume : LExprT String := .abs (.ite (geOp (.app (.op "foo" (.arrow .int natTy)) (.bvar 0 .int) natTy) (.const "0" .int)) (.const "1" .int) (.const "0" .int) .int) (.arrow .int .int)
+def testAppAssume : LExprT String BoundTyRestrict := .abs (.ite (geOp (.app (.op "foo" (.arrow .int natTy)) (.bvar 0 .int) natTy) (.const "0" .int)) (.const "1" .int) (.const "0" .int) .int) (.arrow .int .int)
 
 /-- info: Lambda.LExpr.abs
   (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))
@@ -100,7 +100,7 @@ def testAppAssume : LExprT String := .abs (.ite (geOp (.app (.op "foo" (.arrow .
 -- 4. (x: Nat) + (y: Nat) >= 0 (free variable bounds)
 -- Expected: 0 <= (x: int) -> 0 <= (y : int) -> x + y >= 0
 
-def testFreeVar : LExprT String := geOp (addOp (.fvar "x" natTy) (.fvar "y" natTy)) (.const "0" .int)
+def testFreeVar : LExprT String BoundTyRestrict := geOp (addOp (.fvar "x" natTy) (.fvar "y" natTy)) (.const "0" .int)
 
 /-- info: Lambda.LExpr.app
   (Lambda.LExpr.app
@@ -127,7 +127,7 @@ def testFreeVar : LExprT String := geOp (addOp (.fvar "x" natTy) (.fvar "y" natT
 -- 5. λ (x: Nat). λ (y: Nat). x + y >= 0 (multiple bound vars)
 -- Expected: λ (x: int). λ (y: int). 0 <= y -> 0 <= x -> x + y >= 0
 
-def testMultiBvar : LExprT String := .abs (.abs (geOp (addOp (.bvar 1 .int) (.bvar 0 .int)) (.const "0" .int)) (.arrow natTy .bool)) (.arrow natTy (.arrow natTy .bool))
+def testMultiBvar : LExprT String BoundTyRestrict := .abs (.abs (geOp (addOp (.bvar 1 .int) (.bvar 0 .int)) (.const "0" .int)) (.arrow natTy .bool)) (.arrow natTy (.arrow natTy .bool))
 
 /-- info: Lambda.LExpr.abs
   (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))
@@ -158,7 +158,7 @@ def testMultiBvar : LExprT String := .abs (.abs (geOp (addOp (.bvar 1 .int) (.bv
 -- 6. λ (x: Nat), if foo then λ (y: Nat). not (x = -1) else λ (y: Nat). x + y >= 0 (propagate inside branches of if-then-else)
 --Expected: λ (x: int), if 0 <= x -> foo then λ (y: int), 0 <= y -> 0 <= x -> not (x = -1) else λ (y: int). 0 <= y -> 0 <= x -> x + y >= 0
 
-def testBranchIte : LExprT String := .abs (.ite (.op "foo" .bool) (.abs (notOp (.eq (.bvar 1 .int) (.const "-1" .int) .bool)) (.arrow natTy .bool)) (.abs (geOp (addOp (.bvar 1 .int) (.bvar 0 .int)) (.const "0" .int)) (.arrow natTy .bool)) (.arrow natTy .bool)) (.arrow natTy (.arrow natTy .bool))
+def testBranchIte : LExprT String BoundTyRestrict := .abs (.ite (.op "foo" .bool) (.abs (notOp (.eq (.bvar 1 .int) (.const "-1" .int) .bool)) (.arrow natTy .bool)) (.abs (geOp (addOp (.bvar 1 .int) (.bvar 0 .int)) (.const "0" .int)) (.arrow natTy .bool)) (.arrow natTy .bool)) (.arrow natTy (.arrow natTy .bool))
 
 /-- info: Lambda.LExpr.abs
   (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))
@@ -216,7 +216,7 @@ end TranslateTest
 -- Tests for wf conditions
 
 -- For these tests, we initialize with an empty TEnv
-def runWFTest (e: LExprT String) := do
+def runWFTest (e: LExprT String BoundTyRestrict) := do
   let (l, _) ← boundedWfConditions TEnv.default e;
   .ok (eraseTys l)
 
@@ -225,7 +225,7 @@ namespace WFTest
 -- 1. constant: (1: Nat)
 -- Expected: 0 <= 1
 
-def testWfConst : LExprT String := .const "1" natTy
+def testWfConst : LExprT String BoundTyRestrict := .const "1" natTy
 
 /--info: ok: [Lambda.LExpr.app
   (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
@@ -237,7 +237,7 @@ def testWfConst : LExprT String := .const "1" natTy
 -- 2. application: (λ x: Nat. x) 1
 -- Expected: 0 <= 1
 
-def testWfApp : LExprT String := .app (.abs (.bvar 0 .int) (.arrow natTy .int)) (.const "1" .int) .int
+def testWfApp : LExprT String BoundTyRestrict := .app (.abs (.bvar 0 .int) (.arrow natTy .int)) (.const "1" .int) .int
 
 /-- info: ok: [Lambda.LExpr.app
   (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
@@ -248,7 +248,7 @@ def testWfApp : LExprT String := .app (.abs (.bvar 0 .int) (.arrow natTy .int)) 
 -- 3. application with assumption (bottom up): (λ x: Nat. x) (foo : Nat)
 -- Expected: 0 <= foo -> 0 <= foo
 
-def testWfAppAssume1 : LExprT String := .app (.abs (.bvar 0 .int) (.arrow natTy .int)) (.op "foo" natTy) .int
+def testWfAppAssume1 : LExprT String BoundTyRestrict := .app (.abs (.bvar 0 .int) (.arrow natTy .int)) (.op "foo" natTy) .int
 
 /-- info: ok: [Lambda.LExpr.app
   (Lambda.LExpr.app
@@ -265,7 +265,7 @@ def testWfAppAssume1 : LExprT String := .app (.abs (.bvar 0 .int) (.arrow natTy 
 -- 4. application with assumption (top down): (λ x: Nat. (λ y: Nat. y) x)
 -- Expected: 0 <= x -> 0 <= x (no quantifiers)
 
-def testWfAppAssume2 : LExprT String := .abs (.app (.abs (.bvar 0 .int) (.arrow natTy .int)) (.bvar 0 .int) .int) (.arrow natTy .int)
+def testWfAppAssume2 : LExprT String BoundTyRestrict := .abs (.app (.abs (.bvar 0 .int) (.arrow natTy .int)) (.bvar 0 .int) .int) (.arrow natTy .int)
 
 /-- info: ok: [Lambda.LExpr.app
   (Lambda.LExpr.app
@@ -282,7 +282,7 @@ def testWfAppAssume2 : LExprT String := .abs (.app (.abs (.bvar 0 .int) (.arrow 
 -- 5. abstraction with assumption: (λ x: Nat. foo (x + 1)) (foo: Nat -> int)
 -- Expected: 0 <= x -> 0 <= x + 1
 
-def testWfAbs : LExprT String := .abs (.app (.op "foo" (.arrow natTy .int)) (addOp (.bvar 0 .int) (.const "1" .int)) .int) (.arrow natTy .int)
+def testWfAbs : LExprT String BoundTyRestrict := .abs (.app (.op "foo" (.arrow natTy .int)) (addOp (.bvar 0 .int) (.const "1" .int)) .int) (.arrow natTy .int)
 
 /--info: ok: [Lambda.LExpr.app
   (Lambda.LExpr.app
@@ -301,7 +301,7 @@ def testWfAbs : LExprT String := .abs (.app (.op "foo" (.arrow natTy .int)) (add
 -- 6. quantified assumption: (∃ x: Nat. foo x) where (foo: Nat -> int)
 -- Expected: 0 <= x -> 0 <= x
 
-def testWfQuantAssume : LExprT String := .quant .exist natTy (.bvar 0 .int) (.app (.op "foo" (.arrow natTy .int)) (.bvar 0 .int) .int)
+def testWfQuantAssume : LExprT String BoundTyRestrict := .quant .exist natTy (.bvar 0 .int) (.app (.op "foo" (.arrow natTy .int)) (.bvar 0 .int) .int)
 
 /-- info: ok: [Lambda.LExpr.app
   (Lambda.LExpr.app
@@ -318,7 +318,7 @@ def testWfQuantAssume : LExprT String := .quant .exist natTy (.bvar 0 .int) (.ap
 -- 7. Lambda with bounded body (λ x: Nat. (x + 1: Nat))
 -- Expected: 0 <= x -> 0 <= x + 1
 
-def testWfAbsBody : LExprT String := .abs (addOp (.bvar 0 .int) (.const "1" .int)) (.arrow natTy natTy)
+def testWfAbsBody : LExprT String BoundTyRestrict := .abs (addOp (.bvar 0 .int) (.const "1" .int)) (.arrow natTy natTy)
 
 /-- info: ok: [Lambda.LExpr.app
   (Lambda.LExpr.app
@@ -338,7 +338,7 @@ def testWfAbsBody : LExprT String := .abs (addOp (.bvar 0 .int) (.const "1" .int
 -- 8. Application with bounded body: (foo x) : Nat where foo: int -> Nat
 -- Expected: [] (foo assumed)
 
-def testWfBoundBody : LExprT String := .app (.op "foo" (.arrow .int natTy)) (.fvar "x" .int) natTy
+def testWfBoundBody : LExprT String BoundTyRestrict := .app (.op "foo" (.arrow .int natTy)) (.fvar "x" .int) natTy
 
 /-- info: ok: []-/
 #guard_msgs in
@@ -347,7 +347,7 @@ def testWfBoundBody : LExprT String := .app (.op "foo" (.arrow .int natTy)) (.fv
 -- 9. Application with bounded body, no assumption: (λ (x: int) . x * x) 1 : Nat
 -- Expected: 0 <= (λ (x: int) . x * x) 1
 
-def testWfBoundBodyNoAssume : LExprT String := .app (.abs (mulOp (.bvar 0 .int) (.bvar 0 .int)) (.arrow .int .int)) (.const "1" .int) natTy
+def testWfBoundBodyNoAssume : LExprT String BoundTyRestrict := .app (.abs (mulOp (.bvar 0 .int) (.bvar 0 .int)) (.arrow .int .int)) (.const "1" .int) natTy
 
 /-- info: ok: [Lambda.LExpr.app
   (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
@@ -364,7 +364,7 @@ def testWfBoundBodyNoAssume : LExprT String := .app (.abs (mulOp (.bvar 0 .int) 
 -- 10. If-then-else with bounded body: if b then 1 else 0 : Nat
 -- Expected: 0 <= if b then 1 else 0
 
-def testWfIteBoundBody : LExprT String := .ite (.const "b" .bool) (.const "1" .int) (.const "0" .int) natTy
+def testWfIteBoundBody : LExprT String BoundTyRestrict := .ite (.const "b" .bool) (.const "1" .int) (.const "0" .int) natTy
 
 /-- info: ok: [Lambda.LExpr.app
   (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
@@ -375,7 +375,7 @@ def testWfIteBoundBody : LExprT String := .ite (.const "b" .bool) (.const "1" .i
 -- 11. If-then-else with bound functions: if b then λ (x: int). x * x : Nat else λ (y: int). 0 : Nat (whole type int -> Nat)
 -- Expected: 0 <= x * x; 0 <= 0
 
-def testWfIteBoundAbs : LExprT String := .ite (.const "b" .bool) (.abs (mulOp (.bvar 0 .int) (.bvar 0 .int)) (.arrow .int natTy)) (.abs (.const "0" .int) (.arrow .int natTy)) (.arrow .int natTy)
+def testWfIteBoundAbs : LExprT String BoundTyRestrict := .ite (.const "b" .bool) (.abs (mulOp (.bvar 0 .int) (.bvar 0 .int)) (.arrow .int natTy)) (.abs (.const "0" .int) (.arrow .int natTy)) (.arrow .int natTy)
 
 /-- info: ok: [Lambda.LExpr.app
   (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
@@ -397,7 +397,7 @@ namespace MoreBoundTests
 -- Input: add : {x < 10} → {y < 5} → {z < 15}, applied to (3 : {x < 10}) and (2 : {x < 5})
 -- Expected: translate = add 3 2, wfCond = [3 < 10, 2 < 5]
 
-def testNestedBoundedApps : LExprT String :=
+def testNestedBoundedApps : LExprT String BoundTyRestrict :=
   .app (.app (.op "add" (.arrow (.bounded (.blt (.bvar) (.bconst 10)))
                                (.arrow (.bounded (.blt (.bvar) (.bconst 5)))
                                       (.bounded (.blt (.bvar) (.bconst 15))))))
@@ -424,7 +424,7 @@ def testNestedBoundedApps : LExprT String :=
 -- Input: ∀ (x : {x < 100 ∧ 0 ≤ x}). x = 42
 -- Expected: translate = ∀ x:int. (x < 100 ∧ 0 ≤ x) → (x = 42), wfCond = []
 
-def testComplexBoundInQuantifier : LExprT String :=
+def testComplexBoundInQuantifier : LExprT String BoundTyRestrict :=
   .quant .all (.bounded (.band (.blt (.bvar) (.bconst 100))
                               (.ble (.bconst 0) (.bvar))))
          (.bvar 0 (.bounded (.band (.blt (.bvar) (.bconst 100))
@@ -461,7 +461,7 @@ def testComplexBoundInQuantifier : LExprT String :=
 -- Test 3: If-then-else with bounded branches and boolean condition
 -- Input: if (0 < (getValue 5 : {0 ≤ x})) then (1 : {x < 10}) else (0 : {x < 10}) : {x < 10}
 -- Expected: translate = if (0 ≤ getValue 5) → (0 < getValue 5) then 1 else 0, wfCond = [1 < 10, 0 < 10, (if (getValue 5) then 1 else 0) < 10]
-def testBoundedIte : LExprT String :=
+def testBoundedIte : LExprT String BoundTyRestrict :=
   .ite (.app (.app (LFunc.opExprT intLtFunc)
                    (.const "0" .int)
                    (.arrow .int .bool))
@@ -514,7 +514,7 @@ def testBoundedIte : LExprT String :=
 -- Test 4: Lambda with bounded parameter and bounded return type
 -- Input: λ (x : {0 ≤ x}). increment x : {y < 100}
 -- Expected: translate = λ x:int. increment x, wfCond = [0 ≤ x → increment x < 100; 0 <= x -> 0 <= x]
-def testBoundedLambda : LExprT String :=
+def testBoundedLambda : LExprT String BoundTyRestrict :=
   .abs (.app (.op "increment" (.arrow (.bounded (.ble (.bconst 0) (.bvar)))
                                      (.bounded (.blt (.bvar) (.bconst 100)))))
              (.bvar 0 (.bounded (.ble (.bconst 0) (.bvar))))
@@ -553,7 +553,7 @@ def testBoundedLambda : LExprT String :=
 -- Test 5: Equality between bounded expressions
 -- Input: (square (3 : {-10 ≤ x ≤ 10}) : {0 ≤ y}) = (9 : {0 ≤ z})
 -- Expected: translate = 0 <= square 3 -> square 3 = 9, wfCond = [-10 ≤ 3 ≤ 10, 0 ≤ 9]
-def testBoundedEquality : LExprT String :=
+def testBoundedEquality : LExprT String BoundTyRestrict :=
   .eq (.app (.op "square" (.arrow (.bounded (.band (.ble (.bconst (-10)) (.bvar))
                                                   (.ble (.bvar) (.bconst 10))))
                                  (.bounded (.ble (.bconst 0) (.bvar)))))
@@ -592,7 +592,7 @@ def testBoundedEquality : LExprT String :=
 -- Test 6: Free variable with bounded type in assumptions
 -- Input: compare (x : {x < 50}) 25, with assumption [x < 50]
 -- Expected: translate = (x < 50) → compare x 25, wfCond = []
-def testFreeVarWithAssumptions : LExprT String :=
+def testFreeVarWithAssumptions : LExprT String BoundTyRestrict :=
   .app (.app (.op "compare" (.arrow .int (.arrow .int .bool)))
              (.fvar "x" (.bounded (.blt (.bvar) (.bconst 50))))
              (.arrow .int .bool))
@@ -618,7 +618,7 @@ def testFreeVarWithAssumptions : LExprT String :=
 -- Test 7: Metadata preservation with bounded types
 -- Input: @metadata(42 : {0 ≤ x < 100})
 -- Expected: translate = @metadata(42), wfCond = [0 ≤ 42 < 100]
-def testMetadataWithBounds : LExprT String :=
+def testMetadataWithBounds : LExprT String BoundTyRestrict :=
   .mdata (Info.mk "test_info")
          (.const "42" (.bounded (.band (.ble (.bconst 0) (.bvar))
                                       (.blt (.bvar) (.bconst 100)))))
@@ -642,7 +642,7 @@ def testMetadataWithBounds : LExprT String :=
 -- Test 8: Chain of bounded function applications
 -- Input: f3 (f2 (f1 5 : {x < 10}) : {x < 20}) : {x < 30}
 -- Expected: translate = f3 (f2 (f1 5)), wfCond = [f2 (f1 5) < 20 -> f1 5 < 10 → f2 (f1 5) < 20, f1 5 < 10 -> f1 5 < 10]
-def testBoundedChain : LExprT String :=
+def testBoundedChain : LExprT String BoundTyRestrict :=
   .app (.op "f3" (.arrow (.bounded (.blt (.bvar) (.bconst 20)))
                         (.bounded (.blt (.bvar) (.bconst 30)))))
        (.app (.op "f2" (.arrow (.bounded (.blt (.bvar) (.bconst 10)))
@@ -711,12 +711,12 @@ Here we have several tests for positivity. For many, we have the main test as we
 
 namespace PositiveTest
 
-def ltOp (e1 e2: LExprT String) : LExprT String := .app (.app (LFunc.opExprT intLtFunc) e1 (.arrow .int .bool)) e2 .bool
-def impliesOp (e1 e2: LExprT String) : LExprT String := .app (.app (LFunc.opExprT boolImpliesFunc) e1 (.arrow .bool .bool)) e2 .bool
+def ltOp (e1 e2: LExprT String BoundTyRestrict) : LExprT String BoundTyRestrict := .app (.app (LFunc.opExprT intLtFunc) e1 (.arrow .int .bool)) e2 .bool
+def impliesOp (e1 e2: LExprT String BoundTyRestrict) : LExprT String BoundTyRestrict := .app (.app (LFunc.opExprT boolImpliesFunc) e1 (.arrow .bool .bool)) e2 .bool
 
 -- 1. not (foo 1 < 0) where foo: int -> nat
 -- Expected: 0 <= foo 1 -> not (foo 1 < 0)
-def testPosNot : LExprT String :=
+def testPosNot : LExprT String BoundTyRestrict :=
   notOp (ltOp (.app (.op "foo" (.arrow .int natTy)) (.const "1" .int) natTy) (.const "0" .int))
 
 /-- info: Lambda.LExpr.app
@@ -737,7 +737,7 @@ def testPosNot : LExprT String :=
 
 -- 1a. (foo 1 < 0) where foo: int -> nat
 -- Expected: 0 <= foo 1 -> foo 1 < 0
-def testPosNotAux : LExprT String :=
+def testPosNotAux : LExprT String BoundTyRestrict :=
   ltOp (.app (.op "foo" (.arrow .int natTy)) (.const "1" .int) natTy) (.const "0" .int)
 
 /--
@@ -758,7 +758,7 @@ info: Lambda.LExpr.app
 
 -- 2. not (forall (x: int), foo x < 0) for foo of same type
 -- Expected: (forall (x: int), 0 <= foo x) -> not (forall (x: int), foo x < 0)
-def testPosQuant : LExprT String :=
+def testPosQuant : LExprT String BoundTyRestrict :=
   notOp (.quant .all .int (.bvar 0 .int)
     (ltOp (.app (.op "foo" (.arrow .int natTy)) (.bvar 0 .int) natTy) (.const "0" .int)))
 
@@ -789,7 +789,7 @@ def testPosQuant : LExprT String :=
 
 -- 2a. (forall (x: int), foo x < 0) for foo: int -> nat
 -- Expected: forall (x: int), 0 <= foo x -> foo x < 0
-def testPosQuantAux : LExprT String :=
+def testPosQuantAux : LExprT String BoundTyRestrict :=
   .quant .all .int (.bvar 0 .int)
     (ltOp (.app (.op "foo" (.arrow .int natTy)) (.bvar 0 .int) natTy) (.const "0" .int))
 
@@ -813,7 +813,7 @@ def testPosQuantAux : LExprT String :=
 
 -- 3. (foo 1 < 0 -> false)
 -- Expected: 0 <= foo 1 -> (foo 1 < 0 -> false)
-def testPosImpl : LExprT String :=
+def testPosImpl : LExprT String BoundTyRestrict :=
   impliesOp (ltOp (.app (.op "foo" (.arrow .int natTy)) (.const "1" .int) natTy) (.const "0" .int))
             (.const "false" .bool)
 
@@ -837,7 +837,7 @@ def testPosImpl : LExprT String :=
 
 -- 3a. (b -> foo 1 < 0) for boolean constant b where foo: int -> nat
 -- Expected: b -> 0 <= foo 1 -> foo 1 < 0
-def testPosImplAux : LExprT String :=
+def testPosImplAux : LExprT String BoundTyRestrict :=
   impliesOp (.const "b" .bool)
             (ltOp (.app (.op "foo" (.arrow .int natTy)) (.const "1" .int) natTy) (.const "0" .int))
 
@@ -860,7 +860,7 @@ def testPosImplAux : LExprT String :=
 
 -- 4. (\x y. x -> y) (foo x < 0) false
 -- Expected: (forall x, 0 <= foo x) -> (\x y: bool. x -> y) (foo x < 0) false
-def testPosImplApp : LExprT String :=
+def testPosImplApp : LExprT String BoundTyRestrict :=
   .app (.app (.abs (.abs (impliesOp (.bvar 1 .bool) (.bvar 0 .bool)) (.arrow .bool .bool)) (.arrow .bool (.arrow .bool .bool)))
              (ltOp (.app (.op "foo" (.arrow .int natTy)) (.fvar "x" .int) natTy) (.const "0" .int))
              (.arrow .bool .bool))
@@ -893,7 +893,7 @@ def testPosImplApp : LExprT String :=
 
 -- 5. (\x. foo x < 0) 1
 -- Expected: (forall x, 0 <= foo x) -> (\x. foo x < 0) 1
-def testPosApp : LExprT String :=
+def testPosApp : LExprT String BoundTyRestrict :=
   .app (.abs (ltOp (.app (.op "foo" (.arrow .int natTy)) (.bvar 0 .int) natTy) (.const "0" .int)) (.arrow .int .bool))
        (.const "1" .int)
        .bool
@@ -922,7 +922,7 @@ def testPosApp : LExprT String :=
 
 -- 5a. (\x. foo y < 0) 1 where foo: int -> nat and y is a free variable
 -- Expected: 0 <= foo y -> (\x. foo y < 0) 1
-def testPosAppAux : LExprT String :=
+def testPosAppAux : LExprT String BoundTyRestrict :=
   .app (.abs (ltOp (.app (.op "foo" (.arrow .int natTy)) (.fvar "y" .int) natTy) (.const "0" .int)) (.arrow .int .bool))
        (.const "1" .int)
        .bool
@@ -948,7 +948,7 @@ def testPosAppAux : LExprT String :=
 
 -- 6. (\x. foo x) 1 >= 0
 -- Expected: 0 <= (\x. foo x) 1 -> (forall x, 0 <= foo x) -> (\x. foo x) 1 >= 0
-def testAbsQuant : LExprT String :=
+def testAbsQuant : LExprT String BoundTyRestrict :=
   geOp (.app (.abs (.app (.op "foo" (.arrow .int natTy)) (.bvar 0 .int) natTy) (.arrow .int natTy))
              (.const "1" .int)
              natTy)
@@ -988,7 +988,7 @@ def testAbsQuant : LExprT String :=
 
 -- 7. (if foo x < 0 then bar == 1 else baz > 0) where bar and baz have type nat
 -- Expected: 0 <= foo x -> if foo x < 0 then 0 <= bar -> bar == 1 else 0 <= baz -> baz > 0
-def testPosIte : LExprT String :=
+def testPosIte : LExprT String BoundTyRestrict :=
   .ite (ltOp (.app (.op "foo" (.arrow .int natTy)) (.fvar "x" .int) natTy) (.const "0" .int))
        (.eq (.fvar "bar" natTy) (.const "1" .int) .bool)
        (.app (.app (LFunc.opExprT intGtFunc) (.fvar "baz" natTy) (.arrow .int .bool)) (.const "0" .int) .bool)
@@ -1027,10 +1027,10 @@ def testPosIte : LExprT String :=
 
 -- 8. (foo x >= 0) && (bar y > 0) where foo: int -> nat and bar: int -> nat
 -- Expected: (0 <= foo x -> foo x >= 0) && (0 <= bar y -> bar y > 0)
-def andOp (e1 e2: LExprT String) : LExprT String := .app (.app (LFunc.opExprT boolAndFunc) e1 (.arrow .bool .bool)) e2 .bool
-def gtOp (e1 e2: LExprT String) : LExprT String := .app (.app (LFunc.opExprT intGtFunc) e1 (.arrow .int .bool)) e2 .bool
+def andOp (e1 e2: LExprT String BoundTyRestrict) : LExprT String BoundTyRestrict := .app (.app (LFunc.opExprT boolAndFunc) e1 (.arrow .bool .bool)) e2 .bool
+def gtOp (e1 e2: LExprT String BoundTyRestrict) : LExprT String BoundTyRestrict := .app (.app (LFunc.opExprT intGtFunc) e1 (.arrow .int .bool)) e2 .bool
 
-def testPosAnd : LExprT String :=
+def testPosAnd : LExprT String BoundTyRestrict :=
   andOp (geOp (.app (.op "foo" (.arrow .int natTy)) (.fvar "x" .int) natTy) (.const "0" .int))
         (gtOp (.app (.op "bar" (.arrow .int natTy)) (.fvar "y" .int) natTy) (.const "0" .int))
 

@@ -39,19 +39,19 @@ IMPORTANT: we expect the type definition to not be an alias itself, to avoid any
 cycles. See function `TEnv.addTypeAlias` for a canonical way of adding
 well-formed type aliases to the context.
 -/
-structure TypeAlias where
+structure TypeAlias ExtraRestrict where
   name : String
   typeArgs : List TyIdentifier
-  type : LMonoTy
+  type : LMonoTy ExtraRestrict
   deriving DecidableEq, Repr, Inhabited
 
-def TypeAlias.toAliasLTy (a : TypeAlias) : LTy :=
+def TypeAlias.toAliasLTy (a : TypeAlias ExtraRestrict) : LTy ExtraRestrict :=
   .forAll a.typeArgs (.tcons a.name (a.typeArgs.map (fun i => .ftvar i)))
 
-instance : ToFormat TypeAlias where
+instance : ToFormat (TypeAlias ExtraRestrict) where
   format t := f!"{t.toAliasLTy} := {t.type}"
 
-variable {Identifier : Type} [DecidableEq Identifier] [ToFormat Identifier]
+variable {Identifier : Type} [DecidableEq Identifier] [ToFormat Identifier] {ExtraRestrict : Type}
 
 /--
 A type context contains two maps: `types` and `aliases`.
@@ -63,12 +63,12 @@ The `aliases` field maps type synonyms to their corresponding type definitions.
 We expect these type definitions to not be aliases themselves, to avoid any
 cycles in the map (see `TEnv.addTypeAlias`).
 -/
-structure TContext (Identifier : Type) where
-  types   :  Maps Identifier LTy := []
-  aliases :  List TypeAlias := []
-  deriving DecidableEq, Repr
+structure TContext (Identifier : Type) (ExtraRestrict : Type) where
+  types   :  Maps Identifier (LTy ExtraRestrict) := []
+  aliases :  List (TypeAlias ExtraRestrict) := []
+  deriving DecidableEq, Repr, Inhabited
 
-instance : ToFormat (TContext Identifier) where
+instance : ToFormat (TContext Identifier ExtraRestrict) where
   format ctx :=
     f!"types:   {ctx.types}\n\
        aliases: {ctx.aliases}"
@@ -76,17 +76,17 @@ instance : ToFormat (TContext Identifier) where
 /--
 Get all the known variables (i.e., `LExpr.fvar`s) in the typing context.
 -/
-def TContext.knownVars (ctx : (TContext Identifier)) : List Identifier :=
+def TContext.knownVars (ctx : (TContext Identifier ExtraRestrict)) : List Identifier :=
   go ctx.types
   where go types :=
   match types with
   | [] => [] | m :: rest => m.keys ++ go rest
 
-def TContext.types.knownTypeVars (types : Maps Identifier LTy) : List TyIdentifier :=
+def TContext.types.knownTypeVars (types : Maps Identifier (LTy ExtraRestrict)) : List TyIdentifier :=
   match types with
   | [] => []
   | m :: rest => go m ++ knownTypeVars rest
-  where go (m : Map Identifier LTy) :=
+  where go (m : Map Identifier (LTy ExtraRestrict)) :=
     match m with
     | [] => [] | (_, ty) :: rest => LTy.freeVars ty ++ go rest
 
@@ -94,31 +94,31 @@ def TContext.types.knownTypeVars (types : Maps Identifier LTy) : List TyIdentifi
 Get all the known type variables (i.e., free `LMonoTy.ftvar`s) in the typing
 context.
 -/
-def TContext.knownTypeVars (ctx : (TContext Identifier)) : List TyIdentifier :=
+def TContext.knownTypeVars (ctx : (TContext Identifier ExtraRestrict)) : List TyIdentifier :=
   types.knownTypeVars ctx.types
 
 /--
 Is `x` is a fresh type variable w.r.t. the context?
 -/
-def TContext.isFresh (tx : TyIdentifier) (Γ : (TContext Identifier)) : Prop :=
-  ∀ (x : Identifier) (ty : LTy),
+def TContext.isFresh (tx : TyIdentifier) (Γ : (TContext Identifier ExtraRestrict)) : Prop :=
+  ∀ (x : Identifier) (ty : LTy ExtraRestrict),
     Γ.types.find? x = some ty → tx ∉ (LTy.freeVars ty)
 
 /--
 Are `xs` fresh type variables w.r.t. the context?
 -/
-def TContext.allFreshVars (xs : List TyIdentifier) (Γ : (TContext Identifier)) : Prop :=
+def TContext.allFreshVars (xs : List TyIdentifier) (Γ : (TContext Identifier ExtraRestrict)) : Prop :=
   match xs with
   | [] => True
   | x :: rest => (TContext.isFresh x Γ) ∧ (TContext.allFreshVars rest Γ)
 
-def TContext.types.subst (types : Maps Identifier LTy) (S : Subst) :
-  Maps Identifier LTy :=
+def TContext.types.subst (types : Maps Identifier (LTy ExtraRestrict)) (S : Subst ExtraRestrict) :
+  Maps Identifier (LTy ExtraRestrict) :=
   match types with
   | [] => []
   | tmap :: trest =>
     go tmap :: types.subst trest S
-  where go (tmap : Map Identifier LTy) :=
+  where go (tmap : Map Identifier (LTy ExtraRestrict)) :=
     match tmap with
     | [] => []
     | (x, ty) :: mrest =>
@@ -127,7 +127,7 @@ def TContext.types.subst (types : Maps Identifier LTy) (S : Subst) :
 /--
 Apply a substitution `S` to the context.
 -/
-def TContext.subst (T : TContext Identifier) (S : Subst) : TContext Identifier :=
+def TContext.subst (T : TContext Identifier ExtraRestrict) (S : Subst ExtraRestrict) : TContext Identifier ExtraRestrict :=
   { T with types := types.subst T.types S }
 
 ---------------------------------------------------------------------
@@ -141,35 +141,35 @@ variables needed during type inference. It also has a global substitution map
 
 Also see functions `TEnv.genTyVar` and `TEnv.genExprVar`.
 -/
-structure TState where
+structure TState ExtraRestrict where
   tyGen : Nat := 0
   tyPrefix : String := "$__ty"
   exprGen : Nat := 0
   exprPrefix : String := "$__var"
-  substInfo : SubstInfo := SubstInfo.empty
-  deriving Repr
+  substInfo : SubstInfo ExtraRestrict := SubstInfo.empty
+  deriving Repr, Inhabited
 
-def TState.init : TState := {}
+def TState.init ExtraRestrict : TState ExtraRestrict := {}
 
-def TState.incTyGen (state : TState) : TState :=
+def TState.incTyGen (state : TState ExtraRestrict) : TState ExtraRestrict :=
   { state with tyGen := state.tyGen + 1 }
 
-def TState.genTySym (state : TState) : TyIdentifier × TState :=
+def TState.genTySym (state : TState ExtraRestrict) : TyIdentifier × TState ExtraRestrict :=
   let new_idx := state.tyGen
   let state := state.incTyGen
   let new_var := state.tyPrefix ++ toString new_idx
   (new_var, state)
 
-def TState.incExprGen (state : TState) : TState :=
+def TState.incExprGen (state : TState ExtraRestrict) : TState ExtraRestrict :=
   { state with exprGen := state.exprGen + 1 }
 
-def TState.genExprSym (state : TState) : String × TState :=
+def TState.genExprSym (state : TState ExtraRestrict) : String × TState ExtraRestrict :=
   let new_idx := state.exprGen
   let state := state.incExprGen
   let new_var := state.exprPrefix ++ toString new_idx
   (new_var, state)
 
-instance : ToFormat TState where
+instance : ToFormat (TState ExtraRestrict) where
   format ts :=
     f!"tyGen: {ts.tyGen}{Format.line}\
        tyPrefix: {ts.tyPrefix}{Format.line}\
@@ -190,13 +190,13 @@ def KnownType.toLTy (k : KnownType) : LTy :=
   let args := bvars.map (fun b => .ftvar b)
   .forAll bvars (.tcons k.name args)
 
-def LTy.toKnownType! (lty : LTy) : KnownType :=
+def LTy.toKnownType! [Repr ExtraRestrict] (lty : LTy ExtraRestrict) : KnownType :=
   match lty with
   | .forAll _ (.tcons name args) => { name, arity := args.length }
   | .forAll [] (.bitvec _) => { name := "bitvec", arity := 1 }
   | _ => panic! s!"Unsupported known type: {lty}"
 
-instance : ToFormat KnownType where
+instance  : ToFormat KnownType where
   format k := f!"{k.toLTy}"
 
 /-- Registered types. -/
@@ -212,11 +212,12 @@ substitution and fresh variable generation, and a `KnownTypes` to track the
 supported type constructors. It also has type information about a
 factory of user-specified functions, which is used during type checking.
 -/
-structure TEnv (Identifier : Type) where
-  context : TContext Identifier
-  state : TState
-  functions : @Factory Identifier
+structure TEnv (Identifier : Type) (ExtraRestrict : Type := Empty) where
+  context : TContext Identifier ExtraRestrict
+  state : TState ExtraRestrict
+  functions : @Factory Identifier ExtraRestrict
   knownTypes : KnownTypes
+deriving Inhabited
 
 def KnownTypes.default : KnownTypes :=
   open LTy.Syntax in
@@ -225,38 +226,38 @@ def KnownTypes.default : KnownTypes :=
    t[int],
    t[string]].map (fun k => k.toKnownType!)
 
-def TEnv.default : TEnv Identifier :=
+def TEnv.default : TEnv Identifier ExtraRestrict :=
   open LTy.Syntax in
   { context := {},
-    state := TState.init,
+    state := TState.init ExtraRestrict,
     functions := #[],
     knownTypes := KnownTypes.default
   }
 
-instance : ToFormat (TEnv Identifier) where
+instance : ToFormat (TEnv Identifier ExtraRestrict) where
   format s := f!"context:{Format.line}{s.context}\
                  {Format.line}\
                  state:{Format.line}{s.state}\
                  {Format.line}\
                  known types:{Format.line}{s.knownTypes}"
 
-def TEnv.addKnownType (T : TEnv Identifier) (k : KnownType) : TEnv Identifier :=
+def TEnv.addKnownType (T : TEnv Identifier ExtraRestrict) (k : KnownType) : TEnv Identifier ExtraRestrict :=
   { T with knownTypes := k :: T.knownTypes }
 
-def TEnv.addFactoryFunction (T : TEnv Identifier) (fn : LFunc Identifier) : TEnv Identifier :=
+def TEnv.addFactoryFunction (T : TEnv Identifier ExtraRestrict) (fn : LFunc Identifier ExtraRestrict) : TEnv Identifier ExtraRestrict :=
   { T with functions := T.functions.push fn }
 
-def TEnv.addFactoryFunctions (T : TEnv Identifier) (fact : @Factory Identifier) : TEnv Identifier :=
+def TEnv.addFactoryFunctions (T : TEnv Identifier ExtraRestrict) (fact : @Factory Identifier ExtraRestrict) : TEnv Identifier ExtraRestrict :=
   { T with functions := T.functions.append fact }
 
 /--
 Replace the global substitution in `T.state.subst` with `S`.
 -/
-def TEnv.updateSubst (T : (TEnv Identifier)) (S : SubstInfo) : (TEnv Identifier) :=
+def TEnv.updateSubst (T : (TEnv Identifier ExtraRestrict)) (S : SubstInfo ExtraRestrict) : (TEnv Identifier ExtraRestrict) :=
   { T with state.substInfo := S }
 
 omit [DecidableEq Identifier] [ToFormat Identifier] in
-theorem TEnv.SubstWF_of_pushemptySubstScope (T : TEnv Identifier) :
+theorem TEnv.SubstWF_of_pushemptySubstScope (T : TEnv Identifier ExtraRestrict) :
   SubstWF (Maps.push T.state.substInfo.subst []) := by
   have h_SubstWF : SubstWF T.state.substInfo.subst := by
     apply T.state.substInfo.isWF
@@ -264,13 +265,13 @@ theorem TEnv.SubstWF_of_pushemptySubstScope (T : TEnv Identifier) :
   simp_all [SubstWF, Subst.freeVars]
   done
 
-def TEnv.pushEmptySubstScope (T : (TEnv Identifier)) : (TEnv Identifier) :=
+def TEnv.pushEmptySubstScope (T : (TEnv Identifier ExtraRestrict)) : (TEnv Identifier ExtraRestrict) :=
   let new_subst := T.state.substInfo.subst.push []
   let newS := { subst := new_subst, isWF := (by rw [TEnv.SubstWF_of_pushemptySubstScope]) }
   { T with state.substInfo := newS }
 
 omit [DecidableEq Identifier] [ToFormat Identifier] in
-theorem TEnv.SubstWF_of_popSubstScope (T : TEnv Identifier) :
+theorem TEnv.SubstWF_of_popSubstScope (T : TEnv Identifier ExtraRestrict) :
   SubstWF (Maps.pop T.state.substInfo.subst) := by
   have h_SubstWF : SubstWF T.state.substInfo.subst := by
     apply T.state.substInfo.isWF
@@ -278,19 +279,19 @@ theorem TEnv.SubstWF_of_popSubstScope (T : TEnv Identifier) :
   simp_all [Maps.pop]
   split <;> try simp_all
   rename_i ms m mrest
-  simp [@SubstWF_of_cons m mrest (by assumption)]
+  simp [@SubstWF_of_cons _ m mrest (by assumption)]
 
-def TEnv.popSubstScope (T : (TEnv Identifier)) : (TEnv Identifier) :=
+def TEnv.popSubstScope (T : (TEnv Identifier ExtraRestrict)) : (TEnv Identifier ExtraRestrict) :=
   let new_subst := T.state.substInfo.subst.pop
   let newS := { subst := new_subst, isWF := (by rw [TEnv.SubstWF_of_popSubstScope]) }
   { T with state.substInfo := newS }
 
-def TEnv.pushEmptyContext (T : (TEnv Identifier)) : (TEnv Identifier) :=
+def TEnv.pushEmptyContext (T : (TEnv Identifier ExtraRestrict)) : (TEnv Identifier ExtraRestrict) :=
   let ctx := T.context
   let ctx' := { ctx with types := ctx.types.push [] }
   { T with context := ctx' }
 
-def TEnv.popContext (T : (TEnv Identifier)) : (TEnv Identifier) :=
+def TEnv.popContext (T : (TEnv Identifier ExtraRestrict)) : (TEnv Identifier ExtraRestrict) :=
   let ctx := T.context
   let ctx' := { ctx with types := ctx.types.pop }
   { T with context := ctx' }
@@ -298,7 +299,7 @@ def TEnv.popContext (T : (TEnv Identifier)) : (TEnv Identifier) :=
 /--
 Insert `(x, ty)` in `T.context`.
 -/
-def TEnv.insertInContext (T : (TEnv Identifier)) (x : Identifier) (ty : LTy) : (TEnv Identifier) :=
+def TEnv.insertInContext (T : (TEnv Identifier ExtraRestrict)) (x : Identifier) (ty : LTy ExtraRestrict) : (TEnv Identifier ExtraRestrict) :=
   let ctx := T.context
   let ctx' := { ctx with types := ctx.types.insert x ty }
   { T with context := ctx' }
@@ -306,7 +307,7 @@ def TEnv.insertInContext (T : (TEnv Identifier)) (x : Identifier) (ty : LTy) : (
 /--
 Insert each element in `map` in `T.context`.
 -/
-def TEnv.addToContext (T : (TEnv Identifier)) (map : Map Identifier LTy) : (TEnv Identifier) :=
+def TEnv.addToContext (T : (TEnv Identifier ExtraRestrict)) (map : Map Identifier (LTy ExtraRestrict)) : (TEnv Identifier ExtraRestrict) :=
   let ctx := T.context
   let types := List.foldl (fun m (x, v) => m.insert x v) ctx.types map
   let ctx' := { ctx with types := types }
@@ -315,12 +316,12 @@ def TEnv.addToContext (T : (TEnv Identifier)) (map : Map Identifier LTy) : (TEnv
 /--
 Erase entry for `x` from `T.context`.
 -/
-def TEnv.eraseFromContext (T : (TEnv Identifier)) (x : Identifier) : (TEnv Identifier) :=
+def TEnv.eraseFromContext (T : (TEnv Identifier ExtraRestrict)) (x : Identifier) : (TEnv Identifier ExtraRestrict) :=
   let ctx := T.context
   let ctx' := { ctx with types := ctx.types.erase x }
   { T with context := ctx' }
 
-def TEnv.freeVarCheck (T : (TEnv Identifier)) (e : LExpr LMonoTy Identifier) (msg : Format) :
+def TEnv.freeVarCheck (T : (TEnv Identifier ExtraRestrict)) (e : LExpr (LMonoTy ExtraRestrict) Identifier) (msg : Format) :
   Except Format Unit :=
   let efv := e.freeVars.map (fun (x, _) => x)
   let knownVars := T.context.knownVars
@@ -332,19 +333,19 @@ def TEnv.freeVarCheck (T : (TEnv Identifier)) (e : LExpr LMonoTy Identifier) (ms
               {Format.line}\
               Free Variables: {freeVars}"
 
-def TEnv.freeVarChecks (T : (TEnv Identifier)) (es : List (LExpr LMonoTy Identifier)) : Except Format Unit :=
+def TEnv.freeVarChecks (T : (TEnv Identifier ExtraRestrict)) (es : List (LExpr (LMonoTy ExtraRestrict) Identifier)) : Except Format Unit :=
   match es with
   | [] => .ok ()
   | e :: erest => do
     let _ ← freeVarCheck T e f!"[{e}]"
     freeVarChecks T erest
 
-instance : Inhabited (TyIdentifier × TEnv Identifier) where
+instance : Inhabited (TyIdentifier × TEnv Identifier ExtraRestrict) where
   default := ("$__ty0", TEnv.default)
 
 /-- Variable Generator -/
-class HasGen (Identifier : Type) where
-  genVar : TEnv Identifier → Identifier × TEnv Identifier
+class HasGen (Identifier ExtraRestrict : Type) where
+  genVar : TEnv Identifier ExtraRestrict → Identifier × TEnv Identifier ExtraRestrict
 
 /--
 Generate a fresh variable (`LExpr.fvar`). This is needed to open the body of an
@@ -359,7 +360,7 @@ checking. Also, we rely on the parser disallowing Lambda variables to begin with
 Together, these restrictions ensure that variables created using
 `TEnv.genExprVar` are fresh w.r.t. the Lambda expression.
 -/
-def TEnv.genExprVar (T : TEnv String) : (String × TEnv String) :=
+def TEnv.genExprVar (T : TEnv String ExtraRestrict) : (String × TEnv String ExtraRestrict) :=
   let (new_var, state) := T.state.genExprSym
   let T := { T with state := state }
   let known_vars := TContext.knownVars T.context
@@ -369,7 +370,7 @@ def TEnv.genExprVar (T : TEnv String) : (String × TEnv String) :=
   else
     (new_var, T)
 
-instance : HasGen String where
+instance : HasGen String ExtraRestrict where
   genVar := TEnv.genExprVar
 
 /--
@@ -380,7 +381,7 @@ along with the restriction that all `ftvar`s in an annotation are implicitly
 universally quantified -- ensures that we always get a fresh type variable when
 we use `TEnv.genTyVar`.
 -/
-def TEnv.genTyVar (T : TEnv Identifier) : TyIdentifier × (TEnv Identifier) :=
+def TEnv.genTyVar (T : TEnv Identifier ExtraRestrict) : TyIdentifier × (TEnv Identifier ExtraRestrict) :=
   let (new_var, state) := T.state.genTySym
   let T := { T with state := state }
   if new_var ∈ T.context.knownTypeVars then
@@ -392,7 +393,7 @@ def TEnv.genTyVar (T : TEnv Identifier) : TyIdentifier × (TEnv Identifier) :=
 /--
 Generate `n` fresh type variables (`ftvar`s).
 -/
-def TEnv.genTyVars (n : Nat) (T : (TEnv Identifier)) : List TyIdentifier × (TEnv Identifier) :=
+def TEnv.genTyVars (n : Nat) (T : (TEnv Identifier ExtraRestrict)) : List TyIdentifier × (TEnv Identifier ExtraRestrict) :=
   match n with
   | 0 => ([], T)
   | n' + 1 =>
@@ -403,8 +404,8 @@ def TEnv.genTyVars (n : Nat) (T : (TEnv Identifier)) : List TyIdentifier × (TEn
 /--
 Consistently instantiate type variables `ids` in `mtys`.
 -/
-def LMonoTys.instantiate (ids : List TyIdentifier) (mtys : LMonoTys) (T : (TEnv Identifier)) :
-  LMonoTys × (TEnv Identifier) :=
+def LMonoTys.instantiate (ids : List TyIdentifier) (mtys : LMonoTys ExtraRestrict) (T : (TEnv Identifier ExtraRestrict)) :
+  LMonoTys ExtraRestrict × (TEnv Identifier ExtraRestrict) :=
   let (freshtvs, T) := TEnv.genTyVars ids.length T
   let S := List.zip ids (List.map (fun tv => (LMonoTy.ftvar tv)) freshtvs)
   (LMonoTys.subst [S] mtys, T)
@@ -426,7 +427,7 @@ Note: we do not check whether `ty` is a type alias here. See
 `LTy.resolveAliases`) as well as verifies whether the type is a previously registered
 one.
 -/
-def LTy.instantiate (ty : LTy) (T : (TEnv Identifier)) : LMonoTy × (TEnv Identifier) :=
+def LTy.instantiate (ty : LTy ExtraRestrict) (T : (TEnv Identifier ExtraRestrict)) : LMonoTy ExtraRestrict × (TEnv Identifier ExtraRestrict) :=
   match ty with
   | .forAll [] mty' => (mty', T)
   | .forAll xs lty' =>
@@ -434,7 +435,7 @@ def LTy.instantiate (ty : LTy) (T : (TEnv Identifier)) : LMonoTy × (TEnv Identi
     let S := List.zip xs (List.map (fun tv => (.ftvar tv)) freshtvs)
     (LMonoTy.subst [S] lty', T)
 
-instance : Inhabited (Option LMonoTy × TEnv Identifier) where
+instance : Inhabited (Option LMonoTy × TEnv Identifier ExtraRestrict) where
   default := (none, TEnv.default)
 
 /--
@@ -445,7 +446,7 @@ environment `T`.
 This function does not descend into the subtrees of `mty`, nor does it check
 whether the de-aliased types are registered/known.
 -/
-def LMonoTy.aliasDef? (mty : LMonoTy) (T : (TEnv Identifier)) : (Option LMonoTy × TEnv Identifier) :=
+def LMonoTy.aliasDef? [DecidableEq ExtraRestrict] (mty : LMonoTy ExtraRestrict) (T : (TEnv Identifier ExtraRestrict)) : (Option (LMonoTy ExtraRestrict) × TEnv Identifier ExtraRestrict) :=
   match mty with
   | .ftvar _ =>
     -- We can't have a free variable be the LHS of an alias definition because
@@ -480,7 +481,7 @@ Subst:
 open LTy.Syntax in
 #eval let (ans, T) := LMonoTy.aliasDef?
         mty[FooAlias %p (BarAlias %p %p)]
-        { @TEnv.default String with
+        { @TEnv.default String Empty with
           context := { aliases := [{ typeArgs := ["x", "y"],
                                      name := "FooAlias",
                                      type := mty[Foo %x %y]},
@@ -497,7 +498,7 @@ open LTy.Syntax in
 open LTy.Syntax in
 #eval LMonoTy.aliasDef?
         mty[FooAlias %p (BarAlias %q %p)]
-        { @TEnv.default String with
+        { @TEnv.default String Empty with
           context := { aliases := [{ typeArgs := ["x", "y"],
                                      name := "FooAlias",
                                      type := mty[Foo %x %y]},
@@ -512,7 +513,7 @@ open LTy.Syntax in
 #guard_msgs in
 open LTy.Syntax in
 #eval LMonoTy.aliasDef? mty[myInt]
-      { @TEnv.default String with context :=
+      { @TEnv.default String Empty with context :=
                   { aliases := [{ typeArgs := [],
                                   name := "myInt",
                                   type := mty[int]}]} }
@@ -523,7 +524,7 @@ open LTy.Syntax in
 open LTy.Syntax in
 #eval LMonoTy.aliasDef?
         mty[BadBoolAlias %p %q]
-        { @TEnv.default String with
+        { @TEnv.default String Empty with
           context := { aliases := [{ typeArgs := ["x", "y"],
                                      name := "BadBoolAlias",
                                      type := mty[bool]}]} }
@@ -533,7 +534,7 @@ open LTy.Syntax in
 #guard_msgs in
 open LTy.Syntax in
 #eval LMonoTy.aliasDef? mty[myInt]
-                    { @TEnv.default String with context := { aliases := [{
+                    { @TEnv.default String Empty with context := { aliases := [{
                          typeArgs := ["a"],
                          name := "myInt",
                          type := mty[int]}] } }
@@ -543,7 +544,7 @@ open LTy.Syntax in
 #guard_msgs in
 open LTy.Syntax in
 #eval LMonoTy.aliasDef? mty[myAlias int bool]
-                    { @TEnv.default String with
+                    { @TEnv.default String Empty with
                     context := {
                       aliases := [{
                         typeArgs := ["a", "b"],
@@ -555,7 +556,7 @@ mutual
 /--
 De-alias `mty`, including at the subtrees.
 -/
-partial def LMonoTy.resolveAliases (mty : LMonoTy) (T : TEnv Identifier) : (Option LMonoTy × TEnv Identifier) :=
+partial def LMonoTy.resolveAliases [DecidableEq ExtraRestrict] (mty : LMonoTy ExtraRestrict) (T : TEnv Identifier ExtraRestrict) : (Option (LMonoTy ExtraRestrict) × TEnv Identifier ExtraRestrict) :=
   let (maybe_mty, T) := LMonoTy.aliasDef? mty T
   match maybe_mty with
   | some (.tcons name args) =>
@@ -577,8 +578,8 @@ partial def LMonoTy.resolveAliases (mty : LMonoTy) (T : TEnv Identifier) : (Opti
 /--
 De-alias `mtys`, including at the subtrees.
 -/
-partial def LMonoTys.resolveAliases (mtys : LMonoTys) (aliases : List TypeAlias) (T : (TEnv Identifier)) :
-    (Option LMonoTys × (TEnv Identifier)) :=
+partial def LMonoTys.resolveAliases [DecidableEq ExtraRestrict] (mtys : LMonoTys ExtraRestrict) (aliases : List (TypeAlias ExtraRestrict)) (T : (TEnv Identifier ExtraRestrict)) :
+    (Option (LMonoTys ExtraRestrict) × (TEnv Identifier ExtraRestrict)) :=
     match mtys with
     | [] => (some [], T)
     | mty :: mrest =>
@@ -599,7 +600,7 @@ Subst:
 open LTy.Syntax in
 #eval let (ty, T) := LMonoTy.resolveAliases
         mty[FooAlias %p (BarAlias %p %p)]
-        { @TEnv.default String with
+        { @TEnv.default String Empty with
           context := { aliases := [{ typeArgs := ["x", "y"],
                                      name := "FooAlias",
                                      type := mty[Foo %x %y]},
@@ -614,7 +615,7 @@ open LTy.Syntax in
 /--
 Instantiate and de-alias `ty`, including at the subtrees.
 -/
-def LTy.resolveAliases (ty : LTy) (T : (TEnv Identifier)) : (Option LMonoTy × (TEnv Identifier)) :=
+def LTy.resolveAliases [DecidableEq ExtraRestrict] (ty : LTy ExtraRestrict) (T : (TEnv Identifier ExtraRestrict)) : (Option (LMonoTy ExtraRestrict) × (TEnv Identifier ExtraRestrict)) :=
   let (mty, T) := ty.instantiate T
   LMonoTy.resolveAliases mty T
 
@@ -623,7 +624,7 @@ def LTy.resolveAliases (ty : LTy) (T : (TEnv Identifier)) : (Option LMonoTy × (
 open LTy.Syntax in
 #eval LTy.resolveAliases
         t[∀x. (FooAlias %x %x) → %x]
-        { @TEnv.default String with context := { aliases := [{
+        { @TEnv.default String Empty with context := { aliases := [{
                                         typeArgs := ["x", "y"],
                                         name := "FooAlias",
                                         type := mty[bool]}]} }
@@ -634,7 +635,7 @@ mutual
 Is `ty` an instance of a known type in `ks`? We expect `ty` to be
 de-aliased.
 -/
-def LMonoTy.knownInstance (ty : LMonoTy) (ks : KnownTypes) : Bool :=
+def LMonoTy.knownInstance (ty : LMonoTy ExtraRestrict) (ks : KnownTypes) : Bool :=
   match ty with
   | .ftvar _ | .bitvec _ => true
   | .tcons name args _ =>
@@ -645,22 +646,22 @@ def LMonoTy.knownInstance (ty : LMonoTy) (ks : KnownTypes) : Bool :=
 Are `tys` instances of some known type in `ks`? We expect all types in
 `tys` to be de-aliased.
 -/
-def LMonoTys.knownInstances (tys : LMonoTys) (ks : KnownTypes) : Bool :=
+def LMonoTys.knownInstances (tys : LMonoTys ExtraRestrict) (ks : KnownTypes) : Bool :=
   match tys with
   | [] => true
   | ty :: trest =>
     if LMonoTy.knownInstance ty ks then LMonoTys.knownInstances trest ks else false
 end
 
-def isInstanceOfKnownType (ty : LMonoTy) (T : TEnv Identifier) : Bool :=
+def isInstanceOfKnownType (ty : LMonoTy ExtraRestrict) (T : TEnv Identifier ExtraRestrict) : Bool :=
   LMonoTy.knownInstance ty T.knownTypes
 
 /--
 Instantiate `mty` by replacing all free type variables with fresh ones, and then
 perform resolution of type aliases and subsequent checks for registered types.
 -/
-def LMonoTy.instantiateWithCheck (mty : LMonoTy) (T : (TEnv Identifier)) :
-    Except Format (LMonoTy × (TEnv Identifier)) := do
+def LMonoTy.instantiateWithCheck [DecidableEq ExtraRestrict] (mty : LMonoTy ExtraRestrict) (T : (TEnv Identifier ExtraRestrict)) :
+    Except Format (LMonoTy ExtraRestrict × (TEnv Identifier ExtraRestrict)) := do
   let ftvs := mty.freeVars
   let (mtys, T) := LMonoTys.instantiate ftvs [mty] T
   let mtyi := mtys[0]!
@@ -676,7 +677,7 @@ def LMonoTy.instantiateWithCheck (mty : LMonoTy) (T : (TEnv Identifier)) :
 Instantiate `ty`, with resolution of type aliases to type definitions and checks
 for registered types.
 -/
-def LTy.instantiateWithCheck (ty : LTy) (T : (TEnv Identifier)) : Except Format (LMonoTy × (TEnv Identifier)) := do
+def LTy.instantiateWithCheck [DecidableEq ExtraRestrict] (ty : LTy ExtraRestrict) (T : (TEnv Identifier ExtraRestrict)) : Except Format (LMonoTy ExtraRestrict × (TEnv Identifier ExtraRestrict)) := do
   let (mty, T) := match ty.resolveAliases T with
                   | (some ty', T) => (ty', T)
                   | (none, T) => ty.instantiate T
@@ -692,25 +693,25 @@ open LTy.Syntax
 /-- info: false -/
 #guard_msgs in
 #eval isInstanceOfKnownType mty[myTy (myTy)]
-                            { @TEnv.default String with
+                            { @TEnv.default String Empty with
                                 knownTypes := [LTy.toKnownType! t[∀a. myTy %a],
                                                LTy.toKnownType! t[int]] }
 
 /-- info: false -/
 #guard_msgs in
-#eval isInstanceOfKnownType mty[Foo] (@TEnv.default TyIdentifier)
+#eval isInstanceOfKnownType mty[Foo] (@TEnv.default TyIdentifier Empty)
 
 /--
 info: error: Type (arrow int Foo) is not an instance of a previously registered type!
 Known Types: [∀[0, 1]. (arrow 0 1), bool, int, string]
 -/
 #guard_msgs in
-#eval do let ans ← t[int → Foo].instantiateWithCheck (@TEnv.default TyIdentifier)
+#eval do let ans ← t[int → Foo].instantiateWithCheck (@TEnv.default TyIdentifier Empty)
          return format ans
 
 /-- info: ok: (arrow int bool) -/
 #guard_msgs in
-#eval do let ans ← t[int → bool].instantiateWithCheck (@TEnv.default TyIdentifier)
+#eval do let ans ← t[int → bool].instantiateWithCheck (@TEnv.default TyIdentifier Empty)
          return format ans.fst
 end
 
@@ -718,13 +719,13 @@ end
 Instantiate the scheme `ty` and apply the global substitution `T.state.subst` to
 it.
 -/
-def LTy.instantiateAndSubst (ty : LTy) (T : (TEnv Identifier)) : Except Format (LMonoTy × (TEnv Identifier)) := do
+def LTy.instantiateAndSubst [DecidableEq ExtraRestrict] (ty : LTy ExtraRestrict) (T : (TEnv Identifier ExtraRestrict)) : Except Format ((LMonoTy ExtraRestrict) × (TEnv Identifier ExtraRestrict)) := do
   let (mty, T) ← LTy.instantiateWithCheck ty T
   let mty := LMonoTy.subst T.state.substInfo.subst mty
   return (mty, T)
 
-def LTy.instantiateAndSubsts (tys : List LTy) (T : (TEnv Identifier)) :
-  Except Format (List LMonoTy × (TEnv Identifier)) := do
+def LTy.instantiateAndSubsts [DecidableEq ExtraRestrict] (tys : List (LTy ExtraRestrict)) (T : (TEnv Identifier ExtraRestrict)) :
+  Except Format (List (LMonoTy ExtraRestrict) × (TEnv Identifier ExtraRestrict)) := do
   match tys with
   | [] => return ([], T)
   | ty :: tyrest =>
@@ -736,14 +737,14 @@ def LTy.instantiateAndSubsts (tys : List LTy) (T : (TEnv Identifier)) :
 Get the monotype of variable corresponding to identifier `x` by instantiating
 the type and then applying the global substitution.
 -/
-def Identifier.instantiateAndSubst (x : Identifier) (T : (TEnv Identifier)) :
-  Except Format (Option (LMonoTy × (TEnv Identifier))) := do
+def Identifier.instantiateAndSubst [DecidableEq ExtraRestrict] (x : Identifier) (T : (TEnv Identifier ExtraRestrict)) :
+  Except Format (Option ((LMonoTy ExtraRestrict) × (TEnv Identifier ExtraRestrict))) := do
   match T.context.types.find? x with
   | some ty => LTy.instantiateAndSubst ty T
   | none => return none
 
-def Identifier.instantiateAndSubsts (xs : List Identifier) (T : (TEnv Identifier)) :
-  Except Format (Option (List LMonoTy × (TEnv Identifier))) := do
+def Identifier.instantiateAndSubsts [DecidableEq ExtraRestrict] (xs : List Identifier) (T : (TEnv Identifier ExtraRestrict)) :
+  Except Format (Option (List (LMonoTy ExtraRestrict) × (TEnv Identifier ExtraRestrict))) := do
   match xs with
   | [] => return some ([], T)
   | x :: xrest =>
@@ -759,7 +760,7 @@ def Identifier.instantiateAndSubsts (xs : List Identifier) (T : (TEnv Identifier
 /-- info: (arrow $__ty0 b) -/
 #guard_msgs in
 open LTy.Syntax in
-#eval format $ (LTy.instantiate t[∀a. %a → %b] (@TEnv.default String)).fst
+#eval format $ (LTy.instantiate t[∀a. %a → %b] (@TEnv.default String Empty)).fst
 
 /--
 Instantiate the scheme `∀tyArgs. s` by _consistently_ filling in fresh type
@@ -768,13 +769,13 @@ variables for all the variables bound by the universal quantifier.
 E.g., the instantiation of `∀a. (x : a) (y : int) (z : a)` must be something
 like `(x : _ty0) (y : int) (z : _ty0)`, and not `(x : _ty0) (y : int) (z : _ty1)`.
 -/
-def LMonoTySignature.instantiate (T : (TEnv Identifier)) (tyArgs : List TyIdentifier) (sig : @LMonoTySignature Identifier) :
-  Except Format ((@LMonoTySignature Identifier) × (TEnv Identifier)) := do
+def LMonoTySignature.instantiate [DecidableEq ExtraRestrict] (T : (TEnv Identifier ExtraRestrict)) (tyArgs : List TyIdentifier) (sig : @LMonoTySignature Identifier ExtraRestrict) :
+  Except Format ((@LMonoTySignature Identifier ExtraRestrict) × (TEnv Identifier ExtraRestrict)) := do
   let (mtys, T) := LMonoTys.instantiate tyArgs sig.values T
   let tys := mtys.map (fun mty => (LTy.forAll [] mty))
   let (newtys, T) ← go T tys
   .ok ((sig.keys.zip newtys), T)
-  where go (T : (TEnv Identifier)) (tys : LTys) : Except Format (LMonoTys × (TEnv Identifier)) :=
+  where go (T : (TEnv Identifier ExtraRestrict)) (tys : LTys ExtraRestrict) : Except Format ((LMonoTys ExtraRestrict) × (TEnv Identifier ExtraRestrict)) :=
     match tys with
     | [] => .ok ([], T)
     | t :: trest => do
@@ -788,7 +789,7 @@ info: ok: (x : $__ty0) (y : int) (z : $__ty0)
 #guard_msgs in
 open LTy.Syntax in
 #eval do let ans ← (LMonoTySignature.instantiate
-                    { @TEnv.default TyIdentifier with context :=
+                    { @TEnv.default TyIdentifier Empty with context :=
                                           { aliases := [{ typeArgs := ["a", "b"],
                                                           name := "myInt",
                                                           type := mty[int]}] }}
@@ -800,14 +801,14 @@ open LTy.Syntax in
 Trivial conversion of a `MonoTySignature` to a `TySignature`, with an empty list
 of universally quantified type variables.
 -/
-def LMonoTySignature.toTrivialLTy (s : @LMonoTySignature Identifier) : @LTySignature Identifier :=
+def LMonoTySignature.toTrivialLTy (s : @LMonoTySignature Identifier ExtraRestrict) : @LTySignature Identifier ExtraRestrict :=
   s.map (fun (x, ty) => (x, .forAll [] ty))
 
 /--
 Generate fresh type variables only for unnannotated identifiers in `ids`,
 retaining any pre-existing type annotations.
 -/
-def TEnv.maybeGenMonoTypes (T : (TEnv Identifier)) (ids : (IdentTs Identifier)) : List LMonoTy × (TEnv Identifier) :=
+def TEnv.maybeGenMonoTypes (T : (TEnv Identifier ExtraRestrict)) (ids : (IdentTs Identifier ExtraRestrict)) : List (LMonoTy ExtraRestrict) × (TEnv Identifier ExtraRestrict) :=
   match ids with
   | [] => ([], T)
   | (_x, ty) :: irest =>
@@ -827,7 +828,7 @@ in `T`, only if `fvi` doesn't already exist in some context in `T`.
 
 If `fvi` has no type annotation, a fresh type variable is put in the context.
 -/
-def TEnv.addInOldestContext (fvs : (IdentTs Identifier)) (T : (TEnv Identifier)) : (TEnv Identifier) :=
+def TEnv.addInOldestContext (fvs : (IdentTs Identifier ExtraRestrict)) (T : (TEnv Identifier ExtraRestrict)) : (TEnv Identifier ExtraRestrict) :=
   let (monotys, T) := maybeGenMonoTypes T fvs
   let tys := monotys.map (fun mty => LTy.forAll [] mty)
   let types := T.context.types.addInOldest fvs.idents tys
@@ -837,7 +838,7 @@ def TEnv.addInOldestContext (fvs : (IdentTs Identifier)) (T : (TEnv Identifier))
 Add a well-formed `alias` to the context, where the type definition is first
 de-aliased.
 -/
-def TEnv.addTypeAlias (alias : TypeAlias) (T : TEnv Identifier) : Except Format (TEnv Identifier) := do
+def TEnv.addTypeAlias [DecidableEq ExtraRestrict] (alias : TypeAlias ExtraRestrict) (T : TEnv Identifier ExtraRestrict) : Except Format (TEnv Identifier ExtraRestrict) := do
   let alias_lty := alias.toAliasLTy
   if !alias.typeArgs.Nodup then
     .error f!"[TEnv.addTypeAlias] Duplicates found in the type arguments!\n\

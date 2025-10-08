@@ -107,7 +107,7 @@ returned list has the shape
 ((generated_name, ty), original_expr)
 -/
 def genArgExprIdentsTrip
-  (inputs : @Lambda.LTySignature BoogieIdent)
+  (inputs : @Lambda.LTySignature BoogieIdent Empty)
   (args : List Expression.Expr)
   : CallElimM (List ((Expression.Ident × Lambda.LTy) × Expression.Expr))
   := do
@@ -120,7 +120,7 @@ returned list has the shape
 `((generated_name, ty), original_name)`
 -/
 def genOutExprIdentsTrip
-  (outputs : @Lambda.LTySignature BoogieIdent)
+  (outputs : @Lambda.LTySignature BoogieIdent Empty)
   (lhs : List Expression.Ident)
   : CallElimM (List ((Expression.Ident × Expression.Ty) × Expression.Ident)) := do
   if outputs.length ≠ lhs.length then throw "output length and lhs length mismatch"

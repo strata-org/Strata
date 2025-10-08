@@ -152,10 +152,10 @@ def Env.pushEmptyScope (E : Env) : Env :=
 def Env.popScope (E : Env) : Env :=
   { E with exprEnv.state := E.exprEnv.state.pop }
 
-def Env.factory (E : Env) : (@Lambda.Factory BoogieIdent) :=
+def Env.factory (E : Env) : (@Lambda.Factory BoogieIdent Empty) :=
   E.exprEnv.config.factory
 
-def Env.addFactory (E : Env) (f : (@Lambda.Factory BoogieIdent)) : Except Format Env := do
+def Env.addFactory (E : Env) (f : (@Lambda.Factory BoogieIdent Empty)) : Except Format Env := do
   let exprEnv ← E.exprEnv.addFactory f
   .ok { E with exprEnv := exprEnv }
 

@@ -55,7 +55,7 @@ Typing relation for `LExpr`s.
 (TODO) Add the introduction and elimination rules for `.tcons`.
 -/
 inductive HasType {Identifier : Type} [DecidableEq Identifier]:
-  (TContext Identifier) → (LExpr LMonoTy Identifier) → LTy → Prop where
+  (TContext Identifier Empty) → (LExpr LMonoTy Identifier) → LTy → Prop where
   | tmdata : ∀ Γ info e ty, HasType Γ e ty →
                             HasType Γ (.mdata info e) ty
 

@@ -135,7 +135,7 @@ info: ok: (arrow (arrow $__ty2 (arrow $__ty8 $__ty9)) (arrow (arrow $__ty2 $__ty
                             esM[λλ(%1 (%0 %0))]
          return (format $ ans.fst)
 
-private def testIntFns : (@Factory String) :=
+private def testIntFns : (@Factory String Empty) :=
   #[{ name := "unit",
       inputs := [],
       output := mty[unit]},
@@ -172,7 +172,7 @@ Known Types: [∀[0, 1]. (arrow 0 1), bool, int, string]
 /-- info: ok: int -/
 #guard_msgs in
 #eval do let ans ← LExprT.fromLExpr
-                    { (@TEnv.default String)
+                    { (@TEnv.default String Empty)
                     with functions := testIntFns,
                                           context :=
                                           { aliases := [{typeArgs := [],
@@ -201,25 +201,25 @@ Known Types: [∀[0, 1]. (arrow 0 1), bool, int, string]
 
 /-- info: ok: (arrow int (arrow int int)) -/
 #guard_msgs in
-#eval do let ans ← LExprT.fromLExpr { (@TEnv.default String) with functions := testIntFns, context := { types := [[("x", t[int])]] }}
+#eval do let ans ← LExprT.fromLExpr { (@TEnv.default String Empty) with functions := testIntFns, context := { types := [[("x", t[int])]] }}
                              esM[(λ (~Int.Add %0))]
          return (format $ ans.fst.toLMonoTy)
 
 /-- info: ok: (arrow int (arrow int int)) -/
 #guard_msgs in
-#eval do let ans ← LExprT.fromLExpr { (@TEnv.default String) with functions := testIntFns, context := { types := [[("x", t[int])]] }}
+#eval do let ans ← LExprT.fromLExpr { (@TEnv.default String Empty) with functions := testIntFns, context := { types := [[("x", t[int])]] }}
                              esM[λλ ((~Int.Add %0) %1)]
          return (format $ ans.fst.toLMonoTy)
 
 /-- info: ok: (arrow int (arrow int int)) -/
 #guard_msgs in
-#eval do let ans ← LExprT.fromLExpr { (@TEnv.default String) with functions := testIntFns, context := { types := [[("x", t[int])]] }}
+#eval do let ans ← LExprT.fromLExpr { (@TEnv.default String Empty) with functions := testIntFns, context := { types := [[("x", t[int])]] }}
                              esM[(λλ ((~Int.Add %1) %0))]
          return (format $ ans.fst.toLMonoTy);
 
 /-- info: ok: int -/
 #guard_msgs in
-#eval do let ans ← LExprT.fromLExpr { (@TEnv.default String) with functions := testIntFns, context := { types := [[("x", t[int])]] }}
+#eval do let ans ← LExprT.fromLExpr { (@TEnv.default String Empty) with functions := testIntFns, context := { types := [[("x", t[int])]] }}
                              esM[((~Int.Add x) (~Int.Neg #30))]
          return (format $ ans.fst.toLMonoTy)
 
@@ -227,7 +227,7 @@ Known Types: [∀[0, 1]. (arrow 0 1), bool, int, string]
 info: ok: (((~Int.Add : (arrow int (arrow int int))) (x : int)) ((~Int.Neg : (arrow int int)) (#30 : int)))
 -/
 #guard_msgs in
-#eval do let ans ← LExpr.annotate { (@TEnv.default String)
+#eval do let ans ← LExpr.annotate { (@TEnv.default String Empty)
                                                with functions := testIntFns,
                                                       context := { types := [[("x", t[int])]] }}
                                    esM[((~Int.Add x) (~Int.Neg #30))]
@@ -237,7 +237,7 @@ info: ok: (((~Int.Add : (arrow int (arrow int int))) (x : int)) ((~Int.Neg : (ar
 info: ok: ((λ ((%0 : (arrow bool $__ty4)) ((fn : (arrow bool bool)) (#true : bool)) : bool)) : $__ty4)) : (arrow (arrow bool $__ty4) $__ty4))
 -/
 #guard_msgs in
-#eval do let ans ← LExprT.fromLExpr { (@TEnv.default String)
+#eval do let ans ← LExprT.fromLExpr { (@TEnv.default String Empty)
                                                 with functions := testIntFns,
                                                         context := { types := [[("fn", t[∀a. %a → %a])]] }}
                              esM[(λ (%0 (fn #true)))]
@@ -245,7 +245,7 @@ info: ok: ((λ ((%0 : (arrow bool $__ty4)) ((fn : (arrow bool bool)) (#true : bo
 
 /-- info: ok: int -/
 #guard_msgs in
-#eval do let ans ← LExprT.fromLExpr { (@TEnv.default String)
+#eval do let ans ← LExprT.fromLExpr { (@TEnv.default String Empty)
                                                 with functions := testIntFns,
                                                        context := { types := [[("fn", t[∀a. %a → %a])]] }}
                              esM[(fn #3)]

@@ -61,13 +61,13 @@ open Std (ToFormat Format format)
 
 /-- info: ((λ %1) #true) -/
 #guard_msgs in
-#eval format $ LExpr.eval (Identifier:=String) 10 ∅ (.app (.mdata ⟨"x"⟩ (.abs .none (.bvar 1))) (.const "true" none))
+#eval format $ LExpr.eval (Identifier:=String) (ExtraRestrict:=Empty) 10 ∅ (.app (.mdata ⟨"x"⟩ (.abs .none (.bvar 1))) (.const "true" none))
 
 /- Tests for evaluation of BuiltInFunctions. -/
 
 open LTy.Syntax
 
-private def testBuiltIn : @Factory String :=
+private def testBuiltIn : @Factory String Empty :=
   #[{ name := "Int.Add",
       inputs := [("x", mty[int]), ("y", mty[int])],
       output := mty[int],

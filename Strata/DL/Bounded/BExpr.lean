@@ -39,12 +39,12 @@ namespace Bounded
 open Std (ToFormat Format format)
 open Lambda
 
-variable {Identifier : Type} [ToString Identifier] [DecidableEq Identifier] [ToFormat Identifier] [HasGen Identifier]
+variable {Identifier : Type} [ToString Identifier] [DecidableEq Identifier] [ToFormat Identifier] [HasGen Identifier Empty] {ExtraRestrict : Type}
 
 /--
 Translate bounded integer expression b to LExprT with holes filled by e
 -/
-def boundValToLExprT (b: BoundVal) (e: LExprT Identifier) : LExprT Identifier :=
+def boundValToLExprT (b: BoundVal) (e: LExprT Identifier ExtraRestrict) : LExprT Identifier ExtraRestrict :=
   match b with
   | .bvar => e
   | .bconst val => .const (val.repr) LMonoTy.int
@@ -54,7 +54,7 @@ Utilities to construct common operators on common int and bool functions from In
 -/
 
 -- Adapted for LExprT from Factory.lean
-def LFunc.opExprT (f: LFunc Identifier) : LExprT Identifier :=
+def LFunc.opExprT (f: LFunc Identifier ExtraRestrict) : LExprT Identifier ExtraRestrict :=
   let input_tys := f.inputs.values
   let output_tys := Lambda.LMonoTy.destructArrow f.output
   let ty := match input_tys with
@@ -65,35 +65,35 @@ def LFunc.opExprT (f: LFunc Identifier) : LExprT Identifier :=
 /--
 Constructs the LExprT (.op o) e1 e2, where o has type bool -> bool -> bool
 -/
-def boolBinopExprT (o: LFunc Identifier) (e1 e2: LExprT Identifier) : LExprT Identifier :=
+def boolBinopExprT (o: LFunc Identifier ExtraRestrict) (e1 e2: LExprT Identifier ExtraRestrict) : LExprT Identifier ExtraRestrict :=
   .app (.app (LFunc.opExprT o) e1 (.arrow .bool .bool)) e2 .bool
 
 /--
 Constructs the LExprT (.op o) e1 e2, where o has type int -> int -> bool
 -/
-def intCompBinopExprT (o: LFunc Identifier) (e1 e2: LExprT Identifier) : LExprT Identifier :=
+def intCompBinopExprT (o: LFunc Identifier ExtraRestrict) (e1 e2: LExprT Identifier ExtraRestrict) : LExprT Identifier ExtraRestrict :=
   .app (.app (LFunc.opExprT o) e1 (.arrow .int .bool)) e2 .bool
 
-def andExprT [Coe String Identifier] (e1 e2: LExprT Identifier) : LExprT Identifier :=
+def andExprT [Coe String Identifier] (e1 e2: LExprT Identifier ExtraRestrict) : LExprT Identifier ExtraRestrict :=
   boolBinopExprT boolAndFunc e1 e2
 
-def implExprT [Coe String Identifier] (e1 e2: LExprT Identifier) : LExprT Identifier :=
+def implExprT [Coe String Identifier] (e1 e2: LExprT Identifier ExtraRestrict) : LExprT Identifier ExtraRestrict :=
   boolBinopExprT boolImpliesFunc e1 e2
 
-def notExprT [Coe String Identifier] (e: LExprT Identifier) : LExprT Identifier :=
+def notExprT [Coe String Identifier] (e: LExprT Identifier ExtraRestrict) : LExprT Identifier ExtraRestrict :=
   .app (LFunc.opExprT boolNotFunc) e .bool
 
-def intLtExprT [Coe String Identifier] (e1 e2: LExprT Identifier) : LExprT Identifier :=
+def intLtExprT [Coe String Identifier] (e1 e2: LExprT Identifier ExtraRestrict) : LExprT Identifier ExtraRestrict :=
   intCompBinopExprT intLtFunc e1 e2
 
-def intLeExprT [Coe String Identifier] (e1 e2: LExprT Identifier) : LExprT Identifier :=
+def intLeExprT [Coe String Identifier] (e1 e2: LExprT Identifier ExtraRestrict) : LExprT Identifier ExtraRestrict :=
   intCompBinopExprT intLeFunc e1 e2
 
 /--
 Translate BoundExpr b to corresponding Lambda expression
 -/
-def boundExprToLExprT [Coe String Identifier] (b: BoundExpr) (e: LExprT Identifier) :
-LExprT Identifier :=
+def boundExprToLExprT [Coe String Identifier] (b: BoundExpr) (e: LExprT Identifier Empty) :
+LExprT Identifier Empty :=
   match b with
   | .beq b1 b2 =>
     .eq (boundValToLExprT b1 e) (boundValToLExprT b2 e) LMonoTy.bool
@@ -107,13 +107,13 @@ LExprT Identifier :=
 /--
 Add list of assumptions l to boolean-valued e
 -/
-private def addAssumptions [Coe String Identifier] (l: List (LExprT Identifier)) (e: LExprT Identifier) : LExprT Identifier :=
+private def addAssumptions [Coe String Identifier] (l: List (LExprT Identifier ExtraRestrict)) (e: LExprT Identifier ExtraRestrict) : LExprT Identifier ExtraRestrict :=
   List.foldr implExprT e l
 
 /--
 Produce l₁ ∧ ... ∧ lₙ ∧ e
 -/
-private def addAndExprs [Coe String Identifier] (l: List (LExprT Identifier)) (e: LExprT Identifier) : LExprT Identifier :=
+private def addAndExprs [Coe String Identifier] (l: List (LExprT Identifier ExtraRestrict)) (e: LExprT Identifier ExtraRestrict) : LExprT Identifier ExtraRestrict :=
   List.foldr andExprT e l
 
 /-
@@ -138,42 +138,48 @@ def ListSet.union {α} [DecidableEq α] (l: List (ListSet α)) : ListSet α :=
 /-
 All top-down assumptions initially start as expressions over (.bvar 0 .int). As we pass through binders, these bvars must be increased. We only care about expressions consisting of bvar, eq, app (output of boundExprToLExprT)
 -/
-private def increaseBVar (e: LExprT Identifier) : LExprT Identifier :=
+private def increaseBVar (e: LExprT Identifier ExtraRestrict) : LExprT Identifier ExtraRestrict :=
   match e with
   | .bvar b ty => .bvar (b+1) ty
   | .eq e1 e2 ty => .eq (increaseBVar e1) (increaseBVar e2) ty
   | .app e1 e2 ty => .app (increaseBVar e1) (increaseBVar e2) ty
   | _ => e
 
-private def increaseBVars (l: List (LExprT Identifier)) : List (LExprT Identifier) :=
+private def increaseBVars (l: List (LExprT Identifier ExtraRestrict)) : List (LExprT Identifier ExtraRestrict) :=
   List.map increaseBVar l
 
-private def isBounded (t: LMonoTy) : Option BoundExpr :=
+private def isBounded (t: LMonoTy BoundTyRestrict) : Option BoundExpr :=
   match t with
   | LMonoTy.bounded b => .some b
   | _ => .none
 
-private def removeTyBound (t: LMonoTy) : LMonoTy :=
+private def removeBoundRestrict (l: LTyRestrict BoundTyRestrict) : LTyRestrict Empty :=
+  match l with
+  | .bitvecdata b => .bitvecdata b
+  | _ => .nodata
+
+-- Here, the type system enforces that bounded ints are removed
+private def removeTyBound (t: LMonoTy BoundTyRestrict) : LMonoTy Empty :=
   match t with
   | LMonoTy.bounded _ => LMonoTy.int
-  | .tcons name args m => .tcons name (List.map removeTyBound args) m
-  | _ => t
+  | .tcons name args m => .tcons name (List.map removeTyBound args) (removeBoundRestrict m)
+  | .ftvar t => .ftvar t
 
 /--
 If ty is .bounded b, produces expression b(e)
 -/
-private def boundExprIfType [Coe String Identifier] (ty: LMonoTy) (e: LExprT Identifier) : List (LExprT Identifier) :=
+private def boundExprIfType [Coe String Identifier] (ty: LMonoTy BoundTyRestrict) (e: LExprT Identifier Empty) : List (LExprT Identifier Empty) :=
   ((isBounded ty).map (fun b => boundExprToLExprT b e)).toList
 
 /--
 If ty is .bounded b, produces expression b(.bvar 0 .int)
 -/
-def makeBoundAssumption [Coe String Identifier] (ty : LMonoTy) : List (LExprT Identifier) := boundExprIfType ty (.bvar 0 .int)
+def makeBoundAssumption [Coe String Identifier] (ty : LMonoTy BoundTyRestrict) : List (LExprT Identifier Empty) := boundExprIfType ty (.bvar 0 .int)
 
 /--
 Generates WF condition for calling e1 with argument e2 if bounded type expected
 -/
-def wfCallCondition [Coe String Identifier] (assume : List (LExprT Identifier)) (e1 e2: LExprT Identifier) :=
+def wfCallCondition [Coe String Identifier] (assume : List (LExprT Identifier Empty)) (e1: LExprT Identifier BoundTyRestrict) (e2: LExprT Identifier Empty) : List (LExprT Identifier Empty) :=
   match LExprT.toLMonoTy e1 with
   | .arrow (.bounded b) _ =>
     -- check that translated e2 satisfies precondition under assumptions
@@ -183,19 +189,19 @@ def wfCallCondition [Coe String Identifier] (assume : List (LExprT Identifier)) 
 /--
   Universally quantifies all expressions in lists l1 and l2, additionally adding assumptions in "assume" to l1. These quantifiers will eventually be removed in a postprocessing step
 -/
-private def addBoundedWf [Coe String Identifier] (assume: List (LExprT Identifier)) (l1 l2: List (LExprT Identifier)) : List (LExprT Identifier) :=
+private def addBoundedWf [Coe String Identifier] (assume: List (LExprT Identifier Empty)) (l1 l2: List (LExprT Identifier Empty)) : List (LExprT Identifier Empty) :=
   List.map (fun e => .quant .all .int (.bvar 0 .int) (addAssumptions assume e)) l1 ++ List.map (.quant .all .int (.bvar 0 .int)) l2
 
 /--
   Universally quantifies all expressions in list l with additional assumptions in "assume"
 -/
-private def addBoundedWfAssume [Coe String Identifier] (assume: List (LExprT Identifier)) (l: List (LExprT Identifier)) :=
+private def addBoundedWfAssume [Coe String Identifier] (assume: List (LExprT Identifier Empty)) (l: List (LExprT Identifier Empty)) :=
   addBoundedWf assume l []
 
 /--
 Determines if a term uses a particular bound variable at the top level
 -/
-private def hasBvar (e: LExprT Identifier) (n: Nat) : Bool :=
+private def hasBvar (e: LExprT Identifier Empty) (n: Nat) : Bool :=
   match e with
   | .bvar m _ => n == m
   | .app e1 e2 _ => hasBvar e1 n || hasBvar e2 n
@@ -209,7 +215,7 @@ private def hasBvar (e: LExprT Identifier) (n: Nat) : Bool :=
 /--
 When passing an assumption through a binder, we need to quantify the bound variable if used.
 -/
-private def quantifyAssumptions (ty: LMonoTy) (e: LExprT Identifier): LExprT Identifier :=
+private def quantifyAssumptions (ty: LMonoTy Empty) (e: LExprT Identifier Empty): LExprT Identifier Empty :=
   --TODO: triggers?
   if hasBvar e 0 then .quant .all ty (.bvar 0 ty) e else e
 
@@ -225,7 +231,7 @@ def conditionalReturn (pos : Bool) (value : List α) : List α :=
 /--
 A "clean" translation that only removes types; used for triggers
 -/
-private def translateClean [Coe String Identifier] (e: LExprT Identifier) : LExprT Identifier :=
+private def translateClean [Coe String Identifier] (e: LExprT Identifier Lambda.BoundTyRestrict) : LExprT Identifier Empty :=
   match e with
   | .const c ty => .const c (removeTyBound ty)
   | .op o ty => .op o (removeTyBound ty)
@@ -239,14 +245,14 @@ private def translateClean [Coe String Identifier] (e: LExprT Identifier) : LExp
   | .mdata m e => .mdata m (translateClean e)
 
 structure translationRes Identifier where
-(translate : LExprT Identifier)
-(wfCond : ListSet (LExprT Identifier))
-(assume : List (LExprT Identifier))
+(translate : LExprT Identifier Empty)
+(wfCond : ListSet (LExprT Identifier Empty))
+(assume : List (LExprT Identifier Empty))
 
 /--
   Under top-down assumptions "assume" and positivity "pos", produce the translation, well-formedness conditions, and bottom-up assumptions for expression e
 -/
-def translateBounded [Coe String Identifier] [DecidableEq Identifier] (e: LExprT Identifier) (assume: List (LExprT Identifier)) (pos : Bool) : translationRes Identifier :=
+def translateBounded [Coe String Identifier] [DecidableEq Identifier] (e: LExprT Identifier BoundTyRestrict) (assume: List (LExprT Identifier Empty)) (pos : Bool) : translationRes Identifier :=
   match e with
   -- constants do not need assumptions; they produce a wf goal if bounded
   | .const c ty =>
@@ -269,7 +275,7 @@ def translateBounded [Coe String Identifier] [DecidableEq Identifier] (e: LExprT
   3. In either case, we produce a wf condition if the argument should have bounded type.
   -/
   | .app (.op o ty1) e2 .bool =>
-    let notCase := o == boolNotFunc.name;
+    let notCase := o == (boolNotFunc (ExtraRestrict:=BoundTyRestrict)).name;
     -- inside "not" - not positive
     let e2' := translateBounded e2 [] (not notCase && pos);
     let all_assumes := conditionalAdd pos assume e2'.assume;
@@ -277,9 +283,9 @@ def translateBounded [Coe String Identifier] [DecidableEq Identifier] (e: LExprT
     ⟨res, ListSet.union [wfCallCondition (assume ++ e2'.assume) (.op o ty1) e2'.translate, e2'.wfCond], conditionalReturn pos e2'.assume⟩
   | .app (.app (.op o ty1) e1 ty2) e2 .bool =>
     -- The first argument has positivity pos if the operator is "and" or "or" otherwise false
-    let first := (o == boolAndFunc.name || o == boolOrFunc.name) && pos;
+    let first := (o == (boolAndFunc (ExtraRestrict:=BoundTyRestrict)).name || o == (boolOrFunc (ExtraRestrict:=BoundTyRestrict)).name) && pos;
     -- The second also includes the RHS of implication
-    let second := (o == boolAndFunc.name || o == boolOrFunc.name || o == boolImpliesFunc.name) && pos;
+    let second := (o == (boolAndFunc (ExtraRestrict:=BoundTyRestrict)).name || o == (boolOrFunc (ExtraRestrict:=BoundTyRestrict)).name || o == (boolImpliesFunc (ExtraRestrict:=BoundTyRestrict)).name) && pos;
     let e1' := translateBounded e1 [] first;
     let e2' := translateBounded e2 [] second;
     let all_assumes := conditionalAdd pos assume (e1'.assume ++ e2'.assume);
@@ -313,13 +319,13 @@ def translateBounded [Coe String Identifier] [DecidableEq Identifier] (e: LExprT
   | .abs e (.arrow ty .bool) =>
     let e' := translateBounded e [] pos;
     let all_assume := conditionalAdd pos (makeBoundAssumption ty ++ (increaseBVars assume)) e'.assume;
-    ⟨.abs (addAssumptions all_assume e'.translate) (removeTyBound (.arrow ty .bool)), addBoundedWfAssume all_assume e'.wfCond, conditionalReturn pos (List.map (quantifyAssumptions ty) e'.assume)⟩
+    ⟨.abs (addAssumptions all_assume e'.translate) (removeTyBound (.arrow ty .bool)), addBoundedWfAssume all_assume e'.wfCond, conditionalReturn pos (List.map (quantifyAssumptions (removeTyBound ty)) e'.assume)⟩
   | .abs e (.arrow ty1 ty2) =>
     let all_assume := makeBoundAssumption ty1 ++ (increaseBVars assume);
     let e' := translateBounded e all_assume pos;
     let res := .abs e'.translate (removeTyBound (.arrow ty1 ty2));
     -- Note: don't add assumptions to e'.wfCond, already included
-    ⟨res, addBoundedWf all_assume (boundExprIfType ty2 e'.translate) e'.wfCond, List.map (quantifyAssumptions ty1) e'.assume⟩
+    ⟨res, addBoundedWf all_assume (boundExprIfType ty2 e'.translate) e'.wfCond, List.map (quantifyAssumptions (removeTyBound ty1)) e'.assume⟩
   | .abs _ _ => ⟨.const "0" .int, [], []⟩ -- error case
   /-
   Quantifiers are simpler because they are boolean-valued. ∀ (x : nat). e adds an assumption x >= 0 -> ..., while ∃ (x: nat). e results in x >= 0 ∧ ..
@@ -328,13 +334,13 @@ def translateBounded [Coe String Identifier] [DecidableEq Identifier] (e: LExprT
     let e' := translateBounded e [] pos;
     let tr' := translateClean tr;
     let all_assume := conditionalAdd pos (makeBoundAssumption ty ++ (increaseBVars assume)) e'.assume;
-    ⟨.quant .all (removeTyBound ty) tr' (addAssumptions all_assume e'.translate), addBoundedWfAssume all_assume e'.wfCond, conditionalReturn pos (List.map (quantifyAssumptions ty) e'.assume)⟩
+    ⟨.quant .all (removeTyBound ty) tr' (addAssumptions all_assume e'.translate), addBoundedWfAssume all_assume e'.wfCond, conditionalReturn pos (List.map (quantifyAssumptions (removeTyBound ty)) e'.assume)⟩
   | .quant .exist ty tr e =>
     let newAssumption := makeBoundAssumption ty;
     let e' := translateBounded e [] pos;
     let tr' := translateClean tr;
     let all_assume := conditionalAdd pos (increaseBVars assume) e'.assume;
-    ⟨.quant .exist (removeTyBound ty) tr' (addAssumptions all_assume (addAndExprs newAssumption e'.translate)), addBoundedWfAssume (newAssumption ++ all_assume) e'.wfCond, conditionalReturn pos (List.map (quantifyAssumptions ty) e'.assume)⟩
+    ⟨.quant .exist (removeTyBound ty) tr' (addAssumptions all_assume (addAndExprs newAssumption e'.translate)), addBoundedWfAssume (newAssumption ++ all_assume) e'.wfCond, conditionalReturn pos (List.map (quantifyAssumptions (removeTyBound ty)) e'.assume)⟩
   /-
   For if-then-else, add assumptions to the condition, which is always bool-valued. For a bool-valued result, can add the conditions freely. For a bounded-valued term, produce a wf condition proving this.
   -/
@@ -350,7 +356,7 @@ def translateBounded [Coe String Identifier] [DecidableEq Identifier] (e: LExprT
     let t' := translateBounded t assume pos;
     let f' := translateBounded f assume pos;
     -- here can add inside if positive, never add outside
-    let res := .ite (addAssumptions (conditionalAdd pos assume c'.assume) c'.translate) t'.translate f'.translate ty;
+    let res := .ite (addAssumptions (conditionalAdd pos assume c'.assume) c'.translate) t'.translate f'.translate (removeTyBound ty);
     ⟨res, ListSet.union [boundExprIfType ty res, c'.wfCond, t'.wfCond, f'.wfCond], conditionalReturn pos (c'.assume ++ t'.assume ++ f'.assume)⟩
   /-
   Equality is always bool-valued, so can add assumptions
@@ -359,7 +365,7 @@ def translateBounded [Coe String Identifier] [DecidableEq Identifier] (e: LExprT
   | .eq e1 e2 ty =>
     let e1' := translateBounded e1 [] false;
     let e2' := translateBounded e2 [] false;
-    ⟨addAssumptions (conditionalAdd pos assume (e1'.assume ++ e2'.assume)) (.eq e1'.translate e2'.translate ty), ListSet.union [e1'.wfCond, e2'.wfCond], conditionalReturn pos (e1'.assume ++ e2'.assume)⟩
+    ⟨addAssumptions (conditionalAdd pos assume (e1'.assume ++ e2'.assume)) (.eq e1'.translate e2'.translate (removeTyBound ty)), ListSet.union [e1'.wfCond, e2'.wfCond], conditionalReturn pos (e1'.assume ++ e2'.assume)⟩
   | .mdata m e =>
     let e' := translateBounded e assume pos;
     ⟨.mdata m e'.translate, e'.wfCond, e'.assume⟩
@@ -367,7 +373,7 @@ def translateBounded [Coe String Identifier] [DecidableEq Identifier] (e: LExprT
 /--
 Translated an expression with bounded types to one without, preserving semantics of bool-valued terms by adding assumptions
 -/
-def translateBoundedExpr [Coe String Identifier] (e: LExprT Identifier) : LExprT Identifier :=
+def translateBoundedExpr [Coe String Identifier] (e: LExprT Identifier BoundTyRestrict) : LExprT Identifier Empty :=
   (translateBounded e [] true).translate
 
 /-
@@ -376,7 +382,7 @@ Must be stateful because we need to generate fresh variables
 -/
 
 -- temporary until LExpr/LExprT are unified
-private def LExprT.substK (k : Nat) (s : LExprT Identifier) (e : LExprT Identifier) : LExprT Identifier :=
+private def LExprT.substK (k : Nat) (s : LExprT Identifier ExtraRestrict) (e : LExprT Identifier ExtraRestrict) : LExprT Identifier ExtraRestrict :=
   match e with
   | .const c ty => .const c ty
   | .op o ty => .op o ty
@@ -389,30 +395,30 @@ private def LExprT.substK (k : Nat) (s : LExprT Identifier) (e : LExprT Identifi
   | .ite c t e ty => .ite (substK k s c) (substK k s t) (substK k s e) ty
   | .eq e1 e2 ty => .eq (substK k s e1) (substK k s e2) ty
 
-def LExprT.varOpen (k : Nat) (x : Identifier × LMonoTy) (e : LExprT Identifier) : LExprT Identifier :=
+def LExprT.varOpen (k : Nat) (x : Identifier × (LMonoTy ExtraRestrict)) (e : LExprT Identifier ExtraRestrict) : LExprT Identifier ExtraRestrict :=
   LExprT.substK k (.fvar x.fst x.snd) e
 
 /--
 Remove leading "forall" quantifiers statefully
 -/
-private def removeLeadingForall (T : TEnv Identifier) (e: LExprT Identifier) : Except Format (LExprT Identifier × TEnv Identifier) :=
+private def removeLeadingForall (T : TEnv Identifier) (e: LExprT Identifier Empty) : Except Format (LExprT Identifier Empty × TEnv Identifier Empty) :=
   match e with
   | .quant .all ty _ e => do
     let (xv, xty, T) ← Lambda.LExprT.typeBoundVar T ty;
     .ok (LExprT.varOpen 0 (xv, xty) e, T)
   | _ => .ok (e, T)
 
-private def removeLeadingForalls (T : TEnv Identifier) (l: List (LExprT Identifier)) : Except Format (List (LExprT Identifier) × TEnv Identifier) :=
+private def removeLeadingForalls (T : TEnv Identifier) (l: List (LExprT Identifier Empty)) : Except Format (List (LExprT Identifier Empty) × TEnv Identifier Empty) :=
   List.foldlM (fun (l, T) e =>
   do
     let (e, T') ← removeLeadingForall T e;
     .ok (e :: l, T')) ([], T) l
 
 -- Functional version with extra quantifiers
-def boundedWfConditionsQuant [Coe String Identifier] (e: LExprT Identifier) : List (LExprT Identifier) :=
+def boundedWfConditionsQuant [Coe String Identifier] (e: LExprT Identifier BoundTyRestrict) : List (LExprT Identifier Empty) :=
   (translateBounded e [] true).wfCond
 
 -- Stateful version without extra quantifiers
-def boundedWfConditions [Coe String Identifier] (T : TEnv Identifier) (e: LExprT Identifier) : Except Format (List (LExprT Identifier) × TEnv Identifier) := removeLeadingForalls T (boundedWfConditionsQuant e)
+def boundedWfConditions [Coe String Identifier] (T : TEnv Identifier) (e: LExprT Identifier BoundTyRestrict) : Except Format (List (LExprT Identifier Empty) × TEnv Identifier) := removeLeadingForalls T (boundedWfConditionsQuant e)
 
 end Bounded
