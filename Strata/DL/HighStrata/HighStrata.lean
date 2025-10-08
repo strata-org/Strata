@@ -16,7 +16,7 @@ Design choices:
 - Loops: The only loop is a while, but this can be used to compile do-while and for loops to as well.
 - Jumps: Instead of break and continue statements, there is a labelled block that can be exited from using an exit statement inside of it.
   This can be used to model break statements and continue statements for both while and for loops.
-- Pattern matching: there is no match-case construct, but there are type tests with pattern matching that enable the same functionality but more generally.
+- Pattern matching: there is no match-case construct, but there are type tests with pattern matching that enable the same functionality but more generally. `if (x is <Type> <Binding>) { access to <Binding> }`
 
 - User defined types consist of two categories: composite types and constrained types.
   - Composite types have fields and callables, and may extend other composite types.
@@ -24,7 +24,7 @@ Design choices:
   - Algebriac datatypes do not exist directly but can be encoded using composited and constrained types.
 - The base type for all composite types is dynamic, which is a type that can be type tested.
   For all primitive types there is an implicit composite type that wraps around the primitive, so primitives can be boxed to become the Dynamic type. They can be unboxed using a type test. This is useful for source languages such as JavaScript. The operators that work on primitives also work on the dynamic type, although they can error if the types do not align.
-- There is no concept of constructors, but each composite type has a partial variant that represents an object of that type whose fields
+- WIP: There is no concept of constructors, but each composite type has a partial variant that represents an object of that type whose fields
   are not yet assigned and whose type invariants might not hold.
   A partial type can be completed to a full type once all fields are assigned and the type invariants are known to hold.
 - There is no concept of namespaces so all references need to be fully qualified.
@@ -54,7 +54,9 @@ inductive HighType : Type where
   | TInt
   | TReal
   | TFloat64 /- Required for JavaScript (number). Used by Python (float) and Java (double) as well -/
-  /- A value of type `Dynamic` is a tuple consisting of a type and an expression.
+  /- A value of type `Dynamic` is a tuple consisting of a type and a value.
+     The value can be a primitive type or a map (that can be used with the field select and field assign expressions)
+     `var o: Dynamic = {}; o.age = 13;`
      Values are automatically casted to and from `Dynamic`
      Example: `var x: Dynamic = 3; return x is Int` returns `True`
    -/
@@ -130,7 +132,7 @@ inductive StmtExpr : Type where
 /- Expression like -/
   | LiteralInt (value: Int)
   | LiteralBool (value: Bool)
-  -- Commented out since this needs MathLib
+  -- Next line is commented out since this needs MathLib
   -- | LiteralReal {Rat} (value: Rat)
   | Identifier (name : Identifier)
   /- Assign is only allowed in an impure context -/
@@ -182,9 +184,34 @@ inductive StmtExpr : Type where
 /- Related to proofs -/
   | Assert (condition: StmtExpr)
   | Assume (condition: StmtExpr)
+  /-
+ProveBy allows writing proof trees. Its semantics are the same as that of the given `value`,
+but the `proof` is used to help prove any assertions in `value`.
+Example:
+ProveBy(
+  someCall(arg1, arg2),
+  ProveBy(
+    aLemmaToHelpProveThePreconditionOfTheCall(),
+    anotherLemmaToProveThePreconditionOfTheFirstLemma()
+  )
+)
+-/
   | ProveBy (value: StmtExpr) (proof: StmtExpr)
+
+-- ContractOf allows extracting the contract of a function
+  | ContractOf (type: ContractType) (function: StmtExpr)
+/-
+Abstract can be used as the root expr in a contract for reads/modifies/precondition/postcondition. For example: `reads(abstract)`
+It can only be used for instance callables and it makes the containing type abstract, meaning it can not be instantiated.
+An extending type can become concrete by redefining any callables that had abstracts contracts and providing non-abstract contracts.
+-/
+  | Abstract
+  | All -- All refers to all objects in the heap. Can be used in a reads or modifies clause
 /- Hole has a dynamic type and is useful when programs are only partially available -/
   | Hole
+
+inductive ContractType where
+  | Reads | Modifies | Precondition | PostCondition
 end
 
 partial def highEq (a: HighType) (b: HighType) : Bool := match a, b with
