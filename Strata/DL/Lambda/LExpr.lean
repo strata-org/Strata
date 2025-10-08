@@ -61,6 +61,10 @@ inductive LExpr (TypeType : Type) (Identifier : Type) : Type where
   | ite     (c t e : LExpr TypeType Identifier)
   /-- `.eq e1 e2`: equality expression. -/
   | eq      (e1 e2 : LExpr TypeType Identifier)
+  | dontcare -- Assume false
+  | error    -- assert false
+  | choose (t: Option TypeType) (e: LExpr TypeType Identifier)
+  | skip     -- returns the environment
   deriving Repr, DecidableEq
 
 def LExpr.noTrigger {TypeType: Type} {Identifier : Type} : LExpr TypeType Identifier := .bvar 0
@@ -83,6 +87,7 @@ def LExpr.sizeOf {TypeType: Type}  [SizeOf Identifier]
   | LExpr.app fn e => 3 + sizeOf fn + sizeOf e
   | LExpr.ite c t e => 4 + sizeOf c + sizeOf t + sizeOf e
   | LExpr.eq  e1 e2 => 3 + sizeOf e1 + sizeOf e2
+  | LExpr.choose _ e1 => 1 + sizeOf e1
   | _ => 1
 
 instance  : SizeOf (LExpr TypeType Identifier) where
@@ -103,6 +108,10 @@ def LExpr.getVars (e : (LExpr TypeType Identifier)) := match e with
   | .app e1 e2 => LExpr.getVars e1 ++ LExpr.getVars e2
   | .ite c t e => LExpr.getVars c ++ LExpr.getVars t ++ LExpr.getVars e
   | .eq e1 e2 => LExpr.getVars e1 ++ LExpr.getVars e2
+  | .dontcare => []
+  | .error => []
+  | .choose _ e' => LExpr.getVars e'
+  | .skip => []
 
 def getFVarName? (e : (LExpr TypeType Identifier)) : Option Identifier :=
   match e with
@@ -216,6 +225,10 @@ def removeAllMData (e : (LExpr TypeType Identifier)) : (LExpr TypeType Identifie
   | .app e1 e2 => .app (removeAllMData e1) (removeAllMData e2)
   | .ite c t f => .ite (removeAllMData c) (removeAllMData t) (removeAllMData f)
   | .eq e1 e2 => .eq (removeAllMData e1) (removeAllMData e2)
+  | .dontcare => .dontcare
+  | .error => .error
+  | .choose ty e1 => .choose ty (removeAllMData e1)
+  | .skip => .skip
 
 /--
 Compute the size of `e` as a tree.
@@ -235,6 +248,10 @@ def size (e : (LExpr TypeType Identifier)) : Nat :=
   | .app e1 e2 => 1 + size e1 + size e2
   | .ite c t f => 1 + size c + size t + size f
   | .eq e1 e2 => 1 + size e1 + size e2
+  | .dontcare => 1
+  | .error => 1
+  | .choose _ e' => 1 + size e'
+  | .skip => 1
 
 /--
 Erase all type annotations from `e`.
@@ -251,6 +268,10 @@ def eraseTypes (e : (LExpr TypeType Identifier)) : (LExpr TypeType Identifier) :
   | .ite c t f => .ite (c.eraseTypes) (t.eraseTypes) (f.eraseTypes)
   | .eq e1 e2 => .eq (e1.eraseTypes) (e2.eraseTypes)
   | .mdata m e => .mdata m (e.eraseTypes)
+  | .dontcare => .dontcare
+  | .error => .error
+  | .choose _ e => .choose none (e.eraseTypes)
+  | .skip => .skip
 
 ---------------------------------------------------------------------
 
@@ -280,11 +301,27 @@ private def formatLExpr [ToFormat Identifier] [ToFormat TypeType] (e : (LExpr Ty
   | .quant .all _ _ e1 => Format.paren (f!"∀ {formatLExpr e1}")
   | .quant .exist _ _ e1 => Format.paren (f!"∃ {formatLExpr e1}")
   | .app e1 e2 => Format.paren (formatLExpr e1 ++ " " ++ formatLExpr e2)
-  | .ite c t e => Format.paren
+  | .ite c t e =>
+    match e with
+    | .dontcare => -- assume statement
+      Format.paren
+        ("assume " ++ formatLExpr c ++ formatLExpr t)
+    | .error => -- assert statement
+      Format.paren
+        ("assert " ++ formatLExpr c ++ formatLExpr t)
+    | _ =>
+    Format.paren
                       ("if " ++ formatLExpr c ++
                        " then " ++ formatLExpr t ++ " else "
                        ++ formatLExpr e)
   | .eq e1 e2 => Format.paren (formatLExpr e1 ++ " == " ++ formatLExpr e2)
+  | .dontcare => "dontcare"
+  | .error => "error"
+  | .skip => "skip"
+  | .choose ty e =>
+    match ty with
+    | none => Format.paren (f!"choose {formatLExpr e}")
+    | some ty => Format.paren (f!"choose ({ty}) : {formatLExpr e}")
 
 instance [ToFormat Identifier] [ToFormat TypeType] : ToFormat (LExpr TypeType Identifier) where
   format := formatLExpr
@@ -919,6 +956,244 @@ info: all (some (LTy.forAll [] (LMonoTy.tcons "Map" [LMonoTy.ftvar "k", LMonoTy.
 end Syntax
 
 ---------------------------------------------------------------------
+
+-- Now the experiment
+inductive Context (Identifier : Type) : Type where
+  | topLevel : Context Identifier
+  | extend (tail : Context Identifier) (id : Identifier) (indexFromLast: Nat): Context Identifier
+deriving Repr
+
+def Context.add {Identifier : Type} (c : Context Identifier) (id : Identifier) : Context Identifier :=
+  Context.extend c id (match c with
+    | .topLevel => 0
+    | .extend _ _ s => s + 1)
+
+def Context.size {Identifier : Type} (c : Context Identifier) : Nat :=
+  match c with
+  | .topLevel => 0
+  | .extend _ _ s => s + 1
+
+def Context.nameOf (c : Context String) (n: Nat): String :=
+  let rec go : Context String → Nat → String
+    | .topLevel, _ => "UNDEFINED"
+    | .extend _ id' _, 0 => id'
+    | .extend c' _ _, n+1 => go c' n
+  go c n
+
+-- Returns a bvar corresponding of the index of the identifier in the context
+-- TODO: Add error if identifier not found
+def Context.v {Identifier : Type} [DecidableEq Identifier] (c : Context Identifier) (id : Identifier) : LExpr TypeType Identifier :=
+  let rec go : Context Identifier → Nat → LExpr TypeType Identifier
+    | .topLevel, _ => .bvar 0
+    | .extend c' id' _, n =>
+      if id == id' then
+        LExpr.bvar n
+      else
+        go c' (n + 1)
+  go c 0
+
+-- Declare a new variable without RHS
+def let_ {Identifier : Type} [DecidableEq Identifier] (c: Context Identifier) (id : Identifier) (k : Context Identifier → LExpr TypeType Identifier) : LExpr TypeType Identifier :=
+  let c: Context Identifier := .add c id
+  .choose .none <| LExpr.abs .none <| k c
+
+-- Declare a new variable and assign it a value
+def let_assign {Identifier : Type} [DecidableEq Identifier] (c: Context Identifier) (id : Identifier) (rhs : LExpr TypeType Identifier) (k : Context Identifier → LExpr TypeType Identifier) : LExpr TypeType Identifier :=
+  let c : Context Identifier := .add c id
+  .app (.abs .none (k c)) rhs
+
+def assume {Identifier : Type} (cond : LExpr TypeType Identifier) (thn : LExpr TypeType Identifier) : LExpr TypeType Identifier :=
+  .ite cond thn .dontcare
+
+def assert {Identifier: Type} (cond : LExpr TypeType Identifier) (thn : LExpr TypeType Identifier) : LExpr TypeType Identifier :=
+  .ite cond thn .error
+
+def plus (a b: LExpr LTy String) := LExpr.app (.app (.op "+" .none) a) b
+def minus (a b: LExpr LTy String) := LExpr.app (.app (.op "-" .none) a) b
+def pushpop (a b: LExpr LTy String) :=
+  LExpr.app (LExpr.app (.abs .none (.abs .none (.bvar 0))) a) b
+def not (a: LExpr LTy String) := LExpr.app (.op "!" .none) a
+
+/-var i;
+  var j;
+  var k;
+  var i0 := i;
+  var j0 := j;
+  var k0 := k;
+  assume i + j == k;
+  assert i == k - j;
+  i := i + j + k;
+  j := j + k;
+  assert i == i0 + j0 + k;
+  assert j == j0 + k;
+  assert j0 == j - k
+  assert i0 == i - (j - k) - k;
+  assert i0 == i - j;
+  assert k == i0 + j0;
+  assert k == (i - j) + (j - k);
+  assert k + k == i;-/
+-- Would be nice to find a monadic style where the context is threaded automatically
+
+def prog: LExpr LTy String :=
+  let_ .topLevel "i" <| fun c =>
+  let_ c "j" <| fun c =>
+  let_ c "k" <| fun c =>
+  let_assign c "i0" (c.v "i") <| fun c =>
+  let_assign c "j0" (c.v "j") <| fun c =>
+  let_assign c "k0" (c.v "k") <| fun c =>
+  assume (.eq (plus (c.v "i") (c.v "j")) (c.v "k")) <|
+  assert (.eq (c.v "i") (minus (c.v "k") (c.v "j"))) <|
+  let_assign c "i" (plus (c.v "i") (plus (c.v "j") (c.v "k"))) <| fun c =>
+  let_assign c "j" (plus (c.v "j") (c.v "k")) <| fun c =>
+  assert (.eq (c.v "i") (plus (c.v "i0") (plus (c.v "j0") (c.v "k")))) <|
+  assert (.eq (c.v "j") (plus (c.v "j0") (c.v "k"))) <|
+  assert (.eq (c.v "j0") (minus (c.v "j") (c.v "k"))) <|
+  assert (.eq (c.v "i0") (minus (minus (c.v "i") (minus (c.v "j") (c.v "k"))) (c.v "k"))) <|
+  --assert (.eq (c.v "i0") (minus (c.v "i") (minus (c.v "j") (c.v "k")))) <| -- Wrong encoding of LLM !
+  assert (.eq (c.v "i0") (minus (c.v "i") (c.v "j"))) <|
+  assert (.eq (c.v "k") (plus (c.v "i0") (c.v "j0"))) <|
+  assert (.eq (c.v "k") (plus (minus (c.v "i") (c.v "j")) (minus (c.v "j") (c.v "k")))) <|
+  assert (.eq (plus (c.v "k") (c.v "k")) (c.v "i"))
+  skip
+
+#eval prog
+
+-- Since SMT does not support general ite statements, we need to transform
+-- ite cond thn els
+-- into
+-- pushpop (assume cond thn) (assume (not cond) els)
+
+-- TODO: Prove that this transformation preserves errors
+def IfToPushPop (prog: LExpr LTy String): LExpr LTy String :=
+  match prog with
+  | .assume cond thn =>
+    .assume cond (IfToPushPop thn)
+  | .assert cond thn =>
+    .pushpop (.assume (.not cond) .error) (IfToPushPop thn)
+  | .ite cond thn els =>
+    -- Interestingly, we discard the thn branch!
+    .pushpop (.assume cond (IfToPushPop thn)) (.assume (.not cond) (IfToPushPop els))
+  | .choose t b =>
+    .choose t (IfToPushPop b)
+  | .app a b =>
+    .app (IfToPushPop a) (IfToPushPop b)
+  | .abs t b =>
+    .abs t (IfToPushPop b)
+  | _ => prog
+
+def increaseBvars (prog: LExpr LTy String): LExpr LTy String :=
+  match prog with
+  | .bvar n => .bvar (n + 1)
+  | .const n t => .const n t
+  | .eq a b => .eq (increaseBvars a) (increaseBvars b)
+  | .plus a b => .plus (increaseBvars a) (increaseBvars b)
+  | .minus a b => .minus (increaseBvars a) (increaseBvars b)
+  | .not a => .not (increaseBvars a)
+  | .ite cond thn els =>
+    .ite (increaseBvars cond) (increaseBvars thn) (increaseBvars els)
+  | .dontcare => .dontcare
+  | .error => .error
+  | .skip => .skip
+  | .choose t b => .choose t (increaseBvars b)
+  | .app a b => .app (increaseBvars a) (increaseBvars b)
+  | .abs t b => .abs t (increaseBvars b)
+  | .mdata m b => .mdata m (increaseBvars b)
+  | .quant k ty tr e => .quant k ty (increaseBvars tr) (increaseBvars e)
+  | .fvar n t => .fvar n t
+  | .op n t => .op n t
+
+def letAssignToLetAssume (prog: LExpr LTy String): LExpr LTy String :=
+  match prog with
+  | .app (.abs .none body) rhs =>
+    let body := letAssignToLetAssume body
+    -- Interestingly, because the RHS is now in the context of the new variable,
+    -- we need to increase all bound variables in the RHS by 1
+    .choose .none (.abs .none (.assume (.eq (.bvar 0) (.increaseBvars rhs)) body))
+  | .assume cond thn =>
+    .assume cond (letAssignToLetAssume thn)
+  | .assert cond thn =>
+    .assert cond (letAssignToLetAssume thn)
+  | .ite cond thn els =>
+    .ite cond (letAssignToLetAssume thn) (letAssignToLetAssume els)
+  | .choose t b =>
+    .choose t (letAssignToLetAssume b)
+  | .app a b =>
+    .app (letAssignToLetAssume a) (letAssignToLetAssume b)
+  | .abs t b =>
+    .abs t (letAssignToLetAssume b)
+  | _ => prog
+
+partial def ToSMTExpr (c: Context String) (prog: LExpr LTy String): Format :=
+  match prog with
+  | .bvar n => c.nameOf n
+  | .const n _ => f!"{n}"
+  | .eq a b =>
+    let aSmt := ToSMTExpr c a
+    let bSmt := ToSMTExpr c b
+    f!"(= {aSmt} {bSmt})"
+  | .plus a b =>
+    let aSmt := ToSMTExpr c a
+    let bSmt := ToSMTExpr c b
+    f!"(+ {aSmt} {bSmt})"
+  | .minus a b =>
+    let aSmt := ToSMTExpr c a
+    let bSmt := ToSMTExpr c b
+    f!"(- {aSmt} {bSmt})"
+  | .not a =>
+    let aSmt := ToSMTExpr c a
+    f!"(not {aSmt})"
+  | _ => panic!("ToSMTExpr: Not supported: " ++ (toString (format prog)))
+
+
+-- Assume that the prog is written in an SMT compatible format
+-- where expressions are all proved to be deterministic
+partial def ToSMT (c: Context String) (prog: LExpr LTy String): Format :=
+  match prog with
+  | .choose .none (.abs .none body) => --Assumed integer
+    let varName :=  ("b" ++ toString c.size) -- TODO: Recover original name in .abs
+    let newC := c.add varName
+    let bodySmt := ToSMT newC body
+    f!"(declare-const {varName} Int){bodySmt}"
+  | .assume cond remaining =>
+    let condSmt := ToSMTExpr c cond
+    let remainingSmt := ToSMT c remaining
+    f!"(assert {condSmt}){remainingSmt}"
+  | .error =>
+    f!"(check-sat)"
+    -- push / pop
+  | .app (.app (.abs _ (.abs _ (.bvar 0))) a) b =>
+    let aSmt := ToSMT c a
+    let bSmt := ToSMT c b
+    f!"(push){aSmt}(pop){bSmt}"
+  | .skip => f!""
+  | _ => panic!("ToSMT not supported:" ++ (toString (format prog)))
+
+-- We wrongly assume determinism. We should detect determinism in the future.
+
+-- Only desugaring needed is the .assert
+def test: LExpr LTy String  :=
+  let_ .topLevel "i" <| fun c =>
+  .assume (.eq (c.v "i") (.const "0" .none)) <|
+  .assert (.eq (c.v "i") (.const "1" .none)) <|
+  .skip
+def testWithoutIf := IfToPushPop test
+#eval ToSMT .topLevel <| testWithoutIf
+
+-- Now assignments need to be desugared into an assumption
+def test2: LExpr LTy String  :=
+  let_assign .topLevel "i" (.const "0" .none) <| fun c =>
+  .assert (.eq (c.v "i") (.const "1" .none)) <|
+  .skip
+def test2WithoutIf := IfToPushPop test2
+#eval format test2WithoutIf
+-- ToSMT not supported:Lambda.LExpr.app
+#eval ToSMT .topLevel <| test2WithoutIf
+
+def test2WithoutLetAssign := IfToPushPop <| letAssignToLetAssume <| test2
+#eval format test2WithoutLetAssign
+#eval ToSMT .topLevel <| test2WithoutLetAssign
+
+#eval ToSMT .topLevel <| IfToPushPop <| letAssignToLetAssume <| prog
 
 end LExpr
 end Lambda
