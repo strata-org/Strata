@@ -1483,6 +1483,13 @@ intros Hsubst k1 k2 Hin
 apply Hsubst
 exact List.mem_cons_of_mem h Hin
 
+theorem substNodup_tail :
+Imperative.substNodup (h :: t) →
+Imperative.substNodup t := by
+intros Hsubst
+simp [Imperative.substNodup] at *
+exact (List.nodup_cons.mp (nodup_middle Hsubst.right)).right
+
 theorem substDefined_updatedState :
 Imperative.substDefined σ σ' ls →
 Imperative.substDefined (updatedState σ k v) σ' ls := by
@@ -1760,13 +1767,11 @@ theorem SubstPostsMem :
     simp [← Heq] at *
     cases Hin with
     | inl Hin =>
-      left; sorry -- assumption
+      left; assumption
     | inr Hin =>
       right
       cases Hin with
-      | intro id HH =>
-        sorry
-        -- exact ⟨id, HH.1, Eq.symm HH.2⟩
+      | intro id HH => exact ⟨id, HH.1, Eq.symm HH.2⟩
 
 /--
 Generate the substitution pairs needed for the body of the procedure
@@ -2232,6 +2237,67 @@ NormalizedOldExpr e →
     rw [trih, eih]
     simp [List.app_removeAll]
 
+theorem substOldExpr_cons:
+  Imperative.substNodup (createOldStoreSubst (h::t)) →
+  OldExpressions.substsOldExpr (createOldVarsSubst (h :: t)) e
+          = OldExpressions.substsOldExpr (createOldVarsSubst t) (OldExpressions.substOld h.snd (createFvar h.1.fst) e) :=by
+  intro Hnd
+  induction e
+  case app Hfn He =>
+    simp [OldExpressions.substsOldExpr, createOldVarsSubst, Map.isEmpty, OldExpressions.substOld, createFvar]
+    split; split; split
+    simp [OldExpressions.substOld, createFvar,Map.find? , *, createOldVarsSubst.go] at *
+    rename_i H; simp [← H, OldExpressions.substsOldExpr]
+    simp_all [OldExpressions.substOld, createFvar,Map.find?, createOldVarsSubst.go]
+    rename_i H _; split at H <;> simp_all [OldExpressions.substsOldExpr]
+    intro; simp_all [Map.isEmpty]; rename_i H; split at H <;> simp_all [Map.find?]
+    split <;> (rename_i H _; simp [*, createOldVarsSubst.go, Map.find?] at H)
+    split at H; contradiction
+    unfold OldExpressions.substsOldExpr
+    split <;> simp [*]
+    simp_all [createOldVarsSubst, createFvar]
+    rename_i fn e _ _ H
+    generalize H1: (OldExpressions.substOld h.snd (Lambda.LExpr.fvar h.fst.fst none) fn) = fn'
+    generalize H2: (OldExpressions.substOld h.snd (Lambda.LExpr.fvar h.fst.fst none) e) = e'
+    rw (occs := [3]) [Boogie.OldExpressions.substsOldExpr.eq_def]
+    simp; split
+    simp_all [Map.isEmpty]; rename_i H; split at H <;> simp_all
+    rw[OldExpressions.substOldExpr_nil, OldExpressions.substOldExpr_nil]; simp
+    split; split
+    unfold OldExpressions.substOld at H1
+    split at H1 <;> simp_all
+    unfold OldExpressions.substOld at H2
+    split at H2 <;> simp_all
+    split at H2; split at H2
+    any_goals simp_all
+    simp [← H2.left] at *
+    have : Map.find? (List.map createOldVarsSubst.go t) h.fst.fst = none :=by
+      simp [Imperative.substNodup, createOldStoreSubst, createOldStoreSubst.go] at Hnd
+      have Hnd := Hnd.right
+      have : List.map (Prod.fst ∘ createOldStoreSubst.go) t = List.map (Prod.fst ∘ createOldVarsSubst.go) t := by
+        simp [createOldStoreSubst.go, createOldVarsSubst.go]
+      have : ¬ h.fst.fst ∈ List.map (Prod.fst ∘ createOldVarsSubst.go) t := by
+       rw[← this]
+       rw [List.nodup_append] at Hnd
+       false_or_by_contra
+       have Hnd := Hnd.right.right h.fst.fst (by assumption) h.fst.fst (by simp)
+       contradiction
+      apply Map.findNone_eq_notmem_mapfst.mp
+      simp only [List.map_map]
+      assumption
+    simp_all
+    split at H1 <;> try simp_all
+    split at H1 <;> try simp_all
+    simp [OldExpressions.substsOldExpr]
+  any_goals simp [OldExpressions.substsOldExpr, OldExpressions.substOld, createOldVarsSubst, Map.isEmpty]
+  any_goals (split <;> rename_i H; split at H)
+  any_goals (simp_all [createOldVarsSubst];  rw [OldExpressions.substOldExpr_nil])
+  any_goals simp_all
+  any_goals (split at H <;> try contradiction)
+  any_goals simp_all [createOldVarsSubst]
+  any_goals rw [OldExpressions.substOldExpr_nil]
+  simp [createFvar]; rw [OldExpressions.substOldExpr_nil]
+
 theorem substsOldCorrect :
   Imperative.WellFormedSemanticEvalVar δ →
   Imperative.WellFormedSemanticEvalVal δ →
@@ -2244,71 +2310,43 @@ theorem substsOldCorrect :
   oldTrips.unzip.1.unzip.1.Disjoint (OldExpressions.extractOldExprVars e) →
   δ σ₀ σ e = δ σ₀' σ (OldExpressions.substsOldExpr (createOldVarsSubst oldTrips) e) := by
   intros Hwfvr Hwfvl Hwfc Hwf2 Hnorm Hsubst Hdef Hnd Hdisj
-  induction oldTrips generalizing e σ₀
-  repeat sorry
-  /-
+  induction oldTrips generalizing e
   case nil =>
-    simp [createOldVarsSubst, OldExpressions.substsOldExpr] at *
+    simp [createOldVarsSubst] at *; rw[OldExpressions.substOldExpr_nil]
     cases Hwf2 with
     | intro vs Hwf2 =>
       apply Lambda.LExpr.substFvarsCorrectZero Hwfc Hwfvr Hwfvl
       intros k1 k2 Hin
       simp [zip_self_eq Hin]
   case cons h t ih =>
-    simp [createOldVarsSubst, OldExpressions.substsOldExpr, OldExpressions.substsOldExpr] at *
-    simp [createOldVarsSubst.go]
-    simp [createOldStoreSubst, createOldStoreSubst.go] at Hsubst
-    have Hsubst1 := substStoresCons' Hnd Hdef Hsubst
-    cases Hsubst1 with
-    | intro σ₁ Hsubst1 =>
-    cases Hsubst1 with
-    | intro v₁ Hsubst1 =>
-    cases Hsubst1 with
-    | intro Hsome Hsubst1 =>
-    cases Hsubst1 with
-    | intro Hstore Hsubst1 =>
-    cases Hsubst1 with
-    | intro Hsubst' Hsubst1 =>
-    rw [← ih (σ₀ := σ₁)] <;> try simp_all
-    rw [← substOldCorrect (e := e) Hwfvr Hwfvl Hwfc Hwf2 Hnorm] <;> try simp_all
-    . apply invStoresSubstHead Hsubst'
-      simp [List.Disjoint] at Hdisj
-      simp_all
-    . -- substDefined
-      simp [createOldStoreSubst, createOldStoreSubst.go] at Hdef
-      intros k1 k2 Hin
-      apply Hdef <;> simp_all
-    . -- substStores
-      intros k1 k2 Hin
-      apply Hsubst <;> simp_all
-    . -- wfTwoState
-      refine updatedStateOldWellFormedBoogieEvalTwoState ?_ Hwf2
-      rw [← Hsubst]
-      exact Hsome
-      simp_all
-    . -- normalized expr
-      apply OldExpressions.substOldNormalizedMono
-      . simp [createFvar]
-        intros Hold
-        cases Hold
-      . simp_all
-      . simp [createFvar]
-        constructor
-    . simp [Imperative.substNodup, createOldStoreSubst] at Hnd ⊢
-      have Hnd2 := nodup_middle Hnd.2
-      simp_all
-    . -- substDefined
-      refine substDefined_updatedState ?_
-      exact substDefined_tail Hdef
-    . simp [Imperative.substNodup, createOldStoreSubst] at Hnd ⊢
-      have Hnd2 := nodup_middle Hnd.2
-      simp_all
-    . -- Disjoint
-      rw [substOld_create_replace] <;> try assumption
-      apply List.Disjoint.mono ?_ ?_ Hdisj
-      . simp
-      . simp [List.removeAll]
-  -/
+  have : OldExpressions.substsOldExpr (createOldVarsSubst (h :: t)) e
+          = OldExpressions.substsOldExpr (createOldVarsSubst t) (OldExpressions.substOld h.snd (createFvar h.1.fst) e) :=by
+    apply substOldExpr_cons Hnd
+  rw[this, ← ih]
+  apply substOldCorrect <;> try simp_all
+  intro k1 k2 Hin
+  simp [zip_self_eq Hin]
+  intro k1 k2 Hin
+  simp [Imperative.substDefined] at Hdef
+  apply Hdef; simp_all [createOldStoreSubst, createOldStoreSubst.go]
+  intro k1 k2 Hin
+  simp [Imperative.substStores] at Hsubst
+  apply Hsubst; simp_all [createOldStoreSubst, createOldStoreSubst.go]
+  apply OldExpressions.substOldNormalizedMono
+  intro H; cases H; assumption;
+  constructor
+  intro k1 k2 Hin
+  simp [Imperative.substStores] at Hsubst
+  apply Hsubst; simp_all [createOldStoreSubst, createOldStoreSubst.go]
+  exact substDefined_tail Hdef
+  simp [createOldStoreSubst] at *
+  exact substNodup_tail Hnd
+  simp at Hdisj
+  rw [substOld_create_replace] <;> try assumption
+  have H:= List.Disjoint.removeAll (zs:=[h.snd]) Hdisj
+  rw[← List.Disjoint_app] at H;
+  simp
+  exact List.Disjoint_cons_tail H.right
 
 theorem genArgExprIdent_len' : (List.mapM genArgExprIdent t s).fst.length = t.length := by
   induction t generalizing s <;> simp_all
@@ -3285,6 +3323,69 @@ theorem substOldPostSubset:
       intros x Hin
       simp_all
 
+theorem substOldExprPostSubset':
+  (Imperative.HasVarsPure.getVars (P:=Expression)
+    (OldExpressions.substsOldExpr [(h2, (Lambda.LExpr.fvar h1 ty))] post)).Subset
+    (Imperative.HasVarsPure.getVars (P:=Expression) post ++ [h1]) := by
+  rw [OldExpressions.substsOldExpr_singleton]
+  apply substOldPostSubset
+
+theorem substOldExprPostSubset'':
+  (Imperative.HasVarsPure.getVars (P:=Expression) post ++ [h1]) ⊆ S →
+  (Imperative.HasVarsPure.getVars (P:=Expression)
+    (OldExpressions.substsOldExpr [(h2, (Lambda.LExpr.fvar h1 ty))] post)) ⊆ S := by
+  have : (Imperative.HasVarsPure.getVars (P:=Expression)
+    (OldExpressions.substsOldExpr [(h2, (Lambda.LExpr.fvar h1 ty))] post)).Subset
+    (Imperative.HasVarsPure.getVars (P:=Expression) post ++ [h1]) := substOldExprPostSubset'
+  apply List.Subset.trans this
+
+open OldExpressions in
+theorem substOldExprPostSubset:
+  (Imperative.HasVarsPure.getVars (P:=Expression)
+    (substsOldExpr ((h2, (Lambda.LExpr.fvar h1 ty))::t) post)).Subset
+    (Imperative.HasVarsPure.getVars (P:=Expression) (substsOldExpr t post) ++ [h1]) := by
+  induction post
+  any_goals (simp only [Imperative.HasVarsPure.getVars, substsOldExpr, Map.isEmpty, Bool.false_eq_true, ↓reduceIte, ite_self] at *; try apply List.subset_append_left)
+  any_goals (by_cases Hnil: t = [] <;> (simp only [Hnil]; simp only [Bool.false_eq_true, ↓reduceIte, Lambda.LExpr.LExpr.getVars]); try apply substOldExprPostSubset'; try assumption)
+  any_goals (try simp only [Hnil, List.append_assoc] at *; try rw [OldExpressions.substOldExpr_nil] at *)
+  any_goals (apply List.append_subset.mpr; constructor <;> try apply List.Subset.trans (by assumption); try apply List.append_subset.mpr; constructor)
+  any_goals (apply List.append_subset.mpr; constructor)
+  any_goals apply List.Subset.assoc.mp
+  any_goals (apply List.Subset.subset_app_of_or_3; simp)
+  split <;> try split
+  any_goals (split <;> try split)
+  any_goals split
+  any_goals (simp [Map.find?] at *)
+  any_goals simp [Lambda.LExpr.LExpr.getVars]
+  any_goals (apply substOldExprPostSubset'')
+  any_goals (try apply List.Subset.trans (by assumption))
+  any_goals (apply List.append_subset.mpr; constructor)
+  any_goals (repeat apply List.Subset.assoc.mp)
+  any_goals apply List.Subset.subset_app_of_or_4
+  any_goals simp [Imperative.HasVarsPure.getVars]
+  rename_i H; simp [← H.right, Lambda.LExpr.LExpr.getVars]
+  constructor <;> (apply substOldExprPostSubset''; apply List.Subset.assoc.mp; apply List.append_subset.mpr; constructor <;> (apply List.Subset.subset_app_of_or_3; simp[Imperative.HasVarsPure.getVars]))
+  rename_i H _ _ _
+  split at H <;> try contradiction
+  apply List.Subset.subset_app_of_or_2
+  simp at H
+  simp [← H, Lambda.LExpr.LExpr.getVars]
+  simp_all
+  apply List.Subset.subset_app_of_or_2; simp
+  rename_i H _ _
+  split at H <;> try contradiction
+  simp at H
+  simp [← H, Lambda.LExpr.LExpr.getVars, List.Subset]
+  simp_all
+  rename_i H _ _ _
+  split at H <;> try contradiction
+  simp_all
+  unfold substsOldExpr; simp [Map.isEmpty, Lambda.LExpr.LExpr.getVars]
+  apply List.Subset.trans (by assumption)
+  any_goals (try apply List.Subset.trans (by assumption); apply List.append_subset.mpr <;> constructor)
+  apply List.append_subset.mpr; constructor
+  any_goals (try apply List.Subset.assoc.mp; apply List.Subset.subset_app_of_or_3; simp)
+
 open OldExpressions in
 theorem substsOldPostSubset:
   oldTrips.unzip.1.unzip.1.Disjoint oldTrips.unzip.2 →
@@ -3295,25 +3396,26 @@ theorem substsOldPostSubset:
     simp [createFvar, createOldVarsSubst, createOldVarsSubst.go] at *
   case nil =>
     intros x Hin
-    -- exact Hin
-    sorry
+    unfold substsOldExpr at Hin
+    simp [Map.isEmpty] at Hin
+    exact Hin
   case cons h t ih =>
-    apply List.Subset.trans
-      (b:=(Imperative.HasVarsPure.getVars
-            (P:=Expression) (substOld h.snd (Lambda.LExpr.fvar h.1.fst none) post)) ++
-            List.map (Prod.fst ∘ Prod.fst) t)
-    . -- apply ih
-      -- intros x Hin1 Hin2
-      -- apply @Hdisj x <;> simp_all
-      sorry
-    . apply List.Subset.app
-      apply List.Subset.trans
-      apply substOldPostSubset
-      . intros x Hin
-        simp at Hin
-        cases Hin <;> simp_all
-      . intros x Hin
-        simp_all
+    have Hdisj: (List.map (Prod.fst ∘ Prod.fst) t).Disjoint (List.map Prod.snd t) := by
+      apply List.Disjoint_Subsets Hdisj <;> apply List.subset_cons_self
+
+    have ih := @ih post Hdisj
+    have : (Imperative.HasVarsPure.getVars
+      (substsOldExpr ((h.snd, Lambda.LExpr.fvar h.1.fst none) :: List.map createOldVarsSubst.go t) post)).Subset
+          ((Imperative.HasVarsPure.getVars (substsOldExpr (List.map createOldVarsSubst.go t) post)) ++ [h.1.fst]) := by
+      apply substOldExprPostSubset
+    apply List.Subset.trans this
+    apply List.Subset.app _ (by simp [List.Subset])
+    apply List.Subset.trans ih
+    apply List.Subset.app
+    apply List.subset_append_left
+    apply List.subset_append_of_subset_right
+    apply List.subset_cons_self
+
 
 set_option maxHeartbeats 500000
 -- Second, the program/statement returned by callElim has the same semantics as the pre-transformation program/statement
@@ -4459,7 +4561,7 @@ theorem callElimStatementCorrect :
                                 exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
                                 exact BoogieIdent.isGlob_isGlobOrLocl
                           . simp [Holdtriplen]
-                        . apply List.Disjoint_Subset (ks:=(Imperative.HasVarsPure.getVars post))
+                        . apply List.Disjoint_Subset_right (ks:=(Imperative.HasVarsPure.getVars post))
                           . apply List.PredDisjoint_Disjoint
                                 (P:=(BoogieIdent.isTemp ·))
                                 (Q:=(BoogieIdent.isGlobOrLocl ·))

@@ -1954,7 +1954,7 @@ theorem InvStoresExceptUpdatedMem :
   simp [invStoresExcept] at *
   intros Hsub vs Hdisj
   refine InvStoresUpdatedStatesDisjLeftMono ?_ ?_ Hlen
-  exact List.Disjoint_Subset Hdisj Hsub
+  exact List.Disjoint_Subset_right Hdisj Hsub
   exact Hinv _ Hdisj
 
 theorem InvStoresExceptUpdateStates :
