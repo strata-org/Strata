@@ -162,6 +162,13 @@ partial def evalApp (state : HState) (originalExpr e1 e2 : HExpr) : HState × HE
   | .app (.deferredOp "LengthAccess" _) objExpr =>
     -- Second application to LengthAccess - evaluate
     evalLengthAccess state2 objExpr e2'
+  | .deferredOp "FieldDelete" _ =>
+    -- First application to FieldDelete - return partially applied
+    (state2, .app (.deferredOp "FieldDelete" none) e2')
+  | .app (.deferredOp "FieldDelete" _) objExpr =>
+    -- Second application to FieldDelete - now we can evaluate
+    -- This handles delete obj[field] where field is dynamic
+    evalFieldDelete state2 objExpr e2'
   | .deferredOp op _ =>
     -- First application to a deferred operation - return partially applied
     (state2, .app (.deferredOp op none) e2')
@@ -224,6 +231,32 @@ partial def evalStringFieldAccess (state : HState) (objExpr fieldExpr : HExpr) :
   | _ =>
     -- Field is not a string literal
     (state, .lambda (LExpr.const "error_non_literal_string_field" none))
+
+-- Handle field deletion: delete obj[field]
+partial def evalFieldDelete (state : HState) (objExpr fieldExpr : HExpr) : HState × HExpr :=
+  -- First try to extract a numeric field index from the field expression
+  match extractFieldIndex fieldExpr with
+  | some fieldIndex =>
+    -- We have a numeric field index, delete the field
+    match objExpr with
+    | .address addr =>
+      -- Delete field from the object at this address
+      match state.deleteField addr fieldIndex with
+      | some newState => (newState, objExpr)  -- Return the object address
+      | none => (state, .lambda (LExpr.const s!"error_cannot_delete_field_{fieldIndex}" none))
+    | _ =>
+      -- First evaluate the object expression to get an address
+      let (state1, objVal) := evalHExpr state objExpr
+      match objVal with
+      | .address addr =>
+        match state1.deleteField addr fieldIndex with
+        | some newState => (newState, objVal)
+        | none => (state1, .lambda (LExpr.const s!"error_cannot_delete_field_{fieldIndex}" none))
+      | _ =>
+        (state1, .lambda (LExpr.const "error_invalid_address_for_delete" none))
+  | none =>
+    -- Can't extract a numeric field index, return error
+    (state, .lambda (LExpr.const "error_field_delete_failed" none))
 
 -- Handle length access for both strings and arrays
 partial def evalLengthAccess (state : HState) (objExpr fieldExpr : HExpr) : HState × HExpr :=

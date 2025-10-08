@@ -62,7 +62,6 @@ structure TS_Identifier extends BaseNode where
   typeAnnotation : Option TS_TSTypeAnnotation
 deriving Repr, Lean.FromJson, Lean.ToJson
 
-
 structure TS_Parameter extends BaseNode where
   name : String
   typeAnnotation : TS_TSTypeAnnotation
@@ -90,82 +89,10 @@ deriving Repr, Lean.FromJson, Lean.ToJson
 structure TS_NullLiteral extends BaseNode where
 deriving Repr, Lean.FromJson, Lean.ToJson
 
+structure TS_Comment extends BaseNode where
+deriving Repr, Lean.FromJson, Lean.ToJson
+
 mutual
-  structure TS_MemberExpression extends BaseNode where
-    object: TS_Expression
-    property: TS_Expression
-    computed: Bool
-  deriving Repr, Lean.FromJson, Lean.ToJson
-
-  structure TS_BinaryExpression extends BaseNode where
-    left : TS_Expression
-    operator : String
-    right : TS_Expression
-  deriving Repr, Lean.FromJson, Lean.ToJson
-
-  structure TS_ConditionalExpression extends BaseNode where
-      test : TS_Expression
-      consequent : TS_Expression
-      alternate : TS_Expression
-  deriving Repr, Lean.FromJson, Lean.ToJson
-
-  structure TS_LogicalExpression extends BaseNode where
-    left : TS_Expression
-    operator : String
-    right : TS_Expression
-  deriving Repr, Lean.FromJson, Lean.ToJson
-
-  inductive TS_AssignmentIdentifier where
-    | TS_Identifier : TS_Identifier → TS_AssignmentIdentifier
-    | TS_MemberExpression: TS_MemberExpression → TS_AssignmentIdentifier
-
-  structure TS_AssignmentExpression extends BaseNode where
-    operator: String
-    left: TS_AssignmentIdentifier
-    right: TS_Expression
-  deriving Repr, Lean.FromJson, Lean.ToJson
-
-  structure TS_UnaryExpression extends BaseNode where
-    operator: String
-    argument: TS_Expression
-  deriving Repr, Lean.FromJson, Lean.ToJson
-
-  structure TS_ObjectProperty extends BaseNode where
-    method: Bool
-    -- Key can be any expression (NumericLiteral, StringLiteral, etc.)
-    key: TS_Expression
-    computed: Bool
-    shorthand: Bool
-    value: TS_Expression
-  deriving Repr, Lean.FromJson, Lean.ToJson
-
-  structure TS_ObjectExpression extends BaseNode where
-    properties: Array TS_ObjectProperty
-  deriving Repr, Lean.FromJson, Lean.ToJson
-
-  structure TS_ArrayExpression extends BaseNode where
-    elements : Array TS_Expression
-  deriving Repr, Lean.FromJson, Lean.ToJson
-
-  structure TS_CallExpression extends BaseNode where
-    callee : TS_Identifier
-    arguments : Array TS_Expression
-  deriving Repr, Lean.FromJson, Lean.ToJson
-
-  structure TS_FunctionExpression extends BaseNode where
-    -- id : TS_Identifier
-    -- expression : Bool
-    -- generator : Bool
-    -- async : Bool
-    params : Array TS_Identifier
-    body: TS_Statement
-  deriving Repr, Lean.FromJson, Lean.ToJson
-
-  structure TS_ArrowFunctionExpression extends BaseNode where
-    params : Array TS_Identifier
-    body: TS_Statement
-  deriving Repr, Lean.FromJson, Lean.ToJson
-
   inductive TS_Expression where
     | TS_BinaryExpression : TS_BinaryExpression → TS_Expression
     | TS_ConditionalExpression : TS_ConditionalExpression → TS_Expression
@@ -185,6 +112,91 @@ mutual
     | TS_ArrowFunctionExpression: TS_ArrowFunctionExpression → TS_Expression
   deriving Repr, Lean.FromJson, Lean.ToJson
 
+  inductive TS_Statement where
+    | TS_IfStatement : TS_IfStatement → TS_Statement
+    | TS_VariableDeclaration : TS_VariableDeclaration → TS_Statement
+    | TS_ExpressionStatement : TS_ExpressionStatement → TS_Statement
+    | TS_BlockStatement : TS_BlockStatement → TS_Statement
+    | TS_ThrowStatement : TS_ThrowStatement → TS_Statement
+    | TS_ReturnStatement : TS_ReturnStatement → TS_Statement
+    | TS_FunctionDeclaration : TS_FunctionDeclaration → TS_Statement
+    | TS_ForStatement : TS_ForStatement → TS_Statement
+    | TS_WhileStatement: TS_WhileStatement → TS_Statement
+    | TS_BreakStatement : TS_BreakStatement → TS_Statement
+    | TS_SwitchStatement : TS_SwitchStatement → TS_Statement
+    | TS_ContinueStatement: TS_ContinueStatement → TS_Statement
+  deriving Repr, Lean.FromJson, Lean.ToJson
+
+  inductive TS_AssignmentIdentifier where
+    | TS_Identifier : TS_Identifier → TS_AssignmentIdentifier
+    | TS_MemberExpression: TS_MemberExpression → TS_AssignmentIdentifier
+  deriving Repr, Lean.FromJson, Lean.ToJson
+
+  structure TS_MemberExpression extends BaseNode where
+    object: TS_Expression
+    property: TS_Expression
+    computed: Bool
+  deriving Repr, Lean.FromJson, Lean.ToJson
+
+  structure TS_BinaryExpression extends BaseNode where
+    left : TS_Expression
+    operator : String
+    right : TS_Expression
+  deriving Repr, Lean.FromJson, Lean.ToJson
+
+  structure TS_ConditionalExpression extends BaseNode where
+    test : TS_Expression
+    consequent : TS_Expression
+    alternate : TS_Expression
+  deriving Repr, Lean.FromJson, Lean.ToJson
+
+  structure TS_LogicalExpression extends BaseNode where
+    left : TS_Expression
+    operator : String
+    right : TS_Expression
+  deriving Repr, Lean.FromJson, Lean.ToJson
+
+  structure TS_AssignmentExpression extends BaseNode where
+    operator: String
+    left: TS_AssignmentIdentifier
+    right: TS_Expression
+  deriving Repr, Lean.FromJson, Lean.ToJson
+
+  structure TS_UnaryExpression extends BaseNode where
+    operator: String
+    argument: TS_Expression
+  deriving Repr, Lean.FromJson, Lean.ToJson
+
+  structure TS_ObjectProperty extends BaseNode where
+    method: Bool
+    key: TS_Expression
+    computed: Bool
+    shorthand: Bool
+    value: TS_Expression
+  deriving Repr, Lean.FromJson, Lean.ToJson
+
+  structure TS_ObjectExpression extends BaseNode where
+    properties: Array TS_ObjectProperty
+  deriving Repr, Lean.FromJson, Lean.ToJson
+
+  structure TS_ArrayExpression extends BaseNode where
+    elements : Array TS_Expression
+  deriving Repr, Lean.FromJson, Lean.ToJson
+
+  structure TS_CallExpression extends BaseNode where
+    callee : TS_Expression
+    arguments : Array TS_Expression
+  deriving Repr, Lean.FromJson, Lean.ToJson
+
+  structure TS_FunctionExpression extends BaseNode where
+    params : Array TS_Identifier
+    body: TS_Statement
+  deriving Repr, Lean.FromJson, Lean.ToJson
+
+  structure TS_ArrowFunctionExpression extends BaseNode where
+    params : Array TS_Identifier
+    body: TS_Statement
+  deriving Repr, Lean.FromJson, Lean.ToJson
 
   structure TS_VariableDeclarator extends BaseNode where
     id : TS_Identifier
@@ -207,11 +219,9 @@ mutual
     argument: TS_Expression
   deriving Repr, Lean.FromJson, Lean.ToJson
 
-
   structure TS_BlockStatement extends BaseNode where
     body : Array TS_Statement
     directives : Array String := #[]
-    -- innerComments is an array of comments
   deriving Repr, Lean.FromJson, Lean.ToJson
 
   structure TS_IfStatement extends BaseNode where
@@ -220,11 +230,8 @@ mutual
     alternate : Option TS_Statement
   deriving Repr, Lean.FromJson, Lean.ToJson
 
-  /-- A single `case` (or `default` when `test = none`) inside a switch. -/
   structure TS_SwitchCase extends BaseNode where
-    /-- `some expr` for `case expr:`, `none` for `default:` --/
     test : Option TS_Expression
-    /-- statements executed for this case (often end with a BreakStatement) --/
     consequent : Array TS_Statement
   deriving Repr, Lean.FromJson, Lean.ToJson
 
@@ -248,7 +255,6 @@ mutual
     label: Option TS_Identifier
   deriving Repr, Lean.FromJson, Lean.ToJson
 
-  /- TODO: Add support for for(let a=0, b=0;a!=0 and b!=0;a++,b++) -/
   structure TS_ForStatement extends BaseNode where
     init: TS_VariableDeclaration
     test: TS_Expression
@@ -256,36 +262,29 @@ mutual
     body: TS_Statement
   deriving Repr, Lean.FromJson, Lean.ToJson
 
-  /-- `break;` (labels optional; ESTree uses null when absent) -/
   structure TS_BreakStatement extends BaseNode where
     label : Option TS_Identifier := none
   deriving Repr, Lean.FromJson, Lean.ToJson
 
-  /-- `switch (discriminant) { cases... }` -/
   structure TS_SwitchStatement extends BaseNode where
     discriminant : TS_Expression
     cases : Array TS_SwitchCase
   deriving Repr, Lean.FromJson, Lean.ToJson
-
-  inductive TS_Statement where
-    | TS_IfStatement : TS_IfStatement → TS_Statement
-    | TS_VariableDeclaration : TS_VariableDeclaration → TS_Statement
-    | TS_ExpressionStatement : TS_ExpressionStatement → TS_Statement
-    | TS_BlockStatement : TS_BlockStatement → TS_Statement
-    | TS_ThrowStatement : TS_ThrowStatement → TS_Statement
-    | TS_ReturnStatement : TS_ReturnStatement → TS_Statement
-    | TS_FunctionDeclaration : TS_FunctionDeclaration → TS_Statement
-    | TS_ForStatement : TS_ForStatement → TS_Statement
-    | TS_WhileStatement: TS_WhileStatement -> TS_Statement
-    | TS_BreakStatement : TS_BreakStatement → TS_Statement
-    | TS_SwitchStatement : TS_SwitchStatement → TS_Statement
-    | TS_ContinueStatement: TS_ContinueStatement -> TS_Statement
-  deriving Repr, Lean.FromJson, Lean.ToJson
 end
 
-structure TS_Comment extends BaseNode where
-deriving Repr, Lean.FromJson, Lean.ToJson
-
+instance : Inhabited TS_Expression where
+  default := .TS_NumericLiteral {
+    value := 0,
+    extra := { rawValue := 0, raw := "0" },
+    type := "NumericLiteral",
+    start_loc := 0,
+    end_loc := 0,
+    loc := {
+      start_loc := { line := 0, column := 0, index := 0 },
+      end_loc := { line := 0, column := 0, index := 0 },
+      identifierName := none
+    }
+  }
 
 structure TS_Program extends BaseNode where
   sourceType : String
@@ -305,8 +304,6 @@ deriving Repr, Lean.FromJson, Lean.ToJson
 def test_json_to_x (x: Lean.Json) : IO Unit :=
   let e: Except String TS_Expression := Lean.FromJson.fromJson? x
   IO.println s!"{repr e}"
-
--- #eval test_json_to_x example_expression
 
 def loadJsonFile (path : System.FilePath) : IO TS_File := do
   let contents ← IO.FS.readFile path
