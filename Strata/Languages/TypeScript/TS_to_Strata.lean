@@ -314,7 +314,7 @@ partial def translate_statement_core
               match member.property with
               | .TS_IdExpression methodId =>
                 if methodId.name == "pop" then
-                -- Handle Array.pop() method
+                  -- Handle Array.pop() method
                   let objExpr := translate_expr member.object
                   let lengthExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "LengthAccess" none) objExpr) (Heap.HExpr.string "length")
                   let lastIndexExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Sub" none) lengthExpr) (Heap.HExpr.int 1)
@@ -326,6 +326,157 @@ partial def translate_statement_core
                   let deleteExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "FieldDelete" none) objExpr) tempIndexVar) Heap.HExpr.null
                   let deleteStmt := .cmd (.set "temp_delete_result" deleteExpr)
                   (ctx, [tempIndexInit, initStmt, deleteStmt])
+                else if methodId.name == "map" then
+                  -- Handle Array.map()
+                  let objExpr := translate_expr member.object
+                  let (cbName, ctxAfterCb) :=
+                    match call.arguments[0]? with
+                    | some (.TS_FunctionExpression fexpr) =>
+                      let funcName := s!"__anon_map_func_{fexpr.start_loc}_{fexpr.end_loc}"
+                      let funcBody := match fexpr.body with
+                        | .TS_BlockStatement blockStmt =>
+                          (blockStmt.body.toList.map (fun stmt => translate_statement_core stmt ctx ct |>.snd)).flatten
+                        | _ => panic! s!"Expected block statement as function body, got: {repr fexpr.body}"
+                      let strataFunc : CallHeapStrataFunction := {
+                        name := funcName,
+                        params := fexpr.params.toList.map (·.name),
+                        body := funcBody,
+                        returnType := none
+                      }
+                      let newCtx := ctx.addFunction strataFunc
+                      (funcName, newCtx)
+                    | some (.TS_ArrowFunctionExpression aexpr) =>
+                      let funcName := s!"__anon_map_arrow_{aexpr.start_loc}_{aexpr.end_loc}"
+                      let funcBody := match aexpr.body with
+                        | .TS_BlockStatement blockStmt =>
+                          (blockStmt.body.toList.map (fun stmt => translate_statement_core stmt ctx ct |>.snd)).flatten
+                        | _ => panic! s!"Expected block statement as function body, got: {repr aexpr.body}"
+                      let strataFunc : CallHeapStrataFunction := {
+                        name := funcName,
+                        params := aexpr.params.toList.map (·.name),
+                        body := funcBody,
+                        returnType := none
+                      }
+                      let newCtx := ctx.addFunction strataFunc
+                      (funcName, newCtx)
+                    | some (.TS_IdExpression fid) =>
+                      (fid.name, ctx)
+                    | _ => panic! "map(callback) expects a function or identifier as the first argument"
+
+                  -- Initialize destination array variable (bind to declared identifier)
+                  let dstVar := d.id.name
+                  let initDst : TSStrataStatement := .cmd (.init dstVar Heap.HMonoTy.addr (Heap.HExpr.allocSimple []))
+
+                  -- idx/len
+                  let idxVar := s!"temp_map_idx_{member.start_loc}"
+                  let lenVar := s!"temp_map_len_{member.start_loc}"
+                  let initIdx : TSStrataStatement := .cmd (.init idxVar Heap.HMonoTy.int (Heap.HExpr.int 0))
+                  let lengthExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "LengthAccess" none) objExpr) (Heap.HExpr.string "length")
+                  let initLen : TSStrataStatement := .cmd (.init lenVar Heap.HMonoTy.int lengthExpr)
+
+                  -- guard idx < len
+                  let idxRef := Heap.HExpr.lambda (.fvar idxVar none)
+                  let lenRef := Heap.HExpr.lambda (.fvar lenVar none)
+                  let guard := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Lt" none) idxRef) lenRef
+
+                  -- value = obj[idx]; ret = cb(value, idx, obj); dst[idx] = ret; idx++
+                  let valueExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAccess" none) objExpr) idxRef
+                  let retVar := s!"temp_map_ret_{member.start_loc}"
+                  let callCb : TSStrataStatement := .cmd (.directCall [retVar] cbName [valueExpr, idxRef, objExpr])
+
+                  let dstRef := Heap.HExpr.lambda (.fvar dstVar none)
+                  let assignExpr :=
+                    Heap.HExpr.app
+                      (Heap.HExpr.app
+                        (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAssign" none) dstRef)
+                        idxRef)
+                      (Heap.HExpr.lambda (.fvar retVar none))
+                  let writeStmt : TSStrataStatement := .cmd (.set "temp_map_assign_result" assignExpr)
+
+                  let nextIdx := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Add" none) idxRef) (Heap.HExpr.int 1)
+                  let incIdx : TSStrataStatement := .cmd (.set idxVar nextIdx)
+
+                  let loopBody : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [callCb, writeStmt, incIdx] }
+
+                  (ctxAfterCb, [initDst, initIdx, initLen, .loop guard none none loopBody])
+                else if methodId.name == "filter" then
+                  -- Handle Array.filter()
+                  let objExpr := translate_expr member.object
+                  let (cbName, ctxAfterCb) :=
+                    match call.arguments[0]? with
+                    | some (.TS_FunctionExpression fexpr) =>
+                      let funcName := s!"__anon_filter_func_{fexpr.start_loc}_{fexpr.end_loc}"
+                      let funcBody := match fexpr.body with
+                        | .TS_BlockStatement blockStmt =>
+                          (blockStmt.body.toList.map (fun stmt => translate_statement_core stmt ctx ct |>.snd)).flatten
+                        | _ => panic! s!"Expected block statement as function body, got: {repr fexpr.body}"
+                      let strataFunc : CallHeapStrataFunction := {
+                        name := funcName,
+                        params := fexpr.params.toList.map (·.name),
+                        body := funcBody,
+                        returnType := none
+                      }
+                      let newCtx := ctx.addFunction strataFunc
+                      (funcName, newCtx)
+                    | some (.TS_ArrowFunctionExpression aexpr) =>
+                      let funcName := s!"__anon_filter_arrow_{aexpr.start_loc}_{aexpr.end_loc}"
+                      let funcBody := match aexpr.body with
+                        | .TS_BlockStatement blockStmt =>
+                          (blockStmt.body.toList.map (fun stmt => translate_statement_core stmt ctx ct |>.snd)).flatten
+                        | _ => panic! s!"Expected block statement as function body, got: {repr aexpr.body}"
+                      let strataFunc : CallHeapStrataFunction := {
+                        name := funcName,
+                        params := aexpr.params.toList.map (·.name),
+                        body := funcBody,
+                        returnType := none
+                      }
+                      let newCtx := ctx.addFunction strataFunc
+                      (funcName, newCtx)
+                    | some (.TS_IdExpression fid) =>
+                      (fid.name, ctx)
+                    | _ => panic! "filter(callback) expects a function or identifier as the first argument"
+
+                  -- Initialize destination array variable (bind to declared identifier)
+                  let dstVar := d.id.name
+                  let initDst : TSStrataStatement := .cmd (.init dstVar Heap.HMonoTy.addr (Heap.HExpr.allocSimple []))
+
+                  -- idx/len
+                  let idxVar := s!"temp_filter_idx_{member.start_loc}"
+                  let lenVar := s!"temp_filter_len_{member.start_loc}"
+                  let outIdxVar := s!"temp_filter_outidx_{member.start_loc}"
+                  let initIdx : TSStrataStatement := .cmd (.init idxVar Heap.HMonoTy.int (Heap.HExpr.int 0))
+                  let initOutIdx : TSStrataStatement := .cmd (.init outIdxVar Heap.HMonoTy.int (Heap.HExpr.int 0))
+                  let lengthExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "LengthAccess" none) objExpr) (Heap.HExpr.string "length")
+                  let initLen : TSStrataStatement := .cmd (.init lenVar Heap.HMonoTy.int lengthExpr)
+
+                  -- guard idx < len
+                  let idxRef := Heap.HExpr.lambda (.fvar idxVar none)
+                  let lenRef := Heap.HExpr.lambda (.fvar lenVar none)
+                  let outIdxRef := Heap.HExpr.lambda (.fvar outIdxVar none)
+                  let guard := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Lt" none) idxRef) lenRef
+
+                  -- value = obj[idx]; cond = cb(value, idx, obj); if cond then dst[outIdx] = value; outIdx++; idx++
+                  let valueExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAccess" none) objExpr) idxRef
+                  let condVar := s!"temp_filter_cond_{member.start_loc}"
+                  let callCb : TSStrataStatement := .cmd (.directCall [condVar] cbName [valueExpr, idxRef, objExpr])
+                  let dstRef := Heap.HExpr.lambda (.fvar dstVar none)
+                  let assignExpr :=
+                    Heap.HExpr.app
+                      (Heap.HExpr.app
+                        (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAssign" none) dstRef)
+                        outIdxRef)
+                      valueExpr
+                  let writeStmt : TSStrataStatement := .cmd (.set "temp_filter_assign_result" assignExpr)
+                  let incOutIdx := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Add" none) outIdxRef) (Heap.HExpr.int 1)
+                  let incOutIdxStmt : TSStrataStatement := .cmd (.set outIdxVar incOutIdx)
+                  let condRef := Heap.HExpr.lambda (.fvar condVar none)
+                  let thenBlk : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [writeStmt, incOutIdxStmt] }
+                  let elseBlk : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [] }
+                  let iteStmt : TSStrataStatement := .ite condRef thenBlk elseBlk
+                  let nextIdx := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Add" none) idxRef) (Heap.HExpr.int 1)
+                  let incIdx : TSStrataStatement := .cmd (.set idxVar nextIdx)
+                  let loopBody : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [callCb, iteStmt, incIdx] }
+                  (ctxAfterCb, [initDst, initIdx, initOutIdx, initLen, .loop guard none none loopBody])
                 else
                   defaultInit
               | _ => defaultInit
@@ -389,10 +540,10 @@ partial def translate_statement_core
                 | "push" =>
                   match call.arguments[0]? with
                   | some a =>
-                    let valueExpr := translate_expr a
-                    let lengthExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "LengthAccess" none) objExpr) (Heap.HExpr.string "length")
-                    let pushExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAssign" none) objExpr) lengthExpr) valueExpr
-                    (ctx, [.cmd (.set "temp_push_result" pushExpr)])
+                      let valueExpr := translate_expr a
+                      let lengthExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "LengthAccess" none) objExpr) (Heap.HExpr.string "length")
+                      let pushExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAssign" none) objExpr) lengthExpr) valueExpr
+                      (ctx, [.cmd (.set "temp_push_result" pushExpr)])
                   | none => panic! "push() expects 1 argument"
                 | "pop" =>
                   -- arr.pop() standalone - read and delete
@@ -460,6 +611,155 @@ partial def translate_statement_core
                   let loopBody : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [callCb, incIdx] }
 
                   (ctxAfterCb, [initIdx, initLen, .loop guard none none loopBody])
+                | "map" =>
+                  -- arr.map(callback)
+                  dbg_trace s!"[DEBUG] Translating arr.map(callback) method call"
+                  let (cbName, ctxAfterCb) :=
+                    match call.arguments[0]? with
+                    | some (.TS_FunctionExpression fexpr) =>
+                      let funcName := s!"__anon_map_func_{fexpr.start_loc}_{fexpr.end_loc}"
+                      let funcBody := match fexpr.body with
+                        | .TS_BlockStatement blockStmt =>
+                          (blockStmt.body.toList.map (fun stmt => translate_statement_core stmt ctx ct |>.snd)).flatten
+                        | _ => panic! s!"Expected block statement as function body, got: {repr fexpr.body}"
+                      let strataFunc : CallHeapStrataFunction := {
+                        name := funcName,
+                        params := fexpr.params.toList.map (·.name),
+                        body := funcBody,
+                        returnType := none
+                      }
+                      let newCtx := ctx.addFunction strataFunc
+                      (funcName, newCtx)
+                    | some (.TS_ArrowFunctionExpression aexpr) =>
+                      let funcName := s!"__anon_map_arrow_{aexpr.start_loc}_{aexpr.end_loc}"
+                      let funcBody := match aexpr.body with
+                        | .TS_BlockStatement blockStmt =>
+                          (blockStmt.body.toList.map (fun stmt => translate_statement_core stmt ctx ct |>.snd)).flatten
+                        | _ => panic! s!"Expected block statement as function body, got: {repr aexpr.body}"
+                      let strataFunc : CallHeapStrataFunction := {
+                        name := funcName,
+                        params := aexpr.params.toList.map (·.name),
+                        body := funcBody,
+                        returnType := none
+                      }
+                      let newCtx := ctx.addFunction strataFunc
+                      (funcName, newCtx)
+                    | some (.TS_IdExpression fid) =>
+                      (fid.name, ctx)
+                    | _ => panic! "map(callback) expects a function or identifier as the first argument"
+
+                  -- Prepare destination array to hold mapped values
+                  let dstVar := s!"temp_map_arr_{member.start_loc}"
+                  let initDst : TSStrataStatement :=
+                    .cmd (.init dstVar Heap.HMonoTy.addr (Heap.HExpr.allocSimple []))
+                  -- idx/len like forEach
+                  let idxVar := s!"temp_map_idx_{member.start_loc}"
+                  let lenVar := s!"temp_map_len_{member.start_loc}"
+                  let initIdx : TSStrataStatement := .cmd (.init idxVar Heap.HMonoTy.int (Heap.HExpr.int 0))
+                  let lengthExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "LengthAccess" none) objExpr) (Heap.HExpr.string "length")
+                  let initLen : TSStrataStatement := .cmd (.init lenVar Heap.HMonoTy.int lengthExpr)
+                  -- Build guard: idx < len
+                  let idxRef := Heap.HExpr.lambda (.fvar idxVar none)
+                  let lenRef := Heap.HExpr.lambda (.fvar lenVar none)
+                  let guard := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Lt" none) idxRef) lenRef
+                  -- Loop body: value = obj[idx] ,ret = cb(value, idx, obj), dst[idx] = ret, idx = idx + 1
+                  let valueExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAccess" none) objExpr) idxRef
+                  let retVar := s!"temp_map_ret_{member.start_loc}"
+                  let callCb : TSStrataStatement := .cmd (.directCall [retVar] cbName [valueExpr, idxRef, objExpr])
+
+                  let dstRef := Heap.HExpr.lambda (.fvar dstVar none)
+                  let assignExpr :=
+                    Heap.HExpr.app
+                      (Heap.HExpr.app
+                        (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAssign" none) dstRef)
+                        idxRef)
+                      (Heap.HExpr.lambda (.fvar retVar none))
+                  let writeStmt : TSStrataStatement := .cmd (.set "temp_map_assign_result" assignExpr)
+
+                  let nextIdx := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Add" none) idxRef) (Heap.HExpr.int 1)
+                  let incIdx : TSStrataStatement := .cmd (.set idxVar nextIdx)
+
+                  let loopBody : Imperative.Block TSStrataExpression TSStrataCommand :=
+                    { ss := [callCb, writeStmt, incIdx] }
+
+                  (ctxAfterCb, [initDst, initIdx, initLen, .loop guard none none loopBody])
+                | "filter" =>
+                  -- arr.filter(callback)
+                  dbg_trace s!"[DEBUG] Translating arr.filter(callback) method call"
+                  let (cbName, ctxAfterCb) :=
+                    match call.arguments[0]? with
+                    | some (.TS_FunctionExpression fexpr) =>
+                      let funcName := s!"__anon_filter_func_{fexpr.start_loc}_{fexpr.end_loc}"
+                      let funcBody := match fexpr.body with
+                        | .TS_BlockStatement blockStmt =>
+                          (blockStmt.body.toList.map (fun stmt => translate_statement_core stmt ctx ct |>.snd)).flatten
+                        | _ => panic! s!"Expected block statement as function body, got: {repr fexpr.body}"
+                      let strataFunc : CallHeapStrataFunction := {
+                        name := funcName,
+                        params := fexpr.params.toList.map (·.name),
+                        body := funcBody,
+                        returnType := none
+                      }
+                      let newCtx := ctx.addFunction strataFunc
+                      (funcName, newCtx)
+                    | some (.TS_ArrowFunctionExpression aexpr) =>
+                      let funcName := s!"__anon_filter_arrow_{aexpr.start_loc}_{aexpr.end_loc}"
+                      let funcBody := match aexpr.body with
+                        | .TS_BlockStatement blockStmt =>
+                          (blockStmt.body.toList.map (fun stmt => translate_statement_core stmt ctx ct |>.snd)).flatten
+                        | _ => panic! s!"Expected block statement as function body, got: {repr aexpr.body}"
+                      let strataFunc : CallHeapStrataFunction := {
+                        name := funcName,
+                        params := aexpr.params.toList.map (·.name),
+                        body := funcBody,
+                        returnType := none
+                      }
+                      let newCtx := ctx.addFunction strataFunc
+                      (funcName, newCtx)
+                    | some (.TS_IdExpression fid) =>
+                      (fid.name, ctx)
+                    | _ => panic! "filter(callback) expects a function or identifier as the first argument"
+
+                  -- Prepare destination array to hold filtered values
+                  let dstVar := s!"temp_filter_arr_{member.start_loc}"
+                  let initDst : TSStrataStatement :=
+                    .cmd (.init dstVar Heap.HMonoTy.addr (Heap.HExpr.allocSimple []))
+                  -- idx/len and output idx
+                  let idxVar := s!"temp_filter_idx_{member.start_loc}"
+                  let lenVar := s!"temp_filter_len_{member.start_loc}"
+                  let outIdxVar := s!"temp_filter_outidx_{member.start_loc}"
+                  let initIdx : TSStrataStatement := .cmd (.init idxVar Heap.HMonoTy.int (Heap.HExpr.int 0))
+                  let initOutIdx : TSStrataStatement := .cmd (.init outIdxVar Heap.HMonoTy.int (Heap.HExpr.int 0))
+                  let lengthExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "LengthAccess" none) objExpr) (Heap.HExpr.string "length")
+                  let initLen : TSStrataStatement := .cmd (.init lenVar Heap.HMonoTy.int lengthExpr)
+                  -- Build guard: idx < len
+                  let idxRef := Heap.HExpr.lambda (.fvar idxVar none)
+                  let lenRef := Heap.HExpr.lambda (.fvar lenVar none)
+                  let outIdxRef := Heap.HExpr.lambda (.fvar outIdxVar none)
+                  let guard := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Lt" none) idxRef) lenRef
+                  -- Loop body: value = obj[idx], cond = cb(value, idx, obj), if cond then dst[outIdx] = value; outIdx++; idx++
+                  let valueExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAccess" none) objExpr) idxRef
+                  let condVar := s!"temp_filter_cond_{member.start_loc}"
+                  let callCb : TSStrataStatement := .cmd (.directCall [condVar] cbName [valueExpr, idxRef, objExpr])
+                  let dstRef := Heap.HExpr.lambda (.fvar dstVar none)
+                  let assignExpr :=
+                    Heap.HExpr.app
+                      (Heap.HExpr.app
+                        (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAssign" none) dstRef)
+                        outIdxRef)
+                      valueExpr
+                  let writeStmt : TSStrataStatement := .cmd (.set "temp_filter_assign_result" assignExpr)
+                  let incOutIdx := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Add" none) outIdxRef) (Heap.HExpr.int 1)
+                  let incOutIdxStmt : TSStrataStatement := .cmd (.set outIdxVar incOutIdx)
+                  let condRef := Heap.HExpr.lambda (.fvar condVar none)
+                  let thenBlk : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [writeStmt, incOutIdxStmt] }
+                  let elseBlk : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [] }
+                  let iteStmt : TSStrataStatement := .ite condRef thenBlk elseBlk
+                  let nextIdx := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Add" none) idxRef) (Heap.HExpr.int 1)
+                  let incIdx : TSStrataStatement := .cmd (.set idxVar nextIdx)
+                  let loopBody : Imperative.Block TSStrataExpression TSStrataCommand :=
+                    { ss := [callCb, iteStmt, incIdx] }
+                  (ctxAfterCb, [initDst, initIdx, initOutIdx, initLen, .loop guard none none loopBody])
                 | methodName =>
                   dbg_trace s!"[DEBUG] Translating method call: {methodName}(...)"
                   (ctx, [])
@@ -698,23 +998,26 @@ partial def translate_statement_core
         | .TS_ForStatement forStmt =>
           dbg_trace s!"[DEBUG] Translating for statement at loc {forStmt.start_loc}-{forStmt.end_loc}"
 
-          let continueLabel := s!"for_continue_{forStmt.start_loc}"
-          let breakLabel := s!"for_break_{forStmt.start_loc}"
-          let breakFlagVar := s!"for_break_flag_{forStmt.start_loc}"
+        dbg_trace s!"[DEBUG] Translating for statement at loc {forStmt.start_loc}-{forStmt.end_loc}"
+        let continueLabel := s!"for_continue_{forStmt.start_loc}"
+        let breakLabel := s!"for_break_{forStmt.start_loc}"
+        let breakFlagVar := s!"for_break_flag_{forStmt.start_loc}"
 
-          -- Initialize break flag to false
-          let initBreakFlag : TSStrataStatement := .cmd (.init breakFlagVar Heap.HMonoTy.bool Heap.HExpr.false)
+        -- Initialize break flag to false
+        let initBreakFlag : TSStrataStatement := .cmd (.init breakFlagVar Heap.HMonoTy.bool Heap.HExpr.false)
 
-          -- init phase
-          let (_, initStmts) := translate_statement_core (.TS_VariableDeclaration forStmt.init) ctx
-          -- guard (test)
-          let guard := translate_expr forStmt.test
-          -- body (first translate loop body with break support)
-          let (ctx1, bodyStmts) :=
-              translate_statement_core forStmt.body ctx
-                { continueLabel? := some continueLabel, breakLabel? := some breakLabel, breakFlagVar? := some breakFlagVar }
-          -- update (translate expression into statements following ExpressionStatement style)
-          let (_, updateStmts) :=
+        -- init phase
+        let (_, initStmts) := translate_statement_core (.TS_VariableDeclaration forStmt.init) ctx
+        -- guard (test)
+        let guard := translate_expr forStmt.test
+
+        -- body (first translate loop body with break support)
+        let (ctx1, bodyStmts) :=
+            translate_statement_core forStmt.body ctx
+              { continueLabel? := some continueLabel, breakLabel? := some breakLabel, breakFlagVar? := some breakFlagVar }
+
+        -- update (translate expression into statements following ExpressionStatement style)
+        let (_, updateStmts) :=
             translate_statement_core
               (.TS_ExpressionStatement {
                 expression := .TS_AssignmentExpression forStmt.update,
@@ -724,16 +1027,16 @@ partial def translate_statement_core
                 type := "TS_AssignmentExpression"
               }) ctx1
 
-          -- Modify loop condition to include break flag check: (original_condition && !break_flag)
-          let breakFlagExpr := Heap.HExpr.lambda (.fvar breakFlagVar none)
-          let combinedCondition := Heap.HExpr.deferredIte breakFlagExpr Heap.HExpr.false guard
+        -- Modify loop condition to include break flag check: (original_condition && !break_flag)
+        let breakFlagExpr := Heap.HExpr.lambda (.fvar breakFlagVar none)
+        let combinedCondition := Heap.HExpr.deferredIte breakFlagExpr Heap.HExpr.false guard
 
-          -- assemble loop body (body + update)
-          let loopBody : Imperative.Block TSStrataExpression TSStrataCommand :=
-            { ss := bodyStmts ++ updateStmts }
+        -- assemble loop body (body + update)
+        let loopBody : Imperative.Block TSStrataExpression TSStrataCommand :=
+          { ss := bodyStmts ++ updateStmts }
 
-          -- output: init break flag, init statements, then a loop statement
-          (ctx1, [initBreakFlag] ++ initStmts ++ [ .loop combinedCondition none none loopBody])
+        -- output: init break flag, init statements, then a loop statement
+        (ctx1, [initBreakFlag] ++ initStmts ++ [ .loop combinedCondition none none loopBody])
 
         | .TS_SwitchStatement switchStmt =>
           -- Handle switch statement: switch discriminant { cases }
