@@ -202,9 +202,35 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
     Heap.HExpr.allocSimple fields
 
   | .TS_CallExpression call =>
-    -- Handle function calls - translate to expressions for now
-    -- For now, create a placeholder that will be handled during call statement processing
-    Heap.HExpr.lambda (.fvar s!"call_{call.callee.name}" none)
+    match call.callee with
+      | .TS_MemberExpression member =>
+        -- Handle method calls like arr.push(x) or arr.pop()
+        let objExpr := translate_expr member.object
+        match member.property with
+        | .TS_IdExpression id =>
+          match id.name with
+          | "push" =>
+            -- arr.push(value) - use DynamicFieldAssign with length as index
+            match call.arguments[0]? with
+            | some a =>
+              let valueExpr := translate_expr a
+              let lengthExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "LengthAccess" none) objExpr) (Heap.HExpr.string "length")
+              Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAssign" none) objExpr) lengthExpr) valueExpr
+            | none => panic! "push expects one argument"
+          | "pop" =>
+            -- arr.pop() - read arr[arr.length - 1]
+            let lengthExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "LengthAccess" none) objExpr) (Heap.HExpr.string "length")
+            let lastIndexExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Sub" none) lengthExpr) (Heap.HExpr.int 1)
+            Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAccess" none) objExpr) lastIndexExpr
+          | methodName =>
+            Heap.HExpr.lambda (.fvar s!"call_{methodName}" none)
+        | _ =>
+          Heap.HExpr.lambda (.fvar "call_unknown_method" none)
+      | .TS_IdExpression id =>
+        -- Handle function calls - translate to expressions for now
+        Heap.HExpr.lambda (.fvar s!"call_{id.name}" none)
+      | _ =>
+        panic! s!"Unsupported call expression callee: {repr call.callee}"
 
   | .TS_FunctionExpression e =>
   -- Translate function definition
@@ -222,8 +248,8 @@ partial def translate_statement_core
   (s: TS_Statement)
   (ctx : TranslationContext)
   (ct: ControlTargets := {}) : TranslationContext × List TSStrataStatement :=
-  match s with
-    | .TS_FunctionDeclaration funcDecl =>
+    match s with
+      | .TS_FunctionDeclaration funcDecl =>
       -- Translate function definition
       dbg_trace s!"[DEBUG] Translating TypeScript function definition: {funcDecl.id.name}"
       dbg_trace s!"[DEBUG] Function parameters: {funcDecl.params.toList.map (·.name)}"
@@ -270,6 +296,10 @@ partial def translate_statement_core
         match decl.declarations[0]? with
         | .none => panic! "VariableDeclarations should have at least one declaration"
         | .some d =>
+          let defaultInit :=
+            let value := translate_expr d.init
+            let ty := get_var_type d.id.typeAnnotation d.init
+            (ctx, [.cmd (.init d.id.name ty value)])
           -- Check if this is a function call assignment
           match d.init with
           | .TS_CallExpression call =>
@@ -830,14 +860,14 @@ partial def translate_statement_core
                 { continueLabel? := some continueLabel, breakLabel? := some breakLabel, breakFlagVar? := some breakFlagVar }
           -- update (translate expression into statements following ExpressionStatement style)
           let (_, updateStmts) :=
-              translate_statement_core
-                (.TS_ExpressionStatement {
-                  expression := .TS_AssignmentExpression forStmt.update,
-                  start_loc := forStmt.start_loc,
-                  end_loc := forStmt.end_loc,
-                  loc := forStmt.loc,
-                  type := "TS_AssignmentExpression"
-                }) ctx1
+            translate_statement_core
+              (.TS_ExpressionStatement {
+                expression := .TS_AssignmentExpression forStmt.update,
+                start_loc := forStmt.start_loc,
+                end_loc := forStmt.end_loc,
+                loc := forStmt.loc,
+                type := "TS_AssignmentExpression"
+              }) ctx1
 
           -- Modify loop condition to include break flag check: (original_condition && !break_flag)
           let breakFlagExpr := Heap.HExpr.lambda (.fvar breakFlagVar none)

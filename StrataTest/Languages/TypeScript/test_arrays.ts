@@ -27,3 +27,10 @@ let isEqual: boolean = numbers[2] == 3
 
 // Nested arrays
 // let matrix: number[][] = [[1, 2], [3, 4]];
+
+// Array Push and Pop
+numbers.push(6);
+let popped: number | undefined = numbers.pop();
+
+// Pop empty array
+empty.pop();
