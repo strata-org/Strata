@@ -26,7 +26,7 @@ skip
 #guard_msgs in
 #eval format test
 
-def testWithoutIf := IfToPushPop test
+def testWithoutIf := ifToPushPop test
 /--
 info: (declare-const b0 Int)
 (assert (= b0 0))
@@ -43,7 +43,7 @@ def test2: LExpr LTy String  :=
   let_assign .topLevel "i" _Int (.const "0" .none) <| fun c =>
   .assert (.eq (c.v "i") (.const "1" .none)) <|
   .skip
-def test2WithoutIf := IfToPushPop test2
+def test2WithoutIf := ifToPushPop test2
 /--
 info: let _ : int := #0;
 pushpop (
@@ -67,7 +67,7 @@ info:
 #guard_msgs in
 #eval ToSMT .topLevel <| test2WithoutIf
 
-def test2WithoutLetAssign := IfToPushPop <| letAssignToLetAssume <| test2
+def test2WithoutLetAssign := ifToPushPop <| letAssignToLetAssume <| test2
 /--
 info: let _ : int;
 assume (%0 == #0) <|
@@ -221,7 +221,7 @@ pushpop (
 skip
 -/
 #guard_msgs in
-#eval format <| IfToPushPop <| letAssignToLetAssume <| prog
+#eval format <| ifToPushPop <| letAssignToLetAssume <| prog
 /--
 info: (declare-const b0 Int)
 (declare-const b1 Int)
@@ -275,7 +275,7 @@ info: (declare-const b0 Int)
 (pop)
 -/
 #guard_msgs in
-#eval ToSMT .topLevel <| IfToPushPop <| letAssignToLetAssume <| prog
+#eval ToSMT .topLevel <| ifToPushPop <| letAssignToLetAssume <| prog
 
 def debugIf: LExpr LTy String :=
   let_assign .topLevel "i" _Int (.const "0" .none) <| fun c =>
@@ -371,7 +371,7 @@ info: (push)
 (pop)
 -/
 #guard_msgs in
-#eval ToSMT .topLevel <| IfToPushPop <| simplify <| inlineContinuations <| simplify <| debugIf
+#eval ToSMT .topLevel <| ifToPushPop <| simplify <| inlineContinuations <| simplify <| debugIf
 
 def implies (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op "=>" .none) a) b
 def and (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op "&&" .none) a) b
@@ -602,7 +602,7 @@ assume ((~> %2) #0) <|
       inlineContinuations |>
       inlineContinuations |>
       letAssignToLetAssume |>
-      IfToPushPop |>
+      ifToPushPop |>
       ToSMT .topLevel
 
 end LExpr

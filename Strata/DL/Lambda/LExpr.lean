@@ -1069,21 +1069,21 @@ def not (a: LExpr LTy String) := LExpr.app (.op "!" .none) a
 -- pushpop (assume cond thn) (assume (not cond) els)
 
 -- TODO: Prove that this transformation preserves errors
-def IfToPushPop (prog: LExpr LTy String): LExpr LTy String :=
+def ifToPushPop (prog: LExpr LTy String): LExpr LTy String :=
   match prog with
   | .assume cond thn =>
-    .assume cond (IfToPushPop thn)
+    .assume cond (ifToPushPop thn)
   | .assert cond thn =>
-    .pushpop (.assume (.not cond) .error) (IfToPushPop thn)
+    .pushpop (.assume (.not cond) .error) (ifToPushPop thn)
   | .ite cond thn els =>
     -- Interestingly, we discard the thn branch!
-    .pushpop (.assume cond (IfToPushPop thn)) (.assume (.not cond) (IfToPushPop els))
+    .pushpop (.assume cond (ifToPushPop thn)) (.assume (.not cond) (ifToPushPop els))
   | .choose t =>
     .choose t
   | .app a b =>
-    .app (IfToPushPop a) (IfToPushPop b)
+    .app (ifToPushPop a) (ifToPushPop b)
   | .abs t b =>
-    .abs t (IfToPushPop b)
+    .abs t (ifToPushPop b)
   | _ => prog
 
 -- We increase the bvars that are currently "free" in the context.
