@@ -217,11 +217,11 @@ theorem invStoresExceptComm :
 -- since there could be coercions like [1 >>= True] and [0 >>= False]
 -- or that when δ evaluates to none, δP evaluates to False
   -/
-def WellFormedSemanticEvalBool {P : PureExpr} [HasBool P] [HasBoolNeg P]
+def WellFormedSemanticEvalBool {P : PureExpr} [HasBool P] [HasNot P]
     (δ : SemanticEval P) : Prop :=
     ∀ σ₀ σ e,
-      (δ σ₀ σ e = some Imperative.HasBool.tt ↔ δ σ₀ σ (Imperative.HasBoolNeg.neg e) = (some HasBool.ff)) ∧
-      (δ σ₀ σ e = some Imperative.HasBool.ff ↔ δ σ₀ σ (Imperative.HasBoolNeg.neg e) = (some HasBool.tt))
+      (δ σ₀ σ e = some Imperative.HasBool.tt ↔ δ σ₀ σ (Imperative.HasNot.not e) = (some HasBool.ff)) ∧
+      (δ σ₀ σ e = some Imperative.HasBool.ff ↔ δ σ₀ σ (Imperative.HasNot.not e) = (some HasBool.tt))
 
 def WellFormedSemanticEvalVal {P : PureExpr} [HasVal P]
     (δ : SemanticEval P) : Prop :=
@@ -261,7 +261,7 @@ inductive InitState : SemanticStore P → P.Ident → P.Expr → SemanticStore P
 An inductively-defined operational semantics that depends on
 environment lookup and evaluation functions for expressions.
 -/
-inductive EvalCmd [HasFvar P] [HasBool P] [HasBoolNeg P] :
+inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
   SemanticEval P → SemanticStore P → SemanticStore P → Cmd P → SemanticStore P → Prop where
   | eval_init :
     δ σ₀ σ e = .some v →
