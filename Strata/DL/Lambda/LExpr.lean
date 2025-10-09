@@ -310,8 +310,8 @@ private def formatLExpr [ToFormat Identifier] [ToFormat TypeType] (e : (LExpr Ty
       f!"pushpop ({Format.line}  {Format.nest 2 (formatLExpr a)}{Format.line}) <|{Format.line}{formatLExpr b}"
   | .app (.abs _ e1) (.choose ty) =>
       match ty with
-      | none => f!"let _;{Format.line}{formatLExpr e1}"
-      | some ty => f!"let _ : {ty};{Format.line}{formatLExpr e1}"
+      | none => f!"let %;{Format.line}{formatLExpr e1}"
+      | some ty => f!"let % : {ty};{Format.line}{formatLExpr e1}"
   | .app (.abs ty e1) (.abs ty2 cont) => -- Continuation-passing style
       let absTy :=
         match ty2 with
@@ -324,8 +324,8 @@ private def formatLExpr [ToFormat Identifier] [ToFormat TypeType] (e : (LExpr Ty
         f!"({formatLExpr (.abs ty e1)}) <|{Format.line}{formatLExpr rhs}"
       else
         match ty with
-        | none => f!"let _ := {formatLExpr rhs};{Format.line}{formatLExpr e1}"
-        | some ty => f!"let _ : {ty} := {formatLExpr rhs};{Format.line}{formatLExpr e1}"
+        | none => f!"let % := {formatLExpr rhs};{Format.line}{formatLExpr e1}"
+        | some ty => f!"let % : {ty} := {formatLExpr rhs};{Format.line}{formatLExpr e1}"
   | .app e1 e2 => Format.paren (f!"{formatLExpr e1} {formatLExpr e2}")
   | .ite c t e =>
     match e with
@@ -1139,6 +1139,10 @@ def letAssignToLetAssume (prog: LExpr LTy String): LExpr LTy String :=
   match prog with
   | .app (.abs ty body) rhs =>
     let body := letAssignToLetAssume body
+    if zeroVarContinuation rhs then
+      -- We can simplify
+      .app (.abs ty body) rhs
+    else
     match rhs with
     | choose _ =>
       .app (.abs ty body) rhs  -- We can't simplify
@@ -1186,6 +1190,7 @@ partial def ToSMTExpr (c: Context String) (prog: LExpr LTy String): Format :=
   | .op "<=" _ => f!"<="
   | .op ">" _ => f!">"
   | .op ">=" _ => f!">="
+  | .op "==>" _ => f!"=>"
   | _ => panic!("ToSMTExpr: Not supported: " ++ toString (format prog))
 
 -- Assume that the prog is written in an SMT compatible format
@@ -1221,7 +1226,7 @@ partial def ToSMT (c: Context String) (prog: LExpr LTy String): Format :=
 
 -- We wrongly assume determinism. We should detect determinism in the future.
 
-def if_ (c: Context String) (cond : LExpr LTy String) (frame: List String) (then_ else_:(Context String -> LExpr LTy String) -> Context String → LExpr LTy String) (endif : Context String → LExpr LTy String) : LExpr LTy String :=
+def if_ (c: Context String) (frame: List String) (cond: Context String -> LExpr LTy String) (then_ else_:(Context String -> LExpr LTy String) -> Context String → LExpr LTy String) (endif : Context String → LExpr LTy String) : LExpr LTy String :=
   -- First we call thn and els with a '#continue' free variable
   -- Then we detect which variables have been modified since the original context on either branches
   -- We add those variables to the context for next, and then
@@ -1243,7 +1248,7 @@ def if_ (c: Context String) (cond : LExpr LTy String) (frame: List String) (then
   let nextCtx := frame.foldl Context.add c
   let nextProg := frame.foldl (fun acc _ignoredName => .abs .none acc) (endif nextCtx)
   .app (.abs .none <|
-    .ite cond thnProg elsProg
+    .ite (cond newC) thnProg elsProg
   ) nextProg
   -- We need to find which variables have been modified on either branch
   -- For that, we need to find the context in which continueVar can be found
@@ -1288,10 +1293,10 @@ def subst (replacement body : LExpr LTy String) : LExpr LTy String :=
 partial def inlineContinuations (prog: LExpr LTy String): LExpr LTy String :=
   match prog with
   | .app (.abs _ body) (.abs oty exit) =>
-    decreasesBVar <| subst (.abs oty exit) (inlineContinuations body)
+    decreasesBVar <| subst (.abs oty (inlineContinuations exit)) (inlineContinuations body)
   | .app (.abs ty body) cont =>
     if zeroVarContinuation cont then -- TODO: Verify that it returns a unique value (could be unit!)
-      decreasesBVar <| subst cont (inlineContinuations body)
+      decreasesBVar <| subst (inlineContinuations cont) (inlineContinuations body)
     else
       .app (.abs ty (inlineContinuations body)) (inlineContinuations cont)
   -- These are inlining values, not continuations. A simplification phase could take care of them.
