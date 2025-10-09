@@ -12,60 +12,94 @@ namespace Strata
 
 open Elab
 
+private def reservedKeywords := [
+    -- A list of (name in DDM (without "reserved_" prefix), the string)
+    -- Category "General"
+    ("bang", "!"),
+    ("underbar", "_"),
+    ("as", "as"),
+    ("binary", "BINARY"),
+    ("decimal", "DECIMAL"),
+    ("exists", "EXISTS"),
+    ("hexadecimal", "HEXADECIMAL"),
+    ("forall", "forall"),
+    ("lambda", "lambda"),
+    ("let", "let"),
+    ("match", "match"),
+    ("numeral", "NUMERAL"),
+    ("par", "par"),
+    ("string", "STRING"),
+    -- Category "Command names"
+    ("r_assert", "assert"),
+    ("check_sat", "check-sat"),
+    ("check_sat_assuming", "check-sat-assuming"),
+    ("declare_const", "declare-const"),
+    ("declare_datatype", "declare-datatype"),
+    ("declare_fun", "declare-fun"),
+    ("declare_sort", "declare-sort"),
+    ("declare_sort_parameter", "declare-sort-parameter"),
+    ("define_const", "define-const"),
+    ("define_fun", "define-fun"),
+    ("define_fun_rec", "define-fun-rec"),
+    ("define_sort", "define-sort"),
+    ("echo", "echo"),
+    ("exit", "exit"),
+    ("get_assertions", "get-assertions"),
+    ("get_assignment", "get-assignment"),
+    ("get_info", "get-info"),
+    ("get_model", "get-model"),
+    ("get_option", "get-option"),
+    ("get_proof", "get-proof"),
+    ("get_unsat_assumptions", "get-unsat-assumptions"),
+    ("get_unsat_core", "get-unsat-core"),
+    ("get_value", "get-value"),
+    ("pop", "pop"),
+    ("push", "push"),
+    ("reset", "reset"),
+    ("reset_assertions", "reset-assertions"),
+    ("set_info", "set-info"),
+    ("set_logic", "set-logic"),
+    ("set_option", "set-option")
+  ]
+
+/- From SMT-LIB 2.7: "SimpleSymbol is a non-empty sequence of letters, digits
+  and the characters + - / * = % ? ! . $ _ ˜ & ˆ < > @ that does not start
+  with a digit and is not a reserved word."
+  The SMT-LIB DDM version: partially support symbols including special chars,
+  by not considering strings including special characters (e.g., '!a'), but only
+  considering strings equivalent to the special chars.
+
+  This makes the below list exclude "_" and "!" because it is already in
+  reservedKeywords.
+-/
+private def specialCharsInSimpleSymbol := [
+    ("plus", "+"),
+    ("minus", "-"),
+    -- ("slash", "/"), -- This causes an error in the SMT dialect definition
+    ("star", "*"),
+    ("eq", "="),
+    ("percent", "%"),
+    ("questionmark", "?"),
+    -- ("bang", "!"),
+    ("period", "."),
+    ("dollar", "$"),
+    -- ("underbar", "_"),
+    ("tilde", "~"),
+    ("amp", "&"),
+    ("caret", "^"),
+    ("lt", "<"),
+    ("gt", ">"),
+    ("at", "@")
+  ]
+
 -- https://smt-lib.org/papers/smt-lib-reference-v2.7-r2025-07-07.pdf
 -- Appendix B. Concrete Syntax
+-- Prepare reserved keywords and simple symbols in advance.
 private def smtReservedKeywordsDialect : Dialect :=
   BuiltinM.create! "SMTReservedKeywords" #[] do
     declareAtomicCat q`SMTReservedKeywords.Reserved
 
-    for (name, s) in [
-        -- Category "General"
-        ("bang", "!"),
-        ("underbar", "_"),
-        ("as", "as"),
-        ("binary", "BINARY"),
-        ("decimal", "DECIMAL"),
-        ("exists", "EXISTS"),
-        ("hexadecimal", "HEXADECIMAL"),
-        ("forall", "forall"),
-        ("lambda", "lambda"),
-        ("let", "let"),
-        ("match", "match"),
-        ("numeral", "NUMERAL"),
-        ("par", "par"),
-        ("string", "STRING"),
-        -- Category "Command names"
-        ("r_assert", "assert"),
-        ("check_sat", "check-sat"),
-        ("check_sat_assuming", "check-sat-assuming"),
-        ("declare_const", "declare-const"),
-        ("declare_datatype", "declare-datatype"),
-        ("declare_fun", "declare-fun"),
-        ("declare_sort", "declare-sort"),
-        ("declare_sort_parameter", "declare-sort-parameter"),
-        ("define_const", "define-const"),
-        ("define_fun", "define-fun"),
-        ("define_fun_rec", "define-fun-rec"),
-        ("define_sort", "define-sort"),
-        ("echo", "echo"),
-        ("exit", "exit"),
-        ("get_assertions", "get-assertions"),
-        ("get_assignment", "get-assignment"),
-        ("get_info", "get-info"),
-        ("get_model", "get-model"),
-        ("get_option", "get-option"),
-        ("get_proof", "get-proof"),
-        ("get_unsat_assumptions", "get-unsat-assumptions"),
-        ("get_unsat_core", "get-unsat-core"),
-        ("get_value", "get-value"),
-        ("pop", "pop"),
-        ("push", "push"),
-        ("reset", "reset"),
-        ("reset_assertions", "reset-assertions"),
-        ("set_info", "set-info"),
-        ("set_logic", "set-logic"),
-        ("set_option", "set-option")
-      ] do
+    for (name, s) in reservedKeywords do
       declareOp {
         name := s!"reserved_{name}",
         argDecls := #[],
@@ -73,8 +107,18 @@ private def smtReservedKeywordsDialect : Dialect :=
         syntaxDef := .ofList [.str s]
       }
 
-#eval declareDialect smtReservedKeywordsDialect
+    declareAtomicCat q`SMTReservedKeywords.SimpleSymbol
+    -- Partially support special chars; Do not consider strings including
+    -- special characters (e.g., '!a')
+    for (name, s) in specialCharsInSimpleSymbol do
+      declareOp {
+        name := s!"simple_symbol_{name}",
+        argDecls := #[],
+        category := q`SMTReservedKeywords.SimpleSymbol,
+        syntaxDef := .ofList [.str s]
+      }
 
+#eval declareDialect smtReservedKeywordsDialect
 
 
 #dialect
@@ -92,8 +136,12 @@ import SMTReservedKeywords;
 // <string> is Str.
 
 // <simple_symbol> is QualifiedIdent.
-category SimpleSymbol;
-op simple_symbol (s:QualifiedIdent) : SimpleSymbol => s;
+op simple_symbol_qid (s:QualifiedIdent) : SimpleSymbol => s;
+// The two symbols "true" and "false" are not parsed as QualifiedIdent.
+// This is because they are currently used as keywords in the Init dialect
+// (see Strata/DDM/BuiltinDialects/Init.lean)
+op simple_symbol_tt () : SimpleSymbol => "true";
+op simple_symbol_ff () : SimpleSymbol => "false";
 
 // <symbol> is simplified to <simple_symbol>.
 // - TODO:
@@ -234,7 +282,7 @@ op function_def (s:Symbol, sv:Seq SortedVar, so:SMTSort, t:Term) : FunctionDef
 #end
 
 
--- The dialect for SMTLib input.
+-- A dialect for SMTLib commands.
 
 #dialect
 dialect SMT;
@@ -265,7 +313,7 @@ op define_fun_rec (fdef:FunctionDef) : Command =>
   "(" "define-fun-rec" fdef ")";
 op define_sort (s:Symbol, sl:Seq Symbol, so:SMTSort) : Command =>
   "(" "define-sort" s "(" sl ")" so ")";
-op the_echo (s:Str) : Command => "(" "echo" "\"" s "\"" ")";
+op the_echo (s:Str) : Command => "(" "echo" s ")";
 op the_exit () : Command => "(" "exit" ")";
 op get_assertions () : Command => "(" "get-assertions" ")";
 op get_assignments () : Command => "(" "get-assignments" ")";
@@ -289,6 +337,7 @@ op set_logic (s:Symbol) : Command => "(" "set-logic" s ")";
 
 
 -- A dialect for representing the response.
+
 #dialect
 dialect SMTResponse;
 import SMTCore;
@@ -388,6 +437,179 @@ op error (msg:Str) : Command => "(" "error" msg ")";
 #end
 
 
--- Q: can we add a test for each syntax category?
+namespace Test
+
+#dialect
+dialect SMTCoreTest;
+import SMTCore;
+
+op parse_simple_symbol (x:SimpleSymbol): Command => "parse_simple_symbol" x ";";
+op parse_symbol (x:Symbol): Command => "parse_symbol" x ";";
+op parse_keyword (x:Keyword): Command => "parse_keyword" x ";";
+op parse_spec_constant (x:SpecConstant): Command => "parse_spec_constant" x ";";
+op parse_sexpr (x:SExpr): Command => "parse_sexpr" x ";";
+op parse_index (x:Index): Command => "parse_index" x ";";
+op parse_identifier (x:Identifier): Command => "parse_identifier" x ";";
+op parse_sort (x:SMTSort): Command => "parse_sort" x ";";
+op parse_attribute_value (x:AttributeValue): Command
+  => "parse_attribute_value" x ";";
+op parse_attribute (x:Attribute): Command => "parse_attribute" x ";";
+op parse_qual_identifier (x:QualIdentifier): Command
+  => "parse_qual_identifier" x ";";
+op parse_term (x:Term): Command => "parse_term" x ";";
+op parse_val_binding (x:ValBinding): Command => "parse_val_binding" x ";";
+op parse_sorted_var (x:SortedVar): Command
+  => "parse_sorted_var" x ";";
+op parse_theory_decl (x:TheoryDecl): Command
+  => "parse_theory_decl" x ";";
+op parse_logic (x:Logic): Command
+  => "parse_logic" x ";";
+op parse_sort_dec (x:SortDec): Command
+  => "parse_sort_dec" x ";";
+op parse_function_dec (x:FunctionDec): Command
+  => "parse_function_dec" x ";";
+op parse_function_def (x:FunctionDef): Command
+  => "parse_function_def" x ";";
+#end
+
+
+-- Tests for the syntactic categories in SMTCore.
+-- The current test only checks whether these commands can be parsed, without
+-- doing type checking.
+
+private def test_smt_core := #strata
+program SMTCoreTest;
+
+parse_simple_symbol true ;
+parse_simple_symbol false ;
+parse_simple_symbol x ;
+parse_simple_symbol + ;
+// parse_simple_symbol _; // This must fail
+
+parse_symbol x ;
+parse_symbol + ;
+
+parse_keyword :aaa ;
+
+parse_spec_constant 1;
+parse_spec_constant 1.5;
+parse_spec_constant "test";
+
+parse_sexpr 1;
+parse_sexpr (_) ;
+parse_sexpr (let) ;
+parse_sexpr (+ a b) ;
+
+parse_identifier x ;
+parse_identifier ( _ move up) ;
+parse_identifier ( _ BitVec 32) ;
+
+parse_sort Int ;
+parse_sort ( _ BitVec 32 );
+parse_sort ( Array Int Int );
+
+parse_qual_identifier x ;
+parse_qual_identifier ( as x Bool ) ;
+
+parse_sorted_var ( x Int ) ;
+parse_sorted_var ( x Int ) ;
+
+parse_term 1 ;
+parse_term ( (as x A) 1 2 ) ;
+parse_term (f x y) ;
+parse_term (add 1 2) ;
+parse_term (+ 1 2) ;
+parse_term (and true true false) ;
+parse_term (- 1 (+ 2 3)) ;
+
+// Attribute
+parse_term (=> (! (> x y) :named p1) (! (= x z) :named p2 )) ;
+
+// Let
+parse_term (let ((x (+ 1 2))) x) ;
+parse_term (let ((y (+ 1 2)) (z (f 3 4))) (% y z)) ;
+
+// Lambda
+parse_term (lambda ((x Bool) (y Bool)) (=> (y x))) ;
+
+// Forall (excerpted from SMT-Lib reference)
+parse_term (forall ((x (List Int)) (y (List Int)))
+  (= (append x y)
+    (ite (= x (as nil (List Int)))
+      y
+      (let ((h (head x)) (t (tail x)))
+        (insert h (append t y)))))) ;
+
+parse_function_def f ((x Int) (y Int)) Int (+ x y) ;
+#end
+
+
+-- Tests for commands in SMT.
+
+private def test_smt_commands := #strata
+program SMT;
+
+(assert x)
+(check-sat)
+(check-sat-assuming x y)
+(declare-const x Int)
+(declare-datatype X Int)
+(declare-fun f (Int Int) Int)
+(declare-sort Int 10)
+(declare-sort-parameter X)
+(define-const t Int y)
+(define-fun f ((x Int) (y Int)) Int (+ x y))
+(define-fun-rec f ((x Int) (y Int)) Int (+ x y))
+(echo "x")
+(exit)
+(get-assertions)
+(get-assignments)
+(get-model)
+(get-option :h)
+(get-proof)
+(get-unsat-assumptions)
+(get-unsat-core)
+(get-value (x y))
+(pop 1)
+(push 1)
+(reset)
+(reset-assertions)
+(set-info :t 1)
+(set-logic MY_LOGIC)
+#end
+
+
+-- Tests for the responses in SMT.
+-- This needs Strata DDM being able to return multiple possible parsing trees
+-- for each Command, because one S-expression can be interpreted as multiple
+-- categories.
+
+private def test_smt_responses := #strata
+program SMTResponse;
+
+success
+
+unsupported
+
+sat
+
+unsat
+
+unknown
+
+(error "some err")
+
+(:reason-unknown memout)
+
+// This can be GetProofResponse, GetOptionResponse or GetModelResponse.
+// (
+//   (define-fun z () Real (- 2.0))
+//   (define-fun y () Real (- 2.0))
+//   (define-fun x () Real 1.0)
+// )
+#end
+
+
+end Test
 
 end Strata
