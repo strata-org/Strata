@@ -18,9 +18,9 @@ def test: LExpr LTy String  :=
   .assert (.eq (c.v "i") (.const "1" .none)) <|
   .skip
 /--
-info: let %;
-assume (%0 == #0) <|
-assert (%0 == #1) <|
+info: let λi;
+assume (i%0 == #0) <|
+assert (i%0 == #1) <|
 skip
 -/
 #guard_msgs in
@@ -28,10 +28,10 @@ skip
 
 def testWithoutIf := ifToPushPop test
 /--
-info: (declare-const b0 Int)
-(assert (= b0 0))
+info: (declare-const i@0 Int)
+(assert (= i@0 0))
 (push)
-(assert (not (= b0 1)))
+(assert (not (= i@0 1)))
 (check-sat)
 (pop)
 -/
@@ -45,9 +45,9 @@ def test2: LExpr LTy String  :=
   .skip
 def test2WithoutIf := ifToPushPop test2
 /--
-info: let % : int := #0;
+info: let λi : int := #0;
 pushpop (
-  assume (~! (%0 == #1)) <|
+  assume (~! (i%0 == #1)) <|
   error
 ) <|
 skip
@@ -55,9 +55,9 @@ skip
 #guard_msgs in
 #eval format test2WithoutIf
 /--
-info: PANIC at Lambda.LExpr.ToSMT Strata.DL.Lambda.LExpr:1302:9: ToSMT not supported:let % : int := #0;
+info: PANIC at Lambda.LExpr.ToSMT Strata.DL.Lambda.LExpr:1378:9: ToSMT not supported:let λi : int := #0;
 pushpop (
-  assume (~! (%0 == #1)) <|
+  assume (~! (i%0 == #1)) <|
   error
 ) <|
 skip
@@ -69,10 +69,10 @@ info:
 
 def test2WithoutLetAssign := ifToPushPop <| letAssignToLetAssume <| test2
 /--
-info: let % : int;
-assume (%0 == #0) <|
+info: let λi : int;
+assume (i%0 == #0) <|
 pushpop (
-  assume (~! (%0 == #1)) <|
+  assume (~! (i%0 == #1)) <|
   error
 ) <|
 skip
@@ -80,10 +80,10 @@ skip
 #guard_msgs in
 #eval format test2WithoutLetAssign
 /--
-info: (declare-const b0 Int)
-(assert (= b0 0))
+info: (declare-const i@0 Int)
+(assert (= i@0 0))
 (push)
-(assert (not (= b0 1)))
+(assert (not (= i@0 1)))
 (check-sat)
 (pop)
 -/
@@ -133,107 +133,107 @@ def prog: LExpr LTy String :=
 -- Would be nice to find a monadic style where the context is threaded automatically
 
 /--
-info: let % : int;
-let % : int;
-let % : int;
-let % : int := %2;
-let % : int := %2;
-let % : int := %2;
-assume (((~+ %5) %4) == %3) <|
-assert (%5 == ((~- %3) %4)) <|
-let % : int := ((~+ %5) ((~+ %4) %3));
-let % : int := ((~+ %5) %4);
-assert (%1 == ((~+ %4) ((~+ %3) %5))) <|
-assert (%0 == ((~+ %3) %5)) <|
-assert (%3 == ((~- %0) %5)) <|
-assert (%4 == ((~- ((~- %1) ((~- %0) %5))) %5)) <|
-assert (%4 == ((~- %1) %0)) <|
-assert (%5 == ((~+ %4) %3)) <|
-assert (%5 == ((~+ ((~- %1) %0)) ((~- %0) %5))) <|
-assert (((~+ %5) %5) == %1) <|
+info: let λi : int;
+let λj : int;
+let λk : int;
+let λi0 : int := i%2;
+let λj0 : int := j%2;
+let λk0 : int := k%2;
+assume (((~+ i%5) j%4) == k%3) <|
+assert (i%5 == ((~- k%3) j%4)) <|
+let λi : int := ((~+ i%5) ((~+ j%4) k%3));
+let λj : int := ((~+ j%5) k%4);
+assert (i%1 == ((~+ i0%4) ((~+ j0%3) k%5))) <|
+assert (j%0 == ((~+ j0%3) k%5)) <|
+assert (j0%3 == ((~- j%0) k%5)) <|
+assert (i0%4 == ((~- ((~- i%1) ((~- j%0) k%5))) k%5)) <|
+assert (i0%4 == ((~- i%1) j%0)) <|
+assert (k%5 == ((~+ i0%4) j0%3)) <|
+assert (k%5 == ((~+ ((~- i%1) j%0)) ((~- j%0) k%5))) <|
+assert (((~+ k%5) k%5) == i%1) <|
 skip
 -/
 #guard_msgs in
 #eval format prog
 
 /--
-info: let % : int;
-let % : int;
-let % : int;
-let % : int;
-assume (%0 == %3) <|
-let % : int;
-assume (%0 == %3) <|
-let % : int;
-assume (%0 == %3) <|
-assume (((~+ %5) %4) == %3) <|
-assert (%5 == ((~- %3) %4)) <|
-let % : int;
-assume (%0 == ((~+ %6) ((~+ %5) %4))) <|
-let % : int;
-assume (%0 == ((~+ %6) %5)) <|
-assert (%1 == ((~+ %4) ((~+ %3) %5))) <|
-assert (%0 == ((~+ %3) %5)) <|
-assert (%3 == ((~- %0) %5)) <|
-assert (%4 == ((~- ((~- %1) ((~- %0) %5))) %5)) <|
-assert (%4 == ((~- %1) %0)) <|
-assert (%5 == ((~+ %4) %3)) <|
-assert (%5 == ((~+ ((~- %1) %0)) ((~- %0) %5))) <|
-assert (((~+ %5) %5) == %1) <|
+info: let λi : int;
+let λj : int;
+let λk : int;
+let λi0 : int;
+assume (i0%0 == i%3) <|
+let λj0 : int;
+assume (j0%0 == j%3) <|
+let λk0 : int;
+assume (k0%0 == k%3) <|
+assume (((~+ i%5) j%4) == k%3) <|
+assert (i%5 == ((~- k%3) j%4)) <|
+let λi : int;
+assume (i%0 == ((~+ i%6) ((~+ j%5) k%4))) <|
+let λj : int;
+assume (j%0 == ((~+ j%6) k%5)) <|
+assert (i%1 == ((~+ i0%4) ((~+ j0%3) k%5))) <|
+assert (j%0 == ((~+ j0%3) k%5)) <|
+assert (j0%3 == ((~- j%0) k%5)) <|
+assert (i0%4 == ((~- ((~- i%1) ((~- j%0) k%5))) k%5)) <|
+assert (i0%4 == ((~- i%1) j%0)) <|
+assert (k%5 == ((~+ i0%4) j0%3)) <|
+assert (k%5 == ((~+ ((~- i%1) j%0)) ((~- j%0) k%5))) <|
+assert (((~+ k%5) k%5) == i%1) <|
 skip
 -/
 #guard_msgs in
 #eval format <| letAssignToLetAssume <| prog
 
 /--
-info: let % : int;
-let % : int;
-let % : int;
-let % : int;
-assume (%0 == %3) <|
-let % : int;
-assume (%0 == %3) <|
-let % : int;
-assume (%0 == %3) <|
-assume (((~+ %5) %4) == %3) <|
+info: let λi : int;
+let λj : int;
+let λk : int;
+let λi0 : int;
+assume (i0%0 == i%3) <|
+let λj0 : int;
+assume (j0%0 == j%3) <|
+let λk0 : int;
+assume (k0%0 == k%3) <|
+assume (((~+ i%5) j%4) == k%3) <|
 pushpop (
-  assume (~! (%5 == ((~- %3) %4))) <|
+  assume (~! (i%5 == ((~- k%3) j%4))) <|
   error
 ) <|
-let % : int;
-assume (%0 == ((~+ %6) ((~+ %5) %4))) <|
-let % : int;
-assume (%0 == ((~+ %6) %5)) <|
+let λi : int;
+assume (i%0 == ((~+ i%6) ((~+ j%5) k%4))) <|
+let λj : int;
+assume (j%0 == ((~+ j%6) k%5)) <|
 pushpop (
-  assume (~! (%1 == ((~+ %4) ((~+ %3) %5)))) <|
-  error
-) <|
-pushpop (
-  assume (~! (%0 == ((~+ %3) %5))) <|
+  assume (~! (i%1 == ((~+ i0%4) ((~+ j0%3) k%5)))) <|
   error
 ) <|
 pushpop (
-  assume (~! (%3 == ((~- %0) %5))) <|
+  assume (~! (j%0 == ((~+ j0%3) k%5))) <|
   error
 ) <|
 pushpop (
-  assume (~! (%4 == ((~- ((~- %1) ((~- %0) %5))) %5))) <|
+  assume (~! (j0%3 == ((~- j%0) k%5))) <|
   error
 ) <|
 pushpop (
-  assume (~! (%4 == ((~- %1) %0))) <|
+  assume (~! (i0%4 == ((~- ((~- i%1) ((~- j%0) k%5))) k%5))) <|
   error
 ) <|
 pushpop (
-  assume (~! (%5 == ((~+ %4) %3))) <|
+  assume (~! (i0%4 == ((~- i%1) j%0))) <|
   error
 ) <|
 pushpop (
-  assume (~! (%5 == ((~+ ((~- %1) %0)) ((~- %0) %5)))) <|
+  assume (~! (k%5 == ((~+ i0%4) j0%3))) <|
   error
 ) <|
 pushpop (
-  assume (~! (((~+ %5) %5) == %1)) <|
+  assume (~! (k%5 == ((~+ ((~- i%1) j%0)) ((~- j%0) k%5)))) <|
+  error
+) <|
+pushpop (
+  assume (~! (((~+ k%5) k%5) == i%1)) <|
   error
 ) <|
 skip
@@ -241,54 +241,54 @@ skip
 #guard_msgs in
 #eval format <| ifToPushPop <| letAssignToLetAssume <| prog
 /--
-info: (declare-const b0 Int)
-(declare-const b1 Int)
-(declare-const b2 Int)
-(declare-const b3 Int)
-(assert (= b3 b0))
-(declare-const b4 Int)
-(assert (= b4 b1))
-(declare-const b5 Int)
-(assert (= b5 b2))
-(assert (= (+ b0 b1) b2))
+info: (declare-const i@0 Int)
+(declare-const j@1 Int)
+(declare-const k@2 Int)
+(declare-const i0@3 Int)
+(assert (= i0@3 i@0))
+(declare-const j0@4 Int)
+(assert (= j0@4 j@1))
+(declare-const k0@5 Int)
+(assert (= k0@5 k@2))
+(assert (= (+ i@0 j@1) k@2))
 (push)
-(assert (not (= b0 (- b2 b1))))
+(assert (not (= i@0 (- k@2 j@1))))
 (check-sat)
 (pop)
-(declare-const b6 Int)
-(assert (= b6 (+ b0 (+ b1 b2))))
-(declare-const b7 Int)
-(assert (= b7 (+ b1 b2)))
+(declare-const i@6 Int)
+(assert (= i@6 (+ i@0 (+ j@1 k@2))))
+(declare-const j@7 Int)
+(assert (= j@7 (+ j@1 k@2)))
 (push)
-(assert (not (= b6 (+ b3 (+ b4 b2)))))
-(check-sat)
-(pop)
-(push)
-(assert (not (= b7 (+ b4 b2))))
+(assert (not (= i@6 (+ i0@3 (+ j0@4 k@2)))))
 (check-sat)
 (pop)
 (push)
-(assert (not (= b4 (- b7 b2))))
+(assert (not (= j@7 (+ j0@4 k@2))))
 (check-sat)
 (pop)
 (push)
-(assert (not (= b3 (- (- b6 (- b7 b2)) b2))))
+(assert (not (= j0@4 (- j@7 k@2))))
 (check-sat)
 (pop)
 (push)
-(assert (not (= b3 (- b6 b7))))
+(assert (not (= i0@3 (- (- i@6 (- j@7 k@2)) k@2))))
 (check-sat)
 (pop)
 (push)
-(assert (not (= b2 (+ b3 b4))))
+(assert (not (= i0@3 (- i@6 j@7))))
 (check-sat)
 (pop)
 (push)
-(assert (not (= b2 (+ (- b6 b7) (- b7 b2)))))
+(assert (not (= k@2 (+ i0@3 j0@4))))
 (check-sat)
 (pop)
 (push)
-(assert (not (= (+ b2 b2) b6)))
+(assert (not (= k@2 (+ (- i@6 j@7) (- j@7 k@2)))))
+(check-sat)
+(pop)
+(push)
+(assert (not (= (+ k@2 k@2) i@6)))
 (check-sat)
 (pop)
 -/
@@ -299,25 +299,25 @@ info: (declare-const b0 Int)
 
 def debugSubst: LExpr LTy String :=
     .ite (.const "true" .none)
-      (.app (.abs .none (.app (.bvar 1) (.bvar 0 ))) (.const "1" .none))
+      (.app (.abs "i" .none (.app (.bvar 1) (.bvar 0 ))) (.const "1" .none))
       (.app (.bvar 0) (.const "0" .none))
-def replacement: LExpr LTy String := (.abs .none (.assert (.eq (.bvar 0) (.const "1" .none)) .skip))
+def replacement: LExpr LTy String := (.abs "j" .none (.assert (.eq (.bvar 0) (.const "1" .none)) .skip))
 
-/-- info: (if #true then let % := #1; (%1 %0) else (%0 #0)) -/
+/-- info: (if #true then let λi := #1; (%1 i%0) else (%0 #0)) -/
 #guard_msgs in
 #eval format <| debugSubst
 /--
-info: (if #true then let % := #1; let % := %0; assert (%0 == #1) <| skip else let % := #0; assert (%0 == #1) <| skip)
+info: (if #true then let λi := #1; let λj := i%0; assert (j%0 == #1) <| skip else let λj := #0; assert (j%0 == #1) <| skip)
 -/
 #guard_msgs in
 #eval format <| subst replacement debugSubst
 
 def test_simplify: LExpr LTy String :=
-  .app (.abs .none (.app (.bvar 1) (.bvar 0))) (.const "1" .none)
+  .app (.abs "i" .none (.app (.bvar 1) (.bvar 0))) (.const "1" .none)
 
 /--
-info: let % := #1;
-(%1 %0)
+info: let λi := #1;
+(%1 i%0)
 -/
 #guard_msgs in
 #eval format test_simplify
@@ -343,83 +343,89 @@ def debugIf: LExpr LTy String :=
   )
 
 /--
-info: let % : bool;
-let % : int := #0;
-((λ (if %2 then let % : int := #1; (%1 %0) else (%0 %1)))) <| λ
-assert (%0 == #1) <|
+info: let λb : bool;
+let λi : int := #0;
+((λ@endif (if b%2 then let λi : int := #1; (@endif%1 i%0) else (@endif%0 i%1)))) <| λi
+assert (i%0 == #1) <|
 skip
 -/
 #guard_msgs in
 #eval format debugIf
 /--
-info: let % : bool;
-let % : int;
-assume (%0 == #0) <|
-let %;
-assume (%0 == (λ assert (%0 == #1) <| skip)) <|
-(if %2 then let % : int; assume (%0 == #1) <| (%1 %0) else (%0 %1))
+info: let λb : bool;
+let λi : int;
+assume (i%0 == #0) <|
+let λ@endif;
+assume (@endif%0 == (λi assert (i%0 == #1) <| skip)) <|
+(if b%2 then let λi : int; assume (i%0 == #1) <| (@endif%1 i%0) else (@endif%0 i%1))
 -/
 #guard_msgs in
 #eval format <| letAssignToLetAssume <| debugIf
--- Let's forget about converting a let assign to let assume until the end of the pipeline, otherwe we miss very useful inlinings.
+-- This is not working, we need to beta expand continuations, otherwise we won't be able to convert to SMT
 -- Also, we currently lack determinism detection.
 
 /--
-info: let % : bool;
-((λ (if %1 then (%0 #1) else (%0 #0)))) <| λ
-assert (%0 == #1) <|
+info: let λb : bool;
+((λ@endif (if b%1 then (@endif%0 #1) else (@endif%0 #0)))) <| λi
+assert (i%0 == #1) <|
 skip
 -/
 #guard_msgs in
 #eval format <| simplify <| debugIf
 /--
-info: let % : bool;
-let % : int := #0;
-(if %1 then let % : int := #1; let % := %0; assert (%0 == #1) <| skip else let % := %0; assert (%0 == #1) <| skip)
+info: let λb : bool;
+let λi : int := #0;
+(if b%1 then let λi : int := #1;
+   let λi := i%0;
+   assert (i%0 == #1) <|
+   skip
+ else let λi := i%0;
+   assert (i%0 == #1) <|
+   skip)
 -/
 #guard_msgs in
 #eval format <| inlineContinuations <| debugIf
 /--
-info: (declare-const b0 Bool)
-(declare-const b1 Int)
-(assert (= b1 0))
+info: (declare-const b@0 Bool)
+(declare-const i@1 Int)
+(assert (= i@1 0))
 (push)
-(assert b0)
-(declare-const b2 Int)
-(assert (= b2 1))
-(declare-const b3 Int)
-(assert (= b3 b2))
+(assert b@0)
+(declare-const i@2 Int)
+(assert (= i@2 1))
+(declare-const i@3 Int)
+(assert (= i@3 i@2))
 (push)
-(assert (not (= b3 1)))
+(assert (not (= i@3 1)))
 (check-sat)
 (pop)
 (pop)
-(assert (not b0))
-(declare-const b2 Int)
-(assert (= b2 b1))
+(assert (not b@0))
+(declare-const i@2 Int)
+(assert (= i@2 i@1))
 (push)
-(assert (not (= b2 1)))
+(assert (not (= i@2 1)))
 (check-sat)
 (pop)
 -/
 #guard_msgs in
 #eval ToSMT .topLevel <| ifToPushPop <| letAssignToLetAssume <| inlineContinuations <| debugIf
 /--
-info: let % : bool;
-(if %0 then assert (#1 == #1) <| skip else assert (#0 == #1) <| skip)
+info: let λb : bool;
+(if b%0 then assert (#1 == #1) <| skip else assert (#0 == #1) <| skip)
 -/
 #guard_msgs in
 #eval format <| simplify <| inlineContinuations <| simplify <| debugIf
 /--
-info: (declare-const b0 Bool)
+info: (declare-const b@0 Bool)
 (push)
-(assert b0)
+(assert b@0)
 (push)
 (assert (not (= 1 1)))
 (check-sat)
 (pop)
 (pop)
-(assert (not b0))
+(assert (not b@0))
 (push)
 (assert (not (= 0 1)))
 (check-sat)
@@ -450,25 +456,25 @@ def ifWithLocalVar: LExpr LTy String :=
   assert (eq (c.v "i") (.const "1" .none)) skip
 
 /--
-info: (declare-const b0 Int)
+info: (declare-const i@0 Int)
 (push)
-(assert (distinct b0 1))
-(declare-const b1 Int)
-(assert (= b1 1))
-(declare-const b2 Int)
-(assert (= b2 2))
-(declare-const b3 Int)
-(assert (= b3 b0))
+(assert (distinct i@0 1))
+(declare-const i@1 Int)
+(assert (= i@1 1))
+(declare-const i@2 Int)
+(assert (= i@2 2))
+(declare-const i@3 Int)
+(assert (= i@3 i@0))
 (push)
-(assert (not (= b3 1)))
+(assert (not (= i@3 1)))
 (check-sat)
 (pop)
 (pop)
-(assert (not (distinct b0 1)))
-(declare-const b1 Int)
-(assert (= b1 b0))
+(assert (not (distinct i@0 1)))
+(declare-const i@1 Int)
+(assert (= i@1 i@0))
 (push)
-(assert (not (= b1 1)))
+(assert (not (= i@1 1)))
 (check-sat)
 (pop)
 -/
@@ -499,9 +505,9 @@ def ifWithLocalVar2: LExpr LTy String :=
   assert (eq (c.v "i") (.const "1" .none)) skip
 
 /--
-info: let % : int;
-((λ (if ((~!= %1) #1) then let % : int := #2; (%1 %2) else (%0 %1)))) <| λ
-assert (%0 == #1) <|
+info: let λi : int;
+((λ@endif (if ((~!= i%1) #1) then let λi : int := #2; (@endif%1 i%2) else (@endif%0 i%1)))) <| λi
+assert (i%0 == #1) <|
 skip
 -/
 #guard_msgs in
@@ -583,101 +589,110 @@ def progIfStmt: LExpr LTy String :=
   ))))
 
 /--
-info: let % : bool;
-let % : bool;
-let % : int;
-let % : int := %0;
-let % : int;
-let % : int;
-assume ((~> %1) #0) <|
-assume ((~> %3) #0) <|
-((λ (if %5 then let % : int := ((~- %4) %2); (%1 %5) else (%0 %4)))) <| λ
-((λ (if ((~&& %7) ((~> %1) %3)) then let % : int := ((~- %1) %3); (%1 %2) else (%0 %1)))) <| λ
-assert ((~==> (~! %6)) ((~> %0) #0)) <|
-assert ((~==> ((~< %3) %4)) ((~> %0) #0)) <|
-((λ (if ((~< %1) %5) then ((λ (if (~! %8) then assert %9 <| %0 else %0))) <| assert ((~|| %7) %8) <| %0 else %0))) <|
-assert ((~==> ((~< %0) %4)) ((~|| %6) %7)) <|
-assert ((~==> ((~< %0) #0)) ((~&& %6) ((~> %3) %0))) <|
-((λ (if ((~> %1) %5) then assert #false <| assume #false <| %0 else %0))) <|
+info: let λsuperDiscount : bool;
+let λdiscount : bool;
+let λprice : int;
+let λprice0 : int := price%0;
+let λdiscountAmount : int;
+let λquantity : int;
+assume ((~> discountAmount%1) #0) <|
+assume ((~> price%3) #0) <|
+((λ@endif (if discount%5 then let λprice : int := ((~- price%4) discountAmount%2);
+    (@endif%1 price%5)
+  else (@endif%0 price%4)))) <| λprice
+((λ@endif (if ((~&& superDiscount%7) ((~> price%1) discountAmount%3)) then let λprice : int := ((~- price%1) discountAmount%3);
+    (@endif%1 price%2)
+  else (@endif%0 price%1)))) <| λprice
+assert ((~==> (~! discount%6)) ((~> price%0) #0)) <|
+assert ((~==> ((~< discountAmount%3) price0%4)) ((~> price%0) #0)) <|
+((λ@endif (if ((~< price%1) price0%5) then ((λ@endif (if (~! discount%8) then assert superDiscount%9 <|
+        @endif%0
+      else @endif%0))) <|
+    assert ((~|| discount%7) superDiscount%8) <|
+    @endif%0
+  else @endif%0))) <|
+assert ((~==> ((~< price%0) price0%4)) ((~|| discount%6) superDiscount%7)) <|
+assert ((~==> ((~< price%0) #0)) ((~&& discount%6) ((~> discountAmount%3) price%0))) <|
+((λ@endif (if ((~> price%1) price0%5) then assert #false <| assume #false <| @endif%0 else @endif%0))) <|
 skip
 -/
 #guard_msgs in
 #eval format progIfStmt
 
 /--
-info: let % : bool;
-let % : bool;
-let % : int;
-let % : int := %0;
-let % : int;
-let % : int;
-assume ((~> %1) #0) <|
-assume ((~> %3) #0) <|
-(if %4 then let % : int := ((~- %3) %1);
-   let % := %4;
-   (if ((~&& %7) ((~> %0) %3)) then let % : int := ((~- %0) %3);
-      let % := %1;
-      assert ((~==> (~! %8)) ((~> %0) #0)) <|
-      assert ((~==> ((~< %5) %6)) ((~> %0) #0)) <|
-      (if ((~< %0) %6) then (if (~! %8) then assert %9 <|
-            assert ((~|| %8) %9) <|
-            assert ((~==> ((~< %0) %6)) ((~|| %8) %9)) <|
-            assert ((~==> ((~< %0) #0)) ((~&& %8) ((~> %5) %0))) <|
-            (if ((~> %0) %6) then assert #false <| assume #false <| skip else skip)
-          else assert ((~|| %8) %9) <|
-            assert ((~==> ((~< %0) %6)) ((~|| %8) %9)) <|
-            assert ((~==> ((~< %0) #0)) ((~&& %8) ((~> %5) %0))) <|
-            (if ((~> %0) %6) then assert #false <| assume #false <| skip else skip))
-       else assert ((~==> ((~< %0) %6)) ((~|| %8) %9)) <|
-         assert ((~==> ((~< %0) #0)) ((~&& %8) ((~> %5) %0))) <|
-         (if ((~> %0) %6) then assert #false <| assume #false <| skip else skip))
-    else let % := %0;
-      assert ((~==> (~! %7)) ((~> %0) #0)) <|
-      assert ((~==> ((~< %4) %5)) ((~> %0) #0)) <|
-      (if ((~< %0) %5) then (if (~! %7) then assert %8 <|
-            assert ((~|| %7) %8) <|
-            assert ((~==> ((~< %0) %5)) ((~|| %7) %8)) <|
-            assert ((~==> ((~< %0) #0)) ((~&& %7) ((~> %4) %0))) <|
-            (if ((~> %0) %5) then assert #false <| assume #false <| skip else skip)
-          else assert ((~|| %7) %8) <|
-            assert ((~==> ((~< %0) %5)) ((~|| %7) %8)) <|
-            assert ((~==> ((~< %0) #0)) ((~&& %7) ((~> %4) %0))) <|
-            (if ((~> %0) %5) then assert #false <| assume #false <| skip else skip))
-       else assert ((~==> ((~< %0) %5)) ((~|| %7) %8)) <|
-         assert ((~==> ((~< %0) #0)) ((~&& %7) ((~> %4) %0))) <|
-         (if ((~> %0) %5) then assert #false <| assume #false <| skip else skip)))
- else let % := %3;
-   (if ((~&& %6) ((~> %0) %2)) then let % : int := ((~- %0) %2);
-      let % := %1;
-      assert ((~==> (~! %7)) ((~> %0) #0)) <|
-      assert ((~==> ((~< %4) %5)) ((~> %0) #0)) <|
-      (if ((~< %0) %5) then (if (~! %7) then assert %8 <|
-            assert ((~|| %7) %8) <|
-            assert ((~==> ((~< %0) %5)) ((~|| %7) %8)) <|
-            assert ((~==> ((~< %0) #0)) ((~&& %7) ((~> %4) %0))) <|
-            (if ((~> %0) %5) then assert #false <| assume #false <| skip else skip)
-          else assert ((~|| %7) %8) <|
-            assert ((~==> ((~< %0) %5)) ((~|| %7) %8)) <|
-            assert ((~==> ((~< %0) #0)) ((~&& %7) ((~> %4) %0))) <|
-            (if ((~> %0) %5) then assert #false <| assume #false <| skip else skip))
-       else assert ((~==> ((~< %0) %5)) ((~|| %7) %8)) <|
-         assert ((~==> ((~< %0) #0)) ((~&& %7) ((~> %4) %0))) <|
-         (if ((~> %0) %5) then assert #false <| assume #false <| skip else skip))
-    else let % := %0;
-      assert ((~==> (~! %6)) ((~> %0) #0)) <|
-      assert ((~==> ((~< %3) %4)) ((~> %0) #0)) <|
-      (if ((~< %0) %4) then (if (~! %6) then assert %7 <|
-            assert ((~|| %6) %7) <|
-            assert ((~==> ((~< %0) %4)) ((~|| %6) %7)) <|
-            assert ((~==> ((~< %0) #0)) ((~&& %6) ((~> %3) %0))) <|
-            (if ((~> %0) %4) then assert #false <| assume #false <| skip else skip)
-          else assert ((~|| %6) %7) <|
-            assert ((~==> ((~< %0) %4)) ((~|| %6) %7)) <|
-            assert ((~==> ((~< %0) #0)) ((~&& %6) ((~> %3) %0))) <|
-            (if ((~> %0) %4) then assert #false <| assume #false <| skip else skip))
-       else assert ((~==> ((~< %0) %4)) ((~|| %6) %7)) <|
-         assert ((~==> ((~< %0) #0)) ((~&& %6) ((~> %3) %0))) <|
-         (if ((~> %0) %4) then assert #false <| assume #false <| skip else skip))))
+info: let λsuperDiscount : bool;
+let λdiscount : bool;
+let λprice : int;
+let λprice0 : int := price%0;
+let λdiscountAmount : int;
+let λquantity : int;
+assume ((~> discountAmount%1) #0) <|
+assume ((~> price%3) #0) <|
+(if discount%4 then let λprice : int := ((~- price%3) discountAmount%1);
+   let λprice := price%4;
+   (if ((~&& superDiscount%7) ((~> price%0) discountAmount%3)) then let λprice : int := ((~- price%0) discountAmount%3);
+      let λprice := price%1;
+      assert ((~==> (~! discount%8)) ((~> price%0) #0)) <|
+      assert ((~==> ((~< discountAmount%5) price0%6)) ((~> price%0) #0)) <|
+      (if ((~< price%0) price0%6) then (if (~! discount%8) then assert superDiscount%9 <|
+            assert ((~|| discount%8) superDiscount%9) <|
+            assert ((~==> ((~< price%0) price0%6)) ((~|| discount%8) superDiscount%9)) <|
+            assert ((~==> ((~< price%0) #0)) ((~&& discount%8) ((~> discountAmount%5) price%0))) <|
+            (if ((~> price%0) price0%6) then assert #false <| assume #false <| skip else skip)
+          else assert ((~|| discount%8) superDiscount%9) <|
+            assert ((~==> ((~< price%0) price0%6)) ((~|| discount%8) superDiscount%9)) <|
+            assert ((~==> ((~< price%0) #0)) ((~&& discount%8) ((~> discountAmount%5) price%0))) <|
+            (if ((~> price%0) price0%6) then assert #false <| assume #false <| skip else skip))
+       else assert ((~==> ((~< price%0) price0%6)) ((~|| discount%8) superDiscount%9)) <|
+         assert ((~==> ((~< price%0) #0)) ((~&& discount%8) ((~> discountAmount%5) price%0))) <|
+         (if ((~> price%0) price0%6) then assert #false <| assume #false <| skip else skip))
+    else let λprice := price%0;
+      assert ((~==> (~! discount%7)) ((~> price%0) #0)) <|
+      assert ((~==> ((~< discountAmount%4) price0%5)) ((~> price%0) #0)) <|
+      (if ((~< price%0) price0%5) then (if (~! discount%7) then assert superDiscount%8 <|
+            assert ((~|| discount%7) superDiscount%8) <|
+            assert ((~==> ((~< price%0) price0%5)) ((~|| discount%7) superDiscount%8)) <|
+            assert ((~==> ((~< price%0) #0)) ((~&& discount%7) ((~> discountAmount%4) price%0))) <|
+            (if ((~> price%0) price0%5) then assert #false <| assume #false <| skip else skip)
+          else assert ((~|| discount%7) superDiscount%8) <|
+            assert ((~==> ((~< price%0) price0%5)) ((~|| discount%7) superDiscount%8)) <|
+            assert ((~==> ((~< price%0) #0)) ((~&& discount%7) ((~> discountAmount%4) price%0))) <|
+            (if ((~> price%0) price0%5) then assert #false <| assume #false <| skip else skip))
+       else assert ((~==> ((~< price%0) price0%5)) ((~|| discount%7) superDiscount%8)) <|
+         assert ((~==> ((~< price%0) #0)) ((~&& discount%7) ((~> discountAmount%4) price%0))) <|
+         (if ((~> price%0) price0%5) then assert #false <| assume #false <| skip else skip)))
+ else let λprice := price%3;
+   (if ((~&& superDiscount%6) ((~> price%0) discountAmount%2)) then let λprice : int := ((~- price%0) discountAmount%2);
+      let λprice := price%1;
+      assert ((~==> (~! discount%7)) ((~> price%0) #0)) <|
+      assert ((~==> ((~< discountAmount%4) price0%5)) ((~> price%0) #0)) <|
+      (if ((~< price%0) price0%5) then (if (~! discount%7) then assert superDiscount%8 <|
+            assert ((~|| discount%7) superDiscount%8) <|
+            assert ((~==> ((~< price%0) price0%5)) ((~|| discount%7) superDiscount%8)) <|
+            assert ((~==> ((~< price%0) #0)) ((~&& discount%7) ((~> discountAmount%4) price%0))) <|
+            (if ((~> price%0) price0%5) then assert #false <| assume #false <| skip else skip)
+          else assert ((~|| discount%7) superDiscount%8) <|
+            assert ((~==> ((~< price%0) price0%5)) ((~|| discount%7) superDiscount%8)) <|
+            assert ((~==> ((~< price%0) #0)) ((~&& discount%7) ((~> discountAmount%4) price%0))) <|
+            (if ((~> price%0) price0%5) then assert #false <| assume #false <| skip else skip))
+       else assert ((~==> ((~< price%0) price0%5)) ((~|| discount%7) superDiscount%8)) <|
+         assert ((~==> ((~< price%0) #0)) ((~&& discount%7) ((~> discountAmount%4) price%0))) <|
+         (if ((~> price%0) price0%5) then assert #false <| assume #false <| skip else skip))
+    else let λprice := price%0;
+      assert ((~==> (~! discount%6)) ((~> price%0) #0)) <|
+      assert ((~==> ((~< discountAmount%3) price0%4)) ((~> price%0) #0)) <|
+      (if ((~< price%0) price0%4) then (if (~! discount%6) then assert superDiscount%7 <|
+            assert ((~|| discount%6) superDiscount%7) <|
+            assert ((~==> ((~< price%0) price0%4)) ((~|| discount%6) superDiscount%7)) <|
+            assert ((~==> ((~< price%0) #0)) ((~&& discount%6) ((~> discountAmount%3) price%0))) <|
+            (if ((~> price%0) price0%4) then assert #false <| assume #false <| skip else skip)
+          else assert ((~|| discount%6) superDiscount%7) <|
+            assert ((~==> ((~< price%0) price0%4)) ((~|| discount%6) superDiscount%7)) <|
+            assert ((~==> ((~< price%0) #0)) ((~&& discount%6) ((~> discountAmount%3) price%0))) <|
+            (if ((~> price%0) price0%4) then assert #false <| assume #false <| skip else skip))
+       else assert ((~==> ((~< price%0) price0%4)) ((~|| discount%6) superDiscount%7)) <|
+         assert ((~==> ((~< price%0) #0)) ((~&& discount%6) ((~> discountAmount%3) price%0))) <|
+         (if ((~> price%0) price0%4) then assert #false <| assume #false <| skip else skip))))
 -/
 #guard_msgs in
 #eval format (progIfStmt |>
@@ -685,57 +700,57 @@ assume ((~> %3) #0) <|
     )
 
 /--
-info: let % : bool;
-let % : bool;
-let % : int;
-let % : int;
-assume (%0 == %1) <|
-let % : int;
-let % : int;
-assume ((~> %1) #0) <|
-assume ((~> %3) #0) <|
+info: let λsuperDiscount : bool;
+let λdiscount : bool;
+let λprice : int;
+let λprice0 : int;
+assume (price0%0 == price%1) <|
+let λdiscountAmount : int;
+let λquantity : int;
+assume ((~> discountAmount%1) #0) <|
+assume ((~> price%3) #0) <|
 pushpop (
-  assume %4 <|
-  let % : int;
-  assume (%0 == ((~- %4) %2)) <|
-  let %;
-  assume (%0 == %5) <|
+  assume discount%4 <|
+  let λprice : int;
+  assume (price%0 == ((~- price%4) discountAmount%2)) <|
+  let λprice;
+  assume (price%0 == price%5) <|
   pushpop (
-    assume ((~&& %7) ((~> %0) %3)) <|
-    let % : int;
-    assume (%0 == ((~- %1) %4)) <|
-    let %;
-    assume (%0 == %2) <|
+    assume ((~&& superDiscount%7) ((~> price%0) discountAmount%3)) <|
+    let λprice : int;
+    assume (price%0 == ((~- price%1) discountAmount%4)) <|
+    let λprice;
+    assume (price%0 == price%2) <|
     pushpop (
-      assume (~! ((~==> (~! %8)) ((~> %0) #0))) <|
+      assume (~! ((~==> (~! discount%8)) ((~> price%0) #0))) <|
       error
     ) <|
     pushpop (
-      assume (~! ((~==> ((~< %5) %6)) ((~> %0) #0))) <|
+      assume (~! ((~==> ((~< discountAmount%5) price0%6)) ((~> price%0) #0))) <|
       error
     ) <|
     pushpop (
-      assume ((~< %0) %6) <|
+      assume ((~< price%0) price0%6) <|
       pushpop (
-        assume (~! %8) <|
+        assume (~! discount%8) <|
         pushpop (
-          assume (~! %9) <|
+          assume (~! superDiscount%9) <|
           error
         ) <|
         pushpop (
-          assume (~! ((~|| %8) %9)) <|
+          assume (~! ((~|| discount%8) superDiscount%9)) <|
           error
         ) <|
         pushpop (
-          assume (~! ((~==> ((~< %0) %6)) ((~|| %8) %9))) <|
+          assume (~! ((~==> ((~< price%0) price0%6)) ((~|| discount%8) superDiscount%9))) <|
           error
         ) <|
         pushpop (
-          assume (~! ((~==> ((~< %0) #0)) ((~&& %8) ((~> %5) %0)))) <|
+          assume (~! ((~==> ((~< price%0) #0)) ((~&& discount%8) ((~> discountAmount%5) price%0)))) <|
           error
         ) <|
         pushpop (
-          assume ((~> %0) %6) <|
+          assume ((~> price%0) price0%6) <|
           pushpop (
             assume (~! #false) <|
             error
@@ -743,24 +758,24 @@ pushpop (
           assume #false <|
           skip
         ) <|
-        assume (~! ((~> %0) %6)) <|
+        assume (~! ((~> price%0) price0%6)) <|
         skip
       ) <|
-      assume (~! (~! %8)) <|
+      assume (~! (~! discount%8)) <|
       pushpop (
-        assume (~! ((~|| %8) %9)) <|
+        assume (~! ((~|| discount%8) superDiscount%9)) <|
         error
       ) <|
       pushpop (
-        assume (~! ((~==> ((~< %0) %6)) ((~|| %8) %9))) <|
+        assume (~! ((~==> ((~< price%0) price0%6)) ((~|| discount%8) superDiscount%9))) <|
         error
       ) <|
       pushpop (
-        assume (~! ((~==> ((~< %0) #0)) ((~&& %8) ((~> %5) %0)))) <|
+        assume (~! ((~==> ((~< price%0) #0)) ((~&& discount%8) ((~> discountAmount%5) price%0)))) <|
         error
       ) <|
       pushpop (
-        assume ((~> %0) %6) <|
+        assume ((~> price%0) price0%6) <|
         pushpop (
           assume (~! #false) <|
           error
@@ -768,20 +783,20 @@ pushpop (
         assume #false <|
         skip
       ) <|
-      assume (~! ((~> %0) %6)) <|
+      assume (~! ((~> price%0) price0%6)) <|
       skip
     ) <|
-    assume (~! ((~< %0) %6)) <|
+    assume (~! ((~< price%0) price0%6)) <|
     pushpop (
-      assume (~! ((~==> ((~< %0) %6)) ((~|| %8) %9))) <|
+      assume (~! ((~==> ((~< price%0) price0%6)) ((~|| discount%8) superDiscount%9))) <|
       error
     ) <|
     pushpop (
-      assume (~! ((~==> ((~< %0) #0)) ((~&& %8) ((~> %5) %0)))) <|
+      assume (~! ((~==> ((~< price%0) #0)) ((~&& discount%8) ((~> discountAmount%5) price%0)))) <|
       error
     ) <|
     pushpop (
-      assume ((~> %0) %6) <|
+      assume ((~> price%0) price0%6) <|
       pushpop (
         assume (~! #false) <|
         error
@@ -789,42 +804,42 @@ pushpop (
       assume #false <|
       skip
     ) <|
-    assume (~! ((~> %0) %6)) <|
+    assume (~! ((~> price%0) price0%6)) <|
     skip
   ) <|
-  assume (~! ((~&& %7) ((~> %0) %3))) <|
-  let %;
-  assume (%0 == %1) <|
+  assume (~! ((~&& superDiscount%7) ((~> price%0) discountAmount%3))) <|
+  let λprice;
+  assume (price%0 == price%1) <|
   pushpop (
-    assume (~! ((~==> (~! %7)) ((~> %0) #0))) <|
+    assume (~! ((~==> (~! discount%7)) ((~> price%0) #0))) <|
     error
   ) <|
   pushpop (
-    assume (~! ((~==> ((~< %4) %5)) ((~> %0) #0))) <|
+    assume (~! ((~==> ((~< discountAmount%4) price0%5)) ((~> price%0) #0))) <|
     error
   ) <|
   pushpop (
-    assume ((~< %0) %5) <|
+    assume ((~< price%0) price0%5) <|
     pushpop (
-      assume (~! %7) <|
+      assume (~! discount%7) <|
       pushpop (
-        assume (~! %8) <|
+        assume (~! superDiscount%8) <|
         error
       ) <|
       pushpop (
-        assume (~! ((~|| %7) %8)) <|
+        assume (~! ((~|| discount%7) superDiscount%8)) <|
         error
       ) <|
       pushpop (
-        assume (~! ((~==> ((~< %0) %5)) ((~|| %7) %8))) <|
+        assume (~! ((~==> ((~< price%0) price0%5)) ((~|| discount%7) superDiscount%8))) <|
         error
       ) <|
       pushpop (
-        assume (~! ((~==> ((~< %0) #0)) ((~&& %7) ((~> %4) %0)))) <|
+        assume (~! ((~==> ((~< price%0) #0)) ((~&& discount%7) ((~> discountAmount%4) price%0)))) <|
         error
       ) <|
       pushpop (
-        assume ((~> %0) %5) <|
+        assume ((~> price%0) price0%5) <|
         pushpop (
           assume (~! #false) <|
           error
@@ -832,24 +847,24 @@ pushpop (
         assume #false <|
         skip
       ) <|
-      assume (~! ((~> %0) %5)) <|
+      assume (~! ((~> price%0) price0%5)) <|
       skip
     ) <|
-    assume (~! (~! %7)) <|
+    assume (~! (~! discount%7)) <|
     pushpop (
-      assume (~! ((~|| %7) %8)) <|
+      assume (~! ((~|| discount%7) superDiscount%8)) <|
       error
     ) <|
     pushpop (
-      assume (~! ((~==> ((~< %0) %5)) ((~|| %7) %8))) <|
+      assume (~! ((~==> ((~< price%0) price0%5)) ((~|| discount%7) superDiscount%8))) <|
       error
     ) <|
     pushpop (
-      assume (~! ((~==> ((~< %0) #0)) ((~&& %7) ((~> %4) %0)))) <|
+      assume (~! ((~==> ((~< price%0) #0)) ((~&& discount%7) ((~> discountAmount%4) price%0)))) <|
       error
     ) <|
     pushpop (
-      assume ((~> %0) %5) <|
+      assume ((~> price%0) price0%5) <|
       pushpop (
         assume (~! #false) <|
         error
@@ -857,20 +872,20 @@ pushpop (
       assume #false <|
       skip
     ) <|
-    assume (~! ((~> %0) %5)) <|
+    assume (~! ((~> price%0) price0%5)) <|
     skip
   ) <|
-  assume (~! ((~< %0) %5)) <|
+  assume (~! ((~< price%0) price0%5)) <|
   pushpop (
-    assume (~! ((~==> ((~< %0) %5)) ((~|| %7) %8))) <|
+    assume (~! ((~==> ((~< price%0) price0%5)) ((~|| discount%7) superDiscount%8))) <|
     error
   ) <|
   pushpop (
-    assume (~! ((~==> ((~< %0) #0)) ((~&& %7) ((~> %4) %0)))) <|
+    assume (~! ((~==> ((~< price%0) #0)) ((~&& discount%7) ((~> discountAmount%4) price%0)))) <|
     error
   ) <|
   pushpop (
-    assume ((~> %0) %5) <|
+    assume ((~> price%0) price0%5) <|
     pushpop (
       assume (~! #false) <|
       error
@@ -878,48 +893,48 @@ pushpop (
     assume #false <|
     skip
   ) <|
-  assume (~! ((~> %0) %5)) <|
+  assume (~! ((~> price%0) price0%5)) <|
   skip
 ) <|
-assume (~! %4) <|
-let %;
-assume (%0 == %4) <|
+assume (~! discount%4) <|
+let λprice;
+assume (price%0 == price%4) <|
 pushpop (
-  assume ((~&& %6) ((~> %0) %2)) <|
-  let % : int;
-  assume (%0 == ((~- %1) %3)) <|
-  let %;
-  assume (%0 == %2) <|
+  assume ((~&& superDiscount%6) ((~> price%0) discountAmount%2)) <|
+  let λprice : int;
+  assume (price%0 == ((~- price%1) discountAmount%3)) <|
+  let λprice;
+  assume (price%0 == price%2) <|
   pushpop (
-    assume (~! ((~==> (~! %7)) ((~> %0) #0))) <|
+    assume (~! ((~==> (~! discount%7)) ((~> price%0) #0))) <|
     error
   ) <|
   pushpop (
-    assume (~! ((~==> ((~< %4) %5)) ((~> %0) #0))) <|
+    assume (~! ((~==> ((~< discountAmount%4) price0%5)) ((~> price%0) #0))) <|
     error
   ) <|
   pushpop (
-    assume ((~< %0) %5) <|
+    assume ((~< price%0) price0%5) <|
     pushpop (
-      assume (~! %7) <|
+      assume (~! discount%7) <|
       pushpop (
-        assume (~! %8) <|
+        assume (~! superDiscount%8) <|
         error
       ) <|
       pushpop (
-        assume (~! ((~|| %7) %8)) <|
+        assume (~! ((~|| discount%7) superDiscount%8)) <|
         error
       ) <|
       pushpop (
-        assume (~! ((~==> ((~< %0) %5)) ((~|| %7) %8))) <|
+        assume (~! ((~==> ((~< price%0) price0%5)) ((~|| discount%7) superDiscount%8))) <|
         error
       ) <|
       pushpop (
-        assume (~! ((~==> ((~< %0) #0)) ((~&& %7) ((~> %4) %0)))) <|
+        assume (~! ((~==> ((~< price%0) #0)) ((~&& discount%7) ((~> discountAmount%4) price%0)))) <|
         error
       ) <|
       pushpop (
-        assume ((~> %0) %5) <|
+        assume ((~> price%0) price0%5) <|
         pushpop (
           assume (~! #false) <|
           error
@@ -927,24 +942,24 @@ pushpop (
         assume #false <|
         skip
       ) <|
-      assume (~! ((~> %0) %5)) <|
+      assume (~! ((~> price%0) price0%5)) <|
       skip
     ) <|
-    assume (~! (~! %7)) <|
+    assume (~! (~! discount%7)) <|
     pushpop (
-      assume (~! ((~|| %7) %8)) <|
+      assume (~! ((~|| discount%7) superDiscount%8)) <|
       error
     ) <|
     pushpop (
-      assume (~! ((~==> ((~< %0) %5)) ((~|| %7) %8))) <|
+      assume (~! ((~==> ((~< price%0) price0%5)) ((~|| discount%7) superDiscount%8))) <|
       error
     ) <|
     pushpop (
-      assume (~! ((~==> ((~< %0) #0)) ((~&& %7) ((~> %4) %0)))) <|
+      assume (~! ((~==> ((~< price%0) #0)) ((~&& discount%7) ((~> discountAmount%4) price%0)))) <|
       error
     ) <|
     pushpop (
-      assume ((~> %0) %5) <|
+      assume ((~> price%0) price0%5) <|
       pushpop (
         assume (~! #false) <|
         error
@@ -952,20 +967,20 @@ pushpop (
       assume #false <|
       skip
     ) <|
-    assume (~! ((~> %0) %5)) <|
+    assume (~! ((~> price%0) price0%5)) <|
     skip
   ) <|
-  assume (~! ((~< %0) %5)) <|
+  assume (~! ((~< price%0) price0%5)) <|
   pushpop (
-    assume (~! ((~==> ((~< %0) %5)) ((~|| %7) %8))) <|
+    assume (~! ((~==> ((~< price%0) price0%5)) ((~|| discount%7) superDiscount%8))) <|
     error
   ) <|
   pushpop (
-    assume (~! ((~==> ((~< %0) #0)) ((~&& %7) ((~> %4) %0)))) <|
+    assume (~! ((~==> ((~< price%0) #0)) ((~&& discount%7) ((~> discountAmount%4) price%0)))) <|
     error
   ) <|
   pushpop (
-    assume ((~> %0) %5) <|
+    assume ((~> price%0) price0%5) <|
     pushpop (
       assume (~! #false) <|
       error
@@ -973,42 +988,42 @@ pushpop (
     assume #false <|
     skip
   ) <|
-  assume (~! ((~> %0) %5)) <|
+  assume (~! ((~> price%0) price0%5)) <|
   skip
 ) <|
-assume (~! ((~&& %6) ((~> %0) %2))) <|
-let %;
-assume (%0 == %1) <|
+assume (~! ((~&& superDiscount%6) ((~> price%0) discountAmount%2))) <|
+let λprice;
+assume (price%0 == price%1) <|
 pushpop (
-  assume (~! ((~==> (~! %6)) ((~> %0) #0))) <|
+  assume (~! ((~==> (~! discount%6)) ((~> price%0) #0))) <|
   error
 ) <|
 pushpop (
-  assume (~! ((~==> ((~< %3) %4)) ((~> %0) #0))) <|
+  assume (~! ((~==> ((~< discountAmount%3) price0%4)) ((~> price%0) #0))) <|
   error
 ) <|
 pushpop (
-  assume ((~< %0) %4) <|
+  assume ((~< price%0) price0%4) <|
   pushpop (
-    assume (~! %6) <|
+    assume (~! discount%6) <|
     pushpop (
-      assume (~! %7) <|
+      assume (~! superDiscount%7) <|
       error
     ) <|
     pushpop (
-      assume (~! ((~|| %6) %7)) <|
+      assume (~! ((~|| discount%6) superDiscount%7)) <|
       error
     ) <|
     pushpop (
-      assume (~! ((~==> ((~< %0) %4)) ((~|| %6) %7))) <|
+      assume (~! ((~==> ((~< price%0) price0%4)) ((~|| discount%6) superDiscount%7))) <|
       error
     ) <|
     pushpop (
-      assume (~! ((~==> ((~< %0) #0)) ((~&& %6) ((~> %3) %0)))) <|
+      assume (~! ((~==> ((~< price%0) #0)) ((~&& discount%6) ((~> discountAmount%3) price%0)))) <|
       error
     ) <|
     pushpop (
-      assume ((~> %0) %4) <|
+      assume ((~> price%0) price0%4) <|
       pushpop (
         assume (~! #false) <|
         error
@@ -1016,24 +1031,24 @@ pushpop (
       assume #false <|
       skip
     ) <|
-    assume (~! ((~> %0) %4)) <|
+    assume (~! ((~> price%0) price0%4)) <|
     skip
   ) <|
-  assume (~! (~! %6)) <|
+  assume (~! (~! discount%6)) <|
   pushpop (
-    assume (~! ((~|| %6) %7)) <|
+    assume (~! ((~|| discount%6) superDiscount%7)) <|
     error
   ) <|
   pushpop (
-    assume (~! ((~==> ((~< %0) %4)) ((~|| %6) %7))) <|
+    assume (~! ((~==> ((~< price%0) price0%4)) ((~|| discount%6) superDiscount%7))) <|
     error
   ) <|
   pushpop (
-    assume (~! ((~==> ((~< %0) #0)) ((~&& %6) ((~> %3) %0)))) <|
+    assume (~! ((~==> ((~< price%0) #0)) ((~&& discount%6) ((~> discountAmount%3) price%0)))) <|
     error
   ) <|
   pushpop (
-    assume ((~> %0) %4) <|
+    assume ((~> price%0) price0%4) <|
     pushpop (
       assume (~! #false) <|
       error
@@ -1041,20 +1056,20 @@ pushpop (
     assume #false <|
     skip
   ) <|
-  assume (~! ((~> %0) %4)) <|
+  assume (~! ((~> price%0) price0%4)) <|
   skip
 ) <|
-assume (~! ((~< %0) %4)) <|
+assume (~! ((~< price%0) price0%4)) <|
 pushpop (
-  assume (~! ((~==> ((~< %0) %4)) ((~|| %6) %7))) <|
+  assume (~! ((~==> ((~< price%0) price0%4)) ((~|| discount%6) superDiscount%7))) <|
   error
 ) <|
 pushpop (
-  assume (~! ((~==> ((~< %0) #0)) ((~&& %6) ((~> %3) %0)))) <|
+  assume (~! ((~==> ((~< price%0) #0)) ((~&& discount%6) ((~> discountAmount%3) price%0)))) <|
   error
 ) <|
 pushpop (
-  assume ((~> %0) %4) <|
+  assume ((~> price%0) price0%4) <|
   pushpop (
     assume (~! #false) <|
     error
@@ -1062,7 +1077,7 @@ pushpop (
   assume #false <|
   skip
 ) <|
-assume (~! ((~> %0) %4)) <|
+assume (~! ((~> price%0) price0%4)) <|
 skip
 -/
 #guard_msgs in
@@ -1073,57 +1088,57 @@ skip
     )
 
 /--
-info: (declare-const b0 Bool)
-(declare-const b1 Bool)
-(declare-const b2 Int)
-(declare-const b3 Int)
-(assert (= b3 b2))
-(declare-const b4 Int)
-(declare-const b5 Int)
-(assert (> b4 0))
-(assert (> b2 0))
+info: (declare-const superDiscount@0 Bool)
+(declare-const discount@1 Bool)
+(declare-const price@2 Int)
+(declare-const price0@3 Int)
+(assert (= price0@3 price@2))
+(declare-const discountAmount@4 Int)
+(declare-const quantity@5 Int)
+(assert (> discountAmount@4 0))
+(assert (> price@2 0))
 (push)
-(assert b1)
-(declare-const b6 Int)
-(assert (= b6 (- b2 b4)))
-(declare-const b7 Int)
-(assert (= b7 b2))
+(assert discount@1)
+(declare-const price@6 Int)
+(assert (= price@6 (- price@2 discountAmount@4)))
+(declare-const price@7 Int)
+(assert (= price@7 price@2))
 (push)
-(assert (and b0 (> b7 b4)))
-(declare-const b8 Int)
-(assert (= b8 (- b7 b4)))
-(declare-const b9 Int)
-(assert (= b9 b7))
+(assert (and superDiscount@0 (> price@7 discountAmount@4)))
+(declare-const price@8 Int)
+(assert (= price@8 (- price@7 discountAmount@4)))
+(declare-const price@9 Int)
+(assert (= price@9 price@7))
 (push)
-(assert (not (=> (not b1) (> b9 0))))
+(assert (not (=> (not discount@1) (> price@9 0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b4 b3) (> b9 0))))
+(assert (not (=> (< discountAmount@4 price0@3) (> price@9 0))))
 (check-sat)
 (pop)
 (push)
-(assert (< b9 b3))
+(assert (< price@9 price0@3))
 (push)
-(assert (not b1))
+(assert (not discount@1))
 (push)
-(assert (not b0))
+(assert (not superDiscount@0))
 (check-sat)
 (pop)
 (push)
-(assert (not (or b1 b0)))
+(assert (not (or discount@1 superDiscount@0)))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b9 b3) (or b1 b0))))
+(assert (not (=> (< price@9 price0@3) (or discount@1 superDiscount@0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b9 0) (and b1 (> b4 b9)))))
+(assert (not (=> (< price@9 0) (and discount@1 (> discountAmount@4 price@9)))))
 (check-sat)
 (pop)
 (push)
-(assert (> b9 b3))
+(assert (> price@9 price0@3))
 (push)
 (assert (not false))
 (check-sat)
@@ -1131,24 +1146,24 @@ info: (declare-const b0 Bool)
 (assert false)
 
 (pop)
-(assert (not (> b9 b3)))
+(assert (not (> price@9 price0@3)))
 
 (pop)
-(assert (not (not b1)))
+(assert (not (not discount@1)))
 (push)
-(assert (not (or b1 b0)))
+(assert (not (or discount@1 superDiscount@0)))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b9 b3) (or b1 b0))))
+(assert (not (=> (< price@9 price0@3) (or discount@1 superDiscount@0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b9 0) (and b1 (> b4 b9)))))
+(assert (not (=> (< price@9 0) (and discount@1 (> discountAmount@4 price@9)))))
 (check-sat)
 (pop)
 (push)
-(assert (> b9 b3))
+(assert (> price@9 price0@3))
 (push)
 (assert (not false))
 (check-sat)
@@ -1156,20 +1171,20 @@ info: (declare-const b0 Bool)
 (assert false)
 
 (pop)
-(assert (not (> b9 b3)))
+(assert (not (> price@9 price0@3)))
 
 (pop)
-(assert (not (< b9 b3)))
+(assert (not (< price@9 price0@3)))
 (push)
-(assert (not (=> (< b9 b3) (or b1 b0))))
+(assert (not (=> (< price@9 price0@3) (or discount@1 superDiscount@0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b9 0) (and b1 (> b4 b9)))))
+(assert (not (=> (< price@9 0) (and discount@1 (> discountAmount@4 price@9)))))
 (check-sat)
 (pop)
 (push)
-(assert (> b9 b3))
+(assert (> price@9 price0@3))
 (push)
 (assert (not false))
 (check-sat)
@@ -1177,42 +1192,42 @@ info: (declare-const b0 Bool)
 (assert false)
 
 (pop)
-(assert (not (> b9 b3)))
+(assert (not (> price@9 price0@3)))
 
 (pop)
-(assert (not (and b0 (> b7 b4))))
-(declare-const b8 Int)
-(assert (= b8 b7))
+(assert (not (and superDiscount@0 (> price@7 discountAmount@4))))
+(declare-const price@8 Int)
+(assert (= price@8 price@7))
 (push)
-(assert (not (=> (not b1) (> b8 0))))
+(assert (not (=> (not discount@1) (> price@8 0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b4 b3) (> b8 0))))
+(assert (not (=> (< discountAmount@4 price0@3) (> price@8 0))))
 (check-sat)
 (pop)
 (push)
-(assert (< b8 b3))
+(assert (< price@8 price0@3))
 (push)
-(assert (not b1))
+(assert (not discount@1))
 (push)
-(assert (not b0))
+(assert (not superDiscount@0))
 (check-sat)
 (pop)
 (push)
-(assert (not (or b1 b0)))
+(assert (not (or discount@1 superDiscount@0)))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b8 b3) (or b1 b0))))
+(assert (not (=> (< price@8 price0@3) (or discount@1 superDiscount@0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b8 0) (and b1 (> b4 b8)))))
+(assert (not (=> (< price@8 0) (and discount@1 (> discountAmount@4 price@8)))))
 (check-sat)
 (pop)
 (push)
-(assert (> b8 b3))
+(assert (> price@8 price0@3))
 (push)
 (assert (not false))
 (check-sat)
@@ -1220,24 +1235,24 @@ info: (declare-const b0 Bool)
 (assert false)
 
 (pop)
-(assert (not (> b8 b3)))
+(assert (not (> price@8 price0@3)))
 
 (pop)
-(assert (not (not b1)))
+(assert (not (not discount@1)))
 (push)
-(assert (not (or b1 b0)))
+(assert (not (or discount@1 superDiscount@0)))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b8 b3) (or b1 b0))))
+(assert (not (=> (< price@8 price0@3) (or discount@1 superDiscount@0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b8 0) (and b1 (> b4 b8)))))
+(assert (not (=> (< price@8 0) (and discount@1 (> discountAmount@4 price@8)))))
 (check-sat)
 (pop)
 (push)
-(assert (> b8 b3))
+(assert (> price@8 price0@3))
 (push)
 (assert (not false))
 (check-sat)
@@ -1245,20 +1260,20 @@ info: (declare-const b0 Bool)
 (assert false)
 
 (pop)
-(assert (not (> b8 b3)))
+(assert (not (> price@8 price0@3)))
 
 (pop)
-(assert (not (< b8 b3)))
+(assert (not (< price@8 price0@3)))
 (push)
-(assert (not (=> (< b8 b3) (or b1 b0))))
+(assert (not (=> (< price@8 price0@3) (or discount@1 superDiscount@0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b8 0) (and b1 (> b4 b8)))))
+(assert (not (=> (< price@8 0) (and discount@1 (> discountAmount@4 price@8)))))
 (check-sat)
 (pop)
 (push)
-(assert (> b8 b3))
+(assert (> price@8 price0@3))
 (push)
 (assert (not false))
 (check-sat)
@@ -1266,48 +1281,48 @@ info: (declare-const b0 Bool)
 (assert false)
 
 (pop)
-(assert (not (> b8 b3)))
+(assert (not (> price@8 price0@3)))
 
 (pop)
-(assert (not b1))
-(declare-const b6 Int)
-(assert (= b6 b2))
+(assert (not discount@1))
+(declare-const price@6 Int)
+(assert (= price@6 price@2))
 (push)
-(assert (and b0 (> b6 b4)))
-(declare-const b7 Int)
-(assert (= b7 (- b6 b4)))
-(declare-const b8 Int)
-(assert (= b8 b6))
+(assert (and superDiscount@0 (> price@6 discountAmount@4)))
+(declare-const price@7 Int)
+(assert (= price@7 (- price@6 discountAmount@4)))
+(declare-const price@8 Int)
+(assert (= price@8 price@6))
 (push)
-(assert (not (=> (not b1) (> b8 0))))
+(assert (not (=> (not discount@1) (> price@8 0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b4 b3) (> b8 0))))
+(assert (not (=> (< discountAmount@4 price0@3) (> price@8 0))))
 (check-sat)
 (pop)
 (push)
-(assert (< b8 b3))
+(assert (< price@8 price0@3))
 (push)
-(assert (not b1))
+(assert (not discount@1))
 (push)
-(assert (not b0))
+(assert (not superDiscount@0))
 (check-sat)
 (pop)
 (push)
-(assert (not (or b1 b0)))
+(assert (not (or discount@1 superDiscount@0)))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b8 b3) (or b1 b0))))
+(assert (not (=> (< price@8 price0@3) (or discount@1 superDiscount@0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b8 0) (and b1 (> b4 b8)))))
+(assert (not (=> (< price@8 0) (and discount@1 (> discountAmount@4 price@8)))))
 (check-sat)
 (pop)
 (push)
-(assert (> b8 b3))
+(assert (> price@8 price0@3))
 (push)
 (assert (not false))
 (check-sat)
@@ -1315,24 +1330,24 @@ info: (declare-const b0 Bool)
 (assert false)
 
 (pop)
-(assert (not (> b8 b3)))
+(assert (not (> price@8 price0@3)))
 
 (pop)
-(assert (not (not b1)))
+(assert (not (not discount@1)))
 (push)
-(assert (not (or b1 b0)))
+(assert (not (or discount@1 superDiscount@0)))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b8 b3) (or b1 b0))))
+(assert (not (=> (< price@8 price0@3) (or discount@1 superDiscount@0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b8 0) (and b1 (> b4 b8)))))
+(assert (not (=> (< price@8 0) (and discount@1 (> discountAmount@4 price@8)))))
 (check-sat)
 (pop)
 (push)
-(assert (> b8 b3))
+(assert (> price@8 price0@3))
 (push)
 (assert (not false))
 (check-sat)
@@ -1340,20 +1355,20 @@ info: (declare-const b0 Bool)
 (assert false)
 
 (pop)
-(assert (not (> b8 b3)))
+(assert (not (> price@8 price0@3)))
 
 (pop)
-(assert (not (< b8 b3)))
+(assert (not (< price@8 price0@3)))
 (push)
-(assert (not (=> (< b8 b3) (or b1 b0))))
+(assert (not (=> (< price@8 price0@3) (or discount@1 superDiscount@0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b8 0) (and b1 (> b4 b8)))))
+(assert (not (=> (< price@8 0) (and discount@1 (> discountAmount@4 price@8)))))
 (check-sat)
 (pop)
 (push)
-(assert (> b8 b3))
+(assert (> price@8 price0@3))
 (push)
 (assert (not false))
 (check-sat)
@@ -1361,42 +1376,42 @@ info: (declare-const b0 Bool)
 (assert false)
 
 (pop)
-(assert (not (> b8 b3)))
+(assert (not (> price@8 price0@3)))
 
 (pop)
-(assert (not (and b0 (> b6 b4))))
-(declare-const b7 Int)
-(assert (= b7 b6))
+(assert (not (and superDiscount@0 (> price@6 discountAmount@4))))
+(declare-const price@7 Int)
+(assert (= price@7 price@6))
 (push)
-(assert (not (=> (not b1) (> b7 0))))
+(assert (not (=> (not discount@1) (> price@7 0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b4 b3) (> b7 0))))
+(assert (not (=> (< discountAmount@4 price0@3) (> price@7 0))))
 (check-sat)
 (pop)
 (push)
-(assert (< b7 b3))
+(assert (< price@7 price0@3))
 (push)
-(assert (not b1))
+(assert (not discount@1))
 (push)
-(assert (not b0))
+(assert (not superDiscount@0))
 (check-sat)
 (pop)
 (push)
-(assert (not (or b1 b0)))
+(assert (not (or discount@1 superDiscount@0)))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b7 b3) (or b1 b0))))
+(assert (not (=> (< price@7 price0@3) (or discount@1 superDiscount@0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b7 0) (and b1 (> b4 b7)))))
+(assert (not (=> (< price@7 0) (and discount@1 (> discountAmount@4 price@7)))))
 (check-sat)
 (pop)
 (push)
-(assert (> b7 b3))
+(assert (> price@7 price0@3))
 (push)
 (assert (not false))
 (check-sat)
@@ -1404,24 +1419,24 @@ info: (declare-const b0 Bool)
 (assert false)
 
 (pop)
-(assert (not (> b7 b3)))
+(assert (not (> price@7 price0@3)))
 
 (pop)
-(assert (not (not b1)))
+(assert (not (not discount@1)))
 (push)
-(assert (not (or b1 b0)))
+(assert (not (or discount@1 superDiscount@0)))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b7 b3) (or b1 b0))))
+(assert (not (=> (< price@7 price0@3) (or discount@1 superDiscount@0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b7 0) (and b1 (> b4 b7)))))
+(assert (not (=> (< price@7 0) (and discount@1 (> discountAmount@4 price@7)))))
 (check-sat)
 (pop)
 (push)
-(assert (> b7 b3))
+(assert (> price@7 price0@3))
 (push)
 (assert (not false))
 (check-sat)
@@ -1429,20 +1444,20 @@ info: (declare-const b0 Bool)
 (assert false)
 
 (pop)
-(assert (not (> b7 b3)))
+(assert (not (> price@7 price0@3)))
 
 (pop)
-(assert (not (< b7 b3)))
+(assert (not (< price@7 price0@3)))
 (push)
-(assert (not (=> (< b7 b3) (or b1 b0))))
+(assert (not (=> (< price@7 price0@3) (or discount@1 superDiscount@0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b7 0) (and b1 (> b4 b7)))))
+(assert (not (=> (< price@7 0) (and discount@1 (> discountAmount@4 price@7)))))
 (check-sat)
 (pop)
 (push)
-(assert (> b7 b3))
+(assert (> price@7 price0@3))
 (push)
 (assert (not false))
 (check-sat)
@@ -1450,7 +1465,7 @@ info: (declare-const b0 Bool)
 (assert false)
 
 (pop)
-(assert (not (> b7 b3)))
+(assert (not (> price@7 price0@3)))
 -/
 #guard_msgs in
 #eval ToSMT .topLevel (progIfStmt |>
@@ -1459,7 +1474,7 @@ info: (declare-const b0 Bool)
       ifToPushPop
     )
 
-
+-- HIGHLIGHT: Simple inout procedure
 /-
 procedure f(inout counter) {
   counter := 2;
@@ -1470,29 +1485,29 @@ assert counter == 2
 -/
 def procedureCallDebug: LExpr LTy String :=
   let c := .topLevel
-  let_assign c "f" .none (.abs .none (.abs .none (
-    let c := Context.topLevel.add_declare "counter" |>.add_declare "f#out"
+  procedure c "f" [("counter", _Int), ("f#out", .none)] (fun c =>
     assign c "counter" _Int (.const "2" .none) <| fun c =>
     .app (c.v "f#out") (c.v "counter")
-  ))) <| fun c =>
+  ) <| fun c =>
   let_assign c "counter" _Int (.const "3" .none) <| fun c =>
-  .app (.app (c.v "f") (c.v "counter")) <| .abs .none <|
-  let c := c.add_assign "counter"
+  call1_1 c "f" (c.v "counter") "counter" <| fun c =>
   assert (eq (c.v "counter") (.const "2" .none)) <|
   skip
 
 /--
-info: ((λ let % : int := #3; ((%1 %0) (λ assert (%0 == #2) <| skip)))) <| λ
-(λ let % : int := #2; (%1 %0))
+info: let λf := (λcounter:int (λf#out let λcounter : int := #2; (f#out%1 counter%0)));
+let λcounter : int := #3;
+((f%1 counter%0) (λcounter assert (counter%0 == #2) <| skip))
 -/
 #guard_msgs in
 #eval format procedureCallDebug
 
+-- Note how the 3 does not even appear in the final SMT file !
 /--
-info: (declare-const b0 Int)
-(assert (= b0 2))
+info: (declare-const counter@0 Int)
+(assert (= counter@0 2))
 (push)
-(assert (not (= b0 2)))
+(assert (not (= counter@0 2)))
 (check-sat)
 (pop)
 -/
@@ -1536,31 +1551,34 @@ def procedureCall: LExpr LTy String :=
 
 -- HIGHLIGHT
 /--
-info: ((λ let % : int := #3;
- ((%1 %0) (λ ((%2 %0) (λ assert ((~&& ((~<= #3) %0)) ((~<= %0) #7)) <|
-     assert ((~|| ((~|| (%0 == #3)) (%0 == #5))) (%0 == #3)) <|
-     skip)))))) <| λ : int
-(λ let % : int; assume ((~&& ((~<= #0) %0)) ((~<= %0) #2)) <| let % : int := ((~+ %2) %0); (%2 %0))
+info: let λf := (λcounter:int (λf_return let λinc : int;
+    assume ((~&& ((~<= #0) inc%0)) ((~<= inc%0) #2)) <|
+    let λcounter : int := ((~+ counter%2) inc%0);
+    (f_return%2 counter%0)));
+let λcounter : int := #3;
+((f%1 counter%0) (λcounter ((f%2 counter%0) (λcounter assert ((~&& ((~<= #3) counter%0)) ((~<= counter%0) #7)) <|
+    assert ((~|| ((~|| (counter%0 == #3)) (counter%0 == #5))) (counter%0 == #3)) <|
+    skip))))
 -/
 #guard_msgs in
 #eval format procedureCall
 
 
 /--
-info: (declare-const b0 Int)
-(assert (and (<= 0 b0) (<= b0 2)))
-(declare-const b1 Int)
-(assert (= b1 (+ 3 b0)))
-(declare-const b2 Int)
-(assert (and (<= 0 b2) (<= b2 2)))
-(declare-const b3 Int)
-(assert (= b3 (+ b1 b2)))
+info: (declare-const inc@0 Int)
+(assert (and (<= 0 inc@0) (<= inc@0 2)))
+(declare-const counter@1 Int)
+(assert (= counter@1 (+ 3 inc@0)))
+(declare-const inc@2 Int)
+(assert (and (<= 0 inc@2) (<= inc@2 2)))
+(declare-const counter@3 Int)
+(assert (= counter@3 (+ counter@1 inc@2)))
 (push)
-(assert (not (and (<= 3 b3) (<= b3 7))))
+(assert (not (and (<= 3 counter@3) (<= counter@3 7))))
 (check-sat)
 (pop)
 (push)
-(assert (not (or (or (= b3 3) (= b3 5)) (= b3 3))))
+(assert (not (or (or (= counter@3 3) (= counter@3 5)) (= counter@3 3))))
 (check-sat)
 (pop)
 -/
@@ -1604,12 +1622,12 @@ info: (set-logic QF_S)
 (assert (not (str.in_re "user/policy" (re.++ (str.to_re "arn:") (re.* re.allchar)))))
 (check-sat)
 (pop)
-(declare-const b0 Int)
+(declare-const out_discard@0 Int)
 (push)
 (assert (not (str.in_re "arn:policy" (re.++ (str.to_re "arn:") (re.* re.allchar)))))
 (check-sat)
 (pop)
-(declare-const b1 Int)
+(declare-const out_discard@1 Int)
 -/
 #guard_msgs in
 #eval Format.append f!"(set-logic QF_S){Format.line}" <| ToSMT .topLevel <|
@@ -1626,6 +1644,7 @@ info: (set-logic QF_S)
 
 /-
 function f(i: int) returns (j: int)
+  requires 0 <= i
   ensures i < j
 {
   i + 1
@@ -1636,27 +1655,28 @@ assert out == 3 -- Can't prove with rewriting
 -/
 def method_with_contracts: LExpr LTy String :=
   let c := .topLevel
-  let_assign c "f" .none (
-    .abs .none (
-      .assert (le (.const "0" .none) (.bvar 0)) <|
-      ensures .none (plus (.bvar 0) (.const "1" .none)) <|
-      .abs .none (lt (.bvar 1) (.bvar 0))
-    )
+  procedure c "f" [("i", _Int)] (fun c =>
+    .assert (le (.const "0" .none) (c.v "i")) <|
+    c.ensures .none (plus (c.v "i") (.const "1" .none)) <| fun c =>
+      c.procedure_lambda "j" _Int (fun c => lt (c.v "i") (c.v "j"))
   ) <| fun c =>
-  call1_1 c "f" (.const "2" .none) "fout" <| fun c =>
-  assert (lt (.const "2" .none) (c.v "fout")) -- can't prove
+  let_assign c "f_out" _Int (call1 c "f" (.const "2" .none)) <| fun c =>
+  assert (lt (.const "2" .none) (c.v "f_out")) -- can't prove
   <|
-  assert (.eq (c.v "fout") (.const "3" .none)) -- can't prove
+  assert (.eq (c.v "f_out") (.const "3" .none)) -- can't prove
   skip
 
 
 /--
-info: ((λ ((%0 #2) (λ assert ((~< #2) %0) <| assert (%0 == #3) <| skip)))) <| λ
-assert ((~<= #0) %0) <|
-let % := ((~+ %0) #1);
-assert let % := %0;
-((~< %1) %0) <|
-%0
+info: let λf := (λi:int assert ((~<= #0) i%0) <|
+   let λres := ((~+ i%0) #1);
+   assert let λj : int := res%0;
+   ((~< i%2) j%0) <|
+   res%0);
+let λf_out : int := (f%0 #2);
+assert ((~< #2) f_out%0) <|
+assert (f_out%0 == #3) <|
+skip
 -/
 #guard_msgs in
 #eval format <|
@@ -1664,45 +1684,62 @@ assert let % := %0;
 
 -- Now we split the implementation from the contract
 /--
-info: let % := let %;
-  assume ((~<= #0) %0) <|
-  let % := ((~+ %0) #1);
-  assert let % := %0;
-  ((~< %1) %0) <|
-  %0;
-((λ ((%0 #2) (λ assert ((~< #2) %0) <| assert (%0 == #3) <| skip)))) <| λ
-assert ((~<= #0) %0) <|
-let %;
-assert let % := %0;
-((~< %1) %0) <|
-%0
+info: let λf := let λi : int;
+  assume ((~<= #0) i%0) <|
+  let λres := ((~+ i%0) #1);
+  assert let λj : int := res%0;
+  ((~< i%2) j%0) <|
+  res%0;
+let λf := (λi:int assert ((~<= #0) i%0) <| let λres; assume let λj : int := res%0; ((~< i%2) j%0) <| res%0);
+let λf_out : int := (f%0 #2);
+assert ((~< #2) f_out%0) <|
+assert (f_out%0 == #3) <|
+skip
 -/
 #guard_msgs in
 #eval format <|
   replaceByContract <|
   method_with_contracts
 
--- And we inline the contract
+-- HIGHLIGHT: This is the generated code for verifying both the function contract and its inlining.
+-- Notably, out of the four asserts, the last one is not verified (sat) because the contract is more abstract
 /--
-info: let % := let %;
-  assume ((~<= #0) %0) <|
-  let % := ((~+ %0) #1);
-  assert let % := %0;
-  ((~< %1) %0) <|
-  %0;
-(assert ((~<= #0) #2) <|
- let %;
- assert let % := %0;
- ((~< %1) %0) <|
- %0 (λ assert ((~< #2) %0) <| assert (%0 == #3) <| skip))
+info: (declare-const i@0 Int)
+(assert (<= 0 i@0))
+(declare-const res@1 Int)
+(assert (= res@1 (+ i@0 1)))
+(push)
+(assert (not (< i@0 res@1)))
+(check-sat)
+(pop)
+(push)
+(assert (not (<= 0 2)))
+(check-sat)
+(pop)
+(declare-const res@2 Int)
+(assert (< 2 res@2))
+(push)
+(assert (not (< 2 res@2)))
+(check-sat)
+(pop)
+(push)
+(assert (not (= res@2 3)))
+(check-sat)
+(pop)
 -/
 #guard_msgs in
-#eval format <|
+#eval --format <|
+  ToSMT .topLevel <|
+  ifToPushPop <|
+  letAssignToLetAssume <|
+  simplify <|
+  functionBodiesToVerification <|
   simplify <|
   inlineContinuations <|
   replaceByContract <|
   method_with_contracts
--- TODO: Go to the SMT level
+-- TODO: Go to the SMT level for full demo.
+-- Need to detect f is not used so we convert it to pushpop just to verify it does not crash
 
 inductive StmtExpr (I: Type): Type where
 /- Statement like -/

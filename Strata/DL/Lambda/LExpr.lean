@@ -52,7 +52,7 @@ inductive LExpr (TypeType : Type) (Identifier : Type) : Type where
   | fvar    (name : Identifier) (ty : Option TypeType)
   | mdata   (info : Info) (e : LExpr TypeType Identifier)
   /-- `.abs ty e`: abstractions; `ty` the is type of bound variable. -/
-  | abs     (ty : Option TypeType) (e : LExpr TypeType Identifier)
+  | abs     (id: Option Identifier) (ty : Option TypeType) (e : LExpr TypeType Identifier)
   /-- `.quant k ty tr e`: quantified expressions; `ty` the is type of bound variable, and `tr` the trigger. -/
   | quant   (k : QuantifierKind) (ty : Option TypeType) (trigger: LExpr TypeType Identifier) (e : LExpr TypeType Identifier)
   /-- `.app fn e`: function application. -/
@@ -73,7 +73,7 @@ def LExpr.all {TypeType: Type} {Identifier : Type} (ty : Option TypeType) := @LE
 def LExpr.existTr {TypeType: Type} {Identifier : Type} (ty : Option TypeType) := @LExpr.quant TypeType Identifier .exist ty
 def LExpr.exist {TypeType: Type} {Identifier : Type} (ty : Option TypeType) := @LExpr.quant TypeType Identifier .exist ty LExpr.noTrigger
 
-abbrev LExpr.absUntyped {TypeType: Type} {Identifier : Type} := @LExpr.abs TypeType Identifier .none
+abbrev LExpr.absUntyped {TypeType: Type} {Identifier : Type} := @LExpr.abs TypeType Identifier .none .none
 abbrev LExpr.allUntypedTr {TypeType: Type} {Identifier : Type} := @LExpr.quant TypeType Identifier .all .none
 abbrev LExpr.allUntyped {TypeType: Type} {Identifier : Type} := @LExpr.quant TypeType Identifier .all .none LExpr.noTrigger
 abbrev LExpr.existUntypedTr {TypeType: Type} {Identifier : Type} := @LExpr.quant TypeType Identifier .exist .none
@@ -82,7 +82,7 @@ abbrev LExpr.existUntyped {TypeType: Type} {Identifier : Type} := @LExpr.quant T
 
 def LExpr.sizeOf {TypeType: Type}  [SizeOf Identifier]
   | LExpr.mdata (TypeType:=TypeType) (Identifier:=Identifier) _ e => 2 + sizeOf e
-  | LExpr.abs   _ e => 2 + sizeOf e
+  | LExpr.abs   _ _ e => 2 + sizeOf e
   | LExpr.quant _ _ tr e => 3 + sizeOf e + sizeOf tr
   | LExpr.app fn e => 3 + sizeOf fn + sizeOf e
   | LExpr.ite c t e => 4 + sizeOf c + sizeOf t + sizeOf e
@@ -103,7 +103,7 @@ def LExpr.getVars (e : (LExpr TypeType Identifier)) := match e with
   | .const _ _ => [] | .bvar _ => [] | .op _ _ => []
   | .fvar y _ => [y]
   | .mdata _ e' => LExpr.getVars e'
-  | .abs _ e' => LExpr.getVars e'
+  | .abs _ _ e' => LExpr.getVars e'
   | .quant _ _ tr' e' => LExpr.getVars tr' ++ LExpr.getVars e'
   | .app e1 e2 => LExpr.getVars e1 ++ LExpr.getVars e2
   | .ite c t e => LExpr.getVars c ++ LExpr.getVars t ++ LExpr.getVars e
@@ -220,7 +220,7 @@ def removeAllMData (e : (LExpr TypeType Identifier)) : (LExpr TypeType Identifie
   match e with
   | .const _ _ | .op _ _ | .fvar _ _ | .bvar _ => e
   | .mdata _ e1 => removeAllMData e1
-  | .abs ty e1 => .abs ty (removeAllMData e1)
+  | .abs ty id e1 => .abs ty id (removeAllMData e1)
   | .quant qk ty tr e1 => .quant qk ty (removeAllMData tr) (removeAllMData e1)
   | .app e1 e2 => .app (removeAllMData e1) (removeAllMData e2)
   | .ite c t f => .ite (removeAllMData c) (removeAllMData t) (removeAllMData f)
@@ -242,7 +242,7 @@ def size (e : (LExpr TypeType Identifier)) : Nat :=
   | .op _ _ => 1
   | .bvar _ => 1
   | .fvar _ _ => 1
-  | .abs _ e' => 1 + size e'
+  | .abs _ _ e' => 1 + size e'
   | .quant _ _ _ e' => 1 + size e'
   | .mdata _ e' => 1 + size e'
   | .app e1 e2 => 1 + size e1 + size e2
@@ -262,7 +262,7 @@ def eraseTypes (e : (LExpr TypeType Identifier)) : (LExpr TypeType Identifier) :
   | .op o _ => .op o none
   | .fvar x _ => .fvar x none
   | .bvar _ => e
-  | .abs ty e => .abs ty (e.eraseTypes)
+  | .abs ty id e => .abs ty id (e.eraseTypes)
   | .quant qk ty tr e => .quant qk ty (eraseTypes tr) (e.eraseTypes)
   | .app e1 e2 => .app (e1.eraseTypes) (e2.eraseTypes)
   | .ite c t f => .ite (c.eraseTypes) (t.eraseTypes) (f.eraseTypes)
@@ -286,7 +286,61 @@ def zeroVarContinuation (e : (LExpr TypeType Identifier)) : Bool :=
   | .skip => true
   | _ => false
 
-private def formatLExpr [ToFormat Identifier] [ToFormat TypeType] (e : (LExpr TypeType Identifier)) :
+def formatOptId [ToFormat Identifier] (id: Option Identifier): Format :=
+  match id with
+  | .some id => f!"{id}"
+  | .none => f!""
+
+private def formatName [ToFormat Identifier] (names: List (Option Identifier)) (index: Nat) : Format :=
+  match names[index]? with
+  | .some opt =>
+    match opt with
+    | .some id => f!"{id}"
+    | .none => f!""
+  | .none => f!""
+
+def contains_bvar (level: Nat) (e: LExpr TypeType Identifier): Bool :=
+  match e with
+  | .const _c _ty => false
+  | .op _c _ty => false
+  | .bvar i => i == level
+  | .fvar _x _ty => false
+  | .abs _id _ty e1 => contains_bvar (level + 1) e1
+  | .mdata _info e => contains_bvar level e
+  | .quant _ _ tr e => contains_bvar (level + 1) tr || contains_bvar (level + 1) e
+  | .app e1 e2 => contains_bvar level e1 || contains_bvar level e2
+  | .ite cond e1 e2 =>
+    contains_bvar level cond || contains_bvar level e1 || contains_bvar level e2
+  | .eq e1 e2 =>
+    contains_bvar level e1 || contains_bvar level e2
+  | .choose _ => false
+  | .dontcare => false
+  | .error => false
+  | .skip => false
+
+
+-- Returns true if bvar 0 is used as the last call, meaning it's a continuation.
+def last_call (level: Nat) (e: LExpr TypeType Identifier): Bool :=
+  match e with
+  | .const _c _ty => false
+  | .op _c _ty => false
+  | .bvar i => i == level
+  | .fvar _x _ty => false
+  | .abs _id _ty _e1 => false
+  | .mdata _info e => last_call level e
+  | .quant _ _ tr e => !contains_bvar level tr && last_call (level + 1) e -- Not sure of that
+  | .app (.bvar n) e1 => n == level && !contains_bvar level e1
+  | .app (.abs _ _ body) e2 => !contains_bvar level e2 && last_call (level + 1) body
+  | .app _e1 _e2 => false
+  | .ite cond e1 e2 =>
+    !contains_bvar level cond && (last_call level e1 || !contains_bvar level e1) && (last_call level e2 || !contains_bvar level e2)
+  | .eq _e1 _e2 => false
+  | .choose _ => false
+  | .dontcare => false
+  | .error => false
+  | .skip => false
+
+private def formatLExpr [ToFormat Identifier] [ToFormat TypeType] (e : LExpr TypeType Identifier) (names: List (Option Identifier)) :
     Format :=
   match e with
   | .const c ty =>
@@ -297,45 +351,55 @@ private def formatLExpr [ToFormat Identifier] [ToFormat TypeType] (e : (LExpr Ty
     match ty with
     | none => f!"~{c}"
     | some ty => f!"(~{c} : {ty})"
-  | .bvar i => f!"%{i}"
+  | .bvar i => f!"{formatName names i}%{i}"
   | .fvar x ty =>
     match ty with
     | none => f!"{x}"
     | some ty => f!"({x} : {ty})"
-  | .mdata _info e => formatLExpr e
-  | .abs _ e1 => Format.paren (f!"λ {formatLExpr e1}")
-  | .quant .all _ _ e1 => Format.paren (f!"∀ {formatLExpr e1}")
-  | .quant .exist _ _ e1 => Format.paren (f!"∃ {formatLExpr e1}")
-  | .app (.app (.abs _ (.abs _ (.bvar 0))) a) b =>
-      f!"pushpop ({Format.line}  {Format.nest 2 (formatLExpr a)}{Format.line}) <|{Format.line}{formatLExpr b}"
-  | .app (.abs _ e1) (.choose ty) =>
+  | .mdata _info e => formatLExpr e names
+  | .abs id ty e1 =>
+    match ty with
+    | .none => Format.paren (f!"λ{formatOptId id} {formatLExpr e1 (id :: names)}")
+    | .some ty => Format.paren (f!"λ{formatOptId id}:{ty} {formatLExpr e1 (id :: names)}")
+  | .quant .all _ _ e1 => Format.paren (f!"∀ {formatLExpr e1 (.none ::names)}")
+  | .quant .exist _ _ e1 => Format.paren (f!"∃ {formatLExpr e1 (.none ::names)}")
+  | .app (.app (.abs _ _ (.abs _ _ (.bvar 0))) a) b =>
+      f!"pushpop ({Format.line}  {Format.nest 2 (formatLExpr a names)}{Format.line}) <|{Format.line}{formatLExpr b names}"
+  | .app (.abs id _ e1) (.choose ty) =>
       match ty with
-      | none => f!"let %;{Format.line}{formatLExpr e1}"
-      | some ty => f!"let % : {ty};{Format.line}{formatLExpr e1}"
-  | .app (.abs ty e1) (.abs ty2 cont) => -- Continuation-passing style
-      let absTy :=
-        match ty2 with
-        | none => f!""
-        | some ty => f!" : {ty}"
-      f!"({formatLExpr (.abs ty e1)}) <| λ{absTy}{Format.line}{formatLExpr cont}"
-  | .app (.abs ty e1) rhs =>
+      | none => f!"let λ{formatOptId id};{Format.line}{formatLExpr e1 (id :: names)}"
+      | some ty => f!"let λ{formatOptId id} : {ty};{Format.line}{formatLExpr e1 (id :: names)}"
+  | .app (.abs id ty e1) (.abs id2 ty2 cont) => -- Continuation-passing style
+      if last_call 0 e1 then
+        let absTy :=
+          match ty2 with
+          | none => f!""
+          | some ty => f!" : {ty}"
+        f!"({formatLExpr (.abs id ty e1) names}) <| λ{formatOptId id2}{absTy}{Format.line}{formatLExpr cont (id2 :: names)}"
+      else -- Not the last call, let's say we define a procedure instead
+        let rhs := (.abs id2 ty2 cont)
+        match ty with
+        | none => f!"let λ{formatOptId id} := {Format.nest 2 <| formatLExpr rhs names};{Format.line}{formatLExpr e1 (id :: names)}"
+        | some ty => f!"let λ{formatOptId id} : {ty} := {Format.nest 2 <| formatLExpr rhs names};{Format.line}{formatLExpr e1 (id :: names)}"
+
+  | .app (.abs id ty e1) rhs =>
       -- It could also be that rhs is a zero-variable continuation. This ought to be metadata
       if zeroVarContinuation rhs then
-        f!"({formatLExpr (.abs ty e1)}) <|{Format.line}{formatLExpr rhs}"
+        f!"({formatLExpr (.abs id ty e1) names}) <|{Format.line}{formatLExpr rhs names}"
       else
         match ty with
-        | none => f!"let % := {Format.nest 2 <| formatLExpr rhs};{Format.line}{formatLExpr e1}"
-        | some ty => f!"let % : {ty} := {Format.nest 2 <| formatLExpr rhs};{Format.line}{formatLExpr e1}"
-  | .app e1 e2 => Format.paren (f!"{formatLExpr e1} {formatLExpr e2}")
+        | none => f!"let λ{formatOptId id} := {Format.nest 2 <| formatLExpr rhs names};{Format.line}{formatLExpr e1 (id :: names)}"
+        | some ty => f!"let λ{formatOptId id} : {ty} := {Format.nest 2 <| formatLExpr rhs names};{Format.line}{formatLExpr e1 (id :: names)}"
+  | .app e1 e2 => Format.paren (f!"{formatLExpr e1 names} {formatLExpr e2 names}")
   | .ite c t e =>
     match e with
     | .dontcare => -- assume statement
-        f!"assume {formatLExpr c} <|{Format.line}{formatLExpr t}"
+        f!"assume {formatLExpr c names} <|{Format.line}{formatLExpr t names}"
     | .error => -- assert statement
-        f!"assert {formatLExpr c} <|{Format.line}{formatLExpr t}"
+        f!"assert {formatLExpr c names} <|{Format.line}{formatLExpr t names}"
     | _ =>
-    Format.paren f!"if {formatLExpr c} then {Format.nest 2 (formatLExpr t)}{Format.line}else {Format.nest 2 (formatLExpr e)}"
-  | .eq e1 e2 => Format.paren (formatLExpr e1 ++ " == " ++ formatLExpr e2)
+    Format.paren f!"if {formatLExpr c names} then {Format.nest 2 (formatLExpr t names)}{Format.line}else {Format.nest 2 (formatLExpr e names)}"
+  | .eq e1 e2 => Format.paren (formatLExpr e1 names ++ " == " ++ formatLExpr e2 names)
   | .dontcare => "dontcare"
   | .error => "error"
   | .skip => "skip"
@@ -345,7 +409,7 @@ private def formatLExpr [ToFormat Identifier] [ToFormat TypeType] (e : (LExpr Ty
     | some ty => Format.paren (f!"(* : {ty})")
 
 instance [ToFormat Identifier] [ToFormat TypeType] : ToFormat (LExpr TypeType Identifier) where
-  format := formatLExpr
+  format := fun c => formatLExpr c []
 
 /-
 Syntax for conveniently building `LExpr` terms with `LMonoTy`, scoped under the namespace
@@ -520,7 +584,9 @@ partial def elabLExprMono (Identifier : Type) [MkIdent Identifier] : Lean.Syntax
      let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
      let e' ← elabLExprMono Identifier e
      let typeTypeExpr := mkConst ``LMonoTy
-     return mkAppN (.const ``LExpr.abs []) #[typeTypeExpr, MkIdent.toExpr Identifier, lmonoty, e']
+     let identifierExpr := MkIdent.toExpr Identifier
+     let noneExpr := mkAppN (.const ``Option.none [.zero]) #[identifierExpr]
+     return mkAppN (.const ``LExpr.abs []) #[typeTypeExpr, identifierExpr, noneExpr, lmonoty, e']
   | `(lexprmono| ∀ $e:lexprmono) => do
      let e' ← elabLExprMono Identifier e
      let typeTypeExpr := mkConst ``LMonoTy
@@ -602,7 +668,9 @@ open LTy.Syntax
 #guard_msgs in
 #check esM[((λ %0) #5)]
 
-/-- info: (abs (some (LMonoTy.tcons "bool" [])) (bvar 0)).app (const "true" none) : LExpr LMonoTy String -/
+/--
+info: (abs none (some (LMonoTy.tcons "bool" [])) (bvar 0)).app (const "true" none) : LExpr LMonoTy String
+-/
 #guard_msgs in
 #check esM[((λ (bool): %0) #true)]
 
@@ -834,7 +902,9 @@ partial def elabLExpr (Identifier : Type) [MkIdent Identifier] : Lean.Syntax →
      let lty ← mkSome (mkConst ``LTy) lty
      let e' ← elabLExpr Identifier e
      let typeTypeExpr := mkConst ``LTy
-     return mkAppN (.const ``LExpr.abs []) #[typeTypeExpr, MkIdent.toExpr Identifier, lty, e']
+     let identifierExpr := MkIdent.toExpr Identifier
+     let noneExpr := mkAppN (.const ``Option.none [.zero]) #[identifierExpr]
+     return mkAppN (.const ``LExpr.abs []) #[typeTypeExpr, identifierExpr, noneExpr, lty, e']
   | `(lexpr| ∀ $e:lexpr) => do
      let e' ← elabLExpr Identifier e
      let typeTypeExpr := mkConst ``LTy
@@ -916,7 +986,9 @@ open LTy.Syntax
 #guard_msgs in
 #check es[((λ %0) #5)]
 
-/-- info: (abs (some (LTy.forAll [] (LMonoTy.tcons "bool" []))) (bvar 0)).app (const "true" none) : LExpr LTy String -/
+/--
+info: (abs none (some (LTy.forAll [] (LMonoTy.tcons "bool" []))) (bvar 0)).app (const "true" none) : LExpr LTy String
+-/
 #guard_msgs in
 #check es[((λ (bool): %0) #true)]
 
@@ -1080,9 +1152,9 @@ def Context.vLastAssigned {Identifier : Type}
   go c .none 0
 
 
-def procedure_lambda {Identifier : Type} {TypeType: Type} [DecidableEq Identifier]
+def Context.procedure_lambda {Identifier : Type} {TypeType: Type} [DecidableEq Identifier]
   (c : Context Identifier) (id : Identifier) (ty: Option TypeType) (cont: Context Identifier -> LExpr TypeType Identifier): LExpr TypeType Identifier :=
-  abs ty <|
+  abs (.some id) ty <|
     let c': Context Identifier := c.add_declare id
     cont c'
 
@@ -1096,7 +1168,7 @@ def call1 [DecidableEq Identifier] (c: Context Identifier) (name: Identifier) (a
   .app (c.v name) arg
 
 def call1_1 [DecidableEq Identifier] (c: Context Identifier) (name: Identifier) (arg: LExpr TypeType Identifier) (out: Identifier) (cont: Context Identifier -> LExpr TypeType Identifier): LExpr TypeType Identifier :=
-  .app (.app (c.v name) arg) <| abs .none <|
+  .app (.app (c.v name) arg) <| abs (.some out) .none <|
     let c := c.add_assign out
     cont c
 
@@ -1104,18 +1176,18 @@ def choose_abs (ty: Option TypeType) (l: LExpr TypeType Identifier) : LExpr Type
   .app l (.choose ty)
 
 -- Declare a new variable without RHS
-def let_ {Identifier : Type} (c: Context Identifier) (id : Identifier) (ty: Option TypeType) (k : Context Identifier → LExpr TypeType Identifier) : LExpr TypeType Identifier :=
-  let c: Context Identifier := .add_declare c id
-  choose_abs ty <| LExpr.abs ty <| k c
+def let_ (c: Context String) (id : String) (ty: Option TypeType) (k : Context String → LExpr TypeType String) : LExpr TypeType String :=
+  let c: Context String := .add_declare c id
+  choose_abs ty <| LExpr.abs id ty <| k c
 
 -- Declare a new variable and assign it a value
 def let_assign {Identifier : Type} (c: Context Identifier) (id : Identifier) (ty: Option TypeType) (rhs : LExpr TypeType Identifier) (k : Context Identifier → LExpr TypeType Identifier) : LExpr TypeType Identifier :=
   let c : Context Identifier := .add_declare c id
-  .app (.abs ty (k c)) rhs
+  .app (.abs id ty (k c)) rhs
 
 def assign {Identifier : Type} [DecidableEq Identifier] (c: Context Identifier) (id : Identifier) (ty: Option TypeType) (rhs : LExpr TypeType Identifier) (k : Context Identifier → LExpr TypeType Identifier) : LExpr TypeType Identifier :=
   let c : Context Identifier := .add_assign c id
-  .app (.abs ty (k c)) rhs
+  .app (.abs id ty (k c)) rhs
 
 def procedure  {Identifier : Type} {TypeType: Type} [DecidableEq Identifier]
   (c : Context Identifier)
@@ -1123,7 +1195,7 @@ def procedure  {Identifier : Type} {TypeType: Type} [DecidableEq Identifier]
   (cont: Context Identifier -> LExpr TypeType Identifier): LExpr TypeType Identifier :=
   let funDef :=
     args.foldr (fun (name, type) body =>
-      fun c => procedure_lambda c name type <| body
+      fun c => c.procedure_lambda name type <| body
     ) body
   let_assign c name .none (funDef c) cont
 
@@ -1136,7 +1208,7 @@ def assert {Identifier: Type} (cond : LExpr TypeType Identifier) (thn : LExpr Ty
 def plus (a b: LExpr LTy String) := LExpr.app (.app (.op "+" .none) a) b
 def minus (a b: LExpr LTy String) := LExpr.app (.app (.op "-" .none) a) b
 def pushpop (a b: LExpr LTy String) :=
-  LExpr.app (LExpr.app (.abs .none (.abs .none (.bvar 0))) a) b
+  LExpr.app (LExpr.app (.abs .none .none (.abs .none .none (.bvar 0))) a) b
 def not (a: LExpr LTy String) := LExpr.app (.op "!" .none) a
 
 -- TODO: Prove that this transformation preserves errors
@@ -1153,8 +1225,8 @@ def ifToPushPop (prog: LExpr LTy String): LExpr LTy String :=
     .choose t
   | .app a b =>
     .app (ifToPushPop a) (ifToPushPop b)
-  | .abs t b =>
-    .abs t (ifToPushPop b)
+  | .abs id t b =>
+    .abs id t (ifToPushPop b)
   | _ => prog
 
 -- We increase the bvars that are currently "free" in the context.
@@ -1175,7 +1247,7 @@ def increaseBvars (prog: LExpr LTy String): LExpr LTy String :=
     | _, .skip => .skip
     | _, .choose t => .choose t
     | aboveLevel, .app a b => .app (go aboveLevel a) (go aboveLevel b)
-    | aboveLevel, .abs t b => .abs t (go (aboveLevel + 1) b)
+    | aboveLevel, .abs id t b => .abs id t (go (aboveLevel + 1) b)
     | aboveLevel, .mdata m b => .mdata m (go aboveLevel b)
     | aboveLevel, .quant k ty tr e => .quant k ty (go aboveLevel tr) (go (aboveLevel + 1) e)
     | _, .fvar n t => .fvar n t
@@ -1199,7 +1271,7 @@ def decreasesBVar (prog: LExpr LTy String): LExpr LTy String :=
     | _, .skip => .skip
     | _, .choose t => .choose t
     | aboveLevel, .app a b => .app (go aboveLevel a) (go aboveLevel b)
-    | aboveLevel, .abs t b => .abs t (go (aboveLevel + 1) b)
+    | aboveLevel, .abs id t b => .abs id t (go (aboveLevel + 1) b)
     | aboveLevel, .mdata m b => .mdata m (go aboveLevel b)
     | aboveLevel, .quant k ty tr e => .quant k ty (go aboveLevel tr) (go (aboveLevel + 1) e)
     | _, .fvar n t => .fvar n t
@@ -1208,19 +1280,21 @@ def decreasesBVar (prog: LExpr LTy String): LExpr LTy String :=
 
 def letAssignToLetAssume (prog: LExpr LTy String): LExpr LTy String :=
   match prog with
-  | .app (.abs ty body) rhs =>
+  | .pushpop left right =>
+    .pushpop (letAssignToLetAssume left) (letAssignToLetAssume right)
+  | .app (.abs id ty body) rhs =>
     let body := letAssignToLetAssume body
     if zeroVarContinuation rhs then
       -- We can simplify
-      .app (.abs ty body) rhs
+      .app (.abs id ty body) rhs
     else
     match rhs with
     | choose _ =>
-      .app (.abs ty body) rhs  -- We can't simplify
+      .app (.abs id ty body) rhs  -- We can't simplify
     | _ => --TODO: Need to check determinism
       -- Interestingly, because the RHS is now in the context of the new variable,
       -- we need to increase all bound variables in the RHS by 1
-      choose_abs ty (.abs ty (.assume (.eq (.bvar 0) (.increaseBvars rhs)) body))
+      choose_abs ty (.abs id ty (.assume (.eq (.bvar 0) (.increaseBvars rhs)) body))
   | .assume cond thn =>
     .assume cond (letAssignToLetAssume thn)
   | .assert cond thn =>
@@ -1231,8 +1305,8 @@ def letAssignToLetAssume (prog: LExpr LTy String): LExpr LTy String :=
     .choose t
   | .app a b =>
     .app (letAssignToLetAssume a) (letAssignToLetAssume b)
-  | .abs t b =>
-    .abs t (letAssignToLetAssume b)
+  | .abs id t b =>
+    .abs id t (letAssignToLetAssume b)
   | _ => prog
 
 partial def ToSMTExpr (c: Context String) (prog: LExpr LTy String): Format :=
@@ -1274,19 +1348,21 @@ partial def ToSMTExpr (c: Context String) (prog: LExpr LTy String): Format :=
 -- where expressions are all proved to be deterministic
 partial def ToSMT (c: Context String) (prog: LExpr LTy String): Format :=
   match prog with
-  | .app (.abs _ body) (.choose lty) =>
+  | .app (.abs id _ body) (.choose lty) =>
     if lty == _Bool then
-      let varName :=  ("b" ++ toString c.size) -- TODO: Recover original name in .abs
+      let varName := id.getD "b" ++ "@" ++ toString c.size
       let newC := c.add_declare varName
       let bodySmt := ToSMT newC body
       f!"(declare-const {varName} Bool){Format.line}{bodySmt}"
     else if lty == _Int || lty == .none then -- None assumed integer
-      let varName :=  ("b" ++ toString c.size) -- TODO: Recover original name in .abs
+      let varName :=  id.getD "b" ++ "@" ++ toString c.size
       let newC := c.add_declare varName
       let bodySmt := ToSMT newC body
       f!"(declare-const {varName} Int){Format.line}{bodySmt}"
     else
       panic!("ToSMT: Unsupported type in choose: " ++ (toString (format lty)))
+  | .bvar _ => -- Like skip, there is no error evaluating a bvar
+    f!""
   | .assume cond remaining =>
     let condSmt := ToSMTExpr c cond
     let remainingSmt := ToSMT c remaining
@@ -1294,7 +1370,7 @@ partial def ToSMT (c: Context String) (prog: LExpr LTy String): Format :=
   | .error =>
     f!"(check-sat)"
     -- push / pop
-  | .app (.app (.abs _ (.abs _ (.bvar 0))) a) b =>
+  | .app (.app (.abs _ _ (.abs _ _ (.bvar 0))) a) b =>
     let aSmt := ToSMT c a
     let bSmt := ToSMT c b
     f!"(push){Format.line}{aSmt}{Format.line}(pop){if !bSmt.isEmpty then Format.line else f!""}{bSmt}"
@@ -1318,18 +1394,18 @@ def if_
      (cond: Context String -> LExpr LTy String)
      (then_ else_:(Context String -> LExpr LTy String) -> Context String → LExpr LTy String)
      (endif : Context String → LExpr LTy String) : LExpr LTy String :=
-  -- First we call thn and els with a '#continue' free variable
+  -- First we call thn and els with a '@continue' free variable
   -- Then we detect which variables have been modified since the original context on either branches
   -- We add those variables to the context for next, and then
-  -- we replace #continue on each branch with a call to the actual continue variable with the variables modified on either branches as argument.
-  let exitName := "#continue" -- TODO: Avoid name clashes in the case of nested ifs. Use metadata?
+  -- we replace @continue on each branch with a call to the actual continue variable with the variables modified on either branches as argument.
+  let exitName := "@continue" -- TODO: Avoid name clashes in the case of nested ifs. Use metadata?
   let newC := c.add_declare exitName
   let condProg := cond newC
   let thnProg := then_ (frameExitCall frame exitName newC) newC
   let elsProg := else_ (frameExitCall frame exitName newC) newC
   let nextCtx := frame.foldl Context.add_declare c
-  let nextProg := frame.foldl (fun acc _ignoredName => .abs .none acc) (endif nextCtx)
-  .app (.abs .none <| .ite condProg thnProg elsProg
+  let nextProg := frame.foldl (fun acc name => .abs (.some name) .none acc) (endif nextCtx)
+  .app (.abs (.some "@endif") .none <| .ite condProg thnProg elsProg
   ) nextProg
 
 /-
@@ -1358,7 +1434,7 @@ def subst (replacement body : LExpr LTy String) : LExpr LTy String :=
   -- TODO: replacement MUST be deterministic or there must be EXACTLY one replacement
   let rec go (depth : Nat) (replacement : LExpr LTy String) : LExpr LTy String → LExpr LTy String
     | .bvar n => if n == depth then replacement else .bvar n
-    | .abs ty e => .abs ty (go (depth + 1) (increaseBvars replacement) e)
+    | .abs name ty e => .abs name ty (go (depth + 1) (increaseBvars replacement) e)
     | .quant k ty tr e => .quant k ty (go depth replacement tr) (go (depth + 1) replacement e)
     | .app e1 e2 => .app (go depth replacement e1) (go depth replacement e2)
     | .ite c t e => .ite (go depth replacement c) (go depth replacement t) (go depth replacement e)
@@ -1369,18 +1445,21 @@ def subst (replacement body : LExpr LTy String) : LExpr LTy String :=
 
 -- Like simplify but only for continuations.
 -- .app (.abs _ x) RHS can be beta expanded if RHS is a function (even non deterministic), a constant or a variable
--- TODO: In other cases, we might prefer to just lift all assertions
+-- But defining a procedure and using it is also interpreted as a continuation where the procedure is the continuation.
 partial def inlineContinuations (prog: LExpr LTy String): LExpr LTy String :=
   match prog with
-  | .app (.abs _ body) (.abs oty exit) =>
+  | .app (.abs _name1 _ty1 body) (.abs name_exit oty exit) =>
+    --if _name1 == (.some "@continue") || _name1 == .some "@endif" then -- We also want procedure inlining
     let newExit := inlineContinuations exit
     let newBody := inlineContinuations body
-    decreasesBVar <| subst (increaseBvars (.abs oty newExit)) newBody
-  | .app (.abs ty body) cont =>
+    decreasesBVar <| subst (increaseBvars (.abs name_exit oty newExit)) newBody
+    --else
+    --  .app (.abs name1 ty1 (inlineContinuations body)) (inlineContinuations (.abs name_exit oty exit))
+  | .app (.abs name ty body) cont =>
     if zeroVarContinuation cont then -- TODO: Verify that it returns a unique value (could be unit!)
       decreasesBVar <| subst (increaseBvars <| inlineContinuations cont) (inlineContinuations body)
     else
-      .app (.abs ty (inlineContinuations body)) (inlineContinuations cont)
+      .app (.abs name ty (inlineContinuations body)) (inlineContinuations cont)
   -- These are inlining values, not continuations. A simplification phase could take care of them.
   /-| .app (.abs _ body) (.const value oty) =>
     decreasesBVar <| subst (.const value oty) (inlineContinuations body)
@@ -1392,8 +1471,8 @@ partial def inlineContinuations (prog: LExpr LTy String): LExpr LTy String :=
     .ite cond (inlineContinuations thn) (inlineContinuations els)
   | .app a b =>
     .app (inlineContinuations a) (inlineContinuations b)
-  | .abs t b =>
-    .abs t (inlineContinuations b)
+  | .abs name t b =>
+    .abs name t (inlineContinuations b)
   | _ => prog
 
 
@@ -1401,34 +1480,71 @@ partial def inlineContinuations (prog: LExpr LTy String): LExpr LTy String :=
 -- TODO: In other cases, we might prefer to just lift all assertions
 partial def simplify (prog: LExpr LTy String): LExpr LTy String :=
   match prog with
-  | .app (.abs _ body) (.const value oty) =>
+  | .app (.abs _ _ body) (.const value oty) =>
     decreasesBVar <| subst (.const value oty) (simplify body)
-  | .app (.abs _ body) (.fvar name oty) =>
+  | .app (.abs _ _ body) (.fvar name oty) =>
     decreasesBVar <| subst (.fvar name oty) (simplify body)
-  | .app (.abs _ body) (.bvar depth) =>
+  | .app (.abs _ _ body) (.bvar depth) =>
     decreasesBVar <| subst (.bvar depth) (simplify body)
+  | .app (.abs name id body) (.assert cond thn) => -- Lift assertions up
+    assert cond (simplify (.app (.abs name id body) thn))
+  | .app (.abs name1 id1 body1) (.app (.abs name2 id2 body2) rhs) => -- Lets in RHS become linearized
+    .app (.abs name2 id2 (
+      simplify (.app (increaseBvars (.abs name1 id1 body1)) body2)
+    )) (simplify rhs) -- Not sure if we should have more simplify around it
+  | .app (.abs name id body) (.assume cond thn) => -- Lift assumptions up
+    assume cond (simplify (.app (.abs name id body) thn))
+
   | .ite cond thn els =>
-    .ite cond (simplify thn) (simplify els)
+    .ite (simplify cond) (simplify thn) (simplify els)
   | .app a b =>
     .app (simplify a) (simplify b)
-  | .abs t b =>
-    .abs t (simplify b)
+  | .abs name t b =>
+    .abs name t (simplify b)
   | _ => prog
 
-def ensures (t: Option LTy) (body postcond: LExpr LTy String) : LExpr LTy String :=
-  (.app (.abs t (assert (.app postcond (.bvar 0)) (.bvar 0))) body)
+-- This ensures introduces an intermediate variable "res" that contains the method's output
+def ensures_ (t: Option LTy) (body postcond: LExpr LTy String) : LExpr LTy String :=
+  (.app (.abs "res" t (assert (.app postcond (.bvar 0)) (.bvar 0))) body)
+
+def Context.ensures (t: Option LTy) (c: Context String) (body: LExpr LTy String) (postcond: Context String -> LExpr LTy String) : LExpr LTy String :=
+  let c := c.add_declare "res"
+  ensures_ t body (postcond c)
 
 def ensures_assume (t: Option LTy) (body postcond: LExpr LTy String) : LExpr LTy String :=
-  (.app (.abs t (assert (.app postcond (.bvar 0)) (.bvar 0))) body)
+  (.app (.abs "res" t (assume (.app postcond (.bvar 0)) (.bvar 0))) body)
 
 
 -- This phases replaces a procedure with pre/post conditions with inlinable contracts.
+-- Deserves to be called recursively
 def replaceByContract (prog: LExpr LTy String): LExpr LTy String :=
   match prog with
-  | .app (.abs ty remaining) (.abs ty2 (.assert precond (.ensures t body postcond))) =>
-    .app (.abs ty <| increaseBvars <|
-      .app (.abs ty remaining) (.abs ty2 (.assert precond (.ensures_assume t (.choose .none) postcond)))
-    ) ((.choose ty2) |> .app (.abs .none <| .assume precond (.ensures t body postcond))) -- Value is ignored but not its errors
+  | .app (.abs name ty remaining) (.abs name2 ty2 (.assert precond (.ensures_ t body postcond))) =>
+    .app (.abs name ty <| increaseBvars <|
+      .app (.abs name ty remaining) (.abs name2 ty2 (.assert precond (.ensures_assume t (.choose .none) postcond)))
+    ) ((.choose ty2) |> .app (.abs name2 .none <| .assume precond (.ensures_ t body postcond))) -- Value is ignored but not its errors
+  | _ => prog
+
+-- This phase detects assignments that are unused, and will only keep their definition that can throw errors in a pushpop but not their value.
+def functionBodiesToVerification (prog: LExpr LTy String): LExpr LTy String :=
+  match prog with
+  | .app (.abs name ty body) rhs =>
+    if !contains_bvar 0 body then
+      pushpop rhs body
+    else
+      .app (.abs name ty <| functionBodiesToVerification body) <| functionBodiesToVerification rhs
+  | .app e1 e2 =>
+    .app (functionBodiesToVerification e1) (functionBodiesToVerification e2)
+  | .abs name ty body =>
+    .abs name ty (functionBodiesToVerification body)
+  | .ite cond thn els =>
+    .ite (functionBodiesToVerification cond) (functionBodiesToVerification thn) (functionBodiesToVerification els)
+  | .eq e1 e2 =>
+    .eq (functionBodiesToVerification e1) (functionBodiesToVerification e2)
+  | .quant k ty tr e =>
+    .quant k ty (functionBodiesToVerification tr) (functionBodiesToVerification e)
+  | .mdata info e =>
+    .mdata info (functionBodiesToVerification e)
   | _ => prog
 
 -- This phase removes assert true, assume true, and all the if true then ... else ...
@@ -1439,7 +1555,7 @@ def removeIfTrue (prog: LExpr LTy String): LExpr LTy String :=
     | .const "true" _ => removeIfTrue thn
     | _ => .ite (removeIfTrue cond) (removeIfTrue thn) (removeIfTrue els)
   | .app a b => .app (removeIfTrue a) (removeIfTrue b)
-  | .abs ty body => .abs ty (removeIfTrue body)
+  | .abs name ty body => .abs name ty (removeIfTrue body)
   | .eq a b => .eq (removeIfTrue a) (removeIfTrue b)
   | .quant k ty tr e => .quant k ty (removeIfTrue tr) (removeIfTrue e)
   | .mdata info e => .mdata info (removeIfTrue e)
@@ -1492,7 +1608,7 @@ inductive Eval : Environment String → LExpr LTy String → EvalResult → Prop
   | bvar_undef : ∀ env n, env.lookupStack n = none  → Eval env (.bvar n) (.failure)
   | fvar : ∀ env name ty v, env.lookupGlobal name = some v → Eval env (.fvar name ty) (.success v)
   | fvar_undef : ∀ env name ty, env.lookupGlobal name = none → Eval env (.fvar name ty) (.failure)
-  | abs : ∀ env ty body, Eval env (.abs ty body) (.success <| .closure env.stack (.abs ty body))
+  | abs : ∀ env name ty body, Eval env (.abs name ty body) (.success <| .closure env.stack (.abs name ty body))
   | app_closure : ∀ env fn arg fnEnv fnBody argVal result,
       Eval env fn (.success <| .closure fnEnv fnBody) →
       Eval env arg (.success <| argVal) →
