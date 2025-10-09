@@ -670,7 +670,7 @@ def parseNewBindings (md : Metadata) (args : ArgDecls) : Array (BindingSpec args
         match attr.ident with
         | q`StrataDDL.declare => do
           let #[.catbvar nameIndex, .catbvar typeIndex] := attr.args
-            | newBindingErr "declare does not have expected 2 arguments."; return none
+            | newBindingErr "declare expects 2 arguments."; return none
           let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < args.size))
             | return panic! "Invalid name index"
           let .isTrue typeP := inferInstanceAs (Decidable (typeIndex < args.size))
@@ -821,7 +821,7 @@ Declaration of a metadata tag in a dialect.
 Metadata has an optional argument that must have
 the specified type.
 
-N.B. We may want to further resitrct where metadata can appear.
+N.B. We may want to further restrict where metadata can appear.
 -/
 structure MetadataDecl where
   name : String
