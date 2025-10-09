@@ -230,6 +230,19 @@ def mkSymbol (identifier : String) (symbolType : Json) : Json :=
     ])
   ]
 
+def createParameterSymbol (baseName : String) (functionName : String) (config : CBMCConfig := .empty) : CBMCSymbol :=
+  createSymbol baseName "1" true true s!"{functionName}::" functionName config
+
+def createLocalSymbol (baseName : String) (functionName : String) (config : CBMCConfig := .empty) : CBMCSymbol :=
+  let fullName := s!"{functionName}::1::{baseName}"
+  createSymbol baseName "5" false false s!"{functionName}::1::" functionName config fullName
+
+def getIdent (varName: String) (functionName: String) : String :=
+  if varName == "x" ∨ varName == "y" then
+    s!"{functionName}::{varName}"
+  else
+    s!"{functionName}::1::{varName}"
+
 -------------------------------------------------------------------------------
 
 /-! # Constants -/
@@ -342,7 +355,7 @@ def mkParameter (baseName : String) (functionName : String) (line : String) (con
     ("id", "parameter"),
     ("namedSub", Json.mkObj [
       ("#base_name", Json.mkObj [("id", baseName)]),
-      ("#identifier", Json.mkObj [("id", s!"{functionName}::{baseName}")]),
+      ("#identifier", Json.mkObj [("id", (getIdent baseName functionName))]),
       ("#source_location", mkSourceLocation config.sourceFile functionName line config),
       ("type", mkIntType config)
     ])
@@ -455,13 +468,6 @@ def mkBinaryOp (op : String) (line : String) (functionName : String) (left : Jso
     ]),
     ("sub", Json.arr #[left, right])
   ]
-
-def createParameterSymbol (baseName : String) (functionName : String) (config : CBMCConfig := .empty) : CBMCSymbol :=
-  createSymbol baseName "1" true true s!"{functionName}::" functionName config
-
-def createLocalSymbol (baseName : String) (functionName : String) (config : CBMCConfig := .empty) : CBMCSymbol :=
-  let fullName := s!"{functionName}::1::{baseName}"
-  createSymbol baseName "5" false false s!"{functionName}::1::" functionName config fullName
 
 -------------------------------------------------------------------------------
 

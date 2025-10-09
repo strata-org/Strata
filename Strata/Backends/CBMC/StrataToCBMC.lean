@@ -46,13 +46,6 @@ def SimpleTestEnvAST := TransM.run (translateProgram (SimpleTestEnv.commands))
 
 def myFunc : Strata.C_Simp.Function := SimpleTestEnvAST.fst.funcs.head!
 
-def getIdent (varName: String) (functionName: String) : String :=
-  if varName == "x" ∨ varName == "y" then
-    s!"{functionName}::{varName}"
-  else
-    s!"{functionName}::1::{varName}"
-
-
 -- Convert LExpr to CBMC JSON format for contracts
 def lexprToCBMC (expr : Strata.C_Simp.Expression.Expr) (functionName : String) : Json :=
   let cfg := CBMCConfig.empty

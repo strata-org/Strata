@@ -11,9 +11,9 @@ int procedure simpleTest (x: int, y: int)
   var count : int;
   count = 0;
   while
-  (count < 5)
-  //@decreases (5-count)
-  //@invariant (count <= 5 && (sum == (count * x)))
+  (count < x)
+  //@decreases (x-count)
+  //@invariant (count <= x && (sum == (count * x)))
   {
     count = count + 1;
     sum = sum + x;
