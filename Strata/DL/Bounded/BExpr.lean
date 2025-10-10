@@ -313,13 +313,13 @@ def translateBounded [Coe String Identifier] [DecidableEq Identifier] (e: LExprT
   | .abs e (.arrow ty .bool) =>
     let e' := translateBounded e [] pos;
     let all_assume := conditionalAdd pos (makeBoundAssumption ty ++ (increaseBVars assume)) e'.assume;
-    ⟨.abs (addAssumptions all_assume e'.translate) (removeTyBound (.arrow ty .bool)), addBoundedWfAssume all_assume e'.wfCond, conditionalReturn pos (List.map (quantifyAssumptions ty) e'.assume)⟩
+    ⟨.abs (addAssumptions all_assume e'.translate) (removeTyBound (.arrow ty .bool)), addBoundedWfAssume all_assume e'.wfCond, conditionalReturn pos (List.map (quantifyAssumptions (removeTyBound ty)) e'.assume)⟩
   | .abs e (.arrow ty1 ty2) =>
     let all_assume := makeBoundAssumption ty1 ++ (increaseBVars assume);
     let e' := translateBounded e all_assume pos;
     let res := .abs e'.translate (removeTyBound (.arrow ty1 ty2));
     -- Note: don't add assumptions to e'.wfCond, already included
-    ⟨res, addBoundedWf all_assume (boundExprIfType ty2 e'.translate) e'.wfCond, List.map (quantifyAssumptions ty1) e'.assume⟩
+    ⟨res, addBoundedWf all_assume (boundExprIfType ty2 e'.translate) e'.wfCond, List.map (quantifyAssumptions (removeTyBound ty1)) e'.assume⟩
   | .abs _ _ => ⟨.const "0" .int, [], []⟩ -- error case
   /-
   Quantifiers are simpler because they are boolean-valued. ∀ (x : nat). e adds an assumption x >= 0 -> ..., while ∃ (x: nat). e results in x >= 0 ∧ ..
@@ -328,13 +328,13 @@ def translateBounded [Coe String Identifier] [DecidableEq Identifier] (e: LExprT
     let e' := translateBounded e [] pos;
     let tr' := translateClean tr;
     let all_assume := conditionalAdd pos (makeBoundAssumption ty ++ (increaseBVars assume)) e'.assume;
-    ⟨.quant .all (removeTyBound ty) tr' (addAssumptions all_assume e'.translate), addBoundedWfAssume all_assume e'.wfCond, conditionalReturn pos (List.map (quantifyAssumptions ty) e'.assume)⟩
+    ⟨.quant .all (removeTyBound ty) tr' (addAssumptions all_assume e'.translate), addBoundedWfAssume all_assume e'.wfCond, conditionalReturn pos (List.map (quantifyAssumptions (removeTyBound ty)) e'.assume)⟩
   | .quant .exist ty tr e =>
     let newAssumption := makeBoundAssumption ty;
     let e' := translateBounded e [] pos;
     let tr' := translateClean tr;
     let all_assume := conditionalAdd pos (increaseBVars assume) e'.assume;
-    ⟨.quant .exist (removeTyBound ty) tr' (addAssumptions all_assume (addAndExprs newAssumption e'.translate)), addBoundedWfAssume (newAssumption ++ all_assume) e'.wfCond, conditionalReturn pos (List.map (quantifyAssumptions ty) e'.assume)⟩
+    ⟨.quant .exist (removeTyBound ty) tr' (addAssumptions all_assume (addAndExprs newAssumption e'.translate)), addBoundedWfAssume (newAssumption ++ all_assume) e'.wfCond, conditionalReturn pos (List.map (quantifyAssumptions (removeTyBound ty)) e'.assume)⟩
   /-
   For if-then-else, add assumptions to the condition, which is always bool-valued. For a bool-valued result, can add the conditions freely. For a bounded-valued term, produce a wf condition proving this.
   -/
@@ -350,7 +350,7 @@ def translateBounded [Coe String Identifier] [DecidableEq Identifier] (e: LExprT
     let t' := translateBounded t assume pos;
     let f' := translateBounded f assume pos;
     -- here can add inside if positive, never add outside
-    let res := .ite (addAssumptions (conditionalAdd pos assume c'.assume) c'.translate) t'.translate f'.translate ty;
+    let res := .ite (addAssumptions (conditionalAdd pos assume c'.assume) c'.translate) t'.translate f'.translate (removeTyBound ty);
     ⟨res, ListSet.union [boundExprIfType ty res, c'.wfCond, t'.wfCond, f'.wfCond], conditionalReturn pos (c'.assume ++ t'.assume ++ f'.assume)⟩
   /-
   Equality is always bool-valued, so can add assumptions
@@ -359,7 +359,7 @@ def translateBounded [Coe String Identifier] [DecidableEq Identifier] (e: LExprT
   | .eq e1 e2 ty =>
     let e1' := translateBounded e1 [] false;
     let e2' := translateBounded e2 [] false;
-    ⟨addAssumptions (conditionalAdd pos assume (e1'.assume ++ e2'.assume)) (.eq e1'.translate e2'.translate ty), ListSet.union [e1'.wfCond, e2'.wfCond], conditionalReturn pos (e1'.assume ++ e2'.assume)⟩
+    ⟨addAssumptions (conditionalAdd pos assume (e1'.assume ++ e2'.assume)) (.eq e1'.translate e2'.translate (removeTyBound ty)), ListSet.union [e1'.wfCond, e2'.wfCond], conditionalReturn pos (e1'.assume ++ e2'.assume)⟩
   | .mdata m e =>
     let e' := translateBounded e assume pos;
     ⟨.mdata m e'.translate, e'.wfCond, e'.assume⟩
