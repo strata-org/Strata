@@ -277,6 +277,8 @@ info: (declare-const b0 Int)
 #guard_msgs in
 #eval ToSMT .topLevel <| ifToPushPop <| letAssignToLetAssume <| prog
 
+-- Proof or test that letAssignToLetAssume preserves semantics.
+
 def debugSubst: LExpr LTy String :=
     .ite (.const "true" .none)
       (.app (.abs .none (.app (.bvar 1) (.bvar 0 ))) (.const "1" .none))
@@ -527,69 +529,69 @@ assume ((~> %1) #0) <|
 assume ((~> %3) #0) <|
 (if %4 then let % : int := ((~- %3) %1);
    let % := %0;
+   (if ((~&& %7) ((~> %0) %3)) then let % : int := ((~- %0) %3);
+      let % := %0;
+      assert ((~==> (~! %8)) ((~> %0) #0)) <|
+      assert ((~==> ((~< %5) %6)) ((~> %0) #0)) <|
+      (if ((~< %0) %6) then (if (~! %8) then assert %9 <|
+            assert ((~|| %8) %9) <|
+            assert ((~==> ((~< %0) %6)) ((~|| %8) %9)) <|
+            assert ((~==> ((~< %0) #0)) ((~&& %8) ((~> %5) %0))) <|
+            (if ((~> %0) %6) then assert #false <| assume #false <| skip else skip)
+          else assert ((~|| %8) %9) <|
+            assert ((~==> ((~< %0) %6)) ((~|| %8) %9)) <|
+            assert ((~==> ((~< %0) #0)) ((~&& %8) ((~> %5) %0))) <|
+            (if ((~> %0) %6) then assert #false <| assume #false <| skip else skip))
+       else assert ((~==> ((~< %0) %6)) ((~|| %8) %9)) <|
+         assert ((~==> ((~< %0) #0)) ((~&& %8) ((~> %5) %0))) <|
+         (if ((~> %0) %6) then assert #false <| assume #false <| skip else skip))
+    else let % := %0;
+      assert ((~==> (~! %7)) ((~> %0) #0)) <|
+      assert ((~==> ((~< %4) %5)) ((~> %0) #0)) <|
+      (if ((~< %0) %5) then (if (~! %7) then assert %8 <|
+            assert ((~|| %7) %8) <|
+            assert ((~==> ((~< %0) %5)) ((~|| %7) %8)) <|
+            assert ((~==> ((~< %0) #0)) ((~&& %7) ((~> %4) %0))) <|
+            (if ((~> %0) %5) then assert #false <| assume #false <| skip else skip)
+          else assert ((~|| %7) %8) <|
+            assert ((~==> ((~< %0) %5)) ((~|| %7) %8)) <|
+            assert ((~==> ((~< %0) #0)) ((~&& %7) ((~> %4) %0))) <|
+            (if ((~> %0) %5) then assert #false <| assume #false <| skip else skip))
+       else assert ((~==> ((~< %0) %5)) ((~|| %7) %8)) <|
+         assert ((~==> ((~< %0) #0)) ((~&& %7) ((~> %4) %0))) <|
+         (if ((~> %0) %5) then assert #false <| assume #false <| skip else skip)))
+ else let % := %3;
    (if ((~&& %6) ((~> %0) %2)) then let % : int := ((~- %0) %2);
       let % := %0;
+      assert ((~==> (~! %7)) ((~> %0) #0)) <|
+      assert ((~==> ((~< %4) %5)) ((~> %0) #0)) <|
+      (if ((~< %0) %5) then (if (~! %7) then assert %8 <|
+            assert ((~|| %7) %8) <|
+            assert ((~==> ((~< %0) %5)) ((~|| %7) %8)) <|
+            assert ((~==> ((~< %0) #0)) ((~&& %7) ((~> %4) %0))) <|
+            (if ((~> %0) %5) then assert #false <| assume #false <| skip else skip)
+          else assert ((~|| %7) %8) <|
+            assert ((~==> ((~< %0) %5)) ((~|| %7) %8)) <|
+            assert ((~==> ((~< %0) #0)) ((~&& %7) ((~> %4) %0))) <|
+            (if ((~> %0) %5) then assert #false <| assume #false <| skip else skip))
+       else assert ((~==> ((~< %0) %5)) ((~|| %7) %8)) <|
+         assert ((~==> ((~< %0) #0)) ((~&& %7) ((~> %4) %0))) <|
+         (if ((~> %0) %5) then assert #false <| assume #false <| skip else skip))
+    else let % := %0;
       assert ((~==> (~! %6)) ((~> %0) #0)) <|
-      assert ((~==> ((~< %4) %4)) ((~> %0) #0)) <|
+      assert ((~==> ((~< %3) %4)) ((~> %0) #0)) <|
       (if ((~< %0) %4) then (if (~! %6) then assert %7 <|
-            assert ((~|| %5) %6) <|
-            assert ((~==> ((~< %0) %4)) ((~|| %5) %6)) <|
-            assert ((~==> ((~< %0) #0)) ((~&& %5) ((~> %2) %0))) <|
+            assert ((~|| %6) %7) <|
+            assert ((~==> ((~< %0) %4)) ((~|| %6) %7)) <|
+            assert ((~==> ((~< %0) #0)) ((~&& %6) ((~> %3) %0))) <|
             (if ((~> %0) %4) then assert #false <| assume #false <| skip else skip)
-          else assert ((~|| %5) %6) <|
-            assert ((~==> ((~< %0) %4)) ((~|| %5) %6)) <|
-            assert ((~==> ((~< %0) #0)) ((~&& %5) ((~> %2) %0))) <|
+          else assert ((~|| %6) %7) <|
+            assert ((~==> ((~< %0) %4)) ((~|| %6) %7)) <|
+            assert ((~==> ((~< %0) #0)) ((~&& %6) ((~> %3) %0))) <|
             (if ((~> %0) %4) then assert #false <| assume #false <| skip else skip))
-       else assert ((~==> ((~< %0) %4)) ((~|| %5) %6)) <|
-         assert ((~==> ((~< %0) #0)) ((~&& %5) ((~> %2) %0))) <|
-         (if ((~> %0) %4) then assert #false <| assume #false <| skip else skip))
-    else let % := %0;
-      assert ((~==> (~! %5)) ((~> %0) #0)) <|
-      assert ((~==> ((~< %3) %3)) ((~> %0) #0)) <|
-      (if ((~< %0) %3) then (if (~! %5) then assert %6 <|
-            assert ((~|| %4) %5) <|
-            assert ((~==> ((~< %0) %3)) ((~|| %4) %5)) <|
-            assert ((~==> ((~< %0) #0)) ((~&& %4) ((~> %1) %0))) <|
-            (if ((~> %0) %3) then assert #false <| assume #false <| skip else skip)
-          else assert ((~|| %4) %5) <|
-            assert ((~==> ((~< %0) %3)) ((~|| %4) %5)) <|
-            assert ((~==> ((~< %0) #0)) ((~&& %4) ((~> %1) %0))) <|
-            (if ((~> %0) %3) then assert #false <| assume #false <| skip else skip))
-       else assert ((~==> ((~< %0) %3)) ((~|| %4) %5)) <|
-         assert ((~==> ((~< %0) #0)) ((~&& %4) ((~> %1) %0))) <|
-         (if ((~> %0) %3) then assert #false <| assume #false <| skip else skip)))
- else let % := %3;
-   (if ((~&& %5) ((~> %0) %1)) then let % : int := ((~- %0) %1);
-      let % := %0;
-      assert ((~==> (~! %5)) ((~> %0) #0)) <|
-      assert ((~==> ((~< %3) %3)) ((~> %0) #0)) <|
-      (if ((~< %0) %3) then (if (~! %5) then assert %6 <|
-            assert ((~|| %4) %5) <|
-            assert ((~==> ((~< %0) %3)) ((~|| %4) %5)) <|
-            assert ((~==> ((~< %0) #0)) ((~&& %4) ((~> %2) %0))) <|
-            (if ((~> %0) %3) then assert #false <| assume #false <| skip else skip)
-          else assert ((~|| %4) %5) <|
-            assert ((~==> ((~< %0) %3)) ((~|| %4) %5)) <|
-            assert ((~==> ((~< %0) #0)) ((~&& %4) ((~> %2) %0))) <|
-            (if ((~> %0) %3) then assert #false <| assume #false <| skip else skip))
-       else assert ((~==> ((~< %0) %3)) ((~|| %4) %5)) <|
-         assert ((~==> ((~< %0) #0)) ((~&& %4) ((~> %2) %0))) <|
-         (if ((~> %0) %3) then assert #false <| assume #false <| skip else skip))
-    else let % := %0;
-      assert ((~==> (~! %4)) ((~> %0) #0)) <|
-      assert ((~==> ((~< %2) %2)) ((~> %0) #0)) <|
-      (if ((~< %0) %2) then (if (~! %4) then assert %5 <|
-            assert ((~|| %3) %4) <|
-            assert ((~==> ((~< %0) %2)) ((~|| %3) %4)) <|
-            assert ((~==> ((~< %0) #0)) ((~&& %3) ((~> %1) %0))) <|
-            (if ((~> %0) %2) then assert #false <| assume #false <| skip else skip)
-          else assert ((~|| %3) %4) <|
-            assert ((~==> ((~< %0) %2)) ((~|| %3) %4)) <|
-            assert ((~==> ((~< %0) #0)) ((~&& %3) ((~> %1) %0))) <|
-            (if ((~> %0) %2) then assert #false <| assume #false <| skip else skip))
-       else assert ((~==> ((~< %0) %2)) ((~|| %3) %4)) <|
-         assert ((~==> ((~< %0) #0)) ((~&& %3) ((~> %1) %0))) <|
-         (if ((~> %0) %2) then assert #false <| assume #false <| skip else skip))))
+       else assert ((~==> ((~< %0) %4)) ((~|| %6) %7)) <|
+         assert ((~==> ((~< %0) #0)) ((~&& %6) ((~> %3) %0))) <|
+         (if ((~> %0) %4) then assert #false <| assume #false <| skip else skip))))
 -/
 #guard_msgs in
 #eval format (progIfStmt |>
@@ -613,41 +615,41 @@ pushpop (
   let %;
   assume (%0 == %1) <|
   pushpop (
-    assume ((~&& %6) ((~> %0) %2)) <|
+    assume ((~&& %7) ((~> %0) %3)) <|
     let % : int;
-    assume (%0 == ((~- %1) %3)) <|
+    assume (%0 == ((~- %1) %4)) <|
     let %;
     assume (%0 == %1) <|
     pushpop (
-      assume (~! ((~==> (~! %6)) ((~> %0) #0))) <|
+      assume (~! ((~==> (~! %8)) ((~> %0) #0))) <|
       error
     ) <|
     pushpop (
-      assume (~! ((~==> ((~< %4) %4)) ((~> %0) #0))) <|
+      assume (~! ((~==> ((~< %5) %6)) ((~> %0) #0))) <|
       error
     ) <|
     pushpop (
-      assume ((~< %0) %4) <|
+      assume ((~< %0) %6) <|
       pushpop (
-        assume (~! %6) <|
+        assume (~! %8) <|
         pushpop (
-          assume (~! %7) <|
+          assume (~! %9) <|
           error
         ) <|
         pushpop (
-          assume (~! ((~|| %5) %6)) <|
+          assume (~! ((~|| %8) %9)) <|
           error
         ) <|
         pushpop (
-          assume (~! ((~==> ((~< %0) %4)) ((~|| %5) %6))) <|
+          assume (~! ((~==> ((~< %0) %6)) ((~|| %8) %9))) <|
           error
         ) <|
         pushpop (
-          assume (~! ((~==> ((~< %0) #0)) ((~&& %5) ((~> %2) %0)))) <|
+          assume (~! ((~==> ((~< %0) #0)) ((~&& %8) ((~> %5) %0)))) <|
           error
         ) <|
         pushpop (
-          assume ((~> %0) %4) <|
+          assume ((~> %0) %6) <|
           pushpop (
             assume (~! #false) <|
             error
@@ -655,24 +657,24 @@ pushpop (
           assume #false <|
           skip
         ) <|
-        assume (~! ((~> %0) %4)) <|
+        assume (~! ((~> %0) %6)) <|
         skip
       ) <|
-      assume (~! (~! %6)) <|
+      assume (~! (~! %8)) <|
       pushpop (
-        assume (~! ((~|| %5) %6)) <|
+        assume (~! ((~|| %8) %9)) <|
         error
       ) <|
       pushpop (
-        assume (~! ((~==> ((~< %0) %4)) ((~|| %5) %6))) <|
+        assume (~! ((~==> ((~< %0) %6)) ((~|| %8) %9))) <|
         error
       ) <|
       pushpop (
-        assume (~! ((~==> ((~< %0) #0)) ((~&& %5) ((~> %2) %0)))) <|
+        assume (~! ((~==> ((~< %0) #0)) ((~&& %8) ((~> %5) %0)))) <|
         error
       ) <|
       pushpop (
-        assume ((~> %0) %4) <|
+        assume ((~> %0) %6) <|
         pushpop (
           assume (~! #false) <|
           error
@@ -680,16 +682,243 @@ pushpop (
         assume #false <|
         skip
       ) <|
-      assume (~! ((~> %0) %4)) <|
+      assume (~! ((~> %0) %6)) <|
       skip
     ) <|
-    assume (~! ((~< %0) %4)) <|
+    assume (~! ((~< %0) %6)) <|
     pushpop (
-      assume (~! ((~==> ((~< %0) %4)) ((~|| %5) %6))) <|
+      assume (~! ((~==> ((~< %0) %6)) ((~|| %8) %9))) <|
       error
     ) <|
     pushpop (
-      assume (~! ((~==> ((~< %0) #0)) ((~&& %5) ((~> %2) %0)))) <|
+      assume (~! ((~==> ((~< %0) #0)) ((~&& %8) ((~> %5) %0)))) <|
+      error
+    ) <|
+    pushpop (
+      assume ((~> %0) %6) <|
+      pushpop (
+        assume (~! #false) <|
+        error
+      ) <|
+      assume #false <|
+      skip
+    ) <|
+    assume (~! ((~> %0) %6)) <|
+    skip
+  ) <|
+  assume (~! ((~&& %7) ((~> %0) %3))) <|
+  let %;
+  assume (%0 == %1) <|
+  pushpop (
+    assume (~! ((~==> (~! %7)) ((~> %0) #0))) <|
+    error
+  ) <|
+  pushpop (
+    assume (~! ((~==> ((~< %4) %5)) ((~> %0) #0))) <|
+    error
+  ) <|
+  pushpop (
+    assume ((~< %0) %5) <|
+    pushpop (
+      assume (~! %7) <|
+      pushpop (
+        assume (~! %8) <|
+        error
+      ) <|
+      pushpop (
+        assume (~! ((~|| %7) %8)) <|
+        error
+      ) <|
+      pushpop (
+        assume (~! ((~==> ((~< %0) %5)) ((~|| %7) %8))) <|
+        error
+      ) <|
+      pushpop (
+        assume (~! ((~==> ((~< %0) #0)) ((~&& %7) ((~> %4) %0)))) <|
+        error
+      ) <|
+      pushpop (
+        assume ((~> %0) %5) <|
+        pushpop (
+          assume (~! #false) <|
+          error
+        ) <|
+        assume #false <|
+        skip
+      ) <|
+      assume (~! ((~> %0) %5)) <|
+      skip
+    ) <|
+    assume (~! (~! %7)) <|
+    pushpop (
+      assume (~! ((~|| %7) %8)) <|
+      error
+    ) <|
+    pushpop (
+      assume (~! ((~==> ((~< %0) %5)) ((~|| %7) %8))) <|
+      error
+    ) <|
+    pushpop (
+      assume (~! ((~==> ((~< %0) #0)) ((~&& %7) ((~> %4) %0)))) <|
+      error
+    ) <|
+    pushpop (
+      assume ((~> %0) %5) <|
+      pushpop (
+        assume (~! #false) <|
+        error
+      ) <|
+      assume #false <|
+      skip
+    ) <|
+    assume (~! ((~> %0) %5)) <|
+    skip
+  ) <|
+  assume (~! ((~< %0) %5)) <|
+  pushpop (
+    assume (~! ((~==> ((~< %0) %5)) ((~|| %7) %8))) <|
+    error
+  ) <|
+  pushpop (
+    assume (~! ((~==> ((~< %0) #0)) ((~&& %7) ((~> %4) %0)))) <|
+    error
+  ) <|
+  pushpop (
+    assume ((~> %0) %5) <|
+    pushpop (
+      assume (~! #false) <|
+      error
+    ) <|
+    assume #false <|
+    skip
+  ) <|
+  assume (~! ((~> %0) %5)) <|
+  skip
+) <|
+assume (~! %4) <|
+let %;
+assume (%0 == %4) <|
+pushpop (
+  assume ((~&& %6) ((~> %0) %2)) <|
+  let % : int;
+  assume (%0 == ((~- %1) %3)) <|
+  let %;
+  assume (%0 == %1) <|
+  pushpop (
+    assume (~! ((~==> (~! %7)) ((~> %0) #0))) <|
+    error
+  ) <|
+  pushpop (
+    assume (~! ((~==> ((~< %4) %5)) ((~> %0) #0))) <|
+    error
+  ) <|
+  pushpop (
+    assume ((~< %0) %5) <|
+    pushpop (
+      assume (~! %7) <|
+      pushpop (
+        assume (~! %8) <|
+        error
+      ) <|
+      pushpop (
+        assume (~! ((~|| %7) %8)) <|
+        error
+      ) <|
+      pushpop (
+        assume (~! ((~==> ((~< %0) %5)) ((~|| %7) %8))) <|
+        error
+      ) <|
+      pushpop (
+        assume (~! ((~==> ((~< %0) #0)) ((~&& %7) ((~> %4) %0)))) <|
+        error
+      ) <|
+      pushpop (
+        assume ((~> %0) %5) <|
+        pushpop (
+          assume (~! #false) <|
+          error
+        ) <|
+        assume #false <|
+        skip
+      ) <|
+      assume (~! ((~> %0) %5)) <|
+      skip
+    ) <|
+    assume (~! (~! %7)) <|
+    pushpop (
+      assume (~! ((~|| %7) %8)) <|
+      error
+    ) <|
+    pushpop (
+      assume (~! ((~==> ((~< %0) %5)) ((~|| %7) %8))) <|
+      error
+    ) <|
+    pushpop (
+      assume (~! ((~==> ((~< %0) #0)) ((~&& %7) ((~> %4) %0)))) <|
+      error
+    ) <|
+    pushpop (
+      assume ((~> %0) %5) <|
+      pushpop (
+        assume (~! #false) <|
+        error
+      ) <|
+      assume #false <|
+      skip
+    ) <|
+    assume (~! ((~> %0) %5)) <|
+    skip
+  ) <|
+  assume (~! ((~< %0) %5)) <|
+  pushpop (
+    assume (~! ((~==> ((~< %0) %5)) ((~|| %7) %8))) <|
+    error
+  ) <|
+  pushpop (
+    assume (~! ((~==> ((~< %0) #0)) ((~&& %7) ((~> %4) %0)))) <|
+    error
+  ) <|
+  pushpop (
+    assume ((~> %0) %5) <|
+    pushpop (
+      assume (~! #false) <|
+      error
+    ) <|
+    assume #false <|
+    skip
+  ) <|
+  assume (~! ((~> %0) %5)) <|
+  skip
+) <|
+assume (~! ((~&& %6) ((~> %0) %2))) <|
+let %;
+assume (%0 == %1) <|
+pushpop (
+  assume (~! ((~==> (~! %6)) ((~> %0) #0))) <|
+  error
+) <|
+pushpop (
+  assume (~! ((~==> ((~< %3) %4)) ((~> %0) #0))) <|
+  error
+) <|
+pushpop (
+  assume ((~< %0) %4) <|
+  pushpop (
+    assume (~! %6) <|
+    pushpop (
+      assume (~! %7) <|
+      error
+    ) <|
+    pushpop (
+      assume (~! ((~|| %6) %7)) <|
+      error
+    ) <|
+    pushpop (
+      assume (~! ((~==> ((~< %0) %4)) ((~|| %6) %7))) <|
+      error
+    ) <|
+    pushpop (
+      assume (~! ((~==> ((~< %0) #0)) ((~&& %6) ((~> %3) %0)))) <|
       error
     ) <|
     pushpop (
@@ -704,85 +933,21 @@ pushpop (
     assume (~! ((~> %0) %4)) <|
     skip
   ) <|
-  assume (~! ((~&& %6) ((~> %0) %2))) <|
-  let %;
-  assume (%0 == %1) <|
+  assume (~! (~! %6)) <|
   pushpop (
-    assume (~! ((~==> (~! %5)) ((~> %0) #0))) <|
+    assume (~! ((~|| %6) %7)) <|
     error
   ) <|
   pushpop (
-    assume (~! ((~==> ((~< %3) %3)) ((~> %0) #0))) <|
+    assume (~! ((~==> ((~< %0) %4)) ((~|| %6) %7))) <|
     error
   ) <|
   pushpop (
-    assume ((~< %0) %3) <|
-    pushpop (
-      assume (~! %5) <|
-      pushpop (
-        assume (~! %6) <|
-        error
-      ) <|
-      pushpop (
-        assume (~! ((~|| %4) %5)) <|
-        error
-      ) <|
-      pushpop (
-        assume (~! ((~==> ((~< %0) %3)) ((~|| %4) %5))) <|
-        error
-      ) <|
-      pushpop (
-        assume (~! ((~==> ((~< %0) #0)) ((~&& %4) ((~> %1) %0)))) <|
-        error
-      ) <|
-      pushpop (
-        assume ((~> %0) %3) <|
-        pushpop (
-          assume (~! #false) <|
-          error
-        ) <|
-        assume #false <|
-        skip
-      ) <|
-      assume (~! ((~> %0) %3)) <|
-      skip
-    ) <|
-    assume (~! (~! %5)) <|
-    pushpop (
-      assume (~! ((~|| %4) %5)) <|
-      error
-    ) <|
-    pushpop (
-      assume (~! ((~==> ((~< %0) %3)) ((~|| %4) %5))) <|
-      error
-    ) <|
-    pushpop (
-      assume (~! ((~==> ((~< %0) #0)) ((~&& %4) ((~> %1) %0)))) <|
-      error
-    ) <|
-    pushpop (
-      assume ((~> %0) %3) <|
-      pushpop (
-        assume (~! #false) <|
-        error
-      ) <|
-      assume #false <|
-      skip
-    ) <|
-    assume (~! ((~> %0) %3)) <|
-    skip
-  ) <|
-  assume (~! ((~< %0) %3)) <|
-  pushpop (
-    assume (~! ((~==> ((~< %0) %3)) ((~|| %4) %5))) <|
+    assume (~! ((~==> ((~< %0) #0)) ((~&& %6) ((~> %3) %0)))) <|
     error
   ) <|
   pushpop (
-    assume (~! ((~==> ((~< %0) #0)) ((~&& %4) ((~> %1) %0)))) <|
-    error
-  ) <|
-  pushpop (
-    assume ((~> %0) %3) <|
+    assume ((~> %0) %4) <|
     pushpop (
       assume (~! #false) <|
       error
@@ -790,183 +955,20 @@ pushpop (
     assume #false <|
     skip
   ) <|
-  assume (~! ((~> %0) %3)) <|
+  assume (~! ((~> %0) %4)) <|
   skip
 ) <|
-assume (~! %4) <|
-let %;
-assume (%0 == %4) <|
+assume (~! ((~< %0) %4)) <|
 pushpop (
-  assume ((~&& %5) ((~> %0) %1)) <|
-  let % : int;
-  assume (%0 == ((~- %1) %2)) <|
-  let %;
-  assume (%0 == %1) <|
-  pushpop (
-    assume (~! ((~==> (~! %5)) ((~> %0) #0))) <|
-    error
-  ) <|
-  pushpop (
-    assume (~! ((~==> ((~< %3) %3)) ((~> %0) #0))) <|
-    error
-  ) <|
-  pushpop (
-    assume ((~< %0) %3) <|
-    pushpop (
-      assume (~! %5) <|
-      pushpop (
-        assume (~! %6) <|
-        error
-      ) <|
-      pushpop (
-        assume (~! ((~|| %4) %5)) <|
-        error
-      ) <|
-      pushpop (
-        assume (~! ((~==> ((~< %0) %3)) ((~|| %4) %5))) <|
-        error
-      ) <|
-      pushpop (
-        assume (~! ((~==> ((~< %0) #0)) ((~&& %4) ((~> %2) %0)))) <|
-        error
-      ) <|
-      pushpop (
-        assume ((~> %0) %3) <|
-        pushpop (
-          assume (~! #false) <|
-          error
-        ) <|
-        assume #false <|
-        skip
-      ) <|
-      assume (~! ((~> %0) %3)) <|
-      skip
-    ) <|
-    assume (~! (~! %5)) <|
-    pushpop (
-      assume (~! ((~|| %4) %5)) <|
-      error
-    ) <|
-    pushpop (
-      assume (~! ((~==> ((~< %0) %3)) ((~|| %4) %5))) <|
-      error
-    ) <|
-    pushpop (
-      assume (~! ((~==> ((~< %0) #0)) ((~&& %4) ((~> %2) %0)))) <|
-      error
-    ) <|
-    pushpop (
-      assume ((~> %0) %3) <|
-      pushpop (
-        assume (~! #false) <|
-        error
-      ) <|
-      assume #false <|
-      skip
-    ) <|
-    assume (~! ((~> %0) %3)) <|
-    skip
-  ) <|
-  assume (~! ((~< %0) %3)) <|
-  pushpop (
-    assume (~! ((~==> ((~< %0) %3)) ((~|| %4) %5))) <|
-    error
-  ) <|
-  pushpop (
-    assume (~! ((~==> ((~< %0) #0)) ((~&& %4) ((~> %2) %0)))) <|
-    error
-  ) <|
-  pushpop (
-    assume ((~> %0) %3) <|
-    pushpop (
-      assume (~! #false) <|
-      error
-    ) <|
-    assume #false <|
-    skip
-  ) <|
-  assume (~! ((~> %0) %3)) <|
-  skip
-) <|
-assume (~! ((~&& %5) ((~> %0) %1))) <|
-let %;
-assume (%0 == %1) <|
-pushpop (
-  assume (~! ((~==> (~! %4)) ((~> %0) #0))) <|
+  assume (~! ((~==> ((~< %0) %4)) ((~|| %6) %7))) <|
   error
 ) <|
 pushpop (
-  assume (~! ((~==> ((~< %2) %2)) ((~> %0) #0))) <|
+  assume (~! ((~==> ((~< %0) #0)) ((~&& %6) ((~> %3) %0)))) <|
   error
 ) <|
 pushpop (
-  assume ((~< %0) %2) <|
-  pushpop (
-    assume (~! %4) <|
-    pushpop (
-      assume (~! %5) <|
-      error
-    ) <|
-    pushpop (
-      assume (~! ((~|| %3) %4)) <|
-      error
-    ) <|
-    pushpop (
-      assume (~! ((~==> ((~< %0) %2)) ((~|| %3) %4))) <|
-      error
-    ) <|
-    pushpop (
-      assume (~! ((~==> ((~< %0) #0)) ((~&& %3) ((~> %1) %0)))) <|
-      error
-    ) <|
-    pushpop (
-      assume ((~> %0) %2) <|
-      pushpop (
-        assume (~! #false) <|
-        error
-      ) <|
-      assume #false <|
-      skip
-    ) <|
-    assume (~! ((~> %0) %2)) <|
-    skip
-  ) <|
-  assume (~! (~! %4)) <|
-  pushpop (
-    assume (~! ((~|| %3) %4)) <|
-    error
-  ) <|
-  pushpop (
-    assume (~! ((~==> ((~< %0) %2)) ((~|| %3) %4))) <|
-    error
-  ) <|
-  pushpop (
-    assume (~! ((~==> ((~< %0) #0)) ((~&& %3) ((~> %1) %0)))) <|
-    error
-  ) <|
-  pushpop (
-    assume ((~> %0) %2) <|
-    pushpop (
-      assume (~! #false) <|
-      error
-    ) <|
-    assume #false <|
-    skip
-  ) <|
-  assume (~! ((~> %0) %2)) <|
-  skip
-) <|
-assume (~! ((~< %0) %2)) <|
-pushpop (
-  assume (~! ((~==> ((~< %0) %2)) ((~|| %3) %4))) <|
-  error
-) <|
-pushpop (
-  assume (~! ((~==> ((~< %0) #0)) ((~&& %3) ((~> %1) %0)))) <|
-  error
-) <|
-pushpop (
-  assume ((~> %0) %2) <|
+  assume ((~> %0) %4) <|
   pushpop (
     assume (~! #false) <|
     error
@@ -974,7 +976,7 @@ pushpop (
   assume #false <|
   skip
 ) <|
-assume (~! ((~> %0) %2)) <|
+assume (~! ((~> %0) %4)) <|
 skip
 -/
 #guard_msgs in
@@ -1004,41 +1006,41 @@ info: (declare-const b0 Bool)
 (declare-const b7 Int)
 (assert (= b7 b6))
 (push)
-(assert (and b1 (> b7 b5)))
+(assert (and b0 (> b7 b4)))
 (declare-const b8 Int)
-(assert (= b8 (- b7 b5)))
+(assert (= b8 (- b7 b4)))
 (declare-const b9 Int)
 (assert (= b9 b8))
 (push)
-(assert (not (=> (not b3) (> b9 0))))
+(assert (not (=> (not b1) (> b9 0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b5 b5) (> b9 0))))
+(assert (not (=> (< b4 b3) (> b9 0))))
 (check-sat)
 (pop)
 (push)
-(assert (< b9 b5))
+(assert (< b9 b3))
 (push)
-(assert (not b3))
+(assert (not b1))
 (push)
-(assert (not b2))
+(assert (not b0))
 (check-sat)
 (pop)
 (push)
-(assert (not (and b4 b3)))
+(assert (not (or b1 b0)))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b9 b5) (and b4 b3))))
+(assert (not (=> (< b9 b3) (or b1 b0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b9 0) (and b4 (> b7 b9)))))
+(assert (not (=> (< b9 0) (and b1 (> b4 b9)))))
 (check-sat)
 (pop)
 (push)
-(assert (> b9 b5))
+(assert (> b9 b3))
 (push)
 (assert (not false))
 (check-sat)
@@ -1046,24 +1048,24 @@ info: (declare-const b0 Bool)
 (assert false)
 
 (pop)
-(assert (not (> b9 b5)))
+(assert (not (> b9 b3)))
 
 (pop)
-(assert (not (not b3)))
+(assert (not (not b1)))
 (push)
-(assert (not (and b4 b3)))
+(assert (not (or b1 b0)))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b9 b5) (and b4 b3))))
+(assert (not (=> (< b9 b3) (or b1 b0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b9 0) (and b4 (> b7 b9)))))
+(assert (not (=> (< b9 0) (and b1 (> b4 b9)))))
 (check-sat)
 (pop)
 (push)
-(assert (> b9 b5))
+(assert (> b9 b3))
 (push)
 (assert (not false))
 (check-sat)
@@ -1071,20 +1073,20 @@ info: (declare-const b0 Bool)
 (assert false)
 
 (pop)
-(assert (not (> b9 b5)))
+(assert (not (> b9 b3)))
 
 (pop)
-(assert (not (< b9 b5)))
+(assert (not (< b9 b3)))
 (push)
-(assert (not (=> (< b9 b5) (and b4 b3))))
+(assert (not (=> (< b9 b3) (or b1 b0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b9 0) (and b4 (> b7 b9)))))
+(assert (not (=> (< b9 0) (and b1 (> b4 b9)))))
 (check-sat)
 (pop)
 (push)
-(assert (> b9 b5))
+(assert (> b9 b3))
 (push)
 (assert (not false))
 (check-sat)
@@ -1092,42 +1094,42 @@ info: (declare-const b0 Bool)
 (assert false)
 
 (pop)
-(assert (not (> b9 b5)))
+(assert (not (> b9 b3)))
 
 (pop)
-(assert (not (and b1 (> b7 b5))))
+(assert (not (and b0 (> b7 b4))))
 (declare-const b8 Int)
 (assert (= b8 b7))
 (push)
-(assert (not (=> (not b3) (> b8 0))))
+(assert (not (=> (not b1) (> b8 0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b5 b5) (> b8 0))))
+(assert (not (=> (< b4 b3) (> b8 0))))
 (check-sat)
 (pop)
 (push)
-(assert (< b8 b5))
+(assert (< b8 b3))
 (push)
-(assert (not b3))
+(assert (not b1))
 (push)
-(assert (not b2))
+(assert (not b0))
 (check-sat)
 (pop)
 (push)
-(assert (not (and b4 b3)))
+(assert (not (or b1 b0)))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b8 b5) (and b4 b3))))
+(assert (not (=> (< b8 b3) (or b1 b0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b8 0) (and b4 (> b7 b8)))))
+(assert (not (=> (< b8 0) (and b1 (> b4 b8)))))
 (check-sat)
 (pop)
 (push)
-(assert (> b8 b5))
+(assert (> b8 b3))
 (push)
 (assert (not false))
 (check-sat)
@@ -1135,24 +1137,24 @@ info: (declare-const b0 Bool)
 (assert false)
 
 (pop)
-(assert (not (> b8 b5)))
+(assert (not (> b8 b3)))
 
 (pop)
-(assert (not (not b3)))
+(assert (not (not b1)))
 (push)
-(assert (not (and b4 b3)))
+(assert (not (or b1 b0)))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b8 b5) (and b4 b3))))
+(assert (not (=> (< b8 b3) (or b1 b0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b8 0) (and b4 (> b7 b8)))))
+(assert (not (=> (< b8 0) (and b1 (> b4 b8)))))
 (check-sat)
 (pop)
 (push)
-(assert (> b8 b5))
+(assert (> b8 b3))
 (push)
 (assert (not false))
 (check-sat)
@@ -1160,20 +1162,20 @@ info: (declare-const b0 Bool)
 (assert false)
 
 (pop)
-(assert (not (> b8 b5)))
+(assert (not (> b8 b3)))
 
 (pop)
-(assert (not (< b8 b5)))
+(assert (not (< b8 b3)))
 (push)
-(assert (not (=> (< b8 b5) (and b4 b3))))
+(assert (not (=> (< b8 b3) (or b1 b0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b8 0) (and b4 (> b7 b8)))))
+(assert (not (=> (< b8 0) (and b1 (> b4 b8)))))
 (check-sat)
 (pop)
 (push)
-(assert (> b8 b5))
+(assert (> b8 b3))
 (push)
 (assert (not false))
 (check-sat)
@@ -1181,48 +1183,48 @@ info: (declare-const b0 Bool)
 (assert false)
 
 (pop)
-(assert (not (> b8 b5)))
+(assert (not (> b8 b3)))
 
 (pop)
 (assert (not b1))
 (declare-const b6 Int)
 (assert (= b6 b2))
 (push)
-(assert (and b1 (> b6 b5)))
+(assert (and b0 (> b6 b4)))
 (declare-const b7 Int)
-(assert (= b7 (- b6 b5)))
+(assert (= b7 (- b6 b4)))
 (declare-const b8 Int)
 (assert (= b8 b7))
 (push)
-(assert (not (=> (not b3) (> b8 0))))
+(assert (not (=> (not b1) (> b8 0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b5 b5) (> b8 0))))
+(assert (not (=> (< b4 b3) (> b8 0))))
 (check-sat)
 (pop)
 (push)
-(assert (< b8 b5))
+(assert (< b8 b3))
 (push)
-(assert (not b3))
+(assert (not b1))
 (push)
-(assert (not b2))
+(assert (not b0))
 (check-sat)
 (pop)
 (push)
-(assert (not (and b4 b3)))
+(assert (not (or b1 b0)))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b8 b5) (and b4 b3))))
+(assert (not (=> (< b8 b3) (or b1 b0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b8 0) (and b4 (> b6 b8)))))
+(assert (not (=> (< b8 0) (and b1 (> b4 b8)))))
 (check-sat)
 (pop)
 (push)
-(assert (> b8 b5))
+(assert (> b8 b3))
 (push)
 (assert (not false))
 (check-sat)
@@ -1230,24 +1232,24 @@ info: (declare-const b0 Bool)
 (assert false)
 
 (pop)
-(assert (not (> b8 b5)))
+(assert (not (> b8 b3)))
 
 (pop)
-(assert (not (not b3)))
+(assert (not (not b1)))
 (push)
-(assert (not (and b4 b3)))
+(assert (not (or b1 b0)))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b8 b5) (and b4 b3))))
+(assert (not (=> (< b8 b3) (or b1 b0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b8 0) (and b4 (> b6 b8)))))
+(assert (not (=> (< b8 0) (and b1 (> b4 b8)))))
 (check-sat)
 (pop)
 (push)
-(assert (> b8 b5))
+(assert (> b8 b3))
 (push)
 (assert (not false))
 (check-sat)
@@ -1255,20 +1257,20 @@ info: (declare-const b0 Bool)
 (assert false)
 
 (pop)
-(assert (not (> b8 b5)))
+(assert (not (> b8 b3)))
 
 (pop)
-(assert (not (< b8 b5)))
+(assert (not (< b8 b3)))
 (push)
-(assert (not (=> (< b8 b5) (and b4 b3))))
+(assert (not (=> (< b8 b3) (or b1 b0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b8 0) (and b4 (> b6 b8)))))
+(assert (not (=> (< b8 0) (and b1 (> b4 b8)))))
 (check-sat)
 (pop)
 (push)
-(assert (> b8 b5))
+(assert (> b8 b3))
 (push)
 (assert (not false))
 (check-sat)
@@ -1276,42 +1278,42 @@ info: (declare-const b0 Bool)
 (assert false)
 
 (pop)
-(assert (not (> b8 b5)))
+(assert (not (> b8 b3)))
 
 (pop)
-(assert (not (and b1 (> b6 b5))))
+(assert (not (and b0 (> b6 b4))))
 (declare-const b7 Int)
 (assert (= b7 b6))
 (push)
-(assert (not (=> (not b3) (> b7 0))))
+(assert (not (=> (not b1) (> b7 0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b5 b5) (> b7 0))))
+(assert (not (=> (< b4 b3) (> b7 0))))
 (check-sat)
 (pop)
 (push)
-(assert (< b7 b5))
+(assert (< b7 b3))
 (push)
-(assert (not b3))
+(assert (not b1))
 (push)
-(assert (not b2))
+(assert (not b0))
 (check-sat)
 (pop)
 (push)
-(assert (not (and b4 b3)))
+(assert (not (or b1 b0)))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b7 b5) (and b4 b3))))
+(assert (not (=> (< b7 b3) (or b1 b0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b7 0) (and b4 (> b6 b7)))))
+(assert (not (=> (< b7 0) (and b1 (> b4 b7)))))
 (check-sat)
 (pop)
 (push)
-(assert (> b7 b5))
+(assert (> b7 b3))
 (push)
 (assert (not false))
 (check-sat)
@@ -1319,24 +1321,24 @@ info: (declare-const b0 Bool)
 (assert false)
 
 (pop)
-(assert (not (> b7 b5)))
+(assert (not (> b7 b3)))
 
 (pop)
-(assert (not (not b3)))
+(assert (not (not b1)))
 (push)
-(assert (not (and b4 b3)))
+(assert (not (or b1 b0)))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b7 b5) (and b4 b3))))
+(assert (not (=> (< b7 b3) (or b1 b0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b7 0) (and b4 (> b6 b7)))))
+(assert (not (=> (< b7 0) (and b1 (> b4 b7)))))
 (check-sat)
 (pop)
 (push)
-(assert (> b7 b5))
+(assert (> b7 b3))
 (push)
 (assert (not false))
 (check-sat)
@@ -1344,20 +1346,20 @@ info: (declare-const b0 Bool)
 (assert false)
 
 (pop)
-(assert (not (> b7 b5)))
+(assert (not (> b7 b3)))
 
 (pop)
-(assert (not (< b7 b5)))
+(assert (not (< b7 b3)))
 (push)
-(assert (not (=> (< b7 b5) (and b4 b3))))
+(assert (not (=> (< b7 b3) (or b1 b0))))
 (check-sat)
 (pop)
 (push)
-(assert (not (=> (< b7 0) (and b4 (> b6 b7)))))
+(assert (not (=> (< b7 0) (and b1 (> b4 b7)))))
 (check-sat)
 (pop)
 (push)
-(assert (> b7 b5))
+(assert (> b7 b3))
 (push)
 (assert (not false))
 (check-sat)
@@ -1365,7 +1367,7 @@ info: (declare-const b0 Bool)
 (assert false)
 
 (pop)
-(assert (not (> b7 b5)))
+(assert (not (> b7 b3)))
 -/
 #guard_msgs in
 #eval ToSMT .topLevel (progIfStmt |>
@@ -1373,6 +1375,178 @@ info: (declare-const b0 Bool)
       letAssignToLetAssume |>
       ifToPushPop
     )
+
+
+def progIfStmtDebug: LExpr LTy String :=
+  let_ .topLevel "discount" _Bool <| fun c =>
+  let_ c "price" _Int <| fun c =>
+  let_ c "discountAmount" _Int <| fun c =>
+  if_ c ["price"] (fun c => c.v "discount") (
+    then_ := fun exit c =>
+      let_assign c "price" _Int (minus (c.v "price") (c.v "discountAmount")) <| fun c =>
+      exit c) (
+    else_ := fun exit c => exit c) (
+    endif := fun c =>
+  .assert (implies (not (c.v "discount")) (gt (c.v "price") (.const "0" .none))) <|
+  skip)
+
+/-
+info: let b0% : bool;
+let b1% : int;
+let b2% : int;
+((λb3 (if b0%3 then let b4% : int := ((~- b1%2) b2%1); (b3%1 b4%0) else (%0 %2)))) <| λb3
+assert ((~==> (~! b0%3)) ((~> b3%0) #0)) <|
+skip
+-/
+#eval format (progIfStmtDebug
+      --|> inlineContinuations
+      --|> letAssignToLetAssume
+      --|> ifToPushPop
+    )
+
+/-
+info: let b0% : bool;
+let b1% : int;
+let b2% : int;
+((λb3 (
+  if b0%3 then
+    let b4% : int := ((~- b1%2) b2%1);
+    (b3%1 b4%0)
+  else
+    (%0 %2)))) <| λb3. assert ((~==> (~! b0%3)) ((~> b3%0) #0)) skip
+-/
+
+/-
+info: let b0% : bool;
+let b1% : int;
+let b2% : int;
+
+  if b0%3 then
+    let b4% : int := ((~- b1%2) b2%1);
+    (b3%1 b4%0)
+  else
+    (%0 %2)))) <| λb3. assert ((~==> (~! b0%3)) ((~> b3%0) #0)) skip
+-/
+
+
+
+/-
+info: let b0% : bool;
+let b1% : int;
+let b2% : int;
+(((if b0%2 then
+  let b3% : int := ((~- b1%1) b2%0);
+  ((λb4: Int. assert ((~==> (~! b0%3)) ((~> b4%0) #0))) b3%0) else (%0 %2))))
+skip
+-/
+
+/-
+info: let b0% : bool;
+let b1% : int;
+let b2% : int;
+(if b0%2 then let b3% : int := ((~- b1%1) b2%0);
+   let b4% := b3%0;
+   assert ((~==> (~! b1%3)) ((~> b4%0) #0)) <|
+   skip
+ else let b4% := b2%1;
+   assert ((~==> (~! b1%2)) ((~> b4%0) #0)) <|
+   skip)
+-/
+#eval format (progIfStmtDebug
+      |> inlineContinuations
+      --|> letAssignToLetAssume
+      --|> ifToPushPop
+    )
+
+/--
+info: (declare-const b0 Bool)
+(declare-const b1 Int)
+(declare-const b2 Int)
+(push)
+(assert b0)
+(declare-const b3 Int)
+(assert (= b3 (- b1 b2)))
+(declare-const b4 Int)
+(assert (= b4 b3))
+(push)
+(assert (not (=> (not b0) (> b4 0))))
+(check-sat)
+(pop)
+
+(pop)
+(assert (not b0))
+(declare-const b3 Int)
+(assert (= b3 b1))
+(push)
+(assert (not (=> (not b0) (> b3 0))))
+(check-sat)
+(pop)
+-/
+#guard_msgs in
+#eval ToSMT .topLevel (progIfStmtDebug |>
+      inlineContinuations |>
+      letAssignToLetAssume |>
+      ifToPushPop
+    )
+
+inductive StmtExpr (I: Type): Type where
+/- Statement like -/
+  | IfThenElse (cond : StmtExpr I) (thenBranch : StmtExpr I) (elseBranch : Option (StmtExpr I))
+  | Block (statements : List (StmtExpr I)) (label : Option I)
+  | Exit (target: I)
+  /- The initializer must be set if this StmtExpr is pure -/
+  | LocalVariable (name : I) (type : LTy) (initializer : Option (StmtExpr I))
+  | Assign (target value : StmtExpr I)
+  | Assert (condition: StmtExpr I)
+  | Assume (condition: StmtExpr I)
+  | LiteralInt (i: Int)
+  | Identifier (name: I)
+deriving Repr
+
+mutual
+partial def translateToNLExprList
+  (c: Context String)
+  (frameBVars: List (String × Nat))
+  (continueClosure: Option (LExpr LTy String))
+  (remaining: List (StmtExpr String)): LExpr LTy String :=
+  match remaining with
+  | .Assume condition :: remaining =>
+    .assume (translateToNLExpr c condition) (translateToNLExprList c frameBVars continueClosure remaining)
+  | [] =>
+    match continueClosure with
+    | .some v => frameBVars.foldr (fun (name, index) acc => .app acc (.bvar index)) v
+    | .none => .skip
+  | _ => panic!("Could not do that")
+
+partial def translateToNLExpr (c: Context String) (s: StmtExpr String): LExpr LTy String :=
+  match s with
+  | .Assume condition =>
+    translateToNLExprList c [] .none [s]
+  | .Block statements optLabel => -- Translated to a continuation
+      let blockLabel :=
+        match optLabel with
+        | .some label => label
+        | .none => "exit"
+      let c := c.add blockLabel
+      (.abs .none <| translateToNLExprList c (.some (c.v blockLabel)) statements)
+  | .LiteralInt i => .const (toString f!"{i}") .none
+  | .Identifier name => c.v name
+  | _ => panic!("could not do that")
+end
+/-
+var i := 1;
+l: {
+  // We can't just detect a variable by name
+  //
+  i := 2;
+  var i := 3; // New variable
+  i := 4;
+  exit l;
+}
+assert i == 2; // Can be proved
+
+-/
+#eval translateToNLExpr .topLevel
 
 end LExpr
 end Lambda

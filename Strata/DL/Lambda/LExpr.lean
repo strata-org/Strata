@@ -1185,7 +1185,7 @@ partial def ToSMTExpr (c: Context String) (prog: LExpr LTy String): Format :=
   | .op "-" _ => f!"-"
   | .op "!" _ => f!"not"
   | .op "&&" _ => f!"and"
-  | .op "||" _ => f!"and"
+  | .op "||" _ => f!"or"
   | .op "<" _ => f!"<"
   | .op "<=" _ => f!"<="
   | .op ">" _ => f!">"
@@ -1225,36 +1225,26 @@ partial def ToSMT (c: Context String) (prog: LExpr LTy String): Format :=
   | _ => panic!("ToSMT not supported:" ++ (toString (format prog)))
 
 -- We wrongly assume determinism. We should detect determinism in the future.
+def frameExitCall(frame: List String) (exitName: String) (cAtExit: Context String): LExpr LTy String :=
+    (frame.map cAtExit.v).foldl
+      (fun acc v => .app acc v)
+      (cAtExit.v exitName)
 
 def if_ (c: Context String) (frame: List String) (cond: Context String -> LExpr LTy String) (then_ else_:(Context String -> LExpr LTy String) -> Context String → LExpr LTy String) (endif : Context String → LExpr LTy String) : LExpr LTy String :=
   -- First we call thn and els with a '#continue' free variable
   -- Then we detect which variables have been modified since the original context on either branches
   -- We add those variables to the context for next, and then
   -- we replace #continue on each branch with a call to the actual continue variable with the variables modified on either branches as argument.
-  let continueName := "#continue" -- TODO: Avoid name clashes in the case of nested ifs. Use metadata?
-  let newC := c.add continueName
-  let thnProg :=
-    then_ (
-      fun cAtExitOfThn =>
-        (frame.map cAtExitOfThn.v).foldl
-          (fun acc v => .app acc v)
-          (cAtExitOfThn.v continueName)) newC
-  let elsProg :=
-    else_ (
-      fun cAtExitOfEls =>
-        (frame.map cAtExitOfEls.v).foldl
-          (fun acc v => .app acc v)
-          (cAtExitOfEls.v continueName)) newC
+  let exitName := "#continue" -- TODO: Avoid name clashes in the case of nested ifs. Use metadata?
+  let newC := c.add exitName
+  let thnProg := then_ (frameExitCall frame exitName) newC
+  let elsProg := else_ (frameExitCall frame exitName) newC
   let nextCtx := frame.foldl Context.add c
   let nextProg := frame.foldl (fun acc _ignoredName => .abs .none acc) (endif nextCtx)
   .app (.abs .none <|
     .ite (cond newC) thnProg elsProg
   ) nextProg
-  -- We need to find which variables have been modified on either branch
-  -- For that, we need to find the context in which continueVar can be found
-  -- We create the sequence of all variables added since then in the context.
-  -- To distinguish a local variable shadowing an existing variable from an assignment that overrides the value,
-  -- we can't assume a variable is assigned once on each branch, so
+
 /-
 var i := 0;
 if b {
@@ -1273,7 +1263,10 @@ This means that modifying variables is something that has to be explicit in the 
 We don't have to guess.
 -/
 
-
+-- Substitute variable .bvar 0 in the body expression.
+-- This variable's index increases every time we go through an abstraction
+-- Replacement is assumed to already mention variables at the same scope level
+-- so when going past an abstraction, we increase its free bvars.
 def subst (replacement body : LExpr LTy String) : LExpr LTy String :=
   -- TODO: replacement MUST be deterministic or there must be EXACTLY one replacement
   let rec go (depth : Nat) (replacement : LExpr LTy String) : LExpr LTy String → LExpr LTy String
@@ -1293,10 +1286,12 @@ def subst (replacement body : LExpr LTy String) : LExpr LTy String :=
 partial def inlineContinuations (prog: LExpr LTy String): LExpr LTy String :=
   match prog with
   | .app (.abs _ body) (.abs oty exit) =>
-    decreasesBVar <| subst (.abs oty (inlineContinuations exit)) (inlineContinuations body)
+    let newExit := inlineContinuations exit
+    let newBody := inlineContinuations body
+    decreasesBVar <| subst (increaseBvars (.abs oty newExit)) newBody
   | .app (.abs ty body) cont =>
     if zeroVarContinuation cont then -- TODO: Verify that it returns a unique value (could be unit!)
-      decreasesBVar <| subst (inlineContinuations cont) (inlineContinuations body)
+      decreasesBVar <| subst (increaseBvars <| inlineContinuations cont) (inlineContinuations body)
     else
       .app (.abs ty (inlineContinuations body)) (inlineContinuations cont)
   -- These are inlining values, not continuations. A simplification phase could take care of them.
