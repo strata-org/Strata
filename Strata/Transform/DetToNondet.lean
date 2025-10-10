@@ -21,16 +21,14 @@ def StmtToNondetStmt {P : PureExpr} [Imperative.HasBool P] [Imperative.HasBoolNe
   Imperative.NondetStmt P (Cmd P) :=
   match st with
   | .cmd    cmd => .cmd cmd
-  | .block  _ b _ => StmtsToNondetStmt b.ss
-  | .ite    cond  thenb elseb md =>
+  | .block  _ ⟨ bss ⟩ _ => StmtsToNondetStmt bss
+  | .ite    cond ⟨ tss ⟩ ⟨ ess ⟩ md =>
     .choice
-      (.seq (.assume "true_cond" cond md) (StmtsToNondetStmt thenb.ss))
-      (.seq ((.assume "false_cond" (Imperative.HasBoolNeg.neg cond) md)) (StmtsToNondetStmt elseb.ss))
-  | .loop   guard _measure _inv body md =>
-    .loop (.seq (.assume "guard" guard md) (StmtsToNondetStmt body.ss))
+      (.seq (.assume "true_cond" cond md) (StmtsToNondetStmt tss))
+      (.seq ((.assume "false_cond" (Imperative.HasBoolNeg.neg cond) md)) (StmtsToNondetStmt ess))
+  | .loop   guard _measure _inv ⟨ bss ⟩ md =>
+    .loop (.seq (.assume "guard" guard md) (StmtsToNondetStmt bss))
   | .goto _ _ => (.assume "skip" Imperative.HasBool.tt)
-  termination_by (sizeOf st)
-  decreasing_by all_goals simp [sizeOf] <;> omega
 
 /-- Deterministic-to-nondeterministic transformation for multiple
 (deterministic) statements -/
@@ -40,6 +38,4 @@ def StmtsToNondetStmt {P : Imperative.PureExpr} [Imperative.HasBool P] [Imperati
   match ss with
   | [] => (.assume "skip" Imperative.HasBool.tt)
   | s :: ss => .seq (StmtToNondetStmt s) (StmtsToNondetStmt ss)
-  termination_by (sizeOf ss)
-  decreasing_by all_goals simp [sizeOf]; omega
 end
