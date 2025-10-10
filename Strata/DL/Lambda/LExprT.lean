@@ -21,7 +21,7 @@ namespace Lambda
 open Std (ToFormat Format format)
 open LTy
 
-variable {Identifier : Type} [ToString Identifier] [DecidableEq Identifier] [ToFormat Identifier] {ExtraRestrict: Type} [DecidableEq ExtraRestrict] [HasGen Identifier ExtraRestrict]
+variable {Identifier : Type} [ToString Identifier] [DecidableEq Identifier] [ToFormat Identifier] {ExtraRestrict: Type} [DecidableEq ExtraRestrict] [HasGen Identifier]
 
 /--
 Apply type substitution `S` to `LExpr e`.

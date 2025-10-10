@@ -26,7 +26,7 @@ See module `Strata.DL.Lambda.LExpr` for the formalization of expressions,
 `Strata.DL.Lambda.LExprEval` for the partial evaluator.
 -/
 
-variable {Identifier : Type} [ToString Identifier] [DecidableEq Identifier] [ToFormat Identifier] {ExtraRestrict: Type} [DecidableEq ExtraRestrict] [HasGen Identifier ExtraRestrict]
+variable {Identifier : Type} [ToString Identifier] [DecidableEq Identifier] [ToFormat Identifier] {ExtraRestrict: Type} [DecidableEq ExtraRestrict] [HasGen Identifier]
 
 /--
 Top-level type checking and partial evaluation function for the Lambda

@@ -39,7 +39,7 @@ namespace Bounded
 open Std (ToFormat Format format)
 open Lambda
 
-variable {Identifier : Type} [ToString Identifier] [DecidableEq Identifier] [ToFormat Identifier] [HasGen Identifier Empty] {ExtraRestrict : Type}
+variable {Identifier : Type} [ToString Identifier] [DecidableEq Identifier] [ToFormat Identifier] [HasGen Identifier] {ExtraRestrict : Type}
 
 /--
 Translate bounded integer expression b to LExprT with holes filled by e
@@ -420,5 +420,12 @@ def boundedWfConditionsQuant [Coe String Identifier] (e: LExprT Identifier Bound
 
 -- Stateful version without extra quantifiers
 def boundedWfConditions [Coe String Identifier] (T : TEnv Identifier) (e: LExprT Identifier BoundTyRestrict) : Except Format (List (LExprT Identifier Empty) × TEnv Identifier) := removeLeadingForalls T (boundedWfConditionsQuant e)
+
+-- Produce both translation and well-formedness conditions
+def translateAndWfBounded [Coe String Identifier] (T : TEnv Identifier) (e: LExprT Identifier BoundTyRestrict) : Except Format ((LExprT Identifier Empty) × List (LExprT Identifier Empty) × TEnv Identifier) :=
+  let res := translateBounded e [] true;
+  do
+    let wf ← removeLeadingForalls T res.wfCond;
+    .ok (res.translate, wf)
 
 end Bounded

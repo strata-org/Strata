@@ -344,8 +344,8 @@ instance : Inhabited (TyIdentifier × TEnv Identifier ExtraRestrict) where
   default := ("$__ty0", TEnv.default)
 
 /-- Variable Generator -/
-class HasGen (Identifier ExtraRestrict : Type) where
-  genVar : TEnv Identifier ExtraRestrict → Identifier × TEnv Identifier ExtraRestrict
+class HasGen (Identifier : Type) where
+  genVar : ∀ {ExtraRestrict}, TEnv Identifier ExtraRestrict → Identifier × TEnv Identifier ExtraRestrict
 
 /--
 Generate a fresh variable (`LExpr.fvar`). This is needed to open the body of an
@@ -360,7 +360,7 @@ checking. Also, we rely on the parser disallowing Lambda variables to begin with
 Together, these restrictions ensure that variables created using
 `TEnv.genExprVar` are fresh w.r.t. the Lambda expression.
 -/
-def TEnv.genExprVar (T : TEnv String ExtraRestrict) : (String × TEnv String ExtraRestrict) :=
+def TEnv.genExprVar {ExtraRestrict} (T : TEnv String ExtraRestrict) : (String × TEnv String ExtraRestrict) :=
   let (new_var, state) := T.state.genExprSym
   let T := { T with state := state }
   let known_vars := TContext.knownVars T.context
@@ -370,7 +370,7 @@ def TEnv.genExprVar (T : TEnv String ExtraRestrict) : (String × TEnv String Ext
   else
     (new_var, T)
 
-instance : HasGen String ExtraRestrict where
+instance : HasGen String where
   genVar := TEnv.genExprVar
 
 /--
