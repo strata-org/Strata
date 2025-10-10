@@ -1,8 +1,14 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
 import Strata.DL.Bounded.BExpr
 import Strata.DL.Lambda.LExprT
 import Strata.DL.Lambda.LTy
 
--- Tests
+-- Tests for Bounded Expressions
 
 namespace Test
 open Std (ToFormat Format format)
