@@ -9,7 +9,7 @@ from io import StringIO
 import sys
 import builtins
 from typing import Sized
-from .exception_table import parse_exception_table_entries
+from .exception_table import ExceptionTableEntry, parse_exception_table_entries
 
 PythonSSA : Any = strata.Dialect('PythonSSA')
 """
@@ -204,6 +204,13 @@ jump_check_interrupt = StatementDecl("jump_check_interrupt", ("target",), 0)
 Terminal statement with a jump to block.
 """
 
+exc_info_decl = decl_statement("exc_info", {}, VALUE)
+"""
+Return the current exception info.
+
+Used in exception handlers.
+"""
+
 branch = StatementDecl("branch", ("value", "true_target", "false_target"), 0)
 """
 Terminal statement with a branch to one of two labels.
@@ -311,9 +318,9 @@ class Block:
     input_count : int|None
     statements : list[Statement]
 
-    def __init__(self, offset : int):
+    def __init__(self, offset : int, local_count : int, stack_size : int|None):
         self.offset = offset
-        self.input_count = None
+        self.input_count = None if stack_size is None else local_count + stack_size
         self.statements = []
 
 global_dict = GlobalNameMap()
@@ -347,6 +354,18 @@ class Globals:
 
 type Offset = int
 
+@dataclass(frozen=True)
+class BlockOffset:
+    offset : Offset
+    """
+    Offset of first instruction in block (if known)
+    """
+
+    stack_size : int|None
+    """
+    Expected stack size at offset (if known)
+    """
+
 class Translator:
     globals : Globals
     code : Any
@@ -379,15 +398,17 @@ class Translator:
     stack: list[Value]
     """Values in current stack"""
 
-    def __init__(self, globals : Globals, code, block_offsets : list[Offset]):
+    def __init__(self, globals : Globals, code, block_offsets : list[BlockOffset]):
+
+        local_count = code.co_nlocals
+        assert local_count >= code.co_argcount
+        assert local_count == len(code.co_varnames)
         assert (isinstance(nm, str) for nm in code.co_varnames)
-        assert code.co_nlocals >= code.co_argcount
-        assert code.co_nlocals == len(code.co_varnames)
 
         self.globals = globals
         self.code = code
-        self.jump_targets = { offset : idx for (idx, offset) in enumerate(block_offsets) }
-        self.blocks = [ Block(offset) for offset in block_offsets ]
+        self.jump_targets = { b.offset : idx for (idx, b) in enumerate(block_offsets) }
+        self.blocks = [ Block(b.offset, local_count, b.stack_size) for b in block_offsets ]
         self.stack_heights = {}
         self.cur_block = None
         self.stack = []
@@ -395,13 +416,13 @@ class Translator:
         self.register_count = 0
 
         first_block = self.blocks[0]
-        first_block.input_count = code.co_nlocals
+        first_block.input_count = local_count
         self.cur_block = first_block
         self.next_block_index = 1
 
         # Initialize list of arguments
         arg_values = (ArgValue(i, code.co_varnames[i]) for i in range(code.co_argcount))
-        nonarg_locals = code.co_nlocals - code.co_argcount
+        nonarg_locals = local_count - code.co_argcount
         init_local_values = [ *arg_values, *([None] * nonarg_locals) ]
         self.co_vars = [self.mk_ref(v) for v in init_local_values ]
 
@@ -799,6 +820,20 @@ class Translator:
     def POP_TOP(self, _ : Instruction):
         self.stack_pop()
 
+    def PUSH_EXC_INFO(self, ins : Instruction):
+        """
+        Pops a value from the stack.
+        Pushes the current exception to the top of the stack.
+        Pushes the value originally popped back to the stack.
+        Used in exception handlers.
+        """
+
+        assert ins.arg is None
+        val = self.stack_pop()
+        exc = self.add_stmt(exc_info_decl)
+        self.stack_push(exc)
+        self.stack_push(val)
+
     def PUSH_NULL(self, ins : Instruction):
         assert ins.arg is None
         self.stack_push(None)
@@ -899,21 +934,48 @@ class Translator:
         for i in reversed(range(count)):
             self.stack_push(self.add_stmt(getitem_decl, val, i))
 
-def create_block_offsets(insns : list[dis.Instruction]) -> list[int]:
+def create_block_offsets(
+        insns : list[dis.Instruction],
+        exceptions : list[ExceptionTableEntry]) -> list[BlockOffset]:
     """Create sorted list of block offsets from list of instructions."""
-    block_offsets : set[int] = set()
+    assert len(insns) > 0
+    last_offset = insns[-1].offset
+
+    # Maps block offsets to the expected stack height or None if
+    # expected stack height is unknown.
+    # N.B. The expected stack height is only known for exception
+    # targets
+    block_offset_map : dict[int, int|None] = {}
+    block_offset_map[0] = 0
+
+    # Initialize block offsets from exception table entries.
+    for e in exceptions:
+        start = e.start
+        end = start + e.length
+
+        if start not in block_offset_map:
+            block_offset_map[start] = None
+        if end <= last_offset and end not in block_offset_map:
+            block_offset_map[end] = None
+
+        height = block_offset_map.get(e.target, None)
+        if height is None:
+            block_offset_map[e.target] = e.depth
+        else:
+            assert height == e.depth
+
     next_jump_target : bool = True
     for insn in insns:
         if next_jump_target:
-            block_offsets.add(insn.offset)
+            if insn.offset not in block_offset_map:
+                block_offset_map[insn.offset] = None
             next_jump_target = False
         target = insn.jump_target
         if target is not None:
-            if target not in block_offsets:
-                block_offsets.add(target)
+            if target not in block_offset_map:
+                block_offset_map[target] = None
             next_jump_target = True
-    assert 0 in block_offsets
-    return sorted(block_offsets)
+    return sorted((BlockOffset(k, v) for (k, v) in block_offset_map.items()), key=lambda x: x.offset)
 
 class RedirectStdStreams(object):
     def __init__(self, stdout=None, stderr=None):
@@ -962,7 +1024,6 @@ class MissingInstructions:
 
         # Set of block from jump target to block index.
         for ins in insns:
-
             if ins.opname not in self.supported:
                 missing.add(ins.opname)
 
@@ -1042,17 +1103,15 @@ def find_code(globals : Globals, n : int, co):
     exception_table = parse_exception_table_entries(co.co_exceptiontable)
 
     if len(exception_table) > 0:
-        print(f"Exception tables aren't yet supported.")
+        print(f"Exception tables entries:")
         for entry in exception_table:
             print(f'{entry.pretty_format()}')
-        exit(1)
-        return
 
     supported = set(Translator.__dict__.keys())
     incomplete = any(ins.opname not in supported for ins in insns)
 
     # Set of block from jump target to block index.
-    block_offsets = create_block_offsets(insns)
+    block_offsets = create_block_offsets(insns, exception_table)
     translator = Translator(globals, co, block_offsets)
     for i, ins in enumerate(insns):
         if ins.offset != 0 and ins.offset in translator.jump_targets:
@@ -1065,6 +1124,7 @@ def find_code(globals : Globals, n : int, co):
         if f is not None:
             f(ins)
         else:
+            print("Exiting due to no support.")
             exit(1)
 
     print(f'{indent0}Statements:')

@@ -5,14 +5,14 @@ class ExceptionTableEntry:
     """Entry in Python exception table."""
 
     start: int
-    end: int
+    length: int
     target: int
     depth: int
     lasti: bool
 
     def pretty_format(self):
         return (
-            f"{self.start} to {self.end} -> {self.target} "
+            f"{self.start} to {self.start + self.length} -> {self.target} "
             f"[{self.depth}] {'lasti' if self.lasti else ''}"
         )
 
@@ -24,30 +24,29 @@ class ExceptionTableReader:
         self.pos = 0
         self.end_pos = len(self.table)
 
-    def _read_byte(self) -> int:
+    def read_byte(self) -> int:
         b = self.table[self.pos]
         self.pos += 1
         return b
 
-    def _read_varint(self) -> int:
-        read = self._read_byte()
+    def read_int(self) -> int:
+        read = self.read_byte()
         val = read & 63
         while read & 64:
             val <<= 6
-            read = self._read_byte()
+            read = self.read_byte()
             val |= read & 63
         return val
 
     def read(self) -> ExceptionTableEntry:
-        start = self._read_varint() * 2
-        length = self._read_varint() * 2
-        end = start + length - 2
-        target = self._read_varint() * 2
-        dl = self._read_varint()
+        start = self.read_int() * 2
+        length = self.read_int() * 2
+        target = self.read_int() * 2
+        dl = self.read_int()
         depth = dl >> 1
         lasti = bool(dl & 1)
         return ExceptionTableEntry(
-            start=start, end=end, target=target, depth=depth, lasti=lasti
+            start=start, length=length, target=target, depth=depth, lasti=lasti
         )
 
     def read_all(self) -> list[ExceptionTableEntry]:
