@@ -159,7 +159,7 @@ private def removeBoundRestrict (l: LTyRestrict BoundTyRestrict) : LTyRestrict E
   | _ => .nodata
 
 -- Here, the type system enforces that bounded ints are removed
-private def removeTyBound (t: LMonoTy BoundTyRestrict) : LMonoTy Empty :=
+ def removeTyBound (t: LMonoTy BoundTyRestrict) : LMonoTy Empty :=
   match t with
   | LMonoTy.bounded _ => LMonoTy.int
   | .tcons name args m => .tcons name (List.map removeTyBound args) (removeBoundRestrict m)
@@ -398,25 +398,25 @@ private def LExprT.substK (k : Nat) (s : LExprT Identifier ExtraRestrict) (e : L
 def LExprT.varOpen (k : Nat) (x : Identifier × (LMonoTy ExtraRestrict)) (e : LExprT Identifier ExtraRestrict) : LExprT Identifier ExtraRestrict :=
   LExprT.substK k (.fvar x.fst x.snd) e
 
--- NOTE: all new vars must have type int, so we don't need to worry about unification. We use TGenEnv to avoid any Factory
-def genVar (T : TGenEnv Identifier ExtraRestrict) (ty : LMonoTy ExtraRestrict) :
+-- NOTE: we should not need to do typechecking/unification since the term has already been typechecked and all constraints have been resolved
+def genVar (T : TGenEnv Identifier ExtraRestrict): --(ty : LMonoTy ExtraRestrict) :
   Identifier × TGenEnv Identifier ExtraRestrict :=
   let (xv, T) := HasGen.genVar T
-  let T := T.insertInContext xv (.forAll [] ty)
+  let T := T.insertInContext xv (.forAll [] .int) --TODO: see if it is OK to add dummy type
   (xv, T)
 
 
 /--
 Remove leading "forall" quantifiers statefully
 -/
-private def removeLeadingForall (T : TGenEnv Identifier) (e: LExprT Identifier Empty) : LExprT Identifier Empty × TGenEnv Identifier Empty :=
+private def removeLeadingForall (T : TGenEnv Identifier E) (e: LExprT Identifier ExtraRestrict) : LExprT Identifier ExtraRestrict × TGenEnv Identifier E :=
   match e with
   | .quant .all ty _ e =>
-    let (xv, T) := genVar T ty;
+    let (xv, T) := genVar T;
     (LExprT.varOpen 0 (xv, ty) e, T)
   | _ => (e, T)
 
-private def removeLeadingForalls (T : TGenEnv Identifier) (l: List (LExprT Identifier Empty)) : List (LExprT Identifier Empty) × TGenEnv Identifier Empty :=
+private def removeLeadingForalls (T : TGenEnv Identifier E) (l: List (LExprT Identifier ExtraRestrict)) : List (LExprT Identifier ExtraRestrict) × TGenEnv Identifier E :=
   List.foldl (fun (l, T) e =>
     let (e, T') := removeLeadingForall T e;
     (e :: l, T')) ([], T) l
@@ -426,10 +426,10 @@ def boundedWfConditionsQuant [Coe String Identifier] (e: LExprT Identifier Bound
   (translateBounded e [] true).wfCond
 
 -- Stateful version without extra quantifiers
-def boundedWfConditions [Coe String Identifier] (T : TGenEnv Identifier) (e: LExprT Identifier BoundTyRestrict) : List (LExprT Identifier Empty) × TGenEnv Identifier := removeLeadingForalls T (boundedWfConditionsQuant e)
+def boundedWfConditions [Coe String Identifier] (T : TGenEnv Identifier ExtraRestrict) (e: LExprT Identifier BoundTyRestrict) : List (LExprT Identifier Empty) × TGenEnv Identifier ExtraRestrict := removeLeadingForalls T (boundedWfConditionsQuant e)
 
 -- Produce both translation and well-formedness conditions
-def translateAndWfBounded [Coe String Identifier] (T : TGenEnv Identifier) (e: LExprT Identifier BoundTyRestrict) : (LExprT Identifier Empty) × List (LExprT Identifier Empty) × TGenEnv Identifier :=
+def translateAndWfBounded [Coe String Identifier] (T : TGenEnv Identifier ExtraRestrict) (e: LExprT Identifier BoundTyRestrict) : (LExprT Identifier Empty) × List (LExprT Identifier Empty) × TGenEnv Identifier ExtraRestrict :=
   let res := translateBounded e [] true;
   let wf := removeLeadingForalls T res.wfCond;
   (res.translate, wf)
