@@ -132,6 +132,13 @@ def TContext.subst (T : TContext Identifier ExtraRestrict) (S : Subst ExtraRestr
 
 ---------------------------------------------------------------------
 
+structure TGenState where
+  tyGen : Nat := 0
+  tyPrefix : String := "$__ty"
+  exprGen : Nat := 0
+  exprPrefix : String := "$__var"
+deriving Repr, Inhabited
+
 /--
 Typing state.
 
@@ -141,29 +148,30 @@ variables needed during type inference. It also has a global substitution map
 
 Also see functions `TEnv.genTyVar` and `TEnv.genExprVar`.
 -/
-structure TState ExtraRestrict where
-  tyGen : Nat := 0
-  tyPrefix : String := "$__ty"
-  exprGen : Nat := 0
-  exprPrefix : String := "$__var"
+structure TState ExtraRestrict extends TGenState where
   substInfo : SubstInfo ExtraRestrict := SubstInfo.empty
   deriving Repr, Inhabited
 
+def TState.withGenState (T: TState ExtraRestrict) (G: TGenState) : TState ExtraRestrict :=
+  { T with tyGen := G.tyGen, tyPrefix := G.tyPrefix, exprGen := T.exprGen, exprPrefix := G.exprPrefix}
+
+def TGenState.init : TGenState := {}
+
 def TState.init ExtraRestrict : TState ExtraRestrict := {}
 
-def TState.incTyGen (state : TState ExtraRestrict) : TState ExtraRestrict :=
+def TGenState.incTyGen (state : TGenState) : TGenState :=
   { state with tyGen := state.tyGen + 1 }
 
-def TState.genTySym (state : TState ExtraRestrict) : TyIdentifier × TState ExtraRestrict :=
+def TGenState.genTySym (state : TGenState) : TyIdentifier × TGenState :=
   let new_idx := state.tyGen
   let state := state.incTyGen
   let new_var := state.tyPrefix ++ toString new_idx
   (new_var, state)
 
-def TState.incExprGen (state : TState ExtraRestrict) : TState ExtraRestrict :=
+def TGenState.incExprGen (state : TGenState) : TGenState :=
   { state with exprGen := state.exprGen + 1 }
 
-def TState.genExprSym (state : TState ExtraRestrict) : String × TState ExtraRestrict :=
+def TGenState.genExprSym (state : TGenState) : String × TGenState :=
   let new_idx := state.exprGen
   let state := state.incExprGen
   let new_var := state.exprPrefix ++ toString new_idx
@@ -205,6 +213,11 @@ abbrev KnownTypes := List KnownType
 def KnownTypes.keywords (ks : KnownTypes) : List String :=
   ks.map (fun k => k.name)
 
+structure TGenEnv (Identifier : Type) (ExtraRestrict : Type := Empty) where
+  context : TContext Identifier ExtraRestrict
+  genState : TGenState
+deriving Inhabited
+
 /--
 A type environment `TEnv` contains a stack of contexts `TContext` to track `LExpr`
 variables and their types, a typing state `TState` to track the global
@@ -212,12 +225,18 @@ substitution and fresh variable generation, and a `KnownTypes` to track the
 supported type constructors. It also has type information about a
 factory of user-specified functions, which is used during type checking.
 -/
-structure TEnv (Identifier : Type) (ExtraRestrict : Type := Empty) where
-  context : TContext Identifier ExtraRestrict
-  state : TState ExtraRestrict
+structure TEnv (Identifier : Type) (ExtraRestrict : Type := Empty) extends TGenEnv Identifier ExtraRestrict where
+  stateSubstInfo: SubstInfo ExtraRestrict := SubstInfo.empty
   functions : @Factory Identifier ExtraRestrict
   knownTypes : KnownTypes
 deriving Inhabited
+
+def TEnv.updateGenEnv {Identifier ExtraRestrict} (T: TEnv Identifier ExtraRestrict) (G: TGenEnv Identifier ExtraRestrict) : TEnv Identifier ExtraRestrict :=
+  {stateSubstInfo := T.stateSubstInfo, functions := T.functions, knownTypes := T.knownTypes, context := G.context, genState := G.genState}
+
+
+def TEnv.state {Identifier : Type} {ExtraRestrict : Type} (T: TEnv Identifier ExtraRestrict) : TState ExtraRestrict :=
+  {tyGen := T.genState.tyGen, tyPrefix := T.genState.tyPrefix, exprGen := T.genState.exprGen, exprPrefix := T.genState.exprPrefix, substInfo := T.stateSubstInfo}
 
 def KnownTypes.default : KnownTypes :=
   open LTy.Syntax in
@@ -226,10 +245,16 @@ def KnownTypes.default : KnownTypes :=
    t[int],
    t[string]].map (fun k => k.toKnownType!)
 
+def TGenEnv.default : TGenEnv Identifier ExtraRestrict :=
+  open LTy.Syntax in
+  { context := {},
+    genState := TGenState.init,
+  }
+
 def TEnv.default : TEnv Identifier ExtraRestrict :=
   open LTy.Syntax in
   { context := {},
-    state := TState.init ExtraRestrict,
+    genState := TGenState.init,
     functions := #[],
     knownTypes := KnownTypes.default
   }
@@ -254,7 +279,7 @@ def TEnv.addFactoryFunctions (T : TEnv Identifier ExtraRestrict) (fact : @Factor
 Replace the global substitution in `T.state.subst` with `S`.
 -/
 def TEnv.updateSubst (T : (TEnv Identifier ExtraRestrict)) (S : SubstInfo ExtraRestrict) : (TEnv Identifier ExtraRestrict) :=
-  { T with state.substInfo := S }
+  { T with stateSubstInfo := S }
 
 omit [DecidableEq Identifier] [ToFormat Identifier] in
 theorem TEnv.SubstWF_of_pushemptySubstScope (T : TEnv Identifier ExtraRestrict) :
@@ -268,7 +293,7 @@ theorem TEnv.SubstWF_of_pushemptySubstScope (T : TEnv Identifier ExtraRestrict) 
 def TEnv.pushEmptySubstScope (T : (TEnv Identifier ExtraRestrict)) : (TEnv Identifier ExtraRestrict) :=
   let new_subst := T.state.substInfo.subst.push []
   let newS := { subst := new_subst, isWF := (by rw [TEnv.SubstWF_of_pushemptySubstScope]) }
-  { T with state.substInfo := newS }
+  { T with stateSubstInfo := newS }
 
 omit [DecidableEq Identifier] [ToFormat Identifier] in
 theorem TEnv.SubstWF_of_popSubstScope (T : TEnv Identifier ExtraRestrict) :
@@ -284,7 +309,7 @@ theorem TEnv.SubstWF_of_popSubstScope (T : TEnv Identifier ExtraRestrict) :
 def TEnv.popSubstScope (T : (TEnv Identifier ExtraRestrict)) : (TEnv Identifier ExtraRestrict) :=
   let new_subst := T.state.substInfo.subst.pop
   let newS := { subst := new_subst, isWF := (by rw [TEnv.SubstWF_of_popSubstScope]) }
-  { T with state.substInfo := newS }
+  { T with stateSubstInfo := newS }
 
 def TEnv.pushEmptyContext (T : (TEnv Identifier ExtraRestrict)) : (TEnv Identifier ExtraRestrict) :=
   let ctx := T.context
@@ -299,10 +324,13 @@ def TEnv.popContext (T : (TEnv Identifier ExtraRestrict)) : (TEnv Identifier Ext
 /--
 Insert `(x, ty)` in `T.context`.
 -/
-def TEnv.insertInContext (T : (TEnv Identifier ExtraRestrict)) (x : Identifier) (ty : LTy ExtraRestrict) : (TEnv Identifier ExtraRestrict) :=
+def TGenEnv.insertInContext (T : (TGenEnv Identifier ExtraRestrict)) (x : Identifier) (ty : LTy ExtraRestrict) : (TGenEnv Identifier ExtraRestrict) :=
   let ctx := T.context
   let ctx' := { ctx with types := ctx.types.insert x ty }
   { T with context := ctx' }
+
+def TEnv.insertInContext (T : (TEnv Identifier ExtraRestrict)) (x : Identifier) (ty : LTy ExtraRestrict) : (TEnv Identifier ExtraRestrict) :=
+  T.updateGenEnv (TGenEnv.insertInContext T.toTGenEnv x ty)
 
 /--
 Insert each element in `map` in `T.context`.
@@ -345,7 +373,7 @@ instance : Inhabited (TyIdentifier × TEnv Identifier ExtraRestrict) where
 
 /-- Variable Generator -/
 class HasGen (Identifier : Type) where
-  genVar : ∀ {ExtraRestrict}, TEnv Identifier ExtraRestrict → Identifier × TEnv Identifier ExtraRestrict
+  genVar : ∀ {ExtraRestrict}, TGenEnv Identifier ExtraRestrict → Identifier × TGenEnv Identifier ExtraRestrict
 
 /--
 Generate a fresh variable (`LExpr.fvar`). This is needed to open the body of an
@@ -360,9 +388,9 @@ checking. Also, we rely on the parser disallowing Lambda variables to begin with
 Together, these restrictions ensure that variables created using
 `TEnv.genExprVar` are fresh w.r.t. the Lambda expression.
 -/
-def TEnv.genExprVar {ExtraRestrict} (T : TEnv String ExtraRestrict) : (String × TEnv String ExtraRestrict) :=
-  let (new_var, state) := T.state.genExprSym
-  let T := { T with state := state }
+def TEnv.genExprVar {ExtraRestrict} (T: TGenEnv String ExtraRestrict) : (String × TGenEnv String ExtraRestrict) :=
+  let (new_var, state) := T.genState.genExprSym
+  let T :={ T with genState := state }
   let known_vars := TContext.knownVars T.context
   if new_var ∈ known_vars then
     panic s!"[TEnv.genExprVar] Generated variable {new_var} is not fresh!\n\
@@ -382,8 +410,8 @@ universally quantified -- ensures that we always get a fresh type variable when
 we use `TEnv.genTyVar`.
 -/
 def TEnv.genTyVar (T : TEnv Identifier ExtraRestrict) : TyIdentifier × (TEnv Identifier ExtraRestrict) :=
-  let (new_var, state) := T.state.genTySym
-  let T := { T with state := state }
+  let (new_var, state) := T.genState.genTySym
+  let T := { T with genState := state }
   if new_var ∈ T.context.knownTypeVars then
     panic s!"[TEnv.genTyVar] Generated type variable {new_var} is not fresh!\n\
               Context: {format T.context}"
@@ -463,7 +491,7 @@ def LMonoTy.aliasDef? [DecidableEq ExtraRestrict] (mty : LMonoTy ExtraRestrict) 
       -- (FIXME): Use `LMonoTys.instantiate_length` to remove the `!` below.
       let alias_inst := lst[0]!
       let alias_def := lst[1]!
-      match Constraints.unify [(mty, alias_inst)] T.state.substInfo with
+      match Constraints.unify [(mty, alias_inst)] T.stateSubstInfo with
       | .error e =>
         panic! s!"[LMonoTy.aliasDef?] {e}"
       | .ok S =>

@@ -206,7 +206,8 @@ its type to the type context.
 -/
 def typeBoundVar (T : TEnv Identifier ExtraRestrict) (ty : Option (LMonoTy ExtraRestrict)) :
   Except Format (Identifier × LMonoTy ExtraRestrict × TEnv Identifier ExtraRestrict) := do
-  let (xv, T) := HasGen.genVar T
+  let (xv, G) := HasGen.genVar T.toTGenEnv
+  let T := T.updateGenEnv G
   let (xty, T) ← match ty with
     | some bty =>
       let ans := LMonoTy.instantiateWithCheck bty T

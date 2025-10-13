@@ -398,34 +398,40 @@ private def LExprT.substK (k : Nat) (s : LExprT Identifier ExtraRestrict) (e : L
 def LExprT.varOpen (k : Nat) (x : Identifier × (LMonoTy ExtraRestrict)) (e : LExprT Identifier ExtraRestrict) : LExprT Identifier ExtraRestrict :=
   LExprT.substK k (.fvar x.fst x.snd) e
 
+-- NOTE: all new vars must have type int, so we don't need to worry about unification. We use TGenEnv to avoid any Factory
+def genVar (T : TGenEnv Identifier ExtraRestrict) (ty : LMonoTy ExtraRestrict) :
+  Identifier × TGenEnv Identifier ExtraRestrict :=
+  let (xv, T) := HasGen.genVar T
+  let T := T.insertInContext xv (.forAll [] ty)
+  (xv, T)
+
+
 /--
 Remove leading "forall" quantifiers statefully
 -/
-private def removeLeadingForall (T : TEnv Identifier) (e: LExprT Identifier Empty) : Except Format (LExprT Identifier Empty × TEnv Identifier Empty) :=
+private def removeLeadingForall (T : TGenEnv Identifier) (e: LExprT Identifier Empty) : LExprT Identifier Empty × TGenEnv Identifier Empty :=
   match e with
-  | .quant .all ty _ e => do
-    let (xv, xty, T) ← Lambda.LExprT.typeBoundVar T ty;
-    .ok (LExprT.varOpen 0 (xv, xty) e, T)
-  | _ => .ok (e, T)
+  | .quant .all ty _ e =>
+    let (xv, T) := genVar T ty;
+    (LExprT.varOpen 0 (xv, ty) e, T)
+  | _ => (e, T)
 
-private def removeLeadingForalls (T : TEnv Identifier) (l: List (LExprT Identifier Empty)) : Except Format (List (LExprT Identifier Empty) × TEnv Identifier Empty) :=
-  List.foldlM (fun (l, T) e =>
-  do
-    let (e, T') ← removeLeadingForall T e;
-    .ok (e :: l, T')) ([], T) l
+private def removeLeadingForalls (T : TGenEnv Identifier) (l: List (LExprT Identifier Empty)) : List (LExprT Identifier Empty) × TGenEnv Identifier Empty :=
+  List.foldl (fun (l, T) e =>
+    let (e, T') := removeLeadingForall T e;
+    (e :: l, T')) ([], T) l
 
 -- Functional version with extra quantifiers
 def boundedWfConditionsQuant [Coe String Identifier] (e: LExprT Identifier BoundTyRestrict) : List (LExprT Identifier Empty) :=
   (translateBounded e [] true).wfCond
 
 -- Stateful version without extra quantifiers
-def boundedWfConditions [Coe String Identifier] (T : TEnv Identifier) (e: LExprT Identifier BoundTyRestrict) : Except Format (List (LExprT Identifier Empty) × TEnv Identifier) := removeLeadingForalls T (boundedWfConditionsQuant e)
+def boundedWfConditions [Coe String Identifier] (T : TGenEnv Identifier) (e: LExprT Identifier BoundTyRestrict) : List (LExprT Identifier Empty) × TGenEnv Identifier := removeLeadingForalls T (boundedWfConditionsQuant e)
 
 -- Produce both translation and well-formedness conditions
-def translateAndWfBounded [Coe String Identifier] (T : TEnv Identifier) (e: LExprT Identifier BoundTyRestrict) : Except Format ((LExprT Identifier Empty) × List (LExprT Identifier Empty) × TEnv Identifier) :=
+def translateAndWfBounded [Coe String Identifier] (T : TGenEnv Identifier) (e: LExprT Identifier BoundTyRestrict) : (LExprT Identifier Empty) × List (LExprT Identifier Empty) × TGenEnv Identifier :=
   let res := translateBounded e [] true;
-  do
-    let wf ← removeLeadingForalls T res.wfCond;
-    .ok (res.translate, wf)
+  let wf := removeLeadingForalls T res.wfCond;
+  (res.translate, wf)
 
 end Bounded

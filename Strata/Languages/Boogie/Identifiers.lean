@@ -107,8 +107,8 @@ instance : Inhabited BoogieIdent where
   default := (.unres, "_")
 
 instance : Lambda.HasGen BoogieIdent where
-  genVar T := let (sym, state') := (Lambda.TState.genExprSym T.state)
-              (BoogieIdent.temp sym, { T with state := state' })
+  genVar T := let (sym, state') := (Lambda.TGenState.genExprSym T.genState)
+              (BoogieIdent.temp sym, { T with genState := state' })
 
 namespace Syntax
 

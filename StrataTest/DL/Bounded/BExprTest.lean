@@ -222,9 +222,9 @@ end TranslateTest
 -- Tests for wf conditions
 
 -- For these tests, we initialize with an empty TEnv
-def runWFTest (e: LExprT String BoundTyRestrict) := do
-  let (l, _) ← boundedWfConditions TEnv.default e;
-  .ok (eraseTys l)
+def runWFTest (e: LExprT String BoundTyRestrict) :=
+  let (l, _) := boundedWfConditions TGenEnv.default e;
+  eraseTys l
 
 namespace WFTest
 
@@ -233,9 +233,9 @@ namespace WFTest
 
 def testWfConst : LExprT String BoundTyRestrict := .const "1" natTy
 
-/--info: ok: [Lambda.LExpr.app
-  (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
-  (Lambda.LExpr.const "1" none)]
+/--info: [Lambda.LExpr.app
+   (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+   (Lambda.LExpr.const "1" none)]
    -/
 #guard_msgs in
 #eval runWFTest testWfConst
@@ -245,9 +245,9 @@ def testWfConst : LExprT String BoundTyRestrict := .const "1" natTy
 
 def testWfApp : LExprT String BoundTyRestrict := .app (.abs (.bvar 0 .int) (.arrow natTy .int)) (.const "1" .int) .int
 
-/-- info: ok: [Lambda.LExpr.app
-  (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
-  (Lambda.LExpr.const "1" none)]-/
+/-- info: [Lambda.LExpr.app
+   (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+   (Lambda.LExpr.const "1" none)]-/
 #guard_msgs in
 #eval runWFTest testWfApp
 
@@ -256,15 +256,15 @@ def testWfApp : LExprT String BoundTyRestrict := .app (.abs (.bvar 0 .int) (.arr
 
 def testWfAppAssume1 : LExprT String BoundTyRestrict := .app (.abs (.bvar 0 .int) (.arrow natTy .int)) (.op "foo" natTy) .int
 
-/-- info: ok: [Lambda.LExpr.app
-  (Lambda.LExpr.app
-    (Lambda.LExpr.op "Bool.Implies" none)
-    (Lambda.LExpr.app
-      (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
-      (Lambda.LExpr.op "foo" none)))
-  (Lambda.LExpr.app
-    (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
-    (Lambda.LExpr.op "foo" none))]-/
+/-- info: [Lambda.LExpr.app
+   (Lambda.LExpr.app
+     (Lambda.LExpr.op "Bool.Implies" none)
+     (Lambda.LExpr.app
+       (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+       (Lambda.LExpr.op "foo" none)))
+   (Lambda.LExpr.app
+     (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+     (Lambda.LExpr.op "foo" none))]-/
 #guard_msgs in
 #eval runWFTest testWfAppAssume1
 
@@ -273,15 +273,15 @@ def testWfAppAssume1 : LExprT String BoundTyRestrict := .app (.abs (.bvar 0 .int
 
 def testWfAppAssume2 : LExprT String BoundTyRestrict := .abs (.app (.abs (.bvar 0 .int) (.arrow natTy .int)) (.bvar 0 .int) .int) (.arrow natTy .int)
 
-/-- info: ok: [Lambda.LExpr.app
-  (Lambda.LExpr.app
-    (Lambda.LExpr.op "Bool.Implies" none)
-    (Lambda.LExpr.app
-      (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
-      (Lambda.LExpr.fvar "$__var0" none)))
-  (Lambda.LExpr.app
-    (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
-    (Lambda.LExpr.fvar "$__var0" none))]-/
+/-- info: [Lambda.LExpr.app
+   (Lambda.LExpr.app
+     (Lambda.LExpr.op "Bool.Implies" none)
+     (Lambda.LExpr.app
+       (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+       (Lambda.LExpr.fvar "$__var0" none)))
+   (Lambda.LExpr.app
+     (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+     (Lambda.LExpr.fvar "$__var0" none))]-/
 #guard_msgs in
 #eval runWFTest testWfAppAssume2
 
@@ -290,17 +290,17 @@ def testWfAppAssume2 : LExprT String BoundTyRestrict := .abs (.app (.abs (.bvar 
 
 def testWfAbs : LExprT String BoundTyRestrict := .abs (.app (.op "foo" (.arrow natTy .int)) (addOp (.bvar 0 .int) (.const "1" .int)) .int) (.arrow natTy .int)
 
-/--info: ok: [Lambda.LExpr.app
-  (Lambda.LExpr.app
-    (Lambda.LExpr.op "Bool.Implies" none)
-    (Lambda.LExpr.app
-      (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
-      (Lambda.LExpr.fvar "$__var0" none)))
-  (Lambda.LExpr.app
-    (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
-    (Lambda.LExpr.app
-      (Lambda.LExpr.app (Lambda.LExpr.op "Int.Add" none) (Lambda.LExpr.fvar "$__var0" none))
-      (Lambda.LExpr.const "1" none)))]-/
+/--info: [Lambda.LExpr.app
+   (Lambda.LExpr.app
+     (Lambda.LExpr.op "Bool.Implies" none)
+     (Lambda.LExpr.app
+       (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+       (Lambda.LExpr.fvar "$__var0" none)))
+   (Lambda.LExpr.app
+     (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+     (Lambda.LExpr.app
+       (Lambda.LExpr.app (Lambda.LExpr.op "Int.Add" none) (Lambda.LExpr.fvar "$__var0" none))
+       (Lambda.LExpr.const "1" none)))]-/
 #guard_msgs in
 #eval runWFTest testWfAbs
 
@@ -309,15 +309,15 @@ def testWfAbs : LExprT String BoundTyRestrict := .abs (.app (.op "foo" (.arrow n
 
 def testWfQuantAssume : LExprT String BoundTyRestrict := .quant .exist natTy (.bvar 0 .int) (.app (.op "foo" (.arrow natTy .int)) (.bvar 0 .int) .int)
 
-/-- info: ok: [Lambda.LExpr.app
-  (Lambda.LExpr.app
-    (Lambda.LExpr.op "Bool.Implies" none)
-    (Lambda.LExpr.app
-      (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
-      (Lambda.LExpr.fvar "$__var0" none)))
-  (Lambda.LExpr.app
-    (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
-    (Lambda.LExpr.fvar "$__var0" none))]-/
+/-- info: [Lambda.LExpr.app
+   (Lambda.LExpr.app
+     (Lambda.LExpr.op "Bool.Implies" none)
+     (Lambda.LExpr.app
+       (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+       (Lambda.LExpr.fvar "$__var0" none)))
+   (Lambda.LExpr.app
+     (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+     (Lambda.LExpr.fvar "$__var0" none))]-/
 #guard_msgs in
 #eval runWFTest testWfQuantAssume
 
@@ -326,17 +326,17 @@ def testWfQuantAssume : LExprT String BoundTyRestrict := .quant .exist natTy (.b
 
 def testWfAbsBody : LExprT String BoundTyRestrict := .abs (addOp (.bvar 0 .int) (.const "1" .int)) (.arrow natTy natTy)
 
-/-- info: ok: [Lambda.LExpr.app
-  (Lambda.LExpr.app
-    (Lambda.LExpr.op "Bool.Implies" none)
-    (Lambda.LExpr.app
-      (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
-      (Lambda.LExpr.fvar "$__var0" none)))
-  (Lambda.LExpr.app
-    (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
-    (Lambda.LExpr.app
-      (Lambda.LExpr.app (Lambda.LExpr.op "Int.Add" none) (Lambda.LExpr.fvar "$__var0" none))
-      (Lambda.LExpr.const "1" none)))]-/
+/-- info: [Lambda.LExpr.app
+   (Lambda.LExpr.app
+     (Lambda.LExpr.op "Bool.Implies" none)
+     (Lambda.LExpr.app
+       (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+       (Lambda.LExpr.fvar "$__var0" none)))
+   (Lambda.LExpr.app
+     (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+     (Lambda.LExpr.app
+       (Lambda.LExpr.app (Lambda.LExpr.op "Int.Add" none) (Lambda.LExpr.fvar "$__var0" none))
+       (Lambda.LExpr.const "1" none)))]-/
 #guard_msgs in
 #eval runWFTest testWfAbsBody
 
@@ -346,7 +346,7 @@ def testWfAbsBody : LExprT String BoundTyRestrict := .abs (addOp (.bvar 0 .int) 
 
 def testWfBoundBody : LExprT String BoundTyRestrict := .app (.op "foo" (.arrow .int natTy)) (.fvar "x" .int) natTy
 
-/-- info: ok: []-/
+/-- info: []-/
 #guard_msgs in
 #eval runWFTest testWfBoundBody
 
@@ -355,15 +355,15 @@ def testWfBoundBody : LExprT String BoundTyRestrict := .app (.op "foo" (.arrow .
 
 def testWfBoundBodyNoAssume : LExprT String BoundTyRestrict := .app (.abs (mulOp (.bvar 0 .int) (.bvar 0 .int)) (.arrow .int .int)) (.const "1" .int) natTy
 
-/-- info: ok: [Lambda.LExpr.app
-  (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
-  (Lambda.LExpr.app
-    (Lambda.LExpr.abs
-      (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))
-      (Lambda.LExpr.app
-        (Lambda.LExpr.app (Lambda.LExpr.op "Int.Mul" none) (Lambda.LExpr.bvar 0))
-        (Lambda.LExpr.bvar 0)))
-    (Lambda.LExpr.const "1" none))]-/
+/-- info: [Lambda.LExpr.app
+   (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+   (Lambda.LExpr.app
+     (Lambda.LExpr.abs
+       (some (Lambda.LMonoTy.tcons "int" [] (Lambda.LTyRestrict.nodata)))
+       (Lambda.LExpr.app
+         (Lambda.LExpr.app (Lambda.LExpr.op "Int.Mul" none) (Lambda.LExpr.bvar 0))
+         (Lambda.LExpr.bvar 0)))
+     (Lambda.LExpr.const "1" none))]-/
 #guard_msgs in
 #eval runWFTest testWfBoundBodyNoAssume
 
@@ -372,9 +372,9 @@ def testWfBoundBodyNoAssume : LExprT String BoundTyRestrict := .app (.abs (mulOp
 
 def testWfIteBoundBody : LExprT String BoundTyRestrict := .ite (.const "b" .bool) (.const "1" .int) (.const "0" .int) natTy
 
-/-- info: ok: [Lambda.LExpr.app
-  (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
-  (Lambda.LExpr.ite (Lambda.LExpr.const "b" none) (Lambda.LExpr.const "1" none) (Lambda.LExpr.const "0" none))]-/
+/-- info: [Lambda.LExpr.app
+   (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+   (Lambda.LExpr.ite (Lambda.LExpr.const "b" none) (Lambda.LExpr.const "1" none) (Lambda.LExpr.const "0" none))]-/
 #guard_msgs in
 #eval runWFTest testWfIteBoundBody
 
@@ -383,13 +383,14 @@ def testWfIteBoundBody : LExprT String BoundTyRestrict := .ite (.const "b" .bool
 
 def testWfIteBoundAbs : LExprT String BoundTyRestrict := .ite (.const "b" .bool) (.abs (mulOp (.bvar 0 .int) (.bvar 0 .int)) (.arrow .int natTy)) (.abs (.const "0" .int) (.arrow .int natTy)) (.arrow .int natTy)
 
-/-- info: ok: [Lambda.LExpr.app
-  (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
-  (Lambda.LExpr.app
-    (Lambda.LExpr.app (Lambda.LExpr.op "Int.Mul" none) (Lambda.LExpr.fvar "$__var1" none))
-    (Lambda.LExpr.fvar "$__var1" none)), Lambda.LExpr.app
-  (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
-  (Lambda.LExpr.const "0" none)]-/
+/-- info: [Lambda.LExpr.app
+   (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+   (Lambda.LExpr.app
+     (Lambda.LExpr.app (Lambda.LExpr.op "Int.Mul" none) (Lambda.LExpr.fvar "$__var1" none))
+     (Lambda.LExpr.fvar "$__var1" none)),
+ Lambda.LExpr.app
+   (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+   (Lambda.LExpr.const "0" none)]-/
 #guard_msgs in
 #eval runWFTest testWfIteBoundAbs
 
@@ -412,11 +413,12 @@ def testNestedBoundedApps : LExprT String BoundTyRestrict :=
        (.const "2" (.bounded (.blt (.bvar) (.bconst 5))))
        (.bounded (.blt (.bvar) (.bconst 15)))
 
-/-- info: ok: [Lambda.LExpr.app
-  (Lambda.LExpr.app (Lambda.LExpr.op "Int.Lt" none) (Lambda.LExpr.const "2" none))
-  (Lambda.LExpr.const "5" none), Lambda.LExpr.app
-  (Lambda.LExpr.app (Lambda.LExpr.op "Int.Lt" none) (Lambda.LExpr.const "3" none))
-  (Lambda.LExpr.const "10" none)]-/
+/-- info: [Lambda.LExpr.app
+   (Lambda.LExpr.app (Lambda.LExpr.op "Int.Lt" none) (Lambda.LExpr.const "2" none))
+   (Lambda.LExpr.const "5" none),
+ Lambda.LExpr.app
+   (Lambda.LExpr.app (Lambda.LExpr.op "Int.Lt" none) (Lambda.LExpr.const "3" none))
+   (Lambda.LExpr.const "10" none)]-/
 #guard_msgs in
 #eval runWFTest testNestedBoundedApps
 
@@ -439,7 +441,7 @@ def testComplexBoundInQuantifier : LExprT String BoundTyRestrict :=
                                        (.ble (.bconst 0) (.bvar)))))
               (.const "42" .int) .bool)
 
-/-- info: ok: []-/
+/-- info: []-/
 #guard_msgs in
 #eval runWFTest testComplexBoundInQuantifier
 
@@ -479,26 +481,28 @@ def testBoundedIte : LExprT String BoundTyRestrict :=
        (.const "0" (.bounded (.blt (.bvar) (.bconst 10))))
        (.bounded (.blt (.bvar) (.bconst 10)))
 
-/-- info: ok: [Lambda.LExpr.app
-  (Lambda.LExpr.app
-    (Lambda.LExpr.op "Int.Lt" none)
-    (Lambda.LExpr.ite
-      (Lambda.LExpr.app
-        (Lambda.LExpr.app
-          (Lambda.LExpr.op "Bool.Implies" none)
-          (Lambda.LExpr.app
-            (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
-            (Lambda.LExpr.app (Lambda.LExpr.op "getValue" none) (Lambda.LExpr.const "5" none))))
-        (Lambda.LExpr.app
-          (Lambda.LExpr.app (Lambda.LExpr.op "Int.Lt" none) (Lambda.LExpr.const "0" none))
-          (Lambda.LExpr.app (Lambda.LExpr.op "getValue" none) (Lambda.LExpr.const "5" none))))
-      (Lambda.LExpr.const "1" none)
-      (Lambda.LExpr.const "0" none)))
-  (Lambda.LExpr.const "10" none), Lambda.LExpr.app
-  (Lambda.LExpr.app (Lambda.LExpr.op "Int.Lt" none) (Lambda.LExpr.const "1" none))
-  (Lambda.LExpr.const "10" none), Lambda.LExpr.app
-  (Lambda.LExpr.app (Lambda.LExpr.op "Int.Lt" none) (Lambda.LExpr.const "0" none))
-  (Lambda.LExpr.const "10" none)]-/
+/-- info: [Lambda.LExpr.app
+   (Lambda.LExpr.app
+     (Lambda.LExpr.op "Int.Lt" none)
+     (Lambda.LExpr.ite
+       (Lambda.LExpr.app
+         (Lambda.LExpr.app
+           (Lambda.LExpr.op "Bool.Implies" none)
+           (Lambda.LExpr.app
+             (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+             (Lambda.LExpr.app (Lambda.LExpr.op "getValue" none) (Lambda.LExpr.const "5" none))))
+         (Lambda.LExpr.app
+           (Lambda.LExpr.app (Lambda.LExpr.op "Int.Lt" none) (Lambda.LExpr.const "0" none))
+           (Lambda.LExpr.app (Lambda.LExpr.op "getValue" none) (Lambda.LExpr.const "5" none))))
+       (Lambda.LExpr.const "1" none)
+       (Lambda.LExpr.const "0" none)))
+   (Lambda.LExpr.const "10" none),
+ Lambda.LExpr.app
+   (Lambda.LExpr.app (Lambda.LExpr.op "Int.Lt" none) (Lambda.LExpr.const "1" none))
+   (Lambda.LExpr.const "10" none),
+ Lambda.LExpr.app
+   (Lambda.LExpr.app (Lambda.LExpr.op "Int.Lt" none) (Lambda.LExpr.const "0" none))
+   (Lambda.LExpr.const "10" none)]-/
 #guard_msgs in
 #eval runWFTest testBoundedIte
 
@@ -528,25 +532,26 @@ def testBoundedLambda : LExprT String BoundTyRestrict :=
        (.arrow (.bounded (.ble (.bconst 0) (.bvar)))
                (.bounded (.blt (.bvar) (.bconst 100))))
 
-/-- info: ok: [Lambda.LExpr.app
-  (Lambda.LExpr.app
-    (Lambda.LExpr.op "Bool.Implies" none)
-    (Lambda.LExpr.app
-      (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
-      (Lambda.LExpr.fvar "$__var1" none)))
-  (Lambda.LExpr.app
-    (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
-    (Lambda.LExpr.fvar "$__var1" none)), Lambda.LExpr.app
-  (Lambda.LExpr.app
-    (Lambda.LExpr.op "Bool.Implies" none)
-    (Lambda.LExpr.app
-      (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
-      (Lambda.LExpr.fvar "$__var0" none)))
-  (Lambda.LExpr.app
-    (Lambda.LExpr.app
-      (Lambda.LExpr.op "Int.Lt" none)
-      (Lambda.LExpr.app (Lambda.LExpr.op "increment" none) (Lambda.LExpr.fvar "$__var0" none)))
-    (Lambda.LExpr.const "100" none))]-/
+/-- info: [Lambda.LExpr.app
+   (Lambda.LExpr.app
+     (Lambda.LExpr.op "Bool.Implies" none)
+     (Lambda.LExpr.app
+       (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+       (Lambda.LExpr.fvar "$__var1" none)))
+   (Lambda.LExpr.app
+     (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+     (Lambda.LExpr.fvar "$__var1" none)),
+ Lambda.LExpr.app
+   (Lambda.LExpr.app
+     (Lambda.LExpr.op "Bool.Implies" none)
+     (Lambda.LExpr.app
+       (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+       (Lambda.LExpr.fvar "$__var0" none)))
+   (Lambda.LExpr.app
+     (Lambda.LExpr.app
+       (Lambda.LExpr.op "Int.Lt" none)
+       (Lambda.LExpr.app (Lambda.LExpr.op "increment" none) (Lambda.LExpr.fvar "$__var0" none)))
+     (Lambda.LExpr.const "100" none))]-/
 #guard_msgs in
 #eval runWFTest testBoundedLambda
 
@@ -569,17 +574,18 @@ def testBoundedEquality : LExprT String BoundTyRestrict :=
       (.const "9" (.bounded (.ble (.bconst 0) (.bvar))))
       .bool
 
-/-- info: ok: [Lambda.LExpr.app
-  (Lambda.LExpr.app
-    (Lambda.LExpr.op "Bool.And" none)
-    (Lambda.LExpr.app
-      (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "-10" none))
-      (Lambda.LExpr.const "3" none)))
-  (Lambda.LExpr.app
-    (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "3" none))
-    (Lambda.LExpr.const "10" none)), Lambda.LExpr.app
-  (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
-  (Lambda.LExpr.const "9" none)]-/
+/-- info: [Lambda.LExpr.app
+   (Lambda.LExpr.app
+     (Lambda.LExpr.op "Bool.And" none)
+     (Lambda.LExpr.app
+       (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "-10" none))
+       (Lambda.LExpr.const "3" none)))
+   (Lambda.LExpr.app
+     (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "3" none))
+     (Lambda.LExpr.const "10" none)),
+ Lambda.LExpr.app
+   (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+   (Lambda.LExpr.const "9" none)]-/
 #guard_msgs in
 #eval runWFTest testBoundedEquality
 
@@ -605,7 +611,7 @@ def testFreeVarWithAssumptions : LExprT String BoundTyRestrict :=
        (.const "25" .int)
        .bool
 
-/-- info: ok: []-/
+/-- info: []-/
 #guard_msgs in
 #eval runWFTest testFreeVarWithAssumptions
 
@@ -629,15 +635,15 @@ def testMetadataWithBounds : LExprT String BoundTyRestrict :=
          (.const "42" (.bounded (.band (.ble (.bconst 0) (.bvar))
                                       (.blt (.bvar) (.bconst 100)))))
 
-/-- info: ok: [Lambda.LExpr.app
-  (Lambda.LExpr.app
-    (Lambda.LExpr.op "Bool.And" none)
-    (Lambda.LExpr.app
-      (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
-      (Lambda.LExpr.const "42" none)))
-  (Lambda.LExpr.app
-    (Lambda.LExpr.app (Lambda.LExpr.op "Int.Lt" none) (Lambda.LExpr.const "42" none))
-    (Lambda.LExpr.const "100" none))]-/
+/-- info: [Lambda.LExpr.app
+   (Lambda.LExpr.app
+     (Lambda.LExpr.op "Bool.And" none)
+     (Lambda.LExpr.app
+       (Lambda.LExpr.app (Lambda.LExpr.op "Int.Le" none) (Lambda.LExpr.const "0" none))
+       (Lambda.LExpr.const "42" none)))
+   (Lambda.LExpr.app
+     (Lambda.LExpr.app (Lambda.LExpr.op "Int.Lt" none) (Lambda.LExpr.const "42" none))
+     (Lambda.LExpr.const "100" none))]-/
 #guard_msgs in
 #eval runWFTest testMetadataWithBounds
 
@@ -659,43 +665,44 @@ def testBoundedChain : LExprT String BoundTyRestrict :=
              (.bounded (.blt (.bvar) (.bconst 20))))
        (.bounded (.blt (.bvar) (.bconst 30)))
 
-/--info: ok: [Lambda.LExpr.app
-  (Lambda.LExpr.app
-    (Lambda.LExpr.op "Bool.Implies" none)
-    (Lambda.LExpr.app
-      (Lambda.LExpr.app
-        (Lambda.LExpr.op "Int.Lt" none)
-        (Lambda.LExpr.app
-          (Lambda.LExpr.op "f2" none)
-          (Lambda.LExpr.app (Lambda.LExpr.op "f1" none) (Lambda.LExpr.const "5" none))))
-      (Lambda.LExpr.const "20" none)))
-  (Lambda.LExpr.app
-    (Lambda.LExpr.app
-      (Lambda.LExpr.op "Bool.Implies" none)
-      (Lambda.LExpr.app
-        (Lambda.LExpr.app
-          (Lambda.LExpr.op "Int.Lt" none)
-          (Lambda.LExpr.app (Lambda.LExpr.op "f1" none) (Lambda.LExpr.const "5" none)))
-        (Lambda.LExpr.const "10" none)))
-    (Lambda.LExpr.app
-      (Lambda.LExpr.app
-        (Lambda.LExpr.op "Int.Lt" none)
-        (Lambda.LExpr.app
-          (Lambda.LExpr.op "f2" none)
-          (Lambda.LExpr.app (Lambda.LExpr.op "f1" none) (Lambda.LExpr.const "5" none))))
-      (Lambda.LExpr.const "20" none))), Lambda.LExpr.app
-  (Lambda.LExpr.app
-    (Lambda.LExpr.op "Bool.Implies" none)
-    (Lambda.LExpr.app
-      (Lambda.LExpr.app
-        (Lambda.LExpr.op "Int.Lt" none)
-        (Lambda.LExpr.app (Lambda.LExpr.op "f1" none) (Lambda.LExpr.const "5" none)))
-      (Lambda.LExpr.const "10" none)))
-  (Lambda.LExpr.app
-    (Lambda.LExpr.app
-      (Lambda.LExpr.op "Int.Lt" none)
-      (Lambda.LExpr.app (Lambda.LExpr.op "f1" none) (Lambda.LExpr.const "5" none)))
-    (Lambda.LExpr.const "10" none))]-/
+/--info: [Lambda.LExpr.app
+   (Lambda.LExpr.app
+     (Lambda.LExpr.op "Bool.Implies" none)
+     (Lambda.LExpr.app
+       (Lambda.LExpr.app
+         (Lambda.LExpr.op "Int.Lt" none)
+         (Lambda.LExpr.app
+           (Lambda.LExpr.op "f2" none)
+           (Lambda.LExpr.app (Lambda.LExpr.op "f1" none) (Lambda.LExpr.const "5" none))))
+       (Lambda.LExpr.const "20" none)))
+   (Lambda.LExpr.app
+     (Lambda.LExpr.app
+       (Lambda.LExpr.op "Bool.Implies" none)
+       (Lambda.LExpr.app
+         (Lambda.LExpr.app
+           (Lambda.LExpr.op "Int.Lt" none)
+           (Lambda.LExpr.app (Lambda.LExpr.op "f1" none) (Lambda.LExpr.const "5" none)))
+         (Lambda.LExpr.const "10" none)))
+     (Lambda.LExpr.app
+       (Lambda.LExpr.app
+         (Lambda.LExpr.op "Int.Lt" none)
+         (Lambda.LExpr.app
+           (Lambda.LExpr.op "f2" none)
+           (Lambda.LExpr.app (Lambda.LExpr.op "f1" none) (Lambda.LExpr.const "5" none))))
+       (Lambda.LExpr.const "20" none))),
+ Lambda.LExpr.app
+   (Lambda.LExpr.app
+     (Lambda.LExpr.op "Bool.Implies" none)
+     (Lambda.LExpr.app
+       (Lambda.LExpr.app
+         (Lambda.LExpr.op "Int.Lt" none)
+         (Lambda.LExpr.app (Lambda.LExpr.op "f1" none) (Lambda.LExpr.const "5" none)))
+       (Lambda.LExpr.const "10" none)))
+   (Lambda.LExpr.app
+     (Lambda.LExpr.app
+       (Lambda.LExpr.op "Int.Lt" none)
+       (Lambda.LExpr.app (Lambda.LExpr.op "f1" none) (Lambda.LExpr.const "5" none)))
+     (Lambda.LExpr.const "10" none))]-/
 #guard_msgs in
 #eval runWFTest testBoundedChain
 
