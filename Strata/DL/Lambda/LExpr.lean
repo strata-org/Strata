@@ -1425,5 +1425,77 @@ def gt (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op ">" .none) a) b
 def or (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op "||" .none) a) b
 def neq (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op "!=" .none) a) b
 
+---- Semantics of non-deterministic LExpr
+inductive Value : Type where
+  | unit : Value
+  | value : String → Value
+  | closure : List Value → LExpr LTy String → Value
+  | error : Value
+
+structure Environment (Identifier : Type) where
+  stack : List Value  -- For bound variables (bvar), indexed by position
+  globals : Identifier → Option Value  -- For free variables (fvar), looked up by name
+def Environment.empty : Environment String :=
+  { stack := [], globals := fun _ => none }
+def Environment.pushStack (env : Environment String) (v : Value) : Environment String :=
+  { env with stack := v :: env.stack }
+def Environment.setGlobal (env : Environment String) (name : String) (v : Value) : Environment String :=
+  { env with globals := fun n => if n = name then some v else env.globals n }
+def Environment.lookupStack (env : Environment String) (n : Nat) : Option Value :=
+  env.stack[n]?
+def Environment.lookupGlobal (env : Environment String) (name : String) : Option Value :=
+  env.globals name
+
+inductive Eval : Environment String → LExpr LTy String → Value → Prop where
+  | const : ∀ env c ty, Eval env (.const c ty) (.value c)
+  | op : ∀ env o ty, Eval env (.op o ty) (.closure env.stack (.op o ty))
+  | bvar : ∀ env n v, env.lookupStack n = some v → Eval env (.bvar n) v
+  | fvar : ∀ env name ty v, env.lookupGlobal name = some v → Eval env (.fvar name ty) v
+  | fvar_undef : ∀ env name ty, env.lookupGlobal name = none → Eval env (.fvar name ty) .error
+  | abs : ∀ env ty body, Eval env (.abs ty body) (.closure env.stack (.abs ty body))
+  | app_closure : ∀ env fn arg fnEnv fnBody argVal result,
+      Eval env fn (.closure fnEnv fnBody) →
+      Eval env arg argVal →
+      Eval (env.pushStack argVal) fnBody result →
+      Eval env (.app fn arg) result
+  | app_error_fun : ∀ env fn arg,
+      Eval env fn .error →
+      Eval env (.app fn arg) .error
+  | app_error_arg : ∀ env fn arg,
+      Eval env arg .error →
+      Eval env (.app fn arg) .error
+  | ite_true : ∀ env cond thn els result,
+      Eval env cond (.value "true") →
+      Eval env thn result →
+      Eval env (.ite cond thn els) result
+  | ite_false : ∀ env cond thn els result,
+      Eval env cond (.value "false") →
+      Eval env els result →
+      Eval env (.ite cond thn els) result
+  | ite_error : ∀ env cond thn els,
+      Eval env cond .error →
+      Eval env (.ite cond thn els) .error
+  | eq_true : ∀ env e1 e2 v,
+      Eval env e1 v →
+      Eval env e2 v →
+      Eval env (.eq e1 e2) (.value "true")
+  | eq_false : ∀ env e1 e2 v1 v2,
+      Eval env e1 v1 →
+      Eval env e2 v2 →
+      v1 ≠ v2 →
+      Eval env (.eq e1 e2) (.value "false")
+  --| dontcare : No evaluation rules for .dontcare
+  | error : ∀ env, Eval env .error .error
+  | choose : ∀ env ty v, Eval env (.choose ty) v -- TODO: Add types
+  | skip : ∀ env, Eval env .skip .unit
+
+-- Stated soundness theorem.
+def SoundnessPreserving (t : LExpr LTy String → LExpr LTy String) : Prop :=
+  ∀ (prog : LExpr LTy String) (env : Environment String),
+    Eval env prog .error →
+    Eval env (t prog) .error
+
+theorem IfToPushPopSound: SoundnessPreserving IfToPushPop := by sorry
+
 end LExpr
 end Lambda
