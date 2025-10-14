@@ -1490,12 +1490,18 @@ inductive Eval : Environment String → LExpr LTy String → Value → Prop wher
   | skip : ∀ env, Eval env .skip .unit
 
 -- Stated soundness theorem.
-def SoundnessPreserving (t : LExpr LTy String → LExpr LTy String) : Prop :=
+def preservesSoundness (t : LExpr LTy String → LExpr LTy String) : Prop :=
   ∀ (prog : LExpr LTy String) (env : Environment String),
     Eval env prog .error →
     Eval env (t prog) .error
 
-theorem IfToPushPopSound: SoundnessPreserving IfToPushPop := by sorry
+theorem letAssignToLetAssumeSound:
+  letAssignToLetAssume |> preservesSoundness := by
+  rw [preservesSoundness]
+  intro prog
+  intro env
+  intro produceserror
+  sorry
 
 end LExpr
 end Lambda
