@@ -41,7 +41,6 @@ def myProc : Boogie.Procedure := match SimpleTestEnvAST.fst.decls.head!.getProc?
   | .some p => p
   | .none => panic! "Expected procedure"
 
-
 class IdentToStr (I : Type) where
   toStr : I → String
 
@@ -60,23 +59,14 @@ instance : HasLExpr Boogie.Expression BoogieIdent where
 def exprToJson (I : Type) [IdentToStr I] (e : Lambda.LExpr Lambda.LMonoTy I) (loc: SourceLoc) : Json :=
   match e with
   | .app (.app (.op op _) left) right =>
-    let leftJson := match left with
-      | .fvar varName _ =>
-        if IdentToStr.toStr varName == "z" then
-          mkLvalueSymbol s!"{loc.functionName}::1::z" loc.lineNum loc.functionName
-        else
-          mkLvalueSymbol s!"{loc.functionName}::{IdentToStr.toStr varName}" loc.lineNum loc.functionName
-      | _ => exprToJson (I:=I) left loc
-    let rightJson := match right with
-      | .fvar varName _ => mkLvalueSymbol s!"{loc.functionName}::{IdentToStr.toStr varName}" loc.lineNum loc.functionName
-      | .const value _ => mkConstant value "10" (mkSourceLocation "ex_prog.c" loc.functionName loc.lineNum)
-      | _ => exprToJson (I:=I) right loc
+    let leftJson := exprToJson (I:=I) left loc
+    let rightJson := exprToJson (I:=I) right loc
     mkBinaryOp (opToStr (IdentToStr.toStr op)) loc.lineNum loc.functionName leftJson rightJson
   | .const "true" _ => mkConstantTrue (mkSourceLocation "ex_prog.c" loc.functionName "3")
   | .const n _ =>
     mkConstant n "10" (mkSourceLocation "ex_prog.c" loc.functionName "14")
   | .fvar name _ =>
-    mkLvalueSymbol s!"{loc.functionName}::{IdentToStr.toStr name}" loc.lineNum loc.functionName
+    mkLvalueSymbol (getIdent (IdentToStr.toStr name) loc.functionName) loc.lineNum loc.functionName
   | _ => panic! "Unimplemented"
 
 def cmdToJson (e : Boogie.Command) (loc: SourceLoc) : Json :=
@@ -90,7 +80,7 @@ def cmdToJson (e : Boogie.Command) (loc: SourceLoc) : Json :=
           ("id", "symbol"),
           ("namedSub", Json.mkObj [
             ("#source_location", mkSourceLocation "ex_prog.c" loc.functionName "5"),
-            ("identifier", Json.mkObj [("id", s!"{loc.functionName}::1::{name.toPretty}")]),
+            ("identifier", Json.mkObj [("id", getIdent name.toPretty loc.functionName)]),
             ("type", mkIntType)
           ])
         ]
@@ -101,7 +91,7 @@ def cmdToJson (e : Boogie.Command) (loc: SourceLoc) : Json :=
       let exprLoc : SourceLoc := { functionName := loc.functionName, lineNum := "6" }
       mkCodeBlock "expression" "6" loc.functionName #[
         mkSideEffect "assign" "6" loc.functionName mkIntType #[
-          mkLvalueSymbol s!"{loc.functionName}::1::{name.toPretty}" "6" loc.functionName,
+          mkLvalueSymbol (getIdent name.toPretty loc.functionName) "6" loc.functionName,
           exprToJson (I:=BoogieIdent) expr exprLoc
         ]
       ]
@@ -193,6 +183,20 @@ partial def stmtToJson {P : Imperative.PureExpr} (I : Type) [IdentToStr I] [HasL
         exprToJson (I:=I) converted_cond loc,
         blockToJson (I:=I) thenb loc,
         blockToJson (I:=I) elseb loc,
+      ])
+    ]
+  | .loop guard _ _ body _ =>
+    let converted_guard : Lambda.LExpr Lambda.LMonoTy I := @HasLExpr.expr_eq P (I:=I) _ ▸ guard
+    Json.mkObj [
+      ("id", "code"),
+      ("namedSub", Json.mkObj [
+        ("#source_location", mkSourceLocation "from_andrew.c" loc.functionName "8"),
+        ("statement", Json.mkObj [("id", "while")]),
+        ("type", emptyType)
+      ]),
+      ("sub", Json.arr #[
+        exprToJson (I:=I) converted_guard loc,
+        blockToJson (I:=I) body loc
       ])
     ]
   | _ => panic! "Unimplemented"
@@ -368,6 +372,8 @@ def testSymbols (proc: Boogie.Procedure) : String := Id.run do
 
   -- Hardcode local variable for now
   let zSymbol := createLocalSymbol "z" proc.header.name.toPretty
+  let sumSymbol := createLocalSymbol "sum" proc.header.name.toPretty
+  let countSymbol := createLocalSymbol "count" proc.header.name.toPretty
 
   -- Build symbol map
   let mut m : Map String CBMCSymbol := Map.empty
@@ -377,10 +383,12 @@ def testSymbols (proc: Boogie.Procedure) : String := Id.run do
   -- Add parameter symbols
   for paramName in paramNames do
     let paramSymbol := createParameterSymbol paramName proc.header.name.toPretty
-    m := m.insert s!"{proc.header.name.snd}::{paramName}" paramSymbol
+    m := m.insert (getIdent paramName proc.header.name.snd) paramSymbol
 
   -- Add local variable
   m := m.insert s!"{proc.header.name.snd}::1::z" zSymbol
+  m := m.insert s!"{proc.header.name.snd}::1::sum" sumSymbol
+  m := m.insert s!"{proc.header.name.snd}::1::count" countSymbol
   toString (toJson m)
 
 end Boogie
