@@ -55,7 +55,7 @@ skip
 #guard_msgs in
 #eval format test2WithoutIf
 /--
-info: PANIC at Lambda.LExpr.ToSMT Strata.DL.Lambda.LExpr:1225:9: ToSMT not supported:let % : int := #0;
+info: PANIC at Lambda.LExpr.ToSMT Strata.DL.Lambda.LExpr:1302:9: ToSMT not supported:let % : int := #0;
 pushpop (
   assume (~! (%0 == #1)) <|
   error
@@ -91,7 +91,24 @@ info: (declare-const b0 Int)
 #eval ToSMT .topLevel <| test2WithoutLetAssign
 
 
-
+/-var i;
+  var j;
+  var k;
+  var i0 := i;
+  var j0 := j;
+  var k0 := k;
+  assume i + j == k;
+  assert i == k - j;
+  i := i + j + k;
+  j := j + k;
+  assert i == i0 + j0 + k;
+  assert j == j0 + k;
+  assert j0 == j - k
+  assert i0 == i - (j - k) - k;
+  assert i0 == i - j;
+  assert k == i0 + j0;
+  assert k == (i - j) + (j - k);
+  assert k + k == i;-/
 def prog: LExpr LTy String :=
   let_ .topLevel "i" _Int <| fun c =>
   let_ c "j" _Int <| fun c =>
@@ -113,6 +130,7 @@ def prog: LExpr LTy String :=
   assert (.eq (c.v "k") (plus (minus (c.v "i") (c.v "j")) (minus (c.v "j") (c.v "k")))) <|
   assert (.eq (plus (c.v "k") (c.v "k")) (c.v "i"))
   skip
+-- Would be nice to find a monadic style where the context is threaded automatically
 
 /--
 info: let % : int;
@@ -308,13 +326,12 @@ info: let % := #1;
 #guard_msgs in
 #eval format (simplify test_simplify)
 
-
 def debugIf: LExpr LTy String :=
   let_ .topLevel "b" _Bool <| fun c =>
   let_assign c "i" _Int (.const "0" .none) <| fun c =>
   if_ c ["i"] (fun c => c.v "b") (
     then_ := fun exit c =>
-      let_assign c "i" _Int (.const "1" .none) <| fun c =>
+      assign c "i" _Int (.const "1" .none) <| fun c =>
       exit c
   ) (
     else_ := fun exit c =>
@@ -376,7 +393,6 @@ info: (declare-const b0 Bool)
 (assert (not (= b3 1)))
 (check-sat)
 (pop)
-
 (pop)
 (assert (not b0))
 (declare-const b2 Int)
@@ -402,7 +418,6 @@ info: (declare-const b0 Bool)
 (assert (not (= 1 1)))
 (check-sat)
 (pop)
-
 (pop)
 (assert (not b0))
 (push)
@@ -413,13 +428,84 @@ info: (declare-const b0 Bool)
 #guard_msgs in
 #eval ToSMT .topLevel <| ifToPushPop <| simplify <| inlineContinuations <| simplify <| debugIf
 
-def implies (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op "==>" .none) a) b
-def and (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op "&&" .none) a) b
-def ge (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op ">=" .none) a) b
-def lt (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op "<" .none) a) b
-def le (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op "<=" .none) a) b
-def gt (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op ">" .none) a) b
-def or (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op "||" .none) a) b
+-- HIGHLIGHT
+/-
+var i: int;
+if i != 1 {
+  i := 1
+  var i := 2
+}
+assert i == 1
+-/
+def ifWithLocalVar: LExpr LTy String :=
+  let c := .topLevel
+  let_ c "i" _Int <| fun c =>
+  if_ c c.frame (fun c => neq (c.v "i") (.const "1" .none)) (
+  then_ := fun exit c =>
+    assign c "i" _Int (.const "1" .none) <| fun c: Context String =>
+    let_assign c "i" _Int (.const "2" .none) <| fun c =>
+    exit c) (
+  else_ := fun exit c =>
+    exit c) <| fun c =>
+  assert (eq (c.v "i") (.const "1" .none)) skip
+
+/--
+info: (declare-const b0 Int)
+(push)
+(assert (distinct b0 1))
+(declare-const b1 Int)
+(assert (= b1 1))
+(declare-const b2 Int)
+(assert (= b2 2))
+(declare-const b3 Int)
+(assert (= b3 b0))
+(push)
+(assert (not (= b3 1)))
+(check-sat)
+(pop)
+(pop)
+(assert (not (distinct b0 1)))
+(declare-const b1 Int)
+(assert (= b1 b0))
+(push)
+(assert (not (= b1 1)))
+(check-sat)
+(pop)
+-/
+#guard_msgs in
+#eval ToSMT .topLevel <|
+      ifToPushPop <|
+      letAssignToLetAssume <|
+      inlineContinuations <|
+      ifWithLocalVar
+
+-- Debug issue
+/-
+var i: int;
+if i == 1 {
+  var i := 2
+}
+assert i == 1
+-/
+def ifWithLocalVar2: LExpr LTy String :=
+  let c := .topLevel
+  let_ c "i" _Int <| fun c =>
+  if_ c c.frame (fun c => neq (c.v "i") (.const "1" .none)) (
+  then_ := fun exit c =>
+    let_assign c "i" _Int (.const "2" .none) <| fun c =>
+    exit c) (
+  else_ := fun exit c =>
+    exit c) <| fun c =>
+  assert (eq (c.v "i") (.const "1" .none)) skip
+
+/--
+info: let % : int;
+((λ (if ((~!= %1) #1) then let % : int := #2; (%1 %2) else (%0 %1)))) <| λ
+assert (%0 == #1) <|
+skip
+-/
+#guard_msgs in
+#eval format ifWithLocalVar2
 
 /- progs with joining conditionals and automatic detection of variables being modified -/
 /-var discount: bool;
@@ -505,8 +591,8 @@ let % : int;
 let % : int;
 assume ((~> %1) #0) <|
 assume ((~> %3) #0) <|
-((λ (if %5 then let % : int := ((~- %4) %2); (%1 %0) else (%0 %4)))) <| λ
-((λ (if ((~&& %7) ((~> %1) %3)) then let % : int := ((~- %1) %3); (%1 %0) else (%0 %1)))) <| λ
+((λ (if %5 then let % : int := ((~- %4) %2); (%1 %5) else (%0 %4)))) <| λ
+((λ (if ((~&& %7) ((~> %1) %3)) then let % : int := ((~- %1) %3); (%1 %2) else (%0 %1)))) <| λ
 assert ((~==> (~! %6)) ((~> %0) #0)) <|
 assert ((~==> ((~< %3) %4)) ((~> %0) #0)) <|
 ((λ (if ((~< %1) %5) then ((λ (if (~! %8) then assert %9 <| %0 else %0))) <| assert ((~|| %7) %8) <| %0 else %0))) <|
@@ -528,9 +614,9 @@ let % : int;
 assume ((~> %1) #0) <|
 assume ((~> %3) #0) <|
 (if %4 then let % : int := ((~- %3) %1);
-   let % := %0;
+   let % := %4;
    (if ((~&& %7) ((~> %0) %3)) then let % : int := ((~- %0) %3);
-      let % := %0;
+      let % := %1;
       assert ((~==> (~! %8)) ((~> %0) #0)) <|
       assert ((~==> ((~< %5) %6)) ((~> %0) #0)) <|
       (if ((~< %0) %6) then (if (~! %8) then assert %9 <|
@@ -562,7 +648,7 @@ assume ((~> %3) #0) <|
          (if ((~> %0) %5) then assert #false <| assume #false <| skip else skip)))
  else let % := %3;
    (if ((~&& %6) ((~> %0) %2)) then let % : int := ((~- %0) %2);
-      let % := %0;
+      let % := %1;
       assert ((~==> (~! %7)) ((~> %0) #0)) <|
       assert ((~==> ((~< %4) %5)) ((~> %0) #0)) <|
       (if ((~< %0) %5) then (if (~! %7) then assert %8 <|
@@ -613,13 +699,13 @@ pushpop (
   let % : int;
   assume (%0 == ((~- %4) %2)) <|
   let %;
-  assume (%0 == %1) <|
+  assume (%0 == %5) <|
   pushpop (
     assume ((~&& %7) ((~> %0) %3)) <|
     let % : int;
     assume (%0 == ((~- %1) %4)) <|
     let %;
-    assume (%0 == %1) <|
+    assume (%0 == %2) <|
     pushpop (
       assume (~! ((~==> (~! %8)) ((~> %0) #0))) <|
       error
@@ -803,7 +889,7 @@ pushpop (
   let % : int;
   assume (%0 == ((~- %1) %3)) <|
   let %;
-  assume (%0 == %1) <|
+  assume (%0 == %2) <|
   pushpop (
     assume (~! ((~==> (~! %7)) ((~> %0) #0))) <|
     error
@@ -986,9 +1072,6 @@ skip
       ifToPushPop
     )
 
--- TODO: It does not type check yet, there are replacements that are wrong. Need to try smaller examples first.
--- HOWEVER: We have a path to soundness as we can prove that this program has the same error reporting as the original one.
-
 /--
 info: (declare-const b0 Bool)
 (declare-const b1 Bool)
@@ -1004,13 +1087,13 @@ info: (declare-const b0 Bool)
 (declare-const b6 Int)
 (assert (= b6 (- b2 b4)))
 (declare-const b7 Int)
-(assert (= b7 b6))
+(assert (= b7 b2))
 (push)
 (assert (and b0 (> b7 b4)))
 (declare-const b8 Int)
 (assert (= b8 (- b7 b4)))
 (declare-const b9 Int)
-(assert (= b9 b8))
+(assert (= b9 b7))
 (push)
 (assert (not (=> (not b1) (> b9 0))))
 (check-sat)
@@ -1194,7 +1277,7 @@ info: (declare-const b0 Bool)
 (declare-const b7 Int)
 (assert (= b7 (- b6 b4)))
 (declare-const b8 Int)
-(assert (= b8 b7))
+(assert (= b8 b6))
 (push)
 (assert (not (=> (not b1) (> b8 0))))
 (check-sat)
@@ -1377,117 +1460,167 @@ info: (declare-const b0 Bool)
     )
 
 
-def progIfStmtDebug: LExpr LTy String :=
-  let_ .topLevel "discount" _Bool <| fun c =>
-  let_ c "price" _Int <| fun c =>
-  let_ c "discountAmount" _Int <| fun c =>
-  if_ c ["price"] (fun c => c.v "discount") (
-    then_ := fun exit c =>
-      let_assign c "price" _Int (minus (c.v "price") (c.v "discountAmount")) <| fun c =>
-      exit c) (
-    else_ := fun exit c => exit c) (
-    endif := fun c =>
-  .assert (implies (not (c.v "discount")) (gt (c.v "price") (.const "0" .none))) <|
-  skip)
-
 /-
-info: let b0% : bool;
-let b1% : int;
-let b2% : int;
-((λb3 (if b0%3 then let b4% : int := ((~- b1%2) b2%1); (b3%1 b4%0) else (%0 %2)))) <| λb3
-assert ((~==> (~! b0%3)) ((~> b3%0) #0)) <|
-skip
+procedure f(inout counter) {
+  counter := 2;
+}
+let counter: Int := 3;
+f(counter);
+assert counter == 2
 -/
-#eval format (progIfStmtDebug
-      --|> inlineContinuations
-      --|> letAssignToLetAssume
-      --|> ifToPushPop
-    )
-
-/-
-info: let b0% : bool;
-let b1% : int;
-let b2% : int;
-((λb3 (
-  if b0%3 then
-    let b4% : int := ((~- b1%2) b2%1);
-    (b3%1 b4%0)
-  else
-    (%0 %2)))) <| λb3. assert ((~==> (~! b0%3)) ((~> b3%0) #0)) skip
--/
-
-/-
-info: let b0% : bool;
-let b1% : int;
-let b2% : int;
-
-  if b0%3 then
-    let b4% : int := ((~- b1%2) b2%1);
-    (b3%1 b4%0)
-  else
-    (%0 %2)))) <| λb3. assert ((~==> (~! b0%3)) ((~> b3%0) #0)) skip
--/
-
-
-
-/-
-info: let b0% : bool;
-let b1% : int;
-let b2% : int;
-(((if b0%2 then
-  let b3% : int := ((~- b1%1) b2%0);
-  ((λb4: Int. assert ((~==> (~! b0%3)) ((~> b4%0) #0))) b3%0) else (%0 %2))))
-skip
--/
-
-/-
-info: let b0% : bool;
-let b1% : int;
-let b2% : int;
-(if b0%2 then let b3% : int := ((~- b1%1) b2%0);
-   let b4% := b3%0;
-   assert ((~==> (~! b1%3)) ((~> b4%0) #0)) <|
-   skip
- else let b4% := b2%1;
-   assert ((~==> (~! b1%2)) ((~> b4%0) #0)) <|
-   skip)
--/
-#eval format (progIfStmtDebug
-      |> inlineContinuations
-      --|> letAssignToLetAssume
-      --|> ifToPushPop
-    )
+def procedureCallDebug: LExpr LTy String :=
+  let c := .topLevel
+  let_assign c "f" .none (.abs .none (.abs .none (
+    let c := Context.topLevel.add_declare "counter" |>.add_declare "f#out"
+    assign c "counter" _Int (.const "2" .none) <| fun c =>
+    .app (c.v "f#out") (c.v "counter")
+  ))) <| fun c =>
+  let_assign c "counter" _Int (.const "3" .none) <| fun c =>
+  .app (.app (c.v "f") (c.v "counter")) <| .abs .none <|
+  let c := c.add_assign "counter"
+  assert (eq (c.v "counter") (.const "2" .none)) <|
+  skip
 
 /--
-info: (declare-const b0 Bool)
-(declare-const b1 Int)
-(declare-const b2 Int)
-(push)
-(assert b0)
-(declare-const b3 Int)
-(assert (= b3 (- b1 b2)))
-(declare-const b4 Int)
-(assert (= b4 b3))
-(push)
-(assert (not (=> (not b0) (> b4 0))))
-(check-sat)
-(pop)
+info: ((λ let % : int := #3; ((%1 %0) (λ assert (%0 == #2) <| skip)))) <| λ
+(λ let % : int := #2; (%1 %0))
+-/
+#guard_msgs in
+#eval format procedureCallDebug
 
-(pop)
-(assert (not b0))
-(declare-const b3 Int)
-(assert (= b3 b1))
+/--
+info: (declare-const b0 Int)
+(assert (= b0 2))
 (push)
-(assert (not (=> (not b0) (> b3 0))))
+(assert (not (= b0 2)))
 (check-sat)
 (pop)
 -/
 #guard_msgs in
-#eval ToSMT .topLevel (progIfStmtDebug |>
-      inlineContinuations |>
-      letAssignToLetAssume |>
-      ifToPushPop
-    )
+#eval ToSMT .topLevel <|
+      ifToPushPop <|
+      letAssignToLetAssume <|
+      inlineContinuations <|
+      simplify <|
+      inlineContinuations <|
+      procedureCallDebug
+
+/-
+procedure f(inout counter) {
+  let inc: Int := *;
+  assume 0 <= inc <= 2
+  counter := counter + inc;
+}
+let counter: Int := 3;
+f(counter);
+f(counter)
+assert 3 <= counter <= 7
+assert counter == 3 || counter == 5 || counter == 7  // Cannot be prove with true non-determinism
+-/
+def procedureCall: LExpr LTy String :=
+  let c := .topLevel
+  procedure c "f" (("counter", _Int) :: ("f_return", .none) :: []) (fun c =>
+    let_ c "inc" _Int <| fun c =>
+    assume (and (le (.const "0" .none) (c.v "inc")) (le (c.v "inc") (.const "2" .none))) <|
+    assign c "counter" _Int (plus (c.v "counter") (c.v "inc")) <| fun c =>
+    call1 c "f_return" (c.v "counter")
+  ) <| fun c =>
+  let_assign c "counter" _Int (.const "3" .none) <| fun c =>
+  call1_1 c "f" (c.v "counter") (out := "counter") <| fun c =>
+  call1_1 c "f" (c.v "counter") (out := "counter") <| fun c =>
+  assert (and (le (.const "3" .none) (c.v "counter")) (le (c.v "counter") (.const "7" .none))) <|
+  assert (or (or (eq (c.v "counter") (.const "3" .none))
+                 (eq (c.v "counter") (.const "5" .none)))
+             (eq (c.v "counter") (.const "3" .none)))
+  skip
+
+-- HIGHLIGHT
+/--
+info: ((λ let % : int := #3;
+ ((%1 %0) (λ ((%2 %0) (λ assert ((~&& ((~<= #3) %0)) ((~<= %0) #7)) <|
+     assert ((~|| ((~|| (%0 == #3)) (%0 == #5))) (%0 == #3)) <|
+     skip)))))) <| λ : int
+(λ let % : int; assume ((~&& ((~<= #0) %0)) ((~<= %0) #2)) <| let % : int := ((~+ %2) %0); (%2 %0))
+-/
+#guard_msgs in
+#eval format procedureCall
+
+
+/--
+info: (declare-const b0 Int)
+(assert (and (<= 0 b0) (<= b0 2)))
+(declare-const b1 Int)
+(assert (= b1 (+ 3 b0)))
+(declare-const b2 Int)
+(assert (and (<= 0 b2) (<= b2 2)))
+(declare-const b3 Int)
+(assert (= b3 (+ b1 b2)))
+(push)
+(assert (not (and (<= 3 b3) (<= b3 7))))
+(check-sat)
+(pop)
+(push)
+(assert (not (or (or (= b3 3) (= b3 5)) (= b3 3))))
+(check-sat)
+(pop)
+-/
+#guard_msgs in
+#eval ToSMT .topLevel <|
+      ifToPushPop <|
+      letAssignToLetAssume <|
+      simplify <|
+      inlineContinuations <|
+      simplify <|
+      inlineContinuations <|
+      procedureCall
+
+-- HIGHLIGHT: api use case
+/-Error because does not start with "arn:":
+  iam.simulate_principal_policy(PolicySourceArn='user/someone')
+
+  -- We need to be able to have symbol types.
+  -- Methods in python have one argument which contains all the arguments. Above, the argument is passed as
+  -- [PolicySourceArn := 'user/someone']
+  -- Similarly, objects are lambdas accepting a symbol and returning procedures.
+  -- We need to define a fix point however if some procedures are mutually recursive.
+-/
+def apiProg :=
+  let c := .topLevel
+  procedure c "iam.simulate_principal_policy" (("PolicySourceArn", _String) :: ("out", .none) :: []) (fun c =>
+    assert (
+      opcall2 "regexmatch"
+        (c.v "PolicySourceArn")
+        (opcall2 "regexconcat"
+          (opcall1 "regexfromstring" (.const "\"arn:\"" _String))
+          (opcall1 "regexstar" (.op "regexallchar" .none)))) <|
+    call1 c "out" (.choose _Int)) <| fun c =>
+  call1_1 c "iam.simulate_principal_policy" (.const "\"user/policy\"" _String) "out_discard" <| fun c =>
+  call1_1 c "iam.simulate_principal_policy" (.const "\"arn:policy\"" _String) "out_discard" <| fun _ =>
+  skip
+
+/--
+info: (set-logic QF_S)
+(push)
+(assert (not (str.in_re "user/policy" (re.++ (str.to_re "arn:") (re.* re.allchar)))))
+(check-sat)
+(pop)
+(declare-const b0 Int)
+(push)
+(assert (not (str.in_re "arn:policy" (re.++ (str.to_re "arn:") (re.* re.allchar)))))
+(check-sat)
+(pop)
+(declare-const b1 Int)
+-/
+#guard_msgs in
+#eval Format.append f!"(set-logic QF_S){Format.line}" <| ToSMT .topLevel <|
+      ifToPushPop <|
+      letAssignToLetAssume <|
+      simplify <|
+      inlineContinuations <|
+      simplify <|
+      inlineContinuations <|
+      apiProg
+
 
 inductive StmtExpr (I: Type): Type where
 /- Statement like -/
@@ -1502,7 +1635,7 @@ inductive StmtExpr (I: Type): Type where
   | LiteralInt (i: Int)
   | Identifier (name: I)
 deriving Repr
-
+/-
 mutual
 partial def translateToNLExprList
   (c: Context String)
@@ -1527,26 +1660,14 @@ partial def translateToNLExpr (c: Context String) (s: StmtExpr String): LExpr LT
         match optLabel with
         | .some label => label
         | .none => "exit"
-      let c := c.add blockLabel
+      let c := c.add_declare blockLabel
       (.abs .none <| translateToNLExprList c (.some (c.v blockLabel)) statements)
   | .LiteralInt i => .const (toString f!"{i}") .none
   | .Identifier name => c.v name
   | _ => panic!("could not do that")
 end
-/-
-var i := 1;
-l: {
-  // We can't just detect a variable by name
-  //
-  i := 2;
-  var i := 3; // New variable
-  i := 4;
-  exit l;
-}
-assert i == 2; // Can be proved
-
 -/
-#eval translateToNLExpr .topLevel
+-- #eval translateToNLExpr .topLevel
 
 end LExpr
 end Lambda

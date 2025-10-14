@@ -61,7 +61,7 @@ inductive LExpr (TypeType : Type) (Identifier : Type) : Type where
   | ite     (c t e : LExpr TypeType Identifier)
   /-- `.eq e1 e2`: equality expression. -/
   | eq      (e1 e2 : LExpr TypeType Identifier)
-  | dontcare -- Assume false
+  | dontcare -- assume false
   | error    -- assert false
   | choose (t: Option TypeType) -- like fvar, except that it might return a different value every time
   | skip     -- returns the environment or unit
@@ -977,58 +977,155 @@ info: all (some (LTy.forAll [] (LMonoTy.tcons "Map" [LMonoTy.ftvar "k", LMonoTy.
 end Syntax
 
 ---------------------------------------------------------------------
-
--- Now the experiment
-inductive Context (Identifier : Type) : Type where
-  | topLevel : Context Identifier
-  | extend (tail : Context Identifier) (id : Identifier) (indexFromLast: Nat): Context Identifier
-deriving Repr
+-- Proof of concept of encoding everything in NLambda calculus
 
 def _Bool : Option LTy := .some <| LTy.forAll [] (LMonoTy.tcons "bool" [])
 def _Int : Option LTy := .some <| LTy.forAll [] (LMonoTy.tcons "int" [])
+def _String : Option LTy := .some <| LTy.forAll [] (LMonoTy.tcons "string" [])
 
--- TODO: Add the type to the context
-def Context.add {Identifier : Type} (c : Context Identifier) (id : Identifier) : Context Identifier :=
-  Context.extend c id (match c with
-    | .topLevel => 0
-    | .extend _ _ s => s + 1)
+inductive Context (Identifier : Type) : Type where
+  | topLevel : Context Identifier
+  | extend
+    (tail : Context Identifier)
+    (id : Identifier)
+    (overrideIndex : Option Nat)
+    -- If .some, this variable is supposed to be an override of the variable declared at the given index
+    -- which should have a .none
+    (indexFromLast : Nat): Context Identifier
+deriving Repr
+
+def Context.frame [DecidableEq Identifier] (c: Context Identifier): List Identifier :=
+  match c with
+  | .topLevel => []
+  | .extend tail _ (.some _) _ =>
+    -- This seems wrong as there could be shadowings.
+    -- Also, we don't want to include procedures.
+    tail.frame
+  | .extend tail id .none _ =>
+    let tailframe := tail.frame
+    if id ∈ tailframe then
+      tailframe
+    else
+      id :: tailframe
 
 def Context.size {Identifier : Type} (c : Context Identifier) : Nat :=
   match c with
   | .topLevel => 0
-  | .extend _ _ s => s + 1
+  | .extend _ _ _ s => s + 1
 
 def Context.nameOf (c : Context String) (n: Nat): String :=
   let rec go : Context String → Nat → String
     | .topLevel, _ => "UNDEFINED"
-    | .extend _ id' _, 0 => id'
-    | .extend c' _ _, n+1 => go c' n
+    | .extend _ id' _ _, 0 => id'
+    | .extend c' _ _ _, n+1 => go c' n
   go c n
+
+--
+def Context.lastIndexOf [DecidableEq Identifier] (c : Context Identifier) (id: Identifier): Nat :=
+  let rec go : Context Identifier → Nat
+    | .topLevel => 0
+    | .extend tail id' _ n => if id == id' then n else go tail
+  go c
+
+
+def Context.add_declare {Identifier : Type} (c : Context Identifier) (id : Identifier) : Context Identifier :=
+  Context.extend c id (overrideIndex := .none) (match c with
+    | .topLevel => 0
+    | .extend _ _ _ s => s + 1)
+
+def Context.add_assign {Identifier : Type} [DecidableEq Identifier] (c : Context Identifier) (id : Identifier) : Context Identifier :=
+  let overrideIndex: Nat := c.lastIndexOf id
+  Context.extend c id (.some overrideIndex) (match c with
+    | .topLevel => 0
+    | .extend _ _ _ s => s + 1)
+
+def Context.vOffset [DecidableEq Identifier]: Identifier → Context Identifier → Nat → LExpr TypeType Identifier
+  | _, .topLevel, _ => .bvar 0
+  | id, .extend c' id' _ _, n =>
+    if id == id' then
+      LExpr.bvar n
+    else
+      vOffset id c' (n + 1)
 
 -- Returns a bvar corresponding of the index of the identifier in the context
 -- TODO: Add error if identifier not found
 def Context.v {Identifier : Type} [DecidableEq Identifier] (c : Context Identifier) (id : Identifier) : LExpr TypeType Identifier :=
-  let rec go : Context Identifier → Nat → LExpr TypeType Identifier
-    | .topLevel, _ => .bvar 0
-    | .extend c' id' _, n =>
-      if id == id' then
-        LExpr.bvar n
+  c.vOffset id 0
+
+def Context.vLastAssigned {Identifier : Type}
+  [DecidableEq Identifier]
+  (c cInit : Context Identifier)
+  -- Assuming cInit is a prefix of c, we want to know which identifier in c corresponds to last identifier in cInit
+  -- which was last assigned in c
+  (id : Identifier) : LExpr TypeType Identifier :=
+  let rec go : Context Identifier → Option (LExpr TypeType Identifier) → Nat → LExpr TypeType Identifier
+    | .topLevel, _, _ => .bvar 123456789 -- Should not happen!
+    | .extend c' id' overrideIndex _, candidate, n =>
+      if n + 1 == cInit.size then
+        match candidate with
+        | .some candidate => candidate
+        | .none => -- There were no assignments or they all lead to declarations when walking in reverse, such as
+          -- cInit
+          -- var i;  -- 3.candidate == .none     because it was a local declaration since cInit
+          -- i := 2; -- 2.candidate == .some 0
+          --         -- 1.candidate == none
+          cInit.vOffset id (c.size - (n + 1)) -- Hence we take the last assignment or declaration in the initial context.
       else
-        go c' (n + 1)
-  go c 0
+        if id == id' then
+          match overrideIndex with
+          | .none => go c' .none (n + 1)
+          | .some _ => go c' (.some (LExpr.bvar n)) (n + 1)
+        else
+          go c' candidate (n + 1)
+  go c .none 0
+
+
+def procedure_lambda {Identifier : Type} {TypeType: Type} [DecidableEq Identifier]
+  (c : Context Identifier) (id : Identifier) (ty: Option TypeType) (cont: Context Identifier -> LExpr TypeType Identifier): LExpr TypeType Identifier :=
+  abs ty <|
+    let c': Context Identifier := c.add_declare id
+    cont c'
+
+def opcall1 [DecidableEq Identifier] (name: Identifier) (arg: LExpr TypeType Identifier): LExpr TypeType Identifier :=
+  .app (.op name .none) arg
+
+def opcall2 [DecidableEq Identifier] (name: Identifier) (arg arg2: LExpr TypeType Identifier): LExpr TypeType Identifier :=
+  .app (.app (.op name .none) arg) arg2
+
+def call1 [DecidableEq Identifier] (c: Context Identifier) (name: Identifier) (arg: LExpr TypeType Identifier): LExpr TypeType Identifier :=
+  .app (c.v name) arg
+
+def call1_1 [DecidableEq Identifier] (c: Context Identifier) (name: Identifier) (arg: LExpr TypeType Identifier) (out: Identifier) (cont: Context Identifier -> LExpr TypeType Identifier): LExpr TypeType Identifier :=
+  .app (.app (c.v name) arg) <| abs .none <|
+    let c := c.add_assign out
+    cont c
 
 def choose_abs (ty: Option TypeType) (l: LExpr TypeType Identifier) : LExpr TypeType Identifier :=
   .app l (.choose ty)
 
 -- Declare a new variable without RHS
 def let_ {Identifier : Type} (c: Context Identifier) (id : Identifier) (ty: Option TypeType) (k : Context Identifier → LExpr TypeType Identifier) : LExpr TypeType Identifier :=
-  let c: Context Identifier := .add c id
+  let c: Context Identifier := .add_declare c id
   choose_abs ty <| LExpr.abs ty <| k c
 
 -- Declare a new variable and assign it a value
 def let_assign {Identifier : Type} (c: Context Identifier) (id : Identifier) (ty: Option TypeType) (rhs : LExpr TypeType Identifier) (k : Context Identifier → LExpr TypeType Identifier) : LExpr TypeType Identifier :=
-  let c : Context Identifier := .add c id
+  let c : Context Identifier := .add_declare c id
   .app (.abs ty (k c)) rhs
+
+def assign {Identifier : Type} [DecidableEq Identifier] (c: Context Identifier) (id : Identifier) (ty: Option TypeType) (rhs : LExpr TypeType Identifier) (k : Context Identifier → LExpr TypeType Identifier) : LExpr TypeType Identifier :=
+  let c : Context Identifier := .add_assign c id
+  .app (.abs ty (k c)) rhs
+
+def procedure  {Identifier : Type} {TypeType: Type} [DecidableEq Identifier]
+  (c : Context Identifier)
+  (name: Identifier) (args: List (Identifier × Option TypeType)) (body: Context Identifier -> LExpr TypeType Identifier)
+  (cont: Context Identifier -> LExpr TypeType Identifier): LExpr TypeType Identifier :=
+  let funDef :=
+    args.foldr (fun (name, type) body =>
+      fun c => procedure_lambda c name type <| body
+    ) body
+  let_assign c name .none (funDef c) cont
 
 def assume {Identifier : Type} (cond : LExpr TypeType Identifier) (thn : LExpr TypeType Identifier) : LExpr TypeType Identifier :=
   .ite cond thn .dontcare
@@ -1041,32 +1138,6 @@ def minus (a b: LExpr LTy String) := LExpr.app (.app (.op "-" .none) a) b
 def pushpop (a b: LExpr LTy String) :=
   LExpr.app (LExpr.app (.abs .none (.abs .none (.bvar 0))) a) b
 def not (a: LExpr LTy String) := LExpr.app (.op "!" .none) a
-
-/-var i;
-  var j;
-  var k;
-  var i0 := i;
-  var j0 := j;
-  var k0 := k;
-  assume i + j == k;
-  assert i == k - j;
-  i := i + j + k;
-  j := j + k;
-  assert i == i0 + j0 + k;
-  assert j == j0 + k;
-  assert j0 == j - k
-  assert i0 == i - (j - k) - k;
-  assert i0 == i - j;
-  assert k == i0 + j0;
-  assert k == (i - j) + (j - k);
-  assert k + k == i;-/
--- Would be nice to find a monadic style where the context is threaded automatically
-
-
--- Since SMT does not support general ite statements, we need to transform
--- ite cond thn els
--- into
--- pushpop (assume cond thn) (assume (not cond) els)
 
 -- TODO: Prove that this transformation preserves errors
 def ifToPushPop (prog: LExpr LTy String): LExpr LTy String :=
@@ -1191,6 +1262,12 @@ partial def ToSMTExpr (c: Context String) (prog: LExpr LTy String): Format :=
   | .op ">" _ => f!">"
   | .op ">=" _ => f!">="
   | .op "==>" _ => f!"=>"
+  | .op "!=" _ => f!"distinct"
+  | .op "regexfromstring" _ => "str.to_re"
+  | .op "regexallchar" _ => "re.allchar"
+  | .op "regexstar" _ => "re.*"
+  | .op "regexconcat" _ => "re.++"
+  | .op "regexmatch" _ => "str.in_re"
   | _ => panic!("ToSMTExpr: Not supported: " ++ toString (format prog))
 
 -- Assume that the prog is written in an SMT compatible format
@@ -1200,12 +1277,12 @@ partial def ToSMT (c: Context String) (prog: LExpr LTy String): Format :=
   | .app (.abs _ body) (.choose lty) =>
     if lty == _Bool then
       let varName :=  ("b" ++ toString c.size) -- TODO: Recover original name in .abs
-      let newC := c.add varName
+      let newC := c.add_declare varName
       let bodySmt := ToSMT newC body
       f!"(declare-const {varName} Bool){Format.line}{bodySmt}"
     else if lty == _Int || lty == .none then -- None assumed integer
       let varName :=  ("b" ++ toString c.size) -- TODO: Recover original name in .abs
-      let newC := c.add varName
+      let newC := c.add_declare varName
       let bodySmt := ToSMT newC body
       f!"(declare-const {varName} Int){Format.line}{bodySmt}"
     else
@@ -1220,29 +1297,39 @@ partial def ToSMT (c: Context String) (prog: LExpr LTy String): Format :=
   | .app (.app (.abs _ (.abs _ (.bvar 0))) a) b =>
     let aSmt := ToSMT c a
     let bSmt := ToSMT c b
-    f!"(push){Format.line}{aSmt}{Format.line}(pop){Format.line}{bSmt}"
+    f!"(push){Format.line}{aSmt}{Format.line}(pop){if !bSmt.isEmpty then Format.line else f!""}{bSmt}"
   | .skip => f!""
   | _ => panic!("ToSMT not supported:" ++ (toString (format prog)))
 
 -- We wrongly assume determinism. We should detect determinism in the future.
-def frameExitCall(frame: List String) (exitName: String) (cAtExit: Context String): LExpr LTy String :=
-    (frame.map cAtExit.v).foldl
+def frameExitCall
+  (frame: List String)
+  (exitName: String)
+  (cAtEntry: Context String)
+  (cAtExit: Context String): LExpr LTy String :=
+    (frame.map (fun varName =>
+        cAtExit.vLastAssigned cAtEntry varName)).foldl
       (fun acc v => .app acc v)
       (cAtExit.v exitName)
 
-def if_ (c: Context String) (frame: List String) (cond: Context String -> LExpr LTy String) (then_ else_:(Context String -> LExpr LTy String) -> Context String → LExpr LTy String) (endif : Context String → LExpr LTy String) : LExpr LTy String :=
+def if_
+     (c: Context String)
+     (frame: List String)
+     (cond: Context String -> LExpr LTy String)
+     (then_ else_:(Context String -> LExpr LTy String) -> Context String → LExpr LTy String)
+     (endif : Context String → LExpr LTy String) : LExpr LTy String :=
   -- First we call thn and els with a '#continue' free variable
   -- Then we detect which variables have been modified since the original context on either branches
   -- We add those variables to the context for next, and then
   -- we replace #continue on each branch with a call to the actual continue variable with the variables modified on either branches as argument.
   let exitName := "#continue" -- TODO: Avoid name clashes in the case of nested ifs. Use metadata?
-  let newC := c.add exitName
-  let thnProg := then_ (frameExitCall frame exitName) newC
-  let elsProg := else_ (frameExitCall frame exitName) newC
-  let nextCtx := frame.foldl Context.add c
+  let newC := c.add_declare exitName
+  let condProg := cond newC
+  let thnProg := then_ (frameExitCall frame exitName newC) newC
+  let elsProg := else_ (frameExitCall frame exitName newC) newC
+  let nextCtx := frame.foldl Context.add_declare c
   let nextProg := frame.foldl (fun acc _ignoredName => .abs .none acc) (endif nextCtx)
-  .app (.abs .none <|
-    .ite (cond newC) thnProg elsProg
+  .app (.abs .none <| .ite condProg thnProg elsProg
   ) nextProg
 
 /-
@@ -1327,6 +1414,16 @@ partial def simplify (prog: LExpr LTy String): LExpr LTy String :=
   | .abs t b =>
     .abs t (simplify b)
   | _ => prog
+
+
+def implies (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op "==>" .none) a) b
+def and (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op "&&" .none) a) b
+def ge (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op ">=" .none) a) b
+def lt (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op "<" .none) a) b
+def le (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op "<=" .none) a) b
+def gt (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op ">" .none) a) b
+def or (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op "||" .none) a) b
+def neq (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op "!=" .none) a) b
 
 end LExpr
 end Lambda
