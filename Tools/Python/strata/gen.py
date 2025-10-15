@@ -17,6 +17,7 @@ from strata.pythond import InstructionMap, PythonD
 import strata.pythonssa as pythonssa
 from strata.pythonssa import PythonSSA
 from pathlib import Path
+from dataclasses import dataclass
 
 import ast
 import dis
@@ -69,7 +70,7 @@ def print_ast(bytes, path):
 
 def print_supported_stata():
     """Analyzes dis.opmap to print supported operations."""
-    names = pythonssa.Spec.__dict__
+    names = pythonssa.Translator.__dict__
     total = 0
     supported = 0
     for (op, idx) in dis.opmap.items():
@@ -81,9 +82,76 @@ def print_supported_stata():
         print(f'{op}: {op in names}')
     print(f"Supports {supported} of {total} operations")
 
+@dataclass
+class Function:
+    name : str
+    args : list[str]
+    blocks : list[pythonssa.Block]
+
+def extract_functions(prev : list[Function], globals : pythonssa.Globals, code):
+
+    codeType = type(code)
+
+    blocks = pythonssa.generate_blocks(globals, code)
+
+    args = [ code.co_varnames[i] for i in range(code.co_argcount)]
+
+    prev.append(Function(code.co_qualname, args, blocks))
+
+    for c in code.co_consts:
+        if isinstance(c, codeType):
+            extract_functions(prev, globals, c)
+
+
+def py_to_ssa(path : Path):
+
+    (code, _) = pythonssa.compile_path(Path(path))
+    codeType = type(code)
+
+    globals = pythonssa.Globals()
+    prev = []
+    extract_functions(prev, globals, code)
+    return prev
+
+def print_functions(fns : list[Function]):
+    for f in fns:
+        args = ', '.join(f.args)
+        print(f'{f.name}({args}):')
+        for (i, b) in enumerate(f.blocks):
+            print(f'  L{i}:')
+            for s in b.statements:
+                print(f'    {s}')
+
+def check_ssa_imp(args):
+    path = Path(args.dir)
+    if path.is_dir():
+        success = 0
+        total = 0
+        for p in path.glob('**/*.py'):
+            total += 1
+            try:
+                py_to_ssa(p)
+            except SyntaxError as e:
+                print(f'{p} {type(e).__name__}: {e}')
+                total -= 1
+                continue
+            except Exception as e:
+                print(f'{p} {type(e).__name__}: {e}')
+                continue
+            success += 1
+        print(f'Analyzed {success} of {total} files.')
+    else:
+        py_to_ssa(path)
+
 def dis_python_imp(args):
-    path = args.python
-    with open(path, 'r') as r:
+    path = Path(args.python)
+
+    funs = py_to_ssa(path)
+    print_functions(funs)
+
+def debug_ssa_imp(args):
+    path = Path(args.python)
+    with path.open('r') as r:
         try:
             bytes = r.read()
         except SyntaxError as e:
@@ -124,9 +192,17 @@ def main():
     dis_command.add_argument('python', help='Path of Python file to translate.')
     dis_command.set_defaults(func=dis_python_imp)
 
+    debug_ssa_command = subparsers.add_parser('debug_ssa', help='Disassemble a Python file')
+    debug_ssa_command.add_argument('python', help='Path of Python file to translate.')
+    debug_ssa_command.set_defaults(func=debug_ssa_imp)
+
     missing_command = subparsers.add_parser('missing', help='Check for missing instructions in Python files.')
     missing_command.add_argument('dir', help='Directory with Python files to analyze.')
     missing_command.set_defaults(func=missing_imp)
+
+    checkssa_command = subparsers.add_parser('check_ssa', help='Check SSA conversion doesn\'t crash on Python files.')
+    checkssa_command.add_argument('dir', help='Directory with Python files to analyze.')
+    checkssa_command.set_defaults(func=check_ssa_imp)
 
     args = parser.parse_args()
     if hasattr(args, 'func'):
