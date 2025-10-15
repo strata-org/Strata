@@ -1622,6 +1622,88 @@ info: (set-logic QF_S)
       apiProg
 
 
+-- HIGHLIGHT: Abstractions from methods to contracts
+
+/-
+function f(i: int) returns (j: int)
+  ensures i < j
+{
+  i + 1
+}
+var out := f 2
+assert 2 < out  -- Can prove
+assert out == 3 -- Can't prove with rewriting
+-/
+def method_with_contracts: LExpr LTy String :=
+  let c := .topLevel
+  let_assign c "f" .none (
+    .abs .none (
+      .assert (le (.const "0" .none) (.bvar 0)) <|
+      ensures .none (plus (.bvar 0) (.const "1" .none)) <|
+      .abs .none (lt (.bvar 1) (.bvar 0))
+    )
+  ) <| fun c =>
+  call1_1 c "f" (.const "2" .none) "fout" <| fun c =>
+  assert (lt (.const "2" .none) (c.v "fout")) -- can't prove
+  <|
+  assert (.eq (c.v "fout") (.const "3" .none)) -- can't prove
+  skip
+
+
+/--
+info: ((λ ((%0 #2) (λ assert ((~< #2) %0) <| assert (%0 == #3) <| skip)))) <| λ
+assert ((~<= #0) %0) <|
+let % := ((~+ %0) #1);
+assert let % := %0;
+((~< %1) %0) <|
+%0
+-/
+#guard_msgs in
+#eval format <|
+  method_with_contracts
+
+-- Now we split the implementation from the contract
+/--
+info: let % := let %;
+  assume ((~<= #0) %0) <|
+  let % := ((~+ %0) #1);
+  assert let % := %0;
+  ((~< %1) %0) <|
+  %0;
+((λ ((%0 #2) (λ assert ((~< #2) %0) <| assert (%0 == #3) <| skip)))) <| λ
+assert ((~<= #0) %0) <|
+let %;
+assert let % := %0;
+((~< %1) %0) <|
+%0
+-/
+#guard_msgs in
+#eval format <|
+  replaceByContract <|
+  method_with_contracts
+
+-- And we inline the contract
+/--
+info: let % := let %;
+  assume ((~<= #0) %0) <|
+  let % := ((~+ %0) #1);
+  assert let % := %0;
+  ((~< %1) %0) <|
+  %0;
+(assert ((~<= #0) #2) <|
+ let %;
+ assert let % := %0;
+ ((~< %1) %0) <|
+ %0 (λ assert ((~< #2) %0) <| assert (%0 == #3) <| skip))
+-/
+#guard_msgs in
+#eval format <|
+  simplify <|
+  inlineContinuations <|
+  replaceByContract <|
+  method_with_contracts
+-- TODO: Go to the SMT level
+
 inductive StmtExpr (I: Type): Type where
 /- Statement like -/
   | IfThenElse (cond : StmtExpr I) (thenBranch : StmtExpr I) (elseBranch : Option (StmtExpr I))

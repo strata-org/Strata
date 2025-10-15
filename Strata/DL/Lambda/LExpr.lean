@@ -324,8 +324,8 @@ private def formatLExpr [ToFormat Identifier] [ToFormat TypeType] (e : (LExpr Ty
         f!"({formatLExpr (.abs ty e1)}) <|{Format.line}{formatLExpr rhs}"
       else
         match ty with
-        | none => f!"let % := {formatLExpr rhs};{Format.line}{formatLExpr e1}"
-        | some ty => f!"let % : {ty} := {formatLExpr rhs};{Format.line}{formatLExpr e1}"
+        | none => f!"let % := {Format.nest 2 <| formatLExpr rhs};{Format.line}{formatLExpr e1}"
+        | some ty => f!"let % : {ty} := {Format.nest 2 <| formatLExpr rhs};{Format.line}{formatLExpr e1}"
   | .app e1 e2 => Format.paren (f!"{formatLExpr e1} {formatLExpr e2}")
   | .ite c t e =>
     match e with
@@ -1415,6 +1415,42 @@ partial def simplify (prog: LExpr LTy String): LExpr LTy String :=
     .abs t (simplify b)
   | _ => prog
 
+def ensures (t: Option LTy) (body postcond: LExpr LTy String) : LExpr LTy String :=
+  (.app (.abs t (assert (.app postcond (.bvar 0)) (.bvar 0))) body)
+
+def ensures_assume (t: Option LTy) (body postcond: LExpr LTy String) : LExpr LTy String :=
+  (.app (.abs t (assert (.app postcond (.bvar 0)) (.bvar 0))) body)
+
+
+-- This phases replaces a procedure with pre/post conditions with inlinable contracts.
+def replaceByContract (prog: LExpr LTy String): LExpr LTy String :=
+  match prog with
+  | .app (.abs ty remaining) (.abs ty2 (.assert precond (.ensures t body postcond))) =>
+    .app (.abs ty <| increaseBvars <|
+      .app (.abs ty remaining) (.abs ty2 (.assert precond (.ensures_assume t (.choose .none) postcond)))
+    ) ((.choose ty2) |> .app (.abs .none <| .assume precond (.ensures t body postcond))) -- Value is ignored but not its errors
+  | _ => prog
+
+-- This phase removes assert true, assume true, and all the if true then ... else ...
+def removeIfTrue (prog: LExpr LTy String): LExpr LTy String :=
+  match prog with
+  | .ite cond thn els =>
+    match cond with
+    | .const "true" _ => removeIfTrue thn
+    | _ => .ite (removeIfTrue cond) (removeIfTrue thn) (removeIfTrue els)
+  | .app a b => .app (removeIfTrue a) (removeIfTrue b)
+  | .abs ty body => .abs ty (removeIfTrue body)
+  | .eq a b => .eq (removeIfTrue a) (removeIfTrue b)
+  | .quant k ty tr e => .quant k ty (removeIfTrue tr) (removeIfTrue e)
+  | .mdata info e => .mdata info (removeIfTrue e)
+  | .fvar _ _  => prog
+  | .bvar _  => prog
+  | .op _ _  => prog
+  | .const _ _  => prog
+  | .choose _ => prog
+  | .error => prog
+  | .dontcare => prog
+  | .skip => prog
 
 def implies (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op "==>" .none) a) b
 def and (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op "&&" .none) a) b
@@ -1430,7 +1466,10 @@ inductive Value : Type where
   | unit : Value
   | value : String → Value
   | closure : List Value → LExpr LTy String → Value
-  | error : Value
+
+inductive EvalResult: Type where
+  | success: Value → EvalResult
+  | failure
 
 structure Environment (Identifier : Type) where
   stack : List Value  -- For bound variables (bvar), indexed by position
@@ -1446,54 +1485,140 @@ def Environment.lookupStack (env : Environment String) (n : Nat) : Option Value 
 def Environment.lookupGlobal (env : Environment String) (name : String) : Option Value :=
   env.globals name
 
-inductive Eval : Environment String → LExpr LTy String → Value → Prop where
-  | const : ∀ env c ty, Eval env (.const c ty) (.value c)
-  | op : ∀ env o ty, Eval env (.op o ty) (.closure env.stack (.op o ty))
-  | bvar : ∀ env n v, env.lookupStack n = some v → Eval env (.bvar n) v
-  | fvar : ∀ env name ty v, env.lookupGlobal name = some v → Eval env (.fvar name ty) v
-  | fvar_undef : ∀ env name ty, env.lookupGlobal name = none → Eval env (.fvar name ty) .error
-  | abs : ∀ env ty body, Eval env (.abs ty body) (.closure env.stack (.abs ty body))
+inductive Eval : Environment String → LExpr LTy String → EvalResult → Prop where
+  | const : ∀ env c c' ty, c = c' → Eval env (.const c ty) (.success <| .value c')
+  | op : ∀ env o ty, Eval env (.op o ty) (.success <| .closure env.stack (.op o ty))
+  | bvar : ∀ env n v, env.lookupStack n = some v → Eval env (.bvar n) (.success v)
+  | bvar_undef : ∀ env n, env.lookupStack n = none  → Eval env (.bvar n) (.failure)
+  | fvar : ∀ env name ty v, env.lookupGlobal name = some v → Eval env (.fvar name ty) (.success v)
+  | fvar_undef : ∀ env name ty, env.lookupGlobal name = none → Eval env (.fvar name ty) (.failure)
+  | abs : ∀ env ty body, Eval env (.abs ty body) (.success <| .closure env.stack (.abs ty body))
   | app_closure : ∀ env fn arg fnEnv fnBody argVal result,
-      Eval env fn (.closure fnEnv fnBody) →
-      Eval env arg argVal →
+      Eval env fn (.success <| .closure fnEnv fnBody) →
+      Eval env arg (.success <| argVal) →
       Eval (env.pushStack argVal) fnBody result →
       Eval env (.app fn arg) result
   | app_error_fun : ∀ env fn arg,
-      Eval env fn .error →
-      Eval env (.app fn arg) .error
+      Eval env fn (.failure) →
+      Eval env (.app fn arg) (.failure)
   | app_error_arg : ∀ env fn arg,
-      Eval env arg .error →
-      Eval env (.app fn arg) .error
+      Eval env arg (.failure) →
+      Eval env (.app fn arg) (.failure)
   | ite_true : ∀ env cond thn els result,
-      Eval env cond (.value "true") →
+      Eval env cond (.success <| .value "true") →
       Eval env thn result →
       Eval env (.ite cond thn els) result
   | ite_false : ∀ env cond thn els result,
-      Eval env cond (.value "false") →
+      Eval env cond (.success <| .value "false") →
       Eval env els result →
       Eval env (.ite cond thn els) result
   | ite_error : ∀ env cond thn els,
-      Eval env cond .error →
-      Eval env (.ite cond thn els) .error
+      Eval env cond (.failure) →
+      Eval env (.ite cond thn els) (.failure)
   | eq_true : ∀ env e1 e2 v,
       Eval env e1 v →
       Eval env e2 v →
-      Eval env (.eq e1 e2) (.value "true")
+      Eval env (.eq e1 e2) (.success <| .value "true")
   | eq_false : ∀ env e1 e2 v1 v2,
-      Eval env e1 v1 →
-      Eval env e2 v2 →
+      Eval env e1 (.success <| .value v1) →
+      Eval env e2 (.success <| .value v2) →
       v1 ≠ v2 →
-      Eval env (.eq e1 e2) (.value "false")
+      Eval env (.eq e1 e2) (.success <| .value "false")
+  | eq_errorl : ∀ env e1 e2,
+      Eval env e1 .failure →
+      Eval env (.eq e1 e2) .failure
+  | eq_error2 : ∀ env e1 e2,
+      Eval env e2 .failure →
+      Eval env (.eq e1 e2) .failure
   --| dontcare : No evaluation rules for .dontcare
-  | error : ∀ env, Eval env .error .error
+  | error : ∀ env, Eval env .error (.failure)
   | choose : ∀ env ty v, Eval env (.choose ty) v -- TODO: Add types
-  | skip : ∀ env, Eval env .skip .unit
+  | skip : ∀ env, Eval env .skip (.success .unit)
 
 -- Stated soundness theorem.
 def preservesSoundness (t : LExpr LTy String → LExpr LTy String) : Prop :=
   ∀ (prog : LExpr LTy String) (env : Environment String),
-    Eval env prog .error →
-    Eval env (t prog) .error
+    Eval env prog .failure →
+    Eval env (t prog) .failure
+
+theorem removeIfTrueSound:
+  removeIfTrue |> preservesSoundness := by
+  rw [preservesSoundness]
+  intro prog
+  induction prog with
+  | const c ty =>
+      intro env produceserror
+      cases produceserror
+  | op o ty =>
+      intro env produceserror
+      cases produceserror
+  | bvar n =>
+      intro env produceserror
+      unfold LExpr.removeIfTrue
+      exact produceserror
+  | fvar name ty =>
+      intro env produceserror
+      unfold LExpr.removeIfTrue
+      exact produceserror
+  | abs ty body ih =>
+      intro env produceserror
+      cases produceserror --closures aren't errors
+  | app fn arg =>
+      intro env produceserror
+      sorry
+  | ite cond thn els =>
+      intro env produceserror
+      match cond with
+      | .const c ty =>
+          if h: c = "true" then
+            rw [h]
+            unfold removeIfTrue
+            rename_i thn_ih els_ih cond_ih
+            cases produceserror
+            · rename_i true_v is_failure
+              apply thn_ih env is_failure
+            · rename_i true_v is_failure
+              cases true_v
+              rename_i a
+              rw [h] at a
+              simp at a
+            · rename_i a
+              cases a
+          else
+            unfold LExpr.removeIfTrue
+            simp [h]
+            rename_i t_ih e_ih c_ih
+            have s: (const c ty).removeIfTrue = const c ty := by
+              unfold LExpr.removeIfTrue
+              rfl
+            rw [s]
+            cases produceserror
+            · rename_i a1 a2
+              cases a1
+              contradiction
+            · rename_i a1 a2
+              apply Eval.ite_false
+              · exact a1
+              · exact e_ih env a2
+            · rename_i a1
+              cases a1
+      | .bvar _ =>
+        unfold removeIfTrue
+        sorry
+      | _ =>
+          rename_i  t_ih x1 x2 x3
+          unfold removeIfTrue
+          sorry
+  | eq e1 e2 =>
+    intro env
+    sorry
+  | error => sorry
+  | choose ty => sorry
+  | skip => sorry
+  | mdata info e => sorry
+  | quant k ty tr e => sorry
+  | dontcare => sorry
+
 
 theorem letAssignToLetAssumeSound:
   letAssignToLetAssume |> preservesSoundness := by
@@ -1501,7 +1626,27 @@ theorem letAssignToLetAssumeSound:
   intro prog
   intro env
   intro produceserror
-  sorry
+  cases prog with
+  | const c ty =>
+      cases produceserror
+  | op o ty =>
+      cases produceserror
+  | bvar n =>
+      unfold LExpr.letAssignToLetAssume
+      exact produceserror
+  | fvar name ty =>
+      unfold LExpr.letAssignToLetAssume
+      exact produceserror
+  | abs ty body => sorry
+  | app fn arg => sorry
+  | ite cond thn els => sorry
+  | eq e1 e2 => sorry
+  | error => sorry
+  | choose ty => sorry
+  | skip => sorry
+  | mdata info e => sorry
+  | quant k ty tr e => sorry
+  | dontcare => sorry
 
 end LExpr
 end Lambda
