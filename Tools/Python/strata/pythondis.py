@@ -31,28 +31,28 @@ class InstructionMap:
         self.idxmap = idxmap
         self.instructions = instructions
 
-PythonD : typing.Any = strata.Dialect('PythonD')
-PythonD.add_import("Init")
-const = PythonD.add_syncat("Const")()
-PythonD.add_syncat("Code")
-PythonD.add_op("constCode", [ArgDecl("value", PythonD.Code())], const)
-PythonD.add_op("constInt", [ArgDecl("value", Init.Num())], const)
-PythonD.add_op("constNone", [], const)
-PythonD.add_op("constStr", [ArgDecl("value", Init.Str())], const)
+PythonDis : typing.Any = strata.Dialect('PythonDis')
+PythonDis.add_import("Init")
+const = PythonDis.add_syncat("Const")()
+PythonDis.add_syncat("Code")
+PythonDis.add_op("constCode", [ArgDecl("value", PythonDis.Code())], const)
+PythonDis.add_op("constInt", [ArgDecl("value", Init.Num())], const)
+PythonDis.add_op("constNone", [], const)
+PythonDis.add_op("constStr", [ArgDecl("value", Init.Str())], const)
 
 def initd():
     m = InstructionMap()
-    inst = PythonD.add_syncat("Instruction")()
+    inst = PythonDis.add_syncat("Instruction")()
     for d in m.instructions:
-        args = [ArgDecl("arg", PythonD.Const())] if d.hasarg else []
-        PythonD.add_op(d.name, args, inst)
+        args = [ArgDecl("arg", PythonDis.Const())] if d.hasarg else []
+        PythonDis.add_op(d.name, args, inst)
 
 initd()
 
-PythonD.add_op("mkCode",
+PythonDis.add_op("mkCode",
     args=[
         ArgDecl("name", Init.Str()),
-        ArgDecl("constants", Init.Seq(PythonD.Const())),
-        ArgDecl("instructions", Init.Seq(PythonD.Instruction()))
+        ArgDecl("constants", Init.Seq(PythonDis.Const())),
+        ArgDecl("instructions", Init.Seq(PythonDis.Instruction()))
     ],
-    result=PythonD.Code())
+    result=PythonDis.Code())

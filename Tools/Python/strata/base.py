@@ -634,7 +634,7 @@ class Dialect:
             self.__dict__[decl.name] = decl
         elif isinstance(decl, OpDecl):
             assert (decl.dialect == self.name)
-            assert (decl.name not in self.__dict__)
+            assert (decl.name not in self.__dict__), f'{decl.name} already added.'
             self.__dict__[decl.name] = decl
 
         self.decls.append(decl)

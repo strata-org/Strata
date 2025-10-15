@@ -2,7 +2,7 @@
 name = "strata"
 version = "0.0.1"
 description = 'Python support for Strata.'
-requires-python = ">= 3.13"
+requires-python = ">= 3.14"
 dependencies = [
     "amazon.ion"
 ]

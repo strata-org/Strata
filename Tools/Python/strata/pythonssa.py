@@ -10,6 +10,7 @@ import sys
 import builtins
 from typing import Sized
 from .exception_table import ExceptionTableEntry, parse_exception_table_entries
+from .base import ArgDecl, Init, SyntaxCat
 
 PythonSSA : Any = strata.Dialect('PythonSSA')
 """
@@ -158,6 +159,11 @@ class TupleValue(ValueBase):
         val = ', '.join((str(a) for a in self.values))
         return f'({val})'
 
+@dataclass
+class Binding:
+    name : 'Value'
+    value : 'Value'
+
 class ListValue(ValueBase):
     values : Iterable['Value']
 
@@ -188,52 +194,87 @@ class JumpTarget:
     def __str__(self):
         return f'L{self.label}({", ".join((str(a) for a in self.arguments))})'
 
+class Type():
+    def __init__(self, cat : SyntaxCat, check):
+        self.cat = cat
+        self.check = check
+
+    def check_arg(self, arg : Any):
+        self.check(arg)
+
 class StatementDecl:
     name : str
-    args : Iterable[str]
+    args : dict[str, Type]
     returnCount : int
+    terminal : bool
 
-    def __init__(self, name : str, args : Iterable[str], returnCount : int):
+    def __init__(self, name : str, args : dict[str, Type], returnCount : int, terminal : bool):
         self.name = name
         self.args = args
         self.returnCount = returnCount
+        self.terminal = terminal
 
-class Type():
-    def __init__(self, name : str):
-        self.name = name
+BOOL = Type(PythonSSA.add_syncat("Bool")(), lambda a: isinstance(a, bool))
 
-BIN_OP = Type("bin_op")
-STR = Type("string")
-VALUE = Type("value")
-INT = Type("int")
-BOOL = Type("bool")
+STR = Type(Init.Str(), lambda arg: isinstance(arg, str))
+
+def is_value(arg):
+    return arg is None or isinstance(arg, int) or isinstance(arg, ValueBase)
+
+VALUE = Type(PythonSSA.add_syncat("Value")(), is_value)
+NUM = Type(Init.Num(), lambda arg: isinstance(arg, int) and arg >= 0)
+
+JUMP_TARGET = Type(PythonSSA.add_syncat("JumpTarget")(), lambda arg: isinstance(arg, JumpTarget))
+"""
+Represents a JumpTarget value.
+"""
+
+DICT_BINDING = Type(PythonSSA.add_syncat("DictBinding"), lambda arg: isinstance(arg, Binding))
+
+def is_list(elt : Type, arg : Any) -> bool:
+    return isinstance(arg, list) and all(elt.check(a) for a in arg)
+
+def LIST(elt : Type) -> Type:
+    return Type(Init.CommaSepList(elt.cat), lambda a: is_list(elt, a))
+
+PythonSSA.add_syncat("Statement")
 
 def decl_statement(name : str, args : dict[str, Type], returnTypes : Sized|Type|None = None) -> StatementDecl:
     if returnTypes is None:
         rc = 0
     elif isinstance(returnTypes, Type):
+        assert returnTypes.cat == VALUE.cat
         rc = 1
     else:
+        assert isinstance(returnTypes, tuple)
+        assert all((a.cat == VALUE.cat for a in returnTypes))
         rc = len(returnTypes)
-    return StatementDecl(name, args, rc)
+    argdecls = [ ArgDecl(name, tp.cat) for (name, tp) in args.items() ]
+    assert all(f'r{i}' not in args for i in range(rc))
+    retdecls = [ ArgDecl(f'r{i}', VALUE.cat) for i in range(rc) ]
+    PythonSSA.add_op(name, (argdecls + retdecls), PythonSSA.Statement())
+    return StatementDecl(name, args, rc, False)
 
-import_decl = StatementDecl("import", ("name", "globals", "locals", "fromlist", "level"), 1)
+def term_statement(name : str, args : dict[str, Type]) -> StatementDecl:
+    return StatementDecl(name, args, 0, True)
 
-importfrom_decl = StatementDecl("importfrom", ("module", "name"), 1)
+import_decl = decl_statement("import", { "name" : STR, "fromlist" : VALUE, "level" : VALUE }, VALUE)
+"""
+Implements `__import__` with the given arguments for `name`, `fromlist` and `level`.  
+`globals` and `locals` are `None`.
+"""
+
+importfrom_decl = decl_statement("importfrom", { "module" : VALUE, "name" : STR }, VALUE)
 """
 Imports name from the given module.
 """
 
-mk_dict = StatementDecl("mk_dict", (), 1)
-
-mk_ref_decl = StatementDecl("mk_ref", ("value",), 1)
-
-build_const_key_map_decl = StatementDecl("build_const_key_map", ("names", "values"), 1)
+mk_dict_decl = decl_statement("mk_dict", { "entries" : LIST(DICT_BINDING) }, VALUE)
 """
-Creates a constant key map with names from the tuple `names` and values from tuple `values`
-
-The number of elements in names and values should match as this is compiler generated.
+Creates a new dictionary key map for the entries.
 """
+
+mk_ref_decl = decl_statement("mk_ref", {"value" : VALUE}, VALUE)
 
 ref_load_decl = decl_statement("ref_load", { "ref" : VALUE }, VALUE)
 
@@ -245,7 +286,7 @@ Returns a reference to the value onto the stack, raising an UnboundLocalError
 this is not a initialized reference.
 """
 
-get_closure_decl = decl_statement("get_closure", { "expected" : INT}, VALUE)
+get_closure_decl = decl_statement("get_closure", { "expected" : NUM}, VALUE)
 """
 Returns the closure for the current function as a tuple.
 By construction the tuple should have `expected` arguments.
@@ -257,7 +298,7 @@ assert (closure has expected arguments)
 
 is_none_decl = decl_statement("is_none", { "value" : VALUE}, VALUE)
 
-pytuple_get_item_decl = decl_statement("pytuple_get_item", { "tuple" : VALUE, "i" : INT}, VALUE)
+pytuple_get_item_decl = decl_statement("pytuple_get_item", { "tuple" : VALUE, "i" : NUM}, VALUE)
 """
 Returns the element in the tuple at the given index.
 """
@@ -282,7 +323,7 @@ call_function_ex_decl = decl_statement(
 Implements `fn(*args)`
 """
 
-load_special_decl = decl_statement('load_special', {"value" : VALUE}, (VALUE, VALUE))
+load_special_decl = decl_statement('load_special', {"value" : VALUE, "arg" : NUM}, (VALUE, VALUE))
 """
 Performs special method lookup on `value`.
 
@@ -300,7 +341,7 @@ dict_setitem_decl = decl_statement("dict_setitem", {"d" : VALUE, "key" : VALUE, 
 Implements `dict.__setitem__(d, key, value)`
 """
 
-load_name_decl = decl_statement("load_name", {"dict" : VALUE, "name" : STR, "value" : VALUE}, VALUE)
+load_name_decl = decl_statement("load_name", {"dict" : VALUE, "name" : STR}, VALUE)
 
 store_name_decl = decl_statement("store_name", {"dict" : VALUE, "name" : STR, "value" : VALUE})
 
@@ -322,57 +363,85 @@ Loads the cell contained from the value and returns a reference to the object
 the cell contains on the stack.
 """
 
-getattr_decl = StatementDecl("getattr", ("value", "name"), 1)
+getattr_decl = decl_statement("getattr", {"value":VALUE, "name":STR}, VALUE)
 
-getitem_decl = decl_statement("getitem", {"value": VALUE, "index": INT}, VALUE)
+getitem_decl = decl_statement("getitem", {"value": VALUE, "index": NUM}, VALUE)
 
-getmethod_decl = StatementDecl("getmethod", ("value", "name"), 2)
+getmethod_decl = \
+    decl_statement(
+        "getmethod",
+        { "value" : VALUE, "name" : STR },
+        (VALUE, VALUE))
+"""
+This will attempt to load a method `name` from the `value` object. 
+This bytecode distinguishes two cases:
 
-make_function_decl = StatementDecl("make_function", ("code"), 1)
+* if `value` has a method with the correct name, the bytecode returns the
+  unbound method and `value`.
 
-jump_decl = decl_statement("jump", {"target" : VALUE})
+ * Otherwise, this returns `None` and the object returned by the attribute
+   lookup.
+"""
+
+make_function_decl = decl_statement("make_function", { "code" : VALUE }, VALUE)
+"""
+Creates a new function object built from a code object.
+"""
+
+jump_decl = term_statement("jump", {"target" : VALUE})
 """
 Jump to `target` block.  Does not check for interrupts.
 """
 
-jump_check_interrupt_decl = decl_statement("jump_check_interrupt", {"target" : VALUE})
+jump_check_interrupt_decl = term_statement("jump_check_interrupt", {"target" : VALUE})
 """
 Jump to `target` block.  Checks for interrupts
 """
 
-get_exc_info_decl = decl_statement("exc_info", {}, VALUE)
+get_exc_info_decl = decl_statement("get_exc_info", {}, VALUE)
 """
 Return the current exception info.
 
 Used in exception handlers.
 """
 
-set_exc_info_decl = decl_statement("exc_info", {"state" : VALUE})
+set_exc_info_decl = decl_statement("set_exc_info", {"state" : VALUE})
 """
 Set the current exception state.
 
 See POP_EXCEPT
 """
 
-branch = StatementDecl("branch", ("value", "true_target", "false_target"), 0)
+branch_decl = term_statement("branch", {"value" : VALUE, "true_target" : JUMP_TARGET, "false_target" : JUMP_TARGET})
 """
-Terminal statement with a branch to one of two labels.
+Terminal statement with a branch to either true or false based on a labels.
 
 Value must be a bool.
 """
 
-call_decl = StatementDecl("call", ("fn", "obj", "args"), 1)
+call_decl = decl_statement("call", { "fn" : VALUE, "obj" : VALUE, "args" : LIST(VALUE) }, VALUE)
+"""
+Calls a callable object "fn" with the number of arguments specified by argc.
 
-call_intrinsic_1_decl = decl_statement("call_intrinsic_1", {"op" : INT, "arg" : VALUE}, VALUE)
+On the stack are (in ascending order):
+* The callable
+* self or NULL
+* The remaining positional arguments
+"""
 
-call_kw_decl = StatementDecl("call_kw", ("fn", "obj", "args", "kw_names"), 1)
+call_intrinsic_1_decl = decl_statement("call_intrinsic_1", {"op" : NUM, "arg" : VALUE}, VALUE)
+
+call_kw_decl = decl_statement("call_kw", {"fn" : VALUE, "obj" : VALUE, "args" : LIST(VALUE), "kw_names" : VALUE}, VALUE)
 
 check_exc_match_decl = decl_statement("check_exc_match", {"e" : VALUE, "class": VALUE}, VALUE)
 """
 Returns a Boolean result indicating if `e` an exception matching `class`.
 """
 
-compare_decl = StatementDecl("compare", ("op", "coerce", "x", "y"), 1)
+compare_decl = decl_statement(
+    "compare",
+    { "op" : STR, "coerce" : BOOL, "x" : VALUE, "y" : VALUE },
+    VALUE)
 
 delete_decl = decl_statement("del", { "v" : VALUE})
 """
@@ -384,17 +453,17 @@ dict_merge_decl = decl_statement("dict_merge", { "x" : VALUE, "y" : VALUE})
 Like dict.update but raises exception for duplicate keys.
 """
 
-dict_update_decl = decl_statement("dict_merge", { "x" : VALUE, "y" : VALUE})
+dict_update_decl = decl_statement("dict_update", { "x" : VALUE, "y" : VALUE})
 """
 Implements `dict.update(x, y)`
 """
 
-in_decl = decl_statement("in", { "invert" : INT, "e" : VALUE, "s" : VALUE }, VALUE)
+in_decl = decl_statement("in", { "invert" : BOOL, "e" : VALUE, "s" : VALUE }, VALUE)
 """
 Performs `e in s` operation if invert is 0 and `e not in s` operation if invert is 1.
 """
 
-is_decl = decl_statement("in", {"invert" : INT, "e" : VALUE, "s" : VALUE }, VALUE)
+is_decl = decl_statement("is", {"invert" : BOOL, "e" : VALUE, "s" : VALUE }, VALUE)
 """
 Performs `e is s` operation if invert is 0 and `e not is s` operation if invert is 1.
 """
@@ -421,7 +490,10 @@ If the value is a list or tuple, it returns the value and 0.  Otherwise,
 it calls iter and stores null.
 """
 
-for_iter_decl = StatementDecl("for_iter", ("iter",), 2)
+for_iter_decl = decl_statement(
+    "for_iter",
+    { "iter" : VALUE },
+    (VALUE, VALUE))
 """
 iter is an iterator.  Call its `__next__()` method.
 If this yields a new value, return (true, new_value).
@@ -429,12 +501,12 @@ If this yields a new value, return (true, new_value).
 If the iterator indicates it is exhausted then return (false, None).
 """
 
-return_decl = decl_statement("return", {"value" : VALUE})
+return_decl = term_statement("return", {"value" : VALUE})
 """
 Return from procedure with value (terminal)
 """
 
-return_generator_decl = decl_statement("return_generator", {})
+return_generator_decl = term_statement("return_generator", {})
 """
 Return generator (terminal)
 """
@@ -454,12 +526,12 @@ set_f_lasti_decl = decl_statement("set_f_lasti", {"lasti" : VALUE})
 Set `f_lasti` of the current frame.
 """
 
-raise_prev_decl = decl_statement("raise_prev", {})
+raise_prev_decl = term_statement("raise_prev", {})
 """
 Reraise the given exception given through frame.
 """
 
-raise_decl = decl_statement("raise_prev", {"exc" : VALUE})
+raise_decl = term_statement("raise_prev", {"exc" : VALUE})
 """
 Raise the given exception given through frame.
 """
@@ -469,12 +541,14 @@ raise_with_cause_decl = decl_statement("raise_prev", {"exc" : VALUE, "cause" : V
 Raise the given exception with the cause set to `cause`.
 """
 
-reraise_decl = decl_statement("reraise", {"exc" : VALUE})
+reraise_decl = term_statement("reraise", {"exc" : VALUE})
 """
 Reraise the given exception.
 """
 
-set_function_attribute = StatementDecl("set_function_attribute", ("function", "flag", "value"), 0)
+set_function_attribute_decl = decl_statement(
+    "set_function_attribute",
+    { "function" : VALUE, "flag" : NUM, "value" : VALUE })
 """
 Sets an attribute on a function object using the given value.
 
@@ -487,7 +561,9 @@ The flag determines which attribute to set:
 * 0x08 a tuple containing cells for free variables, making a closure
 """
 
-store_attr = StatementDecl("store_attr", ("obj", "name", "value"), 0)
+store_attr_decl = decl_statement(
+    "store_attr",
+    {"obj":VALUE, "name" : STR, "value" : VALUE})
 """
 Implements `obj.name = value`
 """
@@ -499,12 +575,17 @@ Implements not
 
 binary_op_decl = decl_statement("binary_op", { "op" : STR, "lhs" : VALUE, "rhs" : VALUE}, VALUE)
 
-binary_subscr_decl = StatementDecl("binary_subscr", ("container", "key"), 1)
+binary_subscr_decl = decl_statement(
+    "binary_subscr",
+    { "container" : VALUE, "key" : VALUE },
+    VALUE)
 """
 Implements `container[key]`
 """
 
-store_subscr = StatementDecl("store_subscr", ("container", "key", "value"), 0)
+store_subscr_decl = decl_statement(
+    "store_subscr",
+    { "container" : VALUE, "key" : VALUE, "value" : VALUE})
 """
 Implements `container[key] = value`
 """
@@ -514,7 +595,7 @@ binary_slice_decl = decl_statement("binary_slice", {"container" : VALUE, "start"
 Implements `container[start:end]`
 """
 
-to_bool_decl = StatementDecl("to_bool", ("value",), 1)
+to_bool_decl = decl_statement("to_bool", {"value":VALUE}, VALUE)
 """
 Implements `bool(value)`
 """
@@ -539,7 +620,13 @@ class Statement:
             result = f'{result} = '
         else:
             result = ''
-        return f'{result}@{self.op.name}({', '.join(str(a) for a in self.args)})'
+
+        def ppArg(a):
+            if isinstance(a, list):
+                return f'[{', '.join(ppArg(e) for e in a)}]'
+            else:
+                return str(a)
+        return f'{result}@{self.op.name}({', '.join(ppArg(a) for a in self.args)})'
 
 class Block:
     offset : int
@@ -648,6 +735,7 @@ class Translator:
         # Module level code has no arguments
         assert code.co_qualname != "<module>" or code.co_argcount == 0
         assert (isinstance(nm, str) for nm in code.co_varnames)
+        assert isinstance(code.co_cellvars, tuple)
 
         # Local count is arguments and locals plus free closure variables and additional
         # cell vars added for local storage.
@@ -661,10 +749,6 @@ class Translator:
         self.cur_block = None
         self.stack = []
 
-        assert isinstance(code.co_cellvars, tuple)
-#        if len(code.co_cellvars) > 1:
-#            print(f'Cell vars {code.co_cellvars}')
-#            exit(1)
 
         self.register_count = 0
 
@@ -683,7 +767,7 @@ class Translator:
             self.name_dict = None
             self.names = None
         else:
-            self.name_dict = self.add_stmt(mk_dict)
+            self.name_dict = self.add_stmt(mk_dict_decl, [])
             self.names = set(code.co_varnames)
 
     def stack_pop(self):
@@ -704,11 +788,19 @@ class Translator:
             del self.stack[-n:]
             return val
 
-    def add_stmt(self, stmt : StatementDecl, *args : Value|JumpTarget|str) -> Any:
+    def check_args(self, stmt : StatementDecl, args):
+        assert len(stmt.args) == len(args)
+        for (i, (k, tp)) in enumerate(stmt.args.items()):
+            v = args[i]
+            tp.check_arg(v)
+
+    def add_stmt(self, stmt : StatementDecl, *args : Any) -> Any:
+        assert not stmt.terminal
         base = self.register_count
         self.register_count += stmt.returnCount
         block = self.cur_block
         assert isinstance(block, Block)
+        self.check_args(stmt, args)
         block.statements.append(Statement(base, stmt, args))
         match stmt.returnCount:
             case 0:
@@ -717,6 +809,16 @@ class Translator:
                 return RegValue(base)
             case rc:
                 return tuple(RegValue(i) for i in range(base, base+rc))
+
+    def add_term_stmt(self, stmt : StatementDecl, *args : Any) -> Any:
+        assert stmt.terminal
+        assert stmt.returnCount == 0
+        base = self.register_count
+        block = self.cur_block
+        assert isinstance(block, Block)
+        self.check_args(stmt, args)
+        block.statements.append(Statement(base, stmt, args))
+        self.cur_block = None
 
     def mk_ref(self, value : Value) -> Value:
         return self.add_stmt(mk_ref_decl, value)
@@ -729,10 +831,6 @@ class Translator:
 
     def in_block(self) -> bool:
         return self.cur_block is not None
-
-    def end_block(self):
-        assert self.cur_block is not None
-        self.cur_block = None
 
     def check_stack_height(self, block: Block, stack_height : int) -> Block:
         """Check stack height matches height if previously recorded."""
@@ -758,7 +856,8 @@ class Translator:
 
         if self.cur_block is not None:
             self.check_stack_height(block, len(self.stack))
-            self.end_block()
+            target = self.fallthrough_target()
+            self.add_term_stmt(jump_decl, target)
         if block.input_count is None:
             # If block input_count is None, then this block is not reached
             # by a forward traversal so far.  Every reachable block appears
@@ -790,10 +889,6 @@ class Translator:
         self.check_stack_height(self.blocks[block_index], len(self.stack))
         return JumpTarget(block_index, arguments)
 
-    def add_term_stmt(self, stmt : StatementDecl, *args: Value|JumpTarget):
-        self.add_stmt(stmt, *args)
-        self.end_block()
-
     def get_const(self, arg) -> Value:
         assert isinstance(arg, int) and arg >= 0 and arg < len(self.code.co_consts)
         c = self.code.co_consts[arg]
@@ -817,7 +912,8 @@ class Translator:
         else:
             raise NotImplementedError(f'get_const {type(c)}')
 
-    def get_name(self, arg : int) -> str:
+    def get_name(self, arg : int|None) -> str:
+        assert isinstance(arg, int)
         assert 0 <= arg and arg < len(self.code.co_names), f'Arg {arg} must be less than {len(self.code.co_names)}'
         name = self.code.co_names[arg]
         assert isinstance(name, str)
@@ -868,14 +964,6 @@ class Translator:
         val = self.add_stmt(binary_subscr_decl, container, key)
         self.stack_push(val)
 
-    def BUILD_CONST_KEY_MAP(self, ins : Instruction):
-        count = ins.arg
-        assert isinstance(count, int)
-        names = self.stack_pop()
-        values = TupleValue(self.pop_n(count))
-        val = self.add_stmt(build_const_key_map_decl, names, values)
-        self.stack_push(val)
-
     def BUILD_LIST(self, ins : Instruction):
         arg = ins.arg
         assert isinstance(arg, int)
@@ -886,9 +974,8 @@ class Translator:
         count = ins.arg
         assert isinstance(count, int)
         pairs = self.pop_n(2 * count)
-        names = TupleValue([pairs[2*i] for i in range(count)])
-        values = TupleValue([pairs[2*i+1] for i in range(count)])
-        val = self.add_stmt(build_const_key_map_decl, names, values)
+        bindings = [ Binding(pairs[2*i], pairs[2*i+1]) for i in range(count) ]
+        val = self.add_stmt(mk_dict_decl, bindings)
         self.stack_push(val)
 
     def BUILD_STRING(self, ins : Instruction):
@@ -912,7 +999,9 @@ class Translator:
     def CALL(self, ins : Instruction):
         argc = ins.arg
         assert isinstance(argc, int)
-        args = TupleValue(list(self.stack_pop() for _ in range(argc)))
+        if argc > 999:
+            raise NotImplementedError
+        args = list(self.pop_n(argc))
         selfObj = self.stack_pop()
         fn = self.stack_pop()
         val = self.add_stmt(call_decl, fn, selfObj, args)
@@ -930,6 +1019,7 @@ class Translator:
     def CALL_INTRINSIC_1(self, ins : Instruction):
         op = ins.arg
         assert isinstance(op, int)
+        assert op >= 0
         val = self.stack_pop()
         res = self.add_stmt(call_intrinsic_1_decl, op, val)
         self.stack_push(res)
@@ -939,8 +1029,7 @@ class Translator:
         assert isinstance(argc, int)
 
         names = self.stack_pop()
-        args = TupleValue(list(self.stack[-(i+1)] for i in reversed(range(argc))))
-        self.stack = self.stack[:-argc]
+        args = list(self.pop_n(argc))
         self_or_null = self.stack_pop()
         callable = self.stack_pop()
         val = self.add_stmt(call_kw_decl, callable, self_or_null, args, names)
@@ -978,7 +1067,7 @@ class Translator:
         assert invert in [0, 1]
         e = self.stack_pop()
         s = self.stack_pop()
-        val = self.add_stmt(in_decl, invert, e, s)
+        val = self.add_stmt(in_decl, invert != 0, e, s)
         self.stack_push(val)
 
     def COPY(self, ins : Instruction):
@@ -1009,9 +1098,7 @@ class Translator:
         self.add_stmt(delete_decl, self.co_vars[var_num])
 
     def DELETE_NAME(self, ins : Instruction):
-        namei = ins.arg
-        assert isinstance(namei, int)
-        name = self.get_name(namei)
+        name = self.get_name(ins.arg)
         if self.names is not None and name in self.names:
             val = self.add_stmt(delete_name_decl, self.name_dict, name)
         elif name in self.globals.globals:
@@ -1054,7 +1141,7 @@ class Translator:
         self.stack_pop()
 
         # Stack will reflect true height
-        self.add_term_stmt(branch, success, true_target, false_target)
+        self.add_term_stmt(branch_decl, success, true_target, false_target)
 
     def FORMAT_SIMPLE(self, ins : Instruction):
         assert ins.arg is None
@@ -1081,21 +1168,17 @@ class Translator:
         #self.stack_push(index_or_null)
 
     def IMPORT_FROM(self, ins : Instruction):
-        namei = ins.arg
-        assert isinstance(namei, int)
-        name = self.get_name(namei)
+        name = self.get_name(ins.arg)
         assert len(self.stack) > 0
         module = self.stack[-1]
         val = self.add_stmt(importfrom_decl, module, name)
         self.stack_push(val)
 
     def IMPORT_NAME(self, ins : Instruction):
-        namei = ins.arg
-        assert isinstance(namei, int)
-        name = self.get_name(namei)
+        name = self.get_name(ins.arg)
         fromlist = self.stack_pop()
         level = self.stack_pop()
-        val = self.add_stmt(import_decl, name, None, None, fromlist, level)
+        val = self.add_stmt(import_decl, name, fromlist, level)
         self.stack_push(val)
 
     def IS_OP(self, ins : Instruction):
@@ -1103,7 +1186,7 @@ class Translator:
         assert invert in [0, 1]
         e = self.stack_pop()
         s = self.stack_pop()
-        val = self.add_stmt(is_decl, invert, e, s)
+        val = self.add_stmt(is_decl, invert != 0, e, s)
         self.stack.append(val)
 
     def JUMP_FORWARD(self, ins : Instruction):
@@ -1137,15 +1220,15 @@ class Translator:
         namei = ins.arg
         assert isinstance(namei, int)
         name = self.get_name(namei >> 1)
-        if namei % 2 == 0:
-            val = self.stack_pop()
-            val = self.add_stmt(getattr_decl, val, name)
-            self.stack_push(val)
-        else:
+        if namei & 1 == 1:
             val = self.stack_pop()
             (method, methodSelf) = self.add_stmt(getmethod_decl, val, name)
             self.stack_push(method)
             self.stack_push(methodSelf)
+        else:
+            val = self.stack_pop()
+            val = self.add_stmt(getattr_decl, val, name)
+            self.stack_push(val)
 
     def LOAD_BUILD_CLASS(self, _ : Instruction):
         self.stack_push(Builtin("__builtins__.__build_class__"))
@@ -1224,11 +1307,11 @@ class Translator:
         self.stack_push(val)
 
     def LOAD_GLOBAL(self, ins : Instruction):
-        arg = ins.arg
-        assert isinstance(arg, int)
-        name = self.get_name(arg>>1)
+        namei = ins.arg
+        assert isinstance(namei, int)
+        name = self.get_name(namei>>1)
         val = self.load_global(name)
-        if arg&1 == 1:
+        if namei & 1 == 1:
             self.stack_push(None)
         self.stack_push(val)
 
@@ -1263,6 +1346,7 @@ class Translator:
         """
         arg = ins.arg
         assert isinstance(arg, int)
+        assert arg >= 0
         val = self.stack.pop()
         method, obj = self.add_stmt(load_special_decl, val, arg)
         self.stack_push(method)
@@ -1313,27 +1397,27 @@ class Translator:
 
         true_target = self.fallthrough_target()
         false_target = self.get_jump_target(ins.jump_target)
-        self.add_term_stmt(branch, cond, true_target, false_target)
+        self.add_term_stmt(branch_decl, cond, true_target, false_target)
 
     def POP_JUMP_IF_NONE(self, ins : Instruction):
         val = self.stack_pop()
         cond = self.add_stmt(is_none_decl, val)
         true_target = self.get_jump_target(ins.jump_target)
         false_target = self.fallthrough_target()
-        self.add_term_stmt(branch, cond, true_target, false_target)
+        self.add_term_stmt(branch_decl, cond, true_target, false_target)
 
     def POP_JUMP_IF_NOT_NONE(self, ins : Instruction):
         val = self.stack_pop()
         cond = self.add_stmt(is_none_decl, val)
         true_target = self.fallthrough_target()
         false_target = self.get_jump_target(ins.jump_target)
-        self.add_term_stmt(branch, cond, true_target, false_target)
+        self.add_term_stmt(branch_decl, cond, true_target, false_target)
 
     def POP_JUMP_IF_TRUE(self, ins : Instruction):
         cond = self.stack_pop()
         true_target = self.get_jump_target(ins.jump_target)
         false_target = self.fallthrough_target()
-        self.add_term_stmt(branch, cond, true_target, false_target)
+        self.add_term_stmt(branch_decl, cond, true_target, false_target)
 
     def POP_EXCEPT(self, ins : Instruction):
         assert ins.arg is None
@@ -1419,9 +1503,10 @@ class Translator:
     def SET_FUNCTION_ATTRIBUTE(self, ins : Instruction):
         flag = ins.arg
         assert isinstance(flag, int)
+        assert flag >= 0
         fun = self.stack_pop()
         val = self.stack_pop()
-        self.add_stmt(set_function_attribute, fun, flag, val)
+        self.add_stmt(set_function_attribute_decl, fun, flag, val)
         self.stack_push(fun)
 
     def SET_UPDATE(self, ins : Instruction):
@@ -1449,10 +1534,10 @@ class Translator:
     def STORE_ATTR(self, ins : Instruction):
         namei = ins.arg
         assert isinstance(namei, int)
-        name = self.code.co_names[namei]
+        name = self.get_name(ins.arg)
         obj = self.stack_pop()
         value = self.stack_pop()
-        self.add_stmt(store_attr, obj, name, value)
+        self.add_stmt(store_attr_decl, obj, name, value)
 
     def STORE_DEREF(self, ins : Instruction):
         i = ins.arg
@@ -1488,9 +1573,7 @@ class Translator:
         self.co_vars[var_nums & 15] = self.stack_pop()
 
     def STORE_NAME(self, ins : Instruction):
-        arg = ins.arg
-        assert isinstance(arg, int)
-        name = self.get_name(arg)
+        name = self.get_name(ins.arg)
         val = self.stack_pop()
         if self.names is None:
             self.globals.globals.add(name)
@@ -1503,7 +1586,7 @@ class Translator:
         key = self.stack_pop()
         container = self.stack_pop()
         value = self.stack_pop()
-        self.add_stmt(store_subscr, container, key, value)
+        self.add_stmt(store_subscr_decl, container, key, value)
 
     def SWAP(self, ins : Instruction):
         i = ins.arg

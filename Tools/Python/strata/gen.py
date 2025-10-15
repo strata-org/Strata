@@ -13,7 +13,7 @@ import amazon.ion.simpleion as ion
 from strata import Dialect
 from strata import python as stratap
 import sys
-from strata.pythond import InstructionMap, PythonD
+from strata.pythondis import InstructionMap, PythonDis
 import strata.pythonssa as pythonssa
 from strata.pythonssa import PythonSSA
 from pathlib import Path
@@ -32,7 +32,7 @@ def write_dialect(dialect : Dialect, dir : Path):
         ion.dump(dialect.to_ion(), w, binary=True)
     print(f"Wrote {dialect.name} dialect to {output}")
 
-def gen_dialect_imp(args):
+def write_pythonast_dialect_imp(args):
     write_dialect(stratap.Python, Path(args.output_dir))
 
 def parse_python_imp(args):
@@ -175,9 +175,17 @@ def main():
                     description='Strata interface to Python parser')
     subparsers = parser.add_subparsers(help="subcommand help")
 
-    gen_dialect_command = subparsers.add_parser('dialect', help='Create Strata dialect.')
-    gen_dialect_command.add_argument('output_dir', help='Directory to write Strata dialect to.')
-    gen_dialect_command.set_defaults(func=gen_dialect_imp)
+    write_pythonast_dialect_command = subparsers.add_parser('dialect', help='Create Strata dialect.')
+    write_pythonast_dialect_command.add_argument('output_dir', help='Directory to write Strata dialect to.')
+    write_pythonast_dialect_command.set_defaults(
+        func=lambda args:
+            write_dialect(stratap.Python, Path(args.output_dir)))
+
+    write_pythonssa_dialect_command = subparsers.add_parser('dialect_ssa', help='Create Strata dialect.')
+    write_pythonssa_dialect_command.add_argument('output_dir', help='Directory to write Strata dialect to.')
+    write_pythonssa_dialect_command.set_defaults(
+        func=lambda args:
+            write_dialect(PythonSSA, Path(args.output_dir)))
 
     parse_command = subparsers.add_parser('parse', help='Parse a Python file')
     parse_command.add_argument('python', help='Path of file to read.')
