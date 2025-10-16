@@ -149,6 +149,13 @@ partial def evalApp (state : HState) (originalExpr e1 e2 : HExpr) : HState × HE
     -- Third application to DynamicFieldAssign - now we can evaluate
     -- This handles obj[field] = value where field is dynamic
     evalDynamicFieldAssign state2 objExpr fieldExpr e2'
+  | .deferredOp "StringFieldAccess" _ =>
+    -- First application to StringFieldAccess - return partially applied
+    (state2, .app (.deferredOp "StringFieldAccess" none) e2')
+  | .app (.deferredOp "StringFieldAccess" _) objExpr =>
+    -- Second application to StringFieldAccess - return partially applied
+    -- This handles str.fieldName where fieldName is a string literal
+    evalStringFieldAccess state2 objExpr e2'
   | .deferredOp op _ =>
     -- First application to a deferred operation - return partially applied
     (state2, .app (.deferredOp op none) e2')
@@ -191,6 +198,26 @@ partial def evalDynamicFieldAssign (state : HState) (objExpr fieldExpr valueExpr
   | none =>
     -- Can't extract a numeric field index, return error
     (state, .lambda (LExpr.const "error_dynamic_field_assign_failed" none))
+
+-- Handle string field access: str.fieldName where fieldName is a string literal
+partial def evalStringFieldAccess (state : HState) (objExpr fieldExpr : HExpr) : HState × HExpr :=
+  match fieldExpr with
+  | .lambda (LExpr.const key _) =>
+    if key == "length" then
+      -- Handle string length property
+      match objExpr with
+      | .lambda (LExpr.const s _) =>
+        let len := s.length
+        (state, .lambda (LExpr.const (toString len) (some Lambda.LMonoTy.int)))
+      | _ =>
+        -- Not a string value
+        (state, .lambda (LExpr.const "error_not_a_string" none))
+    else
+      -- Unknown string property
+      (state, .lambda (LExpr.const "error_unknown_string_property" none))
+  | _ =>
+    -- Field is not a string literal
+    (state, .lambda (LExpr.const "error_non_literal_string_field" none))
 
 -- Extract a numeric field index from an expression
 partial def extractFieldIndex (expr : HExpr) : Option Nat :=
