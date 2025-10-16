@@ -434,8 +434,8 @@ partial def translate_statement_core
         (bodyCtx, [ initBreakFlag, .loop combinedCondition none none bodyBlock ])
 
         | .TS_ForStatement forStmt =>
+
           dbg_trace s!"[DEBUG] Translating for statement at loc {forStmt.start_loc}-{forStmt.end_loc}"
-          
           let continueLabel := s!"for_continue_{forStmt.start_loc}"
           let breakLabel := s!"for_break_{forStmt.start_loc}"
           let breakFlagVar := s!"for_break_flag_{forStmt.start_loc}"
@@ -447,10 +447,12 @@ partial def translate_statement_core
           let (_, initStmts) := translate_statement_core (.TS_VariableDeclaration forStmt.init) ctx
           -- guard (test)
           let guard := translate_expr forStmt.test
+
           -- body (first translate loop body with break support)
           let (ctx1, bodyStmts) :=
               translate_statement_core forStmt.body ctx
                 { continueLabel? := some continueLabel, breakLabel? := some breakLabel, breakFlagVar? := some breakFlagVar }
+
           -- update (translate expression into statements following ExpressionStatement style)
           let (_, updateStmts) :=
               translate_statement_core
