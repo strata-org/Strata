@@ -11,6 +11,10 @@ namespace LExpr
 
 open Std (ToFormat Format format)
 
+/-- info: (((m %2) %1) %0) -/
+#guard_msgs in
+#eval format <| applyToBvars (fvar "m" .none) 3
+
 -- Only desugaring needed is the .assert
 def test: LExpr LTy String  :=
   let_ .topLevel "i" .none <| fun c =>

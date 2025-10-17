@@ -1583,6 +1583,8 @@ inductive Value : Type where
   | value : String → Value
   | closure : List Value → LExpr LTy String → Value
 
+abbrev Globals := String -> Option Value
+
 inductive EvalResult: Type where
   | success: Value → EvalResult
   | failure
@@ -1612,7 +1614,7 @@ inductive Eval : Environment String → LExpr LTy String → EvalResult → Prop
   | app_closure : ∀ env fn arg fnEnv fnBody argVal result,
       Eval env fn (.success <| .closure fnEnv fnBody) →
       Eval env arg (.success <| argVal) →
-      Eval (env.pushStack argVal) fnBody result →
+      Eval ({env with stack := fnEnv}.pushStack argVal) fnBody result →
       Eval env (.app fn arg) result
   | app_error_fun : ∀ env fn arg,
       Eval env fn (.failure) →
@@ -1647,8 +1649,9 @@ inductive Eval : Environment String → LExpr LTy String → EvalResult → Prop
       Eval env e2 .failure →
       Eval env (.eq e1 e2) .failure
   --| dontcare : No evaluation rules for .dontcare
-  | error : ∀ env, Eval env .error (.failure)
-  | choose : ∀ env ty v, Eval env (.choose ty) v -- TODO: Add types
+  | mdata : ∀ env info e result, Eval env e result → Eval env (.mdata info e) result
+  | error : ∀ env, Eval env .error .failure
+  | choose : ∀ env ty v, Eval env (.choose ty) v -- TODO: Add types TODO: Not failure
   | skip : ∀ env, Eval env .skip (.success .unit)
 
 -- Stated soundness theorem.
@@ -1657,33 +1660,285 @@ def preservesSoundness (t : LExpr LTy String → LExpr LTy String) : Prop :=
     Eval env prog .failure →
     Eval env (t prog) .failure
 
-theorem removeIfTrueSound:
-  removeIfTrue |> preservesSoundness := by
-  rw [preservesSoundness]
+-- Extract scalar result from any evaluation result
+def isScalar : EvalResult → Bool
+  | .failure => true
+  | .success .unit => true
+  | .success (.value _) => true
+  | .success (.closure _ _) => false
+
+-- Can this value be abstracted / generalized by this other value?
+def valueAbstractedByN (globals: Globals) (n: Nat): EvalResult → EvalResult → Prop :=
+  match n with
+  | .zero => fun _ _ => False
+  | .succ n => fun v v' =>
+    match v, v' with
+    | .failure, .failure => True
+    | .success .unit, .success .unit => True
+    | .success (.value s), .success (.value s') => s = s'
+    | .success (.closure s e), .success (.closure s' e') =>
+      ∀ arg r,
+        (Eval ⟨arg::s, globals⟩ e r
+        → ∃ r', Eval ⟨arg::s', globals⟩ e' r' ∧ valueAbstractedByN globals n r r')
+    | _, _ => False
+
+
+-- Being equivalent at depth n
+def valueEquivN (globals: Globals) (n: Nat): EvalResult → EvalResult → Prop :=
+  match n with
+  | .zero => fun _ _ => False
+  | .succ n => fun v v' =>
+    match v, v' with
+    | .failure, .failure => True
+    | .success .unit, .success .unit => True
+    | .success (.value s), .success (.value s') => s = s'
+    | .success (.closure s e), .success (.closure s' e') =>
+      (s = s' ∧ e = e') ∨
+      ∀ arg r,
+        (Eval ⟨arg::s, globals⟩ e r
+        → ∃ r', Eval ⟨arg::s', globals⟩ e' r' ∧ valueEquivN globals n r r')
+        ∧
+        (Eval ⟨arg::s', globals⟩ e' r
+        → ∃ r', Eval ⟨arg::s, globals⟩ e r' ∧ valueEquivN globals n r r')
+    | _, _ => False
+
+-- But what if applying always returns a closure?
+
+
+-- TODO: Prove that valueEquivN is monotonic in n
+theorem valueEquivNMonotonic
+ : valueEquivN globals n v v' → valueEquivN globals (.succ n) v v' := by
+  intro vh
+  unfold valueEquivN
+  cases v
+  cases v'
+  · rename_i a a'
+    split
+    simp
+    simp
+    · rename_i v v' s s' atov aptovp
+      have h := EvalResult.success.injEq a (.value s)
+      rw [h] at atov
+      have h' := EvalResult.success.injEq a' (.value s')
+      rw [h'] at aptovp
+      clear h h'
+      have h := Value.value.injEq s s'
+      rw [← h, ← atov, ← aptovp]
+      clear h v v'
+      unfold valueEquivN at vh
+      split at vh
+      · contradiction
+      · split at vh
+        · rename_i heq1 heq2
+          simp at heq1
+        · rename_i heq1 heq2
+          have h := EvalResult.success.injEq a a'
+          rw [← h,heq1, heq2]
+        · rename_i s s' heq1 heq2
+          rw [atov, aptovp]
+          rename_i s1 s2 s3 s4 s5 s6
+          rw [atov] at heq1
+          rw [aptovp] at heq2
+          have h := EvalResult.success.injEq (.value s) (.value s')
+          have h2 := Value.value.injEq s s'
+          have h3 := EvalResult.success.injEq a a'
+          grind
+        · rename_i n1 n2 v v' s e s' e' heq1 heq2
+          grind
+        · grind
+    · sorry
+    · sorry
+  · sorry
+  · sorry
+
+def valueEquiv (globals: Globals): EvalResult → EvalResult → Prop :=
+  fun v v' => ∃n, valueEquivN globals n v v'
+
+def valuesAbstracted (globals: Globals): EvalResult → EvalResult → Prop :=
+  fun v v' => ∃n, valueAbstractedByN globals n v v'
+
+-- Stated value preserving theorem, stronger than soundness
+def preservesValues (t : LExpr LTy String → LExpr LTy String) : Prop :=
+  ∀ (prog : LExpr LTy String) (stack : List Value)  (globals: Globals) (result : EvalResult),
+    Eval ⟨stack, globals⟩ prog result →
+    ∃ result', Eval ⟨stack, globals⟩ (t prog) result' ∧
+               valueEquiv globals result result'
+
+def abstractsValues (t : LExpr LTy String → LExpr LTy String) : Prop :=
+  ∀ (prog : LExpr LTy String) (stack : List Value)  (globals: Globals) (result : EvalResult),
+    Eval ⟨stack, globals⟩ prog result →
+    ∃ result', Eval ⟨stack, globals⟩ (t prog) result' ∧
+               valuesAbstracted globals result result'
+
+-- Needs to be a theorem. If a transformation might make programs produce more values than the original,
+-- then failures are guaranteed to be kept
+def abstractValuesPreservesSoundness (t : LExpr LTy String → LExpr LTy String): Prop :=
+  abstractsValues t → preservesSoundness t
+
+-- Needs to be a theorem. If a transformation ensures that produced values are equivalenct,
+-- then it's also the case that t might produce more values (even if it does not)
+def preservesValuesAbstractsValues (t : LExpr LTy String → LExpr LTy String): Prop :=
+  preservesValues t → abstractsValues t
+
+-- Proof that preservesValues is stronger than soundness
+theorem preservesValuesImpliesSoundness (t : LExpr LTy String → LExpr LTy String) :
+  preservesValues t → preservesSoundness t := by
+  intro
+  rename_i a
+  unfold preservesValues at a
+  unfold preservesSoundness
+  intro prog env
+  have a_error := a prog env.stack env.globals EvalResult.failure
+  intro b
+  have envstackglobals: ⟨env.stack, env.globals⟩ = env := by simp
+  rw [envstackglobals] at a_error
+  have b_applied := a_error b
+  obtain ⟨result', eval_result', equiv⟩ := b_applied
+  unfold valueEquiv at equiv
+  cases result' with
+  | failure =>
+    exact eval_result'
+  | success val =>
+    obtain ⟨n, h⟩ := equiv
+    match n with
+    | .zero =>
+      unfold valueEquivN at h
+      contradiction
+    | .succ nm1 =>
+      unfold valueEquivN at h
+      simp at h
+
+-- Proof that doing nothing preserves semantic equivalence
+-- This is not obvious not because of the transformation, but because
+-- equivalence semantics are not obvious!
+theorem doNothingPreservesValues: (fun p => p) |> preservesValues := by
+  rw [preservesValues]
+  intro prog stack globals result eval_stmt
+  let result' := result
+  have results_same: result' = result := by rfl
+  let result'_ok : Eval { stack := stack, globals := globals } prog result' ∧ valueEquiv globals result result' := by
+    constructor
+    · exact eval_stmt
+    · unfold valueEquiv
+      rw [results_same]
+      clear result' results_same
+      have h : valueEquivN globals 1 result result :=
+        by
+        unfold valueEquivN
+        simp
+        cases result
+        · split
+          · simp
+          · simp
+          · rename_i a v v' s s' heq1 heq2
+            have h := EvalResult.success.injEq (.value s) (.value s')
+            rw [EvalResult.success.injEq a (.value s)] at heq1
+            rw [EvalResult.success.injEq a (.value s')] at heq2
+            rw [heq1] at heq2
+            rw [Value.value.injEq s s'] at heq2
+            assumption
+          · rename_i a0 a a' s e s' e' heq1 heq2
+            have h := EvalResult.success.injEq (.closure s e) (.closure s' e')
+            rw [EvalResult.success.injEq a0 (.closure s e)] at heq1
+            rw [EvalResult.success.injEq a0 (.closure s' e')] at heq2
+            rw [heq1] at heq2
+            rw [Value.closure.injEq s e s' e'] at heq2
+            constructor
+            exact heq2
+          · rename_i v r1 r2 vf heq1 heq2 heq3
+            clear vf
+            match v with
+            | .value v0 =>
+              have heq22 := heq2 v0 v0
+              simp at heq22
+            | .unit =>
+              simp at heq1
+            | .closure s0 e0 =>
+              have heq32 := heq3 s0 e0 s0 e0
+              simp at heq32
+        · simp
+      exact ⟨1, h⟩
+  exact ⟨result', result'_ok⟩
+
+theorem removeIfTruePreservesValues:
+  removeIfTrue |> preservesValues := by
+  rw [preservesValues]
   intro prog
   induction prog with
-  | const c ty =>
-      intro env produceserror
+  | const _ _ | op _ _ | bvar _ | fvar _ _ =>
+      intro env result produceserror
+      sorry
+      /-cases result
+      all_goals (rename_i a)
+      cases a
+      any_goals (unfold removeIfTrue)
+      exact ⟨(.success .unit), produceserror, valueEquiv.unit⟩
+      rename_i a
+      exact ⟨(.success (.value a)), produceserror, valueEquiv.value a⟩
+      rename_i stack body
+      · have h := valueEquiv.closure stack body stack body
+        simp at h
+        exact ⟨(.success (Value.closure stack body)), produceserror, h⟩
+      · exact ⟨.failure, produceserror, valueEquiv.error⟩-/
+  | abs name ty body ih =>
+      sorry
+      /-intro env result produceserror
+      unfold removeIfTrue
       cases produceserror
-  | op o ty =>
-      intro env produceserror
-      cases produceserror
-  | bvar n =>
-      intro env produceserror
-      unfold LExpr.removeIfTrue
-      exact produceserror
-  | fvar name ty =>
-      intro env produceserror
-      unfold LExpr.removeIfTrue
-      exact produceserror
-  | abs ty body ih =>
-      intro env produceserror
-      cases produceserror --closures aren't errors
+      let a: EvalResult := (.success <| .closure env.stack (.abs name ty body.removeIfTrue))
+      have h : Eval env (abs name ty body.removeIfTrue) a := by
+        simp [a]
+        apply Eval.abs
+      have exists_property: Eval env (abs name ty body.removeIfTrue) a ∧
+    valueEquiv (EvalResult.success (Value.closure env.stack (abs name ty body))) a := by
+        constructor
+        · exact h
+        · simp [a]
+          apply valueEquiv.closure
+          intro n
+          induction n with
+          | nil =>
+            intro globals args r
+            intro is_scalar_r
+            rw [applyToBvars]
+            rw [applyToBvars]
+            constructor
+            · intro premise
+              cases premise
+              rw [isScalar] at is_scalar_r
+              contradiction
+            · intro premise
+              cases premise
+              rw [isScalar] at is_scalar_r
+              contradiction
+          | cons n tail n_ih =>
+            intro global arg r
+            intro is_scalar_r
+            constructor
+            · intro applyToBvarsN
+              rw [applyToBvars]
+              rw [applyToBvars] at applyToBvarsN
+              have n_ih_inst := n_ih global
+
+
+              sorry
+            · sorry
+      exact ⟨a, exists_property⟩-/
   | app fn arg =>
-      intro env produceserror
+      /-
+      intro env result produceserror
+      unfold removeIfTrue
+      cases result
+      any_goals (rename_i a)
+      any_goals (rename_i arg_ih)
+      rename_i fn_ih
+      cases a
+      any_goals simp
+
+      sorry-/
       sorry
   | ite cond thn els =>
-      intro env produceserror
+      /-intro env produceserror
       match cond with
       | .const c ty =>
           if h: c = "true" then
@@ -1718,22 +1973,169 @@ theorem removeIfTrueSound:
               · exact e_ih env a2
             · rename_i a1
               cases a1
-      | .bvar _ =>
+              -/
+      sorry
+  | bvar n | fvar _ _ | dontcare | skip | choose _ | error
+        =>
+        /-
+        rename (∀ (env : Environment String), Eval env thn EvalResult.failure → Eval env thn.removeIfTrue EvalResult.failure) => t_ih
+        rename (∀ (env : Environment String), Eval env els EvalResult.failure → Eval env els.removeIfTrue EvalResult.failure) => e_ih
+        have t_ih_env := t_ih env
+        have e_ih_env := e_ih env
         unfold removeIfTrue
-        sorry
-      | _ =>
-          rename_i  t_ih x1 x2 x3
+        simp
+        cases produceserror
+        · rename_i to_true lastrule
+          apply Eval.ite_true
+          · exact to_true
+          · exact t_ih_env lastrule
+        · rename_i to_false lastrule
+          apply Eval.ite_false
+          · exact to_false
+          · exact e_ih_env lastrule
+        · rename_i to_failure
+          apply Eval.ite_error
+          exact to_failure
+      | .app e1 e2 =>
+          rename (∀ (env : Environment String), Eval env thn EvalResult.failure → Eval env thn.removeIfTrue EvalResult.failure) => t_ih
+          rename (∀ (env : Environment String), Eval env els EvalResult.failure → Eval env els.removeIfTrue EvalResult.failure) => e_ih
+          rename (∀ (env : Environment String), Eval env (e1.app e2) EvalResult.failure → Eval env (e1.app e2).removeIfTrue EvalResult.failure) => c_ih
+          have t_ih_env := t_ih env
+          have e_ih_env := e_ih env
+          have c_ih_env := c_ih env
           unfold removeIfTrue
+          simp
+          cases produceserror
+          · rename_i to_true lastrule
+            apply Eval.ite_true
+            · exact to_true
+            · exact t_ih_env lastrule
+          · rename_i to_false lastrule
+            apply Eval.ite_false
+            · exact to_false
+            · exact e_ih_env lastrule
+          · rename_i to_failure
+            apply Eval.ite_error
+            exact to_failure
+      | .abs _ _ e2 =>
           sorry
-  | eq e1 e2 =>
-    intro env
+      | _ =>
+          sorry
+    -/
     sorry
-  | error => sorry
-  | choose ty => sorry
-  | skip => sorry
-  | mdata info e => sorry
-  | quant k ty tr e => sorry
-  | dontcare => sorry
+  | eq e1 e2 =>
+    sorry /-
+    intro env
+    unfold removeIfTrue
+    intro h
+    cases h
+    · rename_i e1_ih e2_ih l_failure
+      have e1_ih := e1_ih env
+      have l := e1_ih l_failure
+      apply Eval.eq_errorl
+      exact l
+    · rename_i e1_ih e2_ih r_failure
+      have e2_ih := e2_ih env
+      have r := e2_ih r_failure
+      apply Eval.eq_error2
+      exact r
+    -/
+  | error | choose _ | skip  | dontcare =>
+    intro env
+    unfold removeIfTrue
+    intro h
+    exact h
+  | mdata info e e_h =>
+    intro env
+    unfold removeIfTrue
+    have e_h := e_h env
+    /-
+    intro i
+    cases i
+    rename_i e_h i
+    have ih := e_h i
+    apply Eval.mdata
+    exact ih -/
+    sorry
+  | quant k ty tr e1 =>
+    /-
+    intro env
+    unfold removeIfTrue
+    intro h
+    cases h -- TODO: No evaluation rules for quantifiers yet
+     -/
+     sorry
+
+-- This is not a recursive phase, but we can prove that this transformation
+-- preserves soundness !
+def ifTrueToThen (prog: LExpr LTy String): LExpr LTy String :=
+  match prog with
+  | ite (.const "true" _) thn _ => thn
+  | prog => prog
+
+theorem ifTrueToThenPreservesSoundness:
+  ifTrueToThen |> preservesSoundness := by
+  rw [preservesSoundness]
+  intro prog
+  intro env
+  intro produceserror
+  cases prog with
+  | ite cond thn els =>
+      cases cond with
+      | const s t =>
+        if h: s = "true" then
+          rw [h]
+          rw [ifTrueToThen]
+          cases produceserror
+          · assumption
+          · rename_i weird els_failure
+            rw [h] at weird
+            cases weird
+            rename_i a
+            simp at a
+          · rename_i a
+            rw [h] at a
+            cases a
+        else
+          rw [ifTrueToThen]
+          · cases produceserror
+            · rename_i a a2
+              cases a
+              contradiction
+            · rename_i a a2
+              cases a
+              apply Eval.ite_false
+              · rename_i sfalse
+                rw [sfalse]
+                apply Eval.const
+                rfl
+              · exact a2
+            · rename_i a
+              cases a
+          · intro ty thn_i e
+            intro hp
+            have h := LExpr.ite.injEq (Identifier:=String) (TypeType:=LTy) (.const s t) thn els (.const "true" ty) thn_i e
+            rw [h] at hp
+            have consttrue := hp.1
+            have h2 := LExpr.const.injEq (Identifier:=String) (TypeType:=LTy) s t "true" ty
+            rw [h2] at consttrue
+            have strue := consttrue.1
+            contradiction
+      | _ =>
+        rw [ifTrueToThen]
+        assumption
+        intro ty thn e
+        intro
+        rename_i x
+        simp at x
+  | _ =>
+    rw [ifTrueToThen]
+    assumption
+    intro ty thn e
+    intro
+    rename_i x
+    simp at x
+
 
 
 theorem letAssignToLetAssumeSound:
