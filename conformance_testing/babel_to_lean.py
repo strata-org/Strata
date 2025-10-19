@@ -141,11 +141,6 @@ def parse_function_expression(j):
     add_missing_node_info(j, target_j)
     return target_j
 
-def parse_arrow_function_expression(j):
-    target_j = {
-        'params': [parse_identifier(ji) for ji in j['params']],
-        'body': parse_statement(j['body'])
-    }
 def parse_array_expression(j):
     # Normalize Babel ArrayExpression: keep only non-null elements and parse each
     elems = []
