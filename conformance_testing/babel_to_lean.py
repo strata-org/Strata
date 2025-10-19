@@ -133,6 +133,9 @@ def parse_member_expression(j):
     add_missing_node_info(j, target_j)
     return target_j
 
+    add_missing_node_info(j, target_j)
+    return target_j
+
 def parse_array_expression(j):
     # Normalize Babel ArrayExpression: keep only non-null elements and parse each
     elems = []
@@ -304,7 +307,7 @@ def parse_continue_statement(j):
     }
     add_missing_node_info(j, target_j)
     return target_j
-    
+
 def parse_for_statement(j):
     target_body = parse_statement(j['body'])
     target_j = {
