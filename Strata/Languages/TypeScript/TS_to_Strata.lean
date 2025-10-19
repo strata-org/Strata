@@ -229,23 +229,29 @@ partial def translate_statement_core
       dbg_trace s!"[DEBUG] Function parameters: {funcDecl.params.toList.map (·.name)}"
       dbg_trace s!"[DEBUG] Function body has statements"
 
-      let funcBody := match funcDecl.body with
-        | .TS_BlockStatement blockStmt =>
-          (blockStmt.body.toList.map (fun stmt => translate_statement_core stmt ctx ct |>.snd)).flatten
-        | _ => panic! s!"Expected block statement as function body, got: {repr funcDecl.body}"
+      let (bodyCtx, funcBody) := match funcDecl.body with
+          | .TS_BlockStatement blockStmt =>
+            -- Thread context through function body to handle nested functions
+            blockStmt.body.toList.foldl
+              (fun (accCtx, accStmts) stmt =>
+                let (newCtx, stmts) := translate_statement_core stmt accCtx ct
+                (newCtx, accStmts ++ stmts))
+              (ctx, [])
+          | _ => panic! s!"Expected block statement as function body, got: {repr funcDecl.body}"
 
-      dbg_trace s!"[DEBUG] Translated function body to {funcBody.length} Strata statements"
+        dbg_trace s!"[DEBUG] Translated function body to {funcBody.length} Strata statements"
 
-      let strataFunc : CallHeapStrataFunction := {
-        name := funcDecl.id.name,
-        params := funcDecl.params.toList.map (·.name),
-        body := funcBody,
-        returnType := none  -- We'll infer this later if needed
-      }
-      let newCtx := ctx.addFunction strataFunc
-      dbg_trace s!"[DEBUG] Added TypeScript function '{funcDecl.id.name}' to context"
-      -- Function definitions don't generate statements themselves, just update context
-      (newCtx, [])
+        let strataFunc : CallHeapStrataFunction := {
+          name := funcDecl.id.name,
+          params := funcDecl.params.toList.map (·.name),
+          body := funcBody,
+          returnType := none  -- We'll infer this later if needed
+        }
+        -- Use bodyCtx which includes any nested function declarations
+        let newCtx := bodyCtx.addFunction strataFunc
+        dbg_trace s!"[DEBUG] Added TypeScript function '{funcDecl.id.name}' to context"
+        -- Function definitions don't generate statements themselves, just update context
+        (newCtx, [])
 
       | .TS_ReturnStatement ret =>
         -- Handle return statements
@@ -553,7 +559,7 @@ partial def translate_statement_core
 
         | .TS_ForStatement forStmt =>
           dbg_trace s!"[DEBUG] Translating for statement at loc {forStmt.start_loc}-{forStmt.end_loc}"
-          
+
           let continueLabel := s!"for_continue_{forStmt.start_loc}"
           let breakLabel := s!"for_break_{forStmt.start_loc}"
           let breakFlagVar := s!"for_break_flag_{forStmt.start_loc}"
