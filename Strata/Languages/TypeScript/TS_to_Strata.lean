@@ -219,9 +219,14 @@ partial def translate_statement_core
         dbg_trace s!"[DEBUG] Function parameters: {funcDecl.params.toList.map (·.name)}"
         dbg_trace s!"[DEBUG] Function body has statements"
 
-        let funcBody := match funcDecl.body with
+        let (bodyCtx, funcBody) := match funcDecl.body with
           | .TS_BlockStatement blockStmt =>
-            (blockStmt.body.toList.map (fun stmt => translate_statement_core stmt ctx ct |>.snd)).flatten
+            -- Thread context through function body to handle nested functions
+            blockStmt.body.toList.foldl
+              (fun (accCtx, accStmts) stmt =>
+                let (newCtx, stmts) := translate_statement_core stmt accCtx ct
+                (newCtx, accStmts ++ stmts))
+              (ctx, [])
           | _ => panic! s!"Expected block statement as function body, got: {repr funcDecl.body}"
 
         dbg_trace s!"[DEBUG] Translated function body to {funcBody.length} Strata statements"
@@ -232,7 +237,8 @@ partial def translate_statement_core
           body := funcBody,
           returnType := none  -- We'll infer this later if needed
         }
-        let newCtx := ctx.addFunction strataFunc
+        -- Use bodyCtx which includes any nested function declarations
+        let newCtx := bodyCtx.addFunction strataFunc
         dbg_trace s!"[DEBUG] Added TypeScript function '{funcDecl.id.name}' to context"
         -- Function definitions don't generate statements themselves, just update context
         (newCtx, [])
