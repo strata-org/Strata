@@ -181,7 +181,8 @@ def parse_expression(j):
             return {"TS_MemberExpression": parse_member_expression(j)}
 
         # case "ThisExpression":
-        # case "ArrowFunctionExpression":
+        case "ArrowFunctionExpression":
+            return {"TS_ArrowFunctionExpression": parse_function_expression(j)}
         # case "YieldExpression":
         # case "AwaitExpression":
         case "ArrayExpression":

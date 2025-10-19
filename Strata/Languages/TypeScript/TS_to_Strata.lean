@@ -213,6 +213,9 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
     -- just return a heap lambda placeholder
     Heap.HExpr.lambda (.fvar funcName none)
 
+  | .TS_ArrowFunctionExpression e =>
+    Heap.HExpr.lambda (.fvar s!"__arrow_func_{e.start_loc}_{e.end_loc}" none)
+
   | _ => panic! s!"Unimplemented expression: {repr e}"
 
 partial def translate_statement_core
@@ -286,6 +289,26 @@ partial def translate_statement_core
             }
             let newCtx := ctx.addFunction strataFunc
             dbg_trace s!"[DEBUG] Added function '{funcName}' to context"
+            -- Initialize variable to the function reference
+            let ty := get_var_type d.id.typeAnnotation d.init
+            let funcRef := Heap.HExpr.lambda (.fvar funcName none)
+            (newCtx, [.cmd (.init d.id.name ty funcRef)])
+          | .TS_ArrowFunctionExpression funcExpr =>
+            -- Handle arrow function assignment: let x = (args) => { ... }
+            let funcName := d.id.name
+            let funcBody := match funcExpr.body with
+              | .TS_BlockStatement blockStmt =>
+                (blockStmt.body.toList.map (fun stmt => translate_statement_core stmt ctx ct |>.snd)).flatten
+              | _ => panic! s!"Expected block statement as function body, got: {repr funcExpr.body}"
+            dbg_trace s!"[DEBUG] Translating TypeScript arrow function assignment: {d.id.name} = (args) => function(...)"
+            let strataFunc : CallHeapStrataFunction := {
+              name := funcName,
+              params := funcExpr.params.toList.map (·.name),
+              body := funcBody,
+              returnType := none  -- We'll infer this later if needed
+            }
+            let newCtx := ctx.addFunction strataFunc
+            dbg_trace s!"[DEBUG] Added arrow function '{funcName}' to context"
             -- Initialize variable to the function reference
             let ty := get_var_type d.id.typeAnnotation d.init
             let funcRef := Heap.HExpr.lambda (.fvar funcName none)
@@ -529,21 +552,46 @@ partial def translate_statement_core
         (bodyCtx, [ initBreakFlag, .loop combinedCondition none none bodyBlock ])
 
         | .TS_ForStatement forStmt =>
+
+          dbg_trace s!"[DEBUG] Translating for statement at loc {forStmt.start_loc}-{forStmt.end_loc}"
+          let continueLabel := s!"for_continue_{forStmt.start_loc}"
+          let breakLabel := s!"for_break_{forStmt.start_loc}"
+          let breakFlagVar := s!"for_break_flag_{forStmt.start_loc}"
+
+          -- Initialize break flag to false
+          let initBreakFlag : TSStrataStatement := .cmd (.init breakFlagVar Heap.HMonoTy.bool Heap.HExpr.false)
+
           -- init phase
           let (_, initStmts) := translate_statement_core (.TS_VariableDeclaration forStmt.init) ctx
           -- guard (test)
           let guard := translate_expr forStmt.test
-          -- body (first translate loop body)
-          let (ctx1, bodyStmts) := translate_statement_core forStmt.body ctx
+
+          -- body (first translate loop body with break support)
+          let (ctx1, bodyStmts) :=
+              translate_statement_core forStmt.body ctx
+                { continueLabel? := some continueLabel, breakLabel? := some breakLabel, breakFlagVar? := some breakFlagVar }
+
           -- update (translate expression into statements following ExpressionStatement style)
           let (_, updateStmts) :=
-            translate_statement_core (.TS_ExpressionStatement { expression := .TS_AssignmentExpression forStmt.update, start_loc := forStmt.start_loc, end_loc := forStmt.end_loc, loc:= forStmt.loc, type := "TS_AssignmentExpression" }) ctx1
+              translate_statement_core
+                (.TS_ExpressionStatement {
+                  expression := .TS_AssignmentExpression forStmt.update,
+                  start_loc := forStmt.start_loc,
+                  end_loc := forStmt.end_loc,
+                  loc := forStmt.loc,
+                  type := "TS_AssignmentExpression"
+                }) ctx1
+
+          -- Modify loop condition to include break flag check: (original_condition && !break_flag)
+          let breakFlagExpr := Heap.HExpr.lambda (.fvar breakFlagVar none)
+          let combinedCondition := Heap.HExpr.deferredIte breakFlagExpr Heap.HExpr.false guard
+
           -- assemble loop body (body + update)
           let loopBody : Imperative.Block TSStrataExpression TSStrataCommand :=
             { ss := bodyStmts ++ updateStmts }
 
-          -- output: init statements first, then a loop statement
-          (ctx1, initStmts ++ [ .loop guard none none loopBody])
+          -- output: init break flag, init statements, then a loop statement
+          (ctx1, [initBreakFlag] ++ initStmts ++ [ .loop combinedCondition none none loopBody])
 
       | .TS_ContinueStatement cont =>
         let tgt :=
