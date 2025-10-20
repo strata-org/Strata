@@ -88,6 +88,16 @@ TestDialect.MutB.opB : MutA → MutB
 #print MutB
 
 /--
+info: inductive TestDialect.TypeP : Type
+number of parameters: 0
+constructors:
+TestDialect.TypeP.expr : TestDialectType → TypeP
+TestDialect.TypeP.type : TypeP
+-/
+#guard_msgs in
+#print TypeP
+
+/--
 info: Strata.Expr.fvar 1
 -/
 #guard_msgs in
