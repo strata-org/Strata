@@ -14,17 +14,30 @@ open Lambda
 
 /-! # Bounded Dialect
 
-The Bounded dialect is an extension of Lambda (see `Strata.DL.Lambda`) with support for bounded integer types. See `Stata.DL.Bounded.BExpr` for the translation from Bounded to Lambda.
+The Bounded dialect is an extension of Lambda (see `Strata.DL.Lambda`) with support for bounded integer types. See `Stata.DL.Bounded.BExpr` for the translation from Bounded to Lambda. Here we lift the translation to larger structures (`LFunc`, `Factory`, `TEnv`, etc)
 -/
 
-variable {Identifier : Type} [ToString Identifier] [DecidableEq Identifier] [ToFormat Identifier] [HasGen Identifier] [Coe String Identifier]
+variable {Identifier : Type} [ToString Identifier] [DecidableEq Identifier] [ToFormat Identifier] [HasGen Identifier] [Coe String Identifier] {ExtraRestrict : Type} [DecidableEq ExtraRestrict]
 
 def translateBoundedLMonoTySignature (L: @LMonoTySignature Identifier BoundTyRestrict) : @LMonoTySignature Identifier Empty :=
   L.map (fun (x, y) => (x, removeTyBound y))
 
---TODO: translate TGenEnv (can do bc no factory)
+--TODO: move
 
--- TODO: translate body and axioms to LExprT
+
+/-
+Part 1: Translating LFunc
+
+This proceeds in 2 parts: 1. typecheck LFunc and produce typed version (LFuncT) and 2. Call `translateAndWfBounded` on the typed body and axioms.
+The only complication concens `concreteEval`: given an evaluation function over `BExpr`, we produce a function over `LExpr` by lifting the inputs to bounded expressions, evaluating, then translating the result back to an expression. This requires the evaluation function to satisfy the corresponding commutative diagram (i.e. the result cannot directly depend on the type of the input).
+We do NOT generate well-formedness conditions for the function evaluation result.
+
+TODO: is it possible to check that the condition on concreteEval is satisfied?
+-/
+
+-- def translateBoundedConcreteEval (c: (LExpr (LMonoTy BoundTyRestrict) Identifier) → List (LExpr (LMonoTy BoundTyRestrict) Identifier) → (LExpr (LMonoTy BoundTyRestrict) Identifier)) : (LExpr (LMonoTy Empty) Identifier) → List (LExpr (LMonoTy Empty) Identifier) → (LExpr (LMonoTy Empty) Identifier) :=
+--   fun e es =>
+
 
 private structure LFuncT (Identifier : Type) (ExtraRestrict: Type)  where
   name     : Identifier
@@ -37,7 +50,7 @@ private structure LFuncT (Identifier : Type) (ExtraRestrict: Type)  where
   concreteEval : Option ((LExpr (LMonoTy ExtraRestrict) Identifier) → List (LExpr (LMonoTy ExtraRestrict) Identifier) → (LExpr (LMonoTy ExtraRestrict) Identifier)) := .none
   axioms   : List (LExprT Identifier ExtraRestrict) := []
 
-def LFunc.toLFuncT [DecidableEq ExtraRestrict] (L: LFunc Identifier ExtraRestrict) (T: TEnv Identifier ExtraRestrict) : Except Format (LFuncT Identifier ExtraRestrict × TEnv Identifier ExtraRestrict) := do
+def LFunc.toLFuncT (L: LFunc Identifier ExtraRestrict) (T: TEnv Identifier ExtraRestrict) : Except Format (LFuncT Identifier ExtraRestrict × TEnv Identifier ExtraRestrict) := do
   let (b, T1) ←  match L.body with
   | some b =>
     let (b1, T1) ← LExprT.fromLExpr T b;
@@ -80,3 +93,7 @@ def Factory.translateBounded (F: @Factory Identifier BoundTyRestrict) (T: TEnv I
     let (L1, wf1, T1) ← LFunc.translateBounded L T;
     .ok (Array.setIfInBounds a i L1, wf1 ++ wf, T1)
     ) (Array.emptyWithCapacity (Array.size F), [], T) (Array.zip F (Array.range (Array.size F)))
+
+--TODO: translate TGenEnv (can do bc no factory)
+
+end Bounded
