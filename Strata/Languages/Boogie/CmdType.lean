@@ -23,7 +23,7 @@ def isBoolType (ty : LTy) : Bool :=
   | _ => false
 
 def lookup (T : (TEnv BoogieIdent)) (x : BoogieIdent) : Option LTy :=
-  T.context.types.find? x
+  T.genEnv.context.types.find? x
 
 def update (T : TEnv BoogieIdent) (x : BoogieIdent) (ty : LTy) : TEnv BoogieIdent :=
   T.insertInContext x ty

@@ -223,7 +223,7 @@ end TranslateTest
 
 -- For these tests, we initialize with an empty TEnv
 def runWFTest (e: LExprT String BoundTyRestrict) :=
-  let (l, _) := boundedWfConditions TGenEnv.default e;
+  let (l, _) := boundedWfConditions (@TGenEnv.default String BoundTyRestrict) e;
   eraseTys l
 
 namespace WFTest

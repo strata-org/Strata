@@ -24,6 +24,7 @@ info: ok: ((procedure P :  ((x : int)) → ((y : int)))
  context:
  types:   ⏎
  aliases: []
+ otherIDs: []
  state:
  tyGen: 6
  tyPrefix: $__ty
@@ -57,10 +58,12 @@ postconditions: (P.g_eq_a, ((g : int) == (((~Int.Add : (arrow int (arrow int int
 body: g := (((~Int.Add : (arrow int (arrow int int))) (a : int)) (g : int))
 -/
 #guard_msgs in
-#eval do let ans ←
+#eval do
+  let g : TGenEnv BoogieIdent Empty := { @TGenEnv.default BoogieIdent Empty with context := {types := [[("g", t[int])]] }};
+  let ans ←
               typeCheck { TEnv.default (Identifier:=BoogieIdent) with
                               functions := Boogie.Factory,
-                              context := { types := [[("g", t[int])]] }}
+                              genEnv := g}
                         Program.init
                         { header := { name := "P",
                                       typeArgs := [],
@@ -84,10 +87,12 @@ postconditions: (P.g_eq_a, ((g : int) == (((~Int.Add : (arrow int (arrow int int
 body: g := (((~Int.Add : (arrow int (arrow int int))) (a : int)) (g : int))
 -/
 #guard_msgs in
-#eval do let ans ←
+#eval do
+  let g : TGenEnv BoogieIdent Empty := { @TGenEnv.default BoogieIdent Empty with context := {types := [[("g", t[int])]] }};
+  let ans ←
               typeCheck { TEnv.default (Identifier:=BoogieIdent) with
                               functions := Boogie.Factory,
-                              context := { types := [[("g", t[int])]] }}
+                              genEnv := g}
                         Program.init
                         { header := { name := "P",
                                       typeArgs := [],

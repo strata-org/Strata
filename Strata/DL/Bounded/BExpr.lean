@@ -398,11 +398,11 @@ private def LExprT.substK (k : Nat) (s : LExprT Identifier ExtraRestrict) (e : L
 def LExprT.varOpen (k : Nat) (x : Identifier × (LMonoTy ExtraRestrict)) (e : LExprT Identifier ExtraRestrict) : LExprT Identifier ExtraRestrict :=
   LExprT.substK k (.fvar x.fst x.snd) e
 
--- NOTE: we should not need to do typechecking/unification since the term has already been typechecked and all constraints have been resolved
-def genVar (T : TGenEnv Identifier ExtraRestrict): --(ty : LMonoTy ExtraRestrict) :
+-- NOTE: we do not need to do typechecking/unification since the term has already been typechecked and all constraints have been resolved
+def genVar (T : TGenEnv Identifier ExtraRestrict) :
   Identifier × TGenEnv Identifier ExtraRestrict :=
   let (xv, T) := HasGen.genVar T
-  let T := T.insertInContext xv (.forAll [] .int) --TODO: see if it is OK to add dummy type
+  let T := T.insertIDInContext xv
   (xv, T)
 
 

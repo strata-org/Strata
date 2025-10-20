@@ -32,7 +32,7 @@ these should after Lambda's type inference pass.
 abbrev Cmd := Imperative.Cmd LExprTP
 
 private def lookupType (T : LExprTP.TyEnv) (i : LExprTP.Ident) : Except Format CProverGOTO.Ty :=
-  match T.context.types.find? i with
+  match T.genEnv.context.types.find? i with
   | none => .error s!"Cannot find {i} in the type context!"
   | some ty =>
     if ty.isMonoType then

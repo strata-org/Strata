@@ -33,7 +33,7 @@ namespace BoogieToGOTO
 
 private def lookupType (T : Boogie.Expression.TyEnv) (i : Boogie.Expression.Ident) :
     Except Format CProverGOTO.Ty :=
-  match T.context.types.find? i with
+  match T.genEnv.context.types.find? i with
   | none => .error s!"Cannot find {i} in the type context!"
   | some ty =>
     if ty.isMonoType then
@@ -54,7 +54,7 @@ instance : Imperative.ToGoto Boogie.Expression where
 
 private def lookupTypeStr (T : Boogie.ExprStr.TyEnv) (i : Boogie.ExprStr.Ident) :
     Except Format CProverGOTO.Ty :=
-  match T.context.types.find? i with
+  match T.genEnv.context.types.find? i with
   | none => .error s!"Cannot find {i} in the type context!"
   | some ty =>
     if ty.isMonoType then

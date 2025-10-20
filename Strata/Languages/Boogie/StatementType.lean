@@ -35,7 +35,7 @@ def typeCheckCmd (T : (TEnv BoogieIdent)) (P : Program) (c : Command) :
      match Program.Procedure.find? P pname with
      | none => .error f!"[{c}]: Procedure {pname} not found!"
      | some proc =>
-       if lhs.any (fun l => (T.context.types.find? l).isNone) then
+       if lhs.any (fun l => (T.genEnv.context.types.find? l).isNone) then
          .error f!"[{c}]: All the return variables {lhs} must exist in the context!"
        else if lhs.length != proc.header.outputs.length then
          .error f!"[{c}]: Arity mismatch in this call's return values!\
@@ -211,8 +211,8 @@ inside a procedure).
 def typeCheck (T : Expression.TyEnv) (P : Program) (op : Option Procedure) (ss : List Statement) :
   Except Format (List Statement × Expression.TyEnv) := do
   let (ss', T) ← typeCheckAux T P op ss
-  let context := TContext.subst T.context T.state.substInfo.subst
-  let T := { T with context := context }
+  let context := TContext.subst T.genEnv.context T.state.substInfo.subst
+  let T := T.updateContext context
   let ss' := Statement.subst.go T.state.substInfo.subst ss' []
   .ok (ss', T)
 

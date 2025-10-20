@@ -42,7 +42,7 @@ def typeCheck (T : Boogie.Expression.TyEnv) (p : Program) (proc : Procedure) :
               in the return values.\n\
               Formals: {proc.header.inputs.keys}\n
               Returns: {proc.header.outputs.keys}"
-  else if proc.spec.modifies.any (fun v => (T.context.types.find? v).isNone) then
+  else if proc.spec.modifies.any (fun v => (T.genEnv.context.types.find? v).isNone) then
     .error f!"[{proc.header.name}]: All the variables in the modifies \
               clause must exist in the context! \
               Modifies: {proc.spec.modifies}"

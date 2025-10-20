@@ -21,7 +21,7 @@ x := (xinit : int)
 init (y : int) := (xinit : int)
 -/
 #guard_msgs in
-#eval do let ans ← typeCheck { TEnv.default with context := {types := [[("xinit", t[int])]] }}
+#eval do let ans ← typeCheck (TEnv.default.updateContext {types := [[("xinit", t[int])]] })
                    Program.init
                    none
                    [.init "x" t[int] eb[xinit],
@@ -34,8 +34,7 @@ init (y : int) := (xinit : int)
 info: error: Type Checking [init (x : bool) := #true]: Variable x of type bool already in context.
 -/
 #guard_msgs in
-#eval do let ans ← typeCheck { TEnv.default with
-                                  context := { types := [[("x", t[bool])]] }}
+#eval do let ans ← typeCheck (TEnv.default.updateContext { types := [[("x", t[bool])]] })
                    Program.init
                    none
                    [
@@ -47,6 +46,7 @@ info: error: Type Checking [init (x : bool) := #true]: Variable x of type bool a
 info: ok: context:
 types:   [(zinit, bool) (x, int) (y, int)]
 aliases: []
+otherIDs: []
 state:
 tyGen: 1
 tyPrefix: $__ty
@@ -57,8 +57,7 @@ known types:
 [∀[0, 1]. (arrow 0 1), bool, int, string]
 -/
 #guard_msgs in
-#eval do let ans ← typeCheck { TEnv.default with
-                                  context := { types := [[("zinit", t[bool])]] }}
+#eval do let ans ← typeCheck (TEnv.default.updateContext { types := [[("zinit", t[bool])]] })
                     Program.init
                     none
                     [
@@ -108,6 +107,7 @@ info: error: Type Checking [init (x : int) := #1]: Variable x of type bool alrea
 info: ok: context:
 types:   [(x, int)]
 aliases: []
+otherIDs: []
 state:
 tyGen: 2
 tyPrefix: $__ty
@@ -150,6 +150,7 @@ x := (#2 : int)
 info: ok: context:
 types:   [(fn, ∀[a]. (arrow a a)) (m1, (arrow int int)) (m2, (arrow (arrow bool int) int))]
 aliases: []
+otherIDs: []
 state:
 tyGen: 10
 tyPrefix: $__ty
@@ -160,8 +161,7 @@ known types:
 [∀[0, 1]. (arrow 0 1), bool, int, string]
 -/
 #guard_msgs in
-#eval do let ans ← typeCheck { TEnv.default with
-                                context := { types := [[("fn", t[∀a. %a → %a])]] }}
+#eval do let ans ← typeCheck (TEnv.default.updateContext { types := [[("fn", t[∀a. %a → %a])]] })
                       Program.init none
               [
               .init "m1" t[∀a. %a → int] eb[fn], -- var m : <a>[a]int

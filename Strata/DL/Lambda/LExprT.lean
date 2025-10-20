@@ -206,8 +206,8 @@ its type to the type context.
 -/
 def typeBoundVar (T : TEnv Identifier ExtraRestrict) (ty : Option (LMonoTy ExtraRestrict)) :
   Except Format (Identifier × LMonoTy ExtraRestrict × TEnv Identifier ExtraRestrict) := do
-  let (xv, G) := HasGen.genVar T.toTGenEnv
-  let T := T.updateGenEnv G
+  let (xv, G) := HasGen.genVar T.genEnv
+  let T := {T with genEnv := G}
   let (xty, T) ← match ty with
     | some bty =>
       let ans := LMonoTy.instantiateWithCheck bty T
@@ -224,7 +224,7 @@ def typeBoundVar (T : TEnv Identifier ExtraRestrict) (ty : Option (LMonoTy Extra
 /-- Infer the type of `.fvar x fty`. -/
 def inferFVar (T : (TEnv Identifier ExtraRestrict)) (x : Identifier) (fty : Option (LMonoTy ExtraRestrict)) :
   Except Format (LMonoTy ExtraRestrict × (TEnv Identifier ExtraRestrict)) :=
-  match T.context.types.find? x with
+  match T.genEnv.context.types.find? x with
   | none => .error f!"Cannot find this fvar in the context! \
                       {LExpr.fvar x fty}"
   | some ty => do
