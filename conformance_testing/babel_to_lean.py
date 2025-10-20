@@ -133,6 +133,14 @@ def parse_member_expression(j):
     add_missing_node_info(j, target_j)
     return target_j
 
+def parse_function_expression(j):
+    target_j = {
+        'params': [parse_identifier(ji) for ji in j['params']],
+        'body': parse_statement(j['body'])
+    }
+    add_missing_node_info(j, target_j)
+    return target_j
+
 def parse_array_expression(j):
     # Normalize Babel ArrayExpression: keep only non-null elements and parse each
     elems = []
@@ -173,14 +181,16 @@ def parse_expression(j):
             return {"TS_MemberExpression": parse_member_expression(j)}
 
         # case "ThisExpression":
-        # case "ArrowFunctionExpression":
+        case "ArrowFunctionExpression":
+            return {"TS_ArrowFunctionExpression": parse_function_expression(j)}
         # case "YieldExpression":
         # case "AwaitExpression":
         case "ArrayExpression":
             return {"TS_ArrayExpression": parse_array_expression(j)}
         # case "RecordExpression":
         # case "TupleExpression":
-        # case "FunctionExpression":
+        case "FunctionExpression":
+            return {"TS_FunctionExpression": parse_function_expression(j)}
         # case "UnaryExpression":
         # case "UpdateExpression":
         # case "BindExpression":
