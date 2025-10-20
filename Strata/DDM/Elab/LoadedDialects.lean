@@ -103,6 +103,8 @@ def matchExt (path : String) (ext : String) : Option String :=
     none
 
 def addEntry (m : DialectFileMap) (stem : DialectName) (enc : Encoding) (path : System.FilePath) : BaseIO DialectFileMap := do
+  dbg_trace s!"Adding Dialect: {path}"
+
   let modTime ←
     match ← path.metadata |>.toBaseIO with
     | .error _ => return m
