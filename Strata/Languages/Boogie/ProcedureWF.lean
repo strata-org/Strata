@@ -29,6 +29,9 @@ theorem snd_values_mem {ps : ListMap BoogieLabel Procedure.Check} :
     case inr mem => right ; exact (ih mem)
   case nil => cases Hin
 
+theorem Procedure.typeCheckWF : Procedure.typeCheck T p pp = Except.ok (pp', T') → WFProcedureProp p pp := by sorry
+
+
 /-
 set_option warn.sorry false in
 /--
