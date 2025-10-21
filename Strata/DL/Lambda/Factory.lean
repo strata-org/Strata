@@ -83,6 +83,7 @@ has the right number and type of arguments, etc.?
 structure LFunc (Identifier : Type) where
   name     : Identifier
   typeArgs : List TyIdentifier := []
+  isConstr : Bool := false -- is the function a datatype constructor?
   inputs   : @LMonoTySignature Identifier
   output   : LMonoTy
   body     : Option (LExpr LMonoTy Identifier) := .none
