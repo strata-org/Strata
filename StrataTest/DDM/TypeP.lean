@@ -26,7 +26,7 @@ op mkBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] name ":" tp;
 info: inductive TypeP : Type
 number of parameters: 0
 constructors:
-TypeP.type : TypeP
 TypeP.expr : TestTypePType → TypeP
+TypeP.type : TypeP
 -/
 #guard_msgs in #print TypeP
