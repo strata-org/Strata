@@ -1,0 +1,6 @@
+*.lean
+*.ion
+*.py
+*.md
+*.bpl
+*.st
