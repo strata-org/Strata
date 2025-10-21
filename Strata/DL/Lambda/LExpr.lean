@@ -1060,6 +1060,7 @@ inductive Context (Identifier : Type) : Type where
   | extend
     (tail : Context Identifier)
     (id : Identifier)
+    (afterLabels: List Identifier) -- Labels added after the declaration of the identifier
     (overrideIndex : Option Nat)
     -- If .some, this variable is supposed to be an override of the variable declared at the given index
     -- which should have a .none
@@ -1069,11 +1070,11 @@ deriving Repr
 def Context.frame [DecidableEq Identifier] (c: Context Identifier): List Identifier :=
   match c with
   | .topLevel => []
-  | .extend tail _ (.some _) _ =>
+  | .extend tail _ _ (.some _) _ =>
     -- This seems wrong as there could be shadowings.
     -- Also, we don't want to include procedures.
     tail.frame
-  | .extend tail id .none _ =>
+  | .extend tail id _ .none _ =>
     let tailframe := tail.frame
     if id ∈ tailframe then
       tailframe
@@ -1083,37 +1084,37 @@ def Context.frame [DecidableEq Identifier] (c: Context Identifier): List Identif
 def Context.size {Identifier : Type} (c : Context Identifier) : Nat :=
   match c with
   | .topLevel => 0
-  | .extend _ _ _ s => s + 1
+  | .extend _ _ _ _ s => s + 1
 
 def Context.nameOf (c : Context String) (n: Nat): String :=
   let rec go : Context String → Nat → String
     | .topLevel, _ => "UNDEFINED"
-    | .extend _ id' _ _, 0 => id'
-    | .extend c' _ _ _, n+1 => go c' n
+    | .extend _ id' _ _ _, 0 => id'
+    | .extend c' _ _ _ _, n+1 => go c' n
   go c n
 
 --
 def Context.lastIndexOf [DecidableEq Identifier] (c : Context Identifier) (id: Identifier): Nat :=
   let rec go : Context Identifier → Nat
     | .topLevel => 0
-    | .extend tail id' _ n => if id == id' then n else go tail
+    | .extend tail id' _ _ n => if id == id' then n else go tail
   go c
 
 
 def Context.add_declare {Identifier : Type} (c : Context Identifier) (id : Identifier) : Context Identifier :=
-  Context.extend c id (overrideIndex := .none) (match c with
+  Context.extend c id [] (overrideIndex := .none) (match c with
     | .topLevel => 0
-    | .extend _ _ _ s => s + 1)
+    | .extend _ _ _ _ s => s + 1)
 
 def Context.add_assign {Identifier : Type} [DecidableEq Identifier] (c : Context Identifier) (id : Identifier) : Context Identifier :=
   let overrideIndex: Nat := c.lastIndexOf id
-  Context.extend c id (.some overrideIndex) (match c with
+  Context.extend c id [] (.some overrideIndex) (match c with
     | .topLevel => 0
-    | .extend _ _ _ s => s + 1)
+    | .extend _ _ _ _ s => s + 1)
 
 def Context.vOffset [DecidableEq Identifier]: Identifier → Context Identifier → Nat → LExpr TypeType Identifier
   | _, .topLevel, _ => .bvar 0
-  | id, .extend c' id' _ _, n =>
+  | id, .extend c' id' _ _ _, n =>
     if id == id' then
       LExpr.bvar n
     else
@@ -1124,18 +1125,48 @@ def Context.vOffset [DecidableEq Identifier]: Identifier → Context Identifier 
 def Context.v {Identifier : Type} [DecidableEq Identifier] (c : Context Identifier) (id : Identifier) : LExpr TypeType Identifier :=
   c.vOffset id 0
 
+-- Search the variable with the given name right after the last given label
+def Context.vAt {Identifier : Type} [DecidableEq Identifier]
+  (c : Context Identifier) (searchId label : Identifier) : LExpr TypeType Identifier :=
+  let rec go := fun c labelPreviouslyFound n =>
+    match c with
+    | .topLevel => .bvar 4049828 -- TODO: Error
+    | .extend tail id labels _ _ =>
+      if label ∈ labels then
+        if labelPreviouslyFound then -- Label re-defined, meaning it was not found.
+          LExpr.bvar 0 -- TODO: Throw error
+        else
+          if searchId == id then
+            LExpr.bvar n -- We stop the search, we have found it
+          else
+            go tail (labelPreviouslyFound := true) (n + 1)
+      else
+        if labelPreviouslyFound && searchId == id then
+          LExpr.bvar n -- We stop the search, we have found it
+        else
+          go tail labelPreviouslyFound (n + 1)
+  go c false 0
+
+def Context.label {Identifier: Type} (c : Context Identifier) (name: Identifier): Context Identifier :=
+  match c with
+  | .topLevel => c
+  | .extend c id labels overrideIndex size =>
+    Context.extend c id (name :: labels) overrideIndex size
+
 def Context.vLastAssigned {Identifier : Type}
-  [DecidableEq Identifier]
+  [DecidableEq Identifier] [ToFormat Identifier] [ToFormat TypeType]
   (c cInit : Context Identifier)
   -- Assuming cInit is a prefix of c, we want to know which identifier in c corresponds to last identifier in cInit
   -- which was last assigned in c
   (id : Identifier) : LExpr TypeType Identifier :=
+  let limit := c.size - cInit.size
   let rec go : Context Identifier → Option (LExpr TypeType Identifier) → Nat → LExpr TypeType Identifier
-    | .topLevel, _, _ => .bvar 123456789 -- Should not happen!
-    | .extend c' id' overrideIndex _, candidate, n =>
-      if n + 1 == cInit.size then
+    | .topLevel, _, _ => .bvar 123456789 -- TODO: Convert to error
+    | .extend c' id'  _ overrideIndex _, candidate, n =>
+      if n == limit then
         match candidate with
-        | .some candidate => candidate
+        | .some candidate =>
+          candidate
         | .none => -- There were no assignments or they all lead to declarations when walking in reverse, such as
           -- cInit
           -- var i;  -- 3.candidate == .none     because it was a local declaration since cInit
@@ -1151,12 +1182,14 @@ def Context.vLastAssigned {Identifier : Type}
           go c' candidate (n + 1)
   go c .none 0
 
-
 def Context.procedure_lambda {Identifier : Type} {TypeType: Type} [DecidableEq Identifier]
   (c : Context Identifier) (id : Identifier) (ty: Option TypeType) (cont: Context Identifier -> LExpr TypeType Identifier): LExpr TypeType Identifier :=
   abs (.some id) ty <|
     let c': Context Identifier := c.add_declare id
     cont c'
+
+def label {Identifier: Type} (c : Context Identifier) (name: Identifier) (cont: Context Identifier → LExpr TypeType Identifier) :=
+  cont (c.label name)
 
 def opcall1 [DecidableEq Identifier] (name: Identifier) (arg: LExpr TypeType Identifier): LExpr TypeType Identifier :=
   .app (.op name .none) arg
@@ -1185,6 +1218,8 @@ def let_assign {Identifier : Type} (c: Context Identifier) (id : Identifier) (ty
   let c : Context Identifier := .add_declare c id
   .app (.abs id ty (k c)) rhs
 
+-- Declare a variable and assigns it a value, with the intention that it's
+-- the variable that was assigned last.
 def assign {Identifier : Type} [DecidableEq Identifier] (c: Context Identifier) (id : Identifier) (ty: Option TypeType) (rhs : LExpr TypeType Identifier) (k : Context Identifier → LExpr TypeType Identifier) : LExpr TypeType Identifier :=
   let c : Context Identifier := .add_assign c id
   .app (.abs id ty (k c)) rhs
@@ -1475,6 +1510,22 @@ partial def inlineContinuations (prog: LExpr LTy String): LExpr LTy String :=
     .abs name t (inlineContinuations b)
   | _ => prog
 
+-- TODO We should prove this and perhaps support more cases, also
+-- depending on the environment.
+-- Eventually store it in the LExpr so that we don't need to recompute it.
+def isDeterministic (prog: LExpr LTy String): Bool :=
+  match prog with
+  | .choose _ => false
+  | .app (.app (.op _ _) a) b => isDeterministic a && isDeterministic b
+  | .abs _ _ _ => true
+  | .ite cond thn els => isDeterministic cond && isDeterministic thn && isDeterministic els
+  | .dontcare => false
+  | .error => true
+  | .skip => true
+  | .bvar _ => true
+  | .const _ _ => true
+  | .eq a b => isDeterministic a && isDeterministic b
+  | _ => false
 
 -- .app (.abs _ x) RHS can be beta expanded if RHS is a function (even non deterministic), a constant or a variable
 -- TODO: In other cases, we might prefer to just lift all assertions
@@ -1485,7 +1536,7 @@ partial def simplify (prog: LExpr LTy String): LExpr LTy String :=
   | .app (.abs _ _ body) (.fvar name oty) =>
     decreasesBVar <| subst (.fvar name oty) (simplify body)
   | .app (.abs _ _ body) (.bvar depth) =>
-    decreasesBVar <| subst (.bvar depth) (simplify body)
+    decreasesBVar <| subst (increaseBvars <| .bvar depth) (simplify body)
   | .app (.abs name id body) (.assert cond thn) => -- Lift assertions up
     assert cond (simplify (.app (.abs name id body) thn))
   | .app (.abs name1 id1 body1) (.app (.abs name2 id2 body2) rhs) => -- Lets in RHS become linearized
@@ -1494,11 +1545,18 @@ partial def simplify (prog: LExpr LTy String): LExpr LTy String :=
     )) (simplify rhs) -- Not sure if we should have more simplify around it
   | .app (.abs name id body) (.assume cond thn) => -- Lift assumptions up
     assume cond (simplify (.app (.abs name id body) thn))
-
   | .ite cond thn els =>
     .ite (simplify cond) (simplify thn) (simplify els)
   | .app a b =>
-    .app (simplify a) (simplify b)
+    let new_a := simplify a
+    let new_b := simplify b
+    match new_a with
+    | .abs _ _ body =>
+      if isDeterministic new_b then
+        decreasesBVar <| subst (increaseBvars <| new_b) body
+      else
+        .app new_a new_b
+    | _ => .app new_a new_b
   | .abs name t b =>
     .abs name t (simplify b)
   | _ => prog
@@ -1660,6 +1718,21 @@ def preservesSoundness (t : LExpr LTy String → LExpr LTy String) : Prop :=
     Eval env prog .failure →
     Eval env (t prog) .failure
 
+theorem preservesSoundnessTransitive
+  (t1 t2 : LExpr LTy String → LExpr LTy String):
+  preservesSoundness t1 →
+  preservesSoundness t2 →
+  preservesSoundness (t2 ∘ t1) := by
+  intro h1 h2 prog env hev
+  unfold preservesSoundness at h1 h2
+  rw [Function.comp_apply]
+  have h2_t1_prog := h2 (t1 prog) env
+  have h1_prog := h1 prog env
+  apply h2_t1_prog
+  apply h1_prog
+  exact hev
+
+
 -- Extract scalar result from any evaluation result
 def isScalar : EvalResult → Bool
   | .failure => true
@@ -1763,6 +1836,23 @@ def preservesValues (t : LExpr LTy String → LExpr LTy String) : Prop :=
     Eval ⟨stack, globals⟩ prog result →
     ∃ result', Eval ⟨stack, globals⟩ (t prog) result' ∧
                valueEquiv globals result result'
+
+theorem preservesValuesTransitive
+  (t1 t2 : LExpr LTy String → LExpr LTy String):
+  preservesValues t1 →
+  preservesValues t2 →
+  preservesValues (t2 ∘ t1) := by
+  intro h1 h2 prog stack globals result eval_stmt
+  unfold preservesValues at h1 h2
+  have h1_applied := h1 prog stack globals result eval_stmt
+  obtain ⟨result1, eval_result1, equiv1⟩ := h1_applied
+  have h2_applied := h2 (t1 prog) stack globals result1 eval_result1
+  obtain ⟨result2, eval_result2, equiv2⟩ := h2_applied
+  have exist_h: ∃ n, valueEquivN globals n result result2 := by
+    obtain ⟨n1, h1⟩ := equiv1
+    obtain ⟨n2, h2⟩ := equiv2
+    sorry
+  exact ⟨result2, eval_result2, exist_h⟩
 
 def abstractsValues (t : LExpr LTy String → LExpr LTy String) : Prop :=
   ∀ (prog : LExpr LTy String) (stack : List Value)  (globals: Globals) (result : EvalResult),
@@ -1975,7 +2065,7 @@ theorem removeIfTruePreservesValues:
               cases a1
               -/
       sorry
-  | bvar n | fvar _ _ | dontcare | skip | choose _ | error
+  | dontcare | skip | choose _ | error
         =>
         /-
         rename (∀ (env : Environment String), Eval env thn EvalResult.failure → Eval env thn.removeIfTrue EvalResult.failure) => t_ih
@@ -2040,11 +2130,11 @@ theorem removeIfTruePreservesValues:
       apply Eval.eq_error2
       exact r
     -/
-  | error | choose _ | skip  | dontcare =>
+  /-| error | choose _ | skip  | dontcare =>
     intro env
     unfold removeIfTrue
     intro h
-    exact h
+    exact h-/
   | mdata info e e_h =>
     intro env
     unfold removeIfTrue
@@ -2136,7 +2226,37 @@ theorem ifTrueToThenPreservesSoundness:
     rename_i x
     simp at x
 
+-- Template for dealing with recursive transformations
+def nothingButRecursively (prog: LExpr LTy String): LExpr LTy String :=
+  match prog with
+  | const _ _ | fvar _ _ | bvar _ | op _ _ | skip | dontcare | error | choose _ => prog
+  | mdata m e => mdata m (nothingButRecursively e)
+  | app e1 e2 => app e1 (nothingButRecursively e2)
+  | abs name ty body => abs name ty (nothingButRecursively body)
+  | ite cond thn els => ite (nothingButRecursively cond) (nothingButRecursively thn) (nothingButRecursively els)
+  | quant k ty tr e => quant k ty (nothingButRecursively tr) (nothingButRecursively e)
+  | eq e1 e2 => eq (nothingButRecursively e1) (nothingButRecursively e2)
 
+-- Cannot be proved easily
+theorem nothingButRecursivelyPreservesSoundness:
+  nothingButRecursively |> preservesSoundness := by
+  rw [preservesSoundness]
+  intro prog
+  intro env
+  intro produceserror
+  induction prog with
+  | const _ _ | fvar _ _ | bvar _ | op _ _ | skip | dontcare | error | choose _ =>
+    rw [nothingButRecursively]
+    assumption
+  | app e1 e2 e1_h e2_h =>
+    rw [nothingButRecursively]
+    cases produceserror
+    · rename_i fnEnv fnBody argVal a a2 a3
+
+      sorry
+    · sorry
+    · sorry
+  | _ => sorry
 
 theorem letAssignToLetAssumeSound:
   letAssignToLetAssume |> preservesSoundness := by
