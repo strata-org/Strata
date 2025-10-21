@@ -62,7 +62,7 @@ partial def elabHeader
   let s : DeclState := .initDeclState
   let s := s.openLoadedDialect! .builtin headerDialect
   let s := { s with pos := startPos }
-  let ctx := { inputContext := inputContext, stopPos := stopPos, loader := .builtin }
+  let ctx := { inputContext := inputContext, stopPos := stopPos, loader := .builtin, missingImport := false }
   let (mtree, s) := elabCommand leanEnv ctx s
   if s.errors.isEmpty then
     match mtree with
@@ -107,7 +107,7 @@ def elabProgramRest
   let s := DeclState.initDeclState
   let s := { s with pos := startPos }
   let s := s.openLoadedDialect! loader d
-  let ctx : DeclContext := { inputContext, stopPos, loader := loader }
+  let ctx : DeclContext := { inputContext, stopPos, loader := loader, missingImport := false }
   let (cmds, s) := runCommand leanEnv #[] stopPos ctx s
   if s.errors.isEmpty then
     let openDialects := loader.dialects.importedDialects! dialect
@@ -358,6 +358,7 @@ partial def elabDialectRest
         imports := #[initDialect.name]
     },
     loaded := dialects
+    missingImport := false
   }
   let ((), ds) ← act dctx |>.run ds
   pure (ds.loaded, ds.dialect, ds.declState)
