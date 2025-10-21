@@ -1527,6 +1527,7 @@ def isDeterministic (prog: LExpr LTy String): Bool :=
   | .eq a b => isDeterministic a && isDeterministic b
   | _ => false
 
+
 -- .app (.abs _ x) RHS can be beta expanded if RHS is a function (even non deterministic), a constant or a variable
 -- TODO: In other cases, we might prefer to just lift all assertions
 partial def simplify (prog: LExpr LTy String): LExpr LTy String :=
@@ -1711,6 +1712,60 @@ inductive Eval : Environment String → LExpr LTy String → EvalResult → Prop
   | error : ∀ env, Eval env .error .failure
   | choose : ∀ env ty v, Eval env (.choose ty) v -- TODO: Add types TODO: Not failure
   | skip : ∀ env, Eval env .skip (.success .unit)
+
+
+def isDeterministicProp (prog: LExpr LTy String): Prop :=
+  ∀env res1 res2,
+    Eval env prog res1 →
+    Eval env prog res2 →
+    res1 = res2
+
+theorem isDeterministicCorrectlyImplemented:
+  ∀prog, isDeterministic prog → isDeterministicProp prog := by
+  intro prog hdet env res1 res2 hev1 hev2
+  cases prog
+  · -- const
+    cases hev1
+    cases hev2
+    rename_i s ty s1 a s2 eqcc
+    rw [EvalResult.success.injEq (.value s1) (.value s2)]
+    rw [Value.value.injEq s1 s2]
+    rw [a] at eqcc
+    assumption
+  · cases hev1
+    cases hev2
+    rename_i o ty
+    rfl
+  · -- bvar
+    cases hev1
+    cases hev2
+    · rename_i n v1 lookupV1 v2 lookupv2
+      rw [EvalResult.success.injEq v1 v2]
+      rw [lookupV1] at lookupv2
+      rw [Option.some.injEq v1 v2] at lookupv2
+      assumption
+    · rename_i i v a a2
+      rw [a] at a2
+      contradiction
+    · rename_i i a
+      cases hev2
+      rename_i a2
+      rw [a2] at a
+      contradiction
+      rfl
+  · sorry
+  · sorry
+  · sorry
+  · sorry
+  · sorry
+  · sorry
+  · sorry
+  · sorry
+  · sorry
+  · sorry
+  · sorry
+
+
 
 -- Stated soundness theorem.
 def preservesSoundness (t : LExpr LTy String → LExpr LTy String) : Prop :=
