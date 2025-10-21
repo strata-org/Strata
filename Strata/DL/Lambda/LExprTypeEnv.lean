@@ -454,7 +454,7 @@ def LMonoTy.aliasDef? (mty : LMonoTy) (T : (TEnv Identifier)) : (Option LMonoTy 
   | .bitvec _ =>
     -- A bitvector cannot be a type alias.
     (none, T)
-  | .tcons name args =>
+  | .tcons name args r =>
     match T.context.aliases.find? (fun a => a.name == name && a.typeArgs.length == args.length) with
     | none => (none, T)
     | some alias =>
@@ -568,11 +568,11 @@ partial def LMonoTy.resolveAliases (mty : LMonoTy) (T : TEnv Identifier) : (Opti
     match mty with
     | .ftvar _ => (some mty, T)
     | .bitvec _ => (some mty, T)
-    | .tcons name mtys =>
+    | .tcons name mtys r =>
       let (maybe_mtys, T) := LMonoTys.resolveAliases mtys T.context.aliases T
       match maybe_mtys with
       | none => (none, T)
-      | some mtys' => (some (.tcons name mtys'), T)
+      | some mtys' => (some (.tcons name mtys' r), T)
 
 /--
 De-alias `mtys`, including at the subtrees.
@@ -637,7 +637,7 @@ de-aliased.
 def LMonoTy.knownInstance (ty : LMonoTy) (ks : KnownTypes) : Bool :=
   match ty with
   | .ftvar _ | .bitvec _ => true
-  | .tcons name args =>
+  | .tcons name args _ =>
     (ks.contains { name := name, arity := args.length }) &&
     LMonoTys.knownInstances args ks
 
