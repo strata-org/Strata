@@ -9,6 +9,7 @@ import Strata.DL.SMT.Op
 import Strata.DL.SMT.Solver
 import Strata.DL.SMT.Term
 import Strata.DL.SMT.TermType
+import Strata.DL.Util.ListUtils
 import Std.Data.HashMap
 
 /-!
@@ -208,10 +209,6 @@ def defineAll (inBinder : Bool) (xEnc : String) (tyEnc : String) (trEncs: List (
 
 def defineExist (inBinder : Bool) (xEnc : String) (tyEnc : String) (trEncs: List (List String)) (tEnc : String) : EncoderM String :=
   defineQuantifierHelper inBinder "exists" s!"({xEnc} {tyEnc})" trEncs tEnc
-
-def mapM₁ {m : Type u → Type v} [Monad m] {α : Type w} {β : Type u}
-  (xs : List α) (f : {x : α // x ∈ xs} → m β) : m (List β) :=
-  xs.attach.mapM f
 
 partial
 def encodeTerm (inBinder : Bool) (t : Term) : EncoderM String := do
