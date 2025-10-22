@@ -7,6 +7,7 @@
 import Strata.DL.Lambda.LExprEval
 import Strata.DL.Lambda.LExprType
 import Strata.DL.Lambda.LExpr
+import Strata.DL.Lambda.TypeFactory
 
 namespace Lambda
 
@@ -26,20 +27,31 @@ See module `Strata.DL.Lambda.LExpr` for the formalization of expressions,
 `Strata.DL.Lambda.LExprEval` for the partial evaluator.
 -/
 
-variable {Identifier : Type} [ToString Identifier] [DecidableEq Identifier] [ToFormat Identifier] [HasGen Identifier]
+variable {Identifier : Type} [ToString Identifier] [DecidableEq Identifier] [ToFormat Identifier] [HasGen Identifier] [Coe String Identifier]
+
+def LDatatype.toKnownType (d: LDatatype Identifier) : KnownType :=
+  { name := d.name, arity := d.typeArgs.length}
+
+def TypeFactory.toKnownTypes (t: @TypeFactory Identifier) : List KnownType :=
+  t.foldr (fun t l => t.toKnownType :: l) []
 
 /--
 Top-level type checking and partial evaluation function for the Lambda
 dialect.
 -/
 def typeCheckAndPartialEval
+  (genArgNames : Nat -> List Identifier := fun _ => []) --TODO bad hack
+  (t: TypeFactory (Identifier:=Identifier) := TypeFactory.default)
   (f : Factory (Identifier:=Identifier) := Factory.default)
   (e : (LExpr LMonoTy Identifier)) :
   Except Std.Format (LExpr LMonoTy Identifier) := do
-  let T := TEnv.default.addFactoryFunctions f
+  let fTy ← t.genFactory genArgNames
+  let fAll ← Factory.addFactory fTy f
+  let T := TEnv.default.addFactoryFunctions fAll
+  let T := T.addKnownTypes t.toKnownTypes
   let (et, _T) ← LExpr.annotate T e
   dbg_trace f!"Annotated expression:{Format.line}{et}{Format.line}"
-  let σ ← (LState.init).addFactory f
+  let σ ← (LState.init).addFactory fAll
   return (LExpr.eval σ.config.fuel σ et)
 
 end Lambda

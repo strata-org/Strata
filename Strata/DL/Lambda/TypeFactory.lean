@@ -102,8 +102,6 @@ def elimTy (outputType : LMonoTy)  (c: LConstr Identifier): LMonoTy :=
   | [] => outputType
   | _ :: _ => LMonoTy.mkArrow' outputType (c.args.map Prod.snd)
 
-
-
 /--
 Simulates pattern matching on operator o. We cannot do true pattern matching because (1) Identifiers are abstract and (2) we must determine the correct number of .app calls and arguments
 -/
@@ -152,9 +150,11 @@ The `LFunc` corresponding to the eliminator for datatype `d`, called e.g. `ListE
 -/
 def elimFunc (genArgNames: Nat -> List Identifier) (d: LDatatype Identifier) : LFunc Identifier :=
   let outTyId := freshTypeArg d.typeArgs
-  { name := d.name ++ "Elim", typeArgs := d.typeArgs, inputs := List.zip (genArgNames (d.constrs.length + 1)) (dataDefault d :: d.constrs.map (elimTy (.ftvar outTyId))), output := .ftvar outTyId, concreteEval := elimConcreteEval d}
+  { name := d.name ++ "Elim", typeArgs := outTyId :: d.typeArgs, inputs := List.zip (genArgNames (d.constrs.length + 1)) (dataDefault d :: d.constrs.map (elimTy (.ftvar outTyId))), output := .ftvar outTyId, concreteEval := elimConcreteEval d}
 
 def TypeFactory := Array (LDatatype Identifier)
+
+def TypeFactory.default : @TypeFactory Identifier := #[]
 
 /--
 Generates the Factory (containing all constructor and eliminator functions) for a single datatype

@@ -243,6 +243,8 @@ instance : ToFormat (TEnv Identifier) where
 def TEnv.addKnownType (T : TEnv Identifier) (k : KnownType) : TEnv Identifier :=
   { T with knownTypes := k :: T.knownTypes }
 
+def TEnv.addKnownTypes (T : TEnv Identifier) (k : KnownTypes) : TEnv Identifier := { T with knownTypes := k ++ T.knownTypes }
+
 def TEnv.addFactoryFunction (T : TEnv Identifier) (fn : LFunc Identifier) : TEnv Identifier :=
   { T with functions := T.functions.push fn }
 
