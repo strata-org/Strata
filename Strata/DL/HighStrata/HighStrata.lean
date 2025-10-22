@@ -1,10 +1,15 @@
 /-
 The high strata language is supposed to serve as an intermediate verification language for at least Java, Python, JavaScript.
-/
+
 It enables doing various forms of verification:
 - Deductive verification
 - Property based testing
 - Data-flow analysis
+
+Features currently not present:
+- Type inference. The source program needs to specify enough types so that no inference is needed.
+- Type checking. We assume types have already been checked before.
+- Namespaces. All definition and reference names consist of a single Identifier
 
 Design choices:
 - Pure contracts: contracts may only contain pure code. Pure code does not modify the heap, neither by modifying existing objects are creating new ones.
@@ -19,15 +24,17 @@ Design choices:
 - Pattern matching: there is no match-case construct, but there are type tests with pattern matching that enable the same functionality but more generally. `if (x is <Type> <Binding>) { access to <Binding> }`
 
 - User defined types consist of two categories: composite types and constrained types.
-  - Composite types have fields and callables, and may extend other composite types.
-  - Constrained types are defined by a base type and a constraint over that type.
+- Composite types have fields and callables, and may extend other composite types.
+  - Fields state whether they are mutable, which impacts what permissions are needed to access them
+  - Fields state their type, which is needed to know the resulting type when reading a field.
+- Constrained types are defined by a base type and a constraint over that type.
   - Algebriac datatypes do not exist directly but can be encoded using composited and constrained types.
+
 - The base type for all composite types is dynamic, which is a type that can be type tested.
   For all primitive types there is an implicit composite type that wraps around the primitive, so primitives can be boxed to become the Dynamic type. They can be unboxed using a type test. This is useful for source languages such as JavaScript. The operators that work on primitives also work on the dynamic type, although they can error if the types do not align.
 - WIP: There is no concept of constructors, but each composite type has a partial variant that represents an object of that type whose fields
   are not yet assigned and whose type invariants might not hold.
   A partial type can be completed to a full type once all fields are assigned and the type invariants are known to hold.
-- There is no concept of namespaces so all references need to be fully qualified.
 
 -/
 
