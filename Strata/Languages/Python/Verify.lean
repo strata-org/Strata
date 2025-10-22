@@ -8,10 +8,8 @@ namespace Strata
 
 private def f : String := boogiePrelude
 
-
 def pythonVerify (pgm: Strata.Program) : String :=
   let boogiePgm :=pythonToBoogie pgm
-  dbg_trace s!"Num decls: {boogiePgm.decls.length}"
   "Python program:\n" ++ (toString pgm) ++ "\n" ++ "Boogie program\n" ++ (toString boogiePgm) ++ "\n"
 
 

@@ -86,60 +86,81 @@ namespace Strata
 -- end
 
 
+-- Some hard-coded things we'll need to fix later:
+
+def clientType : Boogie.Expression.Ty := .forAll [] (.tcons "Client" [])
+def dummyClient : Boogie.Expression.Expr := .fvar "DUMMY_CLIENT" none
+
+-- This information should come from our prelude. For now, we use the fact that
+-- these functions are exactly the ones
+-- represented as `Call(Attribute(Name(...)))` in the AST (instead of `Call(Name(...))`).
+def callCanThrow (op: Operation) : Bool :=
+  match op.name with
+  | {dialect := "Python", name:= "Call"} =>
+    match op.args[0]! with
+    | .op op =>
+      match op.name with
+      | {dialect := "Python", name:= "Attribute"} => true
+      | _ => false
+    | _ => false
+  | _ => false
+
+
+-------------------------------------------------------------------------------
+
+partial def collectCalls (a : Arg) : List Operation :=
+  match a with
+  | .op op =>
+    let nested := op.args.toList.flatMap collectCalls
+    match op.name with
+    | {dialect := "Python", name:= "Call"} => op :: nested
+    | _ => nested
+  | .seq args => args.toList.flatMap collectCalls
+  | _ => []
+
 -- def baseDialects : Strata.Elab.LoadedDialects := .builtin
 -- def defaultDialects : Strata.Elab.LoadedDialects := baseDialects.addDialect! Strata.Boogie
 
-partial def pyOpToBoogie(op: Operation) : Option Boogie.Statement :=
-  match op.name with
-  | {dialect := "Python", name:= "mk_arguments"} => none
-  | {dialect := "Python", name:= "Assert"} => some (.assert "assert_0" (.const "false" none))
-  | _ => panic! "Unsupported"
-
-
-partial def pyStmtToStmt(arg: Arg) : Option Boogie.Statement :=
+partial def argToExpr(arg: Arg) : Lambda.LExpr Lambda.LMonoTy Boogie.BoogieIdent :=
   match arg with
-  | .op op => pyOpToBoogie op
-  | .cat _ => dbg_trace "cat"; none
-  | .expr _ => dbg_trace "expr"; none
-  | .type _ => dbg_trace "type"; none
-  | .ident _ => dbg_trace "ident"; none
-  | .num _ => dbg_trace "num"; none
-  | .decimal _ => dbg_trace "decimal"; none
-  | .strlit _ => dbg_trace "strlit"; none
-  | .option _ => dbg_trace "option"; none
-  | .seq args =>
-    match args with
-    | #[] => none
-    | _ =>
-      let stmts := (args.toList.map pyStmtToStmt).filterMap id
-      some (.block "block" {ss := stmts})
-  | .commaSepList _ => dbg_trace "commaseplist"; none
-
-
-def pyBodyToStmts(args: Array Arg) : List Boogie.Statement :=
-  dbg_trace s!"num args in body: {args.size}"
-  (args.toList.map pyStmtToStmt).filterMap id
-
-def pyFuncDefToBoogie(arg: Arg) : Boogie.Procedure :=
-  match arg with
+  | .strlit s => .const s none
   | .op op => match op.name with
-    | {dialect := "Python", name:= "FunctionDef"} =>
-      {header := {name := "test", typeArgs := [], inputs := [], outputs := []}, spec:= default, body := pyBodyToStmts op.args}
-    | _ => panic! "Should be function def"
-  | _ => panic! "Should be function def"
+    | {dialect := "Python", name:= "Name"} =>
+      match op.args with
+      | #[.strlit name, _] => .fvar (.unres, name) none
+      | _ => panic! "Invalid Name"
+    | {dialect := "Python", name:= "Constant"} =>
+      match op.args with
+      | #[.op inner, .option _] => argToExpr (.op inner)
+      | _ => panic! "Invalid Constant"
+    | {dialect := "Python", name:= "ConString"} =>
+      match op.args with
+      | #[.strlit s] => .const s none
+      | _ => panic! "Invalid ConString"
+    | {dialect := "Python", name:= "mk_keyword"} => .const "keyword" none
+    | {dialect := "Python", name:= "mk_alias"} =>
+      let args := op.args
+      assert! args.size == 2 -- List of strlit, none
+      assert! args[1]! == Strata.Arg.option none
+      argToExpr args[0]!
+    | _ => panic! s!"Unsupported expr: {op.name}"
+  | .option _ => .const "none" none
+  | _ => panic! "Unsupported arg in expr"
 
-
-partial def getFuncs (remaining :List Arg): List Arg :=
-  match remaining with
-  | [] => []
-  | h :: tail =>
-    let h' := match h with
+partial def extractCallArgs(args: Array Arg) : List (Lambda.LExpr Lambda.LMonoTy Boogie.BoogieIdent) :=
+  let results := args.toList.map fun arg =>
+    match arg with
     | .op op => match op.name with
-      | {dialect := "Python", name:= "FunctionDef"} => [h]
-      | _ => []
-    | .seq args => getFuncs args.toList ++ getFuncs tail
+      | {dialect := "Python", name:= "mk_keyword"} => []
+      | _ => [argToExpr arg]
+    | .seq innerArgs => innerArgs.toList.filterMap fun inner =>
+        match inner with
+        | Arg.op op => match op.name with
+          | {dialect := "Python", name:= "mk_keyword"} => none
+          | _ => some (argToExpr inner)
+        | _ => none
     | _ => []
-    h' ++ getFuncs tail
+  results.foldl (· ++ ·) []
 
 def unwrapModule (ops: Array Operation): Array Arg :=
   match ops with
@@ -149,12 +170,120 @@ def unwrapModule (ops: Array Operation): Array Arg :=
     | _ => panic! "Expected top-level module"
   | _ => panic! "Expected unique top-level module"
 
+partial def pyOpToBoogie(op: Operation) : List Boogie.Statement :=
+  match op.name with
+  | {dialect := "Python", name:= "ImportFrom"} =>
+    let callArgs := extractCallArgs op.args
+    [.call [] "importFrom" callArgs]
+  | {dialect := "Python", name:= "Import"} =>
+    let callArgs := extractCallArgs op.args
+    [.call [] "import" callArgs]
+  | {dialect := "Python", name:= "Expr"} =>
+    match op.args with
+    | #[.op callOp] => pyOpToBoogie callOp
+    | _ => []
+  | {dialect := "Python", name:= "Call"} =>
+    if op.args.size >= 1 then
+      match op.args[0]! with
+      | .op nameOp => match nameOp.name with
+        | {dialect := "Python", name:= "Name"} =>
+          match nameOp.args with
+          | #[.strlit fname, _] =>
+            let callArgs := extractCallArgs (op.args.extract 1 op.args.size)
+            [.call [] fname callArgs]
+          | _ => []
+        | _ => []
+      | _ => []
+    else []
+  | {dialect := "Python", name:= "Assign"} =>
+    if op.args.size >= 2 then
+      match op.args[0]!, op.args[1]! with
+      | .seq targetSeq, .op valueOp =>
+        if targetSeq.size >= 1 then
+          match targetSeq[0]! with
+          | .op targetOp => match targetOp.name with
+            | {dialect := "Python", name:= "Name"} =>
+              match targetOp.args with
+              | #[.strlit varName, _] =>
+                match valueOp.name with
+                | {dialect := "Python", name:= "Call"} =>
+                  if valueOp.args.size >= 1 then
+                    match valueOp.args[0]! with
+                    | .op callTarget => match callTarget.name with
+                      | {dialect := "Python", name:= "Attribute"} =>
+                        if callTarget.args.size >= 3 then
+                          match callTarget.args[0]!, callTarget.args[1]!, callTarget.args[2]! with
+                          | .op objOp, .strlit methodName, _ =>
+                            match objOp.name with
+                            | {dialect := "Python", name:= "Name"} =>
+                              match objOp.args with
+                              | #[.strlit objName, _] =>
+                                let args := extractCallArgs (valueOp.args.extract 1 valueOp.args.size)
+                                [.call [varName] s!"{objName}_{methodName}" args]
+                              | _ => []
+                            | _ => []
+                          | _, _, _ => []
+                        else []
+                      | _ => []
+                    | _ => []
+                  else []
+                | _ => []
+              | _ => []
+            | _ => []
+          | _ => []
+        else []
+      | _, _ => []
+    else []
+  | {dialect := "Python", name:= "Try"} =>
+    if op.args.size >= 1 then
+      match op.args[0]! with
+      | .seq bodyStmts => bodyStmts.toList.flatMap fun arg =>
+          match arg with
+          | .op o => pyOpToBoogie o
+          | _ => []
+      | .op bodyOp => pyOpToBoogie bodyOp
+      | _ => []
+    else []
+  | _ => []
+
+partial def pyStmtToBoogie(arg: Arg) : List Boogie.Statement :=
+  match arg with
+  | .op op => pyOpToBoogie op
+  | .seq args => args.toList.flatMap pyStmtToBoogie
+  | _ => []
+
+def unwrapSeq (args: Array Arg): List Arg :=
+  args.toList.flatMap fun arg =>
+    match arg with
+    | .seq stmts => stmts.toList
+    | _ => [arg]
+
+def handleCallThrow : Boogie.Statement :=
+  let cond := .eq (.app (.fvar "ExceptOrNone_tag" none) (.fvar "maybe_except" none)) (.fvar "EN_STR_TAG" none)
+  .ite cond {ss := [.goto "end"]} {ss := []}
+
+partial def translateStmtsWithSplits (stmts: List Arg) (startIdx: Nat := 0) : List Boogie.Statement :=
+  match stmts.findIdx? (fun arg => (collectCalls arg).any callCanThrow) with
+  | none => 
+    let blockStmts := stmts.flatMap pyStmtToBoogie
+    if blockStmts.isEmpty then [] else [.block s!"anon{startIdx}" {ss := blockStmts}]
+  | some idx =>
+    let (beforeCall, afterCall) := (stmts.take (idx + 1), stmts.drop (idx + 1))
+    let blockStmts := beforeCall.flatMap pyStmtToBoogie ++ [handleCallThrow]
+    [.block s!"anon{startIdx}" {ss := blockStmts}] ++ translateStmtsWithSplits afterCall (startIdx + 2)
+
 def pythonToBoogie (pgm: Strata.Program): Boogie.Program :=
-  -- pgm
-  let insideMod := (unwrapModule pgm.commands)
-  let funcs := (getFuncs insideMod.toList).map pyFuncDefToBoogie
-  {decls := funcs.map (λ p => .proc p)}
-  -- {pgm with dialect := "Boogie", dialects:= defaultDialects.dialects, commands := pgm.commands.map pyCmdToBoogieCmd}
+  let insideMod := unwrapModule pgm.commands
+  let stmts := unwrapSeq insideMod
+  let varDecls : List Boogie.Statement := [(.init "s3_client" clientType dummyClient), (.havoc "s3_client"), (.init "invalid_client" clientType dummyClient), (.havoc "invalid_client")]
+  let blocks := translateStmtsWithSplits stmts
+  let body := varDecls ++ blocks ++ [.block "end" {ss := []}]
+  let mainProc : Boogie.Procedure := {
+    header := {name := "simple1_btg_main", typeArgs := [], inputs := [], outputs := [("maybe_except", (.tcons "ExceptOrNone" []))]},
+    spec := default,
+    body := body
+  }
+  {decls := [.proc mainProc]}
 
 
 end Strata
