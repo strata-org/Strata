@@ -245,9 +245,12 @@ end PreType
 
 namespace SyntaxCat
 
-protected def mformat : SyntaxCat → StrataFormat
-| .atom n => mf!"{n}"
-| .app h r => mf!"{h.mformat.ensurePrec appPrec} {r.mformat.ensurePrec (appPrec+1) }".ensurePrec appPrec
+protected def mformat (cat : SyntaxCat) : StrataFormat :=
+  let init := mformat cat.name
+  cat.args.foldl (init := init) (fun f a => mf!"{f} {a.mformat.ensurePrec (appPrec+1)}")
+  decreasing_by
+    rw [SyntaxCat.sizeOf_spec cat]
+    decreasing_tactic
 
 instance : ToStrataFormat SyntaxCat where
   mformat := SyntaxCat.mformat
@@ -361,17 +364,20 @@ private partial def Operation.mformatM (op : Operation) : FormatM PrecFormat := 
   match (← read).getOpDecl op.name with
   | some decl =>
     let bindings := decl.argDecls
-    let args := op.args
-    let .isTrue bsize := decEq args.size bindings.size
+    let .isTrue bsize := decEq op.args.size bindings.size
           | return panic! "Mismatch betweeen binding and arg size"
-    let argsV : Vector Arg bindings.size := ⟨args, bsize⟩
-    let argResults := formatArguments (← read) (← get) bindings argsV
+    let args : Vector _ bindings.size := ⟨op.args, bsize⟩
+    let argResults := formatArguments (← read) (← get) bindings args
     let fmt := ppOp (← read).opts decl.syntaxDef (Prod.fst <$> argResults)
     match decl.metadata.resultLevel bindings.size with
     | some idx => set argResults[idx]!.snd
     | none => pure ()
     for b in decl.newBindings do
-      modify (·.pushBinding <| b.varName argsV)
+      match args[b.nameIndex.toLevel] with
+      | .ident e =>
+        modify (·.pushBinding e)
+      | _ =>
+        return panic! s!"Expected ident at {b.nameIndex.toLevel}."
     return fmt
   | none =>
     -- FIXME: Consider reporting error here.
@@ -448,7 +454,7 @@ end ArgDecl
 
 namespace ArgDecls
 
-private def mformatAux (f : Format) (c : FormatContext) (s : FormatState) (a : Array ArgDecl) (idx : Nat) : Format × FormatState :=
+private def mformatAux (f : Format) (c : FormatContext) (s : FormatState) (a : ArgDecls) (idx : Nat) : Format × FormatState :=
   if h : idx < a.size then
     let b := a[idx]
     mformatAux (f ++ ", " ++ cformat b c s) c (s.pushBinding b.ident) a (idx + 1)
@@ -467,7 +473,7 @@ instance : ToStrataFormat ArgDecls where
 
 /- Format `fmt` in a context with additional bindings `b`. -/
 protected def formatIn [ToStrataFormat α] (b : ArgDecls) (fmt : α) : StrataFormat := fun c s =>
-  mformat fmt c (b.foldl (init := s) (·.pushBinding ·.ident))
+  mformat fmt c (b.toArray.foldl (init := s) (·.pushBinding ·.ident))
 
 end ArgDecls
 

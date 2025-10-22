@@ -151,12 +151,12 @@ def source_range(mapping : FileMapping, t : object) -> SourceRange|None:
         return SourceRange(off, end_off)
 
 def ast_to_arg(mapping : FileMapping, v : object, cat : SyntaxCat) -> strata.Arg:
-    match cat.ident:
+    match cat.name:
         case Init.Option.ident:
             if v is None:
-                return None
+                return strata.OptionArg(None)
             else:
-                return strata.SomeArg(ast_to_arg(mapping, v, cat.args[0]))
+                return strata.OptionArg(ast_to_arg(mapping, v, cat.args[0]))
         case Python.int.ident:
             assert isinstance(v, int)
             if v >= 0:
@@ -187,6 +187,8 @@ def ast_to_arg(mapping : FileMapping, v : object, cat : SyntaxCat) -> strata.Arg
                 return Python.ConEllipsis()
             elif isinstance(v, bytes):
                 return Python.ConEllipsis() # FIXME
+            elif isinstance(v, complex):
+                return Python.ConEllipsis() # FIXME
             else:
                 raise ValueError(f"Unsupported constant type {type(v)}")
         case Python.opt_expr.ident:
@@ -197,9 +199,9 @@ def ast_to_arg(mapping : FileMapping, v : object, cat : SyntaxCat) -> strata.Arg
                 return Python.some_expr(ast_to_arg(mapping, v, Python.expr()))
         case Init.Option.ident:
             if v is None:
-                return None
+                return strata.OptionArg(None)
             else:
-                return strata.SomeArg(ast_to_arg(mapping, v, cat.args[0]), ann=None)
+                return strata.OptionArg(ast_to_arg(mapping, v, cat.args[0]))
         case Init.Seq.ident:
             assert isinstance(v, list)
             arg_cat = cat.args[0]
@@ -219,7 +221,7 @@ def ast_to_op(mapping : FileMapping, t : object) -> strata.Operation:
         args.append(ast_to_arg(mapping, v, a.cat))
     return decl(*args, ann=src)
 
-def parse_module(source : str, filename : str | PathLike = "<unknown>") -> tuple[FileMapping, strata.Program]:
+def parse_module(source : bytes, filename : str | PathLike = "<unknown>") -> tuple[FileMapping, strata.Program]:
     """
     Parse the Python source into a Strata program.
     The Strata program will contain a single top-level

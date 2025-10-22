@@ -127,6 +127,10 @@ op no_else () : Else =>;
 op while_stmt (cond : Any, body : Block) : Statement =>
   "while" "(" cond ")" body;
 
+// We use this to model language constructs that don't affect the analysis
+// under consideration. By modeling a source language construct this way, any
+// analysis downstream of this Dyn program will treat the construct as a no-op
+op unmodeled : Statement => "UNMODELED";
 
 category Param;
 @[declare(name, tp)]
