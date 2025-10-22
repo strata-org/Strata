@@ -31,8 +31,17 @@ class HasBool (P : PureExpr) where
   tt : P.Expr
   ff : P.Expr
 
-class HasBoolNeg (P : PureExpr) [HasBool P] where
-  neg : P.Expr → P.Expr
+class HasNot (P : PureExpr) extends HasBool P where
+  not : P.Expr → P.Expr
+
+class HasAnd (P : PureExpr) extends HasBool P where
+  and : P.Expr → P.Expr → P.Expr
+
+class HasImp (P : PureExpr) extends HasBool P where
+  imp : P.Expr → P.Expr → P.Expr
+
+class HasEq (P : PureExpr) where
+  eq : P.Expr → P.Expr → P.Expr
 
 class HasFvar (P : PureExpr) where
   mkFvar : P.Ident → P.Expr

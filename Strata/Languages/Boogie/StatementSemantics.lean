@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+import Strata.DL.Lambda.LExpr
 import Strata.DL.Imperative.StmtSemantics
 import Strata.Languages.Boogie.OldExpressions
 
@@ -37,12 +38,11 @@ instance : HasBool Boogie.Expression where
   tt := Boogie.true
   ff := Boogie.false
 
-/-- TODO: extend this to handle non-constants -/
-instance : HasBoolNeg Boogie.Expression where
-  neg
+instance : HasNot Boogie.Expression where
+  not
   | Boogie.true => Boogie.false
   | Boogie.false => Boogie.true
-  | _ => panic! "neg expects either tt or ff"
+  | e => Lambda.LExpr.app Lambda.boolNotFunc.opExpr e
 
 abbrev BoogieEval := SemanticEval Expression
 abbrev BoogieStore := SemanticStore Expression

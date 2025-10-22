@@ -17,7 +17,7 @@ mutual
 statements that depends on environment lookup and evaluation functions
 for expressions.  -/
 inductive EvalNondetStmt (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
-  [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasBool P] [HasBoolNeg P] :
+  [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasBool P] [HasNot P] :
   SemanticEval P → SemanticStore P → SemanticStore P →
     NondetStmt P Cmd → SemanticStore P → Prop where
   | cmd_sem :
