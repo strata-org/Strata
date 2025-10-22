@@ -88,37 +88,26 @@ TestDialect.MutB.opB : MutA → MutB
 #print MutB
 
 /--
+info: inductive TestDialect.TypeP : Type
+number of parameters: 0
+constructors:
+TestDialect.TypeP.expr : TestDialectType → TypeP
+TestDialect.TypeP.type : TypeP
+-/
+#guard_msgs in
+#print TypeP
+
+/--
 info: Strata.Expr.fvar 1
 -/
 #guard_msgs in
 #eval Expr.fvar 1 |>.toAst
 
 /--
-info: @[irreducible] def TestDialect.Expr.toAst : Expr → Strata.Expr :=
-Expr.toAst._proof_1.fix fun x a =>
-  (match (motive :=
-      (x : Expr) → ((y : Expr) → (invImage (fun x => sizeOf x) sizeOfWFRel).1 y x → Strata.Expr) → Strata.Expr) x with
-    | Expr.fvar a => fun x => Strata.Expr.fvar a
-    | Expr.trueExpr => fun x => Strata.Expr.fn { dialect := "TestDialect", name := "trueExpr" }
-    | a.and a_1 => fun x =>
-      ((Strata.Expr.fn { dialect := "TestDialect", name := "and" }).app (Strata.Arg.expr (x a ⋯))).app
-        (Strata.Arg.expr (x a_1 ⋯))
-    | Expr.lambda a a_1 a_2 => fun x =>
-      (((Strata.Expr.fn { dialect := "TestDialect", name := "lambda" }).app (Strata.Arg.type a.toAst)).app
-            (Strata.Arg.op a_1.toAst)).app
-        (Strata.Arg.expr (x a_2 ⋯)))
-    a
+info: opaque TestDialect.Expr.toAst : Expr → Strata.Expr
 -/
 #guard_msgs in
 #print Expr.toAst
-
-/--
-info: theorem TestDialect.Expr.toAst._proof_1 : WellFounded (invImage (fun x => sizeOf x) sizeOfWFRel).1 := Lean.opaqueId (invImage (fun x => sizeOf x) sizeOfWFRel).2
--/
-#guard_msgs in
-#print Expr.toAst._proof_1
-
---#print Expr.ofStrata
 
 deriving instance DecidableEq for TestDialectType
 deriving instance DecidableEq for TypeP

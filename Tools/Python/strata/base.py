@@ -13,22 +13,12 @@ from typing import Any
 
 import amazon.ion.simpleion as ion
 
-def append_args(v, args):
-    if len(args) == 0:
-        return v
-    l = [v]
-    for a in args:
-        l.append(a.to_ion())
-    return l
-
 def ion_symbol(s : str):
     return ion.IonPySymbol(s, None)
 
 def ion_sexp(*args):
-    h : typing.Any = ion.IonPyList()
+    h : typing.Any = ion.IonPyList(a for a in args)
     h.ion_type = ion.IonType.SEXP
-    for a in args:
-        h.append(a)
     return h
 
 @dataclass
@@ -50,9 +40,7 @@ class SourcePos:
 class FileMapping:
     line_offsets : list[int]
 
-    def __init__(self, source : str):
-        bytes = source.encode()
-
+    def __init__(self, bytes : bytes):
         self.line_offsets = [0]
         for i, b in enumerate(bytes):
             if b == ord('\n'):
@@ -105,23 +93,23 @@ class QualifiedIdent:
 @dataclass
 class SyntaxCat:
     ann : Any
-    ident : QualifiedIdent
+    name : QualifiedIdent
     args: list['SyntaxCat']
 
-    def __init__(self, ident: QualifiedIdent, args: list['SyntaxCat'] | None = None, *, ann = None):
+    def __init__(self, name: QualifiedIdent, args: list['SyntaxCat'] | None = None, *, ann = None):
         self.ann = ann
-        self.ident = ident
+        self.name = name
         self.args = [] if args is None else args
 
     def strPrec(self, prec: int) -> str:
-        s = f'{str(self.ident)}{"".join(' ' + a.strPrec(10) for a in self.args)}'
+        s = f'{str(self.name)}{"".join(' ' + a.strPrec(10) for a in self.args)}'
         return f'({s})' if prec > 0 else s
 
     def __str__(self) -> str:
         return self.strPrec(0)
 
     def to_ion(self):
-        return append_args(self.ident.to_ion(), self.args)
+        return ion_sexp(self.name.to_ion(), *(a.to_ion() for a in self.args))
 
 class TypeExpr:
     ann : Any
@@ -141,9 +129,13 @@ class TypeIdent(TypeExpr):
         self.ident = ident
         self.args = [] if args is None else args
 
+    identSym = ion_symbol("ident")
+
     def to_ion(self):
-        v = self.ident.to_ion()
-        return append_args(v, self.args)
+        return ion_sexp(
+            self.identSym, self.ident.to_ion(),
+            *(a.to_ion() for a in self.args)
+        )
 
 class TypeBVar(TypeExpr):
     index: int
@@ -155,7 +147,7 @@ class TypeBVar(TypeExpr):
     bvarSym = ion_symbol("bvar")
 
     def to_ion(self):
-        return [self.bvarSym, self.index]
+        return ion_sexp(self.bvarSym, self.index)
 
 class TypeFVar(TypeExpr):
     index: int
@@ -169,10 +161,7 @@ class TypeFVar(TypeExpr):
     fvarSym = ion_symbol("fvar")
 
     def to_ion(self):
-        l = [self.fvarSym, self.index]
-        for a in self.args:
-            l.append(a.to_ion())
-        return l
+        return ion_sexp(self.fvarSym, self.index, *(a.to_ion() for a in self.args))
 
 class TypeArrow(TypeExpr):
     arg: TypeExpr
@@ -186,7 +175,7 @@ class TypeArrow(TypeExpr):
     arrowSym = ion_symbol("arrow")
 
     def to_ion(self):
-        return [self.arrowSym, self.arg, self.res]
+        return ion_sexp(self.arrowSym, self.arg, self.res)
 
 class TypeFunMacro(TypeExpr):
     bindingsIndex: int
@@ -200,7 +189,77 @@ class TypeFunMacro(TypeExpr):
     funMacroSym = ion_symbol("funMacro")
 
     def to_ion(self):
-        return [self.funMacroSym, self.bindingsIndex, self.res]
+        return ion_sexp(
+            self.funMacroSym,
+            self.bindingsIndex,
+            self.res)
+
+class Expr:
+    ann : Any
+
+    def __init__(self, *, ann=None):
+        self.ann = ann
+
+    def to_ion(self):
+        raise NotImplementedError
+
+class ExprBVar(Expr):
+    idx : int
+
+    def __init__(self, idx : int, *, ann=None):
+        super().__init__(ann=ann)
+        self.idx = idx
+
+    sym = ion_symbol("bvar")
+
+    def to_ion(self):
+        return ion_sexp(self.sym, self.idx)
+
+class ExprFVar(Expr):
+    level : int
+
+    def __init__(self, level : int, *, ann=None):
+        super().__init__(ann=ann)
+        self.level = level
+
+    fvarSym = ion_symbol("fvar")
+    def to_ion(self):
+        return ion_sexp(self.fvarSym, self.level)
+
+class ExprFn(Expr):
+    ident : QualifiedIdent
+
+    def __init__(self, ident : QualifiedIdent, *, ann=None):
+        super().__init__(ann=ann)
+        self.ident = ident
+
+    def to_ion(self):
+        return ion_sexp(ion_symbol("fn"), self.ident.to_ion())
+
+class Operation:
+    ann : Any
+    decl : 'OpDecl'
+    args : dict[str, 'Arg']
+
+    def __init__(self, decl : 'OpDecl', args : list['Arg']|None = None, *, ann = None):
+        self.ann = ann
+        self.decl = decl
+        if args is None:
+            args = []
+        assert len(decl.args) == len(args)
+        self.args = {}
+        for i in range(len(decl.args)):
+            self.args[decl.args[i].name] = args[i]
+
+    def __str__(self) -> str:
+        t = ', '.join(f'{n}={str(v)}' for (n,v) in self.args.items())
+        return f'{str(self.decl.ident)}({t})'
+
+    def to_ion(self) -> object:
+        return ion_sexp(
+            self.decl.ident.to_ion(),
+            *(arg_to_ion(a) for a in self.args.values())
+        )
 
 @dataclass
 class Ident:
@@ -219,14 +278,19 @@ class NumLit:
     def __init__(self, value: int, *, ann = None):
         assert isinstance(value, int)
         assert value >= 0
-
         self.ann = ann
         self.value = value
 
-    numSym = ion_symbol("num")
+@dataclass
+class DecimalLit:
+    ann : Any
+    value: Decimal
 
-    def to_ion(self):
-        return [self.numSym, self.value]
+    def __init__(self, value: Decimal, *, ann = None):
+        assert isinstance(value, int)
+        assert value >= 0
+        self.ann = ann
+        self.value = value
 
 @dataclass
 class StrLit:
@@ -241,19 +305,19 @@ class StrLit:
         return f'StrLit({repr(self.value)})'
 
 @dataclass
-class SomeArg:
+class OptionArg:
     ann : Any
-    value: 'Arg'
+    value: 'Arg|None'
 
-    def __init__(self, value: 'Arg', *, ann = None):
+    def __init__(self, value: 'Arg|None', *, ann = None):
         self.ann = ann
         self.value = value
 
-    def to_ion(self):
-        return ["option", arg_to_ion(self.value)]
-
     def __str__(self):
-        return f'SomeArg({self.value})'
+        if self.value is None:
+            return 'None'
+        else:
+            return f'Some({self.value})'
 
 @dataclass
 class Seq:
@@ -276,119 +340,60 @@ class CommaSepList:
         self.ann = ann
         self.values = values
 
-class Expr:
-    ann : Any
-
-    def __init__(self, *, ann=None):
-        self.ann = ann
-
-    def to_ion(self):
-        raise NotImplementedError
-
-class ExprBVar(Expr):
-    idx : int
-    args : list['Arg']
-
-    def __init__(self, idx : int, args : list['Arg'], *, ann=None):
-        super().__init__(ann=ann)
-        self.idx = idx
-        self.args = args
-
-    def to_ion(self):
-        l = [ "bvar", self.idx ]
-        for a in self.args:
-            l.append(arg_to_ion(a))
-        return l
-
-class ExprFVar(Expr):
-    level : int
-    args : list['Arg']
-
-    def __init__(self, level : int, args : list['Arg']|None = None, *, ann=None):
-        super().__init__(ann=ann)
-        self.level = level
-        self.args = [] if args is None else args
-
-    def to_ion(self):
-        l = [ "fvar", self.level ]
-        for a in self.args:
-            l.append(arg_to_ion(a))
-        return l
-
-class ExprIdent(Expr):
-    ident : QualifiedIdent
-    args : list['Arg']
-
-    def __init__(self, ident : QualifiedIdent, args : list['Arg'], *, ann=None):
-        super().__init__(ann=ann)
-        self.ident = ident
-        self.args = args
-
-    def to_ion(self):
-        l : list[object] = [ self.ident.to_ion() ]
-        for a in self.args:
-            l.append(arg_to_ion(a))
-        return l
-
-class Operation:
-    ann : Any
-    decl : 'OpDecl'
-    args : dict[str, 'Arg']
-
-    def __init__(self, decl : 'OpDecl', args : list['Arg']|None = None, *, ann = None):
-        self.ann = ann
-        self.decl = decl
-        if args is None:
-            args = []
-        assert len(decl.args) == len(args)
-        self.args = {}
-        for i in range(len(decl.args)):
-            self.args[decl.args[i].name] = args[i]
-
-    def __str__(self) -> str:
-        t = ', '.join(f'{n}={str(v)}' for (n,v) in self.args.items())
-        return f'{str(self.decl.ident)}({t})'
-
-    def to_ion(self) -> list[object]:
-        l : list[object] = [self.decl.ident.to_ion()]
-        for a in self.args.values():
-            l.append(arg_to_ion(a))
-        return l
-
 type Arg = SyntaxCat | Operation | TypeExpr | Expr | Ident \
-    | NumLit | Decimal | StrLit | None | SomeArg | Seq | CommaSepList
+    | NumLit | DecimalLit | StrLit | OptionArg | Seq | CommaSepList
 
-def arg_to_ion(a : Arg) -> list[object]:
-    if isinstance(a, SyntaxCat):
-        return ["cat", a.to_ion()]
-    elif isinstance(a, Operation):
-        return ["op", a.to_ion()]
-    elif isinstance(a, TypeExpr):
-        return ["type", a.to_ion()]
+strlitSym = ion_symbol("strlit")
+numSym = ion_symbol("num")
+
+optionSym = ion_symbol("option")
+
+def is_surrogate(c : str) -> bool:
+    return '\ud800' <= c and c <= '\udfff'
+
+def arg_to_ion(a : Arg) -> object:
+    if isinstance(a, Operation):
+        return ion_sexp(ion_symbol("op"), a.to_ion())
     elif isinstance(a, Expr):
-        return ["expr", a.to_ion()]
+        return ion_sexp(ion_symbol("expr"), a.to_ion())
+    elif isinstance(a, SyntaxCat):
+        return ion_sexp(ion_symbol("cat"), a.to_ion())
+    elif isinstance(a, TypeExpr):
+        return ion_sexp(ion_symbol("type"), a.to_ion())
     elif isinstance(a, Ident):
-        return ["ident", a.value]
+        return ion_sexp(ion_symbol("ident"), a.value)
     elif isinstance(a, NumLit):
-        return a.to_ion()
-    elif isinstance(a, Decimal):
-        return ["decimal", a]
+        return ion_sexp(numSym, a.value)
+    elif isinstance(a, DecimalLit):
+        return ion_sexp(ion_symbol("decimal"), a.value)
     elif isinstance(a, StrLit):
-        return ["strlit", a.value]
-    elif a is None:
-        return ["option"]
-    elif isinstance(a, SomeArg):
-        return a.to_ion()
-    else:
-        l : list[object]
-        if isinstance(a, Seq):
-            l = ["seq"]
+        assert isinstance(a.value, str)
+        val : object
+        # N.B.  The Amazon ion library will write out null if any of the characters
+        # in a string contain surrogate characters.  The Strata library escapes them
+        # for now, but we should likely figure out as better solution as the Lean
+        # library does not unescape them.
+        if any(is_surrogate(c) for c in a.value):
+            val = ""
+            for c in a.value:
+                if is_surrogate(c):
+                    val += f"\\u{ord(c):04x}"
+                else:
+                    val += c
+            val = ion.IonPyText(val)
         else:
-            assert isinstance(a, CommaSepList)
-            l = ["commaSepList"]
-        for e in a.values:
-            l.append(arg_to_ion(e))
-        return l
+            val = ion.IonPyText(a.value)
+        return ion_sexp(ion_symbol("strlit"), val)
+    elif isinstance(a, OptionArg):
+        if a.value is None:
+            return ion_sexp(optionSym)
+        else:
+            return ion_sexp(optionSym, arg_to_ion(a.value))
+    elif isinstance(a, Seq):
+        return ion_sexp(ion_symbol("seq"), *(arg_to_ion(e) for e in a.values))
+    else:
+        assert isinstance(a, CommaSepList), f'Expected {type(a)} to be a CommaSepList.'
+        return ion_sexp(ion_symbol("commaSepList"), *(arg_to_ion(e) for e in a.values))
 
 class Program:
     programSym = ion.SymbolToken(u'program', None, None)
@@ -402,10 +407,10 @@ class Program:
         self.commands.append(command)
 
     def to_ion(self):
-        r = [ion_sexp(self.programSym, self.dialect)]
-        for cmd in self.commands:
-            r.append(cmd.to_ion())
-        return r
+        return [
+            ion_sexp(self.programSym, self.dialect),
+            *(cmd.to_ion() for cmd in self.commands)
+        ]
 
 def metadata_arg_to_ion(value):
     if value is None:
@@ -432,31 +437,27 @@ class MetadataSome:
 
     someSym = ion_symbol("some")
     def to_ion(self):
-        return [self.someSym, metadata_arg_to_ion(self.value)]
+        return ion_sexp(self.someSym, metadata_arg_to_ion(self.value))
 
 @dataclass
 class MetadataAttr:
     ident : QualifiedIdent
     args : list[object]
 
-
     def to_ion(self):
-        l : list[object] = [self.ident.to_ion()]
-        for a in self.args:
-            l.append(metadata_arg_to_ion(a))
-        return l
+        return ion_sexp(self.ident.to_ion(), *(metadata_arg_to_ion(a) for a in self.args))
 
 type Metadata = list[MetadataAttr]
 
 def metadata_to_ion(values):
     return [ v.to_ion() for v in values ]
 
-def declbinding_kind(v: SyntaxCat|TypeExpr):
+def argdecl_kind(v: SyntaxCat|TypeExpr):
     if isinstance(v, SyntaxCat):
-        return ["category", v.to_ion()]
+        return ion_sexp(ion_symbol("category"), v.to_ion())
     else:
         assert isinstance(v, TypeExpr)
-        return ["type", v.to_ion()]
+        return ion_sexp(ion_symbol("type"), v.to_ion())
 
 class SyntaxDefAtomBase:
     def to_ion(self):
@@ -468,7 +469,7 @@ class SyntaxDefIdent(SyntaxDefAtomBase):
     prec: int
 
     def to_ion(self):
-        return ("ident", self.level, self.prec)
+        return ion_sexp(ion_symbol("ident"), self.level, self.prec)
 
 @dataclass
 class SyntaxDefIndent(SyntaxDefAtomBase):
@@ -476,10 +477,7 @@ class SyntaxDefIndent(SyntaxDefAtomBase):
     args : list['SyntaxDefAtom']
 
     def to_ion(self):
-        l : list[object] = ["indent", self.indent]
-        for a in self.args:
-            l.append(syntaxdef_atom_to_ion(a))
-        return l
+        return ion_sexp(ion_symbol("indent"), self.indent, *(syntaxdef_atom_to_ion(a) for a in self.args))
 
 type SyntaxDefAtom = SyntaxDefAtomBase | str
 
@@ -534,7 +532,7 @@ class ArgDecl:
     def to_ion(self):
         flds = {
             "name": self.name,
-            "type": declbinding_kind(self.kind),
+            "type": argdecl_kind(self.kind),
         }
         if len(self.metadata) > 0:
             flds["metadata"] = metadata_to_ion(self.metadata)
@@ -542,6 +540,8 @@ class ArgDecl:
 
 class OpDecl:
     opSym = ion.SymbolToken(u'op', None, None)
+    result : QualifiedIdent
+
     def __init__(self,
                 dialect: str,
                 name: str,
@@ -555,7 +555,9 @@ class OpDecl:
         self.name = name
         self.ident = QualifiedIdent(dialect, name)
         self.args = args
-        self.result = result
+        assert isinstance(result, SyntaxCat)
+        assert len(result.args) == 0
+        self.result = result.name
         self.metadata = [] if metadata is None else metadata
         self.syntax = syntax
 

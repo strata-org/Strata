@@ -280,9 +280,12 @@ def typeCheck (env : Program) (options : Options := Options.default) :
   else
     .error s!"DDM Transform Error: {repr errors}"
 
+def Boogie.getProgram (p : Strata.Program) : Boogie.Program × Array String :=
+  TransM.run (translateProgram p)
+
 def verify (smtsolver : String) (env : Program)
     (options : Options := Options.default) : IO Boogie.VCResults := do
-  let (program, errors) := TransM.run (translateProgram env)
+  let (program, errors) := Boogie.getProgram env
   if errors.isEmpty then
     -- dbg_trace f!"AST: {program}"
     EIO.toIO (fun f => IO.Error.userError (toString f))

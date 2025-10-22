@@ -10,7 +10,7 @@ extension to create high performance Ion serialization and deserialization.
 -/
 import Strata.DDM.Util.Ion
 import Strata.DDM.Util.Ion.Env
-import Lean.Elab.Command
+import Lean.Meta.Eval
 
 namespace Ion
 
@@ -182,28 +182,44 @@ def declareIonSymbolImpl : Elab.Term.TermElab := fun stx _ =>
 
 def typeOf {α : Type u} (_ : α) : Type u := α
 
-syntax (name := declareIonRefEntry) "ionRefEntry!" term : term -- declare the syntax
+initialize Lean.registerTraceClass `Strata.ionTypeOf
 
-@[term_elab declareIonRefEntry]
-def declareIonRefCacheImpl : Elab.Term.TermElab := fun stx _ =>
+syntax (name := declareIonTypeOf) "ionTypeOf!" term : term -- declare the syntax
+
+@[term_elab declareIonTypeOf]
+def declareIonTypeOfImpl : Elab.Term.TermElab := fun stx _ =>
   match stx with
-  | `(ionRefEntry! $fld) => do
-    let fldExpr ← Term.elabTerm fld none
-    let fldType ← instantiateMVars =<< Meta.inferType fldExpr
-    let fldName ←
+  | `(ionTypeOf! $fld) => do
+    let fldName ← do
+          let fldExpr ← Term.elabTerm fld none
+          let fldType ← instantiateMVars =<< Meta.inferType fldExpr
           match fldType with
           | .const fldName [] => pure fldName
           | .app (.const ``Array [_]) (.const fldName []) => pure fldName
           | .app (.const ``List [_]) (.const fldName []) => pure fldName
           | _ =>
             throw <| .error fld m!"Expected a named type instead of {repr fldType}"
-    let fldNameStr : Lean.Expr := toExpr (toString fldName)
-    let (r, e) ← resolveEntry stx (.record fldName)
-    return mkApp3 (.const ``SymbolIdCache.ref! []) r fldNameStr e
+    trace[Strata.ionTypeOf] "Type is {fldName}"
+    return toExpr fldName
   | _ =>
     throwUnsupportedSyntax
 
-notation "ionRef!" s => CachedToIon.cachedToIon (ionRefEntry! s) s
+
+syntax (name := declareIonRefEntry) "ionRefEntry!" term : term -- declare the syntax
+
+@[term_elab declareIonRefEntry]
+unsafe def declareIonRefCacheImpl : Elab.Term.TermElab := fun stx _ =>
+  match stx with
+  | `(ionRefEntry! $fldNameStx) => do
+    let nameType : Expr := .const `Lean.Name []
+    let fldNameExpr ← Term.elabTerm fldNameStx (expectedType? := some nameType)
+    let fldName ← Lean.Meta.evalExpr Name nameType fldNameExpr
+    let (r, e) ← resolveEntry stx (.record fldName)
+    return mkApp3 (.const ``SymbolIdCache.ref! []) r (toExpr fldName.toString) e
+  | _ =>
+    throwUnsupportedSyntax
+
+notation "ionRef!" s => CachedToIon.cachedToIon (ionRefEntry! (ionTypeOf! s)) s
 
 syntax (name := getIonEntries) "ionEntries!" "(" ident ")" : term -- declare the syntax
 
