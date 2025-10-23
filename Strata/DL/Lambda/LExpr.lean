@@ -356,7 +356,7 @@ private def formatLExpr [ToFormat Identifier] [ToFormat TypeType] (e : LExpr Typ
     match ty with
     | none => f!"{x}"
     | some ty => f!"({x} : {ty})"
-  | .mdata _info e => formatLExpr e names
+  | .mdata info e => f!"# {info.value}{Format.line}{formatLExpr e names}"
   | .abs id ty e1 =>
     match ty with
     | .none => Format.paren (f!"λ{formatOptId id} {formatLExpr e1 (id :: names)}")
@@ -1262,6 +1262,8 @@ def ifToPushPop (prog: LExpr LTy String): LExpr LTy String :=
     .app (ifToPushPop a) (ifToPushPop b)
   | .abs id t b =>
     .abs id t (ifToPushPop b)
+  | .mdata info e =>
+    .mdata info (ifToPushPop e)
   | _ => prog
 
 -- We increase the bvars that are currently "free" in the context.
@@ -1313,6 +1315,59 @@ def decreasesBVar (prog: LExpr LTy String): LExpr LTy String :=
     | _, .op n t => .op n t
   go 1 prog
 
+-- Propagate call site information to assertions within a function body
+partial def propagateCallSiteToAssertions (callSiteInfo : Info) (expr : LExpr LTy String) : LExpr LTy String :=
+  match expr with
+  -- Base constructors that don't contain sub-expressions
+  | .const c ty => expr
+  | .op o ty => expr
+  | .bvar n => expr
+  | .fvar name ty => expr
+  | .dontcare => expr
+  | .error => expr
+  | .choose t => expr
+  | .skip => expr
+
+  -- Constructors with sub-expressions
+  | .mdata assertInfo (.ite cond thn .error) =>
+    -- This is an assertion (.assert = .ite cond thn .error) with metadata - prepend call site info
+    let combinedInfo := Info.mk s!"{callSiteInfo.value},{assertInfo.value}"
+    .mdata combinedInfo (.ite cond (propagateCallSiteToAssertions callSiteInfo thn) .error)
+  | .ite cond thn .error =>
+    -- This is an assertion without metadata - add call site info
+    .mdata callSiteInfo (.ite cond (propagateCallSiteToAssertions callSiteInfo thn) .error)
+  | .mdata info e =>
+    .mdata info (propagateCallSiteToAssertions callSiteInfo e)
+  | .abs name ty body =>
+    .abs name ty (propagateCallSiteToAssertions callSiteInfo body)
+  | .quant k ty trigger e =>
+    .quant k ty (propagateCallSiteToAssertions callSiteInfo trigger) (propagateCallSiteToAssertions callSiteInfo e)
+  | .app a b =>
+    .app (propagateCallSiteToAssertions callSiteInfo a) (propagateCallSiteToAssertions callSiteInfo b)
+  | .ite cond thn els =>
+    .ite cond (propagateCallSiteToAssertions callSiteInfo thn) (propagateCallSiteToAssertions callSiteInfo els)
+  | .eq e1 e2 =>
+    .eq (propagateCallSiteToAssertions callSiteInfo e1) (propagateCallSiteToAssertions callSiteInfo e2)
+
+-- TODO We should prove this and perhaps support more cases, also
+-- depending on the environment.
+-- Eventually store it in the LExpr so that we don't need to recompute it.
+def isDeterministic (prog: LExpr LTy String): Bool :=
+  match prog with
+  | .choose _ => false
+  | .app (.app (.op _ _) a) b => isDeterministic a && isDeterministic b
+  | .app (.op _ _) a => isDeterministic a  -- Unary operations are deterministic if their operand is
+  | .abs _ _ _ => true
+  | .ite cond thn els => isDeterministic cond && isDeterministic thn && isDeterministic els
+  | .dontcare => false
+  | .error => true
+  | .skip => true
+  | .bvar _ => true
+  | .const _ _ => true
+  | .eq a b => isDeterministic a && isDeterministic b
+  | .mdata _ e => isDeterministic e  -- Metadata doesn't affect determinism
+  | _ => false
+
 def letAssignToLetAssume (prog: LExpr LTy String): LExpr LTy String :=
   match prog with
   | .pushpop left right =>
@@ -1326,10 +1381,15 @@ def letAssignToLetAssume (prog: LExpr LTy String): LExpr LTy String :=
     match rhs with
     | choose _ =>
       .app (.abs id ty body) rhs  -- We can't simplify
-    | _ => --TODO: Need to check determinism
-      -- Interestingly, because the RHS is now in the context of the new variable,
-      -- we need to increase all bound variables in the RHS by 1
-      choose_abs ty (.abs id ty (.assume (.eq (.bvar 0) (.increaseBvars rhs)) body))
+    | _ =>
+      if isDeterministic rhs then
+        -- RHS is deterministic, we can inline it by substitution
+        -- Interestingly, because the RHS is now in the context of the new variable,
+        -- we need to increase all bound variables in the RHS by 1
+        choose_abs ty (.abs id ty (.assume (.eq (.bvar 0) (.increaseBvars rhs)) body))
+      else
+        -- RHS is non-deterministic, we can't simplify
+        .app (.abs id ty body) rhs
   | .assume cond thn =>
     .assume cond (letAssignToLetAssume thn)
   | .assert cond thn =>
@@ -1342,6 +1402,8 @@ def letAssignToLetAssume (prog: LExpr LTy String): LExpr LTy String :=
     .app (letAssignToLetAssume a) (letAssignToLetAssume b)
   | .abs id t b =>
     .abs id t (letAssignToLetAssume b)
+  | .mdata info e =>
+    .mdata info (letAssignToLetAssume e)
   | _ => prog
 
 partial def ToSMTExpr (c: Context String) (prog: LExpr LTy String): Format :=
@@ -1377,6 +1439,7 @@ partial def ToSMTExpr (c: Context String) (prog: LExpr LTy String): Format :=
   | .op "regexstar" _ => "re.*"
   | .op "regexconcat" _ => "re.++"
   | .op "regexmatch" _ => "str.in_re"
+  | .mdata _ e => ToSMTExpr c e  -- For expressions, just unwrap the metadata
   | _ => panic!("ToSMTExpr: Not supported: " ++ toString (format prog))
 
 -- Assume that the prog is written in an SMT compatible format
@@ -1402,6 +1465,9 @@ partial def ToSMT (c: Context String) (prog: LExpr LTy String): Format :=
     let condSmt := ToSMTExpr c cond
     let remainingSmt := ToSMT c remaining
     f!"(assert {condSmt}){Format.line}{remainingSmt}"
+  | .mdata info e =>
+    let eSmt := ToSMT c e
+    f!"(echo \"{info.value}\"){Format.line}{eSmt}"
   | .error =>
     f!"(check-sat)"
     -- push / pop
@@ -1467,16 +1533,26 @@ We don't have to guess.
 -- so when going past an abstraction, we increase its free bvars.
 def subst (replacement body : LExpr LTy String) : LExpr LTy String :=
   -- TODO: replacement MUST be deterministic or there must be EXACTLY one replacement
-  let rec go (depth : Nat) (replacement : LExpr LTy String) : LExpr LTy String → LExpr LTy String
-    | .bvar n => if n == depth then replacement else .bvar n
-    | .abs name ty e => .abs name ty (go (depth + 1) (increaseBvars replacement) e)
-    | .quant k ty tr e => .quant k ty (go depth replacement tr) (go (depth + 1) replacement e)
-    | .app e1 e2 => .app (go depth replacement e1) (go depth replacement e2)
-    | .ite c t e => .ite (go depth replacement c) (go depth replacement t) (go depth replacement e)
-    | .eq e1 e2 => .eq (go depth replacement e1) (go depth replacement e2)
-    | .mdata info e => .mdata info (go depth replacement e)
+  let rec go (depth : Nat) (replacement : LExpr LTy String) (callSiteInfo : Option Info) : LExpr LTy String → LExpr LTy String
+    | .bvar n =>
+      if n == depth then
+        -- When substituting, propagate call site info to assertions in replacement
+        match callSiteInfo with
+        | some info => propagateCallSiteToAssertions info replacement
+        | none => replacement
+      else .bvar n
+    | .abs name ty e => .abs name ty (go (depth + 1) (increaseBvars replacement) callSiteInfo e)
+    | .quant k ty tr e => .quant k ty (go depth replacement callSiteInfo tr) (go (depth + 1) replacement callSiteInfo e)
+    | .app e1 e2 => .app (go depth replacement callSiteInfo e1) (go depth replacement callSiteInfo e2)
+    | .ite c t e => .ite (go depth replacement callSiteInfo c) (go depth replacement callSiteInfo t) (go depth replacement callSiteInfo e)
+    | .eq e1 e2 => .eq (go depth replacement callSiteInfo e1) (go depth replacement callSiteInfo e2)
+    | .mdata info e =>
+      -- When we encounter metadata, use it as call site context for nested substitutions
+      .mdata info (go depth replacement (some info) e)
     | e => e
-  go 0 replacement body
+  go 0 replacement none body
+
+
 
 -- Like simplify but only for continuations.
 -- .app (.abs _ x) RHS can be beta expanded if RHS is a function (even non deterministic), a constant or a variable
@@ -1508,24 +1584,12 @@ partial def inlineContinuations (prog: LExpr LTy String): LExpr LTy String :=
     .app (inlineContinuations a) (inlineContinuations b)
   | .abs name t b =>
     .abs name t (inlineContinuations b)
+  | .mdata info e =>
+    .mdata info (inlineContinuations e)
   | _ => prog
 
--- TODO We should prove this and perhaps support more cases, also
--- depending on the environment.
--- Eventually store it in the LExpr so that we don't need to recompute it.
-def isDeterministic (prog: LExpr LTy String): Bool :=
-  match prog with
-  | .choose _ => false
-  | .app (.app (.op _ _) a) b => isDeterministic a && isDeterministic b
-  | .abs _ _ _ => true
-  | .ite cond thn els => isDeterministic cond && isDeterministic thn && isDeterministic els
-  | .dontcare => false
-  | .error => true
-  | .skip => true
-  | .bvar _ => true
-  | .const _ _ => true
-  | .eq a b => isDeterministic a && isDeterministic b
-  | _ => false
+
+
 
 
 -- .app (.abs _ x) RHS can be beta expanded if RHS is a function (even non deterministic), a constant or a variable
@@ -1540,6 +1604,8 @@ partial def simplify (prog: LExpr LTy String): LExpr LTy String :=
     decreasesBVar <| subst (increaseBvars <| .bvar depth) (simplify body)
   | .app (.abs name id body) (.assert cond thn) => -- Lift assertions up
     assert cond (simplify (.app (.abs name id body) thn))
+  | .app (.abs name id body) (.mdata info (.assert cond thn)) => -- Lift assertions up
+    .mdata info <| assert cond (simplify (.app (.abs name id body) thn))
   | .app (.abs name1 id1 body1) (.app (.abs name2 id2 body2) rhs) => -- Lets in RHS become linearized
     .app (.abs name2 id2 (
       simplify (.app (increaseBvars (.abs name1 id1 body1)) body2)
@@ -1560,6 +1626,8 @@ partial def simplify (prog: LExpr LTy String): LExpr LTy String :=
     | _ => .app new_a new_b
   | .abs name t b =>
     .abs name t (simplify b)
+  | .mdata info e =>
+    .mdata info (simplify e)
   | _ => prog
 
 -- This ensures introduces an intermediate variable "res" that contains the method's output
