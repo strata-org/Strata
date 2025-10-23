@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Boogie.Verifier
+import Strata.Languages.Boogie.CallGraph
 
 ---------------------------------------------------------------------
 namespace Strata
@@ -47,6 +48,14 @@ procedure Q2() returns () {
   call Q1();
 };
 #end
+
+/--
+info: { callees := Std.HashMap.ofList [("Inc", []), ("Q2", ["Q1"]), ("P", ["Inc"]), ("Q1", [])],
+  callers := Std.HashMap.ofList [("Inc", ["P"]), ("Q1", ["Q2"])] }
+-/
+#guard_msgs in
+#eval let (program, _) := Boogie.getProgram globalCounterPgm
+      Boogie.Program.toProcedureCG program
 
 /--
 info: [Strata.Boogie] Type checking succeeded.

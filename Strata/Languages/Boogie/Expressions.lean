@@ -24,7 +24,7 @@ abbrev Expression : Imperative.PureExpr :=
      EqIdent := instDecidableEqBoogieIdent }
 
 instance : Imperative.HasVarsPure Expression Expression.Expr where
-  getVars := Lambda.LExpr.LExpr.getVars
+  getVars := Lambda.LExpr.getVars
 
 ---------------------------------------------------------------------
 

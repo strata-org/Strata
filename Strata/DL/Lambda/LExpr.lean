@@ -94,7 +94,7 @@ namespace LExpr
 instance : Inhabited (LExpr TypeType Identifier) where
   default := .const "false" none
 
-def LExpr.getVars (e : (LExpr TypeType Identifier)) := match e with
+def getVars (e : (LExpr TypeType Identifier)) := match e with
   | .const _ _ => [] | .bvar _ => [] | .op _ _ => []
   | .fvar y _ => [y]
   | .mdata _ e' => LExpr.getVars e'
@@ -103,6 +103,18 @@ def LExpr.getVars (e : (LExpr TypeType Identifier)) := match e with
   | .app e1 e2 => LExpr.getVars e1 ++ LExpr.getVars e2
   | .ite c t e => LExpr.getVars c ++ LExpr.getVars t ++ LExpr.getVars e
   | .eq e1 e2 => LExpr.getVars e1 ++ LExpr.getVars e2
+
+def getOps (e : (LExpr TypeType Identifier)) := match e with
+  | .op name _ => [name]
+  | .const _ _ => [] | .bvar _ => [] | .fvar _ _ => []
+  | .mdata _ e' => getOps e'
+  | .abs _ e' => getOps e'
+  | .quant _ _ tr e' =>
+    -- NOTE: We also get all ops in the triggers here.
+    getOps tr ++ getOps e'
+  | .app e1 e2 => getOps e1 ++ getOps e2
+  | .ite c t e => getOps c ++ getOps t ++ getOps e
+  | .eq e1 e2 => getOps e1 ++ getOps e2
 
 def getFVarName? (e : (LExpr TypeType Identifier)) : Option Identifier :=
   match e with

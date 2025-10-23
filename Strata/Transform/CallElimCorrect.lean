@@ -346,7 +346,7 @@ Imperative.WellFormedSemanticEvalVal δ →
   simp [Imperative.WellFormedSemanticEvalVal] at Hwfvl
   have Hval := Hwfvl.2
   simp [← Hsome] at *
-  induction e <;> simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
+  induction e <;> simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.getVars] at *
   case const c t | op o ty | bvar b =>
     rw [Hval]; rw [Hval]; constructor; constructor
   case fvar n ty =>
@@ -829,7 +829,7 @@ theorem createFvarsSubstStores :
         constructor
         . simp [createFvar,
                 Imperative.HasVarsPure.getVars,
-                Lambda.LExpr.LExpr.getVars]
+                Lambda.LExpr.getVars]
           simp [Imperative.substDefined] at Hdef
           intros hh Hin
           apply (Hdef hh x ?_).1
@@ -1154,7 +1154,7 @@ theorem Lambda.LExpr.substFvarCorrect :
     . next Hne =>
       simp [Imperative.invStores, Imperative.substStores,
             Imperative.HasVarsPure.getVars,
-            Lambda.LExpr.LExpr.getVars, List.removeAll, Hne] at Hinv
+            Lambda.LExpr.getVars, List.removeAll, Hne] at Hinv
       rw [Hwfvr]
       rw [Hwfvr]
       exact Hinv
@@ -1175,7 +1175,7 @@ theorem Lambda.LExpr.substFvarCorrect :
   case quant k ty tr e trih eih =>
     simp [Boogie.WellFormedBoogieEvalCong] at Hwfc
     simp [Imperative.invStores, Imperative.substStores,
-          Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
+          Imperative.HasVarsPure.getVars, Lambda.LExpr.getVars] at *
     simp [List.app_removeAll, List.zip_append] at *
     specialize eih ?_
     · intros k1 k2 Hin
@@ -1195,7 +1195,7 @@ theorem Lambda.LExpr.substFvarCorrect :
   case app c fn fih eih =>
     simp [Boogie.WellFormedBoogieEvalCong] at Hwfc
     simp [Imperative.invStores, Imperative.substStores,
-          Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
+          Imperative.HasVarsPure.getVars, Lambda.LExpr.getVars] at *
     simp [List.app_removeAll, List.zip_append] at *
     specialize fih ?_
     . intros k1 k2 Hin
@@ -1213,7 +1213,7 @@ theorem Lambda.LExpr.substFvarCorrect :
   case ite c t e cih tih eih =>
     simp [Boogie.WellFormedBoogieEvalCong] at Hwfc
     simp [Imperative.invStores, Imperative.substStores,
-          Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
+          Imperative.HasVarsPure.getVars, Lambda.LExpr.getVars] at *
     simp [List.app_removeAll, List.zip_append] at *
     specialize cih ?_
     . intros k1 k2 Hin
@@ -1236,7 +1236,7 @@ theorem Lambda.LExpr.substFvarCorrect :
   case eq e1 e2 e1ih e2ih =>
     simp [Boogie.WellFormedBoogieEvalCong] at Hwfc
     simp [Imperative.invStores, Imperative.substStores,
-          Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
+          Imperative.HasVarsPure.getVars, Lambda.LExpr.getVars] at *
     simp [List.app_removeAll, List.zip_append] at *
     specialize e1ih ?_
     . intros k1 k2 Hin
@@ -1271,7 +1271,7 @@ theorem Lambda.LExpr.substFvarsCorrectZero :
     rw [Hwfvr]
     rw [Hwfvr]
     rw [Hinv]
-    simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars]
+    simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.getVars]
     simp [Imperative.HasFvar.getFvar]
     simp [Imperative.HasFvar.getFvar]
   case mdata info e ih =>
@@ -1289,7 +1289,7 @@ theorem Lambda.LExpr.substFvarsCorrectZero :
   case quant k ty tr e trih eih =>
     simp [Boogie.WellFormedBoogieEvalCong] at Hwfc
     simp [Imperative.invStores, Imperative.substStores,
-          Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
+          Imperative.HasVarsPure.getVars, Lambda.LExpr.getVars] at *
     simp [List.zip_append] at *
     specialize trih ?_
     . intros k1 k2 Hin
@@ -1307,7 +1307,7 @@ theorem Lambda.LExpr.substFvarsCorrectZero :
   case app c fn fih eih =>
     simp [Boogie.WellFormedBoogieEvalCong] at Hwfc
     simp [Imperative.invStores, Imperative.substStores,
-          Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
+          Imperative.HasVarsPure.getVars, Lambda.LExpr.getVars] at *
     simp [List.zip_append] at *
     specialize fih ?_
     . intros k1 k2 Hin
@@ -1325,7 +1325,7 @@ theorem Lambda.LExpr.substFvarsCorrectZero :
   case ite c t e cih tih eih =>
     simp [Boogie.WellFormedBoogieEvalCong] at Hwfc
     simp [Imperative.invStores, Imperative.substStores,
-          Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
+          Imperative.HasVarsPure.getVars, Lambda.LExpr.getVars] at *
     simp [List.zip_append] at *
     specialize cih ?_
     . intros k1 k2 Hin
@@ -1348,7 +1348,7 @@ theorem Lambda.LExpr.substFvarsCorrectZero :
   case eq e1 e2 e1ih e2ih =>
     simp [Boogie.WellFormedBoogieEvalCong] at Hwfc
     simp [Imperative.invStores, Imperative.substStores,
-          Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
+          Imperative.HasVarsPure.getVars, Lambda.LExpr.getVars] at *
     simp [List.zip_append] at *
     specialize e1ih ?_
     . intros k1 k2 Hin
@@ -1452,16 +1452,16 @@ theorem subst_create_replace :
 := by
 induction e <;> simp [
     Imperative.HasVarsPure.getVars,
-    Lambda.LExpr.LExpr.getVars,
+    Lambda.LExpr.getVars,
     Lambda.LExpr.substFvar,
     createFvar,
     List.replaceAll,
   ] at * <;> try assumption
 case fvar name ty =>
   split <;> try simp_all
-  simp [Lambda.LExpr.LExpr.getVars]
+  simp [Lambda.LExpr.getVars]
   split <;> simp_all
-  simp [Lambda.LExpr.LExpr.getVars]
+  simp [Lambda.LExpr.getVars]
 case app fn e fn_ih e_ih =>
   rw [fn_ih, e_ih]
   rw [List.replaceAll_app]
@@ -1539,11 +1539,11 @@ intros Hin
 induction e <;>
 simp [Lambda.LExpr.substFvar,
       Imperative.HasVarsPure.getVars,
-      Lambda.LExpr.LExpr.getVars,
+      Lambda.LExpr.getVars,
       createFvar
       ] at * <;> try simp_all
 case fvar name ty =>
-  split at Hin <;> simp [Lambda.LExpr.LExpr.getVars] at * <;> simp_all
+  split at Hin <;> simp [Lambda.LExpr.getVars] at * <;> simp_all
 case app fn e fn_ih e_ih =>
   cases Hin <;> simp_all
   cases fn_ih <;> simp_all
@@ -2989,12 +2989,12 @@ theorem extractedOldExprInVars :
   intros Hnorm
   induction post <;>
     simp [Imperative.HasVarsPure.getVars, extractOldExprVars,
-          Lambda.LExpr.LExpr.getVars] at * <;>
+          Lambda.LExpr.getVars] at * <;>
     try simp_all
   case app fn e fn_ih e_ih =>
     unfold extractOldExprVars
     split
-    . simp [Lambda.LExpr.LExpr.getVars]
+    . simp [Lambda.LExpr.getVars]
       intros x Hin
       exact Hin
     . next Hfalse =>
@@ -3066,24 +3066,24 @@ theorem extractedOldExprInVars :
 
 open OldExpressions in
 theorem normalizeOldExprInVarsTrue:
-  (Lambda.LExpr.LExpr.getVars (normalizeOldExpr e true)).Subset
-  (Lambda.LExpr.LExpr.getVars (normalizeOldExpr e)) := by
+  (Lambda.LExpr.getVars (normalizeOldExpr e true)).Subset
+  (Lambda.LExpr.getVars (normalizeOldExpr e)) := by
   induction e <;>
-      simp [normalizeOldExpr, Lambda.LExpr.LExpr.getVars] at * <;>
+      simp [normalizeOldExpr, Lambda.LExpr.getVars] at * <;>
       try simp_all
   case app fn e fn_ih e_ih =>
     unfold normalizeOldExpr
     split
     split
     split
-    . simp [Lambda.LExpr.LExpr.getVars] at *
+    . simp [Lambda.LExpr.getVars] at *
       intros x Hin
       exact Hin
     . intros x Hin
       exact Hin
-    . simp [Lambda.LExpr.LExpr.getVars, normalizeOldExpr] at *
+    . simp [Lambda.LExpr.getVars, normalizeOldExpr] at *
       exact e_ih
-    . simp [Lambda.LExpr.LExpr.getVars] at *
+    . simp [Lambda.LExpr.getVars] at *
       apply List.Subset.app
       . apply List.Subset.trans
         apply fn_ih
@@ -3137,23 +3137,23 @@ theorem normalizeOldExprInVars :
   induction post <;>
     simp [normalizeOldExpr,
           Imperative.HasVarsPure.getVars,
-          Lambda.LExpr.LExpr.getVars] at * <;>
+          Lambda.LExpr.getVars] at * <;>
     try simp_all
   case app fn e fn_ih e_ih =>
     unfold normalizeOldExpr
     split
     split
     split
-    . simp [Lambda.LExpr.LExpr.getVars] at *
+    . simp [Lambda.LExpr.getVars] at *
       intros x Hin
       exact Hin
-    . simp [Lambda.LExpr.LExpr.getVars] at *
+    . simp [Lambda.LExpr.getVars] at *
       apply List.Subset.trans
       apply normalizeOldExprInVarsTrue
       exact e_ih
-    . simp [Lambda.LExpr.LExpr.getVars, normalizeOldExpr] at *
+    . simp [Lambda.LExpr.getVars, normalizeOldExpr] at *
       exact e_ih
-    . simp [Lambda.LExpr.LExpr.getVars] at *
+    . simp [Lambda.LExpr.getVars] at *
       apply List.Subset.app
       . apply List.Subset.trans
         apply fn_ih
@@ -3223,7 +3223,7 @@ theorem substOldPostSubset:
   case mdata ih | abs ih =>
     exact ih
   case ite cih tih eih =>
-    simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
+    simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.getVars] at *
     apply List.Subset.app
     . apply List.Subset.trans
       apply cih <;> assumption
@@ -3243,13 +3243,13 @@ theorem substOldPostSubset:
   case app ih1 ih2 =>
     split
     . split
-      . simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
+      . simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.getVars] at *
         intros x Hin
         simp_all
-      . simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
+      . simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.getVars] at *
         intros x Hin
         simp_all
-    . simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
+    . simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.getVars] at *
       apply List.Subset.app
       . apply List.Subset.trans
         apply ih1 <;> assumption
@@ -3261,7 +3261,7 @@ theorem substOldPostSubset:
         intros x Hin
         simp_all
   case quant trih eih =>
-    simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
+    simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.getVars] at *
     apply List.Subset.app
     . apply List.Subset.trans
       apply trih <;> assumption
@@ -3273,7 +3273,7 @@ theorem substOldPostSubset:
       intros x Hin
       simp_all
   case eq ih1 ih2 =>
-    simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
+    simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.getVars] at *
     apply List.Subset.app
     . apply List.Subset.trans
       apply ih1 <;> assumption

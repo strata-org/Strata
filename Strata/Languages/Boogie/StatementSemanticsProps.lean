@@ -2102,7 +2102,7 @@ theorem EvalExpressionIsDefined :
   simp [WellFormedBoogieEvalCong] at Hwfc
   simp [WellFormedSemanticEvalVar] at Hwfvr
   induction e generalizing v <;>
-    simp [HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
+    simp [HasVarsPure.getVars, Lambda.LExpr.getVars] at *
   case fvar v' ty' =>
     specialize Hwfvr (Lambda.LExpr.fvar v' ty') v' σ₀ σ
     simp [HasFvar.getFvar] at Hwfvr
