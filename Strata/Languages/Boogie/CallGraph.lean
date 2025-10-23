@@ -143,14 +143,25 @@ Eventually, we will compute a transitive closure involving both axioms and
 functions. E.g., consider the following example that we don't handle yet:
 
 ```
-axiom1 : forall x, g(x) == false
-axiom2 : forall x, f(x) == g(x)
+axiom1 : forall x :: g(x) == false
+axiom2 : forall x :: f(x) == g(x)
 ----------------------------------
 goal : forall x, f(x) == true
 ```
 
 Right now, we will determine that only `axiom2` is relevant for the goal, which
 means that the solver will return `unknown` in this case instead of `failed`.
+
+Note: one way to make the dependency analysis better right now is to use the
+triggers to mention relevant functions. E.g., now `axiom1` has `f` in its body,
+so it is relevant for the goal.
+
+```
+axiom1 : forall x :: {f(x)} g(x) == false
+axiom2 : forall x :: f(x) == g(x)
+----------------------------------
+goal : forall x, f(x) == true
+```
 -/
 def Program.toFunctionAxiomMap (prog : Program) : Std.HashMap String (List String) :=
   let axioms := prog.decls.filterMap (fun decl =>
