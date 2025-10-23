@@ -67,13 +67,18 @@ def buildCallGraph (items : List (String × List String)) : CallGraph :=
 
   { callees := calleeMap, callers := callerMap }
 
-/-- Extract function calls from an expression -/
+/--
+Extract function calls from an expression. We ignore Boogie's builtin functions
+(`Boogie.builtinFunctions`) here.
+-/
 def extractFunctionCallsFromExpr (expr : Expression.Expr) : List String :=
   match expr with
   | .fvar _ _ => []
   | .bvar _ => []
   | .mdata _ e => extractFunctionCallsFromExpr e
-  | .op fname _ => [BoogieIdent.toPretty fname]
+  | .op fname _ =>
+    let fname := BoogieIdent.toPretty fname
+    if builtinFunctions.contains fname then [] else [fname]
   | .const _ _ => []
   | .app fn arg => extractFunctionCallsFromExpr fn ++ extractFunctionCallsFromExpr arg
   | .ite c t e => extractFunctionCallsFromExpr c ++ extractFunctionCallsFromExpr t ++ extractFunctionCallsFromExpr e
@@ -130,8 +135,22 @@ def Program.toFunctionCG (prog : Program) : FunctionCG :=
 /--
 Function to _relevant_ axioms mapping
 
-An axiom `a` is _relevant_ for a function `f` if `f` occurs in the body of `a`,
-including in any trigger expressions.
+For now, our definition of a "relevant axiom" is quite weak: an axiom `a` is
+relevant for a function `f` if `f` occurs in the body of `a`, including in any
+trigger expressions.
+
+Eventually, we will compute a transitive closure involving both axioms and
+functions. E.g., consider the following example that we don't handle yet:
+
+```
+axiom1 : forall x, g(x) == false
+axiom2 : forall x, f(x) == g(x)
+----------------------------------
+goal : forall x, f(x) == true
+```
+
+Right now, we will determine that only `axiom2` is relevant for the goal, which
+means that the solver will return `unknown` in this case instead of `failed`.
 -/
 def Program.toFunctionAxiomMap (prog : Program) : Std.HashMap String (List String) :=
   let axioms := prog.decls.filterMap (fun decl =>
@@ -156,18 +175,16 @@ instance : Std.ToFormat (Std.HashMap String (List Axiom)) where
         (fun (k, v) => f!"{k}: [{Std.Format.joinSep (v.map Std.format) ", "}]")
     f!"{Std.Format.joinSep entries ", \n"}"
 
-def Program.getRelevantAxioms (prog : Program) (functions : List String) : List String :=
-  let axiomMap := prog.toFunctionAxiomMap
-  functions.flatMap (fun f =>
-  (axiomMap.filter (fun k _ => k == f)).values.flatten) |>.dedup
-
 def Program.getIrrelevantAxioms (prog : Program) (functions : List String) : List String :=
-  let allAxioms := prog.decls.filterMap (fun decl =>
+  let functionsSet := functions.toArray.qsort (· < ·) -- Sort for binary search
+  prog.decls.filterMap (fun decl =>
     match decl with
-    | .ax a _ => some a.name
+    | .ax a _ =>
+      let ops := Lambda.LExpr.getOps a.e
+      let hasRelevantOp := ops.any (fun op =>
+        functionsSet.binSearch (BoogieIdent.toPretty op) (· < ·) |>.isSome)
+      if hasRelevantOp then none else some a.name
     | _ => none)
-  let relevantAxioms := prog.getRelevantAxioms functions
-  allAxioms.filter (fun ax => !relevantAxioms.contains ax)
 
 ---------------------------------------------------------------------
 
