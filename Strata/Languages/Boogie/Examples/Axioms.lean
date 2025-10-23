@@ -109,25 +109,27 @@ function f(x : int) : int;
 function g(x : int) : int;
 
 axiom [f_g_ax]: (forall x : int :: { f(x) } f(x) == g(x) + 1);
-axiom [g_ax]:   (forall x : int :: { g(x) } g(x) == x * 2);
+// NOTE the trigger `f(x)` in `g_ax` below, which causes the
+// dependency analysis to include this axiom in all goals involving `f(x)`.
+axiom [g_ax]:   (forall x : int :: { g(x), f(x) } g(x) == x * 2);
 
 procedure main (x : int) returns () {
 
-assert [main_assert]: (x >= 0 ==> f(x) > x);
+assert [axiomPgm2_main_assert]: (x >= 0 ==> f(x) > x);
 };
 #end
 
-/-- info: [g_ax, f_g_ax] -/
+/-- info: [] -/
 #guard_msgs in
 #eval let (program, _) := Boogie.getProgram axiomPgm2
-      Std.format (Boogie.Program.getRelevantAxioms program ["g"])
+      Std.format (Boogie.Program.getIrrelevantAxioms program ["f"])
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
 
 
 VCs:
-Label: main_assert
+Label: axiomPgm2_main_assert
 Assumptions:
 
 (f_g_ax, (∀ ((~f %0) == ((~Int.Add (~g %0)) #1))))
@@ -135,13 +137,13 @@ Assumptions:
 Proof Obligation:
 ((~Bool.Implies ((~Int.Ge $__x0) #0)) ((~Int.Gt (~f $__x0)) $__x0))
 
-Wrote problem to vcs/main_assert.smt2.
+Wrote problem to vcs/axiomPgm2_main_assert.smt2.
 ---
 info:
-Obligation: main_assert
+Obligation: axiomPgm2_main_assert
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" axiomPgm2
+#eval verify "z3" axiomPgm2
 
 ---------------------------------------------------------------------

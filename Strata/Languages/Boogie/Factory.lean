@@ -357,4 +357,10 @@ def mkTriggerExpr (ts : List (List Expression.Expr)) : Expression.Expr :=
   let groups := ts.map mkTriggerGroup
   groups.foldl (fun gs g => .app (.app addTriggerGroupOp g) gs) emptyTriggersOp
 
+/--
+Get all the built-in functions supported by Boogie.
+-/
+def builtinFunctions : Array String :=
+  Factory.map (fun f => BoogieIdent.toPretty f.name)
+
 end Boogie
