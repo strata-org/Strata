@@ -10,6 +10,7 @@
 import Strata.Languages.Boogie.Statement
 
 namespace Boogie
+---------------------------------------------------------------------
 
 open Std (ToFormat Format format)
 open Lambda
@@ -25,9 +26,15 @@ the responsibility of the user to ensure that they are consistent.
 structure Axiom where
   name : BoogieLabel
   e : LExpr LMonoTy Visibility
+  deriving DecidableEq, Inhabited
 
 instance : ToFormat Axiom where
   format a := f!"axiom {a.name}: {a.e};"
 
 def Axiom.eraseTypes (a : Axiom) : Axiom :=
   { a with e := a.e.eraseTypes }
+
+instance : ToFormat Axiom where
+  format a := f!"axiom {a.name}: {a.e};"
+
+---------------------------------------------------------------------
