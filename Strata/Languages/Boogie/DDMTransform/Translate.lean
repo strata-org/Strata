@@ -133,7 +133,7 @@ structure GenNum where
 
 structure TransBindings where
   boundTypeVars : Array TyIdentifier := #[]
-  boundVars : Array (LExpr LMonoTy BoogieIdent) := #[]
+  boundVars : Array (LExpr LMonoTy Visibility) := #[]
   freeVars  : Array Boogie.Decl := #[]
   gen : GenNum := (GenNum.mk 0 0 0 0)
 
@@ -678,7 +678,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   | .fn q`Boogie.bvnot, [tpa, xa] =>
     let tp ← translateLMonoTy bindings (dealiasTypeArg p tpa)
     let x ← translateExpr p bindings xa
-    let fn : LExpr LMonoTy BoogieIdent ←
+    let fn : LExpr LMonoTy Visibility ←
       translateFn (.some tp) q`Boogie.bvnot
     return (.app fn x)
   -- If-then-else expression
@@ -722,7 +722,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let kty ← translateLMonoTy bindings _ktp
      let vty ← translateLMonoTy bindings _vtp
      -- TODO: use Boogie.mapSelectOp, but specialized
-     let fn : LExpr LMonoTy BoogieIdent := (LExpr.op "select" (.some (LMonoTy.mkArrow (mapTy kty vty) [kty, vty])))
+     let fn : LExpr LMonoTy Visibility := (LExpr.op "select" (.some (LMonoTy.mkArrow (mapTy kty vty) [kty, vty])))
      let m ← translateExpr p bindings ma
      let i ← translateExpr p bindings ia
      return .mkApp fn [m, i]
@@ -730,7 +730,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let kty ← translateLMonoTy bindings _ktp
      let vty ← translateLMonoTy bindings _vtp
      -- TODO: use Boogie.mapUpdateOp, but specialized
-     let fn : LExpr LMonoTy BoogieIdent := (LExpr.op "update" (.some (LMonoTy.mkArrow (mapTy kty vty) [kty, vty, mapTy kty vty])))
+     let fn : LExpr LMonoTy Visibility := (LExpr.op "update" (.some (LMonoTy.mkArrow (mapTy kty vty) [kty, vty, mapTy kty vty])))
      let m ← translateExpr p bindings ma
      let i ← translateExpr p bindings ia
      let x ← translateExpr p bindings xa
@@ -842,7 +842,7 @@ def initVarStmts (tpids : ListMap Expression.Ident LTy) (bindings : TransBinding
   match tpids with
   | [] => return ([], bindings)
   | (id, tp) :: rest =>
-    let s := Boogie.Statement.init id tp (Names.initVarValue (id.2 ++ "_" ++ (toString bindings.gen.var_def)))
+    let s := Boogie.Statement.init id tp (Names.initVarValue (id.name ++ "_" ++ (toString bindings.gen.var_def)))
     let bindings := incrNum .var_def bindings
     let (stmts, bindings) ← initVarStmts rest bindings
     return ((s :: stmts), bindings)
@@ -856,7 +856,7 @@ def translateVarStatement (bindings : TransBindings) (decls : Array Arg) :
     let (stmts, bindings) ← initVarStmts tpids bindings
     let newVars ← tpids.mapM (fun (id, ty) =>
                     if h: ty.isMonoType then
-                      return ((LExpr.fvar id (ty.toMonoType h)): LExpr LMonoTy Expression.Ident)
+                      return ((LExpr.fvar id (ty.toMonoType h)): LExpr LMonoTy Visibility)
                     else
                       TransM.error s!"translateVarStatement requires {id} to have a monomorphic type, but it has type {ty}")
     let bbindings := bindings.boundVars ++ newVars
@@ -871,7 +871,7 @@ def translateInitStatement (p : Program) (bindings : TransBindings) (args : Arra
     let lhs ← translateIdent BoogieIdent args[1]!
     let val ← translateExpr p bindings args[2]!
     let ty := (.forAll [] mty)
-    let newBinding: LExpr LMonoTy Expression.Ident := LExpr.fvar lhs mty
+    let newBinding: LExpr LMonoTy Visibility := LExpr.fvar lhs mty
     let bbindings := bindings.boundVars ++ [newBinding]
     return ([.init lhs ty val], { bindings with boundVars := bbindings })
 
@@ -998,7 +998,7 @@ def translateOptionFree (arg : Arg) : TransM Procedure.CheckAttr := do
 def translateRequires (p : Program) (name : BoogieIdent) (count : Nat) (bindings : TransBindings) (arg : Arg) :
   TransM (ListMap BoogieLabel Procedure.Check) := do
   let args ← checkOpArg arg q`Boogie.requires_spec 3
-  let l ← translateOptionLabel s!"{name.2}_requires_{count}" args[0]!
+  let l ← translateOptionLabel s!"{name.name}_requires_{count}" args[0]!
   let free? ← translateOptionFree args[1]!
   let e ← translateExpr p bindings args[2]!
   return [(l, { expr := e, attr := free? })]
@@ -1006,7 +1006,7 @@ def translateRequires (p : Program) (name : BoogieIdent) (count : Nat) (bindings
 def translateEnsures (p : Program) (name : BoogieIdent) (count : Nat) (bindings : TransBindings) (arg : Arg) :
   TransM (ListMap BoogieLabel Procedure.Check) := do
   let args ← checkOpArg arg q`Boogie.ensures_spec 3
-  let l ← translateOptionLabel s!"{name.2}_ensures_{count}" args[0]!
+  let l ← translateOptionLabel s!"{name.name}_ensures_{count}" args[0]!
   let free? ← translateOptionFree args[1]!
   let e ← translateExpr p bindings args[2]!
   return [(l, { expr := e, attr := free? })]
@@ -1163,7 +1163,7 @@ def translateGlobalVar (bindings : TransBindings) (op : Operation) :
   let _ ← @checkOp (Boogie.Decl × TransBindings) op q`Boogie.command_var 1
   let (id, targs, mty) ← translateBindMk bindings op.args[0]!
   let ty := LTy.forAll targs mty
-  let decl := (.var id ty (Names.initVarValue (id.2 ++ "_" ++ (toString bindings.gen.var_def))))
+  let decl := (.var id ty (Names.initVarValue (id.name ++ "_" ++ (toString bindings.gen.var_def))))
   let bindings := incrNum .var_def bindings
   return (decl, { bindings with freeVars := bindings.freeVars.push decl})
 

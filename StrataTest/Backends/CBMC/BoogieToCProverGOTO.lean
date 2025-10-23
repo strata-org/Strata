@@ -23,10 +23,10 @@ model-check a Strata-generated GOTO binary.
 
 abbrev Boogie.ExprStr : Imperative.PureExpr :=
    { Ident := String,
-     Expr := Lambda.LExpr Lambda.LMonoTy String,
+     Expr := Lambda.LExpr Lambda.LMonoTy Unit,
      Ty := Lambda.LTy,
-     TyEnv := @Lambda.TEnv BoogieIdent,
-     EvalEnv := Lambda.LState BoogieIdent
+     TyEnv := @Lambda.TEnv Visibility,
+     EvalEnv := Lambda.LState Visibility
      EqIdent := instDecidableEqString }
 
 namespace BoogieToGOTO
@@ -74,33 +74,32 @@ instance : Imperative.ToGoto Boogie.ExprStr where
   toGotoExpr := Lambda.LExpr.toGotoExpr
 
 open Lambda in
-def substVarNames {Identifier: Type} [DecidableEq Identifier]
-    (fn : Identifier → String)
-    (e : LExpr LMonoTy Identifier) (frto : Map String String) : (LExpr LMonoTy String) :=
+def substVarNames {IDMeta: Type} [DecidableEq IDMeta]
+    (e : LExpr LMonoTy IDMeta) (frto : Map String String) : (LExpr LMonoTy Unit) :=
   match e with
   | .const c ty => .const c ty
   | .bvar b => .bvar b
-  | .op o ty => .op (fn o) ty
+  | .op o ty => .op o.name ty
   | .fvar  name ty =>
-    let name_alt := frto.find? (fn name)
-    .fvar (name_alt.getD (fn name)) ty
-  | .mdata info e' => .mdata info (substVarNames fn e' frto)
-  | .abs   ty e' => .abs ty (substVarNames fn e' frto)
-  | .quant qk ty tr' e' => .quant qk ty (substVarNames fn tr' frto) (substVarNames fn e' frto)
-  | .app   f e' => .app (substVarNames fn f frto) (substVarNames fn e' frto)
-  | .ite   c t e' => .ite (substVarNames fn c frto) (substVarNames fn t frto) (substVarNames fn e' frto)
-  | .eq    e1 e2 => .eq (substVarNames fn e1 frto) (substVarNames fn e2 frto)
+    let name_alt := frto.find? name.name
+    .fvar (name_alt.getD name.name) ty
+  | .mdata info e' => .mdata info (substVarNames e' frto)
+  | .abs   ty e' => .abs ty (substVarNames e' frto)
+  | .quant qk ty tr' e' => .quant qk ty (substVarNames tr' frto) (substVarNames e' frto)
+  | .app   f e' => .app (substVarNames f frto) (substVarNames e' frto)
+  | .ite   c t e' => .ite (substVarNames c frto) (substVarNames t frto) (substVarNames e' frto)
+  | .eq    e1 e2 => .eq (substVarNames e1 frto) (substVarNames e2 frto)
 
 def Boogie.Cmd.renameVars (frto : Map String String) (c : Imperative.Cmd Boogie.Expression)
     : Imperative.Cmd Boogie.ExprStr :=
   match c with
   | .init name ty e _ =>
-    let e' := substVarNames Boogie.BoogieIdent.toPretty e frto
+    let e' := substVarNames e frto
     let name_alt := frto.find? (Boogie.BoogieIdent.toPretty name)
     let new := name_alt.getD (Boogie.BoogieIdent.toPretty name)
     .init new ty e' .empty
   | .set name e _ =>
-    let e' := substVarNames Boogie.BoogieIdent.toPretty e frto
+    let e' := substVarNames e frto
     let name_alt := frto.find? (Boogie.BoogieIdent.toPretty name)
     let new := name_alt.getD (Boogie.BoogieIdent.toPretty name)
     .set new e' .empty
@@ -109,10 +108,10 @@ def Boogie.Cmd.renameVars (frto : Map String String) (c : Imperative.Cmd Boogie.
     let new := name_alt.getD (Boogie.BoogieIdent.toPretty name)
     .havoc new .empty
   | .assume label e _ =>
-    let e' := substVarNames Boogie.BoogieIdent.toPretty e frto
+    let e' := substVarNames e frto
     .assume label e' .empty
   | .assert label e _ =>
-    let e' := substVarNames Boogie.BoogieIdent.toPretty e frto
+    let e' := substVarNames e frto
     .assert label e' .empty
 
 def Boogie.Cmds.renameVars (frto : Map String String)
