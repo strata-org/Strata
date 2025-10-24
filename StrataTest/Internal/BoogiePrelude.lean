@@ -5,6 +5,9 @@ import Strata.Languages.Boogie.DDMTransform.Parse
 
 namespace Strata
 
-def boogiePrelude: String := "Foo"
+def boogiePrelude :=
+#strata
+program Boogie;
+#end
 
 end Strata
