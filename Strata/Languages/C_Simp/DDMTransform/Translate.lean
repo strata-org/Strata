@@ -77,25 +77,25 @@ def checkOpArg (arg : Arg) (name : QualifiedIdent) (argc : Nat) : TransM (Array 
 
 def translateCommaSep [Inhabited α] (f : Strata.Arg → TransM α) (arg : Strata.Arg) :
   TransM (Array α) := do
-  let .commaSepList args := arg
+  let .commaSepList _ args := arg
     | TransM.error s!"Expected commaSepList: {repr arg}"
   args.mapM f
 
 def translateOption [Inhabited α] (f : Option Strata.Arg → TransM α) (arg : Arg) :
   TransM α := do
-  let .option maybe_arg := arg
+  let .option _ maybe_arg := arg
     | TransM.error s!"Expected Option: {repr arg}"
   f maybe_arg
 
 ---------------------------------------------------------------------
 
 def translateIdent (arg : Strata.Arg) : TransM String := do
-  let .ident name := arg
+  let .ident _ name := arg
     | TransM.error s!"Expected ident: {repr arg}"
   pure name
 
 def translateNat (arg : Arg) : TransM Nat := do
-  let .num n := arg
+  let .num _ n := arg
     | TransM.error s!"translateNat expects num lit"
   return n
 
@@ -143,11 +143,11 @@ partial def translateLMonoTy (bindings : TransBindings) (arg : Arg) :
   let .type tp := arg
     | TransM.error s!"translateLMonoTy expected type {repr arg}"
   match tp with
-  | .ident i #[] => pure <| (.tcons i.name [])
-  | .ident i argst =>
-      let argst' ← translateLMonoTys bindings (argst.map Arg.type)
+  | .ident _ i #[] => pure <| (.tcons i.name [])
+  | .ident _ i argst =>
+      let argst' ← translateLMonoTys bindings (argst.map ArgF.type)
       pure <| (.tcons i.name argst'.toList.reverse)
-  | .bvar i =>
+  | .bvar _ i =>
     assert! i < bindings.boundTypeVars.size
     let var := bindings.boundTypeVars[bindings.boundTypeVars.size - (i+1)]!
     return (.ftvar var)
@@ -186,47 +186,47 @@ partial def translateExpr (bindings : TransBindings) (arg : Arg) :
   let (op, args) := expr.flatten
   match op, args with
   -- Constants/Literals
-  | .fn q`C_Simp.btrue, [] =>
+  | .fn _ q`C_Simp.btrue, [] =>
     return .const "true" none
-  | .fn q`C_Simp.bfalse, [] =>
+  | .fn _ q`C_Simp.bfalse, [] =>
     return .const "false" none
-  | .fn q`C_Simp.to_int, [xa] =>
+  | .fn _ q`C_Simp.to_int, [xa] =>
     let n ← translateNat xa
     return .const (toString n) none
   -- Equality
-  | .fn q`C_Simp.eq, [_tpa, xa, ya] =>
+  | .fn _ q`C_Simp.eq, [_tpa, xa, ya] =>
     let x ← translateExpr bindings xa
     let y ← translateExpr bindings ya
     return .eq x y
   -- Unary function applications
-  | .fn q`C_Simp.not, [xa] =>
+  | .fn _ q`C_Simp.not, [xa] =>
     let fn := (LExpr.op "Bool.Not" none)
     let x ← translateExpr bindings xa
     return .mkApp fn [x]
   -- Unary array operations
-  | .fn q`C_Simp.len, [xa] =>
+  | .fn _ q`C_Simp.len, [xa] =>
     let fn ← translateFn q`C_Simp.len
     let x ← translateExpr bindings xa
     return .mkApp fn [x]
   -- Binary function applications
-  | .fn fni, [xa, ya] =>
+  | .fn _ fni, [xa, ya] =>
     let fn ← translateFn fni
     let x ← translateExpr bindings xa
     let y ← translateExpr bindings ya
     return .mkApp fn [x, y]
   -- NOTE: Bound and free variables are numbered differently. Bound variables
   -- ascending order (so closer to deBrujin levels).
-  | .bvar i, [] =>
+  | .bvar _ i, [] =>
     assert! i < bindings.boundVars.size
     let expr := bindings.boundVars[bindings.boundVars.size - (i+1)]!
     match expr with
     | .bvar _ => return .bvar i
     | _ => return expr
-  | .fvar i, [] =>
+  | .fvar _ i, [] =>
     assert! i < bindings.freeVars.size
     let name := bindings.freeVars[i]!
     return (.fvar name none)
-  | .fvar i, argsa =>
+  | .fvar _ i, argsa =>
     -- Call of a function declared/defined in C_Simp.
     assert! i < bindings.freeVars.size
     let name := bindings.freeVars[i]!
@@ -338,7 +338,7 @@ def translateBindings (bindings : TransBindings) (op : Arg) :
   TransM (ListMap Expression.Ident LMonoTy) := do
   let bargs ← checkOpArg op q`C_Simp.mkBindings 1
   match bargs[0]! with
-  | .commaSepList args =>
+  | .commaSepList _ args =>
     let arr ← args.mapM (fun op => do
       let bargs ← checkOpArg op q`C_Simp.mkBinding 2
       let id ← translateIdent bargs[0]!
@@ -413,7 +413,7 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
 partial def translateBlock (bindings : TransBindings) (arg : Arg) :
   TransM (List Statement) := do
   let args ← checkOpArg arg q`C_Simp.block 1
-  let .seq stmts := args[0]!
+  let .seq _ stmts := args[0]!
     | TransM.error s!"Invalid block {repr args[0]!}"
   let (a, _) ← stmts.foldlM (init := (#[], bindings)) fun (a, b) s => do
       let (s, b) ← translateStmt b s
