@@ -53,7 +53,7 @@ info: (#3 : int)
 -/
 #guard_msgs in
 #eval format $
-  typeCheckAndPartialEval #[weekTy]  Factory.default ((LExpr.op "DayElim" .none).appMulti (.op "W" (.some (.tcons "Day" [])) :: (List.range 7).map intConst))
+  typeCheckAndPartialEval #[weekTy]  Factory.default ((LExpr.op "DayElim" .none).mkApp (.op "W" (.some (.tcons "Day" [])) :: (List.range 7).map intConst))
 
 
 -- Test 2: Polymorphic tuples
@@ -72,11 +72,11 @@ fst (snd ("a", (1, "b"))) ==> 1
 
 def tupTy : LDatatype Unit := {name := "Tup", typeArgs := ["a", "b"], constrs := [{name := "Prod", args := [("x", .ftvar "a"), ("y", .ftvar "b")]}]}
 
-def fst (e: LExpr LMonoTy Unit) := (LExpr.op "TupElim" .none).appMulti [e, .abs .none (.abs .none (.bvar 1))]
+def fst (e: LExpr LMonoTy Unit) := (LExpr.op "TupElim" .none).mkApp [e, .abs .none (.abs .none (.bvar 1))]
 
-def snd (e: LExpr LMonoTy Unit) := (LExpr.op "TupElim" .none).appMulti [e, .abs .none (.abs .none (.bvar 0))]
+def snd (e: LExpr LMonoTy Unit) := (LExpr.op "TupElim" .none).mkApp [e, .abs .none (.abs .none (.bvar 0))]
 
-def prod (e1 e2: LExpr LMonoTy Unit) : LExpr LMonoTy Unit := (LExpr.op "Prod" .none).appMulti [e1, e2]
+def prod (e1 e2: LExpr LMonoTy Unit) : LExpr LMonoTy Unit := (LExpr.op "Prod" .none).mkApp [e1, e2]
 
 /--
 info: Annotated expression:
@@ -135,7 +135,7 @@ info: (#1 : int)
 -/
 #guard_msgs in
 #eval format $
-  typeCheckAndPartialEval #[listTy]  Factory.default ((LExpr.op "ListElim" .none).appMulti [.op "Nil" .none, (intConst 1), .abs .none (.abs .none (intConst 0))])
+  typeCheckAndPartialEval #[listTy]  Factory.default ((LExpr.op "ListElim" .none).mkApp [.op "Nil" .none, (intConst 1), .abs .none (.abs .none (intConst 0))])
 
 -- Test: elim(cons 1 nil, 0, fun x y => x) -> (fun x y => x) 1 nil
 
@@ -149,7 +149,7 @@ info: (#2 : int)
 -/
 #guard_msgs in
 #eval format $
-  typeCheckAndPartialEval #[listTy]  Factory.default ((LExpr.op "ListElim" .none).appMulti [consApp (.const "2" (.some .int)) (.op "Nil" .none), intConst 0, .abs .none (.abs .none (bvar 1))])
+  typeCheckAndPartialEval #[listTy]  Factory.default ((LExpr.op "ListElim" .none).mkApp [consApp (.const "2" (.some .int)) (.op "Nil" .none), intConst 0, .abs .none (.abs .none (bvar 1))])
 
 -- Test 4: Multiple types and Factories
 
@@ -172,13 +172,13 @@ info: (#7 : int)
 #guard_msgs in
 #eval format $
   typeCheckAndPartialEval #[listTy, tupTy]  IntBoolFactory
-    ((LExpr.op "ListElim" .none).appMulti
+    ((LExpr.op "ListElim" .none).mkApp
       [consApp (prod (intConst 3) (strConst "a"))
         (consApp (prod (intConst 4) (strConst "b")) (.op "Nil" .none)),
       intConst 0,
       .abs .none (.abs .none
         (addOp (fst (.bvar 1))
-          ((LExpr.op "ListElim" .none).appMulti
+          ((LExpr.op "ListElim" .none).mkApp
             [.bvar 0, intConst 1, .abs .none (.abs .none (fst (.bvar 1)))])))])
 
 end Lambda

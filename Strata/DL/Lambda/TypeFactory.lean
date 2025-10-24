@@ -98,15 +98,12 @@ def elimTy (outputType : LMonoTy)  (c: LConstr IDMeta): LMonoTy :=
   | _ :: _ => LMonoTy.mkArrow' outputType (c.args.map Prod.snd)
 
 /--
-Simulates pattern matching on operator o. We cannot do true pattern matching because (1) Identifiers are abstract and (2) we must determine the correct number of .app calls and arguments
-TODO see if anything can help, look in eval
+Simulates pattern matching on operator o.
 -/
-def LExpr.matchOp (x: LExpr LMonoTy IDMeta) (o: Identifier IDMeta) : Option (List (LExpr LMonoTy IDMeta)) :=
-  match x with
-  | .op o1 _ => if o == o1 then .some [] else .none
-  | .app e1 e2 => (e1.matchOp o).bind (fun l => l ++ [e2])
+def LExpr.matchOp (e: LExpr LMonoTy IDMeta) (o: Identifier IDMeta) : Option (List (LExpr LMonoTy IDMeta)) :=
+  match getLFuncCall e with
+  | (.op o1 _, args) => if o == o1 then .some args else .none
   | _ => .none
-
 
 /--
 Determine which constructor, if any, a datatype instance belongs to and get the arguments. Also gives the index in the constructor list
@@ -117,17 +114,8 @@ def datatypeGetConstr (d: LDatatype IDMeta) (x: LExpr LMonoTy IDMeta) : Option (
     | .some args => .some (c, i, args)
     | .none => acc) .none (List.zip d.constrs (List.range d.constrs.length))
 
-def LExpr.appMultiAux (e1: LExpr TypeType IDMeta) (args: List (LExpr TypeType IDMeta)) : LExpr TypeType IDMeta :=
-  match args with
-  | [] => e1
-  | e :: es => .app (e1.appMultiAux es) e
-
-def LExpr.appMulti (e1: LExpr TypeType IDMeta) (args: List (LExpr TypeType IDMeta)) := e1.appMultiAux args.reverse
-
---TODO change to mkApp or similar
-
 /--
-Generate eliminator concrete evaluator. Idea: match on 1st argument (e.g. `x : List α`) to determine constructor and corresponding arguments. If it matches the `n`th constructor, return `n+1`th element of input list applied to constructor arguments.
+Generate eliminator concrete evaluator. Idea: match on 1st argument (e.g. `x : List α`) to determine constructor and corresponding arguments. If it matches the `n`th constructor, return `n+1`st element of input list applied to constructor arguments.
 -/
 def elimConcreteEval (d: LDatatype IDMeta) :
   (LExpr LMonoTy IDMeta) → List (LExpr LMonoTy IDMeta) → (LExpr LMonoTy IDMeta) :=
@@ -137,7 +125,7 @@ def elimConcreteEval (d: LDatatype IDMeta) :
       match datatypeGetConstr d x with
       | .some (_, i, a) =>
         match xs[i]? with
-        | .some f => f.appMulti a
+        | .some f => f.mkApp a
         | .none => e
       | .none => e
     | _ => e
