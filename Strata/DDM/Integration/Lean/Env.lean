@@ -7,12 +7,12 @@
 import Lean.Environment
 import Strata.DDM.Elab
 
+open Lean (registerPersistentEnvExtension ImportM Name PersistentEnvExtension)
+
 namespace Strata
 
-open Lean Parser
-
 structure PersistentDialect where
-  leanName : Lean.Name
+  leanName : Name
   name : DialectName
   -- Names of dialects that are imported into this dialect
   imports : Array DialectName

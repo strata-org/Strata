@@ -565,17 +565,19 @@ instance Decl.instToStrataFormat : ToStrataFormat Decl where
 namespace Dialect
 
 protected def format (dialects : DialectMap) (d : Dialect) (opts : FormatOptions := {}) : Format :=
-  assert! d.name ∈ dialects
-  let c := FormatContext.ofDialects dialects {} opts
-  let imports := dialects.importedDialects! d.name
-  let s : FormatState := { openDialects := imports.map.fold (init := {}) fun s n _ => s.insert n }
-  let f := f!"dialect {d.name};\n"
-  let f := d.imports.foldl (init := f) fun f i =>
-    if i = "Init" then
-      f
-    else
-      f!"{f}import {i}\n"
-  d.declarations.foldl (init := f) fun f d => f ++ (mformat d c s).format
+  if p : d.name ∈ dialects then
+    let c := FormatContext.ofDialects dialects {} opts
+    let imports := dialects.importedDialects d.name p
+    let s : FormatState := { openDialects := imports.map.fold (init := {}) fun s n _ => s.insert n }
+    let f := f!"dialect {d.name};\n"
+    let f := d.imports.foldl (init := f) fun f i =>
+      if i = "Init" then
+        f
+      else
+        f!"{f}import {i}\n"
+    d.declarations.foldl (init := f) fun f d => f ++ (mformat d c s).format
+  else
+    panic! s!"Unknown dialect {d.name}"
 
 end Dialect
 
