@@ -7,9 +7,9 @@
 import Lean.Environment
 import Strata.DDM.Elab
 
-namespace Strata
+open Lean (registerPersistentEnvExtension ImportM PersistentEnvExtension)
 
-open Lean Parser
+namespace Strata
 
 structure PersistentDialect where
   name : DialectName
@@ -55,7 +55,7 @@ def exportEntries (s : DialectState) : Array PersistentDialect :=
   s.newDialects.map .ofDialect
 
 initialize dialectExt : PersistentEnvExtension PersistentDialect Dialect DialectState ←
-  registerPersistentEnvExtension {
+  Lean.registerPersistentEnvExtension {
     mkInitial := pure {},
     addImportedFn := mkImported
     addEntryFn    := fun s d =>

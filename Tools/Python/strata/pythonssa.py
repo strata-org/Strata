@@ -10,7 +10,7 @@ import sys
 import builtins
 from typing import Callable, Sized
 from .exception_table import ExceptionTableEntry, parse_exception_table_entries
-from .base import ArgDecl, Init, SyntaxCat
+from .base import ArgDecl, Init, SyntaxCat, SyntaxArg, Indent
 from . import base
 
 PythonSSA : Any = strata.Dialect('PythonSSA')
@@ -30,15 +30,20 @@ class ValueBase:
 
 value_cat = PythonSSA.add_syncat("Value")()
 
-none_value = PythonSSA.add_op("valueNone", [], value_cat)()
+none_value = PythonSSA.add_op("valueNone", value_cat, syntax='none')()
 
-pos_int_value = PythonSSA.add_op("valueNum", [ArgDecl("value", Init.Num())], value_cat)
+pos_int_value = PythonSSA.add_op("valueNum", ArgDecl("value", Init.Num()), value_cat,
+                                 syntax=SyntaxArg("value"))
 
-neg_int_value = PythonSSA.add_op("valueNegSucc", [ArgDecl("value", Init.Num())], value_cat)
+neg_int_value = PythonSSA.add_op("valueNegSucc", ArgDecl("value", Init.Num()), value_cat,
+                                 syntax=t'-{SyntaxArg("value")}')
 
-builtin_value = PythonSSA.add_op("valueBuiltin", [ArgDecl("value", Init.Str())], value_cat)
+builtin_value = PythonSSA.add_op(
+    "valueBuiltin", ArgDecl("value", Init.Str()), value_cat,
+    syntax=t'builtin({SyntaxArg("value")})')
 
-code_value = PythonSSA.add_op("valueCode", [ArgDecl("value", Init.Str())], value_cat)
+code_value = PythonSSA.add_op("valueCode", ArgDecl("value", Init.Str()), value_cat,
+                              syntax=t'code({SyntaxArg("value")})')
 
 class Builtin(ValueBase):
     value : str
@@ -63,7 +68,8 @@ class CodeName(ValueBase):
     def to_arg(self) -> base.Arg:
         return code_value(base.StrLit(self.value))
 
-str_value = PythonSSA.add_op("valueStr", [ArgDecl("value", Init.Str())], value_cat)
+str_value = PythonSSA.add_op("valueStr", ArgDecl("value", Init.Str()), value_cat,
+                             syntax=SyntaxArg("value"))
 
 class StringLit(ValueBase):
     value : str
@@ -77,7 +83,7 @@ class StringLit(ValueBase):
     def to_arg(self) -> base.Arg:
         return str_value(base.StrLit(self.value))
 
-globals_value = PythonSSA.add_op("valueGlobals", [], value_cat)()
+globals_value = PythonSSA.add_op("valueGlobals", value_cat)()
 
 class GlobalNameMap(ValueBase):
     def __str__(self):
@@ -86,7 +92,7 @@ class GlobalNameMap(ValueBase):
     def to_arg(self) -> base.Arg:
         return globals_value
 
-arg_value = PythonSSA.add_op("valueArg", [ArgDecl("arg", Init.Num())], value_cat)
+arg_value = PythonSSA.add_op("valueArg", ArgDecl("arg", Init.Num()), value_cat)
 
 class ArgValue(ValueBase):
     """An argument value"""
@@ -104,8 +110,8 @@ class ArgValue(ValueBase):
     def to_arg(self) -> base.Arg:
         return arg_value(base.NumLit(self.index))
 
-true_value = PythonSSA.add_op("valueTrue", (), value_cat)()
-false_value = PythonSSA.add_op("valueFalse", (), value_cat)()
+true_value = PythonSSA.add_op("valueTrue", value_cat)()
+false_value = PythonSSA.add_op("valueFalse", value_cat)()
 
 class BoolValue(ValueBase):
     """A boolean literal"""
@@ -120,7 +126,7 @@ class BoolValue(ValueBase):
     def to_arg(self) -> base.Arg:
         return true_value if self.value else false_value
 
-bytes_value = PythonSSA.add_op("valueBytes", (ArgDecl("bytes", Init.Str()),), value_cat)
+bytes_value = PythonSSA.add_op("valueBytes", ArgDecl("bytes", Init.Str()), value_cat)
 
 class BytesValue(ValueBase):
     """An array of bytes"""
@@ -135,7 +141,7 @@ class BytesValue(ValueBase):
     def to_arg(self) -> base.Arg:
         return bytes_value(base.StrLit(str(self.value))) # FIXME: Use bytes
 
-reg_value = PythonSSA.add_op("valueReg", [ArgDecl("index", Init.Num())], value_cat)
+reg_value = PythonSSA.add_op('valueReg', ArgDecl("index", Init.Num()), value_cat, syntax=t'r({SyntaxArg("index")})')
 
 class RegValue(ValueBase):
     """Value returned by a statement"""
@@ -150,7 +156,7 @@ class RegValue(ValueBase):
     def to_arg(self) -> base.Arg:
         return reg_value(base.NumLit(self.value))
 
-block_value = PythonSSA.add_op("valueBlock", [ArgDecl("value", Init.Num())], value_cat)
+block_value = PythonSSA.add_op("valueBlock", ArgDecl("value", Init.Num()), value_cat)
 
 class BlockArgument(ValueBase):
     """An argument to a basic block."""
@@ -165,7 +171,7 @@ class BlockArgument(ValueBase):
     def to_arg(self) -> base.Arg:
        return block_value(base.NumLit(self.value))
 
-concat_value = PythonSSA.add_op("valueConcat", [ArgDecl("seq", Init.CommaSepBy(value_cat))], value_cat)
+concat_value = PythonSSA.add_op("valueConcat", ArgDecl("seq", Init.CommaSepBy(value_cat)), value_cat)
 
 class StringConcat(ValueBase):
     """A string concatenation"""
@@ -183,7 +189,7 @@ class StringConcat(ValueBase):
         return concat_value(base.CommaSepBy([value_to_arg(a) for a in self.values]))
 
 #FIXME
-float_value = PythonSSA.add_op("valueFloat", [], value_cat)()
+float_value = PythonSSA.add_op("valueFloat", value_cat)()
 
 class FloatValue(ValueBase):
     """A floating point literal"""
@@ -198,11 +204,10 @@ class FloatValue(ValueBase):
     def to_arg(self) -> base.Arg:
         return float_value # FIXME
 
-slice_value = PythonSSA.add_op("valueSlice", [
-        ArgDecl("start", value_cat),
-        ArgDecl("stop", value_cat),
-        ArgDecl("step", value_cat)
-    ],
+slice_value = PythonSSA.add_op("valueSlice",
+    ArgDecl("start", value_cat),
+    ArgDecl("stop", value_cat),
+    ArgDecl("step", value_cat),
     value_cat)
 
 class SliceValue(ValueBase):
@@ -225,7 +230,7 @@ class SliceValue(ValueBase):
             value_to_arg(self.stop),
             value_to_arg(self.step))
 
-frozenset_value = PythonSSA.add_op("valueFrozenSet", [ArgDecl("values", Init.CommaSepBy(value_cat))], value_cat)
+frozenset_value = PythonSSA.add_op("valueFrozenSet", ArgDecl("values", Init.CommaSepBy(value_cat)), value_cat)
 
 class FrozenSetValue(ValueBase):
     """A frozen set literal"""
@@ -242,7 +247,7 @@ class FrozenSetValue(ValueBase):
     def to_arg(self) -> base.Arg:
         return frozenset_value(base.CommaSepBy([value_to_arg(a) for a in self.values]))
 
-set_value = PythonSSA.add_op("valueSet", [ArgDecl("values", Init.CommaSepBy(value_cat))], value_cat)
+set_value = PythonSSA.add_op("valueSet", ArgDecl("values", Init.CommaSepBy(value_cat)), value_cat)
 
 class SetValue(ValueBase):
     """A tuple literal"""
@@ -260,7 +265,7 @@ class SetValue(ValueBase):
     def to_arg(self) -> base.Arg:
         return set_value(base.CommaSepBy([value_to_arg(a) for a in self.values]))
 
-list_value = PythonSSA.add_op("valueList", [ArgDecl("values", Init.CommaSepBy(value_cat))], value_cat)
+list_value = PythonSSA.add_op("valueList", ArgDecl("values", Init.CommaSepBy(value_cat)), value_cat)
 
 class ListValue(ValueBase):
     values : Iterable['Value']
@@ -277,7 +282,7 @@ class ListValue(ValueBase):
     def to_arg(self) -> base.Arg:
         return list_value(base.CommaSepBy([value_to_arg(a) for a in self.values]))
 
-tuple_value = PythonSSA.add_op("valueTuple", [ArgDecl("values", Init.CommaSepBy(value_cat))], value_cat)
+tuple_value = PythonSSA.add_op("valueTuple", ArgDecl("values", Init.CommaSepBy(value_cat)), value_cat)
 
 class Type():
     translate : Callable[[Any], base.Arg]
@@ -313,8 +318,8 @@ class StatementDecl:
 
 BOOL_CAT = PythonSSA.add_syncat("Bool")()
 
-boolTrue = PythonSSA.add_op("boolTrue", [], BOOL_CAT)()
-boolFalse = PythonSSA.add_op("boolFalse", [], BOOL_CAT)()
+boolTrue = PythonSSA.add_op("boolTrue", BOOL_CAT)()
+boolFalse = PythonSSA.add_op("boolFalse", BOOL_CAT)()
 
 def bool_to_arg(a : Any):
     assert isinstance(a, bool)
@@ -361,15 +366,15 @@ class JumpTarget:
 
 def jump_target_to_arg(arg) -> base.Arg:
     assert isinstance(arg, JumpTarget)
-    return mk_jump_target_op(base.NumLit(arg.label), base.Seq([value_to_arg(a) for a in arg.arguments]))
+    return mk_jump_target_op(base.NumLit(arg.label), base.CommaSepBy([value_to_arg(a) for a in arg.arguments]))
 
 jump_target_cat = PythonSSA.add_syncat("JumpTarget")()
 
-mk_jump_target_op = PythonSSA.add_op("mk_jump_target", [
-        ArgDecl("index", Init.Num()),
-        ArgDecl("args", Init.Seq(value_cat))
-    ],
-    jump_target_cat)
+mk_jump_target_op = PythonSSA.add_op("mk_jump_target",
+    ArgDecl("index", Init.Num()),
+    ArgDecl("args", Init.CommaSepBy(value_cat)),
+    jump_target_cat,
+    syntax=t'target({SyntaxArg("index")}, {SyntaxArg("args")})')
 
 
 JUMP_TARGET = Type(jump_target_cat, jump_target_to_arg)
@@ -384,7 +389,7 @@ class Binding:
 
 dict_binding_cat = PythonSSA.add_syncat("DictBinding")()
 
-mk_dict_binding = PythonSSA.add_op("mk_binding", (ArgDecl("name", value_cat), ArgDecl("value", value_cat)), dict_binding_cat)
+mk_dict_binding = PythonSSA.add_op("mk_binding", ArgDecl("name", value_cat), ArgDecl("value", value_cat), dict_binding_cat)
 
 def binding_to_arg(arg : Any):
     assert isinstance(arg, Binding)
@@ -413,16 +418,47 @@ def decl_statement(name : str, args : dict[str, Type], returnTypes : Sized|Type|
         assert all((a.cat == VALUE.cat for a in returnTypes))
         rc = len(returnTypes)
     argdecls = [ ArgDecl(name, tp.cat) for (name, tp) in args.items() ]
+    argc = len(args)
     assert all(f'r{i}' not in args for i in range(rc))
     retdecls = [ ArgDecl(f'r{i}', VALUE.cat) for i in range(rc) ]
-    op = PythonSSA.add_op(name, (argdecls + retdecls), statement_cat)
+    atoms = []
+    match rc:
+        case 0:
+            pass
+        case 1:
+            atoms.append(base.SyntaxDefIdent(argc, 0))
+            atoms.append(" = ")
+        case _:
+            atoms.append("(")
+            for i in range(argc, argc + rc):
+                atoms.append(base.SyntaxDefIdent(i, 0))
+            atoms.append(")")
+            atoms.append(" = ")
+    atoms.append(name)
+    atoms.append("(")
+    for i in range(argc):
+        if i > 0:
+            atoms.append(", ")
+        atoms.append(base.SyntaxDefIdent(i, 0))
+    atoms.append(")")
+    atoms.append("\n")
+    op = PythonSSA.add_op(name, *argdecls, *retdecls, statement_cat, syntax = atoms)
     return StatementDecl(name, args, rc, False, op)
 
 term_statement_cat = PythonSSA.add_syncat("TermStatement")()
 
 def term_statement(name : str, args : dict[str, Type]) -> StatementDecl:
-    argdecls = [ ArgDecl(name, tp.cat) for (name, tp) in args.items() ]
-    decl = PythonSSA.add_op(name, argdecls, term_statement_cat)
+    argdecls = (ArgDecl(name, tp.cat) for (name, tp) in args.items())
+    atoms = []
+    atoms.append(name)
+    atoms.append("(")
+    for i in range(len(args)):
+        if i > 0:
+            atoms.append(", ")
+        atoms.append(base.SyntaxDefIdent(i, 0))
+    atoms.append(")")
+    atoms.append("\n")
+    decl = PythonSSA.add_op(name, *argdecls, term_statement_cat, syntax=atoms)
     return StatementDecl(name, args, 0, True, decl)
 
 import_decl = decl_statement("pyImport", { "name" : STR, "fromlist" : VALUE, "level" : VALUE }, VALUE)
@@ -823,23 +859,32 @@ block_cat = PythonSSA.add_syncat("Block")()
 mk_block = \
     PythonSSA.add_op(
         "mk_block",
-        [ArgDecl("index", Init.Num()),
-         ArgDecl("inputs", Init.Num()),
-         ArgDecl("statements", Init.Seq(statement_cat)),
-         ArgDecl("term_statement", term_statement_cat)],
-        block_cat)
+        ArgDecl("index", Init.Num()),
+        ArgDecl("inputs", Init.Num()),
+        ArgDecl("exception_handler", Init.Option(Init.Num())),
+        ArgDecl("statements", Init.Seq(statement_cat)),
+        ArgDecl("term_statement", term_statement_cat),
+        block_cat,
+        syntax=t'block {SyntaxArg("index")}({SyntaxArg("inputs")}) except {SyntaxArg("exception_handler")}:\n{Indent(2, t"{SyntaxArg('statements')}{SyntaxArg('term_statement')}")}')
 
 class Block:
     index : int
     offset : int
     input_count : int|None
+    exception_handler : int|None
     statements : list[Statement]
     term_statement : Statement|None
 
-    def __init__(self, index : int, offset : int, local_count : int, stack_size : int|None):
+    def __init__(self,
+                 index : int,
+                 offset : int,
+                 local_count : int,
+                 stack_size : int|None,
+                 exception_handler : int|None):
         self.index = index
         self.offset = offset
         self.input_count = None if stack_size is None else local_count + stack_size
+        self.exception_handler = exception_handler
         self.statements = []
         self.term_statement = None
 
@@ -849,6 +894,7 @@ class Block:
         return mk_block(
             base.NumLit(self.index),
             base.NumLit(self.input_count),
+            base.OptionArg(None if self.exception_handler is None else base.NumLit(self.exception_handler)),
             base.Seq([ s.to_strata() for s in self.statements ]),
             self.term_statement.to_strata()
             )
@@ -894,6 +940,11 @@ class BlockOffset:
     stack_size : int|None
     """
     Expected stack size at offset (if known)
+    """
+
+    exception_handler : Offset|None
+    """
+    Offset of block with exception handler (if known)
     """
 
 
@@ -958,8 +1009,11 @@ class Translator:
 
         self.globals = globals
         self.code = code
-        self.jump_targets = { b.offset : idx for (idx, b) in enumerate(block_offsets) }
-        self.blocks = [ Block(i, b.offset, local_count, b.stack_size) for(i, b) in enumerate(block_offsets) ]
+        jump_targets = { b.offset : idx for (idx, b) in enumerate(block_offsets) }
+        self.jump_targets = jump_targets
+        def target(off:Offset|None) -> int|None:
+            return None if off is None else self.jump_targets[off]
+        self.blocks = [ Block(i, b.offset, local_count, b.stack_size, target(b.exception_handler)) for(i, b) in enumerate(block_offsets) ]
         self.stack_heights = {}
         self.cur_block = None
         self.stack = []
@@ -1868,6 +1922,12 @@ class Translator:
         val = self.stack[-1]
         self.add_stmt(yield_decl, val, arg != 0)
 
+def handler_for(exceptions : list[ExceptionTableEntry], entry : Offset) -> Offset|None:
+    for ex in exceptions:
+        if ex.start <= entry and entry - ex.start < ex.length:
+            return ex.target
+    return None
+
 def create_block_offsets(
         insns : list[dis.Instruction],
         exceptions : list[ExceptionTableEntry]) -> list[BlockOffset]:
@@ -1879,7 +1939,7 @@ def create_block_offsets(
     # expected stack height is unknown.
     # N.B. The expected stack height is only known for exception
     # targets
-    block_offset_map : dict[int, int|None] = {}
+    block_offset_map : dict[Offset, int|None] = {}
     block_offset_map[0] = 0
 
     # Initialize block offsets from exception table entries.
@@ -1933,7 +1993,7 @@ def create_block_offsets(
                 assert target is None
                 next_jump_target = True
                 next_jump_stack = None
-    return sorted((BlockOffset(k, v) for (k, v) in block_offset_map.items()), key=lambda x: x.offset)
+    return sorted((BlockOffset(off, h, handler_for(exceptions, off)) for (off, h) in block_offset_map.items()), key=lambda x: x.offset)
 
 class RedirectStdStreams(object):
     def __init__(self, stdout=None, stderr=None):
@@ -2058,10 +2118,11 @@ def generate_blocks(globals, co):
 function_decl = \
     PythonSSA.add_op(
         "mk_function",
-        [ArgDecl("name", Init.Str()),
-         ArgDecl("args", Init.Seq(Init.Str())),
-         ArgDecl("blocks", Init.Seq(block_cat))
-         ], Init.Command())
+        ArgDecl("name", Init.Str()),
+        ArgDecl("args", Init.Seq(Init.Str())),
+        ArgDecl("blocks", Init.Seq(block_cat)),
+        Init.Command(),
+        syntax=t'function {SyntaxArg("name")}({SyntaxArg("args")})\n{Indent(2, SyntaxArg("blocks"))}')
 
 @dataclass
 class Function:
@@ -2134,7 +2195,7 @@ def find_code(globals : Globals, n : int, co):
     block_offsets = create_block_offsets(insns, exception_table)
 
     translator = Translator(globals, co, block_offsets)
-    for i, ins in enumerate(insns):
+    for ins in insns:
         offset = ins.offset
         if offset != 0 and offset in translator.jump_targets:
             translator.try_start_block(offset)

@@ -1280,14 +1280,33 @@ instance : CachedToIon Program where
 
 #declareIonSymbolTable Program
 
-def fromIonFragment (f : Ion.Fragment) (dialects : DialectMap) (dialect : DialectName) : Except String Program := do
+def fromIonFragmentCommands (f : Ion.Fragment) : Except String (Array Operation) := do
   let ctx : FromIonContext := ⟨f.symbols⟩
-  let commands ← f.values.foldlM (init := #[]) (start := f.offset) fun cmds u => do
+  f.values.foldlM (init := #[]) (start := f.offset) fun cmds u => do
     cmds.push <$> OperationF.fromIon u ctx
+
+def fromIonFragment (f : Ion.Fragment)
+      (dialects : DialectMap)
+      (dialect : DialectName) : Except String Program :=
   return {
-    dialects := dialects.importedDialects! dialect
+    dialects := dialects
     dialect := dialect
-    commands := commands
+    commands := ← fromIonFragmentCommands f
   }
+
+def fromIon (dialects : DialectMap) (dialect : DialectName) (bytes : ByteArray) : Except String Strata.Program := do
+  let (hdr, frag) ←
+    match Strata.Ion.Header.parse bytes with
+    | .error msg =>
+      throw msg
+    | .ok p =>
+      pure p
+  match hdr with
+  | .dialect _ =>
+    throw "Expected a Strata program instead of a dialect."
+  | .program name => do
+    if name != dialect then
+      throw s!"{name} program found when {dialect} expected."
+    fromIonFragment frag dialects dialect
 
 end Program

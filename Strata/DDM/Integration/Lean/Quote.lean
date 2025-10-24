@@ -7,9 +7,10 @@
 import Strata.DDM.AST
 import Lean.Elab.Term
 
+open Lean
+
 namespace Strata
 
-open Lean
 
 private def quoteOption (a : Option Term) : Term :=
   match a with

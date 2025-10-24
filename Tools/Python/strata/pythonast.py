@@ -30,18 +30,18 @@ class Op:
 PythonAST : typing.Any = strata.Dialect('PythonAST')
 PythonAST.add_import("Init")
 PythonAST.add_syncat("int")
-PythonAST.add_op("IntPos", [ArgDecl("v", Init.Num())], PythonAST.int())
-PythonAST.add_op("IntNeg", [ArgDecl("v", Init.Num())], PythonAST.int())
+PythonAST.add_op("IntPos", ArgDecl("v", Init.Num()), PythonAST.int())
+PythonAST.add_op("IntNeg", ArgDecl("v", Init.Num()), PythonAST.int())
 PythonAST.add_syncat("constant")
-PythonAST.add_op("ConTrue", [], PythonAST.constant())
-PythonAST.add_op("ConFalse", [], PythonAST.constant())
-PythonAST.add_op("ConPos", [ArgDecl("v", Init.Num())], PythonAST.constant())
-PythonAST.add_op("ConNeg", [ArgDecl("v", Init.Num())], PythonAST.constant())
-PythonAST.add_op("ConString", [ArgDecl("v", Init.Str())], PythonAST.constant())
+PythonAST.add_op("ConTrue", PythonAST.constant())
+PythonAST.add_op("ConFalse", PythonAST.constant())
+PythonAST.add_op("ConPos", ArgDecl("v", Init.Num()), PythonAST.constant())
+PythonAST.add_op("ConNeg", ArgDecl("v", Init.Num()), PythonAST.constant())
+PythonAST.add_op("ConString", ArgDecl("v", Init.Str()), PythonAST.constant())
 # JHx: FIXME:  Support floating point literals
-PythonAST.add_op("ConFloat", [ArgDecl("v", Init.Str())], PythonAST.constant())
-PythonAST.add_op("ConNone", [], PythonAST.constant())
-PythonAST.add_op("ConEllipsis", [], PythonAST.constant())
+PythonAST.add_op("ConFloat", ArgDecl("v", Init.Str()), PythonAST.constant())
+PythonAST.add_op("ConNone", PythonAST.constant())
+PythonAST.add_op("ConEllipsis", PythonAST.constant())
 
 # Map python AST types to the syntax cat
 Python_catmap : dict[type, SyntaxCat] = {}
@@ -55,8 +55,8 @@ for c in ast.AST.__subclasses__():
     Python_catmap[c] = decl()
 
 PythonAST.add_syncat("opt_expr")
-some_expr = PythonAST.add_op("some_expr", [ArgDecl("x", PythonAST.expr())], PythonAST.opt_expr())
-missing_expr = PythonAST.add_op("missing_expr", [], PythonAST.opt_expr())
+some_expr = PythonAST.add_op("some_expr", ArgDecl("x", PythonAST.expr()), PythonAST.opt_expr())
+missing_expr = PythonAST.add_op("missing_expr", PythonAST.opt_expr())
 
 op_renamings = {
     'op': 'mk_op',
@@ -123,7 +123,7 @@ def translate_op(name : str, op : type, category : SyntaxCat):
     except AttributeError:
         op_args = []
         op_argDecls = []
-    decl = PythonAST.add_op(name, op_argDecls, category)
+    decl = PythonAST.add_op(name, *op_argDecls, category)
     Python_opmap[op] = Op(decl, op_args)
 
 # Add all operators to Python dialect and op_map.

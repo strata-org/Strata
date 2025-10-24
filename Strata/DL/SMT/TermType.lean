@@ -126,10 +126,10 @@ instance : DecidableEq TermType :=
                   rename_i id' args'
                   obtain ⟨h1, h2⟩ := h
                   induction args generalizing args' <;> simp_all
-                  case constr.intro.nil =>
+                  case constr.nil =>
                     unfold TermType.beq.go at h2
                     split at h2 <;> simp_all
-                  case constr.intro.cons head tail tail_ih =>
+                  case constr.cons head tail tail_ih =>
                     unfold TermType.beq.go at h2; split at h2 <;> simp_all
                     obtain ⟨h2_1, h2_2⟩ := h2
                     obtain ⟨ih1, ih2⟩ := ih

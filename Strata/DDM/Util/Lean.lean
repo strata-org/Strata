@@ -68,3 +68,15 @@ def arrayToExpr (type : Lean.Expr) (a : Array Lean.Expr) : Lean.Expr :=
   a.foldl (init := init) (mkApp2 pushFn)
 
 end Lean
+
+namespace Strata.Lean
+
+/--
+Prepend the current namespace to the Lean name and convert to an identifier.
+-/
+def mkScopedIdent (scope : Name) (subName : Lean.Name) : Ident :=
+  let fullName := scope ++ subName
+  let nameStr := toString subName
+  .mk (.ident .none nameStr.toSubstring subName [.decl fullName []])
+
+end Strata.Lean
