@@ -489,7 +489,13 @@ class SyntaxDefIdent(SyntaxDefAtomBase):
 @dataclass
 class SyntaxDefIndent(SyntaxDefAtomBase):
     indent: int
-    args : list['SyntaxDefAtom']
+    args : tuple['SyntaxDefAtom', ...]
+
+    def __init__(self, indent: int, args: tuple['SyntaxDefAtom', ...]):
+        self.indent = indent
+        self.args = args
+        for a in args:
+            assert not isinstance(a, SyntaxDefIndent)
 
     def to_ion(self):
         return ion_sexp(ion_symbol("indent"), self.indent, *(syntaxdef_atom_to_ion(a) for a in self.args))
@@ -500,6 +506,7 @@ def syntaxdef_atom_to_ion(atom : SyntaxDefAtom) -> object:
     if isinstance(atom, str):
         return atom
     else:
+        assert isinstance(atom, SyntaxDefAtomBase)
         return atom.to_ion()
 
 @dataclass
@@ -558,14 +565,94 @@ class ArgDecl:
             flds["metadata"] = metadata_to_ion(self.metadata)
         return flds
 
+maxPrec = 1024
+
+class SyntaxArg:
+    """Argument in syntax expression."""
+    name : str
+    prec : int
+
+    def __init__(self, name : str):
+        (f, s, e) = name.partition(':')
+        prec = maxPrec
+        if len(s) == 0:
+            prec = 0
+        else:
+            prec = int(e)
+        self.name = f
+        self.prec = prec
+
+    def resolve(self, args : dict[str, int]) -> SyntaxDefAtom:
+        level = args.get(self.name, None)
+        if level is None:
+            raise ValueError(f'Unknown argument {self.name}')
+        return SyntaxDefIdent(level, prec=self.prec)
+
+class Indent:
+    prec : int
+    value : Template|SyntaxArg
+
+    def __init__(self, prec : int, value : Template|SyntaxArg):
+        assert type(prec) is int and prec > 0
+        self.prec = prec
+        self.value = value
+
+from string.templatelib import Interpolation, Template
+
+def resolve_template(args : dict[str, int], t : Template) -> list[SyntaxDefAtom|str]:
+    atoms = []
+    for a in t:
+        if isinstance(a, Interpolation):
+            value = a.value
+            if isinstance(value, str):
+                atoms.append(value)
+            elif isinstance(value, SyntaxArg):
+                atoms.append(value.resolve(args))
+            else:
+                assert isinstance(value, Indent)
+                contents = value.value
+                if isinstance(contents, SyntaxArg):
+                    iatoms = (contents.resolve(args),)
+                else:
+                    assert isinstance(contents, Template)
+                    iatoms = tuple(resolve_template(args, contents))
+                atoms.append(SyntaxDefIndent(value.prec, iatoms))
+        else:
+            assert isinstance(a, str)
+            atoms.append(a)
+    return atoms
+
+def resolve_syntax(args : dict[str, int], v : str|Template|SyntaxArg|Indent) -> list[SyntaxDefAtom]:
+    if isinstance(v, str):
+        return [v]
+    elif isinstance(v, Template):
+        return resolve_template(args, v)
+    elif isinstance(v, Indent):
+        contents = v.value
+        if isinstance(contents, SyntaxArg):
+            atoms = (contents.resolve(args),)
+        else:
+            assert isinstance(contents, Template)
+            atoms = tuple(resolve_template(args, contents))
+        return [SyntaxDefIndent(v.prec, atoms)]
+    else:
+        assert isinstance(v, SyntaxArg)
+        return [v.resolve(args)]
+
 class OpDecl:
     opSym = ion.SymbolToken(u'op', None, None)
-    result : QualifiedIdent
+    dialect : str
+    name : str
+    ident : QualifiedIdent
+    args : tuple[ArgDecl, ...]
+    result : SyntaxCat
+    metadata : Metadata
+    syntax : SyntaxDef|None
 
     def __init__(self,
                 dialect: str,
                 name: str,
-                args: list[ArgDecl],
+                args: tuple[ArgDecl, ...],
                 result : SyntaxCat,
                 *,
                 syntax : SyntaxDef|None = None,
@@ -574,13 +661,18 @@ class OpDecl:
         assert isinstance(result, SyntaxCat)
         assert len(result.args) == 0
         assert name not in reserved, f'{name} is a reserved word.'
+        arg_dict = {}
+        for i, a in enumerate(args):
+            assert a.name not in arg_dict
+            arg_dict[a.name] = i
+
         self.dialect = dialect
         self.name = name
         self.ident = QualifiedIdent(dialect, name)
         self.args = args
-        self.result = result.name
-        self.metadata = [] if metadata is None else metadata
+        self.result = result
         self.syntax = syntax
+        self.metadata = [] if metadata is None else metadata
 
     def __call__(self, *args, ann=None):
         assert len(args) == len(self.args), f"{self.ident} given {len(args)} argument(s) when {len(self.args)} expected ({args})"
@@ -593,7 +685,7 @@ class OpDecl:
         }
         if len(self.args) > 0:
             flds["args"] = [ a.to_ion() for a in self.args ]
-        flds["result"] = self.result.to_ion()
+        flds["result"] = self.result.name.to_ion()
         if self.syntax is not None:
             flds["syntax"] = self.syntax.to_ion()
         if len(self.metadata) > 0:
@@ -630,10 +722,36 @@ class Dialect:
         self.add(decl)
         return decl
 
-    def add_op(self, name : str, args: list[ArgDecl], result : SyntaxCat, *,
-            syntax : SyntaxDef|None = None,
+    def add_op(self, name : str, *args: ArgDecl|SyntaxCat,
+            syntax : str|Template|SyntaxArg|Indent|None|list[SyntaxDefAtom] = None,
+            prec : int|None = None,
             metadata : Metadata|None = None) -> OpDecl:
-        decl = OpDecl(self.name, name, args, result, syntax=syntax, metadata=metadata)
+        assert name not in reserved, f'{name} is a reserved word.'
+        assert len(args) > 0
+        result = args[-1]
+        assert isinstance(result, SyntaxCat), f'{name} result must be a SyntaxCat'
+        assert len(result.args) == 0
+        args = args[:-1]
+        assert all((isinstance(a, ArgDecl) for a in args)), f'{name} args must be a ArgDecl'
+        rargs : tuple[ArgDecl, ...] = args # type: ignore
+
+        arg_dict = {}
+        for i, a in enumerate(rargs):
+            assert a.name not in arg_dict
+            arg_dict[a.name] = i
+
+        if syntax is None:
+            assert prec is None
+            syntaxd = None
+        else:
+            if prec is None:
+                prec = maxPrec
+            if isinstance(syntax, list):
+                syntax_atoms = syntax
+            else:
+                syntax_atoms = resolve_syntax(arg_dict, syntax)
+            syntaxd = SyntaxDef(syntax_atoms, prec)
+        decl = OpDecl(self.name, name, rargs, result, syntax=syntaxd, metadata=metadata)
         self.add(decl)
         return decl
 

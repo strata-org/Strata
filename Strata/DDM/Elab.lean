@@ -12,12 +12,14 @@ import Strata.DDM.Ion
 
 open Lean (
     Message
+    MessageData
     Name
     Syntax
     SyntaxNodeKind
     TSyntax
     TSyntaxArray
     MacroM
+    mkEmptyEnvironment    mkStringMessage
     quote
     nullKind
   )
@@ -26,7 +28,6 @@ open Strata.Parser (DeclParser InputContext ParsingContext ParserState)
 
 namespace Strata
 
-open Lean
 
 namespace Elab
 
@@ -57,7 +58,7 @@ partial def elabHeader
     (leanEnv : Lean.Environment)
     (inputContext : InputContext)
     (startPos : String.Pos := 0)
-    (stopPos : String.Pos := inputContext.input.endPos)
+    (stopPos : String.Pos := inputContext.endPos)
      : Header × Array Message × String.Pos :=
   let s : DeclState := .initDeclState
   let s := s.openLoadedDialect! .builtin headerDialect
@@ -99,8 +100,9 @@ def elabProgramRest
     (inputContext : InputContext)
     (loc : SourceRange)
     (dialect : DialectName)
+    (known : dialect ∈ loader.dialects)
     (startPos : String.Pos)
-    (stopPos : String.Pos := inputContext.input.endPos)
+    (stopPos : String.Pos := inputContext.endPos)
     : Except (Array Message) Program := do
   let some d := loader.dialects[dialect]?
     | .error #[Lean.mkStringMessage inputContext loc.start s!"Unknown dialect {dialect}."]
@@ -110,7 +112,7 @@ def elabProgramRest
   let ctx : DeclContext := { inputContext, stopPos, loader := loader, missingImport := false }
   let (cmds, s) := runCommand leanEnv #[] stopPos ctx s
   if s.errors.isEmpty then
-    let openDialects := loader.dialects.importedDialects! dialect
+    let openDialects := loader.dialects.importedDialects dialect known
     .ok <| .create openDialects dialect cmds
   else
     .error s.errors
@@ -121,7 +123,7 @@ partial def elabProgram
     (leanEnv : Lean.Environment)
     (inputContext : InputContext)
     (startPos : String.Pos := 0)
-    (stopPos : String.Pos := inputContext.input.endPos) : Except (Array Message) Program :=
+    (stopPos : String.Pos := inputContext.endPos) : Except (Array Message) Program :=
   assert! "Init" ∈ loader.dialects
   let (header, errors, startPos) := elabHeader leanEnv inputContext startPos stopPos
   if errors.size > 0 then
@@ -131,7 +133,10 @@ partial def elabProgram
     | .dialect loc _ =>
       .error #[Lean.mkStringMessage inputContext loc.start "Expected program name"]
     | .program loc dialect => do
-      elabProgramRest loader leanEnv inputContext loc dialect startPos stopPos
+      if p : dialect ∈ loader.dialects then
+        elabProgramRest loader leanEnv inputContext loc dialect p startPos stopPos
+      else
+        .error #[Lean.mkStringMessage inputContext loc.start s!"Unknown dialect {dialect}."]
 
 private def asText{m} [Monad m] [MonadExcept String m] (path : System.FilePath) (bytes : ByteArray) : m String :=
   match String.fromUTF8? bytes with
@@ -317,7 +322,7 @@ partial def elabDialectRest
       (loc : SourceRange)
       (dialect : DialectName)
       (startPos : String.Pos := 0)
-      (stopPos : String.Pos := inputContext.input.endPos)
+      (stopPos : String.Pos := inputContext.endPos)
       : BaseIO (LoadedDialects × Dialect × DeclState) := do
   let leanEnv ←
     match ← mkEmptyEnvironment 0 |>.toBaseIO with
@@ -389,7 +394,7 @@ def elabDialect
     (dialects : LoadedDialects)
     (inputContext : Parser.InputContext)
     (startPos : String.Pos := 0)
-    (stopPos : String.Pos := inputContext.input.endPos)
+    (stopPos : String.Pos := inputContext.endPos)
      : BaseIO (LoadedDialects × Dialect × DeclState) := do
   let leanEnv ←
     match ← mkEmptyEnvironment 0 |>.toBaseIO with
