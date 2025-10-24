@@ -68,7 +68,7 @@ def typeCheck (T : Boogie.Expression.TyEnv) (program : Program) :
           .error f!"Type declaration of the same name already exists!\n\
                     {decl}"
         | none =>
-          if td.name.snd ∈ T.knownTypes.keywords then
+          if td.name.name ∈ T.knownTypes.keywords then
             .error f!"This type declaration's name is reserved!\n\
                       {td}\n\
                       KnownTypes' names:\n\

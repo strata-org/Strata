@@ -16,12 +16,12 @@ namespace Strata
 -- 2. Running SymExec of Lambda and Imp
 
 
-def translate_expr (e : C_Simp.Expression.Expr) : Lambda.LExpr Lambda.LMonoTy Boogie.BoogieIdent :=
+def translate_expr (e : C_Simp.Expression.Expr) : Lambda.LExpr Lambda.LMonoTy Boogie.Visibility :=
   match e with
   | .const c ty => .const c ty
-  | .op o ty => .op (.unres, o) ty
+  | .op o ty => .op ⟨o.name, .unres⟩ ty
   | .bvar n => .bvar n
-  | .fvar n ty => .fvar (.unres, n) ty
+  | .fvar n ty => .fvar ⟨n.name, .unres⟩ ty
   | .mdata i e => .mdata i (translate_expr e)
   | .abs ty e => .abs ty (translate_expr e)
   | .quant k ty tr e => .quant k ty (translate_expr tr) (translate_expr e)
@@ -29,16 +29,16 @@ def translate_expr (e : C_Simp.Expression.Expr) : Lambda.LExpr Lambda.LMonoTy Bo
   | .ite c t e => .ite (translate_expr c) (translate_expr t) (translate_expr e)
   | .eq e1 e2 => .eq (translate_expr e1) (translate_expr e2)
 
-def translate_opt_expr (e : Option C_Simp.Expression.Expr) : Option (Lambda.LExpr Lambda.LMonoTy Boogie.BoogieIdent) :=
+def translate_opt_expr (e : Option C_Simp.Expression.Expr) : Option (Lambda.LExpr Lambda.LMonoTy Boogie.Visibility) :=
   match e with
   | some e => translate_expr e
   | none => none
 
 def translate_cmd (c: C_Simp.Command) : Boogie.Command :=
   match c with
-  | .init name ty e _md => .cmd (.init (.unres, name) ty (translate_expr e) {})
-  | .set name e _md => .cmd (.set (.unres, name) (translate_expr e) {})
-  | .havoc name _md => .cmd (.havoc (.unres, name) {})
+  | .init name ty e _md => .cmd (.init ⟨name.name, .unres⟩ ty (translate_expr e) {})
+  | .set name e _md => .cmd (.set ⟨name.name, .unres⟩ (translate_expr e) {})
+  | .havoc name _md => .cmd (.havoc ⟨name.name, .unres⟩ {})
   | .assert label b _md => .cmd (.assert label (translate_expr b) {})
   | .assume label b _md =>  .cmd (.assume label (translate_expr b) {})
 
@@ -76,7 +76,7 @@ def loop_elimination_statement(s : C_Simp.Statement) : Boogie.Statement :=
     match measure, invariant with
     | .some measure, some invariant =>
       -- let bodyss : := body.ss
-      let assigned_vars := (Imperative.Stmts.modifiedVars body.ss).map (λ s => (.unres, s))
+      let assigned_vars := (Imperative.Stmts.modifiedVars body.ss).map (λ s => ⟨s.name, .unres⟩)
       let havocd : Boogie.Statement := .block "loop havoc" {ss:= assigned_vars.map (λ n => Boogie.Statement.havoc n {})} {}
 
       let measure_pos := (.app (.app (.op "Int.Ge" none) (translate_expr measure)) (.const "0" none))
@@ -104,8 +104,8 @@ def loop_elimination_statement(s : C_Simp.Statement) : Boogie.Statement :=
 def loop_elimination_function(f : C_Simp.Function) : Boogie.Procedure :=
   let boogie_preconditions := [("pre", {expr := translate_expr f.pre})]
   let boogie_postconditions := [("post", {expr := translate_expr f.post})]
-  {header := {name := f.name, typeArgs := [],
-              inputs := f.inputs.map (λ p => (p.fst, p.snd)),
+  {header := {name := f.name.name, typeArgs := [],
+              inputs := f.inputs.map (λ p => (p.fst.name, p.snd)),
               outputs := [("return", f.ret_ty)]},
               spec := {modifies := [],
                        preconditions := boogie_preconditions,

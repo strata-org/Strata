@@ -51,11 +51,11 @@ def lexprToCBMC (expr : Strata.C_Simp.Expression.Expr) (functionName : String) :
   let cfg := CBMCConfig.empty
   match expr with
   | .app (.app (.op op _) (.fvar varName _)) (.const value _) =>
-    mkBinaryOp (opToStr op) "2" functionName (config := cfg)
+    mkBinaryOp (opToStr op.name) "2" functionName (config := cfg)
       (Json.mkObj [
         ("id", "symbol"),
         ("namedSub", Json.mkObj [
-          ("#base_name", Json.mkObj [("id", varName)]),
+          ("#base_name", Json.mkObj [("id", varName.name)]),
           ("#id_class", Json.mkObj [("id", "1")]),
           ("#lvalue", Json.mkObj [("id", "1")]),
           ("#source_location", mkSourceLocation "from_andrew.c" functionName "2" cfg),
@@ -96,8 +96,8 @@ def createContractSymbolFromAST (func : Strata.C_Simp.Function) : CBMCSymbol :=
     ])
   }
 
-  let sourceLocation := mkSourceLocation "from_andrew.c" func.name "2"
-  let ensuresSourceLocation := mkSourceLocation "from_andrew.c" func.name "3"
+  let sourceLocation := mkSourceLocation "from_andrew.c" func.name.name "2"
+  let ensuresSourceLocation := mkSourceLocation "from_andrew.c" func.name.name "3"
 
   let mathFunctionType := Json.mkObj [
     ("id", "mathematical_function"),
@@ -128,7 +128,7 @@ def createContractSymbolFromAST (func : Strata.C_Simp.Function) : CBMCSymbol :=
     ]),
     ("sub", Json.arr #[
       parameterTuple,
-      lexprToCBMC func.pre func.name
+      lexprToCBMC func.pre func.name.name
     ])
   ]
 
@@ -140,15 +140,15 @@ def createContractSymbolFromAST (func : Strata.C_Simp.Function) : CBMCSymbol :=
     ]),
     ("sub", Json.arr #[
       parameterTuple,
-      lexprToCBMC func.post func.name
+      lexprToCBMC func.post func.name.name
     ])
   ]
 
   let parameters := Json.mkObj [
     ("id", ""),
     ("sub", Json.arr #[
-      mkParameter "x" func.name "1" cfg,
-      mkParameter "y" func.name "1" cfg
+      mkParameter "x" func.name.name "1" cfg,
+      mkParameter "y" func.name.name "1" cfg
     ])
   ]
 
@@ -172,13 +172,13 @@ def createContractSymbolFromAST (func : Strata.C_Simp.Function) : CBMCSymbol :=
   ]
 
   {
-    baseName := func.name,
+    baseName := func.name.name,
     isProperty := true,
     location := location,
     mode := "C",
     module := "from_andrew",
     name := s!"contract::{func.name}",
-    prettyName := func.name,
+    prettyName := func.name.name,
     prettyType := "signed int (signed int x, signed int y)",
     type := contractType,
     value := Json.mkObj [("id", "nil")]
@@ -188,7 +188,7 @@ def getParamJson(func: Strata.C_Simp.Function) : Json :=
   let cfg := CBMCConfig.empty
   Json.mkObj [
     ("id", ""),
-    ("sub", Json.arr (func.inputs.map (λ i => mkParameter i.fst func.name "1" cfg)).toArray)
+    ("sub", Json.arr (func.inputs.map (λ i => mkParameter i.fst.name func.name.name "1" cfg)).toArray)
   ]
 
 def exprToJson (e : Strata.C_Simp.Expression.Expr) (loc: SourceLoc) : Json :=
@@ -203,7 +203,7 @@ def exprToJson (e : Strata.C_Simp.Expression.Expr) (loc: SourceLoc) : Json :=
       | .fvar varName _ => mkLvalueSymbol s!"{loc.functionName}::{varName}" loc.lineNum loc.functionName cfg
       | .const value _ => mkConstant value "10" (mkSourceLocation "from_andrew.c" loc.functionName loc.lineNum cfg) cfg
       | _ => exprToJson right loc
-    mkBinaryOp (opToStr op) loc.lineNum loc.functionName leftJson rightJson cfg
+    mkBinaryOp (opToStr op.name) loc.lineNum loc.functionName leftJson rightJson cfg
   | .const n _ =>
     mkConstant n "10" (mkSourceLocation "from_andrew.c" loc.functionName "14" cfg) cfg
   | _ => panic! "Unimplemented"
@@ -344,14 +344,14 @@ def createImplementationSymbolFromAST (func : Strata.C_Simp.Function) : CBMCSymb
   ]
 
   -- For now, keep the hardcoded implementation but use function name from AST
-  let loc : SourceLoc := { functionName := func.name, lineNum := "1" }
+  let loc : SourceLoc := { functionName := func.name.name, lineNum := "1" }
   let stmtJsons := (func.body.map (stmtToJson · loc)) --++ [returnStmt]
 
   let implValue := Json.mkObj [
     ("id", "code"),
     ("namedSub", Json.mkObj [
-      ("#end_location", mkSourceLocation "from_andrew.c" func.name "15"),
-      ("#source_location", mkSourceLocation "from_andrew.c" func.name "4"),
+      ("#end_location", mkSourceLocation "from_andrew.c" func.name.name "15"),
+      ("#source_location", mkSourceLocation "from_andrew.c" func.name.name "4"),
       ("statement", Json.mkObj [("id", "block")]),
       ("type", emptyType)
     ]),
@@ -359,14 +359,14 @@ def createImplementationSymbolFromAST (func : Strata.C_Simp.Function) : CBMCSymb
   ]
 
   {
-    baseName := func.name,
+    baseName := func.name.name,
     isLvalue := true,
     location := location,
     mode := "C",
     module := "from_andrew",
-    name := func.name,
-    prettyName := func.name,
-    prettyType := s!"signed int (signed int {String.intercalate ", signed int " func.inputs.keys})",
+    name := func.name.name,
+    prettyName := func.name.name,
+    prettyType := s!"signed int (signed int {String.intercalate ", signed int " (func.inputs.keys.map Lambda.Identifier.name)})",
     prettyValue := "{\n  signed int z;\n  z = x + y;\n  __CPROVER_assert(z > x, \"test_assert\");\n  if(z > 10)\n  {\n    z = z - 1;\n  }\n\n  else\n  {\n    z = z + 1;\n  }\n  __CPROVER_assume(z > 0);\n  return 0;\n}",
     type := implType,
     value := implValue
@@ -381,16 +381,16 @@ def testSymbols (myFunc: Strata.C_Simp.Function) : String := Id.run do
   let paramNames := myFunc.inputs.keys
 
   -- Hardcode local variable for now
-  let zSymbol := createLocalSymbol "z" myFunc.name
+  let zSymbol := createLocalSymbol "z" myFunc.name.name
 
   -- Build symbol map
   let mut m : Map String CBMCSymbol := Map.empty
   m := m.insert s!"contract::{myFunc.name}" contractSymbol
-  m := m.insert myFunc.name implSymbol
+  m := m.insert myFunc.name.name implSymbol
 
   -- Add parameter symbols
   for paramName in paramNames do
-    let paramSymbol := createParameterSymbol paramName myFunc.name
+    let paramSymbol := createParameterSymbol paramName.name myFunc.name.name
     m := m.insert s!"{myFunc.name}::{paramName}" paramSymbol
 
   -- Add local variable

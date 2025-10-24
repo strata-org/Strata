@@ -44,7 +44,7 @@ open Lambda Strata.SMT
 
 -- (TODO) Use DL.Imperative.SMTUtils.
 
-abbrev CounterEx := Map (IdentT BoogieIdent) String
+abbrev CounterEx := Map (IdentT Visibility) String
 
 def CounterEx.format (cex : CounterEx) : Format :=
   match cex with
@@ -59,12 +59,12 @@ instance : ToFormat CounterEx where
 /--
 Find the Id for the SMT encoding of `x`.
 -/
-def getSMTId (x : (IdentT BoogieIdent)) (ctx : SMT.Context) (E : EncoderState) : Except Format String := do
+def getSMTId (x : (IdentT Visibility)) (ctx : SMT.Context) (E : EncoderState) : Except Format String := do
     match x with
     | (var, none) => .error f!"Expected variable {var} to be annotated with a type!"
     | (var, some ty) => do
       let (ty', _) ← LMonoTy.toSMTType ty ctx
-      let key := Term.var (TermVar.mk false var.2 ty')
+      let key := Term.var (TermVar.mk false var.name ty')
       .ok E.terms[key]!
 
 def getModel (m : String) : Except Format (List Strata.SMT.CExParser.KeyValue) := do
@@ -72,7 +72,7 @@ def getModel (m : String) : Except Format (List Strata.SMT.CExParser.KeyValue) :
   return cex.pairs
 
 def processModel
-  (vars : List (IdentT BoogieIdent)) (cexs : List Strata.SMT.CExParser.KeyValue)
+  (vars : List (IdentT Visibility)) (cexs : List Strata.SMT.CExParser.KeyValue)
   (ctx : SMT.Context) (E : EncoderState) :
   Except Format CounterEx := do
   match vars with
@@ -115,7 +115,7 @@ def runSolver (solver : String) (args : Array String) : IO String := do
   --                         stdout: {repr output.stdout}"
   return output.stdout
 
-def solverResult (vars : List (IdentT BoogieIdent)) (ans : String) (ctx : SMT.Context) (E : EncoderState) :
+def solverResult (vars : List (IdentT Visibility)) (ans : String) (ctx : SMT.Context) (E : EncoderState) :
   Except Format Result := do
   let pos := (ans.find (fun c => c == '\n')).byteIdx
   let verdict := (ans.take pos).trim
@@ -177,7 +177,7 @@ def getSolverFlags (options : Options) (solver : String) : Array String :=
 
 def dischargeObligation
   (options : Options)
-  (vars : List (IdentT BoogieIdent)) (smtsolver filename : String)
+  (vars : List (IdentT Visibility)) (smtsolver filename : String)
   (terms : List Term) (ctx : SMT.Context)
   : IO (Except Format (Result × EncoderState)) := do
   if !(← System.FilePath.isDir VC_folder_name) then

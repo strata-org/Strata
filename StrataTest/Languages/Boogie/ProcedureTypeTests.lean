@@ -58,7 +58,7 @@ body: g := (((~Int.Add : (arrow int (arrow int int))) (a : int)) (g : int))
 -/
 #guard_msgs in
 #eval do let ans ←
-              typeCheck { TEnv.default (Identifier:=BoogieIdent) with
+              typeCheck { TEnv.default (IDMeta:=Visibility) with
                               functions := Boogie.Factory,
                               context := { types := [[("g", t[int])]] }}
                         Program.init
@@ -85,7 +85,7 @@ body: g := (((~Int.Add : (arrow int (arrow int int))) (a : int)) (g : int))
 -/
 #guard_msgs in
 #eval do let ans ←
-              typeCheck { TEnv.default (Identifier:=BoogieIdent) with
+              typeCheck { TEnv.default (IDMeta:=Visibility) with
                               functions := Boogie.Factory,
                               context := { types := [[("g", t[int])]] }}
                         Program.init

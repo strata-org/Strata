@@ -17,12 +17,9 @@ namespace Lambda
 open Std (ToFormat Format format)
 open LExpr LTy
 
-def getStrs (n: Nat) : List String :=
-  List.map (fun x => "e" ++ toString x) (List.range n)
-
 -- Utilities
-def strConst (s: String) : LExpr LMonoTy String := .const s (.some .string)
-def intConst (n: Nat) : LExpr LMonoTy String := .const (toString n) (.some .int)
+def strConst (s: String) : LExpr LMonoTy Unit := .const s (.some .string)
+def intConst (n: Nat) : LExpr LMonoTy Unit := .const (toString n) (.some .int)
 
 /-
 We write the tests as pattern matches, even though we use eliminators
@@ -45,7 +42,7 @@ end ==> 3
 
 -/
 
-def weekTy : LDatatype String := {name := "Day", typeArgs := [], constrs := List.map (fun x => {name := x, args := []}) ["Su", "M", "T", "W", "Th", "F", "Sa"]}
+def weekTy : LDatatype Unit := {name := "Day", typeArgs := [], constrs := List.map (fun x => {name := x, args := []}) ["Su", "M", "T", "W", "Th", "F", "Sa"]}
 
 /--
 info: Annotated expression:
@@ -56,7 +53,7 @@ info: (#3 : int)
 -/
 #guard_msgs in
 #eval format $
-  typeCheckAndPartialEval getStrs #[weekTy]  Factory.default ((LExpr.op "DayElim" .none).appMulti (.op "W" (.some (.tcons "Day" [])) :: (List.range 7).map intConst))
+  typeCheckAndPartialEval #[weekTy]  Factory.default ((LExpr.op "DayElim" .none).appMulti (.op "W" (.some (.tcons "Day" [])) :: (List.range 7).map intConst))
 
 
 -- Test 2: Polymorphic tuples
@@ -73,13 +70,13 @@ fst (snd ("a", (1, "b"))) ==> 1
 
 -/
 
-def tupTy : LDatatype String := {name := "Tup", typeArgs := ["a", "b"], constrs := [{name := "Prod", args := [("x", .ftvar "a"), ("y", .ftvar "b")]}]}
+def tupTy : LDatatype Unit := {name := "Tup", typeArgs := ["a", "b"], constrs := [{name := "Prod", args := [("x", .ftvar "a"), ("y", .ftvar "b")]}]}
 
-def fst (e: LExpr LMonoTy String) := (LExpr.op "TupElim" .none).appMulti [e, .abs .none (.abs .none (.bvar 1))]
+def fst (e: LExpr LMonoTy Unit) := (LExpr.op "TupElim" .none).appMulti [e, .abs .none (.abs .none (.bvar 1))]
 
-def snd (e: LExpr LMonoTy String) := (LExpr.op "TupElim" .none).appMulti [e, .abs .none (.abs .none (.bvar 0))]
+def snd (e: LExpr LMonoTy Unit) := (LExpr.op "TupElim" .none).appMulti [e, .abs .none (.abs .none (.bvar 0))]
 
-def prod (e1 e2: LExpr LMonoTy String) : LExpr LMonoTy String := (LExpr.op "Prod" .none).appMulti [e1, e2]
+def prod (e1 e2: LExpr LMonoTy Unit) : LExpr LMonoTy Unit := (LExpr.op "Prod" .none).appMulti [e1, e2]
 
 /--
 info: Annotated expression:
@@ -90,7 +87,7 @@ info: (#3 : int)
 -/
 #guard_msgs in
 #eval format $
-  typeCheckAndPartialEval getStrs #[tupTy]  Factory.default (fst (prod (intConst 3) (strConst "a")))
+  typeCheckAndPartialEval #[tupTy]  Factory.default (fst (prod (intConst 3) (strConst "a")))
 
 /--
 info: Annotated expression:
@@ -101,7 +98,7 @@ info: (#a : string)
 -/
 #guard_msgs in
 #eval format $
-  typeCheckAndPartialEval getStrs #[tupTy]  Factory.default (snd (prod (intConst 3) (strConst "a")))
+  typeCheckAndPartialEval #[tupTy]  Factory.default (snd (prod (intConst 3) (strConst "a")))
 
 
 /--
@@ -113,7 +110,7 @@ info: (#1 : int)
 -/
 #guard_msgs in
 #eval format $
-  typeCheckAndPartialEval getStrs #[tupTy]  Factory.default (fst (snd (prod (strConst "a") (prod (intConst 1) (strConst "b")))))
+  typeCheckAndPartialEval #[tupTy]  Factory.default (fst (snd (prod (strConst "a") (prod (intConst 1) (strConst "b")))))
 
 
 -- Test 3: Polymorphic Lists
@@ -126,9 +123,9 @@ match [2] with | Nil => 0 | Cons x _ => x end ==> 2
 
 -/
 
-def nilConstr : LConstr String := {name := "Nil", args := []}
-def consConstr : LConstr String := {name := "Cons", args := [("h", .ftvar "a"), ("t", .tcons "List" [.ftvar "a"])]}
-def listTy : LDatatype String := {name := "List", typeArgs := ["a"], constrs := [nilConstr, consConstr]}
+def nilConstr : LConstr Unit := {name := "Nil", args := []}
+def consConstr : LConstr Unit := {name := "Cons", args := [("h", .ftvar "a"), ("t", .tcons "List" [.ftvar "a"])]}
+def listTy : LDatatype Unit := {name := "List", typeArgs := ["a"], constrs := [nilConstr, consConstr]}
 
 /-- info: Annotated expression:
 ((((~ListElim : (arrow (List $__ty5) (arrow int (arrow (arrow $__ty5 (arrow (List $__ty5) int)) int)))) (~Nil : (List $__ty5))) (#1 : int)) (λ (λ (#0 : int))))
@@ -138,11 +135,11 @@ info: (#1 : int)
 -/
 #guard_msgs in
 #eval format $
-  typeCheckAndPartialEval getStrs #[listTy]  Factory.default ((LExpr.op "ListElim" .none).appMulti [.op "Nil" .none, (intConst 1), .abs .none (.abs .none (intConst 0))])
+  typeCheckAndPartialEval #[listTy]  Factory.default ((LExpr.op "ListElim" .none).appMulti [.op "Nil" .none, (intConst 1), .abs .none (.abs .none (intConst 0))])
 
 -- Test: elim(cons 1 nil, 0, fun x y => x) -> (fun x y => x) 1 nil
 
-def consApp (e1 e2: LExpr LMonoTy String) : LExpr LMonoTy String := .app (.app (.op "Cons" .none) e1) e2
+def consApp (e1 e2: LExpr LMonoTy Unit) : LExpr LMonoTy Unit := .app (.app (.op "Cons" .none) e1) e2
 
 /-- info: Annotated expression:
 ((((~ListElim : (arrow (List int) (arrow int (arrow (arrow int (arrow (List int) int)) int)))) (((~Cons : (arrow int (arrow (List int) (List int)))) (#2 : int)) (~Nil : (List int)))) (#0 : int)) (λ (λ %1)))
@@ -152,7 +149,7 @@ info: (#2 : int)
 -/
 #guard_msgs in
 #eval format $
-  typeCheckAndPartialEval getStrs #[listTy]  Factory.default ((LExpr.op "ListElim" .none).appMulti [consApp (.const "2" (.some .int)) (.op "Nil" .none), intConst 0, .abs .none (.abs .none (bvar 1))])
+  typeCheckAndPartialEval #[listTy]  Factory.default ((LExpr.op "ListElim" .none).appMulti [consApp (.const "2" (.some .int)) (.op "Nil" .none), intConst 0, .abs .none (.abs .none (bvar 1))])
 
 -- Test 4: Multiple types and Factories
 
@@ -164,7 +161,7 @@ match [(3, "a"), (4, "b")] with
 end ==> 7
 -/
 
-def addOp (e1 e2: LExpr LMonoTy String) : LExpr LMonoTy String := .app (.app (.op intAddFunc.name .none) e1) e2
+def addOp (e1 e2: LExpr LMonoTy Unit) : LExpr LMonoTy Unit := .app (.app (.op intAddFunc.name .none) e1) e2
 
 /-- info: Annotated expression:
 ((((~ListElim : (arrow (List (Tup int string)) (arrow int (arrow (arrow (Tup int string) (arrow (List (Tup int string)) int)) int)))) (((~Cons : (arrow (Tup int string) (arrow (List (Tup int string)) (List (Tup int string))))) (((~Prod : (arrow int (arrow string (Tup int string)))) (#3 : int)) (#a : string))) (((~Cons : (arrow (Tup int string) (arrow (List (Tup int string)) (List (Tup int string))))) (((~Prod : (arrow int (arrow string (Tup int string)))) (#4 : int)) (#b : string))) (~Nil : (List (Tup int string)))))) (#0 : int)) (λ (λ (((~Int.Add : (arrow int (arrow int int))) (((~TupElim : (arrow (Tup int string) (arrow (arrow int (arrow string int)) int))) %1) (λ (λ %1)))) ((((~ListElim : (arrow (List (Tup int string)) (arrow int (arrow (arrow (Tup int string) (arrow (List (Tup int string)) int)) int)))) %0) (#1 : int)) (λ (λ (((~TupElim : (arrow (Tup int string) (arrow (arrow int (arrow string int)) int))) %1) (λ (λ %1))))))))))
@@ -174,7 +171,7 @@ info: (#7 : int)
 -/
 #guard_msgs in
 #eval format $
-  typeCheckAndPartialEval getStrs #[listTy, tupTy]  IntBoolFactory
+  typeCheckAndPartialEval #[listTy, tupTy]  IntBoolFactory
     ((LExpr.op "ListElim" .none).appMulti
       [consApp (prod (intConst 3) (strConst "a"))
         (consApp (prod (intConst 4) (strConst "b")) (.op "Nil" .none)),

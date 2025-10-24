@@ -60,6 +60,7 @@ def mkElabContext (ctx : DialectElabContext) (gctx : GlobalContext) (ictx : Pars
   globalContext := gctx
   inputContext := ictx
   syntaxElabs := ctx.syntaxElabMap
+  missingImport := false
 }
 
 end DialectElabContext
@@ -83,7 +84,7 @@ def ofExprImpl (elabGen : DialectElabContext) (ofExpr : Expr → OfAstM α) (ict
       | .error e => throw #[Lean.mkStringMessage ictx (stx.getPos?.getD 0) e]
       | .ok v => pure v
     else
-      throw <| s.errors.map (·.snd)
+      throw <| s.errors
 
 def ofTypeImpl (elabGen : DialectElabContext) (ofType : TypeExpr → OfAstM α) (ictx : InputContext) (tctx : Elab.TypingContext ) (stx : Lean.Syntax) : Except (Array Lean.Message) α := do
   let elabCtx : Elab.ElabContext := elabGen.mkElabContext tctx.globalContext ictx
@@ -94,7 +95,7 @@ def ofTypeImpl (elabGen : DialectElabContext) (ofType : TypeExpr → OfAstM α) 
     | .error e => throw #[Lean.mkStringMessage ictx (stx.getPos?.getD 0) e]
     | .ok v => pure v
   else
-    throw <| s.errors.map (·.snd)
+    throw <| s.errors
 
 def format {α} [h : GenType α] (a : α) (ctx : GlobalContext := {}) (opts : FormatOptions := {}) (bindings : Array String := #[]) : String :=
   let fctx : FormatContext := .ofDialects h.dialectInfo.dialectMap ctx opts
@@ -126,7 +127,7 @@ def parse (α : Type) [h : GenType α] (leanEnv : Lean.Environment) (tctx : Elab
     GenType.ofArg inputCtx tctx stx
 
 def parseString (α : Type) [h : GenType α] (leanEnv : Lean.Environment) (contents : String) (tctx : Elab.TypingContext := default) : Except (Array Lean.Message) α := do
-  let ictx := Parser.stringInputContext contents
+  let ictx := Parser.stringInputContext "dummy" contents
   parse α leanEnv tctx ictx 0 contents.endPos
 
 end GenType
@@ -156,9 +157,27 @@ fn gt (x : Int, y : Int) : Bool => @[prec(20)] x " > " y;
 namespace Arith
 
 --set_option trace.Strata.generator true
--- set_option trace.Strata.DDM.syntax true
 #strata_gen Arith
---set_option trace.Strata.generator false
+
+/--
+info: inductive Strata.Arith.Expr : Type
+number of parameters: 0
+constructors:
+Strata.Arith.Expr.fvar : Nat → Expr
+Strata.Arith.Expr.btrue : Expr
+Strata.Arith.Expr.bfalse : Expr
+Strata.Arith.Expr.imp : Expr → Expr → Expr
+Strata.Arith.Expr.intLit : Nat → Expr
+Strata.Arith.Expr.add : Expr → Expr → Expr
+Strata.Arith.Expr.mul : Expr → Expr → Expr
+Strata.Arith.Expr.eq : ArithType → Expr → Expr → Expr
+Strata.Arith.Expr.le : Expr → Expr → Expr
+Strata.Arith.Expr.lt : Expr → Expr → Expr
+Strata.Arith.Expr.ge : Expr → Expr → Expr
+Strata.Arith.Expr.gt : Expr → Expr → Expr
+-/
+#guard_msgs in
+#print Expr
 
 
 def arithDialects : DialectMap := DialectMap.ofList! [initDialect, Arith]

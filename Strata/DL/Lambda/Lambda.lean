@@ -27,25 +27,17 @@ See module `Strata.DL.Lambda.LExpr` for the formalization of expressions,
 `Strata.DL.Lambda.LExprEval` for the partial evaluator.
 -/
 
-variable {Identifier : Type} [ToString Identifier] [DecidableEq Identifier] [ToFormat Identifier] [HasGen Identifier] [Coe String Identifier]
-
-def LDatatype.toKnownType (d: LDatatype Identifier) : KnownType :=
-  { name := d.name, arity := d.typeArgs.length}
-
-def TypeFactory.toKnownTypes (t: @TypeFactory Identifier) : List KnownType :=
-  t.foldr (fun t l => t.toKnownType :: l) []
-
+variable {IDMeta : Type} [ToString IDMeta] [DecidableEq IDMeta] [HasGen IDMeta] [Inhabited IDMeta]
 /--
 Top-level type checking and partial evaluation function for the Lambda
 dialect.
 -/
 def typeCheckAndPartialEval
-  (genArgNames : Nat -> List Identifier := fun _ => []) --TODO bad hack
-  (t: TypeFactory (Identifier:=Identifier) := TypeFactory.default)
-  (f : Factory (Identifier:=Identifier) := Factory.default)
-  (e : (LExpr LMonoTy Identifier)) :
-  Except Std.Format (LExpr LMonoTy Identifier) := do
-  let fTy ← t.genFactory genArgNames
+  (t: TypeFactory (IDMeta:=IDMeta) := TypeFactory.default)
+  (f : Factory (IDMeta:=IDMeta) := Factory.default)
+  (e : (LExpr LMonoTy IDMeta)) :
+  Except Std.Format (LExpr LMonoTy IDMeta) := do
+  let fTy ← t.genFactory
   let fAll ← Factory.addFactory fTy f
   let T := TEnv.default.addFactoryFunctions fAll
   let T := T.addKnownTypes t.toKnownTypes
