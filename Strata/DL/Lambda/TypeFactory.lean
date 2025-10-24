@@ -89,13 +89,27 @@ def LMonoTy.mkArrow' (mty : LMonoTy) (mtys : LMonoTys) : LMonoTy :=
   | m :: mrest => .arrow m (LMonoTy.mkArrow' mty mrest)
 
 /--
-Generate types for eliminator arguments.
-The types are functions taking in each constructor argument and returning an element of type `outputType`. Note that there is NO recursive argument (yet), right now this only allows simple case reasoning.
+Construct a recursive type argument for the eliminator.
+Specifically, determine if a type `ty` contains a strictly positive, uniform occurrence of `t`, if so, replace this occurence with `retTy`.
+Note that this does NOT check for strict positivity or uniformity, this is done in TODO.
 -/
-def elimTy (outputType : LMonoTy)  (c: LConstr IDMeta): LMonoTy :=
+def genRecTy (t: LDatatype IDMeta) (retTy: LMonoTy)  (ty: LMonoTy) : Option LMonoTy :=
+  if ty == dataDefault t then .some retTy else
+  match ty with
+  | .arrow t1 t2 => (genRecTy t retTy t2).map (fun r => .arrow t1 r)
+  | _ => .none
+
+def isRecTy (t: LDatatype IDMeta) (ty: LMonoTy) : Bool :=
+  (genRecTy t .int ty).isSome
+
+/--
+Generate types for eliminator arguments.
+The types are functions taking in 1) each argument of constructor `c` of datatype `d` and 2) recursive results for each recursive argument of `c` and returning an element of type `outputType`.
+-/
+def elimTy (outputType : LMonoTy) (t: LDatatype IDMeta) (c: LConstr IDMeta): LMonoTy :=
   match c.args with
   | [] => outputType
-  | _ :: _ => LMonoTy.mkArrow' outputType (c.args.map Prod.snd)
+  | _ :: _ => LMonoTy.mkArrow' outputType (c.args.map Prod.snd ++ (c.args.map (fun x => (genRecTy t outputType x.2).toList)).flatten)
 
 /--
 Simulates pattern matching on operator o.
@@ -106,26 +120,70 @@ def LExpr.matchOp (e: LExpr LMonoTy IDMeta) (o: Identifier IDMeta) : Option (Lis
   | _ => .none
 
 /--
-Determine which constructor, if any, a datatype instance belongs to and get the arguments. Also gives the index in the constructor list
+Determine which constructor, if any, a datatype instance belongs to and get the arguments. Also gives the index in the constructor list as well as the recursive arguments (somewhat redundantly)
 -/
-def datatypeGetConstr (d: LDatatype IDMeta) (x: LExpr LMonoTy IDMeta) : Option (LConstr IDMeta × Nat × List (LExpr LMonoTy IDMeta)) :=
+def datatypeGetConstr (d: LDatatype IDMeta) (x: LExpr LMonoTy IDMeta) : Option (LConstr IDMeta × Nat × List (LExpr LMonoTy IDMeta) × List (LExpr LMonoTy IDMeta × LMonoTy)) :=
   List.foldr (fun (c, i) acc =>
     match x.matchOp c.name with
-    | .some args => .some (c, i, args)
+    | .some args =>
+      -- Get the elements of args corresponding to recursive calls, in order
+      let recs := (List.zip args (c.args.map Prod.snd)).filter (fun (_, ty) => isRecTy d ty)
+
+      .some (c, i, args, recs)
     | .none => acc) .none (List.zip d.constrs (List.range d.constrs.length))
 
+def LMonoTy.getArrowArgs (t: LMonoTy) : List LMonoTy :=
+  match t with
+  | .arrow t1 t2 => t1 :: t2.getArrowArgs
+  | _ => []
+
 /--
-Generate eliminator concrete evaluator. Idea: match on 1st argument (e.g. `x : List α`) to determine constructor and corresponding arguments. If it matches the `n`th constructor, return `n+1`st element of input list applied to constructor arguments.
+Determines which category a recursive type argument falls in: either `d(typeArgs)` or `τ₁ → ... → τₙ → d(typeArgs)`. In the later case, returns the `τ` list
 -/
-def elimConcreteEval (d: LDatatype IDMeta) :
+def recTyStructure (d: LDatatype IDMeta) (recTy: LMonoTy) : Unit ⊕ (List LMonoTy) :=
+  if recTy == dataDefault d then .inl () else .inr (recTy.getArrowArgs)
+
+--TODO: move
+def LExpr.absMulti (tys: List LMonoTy) (body: LExpr LMonoTy IDMeta) : LExpr LMonoTy IDMeta :=
+  List.foldr (fun ty e => .abs (.some ty) e) body tys
+
+/--
+Finds the lambda `bvar` arguments, in order, given an iterated lambda with `n` binders
+-/
+def getBVars (n: Nat) : List (LExpr LMonoTy IDMeta) :=
+  (List.range n).reverse.map .bvar
+
+/--
+Construct recursive call of eliminator. Specifically, `recs` are the recursive arguments, in order, while `elimArgs` are the eliminator cases (e.g. for a binary tree with constructor `Node x l r`, where `l` and `r` are subtrees, `recs` is `[l, r]`)
+
+Invariant: `recTy` must either have the form `d(typeArgs)` or `τ₁ → ... → τₙ → d(typeArgs)`. This is enforced by the filter in `dataTypeGetConstr`
+
+TODO: give examples everywhere
+
+-/
+def elimRecCall (d: LDatatype IDMeta) (recArg: LExpr LMonoTy IDMeta) (recTy: LMonoTy) (elimArgs: List (LExpr LMonoTy IDMeta)) (elimName : Identifier IDMeta) : LExpr LMonoTy IDMeta :=
+  match recTyStructure d recTy with
+  | .inl _ => -- Generate eliminator call directly
+    (LExpr.op elimName .none).mkApp (recArg :: elimArgs)
+  | .inr funArgs => -- Construct lambda, first arg of eliminator is recArg applied to lambda arguments
+    LExpr.absMulti funArgs ((LExpr.op elimName .none).mkApp (recArg.mkApp (getBVars funArgs.length) :: elimArgs))
+
+
+
+
+
+/--
+Generate eliminator concrete evaluator. Idea: match on 1st argument (e.g. `x : List α`) to determine constructor and corresponding arguments. If it matches the `n`th constructor, return `n+1`st element of input list applied to constructor arguments and recursive calls.
+-/
+def elimConcreteEval (d: LDatatype IDMeta) (elimName : Identifier IDMeta) :
   (LExpr LMonoTy IDMeta) → List (LExpr LMonoTy IDMeta) → (LExpr LMonoTy IDMeta) :=
   fun e args =>
     match args with
     | x :: xs =>
       match datatypeGetConstr d x with
-      | .some (_, i, a) =>
+      | .some (_, i, a, recs) =>
         match xs[i]? with
-        | .some f => f.mkApp a
+        | .some f => f.mkApp (a ++ recs.map (fun (r, rty) => elimRecCall d r rty xs elimName))
         | .none => e
       | .none => e
     | _ => e
@@ -135,7 +193,8 @@ The `LFunc` corresponding to the eliminator for datatype `d`, called e.g. `ListE
 -/
 def elimFunc (d: LDatatype IDMeta) : LFunc IDMeta :=
   let outTyId := freshTypeArg d.typeArgs
-  { name := d.name ++ "Elim", typeArgs := outTyId :: d.typeArgs, inputs := List.zip (genArgNames (d.constrs.length + 1)) (dataDefault d :: d.constrs.map (elimTy (.ftvar outTyId))), output := .ftvar outTyId, concreteEval := elimConcreteEval d}
+  let elimName := d.name ++ "Elim";
+  { name := elimName, typeArgs := outTyId :: d.typeArgs, inputs := List.zip (genArgNames (d.constrs.length + 1)) (dataDefault d :: d.constrs.map (elimTy (.ftvar outTyId) d)), output := .ftvar outTyId, concreteEval := elimConcreteEval d elimName}
 
 def TypeFactory := Array (LDatatype IDMeta)
 
