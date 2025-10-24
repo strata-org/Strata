@@ -6,7 +6,7 @@ import StrataTest.Internal.BoogiePrelude
 
 namespace Strata
 
-private def f : String := boogiePrelude
+private def f : Strata.Program := boogiePrelude
 
 def pythonVerify (pgm: Strata.Program) : String :=
   let boogiePgm :=pythonToBoogie pgm
