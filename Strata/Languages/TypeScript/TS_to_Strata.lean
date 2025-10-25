@@ -200,7 +200,7 @@ partial def translate_statement (s: TS_Statement) (ctx : TranslationContext) : T
       (ctx, [.cmd (.set "return_value" (Heap.HExpr.int 1))])
 
   | .TS_VariableDeclaration decl =>
-    match decl.declarations.get? 0 with
+    match decl.declarations[0]? with
     | .none => panic! "VariableDeclarations should have at least one declaration"
     | .some d =>
       -- Check if this is a function call assignment
@@ -280,6 +280,14 @@ partial def translate_statement (s: TS_Statement) (ctx : TranslationContext) : T
     -- For now, we'll use the then context (could be more sophisticated)
     (thenCtx, [.ite testExpr thenBlock elseBlock])
 
+  | .TS_WhileStatement whileStmt =>
+    dbg_trace s!"[DEBUG] Translating while statement at loc {whileStmt.start_loc}-{whileStmt.end_loc}"
+    dbg_trace s!"[DEBUG] While test: {repr whileStmt.test}"
+    dbg_trace s!"[DEBUG] While body: {repr whileStmt.body}"
+    let testExpr := translate_expr whileStmt.test
+    let (bodyCtx, bodyStmts) := translate_statement whileStmt.body ctx
+    let bodyBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := bodyStmts }
+    (bodyCtx, [.loop testExpr none none bodyBlock])
   | _ => panic! s!"Unimplemented statement: {repr s}"
 
 -- Translate list of TypeScript statements with context

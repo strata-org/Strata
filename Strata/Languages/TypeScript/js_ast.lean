@@ -203,6 +203,11 @@ mutual
     body : TS_Statement
   deriving Repr, Lean.FromJson, Lean.ToJson
 
+  structure TS_WhileStatement extends BaseNode where
+    test: TS_Expression
+    body: TS_Statement
+  deriving Repr, Lean.FromJson, Lean.ToJson
+
   inductive TS_Statement where
     | TS_IfStatement : TS_IfStatement → TS_Statement
     | TS_VariableDeclaration : TS_VariableDeclaration → TS_Statement
@@ -211,6 +216,7 @@ mutual
     | TS_ThrowStatement : TS_ThrowStatement → TS_Statement
     | TS_ReturnStatement : TS_ReturnStatement → TS_Statement
     | TS_FunctionDeclaration : TS_FunctionDeclaration → TS_Statement
+    | TS_WhileStatement: TS_WhileStatement -> TS_Statement
   deriving Repr, Lean.FromJson, Lean.ToJson
 end
 
