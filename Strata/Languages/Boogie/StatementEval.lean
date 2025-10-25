@@ -256,7 +256,10 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
               let path_conds_false := Ewn.env.pathConditions.push
                                         [(label_false, (.ite cond' LExpr.false LExpr.true))]
               let Ewns_t := go' {Ewn with env := {Ewn.env with pathConditions := path_conds_true}} then_ss .none
-              let Ewns_f := go' {Ewn with env := {Ewn.env with pathConditions := path_conds_false}} else_ss .none
+              -- We empty the deferred proof obligations in the `else` path to
+              -- avoid duplicate verification checks -- the deferred obligations
+              -- would be checked in the `then` branch anyway.
+              let Ewns_f := go' {Ewn with env := {Ewn.env with pathConditions := path_conds_false, deferred := #[]}} else_ss .none
               match Ewns_t, Ewns_f with
                 -- Special case: if there's only one result from each path,
                 -- with no next label, we can merge both states into one.
