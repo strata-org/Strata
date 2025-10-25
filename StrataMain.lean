@@ -7,7 +7,7 @@
 -- Executable with utilities for working with Strata files.
 import Strata.DDM.Elab
 import Strata.DDM.Ion
-
+-- import Strata.Languages.Boogie.Examples.simple1_btg
 import Strata.Languages.Python.Python
 
 def exitFailure (message : String) : IO α := do
@@ -160,7 +160,17 @@ def verifyCommand : Command where
     | .dialect d =>
       IO.print <| d.format ld.dialects
     | .program pgm =>
-      IO.print <| (Strata.pythonVerify pgm)
+    let preludePgm := Strata.Boogie.prelude
+    let bpgm := Strata.pythonToBoogie pgm
+    let newPgm : Boogie.Program := { decls := preludePgm.decls ++ bpgm.decls }
+    IO.print newPgm
+    -- IO.print <| (←Strata.pythonVerify newPgm)
+    let vcResults ← EIO.toIO (fun f => IO.Error.userError (toString f))
+                        (Boogie.verify "z3" newPgm { Options.default with stopOnFirstError := false })
+    let mut s := ""
+    for vcResult in vcResults do
+      s := s ++ s!"\n{vcResult.obligation.label}: {Std.format vcResult.result}\n"
+    IO.println s
 
 def commandList : List Command := [
       checkCommand,

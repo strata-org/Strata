@@ -8,7 +8,7 @@ import Strata.Languages.Python.PythonDialect
 import StrataTest.Internal.FunctionSignatures
 
 namespace Strata
-
+open Lambda.LTy.Syntax
 -- Some hard-coded things we'll need to fix later:
 
 def clientType : Boogie.Expression.Ty := .forAll [] (.tcons "Client" [])
@@ -37,10 +37,10 @@ def unwrapModule (c : Python.Command) : Array Python.stmt :=
   | _ => panic! "Expected module"
 
 def strToBoogieExpr (s: String) : Boogie.Expression.Expr :=
-  .const s none
+  .const s mty[string]
 
 def intToBoogieExpr (i: Int) : Boogie.Expression.Expr :=
-  .const s!"{i}" none
+  .const s!"{i}" mty[int]
 
 def PyIntToInt (i : Python.int) : Int :=
   match i with
@@ -49,20 +49,20 @@ def PyIntToInt (i : Python.int) : Int :=
 
 def PyConstToBoogie (c: Python.constant) : Boogie.Expression.Expr :=
   match c with
-  | .ConString s => .const s none
+  | .ConString s => .const s mty[string]
   | _ => panic! s!"Unhandled Constant: {repr c}"
 
 def PyAliasToBoogieExpr (a : Python.alias) : Boogie.Expression.Expr :=
   match a with
   | .mk_alias n as_n =>
   assert! as_n.isNone
-  .const n none
+  .const n mty[string]
 
 partial def PyExprToBoogie (e : Python.expr) : Boogie.Expression.Expr :=
   match e with
   | .Call _ _ _ => panic! s!"Call should be handled at stmt level: {repr e}"
   | .Constant c _ => PyConstToBoogie c
-  | .Name n _ => .const n none
+  | .Name n _ => .const n mty[string]
   | .JoinedStr ss => PyExprToBoogie ss[0]! -- TODO: need to actually join strings
   | _ => panic! s!"Unhandled Expr: {repr e}"
 
@@ -91,13 +91,22 @@ def argsAndKWordsToCanonicalList (fname: String) (args : Array Python.expr) (kwo
     let remaining := required_order.drop args.size
     let kws_and_exprs := kwords.toList.map PyKWordsToBoogie
     let ordered_remaining_args := remaining.map (λ n => match kws_and_exprs.find? (λ p => p.fst == n) with
-      | .some p => p.snd
+      | .some p => -- TODO: handle other types
+        -- Optional param. Need to wrap e.g., string into StrOrNone
+        .app (.op "StrOrNone_mk_str" none) p.snd
       | .none => TypeStrToBoogieExpr (getFuncSigType fname n))
     args.toList.map PyExprToBoogie ++ ordered_remaining_args
 
 def handleCallThrow (jmp_target : String) : Boogie.Statement :=
-  let cond := .eq (.app (.fvar "ExceptOrNone_tag" none) (.fvar "maybe_except" none)) (.fvar "EN_STR_TAG" none)
+  let cond := .eq (.app (.op "ExceptOrNone_tag" none) (.fvar "maybe_except" none)) (.op "EN_STR_TAG" none)
   .ite cond {ss := [.goto jmp_target]} {ss := []}
+
+-- TODO: handle rest of names
+def PyListStrToBoogie (names : Array Python.alias) : Boogie.Expression.Expr :=
+  -- ListStr_cons names[0]! (ListStr_nil)
+  .app (.app (.op "ListStr_cons" mty[string → (ListStr → ListStr)]) (PyAliasToBoogieExpr names[0]!))
+       (.op "ListStr_nil" mty[ListStr])
+
 
 mutual
 
@@ -109,13 +118,13 @@ partial def exceptHandlersToBoogie (jmp_targets: List String) (h : Python.except
     | .some ex_ty =>
       let inherits_from : Boogie.BoogieIdent := (.unres, "inheritsFrom")
       let get_ex_tag : Boogie.BoogieIdent := (.unres, "ExceptOrNone_code_val")
-      let exception_ty : Boogie.Expression.Expr := .app (.fvar get_ex_tag none) (.fvar "maybe_except" none)
-      let rhs_curried : Boogie.Expression.Expr := .app (.fvar inherits_from none) exception_ty
+      let exception_ty : Boogie.Expression.Expr := .app (.op get_ex_tag none) (.fvar "maybe_except" none)
+      let rhs_curried : Boogie.Expression.Expr := .app (.op inherits_from none) exception_ty
       let rhs : Boogie.Expression.Expr := .app rhs_curried ((PyExprToBoogie ex_ty))
       let call := .set "exception_ty_matches" rhs
       [call]
     | .none =>
-      [.set "exception_ty_matches" (.const "false" none)]
+      [.set "exception_ty_matches" (.const "false" mty[bool])]
     let cond := .fvar "exception_ty_matches" none
     let body_if_matches := body.toList.flatMap (PyStmtToBoogie jmp_targets) ++ [.goto jmp_targets[1]!]
     set_ex_ty_matches ++ [.ite cond {ss := body_if_matches} {ss := []}]
@@ -125,7 +134,7 @@ partial def PyStmtToBoogie (jmp_targets: List String) (s : Python.stmt) : List B
   assert! jmp_targets.length > 0
   let non_throw := match s with
     | .Import names =>
-      [.call [] "import" (names.toList.map PyAliasToBoogieExpr)]
+      [.call [] "import" [PyListStrToBoogie names]]
     | .ImportFrom s names i =>
       let n := match s with
       | some s => [strToBoogieExpr s]
@@ -133,18 +142,17 @@ partial def PyStmtToBoogie (jmp_targets: List String) (s : Python.stmt) : List B
       let i := match i with
       | some i => [intToBoogieExpr (PyIntToInt i)]
       | none => []
-      [.call [] "importFrom" (n ++ (names.toList.map PyAliasToBoogieExpr) ++ i)]
-    | .Expr (.Call func args kwords) =>
+      [.call [] "importFrom" (n ++ [PyListStrToBoogie names] ++ i)] | .Expr (.Call func args kwords) =>
       let fname := PyExprToString func
       [.call [] fname (argsAndKWordsToCanonicalList fname args kwords)]
     | .Expr _ =>
       dbg_trace "Can't handle Expr statements that aren't calls"
       assert! false
-      [.assert "expr" (.const "true" none)]
+      [.assert "expr" (.const "true" mty[bool])]
     | .Assign lhs (.Call func args kwords) _ =>
       assert! lhs.size == 1
       let fname := PyExprToString func
-      [.call [PyExprToString lhs[0]!] fname (argsAndKWordsToCanonicalList fname args kwords)]
+      [.call [PyExprToString lhs[0]!, "maybe_except"] fname (argsAndKWordsToCanonicalList fname args kwords)]
     | .Assign lhs rhs _ =>
       assert! lhs.size == 1
       [.set (PyExprToString lhs[0]!) (PyExprToBoogie rhs)]
@@ -175,7 +183,7 @@ def pythonToBoogie (pgm: Strata.Program): Boogie.Program :=
                                            (.havoc "s3_client"),
                                            (.init "invalid_client" clientType dummyClient),
                                            (.havoc "invalid_client"),
-                                           (.init "exception_ty_matches" (.forAll [] (.tcons "bool" [])) (.const "true" none)),
+                                           (.init "exception_ty_matches" t[bool] (.const "true" mty[bool])),
                                            (.havoc "exception_ty_matches")]
   let blocks := ArrPyStmtToBoogie insideMod
   let body := varDecls ++ blocks ++ [.block "end" {ss := []}]
