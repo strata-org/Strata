@@ -191,12 +191,21 @@ theorem List.Disjoint.symm_app (d : Disjoint l (l₁ ++ l₂))
   : Disjoint l (l₂ ++ l₁) := fun _ Hin1 Hin2 => d Hin1
         (mem_append.mpr $ Or.symm (mem_append.mp Hin2))
 
-theorem List.Disjoint_Subset : Disjoint vs ks → ks'.Subset ks → vs.Disjoint ks' := by
+theorem List.Disjoint_Subset_right : Disjoint vs ks → ks'.Subset ks → vs.Disjoint ks' := by
   intros Hdis Hsub
   simp [Disjoint, List.Subset] at *
   intros a Hin1 Hin2
   specialize Hdis Hin1
   simp_all
+
+theorem List.Disjoint_Subset_left : Disjoint vs ks → List.Subset vs' vs → vs'.Disjoint ks := by
+  intros Hdis Hsub
+  apply List.Disjoint.symm
+  apply Disjoint_Subset_right (Disjoint.symm Hdis) Hsub
+
+theorem List.Disjoint_Subsets : Disjoint vs ks → List.Subset vs' vs → List.Subset ks' ks → vs'.Disjoint ks' := by
+  intros Hdis Hsub1 Hsub2
+  exact List.Disjoint_Subset_left (Disjoint_Subset_right Hdis Hsub2) Hsub1
 
 theorem List.DisjointAppLeft' :
   Disjoint vs (ks ++ ks') → Disjoint vs ks' := by
@@ -211,6 +220,26 @@ theorem List.DisjointAppRight' :
   intros Hdist
   have Hdist' := List.Disjoint.symm_app Hdist
   exact List.DisjointAppLeft' Hdist'
+
+theorem List.Subset.subset_app_of_or_2 {l: List α}: l ⊆ l1 ∨ l ⊆ l2 → l ⊆ l1 ++ l2  := by
+  simp [Subset, List.Subset]
+  intro H a Ha
+  cases H <;> simp_all
+
+theorem List.Subset.subset_app_of_or_3 {l: List α}: l ⊆ l1 ∨ l ⊆ l2 ∨ l ⊆ l3 → l ⊆ l1 ++ l2 ++ l3  := by
+  simp [Subset, List.Subset]
+  intro H a Ha
+  cases H <;> try (rename_i H; cases H)
+  any_goals simp_all
+
+theorem List.Subset.subset_app_of_or_4 {l: List α}: l ⊆ l1 ∨ l ⊆ l2 ∨ l ⊆ l3 ∨ l ⊆ l4 → l ⊆ l1 ++ l2 ++ l3 ++ l4 := by
+  simp [Subset, List.Subset]
+  intro H a Ha
+  cases H <;> try (rename_i H; cases H <;> try (rename_i H; cases H))
+  any_goals simp_all
+
+theorem List.Subset.assoc {l: List α}: l ⊆ l1 ++ l2 ++ l3 ↔ l ⊆ l1 ++ (l2 ++ l3) := by
+  simp [Subset, List.Subset]
 
 theorem List.replaceAll_app {α : Type} [DecidableEq α] {h h' : α} {as bs : List α}:
   List.replaceAll as h h' ++ List.replaceAll bs h h' = List.replaceAll (as ++ bs) h h' := by

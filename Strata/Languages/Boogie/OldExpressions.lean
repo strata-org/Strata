@@ -255,6 +255,18 @@ with `val`.
 def substsOldExprs (sm : Map Expression.Ident Expression.Expr) (es : List Expression.Expr) :=
   es.map $ substsOldExpr sm
 
+theorem substsOldExpr_singleton: substsOldExpr [(var,s)] e = substOld var s e := by
+  induction e <;> simp [substsOldExpr, substOld, Map.isEmpty, *]
+  split <;> simp_all;
+  simp [Map.find?]
+  split <;> simp_all
+  intro h; rw [Eq.comm] at h
+  contradiction
+
+theorem substOldExpr_nil: OldExpressions.substsOldExpr [] e = e := by
+  unfold OldExpressions.substsOldExpr
+  simp [Map.isEmpty]
+
 /--
 For each `(var, expr)` pair in `sm`, substitute `old(var)` with `expr` in
 `conds`.
