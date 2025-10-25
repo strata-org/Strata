@@ -120,9 +120,6 @@ Result: verified
 Obligation: arbitrary_iter_maintain_invariant_2
 Result: verified
 
-Obligation: entry_invariant_0
-Result: verified
-
 Obligation: arbitrary_iter_maintain_invariant_0
 Result: verified
 -/
