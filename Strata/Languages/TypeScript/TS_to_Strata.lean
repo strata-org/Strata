@@ -200,7 +200,7 @@ partial def translate_statement (s: TS_Statement) (ctx : TranslationContext) : T
       (ctx, [.cmd (.set "return_value" (Heap.HExpr.int 1))])
 
   | .TS_VariableDeclaration decl =>
-    match decl.declarations.get? 0 with
+    match decl.declarations[0]? with
     | .none => panic! "VariableDeclarations should have at least one declaration"
     | .some d =>
       -- Check if this is a function call assignment
@@ -279,6 +279,24 @@ partial def translate_statement (s: TS_Statement) (ctx : TranslationContext) : T
     let elseBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := elseStmts }
     -- For now, we'll use the then context (could be more sophisticated)
     (thenCtx, [.ite testExpr thenBlock elseBlock])
+
+
+  | .TS_ForStatement forStmt =>
+    -- init phase
+    let (_, initStmts) := translate_statement (.TS_VariableDeclaration forStmt.init) ctx
+    -- guard (test)
+    let guard := translate_expr forStmt.test
+    -- body (first translate loop body)
+    let (ctx1, bodyStmts) := translate_statement forStmt.body ctx
+    -- update (translate expression into statements following ExpressionStatement style)
+    let (_, updateStmts) :=
+      translate_statement (.TS_ExpressionStatement { expression := .TS_AssignmentExpression forStmt.update, start_loc := forStmt.start_loc, end_loc := forStmt.end_loc, loc:= forStmt.loc, type := "TS_AssignmentExpression" }) ctx1
+    -- assemble loop body (body + update)
+    let loopBody : Imperative.Block TSStrataExpression TSStrataCommand :=
+      { ss := bodyStmts ++ updateStmts }
+
+    -- output: init statements first, then a loop statement
+    (ctx1, initStmts ++ [.loop guard none none loopBody])
 
   | _ => panic! s!"Unimplemented statement: {repr s}"
 

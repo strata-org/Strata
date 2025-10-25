@@ -139,6 +139,10 @@ def intGeFunc [Coe String Ident] : LFunc Ident :=
   binaryPredicate "Int.Ge" .int
   (some (binOpCeval Int Bool LExpr.denoteInt (fun x y => x >= y) .bool))
 
+def intEqFunc [Coe String Ident] : LFunc Ident :=
+  binaryPredicate "Int.Eq" .int
+  (some (binOpCeval Int Bool LExpr.denoteInt (fun x y => x == y) .bool))
+
 /- Boolean Operations -/
 def boolAndFunc [Coe String Ident] : LFunc Ident :=
   binaryOp "Bool.And" .bool
@@ -172,6 +176,7 @@ def IntBoolFactory : @Factory String :=
     intLeFunc,
     intGtFunc,
     intGeFunc,
+    intEqFunc,
 
     boolAndFunc,
     boolOrFunc,
