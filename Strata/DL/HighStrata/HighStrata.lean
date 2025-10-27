@@ -31,9 +31,7 @@ Design choices:
 
 - For now there is no type polymorphism
 
-- NEEDS FURTHER DESIGN: There is no concept of constructors, but each composite type has a partial variant that represents an object of that type whose fields
-  are not yet assigned and whose type invariants might not hold.
-  A partial type can be completed to a full type once all fields are assigned and the type invariants are known to hold.
+- Allocation of composite types is WIP. It needs a design first.
 
 -/
 
@@ -60,9 +58,6 @@ inductive HighType : Type where
   | TFloat64 /- Required for JavaScript (number). Used by Python (float) and Java (double) as well -/
   | UserDefined (name: Identifier)
   | Applied (base : HighType) (typeArguments : List HighType)
-  /- Partial represents a composite type with unassigned fields and whose type invariants might not hold.
-     Can be represented as a Map that contains a subset of the fields of the composite type -/
-  | Partial (base : HighType)
   /- Pure represents a composite type that does not support reference equality -/
   | Pure(base: HighType)
   /- Java has implicit intersection types.
@@ -140,16 +135,6 @@ inductive StmtExpr : Type where
   | IsType (target : StmtExpr) (type: HighType)
   | InstanceCall (target : StmtExpr) (callee : Identifier) (arguments : List StmtExpr)
 
-/- Related to creation of objects -/
-  /- Create returns a partial type, whose fields are still unassigned and whose type invariants are not guaranteed to hold. -/
-  /- In a pure context, creates pure types -/
-  | Create (type : Identifier)
-  /- Takes an expression of a partial type, checks that all its fields are assigned and its type invariants hold,
-  and return the complete type.
-  In case the partial type contained members with partial values, then those are completed as well, recursively.
-  This way, you can safely construct cyclic object graphs. -/
-  | Complete (value : StmtExpr)
-
 /- Verification specific -/
   | Forall (name: Identifier) (type: HighType) (body: StmtExpr)
   | Exists (name: Identifier) (type: HighType) (body: StmtExpr)
@@ -199,7 +184,6 @@ partial def highEq (a: HighType) (b: HighType) : Bool := match a, b with
   | HighType.UserDefined n1, HighType.UserDefined n2 => n1 == n2
   | HighType.Applied b1 args1, HighType.Applied b2 args2 =>
       highEq b1 b2 && args1.length == args2.length && (args1.zip args2 |>.all (fun (a1, a2) => highEq a1 a2))
-  | HighType.Partial b1, HighType.Partial b2 => highEq b1 b2
   | HighType.Intersection ts1, HighType.Intersection ts2 =>
       ts1.length == ts2.length && (ts1.zip ts2 |>.all (fun (t1, t2) => highEq t1 t2))
   | _, _ => false
