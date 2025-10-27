@@ -21,7 +21,6 @@ Design choices:
 - Loops: The only loop is a while, but this can be used to compile do-while and for loops to as well.
 - Jumps: Instead of break and continue statements, there is a labelled block that can be exited from using an exit statement inside of it.
   This can be used to model break statements and continue statements for both while and for loops.
-- Pattern matching: there is no match-case construct, but there are type tests with pattern matching that enable the same functionality but more generally. `if (x is <Type> <Binding>) { access to <Binding> }`
 
 - User defined types consist of two categories: composite types and constrained types.
 - Composite types have fields and callables, and may extend other composite types.
