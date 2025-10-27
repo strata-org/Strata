@@ -30,23 +30,23 @@ open Std (ToFormat Format format)
 
 open LTy.Syntax
 
-variable {Identifier : Type} [DecidableEq Identifier] [ToFormat Identifier] [Inhabited Identifier]
+variable {IDMeta : Type} [DecidableEq IDMeta] [Inhabited IDMeta]
 
 /--
 A signature is a map from variable identifiers to types.
 -/
-abbrev Signature (Identifier : Type) (Ty : Type) := ListMap Identifier Ty
+abbrev Signature (IDMeta : Type) (Ty : Type) := ListMap (Identifier IDMeta) Ty
 
-def Signature.format (ty : Signature Identifier Ty) [Std.ToFormat Ty] : Std.Format :=
+def Signature.format (ty : Signature IDMeta Ty) [Std.ToFormat Ty] : Std.Format :=
   match ty with
   | [] => ""
   | [(k, v)] => f!"({k} : {v})"
   | (k, v) :: rest =>
     f!"({k} : {v}) " ++ Signature.format rest
 
-abbrev LMonoTySignature := Signature Identifier LMonoTy
+abbrev LMonoTySignature := Signature IDMeta LMonoTy
 
-abbrev LTySignature := Signature Identifier LTy
+abbrev LTySignature := Signature IDMeta LTy
 
 
 /--
@@ -80,22 +80,22 @@ has the right number and type of arguments, etc.?
 (TODO) Use `.bvar`s in the body to correspond to the formals instead of using
 `.fvar`s.
 -/
-structure LFunc (Identifier : Type) where
-  name     : Identifier
+structure LFunc (IDMeta : Type) where
+  name     : Identifier IDMeta
   typeArgs : List TyIdentifier := []
-  inputs   : @LMonoTySignature Identifier
+  inputs   : @LMonoTySignature IDMeta
   output   : LMonoTy
-  body     : Option (LExpr LMonoTy Identifier) := .none
+  body     : Option (LExpr LMonoTy IDMeta) := .none
   -- (TODO): Add support for a fixed set of attributes (e.g., whether to inline
   -- a function, etc.).
   attr     : Array String := #[]
-  concreteEval : Option ((LExpr LMonoTy Identifier) → List (LExpr LMonoTy Identifier) → (LExpr LMonoTy Identifier)) := .none
-  axioms   : List (LExpr LMonoTy Identifier) := []  -- For axiomatic definitions
+  concreteEval : Option ((LExpr LMonoTy IDMeta) → List (LExpr LMonoTy IDMeta) → (LExpr LMonoTy IDMeta)) := .none
+  axioms   : List (LExpr LMonoTy IDMeta) := []  -- For axiomatic definitions
 
-instance : Inhabited (LFunc Identifier) where
+instance : Inhabited (LFunc IDMeta) where
   default := { name := Inhabited.default, inputs := [], output := LMonoTy.bool }
 
-instance : ToFormat (LFunc Identifier) where
+instance : ToFormat (LFunc IDMeta) where
   format f :=
     let attr := if f.attr.isEmpty then f!"" else f!"@[{f.attr}]{Format.line}"
     let typeArgs := if f.typeArgs.isEmpty
@@ -108,7 +108,7 @@ instance : ToFormat (LFunc Identifier) where
        func {f.name} : {type}{sep}\
        {body}"
 
-def LFunc.type (f : (LFunc Identifier)) : Except Format LTy := do
+def LFunc.type (f : (LFunc IDMeta)) : Except Format LTy := do
   if !f.inputs.keys.Nodup then
     .error f!"[{f.name}] Duplicates found in the formals!\
               {Format.line}\
@@ -125,7 +125,7 @@ def LFunc.type (f : (LFunc Identifier)) : Except Format LTy := do
   | ity :: irest =>
     .ok (.forAll f.typeArgs (Lambda.LMonoTy.mkArrow ity (irest ++ output_tys)))
 
-def LFunc.opExpr (f: LFunc Identifier) : LExpr LMonoTy Identifier :=
+def LFunc.opExpr (f: LFunc IDMeta) : LExpr LMonoTy IDMeta :=
   let input_tys := f.inputs.values
   let output_tys := Lambda.LMonoTy.destructArrow f.output
   let ty := match input_tys with
@@ -133,13 +133,13 @@ def LFunc.opExpr (f: LFunc Identifier) : LExpr LMonoTy Identifier :=
             | ity :: irest => Lambda.LMonoTy.mkArrow ity (irest ++ output_tys)
   .op f.name ty
 
-def LFunc.inputPolyTypes (f : (LFunc Identifier)) : @LTySignature Identifier :=
+def LFunc.inputPolyTypes (f : (LFunc IDMeta)) : @LTySignature IDMeta :=
   f.inputs.map (fun (id, mty) => (id, .forAll f.typeArgs mty))
 
-def LFunc.outputPolyType (f : (LFunc Identifier)) : LTy :=
+def LFunc.outputPolyType (f : (LFunc IDMeta)) : LTy :=
   .forAll f.typeArgs f.output
 
-def LFunc.eraseTypes (f : LFunc Identifier) : LFunc Identifier :=
+def LFunc.eraseTypes (f : LFunc IDMeta) : LFunc IDMeta :=
   { f with
     body := f.body.map LExpr.eraseTypes,
     axioms := f.axioms.map LExpr.eraseTypes
@@ -150,27 +150,27 @@ The type checker and partial evaluator for Lambda is parameterizable by
 a user-provided `Factory`.
 
 We don't have any "built-in" functions like `+`, `-`, etc. in `(LExpr
-Identifier)` -- lambdas are our only tool. `Factory` gives us a way to add
+IDMeta)` -- lambdas are our only tool. `Factory` gives us a way to add
 support for concrete/symbolic evaluation and type checking for `FunFactory`
 functions without actually modifying any core logic or the ASTs.
 -/
-def Factory := Array (LFunc Identifier)
+def Factory := Array (LFunc IDMeta)
 
-def Factory.default : @Factory Identifier := #[]
+def Factory.default : @Factory IDMeta := #[]
 
-instance : Inhabited (@Factory Identifier) where
-  default := @Factory.default Identifier
+instance : Inhabited (@Factory IDMeta) where
+  default := @Factory.default IDMeta
 
-def Factory.getFunctionNames (F : @Factory Identifier) : Array Identifier :=
+def Factory.getFunctionNames (F : @Factory IDMeta) : Array (Identifier IDMeta) :=
   F.map (fun f => f.name)
 
-def Factory.getFactoryLFunc (F : @Factory Identifier) (name : Identifier) : Option (LFunc Identifier) :=
+def Factory.getFactoryLFunc (F : @Factory IDMeta) (name : Identifier IDMeta) : Option (LFunc IDMeta) :=
   F.find? (fun fn => fn.name == name)
 
 /--
 Add a function `func` to the factory `F`. Redefinitions are not allowed.
 -/
-def Factory.addFactoryFunc (F : @Factory Identifier) (func : (LFunc Identifier)) : Except Format (@Factory Identifier) :=
+def Factory.addFactoryFunc (F : @Factory IDMeta) (func : (LFunc IDMeta)) : Except Format (@Factory IDMeta) :=
   match F.getFactoryLFunc func.name with
   | none => .ok (F.push func)
   | some func' =>
@@ -183,26 +183,26 @@ def Factory.addFactoryFunc (F : @Factory Identifier) (func : (LFunc Identifier))
 Append a factory `newF` to an existing factory `F`, checking for redefinitions
 along the way.
 -/
-def Factory.addFactory (F newF : @Factory Identifier) : Except Format (@Factory Identifier) :=
+def Factory.addFactory (F newF : @Factory IDMeta) : Except Format (@Factory IDMeta) :=
   Array.foldlM (fun factory func => factory.addFactoryFunc func) F newF
 
-def getLFuncCall (e : (LExpr LMonoTy Identifier)) : (LExpr LMonoTy Identifier) × List (LExpr LMonoTy Identifier) :=
+def getLFuncCall (e : (LExpr LMonoTy IDMeta)) : (LExpr LMonoTy IDMeta) × List (LExpr LMonoTy IDMeta) :=
   go e []
-  where go e (acc : List (LExpr LMonoTy Identifier)) :=
+  where go e (acc : List (LExpr LMonoTy IDMeta)) :=
   match e with
   | .app (.app  e' arg1) arg2 =>  go e' ([arg1, arg2] ++ acc)
   | .app (.op  fn  fnty) arg1 =>  ((.op fn fnty), ([arg1] ++ acc))
   | _ => (e, acc)
 
-def getConcreteLFuncCall (e : (LExpr LMonoTy Identifier)) : (LExpr LMonoTy Identifier) × List (LExpr LMonoTy Identifier) :=
+def getConcreteLFuncCall (e : (LExpr LMonoTy IDMeta)) : (LExpr LMonoTy IDMeta) × List (LExpr LMonoTy IDMeta) :=
   let (op, args) := getLFuncCall e
   if args.all LExpr.isConst then (op, args) else (e, [])
 
 /--
 If `e` is a call of a factory function, get the operator (`.op`), a list
-of all the actuals, and the `(LFunc Identifier)`.
+of all the actuals, and the `(LFunc IDMeta)`.
 -/
-def Factory.callOfLFunc (F : @Factory Identifier) (e : (LExpr LMonoTy Identifier)) : Option ((LExpr LMonoTy Identifier) × List (LExpr LMonoTy Identifier) × (LFunc Identifier)) :=
+def Factory.callOfLFunc (F : @Factory IDMeta) (e : (LExpr LMonoTy IDMeta)) : Option ((LExpr LMonoTy IDMeta) × List (LExpr LMonoTy IDMeta) × (LFunc IDMeta)) :=
   let (op, args) := getLFuncCall e
   match op with
   | .op name _ =>

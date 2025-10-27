@@ -36,7 +36,7 @@ def extractAxiomsDecl (prg: Boogie.Program) : (List Boogie.Decl) :=
 /--
   Extract the body LExpr from the axiom declaration
 -/
-def extractExpr (axDecl: Boogie.Decl): (Lambda.LExpr Lambda.LMonoTy Boogie.BoogieIdent) :=
+def extractExpr (axDecl: Boogie.Decl): (Lambda.LExpr Lambda.LMonoTy Boogie.Visibility) :=
   match axDecl with
     | .ax a _ => a.e
     | _ => panic "Can be called only on axiom declaration"
@@ -61,7 +61,7 @@ def transformSimpleTypeToFreeVariable (ty: Lambda.LMonoTy) (to_replace: List Str
   Transform all occurences of types of the form LMonoTy.tcons name [] into ftvar name, if name is in to_replace
   in the given expression
 -/
-def replaceTypesByFTV (expr: Lambda.LExpr Lambda.LMonoTy Boogie.BoogieIdent) (to_replace: List String): Lambda.LExpr Lambda.LMonoTy Boogie.BoogieIdent :=
+def replaceTypesByFTV (expr: Lambda.LExpr Lambda.LMonoTy Boogie.Visibility) (to_replace: List String): Lambda.LExpr Lambda.LMonoTy Boogie.Visibility :=
   match expr with
     | .const c oty => .const c (oty.map (fun t => transformSimpleTypeToFreeVariable t to_replace))
     | .op o oty => .op o (oty.map (fun t => transformSimpleTypeToFreeVariable t to_replace))
@@ -78,7 +78,7 @@ def replaceTypesByFTV (expr: Lambda.LExpr Lambda.LMonoTy Boogie.BoogieIdent) (to
   Extract all axioms from the given environment by first translating it into a Boogie Program.
   It then extracts LExpr body from the axioms, and replace all occurences of the typeArgs by a ftvar with the same name
 -/
-def extractAxiomsWithFreeTypeVars (pgm: Program) (typeArgs: List String): (List (Lambda.LExpr Lambda.LMonoTy Boogie.BoogieIdent)) :=
+def extractAxiomsWithFreeTypeVars (pgm: Program) (typeArgs: List String): (List (Lambda.LExpr Lambda.LMonoTy Boogie.Visibility)) :=
   let prg: Boogie.Program := (TransM.run (translateProgram pgm)).fst
   let axiomsDecls := extractAxiomsDecl prg
   let axioms := axiomsDecls.map extractExpr
@@ -253,7 +253,7 @@ info: [Lambda.LExpr.quant
          (Lambda.LExpr.app
            (Lambda.LExpr.app
              (Lambda.LExpr.op
-               u:select
+               { name := "select", metadata := Boogie.Visibility.unres }
                (some (Lambda.LMonoTy.tcons
                   "arrow"
                   [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
@@ -262,7 +262,7 @@ info: [Lambda.LExpr.quant
                (Lambda.LExpr.app
                  (Lambda.LExpr.app
                    (Lambda.LExpr.op
-                     u:update
+                     { name := "update", metadata := Boogie.Visibility.unres }
                      (some (Lambda.LMonoTy.tcons
                         "arrow"
                         [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
@@ -298,7 +298,7 @@ info: [Lambda.LExpr.quant
            (Lambda.LExpr.app
              (Lambda.LExpr.app
                (Lambda.LExpr.op
-                 u:select
+                 { name := "select", metadata := Boogie.Visibility.unres }
                  (some (Lambda.LMonoTy.tcons
                     "arrow"
                     [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
@@ -307,7 +307,7 @@ info: [Lambda.LExpr.quant
                  (Lambda.LExpr.app
                    (Lambda.LExpr.app
                      (Lambda.LExpr.op
-                       u:update
+                       { name := "update", metadata := Boogie.Visibility.unres }
                        (some (Lambda.LMonoTy.tcons
                           "arrow"
                           [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
@@ -325,7 +325,7 @@ info: [Lambda.LExpr.quant
            (Lambda.LExpr.app
              (Lambda.LExpr.app
                (Lambda.LExpr.op
-                 u:select
+                 { name := "select", metadata := Boogie.Visibility.unres }
                  (some (Lambda.LMonoTy.tcons
                     "arrow"
                     [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
