@@ -179,7 +179,7 @@ def evalApp (n' : Nat) (σ : (LState IDMeta)) (e e1 e2 : (LExpr LMonoTy IDMeta))
     let e' := subst e2' e1'
     if eqModuloTypes e e' then e else eval n' σ e'
   | .op fn _ =>
-    match σ.config.factory.getFactoryLFunc fn with
+    match σ.config.factory.getFactoryLFunc fn.name with
     | none => LExpr.app e1' e2'
     | some lfunc =>
       let e' := LExpr.app e1' e2'

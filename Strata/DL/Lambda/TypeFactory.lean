@@ -11,7 +11,7 @@ import Strata.DL.Lambda.Factory
 /-!
 ## Lambda's Type Factory
 
-This module contains Lambda's _type factory_, a mechanism for expressing datatypes (sum and product types). It synthesizes the corresponding constructors and eliminators as `LFunc`.
+This module contains Lambda's _type factory_, a mechanism for expressing inductive datatypes (sum and product types). It synthesizes the corresponding constructors and eliminators as `LFunc`. It currently does not allow non-uniform or mutually inductive types.
 -/
 
 
@@ -26,7 +26,7 @@ open LTy.Syntax
 variable {IDMeta : Type} [DecidableEq IDMeta] [Inhabited IDMeta]
 
 /--
-A type constructor description. Note that the free type variables in `args` must be a subset of the `typeArgs` of the corresponding datatype.
+A type constructor description. The free type variables in `args` must be a subset of the `typeArgs` of the corresponding datatype.
 -/
 structure LConstr (IDMeta : Type) where
   name : Identifier IDMeta
@@ -54,20 +54,67 @@ The default type application for a datatype. E.g. for datatype `type List α = |
 def dataDefault (d: LDatatype IDMeta) : LMonoTy :=
   data d (d.typeArgs.map .ftvar)
 
+---------------------------------------------------------------------
+
+-- Typechecking
+
 /--
-The `LFunc` corresponding to constructor `c` of datatype `d`. Note that constructor functions do not have bodies or evaluators, as they are values when applied to value arguments.
+Determines whether type name `n` appear in type `t`
+-/
+def tyNameAppearsIn (n: String) (t: LMonoTy) : Bool :=
+  match t with
+  | .tcons n1 args => n == n1 || List.any (List.map (tyNameAppearsIn n) args) id
+  | _ => false
+
+/--
+Determines whether all occurences of type name `n` within type `t` have arguments `args`. The string `c` appears only for error message information.
+-/
+def checkUniform (c: String) (n: String) (args: List LMonoTy) (t: LMonoTy) : Except Format Unit :=
+  match t with
+  | .tcons n1 args1 => if n == n1 && args == args1 then .ok ()
+    else if n == n1 then .error f!"Error in constructor {c}: Non-uniform occurrence of {n}, which is applied to {args1} when it should be applied to {args}"
+    else List.foldrM (fun t u => do
+      let _ ← checkUniform c n args t
+      .ok u
+      ) () args1
+  | _ => .ok ()
+
+
+/--
+Check for strict positivity and uniformity of datatype `d` in type `ty`. The string `c` appears only for error message information.
+-/
+def checkStrictPosUnifTy (c: String) (d: LDatatype IDMeta) (ty: LMonoTy) : Except Format Unit :=
+  match ty with
+  | .arrow t1 t2 =>
+    if tyNameAppearsIn d.name t1 then
+      .error f!"Error in constructor {c}: Non-strictly positive occurrence of {d.name} in type {ty}"
+    else checkStrictPosUnifTy c d t2
+  | _ => checkUniform c d.name (d.typeArgs.map .ftvar) ty
+
+/--
+Check for strict positivity and uniformity of a datatype
+-/
+def checkStrictPosUnif (d: LDatatype IDMeta) : Except Format Unit :=
+  List.foldrM (fun ⟨name, args⟩ _ =>
+    List.foldrM (fun ⟨ _, ty ⟩ _ =>
+      checkStrictPosUnifTy name.name d ty
+    ) () args
+  ) () d.constrs
+
+---------------------------------------------------------------------
+
+-- Generating constructors and eliminators
+
+/--
+The `LFunc` corresponding to constructor `c` of datatype `d`. Constructor functions do not have bodies or `concreteEval` functions, as they are values when applied to value arguments.
 -/
 def constrFunc (c: LConstr IDMeta) (d: LDatatype IDMeta) : LFunc IDMeta :=
   { name := c.name, typeArgs := d.typeArgs, inputs := c.args, output := dataDefault d, isConstr := true }
 
-/-
-Generating eliminators is trickier.
--/
-
 /--
-Generate `n` strings for argument names for the eliminator. Since there is no body, these strings should not need to be used.
+Generate `n` strings for argument names for the eliminator. Since there is no body, these strings do not need to be used.
 -/
-def genArgNames (n: Nat) : List (Identifier IDMeta) :=
+private def genArgNames (n: Nat) : List (Identifier IDMeta) :=
   (List.range n).map (fun i => ⟨ "_x_" ++ toString i, Inhabited.default ⟩)
 
 /--
@@ -83,6 +130,9 @@ def freshTypeArg (l: List TyIdentifier) : TyIdentifier :=
   | t :: _ => t
   | _ => ""
 
+/--
+Create an iterated arrow type where `mty` is the return type
+-/
 def LMonoTy.mkArrow' (mty : LMonoTy) (mtys : LMonoTys) : LMonoTy :=
   match mtys with
   | [] => mty
@@ -91,7 +141,6 @@ def LMonoTy.mkArrow' (mty : LMonoTy) (mtys : LMonoTys) : LMonoTy :=
 /--
 Construct a recursive type argument for the eliminator.
 Specifically, determine if a type `ty` contains a strictly positive, uniform occurrence of `t`, if so, replace this occurence with `retTy`.
-Note that this does NOT check for strict positivity or uniformity, this is done in TODO.
 -/
 def genRecTy (t: LDatatype IDMeta) (retTy: LMonoTy)  (ty: LMonoTy) : Option LMonoTy :=
   if ty == dataDefault t then .some retTy else
@@ -150,7 +199,7 @@ def LExpr.absMulti (tys: List LMonoTy) (body: LExpr LMonoTy IDMeta) : LExpr LMon
 /--
 Finds the lambda `bvar` arguments, in order, given an iterated lambda with `n` binders
 -/
-def getBVars (n: Nat) : List (LExpr LMonoTy IDMeta) :=
+private def getBVars (n: Nat) : List (LExpr LMonoTy IDMeta) :=
   (List.range n).reverse.map .bvar
 
 /--
@@ -167,10 +216,6 @@ def elimRecCall (d: LDatatype IDMeta) (recArg: LExpr LMonoTy IDMeta) (recTy: LMo
     (LExpr.op elimName .none).mkApp (recArg :: elimArgs)
   | .inr funArgs => -- Construct lambda, first arg of eliminator is recArg applied to lambda arguments
     LExpr.absMulti funArgs ((LExpr.op elimName .none).mkApp (recArg.mkApp (getBVars funArgs.length) :: elimArgs))
-
-
-
-
 
 /--
 Generate eliminator concrete evaluator. Idea: match on 1st argument (e.g. `x : List α`) to determine constructor and corresponding arguments. If it matches the `n`th constructor, return `n+1`st element of input list applied to constructor arguments and recursive calls.
@@ -210,6 +255,8 @@ def LDatatype.genFactory  (d: LDatatype IDMeta) : @Lambda.Factory IDMeta :=
 Generates the Factory (containing all constructor and eliminator functions) for the given `TypeFactory`
 -/
 def TypeFactory.genFactory (t: @TypeFactory IDMeta) : Except Format (@Lambda.Factory IDMeta) :=
-  t.foldlM (fun f d => f.addFactory d.genFactory) Factory.default
+  t.foldlM (fun f d => do
+    _ ← checkStrictPosUnif d
+    f.addFactory d.genFactory) Factory.default
 
 end Lambda

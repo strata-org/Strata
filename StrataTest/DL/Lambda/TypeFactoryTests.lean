@@ -350,13 +350,117 @@ info: (#2 : int)
 
 end Tree
 
+-- Typechecking tests
 
--- Well-formed tests
+/-
+1. Non-positive type
+type Bad := | C (Bad -> Bad)
+-/
 
--- 1. Strict positivity
+def badConstr1: LConstr Unit := {name := "C", args := [⟨"x", .arrow (.tcons "Bad" []) (.tcons "Bad" [])⟩]}
+def badTy1 : LDatatype Unit := {name := "Bad", typeArgs := [], constrs := [badConstr1]}
 
--- 2. Uniformity
+/-- info: Error in constructor C: Non-strictly positive occurrence of Bad in type (arrow Bad Bad)
+-/
+#guard_msgs in
+#eval format $ typeCheckAndPartialEval #[badTy1] IntBoolFactory (.const "0" .none)
 
--- 3. Duplicate names
+/-
+2.Non-strictly positive type
+type Bad a := | C ((Bad a -> int) -> int)
+-/
+
+def badConstr2: LConstr Unit := {name := "C", args := [⟨"x", .arrow (.arrow (.tcons "Bad" [.ftvar "a"]) .int) .int⟩]}
+def badTy2 : LDatatype Unit := {name := "Bad", typeArgs := ["a"], constrs := [badConstr2]}
+
+/-- info: Error in constructor C: Non-strictly positive occurrence of Bad in type (arrow (arrow (Bad a) int) int)-/
+#guard_msgs in
+#eval format $ typeCheckAndPartialEval #[badTy2] IntBoolFactory (.const "0" .none)
+
+/-
+3. Non-strictly positive type 2
+type Bad a := | C (int -> (Bad a -> int))
+-/
+
+def badConstr3: LConstr Unit := {name := "C", args := [⟨"x", .arrow .int (.arrow (.tcons "Bad" [.ftvar "a"]) .int)⟩]}
+def badTy3 : LDatatype Unit := {name := "Bad", typeArgs := ["a"], constrs := [badConstr3]}
+
+/--info: Error in constructor C: Non-strictly positive occurrence of Bad in type (arrow (Bad a) int)-/
+#guard_msgs in
+#eval format $ typeCheckAndPartialEval #[badTy3] IntBoolFactory (.const "0" .none)
+
+/-
+4. Strictly positive type
+type Good := | C (int -> (int -> Good))
+-/
+
+def goodConstr1: LConstr Unit := {name := "C", args := [⟨"x", .arrow .int (.arrow .int (.tcons "Good" [.ftvar "a"]))⟩]}
+def goodTy1 : LDatatype Unit := {name := "Good", typeArgs := ["a"], constrs := [goodConstr1]}
+
+/-- info: Annotated expression:
+(#0 : int)
+
+---
+info: (#0 : int)
+-/
+#guard_msgs in
+#eval format $ typeCheckAndPartialEval #[goodTy1] IntBoolFactory (.const "0" .none)
+
+/-
+5. Non-uniform type
+type Nonunif a := | C (int -> Nonunif (List a))
+-/
+def nonUnifConstr1: LConstr Unit := {name := "C", args := [⟨"x", .arrow .int (.arrow .int (.tcons "Nonunif" [.tcons "List" [.ftvar "a"]]))⟩]}
+def nonUnifTy1 : LDatatype Unit := {name := "Nonunif", typeArgs := ["a"], constrs := [nonUnifConstr1]}
+
+/-- info: Error in constructor C: Non-uniform occurrence of Nonunif, which is applied to [(List a)] when it should be applied to [a]-/
+#guard_msgs in
+#eval format $ typeCheckAndPartialEval #[listTy, nonUnifTy1] IntBoolFactory (.const "0" .none)
+
+/-
+6. Nested types are allowed, though they won't produce a useful elimination principle
+type Nest a := | C (List (Nest a))
+-/
+def nestConstr1: LConstr Unit := {name := "C", args := [⟨"x", .tcons "List" [.tcons "Nest" [.ftvar "a"]]⟩]}
+def nestTy1 : LDatatype Unit := {name := "Nest", typeArgs := ["a"], constrs := [nestConstr1]}
+
+/-- info: Annotated expression:
+(#0 : int)
+
+---
+info: (#0 : int)
+-/
+#guard_msgs in
+#eval format $ typeCheckAndPartialEval #[listTy, nestTy1] IntBoolFactory (.const "0" .none)
+
+/-
+7. 2 constructors with the same name:
+type Bad = | C (int) | C (Bad)
+-/
+
+def badConstr4: LConstr Unit := {name := "C", args := [⟨"x", .int⟩]}
+def badConstr5: LConstr Unit := {name := "C", args := [⟨"x", .tcons "Bad" [.ftvar "a"]⟩]}
+def badTy4 : LDatatype Unit := {name := "Bad", typeArgs := ["a"], constrs := [badConstr4, badConstr5]}
+
+/--
+info: A function of name C already exists! Redefinitions are not allowed.
+Existing Function: func C : ∀[a]. ((x : int)) → (Bad a);
+New Function:func C : ∀[a]. ((x : (Bad a))) → (Bad a);
+-/
+#guard_msgs in
+#eval format $ typeCheckAndPartialEval #[badTy4] IntBoolFactory (.const "0" .none)
+
+/-
+8. Constructor with same name as function not allowed
+type Bad = | Int.add (int)
+-/
+def badConstr6: LConstr Unit := {name := "Int.Add", args := [⟨"x", .int⟩]}
+def badTy5 : LDatatype Unit := {name := "Bad", typeArgs := [], constrs := [badConstr6]}
+
+/-- info: A function of name Int.Add already exists! Redefinitions are not allowed.
+Existing Function: func Int.Add :  ((x : int)) → Bad;
+New Function:func Int.Add :  ((x : int) (y : int)) → int;-/
+#guard_msgs in
+#eval format $ typeCheckAndPartialEval #[badTy5] IntBoolFactory (.const "0" .none)
 
 end Lambda

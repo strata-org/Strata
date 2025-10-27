@@ -234,7 +234,7 @@ partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : (LExpr LMonoTy Visibil
 partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Context) :
   Except Format ((List Term → TermType → Term) × TermType × SMT.Context) :=
   open LTy.Syntax in
-  match E.factory.getFactoryLFunc fn with
+  match E.factory.getFactoryLFunc fn.name with
   | none => .error f!"Cannot find function {fn} in Boogie's Factory!"
   | some func =>
     match func.name.name with
