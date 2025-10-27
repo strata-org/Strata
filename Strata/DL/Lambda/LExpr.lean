@@ -114,6 +114,11 @@ def isConst (e : (LExpr TypeType Identifier)) : Bool :=
   | .const _ _ => true
   | _ => false
 
+def isOp (e : (LExpr TypeType Identifier)) : Bool :=
+  match e with
+  | .op _ _ => true
+  | _ => false
+
 @[match_pattern]
 protected def true : (LExpr LMonoTy Identifier) := .const "true"  (some (.tcons "bool" []))
 
