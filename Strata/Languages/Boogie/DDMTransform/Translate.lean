@@ -1102,6 +1102,17 @@ def translateAxiom (p : Program) (bindings : TransBindings) (op : Operation) :
   let e ← translateExpr p bindings op.args[1]!
   return (.ax (Axiom.mk l e), bindings)
 
+def translateDistinct (p : Program) (bindings : TransBindings) (op : Operation) :
+  TransM (Boogie.Decl × TransBindings) := do
+  let _ ← @checkOp (Boogie.Decl × TransBindings) op q`Boogie.command_distinct 2
+  let default_name := s!"axiom_distinct_{bindings.gen.axiom_def}"
+  let bindings := incrNum .axiom_def bindings
+  let l ← translateOptionLabel default_name op.args[0]!
+  let es ← translateCommaSep (translateExpr p bindings) op.args[1]!
+  if !(es.all LExpr.isOp) then
+    TransM.error s!"arguments to `distinct` must all be constant names: {es}"
+  return (.distinct l es.toList, bindings)
+
 ---------------------------------------------------------------------
 
 inductive FnInterp where
@@ -1190,6 +1201,8 @@ partial def translateBoogieDecls (p : Program) (bindings : TransBindings) :
         translateTypeSynonym bindings op
       | q`Boogie.command_axiom =>
         translateAxiom p bindings op
+      | q`Boogie.command_distinct =>
+        translateDistinct p bindings op
       | q`Boogie.command_procedure =>
         translateProcedure p bindings op
       | q`Boogie.command_fndef =>

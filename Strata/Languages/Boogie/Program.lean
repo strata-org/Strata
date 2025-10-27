@@ -19,7 +19,7 @@ open Std (ToFormat Format format)
 open Imperative
 
 inductive DeclKind : Type where
-  | var | type | ax | proc | func
+  | var | type | ax | distinct | proc | func
   deriving DecidableEq, Repr
 
 /--
@@ -30,6 +30,8 @@ inductive Decl where
   | var (name : Expression.Ident) (ty : Expression.Ty) (e : Expression.Expr) (md : MetaData Boogie.Expression := .empty)
   | type (t : TypeDecl) (md : MetaData Boogie.Expression := .empty)
   | ax   (a : Axiom) (md : MetaData Boogie.Expression := .empty)
+  -- The following is temporary, until we have lists and can encode `distinct` in Lambda.
+  | distinct (name : Expression.Ident) (es : List Expression.Expr) (md : MetaData Boogie.Expression := .empty)
   | proc (d : Procedure) (md : MetaData Boogie.Expression := .empty)
   | func (f : Function) (md : MetaData Boogie.Expression := .empty)
   deriving Inhabited
@@ -39,6 +41,7 @@ def Decl.kind (d : Decl) : DeclKind :=
   | .var _ _ _ _ => .var
   | .type _ _   => .type
   | .ax _ _     => .ax
+  | .distinct _ _ _ => .distinct
   | .proc _ _   => .proc
   | .func _ _   => .func
 
@@ -47,6 +50,7 @@ def Decl.name (d : Decl) : Expression.Ident :=
   | .var name _ _ _ => name
   | .type t _       => t.name
   | .ax a _         => a.name
+  | .distinct n _ _ => n
   | .proc p _       => p.header.name
   | .func f _       => f.name
 
@@ -101,6 +105,7 @@ instance : ToFormat Decl where
     | .var name ty e md => f!"{md}var ({name} : {ty}) := {e}"
     | .type t md => f!"{md}{t}"
     | .ax a md  => f!"{md}{a}"
+    | .distinct l es md  => f!"{md}distinct [{l}] {es}"
     | .proc p md => f!"{md}{p}"
     | .func f md => f!"{md}{f}"
 
