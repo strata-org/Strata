@@ -8,7 +8,7 @@ from pathlib import Path
 from io import StringIO
 import sys
 import builtins
-from typing import Callable, Sized
+from typing import Callable, Iterator, Sized
 from .exception_table import ExceptionTableEntry, parse_exception_table_entries
 from .base import ArgDecl, Init, SyntaxCat, SyntaxArg, Indent
 from . import base
@@ -83,7 +83,7 @@ class StringLit(ValueBase):
     def to_arg(self) -> base.Arg:
         return str_value(base.StrLit(self.value))
 
-globals_value = PythonSSA.add_op("valueGlobals", value_cat)()
+globals_value = PythonSSA.add_op("globals", value_cat, syntax="globals")()
 
 class GlobalNameMap(ValueBase):
     def __str__(self):
@@ -156,7 +156,7 @@ class RegValue(ValueBase):
     def to_arg(self) -> base.Arg:
         return reg_value(base.NumLit(self.value))
 
-block_value = PythonSSA.add_op("valueBlock", ArgDecl("value", Init.Num()), value_cat)
+block_value = PythonSSA.add_op("arg", ArgDecl("value", Init.Num()), value_cat, syntax=t'b{SyntaxArg("value")}')
 
 class BlockArgument(ValueBase):
     """An argument to a basic block."""
@@ -316,16 +316,22 @@ class StatementDecl:
         self.decl = decl
         assert len(self.args) + returnCount == len(decl.args)
 
-BOOL_CAT = PythonSSA.add_syncat("Bool")()
+bool_cat = PythonSSA.add_syncat("Bool")()
 
-boolTrue = PythonSSA.add_op("boolTrue", BOOL_CAT)()
-boolFalse = PythonSSA.add_op("boolFalse", BOOL_CAT)()
+boolTrue = PythonSSA.add_op("boolTrue", bool_cat, syntax="true")()
+boolFalse = PythonSSA.add_op("boolFalse", bool_cat, syntax="false")()
 
 def bool_to_arg(a : Any):
     assert isinstance(a, bool)
     return boolTrue if a else boolFalse
 
-BOOL = Type(BOOL_CAT, bool_to_arg)
+BOOL = Type(bool_cat, bool_to_arg)
+
+def num_to_arg(arg):
+    assert isinstance(arg, int)
+    return base.NumLit(arg)
+
+NUM = Type(Init.Num(), num_to_arg)
 
 def str_to_arg(a : Any):
     assert isinstance(a, str)
@@ -350,36 +356,67 @@ def value_to_arg(arg : 'Value'):
 
 VALUE = Type(value_cat, value_to_arg)
 
-def num_to_arg(arg):
-    assert isinstance(arg, int)
-    return base.NumLit(arg)
+value_list_cat = PythonSSA.add_syncat("ValueList")()
+value_list_op = PythonSSA.add_op(
+    "mk_value_list",
+    ArgDecl("elements", Init.CommaSepBy(value_cat)),
+    value_list_cat,
+    syntax=t'[{SyntaxArg("elements")}]')
 
-NUM = Type(Init.Num(), num_to_arg)
+def value_list_to_arg(arg : Any) -> base.Arg:
+    assert isinstance(arg, tuple)
+    args = [value_to_arg(a) for a in arg]
+    return value_list_op(base.CommaSepBy(args))
+
+VALUE_LIST = Type(value_list_cat, value_list_to_arg)
 
 @dataclass
 class JumpTarget:
     label : int
-    arguments : list['Value']
+    arguments : tuple['Value',...]
 
     def __str__(self):
         return f'L{self.label}({", ".join((str(a) for a in self.arguments))})'
-
-def jump_target_to_arg(arg) -> base.Arg:
-    assert isinstance(arg, JumpTarget)
-    return mk_jump_target_op(base.NumLit(arg.label), base.CommaSepBy([value_to_arg(a) for a in arg.arguments]))
 
 jump_target_cat = PythonSSA.add_syncat("JumpTarget")()
 
 mk_jump_target_op = PythonSSA.add_op("mk_jump_target",
     ArgDecl("index", Init.Num()),
-    ArgDecl("args", Init.CommaSepBy(value_cat)),
+    ArgDecl("args", value_list_cat),
     jump_target_cat,
     syntax=t'target({SyntaxArg("index")}, {SyntaxArg("args")})')
 
+def jump_target_to_arg(arg) -> base.Arg:
+    assert isinstance(arg, JumpTarget)
+    return mk_jump_target_op(base.NumLit(arg.label), value_list_to_arg(arg.arguments))
 
 JUMP_TARGET = Type(jump_target_cat, jump_target_to_arg)
 """
-Represents a JumpTarget value.
+A JumpTarget value.
+"""
+
+exc_handler_cat = PythonSSA.add_syncat("EXC_HANDLER")()
+
+no_exc_handler = PythonSSA.add_op("no_exc_handler",
+    exc_handler_cat,
+    syntax='none')()
+
+exc_handler = PythonSSA.add_op("exc_handler",
+    ArgDecl("target", jump_target_cat),
+    ArgDecl("lasti", bool_cat),
+    exc_handler_cat,
+    syntax=t'exc({SyntaxArg("target")}, {SyntaxArg("lasti")})')
+
+def exc_handler_to_arg(arg : Any) -> base.Arg:
+    if arg is None:
+        return no_exc_handler
+    else:
+        assert isinstance(arg, ExcHandler)
+        return exc_handler(jump_target_to_arg(arg.target), bool_to_arg(arg.lasti))
+
+EXC_HANDLER = Type(exc_handler_cat, exc_handler_to_arg)
+"""
+An optional jump-target value
 """
 
 @dataclass
@@ -397,13 +434,20 @@ def binding_to_arg(arg : Any):
 
 DICT_BINDING = Type(dict_binding_cat, binding_to_arg)
 
-def list_to_arg(elt : Type, arg : Any) -> base.Arg:
-    assert isinstance(arg, list)
-    args = [elt.check_arg(a) for a in arg]
-    return base.Seq(args)
+dict_entries_cat = PythonSSA.add_syncat("DICT_ENTRIES")()
+dict_entries_op = PythonSSA.add_op(
+    "mk_dict_entries",
+    ArgDecl("elements", Init.CommaSepBy(value_cat)),
+    dict_entries_cat,
+    syntax=t'{{{SyntaxArg("elements")}}}')
 
-def LIST(elt : Type) -> Type:
-    return Type(Init.Seq(elt.cat), lambda a: list_to_arg(elt, a))
+def dict_entries_to_arg(arg : Any) -> base.Arg:
+    assert isinstance(arg, tuple)
+    args = [binding_to_arg(a) for a in arg]
+    return dict_entries_op(base.CommaSepBy(args))
+
+DICT_ENTRIES = Type(dict_entries_cat, dict_entries_to_arg)
+
 
 statement_cat = PythonSSA.add_syncat("Statement")()
 
@@ -472,12 +516,12 @@ importfrom_decl = decl_statement("importfrom", { "module" : VALUE, "name" : STR 
 Imports name from the given module.
 """
 
-mk_tuple_decl = decl_statement("mk_tuple", { "entries" : LIST(VALUE) }, VALUE)
+mk_tuple_decl = decl_statement("mk_tuple", { "entries" : VALUE_LIST }, VALUE)
 """
 Creates a tuple for the entries.
 """
 
-mk_dict_decl = decl_statement("mk_dict", { "entries" : LIST(DICT_BINDING) }, VALUE)
+mk_dict_decl = decl_statement("mk_dict", { "entries" : DICT_ENTRIES }, VALUE)
 """
 Creates a new dictionary key map for the entries.
 """
@@ -530,7 +574,7 @@ Implements `set.update(s, seq)`
 """
 
 call_function_ex_decl = decl_statement(
-    "call_function_ex",
+    'call_function_ex',
     {"f" : VALUE, "self" : VALUE, "args" : VALUE, "kwargs" : VALUE}, VALUE)
 """
 Implements `f(*args)`
@@ -632,7 +676,7 @@ Terminal statement with a branch to either true or false based on a labels.
 Value must be a bool.
 """
 
-call_decl = decl_statement("call", { "f" : VALUE, "obj" : VALUE, "args" : LIST(VALUE) }, VALUE)
+call_decl = decl_statement("call", { "f" : VALUE, "obj" : VALUE, "args" : VALUE_LIST, "exc" : EXC_HANDLER }, VALUE)
 """
 Calls a callable object `f` with the number of arguments specified by argc.
 
@@ -644,7 +688,15 @@ On the stack are (in ascending order):
 
 call_intrinsic_1_decl = decl_statement("call_intrinsic_1", {"intrinsic" : NUM, "arg" : VALUE}, VALUE)
 
-call_kw_decl = decl_statement("call_kw", {"f" : VALUE, "obj" : VALUE, "args" : LIST(VALUE), "kw_names" : VALUE}, VALUE)
+call_kw_decl = decl_statement("call_kw", {"f" : VALUE, "obj" : VALUE, "args" : VALUE_LIST, "kw_names" : VALUE, "exc" : EXC_HANDLER}, VALUE)
+"""
+Call keyword calls the given function `f` where
+* `obj` is either the `self` argument or `None` for methods.
+* `args` is a list of arguments.  It starts with the positional arguments and ends with keyword arguments.
+* `kw_names` is a tuple of string for the keyword arguments.  The empty tuple is used
+  for no keyword arguments.
+* `exc` is a jump target for an exception handler - TODO: Figure out exception handling lasti
+"""
 
 check_exc_match_decl = decl_statement("check_exc_match", {"e" : VALUE, "class": VALUE}, VALUE)
 """
@@ -697,10 +749,9 @@ load_from_dict_or_globals_decl = \
 Loads the value from the given dictionary or globals if not found
 """
 
-get_iter_decl = decl_statement("get_iter", {"val" : VALUE}, (VALUE, VALUE))
+get_iter_decl = decl_statement("get_iter", {"val" : VALUE}, VALUE)
 """
-If the value is a list or tuple, it returns the value and 0.  Otherwise,
-it calls iter and stores null.
+This calls iter and returns the value
 """
 
 for_iter_decl = decl_statement(
@@ -815,7 +866,13 @@ Implements `bool(value)`
 
 type Value = ValueBase | None | int
 
-type StatementArg = Value|JumpTarget|str|list[Value]|list[Binding]
+
+@dataclass
+class ExcHandler:
+    target : JumpTarget
+    lasti : bool
+
+type StatementArg = Value|JumpTarget|ExcHandler|str|tuple[Value,...]|tuple[Binding,...]
 
 class Statement:
     register_base : int
@@ -869,22 +926,32 @@ mk_block = \
 
 class Block:
     index : int
-    offset : int
-    input_count : int|None
+    input_count : int
     exception_handler : int|None
+    readonly_height : int
+    """Height that block should not be modified."""
     statements : list[Statement]
     term_statement : Statement|None
 
     def __init__(self,
+                 jump_targets : dict[Offset, int],
                  index : int,
-                 offset : int,
-                 local_count : int,
-                 stack_size : int|None,
-                 exception_handler : int|None):
+                 input_count : int,
+                 block_offset : BlockOffset):
+        """
+        Create a block with the given index, offset within code block 
+        """
         self.index = index
-        self.offset = offset
-        self.input_count = None if stack_size is None else local_count + stack_size
-        self.exception_handler = exception_handler
+        self.input_count = input_count
+        exception_handler = block_offset.exception_handler
+        if exception_handler is None:
+            self.exception_handler = None
+            self.readonly_height = 0
+        else:
+            exception_index = jump_targets[exception_handler.target]
+            depth = exception_handler.depth
+            self.exception_handler = exception_index
+            self.readonly_height = depth
         self.statements = []
         self.term_statement = None
 
@@ -902,7 +969,7 @@ class Block:
 global_dict = GlobalNameMap()
 
 class Globals:
-
+    builtins : dict[str, Builtin]
     globals : set[str]
 
     def __init__(self):
@@ -930,19 +997,19 @@ class Globals:
 
 type Offset = int
 
-@dataclass(frozen=True)
+@dataclass
 class BlockOffset:
     offset : Offset
     """
     Offset of first instruction in block (if known)
     """
 
-    stack_size : int|None
+    stack_height : int|None
     """
     Expected stack size at offset (if known)
     """
 
-    exception_handler : Offset|None
+    exception_handler : ExceptionTableEntry|None
     """
     Offset of block with exception handler (if known)
     """
@@ -962,16 +1029,76 @@ common_constants : dict[int, Value] = {
     CONSTANT_BUILTIN_ANY: Builtin("any")
 }
 
+class Stack:
+    _stack : list[Value]
+
+    def __init__(self, values : list[Value]|None = None):
+        self._stack = [] if values is None else values
+
+    def pop(self) -> Value:
+        """ Pop argument off stack"""
+        assert len(self._stack) > 0
+        return self._stack.pop()
+
+    def push(self, value: Value):
+        """ Push argument off stack"""
+        assert value is None or type(value) == int or isinstance(value, ValueBase)
+        return self._stack.append(value)
+
+    def check_stack_height(self, offset : BlockOffset):
+        """Check stack height matches height if previously recorded."""
+        stack_height = len(self._stack)
+        if offset.stack_height is not None:
+            assert offset.stack_height == stack_height, \
+                f'{offset} has mismatched stack heights {stack_height} and {offset.stack_height}.'
+        else:
+            offset.stack_height = stack_height
+
+    def __iter__(self) -> Iterator[Value]:
+        return iter(self._stack)
+
+    def __len__(self) -> int:
+        return len(self._stack)
+
+    def __getitem__(self, rindex : int):
+        assert type(rindex) == int
+        assert rindex < 0 and -rindex <= len(self._stack), f'Invalid index {rindex} and {len(self._stack)}'
+        index = len(self._stack) + rindex
+        return self._stack[index]
+
+    def __setitem__(self, rindex : int, value : Value):
+        assert type(rindex) == int
+        assert rindex < 0 and -rindex <= len(self._stack)
+        index = len(self._stack) + rindex
+        self._stack[index] = value
+
+    def pop_n(self, n : int) -> tuple[Value, ...]:
+        if n == 0:
+            return ()
+        else:
+            assert 0 < n and n <= len(self._stack)
+            val = tuple(self._stack[-n:])
+            del self._stack[-n:]
+            return val
+
 class Translator:
     globals : Globals
     code : Any
 
     jump_targets : dict[Offset, int]
+    """
+    Map from offsets to the index of the block
+    """
 
-    blocks : list[Block]
+    block_offsets : list[BlockOffset]
+    """
+    Maps block indices to the block offsets.
+
+    The inverse of jump_targets
+    """
+
+    blocks : list[Block|None]
     """Maps block offsets to the block"""
-
-    next_block_index : int
 
     cur_block : Block|None
     """Current block to add code to"""
@@ -991,7 +1118,7 @@ class Translator:
     co_vars : list[Value]
     """Co variable array used for local storage."""
 
-    stack: list[Value]
+    stack: Stack
     """Values in current stack"""
 
     def __init__(self, globals : Globals, code, block_offsets : list[BlockOffset]):
@@ -1011,19 +1138,17 @@ class Translator:
         self.code = code
         jump_targets = { b.offset : idx for (idx, b) in enumerate(block_offsets) }
         self.jump_targets = jump_targets
-        def target(off:Offset|None) -> int|None:
-            return None if off is None else self.jump_targets[off]
-        self.blocks = [ Block(i, b.offset, local_count, b.stack_size, target(b.exception_handler)) for(i, b) in enumerate(block_offsets) ]
+        self.block_offsets = block_offsets
+
         self.stack_heights = {}
         self.cur_block = None
-        self.stack = []
 
         self.register_count = 0
 
-        first_block = self.blocks[0]
-        first_block.input_count = 0
+        self.stack = Stack([])
+        first_block = Block(self.jump_targets, 0, 0, block_offsets[0])
+        self.blocks = [first_block]
         self.cur_block = first_block
-        self.next_block_index = 1
 
         # Initialize list of arguments
         arg_values = (ArgValue(i, code.co_varnames[i]) for i in range(code.co_argcount))
@@ -1039,49 +1164,48 @@ class Translator:
             self.names = set(code.co_varnames)
 
     def mk_dict(self):
-        return self.add_stmt(mk_dict_decl, [])
-
+        return self.add_stmt(mk_dict_decl, ())
 
     def stack_pop(self):
         """ Pop argument off stack"""
-        assert len(self.stack) > 0
         return self.stack.pop()
 
     def stack_push(self, value: Value):
         """ Push argument off stack"""
-        assert value is None or type(value) == int or isinstance(value, ValueBase)
-        return self.stack.append(value)
+        self.stack.push(value)
 
-    def pop_n(self, n : int):
-        if n == 0:
-            return ()
-        else:
-            assert 0 < n and n <= len(self.stack)
-            val = tuple(self.stack[-n:])
-            del self.stack[-n:]
-            return val
+    def check_stack_height(self, offset : BlockOffset):
+        """Check stack height matches height if previously recorded."""
+        self.stack.check_stack_height(offset)
+
+    def pop_n(self, n : int) -> tuple[Value, ...]:
+        return self.stack.pop_n(n)
 
     def check_args(self, stmt : StatementDecl, args : tuple[StatementArg, ...]):
         assert len(stmt.args) == len(args)
-        for (i, (k, tp)) in enumerate(stmt.args.items()):
+        for (i, tp) in enumerate(stmt.args.values()):
             v = args[i]
             tp.check_arg(v)
 
-    def add_stmt(self, stmt : StatementDecl, *args : StatementArg) -> Any:
-        assert not stmt.terminal
+    def create_regvalues(self, count : int):
+        assert count >= 0
         base = self.register_count
-        self.register_count += stmt.returnCount
-        block = self.cur_block
-        assert isinstance(block, Block)
-#        self.check_args(stmt, args)
-        block.statements.append(Statement(base, stmt, args))
-        match stmt.returnCount:
+        self.register_count += count
+        match count:
             case 0:
                 return
             case 1:
                 return RegValue(base)
             case rc:
                 return tuple(RegValue(i) for i in range(base, base+rc))
+
+    def add_stmt(self, stmt : StatementDecl, *args : StatementArg) -> Any:
+        assert not stmt.terminal
+        block = self.cur_block
+        assert isinstance(block, Block)
+        base = self.register_count
+        block.statements.append(Statement(base, stmt, args))
+        return self.create_regvalues(stmt.returnCount)
 
     def add_term_stmt(self, stmt : StatementDecl, *args : StatementArg) -> Any:
         assert stmt.terminal
@@ -1103,21 +1227,12 @@ class Translator:
     def store_ref(self, ref : Value, value : Value):
         self.add_stmt(store_ref_decl, ref, value)
 
+    def do_call(self, fn : Value, selfObj : Value, *args: Value) -> Value:
+        exc = self.mk_exc_target()
+        return self.add_stmt(call_decl, fn, selfObj, args, exc)
+
     def in_block(self) -> bool:
         return self.cur_block is not None
-
-    def check_stack_height(self, block: Block, stack_height : int) -> Block:
-        """Check stack height matches height if previously recorded."""
-
-
-        local_count = len(self.co_vars)
-        input_count = local_count + stack_height
-        if block.input_count is None:
-            block.input_count = input_count
-        else:
-            assert block.input_count == input_count, \
-                f'{block.offset} has mismatched stack heights {stack_height} and {block.input_count - local_count}.'
-        return block
 
     def try_start_block(self, offset : Offset):
         """
@@ -1125,14 +1240,17 @@ class Translator:
         stack height at offset.
         """
         block_index = self.jump_targets[offset]
-        assert block_index >= self.next_block_index
-        block = self.blocks[block_index]
+        while len(self.blocks) < block_index:
+            self.blocks.append(None)
+        assert block_index == len(self.blocks)
+        block_offset = self.block_offsets[block_index]
 
         if self.cur_block is not None:
-            self.check_stack_height(block, len(self.stack))
+            self.check_stack_height(block_offset)
             target = self.fallthrough_target()
             self.add_term_stmt(jump_decl, target)
-        if block.input_count is None:
+
+        if block_offset.stack_height is None:
             # If block input_count is None, then this block is not reached
             # by a forward traversal so far.  Every reachable block appears
             # to be forward reachable so this is unreachable and we skip.
@@ -1140,28 +1258,30 @@ class Translator:
             # no code `try pass except ...`
             return
 
-        assert isinstance(block.input_count, int)
+        assert type(block_offset.stack_height) is int
+        input_count = len(self.co_vars) + block_offset.stack_height
+        block = Block(self.jump_targets, block_index, input_count, block_offset)
+        self.blocks.append(block)
         assert len(block.statements) == 0
         self.cur_block = block
-        self.next_block_index = block_index + 1
         covar_count = len(self.co_vars)
         self.co_vars = [ BlockArgument(i) for i in range(covar_count)]
-        self.stack = [ BlockArgument(i) for i in range(covar_count, block.input_count)]
+        self.stack = Stack([ BlockArgument(i) for i in range(covar_count, block.input_count)])
 
     def get_jump_target(self, target : int|None) -> JumpTarget:
         assert isinstance(target, int)
         assert target != 0
 
         block_index = self.jump_targets[target]
-        self.check_stack_height(self.blocks[block_index], len(self.stack))
-        arguments = [*self.co_vars, *self.stack]
-        return JumpTarget(block_index, arguments)
+        block_offset = self.block_offsets[block_index]
+        self.check_stack_height(block_offset)
+        return JumpTarget(block_index, (*self.co_vars, *self.stack))
 
     def fallthrough_target(self):
-        arguments = [*self.co_vars, *self.stack]
-        block_index = self.next_block_index
-        self.check_stack_height(self.blocks[block_index], len(self.stack))
-        return JumpTarget(block_index, arguments)
+        block_index = len(self.blocks)
+        block_offset = self.block_offsets[block_index]
+        self.check_stack_height(block_offset)
+        return JumpTarget(block_index, (*self.co_vars, *self.stack))
 
     def translate_const(self, c) -> Value:
         if c is None:
@@ -1175,7 +1295,7 @@ class Translator:
         elif isinstance(c, str):
             return StringLit(c)
         elif isinstance(c, tuple):
-            args = [self.translate_const(a) for a in c]
+            args = tuple(self.translate_const(a) for a in c)
             return self.add_stmt(mk_tuple_decl, args)
         elif isinstance(c, type(self.code)):
             return CodeName(c.co_qualname)
@@ -1256,7 +1376,7 @@ class Translator:
         count = ins.arg
         assert isinstance(count, int)
         pairs = self.pop_n(2 * count)
-        bindings = [ Binding(pairs[2*i], pairs[2*i+1]) for i in range(count) ]
+        bindings = tuple(Binding(pairs[2*i], pairs[2*i+1]) for i in range(count))
         val = self.add_stmt(mk_dict_decl, bindings)
         self.stack_push(val)
 
@@ -1275,7 +1395,7 @@ class Translator:
     def BUILD_TUPLE(self, ins : Instruction):
         arg = ins.arg
         assert isinstance(arg, int)
-        val = self.add_stmt(mk_tuple_decl, list(self.pop_n(arg)))
+        val = self.add_stmt(mk_tuple_decl, self.pop_n(arg))
         self.stack_push(val)
 
     def CALL(self, ins : Instruction):
@@ -1283,18 +1403,18 @@ class Translator:
         assert isinstance(argc, int)
         if argc > 999:
             raise NotImplementedError
-        args = list(self.pop_n(argc))
+        args = self.pop_n(argc)
         selfObj = self.stack_pop()
         fn = self.stack_pop()
-        val = self.add_stmt(call_decl, fn, selfObj, args)
+        val = self.do_call(fn, selfObj, *args)
         self.stack_push(val)
 
     def CALL_FUNCTION_EX(self, ins : Instruction):
         assert ins.arg is None
-        kwargs = self.stack.pop()
-        args = self.stack.pop()
-        self_value = self.stack.pop()
-        fun = self.stack.pop()
+        kwargs = self.stack_pop()
+        args = self.stack_pop()
+        self_value = self.stack_pop()
+        fun = self.stack_pop()
         res = self.add_stmt(call_function_ex_decl, fun, self_value, args, kwargs)
         self.stack_push(res)
 
@@ -1306,15 +1426,33 @@ class Translator:
         res = self.add_stmt(call_intrinsic_1_decl, op, val)
         self.stack_push(res)
 
+    def mk_exc_target(self) -> ExcHandler|None:
+        block = self.cur_block
+        assert block is not None
+        block_offset = self.block_offsets[block.index]
+        exc_block = block_offset.exception_handler
+        if exc_block is None:
+            return None
+        else:
+            assert type(block.exception_handler) is int
+            depth = exc_block.depth
+            assert type(depth) is int
+            assert depth <= len(self.stack)
+            slice = self.stack._stack[:depth]
+            exc_args = (*self.co_vars, *slice)
+            tgt = JumpTarget(block.exception_handler, exc_args)
+            return ExcHandler(tgt, exc_block.lasti)
+
     def CALL_KW(self, ins : Instruction):
         argc = ins.arg
         assert isinstance(argc, int)
 
         names = self.stack_pop()
-        args = list(self.pop_n(argc))
+        args = tuple(self.pop_n(argc))
         self_or_null = self.stack_pop()
         callable = self.stack_pop()
-        val = self.add_stmt(call_kw_decl, callable, self_or_null, args, names)
+        exc = self.mk_exc_target()
+        val = self.add_stmt(call_kw_decl, callable, self_or_null, args, names, exc)
         self.stack_push(val)
 
     def CHECK_EXC_MATCH(self, ins : Instruction):
@@ -1390,13 +1528,13 @@ class Translator:
 
     def DICT_MERGE(self, ins : Instruction):
         assert len(self.stack) >= 2
-        map = self.stack.pop()
+        map = self.stack_pop()
 
         self.add_stmt(dict_merge_decl, self.stack[-1], map)
 
     def DICT_UPDATE(self, ins : Instruction):
         assert len(self.stack) >= 2
-        map = self.stack.pop()
+        map = self.stack_pop()
         self.add_stmt(dict_update_decl, self.stack[-1], map)
 
     def END_FOR(self, ins : Instruction):
@@ -1439,15 +1577,16 @@ class Translator:
 
     def GET_ITER(self, ins : Instruction):
         """
-        This appears to be incorrectly documented as it has a special case for lists.
+        This function appears to have a different implementation when
+        executed then how it is documented and normally generated.  The
+        documentation suggestappears to be incorrectly documented as it has a special case for lists.
         If the value is a list or tuple, it returns the value and 0.  Otherwise,
         it calls iter and stores null.
         """
         assert ins.arg is None
         val = self.stack_pop()
-        val, index_or_null = self.add_stmt(get_iter_decl, val)
-        self.stack_push(val)
-        #self.stack_push(index_or_null)
+        iter = self.do_call(Builtin("iter"), None, val)
+        self.stack_push(iter)
 
     def IMPORT_FROM(self, ins : Instruction):
         name = self.get_name(ins.arg)
@@ -1584,7 +1723,7 @@ class Translator:
     def LOAD_FROM_DICT_OR_GLOBALS(self, ins : Instruction):
         assert isinstance(ins.arg, int)
         name = self.get_name(ins.arg)
-        d = self.stack.pop()
+        d = self.stack_pop()
         val = self.add_stmt(load_from_dict_or_globals_decl, d, name)
         self.stack_push(val)
 
@@ -1629,7 +1768,7 @@ class Translator:
         arg = ins.arg
         assert isinstance(arg, int)
         assert arg >= 0
-        val = self.stack.pop()
+        val = self.stack_pop()
         method, obj = self.add_stmt(load_special_decl, val, arg)
         self.stack_push(method)
         self.stack_push(obj)
@@ -1652,8 +1791,8 @@ class Translator:
         i = ins.arg
         assert isinstance(i, int)
         assert i > 0
-        value = self.stack.pop()
-        key = self.stack.pop()
+        value = self.stack_pop()
+        key = self.stack_pop()
         self.add_stmt(dict_setitem_decl, self.stack[-i], key, value)
 
     def NOP(self, ins : Instruction):
@@ -1668,14 +1807,15 @@ class Translator:
 
     def POP_ITER(self, ins : Instruction):
         # Removes the iterator from the top of the stack.
-        self.stack.pop()
+        self.stack_pop()
 
     def POP_JUMP_IF_FALSE(self, ins : Instruction):
         cond = self.stack_pop()
-        block_index = self.next_block_index
+        block_index = len(self.blocks)
+        block_offset = self.block_offsets[block_index].offset
         assert self.cur_block is not None
-        assert ins.offset <= self.blocks[block_index].offset, \
-            f'Offset {ins.offset} <= {self.blocks[block_index].offset}: {self.cur_block.offset}'
+        assert ins.offset <= block_offset, \
+            f'Offset {ins.offset} <= {block_offset}'
 
         true_target = self.fallthrough_target()
         false_target = self.get_jump_target(ins.jump_target)
@@ -1807,7 +1947,7 @@ class Translator:
         assert i > 0
 
         assert len(self.stack) >= 2
-        seq = self.stack.pop()
+        seq = self.stack_pop()
         s = self.stack[-i]
         self.add_stmt(set_update_decl, s, seq)
 
@@ -1922,10 +2062,10 @@ class Translator:
         val = self.stack[-1]
         self.add_stmt(yield_decl, val, arg != 0)
 
-def handler_for(exceptions : list[ExceptionTableEntry], entry : Offset) -> Offset|None:
+def handler_for(exceptions : list[ExceptionTableEntry], entry : Offset) -> ExceptionTableEntry|None:
     for ex in exceptions:
         if ex.start <= entry and entry - ex.start < ex.length:
-            return ex.target
+            return ex
     return None
 
 def create_block_offsets(
@@ -1957,16 +2097,15 @@ def create_block_offsets(
         if end <= last_offset and end not in block_offset_map:
             block_offset_map[end] = None
 
-        height = block_offset_map.get(e.target, None)
-        # This is what docs suggest, but it seems to be wrong.
-        depth = e.depth + 1
-        #depth = e.depth + 2
-        if e.lasti:
-            depth += 1
-        if height is None:
-            block_offset_map[e.target] = depth
+        prev = block_offset_map.get(e.target, None)
+        height = e.target_stack_height()
+        if prev is None:
+            depth = e.depth + 1
+            if e.lasti:
+                depth += 1
+            block_offset_map[e.target] = height
         else:
-            assert height == depth
+            assert prev == height
 
     next_jump_target : bool = True
     next_jump_stack : int|None = None
@@ -1993,7 +2132,9 @@ def create_block_offsets(
                 assert target is None
                 next_jump_target = True
                 next_jump_stack = None
-    return sorted((BlockOffset(off, h, handler_for(exceptions, off)) for (off, h) in block_offset_map.items()), key=lambda x: x.offset)
+    def mk_block_offset(off : Offset, tgt : int|None):
+        return BlockOffset(off, tgt, handler_for(exceptions, off))
+    return sorted((mk_block_offset(off, h) for (off, h) in block_offset_map.items()), key=lambda x: x.offset)
 
 class RedirectStdStreams(object):
     def __init__(self, stdout=None, stderr=None):
@@ -2087,7 +2228,7 @@ class MissingInstructions:
             print(f"{k}: {c} ({p})")
         print(f"Succcess: {successes}/{total}")
 
-def generate_blocks(globals, co):
+def generate_blocks(globals, co) -> list[Block]:
     codeType = type(co)
     consts = co.co_consts
     assert isinstance(consts, tuple)
@@ -2113,7 +2254,7 @@ def generate_blocks(globals, co):
         assert f is not None, f'Missing support for {ins.opname}'
         f(ins)
 
-    return translator.blocks
+    return [ b for b in translator.blocks if b is not None ]
 
 function_decl = \
     PythonSSA.add_op(
@@ -2137,7 +2278,7 @@ class Function:
         return function_decl(
             base.StrLit(self.name),
             base.Seq([base.StrLit(a) for a in self.args]),
-            base.Seq([b.to_strata() for b in self.blocks if b.input_count is not None]))
+            base.Seq([b.to_strata() for b in self.blocks if b is not None]))
 
     def to_ion(self):
         return self.to_strata().to_ion()
@@ -2212,8 +2353,9 @@ def find_code(globals : Globals, n : int, co):
 
     print(f'  Statements:')
     for (idx, block) in enumerate(translator.blocks):
-        if block.input_count is None:
+        if block is None:
             continue
+        assert block.index == idx
         assert isinstance(block.input_count, int)
         assert block.term_statement is not None
         args = ', '.join([f'B{idx}' for idx in range(block.input_count)])
