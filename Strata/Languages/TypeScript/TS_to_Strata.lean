@@ -240,6 +240,13 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
             let lengthExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "LengthAccess" none) objExpr) (Heap.HExpr.string "length")
             let lastIndexExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Sub" none) lengthExpr) (Heap.HExpr.int 1)
             Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAccess" none) objExpr) lastIndexExpr
+          | "shift" =>
+            -- arr.shift() - deferred operation that removes first element and reindexes
+            Heap.HExpr.app (Heap.HExpr.deferredOp "ArrayShift" none) objExpr
+          | "unshift" =>
+            -- arr.unshift(value) - deferred operation that adds to beginning and reindexes
+            let valueExpr := translate_expr call.arguments[0]!
+            Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "ArrayUnshift" none) objExpr) valueExpr
           | methodName =>
             Heap.HExpr.lambda (.fvar s!"call_{methodName}" none)
         | _ =>
@@ -344,6 +351,10 @@ partial def translate_statement_core
                   let deleteExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAssign" none) objExpr) tempIndexVar) Heap.HExpr.null
                   let deleteStmt := .cmd (.set "temp_delete_result" deleteExpr)
                   (ctx, [tempIndexInit, readStmt, deleteStmt])
+                | "shift" =>
+                  let shiftExpr := Heap.HExpr.app (Heap.HExpr.deferredOp "ArrayShift" none) objExpr
+                  let ty := get_var_type d.id.typeAnnotation d.init
+                  (ctx, [.cmd (.init d.id.name ty shiftExpr)])
                 | methodName =>
                   dbg_trace s!"[DEBUG] Translating method call assignment: {d.id.name} = obj.{methodName}(...)"
                   let value := translate_expr d.init
@@ -406,43 +417,52 @@ partial def translate_statement_core
         match expr.expression with
         | .TS_CallExpression call =>
           match call.callee with
-            | .TS_MemberExpression member =>
-              -- Handle method calls like arr.push(x) or arr.pop()
-              let objExpr := translate_expr member.object
-              match member.property with
-              | .TS_IdExpression id =>
-                match id.name with
-                | "push" =>
-                  -- arr.push(value) - use DynamicFieldAssign
-                  let valueExpr := translate_expr call.arguments[0]!
-                  let lengthExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "LengthAccess" none) objExpr) (Heap.HExpr.string "length")
-                  let pushExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAssign" none) objExpr) lengthExpr) valueExpr
-                  (ctx, [.cmd (.set "temp_push_result" pushExpr)])
-                | "pop" =>
-                  -- arr.pop() standalone - read and delete
-                  let lengthExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "LengthAccess" none) objExpr) (Heap.HExpr.string "length")
-                  let lastIndexExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Sub" none) lengthExpr) (Heap.HExpr.int 1)
-                  let tempIndexInit := .cmd (.init "temp_pop_index" Heap.HMonoTy.int lastIndexExpr)
-                  let tempIndexVar := Heap.HExpr.lambda (.fvar "temp_pop_index" none)
-                  -- Read the value
-                  let popExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAccess" none) objExpr) tempIndexVar
-                  let readStmt := .cmd (.set "temp_pop_result" popExpr)
-                  -- Delete the element
-                  let deleteExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAssign" none) objExpr) tempIndexVar) Heap.HExpr.null
-                  let deleteStmt := .cmd (.set "temp_delete_result" deleteExpr)
-                  (ctx, [tempIndexInit, readStmt, deleteStmt])
-                | methodName =>
-                  dbg_trace s!"[DEBUG] Translating method call: {methodName}(...)"
-                  (ctx, [])
-              | _ => (ctx, [])
+          | .TS_MemberExpression member =>
+            -- Handle method calls like arr.push(x), arr.pop(), arr.shift(), arr.unshift(x)
+            let objExpr := translate_expr member.object
+            match member.property with
             | .TS_IdExpression id =>
-              -- Handle standalone function call
-              dbg_trace s!"[DEBUG] Translating TypeScript standalone function call: {id.name}(...)"
-              let args := call.arguments.toList.map translate_expr
-              dbg_trace s!"[DEBUG] Function call has {args.length} arguments"
-              let lhs := []  -- No left-hand side for standalone calls
-              (ctx, [.cmd (.directCall lhs id.name args)])
+              match id.name with
+              | "push" =>
+                -- arr.push(value) - use DynamicFieldAssign
+                let valueExpr := translate_expr call.arguments[0]!
+                let lengthExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "LengthAccess" none) objExpr) (Heap.HExpr.string "length")
+                let pushExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAssign" none) objExpr) lengthExpr) valueExpr
+                (ctx, [.cmd (.set "temp_push_result" pushExpr)])
+              | "pop" =>
+                -- arr.pop() standalone - read and delete
+                let lengthExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "LengthAccess" none) objExpr) (Heap.HExpr.string "length")
+                let lastIndexExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Sub" none) lengthExpr) (Heap.HExpr.int 1)
+                let tempIndexInit := .cmd (.init "temp_pop_index" Heap.HMonoTy.int lastIndexExpr)
+                let tempIndexVar := Heap.HExpr.lambda (.fvar "temp_pop_index" none)
+                -- Read the value
+                let popExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAccess" none) objExpr) tempIndexVar
+                let readStmt := .cmd (.set "temp_pop_result" popExpr)
+                -- Delete the element
+                let deleteExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "FieldDelete" none) objExpr) tempIndexVar
+                let deleteStmt := .cmd (.set "temp_delete_result" deleteExpr)
+                (ctx, [tempIndexInit, readStmt, deleteStmt])
+              | "shift" =>
+                -- arr.shift() standalone
+                let shiftExpr := Heap.HExpr.app (Heap.HExpr.deferredOp "ArrayShift" none) objExpr
+                (ctx, [.cmd (.set "temp_shift_result" shiftExpr)])
+              | "unshift" =>
+                -- arr.unshift(value) standalone
+                let valueExpr := translate_expr call.arguments[0]!
+                let unshiftExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "ArrayUnshift" none) objExpr) valueExpr
+                (ctx, [.cmd (.set "temp_unshift_result" unshiftExpr)])
+              | methodName =>
+                dbg_trace s!"[DEBUG] Translating method call: {methodName}(...)"
+                (ctx, [])
             | _ => (ctx, [])
+          | .TS_IdExpression id =>
+            -- Handle standalone function call
+            dbg_trace s!"[DEBUG] Translating TypeScript standalone function call: {id.name}(...)"
+            let args := call.arguments.toList.map translate_expr
+            dbg_trace s!"[DEBUG] Function call has {args.length} arguments"
+            let lhs := []  -- No left-hand side for standalone calls
+            (ctx, [.cmd (.directCall lhs id.name args)])
+          | _ => (ctx, [])
         | .TS_AssignmentExpression assgn =>
           assert! assgn.operator == "="
           match assgn.left with

@@ -181,6 +181,15 @@ partial def evalApp (state : HState) (originalExpr e1 e2 : HExpr) : HState × HE
     -- Third application: we have obj, start, and end -> evaluate
     evalArraySlice state2 objExpr startExpr e2'
 
+  | .deferredOp "ArrayShift" _ =>
+    -- ArrayShift applied once - now we can evaluate
+    evalArrayShift state2 e2'
+  | .deferredOp "ArrayUnshift" _ =>
+    -- First application to ArrayUnshift - return partially applied
+    (state2, .app (.deferredOp "ArrayUnshift" none) e2')
+  | .app (.deferredOp "ArrayUnshift" _) objExpr =>
+    -- Second application to ArrayUnshift - now we can evaluate
+    evalArrayUnshift state2 objExpr e2'
   | .deferredOp op _ =>
     -- First application to a deferred operation - return partially applied
     (state2, .app (.deferredOp op none) e2')
@@ -243,6 +252,32 @@ partial def evalStringFieldAccess (state : HState) (objExpr fieldExpr : HExpr) :
   | _ =>
     -- Field is not a string literal
     (state, .lambda (LExpr.const "error_non_literal_string_field" none))
+
+
+-- Handle length access for both strings and arrays
+partial def evalLengthAccess (state : HState) (objExpr fieldExpr : HExpr) : HState × HExpr :=
+  match fieldExpr with
+  | .lambda (LExpr.const key _) =>
+    if key == "length" then
+      match objExpr with
+      | .lambda (LExpr.const s _) =>
+        -- String length
+        let len := s.length
+        (state, .lambda (LExpr.const (toString len) (some Lambda.LMonoTy.int)))
+      | .address addr =>
+        -- Array length
+        match state.heap.get? addr with
+        | some obj =>
+          let len := obj.size
+          (state, .lambda (LExpr.const (toString len) (some Lambda.LMonoTy.int)))
+        | none =>
+          (state, .lambda (LExpr.const "error_invalid_address" none))
+      | _ =>
+        (state, .lambda (LExpr.const "error_not_string_or_array" none))
+    else
+      (state, .lambda (LExpr.const "error_unknown_length_property" none))
+  | _ =>
+    (state, .lambda (LExpr.const "error_non_literal_field" none))
 
 -- Handle field deletion: delete obj[field]
 partial def evalFieldDelete (state : HState) (objExpr fieldExpr : HExpr) : HState × HExpr :=
@@ -317,30 +352,62 @@ partial def evalArraySlice (state : HState) (objExpr startExpr endExpr : HExpr) 
       -- Allocate a new array with these fields
       evalHExpr state3 (.alloc (HMonoTy.mkObj outFields.length HMonoTy.int) outFields)
 
--- Handle length access for both strings and arrays
-partial def evalLengthAccess (state : HState) (objExpr fieldExpr : HExpr) : HState × HExpr :=
-  match fieldExpr with
-  | .lambda (LExpr.const key _) =>
-    if key == "length" then
-      match objExpr with
-      | .lambda (LExpr.const s _) =>
-        -- String length
-        let len := s.length
-        (state, .lambda (LExpr.const (toString len) (some Lambda.LMonoTy.int)))
-      | .address addr =>
-        -- Array length
-        match state.heap.get? addr with
-        | some obj =>
-          let len := obj.size
-          (state, .lambda (LExpr.const (toString len) (some Lambda.LMonoTy.int)))
-        | none =>
-          (state, .lambda (LExpr.const "error_invalid_address" none))
-      | _ =>
-        (state, .lambda (LExpr.const "error_not_string_or_array" none))
-    else
-      (state, .lambda (LExpr.const "error_unknown_length_property" none))
+
+-- Handle array shift: arr.shift() - removes first element and reindexes
+partial def evalArrayShift (state : HState) (objExpr : HExpr) : HState × HExpr :=
+  match objExpr with
+  | .address addr =>
+    match state.getObject addr with
+    | some obj =>
+      -- Get the value at index 0
+      let firstValue := obj.get? 0 |>.getD (.lambda (LExpr.const "undefined" none))
+
+      -- Get all fields and shift them down by 1
+      let fields := obj.toList
+      let shiftedFields := fields.filterMap fun (idx, value) =>
+        if idx > 0 then some (idx - 1, value) else none
+
+      -- Create new object with shifted fields
+      let newObj := Std.HashMap.ofList shiftedFields
+      let newHeap := state.heap.insert addr newObj
+      let newState := { state with heap := newHeap }
+
+      (newState, firstValue)
+    | none => (state, .lambda (LExpr.const "error_invalid_address" none))
   | _ =>
-    (state, .lambda (LExpr.const "error_non_literal_field" none))
+    -- Evaluate object expression first
+    let (state1, objVal) := evalHExpr state objExpr
+    evalArrayShift state1 objVal
+
+-- Handle array unshift: arr.unshift(value) - adds element at beginning and reindexes
+partial def evalArrayUnshift (state : HState) (objExpr valueExpr : HExpr) : HState × HExpr :=
+  match objExpr with
+  | .address addr =>
+    match state.getObject addr with
+    | some obj =>
+      -- First evaluate the value expression
+      let (state1, evaluatedValue) := evalHExpr state valueExpr
+
+      -- Get all fields and shift them up by 1
+      let fields := obj.toList
+      let shiftedFields := fields.map fun (idx, value) => (idx + 1, value)
+
+      -- Add new value at index 0
+      let newFields := (0, evaluatedValue) :: shiftedFields
+
+      -- Create new object with all fields
+      let newObj := Std.HashMap.ofList newFields
+      let newHeap := state1.heap.insert addr newObj
+      let newState := { state1 with heap := newHeap }
+
+      -- Return the new length
+      let newLength := newObj.size
+      (newState, .lambda (LExpr.const (toString newLength) (some Lambda.LMonoTy.int)))
+    | none => (state, .lambda (LExpr.const "error_invalid_address" none))
+  | _ =>
+    -- Evaluate object expression first
+    let (state1, objVal) := evalHExpr state objExpr
+    evalArrayUnshift state1 objVal valueExpr
 
 -- Extract a numeric field index from an expression
 partial def extractFieldIndex (expr : HExpr) : Option Nat :=
