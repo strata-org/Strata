@@ -16,7 +16,6 @@ open Strata (dialectExt)
 open Strata.Elab (elabProgram)
 open Strata.Integration.Lean
 
-
 open System (FilePath)
 
 namespace Strata
@@ -29,17 +28,24 @@ set_option trace.Strata.generator true
 
 #strata_gen PythonSSA
 
-#print Command.ofAst
-
 def ofProgram (p : Program) : Array (Command SourceRange) :=
   match p.commands.mapM Command.ofAst with
   | .error msg => panic! msg
   | .ok cmds => cmds
 
-def runPyToStrata (pyfile : String) (outfile : String) (cwd : Option FilePath) : IO Unit := do
+/--
+Use mise to find which Python to run
+-/
+def misePythonPath : IO (Option String) := do
+  let out ← IO.Process.output { cmd := "mise", args := #["which", "python"] }
+  if out.exitCode != 0 then
+    return none
+  return some out.stdout.trim
+
+def runPyToStrata (pythonPath : String) (dialect : String) (pyfile : String) (outfile : String) (cwd : Option FilePath) : IO Unit := do
   let args : IO.Process.SpawnArgs := {
-      cmd := "/Users/joehx/.local/share/mise/installs/python/latest/bin/python"
-      args := #["-m", "strata.gen", "py_to_strata", "PythonSSA", pyfile, outfile ]
+      cmd := pythonPath
+      args := #["-m", "strata.gen", "py_to_strata", dialect, pyfile, outfile ]
       cwd := cwd
       env := #[]
       inheritEnv := false
@@ -50,41 +56,58 @@ def runPyToStrata (pyfile : String) (outfile : String) (cwd : Option FilePath) :
 
 syntax (name := loadPythonSSACommand) "#load_PythonSSA" str : term
 
+def readPythonSSA (loaded : Elab.LoadedDialects) (cwd : FilePath) (pythonPath : String) (programPath : String) : IO Program := do
+  let name := "PythonSSA"
+  let .isTrue mem := inferInstanceAs (Decidable (name ∈ loaded.dialects))
+    | throw <| IO.userError s!"{name} unloaded."
+  let bytes ← IO.FS.withTempFile fun h outpath => do
+      runPyToStrata (cwd := some cwd) pythonPath name programPath outpath.toString
+      h.readBinToEnd
+  let dm := loaded.dialects.importedDialects name mem
+  match Program.fromIon dm name bytes with
+  | .error msg =>
+    throw <| IO.userError msg
+  | .ok p =>
+    return p
+
 @[term_elab loadPythonSSACommand]
 def loadPythonSSAImpl: TermElab := fun (stx : Syntax) _ => do
   match stx with
   | `(#load_PythonSSA $pathStx) =>
-    let programPath : FilePath := pathStx.getString
+    let programPath : String := pathStx.getString
     let cwd ← getLeanCwd
-    let absPath := pathAbsoluteRelativeTo cwd programPath
-    if !(←absPath.pathExists) then
-      throwError "Could not find file {programPath}"
-    let bytes ←
-      IO.FS.withTempFile fun h outpath => do
-        runPyToStrata (cwd := some cwd) absPath.toString outpath.toString
-        h.readBinToEnd
+    let some pythonPath ← misePythonPath
+      | throwError "Could not run mise to find python.  Check that it is installed."
     let loaded := (dialectExt.getState (←Lean.getEnv)).loaded
-    let name := "PythonSSA"
-    let .isTrue mem := inferInstanceAs (Decidable (name ∈ loaded.dialects))
-      | throwError s!"{name} unloaded."
-    let dm := loaded.dialects.importedDialects name mem
-    match Program.fromIon dm name bytes with
-    | .error msg =>
-      throwError msg
-    | .ok p =>
-      let e := toExpr p
-      return e
+    match ← readPythonSSA loaded cwd pythonPath programPath |>.toBaseIO with
+    | .error emsg => throwError emsg.toString
+    | .ok p => return toExpr p
   | _ =>
     throwUnsupportedSyntax
 
 def benchmark : Strata.Program := #load_PythonSSA "../../Tools/Python/benchmarks/ErgoPythonBenchmarks/botomoog-bm-simple/simple1_btg.py"
 
-#print benchmark
+
 def gen_benchmark := ofProgram benchmark
 
-#print Command.mk_function
+#guard gen_benchmark.size == 1
 
-#eval IO.print benchmark
+structure ContextBuilder where
+  foo : Sorry
+
+structure MethodSpec where
+  package : String
+  method : String
+  args :
+
+"botomoog" "client"
+
+def infer : Array (Command SourceRange) := sorry
+
+/--
+Build a typing context
+-/
+
 end PythonSSA
 
 end Strata
