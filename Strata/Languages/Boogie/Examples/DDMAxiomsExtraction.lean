@@ -85,6 +85,16 @@ def extractAxiomsWithFreeTypeVars (pgm: Program) (typeArgs: List String): (List 
   axioms.map (fun a => replaceTypesByFTV a typeArgs)
 
 /--
+info: program Boogie;
+type k;
+type v;
+axiom [updateSelect]:forall(((m):(Map v k)),((kk):(k))),((vv):(v))::((m)[kk:=vv])[kk]==vv;
+axiom [updatePreserves]:forall((((m):(Map v k)),((okk):(k))),((kk):(k))),((vv):(v))::((m)[kk:=vv])[okk]==(m)[okk];
+-/
+#guard_msgs in
+#eval IO.println examplePgm.format.render
+
+/--
 info: #[{ ann := { start := { byteIdx := 295 }, stop := { byteIdx := 302 } },
     name := { dialect := "Boogie", name := "command_typedecl" },
     args :=
