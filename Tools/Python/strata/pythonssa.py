@@ -1579,7 +1579,7 @@ class Translator:
         """
         This function appears to have a different implementation when
         executed then how it is documented and normally generated.  The
-        documentation suggestappears to be incorrectly documented as it has a special case for lists.
+        documentation appears to be incorrectly documented as it has a special case for lists.
         If the value is a list or tuple, it returns the value and 0.  Otherwise,
         it calls iter and stores null.
         """

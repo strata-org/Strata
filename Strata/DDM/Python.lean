@@ -28,6 +28,11 @@ set_option trace.Strata.generator true
 
 #strata_gen PythonSSA
 
+#eval 1
+
+#print Ann
+#print Command
+
 def ofProgram (p : Program) : Array (Command SourceRange) :=
   match p.commands.mapM Command.ofAst with
   | .error msg => panic! msg
@@ -87,26 +92,12 @@ def loadPythonSSAImpl: TermElab := fun (stx : Syntax) _ => do
 
 def benchmark : Strata.Program := #load_PythonSSA "../../Tools/Python/benchmarks/ErgoPythonBenchmarks/botomoog-bm-simple/simple1_btg.py"
 
+#eval IO.print benchmark
 
 def gen_benchmark := ofProgram benchmark
 
 #guard gen_benchmark.size == 1
 
-structure ContextBuilder where
-  foo : Sorry
-
-structure MethodSpec where
-  package : String
-  method : String
-  args :
-
-"botomoog" "client"
-
-def infer : Array (Command SourceRange) := sorry
-
-/--
-Build a typing context
--/
 
 end PythonSSA
 
