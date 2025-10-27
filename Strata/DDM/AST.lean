@@ -17,7 +17,7 @@ abbrev DialectName := String
 structure QualifiedIdent where
   dialect : DialectName
   name : String
-  deriving Hashable, Inhabited, DecidableEq, Repr
+  deriving DecidableEq, Hashable, Inhabited, Repr
 
 namespace QualifiedIdent
 
@@ -361,12 +361,56 @@ inductive MetadataArg where
 | catbvar (index : Nat) -- This is a deBrujin index into current typing environment.
 | num (e : Nat)
 | option (a : Option MetadataArg)
-deriving Inhabited, Repr, BEq
+deriving BEq, Inhabited, Repr
+
+namespace MetadataArg
+
+protected def decEq (x y : MetadataArg) : Decidable (x = y) :=
+  match x with
+  | .bool x =>
+    match y with
+    | .bool y =>
+      if p : x = y then
+        .isTrue (congrArg _ p)
+      else
+        .isFalse (by grind)
+    | .catbvar _ | .num _ | .option _ => .isFalse (by grind)
+  | .catbvar x =>
+    match y with
+    | .catbvar y =>
+      if p : x = y then
+        .isTrue (congrArg _ p)
+      else
+        .isFalse (by grind)
+    | .bool _ | .num _ | .option _ => .isFalse (by grind)
+  | .num x =>
+    match y with
+    | .num y =>
+      if p : x = y then
+        .isTrue (congrArg _ p)
+      else
+        .isFalse (by grind)
+    | .bool _ | .catbvar _ | .option _ => .isFalse (by grind)
+  | .option x =>
+    match y with
+    | .option y =>
+      match x, y with
+      | none, none => .isTrue (by grind)
+      | some x, some y =>
+        match MetadataArg.decEq x y with
+        | .isTrue p => .isTrue (by grind)
+        | .isFalse p => .isFalse (by grind)
+      | none, some _ | some _, none => .isFalse (by grind)
+    | .bool _ | .catbvar _ | .num _ => .isFalse (by grind)
+
+instance : DecidableEq MetadataArg := MetadataArg.decEq
+
+end MetadataArg
 
 structure MetadataAttr where
   ident : QualifiedIdent
   args : Array MetadataArg
-deriving Inhabited, Repr, BEq
+deriving DecidableEq, Inhabited, Repr
 
 namespace MetadataAttr
 
@@ -387,7 +431,7 @@ end MetadataAttr
 structure Metadata where
   ofArray ::
   toArray : Array MetadataAttr
-deriving Repr, BEq
+deriving DecidableEq, Repr
 
 namespace Metadata
 
@@ -520,12 +564,12 @@ inductive SyntaxDefAtom
 | ident (level : Nat) (prec : Nat)
 | str (lit : String)
 | indent (n : Nat) (args : Array SyntaxDefAtom)
-deriving Inhabited, Repr, BEq
+deriving BEq, Inhabited, Repr
 
 structure SyntaxDef where
   atoms : Array SyntaxDefAtom
   prec : Nat
-deriving Repr, Inhabited, BEq
+deriving BEq, Repr, Inhabited
 
 namespace SyntaxDef
 
@@ -562,7 +606,7 @@ deriving Repr
 structure DebruijnIndex (n : Nat) where
   val : Nat
   isLt : val < n
-  deriving Repr
+deriving Repr
 
 namespace DebruijnIndex
 
@@ -798,7 +842,7 @@ deriving Repr, DecidableEq, Inhabited
 structure Ann (Base : Type) (α : Type) where
   ann : α
   val : Base
-deriving BEq, Inhabited, Repr
+deriving BEq, DecidableEq, Inhabited, Repr
 
 /--
 A declaration of an algebraic data type.
@@ -806,7 +850,7 @@ A declaration of an algebraic data type.
 structure TypeDecl where
   name : String
   argNames : Array (Ann String SourceRange)
-deriving BEq, Repr, Inhabited
+deriving BEq, Inhabited, Repr
 
 /-- Operator declaration -/
 structure OpDecl where
@@ -864,7 +908,7 @@ deriving DecidableEq, Inhabited, Repr
 structure MetadataArgDecl where
   ident : String
   type : MetadataArgType
-deriving Repr, Inhabited, DecidableEq
+deriving DecidableEq, Inhabited, Repr
 
 /--
 Declaration of a metadata tag in a dialect.
@@ -877,7 +921,7 @@ N.B. We may want to further resitrct where metadata can appear.
 structure MetadataDecl where
   name : String
   args : Array MetadataArgDecl
-deriving Repr, Inhabited, DecidableEq
+deriving DecidableEq, Inhabited, Repr
 
 inductive Decl where
 | syncat (d : SynCatDecl)
@@ -885,7 +929,7 @@ inductive Decl where
 | type (d : TypeDecl)
 | function (d : FunctionDecl)
 | metadata (d : MetadataDecl)
-deriving Repr, BEq, Inhabited
+deriving BEq, Inhabited, Repr
 
 namespace Decl
 
@@ -1231,7 +1275,7 @@ end
 inductive GlobalKind where
 | expr (tp : TypeExpr)
 | type (params : List String) (definition : Option TypeExpr)
-deriving Inhabited, Repr, BEq
+deriving BEq, Inhabited, Repr
 
 /-- Resolves a binding spec into a global kind. -/
 partial def resolveBindingIndices { argDecls : ArgDecls } (m : DialectMap) (src : SourceRange) (b : BindingSpec argDecls) (args : Vector Arg argDecls.size) : GlobalKind :=
@@ -1285,7 +1329,7 @@ Typing environment created from declarations in an environment.
 structure GlobalContext where
   nameMap : Std.HashMap Var FreeVarIndex := {}
   vars : Array (Var × GlobalKind) := #[]
-deriving Repr, BEq
+deriving BEq, Repr
 
 namespace GlobalContext
 

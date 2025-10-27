@@ -110,11 +110,11 @@ info: opaque TestDialect.Expr.toAst : {α : Type} → [Inhabited α] → Expr α
 #guard_msgs in
 #print Expr.toAst
 
-deriving instance BEq for TestDialectType
-deriving instance BEq for TypeP
-deriving instance BEq for Binding
-deriving instance BEq for Bindings
-deriving instance BEq for Expr
+deriving instance DecidableEq for TestDialectType
+deriving instance DecidableEq for TypeP
+deriving instance DecidableEq for Binding
+deriving instance DecidableEq for Bindings
+deriving instance DecidableEq for Expr
 
 instance : Strata.IsAST Expr Strata.ExprF where
   toAst := Expr.toAst
