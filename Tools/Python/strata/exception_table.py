@@ -16,6 +16,12 @@ class ExceptionTableEntry:
             f"[{self.depth}] {'lasti' if self.lasti else ''}"
         )
 
+    def target_stack_height(self):
+        # This is what docs suggest, but it seems to be wrong.
+        #height = self.depth + 2
+        height = self.depth + 1
+        return height + 1 if self.lasti else height
+
 class ExceptionTableReader:
     """Read the exception table in 3.11+."""
 
