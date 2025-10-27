@@ -30,9 +30,11 @@ Design choices:
 - Constrained types are defined by a base type and a constraint over that type.
   - Algebriac datatypes do not exist directly but can be encoded using composited and constrained types.
 
+- For now there is no type polymorphism
+
 - The base type for all composite types is dynamic, which is a type that can be type tested.
   For all primitive types there is an implicit composite type that wraps around the primitive, so primitives can be boxed to become the Dynamic type. They can be unboxed using a type test. This is useful for source languages such as JavaScript. The operators that work on primitives also work on the dynamic type, although they can error if the types do not align.
-- WIP: There is no concept of constructors, but each composite type has a partial variant that represents an object of that type whose fields
+- NEEDS FURTHER DESIGN: There is no concept of constructors, but each composite type has a partial variant that represents an object of that type whose fields
   are not yet assigned and whose type invariants might not hold.
   A partial type can be completed to a full type once all fields are assigned and the type invariants are known to hold.
 
@@ -43,7 +45,6 @@ abbrev Identifier := String /- Potentially this could be an Int to save resource
 mutual
 structure Callable: Type where
   name : Identifier
-  typeParameters : List TypeParameter
   inputs : List Parameter
   output : HighType
   precondition : StmtExpr
@@ -59,7 +60,6 @@ inductive HighType : Type where
   | TVoid
   | TBool
   | TInt
-  | TReal
   | TFloat64 /- Required for JavaScript (number). Used by Python (float) and Java (double) as well -/
   /- A value of type `Dynamic` is a tuple consisting of a type and a value.
      The value can be a primitive type or a map (that can be used with the field select and field assign expressions)
@@ -73,6 +73,8 @@ inductive HighType : Type where
   /- Partial represents a composite type with unassigned fields and whose type invariants might not hold.
      Can be represented as a Map that contains a subset of the fields of the composite type -/
   | Partial (base : HighType)
+  /- Pure represents a composite type that does not support reference equality -/
+  | Pure(base: HighType)
   /- A nullable type is implicitly cast to its base when required,
     such as in a member access or when assigned to a variable of the base type -/
   | Nullable (base : HighType)
@@ -80,10 +82,6 @@ inductive HighType : Type where
      Example: `<cond> ? RustanLeino : AndersHejlsberg` could be typed as `Scientist & Scandinavian`-/
   | Intersection (types : List HighType)
   deriving Repr
-
-structure TypeParameter where
-  name : Identifier
-  bounds : List HighType /- Java has bounded type parameters -/
 
 inductive Purity: Type where
 /-
@@ -109,7 +107,7 @@ inductive Operation: Type where
     /- Equality on composite types uses reference equality for impure types, and structural equality for pure ones -/
   | Eq | Neq
   | And | Or | Not
-  /- Works on Int/Real/Float64 -/
+  /- Works on Int/Float64 -/
   | Neg | Add | Sub | Mul | Div | Mod
   | Lt | Leq | Gt | Geq
 
@@ -139,18 +137,18 @@ inductive StmtExpr : Type where
 /- Expression like -/
   | LiteralInt (value: Int)
   | LiteralBool (value: Bool)
-  -- Next line is commented out since this needs MathLib
-  -- | LiteralReal {Rat} (value: Rat)
   | Identifier (name : Identifier)
   /- Assign is only allowed in an impure context -/
   | Assign (target : StmtExpr) (value : StmtExpr)
+  /- Used by itself for fields reads and in combination with Assign for field writes -/
   | StaticFieldSelect (target : StmtExpr) (fieldName : Identifier)
   /- PureFieldUpdate is the only way to assign values to fields of pure types -/
   | PureFieldUpdate (target : StmtExpr) (fieldName : Identifier) (newValue : StmtExpr)
-  | StaticInvocation (callee : Identifier) (arguments : List StmtExpr)
+  | StaticCall (callee : Identifier) (arguments : List StmtExpr)
   | PrimitiveOp (operator: Operation) (arguments : List StmtExpr)
 /- Instance related -/
   | This
+  | ReferenceEquals (lhs: StmtExpr) (rhs: StmtExpr)
   /- IsType works both with KnowsType and Composite types
      The newBinding parameter allows bringing a new variable into scope that has the checked type
      The scope where newBinding becomes available depends on where IsType is used
@@ -159,8 +157,9 @@ inductive StmtExpr : Type where
 
      Together with IfThenElse, IsType replaces the need for other pattern matching constructs
   -/
-  | IsType (target : StmtExpr) (type: HighType) (newBinding : Option Identifier)
-  | InstanceInvocation (target : StmtExpr) (callee : Identifier) (arguments : List StmtExpr)
+  | AsType (target: StmtExpr) (targetType: HighType)
+  | IsType (target : StmtExpr) (type: HighType) -- Not yet needed: (newBinding : Option Identifier)
+  | InstanceCall (target : StmtExpr) (callee : Identifier) (arguments : List StmtExpr)
 
 /- Related to creation of objects -/
   /- Create returns a partial type, whose fields are still unassigned and whose type invariants are not guaranteed to hold. -/
@@ -173,7 +172,7 @@ inductive StmtExpr : Type where
   | Complete (value : StmtExpr)
 
 /- Related to dynamic language features -/
-  | DynamicInvocation (callable : StmtExpr) (arguments : List StmtExpr)
+  | DynamicCall (callable : StmtExpr) (arguments : List StmtExpr)
   /- alternatively, we could have a closure that takes a CompositeType, like Java's inner classes
      This would be more powerful but slightly more of a hassle to use when creating callable closures -/
   | Closure (callable: Callable)
@@ -182,7 +181,8 @@ inductive StmtExpr : Type where
   | DynamicFieldUpdate (target : StmtExpr) (fieldName : StmtExpr) (newValue : StmtExpr)
 
 /- Verification specific -/
--- TODO: Add forall and exists
+  | Forall (name: Identifier) (type: HighType) (body: StmtExpr)
+  | Exists (name: Identifier) (type: HighType) (body: StmtExpr)
   | Assigned (name : StmtExpr)
   | Old (value : StmtExpr)
   /- Fresh may only target impure composite types -/
@@ -225,7 +225,6 @@ partial def highEq (a: HighType) (b: HighType) : Bool := match a, b with
   | HighType.TVoid, HighType.TVoid => true
   | HighType.TBool, HighType.TBool => true
   | HighType.TInt, HighType.TInt => true
-  | HighType.TReal, HighType.TReal => true
   | HighType.TFloat64, HighType.TFloat64 => true
   | HighType.Dynamic, HighType.Dynamic => true
   | HighType.UserDefined n1, HighType.UserDefined n2 => n1 == n2
@@ -255,10 +254,12 @@ structure Field where
 
 structure CompositeType where
   name : Identifier
-  typeParameters : List TypeParameter
+  /-
+  The type hierarchy affects the results of IsType and AsType,
+  and can add checks to the postcondition of callables that extend another one
+  -/
   extending : List Identifier
   fields : List Field
-  isPure : Bool /- A pure type may not have mutable fields, and does not support reference equality -/
   instanceCallables : List Callable
 
 structure ConstrainedType where

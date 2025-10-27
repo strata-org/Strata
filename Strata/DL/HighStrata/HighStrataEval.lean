@@ -164,7 +164,6 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
 -- Expressions
   | StmtExpr.LiteralBool b => pure <| TypedValue.mk (Value.VBool b) HighType.TBool
   | StmtExpr.LiteralInt i => pure <| TypedValue.mk (Value.VInt i) HighType.TInt
-  | StmtExpr.LiteralReal r => panic! "not implemented" -- EvalResult.Success (TypedValue.mk (Value.VReal r) HighType.TReal) env
   | StmtExpr.Identifier name => getLocal name
 
   | StmtExpr.IfThenElse condExpr thenBranch elseBranch => do
@@ -193,7 +192,7 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
           let arguments ← argumentsExprs.mapM (fun arg => eval arg)
           let mod ← match callable.purity with
             | Purity.Impure modifies => eval modifies
-            | Purity.Pure reads => pure { val := [], ty := }
+            | Purity.Pure reads => panic! "not implemented" -- pure { val := [], ty := }
           let env ← getEnv
           setEnv { env with heap := env.heap  } -- TODO: apply mod
 
@@ -208,16 +207,17 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
           assertBool precondition
           -- TODO, handle decreases
 
-          match callable.body with
+          let result: TypedValue ← match callable.body with
             | Body.Transparent bodyExpr => do
               let transparantResult ← eval bodyExpr
               if transparantResult.ty != callable.output then
                 withResult <| EvalResult.TypeError s!"Static invocation of {callee} with wrong return type"
               else
-          popStack
-          pure result
+                pure transparantResult
             | Body.Opaque (postcondition: StmtExpr) _ => panic! "not implemented: opaque body"
             | Body.Abstract (postcondition: StmtExpr) => panic! "not implemented: opaque body"
+          popStack
+          pure result
 
 -- Statements
   | StmtExpr.Block stmts label => evalBlock label stmts
@@ -321,6 +321,7 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
 
 -- Used for incomplete code during development
   | StmtExpr.Hole => pure <| TypedValue.mk Value.VUnknown HighType.Dynamic
+  | _ => panic! "not implemented"
 
 
 where
