@@ -57,7 +57,7 @@ def oldExpr
   {tyold : Option Lambda.LMonoTy}
   (e : Expression.Expr)
   : Expression.Expr
-  := .app (.op (.unres "old") tyold) e
+  := .app (.op (BoogieIdent.unres "old") tyold) e
 
 @[match_pattern]
 def oldVar
@@ -161,7 +161,7 @@ This function is agnostic of old expression normalization (see
 -/
 def containsOldExpr (e : Expression.Expr) : Bool :=
   match e with
-  | .op (.unres "old") _ => true
+  | .op (BoogieIdent.unres "old") _ => true
   | .op _ _ => false
   | .const _ _ | .bvar _ | .fvar _ _ => false
   | .mdata _ e' => containsOldExpr e'
@@ -191,8 +191,8 @@ def extractOldExprVars (expr : Expression.Expr)
   | .abs _ e => extractOldExprVars e
   | .quant _ _ tr e => extractOldExprVars tr ++ extractOldExprVars e
   | .app e1 e2 => match e1, e2 with
-    | .op (.unres "old") _, .fvar v _ => [v]
-    | .op (.unres "old") _, _ => panic! s!"Old expression {expr} not normalized"
+    | .op (BoogieIdent.unres "old") _, .fvar v _ => [v]
+    | .op (BoogieIdent.unres "old") _, _ => panic! s!"Old expression {expr} not normalized"
     | e1', e2' => extractOldExprVars e1' ++ extractOldExprVars e2'
   | .ite c t e => extractOldExprVars c ++ extractOldExprVars t ++ extractOldExprVars e
   | .eq  e1 e2 => extractOldExprVars e1 ++ extractOldExprVars e2
@@ -213,7 +213,7 @@ def substOld (var : Expression.Ident) (s e : Expression.Expr) :
   | .quant qk ty tr' e' => .quant qk ty (substOld var s tr') (substOld var s e')
   | .app e1 e2 =>
     match e1, e2 with
-    | .op (.unres "old") _, .fvar x _ =>
+    | .op (BoogieIdent.unres "old") _, .fvar x _ =>
       -- NOTE: We rely on the typeChecker to normalize `e` ensure that `old` is
       -- only used with an `fvar`.
       if x == var
@@ -239,7 +239,7 @@ def substsOldExpr (sm : Map Expression.Ident Expression.Expr) (e : Expression.Ex
   | .quant qk ty tr' e' => .quant qk ty (substsOldExpr sm tr') (substsOldExpr sm e')
   | .app e1 e2 =>
     match e1, e2 with
-    | .op (.unres "old") _, .fvar x _ =>
+    | .op (BoogieIdent.unres "old") _, .fvar x _ =>
       match sm.find? x with
       | some s => s
       | none => e

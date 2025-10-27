@@ -35,15 +35,15 @@ def KnownTypes : KnownTypes :=
   KnownLTys.map (fun ty => ty.toKnownType!)
 
 /--
-  Convert an LExpr LMonoTy String to an LExpr LMonoTy BoogieIdent
+  Convert an LExpr LMonoTy Unit to an LExpr LMonoTy Visibility
   TODO: Remove when Lambda elaborator offers parametric identifier type
 -/
-def ToBoogieIdent (ine: LExpr LMonoTy String): (LExpr LMonoTy BoogieIdent) :=
+def ToBoogieIdent (ine: LExpr LMonoTy Unit): (LExpr LMonoTy Visibility) :=
 match ine with
     | .const c ty => .const c ty
-    | .op o oty => .op (BoogieIdent.unres o) oty
+    | .op o oty => .op (BoogieIdent.unres o.name) oty
     | .bvar deBruijnIndex => .bvar deBruijnIndex
-    | .fvar name oty => .fvar (BoogieIdent.unres name) oty
+    | .fvar name oty => .fvar (BoogieIdent.unres name.name) oty
     | .mdata info e => .mdata info (ToBoogieIdent e)
     | .abs oty e => .abs oty (ToBoogieIdent e)
     | .quant k oty tr e => .quant k oty (ToBoogieIdent tr) (ToBoogieIdent e)
@@ -83,26 +83,26 @@ elab "ExpandBVOpFuncDefs" "[" sizes:num,* "]" : command => do
       let funcArity := mkIdent (.str (.str .anonymous "Lambda") arity)
       let opName := Syntax.mkStrLit s!"Bv{s}.{op}"
       let bvTypeName := Name.mkSimple s!"bv{s}"
-      elabCommand (← `(def $funcName : LFunc BoogieIdent := $funcArity $opName mty[$(mkIdent bvTypeName):ident] none))
+      elabCommand (← `(def $funcName : LFunc Visibility := $funcArity $opName mty[$(mkIdent bvTypeName):ident] none))
 
 ExpandBVOpFuncDefs[1, 2, 8, 16, 32, 64]
 
 /- Real Arithmetic Operations -/
 
-def realAddFunc : LFunc BoogieIdent := binaryOp "Real.Add" mty[real] none
-def realSubFunc : LFunc BoogieIdent := binaryOp "Real.Sub" mty[real] none
-def realMulFunc : LFunc BoogieIdent := binaryOp "Real.Mul" mty[real] none
-def realDivFunc : LFunc BoogieIdent := binaryOp "Real.Div" mty[real] none
-def realNegFunc : LFunc BoogieIdent := unaryOp "Real.Neg" mty[real] none
+def realAddFunc : LFunc Visibility := binaryOp "Real.Add" mty[real] none
+def realSubFunc : LFunc Visibility := binaryOp "Real.Sub" mty[real] none
+def realMulFunc : LFunc Visibility := binaryOp "Real.Mul" mty[real] none
+def realDivFunc : LFunc Visibility := binaryOp "Real.Div" mty[real] none
+def realNegFunc : LFunc Visibility := unaryOp "Real.Neg" mty[real] none
 
 /- Real Comparison Operations -/
-def realLtFunc : LFunc BoogieIdent := binaryPredicate "Real.Lt" mty[real] none
-def realLeFunc : LFunc BoogieIdent := binaryPredicate "Real.Le" mty[real] none
-def realGtFunc : LFunc BoogieIdent := binaryPredicate "Real.Gt" mty[real] none
-def realGeFunc : LFunc BoogieIdent := binaryPredicate "Real.Ge" mty[real] none
+def realLtFunc : LFunc Visibility := binaryPredicate "Real.Lt" mty[real] none
+def realLeFunc : LFunc Visibility := binaryPredicate "Real.Le" mty[real] none
+def realGtFunc : LFunc Visibility := binaryPredicate "Real.Gt" mty[real] none
+def realGeFunc : LFunc Visibility := binaryPredicate "Real.Ge" mty[real] none
 
 /- String Operations -/
-def strLengthFunc : LFunc BoogieIdent :=
+def strLengthFunc : LFunc Visibility :=
     { name := "Str.Length",
       typeArgs := [],
       inputs := [("x", mty[string])]
@@ -111,7 +111,7 @@ def strLengthFunc : LFunc BoogieIdent :=
                             (fun s => (Int.ofNat (String.length s)))
                             mty[int])}
 
-def strConcatFunc : LFunc BoogieIdent :=
+def strConcatFunc : LFunc Visibility :=
     { name := "Str.Concat",
       typeArgs := [],
       inputs := [("x", mty[string]), ("y", mty[string])]
@@ -120,21 +120,21 @@ def strConcatFunc : LFunc BoogieIdent :=
                             String.append mty[string])}
 
 /- A polymorphic `old` function with type `∀a. a → a`. -/
-def polyOldFunc : LFunc BoogieIdent :=
+def polyOldFunc : LFunc Visibility :=
     { name := "old",
       typeArgs := ["a"],
-      inputs := [((.locl, "x"), mty[%a])]
+      inputs := [((BoogieIdent.locl "x"), mty[%a])]
       output := mty[%a]}
 
 /- A `Map` selection function with type `∀k, v. Map k v → k → v`. -/
-def mapSelectFunc : LFunc BoogieIdent :=
+def mapSelectFunc : LFunc Visibility :=
    { name := "select",
      typeArgs := ["k", "v"],
      inputs := [("m", mapTy mty[%k] mty[%v]), ("i", mty[%k])],
      output := mty[%v] }
 
 /- A `Map` update function with type `∀k, v. Map k v → k → v → Map k v`. -/
-def mapUpdateFunc : LFunc BoogieIdent :=
+def mapUpdateFunc : LFunc Visibility :=
    { name := "update",
      typeArgs := ["k", "v"],
      inputs := [("m", mapTy mty[%k] mty[%v]), ("i", mty[%k]), ("x", mty[%v])],
@@ -169,28 +169,28 @@ def mapUpdateFunc : LFunc BoogieIdent :=
      ]
    }
 
-def emptyTriggersFunc : LFunc BoogieIdent :=
+def emptyTriggersFunc : LFunc Visibility :=
     { name := "Triggers.empty",
       typeArgs := [],
       inputs := [],
       output := mty[Triggers],
       concreteEval := none }
 
-def addTriggerGroupFunc : LFunc BoogieIdent :=
+def addTriggerGroupFunc : LFunc Visibility :=
     { name := "Triggers.addGroup",
       typeArgs := [],
       inputs := [("g", mty[TriggerGroup]), ("t", mty[Triggers])],
       output := mty[Triggers],
       concreteEval := none }
 
-def emptyTriggerGroupFunc : LFunc BoogieIdent :=
+def emptyTriggerGroupFunc : LFunc Visibility :=
     { name := "TriggerGroup.empty",
       typeArgs := [],
       inputs := [],
       output := mty[TriggerGroup],
       concreteEval := none }
 
-def addTriggerFunc : LFunc BoogieIdent :=
+def addTriggerFunc : LFunc Visibility :=
     { name := "TriggerGroup.addTrigger",
       typeArgs := ["a"],
       inputs := [("x", mty[%a]), ("t", mty[TriggerGroup])],
@@ -206,14 +206,14 @@ macro "ExpandBVOpFuncNames" "[" sizes:num,* "]" : term => do
     allOps := allOps ++ ops.toArray
   `([$(allOps),*])
 
-def bvConcatFunc (size : Nat) : LFunc BoogieIdent :=
+def bvConcatFunc (size : Nat) : LFunc Visibility :=
   { name := s!"Bv{size}.Concat",
     typeArgs := [],
     inputs := [("x", .bitvec size), ("y", .bitvec size)]
     output := .bitvec (size*2),
     concreteEval := none }
 
-def bvExtractFunc (size hi lo: Nat) : LFunc BoogieIdent :=
+def bvExtractFunc (size hi lo: Nat) : LFunc Visibility :=
   { name := s!"Bv{size}.Extract_{hi}_{lo}",
     typeArgs := [],
     inputs := [("x", .bitvec size)]
@@ -234,7 +234,7 @@ def bv64Extract_31_0_Func  := bvExtractFunc 64 31  0
 def bv64Extract_15_0_Func  := bvExtractFunc 64 15  0
 def bv64Extract_7_0_Func   := bvExtractFunc 64  7  0
 
-def Factory : @Factory BoogieIdent := #[
+def Factory : @Factory Visibility := #[
   intAddFunc,
   intSubFunc,
   intMulFunc,

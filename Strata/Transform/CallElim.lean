@@ -41,7 +41,7 @@ def createFvars (ident : List Expression.Ident)
 
 def genIdent (ident : Expression.Ident) (pf : String → String)
   : BoogieGenM Expression.Ident :=
-    BoogieGenState.gen (pf ident.2)
+    BoogieGenState.gen (pf ident.name)
 
 /--
 Generate identifiers in the form of arg_... that can be used to reduce argument expressions to temporary variables.
@@ -107,7 +107,7 @@ returned list has the shape
 ((generated_name, ty), original_expr)
 -/
 def genArgExprIdentsTrip
-  (inputs : @Lambda.LTySignature BoogieIdent)
+  (inputs : @Lambda.LTySignature Visibility)
   (args : List Expression.Expr)
   : CallElimM (List ((Expression.Ident × Lambda.LTy) × Expression.Expr))
   := do
@@ -120,7 +120,7 @@ returned list has the shape
 `((generated_name, ty), original_name)`
 -/
 def genOutExprIdentsTrip
-  (outputs : @Lambda.LTySignature BoogieIdent)
+  (outputs : @Lambda.LTySignature Visibility)
   (lhs : List Expression.Ident)
   : CallElimM (List ((Expression.Ident × Expression.Ty) × Expression.Ident)) := do
   if outputs.length ≠ lhs.length then throw "output length and lhs length mismatch"

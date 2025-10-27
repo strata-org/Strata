@@ -19,7 +19,7 @@ def LMonoTy.toGotoType (ty : LMonoTy) : Except Format CProverGOTO.Ty :=
   | .string => .ok .String
   | _ => .error f!"[toGotoType] Not yet implemented: {ty}"
 
-def LExprT.getGotoType {Identifier} (e : LExprT Identifier) :
+def LExprT.getGotoType {IDMeta} (e : LExprT IDMeta) :
     Except Format CProverGOTO.Ty := do
   let ty := toLMonoTy e
   ty.toGotoType
@@ -34,7 +34,7 @@ def fnToGotoID (fn : String) : Except Format CProverGOTO.Expr.Identifier :=
 Mapping `LExprT` (Lambda expressions obtained after the type inference
 transform) to GOTO expressions.
 -/
-def LExprT.toGotoExpr {Identifier} [ToString Identifier] (e : LExprT Identifier) :
+def LExprT.toGotoExpr {IDMeta} [ToString IDMeta] (e : LExprT IDMeta) :
     Except Format CProverGOTO.Expr :=
   open CProverGOTO in
   do match e with
@@ -69,7 +69,7 @@ def LExprT.toGotoExpr {Identifier} [ToString Identifier] (e : LExprT Identifier)
 /--
 Mapping `LExpr` to GOTO expressions.
 -/
-def LExpr.toGotoExpr {Identifier} [ToString Identifier] (e : LExpr LMonoTy Identifier) :
+def LExpr.toGotoExpr {IDMeta} [ToString IDMeta] (e : LExpr LMonoTy IDMeta) :
     Except Format CProverGOTO.Expr :=
   open CProverGOTO in
   do match e with

@@ -28,7 +28,7 @@ open Std (ToFormat Format format)
 namespace LExpr
 open LTy
 
-variable {Identifier : Type} [DecidableEq Identifier]
+variable {IDMeta : Type} [DecidableEq IDMeta]
 
 /--
 Close `ty` by `x`, i.e., add `x` as a bound type variable.
@@ -54,8 +54,8 @@ Typing relation for `LExpr`s.
 
 (TODO) Add the introduction and elimination rules for `.tcons`.
 -/
-inductive HasType {Identifier : Type} [DecidableEq Identifier]:
-  (TContext Identifier) → (LExpr LMonoTy Identifier) → LTy → Prop where
+inductive HasType {IDMeta : Type} [DecidableEq IDMeta]:
+  (TContext IDMeta) → (LExpr LMonoTy IDMeta) → LTy → Prop where
   | tmdata : ∀ Γ info e ty, HasType Γ e ty →
                             HasType Γ (.mdata info e) ty
 
@@ -125,7 +125,7 @@ inductive HasType {Identifier : Type} [DecidableEq Identifier]:
 If `LExpr e` is well-typed, then it is well-formed, i.e., contains no dangling
 bound variables.
 -/
-theorem HasType.regularity (h : HasType (Identifier:=Identifier) Γ e ty) :
+theorem HasType.regularity (h : HasType (IDMeta:=IDMeta) Γ e ty) :
   LExpr.WF e := by
   open LExpr in
   induction h
@@ -160,8 +160,8 @@ example : LExpr.HasType {} esM[#-1] t[int] := by
   simp +ground
 
 example : LExpr.HasType { types := [[("x", t[∀a. %a])]]} esM[x] t[int] := by
-  have h_tinst := @LExpr.HasType.tinst (Identifier := String) _ { types := [[("x", t[∀a. %a])]]} esM[x] t[∀a. %a] t[int] "a" mty[int]
-  have h_tvar := @LExpr.HasType.tvar (Identifier := String) _ { types := [[("x", t[∀a. %a])]]} "x" t[∀a. %a]
+  have h_tinst := @LExpr.HasType.tinst (IDMeta := Unit) _ { types := [[("x", t[∀a. %a])]]} esM[x] t[∀a. %a] t[int] "a" mty[int]
+  have h_tvar := @LExpr.HasType.tvar (IDMeta := Unit) _ { types := [[("x", t[∀a. %a])]]} "x" t[∀a. %a]
   simp +ground at h_tvar
   simp [h_tvar] at h_tinst
   simp +ground at h_tinst
@@ -180,13 +180,13 @@ example : LExpr.HasType { types := [[("m", t[∀a. %a → int])]]}
   done
 
 example : LExpr.HasType {} esM[λ %0] t[∀a. %a → %a] := by
-  have h_tabs := @LExpr.HasType.tabs (Identifier := String) _ {} ("a", none) t[%a] esM[%0] t[%a]
+  have h_tabs := @LExpr.HasType.tabs (IDMeta := Unit) _ {} ("a", none) t[%a] esM[%0] t[%a]
   simp +ground at h_tabs
-  have h_tvar := @LExpr.HasType.tvar (Identifier := String) _ { types := [[("a", t[%a])]] }
+  have h_tvar := @LExpr.HasType.tvar (IDMeta := Unit) _ { types := [[("a", t[%a])]] }
                  "a" t[%a]
   simp [Maps.find?, Map.find?] at h_tvar
   simp [h_tvar, LTy.toMonoType] at h_tabs
-  have h_tgen := @LExpr.HasType.tgen (Identifier := String) _ {} esM[λ %0] "a"
+  have h_tgen := @LExpr.HasType.tgen (IDMeta := Unit) _ {} esM[λ %0] "a"
                  t[%a → %a]
                  h_tabs
   simp +ground [Maps.find?] at h_tgen

@@ -19,24 +19,38 @@ section Identifiers
 /--
 Identifiers, optionally with their inferred monotype.
 -/
-abbrev IdentT (Identifier : Type) := Identifier × Option LMonoTy
-abbrev IdentTs (Identifier : Type) := List (IdentT Identifier)
+structure Identifier (IDMeta : Type) : Type where
+  name : String
+  metadata : IDMeta
+deriving Repr, DecidableEq, Inhabited
 
-instance {Identifier : Type} [ToFormat Identifier] : ToFormat (IdentT Identifier) where
+instance : ToFormat (Identifier IDMeta) where
+  format i := i.name
+
+instance : ToString (Identifier IDMeta) where
+  toString i := i.name
+
+instance {IDMeta} [Inhabited IDMeta] : Coe String (Identifier IDMeta) where
+  coe s := ⟨s, Inhabited.default⟩
+
+abbrev IdentT (IDMeta : Type) := (Identifier IDMeta) × Option LMonoTy
+abbrev IdentTs (IDMeta : Type) := List (IdentT IDMeta)
+
+instance {IDMeta : Type} : ToFormat (IdentT IDMeta) where
   format i := match i.snd with
     | none => f!"{i.fst}"
     | some ty => f!"({i.fst} : {ty})"
 
-def IdentT.ident (x : (IdentT Identifier)) : Identifier :=
+def IdentT.ident (x : (IdentT IDMeta)) : Identifier IDMeta :=
   x.fst
 
-def IdentT.monoty? (x : (IdentT Identifier)) : Option LMonoTy :=
+def IdentT.monoty? (x : (IdentT IDMeta)) : Option LMonoTy :=
   x.snd
 
-def IdentTs.idents (xs : (IdentTs Identifier)) : List Identifier :=
+def IdentTs.idents (xs : (IdentTs IDMeta)) : List (Identifier IDMeta) :=
   xs.map Prod.fst
 
-def IdentTs.monotys? (xs : (IdentTs Identifier)) : List (Option LMonoTy) :=
+def IdentTs.monotys? (xs : (IdentTs IDMeta)) : List (Option LMonoTy) :=
   xs.map Prod.snd
 
 ---------------------------------------------------------------------

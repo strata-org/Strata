@@ -19,13 +19,12 @@ open Std (ToFormat Format format)
 
 namespace LExpr
 
-variable {Identifier : Type} [DecidableEq Identifier] [ToFormat Identifier]
-
+variable {IDMeta : Type} [DecidableEq IDMeta]
 /--
 Check for boolean equality of two expressions `e1` and `e2` after erasing any
 type annotations.
 -/
-def eqModuloTypes (e1 e2 : (LExpr LMonoTy Identifier)) : Bool :=
+def eqModuloTypes (e1 e2 : (LExpr LMonoTy IDMeta)) : Bool :=
   e1.eraseTypes == e2.eraseTypes
 
 /--
@@ -34,7 +33,7 @@ Canonical values of `LExpr`s.
 Equality is simply `==` (or more accurately, `eqModuloTypes`) for these
 `LExpr`s. Also see `eql` for a version that can tolerate nested metadata.
 -/
-def isCanonicalValue (e : (LExpr LMonoTy Identifier)) : Bool :=
+def isCanonicalValue (e : (LExpr LMonoTy IDMeta)) : Bool :=
   match e with
   | .const _ _ => true
   | .abs _ _ =>
@@ -51,7 +50,7 @@ Equality of canonical values `e1` and `e2`.
 
 We can tolerate nested metadata here.
 -/
-def eql (e1 e2 : (LExpr LMonoTy Identifier))
+def eql (e1 e2 : (LExpr LMonoTy IDMeta))
   (_h1 : isCanonicalValue e1) (_h2 : isCanonicalValue e2) : Bool :=
   if eqModuloTypes e1 e2 then
     true
@@ -60,7 +59,7 @@ def eql (e1 e2 : (LExpr LMonoTy Identifier))
     let e2' := removeAllMData e2
     eqModuloTypes e1' e2'
 
-instance : ToFormat (Except Format (LExpr LMonoTy Identifier)) where
+instance : ToFormat (Except Format (LExpr LMonoTy IDMeta)) where
   format x := match x with
               | .ok e => format e
               | .error err => err
@@ -71,9 +70,9 @@ eta-expansion.
 
 E.g., `mkAbsOfArity 2 core` will give `λxλy ((core y) x)`.
 -/
-def mkAbsOfArity (arity : Nat) (core : (LExpr LMonoTy Identifier)) : (LExpr LMonoTy Identifier) :=
+def mkAbsOfArity (arity : Nat) (core : (LExpr LMonoTy IDMeta)) : (LExpr LMonoTy IDMeta) :=
   go 0 arity core
-  where go (bvarcount arity : Nat) (core : (LExpr LMonoTy Identifier)) : (LExpr LMonoTy Identifier) :=
+  where go (bvarcount arity : Nat) (core : (LExpr LMonoTy IDMeta)) : (LExpr LMonoTy IDMeta) :=
   match arity with
   | 0 => core
   | n + 1 =>
@@ -91,7 +90,7 @@ We prefer Curry-style semantics because they separate the type system from
 evaluation, allowing us to potentially apply different type systems with our
 expressions, along with supporting dynamically-typed languages.
 -/
-def eval (n : Nat) (σ : (LState Identifier)) (e : (LExpr LMonoTy Identifier)) : (LExpr LMonoTy Identifier) :=
+def eval (n : Nat) (σ : (LState IDMeta)) (e : (LExpr LMonoTy IDMeta)) : (LExpr LMonoTy IDMeta) :=
   match n with
   | 0 => e
   | n' + 1 =>
@@ -123,7 +122,7 @@ def eval (n : Nat) (σ : (LState Identifier)) (e : (LExpr LMonoTy Identifier)) :
         -- Not a call of a factory function.
         evalCore n' σ e
 
-def evalCore (n' : Nat) (σ : (LState Identifier)) (e : (LExpr LMonoTy Identifier)) : (LExpr LMonoTy Identifier) :=
+def evalCore (n' : Nat) (σ : (LState IDMeta)) (e : (LExpr LMonoTy IDMeta)) : (LExpr LMonoTy IDMeta) :=
   match e with
   | .const _ _  => e
   | .op _ _     => e
@@ -139,7 +138,7 @@ def evalCore (n' : Nat) (σ : (LState Identifier)) (e : (LExpr LMonoTy Identifie
   | .eq  e1 e2 => evalEq n' σ e1 e2
   | .ite c t f => evalIte n' σ c t f
 
-def evalIte (n' : Nat) (σ : (LState Identifier)) (c t f : (LExpr LMonoTy Identifier)) : (LExpr LMonoTy Identifier) :=
+def evalIte (n' : Nat) (σ : (LState IDMeta)) (c t f : (LExpr LMonoTy IDMeta)) : (LExpr LMonoTy IDMeta) :=
   let c' := eval n' σ c
   match c' with
   | .const "true" _ => eval n' σ t
@@ -155,7 +154,7 @@ def evalIte (n' : Nat) (σ : (LState Identifier)) (c t f : (LExpr LMonoTy Identi
     let f' := substFvarsFromState σ f
     ite c' t' f'
 
-def evalEq (n' : Nat) (σ : (LState Identifier)) (e1 e2 : (LExpr LMonoTy Identifier)) : (LExpr LMonoTy Identifier) :=
+def evalEq (n' : Nat) (σ : (LState IDMeta)) (e1 e2 : (LExpr LMonoTy IDMeta)) : (LExpr LMonoTy IDMeta) :=
   open LTy.Syntax in
   let e1' := eval n' σ e1
   let e2' := eval n' σ e2
@@ -169,7 +168,7 @@ def evalEq (n' : Nat) (σ : (LState Identifier)) (e1 e2 : (LExpr LMonoTy Identif
   else
     .eq e1' e2'
 
-def evalApp (n' : Nat) (σ : (LState Identifier)) (e e1 e2 : (LExpr LMonoTy Identifier)) : (LExpr LMonoTy Identifier) :=
+def evalApp (n' : Nat) (σ : (LState IDMeta)) (e e1 e2 : (LExpr LMonoTy IDMeta)) : (LExpr LMonoTy IDMeta) :=
   let e1' := eval n' σ e1
   let e2' := eval n' σ e2
   match e1' with
