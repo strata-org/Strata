@@ -135,7 +135,7 @@ info: ok: (arrow (arrow $__ty2 (arrow $__ty8 $__ty9)) (arrow (arrow $__ty2 $__ty
                             esM[λλ(%1 (%0 %0))]
          return (format $ ans.fst)
 
-private def testIntFns : (@Factory String) :=
+private def testIntFns : (@Factory Unit) :=
   #[{ name := "unit",
       inputs := [],
       output := mty[unit]},

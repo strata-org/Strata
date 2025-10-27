@@ -24,7 +24,7 @@ the responsibility of the user to ensure that they are consistent.
 
 structure Axiom where
   name : BoogieLabel
-  e : LExpr LMonoTy BoogieIdent
+  e : LExpr LMonoTy Visibility
 
 instance : ToFormat Axiom where
   format a := f!"axiom {a.name}: {a.e};"
