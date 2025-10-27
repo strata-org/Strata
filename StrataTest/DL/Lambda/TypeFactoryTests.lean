@@ -21,7 +21,7 @@ open LExpr LTy
 def strConst (s: String) : LExpr LMonoTy Unit := .const s (.some .string)
 def intConst (n: Nat) : LExpr LMonoTy Unit := .const (toString n) (.some .int)
 
-def LExpr.absMulti' (n: Nat) (body: LExpr LMonoTy IDMeta) : LExpr LMonoTy IDMeta :=
+private def absMulti' (n: Nat) (body: LExpr LMonoTy IDMeta) : LExpr LMonoTy IDMeta :=
   List.foldr (fun _ e => .abs .none e) body (List.range n)
 
 /-
@@ -195,7 +195,7 @@ info: (#7 : int)
 -- 1. List length and append
 
 def length (x: LExpr LMonoTy Unit) :=
-  (LExpr.op "ListElim" .none).mkApp [x, intConst 0, LExpr.absMulti' 3 (addOp (intConst 1) (.bvar 0))]
+  (LExpr.op "ListElim" .none).mkApp [x, intConst 0, absMulti' 3 (addOp (intConst 1) (.bvar 0))]
 
 /-- info: Annotated expression:
 ((((~ListElim : (arrow (List string) (arrow int (arrow (arrow string (arrow (List string) (arrow int int))) int)))) (((~Cons : (arrow string (arrow (List string) (List string)))) (#a : string)) (((~Cons : (arrow string (arrow (List string) (List string)))) (#b : string)) (((~Cons : (arrow string (arrow (List string) (List string)))) (#c : string)) (~Nil : (List string)))))) (#0 : int)) (λ (λ (λ (((~Int.Add : (arrow int (arrow int int))) (#1 : int)) %0)))))
@@ -225,7 +225,7 @@ l₁ ++ l₂ := (@ListElim (List α → List α) l₁ (fun x => x) (fun x xs rec
 -/
 
 def append (l1 l2: LExpr LMonoTy Unit) : LExpr LMonoTy Unit :=
-  .app ((LExpr.op "ListElim" .none).mkApp [l1, .abs .none (.bvar 0), LExpr.absMulti' 3 (.abs .none (cons (.bvar 3) (.app (.bvar 1) (.bvar 0))))]) l2
+  .app ((LExpr.op "ListElim" .none).mkApp [l1, .abs .none (.bvar 0), absMulti' 3 (.abs .none (cons (.bvar 3) (.app (.bvar 1) (.bvar 0))))]) l2
 
 def list1 :LExpr LMonoTy Unit := listExpr [intConst 2, intConst 4, intConst 6]
 def list2 :LExpr LMonoTy Unit := listExpr [intConst 1, intConst 3, intConst 5]
@@ -263,9 +263,9 @@ def node (x l r: LExpr LMonoTy Unit) : LExpr LMonoTy Unit := (LExpr.op "Node" .n
 def leaf : LExpr LMonoTy Unit := LExpr.op "Leaf" .none
 
 def toList (t: LExpr LMonoTy Unit) : LExpr LMonoTy Unit :=
-  (LExpr.op "binTreeElim" .none).mkApp [t, nil, LExpr.absMulti' 5 (cons (.bvar 4) (append (.bvar 1) (.bvar 0)))]
+  (LExpr.op "binTreeElim" .none).mkApp [t, nil, absMulti' 5 (cons (.bvar 4) (append (.bvar 1) (.bvar 0)))]
 
-/--
+/-
 tree:
         1
       2   4
@@ -326,7 +326,7 @@ def tree1 : LExpr LMonoTy Unit := node (.abs .none (node (.abs .none
   ))))
 
 def height (n: Nat) (t: LExpr LMonoTy Unit) : LExpr LMonoTy Unit :=
-  (LExpr.op "treeElim" .none).mkApp [t, .abs .none (intConst 0), LExpr.absMulti' 2 (addOp (intConst 1) (.app (.bvar 0) (intConst n)))]
+  (LExpr.op "treeElim" .none).mkApp [t, .abs .none (intConst 0), absMulti' 2 (addOp (intConst 1) (.app (.bvar 0) (intConst n)))]
 
 /--info: Annotated expression:
 ((((~treeElim : (arrow (tree int) (arrow (arrow int int) (arrow (arrow (arrow int (tree int)) (arrow (arrow int int) int)) int)))) ((~Node : (arrow (arrow int (tree int)) (tree int))) (λ ((~Node : (arrow (arrow int (tree int)) (tree int))) (λ (if ((((~Int.Add : (arrow int (arrow int int))) %1) %0) == (#0 : int)) then ((~Node : (arrow (arrow int (tree int)) (tree int))) (λ ((~Leaf : (arrow int (tree int))) (#3 : int)))) else ((~Leaf : (arrow int (tree int))) (#4 : int)))))))) (λ (#0 : int))) (λ (λ (((~Int.Add : (arrow int (arrow int int))) (#1 : int)) (%0 (#0 : int))))))

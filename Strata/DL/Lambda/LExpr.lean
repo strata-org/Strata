@@ -130,6 +130,10 @@ def isFalse (e : (LExpr TypeType IDMeta)) : Bool :=
   | .const "false" _ => true
   | _ => false
 
+/-- An iterated/multi-argument lambda with arguments of types `tys` and body `body`-/
+def absMulti (tys: List LMonoTy) (body: LExpr LMonoTy IDMeta) : LExpr LMonoTy IDMeta :=
+  List.foldr (fun ty e => .abs (.some ty) e) body tys
+
 /--
 If `e` is an `LExpr` boolean, then denote that into a Lean `Bool`.
 Note that we are type-agnostic here.

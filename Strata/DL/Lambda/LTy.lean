@@ -106,6 +106,11 @@ theorem LMonoTy.destructArrow_non_empty (mty : LMonoTy) :
   (mty.destructArrow) ≠ [] := by
   unfold destructArrow; split <;> simp_all
 
+def LMonoTy.getArrowArgs (t: LMonoTy) : List LMonoTy :=
+  match t with
+  | .arrow t1 t2 => t1 :: t2.getArrowArgs
+  | _ => []
+
 /--
 Type schemes (poly-types) in Lambda.
 -/
