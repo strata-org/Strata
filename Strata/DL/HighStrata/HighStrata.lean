@@ -68,9 +68,6 @@ inductive HighType : Type where
   | Partial (base : HighType)
   /- Pure represents a composite type that does not support reference equality -/
   | Pure(base: HighType)
-  /- A nullable type is implicitly cast to its base when required,
-    such as in a member access or when assigned to a variable of the base type -/
-  | Nullable (base : HighType)
   /- Java has implicit intersection types.
      Example: `<cond> ? RustanLeino : AndersHejlsberg` could be typed as `Scientist & Scandinavian`-/
   | Intersection (types : List HighType)
@@ -214,7 +211,6 @@ partial def highEq (a: HighType) (b: HighType) : Bool := match a, b with
   | HighType.Applied b1 args1, HighType.Applied b2 args2 =>
       highEq b1 b2 && args1.length == args2.length && (args1.zip args2 |>.all (fun (a1, a2) => highEq a1 a2))
   | HighType.Partial b1, HighType.Partial b2 => highEq b1 b2
-  | HighType.Nullable b1, HighType.Nullable b2 => highEq b1 b2
   | HighType.Intersection ts1, HighType.Intersection ts2 =>
       ts1.length == ts2.length && (ts1.zip ts2 |>.all (fun (t1, t2) => highEq t1 t2))
   | _, _ => false
