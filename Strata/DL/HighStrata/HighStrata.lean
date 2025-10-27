@@ -32,8 +32,6 @@ Design choices:
 
 - For now there is no type polymorphism
 
-- The base type for all composite types is dynamic, which is a type that can be type tested.
-  For all primitive types there is an implicit composite type that wraps around the primitive, so primitives can be boxed to become the Dynamic type. They can be unboxed using a type test. This is useful for source languages such as JavaScript. The operators that work on primitives also work on the dynamic type, although they can error if the types do not align.
 - NEEDS FURTHER DESIGN: There is no concept of constructors, but each composite type has a partial variant that represents an object of that type whose fields
   are not yet assigned and whose type invariants might not hold.
   A partial type can be completed to a full type once all fields are assigned and the type invariants are known to hold.
