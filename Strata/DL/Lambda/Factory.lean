@@ -83,7 +83,7 @@ has the right number and type of arguments, etc.?
 structure LFunc (IDMeta : Type) where
   name     : Identifier IDMeta
   typeArgs : List TyIdentifier := []
-  isConstr : Bool := false -- is the function a datatype constructor?
+  isConstr : Bool := false --whether function is datatype constructor
   inputs   : @LMonoTySignature IDMeta
   output   : LMonoTy
   body     : Option (LExpr LMonoTy IDMeta) := .none

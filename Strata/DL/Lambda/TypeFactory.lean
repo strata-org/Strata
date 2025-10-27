@@ -266,4 +266,6 @@ def TypeFactory.genFactory (t: @TypeFactory IDMeta) : Except Format (@Lambda.Fac
     _ ← checkStrictPosUnif d
     f.addFactory d.genFactory) Factory.default
 
+---------------------------------------------------------------------
+
 end Lambda
