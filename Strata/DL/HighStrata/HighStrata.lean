@@ -153,7 +153,7 @@ inductive StmtExpr : Type where
 
 /- Related to creation of objects -/
   /- Create returns a partial type, whose fields are still unassigned and whose type invariants are not guaranteed to hold. -/
-  /- In a pure context, may only create pure types -/
+  /- In a pure context, creates pure types -/
   | Create (type : Identifier)
   /- Takes an expression of a partial type, checks that all its fields are assigned and its type invariants hold,
   and return the complete type.
