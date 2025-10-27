@@ -22,13 +22,13 @@ def isBoolType (ty : LTy) : Bool :=
   | .forAll [] LMonoTy.bool => true
   | _ => false
 
-def lookup (T : (TEnv BoogieIdent)) (x : BoogieIdent) : Option LTy :=
+def lookup (T : (TEnv Visibility)) (x : BoogieIdent) : Option LTy :=
   T.context.types.find? x
 
-def update (T : TEnv BoogieIdent) (x : BoogieIdent) (ty : LTy) : TEnv BoogieIdent :=
+def update (T : TEnv Visibility) (x : BoogieIdent) (ty : LTy) : TEnv Visibility :=
   T.insertInContext x ty
 
-def freeVars (e : (LExpr LMonoTy BoogieIdent)) : List BoogieIdent :=
+def freeVars (e : (LExpr LMonoTy Visibility)) : List BoogieIdent :=
   (LExpr.freeVars e).map (fun (i, _) => i)
 
 /--
@@ -36,11 +36,11 @@ Preprocess a user-facing type in Boogie amounts to converting a poly-type (i.e.,
 `LTy`) to a mono-type (i.e., `LMonoTy`) via instantiation. We still return an
 `LTy`, with no bound variables.
 -/
-def preprocess (T : TEnv BoogieIdent) (ty : LTy) : Except Format (LTy × TEnv BoogieIdent) := do
+def preprocess (T : TEnv Visibility) (ty : LTy) : Except Format (LTy × TEnv Visibility) := do
   let (mty, T) ← ty.instantiateWithCheck T
   return (.forAll [] mty, T)
 
-def postprocess (T : TEnv BoogieIdent) (ty : LTy) : Except Format (LTy × TEnv BoogieIdent) := do
+def postprocess (T : TEnv Visibility) (ty : LTy) : Except Format (LTy × TEnv Visibility) := do
   if h: ty.isMonoType then
     let ty := LMonoTy.subst T.state.substInfo.subst (ty.toMonoType h)
     .ok (.forAll [] ty, T)
@@ -51,8 +51,8 @@ def postprocess (T : TEnv BoogieIdent) (ty : LTy) : Except Format (LTy × TEnv B
 The inferred type of `e` will be an `LMonoTy`, but we return an `LTy` with no
 bound variables.
 -/
-def inferType (T : TEnv BoogieIdent) (c : Cmd Expression) (e : (LExpr LMonoTy BoogieIdent)) :
-    Except Format ((LExpr LMonoTy BoogieIdent) × LTy × TEnv BoogieIdent) := do
+def inferType (T : TEnv Visibility) (c : Cmd Expression) (e : (LExpr LMonoTy Visibility)) :
+    Except Format ((LExpr LMonoTy Visibility) × LTy × TEnv Visibility) := do
   -- We only allow free variables to appear in `init` statements. Any other
   -- occurrence leads to an error.
   let T ← match c with
@@ -86,7 +86,7 @@ def canonicalizeConstraints (constraints : List (LTy × LTy)) : Except Format Co
                 type constraints, but found the following instead:\n\
                 t1: {t1}\nt2: {t2}\n"
 
-def unifyTypes (T : TEnv BoogieIdent) (constraints : List (LTy × LTy)) : Except Format (TEnv BoogieIdent) := do
+def unifyTypes (T : TEnv Visibility) (constraints : List (LTy × LTy)) : Except Format (TEnv Visibility) := do
   let constraints ← canonicalizeConstraints constraints
   let S ← Constraints.unify constraints T.state.substInfo
   let T := T.updateSubst S
@@ -94,7 +94,7 @@ def unifyTypes (T : TEnv BoogieIdent) (constraints : List (LTy × LTy)) : Except
 
 ---------------------------------------------------------------------
 
-instance : Imperative.TypeContext Expression (TEnv BoogieIdent) where
+instance : Imperative.TypeContext Expression (TEnv Visibility) where
   isBoolType  := CmdType.isBoolType
   freeVars    := CmdType.freeVars
   preprocess  := CmdType.preprocess

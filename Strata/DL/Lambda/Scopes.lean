@@ -25,17 +25,17 @@ scopes, other dialects that include Lambda may need to do so. For the evaluation
 of Lambda expressions in isolation, the stack can contain a single scope.
 -/
 
-variable {Identifier : Type} [DecidableEq Identifier] [ToFormat Identifier]
+variable {IDMeta : Type} [DecidableEq IDMeta]
 
-abbrev Scope (Identifier : Type) := (Map Identifier (Option LMonoTy × (LExpr LMonoTy Identifier)))
+abbrev Scope (IDMeta : Type) := (Map (Identifier IDMeta) (Option LMonoTy × (LExpr LMonoTy IDMeta)))
 
-instance : BEq (Scope Identifier) where
+instance : BEq (Scope IDMeta) where
   beq m1 m2 := m1 == m2
 
-instance : Inhabited (Scope Identifier) where
+instance : Inhabited (Scope IDMeta) where
   default := []
 
-private def Scope.format (m : (Scope Identifier)) : Std.Format :=
+private def Scope.format (m : (Scope IDMeta)) : Std.Format :=
   match m with
   | [] => ""
   | [(k, (ty, v))] => go k ty v
@@ -46,14 +46,14 @@ private def Scope.format (m : (Scope Identifier)) : Std.Format :=
     | some ty => f!"({k} : {ty}) → {v}"
     | none => f!"{k} → {v}"
 
-instance : ToFormat (Scope Identifier) where
+instance : ToFormat (Scope IDMeta) where
   format := Scope.format
 
 /--
 Merge two maps `m1` and `m2`, where `m1` is assumed to be the map if `cond`
 is `true` and `m2` when it is false.
 -/
-def Scope.merge (cond : (LExpr LMonoTy Identifier)) (m1 m2 : (Scope Identifier)) : (Scope Identifier) :=
+def Scope.merge (cond : (LExpr LMonoTy IDMeta)) (m1 m2 : (Scope IDMeta)) : (Scope IDMeta) :=
   match m1 with
   | [] => m2.map (fun (i, (ty, e)) => (i, (ty, mkIte cond (.fvar i ty) e)))
   | (k, (ty1, e1)) :: rest =>
@@ -69,7 +69,7 @@ def Scope.merge (cond : (LExpr LMonoTy Identifier)) (m1 m2 : (Scope Identifier))
       else
         (k, (ty1, mkIte cond e1 e2)) ::
       Scope.merge cond rest (m2.erase k)
-  where mkIte (cond tru fals : (LExpr LMonoTy Identifier)) : (LExpr LMonoTy Identifier) :=
+  where mkIte (cond tru fals : (LExpr LMonoTy IDMeta)) : (LExpr LMonoTy IDMeta) :=
     if tru == fals then tru
     else (LExpr.ite cond tru fals)
 
@@ -81,7 +81,7 @@ info: (x : int) → (#8 : int)
 (z : int) → (if (#true : bool) then (#100 : int) else (z : int))
 -/
 #guard_msgs in
-#eval format $ Scope.merge (.const "true" mty[bool])
+#eval format $ Scope.merge (IDMeta:=Unit) (.const "true" mty[bool])
               [(("x"), (mty[int], .const "8"   mty[int])),
                (("z"), (mty[int], .const "100" mty[int]))]
               [(("x"), (mty[int], .const "8"   mty[int]))]
@@ -92,7 +92,7 @@ info: (x : int) → (if (#true : bool) then (#8 : int) else (x : int))
 (y : int) → (if (#true : bool) then (y : int) else (#8 : int))
 -/
 #guard_msgs in
-#eval format $ Scope.merge (.const "true" mty[bool])
+#eval format $ Scope.merge (IDMeta:=Unit) (.const "true" mty[bool])
               [(("x"), (mty[int], .const "8"   mty[int])),
                (("z"), (mty[int], .const "100" mty[int]))]
               [(("y"), (mty[int], .const "8"   mty[int]))]
@@ -103,7 +103,7 @@ info: (y : int) → (if (#true : bool) then (#8 : int) else (y : int))
 (z : int) → (if (#true : bool) then (z : int) else (#100 : int))
 -/
 #guard_msgs in
-#eval format $ Scope.merge (.const "true" mty[bool])
+#eval format $ Scope.merge (IDMeta:=Unit) (.const "true" mty[bool])
               [(("y"), (mty[int], .const "8"   mty[int]))]
               [(("x"), (mty[int], .const "8"   mty[int])),
                (("z"), (mty[int], .const "100" mty[int]))]
@@ -115,7 +115,7 @@ info: (a : int) → (if (#true : bool) then (#8 : int) else (a : int))
 (z : int) → (if (#true : bool) then (z : int) else (#100 : int))
 -/
 #guard_msgs in
-#eval format $ Scope.merge (.const "true" mty[bool])
+#eval format $ Scope.merge (IDMeta:=Unit) (.const "true" mty[bool])
                 [(("a"), (mty[int], (.const "8"   mty[int]))),
                  (("x"), (mty[int], (.const "800" mty[int]))),
                  (("b"), (mty[int], (.const "900" mty[int])))]
@@ -128,18 +128,18 @@ end Scope.merge.tests
 A stack of scopes, where each scope maps the free variables
 to their `LExpr` values.
 -/
-abbrev Scopes (Identifier : Type) := Maps Identifier (Option LMonoTy × LExpr LMonoTy Identifier)
+abbrev Scopes (IDMeta : Type) := Maps (Identifier IDMeta) (Option LMonoTy × LExpr LMonoTy IDMeta)
 
 /--
 Merge two scopes, where `s1` is assumed to be the scope if `cond` is true, and
 `s2` otherwise.
 -/
-def Scopes.merge (cond : LExpr LMonoTy Identifier) (s1 s2 : Scopes Identifier) : Scopes Identifier :=
+def Scopes.merge (cond : LExpr LMonoTy IDMeta) (s1 s2 : Scopes IDMeta) : Scopes IDMeta :=
   match s1, s2 with
   | [], _ => s2
   | _, [] => s1
   | x :: xrest, y :: yrest =>
-    Scope.merge (Identifier := Identifier) cond x y :: Scopes.merge cond xrest yrest
+    Scope.merge (IDMeta := IDMeta) cond x y :: Scopes.merge cond xrest yrest
 
 --------------------------------------------------------------------
 
