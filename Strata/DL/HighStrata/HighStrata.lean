@@ -61,13 +61,6 @@ inductive HighType : Type where
   | TBool
   | TInt
   | TFloat64 /- Required for JavaScript (number). Used by Python (float) and Java (double) as well -/
-  /- A value of type `Dynamic` is a tuple consisting of a type and a value.
-     The value can be a primitive type or a map (that can be used with the field select and field assign expressions)
-     `var o: Dynamic = {}; o.age = 13;`
-     Values are automatically casted to and from `Dynamic`
-     Example: `var x: Dynamic = 3; return x is Int` returns `True`
-   -/
-  | Dynamic
   | UserDefined (name: Identifier)
   | Applied (base : HighType) (typeArguments : List HighType)
   /- Partial represents a composite type with unassigned fields and whose type invariants might not hold.
@@ -171,15 +164,6 @@ inductive StmtExpr : Type where
   This way, you can safely construct cyclic object graphs. -/
   | Complete (value : StmtExpr)
 
-/- Related to dynamic language features -/
-  | DynamicCall (callable : StmtExpr) (arguments : List StmtExpr)
-  /- alternatively, we could have a closure that takes a CompositeType, like Java's inner classes
-     This would be more powerful but slightly more of a hassle to use when creating callable closures -/
-  | Closure (callable: Callable)
-  /- The next two could be defined using a library -/
-  | DynamicFieldAccess (target : StmtExpr) (fieldName : StmtExpr)
-  | DynamicFieldUpdate (target : StmtExpr) (fieldName : StmtExpr) (newValue : StmtExpr)
-
 /- Verification specific -/
   | Forall (name: Identifier) (type: HighType) (body: StmtExpr)
   | Exists (name: Identifier) (type: HighType) (body: StmtExpr)
@@ -226,7 +210,6 @@ partial def highEq (a: HighType) (b: HighType) : Bool := match a, b with
   | HighType.TBool, HighType.TBool => true
   | HighType.TInt, HighType.TInt => true
   | HighType.TFloat64, HighType.TFloat64 => true
-  | HighType.Dynamic, HighType.Dynamic => true
   | HighType.UserDefined n1, HighType.UserDefined n2 => n1 == n2
   | HighType.Applied b1 args1, HighType.Applied b2 args2 =>
       highEq b1 b2 && args1.length == args2.length && (args1.zip args2 |>.all (fun (a1, a2) => highEq a1 a2))
@@ -238,10 +221,6 @@ partial def highEq (a: HighType) (b: HighType) : Bool := match a, b with
 
 instance : BEq HighType where
   beq := highEq
-
-def HighType.isDynamic : HighType → Bool
-  | Dynamic => true
-  | _ => false
 
 def HighType.isBool : HighType → Bool
   | TBool => true
