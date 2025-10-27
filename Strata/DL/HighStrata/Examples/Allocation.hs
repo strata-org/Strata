@@ -18,11 +18,12 @@ composite ChainOfTwo {
   val other: ChainOfTwo
 }
 
-val completeChainOfTwo = procedure(first: partial ChainOfTwo): impure ChainOfTwo {
-  var second = create ChainOfTwo;
+val completeChainOfTwo = procedure(first: partial ChainOfTwo): ChainOfTwo {
+  var second: partial ChainOfTwo = create ChainOfTwo;
   second.other = first;
   first.other = second;
-  complete first, second
+  complete first, second -- checks that fields of first and second have been assigned, 
+  -- and returns first but with a type that's not partial
 }
 
 val foo = procedure() {

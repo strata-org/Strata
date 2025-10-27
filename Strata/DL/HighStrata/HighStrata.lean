@@ -136,16 +136,8 @@ inductive StmtExpr : Type where
 /- Instance related -/
   | This
   | ReferenceEquals (lhs: StmtExpr) (rhs: StmtExpr)
-  /- IsType works both with KnowsType and Composite types
-     The newBinding parameter allows bringing a new variable into scope that has the checked type
-     The scope where newBinding becomes available depends on where IsType is used
-     Example 1: `x is <SomeType> newVar && newVar.someField` here the variable `newVar` became in scope in the RHS of the &&
-     Example 2: `if x is <SomeType> newVar then newVar.someField else ...` here the variable `newVar` became in scope in the then branch
-
-     Together with IfThenElse, IsType replaces the need for other pattern matching constructs
-  -/
   | AsType (target: StmtExpr) (targetType: HighType)
-  | IsType (target : StmtExpr) (type: HighType) -- Not yet needed: (newBinding : Option Identifier)
+  | IsType (target : StmtExpr) (type: HighType)
   | InstanceCall (target : StmtExpr) (callee : Identifier) (arguments : List StmtExpr)
 
 /- Related to creation of objects -/
