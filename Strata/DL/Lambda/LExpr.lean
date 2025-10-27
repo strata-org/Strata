@@ -114,7 +114,7 @@ def isConst (e : (LExpr TypeType IDMeta)) : Bool :=
   | .const _ _ => true
   | _ => false
 
-def isOp (e : (LExpr TypeType Identifier)) : Bool :=
+def isOp (e : (LExpr TypeType IDMeta)) : Bool :=
   match e with
   | .op _ _ => true
   | _ => false
