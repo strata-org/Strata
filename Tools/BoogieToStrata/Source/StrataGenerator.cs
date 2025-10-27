@@ -203,19 +203,10 @@ public class StrataGenerator : ReadOnlyVisitor {
                 continue;
             }
 
-            var axiomName = $"unique_{Name(kv.Key.ToString())}";
+            var axiomName = $"unique_{Name(kv.Key.ToString()).Replace(" ", "_")}";
             _userAxiomNames.Add(axiomName);
-            WriteText($"axiom [{axiomName}]: ");
-            var cs = kv.Value.ToArray();
-            var n = kv.Value.Count;
-            for (var j = 0; j < n; j++) {
-                for (int k = j + 1; k < n; k++) {
-                    if (j > 0 || k > j + 1) {
-                        WriteText(" && ");
-                    }
-                    WriteText($"{cs[j]} != {cs[k]}");
-                }
-            }
+            WriteText($"distinct [{axiomName}]: ");
+            WriteList(kv.Value);
             WriteLine(";");
         }
     }

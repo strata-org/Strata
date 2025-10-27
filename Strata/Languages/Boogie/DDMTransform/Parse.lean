@@ -269,6 +269,9 @@ op command_var (b : Bind) : Command =>
 
 op command_axiom (label : Option Label, e : bool) : Command => "axiom " label e ";\n";
 
+op command_distinct (label : Option Label, exprs : CommaSepBy Expr) : Command =>
+  "distinct " label "[" exprs "]" ";\n";
+
 #end
 
 namespace BoogieDDM
