@@ -2538,7 +2538,7 @@ theorem Program.find.var_in_decls :
     . apply go_var_in_decls (name:=name)
       exact Hsome
     . simp_all
-  case type | ax | proc | func =>
+  case type | ax | distinct | proc | func =>
     simp [Program.find?] at Hsome
     have HH := Program.find.go_decl_kind_match Hsome
     simp [Decl.kind] at HH
