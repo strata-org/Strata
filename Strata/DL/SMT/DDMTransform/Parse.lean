@@ -102,7 +102,7 @@ private def smtReservedKeywordsDialect : Dialect :=
     for (name, s) in reservedKeywords do
       declareOp {
         name := s!"reserved_{name}",
-        argDecls := #[],
+        argDecls := ArgDecls.empty,
         category := q`SMTReservedKeywords.Reserved,
         syntaxDef := .ofList [.str s]
       }
@@ -113,7 +113,7 @@ private def smtReservedKeywordsDialect : Dialect :=
     for (name, s) in specialCharsInSimpleSymbol do
       declareOp {
         name := s!"simple_symbol_{name}",
-        argDecls := #[],
+        argDecls := ArgDecls.empty,
         category := q`SMTReservedKeywords.SimpleSymbol,
         syntaxDef := .ofList [.str s]
       }
@@ -246,13 +246,42 @@ category Logic;
 op logic (s:Symbol) : Logic => "(" "logic" s ")";
 
 
-// 9. Info flags: TODO
+// 9. Info flags
 
-// 10. Command options: TODO
+category InfoFlag;
+op info_flag_stat () : InfoFlag => ":all-statistics";
+op info_flag_stlvl () : InfoFlag => ":assertion-stack-levels";
+op info_flag_authors () : InfoFlag => ":authors";
+op info_flag_errb () : InfoFlag => ":error-behavior";
+// This collides with the ':named' term attribute. This file has the example.
+// op info_flag_name () : InfoFlag => ":name";
+op info_flag_reasonu () : InfoFlag => ":reason-unknown";
+op info_flag_version () : InfoFlag => ":version";
+
+// 10. Command options
 
 category BValue;
 op bvalue_true () : BValue => "true";
 op bvalue_false () : BValue => "false";
+
+category SMTOption;
+// NOTE: "Solver-specific option names are allowed and indeed expected."
+// A set of standard options is presented here.
+op smtoption_diagoc (s:Str) : SMTOption => ":diagnostic-output-channel" s;
+op smtoption_globald (b:BValue) : SMTOption => ":global-declarations" b;
+op smtoption_interm (b:BValue) : SMTOption => ":interactive-mode" b;
+op smtoption_prints (b:BValue) : SMTOption => ":print-success" b;
+op smtoption_produceasr (b:BValue) : SMTOption => ":produce-assertions" b;
+op smtoption_produceasn (b:BValue) : SMTOption => ":produce-assignments" b;
+op smtoption_producem (b:BValue) : SMTOption => ":produce-models" b;
+op smtoption_producep (b:BValue) : SMTOption => ":produce-proofs" b;
+op smtoption_produceua (b:BValue) : SMTOption => ":produce-unsat-assumptions" b;
+op smtoption_produceuc (b:BValue) : SMTOption => ":produce-unsat-cores" b;
+op smtoption_rseed (n:Num) : SMTOption => ":random-seed" n;
+op smtoption_regularoc (s:Str) : SMTOption => ":regular-output-channel" s;
+op smtoption_reproduciblerl (n:Num) : SMTOption => ":reproducible-resource-limit" n;
+op smtoption_verbosity (n:Num) : SMTOption => ":verbosity" n;
+op smtoption_attr (a:Attribute) : SMTOption => a;
 
 // 11. Commands
 
@@ -290,8 +319,8 @@ import SMTCore;
 
 // 11. Commands (cont.)
 
-// 'the_' is necessary, otherwise it raises "unexpected token 'assert'; expected identifier"
-op the_assert (t:Term) : Command => "(" "assert" t ")";
+// cmd_' is necessary, otherwise it raises "unexpected token 'assert'; expected identifier"
+op cmd_assert (t:Term) : Command => "(" "assert" t ")";
 op check_sat () : Command => "(" "check-sat" ")";
 op check_sat_assuming (ts:Seq Term) : Command => "(" "check-sat-assuming" ts ")";
 op declare_const (s:Symbol, so:SMTSort) : Command =>
@@ -313,11 +342,11 @@ op define_fun_rec (fdef:FunctionDef) : Command =>
   "(" "define-fun-rec" fdef ")";
 op define_sort (s:Symbol, sl:Seq Symbol, so:SMTSort) : Command =>
   "(" "define-sort" s "(" sl ")" so ")";
-op the_echo (s:Str) : Command => "(" "echo" s ")";
-op the_exit () : Command => "(" "exit" ")";
+op cmd_echo (s:Str) : Command => "(" "echo" s ")";
+op cmd_exit () : Command => "(" "exit" ")";
 op get_assertions () : Command => "(" "get-assertions" ")";
-op get_assignments () : Command => "(" "get-assignments" ")";
-// TODO: get-info
+op get_assignment () : Command => "(" "get-assignment" ")";
+op get_info (x:InfoFlag) : Command => "(" "get-info" x ")";
 op get_model () : Command => "(" "get-model" ")";
 op get_option (kw:Keyword) : Command => "(" "get-option" kw ")";
 op get_proof () : Command => "(" "get-proof" ")";
@@ -325,13 +354,13 @@ op get_unsat_assumptions () : Command => "(" "get-unsat-assumptions" ")";
 op get_unsat_core () : Command => "(" "get-unsat-core" ")";
 op get_value (t0:Term, tl:Seq Term) : Command =>
   "(" "get-value" "(" t0 tl ")" ")";
-op the_pop (n:Num) : Command => "(" "pop" n ")";
-op the_push (n:Num) : Command => "(" "push" n ")";
-op the_reset () : Command => "(" "reset" ")";
+op cmd_pop (n:Num) : Command => "(" "pop" n ")";
+op cmd_push (n:Num) : Command => "(" "push" n ")";
+op cmd_reset () : Command => "(" "reset" ")";
 op reset_assertions () : Command => "(" "reset-assertions" ")";
 op set_info (a:Attribute) : Command => "(" "set-info" a ")";
 op set_logic (s:Symbol) : Command => "(" "set-logic" s ")";
-// TODO: set-option
+op set_option (s:SMTOption) : Command => "(" "set-option" s ")";
 
 #end
 
@@ -563,7 +592,7 @@ program SMT;
 (echo "x")
 (exit)
 (get-assertions)
-(get-assignments)
+(get-assignment)
 (get-model)
 (get-option :h)
 (get-proof)
@@ -576,6 +605,7 @@ program SMT;
 (reset-assertions)
 (set-info :t 1)
 (set-logic MY_LOGIC)
+(set-option :global-declarations true)
 #end
 
 
@@ -609,7 +639,30 @@ unknown
 // )
 #end
 
-
 end Test
+
+
+-- The ASTs generated by strata_gen.
+
+namespace SMTDDM
+
+--set_option trace.Strata.generator true
+#strata_gen SMT
+
+deriving instance BEq for
+  SpecConstant, QualifiedIdent, SimpleSymbol, Symbol, Reserved,
+  Keyword, SExpr, AttributeValue, BValue, Attribute, SMTOption, Index,
+  Identifier, SMTSort, SortedVar, QualIdentifier, ValBinding, Term,
+  InfoFlag, FunctionDef, Command
+
+end SMTDDM
+
+
+namespace SMTResponseDDM
+
+--set_option trace.Strata.generator true
+#strata_gen SMTResponse
+
+end SMTResponseDDM
 
 end Strata
