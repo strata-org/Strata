@@ -25,8 +25,8 @@ Type checker for Boogie commands.
 Note that this function needs the entire program to type-check `call`
 commands by looking up the corresponding procedure's information.
 -/
-def typeCheckCmd (T : (TEnv BoogieIdent)) (P : Program) (c : Command) :
-  Except Format (Command × (TEnv BoogieIdent)) := do
+def typeCheckCmd (T : (TEnv Visibility)) (P : Program) (c : Command) :
+  Except Format (Command × (TEnv Visibility)) := do
   match c with
   | .cmd c =>
     let (c, T) ← Imperative.Cmd.typeCheck T c
@@ -69,12 +69,12 @@ def typeCheckCmd (T : (TEnv BoogieIdent)) (P : Program) (c : Command) :
            .ok (s', T)
 
 
-def typeCheckAux (T : (TEnv BoogieIdent)) (P : Program) (op : Option Procedure) (ss : List Statement) :
-  Except Format (List Statement × (TEnv BoogieIdent)) :=
+def typeCheckAux (T : (TEnv Visibility)) (P : Program) (op : Option Procedure) (ss : List Statement) :
+  Except Format (List Statement × (TEnv Visibility)) :=
   go T ss []
 where
-  go (T : TEnv BoogieIdent) (ss : List Statement) (acc : List Statement) :
-    Except Format (List Statement × (TEnv BoogieIdent)) :=
+  go (T : TEnv Visibility) (ss : List Statement) (acc : List Statement) :
+    Except Format (List Statement × (TEnv Visibility)) :=
     match ss with
     | [] => .ok (acc.reverse, T)
     | s :: srest => do

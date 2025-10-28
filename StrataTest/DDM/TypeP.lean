@@ -23,10 +23,10 @@ op mkBinding (name : Ident, tp : TypeP) : Binding => @[prec(40)] name ":" tp;
 #strata_gen TestTypeP
 
 /--
-info: inductive TypeP : Type
-number of parameters: 0
+info: inductive TypeP : Type → Type
+number of parameters: 1
 constructors:
-TypeP.expr : TestTypePType → TypeP
-TypeP.type : TypeP
+TypeP.expr : {α : Type} → TestTypePType α → TypeP α
+TypeP.type : {α : Type} → α → TypeP α
 -/
 #guard_msgs in #print TypeP

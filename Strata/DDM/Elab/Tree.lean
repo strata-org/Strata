@@ -23,7 +23,7 @@ Type variables may be declared as synonyms for existing
 types.  In this case, the value is a type expression
 over the parameters.
 -/
-| type (params : List String) (value : Option TypeExpr)
+| type (ann : SourceRange) (params : List String) (value : Option TypeExpr)
 /--
 Variable belongs to the particular category below.
 -/
@@ -37,19 +37,19 @@ instance : Coe TypeExpr BindingKind where
 
 def ofCat (c : SyntaxCat) : BindingKind :=
   match c with
-  | .atom q`Init.Expr => panic! "Init.Expr may not appear as a category."
-  | .atom q`Init.Type => .type [] .none
+  | .atom _ q`Init.Expr => panic! "Init.Expr may not appear as a category."
+  | .atom loc q`Init.Type => .type loc [] .none
   | c => .cat c
 
 def categoryOf : BindingKind → SyntaxCat
-| .expr _ => .atom q`Init.Expr
-| .type _ _ => .atom q`Init.Type
+| .expr tp => .atom tp.ann q`Init.Expr
+| .type loc _ _ => .atom loc q`Init.Type
 | .cat c => c
 
 instance : ToStrataFormat BindingKind where
   mformat
   | .expr tp => mformat tp
-  | .type params _ => mformat (params.foldr (init := f!"Type") (fun a f => f!"({a} : Type) -> {f}"))
+  | .type _ params _ => mformat (params.foldr (init := f!"Type") (fun a f => f!"({a} : Type) -> {f}"))
   | .cat c => mformat c
 
 end BindingKind
@@ -323,17 +323,19 @@ def arg : Tree → Arg
   | .ofCatInfo info => .cat info.cat
   | .ofExprInfo info => .expr info.expr
   | .ofTypeInfo info => .type info.typeExpr
-  | .ofIdentInfo info => .ident info.val
-  | .ofNumInfo info => .num info.val
-  | .ofDecimalInfo info => .decimal info.val
-  | .ofStrlitInfo info => .strlit info.val
+  | .ofIdentInfo info => .ident info.loc info.val
+  | .ofNumInfo info => .num info.loc info.val
+  | .ofDecimalInfo info => .decimal info.loc info.val
+  | .ofStrlitInfo info => .strlit info.loc info.val
   | .ofOptionInfo _ =>
-    match children with
-    | #[] => .option none
-    | #[x] => .option x.arg
-    | _ => panic! "Unexpected option"
-  | .ofSeqInfo info => .seq info.args
-  | .ofCommaSepInfo info => .commaSepList info.args
+    let r :=
+      match children with
+      | #[] => none
+      | #[x] => some x.arg
+      | _ => panic! "Unexpected option"
+    .option info.loc r
+  | .ofSeqInfo info => .seq info.loc info.args
+  | .ofCommaSepInfo info => .commaSepList info.loc info.args
 
 theorem sizeOf_children (t : Tree) (i : Nat) (p : i < t.children.size) : sizeOf t[i] < sizeOf t := by
   match t with

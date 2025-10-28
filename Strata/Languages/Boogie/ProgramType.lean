@@ -68,7 +68,7 @@ def typeCheck (T : Boogie.Expression.TyEnv) (program : Program) :
           .error f!"Type declaration of the same name already exists!\n\
                     {decl}"
         | none =>
-          if td.name.snd ∈ T.knownTypes.keywords then
+          if td.name.name ∈ T.knownTypes.keywords then
             .error f!"This type declaration's name is reserved!\n\
                       {td}\n\
                       KnownTypes' names:\n\
@@ -86,6 +86,10 @@ def typeCheck (T : Boogie.Expression.TyEnv) (program : Program) :
         match ae.toLMonoTy with
         | .bool => .ok (.ax { a with e := ae.toLExpr } , T)
         | _ => .error f!"Axiom has non-boolean type: {a}"
+
+      | .distinct l es md =>
+        let es' ← es.mapM (LExprT.fromLExpr T)
+        .ok (.distinct l (es'.map (λ e => e.fst.toLExpr)) md, T)
 
       | .proc proc _ =>
         let T := T.pushEmptySubstScope
