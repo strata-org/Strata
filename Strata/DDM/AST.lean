@@ -8,6 +8,8 @@ import Std.Data.HashMap
 import Strata.DDM.Util.Array
 import Strata.DDM.Util.Decimal
 
+set_option autoImplicit false
+
 namespace Strata
 
 abbrev DialectName := String
@@ -15,7 +17,7 @@ abbrev DialectName := String
 structure QualifiedIdent where
   dialect : DialectName
   name : String
-  deriving Hashable, Inhabited, DecidableEq, Repr
+  deriving DecidableEq, Hashable, Inhabited, Repr
 
 namespace QualifiedIdent
 
@@ -34,7 +36,7 @@ instance : Quote QualifiedIdent where
   quote i := Syntax.mkCApp ``QualifiedIdent.mk #[quote i.dialect, quote i.name]
 
 @[macro quoteIdent] def quoteIdentImpl : Macro
-  | `(q`$l:ident ) =>
+  | `(q`$l:ident) =>
     if let .str (.str .anonymous d) suf := l.getId then
       pure (quote (QualifiedIdent.mk d suf) : Term)
     else
@@ -47,202 +49,221 @@ end QualifiedIdent
 
 #guard q`A.C = { dialect := "A", name := "C" }
 
-inductive SyntaxCat where
-| atom (ident : QualifiedIdent)
-| app (h : SyntaxCat) (a : SyntaxCat)
-deriving Inhabited, Repr, DecidableEq
+/--
+Denotes a fully specified syntax category in the Strata dialect.
+-/
+structure SyntaxCatF (α : Type) where
+  ann : α
+  name : QualifiedIdent
+  args : Array (SyntaxCatF α)
+deriving BEq, Inhabited, Repr
 
-namespace SyntaxCat
+namespace SyntaxCatF
 
-protected def head : SyntaxCat → QualifiedIdent
-| .atom i => i
-| .app h _ => h.head
-
-protected def args : SyntaxCat → Array SyntaxCat
-| .atom _ => #[]
-| .app h a => h.args |>.push a
+def atom {α} (ann : α) (ident : QualifiedIdent) : SyntaxCatF α where
+  ann := ann
+  name := ident
+  args := #[]
 
 /--
 Return true if this corresponds to builtin category `Init.Type`
 -/
-def isType (c : SyntaxCat) :=
-  match c with
-  | .atom q`Init.Type => true
-  | _ => false
+def isType {α} (c : SyntaxCatF α) : Bool := c.name == q`Init.Type
 
-end SyntaxCat
+def sizeOf_spec {α} [SizeOf α] (op : SyntaxCatF α) : sizeOf op = 1 + sizeOf op.ann + sizeOf op.name + sizeOf op.args :=
+  match op with
+  | { ann, name, args } => by simp
+
+end SyntaxCatF
 
 /-- This refers to a value introduced in the program. -/
 abbrev FreeVarIndex := Nat
 
 /-- An expression that denotes a type. -/
-inductive TypeExpr where
+inductive TypeExprF (α : Type) where
   /-- A dialect defined type. -/
-| ident (name : QualifiedIdent) (args : Array TypeExpr)
+| ident (ann : α) (name : QualifiedIdent) (args : Array (TypeExprF α))
   /-- A bound type variable at the given deBruijn index in the context. -/
-| bvar (index : Nat)
+| bvar (ann : α) (index : Nat)
   /-- A reference to a global variable along with any arguments to ensure it is well-typed. -/
-| fvar (fvar : FreeVarIndex) (args : Array TypeExpr)
+| fvar (ann : α) (fvar : FreeVarIndex) (args : Array (TypeExprF α))
   /-- A function type. -/
-| arrow (arg : TypeExpr) (res : TypeExpr)
+| arrow (ann : α) (arg : TypeExprF α) (res : TypeExprF α)
 deriving BEq, Inhabited, Repr
 
-namespace TypeExpr
+namespace TypeExprF
 
-def mkFunType (bindings : Array (String × TypeExpr)) (res : TypeExpr) : TypeExpr :=
-  bindings.foldr (init := res) fun (_, argType) tp => .arrow argType tp
-protected def incIndices (tp : TypeExpr) (count : Nat) : TypeExpr :=
+def ann {α} : TypeExprF α → α
+| .ident ann _ _ => ann
+| .bvar ann _ => ann
+| .fvar ann _ _ => ann
+| .arrow ann _ _ => ann
+
+def mkFunType {α} (n : α) (bindings : Array (String × TypeExprF α)) (res : TypeExprF α) : TypeExprF α :=
+  bindings.foldr (init := res) fun (_, argType) tp => .arrow n argType tp
+
+protected def incIndices {α} (tp : TypeExprF α) (count : Nat) : TypeExprF α :=
   match tp with
-  | .ident i args => .ident i (args.attach.map fun ⟨e, _⟩ => e.incIndices count)
-  | .fvar f args => .fvar f (args.attach.map fun ⟨e, _⟩ => e.incIndices count)
-  | .bvar idx => .bvar (idx + count)
-  | .arrow a r => .arrow (a.incIndices count) (r.incIndices count)
+  | .ident n i args => .ident n i (args.attach.map fun ⟨e, _⟩ => e.incIndices count)
+  | .fvar n f args => .fvar n f (args.attach.map fun ⟨e, _⟩ => e.incIndices count)
+  | .bvar n idx => .bvar n (idx + count)
+  | .arrow n a r => .arrow n (a.incIndices count) (r.incIndices count)
 
 /-- Return true if type expression has a bound variable. -/
-protected def hasUnboundVar (bindingCount : Nat := 0) : TypeExpr → Bool
-| .ident _ args => args.attach.any (fun ⟨e, _⟩ => e.hasUnboundVar bindingCount)
-| .fvar _ args => args.attach.any (fun ⟨e, _⟩ => e.hasUnboundVar bindingCount)
-| .bvar idx => idx ≥ bindingCount
-| .arrow a r => a.hasUnboundVar bindingCount || r.hasUnboundVar bindingCount
+protected def hasUnboundVar {α} (bindingCount : Nat := 0) : TypeExprF α → Bool
+| .ident _ _ args => args.attach.any (fun ⟨e, _⟩ => e.hasUnboundVar bindingCount)
+| .fvar _ _ args => args.attach.any (fun ⟨e, _⟩ => e.hasUnboundVar bindingCount)
+| .bvar _ idx => idx ≥ bindingCount
+| .arrow _ a r => a.hasUnboundVar bindingCount || r.hasUnboundVar bindingCount
 termination_by e => e
 
 /-- Return true if type expression has no free variables. -/
-protected def isGround (tp : TypeExpr) := !tp.hasUnboundVar
+protected def isGround {α} (tp : TypeExprF α) := !tp.hasUnboundVar
 
-/-
-This applies global context to instantiate types and variables.
-
-Free type alias variables bound to alias
--/
-protected def instType (d : TypeExpr) (bindings : Array TypeExpr) : TypeExpr :=
-  match d with
-  | .ident i a =>
-    .ident i (a.attach.map (fun ⟨e, _⟩ => e.instType bindings))
-  | .bvar idx =>
-    assert! idx < bindings.size
-    bindings[bindings.size - (idx+1)]!
-  | .fvar idx a => .fvar idx (a.attach.map (fun ⟨e, _⟩ => e.instType bindings))
-  | .arrow a b => .arrow (a.instType bindings) (b.instType bindings)
-termination_by d
-
-/-
-This applies global context to instantiate types and variables.
+/--
+Applies a transformation to each bound variable in a type expression.
 
 Free type alias variables bound to alias
 -/
-protected def instTypeM [Monad m] (d : TypeExpr) (bindings : Nat → m TypeExpr) : m TypeExpr :=
+protected def instTypeM {m α} [Monad m] (d : TypeExprF α) (bindings : α → Nat → m (TypeExprF α)) : m (TypeExprF α) :=
   match d with
-  | .ident i a =>
-    .ident i <$> a.attach.mapM (fun ⟨e, _⟩ => e.instTypeM bindings)
-  | .bvar idx => bindings idx
-  | .fvar idx a => .fvar idx <$> a.attach.mapM (fun ⟨e, _⟩ => e.instTypeM bindings)
-  | .arrow a b => .arrow <$> a.instTypeM bindings <*> b.instTypeM bindings
+  | .ident n i a =>
+    .ident n i <$> a.attach.mapM (fun ⟨e, _⟩ => e.instTypeM bindings)
+  | .bvar n idx => bindings n idx
+  | .fvar n idx a => .fvar n idx <$> a.attach.mapM (fun ⟨e, _⟩ => e.instTypeM bindings)
+  | .arrow n a b => .arrow n <$> a.instTypeM bindings <*> b.instTypeM bindings
 termination_by d
 
-end TypeExpr
+def flattenArrow {α} : Array (TypeExprF α) → TypeExprF α → Array (TypeExprF α)
+| a, .arrow _ l r => flattenArrow (a.push l) r
+| a, r => a.push r
+
+theorem flattenArrow_size {α} (args : Array (TypeExprF α)) (r : TypeExprF α) :
+  sizeOf (flattenArrow args r) ≤ 1 + sizeOf args + sizeOf r := by
+  unfold flattenArrow
+  split
+  case h_1 =>
+    rename_i l r
+    have h := flattenArrow_size (args.push l) r
+    simp at *
+    omega
+  case h_2 =>
+    decreasing_tactic
+  termination_by r
+
+end TypeExprF
 
 mutual
 
-inductive Expr where
-| bvar (idx : Nat)
-| fvar (idx : FreeVarIndex)
-| fn (ident : QualifiedIdent)
-| app (e : Expr) (a : Arg)
+inductive ExprF (α : Type) : Type where
+| bvar (ann : α) (idx : Nat)
+| fvar (ann : α) (idx : FreeVarIndex)
+| fn (ann : α) (ident : QualifiedIdent)
+| app (ann : α) (e : ExprF α) (a : ArgF α)
 deriving Inhabited, Repr
 
-structure Operation where
+structure OperationF (α : Type) : Type where
+  ann : α
   name : QualifiedIdent
-  args : Array Arg
+  args : Array (ArgF α)
 deriving Inhabited, Repr
 
-inductive Arg where
-| op (o : Operation)
-| cat (c : SyntaxCat)
-| expr (e : Expr)
-| type (e : TypeExpr)
-| ident (i : String)
-| num (v : Nat)
-| decimal (v : Decimal)
-| strlit (i : String)
-| option (l : Option Arg)
-| seq (l : Array Arg)
-| commaSepList (l : Array Arg)
+inductive ArgF (α : Type) : Type where
+| op (o : OperationF α)
+| cat (c : SyntaxCatF α)
+| expr (e : ExprF α)
+| type (e : TypeExprF α)
+| ident (ann : α) (i : String)
+| num (ann : α)(v : Nat)
+| decimal (ann : α) (v : Decimal)
+| strlit (ann : α) (i : String)
+| option (ann : α) (l : Option (ArgF α))
+| seq (ann : α) (l : Array (ArgF α))
+| commaSepList (ann : α) (l : Array (ArgF α))
 deriving Inhabited, Repr
 
 end
 
-namespace Operation
+namespace OperationF
 
-def sizeOf_spec (op : Operation) : sizeOf op = 1 + sizeOf op.name + sizeOf op.args :=
+def sizeOf_spec {α} [SizeOf α] (op : OperationF α) : sizeOf op = 1 + sizeOf op.ann + sizeOf op.name + sizeOf op.args :=
   match op with
-  | { name, args } => by simp
+  | { ann, name, args } => by simp
 
-end Operation
+theorem sizeOf_lt_of_op_arg {α} {e : ArgF α} {op : OperationF α} (p : e ∈ op.args) : sizeOf e < sizeOf op := by
+  cases op with
+  | mk ann name args =>
+    have q : sizeOf e < sizeOf args := by decreasing_tactic
+    decreasing_tactic
+
+end OperationF
 
 /--
 Array ofelements whose sizes are bounded by a value.
 -/
 abbrev SizeBounded (α : Type _) [SizeOf α] {β} [SizeOf β] (e : β) (c : Int) := { a : α // sizeOf a ≤ sizeOf e + c }
 
-namespace Expr
+namespace ExprF
 
 /--
 Head-normal form for an expression consists of an operation
 -/
-structure HNF (e : Expr) where
-  fn : Expr
-  args : SizeBounded (Array Arg) e 1
+structure HNF {α} (e : ExprF α) where
+  fn : ExprF α
+  args : SizeBounded (Array (ArgF α)) e 1
 
-protected def hnf (e0 : Expr) : HNF e0 :=
-  let rec aux (e : Expr) (args : Array Arg := #[])
-              (szP : sizeOf e + sizeOf args = sizeOf e0 + 2): HNF e0 :=
+protected def hnf {α} (e0 : ExprF α) : HNF e0 :=
+  let rec aux (e : ExprF α) (args : Array (ArgF α) := #[])
+              (szP : sizeOf e + sizeOf args ≤ sizeOf e0 + 2): HNF e0 :=
     match e with
-    | .bvar _ | .fvar _ | .fn _ => { fn := e, args := ⟨args.reverse, by simp at szP; simp ; omega⟩ }
-    | .app f a => aux f (args.push a) (by simp at *; omega)
+    | .bvar .. | .fvar .. | .fn .. =>
+      { fn := e, args := ⟨args.reverse, by simp at szP; simp; omega⟩ }
+    | .app _ f a =>
+      aux f (args.push a) (by simp at *; omega)
   aux e0 #[] (by simp)
 
-partial def flatten (e : Expr) (prev : List Arg := []) : Expr × List Arg :=
+partial def flatten {α} (e : ExprF α) (prev : List (ArgF α) := []) : ExprF α × List (ArgF α) :=
   match e with
-  | .app f e => f.flatten (e :: prev)
+  | .app _ f e => f.flatten (e :: prev)
   | _ => (e, prev)
 
-end Expr
+end ExprF
 
-namespace Arg
+namespace ArgF
 
-def asOp! : Arg → Operation
+def asOp! {α} [Inhabited α] [Repr α] : ArgF α → OperationF α
 | .op a => a
 | a => panic! s!"{repr a} is not an operation."
 
-def asCat! : Arg → SyntaxCat
+def asCat! {α} [Inhabited α] [Repr α] : ArgF α → SyntaxCatF α
 | .cat a => a
 | a => panic! s!"{repr a} is not a syntax category."
 
-def asExpr! : Arg → Expr
+def asExpr! {α} [Inhabited α] [Repr α] : ArgF α → ExprF α
 | .expr a => a
 | a => panic! s!"{repr a} is not an expression."
 
-def asType! : Arg → TypeExpr
+def asType! {α} [Inhabited α] [Repr α] : ArgF α → TypeExprF α
 | .type a => a
 | a => panic! s!"{repr a} is not a type."
 
-def asIdent! : Arg → String
-| .ident a => a
+def asIdent! {α} [Repr α] : ArgF α → String
+| .ident _ a => a
 | a => panic! s!"{repr a} is not an identifier."
 
-def asOption! : Arg → Option Arg
-| .option a => a
+def asOption! {α} [Repr α] : ArgF α → Option (ArgF α)
+| .option _ a => a
 | a => panic! s!"{repr a} is not an option."
 
-def asSeq! : Arg → Array Arg
-| .seq a => a
+def asSeq! {α} [Repr α] : ArgF α → Array (ArgF α)
+| .seq _ a => a
 | a => panic! s!"{repr a} is not an sequence."
 
-def asCommaSepList : Arg → Array Arg
-| .commaSepList a => a
+def asCommaSepList {α} [Repr α] : ArgF α → Array (ArgF α)
+| .commaSepList _ a => a
 | a => panic! s!"{repr a} is not an comma separated list."
 
-end Arg
+end ArgF
 
 /--
 Source location information in the DDM is defined
@@ -269,77 +290,127 @@ def isNone (loc : SourceRange) : Bool := loc.start = 0 ∧ loc.stop = 0
 
 end SourceRange
 
+abbrev Arg := ArgF SourceRange
+abbrev Expr := ExprF SourceRange
+abbrev Operation := OperationF SourceRange
+abbrev SyntaxCat := SyntaxCatF SourceRange
+abbrev TypeExpr := TypeExprF SourceRange
+
 mutual
 /--
 Decidable equality definitions of Expr, Operation and Arg.
 They cannot be naturally derived from 'deriving DecidableEq'. It seems the
 fact that their constructors use Array of themselves makes this hard.
 -/
-def Expr.beq (e1 e2 : Expr) : Bool :=
+def ExprF.beq {α} [BEq α] (e1 e2 : ExprF α) : Bool :=
   match e1, e2 with
-  | .bvar i1, .bvar i2
-  | .fvar i1, .fvar i2
-  | .fn i1, .fn i2 => i1 = i2
-  | .app e1 a1, .app e2 a2 => Expr.beq e1 e2 && Arg.beq a1 a2
+  | .bvar a1 i1, .bvar a2 i2
+  | .fvar a1 i1, .fvar a2 i2
+  | .fn a1 i1, .fn a2 i2 => a1 == a2 && i1 == i2
+  | .app a1 x1 y1, .app a2 x2 y2 => a1 == a2 && ExprF.beq x1 x2 && ArgF.beq y1 y2
   | _, _ => false
 termination_by sizeOf e1
 
-def Operation.beq (o1 o2 : Operation) : Bool :=
-  o1.name = o2.name &&
-  Arg.array_beq o1.args o2.args
+def OperationF.beq {α} [BEq α] (o1 o2 : OperationF α) : Bool :=
+  o1.ann == o2.ann
+  && o1.name = o2.name
+  && ArgF.array_beq o1.args o2.args
 termination_by sizeOf o1
 decreasing_by
-  simp [Operation.sizeOf_spec]
+  simp [OperationF.sizeOf_spec]
   omega
 
-def Arg.array_beq (a1 a2 : Array Arg) : Bool :=
-  if size_eq : a1.size = a2.size then
-    a1.size.all fun i p => Arg.beq a1[i] a2[i]
-  else
-    false
-termination_by sizeOf a1
-
-def Arg.beq (a1 a2 : Arg) : Bool :=
+def ArgF.beq {α} [BEq α] (a1 a2 : ArgF α) : Bool :=
   match a1, a2 with
-  | .op o1, .op o2 => Operation.beq o1 o2
+  | .op o1, .op o2 => OperationF.beq o1 o2
   | .cat c1, .cat c2 => c1 == c2
-  | .expr e1, .expr e2 => Expr.beq e1 e2
+  | .expr e1, .expr e2 => ExprF.beq e1 e2
   | .type t1, .type t2 => t1 == t2
-  | .ident i1, .ident i2 => i1 == i2
-  | .num n1, .num n2 => n1 == n2
-  | .decimal v1, .decimal v2 => v1 == v2
-  | .strlit i1, .strlit i2 => i1 == i2
-  | .option o1, .option o2 =>
+  | .ident a1 i1, .ident a2 i2 => a1 == a2 && i1 == i2
+  | .num a1 n1, .num a2 n2 => a1 == a2 && n1 == n2
+  | .decimal a1 v1, .decimal a2 v2 => a1 == a2 && v1 == v2
+  | .strlit a1 i1, .strlit a2 i2 => a1 == a2 && i1 == i2
+  | .option a1 o1, .option a2 o2 => a1 == a2 &&
     match o1,o2 with
     | .none, .none => true
-    | .some a1, .some a2 => Arg.beq a1 a2
+    | .some v1, .some v2 => ArgF.beq v1 v2
     | _, _ => false
-  | .seq a1, .seq a2 =>
-    Arg.array_beq a1 a2
-  | .commaSepList a1, .commaSepList a2 =>
-    Arg.array_beq a1 a2
+  | .seq a1 v1, .seq a2 v2 =>
+    a1 == a2 && ArgF.array_beq v1 v2
+  | .commaSepList a1 v1, .commaSepList a2 v2 =>
+    a1 == a2 && ArgF.array_beq v1 v2
   | _, _ => false
+termination_by sizeOf a1
+
+def ArgF.array_beq {α} [BEq α] (a1 a2 : Array (ArgF α)) : Bool :=
+  if size_eq : a1.size = a2.size then
+    a1.size.all fun i p => ArgF.beq a1[i] a2[i]
+  else
+    false
 termination_by sizeOf a1
 
 end
 
 -- TODO: extend these to LawfulBEq!
-instance: BEq Expr where beq := Expr.beq
-instance: BEq Operation where beq := Operation.beq
-instance: BEq Arg where beq := Arg.beq
-
+instance {α} [BEq α] : BEq (ExprF α) where beq := ExprF.beq
+instance {α} [BEq α] : BEq (OperationF α) where beq := OperationF.beq
+instance {α} [BEq α] : BEq (ArgF α) where beq := ArgF.beq
 
 inductive MetadataArg where
 | bool (e : Bool)
 | catbvar (index : Nat) -- This is a deBrujin index into current typing environment.
 | num (e : Nat)
 | option (a : Option MetadataArg)
-deriving Inhabited, Repr, BEq
+deriving BEq, Inhabited, Repr
+
+namespace MetadataArg
+
+protected def decEq (x y : MetadataArg) : Decidable (x = y) :=
+  match x with
+  | .bool x =>
+    match y with
+    | .bool y =>
+      if p : x = y then
+        .isTrue (congrArg _ p)
+      else
+        .isFalse (by grind)
+    | .catbvar _ | .num _ | .option _ => .isFalse (by grind)
+  | .catbvar x =>
+    match y with
+    | .catbvar y =>
+      if p : x = y then
+        .isTrue (congrArg _ p)
+      else
+        .isFalse (by grind)
+    | .bool _ | .num _ | .option _ => .isFalse (by grind)
+  | .num x =>
+    match y with
+    | .num y =>
+      if p : x = y then
+        .isTrue (congrArg _ p)
+      else
+        .isFalse (by grind)
+    | .bool _ | .catbvar _ | .option _ => .isFalse (by grind)
+  | .option x =>
+    match y with
+    | .option y =>
+      match x, y with
+      | none, none => .isTrue (by grind)
+      | some x, some y =>
+        match MetadataArg.decEq x y with
+        | .isTrue p => .isTrue (by grind)
+        | .isFalse p => .isFalse (by grind)
+      | none, some _ | some _, none => .isFalse (by grind)
+    | .bool _ | .catbvar _ | .num _ => .isFalse (by grind)
+
+instance : DecidableEq MetadataArg := MetadataArg.decEq
+
+end MetadataArg
 
 structure MetadataAttr where
   ident : QualifiedIdent
   args : Array MetadataArg
-deriving Inhabited, Repr, BEq
+deriving DecidableEq, Inhabited, Repr
 
 namespace MetadataAttr
 
@@ -360,11 +431,16 @@ end MetadataAttr
 structure Metadata where
   ofArray ::
   toArray : Array MetadataAttr
-deriving Repr, BEq
+deriving DecidableEq, Repr
 
 namespace Metadata
 
-protected def empty : Metadata := { toArray := #[] }
+protected def emptyWithCapacity (c : Nat) : Metadata := { toArray := .emptyWithCapacity c }
+
+protected def empty : Metadata := .emptyWithCapacity 0
+
+protected def push (md : Metadata) (attr : MetadataAttr) : Metadata :=
+  .ofArray <| md.toArray.push attr
 
 instance : Inhabited Metadata where
   default := .empty
@@ -432,24 +508,32 @@ generate types.
 -/
 inductive PreType where
   /-- A dialect defined type. -/
-| ident (name : QualifiedIdent) (args : Array PreType)
+| ident (ann : SourceRange) (name : QualifiedIdent) (args : Array PreType)
   /-- A bound type variable at the given deBruijn index in the context. -/
-| bvar (index : Nat)
+| bvar (ann : SourceRange) (index : Nat)
   /-- A reference to a global variable along with any arguments to ensure it is well-typed. -/
-| fvar (fvar : FreeVarIndex) (args : Array PreType)
+| fvar (ann : SourceRange) (fvar : FreeVarIndex) (args : Array PreType)
   /-- A function type. -/
-| arrow (arg : PreType) (res : PreType)
+| arrow (ann : SourceRange) (arg : PreType) (res : PreType)
   /-- A function created from a reference to bindings and a result type. -/
-| funMacro (bindingsIndex : Nat) (res : PreType)
+| funMacro (ann : SourceRange) (bindingsIndex : Nat) (res : PreType)
 deriving BEq, Inhabited, Repr
 
 namespace PreType
 
-def ofType : TypeExpr → PreType
-| .ident name args => .ident name (args.attach.map fun ⟨a, _⟩ => .ofType a)
-| .bvar idx => .bvar idx
-| .fvar idx args => .fvar idx (args.attach.map fun ⟨a, _⟩ => .ofType a)
-| .arrow a r => .arrow (.ofType a) (.ofType r)
+/-- Return annotation on pretype. -/
+def ann : PreType → SourceRange
+| .ident ann _ _ => ann
+| .bvar ann _ => ann
+| .fvar ann _ _ => ann
+| .arrow ann _ _ => ann
+| .funMacro ann _ _ => ann
+
+def ofType : TypeExprF SourceRange → PreType
+| .ident loc name args => .ident loc name (args.map fun a => .ofType a)
+| .bvar loc idx => .bvar loc idx
+| .fvar loc idx args => .fvar loc idx (args.map fun a => .ofType a)
+| .arrow loc a r => .arrow loc (.ofType a) (.ofType r)
 termination_by tp => tp
 
 end PreType
@@ -480,12 +564,12 @@ inductive SyntaxDefAtom
 | ident (level : Nat) (prec : Nat)
 | str (lit : String)
 | indent (n : Nat) (args : Array SyntaxDefAtom)
-deriving Inhabited, Repr, BEq
+deriving BEq, Inhabited, Repr
 
 structure SyntaxDef where
   atoms : Array SyntaxDefAtom
   prec : Nat
-deriving Repr, Inhabited, BEq
+deriving BEq, Repr, Inhabited
 
 namespace SyntaxDef
 
@@ -522,19 +606,14 @@ deriving Repr
 structure DebruijnIndex (n : Nat) where
   val : Nat
   isLt : val < n
-  deriving Repr
+deriving Repr
 
 namespace DebruijnIndex
 
-def toLevel : DebruijnIndex n → Fin n
+def toLevel {n} : DebruijnIndex n → Fin n
 | ⟨v, lt⟩ => ⟨n - (v+1), by omega⟩
 
 end DebruijnIndex
-
-private def varNameByIndex {n} (args : Vector Arg n) (idx : DebruijnIndex n) : String :=
-  match args[idx.toLevel] with
-  | .ident e => e
-  | a => panic! s!"Expected ident at {idx.val} {repr a}"
 
 /--
 This is the type information for an operator or function declaration.
@@ -549,7 +628,7 @@ deriving BEq, Inhabited, Repr
 namespace ArgDeclKind
 
 def categoryOf : ArgDeclKind → SyntaxCat
-| .type _ => .atom q`Init.Expr
+| .type tp => .atom tp.ann q`Init.Expr
 | .cat c => c
 
 /--
@@ -569,22 +648,36 @@ structure ArgDecl where
   ident : Var
   kind : ArgDeclKind
   metadata : Metadata := .empty
-deriving Inhabited, Repr, BEq
+deriving BEq, Inhabited, Repr
 
-abbrev ArgDecls := Array ArgDecl
+structure ArgDecls where
+  ofArray ::
+  toArray : Array ArgDecl
+deriving BEq, Inhabited, Repr
 
 namespace ArgDecls
 
+protected def empty : ArgDecls := { toArray := #[] }
+
+protected def size (a : ArgDecls) : Nat := a.toArray.size
+
+protected def isEmpty (a : ArgDecls) : Bool := a.toArray.isEmpty
+
+instance : GetElem ArgDecls Nat ArgDecl fun a i => i < a.size where
+  getElem a i p := a.toArray[i]
+
+protected def foldl {α} (a : ArgDecls) (f : α → ArgDecl → α) (init : α): α  := a.toArray.foldl f init
+
 /-- Returns the index of the value in the binding for the given variable of the scope to use. -/
-def argScopeLevel (bindings : ArgDecls) (level : Fin bindings.size) : Option (Fin level.val) :=
-  match bindings[level].metadata.scopeIndex with
+def argScopeLevel (argDecls : ArgDecls) (level : Fin argDecls.size) : Option (Fin level.val) :=
+  match argDecls[level].metadata.scopeIndex with
   | none => none
   | some idx =>
     if h : idx < level.val then
       some ⟨level.val - (idx + 1), by omega⟩
     else
       -- TODO: Validate this is checked when attribute parsing occurs.
-      let varCount := bindings.size
+      let varCount := argDecls.size
       panic! s!"Scope index {idx} out of bounds ({level.val}, varCount = {varCount})"
 
 end ArgDecls
@@ -592,13 +685,13 @@ end ArgDecls
 /--
 Indices for introducing a new expression or operation.
 -/
-structure ValueBindingSpec (bindings : ArgDecls) where
+structure ValueBindingSpec (argDecls : ArgDecls) where
   -- deBrujin level of variable name.
-  nameIndex : DebruijnIndex bindings.size
+  nameIndex : DebruijnIndex argDecls.size
   -- deBrujin index of arguments if this is declaring a function (or none) if this declares a constant.
-  argsIndex : Option (DebruijnIndex bindings.size)
+  argsIndex : Option (DebruijnIndex argDecls.size)
   -- deBrujin index of type or a type/cat literal.
-  typeIndex : DebruijnIndex bindings.size
+  typeIndex : DebruijnIndex argDecls.size
   -- Whether categories are allowed
   allowCat : Bool
 deriving Repr
@@ -606,28 +699,25 @@ deriving Repr
 /--
 Indices for introducing a new type binding.
 -/
-structure TypeBindingSpec (bindings : ArgDecls) where
-  nameIndex : DebruijnIndex bindings.size
-  argsIndex : Option (DebruijnIndex bindings.size)
-  defIndex : Option (DebruijnIndex bindings.size)
+structure TypeBindingSpec (argDecls : ArgDecls) where
+  nameIndex : DebruijnIndex argDecls.size
+  argsIndex : Option (DebruijnIndex argDecls.size)
+  defIndex : Option (DebruijnIndex argDecls.size)
 deriving Repr
 
 /-
 A spec for introducing a new binding into a type context.
 -/
-inductive BindingSpec (bindings : ArgDecls) where
-| value (_ : ValueBindingSpec bindings)
-| type (_ : TypeBindingSpec bindings)
+inductive BindingSpec (argDecls : ArgDecls) where
+| value (_ : ValueBindingSpec argDecls)
+| type (_ : TypeBindingSpec argDecls)
 deriving Repr
 
 namespace BindingSpec
 
-def nameIndex : BindingSpec bindings → DebruijnIndex bindings.size
+def nameIndex {argDecls} : BindingSpec argDecls → DebruijnIndex argDecls.size
 | .value v => v.nameIndex
 | .type v => v.nameIndex
-
-def varName (b : BindingSpec bindings) (args : Vector Arg bindings.size) : String :=
-  varNameByIndex args b.nameIndex
 
 end BindingSpec
 
@@ -639,24 +729,24 @@ private def newBindingErr (msg : String) : NewBindingM Unit :=
 private def checkNameIndexIsIdent (args : ArgDecls) (nameIndex : DebruijnIndex args.size) : NewBindingM Unit :=
   let b := args[nameIndex.toLevel]
   match b.kind with
-  | .cat (.atom q`Init.Ident) =>
+  | .cat (.atom _ q`Init.Ident) =>
     pure ()
   | _ =>
     newBindingErr s!"Expected {b.ident} to be an Ident."
 
 private def mkValueBindingSpec
-            (args : ArgDecls)
-            (nameIndex : DebruijnIndex args.size)
-            (typeIndex : DebruijnIndex args.size)
-            (argsIndex : Option (DebruijnIndex args.size) := none)
-            : NewBindingM (ValueBindingSpec args) := do
-  checkNameIndexIsIdent args nameIndex
-  let typeBinding := args[typeIndex.toLevel]
+            (argDecls : ArgDecls)
+            (nameIndex : DebruijnIndex argDecls.size)
+            (typeIndex : DebruijnIndex argDecls.size)
+            (argsIndex : Option (DebruijnIndex argDecls.size) := none)
+            : NewBindingM (ValueBindingSpec argDecls) := do
+  checkNameIndexIsIdent argDecls nameIndex
+  let typeBinding := argDecls[typeIndex.toLevel]
   let allowCat ←
         match typeBinding.kind with
-        | .cat (.atom q`Init.Type) =>
+        | .cat (.atom _ q`Init.Type) =>
           pure false
-        | .cat (.atom q`Init.TypeP) =>
+        | .cat (.atom _ q`Init.TypeP) =>
           pure true
         | _ =>
           newBindingErr "Expected reference to type variable."
@@ -665,39 +755,39 @@ private def mkValueBindingSpec
     newBindingErr "Arguments only allowed when result is a type."
   return { nameIndex, argsIndex, typeIndex, allowCat }
 
-def parseNewBindings (md : Metadata) (args : ArgDecls) : Array (BindingSpec args) × Array String :=
-  let ins (attr : MetadataAttr) : NewBindingM (Option (BindingSpec args)) := do
+def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec argDecls) × Array String :=
+  let ins (attr : MetadataAttr) : NewBindingM (Option (BindingSpec argDecls)) := do
         match attr.ident with
         | q`StrataDDL.declare => do
           let #[.catbvar nameIndex, .catbvar typeIndex] := attr.args
-            | newBindingErr "declare does not have expected 2 arguments."; return none
-          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < args.size))
+            | newBindingErr "declare expects 2 arguments."; return none
+          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < argDecls.size))
             | return panic! "Invalid name index"
-          let .isTrue typeP := inferInstanceAs (Decidable (typeIndex < args.size))
+          let .isTrue typeP := inferInstanceAs (Decidable (typeIndex < argDecls.size))
             | return panic! "Invalid name index"
-          some <$> .value <$> mkValueBindingSpec args ⟨nameIndex, nameP⟩ ⟨typeIndex, typeP⟩
+          some <$> .value <$> mkValueBindingSpec argDecls ⟨nameIndex, nameP⟩ ⟨typeIndex, typeP⟩
         | q`StrataDDL.declareFn => do
           let #[.catbvar nameIndex, .catbvar argsIndex, .catbvar typeIndex] := attr.args
             | newBindingErr "declareFn missing required arguments."; return none
-          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < args.size))
+          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < argDecls.size))
             | return panic! "Invalid name index"
-          let .isTrue argsP := inferInstanceAs (Decidable (argsIndex < args.size))
+          let .isTrue argsP := inferInstanceAs (Decidable (argsIndex < argDecls.size))
             | return panic! "Invalid arg index"
-          let .isTrue typeP := inferInstanceAs (Decidable (typeIndex < args.size))
+          let .isTrue typeP := inferInstanceAs (Decidable (typeIndex < argDecls.size))
             | return panic! "Invalid name index"
-          some <$> .value <$> mkValueBindingSpec args ⟨nameIndex, nameP⟩ ⟨typeIndex, typeP⟩ (argsIndex := some ⟨argsIndex, argsP⟩)
+          some <$> .value <$> mkValueBindingSpec argDecls ⟨nameIndex, nameP⟩ ⟨typeIndex, typeP⟩ (argsIndex := some ⟨argsIndex, argsP⟩)
         | q`StrataDDL.declareType => do
           let #[.catbvar nameIndex, .option mArgsArg ] := attr.args
             | newBindingErr s!"declareType has bad arguments {repr attr.args}."; return none
-          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < args.size))
+          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < argDecls.size))
             | return panic! "Invalid name index"
           let nameIndex := ⟨nameIndex, nameP⟩
-          checkNameIndexIsIdent args nameIndex
+          checkNameIndexIsIdent argDecls nameIndex
           let argsIndex ←
                 match mArgsArg with
                 | none => pure none
                 | some (.catbvar idx) =>
-                  let .isTrue argsP := inferInstanceAs (Decidable (idx < args.size))
+                  let .isTrue argsP := inferInstanceAs (Decidable (idx < argDecls.size))
                     | return panic! "Invalid arg index"
                   pure <| some ⟨idx, argsP⟩
                 | _ => newBindingErr "declareType args invalid."; return none
@@ -705,23 +795,23 @@ def parseNewBindings (md : Metadata) (args : ArgDecls) : Array (BindingSpec args
         | q`StrataDDL.aliasType => do
           let #[.catbvar nameIndex, .option mArgsArg, .catbvar defIndex] := attr.args
             | newBindingErr "aliasType missing arguments."; return none
-          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < args.size))
+          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < argDecls.size))
             | return panic! "Invalid name index"
           let nameIndex := ⟨nameIndex, nameP⟩
-          checkNameIndexIsIdent args nameIndex
-          let argsIndex ←
+          checkNameIndexIsIdent argDecls nameIndex
+          let argsIndex : DebruijnIndex argDecls.size ←
                 match mArgsArg with
                 | none => pure none
                 | some (.catbvar idx) =>
-                  let .isTrue argsP := inferInstanceAs (Decidable (idx < args.size))
+                  let .isTrue argsP := inferInstanceAs (Decidable (idx < argDecls.size))
                     | return panic! "Invalid arg index"
                   pure <| some ⟨idx, argsP⟩
                 | _ => newBindingErr "aliasType args invalid."; return none
-          let .isTrue defP := inferInstanceAs (Decidable (defIndex < args.size))
+          let .isTrue defP := inferInstanceAs (Decidable (defIndex < argDecls.size))
             | return panic! "Invalid def index"
-          let defBinding := args[args.size - (defIndex+1)]
+          let defBinding := argDecls[argDecls.size - (defIndex+1)]
           match defBinding.kind with
-          | .cat (.atom q`Init.Type) =>
+          | .cat (.atom _ q`Init.Type) =>
             pure ()
           | _ =>
             newBindingErr s!"Expected {defBinding.ident} to be a Type."
@@ -737,8 +827,8 @@ def parseNewBindings (md : Metadata) (args : ArgDecls) : Array (BindingSpec args
           pure none
   (md.toArray.filterMapM ins) #[]
 
-def parseNewBindings! (md : Metadata) (args : ArgDecls) : Array (BindingSpec args) :=
-  let (r, errs) := parseNewBindings md args
+def parseNewBindings! (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec argDecls) :=
+  let (r, errs) := parseNewBindings md argDecls
   if let some msg := errs[0]? then
     panic! msg
   else
@@ -749,13 +839,18 @@ structure SynCatDecl where
   argNames : Array String := #[]
 deriving Repr, DecidableEq, Inhabited
 
+structure Ann (Base : Type) (α : Type) where
+  ann : α
+  val : Base
+deriving BEq, DecidableEq, Inhabited, Repr
+
 /--
 A declaration of an algebraic data type.
 -/
 structure TypeDecl where
   name : String
-  argNames : Array String
-deriving Repr, DecidableEq, Inhabited
+  argNames : Array (Ann String SourceRange)
+deriving BEq, Inhabited, Repr
 
 /-- Operator declaration -/
 structure OpDecl where
@@ -801,19 +896,19 @@ structure FunctionDecl where
   result : PreType
   syntaxDef : SyntaxDef
   metadata : Metadata := .empty
-deriving Inhabited, Repr, BEq
+deriving BEq, Inhabited, Repr
 
 inductive MetadataArgType
 | num
 | ident
 | bool
 | opt (tp : MetadataArgType)
-deriving Repr, DecidableEq, Inhabited
+deriving DecidableEq, Inhabited, Repr
 
 structure MetadataArgDecl where
   ident : String
   type : MetadataArgType
-deriving Repr, Inhabited, DecidableEq
+deriving DecidableEq, Inhabited, Repr
 
 /--
 Declaration of a metadata tag in a dialect.
@@ -821,12 +916,12 @@ Declaration of a metadata tag in a dialect.
 Metadata has an optional argument that must have
 the specified type.
 
-N.B. We may want to further resitrct where metadata can appear.
+N.B. We may want to further restrict where metadata can appear.
 -/
 structure MetadataDecl where
   name : String
   args : Array MetadataArgDecl
-deriving Repr, Inhabited, DecidableEq
+deriving DecidableEq, Inhabited, Repr
 
 inductive Decl where
 | syncat (d : SynCatDecl)
@@ -834,7 +929,7 @@ inductive Decl where
 | type (d : TypeDecl)
 | function (d : FunctionDecl)
 | metadata (d : MetadataDecl)
-deriving Repr, BEq, Inhabited
+deriving BEq, Inhabited, Repr
 
 namespace Decl
 
@@ -855,7 +950,7 @@ structure Collection (α : Type) where
 
 namespace Collection
 
-instance : ForIn m (Collection α) α where
+instance {m α} : ForIn m (Collection α) α where
   forIn c i f := do
     let step d _h r :=
           match c.proj d with
@@ -863,7 +958,7 @@ instance : ForIn m (Collection α) α where
           | .none => pure (.yield r)
     c.declarations.forIn' i step
 
-protected def fold (f : β → α → β) (init : β) (c : Collection α) : β :=
+protected def fold {α β} (f : β → α → β) (init : β) (c : Collection α) : β :=
   let proj := c.proj
   let step b d :=
         match proj d with
@@ -871,23 +966,23 @@ protected def fold (f : β → α → β) (init : β) (c : Collection α) : β :
         | none => b
   c.declarations.foldl step init
 
-instance : ToString (Collection α) where
+instance {α} : ToString (Collection α) where
   toString c :=
     let step i a :=
           let r := if i.fst then i.snd else i.snd ++ ", "
           (false, r ++ c.pretty a)
     (c.fold step (true, "{") |>.snd) ++ "}"
 
-inductive Mem (c : Collection α) (nm : String) : Prop
+inductive Mem {α} (c : Collection α) (nm : String) : Prop
 | intro : (h : nm ∈ c.cache) → (r : α) → c.proj (c.cache[nm]) = some r → Mem c nm
 
-def Mem.inCache : Mem c nm → nm ∈ c.cache
+def Mem.inCache {α} {c : Collection α} {nm} : Mem c nm → nm ∈ c.cache
 | .intro h _ _ => h
 
-instance : Membership String (Collection α) where
+instance {α} : Membership String (Collection α) where
   mem := Mem
 
-instance (nm : String) (c : Collection α) : Decidable (nm ∈ c) :=
+instance {α} (nm : String) (c : Collection α) : Decidable (nm ∈ c) :=
   match p : c.cache[nm]? with
   | none => isFalse fun (.intro inCache _ _) => by
     simp [getElem?_def] at p
@@ -913,7 +1008,7 @@ instance (nm : String) (c : Collection α) : Decidable (nm ∈ c) :=
 
 end Collection
 
-instance : GetElem? (Collection α) String α (fun c nm => nm ∈ c) where
+instance {α} : GetElem? (Collection α) String α (fun c nm => nm ∈ c) where
   getElem c nm p :=
     have inCache : nm ∈ c.cache := p.inCache
     match q : c.cache[nm] with
@@ -946,7 +1041,9 @@ deriving Inhabited
 namespace Dialect
 
 instance : BEq Dialect where
-  beq x y := x.name = y.name && x.imports = y.imports && x.declarations == y.declarations
+  beq x y := x.name = y.name
+    && x.imports = y.imports
+    && x.declarations == y.declarations
 
 def syncats (d : Dialect) : Collection SynCatDecl where
   declarations := d.declarations
@@ -1011,7 +1108,7 @@ def addDecl (d : Dialect) (decl : Decl) : Dialect :=
 def declareSyntaxCat (d : Dialect) (decl : SynCatDecl) :=
   d.addDecl (.syncat decl)
 
-def declareType (d : Dialect) (name : String) (argNames : Array String) :=
+def declareType (d : Dialect) (name : String) (argNames : Array (Ann String SourceRange)) :=
   d.addDecl (.type { name, argNames })
 
 def declareMetadata (d : Dialect) (decl : MetadataDecl) : Dialect :=
@@ -1025,9 +1122,8 @@ instance (nm : String) (d : Dialect) : Decidable (nm ∈ d) :=
 
 end Dialect
 
-
 /-- BEq between two Std HashMap; checked by doing inclusion test twice -/
-instance [BEq α] [Hashable α] [BEq β]: BEq (Std.HashMap α β) where
+instance {α β} [BEq α] [Hashable α] [BEq β]: BEq (Std.HashMap α β) where
   beq x y := Id.run do
     if x.size ≠ y.size then
       return false
@@ -1036,10 +1132,9 @@ instance [BEq α] [Hashable α] [BEq β]: BEq (Std.HashMap α β) where
         return false
     return true
 
-
 structure DialectMap where
   map : Std.HashMap DialectName Dialect
-deriving Inhabited, BEq
+deriving BEq, Inhabited
 
 namespace DialectMap
 
@@ -1119,43 +1214,41 @@ end DialectMap
 mutual
 
 /--
-Invoke a function `f` over each of the binding specifications for an arg
-so that a result type context can be constructed.
+Invoke a function `f` over each of the declaration specifications for an arg.
 -/
-partial def foldArgBindingSpecs
+partial def foldOverArgBindingSpecs {α β}
     (m : DialectMap)
-    (f : α → ∀(argDecls : ArgDecls), BindingSpec argDecls → Vector Arg argDecls.size → α)
-    (init : α)
-    (a : Arg)
-    : α :=
+    (f : β → α → ∀(argDecls : ArgDecls), BindingSpec argDecls → Vector (ArgF α) argDecls.size → β)
+    (init : β)
+    (a : ArgF α)
+    : β :=
   match a with
-  | .op op => foldOverOpBindings m f init op
-  | .expr _ | .type _ | .cat _ | .ident _ | .num _ | .decimal _ | .strlit _ => init
-  | .option none => init
-  | .option (some a) => foldArgBindingSpecs m f init a
-  | .seq a => a.attach.foldl (init := init) (fun init ⟨a, _⟩ => foldArgBindingSpecs m f init a)
-  | .commaSepList a => a.attach.foldl (init := init) (fun init ⟨a, _⟩ => foldArgBindingSpecs m f init a)
+  | .op op => op.foldBindingSpecs m f init
+  | .expr _ | .type _ | .cat _ | .ident .. | .num .. | .decimal .. | .strlit .. => init
+  | .option _ none => init
+  | .option _ (some a) => foldOverArgBindingSpecs m f init a
+  | .seq _ a => a.attach.foldl (init := init) fun init ⟨a, _⟩ => foldOverArgBindingSpecs m f init a
+  | .commaSepList _ a => a.attach.foldl (init := init) fun init ⟨a, _⟩ => foldOverArgBindingSpecs m f init a
 
 /--
-Invoke a function `f` over each of the binding specifications for an operator
-so that a result type context can be constructed.
+Invoke a function `f` over each of the declaration specifications for an operator.
 -/
-partial def foldOverOpBindings
+partial def OperationF.foldBindingSpecs {α β}
     (m : DialectMap)
-    (f : α → ∀{argDecls : ArgDecls}, BindingSpec argDecls → Vector Arg argDecls.size → α)
-    (init : α)
-    (op : Operation)
-    : α :=
+    (f : β → α → ∀{argDecls : ArgDecls}, BindingSpec argDecls → Vector (ArgF α) argDecls.size → β)
+    (init : β)
+    (op : OperationF α)
+    : β :=
   let decl := m.opDecl! op.name
   let argDecls := decl.argDecls
   let args := op.args
   if h : args.size = argDecls.size then
-    let argsV : Vector Arg argDecls.size := ⟨args, h⟩
+    let argsV : Vector (ArgF α) argDecls.size := ⟨args, h⟩
     let init :=
       match decl.metadata.resultLevel argDecls.size with
       | none => init
       | some lvl => foldOverArgAtLevel m f init argDecls argsV lvl
-    decl.newBindings.foldl (init := init) (fun a b => f a b ⟨args, by omega⟩)
+    decl.newBindings.foldl (init := init) fun a b => f a op.ann b argsV
   else
     @panic _ ⟨init⟩ "Expected arguments to match bindings"
 
@@ -1163,72 +1256,72 @@ partial def foldOverOpBindings
 Invoke a function `f` over a given argument for a function or operation so that
 the result context for that argument can be constructed.
 -/
-partial def foldOverArgAtLevel
+partial def foldOverArgAtLevel {α β}
     (m : DialectMap)
-    (f : α → ∀{argDecls : ArgDecls}, BindingSpec argDecls → Vector Arg argDecls.size → α)
-    (init : α)
+    (f : β → α → ∀{argDecls : ArgDecls}, BindingSpec argDecls → Vector (ArgF α) argDecls.size → β)
+    (init : β)
     (bindings : ArgDecls)
-    (args : Vector Arg bindings.size)
+    (args : Vector (ArgF α) bindings.size)
     (level : Fin bindings.size)
-    : α :=
+    : β :=
   let init :=
         match bindings.argScopeLevel level with
         | none => init
         | some lvl => foldOverArgAtLevel m f init bindings args ⟨lvl, by omega⟩
-  foldArgBindingSpecs m f init args[level]
+  foldOverArgBindingSpecs m f init args[level]
 
 end
 
 inductive GlobalKind where
 | expr (tp : TypeExpr)
 | type (params : List String) (definition : Option TypeExpr)
-deriving Inhabited, Repr, BEq
-
-mutual
-
-/-- Resolves binding spec for a new value to its type. -/
-partial def resolveBindingType (m : DialectMap) (b : BindingSpec bindings) (argsV : Vector Arg bindings.size) : TypeExpr :=
-  match resolveBindingIndices m b argsV with
-  | .expr tp => tp
-  | .type _ _ => panic! s!"Expecbted binding to be expression."
+deriving BEq, Inhabited, Repr
 
 /-- Resolves a binding spec into a global kind. -/
-partial def resolveBindingIndices { args } (m : DialectMap) (b : BindingSpec args) (argsV : Vector Arg args.size) : GlobalKind :=
+partial def resolveBindingIndices { argDecls : ArgDecls } (m : DialectMap) (src : SourceRange) (b : BindingSpec argDecls) (args : Vector Arg argDecls.size) : GlobalKind :=
   match b with
   | .value b =>
-    let fnBindings : Array (String × TypeExpr) :=
+    match args[b.typeIndex.toLevel] with
+    | .type tp =>
       match b.argsIndex with
       | none =>
-        #[]
+        .expr tp
       | some idx =>
-        let f (a : Array _) {args : ArgDecls} (b : BindingSpec args) argsV :=
-              let name := varNameByIndex argsV b.nameIndex
-              let type := resolveBindingType m b argsV
-              a.push (name, type)
-        foldOverArgAtLevel m f #[] args argsV idx.toLevel
-    match argsV[b.typeIndex.toLevel] with
-      | .type tp => .expr (.mkFunType fnBindings tp)
-      | .cat (.atom q`Init.Type) => .type [] none
-      | a => panic! s!"Expected new binding to be bound to type instead of {repr a}."
+        let f (a : Array _) (l : SourceRange) {argDecls : ArgDecls} (b : BindingSpec argDecls) args :=
+                let type :=
+                      match resolveBindingIndices m l b args with
+                      | .expr tp => tp
+                      | .type _ _ => panic! s!"Expected binding to be expression."
+                a.push type
+        let fnBindings : Array TypeExpr :=
+          foldOverArgAtLevel m f #[] argDecls args idx.toLevel
+        .expr <| fnBindings.foldr (init := tp) fun argType tp => .arrow src argType tp
+    | .cat c =>
+      if c.name = q`Init.Type then
+        .type [] none
+      else
+        panic! s!"Expected new binding to be Type instead of {repr c}."
+    | a =>
+      panic! s!"Expected new binding to be bound to type instead of {repr a}."
   | .type b =>
     let params : Array String :=
         match b.argsIndex with
         | none => #[]
         | some idx =>
-          let addBinding (a : Array String) {args : _} (b : BindingSpec args) (argsV : Vector Arg args.size) :=
-              a.push (varNameByIndex argsV b.nameIndex)
-          foldOverArgAtLevel m addBinding #[] args argsV idx.toLevel
+          let addBinding (a : Array String) (_ : SourceRange) {argDecls : _} (b : BindingSpec argDecls) (args : Vector Arg argDecls.size) :=
+              match args[b.nameIndex.toLevel] with
+              | .ident _ name => a.push name
+              | a => panic! s!"Expected ident at {idx.val} {repr a}"
+          foldOverArgAtLevel m addBinding #[] argDecls args idx.toLevel
     let value :=
             match b.defIndex with
             | none => none
             | some idx =>
-              match argsV[idx.toLevel] with
+              match args[idx.toLevel] with
               | .type tp =>
                 some tp
               | _ => panic! "Bad arg"
     .type params.toList value
-
-end
 
 /--
 Typing environment created from declarations in an environment.
@@ -1236,7 +1329,7 @@ Typing environment created from declarations in an environment.
 structure GlobalContext where
   nameMap : Std.HashMap Var FreeVarIndex := {}
   vars : Array (Var × GlobalKind) := #[]
-deriving Repr, BEq
+deriving BEq, Repr
 
 namespace GlobalContext
 
@@ -1268,10 +1361,13 @@ def kindOf! (ctx : GlobalContext) (idx : FreeVarIndex) : GlobalKind :=
   ctx.vars[idx]!.snd
 
 def addCommand (dialects : DialectMap) (init : GlobalContext) (op : Operation) : GlobalContext :=
-    foldOverOpBindings dialects addBinding init op
-  where addBinding gctx _ b args :=
-          let name := varNameByIndex args b.nameIndex
-          let kind := resolveBindingIndices dialects b args
+    op.foldBindingSpecs dialects addBinding init
+  where addBinding (gctx : GlobalContext) l _ b args :=
+          let name :=
+                match args[b.nameIndex.toLevel] with
+                | .ident _ e => e
+                | a => panic! s!"Expected ident at {b.nameIndex.toLevel} {repr a}"
+          let kind := resolveBindingIndices dialects l b args
           gctx.push name kind
 
 end GlobalContext
@@ -1308,12 +1404,6 @@ def create (dialects : DialectMap) (dialect : DialectName) (commands : Array Ope
   { dialects, dialect, commands }
 
 end Program
-
-theorem sizeOf_lt_of_op_arg {e : Arg} {op : Operation} (p : e ∈ op.args) : sizeOf e < sizeOf op := by
-  cases op with
-  | mk name args =>
-  have q : sizeOf e < sizeOf args := by decreasing_tactic
-  decreasing_tactic
 
 /-- This tactic, added to the `decreasing_trivial` toolbox, proves that
 `sizeOf a < sizeOf as` when `a ∈ as`, which is useful for well founded recursions

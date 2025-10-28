@@ -117,7 +117,7 @@ def convertQuantifierKind : Lambda.QuantifierKind -> Strata.SMT.QuantifierKind
 
 mutual
 
-partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr LMonoTy BoogieIdent) (ctx : SMT.Context)
+partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr LMonoTy Visibility) (ctx : SMT.Context)
   : Except Format (Term × SMT.Context) := do
   match e with
   | .const "true" _ => .ok ((Term.bool true), ctx)
@@ -202,7 +202,7 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr LMonoTy BoogieIdent
   | .app _ _ =>
     appToSMTTerm E bvs e [] ctx
 
-partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : (LExpr LMonoTy BoogieIdent)) (acc : List Term) (ctx : SMT.Context) :
+partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : (LExpr LMonoTy Visibility)) (acc : List Term) (ctx : SMT.Context) :
   Except Format (Term × SMT.Context) := do
   match e with
   | .app (.app fn e1) e2 => do
@@ -237,7 +237,7 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
   match E.factory.getFactoryLFunc fn with
   | none => .error f!"Cannot find function {fn} in Boogie's Factory!"
   | some func =>
-    match func.name.2 with
+    match func.name.name with
     | "Bool.And"     => .ok (.app Op.and,        .bool,   ctx)
     | "Bool.Or"      => .ok (.app Op.or,         .bool,   ctx)
     | "Bool.Not"     => .ok (.app Op.not,        .bool,   ctx)
@@ -430,7 +430,7 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
           .ok (acc_map.insert tyVar smtTy)
         ) Map.empty
         -- Add all axioms for this function to the context, with types binding for the type variables in the expr
-        let ctx ← func.axioms.foldlM (fun acc_ctx (ax: LExpr LMonoTy BoogieIdent) => do
+        let ctx ← func.axioms.foldlM (fun acc_ctx (ax: LExpr LMonoTy Visibility) => do
           let current_axiom_ctx := acc_ctx.addSubst smt_ty_inst
             let (axiom_term, new_ctx) ← toSMTTerm E [] ax current_axiom_ctx
             .ok (new_ctx.addAxiom axiom_term)
@@ -441,7 +441,7 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
         .ok (.app (Op.uf uf), smt_outty, ctx)
 end
 
-def toSMTTerms (E : Env) (es : List (LExpr LMonoTy BoogieIdent)) (ctx : SMT.Context) :
+def toSMTTerms (E : Env) (es : List (LExpr LMonoTy Visibility)) (ctx : SMT.Context) :
   Except Format ((List Term) × SMT.Context) := do
   match es with
   | [] => .ok ([], ctx)
@@ -454,15 +454,18 @@ def ProofObligation.toSMTTerms (E : Env)
   (d : Imperative.ProofObligation Expression) (ctx : SMT.Context := SMT.Context.default) :
   Except Format ((List Term) × SMT.Context) := do
   let assumptions := d.assumptions.flatten.map (fun a => a.snd)
+  let (ctx, distinct_terms) ← E.distinct.foldlM (λ (ctx, tss) es =>
+    do let (ts, ctx') ← Boogie.toSMTTerms E es ctx; pure (ctx', ts :: tss)) (ctx, [])
+  let distinct_assumptions := distinct_terms.map (λ ts => Term.app .distinct ts .bool)
   let (assumptions_terms, ctx) ← Boogie.toSMTTerms E assumptions ctx
   let (obligation_pos_term, ctx) ← Boogie.toSMTTerm E [] d.obligation ctx
   let obligation_term := Factory.not obligation_pos_term
-  .ok ((assumptions_terms ++ [obligation_term]), ctx)
+  .ok ((distinct_assumptions ++ assumptions_terms ++ [obligation_term]), ctx)
 
 ---------------------------------------------------------------------
 
 /-- Convert an expression of type LExpr to a String representation in SMT-Lib syntax, for testing. -/
-def toSMTTermString (e : (LExpr LMonoTy BoogieIdent)) (E : Env := Env.init) (ctx : SMT.Context := SMT.Context.default)
+def toSMTTermString (e : (LExpr LMonoTy Visibility)) (E : Env := Env.init) (ctx : SMT.Context := SMT.Context.default)
   : IO String := do
   let smtctx := toSMTTerm E [] e ctx
   match smtctx with
