@@ -123,10 +123,10 @@ inductive StmtExpr : Type where
   /- Assign is only allowed in an impure context -/
   | Assign (target : StmtExpr) (value : StmtExpr)
   /- Used by itself for fields reads and in combination with Assign for field writes -/
-  | KnownFieldSelect (target : StmtExpr) (fieldName : Identifier)
+  | FieldSelect (target : StmtExpr) (fieldName : Identifier)
   /- PureFieldUpdate is the only way to assign values to fields of pure types -/
   | PureFieldUpdate (target : StmtExpr) (fieldName : Identifier) (newValue : StmtExpr)
-  | KnownCalleeCall (callee : Identifier) (arguments : List StmtExpr)
+  | StaticCall (callee : Identifier) (arguments : List StmtExpr)
   | PrimitiveOp (operator: Operation) (arguments : List StmtExpr)
 /- Instance related -/
   | This
@@ -234,6 +234,6 @@ inductive TypeDefinition where
   | Constrainted {ConstrainedType} (ty : ConstrainedType)
 
 structure Program where
-  globalCallables : List Callable
-  globalFields : List Field
+  staticCallables : List Callable
+  staticFields : List Field
   types : List TypeDefinition
