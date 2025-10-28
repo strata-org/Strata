@@ -1,3 +1,9 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
 import Strata.Languages.TypeScript.js_ast
 
 -- Simple AST loader that tests if TypeScript AST JSON can be loaded into Lean structures

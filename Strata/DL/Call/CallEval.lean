@@ -19,7 +19,7 @@ specific dialect that uses Call (e.g., Heap dialect).
 class CallEvaluator (State : Type) (P : Imperative.PureExpr) where
   -- Evaluate a direct function call
   evalDirectCall : (lhs : List String) → (funcName : String) → (args : List P.Expr) → State → State
-  
+
   -- Evaluate an imperative command (delegate to the base dialect)
   evalImperativeCmd : Imperative.Cmd P → State → State
 
