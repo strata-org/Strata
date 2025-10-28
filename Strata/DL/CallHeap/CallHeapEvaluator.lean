@@ -169,8 +169,19 @@ partial def evalStatementWithContext (stmt : CallHeapStrataStatement) (ctx : Cal
       ctx
     | .goto _ _ =>
       ctx
-    | .loop _ _ _ _ _ =>
-      ctx
+    | .loop guard _ _ body _ =>
+      let rec loop (ctx : CallHeapEvalContext) : CallHeapEvalContext :=
+      let (newState, condVal) := Heap.evalHExpr ctx.hstate guard
+      let conditionIsTrue := match condVal with
+        | .lambda (.const "true" _) => true
+        | _ => false
+      let newCtx := { ctx with hstate := newState }
+      if conditionIsTrue then
+        let afterBody := evalProgramWithContext body.ss newCtx
+        loop afterBody
+      else
+        newCtx
+    loop ctx
     | _ =>
       ctx
 
@@ -194,7 +205,9 @@ def evalCallHeapTranslatedProgram (transCtx : CallHeapTranslationContext) (stmts
   evalProgramWithContext stmts evalCtx
 
 -- JSON output function with TranslationContext (matching MIDI pattern)
-def runCallHeapAndShowJSONWithTranslation (transCtx : CallHeapTranslationContext) (stmts : List CallHeapStrataStatement) : IO Unit := do
+def runCallHeapAndShowJSONWithTranslation (transCtx : CallHeapTranslationContext)
+    (stmts : List CallHeapStrataStatement)
+    (visibleVars : Option (Std.HashSet String) := none) : IO Unit := do
   let finalContext := evalCallHeapTranslatedProgram transCtx stmts
   let finalState := finalContext.hstate
 
@@ -221,8 +234,12 @@ def runCallHeapAndShowJSONWithTranslation (transCtx : CallHeapTranslationContext
       | none => continue
     | none => continue
 
+  -- Optionally filter the visible variables to match a provided allowlist
   -- Create JSON object and output (sorted for consistency)
-  let sortedFields := jsonFields.toArray.qsort (fun a b => a.1 < b.1) |>.toList
+  let filteredFields : List (String × Lean.Json) := match visibleVars with
+    | some allowed => jsonFields.filter (fun (name, _) => allowed.contains name)
+    | none => jsonFields
+  let sortedFields := filteredFields.toArray.qsort (fun a b => a.1 < b.1) |>.toList
   let jsonObj := Lean.Json.mkObj sortedFields
   IO.println jsonObj.compress  -- Use compress for compact output like {"x": 5, "y": 15}
 

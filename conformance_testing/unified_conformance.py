@@ -19,6 +19,12 @@ from typing import Tuple, Optional
 
 from language_processor import get_language_processor, LanguageProcessor
 
+def _to_strata_heap_value(v):
+    if isinstance(v, list):
+        return {str(i): _to_strata_heap_value(x) for i, x in enumerate(v)}
+    if isinstance(v, dict):
+        return {k: _to_strata_heap_value(x) for k, x in v.items()}
+    return v
 
 class ConformanceTestRunner:
     """Language-neutral conformance test runner."""
@@ -55,6 +61,8 @@ class ConformanceTestRunner:
             print("strata json", strata_json)
             native_data = json.loads(native_json.strip())
             strata_data = json.loads(strata_json.strip())
+
+            native_data = {k: _to_strata_heap_value(v) for k, v in native_data.items()}
             
             mismatches = []
             missing_keys = []
@@ -195,17 +203,13 @@ class ConformanceTestRunner:
                 pass
             return False
     
-    def run_conformance_tests(self, input_dir: Path, max_workers: Optional[int] = None) -> dict:
+    def run_conformance_tests(self, source_files: list[Path], max_workers: Optional[int] = None) -> dict:
         """Run conformance tests on all files in input directory."""
         if max_workers is None:
             max_workers = multiprocessing.cpu_count()
         
-        # Find all source files for this language
-        pattern = f"*{self.processor.file_extension}"
-        source_files = list(input_dir.rglob(pattern))
-        
         if not source_files:
-            print(f"No {self.processor.name} files found in {input_dir}")
+            print(f"No test files found")
             return {"passed": 0, "failed": 0, "total_time": 0.0, "total_files": 0}
         
         print(f"Found {len(source_files)} {self.processor.name} files to test")
@@ -245,13 +249,20 @@ def main():
     base_dir = Path(__file__).parent
     input_dir = Path(args.input_dir).resolve()
     failed_dir = Path(args.failed_dir)
-    
+        
     processor = get_language_processor(args.language, base_dir)
     runner = ConformanceTestRunner(processor, failed_dir, args.verbose)
     
+    # Gather source files
+    if input_dir.is_file():
+        source_files = [input_dir]
+    else:
+        pattern = f"*{processor.file_extension}"
+        source_files = list(input_dir.rglob(pattern))
+    
     # Run tests
     print(f"Running {args.language} conformance tests on {input_dir}")
-    results = runner.run_conformance_tests(input_dir, args.max_workers)
+    results = runner.run_conformance_tests(source_files, args.max_workers)
     
     # Print results
     print("\n" + "="*50)
