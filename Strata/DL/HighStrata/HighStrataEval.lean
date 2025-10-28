@@ -265,10 +265,10 @@ partial def eval (expr : StmtExpr) : Eval TypedValue :=
 
 -- Support non-heap objects
   | StmtExpr.PureFieldUpdate _ _ _ => panic! "not implemented: PureFieldUpdate"
-  | StmtExpr.StaticFieldSelect _ _ => panic! "not implemented: StaticFieldSelect"
+  | KnownFieldSelect _ _ => panic! "not implemented: StaticFieldSelect"
 
 -- Support heap objects
-  | StmtExpr.Assign (StmtExpr.StaticFieldSelect objExpr fieldName) valueExpr =>
+  | StmtExpr.Assign (KnownFieldSelect objExpr fieldName) valueExpr =>
     panic! "not implemented"
   -- do
   --     let objTv ← eval objExpr
