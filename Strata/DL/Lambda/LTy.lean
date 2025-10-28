@@ -86,6 +86,14 @@ def LMonoTy.mkArrow (mty : LMonoTy) (mtys : LMonoTys) : LMonoTy :=
     let mrest' := LMonoTy.mkArrow m mrest
     .arrow mty mrest'
 
+/--
+Create an iterated arrow type where `mty` is the return type
+-/
+def LMonoTy.mkArrow' (mty : LMonoTy) (mtys : LMonoTys) : LMonoTy :=
+  match mtys with
+  | [] => mty
+  | m :: mrest => .arrow m (LMonoTy.mkArrow' mty mrest)
+
 mutual
 def LMonoTy.destructArrow (mty : LMonoTy) : LMonoTys :=
   match mty with

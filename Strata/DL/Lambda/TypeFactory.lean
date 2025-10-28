@@ -131,14 +131,6 @@ def freshTypeArg (l: List TyIdentifier) : TyIdentifier :=
   | _ => ""
 
 /--
-Create an iterated arrow type where `mty` is the return type
--/
-def LMonoTy.mkArrow' (mty : LMonoTy) (mtys : LMonoTys) : LMonoTy :=
-  match mtys with
-  | [] => mty
-  | m :: mrest => .arrow m (LMonoTy.mkArrow' mty mrest)
-
-/--
 Construct a recursive type argument for the eliminator.
 Specifically, determine if a type `ty` contains a strictly positive, uniform occurrence of `t`, if so, replace this occurence with `retTy`.
 
