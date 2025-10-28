@@ -549,9 +549,13 @@ class ArgDecl:
     kind : SyntaxCat|TypeExpr
     metadata: Metadata
 
-    def __init__(self, name: str, kind : SyntaxCat|TypeExpr, metadata: Metadata|None = None):
+    def __init__(self, name: str, kind : SyntaxCat|TypeExpr|SynCatDecl, metadata: Metadata|None = None):
         assert name not in reserved, f'{name} is a reserved word.'
-        assert isinstance(kind, SyntaxCat) or isinstance(kind, TypeExpr)
+        if isinstance(kind, SynCatDecl):
+            assert len(kind.argNames) == 0, f'Missing arguments to syntax category'
+            kind = kind()
+        assert isinstance(kind, SyntaxCat) or isinstance(kind, TypeExpr), f'Unexpected kind {type(kind)}'
+
         self.name = name
         self.kind = kind
         self.metadata = [] if metadata is None else metadata
@@ -783,6 +787,7 @@ class Dialect:
 Init : typing.Any = Dialect('Init')
 Init.add_syncat('Command')
 Init.add_syncat('Expr')
+Init.add_syncat('Ident')
 Init.add_syncat('Num')
 Init.add_syncat('Str')
 Init.add_syncat('Type')

@@ -395,7 +395,7 @@ JUMP_TARGET = Type(jump_target_cat, jump_target_to_arg)
 A JumpTarget value.
 """
 
-exc_handler_cat = PythonSSA.add_syncat("EXC_HANDLER")()
+exc_handler_cat = PythonSSA.add_syncat("ExcHandler")()
 
 no_exc_handler = PythonSSA.add_op("no_exc_handler",
     exc_handler_cat,
@@ -434,7 +434,11 @@ def binding_to_arg(arg : Any):
 
 DICT_BINDING = Type(dict_binding_cat, binding_to_arg)
 
-dict_entries_cat = PythonSSA.add_syncat("DICT_ENTRIES")()
+reg_cat = PythonSSA.add_syncat("Reg")()
+
+mk_reg = PythonSSA.add_op("mk_reg", ArgDecl("index", Init.Num), reg_cat, syntax=t'r{SyntaxArg("index")}')
+
+dict_entries_cat = PythonSSA.add_syncat("DictEntries")()
 dict_entries_op = PythonSSA.add_op(
     "mk_dict_entries",
     ArgDecl("elements", Init.CommaSepBy(value_cat)),
@@ -447,7 +451,6 @@ def dict_entries_to_arg(arg : Any) -> base.Arg:
     return dict_entries_op(base.CommaSepBy(args))
 
 DICT_ENTRIES = Type(dict_entries_cat, dict_entries_to_arg)
-
 
 statement_cat = PythonSSA.add_syncat("Statement")()
 
@@ -464,7 +467,7 @@ def decl_statement(name : str, args : dict[str, Type], returnTypes : Sized|Type|
     argdecls = [ ArgDecl(name, tp.cat) for (name, tp) in args.items() ]
     argc = len(args)
     assert all(f'r{i}' not in args for i in range(rc))
-    retdecls = [ ArgDecl(f'r{i}', VALUE.cat) for i in range(rc) ]
+    retdecls = [ ArgDecl(f'r{i}', reg_cat) for i in range(rc) ]
     atoms = []
     match rc:
         case 0:
@@ -489,6 +492,11 @@ def decl_statement(name : str, args : dict[str, Type], returnTypes : Sized|Type|
     op = PythonSSA.add_op(name, *argdecls, *retdecls, statement_cat, syntax = atoms)
     return StatementDecl(name, args, rc, False, op)
 
+def exc_statement(name : str, args : dict[str, Type], returnTypes : Sized|Type|None = None):
+    assert "exc" not in args
+    args["exc"] = EXC_HANDLER
+    return decl_statement(name, args, returnTypes)
+
 term_statement_cat = PythonSSA.add_syncat("TermStatement")()
 
 def term_statement(name : str, args : dict[str, Type]) -> StatementDecl:
@@ -505,15 +513,21 @@ def term_statement(name : str, args : dict[str, Type]) -> StatementDecl:
     decl = PythonSSA.add_op(name, *argdecls, term_statement_cat, syntax=atoms)
     return StatementDecl(name, args, 0, True, decl)
 
-import_decl = decl_statement("pyImport", { "name" : STR, "fromlist" : VALUE, "level" : VALUE }, VALUE)
+import_decl = exc_statement("pyImport", { "name" : STR, "fromlist" : VALUE, "level" : VALUE }, VALUE)
 """
 Implements `__import__` with the given arguments for `name`, `fromlist` and `level`.  
 `globals` and `locals` are `None`.
+
+This throws a `ModuleNotFoundError` if the module is not found.
 """
 
-importfrom_decl = decl_statement("importfrom", { "module" : VALUE, "name" : STR }, VALUE)
+importfrom_decl = exc_statement("importfrom", { "module" : VALUE, "name" : STR }, VALUE)
 """
 Imports name from the given module.
+
+This throws an `ImportError` if the module does not contain the name.
+
+Conversely `module.undefined_name`. throws an `AttributeError`, so it not the same.
 """
 
 mk_tuple_decl = decl_statement("mk_tuple", { "entries" : VALUE_LIST }, VALUE)
@@ -532,7 +546,7 @@ ref_load_decl = decl_statement("ref_load", { "ref" : VALUE }, VALUE)
 
 ref_load_borrow = decl_statement("ref_load_borrow", { "ref" : VALUE }, VALUE)
 
-ref_load_check_decl = decl_statement("ref_load_check", { "ref" : VALUE }, VALUE)
+ref_load_check_decl = exc_statement("ref_load_check", { "ref" : VALUE }, VALUE)
 """
 Returns a reference to the value onto the stack, raising an UnboundLocalError
 this is not a initialized reference.
@@ -676,7 +690,7 @@ Terminal statement with a branch to either true or false based on a labels.
 Value must be a bool.
 """
 
-call_decl = decl_statement("call", { "f" : VALUE, "obj" : VALUE, "args" : VALUE_LIST, "exc" : EXC_HANDLER }, VALUE)
+call_decl = exc_statement("call", { "f" : VALUE, "obj" : VALUE, "args" : VALUE_LIST}, VALUE)
 """
 Calls a callable object `f` with the number of arguments specified by argc.
 
@@ -688,7 +702,7 @@ On the stack are (in ascending order):
 
 call_intrinsic_1_decl = decl_statement("call_intrinsic_1", {"intrinsic" : NUM, "arg" : VALUE}, VALUE)
 
-call_kw_decl = decl_statement("call_kw", {"f" : VALUE, "obj" : VALUE, "args" : VALUE_LIST, "kw_names" : VALUE, "exc" : EXC_HANDLER}, VALUE)
+call_kw_decl = exc_statement("call_kw", {"f" : VALUE, "obj" : VALUE, "args" : VALUE_LIST, "kw_names" : VALUE}, VALUE)
 """
 Call keyword calls the given function `f` where
 * `obj` is either the `self` argument or `None` for methods.
@@ -866,7 +880,6 @@ Implements `bool(value)`
 
 type Value = ValueBase | None | int
 
-
 @dataclass
 class ExcHandler:
     target : JumpTarget
@@ -907,7 +920,7 @@ class Statement:
         args = (tp.check_arg(self.args[i]) for (i, tp) in enumerate(self.op.args.values()))
         self.op.returnCount
         rbase = self.register_base
-        ret_args = (reg_value(base.NumLit(rbase + i)) for i in range(self.op.returnCount))
+        ret_args = (mk_reg(base.NumLit(rbase + i)) for i in range(self.op.returnCount))
         all_args = (*args, *ret_args)
         return decl(*all_args)
 
@@ -917,12 +930,11 @@ mk_block = \
     PythonSSA.add_op(
         "mk_block",
         ArgDecl("index", Init.Num()),
-        ArgDecl("inputs", Init.Num()),
-        ArgDecl("exception_handler", Init.Option(Init.Num())),
+        ArgDecl("inputs", Init.CommaSepBy(Init.Ident())),
         ArgDecl("statements", Init.Seq(statement_cat)),
         ArgDecl("term_statement", term_statement_cat),
         block_cat,
-        syntax=t'block {SyntaxArg("index")}({SyntaxArg("inputs")}) except {SyntaxArg("exception_handler")}:\n{Indent(2, t"{SyntaxArg('statements')}{SyntaxArg('term_statement')}")}')
+        syntax=t'block {SyntaxArg("index")}({SyntaxArg("inputs")}):\n{Indent(2, t"{SyntaxArg('statements')}{SyntaxArg('term_statement')}")}')
 
 class Block:
     index : int
@@ -960,8 +972,7 @@ class Block:
         assert self.term_statement is not None
         return mk_block(
             base.NumLit(self.index),
-            base.NumLit(self.input_count),
-            base.OptionArg(None if self.exception_handler is None else base.NumLit(self.exception_handler)),
+            base.CommaSepBy([base.Ident(f'b{i}') for i in range(self.input_count)]),
             base.Seq([ s.to_strata() for s in self.statements ]),
             self.term_statement.to_strata()
             )
@@ -1227,9 +1238,12 @@ class Translator:
     def store_ref(self, ref : Value, value : Value):
         self.add_stmt(store_ref_decl, ref, value)
 
-    def do_call(self, fn : Value, selfObj : Value, *args: Value) -> Value:
+    def add_exc_stmt(self, decl : StatementDecl, *args: StatementArg) -> Value:
         exc = self.mk_exc_target()
-        return self.add_stmt(call_decl, fn, selfObj, args, exc)
+        return self.add_stmt(decl, *args, exc)
+
+    def do_call(self, fn : Value, selfObj : Value, *args: Value) -> Value:
+        return self.add_exc_stmt(call_decl, fn, selfObj, args)
 
     def in_block(self) -> bool:
         return self.cur_block is not None
@@ -1592,14 +1606,14 @@ class Translator:
         name = self.get_name(ins.arg)
         assert len(self.stack) > 0
         module = self.stack[-1]
-        val = self.add_stmt(importfrom_decl, module, name)
+        val = self.add_exc_stmt(importfrom_decl, module, name)
         self.stack_push(val)
 
     def IMPORT_NAME(self, ins : Instruction):
         name = self.get_name(ins.arg)
         fromlist = self.stack_pop()
         level = self.stack_pop()
-        val = self.add_stmt(import_decl, name, fromlist, level)
+        val = self.add_exc_stmt(import_decl, name, fromlist, level)
         self.stack_push(val)
 
     def IS_OP(self, ins : Instruction):
@@ -1711,7 +1725,7 @@ class Translator:
         var_num = ins.arg
         assert isinstance(var_num, int)
         ref = self.co_vars[var_num]
-        val = self.add_stmt(ref_load_check_decl, ref)
+        val = self.add_exc_stmt(ref_load_check_decl, ref)
         self.stack_push(val)
 
     def LOAD_FAST_LOAD_FAST(self, ins : Instruction):
