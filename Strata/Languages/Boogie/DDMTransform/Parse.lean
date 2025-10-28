@@ -239,14 +239,14 @@ op command_typesynonym (name : Ident,
 op command_constdecl (name : Ident,
                       typeArgs : Option TypeArgs,
                       r : Type) : Command =>
-  "const" name ":" typeArgs r ";\n";
+  "const " name ":" typeArgs r ";\n";
 
 @[declareFn(name, b, r)]
 op command_fndecl (name : Ident,
                    typeArgs : Option TypeArgs,
                    @[scope(typeArgs)] b : Bindings,
                    @[scope (typeArgs)] r : Type) : Command =>
-  "function" name typeArgs b ":" r ";\n";
+  "function " name typeArgs b ":" r ";\n";
 
 category Inline;
 op inline () : Inline => "inline";
@@ -267,7 +267,11 @@ op command_fndef (name : Ident,
 op command_var (b : Bind) : Command =>
   @[prec(10)] "var " b ";\n";
 
-op command_axiom (label : Option Label, e : bool) : Command => "axiom " label e ";\n";
+op command_axiom (label : Option Label, e : bool) : Command =>
+  "axiom " label e ";\n";
+
+op command_distinct (label : Option Label, exprs : CommaSepBy Expr) : Command =>
+  "distinct " label "[" exprs "]" ";\n";
 
 #end
 

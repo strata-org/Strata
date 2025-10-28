@@ -68,6 +68,7 @@ inductive Op : Type where
   | eq
   | ite
   | implies
+  | distinct
   | uf : UF → Op
   ---------- SMTLib core theory of integers (`Ints`) ----------
   -- The theory of Reals also supports all operations, except
@@ -130,6 +131,7 @@ def Op.mkName : Op → String
   | .eq            => "eq"
   | .ite           => "ite"
   | .implies       => "=>"
+  | .distinct      => "distinct"
   | .uf u          => s!"{u.id}"
   | .neg           => "-"
   | .sub           => "-"

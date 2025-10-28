@@ -4,8 +4,6 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DDM.Elab.DeclM
-import Strata.DDM.Elab.Tree
 import Strata.DDM.Elab.Core
 
 set_option autoImplicit false
@@ -21,11 +19,11 @@ Note this does not return variables referenced by .funMacro.
 -/
 private def foldBoundTypeVars {α} (tp : PreType) (init : α) (f : α → Nat → α) : α :=
   match tp with
-  | .ident _ a => a.attach.foldl (init := init) fun r ⟨e, _⟩ => e.foldBoundTypeVars r f
-  | .fvar _ a => a.attach.foldl (init := init) fun r ⟨e, _⟩ => e.foldBoundTypeVars r f
-  | .bvar i => f init i
-  | .arrow a r => r.foldBoundTypeVars (a.foldBoundTypeVars init f) f
-  | .funMacro _ r => r.foldBoundTypeVars init f
+  | .ident _ _ a => a.attach.foldl (init := init) fun r ⟨e, _⟩ => e.foldBoundTypeVars r f
+  | .fvar _ _ a => a.attach.foldl (init := init) fun r ⟨e, _⟩ => e.foldBoundTypeVars r f
+  | .bvar _ i => f init i
+  | .arrow _ a r => r.foldBoundTypeVars (a.foldBoundTypeVars init f) f
+  | .funMacro _ _ r => r.foldBoundTypeVars init f
 
 end PreType
 
@@ -102,10 +100,10 @@ def asTypeVar {argc : Nat} (argDecls : ArgDeclsMap argc) (loc : SourceRange) (tp
       else if let some _ := argChildren[0]? then
         logError loc s!"{name} does not have arguments."
       let idx := argc - lvl - 1
-      return some (.bvar idx)
+      return some (.bvar loc idx)
   return none
 
-def translateFunMacro {argc : Nat} (argDecls : ArgDeclsMap argc) (bindingsTree : Tree) (rType : PreType) : ElabM PreType := do
+def translateFunMacro {argc : Nat} (argDecls : ArgDeclsMap argc) (loc : SourceRange) (bindingsTree : Tree) (rType : PreType) : ElabM PreType := do
   let .ofIdentInfo nameInfo := bindingsTree.info
     | panic! "Expected identifier"
   let .some lvl := argDecls.argLevel? nameInfo.val
@@ -113,7 +111,7 @@ def translateFunMacro {argc : Nat} (argDecls : ArgDeclsMap argc) (bindingsTree :
   if argDecls.isType lvl then
     logError nameInfo.loc s!"Expected type that creates variables."
     return default
-  return .funMacro (argc - lvl - 1) rType
+  return .funMacro loc (argc - lvl - 1) rType
 
 /--
 Evaluate the tree as a type expression.
@@ -140,7 +138,7 @@ def translatePreType {argc : Nat} (argDecls : ArgDeclsMap argc) (tree : Tree) : 
       checkArgSize argInfo.loc qname decl.argNames.size args
       let args ← args.attach.mapM fun ⟨a, _⟩ =>
         translatePreType argDecls a
-      return .ident qname args
+      return .ident opInfo.loc qname args
     | _ =>
       logError ident.info.loc s!"Expected type"; pure default
   | q`Init.TypeArrow => do
@@ -150,7 +148,7 @@ def translatePreType {argc : Nat} (argDecls : ArgDeclsMap argc) (tree : Tree) : 
     let rTree := argChildren[1]
     let aType ← translatePreType argDecls aTree
     let rType ← translatePreType argDecls rTree
-    return .arrow aType rType
+    return .arrow opInfo.loc aType rType
 
   | q`StrataDDL.TypeFn =>
     let isTrue p := inferInstanceAs (Decidable (argChildren.size = 2))
@@ -158,7 +156,7 @@ def translatePreType {argc : Nat} (argDecls : ArgDeclsMap argc) (tree : Tree) : 
     let bindingsTree := argChildren[0]
     let valTree := argChildren[1]
     let rType ← translatePreType argDecls valTree
-    translateFunMacro argDecls bindingsTree rType
+    translateFunMacro argDecls opInfo.loc bindingsTree rType
   | _ =>
     logInternalError opInfo.loc s!"translatePreType given invalid syntax {repr opInfo.op.name}"
     return default
@@ -217,10 +215,11 @@ partial def translateArgDeclKind {argc} (argDecls : ArgDeclsMap argc) (tree : Tr
     | .type decl =>
       checkArgSize argInfo.loc name decl.argNames.size args
       let args ← args.mapM (translatePreType argDecls)
-      return .type <| .ident name args
+      return .type <| .ident opInfo.loc name args
     | .syncat decl =>
       checkArgSize argInfo.loc name decl.argNames.size args
       return .cat {
+        ann := declLoc
         name := name
         args := ← args.mapM translateSyntaxCat
       }
@@ -228,12 +227,12 @@ partial def translateArgDeclKind {argc} (argDecls : ArgDeclsMap argc) (tree : Tr
     assert! argChildren.size = 2
     let aType ← translatePreType argDecls argChildren[0]!
     let rType ← translatePreType argDecls argChildren[1]!
-    return .type (.arrow aType rType)
+    return .type (.arrow opInfo.loc aType rType)
   | q`StrataDDL.TypeFn => do
     let bindingsTree := argChildren[0]!
     let valTree := argChildren[1]!
     let rType ← translatePreType argDecls valTree
-    .type <$> translateFunMacro argDecls bindingsTree rType
+    .type <$> translateFunMacro argDecls opInfo.loc bindingsTree rType
   | _ =>
     logInternalError argInfo.loc s!"translateArgDeclKind given invalid kind {op}"
     return default
@@ -566,7 +565,7 @@ instance : ElabClass DialectM where
   logErrorMessage msg :=
     modifyDeclState fun s => { s with errors := s.errors.push msg }
 
-private def checkTypeDeclarationArgs (tree : Tree) : ElabM (Array String) := do
+private def checkTypeDeclarationArgs (tree : Tree) : ElabM (Array (Ann String SourceRange)) := do
   let (⟨_, argDecls⟩, success) ← runChecked <| translateArgDecls tree
     if !success then
       return default
@@ -574,7 +573,8 @@ private def checkTypeDeclarationArgs (tree : Tree) : ElabM (Array String) := do
     if !arg.val.kind.isType then
       logErrorMF arg.typeLoc mf!"Parameters for a type declaration must have category {q`Init.Type}."
       return default
-  return argDecls.decls.toArray.map fun a => a.val.ident
+  return argDecls.decls.toArray.map fun a =>
+    { ann := a.nameLoc, val := a.val.ident }
 
 def checkTreeSize (tree : Tree) (size : Nat) : Decidable (tree.children.size = size) := inferInstance
 

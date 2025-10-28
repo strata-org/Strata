@@ -87,6 +87,10 @@ def typeCheck (T : Boogie.Expression.TyEnv) (program : Program) :
         | .bool => .ok (.ax { a with e := ae.toLExpr } , T)
         | _ => .error f!"Axiom has non-boolean type: {a}"
 
+      | .distinct l es md =>
+        let es' ← es.mapM (LExprT.fromLExpr T)
+        .ok (.distinct l (es'.map (λ e => e.fst.toLExpr)) md, T)
+
       | .proc proc _ =>
         let T := T.pushEmptySubstScope
         let (proc', T) ← Procedure.typeCheck T program proc
