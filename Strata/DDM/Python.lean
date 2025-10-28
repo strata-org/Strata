@@ -1,3 +1,8 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
 import Strata.DDM.TaggedRegions
 import Strata.DDM.Integration.Lean.Env
 import Strata.DDM.Integration.Lean.HasInputContext
@@ -24,14 +29,9 @@ namespace PythonSSA
 
 #load_dialect "../../Tools/Python/test_results/dialects/PythonSSA.dialect.st.ion"
 
-set_option trace.Strata.generator true
-
+--set_option trace.Strata.generator true
 #strata_gen PythonSSA
 
-#eval 1
-
-#print Ann
-#print Command
 
 def ofProgram (p : Program) : Array (Command SourceRange) :=
   match p.commands.mapM Command.ofAst with
@@ -92,12 +92,11 @@ def loadPythonSSAImpl: TermElab := fun (stx : Syntax) _ => do
 
 def benchmark : Strata.Program := #load_PythonSSA "../../Tools/Python/benchmarks/ErgoPythonBenchmarks/botomoog-bm-simple/simple1_btg.py"
 
-#eval IO.print benchmark
+--#eval IO.print benchmark
+
+abbrev Program := Array (Command SourceRange)
 
 def gen_benchmark := ofProgram benchmark
-
-#guard gen_benchmark.size == 1
-
 
 end PythonSSA
 
