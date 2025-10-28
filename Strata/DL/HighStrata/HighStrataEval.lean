@@ -1,4 +1,10 @@
 /-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
+/-
 This file defines the behavior of both a type checker and a verifier for the High strata language.
 Both are defined using the 'eval' function. It will only return a single type or verification error at a time.
 

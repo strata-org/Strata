@@ -1,4 +1,10 @@
 /-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
+/-
 The high strata language is supposed to serve as an intermediate verification language for at least Java, Python, JavaScript.
 
 It enables doing various forms of verification:
