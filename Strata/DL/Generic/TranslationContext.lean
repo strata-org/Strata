@@ -58,7 +58,7 @@ def TranslationContext.addFunction {S T : Type} (ctx : TranslationContext S T) (
   { ctx with functions := func :: ctx.functions }
 
 -- Empty context
-def TranslationContext.empty {S T : Type} : TranslationContext S T := 
+def TranslationContext.empty {S T : Type} : TranslationContext S T :=
   { functions := [] }
 
 end Generic

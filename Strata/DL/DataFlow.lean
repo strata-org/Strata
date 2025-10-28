@@ -18,7 +18,7 @@ namespace DataFlow
 -- DataLocation abstracts storage locations across different dialects
 inductive DataLocation where
   | variable : String → DataLocation                    -- Variable: x
-  | heapField : String → Nat → DataLocation           -- Heap field: obj[5]  
+  | heapField : String → Nat → DataLocation           -- Heap field: obj[5]
   | dynamicField : String → String → DataLocation     -- Dynamic field: obj[key]
   | functionParam : String → Nat → DataLocation       -- Function parameter: func.param[0]
   | functionResult : String → DataLocation            -- Function return value: func.result
