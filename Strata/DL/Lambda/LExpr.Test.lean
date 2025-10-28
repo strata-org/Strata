@@ -11,6 +11,89 @@ namespace LExpr
 
 open Std (ToFormat Format format)
 
+/--datatype Option = Some value cont | None
+   let x := Some a 2
+   assert x.isSome
+   assert x.value == a
+-/
+def opt := Datatype .topLevel "Option" [
+  ("Some", [("value", _Int), ("cont", _Int)]),
+  ("None", [])
+] <| λ c =>
+  let_assign c "x" .none (.app (.app (c.v "Option.Some") (.fvar "a" .none)) (.const "2" .none)) <| λc =>
+  assert (.app (c.v "Option.@IsSome") (c.v "x")) <|
+  assert (eq (.app (c.v "Option.Some.value") (c.v "x")) (.fvar "a" .none)) <|
+  skip
+
+/-- info: skip -/
+#guard_msgs in
+#eval! format <|
+  simplify <|
+  simplify <|
+  simplify <|
+  simplify <|
+  simplify <|
+  opt
+
+
+def fib: LExpr LTy String := LExpr.app (.op "fix" .none) <|
+  Context.topLevel.procedure_lambda "continue" _Int <| λc =>
+    c.procedure_lambda "n" _Int <| λc =>
+      .ite (le (c.v "n") (.const "1" .none))
+        (c.v "n")
+        (plus (.app (c.v "continue") (minus (c.v "n") (.const "1" .none)))
+              (.app (c.v "continue") (minus (c.v "n") (.const "2" .none))))
+
+-- Ugly but it works !
+/--
+info: (λn:int (if ((~<= n%0) #1) then n%0
+  else ((~+ ((~fix (λcontinue:int (λn:int (if ((~<= n%0) #1) then n%0
+           else ((~+ (continue%1 ((~- n%0) #1))) (continue%1 ((~- n%0) #2))))))) ((~- n%0) #1))) ((~fix (λcontinue:int (λn:int (if ((~<= n%0) #1) then n%0
+          else ((~+ (continue%1 ((~- n%0) #1))) (continue%1 ((~- n%0) #2))))))) ((~- n%0) #2)))))
+-/
+#guard_msgs in
+#eval! format <|
+    unroll_fix 1 <|
+    fib
+
+def fib_apply: LExpr LTy String :=
+  let_assign .topLevel "f" .none fib <| λc =>
+  .app (c.v "f") (.const "1" .none)
+
+-- Much nicer unrolling, which makes it possible to replace `f` by an uninterpreted function if necessary
+/--
+info: let λf := (~fix (λcontinue:int (λn:int (if ((~<= n%0) #1) then n%0
+      else ((~+ (continue%1 ((~- n%0) #1))) (continue%1 ((~- n%0) #2)))))));
+let λn : int := #1;
+(if ((~<= n%0) #1) then n%0 else ((~+ (f%1 ((~- n%0) #1))) (f%1 ((~- n%0) #2))))
+-/
+#guard_msgs in
+#eval! format <|
+    unroll_fix_named 1 <|
+    fib_apply
+
+def r := (record [
+    ("length", .const "3" .none),
+    ("id", .abs .none .none (.bvar 0)),
+  ])
+
+def prog :=
+  let_assign .topLevel "c" .none (record [
+    ("length", .const "3" .none),
+    ("id", .abs .none .none (.bvar 0)),
+  ]) <| λc =>
+  c.v "c" |> select "length"
+
+/--
+info: let λc := {
+    length: #3,
+    id: (λ %0)
+  };
+(c%0 #length)
+-/
+#guard_msgs in
+#eval! format <| prog
+
 /- Motivating
 var i: Int;
 var b: Bool;
@@ -45,10 +128,8 @@ info: (declare-const i@0 Int)
 (declare-const b@1 Bool)
 (push)
 (assert b@1)
-(declare-const i@2 Int)
-(assert (= i@2 (+ i@0 i@0)))
 (push)
-(assert (not (=> b@1 (= (- i@2 i@0) i@0))))
+(assert (not (=> b@1 (= (- (+ i@0 i@0) i@0) i@0))))
 (check-sat)
 (pop)
 (pop)
@@ -71,13 +152,13 @@ info: (declare-const i@0 Int)
 
 /-- info: Lambda.LExpr.bvar 0 -/
 #guard_msgs in
-#eval Context.topLevel.add_declare "i"
+#eval! Context.topLevel.add_declare "i"
       |>.label "init"
       |>.vAt (TypeType := LTy) "i" "init"
 
 /-- info: Lambda.LExpr.bvar 1 -/
 #guard_msgs in
-#eval Context.topLevel.add_declare "i"
+#eval! Context.topLevel.add_declare "i"
       |>.label "init"
       |>.add_declare "i"
       |>.vAt (TypeType := LTy) "i" "init"
@@ -95,7 +176,7 @@ assert (i%0 == #1) <|
 skip
 -/
 #guard_msgs in
-#eval format test
+#eval! format test
 
 def testWithoutIf := ifToPushPop test
 /--
@@ -107,7 +188,7 @@ info: (declare-const i@0 Int)
 (pop)
 -/
 #guard_msgs in
-#eval ToSMT .topLevel <| testWithoutIf
+#eval! ToSMT .topLevel <| testWithoutIf
 
 -- Now assignments need to be desugared into an assumption
 def test2: LExpr LTy String  :=
@@ -124,11 +205,11 @@ pushpop (
 skip
 -/
 #guard_msgs in
-#eval format test2WithoutIf
+#eval! format test2WithoutIf
 
 -- This one panics but I'm not sure how to capture it
 --#guard_msgs in
---#eval ToSMT .topLevel <| test2WithoutIf
+--#eval! ToSMT .topLevel <| test2WithoutIf
 
 def test2WithoutLetAssign := ifToPushPop <| letAssignToLetAssume <| test2
 /--
@@ -141,7 +222,7 @@ pushpop (
 skip
 -/
 #guard_msgs in
-#eval format test2WithoutLetAssign
+#eval! format test2WithoutLetAssign
 /--
 info: (declare-const i@0 Int)
 (assert (= i@0 0))
@@ -151,7 +232,7 @@ info: (declare-const i@0 Int)
 (pop)
 -/
 #guard_msgs in
-#eval ToSMT .topLevel <| test2WithoutLetAssign
+#eval! ToSMT .topLevel <| test2WithoutLetAssign
 
 /-var i;
   var j;
@@ -170,7 +251,7 @@ info: (declare-const i@0 Int)
   assert k == i@init + j@init;
   assert k == (i - j) + (j - k);
   assert k + k == i;-/
-def prog: LExpr LTy String :=
+def progArith: LExpr LTy String :=
   let_ .topLevel "i" _Int <| λc=>
   let_ c "j" _Int <| λc=>
   let_ c "k" _Int <| λc=>
@@ -212,7 +293,7 @@ assert (((~+ k%3) k%3) == i%1) <|
 skip
 -/
 #guard_msgs in
-#eval format prog
+#eval! format progArith
 
 /--
 info: let λi : int;
@@ -237,7 +318,7 @@ assert (((~+ k%3) k%3) == i%1) <|
 skip
 -/
 #guard_msgs in
-#eval format <| letAssignToLetAssume <| prog
+#eval! format <| letAssignToLetAssume <| progArith
 
 /--
 info: let λi : int;
@@ -289,7 +370,7 @@ pushpop (
 skip
 -/
 #guard_msgs in
-#eval format <| ifToPushPop <| letAssignToLetAssume <| prog
+#eval! format <| ifToPushPop <| letAssignToLetAssume <| progArith
 /--
 info: (declare-const i@0 Int)
 (declare-const j@1 Int)
@@ -339,7 +420,7 @@ info: (declare-const i@0 Int)
 (pop)
 -/
 #guard_msgs in
-#eval ToSMT .topLevel <| ifToPushPop <| letAssignToLetAssume <| prog
+#eval! ToSMT .topLevel <| ifToPushPop <| letAssignToLetAssume <| progArith
 
 -- Proof or test that letAssignToLetAssume preserves semantics.
 
@@ -351,12 +432,12 @@ def replacement: LExpr LTy String := (.abs "j" .none (.assert (.eq (.bvar 0) (.c
 
 /-- info: (if #true then let λi := #1; (%1 i%0) else (%0 #0)) -/
 #guard_msgs in
-#eval format <| debugSubst
+#eval! format <| debugSubst
 /--
 info: (if #true then let λi := #1; let λj := i%0; assert (j%0 == #1) <| skip else let λj := #0; assert (j%0 == #1) <| skip)
 -/
 #guard_msgs in
-#eval format <| subst replacement debugSubst
+#eval! format <| subst replacement debugSubst
 
 def test_simplify: LExpr LTy String :=
   .app (.abs "i" .none (.app (.bvar 1) (.bvar 0))) (.const "1" .none)
@@ -366,11 +447,11 @@ info: let λi := #1;
 (%1 i%0)
 -/
 #guard_msgs in
-#eval format test_simplify
+#eval! format test_simplify
 
 /--info: (%0 #1)-/
 #guard_msgs in
-#eval format (simplify test_simplify)
+#eval! format (simplify test_simplify)
 
 def debugIf: LExpr LTy String :=
   let_ .topLevel "b" _Bool <| λc=>
@@ -396,7 +477,7 @@ assert (i%0 == #1) <|
 skip
 -/
 #guard_msgs in
-#eval format debugIf
+#eval! format debugIf
 /--
 info: let λb : bool;
 let λi : int;
@@ -406,18 +487,15 @@ assume (@endif%0 == (λi assert (i%0 == #1) <| skip)) <|
 (if b%2 then let λi : int; assume (i%0 == #1) <| (@endif%1 i%0) else (@endif%0 i%1))
 -/
 #guard_msgs in
-#eval format <| letAssignToLetAssume <| debugIf
+#eval! format <| letAssignToLetAssume <| debugIf
 -- This is not working, we need to beta expand continuations, otherwise we won't be able to convert to SMT
 -- Also, we currently lack determinism detection.
 
 /--
-info: let λb : bool;
-((λ@endif (if b%1 then (@endif%0 #1) else (@endif%0 #0)))) <| λi
-assert (i%0 == #1) <|
-skip
+info: (if ((* : bool)) then let λi := #1; assert (i%0 == #1) <| skip else let λi := #0; assert (i%0 == #1) <| skip)
 -/
 #guard_msgs in
-#eval format <| simplify <| debugIf
+#eval! format <| simplify <| debugIf
 /--
 info: let λb : bool;
 let λi : int := #0;
@@ -430,7 +508,7 @@ let λi : int := #0;
    skip)
 -/
 #guard_msgs in
-#eval format <| inlineContinuations <| debugIf
+#eval! format <| inlineContinuations <| debugIf
 /--
 info: (declare-const b@0 Bool)
 (declare-const i@1 Int)
@@ -455,30 +533,24 @@ info: (declare-const b@0 Bool)
 (pop)
 -/
 #guard_msgs in
-#eval ToSMT .topLevel <| ifToPushPop <| letAssignToLetAssume <| inlineContinuations <| debugIf
-/--
-info: let λb : bool;
-(if b%0 then assert (#1 == #1) <| skip else assert (#0 == #1) <| skip)
--/
+#eval! ToSMT .topLevel <| ifToPushPop <| letAssignToLetAssume <| inlineContinuations <| debugIf
+/-- info: (if ((* : bool)) then assert (#1 == #1) <| skip else assert (#0 == #1) <| skip) -/
 #guard_msgs in
-#eval format <| simplify <| inlineContinuations <| simplify <| debugIf
+#eval! format <| simplify <| inlineContinuations <| simplify <| debugIf
 /--
-info: (declare-const b@0 Bool)
-(push)
-(assert b@0)
+info: (push)
 (push)
 (assert (not (= 1 1)))
 (check-sat)
 (pop)
 (pop)
-(assert (not b@0))
 (push)
 (assert (not (= 0 1)))
 (check-sat)
 (pop)
 -/
 #guard_msgs in
-#eval ToSMT .topLevel <| ifToPushPop <| simplify <| inlineContinuations <| simplify <| debugIf
+#eval! ToSMT .topLevel <| ifToPushPop <| simplify <| inlineContinuations <| simplify <| debugIf
 
 -- HIGHLIGHT
 /-
@@ -519,7 +591,7 @@ assert ((~==> b%2) (i%0 == #1)) <|
 skip
 -/
 #guard_msgs in
-#eval format <|
+#eval! format <|
   ifWithLocalVar
 
 /--
@@ -551,7 +623,7 @@ info: (declare-const b@0 Bool)
 (pop)
 -/
 #guard_msgs in
-#eval ToSMT .topLevel <|
+#eval! ToSMT .topLevel <|
       ifToPushPop <|
       letAssignToLetAssume <|
       inlineContinuations <|
@@ -661,7 +733,7 @@ assert ((~==> ((~< price%0) #0)) ((~&& discount%6) ((~> discountAmount%3) price%
 skip
 -/
 #guard_msgs in
-#eval format progIfStmt
+#eval! format progIfStmt
 
 /--
 info: let λsuperDiscount : bool;
@@ -739,7 +811,7 @@ assume ((~> price%3) #0) <|
          (if ((~> price%0) price0%4) then assert #false <| assume #false <| skip else skip))))
 -/
 #guard_msgs in
-#eval format (progIfStmt |>
+#eval! format (progIfStmt |>
       inlineContinuations
     )
 
@@ -1125,7 +1197,7 @@ assume (~! ((~> price%0) price0%4)) <|
 skip
 -/
 #guard_msgs in
-#eval format (progIfStmt |>
+#eval! format (progIfStmt |>
       inlineContinuations |>
       letAssignToLetAssume |>
       ifToPushPop
@@ -1512,7 +1584,7 @@ info: (declare-const superDiscount@0 Bool)
 (assert (not (> price@7 price0@3)))
 -/
 #guard_msgs in
-#eval ToSMT .topLevel (progIfStmt |>
+#eval! ToSMT .topLevel (progIfStmt |>
       inlineContinuations |>
       letAssignToLetAssume |>
       ifToPushPop
@@ -1612,7 +1684,7 @@ info: (declare-const b@0 Bool)
 (pop)
 -/
 #guard_msgs in
-#eval format <|
+#eval! format <|
   ToSMT .topLevel <|
   ifToPushPop <|
   letAssignToLetAssume <|
@@ -1647,7 +1719,7 @@ let λcounter : int := #3;
 ((f%1 counter%0) (λcounter assert (counter%0 == #2) <| skip))
 -/
 #guard_msgs in
-#eval format procedureCallDebug
+#eval! format procedureCallDebug
 
 -- Note how the 3 does not even appear in the final SMT file !
 /--
@@ -1659,7 +1731,7 @@ info: (declare-const counter@0 Int)
 (pop)
 -/
 #guard_msgs in
-#eval ToSMT .topLevel <|
+#eval! ToSMT .topLevel <|
       ifToPushPop <|
       letAssignToLetAssume <|
       inlineContinuations <|
@@ -1708,7 +1780,7 @@ let λcounter : int := #3;
     skip))))
 -/
 #guard_msgs in
-#eval format procedureCall
+#eval! format procedureCall
 
 
 /--
@@ -1726,7 +1798,7 @@ info: (declare-const inc@0 Int)
 (pop)
 -/
 #guard_msgs in
-#eval ToSMT .topLevel <|
+#eval! ToSMT .topLevel <|
       ifToPushPop <|
       letAssignToLetAssume <|
       simplify <|
@@ -1765,22 +1837,20 @@ info: let λiam.simulate_principal_policy := (λPolicySourceArn:string (λout as
 ((iam.simulate_principal_policy%0 (#"user/policy" : string)) (λout_discard ((iam.simulate_principal_policy%1 (#"arn:policy" : string)) (λout_discard skip))))
 -/
 #guard_msgs in
-#eval format apiProg
+#eval! format apiProg
 /--
 info: (set-logic QF_S)
 (push)
 (assert (not (str.in_re "user/policy" (re.++ (str.to_re "arn:") (re.* re.allchar)))))
 (check-sat)
 (pop)
-(declare-const out_discard@0 Int)
 (push)
 (assert (not (str.in_re "arn:policy" (re.++ (str.to_re "arn:") (re.* re.allchar)))))
 (check-sat)
 (pop)
-(declare-const out_discard@1 Int)
 -/
 #guard_msgs in
-#eval Format.append f!"(set-logic QF_S){Format.line}" <| ToSMT .topLevel <|
+#eval! Format.append f!"(set-logic QF_S){Format.line}" <| ToSMT .topLevel <|
       ifToPushPop <|
       letAssignToLetAssume <|
       simplify <|
@@ -1829,7 +1899,7 @@ assert (f_out%0 == #3) <|
 skip
 -/
 #guard_msgs in
-#eval format <|
+#eval! format <|
   method_with_contracts
 
 -- Now we split the implementation from the contract
@@ -1847,7 +1917,7 @@ assert (f_out%0 == #3) <|
 skip
 -/
 #guard_msgs in
-#eval format <|
+#eval! format <|
   replaceByContract <|
   method_with_contracts
 
@@ -1856,29 +1926,27 @@ skip
 /--
 info: (declare-const i@0 Int)
 (assert (<= 0 i@0))
-(declare-const res@1 Int)
-(assert (= res@1 (+ i@0 1)))
 (push)
-(assert (not (< i@0 res@1)))
+(assert (not (< i@0 (+ i@0 1))))
 (check-sat)
 (pop)
 (push)
 (assert (not (<= 0 2)))
 (check-sat)
 (pop)
-(declare-const res@2 Int)
-(assert (< 2 res@2))
+(declare-const res@1 Int)
+(assert (< 2 res@1))
 (push)
-(assert (not (< 2 res@2)))
+(assert (not (< 2 res@1)))
 (check-sat)
 (pop)
 (push)
-(assert (not (= res@2 3)))
+(assert (not (= res@1 3)))
 (check-sat)
 (pop)
 -/
 #guard_msgs in
-#eval --format <|
+#eval! --format <|
   ToSMT .topLevel <|
   ifToPushPop <|
   letAssignToLetAssume <|
@@ -1936,7 +2004,7 @@ partial def translateToNLExpr (c: Context String) (s: StmtExpr String): LExpr LT
   | _ => panic!("could not do that")
 end
 -/
--- #eval translateToNLExpr .topLevel
+-- #eval! translateToNLExpr .topLevel
 
 end LExpr
 end Lambda
