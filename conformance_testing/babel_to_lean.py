@@ -133,11 +133,6 @@ def parse_member_expression(j):
     add_missing_node_info(j, target_j)
     return target_j
 
-def parse_function_expression(j):
-    target_j = {
-        'params': [parse_identifier(ji) for ji in j['params']],
-        'body': parse_statement(j['body'])
-    }
     add_missing_node_info(j, target_j)
     return target_j
 
@@ -148,6 +143,22 @@ def parse_array_expression(j):
         if e is not None:
             elems.append(parse_expression(e))
     target_j = {"elements": elems}
+    add_missing_node_info(j, target_j)
+    return target_j
+
+def parse_function_expression(j):
+    target_j = {
+        'params': [parse_identifier(ji) for ji in j['params']],
+        'body': parse_statement(j['body'])
+    }
+    add_missing_node_info(j, target_j)
+    return target_j
+
+def parse_arrow_function_expression(j):
+    target_j = {
+        'params': [parse_identifier(ji) for ji in j['params']],
+        'body': parse_statement(j['body'])
+    }
     add_missing_node_info(j, target_j)
     return target_j
 
@@ -296,7 +307,7 @@ def parse_continue_statement(j):
     }
     add_missing_node_info(j, target_j)
     return target_j
-    
+
 def parse_for_statement(j):
     target_body = parse_statement(j['body'])
     target_j = {
@@ -308,20 +319,30 @@ def parse_for_statement(j):
     add_missing_node_info(j, target_j)
     return target_j
 
-def parse_break_statement(j):
+def parse_switch_statement(j):
     target_j = {
-        "label": parse_identifier(j['label']) if j.get('label') else None
+        "discriminant": parse_expression(j['discriminant']),
+        "cases": [parse_switch_case(ji) for ji in j['cases']]
     }
     add_missing_node_info(j, target_j)
     return target_j
-    
-def parse_for_statement(j):
-    target_body = parse_statement(j['body'])
+
+def parse_switch_case(j):
+    source_test = j.get("test")
+    target_test = None
+    if source_test is not None:
+        target_test = parse_expression(source_test)
+
     target_j = {
-        "init": parse_variable_declaration(j['init']),
-        "test": parse_expression(j['test']),
-        "update": parse_assignment_expression(j['update']),
-        "body": target_body
+        "test": target_test,
+        "consequent": [parse_statement(ji) for ji in j['consequent']]
+    }
+    add_missing_node_info(j, target_j)
+    return target_j
+
+def parse_break_statement(j):
+    target_j = {
+        "label": parse_identifier(j['label']) if j.get('label') else None
     }
     add_missing_node_info(j, target_j)
     return target_j
@@ -342,7 +363,8 @@ def parse_statement(j):
             return {"TS_ThrowStatement": parse_throw_statement(j)}
         case "FunctionDeclaration":
             return {"TS_FunctionDeclaration": parse_function_declarations(j)}
-        # case "SwitchStatement":
+        case "SwitchStatement":
+            return {"TS_SwitchStatement": parse_switch_statement(j)}
         case "BreakStatement":
             return {"TS_BreakStatement": parse_break_statement(j)}
         # case "EmptyStatement":

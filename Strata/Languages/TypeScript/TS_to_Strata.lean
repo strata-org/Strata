@@ -48,16 +48,16 @@ private def isBareContinueStmt (s : TS_Statement) : Bool :=
 private def isIfWithBareContinue (s : TS_Statement) : Option TS_IfStatement :=
   match s with
   | .TS_IfStatement ifs =>
-      let conseqIsBare :=
-        match ifs.consequent with
-        | .TS_ContinueStatement _ => true
-        | .TS_BlockStatement b =>
-            -- exactly one statement and it is `continue`
-            match b.body.toList with
-            | [one] => isBareContinueStmt one
-            | _     => false
-        | _ => false
-      if conseqIsBare && ifs.alternate.isNone then some ifs else none
+    let conseqIsBare :=
+      match ifs.consequent with
+      | .TS_ContinueStatement _ => true
+      | .TS_BlockStatement b =>
+          -- exactly one statement and it is `continue`
+          match b.body.toList with
+          | [one] => isBareContinueStmt one
+          | _     => false
+      | _ => false
+    if conseqIsBare && ifs.alternate.isNone then some ifs else none
   | _ => none
 
 def TS_type_to_HMonoTy (ty: String) : Heap.HMonoTy :=
@@ -224,19 +224,19 @@ partial def translate_statement_core
   (ct: ControlTargets := {}) : TranslationContext × List TSStrataStatement :=
   match s with
     | .TS_FunctionDeclaration funcDecl =>
-        -- Translate function definition
-        dbg_trace s!"[DEBUG] Translating TypeScript function definition: {funcDecl.id.name}"
-        dbg_trace s!"[DEBUG] Function parameters: {funcDecl.params.toList.map (·.name)}"
-        dbg_trace s!"[DEBUG] Function body has statements"
+      -- Translate function definition
+      dbg_trace s!"[DEBUG] Translating TypeScript function definition: {funcDecl.id.name}"
+      dbg_trace s!"[DEBUG] Function parameters: {funcDecl.params.toList.map (·.name)}"
+      dbg_trace s!"[DEBUG] Function body has statements"
 
-        let (bodyCtx, funcBody) := match funcDecl.body with
+      let (bodyCtx, funcBody) := match funcDecl.body with
           | .TS_BlockStatement blockStmt =>
             -- Thread context through function body to handle nested functions
             blockStmt.body.toList.foldl
               (fun (accCtx, accStmts) stmt =>
                 let (newCtx, stmts) := translate_statement_core stmt accCtx ct
-              (newCtx, accStmts ++ stmts))
-            (ctx, [])
+                (newCtx, accStmts ++ stmts))
+              (ctx, [])
           | _ => panic! s!"Expected block statement as function body, got: {repr funcDecl.body}"
 
         dbg_trace s!"[DEBUG] Translated function body to {funcBody.length} Strata statements"
@@ -454,28 +454,28 @@ partial def translate_statement_core
 
         let isIfWithBareContinue : TS_Statement → Option TS_IfStatement
           | .TS_IfStatement ifs =>
-              let conseqIsBare :=
-                match ifs.consequent with
-                | .TS_ContinueStatement _ => true
-                | .TS_BlockStatement b =>
-                    match b.body.toList with
-                    | [one] => isBareContinueStmt one
-                    | _     => false
-                | _ => false
-              if conseqIsBare && ifs.alternate.isNone then some ifs else none
+            let conseqIsBare :=
+              match ifs.consequent with
+              | .TS_ContinueStatement _ => true
+              | .TS_BlockStatement b =>
+                  match b.body.toList with
+                  | [one] => isBareContinueStmt one
+                  | _     => false
+              | _ => false
+            if conseqIsBare && ifs.alternate.isNone then some ifs else none
           | _ => none
 
         let isIfWithBareBreak : TS_Statement → Option TS_IfStatement
           | .TS_IfStatement ifs =>
-              let conseqIsBare :=
-                match ifs.consequent with
-                | .TS_BreakStatement _ => true
-                | .TS_BlockStatement b =>
-                    match b.body.toList with
-                    | [one] => isBareBreakStmt one
-                    | _     => false
-                | _ => false
-              if conseqIsBare && ifs.alternate.isNone then some ifs else none
+            let conseqIsBare :=
+              match ifs.consequent with
+              | .TS_BreakStatement _ => true
+              | .TS_BlockStatement b =>
+                  match b.body.toList with
+                  | [one] => isBareBreakStmt one
+                  | _     => false
+              | _ => false
+            if conseqIsBare && ifs.alternate.isNone then some ifs else none
           | _ => none
 
         -- when we hit the pattern (in a loop), guard the tail with `else`
@@ -493,8 +493,8 @@ partial def translate_statement_core
               let (tailCtx, tailStmts) :=
                 tail.foldl
                   (fun (p, accS) stmt =>
-                      let (p2, ss2) := translate_statement_core stmt p ct
-                      (p2, accS ++ ss2))
+                    let (p2, ss2) := translate_statement_core stmt p ct
+                    (p2, accS ++ ss2))
                   (accCtx, [])
               let cond := translate_expr ifs.test
               let thenBlk : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [] }
@@ -506,8 +506,8 @@ partial def translate_statement_core
               let (tailCtx, tailStmts) :=
                 tail.foldl
                   (fun (p, accS) stmt =>
-                      let (p2, ss2) := translate_statement_core stmt p ct
-                      (p2, accS ++ ss2))
+                    let (p2, ss2) := translate_statement_core stmt p ct
+                    (p2, accS ++ ss2))
                   (accCtx, [])
               let cond := translate_expr ifs.test
               let setBreakFlag : TSStrataStatement := .cmd (.set breakFlagVar Heap.HExpr.true)
@@ -558,8 +558,8 @@ partial def translate_statement_core
         (bodyCtx, [ initBreakFlag, .loop combinedCondition none none bodyBlock ])
 
         | .TS_ForStatement forStmt =>
-
           dbg_trace s!"[DEBUG] Translating for statement at loc {forStmt.start_loc}-{forStmt.end_loc}"
+
           let continueLabel := s!"for_continue_{forStmt.start_loc}"
           let breakLabel := s!"for_break_{forStmt.start_loc}"
           let breakFlagVar := s!"for_break_flag_{forStmt.start_loc}"
@@ -571,12 +571,10 @@ partial def translate_statement_core
           let (_, initStmts) := translate_statement_core (.TS_VariableDeclaration forStmt.init) ctx
           -- guard (test)
           let guard := translate_expr forStmt.test
-
           -- body (first translate loop body with break support)
           let (ctx1, bodyStmts) :=
               translate_statement_core forStmt.body ctx
                 { continueLabel? := some continueLabel, breakLabel? := some breakLabel, breakFlagVar? := some breakFlagVar }
-
           -- update (translate expression into statements following ExpressionStatement style)
           let (_, updateStmts) :=
               translate_statement_core
@@ -599,31 +597,75 @@ partial def translate_statement_core
           -- output: init break flag, init statements, then a loop statement
           (ctx1, [initBreakFlag] ++ initStmts ++ [ .loop combinedCondition none none loopBody])
 
-      | .TS_ContinueStatement cont =>
-        let tgt :=
-          match ct.continueLabel? with
-          | some lab => lab
-          | none     =>
-              dbg_trace "[WARN] `continue` encountered outside of a loop; emitting goto to __unbound_continue";
-              "__unbound_continue"
-        (ctx, [ .goto tgt ])
+        | .TS_SwitchStatement switchStmt =>
+          -- Handle switch statement: switch discriminant { cases }
 
-      | .TS_BreakStatement brk =>
-        -- Handle break statement if loop context fails to handle it
-        dbg_trace "[WARN] `break` statement not handled by pattern matching";
-        match ct.breakFlagVar? with
-        | some flagVar =>
-          -- Set break flag to true as fallback
-          (ctx, [ .cmd (.set flagVar Heap.HExpr.true) ])
-        | none =>
-          dbg_trace "[WARN] `break` encountered outside of a loop; using fallback goto";
+          -- Process all cases in their original order, separating regular from default
+          let allCases := switchStmt.cases.toList
+          let (regularCaseStmts, defaultStmts) := allCases.foldl (fun (regCases, defStmts) case =>
+            match case.test with
+            | some expr =>
+              -- Regular case
+              let discrimExpr := translate_expr switchStmt.discriminant
+              let caseValue := translate_expr expr
+              let testExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Eq" none) discrimExpr) caseValue
+              let (caseCtx, stmts) := case.consequent.foldl (fun (accCtx, accStmts) stmt =>
+                let (newCtx, newStmts) := translate_statement_core stmt accCtx
+                (newCtx, accStmts ++ newStmts)) (ctx, [])
+              (regCases ++ [(testExpr, stmts)], defStmts)
+            | none =>
+              -- Default case
+              let (defaultCtx, stmts) := case.consequent.foldl (fun (accCtx, accStmts) stmt =>
+                let (newCtx, newStmts) := translate_statement_core stmt accCtx
+                (newCtx, accStmts ++ newStmts)) (ctx, [])
+              (regCases, stmts)
+          ) ([], [])
+
+          -- Build nested if-then-else structure for regular cases
+          let rec build_cases (cases: List (Heap.HExpr × List TSStrataStatement)) (defaultStmts: List TSStrataStatement) : TSStrataStatement :=
+            match cases with
+            | [] =>
+              -- No regular cases, just execute default if it exists
+              let defaultBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := defaultStmts }
+              .block "default" defaultBlock
+            | [(test, stmts)] =>
+              let thenBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := stmts }
+              let elseBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := defaultStmts }
+              .ite test thenBlock elseBlock
+            | (test, stmts) :: rest =>
+              let thenBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := stmts }
+              let elseBlock := build_cases rest defaultStmts
+              let elseBlockWrapped : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [elseBlock] }
+              .ite test thenBlock elseBlockWrapped
+
+          let switchStructure := build_cases regularCaseStmts defaultStmts
+          (ctx, [switchStructure])
+
+        | .TS_ContinueStatement cont =>
           let tgt :=
-            match ct.breakLabel? with
+            match ct.continueLabel? with
             | some lab => lab
-            | none     => "__unbound_break"
+            | none     =>
+                dbg_trace "[WARN] `continue` encountered outside of a loop; emitting goto to __unbound_continue";
+                "__unbound_continue"
           (ctx, [ .goto tgt ])
 
-      | _ => panic! s!"Unimplemented statement: {repr s}"
+        | .TS_BreakStatement brk =>
+          -- Handle break statement if loop context fails to handle it
+          dbg_trace "[WARN] `break` statement not handled by pattern matching";
+          match ct.breakFlagVar? with
+          | some flagVar =>
+            -- Set break flag to true as fallback
+            (ctx, [ .cmd (.set flagVar Heap.HExpr.true) ])
+          | none =>
+            dbg_trace "[WARN] `break` encountered outside of a loop; using fallback goto";
+            let tgt :=
+              match ct.breakLabel? with
+              | some lab => lab
+              | none     => "__unbound_break"
+            (ctx, [ .goto tgt ])
+
+        | _ => panic! s!"Unimplemented statement: {repr s}"
 
 -- Translate TypeScript statements to TypeScript-Strata statements
 partial def translate_statement (s: TS_Statement) (ctx : TranslationContext) : TranslationContext × List TSStrataStatement :=
