@@ -38,7 +38,7 @@ def ofProgram (p : Program) : Array (Command SourceRange) :=
 
 def runPyToStrata (pyfile : String) (outfile : String) (cwd : Option FilePath) : IO Unit := do
   let args : IO.Process.SpawnArgs := {
-      cmd := "/Users/joehx/.local/share/mise/installs/python/latest/bin/python"
+      cmd := "/Users/anmwells/miniconda3/envs/strata/bin/python"
       args := #["-m", "strata.gen", "py_to_strata", "PythonSSA", pyfile, outfile ]
       cwd := cwd
       env := #[]
@@ -77,7 +77,7 @@ def loadPythonSSAImpl: TermElab := fun (stx : Syntax) _ => do
   | _ =>
     throwUnsupportedSyntax
 
-def foo := #load_PythonSSA "../../../../Tools/Python/benchmarks/ErgoPythonBenchmarks/botomoog-bm-simple/simple1_btg.py"
+def foo := #load_PythonSSA "../../../../StrataTest/Internal/simple1_btg.py"
 
 #print foo
 def bar := ofProgram foo

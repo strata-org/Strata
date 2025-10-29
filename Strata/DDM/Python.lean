@@ -42,10 +42,11 @@ def ofProgram (p : Program) : Array (Command SourceRange) :=
 Use mise to find which Python to run
 -/
 def misePythonPath : IO (Option String) := do
-  let out ← IO.Process.output { cmd := "mise", args := #["which", "python"] }
-  if out.exitCode != 0 then
-    return none
-  return some out.stdout.trim
+  -- let out ← IO.Process.output { cmd := "which", args := #["python"] }
+  -- if out.exitCode != 0 then
+  --   return none
+  -- return some out.stdout.trim
+  return some "/Users/anmwells/miniconda3/envs/strata/bin/python"
 
 def runPyToStrata (pythonPath : String) (dialect : String) (pyfile : String) (outfile : String) (cwd : Option FilePath) : IO Unit := do
   let args : IO.Process.SpawnArgs := {
@@ -90,13 +91,13 @@ def loadPythonSSAImpl: TermElab := fun (stx : Syntax) _ => do
   | _ =>
     throwUnsupportedSyntax
 
-def benchmark : Strata.Program := #load_PythonSSA "../../Tools/Python/benchmarks/ErgoPythonBenchmarks/botomoog-bm-simple/simple1_btg.py"
+-- def benchmark : Strata.Program := #load_PythonSSA "../../StrataTest/Internal/simple1_btmg.py"
 
 --#eval IO.print benchmark
 
 abbrev Program := Array (Command SourceRange)
 
-def gen_benchmark := ofProgram benchmark
+-- def gen_benchmark := ofProgram benchmark
 
 end PythonSSA
 

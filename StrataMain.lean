@@ -8,6 +8,10 @@
 import Strata.DDM.Elab
 import Strata.DDM.Ion
 
+import Strata.Languages.Python.Python
+import Strata.Languages.Python.PythonSSAToBoogie
+import StrataTest.Internal.BoogiePrelude
+
 
 namespace Strata
 
@@ -213,11 +217,38 @@ def diffCommand : Command where
     | _, _ =>
       exitFailure "Cannot compare dialect def with another dialect/program."
 
+def verifyCommand : Command where
+  name := "verify"
+  args := [ "file" ]
+  help := "Verify a Strata text or Ion file. Write results to stdout."
+  callback := fun searchPath v => do
+    let (ld, pd) ← readFile searchPath v[0]
+    match pd with
+    | .dialect d =>
+      IO.print <| d.format ld.dialects
+    | .program pgm =>
+    let preludePgm := Strata.Boogie.prelude
+    IO.println "Python:"
+    IO.print pgm
+    let bpgm := Strata.pythonSSAToBoogie pgm
+    IO.println "Boogie:"
+    IO.print bpgm
+    let newPgm : Boogie.Program := { decls := preludePgm.decls ++ bpgm.decls }
+    IO.println ""
+    -- -- IO.print <| (←Strata.pythonVerify newPgm)
+    -- let vcResults ← EIO.toIO (fun f => IO.Error.userError (toString f))
+    --                     (Boogie.verify "z3" newPgm { Options.default with stopOnFirstError := false })
+    -- let mut s := ""
+    -- for vcResult in vcResults do
+    --   s := s ++ s!"\n{vcResult.obligation.label}: {Std.format vcResult.result}\n"
+    -- IO.println s
+
 def commandList : List Command := [
       checkCommand,
       toIonCommand,
       printCommand,
       diffCommand,
+      verifyCommand,
     ]
 
 def commandMap : Std.HashMap String Command :=
