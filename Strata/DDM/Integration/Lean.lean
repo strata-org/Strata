@@ -47,22 +47,56 @@ instance : HasInputContext CoreM where
 
 declare_tagged_region command strataDialectCommand "#dialect" "#end"
 
+private def mkScopedName {m} [Monad m] [MonadError m] [MonadEnv m] [MonadResolveName m] (name : Name) : m (Ident × Name) := do
+  let scope ← getCurrNamespace
+  let fullName := scope ++ name
+  let env ← getEnv
+  if env.contains fullName then
+    throwError s!"Cannot define {name}: {fullName} already exists."
+  return (Lean.mkScopedIdent scope name, fullName)
+
+/--
+Create a new definition equal to the given term.
+-/
+private def elabDef (ident : Ident) (type : Term) (qdef : Term) : CommandElabM Unit := do
+  let cmd ← `(command| def $ident : $type := $qdef)
+  tryCatch (elabCommand cmd) fun e =>
+    throwError m!"Definition of {ident} failed: {e.toMessageData}"
+
+private def quoteList : List Term → Term
+  | []      => mkCIdent ``List.nil
+  | (x::xs) => Syntax.mkCApp ``List.cons #[x, quoteList xs]
+
+/--
+Prepend the current namespace to the Lean name and convert to an identifier.
+-/
+private def mkAbsIdent (name : Lean.Name) : Ident :=
+  let nameStr := toString name
+  .mk (.ident .none nameStr.toSubstring name [.decl name []])
+
 /--
 Declare dialect and add to environment.
 -/
 def declareDialect (d : Dialect) : CommandElabM Unit := do
-  let scope ← getCurrNamespace
-  let dialectRelName := Lean.Name.anonymous |>.str d.name
-  let dialectFullName := scope ++ dialectRelName
-  let env ← getEnv
-  if env.contains dialectFullName then
-    throwError "Cannot define {dialectRelName}: {dialectFullName} already exists."
-  let dialectIdent := Lean.mkScopedIdent scope dialectRelName
-  let cmd ← `(command| def $dialectIdent := $(quote d))
-  tryCatch (elabCommand cmd) fun _ =>
-    panic! "Elab command failed: {e}"
+  -- Identifier for dialect
+  let dialectName := Name.anonymous |>.str d.name
+  let (dialectIdent, dialectAbsName) ← mkScopedName dialectName
+  -- Identifier for dialect map
+  let (mapIdent, _) ← mkScopedName (Name.anonymous |>.str s!"{d.name}_map")
+  elabDef dialectIdent (mkAbsIdent ``Dialect) (quote d)
+  -- Add dialect to environment
   modifyEnv fun env =>
-    dialectExt.modifyState env (·.addDialect! d (isNew := true))
+    dialectExt.modifyState env (·.addDialect! d dialectAbsName (isNew := true))
+  -- Create term to represent minimal DialectMap with dialect.
+  let s := (dialectExt.getState (←Lean.getEnv))
+  let openDialects := s.loaded.dialects.importedDialects! d.name |>.toList
+  let quoteD (d : Dialect) : CommandElabM Term := do
+      let some name := s.nameMap[d.name]?
+        | throwError s!"Unknown dialect {d.name}"
+      return mkAbsIdent name
+  let ds ← openDialects.mapM quoteD
+  let mapTerm : Term := Syntax.mkCApp ``DialectMap.ofList! #[quoteList ds]
+  elabDef mapIdent (mkAbsIdent ``DialectMap) mapTerm
 
 @[command_elab strataDialectCommand]
 def strataDialectImpl: Lean.Elab.Command.CommandElab := fun (stx : Syntax) => do
@@ -82,18 +116,32 @@ def strataDialectImpl: Lean.Elab.Command.CommandElab := fun (stx : Syntax) => do
 
 declare_tagged_region term strataProgram "#strata" "#end"
 
- @[term_elab strataProgram]
+private def listToExpr (level : Level) (type : Lean.Expr) (es : List Lean.Expr) : Lean.Expr :=
+  let nilFn  := mkApp (mkConst ``List.nil [level]) type
+  let consFn := mkApp (mkConst ``List.cons [level]) type
+  let rec aux : List Lean.Expr → Lean.Expr
+    | []    => nilFn
+    | a::as => mkApp2 consFn a (aux as)
+  aux es
+
+@[term_elab strataProgram]
 def strataProgramImpl : TermElab := fun stx tp => do
   let .atom i v := stx[1]
         | throwError s!"Bad {stx[1]}"
   let .original _ p _ e := i
         | throwError s!"Expected input context"
   let inputCtx ← (getInputContext : CoreM _)
-  let loaded := (dialectExt.getState (←Lean.getEnv)).loaded
+  let s := (dialectExt.getState (←Lean.getEnv))
   let leanEnv ← Lean.mkEmptyEnvironment 0
-  match Elab.elabProgram loaded leanEnv inputCtx p e with
+  match Elab.elabProgram s.loaded leanEnv inputCtx p e with
   | .ok pgm =>
-    return toExpr pgm
+    -- Get Lean name for dialect
+    let some (.str name root) := s.nameMap[pgm.dialect]?
+      | throwError s!"Unknown dialect {pgm.dialect}"
+    return astExpr! Program.create
+        (mkConst (name |>.str s!"{root}_map"))
+        (toExpr pgm.dialect)
+        (toExpr pgm.commands)
   | .error errors =>
     for e in errors do
       logMessage e
