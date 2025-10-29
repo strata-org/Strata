@@ -29,9 +29,9 @@ instance : HasInputContext CommandElabM where
   getInputContext := do
     let ctx ← read
     pure {
-      input    := ctx.fileMap.source
+      inputString := ctx.fileMap.source
       fileName := ctx.fileName
-      fileMap  := ctx.fileMap
+      fileMap := ctx.fileMap
     }
   getFileName := return (← read).fileName
 
@@ -39,9 +39,9 @@ instance : HasInputContext CoreM where
   getInputContext := do
     let ctx ← read
     pure {
-      input    := ctx.fileMap.source
+      inputString := ctx.fileMap.source
       fileName := ctx.fileName
-      fileMap  := ctx.fileMap
+      fileMap := ctx.fileMap
     }
   getFileName := return (← read).fileName
 

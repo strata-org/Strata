@@ -17,12 +17,11 @@ def parserFn (endToken : String) : ParserFn := fun c s => Id.run do
   if s.hasError then
     return s
   let startPos := s.pos
-  let some stopPos := c.input.indexOf endToken s.pos
+  let some stopPos := c.inputString.indexOf endToken s.pos
         | s.setError { unexpected := s!"Could not find end token {endToken}" }
   let s := s.setPos stopPos
-  let input     := c.input
-  let leading   := mkEmptySubstringAt input startPos
-  let trailing  := mkEmptySubstringAt input stopPos
+  let leading   := c.mkEmptySubstringAt startPos
+  let trailing  := c.mkEmptySubstringAt stopPos
   let info      := SourceInfo.original leading startPos trailing stopPos
   s.pushSyntax (Syntax.atom info "")
 
