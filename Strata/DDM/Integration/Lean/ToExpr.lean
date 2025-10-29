@@ -130,6 +130,30 @@ protected def ArgF.typeExpr (α : Type) [ToExpr α] := mkApp (mkConst ``ArgF) (t
 
 protected def OperationF.typeExpr := mkApp (mkConst ``OperationF)
 
+
+def ArgF.nilArray {α} : Array (ArgF α)  := #[]
+
+def ArgF.singleArray {α} (e : ArgF α) : Array (ArgF α) := #[e]
+
+@[noinline]
+def ArgF.appendArray {α} (x y : Array (ArgF α)) : Array (ArgF α) := x ++ y
+
+private def ArgF.arrayToExpr (type : Lean.Expr) (as : Array Lean.Expr) : Lean.Expr :=
+  let nil := mkApp (mkConst ``ArgF.nilArray) type
+  let one := mkApp (mkConst ``ArgF.singleArray) type
+  let app := mkApp (mkConst ``ArgF.appendArray) type
+  if as.size = 0 then
+    nil
+  else
+    let rec aux (start : Nat) (stop : Nat) : Lean.Expr :=
+          if start + 1 >= stop then
+            mkApp one as[start]!
+          else
+            let h := (start + stop) / 2
+            mkApp2 app (aux start h) (aux h stop)
+    aux 0 as.size
+
+
 mutual
 
 protected def ExprF.toExpr {α} [ToExpr α] : ExprF α → Lean.Expr
@@ -160,7 +184,8 @@ def ArgF.toExpr {α} [ToExpr α] : ArgF α → Lean.Expr
 termination_by a => sizeOf a
 
 protected def OperationF.toExpr {α} [ToExpr α] (op : OperationF α) : Lean.Expr :=
-  let args := arrayToExpr (ArgF.typeExpr α) (op.args.map (·.toExpr))
+--  let args := arrayToExpr (ArgF.typeExpr α) (op.args.map (·.toExpr))
+  let args := ArgF.arrayToExpr (toTypeExpr α) (op.args.map (·.toExpr))
   astAnnExpr! OperationF.mk op.ann (toExpr op.name) args
 termination_by sizeOf op
 decreasing_by
@@ -185,9 +210,12 @@ instance : ToExpr String.Pos where
   toTypeExpr := mkConst ``String.Pos
   toExpr e := mkApp (mkConst ``String.Pos.mk) (toExpr e.byteIdx)
 
+def SourceRange.ofBytes (start stop : Nat) : SourceRange :=
+  { start := .mk start, stop := .mk stop }
+
 instance SourceRange.instToExpr : ToExpr SourceRange where
   toTypeExpr := mkConst ``SourceRange
-  toExpr e := mkApp2 (mkConst ``SourceRange.mk) (toExpr e.start) (toExpr e.stop)
+  toExpr e := mkApp2 (mkConst ``SourceRange.ofBytes) (toExpr e.start.byteIdx) (toExpr e.stop.byteIdx)
 
 namespace Ann
 

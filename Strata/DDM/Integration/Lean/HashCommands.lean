@@ -92,6 +92,52 @@ def strataDialectImpl: Lean.Elab.Command.CommandElab := fun (stx : Syntax) => do
 
 declare_tagged_region term strataProgram "#strata" "#end"
 
+private def listToExprAux {α} [ToExpr α]
+    (nil : Lean.Expr)
+    (cons : Lean.Expr)
+    (append : Lean.Expr)
+    (l : Array α) : Lean.Expr :=
+  if l.size <= 8 then
+    l.foldr (init := nil) fun a r => mkApp2 cons (toExpr a) r
+  else
+    let h := l.size / 2
+    let x := listToExprAux nil cons append (l.extract (stop := h))
+    let y := listToExprAux nil cons append (l.extract (start := h))
+    mkApp2 append x y
+
+private def listToExpr {α : Type u} [ToLevel.{u}] [ToExpr α] (l : List α) : Lean.Expr :=
+  let type := toTypeExpr α
+  let lvl := toLevel.{u}
+  let nil  := mkApp (mkConst ``List.nil [lvl]) type
+  let cons := mkApp (mkConst ``List.cons [lvl]) type
+  let append := mkApp (mkConst ``List.append [lvl]) type
+  listToExprAux nil cons append l.toArray
+
+private def arrayToExpr {α : Type u} [ToLevel.{u}] [ToExpr α] (as : Array α) : Lean.Expr :=
+  mkApp2 (mkConst ``List.toArray [toLevel.{u}]) (toTypeExpr α) (listToExpr as.toList)
+
+def nilArrayOperation : Array Operation := #[]
+
+def singleArrayOperation (op : Operation) : Array Operation := #[op]
+
+@[noinline]
+def appendArrayOperation (x y : Array Operation) : Array Operation := x ++ y
+
+private def opArrayToExpr (as : Array Operation) : Lean.Expr :=
+  let nil := mkConst ``nilArrayOperation
+  let one := mkConst ``singleArrayOperation
+  let app := mkConst ``appendArrayOperation
+  if as.size = 0 then
+    nil
+  else
+    let rec aux (start : Nat) (stop : Nat) : Lean.Expr :=
+          if start + 1 >= stop then
+            mkApp one (toExpr as[start]!)
+          else
+            let h := (start + stop) / 2
+            mkApp2 app (aux start h) (aux h stop)
+    aux 0 as.size
+
 @[term_elab strataProgram]
 def strataProgramImpl : TermElab := fun stx tp => do
   let .atom i v := stx[1]
@@ -109,7 +155,7 @@ def strataProgramImpl : TermElab := fun stx tp => do
     return astExpr! Program.create
         (mkConst (name |>.str s!"{root}_map"))
         (toExpr pgm.dialect)
-        (toExpr pgm.commands)
+        (opArrayToExpr pgm.commands)
   | .error errors =>
     for e in errors do
       logMessage e
