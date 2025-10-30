@@ -1,3 +1,8 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
 val forLoopLikeWithBreakAndContinue = procedure(steps: int, continueSteps: int, exitSteps: int): int {
   var counter = 0
   breakLabel {

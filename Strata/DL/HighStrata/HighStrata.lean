@@ -37,7 +37,7 @@ Design choices:
 
 - For now there is no type polymorphism
 
-- Allocation of composite types is WIP. It needs a design first.
+- Construction of composite types is WIP. It needs a design first.
 
 -/
 
