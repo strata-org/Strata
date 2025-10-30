@@ -202,4 +202,10 @@ theorem Map.insert_values [DecidableEq α] (m : Map α β) :
       grind
   done
 
+theorem Map.findNone_eq_notmem_mapfst {m: Map α β} [DecidableEq α]: ¬ a ∈ List.map Prod.fst m ↔ Map.find? m a = none := by
+  induction m <;> simp [Map.find?]
+  constructor <;> intro H
+  split <;> simp_all
+  split at H <;> simp_all
+  rw [Eq.comm]; assumption
 -------------------------------------------------------------------------------

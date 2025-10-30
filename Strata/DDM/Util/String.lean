@@ -109,10 +109,6 @@ theorem pos_le_refl (pos : String.Pos) : pos ≤ pos := by
   unfold LE.le
   simp [instLEPos]
 
-theorem Pos.le_trans {p q : String.Pos} (a : p ≤ q) (b : q ≤ r) : p ≤ r := by
-  simp [String.le_def] at *
-  omega
-
 theorem next_mono (s : String) (p : String.Pos) : p < s.next p := by
   simp [String.next, Char.utf8Size]
   repeat (split; omega)

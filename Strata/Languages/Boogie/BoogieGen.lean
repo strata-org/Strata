@@ -20,7 +20,7 @@ open Boogie Lambda Imperative
 namespace Names
 
 def initVarValue (id : BoogieIdent) : Expression.Expr :=
-  .fvar ("init_" ++ id.2) none
+  .fvar ("init_" ++ id.name) none
 
 end Names
 
@@ -48,7 +48,7 @@ def BoogieGenState.emp : BoogieGenState := { cs := .emp, generated := [] }
     -/
 def BoogieGenState.gen (pf : BoogieIdent) (σ : BoogieGenState)
   : BoogieIdent × BoogieGenState :=
-  let (s, cs') := StringGenState.gen pf.2 σ.cs
+  let (s, cs') := StringGenState.gen pf.name σ.cs
   let newState : BoogieGenState := { cs := cs', generated := (.temp s) :: σ.generated }
   ((.temp s), newState)
 
@@ -67,9 +67,9 @@ theorem BoogieGenState.WFMono' :
   unfold BoogieGenState.WF at Hwf
   simp [gen] at Hgen
   simp [← Hgen]
-  generalize h1 : (StringGenState.gen pf.snd s.cs).fst = st
-  generalize h2 : (StringGenState.gen pf.snd s.cs).snd = stg
-  have Hstrgen: StringGenState.gen pf.snd s.cs = (st, stg) := by simp [← h1, ← h2]
+  generalize h1 : (StringGenState.gen pf.name s.cs).fst = st
+  generalize h2 : (StringGenState.gen pf.name s.cs).snd = stg
+  have Hstrgen: StringGenState.gen pf.name s.cs = (st, stg) := by simp [← h1, ← h2]
   have Hwf':= StringGenState.WFMono Hwf.left Hstrgen
   simp [StringGenState.gen] at Hstrgen
   constructor <;> simp [*]

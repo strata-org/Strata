@@ -66,6 +66,13 @@ def eval (E : Env) : List (Program × Env) :=
                     xdecls := declsE.xdecls ++ [decl] }
         go rest declsE
 
+    | .distinct _ es _ =>
+        let declsE := {
+          declsE with
+            env := { declsE.env with distinct := es :: declsE.env.distinct },
+            xdecls := declsE.xdecls ++ [decl] }
+      go rest declsE
+
     | .proc proc _ =>
       let pEs := Procedure.eval declsE.env proc
       pEs.flatMap (fun (p, E) =>
