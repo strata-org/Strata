@@ -409,7 +409,6 @@ partial def evalArrayUnshift (state : HState) (objExpr valueExpr : HExpr) : HSta
     let (state1, objVal) := evalHExpr state objExpr
     evalArrayUnshift state1 objVal valueExpr
 
--- Extract a numeric field index from an expression
 partial def extractFieldIndex (expr : HExpr) : Option Nat :=
   match expr with
   | .lambda (LExpr.const s _) =>

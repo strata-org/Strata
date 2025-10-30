@@ -17,4 +17,4 @@ let newLen: number = numbers1.unshift(0);
 // nums = [0, 2, 3, 4]
 
 // Unshift multiple elements
-let moreLen: number = numbers1.unshift(-2, -1);
+let moreLen: number = numbers1.unshift(2, 1)

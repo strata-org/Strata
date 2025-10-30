@@ -244,9 +244,12 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
             -- arr.shift() - deferred operation that removes first element and reindexes
             Heap.HExpr.app (Heap.HExpr.deferredOp "ArrayShift" none) objExpr
           | "unshift" =>
-            -- arr.unshift(value) - deferred operation that adds to beginning and reindexes
-            let valueExpr := translate_expr call.arguments[0]!
-            Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "ArrayUnshift" none) objExpr) valueExpr
+            -- arr.unshift(value) - single value only in expression context
+            if call.arguments.size != 1 then
+              panic! s!"unshift with multiple arguments in expression context not supported"
+            else
+              let valueExpr := translate_expr call.arguments[0]!
+              Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "ArrayUnshift" none) objExpr) valueExpr
           | methodName =>
             Heap.HExpr.lambda (.fvar s!"call_{methodName}" none)
         | _ =>
@@ -321,40 +324,55 @@ partial def translate_statement_core
         match decl.declarations[0]? with
         | .none => panic! "VariableDeclarations should have at least one declaration"
         | .some d =>
-          -- Check if this is a function call assignment
           match d.init with
           | .TS_CallExpression call =>
             match call.callee with
             | .TS_IdExpression id =>
               dbg_trace s!"[DEBUG] Translating TypeScript function call assignment: {d.id.name} = {id.name}(...)"
               let args := call.arguments.toList.map translate_expr
-              dbg_trace s!"[DEBUG] Function call has {args.length} arguments"
               let lhs := [d.id.name]
               (ctx, [.cmd (.directCall lhs id.name args)])
             | .TS_MemberExpression member =>
-              -- Handle method call assignments like x = arr.pop()
               let objExpr := translate_expr member.object
               match member.property with
               | .TS_IdExpression id =>
                 match id.name with
                 | "pop" =>
-                  -- x = arr.pop() - read and delete
+                  -- Handle Array.pop() method
                   let lengthExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "LengthAccess" none) objExpr) (Heap.HExpr.string "length")
                   let lastIndexExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Sub" none) lengthExpr) (Heap.HExpr.int 1)
                   let tempIndexInit := .cmd (.init "temp_pop_index" Heap.HMonoTy.int lastIndexExpr)
                   let tempIndexVar := Heap.HExpr.lambda (.fvar "temp_pop_index" none)
-                  -- Read the value
-                  let popExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAccess" none) objExpr) tempIndexVar
+                  let valueExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAccess" none) objExpr) tempIndexVar
                   let ty := get_var_type d.id.typeAnnotation d.init
-                  let readStmt := .cmd (.init d.id.name ty popExpr)
-                  -- Delete the element
-                  let deleteExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAssign" none) objExpr) tempIndexVar) Heap.HExpr.null
+                  let initStmt := .cmd (.init d.id.name ty valueExpr)
+                  let deleteExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "FieldDelete" none) objExpr) tempIndexVar) Heap.HExpr.null
                   let deleteStmt := .cmd (.set "temp_delete_result" deleteExpr)
-                  (ctx, [tempIndexInit, readStmt, deleteStmt])
+                  (ctx, [tempIndexInit, initStmt, deleteStmt])
                 | "shift" =>
+                  -- Handle Array.shift() method
                   let shiftExpr := Heap.HExpr.app (Heap.HExpr.deferredOp "ArrayShift" none) objExpr
                   let ty := get_var_type d.id.typeAnnotation d.init
                   (ctx, [.cmd (.init d.id.name ty shiftExpr)])
+                | "unshift" =>
+                  -- Handle Array.unshift() with multiple arguments
+                  let valueExprs := call.arguments.toList.map translate_expr
+                  if valueExprs.isEmpty then
+                    let value := translate_expr d.init
+                    let ty := get_var_type d.id.typeAnnotation d.init
+                    (ctx, [.cmd (.init d.id.name ty value)])
+                  else
+                    let reversed := valueExprs.reverse
+                    let allButLast := reversed.dropLast
+                    let lastValue := reversed.getLast!
+                    let tempStmts := allButLast.map (fun valueExpr =>
+                      let unshiftExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "ArrayUnshift" none) objExpr) valueExpr
+                      (.cmd (.set "temp_unshift_result" unshiftExpr) : TSStrataStatement)
+                    )
+                    let lastUnshiftExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "ArrayUnshift" none) objExpr) lastValue
+                    let ty := Heap.HMonoTy.int
+                    let initStmt := .cmd (.init d.id.name ty lastUnshiftExpr)
+                    (ctx, tempStmts ++ [initStmt])
                 | methodName =>
                   dbg_trace s!"[DEBUG] Translating method call assignment: {d.id.name} = obj.{methodName}(...)"
                   let value := translate_expr d.init
@@ -365,10 +383,10 @@ partial def translate_statement_core
                 let ty := get_var_type d.id.typeAnnotation d.init
                 (ctx, [.cmd (.init d.id.name ty value)])
             | _ =>
-              -- Fallback for other call expressions
               let value := translate_expr d.init
               let ty := get_var_type d.id.typeAnnotation d.init
               (ctx, [.cmd (.init d.id.name ty value)])
+
           | .TS_FunctionExpression funcExpr =>
             -- Handle function expression assignment: let x = function(...) { ... }
             let funcName := d.id.name
@@ -388,6 +406,7 @@ partial def translate_statement_core
             let ty := get_var_type d.id.typeAnnotation d.init
             let funcRef := Heap.HExpr.lambda (.fvar funcName none)
             (newCtx, [.cmd (.init d.id.name ty funcRef)])
+
           | .TS_ArrowFunctionExpression funcExpr =>
             -- Handle arrow function assignment: let x = (args) => { ... }
             let funcName := d.id.name
@@ -407,6 +426,7 @@ partial def translate_statement_core
             let ty := get_var_type d.id.typeAnnotation d.init
             let funcRef := Heap.HExpr.lambda (.fvar funcName none)
             (newCtx, [.cmd (.init d.id.name ty funcRef)])
+
           | _ =>
             -- Handle simple variable declaration: let x = value
             let value := translate_expr d.init
@@ -447,10 +467,13 @@ partial def translate_statement_core
                 let shiftExpr := Heap.HExpr.app (Heap.HExpr.deferredOp "ArrayShift" none) objExpr
                 (ctx, [.cmd (.set "temp_shift_result" shiftExpr)])
               | "unshift" =>
-                -- arr.unshift(value) standalone
-                let valueExpr := translate_expr call.arguments[0]!
-                let unshiftExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "ArrayUnshift" none) objExpr) valueExpr
-                (ctx, [.cmd (.set "temp_unshift_result" unshiftExpr)])
+                -- arr.unshift(val1, val2, ...) - expand to multiple single unshift statements
+                let valueExprs := call.arguments.toList.map translate_expr
+                let statements := valueExprs.reverse.map (fun valueExpr =>
+                  let unshiftExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "ArrayUnshift" none) objExpr) valueExpr
+                  (.cmd (.set "temp_unshift_result" unshiftExpr) : TSStrataStatement)
+                )
+                (ctx, statements)
               | methodName =>
                 dbg_trace s!"[DEBUG] Translating method call: {methodName}(...)"
                 (ctx, [])
