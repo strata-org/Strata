@@ -1,6 +1,6 @@
 import Strata.DDM.Elab
 import Strata.DDM.AST
-import Strata.Languages.Python.PythonSSAToBoogie
+import Strata.Languages.Python.PythonToBoogie
 import Strata.Languages.Boogie.DDMTransform.Parse
 import StrataTest.Internal.BoogiePrelude
 import Strata.Languages.Boogie.Verifier

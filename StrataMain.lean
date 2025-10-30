@@ -9,7 +9,7 @@ import Strata.DDM.Elab
 import Strata.DDM.Ion
 
 import Strata.Languages.Python.Python
-import Strata.Languages.Python.PythonSSAToBoogie
+import Strata.Languages.Python.PythonToBoogie
 import StrataTest.Internal.BoogiePrelude
 
 
