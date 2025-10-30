@@ -33,7 +33,7 @@ Design choices:
   - Fields state whether they are mutable, which impacts what permissions are needed to access them
   - Fields state their type, which is needed to know the resulting type when reading a field.
 - Constrained types are defined by a base type and a constraint over that type.
-  - Algebriac datatypes do not exist directly but can be encoded using composited and constrained types.
+  - Algebraic datatypes do not exist directly but can be encoded using composite and constrained types.
 
 - For now there is no type polymorphism
 
