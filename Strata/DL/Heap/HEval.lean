@@ -169,6 +169,18 @@ partial def evalApp (state : HState) (originalExpr e1 e2 : HExpr) : HState × HE
     -- Second application to FieldDelete - now we can evaluate
     -- This handles delete obj[field] where field is dynamic
     evalFieldDelete state2 objExpr e2'
+
+  -- ArraySlice(obj, start?, end?) handling
+  | .deferredOp "ArraySlice" _ =>
+    -- First application: capture the array object
+    (state2, .app (.deferredOp "ArraySlice" none) e2')
+  | .app (.deferredOp "ArraySlice" _) objExpr =>
+    -- Second application: capture start
+    (state2, .app (.app (.deferredOp "ArraySlice" none) objExpr) e2')
+  | .app (.app (.deferredOp "ArraySlice" _) objExpr) startExpr =>
+    -- Third application: we have obj, start, and end -> evaluate
+    evalArraySlice state2 objExpr startExpr e2'
+
   | .deferredOp op _ =>
     -- First application to a deferred operation - return partially applied
     (state2, .app (.deferredOp op none) e2')
@@ -257,6 +269,53 @@ partial def evalFieldDelete (state : HState) (objExpr fieldExpr : HExpr) : HStat
   | none =>
     -- Can't extract a numeric field index, return error
     (state, .lambda (LExpr.const "error_field_delete_failed" none))
+
+-- Handle Array.prototype.slice semantics
+partial def evalArraySlice (state : HState) (objExpr startExpr endExpr : HExpr) : HState × HExpr :=
+  -- Ensure we have an address for the array object
+  let (state1, objVal) := evalHExpr state objExpr
+  -- Evaluate start/end arguments to simplify (handle negatives, computed exprs)
+  let (state2, startVal) := evalHExpr state1 startExpr
+  let (state3, endVal) := evalHExpr state2 endExpr
+  let someAddr? : Option Nat := match objVal with
+    | .address addr => some addr
+    | _ => none
+  match someAddr? with
+  | none => (state3, .lambda (LExpr.const "error_array_slice_invalid_object" none))
+  | some addr =>
+    match state3.heap.get? addr with
+    | none => (state3, .lambda (LExpr.const "error_array_slice_invalid_address" none))
+    | some obj =>
+      let len : Nat := obj.size
+      -- Helper to extract integer from Lambda const
+      let extractInt : HExpr → Option Int := fun e =>
+        match e with
+        | .lambda (LExpr.const s _) => s.toInt?
+        | _ => none
+      let resolveIndex (arg : HExpr) (defaultVal : Int) : Nat :=
+        let i : Int := match arg with
+          | .null => defaultVal
+          | _ => (extractInt arg).getD defaultVal
+        let i' : Int := if i < 0 then i + Int.ofNat len else i
+        let clamped : Int :=
+          if i' < 0 then 0
+          else if i' > Int.ofNat len then Int.ofNat len
+          else i'
+        Int.toNat clamped
+      let startIdx : Nat := resolveIndex startVal 0
+      let endIdx   : Nat := resolveIndex endVal (Int.ofNat len)
+      let finalStart := startIdx
+      let finalEnd := if endIdx < startIdx then startIdx else endIdx
+      -- Collect values in [finalStart, finalEnd) and reindex from 0
+      let rec collect (j : Nat) (i : Nat) (acc : List (Nat × HExpr)) : List (Nat × HExpr) :=
+        if i ≥ finalEnd then acc.reverse
+        else
+          match state3.getField addr i with
+          | some v => collect (j+1) (i+1) ((j, v) :: acc)
+          | none   => collect j (i+1) acc
+      let outFields := collect 0 finalStart []
+      -- Allocate a new array with these fields
+      evalHExpr state3 (.alloc (HMonoTy.mkObj outFields.length HMonoTy.int) outFields)
 
 -- Handle length access for both strings and arrays
 partial def evalLengthAccess (state : HState) (objExpr fieldExpr : HExpr) : HState × HExpr :=

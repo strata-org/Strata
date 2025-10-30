@@ -142,6 +142,18 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
     -- Use deferred conditional instead of toLambda? checks
     Heap.HExpr.deferredIte guard consequent alternate
 
+  | .TS_UnaryExpression e =>
+    match e.operator with
+    | "-" =>
+      -- Numeric negation: translate as 0 - arg
+      let arg := translate_expr e.argument
+      Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Sub" none) (Heap.HExpr.int 0)) arg
+    | "!" =>
+      -- Logical not: use Bool.Not deferred op
+      let arg := translate_expr e.argument
+      Heap.HExpr.app (Heap.HExpr.deferredOp "Bool.Not" none) arg
+    | op => panic! s!"Unsupported unary operator: {op}"
+
   | .TS_NumericLiteral n =>
     dbg_trace s!"[DEBUG] Translating numeric literal value={n.value}, raw={n.extra.raw}, rawValue={n.extra.rawValue}"
     Heap.HExpr.int n.extra.raw.toInt!
@@ -209,6 +221,15 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
         match member.property with
         | .TS_IdExpression id =>
           match id.name with
+          | "slice" =>
+            -- arr.slice(start?, end?) - return a new array (deferred op)
+            let startArg := match call.arguments[0]? with
+              | some a => translate_expr a
+              | none => Heap.HExpr.null
+            let endArg := match call.arguments[1]? with
+              | some a => translate_expr a
+              | none => Heap.HExpr.null
+            Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "ArraySlice" none) objExpr) startArg) endArg
           | "push" =>
             -- arr.push(value) - use DynamicFieldAssign with length as index
             let valueExpr := translate_expr call.arguments[0]!
