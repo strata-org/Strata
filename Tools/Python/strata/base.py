@@ -26,6 +26,9 @@ class SourceRange:
     offset : int
     end_offset : int
 
+    def to_ion(self):
+        return ion_sexp(self.offset, self.end_offset)
+
 class SourcePos:
     line : int
     col : int
@@ -59,6 +62,11 @@ class FileMapping:
         col_offset = index - off
         return SourcePos(lineno, col_offset + 1)
 
+def ann_to_ion(ann : Any):
+    if ann is None:
+        return None
+    assert isinstance(ann, SourceRange)
+    return ann.to_ion()
 
 @dataclass
 class QualifiedIdent:
@@ -109,7 +117,7 @@ class SyntaxCat:
         return self.strPrec(0)
 
     def to_ion(self):
-        return ion_sexp(self.name.to_ion(), *(a.to_ion() for a in self.args))
+        return ion_sexp(ann_to_ion(self.ann), self.name.to_ion(), *(a.to_ion() for a in self.args))
 
 class TypeExpr:
     ann : Any
@@ -133,7 +141,7 @@ class TypeIdent(TypeExpr):
 
     def to_ion(self):
         return ion_sexp(
-            self.identSym, self.ident.to_ion(),
+            self.identSym, ann_to_ion(self.ann), self.ident.to_ion(),
             *(a.to_ion() for a in self.args)
         )
 
@@ -147,7 +155,7 @@ class TypeBVar(TypeExpr):
     bvarSym = ion_symbol("bvar")
 
     def to_ion(self):
-        return ion_sexp(self.bvarSym, self.index)
+        return ion_sexp(self.bvarSym, ann_to_ion(self.ann), self.index)
 
 class TypeFVar(TypeExpr):
     index: int
@@ -161,7 +169,7 @@ class TypeFVar(TypeExpr):
     fvarSym = ion_symbol("fvar")
 
     def to_ion(self):
-        return ion_sexp(self.fvarSym, self.index, *(a.to_ion() for a in self.args))
+        return ion_sexp(self.fvarSym, ann_to_ion(self.ann), self.index, *(a.to_ion() for a in self.args))
 
 class TypeArrow(TypeExpr):
     arg: TypeExpr
@@ -175,7 +183,7 @@ class TypeArrow(TypeExpr):
     arrowSym = ion_symbol("arrow")
 
     def to_ion(self):
-        return ion_sexp(self.arrowSym, self.arg, self.res)
+        return ion_sexp(self.arrowSym, ann_to_ion(self.ann), self.arg, self.res)
 
 class TypeFunMacro(TypeExpr):
     bindingsIndex: int
@@ -191,6 +199,7 @@ class TypeFunMacro(TypeExpr):
     def to_ion(self):
         return ion_sexp(
             self.funMacroSym,
+            ann_to_ion(self.ann),
             self.bindingsIndex,
             self.res)
 
@@ -213,7 +222,7 @@ class ExprBVar(Expr):
     sym = ion_symbol("bvar")
 
     def to_ion(self):
-        return ion_sexp(self.sym, self.idx)
+        return ion_sexp(self.sym, ann_to_ion(self.ann), self.idx)
 
 class ExprFVar(Expr):
     level : int
@@ -224,7 +233,7 @@ class ExprFVar(Expr):
 
     fvarSym = ion_symbol("fvar")
     def to_ion(self):
-        return ion_sexp(self.fvarSym, self.level)
+        return ion_sexp(self.fvarSym, ann_to_ion(self.ann), self.level)
 
 class ExprFn(Expr):
     ident : QualifiedIdent
@@ -234,7 +243,7 @@ class ExprFn(Expr):
         self.ident = ident
 
     def to_ion(self):
-        return ion_sexp(ion_symbol("fn"), self.ident.to_ion())
+        return ion_sexp(ion_symbol("fn"), ann_to_ion(self.ann), self.ident.to_ion())
 
 class Operation:
     ann : Any
@@ -258,6 +267,7 @@ class Operation:
     def to_ion(self) -> object:
         return ion_sexp(
             self.decl.ident.to_ion(),
+            ann_to_ion(self.ann),
             *(arg_to_ion(a) for a in self.args.values())
         )
 
@@ -361,11 +371,11 @@ def arg_to_ion(a : Arg) -> object:
     elif isinstance(a, TypeExpr):
         return ion_sexp(ion_symbol("type"), a.to_ion())
     elif isinstance(a, Ident):
-        return ion_sexp(ion_symbol("ident"), a.value)
+        return ion_sexp(ion_symbol("ident"), ann_to_ion(a.ann), a.value)
     elif isinstance(a, NumLit):
-        return ion_sexp(numSym, a.value)
+        return ion_sexp(numSym, ann_to_ion(a.ann), a.value)
     elif isinstance(a, DecimalLit):
-        return ion_sexp(ion_symbol("decimal"), a.value)
+        return ion_sexp(ion_symbol("decimal"), ann_to_ion(a.ann), a.value)
     elif isinstance(a, StrLit):
         assert isinstance(a.value, str)
         val : object
@@ -383,17 +393,17 @@ def arg_to_ion(a : Arg) -> object:
             val = ion.IonPyText(val)
         else:
             val = ion.IonPyText(a.value)
-        return ion_sexp(ion_symbol("strlit"), val)
+        return ion_sexp(ion_symbol("strlit"), ann_to_ion(a.ann), val)
     elif isinstance(a, OptionArg):
         if a.value is None:
-            return ion_sexp(optionSym)
+            return ion_sexp(optionSym, ann_to_ion(a.ann))
         else:
-            return ion_sexp(optionSym, arg_to_ion(a.value))
+            return ion_sexp(optionSym, ann_to_ion(a.ann), arg_to_ion(a.value))
     elif isinstance(a, Seq):
-        return ion_sexp(ion_symbol("seq"), *(arg_to_ion(e) for e in a.values))
+        return ion_sexp(ion_symbol("seq"), ann_to_ion(a.ann), *(arg_to_ion(e) for e in a.values))
     else:
         assert isinstance(a, CommaSepList), f'Expected {type(a)} to be a CommaSepList.'
-        return ion_sexp(ion_symbol("commaSepList"), *(arg_to_ion(e) for e in a.values))
+        return ion_sexp(ion_symbol("commaSepList"), ann_to_ion(a.ann), *(arg_to_ion(e) for e in a.values))
 
 class Program:
     programSym = ion.SymbolToken(u'program', None, None)

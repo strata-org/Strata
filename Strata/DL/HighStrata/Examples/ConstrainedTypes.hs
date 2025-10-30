@@ -1,7 +1,7 @@
 -- Constrained primitive type
 constrained nat = x: int where x >= 0
 
--- Something analogous to an algebriac datatype
+-- Something analogous to an algebraic datatype
 composite OptionBase {}
 composite Some extends OptionBase { 
   value: int

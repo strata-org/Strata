@@ -133,6 +133,8 @@ structure WFTypeDeclarationProp (p : Program) (f : TypeDecl) : Prop where
 
 structure WFAxiomDeclarationProp (p : Program) (f : Axiom) : Prop where
 
+structure WFDistinctDeclarationProp (p : Program) (l : Expression.Ident) (es : List (Expression.Expr)) : Prop where
+
 structure WFProcedureProp (p : Program) (d : Procedure) : Prop where
   wfstmts : WFStatementsProp p d.body
   wfloclnd : (HasVarsImp.definedVars (P:=Expression) d.body).Nodup
@@ -150,6 +152,7 @@ def WFDeclProp (p : Program) (decl : Decl) : Prop := match decl with
   | .var name ty e _ => WFVarProp p name ty e
   | .type t _ => WFTypeDeclarationProp p t
   | .ax a _ => WFAxiomDeclarationProp p a
+  | .distinct l es _ => WFDistinctDeclarationProp p l es
   | .proc d _ => WFProcedureProp p d
   | .func f _ => WFFunctionProp p f
 
