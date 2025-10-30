@@ -5,7 +5,7 @@
 -/
 
 /-
-The high strata language is supposed to serve as an intermediate verification language for at least Java, Python, JavaScript.
+The Laurel language is supposed to serve as an intermediate verification language for at least Java, Python, JavaScript.
 
 It enables doing various forms of verification:
 - Deductive verification

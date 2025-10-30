@@ -5,7 +5,7 @@
 -/
 
 /-
-This file defines the behavior of both a type checker and a verifier for the High strata language.
+This file defines the behavior of both a type checker and a verifier for the Laurel language.
 Both are defined using the 'eval' function. It will only return a single type or verification error at a time.
 
 TODO: implicit casting from primitives types to Dynamic
