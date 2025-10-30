@@ -340,15 +340,6 @@ def last_call (level: Nat) (e: LExpr TypeType Identifier): Bool :=
   | .error => false
   | .skip => false
 
-def record (values: List (String × LExpr LTy String)): LExpr LTy String :=
-  .abs "symbol" .none <|
-    values.foldr (λ(name, expr) acc =>
-      .ite (.eq (.bvar 0) (.const name .none)) expr acc
-    ) .error
-
-def select (name: String) (e: LExpr LTy String) : LExpr LTy String :=
-  .app e (.const name .none)
-
 mutual
 def formatRecord [ToFormat Identifier] [ToFormat TypeType] (e: LExpr TypeType Identifier) (names: List (Option Identifier)): Option Format :=
   let rec go (e_body: LExpr TypeType Identifier): Option Format :=
@@ -1205,6 +1196,40 @@ inductive Context (Identifier : Type) : Type where
     (indexFromLast : Nat): Context Identifier
 deriving Repr
 
+-- Statements that accept a continuation with a potential different context
+abbrev Builder (Input: Type) (Output: Type) := Input -> (Input -> Output) -> Output
+abbrev ExceptBuilder (Input: Type) (Output: Type) := Builder Input (Except String Output)
+abbrev ExceptExpr (Input: Type) (Output: Type) := Input -> Except String Output
+
+def BuildThen (a b: Builder Input Output): Builder Input Output :=
+  λi k =>
+    a i <| λi => b i k
+
+def ThenStmt (b a: Builder Input Output): Builder Input Output :=
+  BuildThen a b
+
+def Do (stmt: Input -> ExceptBuilder Input Output):
+  ExceptBuilder Input Output
+ :=
+  λc k =>
+  do
+  let res ← (stmt c) c k
+  return res
+
+-- Works also as an except builder
+def skip_: Builder Input Output := λi k => k i
+
+abbrev CELExpr TypeType Identifier := ExceptExpr (Context Identifier) (LExpr TypeType Identifier)
+abbrev Stmt TypeType Identifier := ExceptBuilder (Context Identifier) (LExpr TypeType Identifier)
+
+def Stmt2Expr {TypeType Identifier} (e: CELExpr TypeType Identifier): Stmt TypeType Identifier :=
+  λc _ => -- We ignore the continuation.
+    e c
+
+-- Cannot be followed by more statements.
+def ThenExpr {TypeType Identifier} (e: CELExpr TypeType Identifier) (s: Stmt TypeType Identifier): CELExpr TypeType Identifier :=
+  λc => (s |> ThenStmt (Stmt2Expr e)) c (λ_ => return .skip)
+
 def Context.frame [DecidableEq Identifier] (c: Context Identifier): List Identifier :=
   match c with
   | .topLevel => []
@@ -1224,18 +1249,18 @@ def Context.size {Identifier : Type} (c : Context Identifier) : Nat :=
   | .topLevel => 0
   | .extend _ _ _ _ s => s + 1
 
-def Context.nameOf (c : Context String) (n: Nat): String :=
-  let rec go : Context String → Nat → String
-    | .topLevel, _ => "UNDEFINED"
-    | .extend _ id' _ _ _, 0 => id'
+def Context.nameOf (c : Context String) (n: Nat): Except String String :=
+  let rec go : Context String → Nat → Except String String
+    | .topLevel, n => .error s!"Context.nameOf {n}"
+    | .extend _ id' _ _ _, 0 => .ok id'
     | .extend c' _ _ _ _, n+1 => go c' n
   go c n
 
 --
-def Context.lastIndexOf [DecidableEq Identifier] (c : Context Identifier) (id: Identifier): Nat :=
-  let rec go : Context Identifier → Nat
-    | .topLevel => 0
-    | .extend tail id' _ _ n => if id == id' then n else go tail
+def Context.lastIndexOf [DecidableEq Identifier] [ToString Identifier] (c : Context Identifier) (id: Identifier): Except String Nat :=
+  let rec go : Context Identifier → Except String Nat
+    | .topLevel => .error s!"Context.lastIndexOf {id}"
+    | .extend tail id' _ _ n => if id == id' then .ok n else go tail
   go c
 
 
@@ -1244,46 +1269,83 @@ def Context.add_declare {Identifier : Type} (c : Context Identifier) (id : Ident
     | .topLevel => 0
     | .extend _ _ _ _ s => s + 1)
 
-def Context.add_assign {Identifier : Type} [DecidableEq Identifier] (c : Context Identifier) (id : Identifier) : Context Identifier :=
-  let overrideIndex: Nat := c.lastIndexOf id
-  Context.extend c id [] (.some overrideIndex) (match c with
-    | .topLevel => 0
-    | .extend _ _ _ _ s => s + 1)
+def Context.add_assign {Identifier : Type} [DecidableEq Identifier] [ToString Identifier] (c : Context Identifier) (id : Identifier) : Except String (Context Identifier) :=
+  do
+  match c.lastIndexOf id with
+  | .error _ =>
+    return c.add_declare id
+  | .ok overrideIndex =>
+    return Context.extend c id [] (.some overrideIndex) (match c with
+      | .topLevel => 0
+      | .extend _ _ _ _ s => s + 1)
 
-def Context.vOffset [DecidableEq Identifier]: Identifier → Context Identifier → Nat → LExpr TypeType Identifier
-  | _, .topLevel, _ => .bvar 4049828 -- TODO: Error
-  | id, .extend c' id' _ _ _, n =>
+def app_ (e1 e2: CELExpr TypeType Identifier): CELExpr TypeType Identifier :=
+  λc =>
+  do
+  let e1 ← e1 c
+  let e2 ← e2 c
+  return .app e1 e2
+
+def ite_ (e1 e2 e3: CELExpr TypeType Identifier): CELExpr TypeType Identifier :=
+  λc =>
+  do
+  let e1 ← e1 c
+  let e2 ← e2 c
+  let e3 ← e3 c
+  return .ite e1 e2 e3
+
+def abs_ (id: Identifier) (ty: Option TypeType) (body: CELExpr TypeType Identifier): CELExpr TypeType Identifier :=
+  λc =>
+  do
+  let c := c.add_declare id
+  let body ← body c
+  return .abs id ty body
+
+def fvar_ (id: Identifier) (ty: Option TypeType): CELExpr TypeType Identifier :=
+  λ_ =>
+  return .fvar id ty
+
+def const_ (value: String) (optType: Option TypeType): CELExpr TypeType Identifier := λ_ =>
+  return (LExpr.const value optType)
+
+def op_ (name: Identifier) (optType: Option TypeType): CELExpr TypeType Identifier := λ_ => return LExpr.op name optType
+
+def choose_ (optType: Option TypeType): CELExpr TypeType Identifier := λ_ => return LExpr.choose optType
+
+def vOffset [DecidableEq Identifier]: Identifier → Nat → CELExpr TypeType Identifier
+  | _, n, .topLevel => .error s!"vOffset of {n}" -- .bvar 4049828 if needed to debug
+  | id, n, .extend c' id' _ _ _ =>
+    do
     if id == id' then
-      LExpr.bvar n
-    else
-      vOffset id c' (n + 1)
+      return LExpr.bvar n
+    let res ← vOffset id (n + 1) c'
+    return res
 
 -- Returns a bvar corresponding of the index of the identifier in the context
--- TODO: Add error if identifier not found
-def Context.v {Identifier : Type} [DecidableEq Identifier] (c : Context Identifier) (id : Identifier) : LExpr TypeType Identifier :=
-  c.vOffset id 0
+def var {Identifier : Type} [DecidableEq Identifier] (id : Identifier) : CELExpr TypeType Identifier :=
+  vOffset id 0
 
 -- Search the variable with the given name right after the last given label
-def Context.vAt {Identifier : Type} [DecidableEq Identifier]
-  (c : Context Identifier) (searchId label : Identifier) : LExpr TypeType Identifier :=
-  let rec go := fun c labelPreviouslyFound n =>
+def varAt {Identifier : Type} [DecidableEq Identifier] [ToString Identifier]
+  (label searchId : Identifier) : CELExpr TypeType Identifier :=
+  let rec go := fun labelPreviouslyFound n c =>
     match c with
-    | .topLevel => .bvar 4049828 -- TODO: Error
+    | .topLevel => throw s!"Did not find label {label}" -- .bvar 4049828 -- Use if need to debug where error appear
     | .extend tail id labels _ _ =>
       if label ∈ labels then
         if labelPreviouslyFound then -- Label re-defined, meaning it was not found.
-          LExpr.bvar 0 -- TODO: Throw error
+          return LExpr.bvar 0 -- TODO: Throw error
         else
           if searchId == id then
-            LExpr.bvar n -- We stop the search, we have found it
+            return LExpr.bvar n -- We stop the search, we have found it
           else
-            go tail (labelPreviouslyFound := true) (n + 1)
+            go (labelPreviouslyFound := true) (n + 1) tail
       else
         if labelPreviouslyFound && searchId == id then
-          LExpr.bvar n -- We stop the search, we have found it
+          return LExpr.bvar n -- We stop the search, we have found it
         else
-          go tail labelPreviouslyFound (n + 1)
-  go c false 0
+          go labelPreviouslyFound (n + 1) tail
+  go false 0
 
 def Context.label {Identifier: Type} (c : Context Identifier) (name: Identifier): Context Identifier :=
   match c with
@@ -1291,101 +1353,141 @@ def Context.label {Identifier: Type} (c : Context Identifier) (name: Identifier)
   | .extend c id labels overrideIndex size =>
     Context.extend c id (name :: labels) overrideIndex size
 
-def Context.vLastAssigned {Identifier : Type}
+def vLastAssigned {Identifier : Type}
   [DecidableEq Identifier] [ToFormat Identifier] [ToFormat TypeType]
-  (c cInit : Context Identifier)
+  (cInit : Context Identifier)
   -- Assuming cInit is a prefix of c, we want to know which identifier in c corresponds to last identifier in cInit
   -- which was last assigned in c
-  (id : Identifier) : LExpr TypeType Identifier :=
+  (id : Identifier) : CELExpr TypeType Identifier :=
+  λc=>
   let limit := c.size - cInit.size
-  let rec go : Context Identifier → Option (LExpr TypeType Identifier) → Nat → LExpr TypeType Identifier
-    | .topLevel, _, _ => .bvar 123456789 -- TODO: Convert to error
-    | .extend c' id'  _ overrideIndex _, candidate, n =>
+  let rec go : Option (LExpr TypeType Identifier) → Nat → CELExpr TypeType Identifier
+    | _, n, .topLevel => throw s!"vLastAssigned of {n}" -- .bvar 123456789 -- If needed for debug
+    | candidate, n, .extend c' id'  _ overrideIndex _ =>
       if n == limit then
         match candidate with
         | .some candidate =>
-          candidate
+          .ok candidate
         | .none => -- There were no assignments or they all lead to declarations when walking in reverse, such as
           -- cInit
           -- var i;  -- 3.candidate == .none     because it was a local declaration since cInit
           -- i := 2; -- 2.candidate == .some 0
           --         -- 1.candidate == none
-          cInit.vOffset id n -- Hence we take the last assignment or declaration in the initial context.
+          vOffset id n cInit -- Hence we take the last assignment or declaration in the initial context.
       else
         if id == id' then
           match overrideIndex with
-          | .none => go c' .none (n + 1)
-          | .some _ => go c' (.some (LExpr.bvar n)) (n + 1)
+          | .none => go .none (n + 1) c'
+          | .some _ => go (.some (LExpr.bvar n)) (n + 1)  c'
         else
-          go c' candidate (n + 1)
-  go c .none 0
+          go candidate (n + 1)  c'
+  go .none 0 c
 
-def Context.procedure_lambda {Identifier : Type} {TypeType: Type} [DecidableEq Identifier]
-  (c : Context Identifier) (id : Identifier) (ty: Option TypeType) (cont: Context Identifier -> LExpr TypeType Identifier): LExpr TypeType Identifier :=
-  abs (.some id) ty <|
-    let c': Context Identifier := c.add_declare id
-    cont c'
-
-def label {Identifier: Type} (c : Context Identifier) (name: Identifier) (cont: Context Identifier → LExpr TypeType Identifier) :=
+def label {Identifier: Type} (name: Identifier): Stmt TypeType Identifier :=
+  λc cont =>
   cont (c.label name)
 
-def opcall1 [DecidableEq Identifier] (name: Identifier) (arg: LExpr TypeType Identifier): LExpr TypeType Identifier :=
-  .app (.op name .none) arg
+def opcall1 [DecidableEq Identifier] (name: Identifier) (arg: CELExpr TypeType Identifier): CELExpr TypeType Identifier :=
+  app_ (op_ name .none) arg
 
-def opcall2 [DecidableEq Identifier] (name: Identifier) (arg arg2: LExpr TypeType Identifier): LExpr TypeType Identifier :=
-  .app (.app (.op name .none) arg) arg2
+def opcall2 [DecidableEq Identifier] (name: Identifier) (arg arg2: CELExpr TypeType Identifier): CELExpr TypeType Identifier :=
+  app_ (app_ (op_ name .none) arg) arg2
 
-def call1 [DecidableEq Identifier] (c: Context Identifier) (name: Identifier) (arg: LExpr TypeType Identifier): LExpr TypeType Identifier :=
-  .app (c.v name) arg
+def call1 [DecidableEq Identifier] (name: Identifier) (arg: CELExpr TypeType Identifier): CELExpr TypeType Identifier :=
+  app_ (var name) arg
 
-def call1_1 [DecidableEq Identifier] (c: Context Identifier) (name: Identifier) (arg: LExpr TypeType Identifier) (out: Identifier) (cont: Context Identifier -> LExpr TypeType Identifier): LExpr TypeType Identifier :=
-  .app (.app (c.v name) arg) <| abs (.some out) .none <|
-    let c := c.add_assign out
-    cont c
+-- If the identifier is already declared only !
+def call1_1 [DecidableEq Identifier] [ToString Identifier] (name: Identifier) (arg: CELExpr TypeType Identifier) (out: Identifier): Stmt TypeType Identifier :=
+  λc cont=>
+  do
+  let f ← var name c
+  let a ← arg c
+  let c ← c.add_assign out
+  let remaining ← cont c
+  return .app (.app f a) <| abs (.some out) .none remaining
 
 def choose_abs (ty: Option TypeType) (l: LExpr TypeType Identifier) : LExpr TypeType Identifier :=
   .app l (.choose ty)
 
 -- Declare a new variable without RHS
-def let_ (c: Context String) (id : String) (ty: Option TypeType) (k : Context String → LExpr TypeType String) : LExpr TypeType String :=
+def let_ (id : String) (ty: Option TypeType): Stmt TypeType String :=
+  λc k =>
+  do
   let c: Context String := .add_declare c id
-  choose_abs ty <| LExpr.abs id ty <| k c
+  let cont ← k c
+  return choose_abs ty <| LExpr.abs id ty cont
 
 def let_assign_helper {Identifier : Type} (id : Identifier) (ty: Option TypeType) (rhs : LExpr TypeType Identifier) (k : LExpr TypeType Identifier) : LExpr TypeType Identifier :=
   .app (.abs id ty k) rhs
 
 -- Declare a new variable and assign it a value
-def let_assign {Identifier : Type} (c: Context Identifier) (id : Identifier) (ty: Option TypeType) (rhs : LExpr TypeType Identifier) (k : Context Identifier → LExpr TypeType Identifier) : LExpr TypeType Identifier :=
+def let_assign {Identifier : Type} (id : Identifier) (ty: Option TypeType) (rhs : CELExpr TypeType Identifier): Stmt TypeType Identifier :=
+  λc k =>
+  do
+  let rhs ← rhs c
   let c : Context Identifier := .add_declare c id
-  let_assign_helper id ty rhs (k c)
+  let remaining ← k c
+  return let_assign_helper id ty rhs remaining
 
 -- Declare a variable and assigns it a value, with the intention that it's
 -- the variable that was assigned last.
-def assign {Identifier : Type} [DecidableEq Identifier] (c: Context Identifier) (id : Identifier) (ty: Option TypeType) (rhs : LExpr TypeType Identifier) (k : Context Identifier → LExpr TypeType Identifier) : LExpr TypeType Identifier :=
-  let c : Context Identifier := .add_assign c id
-  .app (.abs id ty (k c)) rhs
+def assign {Identifier : Type} [DecidableEq Identifier] [ToString Identifier] (id : Identifier) (ty: Option TypeType) (rhs : CELExpr TypeType Identifier): Stmt TypeType Identifier :=
+  λc k =>
+  do
+  let rhs ← rhs c
+  let c ← Context.add_assign c id
+  let cont ← k c
+  return .app (.abs id ty cont) rhs
 
 def procedure  {Identifier : Type} {TypeType: Type} [DecidableEq Identifier]
-  (c : Context Identifier)
-  (name: Identifier) (args: List (Identifier × Option TypeType)) (body: Context Identifier -> LExpr TypeType Identifier)
-  (cont: Context Identifier -> LExpr TypeType Identifier): LExpr TypeType Identifier :=
-  let funDef :=
-    args.foldr (fun (name, type) body =>
-      fun c => c.procedure_lambda name type <| body
+  (name: Identifier) (args: List (Identifier × Option TypeType)) (body: CELExpr TypeType Identifier): Stmt TypeType Identifier :=
+  λc cont =>
+  do
+  let funDefExcept :=
+    args.foldr (fun (name, optType) inner =>
+        abs_ name optType inner
     ) body
-  let_assign c name .none (funDef c) cont
+  let_assign name .none funDefExcept c cont
 
 def assume {Identifier : Type} (cond : LExpr TypeType Identifier) (thn : LExpr TypeType Identifier) : LExpr TypeType Identifier :=
   .ite cond thn .dontcare
 
+def canFail: (A -> B) -> (Except String A -> Except String B) :=
+  λf ae =>
+    do
+    let a ← ae
+    return f a
+
+def canFail2: (A -> B -> C) -> (Except String A -> Except String B -> Except String C) :=
+  λf a1e a2e =>
+    do
+    let a1 ← a1e
+    let a2 ← a2e
+    return f a1 a2
+
+def assume_ {TypeType Identifier : Type} (cond : CELExpr TypeType Identifier) : Stmt TypeType Identifier :=
+  λc k =>
+    return assume (← cond c) (← k c)
+
 def assert {Identifier: Type} (cond : LExpr TypeType Identifier) (thn : LExpr TypeType Identifier) : LExpr TypeType Identifier :=
   .ite cond thn .error
 
+def assert_ {TypeType Identifier : Type} (cond : CELExpr TypeType Identifier) : Stmt TypeType Identifier :=
+  λc k =>
+    return assert (← cond c) (← k c)
+
+def skip_expr: CELExpr TypeType Identifier := λ_ => return .skip
+
 def plus (a b: LExpr LTy String) := LExpr.app (.app (.op "+" .none) a) b
+def plus_ (a b: CELExpr LTy String) := app_ (app_ (op_ "+" .none) a) b
 def minus (a b: LExpr LTy String) := LExpr.app (.app (.op "-" .none) a) b
+def minus_ (a b: CELExpr LTy String) := app_ (app_ (op_ "-" .none) a) b
 def pushpop (a b: LExpr LTy String) :=
   LExpr.app (LExpr.app (.abs .none .none (.abs .none .none (.bvar 0))) a) b
+def pushpop_  (a b: CELExpr LTy String) :=
+  λc => return LExpr.app (LExpr.app (.abs .none .none (.abs .none .none (.bvar 0))) (← a c)) (← b c)
 def not (a: LExpr LTy String) := LExpr.app (.op "!" .none) a
+def not_ (a: CELExpr LTy String) := app_ (op_ "!" .none) a
 
 -- TODO: Prove that this transformation preserves errors
 def ifToPushPop (prog: LExpr LTy String): LExpr LTy String :=
@@ -1464,13 +1566,13 @@ def decreasesBVar (prog: LExpr TypeType Identifier): LExpr TypeType Identifier :
 partial def propagateCallSiteToAssertions (callSiteInfo : Info) (expr : LExpr TypeType Identifier) : LExpr TypeType Identifier :=
   match expr with
   -- Base constructors that don't contain sub-expressions
-  | .const c ty => expr
-  | .op o ty => expr
-  | .bvar n => expr
-  | .fvar name ty => expr
+  | .const _ _ => expr
+  | .op _ _ => expr
+  | .bvar _ => expr
+  | .fvar _ _ => expr
   | .dontcare => expr
   | .error => expr
-  | .choose t => expr
+  | .choose _ => expr
   | .skip => expr
 
   -- Constructors with sub-expressions
@@ -1554,7 +1656,10 @@ def letAssignToLetAssume (prog: LExpr LTy String): LExpr LTy String :=
 
 partial def ToSMTExpr (c: Context String) (prog: LExpr LTy String): Format :=
   match prog with
-  | .bvar n => c.nameOf n
+  | .bvar n =>
+    match c.nameOf n with
+    | .ok n => n
+    | .error n => n
   | .const n _ => f!"{n}"
   | .eq a b =>
     let aSmt := ToSMTExpr c a
@@ -1588,8 +1693,6 @@ partial def ToSMTExpr (c: Context String) (prog: LExpr LTy String): Format :=
   | .mdata _ e => ToSMTExpr c e  -- For expressions, just unwrap the metadata
   | _ => panic!("ToSMTExpr: Not supported: " ++ toString (format prog))
 
--- Assume that the prog is written in an SMT compatible format
--- where expressions are all proved to be deterministic
 partial def ToSMT (c: Context String) (prog: LExpr LTy String): Format :=
   match prog with
   | .app (.abs id _ body) (.choose lty) =>
@@ -1622,37 +1725,68 @@ partial def ToSMT (c: Context String) (prog: LExpr LTy String): Format :=
     let bSmt := ToSMT c b
     f!"(push){Format.line}{aSmt}{Format.line}(pop){if !bSmt.isEmpty then Format.line else f!""}{bSmt}"
   | .skip => f!""
-  | _ => panic!("ToSMT not supported:" ++ (toString (format prog)))
+  | .app e1 e2 =>
+    -- TODO: Function definitions that are never used anywhere should be converted already into push pop
+    -- Unrecognized application. We report it but verify each component individually
+    let msg := f!"(echo \"Application not convertible to SMT {format prog}, testing both operands individually but this is not sound\")"
+    --let result := ToSMT c (pushpop (assert (.const "false" _Bool) skip) (pushpop e1 e2))
+    --f!"{msg}{Format.line}{result}"
+    msg
+  | .abs id ty body =>
+    -- Unrecognized abstraction. We analyze the body though
+    let msg := f!"(echo \"Application not convertible to SMT {format prog}, testing body for any input\")"
+    --let result := ToSMT c (pushpop (assert (.const "false" _Bool) skip)
+    --    (.app (.abs id ty body) (.choose ty)))
+    --f!"{msg}{Format.line}{result}"
+    msg
+  | _ =>
+    let msg := f!"(echo \"Not convertible to SMT {format prog}, testing body for any input\")"
+    --let result := ToSMT c (assert (.const "false" _Bool) skip)
+    --f!"{msg}{Format.line}{result}"
+    msg
 
--- We wrongly assume determinism. We should detect determinism in the future.
 def frameExitCall
   (frame: List String)
   (exitName: String)
   (cAtEntry: Context String)
-  (cAtExit: Context String): LExpr LTy String :=
-    (frame.map (fun varName =>
-        cAtExit.vLastAssigned cAtEntry varName)).foldl
-      (fun acc v => .app acc v)
-      (cAtExit.v exitName)
+  : CELExpr LTy String :=
+    λcAtExit =>
+    do
+    let final ← var exitName cAtExit
+    if frame.isEmpty then
+      return .app final (.const "()" .none)
+    let framedLastAssigned :=
+      frame.map (fun varName =>
+        vLastAssigned cAtEntry varName)
+    framedLastAssigned.foldl
+      (fun (acc frameName: CELExpr LTy String) => app_ acc frameName)
+      (λ_ => return final)
+      cAtExit
 
 def if_
-     (c: Context String)
      (frame: List String)
-     (cond: Context String -> LExpr LTy String)
-     (then_ else_:(Context String -> LExpr LTy String) -> Context String → LExpr LTy String)
-     (endif : Context String → LExpr LTy String) : LExpr LTy String :=
+     (cond: Context String -> Except String (LExpr LTy String))
+     (then_ else_: ExceptBuilder (Context String) (LExpr LTy String))
+     : ExceptBuilder (Context String) (LExpr LTy String) :=
   -- First we call thn and els with a '@continue' free variable
   -- Then we detect which variables have been modified since the original context on either branches
   -- We add those variables to the context for next, and then
   -- we replace @continue on each branch with a call to the actual continue variable with the variables modified on either branches as argument.
-  let exitName := "@continue" -- TODO: Avoid name clashes in the case of nested ifs. Use metadata?
+  let exitName := "@continue"
+  λc endif =>
+  do
   let newC := c.add_declare exitName
-  let condProg := cond newC
-  let thnProg := then_ (frameExitCall frame exitName newC) newC
-  let elsProg := else_ (frameExitCall frame exitName newC) newC
-  let nextCtx := frame.foldl Context.add_declare c
-  let nextProg := frame.foldl (fun acc name => .abs (.some name) .none acc) (endif nextCtx)
-  .app (.abs (.some "@endif") .none <| .ite condProg thnProg elsProg
+  let condProg ← cond newC
+  let thnProg ← then_ newC (frameExitCall frame exitName newC)
+  let elsProg ← else_ newC (frameExitCall frame exitName newC)
+  let mut nextCtx := frame.foldl Context.add_declare c
+  if frame.isEmpty then
+    nextCtx := c.add_declare "@unit"
+  let mut endif_final ← endif nextCtx
+  if frame.isEmpty then
+    endif_final := .abs .none .none endif_final
+  let nextProg := frame.foldl (fun acc name => .abs (.some name) .none acc) endif_final
+  return .app (.abs (.some "@endif") .none <| .ite condProg thnProg elsProg
   ) nextProg
 
 -- Count the number of references to bvar 0.
@@ -1734,8 +1868,13 @@ partial def inlineContinuations (prog: LExpr LTy String): LExpr LTy String :=
   | .app (.abs name ty body) cont =>
     if zeroVarContinuation cont then -- TODO: Verify that it returns a unique value (could be unit!)
       betareduction (inlineContinuations body) <| inlineContinuations cont
-    else
-      .app (.abs name ty (inlineContinuations body)) (inlineContinuations cont)
+    else match name, cont with
+      | .some "", .const "()" _ =>
+        betareduction (inlineContinuations body) <| inlineContinuations cont
+      | .none, .const "()" _ =>
+        betareduction (inlineContinuations body) <| inlineContinuations cont
+      | _, _ =>
+        .app (.abs name ty (inlineContinuations body)) (inlineContinuations cont)
   -- These are inlining values, not continuations. A simplification phase takes care of them.
   | .ite cond thn els =>
     .ite cond (inlineContinuations thn) (inlineContinuations els)
@@ -1871,19 +2010,26 @@ decreasing_by
     grind
   }
 
-def Context.record (c: Context String) (values: List (String × (Context String -> LExpr LTy String))): LExpr LTy String :=
-  c.procedure_lambda "symbol" .none <| λc =>
+def record (values: List (String × LExpr LTy String)): LExpr LTy String :=
+  .abs "symbol" .none <|
     values.foldr (λ(name, expr) acc =>
-      .ite (.eq (.bvar 0) (.const name .none)) (expr c) acc
+      .ite (.eq (.bvar 0) (.const name .none)) expr acc
     ) .error
 
-abbrev Threaded (Input: Type) (Output: Type) := Input -> (Input -> Output) -> Output
+def select (name: String) (e: LExpr LTy String) : LExpr LTy String :=
+  .app e (.const name .none)
 
-def ThreadThen (a b: Threaded Input Output): Threaded Input Output :=
-  λi k =>
-    a i <| λi => b i k
+def record_ (values: List (String × (CELExpr LTy String))): CELExpr LTy String :=
+  abs_ "symbol" .none <| λc =>
+    values.foldr (λ(name, expr) acc =>
+      do
+      let res ← expr c
+      let acc ← acc
+      return .ite (.eq (.bvar 0) (.const name .none)) res acc
+    ) (.ok .error)
 
-def ThreadedId: Threaded Input Output := λi k => k i
+def select_ (name: String) (e: CELExpr LTy String) : CELExpr LTy String :=
+  λc => return select name (← e c)
 /-
 Datatype "Option" [("Some", 1), ("None", 0)]
 
@@ -1892,113 +2038,105 @@ generates something like this:
 let Option.Some := \value \@sel. @sel "Some" value
 let Option.None := \@sel. @sel "None"
 let Option@Match :=  \Some \None \value =>
-  value {Some: Some, None: None}
-let Option.IsSome := Match (_ => true) false
-let Option.IsNone := Match (_ => false) true
-let Option.Some.value := Match (v => v) .error
+  value {Some: Some (), None: None ()}
+let Option.@IsSome := Option@Match (_ _ => true) (_ => false)
+let Option.@IsNone := Option@Match (_ _ => false) (_ => true)
+let Option.Some.value := Option@Match (_ v => v) (_ => .error)
 -/
-def Datatype (c: Context String) (name: String) (variants: List (String × List (String × Option LTy)))
-  (k: Context String -> LExpr LTy String): LExpr LTy String :=
+def Datatype (name: String) (variants: List (String × List (String × Option LTy))):
+  Stmt LTy String :=
 
   --let Option.Some := \value \@sel. @sel "Some" value
   --let Option.None := \@sel. @sel "None"
-  let withVariants: Threaded (Context String) (LExpr LTy String) :=
-    variants.foldl (fun (ck: Threaded (Context String) (LExpr LTy String)) (constructor, namesAndTypes) =>
-      ThreadThen ck λc k =>
-        let inner: Context String → LExpr LTy String :=
-          λ(c: Context String) => c.procedure_lambda "@sel" .none <| λc =>
+  let withVariants: Stmt LTy String :=
+    variants.foldl (fun (ck: Stmt LTy String) (constructor, namesAndTypes) =>
+      BuildThen ck λc k =>
+        let inner: CELExpr LTy String :=
+          abs_ "@sel" .none <|
             namesAndTypes.foldl (
-              λacc (nameArg, _) =>
-                .app acc (c.v nameArg)
+              λ(acc: CELExpr LTy String) (nameArg, _) =>
+                app_ acc (var nameArg)
             )
-            (.app (c.v "@sel") (.const constructor .none))
+            (app_ (var "@sel") (const_ constructor .none))
 
-        let rhsBuilder: Context String × (LExpr LTy String → LExpr LTy String) :=
-          namesAndTypes.foldl (
-            λ(c, wrap) (name, optType) =>
-              let new_c := c.add_declare name
-              (new_c, λres => wrap (abs (.some name) optType res))
-          ) (c, λwrapper => wrapper)
+        let rhs: CELExpr LTy String :=
+          namesAndTypes.foldr (
+            λ(name, optType) inner =>
+              abs_ name optType inner
+          ) inner
 
-        let rhs: LExpr LTy String := rhsBuilder.2 <| inner rhsBuilder.1
-
-        let_assign c (name ++ "." ++ constructor) .none rhs k
-    ) ThreadedId
+        let_assign (name ++ "." ++ constructor) .none rhs c k
+    ) (skip_)
 
   --let Option@Match :=  \Some \None \value =>
-    -- value {Some: Some, None: None}
-  let innerMatch: Context String -> LExpr LTy String := λc =>
-    c.procedure_lambda  "value" .none <| λc =>
-      .app (c.v "value") <| c.record <|
+    -- value {Some: Some (), None: None ()}
+  let innerMatch: CELExpr LTy String :=
+    abs_  "value" .none <|
+      app_ (var "value") <| record_ <|
         variants.map λ(name, _) =>
-          (name, λc => c.v name)
+          (name, app_ (var name) (const_ "()" .none))
 
-  let match_: Threaded (Context String) (LExpr LTy String) :=
-    variants.foldl (fun (ck: Threaded (Context String) (LExpr LTy String)) (name, _) =>
-      ThreadThen ck λc k =>
-        c.procedure_lambda name .none k
-    ) ThreadedId
+  let match_: CELExpr LTy String :=
+    variants.foldr (fun (name, _) inner =>
+       abs_ name .none inner
+    ) innerMatch
   let match_name := name ++ "@match"
 
-  let match_final: Threaded (Context String) (LExpr LTy String) :=
+  let match_final: Stmt LTy String :=
     λc k =>
-    let_assign c match_name .none (match_ c innerMatch) <| k
+    let_assign match_name .none match_ c k
 
-  --let Option.@IsSome := Option@match (_ => true) false
-  --let Option.@IsNone := Option@match (_ => false) true
-  let IsVariants: Threaded (Context String) (LExpr LTy String) := variants.foldl (fun (ck: Threaded (Context String) (LExpr LTy String)) (name, _) =>
-      ThreadThen ck λc k =>
+  --let Option.@IsSome := Option@Match (_ _ => true) (_ => false)
+  --let Option.@IsNone := Option@Match (_ _ => false) (_ => true)
+  let IsVariants: Stmt LTy String := variants.foldl (fun (stmts: Stmt LTy String) (name, _) =>
+      BuildThen stmts λc k =>
         let thematch :=
           variants.foldl (
             λrhs (nameVariant, args) =>
-              let result: LExpr LTy String := if nameVariant == name then .const "true" _Bool else .const "false" _Bool
+              let result: CELExpr LTy String := λc => return if nameVariant == name then .const "true" _Bool else .const "false" _Bool
               let toResult :=
                 args.foldr (λ(argName, argOptType) acc =>
-                  .abs argName argOptType acc
+                  abs_ argName argOptType acc
                 ) result
-              .app rhs toResult
-          ) (c.v match_name)
-        let_assign c ("Option.@Is" ++ name) .none thematch k
-    ) ThreadedId
+              app_ rhs (abs_ "" .none toResult)
+          ) (var match_name)
+        let_assign ("Option.@Is" ++ name) .none thematch c k
+    ) skip_
 
   -- How to extract a field of a constructor. Undefined if other constructors
   -- We could have an .error here but only if we could evaluate argumentless closures lazily
-  --let Option.Some.value := Option@match (value cont => value) .choose
-  let parametersExtractors: Threaded (Context String) (LExpr LTy String) :=
-    variants.foldl (fun (ck: Threaded (Context String) (LExpr LTy String)) (constructor, args) =>
+  --let Option.Some.value := Option@Match (_ v => v) (_ => .error)
+  let parametersExtractors: Stmt LTy String :=
+    variants.foldl (fun (ck: Stmt LTy String) (constructor, args) =>
       args.foldl (
-        fun (ck: Threaded (Context String) (LExpr LTy String)) (nameArg, _) =>
-          ThreadThen ck λc k =>
-            let_assign c (name ++ "." ++ constructor ++ "." ++ nameArg) .none (
+        fun (ck: Stmt LTy String) (nameArg, _) =>
+          BuildThen ck λc k =>
+            let_assign (name ++ "." ++ constructor ++ "." ++ nameArg) .none (
               variants.foldl (
                 λacc (otherConstructor, otherVariantArgs) =>
-                  let argFilter :=
-                    otherVariantArgs.foldl (
-                      λ(ck: Threaded (Context String) (LExpr LTy String)) (otherNameArg, otherNameArgOptType)=>
-                        ThreadThen ck λc k =>
-                          c.procedure_lambda otherNameArg otherNameArgOptType k
-                    ) ThreadedId
-                  .app acc <| argFilter c <| λc => if constructor == otherConstructor then c.v nameArg else .choose .none
-              ) (c.v match_name)
-            ) k
+                  app_ acc <|
+                    abs_ "" .none <|
+                      otherVariantArgs.foldr (
+                        λ(otherNameArg, otherNameArgOptType) (ck: CELExpr LTy String) =>
+                        abs_ otherNameArg otherNameArgOptType ck
+                      ) (if constructor == otherConstructor then var nameArg else λ_ => return .error)
+              ) (var match_name)
+            ) c k
       ) ck
-    ) ThreadedId
+    ) skip_
 
-  let final := ThreadThen
-    withVariants <| ThreadThen
-    match_final <| ThreadThen
-    IsVariants  <|
-    parametersExtractors
+  withVariants |>
+  ThenStmt match_final |>
+  ThenStmt IsVariants |>
+  ThenStmt parametersExtractors
 
-  final c k
+def ensures (t: Option LTy) (body postcond: LExpr LTy String): LExpr LTy String :=
+  (.app (.abs "res" t (.assert (.app postcond (.bvar 0)) (.bvar 0))) body)
 
 -- This ensures introduces an intermediate variable "res" that contains the method's output
-def ensures_ (t: Option LTy) (body postcond: LExpr LTy String) : LExpr LTy String :=
-  (.app (.abs "res" t (assert (.app postcond (.bvar 0)) (.bvar 0))) body)
-
-def Context.ensures (t: Option LTy) (c: Context String) (body: LExpr LTy String) (postcond: Context String -> LExpr LTy String) : LExpr LTy String :=
-  let c := c.add_declare "res"
-  ensures_ t body (postcond c)
+def ensures_ (t: Option LTy) (body postcond: CELExpr LTy String) : CELExpr LTy String :=
+  λc =>
+    return ensures t (← body c) (← postcond (c.add_declare "res"))
 
 def ensures_assume (t: Option LTy) (body postcond: LExpr LTy String) : LExpr LTy String :=
   (.app (.abs "res" t (assume (.app postcond (.bvar 0)) (.bvar 0))) body)
@@ -2008,10 +2146,10 @@ def ensures_assume (t: Option LTy) (body postcond: LExpr LTy String) : LExpr LTy
 -- Deserves to be called recursively
 def replaceByContract (prog: LExpr LTy String): LExpr LTy String :=
   match prog with
-  | .app (.abs name ty remaining) (.abs name2 ty2 (.assert precond (.ensures_ t body postcond))) =>
+  | .app (.abs name ty remaining) (.abs name2 ty2 (.assert precond (.ensures t body postcond))) =>
     .app (.abs name ty <| increaseBvars <|
       .app (.abs name ty remaining) (.abs name2 ty2 (.assert precond (.ensures_assume t (.choose .none) postcond)))
-    ) ((.choose ty2) |> .app (.abs name2 .none <| .assume precond (.ensures_ t body postcond))) -- Value is ignored but not its errors
+    ) ((.choose ty2) |> .app (.abs name2 .none <| .assume precond (.ensures t body postcond))) -- Value is ignored but not its errors
   | _ => prog
 
 -- This phase detects assignments that are unused, and will only keep their definition that can throw errors in a pushpop but not their value.
@@ -2058,13 +2196,22 @@ def removeIfTrue (prog: LExpr LTy String): LExpr LTy String :=
   | .skip => prog
 
 def implies (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op "==>" .none) a) b
+def implies_ (a b: CELExpr LTy String) := app_ (app_ (op_ "==>" .none) a) b
 def and (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op "&&" .none) a) b
+def and_ (a b: CELExpr LTy String) := app_ (app_ (op_ "&&" .none) a) b
 def ge (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op ">=" .none) a) b
+def ge_ (a b: CELExpr LTy String) := app_ (app_ (op_ ">=" .none) a) b
 def lt (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op "<" .none) a) b
+def lt_ (a b: CELExpr LTy String) := app_ (app_ (op_ "<" .none) a) b
 def le (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op "<=" .none) a) b
+def le_ (a b: CELExpr LTy String) := app_ (app_ (op_ "<=" .none) a) b
 def gt (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op ">" .none) a) b
+def gt_ (a b: CELExpr LTy String) := app_ (app_ (op_ ">" .none) a) b
 def or (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op "||" .none) a) b
+def or_ (a b: CELExpr LTy String) := app_ (app_ (op_ "||" .none) a) b
 def neq (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op "!=" .none) a) b
+def neq_ (a b: CELExpr LTy String) := app_ (app_ (op_ "!=" .none) a) b
+def eq_ (a b: CELExpr LTy String) := λc=> return (LExpr.eq (← a c) (← b c))
 
 ---- Semantics of non-deterministic LExpr
 inductive Value : Type where
@@ -2386,7 +2533,7 @@ theorem preservesValuesImpliesSoundness (t : LExpr LTy String → LExpr LTy Stri
 -- Proof that doing nothing preserves semantic equivalence
 -- This is not obvious not because of the transformation, but because
 -- equivalence semantics are not obvious!
-theorem doNothingPreservesValues: (fun p => p) |> preservesValues := by
+theorem skip_PreservesValues: (fun p => p) |> preservesValues := by
   rw [preservesValues]
   intro prog stack globals result eval_stmt
   let result' := result
