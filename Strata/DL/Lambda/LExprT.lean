@@ -251,7 +251,7 @@ def inferConst (T : (TEnv IDMeta)) (c : String) (cty : Option LMonoTy) :
   -- Unannotated Booleans: note that `(.const "true" none)` and
   -- `(.const "false" none)` will be interpreted as booleans.
   | "true", none | "false", none =>
-    if { name := "bool" } ∈ T.knownTypes then
+    if T.knownTypes.containsName "bool" then
       .ok (mty[bool], T)
     else
       .error f!"Booleans are not registered in the known types.\n\
@@ -260,7 +260,7 @@ def inferConst (T : (TEnv IDMeta)) (c : String) (cty : Option LMonoTy) :
                 Known Types: {T.knownTypes}"
   -- Annotated Integers
   | c, some LMonoTy.int =>
-    if { name := "int" } ∈ T.knownTypes then
+    if T.knownTypes.containsName "int" then
       if c.isInt then .ok (mty[int], T)
                  else .error f!"Constant annotated as an integer, but it is not.\n\
                                 {@LExpr.const LMonoTy IDMeta c cty}"
@@ -271,7 +271,7 @@ def inferConst (T : (TEnv IDMeta)) (c : String) (cty : Option LMonoTy) :
                 Known Types: {T.knownTypes}"
   -- Annotated Reals
   | c, some LMonoTy.real =>
-    if { name := "real" } ∈ T.knownTypes then
+    if T.knownTypes.containsName "real" then
       .ok (mty[real], T)
     else
       .error f!"Reals are not registered in the known types.\n\
@@ -281,7 +281,7 @@ def inferConst (T : (TEnv IDMeta)) (c : String) (cty : Option LMonoTy) :
   -- Annotated BitVecs
   | c, some (LMonoTy.bitvec n) =>
     let ty := LMonoTy.bitvec n
-    if { name := "bitvec", arity := 1 } ∈ T.knownTypes then
+    if T.knownTypes.containsName "bitvec" then
       (.ok (ty, T))
     else
       .error f!"Bit vectors of size {n} are not registered in the known types.\n\
@@ -290,7 +290,7 @@ def inferConst (T : (TEnv IDMeta)) (c : String) (cty : Option LMonoTy) :
                 Known Types: {T.knownTypes}"
   -- Annotated Strings
   | c, some LMonoTy.string =>
-    if { name := "string" } ∈ T.knownTypes then
+    if T.knownTypes.containsName "string" then
       .ok (mty[string], T)
     else
       .error f!"Strings are not registered in the known types.\n\
@@ -300,7 +300,7 @@ def inferConst (T : (TEnv IDMeta)) (c : String) (cty : Option LMonoTy) :
   | _, _ =>
   -- Unannotated Integers
     if c.isInt then
-      if { name := "int" } ∈ T.knownTypes then
+      if T.knownTypes.containsName "int" then
         .ok (mty[int], T)
       else
         .error f!"Integers are not registered in the known types.\n\

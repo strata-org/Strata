@@ -274,27 +274,218 @@ theorem Program.typeCheck.goWF : Program.typeCheck.go p T ds [] = .ok (ds', T') 
     any_goals (apply Procedure.typeCheckWF (by assumption))
     any_goals constructor
 
+theorem Statement.typeCheckIdentsEq: Statement.typeCheck T P op ss = .ok (ss', T') → T.idents = T'.idents := by sorry
+
+theorem addKnownTypeWithErrorIdents {T: Expression.TyEnv}: T.addKnownTypeWithError kn f = .ok T' → T.idents = T'.idents := by
+  unfold TEnv.addKnownTypeWithError;
+  simp[bind];
+  cases t_eq:  T.knownTypes.addWithError kn f
+  case error => intros _; contradiction
+  case ok k'=> simp[Except.bind]; intros T'; subst T'; rfl
+
+
+-- def foo (l1 l2: List Nat) : List Nat :=
+--   match l1 with
+--   | [] => []
+--   | x :: xs => if x ∈ l2 then x :: foo xs l2 else foo xs l2
+
+-- theorem fooLength l1 l2: (foo l1 l2).length <= l1.length := by
+--   induction l1 with
+--   | nil => simp[foo]
+--   | cons x xs IH =>
+--     simp[foo];
+--     split
+--     by_cases x_in : (x ∈ l2)
+--     case pos => rw[if_pos x_in]
+
+theorem addTypeAliasIdents : TEnv.addTypeAlias ts T = .ok T' → T.idents = T'.idents := by
+  simp[TEnv.addTypeAlias];
+  by_cases (ts.typeArgs.Nodup)
+  cases
+    case
+  unfold TEnv.addTypeAlias; simp
+
+ { name := ts.name, typeArgs := ts.typeArgs, type := ts.type }
+    { context := T.context, state := T.state, functions := T.functions, knownTypes := T.knownTypes, idents := id } =
+  Except.ok T''
+
+
+-- theorem Program.typeCheckFunctionDisjointAux (Hty: Statement.typeCheck T p op ss = .ok (ss', T'')) (IH': ∀ (x : Expression.Ident), x ∈ Program.getNames.go rs → ¬T''.idents.contains x = true) :
+-- T.idents.contains (Decl.var name ty e md).name = false ∧ ∀ (a : Decl), a ∈ rs → T.idents.contains a.name = false
+
+
+-- Hty : Statement.typeCheck
+--     { context := T.context, state := T.state, functions := T.functions, knownTypes := T.knownTypes, idents := id } p
+--     none [Statement.init name ty e] =
+--   Except.ok ([Stmt.cmd (CmdExt.cmd (Cmd.init x'✝ ty'✝ val'✝ md✝))], T'')
+
+-- IH' : ∀ (x : Expression.Ident), x ∈ Program.getNames.go rs → ¬T''.idents.contains x = true
+
+-- T.idents.contains (Decl.var name ty e md).name = false ∧ ∀ (a : Decl), a ∈ rs → T.idents.contains a.name = false
+
+
+theorem Program.typeCheckFunctionDisjoint : Program.typeCheck.go p T decls acc = .ok (d', T') → (∀ x, x ∈ Program.getNames.go decls → ¬ T.idents.contains x) := by
+  revert acc p d' T' T;
+  induction decls with
+  | nil => simp[Program.getNames.go]
+  | cons r rs IH =>
+    simp[Program.getNames.go, Program.typeCheck.go]
+    intros p T acc d' T'; simp[bind]
+    cases Hid: (T.idents.addWithError r.name
+            (format "Error in Boogie declaration " ++ format r ++ format ": " ++ format r.name ++
+              format " already defined"))
+    case error => intro C; cases C; done
+    case ok id =>
+      simp[Except.bind]; cases r <;> simp
+      case var name ty e md =>
+        split; intros _; contradiction
+        next x v Hty =>
+        -- rcases Hty: (Statement.typeCheck
+        --   { context := T.context, state := T.state, functions := T.functions, knownTypes := T.knownTypes, idents := id } p
+        --   none [Statement.init name ty e]) with
+        -- error | ⟨ y, T''⟩
+        -- case error => intro C; cases C; done
+        -- case ok =>
+        rcases v with ⟨y, T''⟩
+        simp; split
+
+/-
+IH : ∀ {p : Program} {T : TEnv Visibility} {acc : List Decl} {d' : Decls} {T' : Expression.TyEnv},
+  Program.typeCheck.go p T rs acc = Except.ok (d', T') →
+    ∀ (x : Expression.Ident), x ∈ Program.getNames.go rs → ¬T.idents.contains x = true
+
+Hty : Statement.typeCheck
+    { context := T.context, state := T.state, functions := T.functions, knownTypes := T.knownTypes, idents := id } p
+    none [Statement.init name ty e] =
+  Except.ok ([Stmt.cmd (CmdExt.cmd (Cmd.init x'✝ ty'✝ val'✝ md✝))], T'')
+
+IH' : ∀ (x : Expression.Ident), x ∈ Program.getNames.go rs → ¬T''.idents.contains x = true
+
+T.idents.contains (Decl.var name ty e md).name = false ∧ ∀ (a : Decl), a ∈ rs → T.idents.contains a.name = false
+
+-/
+
+
+
+        . have Heq := Statement.typeCheckIdentsEq Hty; simp at Heq; subst id;
+          intro Hgo; have IH':= IH Hgo; apply And.intro
+          . simp[Decl.name]; exact (Identifiers.addWithErrorNotin Hid)
+          . intro a a_in;
+            have a_in' : a.name ∈ Program.getNames.go rs := by
+              unfold Program.getNames.go; rw[List.mem_map ]; exists a
+            have a_notin := IH' a.name a_in';
+            have Hcontains := Identifiers.addWithErrorContains Hid a.name;
+            grind
+        . intros C; contradiction
+      case type t md =>
+        rcases t with tc | ts <;> simp --why doesn't "cases" work?
+        case con =>
+          split; intros _; contradiction
+          next x T'' Hadd =>
+          intros Hgo;
+          constructor
+          case left => simp[Decl.name]; exact (Identifiers.addWithErrorNotin Hid)
+          case right =>
+            intros a a_in
+            have a_in' : a.name ∈ Program.getNames.go rs := by
+              unfold Program.getNames.go; rw[List.mem_map ]; exists a
+            have IH':=IH Hgo a.name a_in'
+            have Hcontains := Identifiers.addWithErrorContains Hid a.name;
+            revert IH'; simp;
+            have id_eq := addKnownTypeWithErrorIdents Hadd; simp at id_eq; subst id
+            grind
+        case syn =>
+          split; intros _; contradiction
+          next x T'' Hadd =>
+
+          have Heq := Statement.typeCheckIdentsEq Hty
+
+          . simp
+
+
+
+           simp [Decl.name]; simp[Decl.name]
+          split <;> try contradiction
+          contradiction
+        .
+        cases Ht: t
+          case TypeDecl.con tc =>
+
+
+        cases t
+          case TypeDecl.con =>
+
+         =>
+
+
+          case con tc =>
+               cases:
+
+
+
+
+
+         cases (y == [Stmt.cmd (CmdExt.cmd (Cmd.init x' ty' val' md))])
+        case error
+
+
+
+        | ok ⟨y, T''⟩ => simp; sorry
+
+theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p T decls acc = .ok (d', T') → (Program.getNames.go decls).Nodup := by
+  revert acc p;
+  induction decls with
+  | nil => simp[Program.getNames.go]
+  | cons r rs IH =>
+    simp[Program.getNames.go, Program.typeCheck.go];
+    intros acc p;
+    cases Hid: (T.idents.addWithError r.name
+            (format "Error in Boogie declaration " ++ format r ++ format ": " ++ format r.name ++
+              format " already defined")); simp[bind]
+    case error => intro C; cases C; done
+    case ok id => intro C; simp[bind] at C; sorry
+
+-- Idea: prove invariant that all names in decls are in T'.identifiers
+-- think we can ignore acc - previous ones
+
+
+
+    cases r.kind;
+    case func => simp; intro acc; simp[Program.typeCheck.go]; sorry
+    all_goals sorry
+
 /--
 The main lemma stating that a program 'p' that passes type checking is well formed
 -/
 theorem Program.typeCheckWF : Program.typeCheck T p = .ok (p', T') → WF.WFProgramProp p := by
   intros tcok
   simp [Program.typeCheck] at tcok
+  constructor <;> try assumption
+  simp [bind, Except.bind] at tcok
+  cases Hgo : Program.typeCheck.go p (TEnv.updateSubst T { subst := [[]], isWF := SubstWF_of_empty_empty }) p.decls [] with
+  | error _ => simp_all
+  | ok res => exact typeCheck.goWF Hgo;
   cases (List.nodupDecidable (p.getNames DeclKind.var)) with
   | isFalse pvar => rw [if_neg pvar] at tcok ; cases tcok
   | isTrue pvar =>
     cases (List.nodupDecidable (p.getNames DeclKind.proc)) with
     | isFalse pproc => rw [if_pos pvar, if_neg pproc] at tcok ; cases tcok
     | isTrue pproc =>
-      cases (List.nodupDecidable (p.getNames DeclKind.func)) with
-      | isFalse pfunc => rw [if_pos pvar, if_pos pproc, if_neg pfunc] at tcok ; cases tcok
-      | isTrue pfunc =>
-        constructor <;> try assumption
-        rw [if_pos pvar, if_pos pproc, if_pos pfunc] at tcok
-        simp [bind, Except.bind] at tcok
-        cases Hgo : Program.typeCheck.go p (TEnv.updateSubst T { subst := [[]], isWF := SubstWF_of_empty_empty }) p.decls [] with
-        | error _ => simp_all
-        | ok res => exact typeCheck.goWF Hgo
+      rw[if_pos pvar, if_pos pproc] at tcok;
+      -- cases (List.nodupDecidable (p.getNames DeclKind.func)) with
+      -- | isFalse pfunc => rw [if_pos pvar, if_pos pproc, if_neg pfunc] at tcok ; cases tcok
+      -- | isTrue pfunc =>
+      have pfunc : (p.getNames DeclKind.func).Nodup := by
+        cases e : (Program.typeCheck.go p (TEnv.updateSubst T { subst := [[]], isWF := SubstWF_of_empty_empty }) p.decls []) with
+        | error _ => rw[e] at tcok; cases tcok
+        | ok o =>
+          rw[e] at tcok;
+          have H:= typeCheckFunctionNoDup e; exact H
+      constructor <;> try assumption
+      simp [bind, Except.bind] at tcok
+      cases Hgo : Program.typeCheck.go p (TEnv.updateSubst T { subst := [[]], isWF := SubstWF_of_empty_empty }) p.decls [] with
+      | error _ => simp_all
+      | ok res => exact typeCheck.goWF Hgo
 
 end WF
 end Boogie

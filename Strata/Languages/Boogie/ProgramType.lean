@@ -24,22 +24,22 @@ namespace Program
 def typeCheck (T : Boogie.Expression.TyEnv) (program : Program) :
   Except Format (Program × Boogie.Expression.TyEnv) := do
   -- Check for duplicates in declaration names.
-  let varNames  := program.getNames  .var
-  let procNames := program.getNames .proc
-  let funcNames := program.getNames .func
-  if !varNames.Nodup then
-    .error f!"Duplicate name(s) found for global variables! \
-              List of global variables:{Format.line}\
-              {varNames}"
-  else if !procNames.Nodup then
-    .error f!"Duplicate name(s) found for procedures! \
-              List of procedure names:{Format.line}\
-              {procNames}"
-  else if !funcNames.Nodup then
-    .error f!"Duplicate name(s) found for functions! \
-              List of function names:{Format.line}\
-              {funcNames}"
-  else
+  -- let varNames  := program.getNames  .var
+  -- let procNames := program.getNames .proc
+  -- let funcNames := program.getNames .func
+  -- if !varNames.Nodup then
+  --   .error f!"Duplicate name(s) found for global variables! \
+  --             List of global variables:{Format.line}\
+  --             {varNames}"
+  -- else if !procNames.Nodup then
+  --   .error f!"Duplicate name(s) found for procedures! \
+  --             List of procedure names:{Format.line}\
+  --             {procNames}"
+  -- else if !funcNames.Nodup then
+  --   .error f!"Duplicate name(s) found for functions! \
+  --             List of function names:{Format.line}\
+  --             {funcNames}"
+  -- else
     -- Push a type substitution scope to store global type variables.
     let T := T.updateSubst { subst := [[]], isWF := SubstWF_of_empty_empty }
     let (decls, T) ← go T program.decls []
@@ -49,6 +49,7 @@ def typeCheck (T : Boogie.Expression.TyEnv) (program : Program) :
   match remaining with
   | [] => .ok (acc.reverse, T)
   | decl :: drest => do
+    let T := {T with idents := (← T.idents.addWithError decl.name f!"Error in Boogie declaration {decl}: {decl.name} already defined")}
     let (decl', T) ←
       match decl with
 
@@ -63,19 +64,22 @@ def typeCheck (T : Boogie.Expression.TyEnv) (program : Program) :
                          Declaration: {decl}"
 
       | .type td _ =>
-        match Program.find?.go .type td.name acc with
-        | some decl =>
-          .error f!"Type declaration of the same name already exists!\n\
-                    {decl}"
-        | none =>
-          if td.name.name ∈ T.knownTypes.keywords then
-            .error f!"This type declaration's name is reserved!\n\
+        -- match Program.find?.go .type td.name acc with
+        -- | some decl =>
+        --   .error f!"Type declaration of the same name already exists!\n\
+        --             {decl}"
+        -- | none =>
+        --   if td.name.name ∈ T.knownTypes.keywords then
+        --     .error f!"This type declaration's name is reserved!\n\
+        --               {td}\n\
+        --               KnownTypes' names:\n\
+        --               {T.knownTypes.keywords}"
+          match td with
+          | .con tc =>
+            let T ← T.addKnownTypeWithError { name := tc.name, metadata := tc.numargs } f!"This type declaration's name is reserved!\n\
                       {td}\n\
                       KnownTypes' names:\n\
                       {T.knownTypes.keywords}"
-          else match td with
-          | .con tc =>
-            let T := T.addKnownType { name := tc.name, arity := tc.numargs }
             .ok (.type td, T)
           | .syn ts =>
             let T ← TEnv.addTypeAlias { typeArgs := ts.typeArgs, name := ts.name, type := ts.type } T

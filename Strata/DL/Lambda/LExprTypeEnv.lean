@@ -185,10 +185,16 @@ instance : ToFormat TState where
 ---------------------------------------------------------------------
 
 /-- Name and arity of a registered type. -/
-structure KnownType where
-  name : String
-  arity : Nat := 0
-  deriving Inhabited, Repr, DecidableEq
+def KnownType := Identifier Nat deriving Inhabited, DecidableEq, Repr
+
+-- def makeKnownType (n: String) : KnownType := ⟨n, 0⟩
+
+def KnownType.arity (k: KnownType) := k.metadata
+
+-- structure KnownType where
+--   name : String
+--   arity : Nat := 0
+--   deriving Inhabited, Repr, DecidableEq
 
 def KnownType.toLTy (k : KnownType) : LTy :=
   let bvars := (List.range k.arity).map (fun a => toString a)
@@ -197,18 +203,37 @@ def KnownType.toLTy (k : KnownType) : LTy :=
 
 def LTy.toKnownType! (lty : LTy) : KnownType :=
   match lty with
-  | .forAll _ (.tcons name args) => { name, arity := args.length }
-  | .forAll [] (.bitvec _) => { name := "bitvec", arity := 1 }
+  | .forAll _ (.tcons name args) => { name, metadata := args.length }
+  | .forAll [] (.bitvec _) => { name := "bitvec", metadata := 1 }
   | _ => panic! s!"Unsupported known type: {lty}"
 
 instance : ToFormat KnownType where
   format k := f!"{k.toLTy}"
 
 /-- Registered types. -/
-abbrev KnownTypes := List KnownType
+abbrev KnownTypes := Identifiers Nat
+-- abbrev KnownTypes := List KnownType
+
+def makeKnownTypes (l: List KnownType) : KnownTypes :=
+  Std.HashMap.ofList (l.map (fun x => (x.name, x.arity)))
 
 def KnownTypes.keywords (ks : KnownTypes) : List String :=
-  ks.map (fun k => k.name)
+  ks.keys
+
+def KnownTypes.toList (ks: KnownTypes) : List KnownType :=
+  (Std.HashMap.toList ks).map (fun x => ⟨x.1, x.2⟩)
+
+def KnownTypes.addWithError (ks: KnownTypes) (x: KnownType) (f: Format) : Except Format KnownTypes :=
+  Identifiers.addWithError ks ⟨x.name, x.arity⟩ f
+
+def KnownTypes.contains (ks: KnownTypes) (x: KnownType) : Bool :=
+  Identifiers.contains ks ⟨x.name, x.arity⟩
+
+def KnownTypes.containsName (ks: KnownTypes) (x: String) : Bool :=
+  Std.HashMap.contains ks x
+
+instance : ToFormat KnownTypes where
+  format ks := format (ks.toList)
 
 structure TGenEnv (IDMeta : Type) where
   context : TContext IDMeta
@@ -220,13 +245,15 @@ A type environment `TEnv` contains a stack of contexts `TContext` to track `LExp
 variables and their types, a typing state `TState` to track the global
 substitution and fresh variable generation, and a `KnownTypes` to track the
 supported type constructors. It also has type information about a
-factory of user-specified functions, which is used during type checking.
+factory of user-specified functions, which is used during type checking. It also
+contains data structures for ensuring unique names of types and functions.
 -/
 structure TEnv (IDMeta : Type) where
   genEnv : TGenEnv IDMeta
   stateSubstInfo: SubstInfo := SubstInfo.empty
   functions : @Factory IDMeta
   knownTypes : KnownTypes
+  idents : Identifiers IDMeta
 deriving Inhabited
 
 def TEnv.context (T: TEnv IDMeta) : TContext IDMeta :=
@@ -242,10 +269,10 @@ def TEnv.state {IDMeta : Type} (T: TEnv IDMeta) : TState :=
 
 def KnownTypes.default : KnownTypes :=
   open LTy.Syntax in
-  [t[∀a b. %a → %b],
+  makeKnownTypes ([t[∀a b. %a → %b],
    t[bool],
    t[int],
-   t[string]].map (fun k => k.toKnownType!)
+   t[string]].map (fun k => k.toKnownType!))
 
   def TGenEnv.default : TGenEnv IDMeta :=
   open LTy.Syntax in
@@ -258,18 +285,24 @@ def TEnv.default : TEnv IDMeta :=
   open LTy.Syntax in
   { genEnv := g,
     functions := #[],
-    knownTypes := KnownTypes.default
+    knownTypes := KnownTypes.default,
+    idents := Identifiers.default
   }
 
-instance : ToFormat (TEnv IDMeta) where
+instance [ToFormat IDMeta] : ToFormat (TEnv IDMeta) where
   format s := f!"context:{Format.line}{s.context}\
                  {Format.line}\
                  state:{Format.line}{s.state}\
                  {Format.line}\
-                 known types:{Format.line}{s.knownTypes}"
+                 known types:{Format.line}{s.knownTypes}\
+                 identifiers:{Format.line}{s.idents}"
 
-def TEnv.addKnownType (T : TEnv IDMeta) (k : KnownType) : TEnv IDMeta :=
-  { T with knownTypes := k :: T.knownTypes }
+def TEnv.addKnownTypeWithError (T : TEnv IDMeta) (k : KnownType) (f: Format) : Except Format (TEnv IDMeta) := do
+  .ok {T with knownTypes := (← T.knownTypes.addWithError k f)}
+
+def TEnv.addIdentWithError (T : TEnv IDMeta) (i: Identifier IDMeta) (f: Format) : Except Format (TEnv IDMeta) := do
+  let i ← T.idents.addWithError i f
+  .ok {T with idents := i}
 
 def TEnv.addFactoryFunction (T : TEnv IDMeta) (fn : LFunc IDMeta) : TEnv IDMeta :=
   { T with functions := T.functions.push fn }
@@ -673,7 +706,7 @@ def LMonoTy.knownInstance (ty : LMonoTy) (ks : KnownTypes) : Bool :=
   match ty with
   | .ftvar _ | .bitvec _ => true
   | .tcons name args =>
-    (ks.contains { name := name, arity := args.length }) &&
+    (ks.contains { name := name, metadata := args.length }) &&
     LMonoTys.knownInstances args ks
 
 /--
@@ -728,7 +761,7 @@ open LTy.Syntax
 #guard_msgs in
 #eval isInstanceOfKnownType mty[myTy (myTy)]
                             { @TEnv.default String with
-                                knownTypes := [LTy.toKnownType! t[∀a. myTy %a],
+                                knownTypes := makeKnownTypes [LTy.toKnownType! t[∀a. myTy %a],
                                                LTy.toKnownType! t[int]] }
 
 /-- info: false -/
@@ -737,7 +770,7 @@ open LTy.Syntax
 
 /--
 info: error: Type (arrow int Foo) is not an instance of a previously registered type!
-Known Types: [∀[0, 1]. (arrow 0 1), bool, int, string]
+Known Types: [∀[0, 1]. (arrow 0 1), string, int, bool]
 -/
 #guard_msgs in
 #eval do let ans ← t[int → Foo].instantiateWithCheck (@TEnv.default TyIdentifier)
