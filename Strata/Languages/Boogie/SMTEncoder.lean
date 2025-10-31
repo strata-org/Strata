@@ -183,12 +183,14 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr LMonoTy BoogieIdent
   | .abs ty e => .error f!"Cannot encode lambda abstraction {e}"
 
   | .quant _ .none _ _ => .error f!"Cannot encode untyped quantifier {e}"
+
   | .quant qk (.some ty) tr e =>
     let x := s!"$__bv{bvs.length}"
     let (ety, ctx) ← LMonoTy.toSMTType ty ctx
     let (trt, ctx) ← appToSMTTerm E ((x, ety) :: bvs) tr [] ctx
     let (et, ctx) ← toSMTTerm E ((x, ety) :: bvs) e ctx
     .ok (Factory.quant (convertQuantifierKind qk) x ety trt et, ctx)
+
   | .eq e1 e2 =>
     let (e1t, ctx) ← toSMTTerm E bvs e1 ctx
     let (e2t, ctx) ← toSMTTerm E bvs e2 ctx
@@ -206,6 +208,19 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr LMonoTy BoogieIdent
 partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : (LExpr LMonoTy BoogieIdent)) (acc : List Term) (ctx : SMT.Context) :
   Except Format (Term × SMT.Context) := do
   match e with
+  -- Special cases for indexed operations.
+  | .app (.app (.app (.op "Re.Loop" _) x) n1) n2 =>
+    let (xt, ctx) ← toSMTTerm E bvs x ctx
+    match Lambda.LExpr.denoteInt n1, Lambda.LExpr.denoteInt n2 with
+    | .some n1i, .some n2i =>
+      match Int.toNat? n1i, Int.toNat? n2i with
+      | .some n1n, .some n2n =>
+        .ok (.app (Op.re_loop n1n n2n) [xt] .regex, ctx)
+      | _, _ => .error "Natural numbers expected as indices for re.loop.\n\
+                        Original expression: {e}"
+    | _, _ => .error "Natural numbers expected as indices for re.loop.\n\
+                      Original expression: {e}"
+
   | .app (.app fn e1) e2 => do
     match e1, e2 with
     | _, _ =>
@@ -220,6 +235,7 @@ partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : (LExpr LMonoTy BoogieI
       let (op, retty, ctx) ← toSMTOp E fn fnty ctx
       let (e1t, ctx) ← toSMTTerm E bvs e1 ctx
       .ok (op (e1t :: acc) retty, ctx)
+
   | .app (.fvar fn (.some (.arrow intty outty))) e1 => do
     let (smt_outty, ctx) ← LMonoTy.toSMTType outty ctx
     let (smt_intty, ctx) ← LMonoTy.toSMTType intty ctx
@@ -227,6 +243,7 @@ partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : (LExpr LMonoTy BoogieI
     let (e1t, ctx) ← toSMTTerm E bvs e1 ctx
     let uf := UF.mk (id := (toString $ format fn)) (args := argvars) (out := smt_outty)
     .ok (((Term.app (.uf uf) [e1t] smt_outty)), ctx)
+
   | .app _ _ =>
     .error f!"Cannot encode expression {e}"
 
@@ -390,19 +407,19 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
     | "Bv16.Concat"  => .ok (.app Op.bvconcat,   .bitvec 32, ctx)
     | "Bv32.Concat"  => .ok (.app Op.bvconcat,   .bitvec 64, ctx)
 
-    | "Str.Length"   => .ok (.app Op.str_length, .int,    ctx)
-    | "Str.Concat"   => .ok (.app Op.str_concat, .string, ctx)
-    | "Str.ToRegEx"  => .ok (.app Op.str_to_re,  .regex, ctx)
-    | "Str.InRegEx"  => .ok (.app Op.str_in_re,  .bool, ctx)
-    | "Re.All"       => .ok (.app Op.re_all, .regex, ctx)
-    | "Re.AllChar"   => .ok (.app Op.re_allchar, .regex, ctx)
-    | "Re.Range"     => .ok (.app Op.re_range, .regex, ctx)
-    | "Re.Concat"    => .ok (.app Op.re_concat, .regex, ctx)
-    | "Re.Star"      => .ok (.app Op.re_star, .regex, ctx)
-    | "Re.Plus"      => .ok (.app Op.re_plus, .regex, ctx)
-    | "Re.Union"     => .ok (.app Op.re_union, .regex, ctx)
-    | "Re.Inter"     => .ok (.app Op.re_inter, .regex, ctx)
-    | "Re.Comp"      => .ok (.app Op.re_comp, .regex, ctx)
+    | "Str.Length"   => .ok (.app Op.str_length,    .int,    ctx)
+    | "Str.Concat"   => .ok (.app Op.str_concat,    .string, ctx)
+    | "Str.ToRegEx"  => .ok (.app Op.str_to_re,     .regex,  ctx)
+    | "Str.InRegEx"  => .ok (.app Op.str_in_re,     .bool,   ctx)
+    | "Re.All"       => .ok (.app Op.re_all,        .regex,  ctx)
+    | "Re.AllChar"   => .ok (.app Op.re_allchar,    .regex,  ctx)
+    | "Re.Range"     => .ok (.app Op.re_range,      .regex,  ctx)
+    | "Re.Concat"    => .ok (.app Op.re_concat,     .regex,  ctx)
+    | "Re.Star"      => .ok (.app Op.re_star,       .regex,  ctx)
+    | "Re.Plus"      => .ok (.app Op.re_plus,       .regex,  ctx)
+    | "Re.Union"     => .ok (.app Op.re_union,      .regex,  ctx)
+    | "Re.Inter"     => .ok (.app Op.re_inter,      .regex,  ctx)
+    | "Re.Comp"      => .ok (.app Op.re_comp,       .regex,  ctx)
 
     | "Triggers.empty"          => .ok (.app Op.triggers, .trigger, ctx)
     | "TriggerGroup.empty"      => .ok (.app Op.triggers, .trigger, ctx)
