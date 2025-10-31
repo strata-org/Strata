@@ -66,7 +66,7 @@ cycles in the map (see `TEnv.addTypeAlias`).
 structure TContext (IDMeta : Type) where
   types   :  Maps (Identifier IDMeta) LTy := []
   aliases :  List TypeAlias := []
-  deriving DecidableEq, Repr
+  deriving DecidableEq, Repr, Inhabited
 
 instance : ToFormat (TContext IDMeta) where
   format ctx :=
@@ -132,6 +132,12 @@ def TContext.subst (T : TContext IDMeta) (S : Subst) : TContext IDMeta :=
 
 ---------------------------------------------------------------------
 
+structure TGenState where
+  tyGen : Nat := 0
+  tyPrefix : String := "$__ty"
+  exprGen : Nat := 0
+  exprPrefix : String := "$__var"
+deriving Repr, Inhabited
 /--
 Typing state.
 
@@ -142,28 +148,27 @@ variables needed during type inference. It also has a global substitution map
 Also see functions `TEnv.genTyVar` and `TEnv.genExprVar`.
 -/
 structure TState where
-  tyGen : Nat := 0
-  tyPrefix : String := "$__ty"
-  exprGen : Nat := 0
-  exprPrefix : String := "$__var"
+  genState : TGenState
   substInfo : SubstInfo := SubstInfo.empty
-  deriving Repr
+deriving Repr, Inhabited
 
-def TState.init : TState := {}
+def TGenState.init : TGenState := {}
 
-def TState.incTyGen (state : TState) : TState :=
+def TState.init : TState := {genState := TGenState.init}
+
+def TGenState.incTyGen (state : TGenState) : TGenState :=
   { state with tyGen := state.tyGen + 1 }
 
-def TState.genTySym (state : TState) : TyIdentifier × TState :=
+def TGenState.genTySym (state : TGenState) : TyIdentifier × TGenState :=
   let new_idx := state.tyGen
   let state := state.incTyGen
   let new_var := state.tyPrefix ++ toString new_idx
   (new_var, state)
 
-def TState.incExprGen (state : TState) : TState :=
+def TGenState.incExprGen (state : TGenState) : TGenState :=
   { state with exprGen := state.exprGen + 1 }
 
-def TState.genExprSym (state : TState) : String × TState :=
+def TGenState.genExprSym (state : TGenState) : String × TGenState :=
   let new_idx := state.exprGen
   let state := state.incExprGen
   let new_var := state.exprPrefix ++ toString new_idx
@@ -171,10 +176,10 @@ def TState.genExprSym (state : TState) : String × TState :=
 
 instance : ToFormat TState where
   format ts :=
-    f!"tyGen: {ts.tyGen}{Format.line}\
-       tyPrefix: {ts.tyPrefix}{Format.line}\
-       exprGen: {ts.exprGen}{Format.line}\
-       exprPrefix: {ts.exprPrefix}{Format.line}\
+    f!"tyGen: {ts.genState.tyGen}{Format.line}\
+       tyPrefix: {ts.genState.tyPrefix}{Format.line}\
+       exprGen: {ts.genState.exprGen}{Format.line}\
+       exprPrefix: {ts.genState.exprPrefix}{Format.line}\
        subst: {ts.substInfo.subst}"
 
 ---------------------------------------------------------------------
@@ -205,6 +210,11 @@ abbrev KnownTypes := List KnownType
 def KnownTypes.keywords (ks : KnownTypes) : List String :=
   ks.map (fun k => k.name)
 
+structure TGenEnv (IDMeta : Type) where
+  context : TContext IDMeta
+  genState : TGenState
+deriving Inhabited
+
 /--
 A type environment `TEnv` contains a stack of contexts `TContext` to track `LExpr`
 variables and their types, a typing state `TState` to track the global
@@ -213,10 +223,22 @@ supported type constructors. It also has type information about a
 factory of user-specified functions, which is used during type checking.
 -/
 structure TEnv (IDMeta : Type) where
-  context : TContext IDMeta
-  state : TState
+  genEnv : TGenEnv IDMeta
+  stateSubstInfo: SubstInfo := SubstInfo.empty
   functions : @Factory IDMeta
   knownTypes : KnownTypes
+deriving Inhabited
+
+def TEnv.context (T: TEnv IDMeta) : TContext IDMeta :=
+  T.genEnv.context
+
+def TEnv.updateContext {IDMeta} (T: TEnv IDMeta) (C: TContext IDMeta) : TEnv IDMeta :=
+  let g := {T.genEnv with context := C}
+  {T with genEnv := g}
+
+def TEnv.state {IDMeta : Type} (T: TEnv IDMeta) : TState :=
+  let g := {tyGen := T.genEnv.genState.tyGen, tyPrefix := T.genEnv.genState.tyPrefix, exprGen := T.genEnv.genState.exprGen, exprPrefix := T.genEnv.genState.exprPrefix}
+  { substInfo := T.stateSubstInfo, genState := g}
 
 def KnownTypes.default : KnownTypes :=
   open LTy.Syntax in
@@ -225,10 +247,16 @@ def KnownTypes.default : KnownTypes :=
    t[int],
    t[string]].map (fun k => k.toKnownType!)
 
-def TEnv.default : TEnv IDMeta :=
+  def TGenEnv.default : TGenEnv IDMeta :=
   open LTy.Syntax in
   { context := {},
-    state := TState.init,
+    genState := TGenState.init,
+  }
+
+def TEnv.default : TEnv IDMeta :=
+  let g := {context := {}, genState := TGenState.init}
+  open LTy.Syntax in
+  { genEnv := g,
     functions := #[],
     knownTypes := KnownTypes.default
   }
@@ -253,7 +281,7 @@ def TEnv.addFactoryFunctions (T : TEnv IDMeta) (fact : @Factory IDMeta) : TEnv I
 Replace the global substitution in `T.state.subst` with `S`.
 -/
 def TEnv.updateSubst (T : (TEnv IDMeta)) (S : SubstInfo) : (TEnv IDMeta) :=
-  { T with state.substInfo := S }
+  { T with stateSubstInfo := S }
 
 omit [DecidableEq IDMeta] in
 theorem TEnv.SubstWF_of_pushemptySubstScope (T : TEnv IDMeta) :
@@ -267,7 +295,7 @@ theorem TEnv.SubstWF_of_pushemptySubstScope (T : TEnv IDMeta) :
 def TEnv.pushEmptySubstScope (T : (TEnv IDMeta)) : (TEnv IDMeta) :=
   let new_subst := T.state.substInfo.subst.push []
   let newS := { subst := new_subst, isWF := (by rw [TEnv.SubstWF_of_pushemptySubstScope]) }
-  { T with state.substInfo := newS }
+  { T with stateSubstInfo := newS }
 
 omit [DecidableEq IDMeta] in
 theorem TEnv.SubstWF_of_popSubstScope (T : TEnv IDMeta) :
@@ -283,25 +311,28 @@ theorem TEnv.SubstWF_of_popSubstScope (T : TEnv IDMeta) :
 def TEnv.popSubstScope (T : (TEnv IDMeta)) : (TEnv IDMeta) :=
   let new_subst := T.state.substInfo.subst.pop
   let newS := { subst := new_subst, isWF := (by rw [TEnv.SubstWF_of_popSubstScope]) }
-  { T with state.substInfo := newS }
+  { T with stateSubstInfo := newS }
 
 def TEnv.pushEmptyContext (T : (TEnv IDMeta)) : (TEnv IDMeta) :=
   let ctx := T.context
   let ctx' := { ctx with types := ctx.types.push [] }
-  { T with context := ctx' }
+  T.updateContext ctx'
 
 def TEnv.popContext (T : (TEnv IDMeta)) : (TEnv IDMeta) :=
   let ctx := T.context
   let ctx' := { ctx with types := ctx.types.pop }
+  T.updateContext ctx'
+
+def TGenEnv.insertInContext (T : TGenEnv IDMeta) (x : Identifier IDMeta) (ty : LTy) : TGenEnv IDMeta :=
+  let ctx := T.context
+  let ctx' := { ctx with types := ctx.types.insert x ty }
   { T with context := ctx' }
 
 /--
 Insert `(x, ty)` in `T.context`.
 -/
 def TEnv.insertInContext (T : (TEnv IDMeta)) (x : Identifier IDMeta) (ty : LTy) : (TEnv IDMeta) :=
-  let ctx := T.context
-  let ctx' := { ctx with types := ctx.types.insert x ty }
-  { T with context := ctx' }
+  { T with genEnv := TGenEnv.insertInContext T.genEnv x ty}
 
 /--
 Insert each element in `map` in `T.context`.
@@ -310,7 +341,7 @@ def TEnv.addToContext (T : (TEnv IDMeta)) (map : Map (Identifier IDMeta) LTy) : 
   let ctx := T.context
   let types := List.foldl (fun m (x, v) => m.insert x v) ctx.types map
   let ctx' := { ctx with types := types }
-  { T with context := ctx' }
+  T.updateContext ctx'
 
 /--
 Erase entry for `x` from `T.context`.
@@ -318,7 +349,7 @@ Erase entry for `x` from `T.context`.
 def TEnv.eraseFromContext (T : (TEnv IDMeta)) (x : Identifier IDMeta) : (TEnv IDMeta) :=
   let ctx := T.context
   let ctx' := { ctx with types := ctx.types.erase x }
-  { T with context := ctx' }
+  T.updateContext ctx'
 
 def TEnv.freeVarCheck (T : (TEnv IDMeta)) (e : LExpr LMonoTy IDMeta) (msg : Format) :
   Except Format Unit :=
@@ -347,7 +378,7 @@ instance [Inhabited IDMeta] : Inhabited (Identifier IDMeta × TEnv IDMeta) where
 
 /-- Variable Generator -/
 class HasGen (IDMeta : Type) where
-  genVar : TEnv IDMeta → Identifier IDMeta × TEnv IDMeta
+  genVar : TGenEnv IDMeta → Identifier IDMeta × TGenEnv IDMeta
 
 /--
 Generate a fresh variable (`LExpr.fvar`). This is needed to open the body of an
@@ -362,12 +393,11 @@ checking. Also, we rely on the parser disallowing Lambda variables to begin with
 Together, these restrictions ensure that variables created using
 `TEnv.genExprVar` are fresh w.r.t. the Lambda expression.
 -/
-def TEnv.genExprVar (T : TEnv Unit) : (Identifier Unit × TEnv Unit) :=
-  let (new_var, state) := T.state.genExprSym
-  let T := { T with state := state }
+def TEnv.genExprVar (T: TGenEnv Unit) : (Identifier Unit × TGenEnv Unit) :=
+  let (new_var, state) := T.genState.genExprSym
+  let T :={ T with genState := state }
   let known_vars := TContext.knownVars T.context
-  let new_var := ⟨new_var, ()⟩
-  if new_var ∈ known_vars then
+  if ⟨new_var, ()⟩ ∈ known_vars then
     panic s!"[TEnv.genExprVar] Generated variable {new_var} is not fresh!\n\
               Context: {format T.context}"
   else
@@ -385,8 +415,9 @@ universally quantified -- ensures that we always get a fresh type variable when
 we use `TEnv.genTyVar`.
 -/
 def TEnv.genTyVar (T : TEnv IDMeta) : TyIdentifier × (TEnv IDMeta) :=
-  let (new_var, state) := T.state.genTySym
-  let T := { T with state := state }
+  let (new_var, state) := T.genEnv.genState.genTySym
+  let g := {T.genEnv with genState := state}
+  let T := { T with genEnv := g }
   if new_var ∈ T.context.knownTypeVars then
     panic s!"[TEnv.genTyVar] Generated type variable {new_var} is not fresh!\n\
               Context: {format T.context}"
@@ -484,15 +515,15 @@ Subst:
 open LTy.Syntax in
 #eval let (ans, T) := LMonoTy.aliasDef?
         mty[FooAlias %p (BarAlias %p %p)]
-        { @TEnv.default String with
-          context := { aliases := [{ typeArgs := ["x", "y"],
+        ( (@TEnv.default String).updateContext
+          { aliases := [{ typeArgs := ["x", "y"],
                                      name := "FooAlias",
                                      type := mty[Foo %x %y]},
                                    { typeArgs := ["a", "b"],
                                      name := "BarAlias",
                                      type := mty[Bar %a %b]
                                    }
-                                  ]} }
+                                  ]})
       format f!"Ans: {ans}\n\
                 Subst:\n{T.state.substInfo.subst}"
 
@@ -501,25 +532,25 @@ open LTy.Syntax in
 open LTy.Syntax in
 #eval LMonoTy.aliasDef?
         mty[FooAlias %p (BarAlias %q %p)]
-        { @TEnv.default String with
-          context := { aliases := [{ typeArgs := ["x", "y"],
+        ( (@TEnv.default String).updateContext
+          { aliases := [{ typeArgs := ["x", "y"],
                                      name := "FooAlias",
                                      type := mty[Foo %x %y]},
                                    { typeArgs := ["a", "b"],
                                      name := "BarAlias",
                                      type := mty[Bar %a %b]
                                    }
-                                  ]} }
+                                  ]} )
       |>.fst |> format
 
 /-- info: some int -/
 #guard_msgs in
 open LTy.Syntax in
 #eval LMonoTy.aliasDef? mty[myInt]
-      { @TEnv.default String with context :=
+      ( (@TEnv.default String).updateContext
                   { aliases := [{ typeArgs := [],
                                   name := "myInt",
-                                  type := mty[int]}]} }
+                                  type := mty[int]}]} )
       |>.fst |> format
 
 /-- info: some bool -/
@@ -527,32 +558,32 @@ open LTy.Syntax in
 open LTy.Syntax in
 #eval LMonoTy.aliasDef?
         mty[BadBoolAlias %p %q]
-        { @TEnv.default String with
-          context := { aliases := [{ typeArgs := ["x", "y"],
+        ( (@TEnv.default String).updateContext
+          { aliases := [{ typeArgs := ["x", "y"],
                                      name := "BadBoolAlias",
-                                     type := mty[bool]}]} }
+                                     type := mty[bool]}]} )
       |>.fst |> format
 
 /-- info: none -/
 #guard_msgs in
 open LTy.Syntax in
 #eval LMonoTy.aliasDef? mty[myInt]
-                    { @TEnv.default String with context := { aliases := [{
+                    ( (@TEnv.default String).updateContext
+                      { aliases := [{
                          typeArgs := ["a"],
                          name := "myInt",
-                         type := mty[int]}] } }
+                         type := mty[int]}] })
       |>.fst |> format
 
 /-- info: some (myDef int) -/
 #guard_msgs in
 open LTy.Syntax in
 #eval LMonoTy.aliasDef? mty[myAlias int bool]
-                    { @TEnv.default String with
-                    context := {
-                      aliases := [{
+                    ( (@TEnv.default String).updateContext
+                      { aliases := [{
                         typeArgs := ["a", "b"],
                         name := "myAlias",
-                        type := mty[myDef %a]}] }}
+                        type := mty[myDef %a]}] })
       |>.fst |> format
 
 mutual
@@ -603,15 +634,15 @@ Subst:
 open LTy.Syntax in
 #eval let (ty, T) := LMonoTy.resolveAliases
         mty[FooAlias %p (BarAlias %p %p)]
-        { @TEnv.default String with
-          context := { aliases := [{ typeArgs := ["x", "y"],
+        ((@TEnv.default String).updateContext
+          { aliases := [{ typeArgs := ["x", "y"],
                                      name := "FooAlias",
                                      type := mty[Foo %x %y]},
                                    { typeArgs := ["a", "b"],
                                      name := "BarAlias",
                                      type := mty[Bar %a %b]
                                    }
-                                  ]} }
+                                  ]})
       format f!"De-aliased type: {ty}\n\
                 Subst:\n{T.state.substInfo.subst}"
 
@@ -627,10 +658,10 @@ def LTy.resolveAliases (ty : LTy) (T : (TEnv IDMeta)) : (Option LMonoTy × (TEnv
 open LTy.Syntax in
 #eval LTy.resolveAliases
         t[∀x. (FooAlias %x %x) → %x]
-        { @TEnv.default String with context := { aliases := [{
+        ((@TEnv.default String).updateContext { aliases := [{
                                         typeArgs := ["x", "y"],
                                         name := "FooAlias",
-                                        type := mty[bool]}]} }
+                                        type := mty[bool]}]} )
       |>.fst |>.format
 
 mutual
@@ -792,10 +823,10 @@ info: ok: (x : $__ty0) (y : int) (z : $__ty0)
 #guard_msgs in
 open LTy.Syntax in
 #eval do let ans ← (LMonoTySignature.instantiate
-                    { @TEnv.default Unit with context :=
+                    ((@TEnv.default Unit).updateContext
                                           { aliases := [{ typeArgs := ["a", "b"],
                                                           name := "myInt",
-                                                          type := mty[int]}] }}
+                                                          type := mty[int]}] })
                     ["a", "b"]
                     [("x", mty[%a]), ("y", mty[myInt %a %b]), ("z", mty[%a])])
          return Signature.format ans.fst
@@ -835,7 +866,7 @@ def TEnv.addInOldestContext (fvs : (IdentTs IDMeta)) (T : (TEnv IDMeta)) : (TEnv
   let (monotys, T) := maybeGenMonoTypes T fvs
   let tys := monotys.map (fun mty => LTy.forAll [] mty)
   let types := T.context.types.addInOldest fvs.idents tys
-  { T with context := { T.context with types := types } }
+  T.updateContext { T.genEnv.context with types := types }
 
 /--
 Add a well-formed `alias` to the context, where the type definition is first
@@ -868,7 +899,7 @@ def TEnv.addTypeAlias (alias : TypeAlias) (T : TEnv IDMeta) : Except Format (TEn
                            name := alias.name,
                            type := rhsmty } :: T.context.aliases
       let context := { T.context with aliases := new_aliases }
-      .ok { T with context := context }
+      .ok (T.updateContext context)
     | _ => .error f!"[TEnv.addTypeAlias] Implementation error! \n\
                       {alias}"
 

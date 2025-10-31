@@ -200,7 +200,8 @@ its type to the type context.
 -/
 def typeBoundVar (T : TEnv IDMeta) (ty : Option LMonoTy) :
   Except Format (Identifier IDMeta × LMonoTy × TEnv IDMeta) := do
-  let (xv, T) := HasGen.genVar T
+  let (xv, G) := HasGen.genVar T.genEnv
+  let T := {T with genEnv := G}
   let (xty, T) ← match ty with
     | some bty =>
       let ans := LMonoTy.instantiateWithCheck bty T

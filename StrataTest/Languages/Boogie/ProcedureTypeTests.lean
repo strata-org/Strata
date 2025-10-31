@@ -57,10 +57,12 @@ postconditions: (P.g_eq_a, ((g : int) == (((~Int.Add : (arrow int (arrow int int
 body: g := (((~Int.Add : (arrow int (arrow int int))) (a : int)) (g : int))
 -/
 #guard_msgs in
-#eval do let ans ←
+#eval do
+  let g : TGenEnv Visibility := { @TGenEnv.default Visibility with context := {types := [[("g", t[int])]] }};
+  let ans ←
               typeCheck { TEnv.default (IDMeta:=Visibility) with
                               functions := Boogie.Factory,
-                              context := { types := [[("g", t[int])]] }}
+                              genEnv := g}
                         Program.init
                         { header := { name := "P",
                                       typeArgs := [],
@@ -84,10 +86,12 @@ postconditions: (P.g_eq_a, ((g : int) == (((~Int.Add : (arrow int (arrow int int
 body: g := (((~Int.Add : (arrow int (arrow int int))) (a : int)) (g : int))
 -/
 #guard_msgs in
-#eval do let ans ←
+#eval do
+  let g : TGenEnv Visibility := { @TGenEnv.default Visibility with context := {types := [[("g", t[int])]] }};
+  let ans ←
               typeCheck { TEnv.default (IDMeta:=Visibility) with
                               functions := Boogie.Factory,
-                              context := { types := [[("g", t[int])]] }}
+                              genEnv := g}
                         Program.init
                         { header := { name := "P",
                                       typeArgs := [],

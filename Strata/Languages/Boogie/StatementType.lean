@@ -206,7 +206,7 @@ def typeCheck (T : Expression.TyEnv) (P : Program) (op : Option Procedure) (ss :
   Except Format (List Statement × Expression.TyEnv) := do
   let (ss', T) ← typeCheckAux T P op ss
   let context := TContext.subst T.context T.state.substInfo.subst
-  let T := { T with context := context }
+  let T := T.updateContext context
   let ss' := Statement.subst.go T.state.substInfo.subst ss' []
   .ok (ss', T)
 
