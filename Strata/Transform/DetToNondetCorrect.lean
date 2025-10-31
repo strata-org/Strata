@@ -28,7 +28,8 @@ open Imperative Boogie
   implicit arguments, and it can be hard to find the cause from the generic
   error message similar to "(kernel) application type mismatch".
 -/
-theorem StmtToNondetCorrect [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasBoolNeg P] :
+theorem StmtToNondetCorrect
+  [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasBoolNeg P] :
   WellFormedSemanticEvalBool δ →
   WellFormedSemanticEvalVal δ →
   (∀ st,
@@ -54,27 +55,26 @@ theorem StmtToNondetCorrect [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [H
   intros n ih σ₀ σ σ'
   refine ⟨?_, ?_⟩
   . intros st Hsz Heval
-    cases st <;> simp [StmtToNondetStmt]
-    case cmd c =>
+    match st with
+    | .cmd c =>
       cases Heval
       constructor <;> simp_all
-    case block =>
+    | .block _ ⟨ bss ⟩ =>
       cases Heval with
       | block_sem Heval =>
       next label b =>
       cases Heval with
       | block_sem Heval =>
-      specialize ih (Stmts.sizeOf b.ss) (by simp_all; omega)
+      specialize ih (Stmts.sizeOf bss) (by simp_all; omega)
       apply (ih _ _ _).2
       omega
       assumption
-    case ite =>
+    | .ite c ⟨ tss ⟩ ⟨ ess ⟩ =>
       cases Heval with
       | ite_true_sem Htrue Hwfb Heval =>
-        next c t e =>
         cases Heval with
         | block_sem Heval =>
-        specialize ih (Stmts.sizeOf t.ss) (by simp_all; omega)
+        specialize ih (Stmts.sizeOf tss) (by simp_all; omega)
         refine EvalNondetStmt.choice_left_sem Hwfb ?_
         apply EvalNondetStmt.seq_sem
         . apply EvalNondetStmt.cmd_sem
@@ -87,7 +87,7 @@ theorem StmtToNondetCorrect [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [H
         next c t e =>
         cases Heval with
         | block_sem Heval =>
-        specialize ih (Stmts.sizeOf e.ss) (by simp_all; omega)
+        specialize ih (Stmts.sizeOf ess) (by simp_all; omega)
         refine EvalNondetStmt.choice_right_sem Hwfb ?_
         apply EvalNondetStmt.seq_sem
         . apply EvalNondetStmt.cmd_sem
@@ -98,10 +98,10 @@ theorem StmtToNondetCorrect [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [H
         . apply (ih _ _ _).2
           omega
           assumption
-    case goto =>
+    | .goto _ =>
       -- because goto has no semantics now, it also does not correspond to anything in the nondeterministic semantics
       cases Heval
-    case loop =>
+    | .loop _ _ _ _ =>
       -- because loop has no semantics now, it also does not correspond to anything in the nondeterministic semantics
       cases Heval
   . intros ss Hsz Heval
