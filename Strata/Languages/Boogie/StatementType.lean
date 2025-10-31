@@ -84,25 +84,25 @@ where
           let (c', T) ← typeCheckCmd T P cmd
           .ok (.cmd c', T)
 
-        | .block label blk md => do
+        | .block label ⟨ bss ⟩ md => do
           let T := T.pushEmptyContext
-          let (ss', T) ← go T blk.ss []
+          let (ss', T) ← go T bss []
           let s' := .block label ⟨ss'⟩ md
           .ok (s', T.popContext)
 
-        | .ite cond thenb elseb md => do
+        | .ite cond ⟨ tss ⟩ ⟨ ess ⟩ md => do
           let _ ← T.freeVarCheck cond f!"[{s}]"
           let (conda, T) ← LExprT.fromLExpr T cond
           let condty := conda.toLMonoTy
           match condty with
           | .tcons "bool" [] =>
-            let (tb, T) ← go T [(.block "$$_then" thenb #[])] []
-            let (eb, T) ← go T [(.block "$$_else" elseb #[])] []
+            let (tb, T) ← go T [(.block "$$_then" ⟨ tss ⟩  #[])] []
+            let (eb, T) ← go T [(.block "$$_else" ⟨ ess ⟩  #[])] []
             let s' := .ite conda.toLExpr ⟨tb⟩ ⟨eb⟩ md
             .ok (s', T)
           | _ => .error f!"[{s}]: If's condition {cond} is not of type `bool`!"
 
-        | .loop guard measure invariant body md => do
+        | .loop guard measure invariant ⟨ bss ⟩ md => do
           let _ ← T.freeVarCheck guard f!"[{s}]"
           let (conda, T) ← LExprT.fromLExpr T guard
           let condty := conda.toLMonoTy
@@ -125,7 +125,7 @@ where
           | (.tcons "bool" [], some (.tcons "int" []), none)
           | (.tcons "bool" [], none, some (.tcons "bool" []))
           | (.tcons "bool" [], some (.tcons "int" []), some (.tcons "bool" [])) =>
-            let (tb, T) ← go T [(.block "$$_loop_body" body #[])] []
+            let (tb, T) ← go T [(.block "$$_loop_body" ⟨ bss ⟩ #[])] []
             let s' := .loop conda.toLExpr (mt.map LExprT.toLExpr) (it.map LExprT.toLExpr) ⟨tb⟩ md
             .ok (s', T)
           | _ =>
@@ -182,24 +182,18 @@ Apply type substitution `S` to a statement.
 def Statement.subst (S : Subst) (s : Statement) : Statement :=
   match s with
   | .cmd cmd => .cmd (Command.subst S cmd)
-  | .block label b md =>
-    .block label ⟨go S b.ss []⟩ md
-  | .ite cond thenb elseb md =>
-    .ite (cond.applySubst S) ⟨go S thenb.ss []⟩ ⟨go S elseb.ss []⟩ md
-  | .loop guard m i body md =>
-    .loop (guard.applySubst S) (substOptionExpr S m) (substOptionExpr S i) ⟨go S body.ss []⟩ md
+  | .block label ⟨ bss ⟩ md =>
+    .block label ⟨go S bss []⟩ md
+  | .ite cond ⟨ tss ⟩ ⟨ ess ⟩ md =>
+    .ite (cond.applySubst S) ⟨go S tss []⟩ ⟨go S ess []⟩ md
+  | .loop guard m i ⟨ bss ⟩ md =>
+    .loop (guard.applySubst S) (substOptionExpr S m) (substOptionExpr S i) ⟨go S bss []⟩ md
   | .goto _ _ => s
-  termination_by (Stmt.sizeOf s)
-  decreasing_by
-    all_goals simp_wf <;> omega
   where
     go S ss acc : List Statement :=
     match ss with
     | [] => acc.reverse
     | s :: srest => go S srest ((Statement.subst S s) :: acc)
-    termination_by (Stmts.sizeOf ss)
-    decreasing_by
-      all_goals simp_wf <;> omega
 
 /--
 Type checker and annotater for Statements.

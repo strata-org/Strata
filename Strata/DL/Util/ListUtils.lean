@@ -26,6 +26,13 @@ def PredImplies (P Q : α → Prop) : Prop := ∀ a, P a → Q a
 class ListP {α : Type} (π : α → Prop) (πs : List α → Prop) where
   split : ∀ {a : α} , πs (a :: as) → π a ×' πs as
 
+/-- A `mapM` function that keeps track of the fact that the function is applied
+to an argument that's an element of the original list. Useful for proving
+termination. -/
+def mapM₁ {m : Type u → Type v} [Monad m] {α : Type w} {β : Type u}
+  (xs : List α) (f : {x : α // x ∈ xs} → m β) : m (List β) :=
+  xs.attach.mapM f
+
 /--
   Enable attaching the instance itself to properties about the instance.
   See `WFProcedure` and `WFProgram`.
