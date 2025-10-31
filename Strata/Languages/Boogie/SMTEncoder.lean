@@ -208,7 +208,7 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr LMonoTy BoogieIdent
 partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : (LExpr LMonoTy BoogieIdent)) (acc : List Term) (ctx : SMT.Context) :
   Except Format (Term × SMT.Context) := do
   match e with
-  -- Special cases for indexed operations.
+  -- Special case for indexed operations.
   | .app (.app (.app (.op "Re.Loop" _) x) n1) n2 =>
     let (xt, ctx) ← toSMTTerm E bvs x ctx
     match Lambda.LExpr.denoteInt n1, Lambda.LExpr.denoteInt n2 with
