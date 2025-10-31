@@ -22,6 +22,7 @@ def KnownLTys : LTys :=
   [t[bool],
    t[int],
    t[string],
+   t[regex],
    t[real],
    t[Triggers],
    t[TriggerGroup],
@@ -101,7 +102,7 @@ def realLeFunc : LFunc BoogieIdent := binaryPredicate "Real.Le" mty[real] none
 def realGtFunc : LFunc BoogieIdent := binaryPredicate "Real.Gt" mty[real] none
 def realGeFunc : LFunc BoogieIdent := binaryPredicate "Real.Ge" mty[real] none
 
-/- String Operations -/
+/- String and Regex Operations -/
 def strLengthFunc : LFunc BoogieIdent :=
     { name := "Str.Length",
       typeArgs := [],
@@ -118,6 +119,78 @@ def strConcatFunc : LFunc BoogieIdent :=
       output := mty[string],
       concreteEval := some (binOpCeval String String LExpr.denoteString
                             String.append mty[string])}
+
+def strToRegexFunc : LFunc BoogieIdent :=
+    { name := "Str.ToRegEx",
+      typeArgs := [],
+      inputs := [("x", mty[string])]
+      output := mty[regex] }
+
+def strInRegexFunc : LFunc BoogieIdent :=
+    { name := "Str.InRegEx",
+      typeArgs := [],
+      inputs := [("x", mty[string]), ("y", mty[regex])]
+      output := mty[bool] }
+
+def reAllCharFunc : LFunc BoogieIdent :=
+    { name := "Re.AllChar",
+      typeArgs := [],
+      inputs := []
+      output := mty[regex] }
+
+def reAllFunc : LFunc BoogieIdent :=
+    { name := "Re.All",
+      typeArgs := [],
+      inputs := []
+      output := mty[regex] }
+
+def reRangeFunc : LFunc BoogieIdent :=
+    { name := "Re.Range",
+      typeArgs := [],
+      inputs := [("x", mty[string]), ("y", mty[string])]
+      output := mty[regex] }
+
+def reConcatFunc : LFunc BoogieIdent :=
+    { name := "Re.Concat",
+      typeArgs := [],
+      inputs := [("x", mty[regex]), ("y", mty[regex])]
+      output := mty[regex] }
+
+def reStarFunc : LFunc BoogieIdent :=
+    { name := "Re.Star",
+      typeArgs := [],
+      inputs := [("x", mty[regex])]
+      output := mty[regex] }
+
+def rePlusFunc : LFunc BoogieIdent :=
+    { name := "Re.Plus",
+      typeArgs := [],
+      inputs := [("x", mty[regex])]
+      output := mty[regex] }
+
+def reLoopFunc : LFunc BoogieIdent :=
+    { name := "Re.Loop",
+      typeArgs := [],
+      inputs := [("x", mty[regex]), ("n1", mty[int]), ("n2", mty[int])]
+      output := mty[regex] }
+
+def reUnionFunc : LFunc BoogieIdent :=
+    { name := "Re.Union",
+      typeArgs := [],
+      inputs := [("x", mty[regex]), ("y", mty[regex])]
+      output := mty[regex] }
+
+def reInterFunc : LFunc BoogieIdent :=
+    { name := "Re.Inter",
+      typeArgs := [],
+      inputs := [("x", mty[regex]), ("y", mty[regex])]
+      output := mty[regex] }
+
+def reCompFunc : LFunc BoogieIdent :=
+    { name := "Re.Comp",
+      typeArgs := [],
+      inputs := [("x", mty[regex])]
+      output := mty[regex] }
 
 /- A polymorphic `old` function with type `∀a. a → a`. -/
 def polyOldFunc : LFunc BoogieIdent :=
@@ -265,6 +338,18 @@ def Factory : @Factory BoogieIdent := #[
 
   strLengthFunc,
   strConcatFunc,
+  strToRegexFunc,
+  strInRegexFunc,
+  reAllFunc,
+  reAllCharFunc,
+  reRangeFunc,
+  reConcatFunc,
+  reStarFunc,
+  rePlusFunc,
+  reLoopFunc,
+  reUnionFunc,
+  reInterFunc,
+  reCompFunc,
 
   polyOldFunc,
 
@@ -346,6 +431,18 @@ def boolEquivOp : Expression.Expr := boolEquivFunc.opExpr
 def boolNotOp : Expression.Expr := boolNotFunc.opExpr
 def strLengthOp : Expression.Expr := strLengthFunc.opExpr
 def strConcatOp : Expression.Expr := strConcatFunc.opExpr
+def strToRegexOp : Expression.Expr := strToRegexFunc.opExpr
+def strInRegexOp : Expression.Expr := strInRegexFunc.opExpr
+def reAllOp : Expression.Expr := reAllFunc.opExpr
+def reAllCharOp : Expression.Expr := reAllCharFunc.opExpr
+def reRangeOp : Expression.Expr := reRangeFunc.opExpr
+def reConcatOp : Expression.Expr := reConcatFunc.opExpr
+def reStarOp : Expression.Expr := reStarFunc.opExpr
+def rePlusOp : Expression.Expr := rePlusFunc.opExpr
+def reLoopOp : Expression.Expr := reLoopFunc.opExpr
+def reUnionOp : Expression.Expr := reUnionFunc.opExpr
+def reInterOp : Expression.Expr := reInterFunc.opExpr
+def reCompOp : Expression.Expr := reCompFunc.opExpr
 def polyOldOp : Expression.Expr := polyOldFunc.opExpr
 def mapSelectOp : Expression.Expr := mapSelectFunc.opExpr
 def mapUpdateOp : Expression.Expr := mapUpdateFunc.opExpr
