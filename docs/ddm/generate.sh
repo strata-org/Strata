@@ -1,3 +1,4 @@
 set -ex
 
-lake exe docs --with-html-single --output _out/html
+lake exe ddm --with-html-single --output _out/ddm
+lake exe langdef --with-html-single --output _out/langdef
