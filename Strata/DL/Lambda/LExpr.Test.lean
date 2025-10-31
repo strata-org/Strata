@@ -14,7 +14,7 @@ open Std (ToFormat Format format)
 def extract (res: Except String (LExpr LTy String)): LExpr LTy String :=
   match res with
   | .ok e => e
-  | .error s => .const s .none
+  | .error s => .const ("Error: " ++ s) .none
 
 def build (builder: Stmt LTy String): LExpr LTy String :=
   let res := builder .topLevel (λ_ => .ok .skip)
@@ -23,6 +23,31 @@ def build (builder: Stmt LTy String): LExpr LTy String :=
 def buildExpr (builder: CELExpr LTy String): LExpr LTy String :=
   let res := builder .topLevel
   extract res
+
+def inlineDef :=
+  let_assign "f" .none (abs_ "x" .none (plus_ (var "x") (const_ "1" .none)))
+  |> ThenStmt (
+  let_assign "g" .none (abs_ "y" .none (plus_ (app_ (var "f") (var "y")) (app_ (var "f") (app_ (var "f") (var "y"))))))
+  |> ThenExpr (app_ (var "g") (const_ "2" .none))
+
+/--
+info: let λf := (λx ((~+ x%0) #1));
+((λg (g%0 #2))) <| λy
+((~+ (f%1 y%0)) (f%1 (f%1 y%0)))
+-/
+#guard_msgs in
+#eval! format <|
+  buildExpr <|
+  inlineDef
+
+/-- info: ((~+ ((~+ #2) #1)) ((~+ ((~+ #2) #1)) #1)) -/
+#guard_msgs in
+#eval! format <|
+  inline_fun_defs <|
+  inline_fun_defs <|
+  buildExpr <|
+  inlineDef
+
 /--datatype Option = Some value cont | None
    let x := Some a 2
    assert x.isSome
@@ -47,6 +72,39 @@ def opt := Datatype "Option" [
   simplify <|
   opt
 
+def testInlineFunDefs :=
+  let_assign "f" .none (abs_ "x" .none (plus_ (var "x") (var "x")))
+  |> ThenExpr (plus_ (app_ (var "f") (const_ "0" .none)) (app_ (var "f") (choose_ .none)))
+  |> buildExpr
+
+/-- info: ((~+ ((~+ #0) #0)) let λx; ((~+ x%0) x%0)) -/
+#guard_msgs in
+#eval! format <|
+       inline_fun_defs <|
+       testInlineFunDefs
+
+def py := Datatype "Val" [
+  ("ValInt", [("value", _Int)]),
+  ("None", [])
+] |> ThenExpr (app_ (var "Val.@IsValInt") (app_ (var "Val.ValInt") (const_ "1" .none))) |>   buildExpr
+
+/-- info: (#true : bool) -/
+#guard_msgs in
+#eval! format <|
+       inline_fun_defs <|
+       inline_fun_defs <|
+       inline_fun_defs <|
+       inline_fun_defs <|
+       inline_fun_defs <|
+       inline_fun_defs <|
+       py
+
+/--
+info: assert ((* : bool)) <|
+skip
+-/
+#guard_msgs in
+#eval! format <| assumeAssertOfNotSMTExpr <| build <| assert_ (λ_ => return build <| let_assign "a" .none (const_ "1" .none))
 
 def fib: CELExpr LTy String :=
   app_ (op_ "fix" .none) <|

@@ -380,7 +380,7 @@ termination_by (sizeOf e, 0)
 decreasing_by
   sorry
 
-private def formatLExpr [ToFormat Identifier] [ToFormat TypeType] (e : LExpr TypeType Identifier) (names: List (Option Identifier)) :
+def formatLExpr [ToFormat Identifier] [ToFormat TypeType] (e : LExpr TypeType Identifier) (names: List (Option Identifier)) :
     Format :=
   match e with
   | .const c ty =>
@@ -1279,6 +1279,18 @@ def Context.add_assign {Identifier : Type} [DecidableEq Identifier] [ToString Id
       | .topLevel => 0
       | .extend _ _ _ _ s => s + 1)
 
+def mdata_ (info: Info) (e1: CELExpr TypeType Identifier): CELExpr TypeType Identifier :=
+  λc =>
+    do
+    let e1 ← e1 c
+    return .mdata info e1
+
+def mdata__ (info: Info) (e1: Stmt TypeType Identifier): Stmt TypeType Identifier :=
+  λc k =>
+    do
+    let e1 ← e1 c k
+    return .mdata info e1
+
 def app_ (e1 e2: CELExpr TypeType Identifier): CELExpr TypeType Identifier :=
   λc =>
   do
@@ -1312,8 +1324,8 @@ def op_ (name: Identifier) (optType: Option TypeType): CELExpr TypeType Identifi
 
 def choose_ (optType: Option TypeType): CELExpr TypeType Identifier := λ_ => return LExpr.choose optType
 
-def vOffset [DecidableEq Identifier]: Identifier → Nat → CELExpr TypeType Identifier
-  | _, n, .topLevel => .error s!"vOffset of {n}" -- .bvar 4049828 if needed to debug
+def vOffset [DecidableEq Identifier] [ToFormat Identifier]: Identifier → Nat → CELExpr TypeType Identifier
+  | id, _, .topLevel => .error s!"vOffset of {toString <| format id} not found" -- .bvar 4049828 if needed to debug
   | id, n, .extend c' id' _ _ _ =>
     do
     if id == id' then
@@ -1322,7 +1334,7 @@ def vOffset [DecidableEq Identifier]: Identifier → Nat → CELExpr TypeType Id
     return res
 
 -- Returns a bvar corresponding of the index of the identifier in the context
-def var {Identifier : Type} [DecidableEq Identifier] (id : Identifier) : CELExpr TypeType Identifier :=
+def var {Identifier : Type} [DecidableEq Identifier] [ToFormat Identifier] (id : Identifier) : CELExpr TypeType Identifier :=
   vOffset id 0
 
 -- Search the variable with the given name right after the last given label
@@ -1393,7 +1405,7 @@ def opcall1 [DecidableEq Identifier] (name: Identifier) (arg: CELExpr TypeType I
 def opcall2 [DecidableEq Identifier] (name: Identifier) (arg arg2: CELExpr TypeType Identifier): CELExpr TypeType Identifier :=
   app_ (app_ (op_ name .none) arg) arg2
 
-def call1 [DecidableEq Identifier] (name: Identifier) (arg: CELExpr TypeType Identifier): CELExpr TypeType Identifier :=
+def call1 [DecidableEq Identifier] [ToFormat Identifier] (name: Identifier) (arg: CELExpr TypeType Identifier): CELExpr TypeType Identifier :=
   app_ (var name) arg
 
 -- If the identifier is already declared only !
@@ -1599,7 +1611,7 @@ partial def propagateCallSiteToAssertions (callSiteInfo : Info) (expr : LExpr Ty
 -- TODO We should prove this and perhaps support more cases, also
 -- depending on the environment.
 -- Eventually store it in the LExpr so that we don't need to recompute it.
-def isDeterministic (prog: LExpr LTy String): Bool :=
+def isDeterministic (prog: LExpr TypeType Identifier): Bool :=
   match prog with
   | .choose _ => false
   | .app (.app (.op _ _) a) b => isDeterministic a && isDeterministic b
@@ -1653,6 +1665,34 @@ def letAssignToLetAssume (prog: LExpr LTy String): LExpr LTy String :=
   | .mdata info e =>
     .mdata info (letAssignToLetAssume e)
   | _ => prog
+
+
+def isSmtExpr(prog: LExpr LTy String): Bool :=
+  match prog with
+  | .bvar n => true
+  | .const n _ => true
+  | .eq a b => isSmtExpr a && isSmtExpr b
+  | .app (.op name ty) a => isSmtExpr a
+  | .app (.app (.op name ty) a) b => isSmtExpr a && isSmtExpr b
+  | .op _ _ => true
+  | .mdata _ e => isSmtExpr e  -- For expressions, just unwrap the metadata
+  | _ => false
+
+-- Filter out things that won't result in SMT expressions
+def assumeAssertOfNotSMTExpr(prog: LExpr LTy String): LExpr LTy String :=
+  match prog with
+  | .ite cond thn .dontcare =>
+    if isSmtExpr cond then
+      .ite cond (assumeAssertOfNotSMTExpr thn) .dontcare
+    else
+      .ite (.const "true" _Bool) thn .dontcare -- We assume the weakest
+  | .app e1 e2 =>
+    .app (assumeAssertOfNotSMTExpr e1) (assumeAssertOfNotSMTExpr e2)
+  | .abs id ty body =>
+    .abs id ty (assumeAssertOfNotSMTExpr body)
+  | .mdata info e =>
+    .mdata info (assumeAssertOfNotSMTExpr e)
+  | prog => prog
 
 partial def ToSMTExpr (c: Context String) (prog: LExpr LTy String): Format :=
   match prog with
@@ -1823,10 +1863,6 @@ This means that modifying variables is something that has to be explicit in the 
 We don't have to guess.
 -/
 
--- Substitute variable .bvar 0 in the body expression.
--- This variable's index increases every time we go through an abstraction
--- Replacement is assumed to already mention variables at the same scope level
--- so when going past an abstraction, we increase its free bvars.
 def subst (replacement body : LExpr TypeType Identifier) : LExpr TypeType Identifier :=
   -- TODO: replacement MUST be deterministic or there must be EXACTLY one replacement
   let rec go (depth : Nat) (replacement : LExpr TypeType Identifier) : LExpr TypeType Identifier → LExpr TypeType Identifier
@@ -1848,12 +1884,41 @@ def subst (replacement body : LExpr TypeType Identifier) : LExpr TypeType Identi
     | e => e
   go 0 replacement body
 
-
 -- Beta reduction. Keeps value preservation only if arg appears only once in abs_body OR if arg evaluates to a unique value
-def betareduction (abs_body: LExpr TypeType Identifier) (arg: LExpr TypeType Identifier) :=
+def betareduction (abs_body arg: LExpr TypeType Identifier) :=
   decreasesBVar <| subst (increaseBvars <| arg) abs_body
 
--- Like simplify but only for continuations.
+-- Like subst but assumes that the replacement is a .abs
+-- and it will inline the substituted function definition instead of inlining the function.
+def substDef [ToFormat TypeType] [ToFormat Identifier] (replacement body : LExpr TypeType Identifier): LExpr TypeType Identifier :=
+  -- TODO: replacement MUST be deterministic or there must be EXACTLY one replacement
+  let rec go (depth : Nat) (replacement : LExpr TypeType Identifier) : LExpr TypeType Identifier → LExpr TypeType Identifier
+    | .mdata info (.bvar n) =>
+      if n == depth then
+        propagateCallSiteToAssertions info replacement
+      else .mdata info (.bvar n)
+    | .app (.bvar n) arg =>
+      if n == depth then
+        if isDeterministic arg then
+          match replacement with
+          | .abs _ _ body =>
+            betareduction body arg
+          | _ =>
+            .app replacement (go depth replacement arg)
+        else .app replacement (go depth replacement arg)
+      else .app (.bvar n) (go depth replacement arg)
+    | .bvar n => if n == depth then replacement else .bvar n
+    | .abs name ty e => .abs name ty (go (depth + 1) (increaseBvars replacement) e)
+    | .quant k ty tr e => .quant k ty (go (depth + 1) replacement tr) (go (depth + 1) replacement e)
+    | .app e1 e2 => .app (go depth replacement e1) (go depth replacement e2)
+    | .ite c t e => .ite (go depth replacement c) (go depth replacement t) (go depth replacement e)
+    | .eq e1 e2 => .eq (go depth replacement e1) (go depth replacement e2)
+    | .mdata info e =>
+      .mdata info (go depth replacement e)
+    | e => e
+  go 0 replacement body
+
+-- Like simplify below but only for continuations.
 -- .app (.abs _ x) RHS can be beta expanded if RHS is a function (even non deterministic), a constant or a variable
 -- But defining a procedure and using it is also interpreted as a continuation where the procedure is the continuation.
 partial def inlineContinuations (prog: LExpr LTy String): LExpr LTy String :=
@@ -1912,6 +1977,8 @@ partial def simplify (prog: LExpr LTy String): LExpr LTy String :=
     match newCond with
     | const "true" _ => -- TODO: report all els assertions as vacuously proved?
       simplify thn
+    | const "false" _ =>
+      simplify els
     | _ => .ite newCond (simplify thn) (simplify els)
   | .app a b =>
     let new_a := simplify a
@@ -1928,12 +1995,88 @@ partial def simplify (prog: LExpr LTy String): LExpr LTy String :=
   | .eq a b =>
     let new_a := simplify a
     let new_b := simplify b
-    if isDeterministic new_a && isDeterministic new_b && new_a == new_b then
-      .const "true" .none
+    if isDeterministic new_a && isDeterministic new_b then
+      if new_a == new_b then
+        .const "true" .none
+      else
+        match new_a, new_b with
+        | .const a_value _, .const b_value _ =>
+          if a_value != b_value then .const "false" .none
+          else
+            .eq new_a new_b
+        | _, _ => .eq new_a new_b
     else
       .eq new_a new_b
   | .mdata info e =>
     .mdata info (simplify e)
+  | _ => prog
+
+partial def isTerminal (prog: LExpr LTy String): Bool :=
+   match prog with
+  | .app e1 e2 =>
+    isTerminal e1 && isTerminal e2
+  | .op _ _ => true
+  | .fvar _ _ => true
+  | .const _ _ => true
+  | .bvar _ => false --Can still be replaced.
+  | _ => false
+
+-- Beta reduction, but useful only if the arg is an .abs as it will look for places
+-- where it is applied deterministically and inline the body.
+def betareductiondef [ToFormat TypeType] [ToFormat Identifier] (id: Option Identifier) (ty: Option TypeType) (abs_body arg: LExpr TypeType Identifier) :=
+  let new_body := substDef (increaseBvars <| arg) abs_body
+  if new_body.contains_bvar 0 then -- not totally eliminated.
+    .app (.abs id ty new_body) arg
+  else
+    decreasesBVar <| new_body
+
+-- Expands .app (.abs _ X) (.abs _ RHS) via two beta reductions, but only on the places where
+-- .bvar 0 is applied to a deterministic argument.
+partial def inline_fun_defs (prog: LExpr LTy String): LExpr LTy String :=
+  match prog with
+  | .app (.abs idBody tyBody body) arg =>
+    match arg with
+    | .bvar depth =>
+      betareduction (inline_fun_defs body) (.bvar depth) -- One risk of that is to multiply the bvar excessively
+    | .abs idDef tyDef fundef =>
+      betareductiondef idBody tyBody (inline_fun_defs body) (.abs idDef tyDef (inline_fun_defs fundef))
+    | b =>
+      if isTerminal b then
+        betareduction (inline_fun_defs body) b
+      else
+        -- One more case: if b consists only of constants, free variables and operators, we do the inlining
+        let new_body := inline_fun_defs body
+        let new_b := inline_fun_defs b
+        .app (.abs idBody tyBody new_body) new_b
+  | .app e1 e2 =>
+    .app (inline_fun_defs e1) (inline_fun_defs e2)
+  | .ite cond thn els =>
+    let newCond := inline_fun_defs cond;
+    match newCond with
+    | const "true" _ =>
+      inline_fun_defs thn
+    | const "false" _ =>
+      inline_fun_defs els
+    | _ => .ite newCond (inline_fun_defs thn) (inline_fun_defs els)
+  | .abs name t b =>
+    .abs name t (inline_fun_defs b)
+  | .eq a b =>
+    let new_a := inline_fun_defs a
+    let new_b := inline_fun_defs b
+    if isDeterministic new_a && isDeterministic new_b then
+      if new_a == new_b then
+        .const "true" .none
+      else
+        match new_a, new_b with
+        | .const a_value _, .const b_value _ =>
+          if a_value != b_value then .const "false" .none
+          else
+            .eq new_a new_b
+        | _, _ => .eq new_a new_b
+    else
+      .eq new_a new_b
+  | .mdata info e =>
+    .mdata info (inline_fun_defs e)
   | _ => prog
 
 -- TODO: Use a proper operator?
@@ -2088,19 +2231,19 @@ def Datatype (name: String) (variants: List (String × List (String × Option LT
 
   --let Option.@IsSome := Option@Match (_ _ => true) (_ => false)
   --let Option.@IsNone := Option@Match (_ _ => false) (_ => true)
-  let IsVariants: Stmt LTy String := variants.foldl (fun (stmts: Stmt LTy String) (name, _) =>
+  let IsVariants: Stmt LTy String := variants.foldl (fun (stmts: Stmt LTy String) (constructor, _) =>
       BuildThen stmts λc k =>
         let thematch :=
           variants.foldl (
             λrhs (nameVariant, args) =>
-              let result: CELExpr LTy String := λc => return if nameVariant == name then .const "true" _Bool else .const "false" _Bool
+              let result: CELExpr LTy String := λc => return if nameVariant == constructor then .const "true" _Bool else .const "false" _Bool
               let toResult :=
                 args.foldr (λ(argName, argOptType) acc =>
                   abs_ argName argOptType acc
                 ) result
               app_ rhs (abs_ "" .none toResult)
           ) (var match_name)
-        let_assign ("Option.@Is" ++ name) .none thematch c k
+        let_assign (name ++ ".@Is" ++ constructor) .none thematch c k
     ) skip_
 
   -- How to extract a field of a constructor. Undefined if other constructors
