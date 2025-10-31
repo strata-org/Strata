@@ -9,7 +9,7 @@ import Strata.Languages.Boogie.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def regexPgm :=
+def regexPgm1 :=
 #strata
 program Boogie;
 
@@ -126,6 +126,65 @@ Obligation: cannot_exceed_10_chars
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" regexPgm
+#eval verify "cvc5" regexPgm1
 
 ---------------------------------------------------------------------
+
+def regexPgm2 :=
+#strata
+program Boogie;
+
+function bad_re_loop (n : int) : regex {
+    re.loop(re.range("a", "z"), 1, n)
+}
+
+procedure main(n : int) returns () {
+
+    assert (!(str.in.re("0123456789a", bad_re_loop(n))));
+
+};
+#end
+
+/--
+info: [Strata.Boogie] Type checking succeeded.
+
+
+VCs:
+Label: assert_0
+Assumptions:
+
+
+Proof Obligation:
+(~Bool.Not ((~Str.InRegEx #0123456789a) (~bad_re_loop $__n0)))
+
+[Error] SMT Encoding error for obligation assert_0: ⏎
+Natural numbers expected as indices for re.loop.
+Original expression: (((~Re.Loop ((~Re.Range #a) #z)) #1) %0)
+
+Evaluated program: func bad_re_loop :  ((n : int)) → regex :=
+  (((((~Re.Loop : (arrow regex (arrow int (arrow int regex)))) (((~Re.Range : (arrow string (arrow string regex))) (#a : string)) (#z : string))) (#1 : int)) (n : int)))
+(procedure main :  ((n : int)) → ())
+modifies: []
+preconditions: ⏎
+postconditions: ⏎
+body: assert [assert_0] (~Bool.Not ((~Str.InRegEx #0123456789a) (~bad_re_loop $__n0)))
+
+
+
+---
+info:
+Obligation: assert_0
+Result: err [Error] SMT Encoding error for obligation assert_0: ⏎
+Natural numbers expected as indices for re.loop.
+Original expression: (((~Re.Loop ((~Re.Range #a) #z)) #1) %0)
+
+Evaluated program: func bad_re_loop :  ((n : int)) → regex :=
+  (((((~Re.Loop : (arrow regex (arrow int (arrow int regex)))) (((~Re.Range : (arrow string (arrow string regex))) (#a : string)) (#z : string))) (#1 : int)) (n : int)))
+(procedure main :  ((n : int)) → ())
+modifies: []
+preconditions: ⏎
+postconditions: ⏎
+body: assert [assert_0] (~Bool.Not ((~Str.InRegEx #0123456789a) (~bad_re_loop $__n0)))
+-/
+#guard_msgs in
+#eval verify "cvc5" regexPgm2

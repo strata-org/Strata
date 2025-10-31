@@ -208,7 +208,7 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr LMonoTy Visibility)
 partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : (LExpr LMonoTy Visibility)) (acc : List Term) (ctx : SMT.Context) :
   Except Format (Term × SMT.Context) := do
   match e with
-  -- Special case for indexed operations.
+  -- Special case for indexed SMT operations.
   | .app (.app (.app (.op "Re.Loop" _) x) n1) n2 =>
     let (xt, ctx) ← toSMTTerm E bvs x ctx
     match Lambda.LExpr.denoteInt n1, Lambda.LExpr.denoteInt n2 with
@@ -216,10 +216,10 @@ partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : (LExpr LMonoTy Visibil
       match Int.toNat? n1i, Int.toNat? n2i with
       | .some n1n, .some n2n =>
         .ok (.app (Op.re_loop n1n n2n) [xt] .regex, ctx)
-      | _, _ => .error "Natural numbers expected as indices for re.loop.\n\
-                        Original expression: {e}"
-    | _, _ => .error "Natural numbers expected as indices for re.loop.\n\
-                      Original expression: {e}"
+      | _, _ => .error f!"Natural numbers expected as indices for re.loop.\n\
+                          Original expression: {e.eraseTypes}"
+    | _, _ => .error f!"Natural numbers expected as indices for re.loop.\n\
+                        Original expression: {e.eraseTypes}"
 
   | .app (.app fn e1) e2 => do
     match e1, e2 with
