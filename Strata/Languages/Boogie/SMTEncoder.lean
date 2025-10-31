@@ -92,6 +92,7 @@ def LMonoTy.toSMTType (ty : LMonoTy) (ctx : SMT.Context) :
   | .tcons "int"  [] => .ok (.int, ctx)
   | .tcons "real" [] => .ok (.real, ctx)
   | .tcons "string"  [] => .ok (.string, ctx)
+  | .tcons "regex" [] => .ok (.regex, ctx)
   | .tcons id args =>
     let ctx := ctx.addSort { name := id, arity := args.length }
     let (args', ctx) ← LMonoTys.toSMTType args ctx
@@ -391,6 +392,18 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
 
     | "Str.Length"   => .ok (.app Op.str_length, .int,    ctx)
     | "Str.Concat"   => .ok (.app Op.str_concat, .string, ctx)
+    | "Str.ToRegEx"  => .ok (.app Op.str_to_re,  .regex, ctx)
+    | "Str.InRegEx"  => .ok (.app Op.str_in_re,  .bool, ctx)
+    | "Re.All"       => .ok (.app Op.re_all, .regex, ctx)
+    | "Re.AllChar"   => .ok (.app Op.re_allchar, .regex, ctx)
+    | "Re.Range"     => .ok (.app Op.re_range, .regex, ctx)
+    | "Re.Concat"    => .ok (.app Op.re_concat, .regex, ctx)
+    | "Re.Star"      => .ok (.app Op.re_star, .regex, ctx)
+    | "Re.Plus"      => .ok (.app Op.re_plus, .regex, ctx)
+    | "Re.Union"     => .ok (.app Op.re_union, .regex, ctx)
+    | "Re.Inter"     => .ok (.app Op.re_inter, .regex, ctx)
+    | "Re.Comp"      => .ok (.app Op.re_comp, .regex, ctx)
+
     | "Triggers.empty"          => .ok (.app Op.triggers, .trigger, ctx)
     | "TriggerGroup.empty"      => .ok (.app Op.triggers, .trigger, ctx)
     | "TriggerGroup.addTrigger" => .ok (Factory.addTriggerList, .trigger, ctx)
