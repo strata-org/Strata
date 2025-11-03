@@ -36,8 +36,9 @@ def typeCheckAndPartialEval
   (f : Factory (IDMeta:=IDMeta) := Factory.default)
   (e : (LExpr LMonoTy IDMeta)) :
   Except Std.Format (LExpr LMonoTy IDMeta) := do
-  let T := TEnv.default.addFactoryFunctions f
-  let (et, _T) ← LExpr.annotate T e
+  let T := TEnv.default
+  let C := LContext.default.addFactoryFunctions f
+  let (et, _T) ← LExpr.annotate C T e
   dbg_trace f!"Annotated expression:{Format.line}{et}{Format.line}"
   let σ ← (LState.init).addFactory f
   return (LExpr.eval σ.config.fuel σ et)

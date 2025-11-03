@@ -18,6 +18,7 @@ structure PureExpr : Type 1 where
   Ty      : Type
   /-- Typing environment -/
   TyEnv   : Type
+  TyContext : Type
   /-- Evaluation environment -/
   EvalEnv : Type
   EqIdent : DecidableEq Ident
