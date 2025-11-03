@@ -62,7 +62,7 @@ inductive LExpr (TypeType : Type) (Identifier : Type) : Type where
   /-- `.eq e1 e2`: equality expression. -/
   | eq      (e1 e2 : LExpr TypeType Identifier)
   | dontcare -- assume false
-  | error    -- assert false
+  | error  (info: Info)    -- assert false
   | choose (t: Option TypeType) -- like fvar, except that it might return a different value every time
   | skip     -- returns the environment or unit
   deriving Repr, DecidableEq
@@ -109,7 +109,7 @@ def LExpr.getVars (e : (LExpr TypeType Identifier)) := match e with
   | .ite c t e => LExpr.getVars c ++ LExpr.getVars t ++ LExpr.getVars e
   | .eq e1 e2 => LExpr.getVars e1 ++ LExpr.getVars e2
   | .dontcare => []
-  | .error => []
+  | .error _ => []
   | .choose _ => []
   | .skip => []
 
@@ -226,7 +226,7 @@ def removeAllMData (e : (LExpr TypeType Identifier)) : (LExpr TypeType Identifie
   | .ite c t f => .ite (removeAllMData c) (removeAllMData t) (removeAllMData f)
   | .eq e1 e2 => .eq (removeAllMData e1) (removeAllMData e2)
   | .dontcare => .dontcare
-  | .error => .error
+  | .error m => .error m
   | .choose ty => .choose ty
   | .skip => .skip
 
@@ -249,7 +249,7 @@ def size (e : (LExpr TypeType Identifier)) : Nat :=
   | .ite c t f => 1 + size c + size t + size f
   | .eq e1 e2 => 1 + size e1 + size e2
   | .dontcare => 1
-  | .error => 1
+  | .error _ => 1
   | .choose _ => 1
   | .skip => 1
 
@@ -269,7 +269,7 @@ def eraseTypes (e : (LExpr TypeType Identifier)) : (LExpr TypeType Identifier) :
   | .eq e1 e2 => .eq (e1.eraseTypes) (e2.eraseTypes)
   | .mdata m e => .mdata m (e.eraseTypes)
   | .dontcare => .dontcare
-  | .error => .error
+  | .error m => .error m
   | .choose _ => .choose none
   | .skip => .skip
 
@@ -279,12 +279,6 @@ def eraseTypes (e : (LExpr TypeType Identifier)) : (LExpr TypeType Identifier) :
 
 instance (Identifier : Type) [Repr Identifier] [Repr TypeType] : ToString (LExpr TypeType Identifier) where
    toString a := toString (repr a)
-
-def zeroVarContinuation (e : (LExpr TypeType Identifier)) : Bool :=
-  match e with
-  | .ite _ _ .error => true --heuristic for formatting
-  | .skip => true
-  | _ => false
 
 def formatOptId [ToFormat Identifier] (id: Option Identifier): Format :=
   match id with
@@ -315,7 +309,7 @@ def contains_bvar (level: Nat) (e: LExpr TypeType Identifier): Bool :=
     contains_bvar level e1 || contains_bvar level e2
   | .choose _ => false
   | .dontcare => false
-  | .error => false
+  | .error _ => false
   | .skip => false
 
 
@@ -337,7 +331,7 @@ def last_call (level: Nat) (e: LExpr TypeType Identifier): Bool :=
   | .eq _e1 _e2 => false
   | .choose _ => false
   | .dontcare => false
-  | .error => false
+  | .error _ => false
   | .skip => false
 
 mutual
@@ -353,7 +347,7 @@ def formatRecord [ToFormat Identifier] [ToFormat TypeType] (e: LExpr TypeType Id
         if remaining.isEmpty then
           return f!"{symbolName}: {formatLExpr thn <| .none :: names}"
         return f!"{symbolName}: {formatLExpr thn <|  .none :: names},{Format.line}{remaining}"
-    | .error =>
+    | .error _ =>
       .some ""
     | _ => .none
   termination_by (sizeOf e_body, 0)
@@ -427,24 +421,26 @@ def formatLExpr [ToFormat Identifier] [ToFormat TypeType] (e : LExpr TypeType Id
 
   | .app (.abs id ty e1) rhs =>
       -- It could also be that rhs is a zero-variable continuation. This ought to be metadata
-      if zeroVarContinuation rhs then
-        f!"({formatLExpr (.abs id ty e1) names}) <|{Format.line}{formatLExpr rhs names}"
-      else
-        match ty with
-        | none => f!"let λ{formatOptId id} := {Format.nest 2 <| formatLExpr rhs names};{Format.line}{formatLExpr e1 (id :: names)}"
-        | some ty => f!"let λ{formatOptId id} : {ty} := {Format.nest 2 <| formatLExpr rhs names};{Format.line}{formatLExpr e1 (id :: names)}"
+      match ty with
+      | none => f!"let λ{formatOptId id} := {Format.nest 2 <| formatLExpr rhs names};{Format.line}{formatLExpr e1 (id :: names)}"
+      | some ty => f!"let λ{formatOptId id} : {ty} := {Format.nest 2 <| formatLExpr rhs names};{Format.line}{formatLExpr e1 (id :: names)}"
   | .app e1 e2 => Format.paren (f!"{formatLExpr e1 names} {formatLExpr e2 names}")
   | .ite c t els =>
     match els with
     | .dontcare => -- assume statement
         f!"assume {formatLExpr c names} <|{Format.line}{formatLExpr t names}"
-    | .error => -- assert statement
-        f!"assert {formatLExpr c names} <|{Format.line}{formatLExpr t names}"
+    | .error info => -- assert statement
+        let info_str := if info.value == "" then "" else " #" ++ info.value ++ "#"
+        f!"assert {formatLExpr c names}{info_str} <|{Format.line}{formatLExpr t names}"
     | _ =>
     Format.paren f!"if {formatLExpr c names} then {Format.nest 2 (formatLExpr t names)}{Format.line}else {Format.nest 2 (formatLExpr els names)}"
   | .eq e1 e2 => Format.paren (formatLExpr e1 names ++ " == " ++ formatLExpr e2 names)
   | .dontcare => "dontcare"
-  | .error => "error"
+  | .error m =>
+    if m.value == "" then
+      "error"
+    else
+      f!"error #{m.value}#"
   | .skip => "skip"
   | .choose ty =>
     match ty with
@@ -521,19 +517,13 @@ decreasing_by
     omega
   · simp_wf
     simp [LExpr.sizeOf]
-    omega
-  · simp_wf
-    simp [LExpr.sizeOf]
-    omega
-  · simp_wf
-    simp [LExpr.sizeOf]
     sorry
   · simp_wf
     simp [LExpr.sizeOf]
     omega
   · simp_wf
     simp [LExpr.sizeOf]
-    omega
+    sorry
 
 end
 
@@ -1319,7 +1309,7 @@ def op_ (name: Identifier) (optType: Option TypeType): CELExpr TypeType Identifi
 
 def choose_ (optType: Option TypeType): CELExpr TypeType Identifier := λ_ => return LExpr.choose optType
 
-def error_: CELExpr TypeType Identifier := λ_ => return LExpr.error
+def error_ (info: Info): CELExpr TypeType Identifier := λ_ => return LExpr.error info
 
 def vOffset [DecidableEq Identifier] [ToFormat Identifier]: Identifier → Nat → CELExpr TypeType Identifier
   | id, _, .topLevel => .error s!"vOffset of {toString <| format id} not found" -- .bvar 4049828 if needed to debug
@@ -1478,12 +1468,12 @@ def assume_ {TypeType Identifier : Type} (cond : CELExpr TypeType Identifier) : 
   λk c =>
     return assume (← cond c) (← k c)
 
-def assert {Identifier: Type} (cond : LExpr TypeType Identifier) (thn : LExpr TypeType Identifier) : LExpr TypeType Identifier :=
-  .ite cond thn .error
+def assert {Identifier: Type} (cond : LExpr TypeType Identifier) (info: Info) (thn : LExpr TypeType Identifier) : LExpr TypeType Identifier :=
+  .ite cond thn (.error info)
 
-def assert_ {TypeType Identifier : Type} (cond : CELExpr TypeType Identifier) : Stmt TypeType Identifier :=
+def assert_ {TypeType Identifier : Type} (cond : CELExpr TypeType Identifier) (info: Info) : Stmt TypeType Identifier :=
   λk c =>
-    return assert (← cond c) (← k c)
+    return assert (← cond c) info (← k c)
 
 def skip_expr: CELExpr TypeType Identifier := λ_ => return .skip
 
@@ -1503,8 +1493,8 @@ def ifToPushPop (prog: LExpr LTy String): LExpr LTy String :=
   match prog with
   | .assume cond thn =>
     .assume cond (ifToPushPop thn)
-  | .assert cond thn =>
-    .pushpop (.assume (.not cond) .error) (ifToPushPop thn)
+  | .assert cond info thn =>
+    .pushpop (.assume (.not cond) (.error info)) (ifToPushPop thn)
   | .ite cond thn els =>
     match cond with
     | .choose _ =>
@@ -1536,7 +1526,7 @@ def increaseBvars (prog: LExpr TypeType Identifier): LExpr TypeType Identifier :
     | aboveLevel, .ite cond thn els =>
       .ite (go aboveLevel cond) (go aboveLevel thn) (go aboveLevel els)
     | _, .dontcare => .dontcare
-    | _, .error => .error
+    | _, .error msg => .error msg
     | _, .skip => .skip
     | _, .choose t => .choose t
     | aboveLevel, .app a b => .app (go aboveLevel a) (go aboveLevel b)
@@ -1560,7 +1550,7 @@ def decreasesBVar (prog: LExpr TypeType Identifier): LExpr TypeType Identifier :
     | aboveLevel, .ite cond thn els =>
       .ite (go aboveLevel cond) (go aboveLevel thn) (go aboveLevel els)
     | _, .dontcare => .dontcare
-    | _, .error => .error
+    | _, .error msg => .error msg
     | _, .skip => .skip
     | _, .choose t => .choose t
     | aboveLevel, .app a b => .app (go aboveLevel a) (go aboveLevel b)
@@ -1580,18 +1570,11 @@ partial def propagateCallSiteToAssertions (callSiteInfo : Info) (expr : LExpr Ty
   | .bvar _ => expr
   | .fvar _ _ => expr
   | .dontcare => expr
-  | .error => expr
+  | .error assertInfo =>
+    let combinedInfo := Info.mk s!"{callSiteInfo.value},{assertInfo.value}"
+    .error combinedInfo
   | .choose _ => expr
   | .skip => expr
-
-  -- Constructors with sub-expressions
-  | .mdata assertInfo (.ite cond thn .error) =>
-    -- This is an assertion (.assert = .ite cond thn .error) with metadata - prepend call site info
-    let combinedInfo := Info.mk s!"{callSiteInfo.value},{assertInfo.value}"
-    .mdata combinedInfo (.ite cond (propagateCallSiteToAssertions callSiteInfo thn) .error)
-  | .ite cond thn .error =>
-    -- This is an assertion without metadata - add call site info
-    .mdata callSiteInfo (.ite cond (propagateCallSiteToAssertions callSiteInfo thn) .error)
   | .mdata info e =>
     .mdata info (propagateCallSiteToAssertions callSiteInfo e)
   | .abs name ty body =>
@@ -1616,7 +1599,7 @@ def isDeterministic (prog: LExpr TypeType Identifier): Bool :=
   | .abs _ _ _ => true
   | .ite cond thn els => isDeterministic cond && isDeterministic thn && isDeterministic els
   | .dontcare => false
-  | .error => true
+  | .error _ => true
   | .skip => true
   | .bvar _ => true
   | .fvar _ _ => true
@@ -1631,10 +1614,6 @@ def letAssignToLetAssume (prog: LExpr LTy String): LExpr LTy String :=
     .pushpop (letAssignToLetAssume left) (letAssignToLetAssume right)
   | .app (.abs id ty body) rhs =>
     let body := letAssignToLetAssume body
-    if zeroVarContinuation rhs then
-      -- We can simplify
-      .app (.abs id ty body) rhs
-    else
     match rhs with
     | choose _ =>
       .app (.abs id ty body) rhs  -- We can't simplify
@@ -1647,10 +1626,6 @@ def letAssignToLetAssume (prog: LExpr LTy String): LExpr LTy String :=
       else
         -- RHS is non-deterministic, we can't simplify
         .app (.abs id ty body) rhs
-  | .assume cond thn =>
-    .assume cond (letAssignToLetAssume thn)
-  | .assert cond thn =>
-    .assert cond (letAssignToLetAssume thn)
   | .ite cond thn els =>
     .ite cond (letAssignToLetAssume thn) (letAssignToLetAssume els)
   | .choose t =>
@@ -1691,6 +1666,32 @@ def assumeAssertOfNotSMTExpr(prog: LExpr LTy String): LExpr LTy String :=
   | .mdata info e =>
     .mdata info (assumeAssertOfNotSMTExpr e)
   | prog => prog
+
+-- Determines if a computation is guaranteed not to return errors
+-- This is needed for sound beta reduction in the presence of deterministic errors
+def computationWontReturnErrors (expr: LExpr LTy String): Bool :=
+  match expr with
+  | .bvar _ => true          -- Variable references are safe
+  | .fvar _ _ => true         -- Free variables are safe
+  | .const _ _ => true        -- Constants are safe
+  | .op _ _ => true           -- Operators themselves are safe
+  | .abs _ _ _ => true        -- Abstractions are always safe (they don't compute until applied)
+  | .eq a b => computationWontReturnErrors a && computationWontReturnErrors b  -- Safe if both sides are safe
+  | .ite cond thn els =>
+    computationWontReturnErrors cond &&
+    computationWontReturnErrors thn &&
+    computationWontReturnErrors els  -- Safe if all branches are safe
+  | .mdata _ e => computationWontReturnErrors e  -- Metadata doesn't affect safety
+  | .app (.app (.op _ _) e1) e2 =>
+    computationWontReturnErrors e1 && computationWontReturnErrors e2
+  | .app (.op _ _) e1 =>
+    computationWontReturnErrors e1
+  | .app _ _ => false         -- Applications are unknown/unsafe (could error)
+  | .choose _ => false        -- Choose is nondeterministic, could conceptually error
+  | .error _ => false           -- Error expressions definitely error
+  | .skip => true             -- Skip is safe
+  | .dontcare => true         -- Don't care is safe
+  | .quant _ _ tr e => computationWontReturnErrors tr && computationWontReturnErrors e  -- Quantifiers are safe if trigger and body are safe
 
 -- Helper functions for trigger handling
 def isNoTrigger (trigger: LExpr LTy String): Bool :=
@@ -1930,8 +1931,11 @@ partial def ToSMT (c: Context String) (prog: LExpr LTy String): Format :=
   | .mdata info e =>
     let eSmt := ToSMT c e
     f!"(echo \"{info.value}\"){Format.line}{eSmt}"
-  | .error =>
-    f!"(check-sat)"
+  | .error info =>
+    if info.value == "" then
+      f!"(check-sat)"
+    else
+      f!"(echo \"{info.value}\"){Format.line}(check-sat)"
     -- push / pop
   | .app (.app (.abs _ _ (.abs _ _ (.bvar 0))) a) b =>
     let aSmt := ToSMT c a
@@ -2104,9 +2108,7 @@ partial def inlineContinuations (prog: LExpr LTy String): LExpr LTy String :=
     --else
     --  .app (.abs name1 ty1 (inlineContinuations body)) (inlineContinuations (.abs name_exit oty exit))
   | .app (.abs name ty body) cont =>
-    if zeroVarContinuation cont then -- TODO: Verify that it returns a unique value (could be unit!)
-      betareduction (inlineContinuations body) <| inlineContinuations cont
-    else match name, cont with
+    match name, cont with
       | .some "", .const "()" _ =>
         betareduction (inlineContinuations body) <| inlineContinuations cont
       | .none, .const "()" _ =>
@@ -2135,10 +2137,8 @@ partial def simplify (prog: LExpr LTy String): LExpr LTy String :=
   | .app (.abs _ _ body) (.bvar depth) =>
     betareduction (simplify body) (.bvar depth)
   -- TODO: Perhaps we don't want to lift assertions. For example, we might want that assertions don't impact the verification of the rest
-  | .app (.abs name id body) (.assert cond thn) => -- Lift assertions up
-    assert cond (simplify (.app (.abs name id body) thn))
-  | .app (.abs name id body) (.mdata info (.assert cond thn)) => -- Lift assertions up
-    .mdata info <| assert cond (simplify (.app (.abs name id body) thn))
+  | .app (.abs name id body) (.assert cond info thn) => -- Lift assertions up
+    assert cond info (simplify (.app (.abs name id body) thn))
   | .app (.abs name1 id1 body1) (.app (.abs name2 id2 body2) rhs) => -- Lets in RHS become linearized
     .app (.abs name2 id2 (
       simplify (.app (increaseBvars (.abs name1 id1 body1)) body2)
@@ -2157,9 +2157,10 @@ partial def simplify (prog: LExpr LTy String): LExpr LTy String :=
     let new_a := simplify a
     let new_b := simplify b
     match new_a with
-    | .abs _ _ body =>
-      if isDeterministic new_b || substcount body <= 1 then
-        betareduction body new_b
+    | .abs _ _ new_a_body =>
+      if computationWontReturnErrors new_b &&
+       (isDeterministic new_b || substcount new_a_body <= 1) then
+        betareduction new_a_body new_b
       else
         .app new_a new_b
     | _ => .app new_a new_b
@@ -2330,7 +2331,7 @@ def record (values: List (String × LExpr LTy String)): LExpr LTy String :=
   .abs "symbol" .none <|
     values.foldr (λ(name, expr) acc =>
       .ite (.eq (.bvar 0) (.const name .none)) expr acc
-    ) .error
+    ) (.error (Info.mk "Unknown key"))
 
 def select (name: String) (e: LExpr LTy String) : LExpr LTy String :=
   .app e (.const name .none)
@@ -2342,7 +2343,7 @@ def record_ (values: List (String × (CELExpr LTy String))): CELExpr LTy String 
       let res ← expr c
       let acc ← acc
       return .ite (.eq (.bvar 0) (.const name .none)) res acc
-    ) (.ok .error)
+    ) (.ok (.error <| Info.mk "Unknown key"))
 
 def select_ (name: String) (e: CELExpr LTy String) : CELExpr LTy String :=
   λc => return select name (← e c)
@@ -2357,7 +2358,7 @@ let Option@Match :=  \Some \None \value =>
   value {Some: Some (), None: None ()}
 let Option.@IsSome := Option@Match (_ _ => true) (_ => false)
 let Option.@IsNone := Option@Match (_ _ => false) (_ => true)
-let Option.Some.value := Option@Match (_ v => v) (_ => .error)
+let Option.Some.value := Option@Match (_ v => v) (_ => .error "no match")
 -/
 def Datatype (name: String) (variants: List (String × List (String × Option LTy))):
   Stmt LTy String :=
@@ -2419,7 +2420,7 @@ def Datatype (name: String) (variants: List (String × List (String × Option LT
 
   -- How to extract a field of a constructor. Undefined if other constructors
   -- We could have an .error here but only if we could evaluate argumentless closures lazily
-  --let Option.Some.value := Option@Match (_ v => v) (_ => .error)
+  --let Option.Some.value := Option@Match (_ v => v) (_ => .error "no value")
   let parametersExtractors: Stmt LTy String :=
     variants.foldl (fun (ck: Stmt LTy String) (constructor, args) =>
       args.foldl (
@@ -2433,7 +2434,7 @@ def Datatype (name: String) (variants: List (String × List (String × Option LT
                       otherVariantArgs.foldr (
                         λ(otherNameArg, otherNameArgOptType) (ck: CELExpr LTy String) =>
                         abs_ otherNameArg otherNameArgOptType ck
-                      ) (if constructor == otherConstructor then var nameArg else λ_ => return .error)
+                      ) (if constructor == otherConstructor then var nameArg else λ_ => return .error (Info.mk "no value"))
               ) (var match_name)
             )
       ) ck
@@ -2444,13 +2445,13 @@ def Datatype (name: String) (variants: List (String × List (String × Option LT
   ∘ IsVariants
   ∘ parametersExtractors
 
-def ensures (t: Option LTy) (body postcond: LExpr LTy String): LExpr LTy String :=
-  (.app (.abs "res" t (.assert (.app postcond (.bvar 0)) (.bvar 0))) body)
+def ensures (t: Option LTy) (body postcond: LExpr LTy String) (info: Info): LExpr LTy String :=
+  (.app (.abs "res" t (.assert (.app postcond (.bvar 0)) info (.bvar 0))) body)
 
 -- This ensures introduces an intermediate variable "res" that contains the method's output
-def ensures_ (t: Option LTy) (body postcond: CELExpr LTy String) : CELExpr LTy String :=
+def ensures_ (t: Option LTy) (body postcond: CELExpr LTy String) (info: Info) : CELExpr LTy String :=
   λc =>
-    return ensures t (← body c) (← postcond (c.declare "res"))
+    return ensures t (← body c) (← postcond (c.declare "res")) info
 
 def ensures_assume (t: Option LTy) (body postcond: LExpr LTy String) : LExpr LTy String :=
   (.app (.abs "res" t (assume (.app postcond (.bvar 0)) (.bvar 0))) body)
@@ -2460,10 +2461,10 @@ def ensures_assume (t: Option LTy) (body postcond: LExpr LTy String) : LExpr LTy
 -- Deserves to be called recursively
 def replaceByContract (prog: LExpr LTy String): LExpr LTy String :=
   match prog with
-  | .app (.abs name ty remaining) (.abs name2 ty2 (.assert precond (.ensures t body postcond))) =>
+  | .app (.abs name ty remaining) (.abs name2 ty2 (.assert precond info (.ensures t body postcond infoEnsures))) =>
     .app (.abs name ty <| increaseBvars <|
-      .app (.abs name ty remaining) (.abs name2 ty2 (.assert precond (.ensures_assume t (.choose .none) postcond)))
-    ) ((.choose ty2) |> .app (.abs name2 .none <| .assume precond (.ensures t body postcond))) -- Value is ignored but not its errors
+      .app (.abs name ty remaining) (.abs name2 ty2 (.assert precond info (.ensures_assume t (.choose .none) postcond)))
+    ) ((.choose ty2) |> .app (.abs name2 .none <| .assume precond (.ensures t body postcond infoEnsures))) -- Value is ignored but not its errors
   | _ => prog
 
 -- This phase detects assignments that are unused, and will only keep their definition that can throw errors in a pushpop but not their value.
@@ -2505,7 +2506,7 @@ def removeIfTrue (prog: LExpr LTy String): LExpr LTy String :=
   | .op _ _  => prog
   | .const _ _  => prog
   | .choose _ => prog
-  | .error => prog
+  | .error _ => prog
   | .dontcare => prog
   | .skip => prog
 
@@ -2600,7 +2601,7 @@ inductive Eval : Environment String → LExpr LTy String → EvalResult → Prop
       Eval env (.eq e1 e2) .failure
   --| dontcare : No evaluation rules for .dontcare
   | mdata : ∀ env info e result, Eval env e result → Eval env (.mdata info e) result
-  | error : ∀ env, Eval env .error .failure
+  | error : ∀ env info, Eval env (.error info) .failure
   | choose : ∀ env ty v, Eval env (.choose ty) v -- TODO: Add types TODO: Not failure
   | skip : ∀ env, Eval env .skip (.success .unit)
 
@@ -3175,7 +3176,7 @@ theorem ifTrueToThenPreservesSoundness:
 -- Template for dealing with recursive transformations
 def nothingButRecursively (prog: LExpr LTy String): LExpr LTy String :=
   match prog with
-  | const _ _ | fvar _ _ | bvar _ | op _ _ | skip | dontcare | error | choose _ => prog
+  | const _ _ | fvar _ _ | bvar _ | op _ _ | skip | dontcare | error _ | choose _ => prog
   | mdata m e => mdata m (nothingButRecursively e)
   | app e1 e2 => app e1 (nothingButRecursively e2)
   | abs name ty body => abs name ty (nothingButRecursively body)
