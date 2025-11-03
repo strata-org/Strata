@@ -236,12 +236,10 @@ theorem Program.typeCheck.go_elim_acc:
   any_goals (split <;> try contradiction)
   any_goals (split <;> try contradiction)
   any_goals (split <;> try contradiction)
-  any_goals (split <;> try contradiction)
-  any_goals (split <;> try contradiction)
   any_goals simp
   any_goals (rw [← List.cons_append]; intro; apply ind (by assumption))
-  any_goals (rename_i H _ _ _ _; have H:= Program.find?.go_none_of_append H; simp_all)
-  rename_i H _ _ _ _ _ _ _; have H:= Program.find?.go_none_of_append H; simp_all
+  -- any_goals (rename_i H _ _ _ _; have H:= Program.find?.go_none_of_append H; simp_all)
+  -- rename_i H _ _ _ _ _ _ _; have H:= Program.find?.go_none_of_append H; simp_all
 
 theorem Program.typeCheckAux_elim_singleton: Program.typeCheck.go p ds T [s] = Except.ok (pp, T') →
   Program.typeCheck.go p ds T [] = Except.ok (pp.drop 1, T') := by
@@ -261,7 +259,6 @@ theorem Program.typeCheck.goWF : Program.typeCheck.go p T ds [] = .ok (ds', T') 
   | cons h t t_ih =>
     simp [Program.typeCheck.go, bind, Except.bind] at tcok
     split at tcok <;> try contradiction
-    any_goals (split at tcok <;> try contradiction)
     any_goals (split at tcok <;> try contradiction)
     any_goals (split at tcok <;> try contradiction)
     any_goals (split at tcok <;> try contradiction)
@@ -298,16 +295,46 @@ theorem addKnownTypeWithErrorIdents {T: Expression.TyEnv}: T.addKnownTypeWithErr
 --     by_cases x_in : (x ∈ l2)
 --     case pos => rw[if_pos x_in]
 
-theorem addTypeAliasIdents : TEnv.addTypeAlias ts T = .ok T' → T.idents = T'.idents := by
-  simp[TEnv.addTypeAlias];
-  by_cases (ts.typeArgs.Nodup)
-  cases
-    case
-  unfold TEnv.addTypeAlias; simp
+-- theorem genTyVarsIdents : TEnv.genTyVars n T = (l, T') → T.idents = T'.idents := by
+--   induction n generalizing l T T' with
+--   | zero => simp[TEnv.genTyVars]; grind
+--   | succ n IH =>
+--     simp[TEnv.genTyVars]; intros l_eq t_eq; subst l T';
+--     rcases t_eq: (TEnv.genTyVars n T.genTyVar.snd) with ⟨l', T''⟩
+--     specialize (IH t_eq); simp; rewrite[←IH]
+--     specialize (@IH T.genTyVar.snd )
 
- { name := ts.name, typeArgs := ts.typeArgs, type := ts.type }
-    { context := T.context, state := T.state, functions := T.functions, knownTypes := T.knownTypes, idents := id } =
-  Except.ok T''
+-- theorem instantiateIdents : (LMonoTys.instantiate ids mtys T).snd.idents = T.idents := by
+--   unfold LMonoTys.instantiate
+--   rcases G: TEnv.genTyVars ids.length T with ⟨l, T'⟩; simp
+
+theorem liftGenEnvIdents {α: Type} {f: TGenEnv IDMeta → α × TGenEnv IDMeta} {x: α} {T T': TEnv IDMeta} :
+  (liftGenEnv f T) = (x, T') →
+  T.idents = T'.idents := by
+  unfold liftGenEnv; rcases (f T.genEnv) with ⟨x', T''⟩; simp
+  intros x_eq t_eq; subst T'; rfl
+
+theorem TEnv.addTypeAliasIdents : TEnv.addTypeAlias ts T = .ok T' → T.idents = T'.idents := by
+  simp[TEnv.addTypeAlias];
+  by_cases ts_nodup: ts.typeArgs.Nodup
+  case neg => rw[if_neg ts_nodup]; intros _; contradiction
+  case pos =>
+    rw[if_pos ts_nodup]; by_cases ts_fv : (¬ts.type.freeVars ⊆ ts.typeArgs ∨ ¬ts.toAliasLTy.freeVars ⊆ ts.typeArgs)
+    case pos => rw[if_pos ts_fv]; intros _; contradiction
+    case neg =>
+      rw[if_neg ts_fv]; split; intros _; contradiction
+      rcases inst : (LMonoTys.instantiateEnv ts.typeArgs [ts.toAliasLTy.toMonoTypeUnsafe, ts.type] T) with ⟨x , T''⟩ <;> simp
+      rcases x with _ | ⟨ x, _ | ⟨ y, _ | ⟨ _,  _⟩ ⟩  ⟩ <;> simp
+      cases (LTy.forAll [] y).instantiateWithCheck T'' with
+      | error => simp[bind, Except.bind]
+      | ok z =>
+        simp[bind, Except.bind]; intros t_eq; subst T'; simp[TEnv.updateContext]
+        unfold LMonoTys.instantiateEnv at inst
+        apply (liftGenEnvIdents inst)
+
+--  { name := ts.name, typeArgs := ts.typeArgs, type := ts.type }
+--     { context := T.context, state := T.state, functions := T.functions, knownTypes := T.knownTypes, idents := id } =
+--   Except.ok T''
 
 
 -- theorem Program.typeCheckFunctionDisjointAux (Hty: Statement.typeCheck T p op ss = .ok (ss', T'')) (IH': ∀ (x : Expression.Ident), x ∈ Program.getNames.go rs → ¬T''.idents.contains x = true) :
@@ -397,6 +424,36 @@ T.idents.contains (Decl.var name ty e md).name = false ∧ ∀ (a : Decl), a ∈
         case syn =>
           split; intros _; contradiction
           next x T'' Hadd =>
+          intros Hgo; constructor
+          case left => simp[Decl.name]; exact (Identifiers.addWithErrorNotin Hid)
+          case right =>
+            intros a a_in;
+            have a_in' : a.name ∈ Program.getNames.go rs := by
+              unfold Program.getNames.go; rw[List.mem_map ]; exists a
+            specialize (IH Hgo _ a_in');
+            have Hcontains := Identifiers.addWithErrorContains Hid a.name;
+            have Ht'' := TEnv.addTypeAliasIdents Hadd; simp at Ht''; subst id
+            grind
+      case ax a md =>
+        split; intros _; contradiction
+        split; any_goals (intros _; contradiction)
+        intros Hgo; constructor
+        case left => simp[Decl.name]; exact (Identifiers.addWithErrorNotin Hid)
+        case right =>
+          intros a a_in;
+          have a_in' : a.name ∈ Program.getNames.go rs := by
+            unfold Program.getNames.go; rw[List.mem_map ]; exists a
+          specialize (IH Hgo _ a_in');
+          have Hcontains := Identifiers.addWithErrorContains Hid a.name;
+
+          grind
+          have Ht'' := TEnv.addTypeAliasIdents Hadd; simp at Ht''; subst id
+          grind
+
+          sorry
+
+
+              grind
 
           have Heq := Statement.typeCheckIdentsEq Hty
 

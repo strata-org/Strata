@@ -267,6 +267,13 @@ def TEnv.state {IDMeta : Type} (T: TEnv IDMeta) : TState :=
   let g := {tyGen := T.genEnv.genState.tyGen, tyPrefix := T.genEnv.genState.tyPrefix, exprGen := T.genEnv.genState.exprGen, exprPrefix := T.genEnv.genState.exprPrefix}
   { substInfo := T.stateSubstInfo, genState := g}
 
+/--
+Lift stateful computations over `TGenEnv` to stateful computations over `TEnv`
+-/
+def liftGenEnv {α : Type} (f: TGenEnv IDMeta → α × (TGenEnv IDMeta)) (T: TEnv IDMeta) : α × TEnv IDMeta :=
+  let (a, T') := f T.genEnv
+  (a, {T with genEnv := T'})
+
 def KnownTypes.default : KnownTypes :=
   open LTy.Syntax in
   makeKnownTypes ([t[∀a b. %a → %b],
@@ -447,35 +454,41 @@ along with the restriction that all `ftvar`s in an annotation are implicitly
 universally quantified -- ensures that we always get a fresh type variable when
 we use `TEnv.genTyVar`.
 -/
-def TEnv.genTyVar (T : TEnv IDMeta) : TyIdentifier × (TEnv IDMeta) :=
-  let (new_var, state) := T.genEnv.genState.genTySym
-  let g := {T.genEnv with genState := state}
-  let T := { T with genEnv := g }
+def TGenEnv.genTyVar (T : TGenEnv IDMeta) : TyIdentifier × (TGenEnv IDMeta) :=
+  let (new_var, state) := T.genState.genTySym
+  let T := {T with genState := state}
   if new_var ∈ T.context.knownTypeVars then
     panic s!"[TEnv.genTyVar] Generated type variable {new_var} is not fresh!\n\
               Context: {format T.context}"
   else
     (new_var, T)
 
+def TEnv.genTyVar (T : TEnv IDMeta) : TyIdentifier × (TEnv IDMeta) :=
+  liftGenEnv TGenEnv.genTyVar T
+
 /--
 Generate `n` fresh type variables (`ftvar`s).
 -/
-def TEnv.genTyVars (n : Nat) (T : (TEnv IDMeta)) : List TyIdentifier × (TEnv IDMeta) :=
+def TGenEnv.genTyVars (n : Nat) (T : (TGenEnv IDMeta)) : List TyIdentifier × (TGenEnv IDMeta) :=
   match n with
   | 0 => ([], T)
   | n' + 1 =>
-    let (ty, T) := TEnv.genTyVar T
-    let (rest_ty, T) := TEnv.genTyVars n' T
+    let (ty, T) := TGenEnv.genTyVar T
+    let (rest_ty, T) := TGenEnv.genTyVars n' T
     (ty :: rest_ty, T)
 
 /--
 Consistently instantiate type variables `ids` in `mtys`.
 -/
-def LMonoTys.instantiate (ids : List TyIdentifier) (mtys : LMonoTys) (T : (TEnv IDMeta)) :
-  LMonoTys × (TEnv IDMeta) :=
-  let (freshtvs, T) := TEnv.genTyVars ids.length T
+def LMonoTys.instantiate (ids : List TyIdentifier) (mtys : LMonoTys) (T : (TGenEnv IDMeta)) :
+  LMonoTys × (TGenEnv IDMeta) :=
+  let (freshtvs, T) := TGenEnv.genTyVars ids.length T
   let S := List.zip ids (List.map (fun tv => (LMonoTy.ftvar tv)) freshtvs)
   (LMonoTys.subst [S] mtys, T)
+
+def LMonoTys.instantiateEnv (ids : List TyIdentifier) (mtys : LMonoTys) (T : (TEnv IDMeta)) :
+  LMonoTys × (TEnv IDMeta) :=
+  liftGenEnv (LMonoTys.instantiate ids mtys) T
 
 omit [DecidableEq IDMeta] in
 theorem LMonoTys.instantiate_length :
@@ -494,11 +507,11 @@ Note: we do not check whether `ty` is a type alias here. See
 `LTy.resolveAliases`) as well as verifies whether the type is a previously registered
 one.
 -/
-def LTy.instantiate (ty : LTy) (T : (TEnv IDMeta)) : LMonoTy × (TEnv IDMeta) :=
+def LTy.instantiate (ty : LTy) (T : (TGenEnv IDMeta)) : LMonoTy × (TGenEnv IDMeta) :=
   match ty with
   | .forAll [] mty' => (mty', T)
   | .forAll xs lty' =>
-    let (freshtvs, T) := TEnv.genTyVars xs.length T
+    let (freshtvs, T) := TGenEnv.genTyVars xs.length T
     let S := List.zip xs (List.map (fun tv => (.ftvar tv)) freshtvs)
     (LMonoTy.subst [S] lty', T)
 
@@ -526,11 +539,11 @@ def LMonoTy.aliasDef? (mty : LMonoTy) (T : (TEnv IDMeta)) : (Option LMonoTy × T
     match T.context.aliases.find? (fun a => a.name == name && a.typeArgs.length == args.length) with
     | none => (none, T)
     | some alias =>
-      let (lst, T) := LMonoTys.instantiate alias.typeArgs [(.tcons name (alias.typeArgs.map (fun a => .ftvar a))), alias.type] T
+      let (lst, T) := LMonoTys.instantiateEnv alias.typeArgs [(.tcons name (alias.typeArgs.map (fun a => .ftvar a))), alias.type] T
       -- (FIXME): Use `LMonoTys.instantiate_length` to remove the `!` below.
       let alias_inst := lst[0]!
       let alias_def := lst[1]!
-      match Constraints.unify [(mty, alias_inst)] T.state.substInfo with
+      match Constraints.unify [(mty, alias_inst)] T.stateSubstInfo with
       | .error e =>
         panic! s!"[LMonoTy.aliasDef?] {e}"
       | .ok S =>
@@ -683,7 +696,8 @@ open LTy.Syntax in
 Instantiate and de-alias `ty`, including at the subtrees.
 -/
 def LTy.resolveAliases (ty : LTy) (T : (TEnv IDMeta)) : (Option LMonoTy × (TEnv IDMeta)) :=
-  let (mty, T) := ty.instantiate T
+  let (mty, T') := ty.instantiate T.genEnv
+  let T := {T with genEnv := T'}
   LMonoTy.resolveAliases mty T
 
 /-- info: some (arrow bool $__ty0) -/
@@ -730,7 +744,7 @@ perform resolution of type aliases and subsequent checks for registered types.
 def LMonoTy.instantiateWithCheck (mty : LMonoTy) (T : (TEnv IDMeta)) :
     Except Format (LMonoTy × (TEnv IDMeta)) := do
   let ftvs := mty.freeVars
-  let (mtys, T) := LMonoTys.instantiate ftvs [mty] T
+  let (mtys, T) := LMonoTys.instantiateEnv ftvs [mty] T
   let mtyi := mtys[0]!
   let (mtyi, T) := match mtyi.resolveAliases T with
                   | (some ty', T) => (ty', T)
@@ -747,7 +761,9 @@ for registered types.
 def LTy.instantiateWithCheck (ty : LTy) (T : (TEnv IDMeta)) : Except Format (LMonoTy × (TEnv IDMeta)) := do
   let (mty, T) := match ty.resolveAliases T with
                   | (some ty', T) => (ty', T)
-                  | (none, T) => ty.instantiate T
+                  | (none, T) =>
+                    let (ty, T') := ty.instantiate T.genEnv
+                    (ty, {T with genEnv := T'})
   if isInstanceOfKnownType mty T
   then return (mty, T)
   else .error f!"Type {ty} is not an instance of a previously registered type!\n\
@@ -827,7 +843,7 @@ def Identifier.instantiateAndSubsts (xs : List (Identifier IDMeta)) (T : (TEnv I
 /-- info: (arrow $__ty0 b) -/
 #guard_msgs in
 open LTy.Syntax in
-#eval format $ (LTy.instantiate t[∀a. %a → %b] (@TEnv.default String)).fst
+#eval format $ (LTy.instantiate t[∀a. %a → %b] (@TGenEnv.default String)).fst
 
 /--
 Instantiate the scheme `∀tyArgs. s` by _consistently_ filling in fresh type
@@ -838,7 +854,7 @@ like `(x : _ty0) (y : int) (z : _ty0)`, and not `(x : _ty0) (y : int) (z : _ty1)
 -/
 def LMonoTySignature.instantiate (T : (TEnv IDMeta)) (tyArgs : List TyIdentifier) (sig : @LMonoTySignature IDMeta) :
   Except Format ((@LMonoTySignature IDMeta) × (TEnv IDMeta)) := do
-  let (mtys, T) := LMonoTys.instantiate tyArgs sig.values T
+  let (mtys, T) := LMonoTys.instantiateEnv tyArgs sig.values T
   let tys := mtys.map (fun mty => (LTy.forAll [] mty))
   let (newtys, T) ← go T tys
   .ok ((sig.keys.zip newtys), T)
@@ -918,8 +934,13 @@ def TEnv.addTypeAlias (alias : TypeAlias) (T : TEnv IDMeta) : Except Format (TEn
               Name: {alias.name}\n\
               Type Arguments: {alias.typeArgs}\n\
               Type Definition: {alias.type}"
+  else if T.knownTypes.containsName alias.name then
+    .error f!"This type declaration's name is reserved!\n\
+              {alias}\n\
+              KnownTypes' names:\n\
+              {T.knownTypes.keywords}"
   else
-    let (mtys, T) := LMonoTys.instantiate alias.typeArgs [alias_lty.toMonoTypeUnsafe, alias.type] T
+    let (mtys, T) := LMonoTys.instantiateEnv alias.typeArgs [alias_lty.toMonoTypeUnsafe, alias.type] T
     match mtys with
     | [lhs, rhs] =>
       let newTyArgs := lhs.freeVars

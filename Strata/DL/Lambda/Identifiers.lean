@@ -82,6 +82,9 @@ def Identifiers.contains {IDMeta} [DecidableEq IDMeta] (m: Identifiers IDMeta) (
   | some i => x.metadata == i
   | none => false
 
+def Identifiers.containsName {IDMeta} [DecidableEq IDMeta] (m: Identifiers IDMeta) (n: String) : Bool :=
+  m[n]?.isSome
+
 theorem Identifiers.addWithErrorNotin {IDMeta} [DecidableEq IDMeta] {m m': Identifiers IDMeta} {x: Identifier IDMeta}: m.addWithError x f = .ok m' → m.contains x = false := by
   unfold addWithError contains;
   match h: (Std.HashMap.containsThenInsertIfNew m x.name x.metadata) with
