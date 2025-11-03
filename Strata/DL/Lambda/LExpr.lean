@@ -1197,38 +1197,15 @@ inductive Context (Identifier : Type) : Type where
 deriving Repr
 
 -- Statements that accept a continuation with a potential different context
-abbrev Builder (Input: Type) (Output: Type) := Input -> (Input -> Output) -> Output
+abbrev Builder (Input: Type) (Output: Type) := (Input -> Output) -> Input -> Output
 abbrev ExceptBuilder (Input: Type) (Output: Type) := Builder Input (Except String Output)
 abbrev ExceptExpr (Input: Type) (Output: Type) := Input -> Except String Output
 
-def BuildThen (a b: Builder Input Output): Builder Input Output :=
-  λi k =>
-    a i <| λi => b i k
-
-def ThenStmt (b a: Builder Input Output): Builder Input Output :=
-  BuildThen a b
-
-def Do (stmt: Input -> ExceptBuilder Input Output):
-  ExceptBuilder Input Output
- :=
-  λc k =>
-  do
-  let res ← (stmt c) c k
-  return res
-
 -- Works also as an except builder
-def skip_: Builder Input Output := λi k => k i
+def skip_: Builder Input Output := id
 
 abbrev CELExpr TypeType Identifier := ExceptExpr (Context Identifier) (LExpr TypeType Identifier)
 abbrev Stmt TypeType Identifier := ExceptBuilder (Context Identifier) (LExpr TypeType Identifier)
-
-def Stmt2Expr {TypeType Identifier} (e: CELExpr TypeType Identifier): Stmt TypeType Identifier :=
-  λc _ => -- We ignore the continuation.
-    e c
-
--- Cannot be followed by more statements.
-def ThenExpr {TypeType Identifier} (e: CELExpr TypeType Identifier) (s: Stmt TypeType Identifier): CELExpr TypeType Identifier :=
-  λc => (s |> ThenStmt (Stmt2Expr e)) c (λ_ => return .skip)
 
 def Context.frame [DecidableEq Identifier] (c: Context Identifier): List Identifier :=
   match c with
@@ -1249,9 +1226,14 @@ def Context.size {Identifier : Type} (c : Context Identifier) : Nat :=
   | .topLevel => 0
   | .extend _ _ _ _ s => s + 1
 
+def Context.names {Identifier: Type} (c: Context Identifier) : List Identifier :=
+  match c with
+  | .topLevel => []
+  | .extend tail id _ _ _ => [id] ++ tail.names
+
 def Context.nameOf (c : Context String) (n: Nat): Except String String :=
   let rec go : Context String → Nat → Except String String
-    | .topLevel, n => .error s!"Context.nameOf {n}"
+    | .topLevel, _ => .error s!"Context.nameOf could not find {n} in {c.names}"
     | .extend _ id' _ _ _, 0 => .ok id'
     | .extend c' _ _ _ _, n+1 => go c' n
   go c n
@@ -1264,16 +1246,16 @@ def Context.lastIndexOf [DecidableEq Identifier] [ToString Identifier] (c : Cont
   go c
 
 
-def Context.add_declare {Identifier : Type} (c : Context Identifier) (id : Identifier) : Context Identifier :=
+def Context.declare {Identifier : Type} (c : Context Identifier) (id : Identifier) : Context Identifier :=
   Context.extend c id [] (overrideIndex := .none) (match c with
     | .topLevel => 0
     | .extend _ _ _ _ s => s + 1)
 
-def Context.add_assign {Identifier : Type} [DecidableEq Identifier] [ToString Identifier] (c : Context Identifier) (id : Identifier) : Except String (Context Identifier) :=
+def Context.assign_or_declare {Identifier : Type} [DecidableEq Identifier] [ToString Identifier] (c : Context Identifier) (id : Identifier) : Except String (Context Identifier) :=
   do
   match c.lastIndexOf id with
   | .error _ =>
-    return c.add_declare id
+    return c.declare id
   | .ok overrideIndex =>
     return Context.extend c id [] (.some overrideIndex) (match c with
       | .topLevel => 0
@@ -1286,9 +1268,9 @@ def mdata_ (info: Info) (e1: CELExpr TypeType Identifier): CELExpr TypeType Iden
     return .mdata info e1
 
 def mdata__ (info: Info) (e1: Stmt TypeType Identifier): Stmt TypeType Identifier :=
-  λc k =>
+  λk c =>
     do
-    let e1 ← e1 c k
+    let e1 ← e1 k c
     return .mdata info e1
 
 def app_ (e1 e2: CELExpr TypeType Identifier): CELExpr TypeType Identifier :=
@@ -1297,6 +1279,11 @@ def app_ (e1 e2: CELExpr TypeType Identifier): CELExpr TypeType Identifier :=
   let e1 ← e1 c
   let e2 ← e2 c
   return .app e1 e2
+
+def appList (f: CELExpr TypeType Identifier) (args: List (CELExpr TypeType Identifier)): CELExpr TypeType Identifier :=
+  args.foldl (λe arg =>
+    app_ e arg
+  ) f
 
 def ite_ (e1 e2 e3: CELExpr TypeType Identifier): CELExpr TypeType Identifier :=
   λc =>
@@ -1309,9 +1296,17 @@ def ite_ (e1 e2 e3: CELExpr TypeType Identifier): CELExpr TypeType Identifier :=
 def abs_ (id: Identifier) (ty: Option TypeType) (body: CELExpr TypeType Identifier): CELExpr TypeType Identifier :=
   λc =>
   do
-  let c := c.add_declare id
+  let c := c.declare id
   let body ← body c
   return .abs id ty body
+
+def quant_ (k: QuantifierKind) (id: Identifier) (ty: Option TypeType) (tr e: CELExpr TypeType Identifier): CELExpr TypeType Identifier :=
+  λc =>
+  do
+  let c := c.declare id
+  let tr ← tr c
+  let e ← e c
+  return .quant k ty tr e
 
 def fvar_ (id: Identifier) (ty: Option TypeType): CELExpr TypeType Identifier :=
   λ_ =>
@@ -1323,6 +1318,8 @@ def const_ (value: String) (optType: Option TypeType): CELExpr TypeType Identifi
 def op_ (name: Identifier) (optType: Option TypeType): CELExpr TypeType Identifier := λ_ => return LExpr.op name optType
 
 def choose_ (optType: Option TypeType): CELExpr TypeType Identifier := λ_ => return LExpr.choose optType
+
+def error_: CELExpr TypeType Identifier := λ_ => return LExpr.error
 
 def vOffset [DecidableEq Identifier] [ToFormat Identifier]: Identifier → Nat → CELExpr TypeType Identifier
   | id, _, .topLevel => .error s!"vOffset of {toString <| format id} not found" -- .bvar 4049828 if needed to debug
@@ -1396,7 +1393,7 @@ def vLastAssigned {Identifier : Type}
   go .none 0 c
 
 def label {Identifier: Type} (name: Identifier): Stmt TypeType Identifier :=
-  λc cont =>
+  λcont c =>
   cont (c.label name)
 
 def opcall1 [DecidableEq Identifier] (name: Identifier) (arg: CELExpr TypeType Identifier): CELExpr TypeType Identifier :=
@@ -1410,11 +1407,11 @@ def call1 [DecidableEq Identifier] [ToFormat Identifier] (name: Identifier) (arg
 
 -- If the identifier is already declared only !
 def call1_1 [DecidableEq Identifier] [ToString Identifier] (name: Identifier) (arg: CELExpr TypeType Identifier) (out: Identifier): Stmt TypeType Identifier :=
-  λc cont=>
+  λcont c=>
   do
   let f ← var name c
   let a ← arg c
-  let c ← c.add_assign out
+  let c ← c.assign_or_declare out
   let remaining ← cont c
   return .app (.app f a) <| abs (.some out) .none remaining
 
@@ -1423,9 +1420,9 @@ def choose_abs (ty: Option TypeType) (l: LExpr TypeType Identifier) : LExpr Type
 
 -- Declare a new variable without RHS
 def let_ (id : String) (ty: Option TypeType): Stmt TypeType String :=
-  λc k =>
+  λk c =>
   do
-  let c: Context String := .add_declare c id
+  let c: Context String := .declare c id
   let cont ← k c
   return choose_abs ty <| LExpr.abs id ty cont
 
@@ -1434,20 +1431,20 @@ def let_assign_helper {Identifier : Type} (id : Identifier) (ty: Option TypeType
 
 -- Declare a new variable and assign it a value
 def let_assign {Identifier : Type} (id : Identifier) (ty: Option TypeType) (rhs : CELExpr TypeType Identifier): Stmt TypeType Identifier :=
-  λc k =>
+  λk c =>
   do
   let rhs ← rhs c
-  let c : Context Identifier := .add_declare c id
+  let c : Context Identifier := .declare c id
   let remaining ← k c
   return let_assign_helper id ty rhs remaining
 
 -- Declare a variable and assigns it a value, with the intention that it's
 -- the variable that was assigned last.
 def assign {Identifier : Type} [DecidableEq Identifier] [ToString Identifier] (id : Identifier) (ty: Option TypeType) (rhs : CELExpr TypeType Identifier): Stmt TypeType Identifier :=
-  λc k =>
+  λk c =>
   do
   let rhs ← rhs c
-  let c ← Context.add_assign c id
+  let c ← Context.assign_or_declare c id
   let cont ← k c
   return .app (.abs id ty cont) rhs
 
@@ -1478,14 +1475,14 @@ def canFail2: (A -> B -> C) -> (Except String A -> Except String B -> Except Str
     return f a1 a2
 
 def assume_ {TypeType Identifier : Type} (cond : CELExpr TypeType Identifier) : Stmt TypeType Identifier :=
-  λc k =>
+  λk c =>
     return assume (← cond c) (← k c)
 
 def assert {Identifier: Type} (cond : LExpr TypeType Identifier) (thn : LExpr TypeType Identifier) : LExpr TypeType Identifier :=
   .ite cond thn .error
 
 def assert_ {TypeType Identifier : Type} (cond : CELExpr TypeType Identifier) : Stmt TypeType Identifier :=
-  λc k =>
+  λk c =>
     return assert (← cond c) (← k c)
 
 def skip_expr: CELExpr TypeType Identifier := λ_ => return .skip
@@ -1669,23 +1666,24 @@ def letAssignToLetAssume (prog: LExpr LTy String): LExpr LTy String :=
 
 def isSmtExpr(prog: LExpr LTy String): Bool :=
   match prog with
-  | .bvar n => true
-  | .const n _ => true
+  | .bvar _ => true
+  | .const _ _ => true
   | .eq a b => isSmtExpr a && isSmtExpr b
-  | .app (.op name ty) a => isSmtExpr a
-  | .app (.app (.op name ty) a) b => isSmtExpr a && isSmtExpr b
+  | .app (.op _ _) a => isSmtExpr a
+  | .app (.app (.op _ _) a) b => isSmtExpr a && isSmtExpr b
   | .op _ _ => true
   | .mdata _ e => isSmtExpr e  -- For expressions, just unwrap the metadata
   | _ => false
 
--- Filter out things that won't result in SMT expressions
+-- Convert assumptions of undescriptible things into assumptions of true
+-- When we will have metadata, we will emit what information was omitted
 def assumeAssertOfNotSMTExpr(prog: LExpr LTy String): LExpr LTy String :=
   match prog with
   | .ite cond thn .dontcare =>
     if isSmtExpr cond then
       .ite cond (assumeAssertOfNotSMTExpr thn) .dontcare
     else
-      .ite (.const "true" _Bool) thn .dontcare -- We assume the weakest
+      .ite (.const "true" _Bool) (assumeAssertOfNotSMTExpr thn) .dontcare -- We assume the weakest
   | .app e1 e2 =>
     .app (assumeAssertOfNotSMTExpr e1) (assumeAssertOfNotSMTExpr e2)
   | .abs id ty body =>
@@ -1693,6 +1691,96 @@ def assumeAssertOfNotSMTExpr(prog: LExpr LTy String): LExpr LTy String :=
   | .mdata info e =>
     .mdata info (assumeAssertOfNotSMTExpr e)
   | prog => prog
+
+-- Helper functions for trigger handling
+def isNoTrigger (trigger: LExpr LTy String): Bool :=
+  match trigger with
+  | .bvar 0 => true
+  | _ => false
+
+-- Adjust trigger bvar indices for nested quantifier level
+partial def adjustTriggerLevel (trigger: LExpr LTy String) (levelDiff: Nat): LExpr LTy String :=
+  match trigger with
+  | .bvar n => .bvar (n + levelDiff)
+  | .app e1 e2 => .app (adjustTriggerLevel e1 levelDiff) (adjustTriggerLevel e2 levelDiff)
+  | .eq e1 e2 => .eq (adjustTriggerLevel e1 levelDiff) (adjustTriggerLevel e2 levelDiff)
+  | .ite c t e => .ite (adjustTriggerLevel c levelDiff) (adjustTriggerLevel t levelDiff) (adjustTriggerLevel e levelDiff)
+  | .abs id ty body => .abs id ty (adjustTriggerLevel body levelDiff)
+  | .quant k ty tr body => .quant k ty (adjustTriggerLevel tr levelDiff) (adjustTriggerLevel body levelDiff)
+  | .mdata info e => .mdata info (adjustTriggerLevel e levelDiff)
+  | e => e -- Constants, ops, fvars don't need adjustment
+
+-- Gather variables from nested quantifiers, taking the innermost non-bvar-0 trigger
+partial def gatherTriggerFromNested (expr: LExpr LTy String) (level: Nat := 0): Option (LExpr LTy String) :=
+  match expr with
+  | .quant _ _ trigger body =>
+    if isNoTrigger trigger then
+      gatherTriggerFromNested body (level + 1)
+    else
+      -- Adjust the trigger for the current level
+      some (adjustTriggerLevel trigger level)
+  | _ => none
+
+-- Extract SMT type and transform body (removing type assumption if used)
+def getQuantifierTypeAndBody (ty: Option LTy) (body: LExpr LTy String) (c: Context String): String × LExpr LTy String :=
+  match ty with
+  | some explicitTy =>
+    -- Convert explicit type to SMT type string, keep body unchanged
+    let smtType := match explicitTy with
+      | LTy.forAll [] (.tcons "int" []) => "Int"
+      | LTy.forAll [] (.tcons "bool" []) => "Bool"
+      | LTy.forAll [] (.tcons "string" []) => "String"
+      | LTy.forAll [t] (.tcons "arrow" [.ftvar name, .bool]) =>
+        if name == t then name else "UnknownSort"
+      | _ => "UnknownType"
+    (smtType, body)
+  | none =>
+    -- Look for type assumptions in the body and strip them
+    match body with
+    | .assume (.app (.op "Int" _) (.bvar 0)) bodyRest => ("Int", bodyRest)
+    | .assume (.app (.op "String" _) (.bvar 0)) bodyRest => ("String", bodyRest)
+    | .assume (.app (.op "Bool" _) (.bvar 0)) bodyRest => ("Bool", bodyRest)
+    | .assume (.app (.bvar n) (.bvar 0)) bodyRest =>
+      let typeName := match c.nameOf n with
+        | .ok name =>
+          -- Map common type names to SMT types
+          if name.startsWith "Seq" then "Seq@0"
+          else if name == "Int" then "Int"
+          else if name == "Bool" then "Bool"
+          else if name == "String" then "String"
+          else name
+        | _ => "UnknownSort"
+      (typeName, bodyRest)
+    | .assume (.app (.fvar typeName _) (.bvar 0)) bodyRest =>
+      -- Handle case where type is a free variable
+      let smtTypeName :=
+        if typeName.startsWith "Seq" then "Seq@0"
+        else if typeName == "Int" then "Int"
+        else if typeName == "Bool" then "Bool"
+        else if typeName == "String" then "String"
+        else typeName
+      (smtTypeName, bodyRest)
+    | _ => ("UnknownType", body)
+
+-- Collect consecutive quantifiers of the same kind for flattening
+partial def collectQuantifiers (kind: QuantifierKind) (expr: LExpr LTy String) (c: Context String) : List (String × String) × LExpr LTy String × (LExpr LTy String) :=
+  match expr with
+  | .quant k ty tr body =>
+    if k == kind then
+      let varName := "x" ++ toString c.size
+      let newContext := c.declare varName
+      let (smtType, transformedBody) := getQuantifierTypeAndBody ty body newContext
+      -- Continue collecting if the body is another quantifier of the same kind
+      let (moreVars, finalBody, finalTrigger) := collectQuantifiers kind transformedBody newContext
+      -- Determine effective trigger - prefer non-bvar-0 triggers
+      let effectiveTrigger :=
+        if isNoTrigger tr then finalTrigger
+        else if isNoTrigger finalTrigger then tr
+        else tr -- Prefer the outermost trigger
+      ((varName, smtType) :: moreVars, finalBody, effectiveTrigger)
+    else
+      ([], expr, .bvar 0) -- Return empty list and current expr
+  | _ => ([], expr, .bvar 0)
 
 partial def ToSMTExpr (c: Context String) (prog: LExpr LTy String): Format :=
   match prog with
@@ -1705,15 +1793,46 @@ partial def ToSMTExpr (c: Context String) (prog: LExpr LTy String): Format :=
     let aSmt := ToSMTExpr c a
     let bSmt := ToSMTExpr c b
     f!"(= {aSmt} {bSmt})"
-  | .app (.op name ty) a =>
-    let aSmt := ToSMTExpr c a
-    let opSmt := ToSMTExpr c (.op name ty)
-    f!"({opSmt} {aSmt})"
-  | .app (.app (.op name ty) a) b =>
+  | .app (.app twoarg a) b => -- TODO: More than two arguments
     let aSmt := ToSMTExpr c a
     let bSmt := ToSMTExpr c b
-    let opSmt := ToSMTExpr c (.op name ty)
+    let opSmt := ToSMTExpr c twoarg
     f!"({opSmt} {aSmt} {bSmt})"
+  | .app oneArg a =>
+    let aSmt := ToSMTExpr c a
+    let opSmt := ToSMTExpr c oneArg
+    f!"({opSmt} {aSmt})"
+  | .quant kind ty tr e =>
+    -- Collect all consecutive quantifiers of the same kind
+    let (allVars, finalBody, collectedTrigger) := collectQuantifiers kind (.quant kind ty tr e) c
+
+    -- Build the context for all collected variables
+    let finalContext := allVars.foldl (fun ctx (varName, _) => ctx.declare varName) c
+    let bodySmt := ToSMTExpr finalContext finalBody
+
+    -- Determine the effective trigger
+    let effectiveTrigger :=
+      if isNoTrigger tr then collectedTrigger
+      else if isNoTrigger collectedTrigger then tr
+      else tr -- Prefer the outermost trigger
+
+    -- Generate SMT quantifier
+    let quantifierKind := match kind with
+      | .all => "forall"
+      | .exist => "exists"
+
+    -- Build variable declarations for SMT
+    let varDecls := allVars.map (fun (name, typ) => s!"({name} {typ})") |> String.intercalate " "
+
+    -- Handle trigger rendering
+    if isNoTrigger effectiveTrigger then
+      -- No trigger case
+      f!"({quantifierKind} ({varDecls}) {bodySmt})"
+    else
+      -- With trigger case
+      let triggerSmt := ToSMTExpr finalContext effectiveTrigger
+      f!"({quantifierKind} ({varDecls}) (! {bodySmt} :pattern ({triggerSmt})))"
+
   | .op "+" _ => f!"+"
   | .op "-" _ => f!"-"
   | .op "!" _ => f!"not"
@@ -1730,24 +1849,78 @@ partial def ToSMTExpr (c: Context String) (prog: LExpr LTy String): Format :=
   | .op "regexstar" _ => "re.*"
   | .op "regexconcat" _ => "re.++"
   | .op "regexmatch" _ => "str.in_re"
+  | .op "stringlength" _ => "str.len"
+  | .fvar "Int" _ => "Int"
+  | .fvar "Bool" _ => "Bool"
+  | .fvar "String" _ => "String"
   | .mdata _ e => ToSMTExpr c e  -- For expressions, just unwrap the metadata
+  | .assume cond body =>
+    -- For assumes in expressions, render as implication
+    let condSmt := ToSMTExpr c cond
+    let bodySmt := ToSMTExpr c body
+    f!"(=> {condSmt} {bodySmt})"
   | _ => panic!("ToSMTExpr: Not supported: " ++ toString (format prog))
 
 partial def ToSMT (c: Context String) (prog: LExpr LTy String): Format :=
   match prog with
   | .app (.abs id _ body) (.choose lty) =>
-    if lty == _Bool then
-      let varName := id.getD "b" ++ "@" ++ toString c.size
-      let newC := c.add_declare varName
-      let bodySmt := ToSMT newC body
-      f!"(declare-const {varName} Bool){Format.line}{bodySmt}"
-    else if lty == _Int || lty == .none then -- None assumed integer
-      let varName :=  id.getD "b" ++ "@" ++ toString c.size
-      let newC := c.add_declare varName
-      let bodySmt := ToSMT newC body
-      f!"(declare-const {varName} Int){Format.line}{bodySmt}"
-    else
-      panic!("ToSMT: Unsupported type in choose: " ++ (toString (format lty)))
+    let varName := id.getD "b" ++ "@" ++ toString c.size
+    match lty with
+    | LTy.forAll [t] (.tcons "arrow" [.ftvar name, .bool]) => --Declaration of sorts
+      if name == t then
+        let bodySmt := ToSMT (c.declare varName) body
+        f!"(declare-sort {varName}){Format.line}{bodySmt}"
+      else
+        panic!"Declaration of sort but the type variable does not match"
+    | _ =>
+      match body with --Initial predicate assumptions in body are types
+      | .assume (.app (.op "Int" _) (.bvar 0)) body_left =>
+        let bodySmt := ToSMT (c.declare varName) body_left
+        f!"(declare-const {varName} Int){Format.line}{bodySmt}"
+      | .assume (.app (.op "String" _) (.bvar 0)) body_left =>
+        let bodySmt := ToSMT (c.declare varName) body_left
+        f!"(declare-const {varName} String){Format.line}{bodySmt}"
+      | .assume (.app (.op "Bool" _) (.bvar 0)) body_left =>
+        let bodySmt := ToSMT (c.declare varName) body_left
+        f!"(declare-const {varName} Bool){Format.line}{bodySmt}"
+      | .assume (.app (.bvar n) (.bvar 0)) body_left =>
+        let new_c := c.declare varName
+        let bodySmt := ToSMT new_c body_left
+        match new_c.nameOf n with
+        | .ok typeName =>
+          f!"(declare-const {varName} {typeName}){Format.line}{bodySmt}"
+        | _ =>
+          panic!(s!"No type name available for {n} in context {repr new_c}")
+      | .assume (
+          .quant .all .none (.bvar 0) (.app (.app (.op "==>" _) (.app (inType) (.bvar 0))) (.app outType (.app (.bvar 1) (.bvar 0))))
+        ) body_left =>
+        let new_c := c.declare varName
+        let bodySmt := ToSMT new_c body_left
+        let new_c_context := new_c.declare "x" -- Quantified variable
+        let inType := ToSMTExpr new_c_context inType
+        let outType := ToSMTExpr new_c_context outType
+        f!"(declare-fun {varName} ({inType}) {outType}){Format.line}{bodySmt}"
+      | .assume (
+          .quant .all .none (.bvar 0) (.app (.app (.op "==>" _) (.app (inType2expr) (.bvar 0))) (.quant .all .none (.bvar 0) (.app (.app (.op "==>" _) (.app (inType1expr) (.bvar 0))) (.app outType (.app (.app (.bvar 2) (.bvar 0)) (.bvar 1))))))
+        ) body_left =>
+        let new_c := c.declare varName
+        let bodySmt := ToSMT new_c body_left
+        let new_c_context := new_c.declare "x" -- Quantified variable
+        let new_c_context2 := new_c_context.declare "y" -- Quantified variable
+        let outType := ToSMTExpr new_c_context2 outType
+        let inType1 := ToSMTExpr new_c_context2 inType1expr
+        let inType2 := ToSMTExpr new_c_context inType2expr
+        f!"(declare-fun {varName} ({inType1} {inType2}) {outType}){Format.line}{bodySmt}"
+      | _ =>
+        let bodySmt := ToSMT (c.declare varName) body
+        if lty == _Bool then
+          f!"(declare-const {varName} Bool){Format.line}{bodySmt}"
+        else if lty == _Int || lty == .none then -- None assumed integer
+          let newC := c.declare varName
+          let bodySmt := ToSMT newC body
+          f!"(declare-const {varName} Int){Format.line}{bodySmt}"
+        else
+          panic!("ToSMT: Unsupported type in choose: " ++ (toString (format lty)))
   | .bvar _ => -- Like skip, there is no error evaluating a bvar
     f!""
   | .assume cond remaining =>
@@ -1813,15 +1986,15 @@ def if_
   -- We add those variables to the context for next, and then
   -- we replace @continue on each branch with a call to the actual continue variable with the variables modified on either branches as argument.
   let exitName := "@continue"
-  λc endif =>
+  λendif c =>
   do
-  let newC := c.add_declare exitName
+  let newC := c.declare exitName
   let condProg ← cond newC
-  let thnProg ← then_ newC (frameExitCall frame exitName newC)
-  let elsProg ← else_ newC (frameExitCall frame exitName newC)
-  let mut nextCtx := frame.foldl Context.add_declare c
+  let thnProg ← then_ (frameExitCall frame exitName newC) newC
+  let elsProg ← else_ (frameExitCall frame exitName newC) newC
+  let mut nextCtx := frame.foldl Context.declare c
   if frame.isEmpty then
-    nextCtx := c.add_declare "@unit"
+    nextCtx := c.declare "@unit"
   let mut endif_final ← endif nextCtx
   if frame.isEmpty then
     endif_final := .abs .none .none endif_final
@@ -2193,22 +2366,21 @@ def Datatype (name: String) (variants: List (String × List (String × Option LT
   --let Option.None := \@sel. @sel "None"
   let withVariants: Stmt LTy String :=
     variants.foldl (fun (ck: Stmt LTy String) (constructor, namesAndTypes) =>
-      BuildThen ck λc k =>
-        let inner: CELExpr LTy String :=
-          abs_ "@sel" .none <|
-            namesAndTypes.foldl (
-              λ(acc: CELExpr LTy String) (nameArg, _) =>
-                app_ acc (var nameArg)
-            )
-            (app_ (var "@sel") (const_ constructor .none))
+      let inner: CELExpr LTy String :=
+        abs_ "@sel" .none <|
+          namesAndTypes.foldl (
+            λ(acc: CELExpr LTy String) (nameArg, _) =>
+              app_ acc (var nameArg)
+          )
+          (app_ (var "@sel") (const_ constructor .none))
 
-        let rhs: CELExpr LTy String :=
-          namesAndTypes.foldr (
-            λ(name, optType) inner =>
-              abs_ name optType inner
-          ) inner
-
-        let_assign (name ++ "." ++ constructor) .none rhs c k
+      let rhs: CELExpr LTy String :=
+        namesAndTypes.foldr (
+          λ(name, optType) inner =>
+            abs_ name optType inner
+        ) inner
+      ck
+      ∘ let_assign (name ++ "." ++ constructor) .none rhs
     ) (skip_)
 
   --let Option@Match :=  \Some \None \value =>
@@ -2226,24 +2398,23 @@ def Datatype (name: String) (variants: List (String × List (String × Option LT
   let match_name := name ++ "@match"
 
   let match_final: Stmt LTy String :=
-    λc k =>
-    let_assign match_name .none match_ c k
+    let_assign match_name .none match_
 
   --let Option.@IsSome := Option@Match (_ _ => true) (_ => false)
   --let Option.@IsNone := Option@Match (_ _ => false) (_ => true)
   let IsVariants: Stmt LTy String := variants.foldl (fun (stmts: Stmt LTy String) (constructor, _) =>
-      BuildThen stmts λc k =>
-        let thematch :=
-          variants.foldl (
-            λrhs (nameVariant, args) =>
-              let result: CELExpr LTy String := λc => return if nameVariant == constructor then .const "true" _Bool else .const "false" _Bool
-              let toResult :=
-                args.foldr (λ(argName, argOptType) acc =>
-                  abs_ argName argOptType acc
-                ) result
-              app_ rhs (abs_ "" .none toResult)
-          ) (var match_name)
-        let_assign (name ++ ".@Is" ++ constructor) .none thematch c k
+      let thematch :=
+        variants.foldl (
+          λrhs (nameVariant, args) =>
+            let result: CELExpr LTy String := λc => return if nameVariant == constructor then .const "true" _Bool else .const "false" _Bool
+            let toResult :=
+              args.foldr (λ(argName, argOptType) acc =>
+                abs_ argName argOptType acc
+              ) result
+            app_ rhs (abs_ "" .none toResult)
+        ) (var match_name)
+      stmts ∘
+      let_assign (name ++ ".@Is" ++ constructor) .none thematch
     ) skip_
 
   -- How to extract a field of a constructor. Undefined if other constructors
@@ -2253,7 +2424,7 @@ def Datatype (name: String) (variants: List (String × List (String × Option LT
     variants.foldl (fun (ck: Stmt LTy String) (constructor, args) =>
       args.foldl (
         fun (ck: Stmt LTy String) (nameArg, _) =>
-          BuildThen ck λc k =>
+          ck ∘
             let_assign (name ++ "." ++ constructor ++ "." ++ nameArg) .none (
               variants.foldl (
                 λacc (otherConstructor, otherVariantArgs) =>
@@ -2264,14 +2435,14 @@ def Datatype (name: String) (variants: List (String × List (String × Option LT
                         abs_ otherNameArg otherNameArgOptType ck
                       ) (if constructor == otherConstructor then var nameArg else λ_ => return .error)
               ) (var match_name)
-            ) c k
+            )
       ) ck
     ) skip_
 
-  withVariants |>
-  ThenStmt match_final |>
-  ThenStmt IsVariants |>
-  ThenStmt parametersExtractors
+  withVariants
+  ∘ match_final
+  ∘ IsVariants
+  ∘ parametersExtractors
 
 def ensures (t: Option LTy) (body postcond: LExpr LTy String): LExpr LTy String :=
   (.app (.abs "res" t (.assert (.app postcond (.bvar 0)) (.bvar 0))) body)
@@ -2279,7 +2450,7 @@ def ensures (t: Option LTy) (body postcond: LExpr LTy String): LExpr LTy String 
 -- This ensures introduces an intermediate variable "res" that contains the method's output
 def ensures_ (t: Option LTy) (body postcond: CELExpr LTy String) : CELExpr LTy String :=
   λc =>
-    return ensures t (← body c) (← postcond (c.add_declare "res"))
+    return ensures t (← body c) (← postcond (c.declare "res"))
 
 def ensures_assume (t: Option LTy) (body postcond: LExpr LTy String) : LExpr LTy String :=
   (.app (.abs "res" t (assume (.app postcond (.bvar 0)) (.bvar 0))) body)

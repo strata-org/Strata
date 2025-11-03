@@ -17,18 +17,98 @@ def extract (res: Except String (LExpr LTy String)): LExpr LTy String :=
   | .error s => .const ("Error: " ++ s) .none
 
 def build (builder: Stmt LTy String): LExpr LTy String :=
-  let res := builder .topLevel (λ_ => .ok .skip)
+  let res := builder (λ_ => .ok .skip) .topLevel
   extract res
 
 def buildExpr (builder: CELExpr LTy String): LExpr LTy String :=
   let res := builder .topLevel
   extract res
 
+def is_fun_1 (name: String) (inType: CELExpr LTy String) (outType: CELExpr LTy String):=
+  (quant_ .all "x" .none (var "x") (implies_ (app_ inType (var "x")) (app_ outType (app_ (var name) (var "x")))))
+
+def is_fun_2 (name: String) (inType1 inType2: CELExpr LTy String) (outType: CELExpr LTy String):=
+  (quant_ .all "y" .none (var "y") (implies_ (app_ inType2 (var "y")) (quant_ .all "x" .none (var "x") (implies_ (app_ inType1 (var "x")) (app_ outType (app_ (app_ (var name) (var "x")) (var "y")))))))
+
+-- Arguments quantified are reversed.
+def is_fun_n (name: String) (inTypes: List (CELExpr LTy String)) (outType: CELExpr LTy String): CELExpr LTy String :=
+  let inside: Nat × CELExpr LTy String :=
+    inTypes.foldl (λ(n, acc) _ =>
+      (n + 1, app_ acc (λ_ => return .bvar n))
+    ) (0, var name)
+  let outside :=
+    (0, app_ outType inside.snd) |>
+      inTypes.foldl (λ(n, acc) inType =>
+        let nameArg := s!"x{n}"
+        (n + 1, quant_ .all nameArg .none (var nameArg) (implies_ (app_ inType (var nameArg)) acc))
+      )
+  outside.2
+
+def smtSort :=
+  let is_seq := app_ (var "Seq")
+  let assume_seq := assume_ ∘ is_seq
+  build <|
+  let_ "Seq" (.some (LTy.forAll ["t"] (.arrow (.ftvar "t") .bool)))
+  ∘ let_ "Seq@Empty" .none
+  ∘ assume_seq (var "Seq@Empty")
+  ∘ let_ "Seq@Length" .none
+  ∘ assume_ (is_fun_1 "Seq@Length" (var "Seq") (fvar_ "Int" .none))
+  ∘ assume_ (eq_ (app_ (var "Seq@Length") (var "Seq@Empty")) (const_ "0" .none))
+  ∘ let_ "Seq@Concat" .none
+  ∘ assume_ (is_fun_2 "Seq@Concat" (var "Seq") (var "Seq") (var "Seq"))
+  ∘ assume_ (
+    quant_ .all "s1" .none (var "s1") <|
+      assume_seq (var "s1") <|
+      quant_ .all "s2" .none (app_ (app_ (var "Seq@Concat") (var "s1")) (var "s2")) <|
+        assume_seq (var "s2") <|
+        eq_ (app_ (var "Seq@Length") (app_ (app_ (var "Seq@Concat") (var "s1")) (var "s2")))
+         (plus_ (app_ (var "Seq@Length") (var "s1"))  (app_ (var "Seq@Length") (var "s2")))
+  )
+  ∘ assert_ (
+    eq_ (app_ (var "Seq@Length") (app_ (app_ (var "Seq@Concat") (var "Seq@Empty")) (var "Seq@Empty"))) (const_ "0" .none)
+  )
+  ∘ skip_
+
+/--
+info: let λSeq : ∀[t]. (arrow t bool);
+let λSeq@Empty;
+assume (Seq%1 Seq@Empty%0) <|
+let λSeq@Length;
+assume (∀ ((~==> (Seq%3 %0)) (Int (Seq@Length%1 %0)))) <|
+assume ((Seq@Length%0 Seq@Empty%1) == #0) <|
+let λSeq@Concat;
+assume (∀ ((~==> (Seq%4 %0)) (∀ ((~==> (Seq%5 %0)) (Seq%5 ((Seq@Concat%2 %0) %1)))))) <|
+assume (∀ assume (Seq%4 %0) <|
+ (∀ assume (Seq%5 %0) <| ((Seq@Length%3 ((Seq@Concat%2 %1) %0)) == ((~+ (Seq@Length%3 %1)) (Seq@Length%3 %0))))) <|
+assert ((Seq@Length%1 ((Seq@Concat%0 Seq@Empty%2) Seq@Empty%2)) == #0) <|
+skip
+-/
+#guard_msgs in
+#eval! format <| smtSort
+
+/--
+info: (declare-sort Seq@0)
+(declare-const Seq@Empty@1 Seq@0)
+(declare-fun Seq@Length@2 (Seq@0) Int)
+(assert (= (Seq@Length@2 Seq@Empty@1) 0))
+(declare-fun Seq@Concat@3 (Seq@0 Seq@0) Seq@0)
+(assert (forall ((x4 Seq@0) (x5 Seq@0)) (! (= (Seq@Length@2 (Seq@Concat@3 x4 x5)) (+ (Seq@Length@2 x4) (Seq@Length@2 x5))) :pattern ((Seq@Concat@3 x4 x5)))))
+(push)
+(assert (not (= (Seq@Length@2 (Seq@Concat@3 Seq@Empty@1 Seq@Empty@1)) 0)))
+(check-sat)
+(pop)
+-/
+#guard_msgs in
+#eval! format <|
+  ToSMT .topLevel <|
+  ifToPushPop <|
+  smtSort
+
 def inlineDef :=
   let_assign "f" .none (abs_ "x" .none (plus_ (var "x") (const_ "1" .none)))
-  |> ThenStmt (
+  ∘ (
   let_assign "g" .none (abs_ "y" .none (plus_ (app_ (var "f") (var "y")) (app_ (var "f") (app_ (var "f") (var "y"))))))
-  |> ThenExpr (app_ (var "g") (const_ "2" .none))
+  <| (app_ (var "g") (const_ "2" .none))
 
 /--
 info: let λf := (λx ((~+ x%0) #1));
@@ -56,10 +136,10 @@ info: let λf := (λx ((~+ x%0) #1));
 def opt := Datatype "Option" [
   ("Some", [("value", _Int), ("cont", _Int)]),
   ("None", [])
-] |> ThenStmt (
+] ∘ (
   let_assign "x" .none (app_ (app_ (var "Option.Some") (fvar_ "a" .none)) (const_ "2" .none)))
-  |> ThenStmt (assert_ (app_ (var "Option.@IsSome") (var "x")))
-  |> ThenStmt (assert_ (eq_ (app_ (var "Option.Some.value") (var "x")) (fvar_ "a" .none)))
+  ∘ (assert_ (app_ (var "Option.@IsSome") (var "x")))
+  ∘ (assert_ (eq_ (app_ (var "Option.Some.value") (var "x")) (fvar_ "a" .none)))
   |> build
 
 /-- info: skip -/
@@ -73,9 +153,9 @@ def opt := Datatype "Option" [
   opt
 
 def testInlineFunDefs :=
+  buildExpr <|
   let_assign "f" .none (abs_ "x" .none (plus_ (var "x") (var "x")))
-  |> ThenExpr (plus_ (app_ (var "f") (const_ "0" .none)) (app_ (var "f") (choose_ .none)))
-  |> buildExpr
+  <| (plus_ (app_ (var "f") (const_ "0" .none)) (app_ (var "f") (choose_ .none)))
 
 /-- info: ((~+ ((~+ #0) #0)) let λx; ((~+ x%0) x%0)) -/
 #guard_msgs in
@@ -83,10 +163,11 @@ def testInlineFunDefs :=
        inline_fun_defs <|
        testInlineFunDefs
 
-def py := Datatype "Val" [
+def py := buildExpr <|
+Datatype "Val" [
   ("ValInt", [("value", _Int)]),
   ("None", [])
-] |> ThenExpr (app_ (var "Val.@IsValInt") (app_ (var "Val.ValInt") (const_ "1" .none))) |>   buildExpr
+] <| (app_ (var "Val.@IsValInt") (app_ (var "Val.ValInt") (const_ "1" .none)))
 
 /-- info: (#true : bool) -/
 #guard_msgs in
@@ -100,11 +181,11 @@ def py := Datatype "Val" [
        py
 
 /--
-info: assert ((* : bool)) <|
+info: assume (#true : bool) <|
 skip
 -/
 #guard_msgs in
-#eval! format <| assumeAssertOfNotSMTExpr <| build <| assert_ (λ_ => return build <| let_assign "a" .none (const_ "1" .none))
+#eval! format <| assumeAssertOfNotSMTExpr <| build <| assume_ (λ_ => return build <| let_assign "a" .none (const_ "1" .none))
 
 def fib: CELExpr LTy String :=
   app_ (op_ "fix" .none) <|
@@ -128,9 +209,9 @@ info: (λn:int (if ((~<= n%0) #1) then n%0
     buildExpr <|
     fib
 
-def fib_apply: LExpr LTy String := extract <|
-  let_assign "f" .none fib .topLevel <|
-  app_ (var "f") (const_ "1" .none)
+def fib_apply: LExpr LTy String := buildExpr <|
+  let_assign "f" .none fib
+  <| app_ (var "f") (const_ "1" .none)
 
 -- Much nicer unrolling, which makes it possible to replace `f` by an uninterpreted function if necessary
 /--
@@ -149,11 +230,11 @@ def r := (record [
     ("id", .abs .none .none (.bvar 0)),
   ])
 
-def prog :=
+def prog := buildExpr <|
   let_assign "c" .none (record_ [
     ("length", const_ "3" .none),
     ("id", abs_ "x" .none (var "x")),
-  ]) .topLevel <|
+  ]) <|
   ((var "c") |> select_ "length")
 
 /--
@@ -164,7 +245,7 @@ info: let λc := {
 (c%0 #length)
 -/
 #guard_msgs in
-#eval! format <| extract prog
+#eval! format <| prog
 
 /--
 info: let λb : bool;
@@ -175,10 +256,10 @@ skip
 #guard_msgs in
 #eval! format <| build <|
   let_ "b" _Bool
-  |>ThenStmt (if_ [] (var "b")
+  ∘ if_ [] (var "b")
     (then_ := let_assign "i" _Int (const_ "2" .none))
-    (else_ := skip_))
-  |> ThenStmt (assert_ (const_ "true" .none))
+    (else_ := skip_)
+  ∘ (assert_ (const_ "true" .none))
 
 /- Motivating
 var i: Int;
@@ -192,14 +273,12 @@ assert b ==> i - i@o == i@o
 
 def progMotivating: LExpr LTy String :=
   let_ "i" _Int
-  |>ThenStmt (let_ "b" _Bool)
-  |>ThenStmt (label "previous")
-  |>ThenStmt (
-    if_ ["i"] (var "b")
+  ∘ (let_ "b" _Bool)
+  ∘ (label "previous")
+  ∘ if_ ["i"] (var "b")
       (then_ := assign "i" _Int (plus_ (var "i") (var "i")))
       (else_ := skip_)
-  )
-  |>ThenStmt (
+  ∘ (
       let var_old := varAt "previous"
       assert_ (
       implies_ (var "b") (eq_ (minus_ (var "i") (var_old "i"))
@@ -234,26 +313,26 @@ info: (declare-const i@0 Int)
 
 /-- info: %0 -/
 #guard_msgs in
-#eval! (λc k => k (c.add_declare "i"))
-  |>ThenStmt (label (TypeType := LTy) (Identifier := String) "init")
-  |>ThenExpr (varAt "init" "i")
-  |> buildExpr
-  |> format
+#eval! format <|
+   buildExpr <|
+  (λk c => k (c.declare "i"))
+  ∘ (label (TypeType := LTy) (Identifier := String) "init")
+  <| (varAt "init" "i")
 
 /-- info: %1 -/
 #guard_msgs in
-#eval! (λc k => k (c.add_declare "i"))
-  |>ThenStmt (label (TypeType := LTy) (Identifier := String) "init")
-  |>ThenStmt (λc k => k (c.add_declare "i"))
-  |>ThenExpr (varAt "init" "i")
-  |> buildExpr
-  |> format
+#eval!  format <|
+   buildExpr <|
+  (λk c => k (c.declare "i"))
+  ∘ (label (TypeType := LTy) (Identifier := String) "init")
+  ∘ (λk c => k (c.declare "i"))
+  <| (varAt "init" "i")
 
 -- Only desugaring needed is the .assert
 def test: LExpr LTy String  :=
   let_ "i" .none
-  |> ThenStmt (assume_ (eq_ (var "i") (const_ "0" .none)))
-  |> ThenStmt (assert_ (eq_ (var "i") (const_ "1" .none)))
+  ∘ (assume_ (eq_ (var "i") (const_ "0" .none)))
+  ∘ (assert_ (eq_ (var "i") (const_ "1" .none)))
   |> build
 /--
 info: let λi;
@@ -279,7 +358,7 @@ info: (declare-const i@0 Int)
 -- Now assignments need to be desugared into an assumption
 def test2: LExpr LTy String  :=
   let_assign "i" _Int (const_ "0" .none)
-  |> ThenStmt (assert_ (eq_ (var "i") (const_ "1" .none)))
+  ∘ (assert_ (eq_ (var "i") (const_ "1" .none)))
   |> build
 def test2WithoutIf := ifToPushPop test2
 /--
@@ -339,23 +418,23 @@ info: (declare-const i@0 Int)
   assert k + k == i;-/
 def progArith: LExpr LTy String :=
   let_ "i" _Int
-  |> ThenStmt (let_ "j" _Int)
-  |> ThenStmt (let_ "k" _Int)
-  |> ThenStmt (let_assign "k0" _Int (var "k"))
-  |> ThenStmt (label "init")
-  |> ThenStmt (assume_ (eq_ (plus_ (var "i") (var "j")) (var "k")))
-  |> ThenStmt (assert_ (eq_ (var "i") (minus_ (var "k") (var "j"))))
-  |> ThenStmt (let_assign "i" _Int (plus_ (var "i") (plus_ (var "j") (var "k"))))
-  |> ThenStmt (let_assign "j" _Int (plus_ (var "j") (var "k")))
-  |> ThenStmt (assert_ (eq_ (var "i") (plus_ (varAt "init" "i") (plus_ (varAt "init" "j") (var "k")))))
-  |> ThenStmt (assert_ (eq_ (var "j") (plus_ (varAt "init" "j") (var "k"))))
-  |> ThenStmt (assert_ (eq_ (varAt "init" "j") (minus_ (var "j") (var "k"))))
-  |> ThenStmt (assert_ (eq_ (varAt "init" "i") (minus_ (minus_ (var "i") (minus_ (var "j") (var "k"))) (var "k"))))
+  ∘ (let_ "j" _Int)
+  ∘ (let_ "k" _Int)
+  ∘ (let_assign "k0" _Int (var "k"))
+  ∘ (label "init")
+  ∘ (assume_ (eq_ (plus_ (var "i") (var "j")) (var "k")))
+  ∘ (assert_ (eq_ (var "i") (minus_ (var "k") (var "j"))))
+  ∘ (let_assign "i" _Int (plus_ (var "i") (plus_ (var "j") (var "k"))))
+  ∘ (let_assign "j" _Int (plus_ (var "j") (var "k")))
+  ∘ (assert_ (eq_ (var "i") (plus_ (varAt "init" "i") (plus_ (varAt "init" "j") (var "k")))))
+  ∘ (assert_ (eq_ (var "j") (plus_ (varAt "init" "j") (var "k"))))
+  ∘ (assert_ (eq_ (varAt "init" "j") (minus_ (var "j") (var "k"))))
+  ∘ (assert_ (eq_ (varAt "init" "i") (minus_ (minus_ (var "i") (minus_ (var "j") (var "k"))) (var "k"))))
   --assert (.eq (varAt "init" "i") (minus (var "i") (minus (var "j") (var "k")))) <| -- Wrong encoding of LLM !
-  |> ThenStmt (assert_ (eq_ (varAt "init" "i") (minus_ (var "i") (var "j"))))
-  |> ThenStmt (assert_ (eq_ (var "k") (plus_ (varAt "init" "i") (varAt "init" "j"))))
-  |> ThenStmt (assert_ (eq_ (var "k") (plus_ (minus_ (var "i") (var "j")) (minus_ (var "j") (var "k")))))
-  |> ThenStmt (assert_ (eq_ (plus_ (var "k") (var "k")) (var "i")))
+  ∘ (assert_ (eq_ (varAt "init" "i") (minus_ (var "i") (var "j"))))
+  ∘ (assert_ (eq_ (var "k") (plus_ (varAt "init" "i") (varAt "init" "j"))))
+  ∘ (assert_ (eq_ (var "k") (plus_ (minus_ (var "i") (var "j")) (minus_ (var "j") (var "k")))))
+  ∘ (assert_ (eq_ (plus_ (var "k") (var "k")) (var "i")))
   |> build
 -- Would be nice to find a monadic style where the context is threaded automatically
 
@@ -541,13 +620,13 @@ info: let λi := #1;
 
 def debugIf: LExpr LTy String :=
   let_ "b" _Bool
-  |> ThenStmt (let_assign "i" _Int (const_ "0" .none))
-  |> ThenStmt (
+  ∘ (let_assign "i" _Int (const_ "0" .none))
+  ∘ (
     if_ ["i"] (var "b")
       (then_ := assign "i" _Int (const_ "1" .none))
       (else_ := skip_)
   )
-  |> ThenStmt (assert_ (eq_ (var "i") (const_ "1" .none)))
+  ∘ (assert_ (eq_ (var "i") (const_ "1" .none)))
   |> build
 
 /--
@@ -646,17 +725,17 @@ assert b ==> i == 1
 -/
 def ifWithLocalVar: LExpr LTy String :=
   let_ "b" _Bool
-  |> ThenStmt (let_ "i" _Int)
-  |> ThenStmt (
+  ∘ (let_ "i" _Int)
+  ∘ (
     if_ ["i"] (var "b")
       (then_ :=
         assign "i" _Int (const_ "1" .none)
-        |> ThenStmt (let_assign "i" _Int (plus_ (var "i") (const_ "2" .none)))
-        |> ThenStmt (assert_ (eq_ (var "i") (const_ "3" .none)))
+        ∘ (let_assign "i" _Int (plus_ (var "i") (const_ "2" .none)))
+        ∘ (assert_ (eq_ (var "i") (const_ "3" .none)))
       )
       (else_ := skip_)
   )
-  |> ThenStmt (assert_ (implies_ (var "b") (eq_ (var "i") (const_ "1" .none))))
+  ∘ (assert_ (implies_ (var "b") (eq_ (var "i") (const_ "1" .none))))
   |> build
 
 
@@ -741,42 +820,42 @@ if price > price0 {
 }-/
 def progIfStmt: LExpr LTy String :=
   let_ "superDiscount" _Bool
-  |> ThenStmt (let_ "discount" _Bool)
-  |> ThenStmt (let_ "price" _Int)
-  |> ThenStmt (let_assign "price0" _Int (var "price"))
-  |> ThenStmt (let_ "discountAmount" _Int)
-  |> ThenStmt (let_ "quantity" _Int)
-  |> ThenStmt (assume_ (gt_ (var "discountAmount") (const_ "0" .none)))
-  |> ThenStmt (assume_ (gt_ (var "price") (const_ "0" .none)))
-  |> ThenStmt (
+  ∘ (let_ "discount" _Bool)
+  ∘ (let_ "price" _Int)
+  ∘ (let_assign "price0" _Int (var "price"))
+  ∘ (let_ "discountAmount" _Int)
+  ∘ (let_ "quantity" _Int)
+  ∘ (assume_ (gt_ (var "discountAmount") (const_ "0" .none)))
+  ∘ (assume_ (gt_ (var "price") (const_ "0" .none)))
+  ∘ (
     if_ ["price"] (var "discount")
       (then_ := let_assign "price" _Int (minus_ (var "price") (var "discountAmount")))
       (else_ := skip_)
   )
-  |> ThenStmt (
+  ∘ (
     if_ ["price"] (and_ (var "superDiscount") (gt_ (var "price") (var "discountAmount")))
       (then_ := let_assign "price" _Int (minus_ (var "price") (var "discountAmount")))
       (else_ := skip_)
   )
-  |> ThenStmt (assert_ (implies_ (not_ (var "discount")) (gt_ (var "price") (const_ "0" .none))))
-  |> ThenStmt (assert_ (implies_ (lt_ (var "discountAmount") (var "price0")) (gt_ (var "price") (const_ "0" .none))))
-  |> ThenStmt (
+  ∘ (assert_ (implies_ (not_ (var "discount")) (gt_ (var "price") (const_ "0" .none))))
+  ∘ (assert_ (implies_ (lt_ (var "discountAmount") (var "price0")) (gt_ (var "price") (const_ "0" .none))))
+  ∘ (
     if_ [] (lt_ (var "price") (var "price0"))
       (then_ :=
         if_ [] (not_ (var "discount"))
           (then_ := assert_ (var "superDiscount"))
           (else_ := skip_)
-        |> ThenStmt (assert_ (or_ (var "discount") (var "superDiscount")))
+        ∘ (assert_ (or_ (var "discount") (var "superDiscount")))
       )
       (else_ := skip_)
   )
-  |> ThenStmt (assert_ (implies_ (lt_ (var "price") (var "price0")) (or_ (var "discount") (var "superDiscount"))))
-  |> ThenStmt (assert_ (implies_ (lt_ (var "price") (const_ "0" .none)) (and_ (var "discount") (gt_ (var "discountAmount") (var "price")))))
-  |> ThenStmt (
+  ∘ (assert_ (implies_ (lt_ (var "price") (var "price0")) (or_ (var "discount") (var "superDiscount"))))
+  ∘ (assert_ (implies_ (lt_ (var "price") (const_ "0" .none)) (and_ (var "discount") (gt_ (var "discountAmount") (var "price")))))
+  ∘ (
     if_ [] (gt_ (var "price") (var "price0"))
       (then_ :=
         assert_ (const_ "false" .none)
-        |> ThenStmt (assume_ (const_ "false" .none))
+        ∘ (assume_ (const_ "false" .none))
       )
       (else_ := skip_)
   )
@@ -1694,25 +1773,25 @@ assert i == i@before + 3
 -/
 def progInlineProc: LExpr LTy String :=
   let_ "b" _Bool
-  |> ThenStmt (let_assign "i" _Int (const_ "1" .none))
-  |> ThenStmt (label "before")
-  |> ThenStmt (
+  ∘ (let_assign "i" _Int (const_ "1" .none))
+  ∘ (label "before")
+  ∘ (
     procedure "continueWith" [("i", _Int), ("continueWith_return", .none)] (
       if_ ["i"] (var "b")
         (then_ :=
           assign "i" _Int (choose_ _Int)
-          |> ThenStmt (assume_ (eq_ (minus_ (var "i") (varAt "before" "i")) (const_ "3" .none)))
+          ∘ (assume_ (eq_ (minus_ (var "i") (varAt "before" "i")) (const_ "3" .none)))
         )
         (else_ := assign "i" _Int (plus_ (var "i") (const_ "2" .none)))
-      |> ThenExpr (call1 "continueWith_return" (var "i"))
+      <| (call1 "continueWith_return" (var "i"))
     )
   )
-  |> ThenStmt (
+  ∘ (
     if_ ["i"] (var "b")
       (then_ := call1_1 "continueWith" (var "i") (out := "i"))
       (else_ := call1_1 "continueWith" (plus_ (var "i") (const_ "1" .none)) (out := "i"))
   )
-  |> ThenStmt (assert_ (eq_ (var "i") (plus_ (varAt "before" "i") (const_ "3" .none))))
+  ∘ (assert_ (eq_ (var "i") (plus_ (varAt "before" "i") (const_ "3" .none))))
   |> build
 
 /--
@@ -1780,11 +1859,11 @@ assert counter == 2
 def procedureCallDebug: LExpr LTy String :=
   procedure "f" [("counter", _Int), ("f#out", .none)] (
     assign "counter" _Int (const_ "2" .none)
-    |> ThenExpr (app_ (var "f#out") (var "counter"))
+    <| (app_ (var "f#out") (var "counter"))
   )
-  |> ThenStmt (let_assign "counter" _Int (const_ "3" .none))
-  |> ThenStmt (call1_1 "f" (var "counter") "counter")
-  |> ThenStmt (assert_ (eq_ (var "counter") (const_ "2" .none)))
+  ∘ (let_assign "counter" _Int (const_ "3" .none))
+  ∘ (call1_1 "f" (var "counter") "counter")
+  ∘ (assert_ (eq_ (var "counter") (const_ "2" .none)))
   |> build
 
 /--
@@ -1828,15 +1907,15 @@ assert counter == 3 || counter == 5 || counter == 7  // Cannot be proved with tr
 def procedureCall: LExpr LTy String :=
   procedure "f" (("counter", _Int) :: ("f_return", .none) :: []) (
     let_ "inc" _Int
-    |> ThenStmt (assume_ (and_ (le_ (const_ "0" .none) (var "inc")) (le_ (var "inc") (const_ "2" .none))))
-    |> ThenStmt (assign "counter" _Int (plus_ (var "counter") (var "inc")))
-    |> ThenExpr (call1 "f_return" (var "counter"))
+    ∘ (assume_ (and_ (le_ (const_ "0" .none) (var "inc")) (le_ (var "inc") (const_ "2" .none))))
+    ∘ (assign "counter" _Int (plus_ (var "counter") (var "inc")))
+    <| (call1 "f_return" (var "counter"))
   )
-  |> ThenStmt (let_assign "counter" _Int (const_ "3" .none))
-  |> ThenStmt (call1_1 "f" (var "counter") (out := "counter"))
-  |> ThenStmt (call1_1 "f" (var "counter") (out := "counter"))
-  |> ThenStmt (assert_ (and_ (le_ (const_ "3" .none) (var "counter")) (le_ (var "counter") (const_ "7" .none))))
-  |> ThenStmt (assert_ (or_ (or_ (eq_ (var "counter") (const_ "3" .none))
+  ∘ (let_assign "counter" _Int (const_ "3" .none))
+  ∘ (call1_1 "f" (var "counter") (out := "counter"))
+  ∘ (call1_1 "f" (var "counter") (out := "counter"))
+  ∘ (assert_ (and_ (le_ (const_ "3" .none) (var "counter")) (le_ (var "counter") (const_ "7" .none))))
+  ∘ (assert_ (or_ (or_ (eq_ (var "counter") (const_ "3" .none))
                                 (eq_ (var "counter") (const_ "5" .none)))
                            (eq_ (var "counter") (const_ "3" .none))))
   |> build
@@ -1898,10 +1977,10 @@ def apiProg :=
         (opcall2 "regexconcat"
           (opcall1 "regexfromstring" (const_ "\"arn:\"" _String))
           (opcall1 "regexstar" (op_ "regexallchar" .none))))
-    |> ThenExpr (call1 "out" (choose_ _Int))
+    <| (call1 "out" (choose_ _Int))
   )
-  |> ThenStmt (call1_1 "iam.simulate_principal_policy" (const_ "\"user/policy\"" _String) "out_discard")
-  |> ThenStmt (call1_1 "iam.simulate_principal_policy" (const_ "\"arn:policy\"" _String) "out_discard")
+  ∘ (call1_1 "iam.simulate_principal_policy" (const_ "\"user/policy\"" _String) "out_discard")
+  ∘ (call1_1 "iam.simulate_principal_policy" (const_ "\"arn:policy\"" _String) "out_discard")
   |> build
 
 /--
@@ -1949,11 +2028,11 @@ assert out == 3 -- Can't prove with rewriting
 def method_with_contracts: LExpr LTy String :=
   procedure "f" [("i", _Int)] (
     assert_ (le_ (const_ "0" .none) (var "i"))
-    |> ThenExpr (ensures_ .none (plus_ (var "i") (const_ "1" .none)) (abs_ "j" _Int (lt_ (var "i") (var "j"))))
+    <| (ensures_ .none (plus_ (var "i") (const_ "1" .none)) (abs_ "j" _Int (lt_ (var "i") (var "j"))))
   )
-  |> ThenStmt (let_assign "f_out" _Int (call1 "f" (const_ "2" .none)))
-  |> ThenStmt (assert_ (lt_ (const_ "2" .none) (var "f_out"))) -- can prove
-  |> ThenStmt (assert_ (eq_ (var "f_out") (const_ "3" .none))) -- can't prove
+  ∘ (let_assign "f_out" _Int (call1 "f" (const_ "2" .none)))
+  ∘ (assert_ (lt_ (const_ "2" .none) (var "f_out"))) -- can prove
+  ∘ (assert_ (eq_ (var "f_out") (const_ "3" .none))) -- can't prove
   |> build
 
 
@@ -2067,7 +2146,7 @@ partial def translateToNLExpr (c: Context String) (s: StmtExpr String): LExpr LT
         match optLabel with
         | .some label => label
         | .none => "exit"
-      let c := c.add_declare blockLabel
+      let c := c.declare blockLabel
       (.abs .none <| translateToNLExprList c (.some (var blockLabel)) statements)
   | .LiteralInt i => .const (toString f!"{i}") .none
   | .Identifier name => var name
