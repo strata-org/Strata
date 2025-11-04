@@ -1,4 +1,4 @@
-// Test switch statement with fallthrough
+// Test switch with mixed break and fallthrough
 let x: number = 2;
 let result: number = 0;
 
@@ -9,6 +9,11 @@ switch (x) {
     result = 20;
   case 3:
     result = 30;
+    break;
   default:
     result = 40;
 }
+
+result;
+
+
