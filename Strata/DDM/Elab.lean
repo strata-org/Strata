@@ -57,7 +57,7 @@ partial def elabHeader
     (leanEnv : Lean.Environment)
     (inputContext : InputContext)
     (startPos : String.Pos := 0)
-    (stopPos : String.Pos := inputContext.input.endPos)
+    (stopPos : String.Pos := inputContext.endPos)
      : Header × Array Message × String.Pos :=
   let s : DeclState := .initDeclState
   let s := s.openLoadedDialect! .builtin headerDialect
@@ -100,7 +100,7 @@ def elabProgramRest
     (loc : SourceRange)
     (dialect : DialectName)
     (startPos : String.Pos)
-    (stopPos : String.Pos := inputContext.input.endPos)
+    (stopPos : String.Pos := inputContext.endPos)
     : Except (Array Message) Program := do
   let some d := loader.dialects[dialect]?
     | .error #[Lean.mkStringMessage inputContext loc.start s!"Unknown dialect {dialect}."]
@@ -121,7 +121,7 @@ partial def elabProgram
     (leanEnv : Lean.Environment)
     (inputContext : InputContext)
     (startPos : String.Pos := 0)
-    (stopPos : String.Pos := inputContext.input.endPos) : Except (Array Message) Program :=
+    (stopPos : String.Pos := inputContext.endPos) : Except (Array Message) Program :=
   assert! "Init" ∈ loader.dialects
   let (header, errors, startPos) := elabHeader leanEnv inputContext startPos stopPos
   if errors.size > 0 then
@@ -317,7 +317,7 @@ partial def elabDialectRest
       (loc : SourceRange)
       (dialect : DialectName)
       (startPos : String.Pos := 0)
-      (stopPos : String.Pos := inputContext.input.endPos)
+      (stopPos : String.Pos := inputContext.endPos)
       : BaseIO (LoadedDialects × Dialect × DeclState) := do
   let leanEnv ←
     match ← mkEmptyEnvironment 0 |>.toBaseIO with
@@ -389,7 +389,7 @@ def elabDialect
     (dialects : LoadedDialects)
     (inputContext : Parser.InputContext)
     (startPos : String.Pos := 0)
-    (stopPos : String.Pos := inputContext.input.endPos)
+    (stopPos : String.Pos := inputContext.endPos)
      : BaseIO (LoadedDialects × Dialect × DeclState) := do
   let leanEnv ←
     match ← mkEmptyEnvironment 0 |>.toBaseIO with
