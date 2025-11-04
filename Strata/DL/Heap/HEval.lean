@@ -127,6 +127,22 @@ partial def evalHExpr (state : HState) (expr : HExpr) : HState × HExpr :=
         -- Some parts can't be converted to Lambda, keep as deferred
         (state3, .deferredIte guardVal consVal altVal)
 
+  | .deferredEq e1 e2 =>
+    -- Evaluate both sides first
+    let (state1, val1) := evalHExpr state e1
+    let (state2, val2) := evalHExpr state1 e2
+    -- Try to delegate to Lambda's .eq evaluator
+    match val1.toLambda?, val2.toLambda? with
+    | some l1, some l2 =>
+      -- Both can be converted to Lambda, use Lambda's primitive .eq
+      let lambdaEq := LExpr.eq l1 l2
+      let fuel := 100
+      let result := LExpr.eval fuel state2.lambdaState lambdaEq
+      (state2, .lambda result)
+    | _, _ =>
+      -- Some parts can't be converted to Lambda, keep as deferred
+      (state2, .deferredEq val1 val2)
+
 -- Evaluate application expressions (following Lambda's evalApp pattern)
 partial def evalApp (state : HState) (originalExpr e1 e2 : HExpr) : HState × HExpr :=
   let (state1, e1') := evalHExpr state e1

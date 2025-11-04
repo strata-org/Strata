@@ -139,9 +139,7 @@ def intGeFunc [Coe String Ident] : LFunc Ident :=
   binaryPredicate "Int.Ge" .int
   (some (binOpCeval Int Bool LExpr.denoteInt (fun x y => x >= y) .bool))
 
-def intEqFunc [Coe String Ident] : LFunc Ident :=
-  binaryPredicate "Int.Eq" .int
-  (some (binOpCeval Int Bool LExpr.denoteInt (fun x y => x == y) .bool))
+-- intEqFunc removed: TypeScript uses deferredEq to delegate to Lambda's .eq (no factory)
 
 /- Boolean Operations -/
 def boolAndFunc [Coe String Ident] : LFunc Ident :=
@@ -176,7 +174,7 @@ def IntBoolFactory : @Factory String :=
     intLeFunc,
     intGtFunc,
     intGeFunc,
-    intEqFunc,
+    -- intEqFunc removed: TypeScript uses deferredEq (no factory)
 
     boolAndFunc,
     boolOrFunc,
