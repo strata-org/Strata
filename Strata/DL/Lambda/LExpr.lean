@@ -1252,23 +1252,16 @@ def Context.assign_or_declare {Identifier : Type} [DecidableEq Identifier] [ToSt
       | .extend _ _ _ _ s => s + 1)
 
 def mdata_ (info: Info) (e1: CELExpr TypeType Identifier): CELExpr TypeType Identifier :=
-  λc =>
-    do
-    let e1 ← e1 c
-    return .mdata info e1
+  λc=> return .mdata info (← e1 c)
 
 def mdata__ (info: Info) (e1: Stmt TypeType Identifier): Stmt TypeType Identifier :=
-  λk c =>
-    do
-    let e1 ← e1 k c
-    return .mdata info e1
+  λk c=> return .mdata info (← e1 k c)
 
 def app_ (e1 e2: CELExpr TypeType Identifier): CELExpr TypeType Identifier :=
-  λc =>
-  do
-  let e1 ← e1 c
-  let e2 ← e2 c
-  return .app e1 e2
+  λc=> return .app (← e1 c) (← e2 c)
+
+def eq_ (a b: CELExpr LTy String) :=
+  λc=> return (LExpr.eq (← a c) (← b c))
 
 def appList (f: CELExpr TypeType Identifier) (args: List (CELExpr TypeType Identifier)): CELExpr TypeType Identifier :=
   args.foldl (λe arg =>
@@ -1276,27 +1269,13 @@ def appList (f: CELExpr TypeType Identifier) (args: List (CELExpr TypeType Ident
   ) f
 
 def ite_ (e1 e2 e3: CELExpr TypeType Identifier): CELExpr TypeType Identifier :=
-  λc =>
-  do
-  let e1 ← e1 c
-  let e2 ← e2 c
-  let e3 ← e3 c
-  return .ite e1 e2 e3
+  λc=> return .ite (← e1 c) (← e2 c) (← e3 c)
 
 def abs_ (id: Identifier) (ty: Option TypeType) (body: CELExpr TypeType Identifier): CELExpr TypeType Identifier :=
-  λc =>
-  do
-  let c := c.declare id
-  let body ← body c
-  return .abs id ty body
+  λc=> return .abs id ty (← body (c.declare id))
 
 def quant_ (k: QuantifierKind) (id: Identifier) (ty: Option TypeType) (tr e: CELExpr TypeType Identifier): CELExpr TypeType Identifier :=
-  λc =>
-  do
-  let c := c.declare id
-  let tr ← tr c
-  let e ← e c
-  return .quant k ty tr e
+  λc=> let c' := c.declare id; return .quant k ty (← tr c') (← e c')
 
 def fvar_ (id: Identifier) (ty: Option TypeType): CELExpr TypeType Identifier :=
   λ_ =>
@@ -1383,8 +1362,7 @@ def vLastAssigned {Identifier : Type}
   go .none 0 c
 
 def label {Identifier: Type} (name: Identifier): Stmt TypeType Identifier :=
-  λcont c =>
-  cont (c.label name)
+  λcont c=> cont (c.label name)
 
 def opcall1 [DecidableEq Identifier] (name: Identifier) (arg: CELExpr TypeType Identifier): CELExpr TypeType Identifier :=
   app_ (op_ name .none) arg
@@ -1410,33 +1388,19 @@ def choose_abs (ty: Option TypeType) (l: LExpr TypeType Identifier) : LExpr Type
 
 -- Declare a new variable without RHS
 def let_ (id : String) (ty: Option TypeType): Stmt TypeType String :=
-  λk c =>
-  do
-  let c: Context String := .declare c id
-  let cont ← k c
-  return choose_abs ty <| LExpr.abs id ty cont
+  λk c=> return choose_abs ty <| LExpr.abs id ty (← k (.declare c id))
 
 def let_assign_helper {Identifier : Type} (id : Identifier) (ty: Option TypeType) (rhs : LExpr TypeType Identifier) (k : LExpr TypeType Identifier) : LExpr TypeType Identifier :=
   .app (.abs id ty k) rhs
 
 -- Declare a new variable and assign it a value
 def let_assign {Identifier : Type} (id : Identifier) (ty: Option TypeType) (rhs : CELExpr TypeType Identifier): Stmt TypeType Identifier :=
-  λk c =>
-  do
-  let rhs ← rhs c
-  let c : Context Identifier := .declare c id
-  let remaining ← k c
-  return let_assign_helper id ty rhs remaining
+  λk c=> return let_assign_helper id ty (← rhs c) (← k (.declare c id))
 
 -- Declare a variable and assigns it a value, with the intention that it's
 -- the variable that was assigned last.
 def assign {Identifier : Type} [DecidableEq Identifier] [ToString Identifier] (id : Identifier) (ty: Option TypeType) (rhs : CELExpr TypeType Identifier): Stmt TypeType Identifier :=
-  λk c =>
-  do
-  let rhs ← rhs c
-  let c ← Context.assign_or_declare c id
-  let cont ← k c
-  return .app (.abs id ty cont) rhs
+  λk c=> do let c' ← Context.assign_or_declare c id; return .app (.abs id ty (← k c')) (← rhs c)
 
 def procedure  {Identifier : Type} {TypeType: Type} [DecidableEq Identifier]
   (name: Identifier) (args: List (Identifier × Option TypeType)) (body: CELExpr TypeType Identifier): Stmt TypeType Identifier :=
@@ -1465,15 +1429,13 @@ def canFail2: (A -> B -> C) -> (Except String A -> Except String B -> Except Str
     return f a1 a2
 
 def assume_ {TypeType Identifier : Type} (cond : CELExpr TypeType Identifier) : Stmt TypeType Identifier :=
-  λk c =>
-    return assume (← cond c) (← k c)
+  λk c=> return assume (← cond c) (← k c)
 
 def assert {Identifier: Type} (cond : LExpr TypeType Identifier) (info: Info) (thn : LExpr TypeType Identifier) : LExpr TypeType Identifier :=
   .ite cond thn (.error info)
 
 def assert_ {TypeType Identifier : Type} (cond : CELExpr TypeType Identifier) (info: Info) : Stmt TypeType Identifier :=
-  λk c =>
-    return assert (← cond c) info (← k c)
+  λk c=> return assert (← cond c) info (← k c)
 
 def skip_expr: CELExpr TypeType Identifier := λ_ => return .skip
 
@@ -1484,7 +1446,7 @@ def minus_ (a b: CELExpr LTy String) := app_ (app_ (op_ "-" .none) a) b
 def pushpop (a b: LExpr LTy String) :=
   LExpr.app (LExpr.app (.abs .none .none (.abs .none .none (.bvar 0))) a) b
 def pushpop_  (a b: CELExpr LTy String) :=
-  λc => return LExpr.app (LExpr.app (.abs .none .none (.abs .none .none (.bvar 0))) (← a c)) (← b c)
+  λc=> return LExpr.app (LExpr.app (.abs .none .none (.abs .none .none (.bvar 0))) (← a c)) (← b c)
 def not (a: LExpr LTy String) := LExpr.app (.op "!" .none) a
 def not_ (a: CELExpr LTy String) := app_ (op_ "!" .none) a
 
@@ -2337,16 +2299,13 @@ def select (name: String) (e: LExpr LTy String) : LExpr LTy String :=
   .app e (.const name .none)
 
 def record_ (values: List (String × (CELExpr LTy String))): CELExpr LTy String :=
-  abs_ "symbol" .none <| λc =>
+  abs_ "symbol" .none <|
     values.foldr (λ(name, expr) acc =>
-      do
-      let res ← expr c
-      let acc ← acc
-      return .ite (.eq (.bvar 0) (.const name .none)) res acc
-    ) (.ok (.error <| Info.mk "Unknown key"))
+      ite_ (eq_ (var "symbol") (const_ name .none)) expr acc
+    ) (error_ <| Info.mk "Unknown key")
 
 def select_ (name: String) (e: CELExpr LTy String) : CELExpr LTy String :=
-  λc => return select name (← e c)
+  λc=> return select name (← e c)
 /-
 Datatype "Option" [("Some", 1), ("None", 0)]
 
@@ -2450,8 +2409,7 @@ def ensures (t: Option LTy) (body postcond: LExpr LTy String) (info: Info): LExp
 
 -- This ensures introduces an intermediate variable "res" that contains the method's output
 def ensures_ (t: Option LTy) (body postcond: CELExpr LTy String) (info: Info) : CELExpr LTy String :=
-  λc =>
-    return ensures t (← body c) (← postcond (c.declare "res")) info
+  λc=> return ensures t (← body c) (← postcond (c.declare "res")) info
 
 def ensures_assume (t: Option LTy) (body postcond: LExpr LTy String) : LExpr LTy String :=
   (.app (.abs "res" t (assume (.app postcond (.bvar 0)) (.bvar 0))) body)
@@ -2526,7 +2484,6 @@ def or (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op "||" .none) a) 
 def or_ (a b: CELExpr LTy String) := app_ (app_ (op_ "||" .none) a) b
 def neq (a b: LExpr LTy String) := LExpr.app (LExpr.app (LExpr.op "!=" .none) a) b
 def neq_ (a b: CELExpr LTy String) := app_ (app_ (op_ "!=" .none) a) b
-def eq_ (a b: CELExpr LTy String) := λc=> return (LExpr.eq (← a c) (← b c))
 
 ---- Semantics of non-deterministic LExpr
 inductive Value : Type where
