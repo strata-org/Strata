@@ -117,9 +117,10 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
     | "*" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Mul" none) lhs) rhs
     | "/" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Div" none) lhs) rhs
     | "%" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Mod" none) lhs) rhs
-    -- TODO: handle weak and strict equality properly
-    | "===" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Eq" none) lhs) rhs
-    | "==" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Eq" none) lhs) rhs
+    -- Use deferredEq which delegates to Lambda's .eq at evaluation time
+    | "===" => Heap.HExpr.deferredEq lhs rhs
+    -- [TODO] For simplicity, treat "==" same as "===" for now
+    | "==" => Heap.HExpr.deferredEq lhs rhs
     --------------------------------------------------------
     | "<=" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Le" none) lhs) rhs
     | "<" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Lt" none) lhs) rhs
@@ -608,7 +609,7 @@ partial def translate_statement_core
               -- Regular case
               let discrimExpr := translate_expr switchStmt.discriminant
               let caseValue := translate_expr expr
-              let testExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Eq" none) discrimExpr) caseValue
+              let testExpr := Heap.HExpr.deferredEq discrimExpr caseValue
               let (caseCtx, stmts) := case.consequent.foldl (fun (accCtx, accStmts) stmt =>
                 let (newCtx, newStmts) := translate_statement_core stmt accCtx
                 (newCtx, accStmts ++ newStmts)) (ctx, [])
