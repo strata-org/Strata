@@ -165,9 +165,6 @@ instance (p : Program) : ListP (WFDeclProp p) (WFDeclsProp p) where
 
 structure WFProgramProp (p : Program) where
   namesNodup : (p.getNames).Nodup
-  -- varNodup : (p.getNames .var).Nodup
-  -- procNodup : (p.getNames .proc).Nodup
-  -- funcNodup : (p.getNames .func).Nodup
   wfdecls : WFDeclsProp p p.decls
 
 structure WFProcedure (p : Program) extends (Wrapper Procedure) where

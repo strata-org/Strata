@@ -225,7 +225,6 @@ info: ok: (((~Int.Add : (arrow int (arrow int int))) (x : int)) ((~Int.Neg : (ar
                                    esM[((~Int.Add x) (~Int.Neg #30))]
          return (format $ ans.fst)
 
-
 /--
 info: ok: ((λ ((%0 : (arrow bool $__ty4)) ((fn : (arrow bool bool)) (#true : bool)) : bool)) : $__ty4)) : (arrow (arrow bool $__ty4) $__ty4))
 -/

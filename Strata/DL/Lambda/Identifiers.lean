@@ -5,18 +5,10 @@
 -/
 
 
--- import Std.Data.HashMap.Lemmas
 import Strata.DL.Lambda.LTy
 import Strata.DL.Util.Map
 
 ---------------------------------------------------------------------
-
--- -- Not merged in Lean release yet, so prove it ourselves
-@[simp]
-theorem Std.HashMap.contains_eq_false_iff_not_mem  {α : Type u} {β : Type v} [BEq α] [Hashable α] {m : Std.HashMap α β} {k : α} :
-m.contains k = false ↔ ¬k ∈ m := by
-  have m_cont := (Std.HashMap.contains_iff_mem (m:=m) (a:=k))
-  revert m_cont; cases (m.contains k) <;> simp
 
 namespace Lambda
 open Std (ToFormat Format format)
@@ -86,8 +78,7 @@ def Identifiers.containsName {IDMeta} [DecidableEq IDMeta] (m: Identifiers IDMet
   m[n]?.isSome
 
 theorem Identifiers.addWithErrorNotin {IDMeta} [DecidableEq IDMeta] {m m': Identifiers IDMeta} {x: Identifier IDMeta}: m.addWithError x f = .ok m' → m.contains x = false := by
-  unfold addWithError contains;
-  grind
+  unfold addWithError contains; grind
 
 theorem Identifiers.addWithErrorContains {IDMeta} [DecidableEq IDMeta] {m m': Identifiers IDMeta} {x: Identifier IDMeta}: m.addWithError x f = .ok m' → ∀ y, m'.contains y ↔ x = y ∨ m.contains y := by
   unfold addWithError contains;
@@ -110,7 +101,6 @@ theorem Identifiers.addWithErrorContains {IDMeta} [DecidableEq IDMeta] {m m': Id
 
 instance [ToFormat IDMeta] : ToFormat (Identifiers IDMeta) where
   format m := format (m.toList)
-
 
 ---------------------------------------------------------------------
 

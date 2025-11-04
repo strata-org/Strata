@@ -177,15 +177,6 @@ def Program.getNames (P: Program) : List Expression.Ident :=
   go P.decls
   where go decls := decls.map Decl.name
 
--- def Program.getNames (P : Program) (k : DeclKind) : List Expression.Ident :=
---   go k P.decls
---   where go k decls :=
---   match decls with
---   | [] => []
---   | d :: drest =>
---     let rest := go k drest
---     if d.kind == k then d.name :: rest else rest
-
 def Program.Type.find? (P : Program) (x : Expression.Ident) : Option TypeDecl :=
   match P.find? .type x with
   | none => none

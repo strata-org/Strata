@@ -236,11 +236,7 @@ theorem Program.typeCheck.go_elim_acc:
   any_goals (split <;> try contradiction)
   any_goals (split <;> try (intros; contradiction))
   any_goals (split <;> try (intros; contradiction))
-  -- any_goals simp
-  -- rw [← List.cons_append]; intro;  apply ind (by assumption)
   any_goals (rw [← List.cons_append]; intro; apply ind (by assumption))
-  -- any_goals (rename_i H _ _ _ _; have H:= Program.find?.go_none_of_append H; simp_all)
-  -- rename_i H _ _ _ _ _ _ _; have H:= Program.find?.go_none_of_append H; simp_all
 
 theorem Program.typeCheckAux_elim_singleton: Program.typeCheck.go p C ds T [s] = Except.ok (pp, T') →
   Program.typeCheck.go p C ds T [] = Except.ok (pp.drop 1, T') := by

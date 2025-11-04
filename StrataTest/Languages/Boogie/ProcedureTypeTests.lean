@@ -26,7 +26,7 @@ info: ok: ((procedure P :  ((x : int)) → ((y : int)))
  aliases: [] state: tyGen: 6 tyPrefix: $__ty exprGen: 0 exprPrefix: $__var subst: [])
 -/
 #guard_msgs in
-#eval do let ans ← typeCheck { LContext.default with functions := Boogie.Factory }  TEnv.default
+#eval do let ans ← typeCheck { LContext.default with functions := Boogie.Factory } TEnv.default
                              Program.init
                              { header := {name := "P",
                                           typeArgs := [],
