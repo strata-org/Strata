@@ -68,7 +68,7 @@ abbrev Identifiers IDMeta := Std.HashMap String IDMeta
 def Identifiers.default {IDMeta} : Identifiers IDMeta := Std.HashMap.emptyWithCapacity
 
 /-
-For an informative error message
+For an informative error message, takes in a `Format`
 -/
 def Identifiers.addWithError {IDMeta} (m: Identifiers IDMeta) (x: Identifier IDMeta) (f: Format) : Except Format (Identifiers IDMeta) :=
   let (b, m') := m.containsThenInsertIfNew x.name x.metadata
@@ -87,25 +87,7 @@ def Identifiers.containsName {IDMeta} [DecidableEq IDMeta] (m: Identifiers IDMet
 
 theorem Identifiers.addWithErrorNotin {IDMeta} [DecidableEq IDMeta] {m m': Identifiers IDMeta} {x: Identifier IDMeta}: m.addWithError x f = .ok m' → m.contains x = false := by
   unfold addWithError contains;
-  match h: (Std.HashMap.containsThenInsertIfNew m x.name x.metadata) with
-  | ⟨b, m'⟩ =>
-    simp;
-    cases b with
-    | true => simp
-    | false =>
-      simp; intro C; subst m';
-      have Hnotin := (Std.HashMap.containsThenInsertIfNew_fst (m:=m) (k:=x.name) (v:=x.metadata));
-      rw[h] at Hnotin;
-      symm at Hnotin
-      rw [Std.HashMap.contains_eq_isSome_getElem?] at Hnotin
-      revert Hnotin
-      cases m[x.name]? <;> simp
-
-
-
--- Does this exist
-theorem not_false {P: Prop} [Decidable P]: ¬ P → (if P then x else y) = y :=
-  by grind
+  grind
 
 theorem Identifiers.addWithErrorContains {IDMeta} [DecidableEq IDMeta] {m m': Identifiers IDMeta} {x: Identifier IDMeta}: m.addWithError x f = .ok m' → ∀ y, m'.contains y ↔ x = y ∨ m.contains y := by
   unfold addWithError contains;
@@ -113,25 +95,18 @@ theorem Identifiers.addWithErrorContains {IDMeta} [DecidableEq IDMeta] {m m': Id
   have m'_def := (Std.HashMap.containsThenInsertIfNew_snd (m:=m) (k:=x.name) (v:=x.metadata));
   revert m_contains m'_def
   rcases (Std.HashMap.containsThenInsertIfNew m x.name x.metadata) with ⟨b, m''⟩; simp; intros b_eq m''_eq; subst b m'';
-  cases m_contains: (Std.HashMap.contains m x.name) <;> simp; intros m'_eq; subst m'_eq; intros y; rw[Std.HashMap.getElem?_insertIfNew];
-  cases name_eq: (x.name == y.name)
-  case false =>
-    simp; intros x_eq_y; subst x; rw[BEq.rfl ] at name_eq; contradiction
-  case true =>
-    rw[beq_iff_eq] at name_eq
-    simp; rw[Std.HashMap.contains_eq_false_iff_not_mem] at m_contains;
-    -- is there a better way?
-    rw[not_false m_contains]; simp
-    cases meta_eq: (x.metadata == y.metadata)
-    case false => grind
-    case true =>
-      rw[beq_iff_eq] at meta_eq
-      constructor
-      . intros _; apply Or.inl; cases x; cases y; grind
-      . rw[meta_eq]; intros _; rfl
-
-def Identifiers.eq {IDMeta} (m1 m2: Identifiers IDMeta) : Prop :=
-  Std.HashMap.Equiv m1 m2
+  split <;> intros m_contains; contradiction
+  injection m_contains; subst m'; intros y; rw[Std.HashMap.getElem?_insertIfNew]
+  cases name_eq: (x.name == y.name); grind
+  rw[beq_iff_eq] at name_eq
+  rename_i m_contains
+  have name_notin : ¬ x.name ∈ m := by grind
+  simp; rw[if_neg name_notin]
+  cases meta_eq: (x.metadata == y.metadata); grind
+  rw[beq_iff_eq] at meta_eq
+  constructor
+  . intros _; apply Or.inl; cases x; cases y; grind
+  . rw[meta_eq]; intros _; simp
 
 instance [ToFormat IDMeta] : ToFormat (Identifiers IDMeta) where
   format m := format (m.toList)

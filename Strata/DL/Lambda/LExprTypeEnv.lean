@@ -187,14 +187,7 @@ instance : ToFormat TState where
 /-- Name and arity of a registered type. -/
 def KnownType := Identifier Nat deriving Inhabited, DecidableEq, Repr
 
--- def makeKnownType (n: String) : KnownType := ⟨n, 0⟩
-
 def KnownType.arity (k: KnownType) := k.metadata
-
--- structure KnownType where
---   name : String
---   arity : Nat := 0
---   deriving Inhabited, Repr, DecidableEq
 
 def KnownType.toLTy (k : KnownType) : LTy :=
   let bvars := (List.range k.arity).map (fun a => toString a)
@@ -244,9 +237,7 @@ deriving Inhabited
 A type environment `TEnv` contains a stack of contexts `TContext` to track `LExpr`
 variables and their types, a typing state `TState` to track the global
 substitution and fresh variable generation, and a `KnownTypes` to track the
-supported type constructors. It also has type information about a
-factory of user-specified functions, which is used during type checking. It also
-contains data structures for ensuring unique names of types and functions.
+supported type constructors.
 -/
 structure TEnv (IDMeta : Type) where
   genEnv : TGenEnv IDMeta
