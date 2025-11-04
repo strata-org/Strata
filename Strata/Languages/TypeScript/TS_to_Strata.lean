@@ -48,16 +48,16 @@ private def isBareContinueStmt (s : TS_Statement) : Bool :=
 private def isIfWithBareContinue (s : TS_Statement) : Option TS_IfStatement :=
   match s with
   | .TS_IfStatement ifs =>
-      let conseqIsBare :=
-        match ifs.consequent with
-        | .TS_ContinueStatement _ => true
-        | .TS_BlockStatement b =>
-            -- exactly one statement and it is `continue`
-            match b.body.toList with
-            | [one] => isBareContinueStmt one
-            | _     => false
-        | _ => false
-      if conseqIsBare && ifs.alternate.isNone then some ifs else none
+    let conseqIsBare :=
+      match ifs.consequent with
+      | .TS_ContinueStatement _ => true
+      | .TS_BlockStatement b =>
+          -- exactly one statement and it is `continue`
+          match b.body.toList with
+          | [one] => isBareContinueStmt one
+          | _     => false
+      | _ => false
+    if conseqIsBare && ifs.alternate.isNone then some ifs else none
   | _ => none
 
 def TS_type_to_HMonoTy (ty: String) : Heap.HMonoTy :=
@@ -65,7 +65,7 @@ def TS_type_to_HMonoTy (ty: String) : Heap.HMonoTy :=
   | "TS_TSNumberKeyword" => Heap.HMonoTy.int
   | "TS_TSBooleanKeyword" => Heap.HMonoTy.bool
   | "TS_TSStringKeyword" => Heap.HMonoTy.string
-  -- | "TS_TSArrayType" => Heap.HMonoTy.addr
+  | "TS_TSArrayType" => Heap.HMonoTy.addr
   | _ => panic! s!"Unsupported type: {ty}"
 
 def Option_TS_TSTypeKeyword_to_str (i: Option TS_TSTypeKeyword) : String :=
@@ -74,7 +74,7 @@ def Option_TS_TSTypeKeyword_to_str (i: Option TS_TSTypeKeyword) : String :=
     | .TS_TSNumberKeyword _ => "TS_TSNumberKeyword"
     | .TS_TSBooleanKeyword _ => "TS_TSBooleanKeyword"
     | .TS_TSStringKeyword _ => "TS_TSStringKeyword"
-    -- | .TS_TSArrayType _ => "TS_TSArrayType"
+    | .TS_TSArrayType _ => "TS_TSArrayType"
   | .none => panic! "Unimplemented"
 
 -- Helper to extract type from optional type annotation
@@ -87,7 +87,7 @@ def extract_type_from_annotation (ann: Option TS_TSTypeAnnotation) : String :=
 partial def infer_type_from_expr (expr: TS_Expression) : Heap.HMonoTy :=
   match expr with
   | .TS_ObjectExpression _ => Heap.HMonoTy.addr  -- Objects are addresses
-  -- | .TS_ArrayExpression _ => Heap.HMonoTy.addr   -- Arrays are addresses
+  | .TS_ArrayExpression _ => Heap.HMonoTy.addr   -- Arrays are addresses
   | .TS_NumericLiteral _ => Heap.HMonoTy.int
   | .TS_BooleanLiteral _ => Heap.HMonoTy.bool
   | .TS_BinaryExpression e =>
@@ -159,26 +159,32 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
   | .TS_NullLiteral _ =>
     Heap.HExpr.null
 
-  -- | .TS_ArrayExpression arr =>
-    -- -- Translate [value1, value2, value3] to heap allocation with numeric indices
-    -- let fields := arr.elements.toList.mapIdx (fun idx elem =>
-      -- (idx, translate_expr elem))
-    -- -- Arrays store elements at numeric indices: 0->value1, 1->value2, etc.
-    -- Heap.HExpr.allocSimple fields
+  | .TS_ArrayExpression arr =>
+    -- Translate [value1, value2, value3] to heap allocation with numeric indices
+    let fields := arr.elements.toList.mapIdx (fun idx elem =>
+      (idx, translate_expr elem))
+    -- Arrays store elements at numeric indices: 0->value1, 1->value2, etc.
+    Heap.HExpr.allocSimple fields
 
   | .TS_MemberExpression e =>
-    -- Translate obj[index] to heap dereference
+    -- Translate str.length/obj[index] to heap dereference
     let objExpr := translate_expr e.object
-    -- Handle both static and dynamic field access
     match e.property with
     | .TS_NumericLiteral numLit =>
       -- Static field access: obj[5]
       let field := Float.floor numLit.value |>.toUInt64.toNat
       Heap.HExpr.deref objExpr field
     | .TS_IdExpression id =>
-      -- Dynamic field access: obj[variable]
-      let varExpr := translate_expr (.TS_IdExpression id)
-      Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAccess" none) objExpr) varExpr
+      let keyName := id.name
+      if !e.computed && keyName == "length" then
+        -- String dot access: str.length
+        let keyExpr := Heap.HExpr.string keyName
+        Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "StringFieldAccess" none) objExpr) keyExpr
+      else
+        -- Dynamic field access: obj[variable]
+        let varExpr := translate_expr (.TS_IdExpression id)
+        Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAccess" none) objExpr) varExpr
+
     | _ =>
       -- Other dynamic expressions: obj[expr]
       let fieldExpr := translate_expr e.property
@@ -200,6 +206,16 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
     -- For now, create a placeholder that will be handled during call statement processing
     Heap.HExpr.lambda (.fvar s!"call_{call.callee.name}" none)
 
+  | .TS_FunctionExpression e =>
+  -- Translate function definition
+    dbg_trace s!"[DEBUG] Translating TypeScript function expression at loc {e.start_loc}-{e.end_loc}"
+    let funcName := s!"__anon_func_{e.start_loc}_{e.end_loc}"
+    -- just return a heap lambda placeholder
+    Heap.HExpr.lambda (.fvar funcName none)
+
+  | .TS_ArrowFunctionExpression e =>
+    Heap.HExpr.lambda (.fvar s!"__arrow_func_{e.start_loc}_{e.end_loc}" none)
+
   | _ => panic! s!"Unimplemented expression: {repr e}"
 
 partial def translate_statement_core
@@ -208,14 +224,19 @@ partial def translate_statement_core
   (ct: ControlTargets := {}) : TranslationContext × List TSStrataStatement :=
   match s with
     | .TS_FunctionDeclaration funcDecl =>
-        -- Translate function definition
-        dbg_trace s!"[DEBUG] Translating TypeScript function definition: {funcDecl.id.name}"
-        dbg_trace s!"[DEBUG] Function parameters: {funcDecl.params.toList.map (·.name)}"
-        dbg_trace s!"[DEBUG] Function body has statements"
+      -- Translate function definition
+      dbg_trace s!"[DEBUG] Translating TypeScript function definition: {funcDecl.id.name}"
+      dbg_trace s!"[DEBUG] Function parameters: {funcDecl.params.toList.map (·.name)}"
+      dbg_trace s!"[DEBUG] Function body has statements"
 
-        let funcBody := match funcDecl.body with
+      let (bodyCtx, funcBody) := match funcDecl.body with
           | .TS_BlockStatement blockStmt =>
-            (blockStmt.body.toList.map (fun stmt => translate_statement_core stmt ctx ct |>.snd)).flatten
+            -- Thread context through function body to handle nested functions
+            blockStmt.body.toList.foldl
+              (fun (accCtx, accStmts) stmt =>
+                let (newCtx, stmts) := translate_statement_core stmt accCtx ct
+                (newCtx, accStmts ++ stmts))
+              (ctx, [])
           | _ => panic! s!"Expected block statement as function body, got: {repr funcDecl.body}"
 
         dbg_trace s!"[DEBUG] Translated function body to {funcBody.length} Strata statements"
@@ -226,7 +247,8 @@ partial def translate_statement_core
           body := funcBody,
           returnType := none  -- We'll infer this later if needed
         }
-        let newCtx := ctx.addFunction strataFunc
+        -- Use bodyCtx which includes any nested function declarations
+        let newCtx := bodyCtx.addFunction strataFunc
         dbg_trace s!"[DEBUG] Added TypeScript function '{funcDecl.id.name}' to context"
         -- Function definitions don't generate statements themselves, just update context
         (newCtx, [])
@@ -257,6 +279,46 @@ partial def translate_statement_core
             dbg_trace s!"[DEBUG] Function call has {args.length} arguments"
             let lhs := [d.id.name]  -- Left-hand side variables to store result
             (ctx, [.cmd (.directCall lhs call.callee.name args)])
+          | .TS_FunctionExpression funcExpr =>
+            -- Handle function expression assignment: let x = function(...) { ... }
+            let funcName := d.id.name
+            let funcBody := match funcExpr.body with
+              | .TS_BlockStatement blockStmt =>
+                (blockStmt.body.toList.map (fun stmt => translate_statement_core stmt ctx ct |>.snd)).flatten
+              | _ => panic! s!"Expected block statement as function body, got: {repr funcExpr.body}"
+            dbg_trace s!"[DEBUG] Translating TypeScript function expression assignment: {d.id.name} = function(...)"
+            let strataFunc : CallHeapStrataFunction := {
+              name := funcName,
+              params := funcExpr.params.toList.map (·.name),
+              body := funcBody,
+              returnType := none  -- We'll infer this later if needed
+            }
+            let newCtx := ctx.addFunction strataFunc
+            dbg_trace s!"[DEBUG] Added function '{funcName}' to context"
+            -- Initialize variable to the function reference
+            let ty := get_var_type d.id.typeAnnotation d.init
+            let funcRef := Heap.HExpr.lambda (.fvar funcName none)
+            (newCtx, [.cmd (.init d.id.name ty funcRef)])
+          | .TS_ArrowFunctionExpression funcExpr =>
+            -- Handle arrow function assignment: let x = (args) => { ... }
+            let funcName := d.id.name
+            let funcBody := match funcExpr.body with
+              | .TS_BlockStatement blockStmt =>
+                (blockStmt.body.toList.map (fun stmt => translate_statement_core stmt ctx ct |>.snd)).flatten
+              | _ => panic! s!"Expected block statement as function body, got: {repr funcExpr.body}"
+            dbg_trace s!"[DEBUG] Translating TypeScript arrow function assignment: {d.id.name} = (args) => function(...)"
+            let strataFunc : CallHeapStrataFunction := {
+              name := funcName,
+              params := funcExpr.params.toList.map (·.name),
+              body := funcBody,
+              returnType := none  -- We'll infer this later if needed
+            }
+            let newCtx := ctx.addFunction strataFunc
+            dbg_trace s!"[DEBUG] Added arrow function '{funcName}' to context"
+            -- Initialize variable to the function reference
+            let ty := get_var_type d.id.typeAnnotation d.init
+            let funcRef := Heap.HExpr.lambda (.fvar funcName none)
+            (newCtx, [.cmd (.init d.id.name ty funcRef)])
           | _ =>
             -- Handle simple variable declaration: let x = value
             let value := translate_expr d.init
@@ -277,119 +339,187 @@ partial def translate_statement_core
           match assgn.left with
           | .TS_Identifier id =>
             -- Handle identifier assignment: x = value
-            let value := translate_expr assgn.right
-            dbg_trace s!"[DEBUG] Assignment: {id.name} = {repr value}"
-            (ctx, [.cmd (.set id.name value)])
+            match assgn.right with
+            | .TS_FunctionExpression funcExpr =>
+              -- Capture parameters and body here (since translate_expr is kept pure)
+              let funcName := id.name
+              let funcBody := match funcExpr.body with
+                | .TS_BlockStatement blockStmt =>
+                  (blockStmt.body.toList.map (fun stmt => translate_statement_core stmt ctx ct |>.snd)).flatten
+                | _ => panic! s!"Expected block statement as function body, got: {repr funcExpr.body}"
+              let strataFunc : CallHeapStrataFunction := {
+                name := funcName,
+                params := funcExpr.params.toList.map (·.name),
+                body := funcBody,
+                returnType := none
+              }
+              let newCtx := ctx.addFunction strataFunc
+              dbg_trace s!"[DEBUG] Added anonymous function '{funcName}' to context (assignment to identifier)"
+              let funcRef := Heap.HExpr.lambda (.fvar funcName none)
+              (newCtx, [.cmd (.set id.name funcRef)])
+            | otherExpr =>
+              let value := translate_expr otherExpr
+              dbg_trace s!"[DEBUG] Assignment: {id.name} = {repr value}"
+              (ctx, [.cmd (.set id.name value)])
           | .TS_MemberExpression member =>
             -- Handle field assignment: obj[field] = value
             let objExpr := translate_expr member.object
-            let valueExpr := translate_expr assgn.right
 
-            -- Handle both static and dynamic field assignment
-            match member.property with
-            | .TS_NumericLiteral numLit =>
-              -- Static field assignment: obj[5] = value
-              let fieldIndex := Float.floor numLit.value |>.toUInt64.toNat
-              let assignExpr := Heap.HExpr.assign objExpr fieldIndex valueExpr
-              (ctx, [.cmd (.set "temp_assign_result" assignExpr)])
-            | .TS_IdExpression id =>
-              -- Dynamic field assignment: obj[variable] = value
-              let fieldExpr := translate_expr (.TS_IdExpression id)
-              let assignExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAssign" none) objExpr) fieldExpr) valueExpr
-              (ctx, [.cmd (.set "temp_assign_result" assignExpr)])
-            | _ =>
-              -- Other dynamic field assignment: obj[expr] = value
-              let fieldExpr := translate_expr member.property
-              let assignExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAssign" none) objExpr) fieldExpr) valueExpr
-              (ctx, [.cmd (.set "temp_assign_result" assignExpr)])
+            -- If RHS is a function expression, capture params/body now and bind funcRef
+            match assgn.right with
+            | .TS_FunctionExpression funcExpr =>
+              let funcName := s!"__anon_func_{funcExpr.start_loc}_{funcExpr.end_loc}"
+              let funcBody := match funcExpr.body with
+                | .TS_BlockStatement blockStmt =>
+                  (blockStmt.body.toList.map (fun stmt => translate_statement_core stmt ctx ct |>.snd)).flatten
+                | _ => panic! s!"Expected block statement as function body, got: {repr funcExpr.body}"
+              let strataFunc : CallHeapStrataFunction := {
+                name := funcName,
+                params := funcExpr.params.toList.map (·.name),
+                body := funcBody,
+                returnType := none
+              }
+              let newCtx := ctx.addFunction strataFunc
+              dbg_trace s!"[DEBUG] Added anonymous function '{funcName}' to context (assignment to member)"
+              let funcRef := Heap.HExpr.lambda (.fvar funcName none)
+              -- Handle both static and dynamic field assignment using funcRef
+              match member.property with
+              | .TS_NumericLiteral numLit =>
+                let fieldIndex := Float.floor numLit.value |>.toUInt64.toNat
+                let assignExpr := Heap.HExpr.assign objExpr fieldIndex funcRef
+                (newCtx, [.cmd (.set "temp_assign_result" assignExpr)])
+              | .TS_IdExpression id =>
+                let fieldExpr := translate_expr (.TS_IdExpression id)
+                let assignExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAssign" none) objExpr) fieldExpr) funcRef
+                (newCtx, [.cmd (.set "temp_assign_result" assignExpr)])
+              | _ =>
+                let fieldExpr := translate_expr member.property
+                let assignExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAssign" none) objExpr) fieldExpr) funcRef
+                (newCtx, [.cmd (.set "temp_assign_result" assignExpr)])
+            | otherExpr =>
+              let valueExpr := translate_expr otherExpr
+              -- Handle both static and dynamic field assignment with normal RHS
+              match member.property with
+              | .TS_NumericLiteral numLit =>
+                -- Static field assignment: obj[5] = value
+                let fieldIndex := Float.floor numLit.value |>.toUInt64.toNat
+                let assignExpr := Heap.HExpr.assign objExpr fieldIndex valueExpr
+                (ctx, [.cmd (.set "temp_assign_result" assignExpr)])
+              | .TS_IdExpression id =>
+                -- Dynamic field assignment: obj[variable] = value
+                let fieldExpr := translate_expr (.TS_IdExpression id)
+                let assignExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAssign" none) objExpr) fieldExpr) valueExpr
+                (ctx, [.cmd (.set "temp_assign_result" assignExpr)])
+              | _ =>
+                -- Other dynamic field assignment: obj[expr] = value
+                let fieldExpr := translate_expr member.property
+                let assignExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAssign" none) objExpr) fieldExpr) valueExpr
+                (ctx, [.cmd (.set "temp_assign_result" assignExpr)])
           --| _ => panic! s!"Unsupported assignment target: {repr assgn.left}"
+        | .TS_FunctionExpression funcExpr =>
+          -- Handle standalone function expression (immediately invoked function expression - IIFE)
+          let funcName := s!"__anon_func_{funcExpr.start_loc}_{funcExpr.end_loc}"
+          let funcBody := match funcExpr.body with
+            | .TS_BlockStatement blockStmt =>
+              (blockStmt.body.toList.map (fun stmt => translate_statement_core stmt ctx ct |>.snd)).flatten
+            | _ => panic! s!"Expected block statement as function body, got: {repr funcExpr.body}"
+          let strataFunc : CallHeapStrataFunction := {
+            name := funcName,
+            params := funcExpr.params.toList.map (·.name),
+            body := funcBody,
+            returnType := none  -- We'll infer this later if needed
+          }
+          let newCtx := ctx.addFunction strataFunc
+          dbg_trace s!"[DEBUG] Added anonymous function '{funcName}' to context"
+          -- For now, we don't execute the function; just define it
+          (newCtx, [])
         | _ =>
           -- Other expression statements - ignore for now
           (ctx, [])
 
-       | .TS_BlockStatement block =>
-         -- lower inside loops:  if (cond) { continue; }  ==>  if (cond) { } else { <rest> }
-         -- lower inside loops:  if (cond) { break; }    ==>  if (cond) { } else { <rest> }
-         let stmts := block.body.toList
+      | .TS_BlockStatement block =>
+        -- lower inside loops:  if (cond) { continue; }  ==>  if (cond) { } else { <rest> }
+        -- lower inside loops:  if (cond) { break; }    ==>  if (cond) { } else { <rest> }
+        let stmts := block.body.toList
 
-         -- consequent is exactly a bare `continue`
-         let isBareContinueStmt : TS_Statement → Bool
-           | .TS_ContinueStatement _ => true
-           | _ => false
+        -- consequent is exactly a bare `continue`
+        let isBareContinueStmt : TS_Statement → Bool
+          | .TS_ContinueStatement _ => true
+          | _ => false
 
-         -- consequent is exactly a bare `break`
-         let isBareBreakStmt : TS_Statement → Bool
-           | .TS_BreakStatement _ => true
-           | _ => false
+        -- consequent is exactly a bare `break`
+        let isBareBreakStmt : TS_Statement → Bool
+          | .TS_BreakStatement _ => true
+          | _ => false
 
-         let isIfWithBareContinue : TS_Statement → Option TS_IfStatement
-           | .TS_IfStatement ifs =>
-               let conseqIsBare :=
-                 match ifs.consequent with
-                 | .TS_ContinueStatement _ => true
-                 | .TS_BlockStatement b =>
-                     match b.body.toList with
-                     | [one] => isBareContinueStmt one
-                     | _     => false
-                 | _ => false
-               if conseqIsBare && ifs.alternate.isNone then some ifs else none
-           | _ => none
+        let isIfWithBareContinue : TS_Statement → Option TS_IfStatement
+          | .TS_IfStatement ifs =>
+            let conseqIsBare :=
+              match ifs.consequent with
+              | .TS_ContinueStatement _ => true
+              | .TS_BlockStatement b =>
+                  match b.body.toList with
+                  | [one] => isBareContinueStmt one
+                  | _     => false
+              | _ => false
+            if conseqIsBare && ifs.alternate.isNone then some ifs else none
+          | _ => none
 
-         let isIfWithBareBreak : TS_Statement → Option TS_IfStatement
-           | .TS_IfStatement ifs =>
-               let conseqIsBare :=
-                 match ifs.consequent with
-                 | .TS_BreakStatement _ => true
-                 | .TS_BlockStatement b =>
-                     match b.body.toList with
-                     | [one] => isBareBreakStmt one
-                     | _     => false
-                 | _ => false
-               if conseqIsBare && ifs.alternate.isNone then some ifs else none
-           | _ => none
+        let isIfWithBareBreak : TS_Statement → Option TS_IfStatement
+          | .TS_IfStatement ifs =>
+            let conseqIsBare :=
+              match ifs.consequent with
+              | .TS_BreakStatement _ => true
+              | .TS_BlockStatement b =>
+                  match b.body.toList with
+                  | [one] => isBareBreakStmt one
+                  | _     => false
+              | _ => false
+            if conseqIsBare && ifs.alternate.isNone then some ifs else none
+          | _ => none
 
-         -- when we hit the pattern (in a loop), guard the tail with `else`
-         let rec go (accCtx : TranslationContext) (acc : List TSStrataStatement) (rest : List TS_Statement)
-           : TranslationContext × List TSStrataStatement :=
-           match rest with
-           | [] => (accCtx, acc)
-           | s :: tail =>
-             let continueMatch := isIfWithBareContinue s
-             let breakMatch := isIfWithBareBreak s
-             dbg_trace s!"[DEBUG] Block statement processing: continueMatch={continueMatch.isSome}, breakMatch={breakMatch.isSome}, ct.continueLabel?={ct.continueLabel?}, ct.breakLabel?={ct.breakLabel?}"
-             match ct.continueLabel?, ct.breakFlagVar?, continueMatch, breakMatch with
-             | some _, _, some ifs, _ =>
-               -- Continue case: Translate the tail (everything after the `if`) under the `else` branch
-               let (tailCtx, tailStmts) :=
-                 tail.foldl
-                   (fun (p, accS) stmt =>
-                      let (p2, ss2) := translate_statement_core stmt p ct
-                      (p2, accS ++ ss2))
-                   (accCtx, [])
-               let cond := translate_expr ifs.test
-               let thenBlk : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [] }
-               let elseBlk : Imperative.Block TSStrataExpression TSStrataCommand := { ss := tailStmts }
-               -- Emit one conditional and STOP
-               (tailCtx, acc ++ [ .ite cond thenBlk elseBlk ])
-             | _, some breakFlagVar, _, some ifs =>
-               -- Break case: Set break flag in then branch, execute tail in else branch
-               let (tailCtx, tailStmts) :=
-                 tail.foldl
-                   (fun (p, accS) stmt =>
-                      let (p2, ss2) := translate_statement_core stmt p ct
-                      (p2, accS ++ ss2))
-                   (accCtx, [])
-               let cond := translate_expr ifs.test
-               let setBreakFlag : TSStrataStatement := .cmd (.set breakFlagVar Heap.HExpr.true)
-               let thenBlk : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [setBreakFlag] }
-               let elseBlk : Imperative.Block TSStrataExpression TSStrataCommand := { ss := tailStmts }
-               -- Emit conditional: if condition then set break flag, else execute remaining statements
-               (tailCtx, acc ++ [ .ite cond thenBlk elseBlk ])
-             | _, _, _, _ =>
-               let (newCtx, ss) := translate_statement_core s accCtx ct
-               go newCtx (acc ++ ss) tail
+        -- when we hit the pattern (in a loop), guard the tail with `else`
+        let rec go (accCtx : TranslationContext) (acc : List TSStrataStatement) (rest : List TS_Statement)
+          : TranslationContext × List TSStrataStatement :=
+          match rest with
+          | [] => (accCtx, acc)
+          | s :: tail =>
+            let continueMatch := isIfWithBareContinue s
+            let breakMatch := isIfWithBareBreak s
+            dbg_trace s!"[DEBUG] Block statement processing: continueMatch={continueMatch.isSome}, breakMatch={breakMatch.isSome}, ct.continueLabel?={ct.continueLabel?}, ct.breakLabel?={ct.breakLabel?}"
+            match ct.continueLabel?, ct.breakFlagVar?, continueMatch, breakMatch with
+            | some _, _, some ifs, _ =>
+              -- Continue case: Translate the tail (everything after the `if`) under the `else` branch
+              let (tailCtx, tailStmts) :=
+                tail.foldl
+                  (fun (p, accS) stmt =>
+                    let (p2, ss2) := translate_statement_core stmt p ct
+                    (p2, accS ++ ss2))
+                  (accCtx, [])
+              let cond := translate_expr ifs.test
+              let thenBlk : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [] }
+              let elseBlk : Imperative.Block TSStrataExpression TSStrataCommand := { ss := tailStmts }
+              -- Emit one conditional and STOP
+              (tailCtx, acc ++ [ .ite cond thenBlk elseBlk ])
+            | _, some breakFlagVar, _, some ifs =>
+              -- Break case: Set break flag in then branch, execute tail in else branch
+              let (tailCtx, tailStmts) :=
+                tail.foldl
+                  (fun (p, accS) stmt =>
+                    let (p2, ss2) := translate_statement_core stmt p ct
+                    (p2, accS ++ ss2))
+                  (accCtx, [])
+              let cond := translate_expr ifs.test
+              let setBreakFlag : TSStrataStatement := .cmd (.set breakFlagVar Heap.HExpr.true)
+              let thenBlk : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [setBreakFlag] }
+              let elseBlk : Imperative.Block TSStrataExpression TSStrataCommand := { ss := tailStmts }
+              -- Emit conditional: if condition then set break flag, else execute remaining statements
+              (tailCtx, acc ++ [ .ite cond thenBlk elseBlk ])
+            | _, _, _, _ =>
+              let (newCtx, ss) := translate_statement_core s accCtx ct
+              go newCtx (acc ++ ss) tail
 
-         go ctx [] stmts
+        go ctx [] stmts
 
       | .TS_IfStatement ifStmt =>
         -- Handle if statement: if test then consequent else alternate
@@ -428,47 +558,70 @@ partial def translate_statement_core
         (bodyCtx, [ initBreakFlag, .loop combinedCondition none none bodyBlock ])
 
         | .TS_ForStatement forStmt =>
+          dbg_trace s!"[DEBUG] Translating for statement at loc {forStmt.start_loc}-{forStmt.end_loc}"
+
+          let continueLabel := s!"for_continue_{forStmt.start_loc}"
+          let breakLabel := s!"for_break_{forStmt.start_loc}"
+          let breakFlagVar := s!"for_break_flag_{forStmt.start_loc}"
+
+          -- Initialize break flag to false
+          let initBreakFlag : TSStrataStatement := .cmd (.init breakFlagVar Heap.HMonoTy.bool Heap.HExpr.false)
+
           -- init phase
           let (_, initStmts) := translate_statement_core (.TS_VariableDeclaration forStmt.init) ctx
           -- guard (test)
           let guard := translate_expr forStmt.test
-          -- body (first translate loop body)
-          let (ctx1, bodyStmts) := translate_statement_core forStmt.body ctx
+          -- body (first translate loop body with break support)
+          let (ctx1, bodyStmts) :=
+              translate_statement_core forStmt.body ctx
+                { continueLabel? := some continueLabel, breakLabel? := some breakLabel, breakFlagVar? := some breakFlagVar }
           -- update (translate expression into statements following ExpressionStatement style)
           let (_, updateStmts) :=
-            translate_statement_core (.TS_ExpressionStatement { expression := .TS_AssignmentExpression forStmt.update, start_loc := forStmt.start_loc, end_loc := forStmt.end_loc, loc:= forStmt.loc, type := "TS_AssignmentExpression" }) ctx1
+              translate_statement_core
+                (.TS_ExpressionStatement {
+                  expression := .TS_AssignmentExpression forStmt.update,
+                  start_loc := forStmt.start_loc,
+                  end_loc := forStmt.end_loc,
+                  loc := forStmt.loc,
+                  type := "TS_AssignmentExpression"
+                }) ctx1
+
+          -- Modify loop condition to include break flag check: (original_condition && !break_flag)
+          let breakFlagExpr := Heap.HExpr.lambda (.fvar breakFlagVar none)
+          let combinedCondition := Heap.HExpr.deferredIte breakFlagExpr Heap.HExpr.false guard
+
           -- assemble loop body (body + update)
           let loopBody : Imperative.Block TSStrataExpression TSStrataCommand :=
             { ss := bodyStmts ++ updateStmts }
 
-          -- output: init statements first, then a loop statement
-          (ctx1, initStmts ++ [ .loop guard none none loopBody])
+          -- output: init break flag, init statements, then a loop statement
+          (ctx1, [initBreakFlag] ++ initStmts ++ [ .loop combinedCondition none none loopBody])
 
-      | .TS_ContinueStatement cont =>
-        let tgt :=
-          match ct.continueLabel? with
-          | some lab => lab
-          | none     =>
-              dbg_trace "[WARN] `continue` encountered outside of a loop; emitting goto to __unbound_continue";
-              "__unbound_continue"
-        (ctx, [ .goto tgt ])
-
-      | .TS_BreakStatement brk =>
-        -- Handle break statement if loop context fails to handle it
-        dbg_trace "[WARN] `break` statement not handled by pattern matching";
-        match ct.breakFlagVar? with
-        | some flagVar =>
-          -- Set break flag to true as fallback
-          (ctx, [ .cmd (.set flagVar Heap.HExpr.true) ])
-        | none =>
-          dbg_trace "[WARN] `break` encountered outside of a loop; using fallback goto";
+        | .TS_ContinueStatement cont =>
           let tgt :=
-            match ct.breakLabel? with
+            match ct.continueLabel? with
             | some lab => lab
-            | none     => "__unbound_break"
+            | none     =>
+                dbg_trace "[WARN] `continue` encountered outside of a loop; emitting goto to __unbound_continue";
+                "__unbound_continue"
           (ctx, [ .goto tgt ])
 
-      | .TS_SwitchStatement switchStmt =>
+        | .TS_BreakStatement brk =>
+          -- Handle break statement if loop context fails to handle it
+          dbg_trace "[WARN] `break` statement not handled by pattern matching";
+          match ct.breakFlagVar? with
+          | some flagVar =>
+            -- Set break flag to true as fallback
+            (ctx, [ .cmd (.set flagVar Heap.HExpr.true) ])
+          | none =>
+            dbg_trace "[WARN] `break` encountered outside of a loop; using fallback goto";
+            let tgt :=
+              match ct.breakLabel? with
+              | some lab => lab
+              | none     => "__unbound_break"
+            (ctx, [ .goto tgt ])
+
+        | .TS_SwitchStatement switchStmt =>
         -- Handle switch statement with fallthrough and break semantics
         dbg_trace s!"[DEBUG] Translating switch statement at loc {switchStmt.start_loc}-{switchStmt.end_loc}"
 

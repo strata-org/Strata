@@ -20,43 +20,43 @@ languages that support calls.
 class CallCapable (Stmt : Type) where
   -- Create a simple function call (no return value)
   simpleCall : String → List Heap.HExpr → Stmt
-  
+
   -- Create a function call with return values
   call : List String → String → List Heap.HExpr → Stmt
-  
+
   -- Inspection methods for analyses
   getCallInfo : Stmt → Option (List String × String × List Heap.HExpr)  -- (lhs, funcName, args)
-  
+
   -- Check if this statement is a call
   isCall : Stmt → Bool
-  
+
   -- Extract the underlying imperative statement if possible
   asImperativeStmt : Stmt → Option (Imperative.Stmt (Imperative.Cmd Heap.HExpr))
 
 -- Default implementation for Call dialect statements
 instance : CallCapable (CallStatement Heap.HExpr) where
-  simpleCall funcName args := 
+  simpleCall funcName args :=
     CallStatement.simpleCall funcName args
-    
-  call lhs funcName args := 
+
+  call lhs funcName args :=
     CallStatement.call lhs funcName args
-    
+
   getCallInfo stmt := match stmt with
     | .cmd (.directCall lhs funcName args) => some (lhs, funcName, args)
     | _ => none
-    
+
   isCall stmt := match stmt with
     | .cmd (.directCall _ _ _) => true
     | _ => false
-    
+
   asImperativeStmt stmt := match stmt with
     | .cmd (.imperativeCmd cmd) => some (.cmd cmd)
-    | .ite cond thenb elseb => 
+    | .ite cond thenb elseb =>
       -- Convert blocks by filtering out calls (for now)
       let thenStmts := thenb.ss.filterMap (fun s => match s with
         | .cmd (.imperativeCmd cmd) => some (.cmd cmd)
         | _ => none)
-      let elseStmts := elseb.ss.filterMap (fun s => match s with  
+      let elseStmts := elseb.ss.filterMap (fun s => match s with
         | .cmd (.imperativeCmd cmd) => some (.cmd cmd)
         | _ => none)
       some (.ite cond ⟨thenStmts⟩ ⟨elseStmts⟩)
