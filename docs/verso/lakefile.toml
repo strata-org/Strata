@@ -2,6 +2,10 @@ name = "StrataDoc"
 defaultTargets = ["ddm", "langdef"]
 
 [[require]]
+name = "Strata"
+path = "../.."
+
+[[require]]
 name = "verso"
 git = "https://github.com/leanprover/verso"
 rev = "nightly-testing"
