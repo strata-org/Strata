@@ -215,6 +215,41 @@ theorem Program.typeCheck.goWF' :
           refine ⟨_, _, _, heq⟩
 -/
 
+
+theorem Program.find?.go_none_of_append : Program.find?.go kind name (acc1 ++ acc2) = none → Program.find?.go kind name acc1 = none := by
+  induction acc1 <;> simp [Program.find?.go]
+  rename_i h t ind
+  split <;> simp_all
+
+theorem Program.typeCheck.go_elim_acc:
+  (Program.typeCheck.go p T ds (acc1 ++ acc2) = Except.ok (pp, T') →
+  (List.IsPrefix acc2.reverse pp ∧ Program.typeCheck.go p T ds acc1 = Except.ok (pp.drop acc2.length, T')))
+  := by
+  induction ds generalizing pp acc1 T
+  simp [Program.typeCheck.go]
+  intro  H
+  simp [← H]
+  rename_i h t ind
+  simp [Program.typeCheck.go]
+  simp [bind, Except.bind]
+  split <;> try contradiction
+  any_goals (split <;> try contradiction)
+  any_goals (split <;> try contradiction)
+  any_goals (split <;> try contradiction)
+  any_goals (split <;> try contradiction)
+  any_goals (split <;> try contradiction)
+  any_goals simp
+  any_goals (rw [← List.cons_append]; intro; apply ind (by assumption))
+  any_goals (rename_i H _ _ _ _; have H:= Program.find?.go_none_of_append H; simp_all)
+  rename_i H _ _ _ _ _ _ _; have H:= Program.find?.go_none_of_append H; simp_all
+
+theorem Program.typeCheckAux_elim_singleton: Program.typeCheck.go p ds T [s] = Except.ok (pp, T') →
+  Program.typeCheck.go p ds T [] = Except.ok (pp.drop 1, T') := by
+  intro H
+  have : [s] = [] ++ [s] := by simp
+  rw [this] at H; have H:=  Program.typeCheck.go_elim_acc H
+  simp [H]
+
 /--
 Auxiliary lemma for Program.typeCheckWF
 -/
@@ -224,15 +259,20 @@ theorem Program.typeCheck.goWF : Program.typeCheck.go p T ds [] = .ok (ds', T') 
   | nil => simp [Program.typeCheck.go] at tcok
            cases tcok; constructor <;> try assumption
   | cons h t t_ih =>
-    apply (List.Forall_cons (WF.WFDeclProp p) h t).mpr
+    simp [Program.typeCheck.go, bind, Except.bind] at tcok
+    split at tcok <;> try contradiction
+    any_goals (split at tcok <;> try contradiction)
+    any_goals (split at tcok <;> try contradiction)
+    any_goals (split at tcok <;> try contradiction)
+    any_goals (split at tcok <;> try contradiction)
+    simp
+    any_goals simp [t_ih $ Program.typeCheckAux_elim_singleton tcok]
+    have := Statement.typeCheckWF (by assumption)
     constructor
-    . sorry
-      -- apply (Program.typeCheck.goWF' tcok).1
-    . -- have H := (Program.typeCheck.goWF' tcok).2
-      -- cases H with | intro ds'' H => cases H with | intro TT H =>
-      -- cases H with
-      -- | intro TT' H => exact t_ih H
-      sorry
+    simp [WFCmdExtProp] at this
+    sorry
+    any_goals (apply Procedure.typeCheckWF (by assumption))
+    any_goals constructor
 
 /--
 The main lemma stating that a program 'p' that passes type checking is well formed
