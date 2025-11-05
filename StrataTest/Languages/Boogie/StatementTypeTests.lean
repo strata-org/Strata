@@ -44,7 +44,7 @@ info: error: Type Checking [init (x : bool) := #true]: Variable x of type bool a
 
 /--
 info: ok: context:
-types: [(zinit, bool) (x, int) (y, int)]
+types:   [(zinit, bool) (x, int) (y, int)]
 aliases: []
 state:
 tyGen: 1
@@ -102,7 +102,7 @@ info: error: Type Checking [init (x : int) := #1]: Variable x of type bool alrea
 
 /--
 info: ok: context:
-types: [(x, int)]
+types:   [(x, int)]
 aliases: []
 state:
 tyGen: 2
@@ -142,7 +142,7 @@ x := (#2 : int)
 
 /--
 info: ok: context:
-types: [(fn, ∀[a]. (arrow a a)) (m1, (arrow int int)) (m2, (arrow (arrow bool int) int))]
+types:   [(fn, ∀[a]. (arrow a a)) (m1, (arrow int int)) (m2, (arrow (arrow bool int) int))]
 aliases: []
 state:
 tyGen: 10

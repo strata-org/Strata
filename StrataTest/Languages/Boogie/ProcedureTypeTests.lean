@@ -22,7 +22,7 @@ info: ok: ((procedure P :  ((x : int)) → ((y : int)))
  body: y := (((~Int.Sub : (arrow int (arrow int int))) (#0 : int)) (x : int))
  ,
  context:
- types: 
+ types:   
  aliases: [] state: tyGen: 6 tyPrefix: $__ty exprGen: 0 exprPrefix: $__var subst: [])
 -/
 #guard_msgs in

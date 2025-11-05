@@ -281,11 +281,6 @@ theorem addKnownTypeWithErrorIdents {C: Expression.TyContext}: C.addKnownTypeWit
   case ok k'=> simp[Except.bind]; intros T'; subst T'; rfl
 
 /--
-`LContext.addFactoryFunctionIdents` does not change the set of known identifiers
--/
-theorem addFactoryFunctionIdents {C: Expression.TyContext}: (C.addFactoryFunction f).idents = C.idents := by rfl
-
-/--
 If a program typechecks successfully, then every identifier in the list of
 program decls is not in the original `LContext`
 -/
@@ -314,7 +309,7 @@ theorem Program.typeCheckFunctionDisjoint : Program.typeCheck.go p C T decls acc
     . grind
     . grind
     . grind
-    . rw[addFactoryFunctionIdents] at a_notin; grind
+    . simp[LContext.addFactoryFunction] at a_notin; grind
 
 /--
 If a program typechecks succesfully, all identifiers defined in the program are
@@ -350,7 +345,7 @@ theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decls acc = 
       . grind
       . grind
       . grind
-      . rw[addFactoryFunctionIdents] at x_notin; grind
+      . simp[LContext.addFactoryFunction] at x_notin; grind
 
 /--
 The main lemma stating that a program 'p' that passes type checking is well formed

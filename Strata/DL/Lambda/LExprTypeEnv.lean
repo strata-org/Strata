@@ -70,7 +70,7 @@ structure TContext (IDMeta : Type) where
 
 instance : ToFormat (TContext IDMeta) where
   format ctx :=
-    f!"types: {ctx.types}\n\
+    f!"types:   {ctx.types}\n\
        aliases: {ctx.aliases}"
 
 /--
