@@ -14,6 +14,13 @@ open Lambda.LTy.Syntax
 def clientType : Boogie.Expression.Ty := .forAll [] (.tcons "Client" [])
 def dummyClient : Boogie.Expression.Expr := .fvar "DUMMY_CLIENT" none
 
+def dictStrAnyType : Boogie.Expression.Ty := .forAll [] (.tcons "DictStrAny" [])
+def dummyDictStrAny : Boogie.Expression.Expr := .fvar "DUMMY_DICT_STR_ANY" none
+
+def strType : Boogie.Expression.Ty := .forAll [] (.tcons "string" [])
+def dummyStr : Boogie.Expression.Expr := .fvar "DUMMY_STR" none
+
+
 -- This information should come from our prelude. For now, we use the fact that
 -- these functions are exactly the ones
 -- represented as `Call(Attribute(Name(...)))` in the AST (instead of `Call(Name(...))`).
@@ -50,6 +57,8 @@ def PyIntToInt (i : Python.int) : Int :=
 def PyConstToBoogie (c: Python.constant) : Boogie.Expression.Expr :=
   match c with
   | .ConString s => .const s mty[string]
+  | .ConPos i => .const s!"{i}" mty[int]
+  | .ConNeg i => .const s!"-{i}" mty[int]
   | _ => panic! s!"Unhandled Constant: {repr c}"
 
 def PyAliasToBoogieExpr (a : Python.alias) : Boogie.Expression.Expr :=
@@ -62,7 +71,10 @@ partial def PyExprToBoogie (e : Python.expr) : Boogie.Expression.Expr :=
   match e with
   | .Call _ _ _ => panic! s!"Call should be handled at stmt level: {repr e}"
   | .Constant c _ => PyConstToBoogie c
-  | .Name n _ => .const n mty[string]
+  | .Name n _ =>
+    match n with
+    | "AssertionError" | "Exception" => .const n mty[string]
+    | _ => .fvar n none
   | .JoinedStr ss => PyExprToBoogie ss[0]! -- TODO: need to actually join strings
   | _ => panic! s!"Unhandled Expr: {repr e}"
 
@@ -91,9 +103,16 @@ def argsAndKWordsToCanonicalList (fname: String) (args : Array Python.expr) (kwo
     let remaining := required_order.drop args.size
     let kws_and_exprs := kwords.toList.map PyKWordsToBoogie
     let ordered_remaining_args := remaining.map (λ n => match kws_and_exprs.find? (λ p => p.fst == n) with
-      | .some p => -- TODO: handle other types
-        -- Optional param. Need to wrap e.g., string into StrOrNone
-        .app (.op "StrOrNone_mk_str" none) p.snd
+      | .some p =>
+        let type_str := getFuncSigType fname n
+        if type_str.endsWith "OrNone" then
+          -- Optional param. Need to wrap e.g., string into StrOrNone
+          match type_str with
+          | "StrOrNone" => .app (.op "StrOrNone_mk_str" none) p.snd
+          | "BytesOrStrOrNone" => .app (.op "BytesOrStrOrNone_mk_str" none) p.snd
+          | _ => panic! "Unsupported type_str: "++ type_str
+        else
+          p.snd
       | .none => TypeStrToBoogieExpr (getFuncSigType fname n))
     args.toList.map PyExprToBoogie ++ ordered_remaining_args
 
@@ -156,6 +175,11 @@ partial def PyStmtToBoogie (jmp_targets: List String) (s : Python.stmt) : List B
     | .Assign lhs rhs _ =>
       assert! lhs.size == 1
       [.set (PyExprToString lhs[0]!) (PyExprToBoogie rhs)]
+    | .AnnAssign lhs _ (.some (.Call func args kwords)) _ =>
+      let fname := PyExprToString func
+      [.call [PyExprToString lhs, "maybe_except"] fname (argsAndKWordsToCanonicalList fname args kwords)]
+    | .AnnAssign lhs _ (.some e) _ =>
+      [.set (PyExprToString lhs) (PyExprToBoogie e)]
     | .Try body handlers _orelse _finalbody =>
         let new_target := s!"excepthandlers_{jmp_targets[0]!}"
         let entry_except_handlers := [.block new_target {ss := []}]
@@ -184,7 +208,23 @@ def pythonToBoogie (pgm: Strata.Program): Boogie.Program :=
                                            (.init "invalid_client" clientType dummyClient),
                                            (.havoc "invalid_client"),
                                            (.init "exception_ty_matches" t[bool] (.const "true" mty[bool])),
-                                           (.havoc "exception_ty_matches")]
+                                           (.havoc "exception_ty_matches"),
+                                           (.init "result" dictStrAnyType dummyDictStrAny),
+                                           (.havoc "result"),
+                                           (.init "object_content" strType dummyStr),
+                                           (.havoc "object_content"),
+                                           (.init "valid_bucket_name" strType dummyStr),
+                                           (.havoc "valid_bucket_name"),
+                                           (.init "valid_object_key" strType dummyStr),
+                                           (.havoc "valid_object_key"),
+                                           (.init "invalid_bucket_name" t[int] (.const "0" mty[int])),
+                                           (.havoc "invalid_bucket_name"),
+                                           (.init "invalid_object_key" t[int] (.const "0" mty[int])),
+                                           (.havoc "invalid_object_key"),
+                                           (.init "bucket_name" strType dummyStr),
+                                           (.havoc "bucket_name"),
+                                           (.init "object_key" strType dummyStr),
+                                           (.havoc "object_key"),]
   let blocks := ArrPyStmtToBoogie insideMod
   let body := varDecls ++ blocks ++ [.block "end" {ss := []}]
   let mainProc : Boogie.Procedure := {
