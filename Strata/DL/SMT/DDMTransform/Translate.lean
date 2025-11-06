@@ -40,12 +40,18 @@ private def translateFromTermPrim (t:SMT.TermPrim):
     return (
       if i >= 0 then v
       else
-        let minusop:QualIdentifier SourceRange :=
-          .qi_ident srnone (mkIdentifier "-")
-        .qual_identifier_args srnone minusop (.qual_identifier srnone minusop)
-            (Ann.mk srnone #[]))
-  | .real _ => throw "real constant is unsupported"
-  | .bitvec _ => throw "bit-vector constant is unsupported"
+        -- Note that negative integers like '-1231' are symbols! (Sec 3.1. Lexicon)
+        -- Since the only way to create a unary term from symbol is through
+        -- idenitifer, use mkIdentifier.
+        .qual_identifier srnone (.qi_ident srnone (mkIdentifier (toString i))))
+  | .real str_repr =>
+    return (.qual_identifier srnone (.qi_ident srnone (mkIdentifier str_repr)))
+  | .bitvec bv =>
+    let bvty := mkSymbol (s!"bv{bv.toNat}")
+    let val:Index SourceRange := .ind_numeral srnone (Ann.mk srnone bv.width)
+    return (.qual_identifier srnone
+      (.qi_ident srnone (.iden_indexed srnone bvty val
+        (Ann.mk srnone #[]))))
   | .string s =>
     return .spec_constant_term srnone (.sc_str srnone (Ann.mk srnone s))
 
@@ -111,15 +117,29 @@ def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term SourceRange) := d
         return .exists_smt srnone args_sorted_h
           (Ann.mk srnone (Array.mk args_sorted_t)) body
 
-/-- info: "program SMTDDM;\n(+1020)" -/
-#guard_msgs in #eval (
-  match (translateFromTerm
-    (.app SMT.Op.add [(.prim (.int 10)), (.prim (.int 20))] .int)) with
-  | .ok t => do
-    let s := dialectExt.getState (←Lean.getEnv)
-    let prg := Program.create s.loaded.dialects "SMTDDM" #[SMTDDM.Term.toAst t]
-    return ToString.toString prg
-  | .error _ => panic! "fail")
+
+private def dummy_prg_for_toString :=
+  let dialect_map := DialectMap.ofList!
+    [Strata.initDialect, Strata.smtReservedKeywordsDialect, Strata.SMTCore,
+     Strata.SMT]
+  Program.create dialect_map "SMT" #[]
+
+def toString (t:SMT.Term): Except String String := do
+  let ddm_term <- translateFromTerm t
+  let ddm_ast := SMTDDM.Term.toAst ddm_term
+  let fmt := Operation.instToStrataFormat.mformat ddm_ast
+    (dummy_prg_for_toString.formatContext {})
+    dummy_prg_for_toString.formatState
+  return fmt.format |>.render
+
+
+/-- info: Except.ok "( + 10 20 )" -/
+#guard_msgs in #eval (toString
+    (.app SMT.Op.add [(.prim (.int 10)), (.prim (.int 20))] .int))
+
+/-- info: Except.ok "( _ bv1 32  )" -/
+#guard_msgs in #eval (toString
+    (.prim (.bitvec (BitVec.ofNat 32/-width-/ 1/-value-/))))
 
 end SMTDDM
 

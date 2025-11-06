@@ -216,7 +216,7 @@ op command_procedure (name : Ident,
                       @[scope(ret)] s: Option Spec,
                       @[scope(ret)] body : Option Block) :
   Command =>
-  @[prec(10)] "procedure " name typeArgs b "returns" "(" ret ")\n"
+  @[prec(10)] "procedure" name typeArgs b "returns" "(" ret ")\n"
               indent(2, s) body ";\n";
 
 // (FIXME) Change when DDM supports type declarations like so:
@@ -226,27 +226,27 @@ op command_procedure (name : Ident,
 // where the former is what's needed for Boogie.
 @[declareType(name, some args)]
 op command_typedecl (name : Ident, args : Option Bindings) : Command =>
-  "type " name args ";\n";
+  "type" name args ";\n";
 
 @[aliasType(name, some args, rhs)]
 op command_typesynonym (name : Ident,
                         args : Option Bindings,
                         targs : Option TypeArgs,
                         @[scope(args)] rhs : Type) : Command =>
-  "type " name args ":=" targs rhs ";\n";
+  "type" name args ":=" targs rhs ";\n";
 
 @[declare(name, r)]
 op command_constdecl (name : Ident,
                       typeArgs : Option TypeArgs,
                       r : Type) : Command =>
-  "const " name ":" typeArgs r ";\n";
+  "const" name ":" typeArgs r ";\n";
 
 @[declareFn(name, b, r)]
 op command_fndecl (name : Ident,
                    typeArgs : Option TypeArgs,
                    @[scope(typeArgs)] b : Bindings,
                    @[scope (typeArgs)] r : Type) : Command =>
-  "function " name typeArgs b ":" r ";\n";
+  "function" name typeArgs b ":" r ";\n";
 
 category Inline;
 op inline () : Inline => "inline";
@@ -261,17 +261,17 @@ op command_fndef (name : Ident,
                   // that the order of the arguments in the fndecl and fndef
                   // agree.
                   inline? : Option Inline) : Command =>
-  inline? "function " name typeArgs b " : " r " {\n" indent(2, c) "\n}\n";
+  inline? "function" name typeArgs b " : " r " {\n" indent(2, c) "\n}\n";
 
 @[scope(b)]
 op command_var (b : Bind) : Command =>
   @[prec(10)] "var " b ";\n";
 
 op command_axiom (label : Option Label, e : bool) : Command =>
-  "axiom " label e ";\n";
+  "axiom" label e ";\n";
 
 op command_distinct (label : Option Label, exprs : CommaSepBy Expr) : Command =>
-  "distinct " label "[" exprs "]" ";\n";
+  "distinct" label "[" exprs "]" ";\n";
 
 #end
 

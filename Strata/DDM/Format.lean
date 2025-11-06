@@ -274,7 +274,9 @@ private def SyntaxDefAtom.formatArgs (opts : FormatOptions) (args : Array PrecFo
     .nest n r
 
 private def ppOp (opts : FormatOptions) (stx : SyntaxDef) (args : Array PrecFormat) : PrecFormat :=
-  ⟨Format.join ((·.formatArgs opts args) <$> stx.atoms).toList, stx.prec⟩
+  let fmts:List Format := ((·.formatArgs opts args) <$> stx.atoms).toList
+  let fmts2 := fmts.intersperse (" ":Format)
+  ⟨Format.join fmts2, stx.prec⟩
 
 abbrev FormatM := ReaderT FormatContext (StateM FormatState)
 

@@ -95,7 +95,7 @@ private def specialCharsInSimpleSymbol := [
 -- https://smt-lib.org/papers/smt-lib-reference-v2.7-r2025-07-07.pdf
 -- Appendix B. Concrete Syntax
 -- Prepare reserved keywords and simple symbols in advance.
-private def smtReservedKeywordsDialect : Dialect :=
+def smtReservedKeywordsDialect : Dialect :=
   BuiltinM.create! "SMTReservedKeywords" #[] do
     declareAtomicCat q`SMTReservedKeywords.Reserved
 
@@ -465,6 +465,10 @@ op error (msg:Str) : Command => "(" "error" msg ")";
 
 #end
 
+/--
+info: Strata.SMT : Dialect
+-/
+#guard_msgs in #check SMT
 
 namespace Test
 
@@ -532,6 +536,7 @@ parse_sexpr (+ a b) ;
 parse_identifier x ;
 parse_identifier ( _ move up) ;
 parse_identifier ( _ BitVec 32) ;
+parse_identifier ( _ bv32 12345) ;
 
 parse_sort Int ;
 parse_sort ( _ BitVec 32 );
@@ -646,7 +651,7 @@ end Test
 
 namespace SMTDDM
 
---set_option trace.Strata.generator true
+-- set_option trace.Strata.generator trueß
 #strata_gen SMT
 
 deriving instance BEq for

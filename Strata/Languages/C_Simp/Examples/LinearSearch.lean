@@ -36,20 +36,20 @@ bool procedure linearSearch (arr: intArr, e: int)
 
 /--
 info: program C_Simp;
-(bool)procedurelinearSearch(arr:intArr, e:int)//@pretrue;
-//@posttrue;
-  ({
-  varidx:int;
-  (idx)=0;
-  while((idx)<(len(arr)))
-  //@decreases((len(arr))-(idx))//@invariant(true)({
-  if((e)==(get(arr,idx))){
-  returntrue;
-  }
-  ()(idx)=(idx)+(1);
-  }
-  )returnfalse;
-  }
+(bool) procedure linearSearch  ( arr : intArr, e : int ) //@pre true ;
+ //@post true ;
+ ({
+   var idx : int ;
+  (idx) = 0 ;
+  while ( (idx) < (len( arr )) )
+   //@decreases ((len( arr )) - (idx)) //@invariant (true) ({
+   if ( (e) == (get( arr , idx )) ) {
+   return true ;
+   }
+   ()(idx) = (idx) + (1) ;
+   }
+  )return false ;
+   }
   )
 -/
 #guard_msgs in
