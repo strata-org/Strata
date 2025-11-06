@@ -19,6 +19,8 @@ inductive TermPrimType where
   | real
   | bitvec (n : Nat)
   | string
+  /-- `regex`: regular expressions in the theory of unicode strings -/
+  | regex
   | trigger
 deriving instance Repr, Inhabited, DecidableEq for TermPrimType
 
@@ -28,6 +30,7 @@ def TermPrimType.mkName : TermPrimType → String
   | .real     => "real"
   | .bitvec _ => "bitvec"
   | .string   => "string"
+  | .regex   =>  "regex"
   | .trigger  => "trigger"
 
 def TermPrimType.lt : TermPrimType → TermPrimType → Bool
@@ -168,6 +171,7 @@ abbrev TermType.int  : TermType := .prim .int
 abbrev TermType.real : TermType := .prim .real
 abbrev TermType.bitvec (n : Nat) : TermType := .prim (.bitvec n)
 abbrev TermType.string : TermType := .prim .string
+abbrev TermType.regex : TermType := .prim .regex
 abbrev TermType.trigger : TermType := .prim .trigger
 
 def TermType.isPrimType : TermType → Bool
