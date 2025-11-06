@@ -296,7 +296,7 @@ def inferConst (T : (TEnv IDMeta)) (c : String) (cty : Option LMonoTy) :
                 Don't know how to interpret the following constant:\n\
                 {@LExpr.const LMonoTy IDMeta c cty}\n\
                 Known Types: {T.knownTypes}"
-  | _, _ =>
+  | _, none =>
   -- Unannotated Integers
     if c.isInt then
       if { name := "int" } ∈ T.knownTypes then
@@ -306,6 +306,9 @@ def inferConst (T : (TEnv IDMeta)) (c : String) (cty : Option LMonoTy) :
                   Constant {@LExpr.const LMonoTy IDMeta c cty}\n\
                   Known Types: {T.knownTypes}"
     else
+      .error f!"Cannot infer the type of this constant: \
+                {@LExpr.const LMonoTy IDMeta c cty}"
+  | _, _ =>
       .error f!"Cannot infer the type of this constant: \
                 {@LExpr.const LMonoTy IDMeta c cty}"
 

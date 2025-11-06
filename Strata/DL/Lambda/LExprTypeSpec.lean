@@ -59,21 +59,29 @@ inductive HasType {IDMeta : Type} [DecidableEq IDMeta]:
   | tmdata : ∀ Γ info e ty, HasType Γ e ty →
                             HasType Γ (.mdata info e) ty
 
-  | tbool_const_t : ∀ Γ, HasType Γ (.const "true" none)
-                         (.forAll [] (.tcons "bool" []))
-  | tbool_const_f : ∀ Γ, HasType Γ (.const "false" none)
+  | tbool_const_t : ∀ Γ o, 
+                        o = none ∨ o = some LMonoTy.bool →
+                        HasType Γ (.const "true" o)
                         (.forAll [] (.tcons "bool" []))
-  | tint_const : ∀ Γ, n.isInt → HasType Γ (.const n none)
-                                (.forAll [] (.tcons "int" []))
+  | tbool_const_f : ∀ Γ o, 
+                        o = none ∨ o = some LMonoTy.bool →
+                        HasType Γ (.const "false" o)
+                        (.forAll [] (.tcons "bool" []))
+  | tint_const : ∀ Γ o, 
+                        o = none ∨ o = some LMonoTy.int →
+                        n.isInt → 
+                        HasType Γ (.const n o)
+                        (.forAll [] (.tcons "int" []))
 
   | tvar : ∀ Γ x ty, Γ.types.find? x = some ty → HasType Γ (.fvar x none) ty
 
-  | tabs : ∀ Γ x x_ty e e_ty,
+  | tabs : ∀ Γ x x_ty e e_ty o,
             LExpr.fresh x e →
             (hx : LTy.isMonoType x_ty) →
             (he : LTy.isMonoType e_ty) →
             HasType { Γ with types := Γ.types.insert x.fst x_ty} (LExpr.varOpen 0 x e) e_ty →
-            HasType Γ (.abs .none e)
+            o = none ∨ o = some (x_ty.toMonoType hx) → 
+            HasType Γ (.abs o e)
                       (.forAll [] (.tcons "arrow" [(LTy.toMonoType x_ty hx),
                                                    (LTy.toMonoType e_ty he)]))
 
@@ -120,6 +128,14 @@ inductive HasType {IDMeta : Type} [DecidableEq IDMeta]:
           HasType Γ e1 ty →
           HasType Γ e2 ty →
           HasType Γ (.eq e1 e2) (.forAll [] (.tcons "bool" []))
+          
+  | tquant: ∀ Γ k tr tr_ty x x_ty e o,
+        LExpr.fresh x e →
+        (hx : LTy.isMonoType x_ty) →
+        HasType { Γ with types := Γ.types.insert x.fst x_ty} (LExpr.varOpen 0 x e) (.forAll [] (.tcons "bool" [])) →
+        HasType {Γ with types := Γ.types.insert x.fst x_ty} (LExpr.varOpen 0 x tr) tr_ty →
+        o = none ∨ o = some (x_ty.toMonoType hx) →  
+        HasType Γ (.quant k o tr e) (.forAll [] (.tcons "bool" []))
 
 /--
 If `LExpr e` is well-typed, then it is well-formed, i.e., contains no dangling
@@ -142,6 +158,9 @@ theorem HasType.regularity (h : HasType (IDMeta:=IDMeta) Γ e ty) :
   case teq => simp_all [WF, lcAt]
   case tgen => simp_all
   case tinst => simp_all
+  case tquant T k tr tr_ty x x_ty e o h_x_mono hx htr ih ihtr =>
+    simp_all [WF]
+    exact lcAt_varOpen_quant ih (by omega) ihtr
   done
 
 ---------------------------------------------------------------------
@@ -153,10 +172,10 @@ section Tests
 open LExpr.SyntaxMono LTy.Syntax
 
 example : LExpr.HasType {} esM[#true] t[bool] := by
-  apply LExpr.HasType.tbool_const_t
+  apply LExpr.HasType.tbool_const_t; simp
 
 example : LExpr.HasType {} esM[#-1] t[int] := by
-  apply LExpr.HasType.tint_const
+  apply LExpr.HasType.tint_const; simp
   simp +ground
 
 example : LExpr.HasType { types := [[("x", t[∀a. %a])]]} esM[x] t[int] := by
@@ -177,10 +196,10 @@ example : LExpr.HasType { types := [[("m", t[∀a. %a → int])]]}
     simp +ground
   · simp +ground
     exact rfl
-  done
+  simp; done
 
 example : LExpr.HasType {} esM[λ %0] t[∀a. %a → %a] := by
-  have h_tabs := @LExpr.HasType.tabs (IDMeta := Unit) _ {} ("a", none) t[%a] esM[%0] t[%a]
+  have h_tabs := @LExpr.HasType.tabs (IDMeta := Unit) _ {} ("a", none) t[%a] esM[%0] t[%a] none
   simp +ground at h_tabs
   have h_tvar := @LExpr.HasType.tvar (IDMeta := Unit) _ { types := [[("a", t[%a])]] }
                  "a" t[%a]

@@ -251,6 +251,18 @@ info: ok: ((λ ((%0 : (arrow bool $__ty4)) ((fn : (arrow bool bool)) (#true : bo
                              esM[(fn #3)]
          return (format $ ans.fst.toLMonoTy)
 
+/-- info: error: Cannot infer the type of this constant: (#3 : bool) -/
+#guard_msgs in
+#eval do 
+    let ans ← LExprT.fromLExpr (@TEnv.default Unit) (.const "3" (some .bool)) 
+    return (format $ ans.fst.toLMonoTy)
+
+/-- info: ok: real -/
+#guard_msgs in
+#eval do 
+    let T := (@TEnv.default Unit).addKnownType ⟨ "real", 0⟩
+    let ans ← LExprT.fromLExpr T (.const "true" (some .real)) 
+    return (format $ ans.fst.toLMonoTy)
 
 end Tests
 
