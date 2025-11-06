@@ -16,4 +16,6 @@ import Strata.DL.Imperative.StmtSemantics
 import Strata.DL.Imperative.NondetStmt
 import Strata.DL.Imperative.NondetStmtSemantics
 
+import Strata.DL.Imperative.SemanticsProps
+
 import Strata.DL.Imperative.SMTUtils

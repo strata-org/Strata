@@ -29,7 +29,7 @@ open Imperative Boogie
   error message similar to "(kernel) application type mismatch".
 -/
 theorem StmtToNondetCorrect
-  [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasBoolNeg P] :
+  [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] :
   WellFormedSemanticEvalBool δ →
   WellFormedSemanticEvalVal δ →
   (∀ st,
@@ -135,7 +135,7 @@ theorem StmtToNondetCorrect
 /-- Proof that the Deterministic-to-nondeterministic transformation is correct
 for a single (deterministic) statement -/
 theorem StmtToNondetStmtCorrect
-  [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasBoolNeg P] :
+  [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] :
   WellFormedSemanticEvalBool δ →
   WellFormedSemanticEvalVal δ →
   EvalStmt P (Cmd P) (EvalCmd P) δ σ₀ σ st σ' →
@@ -146,7 +146,7 @@ theorem StmtToNondetStmtCorrect
 /-- Proof that the Deterministic-to-nondeterministic transformation is correct
 for multiple (deterministic) statements -/
 theorem StmtsToNondetStmtCorrect
-  [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasBoolNeg P] :
+  [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] :
   WellFormedSemanticEvalBool δ →
   WellFormedSemanticEvalVal δ →
   EvalStmts P (Cmd P) (EvalCmd P) δ σ₀ σ ss σ' →
