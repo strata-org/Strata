@@ -264,6 +264,17 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
             else
               let valueExpr := translate_expr call.arguments[0]!
               Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "ArrayUnshift" none) objExpr) valueExpr
+          | "concat" =>
+            -- arr.concat(arr2, arr3, ...) - concatenate arrays, returns new array
+            let argExprs := call.arguments.toList.map translate_expr
+            if argExprs.isEmpty then
+              -- concat() with no arguments returns a copy of the original array
+              objExpr
+            else
+              -- Chain concat operations: concat(arr1, arr2, arr3) = concat(concat(arr1, arr2), arr3)
+              argExprs.foldl (fun acc argExpr =>
+                Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "ArrayConcat" none) acc) argExpr
+              ) objExpr
           | methodName =>
             Heap.HExpr.lambda (.fvar s!"call_{methodName}" none)
         | _ =>
