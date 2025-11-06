@@ -233,22 +233,22 @@ theorem varOpen_varClose_when_lcAt
     simp_all [lcAt, varOpen, substK, varClose]
     simp_all [@e1_ih k i x.fst, @e2_ih k i x.fst]
   done
-  
+
 theorem lcAt_substK_inv (he: lcAt k (substK i s e)) (hik: k ≤ i) : lcAt (i + 1) e := by
   induction e generalizing i k s <;> simp_all[lcAt, substK] <;> try grind
-  case bvar id j => 
+  case bvar id j =>
     by_cases j = i
     case pos hji => omega
     case neg hji => rw[if_neg hji] at he; simp[lcAt] at he; omega
-  
+
 theorem lcAt_varOpen_inv (hs: lcAt k (varOpen i x e)) (hik: k ≤ i) : lcAt (i + 1) e := by
   unfold varOpen at hs; exact (lcAt_substK_inv hs hik)
-  
+
 theorem lcAt_varOpen_abs
   (h1 : lcAt k (varOpen i x y)) (h2 : k <= i) :
   lcAt i (abs ty y) := by
   simp[lcAt]; apply (@lcAt_varOpen_inv k i)<;> assumption
-  
+
 theorem lcAt_varOpen_quant
   (hy : lcAt k (varOpen i x y)) (hki : k <= i)
   (htr: lcAt k (varOpen i x tr)) :

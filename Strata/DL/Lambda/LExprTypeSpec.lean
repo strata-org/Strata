@@ -59,17 +59,17 @@ inductive HasType {IDMeta : Type} [DecidableEq IDMeta]:
   | tmdata : ∀ Γ info e ty, HasType Γ e ty →
                             HasType Γ (.mdata info e) ty
 
-  | tbool_const_t : ∀ Γ o, 
+  | tbool_const_t : ∀ Γ o,
                         o = none ∨ o = some LMonoTy.bool →
                         HasType Γ (.const "true" o)
                         (.forAll [] (.tcons "bool" []))
-  | tbool_const_f : ∀ Γ o, 
+  | tbool_const_f : ∀ Γ o,
                         o = none ∨ o = some LMonoTy.bool →
                         HasType Γ (.const "false" o)
                         (.forAll [] (.tcons "bool" []))
-  | tint_const : ∀ Γ o, 
+  | tint_const : ∀ Γ o,
                         o = none ∨ o = some LMonoTy.int →
-                        n.isInt → 
+                        n.isInt →
                         HasType Γ (.const n o)
                         (.forAll [] (.tcons "int" []))
 
@@ -80,7 +80,7 @@ inductive HasType {IDMeta : Type} [DecidableEq IDMeta]:
             (hx : LTy.isMonoType x_ty) →
             (he : LTy.isMonoType e_ty) →
             HasType { Γ with types := Γ.types.insert x.fst x_ty} (LExpr.varOpen 0 x e) e_ty →
-            o = none ∨ o = some (x_ty.toMonoType hx) → 
+            o = none ∨ o = some (x_ty.toMonoType hx) →
             HasType Γ (.abs o e)
                       (.forAll [] (.tcons "arrow" [(LTy.toMonoType x_ty hx),
                                                    (LTy.toMonoType e_ty he)]))
@@ -128,13 +128,13 @@ inductive HasType {IDMeta : Type} [DecidableEq IDMeta]:
           HasType Γ e1 ty →
           HasType Γ e2 ty →
           HasType Γ (.eq e1 e2) (.forAll [] (.tcons "bool" []))
-          
+
   | tquant: ∀ Γ k tr tr_ty x x_ty e o,
         LExpr.fresh x e →
         (hx : LTy.isMonoType x_ty) →
         HasType { Γ with types := Γ.types.insert x.fst x_ty} (LExpr.varOpen 0 x e) (.forAll [] (.tcons "bool" [])) →
         HasType {Γ with types := Γ.types.insert x.fst x_ty} (LExpr.varOpen 0 x tr) tr_ty →
-        o = none ∨ o = some (x_ty.toMonoType hx) →  
+        o = none ∨ o = some (x_ty.toMonoType hx) →
         HasType Γ (.quant k o tr e) (.forAll [] (.tcons "bool" []))
 
 /--
