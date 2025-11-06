@@ -38,6 +38,13 @@ We parameterize Boogie's Commands with Lambda dialect's expressions.
 -/
 abbrev Command := CmdExt Expression
 
+instance : HasPassiveCmds Expression Command where
+  assert l e := .cmd (.assert l e)
+  assume l e := .cmd (.assume l e)
+
+instance : HasHavoc Expression Command where
+  havoc x := .cmd (.havoc x)
+
 def CmdExt.sizeOf (c : CmdExt P) : Nat :=
   match c with
   | .cmd c => SizeOf.sizeOf c
@@ -100,18 +107,18 @@ mutual
 def Statement.eraseTypes (s : Statement) : Statement :=
   match s with
   | .cmd c => .cmd (Command.eraseTypes c)
-  | .block label { ss } md =>
-    let ss' := Statements.eraseTypes ss
+  | .block label ⟨ bss ⟩ md =>
+    let ss' := Statements.eraseTypes bss
     .block label { ss := ss' } md
-  | .ite cond thenb elseb md =>
-    let thenb' := { ss := Statements.eraseTypes thenb.ss }
-    let elseb' := { ss := Statements.eraseTypes elseb.ss }
+  | .ite cond ⟨ tss ⟩ ⟨ ess ⟩ md =>
+    let thenb' := { ss := Statements.eraseTypes tss }
+    let elseb' := { ss := Statements.eraseTypes ess }
     .ite cond thenb' elseb' md
-  | .loop guard measure invariant body md =>
-    let body' := { ss := Statements.eraseTypes body.ss }
+  | .loop guard measure invariant ⟨ bss ⟩ md =>
+    let body' := { ss := Statements.eraseTypes bss }
     .loop guard measure invariant body' md
   | .goto l md => .goto l md
-  termination_by (sizeOf s)
+  termination_by (Stmt.sizeOf s)
   decreasing_by
   all_goals simp_wf <;> simp [sizeOf] <;> omega
 
@@ -183,16 +190,12 @@ def Statement.modifiedVarsTrans
   : List Expression.Ident := match s with
   | .cmd cmd => Command.modifiedVarsTrans π cmd
   | .goto _ _ => []
-  | .block _ b _ => Statements.modifiedVarsTrans π b.ss
-  | .ite _ tb eb _ =>
-    Statements.modifiedVarsTrans π tb.ss ++ Statements.modifiedVarsTrans π eb.ss
-  | .loop _ _ _ b _ =>
-    Statements.modifiedVarsTrans π b.ss
+  | .block _ ⟨ bss ⟩ _ => Statements.modifiedVarsTrans π bss
+  | .ite _ ⟨ tbss ⟩ ⟨ ebss ⟩ _ =>
+    Statements.modifiedVarsTrans π tbss ++ Statements.modifiedVarsTrans π ebss
+  | .loop _ _ _ ⟨ bss ⟩ _ =>
+    Statements.modifiedVarsTrans π bss
   termination_by (Stmt.sizeOf s)
-  decreasing_by
-  all_goals simp_wf
-  cases tb; omega
-  cases eb; omega
 
 def Statements.modifiedVarsTrans
   {ProcType : Type}
@@ -225,16 +228,12 @@ def Statement.getVarsTrans
   : List Expression.Ident := match s with
   | .cmd cmd => Command.getVarsTrans π cmd
   | .goto _ _ => []
-  | .block _ b _ => Statements.getVarsTrans π b.ss
-  | .ite _ tb eb _ =>
-    Statements.getVarsTrans π tb.ss ++ Statements.getVarsTrans π eb.ss
-  | .loop _ _ _ b _ =>
-    Statements.getVarsTrans π b.ss
+  | .block _ ⟨ bss ⟩ _ => Statements.getVarsTrans π bss
+  | .ite _ ⟨ tbss ⟩ ⟨ ebss ⟩ _ =>
+    Statements.getVarsTrans π tbss ++ Statements.getVarsTrans π ebss
+  | .loop _ _ _ ⟨ bss ⟩  _ =>
+    Statements.getVarsTrans π bss
   termination_by (Stmt.sizeOf s)
-  decreasing_by
-  all_goals simp_wf
-  cases tb; omega
-  cases eb; omega
 
 def Statements.getVarsTrans
   {ProcType : Type}
@@ -274,14 +273,10 @@ def Statement.touchedVarsTrans
   match s with
   | .cmd cmd => Command.definedVarsTrans π cmd ++ Command.modifiedVarsTrans π cmd
   | .goto _ _ => []
-  | .block _ b _ => Statements.touchedVarsTrans π b.ss
-  | .ite _ tb eb _ => Statements.touchedVarsTrans π tb.ss ++ Statements.touchedVarsTrans π eb.ss
-  | .loop _ _ _ b _ => Statements.touchedVarsTrans π b.ss
+  | .block _ ⟨ bss ⟩ _ => Statements.touchedVarsTrans π bss
+  | .ite _ ⟨ tbss ⟩ ⟨ ebss ⟩ _ => Statements.touchedVarsTrans π tbss ++ Statements.touchedVarsTrans π ebss
+  | .loop _ _ _ ⟨ bss ⟩ _ => Statements.touchedVarsTrans π bss
   termination_by (Stmt.sizeOf s)
-  decreasing_by
-  all_goals simp_wf
-  cases tb; omega
-  cases eb; omega
 
 def Statements.touchedVarsTrans
   {ProcType : Type}

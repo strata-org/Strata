@@ -1,4 +1,6 @@
-﻿# Strata
+﻿![Strata Logo](./strata_logo.png)
+
+# Strata
 
 Strata offers a unified platform for formalizing language syntax and
 semantics, and implementing automated reasoning applications. Strata
