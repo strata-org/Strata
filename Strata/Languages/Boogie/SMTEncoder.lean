@@ -456,7 +456,8 @@ def ProofObligation.toSMTTerms (E : Env)
   let assumptions := d.assumptions.flatten.map (fun a => a.snd)
   let (ctx, distinct_terms) ← E.distinct.foldlM (λ (ctx, tss) es =>
     do let (ts, ctx') ← Boogie.toSMTTerms E es ctx; pure (ctx', ts :: tss)) (ctx, [])
-  let distinct_assumptions := distinct_terms.map (λ ts => Term.app .distinct ts .bool)
+  let distinct_assumptions := distinct_terms.map
+    (λ ts => Term.app (.core .distinct) ts .bool)
   let (assumptions_terms, ctx) ← Boogie.toSMTTerms E assumptions ctx
   let (obligation_pos_term, ctx) ← Boogie.toSMTTerm E [] d.obligation ctx
   let obligation_term := Factory.not obligation_pos_term

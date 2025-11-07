@@ -32,7 +32,7 @@ def KnownLTys : LTys :=
    t[∀a b. Map %a %b]]
 
 def KnownTypes : KnownTypes :=
-  KnownLTys.map (fun ty => ty.toKnownType!)
+  makeKnownTypes (KnownLTys.map (fun ty => ty.toKnownType!))
 
 /--
   Convert an LExpr LMonoTy Unit to an LExpr LMonoTy Visibility

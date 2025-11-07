@@ -92,14 +92,14 @@ def unifyTypes (T : TEnv) (constraints : List (Ty × Ty)) : Except Format TEnv :
 /--
 Instantiation of `TypeContext` for `ArithPrograms`.
 -/
-instance : TypeContext PureExpr TEnv where
+instance : TypeContext PureExpr Unit TEnv where
   isBoolType := Arith.TypeCheck.isBoolType
   freeVars := (fun e => (Arith.Expr.freeVars e).map (fun (v, _) => v))
-  preprocess := Arith.TypeCheck.preprocess
-  postprocess := Arith.TypeCheck.postprocess
+  preprocess := fun _ => Arith.TypeCheck.preprocess
+  postprocess := fun _ => Arith.TypeCheck.postprocess
   update := Arith.TypeCheck.update
   lookup := Arith.TypeCheck.lookup
-  inferType := Arith.TypeCheck.inferType
+  inferType := fun _ => Arith.TypeCheck.inferType
   unifyTypes := Arith.TypeCheck.unifyTypes
 
 instance : ToFormat (Cmds PureExpr × TEnv) where
@@ -126,7 +126,7 @@ TEnv:
 (x, Num)
 -/
 #guard_msgs in
-#eval do let (cs, τ) ← Cmds.typeCheck TEnv.init testProgram1
+#eval do let (cs, τ) ← Cmds.typeCheck () TEnv.init testProgram1
           return format (cs, τ)
 
 private def testProgram2 : Cmds Arith.PureExpr :=
@@ -134,7 +134,7 @@ private def testProgram2 : Cmds Arith.PureExpr :=
 
 /-- info: error: Types .Bool and Num cannot be unified! -/
 #guard_msgs in
-#eval do let (cs, τ) ← Cmds.typeCheck TEnv.init testProgram2
+#eval do let (cs, τ) ← Cmds.typeCheck () TEnv.init testProgram2
           return format (cs, τ)
 
 private def testProgram3 : Cmds Arith.PureExpr :=
@@ -144,7 +144,7 @@ private def testProgram3 : Cmds Arith.PureExpr :=
 info: error: Type Checking [init (x : .Bool) := x]: Variable x cannot appear in its own initialization expression!
 -/
 #guard_msgs in
-#eval do let (cs, τ) ← Cmds.typeCheck TEnv.init testProgram3
+#eval do let (cs, τ) ← Cmds.typeCheck () TEnv.init testProgram3
           return format (cs, τ)
 
 private def testProgram4 : Cmds Arith.PureExpr :=
@@ -160,7 +160,7 @@ TEnv:
 (x, Num)
 -/
 #guard_msgs in
-#eval do let (cs, τ) ← Cmds.typeCheck TEnv.init testProgram4
+#eval do let (cs, τ) ← Cmds.typeCheck () TEnv.init testProgram4
           return format (cs, τ)
 
 
@@ -172,7 +172,7 @@ private def testProgram5 : Cmds Arith.PureExpr :=
 info: error: Type Checking [init (x : .Bool) := 1 = 2]: Variable x of type Num already in context.
 -/
 #guard_msgs in
-#eval do let (cs, τ) ← Cmds.typeCheck TEnv.init testProgram5
+#eval do let (cs, τ) ← Cmds.typeCheck () TEnv.init testProgram5
           return format (cs, τ)
 
 private def testProgram6 : Cmds Arith.PureExpr :=
@@ -183,7 +183,7 @@ info: error: Cannot infer the types of free variables in the initialization expr
 y
 -/
 #guard_msgs in
-#eval do let (cs, τ) ← Cmds.typeCheck TEnv.init testProgram6
+#eval do let (cs, τ) ← Cmds.typeCheck () TEnv.init testProgram6
           return format (cs, τ)
 
 private def testProgram7 : Cmds Arith.PureExpr :=
@@ -197,7 +197,7 @@ TEnv:
 (y, Num) (z, Num) (x, Num)
 -/
 #guard_msgs in
-#eval do let (cs, τ) ← Cmds.typeCheck TEnv.init testProgram7
+#eval do let (cs, τ) ← Cmds.typeCheck () TEnv.init testProgram7
           return format (cs, τ)
 
 private def testProgram8 : Cmds Arith.PureExpr :=
@@ -206,7 +206,7 @@ private def testProgram8 : Cmds Arith.PureExpr :=
 
 /-- info: error: Variable y not found in type context! -/
 #guard_msgs in
-#eval do let (cs, τ) ← Cmds.typeCheck TEnv.init testProgram8
+#eval do let (cs, τ) ← Cmds.typeCheck () TEnv.init testProgram8
           return format (cs, τ)
 
 ---------------------------------------------------------------------

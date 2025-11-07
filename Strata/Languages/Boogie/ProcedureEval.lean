@@ -7,7 +7,9 @@
 
 
 import Strata.Languages.Boogie.Procedure
+import Strata.Languages.Boogie.Statement
 import Strata.Languages.Boogie.StatementEval
+import Strata.Languages.Boogie.StatementSemantics
 import Strata.Transform.LoopElim
 
 ---------------------------------------------------------------------
@@ -73,7 +75,7 @@ def eval (E : Env) (p : Procedure) : List (Procedure × Env) :=
       p.spec.postconditions
   let precond_assumes :=
     List.map (fun (label, check) => (.assume label check.expr)) p.spec.preconditions
-  let body' := p.body.map Statement.removeLoops
+  let body' : List Statement := p.body.map Stmt.removeLoops
   let ssEs := Statement.eval E old_var_subst (precond_assumes ++ body' ++ postcond_asserts)
   ssEs.map (fun (ss, sE) => ({ p with body := ss }, fixupError sE))
 
