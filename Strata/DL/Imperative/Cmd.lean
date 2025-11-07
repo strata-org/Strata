@@ -73,6 +73,21 @@ instance (P : PureExpr) : SizeOf (Imperative.Cmd P) where
 
 ---------------------------------------------------------------------
 
+class HasPassiveCmds (P : PureExpr) (CmdT : Type) where
+  assume : String → P.Expr → CmdT
+  assert : String → P.Expr → CmdT
+
+instance : HasPassiveCmds P (Cmd P) where
+  assume l e := .assume l e
+  assert l e := .assert l e
+
+class HasHavoc (P : PureExpr) (CmdT : Type) where
+  havoc : P.Ident → CmdT
+
+instance : HasHavoc P (Cmd P) where
+  havoc x := .havoc x
+---------------------------------------------------------------------
+
 mutual
 /-- Get all variables accessed by `c`. -/
 def Cmd.getVars [HasVarsPure P P.Expr] (c : Cmd P) : List P.Ident :=
