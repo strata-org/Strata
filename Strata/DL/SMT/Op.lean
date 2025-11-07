@@ -5,6 +5,7 @@
 -/
 
 import Strata.DL.SMT.TermType
+import Lean.Elab.Command
 
 /-!
 Based on Cedar's Term language.
@@ -60,7 +61,7 @@ instance UF.decLt (x y : UF) : Decidable (x < y) :=
 instance : Hashable UF where
   hash := λ a => hash s!"{repr a}"
 
-inductive Op : Type where
+inductive Op.Core : Type where
   ---------- SMTLib core theory of equality with uninterpreted functions (`UF`) ----------
   | not
   | and
@@ -69,8 +70,11 @@ inductive Op : Type where
   | ite
   | implies
   | distinct
-  | uf : UF → Op
-  ---------- SMTLib core theory of integers (`Ints`) ----------
+  | uf : UF → Op.Core
+  deriving Repr, DecidableEq, Inhabited, Hashable
+
+inductive Op.Num : Type where
+  ---------- SMTLib core theory of integers (`Ints`) and reals (`Reals`) ----------
   -- The theory of Reals also supports all operations, except
   -- `mod` and `abs`, below.
   | neg
@@ -84,6 +88,9 @@ inductive Op : Type where
   | lt
   | ge
   | gt
+deriving Repr, DecidableEq, Inhabited, Hashable
+
+inductive Op.BV : Type where
   ---------- SMTLib theory of finite bitvectors (`BV`) ----------
   | bvneg
   | bvadd
@@ -113,16 +120,120 @@ inductive Op : Type where
   | bvssubo -- bit-vector signed subtraction overflow predicate
   | bvsmulo -- bit-vector signed multiplication overflow predicate
   | bvconcat
-  | zero_extend : Nat → Op
-  ---------- SMTLib theory of unicode strings (`Strings`) ----------
+  | zero_extend : Nat → Op.BV
+deriving Repr, DecidableEq, Inhabited, Hashable
+
+inductive Op.Strings : Type where
+  ---------- SMTLib theory of unicode strings and regular expressions (`Strings`) ----------
+  -- Strings
   | str_length
   | str_concat
-  ---------- An operator to group triggers together
+  | str_lt
+  | str_le
+  | str_at
+  | str_substr
+  | str_prefixof
+  | str_suffixof
+  | str_contains
+  | str_indexof
+  | str_replace
+  | str_replace_all
+  -- Regular Expressions
+  | str_to_re
+  | str_in_re
+  | re_none    -- constant
+  | re_all     -- constant
+  | re_allchar -- constant
+  | re_concat
+  | re_union
+  | re_inter
+  | re_star
+  | str_replace_re
+  | str_replace_re_all
+  | re_comp
+  | re_diff
+  | re_plus
+  | re_opt
+  | re_range
+  | re_loop : Nat → Nat → Op.Strings
+  | re_index : Nat → Op.Strings
+deriving Repr, DecidableEq, Inhabited, Hashable
+
+inductive Op : Type where
+  -- SMTLib core theory of equality with uninterpreted functions (`UF`)
+  | core : Op.Core → Op
+  -- SMTLib core theory of integers (`Ints`) and reals (`Reals`)
+  | num : Op.Num → Op
+  -- SMTLib theory of finite bitvectors (`BV`)
+  | bv : Op.BV → Op
+  -- SMTLib theory of unicode strings and regular expressions (`Strings`)
+  | str : Op.Strings → Op
+  -- An operator to group triggers together
   | triggers
-  ---------- Core ADT operators with a trusted mapping to SMT ----------
+  -- Core ADT operators with a trusted mapping to SMT
   | option_get
 deriving Repr, DecidableEq, Inhabited, Hashable
 
+-- Generate abbreviations like `Op.not` for `Op.core Op.Core.not` for
+-- convenience.
+open Lean Elab Command Lean.Name in
+elab "#genOpAbbrevs" : command => do
+  let env ← getEnv
+  let mut abbrevs : Array (Name × (TSyntax `command)) := #[]
+
+  if let some (.inductInfo coreInfo) := env.find? `Strata.SMT.Op.Core then
+    for ctor in coreInfo.ctors do
+      let ctorName := ctor.toString.split (· == '.') |>.getLast!
+      let name := Lean.Name.mkStr2 "Op" ctorName
+      if ctorName == "uf" then
+        let abbrevCmd ← `(command| abbrev $(mkIdent name) (arg : UF) := Op.core (Op.Core.uf arg))
+        abbrevs := abbrevs.push (name, abbrevCmd)
+      else
+        let abbrevCmd ← `(command| abbrev $(mkIdent name) := Op.core $(mkIdent ctor))
+        abbrevs := abbrevs.push (name, abbrevCmd)
+
+  if let some (.inductInfo numInfo) := env.find? `Strata.SMT.Op.Num then
+    for ctor in numInfo.ctors do
+      let ctorName := ctor.toString.split (· == '.') |>.getLast!
+      let name := Lean.Name.mkStr2 "Op" ctorName
+      let abbrevCmd ← `(command| abbrev $(mkIdent name) := Op.num $(mkIdent ctor))
+      abbrevs := abbrevs.push (name, abbrevCmd)
+
+  if let some (.inductInfo bvInfo) := env.find? `Strata.SMT.Op.BV then
+    for ctor in bvInfo.ctors do
+      let ctorName := ctor.toString.split (· == '.') |>.getLast!
+      let name := Lean.Name.mkStr2 "Op" ctorName
+      if ctorName == "zero_extend" then
+        let abbrevCmd ← `(command| abbrev $(mkIdent name) (n : Nat) := Op.bv (Op.BV.zero_extend n))
+        abbrevs := abbrevs.push (name, abbrevCmd)
+      else
+        let abbrevCmd ← `(command| abbrev $(mkIdent name) := Op.bv $(mkIdent ctor))
+        abbrevs := abbrevs.push (name, abbrevCmd)
+
+  if let some (.inductInfo strInfo) := env.find? `Strata.SMT.Op.Strings then
+    for ctor in strInfo.ctors do
+      let ctorName := ctor.toString.split (· == '.') |>.getLast!
+      let name := Lean.Name.mkStr2 "Op" ctorName
+      if ctorName == "re_index" then
+        let abbrevCmd ← `(command| abbrev $(mkIdent name) (n : Nat) := Op.str (Op.Strings.re_index n))
+        abbrevs := abbrevs.push (name, abbrevCmd)
+      else if ctorName == "re_loop" then
+        let abbrevCmd ← `(command| abbrev $(mkIdent name) (n1 n2 : Nat) := Op.str (Op.Strings.re_loop n1 n2))
+        abbrevs := abbrevs.push (name, abbrevCmd)
+      else
+        let abbrevCmd ← `(command| abbrev $(mkIdent name) := Op.str $(mkIdent ctor))
+        abbrevs := abbrevs.push (name, abbrevCmd)
+
+  for a in abbrevs do
+    elabCommand a.snd
+  logInfo s!"Generated abbrevs: {abbrevs.map (fun a => a.fst)}"
+
+
+/--
+info: Generated abbrevs: #[Op.not, Op.and, Op.or, Op.eq, Op.ite, Op.implies, Op.distinct, Op.uf, Op.neg, Op.sub, Op.add, Op.mul, Op.div, Op.mod, Op.abs, Op.le, Op.lt, Op.ge, Op.gt, Op.bvneg, Op.bvadd, Op.bvsub, Op.bvmul, Op.bvnot, Op.bvand, Op.bvor, Op.bvxor, Op.bvshl, Op.bvlshr, Op.bvashr, Op.bvslt, Op.bvsle, Op.bvult, Op.bvsge, Op.bvsgt, Op.bvule, Op.bvugt, Op.bvuge, Op.bvudiv, Op.bvurem, Op.bvsdiv, Op.bvsrem, Op.bvnego, Op.bvsaddo, Op.bvssubo, Op.bvsmulo, Op.bvconcat, Op.zero_extend, Op.str_length, Op.str_concat, Op.str_lt, Op.str_le, Op.str_at, Op.str_substr, Op.str_prefixof, Op.str_suffixof, Op.str_contains, Op.str_indexof, Op.str_replace, Op.str_replace_all, Op.str_to_re, Op.str_in_re, Op.re_none, Op.re_all, Op.re_allchar, Op.re_concat, Op.re_union, Op.re_inter, Op.re_star, Op.str_replace_re, Op.str_replace_re_all, Op.re_comp, Op.re_diff, Op.re_plus, Op.re_opt, Op.re_range, Op.re_loop, Op.re_index]
+-/
+#guard_msgs in
+#genOpAbbrevs
 
 def Op.mkName : Op → String
   | .not           => "not"
@@ -173,15 +284,45 @@ def Op.mkName : Op → String
   | .bvsmulo       => "bvsmulo"
   | .bvconcat      => "concat"
   | .zero_extend _ => "zero_extend"
-  | .str_length    => "str.len"
-  | .str_concat    => "str.++"
   | .triggers      => "triggers"
   | .option_get    => "option.get"
+  | .str_length    => "str.len"
+  | .str_concat    => "str.++"
+  | .str_lt        => "str.<"
+  | .str_to_re     => "str.to_re"
+  | .str_in_re     => "str.in_re"
+  | .re_none       => "re.none"
+  | .re_all        => "re.all"
+  | .re_allchar    => "re.allchar"
+  | .re_plus       => "re.+"
+  | .re_concat     => "re.++"
+  | .re_union      => "re.union"
+  | .re_inter      => "re.inter"
+  | .re_star       => "re.*"
+  | .str_le        => "str.<="
+  | .str_at        => "str.at"
+  | .str_substr    => "str.substr"
+  | .str_prefixof  => "str.prefixof"
+  | .str_suffixof  => "str.suffixof"
+  | .str_contains  => "str.contains"
+  | .str_indexof   => "str.indexof"
+  | .str_replace   => "str.replace"
+  | .str_replace_all => "str.replace_all"
+  | .str_replace_re  => "str.replace_re"
+  | .str_replace_re_all => "str.replace_re_all"
+  | .re_comp       => "re.comp"
+  | .re_diff       => "re.diff"
+  | .re_opt        => "re.opt"
+  | .re_range      => "re.range"
+  | .re_index _    => "re.^"
+  | .re_loop _ _   => "re.loop"
 
 def Op.LT : Op → Op → Bool
-  | .uf f₁, uf f₂                    => f₁ < f₂
-  | .zero_extend n₁, .zero_extend n₂ => n₁ < n₂
-  | ty₁, ty₂                         => ty₁.mkName < ty₂.mkName
+  | .uf f₁, .uf f₂                    => f₁ < f₂
+  | .zero_extend n₁, .zero_extend n₂  => n₁ < n₂
+  | .re_index n₁, .re_index n₂        => n₁ < n₂
+  | .re_loop n₁ n₂, .re_loop m₁ m₂    => n₁ < n₂ && m₁ < m₂
+  | ty₁, ty₂                          => ty₁.mkName < ty₂.mkName
 
 instance : LT Op where
   lt := fun x y => Op.LT x y
