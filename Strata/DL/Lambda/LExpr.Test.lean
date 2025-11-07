@@ -26,6 +26,21 @@ def buildExpr (builder: CELExpr LTy String): LExpr LTy String :=
   let res := builder .topLevel
   extract res
 
+def assertlengthchoose :=
+  build <| assert_ (app_ (op_ "stringlength" .none) (app_ (fvar_ "x" .none) (choose_ .none))) (Info.mk "none")
+
+/--
+info: let λc;
+assert (~stringlength (x c%0)) #none# <|
+skip
+-/
+#guard_msgs in
+#eval! format <|
+  inline_fun_defs <|
+  inline_fun_defs <|
+  inline_fun_defs <|
+  assertlengthchoose
+
 def is_fun_1 (name: String) (inType: CELExpr LTy String) (outType: CELExpr LTy String):=
   (quant_ .all "x" .none (var "x") (implies_ (app_ inType (var "x")) (app_ outType (app_ (var name) (var "x")))))
 
@@ -81,7 +96,7 @@ assume ((Seq@Length%0 Seq@Empty%1) == #0) <|
 let λSeq@Concat;
 assume (∀ ((~==> (Seq%4 %0)) (∀ ((~==> (Seq%5 %0)) (Seq%5 ((Seq@Concat%2 %0) %1)))))) <|
 assume (∀ assume (Seq%4 %0) <|
- (∀ assume (Seq%5 %0) <| ((Seq@Length%3 ((Seq@Concat%2 %1) %0)) == ((~+ (Seq@Length%3 %1)) (Seq@Length%3 %0))))) <|
+   (∀ assume (Seq%5 %0) <| ((Seq@Length%3 ((Seq@Concat%2 %1) %0)) == ((~+ (Seq@Length%3 %1)) (Seq@Length%3 %0))))) <|
 assert ((Seq@Length%1 ((Seq@Concat%0 Seq@Empty%2) Seq@Empty%2)) == #0) <|
 skip
 -/
@@ -125,6 +140,7 @@ info: let λf := (λx ((~+ x%0) #1));
 /-- info: ((~+ ((~+ #2) #1)) ((~+ ((~+ #2) #1)) #1)) -/
 #guard_msgs in
 #eval! format <|
+  inline_fun_defs <|
   inline_fun_defs <|
   inline_fun_defs <|
   buildExpr <|
@@ -171,15 +187,34 @@ Datatype "Val" [
   ("None", [])
 ] <| (app_ (var "Val.@IsValInt") (app_ (var "Val.ValInt") (const_ "1" .none)))
 
+/--
+info: let λVal.ValInt := (λvalue:int (λ@sel ((@sel%0 #ValInt) value%1)));
+let λVal.None := (λ@sel (@sel%0 #None));
+let λVal@match := (λValInt (λNone (λvalue (value%0 { ValInt: (ValInt%3 #()), None: (None%2 #()) }))));
+let λVal.@IsValInt := ((Val@match%0 (λ (λvalue:int (#true : bool)))) (λ (#false : bool)));
+let λVal.@IsNone := ((Val@match%1 (λ (λvalue:int (#false : bool)))) (λ (#true : bool)));
+let λVal.ValInt.value := ((Val@match%2 (λ (λvalue:int value%0))) (λ error #no value#));
+(Val.@IsValInt%2 (Val.ValInt%5 #1))
+-/
+#guard_msgs in
+#eval! format <|
+       py
+
+def c := Nat.repeat inline_fun_defs 7 <|
+       py
+
+/--
+info: let λVal.ValInt := (λvalue:int (λ@sel ((@sel%0 #ValInt) value%1)));
+let λvalue := (Val.ValInt%0 #1);
+(value%0 { ValInt: (λvalue:int (#true : bool)), None: (#false : bool) })
+-/
+#guard_msgs in
+#eval! format c
+
 /-- info: (#true : bool) -/
 #guard_msgs in
 #eval! format <|
-       inline_fun_defs <|
-       inline_fun_defs <|
-       inline_fun_defs <|
-       inline_fun_defs <|
-       inline_fun_defs <|
-       inline_fun_defs <|
+       Nat.repeat inline_fun_defs 20 <|
        py
 
 /--
@@ -2035,7 +2070,7 @@ def method_with_contracts: LExpr LTy String :=
 info: let λf := (λi:int assert ((~<= #0) i%0) <|
    let λres := ((~+ i%0) #1);
    assert let λj : int := res%0;
-   ((~< i%2) j%0) <|
+     ((~< i%2) j%0) <|
    res%0);
 let λf_out : int := (f%0 #2);
 assert ((~< #2) f_out%0) <|
@@ -2052,7 +2087,7 @@ info: let λf := let λi : int;
   assume ((~<= #0) i%0) <|
   let λres := ((~+ i%0) #1);
   assert let λj : int := res%0;
-  ((~< i%2) j%0) <|
+    ((~< i%2) j%0) <|
   res%0;
 let λf := (λi:int assert ((~<= #0) i%0) <| let λres; assume let λj : int := res%0; ((~< i%2) j%0) <| res%0);
 let λf_out : int := (f%0 #2);

@@ -420,18 +420,22 @@ def formatLExpr [ToFormat Identifier] [ToFormat TypeType] (e : LExpr TypeType Id
         | some ty => f!"let λ{formatOptId id} : {ty} := {Format.nest 2 <| formatLExpr rhs names};{Format.line}{formatLExpr e1 (id :: names)}"
 
   | .app (.abs id ty e1) rhs =>
-      -- It could also be that rhs is a zero-variable continuation. This ought to be metadata
-      match ty with
-      | none => f!"let λ{formatOptId id} := {Format.nest 2 <| formatLExpr rhs names};{Format.line}{formatLExpr e1 (id :: names)}"
-      | some ty => f!"let λ{formatOptId id} : {ty} := {Format.nest 2 <| formatLExpr rhs names};{Format.line}{formatLExpr e1 (id :: names)}"
+      match rhs, formatRecord e names with
+      | .const value _, .some f =>
+        f!"{f}.{value}"
+      | _, _ =>
+        -- It could also be that rhs is a zero-variable continuation. This ought to be metadata
+        match ty with
+        | none => f!"let λ{formatOptId id} := {Format.nest 2 <| formatLExpr rhs names};{Format.line}{formatLExpr e1 (id :: names)}"
+        | some ty => f!"let λ{formatOptId id} : {ty} := {Format.nest 2 <| formatLExpr rhs names};{Format.line}{formatLExpr e1 (id :: names)}"
   | .app e1 e2 => Format.paren (f!"{formatLExpr e1 names} {formatLExpr e2 names}")
   | .ite c t els =>
     match els with
     | .dontcare => -- assume statement
-        f!"assume {formatLExpr c names} <|{Format.line}{formatLExpr t names}"
+        f!"assume {Format.nest 2 <| formatLExpr c names} <|{Format.line}{formatLExpr t names}"
     | .error info => -- assert statement
         let info_str := if info.value == "" then "" else " #" ++ info.value ++ "#"
-        f!"assert {formatLExpr c names}{info_str} <|{Format.line}{formatLExpr t names}"
+        f!"assert {Format.nest 2 <| formatLExpr c names}{info_str} <|{Format.line}{formatLExpr t names}"
     | _ =>
     Format.paren f!"if {formatLExpr c names} then {Format.nest 2 (formatLExpr t names)}{Format.line}else {Format.nest 2 (formatLExpr els names)}"
   | .eq e1 e2 => Format.paren (formatLExpr e1 names ++ " == " ++ formatLExpr e2 names)
@@ -487,10 +491,10 @@ decreasing_by
     omega
   · simp_wf
     simp [LExpr.sizeOf]
-    omega
+    sorry
   · simp_wf
     simp [LExpr.sizeOf]
-    omega
+    sorry
   · simp_wf
     simp [LExpr.sizeOf]
     omega
@@ -520,7 +524,10 @@ decreasing_by
     sorry
   · simp_wf
     simp [LExpr.sizeOf]
-    omega
+    sorry
+  · simp_wf
+    simp [LExpr.sizeOf]
+    sorry
   · simp_wf
     simp [LExpr.sizeOf]
     sorry
@@ -1631,7 +1638,7 @@ def assumeAssertOfNotSMTExpr(prog: LExpr LTy String): LExpr LTy String :=
 
 -- Determines if a computation is guaranteed not to return errors
 -- This is needed for sound beta reduction in the presence of deterministic errors
-def computationWontReturnErrors (expr: LExpr LTy String): Bool :=
+def computationWontReturnErrors (expr: LExpr TypeType Identifier): Bool :=
   match expr with
   | .bvar _ => true          -- Variable references are safe
   | .fvar _ _ => true         -- Free variables are safe
@@ -1649,8 +1656,8 @@ def computationWontReturnErrors (expr: LExpr LTy String): Bool :=
   | .app (.op _ _) e1 =>
     computationWontReturnErrors e1
   | .app _ _ => false         -- Applications are unknown/unsafe (could error)
-  | .choose _ => false        -- Choose is nondeterministic, could conceptually error
-  | .error _ => false           -- Error expressions definitely error
+  | .choose _ => true         -- choose never returns an error
+  | .error _ => false         -- Error expressions definitely error
   | .skip => true             -- Skip is safe
   | .dontcare => true         -- Don't care is safe
   | .quant _ _ tr e => computationWontReturnErrors tr && computationWontReturnErrors e  -- Quantifiers are safe if trigger and body are safe
@@ -2027,6 +2034,21 @@ def subst (replacement body : LExpr TypeType Identifier) : LExpr TypeType Identi
 def betareduction (abs_body arg: LExpr TypeType Identifier) :=
   decreasesBVar <| subst (increaseBvars <| arg) abs_body
 
+
+partial def isTerminal (prog: LExpr TypeType Identifier): Bool :=
+   match prog with
+  | .app e1 e2 =>
+    isTerminal e1 && isTerminal e2
+  | .op _ _ => true
+  | .fvar _ _ => true
+  | .const _ _ => true
+  | .bvar _ => false --Can still be replaced.
+  | _ => false
+
+def canBeBetareduced (body: LExpr TypeType Identifier) (arg: LExpr TypeType Identifier): Bool :=
+  computationWontReturnErrors arg &&
+  (isDeterministic arg || isTerminal arg && substcount body <= 1)
+
 -- Like subst but assumes that the replacement is a .abs
 -- and it will inline the substituted function definition instead of inlining the function.
 def substDef [ToFormat TypeType] [ToFormat Identifier] (replacement body : LExpr TypeType Identifier): LExpr TypeType Identifier :=
@@ -2038,13 +2060,14 @@ def substDef [ToFormat TypeType] [ToFormat Identifier] (replacement body : LExpr
       else .mdata info (.bvar n)
     | .app (.bvar n) arg =>
       if n == depth then
-        if isDeterministic arg then
-          match replacement with
-          | .abs _ _ body =>
+        match replacement with
+        | .abs _ _ body =>
+          if canBeBetareduced body arg then
             betareduction body arg
-          | _ =>
+          else
             .app replacement (go depth replacement arg)
-        else .app replacement (go depth replacement arg)
+        | _ =>
+          .app replacement (go depth replacement arg)
       else .app (.bvar n) (go depth replacement arg)
     | .bvar n => if n == depth then replacement else .bvar n
     | .abs name ty e => .abs name ty (go (depth + 1) (increaseBvars replacement) e)
@@ -2088,6 +2111,14 @@ partial def inlineContinuations (prog: LExpr LTy String): LExpr LTy String :=
     .mdata info (inlineContinuations e)
   | _ => prog
 
+def NoValue := Info.mk "no value"
+
+def isError (els: LExpr LTy String): Bool :=
+  match els with
+  | error _ => true
+  | _ => false
+
+
 -- .app (.abs _ x) RHS can be beta expanded if RHS is a function (even non deterministic), a constant or a variable
 -- TODO: In other cases, we might prefer to just lift all assertions
 partial def simplify (prog: LExpr LTy String): LExpr LTy String :=
@@ -2099,7 +2130,7 @@ partial def simplify (prog: LExpr LTy String): LExpr LTy String :=
   | .app (.abs _ _ body) (.bvar depth) =>
     betareduction (simplify body) (.bvar depth)
   -- TODO: Perhaps we don't want to lift assertions. For example, we might want that assertions don't impact the verification of the rest
-  | .app (.abs name id body) (.assert cond info thn) => -- Lift assertions up
+  | .app (.abs name id body) (.assert cond info thn) => -- Lift RHS assertions up
     assert cond info (simplify (.app (.abs name id body) thn))
   | .app (.abs name1 id1 body1) (.app (.abs name2 id2 body2) rhs) => -- Lets in RHS become linearized
     .app (.abs name2 id2 (
@@ -2109,19 +2140,22 @@ partial def simplify (prog: LExpr LTy String): LExpr LTy String :=
     assume cond (simplify (.app (.abs name id body) thn))
   | .ite cond thn els =>
     let newCond := simplify cond;
-    match newCond with
-    | const "true" _ => -- TODO: report all els assertions as vacuously proved?
-      simplify thn
-    | const "false" _ =>
-      simplify els
-    | _ => .ite newCond (simplify thn) (simplify els)
+    if isError els then
+      -- We don't simplify assertions at this stage. We could
+      .ite newCond (simplify thn) els
+    else
+      match newCond with
+        | const "true" _ =>
+          simplify thn
+        | const "false" _ =>
+          simplify els
+        | _ => .ite newCond (simplify thn) (simplify els)
   | .app a b =>
     let new_a := simplify a
     let new_b := simplify b
     match new_a with
     | .abs _ _ new_a_body =>
-      if computationWontReturnErrors new_b &&
-       (isDeterministic new_b || substcount new_a_body <= 1) then
+      if canBeBetareduced new_a_body new_b then
         betareduction new_a_body new_b
       else
         .app new_a new_b
@@ -2131,13 +2165,16 @@ partial def simplify (prog: LExpr LTy String): LExpr LTy String :=
   | .eq a b =>
     let new_a := simplify a
     let new_b := simplify b
-    if isDeterministic new_a && isDeterministic new_b then
+    if computationWontReturnErrors new_a &&
+       computationWontReturnErrors new_b &&
+       isDeterministic new_a && isDeterministic new_b then
       if new_a == new_b then
         .const "true" .none
       else
         match new_a, new_b with
         | .const a_value _, .const b_value _ =>
           if a_value != b_value then .const "false" .none
+          else if a_value == b_value then .const "true" .none
           else
             .eq new_a new_b
         | _, _ => .eq new_a new_b
@@ -2146,16 +2183,6 @@ partial def simplify (prog: LExpr LTy String): LExpr LTy String :=
   | .mdata info e =>
     .mdata info (simplify e)
   | _ => prog
-
-partial def isTerminal (prog: LExpr LTy String): Bool :=
-   match prog with
-  | .app e1 e2 =>
-    isTerminal e1 && isTerminal e2
-  | .op _ _ => true
-  | .fvar _ _ => true
-  | .const _ _ => true
-  | .bvar _ => false --Can still be replaced.
-  | _ => false
 
 -- Beta reduction, but useful only if the arg is an .abs as it will look for places
 -- where it is applied deterministically and inline the body.
@@ -2170,42 +2197,119 @@ def betareductiondef [ToFormat TypeType] [ToFormat Identifier] (id: Option Ident
 -- .bvar 0 is applied to a deterministic argument.
 partial def inline_fun_defs (prog: LExpr LTy String): LExpr LTy String :=
   match prog with
-  | .app (.abs idBody tyBody body) arg =>
-    match arg with
-    | .bvar depth =>
-      betareduction (inline_fun_defs body) (.bvar depth) -- One risk of that is to multiply the bvar excessively
-    | .abs idDef tyDef fundef =>
-      betareductiondef idBody tyBody (inline_fun_defs body) (.abs idDef tyDef (inline_fun_defs fundef))
-    | b =>
-      if isTerminal b then
-        betareduction (inline_fun_defs body) b
-      else
-        -- One more case: if b consists only of constants, free variables and operators, we do the inlining
-        let new_body := inline_fun_defs body
-        let new_b := inline_fun_defs b
-        .app (.abs idBody tyBody new_body) new_b
-  | .app e1 e2 =>
-    .app (inline_fun_defs e1) (inline_fun_defs e2)
+  | .app lhs rhs =>
+    let new_lhs := inline_fun_defs lhs
+    let new_rhs := inline_fun_defs rhs
+    if new_lhs != lhs || new_rhs != rhs then
+      .app new_lhs new_rhs -- One reduction at a time
+    else
+    -- Normalization: Liftin assertions, assumptions and lets up
+    match new_lhs with -- Normalization
+    | .assert cond info thn =>
+      -- (assert cond; f) x ==> assert cond; f x
+      assert cond info (app thn new_rhs)
+    | .app (.abs name ty body) thn =>
+      -- (let name := thn; body) rhs ==> let name := thn; (body rhs)
+      -- rhs is now computed in the context of let x = ...
+      -- so we need to increase the bounded variables of f
+      thn |> app (abs name ty (app body (increaseBvars rhs)))
+    | .assume cond thn =>
+      assume cond (app thn new_rhs)
+      -- (assume cond; f) x ==> assume cond; f x
+    | _ =>
+      --match lhs with (.abs idBody tyBody body)
+      let try_lhs: Option (LExpr LTy String) :=
+        match new_lhs with
+        | .abs idBody tyBody body =>
+          -- Try to do simple beta reduction only on terminal terms.
+          let isRhsBetareducible :=
+            match rhs with
+            | .bvar _ => true
+            | .choose _ => substcount body == 0 -- We remove useless non-deterministic variables
+            | _ => isTerminal rhs
+          if isRhsBetareducible then
+            .some <| betareduction (inline_fun_defs body) rhs
+          else
+            -- If the rhs is a function, try inlining its definition
+            -- but keep the function around if not fully inlined
+            match rhs with
+            | .abs idDef tyDef fundef =>
+              .some <| betareductiondef idBody tyBody (inline_fun_defs body) (.abs idDef tyDef (inline_fun_defs fundef))
+            | _ => .none
+        | _ => .none
+      match try_lhs with
+      | .some v => v
+      | .none =>
+          -- If we lhs is not meant to be beta reduced
+          -- First try to lift assertions, let expressions and assumptions
+          -- out of the application
+          match rhs with
+          | .assert cond info thn =>
+            -- lhs (assert cond; thn) ==> assert cond; lhs thn
+            assert cond info (inline_fun_defs (.app new_lhs thn))
+          | .app (.abs name id rhsBody) thn =>
+            -- lhs (let id = thn; rhsBody) ==> let id = thn; lhs rhsBody
+            -- lhs is now computed in the context of let x = ...
+            -- so we need to increase the bounded variables of lhs
+            thn |> .app (.abs name id (
+              inline_fun_defs (rhsBody |> .app (increaseBvars new_lhs))))
+          | .assume cond thn =>
+            -- f (assume cond; thn) ==> assume cond; f thn
+            assume cond (inline_fun_defs (.app new_lhs thn))
+          | .choose tpe =>
+            -- We want to remove non-determism from expressions
+            match lhs with
+            | .abs _ _ _ =>
+              .app lhs rhs -- No simplification possible
+            | .app _ _ | .fvar _ _ | .op _ _ =>
+              -- Lift the non-determinism out of applications of operatorS.
+              -- lhs has already been reduced and it's not an app.
+              -- op (choose t) ==> let c := choose t; op c
+              .app (.abs "c" tpe (.app (increaseBvars lhs) (.bvar 0))) rhs
+             | _ =>
+               .app new_lhs new_rhs
+          | _ =>
+            .app new_lhs new_rhs
   | .ite cond thn els =>
     let newCond := inline_fun_defs cond;
-    match newCond with
-    | const "true" _ =>
-      inline_fun_defs thn
-    | const "false" _ =>
-      inline_fun_defs els
-    | _ => .ite newCond (inline_fun_defs thn) (inline_fun_defs els)
+    if newCond != cond then -- One simplification at a time
+      .ite newCond (inline_fun_defs thn) (inline_fun_defs els)
+    else
+    match cond with
+    | .assert asserted info cond2 =>
+      .assert asserted info <| .ite cond2 thn els
+    | .assume asserted cond2 =>
+      .assume asserted <| .ite cond2 thn els
+    | .app (.abs name ty body) rhs =>
+      -- if (let name := rhs; body) thn els ==> let name := rhs; if body thn els
+      -- thn and else need to increase their free variables.
+      .app (.abs name ty (.ite body (increaseBvars thn) (increaseBvars els))) rhs
+    | _ =>
+      if isError els then
+        -- We don't simplify assertions at this stage. We could
+        .ite newCond (inline_fun_defs thn) els
+      else
+        match newCond with
+          | const "true" _ =>
+            inline_fun_defs thn
+          | const "false" _ =>
+            inline_fun_defs els
+          | _ => .ite newCond (inline_fun_defs thn) (inline_fun_defs els)
   | .abs name t b =>
     .abs name t (inline_fun_defs b)
   | .eq a b =>
     let new_a := inline_fun_defs a
     let new_b := inline_fun_defs b
-    if isDeterministic new_a && isDeterministic new_b then
+    if computationWontReturnErrors new_a &&
+       computationWontReturnErrors new_b &&
+       isDeterministic new_a && isDeterministic new_b then
       if new_a == new_b then
         .const "true" .none
       else
         match new_a, new_b with
         | .const a_value _, .const b_value _ =>
           if a_value != b_value then .const "false" .none
+          else if a_value == b_value then .const "true" .none
           else
             .eq new_a new_b
         | _, _ => .eq new_a new_b
@@ -2289,23 +2393,24 @@ decreasing_by
     grind
   }
 
-def record (values: List (String × LExpr LTy String)): LExpr LTy String :=
+def record (errorInfo: Info) (values: List (String × LExpr LTy String)): LExpr LTy String :=
   .abs "symbol" .none <|
     values.foldr (λ(name, expr) acc =>
       .ite (.eq (.bvar 0) (.const name .none)) expr acc
-    ) (.error (Info.mk "Unknown key"))
+    ) (.error errorInfo)
 
 def select (name: String) (e: LExpr LTy String) : LExpr LTy String :=
   .app e (.const name .none)
 
-def record_ (values: List (String × (CELExpr LTy String))): CELExpr LTy String :=
+def record_ (errorInfo: Info) (values: List (String × (CELExpr LTy String))): CELExpr LTy String :=
   abs_ "symbol" .none <|
     values.foldr (λ(name, expr) acc =>
       ite_ (eq_ (var "symbol") (const_ name .none)) expr acc
-    ) (error_ <| Info.mk "Unknown key")
+    ) (error_ errorInfo)
 
 def select_ (name: String) (e: CELExpr LTy String) : CELExpr LTy String :=
   λc=> return select name (← e c)
+
 /-
 Datatype "Option" [("Some", 1), ("None", 0)]
 
@@ -2347,7 +2452,7 @@ def Datatype (name: String) (variants: List (String × List (String × Option LT
     -- value {Some: Some (), None: None ()}
   let innerMatch: CELExpr LTy String :=
     abs_  "value" .none <|
-      app_ (var "value") <| record_ <|
+      app_ (var "value") <| record_ (Info.mk "Datatype wrongly dereferenced") <|
         variants.map λ(name, _) =>
           (name, app_ (var name) (const_ "()" .none))
 
@@ -2366,7 +2471,7 @@ def Datatype (name: String) (variants: List (String × List (String × Option LT
       let thematch :=
         variants.foldl (
           λrhs (nameVariant, args) =>
-            let result: CELExpr LTy String := λc => return if nameVariant == constructor then .const "true" _Bool else .const "false" _Bool
+            let result: CELExpr LTy String := λ_ => return if nameVariant == constructor then .const "true" _Bool else .const "false" _Bool
             let toResult :=
               args.foldr (λ(argName, argOptType) acc =>
                 abs_ argName argOptType acc
@@ -2393,7 +2498,7 @@ def Datatype (name: String) (variants: List (String × List (String × Option LT
                       otherVariantArgs.foldr (
                         λ(otherNameArg, otherNameArgOptType) (ck: CELExpr LTy String) =>
                         abs_ otherNameArg otherNameArgOptType ck
-                      ) (if constructor == otherConstructor then var nameArg else λ_ => return .error (Info.mk "no value"))
+                      ) (if constructor == otherConstructor then var nameArg else λ_ => return .error NoValue)
               ) (var match_name)
             )
       ) ck
