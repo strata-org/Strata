@@ -61,16 +61,23 @@ private def translateFromTermType (t:SMT.TermType):
   match t with
   | .prim tp =>
     match tp with
-    | .bool | .int | .real | .string =>
-      return .smtsort_ident srnone (mkIdentifier tp.mkName)
     | .bitvec n =>
       return (.smtsort_ident srnone
         (.iden_indexed srnone
-          (mkSymbol "bitvec")
+          (mkSymbol "BitVec")
           (.ind_numeral srnone (Ann.mk srnone n))
           (Ann.mk srnone #[])))
     | .trigger =>
       throw "don't know how to translate a trigger type"
+    | _ =>
+      return .smtsort_ident srnone (mkIdentifier
+         (match tp with
+          | .bool => "Bool"
+          | .int => "Int"
+          | .real => "Real"
+          | .string => "String"
+          | .regex => "RegLan"
+          | _ => panic! "unreachable"))
   | .option _ =>
     throw "don't know how to translate an option type"
   | .constr id args =>
