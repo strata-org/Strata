@@ -20,7 +20,8 @@ abbrev Expression : Imperative.PureExpr :=
      Expr := Lambda.LExpr Lambda.LMonoTy Visibility,
      Ty := Lambda.LTy,
      TyEnv := @Lambda.TEnv Visibility,
-     EvalEnv := Lambda.LState Visibility
+     TyContext := @Lambda.LContext Visibility,
+     EvalEnv := Lambda.LState Visibility,
      EqIdent := inferInstanceAs (DecidableEq (Lambda.Identifier _))}
 
 instance : Imperative.HasVarsPure Expression Expression.Expr where

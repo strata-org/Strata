@@ -22,19 +22,11 @@ info: ok: ((procedure P :  ((x : int)) → ((y : int)))
  body: y := (((~Int.Sub : (arrow int (arrow int int))) (#0 : int)) (x : int))
  ,
  context:
- types:   ⏎
- aliases: []
- state:
- tyGen: 6
- tyPrefix: $__ty
- exprGen: 0
- exprPrefix: $__var
- subst: []
- known types:
- [∀[0, 1]. (arrow 0 1), bool, int, string])
+ types:   
+ aliases: [] state: tyGen: 6 tyPrefix: $__ty exprGen: 0 exprPrefix: $__var subst: [])
 -/
 #guard_msgs in
-#eval do let ans ← typeCheck { TEnv.default with functions := Boogie.Factory }
+#eval do let ans ← typeCheck { LContext.default with functions := Boogie.Factory } TEnv.default
                              Program.init
                              { header := {name := "P",
                                           typeArgs := [],
@@ -57,10 +49,11 @@ postconditions: (P.g_eq_a, ((g : int) == (((~Int.Add : (arrow int (arrow int int
 body: g := (((~Int.Add : (arrow int (arrow int int))) (a : int)) (g : int))
 -/
 #guard_msgs in
-#eval do let ans ←
-              typeCheck { TEnv.default (IDMeta:=Visibility) with
-                              functions := Boogie.Factory,
-                              context := { types := [[("g", t[int])]] }}
+#eval do
+  let g : TGenEnv Visibility := { @TGenEnv.default Visibility with context := {types := [[("g", t[int])]] }};
+  let ans ←
+              typeCheck { LContext.default (IDMeta:=Visibility) with
+                              functions := Boogie.Factory} {@TEnv.default Visibility with genEnv := g}
                         Program.init
                         { header := { name := "P",
                                       typeArgs := [],
@@ -84,10 +77,12 @@ postconditions: (P.g_eq_a, ((g : int) == (((~Int.Add : (arrow int (arrow int int
 body: g := (((~Int.Add : (arrow int (arrow int int))) (a : int)) (g : int))
 -/
 #guard_msgs in
-#eval do let ans ←
-              typeCheck { TEnv.default (IDMeta:=Visibility) with
-                              functions := Boogie.Factory,
-                              context := { types := [[("g", t[int])]] }}
+#eval do
+  let g : TGenEnv Visibility := { @TGenEnv.default Visibility with context := {types := [[("g", t[int])]] }};
+  let ans ←
+              typeCheck { LContext.default (IDMeta:=Visibility) with
+                              functions := Boogie.Factory}
+                        { @TEnv.default Visibility with genEnv := g}
                         Program.init
                         { header := { name := "P",
                                       typeArgs := [],

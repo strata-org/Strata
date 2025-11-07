@@ -25,11 +25,11 @@ Type checker for Boogie commands.
 Note that this function needs the entire program to type-check `call`
 commands by looking up the corresponding procedure's information.
 -/
-def typeCheckCmd (T : (TEnv Visibility)) (P : Program) (c : Command) :
+def typeCheckCmd (C: LContext Visibility) (T : (TEnv Visibility)) (P : Program) (c : Command) :
   Except Format (Command × (TEnv Visibility)) := do
   match c with
   | .cmd c =>
-    let (c, T) ← Imperative.Cmd.typeCheck T c
+    let (c, T) ← Imperative.Cmd.typeCheck C T c
     .ok (.cmd c, T)
   | .call lhs pname args md =>
      match Program.Procedure.find? P pname with
@@ -46,21 +46,21 @@ def typeCheckCmd (T : (TEnv Visibility)) (P : Program) (c : Command) :
        else do
          -- Get the types of lhs variables and unify with the procedures'
          -- return types.
-         let lhsinsts ← Lambda.Identifier.instantiateAndSubsts lhs T
+         let lhsinsts ← Lambda.Identifier.instantiateAndSubsts lhs C T
          match lhsinsts with
          | none => .error f!"Implementation error. \
                              Types of {lhs} should have been known."
          | some (lhs_tys, T) =>
            let _ ← T.freeVarChecks args
-           let (ret_sig, T) ← LMonoTySignature.instantiate T proc.header.typeArgs proc.header.outputs
+           let (ret_sig, T) ← LMonoTySignature.instantiate C T proc.header.typeArgs proc.header.outputs
            let ret_mtys := LMonoTys.subst T.state.substInfo.subst ret_sig.values
            let ret_lhs_constraints := lhs_tys.zip ret_mtys
            -- Infer the types of the actuals and unify with the types of the
            -- procedure's formals.
-           let (argsa, T) ← Lambda.LExprT.fromLExprs T args
+           let (argsa, T) ← Lambda.LExprT.fromLExprs C T args
            let args_tys := argsa.map LExprT.toLMonoTy
            let args' := argsa.map $ LExprT.toLExpr
-           let (inp_sig, T) ← LMonoTySignature.instantiate T proc.header.typeArgs proc.header.inputs
+           let (inp_sig, T) ← LMonoTySignature.instantiate C T proc.header.typeArgs proc.header.inputs
            let inp_mtys := LMonoTys.subst T.state.substInfo.subst inp_sig.values
            let lhs_inp_constraints := (args_tys.zip inp_mtys)
            let S ← Constraints.unify (lhs_inp_constraints ++ ret_lhs_constraints) T.state.substInfo
@@ -69,7 +69,7 @@ def typeCheckCmd (T : (TEnv Visibility)) (P : Program) (c : Command) :
            .ok (s', T)
 
 
-def typeCheckAux (T : (TEnv Visibility)) (P : Program) (op : Option Procedure) (ss : List Statement) :
+def typeCheckAux (C: LContext Visibility) (T : (TEnv Visibility)) (P : Program) (op : Option Procedure) (ss : List Statement) :
   Except Format (List Statement × (TEnv Visibility)) :=
   go T ss []
 where
@@ -81,7 +81,7 @@ where
       let (s', T) ←
         match s with
         | .cmd cmd => do
-          let (c', T) ← typeCheckCmd T P cmd
+          let (c', T) ← typeCheckCmd C T P cmd
           .ok (.cmd c', T)
 
         | .block label ⟨ bss ⟩ md => do
@@ -92,7 +92,7 @@ where
 
         | .ite cond ⟨ tss ⟩ ⟨ ess ⟩ md => do
           let _ ← T.freeVarCheck cond f!"[{s}]"
-          let (conda, T) ← LExprT.fromLExpr T cond
+          let (conda, T) ← LExprT.fromLExpr C T cond
           let condty := conda.toLMonoTy
           match condty with
           | .tcons "bool" [] =>
@@ -104,18 +104,18 @@ where
 
         | .loop guard measure invariant ⟨ bss ⟩ md => do
           let _ ← T.freeVarCheck guard f!"[{s}]"
-          let (conda, T) ← LExprT.fromLExpr T guard
+          let (conda, T) ← LExprT.fromLExpr C T guard
           let condty := conda.toLMonoTy
           let (mt, T) ← match measure with
           | .some m => do
             let _ ← T.freeVarCheck m f!"[{s}]"
-            let (ma, T) ← LExprT.fromLExpr T m
+            let (ma, T) ← LExprT.fromLExpr C T m
             .ok (some ma, T)
           | _ => .ok (none, T)
           let (it, T) ← match invariant with
           | .some i => do
             let _ ← T.freeVarCheck i f!"[{s}]"
-            let (ia, T) ← LExprT.fromLExpr T i
+            let (ia, T) ← LExprT.fromLExpr C T i
             .ok (some ia, T)
           | _ => .ok (none, T)
           let mty := mt.map LExprT.toLMonoTy
@@ -202,11 +202,11 @@ Note that this function needs the entire program to type-check statements to
 check whether `goto` targets exist (or .none for statements that don't occur
 inside a procedure).
 -/
-def typeCheck (T : Expression.TyEnv) (P : Program) (op : Option Procedure) (ss : List Statement) :
+def typeCheck (C: Expression.TyContext) (T : Expression.TyEnv) (P : Program) (op : Option Procedure) (ss : List Statement) :
   Except Format (List Statement × Expression.TyEnv) := do
-  let (ss', T) ← typeCheckAux T P op ss
+  let (ss', T) ← typeCheckAux C T P op ss
   let context := TContext.subst T.context T.state.substInfo.subst
-  let T := { T with context := context }
+  let T := T.updateContext context
   let ss' := Statement.subst.go T.state.substInfo.subst ss' []
   .ok (ss', T)
 

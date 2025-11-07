@@ -20,6 +20,7 @@ abbrev LExprTP : Imperative.PureExpr :=
      Expr := Lambda.LExprT String,
      Ty := Lambda.LMonoTy,
      TyEnv := @Lambda.TEnv String,
+     TyContext := @Lambda.LContext String,
      EvalEnv := Lambda.LState String
      EqIdent := instDecidableEqString }
 

@@ -176,11 +176,11 @@ procedure h() returns () spec {
 
 def translate (t : Strata.Program) : Boogie.Program := (TransM.run (translateProgram t)).fst
 
-def env := (Lambda.TEnv.default.addFactoryFunctions Boogie.Factory)
+def env := (Lambda.LContext.default.addFactoryFunctions Boogie.Factory)
 
 def translateWF (t : Strata.Program) : WF.WFProgram :=
   let p := translate t
-  match H: Program.typeCheck env p with
+  match H: Program.typeCheck env Lambda.TEnv.default p with
   | .error e => panic! "Well, " ++ Std.format e |> toString
   | .ok res => { self := p, prop := by exact WF.Program.typeCheckWF H }
 
