@@ -3515,7 +3515,7 @@ theorem callElimStatementCorrect :
       next st' oldTrips =>
       -- extract well-formed program properties
       cases Hwfp with
-      | mk wfvarnd wfprocnd wffncnd Hwfp =>
+      | mk wfnd Hwfp =>
       have Hdecl := List.Forall_mem_iff.mp Hwfp
       have HH := Procedure.find_in_decls Hfind
       cases HH with
