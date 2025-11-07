@@ -226,7 +226,7 @@ def inferFVar (C: LContext IDMeta) (T : (TEnv IDMeta)) (x : Identifier IDMeta) (
     | none => .ok (ty, T)
     | some fty =>
       let (fty, T) ← LMonoTy.instantiateWithCheck fty C T
-      let S ← Constraints.unify [(fty, ty)] T.state.substInfo
+      let S ← Constraints.unify [(fty, ty)] T.stateSubstInfo
       .ok (ty, TEnv.updateSubst T S)
 
 /--
@@ -360,7 +360,7 @@ partial def inferOp (C: LContext IDMeta) (T : (TEnv IDMeta)) (o : Identifier IDM
             let (body_typed, T) ← fromLExprAux C T body
             let bodyty := body_typed.toLMonoTy
             let (retty, T) ← func.outputPolyType.instantiateWithCheck C T
-            let S ← Constraints.unify [(retty, bodyty)] T.state.substInfo
+            let S ← Constraints.unify [(retty, bodyty)] T.stateSubstInfo
             let T := T.updateSubst S
             let T := T.popContext
             .ok T
@@ -371,7 +371,7 @@ partial def inferOp (C: LContext IDMeta) (T : (TEnv IDMeta)) (o : Identifier IDM
       | none => .ok (ty, T)
       | some oty =>
         let (oty, T) ← LMonoTy.instantiateWithCheck oty C T
-        let S ← Constraints.unify [(ty, oty)] T.state.substInfo
+        let S ← Constraints.unify [(ty, oty)] T.stateSubstInfo
         .ok (ty, TEnv.updateSubst T S)
 
 partial def fromLExprAux.ite (C: LContext IDMeta) (T : (TEnv IDMeta)) (c th el : (LExpr LMonoTy IDMeta)) := do
@@ -381,7 +381,7 @@ partial def fromLExprAux.ite (C: LContext IDMeta) (T : (TEnv IDMeta)) (c th el :
   let cty := ct.toLMonoTy
   let tty := tt.toLMonoTy
   let ety := et.toLMonoTy
-  let S ← Constraints.unify [(cty, LMonoTy.bool), (tty, ety)] T.state.substInfo
+  let S ← Constraints.unify [(cty, LMonoTy.bool), (tty, ety)] T.stateSubstInfo
   .ok (ite ct tt et tty, TEnv.updateSubst T S)
 
 partial def fromLExprAux.eq (C: LContext IDMeta) (T : (TEnv IDMeta)) (e1 e2 : (LExpr LMonoTy IDMeta)) := do
@@ -391,7 +391,7 @@ partial def fromLExprAux.eq (C: LContext IDMeta) (T : (TEnv IDMeta)) (e1 e2 : (L
   let (e2t, T) ← fromLExprAux C T e2
   let ty1 := e1t.toLMonoTy
   let ty2 := e2t.toLMonoTy
-  let S ← Constraints.unify [(ty1, ty2)] T.state.substInfo
+  let S ← Constraints.unify [(ty1, ty2)] T.stateSubstInfo
   .ok (.eq e1t e2t LMonoTy.bool, TEnv.updateSubst T S)
 
 partial def fromLExprAux.abs (C: LContext IDMeta) (T : (TEnv IDMeta)) (bty : Option LMonoTy) (e : (LExpr LMonoTy IDMeta)) := do
@@ -405,7 +405,7 @@ partial def fromLExprAux.abs (C: LContext IDMeta) (T : (TEnv IDMeta)) (bty : Opt
   let (et, T) ← fromLExprAux C T e'
   let etclosed := .varClose 0 xv et
   let ety := etclosed.toLMonoTy
-  let mty := LMonoTy.subst T.state.substInfo.subst (.tcons "arrow" [xty, ety])
+  let mty := LMonoTy.subst T.stateSubstInfo.subst (.tcons "arrow" [xty, ety])
   -- Safe to erase fresh variable from context after closing the expressions.
   -- Note that we don't erase `xty` (if it was a fresh type variable) from the substitution
   -- list because it may occur in `etclosed`, which hasn't undergone a
@@ -422,7 +422,7 @@ partial def fromLExprAux.quant (C: LContext IDMeta) (T : (TEnv IDMeta)) (qk : Qu
   let (et, T) ← fromLExprAux C T e'
   let (triggersT, T) ← fromLExprAux C T triggers'
   let ety := et.toLMonoTy
-  let xty := LMonoTy.subst T.state.substInfo.subst xty
+  let xty := LMonoTy.subst T.stateSubstInfo.subst xty
   let etclosed := LExprT.varClose 0 xv et
   let triggersClosed := LExprT.varClose 0 xv triggersT
   -- Safe to erase fresh variable from context after closing the expressions.
@@ -445,7 +445,7 @@ partial def fromLExprAux.app (C: LContext IDMeta) (T : (TEnv IDMeta)) (e1 e2 : (
   let freshty := (.ftvar fresh_name)
   -- `ty1` must be of the form `ty2 → freshty`.
   let constraints := [(ty1, (.tcons "arrow" [ty2, freshty]))]
-  let S ← Constraints.unify constraints T.state.substInfo
+  let S ← Constraints.unify constraints T.stateSubstInfo
   -- The type of `(.app e1 e2)` is `freshty`, with appropriate substitutions
   -- applied.
   let mty := LMonoTy.subst S.subst freshty
@@ -460,7 +460,7 @@ end
 protected def fromLExpr (C: LContext IDMeta) (T : (TEnv IDMeta)) (e : (LExpr LMonoTy IDMeta)) :
     Except Format ((LExprT IDMeta) × (TEnv IDMeta)) := do
   let (et, T) ← fromLExprAux C T e
-  .ok (LExprT.applySubst et T.state.substInfo.subst, T)
+  .ok (LExprT.applySubst et T.stateSubstInfo.subst, T)
 
 protected def fromLExprs (C: LContext IDMeta) (T : (TEnv IDMeta)) (es : List (LExpr LMonoTy IDMeta)) :
     Except Format (List (LExprT IDMeta) × (TEnv IDMeta)) := do

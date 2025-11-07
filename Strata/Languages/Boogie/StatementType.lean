@@ -53,7 +53,7 @@ def typeCheckCmd (C: LContext Visibility) (T : (TEnv Visibility)) (P : Program) 
          | some (lhs_tys, T) =>
            let _ ← T.freeVarChecks args
            let (ret_sig, T) ← LMonoTySignature.instantiate C T proc.header.typeArgs proc.header.outputs
-           let ret_mtys := LMonoTys.subst T.state.substInfo.subst ret_sig.values
+           let ret_mtys := LMonoTys.subst T.stateSubstInfo.subst ret_sig.values
            let ret_lhs_constraints := lhs_tys.zip ret_mtys
            -- Infer the types of the actuals and unify with the types of the
            -- procedure's formals.
@@ -61,9 +61,9 @@ def typeCheckCmd (C: LContext Visibility) (T : (TEnv Visibility)) (P : Program) 
            let args_tys := argsa.map LExprT.toLMonoTy
            let args' := argsa.map $ LExprT.toLExpr
            let (inp_sig, T) ← LMonoTySignature.instantiate C T proc.header.typeArgs proc.header.inputs
-           let inp_mtys := LMonoTys.subst T.state.substInfo.subst inp_sig.values
+           let inp_mtys := LMonoTys.subst T.stateSubstInfo.subst inp_sig.values
            let lhs_inp_constraints := (args_tys.zip inp_mtys)
-           let S ← Constraints.unify (lhs_inp_constraints ++ ret_lhs_constraints) T.state.substInfo
+           let S ← Constraints.unify (lhs_inp_constraints ++ ret_lhs_constraints) T.stateSubstInfo
            let T := T.updateSubst S
            let s' := .call lhs pname args' md
            .ok (s', T)
@@ -205,9 +205,9 @@ inside a procedure).
 def typeCheck (C: Expression.TyContext) (T : Expression.TyEnv) (P : Program) (op : Option Procedure) (ss : List Statement) :
   Except Format (List Statement × Expression.TyEnv) := do
   let (ss', T) ← typeCheckAux C T P op ss
-  let context := TContext.subst T.context T.state.substInfo.subst
+  let context := TContext.subst T.context T.stateSubstInfo.subst
   let T := T.updateContext context
-  let ss' := Statement.subst.go T.state.substInfo.subst ss' []
+  let ss' := Statement.subst.go T.stateSubstInfo.subst ss' []
   .ok (ss', T)
 
 ---------------------------------------------------------------------

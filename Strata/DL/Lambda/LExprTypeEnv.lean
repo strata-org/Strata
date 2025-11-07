@@ -138,23 +138,8 @@ structure TGenState where
   exprGen : Nat := 0
   exprPrefix : String := "$__var"
 deriving Repr, Inhabited
-/--
-Typing state.
-
-The typing state does bookkeeping to generate fresh expression and type
-variables needed during type inference. It also has a global substitution map
-`TState.subst`.
-
-Also see functions `TEnv.genTyVar` and `TEnv.genExprVar`.
--/
-structure TState where
-  genState : TGenState
-  substInfo : SubstInfo := SubstInfo.empty
-deriving Repr, Inhabited
 
 def TGenState.init : TGenState := {}
-
-def TState.init : TState := {genState := TGenState.init}
 
 def TGenState.incTyGen (state : TGenState) : TGenState :=
   { state with tyGen := state.tyGen + 1 }
@@ -173,14 +158,6 @@ def TGenState.genExprSym (state : TGenState) : String × TGenState :=
   let state := state.incExprGen
   let new_var := state.exprPrefix ++ toString new_idx
   (new_var, state)
-
-instance : ToFormat TState where
-  format ts :=
-    f!"tyGen: {ts.genState.tyGen}{Format.line}\
-       tyPrefix: {ts.genState.tyPrefix}{Format.line}\
-       exprGen: {ts.genState.exprGen}{Format.line}\
-       exprPrefix: {ts.genState.exprPrefix}{Format.line}\
-       subst: {ts.substInfo.subst}"
 
 ---------------------------------------------------------------------
 
@@ -261,10 +238,6 @@ def TEnv.updateContext {IDMeta} (T: TEnv IDMeta) (C: TContext IDMeta) : TEnv IDM
   let g := {T.genEnv with context := C}
   {T with genEnv := g}
 
-def TEnv.state {IDMeta : Type} (T: TEnv IDMeta) : TState :=
-  let g := {tyGen := T.genEnv.genState.tyGen, tyPrefix := T.genEnv.genState.tyPrefix, exprGen := T.genEnv.genState.exprGen, exprPrefix := T.genEnv.genState.exprPrefix}
-  { substInfo := T.stateSubstInfo, genState := g}
-
 /--
 Lift stateful computations over `TGenEnv` to stateful computations over `TEnv`
 -/
@@ -294,9 +267,21 @@ def LContext.default : LContext IDMeta :=
     idents := Identifiers.default }
 
 instance [ToFormat IDMeta] : ToFormat (TEnv IDMeta) where
-  format s := f!"context:{Format.line}{s.context}\
-                 {Format.line}\
-                 state:{Format.line}{s.state}"
+  format s :=
+    let g:TGenState := {
+      tyGen := s.genEnv.genState.tyGen,
+      tyPrefix := s.genEnv.genState.tyPrefix,
+      exprGen := s.genEnv.genState.exprGen,
+      exprPrefix := s.genEnv.genState.exprPrefix
+    }
+    f!"context:{Format.line}{s.context}\
+       {Format.line}\
+       state:{Format.line}\
+       tyGen: {g.tyGen}{Format.line}\
+       tyPrefix: {g.tyPrefix}{Format.line}\
+       exprGen: {g.exprGen}{Format.line}\
+       exprPrefix: {g.exprPrefix}{Format.line}\
+       subst: {s.stateSubstInfo.subst}"
 
 instance [ToFormat IDMeta] : ToFormat (LContext IDMeta) where
   format s := f!" known types:{Format.line}{s.knownTypes}\
@@ -324,31 +309,31 @@ def TEnv.updateSubst (T : (TEnv IDMeta)) (S : SubstInfo) : (TEnv IDMeta) :=
 
 omit [DecidableEq IDMeta] in
 theorem TEnv.SubstWF_of_pushemptySubstScope (T : TEnv IDMeta) :
-  SubstWF (Maps.push T.state.substInfo.subst []) := by
-  have h_SubstWF : SubstWF T.state.substInfo.subst := by
-    apply T.state.substInfo.isWF
-  generalize T.state.substInfo.subst = S at *
+  SubstWF (Maps.push T.stateSubstInfo.subst []) := by
+  have h_SubstWF : SubstWF T.stateSubstInfo.subst := by
+    apply T.stateSubstInfo.isWF
+  generalize T.stateSubstInfo.subst = S at *
   simp_all [SubstWF, Subst.freeVars]
   done
 
 def TEnv.pushEmptySubstScope (T : (TEnv IDMeta)) : (TEnv IDMeta) :=
-  let new_subst := T.state.substInfo.subst.push []
+  let new_subst := T.stateSubstInfo.subst.push []
   let newS := { subst := new_subst, isWF := (by rw [TEnv.SubstWF_of_pushemptySubstScope]) }
   { T with stateSubstInfo := newS }
 
 omit [DecidableEq IDMeta] in
 theorem TEnv.SubstWF_of_popSubstScope (T : TEnv IDMeta) :
-  SubstWF (Maps.pop T.state.substInfo.subst) := by
-  have h_SubstWF : SubstWF T.state.substInfo.subst := by
-    apply T.state.substInfo.isWF
-  generalize T.state.substInfo.subst = S at *
+  SubstWF (Maps.pop T.stateSubstInfo.subst) := by
+  have h_SubstWF : SubstWF T.stateSubstInfo.subst := by
+    apply T.stateSubstInfo.isWF
+  generalize T.stateSubstInfo.subst = S at *
   simp_all [Maps.pop]
   split <;> try simp_all
   rename_i ms m mrest
   simp [@SubstWF_of_cons m mrest (by assumption)]
 
 def TEnv.popSubstScope (T : (TEnv IDMeta)) : (TEnv IDMeta) :=
-  let new_subst := T.state.substInfo.subst.pop
+  let new_subst := T.stateSubstInfo.subst.pop
   let newS := { subst := new_subst, isWF := (by rw [TEnv.SubstWF_of_popSubstScope]) }
   { T with stateSubstInfo := newS }
 
@@ -570,7 +555,7 @@ open LTy.Syntax in
                                    }
                                   ]})
       format f!"Ans: {ans}\n\
-                Subst:\n{T.state.substInfo.subst}"
+                Subst:\n{T.stateSubstInfo.subst}"
 
 /-- info: some (Foo $__ty0 (BarAlias q $__ty0)) -/
 #guard_msgs in
@@ -689,7 +674,7 @@ open LTy.Syntax in
                                    }
                                   ]})
       format f!"De-aliased type: {ty}\n\
-                Subst:\n{T.state.substInfo.subst}"
+                Subst:\n{T.stateSubstInfo.subst}"
 
 /--
 Instantiate and de-alias `ty`, including at the subtrees.
@@ -803,7 +788,7 @@ it.
 -/
 def LTy.instantiateAndSubst (ty : LTy) (C: LContext IDMeta) (T : (TEnv IDMeta)) : Except Format (LMonoTy × (TEnv IDMeta)) := do
   let (mty, T) ← LTy.instantiateWithCheck ty C T
-  let mty := LMonoTy.subst T.state.substInfo.subst mty
+  let mty := LMonoTy.subst T.stateSubstInfo.subst mty
   return (mty, T)
 
 def LTy.instantiateAndSubsts (tys : List LTy) (C: LContext IDMeta) (T : (TEnv IDMeta)) :
