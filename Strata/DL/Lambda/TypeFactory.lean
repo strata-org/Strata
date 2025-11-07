@@ -25,6 +25,13 @@ open LTy.Syntax
 
 variable {IDMeta : Type} [DecidableEq IDMeta] [Inhabited IDMeta]
 
+/-
+Prefixes for newly generated type and term variables.
+See comment for `TEnv.genExprVar` for naming.
+-/
+def tyPrefix : String := "$__ty"
+def exprPrefix : String := "$__var"
+
 /--
 A type constructor description. The free type variables in `args` must be a subset of the `typeArgs` of the corresponding datatype.
 -/
@@ -115,16 +122,20 @@ def constrFunc (c: LConstr IDMeta) (d: LDatatype IDMeta) : LFunc IDMeta :=
 Generate `n` strings for argument names for the eliminator. Since there is no body, these strings do not need to be used.
 -/
 private def genArgNames (n: Nat) : List (Identifier IDMeta) :=
-  (List.range n).map (fun i => ⟨ "_x_" ++ toString i, Inhabited.default ⟩)
+  (List.range n).map (fun i => ⟨exprPrefix ++ toString i, Inhabited.default⟩)
 
 /--
 Find `n` type arguments (string) not present in list by enumeration. Inefficient on large inputs.
 -/
 def freshTypeArgs (n: Nat) (l: List TyIdentifier) : List TyIdentifier :=
   -- Generate n + |l| names to ensure enough unique ones
-  let candidates := List.map (fun n => "$__ty" ++ toString n) (List.range (l.length + n));
+  let candidates := List.map (fun n => tyPrefix ++ toString n) (List.range (l.length + n));
   List.filter (fun t => ¬ t ∈ l) candidates
 
+/--
+Find a fresh type argument not present in `l` by enumeration. Relies on the fact
+that `freshTypeArgs n` gives a list of exactly `n` fresh type arguments.
+-/
 def freshTypeArg (l: List TyIdentifier) : TyIdentifier :=
   match freshTypeArgs 1 l with
   | t :: _ => t

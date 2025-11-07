@@ -33,7 +33,7 @@ Canonical values of `LExpr`s.
 Equality is simply `==` (or more accurately, `eqModuloTypes`) for these
 `LExpr`s. Also see `eql` for a version that can tolerate nested metadata.
 -/
-partial def isCanonicalValue (σ : (LState IDMeta)) (e : (LExpr LMonoTy IDMeta)) : Bool :=
+partial def isCanonicalValue (σ : LState IDMeta) (e : LExpr LMonoTy IDMeta) : Bool :=
   match e with
   | .const _ _ => true
   | .abs _ _ =>
@@ -53,7 +53,7 @@ Equality of canonical values `e1` and `e2`.
 
 We can tolerate nested metadata here.
 -/
-def eql (σ : (LState IDMeta)) (e1 e2 : (LExpr LMonoTy IDMeta))
+def eql (σ : LState IDMeta) (e1 e2 : LExpr LMonoTy IDMeta)
   (_h1 : isCanonicalValue σ e1) (_h2 : isCanonicalValue σ e2) : Bool :=
   if eqModuloTypes e1 e2 then
     true
