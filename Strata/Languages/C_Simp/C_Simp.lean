@@ -27,6 +27,7 @@ abbrev Expression : Imperative.PureExpr := {
   Expr := Lambda.LExpr Lambda.LMonoTy Unit,
   Ty := Lambda.LTy,
   TyEnv := Lambda.TEnv String,
+  TyContext := Lambda.LContext String,
   EvalEnv := Lambda.LState String,
   EqIdent := Lambda.instDecidableEqIdentifier
 }

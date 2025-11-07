@@ -21,7 +21,7 @@ x := (xinit : int)
 init (y : int) := (xinit : int)
 -/
 #guard_msgs in
-#eval do let ans ← typeCheck { TEnv.default with context := {types := [[("xinit", t[int])]] }}
+#eval do let ans ← typeCheck LContext.default (TEnv.default.updateContext {types := [[("xinit", t[int])]] })
                    Program.init
                    none
                    [.init "x" t[int] eb[xinit],
@@ -34,8 +34,7 @@ init (y : int) := (xinit : int)
 info: error: Type Checking [init (x : bool) := #true]: Variable x of type bool already in context.
 -/
 #guard_msgs in
-#eval do let ans ← typeCheck { TEnv.default with
-                                  context := { types := [[("x", t[bool])]] }}
+#eval do let ans ← typeCheck LContext.default (TEnv.default.updateContext { types := [[("x", t[bool])]] })
                    Program.init
                    none
                    [
@@ -52,13 +51,10 @@ tyGen: 1
 tyPrefix: $__ty
 exprGen: 0
 exprPrefix: $__var
-subst: ⏎
-known types:
-[∀[0, 1]. (arrow 0 1), bool, int, string]
+subst:
 -/
 #guard_msgs in
-#eval do let ans ← typeCheck { TEnv.default with
-                                  context := { types := [[("zinit", t[bool])]] }}
+#eval do let ans ← typeCheck LContext.default (TEnv.default.updateContext { types := [[("zinit", t[bool])]] })
                     Program.init
                     none
                     [
@@ -81,7 +77,7 @@ known types:
 
 /-- info: error: Cannot unify differently named type constructors bool and int! -/
 #guard_msgs in
-#eval do let ans ← typeCheck TEnv.default Program.init none
+#eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
                     [
                     .init "x" t[int] eb[#0],
                     .init "y" t[int] eb[#6],
@@ -93,7 +89,7 @@ known types:
 info: error: Type Checking [init (x : int) := #1]: Variable x of type bool already in context.
 -/
 #guard_msgs in
-#eval do let ans ← typeCheck TEnv.default Program.init none
+#eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
                     [
                     .init "x" t[bool] eb[#true],
                     .block "label_0" {
@@ -114,11 +110,9 @@ tyPrefix: $__ty
 exprGen: 0
 exprPrefix: $__var
 subst: [($__ty0, int)]
-known types:
-[∀[0, 1]. (arrow 0 1), bool, int, string]
 -/
 #guard_msgs in
-#eval do let ans ← typeCheck TEnv.default Program.init none
+#eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
                     [
                     .init "x" t[int] eb[#0],
                     .ite eb[x == #3]
@@ -139,7 +133,7 @@ info: ok: init (x : int) := (#1 : int)
 x := (#2 : int)
 -/
 #guard_msgs in
-#eval do let ans ← typeCheck TEnv.default Program.init none
+#eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
               [
               .init "x" t[∀a. %a] eb[#1],
               .set "x" eb[#2]
@@ -156,12 +150,9 @@ tyPrefix: $__ty
 exprGen: 1
 exprPrefix: $__var
 subst: [($__ty0, int) ($__ty2, int) ($__ty6, (arrow bool int)) ($__ty7, bool) ($__ty5, (arrow bool int)) ($__ty3, (arrow bool int)) ($__ty9, int)]
-known types:
-[∀[0, 1]. (arrow 0 1), bool, int, string]
 -/
 #guard_msgs in
-#eval do let ans ← typeCheck { TEnv.default with
-                                context := { types := [[("fn", t[∀a. %a → %a])]] }}
+#eval do let ans ← typeCheck LContext.default (TEnv.default.updateContext { types := [[("fn", t[∀a. %a → %a])]] })
                       Program.init none
               [
               .init "m1" t[∀a. %a → int] eb[fn], -- var m : <a>[a]int

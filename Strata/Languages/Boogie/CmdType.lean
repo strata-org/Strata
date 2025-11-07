@@ -36,11 +36,11 @@ Preprocess a user-facing type in Boogie amounts to converting a poly-type (i.e.,
 `LTy`) to a mono-type (i.e., `LMonoTy`) via instantiation. We still return an
 `LTy`, with no bound variables.
 -/
-def preprocess (T : TEnv Visibility) (ty : LTy) : Except Format (LTy × TEnv Visibility) := do
-  let (mty, T) ← ty.instantiateWithCheck T
+def preprocess (C: LContext Visibility) (T : TEnv Visibility) (ty : LTy) : Except Format (LTy × TEnv Visibility) := do
+  let (mty, T) ← ty.instantiateWithCheck C T
   return (.forAll [] mty, T)
 
-def postprocess (T : TEnv Visibility) (ty : LTy) : Except Format (LTy × TEnv Visibility) := do
+def postprocess (_: LContext Visibility) (T : TEnv Visibility) (ty : LTy) : Except Format (LTy × TEnv Visibility) := do
   if h: ty.isMonoType then
     let ty := LMonoTy.subst T.state.substInfo.subst (ty.toMonoType h)
     .ok (.forAll [] ty, T)
@@ -51,7 +51,7 @@ def postprocess (T : TEnv Visibility) (ty : LTy) : Except Format (LTy × TEnv Vi
 The inferred type of `e` will be an `LMonoTy`, but we return an `LTy` with no
 bound variables.
 -/
-def inferType (T : TEnv Visibility) (c : Cmd Expression) (e : (LExpr LMonoTy Visibility)) :
+def inferType (C: LContext Visibility) (T : TEnv Visibility) (c : Cmd Expression) (e : (LExpr LMonoTy Visibility)) :
     Except Format ((LExpr LMonoTy Visibility) × LTy × TEnv Visibility) := do
   -- We only allow free variables to appear in `init` statements. Any other
   -- occurrence leads to an error.
@@ -63,7 +63,7 @@ def inferType (T : TEnv Visibility) (c : Cmd Expression) (e : (LExpr LMonoTy Vis
       let _ ← T.freeVarCheck e f!"[{c}]"
       .ok T
   let e := OldExpressions.normalizeOldExpr e
-  let (ea, T) ← LExprT.fromLExpr T e
+  let (ea, T) ← LExprT.fromLExpr C T e
   let ety := ea.toLMonoTy
   return (ea.toLExpr, (.forAll [] ety), T)
 
@@ -94,7 +94,7 @@ def unifyTypes (T : TEnv Visibility) (constraints : List (LTy × LTy)) : Except 
 
 ---------------------------------------------------------------------
 
-instance : Imperative.TypeContext Expression (TEnv Visibility) where
+instance : Imperative.TypeContext Expression (LContext Visibility) (TEnv Visibility) where
   isBoolType  := CmdType.isBoolType
   freeVars    := CmdType.freeVars
   preprocess  := CmdType.preprocess
