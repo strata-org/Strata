@@ -210,10 +210,12 @@ structure TGenEnv (IDMeta : Type) where
 deriving Inhabited
 
 /--
-A type environment `TEnv` contains a stack of contexts `TContext` to track `LExpr`
-variables and their types, a typing state `TState` to track the global
-substitution and fresh variable generation, and a `KnownTypes` to track the
-supported type constructors.
+A type environment `TEnv` contains
+- genEnv: `TGenEnv` to track the generator state as well as the typing context
+  (mapping from variables to their types, type aliases, etc)
+- stateSubstInfo: `SubstInfo` to track type substitution info.
+This is the top-level data structure that is used by type inference functions
+such as LExpr.annotate.
 -/
 structure TEnv (IDMeta : Type) where
   genEnv : TGenEnv IDMeta
