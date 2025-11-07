@@ -52,6 +52,13 @@ inductive MetaDataElem.Value (P : PureExpr) where
 instance [ToFormat P.Expr] : ToFormat (MetaDataElem.Value P) where
   format f := match f with | .expr e => f!"{e}" | .msg s => f!"{s}"
 
+instance [BEq P.Ident] [BEq P.Expr]: BEq (MetaDataElem.Value P) where
+  beq v1 v2 :=
+    match v1, v2 with
+    | .expr e1, .expr e2 => e1 == e2
+    | .msg m1, .msg m2 => m1 == m2
+    | _, _ => false
+
 /-- A metadata element -/
 structure MetaDataElem (P : PureExpr) where
   fld   : MetaDataElem.Field P
@@ -72,6 +79,11 @@ def MetaData.eraseElem {P : PureExpr} [BEq P.Ident]
     (md : MetaData P) (fld : MetaDataElem.Field P) : MetaData P :=
   md.eraseP (fun e => e.fld == fld)
 
+/-- Retrieve the first metadata element with tag `fld`. -/
+def MetaData.findElem {P : PureExpr} [BEq P.Ident]
+    (md : MetaData P) (fld : MetaDataElem.Field P) : Option (MetaDataElem P) :=
+    md.find? (λ e => e.fld == fld)
+
 instance [ToFormat (MetaDataElem.Field P)] [ToFormat (MetaDataElem.Value P)] :
     ToFormat (MetaDataElem P) where
   format m := f!"<{m.fld}: {m.value}>"
@@ -80,5 +92,11 @@ instance [ToFormat (MetaDataElem P)] : ToFormat (MetaData P) where
   format md := if md.isEmpty then f!"" else f!"{md} "
 
 ---------------------------------------------------------------------
+
+/-! ### Common metadata fields -/
+
+def MetaData.fileLabel : MetaDataElem.Field P := .label "file"
+def MetaData.startLineLabel : MetaDataElem.Field P := .label "startLine"
+def MetaData.startColumnLabel : MetaDataElem.Field P := .label "startColumn"
 
 end Imperative

@@ -24,7 +24,7 @@ procedure S() returns ()
 /-- info: true -/
 #guard_msgs in
 -- No errors in translation.
-#eval TransM.run (translateProgram havocPgm) |>.snd |>.isEmpty
+#eval TransM.run Inhabited.default (translateProgram havocPgm) |>.snd |>.isEmpty
 
 /--
 info: (procedure S :  () → ())
@@ -39,7 +39,7 @@ assert [x_eq_1] ((x : int) == (#1 : int))
 Errors: #[]
 -/
 #guard_msgs in
-#eval TransM.run (translateProgram havocPgm)
+#eval TransM.run Inhabited.default (translateProgram havocPgm)
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -68,7 +68,7 @@ preconditions: ⏎
 postconditions: ⏎
 body: init (x : int) := init_x_0
 x := #1
-#[<var x: ($__x0 : int)>] havoc x
+havoc x
 assert [x_eq_1] ($__x0 == #1)
 
 ---
@@ -78,6 +78,6 @@ Result: failed
 CEx: ($__x0, 0)
 -/
 #guard_msgs in
-#eval verify "cvc5" havocPgm
+#eval verify "cvc5" Inhabited.default havocPgm
 
 ---------------------------------------------------------------------

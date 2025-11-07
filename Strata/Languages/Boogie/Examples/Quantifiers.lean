@@ -105,7 +105,7 @@ Result: failed
 CEx: ($__x0, 0)
 -/
 #guard_msgs in
-#eval verify "cvc5" quantPgm Options.default
+#eval verify "cvc5" Inhabited.default quantPgm Options.default
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -151,4 +151,4 @@ Obligation: f_and_g
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" triggerPgm
+#eval verify "cvc5" Inhabited.default triggerPgm

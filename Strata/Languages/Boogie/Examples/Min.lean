@@ -43,6 +43,6 @@ Obligation: min_ensures_0
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" testPgm
+#eval verify "cvc5" Inhabited.default testPgm
 
 ---------------------------------------------------------------------

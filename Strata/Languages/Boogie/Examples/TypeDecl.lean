@@ -25,7 +25,7 @@ procedure P () returns () {
 
 /-- info: #[] -/
 #guard_msgs in
-#eval TransM.run (translateProgram typeDeclPgm1) |>.snd
+#eval TransM.run Inhabited.default (translateProgram typeDeclPgm1) |>.snd
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -45,7 +45,7 @@ Obligation: f_test
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" typeDeclPgm1
+#eval verify "cvc5" Inhabited.default typeDeclPgm1
 
 --------------------------------------------------------------------
 
@@ -86,7 +86,7 @@ procedure P () returns () {
 
 /-- info: #[] -/
 #guard_msgs in
-#eval TransM.run (translateProgram typeDeclPgm3) |>.snd
+#eval TransM.run Inhabited.default (translateProgram typeDeclPgm3) |>.snd
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -108,7 +108,7 @@ Obligation: fooAssertion
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" typeDeclPgm3
+#eval verify "cvc5" Inhabited.default typeDeclPgm3
 
 
 --------------------------------------------------------------------
@@ -126,6 +126,6 @@ KnownTypes' names:
 [bool, int, string, real, Triggers, TriggerGroup, bitvec, arrow, Map]
 -/
 #guard_msgs in
-#eval verify "cvc5" typeDeclPgm4
+#eval verify "cvc5" Inhabited.default typeDeclPgm4
 
 --------------------------------------------------------------------

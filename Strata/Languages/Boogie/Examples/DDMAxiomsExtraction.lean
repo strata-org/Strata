@@ -79,7 +79,7 @@ def replaceTypesByFTV (expr: Lambda.LExpr Lambda.LMonoTy Boogie.Visibility) (to_
   It then extracts LExpr body from the axioms, and replace all occurences of the typeArgs by a ftvar with the same name
 -/
 def extractAxiomsWithFreeTypeVars (pgm: Program) (typeArgs: List String): (List (Lambda.LExpr Lambda.LMonoTy Boogie.Visibility)) :=
-  let prg: Boogie.Program := (TransM.run (translateProgram pgm)).fst
+  let prg: Boogie.Program := (TransM.run Inhabited.default (translateProgram pgm)).fst
   let axiomsDecls := extractAxiomsDecl prg
   let axioms := axiomsDecls.map extractExpr
   axioms.map (fun a => replaceTypesByFTV a typeArgs)

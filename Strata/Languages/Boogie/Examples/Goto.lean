@@ -148,4 +148,4 @@ Obligation: a7
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" gotoPgm
+#eval verify "cvc5" Inhabited.default gotoPgm

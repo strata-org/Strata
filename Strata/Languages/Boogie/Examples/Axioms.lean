@@ -96,4 +96,4 @@ Obligation: use_a2_again
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" axiomPgm
+#eval verify "cvc5" Inhabited.default axiomPgm

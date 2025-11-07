@@ -71,7 +71,7 @@ def eval (E : Env) (p : Procedure) : List (Procedure × Env) :=
                                   (.expr check.expr)).pushElem
                                   (.label label)
                                   (.msg "FreePostCondition")))
-                | _ => (.assert label check.expr))
+                | _ => (.assert label check.expr check.md))
       p.spec.postconditions
   let precond_assumes :=
     List.map (fun (label, check) => (.assume label check.expr)) p.spec.preconditions

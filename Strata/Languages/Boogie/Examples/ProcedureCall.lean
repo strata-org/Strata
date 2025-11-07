@@ -120,7 +120,7 @@ Obligation: assert_0
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" globalCounterPgm
+#eval verify "cvc5" Inhabited.default globalCounterPgm
 
 ---------------------------------------------------------------------
 

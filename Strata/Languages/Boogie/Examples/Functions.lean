@@ -54,6 +54,6 @@ Obligation: fooEq
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" funcPgm
+#eval verify "cvc5" Inhabited.default funcPgm
 
 ---------------------------------------------------------------------
