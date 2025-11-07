@@ -132,28 +132,31 @@ def TContext.subst (T : TContext IDMeta) (S : Subst) : TContext IDMeta :=
 
 ---------------------------------------------------------------------
 
-structure TGenState where
+/--
+The state of a generator used by typing.
+-/
+structure TState where
   tyGen : Nat := 0
   tyPrefix : String := "$__ty"
   exprGen : Nat := 0
   exprPrefix : String := "$__var"
 deriving Repr, Inhabited
 
-def TGenState.init : TGenState := {}
+def TState.init : TState := {}
 
-def TGenState.incTyGen (state : TGenState) : TGenState :=
+def TState.incTyGen (state : TState) : TState :=
   { state with tyGen := state.tyGen + 1 }
 
-def TGenState.genTySym (state : TGenState) : TyIdentifier × TGenState :=
+def TState.genTySym (state : TState) : TyIdentifier × TState :=
   let new_idx := state.tyGen
   let state := state.incTyGen
   let new_var := state.tyPrefix ++ toString new_idx
   (new_var, state)
 
-def TGenState.incExprGen (state : TGenState) : TGenState :=
+def TState.incExprGen (state : TState) : TState :=
   { state with exprGen := state.exprGen + 1 }
 
-def TGenState.genExprSym (state : TGenState) : String × TGenState :=
+def TState.genExprSym (state : TState) : String × TState :=
   let new_idx := state.exprGen
   let state := state.incExprGen
   let new_var := state.exprPrefix ++ toString new_idx
@@ -206,7 +209,7 @@ instance : ToFormat KnownTypes where
 
 structure TGenEnv (IDMeta : Type) where
   context : TContext IDMeta
-  genState : TGenState
+  genState : TState
 deriving Inhabited
 
 /--
@@ -256,11 +259,11 @@ def KnownTypes.default : KnownTypes :=
 
 def TGenEnv.default : TGenEnv IDMeta :=
   { context := {},
-    genState := TGenState.init,
+    genState := TState.init,
   }
 
 def TEnv.default : TEnv IDMeta :=
-  let g := {context := {}, genState := TGenState.init}
+  let g := {context := {}, genState := TState.init}
   { genEnv := g}
 
 def LContext.default : LContext IDMeta :=
@@ -270,7 +273,7 @@ def LContext.default : LContext IDMeta :=
 
 instance [ToFormat IDMeta] : ToFormat (TEnv IDMeta) where
   format s :=
-    let g:TGenState := {
+    let g:TState := {
       tyGen := s.genEnv.genState.tyGen,
       tyPrefix := s.genEnv.genState.tyPrefix,
       exprGen := s.genEnv.genState.exprGen,
