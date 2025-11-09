@@ -153,7 +153,7 @@ mutual
   deriving Repr, Lean.FromJson, Lean.ToJson
 
   structure TS_CallExpression extends BaseNode where
-    callee : TS_Identifier
+    callee : TS_Expression
     arguments : Array TS_Expression
   deriving Repr, Lean.FromJson, Lean.ToJson
 
@@ -189,7 +189,6 @@ mutual
     | TS_FunctionExpression: TS_FunctionExpression → TS_Expression
     | TS_ArrowFunctionExpression: TS_ArrowFunctionExpression → TS_Expression
   deriving Repr, Lean.FromJson, Lean.ToJson
-
 
   structure TS_VariableDeclarator extends BaseNode where
     id : TS_Identifier
