@@ -7,3 +7,8 @@ arr.forEach((value: number, index: number) => {
 
 // map
 let mappedArr = arr.map((value: number) => {return value + 1});
+
+// filter
+let filteredArr = arr.filter((value: number) => {
+    return value > 5;
+});
