@@ -213,20 +213,6 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
     -- Use allocSimple which handles the object type automatically
     Heap.HExpr.allocSimple fields
 
-  | .TS_UnaryExpression e =>
-    let arg := translate_expr e.argument
-    match e.operator with
-    | "-" =>
-      -- Unary minus: -x
-      Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Sub" none) (Heap.HExpr.int 0)) arg
-    | "+" =>
-      -- Unary plus: +x (just return the argument)
-      arg
-    | "!" =>
-      -- Logical NOT: !x
-      Heap.HExpr.app (Heap.HExpr.deferredOp "Bool.Not" none) arg
-    | _ => panic! s!"Unsupported unary operator: {e.operator}"
-
   | .TS_CallExpression call =>
     match call.callee with
       | .TS_MemberExpression member =>
@@ -275,6 +261,13 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
               argExprs.foldl (fun acc argExpr =>
                 Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "ArrayConcat" none) acc) argExpr
               ) objExpr
+          | "join" =>
+            -- arr.join(separator?) - join elements into a string
+            let separator :=
+              match call.arguments[0]? with
+              | some sepExpr => translate_expr sepExpr
+              | none => Heap.HExpr.string ","
+            Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "ArrayJoin" none) objExpr) separator
           | methodName =>
             Heap.HExpr.lambda (.fvar s!"call_{methodName}" none)
         | _ =>

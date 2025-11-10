@@ -196,6 +196,12 @@ partial def evalApp (state : HState) (originalExpr e1 e2 : HExpr) : HState × HE
   | .app (.deferredOp "ArrayConcat" _) arr1Expr =>
     -- Second application to ArrayConcat - now we can evaluate
     evalArrayConcat state2 arr1Expr e2'
+  | .deferredOp "ArrayJoin" _ =>
+    -- First application to ArrayJoin - return partially applied
+    (state2, .app (.deferredOp "ArrayJoin" none) e2')
+  | .app (.deferredOp "ArrayJoin" _) arrExpr =>
+    -- Second application to ArrayJoin - now we can evaluate
+    evalArrayJoin state2 arrExpr e2'
   | .deferredOp op _ =>
     -- First application to a deferred operation - return partially applied
     (state2, .app (.deferredOp op none) e2')
@@ -446,6 +452,52 @@ partial def evalArrayConcat (state : HState) (arr1Expr arr2Expr : HExpr) : HStat
   | _, _ =>
     -- One or both expressions didn't evaluate to addresses
     (state2, .lambda (LExpr.const "error_invalid_array_for_concat" none))
+
+-- Handle array join: arr.join(separator?) - joins elements into a string
+partial def evalArrayJoin (state : HState) (arrExpr sepExpr : HExpr) : HState × HExpr :=
+  let (state1, arrVal) := evalHExpr state arrExpr
+  let (state2, sepVal) := evalHExpr state1 sepExpr
+  let formatToString : Std.Format → String := fun fmt => fmt.pretty 80
+  let separator : String :=
+    match sepVal with
+    | .null => ","
+    | .lambda (LExpr.const s _) => s
+    | _ =>
+      match sepVal.toLambda? with
+      | some (LExpr.const s _) => s
+      | _ => formatToString (repr sepVal)
+  match arrVal with
+  | .address addr =>
+    match state2.getObject addr with
+    | some _ =>
+      let len := state2.getArrayLength addr
+      let stringOf : HExpr → String := fun value =>
+        match value with
+        | .lambda (LExpr.const s _) => s
+        | .lambda _ => formatToString (repr value)
+        | .address _ => "[object Object]"
+        | .null => ""
+        | _ => formatToString (repr value)
+      let rec collect (idx : Nat) (st : HState) (acc : List String) : HState × List String :=
+        if idx ≥ len then (st, acc.reverse)
+        else
+          match st.getField addr idx with
+          | some rawVal =>
+            let (st1, evaluated) := evalHExpr st rawVal
+            let str := stringOf evaluated
+            collect (idx + 1) st1 (str :: acc)
+          | none =>
+            -- Sparse slot - treated as empty string but still contributes separator
+            collect (idx + 1) st ("" :: acc)
+      let (stateFinal, parts) := collect 0 state2 []
+      let resultString :=
+        match parts with
+        | [] => ""
+        | _ => String.intercalate separator parts
+      (stateFinal, Heap.HExpr.string resultString)
+    | none => (state2, .lambda (LExpr.const "error_invalid_address" none))
+  | _ =>
+    (state2, .lambda (LExpr.const "error_invalid_array_for_join" none))
 
 partial def extractFieldIndex (expr : HExpr) : Option Nat :=
   match expr with
