@@ -138,11 +138,11 @@ def quant (qk : QuantifierKind) (x : String) (ty : TermType) (tr : Term) (e : Te
       -- If both triggers are simple, use the first variable as trigger
       -- Otherwise use the inner trigger (which is more meaningful)
       let coalescedTrigger := if isSimpleTrigger tr2 then (mkSimpleTrigger x ty) else tr2
-      .quant qk ([(x, ty)] ++ args2) coalescedTrigger e2
+      .quant qk ([⟨x, ty⟩] ++ args2) coalescedTrigger e2
     else
-      .quant qk [(x, ty)] tr e
+      .quant qk [⟨x, ty⟩] tr e
   | _ =>
-    .quant qk [(x, ty)] tr e
+    .quant qk [⟨x, ty⟩] tr e
 
 ---------- SMTLib theory of integer numbers (`Ints`) ----------
 

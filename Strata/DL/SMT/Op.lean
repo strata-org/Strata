@@ -29,7 +29,7 @@ namespace Strata.SMT
 structure TermVar where
   id : String
   ty : TermType
-deriving Repr, DecidableEq, Inhabited
+deriving Repr, DecidableEq, Inhabited, Hashable
 
 def TermVar.lt (v v' : TermVar) : Bool :=
   v.id < v'.id || (v.id = v'.id && v.ty < v'.ty)
