@@ -63,7 +63,7 @@ def transformSimpleTypeToFreeVariable (ty: Lambda.LMonoTy) (to_replace: List Str
 -/
 def replaceTypesByFTV (expr: Lambda.LExpr Lambda.LMonoTy Boogie.Visibility) (to_replace: List String): Lambda.LExpr Lambda.LMonoTy Boogie.Visibility :=
   match expr with
-    | .const c oty => .const c (oty.map (fun t => transformSimpleTypeToFreeVariable t to_replace))
+    | .const c => .const c
     | .op o oty => .op o (oty.map (fun t => transformSimpleTypeToFreeVariable t to_replace))
     | .fvar name oty => .fvar name (oty.map (fun t => transformSimpleTypeToFreeVariable t to_replace))
     | .mdata info e => .mdata info (replaceTypesByFTV e to_replace)

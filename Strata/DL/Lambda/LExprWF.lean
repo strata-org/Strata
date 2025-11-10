@@ -29,7 +29,7 @@ in it.
 -/
 def freeVars (e : LExpr LMonoTy IDMeta) : IdentTs IDMeta :=
   match e with
-  | .const _ _ => []
+  | .const _ => []
   | .op _ _ => []
   | .bvar _ => []
   | .fvar x ty => [(x, ty)]
@@ -97,7 +97,7 @@ by; it replaces all leaves of the form `(.bvar k)` with `s`.
 -/
 def substK (k : Nat) (s : LExpr LMonoTy IDMeta) (e : LExpr LMonoTy IDMeta) : LExpr LMonoTy IDMeta :=
   match e with
-  | .const c ty => .const c ty
+  | .const c => .const c
   | .op o ty => .op o ty
   | .bvar i => if (i == k) then s else .bvar i
   | .fvar y ty => .fvar y ty
@@ -151,7 +151,7 @@ of abstractions that have passed by; it replaces all `(.fvar x)` with
 -/
 def varClose (k : Nat) (x : IdentT IDMeta) (e : LExpr LMonoTy IDMeta) : LExpr LMonoTy IDMeta :=
   match e with
-  | .const c ty => .const c ty
+  | .const c => .const c
   | .op o ty => .op o ty
   | .bvar i => .bvar i
   | .fvar y yty => if (x.fst == y) && (yty == x.snd) then
@@ -189,7 +189,7 @@ Example of a term that is not locally closed: `(.abs "x" (.bvar 1))`.
 -/
 def lcAt (k : Nat) (e : LExpr LMonoTy IDMeta) : Bool :=
   match e with
-  | .const _ _ => true
+  | .const _ => true
   | .op _ _ => true
   | .bvar i => i < k
   | .fvar _ _ => true
@@ -285,7 +285,7 @@ variable in `e` with `s`.
 def substFvar {IDMeta: Type} [DecidableEq IDMeta] (e : LExpr LMonoTy IDMeta) (fr : Identifier IDMeta) (to : LExpr LMonoTy IDMeta)
   : (LExpr LMonoTy IDMeta) :=
   match e with
-  | .const _ _ => e | .bvar _ => e | .op _ _ => e
+  | .const _ => e | .bvar _ => e | .op _ _ => e
   | .fvar  name _ => if name == fr then to else e
   | .mdata info e' => .mdata info (substFvar e' fr to)
   | .abs   ty e' => .abs ty (substFvar e' fr to)

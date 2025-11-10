@@ -60,6 +60,9 @@ instance : Quote Decimal where
 
 end
 
+
+
+
 end Decimal
 
 #guard s!"{Decimal.mk 0 0}" = "0.0"
