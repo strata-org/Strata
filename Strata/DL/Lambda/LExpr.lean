@@ -200,8 +200,8 @@ Note that we are type-agnostic here.
 -/
 def denoteInt (e : (LExpr LMonoTy IDMeta)) : Option Int :=
   match e with
-    | .intConst i => some i
-    | _ => none
+  | .intConst i => some i
+  | _ => none
 
 /--
 If `e` is an `LExpr` real, then denote that into a Lean `String`.
@@ -672,48 +672,19 @@ def elabLConst (IDMeta : Type) [MkIdent IDMeta] : Lean.Syntax → MetaM Expr
   | `(lconst| #$n:num)  => do
     let typeTypeExpr := mkConst ``LTy
     return mkAppN (.const ``LExpr.intConst []) #[typeTypeExpr, MkIdent.toExpr IDMeta, mkIntLit n]
-  -- | `(lconstmono| (#$n:num : $ty:lmonoty)) => do
-  --   let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy ty
-  --   let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
-  --   let typeTypeExpr := mkConst ``LMonoTy
-  --   return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr IDMeta, mkStrLit (toString n.getNat), lmonoty]
   | `(lconst| #-$n:num) => do
     let typeTypeExpr := mkConst ``LTy
     return mkAppN (.const ``LExpr.intConst []) #[typeTypeExpr, MkIdent.toExpr IDMeta, mkNegLit n]
-    -- let none ← mkNone (mkConst ``LMonoTy)
-    -- let typeTypeExpr := mkConst ``LMonoTy
-    -- return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr IDMeta, mkStrLit ("-" ++ (toString n.getNat)), none]
-  -- | `(lconstmono| (#-$n:num : $ty:lmonoty)) => do
-  --   let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy ty
-  --   let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
-  --   let typeTypeExpr := mkConst ``LMonoTy
-  --   return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr IDMeta, mkStrLit ("-" ++ (toString n.getNat)), lmonoty]
   | `(lconst| #true)    => do
     let typeTypeExpr := mkConst ``LTy
     return mkAppN (.const ``LExpr.boolConst []) #[typeTypeExpr, MkIdent.toExpr IDMeta, toExpr true]
-  -- | `(lconstmono| (#true : $ty:lmonoty))    => do
-  --   let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy ty
-  --   let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
-  --   let typeTypeExpr := mkConst ``LMonoTy
-  --   return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr IDMeta, mkStrLit "true", lmonoty]
   | `(lconst| #false)   =>  do
     let typeTypeExpr := mkConst ``LTy
     return mkAppN (.const ``LExpr.boolConst []) #[typeTypeExpr, MkIdent.toExpr IDMeta, toExpr false]
-  -- | `(lconstmono| (#false : $ty:lmonoty))    => do
-  --   let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy ty
-  --   let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
-  --   let typeTypeExpr := mkConst ``LMonoTy
-  --   return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr IDMeta, mkStrLit "false", lmonoty]
   | `(lconst| #$s:ident) => do
     let s := toString s.getId
     let typeTypeExpr := mkConst ``LTy
     return mkAppN (.const ``LExpr.strConst []) #[typeTypeExpr, MkIdent.toExpr IDMeta, mkStrLit s]
-  -- | `(lconstmono| (#$s:ident : $ty:lmonoty)) => do
-  --   let lmonoty ← Lambda.LTy.Syntax.elabLMonoTy ty
-  --   let lmonoty ← mkSome (mkConst ``LMonoTy) lmonoty
-  --   let s := toString s.getId
-  --   let typeTypeExpr := mkConst ``LMonoTy
-  --   return mkAppN (.const ``LExpr.const []) #[typeTypeExpr, MkIdent.toExpr IDMeta, mkStrLit s, lmonoty]
   | _ => throwUnsupportedSyntax
 
 declare_syntax_cat lop

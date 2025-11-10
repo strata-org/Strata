@@ -75,8 +75,6 @@ def fromRat (r : Rat) : Option Decimal :=
       let exponent := -(k : Int)
       some (normalize mantissa exponent)
 
--- Tests
-
 #guard Decimal.fromRat (5 : Rat) = some (Decimal.mk 5 0)
 #guard Decimal.fromRat (0 : Rat) = some Decimal.zero
 #guard Decimal.fromRat (-3 : Rat) = some (Decimal.mk (-3) 0)
