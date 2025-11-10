@@ -111,7 +111,7 @@ instance  : SizeOf (LExpr TypeType IDMeta) where
   sizeOf := LExpr.sizeOf
 
 /--
-Get type of a constant `c`c
+Get type of a constant `c`
 -/
 def LConst.ty (c: LConst) : LMonoTy :=
   match c with
@@ -121,6 +121,9 @@ def LConst.ty (c: LConst) : LMonoTy :=
   | .realConst _ => .real
   | .boolConst _ => .bool
 
+/--
+Get type name of a constant `c` (e.g. "int")
+-/
 def LConst.tyName (c: LConst) : String :=
   match c with
   | .intConst _ => "int"
@@ -129,6 +132,9 @@ def LConst.tyName (c: LConst) : String :=
   | .realConst _ => "real"
   | .boolConst _ => "bool"
 
+/--
+Get type name of a constant `c` as a Format (e.g. "Integers")
+-/
 def LConst.tyNameFormat (c: LConst) : Format :=
   match c with
   | .intConst _ => f!"Integers"

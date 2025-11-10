@@ -141,8 +141,8 @@ def evalCore (n' : Nat) (σ : (LState IDMeta)) (e : (LExpr LMonoTy IDMeta)) : (L
 def evalIte (n' : Nat) (σ : (LState IDMeta)) (c t f : (LExpr LMonoTy IDMeta)) : (LExpr LMonoTy IDMeta) :=
   let c' := eval n' σ c
   match c' with
-  | .boolConst true => eval n' σ t
-  | .boolConst false => eval n' σ f
+  | .true => eval n' σ t
+  | .false => eval n' σ f
   | _ =>
     -- It's important to at least substitute `.fvar`s in both branches of the
     -- `ite` here so that we can replace the variables by the values in the

@@ -88,7 +88,7 @@ def loop_elimination_statement(s : C_Simp.Statement) : Boogie.Statement :=
       let arbitrary_iter_assumes := .block "arbitrary_iter_assumes" {ss := [(Boogie.Statement.assume "assume_guard" (translate_expr guard) {}), (Boogie.Statement.assume "assume_invariant" (translate_expr invariant) {}), (Boogie.Statement.assume "assume_measure_pos" measure_pos {})]} {}
       let measure_old_value_assign : Boogie.Statement := .init "special-name-for-old-measure-value" (.forAll [] (.tcons "int" [])) (translate_expr measure) {}
       let measure_decreases : Boogie.Statement := .assert "measure_decreases" (.app (.app (.op "Int.Lt" none) (translate_expr measure)) (.fvar "special-name-for-old-measure-value" none)) {}
-      let measure_imp_not_guard : Boogie.Statement := .assert "measure_imp_not_guard" (.ite (.app (.app (.op "Int.Le" none) (translate_expr measure)) (.intConst 0)) (.app (.op "Bool.Not" none) (translate_expr guard)) (.boolConst true)) {}
+      let measure_imp_not_guard : Boogie.Statement := .assert "measure_imp_not_guard" (.ite (.app (.app (.op "Int.Le" none) (translate_expr measure)) (.intConst 0)) (.app (.op "Bool.Not" none) (translate_expr guard)) .true) {}
       let maintain_invariant : Boogie.Statement := .assert "arbitrary_iter_maintain_invariant" (translate_expr invariant) {}
       let body_statements : List Boogie.Statement := body.ss.map translate_stmt
       let arbitrary_iter_facts : Boogie.Statement := .block "arbitrary iter facts" {ss := [havocd, arbitrary_iter_assumes, measure_old_value_assign] ++ body_statements ++ [measure_decreases, measure_imp_not_guard, maintain_invariant]} {}

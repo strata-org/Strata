@@ -72,7 +72,7 @@ def exprToJson (I : Type) [IdentToStr (Lambda.Identifier I)] (e : Lambda.LExpr L
       | .intConst value => mkConstant (toString value) "10" (mkSourceLocation "ex_prog.c" loc.functionName loc.lineNum)
       | _ => exprToJson (I:=I) right loc
     mkBinaryOp (opToStr (IdentToStr.toStr op)) loc.lineNum loc.functionName leftJson rightJson
-  | .boolConst true => mkConstantTrue (mkSourceLocation "ex_prog.c" loc.functionName "3")
+  | .true => mkConstantTrue (mkSourceLocation "ex_prog.c" loc.functionName "3")
   | .intConst n =>
     mkConstant (toString n) "10" (mkSourceLocation "ex_prog.c" loc.functionName "14")
   | .fvar name _ =>
@@ -200,7 +200,7 @@ end
 
 def listToExpr (l: ListMap BoogieLabel Boogie.Procedure.Check) : Boogie.Expression.Expr :=
   match l with
-  | _ => .boolConst true
+  | _ => .true
 
 def createContractSymbolFromAST (func : Boogie.Procedure) : CBMCSymbol :=
   let location : Location := {

@@ -64,7 +64,7 @@ def lexprToCBMC (expr : Strata.C_Simp.Expression.Expr) (functionName : String) :
         ])
       ])
       (mkConstant (toString value) "10" (mkSourceLocation "from_andrew.c" functionName "2" cfg) cfg)
-  | .boolConst true =>
+  | .true =>
     Json.mkObj [
       ("id", "notequal"),
       ("namedSub", Json.mkObj [

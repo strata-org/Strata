@@ -117,7 +117,7 @@ instance : Inhabited (List Statement × TransBindings) where
   default := ([], {})
 
 instance : Inhabited (C_Simp.Function × TransBindings) where
-  default := ({name := "badfun", pre := .boolConst true, post := .boolConst true, body := [], ret_ty := (.tcons "bad" []), inputs := {} }, {})
+  default := ({name := "badfun", pre := .true, post := .true, body := [], ret_ty := (.tcons "bad" []), inputs := {} }, {})
 
 instance : Inhabited (List C_Simp.Function × TransBindings) where
   default := ([], {})
@@ -187,9 +187,9 @@ partial def translateExpr (bindings : TransBindings) (arg : Arg) :
   match op, args with
   -- Constants/Literals
   | .fn _ q`C_Simp.btrue, [] =>
-    return .boolConst true
+    return .true
   | .fn _ q`C_Simp.bfalse, [] =>
-    return .boolConst false
+    return .false
   | .fn _ q`C_Simp.to_int, [xa] =>
     let n ← translateNat xa
     return .intConst n

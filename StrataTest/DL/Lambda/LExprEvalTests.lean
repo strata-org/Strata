@@ -61,7 +61,7 @@ open Std (ToFormat Format format)
 
 /-- info: ((λ %1) #true) -/
 #guard_msgs in
-#eval format $ LExpr.eval (IDMeta:=Unit) 10 ∅ (.app (.mdata ⟨"x"⟩ (.abs .none (.bvar 1))) (.boolConst true))
+#eval format $ LExpr.eval (IDMeta:=Unit) 10 ∅ (.app (.mdata ⟨"x"⟩ (.abs .none (.bvar 1))) .true)
 
 /- Tests for evaluation of BuiltInFunctions. -/
 

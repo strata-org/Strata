@@ -161,13 +161,13 @@ instance : Inhabited (List Boogie.Statement × TransBindings) where
   default := ([], {})
 
 instance : Inhabited Boogie.Decl where
-  default := .var "badguy" (.forAll [] (.tcons "bool" [])) (.boolConst false)
+  default := .var "badguy" (.forAll [] (.tcons "bool" [])) .false
 
 instance : Inhabited (Procedure.CheckAttr) where
   default := .Default
 
 instance : Inhabited (Boogie.Decl × TransBindings) where
-  default := (.var "badguy" (.forAll [] (.tcons "bool" []))  (.boolConst false), {})
+  default := (.var "badguy" (.forAll [] (.tcons "bool" [])) .false, {})
 
 instance : Inhabited (Boogie.Decls × TransBindings) where
   default := ([], {})
@@ -640,9 +640,9 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   match op, args with
   -- Constants/Literals
   | .fn _ q`Boogie.btrue, [] =>
-    return .boolConst true
+    return .true
   | .fn _ q`Boogie.bfalse, [] =>
-    return .boolConst false
+    return .false
   | .fn _ q`Boogie.natToInt, [xa] =>
     let n ← translateNat xa
     return .intConst n

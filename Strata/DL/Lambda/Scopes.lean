@@ -81,7 +81,7 @@ info: (x : int) → #8
 (z : int) → (if #true then #100 else (z : int))
 -/
 #guard_msgs in
-#eval format $ Scope.merge (IDMeta:=Unit) (.boolConst true)
+#eval format $ Scope.merge (IDMeta:=Unit) .true
               [(("x"), (mty[int], .intConst 8)),
                (("z"), (mty[int], .intConst 100))]
               [(("x"), (mty[int], .intConst 8))]
@@ -92,7 +92,7 @@ info: (x : int) → (if #true then #8 else (x : int))
 (y : int) → (if #true then (y : int) else #8)
 -/
 #guard_msgs in
-#eval format $ Scope.merge (IDMeta:=Unit) (.boolConst true)
+#eval format $ Scope.merge (IDMeta:=Unit) .true
               [(("x"), (mty[int], .intConst 8)),
                (("z"), (mty[int], .intConst 100))]
               [(("y"), (mty[int], .intConst 8))]
@@ -103,7 +103,7 @@ info: (y : int) → (if #true then #8 else (y : int))
 (z : int) → (if #true then (z : int) else #100)
 -/
 #guard_msgs in
-#eval format $ Scope.merge (IDMeta:=Unit) (.boolConst true)
+#eval format $ Scope.merge (IDMeta:=Unit) .true
               [(("y"), (mty[int], .intConst 8 ))]
               [(("x"), (mty[int], .intConst 8)),
                (("z"), (mty[int], .intConst 100))]
@@ -115,7 +115,7 @@ info: (a : int) → (if #true then #8 else (a : int))
 (z : int) → (if #true then (z : int) else #100)
 -/
 #guard_msgs in
-#eval format $ Scope.merge (IDMeta:=Unit) (.boolConst true)
+#eval format $ Scope.merge (IDMeta:=Unit) .true
                 [(("a"), (mty[int], (.intConst 8))),
                  (("x"), (mty[int], (.intConst 800))),
                  (("b"), (mty[int], (.intConst 900)))]
