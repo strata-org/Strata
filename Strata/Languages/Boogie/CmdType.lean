@@ -42,7 +42,7 @@ def preprocess (C: LContext Visibility) (T : TEnv Visibility) (ty : LTy) : Excep
 
 def postprocess (_: LContext Visibility) (T : TEnv Visibility) (ty : LTy) : Except Format (LTy × TEnv Visibility) := do
   if h: ty.isMonoType then
-    let ty := LMonoTy.subst T.state.substInfo.subst (ty.toMonoType h)
+    let ty := LMonoTy.subst T.stateSubstInfo.subst (ty.toMonoType h)
     .ok (.forAll [] ty, T)
   else
     .error f!"[postprocess] Expected mono-type; instead got {ty}"
@@ -88,7 +88,7 @@ def canonicalizeConstraints (constraints : List (LTy × LTy)) : Except Format Co
 
 def unifyTypes (T : TEnv Visibility) (constraints : List (LTy × LTy)) : Except Format (TEnv Visibility) := do
   let constraints ← canonicalizeConstraints constraints
-  let S ← Constraints.unify constraints T.state.substInfo
+  let S ← Constraints.unify constraints T.stateSubstInfo
   let T := T.updateSubst S
   return T
 
