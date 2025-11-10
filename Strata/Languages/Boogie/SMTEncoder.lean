@@ -482,7 +482,7 @@ def toSMTTermString (e : (LExpr LMonoTy Visibility)) (E : Env := Env.init) (ctx 
    (.eq (.bvar 1) (.bvar 0))))
 
 /--
-info: "; x\n(declare-fun f0 () Int)\n(define-fun t0 () Bool (exists (($__bv0 Int)) (= $__bv0 f0)))\n"
+info: "; x\n(declare-const f0 Int)\n(define-fun t0 () Bool (exists (($__bv0 Int)) (= $__bv0 f0)))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -490,7 +490,7 @@ info: "; x\n(declare-fun f0 () Int)\n(define-fun t0 () Bool (exists (($__bv0 Int
    (.eq (.bvar 0) (.fvar "x" (.some .int))))
 
 /--
-info: "; f\n(declare-fun f0 (Int) Int)\n; x\n(declare-fun f1 () Int)\n(define-fun t0 () Bool (exists (($__bv0 Int)) (! (= $__bv0 f1) :pattern ((f0 $__bv0)))))\n"
+info: "; f\n(declare-fun f0 (Int) Int)\n; x\n(declare-const f1 Int)\n(define-fun t0 () Bool (exists (($__bv0 Int)) (! (= $__bv0 f1) :pattern ((f0 $__bv0)))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -499,7 +499,7 @@ info: "; f\n(declare-fun f0 (Int) Int)\n; x\n(declare-fun f1 () Int)\n(define-fu
 
 
 /--
-info: "; f\n(declare-fun f0 (Int) Int)\n; x\n(declare-fun f1 () Int)\n(define-fun t0 () Bool (exists (($__bv0 Int)) (! (= (f0 $__bv0) f1) :pattern ((f0 $__bv0)))))\n"
+info: "; f\n(declare-fun f0 (Int) Int)\n; x\n(declare-const f1 Int)\n(define-fun t0 () Bool (exists (($__bv0 Int)) (! (= (f0 $__bv0) f1) :pattern ((f0 $__bv0)))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -513,7 +513,7 @@ info: "; f\n(declare-fun f0 (Int) Int)\n; x\n(declare-fun f1 () Int)\n(define-fu
    (.eq (.app (.fvar "f" (.some (.arrow .int .int))) (.bvar 0)) (.fvar "x" (.some .int))))
 
 /--
-info: "; f\n(declare-fun f0 () (arrow Int Int))\n; f\n(declare-fun f1 (Int) Int)\n; x\n(declare-fun f2 () Int)\n(define-fun t0 () Bool (exists (($__bv0 Int)) (! (= (f1 $__bv0) f2) :pattern (f0))))\n"
+info: "; f\n(declare-const f0 (arrow Int Int))\n; f\n(declare-fun f1 (Int) Int)\n; x\n(declare-const f2 Int)\n(define-fun t0 () Bool (exists (($__bv0 Int)) (! (= (f1 $__bv0) f2) :pattern (f0))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -529,7 +529,7 @@ info: "; f\n(declare-fun f0 () (arrow Int Int))\n; f\n(declare-fun f1 (Int) Int)
    }})
 
 /--
-info: "; f\n(declare-fun f0 (Int Int) Int)\n; x\n(declare-fun f1 () Int)\n(define-fun t0 () Bool (forall (($__bv0 Int) ($__bv1 Int)) (! (= (f0 $__bv1 $__bv0) f1) :pattern ((f0 $__bv1 $__bv0)))))\n"
+info: "; f\n(declare-fun f0 (Int Int) Int)\n; x\n(declare-const f1 Int)\n(define-fun t0 () Bool (forall (($__bv0 Int) ($__bv1 Int)) (! (= (f0 $__bv1 $__bv0) f1) :pattern ((f0 $__bv1 $__bv0)))))\n"
 -/
 #guard_msgs in
 #eval toSMTTermString
@@ -547,7 +547,7 @@ info: "; f\n(declare-fun f0 (Int Int) Int)\n; x\n(declare-fun f1 () Int)\n(defin
 
 
 /--
-info: "; f\n(declare-fun f0 (Int Int) Int)\n; x\n(declare-fun f1 () Int)\n(define-fun t0 () Bool (forall (($__bv0 Int) ($__bv1 Int)) (= (f0 $__bv1 $__bv0) f1)))\n"
+info: "; f\n(declare-fun f0 (Int Int) Int)\n; x\n(declare-const f1 Int)\n(define-fun t0 () Bool (forall (($__bv0 Int) ($__bv1 Int)) (= (f0 $__bv1 $__bv0) f1)))\n"
 -/
 #guard_msgs in -- No valid trigger
 #eval toSMTTermString
