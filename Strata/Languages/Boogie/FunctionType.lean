@@ -38,7 +38,7 @@ def typeCheck (C: Boogie.Expression.TyContext) (T : Boogie.Expression.TyEnv) (fu
     let (bodya, T) ← LExprT.fromLExpr C T body
     let bodyty := bodya.toLMonoTy
     let (retty, T) ← func.outputPolyType.instantiateWithCheck C T
-    let S ← Constraints.unify [(retty, bodyty)] T.state.substInfo
+    let S ← Constraints.unify [(retty, bodyty)] T.stateSubstInfo
     let T := T.updateSubst S
     let T := T.popContext
     let new_func := { func with body := bodya.toLExpr }
