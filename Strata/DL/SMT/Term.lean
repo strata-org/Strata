@@ -78,11 +78,6 @@ def Term.isVar (t : Term) : Bool :=
   | .var _ => true
   | _ => false
 
-def Term.isFreeVar (t : Term) : Bool :=
-  match t with
-  | .var v => !v.isBound
-  | _ => false
-
 mutual
 def Term.hasDecEq (t t' : Term) : Decidable (t = t') := by
   cases t <;> cases t' <;>

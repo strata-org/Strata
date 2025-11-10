@@ -27,7 +27,6 @@ simplify pattern matching against them within rewrite rules.
 namespace Strata.SMT
 
 structure TermVar where
-  isBound : Bool
   id : String
   ty : TermType
 deriving Repr, DecidableEq, Inhabited

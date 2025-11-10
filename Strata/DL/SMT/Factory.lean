@@ -115,13 +115,13 @@ def app : Function → List Term → Term
   | .uf f, ts => .app (.uf f) ts f.out
 
 def isSimpleTrigger : Term → Bool
-| .var v => v.isBound
+| .var _ => true
 | .app .triggers [] .trigger => true
 | .app .triggers [t] .trigger => isSimpleTrigger t
 | _ => false
 
 def mkSimpleTrigger (x : String) (ty : TermType) : Term :=
-  .app .triggers [.var (TermVar.mk true x ty)] .trigger -- TODO: empty list instead?
+  .app .triggers [.var (TermVar.mk x ty)] .trigger -- TODO: empty list instead?
 
 theorem mkSimpleTriggerIsSimple: isSimpleTrigger (mkSimpleTrigger x ty) := by
   simp [isSimpleTrigger, mkSimpleTrigger]
