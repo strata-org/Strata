@@ -78,7 +78,7 @@ def parse_conditional_expression(j):
 
 def parse_call_expression(j):
     target_j = {
-        "callee": parse_identifier(j['callee']),
+        "callee": parse_expression(j['callee']),
         "arguments": [parse_expression(arg) for arg in j['arguments']]
     }
     add_missing_node_info(j, target_j)
@@ -130,9 +130,6 @@ def parse_member_expression(j):
         'object': parse_expression(j['object']),
         'property': parse_expression(j['property'])
     }
-    add_missing_node_info(j, target_j)
-    return target_j
-
     add_missing_node_info(j, target_j)
     return target_j
 
