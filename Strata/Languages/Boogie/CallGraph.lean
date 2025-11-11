@@ -60,7 +60,7 @@ def buildCallGraph (items : List (String × List String)) : CallGraph :=
   let callerMap :=
     calleeMap.fold (fun acc caller callees =>
       callees.foldl (fun acc' callee =>
-        let existingCallers := (acc'.filter (fun e _ => e == callee)).values.flatten
+        let existingCallers := Option.getD (acc'.get? callee) []
         acc'.insert callee (caller :: existingCallers).dedup)
       acc)
       Std.HashMap.emptyWithCapacity
@@ -175,7 +175,7 @@ def Program.toFunctionAxiomMap (prog : Program) : Std.HashMap String (List Strin
 
   functionAxiomPairs.foldl
     (fun acc (funcName, ax) =>
-      let existing := (acc.filter (fun a _ => a == funcName)).values.flatten
+      let existing := Option.getD (acc.get? funcName) []
       acc.insert funcName (ax.name :: existing).dedup)
     Std.HashMap.emptyWithCapacity
 

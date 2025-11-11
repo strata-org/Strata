@@ -16,7 +16,6 @@ import Strata.Languages.Boogie.Examples.Functions
 import Strata.Languages.Boogie.Examples.Goto
 import Strata.Languages.Boogie.Examples.GeneratedLabels
 import Strata.Languages.Boogie.Examples.Havoc
-import Strata.Languages.Boogie.Examples.RemoveIrrelevantAxioms
 import Strata.Languages.Boogie.Examples.Loops
 import Strata.Languages.Boogie.Examples.Map
 import Strata.Languages.Boogie.Examples.Min
@@ -27,6 +26,7 @@ import Strata.Languages.Boogie.Examples.Quantifiers
 import Strata.Languages.Boogie.Examples.QuantifiersWithTypeAliases
 import Strata.Languages.Boogie.Examples.RealBitVector
 import Strata.Languages.Boogie.Examples.RecursiveProcIte
+import Strata.Languages.Boogie.Examples.RemoveIrrelevantAxioms
 import Strata.Languages.Boogie.Examples.SimpleProc
 import Strata.Languages.Boogie.Examples.String
 import Strata.Languages.Boogie.Examples.TypeAlias
