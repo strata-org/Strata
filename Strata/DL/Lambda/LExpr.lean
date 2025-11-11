@@ -162,7 +162,7 @@ def LExpr.getVars (e : (LExpr TypeType IDMeta)) := match e with
 
 def getOps (e : (LExpr TypeType IDMeta)) := match e with
   | .op name _ => [name]
-  | .const _ _ => [] | .bvar _ => [] | .fvar _ _ => []
+  | .const _ => [] | .bvar _ => [] | .fvar _ _ => []
   | .mdata _ e' => getOps e'
   | .abs _ e' => getOps e'
   | .quant _ _ tr e' =>
