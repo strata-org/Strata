@@ -33,8 +33,8 @@ Canonical values of `LExpr`s.
 Equality is simply `==` (or more accurately, `eqModuloTypes`) for these
 `LExpr`s. Also see `eql` for a version that can tolerate nested metadata.
 -/
-partial def isCanonicalValue (σ : LState IDMeta) (e : LExpr LMonoTy IDMeta) : Bool :=
-  match e with
+def isCanonicalValue (σ : LState IDMeta) (e : LExpr LMonoTy IDMeta) : Bool :=
+  match he: e with
   | .const _ _ => true
   | .abs _ _ =>
     -- We're using the locally nameless representation, which guarantees that
@@ -42,11 +42,17 @@ partial def isCanonicalValue (σ : LState IDMeta) (e : LExpr LMonoTy IDMeta) : B
     -- So we could simplify the following to `closed e`, but leave it as is for
     -- clarity.
     LExpr.closed e
-  | .mdata _ e' => isCanonicalValue σ e'
-  | _ =>
-    match Factory.callOfLFunc σ.config.factory e with
-    | some (_, args, f) => f.isConstr && List.all (args.map (isCanonicalValue σ)) id
+  | .mdata m e' =>
+    isCanonicalValue σ e'
+  | e' =>
+    match h: Factory.callOfLFunc σ.config.factory e with
+    | some (_, args, f) =>
+      f.isConstr && List.all (args.attach.map (fun ⟨ x, _⟩ =>
+        have : x.sizeOf < e'.sizeOf := by
+          have Hsmall := Factory.callOfLFuncSmaller h; grind
+      (isCanonicalValue σ x))) id
     | none => false
+  termination_by e.sizeOf
 
 /--
 Equality of canonical values `e1` and `e2`.
