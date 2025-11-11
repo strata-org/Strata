@@ -94,7 +94,7 @@ namespace LExpr
 instance : Inhabited (LExpr TypeType IDMeta) where
   default := .const "false" none
 
-def LExpr.getVars (e : (LExpr TypeType IDMetad)) := match e with
+def LExpr.getVars (e : (LExpr TypeType IDMeta)) := match e with
   | .const _ _ => [] | .bvar _ => [] | .op _ _ => []
   | .fvar y _ => [y]
   | .mdata _ e' => LExpr.getVars e'
