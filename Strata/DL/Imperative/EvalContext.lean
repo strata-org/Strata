@@ -64,6 +64,10 @@ def PathConditions.addInNewest (ps : PathConditions P) (m : PathCondition P) : P
   let ps := ps.pop
   ps.push new
 
+/-- Remove path conditions with specified names -/
+def PathConditions.removeByNames (ps : PathConditions P) (names : List String) : PathConditions P :=
+  ps.map (fun pc => pc.filter (fun (name, _) => !names.contains name))
+
 /--
 A proof obligation can be discharged by some backend solver or a dedicated
 decision procedure or via denotation into Lean.
