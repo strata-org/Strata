@@ -10,6 +10,7 @@ structure Options where
   typeCheckOnly : Bool
   checkOnly : Bool
   stopOnFirstError : Bool
+  removeIrrelevantAxioms : Bool
   /-- Solver time limit in seconds -/
   solverTimeout : Nat
 
@@ -19,6 +20,7 @@ def Options.default : Options := {
   typeCheckOnly := false,
   checkOnly := false,
   stopOnFirstError := false,
+  removeIrrelevantAxioms := false,
   solverTimeout := 10
 }
 
