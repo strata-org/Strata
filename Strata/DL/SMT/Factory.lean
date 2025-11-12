@@ -115,13 +115,13 @@ def app : Function → List Term → Term
   | .uf f, ts => .app (.uf f) ts f.out
 
 def isSimpleTrigger : Term → Bool
-| .var v => v.isBound
+| .var _ => true
 | .app .triggers [] .trigger => true
 | .app .triggers [t] .trigger => isSimpleTrigger t
 | _ => false
 
 def mkSimpleTrigger (x : String) (ty : TermType) : Term :=
-  .app .triggers [.var (TermVar.mk true x ty)] .trigger -- TODO: empty list instead?
+  .app .triggers [.var (TermVar.mk x ty)] .trigger -- TODO: empty list instead?
 
 theorem mkSimpleTriggerIsSimple: isSimpleTrigger (mkSimpleTrigger x ty) := by
   simp [isSimpleTrigger, mkSimpleTrigger]
@@ -138,11 +138,11 @@ def quant (qk : QuantifierKind) (x : String) (ty : TermType) (tr : Term) (e : Te
       -- If both triggers are simple, use the first variable as trigger
       -- Otherwise use the inner trigger (which is more meaningful)
       let coalescedTrigger := if isSimpleTrigger tr2 then (mkSimpleTrigger x ty) else tr2
-      .quant qk ([(x, ty)] ++ args2) coalescedTrigger e2
+      .quant qk ([⟨x, ty⟩] ++ args2) coalescedTrigger e2
     else
-      .quant qk [(x, ty)] tr e
+      .quant qk [⟨x, ty⟩] tr e
   | _ =>
-    .quant qk [(x, ty)] tr e
+    .quant qk [⟨x, ty⟩] tr e
 
 ---------- SMTLib theory of integer numbers (`Ints`) ----------
 

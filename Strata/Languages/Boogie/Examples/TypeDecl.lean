@@ -123,7 +123,7 @@ type int := bool;
 error: [Strata.Boogie] Type checking error: This type declaration's name is reserved!
 int := bool
 KnownTypes' names:
-[arrow, TriggerGroup, real, string, bitvec, Triggers, int, bool, Map]
+[arrow, TriggerGroup, real, string, bitvec, Triggers, int, bool, Map, regex]
 -/
 #guard_msgs in
 #eval verify "cvc5" typeDeclPgm4
