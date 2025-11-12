@@ -83,13 +83,6 @@ Assumptions:
 Proof Obligation:
 ((~Int.Gt ((~Int.Add $__x0) $__y1)) $__x0)
 
-Label: test_assert
-Assumptions:
-(pre, ((~Int.Gt $__y1) #0))
-
-Proof Obligation:
-((~Int.Gt ((~Int.Add $__x0) $__y1)) $__x0)
-
 Label: post
 Assumptions:
 (pre, ((~Int.Gt $__y1) #0))
@@ -99,12 +92,8 @@ Proof Obligation:
 #true
 
 Wrote problem to vcs/test_assert.smt2.
-Wrote problem to vcs/test_assert.smt2.
 ---
 info:
-Obligation: test_assert
-Result: verified
-
 Obligation: test_assert
 Result: verified
 

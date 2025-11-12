@@ -232,7 +232,7 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
             let Ewn := { Ewn with stk := orig_stk.push [] }
             let cond' := Ewn.env.exprEval cond
             match cond' with
-            | .const "true" _ =>
+            | .true =>
               let Ewns := go' Ewn then_ss .none -- Not allowed to jump into a block
               let Ewns := Ewns.map
                               (fun (ewn : EnvWithNext) =>
@@ -240,7 +240,7 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
                                    let s' := Imperative.Stmt.ite cond' { ss := ss' } { ss := [] } md
                                    { ewn with stk := orig_stk.appendToTop [s']})
               Ewns
-            | .const "false" _ =>
+            | .false =>
               let Ewns := go' Ewn else_ss .none -- Not allowed to jump into a block
               let Ewns := Ewns.map
                               (fun (ewn : EnvWithNext) =>
@@ -256,7 +256,10 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
               let path_conds_false := Ewn.env.pathConditions.push
                                         [(label_false, (.ite cond' LExpr.false LExpr.true))]
               let Ewns_t := go' {Ewn with env := {Ewn.env with pathConditions := path_conds_true}} then_ss .none
-              let Ewns_f := go' {Ewn with env := {Ewn.env with pathConditions := path_conds_false}} else_ss .none
+              -- We empty the deferred proof obligations in the `else` path to
+              -- avoid duplicate verification checks -- the deferred obligations
+              -- would be checked in the `then` branch anyway.
+              let Ewns_f := go' {Ewn with env := {Ewn.env with pathConditions := path_conds_false, deferred := #[]}} else_ss .none
               match Ewns_t, Ewns_f with
                 -- Special case: if there's only one result from each path,
                 -- with no next label, we can merge both states into one.

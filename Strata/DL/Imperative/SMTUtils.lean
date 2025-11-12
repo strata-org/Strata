@@ -91,8 +91,8 @@ def getSMTId {Ident Ty} [ToFormat Ident]
   | (var, none) => .error f!"Expected type-annotated variable {var}!"
   | (var, some ty) => do
     let (var', ty') ← typedVarToSMTFn var ty
-    let key := Strata.SMT.Term.var (Strata.SMT.TermVar.mk false var' ty')
-    .ok (E.terms[key]!)
+    let key : Strata.SMT.UF := { id := var', args := [], out := ty' }
+    .ok (E.ufs[key]!)
 
 def getModel (m : String) : Except Format (List Strata.SMT.CExParser.KeyValue) := do
   let cex ← Strata.SMT.CExParser.parseCEx m
