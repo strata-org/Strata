@@ -70,17 +70,12 @@ inductive Term : Type where
   | none    : TermType → Term
   | some    : Term → Term
   | app     : Op → (args: List Term) → (retTy: TermType) → Term
-  | quant   : QuantifierKind → (args: List (String × TermType)) → (tr: Term) → (body: Term) → Term
-deriving instance Repr, Inhabited for Term
+  | quant   : QuantifierKind → (args: List TermVar) → (tr: Term) → (body: Term) → Term
+deriving Repr, Inhabited
 
 def Term.isVar (t : Term) : Bool :=
   match t with
   | .var _ => true
-  | _ => false
-
-def Term.isFreeVar (t : Term) : Bool :=
-  match t with
-  | .var v => !v.isBound
   | _ => false
 
 mutual
