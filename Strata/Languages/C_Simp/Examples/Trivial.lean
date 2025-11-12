@@ -45,8 +45,7 @@ Errors: #[]
 #eval Strata.C_Simp.TransM.run (Strata.C_Simp.translateProgram (TrivialPgm.commands))
 
 /--
-info: POSTCONDITIONSCHECKS: (post, #true)
-[Strata.Boogie] Type checking succeeded.
+info: [Strata.Boogie] Type checking succeeded.
 
 
 VCs:

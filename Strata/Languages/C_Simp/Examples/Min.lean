@@ -56,8 +56,7 @@ open Strata.C_Simp in
 #eval TransM.run (translateProgram (MinPgm.commands))
 
 /--
-info: POSTCONDITIONSCHECKS: (post, #true)
-[Strata.Boogie] Type checking succeeded.
+info: [Strata.Boogie] Type checking succeeded.
 
 
 VCs:
