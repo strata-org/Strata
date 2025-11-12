@@ -24,7 +24,7 @@ def CallGraph.getCallees (cg : CallGraph) (name : String) : List String :=
 def CallGraph.getCallers (cg : CallGraph) (name : String) : List String :=
   if h : cg.callers.contains name then cg.callers[name]'h else []
 
-/-- Compute transitive closure of callees -/
+/-- Compute transitive closure of callees; the result does not contain `name`. -/
 partial def CallGraph.getCalleesClosure (cg : CallGraph) (name : String) : List String :=
   let rec go (visited : List String) (toVisit : List String) : List String :=
     match toVisit with
@@ -36,11 +36,11 @@ partial def CallGraph.getCalleesClosure (cg : CallGraph) (name : String) : List 
         go (head :: visited) (newCallees ++ tail)
   (go [] [name]).filter (· ≠ name)
 
-/-- Compute transitive closure of callees for multiple names -/
+/-- Compute transitive closure of callees for multiple `names`. -/
 def CallGraph.getAllCalleesClosure (cg : CallGraph) (names : List String) : List String :=
-  (names ++ names.flatMap (cg.getCalleesClosure ·)).dedup
+  names.flatMap (cg.getCalleesClosure ·)
 
-/-- Compute transitive closure of callers -/
+/-- Compute transitive closure of callers; the result does not contain `name`. -/
 partial def CallGraph.getCallersClosure (cg : CallGraph) (name : String) : List String :=
   let rec go (visited : List String) (toVisit : List String) : List String :=
     match toVisit with
@@ -60,7 +60,7 @@ def buildCallGraph (items : List (String × List String)) : CallGraph :=
   let callerMap :=
     calleeMap.fold (fun acc caller callees =>
       callees.foldl (fun acc' callee =>
-        let existingCallers := (acc'.filter (fun e _ => e == callee)).values.flatten
+        let existingCallers := Option.getD (acc'.get? callee) []
         acc'.insert callee (caller :: existingCallers).dedup)
       acc)
       Std.HashMap.emptyWithCapacity
@@ -175,7 +175,7 @@ def Program.toFunctionAxiomMap (prog : Program) : Std.HashMap String (List Strin
 
   functionAxiomPairs.foldl
     (fun acc (funcName, ax) =>
-      let existing := (acc.filter (fun a _ => a == funcName)).values.flatten
+      let existing := Option.getD (acc.get? funcName) []
       acc.insert funcName (ax.name :: existing).dedup)
     Std.HashMap.emptyWithCapacity
 

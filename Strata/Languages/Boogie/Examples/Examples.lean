@@ -27,6 +27,7 @@ import Strata.Languages.Boogie.Examples.QuantifiersWithTypeAliases
 import Strata.Languages.Boogie.Examples.RealBitVector
 import Strata.Languages.Boogie.Examples.RecursiveProcIte
 import Strata.Languages.Boogie.Examples.Regex
+import Strata.Languages.Boogie.Examples.RemoveIrrelevantAxioms
 import Strata.Languages.Boogie.Examples.SimpleProc
 import Strata.Languages.Boogie.Examples.String
 import Strata.Languages.Boogie.Examples.TypeAlias

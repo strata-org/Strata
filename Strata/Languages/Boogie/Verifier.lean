@@ -224,20 +224,20 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
                      {if options.verbose then prog else ""}"
         results := results.push { obligation, result := .sat .empty }
         if options.stopOnFirstError then break
-      -- Now we truly rely on the SMT backend. But first, we attempt to prune
-      -- the path conditions by excluding all irrelevant axioms w.r.t. the
-      -- consequent to reduce the size of the proof obligation.
-      let cg := Program.toFunctionCG p
-      let fns := obligation.obligation.getOps.map BoogieIdent.toPretty
-      let relevant_fns := CallGraph.getAllCalleesClosure cg fns
-      let irrelevant_axs := Program.getIrrelevantAxioms p relevant_fns
-      let new_assumptions := Imperative.PathConditions.removeByNames obligation.assumptions irrelevant_axs
-      -- dbg_trace f!"Obligation: {obligation.label}"
-      -- dbg_trace f!"Irrelevant axioms: {irrelevant_axs}"
-      -- dbg_trace f!"Relevant functions: {relevant_fns}"
-      -- dbg_trace f!"Old assumptions: {obligation.assumptions.map (fun a => a.keys)}"
-      -- dbg_trace f!"New assumptions: {new_assumptions.map (fun a => a.keys)}"
-      let obligation := { obligation with assumptions := new_assumptions }
+      let obligation :=
+      if options.removeIrrelevantAxioms then
+        -- We attempt to prune the path conditions by excluding all irrelevant
+        -- axioms w.r.t. the consequent to reduce the size of the proof
+        -- obligation.
+        let cg := Program.toFunctionCG p
+        let fns := obligation.obligation.getOps.map BoogieIdent.toPretty
+        let relevant_fns := (fns ++ (CallGraph.getAllCalleesClosure cg fns)).dedup
+        let irrelevant_axs := Program.getIrrelevantAxioms p relevant_fns
+        let new_assumptions := Imperative.PathConditions.removeByNames obligation.assumptions irrelevant_axs
+        { obligation with assumptions := new_assumptions }
+      else
+        obligation
+      -- At this point, we solely rely on the SMT backend.
       let maybeTerms := ProofObligation.toSMTTerms E obligation
       match maybeTerms with
       | .error err =>
