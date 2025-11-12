@@ -129,8 +129,8 @@ subst: [($__ty0, int)]
           return format ans.snd
 
 /--
-info: ok: init (x : int) := (#1 : int)
-x := (#2 : int)
+info: ok: init (x : int) := #1
+x := #2
 -/
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default TEnv.default Program.init none

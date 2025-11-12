@@ -35,7 +35,7 @@ open LTy.Syntax LExpr.SyntaxMono LExpr LMonoTy
                          esM[if #true then (x == #5) else (x == #6)]
          return format ans
 
-/-- info: ok: (if (#true : bool) then ((x : int) == (#5 : int)) else ((x : int) == (#6 : int))) -/
+/-- info: ok: (if #true then ((x : int) == #5) else ((x : int) == #6)) -/
 #guard_msgs in
 #eval do let ans ← LExpr.annotate LContext.default (TEnv.default.updateContext { types := [[("x", t[∀x. %x])]] })
                                esM[if #true then (x == #5) else (x == #6)]
@@ -46,7 +46,7 @@ open LTy.Syntax LExpr.SyntaxMono LExpr LMonoTy
 #eval do let ans ← LExpr.annotate LContext.default TEnv.default esM[λ(%0)]
          return format ans.fst
 
-/-- info: ok: (∀ (%0 == (#5 : int))) -/
+/-- info: ok: (∀ (%0 == #5)) -/
 #guard_msgs in
 #eval do let ans ← LExpr.annotate LContext.default TEnv.default esM[∀ (%0 == #5)]
          return format ans.fst
@@ -218,7 +218,7 @@ Known Types: [∀[0, 1]. (arrow 0 1), string, int, bool]
          return (format $ ans.fst.toLMonoTy)
 
 /--
-info: ok: (((~Int.Add : (arrow int (arrow int int))) (x : int)) ((~Int.Neg : (arrow int int)) (#30 : int)))
+info: ok: (((~Int.Add : (arrow int (arrow int int))) (x : int)) ((~Int.Neg : (arrow int int)) #30))
 -/
 #guard_msgs in
 #eval do let ans ← LExpr.annotate {LContext.default with functions := testIntFns} ((@TEnv.default Unit).updateContext { types := [[("x", t[int])]] })
@@ -238,7 +238,6 @@ info: ok: ((λ ((%0 : (arrow bool $__ty4)) ((fn : (arrow bool bool)) (#true : bo
 #eval do let ans ← LExprT.fromLExpr {LContext.default with functions := testIntFns} ((@TEnv.default Unit).updateContext { types := [[("fn", t[∀a. %a → %a])]] })
                              esM[(fn #3)]
          return (format $ ans.fst.toLMonoTy)
-
 
 end Tests
 

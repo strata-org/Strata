@@ -7,6 +7,7 @@
 import Strata.DDM.AST
 import Strata.Languages.Boogie.DDMTransform.Parse
 import Strata.Languages.Boogie.BoogieGen
+import Strata.DDM.Util.DecimalRat
 
 
 ---------------------------------------------------------------------
@@ -160,13 +161,13 @@ instance : Inhabited (List Boogie.Statement × TransBindings) where
   default := ([], {})
 
 instance : Inhabited Boogie.Decl where
-  default := .var "badguy" (.forAll [] (.tcons "bool" [])) (.const "false" (.some .bool))
+  default := .var "badguy" (.forAll [] (.tcons "bool" [])) .false
 
 instance : Inhabited (Procedure.CheckAttr) where
   default := .Default
 
 instance : Inhabited (Boogie.Decl × TransBindings) where
-  default := (.var "badguy" (.forAll [] (.tcons "bool" [])) (.const "false" (.some .bool)), {})
+  default := (.var "badguy" (.forAll [] (.tcons "bool" [])) .false, {})
 
 instance : Inhabited (Boogie.Decls × TransBindings) where
   default := ([], {})
@@ -652,33 +653,33 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   match op, args with
   -- Constants/Literals
   | .fn _ q`Boogie.btrue, [] =>
-    return .const "true" Lambda.LMonoTy.bool
+    return .true
   | .fn _ q`Boogie.bfalse, [] =>
-    return .const "false" Lambda.LMonoTy.bool
+    return .false
   | .fn _ q`Boogie.natToInt, [xa] =>
     let n ← translateNat xa
-    return .const (toString n) Lambda.LMonoTy.int
+    return .intConst n
   | .fn _ q`Boogie.bv1Lit, [xa] =>
     let n ← translateBitVec 1 xa
-    return .const (toString n) Lambda.LMonoTy.bv1
+    return .bitvecConst 1 n
   | .fn _ q`Boogie.bv8Lit, [xa] =>
     let n ← translateBitVec 8 xa
-    return .const (toString n) Lambda.LMonoTy.bv8
+    return .bitvecConst 8 n
   | .fn _ q`Boogie.bv16Lit, [xa] =>
     let n ← translateBitVec 16 xa
-    return .const (toString n) Lambda.LMonoTy.bv16
+    return .bitvecConst 16 n
   | .fn _ q`Boogie.bv32Lit, [xa] =>
     let n ← translateBitVec 32 xa
-    return .const (toString n) Lambda.LMonoTy.bv32
+    return .bitvecConst 32 n
   | .fn _ q`Boogie.bv64Lit, [xa] =>
     let n ← translateBitVec 64 xa
-    return .const (toString n) Lambda.LMonoTy.bv64
+    return .bitvecConst 64 n
   | .fn _ q`Boogie.strLit, [xa] =>
     let x ← translateStr xa
-    return .const x Lambda.LMonoTy.string
+    return .strConst x
   | .fn _ q`Boogie.realLit, [xa] =>
     let x ← translateReal xa
-    return .const (toString x) Lambda.LMonoTy.real
+    return .realConst (Strata.Decimal.toRat x)
   -- Equality
   | .fn _ q`Boogie.equal, [_tpa, xa, ya] =>
     let x ← translateExpr p bindings xa

@@ -9,6 +9,7 @@
 import Strata.Languages.Boogie.Boogie
 import Strata.DL.SMT.SMT
 import Init.Data.String.Extra
+import Strata.DDM.Util.DecimalRat
 
 ---------------------------------------------------------------------
 
@@ -121,39 +122,14 @@ mutual
 partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr LMonoTy Visibility) (ctx : SMT.Context)
   : Except Format (Term × SMT.Context) := do
   match e with
-  | .const "true" _ => .ok ((Term.bool true), ctx)
-  | .const _ ty =>
-    match ty with
-    | none => .error f!"Cannot encode unannotated constant {e}"
-    | some ty =>
-        match ty with
-        | .bool =>
-          match e.denoteBool with
-          | none =>
-            .error f!"Unexpected boolean constant {e}"
-          | some b => .ok ((Term.bool b), ctx)
-        | .int =>
-          match e.denoteInt with
-          | none =>
-            .error f!"Unexpected integer constant {e}"
-          | some i => .ok ((Term.int i), ctx)
-        | .real =>
-          match e.denoteReal with
-          | none =>
-            .error f!"Unexpected real constant {e}"
-          | some r => .ok ((Term.real r), ctx)
-        | .bitvec n =>
-          match e.denoteBitVec n with
-          | none =>
-            .error f!"Unexpected bv constant {e}"
-          | some v => .ok ((Term.bitvec v), ctx)
-        | .string =>
-          match e.denoteString with
-          | none => .error f!"Unexpected string constant {e}"
-          | some s => .ok ((Term.string s), ctx)
-        | _ =>
-          .error f!"Unimplemented encoding for type {ty} in expression {e}"
-
+  | .boolConst b => .ok (Term.bool b, ctx)
+  | .intConst i => .ok (Term.int i, ctx)
+  | .realConst r =>
+    match Strata.Decimal.fromRat r with
+    | some d => .ok (Term.real d.toString, ctx)
+    | none => .error f!"Non-decimal real value {e}"
+  | .bitvecConst n b => .ok (Term.bitvec b, ctx)
+  | .strConst s => .ok (Term.string s, ctx)
   | .op fn fnty =>
     match fnty with
     | none => .error f!"Cannot encode unannotated operation {fn}."
