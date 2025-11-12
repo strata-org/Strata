@@ -32,7 +32,7 @@ def encodeBoogie (ctx : Boogie.SMT.Context) (prelude : SolverM Unit) (ts : List 
   let (ids, estate) ← ts.mapM (encodeTerm False) |>.run estate
   for id in ids do
     Solver.assert id
-  let ids := (estate.terms.filter (fun t _ => t.isVar)).values
+  let ids := estate.ufs.values
   return (ids, estate)
 
 end Strata.SMT.Encoder
@@ -65,8 +65,8 @@ def getSMTId (x : (IdentT Visibility)) (ctx : SMT.Context) (E : EncoderState) : 
     | (var, none) => .error f!"Expected variable {var} to be annotated with a type!"
     | (var, some ty) => do
       let (ty', _) ← LMonoTy.toSMTType ty ctx
-      let key := Term.var (TermVar.mk false var.name ty')
-      .ok E.terms[key]!
+      let key : Strata.SMT.UF := { id := var.name, args := [], out := ty' }
+      .ok (E.ufs[key]!)
 
 def getModel (m : String) : Except Format (List Strata.SMT.CExParser.KeyValue) := do
   let cex ← Strata.SMT.CExParser.parseCEx m
