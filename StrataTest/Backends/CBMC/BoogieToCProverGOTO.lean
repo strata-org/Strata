@@ -26,6 +26,7 @@ abbrev Boogie.ExprStr : Imperative.PureExpr :=
      Expr := Lambda.LExpr Lambda.LMonoTy Unit,
      Ty := Lambda.LTy,
      TyEnv := @Lambda.TEnv Visibility,
+     TyContext := @Lambda.LContext Visibility,
      EvalEnv := Lambda.LState Visibility
      EqIdent := instDecidableEqString }
 
@@ -77,7 +78,7 @@ open Lambda in
 def substVarNames {IDMeta: Type} [DecidableEq IDMeta]
     (e : LExpr LMonoTy IDMeta) (frto : Map String String) : (LExpr LMonoTy Unit) :=
   match e with
-  | .const c ty => .const c ty
+  | .const c => .const c
   | .bvar b => .bvar b
   | .op o ty => .op o.name ty
   | .fvar  name ty =>
@@ -151,8 +152,9 @@ def CProverGOTO.Context.toJson (programName : String) (ctx : CProverGOTO.Context
 
 open Lambda.LTy.Syntax in
 def transformToGoto (boogie : Boogie.Program) : Except Format CProverGOTO.Context := do
-  let T := { Lambda.TEnv.default with functions := Boogie.Factory, knownTypes := Boogie.KnownTypes }
-  let (boogie, _T) ← Boogie.Program.typeCheck T boogie
+  let C := { Lambda.LContext.default with functions := Boogie.Factory, knownTypes := Boogie.KnownTypes }
+  let T := Lambda.TEnv.default
+  let (boogie, _T) ← Boogie.Program.typeCheck C T boogie
   dbg_trace f!"[Strata.Boogie] Type Checking Succeeded!"
   if h : boogie.decls.length = 1 then
     let decl := boogie.decls[0]'(by exact Nat.lt_of_sub_eq_succ h)

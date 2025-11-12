@@ -34,14 +34,14 @@ procedure P() returns ()
 /--
 info: func x :  () → real;
 func y :  () → real;
-axiom real_x_ge_1: (((~Real.Ge : (arrow real (arrow real bool))) (~x : real)) (#1.0 : real));
-axiom real_y_ge_2: (((~Real.Ge : (arrow real (arrow real bool))) (~y : real)) (#2.0 : real));
+axiom real_x_ge_1: (((~Real.Ge : (arrow real (arrow real bool))) (~x : real)) #1);
+axiom real_y_ge_2: (((~Real.Ge : (arrow real (arrow real bool))) (~y : real)) #2);
 (procedure P :  () → ())
 modifies: []
 preconditions: ⏎
 postconditions: ⏎
-body: assert [real_add_ge_good] (((~Real.Ge : (arrow real (arrow real bool))) (((~Real.Add : (arrow real (arrow real real))) (~x : real)) (~y : real))) (#3.0 : real))
-assert [real_add_ge_bad] (((~Real.Ge : (arrow real (arrow real bool))) (((~Real.Add : (arrow real (arrow real real))) (~x : real)) (~y : real))) (#4.0 : real))
+body: assert [real_add_ge_good] (((~Real.Ge : (arrow real (arrow real bool))) (((~Real.Add : (arrow real (arrow real real))) (~x : real)) (~y : real))) #3)
+assert [real_add_ge_bad] (((~Real.Ge : (arrow real (arrow real bool))) (((~Real.Add : (arrow real (arrow real real))) (~x : real)) (~y : real))) #4)
 
 Errors: #[]
 -/
@@ -56,18 +56,18 @@ VCs:
 Label: real_add_ge_good
 Assumptions:
 
-(real_x_ge_1, ((~Real.Ge ~x) #1.0))
-(real_y_ge_2, ((~Real.Ge ~y) #2.0))
+(real_x_ge_1, ((~Real.Ge ~x) #1))
+(real_y_ge_2, ((~Real.Ge ~y) #2))
 Proof Obligation:
-((~Real.Ge ((~Real.Add ~x) ~y)) #3.0)
+((~Real.Ge ((~Real.Add ~x) ~y)) #3)
 
 Label: real_add_ge_bad
 Assumptions:
 
-(real_x_ge_1, ((~Real.Ge ~x) #1.0))
-(real_y_ge_2, ((~Real.Ge ~y) #2.0))
+(real_x_ge_1, ((~Real.Ge ~x) #1))
+(real_y_ge_2, ((~Real.Ge ~y) #2))
 Proof Obligation:
-((~Real.Ge ((~Real.Add ~x) ~y)) #4.0)
+((~Real.Ge ((~Real.Add ~x) ~y)) #4)
 
 Wrote problem to vcs/real_add_ge_good.smt2.
 Wrote problem to vcs/real_add_ge_bad.smt2.
@@ -81,14 +81,14 @@ CEx: ⏎
 Evaluated program:
 func x :  () → real;
 func y :  () → real;
-axiom real_x_ge_1: (((~Real.Ge : (arrow real (arrow real bool))) (~x : real)) (#1.0 : real));
-axiom real_y_ge_2: (((~Real.Ge : (arrow real (arrow real bool))) (~y : real)) (#2.0 : real));
+axiom real_x_ge_1: (((~Real.Ge : (arrow real (arrow real bool))) (~x : real)) #1);
+axiom real_y_ge_2: (((~Real.Ge : (arrow real (arrow real bool))) (~y : real)) #2);
 (procedure P :  () → ())
 modifies: []
 preconditions: ⏎
 postconditions: ⏎
-body: assert [real_add_ge_good] ((~Real.Ge ((~Real.Add ~x) ~y)) #3.0)
-assert [real_add_ge_bad] ((~Real.Ge ((~Real.Add ~x) ~y)) #4.0)
+body: assert [real_add_ge_good] ((~Real.Ge ((~Real.Add ~x) ~y)) #3)
+assert [real_add_ge_bad] ((~Real.Ge ((~Real.Add ~x) ~y)) #4)
 
 ---
 info:
@@ -135,8 +135,8 @@ spec {
 /--
 info: func x :  () → bv8;
 func y :  () → bv8;
-axiom bv_x_ge_1: (((~Bv8.ULe : (arrow bv8 (arrow bv8 bool))) (#1 : bv8)) (~x : bv8));
-axiom bv_y_ge_2: (((~Bv8.ULe : (arrow bv8 (arrow bv8 bool))) (#2 : bv8)) (~y : bv8));
+axiom bv_x_ge_1: (((~Bv8.ULe : (arrow bv8 (arrow bv8 bool))) #1) (~x : bv8));
+axiom bv_y_ge_2: (((~Bv8.ULe : (arrow bv8 (arrow bv8 bool))) #2) (~y : bv8));
 (procedure P :  () → ())
 modifies: []
 preconditions: ⏎

@@ -29,7 +29,7 @@ in it.
 -/
 def freeVars (e : LExpr LMonoTy IDMeta) : IdentTs IDMeta :=
   match e with
-  | .const _ _ => []
+  | .const _ => []
   | .op _ _ => []
   | .bvar _ => []
   | .fvar x ty => [(x, ty)]
@@ -97,7 +97,7 @@ by; it replaces all leaves of the form `(.bvar k)` with `s`.
 -/
 def substK (k : Nat) (s : LExpr LMonoTy IDMeta) (e : LExpr LMonoTy IDMeta) : LExpr LMonoTy IDMeta :=
   match e with
-  | .const c ty => .const c ty
+  | .const c => .const c
   | .op o ty => .op o ty
   | .bvar i => if (i == k) then s else .bvar i
   | .fvar y ty => .fvar y ty
@@ -151,7 +151,7 @@ of abstractions that have passed by; it replaces all `(.fvar x)` with
 -/
 def varClose (k : Nat) (x : IdentT IDMeta) (e : LExpr LMonoTy IDMeta) : LExpr LMonoTy IDMeta :=
   match e with
-  | .const c ty => .const c ty
+  | .const c => .const c
   | .op o ty => .op o ty
   | .bvar i => .bvar i
   | .fvar y yty => if (x.fst == y) && (yty == x.snd) then
@@ -189,7 +189,7 @@ Example of a term that is not locally closed: `(.abs "x" (.bvar 1))`.
 -/
 def lcAt (k : Nat) (e : LExpr LMonoTy IDMeta) : Bool :=
   match e with
-  | .const _ _ => true
+  | .const _ => true
   | .op _ _ => true
   | .bvar i => i < k
   | .fvar _ _ => true
@@ -234,47 +234,26 @@ theorem varOpen_varClose_when_lcAt
     simp_all [@e1_ih k i x.fst, @e2_ih k i x.fst]
   done
 
+theorem lcAt_substK_inv (he: lcAt k (substK i s e)) (hik: k ≤ i) : lcAt (i + 1) e := by
+  induction e generalizing i k s <;> simp_all[lcAt, substK] <;> try grind
+  case bvar id j =>
+    by_cases j = i
+    case pos hji => omega
+    case neg hji => rw[if_neg hji] at he; simp[lcAt] at he; omega
+
+theorem lcAt_varOpen_inv (hs: lcAt k (varOpen i x e)) (hik: k ≤ i) : lcAt (i + 1) e := by
+  unfold varOpen at hs; exact (lcAt_substK_inv hs hik)
+
 theorem lcAt_varOpen_abs
   (h1 : lcAt k (varOpen i x y)) (h2 : k <= i) :
   lcAt i (abs ty y) := by
-  induction y generalizing i k
-  case const => simp_all [lcAt]
-  case op => simp_all [lcAt]
-  case bvar j =>
-    simp_all [lcAt, varOpen, substK]
-    by_cases j = i <;> simp_all [lcAt]; try omega
-  case fvar => simp_all [lcAt]
-  case mdata info e ih =>
-    simp_all [lcAt, varOpen, substK]
-    rw [@ih k i h1 h2]
-  case abs e e_ih =>
-    simp_all [varOpen]
-    simp [substK, lcAt] at h1
-    have e_ih' := @e_ih (k + 1) (i + 1) h1 (by omega)
-    simp_all [lcAt]
-  case quant tr e tr_ih e_ih =>
-    simp_all [varOpen]
-    simp_all [substK, lcAt]
-    have e_ih' := @e_ih (k + 1) (i + 1)
-    have tr_ih' := @tr_ih (k + 1) (i + 1)
-    constructor
-    exact tr_ih' h1.left (by omega)
-    exact e_ih' h1.right (by omega)
-  case app fn e fn_ih e_ih =>
-    simp_all [varOpen, lcAt, substK]
-    rw [@fn_ih k i h1.1 h2, @e_ih k i h1.2 h2]; simp
-  case ite c t e c_ih t_ih e_ih =>
-    simp_all [varOpen, lcAt, substK]
-    rw [@c_ih k i h1.left.left h2,
-        @t_ih k i h1.left.right h2,
-        @e_ih k i h1.right h2];
-        simp
-  case eq e1 e2 e1_ih e2_ih =>
-    simp_all [varOpen, lcAt, substK]
-    rw [@e1_ih k i h1.left h2,
-        @e2_ih k i h1.right h2]
-    simp
-  done
+  simp[lcAt]; apply (@lcAt_varOpen_inv k i)<;> assumption
+
+theorem lcAt_varOpen_quant
+  (hy : lcAt k (varOpen i x y)) (hki : k <= i)
+  (htr: lcAt k (varOpen i x tr)) :
+  lcAt i (quant qk ty tr y) := by
+  simp[lcAt]; constructor<;> apply (@lcAt_varOpen_inv k i) <;> assumption
 
 /--
 An `LExpr e` is well-formed if it has no dangling bound variables.
@@ -306,7 +285,7 @@ variable in `e` with `s`.
 def substFvar {IDMeta: Type} [DecidableEq IDMeta] (e : LExpr LMonoTy IDMeta) (fr : Identifier IDMeta) (to : LExpr LMonoTy IDMeta)
   : (LExpr LMonoTy IDMeta) :=
   match e with
-  | .const _ _ => e | .bvar _ => e | .op _ _ => e
+  | .const _ => e | .bvar _ => e | .op _ _ => e
   | .fvar  name _ => if name == fr then to else e
   | .mdata info e' => .mdata info (substFvar e' fr to)
   | .abs   ty e' => .abs ty (substFvar e' fr to)

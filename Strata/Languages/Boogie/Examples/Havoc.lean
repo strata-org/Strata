@@ -32,9 +32,9 @@ modifies: []
 preconditions: ⏎
 postconditions: ⏎
 body: init (x : int) := init_x_0
-x := (#1 : int)
+x := #1
 havoc x
-assert [x_eq_1] ((x : int) == (#1 : int))
+assert [x_eq_1] ((x : int) == #1)
 
 Errors: #[]
 -/

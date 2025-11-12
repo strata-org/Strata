@@ -90,27 +90,6 @@ Assumptions:
 Proof Obligation:
 ((~Int.Gt ((~Int.Mul $__x2) #2)) $__x2)
 
-Label: a1
-Assumptions:
-
-
-Proof Obligation:
-#true
-
-Label: a3
-Assumptions:
-
-
-Proof Obligation:
-#true
-
-Label: a4
-Assumptions:
-
-
-Proof Obligation:
-#true
-
 Label: a7
 Assumptions:
 (<label_ite_cond_false: !((~Int.Gt x) #0)>, (if ((~Int.Gt $__x2) #0) then #false else #true))
@@ -133,15 +112,6 @@ Obligation: a4
 Result: verified
 
 Obligation: a6
-Result: verified
-
-Obligation: a1
-Result: verified
-
-Obligation: a3
-Result: verified
-
-Obligation: a4
 Result: verified
 
 Obligation: a7

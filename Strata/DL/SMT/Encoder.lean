@@ -9,7 +9,6 @@ import Strata.DL.SMT.Op
 import Strata.DL.SMT.Solver
 import Strata.DL.SMT.Term
 import Strata.DL.SMT.TermType
-import Strata.DL.Util.ListUtils
 import Std.Data.HashMap
 
 /-!
@@ -25,6 +24,7 @@ into a list of SMT assertions. Term encoding is trusted.
  * `TermType.bool`:     builtin SMT `Bool` type
  * `TermType.int`:      builtin SMT `Int` type
  * `TermType.string`:   builtin SMT `String` type
+ * `TermType.regex`:    builtin SMT `RegLan` type
  * `TermType.bitvec n`: builtin SMT `(_ BitVec n)` type
 
  We will represent non-primitive types as SMT algebraic datypes:
@@ -84,6 +84,7 @@ def encodeType (ty : TermType) : EncoderM String := do
     | .int              => return "Int"
     | .real             => return "Real"
     | .string           => return "String"
+    | .regex            => return "RegLan"
     | .trigger          => return "Trigger"
     | .bitvec n         => return s!"(_ BitVec {n})"
     | .option oty       => return s!"(Option {← encodeType oty})"
@@ -116,11 +117,27 @@ def encodeInt (i : Int) : String :=
 def encodeBitVec {n : Nat} (bv : _root_.BitVec n) : String :=
   s!"(_ bv{bv.toNat} {n})"
 
-def declareVar (v : TermVar) (tyEnc : String) : EncoderM String := do
-  let id := (termId (← termNum))
-  comment (reprStr v.id)
-  declareConst id tyEnc
-  return id
+/--
+A constant in the theory of unicode strings denoting the set of all strings of
+length 1.
+No enclosing parentheses should be used here.
+-/
+def encodeReAllChar : String :=
+  s!"re.allchar"
+
+/--
+A constant in the theory of unicode strings denoting the set of all strings.
+No enclosing parentheses should be used here.
+-/
+def encodeReAll : String :=
+  s!"re.all"
+
+/--
+A constant in the theory of unicode strings denoting the empty set of strings.
+No enclosing parentheses should be used here.
+-/
+def encodeReNone : String :=
+  s!"re.none"
 
 def defineTerm (inBinder : Bool) (tyEnc tEnc : String) : EncoderM String := do
   if inBinder
@@ -150,6 +167,8 @@ def encodeUF (uf : UF) : EncoderM String := do
  def encodeOp : Op → String
   | .eq            => "="
   | .zero_extend n => s!"(_ zero_extend {n})"
+  | .re_index n    => s!"(_ re.^ {n})"
+  | .re_loop n₁ n₂ => s!"(_ re.loop {n₁} {n₂})"
   | .option_get    => "val"
   | op             => op.mkName
 
@@ -176,7 +195,8 @@ def defineApp (inBinder : Bool) (tyEnc : String) (op : Op) (tEncs : List String)
       defineTerm inBinder tyEnc s!"{← encodeUF f}"
     else
       defineTerm inBinder tyEnc s!"({← encodeUF f} {args})"
-  | _              => defineTerm inBinder tyEnc s!"({encodeOp op} {args})"
+  | _ =>
+    defineTerm inBinder tyEnc s!"({encodeOp op} {args})"
 
 -- Helper function for quantifier generation
 def defineQuantifierHelper (inBinder : Bool) (quantKind : String) (varDecls : String) (trEncs: List (List String)) (tEnc : String) : EncoderM String :=
@@ -187,16 +207,16 @@ def defineQuantifierHelper (inBinder : Bool) (quantKind : String) (varDecls : St
     | _ =>
       s!"({quantKind} ({varDecls}) (! {tEnc} {encodeTriggers trEncs}))"
 
-def defineMultiAll (inBinder : Bool) (args : List (String × TermType)) (trEncs: List (List String)) (tEnc : String) : EncoderM String := do
-  let varDecls ← args.mapM (fun (x, ty) => do
+def defineMultiAll (inBinder : Bool) (args : List TermVar) (trEncs: List (List String)) (tEnc : String) : EncoderM String := do
+  let varDecls ← args.mapM (fun ⟨x, ty⟩ => do
     let tyEnc ← encodeType ty
     return s!"({x} {tyEnc})")
   let varDeclsStr := String.intercalate " " varDecls
   -- For multi-variable, we check if trigger equals the variable declarations string
   defineQuantifierHelper inBinder "forall" varDeclsStr trEncs tEnc
 
-def defineMultiExist (inBinder : Bool) (args : List (String × TermType)) (trEncs: List (List String)) (tEnc : String) : EncoderM String := do
-  let varDecls ← args.mapM (fun (x, ty) => do
+def defineMultiExist (inBinder : Bool) (args : List TermVar) (trEncs: List (List String)) (tEnc : String) : EncoderM String := do
+  let varDecls ← args.mapM (fun ⟨x, ty⟩ => do
     let tyEnc ← encodeType ty
     return s!"({x} {tyEnc})")
   let varDeclsStr := String.intercalate " " varDecls
@@ -210,13 +230,17 @@ def defineAll (inBinder : Bool) (xEnc : String) (tyEnc : String) (trEncs: List (
 def defineExist (inBinder : Bool) (xEnc : String) (tyEnc : String) (trEncs: List (List String)) (tEnc : String) : EncoderM String :=
   defineQuantifierHelper inBinder "exists" s!"({xEnc} {tyEnc})" trEncs tEnc
 
+def mapM₁ {m : Type u → Type v} [Monad m] {α : Type w} {β : Type u}
+  (xs : List α) (f : {x : α // x ∈ xs} → m β) : m (List β) :=
+  xs.attach.mapM f
+
 partial
 def encodeTerm (inBinder : Bool) (t : Term) : EncoderM String := do
   if let (.some enc) := (← get).terms.get? t then return enc
   let tyEnc ← encodeType t.typeOf
   let enc ←
     match t with
-    | .var v            => if v.isBound then pure v.id else declareVar v tyEnc
+    | .var v            => return v.id
     | .prim p           =>
       match p with
       | .bool b         => return if b then "true" else "false"
@@ -226,6 +250,9 @@ def encodeTerm (inBinder : Bool) (t : Term) : EncoderM String := do
       | .string s       => return encodeString s
     | .none _           => defineTerm inBinder tyEnc s!"(as none {tyEnc})"
     | .some t₁          => defineTerm inBinder tyEnc s!"(some {← encodeTerm inBinder t₁})"
+    | .app .re_allchar [] .regex => return encodeReAllChar
+    | .app .re_all     [] .regex => return encodeReAll
+    | .app .re_none    [] .regex => return encodeReNone
     | .app .bvnego [t] .bool =>
       -- don't encode bvnego itself, for compatibility with older CVC5 (bvnego was
       -- introduced in CVC5 1.1.2)
@@ -244,11 +271,11 @@ def encodeTerm (inBinder : Bool) (t : Term) : EncoderM String := do
       let trExprs := if Factory.isSimpleTrigger tr then [] else extractTriggers tr
       let trEncs ← mapM₁ trExprs (fun ⟨ts, _⟩ => mapM₁ ts (fun ⟨t, _⟩ => encodeTerm True t))
       match qk, args with
-      | .all, [(x, ty)] => defineAll inBinder x (← encodeType ty) trEncs (← encodeTerm True t)
+      | .all, [⟨x, ty⟩] => defineAll inBinder x (← encodeType ty) trEncs (← encodeTerm True t)
       | .all, _ => defineMultiAll inBinder args trEncs (← encodeTerm True t)
-      | .exist, [(x, ty)] => defineExist inBinder x (← encodeType ty) trEncs (← encodeTerm True t)
+      | .exist, [⟨x, ty⟩] => defineExist inBinder x (← encodeType ty) trEncs (← encodeTerm True t)
       | .exist, _ => defineMultiExist inBinder args trEncs (← encodeTerm True t)
-  if inBinder && !t.isFreeVar
+  if inBinder
   then pure enc
   else modifyGet λ state => (enc, {state with terms := state.terms.insert t enc})
 

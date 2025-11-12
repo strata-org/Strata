@@ -34,9 +34,9 @@ info: func a :  () → (Map int bool);
 modifies: []
 preconditions: ⏎
 postconditions: ⏎
-body: assume [a_zero_true_assumption] ((((~select : (arrow (Map int bool) (arrow int bool))) (~a : (Map int bool))) (#0 : int)) == (#true : bool))
-assert [a_zero_true] (((~select : (arrow (Map int bool) (arrow int bool))) (~a : (Map int bool))) (#0 : int))
-assert [a_one_true] (((~select : (arrow (Map int bool) (arrow int bool))) (~a : (Map int bool))) (#1 : int))
+body: assume [a_zero_true_assumption] ((((~select : (arrow (Map int bool) (arrow int bool))) (~a : (Map int bool))) #0) == #true)
+assert [a_zero_true] (((~select : (arrow (Map int bool) (arrow int bool))) (~a : (Map int bool))) #0)
+assert [a_one_true] (((~select : (arrow (Map int bool) (arrow int bool))) (~a : (Map int bool))) #1)
 
 Errors: #[]
 -/

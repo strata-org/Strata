@@ -40,7 +40,7 @@ Deferred Proof Obligations:
 Label: x_eq_18
 Assumptions:
 Proof Obligation:
-(#true : bool)
+#true
 -/
 #guard_msgs in
 #eval (evalOne ∅ ∅ [.init "x" t[int] eb[#0],
@@ -148,12 +148,12 @@ Proof Obligation:
 Label: m_2_eq_20
 Assumptions:
 Proof Obligation:
-(#true : bool)
+#true
 
 Label: m_1_eq_10
 Assumptions:
 Proof Obligation:
-(#true : bool)
+#true
 -/
 #guard_msgs in
 #eval (evalOne (Env.init.pushScope [("minit", (mty[int → int], eb[(_minit : int → int)]))])
@@ -200,12 +200,12 @@ Proof Obligation:
 Label: m_2_eq_20
 Assumptions:
 Proof Obligation:
-(#true : bool)
+#true
 
 Label: m_1_eq_10
 Assumptions:
 Proof Obligation:
-(#true : bool)
+#true
 -/
 #guard_msgs in
 #eval (evalOne (Env.init.pushScope [("minit", (none, eb[_minit]))])
@@ -265,7 +265,7 @@ Factory Functions:
 
 Path Conditions:
 (z_false, (zinit == #false))
-(<label_ite_cond_true: (z == #false)>, (if (zinit == #false) then (zinit == #false) else (#true : bool))) (<label_ite_cond_false: !(z == #false)>, (if (if (zinit == #false) then (#false : bool) else (#true : bool)) then (if (zinit == #false) then (#false : bool) else (#true : bool)) else (#true : bool)))
+(<label_ite_cond_true: (z == #false)>, (if (zinit == #false) then (zinit == #false) else #true)) (<label_ite_cond_false: !(z == #false)>, (if (if (zinit == #false) then #false else #true) then (if (zinit == #false) then #false else #true) else #true))
 
 
 Warnings:
@@ -281,14 +281,14 @@ Proof Obligation:
 Label: x_eq_y_label_0
 Assumptions:
 (z_false, (zinit == #false))
-(<label_ite_cond_true: (z == #false)>, (if (zinit == #false) then (zinit == #false) else (#true : bool))) (<label_ite_cond_false: !(z == #false)>, (if (if (zinit == #false) then (#false : bool) else (#true : bool)) then (if (zinit == #false) then (#false : bool) else (#true : bool)) else (#true : bool)))
+(<label_ite_cond_true: (z == #false)>, (if (zinit == #false) then (zinit == #false) else #true)) (<label_ite_cond_false: !(z == #false)>, (if (if (zinit == #false) then #false else #true) then (if (zinit == #false) then #false else #true) else #true))
 Proof Obligation:
 ((if (zinit == #false) then #6 else #0) == #6)
 
 Label: x_eq_y
 Assumptions:
 (z_false, (zinit == #false))
-(<label_ite_cond_true: (z == #false)>, (if (zinit == #false) then (zinit == #false) else (#true : bool))) (<label_ite_cond_false: !(z == #false)>, (if (if (zinit == #false) then (#false : bool) else (#true : bool)) then (if (zinit == #false) then (#false : bool) else (#true : bool)) else (#true : bool)))
+(<label_ite_cond_true: (z == #false)>, (if (zinit == #false) then (zinit == #false) else #true)) (<label_ite_cond_false: !(z == #false)>, (if (if (zinit == #false) then #false else #true) then (if (zinit == #false) then #false else #true) else #true))
 Proof Obligation:
 ((if (zinit == #false) then #6 else #0) == #6)
 -/
