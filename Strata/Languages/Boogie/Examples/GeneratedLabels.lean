@@ -46,8 +46,8 @@ axiom axiom_3: (∀ (∀ (∀ ((((~select : (arrow (Map Ref Struct) (arrow Ref S
 modifies: []
 preconditions: ⏎
 postconditions: ⏎
-body: init (newH : Heap) := ((((~update : (arrow (Map Ref Struct) (arrow Ref (arrow Struct (Map Ref Struct))))) (h : Heap)) (ref : Ref)) ((((~update : (arrow (Map Field int) (arrow Field (arrow int (Map Field int))))) (((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) (h : Heap)) (ref : Ref))) (field : Field)) (((~Int.Add : (arrow int (arrow int int))) (((~select : (arrow (Map Field int) (arrow Field int))) (((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) (h : Heap)) (ref : Ref))) (field : Field))) (#1 : int))))
-assert [assert_0] ((((~select : (arrow (Map Field int) (arrow Field int))) (((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) (newH : Heap)) (ref : Ref))) (field : Field)) == (((~Int.Add : (arrow int (arrow int int))) (((~select : (arrow (Map Field int) (arrow Field int))) (((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) (h : Heap)) (ref : Ref))) (field : Field))) (#1 : int)))
+body: init (newH : Heap) := ((((~update : (arrow (Map Ref Struct) (arrow Ref (arrow Struct (Map Ref Struct))))) (h : Heap)) (ref : Ref)) ((((~update : (arrow (Map Field int) (arrow Field (arrow int (Map Field int))))) (((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) (h : Heap)) (ref : Ref))) (field : Field)) (((~Int.Add : (arrow int (arrow int int))) (((~select : (arrow (Map Field int) (arrow Field int))) (((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) (h : Heap)) (ref : Ref))) (field : Field))) #1)))
+assert [assert_0] ((((~select : (arrow (Map Field int) (arrow Field int))) (((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) (newH : Heap)) (ref : Ref))) (field : Field)) == (((~Int.Add : (arrow int (arrow int int))) (((~select : (arrow (Map Field int) (arrow Field int))) (((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) (h : Heap)) (ref : Ref))) (field : Field))) #1))
 -/
 #guard_msgs in
 #eval (TransM.run (translateProgram genLabelsPgm) |>.fst)

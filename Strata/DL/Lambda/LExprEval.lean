@@ -35,7 +35,7 @@ Equality is simply `==` (or more accurately, `eqModuloTypes`) for these
 -/
 def isCanonicalValue (e : (LExpr LMonoTy IDMeta)) : Bool :=
   match e with
-  | .const _ _ => true
+  | .const _ => true
   | .abs _ _ =>
     -- We're using the locally nameless representation, which guarantees that
     -- `closed (.abs e) = closed e` (see theorem `closed_abs`).
@@ -124,7 +124,7 @@ def eval (n : Nat) (σ : (LState IDMeta)) (e : (LExpr LMonoTy IDMeta)) : (LExpr 
 
 def evalCore (n' : Nat) (σ : (LState IDMeta)) (e : (LExpr LMonoTy IDMeta)) : (LExpr LMonoTy IDMeta) :=
   match e with
-  | .const _ _  => e
+  | .const _  => e
   | .op _ _     => e
   | .bvar _     => e
   | .fvar x ty  => (σ.state.findD x (ty, e)).snd
@@ -141,8 +141,8 @@ def evalCore (n' : Nat) (σ : (LState IDMeta)) (e : (LExpr LMonoTy IDMeta)) : (L
 def evalIte (n' : Nat) (σ : (LState IDMeta)) (c t f : (LExpr LMonoTy IDMeta)) : (LExpr LMonoTy IDMeta) :=
   let c' := eval n' σ c
   match c' with
-  | .const "true" _ => eval n' σ t
-  | .const "false" _ => eval n' σ f
+  | .true => eval n' σ t
+  | .false => eval n' σ f
   | _ =>
     -- It's important to at least substitute `.fvar`s in both branches of the
     -- `ite` here so that we can replace the variables by the values in the

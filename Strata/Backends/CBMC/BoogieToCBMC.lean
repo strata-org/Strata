@@ -69,12 +69,12 @@ def exprToJson (I : Type) [IdentToStr (Lambda.Identifier I)] (e : Lambda.LExpr L
       | _ => exprToJson (I:=I) left loc
     let rightJson := match right with
       | .fvar varName _ => mkLvalueSymbol s!"{loc.functionName}::{IdentToStr.toStr varName}" loc.lineNum loc.functionName
-      | .const value _ => mkConstant value "10" (mkSourceLocation "ex_prog.c" loc.functionName loc.lineNum)
+      | .intConst value => mkConstant (toString value) "10" (mkSourceLocation "ex_prog.c" loc.functionName loc.lineNum)
       | _ => exprToJson (I:=I) right loc
     mkBinaryOp (opToStr (IdentToStr.toStr op)) loc.lineNum loc.functionName leftJson rightJson
-  | .const "true" _ => mkConstantTrue (mkSourceLocation "ex_prog.c" loc.functionName "3")
-  | .const n _ =>
-    mkConstant n "10" (mkSourceLocation "ex_prog.c" loc.functionName "14")
+  | .true => mkConstantTrue (mkSourceLocation "ex_prog.c" loc.functionName "3")
+  | .intConst n =>
+    mkConstant (toString n) "10" (mkSourceLocation "ex_prog.c" loc.functionName "14")
   | .fvar name _ =>
     mkLvalueSymbol s!"{loc.functionName}::{IdentToStr.toStr name}" loc.lineNum loc.functionName
   | _ => panic! "Unimplemented"
@@ -200,7 +200,7 @@ end
 
 def listToExpr (l: ListMap BoogieLabel Boogie.Procedure.Check) : Boogie.Expression.Expr :=
   match l with
-  | _ => .const "true" none
+  | _ => .true
 
 def createContractSymbolFromAST (func : Boogie.Procedure) : CBMCSymbol :=
   let location : Location := {

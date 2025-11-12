@@ -135,7 +135,7 @@ private def testProgram1 : Cmds Expression :=
 info: Commands:
 init (x : int) := #0
 x := #10
-assert [x_value_eq] (#true : bool)
+assert [x_value_eq] #true
 
 State:
 Error:
@@ -163,7 +163,7 @@ Deferred Proof Obligations:
 Label: x_value_eq
 Assumptions:
 Proof Obligation:
-(#true : bool)
+#true
 -/
 #guard_msgs in
 #eval format $ Imperative.Cmds.eval Env.init testProgram1

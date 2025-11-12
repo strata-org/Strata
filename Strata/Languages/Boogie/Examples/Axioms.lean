@@ -6,11 +6,12 @@
 
 
 import Strata.Languages.Boogie.Verifier
+import Strata.Languages.Boogie.CallGraph
 
 ---------------------------------------------------------------------
 namespace Strata
 
-def axiomPgm :=
+def axiomPgm1 :=
 #strata
 program Boogie;
 
@@ -96,4 +97,53 @@ Obligation: use_a2_again
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" axiomPgm
+#eval verify "cvc5" axiomPgm1
+
+---------------------------------------------------------------------
+
+def axiomPgm2 :=
+#strata
+program Boogie;
+
+function f(x : int) : int;
+function g(x : int) : int;
+
+axiom [f_g_ax]: (forall x : int :: { f(x) } f(x) == g(x) + 1);
+// NOTE the trigger `f(x)` in `g_ax` below, which causes the
+// dependency analysis to include this axiom in all goals involving `f(x)`.
+axiom [g_ax]:   (forall x : int :: { g(x), f(x) } g(x) == x * 2);
+
+procedure main (x : int) returns () {
+
+assert [axiomPgm2_main_assert]: (x >= 0 ==> f(x) > x);
+};
+#end
+
+/-- info: [] -/
+#guard_msgs in
+#eval let (program, _) := Boogie.getProgram axiomPgm2
+      Std.format (Boogie.Program.getIrrelevantAxioms program ["f"])
+
+/--
+info: [Strata.Boogie] Type checking succeeded.
+
+
+VCs:
+Label: axiomPgm2_main_assert
+Assumptions:
+
+(f_g_ax, (∀ ((~f %0) == ((~Int.Add (~g %0)) #1))))
+(g_ax, (∀ ((~g %0) == ((~Int.Mul %0) #2))))
+Proof Obligation:
+((~Bool.Implies ((~Int.Ge $__x0) #0)) ((~Int.Gt (~f $__x0)) $__x0))
+
+Wrote problem to vcs/axiomPgm2_main_assert.smt2.
+---
+info:
+Obligation: axiomPgm2_main_assert
+Result: verified
+-/
+#guard_msgs in
+#eval verify "z3" axiomPgm2
+
+---------------------------------------------------------------------

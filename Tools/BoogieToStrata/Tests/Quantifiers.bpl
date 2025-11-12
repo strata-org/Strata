@@ -46,7 +46,7 @@ procedure S(a: int, b: int)
     return;
 }
 
-procedure T(a: int, b: int)
+procedure T0(a: int, b: int)
   requires a + 2 <= b;
 {
   start:
