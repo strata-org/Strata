@@ -41,7 +41,7 @@ def KnownTypes : KnownTypes :=
 -/
 def ToBoogieIdent (ine: LExpr LMonoTy Unit): (LExpr LMonoTy Visibility) :=
 match ine with
-    | .const c ty => .const c ty
+    | .const c => .const c
     | .op o oty => .op (BoogieIdent.unres o.name) oty
     | .bvar deBruijnIndex => .bvar deBruijnIndex
     | .fvar name oty => .fvar (BoogieIdent.unres name.name) oty
@@ -108,17 +108,16 @@ def strLengthFunc : LFunc Visibility :=
       typeArgs := [],
       inputs := [("x", mty[string])]
       output := mty[int],
-      concreteEval := some (unOpCeval String Int LExpr.denoteString
-                            (fun s => (Int.ofNat (String.length s)))
-                            mty[int])}
+      concreteEval := some (unOpCeval String Int .intConst LExpr.denoteString
+                            (fun s => (Int.ofNat (String.length s))))}
 
 def strConcatFunc : LFunc Visibility :=
     { name := "Str.Concat",
       typeArgs := [],
       inputs := [("x", mty[string]), ("y", mty[string])]
       output := mty[string],
-      concreteEval := some (binOpCeval String String LExpr.denoteString
-                            String.append mty[string])}
+      concreteEval := some (binOpCeval String String .strConst
+                            LExpr.denoteString String.append)}
 
 def strToRegexFunc : LFunc Visibility :=
     { name := "Str.ToRegEx",

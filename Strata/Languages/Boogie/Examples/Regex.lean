@@ -162,7 +162,7 @@ Natural numbers expected as indices for re.loop.
 Original expression: (((~Re.Loop ((~Re.Range #a) #z)) #1) %0)
 
 Evaluated program: func bad_re_loop :  ((n : int)) → regex :=
-  (((((~Re.Loop : (arrow regex (arrow int (arrow int regex)))) (((~Re.Range : (arrow string (arrow string regex))) (#a : string)) (#z : string))) (#1 : int)) (n : int)))
+  (((((~Re.Loop : (arrow regex (arrow int (arrow int regex)))) (((~Re.Range : (arrow string (arrow string regex))) #a) #z)) #1) (n : int)))
 (procedure main :  ((n : int)) → ())
 modifies: []
 preconditions: ⏎
@@ -179,7 +179,7 @@ Natural numbers expected as indices for re.loop.
 Original expression: (((~Re.Loop ((~Re.Range #a) #z)) #1) %0)
 
 Evaluated program: func bad_re_loop :  ((n : int)) → regex :=
-  (((((~Re.Loop : (arrow regex (arrow int (arrow int regex)))) (((~Re.Range : (arrow string (arrow string regex))) (#a : string)) (#z : string))) (#1 : int)) (n : int)))
+  (((((~Re.Loop : (arrow regex (arrow int (arrow int regex)))) (((~Re.Range : (arrow string (arrow string regex))) #a) #z)) #1) (n : int)))
 (procedure main :  ((n : int)) → ())
 modifies: []
 preconditions: ⏎

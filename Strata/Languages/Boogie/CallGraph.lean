@@ -79,7 +79,7 @@ def extractFunctionCallsFromExpr (expr : Expression.Expr) : List String :=
   | .op fname _ =>
     let fname := BoogieIdent.toPretty fname
     if builtinFunctions.contains fname then [] else [fname]
-  | .const _ _ => []
+  | .const _ => []
   | .app fn arg => extractFunctionCallsFromExpr fn ++ extractFunctionCallsFromExpr arg
   | .ite c t e => extractFunctionCallsFromExpr c ++ extractFunctionCallsFromExpr t ++ extractFunctionCallsFromExpr e
   | .eq e1 e2 => extractFunctionCallsFromExpr e1 ++ extractFunctionCallsFromExpr e2

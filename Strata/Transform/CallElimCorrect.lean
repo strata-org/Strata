@@ -347,7 +347,7 @@ Imperative.WellFormedSemanticEvalVal δ →
   have Hval := Hwfvl.2
   simp [← Hsome] at *
   induction e <;> simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
-  case const c t | op o ty | bvar b =>
+  case const c | op o ty | bvar b =>
     rw [Hval]; rw [Hval]; constructor; constructor
   case fvar n ty =>
     simp [Hwfv]
@@ -1137,7 +1137,7 @@ theorem Lambda.LExpr.substFvarCorrect :
   δ σ₀ σ e = δ σ₀' σ' (e.substFvar fro (createFvar to)) := by
   intros Hwfc Hwfvr Hwfvl Hsubst2 Hinv
   induction e <;> simp [Lambda.LExpr.substFvar, createFvar] at *
-  case const c ty | op o ty | bvar x =>
+  case const c | op o ty | bvar x =>
     rw [Hwfvl.2]
     rw [Hwfvl.2]
     constructor
@@ -1260,7 +1260,7 @@ theorem Lambda.LExpr.substFvarsCorrectZero :
   δ σ₀ σ e = δ σ₀' σ' e := by
   intros Hwfc Hwfvr Hwfvl Hinv
   induction e <;> simp at *
-  case const c ty | op o ty | bvar x =>
+  case const c | op o ty | bvar x =>
     rw [Hwfvl.2]
     rw [Hwfvl.2]
     constructor
@@ -1802,7 +1802,7 @@ theorem substOldCorrect :
   δ σ₀ σ e = δ σ₀' σ (OldExpressions.substOld fro (createFvar to) e) := by
   intros Hwfvr Hwfvl Hwfc Hwf2 Hnorm Hinv Hdef Hsubst
   induction e <;> simp [OldExpressions.substOld] at *
-  case const c ty | op o ty | bvar x =>
+  case const c | op o ty | bvar x =>
     rw [Hwfvl.2]
     rw [Hwfvl.2]
     constructor

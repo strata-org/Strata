@@ -56,8 +56,8 @@ instance : Imperative.ToGoto LExprTP where
 open Lambda.LTy.Syntax
 
 def ExampleProgram1 : Imperative.Cmds LExprTP :=
-  [.init "s" mty[bv32] (.const "0" mty[bv32]),
-   .set "s" (.const "100" mty[bv32])]
+  [.init "s" mty[bv32] (.const (.bitvecConst 32 0) mty[bv32]),
+   .set "s" (.const (.bitvecConst 32 100) mty[bv32])]
 
 /--
 info: ok: #[DECL (decl (s : unsignedbv[32])),
@@ -79,8 +79,8 @@ private def addBV32LExpr (op1 op2 : Lambda.LExprT String) :=
     mty[bv32])
 
 def ExampleProgram2 : Imperative.Cmds LExprTP :=
-  [.init "s" mty[bv32] (.const "0" mty[bv32]),
-   .set "s" (addBV32LExpr (.const "100" mty[bv32]) (.const "200" mty[bv32]))]
+  [.init "s" mty[bv32] (.const (.bitvecConst 32 0) mty[bv32]),
+   .set "s" (addBV32LExpr (.const (.bitvecConst 32 100) mty[bv32]) (.const (.bitvecConst 32 200) mty[bv32]))]
 
 /--
 info: ok: #[DECL (decl (s : unsignedbv[32])),
@@ -96,8 +96,8 @@ info: ok: #[DECL (decl (s : unsignedbv[32])),
 -- (FIXME) Is this the right way to deal with non-det. expressions?
 
 def ExampleProgram3 : Imperative.Cmds LExprTP :=
-  [.init "x" mty[bv32] (.const "0" mty[bv32]),
-   .init "y" mty[bv32] (.const "0" mty[bv32]),
+  [.init "x" mty[bv32] (.const (.bitvecConst 32 0) mty[bv32]),
+   .init "y" mty[bv32] (.const (.bitvecConst 32 0) mty[bv32]),
    .havoc "x",
    .havoc "y",
    .init "z" mty[bv32] (addBV32LExpr (.fvar "x" mty[bv32]) (.fvar "y" mty[bv32]))]

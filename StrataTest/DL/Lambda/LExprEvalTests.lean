@@ -29,7 +29,7 @@ open Std (ToFormat Format format)
 /-- info: #42 -/
 #guard_msgs in
 #eval format $ LExpr.eval 100
-                          { LState.init with state := [[("x", (mty[int], esM[(#32 : int)]))]] }
+                          { LState.init with state := [[("x", (mty[int], esM[#32]))]] }
                           esM[((λ (if (%0 == #23) then #17 else #42)) (x : int))]
 
 /-- info: (f #true) -/
@@ -41,7 +41,7 @@ open Std (ToFormat Format format)
 #eval format $ LExpr.eval 100
                     { LState.init with state :=
                         [[("m", (none, esM[(λ (minit %0))]))], -- most recent scope
-                         [("m", (none, (.const "12" none)))]] }
+                         [("m", (none, (.intConst 12)))]] }
                     esM[((λ (if (%0 == #23) then #17 else (m %0)) #24))]
 
 /-- info: (minit #24) -/
@@ -61,7 +61,7 @@ open Std (ToFormat Format format)
 
 /-- info: ((λ %1) #true) -/
 #guard_msgs in
-#eval format $ LExpr.eval (IDMeta:=Unit) 10 ∅ (.app (.mdata ⟨"x"⟩ (.abs .none (.bvar 1))) (.const "true" none))
+#eval format $ LExpr.eval (IDMeta:=Unit) 10 ∅ (.app (.mdata ⟨"x"⟩ (.abs .none (.bvar 1))) .true)
 
 /- Tests for evaluation of BuiltInFunctions. -/
 
@@ -76,7 +76,7 @@ private def testBuiltIn : @Factory Unit :=
                           let e1i := LExpr.denoteInt e1
                           let e2i := LExpr.denoteInt e2
                           match e1i, e2i with
-                          | some x, some y => (.const (toString (x + y)) mty[int])
+                          | some x, some y => .intConst (x + y)
                           | _, _ => e
                         | _ => e) },
     { name := "Int.Div",
@@ -88,7 +88,7 @@ private def testBuiltIn : @Factory Unit :=
                             let e2i := LExpr.denoteInt e2
                             match e1i, e2i with
                             | some x, some y =>
-                              if y == 0 then e else (.const (toString (x / y)) mty[int])
+                              if y == 0 then e else .intConst (x / y)
                             | _, _ => e
                           | _ => e) },
     { name := "Int.Neg",
@@ -98,7 +98,7 @@ private def testBuiltIn : @Factory Unit :=
                               | [e1] =>
                                 let e1i := LExpr.denoteInt e1
                                 match e1i with
-                                | some x => (.const (toString (- x)) mty[int])
+                                | some x => .intConst (- x)
                                 | _ => e
                               | _ => e) },
 
@@ -115,7 +115,7 @@ private def testState : LState Unit :=
   | .error e => panic s!"{e}"
   | .ok ok => ok
 
-/-- info: (#50 : int) -/
+/-- info: #50 -/
 #guard_msgs in
 #eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((~IntAddAlias #20) #30)]
 
@@ -127,17 +127,17 @@ private def testState : LState Unit :=
 #guard_msgs in
 #eval format $ LExpr.eval (IDMeta:=Unit) 10 LState.init esM[(( ((λλ (~Int.Add %1) %0)) ((λ ((~Int.Add %0) #100)) #5)) x)]
 
-/-- info: (#50 : int) -/
+/-- info: #50 -/
 #guard_msgs in
 #eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((~Int.Add #20) #30)]
 
-/-- info: ((~Int.Add (#105 : int)) x) -/
+/-- info: ((~Int.Add #105) x) -/
 #guard_msgs in
 #eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((((λλ (~Int.Add %1) %0)) ((λ ((~Int.Add %0) #100)) #5)) x)]
 
-/-- info: ((#f #20) (#-5 : int)) -/
+/-- info: ((#f #20) #-5) -/
 #guard_msgs in
-#eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[( ((λλ (#f %1) %0) #20) ((λ (~Int.Neg %0)) (#5 : int)))]
+#eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[( ((λλ (#f %1) %0) #20) ((λ (~Int.Neg %0)) #5))]
 
 /-- info: ((~Int.Add #20) (~Int.Neg x)) -/
 #guard_msgs in
@@ -147,35 +147,35 @@ private def testState : LState Unit :=
 #guard_msgs in
 #eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((~Int.Add #20) (~Int.Neg x))]
 
-/-- info: ((~Int.Add x) (#-30 : int)) -/
+/-- info: ((~Int.Add x) #-30) -/
 #guard_msgs in
 #eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((~Int.Add x) (~Int.Neg #30))]
 
-/-- info: (#50 : int) -/
+/-- info: #50 -/
 #guard_msgs in
 #eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((λ %0) ((~Int.Add #20) #30))]
 
-/-- info: (#100 : int) -/
+/-- info: #100 -/
 #guard_msgs in
 #eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((~Int.Div #300) ((~Int.Add #2) #1))]
 
-/-- info: (#0 : int) -/
+/-- info: #0 -/
 #guard_msgs in
 #eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((~Int.Add #3) (~Int.Neg #3))]
 
-/-- info: (#0 : int) -/
+/-- info: #0 -/
 #guard_msgs in
 #eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((~Int.Add (~Int.Neg #3)) #3)]
 
-/-- info: ((~Int.Div #300) (#0 : int)) -/
+/-- info: ((~Int.Div #300) #0) -/
 #guard_msgs in
 #eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((~Int.Div #300) ((~Int.Add #3) (~Int.Neg #3)))]
 
-/-- info: ((~Int.Div x) (#3 : int)) -/
+/-- info: ((~Int.Div x) #3) -/
 #guard_msgs in
 #eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((~Int.Div x) ((~Int.Add #2) #1))]
 
-/-- info: ((~Int.Le (#100 : int)) x) -/
+/-- info: ((~Int.Le #100) x) -/
 #guard_msgs in
 #eval format $ LExpr.eval (IDMeta:=Unit) 200 testState
                 esM[((~Int.Le ((~Int.Div #300) ((~Int.Add #2) #1))) x)]
