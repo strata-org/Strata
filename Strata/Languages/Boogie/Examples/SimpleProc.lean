@@ -45,7 +45,8 @@ Errors: #[]
 #eval TransM.run (translateProgram simpleProcPgm)
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: POSTCONDITIONSCHECKS: (Test_ensures_0, ((y : bool) == (x : bool))) (Test_ensures_1, ((x : bool) == (y : bool))) (Test_ensures_2, ((g : bool) == ((~old : (arrow a a)) (g : bool))))
+[Strata.Boogie] Type checking succeeded.
 
 
 VCs:

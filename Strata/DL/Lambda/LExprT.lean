@@ -276,10 +276,10 @@ partial def fromLExprAux (Env : TEnv T) (e : LExpr T.mono) :
 
   | .const m c cty =>
     let (ty, Env) ← inferConst Env c cty
-    .ok (.const ⟨m, ty⟩ c cty, Env)
+    .ok (.const ⟨m, ty⟩ c (.some ty), Env)
   | .op m o oty =>
     let (ty, Env) ← inferOp Env o oty
-    .ok (.op ⟨m, ty⟩ o oty, Env)
+    .ok (.op ⟨m, ty⟩ o (.some ty), Env)
   | .bvar _ _ => .error f!"Cannot infer the type of this bvar: {e}"
   | .fvar m x fty =>
     let (ty, Env) ← inferFVar Env x fty

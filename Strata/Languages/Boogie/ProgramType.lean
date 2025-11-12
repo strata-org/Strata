@@ -20,7 +20,7 @@ open Lambda
 
 namespace Program
 
-def typeCheck (T : Boogie.Expression.TyEnv) (program : Program) :
+def typeCheck (Env : Boogie.Expression.TyEnv) (program : Program) :
   Except Format (Program × Boogie.Expression.TyEnv) := do
   -- Check for duplicates in declaration names.
   let varNames  := program.getNames  .var
@@ -39,20 +39,20 @@ def typeCheck (T : Boogie.Expression.TyEnv) (program : Program) :
               List of function names:{Format.line}\
               {funcNames}"
   else
-    let (decls, T) ← go T program.decls []
-    .ok ({ decls }, T)
+    let (decls, Env) ← go Env program.decls []
+    .ok ({ decls }, Env)
 
-  where go T remaining acc : Except Format (Decls × Boogie.Expression.TyEnv) :=
+  where go Env remaining acc : Except Format (Decls × Boogie.Expression.TyEnv) :=
   match remaining with
-  | [] => .ok (acc.reverse, T)
+  | [] => .ok (acc.reverse, Env)
   | decl :: drest => do
-    let (decl', T) ←
+    let (decl', Env) ←
       match decl with
 
       | .var x ty val _ =>
-        let (s', T) ← Statement.typeCheck T program .none [.init x ty val .empty]
+        let (s', Env) ← Statement.typeCheck Env program .none [.init x ty val .empty]
         match s' with
-        | [.init x' ty' val' _] => .ok (.var x' ty' val', T)
+        | [.init x' ty' val' _] => .ok (.var x' ty' val', Env)
         | _ => .error f!"Implementation error! \
                          Statement typeChecker returned the following: \
                          {Format.line}\
@@ -65,35 +65,35 @@ def typeCheck (T : Boogie.Expression.TyEnv) (program : Program) :
           .error f!"Type declaration of the same name already exists!\n\
                     {decl}"
         | none =>
-          if td.name.snd ∈ T.knownTypes.keywords then
+          if td.name.snd ∈ Env.knownTypes.keywords then
             .error f!"This type declaration's name is reserved!\n\
                       {td}\n\
                       KnownTypes' names:\n\
-                      {T.knownTypes.keywords}"
+                      {Env.knownTypes.keywords}"
           else match td with
           | .con tc =>
-            let T := T.addKnownType { name := tc.name, arity := tc.numargs }
-            .ok (.type td, T)
+            let Env := Env.addKnownType { name := tc.name, arity := tc.numargs }
+            .ok (.type td, Env)
           | .syn ts =>
-            let T ← TEnv.addTypeAlias { typeArgs := ts.typeArgs, name := ts.name, type := ts.type } T
-            .ok (.type td, T)
+            let Env ← TEnv.addTypeAlias { typeArgs := ts.typeArgs, name := ts.name, type := ts.type } Env
+            .ok (.type td, Env)
 
       | .ax a _ =>
-        let (ae, T) ← LExpr.fromLExpr T a.e
+        let (ae, Env) ← LExpr.fromLExpr Env a.e
         match ae.toLMonoTy with
-        | .bool => .ok (.ax { a with e := ae.unresolved } , T)
+        | .bool => .ok (.ax { a with e := ae.unresolved } , Env)
         | _ => .error f!"Axiom has non-boolean type: {a}"
 
       | .proc proc _ =>
-        let (proc', T) ← Procedure.typeCheck T program proc
-        .ok (.proc proc', T)
+        let (proc', Env) ← Procedure.typeCheck Env program proc
+        .ok (.proc proc', Env)
 
       | .func func _ =>
-        let (func', T) ← Function.typeCheck T func
-        let T := T.addFactoryFunction func'
-        .ok (.func func', T)
+        let (func', Env) ← Function.typeCheck Env func
+        let Env := Env.addFactoryFunction func'
+        .ok (.func func', Env)
 
-    go T drest (decl' :: acc)
+    go Env drest (decl' :: acc)
 
 ---------------------------------------------------------------------
 

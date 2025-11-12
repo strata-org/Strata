@@ -66,15 +66,17 @@ def oldExpr
 
 @[match_pattern]
 def oldVar
-  (m: ExpressionMetadata)
+  (mApp: ExpressionMetadata)
+  (mOp: ExpressionMetadata)
+  (mVar: ExpressionMetadata)
   {tyold : Option Lambda.LMonoTy}
   (v : Expression.Ident)
   {tyv : Option Lambda.LMonoTy}
   : Expression.Expr
-  := @oldExpr m m tyold (.fvar m v tyv)
+  := @oldExpr mApp mOp tyold (.fvar mVar v tyv)
 
 inductive IsOldPred : Expression.Expr → Prop where
-  | oldPred : IsOldPred (.op () (BoogieIdent.unres "old") ty)
+  | oldPred : IsOldPred (.op m (BoogieIdent.unres "old") ty)
 
 def IsOldPred.decidablePred (e : Expression.Expr): Decidable (IsOldPred e) :=
   match He : e with
@@ -108,7 +110,7 @@ def normalizeOldExpr (e : Expression.Expr) (inOld : Bool := false)
   match _He : e with
   | .fvar _ v ty =>
     if inOld then
-      @oldVar e.metadata none v ty -- ignoring the operation type
+      @oldVar e.metadata e.metadata e.metadata none v ty -- ignoring the operation type
     else e
   | .const _ _ _ | .bvar _ _ | .op _ _ _ => e
   | .abs m ty e' => .abs m ty (normalizeOldExpr e' inOld)
@@ -211,9 +213,9 @@ def substOld (var : Expression.Ident) (s e : Expression.Expr) :
   Expression.Expr :=
   match e with
   | .const _ _ _ | .fvar _ _ _ | .bvar _ _ | .op _ _ _ => e
-  | .abs _ ty e' => .abs () ty (substOld var s e')
-  | .quant _ qk ty tr' e' => .quant () qk ty (substOld var s tr') (substOld var s e')
-  | .app _ e1 e2 =>
+  | .abs m ty e' => .abs m ty (substOld var s e')
+  | .quant m qk ty tr' e' => .quant m qk ty (substOld var s tr') (substOld var s e')
+  | .app m e1 e2 =>
     match e1, e2 with
     | .op _ (BoogieIdent.unres "old") _, .fvar _ x _ =>
       -- NOTE: We rely on the typeChecker to normalize `e` ensure that `old` is
@@ -222,10 +224,10 @@ def substOld (var : Expression.Ident) (s e : Expression.Expr) :
         -- substitute, if should be substituted
         then s
         else e
-    | _, _ => .app () (substOld var s e1) (substOld var s e2)
-  | .ite _ c t f => .ite () (substOld var s c)
+    | _, _ => .app m (substOld var s e1) (substOld var s e2)
+  | .ite m c t f => .ite m (substOld var s c)
                       (substOld var s t) (substOld var s f)
-  | .eq _ e1 e2 => .eq () (substOld var s e1) (substOld var s e2)
+  | .eq m e1 e2 => .eq m (substOld var s e1) (substOld var s e2)
 
 /--
 For each `(var, val)` in `sm`, substitute `old(var)` in expression `e` with
@@ -677,7 +679,7 @@ case eq e1 e2 e1_ih e2_ih =>
     assumption
 
 inductive ContainsOldVar : Expression.Expr → Prop where
-  | old : ContainsOldVar (@oldVar m tyOld v ty)
+  | old : ContainsOldVar (@oldVar mApp mOp mVar tyOld v ty)
   | abs : ContainsOldVar e → ContainsOldVar (.abs m ty e)
   | quant : ContainsOldVar e → ContainsOldVar (.quant m k ty tr e)
   | app_l : ContainsOldVar fn → ContainsOldVar (.app m fn e)

@@ -2107,7 +2107,6 @@ theorem EvalExpressionIsDefined :
     specialize Hwfvr (Lambda.LExpr.fvar m v' ty') v' σ₀ σ
     simp [HasFvar.getFvar] at Hwfvr
     simp_all
-    sorry
   case abs => sorry
   case quant => sorry
   case app => sorry

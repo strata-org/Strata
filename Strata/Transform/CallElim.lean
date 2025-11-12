@@ -33,7 +33,7 @@ def createHavocs (ident : List Expression.Ident)
 
 def createFvar (ident : Expression.Ident)
   : Expression.Expr
-  := Lambda.LExpr.fvar ident none
+  := Lambda.LExpr.fvar ((): ExpressionMetadata) ident none
 
 def createFvars (ident : List Expression.Ident)
   : List Expression.Expr
@@ -157,7 +157,7 @@ Generate an init statement with rhs as a free variable reference
 def createInitVar (trip : (Expression.Ident × Expression.Ty) × Expression.Ident)
   : Statement :=
   match trip with
-  | ((v', ty), v) => Statement.init v' ty (Lambda.LExpr.fvar v none)
+  | ((v', ty), v) => Statement.init v' ty (Lambda.LExpr.fvar () v none)
 
 def createInitVars (trips : List ((Expression.Ident × Expression.Ty) × Expression.Ident))
   : List Statement :=

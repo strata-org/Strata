@@ -50,9 +50,9 @@ instance : Inhabited (Lambda.LExpr ⟨⟨ExpressionMetadata, BoogieIdent⟩, LMo
 def PathCondition.format (p : PathCondition Expression) : Format :=
   match p with
   | [] => ""
-  | [(k, v)] => f!"({k}, {v.eraseTypes})"
+  | [(k, v)] => f!"({k}, {v})"
   | (k, v) :: rest =>
-    (f!"({k}, {v.eraseTypes}){Format.line}") ++ ListMap.format' rest
+    (f!"({k}, {v}){Format.line}") ++ ListMap.format' rest
 
 def PathConditions.format (ps : PathConditions Expression) : Format :=
   match ps with

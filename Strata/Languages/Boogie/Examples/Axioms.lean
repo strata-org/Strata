@@ -41,7 +41,9 @@ procedure P2() returns ()
 #end
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: POSTCONDITIONSCHECKS: (use_f1, (((~Int.Gt : (arrow int (arrow int bool))) (ret : int)) (#7 : int)))
+POSTCONDITIONSCHECKS:
+[Strata.Boogie] Type checking succeeded.
 
 
 VCs:

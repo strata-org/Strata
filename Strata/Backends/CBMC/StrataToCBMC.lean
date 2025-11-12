@@ -455,7 +455,7 @@ instance : ToJson (Map String CBMCSymbol) where
 -- Convert LExpr to CBMC JSON format for contracts
 def lexprToCBMC (expr : Strata.C_Simp.Expression.Expr) (functionName : String) : Json :=
   match expr with
-  | .app (.app (.op op _) (.fvar varName _)) (.const value _) =>
+  | .app () (.app () (.op () op _) (.fvar () varName _)) (.const () value _) =>
     mkBinaryOp (opToStr op) "2" functionName
       (Json.mkObj [
         ("id", "symbol"),
@@ -469,7 +469,7 @@ def lexprToCBMC (expr : Strata.C_Simp.Expression.Expr) (functionName : String) :
         ])
       ])
       (mkConstant value "10" (mkSourceLocation "from_andrew.c" functionName "2"))
-  | .const "true" _ =>
+  | .const _ "true" _ =>
     Json.mkObj [
       ("id", "notequal"),
       ("namedSub", Json.mkObj [
@@ -613,17 +613,17 @@ def returnStmt (functionName : String) (config : CBMCConfig := defaultConfig): J
 
 def exprToJson (e : Strata.C_Simp.Expression.Expr) (loc: SourceLoc) : Json :=
   match e with
-  | .app (.app (.op op _) left) right =>
+  | .app _ (.app _ (.op _ op _) left) right =>
     let leftJson := match left with
-      | .fvar "z" _ => mkLvalueSymbol s!"{loc.functionName}::1::z" loc.lineNum loc.functionName
-      | .fvar varName _ => mkLvalueSymbol s!"{loc.functionName}::{varName}" loc.lineNum loc.functionName
+      | .fvar _ "z" _ => mkLvalueSymbol s!"{loc.functionName}::1::z" loc.lineNum loc.functionName
+      | .fvar _ varName _ => mkLvalueSymbol s!"{loc.functionName}::{varName}" loc.lineNum loc.functionName
       | _ => exprToJson left loc
     let rightJson := match right with
-      | .fvar varName _ => mkLvalueSymbol s!"{loc.functionName}::{varName}" loc.lineNum loc.functionName
-      | .const value _ => mkConstant value "10" (mkSourceLocation "from_andrew.c" loc.functionName loc.lineNum)
+      | .fvar _ varName _ => mkLvalueSymbol s!"{loc.functionName}::{varName}" loc.lineNum loc.functionName
+      | .const _ value _ => mkConstant value "10" (mkSourceLocation "from_andrew.c" loc.functionName loc.lineNum)
       | _ => exprToJson right loc
     mkBinaryOp (opToStr op) loc.lineNum loc.functionName leftJson rightJson
-  | .const n _ =>
+  | .const _ n _ =>
     mkConstant n "10" (mkSourceLocation "from_andrew.c" loc.functionName "14")
   | _ => panic! "Unimplemented"
 
