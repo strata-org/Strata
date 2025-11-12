@@ -205,7 +205,6 @@ def isFalse (e : (LExpr TypeType IDMeta)) : Bool :=
 
 /--
 If `e` is an `LExpr` boolean, then denote that into a Lean `Bool`.
-Note that we are type-agnostic here.
 -/
 def denoteBool (e : (LExpr LMonoTy IDMeta)) : Option Bool :=
   match e with
@@ -214,7 +213,6 @@ def denoteBool (e : (LExpr LMonoTy IDMeta)) : Option Bool :=
 
 /--
 If `e` is an `LExpr` integer, then denote that into a Lean `Int`.
-Note that we are type-agnostic here.
 -/
 def denoteInt (e : (LExpr LMonoTy IDMeta)) : Option Int :=
   match e with
@@ -222,8 +220,7 @@ def denoteInt (e : (LExpr LMonoTy IDMeta)) : Option Int :=
   | _ => none
 
 /--
-If `e` is an `LExpr` real, then denote that into a Lean `String`.
-Note that we are type-agnostic here.
+If `e` is an `LExpr` real, then denote that into a Lean `Rat`.
 -/
 def denoteReal (e : (LExpr LMonoTy IDMeta)) : Option Rat :=
   match e with
@@ -232,7 +229,6 @@ def denoteReal (e : (LExpr LMonoTy IDMeta)) : Option Rat :=
 
 /--
 If `e` is an `LExpr` bv<n>, then denote that into a Lean `BitVec n`.
-Note that we are type-agnostic here.
 -/
 def denoteBitVec (n : Nat) (e : (LExpr LMonoTy IDMeta)) : Option (BitVec n) :=
   match e with
@@ -240,8 +236,7 @@ def denoteBitVec (n : Nat) (e : (LExpr LMonoTy IDMeta)) : Option (BitVec n) :=
   | _ => none
 
 /--
-If `e` is an _annotated_ `LExpr` string, then denote that into a Lean `String`.
-Note that unannotated strings are not denoted.
+If `e` is an `LExpr` string, then denote that into a Lean `String`.
 -/
 def denoteString (e : (LExpr LMonoTy IDMeta)) : Option String :=
   match e with
