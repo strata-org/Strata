@@ -34,25 +34,25 @@ theorem StmtToNondetCorrect
   WellFormedSemanticEvalVal δ →
   (∀ st,
     Stmt.sizeOf st ≤ m →
-    EvalStmt P (Cmd P) (EvalCmd P) δ σ₀ σ st σ' →
-    EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ₀ σ (StmtToNondetStmt st) σ') ∧
+    EvalStmt P (Cmd P) (EvalCmd P) δ σ st σ' →
+    EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (StmtToNondetStmt st) σ') ∧
   (∀ ss,
     Stmts.sizeOf ss ≤ m →
-    EvalStmts P (Cmd P) (EvalCmd P) δ σ₀ σ ss σ' →
-    EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ₀ σ (StmtsToNondetStmt ss) σ') := by
+    EvalStmts P (Cmd P) (EvalCmd P) δ σ ss σ' →
+    EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (StmtsToNondetStmt ss) σ') := by
   intros Hwfb Hwfvl
   apply Nat.strongRecOn (motive := λ m ↦
-    ∀ σ₀ σ σ',
+    ∀ σ σ',
     (∀ st,
       Stmt.sizeOf st ≤ m →
-      EvalStmt P (Cmd P) (EvalCmd P) δ σ₀ σ st σ' →
-      EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ₀ σ (StmtToNondetStmt st) σ') ∧
+      EvalStmt P (Cmd P) (EvalCmd P) δ σ st σ' →
+      EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (StmtToNondetStmt st) σ') ∧
     (∀ ss,
       Stmts.sizeOf ss ≤ m →
-      EvalStmts P (Cmd P) (EvalCmd P) δ σ₀ σ ss σ' →
-      EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ₀ σ (StmtsToNondetStmt ss) σ')
+      EvalStmts P (Cmd P) (EvalCmd P) δ σ ss σ' →
+      EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (StmtsToNondetStmt ss) σ')
   )
-  intros n ih σ₀ σ σ'
+  intros n ih σ σ'
   refine ⟨?_, ?_⟩
   . intros st Hsz Heval
     match st with
@@ -66,7 +66,7 @@ theorem StmtToNondetCorrect
       cases Heval with
       | block_sem Heval =>
       specialize ih (Stmts.sizeOf bss) (by simp_all; omega)
-      apply (ih _ _ _).2
+      apply (ih _ _).2
       omega
       assumption
     | .ite c ⟨ tss ⟩ ⟨ ess ⟩ =>
@@ -80,7 +80,7 @@ theorem StmtToNondetCorrect
         . apply EvalNondetStmt.cmd_sem
           exact EvalCmd.eval_assume Htrue Hwfb
           simp [isDefinedOver, HasVarsImp.modifiedVars, Cmd.modifiedVars, isDefined]
-        . apply (ih _ _ _).2
+        . apply (ih _ _).2
           omega
           assumption
       | ite_false_sem Hfalse Hwfb Heval =>
@@ -93,9 +93,9 @@ theorem StmtToNondetCorrect
         . apply EvalNondetStmt.cmd_sem
           refine EvalCmd.eval_assume ?_ Hwfb
           simp [WellFormedSemanticEvalBool] at Hwfb
-          exact (Hwfb σ₀ σ c).2.mp Hfalse
+          exact (Hwfb σ c).2.mp Hfalse
           simp [isDefinedOver, HasVarsImp.modifiedVars, Cmd.modifiedVars, isDefined]
-        . apply (ih _ _ _).2
+        . apply (ih _ _).2
           omega
           assumption
     | .goto _ =>
@@ -115,7 +115,7 @@ theorem StmtToNondetCorrect
         expose_names
         simp [WellFormedSemanticEvalVal] at Hwfvl
         have Hval := wfbv.bool_is_val.1
-        have Hv := Hwfvl.2 HasBool.tt σ₀ σ Hval
+        have Hv := Hwfvl.2 HasBool.tt σ Hval
         exact Hv
       assumption
       intros id Hin
@@ -125,10 +125,10 @@ theorem StmtToNondetCorrect
       simp [Stmts.sizeOf] at Hsz
       specialize ih (h.sizeOf + Stmts.sizeOf t) (by omega)
       constructor
-      . apply (ih _ _ _).1
+      . apply (ih _ _).1
         omega
         exact Heval
-      . apply (ih _ _ _).2
+      . apply (ih _ _).2
         omega
         exact Hevals
 
@@ -138,8 +138,8 @@ theorem StmtToNondetStmtCorrect
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] :
   WellFormedSemanticEvalBool δ →
   WellFormedSemanticEvalVal δ →
-  EvalStmt P (Cmd P) (EvalCmd P) δ σ₀ σ st σ' →
-  EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ₀ σ (StmtToNondetStmt st) σ' := by
+  EvalStmt P (Cmd P) (EvalCmd P) δ σ st σ' →
+  EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (StmtToNondetStmt st) σ' := by
   intros Hwfb Hwfv Heval
   apply (StmtToNondetCorrect Hwfb Hwfv (m:=st.sizeOf)).1 <;> simp_all
 
@@ -149,7 +149,7 @@ theorem StmtsToNondetStmtCorrect
   [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] :
   WellFormedSemanticEvalBool δ →
   WellFormedSemanticEvalVal δ →
-  EvalStmts P (Cmd P) (EvalCmd P) δ σ₀ σ ss σ' →
-  EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ₀ σ (StmtsToNondetStmt ss) σ' := by
+  EvalStmts P (Cmd P) (EvalCmd P) δ σ ss σ' →
+  EvalNondetStmt P (Cmd P) (EvalCmd P) δ σ (StmtsToNondetStmt ss) σ' := by
   intros Hwfb Hwfv Heval
   apply (StmtToNondetCorrect Hwfb Hwfv (m:=Stmts.sizeOf ss)).2 <;> simp_all
