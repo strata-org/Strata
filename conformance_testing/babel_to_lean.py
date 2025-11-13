@@ -76,6 +76,8 @@ def parse_ts_type(j):
         return { "TS_TSTypeLiteral": inner }
     elif t == "TSAnyKeyword" or t is None:
         return None
+    elif t == "TSUnionType":
+        return None
     else:
         print("Unsupported type annotation type: " + str(t), file=sys.stderr)
         return None
@@ -443,6 +445,8 @@ def parse_statement(j):
         # case "ForInStatement":
         # case "ForOfStatement":
         # case "ClassDeclaration":
+        case "TSTypeAliasDeclaration":
+            return {"TS_TypeAliasDeclaration": parse_type_alias_declaration(j)}
         case _:
             print("Unsupported statement type: " + j['type'], file=sys.stderr)
             return j
