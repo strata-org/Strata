@@ -43,38 +43,73 @@ def encode (e:LExpr LMonoTy Boogie.Visibility)
     return (.some (smt_term_eq, ctx))
   | _ => return .none
 
-def checkValid (e:LExpr LMonoTy Boogie.Visibility): IO Unit := do
+-- Returns false if e did not reduce to a constant
+def checkValid (e:LExpr LMonoTy Boogie.Visibility): IO Bool := do
   let tenv := TEnv.default
   let init_state := LState.init
   match encode e tenv init_state with
   | .error msg => throw (IO.userError s!"error: {msg}")
-  | .ok (.none) => IO.println f!"- did not evaluate to a constant"
+  | .ok (.none) => return false
   | .ok (.some (smt_term, ctx)) =>
-    let ans ← Boogie.dischargeObligation Options.default
+    let ans ← Boogie.dischargeObligation
+      { Options.default with verbose := false }
       (LExpr.freeVars e) "z3" s!"exprEvalTest.smt2"
       [smt_term] ctx
     match ans with
-    | .ok (.sat _,_) => IO.println f!"- passed!"
-    | _ => throw (IO.userError "failed")
+    | .ok (.sat _,_) => return true
+    | _ =>
+      IO.println s!"Test failed on {e}"
+      throw (IO.userError "- failed")
 
-def mkRandConst (ty:LMonoTy): IO (Option (LExpr LMonoTy Boogie.Visibility))
+-- If a randomly chosen value is <= odd / 10, pick from interesting vals,
+-- otherwise fallback
+private def pickInterestingValue {α} [Inhabited α]
+    (odd: Nat) (interesting_vals:List α) (fallback:IO α): IO α
   := do
-  let rand_n <- IO.rand 0 100
-  let rand_n2 <- IO.rand 0 100
-  let rand_flag <- IO.rand 0 1
-  let rand_flag := rand_flag == 0
-  let rand_int:Int := if rand_flag then rand_n else Int.neg rand_n
+  if interesting_vals.isEmpty then
+    fallback
+  else
+    let n := interesting_vals.length
+    let k <- IO.rand 0 9
+    if k <= odd then
+      let idx <- IO.rand 0 (n - 1)
+      return interesting_vals.getD idx Inhabited.default
+    else
+      fallback
+
+private def pickRandInt (abs_bound:Nat): IO Int := do
+  let rand_sign <- IO.rand 0 1
+  let rand_size <- IO.rand 0 abs_bound
+  return (if rand_sign = 0 then rand_size else - (Int.ofNat rand_size))
+
+private def mkRandConst (ty:LMonoTy): IO (Option (LExpr LMonoTy Boogie.Visibility))
+  := do
   match ty with
-  | .tcons "int" [] => return (.some (.intConst rand_int))
-  | .tcons "bool" [] => return (.some (.boolConst rand_flag))
-  | .tcons "real" [] => return (.some (.realConst (mkRat rand_int rand_n2)))
-  | .tcons "string" [] => return (.some (.strConst "a"))
+  | .tcons "int" [] =>
+    let i <- pickInterestingValue 1 [0,1,-1] (pickRandInt 2147483648)
+    return (.some (.intConst i))
+  | .tcons "bool" [] =>
+    let rand_flag <- IO.rand 0 1
+    let rand_flag := rand_flag == 0
+    return (.some (.boolConst rand_flag))
+  | .tcons "real" [] =>
+    let i <- pickInterestingValue 1 [0,1,-1] (pickRandInt 2147483648)
+    let n <- IO.rand 1 2147483648
+    return (.some (.realConst (mkRat i n)))
+  | .tcons "string" [] =>
+    -- TODO: random string generator
+    return (.some (.strConst "a"))
   | .tcons "regex" [] =>
+    -- TODO: random regex generator
     return (.some (.app
       (.op (BoogieIdent.unres "Str.ToRegEx") .none) (.strConst ".*")))
   | .bitvec n =>
-    return (.some (.bitvecConst n (BitVec.ofNat n rand_n)))
-  | _ => return .none
+    let specialvals :=
+      [0, 1, -1, Int.ofNat n, (Int.pow 2 (n-1)) - 1, -(Int.pow 2 (n-1))]
+    let i <- pickInterestingValue 3 specialvals (IO.rand 0 ((Nat.pow 2 n) - 1))
+    return (.some (.bitvecConst n (BitVec.ofInt n i)))
+  | _ =>
+    return .none
 
 def checkFactoryOps: IO Unit := do
   let arr:Array (LFunc Boogie.Visibility) := Boogie.Factory
@@ -84,22 +119,31 @@ def checkFactoryOps: IO Unit := do
       IO.println "- Has non-empty type arguments, skipping..."
       continue
     else
-      let args:List (Option (LExpr LMonoTy Visibility))
-        <- e.inputs.mapM (fun t => do
-          let res <- mkRandConst t.snd
-          match res with
-          | .some x => return (.some x)
-          | .none =>
-            IO.println s!"- Don't know how to create a constant for {t.snd}"
-            return .none)
-      if .none ∈ args then
-        continue
-      else
-        let args := List.map (Option.get!) args
-        IO.println s!"- Inputs: {args}"
-        let expr := List.foldl (fun e arg => (.app e arg))
-          (LExpr.op (BoogieIdent.unres e.name.name) .none) args
-        checkValid expr
+      let cnt := 100
+      let mut unsupported := false
+      for _ in [0:cnt] do
+        let args:List (Option (LExpr LMonoTy Visibility))
+          <- e.inputs.mapM (fun t => do
+            let res <- mkRandConst t.snd
+            match res with
+            | .some x => return (.some x)
+            | .none =>
+              IO.println s!"- Don't know how to create a constant for {t.snd}"
+              return .none)
+        if .none ∈ args then
+          unsupported := true
+          break
+        else
+          let args := List.map (Option.get!) args
+          let expr := List.foldl (fun e arg => (.app e arg))
+            (LExpr.op (BoogieIdent.unres e.name.name) .none) args
+          let res <- checkValid expr
+          if ¬ res then
+            IO.println f!"- did not evaluate to a constant; inputs: {args}"
+            unsupported := true
+            break
+      if not unsupported then
+        IO.println s!"- Total {cnt} tests passed"
 
 
 open Lambda.LExpr.SyntaxMono
@@ -113,6 +157,7 @@ open Lambda.LTy.Syntax
 #eval (checkValid
   (.app (.app (.op (BoogieIdent.unres "Int.Add") .none) eb[#100]) eb[#50]))
 
+-- This may take a while (~ 1min)
 #eval checkFactoryOps
 
 end Tests
