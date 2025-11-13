@@ -146,9 +146,23 @@ def replaceUserProvidedType {T : LExprParamsT} (e : LExpr T) (f : T.TypeType →
 
 /--
 Apply type substitution `S` to `LExpr e`.
+This is only for user-defined types, not metadata-stored resolved types
+If e is an LExprT whose metadata contains type information, use applySubstT
 -/
 def applySubst {T : LExprParams} (e : LExpr T.mono) (S : Subst) : LExpr T.mono :=
   replaceUserProvidedType e (fun t: LMonoTy => LMonoTy.subst S t)
+
+/--
+Apply type substitution `S` to `LExpr e`.
+This is for metadata-stored types.
+To change user-defined types, use applySubst
+-/
+def applySubstT (e : LExprT T.mono) (S : Subst) : LExprT T.mono :=
+  LExpr.replaceMetadata e <|
+    fun ⟨m, ty⟩ =>
+      let ty := LMonoTy.subst S ty
+      ⟨m, ty⟩
+
 
 /--
 This function turns some free variables into bound variables to build an
@@ -424,7 +438,7 @@ partial def fromLExprAux.app (Env : TEnv T) (m: T.Metadata) (e1 e2 : LExpr T.mon
 protected partial def fromLExpr (Env : TEnv T) (e : LExpr T.mono) :
     Except Format ((LExprT T.mono) × (TEnv T)) := do
   let (et, Env) ← fromLExprAux Env e
-  .ok (LExpr.applySubst et Env.state.substInfo.subst, Env)
+  .ok (LExpr.applySubstT et Env.state.substInfo.subst, Env)
 
 end
 
@@ -451,15 +465,6 @@ def LExpr.annotate (Env : TEnv T) (e : (LExpr T.mono)) :
     Except Format ((LExpr T.mono) × (TEnv T)) := do
   let (e_a, Env) ← LExpr.fromLExpr Env e
   return (unresolved e_a, Env)
-
-/--
-Apply type substitution `S` to `LExpr e`.
--/
-def applySubstT (e : LExprT T.mono) (S : Subst) : (LExprT T.mono) :=
-  LExpr.replaceMetadata e <|
-    fun ⟨m, ty⟩ =>
-      let ty := LMonoTy.subst S ty
-      ⟨m, ty⟩
 
 ---------------------------------------------------------------------
 
