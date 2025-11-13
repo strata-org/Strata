@@ -112,7 +112,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - name: Build documetation package
+      - name: Build documentation package
         uses: leanprover/lean-action@v1
         with:
           build-args: '--wfail'
@@ -143,3 +143,28 @@ jobs:
     - name: Run test script
       run: ./scripts/run_cpython_tests.sh
       working-directory: Tools/Python
+
+  test_python_analysis:
+    name: Build and test Python analysis
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.14'
+    - name: Build using pip
+      run: pip install .
+      working-directory: Tools/Python
+    - name: Build Lean strata executable for testing purposes.
+      uses: leanprover/lean-action@v1
+      with:
+        auto-config: false
+        build: true
+        build-args: "strata:exe"
+    - name: Run tests
+      working-directory: StrataTest/Languages/Python
+      shell: bash
+      run: ./run_py_analyze.sh
+      
