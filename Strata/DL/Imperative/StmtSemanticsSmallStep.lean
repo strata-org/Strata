@@ -165,10 +165,7 @@ theorem evalStmtsSmallNil
   [HasVarsImp P (List (Stmt P (Cmd P)))]
   [HasVarsImp P (Cmd P)] [HasFvar P] [HasVal P]
   [HasBool P] [HasNot P] :
-  EvalStmtsSmall P δ σ₀ σ [] σ ↔ True := by
-  constructor
-  · intro _; trivial
-  · intro _
+  EvalStmtsSmall P δ σ₀ σ [] σ := by
     unfold EvalStmtsSmall
     apply StepStmtStar.step
     · exact StepStmt.step_stmts_nil
