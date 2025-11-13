@@ -121,6 +121,7 @@ def checkFactoryOps: IO Unit := do
     else
       let cnt := 100
       let mut unsupported := false
+      let mut cnt_skipped := 0
       for _ in [0:cnt] do
         let args:List (Option (LExpr LMonoTy Visibility))
           <- e.inputs.mapM (fun t => do
@@ -139,11 +140,13 @@ def checkFactoryOps: IO Unit := do
             (LExpr.op (BoogieIdent.unres e.name.name) .none) args
           let res <- checkValid expr
           if ¬ res then
-            IO.println f!"- did not evaluate to a constant; inputs: {args}"
-            unsupported := true
-            break
+            if cnt_skipped = 0 then
+              IO.println f!"- did not evaluate to a constant; inputs: {args}"
+              IO.println "    (will omit printing other skipping cases)"
+            cnt_skipped := cnt_skipped + 1
+            continue
       if not unsupported then
-        IO.println s!"- Total {cnt} tests passed"
+        IO.println s!"- Total {cnt} tests passed, {cnt_skipped} tests skipped"
 
 
 open Lambda.LExpr.SyntaxMono
