@@ -8,6 +8,8 @@
 import Strata.DDM.Elab
 import Strata.DDM.Ion
 
+import Strata.Languages.Python.Python
+
 def exitFailure {α} (message : String) : IO α := do
   IO.eprintln (message  ++ "\n\nRun strata --help for additional help.")
   IO.Process.exit 1
@@ -154,11 +156,33 @@ def diffCommand : Command where
     | _, _ =>
       exitFailure "Cannot compare dialect def with another dialect/program."
 
+def pyAnalyzeCommand : Command where
+  name := "pyAnalyze"
+  args := [ "file" ]
+  help := "Analyze a Strata Python Ion file. Write results to stdout."
+  callback := fun searchPath v => do
+    let (ld, pd) ← readFile searchPath v[0]
+    match pd with
+    | .dialect d =>
+      IO.print <| d.format ld.dialects
+    | .program pgm =>
+    let preludePgm := Strata.Python.Internal.Boogie.prelude
+    let bpgm := Strata.pythonToBoogie pgm
+    let newPgm : Boogie.Program := { decls := preludePgm.decls ++ bpgm.decls }
+    IO.print newPgm
+    let vcResults ← EIO.toIO (fun f => IO.Error.userError (toString f))
+                        (Boogie.verify "z3" newPgm { Options.default with stopOnFirstError := false })
+    let mut s := ""
+    for vcResult in vcResults do
+      s := s ++ s!"\n{vcResult.obligation.label}: {Std.format vcResult.result}\n"
+    IO.println s
+
 def commandList : List Command := [
       checkCommand,
       toIonCommand,
       printCommand,
       diffCommand,
+      pyAnalyzeCommand,
     ]
 
 def commandMap : Std.HashMap String Command :=
