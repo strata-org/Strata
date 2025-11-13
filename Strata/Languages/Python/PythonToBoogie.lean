@@ -51,10 +51,10 @@ def unwrapModule (c : Python.Command SourceRange) : Array (Python.stmt SourceRan
   | _ => panic! "Expected module"
 
 def strToBoogieExpr (s: String) : Boogie.Expression.Expr :=
-  .const s mty[string]
+  .const (.strConst s)
 
 def intToBoogieExpr (i: Int) : Boogie.Expression.Expr :=
-  .const s!"{i}" mty[int]
+  .const (.intConst i)
 
 def PyIntToInt (i : Python.int SourceRange) : Int :=
   match i with
@@ -63,16 +63,16 @@ def PyIntToInt (i : Python.int SourceRange) : Int :=
 
 def PyConstToBoogie (c: Python.constant SourceRange) : Boogie.Expression.Expr :=
   match c with
-  | .ConString _ s => .const s.val mty[string]
-  | .ConPos _ i => .const s!"{i.val}" mty[int]
-  | .ConNeg _ i => .const s!"-{i.val}" mty[int]
+  | .ConString _ s => .const (.strConst s.val)
+  | .ConPos _ i => .const (.intConst i.val)
+  | .ConNeg _ i => .const (.intConst (-i.val))
   | _ => panic! s!"Unhandled Constant: {repr c}"
 
 def PyAliasToBoogieExpr (a : Python.alias SourceRange) : Boogie.Expression.Expr :=
   match a with
   | .mk_alias _ n as_n =>
   assert! as_n.val.isNone
-  .const n.val mty[string]
+  .const (.strConst n.val)
 
 partial def PyExprToBoogie (e : Python.expr SourceRange) : Boogie.Expression.Expr :=
   match e with
@@ -80,7 +80,7 @@ partial def PyExprToBoogie (e : Python.expr SourceRange) : Boogie.Expression.Exp
   | .Constant _ c _ => PyConstToBoogie c
   | .Name _ n _ =>
     match n.val with
-    | "AssertionError" | "Exception" => .const n.val mty[string]
+    | "AssertionError" | "Exception" => .const (.strConst n.val)
     | _ => .fvar n.val none
   | .JoinedStr _ ss => PyExprToBoogie ss.val[0]! -- TODO: need to actually join strings
   | _ => panic! s!"Unhandled Expr: {repr e}"
@@ -150,7 +150,7 @@ partial def exceptHandlersToBoogie (jmp_targets: List String) (h : Python.except
       let call := .set "exception_ty_matches" rhs
       [call]
     | .none =>
-      [.set "exception_ty_matches" (.const "false" mty[bool])]
+      [.set "exception_ty_matches" (.const (.boolConst false))]
     let cond := .fvar "exception_ty_matches" none
     let body_if_matches := body.val.toList.flatMap (PyStmtToBoogie jmp_targets) ++ [.goto jmp_targets[1]!]
     set_ex_ty_matches ++ [.ite cond {ss := body_if_matches} {ss := []}]
@@ -178,7 +178,7 @@ partial def PyStmtToBoogie (jmp_targets: List String) (s : Python.stmt SourceRan
     | .Expr _ _ =>
       dbg_trace "Can't handle Expr statements that aren't calls"
       assert! false
-      [.assert "expr" (.const "true" mty[bool])]
+      [.assert "expr" (.const (.boolConst true))]
     | .Assign _ lhs (.Call _ func args kwords) _ =>
       assert! lhs.val.size == 1
       let fname := PyExprToString func
