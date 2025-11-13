@@ -17,6 +17,14 @@ import Strata.Languages.Boogie.Options
 import Strata.Languages.Boogie.SMTEncoder
 import Strata.Languages.Boogie.Verifier
 
+/-! This file does random testing of Boogie operations registered in factory, by
+(1) choosing random constant inputs to the operations
+(2) doing concrete evaluation and getting the results,
+(3) SMT encoding the expression, and
+(4) checking using the SMT solver whether the concrete output is equal to
+the SMT expression.
+-/
+
 namespace Boogie
 
 section Tests
@@ -43,7 +51,10 @@ def encode (e:LExpr LMonoTy Boogie.Visibility)
     return (.some (smt_term_eq, ctx))
   | _ => return .none
 
--- Returns false if e did not reduce to a constant
+/--
+Check whether concrete evaluation of e matches the SMT encoding of e.
+Returns false if e did not reduce to a constant.
+-/
 def checkValid (e:LExpr LMonoTy Boogie.Visibility): IO Bool := do
   let tenv := TEnv.default
   let init_state := LState.init
@@ -61,8 +72,10 @@ def checkValid (e:LExpr LMonoTy Boogie.Visibility): IO Bool := do
       IO.println s!"Test failed on {e}"
       throw (IO.userError "- failed")
 
--- If a randomly chosen value is <= odd / 10, pick from interesting vals,
--- otherwise fallback
+/--
+If a randomly chosen value is <= odd / 10, pick from interesting vals,
+otherwise fallback.
+-/
 private def pickInterestingValue {α} [Inhabited α]
     (odd: Nat) (interesting_vals:List α) (fallback:IO α): IO α
   := do
@@ -111,12 +124,15 @@ private def mkRandConst (ty:LMonoTy): IO (Option (LExpr LMonoTy Boogie.Visibilit
   | _ =>
     return .none
 
-def checkFactoryOps: IO Unit := do
+def checkFactoryOps (verbose:Bool): IO Unit := do
   let arr:Array (LFunc Boogie.Visibility) := Boogie.Factory
+  let print (f:Format): IO Unit :=
+    if verbose then IO.println f
+    else return ()
   for e in arr do
-    IO.println f!"\nOp: {e.name} {e.inputs}"
+    print f!"\nOp: {e.name} {e.inputs}"
     if ¬ e.typeArgs.isEmpty then
-      IO.println "- Has non-empty type arguments, skipping..."
+      print "- Has non-empty type arguments, skipping..."
       continue
     else
       let cnt := 100
@@ -129,7 +145,7 @@ def checkFactoryOps: IO Unit := do
             match res with
             | .some x => return (.some x)
             | .none =>
-              IO.println s!"- Don't know how to create a constant for {t.snd}"
+              print s!"- Don't know how to create a constant for {t.snd}"
               return .none)
         if .none ∈ args then
           unsupported := true
@@ -141,27 +157,32 @@ def checkFactoryOps: IO Unit := do
           let res <- checkValid expr
           if ¬ res then
             if cnt_skipped = 0 then
-              IO.println f!"- did not evaluate to a constant; inputs: {args}"
-              IO.println "    (will omit printing other skipping cases)"
+              print f!"- did not evaluate to a constant; inputs: {args}"
+              print "    (will omit printing other skipped cases)"
             cnt_skipped := cnt_skipped + 1
             continue
       if not unsupported then
-        IO.println s!"- Total {cnt} tests passed, {cnt_skipped} tests skipped"
+        print s!"- Total {cnt} tests passed, {cnt_skipped} tests skipped"
 
 
 open Lambda.LExpr.SyntaxMono
 open Lambda.LExpr.Syntax
 open Lambda.LTy.Syntax
 
-#eval (checkValid eb[#100])
-#eval (checkValid eb[#true])
-#eval (checkValid eb[#1 == #2])
-#eval (checkValid eb[if #1 == #2 then #false else #true])
-#eval (checkValid
+/-- info: true -/
+#guard_msgs in #eval (checkValid eb[#100])
+/-- info: true -/
+#guard_msgs in #eval (checkValid eb[#true])
+/-- info: true -/
+#guard_msgs in #eval (checkValid eb[#1 == #2])
+/-- info: true -/
+#guard_msgs in #eval (checkValid eb[if #1 == #2 then #false else #true])
+/-- info: true -/
+#guard_msgs in #eval (checkValid
   (.app (.app (.op (BoogieIdent.unres "Int.Add") .none) eb[#100]) eb[#50]))
 
 -- This may take a while (~ 1min)
-#eval checkFactoryOps
+#eval (checkFactoryOps false)
 
 end Tests
 

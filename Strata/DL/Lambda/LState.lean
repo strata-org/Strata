@@ -101,8 +101,7 @@ def LState.addFactory (σ : (LState IDMeta)) (F : @Factory IDMeta) : Except Form
   .ok { σ with config := { σ.config with factory := newF } }
 
 /--
-Append `Factory f` to the existing factory of functions in `σ`, checking for
-redefinitions.
+Replace the `factory` field of σ with F.
 -/
 def LState.setFactory (σ : (LState IDMeta)) (F : @Factory IDMeta)
     : (LState IDMeta) :=
