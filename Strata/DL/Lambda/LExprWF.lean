@@ -294,8 +294,8 @@ and `varOpen`, this function is agnostic of types.
 Also see function `subst`, where `subst s e` substitutes the outermost _bound_
 variable in `e` with `s`.
 -/
-def substFvar {GenericTy} {IDMeta: Type} [DecidableEq IDMeta] (e : LExpr GenericTy IDMeta)
-  (fr : Identifier IDMeta) (to : LExpr GenericTy IDMeta)
+def substFvar {GenericTy} {IDMeta: Type} [DecidableEq IDMeta]
+  (e : LExpr GenericTy IDMeta) (fr : Identifier IDMeta) (to : LExpr GenericTy IDMeta)
   : (LExpr GenericTy IDMeta) :=
   match e with
   | .const _ => e | .bvar _ => e | .op _ _ => e
