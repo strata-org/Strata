@@ -52,7 +52,7 @@ def toSMTTerm (E : Env) (e : Arith.Expr) : Except Format Term := do
     | none => .error f!"Variable {v} not type annotated; SMT encoding failed!"
     | some ty =>
       let ty ← toSMTType ty
-      .ok (TermVar.mk false v ty)
+      .ok (.app (.uf { id := v, args := [], out := ty }) [] ty)
 
 def toSMTTerms (E : Env) (es : List Arith.Expr) : Except Format (List Term) := do
   match es with
@@ -77,7 +77,7 @@ def encodeArithToSMTTerms (ts : List Term) : SolverM (List String × EncoderStat
   let (ids, estate) ← ts.mapM (Strata.SMT.Encoder.encodeTerm False) |>.run estate
   for id in ids do
     Solver.assert id
-  let ids := (estate.terms.filter (fun t _ => t.isVar)).values
+  let ids := estate.ufs.values
   return (ids, estate)
 
 ---------------------------------------------------------------------

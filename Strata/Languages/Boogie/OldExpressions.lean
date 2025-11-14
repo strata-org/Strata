@@ -77,7 +77,7 @@ def IsOldPred.decidablePred (e : Expression.Expr): Decidable (IsOldPred e) :=
       by simp [Hid]; exact isTrue oldPred
     else
       by apply isFalse; intros Hold; cases Hold; contradiction
-  | .const _ _ | .bvar _ | .fvar _ _ | .mdata _ _ | .abs _ _
+  | .const _ | .bvar _ | .fvar _ _ | .mdata _ _ | .abs _ _
   | .quant _ _ _ _ | .app _ _ | .ite _ _ _  | .eq _ _ =>
     by apply isFalse; intros Hold; cases Hold
 
@@ -87,7 +87,7 @@ inductive IsFvar : Expression.Expr → Prop where
 def IsFvar.decidablePred (e : Expression.Expr): Decidable (IsFvar e) :=
   match He : e with
   | .fvar v ty => isTrue fvar
-  | .op _ _ | .const _ _ | .bvar _ | .mdata _ _ | .abs _ _
+  | .op _ _ | .const _ | .bvar _ | .mdata _ _ | .abs _ _
   | .quant _ _ _ _ | .app _ _ | .ite _ _ _  | .eq _ _ =>
     by apply isFalse; intros H; cases H
 /--
@@ -104,7 +104,7 @@ def normalizeOldExpr (e : Expression.Expr) (inOld : Bool := false)
     if inOld then
       @oldVar none v ty -- ignoring the operation type
     else e
-  | .const _ _ | .bvar _ | .op _ _ => e
+  | .const _ | .bvar _ | .op _ _ => e
   | .mdata m e' => .mdata m (normalizeOldExpr e' inOld)
   | .abs ty e' => .abs ty (normalizeOldExpr e' inOld)
   | .quant qk ty tr' e' => .quant qk ty (normalizeOldExpr tr' inOld) (normalizeOldExpr e' inOld)
@@ -163,7 +163,7 @@ def containsOldExpr (e : Expression.Expr) : Bool :=
   match e with
   | .op (BoogieIdent.unres "old") _ => true
   | .op _ _ => false
-  | .const _ _ | .bvar _ | .fvar _ _ => false
+  | .const _ | .bvar _ | .fvar _ _ => false
   | .mdata _ e' => containsOldExpr e'
   | .abs _ e' => containsOldExpr e'
   | .quant _ _ tr' e' => containsOldExpr tr' || containsOldExpr e'
@@ -186,7 +186,7 @@ Get a list of original global variable names that are referred to in an
 -/
 def extractOldExprVars (expr : Expression.Expr)
   : List Expression.Ident := match expr with
-  | .const _ _  | .bvar _  | .fvar _ _ | .op _ _ => []
+  | .const _  | .bvar _  | .fvar _ _ | .op _ _ => []
   | .mdata _ e => extractOldExprVars e
   | .abs _ e => extractOldExprVars e
   | .quant _ _ tr e => extractOldExprVars tr ++ extractOldExprVars e
@@ -207,7 +207,7 @@ Substitute `old(var)` in expression `e` with `s`.
 def substOld (var : Expression.Ident) (s e : Expression.Expr) :
   Expression.Expr :=
   match e with
-  | .const _ _ | .fvar _ _ | .bvar _ | .op _ _ => e
+  | .const _ | .fvar _ _ | .bvar _ | .op _ _ => e
   | .mdata m e' => .mdata m (substOld var s e')
   | .abs ty e' => .abs ty (substOld var s e')
   | .quant qk ty tr' e' => .quant qk ty (substOld var s tr') (substOld var s e')
@@ -233,7 +233,7 @@ def substsOldExpr (sm : Map Expression.Ident Expression.Expr) (e : Expression.Ex
   : Expression.Expr :=
   if sm.isEmpty then e else
   match e with
-  | .const _ _ | .fvar _ _ | .bvar _ | .op _ _ => e
+  | .const _ | .fvar _ _ | .bvar _ | .op _ _ => e
   | .mdata m e' => .mdata m (substsOldExpr sm e')
   | .abs ty e' => .abs ty (substsOldExpr sm e')
   | .quant qk ty tr' e' => .quant qk ty (substsOldExpr sm tr') (substsOldExpr sm e')
@@ -297,7 +297,7 @@ inductive NormalizedOldExpr : Expression.Expr → Prop where
   -- | oldVar : NormalizedOldExpr (@oldVar tyOld v ty)
   | mdata :  NormalizedOldExpr e →
              NormalizedOldExpr (.mdata _ e)
-  | const :  NormalizedOldExpr (.const _ _)
+  | const :  NormalizedOldExpr (.const _)
   | op :     NormalizedOldExpr (.op _ _)
   | bvar :   NormalizedOldExpr (.bvar _)
   | fvar :   NormalizedOldExpr (.fvar _ _)
@@ -321,7 +321,7 @@ inductive NormalizedOldExpr : Expression.Expr → Prop where
 inductive ValidExpression : Expression.Expr → Prop where
   | mdata :  ValidExpression e →
              ValidExpression (.mdata _ e)
-  | const :  ValidExpression (.const _ _)
+  | const :  ValidExpression (.const _)
   | op :     ValidExpression (.op _ _)
   | bvar :   ValidExpression (.bvar _)
   | fvar :   ValidExpression (.fvar _ _)

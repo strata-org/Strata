@@ -34,10 +34,10 @@ New Function:func Int.Add :  () → int;
 
 /--
 info: Annotated expression:
-(((~Int.Le : (arrow int (arrow int bool))) (((~Int.Div : (arrow int (arrow int int))) (#300 : int)) (((~Int.Add : (arrow int (arrow int int))) (#2 : int)) (#1 : int)))) (#100 : int))
+(((~Int.Le : (arrow int (arrow int bool))) (((~Int.Div : (arrow int (arrow int int))) #300) (((~Int.Add : (arrow int (arrow int int))) #2) #1))) #100)
 
 ---
-info: (#true : bool)
+info: #true
 -/
 #guard_msgs in
 #eval format $ typeCheckAndPartialEval IntBoolFactory
@@ -45,20 +45,20 @@ info: (#true : bool)
 
 /--
 info: Annotated expression:
-((~Int.Div : (arrow int (arrow int int))) (((~Int.Add : (arrow int (arrow int int))) (#2 : int)) (#1 : int)))
+((~Int.Div : (arrow int (arrow int int))) (((~Int.Add : (arrow int (arrow int int))) #2) #1))
 
 ---
-info: (λ (((~Int.Div : (arrow int (arrow int int))) (#3 : int)) %0))
+info: (λ (((~Int.Div : (arrow int (arrow int int))) #3) %0))
 -/
 #guard_msgs in
 #eval format $ typeCheckAndPartialEval IntBoolFactory
                esM[((~Int.Div ((~Int.Add #2) #1)))]
 /--
 info: Annotated expression:
-((λ (%0 (#2 : int))) ((~Int.Div : (arrow int (arrow int int))) (#300 : int)))
+((λ (%0 #2)) ((~Int.Div : (arrow int (arrow int int))) #300))
 
 ---
-info: (#150 : int)
+info: #150
 -/
 #guard_msgs in
 #eval format $ typeCheckAndPartialEval IntBoolFactory

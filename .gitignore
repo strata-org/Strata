@@ -5,3 +5,5 @@
 vcs/*.smt2
 
 Strata.code-workspace
+
+StrataTest/Internal

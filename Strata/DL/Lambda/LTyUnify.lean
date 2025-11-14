@@ -151,6 +151,9 @@ def SubstInfo.empty : SubstInfo :=
   { subst := Subst.empty,
     isWF := SubstWF_of_empty }
 
+instance : Inhabited SubstInfo where
+  default := SubstInfo.empty
+
 mutual
 /--
 Apply substitution `S` to monotype `mty`.

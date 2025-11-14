@@ -10,17 +10,17 @@ import Strata.DL.Imperative.StmtSemantics
 namespace Imperative
 
 theorem eval_assert_store_cst
-  [HasFvar P] [HasBool P] [HasBoolNeg P]:
+  [HasFvar P] [HasBool P] [HasNot P]:
   EvalCmd P δ σ₀ σ (.assert l e md) σ' → σ = σ' := by
   intros Heval; cases Heval with | eval_assert _ => rfl
 
 theorem eval_stmt_assert_store_cst
-  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvar P] [HasVal P] [HasBool P] [HasBoolNeg P] :
+  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
   EvalStmt P (Cmd P) (EvalCmd P) δ σ₀ σ (.cmd (Cmd.assert l e md)) σ' → σ = σ' := by
   intros Heval; cases Heval with | cmd_sem Hcmd => exact eval_assert_store_cst Hcmd
 
 theorem eval_stmts_assert_store_cst
-  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvar P] [HasVal P] [HasBool P] [HasBoolNeg P] :
+  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
   EvalStmts P (Cmd P) (EvalCmd P) δ σ₀ σ [(.cmd (Cmd.assert l e md))] σ' → σ = σ' := by
   intros Heval; cases Heval with
   | stmts_some_sem H1 H2 =>
@@ -30,7 +30,7 @@ theorem eval_stmts_assert_store_cst
       | stmts_none_sem => exact eval_assert_store_cst H3
 
 theorem eval_stmt_assert_eq_of_pure_expr_eq
-  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasFvar P] [HasVal P] [HasBool P] [HasBoolNeg P] :
+  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
   WellFormedSemanticEvalBool δ →
   (EvalStmt P (Cmd P) (EvalCmd P) δ σ₀ σ (.cmd (Cmd.assert l1 e md1)) σ' ↔
   EvalStmt P (Cmd P) (EvalCmd P) δ σ₀ σ (.cmd (Cmd.assert l2 e md2)) σ') := by
@@ -47,7 +47,7 @@ theorem eval_stmt_assert_eq_of_pure_expr_eq
   )
 
 theorem eval_stmts_assert_elim
-  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasFvar P] [HasVal P] [HasBool P] [HasBoolNeg P] :
+  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
   WellFormedSemanticEvalBool δ →
   EvalStmts P (Cmd P) (EvalCmd P) δ σ₀ σ (.cmd (.assert l1 e md1) :: cmds) σ' →
   EvalStmts P (Cmd P) (EvalCmd P) δ σ₀ σ cmds σ' := by
@@ -58,7 +58,7 @@ theorem eval_stmts_assert_elim
     assumption
 
 theorem assert_elim
-  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasFvar P] [HasVal P] [HasBool P] [HasBoolNeg P] :
+  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
   WellFormedSemanticEvalBool δ →
   EvalStmts P (Cmd P) (EvalCmd P) δ σ₀ σ (.cmd (.assert l1 e md1) :: [.cmd (.assert l2 e md2)]) σ' →
   EvalStmts P (Cmd P) (EvalCmd P) δ σ₀ σ [.cmd (.assert l3 e md3)] σ' := by
@@ -121,7 +121,7 @@ theorem UpdateState_InitStateComm {P: PureExpr} {x1 x2: P.Ident} {σ σ' σ'' σ
 
 theorem semantic_eval_eq_of_eval_cmd_set_unrelated_var
   [HasVarsImp P (Cmd P)] [HasVarsPure P P.Expr]
-  [HasFvar P] [HasVal P] [HasBool P] [HasBoolNeg P]:
+  [HasFvar P] [HasVal P] [HasBool P] [HasNot P]:
   WellFormedSemanticEvalExprCongr δ →
   ¬ v ∈ HasVarsPure.getVars e →
   EvalCmd P δ σ₀ σ (Cmd.set v e') σ' →
@@ -144,7 +144,7 @@ theorem semantic_eval_eq_of_eval_cmd_set_unrelated_var
 
 theorem eval_cmd_set_comm'
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)]
-  [HasFvar P] [HasVal P] [HasBool P] [HasBoolNeg P] [DecidableEq P.Ident] :
+  [HasFvar P] [HasVal P] [HasBool P] [HasNot P] [DecidableEq P.Ident] :
   ¬ x1 = x2 →
   δ σ₀ σ v1 = δ σ₀ σ2 v1 →
   δ σ₀ σ v2 = δ σ₀ σ1 v2 →
@@ -161,7 +161,7 @@ theorem eval_cmd_set_comm'
 
 theorem eval_cmd_set_comm
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasVarsPure P P.Expr]
-  [HasFvar P] [HasVal P] [HasBool P] [HasBoolNeg P] [DecidableEq P.Ident]:
+  [HasFvar P] [HasVal P] [HasBool P] [HasNot P] [DecidableEq P.Ident]:
   WellFormedSemanticEvalExprCongr δ →
   ¬ x1 = x2 →
   ¬ x1 ∈ HasVarsPure.getVars v2 →
@@ -178,7 +178,7 @@ theorem eval_cmd_set_comm
 
 theorem eval_stmt_set_comm
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasVarsPure P P.Expr]
-  [HasFvar P] [HasVal P] [HasBool P] [HasBoolNeg P] [DecidableEq P.Ident]:
+  [HasFvar P] [HasVal P] [HasBool P] [HasNot P] [DecidableEq P.Ident]:
   WellFormedSemanticEvalExprCongr δ →
   ¬ x1 = x2 →
   ¬ x1 ∈ HasVarsPure.getVars v2 →
@@ -195,7 +195,7 @@ theorem eval_stmt_set_comm
 
 theorem eval_stmts_set_comm
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasVarsPure P P.Expr]
-  [HasFvar P] [HasVal P] [HasBool P] [HasBoolNeg P] [DecidableEq P.Ident] :
+  [HasFvar P] [HasVal P] [HasBool P] [HasNot P] [DecidableEq P.Ident] :
   WellFormedSemanticEvalExprCongr δ →
   ¬ x1 = x2 →
   ¬ x1 ∈ HasVarsPure.getVars v2 →

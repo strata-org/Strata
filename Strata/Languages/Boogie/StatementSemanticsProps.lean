@@ -41,7 +41,7 @@ theorem TouchVarsEmpty :
 
 theorem EvalStmtsEmpty {P : PureExpr} {Cmd : Type} {EvalCmd : EvalCmdParam P Cmd}
   { σ σ' σ₀: SemanticStore P } { δ : SemanticEval P }
-  [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasBoolNeg P] :
+  [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
   EvalStmts P Cmd EvalCmd δ σ₀ σ ([]: (List (Stmt P Cmd))) σ' → σ = σ' := by
   intros H; cases H <;> simp
 
@@ -1716,7 +1716,7 @@ theorem EvalCmdDefMonotone :
   next _ _ Hup => exact UpdateStateDefMonotone Hdef Hup
 
 theorem EvalCmdTouch
-  [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasBoolNeg P] :
+  [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] :
   EvalCmd P δ σ₀ σ c σ' →
   TouchVars σ (HasVarsImp.touchedVars c) σ' := by
   intro Heval
