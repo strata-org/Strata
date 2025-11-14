@@ -163,6 +163,8 @@ jobs:
         auto-config: false
         build: true
         build-args: "strata:exe"
+    - name: Setup upterm session
+      uses: lhotari/action-upterm@v1
     - name: Run tests
       working-directory: StrataTest/Languages/Python
       shell: bash
