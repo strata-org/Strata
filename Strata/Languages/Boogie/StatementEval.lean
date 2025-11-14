@@ -39,7 +39,7 @@ a `.call` statement.
 def callConditions (proc : Procedure)
                    (condType : CondType)
                    (conditions : ListMap String Procedure.Check)
-                   (subst :  Map (Lambda.IdentT Visibility) Expression.Expr) :
+                   (subst :  Map (Lambda.IdentT Lambda.LMonoTy Visibility) Expression.Expr) :
                    ListMap String Procedure.Check :=
   let names := List.map
                (fun k => s!"(Origin_{proc.header.name.name}_{condType}){k}")
@@ -75,7 +75,8 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
   | some proc =>
     -- Create a mapping from the formals to the evaluated actuals.
     let args' := List.map (fun a => E.exprEval (OldExpressions.substsOldExpr old_var_subst a)) args
-    let formal_tys := proc.header.inputs.keys.map (fun k => ((k, none) : (Lambda.IdentT Visibility)))
+    let formal_tys := proc.header.inputs.keys.map
+        (fun k => ((k, none) : (Lambda.IdentT Lambda.LMonoTy Visibility)))
     let formal_arg_subst := List.zip formal_tys args'
     -- Generate fresh variables for the LHS, and then create a mapping
     -- from the procedure's return variables to these LHS fresh
@@ -85,7 +86,8 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
       (fun l => (E.exprEnv.state.findD l (none, .fvar l none)).fst)
     let lhs_typed := lhs.zip lhs_tys
     let (lhs_fvars, E) := E.genFVars lhs_typed
-    let return_tys := proc.header.outputs.keys.map (fun k => ((k, none) : (Lambda.IdentT Visibility)))
+    let return_tys := proc.header.outputs.keys.map
+        (fun k => ((k, none) : (Lambda.IdentT Lambda.LMonoTy Visibility)))
     let return_lhs_subst := List.zip return_tys lhs_fvars
     -- The LHS fresh variables reflect the values of these variables
     -- in the post-call state.
