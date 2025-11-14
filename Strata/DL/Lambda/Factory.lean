@@ -83,6 +83,7 @@ has the right number and type of arguments, etc.?
 structure LFunc (IDMeta : Type) where
   name     : Identifier IDMeta
   typeArgs : List TyIdentifier := []
+  isConstr : Bool := false --whether function is datatype constructor
   inputs   : @LMonoTySignature IDMeta
   output   : LMonoTy
   body     : Option (LExpr LMonoTy IDMeta) := .none
@@ -164,14 +165,14 @@ instance : Inhabited (@Factory IDMeta) where
 def Factory.getFunctionNames (F : @Factory IDMeta) : Array (Identifier IDMeta) :=
   F.map (fun f => f.name)
 
-def Factory.getFactoryLFunc (F : @Factory IDMeta) (name : Identifier IDMeta) : Option (LFunc IDMeta) :=
-  F.find? (fun fn => fn.name == name)
+def Factory.getFactoryLFunc (F : @Factory IDMeta) (name : String) : Option (LFunc IDMeta) :=
+  F.find? (fun fn => fn.name.name == name)
 
 /--
 Add a function `func` to the factory `F`. Redefinitions are not allowed.
 -/
 def Factory.addFactoryFunc (F : @Factory IDMeta) (func : (LFunc IDMeta)) : Except Format (@Factory IDMeta) :=
-  match F.getFactoryLFunc func.name with
+  match F.getFactoryLFunc func.name.name with
   | none => .ok (F.push func)
   | some func' =>
     .error f!"A function of name {func.name} already exists! \
@@ -206,7 +207,7 @@ def Factory.callOfLFunc (F : @Factory IDMeta) (e : (LExpr LMonoTy IDMeta)) : Opt
   let (op, args) := getLFuncCall e
   match op with
   | .op name _ =>
-    let maybe_func := getFactoryLFunc F name
+    let maybe_func := getFactoryLFunc F name.name
     match maybe_func with
     | none => none
     | some func =>
