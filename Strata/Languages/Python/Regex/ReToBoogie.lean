@@ -72,10 +72,15 @@ inductive MatchMode where
 /--
 Map `pyRegex` -- a string indicating a regular expression pattern -- to a
 corresponding Boogie expression, taking match mode semantics into account.
+Returns a pair of (result, optional error). On error, returns `re.all` as
+fallback.
 -/
 def pythonRegexToBoogie (pyRegex : String) (mode : MatchMode := .fullmatch) :
-    Except ParseError Boogie.Expression.Expr := do
-  let asts ← parseAll pyRegex 0 []
+    Boogie.Expression.Expr × Option ParseError :=
+  let reAll  := mkApp (.op reAllFunc.name none) []
+  match parseAll pyRegex 0 [] with
+  | .error err => (reAll, some err)
+  | .ok asts =>
 
   -- Detect start and end anchors, if any.
   let hasStartAnchor := match asts.head? with | some .anchor_start => true | _ => false
@@ -86,120 +91,115 @@ def pythonRegexToBoogie (pyRegex : String) (mode : MatchMode := .fullmatch) :
   let middle := if hasEndAnchor && !middle.isEmpty then middle.dropLast else middle
   let hasMiddleAnchor := middle.any (fun ast => match ast with | .anchor_start | .anchor_end => true | _ => false)
 
-  -- If anchors in middle, return `re.none` (unmatchable pattern).
-  -- NOTE: this is a heavy-ish semantic transform.
-  if hasMiddleAnchor then
-    return mkApp (.op reNoneFunc.name none) []
+    -- If anchors in middle, return `re.none` (unmatchable pattern).
+    -- NOTE: this is a heavy-ish semantic transform.
+    if hasMiddleAnchor then
+      let reNone := mkApp (.op reNoneFunc.name none) []
+      (reNone, none)
+    else
 
-  -- `filtered` does not have any anchors.
-  let filtered := middle
+      -- `filtered` does not have any anchors.
+      let filtered := middle
 
-  -- Handle empty pattern.
-  if filtered.isEmpty then
-    return mkApp (.op strToRegexFunc.name none) [strConst ""]
+      -- Handle empty pattern.
+      if filtered.isEmpty then
+        (mkApp (.op strToRegexFunc.name none) [strConst ""], none)
+      else
+        -- Concatenate filtered ASTs.
+        let core := match filtered with
+          | [single] => single
+          | head :: tail => tail.foldl RegexAST.concat head
+          | [] => unreachable!
 
-  -- Concatenate filtered ASTs.
-  let core := match filtered with
-    | [single] => single
-    | head :: tail => tail.foldl RegexAST.concat head
-    | [] => unreachable!
-
-  -- Convert core pattern.
-  let coreExpr ← RegexAST.toBoogie core
-
-  -- Wrap with `Re.All` based on mode and anchors
-  let reAll := mkApp (.op reAllFunc.name none) []
-  let result := match mode, hasStartAnchor, hasEndAnchor with
-    -- Explicit anchors always override match mode.
-    | _, true, true =>
-       -- ^pattern$ - exact match.
-      coreExpr
-    | _, true, false =>
-      -- ^pattern - starts with.
-      mkApp (.op reConcatFunc.name none) [coreExpr, reAll]
-    | _, false, true =>
-      -- pattern$ - ends with.
-      mkApp (.op reConcatFunc.name none) [reAll, coreExpr]
-    -- No anchors - apply match mode.
-    | .fullmatch, false, false =>
-      -- exact match
-      coreExpr
-    | .match, false, false =>
-      -- match at start
-      mkApp (.op reConcatFunc.name none) [coreExpr, reAll]
-    | .search, false, false =>
-      -- match anywhere
-      mkApp (.op reConcatFunc.name none) [reAll, mkApp (.op reConcatFunc.name none) [coreExpr, reAll]]
-
-  return result
+        -- Convert core pattern.
+        match RegexAST.toBoogie core with
+        | .error err => (reAll, some err)
+        | .ok coreExpr =>
+          -- Wrap with `Re.All` based on mode and anchors
+          let result := match mode, hasStartAnchor, hasEndAnchor with
+            -- Explicit anchors always override match mode.
+            | _, true, true =>
+               -- ^pattern$ - exact match.
+              coreExpr
+            | _, true, false =>
+              -- ^pattern - starts with.
+              mkApp (.op reConcatFunc.name none) [coreExpr, reAll]
+            | _, false, true =>
+              -- pattern$ - ends with.
+              mkApp (.op reConcatFunc.name none) [reAll, coreExpr]
+            -- No anchors - apply match mode.
+            | .fullmatch, false, false =>
+              -- exact match
+              coreExpr
+            | .match, false, false =>
+              -- match at start
+              mkApp (.op reConcatFunc.name none) [coreExpr, reAll]
+            | .search, false, false =>
+              -- match anywhere
+              mkApp (.op reConcatFunc.name none) [reAll, mkApp (.op reConcatFunc.name none) [coreExpr, reAll]]
+          (result, none)
 
 -------------------------------------------------------------------------------
 
 section Test.pythonRegexToBoogie
 
+
+/--
+info: (~Re.All,
+ some Pattern error at position 1: Invalid repeat bounds {100,2}: maximum 2 is less than minimum 100 in pattern 'x{100,2}')
+-/
+#guard_msgs in
+#eval Std.format $ pythonRegexToBoogie "x{100,2}" .fullmatch
+
 -- (unmatchable)
-/-- info: ok: ~Re.None -/
+/-- info: (~Re.None, none) -/
 #guard_msgs in
-#eval do let ans ← pythonRegexToBoogie "a^b" .fullmatch
-         return (Std.format ans)
+#eval Std.format $ pythonRegexToBoogie "a^b" .fullmatch
 
-/-- info: ok: ~Re.None -/
+/-- info: (~Re.None, none) -/
 #guard_msgs in
-#eval do let ans ← pythonRegexToBoogie "^a^b" .fullmatch
-         return (Std.format ans)
+#eval Std.format $ pythonRegexToBoogie "^a^b" .fullmatch
 
-/-- info: ok: ~Re.None -/
+/-- info: (~Re.None, none) -/
 #guard_msgs in
-#eval do let ans ← pythonRegexToBoogie "a$b" .fullmatch
-         return (Std.format ans)
+#eval Std.format $ pythonRegexToBoogie "a$b" .fullmatch
 
-/-- info: ok: (~Re.Comp (~Str.ToRegEx #b)) -/
+/-- info: ((~Re.Comp (~Str.ToRegEx #b)), none) -/
 #guard_msgs in
-#eval do let ans ← pythonRegexToBoogie "[^b]" .fullmatch
-         return (Std.format ans)
+#eval Std.format $ pythonRegexToBoogie "[^b]" .fullmatch
 
-/-- info: ok: (~Re.Comp ((~Re.Range #A) #Z)) -/
+/-- info: ((~Re.Comp ((~Re.Range #A) #Z)), none) -/
 #guard_msgs in
-#eval do let ans ← pythonRegexToBoogie "[^A-Z]" .fullmatch
-         return (Std.format ans)
+#eval Std.format $ pythonRegexToBoogie "[^A-Z]" .fullmatch
 
-/-- info: ok: (~Re.Comp (~Str.ToRegEx #^)) -/
+/-- info: ((~Re.Comp (~Str.ToRegEx #^)), none) -/
 #guard_msgs in
-#eval do let ans ← pythonRegexToBoogie "[^^]" .fullmatch
-         return (Std.format ans)
+#eval Std.format $ pythonRegexToBoogie "[^^]" .fullmatch
 
-/-- info: ok: (~Str.ToRegEx #a) -/
+/-- info: ((~Str.ToRegEx #a), none) -/
 #guard_msgs in
-#eval do let ans ← pythonRegexToBoogie "a" .fullmatch
-         return (Std.format ans)
+#eval Std.format $ pythonRegexToBoogie "a" .fullmatch
 
--- match mode tests
-/-- info: ok: ((~Re.Concat (~Str.ToRegEx #a)) ~Re.All) -/
+/-- info: (((~Re.Concat (~Str.ToRegEx #a)) ~Re.All), none) -/
 #guard_msgs in
-#eval do let ans ← pythonRegexToBoogie "a" .match
-         return (Std.format ans)
+#eval Std.format $ pythonRegexToBoogie "a" .match
 
 -- search mode tests
-/-- info: ok: ((~Re.Concat ~Re.All) ((~Re.Concat (~Str.ToRegEx #a)) ~Re.All)) -/
+/-- info: (((~Re.Concat ~Re.All) ((~Re.Concat (~Str.ToRegEx #a)) ~Re.All)), none) -/
 #guard_msgs in
-#eval do let ans ← pythonRegexToBoogie "a" .search
-         return (Std.format ans)
+#eval Std.format $ pythonRegexToBoogie "a" .search
 
--- Explicit anchors override mode
-/-- info: ok: (~Str.ToRegEx #a) -/
+/-- info: ((~Str.ToRegEx #a), none) -/
 #guard_msgs in
-#eval do let ans ← pythonRegexToBoogie "^a$" .search
-         return (Std.format ans)
+#eval Std.format $ pythonRegexToBoogie "^a$" .search
 
-/-- info: ok: ((~Re.Concat (~Str.ToRegEx #a)) ~Re.All) -/
+/-- info: (((~Re.Concat (~Str.ToRegEx #a)) ~Re.All), none) -/
 #guard_msgs in
-#eval do let ans ← pythonRegexToBoogie "^a" .fullmatch
-         return (Std.format ans)
+#eval Std.format $ pythonRegexToBoogie "^a" .fullmatch
 
-/-- info: ok: ((~Re.Concat ~Re.All) (~Str.ToRegEx #a)) -/
+/-- info: (((~Re.Concat ~Re.All) (~Str.ToRegEx #a)), none) -/
 #guard_msgs in
-#eval do let ans ← pythonRegexToBoogie "a$" .match
-         return (Std.format ans)
+#eval Std.format $ pythonRegexToBoogie "a$" .match
 
 end Test.pythonRegexToBoogie
 

@@ -168,7 +168,15 @@ function bad_re_loop (n : int) : regex {
 
 procedure main(n : int) returns () {
 
+    var n1 : int;
+    n1 := 1;
+
     assert (!(str.in.re("0123456789a", bad_re_loop(n))));
+
+    // NOTE: If `bad_re_loop` was inlined, we wouldn't get this
+    // SMT encoding error because then `n1` would be replaced by
+    // `1` by the time `re.loop` is encoded.
+    assert (str.in.re("a", bad_re_loop(n1)));
 
 };
 #end
@@ -185,6 +193,13 @@ Assumptions:
 Proof Obligation:
 (~Bool.Not ((~Str.InRegEx #0123456789a) (~bad_re_loop $__n0)))
 
+Label: assert_1
+Assumptions:
+
+
+Proof Obligation:
+((~Str.InRegEx #a) (~bad_re_loop #1))
+
 [Error] SMT Encoding error for obligation assert_0: ⏎
 Natural numbers expected as indices for re.loop.
 Original expression: (((~Re.Loop ((~Re.Range #a) #z)) #1) %0)
@@ -195,7 +210,27 @@ Evaluated program: func bad_re_loop :  ((n : int)) → regex :=
 modifies: []
 preconditions: ⏎
 postconditions: ⏎
-body: assert [assert_0] (~Bool.Not ((~Str.InRegEx #0123456789a) (~bad_re_loop $__n0)))
+body: init (n1 : int) := init_n1_0
+n1 := #1
+assert [assert_0] (~Bool.Not ((~Str.InRegEx #0123456789a) (~bad_re_loop $__n0)))
+assert [assert_1] ((~Str.InRegEx #a) (~bad_re_loop #1))
+
+
+
+[Error] SMT Encoding error for obligation assert_1: ⏎
+Natural numbers expected as indices for re.loop.
+Original expression: (((~Re.Loop ((~Re.Range #a) #z)) #1) %0)
+
+Evaluated program: func bad_re_loop :  ((n : int)) → regex :=
+  (((((~Re.Loop : (arrow regex (arrow int (arrow int regex)))) (((~Re.Range : (arrow string (arrow string regex))) #a) #z)) #1) (n : int)))
+(procedure main :  ((n : int)) → ())
+modifies: []
+preconditions: ⏎
+postconditions: ⏎
+body: init (n1 : int) := init_n1_0
+n1 := #1
+assert [assert_0] (~Bool.Not ((~Str.InRegEx #0123456789a) (~bad_re_loop $__n0)))
+assert [assert_1] ((~Str.InRegEx #a) (~bad_re_loop #1))
 
 
 
@@ -212,7 +247,29 @@ Evaluated program: func bad_re_loop :  ((n : int)) → regex :=
 modifies: []
 preconditions: ⏎
 postconditions: ⏎
-body: assert [assert_0] (~Bool.Not ((~Str.InRegEx #0123456789a) (~bad_re_loop $__n0)))
+body: init (n1 : int) := init_n1_0
+n1 := #1
+assert [assert_0] (~Bool.Not ((~Str.InRegEx #0123456789a) (~bad_re_loop $__n0)))
+assert [assert_1] ((~Str.InRegEx #a) (~bad_re_loop #1))
+
+
+
+
+Obligation: assert_1
+Result: err [Error] SMT Encoding error for obligation assert_1: ⏎
+Natural numbers expected as indices for re.loop.
+Original expression: (((~Re.Loop ((~Re.Range #a) #z)) #1) %0)
+
+Evaluated program: func bad_re_loop :  ((n : int)) → regex :=
+  (((((~Re.Loop : (arrow regex (arrow int (arrow int regex)))) (((~Re.Range : (arrow string (arrow string regex))) #a) #z)) #1) (n : int)))
+(procedure main :  ((n : int)) → ())
+modifies: []
+preconditions: ⏎
+postconditions: ⏎
+body: init (n1 : int) := init_n1_0
+n1 := #1
+assert [assert_0] (~Bool.Not ((~Str.InRegEx #0123456789a) (~bad_re_loop $__n0)))
+assert [assert_1] ((~Str.InRegEx #a) (~bad_re_loop #1))
 -/
 #guard_msgs in
 #eval verify "cvc5" regexPgm2
