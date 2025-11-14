@@ -216,21 +216,17 @@ structure TypeInfo extends ElabInfo where
   isInferred : Bool
 deriving Inhabited, Repr
 
-structure IdentInfo extends ElabInfo where
-  val : String
+structure ConstInfo (α : Type) extends ElabInfo where
+  val : α
 deriving Inhabited, Repr
 
-structure NumInfo extends ElabInfo where
-  val : Nat
-deriving Inhabited, Repr
+abbrev IdentInfo := ConstInfo String
 
-structure DecimalInfo extends ElabInfo where
-  val : Decimal
-deriving Inhabited, Repr
+abbrev NumInfo := ConstInfo Nat
 
-structure StrlitInfo extends ElabInfo where
-  val : String
-deriving Inhabited, Repr
+abbrev DecimalInfo := ConstInfo Decimal
+
+abbrev StrlitInfo := ConstInfo String
 
 structure OptionInfo extends ElabInfo where
   deriving Inhabited, Repr
@@ -254,6 +250,7 @@ inductive Info
 | ofNumInfo (info : NumInfo)
 | ofDecimalInfo (info : DecimalInfo)
 | ofStrlitInfo (info : StrlitInfo)
+| ofBytesInfo (info : ConstInfo ByteArray)
 | ofOptionInfo (info : OptionInfo)
 | ofSeqInfo (info : SeqInfo)
 | ofCommaSepInfo (info : CommaSepInfo)
@@ -287,6 +284,7 @@ def elabInfo (info : Info) : ElabInfo :=
   | .ofNumInfo info => info.toElabInfo
   | .ofDecimalInfo info => info.toElabInfo
   | .ofStrlitInfo info => info.toElabInfo
+  | .ofBytesInfo info => info.toElabInfo
   | .ofOptionInfo info => info.toElabInfo
   | .ofSeqInfo info => info.toElabInfo
   | .ofCommaSepInfo info => info.toElabInfo
@@ -327,6 +325,7 @@ def arg : Tree → Arg
   | .ofNumInfo info => .num info.loc info.val
   | .ofDecimalInfo info => .decimal info.loc info.val
   | .ofStrlitInfo info => .strlit info.loc info.val
+  | .ofBytesInfo info => .bytes info.loc info.val
   | .ofOptionInfo _ =>
     let r :=
       match children with
@@ -349,7 +348,7 @@ def resultContext (t : Tree) : TypingContext :=
   | .ofOperationInfo info => info.resultCtx
   | .ofCatInfo info => info.inputCtx
   | .ofExprInfo _ | .ofTypeInfo _ => t.info.inputCtx
-  | .ofIdentInfo _ | .ofNumInfo _ | .ofDecimalInfo _ | .ofStrlitInfo _ => t.info.inputCtx
+  | .ofIdentInfo _ | .ofNumInfo _ | .ofDecimalInfo _ | .ofStrlitInfo _ | .ofBytesInfo .. => t.info.inputCtx
   | .ofOptionInfo info =>
     if p : t.children.size > 0 then
       have q : sizeOf t[0] < sizeOf t := sizeOf_children _ _ _

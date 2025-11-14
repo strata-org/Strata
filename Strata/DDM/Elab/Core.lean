@@ -1002,6 +1002,24 @@ partial def catElaborator (c : SyntaxCat) : TypingContext → Syntax → ElabM T
         pure <| .node (.ofNumInfo info) #[]
       | none =>
         panic! s!"Invalid Init.Num {repr stx}"
+  | q`Init.ByteArray =>
+    fun tctx stx => do
+      let some loc := mkSourceRange? stx
+        | panic! "bytes missing source location"
+      match stx with
+      | .node _ _ #[.atom _ contents] =>
+        match ByteArray.unescapeBytes contents with
+        | .error (_, _, msg) => panic! msg
+        | .ok bytes =>
+            let info : ConstInfo ByteArray := {
+              inputCtx := tctx,
+              loc := loc,
+              val := bytes
+            }
+            pure <| .node (.ofBytesInfo info) #[]
+      | _ =>
+        logError loc s!"Unexpected byte syntax {repr stx}"
+        pure default
   | q`Init.Decimal =>
     fun tctx stx => do
       let some loc := mkSourceRange? stx

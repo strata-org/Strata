@@ -42,7 +42,7 @@ PythonAST.add_op("ConFloat", ArgDecl("v", Init.Str()), PythonAST.constant())
 PythonAST.add_op("ConComplex", ArgDecl("real", Init.Str()), ArgDecl("imag", Init.Str()), PythonAST.constant())
 PythonAST.add_op("ConNone", PythonAST.constant())
 PythonAST.add_op("ConEllipsis", PythonAST.constant())
-PythonAST.add_op("ConBytes", ArgDecl("v", Init.Bytes()), PythonAST.constant())
+PythonAST.add_op("ConBytes", ArgDecl("v", Init.ByteArray()), PythonAST.constant())
 
 # Map python AST types to the syntax cat
 Python_catmap : dict[type, SyntaxCat] = {}

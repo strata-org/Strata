@@ -849,7 +849,7 @@ class Dialect:
 Init : typing.Any = Dialect('Init')
 Init.add_syncat('Command')
 Init.add_syncat('Expr')
-Init.add_syncat('Bytes')
+Init.add_syncat('ByteArray')
 Init.add_syncat('Ident')
 Init.add_syncat('Num')
 Init.add_syncat('Str')
