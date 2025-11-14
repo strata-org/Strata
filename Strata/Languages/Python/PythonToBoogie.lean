@@ -95,6 +95,16 @@ partial def PyExprToBoogie (e : Python.expr SourceRange) : Boogie.Expression.Exp
   | .BinOp _ lhs op rhs => match op with
     | .Add _ => handleAdd (PyExprToBoogie lhs) (PyExprToBoogie rhs)
     | _ => panic! s!"Unhandled BinOp: {repr e}"
+  | .Compare _ lhs op rhs =>
+    match op.val with
+    | #[v] => match v with
+      | Strata.Python.cmpop.Eq _ =>
+        let l := PyExprToBoogie lhs
+        assert! rhs.val.size == 1
+        let r := PyExprToBoogie rhs.val[0]!
+        (.eq l r)
+      | _ => panic! s!"Unhandled comparison op: {repr op.val}"
+    | _ => panic! s!"Unhandled comparison op: {repr op.val}"
   | _ => panic! s!"Unhandled Expr: {repr e}"
 
 partial def PyExprToString (e : Python.expr SourceRange) : String :=
@@ -264,6 +274,9 @@ partial def PyStmtToBoogie (jmp_targets: List String) (s : Python.stmt SourceRan
         let except_handlers := handlers.val.toList.flatMap (exceptHandlersToBoogie new_jmp_stack)
         let var_decls := collectVarDecls body.val
         [.block "try_block" {ss := var_decls ++ body.val.toList.flatMap (PyStmtToBoogie new_jmp_stack) ++ entry_except_handlers ++ except_handlers}]
+    | .FunctionDef _ _ _ _ _ _ _ _ => panic! "Can't translate FunctionDef to Boogie statement"
+    | .If _ test then_b else_b =>
+      [.ite (PyExprToBoogie test) {ss := (ArrPyStmtToBoogie then_b.val)} {ss := (ArrPyStmtToBoogie else_b.val)}]
     | _ =>
       panic! s!"Unsupported {repr s}"
   if callCanThrow s then
@@ -271,10 +284,30 @@ partial def PyStmtToBoogie (jmp_targets: List String) (s : Python.stmt SourceRan
   else
     non_throw
 
+partial def ArrPyStmtToBoogie (a : Array (Python.stmt SourceRange)) : List Boogie.Statement :=
+  a.toList.flatMap (PyStmtToBoogie ["end"])
+
 end --mutual
 
-def ArrPyStmtToBoogie (a : Array (Python.stmt SourceRange)) : List Boogie.Statement :=
-  a.toList.flatMap (PyStmtToBoogie ["end"])
+
+
+def translateFunctions (a : Array (Python.stmt SourceRange)) : List Boogie.Decl :=
+  a.toList.filterMap (λ s => match s with
+    | .FunctionDef _ name _args body _ _ret _ _ =>
+
+      let varDecls : List Boogie.Statement := []
+      let proc : Boogie.Procedure := {
+        header := {
+               name := name.val,
+               typeArgs := [],
+               inputs := [],
+               outputs := [("maybe_except", (.tcons "ExceptOrNone" []))]},
+        spec := default,
+        body := varDecls ++ ArrPyStmtToBoogie body.val ++ [.block "end" {ss := []}]
+      }
+      some (.proc proc)
+    | _ => none)
+
 
 def pythonFuncToBoogie (name : String) (body: Array (Python.stmt SourceRange)) (spec : Boogie.Procedure.Spec) : Boogie.Procedure :=
   let varDecls := collectVarDecls body ++ [(.init "exception_ty_matches" t[bool] (.boolConst false)), (.havoc "exception_ty_matches")]
@@ -293,6 +326,22 @@ def pythonToBoogie (pgm: Strata.Program): Boogie.Program :=
   let pyCmds := toPyCommands pgm.commands
   assert! pyCmds.size == 1
   let insideMod := unwrapModule pyCmds[0]!
-  {decls := [.proc (pythonFuncToBoogie "__main__" insideMod default)]}
+  let non_func_blocks := insideMod.filter (λ s => match s with
+  | .FunctionDef _ _ _ _ _ _ _ _ => false
+  | _ => true)
+
+  {decls := [.proc (pythonFuncToBoogie "__main__" non_func_blocks default)]}
+
+  -- let varDecls : List Boogie.Statement := []
+  -- let body := varDecls ++ non_func_blocks ++ [.block "end" {ss := []}]
+  -- let mainProc : Boogie.Procedure := {
+  --   header := {name := "__main__",
+  --              typeArgs := [],
+  --              inputs := [],
+  --              outputs := [("maybe_except", (.tcons "ExceptOrNone" []))]},
+  --   spec := default,
+  --   body := body
+  -- }
+  -- {decls := translateFunctions insideMod ++ [.proc mainProc]}
 
 end Strata
