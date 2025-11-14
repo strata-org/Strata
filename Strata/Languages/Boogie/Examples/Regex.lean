@@ -17,6 +17,10 @@ function cannot_end_with_period () : regex {
   re.comp(re.concat (re.* (re.all()), str.to.re(".")))
 }
 
+function optionally_a () : regex {
+    re.loop(str.to.re("a"), 0, 1)
+}
+
 function ok_chars_regex () : regex {
     re.loop(
         re.union(re.range("a", "z"),
@@ -37,6 +41,8 @@ procedure main() returns () {
     assert [has_to_be_at_least_1_char]:     (!(str.in.re("", ok_chars_regex())));
     assert [cannot_exceed_10_chars]:        (!(str.in.re("0123456789a", ok_chars_regex())));
 
+    assert [optionally_a_check1]:             (str.in.re("a", optionally_a()));
+    assert [optionally_a_check2]:           (!(str.in.re("b", optionally_a())));
 };
 #end
 
@@ -95,6 +101,20 @@ Assumptions:
 Proof Obligation:
 (~Bool.Not ((~Str.InRegEx #0123456789a) ~ok_chars_regex))
 
+Label: optionally_a_check1
+Assumptions:
+
+
+Proof Obligation:
+((~Str.InRegEx #a) ~optionally_a)
+
+Label: optionally_a_check2
+Assumptions:
+
+
+Proof Obligation:
+(~Bool.Not ((~Str.InRegEx #b) ~optionally_a))
+
 Wrote problem to vcs/hello_dot_ends_with_period.smt2.
 Wrote problem to vcs/dot_ends_with_period.smt2.
 Wrote problem to vcs/bye_exclaim_no_end_with_period.smt2.
@@ -102,6 +122,8 @@ Wrote problem to vcs/ok_chars_str.smt2.
 Wrote problem to vcs/cannot_contain_exclaim.smt2.
 Wrote problem to vcs/has_to_be_at_least_1_char.smt2.
 Wrote problem to vcs/cannot_exceed_10_chars.smt2.
+Wrote problem to vcs/optionally_a_check1.smt2.
+Wrote problem to vcs/optionally_a_check2.smt2.
 ---
 info:
 Obligation: hello_dot_ends_with_period
@@ -123,6 +145,12 @@ Obligation: has_to_be_at_least_1_char
 Result: verified
 
 Obligation: cannot_exceed_10_chars
+Result: verified
+
+Obligation: optionally_a_check1
+Result: verified
+
+Obligation: optionally_a_check2
 Result: verified
 -/
 #guard_msgs in
@@ -188,3 +216,40 @@ body: assert [assert_0] (~Bool.Not ((~Str.InRegEx #0123456789a) (~bad_re_loop $_
 -/
 #guard_msgs in
 #eval verify "cvc5" regexPgm2
+
+---------------------------------------------------------------------
+
+def regexPgm3 :=
+#strata
+program Boogie;
+
+procedure main(n : int) returns () {
+
+    var s : string;
+    assert (!(str.in.re(s, re.none())));
+
+};
+#end
+
+/--
+info: [Strata.Boogie] Type checking succeeded.
+
+
+VCs:
+Label: assert_0
+Assumptions:
+
+
+Proof Obligation:
+(~Bool.Not ((~Str.InRegEx init_s_0) ~Re.None))
+
+Wrote problem to vcs/assert_0.smt2.
+---
+info:
+Obligation: assert_0
+Result: verified
+-/
+#guard_msgs in
+#eval verify "cvc5" regexPgm3
+
+---------------------------------------------------------------------

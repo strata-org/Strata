@@ -583,6 +583,7 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Boogie.Expr
   | _, q`Boogie.re_union     => return reUnionOp
   | _, q`Boogie.re_inter     => return reInterOp
   | _, q`Boogie.re_comp      => return reCompOp
+  | _, q`Boogie.re_none      => return reNoneOp
   | _, _ => TransM.error s!"translateFn: Unknown/unimplemented function {repr q} at type {repr ty?}"
 
 mutual
@@ -704,6 +705,10 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   -- Re.AllChar
   | .fn _ q`Boogie.re_allchar, [] =>
     let fn ← translateFn .none q`Boogie.re_allchar
+    return fn
+  -- Re.None
+  | .fn _ q`Boogie.re_none, [] =>
+    let fn ← translateFn .none q`Boogie.re_none
     return fn
   -- Re.All
   | .fn _ q`Boogie.re_all, [] =>

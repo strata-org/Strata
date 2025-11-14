@@ -191,6 +191,12 @@ def reCompFunc : LFunc Visibility :=
       inputs := [("x", mty[regex])]
       output := mty[regex] }
 
+def reNoneFunc : LFunc Visibility :=
+    { name := "Re.None",
+      typeArgs := [],
+      inputs := []
+      output := mty[regex] }
+
 /- A polymorphic `old` function with type `∀a. a → a`. -/
 def polyOldFunc : LFunc Visibility :=
     { name := "old",
@@ -349,6 +355,7 @@ def Factory : @Factory Visibility := #[
   reUnionFunc,
   reInterFunc,
   reCompFunc,
+  reNoneFunc,
 
   polyOldFunc,
 
@@ -442,6 +449,7 @@ def reLoopOp : Expression.Expr := reLoopFunc.opExpr
 def reUnionOp : Expression.Expr := reUnionFunc.opExpr
 def reInterOp : Expression.Expr := reInterFunc.opExpr
 def reCompOp : Expression.Expr := reCompFunc.opExpr
+def reNoneOp : Expression.Expr := reNoneFunc.opExpr
 def polyOldOp : Expression.Expr := polyOldFunc.opExpr
 def mapSelectOp : Expression.Expr := mapSelectFunc.opExpr
 def mapUpdateOp : Expression.Expr := mapUpdateFunc.opExpr

@@ -397,6 +397,7 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
     | "Re.Union"     => .ok (.app Op.re_union,      .regex,  ctx)
     | "Re.Inter"     => .ok (.app Op.re_inter,      .regex,  ctx)
     | "Re.Comp"      => .ok (.app Op.re_comp,       .regex,  ctx)
+    | "Re.None"      => .ok (.app Op.re_none,       .regex,  ctx)
 
     | "Triggers.empty"          => .ok (.app Op.triggers, .trigger, ctx)
     | "TriggerGroup.empty"      => .ok (.app Op.triggers, .trigger, ctx)

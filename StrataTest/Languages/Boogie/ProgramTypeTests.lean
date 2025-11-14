@@ -139,6 +139,7 @@ info: ok: [(type Boogie.Boundedness.Infinite Foo [_, _]
   func Re.Union :  ((x : regex) (y : regex)) → regex;
   func Re.Inter :  ((x : regex) (y : regex)) → regex;
   func Re.Comp :  ((x : regex)) → regex;
+  func Re.None :  () → regex;
   func old : ∀[a]. ((x : a)) → a;
   func select : ∀[k, v]. ((m : (Map k v)) (i : k)) → v;
   func update : ∀[k, v]. ((m : (Map k v)) (i : k) (x : v)) → (Map k v);

@@ -93,6 +93,7 @@ fn re_loop (r : regex, i : int, j : int) : regex => "re.loop" "(" r "," i "," j"
 fn re_union (r1 : regex, r2 : regex) : regex => "re.union" "(" r1 "," r2 ")";
 fn re_inter (r1 : regex, r2 : regex) : regex => "re.inter" "(" r1 "," r2 ")";
 fn re_comp (r : regex) : regex => "re.comp" "(" r ")";
+fn re_none () : regex => "re.none" "(" ")";
 
 fn btrue : bool => "true";
 fn bfalse : bool => "false";
