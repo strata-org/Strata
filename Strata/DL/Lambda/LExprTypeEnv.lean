@@ -7,6 +7,7 @@
 import Strata.DL.Lambda.LExprWF
 import Strata.DL.Lambda.LTyUnify
 import Strata.DL.Lambda.Factory
+import Strata.DL.Lambda.TypeFactory
 import Strata.DL.Util.Maps
 
 /-! ## Type Environment
@@ -212,6 +213,12 @@ structure TGenEnv (IDMeta : Type) where
   genState : TState
 deriving Inhabited
 
+def LDatatype.toKnownType (d: LDatatype IDMeta) : KnownType :=
+  { name := d.name, metadata := d.typeArgs.length}
+
+def TypeFactory.toKnownTypes (t: @TypeFactory IDMeta) : KnownTypes :=
+  makeKnownTypes (t.foldr (fun t l => t.toKnownType :: l) [])
+
 /--
 A type environment `TEnv` contains
 - genEnv: `TGenEnv` to track the generator state as well as the typing context
@@ -292,9 +299,11 @@ instance [ToFormat IDMeta] : ToFormat (LContext IDMeta) where
   format s := f!" known types:{Format.line}{s.knownTypes}\
                  identifiers:{Format.line}{s.idents}"
 
-
 def LContext.addKnownTypeWithError (T : LContext IDMeta) (k : KnownType) (f: Format) : Except Format (LContext IDMeta) := do
   .ok {T with knownTypes := (← T.knownTypes.addWithError k f)}
+
+def LContext.addKnownTypes (T : LContext IDMeta) (k : KnownTypes) : Except Format (LContext IDMeta) := do
+  k.foldM (fun T k n => T.addKnownTypeWithError ⟨k, n⟩ f!"Error: type {k} already known") T
 
 def LContext.addIdentWithError (T : LContext IDMeta) (i: Identifier IDMeta) (f: Format) : Except Format (LContext IDMeta) := do
   let i ← T.idents.addWithError i f
