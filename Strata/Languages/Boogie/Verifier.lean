@@ -45,7 +45,7 @@ open Lambda Strata.SMT
 
 -- (TODO) Use DL.Imperative.SMTUtils.
 
-abbrev CounterEx := Map (IdentT Visibility) String
+abbrev CounterEx := Map (IdentT LMonoTy Visibility) String
 
 def CounterEx.format (cex : CounterEx) : Format :=
   match cex with
@@ -60,20 +60,21 @@ instance : ToFormat CounterEx where
 /--
 Find the Id for the SMT encoding of `x`.
 -/
-def getSMTId (x : (IdentT Visibility)) (ctx : SMT.Context) (E : EncoderState) : Except Format String := do
-    match x with
-    | (var, none) => .error f!"Expected variable {var} to be annotated with a type!"
-    | (var, some ty) => do
-      let (ty', _) ← LMonoTy.toSMTType ty ctx
-      let key : Strata.SMT.UF := { id := var.name, args := [], out := ty' }
-      .ok (E.ufs[key]!)
+def getSMTId (x : (IdentT LMonoTy Visibility)) (ctx : SMT.Context) (E : EncoderState)
+    : Except Format String := do
+  match x with
+  | (var, none) => .error f!"Expected variable {var} to be annotated with a type!"
+  | (var, some ty) => do
+    let (ty', _) ← LMonoTy.toSMTType ty ctx
+    let key : Strata.SMT.UF := { id := var.name, args := [], out := ty' }
+    .ok (E.ufs[key]!)
 
 def getModel (m : String) : Except Format (List Strata.SMT.CExParser.KeyValue) := do
   let cex ← Strata.SMT.CExParser.parseCEx m
   return cex.pairs
 
 def processModel
-  (vars : List (IdentT Visibility)) (cexs : List Strata.SMT.CExParser.KeyValue)
+  (vars : List (IdentT LMonoTy Visibility)) (cexs : List Strata.SMT.CExParser.KeyValue)
   (ctx : SMT.Context) (E : EncoderState) :
   Except Format CounterEx := do
   match vars with
@@ -116,7 +117,8 @@ def runSolver (solver : String) (args : Array String) : IO String := do
   --                         stdout: {repr output.stdout}"
   return output.stdout
 
-def solverResult (vars : List (IdentT Visibility)) (ans : String) (ctx : SMT.Context) (E : EncoderState) :
+def solverResult (vars : List (IdentT LMonoTy Visibility)) (ans : String)
+    (ctx : SMT.Context) (E : EncoderState) :
   Except Format Result := do
   let pos := (ans.find (fun c => c == '\n')).byteIdx
   let verdict := (ans.take pos).trim
@@ -178,7 +180,7 @@ def getSolverFlags (options : Options) (solver : String) : Array String :=
 
 def dischargeObligation
   (options : Options)
-  (vars : List (IdentT Visibility)) (smtsolver filename : String)
+  (vars : List (IdentT LMonoTy Visibility)) (smtsolver filename : String)
   (terms : List Term) (ctx : SMT.Context)
   : IO (Except Format (Result × EncoderState)) := do
   if !(← System.FilePath.isDir VC_folder_name) then

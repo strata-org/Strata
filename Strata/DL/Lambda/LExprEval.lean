@@ -33,7 +33,8 @@ Canonical values of `LExpr`s.
 Equality is simply `==` (or more accurately, `eqModuloTypes`) for these
 `LExpr`s. Also see `eql` for a version that can tolerate nested metadata.
 -/
-partial def isCanonicalValue (σ : LState IDMeta) (e : LExpr LMonoTy IDMeta) : Bool :=
+partial def isCanonicalValue {GenericTy} (σ : LState IDMeta)
+    (e : LExpr GenericTy IDMeta) : Bool :=
   match e with
   | .const _ => true
   | .abs _ _ =>
