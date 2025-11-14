@@ -33,7 +33,7 @@ procedure test(h: Heap, ref: Ref, field: Field) returns ()
 
 #end
 
-#guard TransM.run (translateProgram QuantTypeAliases) |>.snd |>.isEmpty
+#guard TransM.run Inhabited.default (translateProgram QuantTypeAliases) |>.snd |>.isEmpty
 
 /--
 info: type Boogie.Boundedness.Infinite Ref []
@@ -54,7 +54,7 @@ assert [assert0] ((((~select : (arrow (Map Field int) (arrow Field int))) (((~se
 Errors: #[]
 -/
 #guard_msgs in
-#eval TransM.run (translateProgram QuantTypeAliases)
+#eval TransM.run Inhabited.default (translateProgram QuantTypeAliases)
 
 
 /--
@@ -77,4 +77,4 @@ Obligation: assert0
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" QuantTypeAliases
+#eval verify "cvc5" Inhabited.default QuantTypeAliases

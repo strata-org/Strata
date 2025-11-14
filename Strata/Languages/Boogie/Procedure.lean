@@ -51,7 +51,7 @@ instance : Std.ToFormat Procedure.CheckAttr where
 structure Procedure.Check where
   expr : Expression.Expr
   attr : CheckAttr := .Default
-  deriving Repr, DecidableEq
+  md : Imperative.MetaData Expression := #[]
 
 instance : ToFormat Procedure.Check where
   format c := f!"{c.expr}{c.attr}"
@@ -63,7 +63,7 @@ structure Procedure.Spec where
   modifies       : List Expression.Ident
   preconditions  : ListMap BoogieLabel Procedure.Check
   postconditions : ListMap BoogieLabel Procedure.Check
-  deriving Repr, DecidableEq, Inhabited
+  deriving Inhabited
 
 instance : ToFormat Procedure.Spec where
   format p :=

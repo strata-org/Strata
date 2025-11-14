@@ -299,7 +299,7 @@ theorem postconditions_subst_unwrap :
 
 theorem prepostconditions_unwrap {ps : List (BoogieLabel × Procedure.Check)} :
 post ∈ List.map Procedure.Check.expr (ListMap.values ps) →
-∃ label attr, (label, { expr := post, attr : Procedure.Check }) ∈ ps := by
+∃ label attr md, (label, { expr := post, attr := attr, md := md : Procedure.Check }) ∈ ps := by
   intros H
   induction ps
   case nil =>
@@ -312,7 +312,7 @@ post ∈ List.map Procedure.Check.expr (ListMap.values ps) →
     cases Hc.1 with
     | inl Hin =>
       simp_all
-      refine ⟨h.1, c.attr, ?_⟩
+      refine ⟨h.1, c.attr, c.md, ?_⟩
       left
       simp [← Hc, Hin]
     | inr Hin =>
@@ -321,9 +321,7 @@ post ∈ List.map Procedure.Check.expr (ListMap.values ps) →
       . simp [← Hc.2]
         refine ⟨c, ⟨Hin, rfl⟩⟩
       . cases ih with
-        | intro label ih => cases ih with
-        | intro attr ih =>
-          refine ⟨label, attr, Or.inr ih⟩
+        | intro label ih => grind
 
 theorem updatedStateIsDefinedMono :
   (σ k').isSome = true →
@@ -3971,6 +3969,8 @@ theorem callElimStatementCorrect :
                         | intro label HH =>
                         cases HH with
                         | intro attr HH =>
+                        cases HH with
+                        | intro md HH =>
                         have Hwf := (List.Forall_mem_iff.mp wfpre _ HH).glvars
                         simp at Hwf
                         exact Hwf
@@ -3980,6 +3980,8 @@ theorem callElimStatementCorrect :
                     | intro label HH =>
                     cases HH with
                     | intro attr HH =>
+                    cases HH with
+                    | intro md HH =>
                     apply List.Disjoint_app.mp ⟨?_, ?_⟩
                     . apply List.PredDisjoint_Disjoint
                         (P:=(BoogieIdent.isTemp ·))
@@ -4343,6 +4345,8 @@ theorem callElimStatementCorrect :
                     | intro label HH =>
                     cases HH with
                     | intro attr HH =>
+                    cases HH with
+                    | intro md HH =>
                     have Hpost := (List.Forall_mem_iff.mp wfpost _ HH)
                     have Hlcl := List.Forall_mem_iff.mp Hpost.lvars
                     have Hgl := List.Forall_mem_iff.mp Hpost.glvars
@@ -4483,6 +4487,8 @@ theorem callElimStatementCorrect :
                           | intro label HH =>
                           cases HH with
                           | intro attr HH =>
+                          cases HH with
+                          | intro md HH =>
                           have Hwfpost := (List.Forall_mem_iff.mp wfpost _ HH).oldexprs
                           simp at Hwfpost
                           exact Hwfpost
@@ -4572,6 +4578,8 @@ theorem callElimStatementCorrect :
                               | intro label HH =>
                               cases HH with
                               | intro attr HH =>
+                              cases HH with
+                              | intro md HH =>
                               have Hwf := (List.Forall_mem_iff.mp wfpost _ HH).glvars
                               simp at Hwf
                               exact Hwf
@@ -4582,6 +4590,8 @@ theorem callElimStatementCorrect :
                             | intro label HH =>
                             cases HH with
                             | intro attr HH =>
+                            cases HH with
+                            | intro md HH =>
                             have Hwf := (List.Forall_mem_iff.mp wfpost _ HH).oldexprs
                             simp at Hwf
                             exact Hwf
@@ -4599,6 +4609,8 @@ theorem callElimStatementCorrect :
                         | intro label HH =>
                         cases HH with
                         | intro attr HH =>
+                        cases HH with
+                        | intro md HH =>
                         have Hwf := (List.Forall_mem_iff.mp wfpost _ HH).glvars
                         simp at Hwf
                         exact Hwf
@@ -4615,6 +4627,8 @@ theorem callElimStatementCorrect :
                         | intro label HH =>
                         cases HH with
                         | intro attr HH =>
+                        cases HH with
+                        | intro md HH =>
                         have Hwf := (List.Forall_mem_iff.mp wfpost _ HH).glvars
                         simp at Hwf
                         exact Hwf

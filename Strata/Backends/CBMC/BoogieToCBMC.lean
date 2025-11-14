@@ -35,7 +35,7 @@ spec {
 #end
 
 open Boogie in
-def SimpleTestEnvAST := Strata.TransM.run (Strata.translateProgram (SimpleTestEnv))
+def SimpleTestEnvAST := Strata.TransM.run Inhabited.default (Strata.translateProgram (SimpleTestEnv))
 
 def myProc : Boogie.Procedure := match SimpleTestEnvAST.fst.decls.head!.getProc? with
   | .some p => p

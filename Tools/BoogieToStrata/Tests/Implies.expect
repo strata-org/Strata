@@ -1,14 +1,14 @@
 Successfully parsed.
-assert_0: verified
-assert_1: unknown
-assert_2: verified
-assert_3: unknown
-assert_4: unknown
-assert_5: unknown
-assert_6: unknown
-assert_7: unknown
-assert_8: unknown
-assert_9: unknown
-assert_10: unknown
-assert_11: unknown
+Implies.boogie.st(24, 4) [assert_0]: verified
+Implies.boogie.st(25, 4) [assert_1]: unknown
+Implies.boogie.st(26, 4) [assert_2]: verified
+Implies.boogie.st(27, 4) [assert_3]: unknown
+Implies.boogie.st(36, 4) [assert_4]: unknown
+Implies.boogie.st(37, 4) [assert_5]: unknown
+Implies.boogie.st(46, 4) [assert_6]: unknown
+Implies.boogie.st(47, 4) [assert_7]: unknown
+Implies.boogie.st(56, 4) [assert_8]: unknown
+Implies.boogie.st(57, 4) [assert_9]: unknown
+Implies.boogie.st(66, 4) [assert_10]: unknown
+Implies.boogie.st(67, 4) [assert_11]: unknown
 Finished with 2 goals proved, 10 failed.

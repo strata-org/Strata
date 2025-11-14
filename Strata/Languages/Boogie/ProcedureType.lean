@@ -69,7 +69,7 @@ def typeCheck (C: Boogie.Expression.TyContext) (T : Boogie.Expression.TyEnv) (p 
       --    depends on this step! See also note in `OldExpressions.lean`.
       let postcondition_checks := OldExpressions.normalizeOldChecks proc.spec.postconditions
       -- 3. Ensure that the preconditions and postconditions are of type boolean.
-      let postconditions := postcondition_checks.map (fun (_, { expr := expr, attr := _ }) => expr)
+      let postconditions := postcondition_checks.map (fun (_, c) => c.expr)
       let (preconditions_a, T) ← Lambda.LExprT.fromLExprs C T preconditions
       let pre_tys := preconditions_a.map Lambda.LExprT.toLMonoTy
       let preconditions := preconditions_a.map Lambda.LExprT.toLExpr

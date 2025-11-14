@@ -126,7 +126,7 @@ Obligation: cannot_exceed_10_chars
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" regexPgm1
+#eval verify "cvc5" Inhabited.default regexPgm1
 
 ---------------------------------------------------------------------
 
@@ -187,4 +187,4 @@ postconditions: ⏎
 body: assert [assert_0] (~Bool.Not ((~Str.InRegEx #0123456789a) (~bad_re_loop $__n0)))
 -/
 #guard_msgs in
-#eval verify "cvc5" regexPgm2
+#eval verify "cvc5" Inhabited.default regexPgm2
