@@ -33,7 +33,7 @@ Canonical values of `LExpr`s.
 Equality is simply `==` (or more accurately, `eqModuloTypes`) for these
 `LExpr`s. Also see `eql` for a version that can tolerate nested metadata.
 -/
-def isCanonicalValue (e : (LExpr LMonoTy IDMeta)) : Bool :=
+partial def isCanonicalValue (σ : LState IDMeta) (e : LExpr LMonoTy IDMeta) : Bool :=
   match e with
   | .const _ => true
   | .abs _ _ =>
@@ -42,16 +42,19 @@ def isCanonicalValue (e : (LExpr LMonoTy IDMeta)) : Bool :=
     -- So we could simplify the following to `closed e`, but leave it as is for
     -- clarity.
     LExpr.closed e
-  | .mdata _ e' => isCanonicalValue e'
-  | _ => false
+  | .mdata _ e' => isCanonicalValue σ e'
+  | _ =>
+    match Factory.callOfLFunc σ.config.factory e with
+    | some (_, args, f) => f.isConstr && List.all (args.map (isCanonicalValue σ)) id
+    | none => false
 
 /--
 Equality of canonical values `e1` and `e2`.
 
 We can tolerate nested metadata here.
 -/
-def eql (e1 e2 : (LExpr LMonoTy IDMeta))
-  (_h1 : isCanonicalValue e1) (_h2 : isCanonicalValue e2) : Bool :=
+def eql (σ : LState IDMeta) (e1 e2 : LExpr LMonoTy IDMeta)
+  (_h1 : isCanonicalValue σ e1) (_h2 : isCanonicalValue σ e2) : Bool :=
   if eqModuloTypes e1 e2 then
     true
   else
@@ -94,7 +97,7 @@ def eval (n : Nat) (σ : (LState IDMeta)) (e : (LExpr LMonoTy IDMeta)) : (LExpr 
   match n with
   | 0 => e
   | n' + 1 =>
-    if isCanonicalValue e then
+    if isCanonicalValue σ e then
       e
     else
       -- Special handling for Factory functions.
@@ -109,12 +112,12 @@ def eval (n : Nat) (σ : (LState IDMeta)) (e : (LExpr LMonoTy IDMeta)) : (LExpr 
           eval n' σ new_e
         else
           let new_e := mkApp op_expr args
-          if args.all isConst then
+          if args.all (isCanonicalValue σ) then
             -- All arguments in the function call are concrete.
             -- We can, provided a denotation function, evaluate this function
             -- call.
             match lfunc.concreteEval with
-            | none => new_e | some ceval => ceval new_e args
+            | none => new_e | some ceval => eval n' σ (ceval new_e args)
           else
             -- At least one argument in the function call is symbolic.
             new_e
@@ -161,8 +164,8 @@ def evalEq (n' : Nat) (σ : (LState IDMeta)) (e1 e2 : (LExpr LMonoTy IDMeta)) : 
   if eqModuloTypes e1' e2' then
     -- Short-circuit: e1' and e2' are syntactically the same after type erasure.
     LExpr.true
-  else if h: isCanonicalValue e1' ∧ isCanonicalValue e2' then
-      if eql e1' e2' h.left h.right then
+  else if h: isCanonicalValue σ e1' ∧ isCanonicalValue σ e2' then
+      if eql σ e1' e2' h.left h.right then
         LExpr.true
       else LExpr.false
   else
@@ -176,7 +179,7 @@ def evalApp (n' : Nat) (σ : (LState IDMeta)) (e e1 e2 : (LExpr LMonoTy IDMeta))
     let e' := subst e2' e1'
     if eqModuloTypes e e' then e else eval n' σ e'
   | .op fn _ =>
-    match σ.config.factory.getFactoryLFunc fn with
+    match σ.config.factory.getFactoryLFunc fn.name with
     | none => LExpr.app e1' e2'
     | some lfunc =>
       let e' := LExpr.app e1' e2'

@@ -7,6 +7,7 @@
 import Strata.DL.Lambda.LExprEval
 import Strata.DL.Lambda.LExprType
 import Strata.DL.Lambda.LExpr
+import Strata.DL.Lambda.TypeFactory
 
 namespace Lambda
 
@@ -26,21 +27,24 @@ See module `Strata.DL.Lambda.LExpr` for the formalization of expressions,
 `Strata.DL.Lambda.LExprEval` for the partial evaluator.
 -/
 
-variable {IDMeta : Type} [ToString IDMeta] [DecidableEq IDMeta] [HasGen IDMeta]
-
+variable {IDMeta : Type} [ToString IDMeta] [DecidableEq IDMeta] [HasGen IDMeta] [Inhabited IDMeta]
 /--
 Top-level type checking and partial evaluation function for the Lambda
 dialect.
 -/
 def typeCheckAndPartialEval
+  (t: TypeFactory (IDMeta:=IDMeta) := TypeFactory.default)
   (f : Factory (IDMeta:=IDMeta) := Factory.default)
   (e : (LExpr LMonoTy IDMeta)) :
   Except Std.Format (LExpr LMonoTy IDMeta) := do
+  let fTy ← t.genFactory
+  let fAll ← Factory.addFactory fTy f
   let T := TEnv.default
-  let C := LContext.default.addFactoryFunctions f
+  let C := LContext.default.addFactoryFunctions fAll
+  let C ← C.addKnownTypes t.toKnownTypes
   let (et, _T) ← LExpr.annotate C T e
   dbg_trace f!"Annotated expression:{Format.line}{et}{Format.line}"
-  let σ ← (LState.init).addFactory f
+  let σ ← (LState.init).addFactory fAll
   return (LExpr.eval σ.config.fuel σ et)
 
 end Lambda

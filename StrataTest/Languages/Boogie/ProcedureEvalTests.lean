@@ -15,7 +15,7 @@ open Std (ToFormat Format format)
 open Procedure Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Boogie.Syntax
 
 /--
-info: ok: Error:
+info: Error:
 none
 Subst Map:
 (x, ($__x0 : int)) (y, ($__y1 : int))
@@ -215,7 +215,7 @@ Proof Obligation:
 ((~Int.Lt (~Int.Neg ($__x0 : int))) #0)
 -/
 #guard_msgs in
-#eval do let E ← Env.init.addFactory Boogie.Factory
+#eval do let E := Env.init
          let (_proc, E) := evalOne E
               { header := {name := "P",
                            typeArgs := [],
