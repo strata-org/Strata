@@ -127,6 +127,7 @@ info: ok: [(type Boogie.Boundedness.Infinite Foo [_, _]
   func Bool.Not :  ((x : bool)) → bool;
   func Str.Length :  ((x : string)) → int;
   func Str.Concat :  ((x : string) (y : string)) → string;
+  func Str.Substr :  ((x : string) (i : int) (n : int)) → string;
   func Str.ToRegEx :  ((x : string)) → regex;
   func Str.InRegEx :  ((x : string) (y : regex)) → bool;
   func Re.All :  () → regex;

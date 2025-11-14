@@ -119,6 +119,13 @@ def strConcatFunc : LFunc Visibility :=
       concreteEval := some (binOpCeval String String .strConst
                             LExpr.denoteString String.append)}
 
+def strSubstrFunc : LFunc Visibility :=
+    { name := "Str.Substr",
+      typeArgs := [],
+      -- longest substring of `x` of length at most `n` starting at position `i`.
+      inputs := [("x", mty[string]), ("i", mty[int]), ("n", mty[int])]
+      output := mty[string] }
+
 def strToRegexFunc : LFunc Visibility :=
     { name := "Str.ToRegEx",
       typeArgs := [],
@@ -343,6 +350,7 @@ def Factory : @Factory Visibility := #[
 
   strLengthFunc,
   strConcatFunc,
+  strSubstrFunc,
   strToRegexFunc,
   strInRegexFunc,
   reAllFunc,
@@ -437,6 +445,7 @@ def boolEquivOp : Expression.Expr := boolEquivFunc.opExpr
 def boolNotOp : Expression.Expr := boolNotFunc.opExpr
 def strLengthOp : Expression.Expr := strLengthFunc.opExpr
 def strConcatOp : Expression.Expr := strConcatFunc.opExpr
+def strSubstrOp : Expression.Expr := strSubstrFunc.opExpr
 def strToRegexOp : Expression.Expr := strToRegexFunc.opExpr
 def strInRegexOp : Expression.Expr := strInRegexFunc.opExpr
 def reAllOp : Expression.Expr := reAllFunc.opExpr

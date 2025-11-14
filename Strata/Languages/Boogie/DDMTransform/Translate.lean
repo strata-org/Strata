@@ -571,6 +571,7 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Boogie.Expr
   | _, q`Boogie.old          => return polyOldOp
   | _, q`Boogie.str_len      => return strLengthOp
   | _, q`Boogie.str_concat   => return strConcatOp
+  | _, q`Boogie.str_substr   => return strSubstrOp
   | _, q`Boogie.str_toregex  => return strToRegexOp
   | _, q`Boogie.str_inregex  => return strInRegexOp
   | _, q`Boogie.re_all       => return reAllOp
@@ -746,6 +747,11 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let x ← translateExpr p bindings xa
      let y ← translateExpr p bindings ya
      return .mkApp Boogie.strConcatOp [x, y]
+  | .fn _ q`Boogie.str_substr, [xa, ia, na] =>
+     let x ← translateExpr p bindings xa
+     let i ← translateExpr p bindings ia
+     let n ← translateExpr p bindings na
+     return .mkApp Boogie.strSubstrOp [x, i, n]
   | .fn _ q`Boogie.old, [_tp, xa] =>
      let x ← translateExpr p bindings xa
      return .mkApp Boogie.polyOldOp [x]

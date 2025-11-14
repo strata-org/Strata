@@ -81,6 +81,7 @@ fn map_set (K : Type, V : Type, m : Map K V, k : K, v : V) : Map K V =>
 // FIXME: Define polymorphic length and concat functions?
 fn str_len (a : string) : int => "str.len" "(" a  ")";
 fn str_concat (a : string, b : string) : string => "str.concat" "(" a "," b ")";
+fn str_substr (a : string, i : int, n : int) : string => "str.substr" "(" a "," i "," n ")";
 fn str_toregex (a : string) : regex => "str.to.re" "(" a ")";
 fn str_inregex (s : string, a : regex) : bool => "str.in.re" "(" s "," a ")";
 fn re_allchar () : regex => "re.allchar" "(" ")";
