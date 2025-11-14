@@ -187,23 +187,22 @@ along the way.
 def Factory.addFactory (F newF : @Factory IDMeta) : Except Format (@Factory IDMeta) :=
   Array.foldlM (fun factory func => factory.addFactoryFunc func) F newF
 
-def getLFuncCall (e : (LExpr LMonoTy IDMeta)) : (LExpr LMonoTy IDMeta) × List (LExpr LMonoTy IDMeta) :=
+def getLFuncCall {GenericTy} (e : (LExpr GenericTy IDMeta))
+    : (LExpr GenericTy IDMeta) × List (LExpr GenericTy IDMeta) :=
   go e []
-  where go e (acc : List (LExpr LMonoTy IDMeta)) :=
+  where go e (acc : List (LExpr GenericTy IDMeta)) :=
   match e with
   | .app (.app  e' arg1) arg2 =>  go e' ([arg1, arg2] ++ acc)
   | .app (.op  fn  fnty) arg1 =>  ((.op fn fnty), ([arg1] ++ acc))
   | _ => (e, acc)
 
-def getConcreteLFuncCall (e : (LExpr LMonoTy IDMeta)) : (LExpr LMonoTy IDMeta) × List (LExpr LMonoTy IDMeta) :=
-  let (op, args) := getLFuncCall e
-  if args.all LExpr.isConst then (op, args) else (e, [])
-
 /--
 If `e` is a call of a factory function, get the operator (`.op`), a list
 of all the actuals, and the `(LFunc IDMeta)`.
 -/
-def Factory.callOfLFunc (F : @Factory IDMeta) (e : (LExpr LMonoTy IDMeta)) : Option ((LExpr LMonoTy IDMeta) × List (LExpr LMonoTy IDMeta) × (LFunc IDMeta)) :=
+def Factory.callOfLFunc {GenericTy} (F : @Factory IDMeta)
+    (e : (LExpr GenericTy IDMeta))
+    : Option ((LExpr GenericTy IDMeta) × List (LExpr GenericTy IDMeta) × (LFunc IDMeta)) :=
   let (op, args) := getLFuncCall e
   match op with
   | .op name _ =>
