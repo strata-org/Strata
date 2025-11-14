@@ -84,6 +84,16 @@ jobs:
               find "Examples" -maxdepth 1 -type f -name "*.st" | while IFS= read -r file; do
                   source ~/.profile && lake exe StrataVerify "$file"
               done
+      - uses: actions/setup-python@v5
+        with:
+        python-version: '3.14'
+      - name: Build using pip
+        run: pip install .
+        working-directory: Tools/Python
+      - name: Run pyAnalyze tests
+        working-directory: StrataTest/Languages/Python
+        shell: bash
+        run: ./run_py_analyze.sh
 
   lint_checks:
     name: Run lint checks
@@ -143,8 +153,4 @@ jobs:
     - name: Run test script
       run: ./scripts/run_cpython_tests.sh
       working-directory: Tools/Python
-    - name: Run pyAnalyze tests
-      working-directory: StrataTest/Languages/Python
-      shell: bash
-      run: ./run_py_analyze.sh
       
