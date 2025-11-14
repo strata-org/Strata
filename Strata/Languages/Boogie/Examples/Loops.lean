@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Boogie.Verifier
+import Strata.Transform.StructuredToUnstructured
 
 ---------------------------------------------------------------------
 namespace Strata
@@ -32,6 +33,39 @@ spec {
   }
 };
 #end
+
+def singleCFG (p : Program) : Imperative.CFG String (Imperative.DetBlock String Boogie.Command Boogie.Expression) :=
+  let boogiePgm := TransM.run (translateProgram p) |>.fst
+  let proc := match boogiePgm.decls.filter (λ d => d.kind = .proc) with | (.proc p) :: _ => p | _ => panic!"No procedure!"
+  Imperative.stmtsToCFG proc.body
+
+/--
+info: Entry: l_6
+
+[l_6:
+   [init (i : int) := init_i_0]
+   cgoto #true l_5 l_5,
+ l_5:
+   [i := #0]
+   cgoto #true l_4 l_4,
+ l_4:
+   [s := #0]
+   cgoto #true loop_entry_1 loop_entry_1,
+ loop_entry_1:
+   [assert [inv] (((~Bool.And : (arrow bool (arrow bool bool))) (((~Bool.And : (arrow bool (arrow bool bool))) (((~Int.Le : (arrow int (arrow int bool))) #0) (i : int))) (((~Int.Le : (arrow int (arrow int bool))) (i : int)) (n : int)))) ((s : int) == (((~Int.Div : (arrow int (arrow int int))) (((~Int.Mul : (arrow int (arrow int int))) (i : int)) (((~Int.Add : (arrow int (arrow int int))) (i : int)) #1))) #2)))]
+   cgoto (((~Int.Lt : (arrow int (arrow int bool))) (i : int)) (n : int)) l_3 end_0,
+ l_3:
+   [i := (((~Int.Add : (arrow int (arrow int int))) (i : int)) #1)]
+   cgoto #true l_2 l_2,
+ l_2:
+   [s := (((~Int.Add : (arrow int (arrow int int))) (s : int)) (i : int))]
+   cgoto #true loop_entry_1 loop_entry_1,
+ end_0:
+   []
+   finish]
+-/
+#guard_msgs in
+#eval (Std.format (singleCFG gaussPgm))
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -108,6 +142,40 @@ spec {
   }
 };
 #end
+
+/--
+info: Entry: l_8
+
+[l_8:
+   [init (x : int) := init_x_0]
+   cgoto #true l_7 l_7,
+ l_7:
+   [init (y : int) := init_y_1]
+   cgoto #true l_6 l_6,
+ l_6:
+   [x := #0]
+   cgoto #true loop_entry_1 loop_entry_1,
+ loop_entry_1:
+   [assert [inv] (((~Bool.And : (arrow bool (arrow bool bool))) (((~Bool.And : (arrow bool (arrow bool bool))) (((~Int.Ge : (arrow int (arrow int bool))) (x : int)) #0)) (((~Int.Le : (arrow int (arrow int bool))) (x : int)) (n : int)))) (((~Int.Lt : (arrow int (arrow int bool))) (n : int)) (~top : int)))]
+   cgoto (((~Int.Lt : (arrow int (arrow int bool))) (x : int)) (n : int)) l_5 end_0,
+ l_5:
+   [y := #0]
+   cgoto #true loop_entry_3 loop_entry_3,
+ loop_entry_3:
+   [assert [inv] (((~Bool.And : (arrow bool (arrow bool bool))) (((~Int.Ge : (arrow int (arrow int bool))) (y : int)) #0)) (((~Int.Le : (arrow int (arrow int bool))) (y : int)) (x : int)))]
+   cgoto (((~Int.Lt : (arrow int (arrow int bool))) (y : int)) (x : int)) l_4 l_2,
+ l_4:
+   [y := (((~Int.Add : (arrow int (arrow int int))) (y : int)) #1)]
+   cgoto #true loop_entry_3 loop_entry_3,
+ l_2:
+   [x := (((~Int.Add : (arrow int (arrow int int))) (x : int)) #1)]
+   cgoto #true loop_entry_1 loop_entry_1,
+ end_0:
+   []
+   finish]
+-/
+#guard_msgs in
+#eval (Std.format (singleCFG nestedPgm))
 
 /--
 info:
