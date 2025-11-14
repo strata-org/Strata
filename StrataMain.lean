@@ -158,9 +158,10 @@ def diffCommand : Command where
 
 def pyAnalyzeCommand : Command where
   name := "pyAnalyze"
-  args := [ "file" ]
+  args := [ "file", "verbose" ]
   help := "Analyze a Strata Python Ion file. Write results to stdout."
   callback := fun searchPath v => do
+    let verbose := v[1] == "1"
     let (ld, pd) ← readFile searchPath v[0]
     match pd with
     | .dialect d =>
@@ -169,9 +170,10 @@ def pyAnalyzeCommand : Command where
     let preludePgm := Strata.Python.Internal.Boogie.prelude
     let bpgm := Strata.pythonToBoogie pgm
     let newPgm : Boogie.Program := { decls := preludePgm.decls ++ bpgm.decls }
-    IO.print newPgm
+    if verbose then
+      IO.print newPgm
     let vcResults ← EIO.toIO (fun f => IO.Error.userError (toString f))
-                        (Boogie.verify "z3" newPgm { Options.default with stopOnFirstError := false })
+                        (Boogie.verify "z3" newPgm { Options.default with stopOnFirstError := false, verbose })
     let mut s := ""
     for vcResult in vcResults do
       s := s ++ s!"\n{vcResult.obligation.label}: {Std.format vcResult.result}\n"

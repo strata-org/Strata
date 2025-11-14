@@ -128,7 +128,7 @@ def solverResult (vars : List (IdentT Visibility)) (ans : String) (ctx : SMT.Con
     .ok (.sat model)
   | "unsat"   =>  .ok .unsat
   | "unknown" =>  .ok .unknown
-  | other     =>  .error other
+  | _     =>  .error ans
 
 structure VCResult where
   obligation : Imperative.ProofObligation Expression

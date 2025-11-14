@@ -84,6 +84,16 @@ jobs:
               find "Examples" -maxdepth 1 -type f -name "*.st" | while IFS= read -r file; do
                   source ~/.profile && lake exe StrataVerify "$file"
               done
+      - uses: actions/setup-python@v5
+        with:
+        python-version: '3.14'
+      - name: Build using pip
+        run: pip install .
+        working-directory: Tools/Python
+      - name: Run pyAnalyze tests
+        working-directory: StrataTest/Languages/Python
+        shell: bash
+        run: ./run_py_analyze.sh
 
   lint_checks:
     name: Run lint checks
@@ -112,7 +122,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - name: Build documetation package
+      - name: Build documentation package
         uses: leanprover/lean-action@v1
         with:
           build-args: '--wfail'
@@ -122,7 +132,7 @@ jobs:
         working-directory: docs/ddm
 
   build_python:
-    name: Build and test Python package
+    name: Build and test Python
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -130,7 +140,7 @@ jobs:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
       with:
-        python-version: '3.13'
+        python-version: '3.14'
     - name: Build using pip
       run: pip install .
       working-directory: Tools/Python
@@ -143,3 +153,4 @@ jobs:
     - name: Run test script
       run: ./scripts/run_cpython_tests.sh
       working-directory: Tools/Python
+      
