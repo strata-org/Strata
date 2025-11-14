@@ -16,7 +16,8 @@ for test_file in test_[0-9]*.py; do
                 echo "$output" | diff "$expected_file" -
             fi
         else
-            echo "WARNING: No expected file found for $base_name"
+            echo "ERROR: No expected file found for $base_name"
+            exit 1
         fi
     fi
 done
