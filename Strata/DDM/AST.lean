@@ -1385,9 +1385,11 @@ structure Program where
   /-- Final global context for program. -/
   globalContext : GlobalContext :=
     commands.foldl (init := {}) (·.addCommand dialects ·)
-deriving BEq
 
 namespace Program
+
+instance : BEq Program where
+  beq x y := x.dialect == y.dialect && x.commands == y.commands
 
 instance : Inhabited Program where
   default := { dialects := {}, dialect := default }

@@ -596,16 +596,10 @@ protected def ArgF.fromIon {α} [FromIon α] (v : Ion SymbolId) : FromIonM (ArgF
     pure <| .decimal ann d
   | "strlit" =>
     let ⟨p⟩ ← .checkArgCount "strlit" sexp 3
-    match sexp[2] with
-    | .string s => pure ()
-    | _ => throw s!"strlit expected to be a string. {repr v}"
     .strlit <$> fromIon sexp[1]
             <*> .asString "String literal value" sexp[2]
   | "bytes" =>
     let ⟨p⟩ ← .checkArgCount "bytes" sexp 3
-    match sexp[2] with
-    | .string s => pure ()
-    | _ => throw s!"strlit expected to be a string. {repr v}"
     .bytes <$> fromIon sexp[1]
             <*> .asBytes "byte literal" sexp[2]
   | "option" =>

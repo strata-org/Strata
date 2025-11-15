@@ -442,9 +442,9 @@ def arg_to_ion(a : Arg) -> object:
             val = ion.IonPyText(val)
         else:
             val = ion.IonPyText(a.value)
-        return ion_sexp(ion_symbol("strlit"), ann_to_ion(a.ann), val)
+        return ion_sexp(strlitSym, ann_to_ion(a.ann), val)
     elif isinstance(a, BytesLit):
-        return ion_sexp(ion_symbol("strlit"), ann_to_ion(a.ann), a.value)
+        return ion_sexp(ion_symbol("bytes"), ann_to_ion(a.ann), a.value)
     elif isinstance(a, OptionArg):
         if a.value is None:
             return ion_sexp(optionSym, ann_to_ion(a.ann))
