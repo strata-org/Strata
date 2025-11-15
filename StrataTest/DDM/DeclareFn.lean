@@ -24,8 +24,8 @@ category Bindings;
 op mkBindings (bindings : CommaSepBy Binding) : Bindings => "(" bindings ")";
 
 @[declareFn(name, b, r)]
-op command_fndecl (name : Ident, b : Bindings, r : Type) : Command => "function " name b " : " r ";\n";
-op command_assert (b : bool) : Command => "assert " b ";\n";
+op command_fndecl (name : Ident, b : Bindings, r : Type) : Command => "function" name b ":" r ";\n";
+op command_assert (b : bool) : Command => "assert" b ";\n";
 #end
 
 def testDeclareFnPgm :=
@@ -37,8 +37,8 @@ assert f(true, 2);
 
 /--
 info: program TestDeclareFn;
-function f(b:bool, i:int) : bool;
-assert f(true, 2);
+function f ( b : bool, i : int ) : bool ;
+assert f(true, 2) ;
 -/
 #guard_msgs in
 #eval IO.println testDeclareFnPgm
@@ -47,7 +47,7 @@ assert f(true, 2);
 dialect TestDeclareType;
 
 @[declareType(name, none)]
-op command_typedecl (name : Ident) : Command => "type " name ";\n";
+op command_typedecl (name : Ident) : Command => "type" name ";\n";
 
 category Binding;
 @[declare(name, tp)]
@@ -58,17 +58,17 @@ category Bindings;
 op mkBindings (bindings : CommaSepBy Binding) : Bindings => "(" bindings ")";
 
 @[declareType(name, some args)]
-op command_typefn (name : Ident, args : Option Bindings) : Command => "type_fn " name args ";\n";
+op command_typefn (name : Ident, args : Option Bindings) : Command => "type_fn" name args ";\n";
 
 @[aliasType(name, some args, rhs)]
-op typealias (name : Ident, args : Option Bindings, @[scope(args)] rhs : Type) : Command => "type_alias " name args "=" rhs ";\n";
+op typealias (name : Ident, args : Option Bindings, @[scope(args)] rhs : Type) : Command => "type_alias" name args "=" rhs ";\n";
 
 @[declare(name, tp)]
-op var (name : Ident, tp : Type) : Command => "var " name " : " tp ";\n";
+op var (name : Ident, tp : Type) : Command => "var" name ":" tp ";\n";
 
-op checkType (tp : Type) : Command => "check_type " tp ";\n";
+op checkType (tp : Type) : Command => "check_type" tp ";\n";
 
-op checkVar (tp : Type, v : tp) : Command => "check " v " : " tp ";\n";
+op checkVar (tp : Type, v : tp) : Command => "check" v ":" tp ";\n";
 
 #end
 
@@ -93,17 +93,17 @@ check a : F Int;
 
 /--
 info: program TestDeclareType;
-type Int;
-type_fn Nat;
-type_fn Array(name:Type);
-type_fn Array2(a:Type, b:Type);
-type_alias F(name:Type)=Array name;
-var a : Array Int;
-check_type Nat;
-check_type Int;
-check_type Array Int;
-check_type F Int;
-check a : F Int;
+type Int ;
+type_fn Nat  ;
+type_fn Array ( name : Type ) ;
+type_fn Array2 ( a : Type, b : Type ) ;
+type_alias F ( name : Type ) = Array name ;
+var a : Array Int ;
+check_type Nat ;
+check_type Int ;
+check_type Array Int ;
+check_type F Int ;
+check a : F Int ;
 -/
 #guard_msgs in
 #eval IO.println testDeclareTypePgm
