@@ -571,6 +571,7 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Boogie.Expr
   | _, q`Boogie.old          => return polyOldOp
   | _, q`Boogie.str_len      => return strLengthOp
   | _, q`Boogie.str_concat   => return strConcatOp
+  | _, q`Boogie.str_substr   => return strSubstrOp
   | _, q`Boogie.str_toregex  => return strToRegexOp
   | _, q`Boogie.str_inregex  => return strInRegexOp
   | _, q`Boogie.re_all       => return reAllOp
@@ -583,6 +584,7 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Boogie.Expr
   | _, q`Boogie.re_union     => return reUnionOp
   | _, q`Boogie.re_inter     => return reInterOp
   | _, q`Boogie.re_comp      => return reCompOp
+  | _, q`Boogie.re_none      => return reNoneOp
   | _, _ => TransM.error s!"translateFn: Unknown/unimplemented function {repr q} at type {repr ty?}"
 
 mutual
@@ -705,6 +707,10 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   | .fn _ q`Boogie.re_allchar, [] =>
     let fn ← translateFn .none q`Boogie.re_allchar
     return fn
+  -- Re.None
+  | .fn _ q`Boogie.re_none, [] =>
+    let fn ← translateFn .none q`Boogie.re_none
+    return fn
   -- Re.All
   | .fn _ q`Boogie.re_all, [] =>
     let fn ← translateFn .none q`Boogie.re_all
@@ -741,6 +747,11 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let x ← translateExpr p bindings xa
      let y ← translateExpr p bindings ya
      return .mkApp Boogie.strConcatOp [x, y]
+  | .fn _ q`Boogie.str_substr, [xa, ia, na] =>
+     let x ← translateExpr p bindings xa
+     let i ← translateExpr p bindings ia
+     let n ← translateExpr p bindings na
+     return .mkApp Boogie.strSubstrOp [x, i, n]
   | .fn _ q`Boogie.old, [_tp, xa] =>
      let x ← translateExpr p bindings xa
      return .mkApp Boogie.polyOldOp [x]

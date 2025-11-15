@@ -111,6 +111,7 @@ protected def ArgF.quote {α} [Quote α] : ArgF α → Term
 | .num ann e => astQuote! ArgF.num ann (quote e)
 | .decimal ann e => astQuote! ArgF.decimal ann (quote e)
 | .strlit ann e => astQuote! ArgF.strlit ann (quote e)
+| .bytes ann e => astQuote! ArgF.bytes ann (quote e)
 | .option ann a => astQuote! ArgF.option ann (quoteOption (a.attach.map (fun ⟨e, _⟩ => e.quote)))
 | .seq ann a => astQuote! ArgF.seq ann (quoteArray (a.map (·.quote)))
 | .commaSepList ann a => astQuote! ArgF.commaSepList ann (quoteArray (a.map (·.quote)))

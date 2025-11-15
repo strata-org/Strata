@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+import Strata.DDM.Util.ByteArray
 import Strata.DDM.Util.Decimal
 
 namespace Ion
@@ -36,7 +37,6 @@ def codes : Array CoreType := #[
 
 end CoreType
 
-
 /--
 Ion values.
 
@@ -53,7 +53,8 @@ inductive IonF (Sym : Type) (Ind : Type)
 -- TODO: Add timestamp
 | string (s : String)
 | symbol (s : Sym)
--- TODO: Add blob and clob
+| blob (a : ByteArray)
+-- TODO: Add clob
 | struct (a : Array (Sym × Ind))
 | list (a : Array Ind)
 | sexp (a : Array Ind)
@@ -78,7 +79,9 @@ def decimal (d : Decimal) : Ion Sym := .mk (.decimal d)
 
 def string (s : String) : Ion Sym := .mk (.string s)
 
-def symbol (s : Sym) : Ion Sym := .mk (.symbol s)
+def symbol {Sym} (s : Sym) : Ion Sym := .mk (.symbol s)
+
+def blob {Sym} (s : ByteArray) : Ion Sym := .mk (.blob s)
 
 def struct (s : Array (Sym × Ion Sym)) : Ion Sym := .mk (.struct s)
 
