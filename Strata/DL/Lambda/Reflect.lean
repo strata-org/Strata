@@ -61,28 +61,18 @@ def toProp (e : Lean.Expr) : MetaM Lean.Expr := do
   else
     throwError f!"Cannot coerce to a Prop: {e}"
 
-def LExpr.const.toExpr (c : String) (mty : Option LMonoTy) : MetaM Lean.Expr := do
-  match mty with
-  | none => throwError f!"Cannot reflect an untyped constant: {c}!"
-  | some mty => match mty with
-    | LMonoTy.bool =>
-      match c with
-      | "true" => return (mkConst ``Bool.true)
-      | "false" => return (mkConst ``Bool.false)
-      | _ => throwError f!"Unexpected boolean: {c}"
-    | LMonoTy.int =>
-      if c.isInt then
-        return (mkIntLit c.toInt!)
-      else
-        throwError f!"Unexpected integer: {c}"
-    | LMonoTy.string =>
-      return (mkStrLit c)
-    | _ => throwError f!"Unexpected constant: {c}"
+def LExpr.const.toExpr (c : LConst) : MetaM Lean.Expr := do
+  match c with
+  | .boolConst .true => return (mkConst ``Bool.true)
+  | .boolConst .false => return (mkConst ``Bool.false)
+  | .intConst i => return (mkIntLit i)
+  | .strConst s => return (mkStrLit s)
+  | _ => throwError f!"Unexpected constant: {c}"
 
 def LExpr.toExprNoFVars (e : LExpr LMonoTy String) : MetaM Lean.Expr := do
   match e with
-  | .const c mty =>
-    let expr ← LExpr.const.toExpr c mty
+  | .const c =>
+    let expr ← LExpr.const.toExpr c
     return expr
 
   | .op _ _ =>
@@ -97,7 +87,7 @@ def LExpr.toExprNoFVars (e : LExpr LMonoTy String) : MetaM Lean.Expr := do
 
   | .fvar f _ =>
     let lctx ← getLCtx
-    match lctx.findFromUserName? (Lean.Name.mkSimple f) with
+    match lctx.findFromUserName? (Lean.Name.mkSimple f.name) with
     | none => throwError f!"[LExpr.toExprNoFVars] Cannot find free var in the local context: {e}"
     | some decl => return decl.toExpr
 
@@ -160,7 +150,7 @@ def LExpr.toExpr (e : LExpr LMonoTy String) : MetaM Lean.Expr := do
       | none => throwError f!"Untyped fvar encountered: {idT.fst}"
       | some ty =>
         -- let name ← Lean.Core.mkFreshUserName (Lean.Name.mkSimple idT.fst)
-        let name := Lean.Name.mkSimple idT.fst
+        let name := Lean.Name.mkSimple idT.fst.name
         return (name, fun _ => LMonoTy.toExpr ty)
   withLocalDeclsD decls.toArray fun fvars => do
     let e ← LExpr.toExprNoFVars e
@@ -182,7 +172,7 @@ info: Lean.Expr.forallE
   `x
   (Lean.Expr.const `Int [])
   (Lean.Expr.forallE
-    (Lean.Name.mkNum `x._@.Strata.DL.Lambda.Reflect._hyg 1645)
+    (Lean.Name.mkNum (Lean.Name.mkStr (Lean.Name.mkStr (Lean.Name.mkNum `x.«_@».Strata.DL.Lambda.Reflect 1611904336) "_hygCtx") "_hyg") 8)
     (Lean.Expr.const `Int [])
     (Lean.Expr.app
       (Lean.Expr.app
@@ -217,7 +207,7 @@ elab "test1" : term => do
 
 def test2 : MetaM Lean.Expr :=
   LExpr.toExpr
-    (LExpr.app (.abs (some mty[bool]) (.bvar 0)) (.eq (.const "4" mty[int]) (.const "4" mty[int])))
+    (LExpr.app (.abs (some mty[bool]) (.bvar 0)) (.eq (.const (.intConst 4)) (.const (.intConst 4))))
 
 
 elab "test2" : term => do
@@ -230,29 +220,22 @@ elab "test2" : term => do
 
 elab "elaborate_lexpr" "[" e:term "]" : term => unsafe do
   let expr ← Term.elabTerm e none
-  let lexpr ← Lean.Meta.evalExpr (LExpr LMonoTy String) (mkApp (mkConst ``LExpr) (mkConst ``String)) expr
+  let lexpr ← Lean.Meta.evalExpr (LExpr LMonoTy String)
+    (mkApp2 (mkConst ``LExpr) (mkConst ``LMonoTy) (mkConst ``String)) expr
   let result ← liftM (LExpr.toExpr lexpr)
   return result
 
-/-- error: Cannot reflect an untyped constant: 5! -/
-#guard_msgs in
-#check elaborate_lexpr [@LExpr.const String "5" Option.none]
-
-/-- error: Cannot coerce to a Prop: OfNat.ofNat.{0} Int 5 (instOfNat 5) -/
-#guard_msgs in
-#check elaborate_lexpr [@LExpr.const String "5" (Option.some (LMonoTy.int))]
-
 /-- info: true -/
 #guard_msgs in
-#eval elaborate_lexpr [@LExpr.eq String
-                          (@LExpr.const String "5" (Option.some (LMonoTy.int)))
-                          (@LExpr.const String "5" (Option.some (LMonoTy.int)))]
+#eval elaborate_lexpr [@LExpr.eq LMonoTy String
+                        (@LExpr.const LMonoTy String (.intConst 5))
+                        (@LExpr.const LMonoTy String (.intConst 5))]
 
 /-- info: ∀ (x : Int), (x == 5) = true : Prop -/
 #guard_msgs in
-#check elaborate_lexpr [@LExpr.eq String
-                          (@LExpr.fvar String "x" (Option.some (LMonoTy.int)))
-                          (@LExpr.const String "5" (Option.some (LMonoTy.int)))]
+#check elaborate_lexpr [@LExpr.eq LMonoTy String
+                          (@LExpr.fvar LMonoTy String "x" (Option.some (LMonoTy.int)))
+                          (@LExpr.const LMonoTy String (.intConst 5))]
 
 end Tests
 
