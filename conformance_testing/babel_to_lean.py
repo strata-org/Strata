@@ -36,6 +36,44 @@ def parse_ts_type(j):
         inner = {"elementType": tagged_elem}
         add_missing_node_info(j, inner)
         return {"TS_TSArrayType": inner}
+    elif t == "TSTypeLiteral":
+        # Support object type literals like { x: number; y: string }
+        members = []
+        for m in j.get("members", []):
+            m_type = m.get("type")
+            if m_type == "TSPropertySignature":
+                key_node = m.get("key")
+                key_name = None
+                if key_node is not None:
+                    key_kind = key_node.get("type")
+                    if key_kind == "Identifier":
+                        key_name = key_node.get("name")
+                    elif key_kind == "StringLiteral":
+                        key_name = key_node.get("value")
+                # Fallback to empty string if we couldn't extract a name
+                if key_name is None:
+                    key_name = ""
+
+                # Property type annotation is a TSTypeAnnotation node wrapping an inner TS* node
+                ts_type_ann = None
+                type_ann_node = m.get("typeAnnotation")
+                if type_ann_node is not None:
+                    inner_ann = type_ann_node.get("typeAnnotation")
+                    if inner_ann is not None:
+                        ts_type_ann = parse_ts_type(inner_ann)
+
+                member_inner = {
+                    "key": key_name,
+                    "typeAnnotation": ts_type_ann
+                }
+                add_missing_node_info(m, member_inner)
+                members.append(member_inner)
+            else:
+                print("Unsupported TSTypeElement in TSTypeLiteral: " + str(m_type), file=sys.stderr)
+
+        inner = { "members": members }
+        add_missing_node_info(j, inner)
+        return { "TS_TSTypeLiteral": inner }
     elif t == "TSAnyKeyword" or t is None:
         return None
     else:
@@ -343,6 +381,29 @@ def parse_switch_case(j):
 def parse_break_statement(j):
     target_j = {
         "label": parse_identifier(j['label']) if j.get('label') else None
+    }
+    add_missing_node_info(j, target_j)
+    return target_j
+    
+def parse_type_alias_declaration(j):
+    type_ann_node = j["typeAnnotation"]
+    ann_type = type_ann_node.get("type")
+
+    if ann_type == "TSUnionType":
+        inner_types = type_ann_node.get("types", [])
+        tagged_types = [parse_ts_type(tnode) for tnode in inner_types]
+    else:
+        single = parse_ts_type(type_ann_node)
+        tagged_types = [single] if single is not None else []
+
+    union_struct = {
+        "types": tagged_types
+    }
+    add_missing_node_info(type_ann_node, union_struct)
+
+    target_j = {
+        "id": parse_identifier(j["id"]),
+        "typeAnnotation": union_struct,
     }
     add_missing_node_info(j, target_j)
     return target_j
