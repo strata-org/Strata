@@ -28,13 +28,16 @@ def PathConditions.format (ps : PathConditions Expression) : Format :=
   | p :: prest =>
     f!"{PathCondition.format p}{Format.line}" ++ PathConditions.format prest
 
-def PathCondition.getVars (p : PathCondition Expression) : List (Lambda.IdentT Visibility) :=
+def PathCondition.getVars (p : PathCondition Expression)
+    : List (Lambda.IdentT Lambda.LMonoTy Visibility) :=
   p.map (fun (_, e) => Lambda.LExpr.freeVars e) |> .flatten |> .eraseDups
 
-def PathConditions.getVars (ps : PathConditions Expression) : List (Lambda.IdentT Visibility) :=
+def PathConditions.getVars (ps : PathConditions Expression)
+    : List (Lambda.IdentT Lambda.LMonoTy Visibility) :=
   ps.map (fun p => PathCondition.getVars p) |> .flatten |> .eraseDups
 
-def ProofObligation.getVars (d : ProofObligation Expression) : List (Lambda.IdentT Visibility) :=
+def ProofObligation.getVars (d : ProofObligation Expression)
+    : List (Lambda.IdentT Lambda.LMonoTy Visibility) :=
   let o_vars := Lambda.LExpr.freeVars d.obligation
   let pc_vars := PathConditions.getVars d.assumptions
   (o_vars ++ pc_vars).eraseDups
@@ -167,13 +170,15 @@ def Env.addFactoryFunc (E : Env) (func : (Lambda.LFunc Visibility)) : Except For
   let exprEnv ← E.exprEnv.addFactoryFunc func
   .ok { E with exprEnv := exprEnv }
 
-def Env.insertInContext (xt : (Lambda.IdentT Visibility)) (e : Expression.Expr) (E : Env) : Env :=
-  { E with exprEnv.state := E.exprEnv.state.insert xt.ident (xt.monoty?, e) }
+def Env.insertInContext (xt : (Lambda.IdentT Lambda.LMonoTy Visibility)) (e : Expression.Expr) (E : Env) : Env :=
+  { E with exprEnv.state := E.exprEnv.state.insert xt.ident (xt.ty?, e) }
 
 /--
 Insert each `(x, v)` in `xs` into the context.
 -/
-def Env.addToContext (xs : Map (Lambda.IdentT Visibility) Expression.Expr) (E : Env) : Env :=
+def Env.addToContext
+    (xs : Map (Lambda.IdentT Lambda.LMonoTy Visibility) Expression.Expr) (E : Env)
+    : Env :=
   List.foldl (fun E (x, v) => E.insertInContext x v) E xs
 
 -- TODO: prove uniqueness, add different prefix
@@ -212,10 +217,10 @@ def Env.genVars (xs : List String) (σ : (Lambda.LState Visibility)) : (List Boo
 Generate a fresh variable using the base name and pre-existing type, if any,
 from `xt`.
 -/
-def Env.genFVar (E : Env) (xt : (Lambda.IdentT Visibility)) :
+def Env.genFVar (E : Env) (xt : (Lambda.IdentT Lambda.LMonoTy Visibility)) :
   Expression.Expr × Env :=
   let (xid, E) := E.genVar xt.ident
-  let xe := match xt.monoty? with
+  let xe := match xt.ty? with
             | none => .fvar xid none
             | some xty => .fvar xid xty
   (xe, E)
@@ -224,9 +229,10 @@ def Env.genFVar (E : Env) (xt : (Lambda.IdentT Visibility)) :
 Generate fresh variables using the base names and any pre-existing types from
 `xs`.
 -/
-def Env.genFVars (E : Env) (xs : List (Lambda.IdentT Visibility)) :
+def Env.genFVars (E : Env) (xs : List (Lambda.IdentT Lambda.LMonoTy Visibility)) :
   List Expression.Expr × Env :=
-  let rec go (acc : List Expression.Expr) (E : Env) (xs : List (Lambda.IdentT Visibility)) :
+  let rec go (acc : List Expression.Expr) (E : Env)
+             (xs : List (Lambda.IdentT Lambda.LMonoTy Visibility)) :
     List Expression.Expr × Env :=
     match xs with
     | [] => (acc.reverse, E)
@@ -240,7 +246,7 @@ Insert `(xi, .fvar xi)`, for each `xi` in `xs`, in the _oldest_ scope in `ss`,
 only if `xi` is the identifier of a free variable, i.e., it is not in `ss`.
 -/
 def Env.insertFreeVarsInOldestScope
-  (xs : List (Lambda.IdentT Visibility)) (E : Env) : Env :=
+  (xs : List (Lambda.IdentT Lambda.LMonoTy Visibility)) (E : Env) : Env :=
   let (xis, xtyei) := xs.foldl
     (fun (acc_ids, acc_pairs) x =>
       (x.fst :: acc_ids, (x.snd, .fvar x.fst x.snd) :: acc_pairs))

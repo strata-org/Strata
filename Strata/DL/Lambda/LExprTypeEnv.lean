@@ -886,10 +886,11 @@ def LMonoTySignature.toTrivialLTy (s : @LMonoTySignature IDMeta) : @LTySignature
   s.map (fun (x, ty) => (x, .forAll [] ty))
 
 /--
-Generate fresh type variables only for unnannotated identifiers in `ids`,
+Generate fresh type variables only for unannotated identifiers in `ids`,
 retaining any pre-existing type annotations.
 -/
-def TEnv.maybeGenMonoTypes (T : (TEnv IDMeta)) (ids : (IdentTs IDMeta)) : List LMonoTy × (TEnv IDMeta) :=
+def TEnv.maybeGenMonoTypes (T : (TEnv IDMeta)) (ids : (IdentTs LMonoTy IDMeta))
+    : List LMonoTy × (TEnv IDMeta) :=
   match ids with
   | [] => ([], T)
   | (_x, ty) :: irest =>
@@ -909,7 +910,8 @@ in `T`, only if `fvi` doesn't already exist in some context in `T`.
 
 If `fvi` has no type annotation, a fresh type variable is put in the context.
 -/
-def TEnv.addInOldestContext (fvs : (IdentTs IDMeta)) (T : (TEnv IDMeta)) : (TEnv IDMeta) :=
+def TEnv.addInOldestContext (fvs : (IdentTs LMonoTy IDMeta)) (T : (TEnv IDMeta))
+    : (TEnv IDMeta) :=
   let (monotys, T) := maybeGenMonoTypes T fvs
   let tys := monotys.map (fun mty => LTy.forAll [] mty)
   let types := T.context.types.addInOldest fvs.idents tys

@@ -189,23 +189,22 @@ along the way.
 def Factory.addFactory (F newF : @Factory IDMeta) : Except Format (@Factory IDMeta) :=
   Array.foldlM (fun factory func => factory.addFactoryFunc func) F newF
 
-def getLFuncCall (e : (LExpr LMonoTy IDMeta)) : (LExpr LMonoTy IDMeta) × List (LExpr LMonoTy IDMeta) :=
+def getLFuncCall {GenericTy} (e : (LExpr GenericTy IDMeta))
+    : (LExpr GenericTy IDMeta) × List (LExpr GenericTy IDMeta) :=
   go e []
-  where go e (acc : List (LExpr LMonoTy IDMeta)) :=
+  where go e (acc : List (LExpr GenericTy IDMeta)) :=
   match e with
   | .app (.app  e' arg1) arg2 =>  go e' ([arg1, arg2] ++ acc)
   | .app (.op  fn  fnty) arg1 =>  ((.op fn fnty), ([arg1] ++ acc))
   | _ => (e, acc)
 
-def getConcreteLFuncCall (e : (LExpr LMonoTy IDMeta)) : (LExpr LMonoTy IDMeta) × List (LExpr LMonoTy IDMeta) :=
-  let (op, args) := getLFuncCall e
-  if args.all LExpr.isConst then (op, args) else (e, [])
-
 /--
 If `e` is a call of a factory function, get the operator (`.op`), a list
 of all the actuals, and the `(LFunc IDMeta)`.
 -/
-def Factory.callOfLFunc (F : @Factory IDMeta) (e : (LExpr LMonoTy IDMeta)) : Option ((LExpr LMonoTy IDMeta) × List (LExpr LMonoTy IDMeta) × (LFunc IDMeta)) :=
+def Factory.callOfLFunc {GenericTy} (F : @Factory IDMeta)
+    (e : (LExpr GenericTy IDMeta))
+    : Option ((LExpr GenericTy IDMeta) × List (LExpr GenericTy IDMeta) × (LFunc IDMeta)) :=
   let (op, args) := getLFuncCall e
   match op with
   | .op name _ =>
@@ -223,7 +222,7 @@ end Factory
 
 variable {IDMeta: Type}
 
-theorem getLFuncCall.goSize {e: LExpr LMonoTy IDMeta} {op args acc} : getLFuncCall.go e acc = (op, args) →
+theorem getLFuncCall.go_size {GenericTy} {e: LExpr GenericTy IDMeta} {op args acc} : getLFuncCall.go e acc = (op, args) →
 op.sizeOf + List.sum (args.map LExpr.sizeOf) <= e.sizeOf + List.sum (acc.map LExpr.sizeOf) := by
   fun_induction go generalizing op args
   case case1 acc e' arg1 arg2 IH =>
@@ -232,24 +231,24 @@ op.sizeOf + List.sum (args.map LExpr.sizeOf) <= e.sizeOf + List.sum (acc.map LEx
     simp_all; intros op_eq args_eq; subst op args; simp; omega
   case case3 op' args' _ _ => intros Hop; cases Hop; omega
 
-theorem LExpr.sizeOfPos (e: LExpr LMonoTy IDMeta): 0 < sizeOf e := by
+theorem LExpr.sizeOf_pos {GenericTy} (e: LExpr GenericTy IDMeta): 0 < sizeOf e := by
   cases e<;> simp <;> omega
 
-theorem List.sumSizeLe (f: α → Nat) {l: List α} {x: α} (x_in: x ∈ l): f x ≤ List.sum (l.map f) := by
+theorem List.sum_size_le (f: α → Nat) {l: List α} {x: α} (x_in: x ∈ l): f x ≤ List.sum (l.map f) := by
   induction l; simp_all; grind
 
-theorem getLFuncCallSmaller {e: LExpr LMonoTy IDMeta} {op args} : getLFuncCall e = (op, args) → (forall a, a ∈ args → a.sizeOf < e.sizeOf) := by
-  unfold getLFuncCall; intros Hgo; have Hsize := (getLFuncCall.goSize Hgo);
-  simp_all; have Hop:= LExpr.sizeOfPos op; intros a a_in;
-  have Ha := List.sumSizeLe LExpr.sizeOf a_in; omega
+theorem getLFuncCall_smaller {GenericTy} {e: LExpr GenericTy IDMeta} {op args} : getLFuncCall e = (op, args) → (forall a, a ∈ args → a.sizeOf < e.sizeOf) := by
+  unfold getLFuncCall; intros Hgo; have Hsize := (getLFuncCall.go_size Hgo);
+  simp_all; have Hop:= LExpr.sizeOf_pos op; intros a a_in;
+  have Ha := List.sum_size_le LExpr.sizeOf a_in; omega
 
-theorem Factory.callOfLFuncSmaller {F : @Factory IDMeta} {e : (LExpr LMonoTy IDMeta)} {op args F'} : Factory.callOfLFunc F e = some (op, args, F') →
+theorem Factory.callOfLFunc_smaller {GenericTy} {F : @Factory IDMeta} {e : (LExpr GenericTy IDMeta)} {op args F'} : Factory.callOfLFunc F e = some (op, args, F') →
 (forall a, a ∈ args → a.sizeOf < e.sizeOf) := by
   simp[Factory.callOfLFunc]; cases Hfunc: (getLFuncCall e) with | mk op args;
   simp; cases op <;> simp
   rename_i o ty; cases (F.getFactoryLFunc o.name) <;> simp
   rename_i F'
-  cases (args.length == List.length F'.inputs) <;> simp; intros op_eq args_eq F_eq; subst op args F'; exact (getLFuncCallSmaller Hfunc)
+  cases (args.length == List.length F'.inputs) <;> simp; intros op_eq args_eq F_eq; subst op args F'; exact (getLFuncCall_smaller Hfunc)
 
 end Lambda
 
