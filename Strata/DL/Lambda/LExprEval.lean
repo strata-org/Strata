@@ -44,7 +44,7 @@ def isCanonicalValue {GenericTy} (σ : LState IDMeta)
     -- So we could simplify the following to `closed e`, but leave it as is for
     -- clarity.
     LExpr.closed e
-  | .mdata m e' => isCanonicalValue σ e'
+  | .mdata _ e' => isCanonicalValue σ e'
   | e' =>
     match h: Factory.callOfLFunc σ.config.factory e with
     | some (_, args, f) =>
