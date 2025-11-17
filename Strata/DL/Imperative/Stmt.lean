@@ -35,6 +35,42 @@ def Stmt.isCmd {P : PureExpr} {Cmd : Type} (s : Stmt P Cmd) : Bool :=
   | .cmd _ => true
   | _ => false
 
+
+/--
+Induction principle for `Stmt`
+-/
+@[elab_as_elim]
+def Stmt.inductionOn {P : PureExpr} {Cmd : Type}
+    {motive : Stmt P Cmd → Sort u}
+    (cmd_case : ∀ (cmd : Cmd), motive (Stmt.cmd cmd))
+    (block_case : ∀ (label : String) (b : List (Stmt P Cmd)) (md : MetaData P),
+      (∀ s, s ∈ b → motive s) →
+      motive (Stmt.block label b md))
+    (ite_case : ∀ (cond : P.Expr) (thenb elseb : List (Stmt P Cmd)) (md : MetaData P),
+      (∀ s, s ∈ thenb → motive s) →
+      (∀ s, s ∈ elseb → motive s) →
+      motive (Stmt.ite cond thenb elseb md))
+    (loop_case : ∀ (guard : P.Expr) (measure invariant : Option P.Expr)
+      (body : List (Stmt P Cmd)) (md : MetaData P),
+      (∀ s, s ∈ body → motive s) →
+      motive (Stmt.loop guard measure invariant body md))
+    (goto_case : ∀ (label : String) (md : MetaData P),
+      motive (Stmt.goto label md))
+    (s : Stmt P Cmd) : motive s :=
+  match s with
+  | Stmt.cmd c => cmd_case c
+  | Stmt.block label b md =>
+    block_case label b md (fun s _ => inductionOn cmd_case block_case ite_case loop_case goto_case s)
+  | Stmt.ite cond thenb elseb md =>
+    ite_case cond thenb elseb md
+      (fun s _ => inductionOn cmd_case block_case ite_case loop_case goto_case s)
+      (fun s _ => inductionOn cmd_case block_case ite_case loop_case goto_case s)
+  | Stmt.loop guard measure invariant body md =>
+    loop_case guard measure invariant body md
+      (fun s _ => inductionOn cmd_case block_case ite_case loop_case goto_case s)
+  | Stmt.goto label md => goto_case label md
+  termination_by s
+
 ---------------------------------------------------------------------
 
 /-! ### SizeOf -/
