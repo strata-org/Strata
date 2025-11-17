@@ -20,7 +20,7 @@ input_dir=`dirname "$input_path"`
 filename=`basename "$input_path"`
 mkdir -p $test_dir/$input_dir
 
-python3 -m strata.gen parse $input_path "$test_dir/$input_dir/$filename.st.ion"
+python3 -m strata.gen py_to_strata $input_path "$test_dir/$input_dir/$filename.st.ion"
 
 $strata toIon --include "$test_dir/dialects" "$test_dir/$input_dir/$filename.st.ion" "$test_dir/$input_dir/$filename.st.ion2"
 

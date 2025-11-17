@@ -54,6 +54,7 @@ def toJson : Ion String → Lean.Json
 | .decimal d => .num d.toJsonNumber
 | .string s => .str s
 | .symbol s => .str s
+| .blob v => .arr <| v.data.map fun b => .num (.fromNat b.toNat)
 | .struct a => .obj <| a.attach.foldl (init := {}) fun m ⟨(nm, v), _⟩ =>
   m.insert nm v.toJson
 | .sexp l | .list l => .arr <| l.map (·.toJson)
