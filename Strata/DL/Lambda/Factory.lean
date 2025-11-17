@@ -30,6 +30,8 @@ open Std (ToFormat Format format)
 
 open LTy.Syntax
 
+section Factory
+
 variable {IDMeta : Type} [DecidableEq IDMeta] [Inhabited IDMeta]
 
 /--
@@ -215,6 +217,38 @@ def Factory.callOfLFunc {GenericTy} (F : @Factory IDMeta)
       match args.length == func.inputs.length with
       | true => (op, args, func) | false => none
   | _ => none
+
+end Factory
+
+variable {IDMeta: Type}
+
+theorem getLFuncCall.go_size {GenericTy} {e: LExpr GenericTy IDMeta} {op args acc} : getLFuncCall.go e acc = (op, args) →
+op.sizeOf + List.sum (args.map LExpr.sizeOf) <= e.sizeOf + List.sum (acc.map LExpr.sizeOf) := by
+  fun_induction go generalizing op args
+  case case1 acc e' arg1 arg2 IH =>
+    intros Hgo; specialize (IH Hgo); simp_all; omega
+  case case2 acc fn fnty arg1 =>
+    simp_all; intros op_eq args_eq; subst op args; simp; omega
+  case case3 op' args' _ _ => intros Hop; cases Hop; omega
+
+theorem LExpr.sizeOf_pos {GenericTy} (e: LExpr GenericTy IDMeta): 0 < sizeOf e := by
+  cases e<;> simp <;> omega
+
+theorem List.sum_size_le (f: α → Nat) {l: List α} {x: α} (x_in: x ∈ l): f x ≤ List.sum (l.map f) := by
+  induction l; simp_all; grind
+
+theorem getLFuncCall_smaller {GenericTy} {e: LExpr GenericTy IDMeta} {op args} : getLFuncCall e = (op, args) → (forall a, a ∈ args → a.sizeOf < e.sizeOf) := by
+  unfold getLFuncCall; intros Hgo; have Hsize := (getLFuncCall.go_size Hgo);
+  simp_all; have Hop:= LExpr.sizeOf_pos op; intros a a_in;
+  have Ha := List.sum_size_le LExpr.sizeOf a_in; omega
+
+theorem Factory.callOfLFunc_smaller {GenericTy} {F : @Factory IDMeta} {e : (LExpr GenericTy IDMeta)} {op args F'} : Factory.callOfLFunc F e = some (op, args, F') →
+(forall a, a ∈ args → a.sizeOf < e.sizeOf) := by
+  simp[Factory.callOfLFunc]; cases Hfunc: (getLFuncCall e) with | mk op args;
+  simp; cases op <;> simp
+  rename_i o ty; cases (F.getFactoryLFunc o.name) <;> simp
+  rename_i F'
+  cases (args.length == List.length F'.inputs) <;> simp; intros op_eq args_eq F_eq; subst op args F'; exact (getLFuncCall_smaller Hfunc)
 
 end Lambda
 
