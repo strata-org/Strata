@@ -503,10 +503,15 @@ def isFalse (T : LExprParamsT) (e : LExpr T) : Bool :=
   | .boolConst _ false => true
   | _ => false
 
+/-- An iterated/multi-argument lambda with arguments of types `tys` and body `body`-/
+def absMulti (m: Metadata) (tys: List TypeType) (body: LExpr ⟨⟨Metadata, IDMeta⟩, TypeType⟩)
+    : LExpr ⟨⟨Metadata, IDMeta⟩, TypeType⟩ :=
+  List.foldr (fun ty e => .abs m (.some ty) e) body tys
+
 /--
 If `e` is an `LExpr` boolean, then denote that into a Lean `Bool`.
 -/
-def denoteBool {T : LExprParams} (e : LExpr T.mono) : Option Bool :=
+def denoteBool {T : LExprParams} (e : LExpr ⟨T, TypeType⟩) : Option Bool :=
   match e with
   | .boolConst _ b => some b
   | _ => none
@@ -514,7 +519,7 @@ def denoteBool {T : LExprParams} (e : LExpr T.mono) : Option Bool :=
 /--
 If `e` is an `LExpr` integer, then denote that into a Lean `Int`.
 -/
-def denoteInt {T : LExprParams} (e : LExpr T.mono) : Option Int :=
+def denoteInt {T : LExprParams} (e : LExpr ⟨T, TypeType⟩) : Option Int :=
   match e with
   | .intConst _ x => x
   | _ => none
@@ -522,7 +527,7 @@ def denoteInt {T : LExprParams} (e : LExpr T.mono) : Option Int :=
 /--
 If `e` is an `LExpr` real, then denote that into a Lean `Rat`.
 -/
-def denoteReal {T : LExprParams} (e : LExpr T.mono) : Option Rat :=
+def denoteReal {T : LExprParams} (e : LExpr ⟨T, TypeType⟩) : Option Rat :=
   match e with
   | .realConst _ r => some r
   | _ => none
@@ -530,7 +535,7 @@ def denoteReal {T : LExprParams} (e : LExpr T.mono) : Option Rat :=
 /--
 If `e` is an `LExpr` bv<n>, then denote that into a Lean `BitVec n`.
 -/
-def denoteBitVec {T : LExprParams} (n : Nat) (e : LExpr T.mono) : Option (BitVec n) :=
+def denoteBitVec {T : LExprParams} (n : Nat) (e : LExpr ⟨T, TypeType⟩) : Option (BitVec n) :=
   match e with
   | .bitvecConst _ n' b => if n == n' then some (BitVec.ofNat n b.toNat) else none
   | _ => none
@@ -576,6 +581,44 @@ def replaceMetadata1 {T : LExprParamsT} (r: T.base.Metadata) (e : LExpr T) : LEx
   | .ite _ c t e' => .ite r c t e'
   | .eq _ e1 e2 => .eq r e1 e2
 
+
+/--
+Transform metadata in an expression using a callback function.
+-/
+def replaceMetadata {T : LExprParamsT} (e : LExpr T) (f : T.base.Metadata → NewMetadata) : LExpr ⟨⟨NewMetadata, T.base.IDMeta⟩, T.TypeType⟩ :=
+  match e with
+  | .const m c =>
+    .const (f m) c
+  | .op m o uty =>
+    .op (f m) o uty
+  | .bvar m b =>
+    .bvar (f m) b
+  | .fvar m x uty =>
+    .fvar (f m) x uty
+  | .app m e1 e2 =>
+    let e1 := replaceMetadata e1 f
+    let e2 := replaceMetadata e2 f
+    .app (f m) e1 e2
+  | .abs m uty e =>
+    let e := replaceMetadata e f
+    .abs (f m) uty e
+  | .quant m qk argTy tr e =>
+    let e := replaceMetadata e f
+    let tr := replaceMetadata tr f
+    .quant (f m) qk argTy tr e
+  | .ite m c t f_expr =>
+    let c := replaceMetadata c f
+    let t := replaceMetadata t f
+    let f_expr := replaceMetadata f_expr f
+    .ite (f m) c t f_expr
+  | .eq m e1 e2 =>
+    let e1 := replaceMetadata e1 f
+    let e2 := replaceMetadata e2 f
+    .eq (f m) e1 e2
+
+-- Replace all metadata by a unit, suitable for comparison
+def eraseMetadata {T : LExprParamsT} (e : LExpr T) : LExpr ⟨⟨Unit, T.base.IDMeta⟩, T.TypeType⟩ := LExpr.replaceMetadata e (λ_ =>())
+
 /--
 Compute the size of `e` as a tree.
 
@@ -592,7 +635,8 @@ def size (T : LExprParamsT) (e : LExpr T) : Nat :=
   | .eq _ e1 e2 => 1 + size T e1 + size T e2
 
 /--
-Erase all type annotations from `e`.
+Erase all type annotations from `e` except the bound variables of abstractions
+and quantified expressions.
 -/
 def eraseTypes {T : LExprParamsT} (e : LExpr T) : LExpr T :=
   match e with

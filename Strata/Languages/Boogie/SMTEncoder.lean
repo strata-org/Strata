@@ -221,7 +221,7 @@ partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr BoogieLParams.mo
 partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Context) :
   Except Format ((List Term → TermType → Term) × TermType × SMT.Context) :=
   open LTy.Syntax in
-  match E.factory.getFactoryLFunc fn with
+  match E.factory.getFactoryLFunc fn.name with
   | none => .error f!"Cannot find function {fn} in Boogie's Factory!"
   | some func =>
     match func.name.name with
@@ -378,6 +378,7 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
 
     | "Str.Length"   => .ok (.app Op.str_length,    .int,    ctx)
     | "Str.Concat"   => .ok (.app Op.str_concat,    .string, ctx)
+    | "Str.Substr"   => .ok (.app Op.str_substr,    .string, ctx)
     | "Str.ToRegEx"  => .ok (.app Op.str_to_re,     .regex,  ctx)
     | "Str.InRegEx"  => .ok (.app Op.str_in_re,     .bool,   ctx)
     | "Re.All"       => .ok (.app Op.re_all,        .regex,  ctx)
@@ -389,6 +390,7 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
     | "Re.Union"     => .ok (.app Op.re_union,      .regex,  ctx)
     | "Re.Inter"     => .ok (.app Op.re_inter,      .regex,  ctx)
     | "Re.Comp"      => .ok (.app Op.re_comp,       .regex,  ctx)
+    | "Re.None"      => .ok (.app Op.re_none,       .regex,  ctx)
 
     | "Triggers.empty"          => .ok (.app Op.triggers, .trigger, ctx)
     | "TriggerGroup.empty"      => .ok (.app Op.triggers, .trigger, ctx)
@@ -539,7 +541,7 @@ info: "; f\n(declare-fun f0 (Int Int) Int)\n; x\n(declare-const f1 Int)\n(define
       config := { Env.init.exprEnv.config with
         factory :=
           Env.init.exprEnv.config.factory.push $
-          LFunc.mk "f" [] [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none []
+          LFunc.mk "f" [] False [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none []
       }
    }})
 
@@ -557,7 +559,7 @@ info: "; f\n(declare-fun f0 (Int Int) Int)\n; x\n(declare-const f1 Int)\n(define
       config := { Env.init.exprEnv.config with
         factory :=
           Env.init.exprEnv.config.factory.push $
-          LFunc.mk "f" [] [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none []
+          LFunc.mk "f" [] False [("m", LMonoTy.int), ("n", LMonoTy.int)] LMonoTy.int .none #[] .none []
       }
    }})
 

@@ -166,7 +166,7 @@ Proof Obligation:
 #true
 -/
 #guard_msgs in
-#eval format $ Imperative.Cmds.eval Env.init testProgram1
+#eval format $ Imperative.Cmds.eval (Env.init (empty_factory := true)) testProgram1
 
 private def testProgram2 : Cmds Expression :=
   [.init "x" t[int] eb[(y : int)],
@@ -207,7 +207,7 @@ Proof Obligation:
 ((y : int) == #12)
 -/
 #guard_msgs in
-#eval format $ Imperative.Cmds.eval Env.init testProgram2
+#eval format $ Imperative.Cmds.eval (Env.init (empty_factory := true)) testProgram2
 
 end CmdEval
 ---------------------------------------------------------------------

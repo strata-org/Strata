@@ -7,6 +7,8 @@
 import Strata.DL.Lambda.LExprEval
 import Strata.DL.Lambda.LExprType
 import Strata.DL.Lambda.LExpr
+import Strata.DL.Lambda.TypeFactory
+import Strata.DL.Lambda.Reflect
 
 namespace Lambda
 
@@ -33,14 +35,20 @@ Top-level type checking and partial evaluation function for the Lambda
 dialect.
 -/
 def typeCheckAndPartialEval
+  [Inhabited T.Metadata]
+  [Inhabited T.IDMeta]
+  (t: TypeFactory (IDMeta:=T.IDMeta) := TypeFactory.default)
   (f : Factory (T:=T) := Factory.default)
   (e : LExpr T.mono) :
   Except Std.Format (LExpr T.mono) := do
-  let Env := TEnv.default
-  let C := LContext.default.addFactoryFunctions f
-  let (et, _Env) ← LExpr.annotate C Env e
+  let fTy ← t.genFactory
+  let fAll ← Factory.addFactory fTy f
+  let T := TEnv.default
+  let C := LContext.default.addFactoryFunctions fAll
+  let C ← C.addKnownTypes t.toKnownTypes
+  let (et, _T) ← LExpr.annotate C T e
   dbg_trace f!"Annotated expression:{Format.line}{et}{Format.line}"
-  let σ ← (LState.init).addFactory f
+  let σ ← (LState.init).addFactory fAll
   return (LExpr.eval σ.config.fuel σ et)
 
 end Lambda

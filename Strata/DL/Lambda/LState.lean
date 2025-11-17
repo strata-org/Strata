@@ -101,6 +101,13 @@ def LState.addFactory (σ : (LState T)) (F : @Factory T) : Except Format (LState
   .ok { σ with config := { σ.config with factory := newF } }
 
 /--
+Replace the `factory` field of σ with F.
+-/
+def LState.setFactory (σ : (LState IDMeta)) (F : @Factory IDMeta)
+    : (LState IDMeta) :=
+  { σ with config := { σ.config with factory := F } }
+
+/--
 Get all the known variables from the scopes in state `σ`.
 -/
 def LState.knownVars (σ : LState T) : List T.Identifier :=
@@ -114,11 +121,11 @@ def LState.knownVars (σ : LState T) : List T.Identifier :=
 Generate a fresh (internal) identifier with the base name
 `x`; i.e., `σ.config.varPrefix ++ x`.
 -/
-def LState.genVar (x : String) (σ : (LState ⟨Unit, Unit⟩)) : (String × (LState ⟨Unit, Unit⟩)) :=
+def LState.genVar {IDMeta} [Inhabited IDMeta] [DecidableEq IDMeta] (x : String) (σ : LState ⟨Unit, IDMeta⟩) : String × LState ⟨Unit, IDMeta⟩ :=
   let (new_var, config) := σ.config.genSym x
   let σ := { σ with config := config }
   let known_vars := LState.knownVars σ
-  let new_var := ⟨ new_var, () ⟩
+  let new_var := ⟨ new_var, Inhabited.default  ⟩
   if new_var ∈ known_vars then
     panic s!"[LState.genVar] Generated variable {new_var} is not fresh!\n\
              Known variables: {known_vars}"

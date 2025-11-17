@@ -79,40 +79,6 @@ def unresolved {T : LExprParamsT} (e : LExprT T) : LExpr T.base.mono :=
   | .ite m c t f => .ite m.underlying c.unresolved t.unresolved f.unresolved
   | .eq m e1 e2 => .eq m.underlying e1.unresolved e2.unresolved
 
-/--
-Transform metadata in an expression using a callback function.
--/
-def replaceMetadata {T : LExprParamsT} (e : LExpr T) (f : T.base.Metadata → T.base.Metadata) : LExpr T :=
-  match e with
-  | .const m c =>
-    .const (f m) c
-  | .op m o uty =>
-    .op (f m) o uty
-  | .bvar m b =>
-    .bvar (f m) b
-  | .fvar m x uty =>
-    .fvar (f m) x uty
-  | .app m e1 e2 =>
-    let e1 := replaceMetadata e1 f
-    let e2 := replaceMetadata e2 f
-    .app (f m) e1 e2
-  | .abs m uty e =>
-    let e := replaceMetadata e f
-    .abs (f m) uty e
-  | .quant m qk argTy tr e =>
-    let e := replaceMetadata e f
-    let tr := replaceMetadata tr f
-    .quant (f m) qk argTy tr e
-  | .ite m c t f_expr =>
-    let c := replaceMetadata c f
-    let t := replaceMetadata t f
-    let f_expr := replaceMetadata f_expr f
-    .ite (f m) c t f_expr
-  | .eq m e1 e2 =>
-    let e1 := replaceMetadata e1 f
-    let e2 := replaceMetadata e2 f
-    .eq (f m) e1 e2
-
 def replaceUserProvidedType {T : LExprParamsT} (e : LExpr T) (f : T.TypeType → T.TypeType) : LExpr T :=
   match e with
   | .const m c =>
@@ -158,7 +124,7 @@ This is for metadata-stored types.
 To change user-defined types, use applySubst
 -/
 def applySubstT (e : LExprT T.mono) (S : Subst) : LExprT T.mono :=
-  LExpr.replaceMetadata e <|
+  LExpr.replaceMetadata (T:=T.mono.typed) (NewMetadata:=T.mono.typed.base.Metadata) e <|
     fun ⟨m, ty⟩ =>
       let ty := LMonoTy.subst S ty
       ⟨m, ty⟩

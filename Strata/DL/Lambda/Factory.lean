@@ -26,7 +26,7 @@ namespace Lambda
 
 open Std (ToFormat Format format)
 
-variable {T : LExprParams} [Inhabited T.Metadata] [Inhabited T.IDMeta] [DecidableEq T.IDMeta] [BEq T.IDMeta] [ToFormat T.IDMeta] [Inhabited (LExpr T.mono)] [ToFormat (LExpr T.mono)]
+variable {T : LExprParams} [Inhabited T.Metadata] [Inhabited T.IDMeta] [DecidableEq T.IDMeta] [BEq T.IDMeta] [ToFormat T.IDMeta]
 
 ---------------------------------------------------------------------
 
@@ -85,6 +85,7 @@ has the right number and type of arguments, etc.?
 structure LFunc (T : LExprParams) where
   name     : T.Identifier
   typeArgs : List TyIdentifier := []
+  isConstr : Bool := false --whether function is datatype constructor
   inputs   : @LMonoTySignature T.IDMeta
   output   : LMonoTy
   body     : Option (LExpr T.mono) := .none
@@ -166,14 +167,14 @@ instance : Inhabited (@Factory T) where
 def Factory.getFunctionNames (F : @Factory T) : Array T.Identifier :=
   F.map (fun f => f.name)
 
-def Factory.getFactoryLFunc (F : @Factory T) (name : T.Identifier) : Option (LFunc T) :=
-  F.find? (fun fn => fn.name == name)
+def Factory.getFactoryLFunc (F : @Factory T) (name : String) : Option (LFunc T) :=
+  F.find? (fun fn => fn.name.name == name)
 
 /--
 Add a function `func` to the factory `F`. Redefinitions are not allowed.
 -/
-def Factory.addFactoryFunc (F : @Factory T) (func : (LFunc T)) : Except Format (@Factory T) :=
-  match F.getFactoryLFunc func.name with
+def Factory.addFactoryFunc (F : @Factory T) (func : LFunc T) : Except Format (@Factory T) :=
+  match F.getFactoryLFunc func.name.name with
   | none => .ok (F.push func)
   | some func' =>
     .error f!"A function of name {func.name} already exists! \
@@ -188,27 +189,27 @@ along the way.
 def Factory.addFactory (F newF : @Factory T) : Except Format (@Factory T) :=
   Array.foldlM (fun factory func => factory.addFactoryFunc func) F newF
 
-def getLFuncCall (e : (LExpr T.mono)) : (LExpr T.mono) × List (LExpr T.mono) :=
+def getLFuncCall {GenericTy} (e : LExpr ⟨T, GenericTy⟩) : LExpr ⟨T, GenericTy⟩ × List (LExpr ⟨T, GenericTy⟩) :=
   go e []
-  where go e (acc : List (LExpr T.mono)) :=
+  where go e (acc : List (LExpr ⟨T, GenericTy⟩)) :=
   match e with
   | .app _ (.app _ e' arg1) arg2 =>  go e' ([arg1, arg2] ++ acc)
   | .app m (.op _ fn  fnty) arg1 =>  ((.op m fn fnty), ([arg1] ++ acc))
   | _ => (e, acc)
 
-def getConcreteLFuncCall (e : (LExpr T.mono)) : (LExpr T.mono) × List (LExpr T.mono) :=
+def getConcreteLFuncCall (e : LExpr ⟨T, GenericTy⟩) : LExpr ⟨T, GenericTy⟩ × List (LExpr ⟨T, GenericTy⟩) :=
   let (op, args) := getLFuncCall e
-  if args.all (@LExpr.isConst T.mono) then (op, args) else (e, [])
+  if args.all (@LExpr.isConst ⟨T, GenericTy⟩) then (op, args) else (e, [])
 
 /--
 If `e` is a call of a factory function, get the operator (`.op`), a list
 of all the actuals, and the `(LFunc IDMeta)`.
 -/
-def Factory.callOfLFunc (F : @Factory T) (e : (LExpr T.mono)) : Option ((LExpr T.mono) × List (LExpr T.mono) × (LFunc T)) :=
+def Factory.callOfLFunc {GenericTy} (F : @Factory T) (e : LExpr ⟨T, GenericTy⟩) : Option (LExpr ⟨T, GenericTy⟩ × List (LExpr ⟨T, GenericTy⟩) × LFunc T) :=
   let (op, args) := getLFuncCall e
   match op with
   | .op _ name _ =>
-    let maybe_func := getFactoryLFunc F name
+    let maybe_func := getFactoryLFunc F name.name
     match maybe_func with
     | none => none
     | some func =>

@@ -86,6 +86,14 @@ def LMonoTy.mkArrow (mty : LMonoTy) (mtys : LMonoTys) : LMonoTy :=
     let mrest' := LMonoTy.mkArrow m mrest
     .arrow mty mrest'
 
+/--
+Create an iterated arrow type where `mty` is the return type
+-/
+def LMonoTy.mkArrow' (mty : LMonoTy) (mtys : LMonoTys) : LMonoTy :=
+  match mtys with
+  | [] => mty
+  | m :: mrest => .arrow m (LMonoTy.mkArrow' mty mrest)
+
 mutual
 def LMonoTy.destructArrow (mty : LMonoTy) : LMonoTys :=
   match mty with
@@ -105,6 +113,11 @@ end
 theorem LMonoTy.destructArrow_non_empty (mty : LMonoTy) :
   (mty.destructArrow) ≠ [] := by
   unfold destructArrow; split <;> simp_all
+
+def LMonoTy.getArrowArgs (t: LMonoTy) : List LMonoTy :=
+  match t with
+  | .arrow t1 t2 => t1 :: t2.getArrowArgs
+  | _ => []
 
 /--
 Type schemes (poly-types) in Lambda.

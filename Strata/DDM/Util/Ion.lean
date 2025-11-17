@@ -195,6 +195,7 @@ def mapSymbolM [Monad m] (f : α → m β) : Ion α → m (Ion β)
 | .decimal d => pure <| .decimal d
 | .string s => pure <| .string s
 | .symbol s => .symbol <$> f s
+| .blob s => pure <| .blob s
 | .list a => .list <$> a.attach.mapM fun ⟨a, _⟩ => a.mapSymbolM f
 | .sexp a => .sexp <$> a.attach.mapM fun ⟨a, _⟩ => a.mapSymbolM f
 | .struct a => .struct <$> a.attach.mapM fun ⟨(nm, v), p⟩ =>

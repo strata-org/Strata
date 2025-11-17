@@ -122,6 +122,13 @@ def strConcatFunc : LFunc BoogieLParams :=
       concreteEval := some (binOpCeval String String (.strConst (T := BoogieLParams.mono))
                             LExpr.denoteString String.append)}
 
+def strSubstrFunc : LFunc BoogieLParams :=
+    { name := "Str.Substr",
+      typeArgs := [],
+      -- longest substring of `x` of length at most `n` starting at position `i`.
+      inputs := [("x", mty[string]), ("i", mty[int]), ("n", mty[int])]
+      output := mty[string] }
+
 def strToRegexFunc : LFunc BoogieLParams :=
     { name := "Str.ToRegEx",
       typeArgs := [],
@@ -192,6 +199,12 @@ def reCompFunc : LFunc BoogieLParams :=
     { name := "Re.Comp",
       typeArgs := [],
       inputs := [("x", mty[regex])]
+      output := mty[regex] }
+
+def reNoneFunc : LFunc BoogieLParams :=
+    { name := "Re.None",
+      typeArgs := [],
+      inputs := []
       output := mty[regex] }
 
 /- A polymorphic `old` function with type `∀a. a → a`. -/
@@ -342,6 +355,7 @@ def Factory : @Factory BoogieLParams := #[
 
   strLengthFunc,
   strConcatFunc,
+  strSubstrFunc,
   strToRegexFunc,
   strInRegexFunc,
   reAllFunc,
@@ -354,6 +368,7 @@ def Factory : @Factory BoogieLParams := #[
   reUnionFunc,
   reInterFunc,
   reCompFunc,
+  reNoneFunc,
 
   polyOldFunc,
 
@@ -441,6 +456,7 @@ def boolEquivOp : Expression.Expr := @boolEquivFunc.opExpr BoogieLParams _
 def boolNotOp : Expression.Expr := @boolNotFunc.opExpr BoogieLParams _
 def strLengthOp : Expression.Expr := strLengthFunc.opExpr
 def strConcatOp : Expression.Expr := strConcatFunc.opExpr
+def strSubstrOp : Expression.Expr := strSubstrFunc.opExpr
 def strToRegexOp : Expression.Expr := strToRegexFunc.opExpr
 def strInRegexOp : Expression.Expr := strInRegexFunc.opExpr
 def reAllOp : Expression.Expr := reAllFunc.opExpr
@@ -453,6 +469,7 @@ def reLoopOp : Expression.Expr := reLoopFunc.opExpr
 def reUnionOp : Expression.Expr := reUnionFunc.opExpr
 def reInterOp : Expression.Expr := reInterFunc.opExpr
 def reCompOp : Expression.Expr := reCompFunc.opExpr
+def reNoneOp : Expression.Expr := reNoneFunc.opExpr
 def polyOldOp : Expression.Expr := polyOldFunc.opExpr
 def mapSelectOp : Expression.Expr := mapSelectFunc.opExpr
 def mapUpdateOp : Expression.Expr := mapUpdateFunc.opExpr

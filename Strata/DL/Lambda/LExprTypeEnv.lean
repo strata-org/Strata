@@ -7,6 +7,7 @@
 import Strata.DL.Lambda.LExprWF
 import Strata.DL.Lambda.LTyUnify
 import Strata.DL.Lambda.Factory
+import Strata.DL.Lambda.TypeFactory
 import Strata.DL.Util.Maps
 
 /-! ## Type Environment
@@ -212,6 +213,12 @@ structure TGenEnv (IDMeta : Type) where
   genState : TState
 deriving Inhabited
 
+def LDatatype.toKnownType (d: LDatatype IDMeta) : KnownType :=
+  { name := d.name, metadata := d.typeArgs.length}
+
+def TypeFactory.toKnownTypes (t: @TypeFactory IDMeta) : KnownTypes :=
+  makeKnownTypes (t.foldr (fun t l => t.toKnownType :: l) [])
+
 /--
 A type environment `TEnv` contains
 - genEnv: `TGenEnv` to track the generator state as well as the typing context
@@ -295,6 +302,9 @@ instance : ToFormat (LContext T) where
 
 def LContext.addKnownTypeWithError (C : LContext T) (k : KnownType) (f: Format) : Except Format (LContext T) := do
   .ok {C with knownTypes := (← C.knownTypes.addWithError k f)}
+
+def LContext.addKnownTypes (C : LContext T) (k : KnownTypes) : Except Format (LContext T) := do
+  k.foldM (fun T k n => T.addKnownTypeWithError ⟨k, n⟩ f!"Error: type {k} already known") C
 
 def LContext.addIdentWithError (C : LContext T) (i: T.Identifier) (f: Format) : Except Format (LContext T) := do
   let i ← C.idents.addWithError i f
@@ -380,7 +390,7 @@ def TEnv.eraseFromContext (Env : TEnv T.IDMeta) (x : T.Identifier) : TEnv T.IDMe
 
 def TEnv.freeVarCheck [DecidableEq T.IDMeta] (Env : TEnv T.IDMeta) (e : LExpr T.mono) (msg : Format) :
   Except Format Unit :=
-  let efv := (@freeVars T e).map Prod.fst
+  let efv := (@freeVars T LMonoTy e).map Prod.fst
   let knownVars := Env.context.knownVars
   let freeVars := List.filter (fun v => v ∉ knownVars) efv
   match freeVars with
@@ -877,10 +887,10 @@ def LMonoTySignature.toTrivialLTy (s : @LMonoTySignature IDMeta) : @LTySignature
   s.map (fun (x, ty) => (x, .forAll [] ty))
 
 /--
-Generate fresh type variables only for unnannotated identifiers in `ids`,
+Generate fresh type variables only for unannotated identifiers in `ids`,
 retaining any pre-existing type annotations.
 -/
-def TEnv.maybeGenMonoTypes [ToFormat IDMeta] (Env : TEnv IDMeta) (ids : IdentTs IDMeta) : List LMonoTy × TEnv IDMeta :=
+def TEnv.maybeGenMonoTypes [ToFormat IDMeta] (Env : TEnv IDMeta) (ids : IdentTs LMonoTy IDMeta) : List LMonoTy × TEnv IDMeta :=
   match ids with
   | [] => ([], Env)
   | (_x, ty) :: irest =>
@@ -900,7 +910,7 @@ in `Env`, only if `fvi` doesn't already exist in some context in `Env`.
 
 If `fvi` has no type annotation, a fresh type variable is put in the context.
 -/
-def TEnv.addInOldestContext [ToFormat IDMeta] [DecidableEq IDMeta] (fvs : IdentTs IDMeta) (Env : TEnv IDMeta) : TEnv IDMeta :=
+def TEnv.addInOldestContext [ToFormat IDMeta] [DecidableEq IDMeta] (fvs : IdentTs LMonoTy IDMeta) (Env : TEnv IDMeta) : TEnv IDMeta :=
   let (monotys, Env) := maybeGenMonoTypes Env fvs
   let tys := monotys.map (fun mty => LTy.forAll [] mty)
   let types := Env.context.types.addInOldest fvs.idents tys
