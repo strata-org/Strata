@@ -113,7 +113,7 @@ mutual
 def Stmt.hasLabelInside (label : String) (s : Stmt P C) : Bool :=
   match s with
   |  .block label' bss _ => label = label' || Block.hasLabelInside label bss
-  |  .ite _ tss ess  _ => Block.hasLabelInside label tss || Block.hasLabelInside label ess
+  |  .ite _ tss ess _ => Block.hasLabelInside label tss || Block.hasLabelInside label ess
   |  _ => false
   termination_by (Stmt.sizeOf s)
 
@@ -162,7 +162,7 @@ mutual
 def Stmt.definedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   match s with
   | .cmd cmd => HasVarsImp.definedVars cmd
-  | .block _ bss  _ => Block.definedVars bss
+  | .block _ bss _ => Block.definedVars bss
   | .ite _ tbss ebss _ => Block.definedVars tbss ++ Block.definedVars ebss
   | _ => []
   termination_by (Stmt.sizeOf s)

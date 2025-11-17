@@ -117,9 +117,7 @@ subst: [($__ty0, int)]
                       Statement.init "y" t[∀α. %α] eb[x],
                       Statement.assert "local_y_eq_3" eb[y == #3]
                     ]
-                    [
-                      Statement.init "z" t[bool] eb[#true]
-                    ]
+                    [ Statement.init "z" t[bool] eb[#true] ]
                     ]
           return format ans.snd
 
