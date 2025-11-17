@@ -91,6 +91,10 @@ abbrev Statement.call (lhs : List Expression.Ident) (pname : String) (args : Lis
 
 ---------------------------------------------------------------------
 
+abbrev Block := Imperative.Block Boogie.Expression Boogie.Command
+
+---------------------------------------------------------------------
+
 def Command.eraseTypes (c : Command) : Command :=
   match c with
   | .cmd c =>
