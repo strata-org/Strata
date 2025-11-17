@@ -46,16 +46,21 @@ mutual
     | TS_TSBooleanKeyword : TS_TSBooleanKeyword → TS_TSTypeKeyword
     | TS_TSStringKeyword : TS_TSStringKeyword → TS_TSTypeKeyword
     | TS_TSArrayType : TS_TSArrayType → TS_TSTypeKeyword
+    | TS_TSTypeLiteral : TS_TSTypeLiteral → TS_TSTypeKeyword
   deriving Repr, Lean.FromJson, Lean.ToJson
 
   structure TS_TSArrayType extends BaseNode where
     elementType : TS_TSTypeKeyword
   deriving Repr, Lean.FromJson, Lean.ToJson
 
-  -- TODO: Array not as a type?
-  -- structure TS_TSArrayType extends BaseNode where
-    -- elementType : TS_TSTypeKeyword
-  -- deriving Repr, Lean.FromJson, Lean.ToJson
+  structure TS_TSPropertySignature extends BaseNode where
+    key : String
+    typeAnnotation : Option TS_TSTypeKeyword
+  deriving Repr, Lean.FromJson, Lean.ToJson
+
+  structure TS_TSTypeLiteral extends BaseNode where
+    members : Array TS_TSPropertySignature
+  deriving Repr, Lean.FromJson, Lean.ToJson
 end
 
 structure TS_TSTypeAnnotation extends BaseNode where
