@@ -142,10 +142,13 @@ def ofDecimalM {α} [Repr α] : ArgF α → OfAstM (Ann Decimal α)
 | .decimal ann val => pure { ann := ann, val := val }
 | a => .throwExpected "scientific literal" a
 
-def ofStrlitM {α} [Repr α]
-      : ArgF α → OfAstM (Ann String α)
+def ofStrlitM {α} [Repr α] : ArgF α → OfAstM (Ann String α)
 | .strlit ann val => pure { ann := ann, val := val }
 | a => .throwExpected "string literal" a
+
+def ofBytesM {α} [Repr α] : ArgF α → OfAstM (Ann ByteArray α)
+| .bytes ann val => pure { ann := ann, val := val }
+| a => .throwExpected "byte array" a
 
 def ofOptionM {α β} [Repr α] [SizeOf α]
       (arg : ArgF α)

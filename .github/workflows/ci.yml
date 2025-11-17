@@ -86,7 +86,7 @@ jobs:
               done
       - uses: actions/setup-python@v5
         with:
-        python-version: '3.14'
+          python-version: '3.14'
       - name: Build using pip
         run: pip install .
         working-directory: Tools/Python
@@ -153,4 +153,3 @@ jobs:
     - name: Run test script
       run: ./scripts/run_cpython_tests.sh
       working-directory: Tools/Python
-      

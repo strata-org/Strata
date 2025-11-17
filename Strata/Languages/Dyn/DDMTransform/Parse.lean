@@ -36,10 +36,10 @@ fn strLit (s : Str) : string => s;
 
 // Typecasts
 // Casts to Any
-fn str_to_Any (s: string) : Any => "str_to_Any("s")";
-fn int_to_Any (i: int) : Any => "int_to_Any("i")";
-fn bool_to_Any (b: bool) : Any => "bool_to_Any("b")";
-fn fun_to_Any (f: Any -> Any -> Any) : Any => "fun_to_Any("f")";
+fn str_to_Any (s: string) : Any => "str_to_Any(" s ")";
+fn int_to_Any (i: int) : Any => "int_to_Any(" i ")";
+fn bool_to_Any (b: bool) : Any => "bool_to_Any(" b ")";
+fn fun_to_Any (f: Any -> Any -> Any) : Any => "fun_to_Any(" f ")";
 
 // Casts from Any
 fn Any_to_string (a: Any) : string => "Any_to_str("a")";

@@ -146,17 +146,6 @@ protected def lookupSymbol (sym : SymbolId) : FromIonM String := do
     | throw s!"Could not find symbol {sym.value}"
   pure fullname
 
-protected def asString (name : String) (v : Ion SymbolId) : FromIonM String :=
-  match v with
-  | .string s => return s
-  | _ => throw s!"{name} expected to be a string. {repr v}"
-
-protected def asSymbolString (name : String) (v : Ion SymbolId) : FromIonM String :=
-  match v.app with
-  | .symbol sym => .lookupSymbol sym
-  | .string name => pure name
-  | _ => throw s!"{name} expected to be a symbol or string."
-
 protected def asNat (name : String) (v : Ion SymbolId) : FromIonM Nat :=
   match v.asNat? with
   | some x => pure x
@@ -166,6 +155,23 @@ protected def asInt (v : Ion SymbolId) : FromIonM Int :=
   match v.asInt? with
   | some x => pure x
   | none => throw s!"Expected {repr v} to be an int."
+
+protected def asString (name : String) (v : Ion SymbolId) : FromIonM String :=
+  match v with
+  | .string s => return s
+  | _ => throw s!"{name} expected to be a string. {repr v}"
+
+protected def asBytes (name : String) (v : Ion SymbolId) : FromIonM ByteArray :=
+  match v with
+  | .blob a => return a
+  | .list a => ByteArray.ofNatArray <$> a.mapM (.asNat "name element")
+  | _ => throw s!"{name} expected to be a string. {repr v}"
+
+protected def asSymbolString (name : String) (v : Ion SymbolId) : FromIonM String :=
+  match v.app with
+  | .symbol sym => .lookupSymbol sym
+  | .string name => pure name
+  | _ => throw s!"{name} expected to be a symbol or string."
 
 protected def asList (v : Ion SymbolId) : FromIonM { a : Array (Ion SymbolId) // sizeOf a < sizeOf v} :=
   match v with
@@ -484,6 +490,8 @@ protected def ArgF.toIon {α} [ToIon α] (refs : SymbolIdCache) (arg : ArgF α) 
       return .sexp #[ ionSymbol! "decimal", ← toIon ann, .decimal d]
     | .strlit ann s =>
       return .sexp #[ ionSymbol! "strlit", ← toIon ann, .string s]
+    | .bytes ann a =>
+      return .sexp #[ ionSymbol! "bytes", ← toIon ann, .blob a ]
     | .option ann o => do
       let mut args : Array (Ion _) := #[ ionSymbol! "option", ← toIon ann ]
       match o with
@@ -588,11 +596,12 @@ protected def ArgF.fromIon {α} [FromIon α] (v : Ion SymbolId) : FromIonM (ArgF
     pure <| .decimal ann d
   | "strlit" =>
     let ⟨p⟩ ← .checkArgCount "strlit" sexp 3
-    match sexp[2] with
-    | .string s => pure ()
-    | _ => throw s!"strlit expected to be a string. {repr v}"
     .strlit <$> fromIon sexp[1]
             <*> .asString "String literal value" sexp[2]
+  | "bytes" =>
+    let ⟨p⟩ ← .checkArgCount "bytes" sexp 3
+    .bytes <$> fromIon sexp[1]
+            <*> .asBytes "byte literal" sexp[2]
   | "option" =>
     let ⟨p⟩ ← .checkArgMin "option" sexp 2
     let ann ← fromIon sexp[1]

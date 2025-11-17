@@ -34,26 +34,26 @@ instance {IDMeta} [Inhabited IDMeta] : Coe String (Identifier IDMeta) where
   coe s := ⟨s, Inhabited.default⟩
 
 /--
-Identifiers, optionally with their inferred monotype.
+Identifiers, optionally with their inferred type.
 -/
-abbrev IdentT (IDMeta : Type) := (Identifier IDMeta) × Option LMonoTy
-abbrev IdentTs (IDMeta : Type) := List (IdentT IDMeta)
+abbrev IdentT (ITy IDMeta: Type) := (Identifier IDMeta) × Option ITy
+abbrev IdentTs (ITy IDMeta: Type) := List (IdentT ITy IDMeta)
 
-instance {IDMeta : Type} : ToFormat (IdentT IDMeta) where
+instance {IDMeta ITy: Type} [ToFormat ITy]: ToFormat (IdentT ITy IDMeta) where
   format i := match i.snd with
     | none => f!"{i.fst}"
     | some ty => f!"({i.fst} : {ty})"
 
-def IdentT.ident (x : (IdentT IDMeta)) : Identifier IDMeta :=
+def IdentT.ident (x : (IdentT ITy IDMeta)) : Identifier IDMeta :=
   x.fst
 
-def IdentT.monoty? (x : (IdentT IDMeta)) : Option LMonoTy :=
+def IdentT.ty? (x : (IdentT ITy IDMeta)) : Option ITy :=
   x.snd
 
-def IdentTs.idents (xs : (IdentTs IDMeta)) : List (Identifier IDMeta) :=
+def IdentTs.idents (xs : (IdentTs ITy IDMeta)) : List (Identifier IDMeta) :=
   xs.map Prod.fst
 
-def IdentTs.monotys? (xs : (IdentTs IDMeta)) : List (Option LMonoTy) :=
+def IdentTs.tys? (xs : (IdentTs ITy IDMeta)) : List (Option ITy) :=
   xs.map Prod.snd
 
 abbrev Identifiers IDMeta := Std.HashMap String IDMeta

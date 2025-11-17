@@ -29,6 +29,10 @@ procedure main() returns () {
     assume [s1_s2_concat_eq_s3]: str.concat(s1, s2) == s3;
 
     assert [s1_s2_len_sum_eq_s3_len]: str.len(s1) + str.len(s2) == str.len(s3);
+
+    assert [substr_of_concat]: (str.substr(str.concat(s1,s2), 0, str.len(s1)) == s1);
+
+    assert [substr_of_concat_concrete_test]: (str.substr("testing123", 2, 0) == "");
 };
 #end
 
@@ -52,13 +56,37 @@ Assumptions:
 Proof Obligation:
 (((~Int.Add (~Str.Length init_s1_0)) (~Str.Length init_s2_1)) == (~Str.Length init_s3_2))
 
+Label: substr_of_concat
+Assumptions:
+(s1_len, ((~Str.Length init_s1_0) == #3))
+(s2_len, ((~Str.Length init_s2_1) == #3)) (s1_s2_concat_eq_s3, (((~Str.Concat init_s1_0) init_s2_1) == init_s3_2))
+
+Proof Obligation:
+((((~Str.Substr ((~Str.Concat init_s1_0) init_s2_1)) #0) (~Str.Length init_s1_0)) == init_s1_0)
+
+Label: substr_of_concat_concrete_test
+Assumptions:
+(s1_len, ((~Str.Length init_s1_0) == #3))
+(s2_len, ((~Str.Length init_s2_1) == #3)) (s1_s2_concat_eq_s3, (((~Str.Concat init_s1_0) init_s2_1) == init_s3_2))
+
+Proof Obligation:
+((((~Str.Substr #testing123) #2) #0) == #)
+
 Wrote problem to vcs/s1_s2_len_sum_eq_s3_len.smt2.
+Wrote problem to vcs/substr_of_concat.smt2.
+Wrote problem to vcs/substr_of_concat_concrete_test.smt2.
 ---
 info:
 Obligation: concrete_string_test
 Result: verified
 
 Obligation: s1_s2_len_sum_eq_s3_len
+Result: verified
+
+Obligation: substr_of_concat
+Result: verified
+
+Obligation: substr_of_concat_concrete_test
 Result: verified
 -/
 #guard_msgs in

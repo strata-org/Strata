@@ -125,7 +125,6 @@ def normalizeOldExpr (e : Expression.Expr) (inOld : Bool := false)
     termination_by sizeOf e
   decreasing_by
     all_goals simp [sizeOf, Lambda.LExpr.sizeOf]; try simp_all; omega
-    simp [_He1, Lambda.LExpr.sizeOf]; omega
 
 def normalizeOldExprs (sm : List Expression.Expr) :=
   sm.map normalizeOldExpr

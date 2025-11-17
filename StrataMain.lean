@@ -151,8 +151,13 @@ def diffCommand : Command where
     let ⟨_, p2⟩ ← readFile fm v[1]
     match p1, p2 with
     | .program p1, .program p2 =>
-      if p1 == p2 then return ()
-      else exitFailure "Two programs are different"
+      if p1.dialect != p2.dialect then
+        exitFailure s!"Dialects differ: {p1.dialect} and {p2.dialect}"
+        let Decidable.isTrue eq := inferInstanceAs (Decidable (p1.commands.size = p2.commands.size))
+          | exitFailure s!"Number of commands differ {p1.commands.size} and {p2.commands.size}"
+        for (c1, c2) in Array.zip p1.commands p2.commands do
+          if c1 != c2 then
+            exitFailure s!"Commands differ: {repr c1} and {repr c2}"
     | _, _ =>
       exitFailure "Cannot compare dialect def with another dialect/program."
 

@@ -12,6 +12,7 @@ import Strata.Languages.Boogie.DDMTransform.Parse
 import Strata.Languages.Boogie.Boogie
 import Strata.Languages.Python.PythonDialect
 import Strata.Languages.Python.FunctionSignatures
+import Strata.Languages.Python.Regex.ReToBoogie
 import StrataTest.Internal.InternalFunctionSignatures
 
 namespace Strata

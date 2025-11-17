@@ -24,7 +24,8 @@ variable {IDMeta : Type} [DecidableEq IDMeta]
 Check for boolean equality of two expressions `e1` and `e2` after erasing any
 type annotations.
 -/
-def eqModuloTypes (e1 e2 : (LExpr LMonoTy IDMeta)) : Bool :=
+def eqModuloTypes {GenericTy} [DecidableEq GenericTy]
+    (e1 e2 : (LExpr GenericTy IDMeta)) : Bool :=
   e1.eraseTypes == e2.eraseTypes
 
 /--
@@ -33,8 +34,9 @@ Canonical values of `LExpr`s.
 Equality is simply `==` (or more accurately, `eqModuloTypes`) for these
 `LExpr`s. Also see `eql` for a version that can tolerate nested metadata.
 -/
-partial def isCanonicalValue (σ : LState IDMeta) (e : LExpr LMonoTy IDMeta) : Bool :=
-  match e with
+def isCanonicalValue {GenericTy} (σ : LState IDMeta)
+    (e : LExpr GenericTy IDMeta) : Bool :=
+  match he: e with
   | .const _ => true
   | .abs _ _ =>
     -- We're using the locally nameless representation, which guarantees that
@@ -43,17 +45,23 @@ partial def isCanonicalValue (σ : LState IDMeta) (e : LExpr LMonoTy IDMeta) : B
     -- clarity.
     LExpr.closed e
   | .mdata _ e' => isCanonicalValue σ e'
-  | _ =>
-    match Factory.callOfLFunc σ.config.factory e with
-    | some (_, args, f) => f.isConstr && List.all (args.map (isCanonicalValue σ)) id
+  | e' =>
+    match h: Factory.callOfLFunc σ.config.factory e with
+    | some (_, args, f) =>
+      f.isConstr && List.all (args.attach.map (fun ⟨ x, _⟩ =>
+        have : x.sizeOf < e'.sizeOf := by
+          have Hsmall := Factory.callOfLFunc_smaller h; grind
+      (isCanonicalValue σ x))) id
     | none => false
+  termination_by e.sizeOf
 
 /--
 Equality of canonical values `e1` and `e2`.
 
 We can tolerate nested metadata here.
 -/
-def eql (σ : LState IDMeta) (e1 e2 : LExpr LMonoTy IDMeta)
+def eql {GenericTy} [DecidableEq GenericTy]
+  (σ : LState IDMeta) (e1 e2 : LExpr GenericTy IDMeta)
   (_h1 : isCanonicalValue σ e1) (_h2 : isCanonicalValue σ e2) : Bool :=
   if eqModuloTypes e1 e2 then
     true
@@ -73,9 +81,11 @@ eta-expansion.
 
 E.g., `mkAbsOfArity 2 core` will give `λxλy ((core y) x)`.
 -/
-def mkAbsOfArity (arity : Nat) (core : (LExpr LMonoTy IDMeta)) : (LExpr LMonoTy IDMeta) :=
+def mkAbsOfArity {GenericTy} (arity : Nat) (core : (LExpr GenericTy IDMeta))
+    : (LExpr GenericTy IDMeta) :=
   go 0 arity core
-  where go (bvarcount arity : Nat) (core : (LExpr LMonoTy IDMeta)) : (LExpr LMonoTy IDMeta) :=
+  where go (bvarcount arity : Nat) (core : (LExpr GenericTy IDMeta))
+      : (LExpr GenericTy IDMeta) :=
   match arity with
   | 0 => core
   | n + 1 =>
@@ -92,8 +102,12 @@ can evaluate ill-typed terms w.r.t. a given type system here.
 We prefer Curry-style semantics because they separate the type system from
 evaluation, allowing us to potentially apply different type systems with our
 expressions, along with supporting dynamically-typed languages.
+
+Currently evaluator only supports LExpr with LMonoTy because LFuncs registered
+at Factory must have LMonoTy.
 -/
-def eval (n : Nat) (σ : (LState IDMeta)) (e : (LExpr LMonoTy IDMeta)) : (LExpr LMonoTy IDMeta) :=
+def eval (n : Nat) (σ : (LState IDMeta)) (e : (LExpr LMonoTy IDMeta))
+    : (LExpr LMonoTy IDMeta) :=
   match n with
   | 0 => e
   | n' + 1 =>

@@ -149,13 +149,15 @@ def serialize : Ion SymbolId → Serialize
       emitTypeAndLen CoreType.decimal.code len
       emitReversed exp
       emitReversed coef
+  | .string v => do
+    emitTypedBytes .string v.toUTF8
   | .symbol v => do
     let sym := encodeUIntLsb0 v.value
     let len := sym.size
     emitTypeAndLen CoreType.symbol.code len
     emitReversed sym
-  | .string v => do
-    emitTypedBytes .string v.toUTF8
+  | .blob v => do
+    emitTypedBytes .blob v
   | .list v => do
     let s ← runSerialize (v.size.forM fun i isLt => serialize v[i])
     emitTypedBytes .list s
