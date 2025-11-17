@@ -23,6 +23,7 @@ dialect Boogie;
 type bool;
 type int;
 type string;
+type regex;
 type real;
 // TODO: make these parameterized
 type bv1;
@@ -80,6 +81,18 @@ fn map_set (K : Type, V : Type, m : Map K V, k : K, v : V) : Map K V =>
 // FIXME: Define polymorphic length and concat functions?
 fn str_len (a : string) : int => "str.len" "(" a  ")";
 fn str_concat (a : string, b : string) : string => "str.concat" "(" a "," b ")";
+fn str_toregex (a : string) : regex => "str.to.re" "(" a ")";
+fn str_inregex (s : string, a : regex) : bool => "str.in.re" "(" s "," a ")";
+fn re_allchar () : regex => "re.allchar" "(" ")";
+fn re_all () : regex => "re.all" "(" ")";
+fn re_range (s1 : string, s2 : string) : regex => "re.range" "(" s1 "," s2 ")";
+fn re_concat (r1 : regex, r2 : regex) : regex => "re.concat" "(" r1 "," r2 ")";
+fn re_star (r : regex) : regex => "re.*" "(" r ")";
+fn re_plus (r : regex) : regex => "re.+" "(" r ")";
+fn re_loop (r : regex, i : int, j : int) : regex => "re.loop" "(" r "," i "," j")";
+fn re_union (r1 : regex, r2 : regex) : regex => "re.union" "(" r1 "," r2 ")";
+fn re_inter (r1 : regex, r2 : regex) : regex => "re.inter" "(" r1 "," r2 ")";
+fn re_comp (r : regex) : regex => "re.comp" "(" r ")";
 
 fn btrue : bool => "true";
 fn bfalse : bool => "false";
@@ -239,14 +252,14 @@ op command_typesynonym (name : Ident,
 op command_constdecl (name : Ident,
                       typeArgs : Option TypeArgs,
                       r : Type) : Command =>
-  "const" name ":" typeArgs r ";\n";
+  "const " name ":" typeArgs r ";\n";
 
 @[declareFn(name, b, r)]
 op command_fndecl (name : Ident,
                    typeArgs : Option TypeArgs,
                    @[scope(typeArgs)] b : Bindings,
                    @[scope (typeArgs)] r : Type) : Command =>
-  "function" name typeArgs b ":" r ";\n";
+  "function " name typeArgs b ":" r ";\n";
 
 category Inline;
 op inline () : Inline => "inline";
@@ -267,7 +280,11 @@ op command_fndef (name : Ident,
 op command_var (b : Bind) : Command =>
   @[prec(10)] "var " b ";\n";
 
-op command_axiom (label : Option Label, e : bool) : Command => "axiom " label e ";\n";
+op command_axiom (label : Option Label, e : bool) : Command =>
+  "axiom " label e ";\n";
+
+op command_distinct (label : Option Label, exprs : CommaSepBy Expr) : Command =>
+  "distinct " label "[" exprs "]" ";\n";
 
 #end
 

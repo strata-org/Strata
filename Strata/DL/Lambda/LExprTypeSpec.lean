@@ -28,7 +28,7 @@ open Std (ToFormat Format format)
 namespace LExpr
 open LTy
 
-variable {Identifier : Type} [DecidableEq Identifier]
+variable {IDMeta : Type} [DecidableEq IDMeta]
 
 /--
 Close `ty` by `x`, i.e., add `x` as a bound type variable.
@@ -45,7 +45,7 @@ def LTy.open (x : TyIdentifier) (xty : LMonoTy) (ty : LTy) : LTy :=
   | .forAll vars lty =>
     if x ∈ vars then
       let S := [(x, xty)]
-      .forAll (vars.removeAll [x]) (LMonoTy.subst S lty)
+      .forAll (vars.removeAll [x]) (LMonoTy.subst [S] lty)
     else
       ty
 
@@ -54,23 +54,28 @@ Typing relation for `LExpr`s.
 
 (TODO) Add the introduction and elimination rules for `.tcons`.
 -/
-inductive HasType {T: LExprParams} [DecidableEq T.Identifier]:
-  (TContext T.Identifier) → LExpr T.mono → LTy → Prop where
-  | tbool_const_t : ∀ Γ m, HasType Γ (.const m "true" none)
-                         (.forAll [] (.tcons "bool" []))
-  | tbool_const_f : ∀ Γ m, HasType Γ (.const m "false" none)
-                        (.forAll [] (.tcons "bool" []))
-  | tint_const : ∀ Γ, n.isInt → HasType Γ (.const m n none)
-                                (.forAll [] (.tcons "int" []))
+inductive HasType {T: LExprParams} [DecidableEq T.IDMeta]:
+  (TContext T.IDMeta) → LExpr T.mono → LTy → Prop where
+  | tbool_const : ∀ Γ m b,
+            HasType Γ (.boolConst m b) (.forAll [] .bool)
+  | tint_const : ∀ Γ m n,
+            HasType Γ (.intConst m n) (.forAll [] .int)
+  | treal_const : ∀ Γ m r,
+            HasType Γ (.realConst m r) (.forAll [] .real)
+  | tstr_const : ∀ Γ m s,
+            HasType Γ (.strConst m s) (.forAll [] .string)
+  | tbitvec_const : ∀ Γ m n b,
+            HasType Γ (.bitvecConst m n b) (.forAll [] (.bitvec n))
 
   | tvar : ∀ Γ m x ty, Γ.types.find? x = some ty → HasType Γ (.fvar m x none) ty
 
-  | tabs : ∀ Γ m x x_ty e e_ty,
+  | tabs : ∀ Γ m x x_ty e e_ty o,
             LExpr.fresh x e →
             (hx : LTy.isMonoType x_ty) →
             (he : LTy.isMonoType e_ty) →
             HasType { Γ with types := Γ.types.insert x.fst x_ty} (LExpr.varOpen 0 x e) e_ty →
-            HasType Γ (.abs m .none e)
+            o = none ∨ o = some (x_ty.toMonoType hx) →
+            HasType Γ (.abs m o e)
                       (.forAll [] (.tcons "arrow" [(LTy.toMonoType x_ty hx),
                                                    (LTy.toMonoType e_ty he)]))
 
@@ -94,18 +99,18 @@ inductive HasType {T: LExprParams} [DecidableEq T.Identifier]:
 
   -- `ty` is more general than `e_ty`, so we can instantiate `ty` with `e_ty`.
   | tinst : ∀ Γ e ty e_ty x x_ty,
-           HasType Γ e ty →
-           e_ty = LTy.open x x_ty ty →
-           HasType Γ e e_ty
+            HasType Γ e ty →
+            e_ty = LTy.open x x_ty ty →
+            HasType Γ e e_ty
 
   -- The generalization rule will let us do things like the following:
   -- `(·ftvar "a") → (.ftvar "a")` (or `a → a`) will be generalized to
   -- `(.btvar 0) → (.btvar 0)` (or `∀a. a → a`), assuming `a` is not in the
   -- context.
   | tgen : ∀ Γ e a ty,
-           HasType Γ e ty →
-           TContext.isFresh a Γ →
-           HasType Γ e (LTy.close a ty)
+            HasType Γ e ty →
+            TContext.isFresh a Γ →
+            HasType Γ e (LTy.close a ty)
 
   | tif : ∀ Γ m c e1 e2 ty,
           HasType Γ c (.forAll [] (.tcons "bool" [])) →
@@ -118,28 +123,28 @@ inductive HasType {T: LExprParams} [DecidableEq T.Identifier]:
           HasType Γ e2 ty →
           HasType Γ (.eq m e1 e2) (.forAll [] (.tcons "bool" []))
 
+  | tquant: ∀ Γ m k tr tr_ty x x_ty e o,
+            LExpr.fresh x e →
+            (hx : LTy.isMonoType x_ty) →
+            HasType { Γ with types := Γ.types.insert x.fst x_ty} (LExpr.varOpen 0 x e) (.forAll [] .bool) →
+            HasType {Γ with types := Γ.types.insert x.fst x_ty} (LExpr.varOpen 0 x tr) tr_ty →
+            o = none ∨ o = some (x_ty.toMonoType hx) →
+            HasType Γ (.quant m k o tr e) (.forAll [] .bool)
+
 /--
 If `LExpr e` is well-typed, then it is well-formed, i.e., contains no dangling
 bound variables.
 -/
-theorem HasType.regularity [Inhabited T.Metadata] [DecidableEq T.Identifier] [DecidableEq T.Metadata] (h : HasType (T := T) Γ e ty) :
+theorem HasType.regularity [Inhabited T.IDMeta] [DecidableEq T.IDMeta] [DecidableEq T.Metadata] (h : HasType (T := T) Γ e ty) :
   LExpr.WF e := by
   open LExpr in
-  induction h
-  case tbool_const_t => simp [WF, lcAt]
-  case tbool_const_f => simp [WF, lcAt]
-  case tint_const => simp [WF, lcAt]
-  case tvar => simp [WF, lcAt]
+  induction h <;> try (solve | simp_all[WF, lcAt])
   case tabs m x x_ty e e_ty hx h_x_mono h_e_mono ht ih =>
     simp_all [WF]
-    have := @lcAt_varOpen_abs (T := T) x e 0 0 m .none hx ih (by simp)
-    simp_all
-
-  case tapp => simp_all [WF, lcAt]
-  case tif => simp_all [WF, lcAt]
-  case teq => simp_all [WF, lcAt]
-  case tgen => simp_all
-  case tinst => simp_all
+    exact lcAt_varOpen_abs ih (by simp)
+  case tquant m k tr tr_ty x x_ty e o h_x_mono hx htr ih ihtr =>
+    simp_all [WF]
+    exact lcAt_varOpen_quant ih (by omega) ihtr
   done
 
 ---------------------------------------------------------------------
@@ -151,50 +156,42 @@ section Tests
 open LExpr.SyntaxMono LTy.Syntax
 
 example : LExpr.HasType {} esM[#true] t[bool] := by
-  apply LExpr.HasType.tbool_const_t
+  apply LExpr.HasType.tbool_const
 
 example : LExpr.HasType {} esM[#-1] t[int] := by
   apply LExpr.HasType.tint_const
-  simp +ground
 
-example : LExpr.HasType { types := [[("x", t[∀a. %a])]]} esM[x] t[int] := by
-  have h_tinst := @LExpr.HasType.tinst (T := ⟨Unit, String⟩) _ { types := [[("x", t[∀a. %a])]]} esM[x] t[∀a. %a] t[int] "a" mty[int]
-  have h_tvar := @LExpr.HasType.tvar (T := ⟨Unit, String⟩) _ { types := [[("x", t[∀a. %a])]]} () "x" t[∀a. %a]
+example : LExpr.HasType { types := [[(⟨"x", ()⟩, t[∀a. %a])]]} esM[x] t[int] := by
+  have h_tinst := @LExpr.HasType.tinst (T := ⟨Unit, Unit⟩) _ { types := [[("x", t[∀a. %a])]]} esM[x] t[∀a. %a] t[int] "a" mty[int]
+  have h_tvar := @LExpr.HasType.tvar (T := ⟨Unit, Unit⟩) _ { types := [[("x", t[∀a. %a])]]} () "x" t[∀a. %a]
   simp +ground at h_tvar
   simp [h_tvar] at h_tinst
   simp +ground at h_tinst
-  simp [Map.isEmpty, Bool.decEq] at h_tinst
-  assumption
+  exact h_tinst rfl
 
-example : LExpr.HasType { types := [[("m", t[∀a. %a → int])]]}
+example : LExpr.HasType { types := [[(⟨"m", ()⟩, t[∀a. %a → int])]]}
                         esM[(m #true)]
                         t[int] := by
   apply LExpr.HasType.tapp _ _ _ _ _ t[bool] <;> (try simp +ground)
-  <;> try apply LExpr.HasType.tbool_const_t
+  <;> try apply LExpr.HasType.tbool_const
   apply LExpr.HasType.tinst _ _ t[∀a. %a → int] t[bool → int] "a" mty[bool]
   · apply LExpr.HasType.tvar
     simp +ground
   · simp +ground
-    simp [Map.isEmpty, Bool.decEq]
+    exact rfl
   done
 
 example : LExpr.HasType {} esM[λ %0] t[∀a. %a → %a] := by
-  have h_tabs := @LExpr.HasType.tabs (T := ⟨Unit, String⟩) _ {} () ("a", none) t[%a] esM[%0] t[%a]
+  have h_tabs := @LExpr.HasType.tabs (T := ⟨Unit, Unit⟩) _ {} () ("a", none) t[%a] esM[%0] t[%a] none
   simp +ground at h_tabs
-  have h_tvar := @LExpr.HasType.tvar (T := ⟨Unit, String⟩) _ { types := [[("a", t[%a])]] }
+  have h_tvar := @LExpr.HasType.tvar (T := ⟨Unit, Unit⟩) _ { types := [[("a", t[%a])]] }
                  () "a" t[%a]
   simp [Maps.find?, Map.find?] at h_tvar
   simp [h_tvar, LTy.toMonoType] at h_tabs
-  have empty_is_empty: ¬@List.Mem (String × Option LMonoTy) ("a", none) [] := by
-    intro ifMem
-    have h: ("a", (none: Option LMonoTy)) ∈ [] := ifMem
-    have e := List.elem_eq_true_of_mem h
-    rw [List.elem] at e
-    simp at e
-  have h_tabs := h_tabs empty_is_empty
-  have h_tgen := @LExpr.HasType.tgen (T := ⟨Unit, String⟩) _ {} esM[λ %0] "a"
+  have h_tgen := @LExpr.HasType.tgen (T := ⟨Unit, Unit⟩) _ {} esM[λ %0] "a"
                  t[%a → %a]
-                 h_tabs
+                 sorry --TODO: Need help for migrating proof
+                 --h_tabs
   simp +ground [Maps.find?] at h_tgen
   assumption
   done

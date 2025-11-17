@@ -60,6 +60,7 @@ def mkElabContext (ctx : DialectElabContext) (gctx : GlobalContext) (ictx : Pars
   globalContext := gctx
   inputContext := ictx
   syntaxElabs := ctx.syntaxElabMap
+  missingImport := false
 }
 
 end DialectElabContext
@@ -83,7 +84,7 @@ def ofExprImpl (elabGen : DialectElabContext) (ofExpr : Expr → OfAstM α) (ict
       | .error e => throw #[Lean.mkStringMessage ictx (stx.getPos?.getD 0) e]
       | .ok v => pure v
     else
-      throw <| s.errors.map (·.snd)
+      throw <| s.errors
 
 def ofTypeImpl (elabGen : DialectElabContext) (ofType : TypeExpr → OfAstM α) (ictx : InputContext) (tctx : Elab.TypingContext ) (stx : Lean.Syntax) : Except (Array Lean.Message) α := do
   let elabCtx : Elab.ElabContext := elabGen.mkElabContext tctx.globalContext ictx
@@ -94,7 +95,7 @@ def ofTypeImpl (elabGen : DialectElabContext) (ofType : TypeExpr → OfAstM α) 
     | .error e => throw #[Lean.mkStringMessage ictx (stx.getPos?.getD 0) e]
     | .ok v => pure v
   else
-    throw <| s.errors.map (·.snd)
+    throw <| s.errors
 
 def format {α} [h : GenType α] (a : α) (ctx : GlobalContext := {}) (opts : FormatOptions := {}) (bindings : Array String := #[]) : String :=
   let fctx : FormatContext := .ofDialects h.dialectInfo.dialectMap ctx opts
@@ -126,7 +127,7 @@ def parse (α : Type) [h : GenType α] (leanEnv : Lean.Environment) (tctx : Elab
     GenType.ofArg inputCtx tctx stx
 
 def parseString (α : Type) [h : GenType α] (leanEnv : Lean.Environment) (contents : String) (tctx : Elab.TypingContext := default) : Except (Array Lean.Message) α := do
-  let ictx := Parser.stringInputContext contents
+  let ictx := Parser.stringInputContext "dummy" contents
   parse α leanEnv tctx ictx 0 contents.endPos
 
 end GenType
@@ -156,9 +157,27 @@ fn gt (x : Int, y : Int) : Bool => @[prec(20)] x " > " y;
 namespace Arith
 
 --set_option trace.Strata.generator true
--- set_option trace.Strata.DDM.syntax true
 #strata_gen Arith
---set_option trace.Strata.generator false
+
+/--
+info: inductive Strata.Arith.Expr : Type → Type
+number of parameters: 1
+constructors:
+Strata.Arith.Expr.fvar : {α : Type} → α → Nat → Expr α
+Strata.Arith.Expr.btrue : {α : Type} → α → Expr α
+Strata.Arith.Expr.bfalse : {α : Type} → α → Expr α
+Strata.Arith.Expr.imp : {α : Type} → α → Expr α → Expr α → Expr α
+Strata.Arith.Expr.intLit : {α : Type} → α → Ann Nat α → Expr α
+Strata.Arith.Expr.add : {α : Type} → α → Expr α → Expr α → Expr α
+Strata.Arith.Expr.mul : {α : Type} → α → Expr α → Expr α → Expr α
+Strata.Arith.Expr.eq : {α : Type} → α → ArithType α → Expr α → Expr α → Expr α
+Strata.Arith.Expr.le : {α : Type} → α → Expr α → Expr α → Expr α
+Strata.Arith.Expr.lt : {α : Type} → α → Expr α → Expr α → Expr α
+Strata.Arith.Expr.ge : {α : Type} → α → Expr α → Expr α → Expr α
+Strata.Arith.Expr.gt : {α : Type} → α → Expr α → Expr α → Expr α
+-/
+#guard_msgs in
+#print Expr
 
 
 def arithDialects : DialectMap := DialectMap.ofList! [initDialect, Arith]
@@ -170,7 +189,7 @@ def arithDialectParsingContext :=
 
 namespace ArithType
 
-instance : GenType ArithType where
+instance : GenType (ArithType SourceRange) where
   dialectInfo := arithDialectParsingContext
   toArg a := .type a.toAst
   ofArg := GenType.ofTypeImpl arithDialectParsingContext ArithType.ofAst
@@ -179,7 +198,7 @@ end ArithType
 
 namespace ArithType
 
-instance : GenType ArithType where
+instance : GenType (ArithType SourceRange) where
   dialectInfo := arithDialectParsingContext
   toArg a := .type a.toAst
   ofArg := GenType.ofTypeImpl arithDialectParsingContext ArithType.ofAst
@@ -189,7 +208,7 @@ end ArithType
 
 namespace Expr
 
-instance : GenType Expr where
+instance : GenType (Expr SourceRange) where
   dialectInfo := arithDialectParsingContext
   toArg a := .expr a.toAst
   ofArg := GenType.ofExprImpl arithDialectParsingContext Expr.ofAst
@@ -211,7 +230,7 @@ def render [Repr α] (me : Except ε α) : String :=
 info: "true"
 -/
 #guard_msgs in
-#eval GenType.format Expr.btrue
+#eval GenType.format (Expr.btrue SourceRange.none)
 
 /--
 info: "ERROR"
@@ -219,15 +238,15 @@ info: "ERROR"
 #guard_msgs in
 #eval do
   let env ← Lean.mkEmptyEnvironment 0
-  return render <| GenType.parseString Expr env "false true"
+  return render <| GenType.parseString (Expr SourceRange) env "false true"
 
 /--
-info: "Strata.Arith.Expr.imp (Strata.Arith.Expr.bfalse) (Strata.Arith.Expr.btrue)"
+info: "Strata.Arith.Expr.imp\n  { start := { byteIdx := 0 }, stop := { byteIdx := 14 } }\n  (Strata.Arith.Expr.bfalse { start := { byteIdx := 0 }, stop := { byteIdx := 5 } })\n  (Strata.Arith.Expr.btrue { start := { byteIdx := 10 }, stop := { byteIdx := 14 } })"
 -/
 #guard_msgs in
 #eval do
   let env ← Lean.mkEmptyEnvironment 0
-  return render <| GenType.parseString Expr env "false ==> true"
+  return render <| GenType.parseString (Expr SourceRange) env "false ==> true"
 
 end Arith
 
@@ -302,7 +321,8 @@ procedure add (x : Int, y : Int, c : Bool) {
 #end
 
 /--
-info: procedure add(x:Int, y:Int, c:Bool) {
+info: program ArithFn;
+procedure add(x:Int, y:Int, c:Bool) {
   assign(a, c);
   if (a) {
     assign(b, a);

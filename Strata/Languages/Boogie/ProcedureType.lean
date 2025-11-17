@@ -19,9 +19,13 @@ open Std (ToFormat Format format)
 
 namespace Procedure
 
+<<<<<<< HEAD
 
 
 def typeCheck (Env : Boogie.Expression.TyEnv) (p : Program) (proc : Procedure) :
+=======
+def typeCheck (C: Boogie.Expression.TyContext) (T : Boogie.Expression.TyEnv) (p : Program) (proc : Procedure) :
+>>>>>>> origin/main
   Except Format (Procedure × Boogie.Expression.TyEnv) :=
   if !proc.header.inputs.keys.Nodup then
     .error f!"[{proc.header.name}] Duplicates found in the formals!"
@@ -62,8 +66,13 @@ def typeCheck (Env : Boogie.Expression.TyEnv) (p : Program) (proc : Procedure) :
       .error f!"[{proc.header.name}]: Preconditions cannot contain applications of the `old` function!"
      else
       -- 1. Temporarily add the formals and returns into the context.
+<<<<<<< HEAD
       let Env := Env.pushEmptyContext
       let (mty_sig, Env) ← Lambda.LMonoTySignature.instantiate Env proc.header.typeArgs
+=======
+      let T := T.pushEmptyContext
+      let (mty_sig, T) ← Lambda.LMonoTySignature.instantiate C T proc.header.typeArgs
+>>>>>>> origin/main
                             (proc.header.inputs ++ proc.header.outputs)
       let lty_sig := Lambda.LMonoTySignature.toTrivialLTy mty_sig
       let Env := Env.addToContext lty_sig
@@ -72,18 +81,32 @@ def typeCheck (Env : Boogie.Expression.TyEnv) (p : Program) (proc : Procedure) :
       let postcondition_checks := OldExpressions.normalizeOldChecks proc.spec.postconditions
       -- 3. Ensure that the preconditions and postconditions are of type boolean.
       let postconditions := postcondition_checks.map (fun (_, { expr := expr, attr := _ }) => expr)
+<<<<<<< HEAD
       let (preconditions_a, Env) ← Lambda.LExpr.fromLExprs Env preconditions
       let pre_tys := preconditions_a.map Lambda.LExpr.toLMonoTy
       let preconditions := preconditions_a.map Lambda.LExpr.unresolved
       let (postconditions_a, Env) ← Lambda.LExpr.fromLExprs Env postconditions
       let post_tys := postconditions_a.map Lambda.LExpr.toLMonoTy
       let postconditions := postconditions_a.map Lambda.LExpr.unresolved
+=======
+      let (preconditions_a, T) ← Lambda.LExprT.fromLExprs C T preconditions
+      let pre_tys := preconditions_a.map Lambda.LExprT.toLMonoTy
+      let preconditions := preconditions_a.map Lambda.LExprT.toLExpr
+      let (postconditions_a, T) ← Lambda.LExprT.fromLExprs C T postconditions
+      let post_tys := postconditions_a.map Lambda.LExprT.toLMonoTy
+      let postconditions := postconditions_a.map Lambda.LExprT.toLExpr
+>>>>>>> origin/main
       if (pre_tys ++ post_tys).any (fun ty => ty != .tcons "bool" []) then
         .error f!"Expected pre- and post-conditions to be of type Bool!"
       else
         -- 4. Typecheck the body of the procedure.
+<<<<<<< HEAD
         let (annotated_body, Env) ← Statement.typeCheck Env p (.some proc) proc.body
         let Env := Env.popContext
+=======
+        let (annotated_body, T) ← Statement.typeCheck C T p (.some proc) proc.body
+        let T := T.popContext
+>>>>>>> origin/main
         let preconditions := Procedure.Spec.updateCheckExprs preconditions proc.spec.preconditions
         let postconditions := Procedure.Spec.updateCheckExprs postconditions proc.spec.postconditions
         let new_hdr := { proc.header with typeArgs := [],

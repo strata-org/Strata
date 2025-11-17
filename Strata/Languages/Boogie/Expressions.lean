@@ -19,22 +19,18 @@ def ExpressionMetadata := Unit
 
 abbrev Expression : Imperative.PureExpr :=
    { Ident := BoogieIdent,
-     Expr := Lambda.LExpr ⟨⟨ExpressionMetadata, BoogieIdent⟩, Lambda.LMonoTy⟩,
+     Expr := Lambda.LExpr ⟨⟨ExpressionMetadata, Visibility⟩, Lambda.LMonoTy⟩,
      Ty := Lambda.LTy,
-     TyEnv := @Lambda.TEnv ⟨ExpressionMetadata, BoogieIdent⟩,
-     EvalEnv := Lambda.LState ⟨ExpressionMetadata, BoogieIdent⟩
-     EqIdent := instDecidableEqBoogieIdent }
+     TyEnv := @Lambda.TEnv Visibility,
+     TyContext := @Lambda.LContext ⟨ExpressionMetadata, Visibility⟩,
+     EvalEnv := Lambda.LState ⟨ExpressionMetadata, Visibility⟩
+     EqIdent := inferInstanceAs (DecidableEq (Lambda.Identifier _)) }
 
 instance : Imperative.HasVarsPure Expression Expression.Expr where
   getVars := Lambda.LExpr.LExpr.getVars
 
 instance : Inhabited Expression.Expr where
-  default := .const () "default" none
-
--- HasGen instance for the Expression type structure
-instance : Lambda.HasGen ⟨ExpressionMetadata, BoogieIdent⟩ where
-  genVar T := let (sym, state') := (Lambda.TState.genExprSym T.state)
-              (BoogieIdent.temp sym, { T with state := state' })
+  default := .intConst () 0
 
 ---------------------------------------------------------------------
 

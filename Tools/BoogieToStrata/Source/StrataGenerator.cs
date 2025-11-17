@@ -198,19 +198,16 @@ public class StrataGenerator : ReadOnlyVisitor {
     }
 
     private void EmitUniqueConstAxioms() {
-        var i = 0;
         foreach (var kv in _uniqueConstants) {
             if (kv.Value.Count == 1) {
                 continue;
             }
 
-            var axiomName = $"unique{i}";
+            var axiomName = $"unique_{Name(kv.Key.ToString()).Replace(" ", "_")}";
             _userAxiomNames.Add(axiomName);
-            // TODO: uncomment these axioms once Strata.Boogie supports them
-            WriteText($"// axiom {axiomName}: distinct ");
+            WriteText($"distinct [{axiomName}]: ");
             WriteList(kv.Value);
             WriteLine(";");
-            i++;
         }
     }
 
@@ -1017,10 +1014,11 @@ public class StrataGenerator : ReadOnlyVisitor {
 
     public override Constant VisitConstant(Constant node) {
         var ti = node.TypedIdent;
-        WriteText($"const {Name(ti.Name)} : ");
+        var name = Name(ti.Name);
+        WriteText($"const {name} : ");
         VisitType(ti.Type);
         if (node.Unique) {
-            AddUniqueConst(ti.Type, ti.Name);
+            AddUniqueConst(ti.Type, name);
         }
 
         WriteLine(";");
@@ -1103,19 +1101,19 @@ public class StrataGenerator : ReadOnlyVisitor {
 
     private void EmitUnopBody(Function function, string op) {
         var sanitizedArgs =
-            function.InParams.Select(i => SanitizeNameForStrata(i.Name)).ToArray();
+            function.InParams.Select(i => Name(i.Name)).ToArray();
         WriteLine($" {{ {op} {sanitizedArgs[0]} }}");
     }
 
     private void EmitBinopBody(Function function, string op) {
         var sanitizedArgs =
-            function.InParams.Select(i => SanitizeNameForStrata(i.Name)).ToArray();
+            function.InParams.Select(i => Name(i.Name)).ToArray();
         WriteLine($" {{ {sanitizedArgs[0]} {op} {sanitizedArgs[1]} }}");
     }
 
     private void EmitCallBody(Function function, string fn) {
         var sanitizedArgs =
-            function.InParams.Select(i => SanitizeNameForStrata(i.Name));
+            function.InParams.Select(i => Name(i.Name));
         var argStr = string.Join(", ", sanitizedArgs);
         WriteLine($" {{ {fn}({argStr}) }}");
     }

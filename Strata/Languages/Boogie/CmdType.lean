@@ -24,6 +24,7 @@ def isBoolType (ty : LTy) : Bool :=
   | .forAll [] LMonoTy.bool => true
   | _ => false
 
+<<<<<<< HEAD
 def lookup (Env : (TEnv BoogieLParams)) (x : BoogieIdent) : Option LTy :=
   Env.context.types.find? x
 
@@ -31,6 +32,15 @@ def update (Env : TEnv BoogieLParams) (x : BoogieIdent) (ty : LTy) : TEnv Boogie
   Env.insertInContext x ty
 
 def freeVars (e : (LExpr BoogieLParams.mono)) : List BoogieIdent :=
+=======
+def lookup (T : (TEnv Visibility)) (x : BoogieIdent) : Option LTy :=
+  T.context.types.find? x
+
+def update (T : TEnv Visibility) (x : BoogieIdent) (ty : LTy) : TEnv Visibility :=
+  T.insertInContext x ty
+
+def freeVars (e : (LExpr LMonoTy Visibility)) : List BoogieIdent :=
+>>>>>>> origin/main
   (LExpr.freeVars e).map (fun (i, _) => i)
 
 /--
@@ -38,6 +48,7 @@ Preprocess a user-facing type in Boogie amounts to converting a poly-type (i.e.,
 `LTy`) to a mono-type (i.e., `LMonoTy`) via instantiation. We still return an
 `LTy`, with no bound variables.
 -/
+<<<<<<< HEAD
 def preprocess (Env : TEnv BoogieLParams) (ty : LTy) : Except Format (LTy × TEnv BoogieLParams) := do
   let (mty, Env) ← ty.instantiateWithCheck Env
   return (.forAll [] mty, Env)
@@ -46,6 +57,16 @@ def postprocess (Env: TEnv BoogieLParams) (ty : LTy) : Except Format (LTy × TEn
   if h: ty.isMonoType then
     let ty := LMonoTy.subst Env.state.substInfo.subst (ty.toMonoType h)
     .ok (.forAll [] ty, Env)
+=======
+def preprocess (C: LContext Visibility) (T : TEnv Visibility) (ty : LTy) : Except Format (LTy × TEnv Visibility) := do
+  let (mty, T) ← ty.instantiateWithCheck C T
+  return (.forAll [] mty, T)
+
+def postprocess (_: LContext Visibility) (T : TEnv Visibility) (ty : LTy) : Except Format (LTy × TEnv Visibility) := do
+  if h: ty.isMonoType then
+    let ty := LMonoTy.subst T.stateSubstInfo.subst (ty.toMonoType h)
+    .ok (.forAll [] ty, T)
+>>>>>>> origin/main
   else
     .error f!"[postprocess] Expected mono-type; instead got {ty}"
 
@@ -53,8 +74,13 @@ def postprocess (Env: TEnv BoogieLParams) (ty : LTy) : Except Format (LTy × TEn
 The inferred type of `e` will be an `LMonoTy`, but we return an `LTy` with no
 bound variables.
 -/
+<<<<<<< HEAD
 def inferType (Env: TEnv BoogieLParams) (c : Cmd Expression) (e : (LExpr BoogieLParams.mono)) :
     Except Format ((LExpr BoogieLParams.mono) × LTy × TEnv BoogieLParams) := do
+=======
+def inferType (C: LContext Visibility) (T : TEnv Visibility) (c : Cmd Expression) (e : (LExpr LMonoTy Visibility)) :
+    Except Format ((LExpr LMonoTy Visibility) × LTy × TEnv Visibility) := do
+>>>>>>> origin/main
   -- We only allow free variables to appear in `init` statements. Any other
   -- occurrence leads to an error.
   let T ← match c with
@@ -65,7 +91,11 @@ def inferType (Env: TEnv BoogieLParams) (c : Cmd Expression) (e : (LExpr BoogieL
       let _ ← Env.freeVarCheck e f!"[{c}]"
       .ok Env
   let e := OldExpressions.normalizeOldExpr e
+<<<<<<< HEAD
   let (ea, T) ← LExpr.fromLExpr T e
+=======
+  let (ea, T) ← LExprT.fromLExpr C T e
+>>>>>>> origin/main
   let ety := ea.toLMonoTy
   return (ea.unresolved, (.forAll [] ety), T)
 
@@ -88,6 +118,7 @@ def canonicalizeConstraints (constraints : List (LTy × LTy)) : Except Format Co
                 type constraints, but found the following instead:\n\
                 t1: {t1}\nt2: {t2}\n"
 
+<<<<<<< HEAD
 def unifyTypes (Env: TEnv BoogieLParams) (constraints : List (LTy × LTy)) : Except Format (TEnv BoogieLParams) := do
   let constraints ← canonicalizeConstraints constraints
   let S ← Constraints.unify constraints Env.state.substInfo
@@ -97,6 +128,17 @@ def unifyTypes (Env: TEnv BoogieLParams) (constraints : List (LTy × LTy)) : Exc
 ---------------------------------------------------------------------
 
 instance : Imperative.TypeContext Expression (TEnv BoogieLParams) where
+=======
+def unifyTypes (T : TEnv Visibility) (constraints : List (LTy × LTy)) : Except Format (TEnv Visibility) := do
+  let constraints ← canonicalizeConstraints constraints
+  let S ← Constraints.unify constraints T.stateSubstInfo
+  let T := T.updateSubst S
+  return T
+
+---------------------------------------------------------------------
+
+instance : Imperative.TypeContext Expression (LContext Visibility) (TEnv Visibility) where
+>>>>>>> origin/main
   isBoolType  := CmdType.isBoolType
   freeVars    := CmdType.freeVars
   preprocess  := CmdType.preprocess

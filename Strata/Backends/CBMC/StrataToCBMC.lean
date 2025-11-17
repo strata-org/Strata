@@ -8,8 +8,12 @@ import Lean.Data.Json
 import Strata.DL.Util.Map
 import Strata.Languages.C_Simp.C_Simp
 import Strata.Languages.C_Simp.Verify
+import Strata.Backends.CBMC.Common
 
 open Lean
+open Strata.CBMC
+
+namespace CSimp
 
 -- Our test program
 def SimpleTestEnv :=
@@ -42,446 +46,37 @@ def SimpleTestEnvAST := TransM.run (translateProgram (SimpleTestEnv.commands))
 
 def myFunc : Strata.C_Simp.Function := SimpleTestEnvAST.fst.funcs.head!
 
--- Configuration for CBMC output
-structure CBMCConfig where
-  sourceFile : String := "from_andrew.c"
-  -- Likely want to set this from CSimp file once we have one:
-  workingDirectory : String := "/tmp"
-  module : String := "from_andrew"
-  builtinFile : String := "<builtin-architecture-strings>"
-  builtinLine : String := "20"
-  intWidth : String := "32"
-  longWidth : String := "64"
-  charWidth : String := "8"
-  pointerWidth : String := "64"
-
-def defaultConfig : CBMCConfig := {}
-
--- Common JSON type constants
-def emptyType : Json := Json.mkObj [("id", "empty")]
-def boolType : Json := Json.mkObj [("id", "bool")]
-
-def mkIntType (config : CBMCConfig := defaultConfig) : Json :=
-  Json.mkObj [
-    ("id", "signedbv"),
-    ("namedSub", Json.mkObj [
-      ("#c_type", Json.mkObj [("id", "signed_int")]),
-      ("width", Json.mkObj [("id", config.intWidth)])
-    ])
-  ]
-
-def mkCharType (config : CBMCConfig := defaultConfig) : Json :=
-  Json.mkObj [
-    ("id", "signedbv"),
-    ("namedSub", Json.mkObj [
-      ("#c_type", Json.mkObj [("id", "char")]),
-      ("width", Json.mkObj [("id", config.charWidth)])
-    ])
-  ]
-
-def mkCharConstantType (config : CBMCConfig := defaultConfig) : Json :=
-  Json.mkObj [
-    ("id", "signedbv"),
-    ("namedSub", Json.mkObj [
-      ("#c_type", Json.mkObj [("id", "char")]),
-      ("#constant", Json.mkObj [("id", "1")]),
-      ("width", Json.mkObj [("id", config.charWidth)])
-    ])
-  ]
-
-def mkLongType (config : CBMCConfig := defaultConfig) : Json :=
-  Json.mkObj [
-    ("id", "signedbv"),
-    ("namedSub", Json.mkObj [
-      ("#c_type", Json.mkObj [("id", "signed_long_int")]),
-      ("width", Json.mkObj [("id", config.longWidth)])
-    ])
-  ]
-
-def mkPointerType (subType : Json) (config : CBMCConfig := defaultConfig) : Json :=
-  Json.mkObj [
-    ("id", "pointer"),
-    ("namedSub", Json.mkObj [("width", Json.mkObj [("id", config.pointerWidth)])]),
-    ("sub", Json.arr #[subType])
-  ]
-
-def builtinSourceLocation (config : CBMCConfig := defaultConfig) : Json :=
-  Json.mkObj [
-    ("id", ""),
-    ("namedSub", Json.mkObj [
-      ("file", Json.mkObj [("id", config.builtinFile)]),
-      ("function", Json.mkObj [("id", "")]),
-      ("line", Json.mkObj [("id", config.builtinLine)]),
-      ("working_directory", Json.mkObj [("id", config.workingDirectory)])
-    ])
-  ]
-
--- Simple structure to hold any JSON node
-structure JsonNode where
-  id : String
-  namedSub : Option Json := none
-  sub : Option (Array Json) := none
-  deriving FromJson, ToJson
-
--- Location structure
-structure Location where
-  id : String := ""
-  namedSub : Option Json := none
-  deriving FromJson, ToJson
-
--- Parameter structure for contracts
-structure Parameter where
-  id : String := "parameter"
-  namedSub : Json
-  deriving FromJson, ToJson
-
--- Lambda expression structure
-structure LambdaExpr where
-  id : String := "lambda"
-  namedSub : Json
-  sub : Array Json
-  deriving FromJson, ToJson
-
--- Contract type structure
-structure ContractType where
-  id : String := "code"
-  namedSub : Json
-  deriving FromJson, ToJson
-
--- Main CBMC Symbol structure with defaults
-structure CBMCSymbol where
-  baseName : String
-  isAuxiliary : Bool := false
-  isExported : Bool := false
-  isExtern : Bool := false
-  isFileLocal : Bool := false
-  isInput : Bool := false
-  isLvalue : Bool := false
-  isMacro : Bool := false
-  isOutput : Bool := false
-  isParameter : Bool := false
-  isProperty : Bool := false
-  isStateVar : Bool := false
-  isStaticLifetime : Bool := false
-  isThreadLocal : Bool := false
-  isType : Bool := false
-  isVolatile : Bool := false
-  isWeak : Bool := false
-  location : Location
-  mode : String
-  module : String
-  name : String
-  prettyName : String := ""
-  prettyType : String := ""
-  prettyValue : String := ""
-  type : Json
-  value : Json
-  deriving FromJson, ToJson
-
-def createSymbol (baseName : String) (line : String) (isParameter : Bool) (isStateVar : Bool) (namePrefix : String) (functionName : String) (prettyName : String := "") (config : CBMCConfig := defaultConfig) : CBMCSymbol :=
-  let locationNamedSub := Json.mkObj [
-    ("file", Json.mkObj [("id", config.sourceFile)]),
-    ("function", Json.mkObj [("id", functionName)]),
-    ("line", Json.mkObj [("id", line)]),
-    ("working_directory", Json.mkObj [("id", config.workingDirectory)])
-  ]
-
-  let location : Location := {
-    id := "",
-    namedSub := some locationNamedSub
-  }
-
-  let typeNamedSub := Json.mkObj [
-    ("#c_type", Json.mkObj [("id", "signed_int")]),
-    ("width", Json.mkObj [("id", config.intWidth)])
-  ]
-
-  let typeJson := Json.mkObj [
-    ("id", "signedbv"),
-    ("namedSub", typeNamedSub)
-  ]
-
-  let valueJson := Json.mkObj [("id", "nil")]
-  let fullName := s!"{namePrefix}{baseName}"
-
-  {
-    baseName := baseName,
-    isFileLocal := true,
-    isLvalue := true,
-    isParameter := isParameter,
-    isStateVar := isStateVar,
-    isThreadLocal := true,
-    location := location,
-    mode := "C",
-    module := "from_andrew",
-    name := fullName,
-    prettyName := if prettyName.isEmpty then "" else prettyName,
-    prettyType := "signed int",
-    prettyValue := "",
-    type := typeJson,
-    value := valueJson
-  }
-
-def mkSourceLocation (file : String) (function : String) (line : String) (config : CBMCConfig := defaultConfig) : Json :=
-  Json.mkObj [
-    ("id", ""),
-    ("namedSub", Json.mkObj [
-      ("file", Json.mkObj [("id", file)]),
-      ("function", Json.mkObj [("id", function)]),
-      ("line", Json.mkObj [("id", line)]),
-      ("working_directory", Json.mkObj [("id", config.workingDirectory)])
-    ])
-  ]
-
-def mkParameter (baseName : String) (functionName : String) (line : String) (config : CBMCConfig := defaultConfig) : Json :=
-  Json.mkObj [
-    ("id", "parameter"),
-    ("namedSub", Json.mkObj [
-      ("#base_name", Json.mkObj [("id", baseName)]),
-      ("#identifier", Json.mkObj [("id", s!"{functionName}::{baseName}")]),
-      ("#source_location", mkSourceLocation config.sourceFile functionName line config),
-      ("type", mkIntType config)
-    ])
-  ]
-
-def mkSymbol (identifier : String) (symbolType : Json) : Json :=
-  Json.mkObj [
-    ("id", "symbol"),
-    ("namedSub", Json.mkObj [
-      ("identifier", Json.mkObj [("id", identifier)]),
-      ("type", symbolType)
-    ])
-  ]
-
-def i32ToHex (s : String) : String :=
-  match s.toInt? with
-  | some n =>
-    let unsigned := if n < 0 then UInt32.size + n else n
-    ("".intercalate ((Nat.toDigits 16 unsigned.natAbs).map (λ c => c.toUpper.toString)))
-  | none => panic! "Failed to convert String to int"
-
-def mkConstant (value : String) (base : String) (sourceLocation : Json) (config : CBMCConfig := defaultConfig) : Json :=
-  Json.mkObj [
-    ("id", "constant"),
-    ("namedSub", Json.mkObj [
-      ("#base", Json.mkObj [("id", base)]),
-      ("#source_location", sourceLocation),
-      ("type", mkIntType config),
-      ("value", Json.mkObj [("id", i32ToHex value)])
-    ])
-  ]
-
-def mkCodeBlock (statement : String) (line : String) (functionName : String) (sub : Array Json) (config : CBMCConfig := defaultConfig) : Json :=
-  Json.mkObj [
-    ("id", "code"),
-    ("namedSub", Json.mkObj [
-      ("#source_location", mkSourceLocation config.sourceFile functionName line config),
-      ("statement", Json.mkObj [("id", statement)]),
-      ("type", emptyType)
-    ]),
-    ("sub", Json.arr sub)
-  ]
-
-def mkSideEffect (statement : String) (line : String) (functionName : String) (effectType : Json) (sub : Array Json) (config : CBMCConfig := defaultConfig) : Json :=
-  Json.mkObj [
-    ("id", "side_effect"),
-    ("namedSub", Json.mkObj [
-      ("#source_location", mkSourceLocation config.sourceFile functionName line config),
-      ("statement", Json.mkObj [("id", statement)]),
-      ("type", effectType)
-    ]),
-    ("sub", Json.arr sub)
-  ]
-
-def mkLvalueSymbol (identifier : String) (line : String) (functionName : String) (config : CBMCConfig := defaultConfig) : Json :=
-  Json.mkObj [
-    ("id", "symbol"),
-    ("namedSub", Json.mkObj [
-      ("#lvalue", Json.mkObj [("id", "1")]),
-      ("#source_location", mkSourceLocation config.sourceFile functionName line config),
-      ("identifier", Json.mkObj [("id", identifier)]),
-      ("type", mkIntType config)
-    ])
-  ]
-
-def opToStr (op: String) : String :=
-  match op with
-  | "Int.Gt" => ">"
-  | "Int.Lt" => "<"
-  | "Int.Ge" => ">="
-  | "Int.Le" => "<="
-  | "Int.Add" => "+"
-  | "Int.Sub" => "-"
-  | _ => panic! "Unimplemented"
-
-def opToOutTypeJson (op: String) : Json :=
-  match op with
-  | ">" => boolType
-  | "<" => boolType
-  | ">=" => boolType
-  | "<=" => boolType
-  | "+" => mkIntType
-  | "-" => mkIntType
-  | _ => panic! "Unimplemented"
-
-def mkBinaryOp (op : String) (line : String) (functionName : String) (left : Json) (right : Json) (config : CBMCConfig := defaultConfig) : Json :=
-  Json.mkObj [
-    ("id", op),
-    ("namedSub", Json.mkObj [
-      ("#source_location", mkSourceLocation config.sourceFile functionName line config),
-      ("type", (opToOutTypeJson op))
-    ]),
-    ("sub", Json.arr #[left, right])
-  ]
-
-def mkBuiltinFunction (_funcName : String) (paramTypes : Array Json) (config : CBMCConfig := defaultConfig) : Json :=
-  Json.mkObj [
-    ("id", "code"),
-    ("namedSub", Json.mkObj [
-      ("#source_location", builtinSourceLocation config),
-      ("parameters", Json.mkObj [
-        ("id", ""),
-        ("sub", Json.arr paramTypes)
-      ]),
-      ("return_type", Json.mkObj [
-        ("id", "empty"),
-        ("namedSub", Json.mkObj [
-          ("#source_location", builtinSourceLocation config)
-        ])
-      ])
-    ])
-  ]
-
-def mkAssertParam (config : CBMCConfig := defaultConfig) : Json :=
-  Json.mkObj [
-    ("id", "parameter"),
-    ("namedSub", Json.mkObj [
-      ("#base_name", Json.mkObj [("id", "assertion")]),
-      ("#identifier", Json.mkObj [("id", "")]),
-      ("#source_location", mkSourceLocation config.builtinFile "__CPROVER_assert" config.builtinLine config),
-      ("type", boolType)
-    ])
-  ]
-
-def mkStringParam (config : CBMCConfig := defaultConfig) : Json :=
-  Json.mkObj [
-    ("id", "parameter"),
-    ("namedSub", Json.mkObj [
-      ("#base_name", Json.mkObj [("id", "description")]),
-      ("#identifier", Json.mkObj [("id", "")]),
-      ("#source_location", mkSourceLocation config.builtinFile "__CPROVER_assert" config.builtinLine config),
-      ("type", Json.mkObj [
-        ("id", "pointer"),
-        ("namedSub", Json.mkObj [
-          ("#source_location", mkSourceLocation config.builtinFile "__CPROVER_assert" config.builtinLine config),
-          ("width", Json.mkObj [("id", config.pointerWidth)])
-        ]),
-        ("sub", Json.arr #[mkCharConstantType config])
-      ])
-    ])
-  ]
-
-def mkAssumeParam (config : CBMCConfig := defaultConfig) : Json :=
-  Json.mkObj [
-    ("id", "parameter"),
-    ("namedSub", Json.mkObj [
-      ("#base_name", Json.mkObj [("id", "assumption")]),
-      ("#identifier", Json.mkObj [("id", "")]),
-      ("#source_location", mkSourceLocation config.builtinFile "__CPROVER_assume" config.builtinLine config),
-      ("type", boolType)
-    ])
-  ]
-
-def mkStringConstant (value : String) (line : String) (functionName : String) (config : CBMCConfig := defaultConfig) : Json :=
-  Json.mkObj [
-    ("id", "address_of"),
-    ("namedSub", Json.mkObj [
-      ("type", Json.mkObj [
-        ("id", "pointer"),
-        ("namedSub", Json.mkObj [("width", Json.mkObj [("id", config.pointerWidth)])]),
-        ("sub", Json.arr #[mkCharType config])
-      ])
-    ]),
-    ("sub", Json.arr #[
-      Json.mkObj [
-        ("id", "index"),
-        ("namedSub", Json.mkObj [
-          ("type", mkCharType)
-        ]),
-        ("sub", Json.arr #[
-          Json.mkObj [
-            ("id", "string_constant"),
-            ("namedSub", Json.mkObj [
-              ("#lvalue", Json.mkObj [("id", "1")]),
-              ("#source_location", mkSourceLocation "from_andrew.c" functionName line),
-              ("type", Json.mkObj [
-                ("id", "array"),
-                ("namedSub", Json.mkObj [
-                  ("size", Json.mkObj [
-                    ("id", "constant"),
-                    ("namedSub", Json.mkObj [
-                      ("type", mkLongType config),
-                      ("value", Json.mkObj [("id", "C")])
-                    ])
-                  ])
-                ]),
-                ("sub", Json.arr #[mkCharType config])
-              ]),
-              ("value", Json.mkObj [("id", value)])
-            ])
-          ],
-          Json.mkObj [
-            ("id", "constant"),
-            ("namedSub", Json.mkObj [
-              ("type", mkLongType config),
-              ("value", Json.mkObj [("id", "0")])
-            ])
-          ]
-        ])
-      ]
-    ])
-  ]
-
-def createParameterSymbol (baseName : String) (functionName : String := "simpleTest") : CBMCSymbol :=
-  createSymbol baseName "1" true true s!"{functionName}::" functionName
-
-def createLocalSymbol (baseName : String) (functionName : String := "simpleTest") : CBMCSymbol :=
-  let fullName := s!"{functionName}::1::{baseName}"
-  createSymbol baseName "5" false false s!"{functionName}::1::" functionName fullName
-
-instance : ToJson (Map String CBMCSymbol) where
-  toJson m := Json.mkObj (m.map fun (k, v) => (k, toJson v))
-
 -- Convert LExpr to CBMC JSON format for contracts
 def lexprToCBMC (expr : Strata.C_Simp.Expression.Expr) (functionName : String) : Json :=
+  let cfg := CBMCConfig.empty
   match expr with
   | .app () (.app () (.op () op _) (.fvar () varName _)) (.const () value _) =>
-    mkBinaryOp (opToStr op) "2" functionName
+    mkBinaryOp (opToStr op.name) "2" functionName (config := cfg)
       (Json.mkObj [
         ("id", "symbol"),
         ("namedSub", Json.mkObj [
-          ("#base_name", Json.mkObj [("id", varName)]),
+          ("#base_name", Json.mkObj [("id", varName.name)]),
           ("#id_class", Json.mkObj [("id", "1")]),
           ("#lvalue", Json.mkObj [("id", "1")]),
-          ("#source_location", mkSourceLocation "from_andrew.c" functionName "2"),
+          ("#source_location", mkSourceLocation "from_andrew.c" functionName "2" cfg),
           ("identifier", Json.mkObj [("id", s!"{functionName}::{varName}")]),
-          ("type", mkIntType)
+          ("type", mkIntType cfg)
         ])
       ])
-      (mkConstant value "10" (mkSourceLocation "from_andrew.c" functionName "2"))
-  | .const _ "true" _ =>
+      (mkConstant (toString value) "10" (mkSourceLocation "from_andrew.c" functionName "2" cfg) cfg)
+  | .true =>
     Json.mkObj [
       ("id", "notequal"),
       ("namedSub", Json.mkObj [
-        ("#source_location", mkSourceLocation "from_andrew.c" functionName "3"),
+        ("#source_location", mkSourceLocation "from_andrew.c" functionName "3" cfg),
         ("type", Json.mkObj [("id", "bool")])
       ]),
       ("sub", Json.arr #[
-        mkConstant "1" "10" (mkSourceLocation "from_andrew.c" functionName "3"),
+        mkConstant "1" "10" (mkSourceLocation "from_andrew.c" functionName "3" cfg) cfg,
         Json.mkObj [
           ("id", "constant"),
           ("namedSub", Json.mkObj [
-            ("type", mkIntType),
+            ("type", mkIntType cfg),
             ("value", Json.mkObj [("id", "0")])
           ])
         ]
@@ -490,6 +85,7 @@ def lexprToCBMC (expr : Strata.C_Simp.Expression.Expr) (functionName : String) :
   | _ => panic! "Unimplemented"
 
 def createContractSymbolFromAST (func : Strata.C_Simp.Function) : CBMCSymbol :=
+  let cfg := CBMCConfig.empty
   let location : Location := {
     id := "",
     namedSub := some (Json.mkObj [
@@ -500,15 +96,15 @@ def createContractSymbolFromAST (func : Strata.C_Simp.Function) : CBMCSymbol :=
     ])
   }
 
-  let sourceLocation := mkSourceLocation "from_andrew.c" func.name "2"
-  let ensuresSourceLocation := mkSourceLocation "from_andrew.c" func.name "3"
+  let sourceLocation := mkSourceLocation "from_andrew.c" func.name.name "2"
+  let ensuresSourceLocation := mkSourceLocation "from_andrew.c" func.name.name "3"
 
   let mathFunctionType := Json.mkObj [
     ("id", "mathematical_function"),
     ("sub", Json.arr #[
       Json.mkObj [
         ("id", ""),
-        ("sub", Json.arr #[mkIntType, mkIntType, mkIntType])
+        ("sub", Json.arr #[mkIntType cfg, mkIntType cfg, mkIntType cfg])
       ],
       Json.mkObj [("id", "bool")]
     ])
@@ -518,9 +114,9 @@ def createContractSymbolFromAST (func : Strata.C_Simp.Function) : CBMCSymbol :=
     ("id", "tuple"),
     ("namedSub", Json.mkObj [("type", Json.mkObj [("id", "tuple")])]),
     ("sub", Json.arr #[
-      mkSymbol "__CPROVER_return_value" mkIntType,
-      mkSymbol s!"{func.name}::x" mkIntType,
-      mkSymbol s!"{func.name}::y" mkIntType
+      mkSymbol "__CPROVER_return_value" (mkIntType cfg),
+      mkSymbol s!"{func.name}::x" (mkIntType cfg),
+      mkSymbol s!"{func.name}::y" (mkIntType cfg)
     ])
   ]
 
@@ -532,7 +128,7 @@ def createContractSymbolFromAST (func : Strata.C_Simp.Function) : CBMCSymbol :=
     ]),
     ("sub", Json.arr #[
       parameterTuple,
-      lexprToCBMC func.pre func.name
+      lexprToCBMC func.pre func.name.name
     ])
   ]
 
@@ -544,22 +140,22 @@ def createContractSymbolFromAST (func : Strata.C_Simp.Function) : CBMCSymbol :=
     ]),
     ("sub", Json.arr #[
       parameterTuple,
-      lexprToCBMC func.post func.name
+      lexprToCBMC func.post func.name.name
     ])
   ]
 
   let parameters := Json.mkObj [
     ("id", ""),
     ("sub", Json.arr #[
-      mkParameter "x" func.name "1",
-      mkParameter "y" func.name "1"
+      mkParameter "x" func.name.name "1" cfg,
+      mkParameter "y" func.name.name "1" cfg
     ])
   ]
 
   let contractType := Json.mkObj [
     ("id", "code"),
     ("namedSub", Json.mkObj [
-      ("#source_location", mkSourceLocation "from_andrew.c" "" "1"),
+      ("#source_location", mkSourceLocation "from_andrew.c" "" "1" cfg),
       ("#spec_assigns", Json.mkObj [("id", "")]),
       ("#spec_ensures", Json.mkObj [
         ("id", ""),
@@ -571,129 +167,115 @@ def createContractSymbolFromAST (func : Strata.C_Simp.Function) : CBMCSymbol :=
         ("sub", Json.arr #[requiresLambda])
       ]),
       ("parameters", parameters),
-      ("return_type", mkIntType)
+      ("return_type", mkIntType cfg)
     ])
   ]
 
   {
-    baseName := func.name,
+    baseName := func.name.name,
     isProperty := true,
     location := location,
     mode := "C",
     module := "from_andrew",
     name := s!"contract::{func.name}",
-    prettyName := func.name,
+    prettyName := func.name.name,
     prettyType := "signed int (signed int x, signed int y)",
     type := contractType,
     value := Json.mkObj [("id", "nil")]
   }
 
-structure SourceLoc where
-  functionName : String
-  lineNum : String
-
 def getParamJson(func: Strata.C_Simp.Function) : Json :=
+  let cfg := CBMCConfig.empty
   Json.mkObj [
     ("id", ""),
-    ("sub", Json.arr (func.inputs.map (λ i => mkParameter i.fst func.name "1")).toArray)
-  ]
-
-def returnStmt (functionName : String) (config : CBMCConfig := defaultConfig): Json :=
-  Json.mkObj [
-    ("id", "code"),
-    ("namedSub", Json.mkObj [
-      ("#source_location", mkSourceLocation config.sourceFile functionName "14" config),
-      ("statement", Json.mkObj [("id", "return")]),
-      ("type", emptyType)
-    ]),
-    ("sub", Json.arr #[
-      mkConstant "0" "10" (mkSourceLocation config.sourceFile functionName "14" config) config
-    ])
+    ("sub", Json.arr (func.inputs.map (λ i => mkParameter i.fst.name func.name.name "1" cfg)).toArray)
   ]
 
 def exprToJson (e : Strata.C_Simp.Expression.Expr) (loc: SourceLoc) : Json :=
+  let cfg := CBMCConfig.empty
   match e with
   | .app _ (.app _ (.op _ op _) left) right =>
     let leftJson := match left with
-      | .fvar _ "z" _ => mkLvalueSymbol s!"{loc.functionName}::1::z" loc.lineNum loc.functionName
-      | .fvar _ varName _ => mkLvalueSymbol s!"{loc.functionName}::{varName}" loc.lineNum loc.functionName
+      | .fvar _ "z" _ => mkLvalueSymbol s!"{loc.functionName}::1::z" loc.lineNum loc.functionName cfg
+      | .fvar _ varName _ => mkLvalueSymbol s!"{loc.functionName}::{varName}" loc.lineNum loc.functionName cfg
       | _ => exprToJson left loc
     let rightJson := match right with
-      | .fvar _ varName _ => mkLvalueSymbol s!"{loc.functionName}::{varName}" loc.lineNum loc.functionName
-      | .const _ value _ => mkConstant value "10" (mkSourceLocation "from_andrew.c" loc.functionName loc.lineNum)
+      | .fvar _ varName _ => mkLvalueSymbol s!"{loc.functionName}::{varName}" loc.lineNum loc.functionName cfg
+      | .const _ value => mkConstant (toString value) "10" (mkSourceLocation "from_andrew.c" loc.functionName loc.lineNum cfg) cfg
       | _ => exprToJson right loc
-    mkBinaryOp (opToStr op) loc.lineNum loc.functionName leftJson rightJson
-  | .const _ n _ =>
-    mkConstant n "10" (mkSourceLocation "from_andrew.c" loc.functionName "14")
+    mkBinaryOp (opToStr op.name) loc.lineNum loc.functionName leftJson rightJson cfg
+  | .intConst _ n =>
+    mkConstant (toString n) "10" (mkSourceLocation "from_andrew.c" loc.functionName "14" cfg) cfg
   | _ => panic! "Unimplemented"
 
 def cmdToJson (e : Strata.C_Simp.Command) (loc: SourceLoc) : Json :=
+  let cfg := CBMCConfig.empty
   match e with
   | .init name _ _ _ =>
-    mkCodeBlock "decl" "5" loc.functionName #[
+    mkCodeBlock "decl" "5" loc.functionName (config := cfg) #[
       Json.mkObj [
         ("id", "symbol"),
         ("namedSub", Json.mkObj [
-          ("#source_location", mkSourceLocation "from_andrew.c" loc.functionName "5"),
+          ("#source_location", mkSourceLocation "from_andrew.c" loc.functionName "5" cfg),
           ("identifier", Json.mkObj [("id", s!"{loc.functionName}::1::{name}")]),
-          ("type", mkIntType)
+          ("type", mkIntType cfg)
         ])
       ]
     ]
   | .set ("return") _ _ => returnStmt loc.functionName
   | .set name expr _ =>
     let exprLoc : SourceLoc := { functionName := loc.functionName, lineNum := "6" }
-    mkCodeBlock "expression" "6" loc.functionName #[
-      mkSideEffect "assign" "6" loc.functionName mkIntType #[
-        mkLvalueSymbol s!"{loc.functionName}::1::{name}" "6" loc.functionName,
+    mkCodeBlock "expression" "6" loc.functionName (config := cfg) #[
+      mkSideEffect "assign" "6" loc.functionName (mkIntType cfg) (config := cfg) #[
+        mkLvalueSymbol s!"{loc.functionName}::1::{name}" "6" loc.functionName cfg,
         exprToJson expr exprLoc
       ]
     ]
   | .assert label expr _ =>
     let exprLoc : SourceLoc := { functionName := loc.functionName, lineNum := "7" }
-    mkCodeBlock "expression" "7" loc.functionName #[
-      mkSideEffect "function_call" "7" loc.functionName
+    mkCodeBlock "expression" "7" loc.functionName (config := cfg) #[
+      mkSideEffect "function_call" "7" loc.functionName (config := cfg)
         (Json.mkObj [
           ("id", "empty"),
           ("namedSub", Json.mkObj [
-            ("#source_location", builtinSourceLocation)
+            ("#source_location", builtinSourceLocation cfg)
           ])
         ]) #[
         Json.mkObj [
           ("id", "symbol"),
           ("namedSub", Json.mkObj [
             ("#lvalue", Json.mkObj [("id", "1")]),
-            ("#source_location", mkSourceLocation "from_andrew.c" loc.functionName "7"),
+            ("#source_location", mkSourceLocation "from_andrew.c" loc.functionName "7" cfg),
             ("identifier", Json.mkObj [("id", "__CPROVER_assert")]),
-            ("type", mkBuiltinFunction "__CPROVER_assert" #[mkAssertParam, mkStringParam])
+            ("type", mkBuiltinFunction "__CPROVER_assert" #[mkAssertParam cfg, mkStringParam cfg] cfg)
           ])
         ],
         Json.mkObj [
           ("id", "arguments"),
           ("sub", Json.arr #[
             exprToJson expr exprLoc,
-            mkStringConstant label "7" loc.functionName
+            mkStringConstant label "7" loc.functionName cfg
           ])
         ]
       ]
     ]
   | .assume _ expr _ =>
     let exprLoc : SourceLoc := { functionName := loc.functionName, lineNum := "13" }
-    mkCodeBlock "expression" "13" loc.functionName #[
-      mkSideEffect "function_call" "13" loc.functionName
+    mkCodeBlock "expression" "13" loc.functionName (config := cfg) #[
+      mkSideEffect "function_call" "13" loc.functionName (config := cfg)
         (Json.mkObj [
           ("id", "empty"),
           ("namedSub", Json.mkObj [
-            ("#source_location", builtinSourceLocation)
+            ("#source_location", builtinSourceLocation cfg)
           ])
         ]) #[
         Json.mkObj [
           ("id", "symbol"),
           ("namedSub", Json.mkObj [
             ("#lvalue", Json.mkObj [("id", "1")]),
-            ("#source_location", mkSourceLocation "from_andrew.c" loc.functionName "13"),
+            ("#source_location", mkSourceLocation "from_andrew.c" loc.functionName "13" cfg),
             ("identifier", Json.mkObj [("id", "__CPROVER_assume")]),
-            ("type", mkBuiltinFunction "__CPROVER_assume" #[mkAssumeParam])
+            ("type", mkBuiltinFunction "__CPROVER_assume" #[mkAssumeParam cfg] cfg)
           ])
         ],
         Json.mkObj [
@@ -708,11 +290,12 @@ def cmdToJson (e : Strata.C_Simp.Command) (loc: SourceLoc) : Json :=
 
 mutual
 partial def blockToJson (b: Imperative.Block Strata.C_Simp.Expression Strata.C_Simp.Command) (loc: SourceLoc) : Json :=
+  let cfg := CBMCConfig.empty
   Json.mkObj [
     ("id", "code"),
     ("namedSub", Json.mkObj [
-      ("#end_location", mkSourceLocation "from_andrew.c" loc.functionName "10"),
-      ("#source_location", mkSourceLocation "from_andrew.c" loc.functionName "8"),
+      ("#end_location", mkSourceLocation "from_andrew.c" loc.functionName "10" cfg),
+      ("#source_location", mkSourceLocation "from_andrew.c" loc.functionName "8" cfg),
       ("statement", Json.mkObj [("id", "block")]),
       ("type", emptyType)
     ]),
@@ -761,14 +344,14 @@ def createImplementationSymbolFromAST (func : Strata.C_Simp.Function) : CBMCSymb
   ]
 
   -- For now, keep the hardcoded implementation but use function name from AST
-  let loc : SourceLoc := { functionName := func.name, lineNum := "1" }
+  let loc : SourceLoc := { functionName := func.name.name, lineNum := "1" }
   let stmtJsons := (func.body.map (stmtToJson · loc)) --++ [returnStmt]
 
   let implValue := Json.mkObj [
     ("id", "code"),
     ("namedSub", Json.mkObj [
-      ("#end_location", mkSourceLocation "from_andrew.c" func.name "15"),
-      ("#source_location", mkSourceLocation "from_andrew.c" func.name "4"),
+      ("#end_location", mkSourceLocation "from_andrew.c" func.name.name "15"),
+      ("#source_location", mkSourceLocation "from_andrew.c" func.name.name "4"),
       ("statement", Json.mkObj [("id", "block")]),
       ("type", emptyType)
     ]),
@@ -776,20 +359,20 @@ def createImplementationSymbolFromAST (func : Strata.C_Simp.Function) : CBMCSymb
   ]
 
   {
-    baseName := func.name,
+    baseName := func.name.name,
     isLvalue := true,
     location := location,
     mode := "C",
     module := "from_andrew",
-    name := func.name,
-    prettyName := func.name,
-    prettyType := s!"signed int (signed int {String.intercalate ", signed int " func.inputs.keys})",
+    name := func.name.name,
+    prettyName := func.name.name,
+    prettyType := s!"signed int (signed int {String.intercalate ", signed int " (func.inputs.keys.map Lambda.Identifier.name)})",
     prettyValue := "{\n  signed int z;\n  z = x + y;\n  __CPROVER_assert(z > x, \"test_assert\");\n  if(z > 10)\n  {\n    z = z - 1;\n  }\n\n  else\n  {\n    z = z + 1;\n  }\n  __CPROVER_assume(z > 0);\n  return 0;\n}",
     type := implType,
     value := implValue
   }
 
-def testSymbols : String := Id.run do
+def testSymbols (myFunc: Strata.C_Simp.Function) : String := Id.run do
   -- Generate symbols using AST data
   let contractSymbol := createContractSymbolFromAST myFunc
   let implSymbol := createImplementationSymbolFromAST myFunc
@@ -798,19 +381,21 @@ def testSymbols : String := Id.run do
   let paramNames := myFunc.inputs.keys
 
   -- Hardcode local variable for now
-  let zSymbol := createLocalSymbol "z"
+  let zSymbol := createLocalSymbol "z" myFunc.name.name
 
   -- Build symbol map
   let mut m : Map String CBMCSymbol := Map.empty
   m := m.insert s!"contract::{myFunc.name}" contractSymbol
-  m := m.insert myFunc.name implSymbol
+  m := m.insert myFunc.name.name implSymbol
 
   -- Add parameter symbols
   for paramName in paramNames do
-    let paramSymbol := createParameterSymbol paramName
+    let paramSymbol := createParameterSymbol paramName.name myFunc.name.name
     m := m.insert s!"{myFunc.name}::{paramName}" paramSymbol
 
   -- Add local variable
   m := m.insert s!"{myFunc.name}::1::z" zSymbol
 
   toString (toJson m)
+
+end CSimp

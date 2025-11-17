@@ -50,19 +50,25 @@ instance : ToFormat Visibility where
   | .locl => "l:"
   | .temp => "t:"
 
-def BoogieIdent := Visibility × String
+abbrev BoogieIdent := Lambda.Identifier Visibility
+instance : ToString Visibility where
+  toString v := toString $ ToFormat.format v
+
 def BoogieExprMetadata := Unit
-def BoogieLParams: Lambda.LExprParams := {Metadata := BoogieExprMetadata, Identifier := BoogieIdent}
+def BoogieLParams: Lambda.LExprParams := {Metadata := BoogieExprMetadata, IDMeta := Visibility}
 abbrev BoogieLabel := String
 
+def BoogieIdentDec : DecidableEq BoogieIdent := inferInstanceAs (DecidableEq (Lambda.Identifier Visibility))
+
+
 @[match_pattern]
-def BoogieIdent.unres (s : String) := (Visibility.unres, s)
+def BoogieIdent.unres (s : String) : BoogieIdent := ⟨s, Visibility.unres⟩
 @[match_pattern]
-def BoogieIdent.glob (s : String) := (Visibility.glob, s)
+def BoogieIdent.glob (s : String) : BoogieIdent := ⟨s, Visibility.glob⟩
 @[match_pattern]
-def BoogieIdent.locl (s : String) := (Visibility.locl, s)
+def BoogieIdent.locl (s : String) : BoogieIdent := ⟨s, Visibility.locl⟩
 @[match_pattern]
-def BoogieIdent.temp (s : String) := (Visibility.temp, s)
+def BoogieIdent.temp (s : String) : BoogieIdent := ⟨s, Visibility.temp⟩
 
 def BoogieIdent.isUnres (id : BoogieIdent) : Bool := match id with
   | .unres _ => true | _ => false
@@ -79,12 +85,12 @@ def BoogieIdent.isGlobOrLocl (id : BoogieIdent) : Bool :=
 instance : Coe String BoogieIdent where
   coe | s => .unres s
 
-instance : DecidableEq BoogieIdent := instDecidableEqProd
+-- instance : DecidableEq BoogieIdent := instDecidableEqProd
 
 /-- The pretty-printer for Boogie Identifiers.
   We ignore the visibility part so that the output can be parsed again -/
 def BoogieIdent.toPretty (x : BoogieIdent) : String :=
-  match x with | (_, s) => s
+  match x with | ⟨s, _⟩ => s
 
 /-- The pretty-printer for Boogie Identifiers.
   We ignore the visibility part so that the output can be parsed again -/
@@ -110,17 +116,17 @@ instance : DecidableEq BoogieLParams.Identifier :=
   string representation fairly easily by overriding the method, if needed.
 -/
 instance : ToString BoogieIdent where
-  toString | (v, s) => (toString $ ToFormat.format v) ++ (toString $ ToFormat.format s)
+  toString | ⟨s, v⟩ => (toString $ ToFormat.format v) ++ (toString $ ToFormat.format s)
 
 instance : Repr BoogieIdent where
-  reprPrec | (v, s), _  => (ToFormat.format v) ++ (ToFormat.format s)
+  reprPrec | ⟨s, v⟩, _  => (ToFormat.format v) ++ (ToFormat.format s)
 
 instance : Inhabited BoogieIdent where
-  default := (.unres, "_")
+  default := ⟨"_", .unres⟩
 
-instance : Lambda.HasGen BoogieLParams where
-  genVar T := let (sym, state') := (Lambda.TState.genExprSym T.state)
-              (BoogieIdent.temp sym, { T with state := state' })
+instance : Lambda.HasGen Visibility where
+  genVar T := let (sym, state') := (Lambda.TState.genExprSym T.genState)
+              (BoogieIdent.temp sym, { T with genState := state' })
 
 namespace Syntax
 
@@ -134,15 +140,16 @@ def elabBoogieIdent : Syntax → MetaM Expr
     return ← mkAppM ``BoogieIdent.unres #[mkStrLit s]
   | _ => throwUnsupportedSyntax
 
-instance : MkLExprParams BoogieLParams where
+--
+instance : MkLExprParams ⟨BoogieExprMetadata, Visibility⟩ where
   elabIdent := elabBoogieIdent
-  toExpr := mkApp2 (mkConst ``Lambda.LExprParams.mk) (mkConst ``BoogieExprMetadata) (mkConst ``BoogieIdent)
+  toExpr := mkApp2 (mkConst ``Lambda.LExprParams.mk) (mkConst ``BoogieExprMetadata) (.const ``Visibility [])
 
-elab "eb[" e:lexprmono "]" : term => elabLExprMono (T:=BoogieLParams) e
+elab "eb[" e:lexprmono "]" : term => elabLExprMono (T:=⟨BoogieExprMetadata, Visibility⟩) e
 
 /--
 info: Lambda.LExpr.op () (BoogieIdent.unres "old")
-  none : Lambda.LExpr { Metadata := BoogieExprMetadata, Identifier := BoogieIdent }.mono
+  none : Lambda.LExpr { Metadata := BoogieExprMetadata, IDMeta := Visibility }.mono
 -/
 #guard_msgs in
 #check eb[~old]
@@ -150,16 +157,16 @@ info: Lambda.LExpr.op () (BoogieIdent.unres "old")
 /--
 info: Lambda.LExpr.app () (Lambda.LExpr.op () (BoogieIdent.unres "old") none)
   (Lambda.LExpr.fvar () (BoogieIdent.unres "a")
-    none) : Lambda.LExpr { Metadata := BoogieExprMetadata, Identifier := BoogieIdent }.mono
+    none) : Lambda.LExpr { Metadata := BoogieExprMetadata, IDMeta := Visibility }.mono
 -/
 #guard_msgs in
 #check eb[(~old a)]
 
 open Lambda.LTy.Syntax in
+
 /--
 info: Lambda.LExpr.fvar () (BoogieIdent.unres "x")
-  (some
-    (Lambda.LMonoTy.tcons "bool" [])) : Lambda.LExpr { Metadata := BoogieExprMetadata, Identifier := BoogieIdent }.mono
+  (some (Lambda.LMonoTy.tcons "bool" [])) : Lambda.LExpr { Metadata := BoogieExprMetadata, IDMeta := Visibility }.mono
 -/
 #guard_msgs in
 #check eb[(x : bool)]

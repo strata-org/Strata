@@ -18,8 +18,10 @@ namespace Boogie
 open Std (ToFormat Format format)
 open Lambda
 
+
 namespace Program
 
+<<<<<<< HEAD
 def typeCheck (Env : Boogie.Expression.TyEnv) (program : Program) :
   Except Format (Program × Boogie.Expression.TyEnv) := do
   -- Check for duplicates in declaration names.
@@ -43,9 +45,20 @@ def typeCheck (Env : Boogie.Expression.TyEnv) (program : Program) :
     .ok ({ decls }, Env)
 
   where go Env remaining acc : Except Format (Decls × Boogie.Expression.TyEnv) :=
+=======
+def typeCheck (C: Boogie.Expression.TyContext) (T : Boogie.Expression.TyEnv) (program : Program) :
+  Except Format (Program × Boogie.Expression.TyEnv) := do
+    -- Push a type substitution scope to store global type variables.
+    let T := T.updateSubst { subst := [[]], isWF := SubstWF_of_empty_empty }
+    let (decls, T) ← go C T program.decls []
+    .ok ({ decls }, T)
+
+  where go C T remaining acc : Except Format (Decls × Boogie.Expression.TyEnv) :=
+>>>>>>> origin/main
   match remaining with
   | [] => .ok (acc.reverse, Env)
   | decl :: drest => do
+<<<<<<< HEAD
     let (decl', Env) ←
       match decl with
 
@@ -53,6 +66,16 @@ def typeCheck (Env : Boogie.Expression.TyEnv) (program : Program) :
         let (s', Env) ← Statement.typeCheck Env program .none [.init x ty val .empty]
         match s' with
         | [.init x' ty' val' _] => .ok (.var x' ty' val', Env)
+=======
+    let C := {C with idents := (← C.idents.addWithError decl.name f!"Error in Boogie declaration {decl}: {decl.name} already defined")}
+    let (decl', C, T) ←
+      match decl with
+
+      | .var x ty val _ =>
+        let (s', T) ← Statement.typeCheck C T program .none [.init x ty val .empty]
+        match s' with
+        | [.init x' ty' val' _] => .ok (.var x' ty' val', C, T)
+>>>>>>> origin/main
         | _ => .error f!"Implementation error! \
                          Statement typeChecker returned the following: \
                          {Format.line}\
@@ -60,6 +83,7 @@ def typeCheck (Env : Boogie.Expression.TyEnv) (program : Program) :
                          Declaration: {decl}"
 
       | .type td _ =>
+<<<<<<< HEAD
         match Program.find?.go .type td.name acc with
         | some decl =>
           .error f!"Type declaration of the same name already exists!\n\
@@ -82,9 +106,31 @@ def typeCheck (Env : Boogie.Expression.TyEnv) (program : Program) :
         let (ae, Env) ← LExpr.fromLExpr Env a.e
         match ae.toLMonoTy with
         | .bool => .ok (.ax { a with e := ae.unresolved } , Env)
+=======
+          match td with
+          | .con tc =>
+            let C ← C.addKnownTypeWithError { name := tc.name, metadata := tc.numargs } f!"This type declaration's name is reserved!\n\
+                      {td}\n\
+                      KnownTypes' names:\n\
+                      {C.knownTypes.keywords}"
+            .ok (.type td, C, T)
+          | .syn ts =>
+            let T ← TEnv.addTypeAlias { typeArgs := ts.typeArgs, name := ts.name, type := ts.type } C T
+            .ok (.type td, C, T)
+
+      | .ax a _ =>
+        let (ae, T) ← LExprT.fromLExpr C T a.e
+        match ae.toLMonoTy with
+        | .bool => .ok (.ax { a with e := ae.toLExpr }, C, T)
+>>>>>>> origin/main
         | _ => .error f!"Axiom has non-boolean type: {a}"
 
+      | .distinct l es md =>
+        let es' ← es.mapM (LExprT.fromLExpr C T)
+        .ok (.distinct l (es'.map (λ e => e.fst.toLExpr)) md, C, T)
+
       | .proc proc _ =>
+<<<<<<< HEAD
         let (proc', Env) ← Procedure.typeCheck Env program proc
         .ok (.proc proc', Env)
 
@@ -94,6 +140,21 @@ def typeCheck (Env : Boogie.Expression.TyEnv) (program : Program) :
         .ok (.func func', Env)
 
     go Env drest (decl' :: acc)
+=======
+        let T := T.pushEmptySubstScope
+        let (proc', T) ← Procedure.typeCheck C T program proc
+        let T := T.popSubstScope
+        .ok (.proc proc', C, T)
+
+      | .func func _ =>
+        let T := T.pushEmptySubstScope
+        let (func', T) ← Function.typeCheck C T func
+        let C := C.addFactoryFunction func'
+        let T := T.popSubstScope
+        .ok (.func func', C, T)
+
+    go C T drest (decl' :: acc)
+>>>>>>> origin/main
 
 ---------------------------------------------------------------------
 

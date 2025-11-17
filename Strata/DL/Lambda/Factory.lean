@@ -32,23 +32,23 @@ variable {T : LExprParams} [Inhabited T.Metadata] [Inhabited T.Identifier] [Deci
 
 open LTy.Syntax
 
-variable {Identifier : Type} [DecidableEq Identifier] [ToFormat Identifier] [Inhabited Identifier]
+variable {IDMeta : Type} [DecidableEq IDMeta] [Inhabited IDMeta]
 
 /--
 A signature is a map from variable identifiers to types.
 -/
-abbrev Signature (Identifier : Type) (Ty : Type) := ListMap Identifier Ty
+abbrev Signature (IDMeta : Type) (Ty : Type) := ListMap (Identifier IDMeta) Ty
 
-def Signature.format (ty : Signature Identifier Ty) [Std.ToFormat Ty] : Std.Format :=
+def Signature.format (ty : Signature IDMeta Ty) [Std.ToFormat Ty] : Std.Format :=
   match ty with
   | [] => ""
   | [(k, v)] => f!"({k} : {v})"
   | (k, v) :: rest =>
     f!"({k} : {v}) " ++ Signature.format rest
 
-abbrev LMonoTySignature := Signature Identifier LMonoTy
+abbrev LMonoTySignature := Signature IDMeta LMonoTy
 
-abbrev LTySignature := Signature Identifier LTy
+abbrev LTySignature := Signature IDMeta LTy
 
 
 /--
@@ -83,9 +83,9 @@ has the right number and type of arguments, etc.?
 `.fvar`s.
 -/
 structure LFunc (T : LExprParams) where
-  name     : T.Identifier
+  name     : Identifier T.base.IDMeta
   typeArgs : List TyIdentifier := []
-  inputs   : @LMonoTySignature T.Identifier
+  inputs   : @LMonoTySignature T.base.IDMeta
   output   : LMonoTy
   body     : Option (LExpr T.mono) := .none
   -- (TODO): Add support for a fixed set of attributes (e.g., whether to inline
@@ -152,7 +152,7 @@ The type checker and partial evaluator for Lambda is parameterizable by
 a user-provided `Factory`.
 
 We don't have any "built-in" functions like `+`, `-`, etc. in `(LExpr
-Identifier)` -- lambdas are our only tool. `Factory` gives us a way to add
+IDMeta)` -- lambdas are our only tool. `Factory` gives us a way to add
 support for concrete/symbolic evaluation and type checking for `FunFactory`
 functions without actually modifying any core logic or the ASTs.
 -/
@@ -202,7 +202,7 @@ def getConcreteLFuncCall (e : (LExpr T.mono)) : (LExpr T.mono) × List (LExpr T.
 
 /--
 If `e` is a call of a factory function, get the operator (`.op`), a list
-of all the actuals, and the `(LFunc Identifier)`.
+of all the actuals, and the `(LFunc IDMeta)`.
 -/
 def Factory.callOfLFunc (F : @Factory T) (e : (LExpr T.mono)) : Option ((LExpr T.mono) × List (LExpr T.mono) × (LFunc T)) :=
   let (op, args) := getLFuncCall e

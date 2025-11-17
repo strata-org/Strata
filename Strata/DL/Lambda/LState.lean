@@ -16,7 +16,7 @@ namespace Lambda
 
 open Std (ToFormat Format format)
 
-variable {T : LExprParams} [Inhabited T.Metadata] [BEq T.Metadata] [DecidableEq T.Identifier] [BEq T.Identifier] [ToFormat T.Identifier] [ToFormat (LFunc T)] [ToFormat (Scopes T)] [Inhabited (LExpr T.mono)]
+variable {T : LExprParams} [Inhabited T.Metadata] [BEq T.Metadata] [DecidableEq T.IDMeta] [BEq T.IDMeta] [ToFormat T.IDMeta] [ToFormat (LFunc T)] [ToFormat (Scopes T)] [Inhabited (LExpr T.mono)]
 ---------------------------------------------------------------------
 
 /-
@@ -42,15 +42,15 @@ instance : ToFormat (EvalConfig T) where
     f!"Factory Functions:" ++ Format.line ++
     Std.Format.joinSep c.factory.toList f!"{Format.line}"
 
-def EvalConfig.init : (EvalConfig T) :=
+def EvalConfig.init : EvalConfig T :=
   { factory := @Factory.default T,
     fuel := 200,
     gen := 0 }
 
-def EvalConfig.incGen (c : (EvalConfig T)) : (EvalConfig T) :=
+def EvalConfig.incGen (c : EvalConfig T) : EvalConfig T :=
     { c with gen := c.gen + 1 }
 
-def EvalConfig.genSym (x : String) (c : (EvalConfig T)) : String × (EvalConfig T) :=
+def EvalConfig.genSym (x : String) (c : EvalConfig T) : String × EvalConfig T :=
   let new_idx := c.gen
   let c := c.incGen
   let new_var := c.varPrefix ++ x ++ toString new_idx
@@ -60,12 +60,12 @@ def EvalConfig.genSym (x : String) (c : (EvalConfig T)) : String × (EvalConfig 
 
 /-- The Lambda evaluation state. -/
 structure LState (T : LExprParams) where
-  config : (EvalConfig T)
-  state : (Scopes T)
+  config : EvalConfig T
+  state : Scopes T
 
 -- scoped notation (name := lstate) "Σ" => LState
 
-def LState.init : (LState T) :=
+def LState.init : LState T :=
   { state := [],
     config := EvalConfig.init }
 
@@ -103,7 +103,7 @@ def LState.addFactory (σ : (LState T)) (F : @Factory T) : Except Format (LState
 /--
 Get all the known variables from the scopes in state `σ`.
 -/
-def LState.knownVars (σ : (LState T)) : List T.Identifier :=
+def LState.knownVars (σ : LState T) : List T.Identifier :=
   go σ.state []
   where go (s : Scopes T) (acc : List T.Identifier) :=
   match s with
@@ -114,23 +114,24 @@ def LState.knownVars (σ : (LState T)) : List T.Identifier :=
 Generate a fresh (internal) identifier with the base name
 `x`; i.e., `σ.config.varPrefix ++ x`.
 -/
-def LState.genVar (x : String) (σ : (LState ⟨Metadata, String⟩)) : (String × (LState ⟨Metadata, String⟩)) :=
+def LState.genVar (x : String) (σ : (LState ⟨Unit, Unit⟩)) : (String × (LState ⟨Unit, Unit⟩)) :=
   let (new_var, config) := σ.config.genSym x
   let σ := { σ with config := config }
-  let known_vars : List String := LState.knownVars σ
+  let known_vars := LState.knownVars σ
+  let new_var := ⟨ new_var, () ⟩
   if new_var ∈ known_vars then
     panic s!"[LState.genVar] Generated variable {new_var} is not fresh!\n\
              Known variables: {known_vars}"
   else
-    (new_var, σ)
+    (new_var.name, σ)
 
 /--
 Generate fresh identifiers, each with the base name in `xs`.
 -/
-def LState.genVars (xs : List String) (σ : (LState ⟨Metadata, String⟩)) : (List String × (LState ⟨Metadata, String⟩)) :=
+def LState.genVars (xs : List String) (σ : (LState ⟨Unit, Unit⟩)) : (List String × (LState ⟨Unit, Unit⟩)) :=
   let (vars, σ') := go xs σ []
   (vars.reverse, σ')
-  where go (xs : List String) (σ : LState ⟨Metadata, String⟩) (acc : List String) :=
+  where go (xs : List String) (σ : LState ⟨Unit, Unit⟩) (acc : List String) :=
     match xs with
     | [] => (acc, σ)
     | x :: rest =>

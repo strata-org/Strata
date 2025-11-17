@@ -21,15 +21,15 @@ open Std (ToFormat Format format)
 
 namespace LExpr
 
-variable {T : LExprParams}
+variable {T : LExprParams} [DecidableEq T.IDMeta]
 
 /--
 Compute the free variables in an `LExpr`, which are simply all the `LExpr.fvar`s
 in it.
 -/
-def freeVars (e : LExpr T.mono) : IdentTs T.Identifier :=
+def freeVars (e : LExpr T.mono) : IdentTs T.IDMeta :=
   match e with
-  | .const _ _ _ => []
+  | .const _ _ => []
   | .op _ _ _ => []
   | .bvar _ _ => []
   | .fvar _ x ty => [(x, ty)]
@@ -42,23 +42,26 @@ def freeVars (e : LExpr T.mono) : IdentTs T.Identifier :=
 /--
 Is `x` is a fresh variable w.r.t. `e`?
 -/
-def fresh (x : IdentT T.Identifier) (e : LExpr T.mono) : Prop :=
+def fresh (x : IdentT T.IDMeta) (e : LExpr T.mono) : Prop :=
   x ∉ (freeVars e)
 
 /-- An expression `e` is closed if has no free variables. -/
 def closed (e : LExpr T.mono) : Bool :=
   freeVars e |>.isEmpty
 
+omit [DecidableEq T.IDMeta] in
 @[simp]
-theorem fresh_abs {x : IdentT T.Identifier} {m : T.Metadata} {ty : Option LMonoTy} {e : LExpr T.mono} :
+theorem fresh_abs {x : IdentT T.IDMeta} {m : T.Metadata} {ty : Option LMonoTy} {e : LExpr T.mono} :
   fresh x (.abs m ty e) = fresh x e := by
   simp [fresh, freeVars]
 
+omit [DecidableEq T.IDMeta] in
 @[simp]
 theorem freeVars_abs {m : T.Metadata} {ty : Option LMonoTy} {e : LExpr T.mono} :
   freeVars (.abs m ty e) = freeVars e := by
   simp [freeVars]
 
+omit [DecidableEq T.IDMeta] in
 @[simp]
 theorem closed_abs {m : T.Metadata} {ty : Option LMonoTy} {e : LExpr T.mono} :
   closed (.abs m ty e) = closed e := by
@@ -77,7 +80,7 @@ by; it replaces all leaves of the form `(.bvar k)` with `s`.
 -/
 def substK (k : Nat) (s : T.Metadata → LExpr T.mono) (e : LExpr T.mono) : LExpr T.mono :=
   match e with
-  | .const m c ty => .const m c ty
+  | .const m c => .const m c
   | .op m o ty => .op m o ty
   | .bvar m i => if i == k then s m else .bvar m i
   | .fvar m y ty => .fvar m y ty
@@ -119,7 +122,7 @@ with `(.fvar x)`.
 
 Note that `x` is expected to be a fresh variable w.r.t. `e`.
 -/
-def varOpen (k : Nat) (x : IdentT T.Identifier) (e : LExpr T.mono) : LExpr T.mono :=
+def varOpen (k : Nat) (x : IdentT T.IDMeta) (e : LExpr T.mono) : LExpr T.mono :=
   substK k (fun m => .fvar m x.fst x.snd) e
 
 /--
@@ -128,9 +131,9 @@ abstraction, given its body. `varClose k x e` keeps track of the number `k`
 of abstractions that have passed by; it replaces all `(.fvar x)` with
 `(.bvar k)`.
 -/
-def varClose [BEq T.Identifier] (k : Nat) (x : IdentT T.Identifier) (e : LExpr T.mono) : LExpr T.mono :=
+def varClose [BEq T.IDMeta] (k : Nat) (x : IdentT T.IDMeta) (e : LExpr T.mono) : LExpr T.mono :=
   match e with
-  | .const m c ty => .const m c ty
+  | .const m c => .const m c
   | .op m o ty => .op m o ty
   | .bvar m i => .bvar m i
   | .fvar m y (yty: Option LMonoTy) => if (x.fst == y) && (yty == x.snd) then
@@ -142,7 +145,7 @@ def varClose [BEq T.Identifier] (k : Nat) (x : IdentT T.Identifier) (e : LExpr T
   | .eq m e1 e2 => .eq m (varClose k x e1) (varClose k x e2)
 
 
-theorem varClose_of_varOpen [BEq T.Identifier] [ReflBEq T.Identifier] [LawfulBEq T.Identifier] [BEq T.Metadata] [ReflBEq T.Metadata] [ReflBEq LMonoTy] [LawfulBEq LMonoTy] {x : IdentT T.Identifier} {e : LExpr T.mono} {i : Nat} (h : fresh x e) :
+theorem varClose_of_varOpen [BEq T.IDMeta] [ReflBEq T.IDMeta] [LawfulBEq T.IDMeta] [BEq T.Metadata] [ReflBEq T.Metadata] [ReflBEq LMonoTy] [LawfulBEq LMonoTy] {x : IdentT T.IDMeta} {e : LExpr T.mono} {i : Nat} (h : fresh x e) :
   varClose (T := T) i x (varOpen i x e) = e := by
   induction e generalizing i x
   all_goals try simp_all [fresh, varOpen, LExpr.substK, varClose, freeVars]
@@ -173,7 +176,7 @@ Example of a term that is not locally closed: `(.abs "x" (.bvar 1))`.
 -/
 def lcAt (k : Nat) (e : LExpr T.mono) : Bool :=
   match e with
-  | .const _ _ _ => true
+  | .const _ _ => true
   | .op _ _ _ => true
   | .bvar _ i => i < k
   | .fvar _ _ _ => true
@@ -183,7 +186,7 @@ def lcAt (k : Nat) (e : LExpr T.mono) : Bool :=
   | .ite _ c t e' => lcAt k c && lcAt k t && lcAt k e'
   | .eq _ e1 e2 => lcAt k e1 && lcAt k e2
 
-theorem varOpen_varClose_when_lcAt [BEq T.Identifier] [BEq T.Metadata] [LawfulBEq T.Identifier] [LawfulBEq T.Metadata] [LawfulBEq LMonoTy]
+theorem varOpen_varClose_when_lcAt [BEq T.IDMeta] [BEq T.Metadata] [LawfulBEq T.IDMeta] [LawfulBEq T.Metadata] [LawfulBEq LMonoTy]
   (h1 : lcAt k e) (h2 : k <= i) :
   (varOpen i x (varClose (T := T) i x e)) = e := by
   induction e generalizing k i x
@@ -277,7 +280,7 @@ we will prove a _regularity_ lemma; see lemma `HasType.regularity`.
 def WF (e : LExpr T.mono) : Bool :=
   lcAt 0 e
 
-theorem varOpen_of_varClose [BEq T.Metadata] [LawfulBEq T.Metadata] [BEq T.Identifier] [LawfulBEq T.Identifier] {i : Nat} {x : IdentT T.Identifier} {e : LExpr T.mono} (h : LExpr.WF e) :
+theorem varOpen_of_varClose [BEq T.Metadata] [LawfulBEq T.Metadata] [BEq T.IDMeta] [LawfulBEq T.IDMeta] {i : Nat} {x : IdentT T.IDMeta} {e : LExpr T.mono} (h : LExpr.WF e) :
   varOpen i x (varClose i x e) = e := by
   simp_all [LExpr.WF]
   rw [varOpen_varClose_when_lcAt (k:=0) h]
@@ -295,10 +298,10 @@ and `varOpen`, this function is agnostic of types.
 Also see function `subst`, where `subst s e` substitutes the outermost _bound_
 variable in `e` with `s`.
 -/
-def substFvar [BEq T.Identifier] (e : LExpr T.mono) (fr : T.Identifier) (to : LExpr T.mono)
+def substFvar [BEq T.IDMeta] (e : LExpr T.mono) (fr : Identifier T.IDMeta) (to : LExpr T.mono)
   : (LExpr T.mono) :=
   match e with
-  | .const _ _ _ => e | .bvar _ _ => e | .op _ _ _ => e
+  | .const _ _ => e | .bvar _ _ => e | .op _ _ _ => e
   | .fvar _ name _ => if name == fr then to else e
   | .abs m ty e' => .abs m ty (substFvar e' fr to)
   | .quant m qk ty tr' e' => .quant m qk ty (substFvar tr' fr to) (substFvar e' fr to)
@@ -306,7 +309,7 @@ def substFvar [BEq T.Identifier] (e : LExpr T.mono) (fr : T.Identifier) (to : LE
   | .ite m c t e' => .ite m (substFvar c fr to) (substFvar t fr to) (substFvar e' fr to)
   | .eq m e1 e2 => .eq m (substFvar e1 fr to) (substFvar e2 fr to)
 
-def substFvars [BEq T.Identifier] (e : LExpr T.mono) (sm : Map T.Identifier (LExpr T.mono))
+def substFvars [BEq T.IDMeta] (e : LExpr T.mono) (sm : Map (Identifier T.IDMeta) (LExpr T.mono))
   : LExpr T.mono :=
   List.foldl (fun e (var, s) => substFvar e var s) e sm
 

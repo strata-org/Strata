@@ -22,7 +22,7 @@ Note that `EvalStmt` is parameterized by commands `Cmd` as well as their
 evaluation relation `EvalCmd`.
 -/
 inductive EvalStmt (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
-  [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasBoolNeg P] :
+  [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
   SemanticEval P → SemanticStore P → SemanticStore P →
   Stmt P Cmd → SemanticStore P → Prop where
   | cmd_sem :
@@ -56,7 +56,7 @@ inductive EvalStmt (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
   -- (TODO): Define semantics of `goto`.
 
 inductive EvalStmts (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
-  [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasBoolNeg P] :
+  [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
     SemanticEval P → SemanticStore P → SemanticStore P →
     List (Stmt P Cmd) → SemanticStore P → Prop where
   | stmts_none_sem :
@@ -67,7 +67,7 @@ inductive EvalStmts (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
     EvalStmts P Cmd EvalCmd δ σ₀ σ (s :: ss) σ''
 
 inductive EvalBlock (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
-  [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasBoolNeg P] :
+  [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
     SemanticEval P → SemanticStore P → SemanticStore P →
   Block P Cmd → SemanticStore P → Prop where
   | block_sem :
@@ -77,7 +77,7 @@ inductive EvalBlock (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
 end
 
 theorem eval_stmts_singleton
-  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvar P] [HasVal P] [HasBool P] [HasBoolNeg P] :
+  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
   EvalStmts P (Cmd P) (EvalCmd P) δ σ₀ σ [cmd] σ' ↔
   EvalStmt P (Cmd P) (EvalCmd P) δ σ₀ σ cmd σ' := by
   constructor <;> intro Heval
@@ -86,7 +86,7 @@ theorem eval_stmts_singleton
   apply EvalStmts.stmts_some_sem Heval (EvalStmts.stmts_none_sem)
 
 theorem eval_stmts_concat
-  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasFvar P] [HasVal P] [HasBool P] [HasBoolNeg P] :
+  [HasVarsImp P (List (Stmt P (Cmd P)))] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
   EvalStmts P (Cmd P) (EvalCmd P) δ σ₀ σ cmds1 σ' →
   EvalStmts P (Cmd P) (EvalCmd P) δ σ₀ σ' cmds2 σ'' →
   EvalStmts P (Cmd P) (EvalCmd P) δ σ₀ σ (cmds1 ++ cmds2) σ'' := by
@@ -100,7 +100,7 @@ theorem eval_stmts_concat
   apply EvalStmts.stmts_some_sem (by assumption)
   apply ind (by assumption) (by assumption)
 
-theorem EvalCmdDefMonotone [HasFvar P] [HasBool P] [HasBoolNeg P] :
+theorem EvalCmdDefMonotone [HasFvar P] [HasBool P] [HasNot P] :
   isDefined σ v →
   EvalCmd P δ σ₀ σ c σ' →
   isDefined σ' v := by
@@ -112,38 +112,39 @@ theorem EvalCmdDefMonotone [HasFvar P] [HasBool P] [HasBoolNeg P] :
 
 theorem EvalStmtsEmpty {P : PureExpr} {Cmd : Type} {EvalCmd : EvalCmdParam P Cmd}
   { σ σ' σ₀: SemanticStore P } { δ : SemanticEval P }
-  [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasBoolNeg P] :
+  [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
   EvalStmts P Cmd EvalCmd δ σ₀ σ ([]: (List (Stmt P Cmd))) σ' → σ = σ' := by
   intros H; cases H <;> simp
 
 mutual
 theorem EvalStmtDefMonotone
-  [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasBoolNeg P]
+  [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P]
   :
   isDefined σ v →
   EvalStmt P (Cmd P) (EvalCmd P) δ σ₀ σ s σ' →
   isDefined σ' v := by
   intros Hdef Heval
-  cases s
-  case cmd c =>
+  match s with
+  | .cmd c =>
     cases Heval; next Hwf Hup =>
     exact EvalCmdDefMonotone Hdef Hup
-  next l b _ => cases Heval; next Hwf Hup => cases Hup; next Hup =>
-    apply EvalStmtsDefMonotone (ss:=b.ss) <;> try assumption
-  next c t b _ => cases Heval with
-  | ite_true_sem Hsome Hwf Heval =>
-    cases Heval; next Heval =>
-    apply EvalStmtsDefMonotone (ss:=t.ss) <;> try assumption
-  | ite_false_sem Hsome Hwf Heval =>
-    cases Heval; next Heval =>
-    apply EvalStmtsDefMonotone (ss:=b.ss) <;> try assumption
-  case goto => cases Heval
-  case loop => cases Heval
+  | .block l ⟨ bss ⟩  _ =>
+    cases Heval; next Hwf Hup => cases Hup; next Hup =>
+    apply EvalStmtsDefMonotone (ss:=bss) <;> try assumption
+  | .ite c ⟨ tss ⟩ ⟨ bss ⟩ _ => cases Heval with
+    | ite_true_sem Hsome Hwf Heval =>
+      cases Heval; next Heval =>
+      apply EvalStmtsDefMonotone (ss:=tss) <;> try assumption
+    | ite_false_sem Hsome Hwf Heval =>
+      cases Heval; next Heval =>
+      apply EvalStmtsDefMonotone (ss:=bss) <;> try assumption
+  | .goto _ _ => cases Heval
+  | .loop _ _ _ _ _ => cases Heval
   termination_by (Stmt.sizeOf s)
   decreasing_by all_goals simp [*] at * <;> omega
 
 theorem EvalStmtsDefMonotone
-  [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasBoolNeg P]
+  [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P]
   :
   isDefined σ v →
   EvalStmts P (Cmd P) (EvalCmd P) δ σ₀ σ ss σ' →

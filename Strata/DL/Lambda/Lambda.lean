@@ -26,7 +26,7 @@ See module `Strata.DL.Lambda.LExpr` for the formalization of expressions,
 `Strata.DL.Lambda.LExprEval` for the partial evaluator.
 -/
 
-variable {T: LExprParams} [ToString T.Identifier] [DecidableEq T.Identifier] [ToFormat T.Identifier] [HasGen T] [ToFormat (LFunc T)] [Inhabited (LExpr T.mono)] [BEq T.Metadata] [Traceable LExpr.EvalProvenance T.Metadata]
+variable {T: LExprParams} [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [Inhabited (LExpr T.mono)] [BEq T.Metadata] [Traceable LExpr.EvalProvenance T.Metadata]
 
 /--
 Top-level type checking and partial evaluation function for the Lambda
@@ -34,10 +34,11 @@ dialect.
 -/
 def typeCheckAndPartialEval
   (f : Factory (T:=T) := Factory.default)
-  (e : (LExpr T.mono)) :
+  (e : LExpr T.mono) :
   Except Std.Format (LExpr T.mono) := do
-  let Env := TEnv.default.addFactoryFunctions f
-  let (et, _Env) ← LExpr.annotate Env e
+  let Env := TEnv.default
+  let C := LContext.default.addFactoryFunctions f
+  let (et, _Env) ← LExpr.annotate C Env e
   dbg_trace f!"Annotated expression:{Format.line}{et}{Format.line}"
   let σ ← (LState.init).addFactory f
   return (LExpr.eval σ.config.fuel σ et)

@@ -66,7 +66,7 @@ def binOpCeval (InTy OutTy : Type) [ToString OutTy]
      let e1i := cevalInTy e1
      let e2i := cevalInTy e2
      match e1i, e2i with
-     | some x, some y => (LExpr.const e1.metadata (toString (op x y)) ty)
+     | some x, some y => mkConst e1.metadata (op x y)
      | _, _ => e
    | _ => e)
 
@@ -79,7 +79,7 @@ def cevalIntDiv (e : LExpr T.mono) (args : List (LExpr T.mono)) : LExpr T.mono :
     let e2i := LExpr.denoteInt e2
     match e1i, e2i with
     | some x, some y =>
-      if y == 0 then e else (.const e.metadata (toString (x / y)) (.some .int))
+      if y == 0 then e else .intConst e.metadata (x / y)
     | _, _ => e
   | _ => e
 
@@ -92,7 +92,7 @@ def cevalIntMod (e : LExpr T.mono) (args : List (LExpr T.mono)) : LExpr T.mono :
     let e2i := LExpr.denoteInt e2
     match e1i, e2i with
     | some x, some y =>
-      if y == 0 then e else (.const e.metadata (toString (x % y)) (.some .int))
+      if y == 0 then e else .intConst e.metadata (x % y)
     | _, _ => e
   | _ => e
 
@@ -100,15 +100,15 @@ def cevalIntMod (e : LExpr T.mono) (args : List (LExpr T.mono)) : LExpr T.mono :
 
 def intAddFunc : LFunc T :=
   binaryOp "Int.Add" .int
-  (some (binOpCeval Int Int LExpr.denoteInt Int.add .int))
+  (some (binOpCeval Int Int intConst LExpr.denoteInt Int.add))
 
 def intSubFunc : LFunc T :=
   binaryOp "Int.Sub" .int
-  (some (binOpCeval Int Int LExpr.denoteInt Int.sub .int))
+  (some (binOpCeval Int Int intConst LExpr.denoteInt Int.sub))
 
 def intMulFunc : LFunc T :=
   binaryOp "Int.Mul" .int
-  (some (binOpCeval Int Int LExpr.denoteInt Int.mul .int))
+  (some (binOpCeval Int Int intConst LExpr.denoteInt Int.mul))
 
 def intDivFunc : LFunc T :=
   binaryOp "Int.Div" .int
@@ -120,44 +120,44 @@ def intModFunc : LFunc T :=
 
 def intNegFunc : LFunc T :=
   unaryOp "Int.Neg" .int
-  (some (unOpCeval Int Int LExpr.denoteInt Int.neg .int))
+  (some (unOpCeval Int Int intConst LExpr.denoteInt Int.neg))
 
 def intLtFunc : LFunc T :=
   binaryPredicate "Int.Lt" .int
-  (some (binOpCeval Int Bool LExpr.denoteInt (fun x y => x < y) .bool))
+  (some (binOpCeval Int Bool boolConst LExpr.denoteInt (fun x y => x < y)))
 
 def intLeFunc : LFunc T :=
   binaryPredicate "Int.Le" .int
-  (some (binOpCeval Int Bool LExpr.denoteInt (fun x y => x <= y) .bool))
+  (some (binOpCeval Int Bool boolConst LExpr.denoteInt (fun x y => x <= y)))
 
 def intGtFunc : LFunc T :=
   binaryPredicate "Int.Gt" .int
-  (some (binOpCeval Int Bool LExpr.denoteInt (fun x y => x > y) .bool))
+  (some (binOpCeval Int Bool boolConst LExpr.denoteInt (fun x y => x > y)))
 
 def intGeFunc : LFunc T :=
   binaryPredicate "Int.Ge" .int
-  (some (binOpCeval Int Bool LExpr.denoteInt (fun x y => x >= y) .bool))
+  (some (binOpCeval Int Bool boolConst LExpr.denoteInt (fun x y => x >= y)))
 
 /- Boolean Operations -/
 def boolAndFunc : LFunc T :=
   binaryOp "Bool.And" .bool
-  (some (binOpCeval Bool Bool LExpr.denoteBool Bool.and .bool))
+  (some (binOpCeval Bool Bool boolConst LExpr.denoteBool Bool.and))
 
 def boolOrFunc : LFunc T :=
   binaryOp "Bool.Or" .bool
-  (some (binOpCeval Bool Bool LExpr.denoteBool Bool.or .bool))
+  (some (binOpCeval Bool Bool boolConst LExpr.denoteBool Bool.or))
 
 def boolImpliesFunc : LFunc T :=
   binaryOp "Bool.Implies" .bool
-  (some (binOpCeval Bool Bool LExpr.denoteBool (fun x y => ((not x) || y)) .bool))
+  (some (binOpCeval Bool Bool boolConst LExpr.denoteBool (fun x y => ((not x) || y))))
 
 def boolEquivFunc : LFunc T :=
   binaryOp "Bool.Equiv" .bool
-  (some (binOpCeval Bool Bool LExpr.denoteBool (fun x y => (x == y)) .bool))
+  (some (binOpCeval Bool Bool boolConst LExpr.denoteBool (fun x y => (x == y))))
 
 def boolNotFunc : LFunc T :=
   unaryOp "Bool.Not" .bool
-  (some (unOpCeval Bool Bool LExpr.denoteBool Bool.not .bool))
+  (some (unOpCeval Bool Bool boolConst LExpr.denoteBool Bool.not))
 
 def IntBoolFactory : @Factory T :=
   open LTy.Syntax in #[

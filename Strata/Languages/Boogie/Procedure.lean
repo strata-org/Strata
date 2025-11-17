@@ -49,8 +49,8 @@ instance : Repr Expression.Expr :=
 structure Procedure.Header where
   name     : BoogieIdent
   typeArgs : List TyIdentifier
-  inputs   : @LMonoTySignature BoogieIdent
-  outputs  : @LMonoTySignature BoogieIdent
+  inputs   : @LMonoTySignature Visibility
+  outputs  : @LMonoTySignature Visibility
   deriving Repr, DecidableEq, Inhabited
 
 instance : ToFormat Procedure.Header where

@@ -7,16 +7,20 @@
 structure Options where
   verbose : Bool
   parseOnly : Bool
+  typeCheckOnly : Bool
   checkOnly : Bool
   stopOnFirstError : Bool
+  removeIrrelevantAxioms : Bool
   /-- Solver time limit in seconds -/
   solverTimeout : Nat
 
 def Options.default : Options := {
   verbose := true,
   parseOnly := false,
+  typeCheckOnly := false,
   checkOnly := false,
   stopOnFirstError := false,
+  removeIrrelevantAxioms := false,
   solverTimeout := 10
 }
 

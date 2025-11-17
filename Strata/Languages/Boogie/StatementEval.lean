@@ -39,10 +39,10 @@ a `.call` statement.
 def callConditions (proc : Procedure)
                    (condType : CondType)
                    (conditions : ListMap String Procedure.Check)
-                   (subst :  Map (Lambda.IdentT BoogieIdent) Expression.Expr) :
+                   (subst :  Map (Lambda.IdentT Visibility) Expression.Expr) :
                    ListMap String Procedure.Check :=
   let names := List.map
-               (fun k => s!"(Origin_{proc.header.name.2}_{condType}){k}")
+               (fun k => s!"(Origin_{proc.header.name.name}_{condType}){k}")
                conditions.keys
   let exprs := List.map
                 (fun p =>
@@ -75,7 +75,7 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
   | some proc =>
     -- Create a mapping from the formals to the evaluated actuals.
     let args' := List.map (fun a => E.exprEval (OldExpressions.substsOldExpr old_var_subst a)) args
-    let formal_tys := proc.header.inputs.keys.map (fun k => ((k, none) : (Lambda.IdentT BoogieIdent)))
+    let formal_tys := proc.header.inputs.keys.map (fun k => ((k, none) : (Lambda.IdentT Visibility)))
     let formal_arg_subst := List.zip formal_tys args'
     -- Generate fresh variables for the LHS, and then create a mapping
     -- from the procedure's return variables to these LHS fresh
@@ -85,7 +85,7 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
       (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
     let lhs_typed := lhs.zip lhs_tys
     let (lhs_fvars, E) := E.genFVars lhs_typed
-    let return_tys := proc.header.outputs.keys.map (fun k => ((k, none) : (Lambda.IdentT BoogieIdent)))
+    let return_tys := proc.header.outputs.keys.map (fun k => ((k, none) : (Lambda.IdentT Visibility)))
     let return_lhs_subst := List.zip return_tys lhs_fvars
     -- The LHS fresh variables reflect the values of these variables
     -- in the post-call state.
@@ -232,7 +232,11 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
             let Ewn := { Ewn with stk := orig_stk.push [] }
             let cond' := Ewn.env.exprEval cond
             match cond' with
+<<<<<<< HEAD
             | .const _ "true" _ =>
+=======
+            | .true =>
+>>>>>>> origin/main
               let Ewns := go' Ewn then_ss .none -- Not allowed to jump into a block
               let Ewns := Ewns.map
                               (fun (ewn : EnvWithNext) =>
@@ -240,7 +244,11 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
                                    let s' := Imperative.Stmt.ite cond' { ss := ss' } { ss := [] } md
                                    { ewn with stk := orig_stk.appendToTop [s']})
               Ewns
+<<<<<<< HEAD
             | .const _ "false" _ =>
+=======
+            | .false =>
+>>>>>>> origin/main
               let Ewns := go' Ewn else_ss .none -- Not allowed to jump into a block
               let Ewns := Ewns.map
                               (fun (ewn : EnvWithNext) =>
@@ -256,7 +264,10 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
               let path_conds_false := Ewn.env.pathConditions.push
                                         [(label_false, (.ite () cond' (LExpr.false ()) (LExpr.true ())))]
               let Ewns_t := go' {Ewn with env := {Ewn.env with pathConditions := path_conds_true}} then_ss .none
-              let Ewns_f := go' {Ewn with env := {Ewn.env with pathConditions := path_conds_false}} else_ss .none
+              -- We empty the deferred proof obligations in the `else` path to
+              -- avoid duplicate verification checks -- the deferred obligations
+              -- would be checked in the `then` branch anyway.
+              let Ewns_f := go' {Ewn with env := {Ewn.env with pathConditions := path_conds_false, deferred := #[]}} else_ss .none
               match Ewns_t, Ewns_f with
                 -- Special case: if there's only one result from each path,
                 -- with no next label, we can merge both states into one.

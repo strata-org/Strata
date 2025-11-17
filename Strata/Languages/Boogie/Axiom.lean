@@ -12,6 +12,7 @@ import Strata.DL.Lambda.LTy
 import Strata.DL.Lambda.LExpr
 
 namespace Boogie
+---------------------------------------------------------------------
 
 open Std (ToFormat Format format)
 open Lambda
@@ -26,13 +27,23 @@ the responsibility of the user to ensure that they are consistent.
 
 structure Axiom where
   name : BoogieLabel
+<<<<<<< HEAD
   e : LExpr ⟨BoogieLParams, LMonoTy⟩
 
 instance : ToFormat (⟨BoogieLParams, LMonoTy⟩ : LExprParamsT).base.Identifier :=
   show ToFormat BoogieIdent from inferInstance
+=======
+  e : LExpr LMonoTy Visibility
+  deriving DecidableEq, Inhabited
+>>>>>>> origin/main
 
 instance : ToFormat Axiom where
   format a := f!"axiom {a.name}: {a.e};"
 
 def Axiom.eraseTypes (a : Axiom) : Axiom :=
   { a with e := a.e.eraseTypes }
+
+instance : ToFormat Axiom where
+  format a := f!"axiom {a.name}: {a.e};"
+
+---------------------------------------------------------------------
