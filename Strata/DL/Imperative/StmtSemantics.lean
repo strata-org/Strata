@@ -71,7 +71,7 @@ inductive EvalBlock (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
     SemanticEval P → SemanticStore P → SemanticStore P →
   Block P Cmd → SemanticStore P → Prop where
   | block_sem :
-    EvalStmts P Cmd EvalCmd δ σ₀ σ b.ss σ' →
+    EvalStmts P Cmd EvalCmd δ σ₀ σ b σ' →
     EvalBlock P Cmd EvalCmd δ σ₀ σ b σ'
 
 end
@@ -128,10 +128,10 @@ theorem EvalStmtDefMonotone
   | .cmd c =>
     cases Heval; next Hwf Hup =>
     exact EvalCmdDefMonotone Hdef Hup
-  | .block l ⟨ bss ⟩  _ =>
+  | .block l bss  _ =>
     cases Heval; next Hwf Hup => cases Hup; next Hup =>
     apply EvalStmtsDefMonotone (ss:=bss) <;> try assumption
-  | .ite c ⟨ tss ⟩ ⟨ bss ⟩ _ => cases Heval with
+  | .ite c tss bss _ => cases Heval with
     | ite_true_sem Hsome Hwf Heval =>
       cases Heval; next Heval =>
       apply EvalStmtsDefMonotone (ss:=tss) <;> try assumption

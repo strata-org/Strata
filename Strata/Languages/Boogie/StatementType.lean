@@ -84,25 +84,25 @@ where
           let (c', T) ← typeCheckCmd C T P cmd
           .ok (.cmd c', T)
 
-        | .block label ⟨ bss ⟩ md => do
+        | .block label bss md => do
           let T := T.pushEmptyContext
           let (ss', T) ← go T bss []
-          let s' := .block label ⟨ss'⟩ md
+          let s' := .block label ss' md
           .ok (s', T.popContext)
 
-        | .ite cond ⟨ tss ⟩ ⟨ ess ⟩ md => do
+        | .ite cond tss ess md => do
           let _ ← T.freeVarCheck cond f!"[{s}]"
           let (conda, T) ← LExprT.fromLExpr C T cond
           let condty := conda.toLMonoTy
           match condty with
           | .tcons "bool" [] =>
-            let (tb, T) ← go T [(.block "$$_then" ⟨ tss ⟩  #[])] []
-            let (eb, T) ← go T [(.block "$$_else" ⟨ ess ⟩  #[])] []
-            let s' := .ite conda.toLExpr ⟨tb⟩ ⟨eb⟩ md
+            let (tb, T) ← go T [(.block "$$_then" tss  #[])] []
+            let (eb, T) ← go T [(.block "$$_else" ess  #[])] []
+            let s' := .ite conda.toLExpr tb eb md
             .ok (s', T)
           | _ => .error f!"[{s}]: If's condition {cond} is not of type `bool`!"
 
-        | .loop guard measure invariant ⟨ bss ⟩ md => do
+        | .loop guard measure invariant bss md => do
           let _ ← T.freeVarCheck guard f!"[{s}]"
           let (conda, T) ← LExprT.fromLExpr C T guard
           let condty := conda.toLMonoTy
@@ -125,8 +125,8 @@ where
           | (.tcons "bool" [], some (.tcons "int" []), none)
           | (.tcons "bool" [], none, some (.tcons "bool" []))
           | (.tcons "bool" [], some (.tcons "int" []), some (.tcons "bool" [])) =>
-            let (tb, T) ← go T [(.block "$$_loop_body" ⟨ bss ⟩ #[])] []
-            let s' := .loop conda.toLExpr (mt.map LExprT.toLExpr) (it.map LExprT.toLExpr) ⟨tb⟩ md
+            let (tb, T) ← go T [(.block "$$_loop_body" bss #[])] []
+            let s' := .loop conda.toLExpr (mt.map LExprT.toLExpr) (it.map LExprT.toLExpr) tb md
             .ok (s', T)
           | _ =>
             match condty with
@@ -182,12 +182,12 @@ Apply type substitution `S` to a statement.
 def Statement.subst (S : Subst) (s : Statement) : Statement :=
   match s with
   | .cmd cmd => .cmd (Command.subst S cmd)
-  | .block label ⟨ bss ⟩ md =>
-    .block label ⟨go S bss []⟩ md
-  | .ite cond ⟨ tss ⟩ ⟨ ess ⟩ md =>
-    .ite (cond.applySubst S) ⟨go S tss []⟩ ⟨go S ess []⟩ md
-  | .loop guard m i ⟨ bss ⟩ md =>
-    .loop (guard.applySubst S) (substOptionExpr S m) (substOptionExpr S i) ⟨go S bss []⟩ md
+  | .block label bss md =>
+    .block label (go S bss []) md
+  | .ite cond tss ess md =>
+    .ite (cond.applySubst S) (go S tss []) (go S ess []) md
+  | .loop guard m i bss md =>
+    .loop (guard.applySubst S) (substOptionExpr S m) (substOptionExpr S i) (go S bss []) md
   | .goto _ _ => s
   where
     go S ss acc : List Statement :=

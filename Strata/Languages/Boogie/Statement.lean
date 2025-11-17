@@ -107,15 +107,15 @@ mutual
 def Statement.eraseTypes (s : Statement) : Statement :=
   match s with
   | .cmd c => .cmd (Command.eraseTypes c)
-  | .block label ⟨ bss ⟩ md =>
+  | .block label bss md =>
     let ss' := Statements.eraseTypes bss
-    .block label { ss := ss' } md
-  | .ite cond ⟨ tss ⟩ ⟨ ess ⟩ md =>
-    let thenb' := { ss := Statements.eraseTypes tss }
-    let elseb' := { ss := Statements.eraseTypes ess }
+    .block label ss' md
+  | .ite cond tss ess md =>
+    let thenb' := Statements.eraseTypes tss
+    let elseb' := Statements.eraseTypes ess
     .ite cond thenb' elseb' md
-  | .loop guard measure invariant ⟨ bss ⟩ md =>
-    let body' := { ss := Statements.eraseTypes bss }
+  | .loop guard measure invariant bss md =>
+    let body' := Statements.eraseTypes bss
     .loop guard measure invariant body' md
   | .goto l md => .goto l md
   termination_by (Stmt.sizeOf s)
@@ -190,10 +190,10 @@ def Statement.modifiedVarsTrans
   : List Expression.Ident := match s with
   | .cmd cmd => Command.modifiedVarsTrans π cmd
   | .goto _ _ => []
-  | .block _ ⟨ bss ⟩ _ => Statements.modifiedVarsTrans π bss
-  | .ite _ ⟨ tbss ⟩ ⟨ ebss ⟩ _ =>
+  | .block _ bss _ => Statements.modifiedVarsTrans π bss
+  | .ite _ tbss ebss _ =>
     Statements.modifiedVarsTrans π tbss ++ Statements.modifiedVarsTrans π ebss
-  | .loop _ _ _ ⟨ bss ⟩ _ =>
+  | .loop _ _ _ bss _ =>
     Statements.modifiedVarsTrans π bss
   termination_by (Stmt.sizeOf s)
 
@@ -228,10 +228,10 @@ def Statement.getVarsTrans
   : List Expression.Ident := match s with
   | .cmd cmd => Command.getVarsTrans π cmd
   | .goto _ _ => []
-  | .block _ ⟨ bss ⟩ _ => Statements.getVarsTrans π bss
-  | .ite _ ⟨ tbss ⟩ ⟨ ebss ⟩ _ =>
+  | .block _ bss _ => Statements.getVarsTrans π bss
+  | .ite _ tbss ebss _ =>
     Statements.getVarsTrans π tbss ++ Statements.getVarsTrans π ebss
-  | .loop _ _ _ ⟨ bss ⟩  _ =>
+  | .loop _ _ _ bss  _ =>
     Statements.getVarsTrans π bss
   termination_by (Stmt.sizeOf s)
 
@@ -273,9 +273,9 @@ def Statement.touchedVarsTrans
   match s with
   | .cmd cmd => Command.definedVarsTrans π cmd ++ Command.modifiedVarsTrans π cmd
   | .goto _ _ => []
-  | .block _ ⟨ bss ⟩ _ => Statements.touchedVarsTrans π bss
-  | .ite _ ⟨ tbss ⟩ ⟨ ebss ⟩ _ => Statements.touchedVarsTrans π tbss ++ Statements.touchedVarsTrans π ebss
-  | .loop _ _ _ ⟨ bss ⟩ _ => Statements.touchedVarsTrans π bss
+  | .block _ bss _ => Statements.touchedVarsTrans π bss
+  | .ite _ tbss ebss _ => Statements.touchedVarsTrans π tbss ++ Statements.touchedVarsTrans π ebss
+  | .loop _ _ _ bss _ => Statements.touchedVarsTrans π bss
   termination_by (Stmt.sizeOf s)
 
 def Statements.touchedVarsTrans

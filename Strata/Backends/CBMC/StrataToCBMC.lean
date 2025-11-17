@@ -299,7 +299,7 @@ partial def blockToJson (b: Imperative.Block Strata.C_Simp.Expression Strata.C_S
       ("statement", Json.mkObj [("id", "block")]),
       ("type", emptyType)
     ]),
-    ("sub", Json.arr (b.ss.map (stmtToJson · loc)).toArray)
+    ("sub", Json.arr (b.map (stmtToJson · loc)).toArray)
   ]
 
 partial def stmtToJson (e : Strata.C_Simp.Statement) (loc: SourceLoc) : Json :=

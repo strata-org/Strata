@@ -17,21 +17,18 @@ Imperative's Statements include commands and add constructs like structured and
 unstructured control-flow.
 -/
 
-mutual
 inductive Stmt (P : PureExpr) (Cmd : Type) : Type where
   | cmd      (cmd : Cmd)
-  | block    (label : String) (b : Block P Cmd) (md : MetaData P := .empty)
+  | block    (label : String) (b : List (Stmt P Cmd)) (md : MetaData P := .empty)
   /-- `ite` (if-then-else) statement provides structured control flow. -/
-  | ite      (cond : P.Expr)  (thenb : Block P Cmd) (elseb : Block P Cmd) (md : MetaData P := .empty)
+  | ite      (cond : P.Expr)  (thenb : List (Stmt P Cmd)) (elseb : List (Stmt P Cmd)) (md : MetaData P := .empty)
   /-- `loop` Loop statement with optional measure (for termination) and invariant. -/
-  | loop     (guard : P.Expr) (measure : Option P.Expr) (invariant : Option P.Expr) (body : Block P Cmd) (md : MetaData P := .empty)
+  | loop     (guard : P.Expr) (measure : Option P.Expr) (invariant : Option P.Expr) (body : List (Stmt P Cmd)) (md : MetaData P := .empty)
   /-- `goto` provides unstructured control flow. -/
   | goto     (label : String) (md : MetaData P := .empty)
   deriving Inhabited
 
-structure Block (P : PureExpr) (Cmd : Type) where
-  ss : List (Stmt P Cmd)
-end
+def Block (P : PureExpr) (Cmd : Type) := List (Stmt P Cmd)
 
 abbrev Stmts (P : PureExpr) (Cmd : Type) := List (Stmt P Cmd)
 
@@ -49,9 +46,9 @@ mutual
 def Stmt.sizeOf (s : Imperative.Stmt P C) : Nat :=
   match s with
   | .cmd c => 1 + sizeOf c
-  | .block _ ⟨ bss ⟩ _ => 1 + Stmts.sizeOf bss
-  | .ite c ⟨ tss ⟩ ⟨ ess ⟩ _ => 3 + sizeOf c + Stmts.sizeOf tss + Stmts.sizeOf ess
-  | .loop g _ _ ⟨ bss ⟩ _ => 3 + sizeOf g + Stmts.sizeOf bss
+  | .block _ bss _ => 1 + Stmts.sizeOf bss
+  | .ite c tss ess _ => 3 + sizeOf c + Stmts.sizeOf tss + Stmts.sizeOf ess
+  | .loop g _ _ bss _ => 3 + sizeOf g + Stmts.sizeOf bss
   | .goto _ _ => 1
 
 @[simp]
@@ -62,7 +59,7 @@ def Stmts.sizeOf (ss : Imperative.Stmts P C) : Nat :=
 
 @[simp]
 def Block.sizeOf : Imperative.Block P C →  Nat
-  | ⟨ bss ⟩ => 1 + Stmts.sizeOf bss
+  | bss => 1 + Stmts.sizeOf bss
 
 end
 
@@ -88,8 +85,8 @@ mutual
 /-- Does statement `s` contain any block labeled `label`? -/
 def Stmt.hasLabelInside (label : String) (s : Stmt P C) : Bool :=
   match s with
-  |  .block label' ⟨ bss ⟩ _ => label = label' || Stmts.hasLabelInside label bss
-  |  .ite _ ⟨ tss ⟩ ⟨ ess ⟩  _ => Stmts.hasLabelInside label tss || Stmts.hasLabelInside label ess
+  |  .block label' bss _ => label = label' || Stmts.hasLabelInside label bss
+  |  .ite _ tss ess  _ => Stmts.hasLabelInside label tss || Stmts.hasLabelInside label ess
   |  _ => false
   termination_by (Stmt.sizeOf s)
 
@@ -112,9 +109,9 @@ mutual
 def Stmt.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (s : Stmt P C) : List P.Ident :=
   match s with
   | .cmd cmd => HasVarsPure.getVars cmd
-  | .block _ ⟨ bss ⟩ _ => Stmts.getVars bss
-  | .ite _ ⟨ tbss ⟩ ⟨ ebss ⟩ _ => Stmts.getVars tbss ++ Stmts.getVars ebss
-  | .loop _ _ _ ⟨ bss ⟩ _ => Stmts.getVars bss
+  | .block _ bss _ => Stmts.getVars bss
+  | .ite _ tbss ebss _ => Stmts.getVars tbss ++ Stmts.getVars ebss
+  | .loop _ _ _ bss _ => Stmts.getVars bss
   | .goto _ _  => []
   termination_by (Stmt.sizeOf s)
 
@@ -138,8 +135,8 @@ mutual
 def Stmt.definedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   match s with
   | .cmd cmd => HasVarsImp.definedVars cmd
-  | .block _ ⟨ bss ⟩  _ => Stmts.definedVars bss
-  | .ite _ ⟨ tbss ⟩ ⟨ ebss ⟩ _ => Stmts.definedVars tbss ++ Stmts.definedVars ebss
+  | .block _ bss  _ => Stmts.definedVars bss
+  | .ite _ tbss ebss _ => Stmts.definedVars tbss ++ Stmts.definedVars ebss
   | _ => []
   termination_by (Stmt.sizeOf s)
 
@@ -156,9 +153,9 @@ def Stmt.modifiedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   match s with
   | .cmd cmd => HasVarsImp.modifiedVars cmd
   | .goto _ _ => []
-  | .block _ ⟨ bss ⟩ _ => Stmts.modifiedVars bss
-  | .ite _ ⟨ tbss ⟩ ⟨ ebss ⟩ _ => Stmts.modifiedVars tbss ++ Stmts.modifiedVars ebss
-  | .loop _ _ _ ⟨ bss ⟩ _ => Stmts.modifiedVars bss
+  | .block _ bss _ => Stmts.modifiedVars bss
+  | .ite _ tbss ebss _ => Stmts.modifiedVars tbss ++ Stmts.modifiedVars ebss
+  | .loop _ _ _ bss _ => Stmts.modifiedVars bss
   termination_by (Stmt.sizeOf s)
 
 def Stmts.modifiedVars [HasVarsImp P C] (ss : Stmts P C) : List P.Ident :=
@@ -175,8 +172,8 @@ mutual
 @[simp]
 def Stmt.touchedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   match s with
-  | .block _ ⟨ bss ⟩ _ => Stmts.touchedVars bss
-  | .ite _ ⟨ tbss ⟩ ⟨ ebss ⟩ _ => Stmts.touchedVars tbss ++ Stmts.touchedVars ebss
+  | .block _ bss _ => Stmts.touchedVars bss
+  | .ite _ tbss ebss _ => Stmts.touchedVars tbss ++ Stmts.touchedVars ebss
   | _ => Stmt.definedVars s ++ Stmt.modifiedVars s
   termination_by (Stmt.sizeOf s)
 
@@ -211,13 +208,13 @@ partial def formatStmt (P : PureExpr) (s : Stmt P C)
   [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] [ToFormat C] : Format :=
   match s with
   | .cmd cmd => format cmd
-  | .block label bl md => f!"{md}{label} : " ++ Format.bracket "{" f!"{formatStmts P bl.ss}" "}"
+  | .block label bl md => f!"{md}{label} : " ++ Format.bracket "{" f!"{formatStmts P bl}" "}"
   | .ite cond th el md => f!"{md}if {cond} then " ++
-                        Format.bracket "{" f!"{formatStmts P th.ss}" "}" ++
+                        Format.bracket "{" f!"{formatStmts P th}" "}" ++
                         f!"{Format.line}else" ++
-                        Format.bracket "{" f!"{formatStmts P el.ss}" "}"
+                        Format.bracket "{" f!"{formatStmts P el}" "}"
   | .loop guard measure invariant body md => f!"{md}while ({guard}) ({measure}) ({invariant}) " ++
-                        Format.bracket "{" f!"{formatStmts P body.ss}" "}"
+                        Format.bracket "{" f!"{formatStmts P body}" "}"
   | .goto label md => f!"{md}goto {label}"
 
 partial def formatStmts (P : PureExpr) (ss : List (Stmt P C))

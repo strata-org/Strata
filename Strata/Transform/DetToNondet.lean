@@ -21,12 +21,12 @@ def StmtToNondetStmt {P : PureExpr} [Imperative.HasBool P] [HasNot P]
   Imperative.NondetStmt P (Cmd P) :=
   match st with
   | .cmd    cmd => .cmd cmd
-  | .block  _ ⟨ bss ⟩ _ => StmtsToNondetStmt bss
-  | .ite    cond ⟨ tss ⟩ ⟨ ess ⟩ md =>
+  | .block  _ bss _ => StmtsToNondetStmt bss
+  | .ite    cond tss ess md =>
     .choice
       (.seq (.assume "true_cond" cond md) (StmtsToNondetStmt tss))
       (.seq ((.assume "false_cond" (Imperative.HasNot.not cond) md)) (StmtsToNondetStmt ess))
-  | .loop   guard _measure _inv ⟨ bss ⟩ md =>
+  | .loop   guard _measure _inv bss md =>
     .loop (.seq (.assume "guard" guard md) (StmtsToNondetStmt bss))
   | .goto _ _ => (.assume "skip" Imperative.HasBool.tt)
 

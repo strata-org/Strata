@@ -59,7 +59,7 @@ theorem StmtToNondetCorrect
     | .cmd c =>
       cases Heval
       constructor <;> simp_all
-    | .block _ ⟨ bss ⟩ =>
+    | .block _ bss =>
       cases Heval with
       | block_sem Heval =>
       next label b =>
@@ -69,7 +69,7 @@ theorem StmtToNondetCorrect
       apply (ih _ _ _).2
       omega
       assumption
-    | .ite c ⟨ tss ⟩ ⟨ ess ⟩ =>
+    | .ite c tss ess =>
       cases Heval with
       | ite_true_sem Htrue Hwfb Heval =>
         cases Heval with
