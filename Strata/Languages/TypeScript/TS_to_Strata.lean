@@ -726,115 +726,165 @@ partial def translate_statement_core
         let bodyBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := bodyStmts }
         (bodyCtx, [ initBreakFlag, .loop combinedCondition none none bodyBlock ])
 
-        | .TS_ForStatement forStmt =>
-          dbg_trace s!"[DEBUG] Translating for statement at loc {forStmt.start_loc}-{forStmt.end_loc}"
+      | .TS_ForInStatement forInStmt =>
+        dbg_trace s!"[DEBUG] Translating for-in statement at loc {forInStmt.start_loc}-{forInStmt.end_loc}"
 
-          let continueLabel := s!"for_continue_{forStmt.start_loc}"
-          let breakLabel := s!"for_break_{forStmt.start_loc}"
-          let breakFlagVar := s!"for_break_flag_{forStmt.start_loc}"
+        let continueLabel := s!"forin_continue_{forInStmt.start_loc}"
+        let breakLabel := s!"forin_break_{forInStmt.start_loc}"
+        let breakFlagVar := s!"forin_break_flag_{forInStmt.start_loc}"
 
-          -- Initialize break flag to false
-          let initBreakFlag : TSStrataStatement := .cmd (.init breakFlagVar Heap.HMonoTy.bool Heap.HExpr.false)
+        let keyVarName := match forInStmt.left.declarations[0]? with
+          | some decl => decl.id.name
+          | none => panic! "for-in must have loop variable"
 
-          -- init phase
-          let (_, initStmts) := translate_statement_core (.TS_VariableDeclaration forStmt.init) ctx
-          -- guard (test)
-          let guard := translate_expr forStmt.test
-          -- body (first translate loop body with break support)
-          let (ctx1, bodyStmts) :=
-              translate_statement_core forStmt.body ctx
-                { continueLabel? := some continueLabel, breakLabel? := some breakLabel, breakFlagVar? := some breakFlagVar }
-          -- update (translate expression into statements following ExpressionStatement style)
-          let (_, updateStmts) :=
-              translate_statement_core
-                (.TS_ExpressionStatement {
-                  expression := .TS_AssignmentExpression forStmt.update,
-                  start_loc := forStmt.start_loc,
-                  end_loc := forStmt.end_loc,
-                  loc := forStmt.loc,
-                  type := "TS_AssignmentExpression"
-                }) ctx1
+        let objExpr := translate_expr forInStmt.right
 
-          -- Modify loop condition to include break flag check: (original_condition && !break_flag)
-          let breakFlagExpr := Heap.HExpr.lambda (.fvar breakFlagVar none)
-          let combinedCondition := Heap.HExpr.deferredIte breakFlagExpr Heap.HExpr.false guard
+        let keysVar := s!"__keys_{forInStmt.start_loc}"
+        let indexVar := s!"__index_{forInStmt.start_loc}"
+        let lengthVar := s!"__length_{forInStmt.start_loc}"
 
-          -- assemble loop body (body + update)
-          let loopBody : Imperative.Block TSStrataExpression TSStrataCommand :=
-            { ss := bodyStmts ++ updateStmts }
+        let keysExpr := Heap.HExpr.app (Heap.HExpr.deferredOp "ObjectKeys" none) objExpr
+        let initKeys := .cmd (.init keysVar Heap.HMonoTy.addr keysExpr)
 
-          -- output: init break flag, init statements, then a loop statement
-          (ctx1, [initBreakFlag] ++ initStmts ++ [ .loop combinedCondition none none loopBody])
+        let keysVarExpr := Heap.HExpr.lambda (.fvar keysVar none)
+        let lengthExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "LengthAccess" none) keysVarExpr) (Heap.HExpr.string "length")
+        let initLength := .cmd (.init lengthVar Heap.HMonoTy.int lengthExpr)
 
-        | .TS_SwitchStatement switchStmt =>
-          -- Handle switch statement: switch discriminant { cases }
+        let initIndex := .cmd (.init indexVar Heap.HMonoTy.int (Heap.HExpr.int 0))
 
-          -- Process all cases in their original order, separating regular from default
-          let allCases := switchStmt.cases.toList
-          let (regularCaseStmts, defaultStmts) := allCases.foldl (fun (regCases, defStmts) case =>
-            match case.test with
-            | some expr =>
-              -- Regular case
-              let discrimExpr := translate_expr switchStmt.discriminant
-              let caseValue := translate_expr expr
-              let testExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Eq" none) discrimExpr) caseValue
-              let (caseCtx, stmts) := case.consequent.foldl (fun (accCtx, accStmts) stmt =>
-                let (newCtx, newStmts) := translate_statement_core stmt accCtx
-                (newCtx, accStmts ++ newStmts)) (ctx, [])
-              (regCases ++ [(testExpr, stmts)], defStmts)
-            | none =>
-              -- Default case
-              let (defaultCtx, stmts) := case.consequent.foldl (fun (accCtx, accStmts) stmt =>
-                let (newCtx, newStmts) := translate_statement_core stmt accCtx
-                (newCtx, accStmts ++ newStmts)) (ctx, [])
-              (regCases, stmts)
-          ) ([], [])
+        let initBreakFlag := .cmd (.init breakFlagVar Heap.HMonoTy.bool Heap.HExpr.false)
 
-          -- Build nested if-then-else structure for regular cases
-          let rec build_cases (cases: List (Heap.HExpr × List TSStrataStatement)) (defaultStmts: List TSStrataStatement) : TSStrataStatement :=
-            match cases with
-            | [] =>
-              -- No regular cases, just execute default if it exists
-              let defaultBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := defaultStmts }
-              .block "default" defaultBlock
-            | [(test, stmts)] =>
-              let thenBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := stmts }
-              let elseBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := defaultStmts }
-              .ite test thenBlock elseBlock
-            | (test, stmts) :: rest =>
-              let thenBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := stmts }
-              let elseBlock := build_cases rest defaultStmts
-              let elseBlockWrapped : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [elseBlock] }
-              .ite test thenBlock elseBlockWrapped
+        let indexVarExpr := Heap.HExpr.lambda (.fvar indexVar none)
+        let lengthVarExpr := Heap.HExpr.lambda (.fvar lengthVar none)
+        let indexCheck := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Lt" none) indexVarExpr) lengthVarExpr
+        let breakFlagExpr := Heap.HExpr.lambda (.fvar breakFlagVar none)
+        let guard := Heap.HExpr.deferredIte breakFlagExpr Heap.HExpr.false indexCheck
 
-          let switchStructure := build_cases regularCaseStmts defaultStmts
-          (ctx, [switchStructure])
+        let getCurrentKey := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAccess" none) keysVarExpr) indexVarExpr
+        let setKeyVar := .cmd (.init keyVarName Heap.HMonoTy.int getCurrentKey)
 
-        | .TS_ContinueStatement cont =>
+        let (bodyCtx, userBodyStmts) := translate_statement_core forInStmt.body ctx
+          { continueLabel? := some continueLabel,
+            breakLabel? := some breakLabel,
+            breakFlagVar? := some breakFlagVar }
+
+        let incrementExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Add" none) indexVarExpr) (Heap.HExpr.int 1)
+        let incrementIndex := .cmd (.set indexVar incrementExpr)
+
+        let loopBodyStmts := [setKeyVar] ++ userBodyStmts ++ [incrementIndex]
+        let bodyBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := loopBodyStmts }
+
+        (bodyCtx, [initBreakFlag, initKeys, initLength, initIndex, .loop guard none none bodyBlock])
+
+      | .TS_ForStatement forStmt =>
+        dbg_trace s!"[DEBUG] Translating for statement at loc {forStmt.start_loc}-{forStmt.end_loc}"
+
+        let continueLabel := s!"for_continue_{forStmt.start_loc}"
+        let breakLabel := s!"for_break_{forStmt.start_loc}"
+        let breakFlagVar := s!"for_break_flag_{forStmt.start_loc}"
+
+        -- Initialize break flag to false
+        let initBreakFlag : TSStrataStatement := .cmd (.init breakFlagVar Heap.HMonoTy.bool Heap.HExpr.false)
+
+        -- init phase
+        let (_, initStmts) := translate_statement_core (.TS_VariableDeclaration forStmt.init) ctx
+        -- guard (test)
+        let guard := translate_expr forStmt.test
+        -- body (first translate loop body with break support)
+        let (ctx1, bodyStmts) :=
+            translate_statement_core forStmt.body ctx
+              { continueLabel? := some continueLabel, breakLabel? := some breakLabel, breakFlagVar? := some breakFlagVar }
+        -- update (translate expression into statements following ExpressionStatement style)
+        let (_, updateStmts) :=
+            translate_statement_core
+              (.TS_ExpressionStatement {
+                expression := .TS_AssignmentExpression forStmt.update,
+                start_loc := forStmt.start_loc,
+                end_loc := forStmt.end_loc,
+                loc := forStmt.loc,
+                type := "TS_AssignmentExpression"
+              }) ctx1
+
+        -- Modify loop condition to include break flag check: (original_condition && !break_flag)
+        let breakFlagExpr := Heap.HExpr.lambda (.fvar breakFlagVar none)
+        let combinedCondition := Heap.HExpr.deferredIte breakFlagExpr Heap.HExpr.false guard
+
+        -- assemble loop body (body + update)
+        let loopBody : Imperative.Block TSStrataExpression TSStrataCommand :=
+          { ss := bodyStmts ++ updateStmts }
+
+        -- output: init break flag, init statements, then a loop statement
+        (ctx1, [initBreakFlag] ++ initStmts ++ [ .loop combinedCondition none none loopBody])
+
+      | .TS_SwitchStatement switchStmt =>
+        -- Handle switch statement: switch discriminant { cases }
+
+        -- Process all cases in their original order, separating regular from default
+        let allCases := switchStmt.cases.toList
+        let (regularCaseStmts, defaultStmts) := allCases.foldl (fun (regCases, defStmts) case =>
+          match case.test with
+          | some expr =>
+            -- Regular case
+            let discrimExpr := translate_expr switchStmt.discriminant
+            let caseValue := translate_expr expr
+            let testExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Eq" none) discrimExpr) caseValue
+            let (caseCtx, stmts) := case.consequent.foldl (fun (accCtx, accStmts) stmt =>
+              let (newCtx, newStmts) := translate_statement_core stmt accCtx
+              (newCtx, accStmts ++ newStmts)) (ctx, [])
+            (regCases ++ [(testExpr, stmts)], defStmts)
+          | none =>
+            -- Default case
+            let (defaultCtx, stmts) := case.consequent.foldl (fun (accCtx, accStmts) stmt =>
+              let (newCtx, newStmts) := translate_statement_core stmt accCtx
+              (newCtx, accStmts ++ newStmts)) (ctx, [])
+            (regCases, stmts)
+        ) ([], [])
+
+        -- Build nested if-then-else structure for regular cases
+        let rec build_cases (cases: List (Heap.HExpr × List TSStrataStatement)) (defaultStmts: List TSStrataStatement) : TSStrataStatement :=
+          match cases with
+          | [] =>
+            -- No regular cases, just execute default if it exists
+            let defaultBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := defaultStmts }
+            .block "default" defaultBlock
+          | [(test, stmts)] =>
+            let thenBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := stmts }
+            let elseBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := defaultStmts }
+            .ite test thenBlock elseBlock
+          | (test, stmts) :: rest =>
+            let thenBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := stmts }
+            let elseBlock := build_cases rest defaultStmts
+            let elseBlockWrapped : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [elseBlock] }
+            .ite test thenBlock elseBlockWrapped
+
+        let switchStructure := build_cases regularCaseStmts defaultStmts
+        (ctx, [switchStructure])
+
+      | .TS_ContinueStatement cont =>
+        let tgt :=
+          match ct.continueLabel? with
+          | some lab => lab
+          | none     =>
+              dbg_trace "[WARN] `continue` encountered outside of a loop; emitting goto to __unbound_continue";
+              "__unbound_continue"
+        (ctx, [ .goto tgt ])
+
+      | .TS_BreakStatement brk =>
+        -- Handle break statement if loop context fails to handle it
+        dbg_trace "[WARN] `break` statement not handled by pattern matching";
+        match ct.breakFlagVar? with
+        | some flagVar =>
+          -- Set break flag to true as fallback
+          (ctx, [ .cmd (.set flagVar Heap.HExpr.true) ])
+        | none =>
+          dbg_trace "[WARN] `break` encountered outside of a loop; using fallback goto";
           let tgt :=
-            match ct.continueLabel? with
+            match ct.breakLabel? with
             | some lab => lab
-            | none     =>
-                dbg_trace "[WARN] `continue` encountered outside of a loop; emitting goto to __unbound_continue";
-                "__unbound_continue"
+            | none     => "__unbound_break"
           (ctx, [ .goto tgt ])
 
-        | .TS_BreakStatement brk =>
-          -- Handle break statement if loop context fails to handle it
-          dbg_trace "[WARN] `break` statement not handled by pattern matching";
-          match ct.breakFlagVar? with
-          | some flagVar =>
-            -- Set break flag to true as fallback
-            (ctx, [ .cmd (.set flagVar Heap.HExpr.true) ])
-          | none =>
-            dbg_trace "[WARN] `break` encountered outside of a loop; using fallback goto";
-            let tgt :=
-              match ct.breakLabel? with
-              | some lab => lab
-              | none     => "__unbound_break"
-            (ctx, [ .goto tgt ])
-
-        | _ => panic! s!"Unimplemented statement: {repr s}"
+      | _ => panic! s!"Unimplemented statement: {repr s}"
 
 -- Translate TypeScript statements to TypeScript-Strata statements
 partial def translate_statement (s: TS_Statement) (ctx : TranslationContext) : TranslationContext × List TSStrataStatement :=

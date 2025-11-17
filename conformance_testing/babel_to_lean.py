@@ -316,6 +316,42 @@ def parse_for_statement(j):
     add_missing_node_info(j, target_j)
     return target_j
 
+def parse_for_in_statement(j):
+    target_body = parse_statement(j['body'])
+
+    left_decl = j['left']
+
+    # For-in declarators don't have init, so provide a null literal
+    declarators = []
+    for d in left_decl.get('declarations', []):
+        decl_dict = {
+            "id": parse_identifier(d['id']),
+            "init": {"TS_NullLiteral": {
+                "type": "NullLiteral",
+                "start": d.get('start', 0),
+                "end": d.get('end', 0),
+                "loc": d.get('loc', {})
+            }}  # Provide dummy null expression
+        }
+        add_missing_node_info(d, decl_dict)
+        declarators.append(decl_dict)
+
+    target_left = {
+        "type": "VariableDeclaration",
+        "declarations": declarators,
+        "kind": left_decl.get('kind')
+    }
+    add_missing_node_info(left_decl, target_left)
+
+    target_j = {
+        "left": target_left,
+        "right": parse_expression(j['right']),
+        "body": target_body
+    }
+    add_missing_node_info(j, target_j)
+
+    return target_j
+
 def parse_switch_statement(j):
     target_j = {
         "discriminant": parse_expression(j['discriminant']),
@@ -376,7 +412,8 @@ def parse_statement(j):
         # case "DoWhileStatement":
         case "ForStatement":
             return {"TS_ForStatement": parse_for_statement(j)}
-        # case "ForInStatement":
+        case "ForInStatement":
+            return {"TS_ForInStatement": parse_for_in_statement(j)}
         # case "ForOfStatement":
         # case "ClassDeclaration":
         case _:

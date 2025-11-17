@@ -184,6 +184,9 @@ partial def evalApp (state : HState) (originalExpr e1 e2 : HExpr) : HState × HE
   | .deferredOp "ArrayShift" _ =>
     -- ArrayShift applied once - now we can evaluate
     evalArrayShift state2 e2'
+  | .deferredOp "ObjectKeys" _ =>
+    -- ObjectKeys applied once - now we can evaluate
+    evalObjectKeys state2 e2'
   | .deferredOp "ArrayUnshift" _ =>
     -- First application to ArrayUnshift - return partially applied
     (state2, .app (.deferredOp "ArrayUnshift" none) e2')
@@ -390,6 +393,27 @@ partial def evalArrayShift (state : HState) (objExpr : HExpr) : HState × HExpr 
     -- Evaluate object expression first
     let (state1, objVal) := evalHExpr state objExpr
     evalArrayShift state1 objVal
+
+partial def evalObjectKeys (state : HState) (objExpr : HExpr) : HState × HExpr :=
+  match objExpr with
+  | .address addr =>
+    match state.getObject addr with
+    | some obj =>
+      -- Get all field indices and sort them
+      let indices := obj.toList.map (·.1) |>.toArray.qsort (· < ·)
+
+      -- Create array with indices as integer values
+      let keyFields := indices.toList.mapIdx fun arrayIdx fieldIdx =>
+        (arrayIdx, .lambda (LExpr.const (toString fieldIdx) (some Lambda.LMonoTy.int)))
+
+      -- Allocate new array with the keys
+      let (newState, newAddr) := state.alloc keyFields
+      (newState, .address newAddr)
+    | none => (state, .lambda (LExpr.const "error_invalid_address" none))
+  | _ =>
+    -- Evaluate object expression first
+    let (state1, objVal) := evalHExpr state objExpr
+    evalObjectKeys state1 objVal
 
 -- Handle array unshift: arr.unshift(value) - adds element at beginning and reindexes
 partial def evalArrayUnshift (state : HState) (objExpr valueExpr : HExpr) : HState × HExpr :=
