@@ -264,12 +264,12 @@ def callElimStmt (st: Statement) (p : Program)
         return argInit ++ outInit ++ oldInit ++ asserts ++ havocs ++ assumes
       | _ => return [ st ]
 
-def callElimStmts (ss: List Statement) (prog : Program)
+def callElimBlock (ss: List Statement) (prog : Program)
   : CallElimM (List Statement) := do match ss with
     | [] => return []
     | s :: ss =>
       let s' := (callElimStmt s prog)
-      let ss' := (callElimStmts ss prog)
+      let ss' := (callElimBlock ss prog)
       return (← s') ++ (← ss')
 
 def callElimL (dcls : List Decl) (prog : Program)
@@ -279,7 +279,7 @@ def callElimL (dcls : List Decl) (prog : Program)
   | d :: ds =>
     match d with
     | .proc p =>
-      return Decl.proc { p with body := ← (callElimStmts p.body prog ) } :: (← (callElimL ds prog))
+      return Decl.proc { p with body := ← (callElimBlock p.body prog ) } :: (← (callElimL ds prog))
     | _       => return d :: (← (callElimL ds prog))
 
 /-- Call Elimination for an entire program by walking through all procedure

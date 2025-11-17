@@ -164,10 +164,10 @@ instance : HasVarsImp Expression Statement where
   touchedVars := Stmt.touchedVars
 
 instance : HasVarsImp Expression (List Statement) where
-  definedVars := Stmts.definedVars
-  modifiedVars := Stmts.modifiedVars
+  definedVars := Block.definedVars
+  modifiedVars := Block.modifiedVars
   -- order matters for Havoc, so needs to override the default
-  touchedVars := Stmts.touchedVars
+  touchedVars := Block.touchedVars
 
 ---------------------------------------------------------------------
 
@@ -204,7 +204,7 @@ def Statements.modifiedVarsTrans
   : List Expression.Ident := match ss with
   | [] => []
   | s :: ss => Statement.modifiedVarsTrans π s ++ Statements.modifiedVarsTrans π ss
-  termination_by (Stmts.sizeOf ss)
+  termination_by (Block.sizeOf ss)
 end
 
 def Command.getVarsTrans
@@ -242,7 +242,7 @@ def Statements.getVarsTrans
   : List Expression.Ident := match ss with
   | [] => []
   | s :: ss => Statement.getVarsTrans π s ++ Statements.getVarsTrans π ss
-  termination_by (Stmts.sizeOf ss)
+  termination_by (Block.sizeOf ss)
 end
 
 -- don't need to transitively lookup for procedures
@@ -261,7 +261,7 @@ def Statement.definedVarsTrans
 -- since call statement does not define any new variables
 def Statements.definedVarsTrans
   (_ : String → Option ProcType) (s : Statements) :=
-  Stmts.definedVars s
+  Block.definedVars s
 
 mutual
 /-- get all variables touched by the statement `s`. -/
@@ -286,7 +286,7 @@ def Statements.touchedVarsTrans
   match ss with
   | [] => []
   | s :: srest => Statement.touchedVarsTrans π s ++ Statements.touchedVarsTrans π srest
-  termination_by (Stmts.sizeOf ss)
+  termination_by (Block.sizeOf ss)
 end
 
 def Statement.allVarsTrans

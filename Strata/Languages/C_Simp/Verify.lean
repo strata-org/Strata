@@ -76,7 +76,7 @@ def loop_elimination_statement(s : C_Simp.Statement) : Boogie.Statement :=
     match measure, invariant with
     | .some measure, some invariant =>
       -- let bodyss : := body.ss
-      let assigned_vars := (Imperative.Stmts.modifiedVars body).map (λ s => ⟨s.name, .unres⟩)
+      let assigned_vars := (Imperative.Block.modifiedVars body).map (λ s => ⟨s.name, .unres⟩)
       let havocd : Boogie.Statement := .block "loop havoc" (assigned_vars.map (λ n => Boogie.Statement.havoc n {})) {}
 
       let measure_pos := (.app (.app (.op "Int.Ge" none) (translate_expr measure)) (.intConst 0))

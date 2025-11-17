@@ -28,7 +28,7 @@ inductive Stmt (P : PureExpr) (Cmd : Type) : Type where
   | goto     (label : String) (md : MetaData P := .empty)
   deriving Inhabited
 
-abbrev Stmts (P : PureExpr) (Cmd : Type) := List (Stmt P Cmd)
+abbrev Block (P : PureExpr) (Cmd : Type) := List (Stmt P Cmd)
 
 def Stmt.isCmd {P : PureExpr} {Cmd : Type} (s : Stmt P Cmd) : Bool :=
   match s with
@@ -44,24 +44,24 @@ mutual
 def Stmt.sizeOf (s : Imperative.Stmt P C) : Nat :=
   match s with
   | .cmd c => 1 + SizeOf.sizeOf c
-  | .block _ bss _ => 1 + Stmts.sizeOf bss
-  | .ite c tss ess _ => 3 + sizeOf c + Stmts.sizeOf tss + Stmts.sizeOf ess
-  | .loop g _ _ bss _ => 3 + sizeOf g + Stmts.sizeOf bss
+  | .block _ bss _ => 1 + Block.sizeOf bss
+  | .ite c tss ess _ => 3 + sizeOf c + Block.sizeOf tss + Block.sizeOf ess
+  | .loop g _ _ bss _ => 3 + sizeOf g + Block.sizeOf bss
   | .goto _ _ => 1
 
 @[simp]
-def Stmts.sizeOf (ss : Imperative.Stmts P C) : Nat :=
+def Block.sizeOf (ss : Imperative.Block P C) : Nat :=
   match ss with
   | [] => 1
-  | s :: srest => 1 + Stmt.sizeOf s + Stmts.sizeOf srest
+  | s :: srest => 1 + Stmt.sizeOf s + Block.sizeOf srest
 
 end
 
 instance (P : PureExpr) : SizeOf (Imperative.Stmt P C) where
   sizeOf := Stmt.sizeOf
 
-instance (P : PureExpr) : SizeOf (Imperative.Stmts P C) where
-  sizeOf := Stmts.sizeOf
+instance (P : PureExpr) : SizeOf (Imperative.Block P C) where
+  sizeOf := Block.sizeOf
 
 ---------------------------------------------------------------------
 
@@ -76,19 +76,19 @@ mutual
 /-- Does statement `s` contain any block labeled `label`? -/
 def Stmt.hasLabelInside (label : String) (s : Stmt P C) : Bool :=
   match s with
-  |  .block label' bss _ => label = label' || Stmts.hasLabelInside label bss
-  |  .ite _ tss ess  _ => Stmts.hasLabelInside label tss || Stmts.hasLabelInside label ess
+  |  .block label' bss _ => label = label' || Block.hasLabelInside label bss
+  |  .ite _ tss ess  _ => Block.hasLabelInside label tss || Block.hasLabelInside label ess
   |  _ => false
   termination_by (Stmt.sizeOf s)
 
 /--
 Do statements `ss` contain any block labeled `label`?
 -/
-def Stmts.hasLabelInside (label : String) (ss : List (Stmt P C)) : Bool :=
+def Block.hasLabelInside (label : String) (ss : List (Stmt P C)) : Bool :=
   match ss with
   | [] => false
-  | s :: ss => Stmt.hasLabelInside label s || Stmts.hasLabelInside label ss
-  termination_by (Stmts.sizeOf ss)
+  | s :: ss => Stmt.hasLabelInside label s || Block.hasLabelInside label ss
+  termination_by (Block.sizeOf ss)
 end
 
 ---------------------------------------------------------------------
@@ -100,17 +100,17 @@ mutual
 def Stmt.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (s : Stmt P C) : List P.Ident :=
   match s with
   | .cmd cmd => HasVarsPure.getVars cmd
-  | .block _ bss _ => Stmts.getVars bss
-  | .ite _ tbss ebss _ => Stmts.getVars tbss ++ Stmts.getVars ebss
-  | .loop _ _ _ bss _ => Stmts.getVars bss
+  | .block _ bss _ => Block.getVars bss
+  | .ite _ tbss ebss _ => Block.getVars tbss ++ Block.getVars ebss
+  | .loop _ _ _ bss _ => Block.getVars bss
   | .goto _ _  => []
   termination_by (Stmt.sizeOf s)
 
-def Stmts.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (ss : Stmts P C) : List P.Ident :=
+def Block.getVars [HasVarsPure P P.Expr] [HasVarsPure P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
-  | s :: srest => Stmt.getVars s ++ Stmts.getVars srest
-  termination_by (Stmts.sizeOf ss)
+  | s :: srest => Stmt.getVars s ++ Block.getVars srest
+  termination_by (Block.sizeOf ss)
 end
 
 instance (P : PureExpr) [HasVarsPure P P.Expr] [HasVarsPure P C]
@@ -118,24 +118,24 @@ instance (P : PureExpr) [HasVarsPure P P.Expr] [HasVarsPure P C]
   getVars := Stmt.getVars
 
 instance (P : PureExpr) [HasVarsPure P P.Expr] [HasVarsPure P C]
-  : HasVarsPure P (Stmts P C) where
-  getVars := Stmts.getVars
+  : HasVarsPure P (Block P C) where
+  getVars := Block.getVars
 
 mutual
 /-- Get all variables defined by the statement `s`. -/
 def Stmt.definedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   match s with
   | .cmd cmd => HasVarsImp.definedVars cmd
-  | .block _ bss  _ => Stmts.definedVars bss
-  | .ite _ tbss ebss _ => Stmts.definedVars tbss ++ Stmts.definedVars ebss
+  | .block _ bss  _ => Block.definedVars bss
+  | .ite _ tbss ebss _ => Block.definedVars tbss ++ Block.definedVars ebss
   | _ => []
   termination_by (Stmt.sizeOf s)
 
-def Stmts.definedVars [HasVarsImp P C] (ss : Stmts P C) : List P.Ident :=
+def Block.definedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
-  | s :: srest => Stmt.definedVars s ++ Stmts.definedVars srest
-  termination_by (Stmts.sizeOf ss)
+  | s :: srest => Stmt.definedVars s ++ Block.definedVars srest
+  termination_by (Block.sizeOf ss)
 end
 
 mutual
@@ -144,16 +144,16 @@ def Stmt.modifiedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   match s with
   | .cmd cmd => HasVarsImp.modifiedVars cmd
   | .goto _ _ => []
-  | .block _ bss _ => Stmts.modifiedVars bss
-  | .ite _ tbss ebss _ => Stmts.modifiedVars tbss ++ Stmts.modifiedVars ebss
-  | .loop _ _ _ bss _ => Stmts.modifiedVars bss
+  | .block _ bss _ => Block.modifiedVars bss
+  | .ite _ tbss ebss _ => Block.modifiedVars tbss ++ Block.modifiedVars ebss
+  | .loop _ _ _ bss _ => Block.modifiedVars bss
   termination_by (Stmt.sizeOf s)
 
-def Stmts.modifiedVars [HasVarsImp P C] (ss : Stmts P C) : List P.Ident :=
+def Block.modifiedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
-  | s :: srest => Stmt.modifiedVars s ++ Stmts.modifiedVars srest
-  termination_by (Stmts.sizeOf ss)
+  | s :: srest => Stmt.modifiedVars s ++ Block.modifiedVars srest
+  termination_by (Block.sizeOf ss)
 end
 
 mutual
@@ -163,17 +163,17 @@ mutual
 @[simp]
 def Stmt.touchedVars [HasVarsImp P C] (s : Stmt P C) : List P.Ident :=
   match s with
-  | .block _ bss _ => Stmts.touchedVars bss
-  | .ite _ tbss ebss _ => Stmts.touchedVars tbss ++ Stmts.touchedVars ebss
+  | .block _ bss _ => Block.touchedVars bss
+  | .ite _ tbss ebss _ => Block.touchedVars tbss ++ Block.touchedVars ebss
   | _ => Stmt.definedVars s ++ Stmt.modifiedVars s
   termination_by (Stmt.sizeOf s)
 
 @[simp]
-def Stmts.touchedVars [HasVarsImp P C] (ss : Stmts P C) : List P.Ident :=
+def Block.touchedVars [HasVarsImp P C] (ss : Block P C) : List P.Ident :=
   match ss with
   | [] => []
-  | s :: srest => Stmt.touchedVars s ++ Stmts.touchedVars srest
-  termination_by (Stmts.sizeOf ss)
+  | s :: srest => Stmt.touchedVars s ++ Block.touchedVars srest
+  termination_by (Block.sizeOf ss)
 end
 
 instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Stmt P C) where
@@ -182,11 +182,11 @@ instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Stmt P C) where
   -- order matters for Havoc, so needs to override the default
   touchedVars := Stmt.touchedVars
 
-instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Stmts P C) where
-  definedVars := Stmts.definedVars
-  modifiedVars := Stmts.modifiedVars
+instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Block P C) where
+  definedVars := Block.definedVars
+  modifiedVars := Block.modifiedVars
   -- order matters for Havoc, so needs to override the default
-  touchedVars := Stmts.touchedVars
+  touchedVars := Block.touchedVars
 
 ---------------------------------------------------------------------
 
@@ -199,22 +199,22 @@ partial def formatStmt (P : PureExpr) (s : Stmt P C)
   [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] [ToFormat C] : Format :=
   match s with
   | .cmd cmd => format cmd
-  | .block label bl md => f!"{md}{label} : " ++ Format.bracket "{" f!"{formatStmts P bl}" "}"
+  | .block label bl md => f!"{md}{label} : " ++ Format.bracket "{" f!"{formatBlock P bl}" "}"
   | .ite cond th el md => f!"{md}if {cond} then " ++
-                        Format.bracket "{" f!"{formatStmts P th}" "}" ++
+                        Format.bracket "{" f!"{formatBlock P th}" "}" ++
                         f!"{Format.line}else" ++
-                        Format.bracket "{" f!"{formatStmts P el}" "}"
+                        Format.bracket "{" f!"{formatBlock P el}" "}"
   | .loop guard measure invariant body md => f!"{md}while ({guard}) ({measure}) ({invariant}) " ++
-                        Format.bracket "{" f!"{formatStmts P body}" "}"
+                        Format.bracket "{" f!"{formatBlock P body}" "}"
   | .goto label md => f!"{md}goto {label}"
 
-partial def formatStmts (P : PureExpr) (ss : List (Stmt P C))
+partial def formatBlock (P : PureExpr) (ss : List (Stmt P C))
   [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] [ToFormat C] : Format :=
     match ss with
     | [] => f!""
     | s :: rest => formatStmt P s ++
                    if rest.isEmpty then f!""
-                   else f!"\n{formatStmts P rest}"
+                   else f!"\n{formatBlock P rest}"
 end
 
 instance [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty]
@@ -227,7 +227,7 @@ instance [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] [ToFormat C]
 
 instance [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] [ToFormat C]
         : ToFormat (List (Stmt P C)) where
-  format ss := formatStmts P ss
+  format ss := formatBlock P ss
 
 ---------------------------------------------------------------------
 

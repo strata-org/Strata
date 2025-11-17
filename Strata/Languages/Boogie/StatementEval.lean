@@ -195,7 +195,7 @@ def processGoto : Statements → Option String → (Statements × Option String)
 def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : Option String) :
   List EnvWithNext :=
   open LTy.Syntax in
-  go (Imperative.Stmts.sizeOf ss) (EnvWithNext.mk E .none []) ss optLabel
+  go (Imperative.Block.sizeOf ss) (EnvWithNext.mk E .none []) ss optLabel
   where go steps Ewn ss optLabel :=
   match steps, Ewn.env.error with
   | _, some _ => [{Ewn with nextLabel := .none}]

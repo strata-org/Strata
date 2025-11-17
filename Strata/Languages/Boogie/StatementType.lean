@@ -142,14 +142,14 @@ where
         | .goto label _ =>
           match op with
           | .some p =>
-            if Stmts.hasLabelInside label p.body then
+            if Block.hasLabelInside label p.body then
               .ok (s, T)
             else
               .error f!"Label {label} does not exist in the body of {p.header.name}"
           | .none => .error f!"{s} occurs outside a procedure."
 
       go T srest (s' :: acc)
-    termination_by Stmts.sizeOf ss
+    termination_by Block.sizeOf ss
     decreasing_by
     all_goals simp_wf <;> omega
 
