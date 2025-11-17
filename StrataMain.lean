@@ -178,7 +178,7 @@ def pyAnalyzeCommand : Command where
     if verbose then
       IO.print newPgm
     let vcResults ← EIO.toIO (fun f => IO.Error.userError (toString f))
-                        (Boogie.verify "z3" newPgm { Options.default with stopOnFirstError := false }
+                        (Boogie.verify "z3" newPgm { Options.default with stopOnFirstError := false, verbose }
                                                    (moreFns := Strata.Python.ReFactory))
     let mut s := ""
     for vcResult in vcResults do

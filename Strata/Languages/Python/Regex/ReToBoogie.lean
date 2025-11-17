@@ -406,11 +406,11 @@ info: (((~Re.Concat ((~Re.Union ((~Re.Union (~Str.ToRegEx #)) ~Re.AllChar)) ((~R
 #guard_msgs in
 #eval Std.format $ pythonRegexToBoogie "^a" .fullmatch
 
--- BAD
-#eval Std.format $ pythonRegexToBoogie "a$.*" .fullmatch
-
--- BAD
-#eval Std.format $ pythonRegexToBoogie "a$" .match
+-- -- BAD
+-- #eval Std.format $ pythonRegexToBoogie "a$.*" .fullmatch
+--
+-- -- BAD
+-- #eval Std.format $ pythonRegexToBoogie "a$" .match
 
 
 -------------------------------------------------------------------------------

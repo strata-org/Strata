@@ -21,5 +21,3 @@ for test_file in test_[0-9]*.py; do
         fi
     fi
 done
-
-echo "All tests passed!"
