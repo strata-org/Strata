@@ -22,13 +22,8 @@ open Std (ToFormat Format format)
 
 ---------------------------------------------------------------------
 
-<<<<<<< HEAD
-def initVarValue (id : String) : LExpr ⟨⟨Unit, String⟩, LMonoTy⟩ :=
+def initVarValue (id : String) : LExpr CSimpLParams.mono :=
   .fvar () ("init_" ++ id) none
-=======
-def initVarValue (id : String) : LExpr LMonoTy Unit :=
-  .fvar ("init_" ++ id) none
->>>>>>> origin/main
 
 ---------------------------------------------------------------------
 
@@ -108,11 +103,7 @@ def translateNat (arg : Arg) : TransM Nat := do
 
 structure TransBindings where
   boundTypeVars : Array String := #[]
-<<<<<<< HEAD
-  boundVars : Array (LExpr ⟨⟨Unit, String⟩, LMonoTy⟩) := #[]
-=======
-  boundVars : Array (LExpr LMonoTy Unit) := #[]
->>>>>>> origin/main
+  boundVars : Array (LExpr CSimpLParams.mono) := #[]
   freeVars  : Array String := #["return"] -- There's a global variable "return" for return values
 
 instance : ToFormat TransBindings where
@@ -126,11 +117,7 @@ instance : Inhabited (List Statement × TransBindings) where
   default := ([], {})
 
 instance : Inhabited (C_Simp.Function × TransBindings) where
-<<<<<<< HEAD
-  default := ({name := "badfun", pre := (.const () "true" none), post := (.const () "true" none), body := [], ret_ty := (.tcons "bad" []), inputs := {} }, {})
-=======
-  default := ({name := "badfun", pre := .true, post := .true, body := [], ret_ty := (.tcons "bad" []), inputs := {} }, {})
->>>>>>> origin/main
+  default := ({name := "badfun", pre := .true (), post := .true (), body := [], ret_ty := (.tcons "bad" []), inputs := {} }, {})
 
 instance : Inhabited (List C_Simp.Function × TransBindings) where
   default := ([], {})
@@ -173,11 +160,7 @@ end
 
 ---------------------------------------------------------------------
 
-<<<<<<< HEAD
-def translateFn (q : QualifiedIdent) : TransM (LExpr ⟨⟨Unit, String⟩, LMonoTy⟩) :=
-=======
-def translateFn (q : QualifiedIdent) : TransM (LExpr LMonoTy Unit) :=
->>>>>>> origin/main
+def translateFn (q : QualifiedIdent) : TransM (LExpr CSimpLParams.mono) :=
   match q with
   | q`C_Simp.and      => return (.op () "Bool.And"     none)
   | q`C_Simp.or       => return (.op () "Bool.Or"      none)
@@ -197,46 +180,27 @@ def translateFn (q : QualifiedIdent) : TransM (LExpr LMonoTy Unit) :=
 
 mutual
 partial def translateExpr (bindings : TransBindings) (arg : Arg) :
-<<<<<<< HEAD
-  TransM (LExpr ⟨⟨Unit, String⟩, LMonoTy⟩) := do
-=======
-  TransM (LExpr LMonoTy Unit) := do
->>>>>>> origin/main
+  TransM (LExpr CSimpLParams.mono) := do
   let .expr expr := arg
     | TransM.error s!"translateExpr expected expr {repr arg}"
   let (op, args) := expr.flatten
   match op, args with
   -- Constants/Literals
-<<<<<<< HEAD
-  | .fn q`C_Simp.btrue, [] =>
-    return .const () "true" none
-  | .fn q`C_Simp.bfalse, [] =>
-    return .const () "false" none
-  | .fn q`C_Simp.to_int, [xa] =>
-    let n ← translateNat xa
-    return .const () (toString n) none
-=======
   | .fn _ q`C_Simp.btrue, [] =>
-    return .true
+    return .true ()
   | .fn _ q`C_Simp.bfalse, [] =>
-    return .false
+    return .false ()
   | .fn _ q`C_Simp.to_int, [xa] =>
     let n ← translateNat xa
-    return .intConst n
->>>>>>> origin/main
+    return .intConst () n
   -- Equality
   | .fn _ q`C_Simp.eq, [_tpa, xa, ya] =>
     let x ← translateExpr bindings xa
     let y ← translateExpr bindings ya
     return .eq () x y
   -- Unary function applications
-<<<<<<< HEAD
-  | .fn q`C_Simp.not, [xa] =>
-    let fn := (@LExpr.op ⟨⟨Unit, String⟩, LMonoTy⟩ () "Bool.Not" none)
-=======
   | .fn _ q`C_Simp.not, [xa] =>
-    let fn := (LExpr.op "Bool.Not" none)
->>>>>>> origin/main
+    let fn := LExpr.op () ⟨"Bool.Not", ()⟩ none
     let x ← translateExpr bindings xa
     return .mkApp () fn [x]
   -- Unary array operations
@@ -261,13 +225,8 @@ partial def translateExpr (bindings : TransBindings) (arg : Arg) :
   | .fvar _ i, [] =>
     assert! i < bindings.freeVars.size
     let name := bindings.freeVars[i]!
-<<<<<<< HEAD
     return (.fvar () name none)
-  | .fvar i, argsa =>
-=======
-    return (.fvar name none)
   | .fvar _ i, argsa =>
->>>>>>> origin/main
     -- Call of a function declared/defined in C_Simp.
     assert! i < bindings.freeVars.size
     let name := bindings.freeVars[i]!
@@ -280,19 +239,11 @@ partial def translateExpr (bindings : TransBindings) (arg : Arg) :
                      Bindings: {format bindings}}"
 
 partial def translateExprs (bindings : TransBindings) (args : Array Arg) :
-<<<<<<< HEAD
-  TransM (Array (LExpr ⟨⟨Unit, String⟩, LMonoTy⟩)) :=
+  TransM (Array (LExpr CSimpLParams.mono)) :=
   args.mapM (fun a => translateExpr bindings a)
 end
 
-def translateMeasure (bindings : TransBindings) (arg : Arg) : TransM (Option (LExpr ⟨⟨Unit, String⟩, LMonoTy⟩)) := do
-=======
-  TransM (Array (LExpr LMonoTy Unit)) :=
-  args.mapM (fun a => translateExpr bindings a)
-end
-
-def translateMeasure (bindings : TransBindings) (arg : Arg) : TransM (Option (LExpr LMonoTy Unit)) := do
->>>>>>> origin/main
+def translateMeasure (bindings : TransBindings) (arg : Arg) : TransM (Option (LExpr CSimpLParams.mono)) := do
   translateOption (fun maybe_arg => do
                     match maybe_arg with
                     | none => return none
@@ -302,11 +253,7 @@ def translateMeasure (bindings : TransBindings) (arg : Arg) : TransM (Option (LE
                       return some (← translateExpr bindings e[0]!))
                   arg
 
-<<<<<<< HEAD
-def translateInvariant (bindings : TransBindings) (arg : Arg) : TransM (Option (LExpr ⟨⟨Unit, String⟩, LMonoTy⟩)) := do
-=======
-def translateInvariant (bindings : TransBindings) (arg : Arg) : TransM (Option (LExpr LMonoTy Unit)) := do
->>>>>>> origin/main
+def translateInvariant (bindings : TransBindings) (arg : Arg) : TransM (Option (LExpr CSimpLParams.mono)) := do
   translateOption (fun maybe_arg => do
                     match maybe_arg with
                     | none => return none
@@ -414,11 +361,7 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     let id ← translateIdent ida
     let tp ← translateLMonoTy bindings tpa
     let ty := (.forAll [] tp)
-<<<<<<< HEAD
-    let newFVar: LExpr ⟨⟨Unit, String⟩, LMonoTy⟩ := LExpr.fvar () id none
-=======
-    let newFVar: LExpr LMonoTy Unit := LExpr.fvar id none
->>>>>>> origin/main
+    let newFVar: LExpr CSimpLParams.mono := LExpr.fvar () id none
     let bbindings := bindings.boundVars ++ [newFVar]
     let newBindings := { bindings with
                          boundVars := bbindings,
@@ -429,11 +372,7 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     let tp ← translateLMonoTy bindings tpa
     let val ← translateExpr bindings ea
     let ty := (.forAll [] tp)
-<<<<<<< HEAD
-    let newFVar: LExpr ⟨⟨Unit, String⟩, LMonoTy⟩ := LExpr.fvar () id none
-=======
-    let newFVar: LExpr LMonoTy Unit := LExpr.fvar id none
->>>>>>> origin/main
+    let newFVar: LExpr CSimpLParams.mono := LExpr.fvar () id none
     let bbindings := bindings.boundVars ++ [newFVar]
     let newBindings := { bindings with
                          boundVars := bbindings,

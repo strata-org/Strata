@@ -51,31 +51,31 @@ instance : IdentToStr BoogieIdent where
 instance : IdentToStr String where
   toStr := id
 
-class HasLExpr (P : Imperative.PureExpr) (I : Type) where
-  expr_eq : P.Expr = Lambda.LExpr Lambda.LMonoTy I
+class HasLExpr (P : Imperative.PureExpr) (I : Lambda.LExprParams) where
+  expr_eq : P.Expr = Lambda.LExpr I.mono
 
-instance : HasLExpr Boogie.Expression Visibility where
+instance : HasLExpr Boogie.Expression BoogieLParams where
   expr_eq := rfl
 
-def exprToJson (I : Type) [IdentToStr (Lambda.Identifier I)] (e : Lambda.LExpr Lambda.LMonoTy I) (loc: SourceLoc) : Json :=
+def exprToJson (I : Lambda.LExprParams) [IdentToStr (Lambda.Identifier I.IDMeta)] (e : Lambda.LExpr I.mono) (loc: SourceLoc) : Json :=
   match e with
-  | .app (.app (.op op _) left) right =>
+  | .app _ (.app _ (.op _ op _) left) right =>
     let leftJson := match left with
-      | .fvar varName _ =>
+      | .fvar _ varName _ =>
         if IdentToStr.toStr varName == "z" then
           mkLvalueSymbol s!"{loc.functionName}::1::z" loc.lineNum loc.functionName
         else
           mkLvalueSymbol s!"{loc.functionName}::{IdentToStr.toStr varName}" loc.lineNum loc.functionName
       | _ => exprToJson (I:=I) left loc
     let rightJson := match right with
-      | .fvar varName _ => mkLvalueSymbol s!"{loc.functionName}::{IdentToStr.toStr varName}" loc.lineNum loc.functionName
-      | .intConst value => mkConstant (toString value) "10" (mkSourceLocation "ex_prog.c" loc.functionName loc.lineNum)
+      | .fvar _ varName _ => mkLvalueSymbol s!"{loc.functionName}::{IdentToStr.toStr varName}" loc.lineNum loc.functionName
+      | .intConst _ value => mkConstant (toString value) "10" (mkSourceLocation "ex_prog.c" loc.functionName loc.lineNum)
       | _ => exprToJson (I:=I) right loc
     mkBinaryOp (opToStr (IdentToStr.toStr op)) loc.lineNum loc.functionName leftJson rightJson
-  | .true => mkConstantTrue (mkSourceLocation "ex_prog.c" loc.functionName "3")
-  | .intConst n =>
+  | .true _ => mkConstantTrue (mkSourceLocation "ex_prog.c" loc.functionName "3")
+  | .intConst _ n =>
     mkConstant (toString n) "10" (mkSourceLocation "ex_prog.c" loc.functionName "14")
-  | .fvar name _ =>
+  | .fvar _ name _ =>
     mkLvalueSymbol s!"{loc.functionName}::{IdentToStr.toStr name}" loc.lineNum loc.functionName
   | _ => panic! "Unimplemented"
 
@@ -102,7 +102,7 @@ def cmdToJson (e : Boogie.Command) (loc: SourceLoc) : Json :=
       mkCodeBlock "expression" "6" loc.functionName #[
         mkSideEffect "assign" "6" loc.functionName mkIntType #[
           mkLvalueSymbol s!"{loc.functionName}::1::{name.toPretty}" "6" loc.functionName,
-          exprToJson (I:=Visibility) expr exprLoc
+          exprToJson (I:=BoogieLParams) expr exprLoc
         ]
       ]
     | .assert label expr _ =>
@@ -127,7 +127,7 @@ def cmdToJson (e : Boogie.Command) (loc: SourceLoc) : Json :=
           Json.mkObj [
             ("id", "arguments"),
             ("sub", Json.arr #[
-              exprToJson (I:=Visibility) expr exprLoc,
+              exprToJson (I:=BoogieLParams) expr exprLoc,
               mkStringConstant label "7" loc.functionName
             ])
           ]
@@ -155,7 +155,7 @@ def cmdToJson (e : Boogie.Command) (loc: SourceLoc) : Json :=
           Json.mkObj [
             ("id", "arguments"),
             ("sub", Json.arr #[
-              exprToJson (I:=Visibility) expr exprLoc
+              exprToJson (I:=BoogieLParams) expr exprLoc
             ])
           ]
         ]
@@ -163,7 +163,7 @@ def cmdToJson (e : Boogie.Command) (loc: SourceLoc) : Json :=
     | .havoc _ _ => panic! "Unimplemented"
 
 mutual
-partial def blockToJson {P : Imperative.PureExpr} (I : Type) [IdentToStr (Lambda.Identifier I)] [HasLExpr P I]
+partial def blockToJson {P : Imperative.PureExpr} (I : Lambda.LExprParams) [IdentToStr (Lambda.Identifier I.IDMeta)] [HasLExpr P I]
   (b: Imperative.Block P Command) (loc: SourceLoc) : Json :=
   Json.mkObj [
     ("id", "code"),
@@ -176,12 +176,12 @@ partial def blockToJson {P : Imperative.PureExpr} (I : Type) [IdentToStr (Lambda
     ("sub", Json.arr (b.ss.map (stmtToJson (I:=I) · loc)).toArray)
   ]
 
-partial def stmtToJson {P : Imperative.PureExpr} (I : Type) [IdentToStr (Lambda.Identifier I)] [HasLExpr P I]
+partial def stmtToJson {P : Imperative.PureExpr} (I : Lambda.LExprParams) [IdentToStr (Lambda.Identifier I.IDMeta)] [HasLExpr P I]
   (e : Imperative.Stmt P Command) (loc: SourceLoc) : Json :=
   match e with
   | .cmd cmd => cmdToJson cmd loc
   | .ite cond thenb elseb _ =>
-    let converted_cond : Lambda.LExpr Lambda.LMonoTy I := @HasLExpr.expr_eq P (I:=I) _ ▸ cond
+    let converted_cond : Lambda.LExpr I.mono := @HasLExpr.expr_eq P (I:=I) _ ▸ cond
     Json.mkObj [
       ("id", "code"),
       ("namedSub", Json.mkObj [
@@ -200,7 +200,7 @@ end
 
 def listToExpr (l: ListMap BoogieLabel Boogie.Procedure.Check) : Boogie.Expression.Expr :=
   match l with
-  | _ => .true
+  | _ => .true ()
 
 def createContractSymbolFromAST (func : Boogie.Procedure) : CBMCSymbol :=
   let location : Location := {
@@ -245,7 +245,7 @@ def createContractSymbolFromAST (func : Boogie.Procedure) : CBMCSymbol :=
     ]),
     ("sub", Json.arr #[
       parameterTuple,
-      exprToJson (I:=Visibility) (listToExpr func.spec.preconditions) {functionName := func.header.name.toPretty, lineNum := "2"}
+      exprToJson (I:=BoogieLParams) (listToExpr func.spec.preconditions) {functionName := func.header.name.toPretty, lineNum := "2"}
     ])
   ]
 
@@ -257,7 +257,7 @@ def createContractSymbolFromAST (func : Boogie.Procedure) : CBMCSymbol :=
     ]),
     ("sub", Json.arr #[
       parameterTuple,
-      exprToJson (I:=Visibility) (listToExpr func.spec.postconditions) {functionName := func.header.name.toPretty, lineNum := "2"}
+      exprToJson (I:=BoogieLParams) (listToExpr func.spec.postconditions) {functionName := func.header.name.toPretty, lineNum := "2"}
     ])
   ]
 
@@ -331,7 +331,7 @@ def createImplementationSymbolFromAST (func : Boogie.Procedure) : CBMCSymbol :=
 
   -- For now, keep the hardcoded implementation but use function name from AST
   let loc : SourceLoc := { functionName := (func.header.name.toPretty), lineNum := "1" }
-  let stmtJsons := (func.body.map (stmtToJson (I:=Visibility) · loc))
+  let stmtJsons := (func.body.map (stmtToJson (I:=BoogieLParams) · loc))
 
   let implValue := Json.mkObj [
     ("id", "code"),

@@ -18,7 +18,7 @@ namespace Function
 open Lambda Imperative
 open Std (ToFormat Format format)
 
-def typeCheck (C: Boogie.Expression.TyContext) (T : Boogie.Expression.TyEnv) (func : Function) :
+def typeCheck (C: Boogie.Expression.TyContext) (Env : Boogie.Expression.TyEnv) (func : Function) :
   Except Format (Function × Boogie.Expression.TyEnv) := do
   -- (FIXME) Very similar to `Lambda.inferOp`, except that the body is annotated
   -- using `LExprT.fromLExpr`. Can we share code here?
@@ -26,28 +26,23 @@ def typeCheck (C: Boogie.Expression.TyContext) (T : Boogie.Expression.TyEnv) (fu
   -- `LFunc.type` below will also catch any ill-formed functions (e.g.,
   -- where there are duplicates in the formals, etc.).
   let type ← func.type
-  let (_ty, T) ← LTy.instantiateWithCheck type C T
+  let (_ty, Env) ← LTy.instantiateWithCheck type C Env
   match func.body with
-  | none => .ok (func, T)
+  | none => .ok (func, Env)
   | some body =>
     -- Temporarily add formals in the context.
-    let T := T.pushEmptyContext
-    let T := T.addToContext func.inputPolyTypes
+    let Env := Env.pushEmptyContext
+    let Env := Env.addToContext func.inputPolyTypes
     -- Type check and annotate the body, and ensure that it unifies with the
     -- return type.
-<<<<<<< HEAD
-    -- TODO: The LExprT API has changed, this needs to be updated
-    -- For now, just return the original function
-=======
-    let (bodya, T) ← LExprT.fromLExpr C T body
+    let (bodya, Env) ← LExpr.fromLExpr C Env body
     let bodyty := bodya.toLMonoTy
-    let (retty, T) ← func.outputPolyType.instantiateWithCheck C T
-    let S ← Constraints.unify [(retty, bodyty)] T.stateSubstInfo
-    let T := T.updateSubst S
->>>>>>> origin/main
-    let T := T.popContext
+    let (retty, Env) ← func.outputPolyType.instantiateWithCheck C Env
+    let S ← Constraints.unify [(retty, bodyty)] Env.stateSubstInfo
+    let Env := Env.updateSubst S
+    let Env := Env.popContext
     let new_func := func
-    .ok (new_func, T)
+    .ok (new_func, Env)
 
 end Function
 

@@ -26,7 +26,7 @@ namespace Lambda
 
 open Std (ToFormat Format format)
 
-variable {T : LExprParams} [Inhabited T.Metadata] [Inhabited T.Identifier] [DecidableEq T.Identifier] [BEq T.Identifier] [ToFormat T.Identifier] [Inhabited (LExpr T.mono)] [ToFormat (LExpr T.mono)]
+variable {T : LExprParams} [Inhabited T.Metadata] [Inhabited T.IDMeta] [DecidableEq T.IDMeta] [BEq T.IDMeta] [ToFormat T.IDMeta] [Inhabited (LExpr T.mono)] [ToFormat (LExpr T.mono)]
 
 ---------------------------------------------------------------------
 
@@ -83,9 +83,9 @@ has the right number and type of arguments, etc.?
 `.fvar`s.
 -/
 structure LFunc (T : LExprParams) where
-  name     : Identifier T.base.IDMeta
+  name     : T.Identifier
   typeArgs : List TyIdentifier := []
-  inputs   : @LMonoTySignature T.base.IDMeta
+  inputs   : @LMonoTySignature T.IDMeta
   output   : LMonoTy
   body     : Option (LExpr T.mono) := .none
   -- (TODO): Add support for a fixed set of attributes (e.g., whether to inline
@@ -94,7 +94,7 @@ structure LFunc (T : LExprParams) where
   concreteEval : Option ((LExpr T.mono) → List (LExpr T.mono) → (LExpr T.mono)) := .none
   axioms   : List (LExpr T.mono) := []  -- For axiomatic definitions
 
-instance [Inhabited T.Metadata] [Inhabited T.Identifier] : Inhabited (LFunc T) where
+instance [Inhabited T.Metadata] [Inhabited T.IDMeta] : Inhabited (LFunc T) where
   default := { name := Inhabited.default, inputs := [], output := LMonoTy.bool }
 
 instance : ToFormat (LFunc T) where
@@ -135,7 +135,7 @@ def LFunc.opExpr [Inhabited T.Metadata] (f: LFunc T) : LExpr T.mono :=
             | ity :: irest => Lambda.LMonoTy.mkArrow ity (irest ++ output_tys)
   .op (default : T.Metadata) f.name (some ty)
 
-def LFunc.inputPolyTypes (f : (LFunc T)) : @LTySignature T.Identifier :=
+def LFunc.inputPolyTypes (f : (LFunc T)) : @LTySignature T.IDMeta :=
   f.inputs.map (fun (id, mty) => (id, .forAll f.typeArgs mty))
 
 def LFunc.outputPolyType (f : (LFunc T)) : LTy :=
@@ -198,7 +198,7 @@ def getLFuncCall (e : (LExpr T.mono)) : (LExpr T.mono) × List (LExpr T.mono) :=
 
 def getConcreteLFuncCall (e : (LExpr T.mono)) : (LExpr T.mono) × List (LExpr T.mono) :=
   let (op, args) := getLFuncCall e
-  if args.all (LExpr.isConst T.mono) then (op, args) else (e, [])
+  if args.all (@LExpr.isConst T.mono) then (op, args) else (e, [])
 
 /--
 If `e` is a call of a factory function, get the operator (`.op`), a list

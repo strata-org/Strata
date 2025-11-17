@@ -50,7 +50,7 @@ def myFunc : Strata.C_Simp.Function := SimpleTestEnvAST.fst.funcs.head!
 def lexprToCBMC (expr : Strata.C_Simp.Expression.Expr) (functionName : String) : Json :=
   let cfg := CBMCConfig.empty
   match expr with
-  | .app () (.app () (.op () op _) (.fvar () varName _)) (.const () value _) =>
+  | .app () (.app () (.op () op _) (.fvar () varName _)) (.const () value) =>
     mkBinaryOp (opToStr op.name) "2" functionName (config := cfg)
       (Json.mkObj [
         ("id", "symbol"),
@@ -64,7 +64,7 @@ def lexprToCBMC (expr : Strata.C_Simp.Expression.Expr) (functionName : String) :
         ])
       ])
       (mkConstant (toString value) "10" (mkSourceLocation "from_andrew.c" functionName "2" cfg) cfg)
-  | .true =>
+  | .true _ =>
     Json.mkObj [
       ("id", "notequal"),
       ("namedSub", Json.mkObj [

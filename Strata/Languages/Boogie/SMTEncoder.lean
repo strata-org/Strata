@@ -119,58 +119,18 @@ def convertQuantifierKind : Lambda.QuantifierKind -> Strata.SMT.QuantifierKind
 
 mutual
 
-<<<<<<< HEAD
 partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr BoogieLParams.mono) (ctx : SMT.Context)
   : Except Format (Term × SMT.Context) := do
   match e with
-  | .const _ "true" _ => .ok ((Term.bool true), ctx)
-  | .const _ _ ty =>
-    match ty with
-    | none => .error f!"Cannot encode unannotated constant {e}"
-    | some ty =>
-        match ty with
-        | .bool =>
-          match e.denoteBool with
-          | none =>
-            .error f!"Unexpected boolean constant {e}"
-          | some b => .ok ((Term.bool b), ctx)
-        | .int =>
-          match e.denoteInt with
-          | none =>
-            .error f!"Unexpected integer constant {e}"
-          | some i => .ok ((Term.int i), ctx)
-        | .real =>
-          match e.denoteReal with
-          | none =>
-            .error f!"Unexpected real constant {e}"
-          | some r => .ok ((Term.real r), ctx)
-        | .bitvec n =>
-          match e.denoteBitVec n with
-          | none =>
-            .error f!"Unexpected bv constant {e}"
-          | some v => .ok ((Term.bitvec v), ctx)
-        | .string =>
-          match e.denoteString with
-          | none => .error f!"Unexpected string constant {e}"
-          | some s => .ok ((Term.string s), ctx)
-        | _ =>
-          .error f!"Unimplemented encoding for type {ty} in expression {e}"
-
-  | .op _ fn fnty =>
-=======
-partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr LMonoTy Visibility) (ctx : SMT.Context)
-  : Except Format (Term × SMT.Context) := do
-  match e with
-  | .boolConst b => .ok (Term.bool b, ctx)
-  | .intConst i => .ok (Term.int i, ctx)
-  | .realConst r =>
+  | .boolConst _ b => .ok (Term.bool b, ctx)
+  | .intConst _ i => .ok (Term.int i, ctx)
+  | .realConst _ r =>
     match Strata.Decimal.fromRat r with
     | some d => .ok (Term.real d.toString, ctx)
     | none => .error f!"Non-decimal real value {e}"
-  | .bitvecConst n b => .ok (Term.bitvec b, ctx)
-  | .strConst s => .ok (Term.string s, ctx)
-  | .op fn fnty =>
->>>>>>> origin/main
+  | .bitvecConst _ n b => .ok (Term.bitvec b, ctx)
+  | .strConst _ s => .ok (Term.string s, ctx)
+  | .op _ fn fnty =>
     match fnty with
     | none => .error f!"Cannot encode unannotated operation {fn}."
     | some fnty =>
@@ -195,27 +155,14 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr LMonoTy Visibility)
 
   | .abs _ ty e => .error f!"Cannot encode lambda abstraction {e}"
 
-<<<<<<< HEAD
   | .quant _ _ .none _ _ => .error f!"Cannot encode untyped quantifier {e}"
   | .quant _ qk (.some ty) tr e =>
-=======
-  | .abs ty e => .error f!"Cannot encode lambda abstraction {e}"
-
-  | .quant _ .none _ _ => .error f!"Cannot encode untyped quantifier {e}"
-
-  | .quant qk (.some ty) tr e =>
->>>>>>> origin/main
     let x := s!"$__bv{bvs.length}"
     let (ety, ctx) ← LMonoTy.toSMTType ty ctx
     let (trt, ctx) ← appToSMTTerm E ((x, ety) :: bvs) tr [] ctx
     let (et, ctx) ← toSMTTerm E ((x, ety) :: bvs) e ctx
     .ok (Factory.quant (convertQuantifierKind qk) x ety trt et, ctx)
-<<<<<<< HEAD
   | .eq _ e1 e2 =>
-=======
-
-  | .eq e1 e2 =>
->>>>>>> origin/main
     let (e1t, ctx) ← toSMTTerm E bvs e1 ctx
     let (e2t, ctx) ← toSMTTerm E bvs e2 ctx
     .ok ((Factory.eq e1t e2t), ctx)
@@ -229,17 +176,11 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr LMonoTy Visibility)
   | .app _ _ _ =>
     appToSMTTerm E bvs e [] ctx
 
-<<<<<<< HEAD
 partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr BoogieLParams.mono) (acc : List Term) (ctx : SMT.Context) :
   Except Format (Term × SMT.Context) := do
   match e with
-  | .app _ (.app m fn e1) e2 => do
-=======
-partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : (LExpr LMonoTy Visibility)) (acc : List Term) (ctx : SMT.Context) :
-  Except Format (Term × SMT.Context) := do
-  match e with
   -- Special case for indexed SMT operations.
-  | .app (.app (.app (.op "Re.Loop" _) x) n1) n2 =>
+  | .app _ (.app _ (.app _ (.op _ "Re.Loop" _) x) n1) n2 =>
     let (xt, ctx) ← toSMTTerm E bvs x ctx
     match Lambda.LExpr.denoteInt n1, Lambda.LExpr.denoteInt n2 with
     | .some n1i, .some n2i =>
@@ -251,8 +192,7 @@ partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : (LExpr LMonoTy Visibil
     | _, _ => .error f!"Natural numbers expected as indices for re.loop.\n\
                         Original expression: {e.eraseTypes}"
 
-  | .app (.app fn e1) e2 => do
->>>>>>> origin/main
+  | .app _ (.app m fn e1) e2 => do
     match e1, e2 with
     | _, _ =>
       let (e2t, ctx) ← toSMTTerm E bvs e2 ctx
@@ -266,24 +206,14 @@ partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : (LExpr LMonoTy Visibil
       let (op, retty, ctx) ← toSMTOp E fn fnty ctx
       let (e1t, ctx) ← toSMTTerm E bvs e1 ctx
       .ok (op (e1t :: acc) retty, ctx)
-<<<<<<< HEAD
   | .app _ (.fvar _ fn (.some (.arrow intty outty))) e1 => do
-=======
-
-  | .app (.fvar fn (.some (.arrow intty outty))) e1 => do
->>>>>>> origin/main
     let (smt_outty, ctx) ← LMonoTy.toSMTType outty ctx
     let (smt_intty, ctx) ← LMonoTy.toSMTType intty ctx
     let argvars := [TermVar.mk (toString $ format intty) smt_intty]
     let (e1t, ctx) ← toSMTTerm E bvs e1 ctx
     let uf := UF.mk (id := (toString $ format fn)) (args := argvars) (out := smt_outty)
     .ok (((Term.app (.uf uf) [e1t] smt_outty)), ctx)
-<<<<<<< HEAD
   | .app _ _ _ =>
-=======
-
-  | .app _ _ =>
->>>>>>> origin/main
     .error f!"Cannot encode expression {e}"
 
   | _ => toSMTTerm E bvs e ctx
@@ -499,11 +429,7 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
           .ok (acc_map.insert tyVar smtTy)
         ) Map.empty
         -- Add all axioms for this function to the context, with types binding for the type variables in the expr
-<<<<<<< HEAD
         let ctx ← func.axioms.foldlM (fun acc_ctx (ax: LExpr BoogieLParams.mono) => do
-=======
-        let ctx ← func.axioms.foldlM (fun acc_ctx (ax: LExpr LMonoTy Visibility) => do
->>>>>>> origin/main
           let current_axiom_ctx := acc_ctx.addSubst smt_ty_inst
             let (axiom_term, new_ctx) ← toSMTTerm E [] ax current_axiom_ctx
             .ok (new_ctx.addAxiom axiom_term)
@@ -514,11 +440,7 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
         .ok (.app (Op.uf uf), smt_outty, ctx)
 end
 
-<<<<<<< HEAD
 def toSMTTerms (E : Env) (es : List (LExpr BoogieLParams.mono)) (ctx : SMT.Context) :
-=======
-def toSMTTerms (E : Env) (es : List (LExpr LMonoTy Visibility)) (ctx : SMT.Context) :
->>>>>>> origin/main
   Except Format ((List Term) × SMT.Context) := do
   match es with
   | [] => .ok ([], ctx)
@@ -543,11 +465,7 @@ def ProofObligation.toSMTTerms (E : Env)
 ---------------------------------------------------------------------
 
 /-- Convert an expression of type LExpr to a String representation in SMT-Lib syntax, for testing. -/
-<<<<<<< HEAD
 def toSMTTermString (e : LExpr BoogieLParams.mono) (E : Env := Env.init) (ctx : SMT.Context := SMT.Context.default)
-=======
-def toSMTTermString (e : (LExpr LMonoTy Visibility)) (E : Env := Env.init) (ctx : SMT.Context := SMT.Context.default)
->>>>>>> origin/main
   : IO String := do
   let smtctx := toSMTTerm E [] e ctx
   match smtctx with
@@ -613,15 +531,9 @@ info: "; f\n(declare-fun f0 (Int Int) Int)\n; x\n(declare-const f1 Int)\n(define
 -/
 #guard_msgs in
 #eval toSMTTermString
-<<<<<<< HEAD
    (.quant () .all (.some .int) (.bvar () 0) (.quant () .all (.some .int) (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1))
    (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
-   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk false "m" TermType.int) ::(TermVar.mk false "n" TermType.int) :: []) TermType.int] #[] #[] [])
-=======
-   (.quant .all (.some .int) (.bvar 0) (.quant .all (.some .int) (.app (.app (.op "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar 0)) (.bvar 1))
-   (.eq (.app (.app (.op "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar 0)) (.bvar 1)) (.fvar "x" (.some .int)))))
    (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [])
->>>>>>> origin/main
    (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with
@@ -637,15 +549,9 @@ info: "; f\n(declare-fun f0 (Int Int) Int)\n; x\n(declare-const f1 Int)\n(define
 -/
 #guard_msgs in -- No valid trigger
 #eval toSMTTermString
-<<<<<<< HEAD
    (.quant () .all (.some .int) (.bvar () 0) (.quant () .all (.some .int) (.bvar () 0)
    (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
-   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk false "m" TermType.int) ::(TermVar.mk false "n" TermType.int) :: []) TermType.int] #[] #[] [])
-=======
-   (.quant .all (.some .int) (.bvar 0) (.quant .all (.some .int) (.bvar 0)
-   (.eq (.app (.app (.op "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar 0)) (.bvar 1)) (.fvar "x" (.some .int)))))
    (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [])
->>>>>>> origin/main
    (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with

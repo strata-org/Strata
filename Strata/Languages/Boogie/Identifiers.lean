@@ -54,8 +54,8 @@ abbrev BoogieIdent := Lambda.Identifier Visibility
 instance : ToString Visibility where
   toString v := toString $ ToFormat.format v
 
-def BoogieExprMetadata := Unit
-def BoogieLParams: Lambda.LExprParams := {Metadata := BoogieExprMetadata, IDMeta := Visibility}
+abbrev BoogieExprMetadata := Unit
+abbrev BoogieLParams: Lambda.LExprParams := {Metadata := BoogieExprMetadata, IDMeta := Visibility}
 abbrev BoogieLabel := String
 
 def BoogieIdentDec : DecidableEq BoogieIdent := inferInstanceAs (DecidableEq (Lambda.Identifier Visibility))

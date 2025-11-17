@@ -136,7 +136,7 @@ def varClose [BEq T.IDMeta] (k : Nat) (x : IdentT T.IDMeta) (e : LExpr T.mono) :
   | .const m c => .const m c
   | .op m o ty => .op m o ty
   | .bvar m i => .bvar m i
-  | .fvar m y (yty: Option LMonoTy) => if (x.fst == y) && (yty == x.snd) then
+  | .fvar m y (yty: Option LMonoTy) => if x.fst == y && (yty == x.snd) then
                       (.bvar m k) else (.fvar m y yty)
   | .abs m ty e' => .abs m ty (varClose (k + 1) x e')
   | .quant m qk ty tr' e' => .quant m qk ty (varClose (k + 1) x tr') (varClose (k + 1) x e')
@@ -145,7 +145,7 @@ def varClose [BEq T.IDMeta] (k : Nat) (x : IdentT T.IDMeta) (e : LExpr T.mono) :
   | .eq m e1 e2 => .eq m (varClose k x e1) (varClose k x e2)
 
 
-theorem varClose_of_varOpen [BEq T.IDMeta] [ReflBEq T.IDMeta] [LawfulBEq T.IDMeta] [BEq T.Metadata] [ReflBEq T.Metadata] [ReflBEq LMonoTy] [LawfulBEq LMonoTy] {x : IdentT T.IDMeta} {e : LExpr T.mono} {i : Nat} (h : fresh x e) :
+theorem varClose_of_varOpen [BEq T.IDMeta] [ReflBEq T.IDMeta] [LawfulBEq T.IDMeta] [BEq T.Metadata] [ReflBEq T.Metadata] [ReflBEq LMonoTy] [LawfulBEq LMonoTy]  (h : fresh x e) :
   varClose (T := T) i x (varOpen i x e) = e := by
   induction e generalizing i x
   all_goals try simp_all [fresh, varOpen, LExpr.substK, varClose, freeVars]
@@ -156,12 +156,7 @@ theorem varClose_of_varOpen [BEq T.IDMeta] [ReflBEq T.IDMeta] [LawfulBEq T.IDMet
     intro h1
     have ⟨x1, x2⟩ := x
     simp at h h1
-    have p: (x1, x2).snd = x2 := by simp
-    rw [p]
-    replace h := h h1
-    intro m
-    replace m := m.symm
-    contradiction
+    exact fun a => h h1 (id (Eq.symm a))
   done
 
 ---------------------------------------------------------------------
@@ -217,59 +212,26 @@ theorem varOpen_varClose_when_lcAt [BEq T.IDMeta] [BEq T.Metadata] [LawfulBEq T.
     simp_all [@e1_ih k i x.fst, @e2_ih k i x.fst]
   done
 
-theorem lcAt_varOpen_abs  (h1 : fresh (T := T) x y)
-  (h2 : lcAt k (varOpen i x y)) (h3 : k <= i) :
-  lcAt i (.abs m ty y) := by
-  induction y generalizing i k
-  case const => simp_all [lcAt]
-  case op => simp_all [lcAt]
-  case bvar j =>
-    simp_all [lcAt, varOpen, substK]
-    by_cases j = i <;> simp_all [lcAt]; try omega
-  case fvar => simp_all [lcAt]
-  case abs e e_ih =>
-    simp_all [varOpen]
-    simp [substK, lcAt] at h2
-    have e_ih' := @e_ih (k + 1) (i + 1) h2 (by omega)
-    simp_all [lcAt]
-  case quant tr e tr_ih e_ih =>
-    simp_all [varOpen]
-    simp [substK, lcAt] at h2
-    rw [fresh] at h1
-    cases h2
-    rename_i h2_tr h2_e
-    have h1_e : fresh x e = true := by
-      rw [fresh]
-      rw [freeVars] at h1
-      simp
-      simp at h1
-      exact h1.2
-    have h1_tr : fresh x tr = true := by
-      rw [fresh]
-      rw [freeVars] at h1
-      simp
-      simp at h1
-      exact h1.1
-    simp at h1_e
-    simp at h1_tr
-    have e_ih' := @e_ih (k + 1) (i + 1) h1_e (by exact h2_e)
-    have tr_ih' := @tr_ih (k + 1) (i + 1) h1_tr (by exact h2_tr)
-    simp_all [lcAt]
-  case app fn e fn_ih e_ih =>
-    simp_all [varOpen, lcAt, substK, fresh, freeVars]
-    rw [@fn_ih k i h2.1 h3, @e_ih k i h2.2 h3]; simp
-  case ite c t e c_ih t_ih e_ih =>
-    simp_all [varOpen, lcAt, substK, fresh, freeVars]
-    rw [@c_ih k i h2.left.left h3,
-        @t_ih k i h2.left.right h3,
-        @e_ih k i h2.right h3];
-        simp
-  case eq e1 e2 e1_ih e2_ih =>
-    simp_all [varOpen, lcAt, substK, fresh, freeVars]
-    rw [@e1_ih k i h2.left h3,
-        @e2_ih k i h2.right h3]
-    simp
-  done
+theorem lcAt_substK_inv (he: lcAt k (substK i s e)) (hik: k ≤ i) : lcAt (i + 1) e := by
+  induction e generalizing i k s <;> simp_all[lcAt, substK] <;> try grind
+  case bvar id j =>
+    by_cases j = i
+    case pos hji => omega
+    case neg hji => rw[if_neg hji] at he; simp[lcAt] at he; omega
+
+theorem lcAt_varOpen_inv (hs: lcAt k (varOpen i x e)) (hik: k ≤ i) : lcAt (i + 1) e := by
+  unfold varOpen at hs; exact (lcAt_substK_inv hs hik)
+
+theorem lcAt_varOpen_abs
+  (h1 : lcAt k (varOpen i x y)) (h2 : k <= i) :
+  lcAt i (abs m ty y) := by
+  simp[lcAt]; apply (@lcAt_varOpen_inv k i)<;> assumption
+
+theorem lcAt_varOpen_quant
+  (hy : lcAt k (varOpen i x y)) (hki : k <= i)
+  (htr: lcAt k (varOpen i x tr)) :
+  lcAt i (quant m qk ty tr y) := by
+  simp[lcAt]; constructor<;> apply (@lcAt_varOpen_inv k i) <;> assumption
 
 /--
 An `LExpr e` is well-formed if it has no dangling bound variables.
@@ -298,7 +260,7 @@ and `varOpen`, this function is agnostic of types.
 Also see function `subst`, where `subst s e` substitutes the outermost _bound_
 variable in `e` with `s`.
 -/
-def substFvar [BEq T.IDMeta] (e : LExpr T.mono) (fr : Identifier T.IDMeta) (to : LExpr T.mono)
+def substFvar [BEq T.IDMeta] (e : LExpr T.mono) (fr : T.Identifier) (to : LExpr T.mono)
   : (LExpr T.mono) :=
   match e with
   | .const _ _ => e | .bvar _ _ => e | .op _ _ _ => e
@@ -309,7 +271,7 @@ def substFvar [BEq T.IDMeta] (e : LExpr T.mono) (fr : Identifier T.IDMeta) (to :
   | .ite m c t e' => .ite m (substFvar c fr to) (substFvar t fr to) (substFvar e' fr to)
   | .eq m e1 e2 => .eq m (substFvar e1 fr to) (substFvar e2 fr to)
 
-def substFvars [BEq T.IDMeta] (e : LExpr T.mono) (sm : Map (Identifier T.IDMeta) (LExpr T.mono))
+def substFvars [BEq T.IDMeta] (e : LExpr T.mono) (sm : Map T.Identifier (LExpr T.mono))
   : LExpr T.mono :=
   List.foldl (fun e (var, s) => substFvar e var s) e sm
 

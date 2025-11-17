@@ -20,7 +20,7 @@ open Std (ToFormat Format format)
 namespace LExpr
 
 variable {T : LExprParams} [BEq T.Metadata] [DecidableEq T.Metadata] [ToFormat T.Metadata]
-         [Inhabited T.Identifier] [BEq T.Identifier] [DecidableEq T.Identifier] [ToFormat T.Identifier] [Traceable EvalProvenance T.Metadata]
+         [Inhabited T.IDMeta] [BEq T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [Traceable EvalProvenance T.Metadata]
 
 inductive EvalProvenance
   | Original -- The metadata of the original expression
@@ -43,7 +43,7 @@ Equality is simply `==` (or more accurately, `eqModuloTypes`) for these
 def isCanonicalValue (e : (LExpr T.mono)) : Bool :=
   match e with
   | .const _ _ => true
-  | .abs _ _ =>
+  | .abs _ _ _ =>
     -- We're using the locally nameless representation, which guarantees that
     -- `closed (.abs e) = closed e` (see theorem `closed_abs`).
     -- So we could simplify the following to `closed e`, but leave it as is for
@@ -111,7 +111,7 @@ partial def eval (n : Nat) (σ : LState T) (e : LExpr T.mono) : LExpr T.mono :=
           eval n' σ new_e
         else
           let new_e := @mkApp T.mono e.metadata op_expr args
-          if args.all (isConst T.mono) then
+          if args.all (@isConst T.mono) then
             -- All arguments in the function call are concrete.
             -- We can, provided a denotation function, evaluate this function
             -- call.
@@ -141,8 +141,8 @@ partial def evalCore  (n' : Nat) (σ : LState T) (e : LExpr T.mono) : LExpr T.mo
 partial def evalIte (n' : Nat) (σ : LState T) (m: T.Metadata) (c t f : LExpr T.mono) : LExpr T.mono :=
   let c' := eval n' σ c
   match c' with
-  | .true => eval n' σ t
-  | .false => eval n' σ f
+  | .true _ => eval n' σ t
+  | .false _ => eval n' σ f
   | _ =>
     -- It's important to at least substitute `.fvar`s in both branches of the
     -- `ite` here so that we can replace the variables by the values in the

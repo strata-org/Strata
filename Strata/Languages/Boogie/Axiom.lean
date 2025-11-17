@@ -27,15 +27,10 @@ the responsibility of the user to ensure that they are consistent.
 
 structure Axiom where
   name : BoogieLabel
-<<<<<<< HEAD
-  e : LExpr ⟨BoogieLParams, LMonoTy⟩
+  e : LExpr BoogieLParams.mono
 
-instance : ToFormat (⟨BoogieLParams, LMonoTy⟩ : LExprParamsT).base.Identifier :=
+instance : ToFormat (BoogieLParams.mono : LExprParamsT).base.Identifier :=
   show ToFormat BoogieIdent from inferInstance
-=======
-  e : LExpr LMonoTy Visibility
-  deriving DecidableEq, Inhabited
->>>>>>> origin/main
 
 instance : ToFormat Axiom where
   format a := f!"axiom {a.name}: {a.e};"

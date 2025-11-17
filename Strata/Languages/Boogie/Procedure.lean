@@ -26,7 +26,7 @@ instance : Repr ExpressionMetadata :=
 instance : DecidableEq (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : LExprParamsT).base.Metadata :=
   show DecidableEq ExpressionMetadata from inferInstance
 
-instance : DecidableEq (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : LExprParamsT).base.Identifier :=
+instance : DecidableEq (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : LExprParamsT).base.IDMeta :=
   show DecidableEq BoogieIdent from inferInstance
 
 instance : DecidableEq (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : LExprParamsT).TypeType :=
@@ -35,7 +35,7 @@ instance : DecidableEq (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : L
 instance : Repr (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : LExprParamsT).base.Metadata :=
   show Repr ExpressionMetadata from inferInstance
 
-instance : Repr (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : LExprParamsT).base.Identifier :=
+instance : Repr (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : LExprParamsT).base.IDMeta :=
   show Repr BoogieIdent from inferInstance
 
 instance : Repr (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : LExprParamsT).TypeType :=

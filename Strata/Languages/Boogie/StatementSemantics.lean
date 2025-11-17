@@ -14,17 +14,10 @@ namespace Boogie
 
 /-- expressions that can't be reduced when evaluating -/
 inductive Value : Boogie.Expression.Expr → Prop where
-<<<<<<< HEAD
-  | const :  Value (.const () _ _)
+  | const :  Value (.const () _)
   | bvar  :  Value (.bvar () _)
   | op    :  Value (.op () _ _)
   | abs   :  Value (.abs () _ _)
-=======
-  | const :  Value (.const _)
-  | bvar  :  Value (.bvar _)
-  | op    :  Value (.op _ _)
-  | abs   :  Value (.abs _ _)
->>>>>>> origin/main
 
 open Imperative
 
@@ -37,15 +30,9 @@ instance : HasFvar Boogie.Expression where
   | _ => none
 
 @[match_pattern]
-<<<<<<< HEAD
-def Boogie.true : Boogie.Expression.Expr := .const () "true" (some .bool)
+def Boogie.true : Boogie.Expression.Expr := .boolConst () Bool.true
 @[match_pattern]
-def Boogie.false : Boogie.Expression.Expr := .const () "false" (some .bool)
-=======
-def Boogie.true : Boogie.Expression.Expr := .boolConst Bool.true
-@[match_pattern]
-def Boogie.false : Boogie.Expression.Expr := .boolConst Bool.false
->>>>>>> origin/main
+def Boogie.false : Boogie.Expression.Expr := .boolConst () Bool.false
 
 instance : HasBool Boogie.Expression where
   tt := Boogie.true
@@ -55,7 +42,7 @@ instance : HasNot Boogie.Expression where
   not
   | Boogie.true => Boogie.false
   | Boogie.false => Boogie.true
-  | e => Lambda.LExpr.app Lambda.boolNotFunc.opExpr e
+  | e => Lambda.LExpr.app () (Lambda.LFunc.opExpr (T:=BoogieLParams) Lambda.boolNotFunc) e
 
 abbrev BoogieEval := SemanticEval Expression
 abbrev BoogieStore := SemanticStore Expression

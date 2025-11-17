@@ -134,11 +134,7 @@ structure GenNum where
 
 structure TransBindings where
   boundTypeVars : Array TyIdentifier := #[]
-<<<<<<< HEAD
   boundVars : Array (LExpr BoogieLParams.mono) := #[]
-=======
-  boundVars : Array (LExpr LMonoTy Visibility) := #[]
->>>>>>> origin/main
   freeVars  : Array Boogie.Decl := #[]
   gen : GenNum := (GenNum.mk 0 0 0 0)
 
@@ -165,21 +161,13 @@ instance : Inhabited (List Boogie.Statement × TransBindings) where
   default := ([], {})
 
 instance : Inhabited Boogie.Decl where
-<<<<<<< HEAD
-  default := .var "badguy" (.forAll [] (.tcons "bool" [])) (.const () "false" (.some .bool))
-=======
-  default := .var "badguy" (.forAll [] (.tcons "bool" [])) .false
->>>>>>> origin/main
+  default := .var "badguy" (.forAll [] (.tcons "bool" [])) (.false ())
 
 instance : Inhabited (Procedure.CheckAttr) where
   default := .Default
 
 instance : Inhabited (Boogie.Decl × TransBindings) where
-<<<<<<< HEAD
-  default := (.var "badguy" (.forAll [] (.tcons "bool" [])) (.const () "false" (.some .bool)), {})
-=======
-  default := (.var "badguy" (.forAll [] (.tcons "bool" [])) .false, {})
->>>>>>> origin/main
+  default := (.var "badguy" (.forAll [] (.tcons "bool" [])) (.false ()), {})
 
 instance : Inhabited (Boogie.Decls × TransBindings) where
   default := ([], {})
@@ -664,90 +652,47 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   let (op, args) := expr.flatten
   match op, args with
   -- Constants/Literals
-<<<<<<< HEAD
-  | .fn q`Boogie.btrue, [] =>
-    return .const () "true" Lambda.LMonoTy.bool
-  | .fn q`Boogie.bfalse, [] =>
-    return .const () "false" Lambda.LMonoTy.bool
-  | .fn q`Boogie.natToInt, [xa] =>
-    let n ← translateNat xa
-    return .const () (toString n) Lambda.LMonoTy.int
-  | .fn q`Boogie.bv1Lit, [xa] =>
-    let n ← translateBitVec 1 xa
-    return .const () (toString n) Lambda.LMonoTy.bv1
-  | .fn q`Boogie.bv8Lit, [xa] =>
-    let n ← translateBitVec 8 xa
-    return .const () (toString n) Lambda.LMonoTy.bv8
-  | .fn q`Boogie.bv16Lit, [xa] =>
-    let n ← translateBitVec 16 xa
-    return .const () (toString n) Lambda.LMonoTy.bv16
-  | .fn q`Boogie.bv32Lit, [xa] =>
-    let n ← translateBitVec 32 xa
-    return .const () (toString n) Lambda.LMonoTy.bv32
-  | .fn q`Boogie.bv64Lit, [xa] =>
-    let n ← translateBitVec 64 xa
-    return .const () (toString n) Lambda.LMonoTy.bv64
-  | .fn q`Boogie.strLit, [xa] =>
-    let x ← translateStr xa
-    return .const () x Lambda.LMonoTy.string
-  | .fn q`Boogie.realLit, [xa] =>
-    let x ← translateReal xa
-    return .const () (toString x) Lambda.LMonoTy.real
-=======
   | .fn _ q`Boogie.btrue, [] =>
-    return .true
+    return .true ()
   | .fn _ q`Boogie.bfalse, [] =>
-    return .false
+    return .false ()
   | .fn _ q`Boogie.natToInt, [xa] =>
     let n ← translateNat xa
-    return .intConst n
+    return .intConst () n
   | .fn _ q`Boogie.bv1Lit, [xa] =>
     let n ← translateBitVec 1 xa
-    return .bitvecConst 1 n
+    return .bitvecConst () 1 n
   | .fn _ q`Boogie.bv8Lit, [xa] =>
     let n ← translateBitVec 8 xa
-    return .bitvecConst 8 n
+    return .bitvecConst () 8 n
   | .fn _ q`Boogie.bv16Lit, [xa] =>
     let n ← translateBitVec 16 xa
-    return .bitvecConst 16 n
+    return .bitvecConst () 16 n
   | .fn _ q`Boogie.bv32Lit, [xa] =>
     let n ← translateBitVec 32 xa
-    return .bitvecConst 32 n
+    return .bitvecConst () 32 n
   | .fn _ q`Boogie.bv64Lit, [xa] =>
     let n ← translateBitVec 64 xa
-    return .bitvecConst 64 n
+    return .bitvecConst () 64 n
   | .fn _ q`Boogie.strLit, [xa] =>
     let x ← translateStr xa
-    return .strConst x
+    return .strConst () x
   | .fn _ q`Boogie.realLit, [xa] =>
     let x ← translateReal xa
-    return .realConst (Strata.Decimal.toRat x)
->>>>>>> origin/main
+    return .realConst () (Strata.Decimal.toRat x)
   -- Equality
   | .fn _ q`Boogie.equal, [_tpa, xa, ya] =>
     let x ← translateExpr p bindings xa
     let y ← translateExpr p bindings ya
-<<<<<<< HEAD
     return .eq () x y
-  | .fn q`Boogie.not_equal, [_tpa, xa, ya] =>
-    let x ← translateExpr p bindings xa
-    let y ← translateExpr p bindings ya
-    return (.app () Boogie.boolNotOp (.eq () x y))
-  | .fn q`Boogie.bvnot, [tpa, xa] =>
-    let tp ← translateLMonoTy bindings (dealiasTypeArg p tpa)
-    let x ← translateExpr p bindings xa
-    let fn : LExpr BoogieLParams.mono ←
-=======
-    return .eq x y
   | .fn _ q`Boogie.not_equal, [_tpa, xa, ya] =>
     let x ← translateExpr p bindings xa
     let y ← translateExpr p bindings ya
-    return (.app Boogie.boolNotOp (.eq x y))
+    return (.app () Boogie.boolNotOp (.eq () x y))
   | .fn _ q`Boogie.bvnot, [tpa, xa] =>
     let tp ← translateLMonoTy bindings (dealiasTypeArg p tpa)
     let x ← translateExpr p bindings xa
-    let fn : LExpr LMonoTy Visibility ←
->>>>>>> origin/main
+    let fn : LExpr BoogieLParams.mono ←
       translateFn (.some tp) q`Boogie.bvnot
     return (.app () fn x)
   -- If-then-else expression
@@ -755,10 +700,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     let c ← translateExpr p bindings ca
     let t ← translateExpr p bindings ta
     let f ← translateExpr p bindings fa
-<<<<<<< HEAD
     return .ite () c t f
-=======
-    return .ite c t f
   -- Re.AllChar
   | .fn _ q`Boogie.re_allchar, [] =>
     let fn ← translateFn .none q`Boogie.re_allchar
@@ -767,7 +709,6 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   | .fn _ q`Boogie.re_all, [] =>
     let fn ← translateFn .none q`Boogie.re_all
     return fn
->>>>>>> origin/main
   -- Unary function applications
   | .fn _ fni, [xa] =>
     match fni with
@@ -799,12 +740,11 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   | .fn _ q`Boogie.str_concat, [xa, ya] =>
      let x ← translateExpr p bindings xa
      let y ← translateExpr p bindings ya
-<<<<<<< HEAD
      return .mkApp () Boogie.strConcatOp [x, y]
-  | .fn q`Boogie.old, [_tp, xa] =>
+  | .fn _ q`Boogie.old, [_tp, xa] =>
      let x ← translateExpr p bindings xa
      return .mkApp () Boogie.polyOldOp [x]
-  | .fn q`Boogie.map_get, [_ktp, _vtp, ma, ia] =>
+  | .fn _ q`Boogie.map_get, [_ktp, _vtp, ma, ia] =>
      let kty ← translateLMonoTy bindings _ktp
      let vty ← translateLMonoTy bindings _vtp
      -- TODO: use Boogie.mapSelectOp, but specialized
@@ -812,30 +752,11 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let m ← translateExpr p bindings ma
      let i ← translateExpr p bindings ia
      return .mkApp () fn [m, i]
-  | .fn q`Boogie.map_set, [_ktp, _vtp, ma, ia, xa] =>
-     let kty ← translateLMonoTy bindings _ktp
-     let vty ← translateLMonoTy bindings _vtp
-     -- TODO: use Boogie.mapUpdateOp, but specialized
-     let fn : LExpr BoogieLParams.mono := (LExpr.op () "update" (.some (LMonoTy.mkArrow (mapTy kty vty) [kty, vty, mapTy kty vty])))
-=======
-     return .mkApp Boogie.strConcatOp [x, y]
-  | .fn _ q`Boogie.old, [_tp, xa] =>
-     let x ← translateExpr p bindings xa
-     return .mkApp Boogie.polyOldOp [x]
-  | .fn _ q`Boogie.map_get, [_ktp, _vtp, ma, ia] =>
-     let kty ← translateLMonoTy bindings _ktp
-     let vty ← translateLMonoTy bindings _vtp
-     -- TODO: use Boogie.mapSelectOp, but specialized
-     let fn : LExpr LMonoTy Visibility := (LExpr.op "select" (.some (LMonoTy.mkArrow (mapTy kty vty) [kty, vty])))
-     let m ← translateExpr p bindings ma
-     let i ← translateExpr p bindings ia
-     return .mkApp fn [m, i]
   | .fn _ q`Boogie.map_set, [_ktp, _vtp, ma, ia, xa] =>
      let kty ← translateLMonoTy bindings _ktp
      let vty ← translateLMonoTy bindings _vtp
      -- TODO: use Boogie.mapUpdateOp, but specialized
-     let fn : LExpr LMonoTy Visibility := (LExpr.op "update" (.some (LMonoTy.mkArrow (mapTy kty vty) [kty, vty, mapTy kty vty])))
->>>>>>> origin/main
+     let fn : LExpr BoogieLParams.mono := (LExpr.op () "update" (.some (LMonoTy.mkArrow (mapTy kty vty) [kty, vty, mapTy kty vty])))
      let m ← translateExpr p bindings ma
      let i ← translateExpr p bindings ia
      let x ← translateExpr p bindings xa
@@ -854,20 +775,15 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     let fn ← translateFn .none fni
     let x ← translateExpr p bindings xa
     let y ← translateExpr p bindings ya
-<<<<<<< HEAD
     return .mkApp () fn [x, y]
-  | .fn fni, [tpa, xa, ya] =>
-=======
-    return .mkApp fn [x, y]
   | .fn _ q`Boogie.re_loop, [xa, ya, za] =>
     let fn ← translateFn .none q`Boogie.re_loop
     let x ← translateExpr p bindings xa
     let y ← translateExpr p bindings ya
     let z ← translateExpr p bindings za
-    return .mkApp fn [x, y, z]
+    return .mkApp () fn [x, y, z]
   -- Binary function applications (polymorphic)
   | .fn _ fni, [tpa, xa, ya] =>
->>>>>>> origin/main
     match fni with
     | q`Boogie.add_expr
     | q`Boogie.sub_expr
@@ -973,11 +889,7 @@ def translateVarStatement (bindings : TransBindings) (decls : Array Arg) :
     let (stmts, bindings) ← initVarStmts tpids bindings
     let newVars ← tpids.mapM (fun (id, ty) =>
                     if h: ty.isMonoType then
-<<<<<<< HEAD
                       return ((LExpr.fvar () id (ty.toMonoType h)): LExpr BoogieLParams.mono)
-=======
-                      return ((LExpr.fvar id (ty.toMonoType h)): LExpr LMonoTy Visibility)
->>>>>>> origin/main
                     else
                       TransM.error s!"translateVarStatement requires {id} to have a monomorphic type, but it has type {ty}")
     let bbindings := bindings.boundVars ++ newVars
@@ -992,11 +904,7 @@ def translateInitStatement (p : Program) (bindings : TransBindings) (args : Arra
     let lhs ← translateIdent BoogieIdent args[1]!
     let val ← translateExpr p bindings args[2]!
     let ty := (.forAll [] mty)
-<<<<<<< HEAD
     let newBinding: LExpr BoogieLParams.mono := LExpr.fvar () lhs mty
-=======
-    let newBinding: LExpr LMonoTy Visibility := LExpr.fvar lhs mty
->>>>>>> origin/main
     let bbindings := bindings.boundVars ++ [newBinding]
     return ([.init lhs ty val], { bindings with boundVars := bbindings })
 
