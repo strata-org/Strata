@@ -2072,18 +2072,12 @@ theorem EvalStmtRefinesContract :
     exact EvalCommandRefinesContract Hdef
   | block_sem Heval =>
     constructor
-    constructor
-    cases Heval
     apply EvalStmtsRefinesContract <;> assumption
   | ite_true_sem Hdef Hwf Heval =>
-    cases Heval
     apply EvalStmt.ite_true_sem <;> try assumption
-    constructor
     apply EvalStmtsRefinesContract <;> assumption
   | ite_false_sem Hdef Hwf Heval =>
-    cases Heval
     apply EvalStmt.ite_false_sem <;> try assumption
-    constructor
     apply EvalStmtsRefinesContract <;> assumption
 
 /-- Currently we cannot prove this theorem,

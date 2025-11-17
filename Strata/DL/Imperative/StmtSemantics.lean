@@ -35,21 +35,21 @@ inductive EvalStmt (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
     EvalStmt P Cmd EvalCmd δ σ₀ σ (Stmt.cmd c) σ'
 
   | block_sem :
-    EvalBlock P Cmd EvalCmd δ σ₀ σ b σ' →
+    EvalStmts P Cmd EvalCmd δ σ₀ σ b σ' →
     ----
     EvalStmt P Cmd EvalCmd δ σ₀ σ (.block _ b) σ'
 
   | ite_true_sem :
     δ σ₀ σ c = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
-    EvalBlock P Cmd EvalCmd δ σ₀ σ t σ' →
+    EvalStmts P Cmd EvalCmd δ σ₀ σ t σ' →
     ----
     EvalStmt P Cmd EvalCmd δ σ₀ σ (.ite c t e) σ'
 
   | ite_false_sem :
     δ σ₀ σ c = .some HasBool.ff →
     WellFormedSemanticEvalBool δ →
-    EvalBlock P Cmd EvalCmd δ σ₀ σ e σ' →
+    EvalStmts P Cmd EvalCmd δ σ₀ σ e σ' →
     ----
     EvalStmt P Cmd EvalCmd δ σ₀ σ (.ite c t e) σ'
 
@@ -65,14 +65,6 @@ inductive EvalStmts (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
     EvalStmt P Cmd EvalCmd δ σ₀ σ s σ' →
     EvalStmts P Cmd EvalCmd δ σ₀ σ' ss σ'' →
     EvalStmts P Cmd EvalCmd δ σ₀ σ (s :: ss) σ''
-
-inductive EvalBlock (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
-  [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-    SemanticEval P → SemanticStore P → SemanticStore P →
-  Block P Cmd → SemanticStore P → Prop where
-  | block_sem :
-    EvalStmts P Cmd EvalCmd δ σ₀ σ b σ' →
-    EvalBlock P Cmd EvalCmd δ σ₀ σ b σ'
 
 end
 
@@ -129,14 +121,12 @@ theorem EvalStmtDefMonotone
     cases Heval; next Hwf Hup =>
     exact EvalCmdDefMonotone Hdef Hup
   | .block l bss  _ =>
-    cases Heval; next Hwf Hup => cases Hup; next Hup =>
+    cases Heval; next Hwf Hup =>
     apply EvalStmtsDefMonotone (ss:=bss) <;> try assumption
   | .ite c tss bss _ => cases Heval with
     | ite_true_sem Hsome Hwf Heval =>
-      cases Heval; next Heval =>
       apply EvalStmtsDefMonotone (ss:=tss) <;> try assumption
     | ite_false_sem Hsome Hwf Heval =>
-      cases Heval; next Heval =>
       apply EvalStmtsDefMonotone (ss:=bss) <;> try assumption
   | .goto _ _ => cases Heval
   | .loop _ _ _ _ _ => cases Heval

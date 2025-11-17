@@ -63,8 +63,6 @@ theorem StmtToNondetCorrect
       cases Heval with
       | block_sem Heval =>
       next label b =>
-      cases Heval with
-      | block_sem Heval =>
       specialize ih (Stmts.sizeOf bss) (by simp_all; omega)
       apply (ih _ _ _).2
       omega
@@ -72,8 +70,6 @@ theorem StmtToNondetCorrect
     | .ite c tss ess =>
       cases Heval with
       | ite_true_sem Htrue Hwfb Heval =>
-        cases Heval with
-        | block_sem Heval =>
         specialize ih (Stmts.sizeOf tss) (by simp_all; omega)
         refine EvalNondetStmt.choice_left_sem Hwfb ?_
         apply EvalNondetStmt.seq_sem
@@ -85,8 +81,6 @@ theorem StmtToNondetCorrect
           assumption
       | ite_false_sem Hfalse Hwfb Heval =>
         next c t e =>
-        cases Heval with
-        | block_sem Heval =>
         specialize ih (Stmts.sizeOf ess) (by simp_all; omega)
         refine EvalNondetStmt.choice_right_sem Hwfb ?_
         apply EvalNondetStmt.seq_sem

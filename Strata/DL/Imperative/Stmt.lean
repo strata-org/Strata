@@ -28,8 +28,6 @@ inductive Stmt (P : PureExpr) (Cmd : Type) : Type where
   | goto     (label : String) (md : MetaData P := .empty)
   deriving Inhabited
 
-def Block (P : PureExpr) (Cmd : Type) := List (Stmt P Cmd)
-
 abbrev Stmts (P : PureExpr) (Cmd : Type) := List (Stmt P Cmd)
 
 def Stmt.isCmd {P : PureExpr} {Cmd : Type} (s : Stmt P Cmd) : Bool :=
@@ -45,7 +43,7 @@ mutual
 @[simp]
 def Stmt.sizeOf (s : Imperative.Stmt P C) : Nat :=
   match s with
-  | .cmd c => 1 + sizeOf c
+  | .cmd c => 1 + SizeOf.sizeOf c
   | .block _ bss _ => 1 + Stmts.sizeOf bss
   | .ite c tss ess _ => 3 + sizeOf c + Stmts.sizeOf tss + Stmts.sizeOf ess
   | .loop g _ _ bss _ => 3 + sizeOf g + Stmts.sizeOf bss
@@ -57,10 +55,6 @@ def Stmts.sizeOf (ss : Imperative.Stmts P C) : Nat :=
   | [] => 1
   | s :: srest => 1 + Stmt.sizeOf s + Stmts.sizeOf srest
 
-@[simp]
-def Block.sizeOf : Imperative.Block P C →  Nat
-  | bss => 1 + Stmts.sizeOf bss
-
 end
 
 instance (P : PureExpr) : SizeOf (Imperative.Stmt P C) where
@@ -68,9 +62,6 @@ instance (P : PureExpr) : SizeOf (Imperative.Stmt P C) where
 
 instance (P : PureExpr) : SizeOf (Imperative.Stmts P C) where
   sizeOf := Stmts.sizeOf
-
-instance (P : PureExpr) : SizeOf (Imperative.Block P C) where
-  sizeOf := Block.sizeOf
 
 ---------------------------------------------------------------------
 

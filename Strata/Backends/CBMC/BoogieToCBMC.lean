@@ -164,7 +164,7 @@ def cmdToJson (e : Boogie.Command) (loc: SourceLoc) : Json :=
 
 mutual
 partial def blockToJson {P : Imperative.PureExpr} (I : Type) [IdentToStr (Lambda.Identifier I)] [HasLExpr P I]
-  (b: Imperative.Block P Command) (loc: SourceLoc) : Json :=
+  (b: Imperative.Stmts P Command) (loc: SourceLoc) : Json :=
   Json.mkObj [
     ("id", "code"),
     ("namedSub", Json.mkObj [

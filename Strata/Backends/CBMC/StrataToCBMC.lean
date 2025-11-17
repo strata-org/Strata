@@ -289,7 +289,7 @@ def cmdToJson (e : Strata.C_Simp.Command) (loc: SourceLoc) : Json :=
   | .havoc _ _ => panic! "Unimplemented"
 
 mutual
-partial def blockToJson (b: Imperative.Block Strata.C_Simp.Expression Strata.C_Simp.Command) (loc: SourceLoc) : Json :=
+partial def blockToJson (b: Imperative.Stmts Strata.C_Simp.Expression Strata.C_Simp.Command) (loc: SourceLoc) : Json :=
   let cfg := CBMCConfig.empty
   Json.mkObj [
     ("id", "code"),
