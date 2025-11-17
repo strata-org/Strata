@@ -5,8 +5,10 @@
 -/
 
 import Strata.DDM.AST
+import Strata.DL.Lambda.Identifiers
 import Strata.Languages.Boogie.DDMTransform.Parse
 import Strata.Languages.Boogie.BoogieGen
+import Strata.Languages.Boogie.OldExpressions
 import Strata.DDM.Util.DecimalRat
 
 
@@ -22,14 +24,18 @@ open Std (ToFormat Format format)
 
 /- Translation Monad -/
 
+abbrev OldVarSubst := BoogieIdent × LMonoTy × BoogieIdent
+
 structure TransState where
+  globalTypes : Std.TreeMap BoogieIdent LTy
+  oldVarSubsts : List OldVarSubst
   errors : Array String
 
 def TransM := StateM TransState
   deriving Monad
 
 def TransM.run (m : TransM α) : (α × Array String) :=
-  let (v, s) := StateT.run m { errors := #[] }
+  let (v, s) := StateT.run m { errors := #[], globalTypes := .empty, oldVarSubsts := [] }
   (v, s.errors)
 
 instance : ToString (Boogie.Program × Array String) where
@@ -37,8 +43,19 @@ instance : ToString (Boogie.Program × Array String) where
                 "Errors: " ++ (toString p.snd)
 
 def TransM.error [Inhabited α] (msg : String) : TransM α := do
-  fun s => ((), { errors := s.errors.push msg })
+  fun s => ((), { s with errors := s.errors.push msg })
   return panic msg
+
+def TransM.addGlobal (id : BoogieIdent) (ty : LTy) : TransM Unit :=
+  fun s => ((), { s with globalTypes := s.globalTypes.insert id ty })
+
+def TransM.lookupGlobal (id : BoogieIdent) : TransM (Option LTy) :=
+  fun s => (s.globalTypes.get? id, s)
+
+def TransM.setOldVarSubst (ss: List OldVarSubst) : TransM Unit :=
+  fun s => ((), { s with oldVarSubsts := ss })
+
+def TransM.get : TransM TransState := fun s => (s, s)
 
 ---------------------------------------------------------------------
 
@@ -568,7 +585,6 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Boogie.Expr
   | _, q`Boogie.bvextract_15_0_64 => return bv64Extract_15_0_Op
   | _, q`Boogie.bvextract_31_0_64 => return bv64Extract_31_0_Op
 
-  | _, q`Boogie.old          => return polyOldOp
   | _, q`Boogie.str_len      => return strLengthOp
   | _, q`Boogie.str_concat   => return strConcatOp
   | _, q`Boogie.str_toregex  => return strToRegexOp
@@ -742,8 +758,14 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let y ← translateExpr p bindings ya
      return .mkApp Boogie.strConcatOp [x, y]
   | .fn _ q`Boogie.old, [_tp, xa] =>
+     let s ← TransM.get
      let x ← translateExpr p bindings xa
-     return .mkApp Boogie.polyOldOp [x]
+     let x' := OldExpressions.normalizeOldExpr x true
+     match s.oldVarSubsts with
+     | [] => return x'
+     | _ => do
+       let subst := Map.ofList (s.oldVarSubsts.map (λ (x, ty, x') => (x, .fvar x' ty)))
+       return OldExpressions.substsOldExpr subst x'
   | .fn _ q`Boogie.map_get, [_ktp, _vtp, ma, ia] =>
      let kty ← translateLMonoTy bindings _ktp
      let vty ← translateLMonoTy bindings _vtp
@@ -907,6 +929,24 @@ def translateInitStatement (p : Program) (bindings : TransBindings) (args : Arra
     let newBinding: LExpr LMonoTy Visibility := LExpr.fvar lhs mty
     let bbindings := bindings.boundVars ++ [newBinding]
     return ([.init lhs ty val], { bindings with boundVars := bbindings })
+
+def oldPrefix : String := "old$"
+
+def addOldPrefix (i : BoogieIdent) : BoogieIdent :=
+  { i with name := oldPrefix ++ i.name }
+
+def mkOldVarSubsts (modifies : List BoogieIdent) : TransM (List OldVarSubst) :=
+  modifies.mapM $ λ x => do
+    let ty? ← TransM.lookupGlobal x
+    match ty? with
+    | .some (.forAll [] ty) => return (x, ty, addOldPrefix x)
+    | .some (.forAll _ _) =>
+      TransM.error s!"Polymorphic type found for modified variable {x}"
+    | .none =>
+      TransM.error s!"No type found for modified variable {x}"
+
+def mkOldVarInitStmts (subst : List OldVarSubst) : List Statement :=
+  subst.map (λ (x, ty, x') => .cmd (.cmd (.init x' (.forAll [] ty) (.fvar x ty))))
 
 mutual
 partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
@@ -1096,7 +1136,12 @@ def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation)
     if speca.isSome then translateSpec p pname bindings speca.get! else pure ([], [], [])
   let .option _ bodya := op.args[5]!
     | TransM.error s!"translateProcedure body expected here: {repr op.args[4]!}"
-  let (body, bindings) ← if bodya.isSome then translateBlock p bindings bodya.get! else pure ([], bindings)
+  let oldSubsts ← mkOldVarSubsts modifies
+  TransM.setOldVarSubst oldSubsts
+  let (body, bindings) ← match bodya with
+    | .some b => translateBlock p bindings b
+    | .none => pure ([], bindings)
+  TransM.setOldVarSubst []
   let origBindings := { origBindings with gen := bindings.gen }
   return (.proc { header := { name := pname,
                               typeArgs := typeArgs.toList,
@@ -1105,7 +1150,7 @@ def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation)
                   spec := { modifies := modifies,
                             preconditions := requires,
                             postconditions := ensures },
-                  body := body
+                  body := mkOldVarInitStmts oldSubsts ++ body
                 },
           origBindings)
 
@@ -1208,6 +1253,7 @@ def translateGlobalVar (bindings : TransBindings) (op : Operation) :
   let (id, targs, mty) ← translateBindMk bindings op.args[0]!
   let ty := LTy.forAll targs mty
   let decl := (.var id ty (Names.initVarValue (id.name ++ "_" ++ (toString bindings.gen.var_def))))
+  TransM.addGlobal id ty
   let bindings := incrNum .var_def bindings
   return (decl, { bindings with freeVars := bindings.freeVars.push decl})
 
