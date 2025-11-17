@@ -189,7 +189,7 @@ def tests : List (Boogie.Program × Boogie.Program) := [
 
 def callElim (p : Boogie.Program)
   : Boogie.Program :=
-  match (runCallElim p callElim') with
+  match (run p callElim') with
   | .ok res => res
   | .error e => panic! e
 
