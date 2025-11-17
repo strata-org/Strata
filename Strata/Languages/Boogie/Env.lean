@@ -103,18 +103,20 @@ structure Env where
   warnings : List (Imperative.EvalWarning Expression)
   deferred : Imperative.ProofObligations Expression
 
-def Env.init : Env :=
+def Env.init (empty_factory:=false): Env :=
+  let σ := Lambda.LState.init
+  let σ := if empty_factory then σ else σ.setFactory Boogie.Factory
   { error := none,
     program := Program.init,
     substMap := [],
-    exprEnv := ∅,
+    exprEnv := σ,
     distinct := [],
     pathConditions := [],
     warnings := []
     deferred := ∅ }
 
 instance : EmptyCollection Env where
-  emptyCollection := Env.init
+  emptyCollection := Env.init (empty_factory := true)
 
 instance : Inhabited Env where
   default := Env.init

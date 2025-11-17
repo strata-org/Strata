@@ -139,12 +139,6 @@ No enclosing parentheses should be used here.
 def encodeReNone : String :=
   s!"re.none"
 
-def declareVar (v : TermVar) (tyEnc : String) : EncoderM String := do
-  let id := (termId (← termNum))
-  comment (reprStr v.id)
-  declareConst id tyEnc
-  return id
-
 def defineTerm (inBinder : Bool) (tyEnc tEnc : String) : EncoderM String := do
   if inBinder
   then return tEnc
@@ -213,16 +207,16 @@ def defineQuantifierHelper (inBinder : Bool) (quantKind : String) (varDecls : St
     | _ =>
       s!"({quantKind} ({varDecls}) (! {tEnc} {encodeTriggers trEncs}))"
 
-def defineMultiAll (inBinder : Bool) (args : List (String × TermType)) (trEncs: List (List String)) (tEnc : String) : EncoderM String := do
-  let varDecls ← args.mapM (fun (x, ty) => do
+def defineMultiAll (inBinder : Bool) (args : List TermVar) (trEncs: List (List String)) (tEnc : String) : EncoderM String := do
+  let varDecls ← args.mapM (fun ⟨x, ty⟩ => do
     let tyEnc ← encodeType ty
     return s!"({x} {tyEnc})")
   let varDeclsStr := String.intercalate " " varDecls
   -- For multi-variable, we check if trigger equals the variable declarations string
   defineQuantifierHelper inBinder "forall" varDeclsStr trEncs tEnc
 
-def defineMultiExist (inBinder : Bool) (args : List (String × TermType)) (trEncs: List (List String)) (tEnc : String) : EncoderM String := do
-  let varDecls ← args.mapM (fun (x, ty) => do
+def defineMultiExist (inBinder : Bool) (args : List TermVar) (trEncs: List (List String)) (tEnc : String) : EncoderM String := do
+  let varDecls ← args.mapM (fun ⟨x, ty⟩ => do
     let tyEnc ← encodeType ty
     return s!"({x} {tyEnc})")
   let varDeclsStr := String.intercalate " " varDecls
@@ -246,7 +240,7 @@ def encodeTerm (inBinder : Bool) (t : Term) : EncoderM String := do
   let tyEnc ← encodeType t.typeOf
   let enc ←
     match t with
-    | .var v            => if v.isBound then pure v.id else declareVar v tyEnc
+    | .var v            => return v.id
     | .prim p           =>
       match p with
       | .bool b         => return if b then "true" else "false"
@@ -277,11 +271,11 @@ def encodeTerm (inBinder : Bool) (t : Term) : EncoderM String := do
       let trExprs := if Factory.isSimpleTrigger tr then [] else extractTriggers tr
       let trEncs ← mapM₁ trExprs (fun ⟨ts, _⟩ => mapM₁ ts (fun ⟨t, _⟩ => encodeTerm True t))
       match qk, args with
-      | .all, [(x, ty)] => defineAll inBinder x (← encodeType ty) trEncs (← encodeTerm True t)
+      | .all, [⟨x, ty⟩] => defineAll inBinder x (← encodeType ty) trEncs (← encodeTerm True t)
       | .all, _ => defineMultiAll inBinder args trEncs (← encodeTerm True t)
-      | .exist, [(x, ty)] => defineExist inBinder x (← encodeType ty) trEncs (← encodeTerm True t)
+      | .exist, [⟨x, ty⟩] => defineExist inBinder x (← encodeType ty) trEncs (← encodeTerm True t)
       | .exist, _ => defineMultiExist inBinder args trEncs (← encodeTerm True t)
-  if inBinder && !t.isFreeVar
+  if inBinder
   then pure enc
   else modifyGet λ state => (enc, {state with terms := state.terms.insert t enc})
 

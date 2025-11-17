@@ -50,7 +50,7 @@ def myFunc : Strata.C_Simp.Function := SimpleTestEnvAST.fst.funcs.head!
 def lexprToCBMC (expr : Strata.C_Simp.Expression.Expr) (functionName : String) : Json :=
   let cfg := CBMCConfig.empty
   match expr with
-  | .app (.app (.op op _) (.fvar varName _)) (.const value _) =>
+  | .app (.app (.op op _) (.fvar varName _)) (.const value) =>
     mkBinaryOp (opToStr op.name) "2" functionName (config := cfg)
       (Json.mkObj [
         ("id", "symbol"),
@@ -63,8 +63,8 @@ def lexprToCBMC (expr : Strata.C_Simp.Expression.Expr) (functionName : String) :
           ("type", mkIntType cfg)
         ])
       ])
-      (mkConstant value "10" (mkSourceLocation "from_andrew.c" functionName "2" cfg) cfg)
-  | .const "true" _ =>
+      (mkConstant (toString value) "10" (mkSourceLocation "from_andrew.c" functionName "2" cfg) cfg)
+  | .true =>
     Json.mkObj [
       ("id", "notequal"),
       ("namedSub", Json.mkObj [
@@ -201,11 +201,11 @@ def exprToJson (e : Strata.C_Simp.Expression.Expr) (loc: SourceLoc) : Json :=
       | _ => exprToJson left loc
     let rightJson := match right with
       | .fvar varName _ => mkLvalueSymbol s!"{loc.functionName}::{varName}" loc.lineNum loc.functionName cfg
-      | .const value _ => mkConstant value "10" (mkSourceLocation "from_andrew.c" loc.functionName loc.lineNum cfg) cfg
+      | .const value => mkConstant (toString value) "10" (mkSourceLocation "from_andrew.c" loc.functionName loc.lineNum cfg) cfg
       | _ => exprToJson right loc
     mkBinaryOp (opToStr op.name) loc.lineNum loc.functionName leftJson rightJson cfg
-  | .const n _ =>
-    mkConstant n "10" (mkSourceLocation "from_andrew.c" loc.functionName "14" cfg) cfg
+  | .intConst n =>
+    mkConstant (toString n) "10" (mkSourceLocation "from_andrew.c" loc.functionName "14" cfg) cfg
   | _ => panic! "Unimplemented"
 
 def cmdToJson (e : Strata.C_Simp.Command) (loc: SourceLoc) : Json :=

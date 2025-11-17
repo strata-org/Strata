@@ -101,6 +101,13 @@ def LState.addFactory (σ : (LState IDMeta)) (F : @Factory IDMeta) : Except Form
   .ok { σ with config := { σ.config with factory := newF } }
 
 /--
+Replace the `factory` field of σ with F.
+-/
+def LState.setFactory (σ : (LState IDMeta)) (F : @Factory IDMeta)
+    : (LState IDMeta) :=
+  { σ with config := { σ.config with factory := F } }
+
+/--
 Get all the known variables from the scopes in state `σ`.
 -/
 def LState.knownVars (σ : (LState IDMeta)) : List (Identifier IDMeta) :=

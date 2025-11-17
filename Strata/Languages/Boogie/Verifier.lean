@@ -6,6 +6,7 @@
 
 import Strata.Languages.Boogie.DDMTransform.Translate
 import Strata.Languages.Boogie.Options
+import Strata.Languages.Boogie.CallGraph
 import Strata.Languages.Boogie.SMTEncoder
 import Strata.DL.Imperative.SMTUtils
 import Strata.DL.SMT.CexParser
@@ -31,7 +32,7 @@ def encodeBoogie (ctx : Boogie.SMT.Context) (prelude : SolverM Unit) (ts : List 
   let (ids, estate) ← ts.mapM (encodeTerm False) |>.run estate
   for id in ids do
     Solver.assert id
-  let ids := (estate.terms.filter (fun t _ => t.isVar)).values
+  let ids := estate.ufs.values
   return (ids, estate)
 
 end Strata.SMT.Encoder
@@ -64,8 +65,8 @@ def getSMTId (x : (IdentT Visibility)) (ctx : SMT.Context) (E : EncoderState) : 
     | (var, none) => .error f!"Expected variable {var} to be annotated with a type!"
     | (var, some ty) => do
       let (ty', _) ← LMonoTy.toSMTType ty ctx
-      let key := Term.var (TermVar.mk false var.name ty')
-      .ok E.terms[key]!
+      let key : Strata.SMT.UF := { id := var.name, args := [], out := ty' }
+      .ok (E.ufs[key]!)
 
 def getModel (m : String) : Except Format (List Strata.SMT.CExParser.KeyValue) := do
   let cex ← Strata.SMT.CExParser.parseCEx m
@@ -127,7 +128,7 @@ def solverResult (vars : List (IdentT Visibility)) (ans : String) (ctx : SMT.Con
     .ok (.sat model)
   | "unsat"   =>  .ok .unsat
   | "unknown" =>  .ok .unknown
-  | other     =>  .error other
+  | _     =>  .error ans
 
 structure VCResult where
   obligation : Imperative.ProofObligation Expression
@@ -206,9 +207,37 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
   | _ =>
     let mut results := (#[] : VCResults)
     for obligation in E.deferred do
+      -- We don't need the SMT solver if PE (partial evaluation) is enough to
+      -- reduce the consequent to true.
       if obligation.obligation.isTrue then
         results := results.push { obligation, result := .unsat }
         continue
+      -- If PE determines that the consequent is false and the path conditions
+      -- are empty, then we can immediate report a verification failure. Note
+      -- that we go to the SMT solver if the path conditions aren't empty --
+      -- after all, the path conditions could imply false, which the PE isn't
+      -- capable enough to infer.
+      if obligation.obligation.isFalse && obligation.assumptions.isEmpty then
+        let prog := f!"\n\nEvaluated program:\n{p}"
+        dbg_trace f!"\n\nObligation {obligation.label}: failed!\
+                     \n\nResult obtained during partial evaluation.\
+                     {if options.verbose then prog else ""}"
+        results := results.push { obligation, result := .sat .empty }
+        if options.stopOnFirstError then break
+      let obligation :=
+      if options.removeIrrelevantAxioms then
+        -- We attempt to prune the path conditions by excluding all irrelevant
+        -- axioms w.r.t. the consequent to reduce the size of the proof
+        -- obligation.
+        let cg := Program.toFunctionCG p
+        let fns := obligation.obligation.getOps.map BoogieIdent.toPretty
+        let relevant_fns := (fns ++ (CallGraph.getAllCalleesClosure cg fns)).dedup
+        let irrelevant_axs := Program.getIrrelevantAxioms p relevant_fns
+        let new_assumptions := Imperative.PathConditions.removeByNames obligation.assumptions irrelevant_axs
+        { obligation with assumptions := new_assumptions }
+      else
+        obligation
+      -- At this point, we solely rely on the SMT backend.
       let maybeTerms := ProofObligation.toSMTTerms E obligation
       match maybeTerms with
       | .error err =>
@@ -271,17 +300,17 @@ end Boogie
 
 namespace Strata
 
+def Boogie.getProgram (p : Strata.Program) : Boogie.Program × Array String :=
+  TransM.run (translateProgram p)
+
 def typeCheck (env : Program) (options : Options := Options.default) :
   Except Std.Format Boogie.Program := do
-  let (program, errors) := TransM.run (translateProgram env)
+  let (program, errors) := Boogie.getProgram env
   if errors.isEmpty then
     -- dbg_trace f!"AST: {program}"
     Boogie.typeCheck options program
   else
     .error s!"DDM Transform Error: {repr errors}"
-
-def Boogie.getProgram (p : Strata.Program) : Boogie.Program × Array String :=
-  TransM.run (translateProgram p)
 
 def verify (smtsolver : String) (env : Program)
     (options : Options := Options.default) : IO Boogie.VCResults := do

@@ -28,12 +28,7 @@ Apply type substitution `S` to `LExpr e`.
 -/
 def LExpr.applySubst (e : (LExpr LMonoTy IDMeta)) (S : Subst) : (LExpr LMonoTy IDMeta) :=
   match e with
-  | .const c ty =>
-    match ty with
-    | none => e
-    | some ty =>
-      let ty := LMonoTy.subst S ty
-      .const c ty
+  | .const c => .const c
   | .op o ty =>
     match ty with
     | none => e
@@ -59,7 +54,7 @@ Monotype-annotated Lambda expressions, obtained after a type inference transform
 from Lambda expressions `LExpr`.
 -/
 inductive LExprT (IDMeta : Type): Type where
-  | const (c : String) (ty : LMonoTy)
+  | const (c : LConst) (ty : LMonoTy)
   | op    (c : Identifier IDMeta) (ty : LMonoTy)
   | bvar (deBruijnIndex : Nat) (ty : LMonoTy)
   | fvar (name : Identifier IDMeta) (ty : LMonoTy)
@@ -106,12 +101,12 @@ def toLMonoTy (e : (LExprT IDMeta)) : LMonoTy :=
 
 /--
 Obtain an `LExpr` from an `LExprT`. We erase type annotations for all
-expressions, except the constants `.const`s, `.op`s, and free variables
+expressions, except the `.op`s and free variables
 `.fvar`s.
 -/
 def toLExpr (e : (LExprT IDMeta)) : (LExpr LMonoTy IDMeta) :=
   match e with
-  | .const c ty => .const c ty
+  | .const c _ => .const c
   | .op o ty => .op o ty
   | .bvar b _ => .bvar b
   | .fvar f ty => .fvar f ty
@@ -241,73 +236,14 @@ for some kinds of constants, especially for types with really large or infinite
 members (e.g., bitvectors, natural numbers, etc.). `.const` is the place to do
 that.
 -/
-def inferConst (C: LContext IDMeta) (T : (TEnv IDMeta)) (c : String) (cty : Option LMonoTy) :
+def inferConst (C: LContext IDMeta) (T : (TEnv IDMeta)) (c : LConst) :
   Except Format (LMonoTy × (TEnv IDMeta)) :=
-  open LTy.Syntax in
-  match c, cty with
-  -- Annotated Booleans
-  | "true", some LMonoTy.bool | "false", some LMonoTy.bool => .ok (mty[bool], T)
-  -- Unannotated Booleans: note that `(.const "true" none)` and
-  -- `(.const "false" none)` will be interpreted as booleans.
-  | "true", none | "false", none =>
-    if C.knownTypes.containsName "bool" then
-      .ok (mty[bool], T)
-    else
-      .error f!"Booleans are not registered in the known types.\n\
+  if C.knownTypes.containsName c.tyName then
+    .ok (c.ty, T)
+  else .error (c.tyNameFormat ++ f!" are not registered in the known types.\n\
                 Don't know how to interpret the following constant:\n\
-                {@LExpr.const LMonoTy IDMeta c cty}\n\
-                Known Types: {C.knownTypes}"
-  -- Annotated Integers
-  | c, some LMonoTy.int =>
-    if C.knownTypes.containsName "int" then
-      if c.isInt then .ok (mty[int], T)
-                 else .error f!"Constant annotated as an integer, but it is not.\n\
-                                {@LExpr.const LMonoTy IDMeta c cty}"
-    else
-      .error f!"Integers are not registered in the known types.\n\
-                Don't know how to interpret the following constant:\n\
-                {@LExpr.const LMonoTy IDMeta c cty}\n\
-                Known Types: {C.knownTypes}"
-  -- Annotated Reals
-  | c, some LMonoTy.real =>
-    if C.knownTypes.containsName "real" then
-      .ok (mty[real], T)
-    else
-      .error f!"Reals are not registered in the known types.\n\
-                Don't know how to interpret the following constant:\n\
-                {@LExpr.const LMonoTy IDMeta c cty}\n\
-                Known Types: {C.knownTypes}"
-  -- Annotated BitVecs
-  | c, some (LMonoTy.bitvec n) =>
-    let ty := LMonoTy.bitvec n
-    if C.knownTypes.containsName "bitvec" then
-      (.ok (ty, T))
-    else
-      .error f!"Bit vectors of size {n} are not registered in the known types.\n\
-                Don't know how to interpret the following constant:\n\
-                {@LExpr.const LMonoTy IDMeta c cty}\n\
-                Known Types: {C.knownTypes}"
-  -- Annotated Strings
-  | c, some LMonoTy.string =>
-    if C.knownTypes.containsName "string" then
-      .ok (mty[string], T)
-    else
-      .error f!"Strings are not registered in the known types.\n\
-                Don't know how to interpret the following constant:\n\
-                {@LExpr.const LMonoTy IDMeta c cty}\n\
-                Known Types: {C.knownTypes}"
-  | _, _ =>
-  -- Unannotated Integers
-    if c.isInt then
-      if C.knownTypes.containsName "int" then
-        .ok (mty[int], T)
-      else
-        .error f!"Integers are not registered in the known types.\n\
-                  Constant {@LExpr.const LMonoTy IDMeta c cty}\n\
-                  Known Types: {C.knownTypes}"
-    else
-      .error f!"Cannot infer the type of this constant: \
-                {@LExpr.const LMonoTy IDMeta c cty}"
+                {@LExpr.const LMonoTy IDMeta c}\n\
+                Known Types: {C.knownTypes}")
 
 mutual
 partial def fromLExprAux (C: LContext IDMeta) (T : (TEnv IDMeta)) (e : (LExpr LMonoTy IDMeta)) :
@@ -317,8 +253,8 @@ partial def fromLExprAux (C: LContext IDMeta) (T : (TEnv IDMeta)) (e : (LExpr LM
   | .mdata m e =>
     let (et, T) ← fromLExprAux C T e
     .ok ((.mdata m et), T)
-  | .const c cty =>
-    let (ty, T) ← inferConst C T c cty
+  | .const c =>
+    let (ty, T) ← inferConst C T c
     .ok (.const c ty, T)
   | .op o oty =>
     let (ty, T) ← inferOp C T o oty

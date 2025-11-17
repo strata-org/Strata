@@ -7,6 +7,7 @@
 import Strata.DDM.AST
 import Strata.Languages.Boogie.DDMTransform.Parse
 import Strata.Languages.Boogie.BoogieGen
+import Strata.DDM.Util.DecimalRat
 
 
 ---------------------------------------------------------------------
@@ -160,13 +161,13 @@ instance : Inhabited (List Boogie.Statement × TransBindings) where
   default := ([], {})
 
 instance : Inhabited Boogie.Decl where
-  default := .var "badguy" (.forAll [] (.tcons "bool" [])) (.const "false" (.some .bool))
+  default := .var "badguy" (.forAll [] (.tcons "bool" [])) .false
 
 instance : Inhabited (Procedure.CheckAttr) where
   default := .Default
 
 instance : Inhabited (Boogie.Decl × TransBindings) where
-  default := (.var "badguy" (.forAll [] (.tcons "bool" [])) (.const "false" (.some .bool)), {})
+  default := (.var "badguy" (.forAll [] (.tcons "bool" [])) .false, {})
 
 instance : Inhabited (Boogie.Decls × TransBindings) where
   default := ([], {})
@@ -567,9 +568,24 @@ def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Boogie.Expr
   | _, q`Boogie.bvextract_15_0_64 => return bv64Extract_15_0_Op
   | _, q`Boogie.bvextract_31_0_64 => return bv64Extract_31_0_Op
 
-  | _, q`Boogie.old      => return polyOldOp
-  | _, q`Boogie.str_len  => return strLengthOp
-  | _, _              => TransM.error s!"translateFn: Unknown/unimplemented function {repr q} at type {repr ty?}"
+  | _, q`Boogie.old          => return polyOldOp
+  | _, q`Boogie.str_len      => return strLengthOp
+  | _, q`Boogie.str_concat   => return strConcatOp
+  | _, q`Boogie.str_substr   => return strSubstrOp
+  | _, q`Boogie.str_toregex  => return strToRegexOp
+  | _, q`Boogie.str_inregex  => return strInRegexOp
+  | _, q`Boogie.re_all       => return reAllOp
+  | _, q`Boogie.re_allchar   => return reAllCharOp
+  | _, q`Boogie.re_range     => return reRangeOp
+  | _, q`Boogie.re_concat    => return reConcatOp
+  | _, q`Boogie.re_star      => return reStarOp
+  | _, q`Boogie.re_plus      => return rePlusOp
+  | _, q`Boogie.re_loop      => return reLoopOp
+  | _, q`Boogie.re_union     => return reUnionOp
+  | _, q`Boogie.re_inter     => return reInterOp
+  | _, q`Boogie.re_comp      => return reCompOp
+  | _, q`Boogie.re_none      => return reNoneOp
+  | _, _ => TransM.error s!"translateFn: Unknown/unimplemented function {repr q} at type {repr ty?}"
 
 mutual
 
@@ -639,33 +655,33 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   match op, args with
   -- Constants/Literals
   | .fn _ q`Boogie.btrue, [] =>
-    return .const "true" Lambda.LMonoTy.bool
+    return .true
   | .fn _ q`Boogie.bfalse, [] =>
-    return .const "false" Lambda.LMonoTy.bool
+    return .false
   | .fn _ q`Boogie.natToInt, [xa] =>
     let n ← translateNat xa
-    return .const (toString n) Lambda.LMonoTy.int
+    return .intConst n
   | .fn _ q`Boogie.bv1Lit, [xa] =>
     let n ← translateBitVec 1 xa
-    return .const (toString n) Lambda.LMonoTy.bv1
+    return .bitvecConst 1 n
   | .fn _ q`Boogie.bv8Lit, [xa] =>
     let n ← translateBitVec 8 xa
-    return .const (toString n) Lambda.LMonoTy.bv8
+    return .bitvecConst 8 n
   | .fn _ q`Boogie.bv16Lit, [xa] =>
     let n ← translateBitVec 16 xa
-    return .const (toString n) Lambda.LMonoTy.bv16
+    return .bitvecConst 16 n
   | .fn _ q`Boogie.bv32Lit, [xa] =>
     let n ← translateBitVec 32 xa
-    return .const (toString n) Lambda.LMonoTy.bv32
+    return .bitvecConst 32 n
   | .fn _ q`Boogie.bv64Lit, [xa] =>
     let n ← translateBitVec 64 xa
-    return .const (toString n) Lambda.LMonoTy.bv64
+    return .bitvecConst 64 n
   | .fn _ q`Boogie.strLit, [xa] =>
     let x ← translateStr xa
-    return .const x Lambda.LMonoTy.string
+    return .strConst x
   | .fn _ q`Boogie.realLit, [xa] =>
     let x ← translateReal xa
-    return .const (toString x) Lambda.LMonoTy.real
+    return .realConst (Strata.Decimal.toRat x)
   -- Equality
   | .fn _ q`Boogie.equal, [_tpa, xa, ya] =>
     let x ← translateExpr p bindings xa
@@ -687,6 +703,18 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     let t ← translateExpr p bindings ta
     let f ← translateExpr p bindings fa
     return .ite c t f
+  -- Re.AllChar
+  | .fn _ q`Boogie.re_allchar, [] =>
+    let fn ← translateFn .none q`Boogie.re_allchar
+    return fn
+  -- Re.None
+  | .fn _ q`Boogie.re_none, [] =>
+    let fn ← translateFn .none q`Boogie.re_none
+    return fn
+  -- Re.All
+  | .fn _ q`Boogie.re_all, [] =>
+    let fn ← translateFn .none q`Boogie.re_all
+    return fn
   -- Unary function applications
   | .fn _ fni, [xa] =>
     match fni with
@@ -700,7 +728,11 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     | q`Boogie.bvextract_7_0_64
     | q`Boogie.bvextract_15_0_64
     | q`Boogie.bvextract_31_0_64
-    | q`Boogie.str_len => do
+    | q`Boogie.str_len
+    | q`Boogie.str_toregex
+    | q`Boogie.re_star
+    | q`Boogie.re_plus
+    | q`Boogie.re_comp => do
       let fn ← translateFn .none fni
       let x ← translateExpr p bindings xa
       return .mkApp fn [x]
@@ -715,6 +747,11 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let x ← translateExpr p bindings xa
      let y ← translateExpr p bindings ya
      return .mkApp Boogie.strConcatOp [x, y]
+  | .fn _ q`Boogie.str_substr, [xa, ia, na] =>
+     let x ← translateExpr p bindings xa
+     let i ← translateExpr p bindings ia
+     let n ← translateExpr p bindings na
+     return .mkApp Boogie.strSubstrOp [x, i, n]
   | .fn _ q`Boogie.old, [_tp, xa] =>
      let x ← translateExpr p bindings xa
      return .mkApp Boogie.polyOldOp [x]
@@ -744,12 +781,19 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     translateQuantifier .all p bindings xsa (.some tsa) ba
   | .fn _ q`Boogie.existsT, [xsa, tsa, ba] =>
     translateQuantifier .exist p bindings xsa (.some tsa) ba
-  -- Binary function applications
+  -- Binary function applications (monomorphic)
   | .fn _ fni, [xa, ya] =>
     let fn ← translateFn .none fni
     let x ← translateExpr p bindings xa
     let y ← translateExpr p bindings ya
     return .mkApp fn [x, y]
+  | .fn _ q`Boogie.re_loop, [xa, ya, za] =>
+    let fn ← translateFn .none q`Boogie.re_loop
+    let x ← translateExpr p bindings xa
+    let y ← translateExpr p bindings ya
+    let z ← translateExpr p bindings za
+    return .mkApp fn [x, y, z]
+  -- Binary function applications (polymorphic)
   | .fn _ fni, [tpa, xa, ya] =>
     match fni with
     | q`Boogie.add_expr

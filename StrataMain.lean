@@ -8,6 +8,8 @@
 import Strata.DDM.Elab
 import Strata.DDM.Ion
 
+import Strata.Languages.Python.Python
+
 def exitFailure {α} (message : String) : IO α := do
   IO.eprintln (message  ++ "\n\nRun strata --help for additional help.")
   IO.Process.exit 1
@@ -149,16 +151,45 @@ def diffCommand : Command where
     let ⟨_, p2⟩ ← readFile fm v[1]
     match p1, p2 with
     | .program p1, .program p2 =>
-      if p1 == p2 then return ()
-      else exitFailure "Two programs are different"
+      if p1.dialect != p2.dialect then
+        exitFailure s!"Dialects differ: {p1.dialect} and {p2.dialect}"
+        let Decidable.isTrue eq := inferInstanceAs (Decidable (p1.commands.size = p2.commands.size))
+          | exitFailure s!"Number of commands differ {p1.commands.size} and {p2.commands.size}"
+        for (c1, c2) in Array.zip p1.commands p2.commands do
+          if c1 != c2 then
+            exitFailure s!"Commands differ: {repr c1} and {repr c2}"
     | _, _ =>
       exitFailure "Cannot compare dialect def with another dialect/program."
+
+def pyAnalyzeCommand : Command where
+  name := "pyAnalyze"
+  args := [ "file", "verbose" ]
+  help := "Analyze a Strata Python Ion file. Write results to stdout."
+  callback := fun searchPath v => do
+    let verbose := v[1] == "1"
+    let (ld, pd) ← readFile searchPath v[0]
+    match pd with
+    | .dialect d =>
+      IO.print <| d.format ld.dialects
+    | .program pgm =>
+    let preludePgm := Strata.Python.Internal.Boogie.prelude
+    let bpgm := Strata.pythonToBoogie pgm
+    let newPgm : Boogie.Program := { decls := preludePgm.decls ++ bpgm.decls }
+    if verbose then
+      IO.print newPgm
+    let vcResults ← EIO.toIO (fun f => IO.Error.userError (toString f))
+                        (Boogie.verify "z3" newPgm { Options.default with stopOnFirstError := false, verbose })
+    let mut s := ""
+    for vcResult in vcResults do
+      s := s ++ s!"\n{vcResult.obligation.label}: {Std.format vcResult.result}\n"
+    IO.println s
 
 def commandList : List Command := [
       checkCommand,
       toIonCommand,
       printCommand,
       diffCommand,
+      pyAnalyzeCommand,
     ]
 
 def commandMap : Std.HashMap String Command :=

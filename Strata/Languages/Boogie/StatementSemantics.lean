@@ -14,7 +14,7 @@ namespace Boogie
 
 /-- expressions that can't be reduced when evaluating -/
 inductive Value : Boogie.Expression.Expr → Prop where
-  | const :  Value (.const _ _)
+  | const :  Value (.const _)
   | bvar  :  Value (.bvar _)
   | op    :  Value (.op _ _)
   | abs   :  Value (.abs _ _)
@@ -30,9 +30,9 @@ instance : HasFvar Boogie.Expression where
   | _ => none
 
 @[match_pattern]
-def Boogie.true : Boogie.Expression.Expr := .const "true" (some .bool)
+def Boogie.true : Boogie.Expression.Expr := .boolConst Bool.true
 @[match_pattern]
-def Boogie.false : Boogie.Expression.Expr := .const "false" (some .bool)
+def Boogie.false : Boogie.Expression.Expr := .boolConst Bool.false
 
 instance : HasBool Boogie.Expression where
   tt := Boogie.true

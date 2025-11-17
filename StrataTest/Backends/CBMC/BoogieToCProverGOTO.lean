@@ -78,7 +78,7 @@ open Lambda in
 def substVarNames {IDMeta: Type} [DecidableEq IDMeta]
     (e : LExpr LMonoTy IDMeta) (frto : Map String String) : (LExpr LMonoTy Unit) :=
   match e with
-  | .const c ty => .const c ty
+  | .const c => .const c
   | .bvar b => .bvar b
   | .op o ty => .op o.name ty
   | .fvar  name ty =>

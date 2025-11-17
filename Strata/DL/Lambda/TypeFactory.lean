@@ -47,6 +47,7 @@ structure LDatatype (IDMeta : Type) where
   name : String
   typeArgs : List TyIdentifier
   constrs: List (@LConstr IDMeta)
+  constrs_ne : constrs.length != 0
 deriving Repr, DecidableEq
 
 /--
@@ -130,7 +131,7 @@ Find `n` type arguments (string) not present in list by enumeration. Inefficient
 def freshTypeArgs (n: Nat) (l: List TyIdentifier) : List TyIdentifier :=
   -- Generate n + |l| names to ensure enough unique ones
   let candidates := List.map (fun n => tyPrefix ++ toString n) (List.range (l.length + n));
-  List.filter (fun t => ¬ t ∈ l) candidates
+  List.take n (List.filter (fun t => ¬ t ∈ l) candidates)
 
 /--
 Find a fresh type argument not present in `l` by enumeration. Relies on the fact
@@ -220,10 +221,10 @@ Generate eliminator concrete evaluator. Idea: match on 1st argument (e.g. `x : L
 
 Examples:
 1. For `List α`, the generated function behaves as follows:
-`ListElim(Nil, e1, e2) = e1` and
-`ListElim(x :: xs, e1, e2) = e2 x xs (ListElim xs)`
+`List$Elim Nil e1 e2 = e1` and
+`List$Elim (x :: xs) e1 e2 = e2 x xs (List$Elim xs e1 e2)`
 2. For `tree = | T (int -> tree)`, the generated function is:
-`TreeElim(T f, e) = e f (fun (x: int) => TreeElim (f x, e))`
+`Tree$Elim (T f) e = e f (fun (x: int) => Tree$Elim (f x) e)`
 
 -/
 def elimConcreteEval (d: LDatatype IDMeta) (elimName : Identifier IDMeta) :
@@ -240,11 +241,11 @@ def elimConcreteEval (d: LDatatype IDMeta) (elimName : Identifier IDMeta) :
     | _ => e
 
 /--
-The `LFunc` corresponding to the eliminator for datatype `d`, called e.g. `ListElim` for type `List`.
+The `LFunc` corresponding to the eliminator for datatype `d`, called e.g. `List$Elim` for type `List`.
 -/
 def elimFunc (d: LDatatype IDMeta) : LFunc IDMeta :=
   let outTyId := freshTypeArg d.typeArgs
-  let elimName := d.name ++ "Elim";
+  let elimName := d.name ++ "$Elim";
   { name := elimName, typeArgs := outTyId :: d.typeArgs, inputs := List.zip (genArgNames (d.constrs.length + 1)) (dataDefault d :: d.constrs.map (elimTy (.ftvar outTyId) d)), output := .ftvar outTyId, concreteEval := elimConcreteEval d elimName}
 
 ---------------------------------------------------------------------

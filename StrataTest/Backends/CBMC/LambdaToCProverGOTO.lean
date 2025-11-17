@@ -41,7 +41,7 @@ def LExprT.toGotoExpr {IDMeta} [ToString IDMeta] (e : LExprT IDMeta) :
   -- Constants
   | .const c ty =>
     let gty ← ty.toGotoType
-    return (Expr.constant c gty)
+    return (Expr.constant (toString c) gty)
   -- Variables
   | .fvar v ty =>
     let gty ← ty.toGotoType
@@ -74,9 +74,9 @@ def LExpr.toGotoExpr {IDMeta} [ToString IDMeta] (e : LExpr LMonoTy IDMeta) :
   open CProverGOTO in
   do match e with
   -- Constants
-  | .const c (some ty) =>
-    let gty ← ty.toGotoType
-    return (Expr.constant c gty)
+  | .const c  =>
+    let gty ← c.ty.toGotoType
+    return (Expr.constant (toString c) gty)
   -- Variables
   | .fvar v (some ty) =>
     let gty ← ty.toGotoType
@@ -114,5 +114,5 @@ info: ok: { id := CProverGOTO.Expr.Identifier.nullary (CProverGOTO.Expr.Identifi
   namedFields := [] }
 -/
 #guard_msgs in
-#eval do let ans ← @LExprT.toGotoExpr String _ (.const "1" mty[int])
+#eval do let ans ← @LExprT.toGotoExpr String _ (.const (LConst.intConst 1) mty[int])
           return repr ans

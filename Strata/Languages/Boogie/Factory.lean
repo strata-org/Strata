@@ -22,6 +22,7 @@ def KnownLTys : LTys :=
   [t[bool],
    t[int],
    t[string],
+   t[regex],
    t[real],
    t[Triggers],
    t[TriggerGroup],
@@ -40,7 +41,7 @@ def KnownTypes : KnownTypes :=
 -/
 def ToBoogieIdent (ine: LExpr LMonoTy Unit): (LExpr LMonoTy Visibility) :=
 match ine with
-    | .const c ty => .const c ty
+    | .const c => .const c
     | .op o oty => .op (BoogieIdent.unres o.name) oty
     | .bvar deBruijnIndex => .bvar deBruijnIndex
     | .fvar name oty => .fvar (BoogieIdent.unres name.name) oty
@@ -107,17 +108,101 @@ def strLengthFunc : LFunc Visibility :=
       typeArgs := [],
       inputs := [("x", mty[string])]
       output := mty[int],
-      concreteEval := some (unOpCeval String Int LExpr.denoteString
-                            (fun s => (Int.ofNat (String.length s)))
-                            mty[int])}
+      concreteEval := some (unOpCeval String Int .intConst LExpr.denoteString
+                            (fun s => (Int.ofNat (String.length s))))}
 
 def strConcatFunc : LFunc Visibility :=
     { name := "Str.Concat",
       typeArgs := [],
       inputs := [("x", mty[string]), ("y", mty[string])]
       output := mty[string],
-      concreteEval := some (binOpCeval String String LExpr.denoteString
-                            String.append mty[string])}
+      concreteEval := some (binOpCeval String String .strConst
+                            LExpr.denoteString String.append)}
+
+def strSubstrFunc : LFunc Visibility :=
+    { name := "Str.Substr",
+      typeArgs := [],
+      -- longest substring of `x` of length at most `n` starting at position `i`.
+      inputs := [("x", mty[string]), ("i", mty[int]), ("n", mty[int])]
+      output := mty[string] }
+
+def strToRegexFunc : LFunc Visibility :=
+    { name := "Str.ToRegEx",
+      typeArgs := [],
+      inputs := [("x", mty[string])]
+      output := mty[regex] }
+
+def strInRegexFunc : LFunc Visibility :=
+    { name := "Str.InRegEx",
+      typeArgs := [],
+      inputs := [("x", mty[string]), ("y", mty[regex])]
+      output := mty[bool] }
+
+def reAllCharFunc : LFunc Visibility :=
+    { name := "Re.AllChar",
+      typeArgs := [],
+      inputs := []
+      output := mty[regex] }
+
+def reAllFunc : LFunc Visibility :=
+    { name := "Re.All",
+      typeArgs := [],
+      inputs := []
+      output := mty[regex] }
+
+def reRangeFunc : LFunc Visibility :=
+    { name := "Re.Range",
+      typeArgs := [],
+      inputs := [("x", mty[string]), ("y", mty[string])]
+      output := mty[regex] }
+
+def reConcatFunc : LFunc Visibility :=
+    { name := "Re.Concat",
+      typeArgs := [],
+      inputs := [("x", mty[regex]), ("y", mty[regex])]
+      output := mty[regex] }
+
+def reStarFunc : LFunc Visibility :=
+    { name := "Re.Star",
+      typeArgs := [],
+      inputs := [("x", mty[regex])]
+      output := mty[regex] }
+
+def rePlusFunc : LFunc Visibility :=
+    { name := "Re.Plus",
+      typeArgs := [],
+      inputs := [("x", mty[regex])]
+      output := mty[regex] }
+
+def reLoopFunc : LFunc Visibility :=
+    { name := "Re.Loop",
+      typeArgs := [],
+      inputs := [("x", mty[regex]), ("n1", mty[int]), ("n2", mty[int])]
+      output := mty[regex] }
+
+def reUnionFunc : LFunc Visibility :=
+    { name := "Re.Union",
+      typeArgs := [],
+      inputs := [("x", mty[regex]), ("y", mty[regex])]
+      output := mty[regex] }
+
+def reInterFunc : LFunc Visibility :=
+    { name := "Re.Inter",
+      typeArgs := [],
+      inputs := [("x", mty[regex]), ("y", mty[regex])]
+      output := mty[regex] }
+
+def reCompFunc : LFunc Visibility :=
+    { name := "Re.Comp",
+      typeArgs := [],
+      inputs := [("x", mty[regex])]
+      output := mty[regex] }
+
+def reNoneFunc : LFunc Visibility :=
+    { name := "Re.None",
+      typeArgs := [],
+      inputs := []
+      output := mty[regex] }
 
 /- A polymorphic `old` function with type `∀a. a → a`. -/
 def polyOldFunc : LFunc Visibility :=
@@ -265,6 +350,20 @@ def Factory : @Factory Visibility := #[
 
   strLengthFunc,
   strConcatFunc,
+  strSubstrFunc,
+  strToRegexFunc,
+  strInRegexFunc,
+  reAllFunc,
+  reAllCharFunc,
+  reRangeFunc,
+  reConcatFunc,
+  reStarFunc,
+  rePlusFunc,
+  reLoopFunc,
+  reUnionFunc,
+  reInterFunc,
+  reCompFunc,
+  reNoneFunc,
 
   polyOldFunc,
 
@@ -346,6 +445,20 @@ def boolEquivOp : Expression.Expr := boolEquivFunc.opExpr
 def boolNotOp : Expression.Expr := boolNotFunc.opExpr
 def strLengthOp : Expression.Expr := strLengthFunc.opExpr
 def strConcatOp : Expression.Expr := strConcatFunc.opExpr
+def strSubstrOp : Expression.Expr := strSubstrFunc.opExpr
+def strToRegexOp : Expression.Expr := strToRegexFunc.opExpr
+def strInRegexOp : Expression.Expr := strInRegexFunc.opExpr
+def reAllOp : Expression.Expr := reAllFunc.opExpr
+def reAllCharOp : Expression.Expr := reAllCharFunc.opExpr
+def reRangeOp : Expression.Expr := reRangeFunc.opExpr
+def reConcatOp : Expression.Expr := reConcatFunc.opExpr
+def reStarOp : Expression.Expr := reStarFunc.opExpr
+def rePlusOp : Expression.Expr := rePlusFunc.opExpr
+def reLoopOp : Expression.Expr := reLoopFunc.opExpr
+def reUnionOp : Expression.Expr := reUnionFunc.opExpr
+def reInterOp : Expression.Expr := reInterFunc.opExpr
+def reCompOp : Expression.Expr := reCompFunc.opExpr
+def reNoneOp : Expression.Expr := reNoneFunc.opExpr
 def polyOldOp : Expression.Expr := polyOldFunc.opExpr
 def mapSelectOp : Expression.Expr := mapSelectFunc.opExpr
 def mapUpdateOp : Expression.Expr := mapUpdateFunc.opExpr
@@ -356,5 +469,11 @@ def mkTriggerGroup (ts : List Expression.Expr) : Expression.Expr :=
 def mkTriggerExpr (ts : List (List Expression.Expr)) : Expression.Expr :=
   let groups := ts.map mkTriggerGroup
   groups.foldl (fun gs g => .app (.app addTriggerGroupOp g) gs) emptyTriggersOp
+
+/--
+Get all the built-in functions supported by Boogie.
+-/
+def builtinFunctions : Array String :=
+  Factory.map (fun f => BoogieIdent.toPretty f.name)
 
 end Boogie
