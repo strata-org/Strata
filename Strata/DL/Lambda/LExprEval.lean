@@ -34,7 +34,8 @@ Canonical values of `LExpr`s.
 Equality is simply `==` (or more accurately, `eqModuloTypes`) for these
 `LExpr`s. Also see `eql` for a version that can tolerate nested metadata.
 -/
-def isCanonicalValue {GenericTy} (σ : LState IDMeta) (e : LExpr GenericTy IDMeta) : Bool :=
+def isCanonicalValue {GenericTy} (σ : LState IDMeta)
+    (e : LExpr GenericTy IDMeta) : Bool :=
   match he: e with
   | .const _ => true
   | .abs _ _ =>
@@ -43,8 +44,7 @@ def isCanonicalValue {GenericTy} (σ : LState IDMeta) (e : LExpr GenericTy IDMet
     -- So we could simplify the following to `closed e`, but leave it as is for
     -- clarity.
     LExpr.closed e
-  | .mdata m e' =>
-    isCanonicalValue σ e'
+  | .mdata m e' => isCanonicalValue σ e'
   | e' =>
     match h: Factory.callOfLFunc σ.config.factory e with
     | some (_, args, f) =>
