@@ -386,6 +386,7 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
 
     | "Str.Length"   => .ok (.app Op.str_length,    .int,    ctx)
     | "Str.Concat"   => .ok (.app Op.str_concat,    .string, ctx)
+    | "Str.Substr"   => .ok (.app Op.str_substr,    .string, ctx)
     | "Str.ToRegEx"  => .ok (.app Op.str_to_re,     .regex,  ctx)
     | "Str.InRegEx"  => .ok (.app Op.str_in_re,     .bool,   ctx)
     | "Re.All"       => .ok (.app Op.re_all,        .regex,  ctx)
@@ -397,6 +398,7 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
     | "Re.Union"     => .ok (.app Op.re_union,      .regex,  ctx)
     | "Re.Inter"     => .ok (.app Op.re_inter,      .regex,  ctx)
     | "Re.Comp"      => .ok (.app Op.re_comp,       .regex,  ctx)
+    | "Re.None"      => .ok (.app Op.re_none,       .regex,  ctx)
 
     | "Triggers.empty"          => .ok (.app Op.triggers, .trigger, ctx)
     | "TriggerGroup.empty"      => .ok (.app Op.triggers, .trigger, ctx)

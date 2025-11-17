@@ -188,10 +188,10 @@ def isOp (e : (LExpr TypeType IDMeta)) : Bool :=
   | _ => false
 
 @[match_pattern]
-protected def true : (LExpr LMonoTy IDMeta) := LConst.boolConst true
+protected def true : (LExpr TypeType IDMeta) := LConst.boolConst true
 
 @[match_pattern]
-protected def false : (LExpr LMonoTy IDMeta) := LConst.boolConst false
+protected def false : (LExpr TypeType IDMeta) := LConst.boolConst false
 
 def isTrue (e : (LExpr TypeType IDMeta)) : Bool :=
   match e with
@@ -204,13 +204,14 @@ def isFalse (e : (LExpr TypeType IDMeta)) : Bool :=
   | _ => false
 
 /-- An iterated/multi-argument lambda with arguments of types `tys` and body `body`-/
-def absMulti (tys: List LMonoTy) (body: LExpr LMonoTy IDMeta) : LExpr LMonoTy IDMeta :=
+def absMulti (tys: List TypeType) (body: LExpr TypeType IDMeta)
+    : LExpr TypeType IDMeta :=
   List.foldr (fun ty e => .abs (.some ty) e) body tys
 
 /--
 If `e` is an `LExpr` boolean, then denote that into a Lean `Bool`.
 -/
-def denoteBool (e : (LExpr LMonoTy IDMeta)) : Option Bool :=
+def denoteBool (e : (LExpr TypeType IDMeta)) : Option Bool :=
   match e with
   | .const (.boolConst b) => some b
   | _ => none
@@ -218,7 +219,7 @@ def denoteBool (e : (LExpr LMonoTy IDMeta)) : Option Bool :=
 /--
 If `e` is an `LExpr` integer, then denote that into a Lean `Int`.
 -/
-def denoteInt (e : (LExpr LMonoTy IDMeta)) : Option Int :=
+def denoteInt (e : (LExpr TypeType IDMeta)) : Option Int :=
   match e with
   | .intConst i => some i
   | _ => none
@@ -226,7 +227,7 @@ def denoteInt (e : (LExpr LMonoTy IDMeta)) : Option Int :=
 /--
 If `e` is an `LExpr` real, then denote that into a Lean `Rat`.
 -/
-def denoteReal (e : (LExpr LMonoTy IDMeta)) : Option Rat :=
+def denoteReal (e : (LExpr TypeType IDMeta)) : Option Rat :=
   match e with
   | .realConst r => some r
   | _ => none
@@ -234,7 +235,7 @@ def denoteReal (e : (LExpr LMonoTy IDMeta)) : Option Rat :=
 /--
 If `e` is an `LExpr` bv<n>, then denote that into a Lean `BitVec n`.
 -/
-def denoteBitVec (n : Nat) (e : (LExpr LMonoTy IDMeta)) : Option (BitVec n) :=
+def denoteBitVec (n : Nat) (e : (LExpr TypeType IDMeta)) : Option (BitVec n) :=
   match e with
   | .bitvecConst n' b => if n == n' then some (BitVec.ofNat n b.toNat) else none
   | _ => none
@@ -302,7 +303,8 @@ def size (e : (LExpr TypeType IDMeta)) : Nat :=
   | .eq e1 e2 => 1 + size e1 + size e2
 
 /--
-Erase all type annotations from `e`.
+Erase all type annotations from `e` except the bound variables of abstractions
+and quantified expressions.
 -/
 def eraseTypes (e : (LExpr TypeType IDMeta)) : (LExpr TypeType IDMeta) :=
   match e with
