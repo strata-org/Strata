@@ -126,8 +126,13 @@ def solverResult (vars : List (IdentT LMonoTy Visibility)) (ans : String)
   match verdict with
   | "sat"     =>
     let rawModel ← getModel rest
-    let model ← processModel vars rawModel ctx E
-    .ok (.sat model)
+    -- We suppress any counterexample processing errors.
+    -- Likely, these would be because of the suboptimal implementation
+    -- of the counterexample parser, which shouldn't hold back useful
+    -- feedback (i.e., problem was `sat`) from the user.
+    match (processModel vars rawModel ctx E) with
+    | .ok model => .ok (.sat model)
+    | .error _model_err => (.ok (.sat []))
   | "unsat"   =>  .ok .unsat
   | "unknown" =>  .ok .unknown
   | _     =>  .error ans
@@ -285,8 +290,11 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
            if options.stopOnFirstError then break
     return results
 
-def verify (smtsolver : String) (program : Program) (options : Options := Options.default) : EIO Format VCResults := do
-  match Boogie.typeCheckAndPartialEval options program with
+def verify (smtsolver : String) (program : Program)
+    (options : Options := Options.default)
+    (moreFns : @Lambda.Factory Boogie.Visibility := Lambda.Factory.default) :
+    EIO Format VCResults := do
+  match Boogie.typeCheckAndPartialEval options program moreFns with
   | .error err =>
     .error f!"[Strata.Boogie] Type checking error: {format err}"
   | .ok pEs =>
@@ -305,22 +313,25 @@ namespace Strata
 def Boogie.getProgram (p : Strata.Program) : Boogie.Program × Array String :=
   TransM.run (translateProgram p)
 
-def typeCheck (env : Program) (options : Options := Options.default) :
-  Except Std.Format Boogie.Program := do
+def typeCheck (env : Program) (options : Options := Options.default)
+    (moreFns : @Lambda.Factory Boogie.Visibility := Lambda.Factory.default) :
+     Except Std.Format Boogie.Program := do
   let (program, errors) := Boogie.getProgram env
   if errors.isEmpty then
     -- dbg_trace f!"AST: {program}"
-    Boogie.typeCheck options program
+    Boogie.typeCheck options program moreFns
   else
     .error s!"DDM Transform Error: {repr errors}"
 
 def verify (smtsolver : String) (env : Program)
-    (options : Options := Options.default) : IO Boogie.VCResults := do
+    (options : Options := Options.default)
+    (moreFns : @Lambda.Factory Boogie.Visibility := Lambda.Factory.default) :
+    IO Boogie.VCResults := do
   let (program, errors) := Boogie.getProgram env
   if errors.isEmpty then
     -- dbg_trace f!"AST: {program}"
     EIO.toIO (fun f => IO.Error.userError (toString f))
-                (Boogie.verify smtsolver program options)
+                (Boogie.verify smtsolver program options moreFns)
   else
     panic! s!"DDM Transform Error: {repr errors}"
 
