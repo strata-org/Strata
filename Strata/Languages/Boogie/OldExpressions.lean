@@ -395,6 +395,7 @@ theorem IsOldPredNormalize :
         simp [normalizeOldExpr] at Hold
         cases Hold
       case neg Hneg' =>
+        unfold BoogieIdent.unres at *
         unfold normalizeOldExpr at Hold
         split at Hold <;> simp_all
         split at Hold <;> simp_all
@@ -404,19 +405,17 @@ theorem IsOldPredNormalize :
         next _ _ H =>
           exfalso
           apply H
-          sorry
-          --constructor -- TODO: Need to repair proof
-        sorry -- TODO: Need to repair proof
-        -- split at Hold <;> simp_all <;> try cases Hold
-        -- split at Hold <;> try cases Hold
-        -- split at Hold <;> try cases Hold
-        -- cases Hval
-        -- next Hval1 Hval2 Hnold =>
-        -- exfalso
-        -- apply Hnold
-        -- apply e_ih <;> try assumption
-        -- simp [normalizeOldExpr]
-        -- simp_all
+          constructor
+        split at Hold <;> simp_all <;> try cases Hold
+        split at Hold <;> try cases Hold
+        split at Hold <;> try cases Hold
+        cases Hval
+        next Hval1 Hval2 Hnold =>
+        exfalso
+        apply Hnold
+        apply e_ih <;> try assumption
+        simp [normalizeOldExpr]
+        simp_all
     case neg Hneg =>
       by_cases IsOldPred fn <;> simp_all
       unfold normalizeOldExpr at Hold
