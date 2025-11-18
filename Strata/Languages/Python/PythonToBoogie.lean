@@ -67,6 +67,7 @@ def PyConstToBoogie (c: Python.constant SourceRange) : Boogie.Expression.Expr :=
   | .ConString _ s => .const (.strConst s.val)
   | .ConPos _ i => .const (.intConst i.val)
   | .ConNeg _ i => .const (.intConst (-i.val))
+  | .ConBytes _ _b => .const (.strConst "") -- TODO: fix
   | _ => panic! s!"Unhandled Constant: {repr c}"
 
 def PyAliasToBoogieExpr (a : Python.alias SourceRange) : Boogie.Expression.Expr :=
@@ -74,6 +75,13 @@ def PyAliasToBoogieExpr (a : Python.alias SourceRange) : Boogie.Expression.Expr 
   | .mk_alias _ n as_n =>
   assert! as_n.val.isNone
   .const (.strConst n.val)
+
+def handleAdd (lhs rhs: Boogie.Expression.Expr) : Boogie.Expression.Expr :=
+  let lty : Lambda.LMonoTy := mty[string]
+  let rty : Lambda.LMonoTy := mty[string]
+  match lty, rty with
+  | (.tcons "string" []), (.tcons "string" []) => .app (.app (.op "Str.Concat" mty[string → (string → string)]) lhs) rhs
+  | _, _ => panic! s!"Unimplemented add op for {lhs} + {rhs}"
 
 partial def PyExprToBoogie (e : Python.expr SourceRange) : Boogie.Expression.Expr :=
   match e with
@@ -84,12 +92,25 @@ partial def PyExprToBoogie (e : Python.expr SourceRange) : Boogie.Expression.Exp
     | "AssertionError" | "Exception" => .const (.strConst n.val)
     | _ => .fvar n.val none
   | .JoinedStr _ ss => PyExprToBoogie ss.val[0]! -- TODO: need to actually join strings
+  | .BinOp _ lhs op rhs => match op with
+    | .Add _ => handleAdd (PyExprToBoogie lhs) (PyExprToBoogie rhs)
+    | _ => panic! s!"Unhandled BinOp: {repr e}"
   | _ => panic! s!"Unhandled Expr: {repr e}"
 
-def PyExprToString (e : Python.expr SourceRange) : String :=
+partial def PyExprToString (e : Python.expr SourceRange) : String :=
   match e with
   | .Name _ n _ => n.val
   | .Attribute _ v attr _ => s!"{PyExprToString v}_{attr.val}"
+  | .Subscript _ v slice _ =>
+    let v_name := PyExprToString v
+    match v_name with
+    | "Dict" =>
+      match slice with
+      | .Tuple _ elts _ =>
+        assert! elts.val.size == 2
+        s!"Dict[{PyExprToString elts.val[0]!} {PyExprToString elts.val[1]!}]"
+      | _ => panic! s!"Unsupported slice: {repr slice}"
+    | _ => panic! s!"Unsupported subscript to string: {repr e}"
   | _ => panic! s!"Unhandled Expr: {repr e}"
 
 partial def PyKWordsToBoogie (kw : Python.keyword SourceRange) : (String × Boogie.Expression.Expr) :=
@@ -134,6 +155,50 @@ def PyListStrToBoogie (names : Array (Python.alias SourceRange)) : Boogie.Expres
   .app (.app (.op "ListStr_cons" mty[string → (ListStr → ListStr)]) (PyAliasToBoogieExpr names[0]!))
        (.op "ListStr_nil" mty[ListStr])
 
+def deduplicateTypeAnnotations (l : List (String × Option String)) : List (String × String) := Id.run do
+  let mut m : Map String String := []
+  for p in l do
+    let name := p.fst
+    let oty := p.snd
+    match oty with
+    | .some ty =>
+      match m.find? name with
+      | .some other_ty =>
+        if ty != other_ty then
+          panic! s!"Type annotation mismatch: {other_ty} vs {ty}"
+      | .none => m := (name, ty) :: m
+    | .none => ()
+  let names := l.map (λ p => p.fst)
+  let unique_names := names.dedup
+  unique_names.map (λ n =>
+    match m.find? n with
+    | .some ty => (n, ty)
+    | .none => panic s!"Missing type annotations for {n}")
+
+def collectVarDecls (stmts: Array (Python.stmt SourceRange)) : List Boogie.Statement :=
+  let go (s : Python.stmt SourceRange) : List (String × Option String) :=
+    match s with
+    | .Assign _ lhs _ _ =>
+      let names := lhs.val.toList.map PyExprToString
+      names.map (λ n => (n, none))
+    | .AnnAssign _ lhs ty _ _ =>
+      [(PyExprToString lhs, PyExprToString ty)]
+    | _ => []
+  let dup := stmts.toList.flatMap go
+  let dedup := deduplicateTypeAnnotations dup
+  let toBoogie (p: String × String) : List Boogie.Statement :=
+    let name := p.fst
+    let ty_name := p.snd
+    match ty_name with
+    | "bool" => [(.init name t[bool] (.boolConst false)), (.havoc name)]
+    | "str" => [(.init name t[string] (.strConst "")), (.havoc name)]
+    | "int" => [(.init name t[int] (.intConst 0)), (.havoc name)]
+    | "bytes" => [(.init name t[string] (.strConst "")), (.havoc name)]
+    | "S3Client" => [(.init name clientType dummyClient), (.havoc name)]
+    | "Dict[str Any]" => [(.init name dictStrAnyType dummyDictStrAny), (.havoc name)]
+    | _ => panic! s!"Unsupported type annotation: `{ty_name}`"
+  let foo := dedup.map toBoogie
+  foo.flatten
 
 mutual
 
@@ -197,7 +262,8 @@ partial def PyStmtToBoogie (jmp_targets: List String) (s : Python.stmt SourceRan
         let entry_except_handlers := [.block new_target {ss := []}]
         let new_jmp_stack := new_target :: jmp_targets
         let except_handlers := handlers.val.toList.flatMap (exceptHandlersToBoogie new_jmp_stack)
-        body.val.toList.flatMap (PyStmtToBoogie new_jmp_stack) ++ entry_except_handlers ++ except_handlers
+        let var_decls := collectVarDecls body.val
+        [.block "try_block" {ss := var_decls ++ body.val.toList.flatMap (PyStmtToBoogie new_jmp_stack) ++ entry_except_handlers ++ except_handlers}]
     | _ =>
       panic! s!"Unsupported {repr s}"
   if callCanThrow s then
@@ -210,22 +276,23 @@ end --mutual
 def ArrPyStmtToBoogie (a : Array (Python.stmt SourceRange)) : List Boogie.Statement :=
   a.toList.flatMap (PyStmtToBoogie ["end"])
 
+def pythonFuncToBoogie (name : String) (body: Array (Python.stmt SourceRange)) (spec : Boogie.Procedure.Spec) : Boogie.Procedure :=
+  let varDecls := collectVarDecls body ++ [(.init "exception_ty_matches" t[bool] (.boolConst false)), (.havoc "exception_ty_matches")]
+  let stmts := ArrPyStmtToBoogie body
+  let body := varDecls ++ stmts ++ [.block "end" {ss := []}]
+  {
+    header := {name,
+               typeArgs := [],
+               inputs := [],
+               outputs := [("maybe_except", (.tcons "ExceptOrNone" []))]},
+    spec,
+    body
+  }
+
 def pythonToBoogie (pgm: Strata.Program): Boogie.Program :=
   let pyCmds := toPyCommands pgm.commands
   assert! pyCmds.size == 1
   let insideMod := unwrapModule pyCmds[0]!
-
-  let varDecls : List Boogie.Statement := []
-  let blocks := ArrPyStmtToBoogie insideMod
-  let body := varDecls ++ blocks ++ [.block "end" {ss := []}]
-  let mainProc : Boogie.Procedure := {
-    header := {name := "main",
-               typeArgs := [],
-               inputs := [],
-               outputs := [("maybe_except", (.tcons "ExceptOrNone" []))]},
-    spec := default,
-    body := body
-  }
-  {decls := [.proc mainProc]}
+  {decls := [.proc (pythonFuncToBoogie "__main__" insideMod default)]}
 
 end Strata
