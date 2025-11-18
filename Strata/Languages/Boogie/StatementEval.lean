@@ -195,7 +195,7 @@ def processGoto : Statements → Option String → (Statements × Option String)
 def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : Option String) :
   List EnvWithNext :=
   open LTy.Syntax in
-  go (Imperative.Stmts.sizeOf ss) (EnvWithNext.mk E .none []) ss optLabel
+  go (Imperative.Block.sizeOf ss) (EnvWithNext.mk E .none []) ss optLabel
   where go steps Ewn ss optLabel :=
   match steps, Ewn.env.error with
   | _, some _ => [{Ewn with nextLabel := .none}]
@@ -215,7 +215,7 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
                         env := E,
                         nextLabel := .none }]
 
-          | .block label { ss } md =>
+          | .block label ss md =>
             let orig_stk := Ewn.stk
             let Ewn := { Ewn with env := Ewn.env.pushEmptyScope,
                                   stk := orig_stk.push [] }
@@ -225,11 +225,11 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
                                  { ewn with env := ewn.env.popScope,
                                             stk :=
                                               let ss' := ewn.stk.top
-                                              let s' := Imperative.Stmt.block label { ss := ss' } md
+                                              let s' := Imperative.Stmt.block label ss' md
                                               orig_stk.appendToTop [s'] })
             Ewns
 
-          | .ite cond { ss := then_ss } { ss := else_ss } md =>
+          | .ite cond then_ss else_ss md =>
             let orig_stk := Ewn.stk
             let Ewn := { Ewn with stk := orig_stk.push [] }
             let cond' := Ewn.env.exprEval cond
@@ -239,7 +239,7 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
               let Ewns := Ewns.map
                               (fun (ewn : EnvWithNext) =>
                                    let ss' := ewn.stk.top
-                                   let s' := Imperative.Stmt.ite cond' { ss := ss' } { ss := [] } md
+                                   let s' := Imperative.Stmt.ite cond' ss' [] md
                                    { ewn with stk := orig_stk.appendToTop [s']})
               Ewns
             | .false =>
@@ -247,7 +247,7 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
               let Ewns := Ewns.map
                               (fun (ewn : EnvWithNext) =>
                                    let ss' := ewn.stk.top
-                                   let s' := Imperative.Stmt.ite cond' { ss := [] } { ss := ss' } md
+                                   let s' := Imperative.Stmt.ite cond' [] ss' md
                                    { ewn with stk := orig_stk.appendToTop [s']})
               Ewns
             | _ =>
@@ -267,19 +267,19 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
                 -- with no next label, we can merge both states into one.
               | [{ stk := stk_t, env := E_t, nextLabel := .none}],
                 [{ stk := stk_f, env := E_f, nextLabel := .none}] =>
-                let s' := Imperative.Stmt.ite cond' { ss := stk_t.top } { ss := stk_f.top } md
+                let s' := Imperative.Stmt.ite cond' stk_t.top stk_f.top md
                 [EnvWithNext.mk (Env.merge cond' E_t E_f).popScope
                                 .none
                                 (orig_stk.appendToTop [s'])]
               | _, _ =>
                 let Ewns_t := Ewns_t.map
                                   (fun (ewn : EnvWithNext) =>
-                                    let s' := Imperative.Stmt.ite LExpr.true { ss := ewn.stk.top } { ss := [] } md
+                                    let s' := Imperative.Stmt.ite LExpr.true ewn.stk.top [] md
                                     { ewn with env := ewn.env.popScope,
                                                stk := orig_stk.appendToTop [s']})
                 let Ewns_f := Ewns_f.map
                                   (fun (ewn : EnvWithNext) =>
-                                    let s' := Imperative.Stmt.ite LExpr.false { ss := [] } { ss := ewn.stk.top } md
+                                    let s' := Imperative.Stmt.ite LExpr.false [] ewn.stk.top md
                                     { ewn with env := ewn.env.popScope,
                                                stk := orig_stk.appendToTop [s']})
                 Ewns_t ++ Ewns_f

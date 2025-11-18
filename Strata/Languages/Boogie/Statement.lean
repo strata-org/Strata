@@ -107,15 +107,15 @@ mutual
 def Statement.eraseTypes (s : Statement) : Statement :=
   match s with
   | .cmd c => .cmd (Command.eraseTypes c)
-  | .block label ⟨ bss ⟩ md =>
+  | .block label bss md =>
     let ss' := Statements.eraseTypes bss
-    .block label { ss := ss' } md
-  | .ite cond ⟨ tss ⟩ ⟨ ess ⟩ md =>
-    let thenb' := { ss := Statements.eraseTypes tss }
-    let elseb' := { ss := Statements.eraseTypes ess }
+    .block label ss' md
+  | .ite cond tss ess md =>
+    let thenb' := Statements.eraseTypes tss
+    let elseb' := Statements.eraseTypes ess
     .ite cond thenb' elseb' md
-  | .loop guard measure invariant ⟨ bss ⟩ md =>
-    let body' := { ss := Statements.eraseTypes bss }
+  | .loop guard measure invariant bss md =>
+    let body' := Statements.eraseTypes bss
     .loop guard measure invariant body' md
   | .goto l md => .goto l md
   termination_by (Stmt.sizeOf s)
@@ -164,10 +164,10 @@ instance : HasVarsImp Expression Statement where
   touchedVars := Stmt.touchedVars
 
 instance : HasVarsImp Expression (List Statement) where
-  definedVars := Stmts.definedVars
-  modifiedVars := Stmts.modifiedVars
+  definedVars := Block.definedVars
+  modifiedVars := Block.modifiedVars
   -- order matters for Havoc, so needs to override the default
-  touchedVars := Stmts.touchedVars
+  touchedVars := Block.touchedVars
 
 ---------------------------------------------------------------------
 
@@ -190,10 +190,10 @@ def Statement.modifiedVarsTrans
   : List Expression.Ident := match s with
   | .cmd cmd => Command.modifiedVarsTrans π cmd
   | .goto _ _ => []
-  | .block _ ⟨ bss ⟩ _ => Statements.modifiedVarsTrans π bss
-  | .ite _ ⟨ tbss ⟩ ⟨ ebss ⟩ _ =>
+  | .block _ bss _ => Statements.modifiedVarsTrans π bss
+  | .ite _ tbss ebss _ =>
     Statements.modifiedVarsTrans π tbss ++ Statements.modifiedVarsTrans π ebss
-  | .loop _ _ _ ⟨ bss ⟩ _ =>
+  | .loop _ _ _ bss _ =>
     Statements.modifiedVarsTrans π bss
   termination_by (Stmt.sizeOf s)
 
@@ -204,7 +204,7 @@ def Statements.modifiedVarsTrans
   : List Expression.Ident := match ss with
   | [] => []
   | s :: ss => Statement.modifiedVarsTrans π s ++ Statements.modifiedVarsTrans π ss
-  termination_by (Stmts.sizeOf ss)
+  termination_by (Block.sizeOf ss)
 end
 
 def Command.getVarsTrans
@@ -228,10 +228,10 @@ def Statement.getVarsTrans
   : List Expression.Ident := match s with
   | .cmd cmd => Command.getVarsTrans π cmd
   | .goto _ _ => []
-  | .block _ ⟨ bss ⟩ _ => Statements.getVarsTrans π bss
-  | .ite _ ⟨ tbss ⟩ ⟨ ebss ⟩ _ =>
+  | .block _ bss _ => Statements.getVarsTrans π bss
+  | .ite _ tbss ebss _ =>
     Statements.getVarsTrans π tbss ++ Statements.getVarsTrans π ebss
-  | .loop _ _ _ ⟨ bss ⟩  _ =>
+  | .loop _ _ _ bss  _ =>
     Statements.getVarsTrans π bss
   termination_by (Stmt.sizeOf s)
 
@@ -242,7 +242,7 @@ def Statements.getVarsTrans
   : List Expression.Ident := match ss with
   | [] => []
   | s :: ss => Statement.getVarsTrans π s ++ Statements.getVarsTrans π ss
-  termination_by (Stmts.sizeOf ss)
+  termination_by (Block.sizeOf ss)
 end
 
 -- don't need to transitively lookup for procedures
@@ -261,7 +261,7 @@ def Statement.definedVarsTrans
 -- since call statement does not define any new variables
 def Statements.definedVarsTrans
   (_ : String → Option ProcType) (s : Statements) :=
-  Stmts.definedVars s
+  Block.definedVars s
 
 mutual
 /-- get all variables touched by the statement `s`. -/
@@ -273,9 +273,9 @@ def Statement.touchedVarsTrans
   match s with
   | .cmd cmd => Command.definedVarsTrans π cmd ++ Command.modifiedVarsTrans π cmd
   | .goto _ _ => []
-  | .block _ ⟨ bss ⟩ _ => Statements.touchedVarsTrans π bss
-  | .ite _ ⟨ tbss ⟩ ⟨ ebss ⟩ _ => Statements.touchedVarsTrans π tbss ++ Statements.touchedVarsTrans π ebss
-  | .loop _ _ _ ⟨ bss ⟩ _ => Statements.touchedVarsTrans π bss
+  | .block _ bss _ => Statements.touchedVarsTrans π bss
+  | .ite _ tbss ebss _ => Statements.touchedVarsTrans π tbss ++ Statements.touchedVarsTrans π ebss
+  | .loop _ _ _ bss _ => Statements.touchedVarsTrans π bss
   termination_by (Stmt.sizeOf s)
 
 def Statements.touchedVarsTrans
@@ -286,7 +286,7 @@ def Statements.touchedVarsTrans
   match ss with
   | [] => []
   | s :: srest => Statement.touchedVarsTrans π s ++ Statements.touchedVarsTrans π srest
-  termination_by (Stmts.sizeOf ss)
+  termination_by (Block.sizeOf ss)
 end
 
 def Statement.allVarsTrans

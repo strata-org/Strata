@@ -213,11 +213,8 @@ section NondetExamples
 open Imperative
 
 def NondetTest1 : Stmt Expression (Cmd Expression) :=
-  .ite (Boogie.true) {ss :=
-    [.cmd $ .havoc "x" ]
-    } {ss :=
+  .ite (Boogie.true) [.cmd $ .havoc "x" ]
     [.cmd $ .havoc "y" ]
-    }
 
 def NondetTest1Ans : NondetStmt Expression (Cmd Expression) :=
   .choice

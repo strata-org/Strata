@@ -126,7 +126,7 @@ def argsAndKWordsToCanonicalList (fname: String) (args : Array (Python.expr Sour
 
 def handleCallThrow (jmp_target : String) : Boogie.Statement :=
   let cond := .eq (.app (.op "ExceptOrNone_tag" none) (.fvar "maybe_except" none)) (.op "EN_STR_TAG" none)
-  .ite cond {ss := [.goto jmp_target]} {ss := []}
+  .ite cond [.goto jmp_target] []
 
 -- TODO: handle rest of names
 def PyListStrToBoogie (names : Array (Python.alias SourceRange)) : Boogie.Expression.Expr :=
@@ -154,7 +154,7 @@ partial def exceptHandlersToBoogie (jmp_targets: List String) (h : Python.except
       [.set "exception_ty_matches" (.const (.boolConst false))]
     let cond := .fvar "exception_ty_matches" none
     let body_if_matches := body.val.toList.flatMap (PyStmtToBoogie jmp_targets) ++ [.goto jmp_targets[1]!]
-    set_ex_ty_matches ++ [.ite cond {ss := body_if_matches} {ss := []}]
+    set_ex_ty_matches ++ [.ite cond body_if_matches []]
 
 
 partial def PyStmtToBoogie (jmp_targets: List String) (s : Python.stmt SourceRange) : List Boogie.Statement :=
@@ -194,7 +194,7 @@ partial def PyStmtToBoogie (jmp_targets: List String) (s : Python.stmt SourceRan
       [.set (PyExprToString lhs) (PyExprToBoogie e)]
     | .Try _ body handlers _orelse _finalbody =>
         let new_target := s!"excepthandlers_{jmp_targets[0]!}"
-        let entry_except_handlers := [.block new_target {ss := []}]
+        let entry_except_handlers := [.block new_target []]
         let new_jmp_stack := new_target :: jmp_targets
         let except_handlers := handlers.val.toList.flatMap (exceptHandlersToBoogie new_jmp_stack)
         body.val.toList.flatMap (PyStmtToBoogie new_jmp_stack) ++ entry_except_handlers ++ except_handlers
@@ -217,7 +217,7 @@ def pythonToBoogie (pgm: Strata.Program): Boogie.Program :=
 
   let varDecls : List Boogie.Statement := []
   let blocks := ArrPyStmtToBoogie insideMod
-  let body := varDecls ++ blocks ++ [.block "end" {ss := []}]
+  let body := varDecls ++ blocks ++ [.block "end" []]
   let mainProc : Boogie.Procedure := {
     header := {name := "main",
                typeArgs := [],

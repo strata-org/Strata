@@ -313,12 +313,12 @@ def outOfScopeVarProg : Program := { decls := [
               body := [
                 Statement.set "y" eb[((~Bool.Or x) x)],
                 .ite eb[(x == #true)]
-                  { ss := [Statement.init "q" t[int] eb[#0],
+                  [Statement.init "q" t[int] eb[#0],
                            Statement.set "q" eb[#1],
-                           Statement.set "y" eb[#true]] }
-                  { ss := [Statement.init "q" t[int] eb[#0],
+                           Statement.set "y" eb[#true]]
+                  [Statement.init "q" t[int] eb[#0],
                            Statement.set "q" eb[#2],
-                           Statement.set "y" eb[#true]] },
+                           Statement.set "y" eb[#true]],
                 Statement.assert "y_check" eb[y == #true],
                 Statement.assert "q_check" eb[q == #1]
               ]

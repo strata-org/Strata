@@ -22,7 +22,7 @@ import Strata.DL.Util.ListUtils
 
   This file contains the main proof that the call elimination transformation is
   semantics preserving (see `callElimStatementCorrect`).
-  Additionally, `callElimStmtsNoExcept` shows that the call elimination
+  Additionally, `callElimBlockNoExcept` shows that the call elimination
   transformation always succeeds on well-formed statements.
 -/
 
@@ -163,16 +163,16 @@ theorem getIdentTys!_no_throw :
     simp [pure, StateT.pure]
 
 -- Step 1. A theorem stating that given a well-formed program, call-elim will return no exception
-theorem callElimStmtsNoExcept :
+theorem callElimBlockNoExcept :
   ∀ (st : Boogie.Statement)
     (p : Boogie.Program),
     WF.WFStatementsProp p [st] →
-  ∃ sts, Except.ok sts = ((CallElim.runCallElim [st] (CallElim.callElimStmts · p)))
+  ∃ sts, Except.ok sts = ((CallElim.runCallElim [st] (CallElim.callElimBlock · p)))
   -- NOTE: the generated variables will not be local, but temp. So it will not be well-formed
   -- ∧ WF.WFStatementsProp p sts
   := by
   intros st p wf
-  simp [CallElim.callElimStmts, CallElim.callElimStmt]
+  simp [CallElim.callElimBlock, CallElim.callElimStmt]
   cases st with
   | block l b md => exists [.block l b md]
   | ite cd tb eb md => exists [.ite cd tb eb md]
@@ -669,7 +669,7 @@ theorem EvalStatementsContractInitVars :
     | mk pair v =>
     cases pair with
     | mk v' ty =>
-    apply Imperative.EvalStmts.stmts_some_sem
+    apply Imperative.EvalBlock.stmts_some_sem
     apply EvalStatementContractInitVar <;> try assumption
     apply Hndef <;> simp_all
     unfold updatedStates
@@ -740,7 +740,7 @@ theorem EvalStatementsContractInits :
     | mk pair v =>
     cases pair with
     | mk v' ty =>
-    apply Imperative.EvalStmts.stmts_some_sem
+    apply Imperative.EvalBlock.stmts_some_sem
     apply EvalStatementContractInit <;> try assumption
     apply Hndef <;> simp_all
     unfold updatedStates
@@ -861,12 +861,12 @@ theorem EvalStatementsContractHavocVars :
   case nil =>
     have Heq := HavocVarsEmpty Hhav
     simp_all
-    exact Imperative.EvalStmts.stmts_none_sem
+    exact Imperative.EvalBlock.stmts_none_sem
   case cons h t ih =>
     simp [createHavoc]
     cases Hhav with
     | update_some Hup Hhav =>
-    apply Imperative.EvalStmts.stmts_some_sem
+    apply Imperative.EvalBlock.stmts_some_sem
     apply EvalStmtRefinesContract
     apply Imperative.EvalStmt.cmd_sem
     apply EvalCommand.cmd_sem
@@ -3430,7 +3430,7 @@ theorem callElimStatementCorrect :
   WF.WFProgramProp p →
   BoogieGenState.WF γ →
   (∀ v, v ∈ γ.generated ↔ ((σ v).isSome ∧ BoogieIdent.isTemp v)) →
-  (Except.ok sts, γ') = (CallElim.runCallElimWith' [st] (CallElim.callElimStmts · p) γ) →
+  (Except.ok sts, γ') = (CallElim.runCallElimWith' [st] (CallElim.callElimBlock · p) γ) →
   -- NOTE: The theorem does not expect the same store due to inserting new temp variables
   exists σ'',
     Inits σ' σ'' ∧
@@ -3438,7 +3438,7 @@ theorem callElimStatementCorrect :
     := by
   intros Hp Hgv Heval Hwfc Hwf Hwfp Hwfgen Hwfgenst Helim
   cases st <;>
-  simp [StateT.run, callElimStmts, callElimStmt,
+  simp [StateT.run, callElimBlock, callElimStmt,
         pure, ExceptT.pure, ExceptT.mk, StateT.pure,
         bind, ExceptT.bind, ExceptT.bindCont, StateT.bind,
         ] at Helim
@@ -3591,7 +3591,7 @@ theorem callElimStatementCorrect :
                       (argTrips.unzip.fst.unzip.fst ++
                       outTrips.unzip.fst.unzip.fst ++
                       oldTrips.unzip.fst.unzip.fst) := by
-        simp only [EvalStmtsEmpty Heval2] at *
+        simp only [EvalBlockEmpty Heval2] at *
         apply UpdateStatesNotDefMonotone ?_ Hupdate
         intros v Hin
         have Htemp : v.isTemp = true := by
