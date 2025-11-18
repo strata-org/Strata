@@ -126,8 +126,13 @@ def solverResult (vars : List (IdentT LMonoTy Visibility)) (ans : String)
   match verdict with
   | "sat"     =>
     let rawModel ← getModel rest
-    let model ← processModel vars rawModel ctx E
-    .ok (.sat model)
+    -- We suppress any counterexample processing errors.
+    -- Likely, these would be because of the suboptimal implementation
+    -- of the counterexample parser, which shouldn't hold back useful
+    -- feedback (i.e., problem was `sat`) from the user.
+    match (processModel vars rawModel ctx E) with
+    | .ok model => .ok (.sat model)
+    | .error _model_err => (.ok (.sat []))
   | "unsat"   =>  .ok .unsat
   | "unknown" =>  .ok .unknown
   | _     =>  .error ans
