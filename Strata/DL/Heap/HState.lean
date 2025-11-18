@@ -52,7 +52,7 @@ instance : Repr HState where
 
 namespace HState
 
--- Helper function to add a variable to Lambda state
+-- Helper function to add a variable to Lambda state (for init - always adds to current scope)
 private def addToLambdaState (lambdaState : LState String) (name : String) (ty : Option Lambda.LMonoTy) (expr : Lambda.LExpr Lambda.LMonoTy String) : LState String :=
   -- Add to the top scope (most recent scope)
   match lambdaState.state with
@@ -63,6 +63,44 @@ private def addToLambdaState (lambdaState : LState String) (name : String) (ty :
     -- Add to the top scope
     let newTopScope := topScope.insert name (ty, expr)
     { lambdaState with state := newTopScope :: restScopes }
+
+-- Helper function to update a variable in Lambda state (for set - updates in current scope if exists, else outer scope if exists, else current scope)
+private def updateInLambdaState (lambdaState : LState String) (name : String) (ty : Option Lambda.LMonoTy) (expr : Lambda.LExpr Lambda.LMonoTy String) : LState String :=
+  -- First check if variable exists in current scope
+  match lambdaState.state with
+  | [] =>
+    -- No scopes exist, create a new one
+    { lambdaState with state := [[(name, (ty, expr))]] }
+  | topScope :: restScopes =>
+    -- Check if variable exists in current scope
+    if topScope.contains name then
+      -- Update in current scope
+      let newTopScope := topScope.insert name (ty, expr)
+      { lambdaState with state := newTopScope :: restScopes }
+    else
+      -- Variable not in current scope, search outer scopes
+      let rec updateInOuterScopes (scopes : List (Lambda.Scope String)) : Option (List (Lambda.Scope String)) :=
+        match scopes with
+        | [] => none  -- Variable not found in any scope
+        | scope :: rest =>
+          if scope.contains name then
+            -- Found in this scope, update it
+            let updatedScope := scope.insert name (ty, expr)
+            some (updatedScope :: rest)
+          else
+            -- Not in this scope, continue searching
+            match updateInOuterScopes rest with
+            | some updatedRest => some (scope :: updatedRest)
+            | none => none
+      
+      match updateInOuterScopes restScopes with
+      | some updatedRestScopes =>
+        -- Variable found in outer scope, update it
+        { lambdaState with state := topScope :: updatedRestScopes }
+      | none =>
+        -- Variable not found anywhere, add to current scope
+        let newTopScope := topScope.insert name (ty, expr)
+        { lambdaState with state := newTopScope :: restScopes }
 
 -- Helper function to lookup a variable in Lambda state
 private def lookupInLambdaState (lambdaState : LState String) (name : String) : Option (Lambda.LExpr Lambda.LMonoTy String) :=
@@ -87,8 +125,8 @@ def empty : HState :=
 
 -- Heap Variable Environment Operations
 
--- Set a heap variable with its type and value
-def setHeapVar (state : HState) (name : String) (ty : HMonoTy) (value : HExpr) : HState :=
+-- Initialize a heap variable (for init - always creates in current scope, supports shadowing)
+def initHeapVar (state : HState) (name : String) (ty : HMonoTy) (value : HExpr) : HState :=
   match value with
   | .lambda lambdaExpr =>
     -- Pure Lambda expression - store ONLY in lambdaState (proper dialect separation)
@@ -98,6 +136,23 @@ def setHeapVar (state : HState) (name : String) (ty : HMonoTy) (value : HExpr) :
   | _ =>
     -- Heap-specific expression (address, deferred op, etc.) - store ONLY in heapVars
     { state with heapVars := state.heapVars.insert name (ty, value) }
+
+-- Update a heap variable (for set - updates in current scope if exists, else outer scope if exists, else current scope)
+def updateHeapVar (state : HState) (name : String) (ty : HMonoTy) (value : HExpr) : HState :=
+  match value with
+  | .lambda lambdaExpr =>
+    -- Pure Lambda expression - update in lambdaState
+    let lambdaTy := ty.toLambda?
+    let newLambdaState := updateInLambdaState state.lambdaState name lambdaTy lambdaExpr
+    { state with lambdaState := newLambdaState }
+  | _ =>
+    -- Heap-specific expression - update in heapVars (heapVars is flat, so just update directly)
+    { state with heapVars := state.heapVars.insert name (ty, value) }
+
+-- Set a heap variable with its type and value (legacy function, kept for compatibility)
+-- For new code, use initHeapVar or updateHeapVar explicitly
+def setHeapVar (state : HState) (name : String) (ty : HMonoTy) (value : HExpr) : HState :=
+  initHeapVar state name ty value
 
 -- Get a heap variable (returns type and value)
 def getHeapVar (state : HState) (name : String) : Option (HMonoTy × HExpr) :=

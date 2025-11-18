@@ -40,7 +40,7 @@ partial def evalStatementWithContext (stmt : HeapStrataStatement) (ctx : HeapEva
     dbg_trace s!"[DEBUG] Executing init: {name} : {repr ty} = {repr expr}"
     let (newState, value) := Heap.evalHExpr ctx.hstate expr
     dbg_trace s!"[DEBUG] Evaluated init expr to: {repr value}"
-    let finalState := HState.setHeapVar newState name ty value
+    let finalState := HState.initHeapVar newState name ty value
     { ctx with hstate := finalState }
 
   | .cmd (.set name expr _) =>
@@ -52,7 +52,7 @@ partial def evalStatementWithContext (stmt : HeapStrataStatement) (ctx : HeapEva
     let ty := match HState.getHeapVarType newState name with
       | some existingTy => existingTy
       | none => HMonoTy.int  -- Default fallback
-    let finalState := HState.setHeapVar newState name ty value
+    let finalState := HState.updateHeapVar newState name ty value
     dbg_trace s!"[DEBUG] Set {name} to {repr value}"
     { ctx with hstate := finalState }
 
@@ -82,7 +82,7 @@ partial def evalStatementWithContext (stmt : HeapStrataStatement) (ctx : HeapEva
     match stmt with
     | .cmd (.havoc name _) =>
       -- Havoc operation - set variable to unknown value (we'll use 0 as default)
-      let finalState := HState.setHeapVar ctx.hstate name HMonoTy.int (HExpr.int 0)
+      let finalState := HState.updateHeapVar ctx.hstate name HMonoTy.int (HExpr.int 0)
       { ctx with hstate := finalState }
     | .cmd (.assert _ _ _) =>
       -- Assertion - for now, just ignore (assume it passes)
