@@ -21,7 +21,7 @@ open Std (ToFormat Format format)
 def typeCheck (C: Boogie.Expression.TyContext) (Env : Boogie.Expression.TyEnv) (func : Function) :
   Except Format (Function × Boogie.Expression.TyEnv) := do
   -- (FIXME) Very similar to `Lambda.inferOp`, except that the body is annotated
-  -- using `LExprT.fromLExpr`. Can we share code here?
+  -- using `LExprT.resolve`. Can we share code here?
   --
   -- `LFunc.type` below will also catch any ill-formed functions (e.g.,
   -- where there are duplicates in the formals, etc.).
@@ -35,7 +35,7 @@ def typeCheck (C: Boogie.Expression.TyContext) (Env : Boogie.Expression.TyEnv) (
     let Env := Env.addToContext func.inputPolyTypes
     -- Type check and annotate the body, and ensure that it unifies with the
     -- return type.
-    let (bodya, Env) ← LExpr.fromLExpr C Env body
+    let (bodya, Env) ← LExpr.resolve C Env body
     let bodyty := bodya.toLMonoTy
     let (retty, Env) ← func.outputPolyType.instantiateWithCheck C Env
     let S ← Constraints.unify [(retty, bodyty)] Env.stateSubstInfo

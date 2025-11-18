@@ -65,7 +65,7 @@ def inferType (C: LContext BoogieLParams) (Env: TEnv Visibility) (c : Cmd Expres
       let _ ← Env.freeVarCheck e f!"[{c}]"
       .ok Env
   let e := OldExpressions.normalizeOldExpr e
-  let (ea, T) ← LExpr.fromLExpr C T e
+  let (ea, T) ← LExpr.resolve C T e
   let ety := ea.toLMonoTy
   return (ea.unresolved, (.forAll [] ety), T)
 

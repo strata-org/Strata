@@ -57,7 +57,7 @@ def typeCheckCmd (C: LContext BoogieLParams) (Env : TEnv Visibility) (P : Progra
            let ret_lhs_constraints := lhs_tys.zip ret_mtys
            -- Infer the types of the actuals and unify with the types of the
            -- procedure's formals.
-           let (argsa, Env) ← Lambda.LExpr.fromLExprs C Env args
+           let (argsa, Env) ← Lambda.LExpr.resolves C Env args
            let args_tys := argsa.map LExpr.toLMonoTy
            let args' := argsa.map $ LExpr.unresolved
            let (inp_sig, Env) ← LMonoTySignature.instantiate C Env proc.header.typeArgs proc.header.inputs
@@ -92,7 +92,7 @@ where
 
         | .ite cond ⟨ tss ⟩ ⟨ ess ⟩ md => do
           let _ ← Env.freeVarCheck cond f!"[{s}]"
-          let (conda, Env) ← LExpr.fromLExpr C Env cond
+          let (conda, Env) ← LExpr.resolve C Env cond
           let condty := conda.toLMonoTy
           match condty with
           | .tcons "bool" [] =>
@@ -104,18 +104,18 @@ where
 
         | .loop guard measure invariant ⟨ bss ⟩ md => do
           let _ ← Env.freeVarCheck guard f!"[{s}]"
-          let (conda, Env) ← LExpr.fromLExpr C Env guard
+          let (conda, Env) ← LExpr.resolve C Env guard
           let condty := conda.toLMonoTy
           let (mt, Env) ← match measure with
           | .some m => do
             let _ ← Env.freeVarCheck m f!"[{s}]"
-            let (ma, Env) ← LExpr.fromLExpr C Env m
+            let (ma, Env) ← LExpr.resolve C Env m
             .ok (some ma, Env)
           | _ => .ok (none, Env)
           let (it, Env) ← match invariant with
           | .some i => do
             let _ ← Env.freeVarCheck i f!"[{s}]"
-            let (ia, Env) ← LExpr.fromLExpr C Env i
+            let (ia, Env) ← LExpr.resolve C Env i
             .ok (some ia, Env)
           | _ => .ok (none, Env)
           let mty := mt.map LExpr.toLMonoTy

@@ -211,7 +211,7 @@ def inferConst (C: LContext T) (Env : TEnv T.IDMeta) (c : LConst) :
                 Known Types: {C.knownTypes}")
 
 mutual
-partial def fromLExprAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
+partial def resolveAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     Except Format (LExprT T.mono × TEnv T.IDMeta) :=
   open LTy.Syntax in do
   match e with
@@ -225,11 +225,11 @@ partial def fromLExprAux (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono
   | .fvar m x fty =>
     let (ty, Env) ← inferFVar C Env x fty
     .ok (.fvar ⟨m, ty⟩ x ty, Env)
-  | .app m e1 e2   => fromLExprAux.app C Env m e1 e2
-  | .abs m ty e    => fromLExprAux.abs C Env m ty e
-  | .quant m qk ty tr e => fromLExprAux.quant C Env m qk ty tr e
-  | .eq m e1 e2    => fromLExprAux.eq C Env m e1 e2
-  | .ite m c th el => fromLExprAux.ite C Env m c th el
+  | .app m e1 e2   => resolveAux.app C Env m e1 e2
+  | .abs m ty e    => resolveAux.abs C Env m ty e
+  | .quant m qk ty tr e => resolveAux.quant C Env m qk ty tr e
+  | .eq m e1 e2    => resolveAux.eq C Env m e1 e2
+  | .ite m c th el => resolveAux.ite C Env m c th el
 
 /-- Infer the type of an operation `.op o oty`, where an operation is defined in
   the factory. -/
@@ -255,7 +255,7 @@ partial def inferOp (C: LContext T) (Env : TEnv T.IDMeta) (o : T.Identifier) (ot
             let Env := Env.addToContext func.inputPolyTypes
             -- Type check the body and ensure that it unifies with the return type.
             -- let (bodyty, Env) ← infer Env body
-            let (body_typed, Env) ← fromLExprAux C Env body
+            let (body_typed, Env) ← resolveAux C Env body
             let bodyty := body_typed.toLMonoTy
             let (retty, Env) ← func.outputPolyType.instantiateWithCheck C Env
             let S ← Constraints.unify [(retty, bodyty)] Env.stateSubstInfo
@@ -272,27 +272,27 @@ partial def inferOp (C: LContext T) (Env : TEnv T.IDMeta) (o : T.Identifier) (ot
         let S ← Constraints.unify [(ty, oty)] Env.stateSubstInfo
         .ok (ty, TEnv.updateSubst Env S)
 
-partial def fromLExprAux.ite (C: LContext T) (Env : TEnv T.IDMeta) (m : T.Metadata) (c th el : LExpr ⟨T, LMonoTy⟩) := do
-  let (ct, Env) ← fromLExprAux C Env c
-  let (tt, Env) ← fromLExprAux C Env th
-  let (et, Env) ← fromLExprAux C Env el
+partial def resolveAux.ite (C: LContext T) (Env : TEnv T.IDMeta) (m : T.Metadata) (c th el : LExpr ⟨T, LMonoTy⟩) := do
+  let (ct, Env) ← resolveAux C Env c
+  let (tt, Env) ← resolveAux C Env th
+  let (et, Env) ← resolveAux C Env el
   let cty := ct.toLMonoTy
   let tty := tt.toLMonoTy
   let ety := et.toLMonoTy
   let S ← Constraints.unify [(cty, LMonoTy.bool), (tty, ety)] Env.stateSubstInfo
   .ok (.ite ⟨m, tty⟩ ct tt et, Env.updateSubst S)
 
-partial def fromLExprAux.eq (C: LContext T) (Env : TEnv T.IDMeta) (m: T.Metadata) (e1 e2 : LExpr T.mono) := do
+partial def resolveAux.eq (C: LContext T) (Env : TEnv T.IDMeta) (m: T.Metadata) (e1 e2 : LExpr T.mono) := do
   -- `.eq A B` is well-typed if there is some instantiation of
   -- type parameters in `A` and `B` that makes them have the same type.
-  let (e1t, Env) ← fromLExprAux C Env e1
-  let (e2t, Env) ← fromLExprAux C Env e2
+  let (e1t, Env) ← resolveAux C Env e1
+  let (e2t, Env) ← resolveAux C Env e2
   let ty1 := e1t.toLMonoTy
   let ty2 := e2t.toLMonoTy
   let S ← Constraints.unify [(ty1, ty2)] Env.stateSubstInfo
   .ok (.eq ⟨m, LMonoTy.bool⟩ e1t e2t, TEnv.updateSubst Env S)
 
-partial def fromLExprAux.abs (C: LContext T) (Env : TEnv T.IDMeta) (m: T.Metadata) (bty : Option LMonoTy) (e : LExpr T.mono): Except Format (LExprT T.mono × TEnv T.IDMeta) := do
+partial def resolveAux.abs (C: LContext T) (Env : TEnv T.IDMeta) (m: T.Metadata) (bty : Option LMonoTy) (e : LExpr T.mono): Except Format (LExprT T.mono × TEnv T.IDMeta) := do
   -- Generate a fresh expression variable to stand in for the bound variable
   -- For the bound variable, use type annotation if present. Otherwise,
   -- generate a fresh type variable.
@@ -300,7 +300,7 @@ partial def fromLExprAux.abs (C: LContext T) (Env : TEnv T.IDMeta) (m: T.Metadat
   -- Construct `e'` from `e`, where the bound variable has been replaced by
   -- `xv`.
   let e' := LExpr.varOpen 0 (xv, some xty) e
-  let (et, Env) ← fromLExprAux C Env e'
+  let (et, Env) ← resolveAux C Env e'
   let etclosed := .varCloseT 0 xv et
   let ety := etclosed.toLMonoTy
   let mty := LMonoTy.subst Env.stateSubstInfo.subst (.tcons "arrow" [xty, ety])
@@ -312,13 +312,13 @@ partial def fromLExprAux.abs (C: LContext T) (Env : TEnv T.IDMeta) (m: T.Metadat
   let Env := Env.eraseFromContext xv
   .ok ((.abs ⟨m, mty⟩ bty etclosed), Env)
 
-partial def fromLExprAux.quant (C: LContext T) (Env : TEnv T.IDMeta) (m: T.Metadata) (qk : QuantifierKind) (bty : Option LMonoTy)
+partial def resolveAux.quant (C: LContext T) (Env : TEnv T.IDMeta) (m: T.Metadata) (qk : QuantifierKind) (bty : Option LMonoTy)
     (triggers e : LExpr T.mono): Except Format (LExprT T.mono × TEnv T.IDMeta) := do
   let (xv, xty, Env) ← typeBoundVar C Env bty
   let e' := LExpr.varOpen 0 (xv, some xty) e
   let triggers' := LExpr.varOpen 0 (xv, some xty) triggers
-  let (et, Env) ← fromLExprAux C Env e'
-  let (triggersT, Env) ← fromLExprAux C Env triggers'
+  let (et, Env) ← resolveAux C Env e'
+  let (triggersT, Env) ← resolveAux C Env triggers'
   let ety := et.toLMonoTy
   let xty := LMonoTy.subst Env.stateSubstInfo.subst xty
   let etclosed := Lambda.LExpr.varCloseT 0 xv et
@@ -332,10 +332,10 @@ partial def fromLExprAux.quant (C: LContext T) (Env : TEnv T.IDMeta) (m: T.Metad
   else
     .ok (.quant ⟨m, xty⟩ qk xty triggersClosed etclosed, Env)
 
-partial def fromLExprAux.app (C: LContext T) (Env : TEnv T.IDMeta) (m: T.Metadata) (e1 e2 : LExpr T.mono) := do
-  let (e1t, Env) ← fromLExprAux C Env e1
+partial def resolveAux.app (C: LContext T) (Env : TEnv T.IDMeta) (m: T.Metadata) (e1 e2 : LExpr T.mono) := do
+  let (e1t, Env) ← resolveAux C Env e1
   let ty1 := e1t.toLMonoTy
-  let (e2t, Env) ← fromLExprAux C Env e2
+  let (e2t, Env) ← resolveAux C Env e2
   let ty2 := e2t.toLMonoTy
   -- `freshty` is the type variable whose identifier is `fresh_name`. It denotes
   -- the type of `(.app e1 e2)`.
@@ -351,15 +351,15 @@ partial def fromLExprAux.app (C: LContext T) (Env : TEnv T.IDMeta) (m: T.Metadat
   let S := { S with subst := S.subst.remove fresh_name, isWF := hWF }
   .ok (.app ⟨m, mty⟩ e1t e2t, TEnv.updateSubst Env S)
 
-protected partial def fromLExpr (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
+protected partial def resolve (C: LContext T) (Env : TEnv T.IDMeta) (e : LExpr T.mono) :
     Except Format (LExprT T.mono × TEnv T.IDMeta) := do
-  let (et, Env) ← fromLExprAux C Env e
+  let (et, Env) ← resolveAux C Env e
   .ok (LExpr.applySubstT et Env.stateSubstInfo.subst, Env)
 
 end
 
 
-protected def fromLExprs (C: LContext T) (Env : TEnv T.IDMeta) (es : List (LExpr T.mono)) :
+protected def resolves (C: LContext T) (Env : TEnv T.IDMeta) (es : List (LExpr T.mono)) :
     Except Format (List (LExprT T.mono) × TEnv T.IDMeta) := do
   go Env es []
   where
@@ -368,7 +368,7 @@ protected def fromLExprs (C: LContext T) (Env : TEnv T.IDMeta) (es : List (LExpr
       match rest with
       | [] => .ok (acc.reverse, Env)
       | e :: erest =>
-        let (et, T) ← LExpr.fromLExpr C Env e
+        let (et, T) ← LExpr.resolve C Env e
         go T erest (et :: acc)
 
 end LExpr
@@ -380,7 +380,7 @@ Annotate an `LExpr e` with inferred monotypes.
 -/
 def LExpr.annotate (C: LContext T) (Env : TEnv T.IDMeta) (e : (LExpr T.mono)) :
     Except Format (LExpr T.mono × TEnv T.IDMeta) := do
-  let (e_a, Env) ← LExpr.fromLExpr C Env e
+  let (e_a, Env) ← LExpr.resolve C Env e
   return (unresolved e_a, Env)
 
 ---------------------------------------------------------------------

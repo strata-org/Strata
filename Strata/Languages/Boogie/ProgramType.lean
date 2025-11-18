@@ -59,13 +59,13 @@ def typeCheck (C: Boogie.Expression.TyContext) (Env : Boogie.Expression.TyEnv) (
             .ok (.type td, C, Env)
 
       | .ax a _ =>
-        let (ae, Env) ← LExpr.fromLExpr C Env a.e
+        let (ae, Env) ← LExpr.resolve C Env a.e
         match ae.toLMonoTy with
         | .bool => .ok (.ax { a with e := ae.unresolved }, C, Env)
         | _ => .error f!"Axiom has non-boolean type: {a}"
 
       | .distinct l es md =>
-        let es' ← es.mapM (LExpr.fromLExpr C Env)
+        let es' ← es.mapM (LExpr.resolve C Env)
         .ok (.distinct l (es'.map (λ e => e.fst.unresolved)) md, C, Env)
 
       | .proc proc _ =>
