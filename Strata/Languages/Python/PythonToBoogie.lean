@@ -276,7 +276,7 @@ partial def PyStmtToBoogie (jmp_targets: List String) (s : Python.stmt SourceRan
         [.block "try_block" {ss := var_decls ++ body.val.toList.flatMap (PyStmtToBoogie new_jmp_stack) ++ entry_except_handlers ++ except_handlers}]
     | .FunctionDef _ _ _ _ _ _ _ _ => panic! "Can't translate FunctionDef to Boogie statement"
     | .If _ test then_b else_b =>
-      [.ite (PyExprToBoogie test) {ss := (ArrPyStmtToBoogie then_b.val)} {ss := (ArrPyStmtToBoogie else_b.val)}]
+      [.ite (PyExprToBoogie test) {ss := (ArrPyStmtToBoogie then_b.val)} {ss := (ArrPyStmtToBoogie else_b.val)}] -- TODO: fix this
     | _ =>
       panic! s!"Unsupported {repr s}"
   if callCanThrow s then
@@ -322,15 +322,28 @@ def pythonFuncToBoogie (name : String) (body: Array (Python.stmt SourceRange)) (
     body
   }
 
+def PyFuncDefToBoogie (s: Python.stmt SourceRange) : Boogie.Decl :=
+  match s with
+  | .FunctionDef _ name _args body _ _ret _ _ =>
+    .proc (pythonFuncToBoogie name.val body.val default)
+  | _ => panic! s!"Expected function def: {repr s}"
+
 def pythonToBoogie (pgm: Strata.Program): Boogie.Program :=
   let pyCmds := toPyCommands pgm.commands
   assert! pyCmds.size == 1
   let insideMod := unwrapModule pyCmds[0]!
+  let func_defs := insideMod.filter (λ s => match s with
+  | .FunctionDef _ _ _ _ _ _ _ _ => true
+  | _ => false)
+
   let non_func_blocks := insideMod.filter (λ s => match s with
   | .FunctionDef _ _ _ _ _ _ _ _ => false
   | _ => true)
 
-  {decls := [.proc (pythonFuncToBoogie "__main__" non_func_blocks default)]}
+  let globals := [(.var "__name__" (.forAll [] mty[string]) (.strConst "__main__"))]
+  let func_defs := func_defs.map PyFuncDefToBoogie
+
+  {decls := globals ++ func_defs.toList ++ [.proc (pythonFuncToBoogie "__main__" non_func_blocks default)]}
 
   -- let varDecls : List Boogie.Statement := []
   -- let body := varDecls ++ non_func_blocks ++ [.block "end" {ss := []}]
