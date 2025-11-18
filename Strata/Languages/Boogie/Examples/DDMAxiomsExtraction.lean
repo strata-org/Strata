@@ -86,10 +86,10 @@ def extractAxiomsWithFreeTypeVars (pgm: Program) (typeArgs: List String): (List 
 
 /--
 info: program Boogie;
-type k;
-type v;
-axiom [updateSelect]:forall(((m):(Map v k)),((kk):(k))),((vv):(v))::((m)[kk:=vv])[kk]==vv;
-axiom [updatePreserves]:forall((((m):(Map v k)),((okk):(k))),((kk):(k))),((vv):(v))::((m)[kk:=vv])[okk]==(m)[okk];
+type k  ;
+type v  ;
+axiom [ updateSelect ]: forall (((m) :  (Map v k)) , ((kk) :  (k))) , ((vv) :  (v)) :: ((m) [ kk := vv ]) [ kk ] == vv ;
+axiom [ updatePreserves ]: forall ((((m) :  (Map v k)) , ((okk) :  (k))) , ((kk) :  (k))) , ((vv) :  (v)) :: ((m) [ kk := vv ]) [ okk ] == (m) [ okk ] ;
 -/
 #guard_msgs in
 #eval IO.println examplePgm.format.render
