@@ -401,16 +401,17 @@ abbrev LExpr.allUntyped {T : LExprParamsT} (m : T.base.Metadata) := @LExpr.quant
 abbrev LExpr.existUntypedTr {T : LExprParamsT} (m : T.base.Metadata) := @LExpr.quant T m .exist .none
 abbrev LExpr.existUntyped {T : LExprParamsT} (m : T.base.Metadata) := @LExpr.quant T m .exist .none (LExpr.noTrigger m)
 
-def LExpr.sizeOf (T : LExprParamsT) [SizeOf T.base.IDMeta] : LExpr T → Nat
-  | LExpr.const _ _ | LExpr.op _ _ _ | LExpr.bvar _ _ | LExpr.fvar _ _ _ => 1
-  | LExpr.abs _ _ e => 2 + LExpr.sizeOf T e
-  | LExpr.quant _ _ _ tr e => 3 + LExpr.sizeOf T e + LExpr.sizeOf T tr
-  | LExpr.app _ fn e => 3 + LExpr.sizeOf T fn + LExpr.sizeOf T e
-  | LExpr.ite _ c t e => 4 + LExpr.sizeOf T c + LExpr.sizeOf T t + LExpr.sizeOf T e
-  | LExpr.eq _ e1 e2 => 3 + LExpr.sizeOf T e1 + LExpr.sizeOf T e2
+@[simp]
+def LExpr.sizeOf: LExpr T → Nat
+  | LExpr.abs _ _ e => 2 + sizeOf e
+  | LExpr.quant _ _ _ tr e => 3 + sizeOf e + sizeOf tr
+  | LExpr.app _ fn e => 3 + sizeOf fn + sizeOf e
+  | LExpr.ite _ c t e => 4 + sizeOf c + sizeOf t + sizeOf e
+  | LExpr.eq _ e1 e2 => 3 + sizeOf e1 + sizeOf e2
+  | _ => 1
 
-instance (T : LExprParamsT) [SizeOf T.base.IDMeta] : SizeOf (LExpr T) where
-  sizeOf := LExpr.sizeOf T
+instance  : SizeOf (LExpr T) where
+  sizeOf := LExpr.sizeOf
 
 /--
 Get type of a constant `c`

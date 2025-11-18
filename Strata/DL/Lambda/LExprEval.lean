@@ -19,8 +19,8 @@ open Std (ToFormat Format format)
 
 namespace LExpr
 
-variable {T : LExprParams} [BEq T.Metadata] [DecidableEq T.Metadata] [ToFormat T.Metadata]
-         [Inhabited T.IDMeta] [BEq T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [Traceable EvalProvenance T.Metadata]
+variable {T : LExprParamsT} {TBase : LExprParams} [BEq T.base.Metadata] [BEq T.base.IDMeta] [BEq T.TypeType] [DecidableEq T.base.Metadata] [DecidableEq TBase.IDMeta] [ToFormat T.base.Metadata]
+         [Inhabited T.base.IDMeta] [BEq T.base.IDMeta] [DecidableEq T.base.IDMeta] [ToFormat T.base.IDMeta] [Traceable EvalProvenance TBase.Metadata]
 
 inductive EvalProvenance
   | Original -- The metadata of the original expression
@@ -31,7 +31,7 @@ inductive EvalProvenance
 Check for boolean equality of two expressions `e1` and `e2` after erasing any
 type annotations.
 -/
-def eqModuloTypes {GenericTy} [DecidableEq GenericTy] (e1 e2 : LExpr ⟨T, GenericTy⟩) : Bool :=
+def eqModuloTypes (e1 e2 : LExpr T) : Bool :=
   e1.eraseMetadata.eraseTypes == e2.eraseMetadata.eraseTypes
 
 /--
@@ -40,8 +40,8 @@ Canonical values of `LExpr`s.
 Equality is simply `==` (or more accurately, `eqModuloTypes`) for these
 `LExpr`s. Also see `eql` for a version that can tolerate nested metadata.
 -/
-def isCanonicalValue {GenericTy} (σ : LState T) (e : LExpr ⟨T, GenericTy⟩) : Bool :=
-  match e with
+def isCanonicalValue (σ : LState T.base) (e : LExpr T) : Bool :=
+  match he: e with
   | .const _ _ => true
   | .abs _ _ _ =>
     -- We're using the locally nameless representation, which guarantees that
@@ -49,27 +49,29 @@ def isCanonicalValue {GenericTy} (σ : LState T) (e : LExpr ⟨T, GenericTy⟩) 
     -- So we could simplify the following to `closed e`, but leave it as is for
     -- clarity.
     LExpr.closed e
-  | _ =>
-    match Factory.callOfLFunc σ.config.factory e with
-    | some (_, args, f) => f.isConstr && List.all (args.map (isCanonicalValue σ)) id
+  | e' =>
+    match h: Factory.callOfLFunc σ.config.factory e with
+    | some (_, args, f) =>
+      f.isConstr && List.all (args.attach.map (fun ⟨ x, _⟩ =>
+        have : x.sizeOf < e'.sizeOf := by
+          have Hsmall := Factory.callOfLFunc_smaller h; grind
+      (isCanonicalValue σ x))) id
     | none => false
-  decreasing_by
-    sorry -- TODO: Need help
+  termination_by e.sizeOf
 
 /--
 Equality of canonical values `e1` and `e2`.
 
 We can tolerate nested metadata here.
 -/
-def eql {GenericTy} [DecidableEq GenericTy]
-  (σ : LState T) (e1 e2 : LExpr ⟨T, GenericTy⟩)
+def eql (σ : LState T.base) (e1 e2 : LExpr T)
   (_h1 : isCanonicalValue σ e1) (_h2 : isCanonicalValue σ e2) : Bool :=
   if eqModuloTypes e1 e2 then
     true
   else
     eqModuloTypes e1 e2
 
-instance [ToFormat GenericTy]: ToFormat (Except Format (LExpr ⟨T, GenericTy⟩)) where
+instance [ToFormat T.TypeType]: ToFormat (Except Format (LExpr T)) where
   format x := match x with
               | .ok e => format e
               | .error err => err
@@ -80,9 +82,9 @@ eta-expansion.
 
 E.g., `mkAbsOfArity 2 core` will give `λxλy ((core y) x)`.
 -/
-def mkAbsOfArity {GenericTy} (arity : Nat) (core : (LExpr ⟨T, GenericTy⟩)) : (LExpr ⟨T, GenericTy⟩) :=
+def mkAbsOfArity (arity : Nat) (core : LExpr T) : (LExpr T) :=
   go 0 arity core
-  where go (bvarcount arity : Nat) (core : (LExpr ⟨T, GenericTy⟩)) : (LExpr ⟨T, GenericTy⟩) :=
+  where go (bvarcount arity : Nat) (core : LExpr T) : (LExpr T) :=
   match arity with
   | 0 => core
   | n + 1 =>
@@ -103,8 +105,8 @@ expressions, along with supporting dynamically-typed languages.
 Currently evaluator only supports LExpr with LMonoTy because LFuncs registered
 at Factory must have LMonoTy.
 -/
-partial def eval (n : Nat) (σ : LState T) (e : (LExpr T.mono))
-    : LExpr T.mono :=
+partial def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
+    : LExpr TBase.mono :=
   match n with
   | 0 => e
   | n' + 1 =>
@@ -122,7 +124,7 @@ partial def eval (n : Nat) (σ : LState T) (e : (LExpr T.mono))
           let new_e := substFvars body input_map
           eval n' σ new_e
         else
-          let new_e := @mkApp T.mono e.metadata op_expr args
+          let new_e := @mkApp TBase.mono e.metadata op_expr args
           if args.all (isCanonicalValue σ) then
             -- All arguments in the function call are concrete.
             -- We can, provided a denotation function, evaluate this function
@@ -136,7 +138,7 @@ partial def eval (n : Nat) (σ : LState T) (e : (LExpr T.mono))
         -- Not a call of a factory function.
         evalCore n' σ e
 
-partial def evalCore  (n' : Nat) (σ : LState T) (e : LExpr T.mono) : LExpr T.mono :=
+partial def evalCore  (n' : Nat) (σ : LState TBase) (e : LExpr TBase.mono) : LExpr TBase.mono :=
   match e with
   | .const _ _  => e
   | .op _ _ _     => e
@@ -150,7 +152,7 @@ partial def evalCore  (n' : Nat) (σ : LState T) (e : LExpr T.mono) : LExpr T.mo
   | .eq m e1 e2 => evalEq n' σ m e1 e2
   | .ite m c t f => evalIte n' σ m c t f
 
-partial def evalIte (n' : Nat) (σ : LState T) (m: T.Metadata) (c t f : LExpr T.mono) : LExpr T.mono :=
+partial def evalIte (n' : Nat) (σ : LState TBase) (m: TBase.Metadata) (c t f : LExpr TBase.mono) : LExpr TBase.mono :=
   let c' := eval n' σ c
   match c' with
   | .true _ => eval n' σ t
@@ -166,7 +168,7 @@ partial def evalIte (n' : Nat) (σ : LState T) (m: T.Metadata) (c t f : LExpr T.
     let f' := substFvarsFromState σ f
     .ite m c' t' f'
 
-partial def evalEq (n' : Nat) (σ : LState T) (m: T.Metadata) (e1 e2 : LExpr T.mono) : LExpr T.mono :=
+partial def evalEq (n' : Nat) (σ : LState TBase) (m: TBase.Metadata) (e1 e2 : LExpr TBase.mono) : LExpr TBase.mono :=
   open LTy.Syntax in
   let e1' := eval n' σ e1
   let e2' := eval n' σ e2
@@ -180,13 +182,13 @@ partial def evalEq (n' : Nat) (σ : LState T) (m: T.Metadata) (e1 e2 : LExpr T.m
   else
     .eq m e1' e2'
 
-partial def evalApp (n' : Nat) (σ : LState T) (e e1 e2 : LExpr T.mono) : LExpr T.mono :=
+partial def evalApp (n' : Nat) (σ : LState TBase) (e e1 e2 : LExpr TBase.mono) : LExpr TBase.mono :=
   let e1' := eval n' σ e1
   let e2' := eval n' σ e2
   match e1' with
   | .abs mAbs _ e1' =>
-    let replacer := fun (replacementVar: T.Metadata) =>
-     (@replaceMetadata1 (T := T.mono) (
+    let replacer := fun (replacementVar: TBase.Metadata) =>
+     (@replaceMetadata1 (T := TBase.mono) (
       Traceable.combine
       [(EvalProvenance.Original,       e2'.metadata),
        (EvalProvenance.ReplacementVar, replacementVar),
@@ -200,7 +202,7 @@ partial def evalApp (n' : Nat) (σ : LState T) (e e1 e2 : LExpr T.mono) : LExpr 
       let e' := LExpr.app m e1' e2'
       -- In `e'`, we have already supplied one input to `fn`.
       -- Note that we can't have 0-arity Factory functions at this point.
-      let e'' := @mkAbsOfArity T LMonoTy (lfunc.inputs.length - 1) (e' : LExpr T.mono)
+      let e'' := @mkAbsOfArity TBase.mono (lfunc.inputs.length - 1) (e' : LExpr TBase.mono)
       eval n' σ e''
   | _ => .app e.metadata e1' e2'
 end
