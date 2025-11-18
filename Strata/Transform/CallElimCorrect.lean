@@ -238,10 +238,10 @@ theorem callElimStmtsNoExcept :
                 exfalso
                 apply Hne
                 simp [Option.isSome] at df
+                unfold BoogieIdent.unres at *
                 split at df <;> simp_all
                 apply Hne
                 simp [← ol, Lambda.LMonoTySignature.toTrivialLTy]
-                sorry -- TODO Need help
         . -- failed to get type for arguments, contradiction
           split at heq1
           . next x e heq1' =>
@@ -254,10 +254,10 @@ theorem callElimStmtsNoExcept :
             exfalso
             apply Hne
             simp [Option.isSome] at df
+            unfold BoogieIdent.unres at *
             split at df <;> simp_all
             apply Hne
             simp [← al, Lambda.LMonoTySignature.toTrivialLTy]
-            sorry -- TODO Need help
       . exfalso
         next proc Hfalse =>
         simp [Program.Procedure.find?] at Hfalse
@@ -268,8 +268,8 @@ theorem callElimStmtsNoExcept :
         cases wf with
         | mk wf =>
         simp [Program.Procedure.find?] at wf
+        unfold BoogieIdent.unres at *
         split at wf <;> simp_all
-        sorry -- TODO Need help
     . -- other case
       exfalso
       next st Hfalse =>
@@ -2268,33 +2268,28 @@ theorem substOldExpr_cons:
     unfold OldExpressions.substOld at H1
     split at H1 <;> simp_all
     unfold OldExpressions.substOld at H2
-    split at H2 <;> simp_all
-    sorry -- TODO: Need help
-    sorry -- TODO: Need help
-    sorry -- TODO: Need help
-    sorry -- TODO: Need help
-    sorry -- TODO: Need help
-    -- split at H2; split at H2
-    -- any_goals simp_all
-    -- simp [← H2.left] at *
-    -- have : Map.find? (List.map createOldVarsSubst.go t) h.fst.fst = none :=by
-    --   simp [Imperative.substNodup, createOldStoreSubst, createOldStoreSubst.go] at Hnd
-    --   have Hnd := Hnd.right
-    --   have : List.map (Prod.fst ∘ createOldStoreSubst.go) t = List.map (Prod.fst ∘ createOldVarsSubst.go) t := by
-    --     simp [createOldStoreSubst.go, createOldVarsSubst.go]
-    --   have : ¬ h.fst.fst ∈ List.map (Prod.fst ∘ createOldVarsSubst.go) t := by
-    --    rw[← this]
-    --    rw [List.nodup_append] at Hnd
-    --    false_or_by_contra
-    --    have Hnd := Hnd.right.right h.fst.fst (by assumption) h.fst.fst (by simp)
-    --    contradiction
-    --   apply Map.findNone_eq_notmem_mapfst.mp
-    --   simp only [List.map_map]
-    --   assumption
-    -- simp_all
-    -- split at H1 <;> try simp_all
-    -- split at H1 <;> try simp_all
-    -- simp [OldExpressions.substsOldExpr]
+    split at H2 <;> simp_all; grind
+    split at H2; split at H2
+    any_goals simp_all
+    simp [← H2.left] at *
+    have : Map.find? (List.map createOldVarsSubst.go t) h.fst.fst = none :=by
+      simp [Imperative.substNodup, createOldStoreSubst, createOldStoreSubst.go] at Hnd
+      have Hnd := Hnd.right
+      have : List.map (Prod.fst ∘ createOldStoreSubst.go) t = List.map (Prod.fst ∘ createOldVarsSubst.go) t := by
+        simp [createOldStoreSubst.go, createOldVarsSubst.go]
+      have : ¬ h.fst.fst ∈ List.map (Prod.fst ∘ createOldVarsSubst.go) t := by
+       rw[← this]
+       rw [List.nodup_append] at Hnd
+       false_or_by_contra
+       have Hnd := Hnd.right.right h.fst.fst (by assumption) h.fst.fst (by simp)
+       contradiction
+      apply Map.findNone_eq_notmem_mapfst.mp
+      simp only [List.map_map]
+      assumption
+    simp_all
+    split at H1 <;> try simp_all
+    split at H1 <;> try simp_all
+    simp [OldExpressions.substsOldExpr]
   any_goals simp [OldExpressions.substsOldExpr, OldExpressions.substOld, createOldVarsSubst, Map.isEmpty]
   any_goals (split <;> rename_i H; split at H)
   any_goals (simp_all [createOldVarsSubst];  rw [OldExpressions.substOldExpr_nil])
@@ -3382,41 +3377,40 @@ theorem substOldExprPostSubset:
   any_goals (apply List.append_subset.mpr; constructor <;> try apply List.Subset.trans (by assumption); try apply List.append_subset.mpr; constructor)
   any_goals (apply List.append_subset.mpr; constructor)
   any_goals apply List.Subset.assoc.mp
-  any_goals (apply List.Subset.subset_app_of_or_3; simp)
+  any_goals (solve | apply List.Subset.subset_app_of_or_3; simp)
   split <;> try split
   any_goals (split <;> try split)
   any_goals split
   any_goals (simp [Map.find?] at *)
   any_goals simp [Lambda.LExpr.LExpr.getVars]
-  any_goals (sorry) -- TODO: Need help for that proof
-  -- any_goals (apply substOldExprPostSubset'')
-  -- any_goals (try apply List.Subset.trans (by assumption))
-  -- any_goals (apply List.append_subset.mpr; constructor)
-  -- any_goals (repeat apply List.Subset.assoc.mp)
-  -- any_goals apply List.Subset.subset_app_of_or_4
-  -- any_goals simp [Imperative.HasVarsPure.getVars]
-  -- rename_i H; simp [← H.right, Lambda.LExpr.LExpr.getVars]
-  -- constructor <;> (apply substOldExprPostSubset''; apply List.Subset.assoc.mp; apply List.append_subset.mpr; constructor <;> (apply List.Subset.subset_app_of_or_3; simp[Imperative.HasVarsPure.getVars]))
-  -- rename_i H _ _ _
-  -- split at H <;> try contradiction
-  -- apply List.Subset.subset_app_of_or_2
-  -- simp at H
-  -- simp [← H, Lambda.LExpr.LExpr.getVars]
-  -- simp_all
-  -- apply List.Subset.subset_app_of_or_2; simp
-  -- rename_i H _ _
-  -- split at H <;> try contradiction
-  -- simp at H
-  -- simp [← H, Lambda.LExpr.LExpr.getVars, List.Subset]
-  -- simp_all
-  -- rename_i H _ _ _
-  -- split at H <;> try contradiction
-  -- simp_all
-  -- unfold substsOldExpr; simp [Map.isEmpty, Lambda.LExpr.LExpr.getVars]
-  -- apply List.Subset.trans (by assumption)
-  -- any_goals (try apply List.Subset.trans (by assumption); apply List.append_subset.mpr <;> constructor)
-  -- apply List.append_subset.mpr; constructor
-  -- any_goals (try apply List.Subset.assoc.mp; apply List.Subset.subset_app_of_or_3; simp)
+  any_goals (apply substOldExprPostSubset'')
+  any_goals (try apply List.Subset.trans (by assumption))
+  any_goals (apply List.append_subset.mpr; constructor)
+  any_goals (repeat apply List.Subset.assoc.mp)
+  any_goals apply List.Subset.subset_app_of_or_4
+  any_goals simp [Imperative.HasVarsPure.getVars]
+  rename_i H; simp [← H.right, Lambda.LExpr.LExpr.getVars]
+  constructor <;> (apply substOldExprPostSubset''; apply List.Subset.assoc.mp; apply List.append_subset.mpr; constructor <;> (apply List.Subset.subset_app_of_or_3; simp[Imperative.HasVarsPure.getVars]))
+  rename_i H _ _ _
+  split at H <;> try contradiction
+  apply List.Subset.subset_app_of_or_2
+  simp at H
+  simp [← H, Lambda.LExpr.LExpr.getVars]
+  simp_all
+  apply List.Subset.subset_app_of_or_2; simp
+  rename_i H _ _
+  split at H <;> try contradiction
+  simp at H
+  simp [← H, Lambda.LExpr.LExpr.getVars, List.Subset]
+  simp_all
+  rename_i H _ _ _
+  split at H <;> try contradiction
+  simp_all
+  unfold substsOldExpr; simp [Map.isEmpty, Lambda.LExpr.LExpr.getVars]
+  apply List.Subset.trans (by assumption)
+  any_goals (try apply List.Subset.trans (by assumption); apply List.append_subset.mpr <;> constructor)
+  apply List.append_subset.mpr; constructor
+  any_goals (try apply List.Subset.assoc.mp; apply List.Subset.subset_app_of_or_3; simp)
 
 open OldExpressions in
 theorem substsOldPostSubset:
@@ -3502,15 +3496,17 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
     cases Hwf with | mk Hwf =>
     simp [Option.isSome] at Hwf
     split at Hwf <;> simp_all
-    next decl' proc Hfa Harglen Houtlen Hlhsdisj Hlhs Hwfargs Hfind =>
+    next decl' proc Harglen Houtlen Hlhsdisj Hlhs Hwfargs Hfind =>
     cases Heval with | stmts_some_sem Heval Heval2 =>
     cases Heval with
     | cmd_sem Heval Hdef =>
     cases Heval with
     | call_sem lkup Hevalargs Hevalouts Hwfval Hwfvars Hwfb Hwf2 Hwf Hinitin Hinitout Hpre Hhav1 Hhav2 Hpost Hrd Hupdate =>
       next outVals argVals σA σAO σO σR p' modvals =>
-      have Hsome : (Program.Procedure.find? p procName).isSome := by sorry -- TODO: Need help: simp [Hfind]
+      unfold BoogieIdent.unres at Hfind
+      have Hsome : (Program.Procedure.find? p procName).isSome := by simp [Hfind]
       simp [Option.isSome] at Hsome
+      unfold BoogieIdent.unres at *
       have lkup' := lkup
       split at Hsome <;> try contradiction
       next x val Hfind =>
@@ -3523,1330 +3519,1329 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
       split at Helim' <;> try simp [StateT.pure, StateT.bind, ExceptT.bindCont] at Helim' <;> try cases Helim'
       next argTrips =>
       have Heqargs : List.map Prod.snd argTrips = args := genArgExprIdentsTrip_snd Heqarg
-      sorry -- TODO Need help
       -- refactor out labels generation expressions
-      -- generalize Heqout : (genOutExprIdentsTrip proc.header.outputs.toTrivialLTy lhs s_arg) = pair_out at Helim'
-      -- cases pair_out
-      -- next res_out s_out =>
-      -- simp only [bind] at Helim'
-      -- split at Helim' <;> try simp [pure, StateT.pure] at Helim' <;> try cases Helim'
-      -- next outTrips =>
-      -- have Heqouts : lhs = List.map Prod.snd outTrips := Eq.symm $ genOutExprIdentsTrip_snd Heqout
-      -- have Hrdout := InitStatesReadValues Hinitout
-      -- simp [StateT.bind, ExceptT.bindCont] at Helim'
-      -- -- refactor old expressions generation expressions
-      -- generalize Heqold : (genOldExprIdentsTrip p
-      --     (List.filter (isGlobalVar p)
-      --       (List.flatMap OldExpressions.extractOldExprVars
-      --           (OldExpressions.normalizeOldExprs
-      --             (List.map Procedure.Check.expr proc.spec.postconditions.values))).eraseDups)
-      --           s_out) = pair_old at Helim'
-      -- cases pair_old <;> simp only at Helim'
-      -- next res_old s_old =>
-      -- simp only [bind] at Helim'
-      -- split at Helim' <;> try simp [pure, StateT.pure] at Helim' <;> try cases Helim'
-      -- next st' oldTrips =>
-      -- -- extract well-formed program properties
-      -- cases Hwfp with
-      -- | mk wfnd Hwfp =>
-      -- have Hdecl := List.Forall_mem_iff.mp Hwfp
-      -- have HH := Procedure.find_in_decls Hfind
-      -- cases HH with
-      -- | intro md HH =>
-      -- specialize Hdecl (.proc proc md) HH
-      -- cases Hdecl with
-      -- | mk wfstmts wfloclnd Hiodisj Hinnd Houtnd Hmodsnd Hinlc Houtlc wfspec =>
-      -- cases wfspec with
-      -- | mk wfpre wfpost wfmod =>
-      -- have HoldDef : Imperative.isDefined σ oldTrips.unzip.snd := by
-      --   intros k Hin
-      --   apply Hgv
-      --   apply genOldExprIdentsFind ?_ Heqold Hin
-      --   intros l Hin
-      --   have HH := List.mem_filter.mp Hin
-      --   exact HH.2
-      -- have HrdOld := isDefinedReadValues HoldDef
-      -- have Hwfgenargs : BoogieGenState.WF s_arg := genArgExprIdentsTripWFMono Hwfgen Heqarg
-      -- have Hwfgenouts : BoogieGenState.WF s_out := genOutExprIdentsTripWFMono Hwfgenargs Heqout
-      -- have Hwfgenolds : BoogieGenState.WF cs' := genOldExprIdentsTripWFMono Hwfgenouts Heqold
-      -- have Hgenargs := genArgExprIdentsTripGeneratedWF Heqarg
-      -- have Hgenouts := genOutExprIdentsTripGeneratedWF Heqout
-      -- have Hgenolds := genOldExprIdentsTripGeneratedWF Heqold
-      -- have HargTemp : Forall (BoogieIdent.isTemp ·) argTrips.unzip.1.unzip.1 := by
-      --   simp [BoogieGenState.WF] at Hwfgenargs
-      --   have HH := List.Forall_mem_iff.mp Hwfgenargs.2.2.2
-      --   simp only [← Hgenargs] at HH
-      --   refine List.Forall_mem_iff.mpr ?_
-      --   intros x Hin
-      --   apply HH
-      --   exact List.mem_append_left γ.generated (List.mem_reverse.mpr Hin)
-      -- have HoutTemp : Forall (BoogieIdent.isTemp ·) outTrips.unzip.1.unzip.1 := by
-      --   simp [BoogieGenState.WF] at Hwfgenouts
-      --   have HH := List.Forall_mem_iff.mp Hwfgenouts.2.2.2
-      --   simp only [← Hgenouts] at HH
-      --   refine List.Forall_mem_iff.mpr ?_
-      --   intros x Hin
-      --   apply HH
-      --   exact List.mem_append_left s_arg.generated (List.mem_reverse.mpr Hin)
-      -- have HoldTemp : Forall (BoogieIdent.isTemp ·) oldTrips.unzip.1.unzip.1 := by
-      --   simp [BoogieGenState.WF] at Hwfgenolds
-      --   have HH := List.Forall_mem_iff.mp Hwfgenolds.2.2.2
-      --   simp only [← Hgenolds] at HH
-      --   refine List.Forall_mem_iff.mpr ?_
-      --   intros x Hin
-      --   apply HH
-      --   exact List.mem_append_left s_out.generated (List.mem_reverse.mpr Hin)
-      -- have HgenApp : oldTrips.unzip.fst.unzip.fst.reverse ++
-      --                outTrips.unzip.fst.unzip.fst.reverse ++
-      --                argTrips.unzip.fst.unzip.fst.reverse ++
-      --                γ.generated = cs'.generated := by
-      --   simp only [← Hgenargs,← Hgenouts,← Hgenolds]
-      --   simp [List.append_assoc]
-      -- have Hgennd' : (γ.generated.reverse ++
-      --                 argTrips.unzip.fst.unzip.fst ++
-      --                 outTrips.unzip.fst.unzip.fst ++
-      --                 oldTrips.unzip.fst.unzip.fst).Nodup := by
-      --   simp [BoogieGenState.WF] at Hwfgenolds
-      --   have Hnd := nodup_reverse Hwfgenolds.2.2.1
-      --   simp only [List.reverse_append, List.reverse_reverse, ← List.append_assoc,
-      --             ← Hgenargs,← Hgenouts,← Hgenolds] at Hnd
-      --   exact Hnd
-      -- have Hgennd : (argTrips.unzip.fst.unzip.fst ++
-      --                 outTrips.unzip.fst.unzip.fst ++
-      --                 oldTrips.unzip.fst.unzip.fst).Nodup := by
-      --   simp only [List.append_assoc] at Hgennd' ⊢
-      --   exact (List.nodup_append.mp Hgennd').2.1
-      -- have Hinoutnd : (ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs).Nodup := by
-      --   apply List.Disjoint_Nodup_iff.mp
-      --   refine ⟨Hinnd, Houtnd, ?_⟩
-      --   . exact Hiodisj
-      -- have Hndefgen : Imperative.isNotDefined σ'
-      --                 (argTrips.unzip.fst.unzip.fst ++
-      --                 outTrips.unzip.fst.unzip.fst ++
-      --                 oldTrips.unzip.fst.unzip.fst) := by
-      --   simp only [EvalStmtsEmpty Heval2] at *
-      --   apply UpdateStatesNotDefMonotone ?_ Hupdate
-      --   intros v Hin
-      --   have Htemp : v.isTemp = true := by
-      --     simp only [List.append_assoc, List.mem_append] at Hin
-      --     cases Hin with
-      --     | inl Hin =>
-      --       exact (List.Forall_mem_iff.mp HargTemp) _ Hin
-      --     | inr Hin => cases Hin with
-      --     | inl Hin =>
-      --       exact (List.Forall_mem_iff.mp HoutTemp) _ Hin
-      --     | inr Hin =>
-      --       exact (List.Forall_mem_iff.mp HoldTemp) _ Hin
-      --   refine Option.not_isSome_iff_eq_none.mp ?_
-      --   intros Hsome
-      --   have Hcontra := List.mem_reverse.mpr ((Hwfgenst v).mpr ⟨Hsome, Htemp⟩)
-      --   simp only [List.append_assoc] at Hin Hgennd'
-      --   exact (List.nodup_append.mp Hgennd').2.2 v Hcontra v Hin rfl
-      -- have Hmodglob : Forall (BoogieIdent.isGlob ·) proc.spec.modifies := by
-      --   simp [WF.WFModsProp] at wfmod
-      --   apply List.Forall_PredImplies
-      --   exact wfmod
-      --   intros x HH
-      --   apply WFProgGlob Hwfp
-      --   exact WF.WFModProp.defined HH
-      -- have Holdsndglob : Forall (BoogieIdent.isGlob ·) oldTrips.unzip.snd := by
-      --   simp [genOldExprIdentsTrip_snd Heqold]
-      --   apply List.Forall_PredImplies
-      --   apply List.Forall_filter
-      --   apply WFProgGlob Hwfp
-      -- -- derive some equivalence between stores
-      -- have Hrd' := ReadValuesAppKeys' Hrd
-      -- cases Hrd' with
-      -- | intro v1 Hrd' => cases Hrd' with
-      -- | intro v2 Hrd' =>
-      -- have Hup1 := HavocVarsUpdateStates Hhav1
-      -- cases Hup1 with
-      -- | intro v1' Hup1 =>
-      -- have Hup2 := HavocVarsUpdateStates Hhav2
-      -- cases Hup2 with
-      -- | intro v2' Hup2 =>
-      -- cases HrdOld with
-      -- | intro oldVals HoldVals =>
-      -- have Hargtriplen : argTrips.length = argVals.length :=
-      --   calc argTrips.length
-      --     _ = argTrips.unzip.snd.length := by simp [List.unzip_eq_map]
-      --     _ = args.length := by simp [← Heqargs]
-      --     _ = argVals.length := by apply EvalExpressionsLength Hevalargs
-      -- have Houttriplen : outTrips.length = outVals.length :=
-      --   calc outTrips.length
-      --     _ = outTrips.unzip.snd.length := by simp [List.unzip_eq_map]
-      --     _ = lhs.length := by simp [← Heqouts]
-      --     _ = (ListMap.keys proc.header.outputs).length := by simp_all [ListMap.keys.length]
-      --     _ = outVals.length := ReadValuesLength Hrdout
-      -- have Holdtriplen : oldTrips.length = oldVals.length :=
-      --   calc oldTrips.length
-      --     _ = oldTrips.unzip.snd.length := by simp [List.unzip_eq_map]
-      --     _ = oldVals.length := by apply ReadValuesLength HoldVals
-      -- have Hinit := updatedStatesInit ?_ ?_ ?_ (σ:=σ')
-      --     (hs:=argTrips.unzip.fst.unzip.fst ++
-      --         outTrips.unzip.fst.unzip.fst ++
-      --         oldTrips.unzip.fst.unzip.fst)
-      --     (vs:=argVals ++ outVals ++ oldVals)
-      -- rotate_left
-      -- . simp [Hargtriplen, Houttriplen, Holdtriplen]
-      -- . exact Hndefgen
-      -- . exact Hgennd
-      -- . have Heq := EvalStatementsContractEmpty Heval2
-      --   simp only [Heq] at *
-      --   have Hinit' := InitsUpdatesComm Hupdate Hinit
-      --   cases Hinit' with
-      --   | intro σ₁ Hinit' =>
-      --   exists (updatedStates σ'
-      --         (argTrips.unzip.1.unzip.1 ++ outTrips.unzip.1.unzip.1 ++ oldTrips.unzip.1.unzip.1)
-      --         (argVals ++ outVals ++ oldVals))
-      --   apply And.intro
-      --   . exact InitStatesInits Hinit
-      --   . apply EvalStatementsContractApp
-      --     . -- Prove args expression initialization is correct
-      --       apply EvalStatementsContractInits
-      --       . assumption
-      --       . assumption
-      --       . assumption
-      --       . simp [genArgExprIdentsTrip_snd Heqarg]
-      --         apply List.PredDisjoint_Disjoint
-      --           (P:=(BoogieIdent.isTemp ·))
-      --           (Q:=(BoogieIdent.isGlobOrLocl ·))
-      --         . simp at HargTemp
-      --           apply HargTemp
-      --         . apply List.Forall_flatMap.mp
-      --           apply List.Forall_PredImplies Hwfargs
-      --           intros x Hp
-      --           exact WF.WFargProp.glarg Hp
-      --         . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --       . apply List.Sublist.nodup (List.sublist_append_left _ _) ?_
-      --         . exact outTrips.unzip.fst.unzip.fst
-      --         apply List.Sublist.nodup (List.sublist_append_left _ _) ?_
-      --         . exact oldTrips.unzip.fst.unzip.fst
-      --         exact Hgennd
-      --       . simp
-      --         simp [Heqargs]
-      --         assumption
-      --       . -- arg vars generated are not defined
-      --         apply UpdateStatesNotDefMonotone' (σ':=σ') ?_ Hupdate
-      --         simp [Imperative.isNotDefined] at *
-      --         intros v x x' Hin
-      --         apply Hndefgen
-      --         left; exact ⟨x, x', Hin⟩
-      --     -- Reused assumption : lhs and modifies are defined
-      --     have Hdeflm : Imperative.isDefined σ (lhs ++ proc.spec.modifies) := by
-      --             simp [Imperative.isDefinedOver,
-      --                   Imperative.HasVarsTrans.allVarsTrans,
-      --                   Statement.allVarsTrans,
-      --                   Statement.touchedVarsTrans,
-      --                   Command.definedVarsTrans,
-      --                   Command.definedVars,
-      --                   Command.modifiedVarsTrans,
-      --                   Imperative.HasVarsTrans.modifiedVarsTrans,
-      --                   Procedure.modifiedVarsTrans,
-      --                   lkup] at Hwf
-      --             simp [Imperative.isDefined] at *
-      --             intros v Hin
-      --             apply Hwf
-      --             cases Hin with
-      --             | inl a => right; left; exact a
-      --             | inr a => right; right; left; exact a
-      --     apply EvalStatementsContractApp (σ':=(updatedStates (updatedStates σ
-      --                                       argTrips.unzip.fst.unzip.fst argVals)
-      --                                       outTrips.unzip.fst.unzip.fst outVals))
-      --     . -- Prove output variables initialization is correct
-      --       apply EvalStatementsContractInitVars
-      --       . assumption
-      --       . apply List.Disjoint_Nodup_iff.mp
-      --         refine ⟨?_, ?_, ?_⟩
-      --         . exact (List.nodup_append.mp (List.nodup_append.mp Hgennd).1).2.1
-      --         . simp [genOutExprIdentsTrip_snd Heqout]
-      --           exact Hlhs.1
-      --         . -- Disjoint between localGlob and Temp
-      --           simp [genOutExprIdentsTrip_snd Heqout]
-      --           apply List.PredDisjoint_Disjoint
-      --             (P:=(BoogieIdent.isTemp ·))
-      --             (Q:=(BoogieIdent.isLocl ·))
-      --           . simp at HoutTemp
-      --             exact HoutTemp
-      --           . exact Hlhs.2
-      --           . apply List.PredDisjoint_PredImplies_right
-      --             exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --             exact BoogieIdent.isLocl_isGlobOrLocl
-      --       . simp
-      --         refine ReadValuesUpdatedStates ?_ ?_ ?_
-      --         . simp [Hargtriplen]
-      --         . apply List.PredDisjoint_Disjoint
-      --             (P:=(BoogieIdent.isTemp ·))
-      --             (Q:=(BoogieIdent.isLocl ·))
-      --           . simp at HargTemp
-      --             exact HargTemp
-      --           . simp [← Heqouts]
-      --             exact Hlhs.2
-      --           . apply List.PredDisjoint_PredImplies_right
-      --             exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --             exact BoogieIdent.isLocl_isGlobOrLocl
-      --         . simp [← Heqouts]
-      --           exact Hevalouts
-      --       . -- out vars generated are not defined
-      --         apply UpdatedStatesDisjNotDefMonotone
-      --         . have Hnd' := List.Disjoint_Nodup_iff.mpr (List.nodup_append.mp Hgennd).1
-      --           exact Hnd'.2.2
-      --         . simp [← Hargtriplen]
-      --         . apply UpdateStatesNotDefMonotone' (σ':=σ') ?_ Hupdate
-      --           simp [Imperative.isNotDefined] at *
-      --           intros v x x' Hin
-      --           apply Hndefgen
-      --           right; left; exact ⟨x, x', Hin⟩
-      --     apply EvalStatementsContractApp (σ':=(updatedStates (updatedStates (updatedStates σ
-      --                                       argTrips.unzip.fst.unzip.fst argVals)
-      --                                       outTrips.unzip.fst.unzip.fst outVals)
-      --                                       oldTrips.unzip.fst.unzip.fst oldVals))
-      --     . -- Prove old expressions initialization is correct
-      --       apply EvalStatementsContractInitVars Hwfvars
-      --       . apply List.Disjoint_Nodup_iff.mp
-      --         refine ⟨?_, ?_, ?_⟩
-      --         . exact (List.nodup_append.mp Hgennd).2.1
-      --         . simp [genOldExprIdentsTrip_snd Heqold]
-      --           apply filter_nodup
-      --           apply eraseDups_Nodup
-      --         . apply List.PredDisjoint_Disjoint
-      --             (P:=(BoogieIdent.isTemp ·))
-      --             (Q:=(BoogieIdent.isGlob ·))
-      --           . exact HoldTemp
-      --           . simp [genOldExprIdentsTrip_snd Heqold]
-      --             apply List.Forall_PredImplies
-      --             . apply List.Forall_filter
-      --             . exact WFProgGlob Hwfp
-      --           . apply List.PredDisjoint_PredImplies_right
-      --             exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --             exact BoogieIdent.isGlob_isGlobOrLocl
-      --       . simp
-      --         apply ReadValuesUpdatedStates
-      --         . simp [Houttriplen]
-      --         . apply List.PredDisjoint_Disjoint
-      --             (P:=(BoogieIdent.isTemp ·))
-      --             (Q:=(BoogieIdent.isGlob ·))
-      --           . simp at HoutTemp
-      --             exact HoutTemp
-      --           . simp [genOldExprIdentsTrip_snd Heqold]
-      --             apply List.Forall_PredImplies
-      --             . apply List.Forall_filter
-      --             . exact WFProgGlob Hwfp
-      --           . apply List.PredDisjoint_PredImplies_right
-      --             exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --             exact BoogieIdent.isGlob_isGlobOrLocl
-      --         apply ReadValuesUpdatedStates
-      --         . simp [Hargtriplen]
-      --         . apply List.PredDisjoint_Disjoint
-      --             (P:=(BoogieIdent.isTemp ·))
-      --             (Q:=(BoogieIdent.isGlob ·))
-      --           . simp at HargTemp
-      --             exact HargTemp
-      --           . simp [genOldExprIdentsTrip_snd Heqold]
-      --             apply List.Forall_PredImplies
-      --             . apply List.Forall_filter
-      --             . exact WFProgGlob Hwfp
-      --           . apply List.PredDisjoint_PredImplies_right
-      --             exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --             exact BoogieIdent.isGlob_isGlobOrLocl
-      --         . simp at HoldVals
-      --           exact HoldVals
-      --       . -- old vars generated are not defined
-      --         apply UpdatedStatesDisjNotDefMonotone
-      --         . simp only [List.append_assoc] at Hgennd
-      --           exact (List.Disjoint_Nodup_iff.mpr (List.nodup_append.mp Hgennd).2.1).2.2
-      --         . simp [← Houttriplen]
-      --         apply UpdatedStatesDisjNotDefMonotone
-      --         . simp only [nodup_swap'] at Hgennd
-      --           simp only [← List.append_assoc] at Hgennd
-      --           have Hnd' := (List.Disjoint_Nodup_iff.mpr (List.nodup_append.mp Hgennd).1).2.2
-      --           exact List.Disjoint.symm Hnd'
-      --         . simp [← Hargtriplen]
-      --         . apply UpdateStatesNotDefMonotone' (σ:=σ) (σ':=σ') ?_ Hupdate
-      --           intros x Hin
-      --           apply Hndefgen
-      --           simp_all
-      --     -- σA contains inputs as keys, while σ₁ contains the generated keys as keys
-      --     have Hinit2 := InitStatesApp' Hinit'.2.1 (by simp_all) (by simp_all)
-      --     cases Hinit2 with
-      --     | intro σ₁' Hinit2 =>
-      --     have Hinit3 := InitStatesApp' Hinit2.2.1 (by simp_all) (by simp_all)
-      --     cases Hinit3 with
-      --     | intro σ₁'' Hinit3 =>
-      --       -- NOTE: We split the single InitStates into three stages
-      --       -- σ |-- init argVal --> σ₁'' |-- init outVal --> σ₁' |-- init oldVal --> σ₁
-      --       simp [← List.append_assoc]
-      --       apply EvalStatementsContractApp (σ':=
-      --                 (updatedStates (updatedStates (updatedStates (updatedStates σ
-      --                 (List.map (Prod.fst ∘ Prod.fst) argTrips) argVals)
-      --                 (List.map (Prod.fst ∘ Prod.fst) outTrips) outVals)
-      --                 (List.map (Prod.fst ∘ Prod.fst) oldTrips) oldVals)
-      --                 (lhs ++ proc.spec.modifies) modvals))
-      --       . simp [List.append_assoc]
-      --         apply EvalStatementsContractApp
-      --         . -- asserts
-      --           have Hrdin : ReadValues σAO (ListMap.keys proc.header.inputs) argVals := by
-      --             apply InitStatesReadValuesMonotone (σ:=σA) ?_ Hinitout
-      --             exact InitStatesReadValues Hinitin
-      --           have Hrdinout : ReadValues σAO
-      --                 (ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs)
-      --                 (argVals ++ outVals) := ReadValuesApp Hrdin Hrdout
-      --           have Hlen : (ListMap.keys proc.header.inputs).length =
-      --                       (createFvars (List.map (Prod.fst ∘ Prod.fst) argTrips)).length := by calc
-      --                       _ = argVals.length := InitStatesLength Hinitin
-      --                       _ = argTrips.length := by simp_all
-      --                       _ = (List.map (Prod.fst ∘ Prod.fst) argTrips).length := by simp_all
-      --                       _ = _ := by rw [createFvarsLength]
-      --           rw [← (List.zip_append Hlen)]
-      --           rw [← createFvarsApp]
-      --           apply createAssertsCorrect (σA:=σAO) Hwfb Hwfvars
-      --           . assumption
-      --           . assumption
-      --           . simp_all
-      --             rw [createFvarsLength]
-      --             simp [← Hargtriplen]
-      --           . -- substNodup
-      --             have Hlen := ReadValuesLength Hrdin
-      --             simp [Imperative.substNodup]
-      --             rw [List.map_fst_zip, List.map_snd_zip] <;> simp_all
-      --             -- TODO: input names of function not overlapping with generated variables
-      --             -- can come from local/global distinction
-      --             conv => arg 1; rw [← List.append_assoc]
-      --             refine List.Disjoint_Nodup_iff.mp ⟨?_, ?_, ?_⟩
-      --             . exact Hinoutnd
-      --             . apply List.Disjoint_Nodup_iff.mp ⟨?_, ?_, ?_⟩
-      --               . exact (List.Disjoint_Nodup_iff.mpr Hgennd).1
-      --               . exact Hlhs.1
-      --               . apply List.PredDisjoint_Disjoint
-      --                   (P:=(BoogieIdent.isTemp ·))
-      --                   (Q:=(BoogieIdent.isLocl ·))
-      --                 . exact HargTemp
-      --                 . exact Hlhs.2
-      --                 . apply List.PredDisjoint_PredImplies_right
-      --                   exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --                   exact BoogieIdent.isLocl_isGlobOrLocl
-      --             . apply List.Disjoint.symm
-      --               apply List.Disjoint_app.mp ⟨?_, ?_⟩
-      --               . apply List.PredDisjoint_Disjoint
-      --                   (P:=(BoogieIdent.isTemp ·))
-      --                   (Q:=(BoogieIdent.isGlobOrLocl ·))
-      --                 . exact HargTemp
-      --                 . apply List.Forall_append.mpr ⟨?_, ?_⟩
-      --                   . exact List.Forall_PredImplies Hinlc BoogieIdent.isLocl_isGlobOrLocl
-      --                   . exact List.Forall_PredImplies Houtlc BoogieIdent.isLocl_isGlobOrLocl
-      --                 . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --               . intros x Hin1 Hin2
-      --                 apply Hlhsdisj Hin1
-      --                 simp_all
-      --           . -- substDefined
-      --             intros k1 k2 Hin
-      --             have Hmem := List.of_mem_zip Hin
-      --             simp only [List.mem_append] at Hmem
-      --             apply And.intro
-      --             . cases Hmem.1 with
-      --               | inl Hmem =>
-      --               have Hdef : Imperative.isDefined σAO (ListMap.keys proc.header.inputs) := by
-      --                 apply InitStatesDefMonotone ?_ Hinitout
-      --                 exact InitStatesDefined Hinitin
-      --               exact Hdef k1 Hmem
-      --               | inr Hmem =>
-      --               have Hdef : Imperative.isDefined σAO (ListMap.keys proc.header.outputs) := by
-      --                 exact InitStatesDefined Hinitout
-      --               exact Hdef k1 Hmem
-      --             . cases Hmem.2 with
-      --               | inl Hmem =>
-      --                 apply updatedStatesDefMonotone <;> try assumption
-      --                 apply updatedStatesDefMonotone <;> try assumption
-      --                 apply updatedStatesDefined
-      --                 simp_all
-      --               | inr Hmem =>
-      --                 apply updatedStatesDefMonotone <;> try assumption
-      --                 apply updatedStatesDefMonotone <;> try assumption
-      --                 apply updatedStatesDefMonotone <;> try assumption
-      --           . -- precondition correct
-      --             intros pre Hin; simp_all
-      --             apply And.intro
-      --             . simp [updatedStates]
-      --               rw [← updatedStates'App]
-      --               rw [← updatedStates'App]
-      --               rw [← List.zip_append] <;> try simp_all
-      --               rw [← List.zip_append] <;> try simp_all
-      --               rw [← updatedStates]
-      --               apply InvStoresExceptInvStores
-      --               apply Imperative.invStoresExceptComm
-      --               apply InvStoresExceptUpdated
-      --               apply Imperative.invStoresExceptComm
-      --               apply InvStoresExceptInitStates (σ:=σA) (ks':=ListMap.keys proc.header.outputs)
-      --               apply InvStoresExceptInitStates (σ:=σ) (ks':=ListMap.keys proc.header.inputs)
-      --               exact InvStoresExceptEmpty
-      --               exact Hinitin
-      --               exact Hinitout
-      --               simp_all
-      --               simp_all
-      --               simp [← List.append_assoc]
-      --               generalize ListMap.keys proc.header.inputs ++
-      --                          ListMap.keys proc.header.outputs ++
-      --                          List.map (Prod.fst ∘ Prod.fst) argTrips
-      --                          = inoutarg
-      --               simp [List.append_assoc]
-      --               simp [List.removeAll_app]
-      --               rw [List.removeAll_comm]
-      --               apply List.Disjoint.removeAll
-      --               apply List.Disjoint.mono_right
-      --               . exact List.removeAll_Sublist
-      --               . apply List.PredDisjoint_Disjoint
-      --                   (P:=(BoogieIdent.isTemp ·))
-      --                   (Q:=(BoogieIdent.isGlobOrLocl ·))
-      --                 . apply List.Forall_append.mpr
-      --                   exact ⟨HoutTemp, HoldTemp⟩
-      --                 . have HH := prepostconditions_unwrap Hin
-      --                   cases HH with
-      --                   | intro label HH =>
-      --                   cases HH with
-      --                   | intro attr HH =>
-      --                   have Hwf := (List.Forall_mem_iff.mp wfpre _ HH).glvars
-      --                   simp at Hwf
-      --                   exact Hwf
-      --                 . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --             . have HH := prepostconditions_unwrap Hin
-      --               cases HH with
-      --               | intro label HH =>
-      --               cases HH with
-      --               | intro attr HH =>
-      --               apply List.Disjoint_app.mp ⟨?_, ?_⟩
-      --               . apply List.PredDisjoint_Disjoint
-      --                   (P:=(BoogieIdent.isTemp ·))
-      --                   (Q:=(BoogieIdent.isGlobOrLocl ·))
-      --                 . exact HargTemp
-      --                 . have Hwf := (List.Forall_mem_iff.mp wfpre _ HH).glvars
-      --                   simp at Hwf
-      --                   exact Hwf
-      --                 . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --               . have Hpre := (List.Forall_mem_iff.mp wfpre _ HH)
-      --                 have Hlcl := List.Forall_mem_iff.mp Hpre.lvars
-      --                 have Hgl := List.Forall_mem_iff.mp Hpre.glvars
-      --                 simp at Hlcl Hgl
-      --                 intros x Hin1 Hin2
-      --                 specialize Hgl x Hin2
-      --                 simp [BoogieIdent.isGlobOrLocl] at Hgl
-      --                 cases Hgl with
-      --                 | inl Hg =>
-      --                   -- disjoint of local and global
-      --                   have Hlhs := List.Forall_mem_iff.mp Hlhs.2
-      --                   specialize Hlhs x Hin1
-      --                   exact BoogieIdent.Disjoint_isLocl_isGlob _ Hlhs Hg
-      --                 | inr Hl =>
-      --                   -- disjoint because of WF
-      --                   specialize Hlcl x Hin2 Hl
-      --                   apply Hlhsdisj Hin1
-      --                   simp_all
-      --           . apply createFvarsSubstStores (σ:=σ₁') (σA:=σAO)
-      --                   (ks2:=(ListMap.keys proc.header.inputs) ++ (ListMap.keys proc.header.outputs))
-      --             . -- length
-      --               simp_all
-      --               rw [createFvarsLength]
-      --               simp [← Hargtriplen]
-      --             . assumption
-      --             . -- substDefined
-      --               intros k1 k2 Hin
-      --               have Hmem := List.of_mem_zip Hin
-      --               apply And.intro
-      --               . simp only [List.mem_append] at Hmem
-      --                 cases Hmem.1 with
-      --                 | inl Hmem =>
-      --                 have Hdef : Imperative.isDefined σ₁' argTrips.unzip.1.unzip.1 := by
-      --                   apply InitStatesDefMonotone ?_ Hinit3.2.2
-      --                   exact InitStatesDefined Hinit3.2.1
-      --                 simp at Hdef
-      --                 exact Hdef k1 Hmem
-      --                 | inr Hmem =>
-      --                 have Hdef : Imperative.isDefined σ₁' lhs := by
-      --                   simp [Hinit2.1]
-      --                   apply updatedStatesDefMonotone
-      --                   intros k Hin
-      --                   apply Hdeflm
-      --                   exact List.mem_append_left proc.spec.modifies Hin
-      --                 exact Hdef _ Hmem
-      --               . apply ReadValuesIsDefined Hrdinout
-      --                 exact Hmem.2
-      --             . -- substStores
-      --               simp_all
-      --               apply ReadValuesSubstStores ?_ Hrdinout
-      --               apply ReadValuesApp
-      --               simp [updatedStates]
-      --               rw [List.zip_append]
-      --               rw [updatedStates'App]
-      --               apply ReadValuesUpdatedStates
-      --               . simp [Houttriplen]
-      --               . intros a Hin1 Hin2
-      --                 apply (List.nodup_append.mp Hgennd).2.2 a ?_ a ?_
-      --                 . rfl
-      --                 . simp only at Hin2 ⊢
-      --                   exact Hin2
-      --                 . simp only at Hin1 ⊢
-      --                   exact List.mem_append_left _ Hin1
-      --               . apply ReadValuesUpdatedStatesSame
-      --                 simp [Hargtriplen]
-      --                 grind
-      --               . -- length, provable
-      --                 simp [Hargtriplen]
-      --               . apply ReadValuesUpdatedStates
-      --                 . -- length, provable
-      --                   simp [Hargtriplen, Houttriplen]
-      --                 . apply List.PredDisjoint_Disjoint
-      --                     (P:=(BoogieIdent.isTemp ·))
-      --                     (Q:=(BoogieIdent.isLocl ·))
-      --                   . apply List.Forall_append.mpr ⟨HargTemp, HoutTemp⟩
-      --                   . exact Hlhs.2
-      --                   . apply List.PredDisjoint_PredImplies_right
-      --                     exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --                     exact BoogieIdent.isLocl_isGlobOrLocl
-      --                 . exact Hevalouts
-      --             . exact Hrdinout
-      --           . -- Read Values
-      --             exact Hrdinout
-      --           . -- substStores
-      --             apply ReadValuesSubstStores ?_ Hrdinout
-      --             apply ReadValuesApp
-      --             simp [updatedStates]
-      --             apply ReadValuesUpdatedStates
-      --             . simp [Holdtriplen]
-      --             . intros a Hin1 Hin2
-      --               apply (List.nodup_append.mp Hgennd).2.2 a ?_ a ?_
-      --               . rfl
-      --               . simp at Hin2 ⊢
-      --                 exact Or.inl Hin2
-      --               . simp at Hin1 ⊢
-      --                 exact Hin1
-      --             apply ReadValuesUpdatedStates
-      --             . simp [Houttriplen]
-      --             . intros a Hin1 Hin2
-      --               apply (List.nodup_append.mp (List.nodup_append.mp Hgennd).1).2.2 a ?_ a ?_
-      --               . rfl
-      --               . simp at Hin2 ⊢
-      --                 exact Hin2
-      --               . simp at Hin1 ⊢
-      --                 exact Hin1
-      --             . apply ReadValuesUpdatedStatesSame
-      --               simp [Hargtriplen]
-      --               grind
-      --             . apply ReadValuesUpdatedStates
-      --               . simp [Holdtriplen]
-      --               . apply List.PredDisjoint_Disjoint
-      --                   (P:=(BoogieIdent.isTemp ·))
-      --                   (Q:=(BoogieIdent.isLocl ·))
-      --                 . simp at HoldTemp
-      --                   exact HoldTemp
-      --                 . exact Hlhs.2
-      --                 . apply List.PredDisjoint_PredImplies_right
-      --                   exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --                   exact BoogieIdent.isLocl_isGlobOrLocl
-      --               . apply ReadValuesUpdatedStates
-      --                 . simp [Houttriplen]
-      --                 . apply List.PredDisjoint_Disjoint
-      --                     (P:=(BoogieIdent.isTemp ·))
-      --                     (Q:=(BoogieIdent.isLocl ·))
-      --                   . simp at HoutTemp
-      --                     exact HoutTemp
-      --                   . exact Hlhs.2
-      --                   . apply List.PredDisjoint_PredImplies_right
-      --                     exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --                     exact BoogieIdent.isLocl_isGlobOrLocl
-      --                 . apply ReadValuesUpdatedStates
-      --                   . simp [Hargtriplen]
-      --                   . apply List.PredDisjoint_Disjoint
-      --                       (P:=(BoogieIdent.isTemp ·))
-      --                       (Q:=(BoogieIdent.isLocl ·))
-      --                     . simp at HargTemp
-      --                       exact HargTemp
-      --                     . exact Hlhs.2
-      --                     . apply List.PredDisjoint_PredImplies_right
-      --                       exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --                       exact BoogieIdent.isLocl_isGlobOrLocl
-      --                   . exact Hevalouts
-      --         . -- Prove havocs correct
-      --           simp [← createHavocsApp]
-      --           apply EvalStatementsContractHavocVars (σ':=
-      --                 (updatedStates (updatedStates (updatedStates (updatedStates σ
-      --                 (List.map (Prod.fst ∘ Prod.fst) argTrips) argVals)
-      --                 (List.map (Prod.fst ∘ Prod.fst) outTrips) outVals)
-      --                 (List.map (Prod.fst ∘ Prod.fst) oldTrips) oldVals)
-      --                 (lhs ++ proc.spec.modifies) modvals))
-      --           . assumption
-      --           . apply updatedStatesDefMonotone
-      --             apply updatedStatesDefMonotone
-      --             apply updatedStatesDefMonotone
-      --             exact Hdeflm
-      --           . apply UpdateStatesHavocVars (modvals:=modvals)
-      --             refine updatedStatesUpdate ?_ ?_
-      --             exact UpdateStatesLength Hupdate
-      --             apply updatedStatesDefMonotone
-      --             apply updatedStatesDefMonotone
-      --             apply updatedStatesDefMonotone
-      --             exact Hdeflm
-      --       . -- Prove assumes correct
-      --         -- transform to the same store
-      --         simp [updatedStates]
-      --         rw [updatedStatesComm]
-      --         rw [updatedStatesComm (kvs':=(lhs ++ proc.spec.modifies).zip modvals)]
-      --         rw [updatedStatesComm (kvs':=(lhs ++ proc.spec.modifies).zip modvals)]
-      --         simp [UpdateStatesUpdated Hupdate, updatedStates]
-      --         rw [List.zip_append] <;> simp_all
-      --         rw [List.zip_append]
-      --         rw [updatedStates'App]
-      --         rw [updatedStates'App]
-      --         rw [← List.zip_append]
-      --         -- combine fvars
-      --         rw [← createFvarsApp]
-      --         . -- createAssumesCorrect
-      --           -- NOTE: σR here should be σR with the temporary old variables
-      --           generalize HσR₁ : (updatedStates (updatedStates σR
-      --                             (List.map (Prod.fst ∘ Prod.fst) outTrips) outVals))
-      --                             (List.map (Prod.fst ∘ Prod.fst) oldTrips) oldVals = σR₁
-      --           apply createAssumesCorrect (σ₀':=σ₁) (σA:=σR₁) Hwfb Hwfvars
-      --           . assumption
-      --           . assumption
-      --           . -- length
-      --             simp_all
-      --             exact EvalExpressionsLength Hevalargs
-      --           . -- substNoDup
-      --             simp [Imperative.substNodup]
-      --             rw [List.map_fst_zip]
-      --             rw [List.map_snd_zip]
-      --             . apply List.Disjoint_Nodup_iff.mp
-      --               refine ⟨Hinoutnd, ?_, ?_⟩
-      --               . simp [← List.append_assoc] at Hgennd
-      --                 have HH := List.nodup_append.mp Hgennd
-      --                 apply List.Disjoint_Nodup_iff.mp
-      --                 refine ⟨?_, ?_, ?_⟩
-      --                 . exact (List.nodup_append.mp HH.1).1
-      --                 . exact Hlhs.1
-      --                 . apply List.PredDisjoint_Disjoint
-      --                     (P:=(BoogieIdent.isTemp ·))
-      --                     (Q:=(BoogieIdent.isLocl ·))
-      --                   . exact HargTemp
-      --                   . exact Hlhs.2
-      --                   . apply List.PredDisjoint_PredImplies_right
-      --                     exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --                     exact BoogieIdent.isLocl_isGlobOrLocl
-      --               . apply List.Disjoint.symm
-      --                 apply List.Disjoint_app.mp ⟨?_, ?_⟩
-      --                 . apply List.PredDisjoint_Disjoint
-      --                     (P:=(BoogieIdent.isTemp ·))
-      --                     (Q:=(BoogieIdent.isGlobOrLocl ·))
-      --                   . exact HargTemp
-      --                   . apply List.Forall_append.mpr ⟨?_, ?_⟩
-      --                     . exact List.Forall_PredImplies Hinlc BoogieIdent.isLocl_isGlobOrLocl
-      --                     . exact List.Forall_PredImplies Houtlc BoogieIdent.isLocl_isGlobOrLocl
-      --                   . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --                 . intros x Hin1 Hin2
-      --                   apply Hlhsdisj Hin1
-      --                   simp_all
-      --             . simp_all
-      --               simp [← Hargtriplen, ← Heqargs]
-      --             . simp_all
-      --               simp [← Hargtriplen, ← Heqargs]
-      --           . -- substDefined
-      --             intros k1 k2 Hin
-      --             have Hmem := List.of_mem_zip Hin
-      --             simp only [List.mem_append] at Hmem
-      --             apply And.intro
-      --             -- inputs and outputs defined in σR
-      --             . cases Hmem.1 with
-      --               | inl Hmem =>
-      --               have Hdef : Imperative.isDefined σR₁ (ListMap.keys proc.header.inputs) := by
-      --                 simp [← HσR₁]
-      --                 apply updatedStatesDefMonotone
-      --                 apply updatedStatesDefMonotone
-      --                 apply HavocVarsDefMonotone ?_ Hhav2
-      --                 apply HavocVarsDefMonotone ?_ Hhav1
-      --                 apply InitStatesDefMonotone ?_ Hinitout
-      --                 exact InitStatesDefined Hinitin
-      --               exact Hdef k1 Hmem
-      --               | inr Hmem =>
-      --               have Hdef : Imperative.isDefined σR₁ (ListMap.keys proc.header.outputs) := by
-      --                 simp [← HσR₁]
-      --                 apply updatedStatesDefMonotone
-      --                 apply updatedStatesDefMonotone
-      --                 apply HavocVarsDefMonotone ?_ Hhav2
-      --                 apply HavocVarsDefMonotone ?_ Hhav1
-      --                 exact InitStatesDefined Hinitout
-      --               exact Hdef k1 Hmem
-      --             . cases Hmem.2 with
-      --               | inl Hmem =>
-      --                 apply updatedStatesDefMonotone <;> try assumption
-      --                 apply updatedStatesDefMonotone <;> try assumption
-      --                 apply updatedStatesDefined
-      --                 simp_all
-      --               | inr Hmem =>
-      --                 apply updatedStatesDefMonotone <;> try assumption
-      --                 apply updatedStatesDefMonotone <;> try assumption
-      --                 apply updatedStatesDefMonotone <;> try assumption
-      --                 apply updatedStatesDefMonotone <;> try assumption
-      --               -- args and outs are defined in σ₁
-      --           . intros substPost HinSubst
-      --             refine ⟨?_, ?_, ?_⟩
-      --             . -- store invariant
-      --               have Hndrd1 : (ListMap.keys proc.header.outputs ++ proc.spec.modifies).Nodup := by
-      --                 refine List.Disjoint_Nodup_iff.mp ⟨Houtnd, Hmodsnd, ?_⟩
-      --                 -- disjoint between local and global
-      --                 apply List.PredDisjoint_Disjoint
-      --                     (P:=(BoogieIdent.isLocl ·))
-      --                     (Q:=(BoogieIdent.isGlob ·))
-      --                 . exact Houtlc
-      --                 . exact Hmodglob
-      --                 . exact BoogieIdent.Disjoint_isLocl_isGlob
-      --               have Hrd1 := UpdateStatesReadValues Houtnd Hup1
-      --               have Hrd2 := UpdateStatesReadValues Hmodsnd Hup2
-      --               have Heq2 := ReadValuesInjective Hrd2 Hrd'.2.2
-      --               -- start reducing the update operation
-      --               apply InvStoresExceptInvStores (ks:=
-      --                     (ListMap.keys proc.header.inputs ++
-      --                     ListMap.keys proc.header.outputs ++
-      --                     (List.map (Prod.fst ∘ Prod.fst) argTrips ++
-      --                     List.map Prod.snd outTrips)))
-      --               . apply Imperative.invStoresExceptComm
-      --                 rw [← HσR₁]
-      --                 apply InvStoresExceptUpdatedSame
-      --                 apply InvStoresExceptUpdatedSame
-      --                 . apply InvStoresExceptUpdatedMem
-      --                   . rw [← Hrd'.1]
-      --                     rw [List.zip_append]
-      --                     rw [updatedStates'App]
-      --                     rw [updatedStatesComm]
-      --                     . apply InvStoresExceptUpdatedMem
-      --                       . simp [UpdateStatesUpdated Hup2]
-      --                         simp [← Heq2]
-      --                         apply InvStoresExceptUpdatedSame
-      --                         . apply Imperative.invStoresExceptComm
-      --                           simp [UpdateStatesUpdated Hup1]
-      --                           simp [InitStatesUpdated Hinitout]
-      --                           simp [InitStatesUpdated Hinitin]
-      --                           apply InvStoresExceptUpdatedMem
-      --                           apply InvStoresExceptUpdatedMem
-      --                           apply InvStoresExceptUpdatedMem
-      --                           apply InvStoresExceptId
-      --                           . simp [Harglen, ← Heqargs, Hargtriplen]
-      --                           . intros x Hin
-      --                             simp_all
-      --                           . simp [Houtlen]
-      --                           . intros x Hin
-      --                             simp_all
-      --                           . exact ReadValuesLength Hrd1
-      --                           . intros x Hin
-      --                             simp_all
-      --                         . exact ReadValuesLength Hrd2
-      --                         . exact Hmodsnd
-      --                       . simp [← Houtlen , Houttriplen]
-      --                         have Hlen := ReadValuesLength Hrd'.2.1
-      --                         simp at Hlen
-      --                         exact Hlen
-      --                       . intros x Hin
-      --                         simp_all
-      --                     . -- lhs disjoint from modifies, from WF
-      --                       rw [List.unzip_zip]
-      --                       rw [List.unzip_zip]
-      --                       simp
-      --                       . exact List.DisjointAppRight' Hlhsdisj
-      --                       . simp [← Heq2]
-      --                         exact ReadValuesLength Hrd2
-      --                       . have Hlen := ReadValuesLength Hrd'.2.1
-      --                         simp_all
-      --                     . simp [← Houtlen , Houttriplen]
-      --                       have Hlen := ReadValuesLength Hrd'.2.1
-      --                       simp at Hlen
-      --                       exact Hlen
-      --                   . simp [Hargtriplen]
-      --                   . intros x Hin
-      --                     simp_all
-      --                     -- NOTE: can also use equivalent proof term:
-      --                     -- exact List.mem_append.mpr (Or.inr (List.mem_append.mpr (Or.inl Hin)))
-      --                 . simp [Houttriplen]
-      --                 . exact (List.nodup_append.mp (List.nodup_append.mp Hgennd).2.1).1
-      --                 . simp [Holdtriplen]
-      --                 . exact (List.nodup_append.mp (List.nodup_append.mp Hgennd).2.1).2.1
-      --               . apply List.Disjoint.symm
-      --                 exact List.removeAll_Disjoint
-      --             . -- TODO : all vars in substPost is a subset of subst ++ fst fst oldTrips
-      --               have Hin := postconditions_subst_unwrap HinSubst
-      --               cases Hin with
-      --               | intro post Hin =>
-      --               have HH := prepostconditions_unwrap Hin.1
-      --               cases HH with
-      --               | intro label HH =>
-      --               cases HH with
-      --               | intro attr HH =>
-      --               have Hpost := (List.Forall_mem_iff.mp wfpost _ HH)
-      --               have Hlcl := List.Forall_mem_iff.mp Hpost.lvars
-      --               have Hgl := List.Forall_mem_iff.mp Hpost.glvars
-      --               simp at Hlcl Hgl
-      --               intros x Hin1 Hin2
-      --               have Hdisj : oldTrips.unzip.fst.unzip.fst.Disjoint oldTrips.unzip.snd := by
-      --                 apply List.PredDisjoint_Disjoint
-      --                   (P:=(BoogieIdent.isTemp ·))
-      --                   (Q:=(BoogieIdent.isGlob ·))
-      --                 . simp; exact HoldTemp
-      --                 . simp; exact Holdsndglob
-      --                 . apply List.PredDisjoint_PredImplies_right
-      --                   exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --                   exact BoogieIdent.isGlob_isGlobOrLocl
-      --               have Hsubset := substsOldPostSubset (post:=(OldExpressions.normalizeOldExpr post)) (oldTrips:=oldTrips) Hdisj
-      --               have Hin : x ∈ (Imperative.HasVarsPure.getVars (P:=Expression) (OldExpressions.normalizeOldExpr post) ++
-      --                           oldTrips.unzip.fst.unzip.fst) := by
-      --                 apply Hsubset
-      --                 simp [Hin.2] at Hin2
-      --                 exact Hin2
-      --               simp only [List.mem_append] at Hin Hin1
-      --               cases Hin1 with
-      --               | inl Hin1 =>
-      --                 cases Hin with
-      --                 | inl Hin =>
-      --                   -- disjoint of global/local with temp
-      --                   have Hin := normalizeOldExprInVars Hin
-      --                   specialize Hgl x Hin
-      --                   apply BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --                   . exact List.Forall_mem_iff.mp HargTemp x Hin1
-      --                   . exact Hgl
-      --                 | inr Hin =>
-      --                   -- disjoint among temp
-      --                   simp only [List.unzip_fst, List.map_map] at Hin
-      --                   simp [BoogieIdent.isGlobOrLocl] at Hgl
-      --                   have HH := (List.nodup_append.mp Hgennd).2.2
-      --                   apply HH x Hin1 x
-      --                   apply List.mem_append.mpr
-      --                   apply (Or.inr Hin)
-      --                   rfl
-      --               | inr Hin1 =>
-      --               cases Hin with
-      --               | inl Hin =>
-      --                 have Hin := normalizeOldExprInVars Hin
-      --                 specialize Hgl x Hin
-      --                 -- x is either global or local
-      --                 simp [BoogieIdent.isGlobOrLocl] at Hgl
-      --                 cases Hgl with
-      --                 | inl Hg =>
-      --                   -- x is global
-      --                   have Hlhs := List.Forall_mem_iff.mp Hlhs.2
-      --                   specialize Hlhs x Hin1
-      --                   exact BoogieIdent.Disjoint_isLocl_isGlob _ Hlhs Hg
-      --                 | inr Hl =>
-      --                   -- x is local, use wf
-      --                   specialize Hlcl x Hin Hl
-      --                   apply Hlhsdisj Hin1
-      --                   simp_all
-      --               | inr Hin =>
-      --                 -- oldTrips disjoint from lhs
-      --                 simp only [List.unzip_fst, List.map_map] at Hin
-      --                 apply BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --                 . exact List.Forall_mem_iff.mp HoldTemp x Hin
-      --                 . apply BoogieIdent.isLocl_isGlobOrLocl
-      --                   exact List.Forall_mem_iff.mp Hlhs.2 _ Hin1
-      --             . -- post condition correct
-      --               have Hmem := SubstPostsMem HinSubst
-      --               cases Hmem with
-      --               | intro post Hin =>
-      --               specialize Hpost post Hin.1
-      --               simp [Hin.2]
-      --               -- simp [Imperative.WellFormedSemanticEvalBool] at Hwfb
-      --               -- apply (Hwfb _ _ _).1.1.mp
-      --               have Hsubst' :
-      --                 δ σO σR₁ post =
-      --                 δ σ₁ σR₁ (OldExpressions.substsOldExpr (createOldVarsSubst oldTrips) (OldExpressions.normalizeOldExpr post))
-      --                 := by
-      --                   cases Hwf2 with
-      --                   | intro e Hwf2 =>
-      --                   rw [Hwf2.2 (e:=post)]
-      --                   apply substsOldCorrect
-      --                   -- wf
-      --                   . assumption
-      --                   . assumption
-      --                   . assumption
-      --                   -- wfTwoState, should be provable by setting inits to the oldVars created
-      --                   . simp [WellFormedBoogieEvalTwoState]
-      --                     refine ⟨?_, ?_, Hwf2.2⟩
-      --                     . -- split into havoc and init, by setting inits to the oldVars created
-      --                       simp [← HσR₁]
-      --                       refine ⟨proc.spec.modifies,
-      --                               (List.map (Prod.fst ∘ Prod.fst) outTrips) ++
-      --                               (List.map (Prod.fst ∘ Prod.fst) oldTrips), σR, ?_, ?_⟩
-      --                       . exact Hhav2
-      --                       . simp [updatedStates]
-      --                         rw [← updatedStates'App]
-      --                         rw [← List.zip_append]
-      --                         rw [← updatedStates]
-      --                         apply InitStatesInitVars
-      --                         refine updatedStatesInit ?_ ?_ ?_
-      --                         . simp [Houttriplen, Holdtriplen]
-      --                         . -- not defined
-      --                           apply UpdateStatesNotDefMonotone _ Hup2
-      --                           apply UpdateStatesNotDefMonotone _ Hup1
-      --                           simp [InitStatesUpdated Hinitout]
-      --                           apply UpdatedStatesDisjNotDefMonotone
-      --                           . -- Disjoint between local and temp
-      --                             apply List.Disjoint.symm
-      --                             apply List.PredDisjoint_Disjoint
-      --                               (P:=(BoogieIdent.isTemp ·))
-      --                               (Q:=(BoogieIdent.isGlobOrLocl ·))
-      --                             . exact List.Forall_append.mpr ⟨HoutTemp, HoldTemp⟩
-      --                             . exact List.Forall_PredImplies Houtlc BoogieIdent.isLocl_isGlobOrLocl
-      --                             . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --                           . simp [Houtlen]
-      --                           . simp [InitStatesUpdated Hinitin]
-      --                             apply UpdatedStatesDisjNotDefMonotone
-      --                             . -- Disjoint between local and temp
-      --                               apply List.Disjoint.symm
-      --                               apply List.PredDisjoint_Disjoint
-      --                                 (P:=(BoogieIdent.isTemp ·))
-      --                                 (Q:=(BoogieIdent.isGlobOrLocl ·))
-      --                               . exact List.Forall_append.mpr ⟨HoutTemp, HoldTemp⟩
-      --                               . exact List.Forall_PredImplies Hinlc BoogieIdent.isLocl_isGlobOrLocl
-      --                               . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --                             . simp [← Hargtriplen, Harglen, ← Heqargs]
-      --                             . have Hndef := (Imperative.isNotDefinedApp' Hndefgen).2
-      --                               exact UpdateStatesNotDefMonotone' Hndef Hupdate
-      --                         . exact (List.nodup_append.mp Hgennd).2.1
-      --                         . simp [Houttriplen]
-      --                     . intros vs vs' σ₀ σ₁ σ m Hhav Hinit
-      --                       have HH := Hwf2.1 vs vs' σ₀ σ₁ σ m ⟨Hhav,Hinit⟩
-      --                       apply HH
-      --                   -- normalized
-      --                   . apply OldExpressions.normalizeOldExprSound
-      --                     have HH := prepostconditions_unwrap Hin.1
-      --                     cases HH with
-      --                     | intro label HH =>
-      --                     cases HH with
-      --                     | intro attr HH =>
-      --                     have Hwfpost := (List.Forall_mem_iff.mp wfpost _ HH).oldexprs
-      --                     simp at Hwfpost
-      --                     exact Hwfpost
-      --                   . rw [createOldStoreSubstEq]
-      --                     have Hhav := HavocVarsUpdateStates Hhav1
-      --                     cases Hhav with
-      --                     | intro modvals Hhav =>
-      --                     apply ReadValuesSubstStores
-      --                     apply UpdateStatesReadValuesMonotone (σ:=σAO) (vs:=oldVals) _ ?_ Hhav
-      --                     . -- Nodup
-      --                       apply List.Disjoint_Nodup_iff.mp
-      --                       refine ⟨?_, ?_, ?_⟩
-      --                       . have Heq := genOldExprIdentsTrip_snd Heqold
-      --                         simp [Heq]
-      --                         apply filter_nodup
-      --                         apply eraseDups_Nodup
-      --                       . exact Houtnd
-      --                       . -- Disjoint between local and temp
-      --                         apply List.Disjoint.symm
-      --                         apply List.PredDisjoint_Disjoint
-      --                             (P:=(BoogieIdent.isLocl ·))
-      --                             (Q:=(BoogieIdent.isGlob ·))
-      --                         . exact Houtlc
-      --                         . simp [genOldExprIdentsTrip_snd Heqold]
-      --                           apply List.Forall_PredImplies
-      --                           . apply List.Forall_filter
-      --                           . exact WFProgGlob Hwfp
-      --                         . exact BoogieIdent.Disjoint_isLocl_isGlob
-      --                     . apply InitStatesReadValuesMonotone (σ:=σA) ?_ Hinitout
-      --                       . apply InitStatesReadValuesMonotone (σ:=σ) ?_ Hinitin
-      --                         simp only [List.unzip_snd]
-      --                         exact HoldVals
-      --                     . simp [← HσR₁]
-      --                       apply ReadValuesUpdatedStatesSame
-      --                       simp [Holdtriplen]
-      --                       exact (List.nodup_append.mp (List.nodup_append.mp Hgennd).2.1).2.1
-      --                   . rw [createOldStoreSubstEq]
-      --                     intros k1 k2 Hin
-      --                     have Hmem := List.of_mem_zip Hin
-      --                     apply And.intro
-      --                     . have Hdef : Imperative.isDefined σO (oldTrips.unzip.snd) := by
-      --                         apply HavocVarsDefMonotone ?_ Hhav1
-      --                         apply InitStatesDefMonotone ?_ Hinitout
-      --                         apply InitStatesDefMonotone ?_ Hinitin
-      --                         simp only [List.unzip_snd]
-      --                         exact HoldDef
-      --                       exact Hdef k1 Hmem.1
-      --                     . have Hdef : Imperative.isDefined σR₁ oldTrips.unzip.fst.unzip.fst := by
-      --                         simp [← HσR₁]
-      --                         apply updatedStatesDefined
-      --                         simp [Holdtriplen]
-      --                       exact Hdef k2 Hmem.2
-      --                   . rw [createOldStoreSubstEq]
-      --                     simp [Imperative.substNodup]
-      --                     simp [← List.unzip_fst, ← List.unzip_snd]
-      --                     rw [List.unzip_zip]
-      --                     simp
-      --                     apply List.Disjoint_Nodup_iff.mp
-      --                     . refine ⟨?_, ?_, ?_⟩
-      --                       . -- oldTrips.unzip.2 Nodup. needs some equivalence
-      --                         have Heq := genOldExprIdentsTrip_snd Heqold
-      --                         simp only [Heq]
-      --                         apply filter_nodup
-      --                         apply eraseDups_Nodup
-      --                       . exact (List.nodup_append.mp (List.nodup_append.mp Hgennd).2.1).2.1
-      --                       . apply List.Disjoint.symm
-      --                         apply List.PredDisjoint_Disjoint
-      --                             (P:=(BoogieIdent.isTemp ·))
-      --                             (Q:=(BoogieIdent.isGlob ·))
-      --                         . exact HoldTemp
-      --                         . simp [genOldExprIdentsTrip_snd Heqold]
-      --                           apply List.Forall_PredImplies
-      --                           . apply List.Forall_filter
-      --                           . exact WFProgGlob Hwfp
-      --                         . apply List.PredDisjoint_PredImplies_right
-      --                           exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --                           exact BoogieIdent.isGlob_isGlobOrLocl
-      --                     . simp [Holdtriplen]
-      --                   . apply List.Disjoint_Subset_right (ks:=(Imperative.HasVarsPure.getVars post))
-      --                     . apply List.PredDisjoint_Disjoint
-      --                           (P:=(BoogieIdent.isTemp ·))
-      --                           (Q:=(BoogieIdent.isGlobOrLocl ·))
-      --                       . simp
-      --                         exact HoldTemp
-      --                       . have HH := prepostconditions_unwrap Hin.1
-      --                         cases HH with
-      --                         | intro label HH =>
-      --                         cases HH with
-      --                         | intro attr HH =>
-      --                         have Hwf := (List.Forall_mem_iff.mp wfpost _ HH).glvars
-      --                         simp at Hwf
-      --                         exact Hwf
-      --                       . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --                     . refine extractedOldVarsInVars ?_
-      --                       have HH := prepostconditions_unwrap Hin.1
-      --                       cases HH with
-      --                       | intro label HH =>
-      --                       cases HH with
-      --                       | intro attr HH =>
-      --                       have Hwf := (List.Forall_mem_iff.mp wfpost _ HH).oldexprs
-      --                       simp at Hwf
-      --                       exact Hwf
-      --               rw [← Hsubst']
-      --               simp [← HσR₁]
-      --               apply EvalExpressionUpdatedStates <;> try assumption
-      --               . simp [Holdtriplen]
-      --               . exact (List.nodup_append.mp (List.nodup_append.mp Hgennd).2.1).2.1
-      --               . apply List.PredDisjoint_Disjoint
-      --                     (P:=(BoogieIdent.isTemp ·))
-      --                     (Q:=(BoogieIdent.isGlobOrLocl ·))
-      --                 . exact HoldTemp
-      --                 . have HH := prepostconditions_unwrap Hin.1
-      --                   cases HH with
-      --                   | intro label HH =>
-      --                   cases HH with
-      --                   | intro attr HH =>
-      --                   have Hwf := (List.Forall_mem_iff.mp wfpost _ HH).glvars
-      --                   simp at Hwf
-      --                   exact Hwf
-      --                 . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --               apply EvalExpressionUpdatedStates <;> try assumption
-      --               . simp [Houttriplen]
-      --               . exact (List.nodup_append.mp (List.nodup_append.mp Hgennd).2.1).1
-      --               . apply List.PredDisjoint_Disjoint
-      --                     (P:=(BoogieIdent.isTemp ·))
-      --                     (Q:=(BoogieIdent.isGlobOrLocl ·))
-      --                 . exact HoutTemp
-      --                 . have HH := prepostconditions_unwrap Hin.1
-      --                   cases HH with
-      --                   | intro label HH =>
-      --                   cases HH with
-      --                   | intro attr HH =>
-      --                   have Hwf := (List.Forall_mem_iff.mp wfpost _ HH).glvars
-      --                   simp at Hwf
-      --                   exact Hwf
-      --                 . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --               exact Hpost.2
-      --           . -- substStores, provable
-      --             apply ReadValuesSubstStores (vs:=argVals ++ v1)
-      --             . apply ReadValuesApp
-      --               . simp [← HσR₁]
-      --                 apply InitStatesReadValuesMonotone (σ:=σR)
-      --                 . -- read values
-      --                   apply UpdateStatesReadValuesMonotone (σ:=σO) _ ?_ Hup2
-      --                   . -- nodup between inputs and modifies
-      --                     apply List.Disjoint_Nodup_iff.mp
-      --                     refine ⟨?_, ?_, ?_⟩
-      --                     . exact Hinnd
-      --                     . exact Hmodsnd
-      --                     . -- Disjoint between local and temp
-      --                       apply List.PredDisjoint_Disjoint
-      --                           (P:=(BoogieIdent.isLocl ·))
-      --                           (Q:=(BoogieIdent.isGlob ·))
-      --                       . exact Hinlc
-      --                       . exact Hmodglob
-      --                       . exact BoogieIdent.Disjoint_isLocl_isGlob
-      --                   . apply UpdateStatesReadValuesMonotone (σ:=σAO) _ ?_ Hup1
-      --                     . exact Hinoutnd
-      --                     . apply InitStatesReadValuesMonotone (σ:=σA) _ Hinitout
-      --                       . apply InitStatesReadValues (σ:=σ) Hinitin
-      --                 . simp [updatedStates]
-      --                   rw [← updatedStates'App]
-      --                   rw [← List.zip_append]
-      --                   rw [← updatedStates]
-      --                   apply updatedStatesInit
-      --                   . simp [Holdtriplen, Houttriplen]
-      --                   . -- not defined
-      --                     apply UpdateStatesNotDefMonotone _ Hup2
-      --                     apply UpdateStatesNotDefMonotone _ Hup1
-      --                     simp [InitStatesUpdated Hinitout]
-      --                     apply UpdatedStatesDisjNotDefMonotone
-      --                     . -- Disjoint between local and temp
-      --                       apply List.Disjoint.symm
-      --                       apply List.PredDisjoint_Disjoint
-      --                         (P:=(BoogieIdent.isTemp ·))
-      --                         (Q:=(BoogieIdent.isGlobOrLocl ·))
-      --                       . exact List.Forall_append.mpr ⟨HoutTemp, HoldTemp⟩
-      --                       . refine List.Forall_PredImplies Houtlc BoogieIdent.isLocl_isGlobOrLocl
-      --                       . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --                     . simp [Houtlen]
-      --                     . simp [InitStatesUpdated Hinitin]
-      --                       apply UpdatedStatesDisjNotDefMonotone
-      --                       . -- Disjoint between local and temp
-      --                         apply List.Disjoint.symm
-      --                         apply List.PredDisjoint_Disjoint
-      --                           (P:=(BoogieIdent.isTemp ·))
-      --                           (Q:=(BoogieIdent.isGlobOrLocl ·))
-      --                         . exact List.Forall_append.mpr ⟨HoutTemp, HoldTemp⟩
-      --                         . refine List.Forall_PredImplies Hinlc BoogieIdent.isLocl_isGlobOrLocl
-      --                         . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --                       . simp [← Hargtriplen, Harglen, ← Heqargs]
-      --                       . have Hndef := (Imperative.isNotDefinedApp' Hndefgen).2
-      --                         exact UpdateStatesNotDefMonotone' Hndef Hupdate
-      --                   . exact (List.nodup_append.mp Hgennd).2.1
-      --                   . simp [Houttriplen]
-      --               . simp [← HσR₁]
-      --                 apply ReadValuesUpdatedStates
-      --                 . simp [Holdtriplen]
-      --                 . -- Disjoint between local and temp
-      --                   apply List.PredDisjoint_Disjoint
-      --                     (P:=(BoogieIdent.isTemp ·))
-      --                     (Q:=(BoogieIdent.isGlobOrLocl ·))
-      --                   . exact HoldTemp
-      --                   . refine List.Forall_PredImplies Houtlc BoogieIdent.isLocl_isGlobOrLocl
-      --                   . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --                 . apply ReadValuesUpdatedStates
-      --                   . simp [Houttriplen]
-      --                   . -- Disjoint between local and temp
-      --                     apply List.PredDisjoint_Disjoint
-      --                       (P:=(BoogieIdent.isTemp ·))
-      --                       (Q:=(BoogieIdent.isGlobOrLocl ·))
-      --                     . exact HoutTemp
-      --                     . refine List.Forall_PredImplies Houtlc BoogieIdent.isLocl_isGlobOrLocl
-      --                     . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --                   . exact Hrd'.2.1
-      --             . apply ReadValuesApp
-      --               . apply ReadValuesUpdatedStates
-      --                 . simp [Holdtriplen]
-      --                 . simp only [nodup_swap'] at Hgennd
-      --                   simp only [List.append_assoc] at Hgennd
-      --                   exact (List.Disjoint_Nodup_iff.mpr (List.nodup_append.mp Hgennd).2.1).2.2
-      --                 . apply ReadValuesUpdatedStates
-      --                   . simp [Houttriplen]
-      --                   . simp only [← List.append_assoc] at Hgennd
-      --                     exact List.Disjoint.symm (List.Disjoint_Nodup_iff.mpr (List.nodup_append.mp Hgennd).1).2.2
-      --                   . apply ReadValuesUpdatedStatesSame
-      --                     . simp [Hargtriplen]
-      --                     . exact (List.nodup_append.mp Hgennd).1
-      --               . simp [← Hrd'.1]
-      --                 rw [List.zip_append, updatedStates'App]
-      --                 . apply ReadValuesUpdatedStates
-      --                   . simp [Holdtriplen]
-      --                   . -- Disjoint between local and temp
-      --                     apply List.PredDisjoint_Disjoint
-      --                       (P:=(BoogieIdent.isTemp ·))
-      --                       (Q:=(BoogieIdent.isLocl ·))
-      --                     . exact HoldTemp
-      --                     . exact Hlhs.2
-      --                     . apply List.PredDisjoint_PredImplies_right
-      --                       exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --                       exact BoogieIdent.isLocl_isGlobOrLocl
-      --                   . apply ReadValuesUpdatedStates
-      --                     . simp [Houttriplen]
-      --                     . -- Disjoint between local and temp
-      --                       apply List.PredDisjoint_Disjoint
-      --                         (P:=(BoogieIdent.isTemp ·))
-      --                         (Q:=(BoogieIdent.isLocl ·))
-      --                       . exact HoutTemp
-      --                       . exact Hlhs.2
-      --                       . apply List.PredDisjoint_PredImplies_right
-      --                         exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --                         exact BoogieIdent.isLocl_isGlobOrLocl
-      --                     . apply ReadValuesUpdatedStates
-      --                       . simp [Hargtriplen]
-      --                       . -- Disjoint between local and temp
-      --                         apply List.PredDisjoint_Disjoint
-      --                           (P:=(BoogieIdent.isTemp ·))
-      --                           (Q:=(BoogieIdent.isLocl ·))
-      --                         . exact HargTemp
-      --                         . exact Hlhs.2
-      --                         . apply List.PredDisjoint_PredImplies_right
-      --                           exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --                           exact BoogieIdent.isLocl_isGlobOrLocl
-      --                       . apply ReadValuesUpdatedStates
-      --                         . exact ReadValuesLength Hrd'.2.2
-      --                         . intros x Hin1 Hin2
-      --                           apply Hlhsdisj Hin2
-      --                           simp_all
-      --                         . apply ReadValuesUpdatedStatesSame
-      --                           . simp [Houttriplen, ← Houtlen]
-      --                             have HH := ReadValuesLength Hrd'.2.1
-      --                             simp at HH
-      --                             exact HH
-      --                           . exact Hlhs.1
-      --                 . simp [Houttriplen, ← Houtlen]
-      --                   have HH := ReadValuesLength Hrd'.2.1
-      --                   simp at HH
-      --                   exact HH
-      --         . -- length of input and argTrips
-      --           simp [createFvars]
-      --           have Heq := InitStatesLength Hinitin
-      --           simp_all
-      --         . -- length of output and outVals
-      --           simp_all
-      --         . simp
-      --           have Hlen := UpdateStatesLength Hupdate
-      --           rw [List.map_fst_zip]
-      --           rw [List.map_fst_zip]
-      --           . -- Disjoint between old labels and lhs, modified, and modvals
-      --             apply List.PredDisjoint_Disjoint
-      --               (P:=(BoogieIdent.isTemp ·))
-      --               (Q:=(BoogieIdent.isGlobOrLocl ·))
-      --             . simp at HargTemp
-      --               exact HargTemp
-      --             . apply List.Forall_append.mpr ⟨?_, ?_⟩
-      --               . exact List.Forall_PredImplies Hlhs.2 BoogieIdent.isLocl_isGlobOrLocl
-      --               . exact List.Forall_PredImplies Hmodglob BoogieIdent.isGlob_isGlobOrLocl
-      --             . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --           . simp_all
-      --           . simp_all
-      --         . -- Disjoint between old labels and lhs, modified, and modvals
-      --           simp
-      --           rw [List.map_fst_zip]
-      --           rw [List.map_fst_zip (l₂:=modvals)]
-      --           apply List.PredDisjoint_Disjoint
-      --             (P:=(BoogieIdent.isTemp ·))
-      --             (Q:=(BoogieIdent.isGlobOrLocl ·))
-      --           . simp at HoutTemp
-      --             exact HoutTemp
-      --           . apply List.Forall_append.mpr ⟨?_, ?_⟩
-      --             . exact List.Forall_PredImplies Hlhs.2 BoogieIdent.isLocl_isGlobOrLocl
-      --             . exact List.Forall_PredImplies Hmodglob BoogieIdent.isGlob_isGlobOrLocl
-      --           . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --           . have Hlen := UpdateStatesLength Hupdate
-      --             omega
-      --           . simp_all
-      --         . -- Disjoint between generated out labels and lhs ++ modifies
-      --           simp
-      --           rw [List.map_fst_zip]
-      --           rw [List.map_fst_zip (l₂:=modvals)]
-      --           apply List.PredDisjoint_Disjoint
-      --             (P:=(BoogieIdent.isTemp ·))
-      --             (Q:=(BoogieIdent.isGlobOrLocl ·))
-      --           . simp at HoldTemp
-      --             exact HoldTemp
-      --           . apply List.Forall_append.mpr ⟨?_, ?_⟩
-      --             . exact List.Forall_PredImplies Hlhs.2 BoogieIdent.isLocl_isGlobOrLocl
-      --             . exact List.Forall_PredImplies Hmodglob BoogieIdent.isGlob_isGlobOrLocl
-      --           . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
-      --           . have Hlen := UpdateStatesLength Hupdate
-      --             omega
-      --           . simp_all
+      generalize Heqout : (genOutExprIdentsTrip proc.header.outputs.toTrivialLTy lhs s_arg) = pair_out at Helim'
+      cases pair_out
+      next res_out s_out =>
+      simp only [bind] at Helim'
+      split at Helim' <;> try simp [pure, StateT.pure] at Helim' <;> try cases Helim'
+      next outTrips =>
+      have Heqouts : lhs = List.map Prod.snd outTrips := Eq.symm $ genOutExprIdentsTrip_snd Heqout
+      have Hrdout := InitStatesReadValues Hinitout
+      simp [StateT.bind, ExceptT.bindCont] at Helim'
+      -- refactor old expressions generation expressions
+      generalize Heqold : (genOldExprIdentsTrip p
+          (List.filter (isGlobalVar p)
+            (List.flatMap OldExpressions.extractOldExprVars
+                (OldExpressions.normalizeOldExprs
+                  (List.map Procedure.Check.expr proc.spec.postconditions.values))).eraseDups)
+                s_out) = pair_old at Helim'
+      cases pair_old <;> simp only at Helim'
+      next res_old s_old =>
+      simp only [bind] at Helim'
+      split at Helim' <;> try simp [pure, StateT.pure] at Helim' <;> try cases Helim'
+      next st' oldTrips =>
+      -- extract well-formed program properties
+      cases Hwfp with
+      | mk wfnd Hwfp =>
+      have Hdecl := List.Forall_mem_iff.mp Hwfp
+      have HH := Procedure.find_in_decls Hfind
+      cases HH with
+      | intro md HH =>
+      specialize Hdecl (.proc proc md) HH
+      cases Hdecl with
+      | mk wfstmts wfloclnd Hiodisj Hinnd Houtnd Hmodsnd Hinlc Houtlc wfspec =>
+      cases wfspec with
+      | mk wfpre wfpost wfmod =>
+      have HoldDef : Imperative.isDefined σ oldTrips.unzip.snd := by
+        intros k Hin
+        apply Hgv
+        apply genOldExprIdentsFind ?_ Heqold Hin
+        intros l Hin
+        have HH := List.mem_filter.mp Hin
+        exact HH.2
+      have HrdOld := isDefinedReadValues HoldDef
+      have Hwfgenargs : BoogieGenState.WF s_arg := genArgExprIdentsTripWFMono Hwfgen Heqarg
+      have Hwfgenouts : BoogieGenState.WF s_out := genOutExprIdentsTripWFMono Hwfgenargs Heqout
+      have Hwfgenolds : BoogieGenState.WF cs' := genOldExprIdentsTripWFMono Hwfgenouts Heqold
+      have Hgenargs := genArgExprIdentsTripGeneratedWF Heqarg
+      have Hgenouts := genOutExprIdentsTripGeneratedWF Heqout
+      have Hgenolds := genOldExprIdentsTripGeneratedWF Heqold
+      have HargTemp : Forall (BoogieIdent.isTemp ·) argTrips.unzip.1.unzip.1 := by
+        simp [BoogieGenState.WF] at Hwfgenargs
+        have HH := List.Forall_mem_iff.mp Hwfgenargs.2.2.2
+        simp only [← Hgenargs] at HH
+        refine List.Forall_mem_iff.mpr ?_
+        intros x Hin
+        apply HH
+        exact List.mem_append_left γ.generated (List.mem_reverse.mpr Hin)
+      have HoutTemp : Forall (BoogieIdent.isTemp ·) outTrips.unzip.1.unzip.1 := by
+        simp [BoogieGenState.WF] at Hwfgenouts
+        have HH := List.Forall_mem_iff.mp Hwfgenouts.2.2.2
+        simp only [← Hgenouts] at HH
+        refine List.Forall_mem_iff.mpr ?_
+        intros x Hin
+        apply HH
+        exact List.mem_append_left s_arg.generated (List.mem_reverse.mpr Hin)
+      have HoldTemp : Forall (BoogieIdent.isTemp ·) oldTrips.unzip.1.unzip.1 := by
+        simp [BoogieGenState.WF] at Hwfgenolds
+        have HH := List.Forall_mem_iff.mp Hwfgenolds.2.2.2
+        simp only [← Hgenolds] at HH
+        refine List.Forall_mem_iff.mpr ?_
+        intros x Hin
+        apply HH
+        exact List.mem_append_left s_out.generated (List.mem_reverse.mpr Hin)
+      have HgenApp : oldTrips.unzip.fst.unzip.fst.reverse ++
+                     outTrips.unzip.fst.unzip.fst.reverse ++
+                     argTrips.unzip.fst.unzip.fst.reverse ++
+                     γ.generated = cs'.generated := by
+        simp only [← Hgenargs,← Hgenouts,← Hgenolds]
+        simp [List.append_assoc]
+      have Hgennd' : (γ.generated.reverse ++
+                      argTrips.unzip.fst.unzip.fst ++
+                      outTrips.unzip.fst.unzip.fst ++
+                      oldTrips.unzip.fst.unzip.fst).Nodup := by
+        simp [BoogieGenState.WF] at Hwfgenolds
+        have Hnd := nodup_reverse Hwfgenolds.2.2.1
+        simp only [List.reverse_append, List.reverse_reverse, ← List.append_assoc,
+                  ← Hgenargs,← Hgenouts,← Hgenolds] at Hnd
+        exact Hnd
+      have Hgennd : (argTrips.unzip.fst.unzip.fst ++
+                      outTrips.unzip.fst.unzip.fst ++
+                      oldTrips.unzip.fst.unzip.fst).Nodup := by
+        simp only [List.append_assoc] at Hgennd' ⊢
+        exact (List.nodup_append.mp Hgennd').2.1
+      have Hinoutnd : (ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs).Nodup := by
+        apply List.Disjoint_Nodup_iff.mp
+        refine ⟨Hinnd, Houtnd, ?_⟩
+        . exact Hiodisj
+      have Hndefgen : Imperative.isNotDefined σ'
+                      (argTrips.unzip.fst.unzip.fst ++
+                      outTrips.unzip.fst.unzip.fst ++
+                      oldTrips.unzip.fst.unzip.fst) := by
+        simp only [EvalStmtsEmpty Heval2] at *
+        apply UpdateStatesNotDefMonotone ?_ Hupdate
+        intros v Hin
+        have Htemp : v.isTemp = true := by
+          simp only [List.append_assoc, List.mem_append] at Hin
+          cases Hin with
+          | inl Hin =>
+            exact (List.Forall_mem_iff.mp HargTemp) _ Hin
+          | inr Hin => cases Hin with
+          | inl Hin =>
+            exact (List.Forall_mem_iff.mp HoutTemp) _ Hin
+          | inr Hin =>
+            exact (List.Forall_mem_iff.mp HoldTemp) _ Hin
+        refine Option.not_isSome_iff_eq_none.mp ?_
+        intros Hsome
+        have Hcontra := List.mem_reverse.mpr ((Hwfgenst v).mpr ⟨Hsome, Htemp⟩)
+        simp only [List.append_assoc] at Hin Hgennd'
+        exact (List.nodup_append.mp Hgennd').2.2 v Hcontra v Hin rfl
+      have Hmodglob : Forall (BoogieIdent.isGlob ·) proc.spec.modifies := by
+        simp [WF.WFModsProp] at wfmod
+        apply List.Forall_PredImplies
+        exact wfmod
+        intros x HH
+        apply WFProgGlob Hwfp
+        exact WF.WFModProp.defined HH
+      have Holdsndglob : Forall (BoogieIdent.isGlob ·) oldTrips.unzip.snd := by
+        simp [genOldExprIdentsTrip_snd Heqold]
+        apply List.Forall_PredImplies
+        apply List.Forall_filter
+        apply WFProgGlob Hwfp
+      -- derive some equivalence between stores
+      have Hrd' := ReadValuesAppKeys' Hrd
+      cases Hrd' with
+      | intro v1 Hrd' => cases Hrd' with
+      | intro v2 Hrd' =>
+      have Hup1 := HavocVarsUpdateStates Hhav1
+      cases Hup1 with
+      | intro v1' Hup1 =>
+      have Hup2 := HavocVarsUpdateStates Hhav2
+      cases Hup2 with
+      | intro v2' Hup2 =>
+      cases HrdOld with
+      | intro oldVals HoldVals =>
+      have Hargtriplen : argTrips.length = argVals.length :=
+        calc argTrips.length
+          _ = argTrips.unzip.snd.length := by simp [List.unzip_eq_map]
+          _ = args.length := by simp [← Heqargs]
+          _ = argVals.length := by apply EvalExpressionsLength Hevalargs
+      have Houttriplen : outTrips.length = outVals.length :=
+        calc outTrips.length
+          _ = outTrips.unzip.snd.length := by simp [List.unzip_eq_map]
+          _ = lhs.length := by simp [← Heqouts]
+          _ = (ListMap.keys proc.header.outputs).length := by simp_all [ListMap.keys.length]
+          _ = outVals.length := ReadValuesLength Hrdout
+      have Holdtriplen : oldTrips.length = oldVals.length :=
+        calc oldTrips.length
+          _ = oldTrips.unzip.snd.length := by simp [List.unzip_eq_map]
+          _ = oldVals.length := by apply ReadValuesLength HoldVals
+      have Hinit := updatedStatesInit ?_ ?_ ?_ (σ:=σ')
+          (hs:=argTrips.unzip.fst.unzip.fst ++
+              outTrips.unzip.fst.unzip.fst ++
+              oldTrips.unzip.fst.unzip.fst)
+          (vs:=argVals ++ outVals ++ oldVals)
+      rotate_left
+      . simp [Hargtriplen, Houttriplen, Holdtriplen]
+      . exact Hndefgen
+      . exact Hgennd
+      . have Heq := EvalStatementsContractEmpty Heval2
+        simp only [Heq] at *
+        have Hinit' := InitsUpdatesComm Hupdate Hinit
+        cases Hinit' with
+        | intro σ₁ Hinit' =>
+        exists (updatedStates σ'
+              (argTrips.unzip.1.unzip.1 ++ outTrips.unzip.1.unzip.1 ++ oldTrips.unzip.1.unzip.1)
+              (argVals ++ outVals ++ oldVals))
+        apply And.intro
+        . exact InitStatesInits Hinit
+        . apply EvalStatementsContractApp
+          . -- Prove args expression initialization is correct
+            apply EvalStatementsContractInits
+            . assumption
+            . assumption
+            . assumption
+            . simp [genArgExprIdentsTrip_snd Heqarg]
+              apply List.PredDisjoint_Disjoint
+                (P:=(BoogieIdent.isTemp ·))
+                (Q:=(BoogieIdent.isGlobOrLocl ·))
+              . simp at HargTemp
+                apply HargTemp
+              . apply List.Forall_flatMap.mp
+                apply List.Forall_PredImplies Hwfargs
+                intros x Hp
+                exact WF.WFargProp.glarg Hp
+              . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+            . apply List.Sublist.nodup (List.sublist_append_left _ _) ?_
+              . exact outTrips.unzip.fst.unzip.fst
+              apply List.Sublist.nodup (List.sublist_append_left _ _) ?_
+              . exact oldTrips.unzip.fst.unzip.fst
+              exact Hgennd
+            . simp
+              simp [Heqargs]
+              assumption
+            . -- arg vars generated are not defined
+              apply UpdateStatesNotDefMonotone' (σ':=σ') ?_ Hupdate
+              simp [Imperative.isNotDefined] at *
+              intros v x x' Hin
+              apply Hndefgen
+              left; exact ⟨x, x', Hin⟩
+          -- Reused assumption : lhs and modifies are defined
+          have Hdeflm : Imperative.isDefined σ (lhs ++ proc.spec.modifies) := by
+                  simp [Imperative.isDefinedOver,
+                        Imperative.HasVarsTrans.allVarsTrans,
+                        Statement.allVarsTrans,
+                        Statement.touchedVarsTrans,
+                        Command.definedVarsTrans,
+                        Command.definedVars,
+                        Command.modifiedVarsTrans,
+                        Imperative.HasVarsTrans.modifiedVarsTrans,
+                        Procedure.modifiedVarsTrans,
+                        lkup] at Hwf
+                  simp [Imperative.isDefined] at *
+                  intros v Hin
+                  apply Hwf
+                  cases Hin with
+                  | inl a => right; left; exact a
+                  | inr a => right; right; left; exact a
+          apply EvalStatementsContractApp (σ':=(updatedStates (updatedStates σ
+                                            argTrips.unzip.fst.unzip.fst argVals)
+                                            outTrips.unzip.fst.unzip.fst outVals))
+          . -- Prove output variables initialization is correct
+            apply EvalStatementsContractInitVars
+            . assumption
+            . apply List.Disjoint_Nodup_iff.mp
+              refine ⟨?_, ?_, ?_⟩
+              . exact (List.nodup_append.mp (List.nodup_append.mp Hgennd).1).2.1
+              . simp [genOutExprIdentsTrip_snd Heqout]
+                exact Hlhs.1
+              . -- Disjoint between localGlob and Temp
+                simp [genOutExprIdentsTrip_snd Heqout]
+                apply List.PredDisjoint_Disjoint
+                  (P:=(BoogieIdent.isTemp ·))
+                  (Q:=(BoogieIdent.isLocl ·))
+                . simp at HoutTemp
+                  exact HoutTemp
+                . exact Hlhs.2
+                . apply List.PredDisjoint_PredImplies_right
+                  exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                  exact BoogieIdent.isLocl_isGlobOrLocl
+            . simp
+              refine ReadValuesUpdatedStates ?_ ?_ ?_
+              . simp [Hargtriplen]
+              . apply List.PredDisjoint_Disjoint
+                  (P:=(BoogieIdent.isTemp ·))
+                  (Q:=(BoogieIdent.isLocl ·))
+                . simp at HargTemp
+                  exact HargTemp
+                . simp [← Heqouts]
+                  exact Hlhs.2
+                . apply List.PredDisjoint_PredImplies_right
+                  exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                  exact BoogieIdent.isLocl_isGlobOrLocl
+              . simp [← Heqouts]
+                exact Hevalouts
+            . -- out vars generated are not defined
+              apply UpdatedStatesDisjNotDefMonotone
+              . have Hnd' := List.Disjoint_Nodup_iff.mpr (List.nodup_append.mp Hgennd).1
+                exact Hnd'.2.2
+              . simp [← Hargtriplen]
+              . apply UpdateStatesNotDefMonotone' (σ':=σ') ?_ Hupdate
+                simp [Imperative.isNotDefined] at *
+                intros v x x' Hin
+                apply Hndefgen
+                right; left; exact ⟨x, x', Hin⟩
+          apply EvalStatementsContractApp (σ':=(updatedStates (updatedStates (updatedStates σ
+                                            argTrips.unzip.fst.unzip.fst argVals)
+                                            outTrips.unzip.fst.unzip.fst outVals)
+                                            oldTrips.unzip.fst.unzip.fst oldVals))
+          . -- Prove old expressions initialization is correct
+            apply EvalStatementsContractInitVars Hwfvars
+            . apply List.Disjoint_Nodup_iff.mp
+              refine ⟨?_, ?_, ?_⟩
+              . exact (List.nodup_append.mp Hgennd).2.1
+              . simp [genOldExprIdentsTrip_snd Heqold]
+                apply filter_nodup
+                apply eraseDups_Nodup
+              . apply List.PredDisjoint_Disjoint
+                  (P:=(BoogieIdent.isTemp ·))
+                  (Q:=(BoogieIdent.isGlob ·))
+                . exact HoldTemp
+                . simp [genOldExprIdentsTrip_snd Heqold]
+                  apply List.Forall_PredImplies
+                  . apply List.Forall_filter
+                  . exact WFProgGlob Hwfp
+                . apply List.PredDisjoint_PredImplies_right
+                  exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                  exact BoogieIdent.isGlob_isGlobOrLocl
+            . simp
+              apply ReadValuesUpdatedStates
+              . simp [Houttriplen]
+              . apply List.PredDisjoint_Disjoint
+                  (P:=(BoogieIdent.isTemp ·))
+                  (Q:=(BoogieIdent.isGlob ·))
+                . simp at HoutTemp
+                  exact HoutTemp
+                . simp [genOldExprIdentsTrip_snd Heqold]
+                  apply List.Forall_PredImplies
+                  . apply List.Forall_filter
+                  . exact WFProgGlob Hwfp
+                . apply List.PredDisjoint_PredImplies_right
+                  exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                  exact BoogieIdent.isGlob_isGlobOrLocl
+              apply ReadValuesUpdatedStates
+              . simp [Hargtriplen]
+              . apply List.PredDisjoint_Disjoint
+                  (P:=(BoogieIdent.isTemp ·))
+                  (Q:=(BoogieIdent.isGlob ·))
+                . simp at HargTemp
+                  exact HargTemp
+                . simp [genOldExprIdentsTrip_snd Heqold]
+                  apply List.Forall_PredImplies
+                  . apply List.Forall_filter
+                  . exact WFProgGlob Hwfp
+                . apply List.PredDisjoint_PredImplies_right
+                  exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                  exact BoogieIdent.isGlob_isGlobOrLocl
+              . simp at HoldVals
+                exact HoldVals
+            . -- old vars generated are not defined
+              apply UpdatedStatesDisjNotDefMonotone
+              . simp only [List.append_assoc] at Hgennd
+                exact (List.Disjoint_Nodup_iff.mpr (List.nodup_append.mp Hgennd).2.1).2.2
+              . simp [← Houttriplen]
+              apply UpdatedStatesDisjNotDefMonotone
+              . simp only [nodup_swap'] at Hgennd
+                simp only [← List.append_assoc] at Hgennd
+                have Hnd' := (List.Disjoint_Nodup_iff.mpr (List.nodup_append.mp Hgennd).1).2.2
+                exact List.Disjoint.symm Hnd'
+              . simp [← Hargtriplen]
+              . apply UpdateStatesNotDefMonotone' (σ:=σ) (σ':=σ') ?_ Hupdate
+                intros x Hin
+                apply Hndefgen
+                simp_all
+          -- σA contains inputs as keys, while σ₁ contains the generated keys as keys
+          have Hinit2 := InitStatesApp' Hinit'.2.1 (by simp_all) (by simp_all)
+          cases Hinit2 with
+          | intro σ₁' Hinit2 =>
+          have Hinit3 := InitStatesApp' Hinit2.2.1 (by simp_all) (by simp_all)
+          cases Hinit3 with
+          | intro σ₁'' Hinit3 =>
+            -- NOTE: We split the single InitStates into three stages
+            -- σ |-- init argVal --> σ₁'' |-- init outVal --> σ₁' |-- init oldVal --> σ₁
+            simp [← List.append_assoc]
+            apply EvalStatementsContractApp (σ':=
+                      (updatedStates (updatedStates (updatedStates (updatedStates σ
+                      (List.map (Prod.fst ∘ Prod.fst) argTrips) argVals)
+                      (List.map (Prod.fst ∘ Prod.fst) outTrips) outVals)
+                      (List.map (Prod.fst ∘ Prod.fst) oldTrips) oldVals)
+                      (lhs ++ proc.spec.modifies) modvals))
+            . simp [List.append_assoc]
+              apply EvalStatementsContractApp
+              . -- asserts
+                have Hrdin : ReadValues σAO (ListMap.keys proc.header.inputs) argVals := by
+                  apply InitStatesReadValuesMonotone (σ:=σA) ?_ Hinitout
+                  exact InitStatesReadValues Hinitin
+                have Hrdinout : ReadValues σAO
+                      (ListMap.keys proc.header.inputs ++ ListMap.keys proc.header.outputs)
+                      (argVals ++ outVals) := ReadValuesApp Hrdin Hrdout
+                have Hlen : (ListMap.keys proc.header.inputs).length =
+                            (createFvars (List.map (Prod.fst ∘ Prod.fst) argTrips)).length := by calc
+                            _ = argVals.length := InitStatesLength Hinitin
+                            _ = argTrips.length := by simp_all
+                            _ = (List.map (Prod.fst ∘ Prod.fst) argTrips).length := by simp_all
+                            _ = _ := by rw [createFvarsLength]
+                rw [← (List.zip_append Hlen)]
+                rw [← createFvarsApp]
+                apply createAssertsCorrect (σA:=σAO) Hwfb Hwfvars
+                . assumption
+                . assumption
+                . simp_all
+                  rw [createFvarsLength]
+                  simp [← Hargtriplen]
+                . -- substNodup
+                  have Hlen := ReadValuesLength Hrdin
+                  simp [Imperative.substNodup]
+                  rw [List.map_fst_zip, List.map_snd_zip] <;> simp_all
+                  -- TODO: input names of function not overlapping with generated variables
+                  -- can come from local/global distinction
+                  conv => arg 1; rw [← List.append_assoc]
+                  refine List.Disjoint_Nodup_iff.mp ⟨?_, ?_, ?_⟩
+                  . exact Hinoutnd
+                  . apply List.Disjoint_Nodup_iff.mp ⟨?_, ?_, ?_⟩
+                    . exact (List.Disjoint_Nodup_iff.mpr Hgennd).1
+                    . exact Hlhs.1
+                    . apply List.PredDisjoint_Disjoint
+                        (P:=(BoogieIdent.isTemp ·))
+                        (Q:=(BoogieIdent.isLocl ·))
+                      . exact HargTemp
+                      . exact Hlhs.2
+                      . apply List.PredDisjoint_PredImplies_right
+                        exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                        exact BoogieIdent.isLocl_isGlobOrLocl
+                  . apply List.Disjoint.symm
+                    apply List.Disjoint_app.mp ⟨?_, ?_⟩
+                    . apply List.PredDisjoint_Disjoint
+                        (P:=(BoogieIdent.isTemp ·))
+                        (Q:=(BoogieIdent.isGlobOrLocl ·))
+                      . exact HargTemp
+                      . apply List.Forall_append.mpr ⟨?_, ?_⟩
+                        . exact List.Forall_PredImplies Hinlc BoogieIdent.isLocl_isGlobOrLocl
+                        . exact List.Forall_PredImplies Houtlc BoogieIdent.isLocl_isGlobOrLocl
+                      . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                    . intros x Hin1 Hin2
+                      apply Hlhsdisj Hin1
+                      simp_all
+                . -- substDefined
+                  intros k1 k2 Hin
+                  have Hmem := List.of_mem_zip Hin
+                  simp only [List.mem_append] at Hmem
+                  apply And.intro
+                  . cases Hmem.1 with
+                    | inl Hmem =>
+                    have Hdef : Imperative.isDefined σAO (ListMap.keys proc.header.inputs) := by
+                      apply InitStatesDefMonotone ?_ Hinitout
+                      exact InitStatesDefined Hinitin
+                    exact Hdef k1 Hmem
+                    | inr Hmem =>
+                    have Hdef : Imperative.isDefined σAO (ListMap.keys proc.header.outputs) := by
+                      exact InitStatesDefined Hinitout
+                    exact Hdef k1 Hmem
+                  . cases Hmem.2 with
+                    | inl Hmem =>
+                      apply updatedStatesDefMonotone <;> try assumption
+                      apply updatedStatesDefMonotone <;> try assumption
+                      apply updatedStatesDefined
+                      simp_all
+                    | inr Hmem =>
+                      apply updatedStatesDefMonotone <;> try assumption
+                      apply updatedStatesDefMonotone <;> try assumption
+                      apply updatedStatesDefMonotone <;> try assumption
+                . -- precondition correct
+                  intros pre Hin; simp_all
+                  apply And.intro
+                  . simp [updatedStates]
+                    rw [← updatedStates'App]
+                    rw [← updatedStates'App]
+                    rw [← List.zip_append] <;> try simp_all
+                    rw [← List.zip_append] <;> try simp_all
+                    rw [← updatedStates]
+                    apply InvStoresExceptInvStores
+                    apply Imperative.invStoresExceptComm
+                    apply InvStoresExceptUpdated
+                    apply Imperative.invStoresExceptComm
+                    apply InvStoresExceptInitStates (σ:=σA) (ks':=ListMap.keys proc.header.outputs)
+                    apply InvStoresExceptInitStates (σ:=σ) (ks':=ListMap.keys proc.header.inputs)
+                    exact InvStoresExceptEmpty
+                    exact Hinitin
+                    exact Hinitout
+                    simp_all
+                    simp_all
+                    simp [← List.append_assoc]
+                    generalize ListMap.keys proc.header.inputs ++
+                               ListMap.keys proc.header.outputs ++
+                               List.map (Prod.fst ∘ Prod.fst) argTrips
+                               = inoutarg
+                    simp [List.append_assoc]
+                    simp [List.removeAll_app]
+                    rw [List.removeAll_comm]
+                    apply List.Disjoint.removeAll
+                    apply List.Disjoint.mono_right
+                    . exact List.removeAll_Sublist
+                    . apply List.PredDisjoint_Disjoint
+                        (P:=(BoogieIdent.isTemp ·))
+                        (Q:=(BoogieIdent.isGlobOrLocl ·))
+                      . apply List.Forall_append.mpr
+                        exact ⟨HoutTemp, HoldTemp⟩
+                      . have HH := prepostconditions_unwrap Hin
+                        cases HH with
+                        | intro label HH =>
+                        cases HH with
+                        | intro attr HH =>
+                        have Hwf := (List.Forall_mem_iff.mp wfpre _ HH).glvars
+                        simp at Hwf
+                        exact Hwf
+                      . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                  . have HH := prepostconditions_unwrap Hin
+                    cases HH with
+                    | intro label HH =>
+                    cases HH with
+                    | intro attr HH =>
+                    apply List.Disjoint_app.mp ⟨?_, ?_⟩
+                    . apply List.PredDisjoint_Disjoint
+                        (P:=(BoogieIdent.isTemp ·))
+                        (Q:=(BoogieIdent.isGlobOrLocl ·))
+                      . exact HargTemp
+                      . have Hwf := (List.Forall_mem_iff.mp wfpre _ HH).glvars
+                        simp at Hwf
+                        exact Hwf
+                      . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                    . have Hpre := (List.Forall_mem_iff.mp wfpre _ HH)
+                      have Hlcl := List.Forall_mem_iff.mp Hpre.lvars
+                      have Hgl := List.Forall_mem_iff.mp Hpre.glvars
+                      simp at Hlcl Hgl
+                      intros x Hin1 Hin2
+                      specialize Hgl x Hin2
+                      simp [BoogieIdent.isGlobOrLocl] at Hgl
+                      cases Hgl with
+                      | inl Hg =>
+                        -- disjoint of local and global
+                        have Hlhs := List.Forall_mem_iff.mp Hlhs.2
+                        specialize Hlhs x Hin1
+                        exact BoogieIdent.Disjoint_isLocl_isGlob _ Hlhs Hg
+                      | inr Hl =>
+                        -- disjoint because of WF
+                        specialize Hlcl x Hin2 Hl
+                        apply Hlhsdisj Hin1
+                        simp_all
+                . apply createFvarsSubstStores (σ:=σ₁') (σA:=σAO)
+                        (ks2:=(ListMap.keys proc.header.inputs) ++ (ListMap.keys proc.header.outputs))
+                  . -- length
+                    simp_all
+                    rw [createFvarsLength]
+                    simp [← Hargtriplen]
+                  . assumption
+                  . -- substDefined
+                    intros k1 k2 Hin
+                    have Hmem := List.of_mem_zip Hin
+                    apply And.intro
+                    . simp only [List.mem_append] at Hmem
+                      cases Hmem.1 with
+                      | inl Hmem =>
+                      have Hdef : Imperative.isDefined σ₁' argTrips.unzip.1.unzip.1 := by
+                        apply InitStatesDefMonotone ?_ Hinit3.2.2
+                        exact InitStatesDefined Hinit3.2.1
+                      simp at Hdef
+                      exact Hdef k1 Hmem
+                      | inr Hmem =>
+                      have Hdef : Imperative.isDefined σ₁' lhs := by
+                        simp [Hinit2.1]
+                        apply updatedStatesDefMonotone
+                        intros k Hin
+                        apply Hdeflm
+                        exact List.mem_append_left proc.spec.modifies Hin
+                      exact Hdef _ Hmem
+                    . apply ReadValuesIsDefined Hrdinout
+                      exact Hmem.2
+                  . -- substStores
+                    simp_all
+                    apply ReadValuesSubstStores ?_ Hrdinout
+                    apply ReadValuesApp
+                    simp [updatedStates]
+                    rw [List.zip_append]
+                    rw [updatedStates'App]
+                    apply ReadValuesUpdatedStates
+                    . simp [Houttriplen]
+                    . intros a Hin1 Hin2
+                      apply (List.nodup_append.mp Hgennd).2.2 a ?_ a ?_
+                      . rfl
+                      . simp only at Hin2 ⊢
+                        exact Hin2
+                      . simp only at Hin1 ⊢
+                        exact List.mem_append_left _ Hin1
+                    . apply ReadValuesUpdatedStatesSame
+                      simp [Hargtriplen]
+                      grind
+                    . -- length, provable
+                      simp [Hargtriplen]
+                    . apply ReadValuesUpdatedStates
+                      . -- length, provable
+                        simp [Hargtriplen, Houttriplen]
+                      . apply List.PredDisjoint_Disjoint
+                          (P:=(BoogieIdent.isTemp ·))
+                          (Q:=(BoogieIdent.isLocl ·))
+                        . apply List.Forall_append.mpr ⟨HargTemp, HoutTemp⟩
+                        . exact Hlhs.2
+                        . apply List.PredDisjoint_PredImplies_right
+                          exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                          exact BoogieIdent.isLocl_isGlobOrLocl
+                      . exact Hevalouts
+                  . exact Hrdinout
+                . -- Read Values
+                  exact Hrdinout
+                . -- substStores
+                  apply ReadValuesSubstStores ?_ Hrdinout
+                  apply ReadValuesApp
+                  simp [updatedStates]
+                  apply ReadValuesUpdatedStates
+                  . simp [Holdtriplen]
+                  . intros a Hin1 Hin2
+                    apply (List.nodup_append.mp Hgennd).2.2 a ?_ a ?_
+                    . rfl
+                    . simp at Hin2 ⊢
+                      exact Or.inl Hin2
+                    . simp at Hin1 ⊢
+                      exact Hin1
+                  apply ReadValuesUpdatedStates
+                  . simp [Houttriplen]
+                  . intros a Hin1 Hin2
+                    apply (List.nodup_append.mp (List.nodup_append.mp Hgennd).1).2.2 a ?_ a ?_
+                    . rfl
+                    . simp at Hin2 ⊢
+                      exact Hin2
+                    . simp at Hin1 ⊢
+                      exact Hin1
+                  . apply ReadValuesUpdatedStatesSame
+                    simp [Hargtriplen]
+                    grind
+                  . apply ReadValuesUpdatedStates
+                    . simp [Holdtriplen]
+                    . apply List.PredDisjoint_Disjoint
+                        (P:=(BoogieIdent.isTemp ·))
+                        (Q:=(BoogieIdent.isLocl ·))
+                      . simp at HoldTemp
+                        exact HoldTemp
+                      . exact Hlhs.2
+                      . apply List.PredDisjoint_PredImplies_right
+                        exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                        exact BoogieIdent.isLocl_isGlobOrLocl
+                    . apply ReadValuesUpdatedStates
+                      . simp [Houttriplen]
+                      . apply List.PredDisjoint_Disjoint
+                          (P:=(BoogieIdent.isTemp ·))
+                          (Q:=(BoogieIdent.isLocl ·))
+                        . simp at HoutTemp
+                          exact HoutTemp
+                        . exact Hlhs.2
+                        . apply List.PredDisjoint_PredImplies_right
+                          exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                          exact BoogieIdent.isLocl_isGlobOrLocl
+                      . apply ReadValuesUpdatedStates
+                        . simp [Hargtriplen]
+                        . apply List.PredDisjoint_Disjoint
+                            (P:=(BoogieIdent.isTemp ·))
+                            (Q:=(BoogieIdent.isLocl ·))
+                          . simp at HargTemp
+                            exact HargTemp
+                          . exact Hlhs.2
+                          . apply List.PredDisjoint_PredImplies_right
+                            exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                            exact BoogieIdent.isLocl_isGlobOrLocl
+                        . exact Hevalouts
+              . -- Prove havocs correct
+                simp [← createHavocsApp]
+                apply EvalStatementsContractHavocVars (σ':=
+                      (updatedStates (updatedStates (updatedStates (updatedStates σ
+                      (List.map (Prod.fst ∘ Prod.fst) argTrips) argVals)
+                      (List.map (Prod.fst ∘ Prod.fst) outTrips) outVals)
+                      (List.map (Prod.fst ∘ Prod.fst) oldTrips) oldVals)
+                      (lhs ++ proc.spec.modifies) modvals))
+                . assumption
+                . apply updatedStatesDefMonotone
+                  apply updatedStatesDefMonotone
+                  apply updatedStatesDefMonotone
+                  exact Hdeflm
+                . apply UpdateStatesHavocVars (modvals:=modvals)
+                  refine updatedStatesUpdate ?_ ?_
+                  exact UpdateStatesLength Hupdate
+                  apply updatedStatesDefMonotone
+                  apply updatedStatesDefMonotone
+                  apply updatedStatesDefMonotone
+                  exact Hdeflm
+            . -- Prove assumes correct
+              -- transform to the same store
+              simp [updatedStates]
+              rw [updatedStatesComm]
+              rw [updatedStatesComm (kvs':=(lhs ++ proc.spec.modifies).zip modvals)]
+              rw [updatedStatesComm (kvs':=(lhs ++ proc.spec.modifies).zip modvals)]
+              simp [UpdateStatesUpdated Hupdate, updatedStates]
+              rw [List.zip_append] <;> simp_all
+              rw [List.zip_append]
+              rw [updatedStates'App]
+              rw [updatedStates'App]
+              rw [← List.zip_append]
+              -- combine fvars
+              rw [← createFvarsApp]
+              . -- createAssumesCorrect
+                -- NOTE: σR here should be σR with the temporary old variables
+                generalize HσR₁ : (updatedStates (updatedStates σR
+                                  (List.map (Prod.fst ∘ Prod.fst) outTrips) outVals))
+                                  (List.map (Prod.fst ∘ Prod.fst) oldTrips) oldVals = σR₁
+                apply createAssumesCorrect (σ₀':=σ₁) (σA:=σR₁) Hwfb Hwfvars
+                . assumption
+                . assumption
+                . -- length
+                  simp_all
+                  exact EvalExpressionsLength Hevalargs
+                . -- substNoDup
+                  simp [Imperative.substNodup]
+                  rw [List.map_fst_zip]
+                  rw [List.map_snd_zip]
+                  . apply List.Disjoint_Nodup_iff.mp
+                    refine ⟨Hinoutnd, ?_, ?_⟩
+                    . simp [← List.append_assoc] at Hgennd
+                      have HH := List.nodup_append.mp Hgennd
+                      apply List.Disjoint_Nodup_iff.mp
+                      refine ⟨?_, ?_, ?_⟩
+                      . exact (List.nodup_append.mp HH.1).1
+                      . exact Hlhs.1
+                      . apply List.PredDisjoint_Disjoint
+                          (P:=(BoogieIdent.isTemp ·))
+                          (Q:=(BoogieIdent.isLocl ·))
+                        . exact HargTemp
+                        . exact Hlhs.2
+                        . apply List.PredDisjoint_PredImplies_right
+                          exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                          exact BoogieIdent.isLocl_isGlobOrLocl
+                    . apply List.Disjoint.symm
+                      apply List.Disjoint_app.mp ⟨?_, ?_⟩
+                      . apply List.PredDisjoint_Disjoint
+                          (P:=(BoogieIdent.isTemp ·))
+                          (Q:=(BoogieIdent.isGlobOrLocl ·))
+                        . exact HargTemp
+                        . apply List.Forall_append.mpr ⟨?_, ?_⟩
+                          . exact List.Forall_PredImplies Hinlc BoogieIdent.isLocl_isGlobOrLocl
+                          . exact List.Forall_PredImplies Houtlc BoogieIdent.isLocl_isGlobOrLocl
+                        . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                      . intros x Hin1 Hin2
+                        apply Hlhsdisj Hin1
+                        simp_all
+                  . simp_all
+                    simp [← Hargtriplen, ← Heqargs]
+                  . simp_all
+                    simp [← Hargtriplen, ← Heqargs]
+                . -- substDefined
+                  intros k1 k2 Hin
+                  have Hmem := List.of_mem_zip Hin
+                  simp only [List.mem_append] at Hmem
+                  apply And.intro
+                  -- inputs and outputs defined in σR
+                  . cases Hmem.1 with
+                    | inl Hmem =>
+                    have Hdef : Imperative.isDefined σR₁ (ListMap.keys proc.header.inputs) := by
+                      simp [← HσR₁]
+                      apply updatedStatesDefMonotone
+                      apply updatedStatesDefMonotone
+                      apply HavocVarsDefMonotone ?_ Hhav2
+                      apply HavocVarsDefMonotone ?_ Hhav1
+                      apply InitStatesDefMonotone ?_ Hinitout
+                      exact InitStatesDefined Hinitin
+                    exact Hdef k1 Hmem
+                    | inr Hmem =>
+                    have Hdef : Imperative.isDefined σR₁ (ListMap.keys proc.header.outputs) := by
+                      simp [← HσR₁]
+                      apply updatedStatesDefMonotone
+                      apply updatedStatesDefMonotone
+                      apply HavocVarsDefMonotone ?_ Hhav2
+                      apply HavocVarsDefMonotone ?_ Hhav1
+                      exact InitStatesDefined Hinitout
+                    exact Hdef k1 Hmem
+                  . cases Hmem.2 with
+                    | inl Hmem =>
+                      apply updatedStatesDefMonotone <;> try assumption
+                      apply updatedStatesDefMonotone <;> try assumption
+                      apply updatedStatesDefined
+                      simp_all
+                    | inr Hmem =>
+                      apply updatedStatesDefMonotone <;> try assumption
+                      apply updatedStatesDefMonotone <;> try assumption
+                      apply updatedStatesDefMonotone <;> try assumption
+                      apply updatedStatesDefMonotone <;> try assumption
+                    -- args and outs are defined in σ₁
+                . intros substPost HinSubst
+                  refine ⟨?_, ?_, ?_⟩
+                  . -- store invariant
+                    have Hndrd1 : (ListMap.keys proc.header.outputs ++ proc.spec.modifies).Nodup := by
+                      refine List.Disjoint_Nodup_iff.mp ⟨Houtnd, Hmodsnd, ?_⟩
+                      -- disjoint between local and global
+                      apply List.PredDisjoint_Disjoint
+                          (P:=(BoogieIdent.isLocl ·))
+                          (Q:=(BoogieIdent.isGlob ·))
+                      . exact Houtlc
+                      . exact Hmodglob
+                      . exact BoogieIdent.Disjoint_isLocl_isGlob
+                    have Hrd1 := UpdateStatesReadValues Houtnd Hup1
+                    have Hrd2 := UpdateStatesReadValues Hmodsnd Hup2
+                    have Heq2 := ReadValuesInjective Hrd2 Hrd'.2.2
+                    -- start reducing the update operation
+                    apply InvStoresExceptInvStores (ks:=
+                          (ListMap.keys proc.header.inputs ++
+                          ListMap.keys proc.header.outputs ++
+                          (List.map (Prod.fst ∘ Prod.fst) argTrips ++
+                          List.map Prod.snd outTrips)))
+                    . apply Imperative.invStoresExceptComm
+                      rw [← HσR₁]
+                      apply InvStoresExceptUpdatedSame
+                      apply InvStoresExceptUpdatedSame
+                      . apply InvStoresExceptUpdatedMem
+                        . rw [← Hrd'.1]
+                          rw [List.zip_append]
+                          rw [updatedStates'App]
+                          rw [updatedStatesComm]
+                          . apply InvStoresExceptUpdatedMem
+                            . simp [UpdateStatesUpdated Hup2]
+                              simp [← Heq2]
+                              apply InvStoresExceptUpdatedSame
+                              . apply Imperative.invStoresExceptComm
+                                simp [UpdateStatesUpdated Hup1]
+                                simp [InitStatesUpdated Hinitout]
+                                simp [InitStatesUpdated Hinitin]
+                                apply InvStoresExceptUpdatedMem
+                                apply InvStoresExceptUpdatedMem
+                                apply InvStoresExceptUpdatedMem
+                                apply InvStoresExceptId
+                                . simp [Harglen, ← Heqargs, Hargtriplen]
+                                . intros x Hin
+                                  simp_all
+                                . simp [Houtlen]
+                                . intros x Hin
+                                  simp_all
+                                . exact ReadValuesLength Hrd1
+                                . intros x Hin
+                                  simp_all
+                              . exact ReadValuesLength Hrd2
+                              . exact Hmodsnd
+                            . simp [← Houtlen , Houttriplen]
+                              have Hlen := ReadValuesLength Hrd'.2.1
+                              simp at Hlen
+                              exact Hlen
+                            . intros x Hin
+                              simp_all
+                          . -- lhs disjoint from modifies, from WF
+                            rw [List.unzip_zip]
+                            rw [List.unzip_zip]
+                            simp
+                            . exact List.DisjointAppRight' Hlhsdisj
+                            . simp [← Heq2]
+                              exact ReadValuesLength Hrd2
+                            . have Hlen := ReadValuesLength Hrd'.2.1
+                              simp_all
+                          . simp [← Houtlen , Houttriplen]
+                            have Hlen := ReadValuesLength Hrd'.2.1
+                            simp at Hlen
+                            exact Hlen
+                        . simp [Hargtriplen]
+                        . intros x Hin
+                          simp_all
+                          -- NOTE: can also use equivalent proof term:
+                          -- exact List.mem_append.mpr (Or.inr (List.mem_append.mpr (Or.inl Hin)))
+                      . simp [Houttriplen]
+                      . exact (List.nodup_append.mp (List.nodup_append.mp Hgennd).2.1).1
+                      . simp [Holdtriplen]
+                      . exact (List.nodup_append.mp (List.nodup_append.mp Hgennd).2.1).2.1
+                    . apply List.Disjoint.symm
+                      exact List.removeAll_Disjoint
+                  . -- TODO : all vars in substPost is a subset of subst ++ fst fst oldTrips
+                    have Hin := postconditions_subst_unwrap HinSubst
+                    cases Hin with
+                    | intro post Hin =>
+                    have HH := prepostconditions_unwrap Hin.1
+                    cases HH with
+                    | intro label HH =>
+                    cases HH with
+                    | intro attr HH =>
+                    have Hpost := (List.Forall_mem_iff.mp wfpost _ HH)
+                    have Hlcl := List.Forall_mem_iff.mp Hpost.lvars
+                    have Hgl := List.Forall_mem_iff.mp Hpost.glvars
+                    simp at Hlcl Hgl
+                    intros x Hin1 Hin2
+                    have Hdisj : oldTrips.unzip.fst.unzip.fst.Disjoint oldTrips.unzip.snd := by
+                      apply List.PredDisjoint_Disjoint
+                        (P:=(BoogieIdent.isTemp ·))
+                        (Q:=(BoogieIdent.isGlob ·))
+                      . simp; exact HoldTemp
+                      . simp; exact Holdsndglob
+                      . apply List.PredDisjoint_PredImplies_right
+                        exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                        exact BoogieIdent.isGlob_isGlobOrLocl
+                    have Hsubset := substsOldPostSubset (post:=(OldExpressions.normalizeOldExpr post)) (oldTrips:=oldTrips) Hdisj
+                    have Hin : x ∈ (Imperative.HasVarsPure.getVars (P:=Expression) (OldExpressions.normalizeOldExpr post) ++
+                                oldTrips.unzip.fst.unzip.fst) := by
+                      apply Hsubset
+                      simp [Hin.2] at Hin2
+                      exact Hin2
+                    simp only [List.mem_append] at Hin Hin1
+                    cases Hin1 with
+                    | inl Hin1 =>
+                      cases Hin with
+                      | inl Hin =>
+                        -- disjoint of global/local with temp
+                        have Hin := normalizeOldExprInVars Hin
+                        specialize Hgl x Hin
+                        apply BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                        . exact List.Forall_mem_iff.mp HargTemp x Hin1
+                        . exact Hgl
+                      | inr Hin =>
+                        -- disjoint among temp
+                        simp only [List.unzip_fst, List.map_map] at Hin
+                        simp [BoogieIdent.isGlobOrLocl] at Hgl
+                        have HH := (List.nodup_append.mp Hgennd).2.2
+                        apply HH x Hin1 x
+                        apply List.mem_append.mpr
+                        apply (Or.inr Hin)
+                        rfl
+                    | inr Hin1 =>
+                    cases Hin with
+                    | inl Hin =>
+                      have Hin := normalizeOldExprInVars Hin
+                      specialize Hgl x Hin
+                      -- x is either global or local
+                      simp [BoogieIdent.isGlobOrLocl] at Hgl
+                      cases Hgl with
+                      | inl Hg =>
+                        -- x is global
+                        have Hlhs := List.Forall_mem_iff.mp Hlhs.2
+                        specialize Hlhs x Hin1
+                        exact BoogieIdent.Disjoint_isLocl_isGlob _ Hlhs Hg
+                      | inr Hl =>
+                        -- x is local, use wf
+                        specialize Hlcl x Hin Hl
+                        apply Hlhsdisj Hin1
+                        simp_all
+                    | inr Hin =>
+                      -- oldTrips disjoint from lhs
+                      simp only [List.unzip_fst, List.map_map] at Hin
+                      apply BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                      . exact List.Forall_mem_iff.mp HoldTemp x Hin
+                      . apply BoogieIdent.isLocl_isGlobOrLocl
+                        exact List.Forall_mem_iff.mp Hlhs.2 _ Hin1
+                  . -- post condition correct
+                    have Hmem := SubstPostsMem HinSubst
+                    cases Hmem with
+                    | intro post Hin =>
+                    specialize Hpost post Hin.1
+                    simp [Hin.2]
+                    -- simp [Imperative.WellFormedSemanticEvalBool] at Hwfb
+                    -- apply (Hwfb _ _ _).1.1.mp
+                    have Hsubst' :
+                      δ σO σR₁ post =
+                      δ σ₁ σR₁ (OldExpressions.substsOldExpr (createOldVarsSubst oldTrips) (OldExpressions.normalizeOldExpr post))
+                      := by
+                        cases Hwf2 with
+                        | intro e Hwf2 =>
+                        rw [Hwf2.2 (e:=post)]
+                        apply substsOldCorrect
+                        -- wf
+                        . assumption
+                        . assumption
+                        . assumption
+                        -- wfTwoState, should be provable by setting inits to the oldVars created
+                        . simp [WellFormedBoogieEvalTwoState]
+                          refine ⟨?_, ?_, Hwf2.2⟩
+                          . -- split into havoc and init, by setting inits to the oldVars created
+                            simp [← HσR₁]
+                            refine ⟨proc.spec.modifies,
+                                    (List.map (Prod.fst ∘ Prod.fst) outTrips) ++
+                                    (List.map (Prod.fst ∘ Prod.fst) oldTrips), σR, ?_, ?_⟩
+                            . exact Hhav2
+                            . simp [updatedStates]
+                              rw [← updatedStates'App]
+                              rw [← List.zip_append]
+                              rw [← updatedStates]
+                              apply InitStatesInitVars
+                              refine updatedStatesInit ?_ ?_ ?_
+                              . simp [Houttriplen, Holdtriplen]
+                              . -- not defined
+                                apply UpdateStatesNotDefMonotone _ Hup2
+                                apply UpdateStatesNotDefMonotone _ Hup1
+                                simp [InitStatesUpdated Hinitout]
+                                apply UpdatedStatesDisjNotDefMonotone
+                                . -- Disjoint between local and temp
+                                  apply List.Disjoint.symm
+                                  apply List.PredDisjoint_Disjoint
+                                    (P:=(BoogieIdent.isTemp ·))
+                                    (Q:=(BoogieIdent.isGlobOrLocl ·))
+                                  . exact List.Forall_append.mpr ⟨HoutTemp, HoldTemp⟩
+                                  . exact List.Forall_PredImplies Houtlc BoogieIdent.isLocl_isGlobOrLocl
+                                  . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                                . simp [Houtlen]
+                                . simp [InitStatesUpdated Hinitin]
+                                  apply UpdatedStatesDisjNotDefMonotone
+                                  . -- Disjoint between local and temp
+                                    apply List.Disjoint.symm
+                                    apply List.PredDisjoint_Disjoint
+                                      (P:=(BoogieIdent.isTemp ·))
+                                      (Q:=(BoogieIdent.isGlobOrLocl ·))
+                                    . exact List.Forall_append.mpr ⟨HoutTemp, HoldTemp⟩
+                                    . exact List.Forall_PredImplies Hinlc BoogieIdent.isLocl_isGlobOrLocl
+                                    . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                                  . simp [← Hargtriplen, Harglen, ← Heqargs]
+                                  . have Hndef := (Imperative.isNotDefinedApp' Hndefgen).2
+                                    exact UpdateStatesNotDefMonotone' Hndef Hupdate
+                              . exact (List.nodup_append.mp Hgennd).2.1
+                              . simp [Houttriplen]
+                          . intros vs vs' σ₀ σ₁ σ m Hhav Hinit
+                            have HH := Hwf2.1 vs vs' σ₀ σ₁ σ m ⟨Hhav,Hinit⟩
+                            apply HH
+                        -- normalized
+                        . apply OldExpressions.normalizeOldExprSound
+                          have HH := prepostconditions_unwrap Hin.1
+                          cases HH with
+                          | intro label HH =>
+                          cases HH with
+                          | intro attr HH =>
+                          have Hwfpost := (List.Forall_mem_iff.mp wfpost _ HH).oldexprs
+                          simp at Hwfpost
+                          exact Hwfpost
+                        . rw [createOldStoreSubstEq]
+                          have Hhav := HavocVarsUpdateStates Hhav1
+                          cases Hhav with
+                          | intro modvals Hhav =>
+                          apply ReadValuesSubstStores
+                          apply UpdateStatesReadValuesMonotone (σ:=σAO) (vs:=oldVals) _ ?_ Hhav
+                          . -- Nodup
+                            apply List.Disjoint_Nodup_iff.mp
+                            refine ⟨?_, ?_, ?_⟩
+                            . have Heq := genOldExprIdentsTrip_snd Heqold
+                              simp [Heq]
+                              apply filter_nodup
+                              apply eraseDups_Nodup
+                            . exact Houtnd
+                            . -- Disjoint between local and temp
+                              apply List.Disjoint.symm
+                              apply List.PredDisjoint_Disjoint
+                                  (P:=(BoogieIdent.isLocl ·))
+                                  (Q:=(BoogieIdent.isGlob ·))
+                              . exact Houtlc
+                              . simp [genOldExprIdentsTrip_snd Heqold]
+                                apply List.Forall_PredImplies
+                                . apply List.Forall_filter
+                                . exact WFProgGlob Hwfp
+                              . exact BoogieIdent.Disjoint_isLocl_isGlob
+                          . apply InitStatesReadValuesMonotone (σ:=σA) ?_ Hinitout
+                            . apply InitStatesReadValuesMonotone (σ:=σ) ?_ Hinitin
+                              simp only [List.unzip_snd]
+                              exact HoldVals
+                          . simp [← HσR₁]
+                            apply ReadValuesUpdatedStatesSame
+                            simp [Holdtriplen]
+                            exact (List.nodup_append.mp (List.nodup_append.mp Hgennd).2.1).2.1
+                        . rw [createOldStoreSubstEq]
+                          intros k1 k2 Hin
+                          have Hmem := List.of_mem_zip Hin
+                          apply And.intro
+                          . have Hdef : Imperative.isDefined σO (oldTrips.unzip.snd) := by
+                              apply HavocVarsDefMonotone ?_ Hhav1
+                              apply InitStatesDefMonotone ?_ Hinitout
+                              apply InitStatesDefMonotone ?_ Hinitin
+                              simp only [List.unzip_snd]
+                              exact HoldDef
+                            exact Hdef k1 Hmem.1
+                          . have Hdef : Imperative.isDefined σR₁ oldTrips.unzip.fst.unzip.fst := by
+                              simp [← HσR₁]
+                              apply updatedStatesDefined
+                              simp [Holdtriplen]
+                            exact Hdef k2 Hmem.2
+                        . rw [createOldStoreSubstEq]
+                          simp [Imperative.substNodup]
+                          simp [← List.unzip_fst, ← List.unzip_snd]
+                          rw [List.unzip_zip]
+                          simp
+                          apply List.Disjoint_Nodup_iff.mp
+                          . refine ⟨?_, ?_, ?_⟩
+                            . -- oldTrips.unzip.2 Nodup. needs some equivalence
+                              have Heq := genOldExprIdentsTrip_snd Heqold
+                              simp only [Heq]
+                              apply filter_nodup
+                              apply eraseDups_Nodup
+                            . exact (List.nodup_append.mp (List.nodup_append.mp Hgennd).2.1).2.1
+                            . apply List.Disjoint.symm
+                              apply List.PredDisjoint_Disjoint
+                                  (P:=(BoogieIdent.isTemp ·))
+                                  (Q:=(BoogieIdent.isGlob ·))
+                              . exact HoldTemp
+                              . simp [genOldExprIdentsTrip_snd Heqold]
+                                apply List.Forall_PredImplies
+                                . apply List.Forall_filter
+                                . exact WFProgGlob Hwfp
+                              . apply List.PredDisjoint_PredImplies_right
+                                exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                                exact BoogieIdent.isGlob_isGlobOrLocl
+                          . simp [Holdtriplen]
+                        . apply List.Disjoint_Subset_right (ks:=(Imperative.HasVarsPure.getVars post))
+                          . apply List.PredDisjoint_Disjoint
+                                (P:=(BoogieIdent.isTemp ·))
+                                (Q:=(BoogieIdent.isGlobOrLocl ·))
+                            . simp
+                              exact HoldTemp
+                            . have HH := prepostconditions_unwrap Hin.1
+                              cases HH with
+                              | intro label HH =>
+                              cases HH with
+                              | intro attr HH =>
+                              have Hwf := (List.Forall_mem_iff.mp wfpost _ HH).glvars
+                              simp at Hwf
+                              exact Hwf
+                            . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                          . refine extractedOldVarsInVars ?_
+                            have HH := prepostconditions_unwrap Hin.1
+                            cases HH with
+                            | intro label HH =>
+                            cases HH with
+                            | intro attr HH =>
+                            have Hwf := (List.Forall_mem_iff.mp wfpost _ HH).oldexprs
+                            simp at Hwf
+                            exact Hwf
+                    rw [← Hsubst']
+                    simp [← HσR₁]
+                    apply EvalExpressionUpdatedStates <;> try assumption
+                    . simp [Holdtriplen]
+                    . exact (List.nodup_append.mp (List.nodup_append.mp Hgennd).2.1).2.1
+                    . apply List.PredDisjoint_Disjoint
+                          (P:=(BoogieIdent.isTemp ·))
+                          (Q:=(BoogieIdent.isGlobOrLocl ·))
+                      . exact HoldTemp
+                      . have HH := prepostconditions_unwrap Hin.1
+                        cases HH with
+                        | intro label HH =>
+                        cases HH with
+                        | intro attr HH =>
+                        have Hwf := (List.Forall_mem_iff.mp wfpost _ HH).glvars
+                        simp at Hwf
+                        exact Hwf
+                      . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                    apply EvalExpressionUpdatedStates <;> try assumption
+                    . simp [Houttriplen]
+                    . exact (List.nodup_append.mp (List.nodup_append.mp Hgennd).2.1).1
+                    . apply List.PredDisjoint_Disjoint
+                          (P:=(BoogieIdent.isTemp ·))
+                          (Q:=(BoogieIdent.isGlobOrLocl ·))
+                      . exact HoutTemp
+                      . have HH := prepostconditions_unwrap Hin.1
+                        cases HH with
+                        | intro label HH =>
+                        cases HH with
+                        | intro attr HH =>
+                        have Hwf := (List.Forall_mem_iff.mp wfpost _ HH).glvars
+                        simp at Hwf
+                        exact Hwf
+                      . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                    exact Hpost.2
+                . -- substStores, provable
+                  apply ReadValuesSubstStores (vs:=argVals ++ v1)
+                  . apply ReadValuesApp
+                    . simp [← HσR₁]
+                      apply InitStatesReadValuesMonotone (σ:=σR)
+                      . -- read values
+                        apply UpdateStatesReadValuesMonotone (σ:=σO) _ ?_ Hup2
+                        . -- nodup between inputs and modifies
+                          apply List.Disjoint_Nodup_iff.mp
+                          refine ⟨?_, ?_, ?_⟩
+                          . exact Hinnd
+                          . exact Hmodsnd
+                          . -- Disjoint between local and temp
+                            apply List.PredDisjoint_Disjoint
+                                (P:=(BoogieIdent.isLocl ·))
+                                (Q:=(BoogieIdent.isGlob ·))
+                            . exact Hinlc
+                            . exact Hmodglob
+                            . exact BoogieIdent.Disjoint_isLocl_isGlob
+                        . apply UpdateStatesReadValuesMonotone (σ:=σAO) _ ?_ Hup1
+                          . exact Hinoutnd
+                          . apply InitStatesReadValuesMonotone (σ:=σA) _ Hinitout
+                            . apply InitStatesReadValues (σ:=σ) Hinitin
+                      . simp [updatedStates]
+                        rw [← updatedStates'App]
+                        rw [← List.zip_append]
+                        rw [← updatedStates]
+                        apply updatedStatesInit
+                        . simp [Holdtriplen, Houttriplen]
+                        . -- not defined
+                          apply UpdateStatesNotDefMonotone _ Hup2
+                          apply UpdateStatesNotDefMonotone _ Hup1
+                          simp [InitStatesUpdated Hinitout]
+                          apply UpdatedStatesDisjNotDefMonotone
+                          . -- Disjoint between local and temp
+                            apply List.Disjoint.symm
+                            apply List.PredDisjoint_Disjoint
+                              (P:=(BoogieIdent.isTemp ·))
+                              (Q:=(BoogieIdent.isGlobOrLocl ·))
+                            . exact List.Forall_append.mpr ⟨HoutTemp, HoldTemp⟩
+                            . refine List.Forall_PredImplies Houtlc BoogieIdent.isLocl_isGlobOrLocl
+                            . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                          . simp [Houtlen]
+                          . simp [InitStatesUpdated Hinitin]
+                            apply UpdatedStatesDisjNotDefMonotone
+                            . -- Disjoint between local and temp
+                              apply List.Disjoint.symm
+                              apply List.PredDisjoint_Disjoint
+                                (P:=(BoogieIdent.isTemp ·))
+                                (Q:=(BoogieIdent.isGlobOrLocl ·))
+                              . exact List.Forall_append.mpr ⟨HoutTemp, HoldTemp⟩
+                              . refine List.Forall_PredImplies Hinlc BoogieIdent.isLocl_isGlobOrLocl
+                              . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                            . simp [← Hargtriplen, Harglen, ← Heqargs]
+                            . have Hndef := (Imperative.isNotDefinedApp' Hndefgen).2
+                              exact UpdateStatesNotDefMonotone' Hndef Hupdate
+                        . exact (List.nodup_append.mp Hgennd).2.1
+                        . simp [Houttriplen]
+                    . simp [← HσR₁]
+                      apply ReadValuesUpdatedStates
+                      . simp [Holdtriplen]
+                      . -- Disjoint between local and temp
+                        apply List.PredDisjoint_Disjoint
+                          (P:=(BoogieIdent.isTemp ·))
+                          (Q:=(BoogieIdent.isGlobOrLocl ·))
+                        . exact HoldTemp
+                        . refine List.Forall_PredImplies Houtlc BoogieIdent.isLocl_isGlobOrLocl
+                        . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                      . apply ReadValuesUpdatedStates
+                        . simp [Houttriplen]
+                        . -- Disjoint between local and temp
+                          apply List.PredDisjoint_Disjoint
+                            (P:=(BoogieIdent.isTemp ·))
+                            (Q:=(BoogieIdent.isGlobOrLocl ·))
+                          . exact HoutTemp
+                          . refine List.Forall_PredImplies Houtlc BoogieIdent.isLocl_isGlobOrLocl
+                          . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                        . exact Hrd'.2.1
+                  . apply ReadValuesApp
+                    . apply ReadValuesUpdatedStates
+                      . simp [Holdtriplen]
+                      . simp only [nodup_swap'] at Hgennd
+                        simp only [List.append_assoc] at Hgennd
+                        exact (List.Disjoint_Nodup_iff.mpr (List.nodup_append.mp Hgennd).2.1).2.2
+                      . apply ReadValuesUpdatedStates
+                        . simp [Houttriplen]
+                        . simp only [← List.append_assoc] at Hgennd
+                          exact List.Disjoint.symm (List.Disjoint_Nodup_iff.mpr (List.nodup_append.mp Hgennd).1).2.2
+                        . apply ReadValuesUpdatedStatesSame
+                          . simp [Hargtriplen]
+                          . exact (List.nodup_append.mp Hgennd).1
+                    . simp [← Hrd'.1]
+                      rw [List.zip_append, updatedStates'App]
+                      . apply ReadValuesUpdatedStates
+                        . simp [Holdtriplen]
+                        . -- Disjoint between local and temp
+                          apply List.PredDisjoint_Disjoint
+                            (P:=(BoogieIdent.isTemp ·))
+                            (Q:=(BoogieIdent.isLocl ·))
+                          . exact HoldTemp
+                          . exact Hlhs.2
+                          . apply List.PredDisjoint_PredImplies_right
+                            exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                            exact BoogieIdent.isLocl_isGlobOrLocl
+                        . apply ReadValuesUpdatedStates
+                          . simp [Houttriplen]
+                          . -- Disjoint between local and temp
+                            apply List.PredDisjoint_Disjoint
+                              (P:=(BoogieIdent.isTemp ·))
+                              (Q:=(BoogieIdent.isLocl ·))
+                            . exact HoutTemp
+                            . exact Hlhs.2
+                            . apply List.PredDisjoint_PredImplies_right
+                              exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                              exact BoogieIdent.isLocl_isGlobOrLocl
+                          . apply ReadValuesUpdatedStates
+                            . simp [Hargtriplen]
+                            . -- Disjoint between local and temp
+                              apply List.PredDisjoint_Disjoint
+                                (P:=(BoogieIdent.isTemp ·))
+                                (Q:=(BoogieIdent.isLocl ·))
+                              . exact HargTemp
+                              . exact Hlhs.2
+                              . apply List.PredDisjoint_PredImplies_right
+                                exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                                exact BoogieIdent.isLocl_isGlobOrLocl
+                            . apply ReadValuesUpdatedStates
+                              . exact ReadValuesLength Hrd'.2.2
+                              . intros x Hin1 Hin2
+                                apply Hlhsdisj Hin2
+                                simp_all
+                              . apply ReadValuesUpdatedStatesSame
+                                . simp [Houttriplen, ← Houtlen]
+                                  have HH := ReadValuesLength Hrd'.2.1
+                                  simp at HH
+                                  exact HH
+                                . exact Hlhs.1
+                      . simp [Houttriplen, ← Houtlen]
+                        have HH := ReadValuesLength Hrd'.2.1
+                        simp at HH
+                        exact HH
+              . -- length of input and argTrips
+                simp [createFvars]
+                have Heq := InitStatesLength Hinitin
+                simp_all
+              . -- length of output and outVals
+                simp_all
+              . simp
+                have Hlen := UpdateStatesLength Hupdate
+                rw [List.map_fst_zip]
+                rw [List.map_fst_zip]
+                . -- Disjoint between old labels and lhs, modified, and modvals
+                  apply List.PredDisjoint_Disjoint
+                    (P:=(BoogieIdent.isTemp ·))
+                    (Q:=(BoogieIdent.isGlobOrLocl ·))
+                  . simp at HargTemp
+                    exact HargTemp
+                  . apply List.Forall_append.mpr ⟨?_, ?_⟩
+                    . exact List.Forall_PredImplies Hlhs.2 BoogieIdent.isLocl_isGlobOrLocl
+                    . exact List.Forall_PredImplies Hmodglob BoogieIdent.isGlob_isGlobOrLocl
+                  . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                . simp_all
+                . simp_all
+              . -- Disjoint between old labels and lhs, modified, and modvals
+                simp
+                rw [List.map_fst_zip]
+                rw [List.map_fst_zip (l₂:=modvals)]
+                apply List.PredDisjoint_Disjoint
+                  (P:=(BoogieIdent.isTemp ·))
+                  (Q:=(BoogieIdent.isGlobOrLocl ·))
+                . simp at HoutTemp
+                  exact HoutTemp
+                . apply List.Forall_append.mpr ⟨?_, ?_⟩
+                  . exact List.Forall_PredImplies Hlhs.2 BoogieIdent.isLocl_isGlobOrLocl
+                  . exact List.Forall_PredImplies Hmodglob BoogieIdent.isGlob_isGlobOrLocl
+                . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                . have Hlen := UpdateStatesLength Hupdate
+                  omega
+                . simp_all
+              . -- Disjoint between generated out labels and lhs ++ modifies
+                simp
+                rw [List.map_fst_zip]
+                rw [List.map_fst_zip (l₂:=modvals)]
+                apply List.PredDisjoint_Disjoint
+                  (P:=(BoogieIdent.isTemp ·))
+                  (Q:=(BoogieIdent.isGlobOrLocl ·))
+                . simp at HoldTemp
+                  exact HoldTemp
+                . apply List.Forall_append.mpr ⟨?_, ?_⟩
+                  . exact List.Forall_PredImplies Hlhs.2 BoogieIdent.isLocl_isGlobOrLocl
+                  . exact List.Forall_PredImplies Hmodglob BoogieIdent.isGlob_isGlobOrLocl
+                . exact BoogieIdent.Disjoint_isTemp_isGlobOrLocl
+                . have Hlen := UpdateStatesLength Hupdate
+                  omega
+                . simp_all
 
 end CallElimCorrect
