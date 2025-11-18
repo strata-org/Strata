@@ -10,14 +10,19 @@ import Strata.DDM.BuiltinDialects.StrataHeader
 import Strata.DDM.Util.ByteArray
 import Strata.DDM.Ion
 
+set_option autoImplicit false
+
 open Lean (
     Message
+    MessageData
     Name
     Syntax
     SyntaxNodeKind
     TSyntax
     TSyntaxArray
     MacroM
+    mkEmptyEnvironment
+    mkStringMessage
     quote
     nullKind
   )
@@ -25,8 +30,6 @@ open Lean (
 open Strata.Parser (DeclParser InputContext ParsingContext ParserState)
 
 namespace Strata
-
-open Lean
 
 namespace Elab
 

@@ -7,9 +7,10 @@
 import Lean.Elab.Term
 import Strata.DDM.AST
 
-namespace Strata
-
 open Lean
+open Lean.Elab
+
+namespace Strata
 
 namespace QualifiedIdent
 
@@ -20,8 +21,6 @@ instance : ToExpr QualifiedIdent where
 end QualifiedIdent
 
 section
-
-open Lean.Elab
 
 private def rootIdent (name : Name) : Ident :=
   .mk (.ident .none name.toString.toSubstring name [.decl name []])

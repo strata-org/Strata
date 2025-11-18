@@ -9,11 +9,9 @@ import Lean.Parser.Basic
 
 namespace Strata
 
-open Lean
+abbrev PrattParsingTableMap := Std.HashMap QualifiedIdent Lean.Parser.PrattParsingTables
 
-abbrev PrattParsingTableMap := Std.HashMap QualifiedIdent Parser.PrattParsingTables
-
-initialize parserExt : EnvExtension PrattParsingTableMap ←
-  registerEnvExtension (pure {})
+initialize parserExt : Lean.EnvExtension PrattParsingTableMap ←
+  Lean.registerEnvExtension (pure {})
 
 end Strata

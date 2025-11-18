@@ -3,16 +3,21 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
-import Lean.Elab.Command
 import Strata.DDM.Integration.Lean.Env
 import Strata.DDM.Integration.Lean.GenTrace
 import Strata.DDM.Integration.Lean.OfAstM
 import Strata.DDM.Util.Graph.Tarjan
 
-open Lean (Command Name Ident Term TSyntax getEnv logError profileitM quote withTraceNode mkIdentFrom)
+import Lean.Meta.Constructions.BRecOn
+import Lean.Meta.Constructions.CasesOn
+import Lean.Meta.Constructions.NoConfusion
+import Lean.Meta.Constructions.RecOn
+import Lean.Elab.Deriving.Repr
+
+open Lean (Command Name Ident Term TSyntax getEnv logError mkConst mkIdentFrom)
+open Lean (profileitM quote withTraceNode)
 open Lean.Elab (throwUnsupportedSyntax)
-open Lean.Elab.Command (CommandElab CommandElabM elabCommand)
+open Lean.Elab.Command (CommandElab CommandElabM elabCommand liftCoreM)
 open Lean.MonadOptions (getOptions)
 open Lean.MonadResolveName (getCurrNamespace)
 open Lean.Parser.Command (ctor)
@@ -39,8 +44,6 @@ def currScopedIdent {m} [Monad m] [Lean.MonadResolveName m] (subName : Lean.Name
   (mkScopedIdent · subName) <$> getCurrNamespace
 
 end Lean
-
-open Lean (currScopedIdent)
 
 private def arrayLit [Monad m] [Lean.MonadQuotation m] (as : Array Term) : m Term := do
   ``( (#[ $as:term,* ] : Array _) )
@@ -537,36 +540,13 @@ def getCategoryScopedName (cat : QualifiedIdent) : GenM Name := do
   | none =>
     return panic! s!"getCategoryScopedName given {cat}"
 
-/-- Return identifier for type that implements given category. -/
-def getCategoryIdent (cat : QualifiedIdent) : GenM Ident := do
-  if let some nm := declaredCategories[cat]? then
-    return mkRootIdent nm
-  currScopedIdent (← getCategoryScopedName cat)
-
 def getCategoryTerm (cat : QualifiedIdent) (annType : Ident) : GenM Term := do
   let catIdent ← mkScopedIdent (← getCategoryScopedName cat)
   return Lean.Syntax.mkApp catIdent #[annType]
 
 /-- Return identifier for operator with given name to suport category. -/
 def getCategoryOpIdent (cat : QualifiedIdent) (name : Name) : GenM Ident := do
-  currScopedIdent <| (← getCategoryScopedName cat) ++ name
-
-partial def ppCat (annType : Ident) (c : SyntaxCat) : GenM Term := do
-  let args ← c.args.mapM (ppCat annType)
-  match c.name, eq : args.size with
-  | q`Init.CommaSepBy, 1 =>
-    return mkCApp ``Ann #[mkCApp ``Array #[args[0]], annType]
-  | q`Init.Option, 1 =>
-    return mkCApp ``Ann #[mkCApp ``Option #[args[0]], annType]
-  | q`Init.Seq, 1 =>
-    return mkCApp ``Ann #[mkCApp ``Array #[args[0]], annType]
-  | cat, 0 =>
-    match declaredCategories[cat]? with
-    | some nm =>
-      pure <| mkCApp ``Ann #[mkRootIdent nm, annType]
-    | none => do
-      getCategoryTerm cat annType
-  | f, _ => throwError "Unsupported {f.fullName}"
+  Lean.currScopedIdent <| (← getCategoryScopedName cat) ++ name
 
 def elabCommands (commands : Array Command) : CommandElabM Unit := do
   let messageCount := (← get).messages.unreported.size
@@ -595,41 +575,147 @@ def elabCommands (commands : Array Command) : CommandElabM Unit := do
   | some m =>
     logError m!"Command elaboration reported messages:\n {commands}\n  {m.kind}"
 
-abbrev BracketedBinder := TSyntax ``Lean.Parser.Term.bracketedBinder
+def leanType : Lean.Expr := .sort (.succ .zero)
 
-def explicitBinder (name : String) (typeStx : Term) : CommandElabM BracketedBinder := do
-  let nameStx := localIdent name
-  `(bracketedBinderF| ($nameStx : $typeStx))
+def forallI (name : Lean.Name) (arg : Lean.Expr) (res : Lean.Expr) : Lean.Expr :=
+  .forallE name arg res .implicit
 
-def genCtor (annType : Ident) (op : DefaultCtor) : GenM (TSyntax ``ctor) := do
-  let ctorId : Ident := localIdent op.leanNameStr
-  let binders ← op.argDecls.mapM fun (name, tp) => do
-        explicitBinder name (← ppCat annType tp)
-  `(ctor| | $ctorId:ident (ann : $annType) $binders:bracketedBinder* )
+def forallD (name : Lean.Name) (arg : Lean.Expr) (res : Lean.Expr) : Lean.Expr :=
+  .forallE name arg res .default
 
-def mkInductive (cat : QualifiedIdent) (ctors : Array DefaultCtor) : GenM Command := do
+-- Function type: (α : Type) → Type
+def functionTypeExpr : Lean.Expr :=
+  forallD `α leanType leanType
+
+def getCategoryExpr (cat : QualifiedIdent) : GenM Lean.Expr := do
+  return mkConst <| (← getCurrNamespace) ++ (← getCategoryScopedName cat)
+
+partial def getCatExpr (annType : Lean.Expr) (c : SyntaxCat) : GenM Lean.Expr := do
+  let args ← c.args.mapM (getCatExpr annType)
+  match c.name, eq : args.size with
+  | q`Init.CommaSepBy, 1 =>
+    let basetp := Lean.mkApp (mkConst ``Array [.zero]) args[0]
+    return Lean.mkApp2 (mkConst ``Ann) basetp annType
+  | q`Init.Option, 1 =>
+    let basetp := Lean.mkApp (mkConst ``Option [.zero]) args[0]
+    return Lean.mkApp2 (mkConst ``Ann) basetp annType
+  | q`Init.Seq, 1 =>
+    let basetp := Lean.mkApp (mkConst ``Array [.zero]) args[0]
+    return Lean.mkApp2 (mkConst ``Ann) basetp annType
+  | cat, 0 =>
+    match declaredCategories[cat]? with
+    | some nm =>
+      let basetp := mkConst nm
+      return Lean.mkApp2 (mkConst ``Ann) basetp annType
+    | none => do
+      return Lean.mkApp (← getCategoryExpr cat) annType
+  | f, _ => throwError "Unsupported {f.fullName}"
+
+def genLeanCtor (base : Name) (op : DefaultCtor) : GenM Lean.Constructor := do
+  let dt := mkConst base
+  let name := base |>.str op.leanNameStr
+  let argc := op.argDecls.size
+  let type : Lean.Expr := .app dt (.bvar (argc+1))
+  let type ← Fin.foldrM argc (init := type) fun i rtp => do
+    let (aname, cat) := op.argDecls[i]
+    let anamen := Lean.Name.anonymous |>.str aname
+    let atp ← getCatExpr (.bvar (i.val + 1)) cat
+    return .forallE anamen atp rtp .default
+  let type : Lean.Expr := forallD `ann (.bvar 0) type
+  let type : Lean.Expr := forallI `α leanType type
+  return { name := name, type := type }
+
+def mkInductiveType (cat : QualifiedIdent) (ctors : Array DefaultCtor) : GenM Lean.InductiveType := do
   assert! cat ∉ declaredCategories
-  let ident ← mkScopedIdent (← getCategoryScopedName cat)
+  let ident ← getCategoryScopedName cat
   trace[Strata.generator] "Generating {ident}"
-  let annType := localIdent "α"
-  let builtinCtors : Array (TSyntax ``ctor) ←
+  let scope ← getCurrNamespace
+  let name : Lean.Name := scope ++ ident
+  let nameE := mkConst name
+  let builtinCtors : List Lean.Constructor ←
         match cat with
         | q`Init.Expr => do
-            pure #[
-              ← `(ctor| | $(localIdent "fvar"):ident (ann : $annType) (idx : Nat))
+            pure [
+              { name := name ++ `fvar,
+                type := forallI `α leanType <|
+                           forallD `ann (.bvar 0) <|
+                              forallD `idx (mkConst ``Nat) <|
+                                Lean.mkApp nameE (.bvar 2)
+                }
             ]
         | q`Init.TypeP => do
-          let typeIdent ← getCategoryTerm q`Init.Type annType
-          pure #[
-              ← `(ctor| | $(localIdent "expr"):ident (tp : $typeIdent)),
-              ← `(ctor| | $(localIdent "type"):ident (tp : $annType))
+          let typeExpr ← getCategoryExpr q`Init.Type
+          pure [
+              { name := name ++ `expr,
+                type :=
+                  forallI `α leanType <|
+                    forallD `type (Lean.mkApp typeExpr (.bvar 0)) <|
+                      Lean.mkApp nameE (.bvar 1)
+              },
+              { name := name ++ `type,
+                type :=
+                  forallI `α leanType <|
+                    forallD `ann (.bvar 0) <|
+                      Lean.mkApp nameE (.bvar 1)
+              }
           ]
         | _ =>
-          pure #[]
-  `(inductive $ident ($annType : Type) : Type where
-    $builtinCtors:ctor*
-    $(← ctors.mapM (genCtor annType)):ctor*
-    deriving Repr)
+          pure []
+
+  let leanCtors ← ctors.mapM (genLeanCtor name)
+  return {
+    name := name,
+    type := functionTypeExpr,
+    ctors := builtinCtors ++ leanCtors.toList
+  }
+
+def mkIndAuxDecls (inductives : List Lean.InductiveType) : Lean.MetaM Unit := do
+  for tp in inductives do
+    let n := tp.name
+    mkRecOn n
+    Lean.mkCasesOn n
+    mkCtorIdx n
+    Lean.mkCtorElim n
+    Lean.mkNoConfusion n
+    Lean.mkBelow n
+  for tp in inductives do
+    Lean.mkBRecOn tp.name
+
+/--
+Declares a list of inductive data types that are all over the given level parameters and
+number of type parameters.
+
+This ensures all the auxillary definitions are used.
+-/
+def declareInductives (lparams : List Name) (nparams : Nat) (inductives : List Lean.InductiveType) (isUnsafe : Bool := false) : Lean.CoreM Unit := do
+  assert! !inductives.isEmpty
+  Lean.addAndCompile <| .inductDecl lparams nparams inductives isUnsafe
+  -- Declare rec commands
+  for indType in inductives do
+    let mut i := 1
+    while true do
+      let auxRecName := indType.name ++ `rec |>.appendIndexAfter i
+      let env ← getEnv
+      let some const := env.toKernelEnv.find? auxRecName | break
+      let res ← env.addConstAsync auxRecName .recursor
+      res.commitConst res.asyncEnv (info? := const)
+      res.commitCheckEnv res.asyncEnv
+      Lean.setEnv res.mainEnv
+      i := i + 1
+  let _ ← (mkIndAuxDecls inductives).run
+
+def genInductives (allCtors : Array (QualifiedIdent × Array DefaultCtor)) : GenM Unit := do
+  let inductives ← allCtors.mapM fun (cat, ctors) => do
+    assert! q`Init.Num ≠ cat
+    assert! q`Init.Str ≠ cat
+    mkInductiveType cat ctors
+  let lparams : List Name := []
+  let nparams : Nat := 1
+  runCmd <| liftCoreM <| do
+    declareInductives lparams nparams inductives.toList
+  let names := inductives |>.map (·.name)
+  let b ← Lean.Elab.Deriving.Repr.mkReprInstanceHandler names
+  assert! b
 
 def categoryToAstTypeIdent (cat : QualifiedIdent) (annType : Term) : Term :=
   let ident :=
@@ -645,10 +731,10 @@ structure ToOp where
   argDecls : Array (String × SyntaxCat)
 
 def toAstIdentM (cat : QualifiedIdent) : GenM Ident := do
-  currScopedIdent <| (← getCategoryScopedName cat) ++ `toAst
+  Lean.currScopedIdent <| (← getCategoryScopedName cat) ++ `toAst
 
 def ofAstIdentM (cat : QualifiedIdent) : GenM Ident := do
-  currScopedIdent <| (← getCategoryScopedName cat) ++ `ofAst
+  Lean.currScopedIdent <| (← getCategoryScopedName cat) ++ `ofAst
 
 def mkAnnWithTerm (argCtor : Name) (annTerm v : Term) : Term :=
   mkCApp argCtor #[mkCApp ``Ann.ann #[annTerm], v]
@@ -911,14 +997,15 @@ def ofAstOpMatchRhs (cat : QualifiedIdent) (annI argsVar : Ident) (op : DefaultC
 Creates a mapping from operation names (QualifiedIdent) to unique natural numbers.
 This is used to pattern match in the generated code.
 -/
-def createNameIndexMap (cat : QualifiedIdent) (ops : Array DefaultCtor) : GenM (Std.HashMap QualifiedIdent Nat × Ident × Command) := do
+def createNameIndexMap (cat : QualifiedIdent) (ops : Array DefaultCtor) : GenM (Std.HashMap QualifiedIdent Nat × Ident) := do
   let nameIndexMap := ops.foldl (init := {}) fun map op =>
     match op.strataName with
     | none => map  -- Skip operators without a name
     | some name => map.insert name map.size  -- Assign the next available index
-  let ofAstNameMap ← currScopedIdent <| (← getCategoryScopedName cat) ++ `ofAst.nameIndexMap
+  let ofAstNameMap ← Lean.currScopedIdent <| (← getCategoryScopedName cat) ++ `ofAst.nameIndexMap
   let cmd ← `(def $ofAstNameMap : Std.HashMap Strata.QualifiedIdent Nat := Std.HashMap.ofList $(quote nameIndexMap.toList))
-  pure (nameIndexMap, ofAstNameMap, cmd)
+  elabCommand cmd
+  pure (nameIndexMap, ofAstNameMap)
 
 def mkOfAstDef (cat : QualifiedIdent) (ofAst : Ident) (v : Name) (rhs : Term) : GenM Command := do
   let src := (←read).src
@@ -932,7 +1019,7 @@ def matchTypeParamOrType {Ann α} [Repr Ann] (a : ArgF Ann) (onTypeParam : Ann �
   | .type tp => onType tp
   | _ => .throwExpected "Type parameter or type expression" a
 
-def genOfAst (cat : QualifiedIdent) (ops : Array DefaultCtor) : GenM (Array Command × Command) := do
+def genOfAst (cat : QualifiedIdent) (ops : Array DefaultCtor) : GenM Command := do
   let src := (←read).src
   let ofAst ← ofAstIdentM cat
   trace[Strata.generator] "Generating {ofAst}"
@@ -941,7 +1028,7 @@ def genOfAst (cat : QualifiedIdent) (ops : Array DefaultCtor) : GenM (Array Comm
     let v ← genFreshLeanName "v"
     let argsVar ← genFreshLeanName "args"
     let (annC, annI) ← genFreshIdentPair "ann"
-    let (nameIndexMap, ofAstNameMap, cmd) ← createNameIndexMap cat ops
+    let (nameIndexMap, ofAstNameMap) ← createNameIndexMap cat ops
     let fvarCtorIdent ← getCategoryOpIdent cat `fvar
     let cases : Array MatchAlt ← ops.mapM (ofAstExprMatch nameIndexMap cat annI (mkIdentFrom src argsVar))
     let rhs ←
@@ -954,12 +1041,12 @@ def genOfAst (cat : QualifiedIdent) (ops : Array DefaultCtor) : GenM (Array Comm
           $cases:matchAlt*
           | _ => OfAstM.throwUnknownIdentifier $(quote cat) fnId)
         | _ => pure (panic! "Unexpected argument"))
-    pure (#[cmd], ← mkOfAstDef cat ofAst v rhs)
+    mkOfAstDef cat ofAst v rhs
   | q`Init.Type =>
     let v ← genFreshLeanName "v"
     let (argsC, argsI) ← genFreshIdentPair "args"
     let (annC, annI) ← genFreshIdentPair "ann"
-    let (nameIndexMap, ofAstNameMap, cmd) ← createNameIndexMap cat ops
+    let (nameIndexMap, ofAstNameMap) ← createNameIndexMap cat ops
     let cases : Array MatchAlt ← ops.mapM fun op =>
       ofAstMatch nameIndexMap op =<< ofAstTypeMatchRhs cat annI argsI op
     let rhs ←
@@ -969,7 +1056,7 @@ def genOfAst (cat : QualifiedIdent) (ops : Array DefaultCtor) : GenM (Array Comm
           $cases:matchAlt*
           | _ => OfAstM.throwUnknownIdentifier $(quote cat) typeIdent)
         | _ => OfAstM.throwExpected "Expected type" (ArgF.type $(mkIdentFrom src v)))
-    pure (#[cmd], ← mkOfAstDef cat ofAst v rhs)
+    mkOfAstDef cat ofAst v rhs
   | q`Init.TypeP =>
     let v ← genFreshLeanName "v"
     let catCtorIdent ← getCategoryOpIdent cat `type
@@ -978,13 +1065,13 @@ def genOfAst (cat : QualifiedIdent) (ops : Array DefaultCtor) : GenM (Array Comm
     let rhs ← ``(
       matchTypeParamOrType $(mkIdentFrom src v) $catCtorIdent (fun tp => $exprCtorIdent <$> $typeOfAst tp)
     )
-    pure (#[], ← mkOfAstDef cat ofAst v rhs)
+    mkOfAstDef cat ofAst v rhs
   | _ =>
     let v ← genFreshLeanName "v"
     let (annC, annI) ← genFreshIdentPair "ann"
     let vi := mkIdentFrom src v
     let (argsC, argsI) ← genFreshIdentPair "args"
-    let (nameIndexMap, ofAstNameMap, cmd) ← createNameIndexMap cat ops
+    let (nameIndexMap, ofAstNameMap) ← createNameIndexMap cat ops
     let cases : Array MatchAlt ← ops.mapM fun op =>
       ofAstMatch nameIndexMap op =<< ofAstOpMatchRhs cat annI argsI op
     let rhs ← `(
@@ -993,7 +1080,7 @@ def genOfAst (cat : QualifiedIdent) (ops : Array DefaultCtor) : GenM (Array Comm
       match ($ofAstNameMap[OperationF.name $vi]?) with
       $cases:matchAlt*
       | _ => OfAstM.throwUnknownIdentifier $(quote cat) (OperationF.name $vi))
-    pure (#[cmd], ← mkOfAstDef cat ofAst v rhs)
+    mkOfAstDef cat ofAst v rhs
 
 abbrev InhabitedSet := Std.HashSet QualifiedIdent
 
@@ -1051,11 +1138,7 @@ def gen (categories : Array (QualifiedIdent × Array DefaultCtor)) : GenM Unit :
         --            fun b qid => b || qid ∈ newCats
         let cats := allCtors.map (·.fst)
         profileitM Lean.Exception s!"Generating inductives {cats}" (← getOptions) do
-          let inductives ← allCtors.mapM fun (cat, ctors) => do
-            assert! q`Init.Num ≠ cat
-            assert! q`Init.Str ≠ cat
-            mkInductive cat ctors
-          runCmd <| elabCommands inductives
+          genInductives allCtors
         let inhabitedCats2 ←
           profileitM Lean.Exception s!"Generating inhabited {cats}" (← getOptions) do
             addInhabited allCtors inhabitedCats
@@ -1065,10 +1148,7 @@ def gen (categories : Array (QualifiedIdent × Array DefaultCtor)) : GenM Unit :
             genToAst cat ctors
           runCmd <| elabCommands toAstDefs
         profileitM Lean.Exception s!"Generating ofAstDefs {cats}" (← getOptions) do
-          let ofAstDefs ← allCtors.mapM fun (cat, ctors) => do
-            let (cmds, d) ← genOfAst cat ctors
-            (cmds.forM elabCommand : CommandElabM Unit)
-            pure d
+          let ofAstDefs ← allCtors.mapM fun (cat, ctors) => genOfAst cat ctors
           runCmd <| elabCommands ofAstDefs
         pure inhabitedCats
     inhabitedCats := s

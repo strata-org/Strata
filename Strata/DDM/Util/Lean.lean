@@ -5,8 +5,13 @@
 -/
 
 import Lean.Parser.Types
+import Lean.AddDecl
+import Lean.CoreM
 
-open Lean Parser
+
+open Lean
+open Lean.Core (CoreM)
+open Lean.Parser (InputContext SyntaxStack)
 
 namespace Lean
 
@@ -73,3 +78,27 @@ def listToExpr (level : Level) (type : Lean.Expr) (es : List Lean.Expr) : Lean.E
   es.foldr (init := nilFn) (mkApp2 consFn)
 
 end Lean
+
+namespace Strata.Lean
+
+/--
+Add a definition to environment and compile it.
+-/
+def addDefn (name : Lean.Name)
+            (type : Lean.Expr)
+            (value : Lean.Expr)
+            (levelParams : List Name := [])
+            (hints : ReducibilityHints := .abbrev)
+            (safety : DefinitionSafety := .safe)
+            (all : List Lean.Name := [name]) : CoreM Unit := do
+  addAndCompile <| .defnDecl {
+    name := name
+    levelParams := levelParams
+    type := type
+    value := value
+    hints := hints
+    safety := safety
+    all := all
+  }
+
+end Strata.Lean

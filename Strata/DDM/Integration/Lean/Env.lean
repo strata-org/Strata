@@ -7,9 +7,9 @@
 import Lean.Environment
 import Strata.DDM.Elab
 
-namespace Strata
+open Lean
 
-open Lean Parser
+namespace Strata
 
 structure PersistentDialect where
   leanName : Lean.Name

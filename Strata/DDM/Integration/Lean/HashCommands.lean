@@ -10,10 +10,11 @@ import Strata.DDM.TaggedRegions
 
 open Lean
 open Lean.Elab (throwUnsupportedSyntax)
-open Lean.Elab.Command (CommandElab CommandElabM)
+open Lean.Elab.Command (CommandElab CommandElabM liftCoreM)
 open Lean.Elab.Term (TermElab)
 open Lean.Parser (InputContext)
 open System (FilePath)
+open Strata.Lean (addDefn)
 
 namespace Strata
 
@@ -58,28 +59,6 @@ Prepend the current namespace to the Lean name and convert to an identifier.
 private def mkAbsIdent (name : Lean.Name) : Ident :=
   let nameStr := toString name
   .mk (.ident .none nameStr.toSubstring name [.decl name []])
-
-open Lean.Elab.Command (liftCoreM)
-
-/--
-Add a definition to environment and compile it.
--/
-def addDefn (name : Lean.Name)
-            (type : Lean.Expr)
-            (value : Lean.Expr)
-            (levelParams : List Name := [])
-            (hints : ReducibilityHints := .abbrev)
-            (safety : DefinitionSafety := .safe)
-            (all : List Lean.Name := [name]) : CoreM Unit := do
-  addAndCompile <| .defnDecl {
-    name := name
-    levelParams := levelParams
-    type := type
-    value := value
-    hints := hints
-    safety := safety
-    all := all
-  }
 
 /--
 Declare dialect and add to environment.
@@ -161,6 +140,7 @@ syntax (name := loadDialectCommand) "#load_dialect" str : command
 
 def resolveLeanRelPath {m} [Monad m] [HasInputContext m] [MonadError m] (path : FilePath) : m FilePath := do
   if path.isAbsolute then
+    -- TODO: Add warning about absolute paths
     pure path
   else
     let leanPath ← HasInputContext.getFileName
@@ -174,8 +154,8 @@ def loadDialectImpl: CommandElab := fun (stx : Syntax) => do
   | `(command|#load_dialect $pathStx) =>
     let dialectPath : FilePath := pathStx.getString
     let absPath ← resolveLeanRelPath dialectPath
-    if ! (← absPath.pathExists) then
-      throwErrorAt pathStx "Could not find file {dialectPath}"
+    if ! (←absPath.pathExists) then
+      throwError "Could not find file {dialectPath}"
     let loaded := (dialectExt.getState (←Lean.getEnv)).loaded
     let (_, r) ← Elab.loadDialectFromPath {} loaded #[]
                         (path := dialectPath) (actualPath := absPath) (expected := .none)
