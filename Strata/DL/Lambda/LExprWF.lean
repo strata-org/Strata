@@ -181,7 +181,7 @@ def lcAt (k : Nat) (e : LExpr ⟨T, GenericTy⟩) : Bool :=
   | .ite _ c t e' => lcAt k c && lcAt k t && lcAt k e'
   | .eq _ e1 e2 => lcAt k e1 && lcAt k e2
 
-theorem varOpen_varClose_when_lcAt [DecidableEq GenericTy] [BEq T.Metadata] [LawfulBEq T.IDMeta] [LawfulBEq T.Metadata] [LawfulBEq GenericTy] [BEq (Identifier T.IDMeta)] [BEq GenericTy]
+theorem varOpen_varClose_when_lcAt [DecidableEq GenericTy] [BEq T.Metadata] [LawfulBEq T.Metadata]
   (h1 : lcAt k e) (h2 : k <= i) :
   (varOpen i x (varClose (T := T) (GenericTy := GenericTy) i x e)) = e := by
   induction e generalizing k i x
@@ -193,8 +193,8 @@ theorem varOpen_varClose_when_lcAt [DecidableEq GenericTy] [BEq T.Metadata] [Law
     simp_all! [lcAt, varOpen, substK]; omega
   case fvar name ty =>
     simp_all [lcAt, varOpen, varClose]
-    by_cases hx: x.fst = name <;> sorry --TODO: Need help: simp_all [substK]
-    --by_cases ht: ty = x.snd <;> sorry --TODO: Need help:  simp_all [substK]
+    by_cases hx: x.fst = name <;> simp_all[substK]
+    by_cases ht: ty = x.snd <;> simp_all [substK]
   case abs e e_ih =>
     simp_all [lcAt, varOpen, substK, varClose]
     simp_all [@e_ih (k + 1) (i + 1) x.fst]
@@ -242,7 +242,7 @@ we will prove a _regularity_ lemma; see lemma `HasType.regularity`.
 def WF {T} {GenericTy} (e : LExpr ⟨T, GenericTy⟩) : Bool :=
   lcAt 0 e
 
-theorem varOpen_of_varClose {T} {GenericTy} [BEq T.Metadata] [LawfulBEq T.Metadata] [BEq T.IDMeta] [BEq (Identifier T.IDMeta)] [LawfulBEq T.IDMeta] [BEq GenericTy] [DecidableEq T.IDMeta] [DecidableEq GenericTy] {i : Nat} {x : IdentT GenericTy T.IDMeta} {e : LExpr ⟨T, GenericTy⟩} (h : LExpr.WF e) :
+theorem varOpen_of_varClose {T} {GenericTy} [BEq T.Metadata] [LawfulBEq T.Metadata] [DecidableEq T.IDMeta] [DecidableEq GenericTy] {i : Nat} {x : IdentT GenericTy T.IDMeta} {e : LExpr ⟨T, GenericTy⟩} (h : LExpr.WF e) :
   varOpen i x (varClose i x e) = e := by
   simp_all [LExpr.WF]
   rename_i r1 r2 r3
