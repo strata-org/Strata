@@ -172,6 +172,8 @@ def pyAnalyzeCommand : Command where
     | .dialect d =>
       IO.print <| d.format ld.dialects
     | .program pgm =>
+    if verbose then
+      IO.print pgm
     let preludePgm := Strata.Python.Internal.Boogie.prelude
     let bpgm := Strata.pythonToBoogie pgm
     let newPgm : Boogie.Program := { decls := preludePgm.decls ++ bpgm.decls }
