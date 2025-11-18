@@ -1,0 +1,14 @@
+Successfully parsed.
+P_ensures_0: verified
+assert_0: verified
+assert_1: verified
+assert_2: verified
+assert_3: verified
+assert_4: verified
+assert_5: unknown
+assert_6: unknown
+assert_7: verified
+assert_8: verified
+assert_9: verified
+assert_10: verified
+Finished with 10 goals proved, 2 failed.
