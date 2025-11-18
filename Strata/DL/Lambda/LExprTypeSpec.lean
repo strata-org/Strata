@@ -190,8 +190,11 @@ example : LExpr.HasType {} esM[λ %0] t[∀a. %a → %a] := by
   simp [h_tvar, LTy.toMonoType] at h_tabs
   have h_tgen := @LExpr.HasType.tgen (T := ⟨Unit, Unit⟩) _ {} esM[λ %0] "a"
                  t[%a → %a]
-                 sorry --TODO: Need help for migrating proof
-                 --h_tabs
+                 (by
+                   apply h_tabs
+                   apply (mt List.elem_eq_true_of_mem)
+                   unfold List.elem
+                   simp)
   simp +ground [Maps.find?] at h_tgen
   assumption
   done
