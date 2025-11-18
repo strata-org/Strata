@@ -52,14 +52,6 @@ private def mkScopedName {m} [Monad m] [MonadError m] [MonadEnv m] [MonadResolve
     throwError s!"Cannot define {name}: {fullName} already exists."
   return fullName
 
-private def listToExpr (level : Level) (type : Lean.Expr) (es : List Lean.Expr) : Lean.Expr :=
-  let nilFn  := mkApp (mkConst ``List.nil [level]) type
-  let consFn := mkApp (mkConst ``List.cons [level]) type
-  let rec aux : List Lean.Expr → Lean.Expr
-    | []    => nilFn
-    | a::as => mkApp2 consFn a (aux as)
-  aux es
-
 /--
 Prepend the current namespace to the Lean name and convert to an identifier.
 -/
@@ -142,10 +134,23 @@ def strataProgramImpl : TermElab := fun stx tp => do
     -- Get Lean name for dialect
     let some (.str name root) := s.nameMap[pgm.dialect]?
       | throwError s!"Unknown dialect {pgm.dialect}"
+    let commandType := mkConst ``Operation
+    let cmdToExpr (cmd : Strata.Operation) : CoreM Lean.Expr := do
+          let n ← mkFreshUserName `command
+          addAndCompile <| .defnDecl {
+            name := n
+            levelParams := []
+            type := commandType
+            value := toExpr cmd
+            hints := .opaque
+            safety := .safe
+          }
+          pure <| mkConst n
+    let commandExprs ← monadLift <| pgm.commands.mapM cmdToExpr
     return astExpr! Program.create
         (mkConst (name |>.str s!"{root}_map"))
         (toExpr pgm.dialect)
-        (toExpr pgm.commands)
+        (arrayToExpr .zero commandType commandExprs)
   | .error errors =>
     for e in errors do
       logMessage e
