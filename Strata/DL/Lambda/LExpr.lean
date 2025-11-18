@@ -98,6 +98,7 @@ abbrev LExpr.existUntypedTr {TypeType: Type} {IDMeta : Type} := @LExpr.quant Typ
 abbrev LExpr.existUntyped {TypeType: Type} {IDMeta : Type} := @LExpr.quant TypeType IDMeta .exist .none LExpr.noTrigger
 
 
+@[simp]
 def LExpr.sizeOf {TypeType: Type}  [SizeOf IDMeta]
   | LExpr.mdata (TypeType:=TypeType) (IDMeta:=IDMeta) _ e => 2 + sizeOf e
   | LExpr.abs   _ e => 2 + sizeOf e
