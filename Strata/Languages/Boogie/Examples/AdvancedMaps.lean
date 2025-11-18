@@ -63,7 +63,10 @@ var (c : (Map int MapII)) := init_c_2
 modifies: [a, b, c]
 preconditions: (P_requires_3, ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) #0) == #0)) (P_requires_4, ((((~select : (arrow (Map int MapII) (arrow int MapII))) (c : (Map int MapII))) #0) == (a : MapII)))
 postconditions: ⏎
-body: assert [c_0_eq_a] ((((~select : (arrow (Map int MapII) (arrow int MapII))) (c : (Map int MapII))) #0) == (a : MapII))
+body: init (old$a : MapII) := (a : MapII)
+init (old$b : (Map bool int)) := (b : (Map bool int))
+init (old$c : (Map int MapII)) := (c : (Map int MapII))
+assert [c_0_eq_a] ((((~select : (arrow (Map int MapII) (arrow int MapII))) (c : (Map int MapII))) #0) == (a : MapII))
 c := ((((~update : (arrow (Map int MapII) (arrow int (arrow MapII (Map int MapII))))) (c : (Map int MapII))) #1) (a : MapII))
 assert [c_1_eq_a] ((((~select : (arrow (Map int MapII) (arrow int MapII))) (c : (Map int MapII))) #1) == (a : MapII))
 assert [a0eq0] ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) #0) == #0)

@@ -22,7 +22,7 @@ Identifiers with a name and additional metadata
 structure Identifier (IDMeta : Type) : Type where
   name : String
   metadata : IDMeta
-deriving Repr, DecidableEq, Inhabited
+deriving Repr, DecidableEq, Inhabited, Hashable, Ord
 
 instance : ToFormat (Identifier IDMeta) where
   format i := i.name

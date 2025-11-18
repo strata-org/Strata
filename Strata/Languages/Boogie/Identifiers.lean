@@ -40,7 +40,7 @@ inductive Visibility where
   | glob
   | locl
   | temp
-deriving DecidableEq, Repr
+deriving DecidableEq, Repr, Ord, Hashable
 
 instance : ToFormat Visibility where
   format
