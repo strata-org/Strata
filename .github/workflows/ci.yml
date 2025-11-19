@@ -155,4 +155,6 @@ jobs:
       working-directory: Tools/Python
 
   cbmc:
+    permissions:
+      contents: read
     uses: ./.github/workflows/cbmc.yml
