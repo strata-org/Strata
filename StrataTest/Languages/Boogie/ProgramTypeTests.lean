@@ -127,6 +127,7 @@ info: ok: [(type Boogie.Boundedness.Infinite Foo [_, _]
   func Bool.Not :  ((x : bool)) → bool;
   func Str.Length :  ((x : string)) → int;
   func Str.Concat :  ((x : string) (y : string)) → string;
+  func Str.Substr :  ((x : string) (i : int) (n : int)) → string;
   func Str.ToRegEx :  ((x : string)) → regex;
   func Str.InRegEx :  ((x : string) (y : regex)) → bool;
   func Re.All :  () → regex;
@@ -139,6 +140,7 @@ info: ok: [(type Boogie.Boundedness.Infinite Foo [_, _]
   func Re.Union :  ((x : regex) (y : regex)) → regex;
   func Re.Inter :  ((x : regex) (y : regex)) → regex;
   func Re.Comp :  ((x : regex)) → regex;
+  func Re.None :  () → regex;
   func old : ∀[a]. ((x : a)) → a;
   func select : ∀[k, v]. ((m : (Map k v)) (i : k)) → v;
   func update : ∀[k, v]. ((m : (Map k v)) (i : k) (x : v)) → (Map k v);

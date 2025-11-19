@@ -77,11 +77,12 @@ Proof Obligation:
 (_yinit == #12)
 -/
 #guard_msgs in
-#eval (evalOne (Env.init.pushScope [("y", (mty[int], eb[_yinit]))])
-                      ∅
-                     [.init "x" t[int] eb[#0],
-                      .set "x" eb[y],
-                      .assert "x_eq_12" eb[x == #12]]) |>.snd |> format
+#eval (evalOne
+  ((Env.init (empty_factory := true)).pushScope [("y", (mty[int], eb[_yinit]))])
+  ∅
+  [.init "x" t[int] eb[#0],
+  .set "x" eb[y],
+  .assert "x_eq_12" eb[x == #12]]) |>.snd |> format
 
 /--
 info: Error:
@@ -156,17 +157,19 @@ Proof Obligation:
 #true
 -/
 #guard_msgs in
-#eval (evalOne (Env.init.pushScope [("minit", (mty[int → int], eb[(_minit : int → int)]))])
-                        ∅
-                       [.init "m" t[int → int] eb[minit],
-                        .init "m0" t[int] eb[(m #0)],
-                        .set "m" eb[λ (if (%0 == #1) then #10 else ((m : int → int) %0))],
-                        .set "m" eb[λ (if (%0 == #2) then #20 else ((m : int → int) %0))],
-                        .assert "m_5_eq_50" eb[(m #5) == #50],
-                        .assert "m_2_eq_20" eb[(m #2) == #20],
-                        .set "m" eb[λ (if (%0 == #3) then #30 else ((m : int → int) %0))],
-                        .assert "m_1_eq_10" eb[(m #1) == #10]
-                        ]) |>.snd |> format
+#eval (evalOne
+  ((Env.init (empty_factory := true)).pushScope
+    [("minit", (mty[int → int], eb[(_minit : int → int)]))])
+  ∅
+  [.init "m" t[int → int] eb[minit],
+  .init "m0" t[int] eb[(m #0)],
+  .set "m" eb[λ (if (%0 == #1) then #10 else ((m : int → int) %0))],
+  .set "m" eb[λ (if (%0 == #2) then #20 else ((m : int → int) %0))],
+  .assert "m_5_eq_50" eb[(m #5) == #50],
+  .assert "m_2_eq_20" eb[(m #2) == #20],
+  .set "m" eb[λ (if (%0 == #3) then #30 else ((m : int → int) %0))],
+  .assert "m_1_eq_10" eb[(m #1) == #10]
+  ]) |>.snd |> format
 
 /--
 info: Error:
@@ -208,16 +211,17 @@ Proof Obligation:
 #true
 -/
 #guard_msgs in
-#eval (evalOne (Env.init.pushScope [("minit", (none, eb[_minit]))])
-                       ∅
-                       [.init "m" t[int → int] eb[minit],
-                        .set "m" eb[λ (if (%0 == #1) then #10 else (m %0))],
-                        .set "m" eb[λ (if (%0 == #2) then #20 else (m %0))],
-                        .assert "m_5_eq_50" eb[(m #5) == #50],
-                        .assert "m_2_eq_20" eb[(m #2) == #20],
-                        .set "m" eb[λ (if (%0 == #3) then #30 else (m %0))],
-                        .assert "m_1_eq_10" eb[(m #1) == #10]
-                        ]) |>.snd |> format
+#eval (evalOne
+  ((Env.init (empty_factory := true)).pushScope [("minit", (none, eb[_minit]))])
+  ∅
+  [.init "m" t[int → int] eb[minit],
+  .set "m" eb[λ (if (%0 == #1) then #10 else (m %0))],
+  .set "m" eb[λ (if (%0 == #2) then #20 else (m %0))],
+  .assert "m_5_eq_50" eb[(m #5) == #50],
+  .assert "m_2_eq_20" eb[(m #2) == #20],
+  .set "m" eb[λ (if (%0 == #3) then #30 else (m %0))],
+  .assert "m_1_eq_10" eb[(m #1) == #10]
+  ]) |>.snd |> format
 
 
 

@@ -29,7 +29,7 @@ New Function:func Int.Add :  () → int;
 #eval do let F ← IntBoolFactory.addFactoryFunc { name := "Int.Add",
                                                  inputs := [],
                                                  output := .tcons "int" [] }
-         let ans ← typeCheckAndPartialEval F esM[((~Int.Le ((~Int.Div #300) ((~Int.Add #2) #1))) #100)]
+         let ans ← typeCheckAndPartialEval TypeFactory.default F esM[((~Int.Le ((~Int.Div #300) ((~Int.Add #2) #1))) #100)]
          return format ans
 
 /--
@@ -40,7 +40,7 @@ info: Annotated expression:
 info: #true
 -/
 #guard_msgs in
-#eval format $ typeCheckAndPartialEval IntBoolFactory
+#eval format $ typeCheckAndPartialEval TypeFactory.default  IntBoolFactory
                 esM[((~Int.Le ((~Int.Div #300) ((~Int.Add #2) #1))) #100)]
 
 /--
@@ -51,7 +51,7 @@ info: Annotated expression:
 info: (λ (((~Int.Div : (arrow int (arrow int int))) #3) %0))
 -/
 #guard_msgs in
-#eval format $ typeCheckAndPartialEval IntBoolFactory
+#eval format $ typeCheckAndPartialEval TypeFactory.default  IntBoolFactory
                esM[((~Int.Div ((~Int.Add #2) #1)))]
 /--
 info: Annotated expression:
@@ -61,7 +61,7 @@ info: Annotated expression:
 info: #150
 -/
 #guard_msgs in
-#eval format $ typeCheckAndPartialEval IntBoolFactory
+#eval format $ typeCheckAndPartialEval TypeFactory.default  IntBoolFactory
                 esM[((λ (%0 #2)) (~Int.Div #300))]
 
 end Test

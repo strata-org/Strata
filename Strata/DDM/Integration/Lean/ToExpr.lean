@@ -129,6 +129,10 @@ protected def ArgF.typeExpr (α : Type) [ToExpr α] := mkApp (mkConst ``ArgF) (t
 
 protected def OperationF.typeExpr := mkApp (mkConst ``OperationF)
 
+instance : ToExpr ByteArray where
+  toTypeExpr := mkConst ``ByteArray
+  toExpr a := mkApp (mkConst ``ByteArray.ofNatArray) <| toExpr <| a.data.map (·.toNat)
+
 mutual
 
 protected def ExprF.toExpr {α} [ToExpr α] : ExprF α → Lean.Expr
@@ -147,6 +151,7 @@ def ArgF.toExpr {α} [ToExpr α] : ArgF α → Lean.Expr
 | .num ann e => astAnnExpr! ArgF.num ann (toExpr e)
 | .decimal ann e => astAnnExpr! ArgF.decimal ann (toExpr e)
 | .strlit ann e => astAnnExpr! ArgF.strlit ann (toExpr e)
+| .bytes ann a => astAnnExpr! ArgF.bytes ann (toExpr a)
 | .option ann a =>
   let tpe := ArgF.typeExpr α
   astAnnExpr! ArgF.option ann (optionToExpr tpe <| a.attach.map fun ⟨e, _⟩ => e.toExpr)

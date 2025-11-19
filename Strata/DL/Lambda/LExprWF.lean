@@ -27,7 +27,8 @@ variable {IDMeta : Type} [DecidableEq IDMeta]
 Compute the free variables in an `LExpr`, which are simply all the `LExpr.fvar`s
 in it.
 -/
-def freeVars (e : LExpr LMonoTy IDMeta) : IdentTs IDMeta :=
+def freeVars {GenericTy} (e : LExpr GenericTy IDMeta)
+  : IdentTs GenericTy IDMeta :=
   match e with
   | .const _ => []
   | .op _ _ => []
@@ -41,22 +42,25 @@ def freeVars (e : LExpr LMonoTy IDMeta) : IdentTs IDMeta :=
   | .eq e1 e2 => freeVars e1 ++ freeVars e2
 
 /--
-Is `x` is a fresh variable w.r.t. `e`?
+Is `x` a fresh variable w.r.t. `e`?
 -/
-def fresh (x : IdentT IDMeta) (e : LExpr LMonoTy IDMeta) : Bool :=
+def fresh {GenericTy} [DecidableEq GenericTy]
+    (x : IdentT GenericTy IDMeta) (e : LExpr GenericTy IDMeta) : Bool :=
   x ∉ (freeVars e)
 
 /-- An expression `e` is closed if has no free variables. -/
-def closed (e : LExpr LMonoTy IDMeta) : Bool :=
+def closed {GenericTy} (e : LExpr GenericTy IDMeta) : Bool :=
   freeVars e |>.isEmpty
 
 @[simp]
-theorem fresh_abs :
+theorem fresh_abs {GenericTy} [DecidableEq GenericTy]
+  {x:IdentT GenericTy IDMeta} {e:LExpr GenericTy IDMeta} {ty:Option GenericTy}:
   fresh (IDMeta:=IDMeta) x (.abs ty e) = fresh x e := by
   simp [fresh, freeVars]
 
 @[simp]
-theorem fresh_mdata :
+theorem fresh_mdata {GenericTy} [DecidableEq GenericTy]
+  {x:IdentT GenericTy IDMeta} {e:LExpr GenericTy IDMeta}:
   fresh (IDMeta:=IDMeta) x (.mdata info e) = fresh x e := by
   simp [fresh, freeVars]
 
@@ -95,7 +99,8 @@ This function replaces some bound variables in `e` by an arbitrary expression
 `substK k s e` keeps track of the number `k` of abstractions that have passed
 by; it replaces all leaves of the form `(.bvar k)` with `s`.
 -/
-def substK (k : Nat) (s : LExpr LMonoTy IDMeta) (e : LExpr LMonoTy IDMeta) : LExpr LMonoTy IDMeta :=
+def substK {GenericTy} (k : Nat) (s : LExpr GenericTy IDMeta)
+    (e : LExpr GenericTy IDMeta) : LExpr GenericTy IDMeta :=
   match e with
   | .const c => .const c
   | .op o ty => .op o ty
@@ -129,7 +134,8 @@ to avoid such issues:
 
 `(λλ 1 0) (λ b) --β--> (λ (λ b) 0)`
 -/
-def subst (s : LExpr LMonoTy IDMeta) (e : LExpr LMonoTy IDMeta) : LExpr LMonoTy IDMeta :=
+def subst {GenericTy} (s : LExpr GenericTy IDMeta) (e : LExpr GenericTy IDMeta)
+    : LExpr GenericTy IDMeta :=
   substK 0 s e
 
 /--
@@ -140,7 +146,8 @@ with `(.fvar x)`.
 
 Note that `x` is expected to be a fresh variable w.r.t. `e`.
 -/
-def varOpen (k : Nat) (x : IdentT IDMeta) (e : LExpr LMonoTy IDMeta) : LExpr LMonoTy IDMeta :=
+def varOpen {GenericTy} (k : Nat) (x : IdentT GenericTy IDMeta)
+    (e : LExpr GenericTy IDMeta) : LExpr GenericTy IDMeta :=
   substK k (.fvar x.fst x.snd) e
 
 /--
@@ -149,7 +156,9 @@ abstraction, given its body. `varClose k x e` keeps track of the number `k`
 of abstractions that have passed by; it replaces all `(.fvar x)` with
 `(.bvar k)`.
 -/
-def varClose (k : Nat) (x : IdentT IDMeta) (e : LExpr LMonoTy IDMeta) : LExpr LMonoTy IDMeta :=
+def varClose {GenericTy} (k : Nat) (x : IdentT GenericTy IDMeta)
+    [DecidableEq GenericTy]
+    (e : LExpr GenericTy IDMeta) : LExpr GenericTy IDMeta :=
   match e with
   | .const c => .const c
   | .op o ty => .op o ty
@@ -164,7 +173,8 @@ def varClose (k : Nat) (x : IdentT IDMeta) (e : LExpr LMonoTy IDMeta) : LExpr LM
   | .eq e1 e2 => .eq (varClose k x e1) (varClose k x e2)
 
 
-theorem varClose_of_varOpen (h : fresh x e) :
+theorem varClose_of_varOpen {GenericTy} [DecidableEq GenericTy]
+  {x: IdentT GenericTy IDMeta} (e: LExpr GenericTy IDMeta) (h : fresh x e) :
   varClose (IDMeta:=IDMeta) i x (varOpen i x e) = e := by
   induction e generalizing i x
   all_goals try simp_all [fresh, varOpen, LExpr.substK, varClose, freeVars]
@@ -187,7 +197,7 @@ variables.
 
 Example of a term that is not locally closed: `(.abs "x" (.bvar 1))`.
 -/
-def lcAt (k : Nat) (e : LExpr LMonoTy IDMeta) : Bool :=
+def lcAt {GenericTy} (k : Nat) (e : LExpr GenericTy IDMeta) : Bool :=
   match e with
   | .const _ => true
   | .op _ _ => true
@@ -200,7 +210,8 @@ def lcAt (k : Nat) (e : LExpr LMonoTy IDMeta) : Bool :=
   | .ite c t e' => lcAt k c && lcAt k t && lcAt k e'
   | .eq e1 e2 => lcAt k e1 && lcAt k e2
 
-theorem varOpen_varClose_when_lcAt
+theorem varOpen_varClose_when_lcAt {GenericTy} [DecidableEq GenericTy]
+  {x : IdentT GenericTy IDMeta} {e : LExpr GenericTy IDMeta}
   (h1 : lcAt k e) (h2 : k <= i) :
   (varOpen i x (varClose (IDMeta:=IDMeta) i x e)) = e := by
   induction e generalizing k i x
@@ -261,10 +272,11 @@ An `LExpr e` is well-formed if it has no dangling bound variables.
 We expect the type system to guarantee the well-formedness of an `LExpr`, i.e.,
 we will prove a _regularity_ lemma; see lemma `HasType.regularity`.
 -/
-def WF (e : LExpr LMonoTy IDMeta) : Bool :=
+def WF {GenericTy} (e : LExpr GenericTy IDMeta) : Bool :=
   lcAt 0 e
 
-theorem varOpen_of_varClose (h : LExpr.WF e) :
+theorem varOpen_of_varClose {GenericTy} [DecidableEq GenericTy]
+  {e : LExpr GenericTy IDMeta} {x : IdentT GenericTy IDMeta} (h : LExpr.WF e) :
   varOpen i x (varClose (IDMeta:=IDMeta) i x e) = e := by
   simp_all [LExpr.WF]
   rw [varOpen_varClose_when_lcAt (k:=0) h]
@@ -282,8 +294,9 @@ and `varOpen`, this function is agnostic of types.
 Also see function `subst`, where `subst s e` substitutes the outermost _bound_
 variable in `e` with `s`.
 -/
-def substFvar {IDMeta: Type} [DecidableEq IDMeta] (e : LExpr LMonoTy IDMeta) (fr : Identifier IDMeta) (to : LExpr LMonoTy IDMeta)
-  : (LExpr LMonoTy IDMeta) :=
+def substFvar {GenericTy} {IDMeta: Type} [DecidableEq IDMeta]
+  (e : LExpr GenericTy IDMeta) (fr : Identifier IDMeta) (to : LExpr GenericTy IDMeta)
+  : (LExpr GenericTy IDMeta) :=
   match e with
   | .const _ => e | .bvar _ => e | .op _ _ => e
   | .fvar  name _ => if name == fr then to else e
@@ -294,8 +307,10 @@ def substFvar {IDMeta: Type} [DecidableEq IDMeta] (e : LExpr LMonoTy IDMeta) (fr
   | .ite   c t e' => .ite (substFvar c fr to) (substFvar t fr to) (substFvar e' fr to)
   | .eq    e1 e2 => .eq (substFvar e1 fr to) (substFvar e2 fr to)
 
-def substFvars {IDMeta: Type} [DecidableEq IDMeta] (e : LExpr LMonoTy IDMeta) (sm : Map (Identifier IDMeta) (LExpr LMonoTy IDMeta))
-  : LExpr LMonoTy IDMeta :=
+def substFvars {GenericTy} {IDMeta: Type} [DecidableEq IDMeta]
+  (e : LExpr GenericTy IDMeta) (sm : Map (Identifier IDMeta)
+  (LExpr GenericTy IDMeta))
+  : LExpr GenericTy IDMeta :=
   List.foldl (fun e (var, s) => substFvar e var s) e sm
 
 ---------------------------------------------------------------------
