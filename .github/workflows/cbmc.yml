@@ -52,15 +52,14 @@ jobs:
         run: |
           wget https://github.com/diffblue/cbmc/releases/download/cbmc-6.4.1/ubuntu-22.04-cbmc-6.4.1-Linux.deb
           sudo dpkg -i ubuntu-22.04-cbmc-6.4.1-Linux.deb
-          echo "/usr/bin" >> $GITHUB_PATH
       - name: Build Strata
         uses: leanprover/lean-action@v1
       - uses: actions/setup-python@v5
         with:
           python-version: '3.14'
       - name: Run CBMC tests
+        working-directory: Strata/Backends/CBMC
         shell: bash
         run: |
           export CBMC_DIR="/usr/bin/"
-          chmod +x Strata/Backends/CBMC/run_strata_cbmc.sh
-          ./Strata/Backends/CBMC/run_strata_cbmc.sh Examples/SimpleProc.boogie.st
+          ./run_strata_cbmc.sh ../../../Examples/SimpleProc.boogie.st
