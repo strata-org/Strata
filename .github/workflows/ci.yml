@@ -153,3 +153,6 @@ jobs:
     - name: Run test script
       run: ./scripts/run_cpython_tests.sh
       working-directory: Tools/Python
+
+  cbmc:
+    uses: ./.github/workflows/cbmc.yml
