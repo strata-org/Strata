@@ -57,6 +57,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.14'
+      - name: Setup upterm session
+        uses: lhotari/action-upterm@v1
       - name: Run CBMC tests
         working-directory: Strata/Backends/CBMC
         shell: bash
