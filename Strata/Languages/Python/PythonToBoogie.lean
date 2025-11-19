@@ -261,9 +261,7 @@ partial def PyStmtToBoogie (jmp_targets: List String) (func_infos : List PythonF
       else
         [.call [] fname (argsAndKWordsToCanonicalList func_infos fname args.val kwords.val)]
     | .Expr _ _ =>
-      dbg_trace "Can't handle Expr statements that aren't calls"
-      assert! false
-      [.assert "expr" (.const (.boolConst true))]
+      panic! "Can't handle Expr statements that aren't calls"
     | .Assign _ lhs (.Call _ func args kwords) _ =>
       assert! lhs.val.size == 1
       let fname := PyExprToString func
@@ -352,8 +350,6 @@ def PyFuncDefToBoogie (s: Python.stmt SourceRange) (func_infos : List PythonFunc
   match s with
   | .FunctionDef _ name args body _ _ret _ _ =>
     let args := unpackPyArguments args
-    dbg_trace s!"name: {name.val}"
-    dbg_trace s!"Args: {args}"
     (.proc (pythonFuncToBoogie name.val args body.val default func_infos), {name := name.val, args})
   | _ => panic! s!"Expected function def: {repr s}"
 
@@ -386,17 +382,5 @@ def pythonToBoogie (pgm: Strata.Program): Boogie.Program :=
   let func_infos := func_defs_and_infos.snd
 
   {decls := globals ++ func_defs ++ [.proc (pythonFuncToBoogie "__main__" [] non_func_blocks default func_infos)]}
-
-  -- let varDecls : List Boogie.Statement := []
-  -- let body := varDecls ++ non_func_blocks ++ [.block "end" {ss := []}]
-  -- let mainProc : Boogie.Procedure := {
-  --   header := {name := "__main__",
-  --              typeArgs := [],
-  --              inputs := [],
-  --              outputs := [("maybe_except", (.tcons "ExceptOrNone" []))]},
-  --   spec := default,
-  --   body := body
-  -- }
-  -- {decls := translateFunctions insideMod ++ [.proc mainProc]}
 
 end Strata
