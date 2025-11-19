@@ -62,6 +62,26 @@ private def mkAbsIdent (name : Lean.Name) : Ident :=
 open Lean.Elab.Command (liftCoreM)
 
 /--
+Add a definition to environment and compile it.
+-/
+def addDefn (name : Lean.Name)
+            (type : Lean.Expr)
+            (value : Lean.Expr)
+            (levelParams : List Name := [])
+            (hints : ReducibilityHints := .abbrev)
+            (safety : DefinitionSafety := .safe)
+            (all : List Lean.Name := [name]) : CoreM Unit := do
+  addAndCompile <| .defnDecl {
+    name := name
+    levelParams := levelParams
+    type := type
+    value := value
+    hints := hints
+    safety := safety
+    all := all
+  }
+
+/--
 Declare dialect and add to environment.
 -/
 def declareDialect (d : Dialect) : CommandElabM Unit := do
@@ -72,14 +92,7 @@ def declareDialect (d : Dialect) : CommandElabM Unit := do
   let mapAbsName ← mkScopedName (Name.anonymous |>.str s!"{d.name}_map")
 
   let dialectTypeExpr := mkConst ``Dialect
-  liftCoreM <| addAndCompile <| .defnDecl {
-    name := dialectAbsName
-    levelParams := []
-    type := dialectTypeExpr
-    value := toExpr d
-    hints := .opaque
-    safety := .safe
-  }
+  liftCoreM <| addDefn dialectAbsName dialectTypeExpr (toExpr d)
   -- Add dialect to environment
   modifyEnv fun env =>
     dialectExt.modifyState env (·.addDialect! d dialectAbsName (isNew := true))
@@ -91,14 +104,9 @@ def declareDialect (d : Dialect) : CommandElabM Unit := do
         | throwError s!"Unknown dialect {d.name}"
       return mkConst name
   let de ← openDialects.mapM exprD
-  liftCoreM <| addAndCompile <| .defnDecl {
-    name := mapAbsName
-    levelParams := []
-    type := mkConst ``DialectMap
-    value := mkApp (mkConst ``DialectMap.ofList!) (listToExpr .zero dialectTypeExpr de)
-    hints := .opaque
-    safety := .safe
-  }
+  let mapValue := mkApp (mkConst ``DialectMap.ofList!)
+                        (listToExpr .zero dialectTypeExpr de)
+  liftCoreM <| addDefn mapAbsName (mkConst ``DialectMap) mapValue
 
 declare_tagged_region command strataDialectCommand "#dialect" "#end"
 
@@ -137,14 +145,7 @@ def strataProgramImpl : TermElab := fun stx tp => do
     let commandType := mkConst ``Operation
     let cmdToExpr (cmd : Strata.Operation) : CoreM Lean.Expr := do
           let n ← mkFreshUserName `command
-          addAndCompile <| .defnDecl {
-            name := n
-            levelParams := []
-            type := commandType
-            value := toExpr cmd
-            hints := .opaque
-            safety := .safe
-          }
+          addDefn n commandType (toExpr cmd)
           pure <| mkConst n
     let commandExprs ← monadLift <| pgm.commands.mapM cmdToExpr
     return astExpr! Program.create
