@@ -2,7 +2,7 @@ import test_helper
 
 # Test function inlining
 
-def my_f(s: str):
+def my_f(s: str) -> None:
     test_helper.procedure(s)
 
 def main():
