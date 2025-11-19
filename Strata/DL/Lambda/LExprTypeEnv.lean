@@ -243,6 +243,12 @@ structure LContext (T: LExprParams) where
   idents : Identifiers T.IDMeta
 deriving Inhabited
 
+def LContext.empty {IDMeta} : LContext IDMeta :=
+  ⟨#[], {}, {}⟩
+
+instance : EmptyCollection (LContext IDMeta) where
+  emptyCollection := LContext.empty
+
 def TEnv.context (T: TEnv IDMeta) : TContext IDMeta :=
   T.genEnv.context
 

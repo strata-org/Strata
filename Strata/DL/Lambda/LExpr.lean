@@ -24,12 +24,6 @@ inductive QuantifierKind
   | exist
   deriving Repr, DecidableEq
 
-class Locatable (T: Type) where
-  Uri: T -> String
-  LineIndex: T -> Nat
-  ColumnIndex: T -> Nat
-  PositionIndex: T -> Nat
-
 /-
 Traceable class for combining multiple metadata with labeled provenance.
 
