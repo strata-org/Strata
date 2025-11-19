@@ -97,7 +97,7 @@ Obligation: use_a2_again
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" Inhabited.default axiomPgm1
+#eval verify "cvc5" axiomPgm1
 
 ---------------------------------------------------------------------
 
@@ -121,7 +121,7 @@ assert [axiomPgm2_main_assert]: (x >= 0 ==> f(x) > x);
 
 /-- info: [] -/
 #guard_msgs in
-#eval let (program, _) := Boogie.getProgram Inhabited.default axiomPgm2
+#eval let (program, _) := Boogie.getProgram axiomPgm2
       Std.format (Boogie.Program.getIrrelevantAxioms program ["f"])
 
 /--
@@ -144,6 +144,6 @@ Obligation: axiomPgm2_main_assert
 Result: verified
 -/
 #guard_msgs in
-#eval verify "z3" Inhabited.default axiomPgm2
+#eval verify "z3" axiomPgm2
 
 ---------------------------------------------------------------------

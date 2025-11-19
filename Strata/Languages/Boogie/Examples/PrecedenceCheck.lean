@@ -96,7 +96,7 @@ Obligation: implies_equiv
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" Inhabited.default precPgm
+#eval verify "cvc5" precPgm
 
 end Strata
 

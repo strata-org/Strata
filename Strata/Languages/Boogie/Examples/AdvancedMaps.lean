@@ -185,6 +185,6 @@ Obligation: mix
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" Inhabited.default mapPgm
+#eval verify "cvc5" mapPgm
 
 ---------------------------------------------------------------------

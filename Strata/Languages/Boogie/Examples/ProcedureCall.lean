@@ -54,7 +54,7 @@ info: { callees := Std.HashMap.ofList [("Inc", []), ("Q2", ["Q1"]), ("P", ["Inc"
   callers := Std.HashMap.ofList [("Inc", ["P"]), ("Q1", ["Q2"])] }
 -/
 #guard_msgs in
-#eval let (program, _) := Boogie.getProgram Inhabited.default globalCounterPgm
+#eval let (program, _) := Boogie.getProgram globalCounterPgm
       Boogie.Program.toProcedureCG program
 
 /--
@@ -129,7 +129,7 @@ Obligation: assert_0
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" Inhabited.default globalCounterPgm
+#eval verify "cvc5" globalCounterPgm
 
 ---------------------------------------------------------------------
 

@@ -59,6 +59,6 @@ Obligation: assert_0
 Result: verified
 -/
 #guard_msgs in
-#eval verify "z3" Inhabited.default assertionNames
+#eval verify "z3" assertionNames
 
 ---------------------------------------------------------------------

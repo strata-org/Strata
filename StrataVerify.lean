@@ -84,7 +84,7 @@ def main (args : List String) : IO UInt32 := do
             if file.endsWith ".csimp.st" then
               C_Simp.verify "z3" pgm opts
             else
-              verify "z3" inputCtx pgm opts
+              verify "z3" pgm inputCtx opts
         for vcResult in vcResults do
           let posStr := match Boogie.formatPositionMetaData vcResult.obligation.metadata with
                         | .none => "<none>"

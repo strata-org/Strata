@@ -70,6 +70,6 @@ Obligation: x_eq_y
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" Inhabited.default unreachableAssertPgm
+#eval verify "cvc5" unreachableAssertPgm
 
 ---------------------------------------------------------------------

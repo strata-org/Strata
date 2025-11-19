@@ -54,4 +54,4 @@ Obligation: Update_ensures_0
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" Inhabited.default advQuantPgm
+#eval verify "cvc5" advQuantPgm

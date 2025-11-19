@@ -154,7 +154,7 @@ Obligation: optionally_a_check2
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" Inhabited.default regexPgm1
+#eval verify "cvc5" regexPgm1
 
 ---------------------------------------------------------------------
 
@@ -272,7 +272,7 @@ assert [assert_0] (~Bool.Not ((~Str.InRegEx #0123456789a) (~bad_re_loop $__n0)))
 assert [assert_1] ((~Str.InRegEx #a) (~bad_re_loop #1))
 -/
 #guard_msgs in
-#eval verify "cvc5" Inhabited.default regexPgm2
+#eval verify "cvc5" regexPgm2
 
 ---------------------------------------------------------------------
 
@@ -307,6 +307,6 @@ Obligation: assert_0
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" Inhabited.default regexPgm3
+#eval verify "cvc5" regexPgm3
 
 ---------------------------------------------------------------------

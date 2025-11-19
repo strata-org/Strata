@@ -67,6 +67,6 @@ Result: failed
 CEx:
 -/
 #guard_msgs in
-#eval verify "cvc5" Inhabited.default pgm
+#eval verify "cvc5" pgm
 
 ---------------------------------------------------------------------

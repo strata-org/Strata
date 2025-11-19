@@ -77,4 +77,4 @@ Obligation: assert0
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" Inhabited.default QuantTypeAliases
+#eval verify "cvc5" QuantTypeAliases

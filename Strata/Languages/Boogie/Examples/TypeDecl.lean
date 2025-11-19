@@ -45,7 +45,7 @@ Obligation: f_test
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" Inhabited.default typeDeclPgm1
+#eval verify "cvc5" typeDeclPgm1
 
 --------------------------------------------------------------------
 
@@ -108,7 +108,7 @@ Obligation: fooAssertion
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" Inhabited.default typeDeclPgm3
+#eval verify "cvc5" typeDeclPgm3
 
 
 --------------------------------------------------------------------
@@ -126,6 +126,6 @@ KnownTypes' names:
 [arrow, TriggerGroup, real, string, bitvec, Triggers, int, bool, Map, regex]
 -/
 #guard_msgs in
-#eval verify "cvc5" Inhabited.default typeDeclPgm4
+#eval verify "cvc5" typeDeclPgm4
 
 --------------------------------------------------------------------

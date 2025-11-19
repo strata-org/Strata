@@ -78,7 +78,7 @@ Obligation: sum_ensures_1
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" Inhabited.default gaussPgm
+#eval verify "cvc5" gaussPgm
 
 def nestedPgm :=
 #strata
@@ -124,4 +124,4 @@ Obligation: arbitrary_iter_maintain_invariant_0
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" Inhabited.default nestedPgm Options.quiet
+#eval verify "cvc5" nestedPgm Inhabited.default Options.quiet

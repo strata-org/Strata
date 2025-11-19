@@ -35,7 +35,7 @@ barTest1 callers: [barTest4, barTest3]
 fooConst callees: []
 -/
 #guard_msgs in
-#eval let (program, _) := Boogie.getProgram Inhabited.default funcPgm
+#eval let (program, _) := Boogie.getProgram funcPgm
       let cg := (Boogie.Program.toFunctionCG program)
       let ans1 := Boogie.CallGraph.getCalleesClosure cg "barTest4"
       let ans2 := Boogie.CallGraph.getCallersClosure cg "barTest1"
@@ -73,6 +73,6 @@ Obligation: fooEq
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" Inhabited.default funcPgm
+#eval verify "cvc5" funcPgm
 
 ---------------------------------------------------------------------

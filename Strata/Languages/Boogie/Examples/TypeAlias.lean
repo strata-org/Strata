@@ -94,6 +94,6 @@ Obligation: fooAssertion
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" Inhabited.default goodTypeAlias
+#eval verify "cvc5" goodTypeAlias
 
 --------------------------------------------------------------------

@@ -101,6 +101,6 @@ Result: failed
 CEx: ($__g2, 0)
 -/
 #guard_msgs in
-#eval verify "cvc5" Inhabited.default freeReqEnsPgm
+#eval verify "cvc5" freeReqEnsPgm
 
 ---------------------------------------------------------------------

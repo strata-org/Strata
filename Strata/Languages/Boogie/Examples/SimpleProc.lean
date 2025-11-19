@@ -84,6 +84,6 @@ Obligation: Test_ensures_2
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" Inhabited.default simpleProcPgm
+#eval verify "cvc5" simpleProcPgm
 
 ---------------------------------------------------------------------

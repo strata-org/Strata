@@ -72,4 +72,4 @@ Obligation: assert_0
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" Inhabited.default genLabelsPgm
+#eval verify "cvc5" genLabelsPgm

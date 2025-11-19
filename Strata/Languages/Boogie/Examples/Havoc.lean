@@ -78,6 +78,6 @@ Result: failed
 CEx: ($__x0, 0)
 -/
 #guard_msgs in
-#eval verify "cvc5" Inhabited.default havocPgm
+#eval verify "cvc5" havocPgm
 
 ---------------------------------------------------------------------

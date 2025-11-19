@@ -100,7 +100,7 @@ Result: failed
 CEx:
 -/
 #guard_msgs in
-#eval verify "cvc5" Inhabited.default realPgm
+#eval verify "cvc5" realPgm
 
 ---------------------------------------------------------------------
 
@@ -186,7 +186,7 @@ Obligation: Q_ensures_0
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" Inhabited.default bvPgm
+#eval verify "cvc5" bvPgm
 
 def bvMoreOpsPgm : Program :=
 #strata
@@ -238,4 +238,4 @@ Result: failed
 CEx: ($__x0, #b10011001) ($__y1, #b00000010)
 -/
 #guard_msgs in
-#eval verify "cvc5" Inhabited.default bvMoreOpsPgm Options.quiet
+#eval verify "cvc5" bvMoreOpsPgm Inhabited.default Options.quiet

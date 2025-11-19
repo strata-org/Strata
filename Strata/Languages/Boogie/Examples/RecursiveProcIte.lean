@@ -63,7 +63,7 @@ Obligation: n_le_100_postcond
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" Inhabited.default procIfPgm
+#eval verify "cvc5" procIfPgm
 
 /-
 <PCs>

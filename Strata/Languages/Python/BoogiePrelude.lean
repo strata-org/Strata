@@ -159,6 +159,6 @@ spec {
 #end
 
 def Boogie.prelude : Boogie.Program :=
-   Boogie.getProgram Inhabited.default Strata.boogiePrelude |>.fst
+   Boogie.getProgram Strata.boogiePrelude |>.fst
 
 end Strata

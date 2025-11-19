@@ -90,6 +90,6 @@ Obligation: substr_of_concat_concrete_test
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" Inhabited.default strPgm
+#eval verify "cvc5" strPgm
 
 ---------------------------------------------------------------------
