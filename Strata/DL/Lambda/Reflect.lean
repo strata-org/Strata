@@ -103,7 +103,7 @@ def LExpr.toExprNoFVars (e : LExpr MonoString) : MetaM Lean.Expr := do
         let bodyExpr ← LExpr.toExprNoFVars e'
         mkLambdaFVars #[x] bodyExpr
 
-  | .quant _ qk mty tr e =>
+  | .quant _ qk mty _ e =>
     match mty with
     | none => throwError f!"[LExpr.toExprNoFVars] Cannot reflect untyped quantifier!"
     | some ty =>

@@ -76,9 +76,9 @@ def Scope.merge (cond : LExpr T.mono) (m1 m2 : Scope T) : Scope T :=
 section Scope.merge.tests
 open LTy.Syntax LExpr.SyntaxMono
 
-abbrev TestParams : LExprParams := ⟨Unit, Unit⟩
+private abbrev TestParams : LExprParams := ⟨Unit, Unit⟩
 
-instance : Coe String TestParams.Identifier where
+private instance : Coe String TestParams.Identifier where
   coe s := Identifier.mk s ()
 
 /--

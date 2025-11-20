@@ -15,9 +15,9 @@ section Tests
 
 open LTy.Syntax LExpr.SyntaxMono LExpr LMonoTy
 
-abbrev TestParams : LExprParams := ⟨Unit, Unit⟩
+private abbrev TestParams : LExprParams := ⟨Unit, Unit⟩
 
-instance : Coe String TestParams.Identifier where
+private instance : Coe String TestParams.Identifier where
   coe s := Identifier.mk s ()
 
 /-- info: error: Cannot infer the type of this bvar: %2 -/

@@ -19,12 +19,12 @@ section EvalTest
 open LTy.Syntax LExpr.SyntaxMono
 open Std (ToFormat Format format)
 
-abbrev TestParams : LExprParams := ⟨Unit, Unit⟩
+private abbrev TestParams : LExprParams := ⟨Unit, Unit⟩
 
-instance : Coe String TestParams.Identifier where
+private instance : Coe String TestParams.Identifier where
   coe s := Identifier.mk s ()
 
-instance : Traceable EvalProvenance TestParams.Metadata where
+private instance : Traceable EvalProvenance TestParams.Metadata where
   combine _ := ()
 
 /-- info: (λ (if (%0 == #1) then #10 else (_minit %0))) -/

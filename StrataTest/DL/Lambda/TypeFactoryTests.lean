@@ -17,12 +17,12 @@ namespace Lambda
 open Std (ToFormat Format format)
 open LExpr LTy
 
-abbrev TestParams : LExprParams := ⟨Unit, Unit⟩
+private abbrev TestParams : LExprParams := ⟨Unit, Unit⟩
 
-instance : Coe String TestParams.Identifier where
+private instance : Coe String TestParams.Identifier where
   coe s := Identifier.mk s ()
 
-instance : Traceable EvalProvenance TestParams.Metadata where
+private instance : Traceable EvalProvenance TestParams.Metadata where
   combine _ := ()
 
 private def absMulti' (n: Nat) (body: LExpr TestParams.mono) : LExpr TestParams.mono :=

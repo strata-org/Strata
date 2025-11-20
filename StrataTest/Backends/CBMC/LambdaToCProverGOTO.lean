@@ -11,6 +11,11 @@ namespace Lambda
 open Std (ToFormat Format format)
 -------------------------------------------------------------------------------
 
+private abbrev TestParams : LExprParams := ⟨Unit, Unit⟩
+
+private instance : Coe String TestParams.Identifier where
+  coe s := Identifier.mk s ()
+
 def LMonoTy.toGotoType (ty : LMonoTy) : Except Format CProverGOTO.Ty :=
   match ty with
   | .bitvec n => .ok (CProverGOTO.Ty.UnsignedBV n)
@@ -102,8 +107,6 @@ def LExpr.toGotoExpr {TBase: LExprParams} [ToString $ LExpr TBase.mono] (e : LEx
     let e2g ← toGotoExpr e2
     return { id := .binary .Equal, type := .Boolean, operands := [e1g, e2g] }
   | _ => .error f!"[toGotoExpr] Not yet implemented: {toString e}"
-
-abbrev TestParams : LExprParams := ⟨Unit, String⟩
 
 open LTy.Syntax LExpr.Syntax in
 /--

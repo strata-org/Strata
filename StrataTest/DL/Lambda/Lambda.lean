@@ -16,9 +16,9 @@ namespace Lambda
 open Std (ToFormat Format format)
 open LExpr LTy
 
-abbrev TestParams : LExprParams := ⟨Unit, Unit⟩
+private abbrev TestParams : LExprParams := ⟨Unit, Unit⟩
 
-instance : Traceable EvalProvenance TestParams.Metadata where
+private instance : Traceable EvalProvenance TestParams.Metadata where
   combine _ := ()
 
 section Test

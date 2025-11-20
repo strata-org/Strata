@@ -15,9 +15,9 @@ instructions -/
 section
 open Std (ToFormat Format format)
 
-abbrev TestParams : Lambda.LExprParams := ⟨Unit, Unit⟩
+private abbrev TestParams : Lambda.LExprParams := ⟨Unit, Unit⟩
 
-abbrev LExprTP : Imperative.PureExpr :=
+private abbrev LExprTP : Imperative.PureExpr :=
    { Ident := TestParams.Identifier,
      Expr := Lambda.LExprT TestParams.mono,
      Ty := Lambda.LMonoTy,
@@ -32,7 +32,7 @@ Commands, parameterized by type-annotated Lambda expressions.
 We assume in this test that the Lambda expressions are well-typed. In practice,
 these should after Lambda's type inference pass.
 -/
-abbrev Cmd := Imperative.Cmd LExprTP
+private abbrev Cmd := Imperative.Cmd LExprTP
 
 private def lookupType (T : LExprTP.TyEnv) (i : LExprTP.Ident) : Except Format CProverGOTO.Ty :=
   match T.context.types.find? i with
