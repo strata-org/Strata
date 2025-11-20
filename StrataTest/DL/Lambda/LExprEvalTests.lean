@@ -24,9 +24,6 @@ private abbrev TestParams : LExprParams := ⟨Unit, Unit⟩
 private instance : Coe String TestParams.Identifier where
   coe s := Identifier.mk s ()
 
-private instance : Traceable EvalProvenance TestParams.Metadata where
-  combine _ := ()
-
 /-- info: (λ (if (%0 == #1) then #10 else (_minit %0))) -/
 #guard_msgs in
 #eval format $ Lambda.LExpr.eval (TBase:=TestParams) 100

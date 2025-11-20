@@ -22,9 +22,6 @@ private abbrev TestParams : LExprParams := ⟨Unit, Unit⟩
 private instance : Coe String TestParams.Identifier where
   coe s := Identifier.mk s ()
 
-private instance : Traceable EvalProvenance TestParams.Metadata where
-  combine _ := ()
-
 private def absMulti' (n: Nat) (body: LExpr TestParams.mono) : LExpr TestParams.mono :=
   List.foldr (fun _ e => .abs () .none e) body (List.range n)
 

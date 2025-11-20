@@ -32,7 +32,7 @@ private instance : Coe String TestParams.Identifier where
 #guard_msgs in
 #eval do let ans ← LExpr.resolve (T:=TestParams) LContext.default (TEnv.default.updateContext { types := [[("y", t[∀x. %x])]] })
                             esM[((λ %0) y)]
-         return (LExprT.format $ ans.fst)
+         return (format $ ans.fst)
 
 /-- info: error: Cannot unify differently named type constructors bool and int! -/
 #guard_msgs in
@@ -65,7 +65,7 @@ private instance : Coe String TestParams.Identifier where
 /-- info: ok: (∀(int) ((%0 : int) == (#5 : int)) : bool)) -/
 #guard_msgs in
 #eval do let ans ← LExpr.resolve (T:=TestParams) LContext.default TEnv.default esM[∀ (%0 == #5)]
-         return (LExprT.format $ ans.fst)
+         return (format $ ans.fst)
 
 /-- info: ok: ((λ (%0 : $__ty0)) : (arrow $__ty0 $__ty0)) -/
 #guard_msgs in
@@ -236,7 +236,7 @@ info: ok: ((λ ((%0 : (arrow bool $__ty4)) ((fn : (arrow bool bool)) (#true : bo
 #guard_msgs in
 #eval do let ans ← LExpr.resolve (T:=TestParams) {LContext.default with functions := testIntFns} ((@TEnv.default TestParams.IDMeta).updateContext { types := [[("fn", t[∀a. %a → %a])]] })
                              esM[(λ (%0 (fn #true)))]
-         return LExprT.format ans.fst
+         return format ans.fst
 
 /-- info: ok: int -/
 #guard_msgs in

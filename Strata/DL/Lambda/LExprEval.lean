@@ -207,5 +207,8 @@ partial def evalApp (n' : Nat) (σ : LState TBase) (e e1 e2 : LExpr TBase.mono) 
   | _ => .app e.metadata e1' e2'
 end
 
+instance : Traceable EvalProvenance Unit where
+  combine _ := ()
+
 end LExpr
 end Lambda

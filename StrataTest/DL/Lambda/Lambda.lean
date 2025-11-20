@@ -18,9 +18,6 @@ open LExpr LTy
 
 private abbrev TestParams : LExprParams := ⟨Unit, Unit⟩
 
-private instance : Traceable EvalProvenance TestParams.Metadata where
-  combine _ := ()
-
 section Test
 open LState LExpr LExpr.SyntaxMono
 

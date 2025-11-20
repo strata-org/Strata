@@ -41,8 +41,12 @@ partial def LExprT.format {T : LExprParamsT} [ToFormat T.base.IDMeta] (et : LExp
                             {LExprT.format f}) : {m.type})"
   | .eq m e1 e2 => f!"({LExprT.format e1} == {LExprT.format e2}) : {m.type})"
 
-instance {T : LExprParamsT} [ToFormat T.base.IDMeta] : ToFormat (LExprT T) where
+instance (priority := high) {T : LExprParamsT} [ToFormat T.base.IDMeta] : ToFormat (LExprT T) where
   format := LExprT.format
+
+-- More specific instance that matches when the metadata is explicitly Typed
+instance (priority := high) {M : Type} {IDMeta : Type} [ToFormat IDMeta] : ToFormat (LExpr ⟨⟨Typed M, IDMeta⟩, LMonoTy⟩) where
+  format e := LExprT.format (T := ⟨⟨M, IDMeta⟩, LMonoTy⟩) e
 
 ---------------------------------------------------------------------
 

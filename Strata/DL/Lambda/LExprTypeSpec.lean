@@ -99,17 +99,6 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T):
             HasType C Γ (.abs m o e)
                       (.forAll [] (.tcons "arrow" [(LTy.toMonoType x_ty hx),
                                                    (LTy.toMonoType e_ty he)]))
-
---  | tcons_intro : ∀ Γ C args targs,
---                  args.length == targs.length →
---                  ∀ et ∈ (List.zip args targs), HasType Γ et.fst et.snd →
---                  HasType Γ (.app (.const C) args) (.tcons C targs)
-
---  | tcons_elim :
---                HasType Γ (.app (.const C) args) (.tcons C targs) →
---                (h : i < targs.length) →
---                HasType Γ (.proj i args) (List.get targs i h)
-
   | tapp : ∀ Γ m e1 e2 t1 t2,
             (h1 : LTy.isMonoType t1) →
             (h2 : LTy.isMonoType t2) →

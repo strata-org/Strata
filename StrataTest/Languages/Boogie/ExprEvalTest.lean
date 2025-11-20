@@ -32,9 +32,6 @@ section Tests
 open Lambda
 open Std
 
-instance : Traceable LExpr.EvalProvenance BoogieLParams.Metadata where
-  combine _ := ()
-
 def encode (e:LExpr BoogieLParams.mono)
            (tenv:TEnv Visibility)
            (init_state:LState BoogieLParams):
