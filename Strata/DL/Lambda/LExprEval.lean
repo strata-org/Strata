@@ -46,25 +46,25 @@ Without (2), this is impossible because the `reduce_2` rule of small step
 semantics only fires when `Int.Add 1` is a 'canonical value'. Therefore, without
 (2), the semantics stuck and `2+3` can never be evaluated to `5`.
 -/
-def isCanonicalValue {GenericTy} (σ : LState IDMeta)
+def isCanonicalValue {GenericTy} (F : @Factory IDMeta)
     (e : LExpr GenericTy IDMeta) : Bool :=
   match he: e with
   | .const _ => true
-  | .abs _ _ =>
+  | .abs _ _ | .quant _ _ _ _ =>
     -- We're using the locally nameless representation, which guarantees that
     -- `closed (.abs e) = closed e` (see theorem `closed_abs`).
     -- So we could simplify the following to `closed e`, but leave it as is for
     -- clarity.
     LExpr.closed e
-  | .mdata _ e' => isCanonicalValue σ e'
+  | .mdata _ e' => isCanonicalValue F e'
   | e' =>
-    match h: Factory.callOfLFunc σ.config.factory e true with
+    match h: Factory.callOfLFunc F e true with
     | some (_, args, f) =>
       (f.isConstr || Nat.blt args.length f.inputs.length) &&
       List.all (args.attach.map (fun ⟨ x, _⟩ =>
         have : x.sizeOf < e'.sizeOf := by
           have Hsmall := Factory.callOfLFunc_smaller h; grind
-        (isCanonicalValue σ x))) id
+        (isCanonicalValue F x))) id
     | none => false
   termination_by e.sizeOf
 
@@ -74,8 +74,8 @@ Equality of canonical values `e1` and `e2`.
 We can tolerate nested metadata here.
 -/
 def eql {GenericTy} [DecidableEq GenericTy]
-  (σ : LState IDMeta) (e1 e2 : LExpr GenericTy IDMeta)
-  (_h1 : isCanonicalValue σ e1) (_h2 : isCanonicalValue σ e2) : Bool :=
+  (F : @Factory IDMeta) (e1 e2 : LExpr GenericTy IDMeta)
+  (_h1 : isCanonicalValue F e1) (_h2 : isCanonicalValue F e2) : Bool :=
   if eqModuloTypes e1 e2 then
     true
   else
@@ -124,7 +124,7 @@ def eval (n : Nat) (σ : (LState IDMeta)) (e : (LExpr LMonoTy IDMeta))
   match n with
   | 0 => e
   | n' + 1 =>
-    if isCanonicalValue σ e then
+    if isCanonicalValue σ.config.factory e then
       e
     else
       -- Special handling for Factory functions.
@@ -139,7 +139,7 @@ def eval (n : Nat) (σ : (LState IDMeta)) (e : (LExpr LMonoTy IDMeta))
           eval n' σ new_e
         else
           let new_e := mkApp op_expr args
-          if args.all (isCanonicalValue σ) then
+          if args.all (isCanonicalValue σ.config.factory) then
             -- All arguments in the function call are concrete.
             -- We can, provided a denotation function, evaluate this function
             -- call.
@@ -191,8 +191,9 @@ def evalEq (n' : Nat) (σ : (LState IDMeta)) (e1 e2 : (LExpr LMonoTy IDMeta)) : 
   if eqModuloTypes e1' e2' then
     -- Short-circuit: e1' and e2' are syntactically the same after type erasure.
     LExpr.true
-  else if h: isCanonicalValue σ e1' ∧ isCanonicalValue σ e2' then
-      if eql σ e1' e2' h.left h.right then
+  else if h: isCanonicalValue σ.config.factory e1' ∧
+             isCanonicalValue σ.config.factory e2' then
+      if eql σ.config.factory e1' e2' h.left h.right then
         LExpr.true
       else LExpr.false
   else

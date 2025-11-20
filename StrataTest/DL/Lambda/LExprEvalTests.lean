@@ -53,9 +53,9 @@ macro "reduce_beta": tactic => `(tactic |
 
 -- Small step stucks because abstraction is a value.
 example:
-  ∀ σ e, ¬ (Lambda.Step σ (esM[(λ (if (%0 == #1) then #10 else (m %0)))]) e)
+  ∀ F s e, ¬ (Lambda.Step F s (esM[(λ (if (%0 == #1) then #10 else (m %0)))]) e)
   := by
-  intros σ e H
+  intros; intro
   contradiction
 
 
@@ -67,7 +67,8 @@ example:
 
 example:
   Lambda.StepStar
-    { LState.init with state := [[("x", (mty[int], esM[#32]))]] }
+    LState.init.config.factory
+    [[("x", (mty[int], esM[#32]))]]
     esM[((λ (if (%0 == #23) then #17 else #42)) (x : int))]
     esM[#42] := by
   take_step; apply Step.reduce_2
@@ -84,11 +85,8 @@ example:
 #guard_msgs in
 #eval format $ LExpr.eval 10 ∅ esM[(f #true)]
 
-theorem nil_state_empty {Ty}: (∅:LState Ty).state = [] := by
-  rfl
-
 example:
-  ∀ e, ¬ Lambda.Step ∅ esM[(f #true)] e := by
+  ∀ e, ¬ Lambda.Step LState.init.config.factory [] esM[(f #true)] e := by
   intros e H
   contradiction
 
@@ -103,9 +101,9 @@ example:
 
 example:
   Lambda.StepStar
-    { LState.init with state :=
-      [[("m", (none, esM[(λ (minit %0))]))], -- most recent scope
-      [("m", (none, (.intConst 12)))]] }
+    LState.init.config.factory
+    [[("m", (none, esM[(λ (minit %0))]))], -- most recent scope
+      [("m", (none, (.intConst 12)))]]
     esM[((λ (if (%0 == #23) then #17 else (m %0)) #24))]
     esM[(minit #24)] := by
   take_step; reduce_beta
@@ -125,7 +123,7 @@ example:
 
 example:
   Lambda.StepStar
-    { LState.init with state := [[("m", (none, esM[minit]))]] }
+    LState.init.config.factory [[("m", (none, esM[minit]))]]
     esM[((λ (if (%0 == #23) then #17 else (m %0))) #24)]
     esM[(minit #24)] := by
   take_step; reduce_beta
@@ -140,7 +138,8 @@ example:
 #eval format $ LExpr.eval 10 ∅ esM[if #true then x else y]
 
 example:
-  Lambda.StepStar ∅ esM[if #true then x else y] esM[x] := by
+  Lambda.StepStar LState.init.config.factory []
+    esM[if #true then x else y] esM[x] := by
   take_step
   · constructor
   take_refl
@@ -152,7 +151,7 @@ example:
 #eval format $ LExpr.eval 10 ∅ esM[(λ %1)]
 
 example:
-  ∀ e, ¬ Lambda.Step ∅ esM[(λ %1)] e := by
+  ∀ e, ¬ Lambda.Step LState.init.config.factory [] esM[(λ %1)] e := by
   intros e H
   contradiction
 
@@ -162,8 +161,8 @@ example:
 #eval format $ LExpr.eval (IDMeta:=Unit) 10 ∅ (.app (.mdata ⟨"x"⟩ (.abs .none (.bvar 1))) .true)
 
 example:
-  ∀ e, ¬ Lambda.Step (IDMeta:=Unit) ∅
-      (.app (.mdata ⟨"x"⟩ (.abs .none (.bvar 1))) .true) e := by
+  ∀ e, ¬ Lambda.Step (IDMeta:=Unit) LState.init.config.factory []
+    (.app (.mdata ⟨"x"⟩ (.abs .none (.bvar 1))) .true) e := by
   intros e H
   contradiction
 
@@ -225,7 +224,8 @@ private def testState : LState Unit :=
 #eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((~IntAddAlias #20) #30)]
 
 example:
-  Lambda.StepStar testState esM[((~IntAddAlias #20) #30)] esM[#50] := by
+  Lambda.StepStar testState.config.factory testState.state
+    esM[((~IntAddAlias #20) #30)] esM[#50] := by
   take_step; apply Step.expand_fn <;> discharge_isCanonicalValue
   take_step; apply Step.eval_fn <;> discharge_isCanonicalValue
   take_refl
@@ -239,7 +239,8 @@ example:
 -- to avoid nondeterminism in the small-step semantics (unless this becomes
 -- explicitly allowed in the future).
 example:
-  ∀ e, ¬ Lambda.Step testState esM[((~IntAddAlias #20) x)] e
+  ∀ e, ¬ Lambda.Step testState.config.factory testState.state
+    esM[((~IntAddAlias #20) x)] e
   := by
   intro e H; cases H
   case reduce_2 => contradiction
@@ -280,7 +281,8 @@ example:
 #eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((~Int.Add #20) #30)]
 
 example:
-  Lambda.StepStar testState esM[((~Int.Add #20) #30)] esM[#50] := by
+  Lambda.StepStar testState.config.factory testState.state
+    esM[((~Int.Add #20) #30)] esM[#50] := by
   take_step; apply Step.eval_fn <;> discharge_isCanonicalValue
   take_refl
 
@@ -292,14 +294,14 @@ example:
 
 /-- info: false -/
 #guard_msgs in
-#eval LExpr.isCanonicalValue testState esM[((~Int.Add #100) #200)]
+#eval LExpr.isCanonicalValue testState.config.factory esM[((~Int.Add #100) #200)]
 
 /-- info: true -/
 #guard_msgs in
-#eval LExpr.isCanonicalValue testState esM[(~Int.Add #100)]
+#eval LExpr.isCanonicalValue testState.config.factory esM[(~Int.Add #100)]
 
 example:
-  Lambda.StepStar testState
+  Lambda.StepStar testState.config.factory testState.state
     esM[((((λ(λ (~Int.Add %1) %0))) ((λ ((~Int.Add %0) #100)) #5)) x)]
     esM[((~Int.Add #105) x)] := by
   take_step; apply Step.reduce_1; apply Step.reduce_2
@@ -331,7 +333,7 @@ example:
 -- The result stops at (.. ((λ (~Int.Neg %0)) x)) because definition of
 -- x is not available.
 example:
-  Lambda.StepStar testState
+  Lambda.StepStar testState.config.factory testState.state
     esM[( ((λ(λ (~Int.Add %1) %0)) #20) ((λ (~Int.Neg %0)) x))]
     esM[((~Int.Add #20) ((λ (~Int.Neg %0)) x))]
   := by
@@ -354,7 +356,7 @@ example:
 #eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((λ %0) ((~Int.Add #20) #30))]
 
 example:
-  Lambda.StepStar testState
+  Lambda.StepStar testState.config.factory testState.state
     esM[((λ %0) ((~Int.Add #20) #30))]
     esM[(#50)]
   := by
@@ -371,7 +373,8 @@ example:
 #eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((~Int.Div #300) ((~Int.Add #2) #1))]
 
 example:
-  Lambda.StepStar testState esM[((~Int.Div #300) ((~Int.Add #2) #1))] esM[(#100)]
+  Lambda.StepStar testState.config.factory testState.state
+    esM[((~Int.Div #300) ((~Int.Add #2) #1))] esM[(#100)]
   := by
   take_step; apply Step.reduce_2
   · discharge_isCanonicalValue
@@ -385,7 +388,8 @@ example:
 #eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((~Int.Add #3) (~Int.Neg #3))]
 
 example:
-  Lambda.StepStar testState esM[((~Int.Add #3) (~Int.Neg #3))] esM[(#0)]
+  Lambda.StepStar testState.config.factory testState.state
+    esM[((~Int.Add #3) (~Int.Neg #3))] esM[(#0)]
   := by
   take_step
   · apply Step.reduce_2
@@ -401,7 +405,8 @@ example:
 #eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((~Int.Add (~Int.Neg #3)) #3)]
 
 example:
-  Lambda.StepStar testState esM[((~Int.Add (~Int.Neg #3)) #3)] esM[(#0)]
+  Lambda.StepStar testState.config.factory testState.state
+    esM[((~Int.Add (~Int.Neg #3)) #3)] esM[(#0)]
   := by
   take_step; apply Step.reduce_1; apply Step.reduce_2
   · discharge_isCanonicalValue
@@ -414,7 +419,7 @@ example:
 #eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((~Int.Div #300) ((~Int.Add #3) (~Int.Neg #3)))]
 
 example:
-  Lambda.StepStar testState
+  Lambda.StepStar testState.config.factory testState.state
     esM[((~Int.Div #300) ((~Int.Add #3) (~Int.Neg #3)))]
     esM[((~Int.Div #300) #0)]
   := by
