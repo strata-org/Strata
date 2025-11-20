@@ -76,8 +76,8 @@ example:
   · repeat constructor
   take_step; reduce_beta
   take_step; constructor
-  · apply Step.beta_eq <;> discharge_isCanonicalValue
-  take_step; apply Step.ite_beta_else
+  · apply Step.eq_reduce <;> discharge_isCanonicalValue
+  take_step; apply Step.ite_reduce_else
   apply StepStar.refl
 
 
@@ -108,7 +108,7 @@ example:
     esM[(minit #24)] := by
   take_step; reduce_beta
   take_step; apply Step.ite_reduce_cond
-  · apply Step.beta_eq <;> discharge_isCanonicalValue
+  · apply Step.eq_reduce <;> discharge_isCanonicalValue
   take_step; apply Step.ite_beta_else
   take_step; apply Step.reduce_1; apply Step.expand_fvar; rfl
   take_step; reduce_beta
@@ -127,7 +127,7 @@ example:
     esM[((λ (if (%0 == #23) then #17 else (m %0))) #24)]
     esM[(minit #24)] := by
   take_step; reduce_beta
-  take_step; apply Step.ite_reduce_cond; apply Step.beta_eq <;> discharge_isCanonicalValue
+  take_step; apply Step.ite_reduce_cond; apply Step.eq_reduce <;> discharge_isCanonicalValue
   take_step; apply Step.ite_beta_else
   take_step; apply Step.reduce_1; apply Step.expand_fvar; rfl
   take_refl

@@ -56,11 +56,11 @@ inductive Step (F:@Factory IDMeta) (state:Scopes IDMeta)
 -- For ite x e1 e2, do not eagerly evaluate e1 and e2.
 -- For the reduction order, ite x e1 e2 is interpreted as
 -- 'ite x (λ.e1) (λ.e2)'.
-| ite_beta_then:
+| ite_reduce_then:
   ∀ (ethen eelse:LExpr LMonoTy IDMeta),
     Step F state  (.ite (.const (.boolConst true)) ethen eelse) ethen
 
-| ite_beta_else:
+| ite_reduce_else:
   ∀ (ethen eelse:LExpr LMonoTy IDMeta),
     Step F state  (.ite (.const (.boolConst false)) ethen eelse) eelse
 
@@ -70,19 +70,19 @@ inductive Step (F:@Factory IDMeta) (state:Scopes IDMeta)
     Step F state  (.ite econd ethen eelse) (.ite econd' ethen eelse)
 
 -- Equality. Reduce after both operands evaluate to values.
-| beta_eq:
+| eq_reduce:
   ∀ (e1 e2 eres:LExpr LMonoTy IDMeta)
     (H1:LExpr.isCanonicalValue F e1)
     (H2:LExpr.isCanonicalValue F e2),
     eres = .const (.boolConst (LExpr.eql F e1 e2 H1 H2)) →
     Step F state  (.eq e1 e2) eres
 
-| reduce_eq_lhs:
+| eq_reduce_lhs:
   ∀ (e1 e1' e2:LExpr LMonoTy IDMeta),
     Step F state  e1 e1' →
     Step F state  (.eq e1 e2) (.eq e1' e2)
 
-| reduce_eq_rhs:
+| eq_reduce_rhs:
   ∀ (v1 e2 e2':LExpr LMonoTy IDMeta),
     LExpr.isCanonicalValue F v1 →
     Step F state  e2 e2' →
