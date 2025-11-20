@@ -26,15 +26,15 @@ variable {T : LExprParams} [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat 
 abbrev LExprT (T : LExprParamsT) :=
   LExpr (LExprParamsT.typed T)
 
-partial def LExprT.format {T : LExprParamsT} [ToFormat T.base.Identifier] (et : LExprT T) : Std.Format :=
+partial def LExprT.format {T : LExprParamsT} [ToFormat T.base.IDMeta] (et : LExprT T) : Std.Format :=
   match et with
   | .const m c => f!"(#{c} : {m.type})"
   | .op m o _ => f!"(~{o} : {m.type})"
   | .bvar m i => f!"(%{i} : {m.type})"
   | .fvar m x _ => f!"({x} : {m.type})"
   | .abs m _ e => f!"((λ {LExprT.format e}) : {m.type})"
-  | .quant _ .all argTy _ e => f!"(∀({argTy}) {LExprT.format e})"
-  | .quant _ .exist argTy _ e => f!"(∃({argTy}) {LExprT.format e})"
+  | .quant m .all _ _ e => f!"(∀({m.type}) {LExprT.format e})"
+  | .quant m .exist _ _ e => f!"(∃({m.type}) {LExprT.format e})"
   | .app m e1 e2 => f!"({LExprT.format e1} {LExprT.format e2}) : {m.type})"
   | .ite m c t f => f!"(if {LExprT.format c} then \
                             {LExprT.format t} else \

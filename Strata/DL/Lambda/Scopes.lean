@@ -53,7 +53,7 @@ instance : ToFormat (Scope T) where
 Merge two maps `m1` and `m2`, where `m1` is assumed to be the map if `cond`
 is `true` and `m2` when it is false.
 -/
-def Scope.merge (cond : (LExpr T.mono)) (m1 m2 : (Scope T)) : (Scope T) :=
+def Scope.merge (cond : LExpr T.mono) (m1 m2 : Scope T) : Scope T :=
   match m1 with
   | [] => m2.map (fun (i, (ty, e)) => (i, (ty, mkIte cond (.fvar (default : T.Metadata) i ty) e)))
   | (k, (ty1, e1)) :: rest =>
@@ -73,58 +73,60 @@ def Scope.merge (cond : (LExpr T.mono)) (m1 m2 : (Scope T)) : (Scope T) :=
     if tru == fals then tru
     else (LExpr.ite (default : T.Metadata) cond tru fals)
 
-/-
 section Scope.merge.tests
 open LTy.Syntax LExpr.SyntaxMono
 
-/--
-info: (x : int) → #8
-(z : int) → (if #true then #100 else (z : int))
--/
-#guard_msgs in
-#eval format $ Scope.merge (IDMeta:=Unit) .true
-              [(("x"), (mty[int], .intConst 8)),
-               (("z"), (mty[int], .intConst 100))]
-              [(("x"), (mty[int], .intConst 8))]
+abbrev TestParams : LExprParams := ⟨Unit, Unit⟩
+
+instance : Coe String TestParams.Identifier where
+  coe s := Identifier.mk s ()
 
 /--
-info: (x : int) → (if #true then #8 else (x : int))
-(z : int) → (if #true then #100 else (z : int))
-(y : int) → (if #true then (y : int) else #8)
+info: (x, (some int, #8)) (z, (some int, (if #true then #100 else (z : int))))
 -/
 #guard_msgs in
-#eval format $ Scope.merge (IDMeta:=Unit) .true
-              [(("x"), (mty[int], .intConst 8)),
-               (("z"), (mty[int], .intConst 100))]
-              [(("y"), (mty[int], .intConst 8))]
+#eval format $ Scope.merge (T:=TestParams) (.boolConst () true)
+              [("x", (mty[int], .intConst () 8)),
+               ("z", (mty[int], .intConst () 100))]
+              [("x", (mty[int], .intConst () 8))]
 
 /--
-info: (y : int) → (if #true then #8 else (y : int))
-(x : int) → (if #true then (x : int) else #8)
-(z : int) → (if #true then (z : int) else #100)
+info: (x, (some int,
+ (if #true then #8 else (x : int)))) (z, (some int,
+ (if #true then #100 else (z : int)))) (y, (some int, (if #true then (y : int) else #8)))
 -/
 #guard_msgs in
-#eval format $ Scope.merge (IDMeta:=Unit) .true
-              [(("y"), (mty[int], .intConst 8 ))]
-              [(("x"), (mty[int], .intConst 8)),
-               (("z"), (mty[int], .intConst 100))]
+#eval format $ Scope.merge (T:=TestParams) (.boolConst () true)
+              [("x", (mty[int], .intConst () 8)),
+               ("z", (mty[int], .intConst () 100))]
+              [("y", (mty[int], .intConst () 8))]
 
 /--
-info: (a : int) → (if #true then #8 else (a : int))
-(x : int) → (if #true then #800 else #8)
-(b : int) → (if #true then #900 else (b : int))
-(z : int) → (if #true then (z : int) else #100)
+info: (y, (some int,
+ (if #true then #8 else (y : int)))) (x, (some int,
+ (if #true then (x : int) else #8))) (z, (some int, (if #true then (z : int) else #100)))
 -/
 #guard_msgs in
-#eval format $ Scope.merge (IDMeta:=Unit) .true
-                [(("a"), (mty[int], (.intConst 8))),
-                 (("x"), (mty[int], (.intConst 800))),
-                 (("b"), (mty[int], (.intConst 900)))]
-                [(("x"), (mty[int], (.intConst 8))),
-                 (("z"), (mty[int], (.intConst 100)))]
+#eval format $ Scope.merge (T:=TestParams) (.boolConst () true)
+              [("y", (mty[int], .intConst () 8 ))]
+              [("x", (mty[int], .intConst () 8)),
+               ("z", (mty[int], .intConst () 100))]
+
+/--
+info: (a, (some int,
+ (if #true then #8 else (a : int)))) (x, (some int,
+ (if #true then #800 else #8))) (b, (some int,
+ (if #true then #900 else (b : int)))) (z, (some int, (if #true then (z : int) else #100)))
+-/
+#guard_msgs in
+#eval format $ Scope.merge (T:=TestParams) (.boolConst () true)
+                [("a", (mty[int], (.intConst () 8))),
+                 ("x", (mty[int], (.intConst () 800))),
+                 ("b", (mty[int], (.intConst () 900)))]
+                [("x", (mty[int], (.intConst () 8))),
+                 ("z", (mty[int], (.intConst () 100)))]
 
 end Scope.merge.tests
--/
 
 /--
 A stack of scopes, where each scope maps the free variables
