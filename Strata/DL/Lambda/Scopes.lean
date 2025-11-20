@@ -27,15 +27,18 @@ of Lambda expressions in isolation, the stack can contain a single scope.
 
 variable {T : LExprParams} [Inhabited T.Metadata] [BEq T.Metadata] [DecidableEq T.IDMeta] [BEq T.IDMeta] [ToFormat T.IDMeta] [BEq (LExpr T.mono)] [ToFormat (LExpr T.mono)]
 
-abbrev Scope (T : LExprParams) := (Map T.Identifier (Option LMonoTy × (LExpr T.mono)))
+def Scope (T : LExprParams) : Type := Map T.Identifier (Option LMonoTy × (LExpr T.mono))
+
+def Scope.ofMap (m : Map T.Identifier (Option LMonoTy × (LExpr T.mono))) : Scope T := m
+def Scope.toMap (s : Scope T) : Map T.Identifier (Option LMonoTy × (LExpr T.mono)) := s
 
 instance : BEq (Scope T) where
-  beq m1 m2 := m1 == m2
+  beq m1 m2 := m1.toMap == m2.toMap
 
 instance : Inhabited (Scope T) where
-  default := []
+  default := Scope.ofMap []
 
-private def Scope.format (m : (Scope T)) : Std.Format :=
+private def Scope.format (m : Scope T) : Std.Format :=
   match m with
   | [] => ""
   | [(k, (ty, v))] => go k ty v
@@ -46,7 +49,7 @@ private def Scope.format (m : (Scope T)) : Std.Format :=
     | some ty => f!"({k} : {ty}) → {v}"
     | none => f!"{k} → {v}"
 
-instance : ToFormat (Scope T) where
+instance (priority := high) : ToFormat (Scope T) where
   format := Scope.format
 
 /--
@@ -82,7 +85,8 @@ private instance : Coe String TestParams.Identifier where
   coe s := Identifier.mk s ()
 
 /--
-info: (x, (some int, #8)) (z, (some int, (if #true then #100 else (z : int))))
+info: (x : int) → #8
+(z : int) → (if #true then #100 else (z : int))
 -/
 #guard_msgs in
 #eval format $ Scope.merge (T:=TestParams) (.boolConst () true)
@@ -91,9 +95,9 @@ info: (x, (some int, #8)) (z, (some int, (if #true then #100 else (z : int))))
               [("x", (mty[int], .intConst () 8))]
 
 /--
-info: (x, (some int,
- (if #true then #8 else (x : int)))) (z, (some int,
- (if #true then #100 else (z : int)))) (y, (some int, (if #true then (y : int) else #8)))
+info: (x : int) → (if #true then #8 else (x : int))
+(z : int) → (if #true then #100 else (z : int))
+(y : int) → (if #true then (y : int) else #8)
 -/
 #guard_msgs in
 #eval format $ Scope.merge (T:=TestParams) (.boolConst () true)
@@ -102,9 +106,9 @@ info: (x, (some int,
               [("y", (mty[int], .intConst () 8))]
 
 /--
-info: (y, (some int,
- (if #true then #8 else (y : int)))) (x, (some int,
- (if #true then (x : int) else #8))) (z, (some int, (if #true then (z : int) else #100)))
+info: (y : int) → (if #true then #8 else (y : int))
+(x : int) → (if #true then (x : int) else #8)
+(z : int) → (if #true then (z : int) else #100)
 -/
 #guard_msgs in
 #eval format $ Scope.merge (T:=TestParams) (.boolConst () true)
@@ -113,10 +117,10 @@ info: (y, (some int,
                ("z", (mty[int], .intConst () 100))]
 
 /--
-info: (a, (some int,
- (if #true then #8 else (a : int)))) (x, (some int,
- (if #true then #800 else #8))) (b, (some int,
- (if #true then #900 else (b : int)))) (z, (some int, (if #true then (z : int) else #100)))
+info: (a : int) → (if #true then #8 else (a : int))
+(x : int) → (if #true then #800 else #8)
+(b : int) → (if #true then #900 else (b : int))
+(z : int) → (if #true then (z : int) else #100)
 -/
 #guard_msgs in
 #eval format $ Scope.merge (T:=TestParams) (.boolConst () true)
