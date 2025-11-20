@@ -57,11 +57,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.14'
-      - name: Setup upterm session
-        uses: owenthereal/action-upterm@v1
       - name: Run CBMC tests
-        working-directory: Strata/Backends/CBMC
         shell: bash
         run: |
           export CBMC_DIR="/usr/bin/"
-          ./run_strata_cbmc.sh ../../../Examples/SimpleProc.boogie.st
+          ./Strata/Backends/CBMC/run_strata_cbmc.sh Strata/Backends/CBMC/tests/simpleTest.csimp.st
