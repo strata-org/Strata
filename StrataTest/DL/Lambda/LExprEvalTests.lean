@@ -26,6 +26,24 @@ Each test is a pair of
 2. Its equivalent Lambda.LExpr.Step version.
 -/
 
+-- A helper tactic for proving 'isCanonicalValue e = b'.
+macro "discharge_isCanonicalValue": tactic => `(tactic|
+    conv =>
+      lhs; reduce; unfold isCanonicalValue; reduce; unfold isCanonicalValue
+  )
+-- Take a small step.
+macro "take_step": tactic => `(tactic |
+    (conv => lhs; reduce) <;> apply StepStar.step
+  )
+-- Finish taking small steps!
+macro "take_refl": tactic => `(tactic |
+    (conv => lhs; reduce) <;> apply StepStar.refl
+  )
+-- Do beta reduction.
+macro "reduce_beta": tactic => `(tactic |
+    apply Step.beta <;> discharge_isCanonicalValue
+  )
+
 /-- info: (λ (if (%0 == #1) then #10 else (_minit %0))) -/
 #guard_msgs in
 #eval format $ Lambda.LExpr.eval 100
@@ -52,19 +70,13 @@ example:
     { LState.init with state := [[("x", (mty[int], esM[#32]))]] }
     esM[((λ (if (%0 == #23) then #17 else #42)) (x : int))]
     esM[#42] := by
-  apply StepStar.step
-  · apply Step.reduce_2
-    · unfold LExpr.isCanonicalValue; rfl
-    · repeat constructor
-  apply StepStar.step
-  · apply Step.beta; unfold isCanonicalValue; rfl
-  conv => lhs; reduce
-  apply StepStar.step
-  · apply Step.ite_reduce_cond
-    apply Step.beta_eq <;> unfold isCanonicalValue <;> rfl
-  conv => lhs; reduce
-  apply StepStar.step
-  · apply Step.ite_beta_else
+  take_step; apply Step.reduce_2
+  · discharge_isCanonicalValue
+  · repeat constructor
+  take_step; reduce_beta
+  take_step; constructor
+  · apply Step.beta_eq <;> discharge_isCanonicalValue
+  take_step; apply Step.ite_beta_else
   apply StepStar.refl
 
 
@@ -96,23 +108,13 @@ example:
       [("m", (none, (.intConst 12)))]] }
     esM[((λ (if (%0 == #23) then #17 else (m %0)) #24))]
     esM[(minit #24)] := by
-  apply StepStar.step
-  · apply Step.beta; unfold isCanonicalValue; rfl
-  conv => lhs; reduce
-  apply StepStar.step
-  · apply Step.ite_reduce_cond
-    apply Step.beta_eq <;> unfold isCanonicalValue <;> rfl
-  conv => lhs; reduce
-  apply StepStar.step
-  · apply Step.ite_beta_else
-  apply StepStar.step
-  · apply Step.reduce_1
-    apply Step.expand_fvar
-    rfl
-  apply StepStar.step
-  · apply Step.beta
-    unfold isCanonicalValue; rfl
-  apply StepStar.refl
+  take_step; reduce_beta
+  take_step; apply Step.ite_reduce_cond
+  · apply Step.beta_eq <;> discharge_isCanonicalValue
+  take_step; apply Step.ite_beta_else
+  take_step; apply Step.reduce_1; apply Step.expand_fvar; rfl
+  take_step; reduce_beta
+  take_refl
 
 
 /-- info: (minit #24) -/
@@ -126,20 +128,11 @@ example:
     { LState.init with state := [[("m", (none, esM[minit]))]] }
     esM[((λ (if (%0 == #23) then #17 else (m %0))) #24)]
     esM[(minit #24)] := by
-  apply StepStar.step
-  · apply Step.beta; unfold isCanonicalValue; rfl
-  conv => lhs; reduce
-  apply StepStar.step
-  · apply Step.ite_reduce_cond
-    apply Step.beta_eq <;> unfold isCanonicalValue <;> rfl
-  conv => lhs; reduce
-  apply StepStar.step
-  · apply Step.ite_beta_else
-  apply StepStar.step
-  · apply Step.reduce_1
-    apply Step.expand_fvar
-    rfl
-  apply StepStar.refl
+  take_step; reduce_beta
+  take_step; apply Step.ite_reduce_cond; apply Step.beta_eq <;> discharge_isCanonicalValue
+  take_step; apply Step.ite_beta_else
+  take_step; apply Step.reduce_1; apply Step.expand_fvar; rfl
+  take_refl
 
 
 /-- info: x -/
@@ -148,9 +141,9 @@ example:
 
 example:
   Lambda.StepStar ∅ esM[if #true then x else y] esM[x] := by
-  apply StepStar.step
+  take_step
   · constructor
-  apply StepStar.refl
+  take_refl
 
 
 -- Ill-formed `abs` is returned as-is in this Curry style...
@@ -233,16 +226,9 @@ private def testState : LState Unit :=
 
 example:
   Lambda.StepStar testState esM[((~IntAddAlias #20) #30)] esM[#50] := by
-  apply StepStar.step
-  · apply Step.expand_fn <;> try rfl
-    · simp only [HAppend.hAppend, Append.append, List.append, List.all]
-      unfold isCanonicalValue; rfl
-  apply StepStar.step
-  · apply Step.eval_fn
-    · rfl
-    · conv => lhs; reduce; unfold isCanonicalValue; reduce
-    · conv => lhs; rhs; reduce
-  apply StepStar.refl
+  take_step; apply Step.expand_fn <;> discharge_isCanonicalValue
+  take_step; apply Step.eval_fn <;> discharge_isCanonicalValue
+  take_refl
 
 /-- info: ((~Int.Add #20) x) -/
 #guard_msgs in
@@ -256,27 +242,21 @@ example:
   ∀ e, ¬ Lambda.Step testState esM[((~IntAddAlias #20) x)] e
   := by
   intro e H; cases H
-  case reduce_2 =>
-    contradiction
-  case reduce_1 =>
-    contradiction
+  case reduce_2 => contradiction
+  case reduce_1 => contradiction
   case expand_fn =>
     rename_i Hlfunc Hfv
-    conv at Hlfunc =>
-      lhs; reduce
+    conv at Hlfunc => lhs; reduce
     cases Hlfunc
     rename_i Hconst Htmp
-    conv at Hconst =>
-      lhs; reduce; unfold isCanonicalValue; reduce
+    conv at Hconst => lhs; reduce; unfold isCanonicalValue; reduce
     contradiction
   case eval_fn =>
     rename_i Hlfunc
-    conv at Hlfunc =>
-      lhs; reduce
+    conv at Hlfunc => lhs; reduce
     cases Hlfunc
     rename_i Hconst Htmp
-    conv at Hconst =>
-      lhs; reduce; unfold isCanonicalValue; reduce
+    conv at Hconst => lhs; reduce; unfold isCanonicalValue; reduce
     contradiction
 
 
@@ -301,10 +281,8 @@ example:
 
 example:
   Lambda.StepStar testState esM[((~Int.Add #20) #30)] esM[#50] := by
-  apply StepStar.step
-  · apply Step.eval_fn <;> try rfl
-    · conv => lhs; reduce; unfold isCanonicalValue; reduce
-  apply StepStar.refl
+  take_step; apply Step.eval_fn <;> discharge_isCanonicalValue
+  take_refl
 
 
 /-- info: ((~Int.Add #105) x) -/
@@ -324,34 +302,15 @@ example:
   Lambda.StepStar testState
     esM[((((λ(λ (~Int.Add %1) %0))) ((λ ((~Int.Add %0) #100)) #5)) x)]
     esM[((~Int.Add #105) x)] := by
-  unfold LExpr.absUntyped
-  apply StepStar.step
-  · apply Step.reduce_1
-    apply Step.reduce_2
-    · unfold isCanonicalValue; rfl
-    · apply Step.beta
-      · unfold isCanonicalValue; rfl
-  conv => lhs; reduce
-  apply StepStar.step
-  · apply Step.reduce_1
-    apply Step.reduce_2
-    · unfold isCanonicalValue; rfl
-    · apply Step.eval_fn
-      · conv => lhs; reduce; unfold isCanonicalValue; reduce
-      · conv => lhs; reduce; unfold isCanonicalValue; reduce
-      · conv => lhs; reduce
-  conv => lhs; reduce
-  apply StepStar.step
-  · apply Step.reduce_1
-    apply Step.beta
-    · unfold isCanonicalValue; rfl
-  conv => lhs; reduce
-  apply StepStar.step
-  · apply Step.reduce_1
-    apply Step.beta
-    · unfold isCanonicalValue; rfl
-  conv => lhs; reduce
-  apply StepStar.refl
+  take_step; apply Step.reduce_1; apply Step.reduce_2
+  · discharge_isCanonicalValue
+  · reduce_beta
+  take_step; apply Step.reduce_1; apply Step.reduce_2
+  · discharge_isCanonicalValue
+  · apply Step.eval_fn <;> discharge_isCanonicalValue
+  take_step; apply Step.reduce_1; reduce_beta
+  take_step; apply Step.reduce_1; reduce_beta
+  take_refl
 
 
 /-- info: ((#f #20) #-5) -/
@@ -376,18 +335,10 @@ example:
     esM[( ((λ(λ (~Int.Add %1) %0)) #20) ((λ (~Int.Neg %0)) x))]
     esM[((~Int.Add #20) ((λ (~Int.Neg %0)) x))]
   := by
-  unfold LExpr.absUntyped
-  apply StepStar.step
-  · apply Step.reduce_1
-    apply Step.beta
-    · conv => lhs; reduce; unfold isCanonicalValue; reduce
-  conv => lhs; reduce
-  apply StepStar.step
-  · apply Step.reduce_1
-    apply Step.beta
-    · conv => lhs; reduce; unfold isCanonicalValue; reduce
-  conv => lhs; reduce
-  apply StepStar.refl
+  take_step; apply Step.reduce_1; reduce_beta
+  take_step; apply Step.reduce_1; reduce_beta
+  take_refl
+
 
 
 /-- info: ((~Int.Add #20) (~Int.Neg x)) -/
@@ -407,18 +358,12 @@ example:
     esM[((λ %0) ((~Int.Add #20) #30))]
     esM[(#50)]
   := by
-  unfold LExpr.absUntyped
-  apply StepStar.step
-  · apply Step.reduce_2
-    · conv => lhs; reduce; unfold isCanonicalValue; reduce
-    · apply Step.eval_fn <;> try rfl
-      · conv => lhs; reduce; unfold isCanonicalValue; reduce
-  conv => lhs; reduce
-  apply StepStar.step
-  · apply Step.beta
-    · conv => lhs; reduce; unfold isCanonicalValue; reduce
-  conv => lhs; reduce
-  apply StepStar.refl
+  take_step; apply Step.reduce_2
+  · discharge_isCanonicalValue
+  · apply Step.eval_fn <;> discharge_isCanonicalValue
+  take_step; reduce_beta
+  take_refl
+
 
 
 /-- info: #100 -/
@@ -428,17 +373,12 @@ example:
 example:
   Lambda.StepStar testState esM[((~Int.Div #300) ((~Int.Add #2) #1))] esM[(#100)]
   := by
-  apply StepStar.step
-  · apply Step.reduce_2
-    · conv => lhs; reduce; unfold isCanonicalValue; reduce; unfold isCanonicalValue
-    · apply Step.eval_fn <;> try rfl
-      · conv => lhs; reduce; unfold isCanonicalValue; reduce
-  conv => lhs; reduce
-  apply StepStar.step
-  · apply Step.eval_fn <;> try rfl
-    · conv => lhs; reduce; unfold isCanonicalValue; reduce
-  conv => lhs; reduce
-  apply StepStar.refl
+  take_step; apply Step.reduce_2
+  · discharge_isCanonicalValue
+  · apply Step.eval_fn <;> discharge_isCanonicalValue
+  take_step; apply Step.eval_fn <;> discharge_isCanonicalValue
+  take_refl
+
 
 /-- info: #0 -/
 #guard_msgs in
@@ -447,17 +387,14 @@ example:
 example:
   Lambda.StepStar testState esM[((~Int.Add #3) (~Int.Neg #3))] esM[(#0)]
   := by
-  apply StepStar.step
+  take_step
   · apply Step.reduce_2
-    · conv => lhs; reduce; unfold isCanonicalValue; reduce; unfold isCanonicalValue
-    · apply Step.eval_fn <;> try rfl
-      · conv => lhs; reduce; unfold isCanonicalValue; reduce
-  conv => lhs; reduce
-  apply StepStar.step
+    · discharge_isCanonicalValue
+    · apply Step.eval_fn <;> discharge_isCanonicalValue
+  take_step
   · apply Step.eval_fn <;> try rfl
     · conv => lhs; reduce; unfold isCanonicalValue; reduce
-  conv => lhs; reduce
-  apply StepStar.refl
+  take_refl
 
 /-- info: #0 -/
 #guard_msgs in
@@ -466,17 +403,11 @@ example:
 example:
   Lambda.StepStar testState esM[((~Int.Add (~Int.Neg #3)) #3)] esM[(#0)]
   := by
-  apply StepStar.step
-  · apply Step.reduce_1
-    apply Step.reduce_2
-    · conv => lhs; reduce; unfold isCanonicalValue; reduce; unfold isCanonicalValue
-    · apply Step.eval_fn <;> try rfl
-      · conv => lhs; reduce; unfold isCanonicalValue; reduce; unfold isCanonicalValue
-  conv => lhs; reduce
-  apply StepStar.step
-  · apply Step.eval_fn <;> try rfl
-    · conv => lhs; reduce; unfold isCanonicalValue; reduce; unfold isCanonicalValue
-  apply StepStar.refl
+  take_step; apply Step.reduce_1; apply Step.reduce_2
+  · discharge_isCanonicalValue
+  · apply Step.eval_fn <;> discharge_isCanonicalValue
+  take_step; apply Step.eval_fn <;> discharge_isCanonicalValue
+  take_refl
 
 /-- info: ((~Int.Div #300) #0) -/
 #guard_msgs in
@@ -487,21 +418,15 @@ example:
     esM[((~Int.Div #300) ((~Int.Add #3) (~Int.Neg #3)))]
     esM[((~Int.Div #300) #0)]
   := by
-  apply StepStar.step
+  take_step; apply Step.reduce_2
+  · discharge_isCanonicalValue
   · apply Step.reduce_2
-    · conv => lhs; reduce; unfold isCanonicalValue; reduce; unfold isCanonicalValue
-    · apply Step.reduce_2
-      · conv => lhs; reduce; unfold isCanonicalValue; reduce; unfold isCanonicalValue
-      · apply Step.eval_fn <;> try rfl
-        · conv => lhs; reduce; unfold isCanonicalValue; reduce; unfold isCanonicalValue
-  conv => lhs; reduce
-  apply StepStar.step
-  · apply Step.reduce_2
-    · conv => lhs; reduce; unfold isCanonicalValue; reduce; unfold isCanonicalValue
-    · apply Step.eval_fn <;> try rfl
-      · conv => lhs; reduce; unfold isCanonicalValue; reduce; unfold isCanonicalValue
-  conv => lhs; reduce
-  apply StepStar.refl
+    · discharge_isCanonicalValue
+    · apply Step.eval_fn <;> discharge_isCanonicalValue
+  take_step; apply Step.reduce_2
+  · discharge_isCanonicalValue
+  · apply Step.eval_fn <;> discharge_isCanonicalValue
+  take_refl
 
 /-- info: ((~Int.Div x) #3) -/
 #guard_msgs in
