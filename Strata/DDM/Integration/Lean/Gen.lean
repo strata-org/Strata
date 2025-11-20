@@ -22,6 +22,16 @@ open Lean.Parser.Term (bracketedBinderF doSeqItem matchAltExpr)
 open Lean.Parser.Termination (terminationBy suffix)
 open Lean.Syntax (mkApp mkCApp mkStrLit)
 
+register_option strata.gen.inhabited : Bool := {
+  defValue := true
+  descr := "Generate Inhabited instances for strata types"
+}
+
+register_option strata.gen.ast : Bool := {
+  defValue := true
+  descr := "Generate toAst/fromASt  for strata types"
+}
+
 namespace Strata
 
 namespace Lean
@@ -1058,20 +1068,24 @@ def gen (categories : Array (QualifiedIdent × Array DefaultCtor)) : GenM Unit :
             assert! q`Init.Str ≠ cat
             mkInductive cat ctors
           runCmd <| elabCommands inductives
-        let inhabitedCats2 ←
-          profileitM Lean.Exception s!"Generating inhabited {cats}" (← getOptions) do
-            addInhabited allCtors inhabitedCats
-        let inhabitedCats := inhabitedCats2
-        profileitM Lean.Exception s!"Generating toAstDefs {cats}" (← getOptions) do
-          let toAstDefs ← allCtors.mapM fun (cat, ctors) => do
-            genToAst cat ctors
-          runCmd <| elabCommands toAstDefs
-        profileitM Lean.Exception s!"Generating ofAstDefs {cats}" (← getOptions) do
-          let ofAstDefs ← allCtors.mapM fun (cat, ctors) => do
-            let (cmds, d) ← genOfAst cat ctors
-            (cmds.forM elabCommand : CommandElabM Unit)
-            pure d
-          runCmd <| elabCommands ofAstDefs
+        let opt ← getOptions
+        let inhabitedCats ←
+          if strata.gen.inhabited.get opt then
+            profileitM Lean.Exception s!"Generating inhabited {cats}" (← getOptions) do
+              addInhabited allCtors inhabitedCats
+          else
+            pure inhabitedCats
+        if strata.gen.ast.get opt then
+          profileitM Lean.Exception s!"Generating toAstDefs {cats}" (← getOptions) do
+            let toAstDefs ← allCtors.mapM fun (cat, ctors) => do
+              genToAst cat ctors
+            runCmd <| elabCommands toAstDefs
+          profileitM Lean.Exception s!"Generating ofAstDefs {cats}" (← getOptions) do
+            let ofAstDefs ← allCtors.mapM fun (cat, ctors) => do
+              let (cmds, d) ← genOfAst cat ctors
+              (cmds.forM elabCommand : CommandElabM Unit)
+              pure d
+            runCmd <| elabCommands ofAstDefs
         pure inhabitedCats
     inhabitedCats := s
 
