@@ -1,0 +1,307 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
+import Strata.Languages.B3.DDMTransform.Parse
+import Strata.Languages.B3.DDMTransform.Translate
+
+namespace B3
+
+
+
+open Std (Format)
+open Strata
+open Strata.B3DDM
+
+/--
+info: @[reducible] def Strata.Expr : Type :=
+ExprF SourceRange
+---
+info: inductive Strata.B3DDM.Expr : Type → Type
+number of parameters: 1
+constructors:
+Strata.B3DDM.Expr.fvar : {α : Type} → α → Nat → B3DDM.Expr α
+Strata.B3DDM.Expr.not : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.natLit : {α : Type} → α → Ann Nat α → B3DDM.Expr α
+Strata.B3DDM.Expr.strLit : {α : Type} → α → Ann String α → B3DDM.Expr α
+Strata.B3DDM.Expr.btrue : {α : Type} → α → B3DDM.Expr α
+Strata.B3DDM.Expr.bfalse : {α : Type} → α → B3DDM.Expr α
+Strata.B3DDM.Expr.id : {α : Type} → α → Ann String α → B3DDM.Expr α
+Strata.B3DDM.Expr.ite : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.iff : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.implies : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.impliedBy : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.and : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.or : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.equal : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.not_equal : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.le : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.lt : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.ge : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.gt : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.neg : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.add : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.sub : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.mul : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.div : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.mod : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
+-/
+#guard_msgs in
+#print Expr
+
+-- Helpers to convert Unit annotations to SourceRange
+mutual
+  partial def exprFUnitToSourceRange : ExprF Unit → ExprF SourceRange
+    | .bvar () idx => .bvar default idx
+    | .fvar () idx => .fvar default idx
+    | .fn () f => .fn default f
+    | .app () f a => .app default (exprFUnitToSourceRange f) (argFUnitToSourceRange a)
+
+  partial def argFUnitToSourceRange : ArgF Unit → ArgF SourceRange
+    | .op op => .op { op with ann := default, args := op.args.map argFUnitToSourceRange }
+    | .expr e => .expr (exprFUnitToSourceRange e)
+    | .type t => .type (typeExprFUnitToSourceRange t)
+    | .cat c => .cat (syntaxCatFUnitToSourceRange c)
+    | .ident () x => .ident default x
+    | .num () x => .num default x
+    | .decimal () v => .decimal default v
+    | .strlit () s => .strlit default s
+    | .bytes () v => .bytes default v
+    | .option () ma => .option default (ma.map argFUnitToSourceRange)
+    | .seq () entries => .seq default (entries.map argFUnitToSourceRange)
+    | .commaSepList () entries => .commaSepList default (entries.map argFUnitToSourceRange)
+
+  partial def typeExprFUnitToSourceRange : TypeExprF Unit → TypeExprF SourceRange
+    | .ident () tp a => .ident default tp (a.map typeExprFUnitToSourceRange)
+    | .bvar () idx => .bvar default idx
+    | .fvar () idx a => .fvar default idx (a.map typeExprFUnitToSourceRange)
+    | .arrow () a r => .arrow default (typeExprFUnitToSourceRange a) (typeExprFUnitToSourceRange r)
+
+  partial def syntaxCatFUnitToSourceRange : SyntaxCatF Unit → SyntaxCatF SourceRange
+    | ⟨(), name, args⟩ => ⟨default, name, args.map syntaxCatFUnitToSourceRange⟩
+end
+
+-- Create a minimal B3 program to get the dialect context
+def b3Program : Program := #strata program B3; #end
+
+-- Helper to format DDM expressions with proper pretty-printing
+def formatExpr (e : Expr Unit) : Format :=
+  let ctx := b3Program.formatContext {}
+  let state := b3Program.formatState
+  cformat (exprFUnitToSourceRange e.toAst) ctx state
+
+section ExpressionFormatTests
+
+/--
+info: x
+-/
+#guard_msgs in
+#eval formatExpr $ .id () ⟨(), "x"⟩
+
+/--
+info: 42
+-/
+#guard_msgs in
+#eval formatExpr $ .natLit () ⟨(), 42⟩
+
+/--
+info: true
+-/
+#guard_msgs in
+#eval formatExpr $ .btrue ()
+
+/--
+info: false
+-/
+#guard_msgs in
+#eval formatExpr $ .bfalse ()
+
+/--
+info: 5 + 3
+-/
+#guard_msgs in
+#eval formatExpr $ .add () (.natLit () ⟨(), 5⟩) (.natLit () ⟨(), 3⟩)
+
+/-- info: !true -/
+#guard_msgs in
+#eval formatExpr $ .not () (.btrue ())
+
+/--
+info: 10 - 3
+-/
+#guard_msgs in
+#eval formatExpr $ .sub () (.natLit () ⟨(), 10⟩) (.natLit () ⟨(), 3⟩)
+
+/--
+info: 4 * 5
+-/
+#guard_msgs in
+#eval formatExpr $ .mul () (.natLit () ⟨(), 4⟩) (.natLit () ⟨(), 5⟩)
+
+/--
+info: 20 div 4
+-/
+#guard_msgs in
+#eval formatExpr $ .div () (.natLit () ⟨(), 20⟩) (.natLit () ⟨(), 4⟩)
+
+/--
+info: 17 mod 5
+-/
+#guard_msgs in
+#eval formatExpr $ .mod () (.natLit () ⟨(), 17⟩) (.natLit () ⟨(), 5⟩)
+
+/--
+info: 5 == 5
+-/
+#guard_msgs in
+#eval formatExpr $ .equal () (.natLit () ⟨(), 5⟩) (.natLit () ⟨(), 5⟩)
+
+/--
+info: 3 != 7
+-/
+#guard_msgs in
+#eval formatExpr $ .not_equal () (.natLit () ⟨(), 3⟩) (.natLit () ⟨(), 7⟩)
+
+/--
+info: 3 <= 5
+-/
+#guard_msgs in
+#eval formatExpr $ .le () (.natLit () ⟨(), 3⟩) (.natLit () ⟨(), 5⟩)
+
+/--
+info: 2 < 8
+-/
+#guard_msgs in
+#eval formatExpr $ .lt () (.natLit () ⟨(), 2⟩) (.natLit () ⟨(), 8⟩)
+
+/--
+info: 10 >= 5
+-/
+#guard_msgs in
+#eval formatExpr $ .ge () (.natLit () ⟨(), 10⟩) (.natLit () ⟨(), 5⟩)
+
+/--
+info: 15 > 3
+-/
+#guard_msgs in
+#eval formatExpr $ .gt () (.natLit () ⟨(), 15⟩) (.natLit () ⟨(), 3⟩)
+
+/--
+info: 2 + 3 * 4
+-/
+#guard_msgs in
+#eval formatExpr $ .add ()
+  (.natLit () ⟨(), 2⟩)
+  (.mul () (.natLit () ⟨(), 3⟩) (.natLit () ⟨(), 4⟩))
+
+/--
+info: (2 + 3) * 4
+-/
+#guard_msgs in
+#eval formatExpr $ .mul ()
+  (.add () (.natLit () ⟨(), 2⟩) (.natLit () ⟨(), 3⟩))
+  (.natLit () ⟨(), 4⟩)
+
+/--
+info: 1 + 2 + 3
+-/
+#guard_msgs in
+#eval formatExpr $ .add ()
+  (.add () (.natLit () ⟨(), 1⟩) (.natLit () ⟨(), 2⟩))
+  (.natLit () ⟨(), 3⟩)
+
+/--
+info: 1 + 2 < 5
+-/
+#guard_msgs in
+#eval formatExpr $ .lt ()
+  (.add () (.natLit () ⟨(), 1⟩) (.natLit () ⟨(), 2⟩))
+  (.natLit () ⟨(), 5⟩)
+
+/--
+info: 10 - 3 + 2
+-/
+#guard_msgs in
+#eval formatExpr $ .add ()
+  (.sub () (.natLit () ⟨(), 10⟩) (.natLit () ⟨(), 3⟩))
+  (.natLit () ⟨(), 2⟩)
+
+/--
+info: 20 div 4 * 3
+-/
+#guard_msgs in
+#eval formatExpr $ .mul ()
+  (.div () (.natLit () ⟨(), 20⟩) (.natLit () ⟨(), 4⟩))
+  (.natLit () ⟨(), 3⟩)
+
+/--
+info: 1 < 2 * 3 + 4
+-/
+#guard_msgs in
+#eval formatExpr $ .lt ()
+  (.natLit () ⟨(), 1⟩)
+  (.add ()
+    (.mul () (.natLit () ⟨(), 2⟩) (.natLit () ⟨(), 3⟩))
+    (.natLit () ⟨(), 4⟩))
+
+/--
+info: if true then 1 else 0
+-/
+#guard_msgs in
+#eval formatExpr $ .ite () (.btrue ()) (.natLit () ⟨(), 1⟩) (.natLit () ⟨(), 0⟩)
+
+end ExpressionFormatTests
+
+-- Helper to convert OperationF Unit to OperationF SourceRange
+def operationFUnitToSourceRange (op : OperationF Unit) : OperationF SourceRange :=
+  { op with ann := default, args := op.args.map argFUnitToSourceRange }
+
+-- Helper to format DDM statements with proper pretty-printing
+def formatStmt (s : Statement Unit) : Format :=
+  let ctx := b3Program.formatContext {}
+  let state := b3Program.formatState
+  cformat (ArgF.op (operationFUnitToSourceRange s.toAst)) ctx state
+
+section StatementFormatTests
+
+/--
+info: x := 42
+-/
+#guard_msgs in
+#eval formatStmt $ .assign () ⟨(), "x"⟩ (.natLit () ⟨(), 42⟩)
+
+/--
+info: check 5 > 0
+-/
+#guard_msgs in
+#eval formatStmt $ .check () (.gt () (.natLit () ⟨(), 5⟩) (.natLit () ⟨(), 0⟩))
+
+/--
+info: assume 10 >= 0
+-/
+#guard_msgs in
+#eval formatStmt $ .assume () (.ge () (.natLit () ⟨(), 10⟩) (.natLit () ⟨(), 0⟩))
+
+/--
+info: assert 5 > 0
+-/
+#guard_msgs in
+#eval formatStmt $ .assert () (.gt () (.natLit () ⟨(), 5⟩) (.natLit () ⟨(), 0⟩))
+
+/--
+info: reach 5 == 5
+-/
+#guard_msgs in
+#eval formatStmt $ .reach () (.equal () (.natLit () ⟨(), 5⟩) (.natLit () ⟨(), 5⟩))
+
+/--
+info: return
+-/
+#guard_msgs in
+#eval formatStmt $ .return_statement ()
+
+end StatementFormatTests
+
+end B3

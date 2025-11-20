@@ -13,21 +13,11 @@ open Std (Format)
 
 section ExpressionFormatTests
 
--- Test literal formatting
-def testLiteral : B3Expression :=
-  .literal () (Lambda.LConst.intConst 42)
-
 instance : Std.ToFormat defaultExprParams.Metadata where
    format _ := f!""
 
 instance : Std.ToFormat defaultExprParams.Identifier where
    format id := f!"{id.name}"
-
-/--
-info: 42
--/
-#guard_msgs in
-#eval testLiteral.format
 
 instance : Coe String defaultExprParams.Identifier
  where
@@ -42,38 +32,6 @@ info: x
 -/
 #guard_msgs in
 #eval testId.format
-
--- Test binary operation formatting
-def testBinaryOp : B3Expression :=
-  .binaryOp () .add
-    (.id () "x")
-    (.literal () (Lambda.LConst.intConst 5))
-
-/-- info: x + 5 -/
-#guard_msgs in
-#eval testBinaryOp.format
-
--- Test unary operation formatting
-def testUnaryOp : B3Expression :=
-  .unaryOp () .not
-    (.id () "flag")
-
-/-- info: !flag -/
-#guard_msgs in
-#eval testUnaryOp.format
-
--- Test if-then-else formatting
-def testIte : B3Expression :=
-  .ite ()
-    (.id () "cond")
-    (.literal () (Lambda.LConst.intConst 1))
-    (.literal () (Lambda.LConst.intConst 0))
-
-/--
-info: if cond then 1 else 0
--/
-#guard_msgs in
-#eval testIte.format
 
 -- Test function call formatting
 def testFunctionCall : B3Expression :=
@@ -184,17 +142,6 @@ info: var z : int autoinv z >= 0
 #guard_msgs in
 #eval testVarDeclAutoinv.format
 
--- Test assignment formatting
-def testAssign : B3Stmt :=
-  .assign () "x"
-    (.literal () (Lambda.LConst.intConst 42))
-
-/--
-info: x := 42
--/
-#guard_msgs in
-#eval testAssign.format
-
 -- Test block statement formatting
 def testBlockStmt : B3Stmt :=
   .blockStmt () [
@@ -225,7 +172,7 @@ info: result := compute(a, b)
 -- Test procedure call with out/inout parameters
 def testCallOutInout : B3Stmt :=
   .call () [] "modify"
-    [.inout (B3Ident.mk "x"), .out (B3Ident.mk "y")]
+    [.inout "x", .out "y"]
 
 /--
 info: modify(inout x, out y)
@@ -233,64 +180,12 @@ info: modify(inout x, out y)
 #guard_msgs in
 #eval testCallOutInout.format
 
--- Test assert formatting
-def testAssert : B3Stmt :=
-  .assert ()
-    (.binaryOp () .gt
-      (.id () (B3Ident.mk "x"))
-      (.literal () (Lambda.LConst.intConst 0)))
-
-/--
-info: assert x > 0
--/
-#guard_msgs in
-#eval testAssert.format
-
--- Test assume formatting
-def testAssume : B3Stmt :=
-  .assume ()
-    (.binaryOp () .ge
-      (.id () (B3Ident.mk "n"))
-      (.literal () (Lambda.LConst.intConst 0)))
-
-/--
-info: assume n >= 0
--/
-#guard_msgs in
-#eval testAssume.format
-
--- Test check formatting
-def testCheck : B3Stmt :=
-  .check ()
-    (.binaryOp () .le
-      (.id () (B3Ident.mk "i"))
-      (.id () (B3Ident.mk "n")))
-
-/--
-info: check i <= n
--/
-#guard_msgs in
-#eval testCheck.format
-
--- Test reach formatting
-def testReach : B3Stmt :=
-  .reach ()
-    (.binaryOp () .eq
-      (.id () (B3Ident.mk "state"))
-      (.literal () (Lambda.LConst.intConst 5)))
-
-/--
-info: reach state == 5
--/
-#guard_msgs in
-#eval testReach.format
-
 -- Test if statement formatting
 def testIfStmt : B3Stmt :=
   .ifStmt ()
-    (.id () (B3Ident.mk "flag"))
-    (.blockStmt () [.assign () (B3Ident.mk "x") (.literal () (Lambda.LConst.intConst 1))])
-    (some (.blockStmt () [.assign () (B3Ident.mk "x") (.literal () (Lambda.LConst.intConst 0))]))
+    (.id () "flag")
+    (.blockStmt () [.assign () "x" (.literal () (Lambda.LConst.intConst 1))])
+    (some (.blockStmt () [.assign () "x" (.literal () (Lambda.LConst.intConst 0))]))
 
 /--
 info: if flag {
@@ -306,9 +201,9 @@ info: if flag {
 def testLoop : B3Stmt :=
   .loop () []
     (.blockStmt () [
-      .assign () (B3Ident.mk "i")
+      .assign () "i"
         (.binaryOp () .add
-          (.id () (B3Ident.mk "i"))
+          (.id () "i")
           (.literal () (Lambda.LConst.intConst 1)))
     ])
 
@@ -323,12 +218,12 @@ info: loop {
 -- Test loop with invariants
 def testLoopInv : B3Stmt :=
   .loop ()
-    [.binaryOp () .ge (.id () (B3Ident.mk "i")) (.literal () (Lambda.LConst.intConst 0)),
-     .binaryOp () .le (.id () (B3Ident.mk "i")) (.id () (B3Ident.mk "n"))]
+    [.binaryOp () .ge (.id () "i") (.literal () (Lambda.LConst.intConst 0)),
+     .binaryOp () .le (.id () "i") (.id () "n")]
     (.blockStmt () [
-      .assign () (B3Ident.mk "i")
+      .assign () "i"
         (.binaryOp () .add
-          (.id () (B3Ident.mk "i"))
+          (.id () "i")
           (.literal () (Lambda.LConst.intConst 1)))
     ])
 
@@ -345,7 +240,7 @@ info: loop
 -- Test labeled statement formatting
 def testLabeledStmt : B3Stmt :=
   .labeledStmt () "loop_start"
-    (.assign () (B3Ident.mk "x") (.literal () (Lambda.LConst.intConst 0)))
+    (.assign () "x" (.literal () (Lambda.LConst.intConst 0)))
 
 /--
 info: loop_start: x := 0
@@ -363,16 +258,6 @@ info: exit loop_start
 #guard_msgs in
 #eval testExit.format
 
--- Test return statement formatting
-def testReturnStmt : B3Stmt :=
-  .returnStmt ()
-
-/--
-info: return
--/
-#guard_msgs in
-#eval testReturnStmt.format
-
 -- Test probe formatting
 def testProbe : B3Stmt :=
   .probe () "debug_point"
@@ -385,9 +270,9 @@ info: probe debug_point
 
 -- Test aForall formatting
 def testAForall : B3Stmt :=
-  .aForall () (B3Ident.mk "x") "int"
+  .aForall () "x" "int"
     (.blockStmt () [
-      .check () (.binaryOp () .ge (.id () (B3Ident.mk "x")) (.literal () (Lambda.LConst.intConst 0)))
+      .check () (.binaryOp () .ge (.id () "x") (.literal () (Lambda.LConst.intConst 0)))
     ])
 
 /--
@@ -401,8 +286,8 @@ info: forall x : int {
 -- Test choose formatting
 def testChoose : B3Stmt :=
   .choose () [
-    .blockStmt () [.assign () (B3Ident.mk "x") (.literal () (Lambda.LConst.intConst 1))],
-    .blockStmt () [.assign () (B3Ident.mk "x") (.literal () (Lambda.LConst.intConst 2))]
+    .blockStmt () [.assign () "x" (.literal () (Lambda.LConst.intConst 1))],
+    .blockStmt () [.assign () "x" (.literal () (Lambda.LConst.intConst 2))]
   ]
 
 /--
@@ -418,10 +303,10 @@ info: choose {
 -- Test ifCase formatting
 def testIfCase : B3Stmt :=
   .ifCase () [
-    (.binaryOp () .eq (.id () (B3Ident.mk "x")) (.literal () (Lambda.LConst.intConst 1)),
-     .blockStmt () [.assign () (B3Ident.mk "y") (.literal () (Lambda.LConst.intConst 10))]),
-    (.binaryOp () .eq (.id () (B3Ident.mk "x")) (.literal () (Lambda.LConst.intConst 2)),
-     .blockStmt () [.assign () (B3Ident.mk "y") (.literal () (Lambda.LConst.intConst 20))])
+    (.binaryOp () .eq (.id () "x") (.literal () (Lambda.LConst.intConst 1)),
+     .blockStmt () [.assign () "y" (.literal () (Lambda.LConst.intConst 10))]),
+    (.binaryOp () .eq (.id () "x") (.literal () (Lambda.LConst.intConst 2)),
+     .blockStmt () [.assign () "y" (.literal () (Lambda.LConst.intConst 20))])
   ]
 
 /--
