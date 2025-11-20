@@ -35,11 +35,11 @@ The order of constructors matter because the `constructor` tactic will rely on
 it.
 This small-step definitions faithfully follows the behavior of LExpr.eval,
 except that this inductive definition may stuck early when there is no
-assignment to a free variable available in LState.
+assignment to a free variable available.
 -/
 inductive Step (F:@Factory IDMeta) (rf:FreeVarMap)
   : LExpr LMonoTy IDMeta → LExpr LMonoTy IDMeta → Prop where
--- A free variable. Stuck if fvar does not exist in LState.
+-- A free variable. Stuck if fvar does not exist in FreeVarMap.
 | expand_fvar:
   ∀ (x:Identifier IDMeta) (e:LExpr LMonoTy IDMeta),
     rf.find? x = .some e →
