@@ -18,7 +18,7 @@ variable {IDMeta:Type} [DecidableEq IDMeta]
 open Lambda
 
 /--
-A free variable -> expressions mapping.
+A free variable -> expression mapping.
 -/
 abbrev FreeVarMap := Map (Identifier IDMeta) (LExpr LMonoTy IDMeta)
 
