@@ -33,6 +33,18 @@ Canonical values of `LExpr`s.
 
 Equality is simply `==` (or more accurately, `eqModuloTypes`) for these
 `LExpr`s. Also see `eql` for a version that can tolerate nested metadata.
+
+If `e:LExpr` is `.app`, say `e1 e2 .. en`, `e` is a canonical value if
+(1) `e1` is a constructor and `e2 .. en` are all canonical values, or
+(2) `e1` is a named function `f` (not abstraction) and `n` is less than the
+    number of arguments required to run the function `f`.
+
+The intuition of case (2) is as follows. Let's assume that we would like to
+calculate `Int.Add 1 (2+3)`. According to the small step semantics, we would
+like to calculate `2+3` to `5`, hence it becomes `Int.Add 1 5` and eventually 6.
+Without (2), this is impossible because the `reduce_2` rule of small step
+semantics only fires when `Int.Add 1` is a 'canonical value'. Therefore, without
+(2), the semantics stuck and `2+3` can never be evaluated to `5`.
 -/
 def isCanonicalValue {GenericTy} (σ : LState IDMeta)
     (e : LExpr GenericTy IDMeta) : Bool :=
