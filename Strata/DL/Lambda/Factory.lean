@@ -202,8 +202,9 @@ def getLFuncCall {GenericTy} (e : (LExpr GenericTy IDMeta))
 If `e` is a call of a factory function, get the operator (`.op`), a list
 of all the actuals, and the `(LFunc IDMeta)`.
 -/
-def Factory.callOfLFunc {GenericTy} (F : @Factory IDMeta)
-    (e : (LExpr GenericTy IDMeta))
+def Factory.callOfLFunc {GenericTy}
+    (F : @Factory IDMeta) (e : (LExpr GenericTy IDMeta))
+    (allowPartialApp := false)
     : Option ((LExpr GenericTy IDMeta) × List (LExpr GenericTy IDMeta) × (LFunc IDMeta)) :=
   let (op, args) := getLFuncCall e
   match op with
@@ -214,7 +215,10 @@ def Factory.callOfLFunc {GenericTy} (F : @Factory IDMeta)
     | some func =>
       -- Note that we don't do any type or well-formedness checking here; this
       -- is just a simple arity check.
-      match args.length == func.inputs.length with
+      let matchesArg:Bool :=
+        if allowPartialApp then Nat.ble args.length func.inputs.length
+        else args.length == func.inputs.length
+      match matchesArg with
       | true => (op, args, func) | false => none
   | _ => none
 
@@ -242,13 +246,20 @@ theorem getLFuncCall_smaller {GenericTy} {e: LExpr GenericTy IDMeta} {op args} :
   simp_all; have Hop:= LExpr.sizeOf_pos op; intros a a_in;
   have Ha := List.sum_size_le LExpr.sizeOf a_in; omega
 
-theorem Factory.callOfLFunc_smaller {GenericTy} {F : @Factory IDMeta} {e : (LExpr GenericTy IDMeta)} {op args F'} : Factory.callOfLFunc F e = some (op, args, F') →
-(forall a, a ∈ args → a.sizeOf < e.sizeOf) := by
+theorem Factory.callOfLFunc_smaller {GenericTy} {F : @Factory IDMeta}
+  {e : (LExpr GenericTy IDMeta)} {op args F'} {allowPartialMatch}
+  : Factory.callOfLFunc F e allowPartialMatch = some (op, args, F') →
+  (forall a, a ∈ args → a.sizeOf < e.sizeOf) := by
   simp[Factory.callOfLFunc]; cases Hfunc: (getLFuncCall e) with | mk op args;
   simp; cases op <;> simp
   rename_i o ty; cases (F.getFactoryLFunc o.name) <;> simp
   rename_i F'
-  cases (args.length == List.length F'.inputs) <;> simp; intros op_eq args_eq F_eq; subst op args F'; exact (getLFuncCall_smaller Hfunc)
+  cases allowPartialMatch
+  · cases (args.length == List.length F'.inputs) <;> simp; intros op_eq args_eq F_eq
+    subst op args F'; exact (getLFuncCall_smaller Hfunc)
+  · cases (Nat.ble args.length (List.length F'.inputs)) <;> simp
+    intros op_eq args_eq F_eq
+    subst op args F'; exact (getLFuncCall_smaller Hfunc)
 
 end Lambda
 

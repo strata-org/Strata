@@ -46,12 +46,13 @@ def isCanonicalValue {GenericTy} (σ : LState IDMeta)
     LExpr.closed e
   | .mdata _ e' => isCanonicalValue σ e'
   | e' =>
-    match h: Factory.callOfLFunc σ.config.factory e with
+    match h: Factory.callOfLFunc σ.config.factory e true with
     | some (_, args, f) =>
-      f.isConstr && List.all (args.attach.map (fun ⟨ x, _⟩ =>
+      (f.isConstr || Nat.blt args.length f.inputs.length) &&
+      List.all (args.attach.map (fun ⟨ x, _⟩ =>
         have : x.sizeOf < e'.sizeOf := by
           have Hsmall := Factory.callOfLFunc_smaller h; grind
-      (isCanonicalValue σ x))) id
+        (isCanonicalValue σ x))) id
     | none => false
   termination_by e.sizeOf
 
