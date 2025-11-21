@@ -211,7 +211,16 @@ partial def whitespace : ParserFn := fun c s =>
     if curr == '\t' then
       s.mkUnexpectedError (pushMissing := false) "tabs are not allowed; please configure your editor to expand them"
     else if curr == '\r' then
-      s.mkUnexpectedError (pushMissing := false) "isolated carriage returns are not allowed"
+      -- Allow \r\n (Windows line endings) but reject isolated \r
+      let j := c.next' i h
+      if c.atEnd j then
+        s.mkUnexpectedError (pushMissing := false) "isolated carriage returns are not allowed"
+      else
+        let next := c.get j
+        if next == '\n' then
+          whitespace c (s.next c j)
+        else
+          s.mkUnexpectedError (pushMissing := false) "isolated carriage returns are not allowed"
     else if curr.isWhitespace then whitespace c (s.next' c i h)
     else if curr == '/' then
       let j    := c.next' i h
