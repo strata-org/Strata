@@ -26,6 +26,8 @@ namespace Lambda
 
 open Std (ToFormat Format format)
 
+variable {T : LExprParams} [Inhabited T.Metadata] [Inhabited T.IDMeta] [DecidableEq T.IDMeta] [BEq T.IDMeta] [ToFormat T.IDMeta]
+
 ---------------------------------------------------------------------
 
 open LTy.Syntax
@@ -82,23 +84,23 @@ has the right number and type of arguments, etc.?
 (TODO) Use `.bvar`s in the body to correspond to the formals instead of using
 `.fvar`s.
 -/
-structure LFunc (IDMeta : Type) where
-  name     : Identifier IDMeta
+structure LFunc (T : LExprParams) where
+  name     : T.Identifier
   typeArgs : List TyIdentifier := []
   isConstr : Bool := false --whether function is datatype constructor
-  inputs   : @LMonoTySignature IDMeta
+  inputs   : @LMonoTySignature T.IDMeta
   output   : LMonoTy
-  body     : Option (LExpr LMonoTy IDMeta) := .none
+  body     : Option (LExpr T.mono) := .none
   -- (TODO): Add support for a fixed set of attributes (e.g., whether to inline
   -- a function, etc.).
   attr     : Array String := #[]
-  concreteEval : Option ((LExpr LMonoTy IDMeta) → List (LExpr LMonoTy IDMeta) → (LExpr LMonoTy IDMeta)) := .none
-  axioms   : List (LExpr LMonoTy IDMeta) := []  -- For axiomatic definitions
+  concreteEval : Option ((LExpr T.mono) → List (LExpr T.mono) → (LExpr T.mono)) := .none
+  axioms   : List (LExpr T.mono) := []  -- For axiomatic definitions
 
-instance : Inhabited (LFunc IDMeta) where
+instance [Inhabited T.Metadata] [Inhabited T.IDMeta] : Inhabited (LFunc T) where
   default := { name := Inhabited.default, inputs := [], output := LMonoTy.bool }
 
-instance : ToFormat (LFunc IDMeta) where
+instance : ToFormat (LFunc T) where
   format f :=
     let attr := if f.attr.isEmpty then f!"" else f!"@[{f.attr}]{Format.line}"
     let typeArgs := if f.typeArgs.isEmpty
@@ -111,12 +113,12 @@ instance : ToFormat (LFunc IDMeta) where
        func {f.name} : {type}{sep}\
        {body}"
 
-def LFunc.type (f : (LFunc IDMeta)) : Except Format LTy := do
-  if !f.inputs.keys.Nodup then
+def LFunc.type (f : (LFunc T)) : Except Format LTy := do
+  if !(decide f.inputs.keys.Nodup) then
     .error f!"[{f.name}] Duplicates found in the formals!\
               {Format.line}\
               {f.inputs}"
-  else if !f.typeArgs.Nodup then
+  else if !(decide f.typeArgs.Nodup) then
     .error f!"[{f.name}] Duplicates found in the universally \
               quantified type identifiers!\
               {Format.line}\
@@ -128,21 +130,21 @@ def LFunc.type (f : (LFunc IDMeta)) : Except Format LTy := do
   | ity :: irest =>
     .ok (.forAll f.typeArgs (Lambda.LMonoTy.mkArrow ity (irest ++ output_tys)))
 
-def LFunc.opExpr (f: LFunc IDMeta) : LExpr LMonoTy IDMeta :=
+def LFunc.opExpr [Inhabited T.Metadata] (f: LFunc T) : LExpr T.mono :=
   let input_tys := f.inputs.values
   let output_tys := Lambda.LMonoTy.destructArrow f.output
   let ty := match input_tys with
             | [] => f.output
             | ity :: irest => Lambda.LMonoTy.mkArrow ity (irest ++ output_tys)
-  .op f.name ty
+  .op (default : T.Metadata) f.name (some ty)
 
-def LFunc.inputPolyTypes (f : (LFunc IDMeta)) : @LTySignature IDMeta :=
+def LFunc.inputPolyTypes (f : (LFunc T)) : @LTySignature T.IDMeta :=
   f.inputs.map (fun (id, mty) => (id, .forAll f.typeArgs mty))
 
-def LFunc.outputPolyType (f : (LFunc IDMeta)) : LTy :=
+def LFunc.outputPolyType (f : (LFunc T)) : LTy :=
   .forAll f.typeArgs f.output
 
-def LFunc.eraseTypes (f : LFunc IDMeta) : LFunc IDMeta :=
+def LFunc.eraseTypes (f : LFunc T) : LFunc T :=
   { f with
     body := f.body.map LExpr.eraseTypes,
     axioms := f.axioms.map LExpr.eraseTypes
@@ -157,23 +159,23 @@ IDMeta)` -- lambdas are our only tool. `Factory` gives us a way to add
 support for concrete/symbolic evaluation and type checking for `FunFactory`
 functions without actually modifying any core logic or the ASTs.
 -/
-def Factory := Array (LFunc IDMeta)
+def Factory (T : LExprParams) := Array (LFunc T)
 
-def Factory.default : @Factory IDMeta := #[]
+def Factory.default : @Factory T := #[]
 
-instance : Inhabited (@Factory IDMeta) where
-  default := @Factory.default IDMeta
+instance : Inhabited (@Factory T) where
+  default := @Factory.default T
 
-def Factory.getFunctionNames (F : @Factory IDMeta) : Array (Identifier IDMeta) :=
+def Factory.getFunctionNames (F : @Factory T) : Array T.Identifier :=
   F.map (fun f => f.name)
 
-def Factory.getFactoryLFunc (F : @Factory IDMeta) (name : String) : Option (LFunc IDMeta) :=
+def Factory.getFactoryLFunc (F : @Factory T) (name : String) : Option (LFunc T) :=
   F.find? (fun fn => fn.name.name == name)
 
 /--
 Add a function `func` to the factory `F`. Redefinitions are not allowed.
 -/
-def Factory.addFactoryFunc (F : @Factory IDMeta) (func : (LFunc IDMeta)) : Except Format (@Factory IDMeta) :=
+def Factory.addFactoryFunc (F : @Factory T) (func : LFunc T) : Except Format (@Factory T) :=
   match F.getFactoryLFunc func.name.name with
   | none => .ok (F.push func)
   | some func' =>
@@ -186,28 +188,29 @@ def Factory.addFactoryFunc (F : @Factory IDMeta) (func : (LFunc IDMeta)) : Excep
 Append a factory `newF` to an existing factory `F`, checking for redefinitions
 along the way.
 -/
-def Factory.addFactory (F newF : @Factory IDMeta) : Except Format (@Factory IDMeta) :=
+def Factory.addFactory (F newF : @Factory T) : Except Format (@Factory T) :=
   Array.foldlM (fun factory func => factory.addFactoryFunc func) F newF
 
-def getLFuncCall {GenericTy} (e : (LExpr GenericTy IDMeta))
-    : (LExpr GenericTy IDMeta) × List (LExpr GenericTy IDMeta) :=
+def getLFuncCall {GenericTy} (e : LExpr ⟨T, GenericTy⟩) : LExpr ⟨T, GenericTy⟩ × List (LExpr ⟨T, GenericTy⟩) :=
   go e []
-  where go e (acc : List (LExpr GenericTy IDMeta)) :=
+  where go e (acc : List (LExpr ⟨T, GenericTy⟩)) :=
   match e with
-  | .app (.app  e' arg1) arg2 =>  go e' ([arg1, arg2] ++ acc)
-  | .app (.op  fn  fnty) arg1 =>  ((.op fn fnty), ([arg1] ++ acc))
+  | .app _ (.app _ e' arg1) arg2 =>  go e' ([arg1, arg2] ++ acc)
+  | .app _ (.op m fn  fnty) arg1 =>  ((.op m fn fnty), ([arg1] ++ acc))
   | _ => (e, acc)
+
+def getConcreteLFuncCall (e : LExpr ⟨T, GenericTy⟩) : LExpr ⟨T, GenericTy⟩ × List (LExpr ⟨T, GenericTy⟩) :=
+  let (op, args) := getLFuncCall e
+  if args.all (@LExpr.isConst ⟨T, GenericTy⟩) then (op, args) else (e, [])
 
 /--
 If `e` is a call of a factory function, get the operator (`.op`), a list
 of all the actuals, and the `(LFunc IDMeta)`.
 -/
-def Factory.callOfLFunc {GenericTy} (F : @Factory IDMeta)
-    (e : (LExpr GenericTy IDMeta))
-    : Option ((LExpr GenericTy IDMeta) × List (LExpr GenericTy IDMeta) × (LFunc IDMeta)) :=
+def Factory.callOfLFunc {GenericTy} (F : @Factory T) (e : LExpr ⟨T, GenericTy⟩) : Option (LExpr ⟨T, GenericTy⟩ × List (LExpr ⟨T, GenericTy⟩) × LFunc T) :=
   let (op, args) := getLFuncCall e
   match op with
-  | .op name _ =>
+  | .op _ name _ =>
     let maybe_func := getFactoryLFunc F name.name
     match maybe_func with
     | none => none
@@ -220,9 +223,7 @@ def Factory.callOfLFunc {GenericTy} (F : @Factory IDMeta)
 
 end Factory
 
-variable {IDMeta: Type}
-
-theorem getLFuncCall.go_size {GenericTy} {e: LExpr GenericTy IDMeta} {op args acc} : getLFuncCall.go e acc = (op, args) →
+theorem getLFuncCall.go_size {T: LExprParamsT} {e: LExpr T} {op args acc} : getLFuncCall.go e acc = (op, args) →
 op.sizeOf + List.sum (args.map LExpr.sizeOf) <= e.sizeOf + List.sum (acc.map LExpr.sizeOf) := by
   fun_induction go generalizing op args
   case case1 acc e' arg1 arg2 IH =>
@@ -231,18 +232,18 @@ op.sizeOf + List.sum (args.map LExpr.sizeOf) <= e.sizeOf + List.sum (acc.map LEx
     simp_all; intros op_eq args_eq; subst op args; simp; omega
   case case3 op' args' _ _ => intros Hop; cases Hop; omega
 
-theorem LExpr.sizeOf_pos {GenericTy} (e: LExpr GenericTy IDMeta): 0 < sizeOf e := by
+theorem LExpr.sizeOf_pos {T} (e: LExpr T): 0 < sizeOf e := by
   cases e<;> simp <;> omega
 
 theorem List.sum_size_le (f: α → Nat) {l: List α} {x: α} (x_in: x ∈ l): f x ≤ List.sum (l.map f) := by
   induction l; simp_all; grind
 
-theorem getLFuncCall_smaller {GenericTy} {e: LExpr GenericTy IDMeta} {op args} : getLFuncCall e = (op, args) → (forall a, a ∈ args → a.sizeOf < e.sizeOf) := by
+theorem getLFuncCall_smaller {T} {e: LExpr T} {op args} : getLFuncCall e = (op, args) → (forall a, a ∈ args → a.sizeOf < e.sizeOf) := by
   unfold getLFuncCall; intros Hgo; have Hsize := (getLFuncCall.go_size Hgo);
   simp_all; have Hop:= LExpr.sizeOf_pos op; intros a a_in;
   have Ha := List.sum_size_le LExpr.sizeOf a_in; omega
 
-theorem Factory.callOfLFunc_smaller {GenericTy} {F : @Factory IDMeta} {e : (LExpr GenericTy IDMeta)} {op args F'} : Factory.callOfLFunc F e = some (op, args, F') →
+theorem Factory.callOfLFunc_smaller {T} {F : @Factory T.base} {e : LExpr T} {op args F'} : Factory.callOfLFunc F e = some (op, args, F') →
 (forall a, a ∈ args → a.sizeOf < e.sizeOf) := by
   simp[Factory.callOfLFunc]; cases Hfunc: (getLFuncCall e) with | mk op args;
   simp; cases op <;> simp

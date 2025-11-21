@@ -28,16 +28,19 @@ See module `Strata.DL.Lambda.LExpr` for the formalization of expressions,
 `Strata.DL.Lambda.LExprEval` for the partial evaluator.
 -/
 
-variable {IDMeta : Type} [ToString IDMeta] [DecidableEq IDMeta] [HasGen IDMeta] [Inhabited IDMeta]
+variable {T: LExprParams} [ToString T.IDMeta] [DecidableEq T.IDMeta] [ToFormat T.IDMeta] [HasGen T.IDMeta] [ToFormat (LFunc T)] [Inhabited (LExpr T.mono)] [BEq T.Metadata] [Traceable LExpr.EvalProvenance T.Metadata]
+
 /--
 Top-level type checking and partial evaluation function for the Lambda
 dialect.
 -/
 def typeCheckAndPartialEval
-  (t: TypeFactory (IDMeta:=IDMeta) := TypeFactory.default)
-  (f : Factory (IDMeta:=IDMeta) := Factory.default)
-  (e : (LExpr LMonoTy IDMeta)) :
-  Except Std.Format (LExpr LMonoTy IDMeta) := do
+  [Inhabited T.Metadata]
+  [Inhabited T.IDMeta]
+  (t: TypeFactory (IDMeta:=T.IDMeta) := TypeFactory.default)
+  (f : Factory (T:=T) := Factory.default)
+  (e : LExpr T.mono) :
+  Except Std.Format (LExpr T.mono) := do
   let fTy ← t.genFactory
   let fAll ← Factory.addFactory fTy f
   let T := TEnv.default

@@ -16,6 +16,34 @@ namespace Boogie
 open Std (ToFormat Format format)
 open Lambda
 
+-- Type class instances to enable deriving for structures containing Expression.Expr
+instance : DecidableEq ExpressionMetadata :=
+  show DecidableEq Unit from inferInstance
+
+instance : Repr ExpressionMetadata :=
+  show Repr Unit from inferInstance
+
+instance : DecidableEq (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : LExprParamsT).base.Metadata :=
+  show DecidableEq ExpressionMetadata from inferInstance
+
+instance : DecidableEq (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : LExprParamsT).base.IDMeta :=
+  show DecidableEq BoogieIdent from inferInstance
+
+instance : DecidableEq (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : LExprParamsT).TypeType :=
+  show DecidableEq LMonoTy from inferInstance
+
+instance : Repr (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : LExprParamsT).base.Metadata :=
+  show Repr ExpressionMetadata from inferInstance
+
+instance : Repr (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : LExprParamsT).base.IDMeta :=
+  show Repr BoogieIdent from inferInstance
+
+instance : Repr (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : LExprParamsT).TypeType :=
+  show Repr LMonoTy from inferInstance
+
+instance : Repr Expression.Expr :=
+  show Repr Expression.Expr from inferInstance
+
 /-! # Boogie Procedures -/
 
 structure Procedure.Header where
