@@ -64,8 +64,8 @@ category Pattern;
 op pattern (e : Expr) : Pattern => "pattern " e:0 ", ";
 
 category Patterns;
-op patternsAtom (p : Pattern) : Patterns => p;
-op patternsPush (ps : Patterns, p : Pattern) : Patterns => ps p;
+op patternsAtom (p : Pattern) : Patterns => @[prec(0)] p:0;
+op patternsPush (ps : Patterns, p : Pattern) : Patterns => @[prec(0)] ps:0 p:0;
 
 fn forall_expr (var : Ident, ty : Ident, patterns : Option Patterns, body : Expr) : Expression =>
   @[prec(1)] "forall " var " : " ty " " patterns body:1;
