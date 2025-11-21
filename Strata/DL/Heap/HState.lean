@@ -161,6 +161,18 @@ def setField (state : HState) (addr : Address) (field : Nat) (value : HExpr) : O
     some { state with heap := newHeap }
   | none => none
 
+def deleteField (state : HState) (addr : Address) (field : Nat) : Option HState :=
+  -- Remove the field from the object's fields
+  -- As an example:
+  --  before array deletion {'0': 1, '1': 5} (delete arr[1])
+  --  after array deletion  {'0': 1} instead of {'0': 1, '1': None}
+  match state.getObject addr with
+  | some obj =>
+    let newObj := obj.erase field
+    let newHeap := state.heap.insert addr newObj
+    some { state with heap := newHeap }
+  | none => none
+
 -- Check if an address is valid (exists in heap)
 def isValidAddr (state : HState) (addr : Address) : Bool :=
   state.heap.contains addr
