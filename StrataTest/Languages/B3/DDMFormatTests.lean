@@ -401,10 +401,9 @@ x := 1
 
 /--
 info: if flag x := 1
-( else {
+ else {
 x := 0
   }
-)
 -/
 #guard_msgs in
 #eval formatStmt $ Statement.if_statement ()

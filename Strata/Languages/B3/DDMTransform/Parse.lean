@@ -92,10 +92,10 @@ op assert (c : Expr) : Statement => "assert " c "\n";
 
 category Else;
 op else_none () : Else => "";
-op else_some (s : Statement) : Else => " else " s:40;
+op else_some (s : Statement) : Else => @[prec(0)] " else " s:0;
 
 op if_statement (c : Expr, t : Statement, f : Else) : Statement =>
-  "if " c:0 " " t:40 f;
+  "if " c:0 " " t:0 f:0;
 
 category Invariant;
 op invariant (e : Expr) : Invariant => "\n  invariant " e:0;
