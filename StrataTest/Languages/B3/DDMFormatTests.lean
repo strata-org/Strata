@@ -391,7 +391,7 @@ info: return
 info: {
   x := 1
   y := 2
-  }
+}
 -/
 #guard_msgs in
 #eval formatStmt $ Statement.block () ⟨(), #[
@@ -400,9 +400,11 @@ info: {
 ]⟩
 
 /--
-info: if flag x := 1
-else {
-  x := 0
+info: if flag ⏎
+  x := 1
+else ⏎
+  {
+    x := 0
   }
 -/
 #guard_msgs in
@@ -412,9 +414,10 @@ else {
   (Else.else_some () (Statement.block () ⟨(), #[Statement.assign () ⟨(), "x"⟩ (Expr.natLit () ⟨(), 0⟩)]⟩))
 
 /--
-info: loop {
+info: loop ⏎
+{
   i := i + 1
-  }
+}
 -/
 #guard_msgs in
 #eval formatStmt $ Statement.loop_statement () ⟨(), #[]⟩
@@ -426,9 +429,10 @@ info: loop {
 /--
 info: loop
   invariant i >= 0
-  invariant i <= n {
+  invariant i <= n ⏎
+{
   i := i + 1
-  }
+}
 -/
 #guard_msgs in
 #eval formatStmt $ Statement.loop_statement ()
@@ -446,8 +450,8 @@ info: exit loop_start
 #eval formatStmt $ Statement.exit_statement () ⟨(), some ⟨(), "loop_start"⟩⟩
 
 /--
-info: (loop_start): (x := 0
-)
+info: loop_start: ⏎
+x := 0
 -/
 #guard_msgs in
 #eval formatStmt $ Statement.labeled_statement () ⟨(), "loop_start"⟩
@@ -483,9 +487,10 @@ info: var z : int autoinv z >= 0
   (VarInit.var_init_none ())
 
 /--
-info: forall x : int {
+info: forall x : int ⏎
+{
   check x >= 0
-  }
+}
 -/
 #guard_msgs in
 #eval formatStmt $ Statement.aForall_statement () ⟨(), "x"⟩ ⟨(), "int"⟩
@@ -494,13 +499,13 @@ info: forall x : int {
   ]⟩)
 
 /--
-info: choose (({
+info: choose ⏎
+{
   x := 1
-  }
-) or ({
+} or ⏎
+{
   x := 2
-  }
-))
+}
 -/
 #guard_msgs in
 #eval formatStmt $ Statement.choose_statement ()
@@ -508,16 +513,28 @@ info: choose (({
     (ChoiceBranches.choiceAtom () (ChoiceBranch.choice_branch () (Statement.block () ⟨(), #[Statement.assign () ⟨(), "x"⟩ (Expr.natLit () ⟨(), 1⟩)]⟩)))
     (ChoiceBranch.choice_branch () (Statement.block () ⟨(), #[Statement.assign () ⟨(), "x"⟩ (Expr.natLit () ⟨(), 2⟩)]⟩)))
 
--- TODO: Fix if_case formatting - currently produces unexpected parentheses
--- #eval formatStmt $ Statement.if_case_statement () ⟨(), #[
---   IfCaseBranch.if_case_branch () (Expr.equal () (Expr.id () ⟨(), "x"⟩) (Expr.natLit () ⟨(), 1⟩))
---     (Statement.block () ⟨(), #[Statement.assign () ⟨(), "y"⟩ (Expr.natLit () ⟨(), 10⟩)]⟩),
---   IfCaseBranch.if_case_branch () (Expr.equal () (Expr.id () ⟨(), "x"⟩) (Expr.natLit () ⟨(), 2⟩))
---     (Statement.block () ⟨(), #[Statement.assign () ⟨(), "y"⟩ (Expr.natLit () ⟨(), 20⟩)]⟩)
--- ]⟩)
+/--
+info: if
+case x == 1 ⏎
+{
+  y := 10
+}
+case x == 2 ⏎
+{
+  y := 20
+}
+-/
+#guard_msgs in
+#eval formatStmt $ Statement.if_case_statement () ⟨(), #[
+  IfCaseBranch.if_case_branch () (Expr.equal () (Expr.id () ⟨(), "x"⟩) (Expr.natLit () ⟨(), 1⟩))
+    (Statement.block () ⟨(), #[Statement.assign () ⟨(), "y"⟩ (Expr.natLit () ⟨(), 10⟩)]⟩),
+  IfCaseBranch.if_case_branch () (Expr.equal () (Expr.id () ⟨(), "x"⟩) (Expr.natLit () ⟨(), 2⟩))
+    (Statement.block () ⟨(), #[Statement.assign () ⟨(), "y"⟩ (Expr.natLit () ⟨(), 20⟩)]⟩)
+]⟩
 
 /--
-info: (compute)(out (result), a, b)
+info:
+compute(out result, a, b)
 -/
 #guard_msgs in
 #eval formatStmt $ Statement.call_statement () ⟨(), "compute"⟩ ⟨(), #[
@@ -527,7 +544,8 @@ info: (compute)(out (result), a, b)
 ]⟩
 
 /--
-info: (modify)(inout (x), out (y))
+info:
+modify(inout x, out y)
 -/
 #guard_msgs in
 #eval formatStmt $ Statement.call_statement () ⟨(), "modify"⟩ ⟨(), #[

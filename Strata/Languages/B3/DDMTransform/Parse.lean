@@ -37,7 +37,7 @@ fn letExpr (name : Ident, value : Expr, body : Expr) : Expression =>
 
 fn labeledExpr (label : Ident, e : Expr) : Expression => @[prec(1)] label ": " e:1;
 
-fn ite (c : Expr, t : Expr, f : Expr) : Expression => @[prec(3)] "if " c:0 " then " t:3 " else " f:3;
+fn ite (c : Expr, t : Expr, f : Expr) : Expression => @[prec(3)] "if " c:0 " then " indent(2, t:3) " else " indent(2, f:3);
 fn iff (a : Expr, b : Expr) : Expression => @[prec(4)] a " <==> " b;
 fn implies (a : Expr, b : Expr) : Expression => @[prec(5), rightassoc] a " ==> " b;
 fn impliedBy (a : Expr, b : Expr) : Expression => @[prec(5), rightassoc] a " <== " b;
@@ -75,27 +75,27 @@ fn exists_expr (var : Ident, ty : Ident, patterns : Option Patterns, body : Expr
 
 category Statement;
 
-op assign (v : Ident, e : Expr) : Statement => v:0 " := " e "\n";
+op assign (v : Ident, e : Expr) : Statement => "\n" v:0 " := " e:0;
 
 category CallArg;
 op call_arg_expr (e : Expr) : CallArg => e:0;
-op call_arg_out (id : Ident) : CallArg => "out " id;
-op call_arg_inout (id : Ident) : CallArg => "inout " id;
+op call_arg_out (id : Ident) : CallArg => "out " id:0;
+op call_arg_inout (id : Ident) : CallArg => "inout " id:0;
 
 op call_statement (proc : Ident, args : CommaSepBy CallArg) : Statement =>
-  proc "(" args ")\n";
+  "\n" proc "(" args ")";
 
-op check (c : Expr) : Statement => "check " c "\n";
-op assume (c : Expr) : Statement => "assume " c "\n";
-op reach (c : Expr) : Statement => "reach " c "\n";
-op assert (c : Expr) : Statement => "assert " c "\n";
+op check (c : Expr) : Statement => "\ncheck " c:0;
+op assume (c : Expr) : Statement => "\nassume " c:0;
+op reach (c : Expr) : Statement => "\nreach " c:0;
+op assert (c : Expr) : Statement => "\nassert " c:0;
 
 category Else;
 op else_none () : Else => "";
-op else_some (s : Statement) : Else => @[prec(0)] "else " s:0;
+op else_some (s : Statement) : Else => @[prec(0)] "\nelse " indent(2, s:0);
 
 op if_statement (c : Expr, t : Statement, f : Else) : Statement =>
-  "if " c:0 " " t:0 f:0;
+  "if " c:0 " " indent(2, t:0) f:0;
 
 category Invariant;
 op invariant (e : Expr) : Invariant => "\n  invariant " e:0;
@@ -103,12 +103,12 @@ op invariant (e : Expr) : Invariant => "\n  invariant " e:0;
 op loop_statement (invs : Seq Invariant, body : Statement) : Statement =>
   "loop" invs " " body:40;
 
-op exit_statement (label : Option Ident) : Statement => "exit " label "\n";
-op return_statement () : Statement => "return";
+op exit_statement (label : Option Ident) : Statement => "\nexit " label:0 ;
+op return_statement () : Statement => "\nreturn";
 
-op labeled_statement (label : Ident, s : Statement) : Statement => label ": " s;
+op labeled_statement (label : Ident, s : Statement) : Statement => label:0 ": " s:0;
 
-op probe (name : Ident) : Statement => "probe " name "\n";
+op probe (name : Ident) : Statement => "\nprobe " name:0 ;
 
 category VarInit;
 op var_init_none () : VarInit => "";
@@ -119,29 +119,29 @@ op autoinv_none () : AutoInv => "";
 op autoinv_some (e : Expr) : AutoInv => " autoinv " e:0;
 
 op var_decl (name : Ident, ty : Ident, autoinv : AutoInv, init : VarInit) : Statement =>
-  "var " name " : " ty autoinv init "\n";
+  "\nvar " name " : " ty autoinv:0 init:0 ;
 
 category ChoiceBranch;
 op choice_branch (s : Statement) : ChoiceBranch => s:40;
 
 category ChoiceBranches;
-op choiceAtom (b : ChoiceBranch) : ChoiceBranches => b;
-op choicePush (bs : ChoiceBranches, b : ChoiceBranch) : ChoiceBranches => bs " or " b;
+op choiceAtom (b : ChoiceBranch) : ChoiceBranches => b:0;
+op choicePush (bs : ChoiceBranches, b : ChoiceBranch) : ChoiceBranches => bs:0 " or " b:0;
 
 op choose_statement (branches : ChoiceBranches) : Statement =>
-  "choose " branches;
+  "choose " branches:0;
 
 category IfCaseBranch;
 op if_case_branch (cond : Expr, body : Statement) : IfCaseBranch =>
   "\ncase " cond:0 " " body:40;
 
 op if_case_statement (branches : Seq IfCaseBranch) : Statement =>
-  "if" branches;
+  "if" branches:0;
 
 op aForall_statement (var : Ident, ty : Ident, body : Statement) : Statement =>
-  "forall " var " : " ty " " body:40;
+  "forall " var:0 " : " ty:0 " " body:40;
 
-op block (c : Seq Statement) : Statement => "{" indent(2, "\n" c:0) "}\n";
+op block (c : Seq Statement) : Statement => "\n{" indent(2, c:0) "\n}";
 
 #end
 
