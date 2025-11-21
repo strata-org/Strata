@@ -32,8 +32,6 @@ fn bfalse : Expression => "false";
 
 fn id (name : Ident) : Expression => name;
 
-fn functionCall (name : Ident, args : CommaSepList Expr) : Expression => name "(" args ")";
-
 fn letExpr (name : Ident, value : Expr, body : Expr) : Expression =>
   @[prec(2)] "val " name " := " value:0 " " body:2;
 
@@ -60,9 +58,47 @@ fn mul (a : Expr, b : Expr) : Expression => @[prec(30), leftassoc] a " * " b;
 fn div (a : Expr, b : Expr) : Expression => @[prec(30), leftassoc] a " div " b;
 fn mod (a : Expr, b : Expr) : Expression => @[prec(30), leftassoc] a " mod " b;
 
+fn functionCall1 (name : Ident, arg1 : Expr) : Expression => @[prec(40)] name "(" arg1:0 ")";
+fn functionCall2 (name : Ident, arg1 : Expr, arg2 : Expr) : Expression => @[prec(40)] name "(" arg1:0 ", " arg2:0 ")";
+
+fn forall_expr (var : Ident, ty : Ident, body : Expr) : Expression =>
+  @[prec(1)] "forall " var " : " ty " " body:1;
+
+fn exists_expr (var : Ident, ty : Ident, body : Expr) : Expression =>
+  @[prec(1)] "exists " var " : " ty " " body:1;
+
+fn forall_expr_1p (var : Ident, ty : Ident, p1 : Expr, body : Expr) : Expression =>
+  @[prec(1)] "forall " var " : " ty " pattern " p1:0 ", " body:1;
+
+fn exists_expr_1p (var : Ident, ty : Ident, p1 : Expr, body : Expr) : Expression =>
+  @[prec(1)] "exists " var " : " ty " pattern " p1:0 ", " body:1;
+
+fn forall_expr_2p (var : Ident, ty : Ident, p1 : Expr, p2 : Expr, body : Expr) : Expression =>
+  @[prec(1)] "forall " var " : " ty " pattern " p1:0 ", pattern " p2:0 ", " body:1;
+
+fn exists_expr_2p (var : Ident, ty : Ident, p1 : Expr, p2 : Expr, body : Expr) : Expression =>
+  @[prec(1)] "exists " var " : " ty " pattern " p1:0 ", pattern " p2:0 ", " body:1;
+
+fn forall_expr_3p (var : Ident, ty : Ident, p1 : Expr, p2 : Expr, p3 : Expr, body : Expr) : Expression =>
+  @[prec(1)] "forall " var " : " ty " pattern " p1:0 ", pattern " p2:0 ", pattern " p3:0 ", " body:1;
+
+fn exists_expr_3p (var : Ident, ty : Ident, p1 : Expr, p2 : Expr, p3 : Expr, body : Expr) : Expression =>
+  @[prec(1)] "exists " var " : " ty " pattern " p1:0 ", pattern " p2:0 ", pattern " p3:0 ", " body:1;
+
 category Statement;
 
 op assign (v : Ident, e : Expr) : Statement => v:0 " := " e "\n";
+
+category CallArg;
+op call_arg_expr (e : Expr) : CallArg => e:0;
+op call_arg_out (id : Ident) : CallArg => "out " id;
+op call_arg_inout (id : Ident) : CallArg => "inout " id;
+
+op call_no_return_2args (proc : Ident, arg1 : CallArg, arg2 : CallArg) : Statement =>
+  proc "(" arg1 ", " arg2 ")\n";
+
+op call_1return_2args (ret : Ident, proc : Ident, arg1 : CallArg, arg2 : CallArg) : Statement =>
+  ret:0 " := " proc "(" arg1 ", " arg2 ")\n";
 
 op check (c : Expr) : Statement => "check " c "\n";
 op assume (c : Expr) : Statement => "assume " c "\n";
@@ -88,6 +124,30 @@ op return_statement () : Statement => "return";
 op labeled_statement (label : Ident, s : Statement) : Statement => label ": " s;
 
 op probe (name : Ident) : Statement => "probe " name "\n";
+
+category VarInit;
+op var_init_none () : VarInit => "";
+op var_init_some (e : Expr) : VarInit => " := " e:0;
+
+category AutoInv;
+op autoinv_none () : AutoInv => "";
+op autoinv_some (e : Expr) : AutoInv => " autoinv " e:0;
+
+op var_decl (name : Ident, ty : Ident, autoinv : AutoInv, init : VarInit) : Statement =>
+  "var " name " : " ty autoinv init "\n";
+
+op choose_statement (branch1 : Statement, branch2 : Statement) : Statement =>
+  "choose " branch1:40 " or " branch2:40;
+
+category IfCaseBranch;
+op if_case_branch (cond : Expr, body : Statement) : IfCaseBranch =>
+  "\ncase " cond:0 " " body:40;
+
+op if_case_statement (branches : Seq IfCaseBranch) : Statement =>
+  "if" branches;
+
+op aForall_statement (var : Ident, ty : Ident, body : Statement) : Statement =>
+  "forall " var " : " ty " " body:40;
 
 op block (c : Seq Statement) : Statement => "{\n" indent(2, c:40) "}\n";
 

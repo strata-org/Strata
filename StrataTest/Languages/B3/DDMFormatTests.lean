@@ -29,6 +29,8 @@ Strata.B3DDM.Expr.strLit : {α : Type} → α → Ann String α → B3DDM.Expr �
 Strata.B3DDM.Expr.btrue : {α : Type} → α → B3DDM.Expr α
 Strata.B3DDM.Expr.bfalse : {α : Type} → α → B3DDM.Expr α
 Strata.B3DDM.Expr.id : {α : Type} → α → Ann String α → B3DDM.Expr α
+Strata.B3DDM.Expr.letExpr : {α : Type} → α → Ann String α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.labeledExpr : {α : Type} → α → Ann String α → B3DDM.Expr α → B3DDM.Expr α
 Strata.B3DDM.Expr.ite : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
 Strata.B3DDM.Expr.iff : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
 Strata.B3DDM.Expr.implies : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
@@ -47,6 +49,22 @@ Strata.B3DDM.Expr.sub : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α �
 Strata.B3DDM.Expr.mul : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
 Strata.B3DDM.Expr.div : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
 Strata.B3DDM.Expr.mod : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.functionCall1 : {α : Type} → α → Ann String α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.functionCall2 : {α : Type} → α → Ann String α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.forall_expr : {α : Type} → α → Ann String α → Ann String α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.exists_expr : {α : Type} → α → Ann String α → Ann String α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.forall_expr_1p : {α : Type} →
+  α → Ann String α → Ann String α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.exists_expr_1p : {α : Type} →
+  α → Ann String α → Ann String α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.forall_expr_2p : {α : Type} →
+  α → Ann String α → Ann String α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.exists_expr_2p : {α : Type} →
+  α → Ann String α → Ann String α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.forall_expr_3p : {α : Type} →
+  α → Ann String α → Ann String α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
+Strata.B3DDM.Expr.exists_expr_3p : {α : Type} →
+  α → Ann String α → Ann String α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
 -/
 #guard_msgs in
 #print Expr
@@ -253,12 +271,6 @@ info: if true then 1 else 0
 #eval formatExpr $ .ite () (.btrue ()) (.natLit () ⟨(), 1⟩) (.natLit () ⟨(), 0⟩)
 
 /--
-info: foo(x, y)
--/
-#guard_msgs in
-#eval formatExpr $ .functionCall () ⟨(), "foo"⟩ ⟨(), #[.id () ⟨(), "x"⟩, .id () ⟨(), "y"⟩]⟩
-
-/--
 info: val temp := 10 temp + x
 -/
 #guard_msgs in
@@ -270,6 +282,47 @@ info: important: result
 -/
 #guard_msgs in
 #eval formatExpr $ .labeledExpr () ⟨(), "important"⟩ (.id () ⟨(), "result"⟩)
+
+/--
+info: forall i : int i >= 0
+-/
+#guard_msgs in
+#eval formatExpr $ .forall_expr () ⟨(), "i"⟩ ⟨(), "int"⟩
+  (.ge () (.id () ⟨(), "i"⟩) (.natLit () ⟨(), 0⟩))
+
+/--
+info: exists y : bool y || !y
+-/
+#guard_msgs in
+#eval formatExpr $ .exists_expr () ⟨(), "y"⟩ ⟨(), "bool"⟩
+  (.or () (.id () ⟨(), "y"⟩) (.not () (.id () ⟨(), "y"⟩)))
+
+/--
+info: forall x : int pattern f(x), f(x) > 0
+-/
+#guard_msgs in
+#eval formatExpr $ .forall_expr_1p () ⟨(), "x"⟩ ⟨(), "int"⟩
+  (.functionCall1 () ⟨(), "f"⟩ (.id () ⟨(), "x"⟩))
+  (.gt () (.functionCall1 () ⟨(), "f"⟩ (.id () ⟨(), "x"⟩)) (.natLit () ⟨(), 0⟩))
+
+/--
+info: exists y : bool pattern y, pattern !y, y || !y
+-/
+#guard_msgs in
+#eval formatExpr $ .exists_expr_2p () ⟨(), "y"⟩ ⟨(), "bool"⟩
+  (.id () ⟨(), "y"⟩)
+  (.not () (.id () ⟨(), "y"⟩))
+  (.or () (.id () ⟨(), "y"⟩) (.not () (.id () ⟨(), "y"⟩)))
+
+/--
+info: forall z : int pattern z, pattern z + 1, pattern z * 2, z > 0
+-/
+#guard_msgs in
+#eval formatExpr $ .forall_expr_3p () ⟨(), "z"⟩ ⟨(), "int"⟩
+  (.id () ⟨(), "z"⟩)
+  (.add () (.id () ⟨(), "z"⟩) (.natLit () ⟨(), 1⟩))
+  (.mul () (.id () ⟨(), "z"⟩) (.natLit () ⟨(), 2⟩))
+  (.gt () (.id () ⟨(), "z"⟩) (.natLit () ⟨(), 0⟩))
 
 end ExpressionFormatTests
 
@@ -381,7 +434,8 @@ info: exit loop_start
 #eval formatStmt $ Statement.exit_statement () ⟨(), some ⟨(), "loop_start"⟩⟩
 
 /--
-info: loop_start: x := 0
+info: (loop_start): (x := 0
+)
 -/
 #guard_msgs in
 #eval formatStmt $ Statement.labeled_statement () ⟨(), "loop_start"⟩
@@ -392,6 +446,77 @@ info: probe debug_point
 -/
 #guard_msgs in
 #eval formatStmt $ Statement.probe () ⟨(), "debug_point"⟩
+
+/--
+info: var x : int
+-/
+#guard_msgs in
+#eval formatStmt $ Statement.var_decl () ⟨(), "x"⟩ ⟨(), "int"⟩
+  (AutoInv.autoinv_none ()) (VarInit.var_init_none ())
+
+/--
+info: var y : bool := true
+-/
+#guard_msgs in
+#eval formatStmt $ Statement.var_decl () ⟨(), "y"⟩ ⟨(), "bool"⟩
+  (AutoInv.autoinv_none ())
+  (VarInit.var_init_some () (Expr.btrue ()))
+
+/--
+info: var z : int autoinv z >= 0
+-/
+#guard_msgs in
+#eval formatStmt $ Statement.var_decl () ⟨(), "z"⟩ ⟨(), "int"⟩
+  (AutoInv.autoinv_some () (Expr.ge () (Expr.id () ⟨(), "z"⟩) (Expr.natLit () ⟨(), 0⟩)))
+  (VarInit.var_init_none ())
+
+/--
+info: forall x : int {
+check x >= 0
+  }
+-/
+#guard_msgs in
+#eval formatStmt $ Statement.aForall_statement () ⟨(), "x"⟩ ⟨(), "int"⟩
+  (Statement.block () ⟨(), #[
+    Statement.check () (Expr.ge () (Expr.id () ⟨(), "x"⟩) (Expr.natLit () ⟨(), 0⟩))
+  ]⟩)
+
+/--
+info: choose {
+x := 1
+  }
+ or {
+x := 2
+  }
+-/
+#guard_msgs in
+#eval formatStmt $ Statement.choose_statement ()
+  (Statement.block () ⟨(), #[Statement.assign () ⟨(), "x"⟩ (Expr.natLit () ⟨(), 1⟩)]⟩)
+  (Statement.block () ⟨(), #[Statement.assign () ⟨(), "x"⟩ (Expr.natLit () ⟨(), 2⟩)]⟩)
+
+-- TODO: Fix if_case formatting - currently produces unexpected parentheses
+-- #eval formatStmt $ Statement.if_case_statement () ⟨(), #[
+--   IfCaseBranch.if_case_branch () (Expr.equal () (Expr.id () ⟨(), "x"⟩) (Expr.natLit () ⟨(), 1⟩))
+--     (Statement.block () ⟨(), #[Statement.assign () ⟨(), "y"⟩ (Expr.natLit () ⟨(), 10⟩)]⟩),
+--   IfCaseBranch.if_case_branch () (Expr.equal () (Expr.id () ⟨(), "x"⟩) (Expr.natLit () ⟨(), 2⟩))
+--     (Statement.block () ⟨(), #[Statement.assign () ⟨(), "y"⟩ (Expr.natLit () ⟨(), 20⟩)]⟩)
+-- ]⟩)
+
+/--
+info: result := compute(a, b)
+-/
+#guard_msgs in
+#eval formatStmt $ Statement.call_1return_2args () ⟨(), "result"⟩ ⟨(), "compute"⟩
+  (CallArg.call_arg_expr () (Expr.id () ⟨(), "a"⟩))
+  (CallArg.call_arg_expr () (Expr.id () ⟨(), "b"⟩))
+
+/--
+info: (modify)(inout (x), out (y))
+-/
+#guard_msgs in
+#eval formatStmt $ Statement.call_no_return_2args () ⟨(), "modify"⟩
+  (CallArg.call_arg_inout () ⟨(), "x"⟩)
+  (CallArg.call_arg_out () ⟨(), "y"⟩)
 
 end StatementFormatTests
 
