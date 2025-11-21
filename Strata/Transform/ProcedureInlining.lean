@@ -69,7 +69,16 @@ def inlineCall (p : Boogie.Program)
   | .ok res => res
   | .error e => panic! e
 
+/--
+info: "(procedure f :  ((x : bool)) → ((y : bool)))\nmodifies: []\npreconditions: \npostconditions: \nbody: y := (~Bool.Not x)\n\n(procedure h :  () → ())\nmodifies: []\npreconditions: \npostconditions: \nbody: init (b_in : bool) := init_b_in_0\ninit (b_out : bool) := tmp_b_out_0\nf$inlined : {init (tmp_arg_1 : bool) := b_in\n init (y : bool) := tmp_y_2\n y := (~Bool.Not tmp_arg_1)\n b_out := y}\n"
+-/
+#guard_msgs in
 #eval toString (inlineCall (translate Test1)).eraseTypes
+
+/--
+info: "(procedure f :  ((x : bool)) → ((y : bool)))\nmodifies: []\npreconditions: \npostconditions: \nbody: y := (~Bool.Not x)\n\n(procedure h :  () → ())\nmodifies: []\npreconditions: \npostconditions: \nbody: init (b_in : bool) := init_b_in_0\ninit (b_out : bool) := init_b_out_1\ninlined : {init (tmp_arg_0 : bool) := b_in\n init (y : bool) := init_y_2\n y := (~Bool.Not b_in)\n b_out := y}\n"
+-/
+#guard_msgs in
 #eval toString (translate Test1Ans).eraseTypes
 
 -- TODO: compare Test1 and Test1Ans. This needs postprocessing because

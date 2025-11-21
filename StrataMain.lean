@@ -9,6 +9,7 @@ import Strata.DDM.Elab
 import Strata.DDM.Ion
 
 import Strata.Languages.Python.Python
+import Strata.Transform.ProcedureInlining
 
 def exitFailure {α} (message : String) : IO α := do
   IO.eprintln (message  ++ "\n\nRun strata --help for additional help.")
@@ -194,6 +195,12 @@ def pyAnalyzeCommand : Command where
     let newPgm : Boogie.Program := { decls := preludePgm.decls ++ bpgm.decls }
     if verbose then
       IO.print newPgm
+
+    let newPgm := inlineCall newPgm
+    if verbose then
+      IO.println "After inlining:"
+      IO.print newPgm
+
     let vcResults ← EIO.toIO (fun f => IO.Error.userError (toString f))
                         (Boogie.verify "z3" newPgm { Options.default with stopOnFirstError := false, verbose })
     let mut s := ""
