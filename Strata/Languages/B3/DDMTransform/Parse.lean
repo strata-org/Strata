@@ -92,7 +92,7 @@ op assert (c : Expr) : Statement => "assert " c "\n";
 
 category Else;
 op else_none () : Else => "";
-op else_some (s : Statement) : Else => @[prec(0)] " else " s:0;
+op else_some (s : Statement) : Else => @[prec(0)] "else " s:0;
 
 op if_statement (c : Expr, t : Statement, f : Else) : Statement =>
   "if " c:0 " " t:0 f:0;
@@ -141,7 +141,7 @@ op if_case_statement (branches : Seq IfCaseBranch) : Statement =>
 op aForall_statement (var : Ident, ty : Ident, body : Statement) : Statement =>
   "forall " var " : " ty " " body:40;
 
-op block (c : Seq Statement) : Statement => "{\n" indent(2, c:40) "}\n";
+op block (c : Seq Statement) : Statement => "{" indent(2, "\n" c:0) "}\n";
 
 #end
 

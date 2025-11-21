@@ -389,7 +389,7 @@ info: return
 
 /--
 info: {
-x := 1
+  x := 1
   y := 2
   }
 -/
@@ -401,8 +401,8 @@ x := 1
 
 /--
 info: if flag x := 1
- else {
-x := 0
+else {
+  x := 0
   }
 -/
 #guard_msgs in
@@ -413,7 +413,7 @@ x := 0
 
 /--
 info: loop {
-i := i + 1
+  i := i + 1
   }
 -/
 #guard_msgs in
@@ -427,7 +427,7 @@ i := i + 1
 info: loop
   invariant i >= 0
   invariant i <= n {
-i := i + 1
+  i := i + 1
   }
 -/
 #guard_msgs in
@@ -484,7 +484,7 @@ info: var z : int autoinv z >= 0
 
 /--
 info: forall x : int {
-check x >= 0
+  check x >= 0
   }
 -/
 #guard_msgs in
@@ -495,10 +495,10 @@ check x >= 0
 
 /--
 info: choose (({
-x := 1
+  x := 1
   }
 ) or ({
-x := 2
+  x := 2
   }
 ))
 -/
