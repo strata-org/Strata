@@ -325,37 +325,7 @@ theorem LExpr.beq_eq {T : LExprParamsT} [DecidableEq T.base.Metadata] [Decidable
 
 
   · -- Completeness: e1 = e2 → beq = true
-    intro h
-    rw [h]
-    -- Prove that beq is reflexive
-    induction e2 generalizing e1 with
-    | const m c =>
-      simp [LExpr.beq]
-    | op m o ty =>
-      simp [LExpr.beq]
-    | bvar m i =>
-      simp [LExpr.beq]
-    | fvar m n ty =>
-      simp [LExpr.beq]
-    | abs m ty e ih =>
-      simp [LExpr.beq]
-      exact ih e rfl
-    | quant m k ty tr e ih_tr ih_e =>
-      simp [LExpr.beq]
-      exact ⟨ih_tr tr rfl, ih_e e rfl⟩
-
-    | app m fn e ih_fn ih_e =>
-      simp [LExpr.beq]
-      exact ⟨ih_fn fn rfl, ih_e e rfl⟩
-
-    | ite m c t e ih_c ih_t ih_e =>
-      simp [LExpr.beq]
-      exact ⟨⟨ih_c c rfl, ih_t t rfl⟩, ih_e e rfl⟩
-
-    | eq m ea eb ih_a ih_b =>
-      simp [LExpr.beq]
-      exact ⟨ih_a ea rfl, ih_b eb rfl⟩
-
+    intros h; rw[h]; induction e2 generalizing e1 <;> simp only [LExpr.beq] <;> grind
 
 -- Now use this theorem in DecidableEq
 instance {T: LExprParamsT} [DecidableEq T.base.Metadata] [DecidableEq T.TypeType] [DecidableEq T.base.IDMeta] : DecidableEq (LExpr T) :=
