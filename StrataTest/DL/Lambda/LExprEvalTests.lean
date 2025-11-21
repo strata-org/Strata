@@ -43,131 +43,162 @@ macro "take_refl": tactic => `(tactic |
 macro "reduce_beta": tactic => `(tactic |
     apply Step.beta <;> discharge_isCanonicalValue
   )
+-- A helper tactic to exhibit an instance of Metadata (which is Unit)
+macro "inhabited_metadata": tactic => `(tactic |
+    solve | (simp; apply ())
+  )
 
 private abbrev TestParams : LExprParams := ⟨Unit, Unit⟩
 
 private instance : Coe String TestParams.Identifier where
   coe s := Identifier.mk s ()
 
-/-- info: (λ (if (%0 == #1) then #10 else (_minit %0))) -/
+
+/- Test cases -/
+
+structure TestCase where
+  -- Input state
+  σ: LState TestParams
+  -- Input expression
+  e: LExpr (TestParams.mono)
+  -- Reduced output
+  e_out: LExpr (TestParams.mono)
+
+def check (t:TestCase) (n:=100) := (Lambda.LExpr.eval n t.σ t.e) == t.e_out
+
+/-- The two kinds of propositions we would like to test! -/
+abbrev steps_well (t:TestCase):Prop :=
+  Lambda.StepStar (Tbase:=TestParams)
+    t.σ.config.factory (Scopes.toEnv t.σ.state) t.e t.e_out
+
+abbrev stuck (t:TestCase):Prop :=
+  ∀ eres, ¬ Lambda.Step (Tbase:=TestParams)
+    t.σ.config.factory (Scopes.toEnv t.σ.state) t.e eres
+
+
+-------------------------------- Tests ------------------------------
+
+def test1 := TestCase.mk
+  ({Lambda.LState.init with state := [[("m", (mty[int → int], esM[_minit]))]] })
+  (esM[λ (if (%0 == #1) then #10 else (m %0))])
+  (esM[λ (if (%0 == #1) then #10 else (_minit %0))])
+
+/-- info: true -/
 #guard_msgs in
-#eval format $ Lambda.LExpr.eval (TBase:=TestParams) 100
-                  {Lambda.LState.init with state :=
-                      [[("m", (mty[int → int], esM[_minit]))]] }
-        esM[λ (if (%0 == #1) then #10 else (m %0))]
+#eval (check test1)
 
 -- Small step stucks because abstraction is a value.
-example:
-  ∀ F s e, ¬ (Lambda.Step F s (esM[(λ (if (%0 == #1) then #10 else (m %0)))]) e)
-  := by
-  intros; intro
-  contradiction
-
-
-/-- info: #42 -/
-#guard_msgs in
-#eval format $ LExpr.eval (TBase:=TestParams) 100
-                          { LState.init with state := [[("x", (mty[int], esM[#32]))]] }
-                          esM[((λ (if (%0 == #23) then #17 else #42)) (x : int))]
-
-example:
-  Lambda.StepStar
-    LState.init.config.factory
-    [("x", esM[#32])]
-    esM[((λ (if (%0 == #23) then #17 else #42)) (x : int))]
-    esM[#42] := by
-  take_step; apply Step.reduce_2
-  · discharge_isCanonicalValue
-  · repeat constructor
-  take_step; reduce_beta
-  take_step; constructor
-  · apply Step.eq_reduce <;> discharge_isCanonicalValue
-  take_step; apply Step.ite_reduce_else
-  apply StepStar.refl
-
-
-/-- info: (f #true) -/
-#guard_msgs in
-#eval format $ LExpr.eval (TBase:=TestParams) 10 ∅ esM[(f #true)]
-
-example:
-  ∀ e, ¬ Lambda.Step LState.init.config.factory [] esM[(f #true)] e := by
+example: stuck test1 := by
   intros e H
   contradiction
 
 
-/-- info: (minit #24) -/
-#guard_msgs in
-#eval format $ LExpr.eval (TBase:=TestParams) 100
-                    { LState.init with state :=
-                        [[("m", (none, esM[(λ (minit %0))]))], -- most recent scope
-                         [("m", (none, (.intConst () 12)))]] }
-                    esM[((λ (if (%0 == #23) then #17 else (m %0)) #24))]
+def test2 := TestCase.mk
+  { LState.init with state := [[("x", (mty[int], esM[#32]))]] }
+  esM[((λ (if (%0 == #23) then #17 else #42)) (x : int))]
+  esM[#42]
 
-example:
-  Lambda.StepStar
-    LState.init.config.factory
-    (Scopes.toFreeVarMap [[("m", (none, esM[(λ (minit %0))]))], -- most recent scope
-      [("m", (none, (.intConst 12)))]])
-    esM[((λ (if (%0 == #23) then #17 else (m %0)) #24))]
-    esM[(minit #24)] := by
+/-- info: true -/
+#guard_msgs in
+#eval (check test2)
+
+example: steps_well test2 := by
+  unfold steps_well Scopes.toEnv test2
+  take_step; apply Step.reduce_2 <;> try inhabited_metadata
+  · discharge_isCanonicalValue
+  · repeat constructor
   take_step; reduce_beta
-  take_step; apply Step.ite_reduce_cond
-  · apply Step.eq_reduce <;> discharge_isCanonicalValue
+  take_step; constructor <;> try inhabited_metadata
+  · apply Step.eq_reduce <;> try discharge_isCanonicalValue
+    · inhabited_metadata
   take_step; apply Step.ite_reduce_else
-  take_step; apply Step.reduce_1; apply Step.expand_fvar; rfl
+  apply StepStar.refl
+
+
+def test3 := TestCase.mk
+  ∅
+  esM[(f #true)]
+  esM[(f #true)]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test3
+
+example: stuck test3 := by
+  intros e H
+  contradiction
+
+
+def test4 := TestCase.mk
+  { LState.init with state :=
+      [[("m", (none, esM[(λ (minit %0))]))], -- most recent scope
+      [("m", (none, (.intConst () 12)))]] }
+  esM[((λ (if (%0 == #23) then #17 else (m %0)) #24))]
+  esM[(minit #24)]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test4
+
+example: steps_well test4 := by
+  unfold steps_well Scopes.toEnv test4
+  take_step; reduce_beta
+  take_step; apply Step.ite_reduce_cond <;> try inhabited_metadata
+  · apply Step.eq_reduce <;> try discharge_isCanonicalValue
+    · inhabited_metadata
+  take_step; apply Step.ite_reduce_else
+  take_step; apply Step.reduce_1; inhabited_metadata; apply Step.expand_fvar; rfl
   take_step; reduce_beta
   take_refl
 
 
-/-- info: (minit #24) -/
-#guard_msgs in
-#eval format $ LExpr.eval (TBase:=TestParams) 100
-                    { LState.init with state := [[("m", (none, esM[minit]))]] }
-                    esM[((λ (if (%0 == #23) then #17 else (m %0))) #24)]
+def test5 := TestCase.mk
+  { LState.init with state := [[("m", (none, esM[minit]))]] }
+  esM[((λ (if (%0 == #23) then #17 else (m %0))) #24)]
+  esM[(minit #24)]
 
-example:
-  Lambda.StepStar
-    LState.init.config.factory [("m", esM[minit])]
-    esM[((λ (if (%0 == #23) then #17 else (m %0))) #24)]
-    esM[(minit #24)] := by
+/-- info: true -/
+#guard_msgs in
+#eval check test5
+
+example: steps_well test5 := by
+  unfold steps_well Scopes.toEnv test5
   take_step; reduce_beta
-  take_step; apply Step.ite_reduce_cond; apply Step.eq_reduce <;> discharge_isCanonicalValue
+  take_step; apply Step.ite_reduce_cond; inhabited_metadata
+  · apply Step.eq_reduce <;> try discharge_isCanonicalValue
+    · inhabited_metadata
   take_step; apply Step.ite_reduce_else
-  take_step; apply Step.reduce_1; apply Step.expand_fvar; rfl
+  take_step; apply Step.reduce_1; inhabited_metadata; apply Step.expand_fvar; rfl
   take_refl
 
 
-/-- info: x -/
-#guard_msgs in
-#eval format $ LExpr.eval (TBase:=TestParams) 10 ∅ esM[if #true then x else y]
+def test6 := TestCase.mk
+  ∅
+  esM[if #true then x else y]
+  esM[x]
 
-example:
-  Lambda.StepStar LState.init.config.factory []
-    esM[if #true then x else y] esM[x] := by
+/-- info: true -/
+#guard_msgs in
+#eval check test6
+
+example: steps_well test6 := by
+  unfold steps_well Scopes.toEnv test6
   take_step
   · constructor
   take_refl
 
 
 -- Ill-formed `abs` is returned as-is in this Curry style...
-/-- info: (λ %1) -/
+def test7 := TestCase.mk
+  ∅
+  esM[(λ %1)]
+  esM[(λ %1)]
+
+/-- info: true -/
 #guard_msgs in
-#eval format $ LExpr.eval (TBase:=TestParams) 10 ∅ esM[(λ %1)]
+#eval check test7
 
-example:
-  ∀ e, ¬ Lambda.Step LState.init.config.factory [] esM[(λ %1)] e := by
-  intros e H
-  contradiction
-
-
-/-- info: ((λ %1) #true) -/
-#guard_msgs in
-#eval format $ LExpr.eval (TBase:=TestParams) 0 ∅ (.app () (.abs () .none (.bvar () 1)) (LExpr.true ()))
-
-example:
-  ∀ e, ¬ Lambda.Step (IDMeta:=Unit) LState.init.config.factory []
-    (.app (.mdata ⟨"x"⟩ (.abs .none (.bvar 1))) .true) e := by
+example: stuck test7 := by
   intros e H
   contradiction
 
@@ -224,29 +255,38 @@ private def testState : LState TestParams :=
   | .error e => panic s!"{e}"
   | .ok ok => ok
 
-/-- info: #50 -/
-#guard_msgs in
-#eval format $ LExpr.eval (TBase:=TestParams) 10 testState esM[((~IntAddAlias #20) #30)]
 
-example:
-  Lambda.StepStar testState.config.factory testState.state.toFreeVarMap
-    esM[((~IntAddAlias #20) #30)] esM[#50] := by
+def test8 := TestCase.mk
+  testState
+  esM[((~IntAddAlias #20) #30)]
+  esM[(#50)]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test8
+
+example: steps_well test8 := by
+  unfold steps_well Scopes.toEnv test8
   take_step; apply Step.expand_fn <;> discharge_isCanonicalValue
-  take_step; apply Step.eval_fn <;> discharge_isCanonicalValue
+  take_step; apply Step.eval_fn <;> try discharge_isCanonicalValue
+  · inhabited_metadata
   take_refl
 
-/-- info: ((~Int.Add #20) x) -/
+
+def test9 := TestCase.mk
+  testState
+  esM[((~IntAddAlias #20) x)]
+  esM[((~Int.Add #20) x)]
+
+/-- info: true -/
 #guard_msgs in
-#eval format $ LExpr.eval (TBase:=TestParams) 10 testState esM[((~IntAddAlias #20) x)]
+#eval check test9
 
 -- Note: this case diverges from concrete evaluator, because 'x' is not a
 -- canonical value! Small step reduces only when the arguments are values,
 -- to avoid nondeterminism in the small-step semantics (unless this becomes
 -- explicitly allowed in the future).
-example:
-  ∀ e, ¬ Lambda.Step testState.config.factory testState.state.toFreeVarMap
-    esM[((~IntAddAlias #20) x)] e
-  := by
+example: stuck test9 := by
   intro e H; cases H
   case reduce_2 => contradiction
   case reduce_1 => contradiction
@@ -271,30 +311,60 @@ example:
 #guard_msgs in
 #eval esM[(λλ (~Int.Add %1) %0)] = esM[((λ(λ (~Int.Add %1))) %0)]
 
-/-- info: ((~Int.Add ((~Int.Add #5) #100)) x) -/
-#guard_msgs in
-#eval format $ LExpr.eval (TBase:=TestParams) 10 LState.init
+
+def test10 := TestCase.mk
+  LState.init
   esM[(( ((λ(λ ((~Int.Add %1) %0)))) ((λ ((~Int.Add %0) #100)) #5)) x)]
+  esM[((~Int.Add ((~Int.Add #5) #100)) x)]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test10
 
 -- The small step semantics of this example will stuck in the middle because
 -- 'Int.Add %0 100' cannot be evaluated because the definition of Int.Add is
 -- not available in LState.init .
 
-/-- info: #50 -/
-#guard_msgs in
-#eval format $ LExpr.eval (TBase:=TestParams) 10 testState esM[((~Int.Add #20) #30)]
 
-example:
-  Lambda.StepStar testState.config.factory testState.state.toFreeVarMap
-    esM[((~Int.Add #20) #30)] esM[#50] := by
-  take_step; apply Step.eval_fn <;> discharge_isCanonicalValue
+def test11 := TestCase.mk
+  testState
+  esM[((~Int.Add #20) #30)]
+  esM[#50]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test11
+
+example: steps_well test11 := by
+  unfold steps_well Scopes.toEnv test11
+  take_step; apply Step.eval_fn <;> try discharge_isCanonicalValue
+  · inhabited_metadata
   take_refl
 
 
-/-- info: ((~Int.Add #105) x) -/
-#guard_msgs in
-#eval format $ LExpr.eval (TBase:=TestParams) 10 testState
+def test12 := TestCase.mk
+  testState
   esM[((((λ(λ (~Int.Add %1) %0))) ((λ ((~Int.Add %0) #100)) #5)) x)]
+  esM[((~Int.Add #105) x)]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test12
+
+example: steps_well test12 := by
+  unfold steps_well Scopes.toEnv test12
+  take_step; apply Step.reduce_1; inhabited_metadata; apply Step.reduce_2
+  · inhabited_metadata;
+  · discharge_isCanonicalValue
+  · reduce_beta
+  take_step; apply Step.reduce_1; inhabited_metadata; apply Step.reduce_2;
+  · inhabited_metadata;
+  · discharge_isCanonicalValue
+  · apply Step.eval_fn <;> try discharge_isCanonicalValue
+    · inhabited_metadata
+  take_step; apply Step.reduce_1; inhabited_metadata; reduce_beta
+  take_step; apply Step.reduce_1; inhabited_metadata; reduce_beta
+  take_refl
 
 /-- info: false -/
 #guard_msgs in
@@ -304,158 +374,261 @@ example:
 #guard_msgs in
 #eval LExpr.isCanonicalValue testState.config.factory esM[(~Int.Add #100)]
 
-example:
-  Lambda.StepStar testState.config.factory testState.state.toFreeVarMap
-    esM[((((λ(λ (~Int.Add %1) %0))) ((λ ((~Int.Add %0) #100)) #5)) x)]
-    esM[((~Int.Add #105) x)] := by
-  take_step; apply Step.reduce_1; apply Step.reduce_2
-  · discharge_isCanonicalValue
-  · reduce_beta
-  take_step; apply Step.reduce_1; apply Step.reduce_2
-  · discharge_isCanonicalValue
-  · apply Step.eval_fn <;> discharge_isCanonicalValue
-  take_step; apply Step.reduce_1; reduce_beta
-  take_step; apply Step.reduce_1; reduce_beta
-  take_refl
 
-
-/-- info: ((#f #20) #-5) -/
-#guard_msgs in
-#eval format $ LExpr.eval (TBase:=TestParams) 10 testState
+def test13 := TestCase.mk
+  testState
   esM[( ((λ(λ (#f %1) %0) #20)) ((λ (~Int.Neg %0)) #5))]
+  esM[((#f #20) #-5)]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test13
 
 -- The small step semantics of this example will stuck in the middle because
 -- '(#f 20) e' cannot be evaluated because the definition of #f is
 -- not available.
 
 
-/-- info: ((~Int.Add #20) (~Int.Neg x)) -/
-#guard_msgs in
-#eval format $ LExpr.eval (TBase:=TestParams) 10 testState
+def test14 := TestCase.mk
+  testState
   esM[( ((λ(λ (~Int.Add %1) %0)) #20) ((λ (~Int.Neg %0)) x))]
+  esM[((~Int.Add #20) (~Int.Neg x))]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test14
 
 -- The result stops at (.. ((λ (~Int.Neg %0)) x)) because definition of
 -- x is not available.
-example:
-  Lambda.StepStar testState.config.factory testState.state.toFreeVarMap
-    esM[( ((λ(λ (~Int.Add %1) %0)) #20) ((λ (~Int.Neg %0)) x))]
-    esM[((~Int.Add #20) ((λ (~Int.Neg %0)) x))]
+example: steps_well { test14 with e_out := esM[((~Int.Add #20) ((λ (~Int.Neg %0)) x))] }
   := by
-  take_step; apply Step.reduce_1; reduce_beta
-  take_step; apply Step.reduce_1; reduce_beta
+  unfold steps_well Scopes.toEnv test14
+  take_step; apply Step.reduce_1; inhabited_metadata; reduce_beta
+  take_step; apply Step.reduce_1; inhabited_metadata; reduce_beta
   take_refl
 
 
-/-- info: ((~Int.Add #20) (~Int.Neg x)) -/
-#guard_msgs in
-#eval format $ LExpr.eval (TBase:=TestParams) 10 testState esM[((~Int.Add #20) (~Int.Neg x))]
+def test15 := TestCase.mk
+  testState
+  esM[((~Int.Add #20) (~Int.Neg x))]
+  esM[((~Int.Add #20) (~Int.Neg x))]
 
-/-- info: ((~Int.Add x) #-30) -/
+/-- info: true -/
 #guard_msgs in
-#eval format $ LExpr.eval (TBase:=TestParams) 10 testState esM[((~Int.Add x) (~Int.Neg #30))]
+#eval check test15
 
-/-- info: #50 -/
+example: stuck test15 := by
+  intros e H
+  cases H <;> try contradiction
+  case reduce_2 =>
+    rename_i a
+    cases a <;> try contradiction
+    · rename_i a a2 _
+      cases a2; cases a
+    · rename_i a a2 a3
+      cases a3
+      conv at a => lhs ; reduce; unfold isCanonicalValue; reduce
+      contradiction
+  case expand_fn =>
+    rename_i a a2 a3
+    cases a2
+    contradiction
+  case eval_fn =>
+    rename_i a a2 a3
+    cases a3
+    conv at a => lhs ; reduce; unfold isCanonicalValue; reduce
+    contradiction
+
+
+def test16 := TestCase.mk
+  testState
+  esM[((~Int.Add x) (~Int.Neg #30))]
+  esM[((~Int.Add x) #-30)]
+
+/-- info: true -/
 #guard_msgs in
-#eval format $ LExpr.eval (TBase:=TestParams) 10 testState esM[((λ %0) ((~Int.Add #20) #30))]
+#eval check test16
 
-example:
-  Lambda.StepStar testState.config.factory testState.state.toFreeVarMap
-    esM[((λ %0) ((~Int.Add #20) #30))]
-    esM[(#50)]
-  := by
+-- test16 stucks because '~Int.Add x' isn't canonical value.
+example: stuck test16 := by
+  intros e H
+  cases H <;> try contradiction
+  case reduce_2 =>
+    rename_i a a2
+    conv at a => lhs; unfold isCanonicalValue; reduce; unfold isCanonicalValue; reduce
+    contradiction
+  case expand_fn =>
+    rename_i a a2 a3
+    cases a2
+    contradiction
+  case eval_fn =>
+    rename_i a a2 a3
+    cases a3
+    conv at a => lhs ; reduce; unfold isCanonicalValue; reduce
+    contradiction
+
+
+def test17 := TestCase.mk
+  testState
+  esM[((λ %0) ((~Int.Add #20) #30))]
+  esM[(#50)]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test17
+
+example: steps_well test17 := by
+  unfold steps_well Scopes.toEnv test17
   take_step; apply Step.reduce_2
+  · inhabited_metadata
   · discharge_isCanonicalValue
-  · apply Step.eval_fn <;> discharge_isCanonicalValue
+  · apply Step.eval_fn <;> try discharge_isCanonicalValue
+    · inhabited_metadata
   take_step; reduce_beta
   take_refl
 
 
+def test18 := TestCase.mk
+  testState
+  esM[((~Int.Div #300) ((~Int.Add #2) #1))]
+  esM[(#100)]
 
-/-- info: #100 -/
+/-- info: true -/
 #guard_msgs in
-#eval format $ LExpr.eval (TBase:=TestParams) 10 testState esM[((~Int.Div #300) ((~Int.Add #2) #1))]
+#eval check test18
 
-example:
-  Lambda.StepStar testState.config.factory testState.state.toFreeVarMap
-    esM[((~Int.Div #300) ((~Int.Add #2) #1))] esM[(#100)]
-  := by
+example: steps_well test18 := by
+  unfold steps_well Scopes.toEnv test18
   take_step; apply Step.reduce_2
+  · inhabited_metadata
   · discharge_isCanonicalValue
-  · apply Step.eval_fn <;> discharge_isCanonicalValue
-  take_step; apply Step.eval_fn <;> discharge_isCanonicalValue
+  · apply Step.eval_fn <;> try discharge_isCanonicalValue
+    · inhabited_metadata
+  take_step; apply Step.eval_fn <;> try discharge_isCanonicalValue
+  · inhabited_metadata
   take_refl
 
 
-/-- info: #0 -/
-#guard_msgs in
-#eval format $ LExpr.eval (TBase:=TestParams) 10 testState esM[((~Int.Add #3) (~Int.Neg #3))]
+def test19 := TestCase.mk
+  testState
+  esM[((~Int.Add #3) (~Int.Neg #3))]
+  esM[(#0)]
 
-example:
-  Lambda.StepStar testState.config.factory testState.state.toFreeVarMap
-    esM[((~Int.Add #3) (~Int.Neg #3))] esM[(#0)]
-  := by
+/-- info: true -/
+#guard_msgs in
+#eval check test19
+
+example: steps_well test19 := by
+  unfold steps_well Scopes.toEnv test19
   take_step
   · apply Step.reduce_2
+    · inhabited_metadata
     · discharge_isCanonicalValue
-    · apply Step.eval_fn <;> discharge_isCanonicalValue
+    · apply Step.eval_fn <;> try discharge_isCanonicalValue
+      · inhabited_metadata
   take_step
   · apply Step.eval_fn <;> try rfl
+    · inhabited_metadata
     · conv => lhs; reduce; unfold isCanonicalValue; reduce
   take_refl
 
-/-- info: #0 -/
-#guard_msgs in
-#eval format $ LExpr.eval (TBase:=TestParams) 10 testState esM[((~Int.Add (~Int.Neg #3)) #3)]
 
-example:
-  Lambda.StepStar testState.config.factory testState.state.toFreeVarMap
-    esM[((~Int.Add (~Int.Neg #3)) #3)] esM[(#0)]
-  := by
-  take_step; apply Step.reduce_1; apply Step.reduce_2
-  · discharge_isCanonicalValue
-  · apply Step.eval_fn <;> discharge_isCanonicalValue
-  take_step; apply Step.eval_fn <;> discharge_isCanonicalValue
+def test20 := TestCase.mk
+  testState
+  esM[((~Int.Add (~Int.Neg #3)) #3)]
+  esM[(#0)]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test20
+
+example: steps_well test20 := by
+  unfold steps_well Scopes.toEnv test20
+  take_step; apply Step.reduce_1
+  · inhabited_metadata
+  · apply Step.reduce_2
+    · inhabited_metadata
+    · discharge_isCanonicalValue
+    · apply Step.eval_fn <;> try discharge_isCanonicalValue
+      · inhabited_metadata
+  take_step; apply Step.eval_fn <;> try discharge_isCanonicalValue
+  · inhabited_metadata
   take_refl
 
-/-- info: ((~Int.Div #300) #0) -/
-#guard_msgs in
-#eval format $ LExpr.eval (TBase:=TestParams) 10 testState esM[((~Int.Div #300) ((~Int.Add #3) (~Int.Neg #3)))]
 
-example:
-  Lambda.StepStar testState.config.factory testState.state.toFreeVarMap
-    esM[((~Int.Div #300) ((~Int.Add #3) (~Int.Neg #3)))]
-    esM[((~Int.Div #300) #0)]
-  := by
+def test21 := TestCase.mk
+  testState
+  esM[((~Int.Div #300) ((~Int.Add #3) (~Int.Neg #3)))]
+  esM[((~Int.Div #300) #0)]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test21
+
+example: steps_well test21 := by
+  unfold steps_well Scopes.toEnv test21
   take_step; apply Step.reduce_2
+  · inhabited_metadata
   · discharge_isCanonicalValue
   · apply Step.reduce_2
+    · inhabited_metadata
     · discharge_isCanonicalValue
-    · apply Step.eval_fn <;> discharge_isCanonicalValue
+    · apply Step.eval_fn <;> try discharge_isCanonicalValue
+      · inhabited_metadata
   take_step; apply Step.reduce_2
+  · inhabited_metadata
   · discharge_isCanonicalValue
-  · apply Step.eval_fn <;> discharge_isCanonicalValue
+  · apply Step.eval_fn <;> try discharge_isCanonicalValue
+    · inhabited_metadata
   take_refl
 
-/-- info: ((~Int.Div x) #3) -/
-#guard_msgs in
-#eval format $ LExpr.eval (TBase:=TestParams) 10 testState esM[((~Int.Div x) ((~Int.Add #2) #1))]
 
-/-- info: ((~Int.Le #100) x) -/
-#guard_msgs in
-#eval format $ LExpr.eval (TBase:=TestParams) 200 testState
-                esM[((~Int.Le ((~Int.Div #300) ((~Int.Add #2) #1))) x)]
+def test22 := TestCase.mk
+  testState
+  esM[((~Int.Div x) ((~Int.Add #2) #1))]
+  esM[((~Int.Div x) #3)]
 
-/--
-info: ((~Int.Le ((~Int.Div #300) ((~Int.Add #2) y))) x)
--/
+/-- info: true -/
 #guard_msgs in
-#eval format $ LExpr.eval (TBase:=TestParams) 200 testState
-                esM[((~Int.Le ((~Int.Div #300) ((~Int.Add #2) y))) x)]
+#eval check test22
 
-/-- info: ((~Int.Div x) x) -/
+-- TODO: steps_well proof of test22
+
+
+def test23 := TestCase.mk
+  testState
+  esM[((~Int.Le ((~Int.Div #300) ((~Int.Add #2) #1))) x)]
+  esM[((~Int.Le #100) x)]
+
+/-- info: true -/
 #guard_msgs in
-#eval format $ LExpr.eval (TBase:=TestParams) 200 testState
-                esM[((~Int.Div x) x)]
+#eval check test23
+
+-- TODO: steps_well proof of test23
+
+
+def test24 := TestCase.mk
+  testState
+  esM[((~Int.Le ((~Int.Div #300) ((~Int.Add #2) y))) x)]
+  esM[((~Int.Le ((~Int.Div #300) ((~Int.Add #2) y))) x)]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test24
+
+-- TODO: steps_well proof of test24
+
+
+def test25 := TestCase.mk
+  testState
+  esM[((~Int.Div x) x)]
+  esM[((~Int.Div x) x) ]
+
+/-- info: true -/
+#guard_msgs in
+#eval check test25
+
+-- TODO: steps_well proof of test25
 
 
 end EvalTest
