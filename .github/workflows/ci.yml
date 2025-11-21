@@ -94,16 +94,6 @@ jobs:
         working-directory: StrataTest/Languages/Python
         shell: bash
         run: ./run_py_analyze.sh
-      - name: Install CBMC
-        shell: bash
-        run: |
-          wget https://github.com/diffblue/cbmc/releases/download/cbmc-6.4.1/ubuntu-22.04-cbmc-6.4.1-Linux.deb
-          sudo dpkg -i ubuntu-22.04-cbmc-6.4.1-Linux.deb
-      - name: Run CBMC tests
-        shell: bash
-        run: |
-          export CBMC_DIR="/usr/bin/"
-          ./Strata/Backends/CBMC/run_strata_cbmc.sh Strata/Backends/CBMC/tests/simpleTest.csimp.st
 
   lint_checks:
     name: Run lint checks
@@ -163,3 +153,8 @@ jobs:
     - name: Run test script
       run: ./scripts/run_cpython_tests.sh
       working-directory: Tools/Python
+
+  cbmc:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/cbmc.yml
