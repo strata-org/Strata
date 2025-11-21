@@ -46,13 +46,13 @@ def genIdent (ident : Expression.Ident) (pf : String → String)
 /--
 Generate identifiers in the form of arg_... that can be used to reduce argument expressions to temporary variables.
 -/
-def genArgExprIdent (_ : Expression.Expr)
+def genArgExprIdent
   : BoogieGenM Expression.Ident :=
     genIdent "arg" tmpVarPrefix
 
-def genArgExprIdents (exprs : List Expression.Expr)
-  : BoogieGenM (List Expression.Ident)
-  := List.mapM genArgExprIdent exprs
+def genArgExprIdents (n:Nat)
+  : BoogieGenM (List Expression.Ident) :=
+  List.mapM (fun _ => genArgExprIdent) (List.replicate n ())
 
 /--
 Retrieves a fresh identifier from the counter generator the given identifier "ident" within old(...), or retrieve an existing one from the exprMap
@@ -105,6 +105,7 @@ def getIdentTys! (p : Program) (ids : List Expression.Ident)
 /--
 returned list has the shape
 ((generated_name, ty), original_expr)
+Only types of the 'inputs' parameter are used
 -/
 def genArgExprIdentsTrip
   (inputs : @Lambda.LTySignature Visibility)
@@ -112,12 +113,13 @@ def genArgExprIdentsTrip
   : CallElimM (List ((Expression.Ident × Lambda.LTy) × Expression.Expr))
   := do
   if inputs.length ≠ args.length then throw "input length and args length mismatch"
-  else let gen_idents ← genArgExprIdents args
+  else let gen_idents ← genArgExprIdents args.length
        return (gen_idents.zip inputs.unzip.2).zip args
 
 /--
 returned list has the shape
 `((generated_name, ty), original_name)`
+Only types of the 'outputs' parameter are used.
 -/
 def genOutExprIdentsTrip
   (outputs : @Lambda.LTySignature Visibility)
@@ -319,6 +321,26 @@ partial def Statement.substFvar (s : Boogie.Statement)
   | .goto _ _ => s
 end
 
+mutual
+partial def Block.renameLhs (b : Block) (fr:String) (to:String) : Block :=
+  { b with ss := List.map (fun s => Statement.renameLhs s fr to) b.ss }
+
+partial def Statement.renameLhs (s : Boogie.Statement) (fr:String) (to:String)
+    : Statement :=
+  match s with
+  | .init lhs ty rhs metadata =>
+    .init (if lhs.name == fr then { lhs with name := to } else lhs) ty rhs metadata
+  | .set lhs rhs metadata =>
+    .set (if lhs.name == fr then { lhs with name := to } else lhs) rhs metadata
+  | .call lhs pname args metadata =>
+    .call (lhs.map (fun l =>
+      if l.name == fr  then { l with name := to } else l)) pname args metadata
+  | .block lbl b metadata =>
+    .block lbl (Block.renameLhs b fr to) metadata
+  | .havoc _ _ | .assert _ _ _ | .assume _ _ _ | .ite _ _ _ _
+  | .loop _ _ _ _ _ | .goto _ _ => s
+end
+
 /--
 If st is a call statement, inline the contents of the callee procedure.
 This is under the assumption that, the input and output parameters are not
@@ -343,7 +365,7 @@ def inlineCallStmt (st: Statement) (p : Program)
         let sigOutputs := LMonoTySignature.toTrivialLTy proc.header.outputs
 
         -- Create a var statement for each LHS variable of the call statement.
-        let lhsTrips /-(new id, ty, prev name)-/ ← genOutExprIdentsTrip
+        let lhsTrips /-(new id, ty, prev id)-/ ← genOutExprIdentsTrip
           sigOutputs lhs
         let lhsInit := createInitVars
           (lhsTrips.map (fun ((tmpvar,ty),orgvar) => ((orgvar,ty),tmpvar)))
@@ -351,23 +373,32 @@ def inlineCallStmt (st: Statement) (p : Program)
         -- Create a var statement for each procedure input arguments.
         -- Create fresh variable names to avoid name collision.
         -- The input parameter expression is assigned to these new vars.
-        let argTrips ← genArgExprIdentsTrip sigInputs args
-        let inputInit := createInits argTrips
+        let inputTrips ← genArgExprIdentsTrip sigInputs args
+        let inputInit := createInits inputTrips
 
-        -- Create a var statement for each procedure output arguments.
-        let outputTrips ← genOutExprIdentsTrip sigOutputs (sigOutputs.unzip.1)
+        -- Create a fresh var statement for each procedure output arguments.
+        let freshVarsForOutput ← genArgExprIdents (sigOutputs.length)
+        let outputTrips ← genOutExprIdentsTrip sigOutputs freshVarsForOutput
         let outputInit := createInitVars
           (outputTrips.map (fun ((tmpvar,ty),orgvar) => ((orgvar,ty),tmpvar)))
 
-        -- Replace all input parameters with the fresh variable names.
+        -- Replace all input and output parameters with the fresh variable
+        -- names. The code is under the assumption that no local variables
+        -- have the same name as input/output parameters.
         let newBody := List.foldl
-          (fun body (new_ident, original_ident) =>
+          (fun body ((new_ident:Expression.Ident), (original_ident,_)) =>
             let new_expr:LExpr LMonoTy Visibility :=
-              .fvar (new_ident.fst.fst) .none
+              .fvar new_ident .none
             List.map
-              (fun stmt => Statement.substFvar stmt original_ident.fst new_expr)
+              (fun stmt =>
+                let st := Statement.substFvar stmt original_ident new_expr
+                let res := Statement.renameLhs st original_ident.name
+                  new_ident.name
+                res
+              )
               body)
-          proc.body (argTrips.zip sigInputs)
+          proc.body ((inputTrips.unzip.fst.unzip.fst.zip sigInputs) ++
+                     (outputTrips.unzip.snd.zip sigOutputs))
 
         -- Assign the output variables in the signature to the actual output
         -- variables used in the callee.

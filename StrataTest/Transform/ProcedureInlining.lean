@@ -42,9 +42,9 @@ procedure h() returns () {
   var b_out : bool;
   inlined: {
     var tmp_arg_0 : bool := b_in;
-    var y : bool;
-    y := !b_in;
-    b_out := y;
+    var tmp_arg_1 : bool;
+    tmp_arg_1 := !tmp_arg_0;
+    b_out := tmp_arg_1;
   }
 };
 
