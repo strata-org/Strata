@@ -616,7 +616,7 @@ def test24 := TestCase.mk
 #guard_msgs in
 #eval check test24
 
--- TODO: steps_well proof of test24
+-- TODO: stuck proof of test24
 
 
 def test25 := TestCase.mk
@@ -628,7 +628,7 @@ def test25 := TestCase.mk
 #guard_msgs in
 #eval check test25
 
--- TODO: steps_well proof of test25
+-- TODO: stuck proof of test25
 
 
 end EvalTest
