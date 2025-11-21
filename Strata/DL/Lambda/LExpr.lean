@@ -195,7 +195,8 @@ theorem LExpr.beq_eq {T : LExprParamsT} [DecidableEq T.base.Metadata] [Decidable
   (e1 e2 : LExpr T) : LExpr.beq e1 e2 = true ↔ e1 = e2 := by
   constructor
   · -- Soundness: beq = true → e1 = e2
-    intro h; induction e1 generalizing e2 <;> solve | unfold beq at h; cases e2 <;> grind
+    intro h; induction e1 generalizing e2 <;>
+    (unfold beq at h; cases e2 <;> grind)
   · -- Completeness: e1 = e2 → beq = true
     intros h; rw[h]; induction e2 generalizing e1 <;> simp only [LExpr.beq] <;> grind
 
