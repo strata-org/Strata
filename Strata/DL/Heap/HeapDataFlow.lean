@@ -174,6 +174,17 @@ instance : DataFlowCapable HExpr where
         (DataLocation.variable "ite_result")
         "conditional_else"]
 
+    | .deferredEq e1 e2 =>
+      -- Equality expression - data flows from both operands to result
+      [DataFlow.mk
+        (extractDataLocation e1)
+        (DataLocation.variable "eq_result")
+        "equality_lhs",
+       DataFlow.mk
+        (extractDataLocation e2)
+        (DataLocation.variable "eq_result")
+        "equality_rhs"]
+
   getExternalCalls (expr : HExpr) : List (String × List DataLocation × List DataLocation) :=
     -- HeapStrata doesn't directly represent external calls
     -- They would be handled at the HeapStrataStatement level
