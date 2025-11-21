@@ -2349,7 +2349,7 @@ theorem substsOldCorrect :
   simp
   exact List.Disjoint_cons_tail H.right
 
-theorem genArgExprIdent_len' : (List.mapM genArgExprIdent t s).fst.length = t.length := by
+theorem genArgExprIdent_len' : (List.mapM (fun _ => genArgExprIdent) t s).fst.length = t.length := by
   induction t generalizing s <;> simp_all
   case nil =>
     simp [pure, StateT.pure]
@@ -2359,12 +2359,12 @@ theorem genArgExprIdent_len' : (List.mapM genArgExprIdent t s).fst.length = t.le
     simp [StateT.map, Functor.map]
     apply ih
 
-theorem genArgExprIdent_len : List.mapM genArgExprIdent t s = (a, s') → t.length = a.length := by
+theorem genArgExprIdent_len : List.mapM (fun _ => genArgExprIdent) t s = (a, s') → t.length = a.length := by
   intros Hgen
-  generalize Heq : List.mapM genArgExprIdent t s = res at Hgen
+  generalize Heq : List.mapM (fun _ => genArgExprIdent) t s = res at Hgen
   cases res with
   | mk fst snd =>
-  have Heq' : (List.mapM genArgExprIdent t s).fst = fst := by simp [Heq]
+  have Heq' : (List.mapM (fun _ => genArgExprIdent) t s).fst = fst := by simp [Heq]
   cases Hgen
   simp [← Heq']
   symm
@@ -2439,7 +2439,7 @@ theorem genArgExprIdentsTrip_snd :
     simp [genArgExprIdents] at heq
     induction args <;> simp_all
     case cons h t ih =>
-    simp [bind, StateT.bind, Functor.map, StateT.map] at heq
+    simp [bind, List.replicate, StateT.bind, Functor.map, StateT.map] at heq
     rw [List.map_snd_zip]
     simp
     split at heq
@@ -2450,8 +2450,11 @@ theorem genArgExprIdentsTrip_snd :
     next a'' e'' heq'' =>
     cases heq
     simp_all
-    rw [genArgExprIdent_len (t:=t) (a:=a'')] <;> try assumption
-    simp_all
+    have Hlen: t.length = (List.replicate t.length ()).length := by
+      solve | simp
+    rw [Hlen]
+    rw [genArgExprIdent_len (t:=List.replicate t.length ()) (a:=a'')] <;> try assumption
+    omega
   . simp [throw, throwThe, MonadExceptOf.throw, ExceptT.mk, pure, StateT.pure] at Hgen
     cases Hgen
 
@@ -2652,7 +2655,7 @@ case cons h t ih =>
 /--! Theorems about well-formedness of BoogieGen -/
 
 theorem genArgExprIdentTemp :
-  genArgExprIdent e s = (l, s') → BoogieIdent.isTemp l :=
+  genArgExprIdent s = (l, s') → BoogieIdent.isTemp l :=
   fun Hgen => by exact genBoogieIdentTemp Hgen
 
 theorem genOutExprIdentTemp :
@@ -2671,36 +2674,36 @@ theorem genIdentGeneratedWF :
   fun Hgen => genBoogieIdentGeneratedWF Hgen
 
 theorem genArgExprIdentGeneratedWF :
-  genArgExprIdent e s = (l, s') → s'.generated = l :: s.generated :=
+  genArgExprIdent s = (l, s') → s'.generated = l :: s.generated :=
   fun Hgen => genBoogieIdentGeneratedWF Hgen
 
 theorem genArgExprIdentsGeneratedWF :
-  genArgExprIdents es s = (ls, s') →
+  genArgExprIdents n s = (ls, s') →
   ls.reverse ++ s.generated = s'.generated
   := by
   intros Hgen
   simp [genArgExprIdents] at Hgen
-  induction es generalizing s ls s' <;> simp at Hgen
-  case nil =>
+  induction n generalizing s ls s'
+  case zero =>
+    rw [List.replicate_zero] at Hgen
     simp [StateT.pure, pure] at Hgen
     cases Hgen <;> simp_all
-  case cons h t ih =>
-    simp [bind, StateT.bind, Functor.map, StateT.map, pure] at Hgen
+  case succ n =>
+    simp only [List.replicate] at Hgen
+    simp [bind, StateT.bind, pure] at Hgen
     split at Hgen
     next a s₁ heq =>
     split at Hgen
     next a' s₂ heq' =>
     cases Hgen
     have HH := genArgExprIdentGeneratedWF heq
-    specialize ih heq'
-    simp [HH] at ih
-    simp_all
+    grind
 
 theorem genArgExprIdentsTripGeneratedWF { s s' : BoogieGenState } :
   genArgExprIdentsTrip outs xs s = (Except.ok trips, s') →
   trips.unzip.1.unzip.1.reverse ++ s.generated = s'.generated := by
   intros Hgen
-  apply genArgExprIdentsGeneratedWF (es:=xs)
+  apply genArgExprIdentsGeneratedWF (n:=xs.length)
   simp [genArgExprIdentsTrip] at *
   split at Hgen
   . simp [Functor.map, ExceptT.map, bind,
@@ -2729,29 +2732,30 @@ theorem genArgExprIdentsTripGeneratedWF { s s' : BoogieGenState } :
 
 theorem genArgExprIdentWFMono :
   BoogieGenState.WF s →
-  genArgExprIdent e s = (l, s') →
+  genArgExprIdent s = (l, s') →
   BoogieGenState.WF s' :=
   fun Hgen => BoogieGenState.WFMono' Hgen
 
 theorem genArgExprIdentsWFMono :
   BoogieGenState.WF s →
-  genArgExprIdents es s = (ls, s') →
+  genArgExprIdents n s = (ls, s') →
   BoogieGenState.WF s' := by
   intros Hwf Hgen
   simp [genArgExprIdents] at Hgen
-  induction es generalizing s ls s' <;> simp at Hgen
-  case nil =>
+  induction n generalizing s ls s'
+  case zero =>
     simp [StateT.pure, pure] at Hgen
     cases Hgen <;> simp_all
-  case cons h t ih =>
-    simp [bind, StateT.bind, Functor.map, StateT.map, pure] at Hgen
+  case succ n' =>
+    simp only [List.replicate] at Hgen
+    simp [bind, StateT.bind, pure] at Hgen
     split at Hgen
     next a s₁ heq =>
     split at Hgen
     next a' s₂ heq' =>
     cases Hgen
     have HH := genArgExprIdentWFMono Hwf heq
-    exact ih HH heq'
+    grind
 
 theorem genArgExprIdentsTripWFMono :
   BoogieGenState.WF s →
@@ -2769,7 +2773,7 @@ theorem genArgExprIdentsTripWFMono :
       simp [pure, StateT.pure] at Hgen
       cases Hgen
       simp [StateT.map, Functor.map] at heq
-      generalize Hgen' : (genArgExprIdents xs s) = gen at heq
+      generalize Hgen' : (genArgExprIdents xs.length s) = gen at heq
       cases gen with
       | mk fst snd =>
       simp at heq

@@ -287,13 +287,13 @@ bodies -/
 def callElim' (p : Program) : CallElimM Program := return { decls := (← (callElimL p.decls p)) }
 
 mutual
-partial def Block.substFvar (b : Block) (fr:Lambda.Identifier Visibility)
-      (to:Lambda.LExpr Lambda.LMonoTy Visibility) : Block :=
+partial def Block.substFvar (b : Block) (fr:Expression.Ident)
+      (to:Expression.Expr) : Block :=
   { b with ss := List.map (fun s => Statement.substFvar s fr to) b.ss }
 
 partial def Statement.substFvar (s : Boogie.Statement)
-      (fr:Lambda.Identifier Visibility)
-      (to:Lambda.LExpr Lambda.LMonoTy Visibility) : Statement :=
+      (fr:Expression.Ident)
+      (to:Expression.Expr) : Statement :=
   match s with
   | .init lhs ty rhs metadata =>
     .init lhs ty (Lambda.LExpr.substFvar rhs fr to) metadata
@@ -387,8 +387,7 @@ def inlineCallStmt (st: Statement) (p : Program)
         -- have the same name as input/output parameters.
         let newBody := List.foldl
           (fun body ((new_ident:Expression.Ident), (original_ident,_)) =>
-            let new_expr:LExpr LMonoTy Visibility :=
-              .fvar new_ident .none
+            let new_expr:Expression.Expr := .fvar () new_ident .none
             List.map
               (fun stmt =>
                 let st := Statement.substFvar stmt original_ident new_expr
@@ -406,7 +405,7 @@ def inlineCallStmt (st: Statement) (p : Program)
           let outs_lhs_and_sig := List.zip lhs sigOutputs
           List.map
             (fun (lhs_var,sig_ident,_) =>
-              Statement.set lhs_var (.fvar sig_ident (.none)))
+              Statement.set lhs_var (.fvar () sig_ident (.none)))
             outs_lhs_and_sig
 
         let stmts:List (Imperative.Stmt Boogie.Expression Boogie.Command)
