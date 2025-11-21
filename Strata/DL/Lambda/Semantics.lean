@@ -15,7 +15,6 @@ namespace Lambda
 
 variable {Tbase : LExprParams} [DecidableEq Tbase.Metadata]
     [DecidableEq Tbase.Identifier] [DecidableEq Tbase.IDMeta]
-    [Traceable LExpr.EvalProvenance Tbase.Metadata]
 
 open Lambda
 
@@ -126,8 +125,7 @@ inductive Step (F:@Factory Tbase) (rf:Env Tbase)
     Step F rf e (denotefn (LExpr.mkApp m callee args) args)
 
 
-omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier]
-     [Traceable LExpr.EvalProvenance Tbase.Metadata] in
+omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
 theorem step_const_stuck:
   ∀ (F:@Factory Tbase) r x e,
   ¬ Step F r (.const m x) e := by

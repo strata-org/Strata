@@ -104,7 +104,8 @@ def mkAbsOfArity (arity : Nat) (core : LExpr T) : (LExpr T) :=
     go (bvarcount + 1) n (.abs core.metadata .none (.app core.metadata core (.bvar core.metadata bvarcount)))
 
 /--
-A metadata merger. It will create a new metadata when 'subst s e'
+A metadata merger. It will be invoked 'subst s e' is invoked, to create a new
+metadata.
 -/
 def mergeMetadataForSubst (metaAbs metaE2 metaReplacementVar: TBase.Metadata) :=
   Traceable.combine
