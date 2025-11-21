@@ -32,6 +32,13 @@ fn bfalse : Expression => "false";
 
 fn id (name : Ident) : Expression => name;
 
+fn functionCall (name : Ident, args : CommaSepList Expr) : Expression => name "(" args ")";
+
+fn letExpr (name : Ident, value : Expr, body : Expr) : Expression =>
+  @[prec(2)] "val " name " := " value:0 " " body:2;
+
+fn labeledExpr (label : Ident, e : Expr) : Expression => @[prec(1)] label ": " e:1;
+
 fn ite (c : Expr, t : Expr, f : Expr) : Expression => @[prec(3)] "if " c:0 " then " t:3 " else " f:3;
 fn iff (a : Expr, b : Expr) : Expression => @[prec(4)] a " <==> " b;
 fn implies (a : Expr, b : Expr) : Expression => @[prec(5), rightassoc] a " ==> " b;
@@ -64,19 +71,23 @@ op assert (c : Expr) : Statement => "assert " c "\n";
 
 category Else;
 op else_none () : Else => "";
-op else_some (s : Statement) : Else => " else " s;
+op else_some (s : Statement) : Else => " else " s:40;
 
 op if_statement (c : Expr, t : Statement, f : Else) : Statement =>
-  "if " c " " t f;
+  "if " c:0 " " t:40 f;
 
 category Invariant;
-op invariant (e : Expr) : Invariant => "\n  invariant " e;
+op invariant (e : Expr) : Invariant => "\n  invariant " e:0;
 
 op loop_statement (invs : Seq Invariant, body : Statement) : Statement =>
-  "loop" invs " " body;
+  "loop" invs " " body:40;
 
 op exit_statement (label : Option Ident) : Statement => "exit " label "\n";
 op return_statement () : Statement => "return";
+
+op labeled_statement (label : Ident, s : Statement) : Statement => label ": " s;
+
+op probe (name : Ident) : Statement => "probe " name "\n";
 
 op block (c : Seq Statement) : Statement => "{\n" indent(2, c:40) "}\n";
 

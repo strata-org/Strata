@@ -252,6 +252,25 @@ info: if true then 1 else 0
 #guard_msgs in
 #eval formatExpr $ .ite () (.btrue ()) (.natLit () ⟨(), 1⟩) (.natLit () ⟨(), 0⟩)
 
+/--
+info: foo(x, y)
+-/
+#guard_msgs in
+#eval formatExpr $ .functionCall () ⟨(), "foo"⟩ ⟨(), #[.id () ⟨(), "x"⟩, .id () ⟨(), "y"⟩]⟩
+
+/--
+info: val temp := 10 temp + x
+-/
+#guard_msgs in
+#eval formatExpr $ .letExpr () ⟨(), "temp"⟩ (.natLit () ⟨(), 10⟩)
+  (.add () (.id () ⟨(), "temp"⟩) (.id () ⟨(), "x"⟩))
+
+/--
+info: important: result
+-/
+#guard_msgs in
+#eval formatExpr $ .labeledExpr () ⟨(), "important"⟩ (.id () ⟨(), "result"⟩)
+
 end ExpressionFormatTests
 
 -- Helper to convert OperationF Unit to OperationF SourceRange
@@ -301,6 +320,78 @@ info: return
 -/
 #guard_msgs in
 #eval formatStmt $ .return_statement ()
+
+/--
+info: {
+x := 1
+  y := 2
+  }
+-/
+#guard_msgs in
+#eval formatStmt $ Statement.block () ⟨(), #[
+  Statement.assign () ⟨(), "x"⟩ (Expr.natLit () ⟨(), 1⟩),
+  Statement.assign () ⟨(), "y"⟩ (Expr.natLit () ⟨(), 2⟩)
+]⟩
+
+/--
+info: if flag x := 1
+( else {
+x := 0
+  }
+)
+-/
+#guard_msgs in
+#eval formatStmt $ Statement.if_statement ()
+  (Expr.id () ⟨(), "flag"⟩)
+  (Statement.assign () ⟨(), "x"⟩ (Expr.natLit () ⟨(), 1⟩))
+  (Else.else_some () (Statement.block () ⟨(), #[Statement.assign () ⟨(), "x"⟩ (Expr.natLit () ⟨(), 0⟩)]⟩))
+
+/--
+info: loop {
+i := i + 1
+  }
+-/
+#guard_msgs in
+#eval formatStmt $ Statement.loop_statement () ⟨(), #[]⟩
+  (Statement.block () ⟨(), #[
+    Statement.assign () ⟨(), "i"⟩
+      (Expr.add () (Expr.id () ⟨(), "i"⟩) (Expr.natLit () ⟨(), 1⟩))
+  ]⟩)
+
+/--
+info: loop
+  invariant i >= 0
+  invariant i <= n {
+i := i + 1
+  }
+-/
+#guard_msgs in
+#eval formatStmt $ Statement.loop_statement ()
+  ⟨(), #[Invariant.invariant () (Expr.ge () (Expr.id () ⟨(), "i"⟩) (Expr.natLit () ⟨(), 0⟩)),
+    Invariant.invariant () (Expr.le () (Expr.id () ⟨(), "i"⟩) (Expr.id () ⟨(), "n"⟩))]⟩
+  (Statement.block () ⟨(), #[
+    Statement.assign () ⟨(), "i"⟩
+      (Expr.add () (Expr.id () ⟨(), "i"⟩) (Expr.natLit () ⟨(), 1⟩))
+  ]⟩)
+
+/--
+info: exit loop_start
+-/
+#guard_msgs in
+#eval formatStmt $ Statement.exit_statement () ⟨(), some ⟨(), "loop_start"⟩⟩
+
+/--
+info: loop_start: x := 0
+-/
+#guard_msgs in
+#eval formatStmt $ Statement.labeled_statement () ⟨(), "loop_start"⟩
+  (Statement.assign () ⟨(), "x"⟩ (Expr.natLit () ⟨(), 0⟩))
+
+/--
+info: probe debug_point
+-/
+#guard_msgs in
+#eval formatStmt $ Statement.probe () ⟨(), "debug_point"⟩
 
 end StatementFormatTests
 
