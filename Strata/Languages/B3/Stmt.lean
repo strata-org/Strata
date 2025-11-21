@@ -36,7 +36,7 @@ inductive Stmt (P : StmtParams) : Type where
   | assign      (md : P.Metadata) (lhs : P.Identifier) (rhs : Expression P.exprParams)
   | reinit      (md : P.Metadata) (name : P.Identifier)
   | blockStmt   (md : P.Metadata) (stmts : List (Stmt P))
-  | call        (md : P.Metadata) (lhs : List P.Identifier) (procName : String) (args : List (CallArg P))
+  | call        (md : P.Metadata) (procName : String) (args : List (CallArg P))
   -- assertions
   | check       (md : P.Metadata) (expr : Expression P.exprParams)
   | assume      (md : P.Metadata) (expr : Expression P.exprParams)
@@ -69,7 +69,7 @@ def Stmt.sizeOf : Stmt P → Nat
   | .assign _ _ rhs => 1 + rhs.sizeOf
   | .reinit _ _ => 1
   | .blockStmt _ stmts => 1 + Stmt.sizeOfList stmts
-  | .call _ lhs _ args => 1 + lhs.length + CallArg.sizeOfList args
+  | .call _ _ args => 1 + CallArg.sizeOfList args
   | .check _ expr => 1 + expr.sizeOf
   | .assume _ expr => 1 + expr.sizeOf
   | .reach _ expr => 1 + expr.sizeOf
@@ -120,9 +120,8 @@ partial def Stmt.format [ToFormat P.Metadata] [ToFormat P.exprParams.Metadata] [
   | .blockStmt _ stmts =>
     let stmtFormats := stmts.map fun s => format s
     "{" ++ (Format.nest 2 $ (Format.line ++ Format.joinSep stmtFormats Format.line)) ++ Format.line ++ "}"
-  | .call _ lhs procName args =>
-    let lhsStr := if lhs.isEmpty then Format.nil else Format.joinSep (lhs.map ToFormat.format) ", " ++ " := "
-    lhsStr ++ f!"{procName}({Format.joinSep (args.map CallArg.format) ", "})"
+  | .call _ procName args =>
+    f!"{procName}({Format.joinSep (args.map CallArg.format) ", "})"
   | .check _ expr => f!"check {expr.format}"
   | .assume _ expr => f!"assume {expr.format}"
   | .reach _ expr => f!"reach {expr.format}"
