@@ -49,11 +49,6 @@ are only left with `old(var)` expressions:
 2. Any `old(var)` in the postcondition of a procedure `Q` that is called in `P`
    can be replaced by the value of `var` immediately before `Q`'s call.
 -/
-
-inductive OldProvenance: Type where
-  | AutoOldWrapping
-
-
 @[match_pattern]
 def oldExpr
   (mApp: ExpressionMetadata)

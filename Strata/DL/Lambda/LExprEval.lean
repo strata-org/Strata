@@ -19,8 +19,8 @@ open Std (ToFormat Format format)
 
 namespace LExpr
 
-variable {T : LExprParamsT} {TBase : LExprParams} [BEq T.base.Metadata] [BEq T.base.IDMeta] [BEq T.TypeType] [DecidableEq T.base.Metadata] [DecidableEq TBase.IDMeta] [ToFormat T.base.Metadata]
-         [Inhabited T.base.IDMeta] [BEq T.base.IDMeta] [DecidableEq T.base.IDMeta] [ToFormat T.base.IDMeta] [Traceable EvalProvenance TBase.Metadata]
+variable {T : LExprParamsT} {TBase : LExprParams} [BEq T.TypeType] [DecidableEq T.base.Metadata] [DecidableEq TBase.IDMeta] [ToFormat T.base.Metadata]
+         [Inhabited T.base.IDMeta] [DecidableEq T.base.IDMeta] [ToFormat T.base.IDMeta] [Traceable EvalProvenance TBase.Metadata]
 
 inductive EvalProvenance
   | Original -- The metadata of the original expression
@@ -104,6 +104,8 @@ expressions, along with supporting dynamically-typed languages.
 
 Currently evaluator only supports LExpr with LMonoTy because LFuncs registered
 at Factory must have LMonoTy.
+
+TODO: Once we are on Lean 4.25 or more, we ought to be able to remove the "partial" because this fix should have been merged https://github.com/leanprover/lean4/issues/10353
 -/
 partial def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
     : LExpr TBase.mono :=

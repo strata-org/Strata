@@ -145,7 +145,7 @@ def varClose {T} {GenericTy} [BEq (Identifier T.IDMeta)] [BEq GenericTy] (k : Na
   | .eq m e1 e2 => .eq m (varClose k x e1) (varClose k x e2)
 
 
-theorem varClose_of_varOpen [BEq T.IDMeta] [ReflBEq T.IDMeta] [LawfulBEq T.IDMeta] [BEq T.Metadata] [ReflBEq T.Metadata] [BEq GenericTy] [ReflBEq GenericTy] [LawfulBEq GenericTy]  (h : fresh x e) :
+theorem varClose_of_varOpen [LawfulBEq T.IDMeta] [BEq T.Metadata] [ReflBEq T.Metadata] [BEq GenericTy] [ReflBEq GenericTy] [LawfulBEq GenericTy]  (h : fresh x e) :
   varClose (T := T) (GenericTy := GenericTy) i x (varOpen i x e) = e := by
   induction e generalizing i x
   all_goals try simp_all [fresh, varOpen, LExpr.substK, varClose, freeVars]

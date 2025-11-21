@@ -629,7 +629,6 @@ open LTy.Syntax in
 #eval LMonoTy.aliasDef? mty[myAlias int bool]
                     ( (@TEnv.default String).updateContext
                       { aliases := [{
-
                         typeArgs := ["a", "b"],
                         name := "myAlias",
                         type := mty[myDef %a]}] })
@@ -712,7 +711,6 @@ open LTy.Syntax in
                                         typeArgs := ["x", "y"],
                                         name := "FooAlias",
                                         type := mty[bool]}]} )
-
       |>.fst |>.format
 
 mutual

@@ -269,8 +269,8 @@ theorem LExpr.beq_eq {T : LExprParamsT} [DecidableEq T.base.Metadata] [Decidable
         simp only [Bool.and_eq_true] at h
         rcases h with ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩
         simp only [beq_iff_eq] at h1 h2 h3
-        have h4' := ih1 tr2 h4  -- Pass tr2 as argument
-        have h5' := ih2 e2' h5  -- Pass e2' as argument
+        have h4' := ih1 tr2 h4
+        have h5' := ih2 e2' h5
         rw [h1, h2, h3, h4', h5']
       | _ =>
         unfold beq at h
@@ -361,13 +361,6 @@ theorem LExpr.beq_eq {T : LExprParamsT} [DecidableEq T.base.Metadata] [Decidable
 instance {T: LExprParamsT} [DecidableEq T.base.Metadata] [DecidableEq T.TypeType] [DecidableEq T.base.IDMeta] : DecidableEq (LExpr T) :=
   fun e1 e2 =>
     if h : LExpr.beq e1 e2 then
-      isTrue (LExpr.beq_eq e1 e2 |>.mp h)
-    else
-      isFalse (fun heq => h (LExpr.beq_eq e1 e2 |>.mpr heq))
-
-instance {T: LExprParamsT} [DecidableEq T.base.Metadata] [DecidableEq T.TypeType] [DecidableEq T.base.IDMeta] : DecidableEq (LExpr T) :=
-  fun e1 e2 =>
-    if h: LExpr.beq e1 e2 then
       isTrue (LExpr.beq_eq e1 e2 |>.mp h)
     else
       isFalse (fun heq => h (LExpr.beq_eq e1 e2 |>.mpr heq))
