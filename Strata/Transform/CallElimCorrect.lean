@@ -123,9 +123,9 @@ theorem getIdentTys!_store_same :
 
 theorem getIdentTy!_no_throw :
   (p.find? .var ident).isSome = true →
-  ∃ r, (runCallElimWith ident (getIdentTy! p) cs) = (Except.ok r) := by
+  ∃ r, (runWith ident (getIdentTy! p) cs) = (Except.ok r) := by
   intros H
-  simp [runCallElimWith, StateT.run, getIdentTy!]
+  simp [runWith, StateT.run, getIdentTy!]
   have Hsome := @getOldExprIdentTy_some p ident
   simp [H] at Hsome
   simp [Option.isSome] at Hsome
@@ -138,7 +138,7 @@ theorem getIdentTys!_no_throw :
     {idents : List Expression.Ident}
     {cs : BoogieGenState},
   (∀ ident ∈ idents, (p.find? .var ident).isSome = true) →
-  ∃ r, (runCallElimWith idents (getIdentTys! p) cs) = (Except.ok r) := by
+  ∃ r, (runWith idents (getIdentTys! p) cs) = (Except.ok r) := by
   intros p idents cs Hglob
   induction idents generalizing cs
   case nil =>
@@ -152,7 +152,7 @@ theorem getIdentTys!_no_throw :
     have Hhead := @getIdentTy!_no_throw _ _ cs Hsome
     cases Hhead with
     | intro T' Hok' =>
-    simp [runCallElimWith, StateT.run] at Hok'
+    simp [runWith, StateT.run] at Hok'
     split <;> simp_all
     next err cs' Hres =>
     specialize @ih cs'
@@ -167,7 +167,7 @@ theorem callElimStmtsNoExcept :
   ∀ (st : Boogie.Statement)
     (p : Boogie.Program),
     WF.WFStatementsProp p [st] →
-  ∃ sts, Except.ok sts = ((CallElim.runCallElim [st] (CallElim.callElimStmts · p)))
+  ∃ sts, Except.ok sts = ((CallElim.run [st] (CallElim.callElimStmts · p)))
   -- NOTE: the generated variables will not be local, but temp. So it will not be well-formed
   -- ∧ WF.WFStatementsProp p sts
   := by
@@ -220,7 +220,7 @@ theorem callElimStmtsNoExcept :
                       (List.map Procedure.Check.expr res'.spec.postconditions.values))).eraseDups)
                         = eq at *
                 have Hgen := @getIdentTys!_no_throw p eq (List.mapM.loop genOldExprIdent eq [] ss).snd ?_
-                simp [runCallElimWith, StateT.run] at Hgen
+                simp [runWith, StateT.run] at Hgen
                 . cases Hgen with
                   | intro tys Hgen =>
                   simp_all
@@ -3430,7 +3430,7 @@ theorem callElimStatementCorrect :
   WF.WFProgramProp p →
   BoogieGenState.WF γ →
   (∀ v, v ∈ γ.generated ↔ ((σ v).isSome ∧ BoogieIdent.isTemp v)) →
-  (Except.ok sts, γ') = (CallElim.runCallElimWith' [st] (CallElim.callElimStmts · p) γ) →
+  (Except.ok sts, γ') = (CallElim.runWith' [st] (CallElim.callElimStmts · p) γ) →
   -- NOTE: The theorem does not expect the same store due to inserting new temp variables
   exists σ'',
     Inits σ' σ'' ∧

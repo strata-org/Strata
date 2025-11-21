@@ -9,6 +9,7 @@ import Strata.DDM.Elab
 import Strata.DDM.Ion
 
 import Strata.Languages.Python.Python
+import Strata.Transform.ProcedureInlining
 
 def exitFailure {α} (message : String) : IO α := do
   IO.eprintln (message  ++ "\n\nRun strata --help for additional help.")
@@ -161,6 +162,21 @@ def diffCommand : Command where
     | _, _ =>
       exitFailure "Cannot compare dialect def with another dialect/program."
 
+def pyTranslateCommand : Command where
+  name := "pyTranslate"
+  args := [ "file" ]
+  help := "Tranlate a Strata Python Ion file to Strata.Boogie. Write results to stdout."
+  callback := fun searchPath v => do
+    let (ld, pd) ← readFile searchPath v[0]
+    match pd with
+    | .dialect d =>
+      IO.print <| d.format ld.dialects
+    | .program pgm =>
+    let preludePgm := Strata.Python.Internal.Boogie.prelude
+    let bpgm := Strata.pythonToBoogie pgm
+    let newPgm : Boogie.Program := { decls := preludePgm.decls ++ bpgm.decls }
+    IO.print newPgm
+
 def pyAnalyzeCommand : Command where
   name := "pyAnalyze"
   args := [ "file", "verbose" ]
@@ -179,6 +195,12 @@ def pyAnalyzeCommand : Command where
     let newPgm : Boogie.Program := { decls := preludePgm.decls ++ bpgm.decls }
     if verbose then
       IO.print newPgm
+
+    let newPgm := inlineCall newPgm
+    if verbose then
+      IO.println "After inlining:"
+      IO.print newPgm
+
     let vcResults ← EIO.toIO (fun f => IO.Error.userError (toString f))
                         (Boogie.verify "z3" newPgm { Options.default with stopOnFirstError := false, verbose })
     let mut s := ""
@@ -192,6 +214,7 @@ def commandList : List Command := [
       printCommand,
       diffCommand,
       pyAnalyzeCommand,
+      pyTranslateCommand,
     ]
 
 def commandMap : Std.HashMap String Command :=

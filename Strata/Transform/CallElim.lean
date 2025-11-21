@@ -192,7 +192,7 @@ def createOldVarsSubst
 
 /--
 The main call elimination transformation algorithm on a single statement.
-The returned result is a sequence of statements if the
+The returned result is a sequence of statements
 -/
 def callElimStmt (st: Statement) (p : Program)
   : CallElimM (List Statement) := do
@@ -212,12 +212,10 @@ def callElimStmt (st: Statement) (p : Program)
         let oldVars := oldVars.filter (isGlobalVar p)
 
         let genArgTrips := genArgExprIdentsTrip (Lambda.LMonoTySignature.toTrivialLTy proc.header.inputs) args
-
         let argTrips
             : List ((Expression.Ident × Expression.Ty) × Expression.Expr)
             ← genArgTrips
 
-        -- Monadic operation, generate var mapping for each unique oldVars.
         let genOutTrips := genOutExprIdentsTrip (Lambda.LMonoTySignature.toTrivialLTy proc.header.outputs) lhs
         let outTrips
             : List ((Expression.Ident × Expression.Ty) × Expression.Ident)
@@ -286,21 +284,149 @@ def callElimL (dcls : List Decl) (prog : Program)
 bodies -/
 def callElim' (p : Program) : CallElimM Program := return { decls := (← (callElimL p.decls p)) }
 
+mutual
+partial def Block.substFvar (b : Block) (fr:Lambda.Identifier Visibility)
+      (to:Lambda.LExpr Lambda.LMonoTy Visibility) : Block :=
+  { b with ss := List.map (fun s => Statement.substFvar s fr to) b.ss }
+
+partial def Statement.substFvar (s : Boogie.Statement)
+      (fr:Lambda.Identifier Visibility)
+      (to:Lambda.LExpr Lambda.LMonoTy Visibility) : Statement :=
+  match s with
+  | .init lhs ty rhs metadata =>
+    .init lhs ty (Lambda.LExpr.substFvar rhs fr to) metadata
+  | .set lhs rhs metadata =>
+    .set lhs (Lambda.LExpr.substFvar rhs fr to) metadata
+  | .havoc _ _ => s
+  | .assert lbl b metadata =>
+    .assert lbl (Lambda.LExpr.substFvar b fr to) metadata
+  | .assume lbl b metadata =>
+    .assume lbl (Lambda.LExpr.substFvar b fr to) metadata
+  | .call lhs pname args metadata =>
+    .call lhs pname (List.map (Lambda.LExpr.substFvar · fr to) args) metadata
+
+  | .block lbl b metadata =>
+    .block lbl (Block.substFvar b fr to) metadata
+  | .ite cond thenb elseb metadata =>
+    .ite (Lambda.LExpr.substFvar cond fr to) (Block.substFvar thenb fr to)
+          (Block.substFvar elseb fr to) metadata
+  | .loop guard measure invariant body metadata =>
+    .loop (Lambda.LExpr.substFvar guard fr to)
+          (Option.map (Lambda.LExpr.substFvar · fr to) measure)
+          (Option.map (Lambda.LExpr.substFvar · fr to) invariant)
+          (Block.substFvar body fr to)
+          metadata
+  | .goto _ _ => s
+end
+
+/--
+If st is a call statement, inline the contents of the callee procedure.
+This is under the assumption that, the input and output parameters are not
+redefined in the procedure body.
+
+For example,
+
+procedure f(x:int) return (y:bool) {
+  -- Variables x and y are never redeclared in this scope.
+};
+-/
+def inlineCallStmt (st: Statement) (p : Program)
+  : CallElimM (List Statement) :=
+    open Lambda in do
+    match st with
+      | .call lhs procName args _ =>
+
+        let some proc := Program.Procedure.find? p procName
+          | throw s!"Procedure {procName} not found in program"
+
+        let sigInputs := LMonoTySignature.toTrivialLTy proc.header.inputs
+        let sigOutputs := LMonoTySignature.toTrivialLTy proc.header.outputs
+
+        -- Create a var statement for each LHS variable of the call statement.
+        let lhsTrips /-(new id, ty, prev name)-/ ← genOutExprIdentsTrip
+          sigOutputs lhs
+        let lhsInit := createInitVars
+          (lhsTrips.map (fun ((tmpvar,ty),orgvar) => ((orgvar,ty),tmpvar)))
+
+        -- Create a var statement for each procedure input arguments.
+        -- Create fresh variable names to avoid name collision.
+        -- The input parameter expression is assigned to these new vars.
+        let argTrips ← genArgExprIdentsTrip sigInputs args
+        let inputInit := createInits argTrips
+
+        -- Create a var statement for each procedure output arguments.
+        let outputTrips ← genOutExprIdentsTrip sigOutputs (sigOutputs.unzip.1)
+        let outputInit := createInitVars
+          (outputTrips.map (fun ((tmpvar,ty),orgvar) => ((orgvar,ty),tmpvar)))
+
+        -- Replace all input parameters with the fresh variable names.
+        let newBody := List.foldl
+          (fun body (new_ident, original_ident) =>
+            let new_expr:LExpr LMonoTy Visibility :=
+              .fvar (new_ident.fst.fst) .none
+            List.map
+              (fun stmt => Statement.substFvar stmt original_ident.fst new_expr)
+              body)
+          proc.body (argTrips.zip sigInputs)
+
+        -- Assign the output variables in the signature to the actual output
+        -- variables used in the callee.
+        let outputSetStmts :=
+          let outs_lhs_and_sig := List.zip lhs sigOutputs
+          List.map
+            (fun (lhs_var,sig_ident,_) =>
+              Statement.set lhs_var (.fvar sig_ident (.none)))
+            outs_lhs_and_sig
+
+        let stmts:List (Imperative.Stmt Boogie.Expression Boogie.Command)
+          := inputInit ++ outputInit ++ newBody ++ outputSetStmts
+        let new_blk := Imperative.Block.mk stmts
+
+        return lhsInit ++ [.block (procName ++ "$inlined") new_blk]
+      | _ => return [st]
+
+def inlineCallStmts (ss: List Statement) (prog : Program)
+  : CallElimM (List Statement) := do match ss with
+    | [] => return []
+    | s :: ss =>
+      let s' := (inlineCallStmt s prog)
+      let ss' := (inlineCallStmts ss prog)
+      return (← s') ++ (← ss')
+
+def inlineCallL (dcls : List Decl) (prog : Program)
+  : CallElimM (List Decl) :=
+  match dcls with
+  | [] => return []
+  | d :: ds =>
+    match d with
+    | .proc p =>
+      return Decl.proc { p with body := ← (inlineCallStmts p.body prog ) } ::
+        (← (inlineCallL ds prog))
+    | _       => return d :: (← (inlineCallL ds prog))
+
+/--
+Procedure calls inlining for an entire program by walking through all
+procedure bodies -/
+def inlineCall' (p : Program) : CallElimM Program :=
+  return { decls := (← (inlineCallL p.decls p)) }
+
+
 @[simp]
-def runCallElimWith' {α : Type} (p : α) (f : α → CallElimM β) (s : BoogieGenState):
+def runWith' {α : Type} (p : α) (f : α → CallElimM β) (s : BoogieGenState):
   Except Err β × BoogieGenState :=
   (StateT.run (f p) s)
 
 @[simp]
-def runCallElimWith {α : Type} (p : α) (f : α → CallElimM β) (s : BoogieGenState):
+def runWith {α : Type} (p : α) (f : α → CallElimM β) (s : BoogieGenState):
   Except Err β :=
-  (runCallElimWith' p f s).fst
+  (runWith' p f s).fst
 
 /-- run call elimination with an empty counter state (e.g. starting from 0) -/
 @[simp]
-def runCallElim {α : Type} (p : α) (f : α → CallElimM β):
+def run {α : Type} (p : α) (f : α → CallElimM β):
   Except Err β :=
-  runCallElimWith p f .emp
+  runWith p f .emp
+
 
 end CallElim
 end Boogie
