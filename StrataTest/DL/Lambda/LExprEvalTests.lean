@@ -44,9 +44,14 @@ macro "reduce_beta": tactic => `(tactic |
     apply Step.beta <;> discharge_isCanonicalValue
   )
 
+private abbrev TestParams : LExprParams := ⟨Unit, Unit⟩
+
+private instance : Coe String TestParams.Identifier where
+  coe s := Identifier.mk s ()
+
 /-- info: (λ (if (%0 == #1) then #10 else (_minit %0))) -/
 #guard_msgs in
-#eval format $ Lambda.LExpr.eval 100
+#eval format $ Lambda.LExpr.eval (TBase:=TestParams) 100
                   {Lambda.LState.init with state :=
                       [[("m", (mty[int → int], esM[_minit]))]] }
         esM[λ (if (%0 == #1) then #10 else (m %0))]
@@ -61,7 +66,7 @@ example:
 
 /-- info: #42 -/
 #guard_msgs in
-#eval format $ LExpr.eval 100
+#eval format $ LExpr.eval (TBase:=TestParams) 100
                           { LState.init with state := [[("x", (mty[int], esM[#32]))]] }
                           esM[((λ (if (%0 == #23) then #17 else #42)) (x : int))]
 
@@ -83,7 +88,7 @@ example:
 
 /-- info: (f #true) -/
 #guard_msgs in
-#eval format $ LExpr.eval 10 ∅ esM[(f #true)]
+#eval format $ LExpr.eval (TBase:=TestParams) 10 ∅ esM[(f #true)]
 
 example:
   ∀ e, ¬ Lambda.Step LState.init.config.factory [] esM[(f #true)] e := by
@@ -93,10 +98,10 @@ example:
 
 /-- info: (minit #24) -/
 #guard_msgs in
-#eval format $ LExpr.eval 100
+#eval format $ LExpr.eval (TBase:=TestParams) 100
                     { LState.init with state :=
                         [[("m", (none, esM[(λ (minit %0))]))], -- most recent scope
-                         [("m", (none, (.intConst 12)))]] }
+                         [("m", (none, (.intConst () 12)))]] }
                     esM[((λ (if (%0 == #23) then #17 else (m %0)) #24))]
 
 example:
@@ -117,7 +122,7 @@ example:
 
 /-- info: (minit #24) -/
 #guard_msgs in
-#eval format $ LExpr.eval 100
+#eval format $ LExpr.eval (TBase:=TestParams) 100
                     { LState.init with state := [[("m", (none, esM[minit]))]] }
                     esM[((λ (if (%0 == #23) then #17 else (m %0))) #24)]
 
@@ -135,7 +140,7 @@ example:
 
 /-- info: x -/
 #guard_msgs in
-#eval format $ LExpr.eval 10 ∅ esM[if #true then x else y]
+#eval format $ LExpr.eval (TBase:=TestParams) 10 ∅ esM[if #true then x else y]
 
 example:
   Lambda.StepStar LState.init.config.factory []
@@ -148,7 +153,7 @@ example:
 -- Ill-formed `abs` is returned as-is in this Curry style...
 /-- info: (λ %1) -/
 #guard_msgs in
-#eval format $ LExpr.eval 10 ∅ esM[(λ %1)]
+#eval format $ LExpr.eval (TBase:=TestParams) 10 ∅ esM[(λ %1)]
 
 example:
   ∀ e, ¬ Lambda.Step LState.init.config.factory [] esM[(λ %1)] e := by
@@ -158,7 +163,7 @@ example:
 
 /-- info: ((λ %1) #true) -/
 #guard_msgs in
-#eval format $ LExpr.eval (IDMeta:=Unit) 10 ∅ (.app (.mdata ⟨"x"⟩ (.abs .none (.bvar 1))) .true)
+#eval format $ LExpr.eval (TBase:=TestParams) 0 ∅ (.app () (.abs () .none (.bvar () 1)) (LExpr.true ()))
 
 example:
   ∀ e, ¬ Lambda.Step (IDMeta:=Unit) LState.init.config.factory []
@@ -171,7 +176,7 @@ example:
 
 open LTy.Syntax
 
-private def testBuiltIn : @Factory Unit :=
+private def testBuiltIn : @Factory TestParams :=
   #[{ name := "Int.Add",
       inputs := [("x", mty[int]), ("y", mty[int])],
       output := mty[int],
@@ -180,7 +185,7 @@ private def testBuiltIn : @Factory Unit :=
                           let e1i := LExpr.denoteInt e1
                           let e2i := LExpr.denoteInt e2
                           match e1i, e2i with
-                          | some x, some y => .intConst (x + y)
+                          | some x, some y => .intConst e1.metadata (x + y)
                           | _, _ => e
                         | _ => e) },
     { name := "Int.Div",
@@ -192,7 +197,7 @@ private def testBuiltIn : @Factory Unit :=
                             let e2i := LExpr.denoteInt e2
                             match e1i, e2i with
                             | some x, some y =>
-                              if y == 0 then e else .intConst (x / y)
+                              if y == 0 then e else .intConst e1.metadata (x / y)
                             | _, _ => e
                           | _ => e) },
     { name := "Int.Neg",
@@ -202,7 +207,7 @@ private def testBuiltIn : @Factory Unit :=
                               | [e1] =>
                                 let e1i := LExpr.denoteInt e1
                                 match e1i with
-                                | some x => .intConst (- x)
+                                | some x => .intConst e1.metadata (- x)
                                 | _ => e
                               | _ => e) },
 
@@ -213,7 +218,7 @@ private def testBuiltIn : @Factory Unit :=
       body := some esM[((~Int.Add x) y)]
     }]
 
-private def testState : LState Unit :=
+private def testState : LState TestParams :=
   let ans := LState.addFactory LState.init testBuiltIn
   match ans with
   | .error e => panic s!"{e}"
@@ -221,7 +226,7 @@ private def testState : LState Unit :=
 
 /-- info: #50 -/
 #guard_msgs in
-#eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((~IntAddAlias #20) #30)]
+#eval format $ LExpr.eval (TBase:=TestParams) 10 testState esM[((~IntAddAlias #20) #30)]
 
 example:
   Lambda.StepStar testState.config.factory testState.state.toFreeVarMap
@@ -232,7 +237,7 @@ example:
 
 /-- info: ((~Int.Add #20) x) -/
 #guard_msgs in
-#eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((~IntAddAlias #20) x)]
+#eval format $ LExpr.eval (TBase:=TestParams) 10 testState esM[((~IntAddAlias #20) x)]
 
 -- Note: this case diverges from concrete evaluator, because 'x' is not a
 -- canonical value! Small step reduces only when the arguments are values,
@@ -268,17 +273,16 @@ example:
 
 /-- info: ((~Int.Add ((~Int.Add #5) #100)) x) -/
 #guard_msgs in
-#eval format $ LExpr.eval (IDMeta:=Unit) 10 LState.init
+#eval format $ LExpr.eval (TBase:=TestParams) 10 LState.init
   esM[(( ((λ(λ ((~Int.Add %1) %0)))) ((λ ((~Int.Add %0) #100)) #5)) x)]
 
 -- The small step semantics of this example will stuck in the middle because
 -- 'Int.Add %0 100' cannot be evaluated because the definition of Int.Add is
 -- not available in LState.init .
 
-
 /-- info: #50 -/
 #guard_msgs in
-#eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((~Int.Add #20) #30)]
+#eval format $ LExpr.eval (TBase:=TestParams) 10 testState esM[((~Int.Add #20) #30)]
 
 example:
   Lambda.StepStar testState.config.factory testState.state.toFreeVarMap
@@ -289,7 +293,7 @@ example:
 
 /-- info: ((~Int.Add #105) x) -/
 #guard_msgs in
-#eval format $ LExpr.eval (IDMeta:=Unit) 10 testState
+#eval format $ LExpr.eval (TBase:=TestParams) 10 testState
   esM[((((λ(λ (~Int.Add %1) %0))) ((λ ((~Int.Add %0) #100)) #5)) x)]
 
 /-- info: false -/
@@ -317,7 +321,7 @@ example:
 
 /-- info: ((#f #20) #-5) -/
 #guard_msgs in
-#eval format $ LExpr.eval (IDMeta:=Unit) 10 testState
+#eval format $ LExpr.eval (TBase:=TestParams) 10 testState
   esM[( ((λ(λ (#f %1) %0) #20)) ((λ (~Int.Neg %0)) #5))]
 
 -- The small step semantics of this example will stuck in the middle because
@@ -327,7 +331,7 @@ example:
 
 /-- info: ((~Int.Add #20) (~Int.Neg x)) -/
 #guard_msgs in
-#eval format $ LExpr.eval (IDMeta:=Unit) 10 testState
+#eval format $ LExpr.eval (TBase:=TestParams) 10 testState
   esM[( ((λ(λ (~Int.Add %1) %0)) #20) ((λ (~Int.Neg %0)) x))]
 
 -- The result stops at (.. ((λ (~Int.Neg %0)) x)) because definition of
@@ -342,18 +346,17 @@ example:
   take_refl
 
 
-
 /-- info: ((~Int.Add #20) (~Int.Neg x)) -/
 #guard_msgs in
-#eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((~Int.Add #20) (~Int.Neg x))]
+#eval format $ LExpr.eval (TBase:=TestParams) 10 testState esM[((~Int.Add #20) (~Int.Neg x))]
 
 /-- info: ((~Int.Add x) #-30) -/
 #guard_msgs in
-#eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((~Int.Add x) (~Int.Neg #30))]
+#eval format $ LExpr.eval (TBase:=TestParams) 10 testState esM[((~Int.Add x) (~Int.Neg #30))]
 
 /-- info: #50 -/
 #guard_msgs in
-#eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((λ %0) ((~Int.Add #20) #30))]
+#eval format $ LExpr.eval (TBase:=TestParams) 10 testState esM[((λ %0) ((~Int.Add #20) #30))]
 
 example:
   Lambda.StepStar testState.config.factory testState.state.toFreeVarMap
@@ -370,7 +373,7 @@ example:
 
 /-- info: #100 -/
 #guard_msgs in
-#eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((~Int.Div #300) ((~Int.Add #2) #1))]
+#eval format $ LExpr.eval (TBase:=TestParams) 10 testState esM[((~Int.Div #300) ((~Int.Add #2) #1))]
 
 example:
   Lambda.StepStar testState.config.factory testState.state.toFreeVarMap
@@ -385,7 +388,7 @@ example:
 
 /-- info: #0 -/
 #guard_msgs in
-#eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((~Int.Add #3) (~Int.Neg #3))]
+#eval format $ LExpr.eval (TBase:=TestParams) 10 testState esM[((~Int.Add #3) (~Int.Neg #3))]
 
 example:
   Lambda.StepStar testState.config.factory testState.state.toFreeVarMap
@@ -402,7 +405,7 @@ example:
 
 /-- info: #0 -/
 #guard_msgs in
-#eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((~Int.Add (~Int.Neg #3)) #3)]
+#eval format $ LExpr.eval (TBase:=TestParams) 10 testState esM[((~Int.Add (~Int.Neg #3)) #3)]
 
 example:
   Lambda.StepStar testState.config.factory testState.state.toFreeVarMap
@@ -416,7 +419,7 @@ example:
 
 /-- info: ((~Int.Div #300) #0) -/
 #guard_msgs in
-#eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((~Int.Div #300) ((~Int.Add #3) (~Int.Neg #3)))]
+#eval format $ LExpr.eval (TBase:=TestParams) 10 testState esM[((~Int.Div #300) ((~Int.Add #3) (~Int.Neg #3)))]
 
 example:
   Lambda.StepStar testState.config.factory testState.state.toFreeVarMap
@@ -435,23 +438,23 @@ example:
 
 /-- info: ((~Int.Div x) #3) -/
 #guard_msgs in
-#eval format $ LExpr.eval (IDMeta:=Unit) 10 testState esM[((~Int.Div x) ((~Int.Add #2) #1))]
+#eval format $ LExpr.eval (TBase:=TestParams) 10 testState esM[((~Int.Div x) ((~Int.Add #2) #1))]
 
 /-- info: ((~Int.Le #100) x) -/
 #guard_msgs in
-#eval format $ LExpr.eval (IDMeta:=Unit) 200 testState
+#eval format $ LExpr.eval (TBase:=TestParams) 200 testState
                 esM[((~Int.Le ((~Int.Div #300) ((~Int.Add #2) #1))) x)]
 
 /--
 info: ((~Int.Le ((~Int.Div #300) ((~Int.Add #2) y))) x)
 -/
 #guard_msgs in
-#eval format $ LExpr.eval (IDMeta:=Unit) 200 testState
+#eval format $ LExpr.eval (TBase:=TestParams) 200 testState
                 esM[((~Int.Le ((~Int.Div #300) ((~Int.Add #2) y))) x)]
 
 /-- info: ((~Int.Div x) x) -/
 #guard_msgs in
-#eval format $ LExpr.eval (IDMeta:=Unit) 200 testState
+#eval format $ LExpr.eval (TBase:=TestParams) 200 testState
                 esM[((~Int.Div x) x)]
 
 
