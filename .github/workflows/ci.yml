@@ -77,6 +77,9 @@ jobs:
           name: smt-solvers
           path: ~/smt-solvers
       
+      - name: Restore executable permissions
+        run: chmod +x ~/smt-solvers/bin/*
+      
       - name: Add SMT solvers to PATH
         run: echo "$HOME/smt-solvers/bin" >> $GITHUB_PATH
       
@@ -123,6 +126,9 @@ jobs:
         with:
           name: smt-solvers
           path: ~/smt-solvers
+      
+      - name: Restore executable permissions
+        run: chmod +x ~/smt-solvers/bin/*
       
       - name: Add SMT solvers to PATH
         run: echo "$HOME/smt-solvers/bin" >> $GITHUB_PATH
@@ -182,6 +188,9 @@ jobs:
         with:
           name: smt-solvers
           path: ~/smt-solvers
+      
+      - name: Restore executable permissions
+        run: chmod +x ~/smt-solvers/bin/*
       
       - name: Add SMT solvers to PATH
         run: echo "$HOME/smt-solvers/bin" >> $GITHUB_PATH
