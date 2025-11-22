@@ -80,6 +80,10 @@ structure Procedure.Check where
   expr : Expression.Expr
   attr : CheckAttr := .Default
   md : Imperative.MetaData Expression := #[]
+  deriving Repr, DecidableEq
+
+instance : Inhabited Procedure.Check where
+  default := { expr := Inhabited.default }
 
 instance : ToFormat Procedure.Check where
   format c := f!"{c.expr}{c.attr}"
@@ -91,7 +95,7 @@ structure Procedure.Spec where
   modifies       : List Expression.Ident
   preconditions  : ListMap BoogieLabel Procedure.Check
   postconditions : ListMap BoogieLabel Procedure.Check
-  deriving Inhabited
+  deriving Inhabited, Repr
 
 instance : ToFormat Procedure.Spec where
   format p :=
