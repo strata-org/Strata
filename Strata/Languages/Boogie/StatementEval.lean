@@ -48,8 +48,7 @@ def callConditions (proc : Procedure)
                 (fun p =>
                   List.foldl
                     (fun c (x, v) =>
-                      { expr := LExpr.substFvar c.expr x.fst v ,
-                        attr := c.attr})
+                      { c with expr := LExpr.substFvar c.expr x.fst v })
                     p subst)
                 conditions.values
   List.zip names exprs
@@ -117,7 +116,7 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
     let preconditions :=
         callConditions proc .Requires proc.spec.preconditions subst
     let preconditions := preconditions.map
-                            (fun (l, e) => (toString l, Procedure.Check.mk (E.exprEval e.expr) e.attr))
+                            (fun (l, e) => (toString l, Procedure.Check.mk (E.exprEval e.expr) e.attr e.md))
     -- A free precondition is not checked at call sites, which is
     -- accounted for by `ProofObligations.create` below.
     let deferred_pre := ProofObligations.create E.pathConditions preconditions

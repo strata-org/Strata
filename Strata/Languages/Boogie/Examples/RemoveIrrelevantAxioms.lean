@@ -191,7 +191,7 @@ Result: failed
 CEx: ($__x3, 3)
 -/
 #guard_msgs in
-#eval verify "z3" irrelevantAxiomsTestPgm {Options.quiet with removeIrrelevantAxioms := true}
+#eval verify "z3" irrelevantAxiomsTestPgm Inhabited.default {Options.quiet with removeIrrelevantAxioms := true}
 
 ---------------------------------------------------------------------
 
@@ -285,6 +285,6 @@ Obligation: assert_11
 Result: unknown
 -/
 #guard_msgs in
-#eval verify "z3" irrelevantAxiomsTestPgm {Options.quiet with removeIrrelevantAxioms := false}
+#eval verify "z3" irrelevantAxiomsTestPgm Inhabited.default {Options.quiet with removeIrrelevantAxioms := false}
 
 ---------------------------------------------------------------------

@@ -204,7 +204,7 @@ private def testProgram2 : Cmds PureExpr :=
 /--
 info: Commands:
 init (x : Num) := y
-#[<var x: ($__x0 : Num)>] havoc x
+havoc x
 assert [x_value_eq] ($__x0 : Num) = 100
 
 State:

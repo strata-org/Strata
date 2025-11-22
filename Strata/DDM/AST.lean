@@ -186,6 +186,30 @@ deriving Inhabited, Repr
 
 end
 
+mutual
+
+def ExprF.ann {α : Type} : ExprF α → α
+| .bvar ann _ => ann
+| .fvar ann _ => ann
+| .fn ann _ => ann
+| .app ann _ _ => ann
+
+def ArgF.ann {α : Type} : ArgF α → α
+| .op o => o.ann
+| .cat c => c.ann
+| .expr e => e.ann
+| .type t => t.ann
+| .ident ann _ => ann
+| .num ann _ => ann
+| .decimal ann _ => ann
+| .bytes ann _ => ann
+| .strlit ann _ => ann
+| .option ann _ => ann
+| .seq ann _ => ann
+| .commaSepList ann _ => ann
+
+end
+
 namespace OperationF
 
 def sizeOf_spec {α} [SizeOf α] (op : OperationF α) : sizeOf op = 1 + sizeOf op.ann + sizeOf op.name + sizeOf op.args :=

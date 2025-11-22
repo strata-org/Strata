@@ -105,7 +105,7 @@ Result: failed
 CEx: ($__x0, 0)
 -/
 #guard_msgs in
-#eval verify "cvc5" quantPgm Options.default
+#eval verify "cvc5" quantPgm Inhabited.default Options.default
 
 /--
 info: [Strata.Boogie] Type checking succeeded.

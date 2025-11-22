@@ -101,8 +101,8 @@ def loop_elimination_statement(s : C_Simp.Statement) : Boogie.Statement :=
 
 -- C_Simp functions are Boogie procedures
 def loop_elimination_function(f : C_Simp.Function) : Boogie.Procedure :=
-  let boogie_preconditions := [("pre", {expr := translate_expr f.pre})]
-  let boogie_postconditions := [("post", {expr := translate_expr f.post})]
+  let boogie_preconditions := [("pre", {expr := translate_expr f.pre })]
+  let boogie_postconditions := [("post", {expr := translate_expr f.post })]
   {header := {name := f.name.name, typeArgs := [],
               inputs := f.inputs.map (λ p => (p.fst.name, p.snd)),
               outputs := [("return", f.ret_ty)]},

@@ -50,7 +50,7 @@ body: init (newH : Heap) := ((((~update : (arrow (Map Ref Struct) (arrow Ref (ar
 assert [assert_0] ((((~select : (arrow (Map Field int) (arrow Field int))) (((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) (newH : Heap)) (ref : Ref))) (field : Field)) == (((~Int.Add : (arrow int (arrow int int))) (((~select : (arrow (Map Field int) (arrow Field int))) (((~select : (arrow (Map Ref Struct) (arrow Ref Struct))) (h : Heap)) (ref : Ref))) (field : Field))) #1))
 -/
 #guard_msgs in
-#eval (TransM.run (translateProgram genLabelsPgm) |>.fst)
+#eval (TransM.run Inhabited.default (translateProgram genLabelsPgm) |>.fst)
 
 /--
 info: [Strata.Boogie] Type checking succeeded.

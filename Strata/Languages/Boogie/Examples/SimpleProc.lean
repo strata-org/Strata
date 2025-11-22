@@ -29,7 +29,7 @@ spec {
 /-- info: true -/
 #guard_msgs in
 -- No errors in translation.
-#eval TransM.run (translateProgram simpleProcPgm) |>.snd |>.isEmpty
+#eval TransM.run Inhabited.default (translateProgram simpleProcPgm) |>.snd |>.isEmpty
 
 /--
 info: var (g : bool) := init_g_0
@@ -42,7 +42,7 @@ body: y := (((~Bool.Or : (arrow bool (arrow bool bool))) (x : bool)) (x : bool))
 Errors: #[]
 -/
 #guard_msgs in
-#eval TransM.run (translateProgram simpleProcPgm)
+#eval TransM.run Inhabited.default (translateProgram simpleProcPgm)
 
 /--
 info: [Strata.Boogie] Type checking succeeded.

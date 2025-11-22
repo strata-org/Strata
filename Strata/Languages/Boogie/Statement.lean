@@ -39,8 +39,8 @@ We parameterize Boogie's Commands with Lambda dialect's expressions.
 abbrev Command := CmdExt Expression
 
 instance : HasPassiveCmds Expression Command where
-  assert l e := .cmd (.assert l e)
-  assume l e := .cmd (.assume l e)
+  assert l e md := .cmd (.assert l e md)
+  assume l e md := .cmd (.assume l e md)
 
 instance : HasHavoc Expression Command where
   havoc x := .cmd (.havoc x)
@@ -58,8 +58,8 @@ instance [ToFormat (Cmd P)] [ToFormat (MetaData P)]
     ToFormat (CmdExt P) where
   format c := match c with
     | .cmd c => format c
-    | .call lhs pname args md =>
-      f!"{md}call " ++ (if lhs.isEmpty then f!"" else f!"{lhs} := ") ++
+    | .call lhs pname args _md =>
+      f!"call " ++ (if lhs.isEmpty then f!"" else f!"{lhs} := ") ++
       f!"{pname}({args})"
 
 ---------------------------------------------------------------------
