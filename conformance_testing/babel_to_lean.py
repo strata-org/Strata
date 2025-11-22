@@ -38,6 +38,8 @@ def parse_ts_type(j):
         return {"TS_TSArrayType": inner}
     elif t == "TSAnyKeyword" or t is None:
         return None
+    elif t == "TSUnionType":
+        return None
     else:
         print("Unsupported type annotation type: " + str(t), file=sys.stderr)
         return None
@@ -346,6 +348,24 @@ def parse_break_statement(j):
     }
     add_missing_node_info(j, target_j)
     return target_j
+    
+def parse_type_alias_declaration(j):
+    union_node = j["typeAnnotation"]
+
+    inner_types = union_node.get("types", [])
+    tagged_types = [parse_ts_type(tnode) for tnode in inner_types]
+
+    union_struct = {
+        "types": tagged_types
+    }
+    add_missing_node_info(union_node, union_struct)
+
+    target_j = {
+        "id": parse_identifier(j["id"]),
+        "typeAnnotation": union_struct,
+    }
+    add_missing_node_info(j, target_j)
+    return target_j
 
 def parse_statement(j):
     match j['type']:
@@ -382,6 +402,8 @@ def parse_statement(j):
         # case "ForInStatement":
         # case "ForOfStatement":
         # case "ClassDeclaration":
+        case "TSTypeAliasDeclaration":
+            return {"TS_TypeAliasDeclaration": parse_type_alias_declaration(j)}
         case _:
             print("Unsupported statement type: " + j['type'], file=sys.stderr)
             return j
