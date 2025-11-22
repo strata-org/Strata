@@ -29,15 +29,6 @@ def strType : Boogie.Expression.Ty := .forAll [] (.tcons "string" [])
 def dummyStr : Boogie.Expression.Expr := .fvar () "DUMMY_STR" none
 
 
--- This information should come from our prelude. For now, we use the fact that
--- these functions are exactly the ones
--- represented as `Call(Attribute(Name(...)))` in the AST (instead of `Call(Name(...))`).
-def callCanThrow (stmt: Python.stmt SourceRange) : Bool :=
-  match stmt with
-  | .Expr _ (.Call _ (.Attribute _ _ _ _) _ _) => true
-  | .Assign _ _ (.Call _ (.Attribute _ _ _ _) _ _) _ => true
-  | _ => false
-
 -------------------------------------------------------------------------------
 
 
@@ -95,6 +86,16 @@ partial def PyExprToBoogie (e : Python.expr SourceRange) : Boogie.Expression.Exp
   | .BinOp _ lhs op rhs => match op with
     | .Add _ => handleAdd (PyExprToBoogie lhs) (PyExprToBoogie rhs)
     | _ => panic! s!"Unhandled BinOp: {repr e}"
+  | .Compare _ lhs op rhs =>
+    match op.val with
+    | #[v] => match v with
+      | Strata.Python.cmpop.Eq _ =>
+        let l := PyExprToBoogie lhs
+        assert! rhs.val.size == 1
+        let r := PyExprToBoogie rhs.val[0]!
+        (.eq () l r)
+      | _ => panic! s!"Unhandled comparison op: {repr op.val}"
+    | _ => panic! s!"Unhandled comparison op: {repr op.val}"
   | _ => panic! s!"Unhandled Expr: {repr e}"
 
 partial def PyExprToString (e : Python.expr SourceRange) : String :=
@@ -120,11 +121,29 @@ partial def PyKWordsToBoogie (kw : Python.keyword SourceRange) : (String × Boog
     | some n => (n.val, PyExprToBoogie expr)
     | none => panic! "Keyword arg should have a name"
 
+structure PythonFunctionDecl where
+  name : String
+  args : List (String × String) -- Elements are (arg_name, arg_ty) where `arg_ty` is the string representation of the type in Python
+deriving Repr, BEq, Inhabited
+
+-- This information should come from our prelude. For now, we use the fact that
+-- these functions are exactly the ones
+-- represented as `Call(Attribute(Name(...)))` in the AST (instead of `Call(Name(...))`).
+def callCanThrow (func_infos : List PythonFunctionDecl) (stmt: Python.stmt SourceRange) : Bool :=
+  match stmt with
+  | .Expr _ (.Call _ (.Attribute _ _ _ _) _ _) | .Assign _ _ (.Call _ (.Attribute _ _ _ _) _ _) _ => true
+  | .Expr _ (.Call _ f _ _) | .Assign _ _ (.Call _ f _ _) _ => match f with
+    | .Name _ f _ => func_infos.any (λ fi => fi.name == f.val)
+    | _ => false
+  | _ => false
+
 -- TODO: we should be checking that args are right
 open Strata.Python.Internal in
-def argsAndKWordsToCanonicalList (fname: String) (args : Array (Python.expr SourceRange)) (kwords: Array (Python.keyword SourceRange)) : List Boogie.Expression.Expr :=
+def argsAndKWordsToCanonicalList (func_infos : List PythonFunctionDecl) (fname: String) (args : Array (Python.expr SourceRange)) (kwords: Array (Python.keyword SourceRange)) : List Boogie.Expression.Expr :=
   -- TODO: we need a more general solution for other functions
   if fname == "print" then
+    args.toList.map PyExprToBoogie
+  else if func_infos.any (λ e => e.name == fname) then
     args.toList.map PyExprToBoogie
   else
     let required_order := getFuncSigOrder fname
@@ -202,7 +221,7 @@ def collectVarDecls (stmts: Array (Python.stmt SourceRange)) : List Boogie.State
 
 mutual
 
-partial def exceptHandlersToBoogie (jmp_targets: List String) (h : Python.excepthandler SourceRange) : List Boogie.Statement :=
+partial def exceptHandlersToBoogie (jmp_targets: List String) (func_infos : List PythonFunctionDecl) (h : Python.excepthandler SourceRange) : List Boogie.Statement :=
   assert! jmp_targets.length >= 2
   match h with
   | .ExceptHandler _ ex_ty _ body =>
@@ -218,11 +237,11 @@ partial def exceptHandlersToBoogie (jmp_targets: List String) (h : Python.except
     | .none =>
       [.set "exception_ty_matches" (.boolConst () false)]
     let cond := .fvar () "exception_ty_matches" none
-    let body_if_matches := body.val.toList.flatMap (PyStmtToBoogie jmp_targets) ++ [.goto jmp_targets[1]!]
+    let body_if_matches := body.val.toList.flatMap (PyStmtToBoogie jmp_targets func_infos) ++ [.goto jmp_targets[1]!]
     set_ex_ty_matches ++ [.ite cond {ss := body_if_matches} {ss := []}]
 
 
-partial def PyStmtToBoogie (jmp_targets: List String) (s : Python.stmt SourceRange) : List Boogie.Statement :=
+partial def PyStmtToBoogie (jmp_targets: List String) (func_infos : List PythonFunctionDecl) (s : Python.stmt SourceRange) : List Boogie.Statement :=
   assert! jmp_targets.length > 0
   let non_throw := match s with
     | .Import _ names =>
@@ -237,62 +256,131 @@ partial def PyStmtToBoogie (jmp_targets: List String) (s : Python.stmt SourceRan
       [.call [] "importFrom" (n ++ [PyListStrToBoogie names.val] ++ i)]
     | .Expr _ (.Call _ func args kwords) =>
       let fname := PyExprToString func
-      if callCanThrow s then
-        [.call ["maybe_except"] fname (argsAndKWordsToCanonicalList fname args.val kwords.val)]
+      if callCanThrow func_infos s then
+        [.call ["maybe_except"] fname (argsAndKWordsToCanonicalList func_infos fname args.val kwords.val)]
       else
-        [.call [] fname (argsAndKWordsToCanonicalList fname args.val kwords.val)]
+        [.call [] fname (argsAndKWordsToCanonicalList func_infos fname args.val kwords.val)]
     | .Expr _ _ =>
-      dbg_trace "Can't handle Expr statements that aren't calls"
-      assert! false
-      [.assert "expr" (.boolConst () true)]
+      panic! "Can't handle Expr statements that aren't calls"
     | .Assign _ lhs (.Call _ func args kwords) _ =>
       assert! lhs.val.size == 1
       let fname := PyExprToString func
-      [.call [PyExprToString lhs.val[0]!, "maybe_except"] fname (argsAndKWordsToCanonicalList fname args.val kwords.val)]
+      [.call [PyExprToString lhs.val[0]!, "maybe_except"] fname (argsAndKWordsToCanonicalList func_infos fname args.val kwords.val)]
     | .Assign _ lhs rhs _ =>
       assert! lhs.val.size == 1
       [.set (PyExprToString lhs.val[0]!) (PyExprToBoogie rhs)]
     | .AnnAssign _ lhs _ { ann := _ , val := (.some (.Call _ func args kwords))} _ =>
       let fname := PyExprToString func
-      [.call [PyExprToString lhs, "maybe_except"] fname (argsAndKWordsToCanonicalList fname args.val kwords.val)]
+      [.call [PyExprToString lhs, "maybe_except"] fname (argsAndKWordsToCanonicalList func_infos fname args.val kwords.val)]
     | .AnnAssign _ lhs _ {ann := _, val := (.some e)} _ =>
       [.set (PyExprToString lhs) (PyExprToBoogie e)]
     | .Try _ body handlers _orelse _finalbody =>
         let new_target := s!"excepthandlers_{jmp_targets[0]!}"
         let entry_except_handlers := [.block new_target {ss := []}]
         let new_jmp_stack := new_target :: jmp_targets
-        let except_handlers := handlers.val.toList.flatMap (exceptHandlersToBoogie new_jmp_stack)
+        let except_handlers := handlers.val.toList.flatMap (exceptHandlersToBoogie new_jmp_stack func_infos)
         let var_decls := collectVarDecls body.val
-        [.block "try_block" {ss := var_decls ++ body.val.toList.flatMap (PyStmtToBoogie new_jmp_stack) ++ entry_except_handlers ++ except_handlers}]
+        [.block "try_block" {ss := var_decls ++ body.val.toList.flatMap (PyStmtToBoogie new_jmp_stack func_infos) ++ entry_except_handlers ++ except_handlers}]
+    | .FunctionDef _ _ _ _ _ _ _ _ => panic! "Can't translate FunctionDef to Boogie statement"
+    | .If _ test then_b else_b =>
+      [.ite (PyExprToBoogie test) {ss := (ArrPyStmtToBoogie func_infos then_b.val)} {ss := (ArrPyStmtToBoogie func_infos else_b.val)}] -- TODO: fix this
     | _ =>
       panic! s!"Unsupported {repr s}"
-  if callCanThrow s then
+  if callCanThrow func_infos s then
     non_throw ++ [handleCallThrow jmp_targets[0]!]
   else
     non_throw
 
+partial def ArrPyStmtToBoogie (func_infos : List PythonFunctionDecl) (a : Array (Python.stmt SourceRange)) : List Boogie.Statement :=
+  a.toList.flatMap (PyStmtToBoogie ["end"] func_infos)
+
 end --mutual
 
-def ArrPyStmtToBoogie (a : Array (Python.stmt SourceRange)) : List Boogie.Statement :=
-  a.toList.flatMap (PyStmtToBoogie ["end"])
 
-def pythonFuncToBoogie (name : String) (body: Array (Python.stmt SourceRange)) (spec : Boogie.Procedure.Spec) : Boogie.Procedure :=
+
+def translateFunctions (a : Array (Python.stmt SourceRange)) (func_infos : List PythonFunctionDecl) : List Boogie.Decl :=
+  a.toList.filterMap (λ s => match s with
+    | .FunctionDef _ name _args body _ _ret _ _ =>
+
+      let varDecls : List Boogie.Statement := []
+      let proc : Boogie.Procedure := {
+        header := {
+               name := name.val,
+               typeArgs := [],
+               inputs := [],
+               outputs := [("maybe_except", (.tcons "ExceptOrNone" []))]},
+        spec := default,
+        body := varDecls ++ ArrPyStmtToBoogie func_infos body.val ++ [.block "end" {ss := []}]
+      }
+      some (.proc proc)
+    | _ => none)
+
+def pyTyStrToLMonoTy (ty_str: String) : Lambda.LMonoTy :=
+  match ty_str with
+  | "str" => mty[string]
+  | _ => panic! s!"Unsupported type: {ty_str}"
+
+def pythonFuncToBoogie (name : String) (args: List (String × String)) (body: Array (Python.stmt SourceRange)) (spec : Boogie.Procedure.Spec) (func_infos : List PythonFunctionDecl) : Boogie.Procedure :=
+  let inputs : List (Lambda.Identifier Boogie.Visibility × Lambda.LMonoTy) := args.map (λ p => (p.fst, pyTyStrToLMonoTy p.snd))
   let varDecls := collectVarDecls body ++ [(.init "exception_ty_matches" t[bool] (.boolConst () false)), (.havoc "exception_ty_matches")]
-  let stmts := ArrPyStmtToBoogie body
+  let stmts := ArrPyStmtToBoogie func_infos body
   let body := varDecls ++ stmts ++ [.block "end" {ss := []}]
   {
     header := {name,
                typeArgs := [],
-               inputs := [],
+               inputs,
                outputs := [("maybe_except", (.tcons "ExceptOrNone" []))]},
     spec,
     body
   }
 
+def unpackPyArguments (args: Python.arguments SourceRange) : List (String × String) :=
+-- Python AST:
+-- arguments = (arg* posonlyargs, arg* args, arg? vararg, arg* kwonlyargs,
+--                  expr* kw_defaults, arg? kwarg, expr* defaults)
+  match args with -- TODO: Error if any other types of args
+  | .mk_arguments _ _ args _ _ _ _ _ => args.val.toList.map (λ a =>
+    match a with
+    | .mk_arg _ name oty _ =>
+      match oty.val with
+      | .some ty => (name.val, PyExprToString ty)
+      | _ => panic! s!"Missing type annotation on arg: {repr a}")
+
+def PyFuncDefToBoogie (s: Python.stmt SourceRange) (func_infos : List PythonFunctionDecl) : Boogie.Decl × PythonFunctionDecl :=
+  match s with
+  | .FunctionDef _ name args body _ _ret _ _ =>
+    let args := unpackPyArguments args
+    (.proc (pythonFuncToBoogie name.val args body.val default func_infos), {name := name.val, args})
+  | _ => panic! s!"Expected function def: {repr s}"
+
 def pythonToBoogie (pgm: Strata.Program): Boogie.Program :=
   let pyCmds := toPyCommands pgm.commands
   assert! pyCmds.size == 1
   let insideMod := unwrapModule pyCmds[0]!
-  {decls := [.proc (pythonFuncToBoogie "__main__" insideMod default)]}
+  let func_defs := insideMod.filter (λ s => match s with
+  | .FunctionDef _ _ _ _ _ _ _ _ => true
+  | _ => false)
+
+  let non_func_blocks := insideMod.filter (λ s => match s with
+  | .FunctionDef _ _ _ _ _ _ _ _ => false
+  | _ => true)
+
+  let globals := [(.var "__name__" (.forAll [] mty[string]) (.strConst () "__main__"))]
+
+  let rec helper (f : Python.stmt SourceRange → List PythonFunctionDecl → Boogie.Decl × PythonFunctionDecl)
+                 (acc : List PythonFunctionDecl) :
+                 List (Python.stmt SourceRange) → List Boogie.Decl × List PythonFunctionDecl
+  | [] => ([], acc)
+  | x :: xs =>
+    let (y, acc') := f x acc
+    let new_acc := acc' :: acc
+    let (ys, acc'') := helper f new_acc xs
+    (y :: ys, acc'')
+
+  let func_defs_and_infos := (helper PyFuncDefToBoogie [] func_defs.toList)
+  let func_defs := func_defs_and_infos.fst
+  let func_infos := func_defs_and_infos.snd
+
+  {decls := globals ++ func_defs ++ [.proc (pythonFuncToBoogie "__main__" [] non_func_blocks default func_infos)]}
 
 end Strata
