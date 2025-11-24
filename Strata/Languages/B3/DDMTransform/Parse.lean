@@ -65,13 +65,19 @@ category Pattern;
 op pattern (e : Expression) : Pattern => "pattern " e:0 ", ";
 
 category Patterns;
-op patternsAtom (p : Pattern) : Patterns => @[prec(0)] p:0;
-op patternsPush (ps : Patterns, p : Pattern) : Patterns => @[prec(0)] ps:0 p:0;
+op patterns_cons (p : Pattern, ps : Patterns) : Patterns => @[prec(0)] p:0 ps:0;
+op patterns_single (p : Pattern) : Patterns => @[prec(0)] p:0;
 
-op forall_expr (var : Ident, ty : Ident, patterns : Option Patterns, body : Expression) : Expression =>
+op forall_expr_no_patterns (var : Ident, ty : Ident, body : Expression) : Expression =>
+  @[prec(1)] "forall " var " : " ty " " body:1;
+
+op forall_expr (var : Ident, ty : Ident, patterns : Patterns, body : Expression) : Expression =>
   @[prec(1)] "forall " var " : " ty " " patterns body:1;
 
-op exists_expr (var : Ident, ty : Ident, patterns : Option Patterns, body : Expression) : Expression =>
+op exists_expr_no_patterns (var : Ident, ty : Ident, body : Expression) : Expression =>
+  @[prec(1)] "exists " var " : " ty " " body:1;
+
+op exists_expr (var : Ident, ty : Ident, patterns : Patterns, body : Expression) : Expression =>
   @[prec(1)] "exists " var " : " ty " " patterns body:1;
 
 category Statement;
@@ -111,23 +117,26 @@ op labeled_statement (label : Ident, s : Statement) : Statement => label:0 ": " 
 
 op probe (name : Ident) : Statement => "\nprobe " name:0 ;
 
-category VarInit;
-op var_init_none () : VarInit => "";
-op var_init_some (e : Expression) : VarInit => " := " e:0;
+op var_decl_full (name : Ident, ty : Ident, autoinv : Expression, init : Expression) : Statement =>
+  "\nvar " name:0 " : " ty:0 " autoinv " autoinv:0 " := " init:0 ;
 
-category VarType;
-op type_init_none () : VarType => "";
-op type_init_some (i: Ident): VarType => " : " i:0;
+op var_decl_with_autoinv (name : Ident, ty : Ident, autoinv : Expression) : Statement =>
+  "\nvar " name:0 " : " ty:0 " autoinv " autoinv:0 ;
 
-category AutoInv;
-op autoinv_none () : AutoInv => "";
-op autoinv_some (e : Expression) : AutoInv => " autoinv " e:0;
+op var_decl_with_init (name : Ident, ty : Ident, init : Expression) : Statement =>
+  "\nvar " name:0 " : " ty:0 " := " init:0 ;
 
-op var_decl (name : Ident, ty : VarType, autoinv : AutoInv, init : VarInit) : Statement =>
-  "\nvar " name ty autoinv:0 init:0 ;
+op var_decl_typed (name : Ident, ty : Ident) : Statement =>
+  "\nvar " name:0 " : " ty:0 ;
 
-op val_decl (name : Ident, ty : VarType, init : Expression) : Statement =>
-  "\nval " name ty " := " init:0 ;
+op var_decl_inferred (name : Ident, init : Expression) : Statement =>
+  "\nvar " name:0 " := " init:0 ;
+
+op val_decl (name : Ident, ty : Ident, init : Expression) : Statement =>
+  "\nval " name:0 " : " ty:0 " := " init:0 ;
+
+op val_decl_inferred (name : Ident, init : Expression) : Statement =>
+  "\nval " name:0 " := " init:0 ;
 
 category ChoiceBranch;
 op choice_branch (s : Statement) : ChoiceBranch => s:40;
@@ -201,8 +210,11 @@ op pmode_out () : PParamMode => "out ";
 op pmode_inout () : PParamMode => "inout ";
 
 category PParam;
-op pparam (mode : PParamMode, name : Ident, ty : Ident, autoinv : AutoInv) : PParam =>
-  mode name " : " ty autoinv;
+op pparam (mode : PParamMode, name : Ident, ty : Ident) : PParam =>
+  mode name " : " ty;
+
+op pparam_with_autoinv (mode : PParamMode, name : Ident, ty : Ident, autoinv : Expression) : PParam =>
+  mode name " : " ty " autoinv " autoinv:0;
 
 category Spec;
 op spec_requires (e : Expression) : Spec => "\n  requires " e:0;

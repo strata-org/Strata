@@ -45,8 +45,8 @@ Strata.B3DDM.Pattern.pattern : {α : Type} → α → B3DDM.Expression α → B3
 info: inductive Strata.B3DDM.Patterns : Type → Type
 number of parameters: 1
 constructors:
-Strata.B3DDM.Patterns.patternsAtom : {α : Type} → α → B3DDM.Pattern α → Patterns α
-Strata.B3DDM.Patterns.patternsPush : {α : Type} → α → Patterns α → B3DDM.Pattern α → Patterns α
+Strata.B3DDM.Patterns.patterns_cons : {α : Type} → α → B3DDM.Pattern α → Patterns α → Patterns α
+Strata.B3DDM.Patterns.patterns_single : {α : Type} → α → B3DDM.Pattern α → Patterns α
 -/
 #guard_msgs in
 #print B3DDM.Patterns

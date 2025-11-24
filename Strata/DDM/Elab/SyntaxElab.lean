@@ -35,9 +35,12 @@ def addElaborators (argDecls : ArgDecls) (p : Nat × Array ArgElaborator) (a : S
       (si + 1, es.push argElab)
     else
       panic! "Invalid index"
-  | .str _ =>
-    let (si, es) := p
-    (si + 1, es)
+  | .str s =>
+    if s.trim.isEmpty then
+      p
+    else
+      let (si, es) := p
+      (si + 1, es)
   | .indent _ as =>
     as.attach.foldl (init := p) (fun p ⟨a, _⟩ => addElaborators argDecls p a)
 
