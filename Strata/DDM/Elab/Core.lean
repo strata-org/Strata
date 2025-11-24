@@ -886,10 +886,12 @@ Return the arguments to the given syntax declaration.
 
 This should alway succeeed, but captures an internal error if an invariant check fails.
 -/
-def getSyntaxArgs (loc : SourceRange) (stx : Syntax) (expected : Nat) : ElabM (Vector Syntax expected) := do
+def getSyntaxArgs (stx : Syntax) (ident : QualifiedIdent) (expected : Nat) : ElabM (Vector Syntax expected) := do
+  let some loc := mkSourceRange? stx
+    | panic! s!"elabOperation missing source location {repr stx}"
   let stxArgs := stx.getArgs
   let .isTrue stxArgP := inferInstanceAs (Decidable (stxArgs.size = expected))
-    | logInternalError loc s!"Expected {expected} arguments when {stxArgs.size} seen."
+    | logInternalError loc s!"{ident} expected {expected} arguments when {stxArgs.size} seen.\n  {repr stxArgs[0]!}"
       return default
   return ⟨stxArgs, stxArgP⟩
 
@@ -911,7 +913,7 @@ partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := 
     | return panic! s!"Unknown elaborator {i.fullName}"
   let initSize := tctx.bindings.size
   let argDecls := decl.argDecls.toArray.toVector
-  let (stxArgs, success) ← runChecked <| getSyntaxArgs loc stx se.syntaxCount
+  let (stxArgs, success) ← runChecked <| getSyntaxArgs stx i se.syntaxCount
   if not success then
     return default
   let ((args, newCtx), success) ← runChecked <| runSyntaxElaborator argDecls se tctx stxArgs
@@ -1189,7 +1191,7 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
     let some se := (←read).syntaxElabs[i]?
       | return panic! s!"Unknown expression elaborator {i.fullName}"
     let argDecls := fn.argDecls.toArray.toVector
-    let (stxArgs, success) ← runChecked <| getSyntaxArgs loc stx se.syntaxCount
+    let (stxArgs, success) ← runChecked <| getSyntaxArgs stx i se.syntaxCount
     if !success then
       return default
     let ((args, _), success) ← runChecked <| runSyntaxElaborator argDecls se tctx stxArgs

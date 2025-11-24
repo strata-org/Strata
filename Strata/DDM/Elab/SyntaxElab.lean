@@ -89,10 +89,13 @@ def mkSyntaxElab (argDecls : ArgDecls) (stx : SyntaxDef) (opMd : Metadata) : Syn
     syntaxCount := 0
     argElaborators := Array.mkEmpty argDecls.size
   }
-  let ⟨sc, elabs⟩ := stx.atoms.foldl (init := init) (addElaborators argDecls)
-  let elabs := elabs.qsort (fun x y => x.val.argLevel < y.val.argLevel)
+  let as := stx.atoms.foldl (init := init) (addElaborators argDecls)
+  -- In the case with no syntax there is still a single expected
+  -- syntax argument with the empty string.
+  let as := if as.syntaxCount = 0 then as.inc else as
+  let elabs := as.argElaborators.qsort (·.val.argLevel < ·.val.argLevel)
   {
-    syntaxCount := sc
+    syntaxCount := as.syntaxCount
     argElaborators := elabs
     resultScope := opMd.resultLevel argDecls.size
   }
