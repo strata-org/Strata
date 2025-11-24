@@ -20,18 +20,11 @@ function nesting(a: int): int
   e
 }
 
-composite Counter {
-  var value: int
-}
-
-int nestedImpureCalls(counter: Counter) {
-    if (add(counter, 1) == 1) {
-        var x = add(counter, add(counter, 2));
-        return x;
+int nestedImpureCalls() {
+    var x = 0;
+    var y = 0;
+    if ((x = x + 1) == (y = x)) {
+        return;
     }
-    return add(counter, 3);
-}
-
-method add(counter: Counter, amount: int): int {
-  counter.value = counter.value + amount
+    assert false;
 }
