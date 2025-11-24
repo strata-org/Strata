@@ -881,6 +881,18 @@ partial def translateTypeTree (arg : Tree) : ElabM Tree := do
   | _ =>
     panic! s!"translateTypeExpr expected operator {repr arg}"
 
+/--
+Return the arguments to the given syntax declaration.
+
+This should alway succeeed, but captures an internal error if an invariant check fails.
+-/
+def getSyntaxArgs (loc : SourceRange) (stx : Syntax) (expected : Nat) : ElabM (Vector Syntax expected) := do
+  let stxArgs := stx.getArgs
+  let .isTrue stxArgP := inferInstanceAs (Decidable (stxArgs.size = expected))
+    | logInternalError loc s!"Expected {expected} arguments when {stxArgs.size} seen."
+      return default
+  return ⟨stxArgs, stxArgP⟩
+
 mutual
 
 partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
@@ -899,7 +911,10 @@ partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := 
     | return panic! s!"Unknown elaborator {i.fullName}"
   let initSize := tctx.bindings.size
   let argDecls := decl.argDecls.toArray.toVector
-  let ((args, newCtx), success) ← runChecked <| runSyntaxElaborator se argDecls tctx stx.getArgs
+  let (stxArgs, success) ← runChecked <| getSyntaxArgs loc stx se.syntaxCount
+  if not success then
+    return default
+  let ((args, newCtx), success) ← runChecked <| runSyntaxElaborator argDecls se tctx stxArgs
   if !success then
     return default
   let resultCtx ← decl.newBindings.foldlM (init := newCtx) <| fun ctx spec => do
@@ -912,14 +927,12 @@ partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := 
 
 partial def runSyntaxElaborator
   {argc : Nat}
+  (argDecls : Vector ArgDecl argc)
   (se : SyntaxElaborator)
-  (b : Vector ArgDecl argc)
   (tctx0 : TypingContext)
-  (args : Array Syntax) : ElabM (Vector Tree argc × TypingContext) := do
+  (args : Vector Syntax se.syntaxCount) : ElabM (Vector Tree argc × TypingContext) := do
   let mut trees : Vector (Option Tree) argc := .replicate argc none
-  for ae in se.argElaborators do
-    let .isTrue syntaxLevelP := inferInstanceAs (Decidable (ae.syntaxLevel < args.size))
-        | return panic! "Invalid syntaxLevel"
+  for ⟨ae, sp⟩ in se.argElaborators do
     let argLevel := ae.argLevel
     let .isTrue argLevelP := inferInstanceAs (Decidable (argLevel < argc))
         | return panic! "Invalid argLevel"
@@ -931,7 +944,7 @@ partial def runSyntaxElaborator
         | none => continue
       | none => pure tctx0
     let astx := args[ae.syntaxLevel]
-    let expectedKind := b[argLevel].kind
+    let expectedKind := argDecls[argLevel].kind
     match expectedKind with
     | .type expectedType =>
       let (tree, success) ← runChecked <| elabExpr tctx astx
@@ -948,7 +961,7 @@ partial def runSyntaxElaborator
         | .error () =>
           panic! "Could not infer type."
         | .ok expectedType => do
-          trees ← unifyTypes b ⟨argLevel, argLevelP⟩ expectedType tctx astx inferredType trees
+          trees ← unifyTypes argDecls ⟨argLevel, argLevelP⟩ expectedType tctx astx inferredType trees
           assert! trees[argLevel].isNone
           trees := trees.set argLevel (some tree)
       | .cat c =>
@@ -1152,11 +1165,13 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
           { ident := "", kind := .type (.ofType tp) }
     let argDecls := argTypes.map mkArgDecl
     let se : SyntaxElaborator := {
-            argElaborators := Array.ofFn fun (⟨lvl, _⟩ : Fin args.size) =>
-               { syntaxLevel := lvl, argLevel := lvl }
+            syntaxCount := args.size
+            argElaborators := Array.ofFn fun (⟨lvl, lvlp⟩ : Fin args.size) =>
+              let e := { syntaxLevel := lvl, argLevel := lvl }
+              ⟨e, lvlp⟩
             resultScope := none
           }
-    let (args, _) ← runSyntaxElaborator se argDecls tctx args
+    let (args, _) ← runSyntaxElaborator argDecls se tctx ⟨args, Eq.refl args.size⟩
     let e := args.toArray.foldl (init := fvar) fun e t =>
       .app { start := fnLoc.start, stop := t.info.loc.stop } e t.arg
     let info : ExprInfo := { toElabInfo := einfo, expr := e }
@@ -1174,7 +1189,10 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
     let some se := (←read).syntaxElabs[i]?
       | return panic! s!"Unknown expression elaborator {i.fullName}"
     let argDecls := fn.argDecls.toArray.toVector
-    let ((args, _), success) ← runChecked <| runSyntaxElaborator se argDecls tctx stx.getArgs
+    let (stxArgs, success) ← runChecked <| getSyntaxArgs loc stx se.syntaxCount
+    if !success then
+      return default
+    let ((args, _), success) ← runChecked <| runSyntaxElaborator argDecls se tctx stxArgs
     if !success then
       return default
     -- N.B. Every subterm gets the function location.

@@ -22,42 +22,79 @@ structure ArgElaborator where
   contextLevel : Option (Fin argLevel) := .none
 deriving Inhabited, Repr
 
-def mkArgElab (argDecls : ArgDecls) (syntaxLevel : Nat) (argLevel : Fin argDecls.size) : ArgElaborator :=
-  let contextLevel : Option (Fin argLevel) := argDecls.argScopeLevel argLevel
-  { argLevel := argLevel.val, syntaxLevel, contextLevel }
+abbrev ArgElaboratorArray (sc : Nat) :=
+  Array { a : ArgElaborator // a.syntaxLevel < sc }
 
-def addElaborators (argDecls : ArgDecls) (p : Nat × Array ArgElaborator) (a : SyntaxDefAtom) : Nat × Array ArgElaborator :=
+/-- Information needed to elaborator arguments to operations or functions. -/
+structure ArgElaborators where
+  /-- Expected number of arguments elaborator will process. -/
+  syntaxCount : Nat
+  argElaborators : ArgElaboratorArray syntaxCount
+deriving Inhabited, Repr
+
+namespace ArgElaborators
+
+def inc (as : ArgElaborators) : ArgElaborators :=
+  let sc := as.syntaxCount
+  let elabs := as.argElaborators.unattach
+  have ext (e : ArgElaborator) (mem : e ∈ elabs) : e.syntaxLevel < sc + 1 := by
+          simp [elabs] at mem
+          grind
+  let elabs' := elabs.attachWith (·.syntaxLevel < sc + 1) ext
+  have scp : sc < sc + 1 := by grind
+  { syntaxCount := sc + 1
+    argElaborators := elabs'
+  }
+
+def push (as : ArgElaborators)
+         (argDecls : ArgDecls)
+         (argLevel : Fin argDecls.size) : ArgElaborators :=
+  let sc := as.syntaxCount
+  let as := as.inc
+  let newElab : ArgElaborator := {
+    syntaxLevel := sc
+    argLevel := argLevel.val
+    contextLevel := argDecls.argScopeLevel argLevel
+  }
+  have scp : sc < sc + 1 := by grind
+  { as with argElaborators := as.argElaborators.push ⟨newElab, scp⟩ }
+
+end ArgElaborators
+
+def addElaborators (argDecls : ArgDecls) (p : ArgElaborators) (a : SyntaxDefAtom) : ArgElaborators :=
   match a with
   | .ident level _prec =>
-    let (si, es) := p
     if h : level < argDecls.size then
-      let argElab := mkArgElab argDecls si ⟨level, h⟩
-      (si + 1, es.push argElab)
+      p.push argDecls ⟨level, h⟩
     else
       panic! "Invalid index"
   | .str s =>
     if s.trim.isEmpty then
       p
     else
-      let (si, es) := p
-      (si + 1, es)
+      p.inc
   | .indent _ as =>
     as.attach.foldl (init := p) (fun p ⟨a, _⟩ => addElaborators argDecls p a)
 
-/-- Information needed to elaborator operations or functions. -/
+/-- Information needed to elaborate operations or functions. -/
 structure SyntaxElaborator where
-  argElaborators : Array ArgElaborator
+  /-- Expected number of arguments elaborator will process. -/
+  syntaxCount : Nat
+  argElaborators : ArgElaboratorArray syntaxCount
   resultScope : Option Nat
 deriving Inhabited, Repr
 
-def mkElaborators (argDecls : ArgDecls) (as : Array SyntaxDefAtom) : Array ArgElaborator :=
-  let init : Array ArgElaborator := Array.mkEmpty argDecls.size
-  let (_, es) := as.foldl (init := (0, init)) (addElaborators argDecls)
-  es.qsort (fun x y => x.argLevel < y.argLevel)
-
-def mkSyntaxElab (argDecls : ArgDecls) (stx : SyntaxDef) (opMd : Metadata) : SyntaxElaborator := {
-    argElaborators := mkElaborators argDecls stx.atoms,
-    resultScope := opMd.resultLevel argDecls.size,
+def mkSyntaxElab (argDecls : ArgDecls) (stx : SyntaxDef) (opMd : Metadata) : SyntaxElaborator :=
+  let init : ArgElaborators := {
+    syntaxCount := 0
+    argElaborators := Array.mkEmpty argDecls.size
+  }
+  let ⟨sc, elabs⟩ := stx.atoms.foldl (init := init) (addElaborators argDecls)
+  let elabs := elabs.qsort (fun x y => x.val.argLevel < y.val.argLevel)
+  {
+    syntaxCount := sc
+    argElaborators := elabs
+    resultScope := opMd.resultLevel argDecls.size
   }
 
 def opDeclElaborator (decl : OpDecl) : SyntaxElaborator :=
