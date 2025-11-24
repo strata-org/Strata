@@ -209,8 +209,12 @@ partial def Statement.renameLhs (s : Boogie.Statement) (fr: Lambda.Identifier Vi
       if l.name == fr  then to else l)) pname args metadata
   | .block lbl b metadata =>
     .block lbl (Block.renameLhs b fr to) metadata
-  | .havoc _ _ | .assert _ _ _ | .assume _ _ _ | .ite _ _ _ _
-  | .loop _ _ _ _ _ | .goto _ _ => s
+  | .ite x thenb elseb m =>
+    .ite x (Block.renameLhs thenb fr to) (Block.renameLhs elseb fr to) m
+  | .loop m g i b md =>
+    .loop m g i (Block.renameLhs b fr to) md
+  | .havoc _ _ | .assert _ _ _ | .assume _ _ _
+  | .goto _ _ => s
 end
 
 -- Unlike Stmt.hasLabel, this gathers labels in assert and assume as well.
@@ -345,8 +349,8 @@ def inlineCallStmt (st: Statement) (p : Program)
           (outputTrips.map (fun ((tmpvar,ty),orgvar) => ((orgvar,ty),tmpvar)))
         -- Create a var statement for each procedure input arguments.
         -- The input parameter expression is assigned to these new vars.
-        let inputTrips ← genArgExprIdentsTrip sigInputs args
-        let inputInit := createInits inputTrips
+        --let inputTrips ← genArgExprIdentsTrip sigInputs args
+        let inputInit := createInits (sigInputs.zip args)
         -- Assign the output variables in the signature to the actual output
         -- variables used in the callee.
         let outputSetStmts :=

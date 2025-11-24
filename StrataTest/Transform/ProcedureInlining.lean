@@ -22,39 +22,8 @@ open Std
 
 section ProcedureInliningExamples
 
-def Test1 :=
-#strata
-program Boogie;
-procedure f(x : bool) returns (y : bool) {
-  y := !x;
-};
 
-procedure h() returns () {
-  var b_in : bool;
-  var b_out : bool;
-  call b_out := f(b_in);
-};
-#end
-
-def Test1Ans :=
-#strata
-program Boogie;
-procedure f(x : bool) returns (y : bool) {
-  y := !x;
-};
-
-procedure h() returns () {
-  var b_in : bool;
-  var b_out : bool;
-  inlined: {
-    var tmp_arg_0 : bool := b_in;
-    var tmp_arg_1 : bool;
-    tmp_arg_1 := !tmp_arg_0;
-    b_out := tmp_arg_1;
-  }
-};
-
-#end
+-- Alpha equivalence of procedures for testing!
 
 
 structure IdMap where
@@ -92,16 +61,23 @@ private def IdMap.lblMapsTo (map:IdMap) (fr:String) (to:String): Bool :=
   | .some x => x == to
 
 
-private def alphaEquivExprs (e1 e2: Expression.Expr) (map:IdMap)
-    : Bool :=
-  let new_e1 := map.vars.foldl
+private def substExpr (e1:Expression.Expr) (map:IdMap) :=
+  map.vars.foldl
     (fun (e:Expression.Expr) ((i1,i2):String × String) =>
-      let old_id:Expression.Ident := { name := i1, metadata := Visibility.locl }
+      -- old_id has visibility of temp because the new local variables were
+      -- created by BoogieGenM.
+      let old_id:Expression.Ident := { name := i1, metadata := Visibility.temp }
+      -- new_expr has visibility of unres because that is the default setting
+      -- from DDM parsed program, and the substituted program is supposed to be
+      -- equivalent to the answer program translated from DDM
       let new_expr:Expression.Expr := .fvar ()
-          { name := i2, metadata := Visibility.locl } .none
+          { name := i2, metadata := Visibility.unres } .none
       e.substFvar old_id new_expr)
     e1
-  new_e1 == e2
+
+private def alphaEquivExprs (e1 e2: Expression.Expr) (map:IdMap)
+    : Bool :=
+  (substExpr e1 map).eraseTypes == e2.eraseTypes
 
 private def alphaEquivExprsOpt (e1 e2: Option Expression.Expr) (map:IdMap)
     : Except Format Bool :=
@@ -115,10 +91,13 @@ private def alphaEquivExprsOpt (e1 e2: Option Expression.Expr) (map:IdMap)
 
 private def alphaEquivIdents (e1 e2: Expression.Ident) (map:IdMap)
     : Bool :=
-  let new_e1 := match Map.find? map.vars e1.name with
-    | .some n' => { e1 with name := n' }
-    | .none => e1
-  new_e1 == e2
+  (-- Case 1: e1 is created from inliner, e2 was from DDM
+   (e1.metadata == Visibility.temp && e2.metadata == Visibility.unres) ||
+   -- Caes 2: both e1 and e2 are from DDM
+   (e1.metadata == e2.metadata)) &&
+  (match Map.find? map.vars e1.name with
+    | .some n' => n' == e2.name
+    | .none => e1.name == e2.name)
 
 
 mutual
@@ -138,7 +117,7 @@ partial def alphaEquivBlock (b1 b2: Boogie.Block) (map:IdMap)
 
 partial def alphaEquivStatement (s1 s2: Boogie.Statement) (map:IdMap)
     : Except Format IdMap := do
-  let mk_err (s:String): Except Format IdMap :=
+  let mk_err (s:Format): Except Format IdMap :=
     .error (f!"{s}\ns1:{s1}\ns2:{s2}\nmap:{map.vars}")
 
   match (s1,s2) with
@@ -192,30 +171,31 @@ partial def alphaEquivStatement (s1 s2: Boogie.Statement) (map:IdMap)
       IdMap.updateVars map [(n1.name,n2.name)]
     | (.cmd (.set n1 e1 _), .cmd (.set n2 e2 _)) =>
       if ¬ alphaEquivExprs e1 e2 map then
-        mk_err "RHS of sets do not match"
+        mk_err f!"RHS of sets do not match \
+        \n(subst of e1: {repr (substExpr e1 map)})\n(e2: {repr e2})"
       else if ¬ alphaEquivIdents n1 n2 map then
-        .error "LHS of sets do not match"
+        mk_err "LHS of sets do not match"
       else
         return map
     | (.cmd (.havoc n1 _), .cmd (.havoc n2 _)) =>
       if ¬ alphaEquivIdents n1 n2 map then
-        .error "LHS of havocs do not match"
+        mk_err "LHS of havocs do not match"
       else
         return map
     | (.cmd (.assert _ e1 _), .cmd (.assert _ e2 _)) =>
       if ¬ alphaEquivExprs e1 e2 map then
-        .error "Expressions of asserts do not match"
+        mk_err "Expressions of asserts do not match"
       else
         return map
     | (.cmd (.assume _ e1 _), .cmd (.assume _ e2 _)) =>
       if ¬ alphaEquivExprs e1 e2 map then
-        .error "Expressions of assumes do not match"
+        mk_err "Expressions of assumes do not match"
       else
         return map
     | (_,_) =>
-      .error "Commands do not match"
+      mk_err "Commands do not match"
 
-  | (_,_) => .error "Statements do not match"
+  | (_,_) => mk_err "Statements do not match"
 
 end
 
@@ -258,13 +238,98 @@ def checkInlining (prog : Boogie.Program) (progAns : Boogie.Program)
         .error msg
     | _, _ => .error "?")
 
-#eval Boogie.typeCheck Options.default (translate Test1)
-#eval Boogie.typeCheck Options.default (translate Test1Ans)
-#eval toString (runInlineCall (translate Test1)).eraseTypes
-#eval toString (translate Test1Ans).eraseTypes
+
+
+def Test1 :=
+#strata
+program Boogie;
+procedure f(x : bool) returns (y : bool) {
+  y := !x;
+};
+
+procedure h() returns () {
+  var b_in : bool;
+  var b_out : bool;
+  call b_out := f(b_in);
+};
+#end
+
+def Test1Ans :=
+#strata
+program Boogie;
+procedure f(x : bool) returns (y : bool) {
+  y := !x;
+};
+
+procedure h() returns () {
+  var b_in : bool;
+  var b_out : bool;
+  inlined: {
+    var tmp_arg_0 : bool := b_in;
+    var tmp_arg_1 : bool;
+    tmp_arg_1 := !tmp_arg_0;
+    b_out := tmp_arg_1;
+  }
+};
+
+#end
+
+/-- info: ok: true -/
+#guard_msgs in
 #eval checkInlining (translate Test1) (translate Test1Ans)
 
--- TODO: compare Test1 and Test1Ans. This needs postprocessing because
--- the "init" statements' RHSes have different placeholder variable names.
+def Test2 :=
+#strata
+program Boogie;
+procedure f(x : bool) returns (y : bool) {
+  if (x) {
+    goto end;
+  } else { y := false;
+  }
+  end: {}
+};
+
+procedure h() returns () {
+  var b_in : bool;
+  var b_out : bool;
+  call b_out := f(b_in);
+  end: {}
+};
+#end
+
+def Test2Ans :=
+#strata
+program Boogie;
+procedure f(x : bool) returns (y : bool) {
+  if (x) {
+    goto end;
+  } else { y := false;
+  }
+  end: {}
+};
+
+procedure h() returns () {
+  var b_in : bool;
+  var b_out : bool;
+  inlined: {
+    var f_x : bool := b_in;
+    var f_y : bool;
+    if (f_x) {
+      goto f_end;
+    } else {
+      f_y := false;
+    }
+    f_end: {}
+    b_out := f_y;
+  }
+  end: {}
+};
+
+#end
+
+/-- info: ok: true -/
+#guard_msgs in
+#eval checkInlining (translate Test2) (translate Test2Ans)
+
 
 end ProcedureInliningExamples
