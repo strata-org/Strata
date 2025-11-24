@@ -919,7 +919,7 @@ partial def runSyntaxElaborator
   let mut trees : Vector (Option Tree) argc := .replicate argc none
   for ae in se.argElaborators do
     let .isTrue syntaxLevelP := inferInstanceAs (Decidable (ae.syntaxLevel < args.size))
-        | return panic! "Invalid syntaxLevel"
+        | return panic! s!"Invalid syntaxLevel {repr ae}"
     let argLevel := ae.argLevel
     let .isTrue argLevelP := inferInstanceAs (Decidable (argLevel < argc))
         | return panic! "Invalid argLevel"
