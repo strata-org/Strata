@@ -4,17 +4,13 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DDM.Integration.Lean
-import Strata.DDM.Util.Format
-import Strata.Transform.BoogieTransform
-import Strata.Languages.Boogie.Statement
-import Strata.Languages.Boogie.Verifier
-import Strata.Languages.Boogie.Boogie
-import Strata.Languages.Boogie.OldExpressions
-import Strata.Languages.Boogie.ProgramWF
-import Strata.DL.Util.ListUtils
-import Strata.Languages.Boogie.BoogieGen
 import Strata.DL.Util.LabelGen
+import Strata.DL.Util.ListUtils
+import Strata.Languages.Boogie.Boogie
+import Strata.Languages.Boogie.BoogieGen
+import Strata.Languages.Boogie.ProgramWF
+import Strata.Languages.Boogie.Statement
+import Strata.Transform.BoogieTransform
 
 /-! # Procedure Inlining Transformation -/
 
