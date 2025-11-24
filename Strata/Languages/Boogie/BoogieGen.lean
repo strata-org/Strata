@@ -20,7 +20,7 @@ open Boogie Lambda Imperative
 namespace Names
 
 def initVarValue (id : BoogieIdent) : Expression.Expr :=
-  .fvar ("init_" ++ id.name) none
+  .fvar () (BoogieIdent.unres ("init_" ++ id.name)) none
 
 end Names
 

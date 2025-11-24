@@ -2103,13 +2103,10 @@ theorem EvalExpressionIsDefined :
   simp [WellFormedSemanticEvalVar] at Hwfvr
   induction e generalizing v <;>
     simp [HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
-  case fvar v' ty' =>
-    specialize Hwfvr (Lambda.LExpr.fvar v' ty') v' σ₀ σ
+  case fvar m v' ty' =>
+    specialize Hwfvr (Lambda.LExpr.fvar m v' ty') v' σ₀ σ
     simp [HasFvar.getFvar] at Hwfvr
     simp_all
-  case mdata info e ih =>
-    -- Need extra congruence properties -- if f(a) is defined, then a must be defined
-    sorry
   case abs => sorry
   case quant => sorry
   case app => sorry

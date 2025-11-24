@@ -129,7 +129,7 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
     (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
     (vars : List P.TypedIdent) (ans : String)
     (E : Strata.SMT.EncoderState) : Except Format (Result P.TypedIdent) := do
-  let pos := (ans.find (fun c => c == '\n')).byteIdx
+  let pos := (ans.find (fun c => c == '\n' || c == '\r')).byteIdx
   let verdict := ans.take pos
   let rest := ans.drop pos
   match verdict with

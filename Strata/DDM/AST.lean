@@ -6,6 +6,7 @@
 
 import Std.Data.HashMap
 import Strata.DDM.Util.Array
+import Strata.DDM.Util.ByteArray
 import Strata.DDM.Util.Decimal
 
 set_option autoImplicit false
@@ -177,6 +178,7 @@ inductive ArgF (α : Type) : Type where
 | num (ann : α)(v : Nat)
 | decimal (ann : α) (v : Decimal)
 | strlit (ann : α) (i : String)
+| bytes (ann : α) (a : ByteArray)
 | option (ann : α) (l : Option (ArgF α))
 | seq (ann : α) (l : Array (ArgF α))
 | commaSepList (ann : α) (l : Array (ArgF α))
@@ -1224,7 +1226,7 @@ partial def foldOverArgBindingSpecs {α β}
     : β :=
   match a with
   | .op op => op.foldBindingSpecs m f init
-  | .expr _ | .type _ | .cat _ | .ident .. | .num .. | .decimal .. | .strlit .. => init
+  | .expr _ | .type _ | .cat _ | .ident .. | .num .. | .decimal .. | .bytes .. | .strlit .. => init
   | .option _ none => init
   | .option _ (some a) => foldOverArgBindingSpecs m f init a
   | .seq _ a => a.attach.foldl (init := init) fun init ⟨a, _⟩ => foldOverArgBindingSpecs m f init a
@@ -1383,9 +1385,11 @@ structure Program where
   /-- Final global context for program. -/
   globalContext : GlobalContext :=
     commands.foldl (init := {}) (·.addCommand dialects ·)
-deriving BEq
 
 namespace Program
+
+instance : BEq Program where
+  beq x y := x.dialect == y.dialect && x.commands == y.commands
 
 instance : Inhabited Program where
   default := { dialects := {}, dialect := default }

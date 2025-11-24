@@ -21,14 +21,16 @@ model-check a Strata-generated GOTO binary.
 
 -------------------------------------------------------------------------------
 
+abbrev BoogieParams : Lambda.LExprParams := ⟨Unit, Boogie.Visibility⟩
+
 abbrev Boogie.ExprStr : Imperative.PureExpr :=
-   { Ident := String,
-     Expr := Lambda.LExpr Lambda.LMonoTy Unit,
+   { Ident := BoogieParams.Identifier,
+     Expr := Lambda.LExpr BoogieParams.mono,
      Ty := Lambda.LTy,
-     TyEnv := @Lambda.TEnv Visibility,
-     TyContext := @Lambda.LContext Visibility,
-     EvalEnv := Lambda.LState Visibility
-     EqIdent := instDecidableEqString }
+     TyEnv := @Lambda.TEnv BoogieParams.IDMeta,
+     TyContext := @Lambda.LContext BoogieParams,
+     EvalEnv := Lambda.LState BoogieParams
+     EqIdent := inferInstanceAs (DecidableEq BoogieParams.Identifier) }
 
 namespace BoogieToGOTO
 
@@ -44,7 +46,7 @@ private def lookupType (T : Boogie.Expression.TyEnv) (i : Boogie.Expression.Iden
 
 private def updateType (T : Boogie.Expression.TyEnv) (i : Boogie.Expression.Ident)
     (ty : Boogie.Expression.Ty) : Boogie.Expression.TyEnv :=
-  T.insertInContext i ty
+  @Lambda.TEnv.insertInContext ⟨Boogie.ExpressionMetadata, Boogie.Visibility⟩ _ T i ty
 
 instance : Imperative.ToGoto Boogie.Expression where
   lookupType := lookupType
@@ -70,26 +72,25 @@ private def updateTypeStr (T : Boogie.ExprStr.TyEnv) (i : Boogie.ExprStr.Ident)
 instance : Imperative.ToGoto Boogie.ExprStr where
   lookupType := lookupTypeStr
   updateType := updateTypeStr
-  identToString := (fun x => x)
+  identToString := (fun x => x.name)
   toGotoType := (fun ty => Lambda.LMonoTy.toGotoType ty.toMonoTypeUnsafe)
   toGotoExpr := Lambda.LExpr.toGotoExpr
 
 open Lambda in
-def substVarNames {IDMeta: Type} [DecidableEq IDMeta]
-    (e : LExpr LMonoTy IDMeta) (frto : Map String String) : (LExpr LMonoTy Unit) :=
+def substVarNames {Metadata IDMeta: Type} [DecidableEq IDMeta]
+    (e : LExpr ⟨⟨Metadata, IDMeta⟩, LMonoTy⟩) (frto : Map String String) : (LExpr ⟨⟨Unit, Boogie.Visibility⟩, LMonoTy⟩) :=
   match e with
-  | .const c => .const c
-  | .bvar b => .bvar b
-  | .op o ty => .op o.name ty
-  | .fvar  name ty =>
+  | .const _ c => .const () c
+  | .bvar _ b => .bvar () b
+  | .op _ o ty => .op () (Lambda.Identifier.mk o.name Boogie.Visibility.unres) ty
+  | .fvar _ name ty =>
     let name_alt := frto.find? name.name
-    .fvar (name_alt.getD name.name) ty
-  | .mdata info e' => .mdata info (substVarNames e' frto)
-  | .abs   ty e' => .abs ty (substVarNames e' frto)
-  | .quant qk ty tr' e' => .quant qk ty (substVarNames tr' frto) (substVarNames e' frto)
-  | .app   f e' => .app (substVarNames f frto) (substVarNames e' frto)
-  | .ite   c t e' => .ite (substVarNames c frto) (substVarNames t frto) (substVarNames e' frto)
-  | .eq    e1 e2 => .eq (substVarNames e1 frto) (substVarNames e2 frto)
+    .fvar () (Lambda.Identifier.mk (name_alt.getD name.name) Boogie.Visibility.unres) ty
+  | .abs _ ty e' => .abs () ty (substVarNames e' frto)
+  | .quant _ qk ty tr' e' => .quant () qk ty (substVarNames tr' frto) (substVarNames e' frto)
+  | .app _ f e' => .app () (substVarNames f frto) (substVarNames e' frto)
+  | .ite _ c t e' => .ite () (substVarNames c frto) (substVarNames t frto) (substVarNames e' frto)
+  | .eq _ e1 e2 => .eq () (substVarNames e1 frto) (substVarNames e2 frto)
 
 def Boogie.Cmd.renameVars (frto : Map String String) (c : Imperative.Cmd Boogie.Expression)
     : Imperative.Cmd Boogie.ExprStr :=
@@ -152,9 +153,9 @@ def CProverGOTO.Context.toJson (programName : String) (ctx : CProverGOTO.Context
 
 open Lambda.LTy.Syntax in
 def transformToGoto (boogie : Boogie.Program) : Except Format CProverGOTO.Context := do
-  let C := { Lambda.LContext.default with functions := Boogie.Factory, knownTypes := Boogie.KnownTypes }
-  let T := Lambda.TEnv.default
-  let (boogie, _T) ← Boogie.Program.typeCheck C T boogie
+  let Ctx := { Lambda.LContext.default with functions := Boogie.Factory, knownTypes := Boogie.KnownTypes }
+  let Env := Lambda.TEnv.default
+  let (boogie, _Env) ← Boogie.Program.typeCheck Ctx Env boogie
   dbg_trace f!"[Strata.Boogie] Type Checking Succeeded!"
   if h : boogie.decls.length = 1 then
     let decl := boogie.decls[0]'(by exact Nat.lt_of_sub_eq_succ h)
@@ -192,7 +193,7 @@ def transformToGoto (boogie : Boogie.Program) : Except Format CProverGOTO.Contex
       let cmds := Boogie.Cmds.renameVars args_renamed cmds
 
       let ans ← @Imperative.Cmds.toGotoTransform Boogie.ExprStr
-                    BoogieToGOTO.instToGotoExprStr T pname cmds (loc := 0)
+                    BoogieToGOTO.instToGotoExprStr Env pname cmds (loc := 0)
       let ending_insts : Array CProverGOTO.Instruction := #[
         -- (FIXME): Add lifetime markers.
         -- { type := .DEAD, locationNum := ans.nextLoc + 1,
