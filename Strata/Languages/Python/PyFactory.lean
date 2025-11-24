@@ -64,7 +64,7 @@ if not PyReMatch(REGEX, name, 0) then
 open Boogie
 open Lambda LTy.Syntax LExpr.SyntaxMono
 
-def reCompileFunc : LFunc Boogie.Visibility :=
+def reCompileFunc : LFunc Boogie.BoogieLParams :=
     { name := "PyReCompile",
       typeArgs := [],
       inputs := [("string", mty[string]),
@@ -72,7 +72,7 @@ def reCompileFunc : LFunc Boogie.Visibility :=
       output := mty[ExceptErrorRegex],
       concreteEval := some
         (fun orig_e args => match args with
-          | [LExpr.strConst s, LExpr.intConst 0] =>
+          | [LExpr.strConst () s, LExpr.intConst () 0] =>
             -- This function has a concrete evaluation implementation only when
             -- flags == 0.
             -- (FIXME): We use `.match` mode below because we support only
@@ -84,17 +84,17 @@ def reCompileFunc : LFunc Boogie.Visibility :=
               -- Note: Do not use `eb` (in Boogie.Syntax) here (e.g., see below)
               -- eb[(~ExceptErrorRegex_mkOK expr)]
               -- that captures `expr` as an `.fvar`.
-              LExpr.mkApp (.op "ExceptErrorRegex_mkOK" none) [expr]
+              LExpr.mkApp () (.op () "ExceptErrorRegex_mkOK" none) [expr]
             | some (ParseError.unimplemented msg _pattern _pos) =>
-              LExpr.mkApp (.op "ExceptErrorRegex_mkErr" none)
-                  [LExpr.mkApp (.op "Error_Unimplemented" none) [.strConst (toString msg)]]
+              LExpr.mkApp () (.op () "ExceptErrorRegex_mkErr" none)
+                  [LExpr.mkApp () (.op () "Error_Unimplemented" none) [.strConst () (toString msg)]]
             | some (ParseError.patternError msg _pattern _pos) =>
-              LExpr.mkApp (.op "ExceptErrorRegex_mkErr" none)
-                  [LExpr.mkApp (.op "Error_RePatternErr" none) [.strConst (toString msg)]]
+              LExpr.mkApp () (.op () "ExceptErrorRegex_mkErr" none)
+                  [LExpr.mkApp () (.op () "Error_RePatternErr" none) [.strConst () (toString msg)]]
           | _ => orig_e)
       }
 
-def ReFactory : @Factory Boogie.Visibility :=
+def ReFactory : @Factory Boogie.BoogieLParams :=
     #[
       reCompileFunc
     ]

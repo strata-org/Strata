@@ -292,7 +292,7 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
 
 def verify (smtsolver : String) (program : Program)
     (options : Options := Options.default)
-    (moreFns : @Lambda.Factory Boogie.Visibility := Lambda.Factory.default) :
+    (moreFns : @Lambda.Factory BoogieLParams := Lambda.Factory.default) :
     EIO Format VCResults := do
   match Boogie.typeCheckAndPartialEval options program moreFns with
   | .error err =>
@@ -314,7 +314,7 @@ def Boogie.getProgram (p : Strata.Program) : Boogie.Program × Array String :=
   TransM.run (translateProgram p)
 
 def typeCheck (env : Program) (options : Options := Options.default)
-    (moreFns : @Lambda.Factory Boogie.Visibility := Lambda.Factory.default) :
+    (moreFns : @Lambda.Factory Boogie.BoogieLParams := Lambda.Factory.default) :
      Except Std.Format Boogie.Program := do
   let (program, errors) := Boogie.getProgram env
   if errors.isEmpty then
@@ -325,7 +325,7 @@ def typeCheck (env : Program) (options : Options := Options.default)
 
 def verify (smtsolver : String) (env : Program)
     (options : Options := Options.default)
-    (moreFns : @Lambda.Factory Boogie.Visibility := Lambda.Factory.default) :
+    (moreFns : @Lambda.Factory Boogie.BoogieLParams := Lambda.Factory.default) :
     IO Boogie.VCResults := do
   let (program, errors) := Boogie.getProgram env
   if errors.isEmpty then

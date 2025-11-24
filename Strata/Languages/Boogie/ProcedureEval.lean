@@ -32,7 +32,7 @@ def eval (E : Env) (p : Procedure) : List (Procedure × Env) :=
   -- the context. These reflect the pre-state values of the globals.
   let modifies_tys :=
     p.spec.modifies.map
-    (fun l => (E.exprEnv.state.findD l (none, .fvar l none)).fst)
+    (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
   let modifies_typed := p.spec.modifies.zip modifies_tys
   let (globals_fvars, E) := E.genFVars modifies_typed
   let global_init_subst := List.zip modifies_typed globals_fvars
@@ -64,7 +64,7 @@ def eval (E : Env) (p : Procedure) : List (Procedure × Env) :=
                     -- that hides the expression from the evaluator, allowing us
                     -- to retain the postcondition body instead of replacing it
                     -- with "true".
-                  (.assert label .true
+                  (.assert label (.true ())
                                  ((Imperative.MetaData.pushElem
                                   #[]
                                   (.label label)

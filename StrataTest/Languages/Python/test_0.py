@@ -1,5 +1,7 @@
 import test_helper
 
+# Test minimal precondition verification
+
 # Should succeed
 test_helper.procedure("foo")
 

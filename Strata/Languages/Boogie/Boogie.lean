@@ -35,7 +35,7 @@ namespace Boogie
 -/
 
 def typeCheck (options : Options) (program : Program)
-    (moreFns : @Lambda.Factory Boogie.Visibility := Lambda.Factory.default) :
+    (moreFns : @Lambda.Factory BoogieLParams := Lambda.Factory.default) :
     Except Std.Format Program := do
   let T := Lambda.TEnv.default
   let factory ← Boogie.Factory.addFactory moreFns
@@ -49,7 +49,7 @@ def typeCheck (options : Options) (program : Program)
   return program
 
 def typeCheckAndPartialEval (options : Options) (program : Program)
-    (moreFns : @Lambda.Factory Boogie.Visibility := Lambda.Factory.default) :
+    (moreFns : @Lambda.Factory BoogieLParams := Lambda.Factory.default) :
     Except Std.Format (List (Program × Env)) := do
   let program ← typeCheck options program moreFns
   let σ ← (Lambda.LState.init).addFactory Boogie.Factory
