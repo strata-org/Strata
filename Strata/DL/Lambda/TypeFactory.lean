@@ -228,7 +228,7 @@ Examples:
 
 -/
 def elimConcreteEval {T: LExprParams} [BEq T.Identifier] (d: LDatatype T.IDMeta) (m: T.Metadata) (elimName : Identifier T.IDMeta) :
-  (LExpr T.mono) → List (LExpr T.mono) → (LExpr T.mono) :=
+  (LExpr T.mono) → List (LExpr T.mono) → Option (LExpr T.mono) :=
   fun e args =>
     match args with
     | x :: xs =>

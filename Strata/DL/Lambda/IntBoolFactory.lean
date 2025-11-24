@@ -21,13 +21,18 @@ section IntBoolFactory
 
 variable {T : LExprParams} [Coe String T.Identifier]
 
-def unaryOp (n : T.Identifier)
+def cevalMkOpt (ceval:  Option (LExpr T.mono→ List (LExpr T.mono) → LExpr T.mono)) :  Option (LExpr T.mono → List (LExpr T.mono) → Option (LExpr T.mono)) :=
+  match ceval with
+  | none => none
+  | some f => some (fun x y => some (f x y))
+
+def unaryOp (n :T.Identifier)
             (ty : LMonoTy)
             (ceval : Option (LExpr T.mono → List (LExpr T.mono) → LExpr T.mono)) : LFunc T :=
   { name := n,
     inputs := [("x", ty)],
     output := ty,
-    concreteEval := ceval }
+    concreteEval := cevalMkOpt ceval }
 
 def binaryOp (n : T.Identifier)
              (ty : LMonoTy)
@@ -35,7 +40,7 @@ def binaryOp (n : T.Identifier)
   { name := n,
     inputs := [("x", ty), ("y", ty)],
     output := ty,
-    concreteEval := ceval }
+    concreteEval := cevalMkOpt ceval }
 
 def binaryPredicate (n : T.Identifier)
                     (ty : LMonoTy)
@@ -43,7 +48,7 @@ def binaryPredicate (n : T.Identifier)
   { name := n,
     inputs := [("x", ty), ("y", ty)],
     output := .bool,
-    concreteEval := ceval }
+    concreteEval := cevalMkOpt ceval }
 
 def unOpCeval (InTy OutTy : Type) [ToString OutTy]
                 (mkConst : T.Metadata → OutTy → LExpr T.mono)
