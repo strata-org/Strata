@@ -90,6 +90,8 @@ partial def Statement.labels (s : Boogie.Statement) : List String :=
   | .block lbl b _ => lbl :: (Block.labels b)
   | .ite _ thenb elseb _ => (Block.labels thenb) ++ (Block.labels elseb)
   | .loop _ _ _ body _ => Block.labels body
+  | .assume lbl _ _ => [lbl]
+  | .assert lbl _ _ => [lbl]
   | _ => []
 end
 
@@ -111,6 +113,8 @@ partial def Statement.replaceLabels
     .ite cond (Block.replaceLabels thenb map) (Block.replaceLabels elseb map)
   | .loop g measure inv body m =>
     .loop g measure inv (Block.replaceLabels body map) m
+  | .assume lbl e m => .assume (app lbl) e m
+  | .assert lbl e m => .assert (app lbl) e m
   | _ => s
 end
 
