@@ -19,7 +19,7 @@ import Strata.DL.Util.LabelGen
 /-! # Procedure Inlining Transformation -/
 
 namespace Boogie
-namespace CallElim
+namespace ProcedureInlining
 
 open Transform
 
@@ -279,8 +279,6 @@ private def renameAllLocalNames (c:Procedure)
   let label_map_id <- genOldToFreshIdMappings label_ids [] proc_name
   let label_map := label_map_id.map (fun (id1,id2) => (id1.name, id2.name))
 
-  dbg_trace f!"var_map: {var_map}"
-
   -- Do substitution
   let new_body := List.map (fun (s0:Statement) =>
     var_map.foldl (fun (s:Statement) (old_id,new_id) =>
@@ -288,7 +286,17 @@ private def renameAllLocalNames (c:Procedure)
         let s := Statement.renameLhs s old_id new_id
         Statement.replaceLabels s label_map)
       s0) c.body
-  return ({ c with body := new_body }, var_map)
+  let new_header := { c.header with
+    inputs := c.header.inputs.map (fun (id,ty) =>
+      match var_map.find? id with
+      | .some id' => (id',ty)
+      | .none => panic! "unreachable"),
+    outputs := c.header.outputs.map (fun (id,ty) =>
+      match var_map.find? id with
+      | .some id' => (id',ty)
+      | .none => panic! "unreachable")
+    }
+  return ({ c with body := new_body, header := new_header }, var_map)
 
 
 /-
@@ -321,12 +329,12 @@ def inlineCallStmt (st: Statement) (p : Program)
         --   call x1,x2, .. = f(v1,v2,...)
         --   where 'procedure f(in1,in2,..) outputs(out1,out2,..)'
         -- Insert
-        --   init out1 : ty := ..      --- outputInit
-        --   init out2 : ty := ..
         --   init in1 : ty := v1     --- inputInit
         --   init in2 : ty := v2
+        --   init out1 : ty := <placeholder> --- outputInit
+        --   init out2 : ty := <placeholder>
         --   ... (f body)
-        --   set x1 := out1
+        --   set x1 := out1    --- outputSetStmts
         --   set x2 := out2
         -- `init outN` is not necessary because calls are only allowed to use
         -- already declared variables (per Boogie.typeCheck)
@@ -353,10 +361,10 @@ def inlineCallStmt (st: Statement) (p : Program)
             outs_lhs_and_sig
 
         let stmts:List (Imperative.Stmt Boogie.Expression Boogie.Command)
-          := inputInit ++ proc.body ++ outputSetStmts
+          := inputInit ++ outputInit ++ proc.body ++ outputSetStmts
         let new_blk := Imperative.Block.mk stmts
 
-        return outputInit ++ [.block (procName ++ "$inlined") new_blk]
+        return [.block (procName ++ "$inlined") new_blk]
       | _ => return [st]
 
 def inlineCallStmts (ss: List Statement) (prog : Program)
@@ -378,5 +386,5 @@ def inlineCallL (dcls : List Decl) (prog : Program)
         (← (inlineCallL ds prog))
     | _       => return d :: (← (inlineCallL ds prog))
 
-end CallElim
+end ProcedureInlining
 end Boogie
