@@ -43,25 +43,25 @@ inductive MatchMode where
   deriving Repr, BEq
 
 /--
-When `r` is definitely consuming, this function returns `false`.
-Returns `true` otherwise (i.e., when it _may_ not be consuming).
+When `r` is definitely consuming, this function returns `true`.
+Returns `false` otherwise (i.e., when it _may_ not be consuming).
 -/
-def RegexAST.mayNotConsume (r : RegexAST) : Bool :=
+def RegexAST.alwaysConsume (r : RegexAST) : Bool :=
   match r with
-  | .char _ => false
-  | .range _ _ => false
-  | .union r1 r2 => mayNotConsume r1 || mayNotConsume r2
-  | .concat r1 r2 => mayNotConsume r1 && mayNotConsume r2
-  | .anychar => false
-  | .star _ => true
-  | .plus r1 => mayNotConsume r1
-  | .optional _ => true
-  | .loop r1 n _ => mayNotConsume r1 || n == 0
-  | .anchor_start => true
-  | .anchor_end => true
-  | .group r1 => mayNotConsume r1
-  | .empty => true
-  | .complement _ => false
+  | .char _ => true
+  | .range _ _ => true
+  | .union r1 r2 => alwaysConsume r1 && alwaysConsume r2
+  | .concat r1 r2 => alwaysConsume r1 || alwaysConsume r2
+  | .anychar => true
+  | .star _ => false
+  | .plus r1 => alwaysConsume r1
+  | .optional _ => false
+  | .loop r1 n _ => alwaysConsume r1 && n ≠ 0
+  | .anchor_start => false
+  | .anchor_end => false
+  | .group r1 => alwaysConsume r1
+  | .empty => false
+  | .complement _ => true
 
 /--
 Empty regex pattern; matches an empty string.
@@ -93,30 +93,19 @@ partial def RegexAST.toBoogie (r : RegexAST) (atStart atEnd : Bool) :
   | .anchor_end =>
     if atEnd then Boogie.emptyRegex else Boogie.unmatchableRegex
   | .plus r1 =>
-    let r1b := toBoogie r1 atStart atEnd
-    let r2b :=
-      match (mayNotConsume r1) with
-      | false =>
-        let r1b := toBoogie r1 atStart false -- r1 at the beginning
-        let r2b := toBoogie r1 false false   -- r1s in the middle
-        let r3b := toBoogie r1 false atEnd   -- r1 at the end
-        let r2b := mkApp () (.op () reStarFunc.name none) [r2b]
-        mkApp () (.op () reConcatFunc.name none) [mkApp () (.op () reConcatFunc.name none) [r1b, r2b], r3b]
-      | true =>
-        mkApp () (.op () reStarFunc.name none) [r1b]
-    mkApp () (.op () reUnionFunc.name none) [r1b, r2b]
+    toBoogie (.concat r1 (.star r1)) atStart atEnd
   | .star r1 =>
     let r1b := toBoogie r1 atStart atEnd
     let r2b :=
-      match (mayNotConsume r1) with
-      | false =>
+      match (alwaysConsume r1) with
+      | true =>
         let r1b := toBoogie r1 atStart false -- r1 at the beginning
         let r2b := toBoogie r1 false false   -- r1s in the middle
         let r3b := toBoogie r1 false atEnd   -- r1 at the end
         let r2b := mkApp () (.op () reStarFunc.name none) [r2b]
         mkApp () (.op () reConcatFunc.name none)
           [mkApp () (.op () reConcatFunc.name none) [r1b, r2b], r3b]
-      | true =>
+      | false =>
         mkApp () (.op () reStarFunc.name none) [r1b]
     mkApp () (.op () reUnionFunc.name none)
       [mkApp () (.op () reUnionFunc.name none) [Boogie.emptyRegex, r1b], r2b]
@@ -128,36 +117,36 @@ partial def RegexAST.toBoogie (r : RegexAST) (atStart atEnd : Bool) :
     | 0, 1 => toBoogie (.union .empty r1) atStart atEnd
     | 0, m => -- Note: m >= 2
       let r1b := toBoogie r1 atStart atEnd
-      let r2b := match (mayNotConsume r1) with
-                | false =>
+      let r2b := match (alwaysConsume r1) with
+                | true =>
                   let r1b := toBoogie r1 atStart false -- r1 at the beginning
                   let r2b := toBoogie r1 false false   -- r1s in the middle
                   let r3b := toBoogie r1 false atEnd   -- r1 at the end
                   let r2b := mkApp () (.op () reLoopFunc.name none) [r2b, intConst () 0, intConst () (m-2)]
                   mkApp () (.op () reConcatFunc.name none) [mkApp () (.op () reConcatFunc.name none) [r1b, r2b], r3b]
-                | true =>
+                | false =>
                   mkApp () (.op () reLoopFunc.name none) [r1b, intConst () 0, intConst () m]
       mkApp () (.op () reUnionFunc.name none)
             [mkApp () (.op () reUnionFunc.name none) [Boogie.emptyRegex, r1b],
             r2b]
     | _, _ =>
-      toBoogie (.union r1 (.loop r1 (n - 1) (m - 1))) atStart atEnd
+      toBoogie (.concat r1 (.loop r1 (n - 1) (m - 1))) atStart atEnd
   | .group r1 => toBoogie r1 atStart atEnd
   | .concat r1 r2 =>
-    match (mayNotConsume r1), (mayNotConsume r2) with
-    | false, false =>
+    match (alwaysConsume r1), (alwaysConsume r2) with
+    | true, true =>
       let r1b := toBoogie r1 atStart false
-      let r2b := toBoogie r2 false atEnd
-      mkApp () (.op () reConcatFunc.name none) [r1b, r2b]
-    | false, true =>
-      let r1b := toBoogie r1 atStart atEnd
       let r2b := toBoogie r2 false atEnd
       mkApp () (.op () reConcatFunc.name none) [r1b, r2b]
     | true, false =>
+      let r1b := toBoogie r1 atStart atEnd
+      let r2b := toBoogie r2 false atEnd
+      mkApp () (.op () reConcatFunc.name none) [r1b, r2b]
+    | false, true =>
       let r1b := toBoogie r1 atStart false
       let r2b := toBoogie r2 true atEnd
       mkApp () (.op () reConcatFunc.name none) [r1b, r2b]
-    | true, true =>
+    | false, false =>
       let r1b := toBoogie r1 atStart atEnd
       let r2b := toBoogie r2 atStart atEnd
       mkApp () (.op () reConcatFunc.name none) [r1b, r2b]
