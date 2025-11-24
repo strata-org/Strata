@@ -12,6 +12,7 @@ import Strata.Languages.Boogie.Program
 import Strata.Languages.Boogie.ProgramType
 import Strata.Languages.Boogie.WF
 import Strata.DL.Lambda.Lambda
+import Strata.Transform.BoogieTransform
 import Strata.Transform.CallElim
 import Strata.DL.Imperative.CmdSemantics
 import Strata.Languages.Boogie.StatementSemantics
@@ -27,7 +28,7 @@ import Strata.DL.Util.ListUtils
 -/
 
 namespace CallElimCorrect
-open Boogie CallElim
+open Boogie Boogie.Transform CallElim
 
 theorem BoogieIdent.isGlob_isGlobOrLocl :
   PredImplies (BoogieIdent.isGlob ·) (BoogieIdent.isGlobOrLocl ·) := by
@@ -123,7 +124,7 @@ theorem getIdentTys!_store_same :
 
 theorem getIdentTy!_no_throw :
   (p.find? .var ident).isSome = true →
-  ∃ r, (runWith ident (getIdentTy! p) cs) = (Except.ok r) := by
+  ∃ r, (runWith ident (getIdentTy! p) cs).fst = (Except.ok r) := by
   intros H
   simp [runWith, StateT.run, getIdentTy!]
   have Hsome := @getOldExprIdentTy_some p ident
@@ -138,7 +139,7 @@ theorem getIdentTys!_no_throw :
     {idents : List Expression.Ident}
     {cs : BoogieGenState},
   (∀ ident ∈ idents, (p.find? .var ident).isSome = true) →
-  ∃ r, (runWith idents (getIdentTys! p) cs) = (Except.ok r) := by
+  ∃ r, (runWith idents (getIdentTys! p) cs).fst = (Except.ok r) := by
   intros p idents cs Hglob
   induction idents generalizing cs
   case nil =>
@@ -167,12 +168,12 @@ theorem callElimStmtsNoExcept :
   ∀ (st : Boogie.Statement)
     (p : Boogie.Program),
     WF.WFStatementsProp p [st] →
-  ∃ sts, Except.ok sts = ((CallElim.run [st] (CallElim.callElimStmts · p)))
+  ∃ sts, Except.ok sts = ((run [st] (CallElim.callElimStmts · p)))
   -- NOTE: the generated variables will not be local, but temp. So it will not be well-formed
   -- ∧ WF.WFStatementsProp p sts
   := by
   intros st p wf
-  simp [CallElim.callElimStmts, CallElim.callElimStmt]
+  simp [Transform.run, runStmts, CallElim.callElimStmts, CallElim.callElimStmt]
   cases st with
   | block l b md => exists [.block l b md]
   | ite cd tb eb md => exists [.ite cd tb eb md]
@@ -2439,7 +2440,7 @@ theorem genArgExprIdentsTrip_snd :
     simp [genArgExprIdents] at heq
     induction args <;> simp_all
     case cons h t ih =>
-    simp [bind, List.replicate, StateT.bind, Functor.map, StateT.map] at heq
+    simp [bind, List.replicate, StateT.bind, StateT.map] at heq
     rw [List.map_snd_zip]
     simp
     split at heq
@@ -3460,7 +3461,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
   WF.WFProgramProp p →
   BoogieGenState.WF γ →
   (∀ v, v ∈ γ.generated ↔ ((σ v).isSome ∧ BoogieIdent.isTemp v)) →
-  (Except.ok sts, γ') = (CallElim.runWith' [st] (CallElim.callElimStmts · p) γ) →
+  (Except.ok sts, γ') = (runWith [st] (CallElim.callElimStmts · p) γ) →
   -- NOTE: The theorem does not expect the same store due to inserting new temp variables
   exists σ'',
     Inits σ' σ'' ∧
@@ -3468,7 +3469,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
     := by
   intros Hp Hgv Heval Hwfc Hwf Hwfp Hwfgen Hwfgenst Helim
   cases st <;>
-  simp [StateT.run, callElimStmts, callElimStmt,
+  simp [Transform.runWith, StateT.run, callElimStmts, runStmts, callElimStmt,
         pure, ExceptT.pure, ExceptT.mk, StateT.pure,
         bind, ExceptT.bind, ExceptT.bindCont, StateT.bind,
         ] at Helim

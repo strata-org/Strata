@@ -5,6 +5,7 @@
 -/
 
 import Strata.Transform.CallElim
+import Strata.Languages.Boogie.Boogie
 import Strata.Languages.Boogie.StatementSemantics
 import Strata.Languages.Boogie.ProgramType
 import Strata.Languages.Boogie.ProgramWF
@@ -26,6 +27,7 @@ procedure f(x : bool) returns (y : bool) {
 
 procedure h() returns () {
   var b_in : bool;
+  var b_out : bool;
   call b_out := f(b_in);
 };
 #end
@@ -51,6 +53,41 @@ procedure h() returns () {
 #end
 
 
+structure VarMap where
+  vars: Map String String
+  labels: Map String String
+
+mutual
+partial def alphaEquivBlock (b1 b2: Boogie.Block) (map:VarMap)
+    : Except String VarMap := do
+  let st1 := b1.ss
+  let st2 := b2.ss
+  if st1.length ≠ st2.length then
+    .error "Block lengths do not match"
+  else
+    (st1.zip st2).allM
+      (fun (st1,st2) => alphaEquivStatement st1 st2 varmap lblmap)
+
+partial def alphaEquivStatement (s1 s2: Boogie.Statement)
+    (varmap:Map String String) (lblmap:Map String String)
+    : Except String Bool :=
+  match s1,s2 with
+  | (.block lbl1 b1 _, .block lbl2 b2 _) =>
+    match lblmap.find? lbl1 with
+    | None =>
+      alphaEquivBlock b1 b2 varmap (lblmap.insert lbl1 lbl2)
+    | Some lbl2' =>
+      .error ("Has duplicated definition of block label " ++ lbl1 ++
+          "(previously mapped to " ++ lbl2' ++ ")")
+  | (.ite _ thenb1 elseb1 _, .ite _ thenb2 elseb2) => do
+    let res1 <- alphaEquivBlock thenb1 thenb2 varmap lblmap
+
+end
+
+def alphaEquiv (p1 p2:Boogie.Procedure) :=
+  p1.body
+
+
 
 def translate (t : Strata.Program) : Boogie.Program :=
   (TransM.run (translateProgram t)).fst
@@ -69,6 +106,8 @@ def inlineCall (p : Boogie.Program)
   | .ok res => res
   | .error e => panic! e
 
+#eval Boogie.typeCheck Options.default (translate Test1)
+#eval Boogie.typeCheck Options.default (translate Test1Ans)
 #eval toString (inlineCall (translate Test1)).eraseTypes
 #eval toString (translate Test1Ans).eraseTypes
 
