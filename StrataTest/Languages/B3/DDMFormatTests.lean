@@ -6,10 +6,9 @@
 
 import Strata.Languages.B3.DDMTransform.Parse
 import Strata.Languages.B3.DDMTransform.Translate
+import Strata.Languages.B3.DDMTransform.B3AST2DDM
 
 namespace B3
-
-
 
 open Std (Format)
 open Strata
@@ -118,165 +117,196 @@ def formatExpr (e : Expr Unit) : Format :=
   let state := b3Program.formatState
   cformat (exprFUnitToSourceRange e.toAst) ctx state
 
+-- Helper to extract expression from a check statement and reformat it
+def reformatExpr (p : Program) : Format :=
+  match p.commands.toList with
+  | [op] =>
+    if op.name.name == "command_stmt" then
+      match op.args.toList with
+      | [ArgF.op stmt] =>
+        if stmt.name.name == "check" then
+          match stmt.args.toList with
+          | [ArgF.expr e] =>
+            let ctx := p.formatContext {}
+            let state := p.formatState
+            cformat e ctx state
+          | _ => "Error: expected expr in check"
+        else s!"Error: expected check statement, got {stmt.name.name}"
+      | _ => "Error: expected statement op"
+    else if op.name.name == "command_decl" then
+       match op.args.toList with
+      | [ArgF.op decl] =>
+        if decl.name.name == "axiom_decl" then
+          -- axiom_decl contains an AxiomBody
+          match decl.args.toList with
+          | [ArgF.op body] =>
+            if body.name.name == "axiom" then
+              -- Simple axiom: axiom (expr)
+              match body.args.toList with
+              | [ArgF.expr e] =>
+                let ctx := p.formatContext {}
+                let state := p.formatState
+                cformat e ctx state
+              | _ => s!"Error: expected expr in axiom body, got {repr body.args.toList}"
+            else if body.name.name == "explain_axiom" then
+              -- Axiom with explains: explain_axiom (names, expr)
+              match body.args.toList with
+              | [_, ArgF.expr e] =>
+                let ctx := p.formatContext {}
+                let state := p.formatState
+                cformat e ctx state
+              | _ => s!"Error: expected names and expr in explain_axiom, got {repr body.args.toList}"
+            else s!"Error: expected axiom or explain_axiom body, got {body.name.name}"
+          | _ => s!"Error: expected AxiomBody in axiom_decl, got {repr decl.args.toList}"
+        else s!"Error: expected axiom declaration, got {decl.name.name}"
+      | _ => "Error: expected axiom op"
+    else
+      s!"Error: expected command_stmt or command_decl, got {op.name.name}"
+  | _ => "Error: expected single command"
+
 section ExpressionFormatTests
 
 /--
 info: x
 -/
 #guard_msgs in
-#eval formatExpr $ .id () ⟨(), "x"⟩
-
-/--
-info: 42
--/
-#guard_msgs in
-#eval formatExpr $ .natLit () ⟨(), 42⟩
-
-/--
-info: true
--/
-#guard_msgs in
-#eval formatExpr $ .btrue ()
-
-/--
-info: false
--/
-#guard_msgs in
-#eval formatExpr $ .bfalse ()
+#eval reformatExpr $ #strata program B3; axiom x #end
 
 /--
 info: 5 + 3
 -/
 #guard_msgs in
-#eval formatExpr $ .add () (.natLit () ⟨(), 5⟩) (.natLit () ⟨(), 3⟩)
+#eval reformatExpr $ #strata program B3; axiom 5 + 3 #end
+
+/--
+info: true
+-/
+#guard_msgs in
+#eval reformatExpr $ #strata program B3; check true #end
+
+/--
+info: false
+-/
+#guard_msgs in
+#eval reformatExpr $ #strata program B3; check false #end
+
+/--
+info: 5 + 3
+-/
+#guard_msgs in
+#eval reformatExpr $ #strata program B3; check 5 + 3 #end
 
 /-- info: !true -/
 #guard_msgs in
-#eval formatExpr $ .not () (.btrue ())
+#eval reformatExpr $ #strata program B3; check !true #end
 
 /--
 info: 10 - 3
 -/
 #guard_msgs in
-#eval formatExpr $ .sub () (.natLit () ⟨(), 10⟩) (.natLit () ⟨(), 3⟩)
+#eval reformatExpr $ #strata program B3; check 10 - 3 #end
 
 /--
 info: 4 * 5
 -/
 #guard_msgs in
-#eval formatExpr $ .mul () (.natLit () ⟨(), 4⟩) (.natLit () ⟨(), 5⟩)
+#eval reformatExpr $ #strata program B3; check 4 * 5 #end
 
 /--
 info: 20 div 4
 -/
 #guard_msgs in
-#eval formatExpr $ .div () (.natLit () ⟨(), 20⟩) (.natLit () ⟨(), 4⟩)
+#eval reformatExpr $ #strata program B3; check 20 div 4 #end
 
 /--
 info: 17 mod 5
 -/
 #guard_msgs in
-#eval formatExpr $ .mod () (.natLit () ⟨(), 17⟩) (.natLit () ⟨(), 5⟩)
+#eval reformatExpr $ #strata program B3; check 17 mod 5 #end
 
 /--
 info: 5 == 5
 -/
 #guard_msgs in
-#eval formatExpr $ .equal () (.natLit () ⟨(), 5⟩) (.natLit () ⟨(), 5⟩)
+#eval reformatExpr $ #strata program B3; check 5 == 5 #end
 
 /--
 info: 3 != 7
 -/
 #guard_msgs in
-#eval formatExpr $ .not_equal () (.natLit () ⟨(), 3⟩) (.natLit () ⟨(), 7⟩)
+#eval reformatExpr $ #strata program B3; check 3 != 7 #end
 
 /--
 info: 3 <= 5
 -/
 #guard_msgs in
-#eval formatExpr $ .le () (.natLit () ⟨(), 3⟩) (.natLit () ⟨(), 5⟩)
+#eval reformatExpr $ #strata program B3; check 3 <= 5 #end
 
 /--
 info: 2 < 8
 -/
 #guard_msgs in
-#eval formatExpr $ .lt () (.natLit () ⟨(), 2⟩) (.natLit () ⟨(), 8⟩)
+#eval reformatExpr $ #strata program B3; check 2 < 8 #end
 
 /--
 info: 10 >= 5
 -/
 #guard_msgs in
-#eval formatExpr $ .ge () (.natLit () ⟨(), 10⟩) (.natLit () ⟨(), 5⟩)
+#eval reformatExpr $ #strata program B3; check 10 >= 5 #end
 
 /--
 info: 15 > 3
 -/
 #guard_msgs in
-#eval formatExpr $ .gt () (.natLit () ⟨(), 15⟩) (.natLit () ⟨(), 3⟩)
+#eval reformatExpr $ #strata program B3; check 15 > 3 #end
 
 /--
 info: 2 + 3 * 4
 -/
 #guard_msgs in
-#eval formatExpr $ .add ()
-  (.natLit () ⟨(), 2⟩)
-  (.mul () (.natLit () ⟨(), 3⟩) (.natLit () ⟨(), 4⟩))
+#eval reformatExpr $ #strata program B3; check 2 + 3 * 4 #end
 
 /--
 info: (2 + 3) * 4
 -/
 #guard_msgs in
-#eval formatExpr $ .mul ()
-  (.add () (.natLit () ⟨(), 2⟩) (.natLit () ⟨(), 3⟩))
-  (.natLit () ⟨(), 4⟩)
+#eval reformatExpr $ #strata program B3; check (2 + 3) * 4 #end
 
 /--
 info: 1 + 2 + 3
 -/
 #guard_msgs in
-#eval formatExpr $ .add ()
-  (.add () (.natLit () ⟨(), 1⟩) (.natLit () ⟨(), 2⟩))
-  (.natLit () ⟨(), 3⟩)
+#eval reformatExpr $ #strata program B3; check 1 + 2 + 3 #end
 
 /--
 info: 1 + 2 < 5
 -/
 #guard_msgs in
-#eval formatExpr $ .lt ()
-  (.add () (.natLit () ⟨(), 1⟩) (.natLit () ⟨(), 2⟩))
-  (.natLit () ⟨(), 5⟩)
+#eval reformatExpr $ #strata program B3; check 1 + 2 < 5 #end
 
 /--
 info: 10 - 3 + 2
 -/
 #guard_msgs in
-#eval formatExpr $ .add ()
-  (.sub () (.natLit () ⟨(), 10⟩) (.natLit () ⟨(), 3⟩))
-  (.natLit () ⟨(), 2⟩)
+#eval reformatExpr $ #strata program B3; check 10 - 3 + 2 #end
 
 /--
 info: 20 div 4 * 3
 -/
 #guard_msgs in
-#eval formatExpr $ .mul ()
-  (.div () (.natLit () ⟨(), 20⟩) (.natLit () ⟨(), 4⟩))
-  (.natLit () ⟨(), 3⟩)
+#eval reformatExpr $ #strata program B3; check 20 div 4 * 3 #end
 
 /--
 info: 1 < 2 * 3 + 4
 -/
 #guard_msgs in
-#eval formatExpr $ .lt ()
-  (.natLit () ⟨(), 1⟩)
-  (.add ()
-    (.mul () (.natLit () ⟨(), 2⟩) (.natLit () ⟨(), 3⟩))
-    (.natLit () ⟨(), 4⟩))
+#eval reformatExpr $ #strata program B3; check 1 < 2 * 3 + 4 #end
 
 /--
 info: if true then 1 else 0
 -/
 #guard_msgs in
-#eval formatExpr $ .ite () (.btrue ()) (.natLit () ⟨(), 1⟩) (.natLit () ⟨(), 0⟩)
+#eval reformatExpr $ #strata program B3; check if true then 1 else 0 #end
 
 /--
 info: val temp := 10 temp + x
@@ -467,14 +497,21 @@ info: probe debug_point
 info: var x : int
 -/
 #guard_msgs in
-#eval formatStmt $ Statement.var_decl () ⟨(), "x"⟩ ⟨(), "int"⟩
+#eval formatStmt $ Statement.var_decl () ⟨(), "x"⟩ (VarType.type_init_some () ⟨(), "int"⟩)
   (AutoInv.autoinv_none ()) (VarInit.var_init_none ())
+
+/--
+info: val x : bool := true
+-/
+#guard_msgs in
+#eval formatStmt $ Statement.val_decl () ⟨(), "x"⟩ (VarType.type_init_some () ⟨(), "bool"⟩) (Expr.btrue ())
+
 
 /--
 info: var y : bool := true
 -/
 #guard_msgs in
-#eval formatStmt $ Statement.var_decl () ⟨(), "y"⟩ ⟨(), "bool"⟩
+#eval formatStmt $ Statement.var_decl () ⟨(), "y"⟩ (VarType.type_init_some () ⟨(), "bool"⟩)
   (AutoInv.autoinv_none ())
   (VarInit.var_init_some () (Expr.btrue ()))
 
@@ -482,7 +519,7 @@ info: var y : bool := true
 info: var z : int autoinv z >= 0
 -/
 #guard_msgs in
-#eval formatStmt $ Statement.var_decl () ⟨(), "z"⟩ ⟨(), "int"⟩
+#eval formatStmt $ Statement.var_decl () ⟨(), "z"⟩ (VarType.type_init_some () ⟨(), "int"⟩)
   (AutoInv.autoinv_some () (Expr.ge () (Expr.id () ⟨(), "z"⟩) (Expr.natLit () ⟨(), 0⟩)))
   (VarInit.var_init_none ())
 

@@ -22,7 +22,7 @@ dialect B3;
 
 type Expression;
 
-fn not (e : Expr) : Expression => @[prec(35)] "!" e;
+fn not (e : Expression) : Expression => @[prec(35)] "!" e;
 
 fn natLit (n : Num) : Expression => n;
 fn strLit (s : Str) : Expression => s;
@@ -32,73 +32,73 @@ fn bfalse : Expression => "false";
 
 fn id (name : Ident) : Expression => name;
 
-fn letExpr (name : Ident, value : Expr, body : Expr) : Expression =>
+fn letExpr (name : Ident, value : Expression, body : Expression) : Expression =>
   @[prec(2)] "val " name " := " value:0 " " body:2;
 
-fn labeledExpr (label : Ident, e : Expr) : Expression => @[prec(1)] label ": " e:1;
+fn labeledExpr (label : Ident, e : Expression) : Expression => @[prec(1)] label ": " e:1;
 
-fn ite (c : Expr, t : Expr, f : Expr) : Expression => @[prec(3)] "if " c:0 " then " indent(2, t:3) " else " indent(2, f:3);
-fn iff (a : Expr, b : Expr) : Expression => @[prec(4)] a " <==> " b;
-fn implies (a : Expr, b : Expr) : Expression => @[prec(5), rightassoc] a " ==> " b;
-fn impliedBy (a : Expr, b : Expr) : Expression => @[prec(5), rightassoc] a " <== " b;
-fn and (a : Expr, b : Expr) : Expression => @[prec(10), leftassoc] a " && " b;
-fn or (a : Expr, b : Expr) : Expression => @[prec(8), leftassoc] a " || " b;
+fn ite (c : Expression, t : Expression, f : Expression) : Expression => @[prec(3)] "if " c:0 " then " indent(2, t:3) " else " indent(2, f:3);
+fn iff (a : Expression, b : Expression) : Expression => @[prec(4)] a " <==> " b;
+fn implies (a : Expression, b : Expression) : Expression => @[prec(5), rightassoc] a " ==> " b;
+fn impliedBy (a : Expression, b : Expression) : Expression => @[prec(5), rightassoc] a " <== " b;
+fn and (a : Expression, b : Expression) : Expression => @[prec(10), leftassoc] a " && " b;
+fn or (a : Expression, b : Expression) : Expression => @[prec(8), leftassoc] a " || " b;
 
-fn equal (a : Expr, b : Expr) : Expression => @[prec(15)] a " == " b;
-fn not_equal (a : Expr, b : Expr) : Expression => @[prec(15)] a " != " b;
-fn le (a : Expr, b : Expr) : Expression => @[prec(15)] a " <= " b;
-fn lt (a : Expr, b : Expr) : Expression => @[prec(15)] a " < " b;
-fn ge (a : Expr, b : Expr) : Expression => @[prec(15)] a " >= " b;
-fn gt (a : Expr, b : Expr) : Expression => @[prec(15)] a " > " b;
+fn equal (a : Expression, b : Expression) : Expression => @[prec(15)] a " == " b;
+fn not_equal (a : Expression, b : Expression) : Expression => @[prec(15)] a " != " b;
+fn le (a : Expression, b : Expression) : Expression => @[prec(15)] a " <= " b;
+fn lt (a : Expression, b : Expression) : Expression => @[prec(15)] a " < " b;
+fn ge (a : Expression, b : Expression) : Expression => @[prec(15)] a " >= " b;
+fn gt (a : Expression, b : Expression) : Expression => @[prec(15)] a " > " b;
 
-fn neg (e : Expr) : Expression => "-" e;
-fn add (a : Expr, b : Expr) : Expression => @[prec(25), leftassoc] a " + " b;
-fn sub (a : Expr, b : Expr) : Expression => @[prec(25), leftassoc] a " - " b;
-fn mul (a : Expr, b : Expr) : Expression => @[prec(30), leftassoc] a " * " b;
-fn div (a : Expr, b : Expr) : Expression => @[prec(30), leftassoc] a " div " b;
-fn mod (a : Expr, b : Expr) : Expression => @[prec(30), leftassoc] a " mod " b;
+fn neg (e : Expression) : Expression => "-" e;
+fn add (a : Expression, b : Expression) : Expression => @[prec(25), leftassoc] a " + " b;
+fn sub (a : Expression, b : Expression) : Expression => @[prec(25), leftassoc] a " - " b;
+fn mul (a : Expression, b : Expression) : Expression => @[prec(30), leftassoc] a " * " b;
+fn div (a : Expression, b : Expression) : Expression => @[prec(30), leftassoc] a " div " b;
+fn mod (a : Expression, b : Expression) : Expression => @[prec(30), leftassoc] a " mod " b;
 
 fn functionCall (name : Ident, args : CommaSepBy Expr) : Expression => @[prec(40)] name "(" args ")";
 
 category Pattern;
-op pattern (e : Expr) : Pattern => "pattern " e:0 ", ";
+op pattern (e : Expression) : Pattern => "pattern " e:0 ", ";
 
 category Patterns;
 op patternsAtom (p : Pattern) : Patterns => @[prec(0)] p:0;
 op patternsPush (ps : Patterns, p : Pattern) : Patterns => @[prec(0)] ps:0 p:0;
 
-fn forall_expr (var : Ident, ty : Ident, patterns : Option Patterns, body : Expr) : Expression =>
+fn forall_expr (var : Ident, ty : Ident, patterns : Option Patterns, body : Expression) : Expression =>
   @[prec(1)] "forall " var " : " ty " " patterns body:1;
 
-fn exists_expr (var : Ident, ty : Ident, patterns : Option Patterns, body : Expr) : Expression =>
+fn exists_expr (var : Ident, ty : Ident, patterns : Option Patterns, body : Expression) : Expression =>
   @[prec(1)] "exists " var " : " ty " " patterns body:1;
 
 category Statement;
 
-op assign (v : Ident, e : Expr) : Statement => "\n" v:0 " := " e:0;
+op assign (v : Ident, e : Expression) : Statement => "\n" v:0 " := " e:0;
 
 category CallArg;
-op call_arg_expr (e : Expr) : CallArg => e:0;
+op call_arg_expr (e : Expression) : CallArg => e:0;
 op call_arg_out (id : Ident) : CallArg => "out " id:0;
 op call_arg_inout (id : Ident) : CallArg => "inout " id:0;
 
 op call_statement (proc : Ident, args : CommaSepBy CallArg) : Statement =>
   "\n" proc "(" args ")";
 
-op check (c : Expr) : Statement => "\ncheck " c:0;
-op assume (c : Expr) : Statement => "\nassume " c:0;
-op reach (c : Expr) : Statement => "\nreach " c:0;
-op assert (c : Expr) : Statement => "\nassert " c:0;
+op check (c : Expression) : Statement => "\ncheck " c:0;
+op assume (c : Expression) : Statement => "\nassume " c:0;
+op reach (c : Expression) : Statement => "\nreach " c:0;
+op assert (c : Expression) : Statement => "\nassert " c:0;
 
 category Else;
 op else_none () : Else => "";
 op else_some (s : Statement) : Else => @[prec(0)] "\nelse " indent(2, s:0);
 
-op if_statement (c : Expr, t : Statement, f : Else) : Statement =>
+op if_statement (c : Expression, t : Statement, f : Else) : Statement =>
   "if " c:0 " " indent(2, t:0) f:0;
 
 category Invariant;
-op invariant (e : Expr) : Invariant => "\n  invariant " e:0;
+op invariant (e : Expression) : Invariant => "\n  invariant " e:0;
 
 op loop_statement (invs : Seq Invariant, body : Statement) : Statement =>
   "loop" invs " " body:40;
@@ -112,14 +112,21 @@ op probe (name : Ident) : Statement => "\nprobe " name:0 ;
 
 category VarInit;
 op var_init_none () : VarInit => "";
-op var_init_some (e : Expr) : VarInit => " := " e:0;
+op var_init_some (e : Expression) : VarInit => " := " e:0;
+
+category VarType;
+op type_init_none () : VarType => "";
+op type_init_some (i: Ident): VarType => " : " i:0;
 
 category AutoInv;
 op autoinv_none () : AutoInv => "";
-op autoinv_some (e : Expr) : AutoInv => " autoinv " e:0;
+op autoinv_some (e : Expression) : AutoInv => " autoinv " e:0;
 
-op var_decl (name : Ident, ty : Ident, autoinv : AutoInv, init : VarInit) : Statement =>
-  "\nvar " name " : " ty autoinv:0 init:0 ;
+op var_decl (name : Ident, ty : VarType, autoinv : AutoInv, init : VarInit) : Statement =>
+  "\nvar " name ty autoinv:0 init:0 ;
+
+op val_decl (name : Ident, ty : VarType, init : Expression) : Statement =>
+  "\nval " name ty " := " init:0 ;
 
 category ChoiceBranch;
 op choice_branch (s : Statement) : ChoiceBranch => s:40;
@@ -132,7 +139,7 @@ op choose_statement (branches : ChoiceBranches) : Statement =>
   "choose " branches:0;
 
 category IfCaseBranch;
-op if_case_branch (cond : Expr, body : Statement) : IfCaseBranch =>
+op if_case_branch (cond : Expression, body : Statement) : IfCaseBranch =>
   "\ncase " cond:0 " " body:40;
 
 op if_case_statement (branches : Seq IfCaseBranch) : Statement =>
@@ -143,6 +150,72 @@ op aForall_statement (var : Ident, ty : Ident, body : Statement) : Statement =>
 
 op block (c : Seq Statement) : Statement => "\n{" indent(2, c:0) "\n}";
 
+category Decl;
+
+op type_decl (name : Ident) : Decl => "\ntype " name;
+
+op tagger_decl (name : Ident, forType : Ident) : Decl => "\ntagger " name " for " forType;
+
+category Injective;
+op injective_none () : Injective => "";
+op injective_some () : Injective => "injective ";
+
+category FParam;
+op fparam (injective : Injective, name : Ident, ty : Ident) : FParam =>
+  injective name " : " ty;
+
+category FParams;
+op fparams_empty () : FParams => "";
+op fparams_single (p : FParam) : FParams => p;
+op fparams_cons (p : FParam, rest : CommaSepBy FParam) : FParams => p ", " rest;
+
+category TagClause;
+op tag_none () : TagClause => "";
+op tag_some (t : Ident) : TagClause => " tag " t;
+
+category WhenClause;
+op when_clause (e : Expression) : WhenClause => "\n  when " e:0;
+
+category FunctionBody;
+op function_body_none () : FunctionBody => "";
+op function_body_some (e : Expression) : FunctionBody => " {" indent(2, "\n" e:0) "\n}";
+
+op function_decl (name : Ident, params : CommaSepBy FParam, resultType : Ident, tag : TagClause, whens : Seq WhenClause, body : FunctionBody) : Decl =>
+  "\nfunction " name "(" params ")" " : " resultType tag whens body;
+
+category AxiomBody;
+
+op explain_axiom (names: Seq Ident, expr : Expression) : AxiomBody =>
+  "explains " names:0 "," indent(2, "\n" expr:0);
+
+op axiom (expr : Expression) : AxiomBody =>
+  expr;
+
+op axiom_decl (expr : AxiomBody) : Decl =>
+  "\naxiom" expr:0;
+
+category PParamMode;
+op pmode_in () : PParamMode => "";
+op pmode_out () : PParamMode => "out ";
+op pmode_inout () : PParamMode => "inout ";
+
+category PParam;
+op pparam (mode : PParamMode, name : Ident, ty : Ident, autoinv : AutoInv) : PParam =>
+  mode name " : " ty autoinv;
+
+category Spec;
+op spec_requires (e : Expression) : Spec => "\n  requires " e:0;
+op spec_ensures (e : Expression) : Spec => "\n  ensures " e:0;
+
+category ProcBody;
+op proc_body_none () : ProcBody => "";
+op proc_body_some (s : Statement) : ProcBody => s:40;
+
+op procedure_decl (name : Ident, params : CommaSepBy PParam, specs : Seq Spec, body : ProcBody) : Decl =>
+  "\nprocedure " name "(" params ")" specs body;
+
+op command_stmt (s : Statement) : Command => s;
+op command_decl (d : Decl) : Command => d;
 #end
 
 namespace B3DDM
