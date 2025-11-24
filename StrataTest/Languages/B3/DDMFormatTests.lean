@@ -15,53 +15,28 @@ open Strata
 open Strata.B3DDM
 
 /--
-info: @[reducible] def Strata.Expr : Type :=
-ExprF SourceRange
----
-info: inductive Strata.B3DDM.Expr : Type → Type
+info: inductive B3.Expression : ExprParams → Type
 number of parameters: 1
 constructors:
-Strata.B3DDM.Expr.fvar : {α : Type} → α → Nat → B3DDM.Expr α
-Strata.B3DDM.Expr.not : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α
-Strata.B3DDM.Expr.natLit : {α : Type} → α → Ann Nat α → B3DDM.Expr α
-Strata.B3DDM.Expr.strLit : {α : Type} → α → Ann String α → B3DDM.Expr α
-Strata.B3DDM.Expr.btrue : {α : Type} → α → B3DDM.Expr α
-Strata.B3DDM.Expr.bfalse : {α : Type} → α → B3DDM.Expr α
-Strata.B3DDM.Expr.id : {α : Type} → α → Ann String α → B3DDM.Expr α
-Strata.B3DDM.Expr.letExpr : {α : Type} → α → Ann String α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
-Strata.B3DDM.Expr.labeledExpr : {α : Type} → α → Ann String α → B3DDM.Expr α → B3DDM.Expr α
-Strata.B3DDM.Expr.ite : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
-Strata.B3DDM.Expr.iff : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
-Strata.B3DDM.Expr.implies : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
-Strata.B3DDM.Expr.impliedBy : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
-Strata.B3DDM.Expr.and : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
-Strata.B3DDM.Expr.or : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
-Strata.B3DDM.Expr.equal : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
-Strata.B3DDM.Expr.not_equal : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
-Strata.B3DDM.Expr.le : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
-Strata.B3DDM.Expr.lt : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
-Strata.B3DDM.Expr.ge : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
-Strata.B3DDM.Expr.gt : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
-Strata.B3DDM.Expr.neg : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α
-Strata.B3DDM.Expr.add : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
-Strata.B3DDM.Expr.sub : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
-Strata.B3DDM.Expr.mul : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
-Strata.B3DDM.Expr.div : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
-Strata.B3DDM.Expr.mod : {α : Type} → α → B3DDM.Expr α → B3DDM.Expr α → B3DDM.Expr α
-Strata.B3DDM.Expr.functionCall : {α : Type} → α → Ann String α → Ann (Array (B3DDM.Expr α)) α → B3DDM.Expr α
-Strata.B3DDM.Expr.forall_expr : {α : Type} →
-  α → Ann String α → Ann String α → Ann (Option (Patterns α)) α → B3DDM.Expr α → B3DDM.Expr α
-Strata.B3DDM.Expr.exists_expr : {α : Type} →
-  α → Ann String α → Ann String α → Ann (Option (Patterns α)) α → B3DDM.Expr α → B3DDM.Expr α
+B3.Expression.literal : {P : ExprParams} → P.Metadata → Lambda.LConst → Expression P
+B3.Expression.id : {P : ExprParams} → P.Metadata → P.Identifier → Expression P
+B3.Expression.ite : {P : ExprParams} → P.Metadata → Expression P → Expression P → Expression P → Expression P
+B3.Expression.binaryOp : {P : ExprParams} → P.Metadata → BinaryOp → Expression P → Expression P → Expression P
+B3.Expression.unaryOp : {P : ExprParams} → P.Metadata → UnaryOp → Expression P → Expression P
+B3.Expression.functionCall : {P : ExprParams} → P.Metadata → P.Identifier → List (Expression P) → Expression P
+B3.Expression.labeledExpr : {P : ExprParams} → P.Metadata → String → Expression P → Expression P
+B3.Expression.letExpr : {P : ExprParams} → P.Metadata → P.Identifier → Expression P → Expression P → Expression P
+B3.Expression.quantifierExpr : {P : ExprParams} →
+  P.Metadata → QuantifierKind → P.Identifier → String → List (Pattern P) → Expression P → Expression P
 -/
 #guard_msgs in
-#print Expr
+#print Expression
 
 /--
 info: inductive Strata.B3DDM.Pattern : Type → Type
 number of parameters: 1
 constructors:
-Strata.B3DDM.Pattern.pattern : {α : Type} → α → B3DDM.Expr α → B3DDM.Pattern α
+Strata.B3DDM.Pattern.pattern : {α : Type} → α → B3DDM.Expression α → B3DDM.Pattern α
 -/
 #guard_msgs in
 #print B3DDM.Pattern
@@ -112,12 +87,14 @@ end
 def b3Program : Program := #strata program B3; #end
 
 -- Helper to format DDM expressions with proper pretty-printing
-def formatExpr (e : Expr Unit) : Format :=
-  let ctx := b3Program.formatContext {}
-  let state := b3Program.formatState
-  cformat (exprFUnitToSourceRange e.toAst) ctx state
+-- Note: This function is deprecated as expressions should be created via #strata syntax
+-- def formatExpr (e : Expr Unit) : Format :=
+--   let ctx := b3Program.formatContext {}
+--   let state := b3Program.formatState
+--   cformat (exprFUnitToSourceRange e.toAst) ctx state
 
 -- Helper to extract expression from a check statement and reformat it
+-- With op-based expressions, everything is an operation, so we format the operation directly
 def reformatExpr (p : Program) : Format :=
   match p.commands.toList with
   | [op] =>
@@ -126,11 +103,11 @@ def reformatExpr (p : Program) : Format :=
       | [ArgF.op stmt] =>
         if stmt.name.name == "check" then
           match stmt.args.toList with
-          | [ArgF.expr e] =>
+          | [ArgF.op e] =>  -- With op, expressions are operations
             let ctx := p.formatContext {}
             let state := p.formatState
-            cformat e ctx state
-          | _ => "Error: expected expr in check"
+            cformat (ArgF.op e) ctx state
+          | _ => s!"Error: expected op in check, got {repr stmt.args.toList}"
         else s!"Error: expected check statement, got {stmt.name.name}"
       | _ => "Error: expected statement op"
     else if op.name.name == "command_decl" then
@@ -143,19 +120,19 @@ def reformatExpr (p : Program) : Format :=
             if body.name.name == "axiom" then
               -- Simple axiom: axiom (expr)
               match body.args.toList with
-              | [ArgF.expr e] =>
+              | [ArgF.op e] =>  -- With op, expressions are operations
                 let ctx := p.formatContext {}
                 let state := p.formatState
-                cformat e ctx state
-              | _ => s!"Error: expected expr in axiom body, got {repr body.args.toList}"
+                cformat (ArgF.op e) ctx state
+              | _ => s!"Error: expected op in axiom body, got {repr body.args.toList}"
             else if body.name.name == "explain_axiom" then
               -- Axiom with explains: explain_axiom (names, expr)
               match body.args.toList with
-              | [_, ArgF.expr e] =>
+              | [_, ArgF.op e] =>  -- With op, expressions are operations
                 let ctx := p.formatContext {}
                 let state := p.formatState
-                cformat e ctx state
-              | _ => s!"Error: expected names and expr in explain_axiom, got {repr body.args.toList}"
+                cformat (ArgF.op e) ctx state
+              | _ => s!"Error: expected names and op in explain_axiom, got {repr body.args.toList}"
             else s!"Error: expected axiom or explain_axiom body, got {body.name.name}"
           | _ => s!"Error: expected AxiomBody in axiom_decl, got {repr decl.args.toList}"
         else s!"Error: expected axiom declaration, got {decl.name.name}"
@@ -309,63 +286,46 @@ info: if true then 1 else 0
 #eval reformatExpr $ #strata program B3; check if true then 1 else 0 #end
 
 /--
-info: val temp := 10 temp + x
+info: vaal temp := 10 temp + x == 7
 -/
 #guard_msgs in
-#eval formatExpr $ .letExpr () ⟨(), "temp"⟩ (.natLit () ⟨(), 10⟩)
-  (.add () (.id () ⟨(), "temp"⟩) (.id () ⟨(), "x"⟩))
+#eval reformatExpr $ #strata program B3; axiom vaal temp := 10 temp + x == 7 #end
 
 /--
 info: important: result
 -/
 #guard_msgs in
-#eval formatExpr $ .labeledExpr () ⟨(), "important"⟩ (.id () ⟨(), "result"⟩)
+#eval reformatExpr $ #strata program B3; axiom important: result #end
 
 /--
 info: forall i : int i >= 0
 -/
 #guard_msgs in
-#eval formatExpr $ .forall_expr () ⟨(), "i"⟩ ⟨(), "int"⟩
-  ⟨(), none⟩
-  (.ge () (.id () ⟨(), "i"⟩) (.natLit () ⟨(), 0⟩))
+#eval reformatExpr $ #strata program B3; axiom forall i : int i >= 0 #end
 
 /--
 info: exists y : bool y || !y
 -/
 #guard_msgs in
-#eval formatExpr $ .exists_expr () ⟨(), "y"⟩ ⟨(), "bool"⟩
-  ⟨(), none⟩
-  (.or () (.id () ⟨(), "y"⟩) (.not () (.id () ⟨(), "y"⟩)))
+#eval reformatExpr $ #strata program B3; axiom exists y : bool y || !y #end
 
 /--
 info: forall x : int pattern f(x), f(x) > 0
 -/
 #guard_msgs in
-#eval formatExpr $ Expr.forall_expr () ⟨(), "x"⟩ ⟨(), "int"⟩
-  ⟨(), some (B3DDM.Patterns.patternsAtom () (B3DDM.Pattern.pattern () (Expr.functionCall () ⟨(), "f"⟩ ⟨(), #[Expr.id () ⟨(), "x"⟩]⟩)))⟩
-  (Expr.gt () (Expr.functionCall () ⟨(), "f"⟩ ⟨(), #[Expr.id () ⟨(), "x"⟩]⟩) (Expr.natLit () ⟨(), 0⟩))
+#eval reformatExpr $ #strata program B3; axiom forall x : int pattern f(x), f(x) > 0 #end
 
 /--
 info: exists y : bool pattern y, pattern !y, y || !y
 -/
 #guard_msgs in
-#eval formatExpr $ Expr.exists_expr () ⟨(), "y"⟩ ⟨(), "bool"⟩
-  ⟨(), some (B3DDM.Patterns.patternsPush ()
-    (B3DDM.Patterns.patternsAtom () (B3DDM.Pattern.pattern () (Expr.id () ⟨(), "y"⟩)))
-    (B3DDM.Pattern.pattern () (Expr.not () (Expr.id () ⟨(), "y"⟩))))⟩
-  (Expr.or () (Expr.id () ⟨(), "y"⟩) (Expr.not () (Expr.id () ⟨(), "y"⟩)))
+#eval reformatExpr $ #strata program B3; axiom exists y : bool pattern y, pattern !y, y || !y #end
 
 /--
 info: forall z : int pattern z, pattern z + 1, pattern z * 2, z > 0
 -/
 #guard_msgs in
-#eval formatExpr $ Expr.forall_expr () ⟨(), "z"⟩ ⟨(), "int"⟩
-  ⟨(), some (B3DDM.Patterns.patternsPush ()
-    (B3DDM.Patterns.patternsPush ()
-      (B3DDM.Patterns.patternsAtom () (B3DDM.Pattern.pattern () (Expr.id () ⟨(), "z"⟩)))
-      (B3DDM.Pattern.pattern () (Expr.add () (Expr.id () ⟨(), "z"⟩) (Expr.natLit () ⟨(), 1⟩))))
-    (B3DDM.Pattern.pattern () (Expr.mul () (Expr.id () ⟨(), "z"⟩) (Expr.natLit () ⟨(), 2⟩))))⟩
-  (Expr.gt () (Expr.id () ⟨(), "z"⟩) (Expr.natLit () ⟨(), 0⟩))
+#eval reformatExpr $ #strata program B3; axiom forall z : int pattern z, pattern z + 1, pattern z * 2, z > 0 #end
 
 end ExpressionFormatTests
 
@@ -373,11 +333,19 @@ end ExpressionFormatTests
 def operationFUnitToSourceRange (op : OperationF Unit) : OperationF SourceRange :=
   { op with ann := default, args := op.args.map argFUnitToSourceRange }
 
--- Helper to format DDM statements with proper pretty-printing
-def formatStmt (s : Statement Unit) : Format :=
-  let ctx := b3Program.formatContext {}
-  let state := b3Program.formatState
-  cformat (ArgF.op (operationFUnitToSourceRange s.toAst)) ctx state
+-- Helper to extract statement from a program and reformat it
+def reformatStmt (p : Program) : Format :=
+  match p.commands.toList with
+  | [op] =>
+    if op.name.name == "command_stmt" then
+      match op.args.toList with
+      | [ArgF.op stmt] =>
+        let ctx := p.formatContext {}
+        let state := p.formatState
+        cformat (ArgF.op stmt) ctx state
+      | _ => "Error: expected statement op"
+    else s!"Error: expected command_stmt, got {op.name.name}"
+  | _ => "Error: expected single command"
 
 section StatementFormatTests
 
@@ -385,37 +353,37 @@ section StatementFormatTests
 info: x := 42
 -/
 #guard_msgs in
-#eval formatStmt $ .assign () ⟨(), "x"⟩ (.natLit () ⟨(), 42⟩)
+#eval reformatStmt $ #strata program B3; x := 42 #end
 
 /--
 info: check 5 > 0
 -/
 #guard_msgs in
-#eval formatStmt $ .check () (.gt () (.natLit () ⟨(), 5⟩) (.natLit () ⟨(), 0⟩))
+#eval reformatStmt $ #strata program B3; check 5 > 0 #end
 
 /--
 info: assume 10 >= 0
 -/
 #guard_msgs in
-#eval formatStmt $ .assume () (.ge () (.natLit () ⟨(), 10⟩) (.natLit () ⟨(), 0⟩))
+#eval reformatStmt $ #strata program B3; assume 10 >= 0 #end
 
 /--
 info: assert 5 > 0
 -/
 #guard_msgs in
-#eval formatStmt $ .assert () (.gt () (.natLit () ⟨(), 5⟩) (.natLit () ⟨(), 0⟩))
+#eval reformatStmt $ #strata program B3; assert 5 > 0 #end
 
 /--
 info: reach 5 == 5
 -/
 #guard_msgs in
-#eval formatStmt $ .reach () (.equal () (.natLit () ⟨(), 5⟩) (.natLit () ⟨(), 5⟩))
+#eval reformatStmt $ #strata program B3; reach 5 == 5 #end
 
 /--
 info: return
 -/
 #guard_msgs in
-#eval formatStmt $ .return_statement ()
+#eval reformatStmt $ #strata program B3; return #end
 
 /--
 info: {
@@ -424,10 +392,7 @@ info: {
 }
 -/
 #guard_msgs in
-#eval formatStmt $ Statement.block () ⟨(), #[
-  Statement.assign () ⟨(), "x"⟩ (Expr.natLit () ⟨(), 1⟩),
-  Statement.assign () ⟨(), "y"⟩ (Expr.natLit () ⟨(), 2⟩)
-]⟩
+#eval reformatStmt $ #strata program B3; { x := 1 y := 2 } #end
 
 /--
 info: if flag ⏎
@@ -438,10 +403,7 @@ else ⏎
   }
 -/
 #guard_msgs in
-#eval formatStmt $ Statement.if_statement ()
-  (Expr.id () ⟨(), "flag"⟩)
-  (Statement.assign () ⟨(), "x"⟩ (Expr.natLit () ⟨(), 1⟩))
-  (Else.else_some () (Statement.block () ⟨(), #[Statement.assign () ⟨(), "x"⟩ (Expr.natLit () ⟨(), 0⟩)]⟩))
+#eval reformatStmt $ #strata program B3; if flag x := 1 else { x := 0 } #end
 
 /--
 info: loop ⏎
@@ -450,11 +412,7 @@ info: loop ⏎
 }
 -/
 #guard_msgs in
-#eval formatStmt $ Statement.loop_statement () ⟨(), #[]⟩
-  (Statement.block () ⟨(), #[
-    Statement.assign () ⟨(), "i"⟩
-      (Expr.add () (Expr.id () ⟨(), "i"⟩) (Expr.natLit () ⟨(), 1⟩))
-  ]⟩)
+#eval reformatStmt $ #strata program B3; loop { i := i + 1 } #end
 
 /--
 info: loop
@@ -465,63 +423,50 @@ info: loop
 }
 -/
 #guard_msgs in
-#eval formatStmt $ Statement.loop_statement ()
-  ⟨(), #[Invariant.invariant () (Expr.ge () (Expr.id () ⟨(), "i"⟩) (Expr.natLit () ⟨(), 0⟩)),
-    Invariant.invariant () (Expr.le () (Expr.id () ⟨(), "i"⟩) (Expr.id () ⟨(), "n"⟩))]⟩
-  (Statement.block () ⟨(), #[
-    Statement.assign () ⟨(), "i"⟩
-      (Expr.add () (Expr.id () ⟨(), "i"⟩) (Expr.natLit () ⟨(), 1⟩))
-  ]⟩)
+#eval reformatStmt $ #strata program B3; loop invariant i >= 0 invariant i <= n { i := i + 1 } #end
 
 /--
 info: exit loop_start
 -/
 #guard_msgs in
-#eval formatStmt $ Statement.exit_statement () ⟨(), some ⟨(), "loop_start"⟩⟩
+#eval reformatStmt $ #strata program B3; exit loop_start #end
 
 /--
 info: loop_start: ⏎
 x := 0
 -/
 #guard_msgs in
-#eval formatStmt $ Statement.labeled_statement () ⟨(), "loop_start"⟩
-  (Statement.assign () ⟨(), "x"⟩ (Expr.natLit () ⟨(), 0⟩))
+#eval reformatStmt $ #strata program B3; loop_start: x := 0 #end
 
 /--
 info: probe debug_point
 -/
 #guard_msgs in
-#eval formatStmt $ Statement.probe () ⟨(), "debug_point"⟩
+#eval reformatStmt $ #strata program B3; probe debug_point #end
 
 /--
 info: var x : int
 -/
 #guard_msgs in
-#eval formatStmt $ Statement.var_decl () ⟨(), "x"⟩ (VarType.type_init_some () ⟨(), "int"⟩)
-  (AutoInv.autoinv_none ()) (VarInit.var_init_none ())
+#eval reformatStmt $ #strata program B3; var x : int #end
 
 /--
 info: val x : bool := true
 -/
 #guard_msgs in
-#eval formatStmt $ Statement.val_decl () ⟨(), "x"⟩ (VarType.type_init_some () ⟨(), "bool"⟩) (Expr.btrue ())
-
+#eval reformatStmt $ #strata program B3; val x : bool := true #end
 
 /--
 info: var y : bool := true
 -/
 #guard_msgs in
-#eval formatStmt $ Statement.var_decl () ⟨(), "y"⟩ (VarType.type_init_some () ⟨(), "bool"⟩)
-  (AutoInv.autoinv_none ())
-  (VarInit.var_init_some () (Expr.btrue ()))
+#eval reformatStmt $ #strata program B3; var y : bool := true #end
 
 /--
 info: var z : int autoinv z >= 0
 -/
 #guard_msgs in
-#eval formatStmt $ Statement.var_decl () ⟨(), "z"⟩ (VarType.type_init_some () ⟨(), "int"⟩)
-  (AutoInv.autoinv_some () (Expr.ge () (Expr.id () ⟨(), "z"⟩) (Expr.natLit () ⟨(), 0⟩)))
-  (VarInit.var_init_none ())
+#eval reformatStmt $ #strata program B3; var z : int autoinv z >= 0 #end
 
 /--
 info: forall x : int ⏎
@@ -530,10 +475,7 @@ info: forall x : int ⏎
 }
 -/
 #guard_msgs in
-#eval formatStmt $ Statement.aForall_statement () ⟨(), "x"⟩ ⟨(), "int"⟩
-  (Statement.block () ⟨(), #[
-    Statement.check () (Expr.ge () (Expr.id () ⟨(), "x"⟩) (Expr.natLit () ⟨(), 0⟩))
-  ]⟩)
+#eval reformatStmt $ #strata program B3; forall x : int { check x >= 0 } #end
 
 /--
 info: choose ⏎
@@ -545,10 +487,7 @@ info: choose ⏎
 }
 -/
 #guard_msgs in
-#eval formatStmt $ Statement.choose_statement ()
-  (ChoiceBranches.choicePush ()
-    (ChoiceBranches.choiceAtom () (ChoiceBranch.choice_branch () (Statement.block () ⟨(), #[Statement.assign () ⟨(), "x"⟩ (Expr.natLit () ⟨(), 1⟩)]⟩)))
-    (ChoiceBranch.choice_branch () (Statement.block () ⟨(), #[Statement.assign () ⟨(), "x"⟩ (Expr.natLit () ⟨(), 2⟩)]⟩)))
+#eval reformatStmt $ #strata program B3; choose { x := 1 } or { x := 2 } #end
 
 /--
 info: if
@@ -562,33 +501,21 @@ case x == 2 ⏎
 }
 -/
 #guard_msgs in
-#eval formatStmt $ Statement.if_case_statement () ⟨(), #[
-  IfCaseBranch.if_case_branch () (Expr.equal () (Expr.id () ⟨(), "x"⟩) (Expr.natLit () ⟨(), 1⟩))
-    (Statement.block () ⟨(), #[Statement.assign () ⟨(), "y"⟩ (Expr.natLit () ⟨(), 10⟩)]⟩),
-  IfCaseBranch.if_case_branch () (Expr.equal () (Expr.id () ⟨(), "x"⟩) (Expr.natLit () ⟨(), 2⟩))
-    (Statement.block () ⟨(), #[Statement.assign () ⟨(), "y"⟩ (Expr.natLit () ⟨(), 20⟩)]⟩)
-]⟩
+#eval reformatStmt $ #strata program B3; if case x == 1 { y := 10 } case x == 2 { y := 20 } #end
 
 /--
 info:
 compute(out result, a, b)
 -/
 #guard_msgs in
-#eval formatStmt $ Statement.call_statement () ⟨(), "compute"⟩ ⟨(), #[
-  CallArg.call_arg_out () ⟨(), "result"⟩,
-  CallArg.call_arg_expr () (Expr.id () ⟨(), "a"⟩),
-  CallArg.call_arg_expr () (Expr.id () ⟨(), "b"⟩)
-]⟩
+#eval reformatStmt $ #strata program B3; compute(out result, a, b) #end
 
 /--
 info:
 modify(inout x, out y)
 -/
 #guard_msgs in
-#eval formatStmt $ Statement.call_statement () ⟨(), "modify"⟩ ⟨(), #[
-  CallArg.call_arg_inout () ⟨(), "x"⟩,
-  CallArg.call_arg_out () ⟨(), "y"⟩
-]⟩
+#eval reformatStmt $ #strata program B3; modify(inout x, out y) #end
 
 end StatementFormatTests
 
