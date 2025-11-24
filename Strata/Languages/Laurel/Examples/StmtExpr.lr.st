@@ -3,7 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-function nesting(a: int): int
+procedure nesting(a: int): int
   requires a > 0 && a < 100
   returns
 {
@@ -20,7 +20,7 @@ function nesting(a: int): int
   e
 }
 
-int nestedImpureCalls() {
+procedure nestedImpureCalls(): int {
     var x = 0;
     var y = 0;
     if ((x = x + 1) == (y = x)) {
