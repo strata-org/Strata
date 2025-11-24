@@ -776,6 +776,59 @@ partial def translate_statement_core
 
         (bodyCtx, [initBreakFlag, initKeys, initLength, initIndex, .loop guard none none bodyBlock])
 
+      | .TS_ForOfStatement forOfStmt =>
+        dbg_trace s!"[DEBUG] Translating for-of statement at loc {forOfStmt.start_loc}-{forOfStmt.end_loc}"
+
+        let continueLabel := s!"forof_continue_{forOfStmt.start_loc}"
+        let breakLabel := s!"forof_break_{forOfStmt.start_loc}"
+        let breakFlagVar := s!"forof_break_flag_{forOfStmt.start_loc}"
+
+        -- Extract loop variable name
+        let valueVarName := match forOfStmt.left.declarations[0]? with
+          | some decl => decl.id.name
+          | none => panic! "for-of must have loop variable"
+
+        -- Array to iterate over
+        let arrExpr := translate_expr forOfStmt.right
+
+        -- Create temporary variables for iteration
+        let indexVar := s!"__index_{forOfStmt.start_loc}"
+        let lengthVar := s!"__length_{forOfStmt.start_loc}"
+
+        -- Get length of array
+        let lengthExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "LengthAccess" none) arrExpr) (Heap.HExpr.string "length")
+        let initLength := .cmd (.init lengthVar Heap.HMonoTy.int lengthExpr)
+
+        -- Initialize index to 0
+        let initIndex := .cmd (.init indexVar Heap.HMonoTy.int (Heap.HExpr.int 0))
+
+        -- Initialize break flag
+        let initBreakFlag := .cmd (.init breakFlagVar Heap.HMonoTy.bool Heap.HExpr.false)
+
+        -- Loop guard: index < length && !breakFlag
+        let indexVarExpr := Heap.HExpr.lambda (.fvar indexVar none)
+        let lengthVarExpr := Heap.HExpr.lambda (.fvar lengthVar none)
+        let indexCheck := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Lt" none) indexVarExpr) lengthVarExpr
+        let breakFlagExpr := Heap.HExpr.lambda (.fvar breakFlagVar none)
+        let guard := Heap.HExpr.deferredIte breakFlagExpr Heap.HExpr.false indexCheck
+
+        let getCurrentValue := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAccess" none) arrExpr) indexVarExpr
+        let setValueVar := .cmd (.set valueVarName getCurrentValue)
+
+        let (bodyCtx, userBodyStmts) := translate_statement_core forOfStmt.body ctx
+          { continueLabel? := some continueLabel,
+            breakLabel? := some breakLabel,
+            breakFlagVar? := some breakFlagVar }
+
+        let incrementExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Add" none) indexVarExpr) (Heap.HExpr.int 1)
+        let incrementIndex := .cmd (.set indexVar incrementExpr)
+
+        let initValueVar := .cmd (.init valueVarName Heap.HMonoTy.int (Heap.HExpr.int 0))
+
+        let loopBodyStmts := [setValueVar] ++ userBodyStmts ++ [incrementIndex]
+        let bodyBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := loopBodyStmts }
+
+        (bodyCtx, [initBreakFlag, initLength, initIndex, initValueVar, .loop guard none none bodyBlock])
       | .TS_ForStatement forStmt =>
         dbg_trace s!"[DEBUG] Translating for statement at loc {forStmt.start_loc}-{forStmt.end_loc}"
 

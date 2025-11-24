@@ -126,6 +126,7 @@ mutual
     | TS_SwitchStatement : TS_SwitchStatement → TS_Statement
     | TS_ContinueStatement: TS_ContinueStatement → TS_Statement
     | TS_ForInStatement : TS_ForInStatement → TS_Statement
+    | TS_ForOfStatement : TS_ForOfStatement → TS_Statement
   deriving Repr, Lean.FromJson, Lean.ToJson
 
   inductive TS_AssignmentIdentifier where
@@ -273,6 +274,12 @@ mutual
   deriving Repr, Lean.FromJson, Lean.ToJson
 
   structure TS_ForInStatement extends BaseNode where
+    left: TS_VariableDeclaration
+    right: TS_Expression
+    body: TS_Statement
+  deriving Repr, Lean.FromJson, Lean.ToJson
+
+  structure TS_ForOfStatement extends BaseNode where
     left: TS_VariableDeclaration
     right: TS_Expression
     body: TS_Statement

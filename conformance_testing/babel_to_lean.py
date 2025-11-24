@@ -352,6 +352,42 @@ def parse_for_in_statement(j):
 
     return target_j
 
+def parse_for_of_statement(j):
+    target_body = parse_statement(j['body'])
+
+    # Parse left as bare TS_VariableDeclaration structure
+    left_decl = j['left']
+
+    declarators = []
+    for d in left_decl.get('declarations', []):
+        decl_dict = {
+            "id": parse_identifier(d['id']),
+            "init": {"TS_NullLiteral": {
+                "type": "NullLiteral",
+                "start": d.get('start', 0),
+                "end": d.get('end', 0),
+                "loc": d.get('loc', {})
+            }}
+        }
+        add_missing_node_info(d, decl_dict)
+        declarators.append(decl_dict)
+
+    target_left = {
+        "type": "VariableDeclaration",
+        "declarations": declarators,
+        "kind": left_decl.get('kind')
+    }
+    add_missing_node_info(left_decl, target_left)
+
+    target_j = {
+        "left": target_left,
+        "right": parse_expression(j['right']),
+        "body": target_body
+    }
+    add_missing_node_info(j, target_j)
+
+    return target_j
+
 def parse_switch_statement(j):
     target_j = {
         "discriminant": parse_expression(j['discriminant']),
@@ -414,7 +450,8 @@ def parse_statement(j):
             return {"TS_ForStatement": parse_for_statement(j)}
         case "ForInStatement":
             return {"TS_ForInStatement": parse_for_in_statement(j)}
-        # case "ForOfStatement":
+        case "ForOfStatement":
+            return {"TS_ForOfStatement": parse_for_of_statement(j)}
         # case "ClassDeclaration":
         case _:
             print("Unsupported statement type: " + j['type'], file=sys.stderr)
