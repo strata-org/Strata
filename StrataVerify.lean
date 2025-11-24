@@ -7,6 +7,7 @@
 -- Executable for verifying a Strata program from a file.
 import Strata.Languages.Boogie.Verifier
 import Strata.Languages.C_Simp.Verify
+import Strata.Util.IO
 import Std.Internal.Parsec
 
 open Strata
@@ -55,8 +56,10 @@ def main (args : List String) : IO UInt32 := do
   let parseResult := parseOptions args
   match parseResult with
   | .ok (opts, file) => do
-    let text ← IO.FS.readFile file
-    let inputCtx := Lean.Parser.mkInputContext text file
+    let text ← Strata.Util.readInputSource file
+    -- Use "<stdin>" as display name for error messages when reading from stdin
+    let displayName := if file == "-" then "<stdin>" else file
+    let inputCtx := Lean.Parser.mkInputContext text displayName
     let dctx := Elab.LoadedDialects.builtin
     let dctx := dctx.addDialect! Boogie
     let dctx := dctx.addDialect! C_Simp
