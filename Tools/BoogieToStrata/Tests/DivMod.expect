@@ -1,8 +1,8 @@
 Successfully parsed.
-T_from_E_ensures_1: verified
-T_from_E_ensures_2: verified
-T_from_E_ensures_3: verified
-E_from_T_ensures_1: verified
-E_from_T_ensures_2: verified
-E_from_T_ensures_3: verified
+DivMod.boogie.st(25, 2) [T_from_E_ensures_1]: verified
+DivMod.boogie.st(26, 2) [T_from_E_ensures_2]: verified
+DivMod.boogie.st(27, 2) [T_from_E_ensures_3]: verified
+DivMod.boogie.st(45, 2) [E_from_T_ensures_1]: verified
+DivMod.boogie.st(46, 2) [E_from_T_ensures_2]: verified
+DivMod.boogie.st(47, 2) [E_from_T_ensures_3]: verified
 Proved all 6 goals.

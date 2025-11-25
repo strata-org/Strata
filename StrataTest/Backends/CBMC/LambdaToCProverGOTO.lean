@@ -11,6 +11,11 @@ namespace Lambda
 open Std (ToFormat Format format)
 -------------------------------------------------------------------------------
 
+private abbrev TestParams : LExprParams := ⟨Unit, Unit⟩
+
+private instance : Coe String TestParams.Identifier where
+  coe s := Identifier.mk s ()
+
 def LMonoTy.toGotoType (ty : LMonoTy) : Except Format CProverGOTO.Ty :=
   match ty with
   | .bitvec n => .ok (CProverGOTO.Ty.UnsignedBV n)
@@ -19,9 +24,9 @@ def LMonoTy.toGotoType (ty : LMonoTy) : Except Format CProverGOTO.Ty :=
   | .string => .ok .String
   | _ => .error f!"[toGotoType] Not yet implemented: {ty}"
 
-def LExprT.getGotoType {IDMeta} (e : LExprT IDMeta) :
+def LExprT.getGotoType {T : LExprParamsT} (e : LExprT T) :
     Except Format CProverGOTO.Ty := do
-  let ty := toLMonoTy e
+  let ty := LExpr.toLMonoTy e
   ty.toGotoType
 
 def fnToGotoID (fn : String) : Except Format CProverGOTO.Expr.Identifier :=
@@ -34,55 +39,55 @@ def fnToGotoID (fn : String) : Except Format CProverGOTO.Expr.Identifier :=
 Mapping `LExprT` (Lambda expressions obtained after the type inference
 transform) to GOTO expressions.
 -/
-def LExprT.toGotoExpr {IDMeta} [ToString IDMeta] (e : LExprT IDMeta) :
+def LExprT.toGotoExpr {TBase: LExprParamsT} [ToString TBase.base.IDMeta] (e : LExprT TBase) :
     Except Format CProverGOTO.Expr :=
   open CProverGOTO in
   do match e with
   -- Constants
-  | .const c ty =>
-    let gty ← ty.toGotoType
+  | .const m c =>
+    let gty ← m.type.toGotoType
     return (Expr.constant (toString c) gty)
   -- Variables
-  | .fvar v ty =>
-    let gty ← ty.toGotoType
+  | .fvar m v _ =>
+    let gty ← m.type.toGotoType
     return (Expr.symbol (toString v) gty)
   -- Binary Functions
-  | .app (.app (.op fn _) e1 _) e2 ty =>
+  | .app m (.app _ (.op _ fn _) e1) e2 =>
     let op ← fnToGotoID (toString fn)
-    let gty ← ty.toGotoType
+    let gty ← m.type.toGotoType
     let e1g ← toGotoExpr e1
     let e2g ← toGotoExpr e2
     return { id := op, type := gty, operands := [e1g, e2g] }
   -- Unary Functions
-  | .app (.op fn _) e1 ty =>
+  | .app m (.op _ fn _) e1 =>
     let op ← fnToGotoID (toString fn)
-    let gty ← ty.toGotoType
+    let gty ← m.type.toGotoType
     let e1g ← toGotoExpr e1
     return { id := op, type := gty, operands := [e1g] }
   -- Equality
-  | .eq e1 e2 _ =>
+  | .eq _ e1 e2 =>
     let e1g ← toGotoExpr e1
     let e2g ← toGotoExpr e2
     return { id := .binary .Equal, type := .Boolean, operands := [e1g, e2g] }
   | _ => .error f!"[toGotoExpr] Not yet implemented: {e}"
 
 /--
-Mapping `LExpr` to GOTO expressions.
+Mapping `LExpr` to GOTO expressions (for LMonoTy-typed expressions).
 -/
-def LExpr.toGotoExpr {IDMeta} [ToString IDMeta] (e : LExpr LMonoTy IDMeta) :
+def LExpr.toGotoExpr {TBase: LExprParams} [ToString $ LExpr TBase.mono] (e : LExpr TBase.mono) :
     Except Format CProverGOTO.Expr :=
   open CProverGOTO in
   do match e with
   -- Constants
-  | .const c  =>
+  | .const _ c  =>
     let gty ← c.ty.toGotoType
     return (Expr.constant (toString c) gty)
   -- Variables
-  | .fvar v (some ty) =>
+  | .fvar _ v (some ty) =>
     let gty ← ty.toGotoType
     return (Expr.symbol (toString v) gty)
   -- Binary Functions
-  | .app (.app (.op fn (some ty)) e1) e2 =>
+  | .app _ (.app _ (.op _ fn (some ty)) e1) e2 =>
     let op ← fnToGotoID (toString fn)
     let retty := ty.destructArrow.getLast!
     let gty ← retty.toGotoType
@@ -90,18 +95,18 @@ def LExpr.toGotoExpr {IDMeta} [ToString IDMeta] (e : LExpr LMonoTy IDMeta) :
     let e2g ← toGotoExpr e2
     return { id := op, type := gty, operands := [e1g, e2g] }
   -- Unary Functions
-  | .app (.op fn (some ty)) e1 =>
+  | .app _ (.op _ fn (some ty)) e1 =>
     let op ← fnToGotoID (toString fn)
     let retty := ty.destructArrow.getLast!
     let gty ← retty.toGotoType
     let e1g ← toGotoExpr e1
     return { id := op, type := gty, operands := [e1g] }
   -- Equality
-  | .eq e1 e2 =>
+  | .eq _ e1 e2 =>
     let e1g ← toGotoExpr e1
     let e2g ← toGotoExpr e2
     return { id := .binary .Equal, type := .Boolean, operands := [e1g, e2g] }
-  | _ => .error f!"[toGotoExpr] Not yet implemented: {e}"
+  | _ => .error f!"[toGotoExpr] Not yet implemented: {toString e}"
 
 open LTy.Syntax LExpr.Syntax in
 /--
@@ -114,5 +119,5 @@ info: ok: { id := CProverGOTO.Expr.Identifier.nullary (CProverGOTO.Expr.Identifi
   namedFields := [] }
 -/
 #guard_msgs in
-#eval do let ans ← @LExprT.toGotoExpr String _ (.const (LConst.intConst 1) mty[int])
+#eval do let ans ← @LExprT.toGotoExpr TestParams.mono _ (.const ⟨(), mty[int]⟩ (LConst.intConst 1))
           return repr ans

@@ -1,14 +1,14 @@
 Successfully parsed.
-P_ensures_0: verified
-assert_0: verified
-assert_1: verified
-assert_2: verified
-assert_3: verified
-assert_4: verified
-assert_5: unknown
-assert_6: unknown
-assert_7: verified
-assert_8: verified
-assert_9: verified
-assert_10: verified
+Lambda.boogie.st(39, 2) [P_ensures_0]: verified
+Lambda.boogie.st(52, 4) [assert_0]: verified
+Lambda.boogie.st(61, 4) [assert_1]: verified
+Lambda.boogie.st(74, 4) [assert_2]: verified
+Lambda.boogie.st(75, 4) [assert_3]: verified
+Lambda.boogie.st(76, 4) [assert_4]: verified
+Lambda.boogie.st(89, 4) [assert_5]: unknown
+Lambda.boogie.st(90, 4) [assert_6]: unknown
+Lambda.boogie.st(103, 4) [assert_7]: verified
+Lambda.boogie.st(104, 4) [assert_8]: verified
+Lambda.boogie.st(106, 4) [assert_9]: verified
+Lambda.boogie.st(107, 4) [assert_10]: verified
 Finished with 10 goals proved, 2 failed.
