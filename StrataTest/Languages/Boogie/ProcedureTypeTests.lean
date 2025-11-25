@@ -33,8 +33,8 @@ info: ok: ((procedure P :  ((x : int)) → ((y : int)))
                                           inputs := [("x", mty[int])],
                                           outputs := [("y", mty[int])] },
                                spec := { modifies := [],
-                                         preconditions := [("0_lt_x", ⟨eb[((~Int.Lt #0) x)], .Default⟩)],
-                                         postconditions := [("ret_y_lt_0", ⟨eb[((~Int.Lt y) #0)], .Default⟩)] },
+                                         preconditions := [("0_lt_x", ⟨eb[((~Int.Lt #0) x)], .Default, #[]⟩)],
+                                         postconditions := [("ret_y_lt_0", ⟨eb[((~Int.Lt y) #0)], .Default, #[]⟩)] },
                                body := [
                                  Statement.set "y" eb[((~Int.Sub #0) x)]
                                ]
@@ -63,7 +63,7 @@ body: g := (((~Int.Add : (arrow int (arrow int int))) (a : int)) (g : int))
                           modifies := [("g")],
                           preconditions := [],
                           postconditions :=
-                            [("P.g_eq_a", ⟨eb[g == ((~Int.Add (~old g)) a)], .Default⟩)] },
+                            [("P.g_eq_a", ⟨eb[g == ((~Int.Add (~old g)) a)], .Default, #[]⟩)] },
                           body :=
                             [Statement.set "g" eb[((~Int.Add a) g)]]
                         }
@@ -92,7 +92,7 @@ body: g := (((~Int.Add : (arrow int (arrow int int))) (a : int)) (g : int))
                           modifies := [("g")],
                           preconditions := [],
                           postconditions :=
-                            [("P.g_eq_a", ⟨eb[g == (~old ((~Int.Add a) g))], .Default⟩)] },
+                            [("P.g_eq_a", ⟨eb[g == (~old ((~Int.Add a) g))], .Default, #[]⟩)] },
                           body :=
                             [Statement.set "g" eb[((~Int.Add a) g)]]
                         }

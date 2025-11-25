@@ -1,16 +1,16 @@
 Successfully parsed.
-entry_invariant_0: verified
-arbitrary_iter_maintain_invariant_0: verified
-entry_invariant_0: verified
-BubbleSort_ensures_1: verified
-BubbleSort_ensures_2: verified
-BubbleSort_ensures_3: verified
-BubbleSort_ensures_4: verified
-entry_invariant_1: verified
-arbitrary_iter_maintain_invariant_1: verified
-arbitrary_iter_maintain_invariant_0: verified
-BubbleSort_ensures_1: verified
-BubbleSort_ensures_2: verified
-BubbleSort_ensures_3: verified
-BubbleSort_ensures_4: verified
+Bubble.boogie.st(31, 4) [entry_invariant_0]: verified
+Bubble.boogie.st(31, 4) [arbitrary_iter_maintain_invariant_0]: verified
+Bubble.boogie.st(43, 4) [entry_invariant_0]: verified
+Bubble.boogie.st(20, 2) [BubbleSort_ensures_1]: verified
+Bubble.boogie.st(21, 2) [BubbleSort_ensures_2]: verified
+Bubble.boogie.st(22, 2) [BubbleSort_ensures_3]: verified
+Bubble.boogie.st(23, 2) [BubbleSort_ensures_4]: verified
+Bubble.boogie.st(57, 8) [entry_invariant_1]: verified
+Bubble.boogie.st(57, 8) [arbitrary_iter_maintain_invariant_1]: verified
+Bubble.boogie.st(43, 4) [arbitrary_iter_maintain_invariant_0]: verified
+Bubble.boogie.st(20, 2) [BubbleSort_ensures_1]: verified
+Bubble.boogie.st(21, 2) [BubbleSort_ensures_2]: verified
+Bubble.boogie.st(22, 2) [BubbleSort_ensures_3]: verified
+Bubble.boogie.st(23, 2) [BubbleSort_ensures_4]: verified
 Proved all 14 goals.

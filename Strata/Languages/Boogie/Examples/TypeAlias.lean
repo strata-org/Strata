@@ -54,7 +54,7 @@ procedure P () returns () {
 
 /-- info: #[] -/
 #guard_msgs in
-#eval TransM.run (translateProgram goodTypeAlias) |>.snd
+#eval TransM.run Inhabited.default (translateProgram goodTypeAlias) |>.snd
 
 /--
 info: type Boogie.Boundedness.Infinite Foo [_, _]
@@ -72,7 +72,7 @@ assume [fooConst2_value] ((~fooConst2 : (Foo int bool)) == (~fooVal : (FooAlias2
 assert [fooAssertion] ((~fooConst1 : (Foo int bool)) == (~fooConst2 : (Foo int bool)))
 -/
 #guard_msgs in
-#eval TransM.run (translateProgram goodTypeAlias) |>.fst
+#eval TransM.run Inhabited.default (translateProgram goodTypeAlias) |>.fst
 
 /--
 info: [Strata.Boogie] Type checking succeeded.

@@ -15,7 +15,7 @@ namespace Strata
 
 /- Translating concrete syntax into abstract syntax -/
 
-open Boogie Lambda Imperative
+open Boogie Lambda Imperative Lean.Parser
 open Std (ToFormat Format format)
 
 ---------------------------------------------------------------------
@@ -23,13 +23,14 @@ open Std (ToFormat Format format)
 /- Translation Monad -/
 
 structure TransState where
+  inputCtx : InputContext
   errors : Array String
 
 def TransM := StateM TransState
   deriving Monad
 
-def TransM.run (m : TransM α) : (α × Array String) :=
-  let (v, s) := StateT.run m { errors := #[] }
+def TransM.run (ictx : InputContext) (m : TransM α) : (α × Array String) :=
+  let (v, s) := StateT.run m { inputCtx := ictx, errors := #[] }
   (v, s.errors)
 
 instance : ToString (Boogie.Program × Array String) where
@@ -37,8 +38,26 @@ instance : ToString (Boogie.Program × Array String) where
                 "Errors: " ++ (toString p.snd)
 
 def TransM.error [Inhabited α] (msg : String) : TransM α := do
-  fun s => ((), { errors := s.errors.push msg })
+  fun s => ((), { s with errors := s.errors.push msg })
   return panic msg
+
+---------------------------------------------------------------------
+
+/- Metadata -/
+
+def SourceRange.toMetaData (ictx : InputContext) (sr : SourceRange) : Imperative.MetaData Boogie.Expression :=
+  let file := ictx.fileName
+  let startPos := ictx.fileMap.toPosition sr.start
+  let fileElt := ⟨ MetaData.fileLabel, .msg file ⟩
+  let lineElt := ⟨ MetaData.startLineLabel, .msg s!"{startPos.line}" ⟩
+  let colElt := ⟨ MetaData.startColumnLabel, .msg s!"{startPos.column}" ⟩
+  #[fileElt, lineElt, colElt]
+
+def getOpMetaData (op : Operation) : TransM (Imperative.MetaData Boogie.Expression) :=
+  return op.ann.toMetaData (← StateT.get).inputCtx
+
+def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Boogie.Expression) :=
+  return arg.ann.toMetaData (← StateT.get).inputCtx
 
 ---------------------------------------------------------------------
 
@@ -933,48 +952,58 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
   | q`Boogie.assign, #[_tpa, lhsa, ea] =>
     let lhs ← translateLhs lhsa
     let val ← translateExpr p bindings ea
-    return ([.set lhs val], bindings)
+    let md ← getOpMetaData op
+    return ([.set lhs val md], bindings)
   | q`Boogie.havoc_statement, #[ida] =>
     let id ← translateIdent BoogieIdent ida
-    return ([.havoc id], bindings)
+    let md ← getOpMetaData op
+    return ([.havoc id md], bindings)
   | q`Boogie.assert, #[la, ca] =>
     let c ← translateExpr p bindings ca
     let default_name := s!"assert_{bindings.gen.assert_def}"
     let bindings := incrNum .assert_def bindings
     let l ← translateOptionLabel default_name la
-    return ([.assert l c], bindings)
+    let md ← getOpMetaData op
+    return ([.assert l c md], bindings)
   | q`Boogie.assume, #[la, ca] =>
     let c ← translateExpr p bindings ca
     let default_name := s!"assume_{bindings.gen.assume_def}"
     let bindings := incrNum .assume_def bindings
     let l ← translateOptionLabel default_name la
-    return ([.assume l c], bindings)
+    let md ← getOpMetaData op
+    return ([.assume l c md], bindings)
   | q`Boogie.if_statement, #[ca, ta, fa] =>
     let c ← translateExpr p bindings ca
     let (tss, bindings) ← translateBlock p bindings ta
     let (fss, bindings) ← translateElse p bindings fa
-    return ([.ite c { ss := tss } { ss := fss } ], bindings)
+    let md ← getOpMetaData op
+    return ([.ite c { ss := tss } { ss := fss } md], bindings)
   | q`Boogie.while_statement, #[ca, ia, ba] =>
     let c ← translateExpr p bindings ca
     let i ← translateInvariant p bindings ia
     let (bodyss, bindings) ← translateBlock p bindings ba
-    return ([.loop c .none i { ss := bodyss } ], bindings)
+    let md ← getOpMetaData op
+    return ([.loop c .none i { ss := bodyss } md], bindings)
   | q`Boogie.call_statement, #[lsa, fa, esa] =>
-   let ls  ← translateCommaSep (translateIdent BoogieIdent) lsa
-   let f   ← translateIdent String fa
-   let es  ← translateCommaSep (fun a => translateExpr p bindings a) esa
-   return ([.call ls.toList f es.toList], bindings)
+    let ls  ← translateCommaSep (translateIdent BoogieIdent) lsa
+    let f   ← translateIdent String fa
+    let es  ← translateCommaSep (fun a => translateExpr p bindings a) esa
+    let md ← getOpMetaData op
+    return ([.call ls.toList f es.toList md], bindings)
   | q`Boogie.call_unit_statement, #[fa, esa] =>
-   let f   ← translateIdent String fa
-   let es  ← translateCommaSep (fun a => translateExpr p bindings a) esa
-   return ([.call [] f es.toList], bindings)
+    let f   ← translateIdent String fa
+    let es  ← translateCommaSep (fun a => translateExpr p bindings a) esa
+    let md ← getOpMetaData op
+    return ([.call [] f es.toList md], bindings)
   | q`Boogie.block_statement, #[la, ba] =>
     let l ← translateIdent String la
     let (ss, bindings) ← translateBlock p bindings ba
-    return ([.block l { ss := ss }], bindings)
+    let md ← getOpMetaData op
+    return ([.block l { ss := ss } md], bindings)
   | q`Boogie.goto_statement, #[la] =>
     let l ← translateIdent String la
-    return ([.goto l], bindings)
+    let md ← getOpMetaData op
+    return ([.goto l md], bindings)
   | name, args => TransM.error s!"Unexpected statement {name.fullName} with {args.size} arguments."
 
 partial def translateBlock (p : Program) (bindings : TransBindings) (arg : Arg) :
@@ -1045,7 +1074,8 @@ def translateRequires (p : Program) (name : BoogieIdent) (count : Nat) (bindings
   let l ← translateOptionLabel s!"{name.name}_requires_{count}" args[0]!
   let free? ← translateOptionFree args[1]!
   let e ← translateExpr p bindings args[2]!
-  return [(l, { expr := e, attr := free? })]
+  let md ← getArgMetaData arg
+  return [(l, { expr := e, attr := free?, md := md })]
 
 def translateEnsures (p : Program) (name : BoogieIdent) (count : Nat) (bindings : TransBindings) (arg : Arg) :
   TransM (ListMap BoogieLabel Procedure.Check) := do
@@ -1053,7 +1083,8 @@ def translateEnsures (p : Program) (name : BoogieIdent) (count : Nat) (bindings 
   let l ← translateOptionLabel s!"{name.name}_ensures_{count}" args[0]!
   let free? ← translateOptionFree args[1]!
   let e ← translateExpr p bindings args[2]!
-  return [(l, { expr := e, attr := free? })]
+  let md ← getArgMetaData arg
+  return [(l, { expr := e, attr := free?, md := md })]
 
 def translateSpecElem (p : Program) (name : BoogieIdent) (count : Nat) (bindings : TransBindings) (arg : Arg) :
   TransM (List BoogieIdent × ListMap BoogieLabel Procedure.Check × ListMap BoogieLabel Procedure.Check) := do

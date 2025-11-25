@@ -215,7 +215,7 @@ def transformToGoto (boogie : Boogie.Program) : Except Format CProverGOTO.Contex
 
 open Strata in
 def getGotoJson (programName : String) (env : Program) : IO CProverGOTO.Json := do
-  let (program, errors) := TransM.run (translateProgram env)
+  let (program, errors) := TransM.run Inhabited.default (translateProgram env)
   if errors.isEmpty then
     (match (BoogieToGOTO.transformToGoto program) with
       | .error e =>

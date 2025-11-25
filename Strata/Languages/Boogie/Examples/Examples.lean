@@ -11,6 +11,7 @@ import Strata.Languages.Boogie.Examples.Axioms
 import Strata.Languages.Boogie.Examples.BitVecParse
 import Strata.Languages.Boogie.Examples.DDMAxiomsExtraction
 import Strata.Languages.Boogie.Examples.DDMTransform
+import Strata.Languages.Boogie.Examples.FailingAssertion
 import Strata.Languages.Boogie.Examples.FreeRequireEnsure
 import Strata.Languages.Boogie.Examples.Functions
 import Strata.Languages.Boogie.Examples.Goto
