@@ -62,9 +62,14 @@ def optionToExpr (type : Lean.Expr) (a : Option Lean.Expr) : Lean.Expr :=
   | some a => mkApp2 (mkConst ``Option.some [levelZero]) type a
 
 @[inline]
-def arrayToExpr (type : Lean.Expr) (a : Array Lean.Expr) : Lean.Expr :=
-  let init := mkApp2 (mkConst ``Array.mkEmpty [levelZero]) type (toExpr a.size)
-  let pushFn := mkApp (mkConst ``Array.push [levelZero]) type
+def arrayToExpr (level : Level) (type : Lean.Expr) (a : Array Lean.Expr) : Lean.Expr :=
+  let init := mkApp2 (mkConst ``Array.mkEmpty [level]) type (toExpr a.size)
+  let pushFn := mkApp (mkConst ``Array.push [level]) type
   a.foldl (init := init) (mkApp2 pushFn)
+
+def listToExpr (level : Level) (type : Lean.Expr) (es : List Lean.Expr) : Lean.Expr :=
+  let nilFn  := mkApp (mkConst ``List.nil [level]) type
+  let consFn := mkApp (mkConst ``List.cons [level]) type
+  es.foldr (init := nilFn) (mkApp2 consFn)
 
 end Lean

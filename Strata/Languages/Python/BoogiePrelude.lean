@@ -11,7 +11,6 @@ import Strata.Languages.Boogie.Verifier
 
 namespace Strata
 
-set_option maxRecDepth 25000
 def boogiePrelude :=
 #strata
 program Boogie;
