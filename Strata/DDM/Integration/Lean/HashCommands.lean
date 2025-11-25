@@ -161,7 +161,6 @@ syntax (name := loadDialectCommand) "#load_dialect" str : command
 
 def resolveLeanRelPath {m} [Monad m] [HasInputContext m] [MonadError m] (path : FilePath) : m FilePath := do
   if path.isAbsolute then
-    -- TODO: Add warning about absolute paths
     pure path
   else
     let leanPath ← HasInputContext.getFileName
@@ -175,8 +174,8 @@ def loadDialectImpl: CommandElab := fun (stx : Syntax) => do
   | `(command|#load_dialect $pathStx) =>
     let dialectPath : FilePath := pathStx.getString
     let absPath ← resolveLeanRelPath dialectPath
-    if ! (←absPath.pathExists) then
-      throwError "Could not find file {dialectPath}"
+    if ! (← absPath.pathExists) then
+      throwErrorAt pathStx "Could not find file {dialectPath}"
     let loaded := (dialectExt.getState (←Lean.getEnv)).loaded
     let (_, r) ← Elab.loadDialectFromPath {} loaded #[]
                         (path := dialectPath) (actualPath := absPath) (expected := .none)
