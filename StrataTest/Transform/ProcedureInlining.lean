@@ -129,7 +129,7 @@ partial def alphaEquivStatement (s1 s2: Boogie.Statement) (map:IdMap)
     let map ← IdMap.updateLabel map lbl1 lbl2
     alphaEquivBlock b1 b2 map
 
-  | (.ite cond1 thenb1 elseb1 _, .ite cond2 thenb2 elseb2) => do
+  | (.ite cond1 thenb1 elseb1 _, .ite cond2 thenb2 elseb2 _) => do
     if alphaEquivExprs cond1 cond2 map then
       let map' <- alphaEquivBlock thenb1 thenb2 map
       let map'' <- alphaEquivBlock elseb1 elseb2 map'
@@ -218,7 +218,7 @@ private def alphaEquiv (p1 p2:Boogie.Procedure):Except Format Bool := do
 
 
 def translate (t : Strata.Program) : Boogie.Program :=
-  (TransM.run (translateProgram t)).fst
+  (TransM.run Inhabited.default (translateProgram t)).fst
 
 def runInlineCall (p : Boogie.Program) : Boogie.Program :=
   match (runProgram inlineCallStmt p .emp) with
