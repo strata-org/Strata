@@ -74,7 +74,8 @@ partial def Statement.renameLhs (s : Boogie.Statement) (fr: Lambda.Identifier Vi
     .ite x (Block.renameLhs thenb fr to) (Block.renameLhs elseb fr to) m
   | .loop m g i b md =>
     .loop m g i (Block.renameLhs b fr to) md
-  | .havoc _ _ | .assert _ _ _ | .assume _ _ _
+  | .havoc l md => .havoc (if l.name == fr then to else l) md
+  | .assert _ _ _ | .assume _ _ _
   | .goto _ _ => s
 end
 

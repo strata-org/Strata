@@ -246,6 +246,7 @@ def Test1 :=
 #strata
 program Boogie;
 procedure f(x : bool) returns (y : bool) {
+  havoc x;
   y := !x;
 };
 
@@ -260,6 +261,7 @@ def Test1Ans :=
 #strata
 program Boogie;
 procedure f(x : bool) returns (y : bool) {
+  havoc x;
   y := !x;
 };
 
@@ -269,6 +271,7 @@ procedure h() returns () {
   inlined: {
     var tmp_arg_0 : bool := b_in;
     var tmp_arg_1 : bool;
+    havoc tmp_arg_0;
     tmp_arg_1 := !tmp_arg_0;
     b_out := tmp_arg_1;
   }
