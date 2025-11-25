@@ -7,6 +7,7 @@
 import Strata.DL.Lambda.LExprEval
 import Strata.DL.Lambda.LExprType
 import Strata.DL.Lambda.LExpr
+import Strata.DL.Lambda.Semantics
 import Strata.DL.Lambda.TypeFactory
 import Strata.DL.Lambda.Reflect
 

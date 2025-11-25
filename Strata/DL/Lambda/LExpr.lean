@@ -7,6 +7,7 @@
 import Strata.DL.Lambda.LTy
 import Strata.DL.Lambda.Identifiers
 import Strata.DL.Lambda.MetaData
+import Strata.DL.Util.DecidableEq
 
 /-! ## Lambda Expressions with Quantifiers
 
@@ -59,8 +60,7 @@ Dot notation syntax: T.mono transforms LExprParams into LExprParamsT with LMonoT
 abbrev LExprParams.mono (T : LExprParams) : LExprParamsT :=
   ⟨T, LMonoTy⟩
 
-abbrev identifier := Identifier
-abbrev LExprParams.Identifier (T : LExprParams) := identifier T.IDMeta
+abbrev LExprParams.Identifier (T : LExprParams) := Lambda.Identifier T.IDMeta
 
 structure Typed (T: Type) where
   underlying: T
@@ -147,6 +147,7 @@ instance [Repr T.base.Metadata] [Repr T.TypeType] [Repr T.base.IDMeta] : Repr (L
     if prec > 0 then Std.Format.paren (go e) else go e
 
 -- Boolean equality function for LExpr
+@[grind]
 def LExpr.beq [BEq T.base.Metadata] [BEq T.TypeType] [BEq (Identifier T.base.IDMeta)] : LExpr T → LExpr T → Bool
   | .const m1 c1, e2 =>
     match e2 with
@@ -193,12 +194,7 @@ instance [BEq T.base.Metadata] [BEq T.TypeType] [BEq (Identifier T.base.IDMeta)]
 -- First, prove that beq is sound and complete
 theorem LExpr.beq_eq {T : LExprParamsT} [DecidableEq T.base.Metadata] [DecidableEq T.TypeType] [DecidableEq T.base.IDMeta]
   (e1 e2 : LExpr T) : LExpr.beq e1 e2 = true ↔ e1 = e2 := by
-  constructor
-  · -- Soundness: beq = true → e1 = e2
-    intro h; induction e1 generalizing e2 <;>
-    (unfold beq at h; cases e2 <;> grind)
-  · -- Completeness: e1 = e2 → beq = true
-    intros h; rw[h]; induction e2 generalizing e1 <;> simp only [LExpr.beq] <;> grind
+  solve_beq e1 e2
 
 -- Now use this theorem in DecidableEq
 instance {T: LExprParamsT} [DecidableEq T.base.Metadata] [DecidableEq T.TypeType] [DecidableEq T.base.IDMeta] : DecidableEq (LExpr T) :=

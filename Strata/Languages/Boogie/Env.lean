@@ -97,7 +97,7 @@ instance : ToFormat (ProofObligations Expression) where
 -- (FIXME) Parameterize by EvalContext typeclass.
 def ProofObligation.create
   (label : String) (assumptions : PathConditions Expression)
-  (obligation : Procedure.Check) (md : MetaData Expression := #[]):
+  (obligation : Procedure.Check):
   Option (ProofObligation Expression) :=
   open Lambda.LExpr.SyntaxMono in
   if obligation.attr == .Free then
@@ -107,18 +107,18 @@ def ProofObligation.create
   --  dbg_trace f!"{Format.line}Obligation {label} proved via evaluation!{Format.line}"
   --  none
   else
-    some (ProofObligation.mk label assumptions obligation.expr md)
+    some (ProofObligation.mk label assumptions obligation.expr obligation.md)
 
 def ProofObligations.create
   (assumptions : PathConditions Expression)
-  (obligations : ListMap String Procedure.Check) (md : MetaData Expression := #[])
+  (obligations : ListMap String Procedure.Check)
   : ProofObligations Expression :=
   match obligations with
   | [] => #[]
   | o :: orest =>
-    let orest' := ProofObligations.create assumptions orest md
+    let orest' := ProofObligations.create assumptions orest
     let o' :=
-      match (ProofObligation.create o.fst assumptions o.snd md) with
+      match (ProofObligation.create o.fst assumptions o.snd) with
       | none => #[]
       | some o' => #[o']
     o' ++ orest'
