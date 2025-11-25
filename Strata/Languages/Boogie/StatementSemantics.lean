@@ -14,25 +14,25 @@ namespace Boogie
 
 /-- expressions that can't be reduced when evaluating -/
 inductive Value : Boogie.Expression.Expr → Prop where
-  | const :  Value (.const _)
-  | bvar  :  Value (.bvar _)
-  | op    :  Value (.op _ _)
-  | abs   :  Value (.abs _ _)
+  | const :  Value (.const () _)
+  | bvar  :  Value (.bvar () _)
+  | op    :  Value (.op () _ _)
+  | abs   :  Value (.abs () _ _)
 
 open Imperative
 
 instance : HasVal Boogie.Expression where value := Value
 
 instance : HasFvar Boogie.Expression where
-  mkFvar := (.fvar · none)
+  mkFvar := (.fvar () · none)
   getFvar
-  | .fvar v _ => some v
+  | .fvar _ v _ => some v
   | _ => none
 
 @[match_pattern]
-def Boogie.true : Boogie.Expression.Expr := .boolConst Bool.true
+def Boogie.true : Boogie.Expression.Expr := .boolConst () Bool.true
 @[match_pattern]
-def Boogie.false : Boogie.Expression.Expr := .boolConst Bool.false
+def Boogie.false : Boogie.Expression.Expr := .boolConst () Bool.false
 
 instance : HasBool Boogie.Expression where
   tt := Boogie.true
@@ -42,26 +42,25 @@ instance : HasNot Boogie.Expression where
   not
   | Boogie.true => Boogie.false
   | Boogie.false => Boogie.true
-  | e => Lambda.LExpr.app Lambda.boolNotFunc.opExpr e
+  | e => Lambda.LExpr.app () (Lambda.LFunc.opExpr (T:=BoogieLParams) Lambda.boolNotFunc) e
 
 abbrev BoogieEval := SemanticEval Expression
 abbrev BoogieStore := SemanticStore Expression
 
 def WellFormedBoogieEvalCong (δ : BoogieEval) : Prop :=
-    (∀ e₁ e₁' σ₀ σ σ₀' σ',
+    (∀ e₁ e₁' σ₀ σ σ₀' σ' m,
       δ σ₀ σ e₁ = δ σ₀' σ' e₁' →
-      (∀ ty, δ σ₀ σ (.abs ty e₁) = δ σ₀' σ' (.abs ty e₁')) ∧
-      (∀ info, δ σ₀ σ (.mdata info e₁) = δ σ₀' σ' (.mdata info e₁')) ∧
+      (∀ ty, δ σ₀ σ (.abs m ty e₁) = δ σ₀' σ' (.abs m ty e₁')) ∧
     -- binary congruence
     (∀ e₂ e₂',
       δ σ₀ σ e₂ = δ σ₀' σ' e₂' →
-      δ σ₀ σ (.app e₁ e₂) = δ σ₀' σ' (.app e₁' e₂') ∧
-      δ σ₀ σ (.eq e₁ e₂) = δ σ₀' σ' (.eq e₁' e₂') ∧
-      (∀ k ty, δ σ₀ σ (.quant k ty e₁ e₂) = δ σ₀' σ' (.quant k ty e₁' e₂')) ∧
+      δ σ₀ σ (.app m e₁ e₂) = δ σ₀' σ' (.app m e₁' e₂') ∧
+      δ σ₀ σ (.eq m e₁ e₂) = δ σ₀' σ' (.eq m e₁' e₂') ∧
+      (∀ k ty, δ σ₀ σ (.quant m k ty e₁ e₂) = δ σ₀' σ' (.quant m k ty e₁' e₂')) ∧
     -- ternary congruence
     (∀ e₃ e₃',
       δ σ₀ σ e₃ = δ σ₀' σ' e₃' →
-      δ σ₀ σ (.ite e₃ e₁ e₂) = δ σ₀' σ' (.ite e₃' e₁' e₂')
+      δ σ₀ σ (.ite m e₃ e₁ e₂) = δ σ₀' σ' (.ite m e₃' e₁' e₂')
     ))
     )
 
@@ -162,13 +161,13 @@ def updatedStates
 def WellFormedBoogieEvalTwoState (δ : BoogieEval) (σ₀ σ : BoogieStore) : Prop :=
     open Boogie.OldExpressions in
       (∃ vs vs' σ₁, HavocVars σ₀ vs σ₁ ∧ InitVars σ₁ vs' σ) ∧
-      (∀ vs vs' σ₀ σ₁ σ,
+      (∀ vs vs' σ₀ σ₁ σ m,
         (HavocVars σ₀ vs σ₁ ∧ InitVars σ₁ vs' σ) →
         -- if the variable is modified, then old variable should lookup in the old store
-        ∀ v,
-          (v ∈ vs → ∀ oty ty, δ σ₀ σ (@oldVar oty v ty) = σ₀ v) ∧
+        ∀ v mOp mVar,
+          (v ∈ vs → ∀ oty ty, δ σ₀ σ (@oldVar m (tyold := oty) mOp mVar v (tyv := ty)) = σ₀ v) ∧
         -- if the variable is not modified, then old variable is identity
-          (¬ v ∈ vs → ∀ oty ty, δ σ₀ σ (@oldVar oty v ty) = σ v)) ∧
+          (¬ v ∈ vs → ∀ oty ty, δ σ₀ σ (@oldVar m (tyold := oty) mOp mVar v (tyv := ty)) = σ v)) ∧
       -- evaluating on an old complex expression is the same as evlauating on its normal form
       -- TODO: can possibly break this into more sub-components, proving it using congruence and normalization property
       -- Might not be needed if we assume all expressions are normalized

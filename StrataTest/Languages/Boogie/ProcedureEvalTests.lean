@@ -225,8 +225,8 @@ Proof Obligation:
                            outputs := [("y", mty[int])] },
                 spec := {
                     modifies := [],
-                    preconditions := [("0_lt_x", ⟨eb[((~Int.Lt #0) x)], .Default⟩)],
-                    postconditions := [("ret_y_lt_0", ⟨eb[((~Int.Lt y) #0)], .Default⟩)] },
+                    preconditions := [("0_lt_x", ⟨eb[((~Int.Lt #0) x)], .Default, #[]⟩)],
+                    postconditions := [("ret_y_lt_0", ⟨eb[((~Int.Lt y) #0)], .Default, #[]⟩)] },
                 body := [
                   Statement.set "y" eb[(~Int.Neg x)]
                 ]

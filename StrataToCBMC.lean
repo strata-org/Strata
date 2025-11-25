@@ -33,7 +33,7 @@ def main (args : List String) : IO Unit := do
           let csimp_prog := C_Simp.get_program pgm
           IO.println (CSimp.testSymbols csimp_prog.funcs.head!)
         else if file.endsWith ".boogie.st" then
-          let boogie_prog := (Boogie.getProgram pgm).fst
+          let boogie_prog := (Boogie.getProgram pgm inputCtx).fst
           match boogie_prog.decls.head! with
             | .proc f => IO.println (Boogie.testSymbols f)
             | _ => IO.println "Error: expected boogie procedure"

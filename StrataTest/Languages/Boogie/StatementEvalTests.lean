@@ -312,9 +312,9 @@ private def prog2 : Statements := [
 /--
 info: init (x : int) := #0
 x := #1
-#[<var x: ($__x0 : int)>] havoc x
+havoc x
 assert [x_eq_1] ($__x0 == #1)
-#[<var x: ($__x1 : int)>] havoc x
+havoc x
 x := #8
 -/
 #guard_msgs in

@@ -18,6 +18,13 @@ namespace Boogie
 open Std (ToFormat Format format)
 open Imperative
 
+-- Type class instances needed for deriving and formatting
+instance : Inhabited TypeDecl where
+  default := .con { name := "DefaultType", numargs := 0 }
+
+-- ToFormat instance for Function (which is LFunc BoogieLParams)
+-- Note: ToFormat BoogieLParams.Identifier is now defined in Identifiers.lean
+
 inductive DeclKind : Type where
   | var | type | ax | distinct | proc | func
   deriving DecidableEq, Repr

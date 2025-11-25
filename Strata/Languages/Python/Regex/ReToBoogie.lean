@@ -22,36 +22,36 @@ handled here. See `pythonRegexToBoogie` for a preprocessing pass.
 def RegexAST.toBoogie (ast : RegexAST) : Except ParseError Boogie.Expression.Expr := do
   match ast with
   | .char c =>
-    return (mkApp (.op strToRegexFunc.name none) [strConst (toString c)])
+    return (mkApp () (.op () strToRegexFunc.name none) [strConst () (toString c)])
   | .range c1 c2 =>
-    return mkApp (.op reRangeFunc.name none) [strConst (toString c1), strConst (toString c2)]
+    return mkApp () (.op () reRangeFunc.name none) [strConst () (toString c1), strConst () (toString c2)]
   | .union r1 r2 =>
     let r1b ← toBoogie r1
     let r2b ← toBoogie r2
-    return mkApp (.op reUnionFunc.name none) [r1b, r2b]
+    return mkApp () (.op () reUnionFunc.name none) [r1b, r2b]
   | .concat r1 r2 =>
     let r1b ← toBoogie r1
     let r2b ← toBoogie r2
-    return mkApp (.op reConcatFunc.name none) [r1b, r2b]
+    return mkApp () (.op () reConcatFunc.name none) [r1b, r2b]
   | .star r =>
     let rb ← toBoogie r
-    return mkApp (.op reStarFunc.name none) [rb]
+    return mkApp () (.op () reStarFunc.name none) [rb]
   | .plus r =>
     let rb ← toBoogie r
-    return mkApp (.op rePlusFunc.name none) [rb]
+    return mkApp () (.op () rePlusFunc.name none) [rb]
   | .optional r =>
     let rb ← toBoogie r
-    return mkApp (.op reLoopFunc.name none) [rb, intConst 0, intConst 1]
+    return mkApp () (.op () reLoopFunc.name none) [rb, intConst () 0, intConst () 1]
   | .loop r min max =>
     let rb ← toBoogie r
-    return mkApp (.op reLoopFunc.name none) [rb, intConst min, intConst max]
+    return mkApp () (.op () reLoopFunc.name none) [rb, intConst () min, intConst () max]
   | .anychar =>
-    return mkApp (.op reAllCharFunc.name none) []
+    return mkApp () (.op () reAllCharFunc.name none) []
   | .group r => toBoogie r
-  | .empty => return mkApp (.op strToRegexFunc.name none) [strConst ""]
+  | .empty => return mkApp () (.op () strToRegexFunc.name none) [strConst () ""]
   | .complement r =>
     let rb ← toBoogie r
-    return mkApp (.op reCompFunc.name none) [rb]
+    return mkApp () (.op () reCompFunc.name none) [rb]
   | .anchor_start => throw (.patternError "Anchor should not appear in AST conversion" "" 0)
   | .anchor_end => throw (.patternError "Anchor should not appear in AST conversion" "" 0)
 
@@ -77,7 +77,7 @@ fallback.
 -/
 def pythonRegexToBoogie (pyRegex : String) (mode : MatchMode := .fullmatch) :
     Boogie.Expression.Expr × Option ParseError :=
-  let reAll  := mkApp (.op reAllFunc.name none) []
+  let reAll  := mkApp () (.op () reAllFunc.name none) []
   match parseAll pyRegex 0 [] with
   | .error err => (reAll, some err)
   | .ok asts =>
@@ -94,7 +94,7 @@ def pythonRegexToBoogie (pyRegex : String) (mode : MatchMode := .fullmatch) :
     -- If anchors in middle, return `re.none` (unmatchable pattern).
     -- NOTE: this is a heavy-ish semantic transform.
     if hasMiddleAnchor then
-      let reNone := mkApp (.op reNoneFunc.name none) []
+      let reNone := mkApp () (.op () reNoneFunc.name none) []
       (reNone, none)
     else
 
@@ -103,7 +103,7 @@ def pythonRegexToBoogie (pyRegex : String) (mode : MatchMode := .fullmatch) :
 
       -- Handle empty pattern.
       if filtered.isEmpty then
-        (mkApp (.op strToRegexFunc.name none) [strConst ""], none)
+        (mkApp () (.op () strToRegexFunc.name none) [strConst () ""], none)
       else
         -- Concatenate filtered ASTs.
         let core := match filtered with
@@ -123,20 +123,20 @@ def pythonRegexToBoogie (pyRegex : String) (mode : MatchMode := .fullmatch) :
               coreExpr
             | _, true, false =>
               -- ^pattern - starts with.
-              mkApp (.op reConcatFunc.name none) [coreExpr, reAll]
+              mkApp () (.op () reConcatFunc.name none) [coreExpr, reAll]
             | _, false, true =>
               -- pattern$ - ends with.
-              mkApp (.op reConcatFunc.name none) [reAll, coreExpr]
+              mkApp () (.op () reConcatFunc.name none) [reAll, coreExpr]
             -- No anchors - apply match mode.
             | .fullmatch, false, false =>
               -- exact match
               coreExpr
             | .match, false, false =>
               -- match at start
-              mkApp (.op reConcatFunc.name none) [coreExpr, reAll]
+              mkApp () (.op () reConcatFunc.name none) [coreExpr, reAll]
             | .search, false, false =>
               -- match anywhere
-              mkApp (.op reConcatFunc.name none) [reAll, mkApp (.op reConcatFunc.name none) [coreExpr, reAll]]
+              mkApp () (.op () reConcatFunc.name none) [reAll, mkApp () (.op () reConcatFunc.name none) [coreExpr, reAll]]
           (result, none)
 
 -------------------------------------------------------------------------------

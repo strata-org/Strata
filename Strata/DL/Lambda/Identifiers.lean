@@ -79,7 +79,9 @@ def Identifiers.containsName {IDMeta} [DecidableEq IDMeta] (m: Identifiers IDMet
   m[n]?.isSome
 
 theorem Identifiers.addWithErrorNotin {IDMeta} [DecidableEq IDMeta] {m m': Identifiers IDMeta} {x: Identifier IDMeta}: m.addWithError x f = .ok m' → m.contains x = false := by
-  unfold addWithError contains; grind
+  unfold addWithError contains
+  simp
+  grind
 
 theorem Identifiers.addWithErrorContains {IDMeta} [DecidableEq IDMeta] {m m': Identifiers IDMeta} {x: Identifier IDMeta}: m.addWithError x f = .ok m' → ∀ y, m'.contains y ↔ x = y ∨ m.contains y := by
   unfold addWithError contains;

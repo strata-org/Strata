@@ -25,17 +25,20 @@ scopes, other dialects that include Lambda may need to do so. For the evaluation
 of Lambda expressions in isolation, the stack can contain a single scope.
 -/
 
-variable {IDMeta : Type} [DecidableEq IDMeta]
+variable {T : LExprParams} [Inhabited T.Metadata] [BEq T.Metadata] [DecidableEq T.IDMeta] [BEq T.IDMeta] [ToFormat T.IDMeta] [BEq (LExpr T.mono)] [ToFormat (LExpr T.mono)]
 
-abbrev Scope (IDMeta : Type) := (Map (Identifier IDMeta) (Option LMonoTy × (LExpr LMonoTy IDMeta)))
+def Scope (T : LExprParams) : Type := Map T.Identifier (Option LMonoTy × (LExpr T.mono))
 
-instance : BEq (Scope IDMeta) where
-  beq m1 m2 := m1 == m2
+def Scope.ofMap (m : Map T.Identifier (Option LMonoTy × (LExpr T.mono))) : Scope T := m
+def Scope.toMap (s : Scope T) : Map T.Identifier (Option LMonoTy × (LExpr T.mono)) := s
 
-instance : Inhabited (Scope IDMeta) where
-  default := []
+instance : BEq (Scope T) where
+  beq m1 m2 := m1.toMap == m2.toMap
 
-private def Scope.format (m : (Scope IDMeta)) : Std.Format :=
+instance : Inhabited (Scope T) where
+  default := Scope.ofMap []
+
+private def Scope.format (m : Scope T) : Std.Format :=
   match m with
   | [] => ""
   | [(k, (ty, v))] => go k ty v
@@ -46,20 +49,20 @@ private def Scope.format (m : (Scope IDMeta)) : Std.Format :=
     | some ty => f!"({k} : {ty}) → {v}"
     | none => f!"{k} → {v}"
 
-instance : ToFormat (Scope IDMeta) where
+instance (priority := high) : ToFormat (Scope T) where
   format := Scope.format
 
 /--
 Merge two maps `m1` and `m2`, where `m1` is assumed to be the map if `cond`
 is `true` and `m2` when it is false.
 -/
-def Scope.merge (cond : (LExpr LMonoTy IDMeta)) (m1 m2 : (Scope IDMeta)) : (Scope IDMeta) :=
+def Scope.merge (cond : LExpr T.mono) (m1 m2 : Scope T) : Scope T :=
   match m1 with
-  | [] => m2.map (fun (i, (ty, e)) => (i, (ty, mkIte cond (.fvar i ty) e)))
+  | [] => m2.map (fun (i, (ty, e)) => (i, (ty, mkIte cond (.fvar (default : T.Metadata) i ty) e)))
   | (k, (ty1, e1)) :: rest =>
     match m2.find? k with
     | none =>
-      (k, (ty1, mkIte cond e1 (.fvar k ty1))) ::
+      (k, (ty1, mkIte cond e1 (.fvar (default : T.Metadata) k ty1))) ::
       Scope.merge cond rest m2
     | some (ty2, e2) =>
       if ty1 ≠ ty2 then
@@ -69,22 +72,27 @@ def Scope.merge (cond : (LExpr LMonoTy IDMeta)) (m1 m2 : (Scope IDMeta)) : (Scop
       else
         (k, (ty1, mkIte cond e1 e2)) ::
       Scope.merge cond rest (m2.erase k)
-  where mkIte (cond tru fals : (LExpr LMonoTy IDMeta)) : (LExpr LMonoTy IDMeta) :=
+  where mkIte (cond tru fals : LExpr T.mono) : LExpr T.mono :=
     if tru == fals then tru
-    else (LExpr.ite cond tru fals)
+    else (LExpr.ite (default : T.Metadata) cond tru fals)
 
 section Scope.merge.tests
 open LTy.Syntax LExpr.SyntaxMono
+
+private abbrev TestParams : LExprParams := ⟨Unit, Unit⟩
+
+private instance : Coe String TestParams.Identifier where
+  coe s := Identifier.mk s ()
 
 /--
 info: (x : int) → #8
 (z : int) → (if #true then #100 else (z : int))
 -/
 #guard_msgs in
-#eval format $ Scope.merge (IDMeta:=Unit) .true
-              [(("x"), (mty[int], .intConst 8)),
-               (("z"), (mty[int], .intConst 100))]
-              [(("x"), (mty[int], .intConst 8))]
+#eval format $ Scope.merge (T:=TestParams) (.boolConst () true)
+              [("x", (mty[int], .intConst () 8)),
+               ("z", (mty[int], .intConst () 100))]
+              [("x", (mty[int], .intConst () 8))]
 
 /--
 info: (x : int) → (if #true then #8 else (x : int))
@@ -92,10 +100,10 @@ info: (x : int) → (if #true then #8 else (x : int))
 (y : int) → (if #true then (y : int) else #8)
 -/
 #guard_msgs in
-#eval format $ Scope.merge (IDMeta:=Unit) .true
-              [(("x"), (mty[int], .intConst 8)),
-               (("z"), (mty[int], .intConst 100))]
-              [(("y"), (mty[int], .intConst 8))]
+#eval format $ Scope.merge (T:=TestParams) (.boolConst () true)
+              [("x", (mty[int], .intConst () 8)),
+               ("z", (mty[int], .intConst () 100))]
+              [("y", (mty[int], .intConst () 8))]
 
 /--
 info: (y : int) → (if #true then #8 else (y : int))
@@ -103,10 +111,10 @@ info: (y : int) → (if #true then #8 else (y : int))
 (z : int) → (if #true then (z : int) else #100)
 -/
 #guard_msgs in
-#eval format $ Scope.merge (IDMeta:=Unit) .true
-              [(("y"), (mty[int], .intConst 8 ))]
-              [(("x"), (mty[int], .intConst 8)),
-               (("z"), (mty[int], .intConst 100))]
+#eval format $ Scope.merge (T:=TestParams) (.boolConst () true)
+              [("y", (mty[int], .intConst () 8 ))]
+              [("x", (mty[int], .intConst () 8)),
+               ("z", (mty[int], .intConst () 100))]
 
 /--
 info: (a : int) → (if #true then #8 else (a : int))
@@ -115,12 +123,12 @@ info: (a : int) → (if #true then #8 else (a : int))
 (z : int) → (if #true then (z : int) else #100)
 -/
 #guard_msgs in
-#eval format $ Scope.merge (IDMeta:=Unit) .true
-                [(("a"), (mty[int], (.intConst 8))),
-                 (("x"), (mty[int], (.intConst 800))),
-                 (("b"), (mty[int], (.intConst 900)))]
-                [(("x"), (mty[int], (.intConst 8))),
-                 (("z"), (mty[int], (.intConst 100)))]
+#eval format $ Scope.merge (T:=TestParams) (.boolConst () true)
+                [("a", (mty[int], (.intConst () 8))),
+                 ("x", (mty[int], (.intConst () 800))),
+                 ("b", (mty[int], (.intConst () 900)))]
+                [("x", (mty[int], (.intConst () 8))),
+                 ("z", (mty[int], (.intConst () 100)))]
 
 end Scope.merge.tests
 
@@ -128,18 +136,18 @@ end Scope.merge.tests
 A stack of scopes, where each scope maps the free variables
 to their `LExpr` values.
 -/
-abbrev Scopes (IDMeta : Type) := Maps (Identifier IDMeta) (Option LMonoTy × LExpr LMonoTy IDMeta)
+abbrev Scopes (T : LExprParams) := Maps T.Identifier (Option LMonoTy × LExpr T.mono)
 
 /--
 Merge two scopes, where `s1` is assumed to be the scope if `cond` is true, and
 `s2` otherwise.
 -/
-def Scopes.merge (cond : LExpr LMonoTy IDMeta) (s1 s2 : Scopes IDMeta) : Scopes IDMeta :=
+def Scopes.merge (cond : LExpr T.mono) (s1 s2 : Scopes T) : Scopes T :=
   match s1, s2 with
   | [], _ => s2
   | _, [] => s1
   | x :: xrest, y :: yrest =>
-    Scope.merge (IDMeta := IDMeta) cond x y :: Scopes.merge cond xrest yrest
+    Scope.merge cond x y :: Scopes.merge cond xrest yrest
 
 --------------------------------------------------------------------
 

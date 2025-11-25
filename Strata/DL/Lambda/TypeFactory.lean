@@ -116,7 +116,7 @@ def checkStrictPosUnif (d: LDatatype IDMeta) : Except Format Unit :=
 /--
 The `LFunc` corresponding to constructor `c` of datatype `d`. Constructor functions do not have bodies or `concreteEval` functions, as they are values when applied to value arguments.
 -/
-def constrFunc (c: LConstr IDMeta) (d: LDatatype IDMeta) : LFunc IDMeta :=
+def constrFunc (c: LConstr T.IDMeta) (d: LDatatype T.IDMeta) : LFunc T :=
   { name := c.name, typeArgs := d.typeArgs, inputs := c.args, output := dataDefault d, isConstr := true }
 
 /--
@@ -171,9 +171,9 @@ def elimTy (outputType : LMonoTy) (t: LDatatype IDMeta) (c: LConstr IDMeta): LMo
 /--
 Simulates pattern matching on operator o.
 -/
-def LExpr.matchOp (e: LExpr LMonoTy IDMeta) (o: Identifier IDMeta) : Option (List (LExpr LMonoTy IDMeta)) :=
+def LExpr.matchOp {T: LExprParams} [BEq T.Identifier] (e: LExpr T.mono) (o: T.Identifier) : Option (List (LExpr T.mono)) :=
   match getLFuncCall e with
-  | (.op o1 _, args) => if o == o1 then .some args else .none
+  | (.op _ o1 _, args) => if o == o1 then .some args else .none
   | _ => .none
 
 /--
@@ -181,7 +181,7 @@ Determine which constructor, if any, a datatype instance belongs to and get the 
 
 For example, expression `cons x l` gives constructor `cons`, index `1` (cons is the second constructor), arguments `[x, l]`, and recursive argument `[(l, List α)]`
 -/
-def datatypeGetConstr (d: LDatatype IDMeta) (x: LExpr LMonoTy IDMeta) : Option (LConstr IDMeta × Nat × List (LExpr LMonoTy IDMeta) × List (LExpr LMonoTy IDMeta × LMonoTy)) :=
+def datatypeGetConstr {T: LExprParams} [BEq T.Identifier] (d: LDatatype T.IDMeta) (x: LExpr T.mono) : Option (LConstr T.IDMeta × Nat × List (LExpr T.mono) × List (LExpr T.mono × LMonoTy)) :=
   List.foldr (fun (c, i) acc =>
     match x.matchOp c.name with
     | .some args =>
@@ -200,8 +200,8 @@ def recTyStructure (d: LDatatype IDMeta) (recTy: LMonoTy) : Unit ⊕ (List LMono
 /--
 Finds the lambda `bvar` arguments, in order, given an iterated lambda with `n` binders
 -/
-private def getBVars (n: Nat) : List (LExpr LMonoTy IDMeta) :=
-  (List.range n).reverse.map .bvar
+private def getBVars {T: LExprParams} (m: T.Metadata) (n: Nat) : List (LExpr T.mono) :=
+  (List.range n).reverse.map (.bvar m)
 
 /--
 Construct recursive call of eliminator. Specifically, `recs` are the recursive arguments, in order, while `elimArgs` are the eliminator cases (e.g. for a binary tree with constructor `Node x l r`, where `l` and `r` are subtrees, `recs` is `[l, r]`)
@@ -209,12 +209,12 @@ Construct recursive call of eliminator. Specifically, `recs` are the recursive a
 Invariant: `recTy` must either have the form `d(typeArgs)` or `τ₁ → ... → τₙ → d(typeArgs)`. This is enforced by `dataTypeGetConstr`
 
 -/
-def elimRecCall (d: LDatatype IDMeta) (recArg: LExpr LMonoTy IDMeta) (recTy: LMonoTy) (elimArgs: List (LExpr LMonoTy IDMeta)) (elimName : Identifier IDMeta) : LExpr LMonoTy IDMeta :=
+def elimRecCall {T: LExprParams} (d: LDatatype T.IDMeta) (recArg: LExpr T.mono) (recTy: LMonoTy) (elimArgs: List (LExpr T.mono)) (m: T.Metadata) (elimName : Identifier T.IDMeta) : LExpr T.mono :=
   match recTyStructure d recTy with
   | .inl _ => -- Generate eliminator call directly
-    (LExpr.op elimName .none).mkApp (recArg :: elimArgs)
+    (LExpr.op m elimName .none).mkApp m (recArg :: elimArgs)
   | .inr funArgs => -- Construct lambda, first arg of eliminator is recArg applied to lambda arguments
-    LExpr.absMulti funArgs ((LExpr.op elimName .none).mkApp (recArg.mkApp (getBVars funArgs.length) :: elimArgs))
+    LExpr.absMulti m funArgs ((LExpr.op m elimName .none).mkApp m (recArg.mkApp m (getBVars m funArgs.length) :: elimArgs))
 
 /--
 Generate eliminator concrete evaluator. Idea: match on 1st argument (e.g. `x : List α`) to determine constructor and corresponding arguments. If it matches the `n`th constructor, return `n+1`st element of input list applied to constructor arguments and recursive calls.
@@ -227,15 +227,15 @@ Examples:
 `Tree$Elim (T f) e = e f (fun (x: int) => Tree$Elim (f x) e)`
 
 -/
-def elimConcreteEval (d: LDatatype IDMeta) (elimName : Identifier IDMeta) :
-  (LExpr LMonoTy IDMeta) → List (LExpr LMonoTy IDMeta) → (LExpr LMonoTy IDMeta) :=
+def elimConcreteEval {T: LExprParams} [BEq T.Identifier] (d: LDatatype T.IDMeta) (m: T.Metadata) (elimName : Identifier T.IDMeta) :
+  (LExpr T.mono) → List (LExpr T.mono) → (LExpr T.mono) :=
   fun e args =>
     match args with
     | x :: xs =>
       match datatypeGetConstr d x with
       | .some (_, i, a, recs) =>
         match xs[i]? with
-        | .some f => f.mkApp (a ++ recs.map (fun (r, rty) => elimRecCall d r rty xs elimName))
+        | .some f => f.mkApp m (a ++ recs.map (fun (r, rty) => elimRecCall d r rty xs m elimName))
         | .none => e
       | .none => e
     | _ => e
@@ -243,10 +243,10 @@ def elimConcreteEval (d: LDatatype IDMeta) (elimName : Identifier IDMeta) :
 /--
 The `LFunc` corresponding to the eliminator for datatype `d`, called e.g. `List$Elim` for type `List`.
 -/
-def elimFunc (d: LDatatype IDMeta) : LFunc IDMeta :=
+def elimFunc [Inhabited T.IDMeta] [BEq T.Identifier] (d: LDatatype T.IDMeta) (m: T.Metadata) : LFunc T :=
   let outTyId := freshTypeArg d.typeArgs
   let elimName := d.name ++ "$Elim";
-  { name := elimName, typeArgs := outTyId :: d.typeArgs, inputs := List.zip (genArgNames (d.constrs.length + 1)) (dataDefault d :: d.constrs.map (elimTy (.ftvar outTyId) d)), output := .ftvar outTyId, concreteEval := elimConcreteEval d elimName}
+  { name := elimName, typeArgs := outTyId :: d.typeArgs, inputs := List.zip (genArgNames (d.constrs.length + 1)) (dataDefault d :: d.constrs.map (elimTy (.ftvar outTyId) d)), output := .ftvar outTyId, concreteEval := elimConcreteEval d m elimName}
 
 ---------------------------------------------------------------------
 
@@ -259,16 +259,16 @@ def TypeFactory.default : @TypeFactory IDMeta := #[]
 /--
 Generates the Factory (containing all constructor and eliminator functions) for a single datatype
 -/
-def LDatatype.genFactory  (d: LDatatype IDMeta) : @Lambda.Factory IDMeta :=
-  (elimFunc d :: d.constrs.map (fun c => constrFunc c d)).toArray
+def LDatatype.genFactory {T: LExprParams} [Inhabited T.IDMeta] [BEq T.Identifier] (d: LDatatype T.IDMeta) (m: T.Metadata): @Lambda.Factory T :=
+  (elimFunc d m :: d.constrs.map (fun c => constrFunc c d)).toArray
 
 /--
 Generates the Factory (containing all constructor and eliminator functions) for the given `TypeFactory`
 -/
-def TypeFactory.genFactory (t: @TypeFactory IDMeta) : Except Format (@Lambda.Factory IDMeta) :=
+def TypeFactory.genFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabited T.IDMeta] [ToFormat T.IDMeta] [BEq T.Identifier] (t: @TypeFactory T.IDMeta) : Except Format (@Lambda.Factory T) :=
   t.foldlM (fun f d => do
     _ ← checkStrictPosUnif d
-    f.addFactory d.genFactory) Factory.default
+    f.addFactory (d.genFactory inst.default)) Factory.default
 
 ---------------------------------------------------------------------
 
