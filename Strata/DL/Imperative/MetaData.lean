@@ -33,6 +33,7 @@ inductive MetaDataElem.Field (P : PureExpr) where
   | var (v : P.Ident)
   | label (l : String)
 
+@[grind]
 def MetaDataElem.Field.beq [BEq P.Ident] (f1 f2 : MetaDataElem.Field P) :=
   match f1, f2 with
   | .var v1, .var v2 => v1 == v2
@@ -42,17 +43,9 @@ def MetaDataElem.Field.beq [BEq P.Ident] (f1 f2 : MetaDataElem.Field P) :=
 instance [BEq P.Ident] : BEq (MetaDataElem.Field P) where
   beq f1 f2 := f1.beq f2
 
--- TODO: this is exactly the same proof as LExpr.beq_eq. Is there some existing
--- automation we could use?
 theorem MetaDataElem.Field.beq_eq {P : PureExpr} [DecidableEq P.Ident]
   (f1 f2 : MetaDataElem.Field P) : MetaDataElem.Field.beq f1 f2 = true ↔ f1 = f2 := by
-  constructor <;> intro h
-  case mp =>
-    -- Soundness: beq = true → e1 = e2
-    unfold beq at h; induction f1 generalizing f2 <;> (cases f2 <;> grind)
-  case mpr =>
-    -- Completeness: e1 = e2 → beq = true
-    rw[h]; induction f2 generalizing f1 <;> simp only [MetaDataElem.Field.beq] <;> grind
+  solve_beq f1 f2
 
 instance [DecidableEq P.Ident] : DecidableEq (MetaDataElem.Field P) :=
   beq_eq_DecidableEq MetaDataElem.Field.beq MetaDataElem.Field.beq_eq
