@@ -199,6 +199,11 @@ partial def evalApp (state : HState) (originalExpr e1 e2 : HExpr) : HState × HE
         HExpr.string "undefined"
     (state2, result)
 
+  | .deferredOp "InstanceOf" _ =>
+    (state2, .app (.deferredOp "InstanceOf" none) e2')
+  | .app (.deferredOp "InstanceOf" _) lhsExpr =>
+    evalInstanceOf state2 lhsExpr e2'
+
   | .deferredOp op _ =>
     -- First application to a deferred operation - return partially applied
     (state2, .app (.deferredOp op none) e2')
@@ -376,6 +381,18 @@ partial def evalBinaryOp (state : HState) (op : String) (arg1 arg2 : HExpr) : HS
   | _, _ =>
     -- Partial evaluation - keep as deferred operation
     (state, .app (.app (.deferredOp op none) arg1) arg2)
+
+partial def evalInstanceOf (state : HState) (lhs rhs : HExpr) : HState × HExpr :=
+  let (s1, v)   := evalHExpr state lhs
+  let (s2, _) := evalHExpr s1 rhs
+
+  let result : HExpr :=
+    match v with
+    | .address _ => Heap.HExpr.true
+    | .null      => Heap.HExpr.false
+    | _          => Heap.HExpr.false
+
+  (s2, result)
 
 end
 

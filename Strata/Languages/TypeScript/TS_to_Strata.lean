@@ -94,7 +94,7 @@ partial def infer_type_from_expr (expr: TS_Expression) : Heap.HMonoTy :=
   | .TS_BinaryExpression e =>
     match e.operator with
     | "+" | "-" | "*" | "/" | "%" => Heap.HMonoTy.int
-    | "==" | "<=" | "<" | ">=" | ">" => Heap.HMonoTy.bool
+    | "==" | "<=" | "<" | ">=" | ">" | "instanceof" => Heap.HMonoTy.bool
     | _ => Heap.HMonoTy.int  -- Default
   | .TS_LogicalExpression _ => Heap.HMonoTy.bool
   | .TS_ConditionalExpression e => infer_type_from_expr e.consequent  -- Use consequent type
@@ -130,6 +130,7 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
     | "<" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Lt" none) lhs) rhs
     | ">=" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Ge" none) lhs) rhs
     | ">" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Gt" none) lhs) rhs
+    | "instanceof" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "InstanceOf" none) lhs) rhs
     | _ => panic! s!"Unsupported binary operator: {e.operator}"
 
   | .TS_LogicalExpression e =>
