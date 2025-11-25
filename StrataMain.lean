@@ -96,8 +96,7 @@ def readStrataIon (fm : Strata.DialectFileMap) (path : System.FilePath) (bytes :
 
 def readFile (fm : Strata.DialectFileMap) (path : System.FilePath) : IO (Strata.Elab.LoadedDialects × Strata.DialectOrProgram) := do
   let bytes ← Strata.Util.readBinInputSource path.toString
-  -- Use "<stdin>" as display name for error messages when reading from stdin
-  let displayPath : System.FilePath := if path.toString == "-" then "<stdin>" else path
+  let displayPath : System.FilePath := Strata.Util.displayName path.toString
   if bytes.startsWith Ion.binaryVersionMarker then
     readStrataIon fm displayPath bytes
   else

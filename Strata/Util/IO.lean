@@ -23,4 +23,8 @@ def readBinInputSource (path : String) : IO ByteArray := do
   else
     IO.FS.readBinFile path
 
+/-- Get display name for error messages: "<stdin>" if reading from stdin, otherwise the path -/
+def displayName (path : String) : String :=
+  if path == "-" then "<stdin>" else path
+
 end Strata.Util

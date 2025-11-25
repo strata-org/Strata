@@ -20,9 +20,7 @@ def main (args : List String) : IO Unit := do
   match args with
   | [file] => do
     let text ← Strata.Util.readInputSource file
-    -- Use "<stdin>" as display name for error messages when reading from stdin
-    let displayName := if file == "-" then "<stdin>" else file
-    let inputCtx := Lean.Parser.mkInputContext text displayName
+    let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
     let dctx := Elab.LoadedDialects.builtin
     let dctx := dctx.addDialect! Boogie
     let dctx := dctx.addDialect! C_Simp
