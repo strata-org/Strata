@@ -18,8 +18,7 @@ def readInputSource (path : String) : IO String := do
 def readBinInputSource (path : String) : IO ByteArray := do
   if path == "-" then
     let stdin ← IO.getStdin
-    let content ← stdin.readToEnd
-    pure content.toUTF8
+    stdin.readBinToEnd
   else
     IO.FS.readBinFile path
 
