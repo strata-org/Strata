@@ -104,6 +104,61 @@ instance : SizeOf (CallArg P) where
 instance : SizeOf (Stmt P) where
   sizeOf := Stmt.sizeOf
 
+---------------------------------------------------------------------
+-- Repr Instances
+---------------------------------------------------------------------
+
+mutual
+partial def CallArg.repr [Repr P.Metadata] [Repr P.exprParams.Metadata] [Repr P.Identifier] : CallArg P → String
+  | .expr e => ".expr (" ++ Expression.repr e ++ ")"
+  | .out id => s!".out {reprArg id}"
+  | .inout id => s!".inout {reprArg id}"
+
+partial def Stmt.repr [Repr P.Metadata] [Repr P.exprParams.Metadata] [Repr P.Identifier] : Stmt P → String
+  | .varDecl md name ty autoinv init =>
+      let tyRepr := match ty with | some t => s!"(some {reprArg t})" | none => "none"
+      let autoinvRepr := match autoinv with | some e => s!"(some ({Expression.repr e}))" | none => "none"
+      let initRepr := match init with | some e => s!"(some ({Expression.repr e}))" | none => "none"
+      s!".varDecl {reprArg md} {reprArg name} {tyRepr} {autoinvRepr} {initRepr}"
+  | .assign md lhs rhs => s!".assign {reprArg md} {reprArg lhs} ({Expression.repr rhs})"
+  | .reinit md name => s!".reinit {reprArg md} {reprArg name}"
+  | .blockStmt md stmts =>
+      let stmtsRepr := "[" ++ String.intercalate ", " (stmts.map Stmt.repr) ++ "]"
+      s!".blockStmt {reprArg md} {stmtsRepr}"
+  | .call md procName args =>
+      let argsRepr := "[" ++ String.intercalate ", " (args.map CallArg.repr) ++ "]"
+      s!".call {reprArg md} {reprArg procName} {argsRepr}"
+  | .check md expr => s!".check {reprArg md} ({Expression.repr expr})"
+  | .assume md expr => s!".assume {reprArg md} ({Expression.repr expr})"
+  | .reach md expr => s!".reach {reprArg md} ({Expression.repr expr})"
+  | .assert md expr => s!".assert {reprArg md} ({Expression.repr expr})"
+  | .aForall md var ty body => s!".aForall {reprArg md} {reprArg var} {reprArg ty} ({Stmt.repr body})"
+  | .choose md branches =>
+      let branchesRepr := "[" ++ String.intercalate ", " (branches.map Stmt.repr) ++ "]"
+      s!".choose {reprArg md} {branchesRepr}"
+  | .ifStmt md cond thenB elseB =>
+      let elseRepr := match elseB with | some s => s!"(some ({Stmt.repr s}))" | none => "none"
+      s!".ifStmt {reprArg md} ({Expression.repr cond}) ({Stmt.repr thenB}) {elseRepr}"
+  | .ifCase md cases =>
+      let casesRepr := "[" ++ String.intercalate ", " (cases.map fun (e, s) => s!"({Expression.repr e}, {Stmt.repr s})") ++ "]"
+      s!".ifCase {reprArg md} {casesRepr}"
+  | .loop md invariants body =>
+      let invsRepr := "[" ++ String.intercalate ", " (invariants.map Expression.repr) ++ "]"
+      s!".loop {reprArg md} {invsRepr} ({Stmt.repr body})"
+  | .labeledStmt md label stmt => s!".labeledStmt {reprArg md} {reprArg label} ({Stmt.repr stmt})"
+  | .exit md label =>
+      let labelRepr := match label with | some l => s!"(some {reprArg l})" | none => "none"
+      s!".exit {reprArg md} {labelRepr}"
+  | .returnStmt md => s!".returnStmt {reprArg md}"
+  | .probe md label => s!".probe {reprArg md} {reprArg label}"
+end
+
+instance [Repr P.Metadata] [Repr P.exprParams.Metadata] [Repr P.Identifier] : Repr (CallArg P) where
+  reprPrec a _ := CallArg.repr a
+
+instance [Repr P.Metadata] [Repr P.exprParams.Metadata] [Repr P.Identifier] : Repr (Stmt P) where
+  reprPrec s _ := Stmt.repr s
+
 -- Formatting is now handled by converting to DDM and using DDM's formatting
 -- Statement and CallArg converters would be added to B3AST2DDM when needed
 
@@ -118,6 +173,21 @@ abbrev B3Stmt := Stmt defaultStmtParams
 
 /-- B3 CallArg with default parameters -/
 abbrev B3CallArg := CallArg defaultStmtParams
+
+instance : Repr Unit where
+  reprPrec _ _ := "()"
+
+instance : Repr B3IdentifierMetadata where
+  reprPrec _ _ := "()"
+
+instance : Repr (Lambda.Identifier B3IdentifierMetadata) where
+  reprPrec id _ := id.name
+
+instance : Repr B3Stmt where
+  reprPrec s _ := @Stmt.repr defaultStmtParams (inferInstanceAs (Repr Unit)) (inferInstanceAs (Repr Unit)) (inferInstanceAs (Repr (Lambda.Identifier B3IdentifierMetadata))) s
+
+instance : Repr B3CallArg where
+  reprPrec a _ := @CallArg.repr defaultStmtParams (inferInstanceAs (Repr Unit)) (inferInstanceAs (Repr Unit)) (inferInstanceAs (Repr (Lambda.Identifier B3IdentifierMetadata))) a
 
 /-- B3 Identifier for statements (same as B3Ident) -/
 abbrev B3StmtIdent := defaultStmtParams.Identifier

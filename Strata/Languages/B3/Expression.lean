@@ -39,7 +39,7 @@ inductive BinaryOp where
   | mul        -- "*"
   | div        -- "div"
   | mod        -- "mod"
-deriving Repr, DecidableEq
+deriving DecidableEq
 
 def BinaryOp.toString : BinaryOp → String
   | .iff => "<==>"
@@ -84,13 +84,32 @@ instance : ToString BinaryOp where
 instance : ToFormat BinaryOp where
   format op := op.toString
 
+instance : Repr BinaryOp where
+  reprPrec op _ := match op with
+    | .iff => ".iff"
+    | .implies => ".implies"
+    | .impliedBy => ".impliedBy"
+    | .and => ".and"
+    | .or => ".or"
+    | .eq => ".eq"
+    | .neq => ".neq"
+    | .lt => ".lt"
+    | .le => ".le"
+    | .ge => ".ge"
+    | .gt => ".gt"
+    | .add => ".add"
+    | .sub => ".sub"
+    | .mul => ".mul"
+    | .div => ".div"
+    | .mod => ".mod"
+
 /--
 B3 Unary operators
 -/
 inductive UnaryOp where
   | not  -- "!"
   | neg  -- "-"
-deriving Repr, DecidableEq
+deriving DecidableEq
 
 def UnaryOp.toString : UnaryOp → String
   | .not => "!"
@@ -102,13 +121,18 @@ instance : ToString UnaryOp where
 instance : ToFormat UnaryOp where
   format op := op.toString
 
+instance : Repr UnaryOp where
+  reprPrec op _ := match op with
+    | .not => ".not"
+    | .neg => ".neg"
+
 /--
 B3 Quantifier kind
 -/
 inductive QuantifierKind where
   | forall
   | exists
-deriving Repr, DecidableEq
+deriving DecidableEq
 
 def QuantifierKind.toString : QuantifierKind → String
   | .forall => "forall"
@@ -119,6 +143,11 @@ instance : ToString QuantifierKind where
 
 instance : ToFormat QuantifierKind where
   format q := q.toString
+
+instance : Repr QuantifierKind where
+  reprPrec q _ := match q with
+    | .forall => ".forall"
+    | .exists => ".exists"
 
 -- B3 Expression and Pattern - mutually inductive types.
 mutual
