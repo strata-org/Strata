@@ -176,54 +176,49 @@ instance : SizeOf (Expression P) where
 instance : SizeOf (Pattern P) where
   sizeOf := Pattern.sizeOf
 
+---------------------------------------------------------------------
+-- Repr Instances
+---------------------------------------------------------------------
+
 mutual
-/-- Format with optional parentheses based on parent precedence -/
-partial def Expression.formatWithPrec [ToFormat P.Metadata] [ToFormat P.Identifier] (parentPrec : Nat) : Expression P → Format
-  | .literal _ val => f!"{val}"
-  | .id _ name => ToFormat.format name
-  | .ite _ cond thenE elseE => f!"if {Format.nest 2 (cond.formatWithPrec 0)} then {Format.nest 2 (thenE.formatWithPrec 0)} else {Format.nest 2 (elseE.formatWithPrec 0)}"
-  | .binaryOp _ op lhs rhs =>
-    let prec := op.precedence
-    let lhsStr := Format.nest 2 (lhs.formatWithPrec prec)
-    let rhsStr := Format.nest 2 (rhs.formatWithPrec (prec + 1))
-    let inner := f!"{lhsStr} {op} {rhsStr}"
-    if parentPrec > prec then f!"({inner})" else inner
-  | .unaryOp _ op arg =>
-    let argStr := Format.nest 2 (arg.formatWithPrec 100)
-    f!"{op}{argStr}"
-  | .functionCall _ fn args =>
-    let argStrs := Format.joinSep (args.map (Expression.formatWithPrec 0)) ", "
-    f!"{ToFormat.format fn}({argStrs})"
-  | .labeledExpr _ label expr => f!"{label}: {expr.formatWithPrec 0}"
-  | .letExpr _ var value body =>
-    f!"val {ToFormat.format var} := {Format.nest 2 (value.formatWithPrec 0)}{Format.line}{body.formatWithPrec 0}"
-  | .quantifierExpr _ q var ty patterns body =>
-    let patternsFormatted := patterns.foldl (fun acc p => f!"{acc} {Pattern.format p},") Format.nil
-    f!"{q} {ToFormat.format var} : {ty}{Format.nest 2 $ patternsFormatted} {Format.nest 2 $ body.formatWithPrec 0}"
+partial def Expression.repr [Repr P.Metadata] [Repr P.Identifier] : Expression P → String
+  | .literal md val => s!".literal {reprArg md} {reprArg val}"
+  | .id md name => s!".id {reprArg md} {reprArg name}"
+  | .ite md cond thenE elseE => s!".ite {reprArg md} ({cond.repr}) ({thenE.repr}) ({elseE.repr})"
+  | .binaryOp md op lhs rhs => s!".binaryOp {reprArg md} {reprArg op} ({lhs.repr}) ({rhs.repr})"
+  | .unaryOp md op arg => s!".unaryOp {reprArg md} {reprArg op} ({arg.repr})"
+  | .functionCall md fn args =>
+      let argsRepr := "[" ++ String.intercalate ", " (args.map Expression.repr) ++ "]"
+      s!".functionCall {reprArg md} {reprArg fn} {argsRepr}"
+  | .labeledExpr md label expr => s!".labeledExpr {reprArg md} {reprArg label} ({expr.repr})"
+  | .letExpr md var value body => s!".letExpr {reprArg md} {reprArg var} ({value.repr}) ({body.repr})"
+  | .quantifierExpr md q var ty patterns body =>
+      let patternsRepr := "[" ++ String.intercalate ", " (patterns.map Pattern.repr) ++ "]"
+      ".quantifierExpr " ++ toString (reprArg md) ++ " " ++ toString (reprArg q) ++ " " ++ toString (reprArg var) ++ " " ++ toString (reprArg ty) ++ " " ++ patternsRepr ++ " (" ++ body.repr ++ ")"
 
-partial def Expression.format [ToFormat P.Metadata] [ToFormat P.Identifier] : Expression P → Format :=
-  Expression.formatWithPrec 0
-
-partial def Pattern.format [ToFormat P.Metadata] [ToFormat P.Identifier] : Pattern P → Format
-  | .pattern _ exprs =>
-    let exprStrs := Format.joinSep (exprs.map Expression.format) " "
-    f!"pattern {exprStrs}"
+partial def Pattern.repr [Repr P.Metadata] [Repr P.Identifier] : Pattern P → String
+  | .pattern md exprs =>
+      let exprsRepr := "[" ++ String.intercalate ", " (exprs.map Expression.repr) ++ "]"
+      ".pattern " ++ toString (reprArg md) ++ " " ++ exprsRepr
 end
 
-instance [ToFormat P.Metadata] [ToFormat P.Identifier] : ToFormat (Expression P) where
-  format := Expression.format
+instance [Repr P.Metadata] [Repr P.Identifier] : Repr (Expression P) where
+  reprPrec e _ := Expression.repr e
 
-instance [ToFormat P.Metadata] [ToFormat P.Identifier] : ToFormat (Pattern P) where
-  format := Pattern.format
+instance [Repr P.Metadata] [Repr P.Identifier] : Repr (Pattern P) where
+  reprPrec p _ := Pattern.repr p
 
 /-- Default ExprParams with Unit metadata and B3IdentifierMetadata -/
-def defaultExprParams : ExprParams := {
+abbrev defaultExprParams : ExprParams := {
   Metadata := Unit
   IDMeta := B3IdentifierMetadata
 }
 
 /-- B3 Expression with default parameters -/
 abbrev B3Expression := Expression defaultExprParams
+
+instance : Repr (B3Expression) where
+  reprPrec e _ := Expression.repr e
 
 /-- B3 Pattern with default parameters -/
 abbrev B3Pattern := Pattern defaultExprParams

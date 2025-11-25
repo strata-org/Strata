@@ -104,54 +104,8 @@ instance : SizeOf (CallArg P) where
 instance : SizeOf (Stmt P) where
   sizeOf := Stmt.sizeOf
 
-partial def CallArg.format [ToFormat P.Metadata] [ToFormat P.exprParams.Metadata] [ToFormat (P.Identifier)] [ToFormat P.exprParams.Metadata] [ToFormat (P.exprParams.Identifier)] : CallArg P → Format
-  | .expr e => Expression.format e
-  | .out id => f!"out {ToFormat.format id}"
-  | .inout id => f!"inout {ToFormat.format id}"
-
-partial def Stmt.format [ToFormat P.Metadata] [ToFormat P.exprParams.Metadata] [ToFormat (P.Identifier)] [ToFormat P.exprParams.Metadata] [ToFormat (P.exprParams.Identifier)] : Stmt P → Format
-  | .varDecl _ name ty autoinv init =>
-    let tyStr := match ty with | some t => f!" : {t}" | none => ""
-    let autoinvStr := match autoinv with | some e => f!" autoinv {e.format}" | none => ""
-    let initStr := match init with | some e => f!" := {e.format}" | none => ""
-    f!"var {ToFormat.format name}{tyStr}{autoinvStr}{initStr}"
-  | .assign _ lhs rhs => f!"{ToFormat.format lhs} := {rhs.format}"
-  | .reinit _ name => f!"reinit {ToFormat.format name}"
-  | .blockStmt _ stmts =>
-    let stmtFormats := stmts.map fun s => format s
-    "{" ++ (Format.nest 2 $ (Format.line ++ Format.joinSep stmtFormats Format.line)) ++ Format.line ++ "}"
-  | .call _ procName args =>
-    f!"{procName}({Format.joinSep (args.map CallArg.format) ", "})"
-  | .check _ expr => f!"check {expr.format}"
-  | .assume _ expr => f!"assume {expr.format}"
-  | .reach _ expr => f!"reach {expr.format}"
-  | .assert _ expr => f!"assert {expr.format}"
-  | .aForall _ var ty body => f!"forall {ToFormat.format var} : {ty} {body.format}"
-  | .choose _ branches =>
-    let branchStrs := branches.map fun s => format s
-    f!"choose {Format.joinSep branchStrs " or "}"
-  | .ifStmt _ cond thenB elseB =>
-    let elseStr := match elseB with | some s => f!" else {s.format}" | none => ""
-    f!"if {cond.format} {thenB.format}{elseStr}"
-  | .ifCase _ cases =>
-    let caseStrs := cases.map fun (e, s) => f!"{Format.line}case {e.format} {s.format}"
-    f!"if{Format.joinSep caseStrs ""}"
-  | .loop _ invariants body =>
-    let invStrs := invariants.map fun e => f!"invariant {e.format}"
-    let invFormatted := if invariants.isEmpty then Format.nil else Format.line ++ Format.joinSep invStrs Format.line
-    f!"loop{Format.nest 2 $ invFormatted} {body.format}"
-  | .labeledStmt _ label stmt => f!"{label}: {stmt.format}"
-  | .exit _ label =>
-    let labelStr := match label with | some l => f!" {l}" | none => ""
-    f!"exit{labelStr}"
-  | .returnStmt _ => f!"return"
-  | .probe _ label => f!"probe {label}"
-
-instance [ToFormat P.Metadata] [ToFormat P.exprParams.Metadata] [ToFormat (P.Identifier)] [ToFormat P.exprParams.Metadata] [ToFormat (P.exprParams.Identifier)] : ToFormat (CallArg P) where
-  format := CallArg.format
-
-instance [ToFormat P.Metadata] [ToFormat P.exprParams.Metadata] [ToFormat (P.Identifier)] [ToFormat P.exprParams.Metadata] [ToFormat (P.exprParams.Identifier)] : ToFormat (Stmt P) where
-  format := Stmt.format
+-- Formatting is now handled by converting to DDM and using DDM's formatting
+-- Statement and CallArg converters would be added to B3AST2DDM when needed
 
 /-- Default StmtParams with Unit metadata and B3IdentifierMetadata -/
 def defaultStmtParams : StmtParams := {

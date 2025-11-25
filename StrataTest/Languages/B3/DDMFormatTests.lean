@@ -6,7 +6,8 @@
 
 import Strata.Languages.B3.DDMTransform.Parse
 import Strata.Languages.B3.DDMTransform.Translate
-import Strata.Languages.B3.DDMTransform.B3AST2DDM
+import Strata.Languages.B3.DDMTransform.B3ToDDM
+import Strata.Languages.B3.DDMTransform.DDMToB3
 
 namespace B3
 
@@ -86,16 +87,68 @@ end
 -- Create a minimal B3 program to get the dialect context
 def b3Program : Program := #strata program B3; #end
 
--- Helper to format DDM expressions with proper pretty-printing
--- Note: This function is deprecated as expressions should be created via #strata syntax
--- def formatExpr (e : Expr Unit) : Format :=
---   let ctx := b3Program.formatContext {}
---   let state := b3Program.formatState
---   cformat (exprFUnitToSourceRange e.toAst) ctx state
+-- Helper to strip SourceRange annotations and replace with Unit
+mutual
+  partial def stripAnnotations : B3DDM.Expression SourceRange → B3DDM.Expression Unit
+    | .natLit _ n => .natLit () ⟨(), n.val⟩
+    | .strLit _ s => .strLit () ⟨(), s.val⟩
+    | .btrue _ => .btrue ()
+    | .bfalse _ => .bfalse ()
+    | .id _ name => .id () ⟨(), name.val⟩
+    | .not _ arg => .not () (stripAnnotations arg)
+    | .neg _ arg => .neg () (stripAnnotations arg)
+    | .iff _ lhs rhs => .iff () (stripAnnotations lhs) (stripAnnotations rhs)
+    | .implies _ lhs rhs => .implies () (stripAnnotations lhs) (stripAnnotations rhs)
+    | .impliedBy _ lhs rhs => .impliedBy () (stripAnnotations lhs) (stripAnnotations rhs)
+    | .and _ lhs rhs => .and () (stripAnnotations lhs) (stripAnnotations rhs)
+    | .or _ lhs rhs => .or () (stripAnnotations lhs) (stripAnnotations rhs)
+    | .equal _ lhs rhs => .equal () (stripAnnotations lhs) (stripAnnotations rhs)
+    | .not_equal _ lhs rhs => .not_equal () (stripAnnotations lhs) (stripAnnotations rhs)
+    | .lt _ lhs rhs => .lt () (stripAnnotations lhs) (stripAnnotations rhs)
+    | .le _ lhs rhs => .le () (stripAnnotations lhs) (stripAnnotations rhs)
+    | .ge _ lhs rhs => .ge () (stripAnnotations lhs) (stripAnnotations rhs)
+    | .gt _ lhs rhs => .gt () (stripAnnotations lhs) (stripAnnotations rhs)
+    | .add _ lhs rhs => .add () (stripAnnotations lhs) (stripAnnotations rhs)
+    | .sub _ lhs rhs => .sub () (stripAnnotations lhs) (stripAnnotations rhs)
+    | .mul _ lhs rhs => .mul () (stripAnnotations lhs) (stripAnnotations rhs)
+    | .div _ lhs rhs => .div () (stripAnnotations lhs) (stripAnnotations rhs)
+    | .mod _ lhs rhs => .mod () (stripAnnotations lhs) (stripAnnotations rhs)
+    | .functionCall _ fn args => .functionCall () ⟨(), fn.val⟩ ⟨(), args.val.map stripAnnotations⟩
+    | .labeledExpr _ label expr => .labeledExpr () ⟨(), label.val⟩ (stripAnnotations expr)
+    | .letExpr _ var value body => .letExpr () ⟨(), var.val⟩ (stripAnnotations value) (stripAnnotations body)
+    | .ite _ cond thenExpr elseExpr => .ite () (stripAnnotations cond) (stripAnnotations thenExpr) (stripAnnotations elseExpr)
+    | .forall_expr_no_patterns _ var ty body => .forall_expr_no_patterns () ⟨(), var.val⟩ ⟨(), ty.val⟩ (stripAnnotations body)
+    | .forall_expr _ var ty patterns body => .forall_expr () ⟨(), var.val⟩ ⟨(), ty.val⟩ (stripPatternsAnnotations patterns) (stripAnnotations body)
+    | .exists_expr_no_patterns _ var ty body => .exists_expr_no_patterns () ⟨(), var.val⟩ ⟨(), ty.val⟩ (stripAnnotations body)
+    | .exists_expr _ var ty patterns body => .exists_expr () ⟨(), var.val⟩ ⟨(), ty.val⟩ (stripPatternsAnnotations patterns) (stripAnnotations body)
+    | .paren _ expr => .paren () (stripAnnotations expr)
 
--- Helper to extract expression from a check statement and reformat it
--- With op-based expressions, everything is an operation, so we format the operation directly
-def reformatExpr (p : Program) : Format :=
+  partial def stripPatternAnnotations : B3DDM.Pattern SourceRange → B3DDM.Pattern Unit
+    | .pattern _ expr => .pattern () (stripAnnotations expr)
+
+  partial def stripPatternsAnnotations : B3DDM.Patterns SourceRange → B3DDM.Patterns Unit
+    | .patterns_single _ p => .patterns_single () (stripPatternAnnotations p)
+    | .patterns_cons _ p ps => .patterns_cons () (stripPatternAnnotations p) (stripPatternsAnnotations ps)
+end
+
+-- Helper to perform the round-trip transformation and format
+-- DDM OperationF → B3 AST → DDM → formatted output
+def doRoundtrip (e : OperationF SourceRange) (ctx : FormatContext) (state : FormatState) : Format :=
+  match B3DDM.Expression.ofAst e with
+  | .ok ddmExpr =>
+      let ddmExprUnit := stripAnnotations ddmExpr
+      let b3Expr := Expression.fromDDM ddmExprUnit
+      dbg_trace f!"B3: {repr b3Expr}"
+      let ddmExpr' := b3Expr.toDDM
+      let ddmAst := ddmExpr'.toAst
+      let ddmAstSR := argFUnitToSourceRange (ArgF.op ddmAst)
+      cformat ddmAstSR ctx state
+  | .error msg => s!"Parse error: {msg}"
+
+-- Helper to extract expression from a program and apply round-trip transformation
+def roundtripExpr (p : Program) : Format :=
+  let ctx := p.formatContext {}
+  let state := p.formatState
   match p.commands.toList with
   | [op] =>
     if op.name.name == "command_stmt" then
@@ -103,10 +156,7 @@ def reformatExpr (p : Program) : Format :=
       | [ArgF.op stmt] =>
         if stmt.name.name == "check" then
           match stmt.args.toList with
-          | [ArgF.op e] =>  -- With op, expressions are operations
-            let ctx := p.formatContext {}
-            let state := p.formatState
-            cformat (ArgF.op e) ctx state
+          | [ArgF.op e] => doRoundtrip e ctx state
           | _ => s!"Error: expected op in check, got {repr stmt.args.toList}"
         else s!"Error: expected check statement, got {stmt.name.name}"
       | _ => "Error: expected statement op"
@@ -114,24 +164,15 @@ def reformatExpr (p : Program) : Format :=
        match op.args.toList with
       | [ArgF.op decl] =>
         if decl.name.name == "axiom_decl" then
-          -- axiom_decl contains an AxiomBody
           match decl.args.toList with
           | [ArgF.op body] =>
             if body.name.name == "axiom" then
-              -- Simple axiom: axiom (expr)
               match body.args.toList with
-              | [ArgF.op e] =>  -- With op, expressions are operations
-                let ctx := p.formatContext {}
-                let state := p.formatState
-                cformat (ArgF.op e) ctx state
+              | [ArgF.op e] => doRoundtrip e ctx state
               | _ => s!"Error: expected op in axiom body, got {repr body.args.toList}"
             else if body.name.name == "explain_axiom" then
-              -- Axiom with explains: explain_axiom (names, expr)
               match body.args.toList with
-              | [_, ArgF.op e] =>  -- With op, expressions are operations
-                let ctx := p.formatContext {}
-                let state := p.formatState
-                cformat (ArgF.op e) ctx state
+              | [_, ArgF.op e] => doRoundtrip e ctx state
               | _ => s!"Error: expected names and op in explain_axiom, got {repr body.args.toList}"
             else s!"Error: expected axiom or explain_axiom body, got {body.name.name}"
           | _ => s!"Error: expected AxiomBody in axiom_decl, got {repr decl.args.toList}"
@@ -141,193 +182,233 @@ def reformatExpr (p : Program) : Format :=
       s!"Error: expected command_stmt or command_decl, got {op.name.name}"
   | _ => "Error: expected single command"
 
-section ExpressionFormatTests
+section ExpressionRoundtripTests
 
 /--
+info: B3: .id () x
+---
 info: x
 -/
 #guard_msgs in
-#eval reformatExpr $ #strata program B3; axiom x #end
+#eval roundtripExpr $ #strata program B3; check x #end
 
 /--
+info: B3: .binaryOp () (B3.BinaryOp.add) (.literal () (Lambda.LConst.intConst 5)) (.literal () (Lambda.LConst.intConst 3))
+---
 info: 5 + 3
 -/
 #guard_msgs in
-#eval reformatExpr $ #strata program B3; axiom 5 + 3 #end
+#eval roundtripExpr $ #strata program B3; check 5 + 3 #end
 
 /--
+info: B3: .literal () (Lambda.LConst.boolConst true)
+---
 info: true
 -/
 #guard_msgs in
-#eval reformatExpr $ #strata program B3; check true #end
+#eval roundtripExpr $ #strata program B3; check true #end
 
 /--
+info: B3: .literal () (Lambda.LConst.boolConst false)
+---
 info: false
 -/
 #guard_msgs in
-#eval reformatExpr $ #strata program B3; check false #end
+#eval roundtripExpr $ #strata program B3; check false #end
 
 /--
-info: 5 + 3
+info: B3: .unaryOp () (B3.UnaryOp.not) (.literal () (Lambda.LConst.boolConst true))
+---
+info: !true
 -/
 #guard_msgs in
-#eval reformatExpr $ #strata program B3; check 5 + 3 #end
-
-/-- info: !true -/
-#guard_msgs in
-#eval reformatExpr $ #strata program B3; check !true #end
+#eval roundtripExpr $ #strata program B3; check !true #end
 
 /--
+info: B3: .binaryOp () (B3.BinaryOp.sub) (.literal () (Lambda.LConst.intConst 10)) (.literal () (Lambda.LConst.intConst 3))
+---
 info: 10 - 3
 -/
 #guard_msgs in
-#eval reformatExpr $ #strata program B3; check 10 - 3 #end
+#eval roundtripExpr $ #strata program B3; check 10 - 3 #end
 
 /--
+info: B3: .binaryOp () (B3.BinaryOp.mul) (.literal () (Lambda.LConst.intConst 4)) (.literal () (Lambda.LConst.intConst 5))
+---
 info: 4 * 5
 -/
 #guard_msgs in
-#eval reformatExpr $ #strata program B3; check 4 * 5 #end
+#eval roundtripExpr $ #strata program B3; check 4 * 5 #end
 
 /--
+info: B3: .binaryOp () (B3.BinaryOp.div) (.literal () (Lambda.LConst.intConst 20)) (.literal () (Lambda.LConst.intConst 4))
+---
 info: 20 div 4
 -/
 #guard_msgs in
-#eval reformatExpr $ #strata program B3; check 20 div 4 #end
+#eval roundtripExpr $ #strata program B3; check 20 div 4 #end
 
 /--
+info: B3: .binaryOp () (B3.BinaryOp.mod) (.literal () (Lambda.LConst.intConst 17)) (.literal () (Lambda.LConst.intConst 5))
+---
 info: 17 mod 5
 -/
 #guard_msgs in
-#eval reformatExpr $ #strata program B3; check 17 mod 5 #end
+#eval roundtripExpr $ #strata program B3; check 17 mod 5 #end
 
 /--
+info: B3: .binaryOp () (B3.BinaryOp.eq) (.literal () (Lambda.LConst.intConst 5)) (.literal () (Lambda.LConst.intConst 5))
+---
 info: 5 == 5
 -/
 #guard_msgs in
-#eval reformatExpr $ #strata program B3; check 5 == 5 #end
+#eval roundtripExpr $ #strata program B3; check 5 == 5 #end
 
 /--
+info: B3: .binaryOp () (B3.BinaryOp.neq) (.literal () (Lambda.LConst.intConst 3)) (.literal () (Lambda.LConst.intConst 7))
+---
 info: 3 != 7
 -/
 #guard_msgs in
-#eval reformatExpr $ #strata program B3; check 3 != 7 #end
+#eval roundtripExpr $ #strata program B3; check 3 != 7 #end
 
 /--
+info: B3: .binaryOp () (B3.BinaryOp.le) (.literal () (Lambda.LConst.intConst 3)) (.literal () (Lambda.LConst.intConst 5))
+---
 info: 3 <= 5
 -/
 #guard_msgs in
-#eval reformatExpr $ #strata program B3; check 3 <= 5 #end
+#eval roundtripExpr $ #strata program B3; check 3 <= 5 #end
 
 /--
+info: B3: .binaryOp () (B3.BinaryOp.lt) (.literal () (Lambda.LConst.intConst 2)) (.literal () (Lambda.LConst.intConst 8))
+---
 info: 2 < 8
 -/
 #guard_msgs in
-#eval reformatExpr $ #strata program B3; check 2 < 8 #end
+#eval roundtripExpr $ #strata program B3; check 2 < 8 #end
 
 /--
+info: B3: .binaryOp () (B3.BinaryOp.ge) (.literal () (Lambda.LConst.intConst 10)) (.literal () (Lambda.LConst.intConst 5))
+---
 info: 10 >= 5
 -/
 #guard_msgs in
-#eval reformatExpr $ #strata program B3; check 10 >= 5 #end
+#eval roundtripExpr $ #strata program B3; check 10 >= 5 #end
 
 /--
+info: B3: .binaryOp () (B3.BinaryOp.gt) (.literal () (Lambda.LConst.intConst 15)) (.literal () (Lambda.LConst.intConst 3))
+---
 info: 15 > 3
 -/
 #guard_msgs in
-#eval reformatExpr $ #strata program B3; check 15 > 3 #end
+#eval roundtripExpr $ #strata program B3; check 15 > 3 #end
 
 /--
+info: B3: .binaryOp () (B3.BinaryOp.add) (.literal () (Lambda.LConst.intConst 2)) (.binaryOp () (B3.BinaryOp.mul) (.literal () (Lambda.LConst.intConst 3)) (.literal () (Lambda.LConst.intConst 4)))
+---
 info: 2 + 3 * 4
 -/
 #guard_msgs in
-#eval reformatExpr $ #strata program B3; check 2 + 3 * 4 #end
+#eval roundtripExpr $ #strata program B3; check 2 + 3 * 4 #end
 
 /--
+info: B3: .binaryOp () (B3.BinaryOp.mul) (.binaryOp () (B3.BinaryOp.add) (.literal () (Lambda.LConst.intConst 2)) (.literal () (Lambda.LConst.intConst 3))) (.literal () (Lambda.LConst.intConst 4))
+---
 info: (2 + 3) * 4
 -/
 #guard_msgs in
-#eval reformatExpr $ #strata program B3; check (2 + 3) * 4 #end
+#eval roundtripExpr $ #strata program B3; check (2 + 3) * 4 #end
 
 /--
+info: B3: .binaryOp () (B3.BinaryOp.add) (.binaryOp () (B3.BinaryOp.add) (.literal () (Lambda.LConst.intConst 1)) (.literal () (Lambda.LConst.intConst 2))) (.literal () (Lambda.LConst.intConst 3))
+---
 info: 1 + 2 + 3
 -/
 #guard_msgs in
-#eval reformatExpr $ #strata program B3; check 1 + 2 + 3 #end
+#eval roundtripExpr $ #strata program B3; check 1 + 2 + 3 #end
 
 /--
+info: B3: .binaryOp () (B3.BinaryOp.lt) (.binaryOp () (B3.BinaryOp.add) (.literal () (Lambda.LConst.intConst 1)) (.literal () (Lambda.LConst.intConst 2))) (.literal () (Lambda.LConst.intConst 5))
+---
 info: 1 + 2 < 5
 -/
 #guard_msgs in
-#eval reformatExpr $ #strata program B3; check 1 + 2 < 5 #end
+#eval roundtripExpr $ #strata program B3; check 1 + 2 < 5 #end
 
 /--
+info: B3: .binaryOp () (B3.BinaryOp.add) (.binaryOp () (B3.BinaryOp.sub) (.literal () (Lambda.LConst.intConst 10)) (.literal () (Lambda.LConst.intConst 3))) (.literal () (Lambda.LConst.intConst 2))
+---
 info: 10 - 3 + 2
 -/
 #guard_msgs in
-#eval reformatExpr $ #strata program B3; check 10 - 3 + 2 #end
+#eval roundtripExpr $ #strata program B3; check 10 - 3 + 2 #end
 
 /--
+info: B3: .binaryOp () (B3.BinaryOp.mul) (.binaryOp () (B3.BinaryOp.div) (.literal () (Lambda.LConst.intConst 20)) (.literal () (Lambda.LConst.intConst 4))) (.literal () (Lambda.LConst.intConst 3))
+---
 info: 20 div 4 * 3
 -/
 #guard_msgs in
-#eval reformatExpr $ #strata program B3; check 20 div 4 * 3 #end
+#eval roundtripExpr $ #strata program B3; check 20 div 4 * 3 #end
 
 /--
+info: B3: .binaryOp () (B3.BinaryOp.lt) (.literal () (Lambda.LConst.intConst 1)) (.binaryOp () (B3.BinaryOp.add) (.binaryOp () (B3.BinaryOp.mul) (.literal () (Lambda.LConst.intConst 2)) (.literal () (Lambda.LConst.intConst 3))) (.literal () (Lambda.LConst.intConst 4)))
+---
 info: 1 < 2 * 3 + 4
 -/
 #guard_msgs in
-#eval reformatExpr $ #strata program B3; check 1 < 2 * 3 + 4 #end
+#eval roundtripExpr $ #strata program B3; check 1 < 2 * 3 + 4 #end
 
 /--
+info: B3: .ite () (.literal () (Lambda.LConst.boolConst true)) (.literal () (Lambda.LConst.intConst 1)) (.literal () (Lambda.LConst.intConst 0))
+---
 info: if true then 1 else 0
 -/
 #guard_msgs in
-#eval reformatExpr $ #strata program B3; check if true then 1 else 0 #end
+#eval roundtripExpr $ #strata program B3; check if true then 1 else 0 #end
 
 /--
-info: vaal temp := 10 temp + x == 7
--/
-#guard_msgs in
-#eval reformatExpr $ #strata program B3; axiom vaal temp := 10 temp + x == 7 #end
-
-/--
-info: important: result
--/
-#guard_msgs in
-#eval reformatExpr $ #strata program B3; axiom important: result #end
-
-/--
+info: B3: .quantifierExpr () (B3.QuantifierKind.forall) i "int" [] (.binaryOp () (B3.BinaryOp.ge) (.id () i) (.literal () (Lambda.LConst.intConst 0)))
+---
 info: forall i : int i >= 0
 -/
 #guard_msgs in
-#eval reformatExpr $ #strata program B3; axiom forall i : int i >= 0 #end
+#eval roundtripExpr $ #strata program B3; axiom forall i : int i >= 0 #end
 
 /--
+info: B3: .quantifierExpr () (B3.QuantifierKind.exists) y "bool" [] (.binaryOp () (B3.BinaryOp.or) (.id () y) (.unaryOp () (B3.UnaryOp.not) (.id () y)))
+---
 info: exists y : bool y || !y
 -/
 #guard_msgs in
-#eval reformatExpr $ #strata program B3; axiom exists y : bool y || !y #end
+#eval roundtripExpr $ #strata program B3; axiom exists y : bool y || !y #end
 
 /--
+info: B3: .quantifierExpr () (B3.QuantifierKind.forall) x "int" [.pattern () [.functionCall () f [.id () x]]] (.binaryOp () (B3.BinaryOp.gt) (.functionCall () f [.id () x]) (.literal () (Lambda.LConst.intConst 0)))
+---
 info: forall x : int pattern f(x), f(x) > 0
 -/
 #guard_msgs in
-#eval reformatExpr $ #strata program B3; axiom forall x : int pattern f(x), f(x) > 0 #end
+#eval roundtripExpr $ #strata program B3; axiom forall x : int pattern f(x), f(x) > 0 #end
 
 /--
+info: B3: .quantifierExpr () (B3.QuantifierKind.exists) y "bool" [.pattern () [.id () y], .pattern () [.unaryOp () (B3.UnaryOp.not) (.id () y)]] (.binaryOp () (B3.BinaryOp.or) (.id () y) (.unaryOp () (B3.UnaryOp.not) (.id () y)))
+---
 info: exists y : bool pattern y, pattern !y, y || !y
 -/
 #guard_msgs in
-#eval reformatExpr $ #strata program B3; axiom exists y : bool pattern y, pattern !y, y || !y #end
+#eval roundtripExpr $ #strata program B3; axiom exists y : bool pattern y, pattern !y, y || !y #end
 
 /--
+info: B3: .quantifierExpr () (B3.QuantifierKind.forall) z "int" [.pattern () [.id () z], .pattern () [.binaryOp () (B3.BinaryOp.add) (.id () z) (.literal () (Lambda.LConst.intConst 1))], .pattern () [.binaryOp () (B3.BinaryOp.mul) (.id () z) (.literal () (Lambda.LConst.intConst 2))]] (.binaryOp () (B3.BinaryOp.gt) (.id () z) (.literal () (Lambda.LConst.intConst 0)))
+---
 info: forall z : int pattern z, pattern z + 1, pattern z * 2, z > 0
 -/
 #guard_msgs in
-#eval reformatExpr $ #strata program B3; axiom forall z : int pattern z, pattern z + 1, pattern z * 2, z > 0 #end
+#eval roundtripExpr $ #strata program B3; axiom forall z : int pattern z, pattern z + 1, pattern z * 2, z > 0 #end
 
-end ExpressionFormatTests
+end ExpressionRoundtripTests
 
 -- Helper to convert OperationF Unit to OperationF SourceRange
 def operationFUnitToSourceRange (op : OperationF Unit) : OperationF SourceRange :=
