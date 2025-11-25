@@ -74,12 +74,12 @@ instance (P : PureExpr) : SizeOf (Imperative.Cmd P) where
 ---------------------------------------------------------------------
 
 class HasPassiveCmds (P : PureExpr) (CmdT : Type) where
-  assume : String → P.Expr → CmdT
-  assert : String → P.Expr → CmdT
+  assume : String → P.Expr → MetaData P → CmdT
+  assert : String → P.Expr → MetaData P → CmdT
 
 instance : HasPassiveCmds P (Cmd P) where
-  assume l e := .assume l e
-  assert l e := .assert l e
+  assume l e (md := MetaData.empty):= .assume l e md
+  assert l e (md := MetaData.empty):= .assert l e md
 
 class HasHavoc (P : PureExpr) (CmdT : Type) where
   havoc : P.Ident → CmdT
@@ -160,11 +160,11 @@ open Std (ToFormat Format format)
 def formatCmd (P : PureExpr) (c : Cmd P)
     [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] : Format :=
   match c with
-  | .init name ty e md => f!"{md}init ({name} : {ty}) := {e}"
-  | .set name e md => f!"{md}{name} := {e}"
-  | .havoc name md => f!"{md}havoc {name}"
-  | .assert label b md => f!"{md}assert [{label}] {b}"
-  | .assume label b md => f!"{md}assume [{label}] {b}"
+  | .init name ty e _md => f!"init ({name} : {ty}) := {e}"
+  | .set name e _md => f!"{name} := {e}"
+  | .havoc name _md => f!"havoc {name}"
+  | .assert label b _md => f!"assert [{label}] {b}"
+  | .assume label b _md => f!"assume [{label}] {b}"
 
 instance [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty]
         : ToFormat (Cmd P) where

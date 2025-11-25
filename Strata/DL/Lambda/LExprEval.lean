@@ -39,23 +39,36 @@ Canonical values of `LExpr`s.
 
 Equality is simply `==` (or more accurately, `eqModuloTypes`) for these
 `LExpr`s. Also see `eql` for a version that can tolerate nested metadata.
+
+If `e:LExpr` is `.app`, say `e1 e2 .. en`, `e` is a canonical value if
+(1) `e1` is a constructor and `e2 .. en` are all canonical values, or
+(2) `e1` is a named function `f` (not abstraction) and `n` is less than the
+    number of arguments required to run the function `f`.
+
+The intuition of case (2) is as follows. Let's assume that we would like to
+calculate `Int.Add 1 (2+3)`. According to the small step semantics, we would
+like to calculate `2+3` to `5`, hence it becomes `Int.Add 1 5` and eventually 6.
+Without (2), this is impossible because the `reduce_2` rule of small step
+semantics only fires when `Int.Add 1` is a 'canonical value'. Therefore, without
+(2), the semantics stuck and `2+3` can never be evaluated to `5`.
 -/
-def isCanonicalValue (σ : LState T.base) (e : LExpr T) : Bool :=
+def isCanonicalValue (F : @Factory T.base) (e : LExpr T) : Bool :=
   match he: e with
   | .const _ _ => true
-  | .abs _ _ _ =>
+  | .abs _ _ _ | .quant _ _ _ _ _ =>
     -- We're using the locally nameless representation, which guarantees that
     -- `closed (.abs e) = closed e` (see theorem `closed_abs`).
     -- So we could simplify the following to `closed e`, but leave it as is for
     -- clarity.
     LExpr.closed e
   | e' =>
-    match h: Factory.callOfLFunc σ.config.factory e with
+    match h: Factory.callOfLFunc F e true with
     | some (_, args, f) =>
-      f.isConstr && List.all (args.attach.map (fun ⟨ x, _⟩ =>
+      (f.isConstr || Nat.blt args.length f.inputs.length) &&
+      List.all (args.attach.map (fun ⟨ x, _⟩ =>
         have : x.sizeOf < e'.sizeOf := by
           have Hsmall := Factory.callOfLFunc_smaller h; grind
-      (isCanonicalValue σ x))) id
+        (isCanonicalValue F x))) id
     | none => false
   termination_by e.sizeOf
 
@@ -64,8 +77,8 @@ Equality of canonical values `e1` and `e2`.
 
 We can tolerate nested metadata here.
 -/
-def eql (σ : LState T.base) (e1 e2 : LExpr T)
-  (_h1 : isCanonicalValue σ e1) (_h2 : isCanonicalValue σ e2) : Bool :=
+def eql (F : @Factory T.base) (e1 e2 : LExpr T)
+  (_h1 : isCanonicalValue F e1) (_h2 : isCanonicalValue F e2) : Bool :=
   if eqModuloTypes e1 e2 then
     true
   else
@@ -90,6 +103,17 @@ def mkAbsOfArity (arity : Nat) (core : LExpr T) : (LExpr T) :=
   | n + 1 =>
     go (bvarcount + 1) n (.abs core.metadata .none (.app core.metadata core (.bvar core.metadata bvarcount)))
 
+/--
+A metadata merger. It will be invoked 'subst s e' is invoked, to create a new
+metadata.
+-/
+def mergeMetadataForSubst (metaAbs metaE2 metaReplacementVar: TBase.Metadata) :=
+  Traceable.combine
+  [(EvalProvenance.Original,       metaE2),
+    (EvalProvenance.ReplacementVar, metaReplacementVar),
+    (EvalProvenance.Abstraction,    metaAbs)]
+
+
 mutual
 /--
 (Partial) evaluator for Lambda expressions w.r.t. a module, written using a fuel
@@ -112,7 +136,7 @@ partial def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
   match n with
   | 0 => e
   | n' + 1 =>
-    if isCanonicalValue σ e then
+    if isCanonicalValue σ.config.factory e then
       e
     else
       -- Special handling for Factory functions.
@@ -127,7 +151,7 @@ partial def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
           eval n' σ new_e
         else
           let new_e := @mkApp TBase.mono e.metadata op_expr args
-          if args.all (isCanonicalValue σ) then
+          if args.all (isCanonicalValue σ.config.factory) then
             -- All arguments in the function call are concrete.
             -- We can, provided a denotation function, evaluate this function
             -- call.
@@ -177,10 +201,11 @@ partial def evalEq (n' : Nat) (σ : LState TBase) (m: TBase.Metadata) (e1 e2 : L
   if eqModuloTypes e1'.eraseMetadata e2'.eraseMetadata then
     -- Short-circuit: e1' and e2' are syntactically the same after type erasure.
     LExpr.true m
-  else if h: isCanonicalValue σ e1' ∧ isCanonicalValue σ e2' then
-      if eql σ e1' e2' h.left h.right then
-        LExpr.true m
-      else LExpr.false m
+  else if h: isCanonicalValue σ.config.factory e1' ∧
+             isCanonicalValue σ.config.factory e2' then
+    if eql σ.config.factory e1' e2' h.left h.right then
+      LExpr.true m
+    else LExpr.false m
   else
     .eq m e1' e2'
 
@@ -189,13 +214,9 @@ partial def evalApp (n' : Nat) (σ : LState TBase) (e e1 e2 : LExpr TBase.mono) 
   let e2' := eval n' σ e2
   match e1' with
   | .abs mAbs _ e1' =>
-    let replacer := fun (replacementVar: TBase.Metadata) =>
-     (@replaceMetadata1 (T := TBase.mono) (
-      Traceable.combine
-      [(EvalProvenance.Original,       e2'.metadata),
-       (EvalProvenance.ReplacementVar, replacementVar),
-       (EvalProvenance.Abstraction,    mAbs)]) e2');
-    let e' := subst replacer e1'
+    let e' := subst (fun metaReplacementVar =>
+      let newMeta := mergeMetadataForSubst mAbs e2'.metadata metaReplacementVar
+      replaceMetadata1 newMeta e2') e1'
     if eqModuloTypes e e' then e else eval n' σ e'
   | .op m fn _ =>
     match σ.config.factory.getFactoryLFunc fn.name with

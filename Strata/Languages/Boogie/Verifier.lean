@@ -8,6 +8,7 @@ import Strata.Languages.Boogie.DDMTransform.Translate
 import Strata.Languages.Boogie.Options
 import Strata.Languages.Boogie.CallGraph
 import Strata.Languages.Boogie.SMTEncoder
+import Strata.DL.Imperative.MetaData
 import Strata.DL.Imperative.SMTUtils
 import Strata.DL.SMT.CexParser
 
@@ -131,6 +132,17 @@ def solverResult (vars : List (IdentT LMonoTy Visibility)) (ans : String)
   | "unsat"   =>  .ok .unsat
   | "unknown" =>  .ok .unknown
   | _     =>  .error ans
+
+open Imperative
+
+def formatPositionMetaData [BEq P.Ident] [ToFormat P.Expr] (md : MetaData P): Option Format := do
+  let file ← md.findElem MetaData.fileLabel
+  let line ← md.findElem MetaData.startLineLabel
+  let col ← md.findElem MetaData.startColumnLabel
+  let baseName := match file.value with
+                  | .msg m => (m.split (λ c => c == '/')).getLast!
+                  | _ => "<no file>"
+  f!"{baseName}({line.value}, {col.value})"
 
 structure VCResult where
   obligation : Imperative.ProofObligation Expression
@@ -302,21 +314,27 @@ end Boogie
 
 namespace Strata
 
-def Boogie.getProgram (p : Strata.Program) : Boogie.Program × Array String :=
-  TransM.run (translateProgram p)
+open Lean.Parser
 
-def typeCheck (env : Program) (options : Options := Options.default) :
+def typeCheck (ictx : InputContext) (env : Program) (options : Options := Options.default) :
   Except Std.Format Boogie.Program := do
-  let (program, errors) := Boogie.getProgram env
+  let (program, errors) := TransM.run ictx (translateProgram env)
   if errors.isEmpty then
     -- dbg_trace f!"AST: {program}"
     Boogie.typeCheck options program
   else
     .error s!"DDM Transform Error: {repr errors}"
 
-def verify (smtsolver : String) (env : Program)
+def Boogie.getProgram
+  (p : Strata.Program)
+  (ictx : InputContext := Inhabited.default) : Boogie.Program × Array String :=
+  TransM.run ictx (translateProgram p)
+
+def verify
+    (smtsolver : String) (env : Program)
+    (ictx : InputContext := Inhabited.default)
     (options : Options := Options.default) : IO Boogie.VCResults := do
-  let (program, errors) := Boogie.getProgram env
+  let (program, errors) := Boogie.getProgram env ictx
   if errors.isEmpty then
     -- dbg_trace f!"AST: {program}"
     EIO.toIO (fun f => IO.Error.userError (toString f))
