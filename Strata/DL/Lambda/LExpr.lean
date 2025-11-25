@@ -59,8 +59,7 @@ Dot notation syntax: T.mono transforms LExprParams into LExprParamsT with LMonoT
 abbrev LExprParams.mono (T : LExprParams) : LExprParamsT :=
   ⟨T, LMonoTy⟩
 
-abbrev identifier := Identifier
-abbrev LExprParams.Identifier (T : LExprParams) := identifier T.IDMeta
+abbrev LExprParams.Identifier (T : LExprParams) := Lambda.Identifier T.IDMeta
 
 structure Typed (T: Type) where
   underlying: T
