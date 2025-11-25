@@ -250,6 +250,43 @@ info: ((~List$isCons : (arrow (List int) bool)) (~l : (List int)))
   (typeCheckAndPartialEval (T:=TestParams) #[listTy] f
   ((LExpr.op () ("List$isCons" : TestParams.Identifier) (some (LMonoTy.arrow (.tcons "List" [.int]) .bool))).mkApp () [.op () "l" .none]))
 
+-- Test destructors
+
+/--
+info: Annotated expression:
+((~List$ConsProj0 : (arrow (List int) int)) (((~Cons : (arrow int (arrow (List int) (List int)))) #1) (~Nil : (List int))))
+
+---
+info: #1
+-/
+#guard_msgs in
+#eval format $
+  typeCheckAndPartialEval #[listTy]  (Factory.default : @Factory TestParams)
+  ((LExpr.op () ("List$ConsProj0" : TestParams.Identifier) .none).mkApp () [cons (intConst () 1) nil])
+
+/--
+info: Annotated expression: ((~List$ConsProj1 : (arrow (List int) (List int))) (((~Cons : (arrow int (arrow (List int) (List int)))) #1) (((~Cons : (arrow int (arrow (List int) (List int)))) #2) (~Nil : (List int)))))
+
+---
+info: (((~Cons : (arrow int (arrow (List int) (List int)))) #2) (~Nil : (List int)))
+-/
+#guard_msgs in
+#eval format $
+  typeCheckAndPartialEval #[listTy]  (Factory.default : @Factory TestParams)
+  ((LExpr.op () ("List$ConsProj1" : TestParams.Identifier) .none).mkApp () [cons (intConst () 1) (cons (intConst () 2) nil)])
+
+-- Destructor does not evaluate on a different constructor
+
+/--
+info: Annotated expression: ((~List$ConsProj1 : (arrow (List $__ty1) (List $__ty1))) (~Nil : (List $__ty1)))
+
+---
+info: ((~List$ConsProj1 : (arrow (List $__ty1) (List $__ty1))) (~Nil : (List $__ty1)))-/
+#guard_msgs in
+#eval format $
+  typeCheckAndPartialEval #[listTy]  (Factory.default : @Factory TestParams)
+  ((LExpr.op () ("List$ConsProj1" : TestParams.Identifier) .none).mkApp () [nil])
+
 
 -- Test 4: Multiple types and Factories
 
