@@ -102,7 +102,8 @@ def parse_binary_expression(j):
 
 def parse_unary_expression(j):
     target_j = {
-        "argument": parse_expression(j['argument'])
+        "argument": parse_expression(j['argument']),
+        "operator": j['operator']
     }
     add_missing_node_info(j, target_j)
     return target_j

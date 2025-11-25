@@ -179,6 +179,26 @@ partial def evalApp (state : HState) (originalExpr e1 e2 : HExpr) : HState × HE
     -- This handles delete obj[field] where field is dynamic
     evalFieldDelete state2 objExpr e2'
 
+  | .deferredOp "TypeOf" _ =>
+    -- Unary typeof operator
+    let result : HExpr :=
+      match e2' with
+      | .address _ =>
+        HExpr.string "object"
+      | .null =>
+        HExpr.string "object"
+      | .lambda (LExpr.const _ (some Lambda.LMonoTy.int)) =>
+        HExpr.string "number"
+      | .lambda (LExpr.const _ (some Lambda.LMonoTy.bool)) =>
+        HExpr.string "boolean"
+      | .lambda (LExpr.const _ (some Lambda.LMonoTy.string)) =>
+        HExpr.string "string"
+      | .lambda (LExpr.const _ _) =>
+        HExpr.string "undefined"
+      | _ =>
+        HExpr.string "undefined"
+    (state2, result)
+
   | .deferredOp op _ =>
     -- First application to a deferred operation - return partially applied
     (state2, .app (.deferredOp op none) e2')

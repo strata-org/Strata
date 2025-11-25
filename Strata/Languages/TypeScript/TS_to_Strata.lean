@@ -98,6 +98,10 @@ partial def infer_type_from_expr (expr: TS_Expression) : Heap.HMonoTy :=
     | _ => Heap.HMonoTy.int  -- Default
   | .TS_LogicalExpression _ => Heap.HMonoTy.bool
   | .TS_ConditionalExpression e => infer_type_from_expr e.consequent  -- Use consequent type
+  | .TS_UnaryExpression e =>
+    match e.operator with
+    | "typeof" => Heap.HMonoTy.string
+    | _ => Heap.HMonoTy.int  -- Default
   | _ => Heap.HMonoTy.int  -- Default fallback
 
 -- Get type for variable declaration, preferring annotation over inference
@@ -142,6 +146,14 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
     let alternate := translate_expr e.alternate
     -- Use deferred conditional instead of toLambda? checks
     Heap.HExpr.deferredIte guard consequent alternate
+
+  | .TS_UnaryExpression e =>
+    let arg := translate_expr e.argument
+    match e.operator with
+    | "typeof" =>
+      Heap.HExpr.app (Heap.HExpr.deferredOp "TypeOf" none) arg
+    | op =>
+      panic! s!"Unsupported unary operator: {op}"
 
   | .TS_NumericLiteral n =>
     dbg_trace s!"[DEBUG] Translating numeric literal value={n.value}, raw={n.extra.raw}, rawValue={n.extra.rawValue}"
