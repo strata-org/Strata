@@ -191,15 +191,25 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
       Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAccess" none) objExpr) fieldExpr
 
   | .TS_ObjectExpression e =>
-    -- Translate {1: value1, 5: value5} to heap allocation
-    let fields := e.properties.toList.map (fun prop =>
-      let key := match prop.key with
-        | .TS_NumericLiteral numLit => Float.floor numLit.value |>.toUInt64.toNat
-        | _ => panic! s!"Expected numeric literal as object key, got: {repr prop.key}"
-      let value := translate_expr prop.value
-      (key, value))
-    -- Use allocSimple which handles the object type automatically
-    Heap.HExpr.allocSimple fields
+    -- Collect numeric props for allocSimple, and *one* list of dynamic (keyExpr,valueExpr)
+    let (numProps, dynProps) :=
+      e.properties.toList.foldl
+        (fun (ns, ds) prop =>
+          let v := translate_expr prop.value
+          match prop.key with
+          | .TS_NumericLiteral numLit =>
+              let idx := Float.floor numLit.value |>.toUInt64.toNat
+              ((idx, v) :: ns, ds)
+          | .TS_StringLiteral strLit =>
+              -- unify: string-literal key becomes a constant string expression
+              (ns, (Heap.HExpr.string strLit.value, v) :: ds)
+          | other =>
+              -- computed or identifier: translate to an expr
+              (ns, (translate_expr other, v) :: ds))
+        ([], [])
+
+    let obj := Heap.HExpr.dynamicAlloc (numProps.reverse) (dynProps.reverse)
+    obj
 
   | .TS_CallExpression call =>
     match call.callee with
@@ -403,8 +413,8 @@ partial def translate_statement_core
                   -- Read the value
                   let popExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAccess" none) objExpr) tempIndexVar
                   let readStmt := .cmd (.set "temp_pop_result" popExpr)
-                  -- Delete the element
-                  let deleteExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAssign" none) objExpr) tempIndexVar) Heap.HExpr.null
+                  -- Delete the element (use FieldDelete so the index is removed instead of set to null)
+                  let deleteExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "FieldDelete" none) objExpr) tempIndexVar
                   let deleteStmt := .cmd (.set "temp_delete_result" deleteExpr)
                   (ctx, [tempIndexInit, readStmt, deleteStmt])
                 | "forEach" =>
