@@ -1758,7 +1758,7 @@ theorem substOldCorrect :
   /-
   intros Hwfvr Hwfvl Hwfc Hwf2 Hnorm Hinv Hdef Hsubst
   induction e <;> simp [OldExpressions.substOld] at *
-  case bvar x =>
+  case const c | op o ty | bvar x =>
     rw [Hwfvl.2]
     rw [Hwfvl.2]
     constructor
