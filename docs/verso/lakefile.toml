@@ -8,7 +8,7 @@ path = "../.."
 [[require]]
 name = "verso"
 git = "https://github.com/leanprover/verso"
-rev = "nightly-testing"
+rev = "v4.24.0"
 
 [[lean_lib]]
 name = "DDMDoc"
