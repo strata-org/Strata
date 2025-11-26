@@ -18,18 +18,32 @@ unstructured control-flow.
 -/
 
 mutual
+/-- Imperative statements focused on control flow.
+
+The `P` parameter specifies the type of expressions that appear in conditional
+and loop guards.  The `Cmd` parameter specifies the type of atomic command
+contained within the `.cmd` constructor.
+-/
 inductive Stmt (P : PureExpr) (Cmd : Type) : Type where
+  /-- An atomic command. -/
   | cmd      (cmd : Cmd)
+  /-- An block containing a `List` of `Stmt`. -/
   | block    (label : String) (b : Block P Cmd) (md : MetaData P := .empty)
-  /-- `ite` (if-then-else) statement provides structured control flow. -/
+  /-- A conditional execution statement. -/
   | ite      (cond : P.Expr)  (thenb : Block P Cmd) (elseb : Block P Cmd) (md : MetaData P := .empty)
-  /-- `loop` Loop statement with optional measure (for termination) and invariant. -/
+  /-- An iterated execution statement. Includes an optional measure (for
+  termination) and invariant. -/
   | loop     (guard : P.Expr) (measure : Option P.Expr) (invariant : Option P.Expr) (body : Block P Cmd) (md : MetaData P := .empty)
-  /-- `goto` provides unstructured control flow. -/
+  /-- A semi-structured control flow statement transferring control to the given
+  label. The control flow induced by `goto` must not create cycles. **NOTE:**
+  This will likely be removed, in favor of an alternative view of imperative
+  programs that is purely untructured. -/
   | goto     (label : String) (md : MetaData P := .empty)
   deriving Inhabited
 
+/-- A list of statements used by the `.block` constructor of `Stmt`. -/
 structure Block (P : PureExpr) (Cmd : Type) where
+  /-- The concrete list of statements. -/
   ss : List (Stmt P Cmd)
 end
 

@@ -58,27 +58,45 @@ def LTy.openFull (ty: LTy) (tys: List LMonoTy) : LMonoTy :=
   LMonoTy.subst [(List.zip (LTy.boundVars ty) tys)] (LTy.toMonoTypeUnsafe ty)
 
 /--
-Typing relation for `LExpr`s.
+Typing relation for `LExpr`s with respect to `LTy`.
 -/
 inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T):
   (TContext T.IDMeta) → LExpr T.mono → LTy → Prop where
+
+  /-- A boolean constant has type `.bool` if `bool` is a known type in this
+  context. -/
   | tbool_const : ∀ Γ m b,
             C.knownTypes.containsName "bool" →
             HasType C Γ (.boolConst m b) (.forAll [] .bool)
+
+  /-- An integer constant has type `.int` if `int` is a known type in this
+  context. -/
   | tint_const : ∀ Γ m n,
             C.knownTypes.containsName "int" →
             HasType C Γ (.intConst m n) (.forAll [] .int)
+
+  /-- A real constant has type `.real` if `real` is a known type in this
+  context. -/
   | treal_const : ∀ Γ m r,
             C.knownTypes.containsName "real" →
             HasType C Γ (.realConst m r) (.forAll [] .real)
+
+  /-- A string constant has type `.string` if `string` is a known type in this
+  context. -/
   | tstr_const : ∀ Γ m s,
             C.knownTypes.containsName "string" →
             HasType C Γ (.strConst m s) (.forAll [] .string)
+
+  /-- A bit vector constant of size `n` has type `.bitvec n` if `bitvec` is a
+  known type in this context. -/
   | tbitvec_const : ∀ Γ m n b,
             C.knownTypes.containsName "bitvec" →
             HasType C Γ (.bitvecConst m n b) (.forAll [] (.bitvec n))
+
+  /-- A variable has the type recorded for it in `Γ`, if any. -/
   | tvar : ∀ Γ m x ty, Γ.types.find? x = some ty → HasType C Γ (.fvar m x none) ty
-  /-
+
+  /--
   For an annotated free variable (or operator, see `top_annotated`), it must be
   the case that the claimed type `ty_s` is an instantiation of the general type
   `ty_o`. It suffices to show the existence of a list `tys` that, when
@@ -107,7 +125,8 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T):
             HasType C Γ e2 t2 →
             HasType C Γ (.app m e1 e2) t1
 
-  -- `ty` is more general than `e_ty`, so we can instantiate `ty` with `e_ty`.
+  /-- If `ty` is more general than `e_ty`, we can instantiate `ty` with `e_ty`.
+  -/
   | tinst : ∀ Γ e ty e_ty x x_ty,
             HasType C Γ e ty →
             e_ty = LTy.open x x_ty ty →
@@ -122,12 +141,16 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T):
             TContext.isFresh a Γ →
             HasType C Γ e (LTy.close a ty)
 
+  /-- If `e1` and `e2` have the same type `ty`, and `c` has type `.bool`, then
+  `.ite c e1 e2` has type `ty`. -/
   | tif : ∀ Γ m c e1 e2 ty,
           HasType C Γ c (.forAll [] .bool) →
           HasType C Γ e1 ty →
           HasType C Γ e2 ty →
           HasType C Γ (.ite m c e1 e2) ty
 
+  /-- If `e1` and `e2` have the same type `ty`, then `.eq e1 e2` has type
+  `.bool`. -/
   | teq : ∀ Γ m e1 e2 ty,
           HasType C Γ e1 ty →
           HasType C Γ e2 ty →
@@ -144,7 +167,7 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T):
             C.functions.find? (fun fn => fn.name == op) = some f →
             f.type = .ok ty →
             HasType C Γ (.op m op none) ty
-  /-
+  /--
   See comments in `tvar_annotated`.
   -/
   | top_annotated: ∀ Γ m f op ty_o ty_s tys,

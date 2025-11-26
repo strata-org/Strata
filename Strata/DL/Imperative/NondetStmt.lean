@@ -22,10 +22,23 @@ Comamnds](https://en.wikipedia.org/wiki/Guarded_Command_Language), and in
 [Kleene Algebra with Tests](https://www.cs.cornell.edu/~kozen/Papers/kat.pdf).
 -/
 
+/--
+A non-deterministic statement, parameterized by a type of pure expressions (`P`)
+and a type of commands (`Cmd`).
+
+This encodes the same types of control flow as `Stmt`, but using only
+non-deterministic choices: arbitrarily choosing one of two sub-statements to
+execute or executing a sub-statement an arbitrary number of times. Conditions
+can be encoded if the command type includes assumptions.
+-/
 inductive NondetStmt (P : PureExpr) (Cmd : Type) : Type where
+  /-- An atomic command, of an arbitrary type. -/
   | cmd      (cmd : Cmd)
+  /-- Execute `s1` followed by `s2`. -/
   | seq      (s1 s2 : NondetStmt P Cmd)
+  /-- Execute either `s1` or `s2`, arbitrarily. -/
   | choice   (s1 s2 : NondetStmt P Cmd)
+  /-- Execute `s` an arbitrary number of times (possibly zero). -/
   | loop     (s : NondetStmt P Cmd)
   deriving Inhabited
 
