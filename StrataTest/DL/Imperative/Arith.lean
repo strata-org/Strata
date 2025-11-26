@@ -13,7 +13,7 @@ namespace Arith
 open Std (ToFormat Format format)
 
 def typeCheckAndPartialEval (cmds : Commands) : Except Format (Commands × Eval.State) := do
-  let (cmds, _T) ← Imperative.Cmds.typeCheck TEnv.init cmds
+  let (cmds, _T) ← Imperative.Cmds.typeCheck () TEnv.init cmds
   let (cmds, S) := Imperative.Cmds.eval Eval.State.init cmds
   return (cmds, S)
 
@@ -25,7 +25,7 @@ private def testProgram1 : Commands :=
 /--
 info: ok: Commands:
 init (x : Num) := (y : Num)
-#[<var x: ($__x0 : Num)>] havoc x
+havoc x
 assert [x_value_eq] ($__x0 : Num) = (y : Num)
 
 State:

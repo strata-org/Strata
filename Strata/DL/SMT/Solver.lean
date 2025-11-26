@@ -118,8 +118,11 @@ def declareSort (id : String) (arity : Nat) : SolverM Unit :=
   emitln s!"(declare-sort {id} {arity})"
 
 def declareFun (id : String) (args : List String) (type : String) : SolverM Unit :=
-  let inline := String.intercalate " " args
-  emitln s!"(declare-fun {id} ({inline}) {type})"
+  if args.isEmpty then
+    declareConst id type
+  else
+    let inline := String.intercalate " " args
+    emitln s!"(declare-fun {id} ({inline}) {type})"
 
 def declareDatatype (id : String) (params : List String) (constructors : List String) : SolverM Unit :=
   let cInline := "\n  " ++ String.intercalate "\n  " constructors

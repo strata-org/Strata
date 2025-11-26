@@ -18,8 +18,8 @@ open Std (ToFormat Format format)
 Type checker for an Imperative Command.
 -/
 def Cmd.typeCheck [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
-    [DecidableEq P.Ident] [TC : TypeContext P T]
-    (τ : T) (c : Cmd P) : Except Format (Cmd P × T) := do
+    [DecidableEq P.Ident] [TC : TypeContext P C T]
+    (ctx: C) (τ : T) (c : Cmd P) : Except Format (Cmd P × T) := do
 
   match c with
 
@@ -30,10 +30,10 @@ def Cmd.typeCheck [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
         .error f!"Type Checking [{c}]: \
                   Variable {x} cannot appear in its own initialization expression!"
       else
-        let (xty, τ) ← TC.preprocess τ xty
-        let (e, ety, τ) ← TC.inferType τ c e
+        let (xty, τ) ← TC.preprocess ctx τ xty
+        let (e, ety, τ) ← TC.inferType ctx τ c e
         let τ ← TC.unifyTypes τ [(xty, ety)]
-        let (xty, τ) ← TC.postprocess τ xty
+        let (xty, τ) ← TC.postprocess ctx τ xty
         let τ := TC.update τ x xty
         let c := Cmd.init x xty e md
         .ok (c, τ)
@@ -44,7 +44,7 @@ def Cmd.typeCheck [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
     match TC.lookup τ x with
     | none => .error f!"Type Checking [{c}]: Cannot set undefined variable {x}."
     | some xty =>
-      let (e, ety, τ) ← TC.inferType τ c e
+      let (e, ety, τ) ← TC.inferType ctx τ c e
       let τ ← TC.unifyTypes τ [(xty, ety)]
       let c := Cmd.set x e md
       .ok (c, τ)
@@ -55,7 +55,7 @@ def Cmd.typeCheck [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
     | none => .error f!"Type Checking [{c}]: Cannot havoc undefined variable {x}."
 
   | .assert label e md =>
-    let (e, ety, τ) ← TC.inferType τ c e
+    let (e, ety, τ) ← TC.inferType ctx τ c e
     if TC.isBoolType ety then
        let c := Cmd.assert label e md
        .ok (c, τ)
@@ -64,7 +64,7 @@ def Cmd.typeCheck [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
                 Assertion expected to be of type boolean, but inferred type is {ety}."
 
   | .assume label e md =>
-    let (e, ety, τ) ← TC.inferType τ c e
+    let (e, ety, τ) ← TC.inferType ctx τ c e
     if TC.isBoolType ety then
        let c := Cmd.assume label e md
        .ok (c, τ)
@@ -75,14 +75,14 @@ def Cmd.typeCheck [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
 /--
 Type checker for Imperative's Commands.
 -/
-def Cmds.typeCheck {P T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
-    [DecidableEq P.Ident] [TC : TypeContext P T]
-    (τ : T) (cs : Cmds P) : Except Format (Cmds P × T) := do
+def Cmds.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
+    [DecidableEq P.Ident] [TC : TypeContext P C T]
+    (ctx: C) (τ : T) (cs : Cmds P) : Except Format (Cmds P × T) := do
   match cs with
   | [] => .ok ([], τ)
   | c :: crest =>
-    let (c, τ) ← Cmd.typeCheck τ c
-    let (crest, τ) ← Cmds.typeCheck τ crest
+    let (c, τ) ← Cmd.typeCheck ctx τ c
+    let (crest, τ) ← Cmds.typeCheck ctx τ crest
     .ok (c :: crest, τ)
 
 ---------------------------------------------------------------------

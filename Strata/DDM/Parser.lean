@@ -211,7 +211,16 @@ partial def whitespace : ParserFn := fun c s =>
     if curr == '\t' then
       s.mkUnexpectedError (pushMissing := false) "tabs are not allowed; please configure your editor to expand them"
     else if curr == '\r' then
-      s.mkUnexpectedError (pushMissing := false) "isolated carriage returns are not allowed"
+      -- Allow \r\n (Windows line endings) but reject isolated \r
+      let j := c.next' i h
+      if c.atEnd j then
+        s.mkUnexpectedError (pushMissing := false) "isolated carriage returns are not allowed"
+      else
+        let next := c.get j
+        if next == '\n' then
+          whitespace c (s.next c j)
+        else
+          s.mkUnexpectedError (pushMissing := false) "isolated carriage returns are not allowed"
     else if curr.isWhitespace then whitespace c (s.next' c i h)
     else if curr == '/' then
       let j    := c.next' i h
@@ -370,8 +379,10 @@ def octalNumberFn (startPos : String.Pos) : ParserFn := fun c s =>
   let s := takeDigitsFn (fun c => '0' ≤ c && c ≤ '7') "octal number" true c s
   mkNodeToken numLitKind startPos c s
 
+def isHexDigit (c : Char) := ('0' ≤ c && c ≤ '9') || ('a' ≤ c && c ≤ 'f') || ('A' ≤ c && c ≤ 'F')
+
 def hexNumberFn (startPos : String.Pos) : ParserFn := fun c s =>
-  let s := takeDigitsFn (fun c => ('0' ≤ c && c ≤ '9') || ('a' ≤ c && c ≤ 'f') || ('A' ≤ c && c ≤ 'F')) "hexadecimal number" true c s
+  let s := takeDigitsFn isHexDigit "hexadecimal number" true c s
   mkNodeToken numLitKind startPos c s
 
 def numberFnAux : ParserFn := fun c s =>
@@ -395,6 +406,18 @@ def numberFnAux : ParserFn := fun c s =>
     else
       s.mkError "numeral"
 
+abbrev bytesLitKind : SyntaxNodeKind := `bytes
+
+partial def parseByteContent (startPos : String.Pos) : ParserFn := fun c s =>
+  if s.hasError then
+    s
+  else
+    match ByteArray.unescapeBytesAux c.inputString s.pos .empty with
+    | .error (_, e, msg) =>
+      s.setPos e |>.mkError msg
+    | .ok (_, e) =>
+      mkNodeToken bytesLitKind startPos c (s.setPos e)
+
 partial def strLitFnAux (startPos : String.Pos) : ParserFn := fun c s =>
   let i     := s.pos
   if h : c.atEnd i then s.mkUnexpectedErrorAt "unterminated string literal" startPos
@@ -411,8 +434,10 @@ private def tokenFnAux : ParserFn := fun c s =>
   let curr  := c.get i
   if curr == '\"' then
     strLitFnAux i c (s.next c i)
-  else if curr == '\'' && getNext c.inputString i != '\'' then
+  else if curr == '\'' && c.getNext i != '\'' then
     charLitFnAux i c (s.next c i)
+  else if curr = 'b' ∧ c.getNext i = '\"' then
+    parseByteContent i c (s.setPos (c.next <| c.next i))
   else if curr.isDigit then
     numberFnAux c s
   else
@@ -485,6 +510,11 @@ def identifier : Parser := {
 def numLit : Parser := {
   fn   := expectTokenFn numLitKind "numeral"
   info := mkAtomicInfo "num"
+}
+
+def byteArray : Parser := {
+  fn := fun ctx s => expectTokenFn bytesLitKind "byte sequence" ctx s
+  info := mkAtomicInfo "byte array"
 }
 
 def decimalLit : Parser := {

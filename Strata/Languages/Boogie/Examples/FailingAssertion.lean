@@ -32,21 +32,21 @@ spec {
 /-- info: true -/
 #guard_msgs in
 -- No errors in translation.
-#eval TransM.run (translateProgram failing) |>.snd |>.isEmpty
+#eval TransM.run Inhabited.default (translateProgram failing) |>.snd |>.isEmpty
 
 /--
 info: type MapII := (Map int int)
 var (a : MapII) := init_a_0
 (procedure P :  () → ())
 modifies: [a]
-preconditions: (P_requires_1, ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) (#0 : int)) == (#0 : int)))
+preconditions: (P_requires_1, ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) #0) == #0))
 postconditions: ⏎
-body: assert [assert_0] ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) (#0 : int)) == (#1 : int))
+body: assert [assert_0] ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) #0) == #1)
 
 Errors: #[]
 -/
 #guard_msgs in
-#eval TransM.run (translateProgram failing)
+#eval TransM.run Inhabited.default (translateProgram failing)
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -65,14 +65,14 @@ Wrote problem to vcs/assert_0.smt2.
 
 Obligation assert_0: solver error!
 
-Error: Cannot find model for id: t0
+Error: Cannot find model for id: f1
 
 Evaluated program:
 type MapII := (Map int int)
 var (a : (Map int int)) := init_a_0
 (procedure P :  () → ())
 modifies: [a]
-preconditions: (P_requires_1, ((((~select : (arrow (Map int int) (arrow int int))) (a : (Map int int))) (#0 : int)) == (#0 : int)))
+preconditions: (P_requires_1, ((((~select : (arrow (Map int int) (arrow int int))) (a : (Map int int))) #0) == #0))
 postconditions: ⏎
 body: assume [P_requires_1] (((~select $__a0) #0) == #0)
 assert [assert_0] (((~select $__a0) #0) == #1)
@@ -80,7 +80,7 @@ assert [assert_0] (((~select $__a0) #0) == #1)
 ---
 info:
 Obligation: assert_0
-Result: err Cannot find model for id: t0
+Result: err Cannot find model for id: f1
 -/
 #guard_msgs in
 #eval verify "cvc5" failing
@@ -136,4 +136,4 @@ Result: failed
 CEx: ($__x0, 7)
 -/
 #guard_msgs in
-#eval verify "cvc5" failingThrice Options.quiet
+#eval verify "cvc5" failingThrice Inhabited.default Options.quiet

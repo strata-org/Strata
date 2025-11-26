@@ -278,7 +278,7 @@ private def ppOp (opts : FormatOptions) (stx : SyntaxDef) (args : Array PrecForm
 
 abbrev FormatM := ReaderT FormatContext (StateM FormatState)
 
-def pformat [ToStrataFormat α] (a : α) : FormatM PrecFormat :=
+def pformat {α} [ToStrataFormat α] (a : α) : FormatM PrecFormat :=
   fun c s => (mformat a c s, s)
 
 mutual
@@ -309,7 +309,7 @@ private partial def ExprF.mformatM (e : ExprF α) (rargs : Array (ArgF α)  := #
       | none => ppArgs f.fullName
   | .app _ f a => f.mformatM (rargs.push a)
 
-private partial def ArgF.mformatM : ArgF α → FormatM PrecFormat
+private partial def ArgF.mformatM {α} : ArgF α → FormatM PrecFormat
 | .op o => o.mformatM
 | .expr e => e.mformatM
 | .type e => pformat e
@@ -318,6 +318,7 @@ private partial def ArgF.mformatM : ArgF α → FormatM PrecFormat
 | .num _ x => pformat x
 | .decimal _ v => pformat v
 | .strlit _ s => return .atom (.text <| escapeStringLit s)
+| .bytes _ v => return .atom <| .text <| ByteArray.escapeBytes v
 | .option _ ma =>
   match ma with
   | none => pure (.atom .nil)

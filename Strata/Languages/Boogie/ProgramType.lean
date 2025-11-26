@@ -21,41 +21,25 @@ open Lambda
 
 namespace Program
 
-def typeCheck (T : Boogie.Expression.TyEnv) (program : Program) :
+def typeCheck (C: Boogie.Expression.TyContext) (Env : Boogie.Expression.TyEnv) (program : Program) :
   Except Format (Program × Boogie.Expression.TyEnv) := do
-  -- Check for duplicates in declaration names.
-  let varNames  := program.getNames  .var
-  let procNames := program.getNames .proc
-  let funcNames := program.getNames .func
-  if !varNames.Nodup then
-    .error f!"Duplicate name(s) found for global variables! \
-              List of global variables:{Format.line}\
-              {varNames}"
-  else if !procNames.Nodup then
-    .error f!"Duplicate name(s) found for procedures! \
-              List of procedure names:{Format.line}\
-              {procNames}"
-  else if !funcNames.Nodup then
-    .error f!"Duplicate name(s) found for functions! \
-              List of function names:{Format.line}\
-              {funcNames}"
-  else
     -- Push a type substitution scope to store global type variables.
-    let T := T.updateSubst { subst := [[]], isWF := SubstWF_of_empty_empty }
-    let (decls, T) ← go T program.decls []
-    .ok ({ decls }, T)
+    let Env := Env.updateSubst { subst := [[]], isWF := SubstWF_of_empty_empty }
+    let (decls, Env) ← go C Env program.decls []
+    .ok ({ decls }, Env)
 
-  where go T remaining acc : Except Format (Decls × Boogie.Expression.TyEnv) :=
+  where go C Env remaining acc : Except Format (Decls × Boogie.Expression.TyEnv) :=
   match remaining with
-  | [] => .ok (acc.reverse, T)
+  | [] => .ok (acc.reverse, Env)
   | decl :: drest => do
-    let (decl', T) ←
+    let C := {C with idents := (← C.idents.addWithError decl.name f!"Error in Boogie declaration {decl}: {decl.name} already defined")}
+    let (decl', C, Env) ←
       match decl with
 
       | .var x ty val _ =>
-        let (s', T) ← Statement.typeCheck T program .none [.init x ty val .empty]
+        let (s', Env) ← Statement.typeCheck C Env program .none [.init x ty val .empty]
         match s' with
-        | [.init x' ty' val' _] => .ok (.var x' ty' val', T)
+        | [.init x' ty' val' _] => .ok (.var x' ty' val', C, Env)
         | _ => .error f!"Implementation error! \
                          Statement typeChecker returned the following: \
                          {Format.line}\
@@ -63,48 +47,41 @@ def typeCheck (T : Boogie.Expression.TyEnv) (program : Program) :
                          Declaration: {decl}"
 
       | .type td _ =>
-        match Program.find?.go .type td.name acc with
-        | some decl =>
-          .error f!"Type declaration of the same name already exists!\n\
-                    {decl}"
-        | none =>
-          if td.name.name ∈ T.knownTypes.keywords then
-            .error f!"This type declaration's name is reserved!\n\
+          match td with
+          | .con tc =>
+            let C ← C.addKnownTypeWithError { name := tc.name, metadata := tc.numargs } f!"This type declaration's name is reserved!\n\
                       {td}\n\
                       KnownTypes' names:\n\
-                      {T.knownTypes.keywords}"
-          else match td with
-          | .con tc =>
-            let T := T.addKnownType { name := tc.name, arity := tc.numargs }
-            .ok (.type td, T)
+                      {C.knownTypes.keywords}"
+            .ok (.type td, C, Env)
           | .syn ts =>
-            let T ← TEnv.addTypeAlias { typeArgs := ts.typeArgs, name := ts.name, type := ts.type } T
-            .ok (.type td, T)
+            let Env ← TEnv.addTypeAlias { typeArgs := ts.typeArgs, name := ts.name, type := ts.type } C Env
+            .ok (.type td, C, Env)
 
       | .ax a _ =>
-        let (ae, T) ← LExprT.fromLExpr T a.e
+        let (ae, Env) ← LExpr.resolve C Env a.e
         match ae.toLMonoTy with
-        | .bool => .ok (.ax { a with e := ae.toLExpr } , T)
+        | .bool => .ok (.ax { a with e := ae.unresolved }, C, Env)
         | _ => .error f!"Axiom has non-boolean type: {a}"
 
       | .distinct l es md =>
-        let es' ← es.mapM (LExprT.fromLExpr T)
-        .ok (.distinct l (es'.map (λ e => e.fst.toLExpr)) md, T)
+        let es' ← es.mapM (LExpr.resolve C Env)
+        .ok (.distinct l (es'.map (λ e => e.fst.unresolved)) md, C, Env)
 
       | .proc proc _ =>
-        let T := T.pushEmptySubstScope
-        let (proc', T) ← Procedure.typeCheck T program proc
-        let T := T.popSubstScope
-        .ok (.proc proc', T)
+        let Env := Env.pushEmptySubstScope
+        let (proc', Env) ← Procedure.typeCheck C Env program proc
+        let Env := Env.popSubstScope
+        .ok (.proc proc', C, Env)
 
       | .func func _ =>
-        let T := T.pushEmptySubstScope
-        let (func', T) ← Function.typeCheck T func
-        let T := T.addFactoryFunction func'
-        let T := T.popSubstScope
-        .ok (.func func', T)
+        let Env := Env.pushEmptySubstScope
+        let (func', Env) ← Function.typeCheck C Env func
+        let C := C.addFactoryFunction func'
+        let Env := Env.popSubstScope
+        .ok (.func func', C, Env)
 
-    go T drest (decl' :: acc)
+    go C Env drest (decl' :: acc)
 
 ---------------------------------------------------------------------
 

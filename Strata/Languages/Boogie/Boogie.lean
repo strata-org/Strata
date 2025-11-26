@@ -35,8 +35,9 @@ namespace Boogie
 -/
 
 def typeCheck (options : Options) (program : Program) : Except Std.Format Program := do
-  let T := { Lambda.TEnv.default with functions := Boogie.Factory, knownTypes := Boogie.KnownTypes }
-  let (program, _T) ← Program.typeCheck T program
+  let T := Lambda.TEnv.default
+  let C := { Lambda.LContext.default with functions := Boogie.Factory, knownTypes := Boogie.KnownTypes }
+  let (program, _T) ← Program.typeCheck C T program
   -- dbg_trace f!"[Strata.Boogie] Type variables:\n{T.state.substInfo.subst.length}"
   -- dbg_trace f!"[Strata.Boogie] Annotated program:\n{program}"
   if options.verbose then dbg_trace f!"[Strata.Boogie] Type checking succeeded.\n"
@@ -45,9 +46,7 @@ def typeCheck (options : Options) (program : Program) : Except Std.Format Progra
 def typeCheckAndPartialEval (options : Options) (program : Program) :
   Except Std.Format (List (Program × Env)) := do
   let program ← typeCheck options program
-  let σ ← (Lambda.LState.init).addFactory Boogie.Factory
-  let E := { Env.init with exprEnv := σ,
-                           program := program }
+  let E := { Env.init with program := program }
   let pEs := Program.eval E
   if options.verbose then do
     dbg_trace f!"{Std.Format.line}VCs:"

@@ -41,7 +41,7 @@ theorem TouchVarsEmpty :
 
 theorem EvalStmtsEmpty {P : PureExpr} {Cmd : Type} {EvalCmd : EvalCmdParam P Cmd}
   { σ σ' σ₀: SemanticStore P } { δ : SemanticEval P }
-  [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasBoolNeg P] :
+  [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
   EvalStmts P Cmd EvalCmd δ σ₀ σ ([]: (List (Stmt P Cmd))) σ' → σ = σ' := by
   intros H; cases H <;> simp
 
@@ -1716,7 +1716,7 @@ theorem EvalCmdDefMonotone :
   next _ _ Hup => exact UpdateStateDefMonotone Hdef Hup
 
 theorem EvalCmdTouch
-  [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasBoolNeg P] :
+  [HasVal P] [HasFvar P] [HasBool P] [HasBoolVal P] [HasNot P] :
   EvalCmd P δ σ₀ σ c σ' →
   TouchVars σ (HasVarsImp.touchedVars c) σ' := by
   intro Heval
@@ -2103,13 +2103,10 @@ theorem EvalExpressionIsDefined :
   simp [WellFormedSemanticEvalVar] at Hwfvr
   induction e generalizing v <;>
     simp [HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
-  case fvar v' ty' =>
-    specialize Hwfvr (Lambda.LExpr.fvar v' ty') v' σ₀ σ
+  case fvar m v' ty' =>
+    specialize Hwfvr (Lambda.LExpr.fvar m v' ty') v' σ₀ σ
     simp [HasFvar.getFvar] at Hwfvr
     simp_all
-  case mdata info e ih =>
-    -- Need extra congruence properties -- if f(a) is defined, then a must be defined
-    sorry
   case abs => sorry
   case quant => sorry
   case app => sorry

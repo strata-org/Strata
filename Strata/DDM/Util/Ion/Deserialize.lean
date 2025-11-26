@@ -87,6 +87,10 @@ def readLength (td : TypeDesc) (limit : Nat) : AReader (NatLe limit) := do
     else
       .fail off s!"Length is too large"
 
+def readBytes (limit : Nat) : AReader ByteArray := do
+  let off ← .curOffset
+  .readBuffer (limit - off)
+
 def readString (limit : Nat) : AReader String := do
   let off ← .curOffset
   let b ← .readBuffer (limit - off)
@@ -107,6 +111,7 @@ inductive Token (limit : Nat)
 -- TODO: Add timestamp
 | string (s : String)
 | symbol (s : SymbolId)
+| blob (a : ByteArray)
 | bvm (major minor : UInt8)
 | nop
 | startList (end_limit : NatLe limit)
@@ -179,7 +184,9 @@ def readToken (limit : Nat) : SReader (Token limit) :=
     | 0x9 =>
       .fail off "clob not supported"
     | 0xA =>
-      .fail off "blob not supported"
+      let .mk limit _ ← readLength typeDesc limit
+      let a ← readBytes limit
+      return .blob a
     | 0xB => -- list
       .startList <$> readLength typeDesc limit
     | 0xC => -- sexp
@@ -345,10 +352,12 @@ def deserializeAux {size} (ds : DeserializeState size) : AReader (DeserializeSta
         cleanupRecords <| ds.appendValue sym (.float v)
       | .decimal v =>
         cleanupRecords <| ds.appendValue sym (.decimal v)
-      | .symbol v =>
-        cleanupRecords <| ds.appendValue sym (.symbol v)
       | .string v =>
         cleanupRecords <| ds.appendValue sym (.string v)
+      | .symbol v =>
+        cleanupRecords <| ds.appendValue sym (.symbol v)
+      | .blob v =>
+        cleanupRecords <| ds.appendValue sym (.blob v)
       | .bvm major minor => do
         if !ds.stack.isEmpty then
           .fail (←.curOffset) s!"Encountered binary version marker inside term"

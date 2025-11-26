@@ -17,32 +17,24 @@ open Procedure Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Boogie
 /--
 info: ok: ((procedure P :  ((x : int)) → ((y : int)))
  modifies: []
- preconditions: (0_lt_x, (((~Int.Lt : (arrow int (arrow int bool))) (#0 : int)) (x : int)))
- postconditions: (ret_y_lt_0, (((~Int.Lt : (arrow int (arrow int bool))) (y : int)) (#0 : int)))
- body: y := (((~Int.Sub : (arrow int (arrow int int))) (#0 : int)) (x : int))
+ preconditions: (0_lt_x, (((~Int.Lt : (arrow int (arrow int bool))) #0) (x : int)))
+ postconditions: (ret_y_lt_0, (((~Int.Lt : (arrow int (arrow int bool))) (y : int)) #0))
+ body: y := (((~Int.Sub : (arrow int (arrow int int))) #0) (x : int))
  ,
  context:
  types:   ⏎
- aliases: []
- state:
- tyGen: 6
- tyPrefix: $__ty
- exprGen: 0
- exprPrefix: $__var
- subst: []
- known types:
- [∀[0, 1]. (arrow 0 1), bool, int, string])
+ aliases: [] state: tyGen: 6 tyPrefix: $__ty exprGen: 0 exprPrefix: $__var subst: [])
 -/
 #guard_msgs in
-#eval do let ans ← typeCheck { TEnv.default with functions := Boogie.Factory }
+#eval do let ans ← typeCheck { LContext.default with functions := Boogie.Factory } TEnv.default
                              Program.init
                              { header := {name := "P",
                                           typeArgs := [],
                                           inputs := [("x", mty[int])],
                                           outputs := [("y", mty[int])] },
                                spec := { modifies := [],
-                                         preconditions := [("0_lt_x", ⟨eb[((~Int.Lt #0) x)], .Default⟩)],
-                                         postconditions := [("ret_y_lt_0", ⟨eb[((~Int.Lt y) #0)], .Default⟩)] },
+                                         preconditions := [("0_lt_x", ⟨eb[((~Int.Lt #0) x)], .Default, #[]⟩)],
+                                         postconditions := [("ret_y_lt_0", ⟨eb[((~Int.Lt y) #0)], .Default, #[]⟩)] },
                                body := [
                                  Statement.set "y" eb[((~Int.Sub #0) x)]
                                ]
@@ -57,10 +49,11 @@ postconditions: (P.g_eq_a, ((g : int) == (((~Int.Add : (arrow int (arrow int int
 body: g := (((~Int.Add : (arrow int (arrow int int))) (a : int)) (g : int))
 -/
 #guard_msgs in
-#eval do let ans ←
-              typeCheck { TEnv.default (IDMeta:=Visibility) with
-                              functions := Boogie.Factory,
-                              context := { types := [[("g", t[int])]] }}
+#eval do
+  let g : TGenEnv Visibility := { @TGenEnv.default Visibility with context := {types := [[("g", t[int])]] }};
+  let ans ←
+              typeCheck { @LContext.default ⟨Unit, Visibility⟩ with
+                              functions := Boogie.Factory} {@TEnv.default Visibility with genEnv := g}
                         Program.init
                         { header := { name := "P",
                                       typeArgs := [],
@@ -70,7 +63,7 @@ body: g := (((~Int.Add : (arrow int (arrow int int))) (a : int)) (g : int))
                           modifies := [("g")],
                           preconditions := [],
                           postconditions :=
-                            [("P.g_eq_a", ⟨eb[g == ((~Int.Add (~old g)) a)], .Default⟩)] },
+                            [("P.g_eq_a", ⟨eb[g == ((~Int.Add (~old g)) a)], .Default, #[]⟩)] },
                           body :=
                             [Statement.set "g" eb[((~Int.Add a) g)]]
                         }
@@ -84,10 +77,12 @@ postconditions: (P.g_eq_a, ((g : int) == (((~Int.Add : (arrow int (arrow int int
 body: g := (((~Int.Add : (arrow int (arrow int int))) (a : int)) (g : int))
 -/
 #guard_msgs in
-#eval do let ans ←
-              typeCheck { TEnv.default (IDMeta:=Visibility) with
-                              functions := Boogie.Factory,
-                              context := { types := [[("g", t[int])]] }}
+#eval do
+  let g : TGenEnv Visibility := { @TGenEnv.default Visibility with context := {types := [[("g", t[int])]] }};
+  let ans ←
+              typeCheck { @LContext.default ⟨Unit, Visibility⟩ with
+                              functions := Boogie.Factory}
+                        { @TEnv.default Visibility with genEnv := g}
                         Program.init
                         { header := { name := "P",
                                       typeArgs := [],
@@ -97,7 +92,7 @@ body: g := (((~Int.Add : (arrow int (arrow int int))) (a : int)) (g : int))
                           modifies := [("g")],
                           preconditions := [],
                           postconditions :=
-                            [("P.g_eq_a", ⟨eb[g == (~old ((~Int.Add a) g))], .Default⟩)] },
+                            [("P.g_eq_a", ⟨eb[g == (~old ((~Int.Add a) g))], .Default, #[]⟩)] },
                           body :=
                             [Statement.set "g" eb[((~Int.Add a) g)]]
                         }

@@ -7,7 +7,9 @@
 
 
 import Strata.Languages.Boogie.Procedure
+import Strata.Languages.Boogie.Statement
 import Strata.Languages.Boogie.StatementEval
+import Strata.Languages.Boogie.StatementSemantics
 import Strata.Transform.LoopElim
 
 ---------------------------------------------------------------------
@@ -30,7 +32,7 @@ def eval (E : Env) (p : Procedure) : List (Procedure × Env) :=
   -- the context. These reflect the pre-state values of the globals.
   let modifies_tys :=
     p.spec.modifies.map
-    (fun l => (E.exprEnv.state.findD l (none, .fvar l none)).fst)
+    (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
   let modifies_typed := p.spec.modifies.zip modifies_tys
   let (globals_fvars, E) := E.genFVars modifies_typed
   let global_init_subst := List.zip modifies_typed globals_fvars
@@ -62,18 +64,18 @@ def eval (E : Env) (p : Procedure) : List (Procedure × Env) :=
                     -- that hides the expression from the evaluator, allowing us
                     -- to retain the postcondition body instead of replacing it
                     -- with "true".
-                  (.assert label .true
+                  (.assert label (.true ())
                                  ((Imperative.MetaData.pushElem
                                   #[]
                                   (.label label)
                                   (.expr check.expr)).pushElem
                                   (.label label)
                                   (.msg "FreePostCondition")))
-                | _ => (.assert label check.expr))
+                | _ => (.assert label check.expr check.md))
       p.spec.postconditions
   let precond_assumes :=
     List.map (fun (label, check) => (.assume label check.expr)) p.spec.preconditions
-  let body' := p.body.map Statement.removeLoops
+  let body' : List Statement := p.body.map Stmt.removeLoops
   let ssEs := Statement.eval E old_var_subst (precond_assumes ++ body' ++ postcond_asserts)
   ssEs.map (fun (ss, sE) => ({ p with body := ss }, fixupError sE))
 

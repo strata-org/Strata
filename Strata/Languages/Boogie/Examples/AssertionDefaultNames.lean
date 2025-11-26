@@ -26,19 +26,19 @@ spec {
 /-- info: true -/
 #guard_msgs in
 -- No errors in translation.
-#eval TransM.run (translateProgram assertionNames) |>.snd |>.isEmpty
+#eval TransM.run Inhabited.default (translateProgram assertionNames) |>.snd |>.isEmpty
 
 /--
 info: (procedure Test :  ((x : int)) → ())
 modifies: []
-preconditions: (Test_requires_0, ((x : int) == (#1 : int)))
+preconditions: (Test_requires_0, ((x : int) == #1))
 postconditions: ⏎
-body: assert [assert_0] ((x : int) == (#1 : int))
+body: assert [assert_0] ((x : int) == #1)
 
 Errors: #[]
 -/
 #guard_msgs in
-#eval TransM.run (translateProgram assertionNames)
+#eval TransM.run Inhabited.default (translateProgram assertionNames)
 
 /--
 info: [Strata.Boogie] Type checking succeeded.

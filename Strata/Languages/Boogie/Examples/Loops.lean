@@ -114,17 +114,14 @@ info:
 Obligation: entry_invariant_0
 Result: verified
 
-Obligation: entry_invariant_2
+Obligation: entry_invariant_1
 Result: verified
 
-Obligation: arbitrary_iter_maintain_invariant_2
-Result: verified
-
-Obligation: entry_invariant_0
+Obligation: arbitrary_iter_maintain_invariant_1
 Result: verified
 
 Obligation: arbitrary_iter_maintain_invariant_0
 Result: verified
 -/
 #guard_msgs in
-#eval verify "cvc5" nestedPgm Options.quiet
+#eval verify "cvc5" nestedPgm Inhabited.default Options.quiet

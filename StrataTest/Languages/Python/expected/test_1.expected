@@ -1,0 +1,8 @@
+
+ensures_maybe_except_none: verified
+
+(Origin_test_helper_procedure_Requires)req_name_is_foo: unknown
+
+(Origin_test_helper_procedure_Requires)opt_name_none_or_bar: verified
+
+(Origin_test_helper_procedure_Requires)opt_name_none_or_bar: verified

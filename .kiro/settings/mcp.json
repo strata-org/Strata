@@ -1,0 +1,29 @@
+{
+  "mcpServers": {
+    "lean-lsp": {
+      "command": "uvx",
+      "args": [
+        "lean-lsp-mcp"
+      ],
+      "disabled": false,
+      "autoApprove": [
+        "lean_build",
+        "lean_file_contents",
+        "lean_diagnostic_messages",
+        "lean_goal",
+        "lean_term_goal",
+        "lean_hover_info",
+        "lean_completions",
+        "lean_declaration_file",
+        "lean_multi_attempt",
+        "lean_run_code",
+        "loan_local_search",
+        "lean_leansearch",
+        "lean_loogle",
+        "lean_leanfinder",
+        "lean_state_search",
+        "lean_hammer_premise"
+      ]
+    }
+  }
+}

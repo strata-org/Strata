@@ -25,7 +25,7 @@ procedure P () returns () {
 
 /-- info: #[] -/
 #guard_msgs in
-#eval TransM.run (translateProgram typeDeclPgm1) |>.snd
+#eval TransM.run Inhabited.default (translateProgram typeDeclPgm1) |>.snd
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -86,7 +86,7 @@ procedure P () returns () {
 
 /-- info: #[] -/
 #guard_msgs in
-#eval TransM.run (translateProgram typeDeclPgm3) |>.snd
+#eval TransM.run Inhabited.default (translateProgram typeDeclPgm3) |>.snd
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -121,9 +121,9 @@ type int := bool;
 
 /--
 error: [Strata.Boogie] Type checking error: This type declaration's name is reserved!
-type int := bool
+int := bool
 KnownTypes' names:
-[bool, int, string, real, Triggers, TriggerGroup, bitvec, arrow, Map]
+[arrow, TriggerGroup, real, string, bitvec, Triggers, int, bool, Map, regex]
 -/
 #guard_msgs in
 #eval verify "cvc5" typeDeclPgm4
