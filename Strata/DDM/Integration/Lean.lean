@@ -89,7 +89,9 @@ def declareDialect (d : Dialect) : CommandElabM Unit := do
     dialectExt.modifyState env (·.addDialect! d dialectAbsName (isNew := true))
   -- Create term to represent minimal DialectMap with dialect.
   let s := (dialectExt.getState (←Lean.getEnv))
-  let openDialects := s.loaded.dialects.importedDialects! d.name |>.toList
+  let .isTrue mem := inferInstanceAs (Decidable (d.name ∈ s.loaded.dialects))
+    | throwError "Internal error with unknown dialect"
+  let openDialects := s.loaded.dialects.importedDialects d.name mem |>.toList
   let quoteD (d : Dialect) : CommandElabM Term := do
       let some name := s.nameMap[d.name]?
         | throwError s!"Unknown dialect {d.name}"
