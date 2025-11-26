@@ -34,6 +34,8 @@ structure SMT.Context where
   ifs : Array SMT.IF := #[]
   axms : Array Term := #[]
   tySubst: Map String TermType := []
+  datatypes : Array (LDatatype BoogieLParams.IDMeta) := #[]
+  declaredDatatypes : Array String := #[]
 deriving Repr, DecidableEq, Inhabited
 
 def SMT.Context.default : SMT.Context := {}
@@ -60,6 +62,20 @@ def SMT.Context.addSubst (ctx : SMT.Context) (newSubst: Map String TermType) : S
 
 def SMT.Context.removeSubst (ctx : SMT.Context) (newSubst: Map String TermType) : SMT.Context :=
   { ctx with tySubst := newSubst.foldl (fun acc_m p => acc_m.erase p.fst) ctx.tySubst }
+
+def SMT.Context.addDatatype (ctx : SMT.Context) (d : LDatatype BoogieLParams.IDMeta) : SMT.Context :=
+  let name := d.name
+  if ctx.declaredDatatypes.contains name then ctx
+  else { ctx with
+    datatypes := ctx.datatypes.push d,
+    declaredDatatypes := ctx.declaredDatatypes.push name
+  }
+
+def SMT.Context.hasDatatype (ctx : SMT.Context) (name : String) : Bool :=
+  ctx.declaredDatatypes.contains name
+
+def SMT.Context.getDatatype (ctx : SMT.Context) (name : String) : Option (LDatatype BoogieLParams.IDMeta) :=
+  ctx.datatypes.find? (fun d => d.name == name)
 
 abbrev BoundVars := List (String × TermType)
 
@@ -535,7 +551,7 @@ info: "; f\n(declare-fun f0 (Int Int) Int)\n; x\n(declare-const f1 Int)\n(define
 #eval toSMTTermString
    (.quant () .all (.some .int) (.bvar () 0) (.quant () .all (.some .int) (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1))
    (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
-   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [])
+   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] #[])
    (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with
@@ -553,7 +569,7 @@ info: "; f\n(declare-fun f0 (Int Int) Int)\n; x\n(declare-const f1 Int)\n(define
 #eval toSMTTermString
    (.quant () .all (.some .int) (.bvar () 0) (.quant () .all (.some .int) (.bvar () 0)
    (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
-   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [])
+   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] #[])
    (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with
