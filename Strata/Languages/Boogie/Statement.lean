@@ -91,6 +91,10 @@ abbrev Statement.call (lhs : List Expression.Ident) (pname : String) (args : Lis
 
 ---------------------------------------------------------------------
 
+abbrev Block := Imperative.Block Boogie.Expression Boogie.Command
+
+---------------------------------------------------------------------
+
 def Command.eraseTypes (c : Command) : Command :=
   match c with
   | .cmd c =>
@@ -299,5 +303,69 @@ def Statements.allVarsTrans
   (π : String → Option ProcType) (ss : Statements) := match ss with
   | [] => []
   | s :: ss => Statement.allVarsTrans π s ++ Statements.allVarsTrans π ss
+
+---------------------------------------------------------------------
+
+mutual
+partial def Block.substFvar (b : Block) (fr:Expression.Ident)
+      (to:Expression.Expr) : Block :=
+  { b with ss := List.map (fun s => Statement.substFvar s fr to) b.ss }
+
+partial def Statement.substFvar (s : Boogie.Statement)
+      (fr:Expression.Ident)
+      (to:Expression.Expr) : Statement :=
+  match s with
+  | .init lhs ty rhs metadata =>
+    .init lhs ty (Lambda.LExpr.substFvar rhs fr to) metadata
+  | .set lhs rhs metadata =>
+    .set lhs (Lambda.LExpr.substFvar rhs fr to) metadata
+  | .havoc _ _ => s
+  | .assert lbl b metadata =>
+    .assert lbl (Lambda.LExpr.substFvar b fr to) metadata
+  | .assume lbl b metadata =>
+    .assume lbl (Lambda.LExpr.substFvar b fr to) metadata
+  | .call lhs pname args metadata =>
+    .call lhs pname (List.map (Lambda.LExpr.substFvar · fr to) args) metadata
+
+  | .block lbl b metadata =>
+    .block lbl (Block.substFvar b fr to) metadata
+  | .ite cond thenb elseb metadata =>
+    .ite (Lambda.LExpr.substFvar cond fr to) (Block.substFvar thenb fr to)
+          (Block.substFvar elseb fr to) metadata
+  | .loop guard measure invariant body metadata =>
+    .loop (Lambda.LExpr.substFvar guard fr to)
+          (Option.map (Lambda.LExpr.substFvar · fr to) measure)
+          (Option.map (Lambda.LExpr.substFvar · fr to) invariant)
+          (Block.substFvar body fr to)
+          metadata
+  | .goto _ _ => s
+end
+
+---------------------------------------------------------------------
+
+mutual
+partial def Block.renameLhs (b : Block)
+    (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility) : Block :=
+  { b with ss := List.map (fun s => Statement.renameLhs s fr to) b.ss }
+
+partial def Statement.renameLhs (s : Boogie.Statement)
+    (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility)
+    : Statement :=
+  match s with
+  | .init lhs ty rhs metadata =>
+    .init (if lhs.name == fr then to else lhs) ty rhs metadata
+  | .set lhs rhs metadata =>
+    .set (if lhs.name == fr then to else lhs) rhs metadata
+  | .call lhs pname args metadata =>
+    .call (lhs.map (fun l =>
+      if l.name == fr  then to else l)) pname args metadata
+  | .block lbl b metadata =>
+    .block lbl (Block.renameLhs b fr to) metadata
+  | .havoc _ _ | .assert _ _ _ | .assume _ _ _ | .ite _ _ _ _
+  | .loop _ _ _ _ _ | .goto _ _ => s
+end
+
+---------------------------------------------------------------------
+
 
 end Boogie

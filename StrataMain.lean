@@ -7,6 +7,7 @@
 -- Executable with utilities for working with Strata files.
 import Strata.DDM.Elab
 import Strata.DDM.Ion
+import Strata.Util.IO
 
 import Strata.Languages.Python.Python
 
@@ -94,15 +95,12 @@ def readStrataIon (fm : Strata.DialectFileMap) (path : System.FilePath) (bytes :
       fileReadError path msg
 
 def readFile (fm : Strata.DialectFileMap) (path : System.FilePath) : IO (Strata.Elab.LoadedDialects × Strata.DialectOrProgram) := do
-  let bytes ←
-    match ← IO.FS.readBinFile path |>.toBaseIO with
-    | .error _ =>
-      exitFailure s!"Error reading {path}."
-    | .ok c => pure c
+  let bytes ← Strata.Util.readBinInputSource path.toString
+  let displayPath : System.FilePath := Strata.Util.displayName path.toString
   if bytes.startsWith Ion.binaryVersionMarker then
-    readStrataIon fm path bytes
+    readStrataIon fm displayPath bytes
   else
-    readStrataText fm path bytes
+    readStrataText fm displayPath bytes
 
 structure Command where
   name : String

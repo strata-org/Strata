@@ -58,15 +58,8 @@ def typeCheck (C: Boogie.Expression.TyContext) (Env : Boogie.Expression.TyEnv) (
             let Env ← TEnv.addTypeAlias { typeArgs := ts.typeArgs, name := ts.name, type := ts.type } C Env
             .ok (.type td, C, Env)
           | .data d =>
-            if C.knownTypes.containsName d.name then
-              .error f!"Cannot name datatype same as known type!\n\
-                      {d}\n\
-                      KnownTypes' names:\n\
-                      {C.knownTypes.keywords}"
-
-            -- TODO: make sure doesnt conflict with knownTypes
-            -- TODO: add LDatatype to context
-            sorry
+            let C ← C.addDatatype d
+            .ok (.type td, C, Env)
 
       | .ax a _ =>
         let (ae, Env) ← LExpr.resolve C Env a.e

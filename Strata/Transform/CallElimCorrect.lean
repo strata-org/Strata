@@ -12,6 +12,7 @@ import Strata.Languages.Boogie.Program
 import Strata.Languages.Boogie.ProgramType
 import Strata.Languages.Boogie.WF
 import Strata.DL.Lambda.Lambda
+import Strata.Transform.BoogieTransform
 import Strata.Transform.CallElim
 import Strata.DL.Imperative.CmdSemantics
 import Strata.Languages.Boogie.StatementSemantics
@@ -27,7 +28,7 @@ import Strata.DL.Util.ListUtils
 -/
 
 namespace CallElimCorrect
-open Boogie CallElim
+open Boogie Boogie.Transform CallElim
 
 theorem BoogieIdent.isGlob_isGlobOrLocl :
   PredImplies (BoogieIdent.isGlob ·) (BoogieIdent.isGlobOrLocl ·) := by
@@ -123,9 +124,9 @@ theorem getIdentTys!_store_same :
 
 theorem getIdentTy!_no_throw :
   (p.find? .var ident).isSome = true →
-  ∃ r, (runCallElimWith ident (getIdentTy! p) cs) = (Except.ok r) := by
+  ∃ r, (runWith ident (getIdentTy! p) cs).fst = (Except.ok r) := by
   intros H
-  simp [runCallElimWith, StateT.run, getIdentTy!]
+  simp [runWith, StateT.run, getIdentTy!]
   have Hsome := @getOldExprIdentTy_some p ident
   simp [H] at Hsome
   simp [Option.isSome] at Hsome
@@ -138,7 +139,7 @@ theorem getIdentTys!_no_throw :
     {idents : List Expression.Ident}
     {cs : BoogieGenState},
   (∀ ident ∈ idents, (p.find? .var ident).isSome = true) →
-  ∃ r, (runCallElimWith idents (getIdentTys! p) cs) = (Except.ok r) := by
+  ∃ r, (runWith idents (getIdentTys! p) cs).fst = (Except.ok r) := by
   intros p idents cs Hglob
   induction idents generalizing cs
   case nil =>
@@ -152,7 +153,7 @@ theorem getIdentTys!_no_throw :
     have Hhead := @getIdentTy!_no_throw _ _ cs Hsome
     cases Hhead with
     | intro T' Hok' =>
-    simp [runCallElimWith, StateT.run] at Hok'
+    simp [runWith, StateT.run] at Hok'
     split <;> simp_all
     next err cs' Hres =>
     specialize @ih cs'
@@ -167,12 +168,12 @@ theorem callElimStmtsNoExcept :
   ∀ (st : Boogie.Statement)
     (p : Boogie.Program),
     WF.WFStatementsProp p [st] →
-  ∃ sts, Except.ok sts = ((CallElim.runCallElim [st] (CallElim.callElimStmts · p)))
+  ∃ sts, Except.ok sts = ((run [st] (CallElim.callElimStmts · p)))
   -- NOTE: the generated variables will not be local, but temp. So it will not be well-formed
   -- ∧ WF.WFStatementsProp p sts
   := by
   intros st p wf
-  simp [CallElim.callElimStmts, CallElim.callElimStmt]
+  simp [Transform.run, runStmts, CallElim.callElimStmts, CallElim.callElimStmt]
   cases st with
   | block l b md => exists [.block l b md]
   | ite cd tb eb md => exists [.ite cd tb eb md]
@@ -220,7 +221,7 @@ theorem callElimStmtsNoExcept :
                       (List.map Procedure.Check.expr res'.spec.postconditions.values))).eraseDups)
                         = eq at *
                 have Hgen := @getIdentTys!_no_throw p eq (List.mapM.loop genOldExprIdent eq [] ss).snd ?_
-                simp [runCallElimWith, StateT.run] at Hgen
+                simp [runWith, StateT.run] at Hgen
                 . cases Hgen with
                   | intro tys Hgen =>
                   simp_all
@@ -2347,7 +2348,7 @@ theorem substsOldCorrect :
   simp
   exact List.Disjoint_cons_tail H.right
 
-theorem genArgExprIdent_len' : (List.mapM genArgExprIdent t s).fst.length = t.length := by
+theorem genArgExprIdent_len' : (List.mapM (fun _ => genArgExprIdent) t s).fst.length = t.length := by
   induction t generalizing s <;> simp_all
   case nil =>
     simp [pure, StateT.pure]
@@ -2357,12 +2358,12 @@ theorem genArgExprIdent_len' : (List.mapM genArgExprIdent t s).fst.length = t.le
     simp [StateT.map, Functor.map]
     apply ih
 
-theorem genArgExprIdent_len : List.mapM genArgExprIdent t s = (a, s') → t.length = a.length := by
+theorem genArgExprIdent_len : List.mapM (fun _ => genArgExprIdent) t s = (a, s') → t.length = a.length := by
   intros Hgen
-  generalize Heq : List.mapM genArgExprIdent t s = res at Hgen
+  generalize Heq : List.mapM (fun _ => genArgExprIdent) t s = res at Hgen
   cases res with
   | mk fst snd =>
-  have Heq' : (List.mapM genArgExprIdent t s).fst = fst := by simp [Heq]
+  have Heq' : (List.mapM (fun _ => genArgExprIdent) t s).fst = fst := by simp [Heq]
   cases Hgen
   simp [← Heq']
   symm
@@ -2437,7 +2438,7 @@ theorem genArgExprIdentsTrip_snd :
     simp [genArgExprIdents] at heq
     induction args <;> simp_all
     case cons h t ih =>
-    simp [bind, StateT.bind, Functor.map, StateT.map] at heq
+    simp [bind, List.replicate, StateT.bind, StateT.map] at heq
     rw [List.map_snd_zip]
     simp
     split at heq
@@ -2448,8 +2449,11 @@ theorem genArgExprIdentsTrip_snd :
     next a'' e'' heq'' =>
     cases heq
     simp_all
-    rw [genArgExprIdent_len (t:=t) (a:=a'')] <;> try assumption
-    simp_all
+    have Hlen: t.length = (List.replicate t.length ()).length := by
+      solve | simp
+    rw [Hlen]
+    rw [genArgExprIdent_len (t:=List.replicate t.length ()) (a:=a'')] <;> try assumption
+    omega
   . simp [throw, throwThe, MonadExceptOf.throw, ExceptT.mk, pure, StateT.pure] at Hgen
     cases Hgen
 
@@ -2650,7 +2654,7 @@ case cons h t ih =>
 /--! Theorems about well-formedness of BoogieGen -/
 
 theorem genArgExprIdentTemp :
-  genArgExprIdent e s = (l, s') → BoogieIdent.isTemp l :=
+  genArgExprIdent s = (l, s') → BoogieIdent.isTemp l :=
   fun Hgen => by exact genBoogieIdentTemp Hgen
 
 theorem genOutExprIdentTemp :
@@ -2669,36 +2673,36 @@ theorem genIdentGeneratedWF :
   fun Hgen => genBoogieIdentGeneratedWF Hgen
 
 theorem genArgExprIdentGeneratedWF :
-  genArgExprIdent e s = (l, s') → s'.generated = l :: s.generated :=
+  genArgExprIdent s = (l, s') → s'.generated = l :: s.generated :=
   fun Hgen => genBoogieIdentGeneratedWF Hgen
 
 theorem genArgExprIdentsGeneratedWF :
-  genArgExprIdents es s = (ls, s') →
+  genArgExprIdents n s = (ls, s') →
   ls.reverse ++ s.generated = s'.generated
   := by
   intros Hgen
   simp [genArgExprIdents] at Hgen
-  induction es generalizing s ls s' <;> simp at Hgen
-  case nil =>
+  induction n generalizing s ls s'
+  case zero =>
+    rw [List.replicate_zero] at Hgen
     simp [StateT.pure, pure] at Hgen
     cases Hgen <;> simp_all
-  case cons h t ih =>
-    simp [bind, StateT.bind, Functor.map, StateT.map, pure] at Hgen
+  case succ n =>
+    simp only [List.replicate] at Hgen
+    simp [bind, StateT.bind, pure] at Hgen
     split at Hgen
     next a s₁ heq =>
     split at Hgen
     next a' s₂ heq' =>
     cases Hgen
     have HH := genArgExprIdentGeneratedWF heq
-    specialize ih heq'
-    simp [HH] at ih
-    simp_all
+    grind
 
 theorem genArgExprIdentsTripGeneratedWF { s s' : BoogieGenState } :
   genArgExprIdentsTrip outs xs s = (Except.ok trips, s') →
   trips.unzip.1.unzip.1.reverse ++ s.generated = s'.generated := by
   intros Hgen
-  apply genArgExprIdentsGeneratedWF (es:=xs)
+  apply genArgExprIdentsGeneratedWF (n:=xs.length)
   simp [genArgExprIdentsTrip] at *
   split at Hgen
   . simp [Functor.map, ExceptT.map, bind,
@@ -2727,29 +2731,30 @@ theorem genArgExprIdentsTripGeneratedWF { s s' : BoogieGenState } :
 
 theorem genArgExprIdentWFMono :
   BoogieGenState.WF s →
-  genArgExprIdent e s = (l, s') →
+  genArgExprIdent s = (l, s') →
   BoogieGenState.WF s' :=
   fun Hgen => BoogieGenState.WFMono' Hgen
 
 theorem genArgExprIdentsWFMono :
   BoogieGenState.WF s →
-  genArgExprIdents es s = (ls, s') →
+  genArgExprIdents n s = (ls, s') →
   BoogieGenState.WF s' := by
   intros Hwf Hgen
   simp [genArgExprIdents] at Hgen
-  induction es generalizing s ls s' <;> simp at Hgen
-  case nil =>
+  induction n generalizing s ls s'
+  case zero =>
     simp [StateT.pure, pure] at Hgen
     cases Hgen <;> simp_all
-  case cons h t ih =>
-    simp [bind, StateT.bind, Functor.map, StateT.map, pure] at Hgen
+  case succ n' =>
+    simp only [List.replicate] at Hgen
+    simp [bind, StateT.bind, pure] at Hgen
     split at Hgen
     next a s₁ heq =>
     split at Hgen
     next a' s₂ heq' =>
     cases Hgen
     have HH := genArgExprIdentWFMono Hwf heq
-    exact ih HH heq'
+    grind
 
 theorem genArgExprIdentsTripWFMono :
   BoogieGenState.WF s →
@@ -2767,7 +2772,7 @@ theorem genArgExprIdentsTripWFMono :
       simp [pure, StateT.pure] at Hgen
       cases Hgen
       simp [StateT.map, Functor.map] at heq
-      generalize Hgen' : (genArgExprIdents xs s) = gen at heq
+      generalize Hgen' : (genArgExprIdents xs.length s) = gen at heq
       cases gen with
       | mk fst snd =>
       simp at heq
@@ -3454,7 +3459,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
   WF.WFProgramProp p →
   BoogieGenState.WF γ →
   (∀ v, v ∈ γ.generated ↔ ((σ v).isSome ∧ BoogieIdent.isTemp v)) →
-  (Except.ok sts, γ') = (CallElim.runCallElimWith' [st] (CallElim.callElimStmts · p) γ) →
+  (Except.ok sts, γ') = (runWith [st] (CallElim.callElimStmts · p) γ) →
   -- NOTE: The theorem does not expect the same store due to inserting new temp variables
   exists σ'',
     Inits σ' σ'' ∧
@@ -3462,7 +3467,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
     := by
   intros Hp Hgv Heval Hwfc Hwf Hwfp Hwfgen Hwfgenst Helim
   cases st <;>
-  simp [StateT.run, callElimStmts, callElimStmt,
+  simp [Transform.runWith, StateT.run, callElimStmts, runStmts, callElimStmt,
         pure, ExceptT.pure, ExceptT.mk, StateT.pure,
         bind, ExceptT.bind, ExceptT.bindCont, StateT.bind,
         ] at Helim

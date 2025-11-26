@@ -279,6 +279,8 @@ info: ok: [(type Boogie.Boundedness.Infinite Foo [_, _]
   func fooVal :  () → (Foo int bool);
   ⏎
   ⏎
+  Datatypes:
+  ⏎
   Path Conditions:
   ⏎
   ⏎

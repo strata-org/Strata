@@ -4,16 +4,19 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Transform.CallElim
-import Strata.Transform.DetToNondet
-import Strata.Languages.Boogie.StatementSemantics
+import Strata.DDM.Integration.Lean
+import Strata.DDM.Util.Format
+import Strata.Languages.Boogie.Boogie
+import Strata.Languages.Boogie.DDMTransform.Translate
 import Strata.Languages.Boogie.ProgramType
 import Strata.Languages.Boogie.ProgramWF
-import Strata.DL.Lambda.IntBoolFactory
+import Strata.Languages.Boogie.StatementSemantics
+import Strata.Transform.BoogieTransform
+import Strata.Transform.CallElim
 
-/-! # Program Transformation Examples -/
 
 open Boogie
+open Boogie.Transform
 open CallElim
 open Strata
 
@@ -192,7 +195,7 @@ def tests : List (Boogie.Program × Boogie.Program) := [
 
 def callElim (p : Boogie.Program)
   : Boogie.Program :=
-  match (runCallElim p callElim') with
+  match (run p callElim') with
   | .ok res => res
   | .error e => panic! e
 
@@ -206,30 +209,3 @@ info: true
 --#eval tests[1].snd
 
 end CallElimExamples
-
-/-! ## Deterministic-to-Nondeterministic Examples -/
-section NondetExamples
-
-open Imperative
-
-def NondetTest1 : Stmt Expression (Cmd Expression) :=
-  .ite (Boogie.true) {ss :=
-    [.cmd $ .havoc "x" ]
-    } {ss :=
-    [.cmd $ .havoc "y" ]
-    }
-
-def NondetTest1Ans : NondetStmt Expression (Cmd Expression) :=
-  .choice
-    (.seq (.cmd (.assume "true_cond" Boogie.true)) (.seq (.cmd $ .havoc "x") (.assume "skip" Imperative.HasBool.tt)))
-    (.seq (.cmd (.assume "false_cond" Boogie.false)) (.seq (.cmd $ .havoc "y") (.assume "skip" Imperative.HasBool.tt)))
-
-
--- #eval toString $ Std.format (StmtToNondetStmt NondetTest1)
--- #eval toString $ Std.format NondetTest1Ans
-
-/-- info: true -/
-#guard_msgs in
-#eval (toString $ Std.format (StmtToNondetStmt NondetTest1)) == (toString $ Std.format NondetTest1Ans)
-
-end NondetExamples

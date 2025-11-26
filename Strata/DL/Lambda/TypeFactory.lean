@@ -46,7 +46,6 @@ instance: ToFormat (LConstr IDMeta) where
   format c := f!"Name:{Format.line}{c.name}{Format.line}\
                  Args:{Format.line}{c.args}{Format.line}"
 
-
 /--
 A datatype description. `typeArgs` contains the free type variables of the given datatype.
 -/
@@ -345,25 +344,30 @@ def TypeFactory := Array (LDatatype IDMeta)
 instance: ToFormat (@TypeFactory IDMeta) where
   format f := Std.Format.joinSep f.toList f!"{Format.line}"
 
+instance : Inhabited (@TypeFactory IDMeta) where
+  default := #[]
+
 def TypeFactory.default : @TypeFactory IDMeta := #[]
 
 /--
 Generates the Factory (containing the eliminator, constructors, testers,
 and destructors for a single datatype.
 -/
-def LDatatype.genFactory {T: LExprParams} [Inhabited T.IDMeta] [BEq T.Identifier] (d: LDatatype T.IDMeta) (m: T.Metadata): @Lambda.Factory T :=
-  (elimFunc d m ::
-  d.constrs.map (fun c => constrFunc c d) ++
-  d.constrs.map (fun c => testerFunc d c m) ++
-  (d.constrs.map (fun c => destructorFuncs d c)).flatten).toArray
+def LDatatype.genFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabited T.IDMeta]  [ToFormat T.IDMeta] [BEq T.Identifier] (d: LDatatype T.IDMeta): Except Format (@Lambda.Factory T) := do
+  _ ← checkStrictPosUnif d
+  Factory.default.addFactory (
+      elimFunc d inst.default ::
+      d.constrs.map (fun c => constrFunc c d) ++
+      d.constrs.map (fun c => testerFunc d c inst.default) ++
+      (d.constrs.map (fun c => destructorFuncs d c)).flatten).toArray
 
 /--
 Generates the Factory (containing all constructor and eliminator functions) for the given `TypeFactory`
 -/
 def TypeFactory.genFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabited T.IDMeta] [ToFormat T.IDMeta] [BEq T.Identifier] (t: @TypeFactory T.IDMeta) : Except Format (@Lambda.Factory T) :=
   t.foldlM (fun f d => do
-    _ ← checkStrictPosUnif d
-    f.addFactory (d.genFactory inst.default)) Factory.default
+    let f' ← d.genFactory
+    f.addFactory f') Factory.default
 
 def TypeFactory.getType (F : @TypeFactory IDMeta) (name : String) : Option (LDatatype IDMeta) :=
   F.find? (fun d => d.name == name)
