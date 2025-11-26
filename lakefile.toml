@@ -1,6 +1,6 @@
 name = "Strata"
 version = "0.1.0"
-defaultTargets = ["Strata", "StrataMain", "StrataVerify", "StrataToCBMC"]
+defaultTargets = ["Strata", "strata", "StrataMain", "StrataVerify", "StrataToCBMC", "BoogieToGoto"]
 testDriver = "StrataTest"
 
 [[lean_lib]]
