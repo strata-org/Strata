@@ -111,16 +111,16 @@ def strLengthFunc : LFunc BoogieLParams :=
       typeArgs := [],
       inputs := [("x", mty[string])]
       output := mty[int],
-      concreteEval := some (unOpCeval (T:=BoogieLParams) String Int (.intConst (T:=BoogieLParams.mono)) (@LExpr.denoteString BoogieLParams)
-                            (fun s => (Int.ofNat (String.length s))))}
+      concreteEval := cevalMkOpt (some (unOpCeval (T:=BoogieLParams) String Int (.intConst (T:=BoogieLParams.mono)) (@LExpr.denoteString BoogieLParams)
+                            (fun s => (Int.ofNat (String.length s)))))}
 
 def strConcatFunc : LFunc BoogieLParams :=
     { name := "Str.Concat",
       typeArgs := [],
       inputs := [("x", mty[string]), ("y", mty[string])]
       output := mty[string],
-      concreteEval := some (binOpCeval String String (.strConst (T := BoogieLParams.mono))
-                            LExpr.denoteString String.append)}
+      concreteEval := cevalMkOpt (some (binOpCeval String String (.strConst (T := BoogieLParams.mono))
+                            LExpr.denoteString String.append))}
 
 def strSubstrFunc : LFunc BoogieLParams :=
     { name := "Str.Substr",

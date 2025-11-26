@@ -216,7 +216,7 @@ private def testBuiltIn : @Factory TestParams :=
                           let e1i := LExpr.denoteInt e1
                           let e2i := LExpr.denoteInt e2
                           match e1i, e2i with
-                          | some x, some y => .intConst e1.metadata (x + y)
+                          | some x, some y => some (.intConst e1.metadata (x + y))
                           | _, _ => e
                         | _ => e) },
     { name := "Int.Div",
@@ -228,7 +228,7 @@ private def testBuiltIn : @Factory TestParams :=
                             let e2i := LExpr.denoteInt e2
                             match e1i, e2i with
                             | some x, some y =>
-                              if y == 0 then e else .intConst e1.metadata (x / y)
+                              if y == 0 then none else some (.intConst e1.metadata (x / y))
                             | _, _ => e
                           | _ => e) },
     { name := "Int.Neg",
@@ -238,7 +238,7 @@ private def testBuiltIn : @Factory TestParams :=
                               | [e1] =>
                                 let e1i := LExpr.denoteInt e1
                                 match e1i with
-                                | some x => .intConst e1.metadata (- x)
+                                | some x => some (.intConst e1.metadata (- x))
                                 | _ => e
                               | _ => e) },
 
