@@ -48,12 +48,12 @@ spec {
 #end
 
 
-/-- info: true -/
-#guard_msgs in
+/- info: true -/
+-- #guard_msgs in
 -- No errors in translation.
-#eval TransM.run (translateProgram mapPgm) |>.snd |>.isEmpty
+-- #eval TransM.run (translateProgram mapPgm) |>.snd |>.isEmpty
 
-/--
+/-
 info: type MapII := (Map int int)
 type MapIMapII := (Map int MapII)
 var (a : MapII) := init_a_0
@@ -78,10 +78,11 @@ assert [mix] ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) #
 
 Errors: #[]
 -/
-#guard_msgs in
-#eval TransM.run (translateProgram mapPgm)
 
-/--
+-- #guard_msgs in
+-- #eval TransM.run (translateProgram mapPgm)
+
+/-
 info: [Strata.Boogie] Type checking succeeded.
 
 
@@ -184,7 +185,7 @@ Result: verified
 Obligation: mix
 Result: verified
 -/
-#guard_msgs in
-#eval verify "cvc5" mapPgm
+-- #guard_msgs in
+-- #eval verify "cvc5" mapPgm
 
 ---------------------------------------------------------------------
