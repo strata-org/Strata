@@ -1,4 +1,8 @@
+/-
+  Copyright Strata Contributors
 
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
 -- body is transparant despite having mutation
 val fooReassign = procedure(): int {
   var x = 0;

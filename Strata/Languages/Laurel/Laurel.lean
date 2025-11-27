@@ -204,11 +204,11 @@ structure CompositeType where
   name : Identifier
   /-
   The type hierarchy affects the results of IsType and AsType,
-  and can add checks to the postcondition of callables that extend another one
+  and can add checks to the postcondition of procedures that extend another one
   -/
   extending : List Identifier
   fields : List Field
-  instanceCallables : List Procedure
+  instanceProcedures : List Procedure
 
 structure ConstrainedType where
   name : Identifier
@@ -234,6 +234,6 @@ inductive TypeDefinition where
   | Constrainted {ConstrainedType} (ty : ConstrainedType)
 
 structure Program where
-  staticCallables : List Procedure
+  staticProcedures : List Procedure
   staticFields : List Field
   types : List TypeDefinition

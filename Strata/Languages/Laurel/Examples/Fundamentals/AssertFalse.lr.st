@@ -1,3 +1,8 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
 val foo = procedure() {
   assert true; -- pass
   assert false; -- error

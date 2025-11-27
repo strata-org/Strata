@@ -1,4 +1,8 @@
+/-
+  Copyright Strata Contributors
 
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
 val opaqueBody = procedure(x: int): (r: int)
   ensures assert 1 == 1; r >= 0
 {
