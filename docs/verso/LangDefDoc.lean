@@ -12,9 +12,13 @@ import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.StmtSemanticsSmallStep
 import Strata.DL.Imperative.NondetStmt
 import Strata.DL.Imperative.NondetStmtSemantics
+import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
 import Strata.DL.Lambda.Semantics
 import Strata.DL.Lambda.LExprTypeSpec
+
+open Lambda
+open Imperative
 
 -- This gets access to most of the manual genre
 open Verso.Genre Manual
@@ -67,16 +71,16 @@ used together, it’s reasonable to think of Strata Core as a single language th
 can be configured in various ways for different use cases.
 
 The two fundamental building blocks of Strata Core are a representation of
-functional programs called `Lambda`, and a representation of imperative programs
-called `Imperative`. The `Lambda` language is parameterized by a type system
-(TODO: and can be constrained to allow or disallow complex features such as
-lambda abstractions and quantifiers). `Lambda` is also parameterized by a set of
+functional programs (`Lambda`), and a representation of imperative programs
+(`Imperative`). The `Lambda` language is parameterized by a type system (TODO:
+and can be constrained to allow or disallow complex features such as lambda
+abstractions and quantifiers). `Lambda` is also parameterized by a set of
 built-in types and functions. The `Imperative` language is then parameterized by
-the type of expressions allowed. Currently, those expressions will almost always
-be some instantiation of `Lambda`, but they may be restricted in some way, such
-as disallowing quantifiers. Both Core building blocks are parameterized by a
-metadata type, which by default is instantiated with a map from keys to
-structured values that can contain expressions (typically from `Lambda`).
+the type of expressions it allows in conditions, assignments, and so on.
+Currently, those expressions will almost always be some instantiation of
+`Lambda`. Both Core building blocks are parameterized by a metadata type,
+which by default is instantiated with a map from keys to structured values that
+can contain expressions (typically from `Lambda`).
 
 The remainder of this document describes the current abstract syntax and
 semantics of `Lambda` and `Imperative` in detail, with direct reference to the
@@ -88,23 +92,24 @@ fundamental constructs, and this document will be updated as it does.
 
 The `Lambda` language is a standard but generic implementation of the lambda
 calculus. It is parameterized by a type for metadata and the type of types
-(which may be `Unit`). It includes the standard constructs for constants, free
-and bound variables, abstractions, and applications. In addition, it includes a
-special type of constant, an operator, to represent built-in functions. It
-extends the standard lambda calculus by allowing quantifiers (since a key use of
-the language is to write logical predicates) and includes constructors for
-if-then-else and equality functions, since those are so commonly used.
+(which may be `Unit`, to describe the untyped lambda calculus). It includes the
+standard constructs for constants, free and bound variables, abstractions, and
+applications. In addition, it includes a special type of constant, an operator,
+to represent built-in functions. It extends the standard lambda calculus by
+allowing quantifiers (since a key use of the language is to write logical
+predicates) and includes constructors for if-then-else and equality functions,
+since those are so commonly used.
 
 Although `Lambda` can be parameterized by an arbitrary type system, the Strata
 code base includes an implementation of a polymorphic Hindley-Milner type system
-(TODO: link) and inference algorithm (TODO: link) over the type `LTy`. This
-allows universal quantification over types and the use of arbitrary named type
-constructors (as well as special support for bit vector types, to allow them to
-be parameterized by size).
+(TODO: link) and inference algorithm (TODO: link) over the type `LTy` (described
+below). This allows universal quantification over types and the use of arbitrary
+named type constructors (as well as special support for bit vector types, to
+allow them to be parameterized by size).
 
 Type inference and checking with this type system takes as input expressions
-parameterized by `Unit` as the type of types, and produces expressions
-parameterized by `LTy` as output.
+parameterized by `Unit` as the type of types (TODO: is this true?), and produces
+expressions parameterized by `LTy` as output.
 
 ## Syntax
 
@@ -114,21 +119,22 @@ The syntax of lambda expressions is provided by the `LExpr` type.
 
 ## Type System
 
-Although `LExpr` can be parameterized by an arbitrary type system, Strata
-currently implements one, based on the types `LMonoTy` and `LTy`.
+Although {name LExpr}`LExpr` can be parameterized by an arbitrary type system,
+Strata currently implements one, based on the types {name LMonoTy}`LMonoTy` and
+{name LTy}`LTy`.
 
-The first, `LMonoTy` represents monomorphic types. It's a separate type because
+The first, {name LMonoTy}`LMonoTy` represents monomorphic types. It's a separate type because
 some contexts allow only monomorphic types.
 
 {docstring Lambda.LMonoTy}
 
-The `LTy` type allows monomorphic types to be wrapped in universal type
+The {name LTy}`LTy` type allows monomorphic types to be wrapped in universal type
 quantifiers, creating polymorphic types.
 
 {docstring Lambda.LTy}
 
-The relationshp between `LExpr` and `LTy` is expressed by the
-`Lambda.LExpr.HasType` relation.
+The relationshp between {name LExpr}`LExpr` and {name LTy}`LTy` is expressed by the
+{name LExpr.HasType}`HasType` relation.
 
 {docstring Lambda.LExpr.HasType}
 
@@ -136,14 +142,17 @@ The relationshp between `LExpr` and `LTy` is expressed by the
 
 ## Operational Semantics
 
-The semantics of the `LExpr` type are specified using the small-step inductive
-relation `Lambda.Step`.
+TODO: talk about `Factory`
+
+The semantics of the {name LExpr}`LExpr` type are specified in a standard way
+using the small-step inductive relation {name Lambda.Step}`Lambda.Step`.
 
 {docstring Lambda.Step}
 
-Typically we will want to talk about arbitrarily long sequences of steps, from
-an initial expression to a value. The `Lambda.StepStar` relation describes the
-reflexive, transitive closure of the `Lambda.Step` relation.
+Typically we will want to talk about arbitrarily long sequences of steps, such
+as from an initial expression to a value. The
+{name Lambda.StepStar}`Lambda.StepStar` relation describes the reflexive,
+transitive closure of the {name Lambda.Step}`Lambda.Step` relation.
 
 {docstring Lambda.StepStar}
 
@@ -155,14 +164,15 @@ an arbitrary relation? Both here and for statements?)
 The `Imperative` language is a standard core imperative calculus, parameterized
 by a type of expressions and divided into two pieces: commands and statements.
 Commands represent atomic operations that do not induce control flow (except
-possibly in the form of procedure calls that follow a stack discipline).
-Statements are parameterized by a command type and describe the control flow
-surrounding those commands. Statements exist in three forms, corresponding to
-the most common alternative representations. These forms are:
+possibly in the form of procedure calls that follow a stack discipline, though
+the current core set of commands does not include calls).  Statements are
+parameterized by a command type and describe the control flow surrounding those
+commands. Statements exist in three forms, corresponding to the most common
+alternative representations. These forms are:
 
 * Structured deterministic statements, each of which can be: a command, a
-  sequence of statements in a block, a deterministic conditional, a
-  deterministic loop with a condition, or a block exit statement.
+  sequence of statements in a block, a deterministic conditional, a deterministic
+  loop with a condition, or a block exit statement. (TODO: goto still exists)
 
 * Structured non-deterministic statements, each of which can be: a command, a
   sequence of two statements, an arbitrary choice between two statements, or an
@@ -175,6 +185,7 @@ the most common alternative representations. These forms are:
 
 Translations exist from structured deterministic statements into either
 structured non-deterministic statements or unstructured control-flow graphs.
+(TODO: point to these translations)
 
 ## Command Syntax
 
@@ -189,21 +200,22 @@ and assumptions.
 The semantics of commands are specified in terms of how they interact with a
 program state, written `σ`. A state can be applied to a variable to obtain its
 current value. And an expression `e` can be evaluated using the evaluation
-functin in a given state: `δ σ e` gives the result of evaluating `e` in state
+function in a given state: `δ σ e` gives the result of evaluating `e` in state
 `σ`. This generic description allows the details of the program state
 representation to vary, as long as it supports these operations.
 
-Given a state `σ`, the `InitState` relation describes how a variable obtains its
-initial value.
+Given a state `σ`, the {name InitState}`InitState` relation describes how a
+variable obtains its initial value.
 
 {docstring Imperative.InitState}
 
-The `UpdateState` relation then describes how a variable's value can change.
+The {name UpdateState}`UpdateState` relation then describes how a variable's
+value can change.
 
 {docstring Imperative.UpdateState}
 
 Given these two state relations, the semantics of each command is specified in
-the standard way.
+a standard way.
 
 {docstring Imperative.EvalCmd}
 
@@ -212,15 +224,31 @@ the standard way.
 Statements allow commands to be organized into standard control flow
 arrangements, including sequencing, alternation, and iteration.
 
+(TODO: say more about loop invariants, measures?)
+
 {docstring Imperative.Stmt}
 
 {docstring Imperative.Block}
 
 ## Structured Deterministic Statement Operational Semantics
 
+The semantics of the {name Stmt}`Stmt` type is defined in terms of
+*configurations*, represented by the {name Imperative.Config}`Config` type. A
+configuration pairs the statement(s) remaining to be executed with a state, and
+each step of execution goes from an initial configuration to a final configuration.
+
 {docstring Imperative.Config}
 
+The {name StepStmt}`StepStmt` type describes how each type of statement
+transforms configurations. Like with the other components of Strata, the rules
+follow standard conventions.
+
 {docstring Imperative.StepStmt}
+
+Like with `Lambda`, we typically want to talk about arbitrarily long sequences
+of steps.  The {name StepStmtStar}`Imperative.StepStmtStar` relation describes
+the reflexive, transitive closure of the {name StepStmt}`Imperative.StepStmt`
+relation.
 
 {docstring Imperative.StepStmtStar}
 
@@ -231,3 +259,23 @@ arrangements, including sequencing, alternation, and iteration.
 ## Structured Non-Deterministic Statement Operational Semantics
 
 {docstring Imperative.EvalNondetStmt}
+
+## Unstructured Control-Flow Graph Syntax
+
+TODO: fill in once it's merged
+
+## Unstructured Control-Flow Graph Semantics
+
+TODO: fill in once it's merged
+
+# Metadata
+
+TODO: describe this
+
+{docstring Imperative.MetaDataElem.Field}
+
+{docstring Imperative.MetaDataElem.Value}
+
+{docstring Imperative.MetaDataElem}
+
+{docstring Imperative.MetaData}
