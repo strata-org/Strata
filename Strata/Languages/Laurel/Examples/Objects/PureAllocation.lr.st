@@ -7,7 +7,7 @@
 composite Immutable {
   val x: int
 
-  val construct = function(): pure Immutable
+  val construct = procedure(): pure Immutable
     constructor
     requires constructing = {this}
     ensures constructing == {}
@@ -18,8 +18,8 @@ composite Immutable {
   }
 }
 
-val pureCompositeAllocator = function(): boolean {
-  var i: pure Empty = Immutable.construct(); -- can be called in a pure construct, because it is a function
+val pureCompositeAllocator = procedure(): boolean {
+  var i: pure Empty = Immutable.construct(); -- can be called in a pure context, because it is pure
   var j: pure Empty = Immutable.construct();
   i =&= j
 --  ^^^ reference equality operator '=&=' can not be used on pure types
