@@ -19,12 +19,15 @@ dialect's statement constructs.
 /--
 Configuration for small-step semantics, representing the current execution
 state. A configuration consists of:
-- The current statement being executed
+- The current statement (or list of statements) being executed
 - The current store
 -/
 inductive Config (P : PureExpr) (CmdT : Type) : Type where
+  /-- A single statement to execute next. -/
   | stmt : Stmt P CmdT → SemanticStore P → Config P CmdT
+  /-- A list of statements to execute next, in order. -/
   | stmts : List (Stmt P CmdT) → SemanticStore P → Config P CmdT
+  /-- A terminal configuration, indicating that execution has finished. -/
   | terminal : SemanticStore P → Config P CmdT
 
 /--
@@ -40,8 +43,7 @@ inductive StepStmt
   [HasBool P] [HasNot P] :
   SemanticEval P → SemanticStore P → Config P CmdT → Config P CmdT → Prop where
 
-  /-- Command: a command steps to terminal configuration if it
-  evaluates successfully -/
+  /-- A command steps to terminal configuration if it evaluates successfully -/
   | step_cmd :
     EvalCmd δ σ₀ σ c σ' →
     ----
@@ -49,13 +51,14 @@ inductive StepStmt
       (.stmt (.cmd c) σ₀)
       (.terminal σ')
 
-  /-- Block: a labeled block steps to its statement list -/
+  /-- A labeled block steps to its statement list. -/
   | step_block :
     StepStmt P EvalCmd δ σ₀
       (.stmt (.block _ ⟨ss⟩ _) σ)
       (.stmts ss σ)
 
-  /-- Conditional (true): if condition evaluates to true, step to then-branch -/
+  /-- If the condition of an `ite` statement evaluates to true, step to the then
+  branch. -/
   | step_ite_true :
     δ σ₀ σ c = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
@@ -64,7 +67,8 @@ inductive StepStmt
       (.stmt (.ite c ⟨tss⟩ ⟨ess⟩ _) σ)
       (.stmts tss σ)
 
-  /-- Conditional (false): if condition evaluates to false, step to else-branch -/
+  /-- If the condition of an `ite` statement evaluates to false, step to the else
+  branch. -/
   | step_ite_false :
     δ σ₀ σ c = .some HasBool.ff →
     WellFormedSemanticEvalBool δ →
@@ -73,7 +77,7 @@ inductive StepStmt
       (.stmt (.ite c ⟨tss⟩ ⟨ess⟩ _) σ)
       (.stmts ess σ)
 
-  /-- Loop (guard true): if guard is true, execute body then loop again -/
+  /-- If a loop guard is true, execute the body and then loop again. -/
   | step_loop_enter :
     δ σ₀ σ g = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
@@ -82,7 +86,7 @@ inductive StepStmt
       (.stmt (.loop g m inv ⟨body⟩ md) σ)
       (.stmts (body ++ [.loop g m inv ⟨body⟩ md]) σ)
 
-  /-- Loop (guard false): if guard is false, terminate the loop -/
+  /-- If a loop guard is false, terminate the loop. -/
   | step_loop_exit :
     δ σ₀ σ g = .some HasBool.ff →
     WellFormedSemanticEvalBool δ →
@@ -93,14 +97,14 @@ inductive StepStmt
 
   /- Goto: not implemented, because we plan to remove it. -/
 
-  /-- Empty statement list: no statements left to execute -/
+  /-- An empty list of statements steps to `.terminal` with no state changes. -/
   | step_stmts_nil :
     StepStmt P EvalCmd δ σ₀
       (.stmts [] σ)
       (.terminal σ)
 
-  /-- Statement composition: after executing a statement, continue with
-  remaining statements -/
+  /-- To evaluate a sequence of statements, evaluate the first statement and
+  then evaluate the remaining statements in the resulting state. -/
   | step_stmt_cons :
     StepStmt P EvalCmd δ σ₀ (.stmt s σ) (.terminal σ') →
     ----
@@ -119,8 +123,14 @@ inductive StepStmtStar
   [HasVarsImp P CmdT] [HasFvar P] [HasVal P]
   [HasBool P] [HasNot P] :
   SemanticEval P → SemanticStore P → Config P CmdT → Config P CmdT → Prop where
+
+  /-- Reflexivity: a configuration `c` can evaluate to itself in zero steps. -/
   | refl :
     StepStmtStar P EvalCmd δ σ₀ c c
+
+  /-- Transitivity: if `c₁` can reach `c₂` in some number of steps and `c₂` can
+  reach `c₃` in some number of steps, `c₁` can reach `c₃` in some number of
+  steps.  -/
   | step :
     StepStmt P EvalCmd δ σ₀ c₁ c₂ →
     StepStmtStar P EvalCmd δ σ₀ c₂ c₃ →

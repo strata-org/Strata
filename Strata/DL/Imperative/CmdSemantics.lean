@@ -235,10 +235,15 @@ def WellFormedSemanticEvalVar {P : PureExpr} [HasFvar P] (δ : SemanticEval P)
 
 def WellFormedSemanticEvalExprCongr {P : PureExpr} [HasVarsPure P P.Expr] (δ : SemanticEval P)
     : Prop := ∀ e σ₀ σ σ', (∀ x ∈ HasVarsPure.getVars e, σ x = σ' x) → δ σ₀ σ e = δ σ₀ σ' e
+
 /--
-An inductive rule for state update.
+Abstract variable update.
+
+This does not specify how `σ` is represented, only what it maps each variable to.
 -/
 inductive UpdateState : SemanticStore P → P.Ident → P.Expr → SemanticStore P → Prop where
+  /-- The state `σ'` is be equivalent to `σ` except at `x`, where it maps to
+  `v`. Requires that `x` mapped to something beforehand. -/
   | update :
     σ x = .some v' →
     σ' x = .some v →
@@ -247,9 +252,13 @@ inductive UpdateState : SemanticStore P → P.Ident → P.Expr → SemanticStore
     UpdateState σ x v σ'
 
 /--
-An inductive rule for state init.
+Abtract variable initialization.
+
+This does not specify how `σ` is represented, only what it maps each variable to.
 -/
 inductive InitState : SemanticStore P → P.Ident → P.Expr → SemanticStore P → Prop where
+  /-- The state `σ'` is be equivalent to `σ` except at `x`, where it maps to
+  `v`. Requires that `x` mapped to nothing beforehand. -/
   | init :
     σ x = none →
     σ' x = .some v →
@@ -258,11 +267,12 @@ inductive InitState : SemanticStore P → P.Ident → P.Expr → SemanticStore P
     InitState σ x v σ'
 
 /--
-An inductively-defined operational semantics that depends on
-environment lookup and evaluation functions for expressions.
+An inductively-defined operational semantics for `Cmd` that depends on variable
+lookup (`σ`) and expression evaluation (`δ`) functions.
 -/
 inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
   SemanticEval P → SemanticStore P → SemanticStore P → Cmd P → SemanticStore P → Prop where
+  /-- If `e` evaluates to a value `v`, initialize `x` according to `InitState`. -/
   | eval_init :
     δ σ₀ σ e = .some v →
     InitState P σ x v σ' →
@@ -270,6 +280,7 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
     ---
     EvalCmd δ σ₀ σ (.init x _ e _) σ'
 
+  /-- If `e` evaluates to a value `v`, assign `x` according to `UpdateState`. -/
   | eval_set :
     δ σ₀ σ e = .some v →
     UpdateState P σ x v σ' →
@@ -277,18 +288,22 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
     ----
     EvalCmd δ σ₀ σ (.set x e _) σ'
 
+  /-- Assign `x` an arbitrary value `v` according to `UpdateState`. -/
   | eval_havoc :
     UpdateState P σ x v σ' →
     WellFormedSemanticEvalVar δ →
     ----
     EvalCmd δ σ₀ σ (.havoc x _) σ'
 
+  /-- If `e` evaluates to true in `σ`, evaluate to the same `σ`. This semantics
+  does not have a concept of an erroneous execution. -/
   | eval_assert :
     δ σ₀ σ e = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →
     ----
     EvalCmd δ σ₀ σ (.assert _ e _) σ
 
+  /-- If `e` evaluates to true in `σ`, evaluate to the same `σ`. -/
   | eval_assume :
     δ σ₀ σ e = .some HasBool.tt →
     WellFormedSemanticEvalBool δ →

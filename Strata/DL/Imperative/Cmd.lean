@@ -28,19 +28,21 @@ variable declaration and assignment, and assertions and assumptions.
 -/
 
 /--
-A command in the Imperative dialect
+A an atomic command in the `Imperative` dialect.
+
+Commands generally don't involve control flow on their own, and are typically
+used as a parameter to `Imperative.Stmt` or other similar types.
 -/
 inductive Cmd (P : PureExpr) : Type where
-  /-- `init` defines a variable called `name` with type `ty` and
-    initial value `e`. -/
+  /-- Define a variable called `name` with type `ty` and initial value `e`. -/
   | init     (name : P.Ident) (ty : P.Ty) (e : P.Expr) (md : (MetaData P) := .empty)
-  /-- `set` assigns `e` to a pre-existing variable `name`. -/
+  /-- Assign `e` to a pre-existing variable `name`. -/
   | set      (name : P.Ident) (e : P.Expr) (md : (MetaData P) := .empty)
-  /-- `havoc` assigns a pre-existing variable `name` a random value. -/
+  /-- Assign a random value to a pre-existing variable `name`. -/
   | havoc    (name : P.Ident) (md : (MetaData P) := .empty)
-  /-- `assert` checks whether condition `b` is true. -/
+  /-- Check whether condition `b` is true, failing if not. -/
   | assert   (label : String) (b : P.Expr) (md : (MetaData P) := .empty)
-  /-- `assume` constrains execution by adding assumption `b`. -/
+  /-- Constrain execution to the states in which `b` is true. -/
   | assume   (label : String) (b : P.Expr) (md : (MetaData P) := .empty)
 
 abbrev Cmds (P : PureExpr) := List (Cmd P)
