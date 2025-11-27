@@ -7,6 +7,7 @@
 -- Executable with utilities for working with Strata files.
 import Strata.DDM.Elab
 import Strata.DDM.Ion
+import Strata.Util.IO
 
 import Strata.Languages.Python.Python
 
@@ -94,15 +95,12 @@ def readStrataIon (fm : Strata.DialectFileMap) (path : System.FilePath) (bytes :
       fileReadError path msg
 
 def readFile (fm : Strata.DialectFileMap) (path : System.FilePath) : IO (Strata.Elab.LoadedDialects × Strata.DialectOrProgram) := do
-  let bytes ←
-    match ← IO.FS.readBinFile path |>.toBaseIO with
-    | .error _ =>
-      exitFailure s!"Error reading {path}."
-    | .ok c => pure c
+  let bytes ← Strata.Util.readBinInputSource path.toString
+  let displayPath : System.FilePath := Strata.Util.displayName path.toString
   if bytes.startsWith Ion.binaryVersionMarker then
-    readStrataIon fm path bytes
+    readStrataIon fm displayPath bytes
   else
-    readStrataText fm path bytes
+    readStrataText fm displayPath bytes
 
 structure Command where
   name : String
@@ -151,15 +149,20 @@ def diffCommand : Command where
     let ⟨_, p2⟩ ← readFile fm v[1]
     match p1, p2 with
     | .program p1, .program p2 =>
-      if p1 == p2 then return ()
-      else exitFailure "Two programs are different"
+      if p1.dialect != p2.dialect then
+        exitFailure s!"Dialects differ: {p1.dialect} and {p2.dialect}"
+        let Decidable.isTrue eq := inferInstanceAs (Decidable (p1.commands.size = p2.commands.size))
+          | exitFailure s!"Number of commands differ {p1.commands.size} and {p2.commands.size}"
+        for (c1, c2) in Array.zip p1.commands p2.commands do
+          if c1 != c2 then
+            exitFailure s!"Commands differ: {repr c1} and {repr c2}"
     | _, _ =>
       exitFailure "Cannot compare dialect def with another dialect/program."
 
-def pyAnalyzeCommand : Command where
-  name := "pyAnalyze"
+def pyTranslateCommand : Command where
+  name := "pyTranslate"
   args := [ "file" ]
-  help := "Analyze a Strata Python Ion file. Write results to stdout."
+  help := "Tranlate a Strata Python Ion file to Strata.Boogie. Write results to stdout."
   callback := fun searchPath v => do
     let (ld, pd) ← readFile searchPath v[0]
     match pd with
@@ -170,8 +173,27 @@ def pyAnalyzeCommand : Command where
     let bpgm := Strata.pythonToBoogie pgm
     let newPgm : Boogie.Program := { decls := preludePgm.decls ++ bpgm.decls }
     IO.print newPgm
+
+def pyAnalyzeCommand : Command where
+  name := "pyAnalyze"
+  args := [ "file", "verbose" ]
+  help := "Analyze a Strata Python Ion file. Write results to stdout."
+  callback := fun searchPath v => do
+    let verbose := v[1] == "1"
+    let (ld, pd) ← readFile searchPath v[0]
+    match pd with
+    | .dialect d =>
+      IO.print <| d.format ld.dialects
+    | .program pgm =>
+    if verbose then
+      IO.print pgm
+    let preludePgm := Strata.Python.Internal.Boogie.prelude
+    let bpgm := Strata.pythonToBoogie pgm
+    let newPgm : Boogie.Program := { decls := preludePgm.decls ++ bpgm.decls }
+    if verbose then
+      IO.print newPgm
     let vcResults ← EIO.toIO (fun f => IO.Error.userError (toString f))
-                        (Boogie.verify "z3" newPgm { Options.default with stopOnFirstError := false })
+                        (Boogie.verify "z3" newPgm { Options.default with stopOnFirstError := false, verbose })
     let mut s := ""
     for vcResult in vcResults do
       s := s ++ s!"\n{vcResult.obligation.label}: {Std.format vcResult.result}\n"
@@ -183,6 +205,7 @@ def commandList : List Command := [
       printCommand,
       diffCommand,
       pyAnalyzeCommand,
+      pyTranslateCommand,
     ]
 
 def commandMap : Std.HashMap String Command :=

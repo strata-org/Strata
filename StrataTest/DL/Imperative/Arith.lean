@@ -25,7 +25,7 @@ private def testProgram1 : Commands :=
 /--
 info: ok: Commands:
 init (x : Num) := (y : Num)
-#[<var x: ($__x0 : Num)>] havoc x
+havoc x
 assert [x_value_eq] ($__x0 : Num) = (y : Num)
 
 State:

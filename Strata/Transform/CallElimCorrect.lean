@@ -12,6 +12,7 @@ import Strata.Languages.Boogie.Program
 import Strata.Languages.Boogie.ProgramType
 import Strata.Languages.Boogie.WF
 import Strata.DL.Lambda.Lambda
+import Strata.Transform.BoogieTransform
 import Strata.Transform.CallElim
 import Strata.DL.Imperative.CmdSemantics
 import Strata.Languages.Boogie.StatementSemantics
@@ -27,7 +28,7 @@ import Strata.DL.Util.ListUtils
 -/
 
 namespace CallElimCorrect
-open Boogie CallElim
+open Boogie Boogie.Transform CallElim
 
 theorem BoogieIdent.isGlob_isGlobOrLocl :
   PredImplies (BoogieIdent.isGlob ·) (BoogieIdent.isGlobOrLocl ·) := by
@@ -123,9 +124,9 @@ theorem getIdentTys!_store_same :
 
 theorem getIdentTy!_no_throw :
   (p.find? .var ident).isSome = true →
-  ∃ r, (runCallElimWith ident (getIdentTy! p) cs) = (Except.ok r) := by
+  ∃ r, (runWith ident (getIdentTy! p) cs).fst = (Except.ok r) := by
   intros H
-  simp [runCallElimWith, StateT.run, getIdentTy!]
+  simp [runWith, StateT.run, getIdentTy!]
   have Hsome := @getOldExprIdentTy_some p ident
   simp [H] at Hsome
   simp [Option.isSome] at Hsome
@@ -138,7 +139,7 @@ theorem getIdentTys!_no_throw :
     {idents : List Expression.Ident}
     {cs : BoogieGenState},
   (∀ ident ∈ idents, (p.find? .var ident).isSome = true) →
-  ∃ r, (runCallElimWith idents (getIdentTys! p) cs) = (Except.ok r) := by
+  ∃ r, (runWith idents (getIdentTys! p) cs).fst = (Except.ok r) := by
   intros p idents cs Hglob
   induction idents generalizing cs
   case nil =>
@@ -152,7 +153,7 @@ theorem getIdentTys!_no_throw :
     have Hhead := @getIdentTy!_no_throw _ _ cs Hsome
     cases Hhead with
     | intro T' Hok' =>
-    simp [runCallElimWith, StateT.run] at Hok'
+    simp [runWith, StateT.run] at Hok'
     split <;> simp_all
     next err cs' Hres =>
     specialize @ih cs'
@@ -167,12 +168,12 @@ theorem callElimStmtsNoExcept :
   ∀ (st : Boogie.Statement)
     (p : Boogie.Program),
     WF.WFStatementsProp p [st] →
-  ∃ sts, Except.ok sts = ((CallElim.runCallElim [st] (CallElim.callElimStmts · p)))
+  ∃ sts, Except.ok sts = ((run [st] (CallElim.callElimStmts · p)))
   -- NOTE: the generated variables will not be local, but temp. So it will not be well-formed
   -- ∧ WF.WFStatementsProp p sts
   := by
   intros st p wf
-  simp [CallElim.callElimStmts, CallElim.callElimStmt]
+  simp [Transform.run, runStmts, CallElim.callElimStmts, CallElim.callElimStmt]
   cases st with
   | block l b md => exists [.block l b md]
   | ite cd tb eb md => exists [.ite cd tb eb md]
@@ -220,7 +221,7 @@ theorem callElimStmtsNoExcept :
                       (List.map Procedure.Check.expr res'.spec.postconditions.values))).eraseDups)
                         = eq at *
                 have Hgen := @getIdentTys!_no_throw p eq (List.mapM.loop genOldExprIdent eq [] ss).snd ?_
-                simp [runCallElimWith, StateT.run] at Hgen
+                simp [runWith, StateT.run] at Hgen
                 . cases Hgen with
                   | intro tys Hgen =>
                   simp_all
@@ -238,6 +239,7 @@ theorem callElimStmtsNoExcept :
                 exfalso
                 apply Hne
                 simp [Option.isSome] at df
+                unfold BoogieIdent.unres at *
                 split at df <;> simp_all
                 apply Hne
                 simp [← ol, Lambda.LMonoTySignature.toTrivialLTy]
@@ -253,6 +255,7 @@ theorem callElimStmtsNoExcept :
             exfalso
             apply Hne
             simp [Option.isSome] at df
+            unfold BoogieIdent.unres at *
             split at df <;> simp_all
             apply Hne
             simp [← al, Lambda.LMonoTySignature.toTrivialLTy]
@@ -266,6 +269,7 @@ theorem callElimStmtsNoExcept :
         cases wf with
         | mk wf =>
         simp [Program.Procedure.find?] at wf
+        unfold BoogieIdent.unres at *
         split at wf <;> simp_all
     . -- other case
       exfalso
@@ -299,7 +303,7 @@ theorem postconditions_subst_unwrap :
 
 theorem prepostconditions_unwrap {ps : List (BoogieLabel × Procedure.Check)} :
 post ∈ List.map Procedure.Check.expr (ListMap.values ps) →
-∃ label attr, (label, { expr := post, attr : Procedure.Check }) ∈ ps := by
+∃ label attr md, (label, { expr := post, attr := attr, md := md : Procedure.Check }) ∈ ps := by
   intros H
   induction ps
   case nil =>
@@ -312,7 +316,7 @@ post ∈ List.map Procedure.Check.expr (ListMap.values ps) →
     cases Hc.1 with
     | inl Hin =>
       simp_all
-      refine ⟨h.1, c.attr, ?_⟩
+      refine ⟨h.1, c.attr, c.md, ?_⟩
       left
       simp [← Hc, Hin]
     | inr Hin =>
@@ -321,9 +325,7 @@ post ∈ List.map Procedure.Check.expr (ListMap.values ps) →
       . simp [← Hc.2]
         refine ⟨c, ⟨Hin, rfl⟩⟩
       . cases ih with
-        | intro label ih => cases ih with
-        | intro attr ih =>
-          refine ⟨label, attr, Or.inr ih⟩
+        | intro label ih => grind
 
 theorem updatedStateIsDefinedMono :
   (σ k').isSome = true →
@@ -349,33 +351,30 @@ Imperative.WellFormedSemanticEvalVal δ →
   induction e <;> simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
   case const c | op o ty | bvar b =>
     rw [Hval]; rw [Hval]; constructor; constructor
-  case fvar n ty =>
+  case fvar m n ty =>
     simp [Hwfv]
     simp [updatedState]
     intros Heq
     simp [Heq]
     simp_all
-  case mdata info e ih =>
-    apply ((Hwfc e e σ₀ (updatedState σ k v) σ₀ σ) ?_).2.1
+  case abs m ty e ih =>
+    apply ((Hwfc e e σ₀ (updatedState σ k v) σ₀ σ) m ?_).1
     apply ih ; simp_all
-  case abs ty e ih =>
-    apply ((Hwfc e e σ₀ (updatedState σ k v) σ₀ σ) ?_).1
-    apply ih ; simp_all
-  case quant kk ty tr e trih eih =>
-    apply (((Hwfc tr tr σ₀ (updatedState σ k v) σ₀ σ) ?_).2.2 e e ?_).2.2.1
+  case quant m kk ty tr e trih eih =>
+    apply ((Hwfc tr tr σ₀ (updatedState σ k v) σ₀ σ m ?_).2 e e ?_).2.2.1
     apply trih ; simp_all
     apply eih ; simp_all
-  case app fn e fnih eih =>
-    apply (((Hwfc fn fn σ₀ (updatedState σ k v) σ₀ σ) ?_).2.2 e e ?_).1
+  case app m fn e fnih eih =>
+    apply (((Hwfc fn fn σ₀ (updatedState σ k v) σ₀ σ) m ?_).2 e e ?_).1
     apply fnih ; simp_all
     apply eih ; simp_all
-  case ite c t e cih tih eih =>
-    apply (((Hwfc t t σ₀ (updatedState σ k v) σ₀ σ) ?_).2.2 e e ?_).2.2.2 c c ?_
+  case ite m c t e cih tih eih =>
+    apply (((Hwfc t t σ₀ (updatedState σ k v) σ₀ σ) m ?_).2 e e ?_).2.2.2 c c ?_
     apply tih ; simp_all
     apply eih ; simp_all
     apply cih ; simp_all
-  case eq e1 e2 e1ih e2ih =>
-    apply (((Hwfc e1 e1 σ₀ (updatedState σ k v) σ₀ σ) ?_).2.2 e2 e2 ?_).2.1
+  case eq m e1 e2 e1ih e2ih =>
+    apply (((Hwfc e1 e1 σ₀ (updatedState σ k v) σ₀ σ) m ?_).2 e2 e2 ?_).2.1
     apply e1ih ; simp_all
     apply e2ih ; simp_all
 
@@ -632,7 +631,7 @@ theorem EvalStatementContractInitVar :
   constructor
   constructor
   . apply Imperative.EvalCmd.eval_init <;> try assumption
-    have Hwfv := Hwf (Lambda.LExpr.fvar v none) v σ₀ σ
+    have Hwfv := Hwf (Lambda.LExpr.fvar () v none) v σ₀ σ
     rw [Hwfv]; assumption
     simp [Imperative.HasFvar.getFvar]
     apply Imperative.InitState.init Hnone
@@ -1160,19 +1159,13 @@ theorem Lambda.LExpr.substFvarCorrect :
       exact Hinv
       simp [Imperative.HasFvar.getFvar]
       simp [Imperative.HasFvar.getFvar]
-  case mdata info e ih =>
+  case abs m ty e ih  =>
     simp [Boogie.WellFormedBoogieEvalCong] at Hwfc
     specialize ih Hinv
-    specialize Hwfc _ _ _ _ _ _ ih
-    have Hinfo := Hwfc.2.1
-    specialize Hinfo info
-    simp [Hinfo]
-  case abs ty e ih  =>
-    simp [Boogie.WellFormedBoogieEvalCong] at Hwfc
-    specialize ih Hinv
-    specialize Hwfc _ _ _ _ _ _ ih
-    apply Hwfc.1
-  case quant k ty tr e trih eih =>
+    have e2 := (e.substFvar fro (Lambda.LExpr.fvar () to none))
+    have Hwfcx := Hwfc e ((e.substFvar fro (Lambda.LExpr.fvar () to none))) σ₀ σ σ₀' σ' m ih |>.1
+    apply Hwfcx
+  case quant m k ty tr e trih eih =>
     simp [Boogie.WellFormedBoogieEvalCong] at Hwfc
     simp [Imperative.invStores, Imperative.substStores,
           Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
@@ -1187,12 +1180,12 @@ theorem Lambda.LExpr.substFvarCorrect :
       rw [Hinv]
       left;
       assumption
-    specialize Hwfc _ _ _ _ _ _ trih
-    have Hfun := Hwfc.2.2
+    have Hwfc := Hwfc tr (tr.substFvar fro (Lambda.LExpr.fvar () to none)) σ₀ σ σ₀' σ' m trih
+    have Hfun := Hwfc.2
     specialize Hfun _ _ eih
     have Hfun := Hfun.2.2.1
     exact (Hfun k ty)
-  case app c fn fih eih =>
+  case app m c fn fih eih =>
     simp [Boogie.WellFormedBoogieEvalCong] at Hwfc
     simp [Imperative.invStores, Imperative.substStores,
           Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
@@ -1205,12 +1198,12 @@ theorem Lambda.LExpr.substFvarCorrect :
     . intros k1 k2 Hin
       rw [Hinv]
       right; assumption
-    specialize Hwfc _ _ _ _ _ _ fih
-    have Hfun := Hwfc.2.2
+    have Hwfc := Hwfc c (c.substFvar fro (Lambda.LExpr.fvar () to none)) σ₀ σ σ₀' σ' m fih
+    have Hfun := Hwfc.2
     specialize Hfun _ _ eih
     have Hfun := Hfun.1
     exact Hfun
-  case ite c t e cih tih eih =>
+  case ite m c t e cih tih eih =>
     simp [Boogie.WellFormedBoogieEvalCong] at Hwfc
     simp [Imperative.invStores, Imperative.substStores,
           Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
@@ -1227,13 +1220,13 @@ theorem Lambda.LExpr.substFvarCorrect :
     . intros k1 k2 Hin
       rw [Hinv]
       right; right; assumption
-    specialize Hwfc _ _ _ _ _ _ tih
-    have Hfun := Hwfc.2.2
+    have Hwfc := Hwfc t (t.substFvar fro (Lambda.LExpr.fvar () to none)) σ₀ σ σ₀' σ' m tih
+    have Hfun := Hwfc.2
     specialize Hfun _ _ eih
     have Hfun := Hfun.2.2.2
     specialize Hfun _ _ cih
     exact Hfun
-  case eq e1 e2 e1ih e2ih =>
+  case eq m e1 e2 e1ih e2ih =>
     simp [Boogie.WellFormedBoogieEvalCong] at Hwfc
     simp [Imperative.invStores, Imperative.substStores,
           Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
@@ -1246,8 +1239,8 @@ theorem Lambda.LExpr.substFvarCorrect :
     . intros k1 k2 Hin
       rw [Hinv]
       right; assumption
-    specialize Hwfc _ _ _ _ _ _ e1ih
-    have Hfun := Hwfc.2.2
+    specialize Hwfc e1 (e1.substFvar fro (Lambda.LExpr.fvar () to none)) σ₀ σ σ₀' σ' m e1ih
+    have Hfun := Hwfc.2
     specialize Hfun _ _ e2ih
     have Hfun := Hfun.2.1
     exact Hfun
@@ -1265,28 +1258,21 @@ theorem Lambda.LExpr.substFvarsCorrectZero :
     rw [Hwfvl.2]
     constructor
     constructor
-  case fvar name ty =>
+  case fvar m name ty =>
     simp [Imperative.WellFormedSemanticEvalVar] at Hwfvr
-    specialize Hwfvr (Lambda.LExpr.fvar name ty) name
+    specialize Hwfvr (Lambda.LExpr.fvar m name ty) name
     rw [Hwfvr]
     rw [Hwfvr]
     rw [Hinv]
     simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars]
     simp [Imperative.HasFvar.getFvar]
     simp [Imperative.HasFvar.getFvar]
-  case mdata info e ih =>
+  case abs m ty e ih  =>
     simp [Boogie.WellFormedBoogieEvalCong] at Hwfc
     specialize ih Hinv
-    specialize Hwfc _ _ _ _ _ _ ih
-    have Hinfo := Hwfc.2.1
-    specialize Hinfo info
-    simp [Hinfo]
-  case abs ty e ih  =>
-    simp [Boogie.WellFormedBoogieEvalCong] at Hwfc
-    specialize ih Hinv
-    specialize Hwfc _ _ _ _ _ _ ih
+    have Hwfc := Hwfc e e σ₀ σ σ₀' σ' m ih
     apply Hwfc.1
-  case quant k ty tr e trih eih =>
+  case quant m k ty tr e trih eih =>
     simp [Boogie.WellFormedBoogieEvalCong] at Hwfc
     simp [Imperative.invStores, Imperative.substStores,
           Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
@@ -1299,12 +1285,12 @@ theorem Lambda.LExpr.substFvarsCorrectZero :
     . intros k1 k2 Hin
       rw [Hinv]
       right; assumption
-    specialize Hwfc _ _ _ _ _ _ trih
-    have Hfun := Hwfc.2.2
+    have Hwfc := Hwfc tr tr σ₀ σ σ₀' σ' m trih
+    have Hfun := Hwfc.2
     specialize Hfun _ _ eih
     have Hfun := Hfun.2.2.1
     exact (Hfun k ty)
-  case app c fn fih eih =>
+  case app m fn e fih eih =>
     simp [Boogie.WellFormedBoogieEvalCong] at Hwfc
     simp [Imperative.invStores, Imperative.substStores,
           Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
@@ -1317,12 +1303,12 @@ theorem Lambda.LExpr.substFvarsCorrectZero :
     . intros k1 k2 Hin
       rw [Hinv]
       right; assumption
-    specialize Hwfc _ _ _ _ _ _ fih
-    have Hfun := Hwfc.2.2
+    have Hwfc := Hwfc fn fn σ₀ σ σ₀' σ' m fih
+    have Hfun := Hwfc.2
     specialize Hfun _ _ eih
     have Hfun := Hfun.1
     exact Hfun
-  case ite c t e cih tih eih =>
+  case ite m c t e cih tih eih =>
     simp [Boogie.WellFormedBoogieEvalCong] at Hwfc
     simp [Imperative.invStores, Imperative.substStores,
           Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
@@ -1339,13 +1325,13 @@ theorem Lambda.LExpr.substFvarsCorrectZero :
     . intros k1 k2 Hin
       rw [Hinv]
       right; right; assumption
-    specialize Hwfc _ _ _ _ _ _ tih
-    have Hfun := Hwfc.2.2
+    have Hwfc := Hwfc t t  σ₀ σ σ₀' σ' m tih
+    have Hfun := Hwfc.2
     specialize Hfun _ _ eih
     have Hfun := Hfun.2.2.2
     specialize Hfun _ _ cih
     exact Hfun
-  case eq e1 e2 e1ih e2ih =>
+  case eq m e1 e2 e1ih e2ih =>
     simp [Boogie.WellFormedBoogieEvalCong] at Hwfc
     simp [Imperative.invStores, Imperative.substStores,
           Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
@@ -1358,8 +1344,8 @@ theorem Lambda.LExpr.substFvarsCorrectZero :
     . intros k1 k2 Hin
       rw [Hinv]
       right; assumption
-    specialize Hwfc _ _ _ _ _ _ e1ih
-    have Hfun := Hwfc.2.2
+    have Hwfc := Hwfc e1 e1 σ₀ σ σ₀' σ' m e1ih
+    have Hfun := Hwfc.2
     specialize Hfun _ _ e2ih
     have Hfun := Hfun.2.1
     exact Hfun
@@ -1814,24 +1800,15 @@ theorem substOldCorrect :
     exact name
     simp [Imperative.HasFvar.getFvar]
     simp [Imperative.HasFvar.getFvar]
-  case mdata info e ih =>
-    simp [Boogie.WellFormedBoogieEvalCong] at Hwfc
-    cases Hnorm with
-    | mdata Hnorm =>
-    specialize ih Hnorm Hinv
-    specialize Hwfc _ _ _ _ _ _ ih
-    have Hinfo := Hwfc.2.1
-    specialize Hinfo info
-    simp [Hinfo]
-  case abs ty e ih  =>
+  case abs m ty e ih  =>
     simp [Boogie.WellFormedBoogieEvalCong] at Hwfc
     cases Hnorm with
     | abs Hnorm =>
     specialize ih Hnorm
     specialize ih Hinv
-    specialize Hwfc _ _ _ _ _ _ ih
+    have Hwfc := Hwfc e (OldExpressions.substOld fro (createFvar to) e) σ₀ σ σ₀' σ m ih
     apply Hwfc.1
-  case quant k ty tr e trih eih =>
+  case quant m k ty tr e trih eih =>
     simp [Boogie.WellFormedBoogieEvalCong] at Hwfc
     cases Hnorm with
     | quant Ht He =>
@@ -1849,12 +1826,12 @@ theorem substOldCorrect :
             List.app_removeAll,
             List.zip_append]
       right; assumption
-    specialize Hwfc _ _ _ _ _ _ trih
-    have Hfun := Hwfc.2.2
+    have Hwfc := Hwfc tr (OldExpressions.substOld fro (createFvar to) tr) σ₀ σ σ₀' σ m trih
+    have Hfun := Hwfc.2
     specialize Hfun _ _ eih
     have Hfun := Hfun.2.2.1
     exact (Hfun k ty)
-  case app c fn fih eih =>
+  case app m c fn fih eih =>
     cases Hnorm with
     | app Hc Hfn Hwf =>
     specialize fih Hc ?_
@@ -1895,9 +1872,9 @@ theorem substOldCorrect :
         cases Hwf2' with
         | intro σ₁ Hwf2' =>
         by_cases Hin : fro ∈ vs
-        case pos e1 e2 ty' =>
+        case pos =>
         -- old var is modified
-          have HH := ((Hwf2.2.1 vs vs' σ₀ σ₁ σ Hwf2'.1 Hwf2'.2) fro).1 Hin
+          have HH := fun m2 mOp mVar => Hwf2.2.1 vs vs' σ₀ σ₁ σ m2 Hwf2'.1 Hwf2'.2 fro mOp mVar |>.1 Hin
           simp [OldExpressions.oldVar,
                 OldExpressions.oldExpr,
                 BoogieIdent.unres] at HH
@@ -1908,7 +1885,7 @@ theorem substOldCorrect :
           apply Hsubst
           exact List.mem_singleton.mpr rfl
           simp [Imperative.HasFvar.getFvar]
-        case neg e1 e2 ty' =>
+        case neg =>
         -- old var is not modified
           have Hup := HavocVarsUpdateStates Hwf2'.1
           cases Hup with
@@ -1918,7 +1895,7 @@ theorem substOldCorrect :
           | intro bs Hinit =>
           have Hsubst' := substStoresUpdatesInv' ?_ Hsubst Hup
           have Hsubst'' := substStoresInitsInv' ?_ Hsubst' Hinit
-          . have HH := ((Hwf2.2.1 _ _ _ _ _ Hwf2'.1 Hwf2'.2) fro).2 Hin
+          . have HH := fun m2 mOp mVar => Hwf2.2.1 _ _ _ _ _ m2 Hwf2'.1 Hwf2'.2 fro mOp mVar |>.2 Hin
             simp [OldExpressions.oldVar,
                   OldExpressions.oldExpr,
                   BoogieIdent.unres] at HH
@@ -1941,18 +1918,27 @@ theorem substOldCorrect :
             simp [Heq] at *
             contradiction
       . -- is an old var that is not substituted, use congruence
-        specialize Hwfc _ _ _ _ _ _ fih
-        have Hfun := Hwfc.2.2
-        specialize Hfun _ _ eih
-        have Hfun := Hfun.1
-        exact Hfun
+        rename_i e1 e2 mOp ty0 mVar x ty1 h
+        simp at m mOp ty0 mVar x ty1
+        unfold WellFormedBoogieEvalCong at Hwfc
+        let eHelper: Expression.Expr := Lambda.LExpr.op m ⟨"old", Visibility.unres⟩ ty0
+        let eHelper2: Expression.Expr := Lambda.LExpr.fvar mVar x ty1
+        have Hwfc2 := Hwfc eHelper eHelper σ₀ σ σ₀' σ m
+        rw [OldExpressions.substOld] at fih
+        unfold createFvar at eih
+        rw [OldExpressions.substOld] at eih
+        have Hwfc3 := Hwfc2 fih |>.2 eHelper2 eHelper2
+        have Hwfc4 := Hwfc3 eih |>.1
+        assumption
     . -- is not an old var, use congruence
-      specialize Hwfc _ _ _ _ _ _ fih
-      have Hfun := Hwfc.2.2
+      unfold WellFormedBoogieEvalCong at Hwfc
+      let eHelper2: Expression.Expr := (OldExpressions.substOld fro (createFvar to) c)
+      have Hwfc2 := Hwfc c eHelper2 σ₀ σ σ₀' σ m fih
+      have Hfun := Hwfc2.2
       specialize Hfun _ _ eih
       have Hfun := Hfun.1
       exact Hfun
-  case ite c t e cih tih eih =>
+  case ite m c t e cih tih eih =>
     simp [Boogie.WellFormedBoogieEvalCong] at Hwfc
     cases Hnorm with
     | ite Hc Ht He =>
@@ -1977,13 +1963,16 @@ theorem substOldCorrect :
             List.app_removeAll,
             List.zip_append]
       right; right; assumption
-    specialize Hwfc _ _ _ _ _ _ tih
-    have Hfun := Hwfc.2.2
-    specialize Hfun _ _ eih
+    let tExpr: Expression.Expr := (OldExpressions.substOld fro (createFvar to) t)
+    let eExpr: Expression.Expr := (OldExpressions.substOld fro (createFvar to) e)
+    --have Hwfc2 := HWfc t tExpr
+    specialize Hwfc t tExpr σ₀ σ σ₀' σ m tih
+    have Hfun := Hwfc.2 e eExpr
+    specialize Hfun eih
     have Hfun := Hfun.2.2.2
     specialize Hfun _ _ cih
     exact Hfun
-  case eq e1 e2 e1ih e2ih =>
+  case eq m e1 e2 e1ih e2ih =>
     simp [Boogie.WellFormedBoogieEvalCong] at Hwfc
     cases Hnorm with
     | eq He1 He2 =>
@@ -2001,8 +1990,10 @@ theorem substOldCorrect :
             List.app_removeAll,
             List.zip_append]
       right; assumption
-    specialize Hwfc _ _ _ _ _ _ e1ih
-    have Hfun := Hwfc.2.2
+    let e1Expr: Expression.Expr := (OldExpressions.substOld fro (createFvar to) e1)
+    let e2Expr: Expression.Expr := (OldExpressions.substOld fro (createFvar to) e2)
+    specialize Hwfc e1 e1Expr σ₀ σ σ₀' σ m e1ih
+    have Hfun := Hwfc.2
     specialize Hfun _ _ e2ih
     have Hfun := Hfun.2.1
     exact Hfun
@@ -2196,7 +2187,7 @@ NormalizedOldExpr e →
 (extractOldExprVars e).removeAll [h] := by
   intros Hnorm
   induction Hnorm <;> simp [extractOldExprVars, createFvar, substOld] at * <;> try assumption
-  case app fn e Hnfn Hne Hwf ih1 ih2 =>
+  case app fn e m Hnfn Hne Hwf ih1 ih2 =>
     split
     . -- is old var
       next e1 e2 ty x ty =>
@@ -2210,7 +2201,10 @@ NormalizedOldExpr e →
         cases Hwf
         simp_all
         simp [BoogieIdent.unres] at HH
-      have Hnold' : ¬ IsOldPred (substOld h (Lambda.LExpr.fvar h' none) fn) := by
+        rename_i md tyy id v
+        have HH2 := HH md tyy () id v
+        simp_all
+      have Hnold' : ¬ IsOldPred (substOld h (Lambda.LExpr.fvar () h' none) fn) := by
         intros Hold
         apply Hnold
         apply substOldIsOldPred' ?_ Hold
@@ -2223,7 +2217,13 @@ NormalizedOldExpr e →
         exfalso; apply Hnold'; constructor
       . -- old expr, contradiction
         exfalso; apply Hnold'; constructor
-      split <;> simp_all
+      split
+      · rename_i x1 x2 x3 m1 id ty2 x7
+        have hI: Lambda.LExpr.op x2 ⟨"old", Visibility.unres⟩ x3 = Lambda.LExpr.op x2 ⟨"old", Visibility.unres⟩ x3 := by rfl
+        have hI2: Lambda.LExpr.fvar m1 id ty2 = Lambda.LExpr.fvar m1 id ty2 := by rfl
+        have h2 := HH x2 x3 m1 id ty2 hI hI2
+        exfalso
+        contradiction
       . -- old expr, contradiction
         exfalso; apply Hnold; constructor
       . simp [List.app_removeAll]
@@ -2256,9 +2256,9 @@ theorem substOldExpr_cons:
     unfold OldExpressions.substsOldExpr
     split <;> simp [*]
     simp_all [createOldVarsSubst, createFvar]
-    rename_i fn e _ _ H
-    generalize H1: (OldExpressions.substOld h.snd (Lambda.LExpr.fvar h.fst.fst none) fn) = fn'
-    generalize H2: (OldExpressions.substOld h.snd (Lambda.LExpr.fvar h.fst.fst none) e) = e'
+    rename_i _ fn e _ _ H
+    generalize H1: (OldExpressions.substOld h.snd (Lambda.LExpr.fvar () h.fst.fst none) fn) = fn'
+    generalize H2: (OldExpressions.substOld h.snd (Lambda.LExpr.fvar () h.fst.fst none) e) = e'
     rw (occs := [3]) [Boogie.OldExpressions.substsOldExpr.eq_def]
     simp; split
     simp_all [Map.isEmpty]; rename_i H; split at H <;> simp_all
@@ -2267,7 +2267,7 @@ theorem substOldExpr_cons:
     unfold OldExpressions.substOld at H1
     split at H1 <;> simp_all
     unfold OldExpressions.substOld at H2
-    split at H2 <;> simp_all
+    split at H2 <;> simp_all; grind
     split at H2; split at H2
     any_goals simp_all
     simp [← H2.left] at *
@@ -2348,7 +2348,7 @@ theorem substsOldCorrect :
   simp
   exact List.Disjoint_cons_tail H.right
 
-theorem genArgExprIdent_len' : (List.mapM genArgExprIdent t s).fst.length = t.length := by
+theorem genArgExprIdent_len' : (List.mapM (fun _ => genArgExprIdent) t s).fst.length = t.length := by
   induction t generalizing s <;> simp_all
   case nil =>
     simp [pure, StateT.pure]
@@ -2358,12 +2358,12 @@ theorem genArgExprIdent_len' : (List.mapM genArgExprIdent t s).fst.length = t.le
     simp [StateT.map, Functor.map]
     apply ih
 
-theorem genArgExprIdent_len : List.mapM genArgExprIdent t s = (a, s') → t.length = a.length := by
+theorem genArgExprIdent_len : List.mapM (fun _ => genArgExprIdent) t s = (a, s') → t.length = a.length := by
   intros Hgen
-  generalize Heq : List.mapM genArgExprIdent t s = res at Hgen
+  generalize Heq : List.mapM (fun _ => genArgExprIdent) t s = res at Hgen
   cases res with
   | mk fst snd =>
-  have Heq' : (List.mapM genArgExprIdent t s).fst = fst := by simp [Heq]
+  have Heq' : (List.mapM (fun _ => genArgExprIdent) t s).fst = fst := by simp [Heq]
   cases Hgen
   simp [← Heq']
   symm
@@ -2438,7 +2438,7 @@ theorem genArgExprIdentsTrip_snd :
     simp [genArgExprIdents] at heq
     induction args <;> simp_all
     case cons h t ih =>
-    simp [bind, StateT.bind, Functor.map, StateT.map] at heq
+    simp [bind, List.replicate, StateT.bind, StateT.map] at heq
     rw [List.map_snd_zip]
     simp
     split at heq
@@ -2449,8 +2449,11 @@ theorem genArgExprIdentsTrip_snd :
     next a'' e'' heq'' =>
     cases heq
     simp_all
-    rw [genArgExprIdent_len (t:=t) (a:=a'')] <;> try assumption
-    simp_all
+    have Hlen: t.length = (List.replicate t.length ()).length := by
+      solve | simp
+    rw [Hlen]
+    rw [genArgExprIdent_len (t:=List.replicate t.length ()) (a:=a'')] <;> try assumption
+    omega
   . simp [throw, throwThe, MonadExceptOf.throw, ExceptT.mk, pure, StateT.pure] at Hgen
     cases Hgen
 
@@ -2651,7 +2654,7 @@ case cons h t ih =>
 /--! Theorems about well-formedness of BoogieGen -/
 
 theorem genArgExprIdentTemp :
-  genArgExprIdent e s = (l, s') → BoogieIdent.isTemp l :=
+  genArgExprIdent s = (l, s') → BoogieIdent.isTemp l :=
   fun Hgen => by exact genBoogieIdentTemp Hgen
 
 theorem genOutExprIdentTemp :
@@ -2670,36 +2673,36 @@ theorem genIdentGeneratedWF :
   fun Hgen => genBoogieIdentGeneratedWF Hgen
 
 theorem genArgExprIdentGeneratedWF :
-  genArgExprIdent e s = (l, s') → s'.generated = l :: s.generated :=
+  genArgExprIdent s = (l, s') → s'.generated = l :: s.generated :=
   fun Hgen => genBoogieIdentGeneratedWF Hgen
 
 theorem genArgExprIdentsGeneratedWF :
-  genArgExprIdents es s = (ls, s') →
+  genArgExprIdents n s = (ls, s') →
   ls.reverse ++ s.generated = s'.generated
   := by
   intros Hgen
   simp [genArgExprIdents] at Hgen
-  induction es generalizing s ls s' <;> simp at Hgen
-  case nil =>
+  induction n generalizing s ls s'
+  case zero =>
+    rw [List.replicate_zero] at Hgen
     simp [StateT.pure, pure] at Hgen
     cases Hgen <;> simp_all
-  case cons h t ih =>
-    simp [bind, StateT.bind, Functor.map, StateT.map, pure] at Hgen
+  case succ n =>
+    simp only [List.replicate] at Hgen
+    simp [bind, StateT.bind, pure] at Hgen
     split at Hgen
     next a s₁ heq =>
     split at Hgen
     next a' s₂ heq' =>
     cases Hgen
     have HH := genArgExprIdentGeneratedWF heq
-    specialize ih heq'
-    simp [HH] at ih
-    simp_all
+    grind
 
 theorem genArgExprIdentsTripGeneratedWF { s s' : BoogieGenState } :
   genArgExprIdentsTrip outs xs s = (Except.ok trips, s') →
   trips.unzip.1.unzip.1.reverse ++ s.generated = s'.generated := by
   intros Hgen
-  apply genArgExprIdentsGeneratedWF (es:=xs)
+  apply genArgExprIdentsGeneratedWF (n:=xs.length)
   simp [genArgExprIdentsTrip] at *
   split at Hgen
   . simp [Functor.map, ExceptT.map, bind,
@@ -2728,29 +2731,30 @@ theorem genArgExprIdentsTripGeneratedWF { s s' : BoogieGenState } :
 
 theorem genArgExprIdentWFMono :
   BoogieGenState.WF s →
-  genArgExprIdent e s = (l, s') →
+  genArgExprIdent s = (l, s') →
   BoogieGenState.WF s' :=
   fun Hgen => BoogieGenState.WFMono' Hgen
 
 theorem genArgExprIdentsWFMono :
   BoogieGenState.WF s →
-  genArgExprIdents es s = (ls, s') →
+  genArgExprIdents n s = (ls, s') →
   BoogieGenState.WF s' := by
   intros Hwf Hgen
   simp [genArgExprIdents] at Hgen
-  induction es generalizing s ls s' <;> simp at Hgen
-  case nil =>
+  induction n generalizing s ls s'
+  case zero =>
     simp [StateT.pure, pure] at Hgen
     cases Hgen <;> simp_all
-  case cons h t ih =>
-    simp [bind, StateT.bind, Functor.map, StateT.map, pure] at Hgen
+  case succ n' =>
+    simp only [List.replicate] at Hgen
+    simp [bind, StateT.bind, pure] at Hgen
     split at Hgen
     next a s₁ heq =>
     split at Hgen
     next a' s₂ heq' =>
     cases Hgen
     have HH := genArgExprIdentWFMono Hwf heq
-    exact ih HH heq'
+    grind
 
 theorem genArgExprIdentsTripWFMono :
   BoogieGenState.WF s →
@@ -2768,7 +2772,7 @@ theorem genArgExprIdentsTripWFMono :
       simp [pure, StateT.pure] at Hgen
       cases Hgen
       simp [StateT.map, Functor.map] at heq
-      generalize Hgen' : (genArgExprIdents xs s) = gen at heq
+      generalize Hgen' : (genArgExprIdents xs.length s) = gen at heq
       cases gen with
       | mk fst snd =>
       simp at heq
@@ -3057,7 +3061,7 @@ theorem extractedOldExprInVars :
         exact H2
         intros x Hin
         simp_all
-  case mdata ih | abs ih =>
+  case abs ih =>
     cases Hnorm
     apply ih <;> assumption
   case quant trih eih =>
@@ -3253,12 +3257,35 @@ theorem extractedOldVarsInVars :
 open OldExpressions in
 theorem substOldPostSubset:
   (Imperative.HasVarsPure.getVars (P:=Expression)
-    (substOld h2 (Lambda.LExpr.fvar h1 ty) post)).Subset
+    (substOld h2 (Lambda.LExpr.fvar m h1 ty) post)).Subset
     (Imperative.HasVarsPure.getVars (P:=Expression) post ++ [h1]) := by
   induction post <;> simp [substOld]
-  case fvar | op | const | bvar =>
-    intros x Hin ; simp_all
-  case mdata ih | abs ih =>
+  case fvar =>
+    intros x Hin
+    rename_i m name ty2
+    simp at m
+    simp at name
+    simp at ty2
+
+    simp_all
+  case op =>
+    intros x Hin
+    rename_i m name ty2
+    simp at m
+    simp at name
+    simp at ty2
+    simp_all
+  case const =>
+    intros x Hin
+    rename_i m name
+    simp at m
+    simp_all
+  case bvar =>
+    intros x Hin
+    rename_i m d
+    simp at m
+    simp_all
+  case abs ih =>
     exact ih
   case ite cih tih eih =>
     simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
@@ -3304,6 +3331,8 @@ theorem substOldPostSubset:
     . apply List.Subset.trans
       apply trih <;> assumption
       intros x Hin
+      rename_i m1 k1 ty1 trigger1 e1
+      have assoc := List.append_assoc (Lambda.LExpr.LExpr.getVars trigger1) (Lambda.LExpr.LExpr.getVars e1) [h1]
       simp_all
       cases Hin <;> simp_all
     . apply List.Subset.trans
@@ -3325,7 +3354,7 @@ theorem substOldPostSubset:
 
 theorem substOldExprPostSubset':
   (Imperative.HasVarsPure.getVars (P:=Expression)
-    (OldExpressions.substsOldExpr [(h2, (Lambda.LExpr.fvar h1 ty))] post)).Subset
+    (OldExpressions.substsOldExpr [(h2, (Lambda.LExpr.fvar m h1 ty))] post)).Subset
     (Imperative.HasVarsPure.getVars (P:=Expression) post ++ [h1]) := by
   rw [OldExpressions.substsOldExpr_singleton]
   apply substOldPostSubset
@@ -3333,16 +3362,16 @@ theorem substOldExprPostSubset':
 theorem substOldExprPostSubset'':
   (Imperative.HasVarsPure.getVars (P:=Expression) post ++ [h1]) ⊆ S →
   (Imperative.HasVarsPure.getVars (P:=Expression)
-    (OldExpressions.substsOldExpr [(h2, (Lambda.LExpr.fvar h1 ty))] post)) ⊆ S := by
+    (OldExpressions.substsOldExpr [(h2, (Lambda.LExpr.fvar m h1 ty))] post)) ⊆ S := by
   have : (Imperative.HasVarsPure.getVars (P:=Expression)
-    (OldExpressions.substsOldExpr [(h2, (Lambda.LExpr.fvar h1 ty))] post)).Subset
+    (OldExpressions.substsOldExpr [(h2, (Lambda.LExpr.fvar m h1 ty))] post)).Subset
     (Imperative.HasVarsPure.getVars (P:=Expression) post ++ [h1]) := substOldExprPostSubset'
   apply List.Subset.trans this
 
 open OldExpressions in
 theorem substOldExprPostSubset:
   (Imperative.HasVarsPure.getVars (P:=Expression)
-    (substsOldExpr ((h2, (Lambda.LExpr.fvar h1 ty))::t) post)).Subset
+    (substsOldExpr ((h2, (Lambda.LExpr.fvar m h1 ty))::t) post)).Subset
     (Imperative.HasVarsPure.getVars (P:=Expression) (substsOldExpr t post) ++ [h1]) := by
   induction post
   any_goals (simp only [Imperative.HasVarsPure.getVars, substsOldExpr, Map.isEmpty, Bool.false_eq_true, ↓reduceIte, ite_self] at *; try apply List.subset_append_left)
@@ -3351,7 +3380,7 @@ theorem substOldExprPostSubset:
   any_goals (apply List.append_subset.mpr; constructor <;> try apply List.Subset.trans (by assumption); try apply List.append_subset.mpr; constructor)
   any_goals (apply List.append_subset.mpr; constructor)
   any_goals apply List.Subset.assoc.mp
-  any_goals (apply List.Subset.subset_app_of_or_3; simp)
+  any_goals (solve | apply List.Subset.subset_app_of_or_3; simp)
   split <;> try split
   any_goals (split <;> try split)
   any_goals split
@@ -3405,7 +3434,7 @@ theorem substsOldPostSubset:
 
     have ih := @ih post Hdisj
     have : (Imperative.HasVarsPure.getVars
-      (substsOldExpr ((h.snd, Lambda.LExpr.fvar h.1.fst none) :: List.map createOldVarsSubst.go t) post)).Subset
+      (substsOldExpr ((h.snd, Lambda.LExpr.fvar () h.1.fst none) :: List.map createOldVarsSubst.go t) post)).Subset
           ((Imperative.HasVarsPure.getVars (substsOldExpr (List.map createOldVarsSubst.go t) post)) ++ [h.1.fst]) := by
       apply substOldExprPostSubset
     apply List.Subset.trans this
@@ -3419,7 +3448,7 @@ theorem substsOldPostSubset:
 
 set_option maxHeartbeats 500000
 -- Second, the program/statement returned by callElim has the same semantics as the pre-transformation program/statement
-theorem callElimStatementCorrect :
+theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
   -- procedure lookup function is well-behaved
   (∀ pname, π pname = (Program.Procedure.find? p (.unres pname))) →
   -- all global variables in p exist in σ
@@ -3430,7 +3459,7 @@ theorem callElimStatementCorrect :
   WF.WFProgramProp p →
   BoogieGenState.WF γ →
   (∀ v, v ∈ γ.generated ↔ ((σ v).isSome ∧ BoogieIdent.isTemp v)) →
-  (Except.ok sts, γ') = (CallElim.runCallElimWith' [st] (CallElim.callElimStmts · p) γ) →
+  (Except.ok sts, γ') = (runWith [st] (CallElim.callElimStmts · p) γ) →
   -- NOTE: The theorem does not expect the same store due to inserting new temp variables
   exists σ'',
     Inits σ' σ'' ∧
@@ -3438,7 +3467,7 @@ theorem callElimStatementCorrect :
     := by
   intros Hp Hgv Heval Hwfc Hwf Hwfp Hwfgen Hwfgenst Helim
   cases st <;>
-  simp [StateT.run, callElimStmts, callElimStmt,
+  simp [Transform.runWith, StateT.run, callElimStmts, runStmts, callElimStmt,
         pure, ExceptT.pure, ExceptT.mk, StateT.pure,
         bind, ExceptT.bind, ExceptT.bindCont, StateT.bind,
         ] at Helim
@@ -3470,15 +3499,17 @@ theorem callElimStatementCorrect :
     cases Hwf with | mk Hwf =>
     simp [Option.isSome] at Hwf
     split at Hwf <;> simp_all
-    next decl' proc Hfa Harglen Houtlen Hlhsdisj Hlhs Hwfargs Hfind =>
+    next decl' proc Harglen Houtlen Hlhsdisj Hlhs Hwfargs Hfind =>
     cases Heval with | stmts_some_sem Heval Heval2 =>
     cases Heval with
     | cmd_sem Heval Hdef =>
     cases Heval with
     | call_sem lkup Hevalargs Hevalouts Hwfval Hwfvars Hwfb Hwf2 Hwf Hinitin Hinitout Hpre Hhav1 Hhav2 Hpost Hrd Hupdate =>
       next outVals argVals σA σAO σO σR p' modvals =>
+      unfold BoogieIdent.unres at Hfind
       have Hsome : (Program.Procedure.find? p procName).isSome := by simp [Hfind]
       simp [Option.isSome] at Hsome
+      unfold BoogieIdent.unres at *
       have lkup' := lkup
       split at Hsome <;> try contradiction
       next x val Hfind =>
@@ -3971,6 +4002,8 @@ theorem callElimStatementCorrect :
                         | intro label HH =>
                         cases HH with
                         | intro attr HH =>
+                        cases HH with
+                        | intro md HH =>
                         have Hwf := (List.Forall_mem_iff.mp wfpre _ HH).glvars
                         simp at Hwf
                         exact Hwf
@@ -3980,6 +4013,8 @@ theorem callElimStatementCorrect :
                     | intro label HH =>
                     cases HH with
                     | intro attr HH =>
+                    cases HH with
+                    | intro md HH =>
                     apply List.Disjoint_app.mp ⟨?_, ?_⟩
                     . apply List.PredDisjoint_Disjoint
                         (P:=(BoogieIdent.isTemp ·))
@@ -4343,6 +4378,8 @@ theorem callElimStatementCorrect :
                     | intro label HH =>
                     cases HH with
                     | intro attr HH =>
+                    cases HH with
+                    | intro md HH =>
                     have Hpost := (List.Forall_mem_iff.mp wfpost _ HH)
                     have Hlcl := List.Forall_mem_iff.mp Hpost.lvars
                     have Hgl := List.Forall_mem_iff.mp Hpost.glvars
@@ -4473,8 +4510,8 @@ theorem callElimStatementCorrect :
                                     exact UpdateStatesNotDefMonotone' Hndef Hupdate
                               . exact (List.nodup_append.mp Hgennd).2.1
                               . simp [Houttriplen]
-                          . intros vs vs' σ₀ σ₁ σ Hhav Hinit
-                            have HH := Hwf2.1 vs vs' σ₀ σ₁ σ ⟨Hhav,Hinit⟩
+                          . intros vs vs' σ₀ σ₁ σ m Hhav Hinit
+                            have HH := Hwf2.1 vs vs' σ₀ σ₁ σ m ⟨Hhav,Hinit⟩
                             apply HH
                         -- normalized
                         . apply OldExpressions.normalizeOldExprSound
@@ -4483,6 +4520,8 @@ theorem callElimStatementCorrect :
                           | intro label HH =>
                           cases HH with
                           | intro attr HH =>
+                          cases HH with
+                          | intro md HH =>
                           have Hwfpost := (List.Forall_mem_iff.mp wfpost _ HH).oldexprs
                           simp at Hwfpost
                           exact Hwfpost
@@ -4572,6 +4611,8 @@ theorem callElimStatementCorrect :
                               | intro label HH =>
                               cases HH with
                               | intro attr HH =>
+                              cases HH with
+                              | intro md HH =>
                               have Hwf := (List.Forall_mem_iff.mp wfpost _ HH).glvars
                               simp at Hwf
                               exact Hwf
@@ -4582,6 +4623,8 @@ theorem callElimStatementCorrect :
                             | intro label HH =>
                             cases HH with
                             | intro attr HH =>
+                            cases HH with
+                            | intro md HH =>
                             have Hwf := (List.Forall_mem_iff.mp wfpost _ HH).oldexprs
                             simp at Hwf
                             exact Hwf
@@ -4599,6 +4642,8 @@ theorem callElimStatementCorrect :
                         | intro label HH =>
                         cases HH with
                         | intro attr HH =>
+                        cases HH with
+                        | intro md HH =>
                         have Hwf := (List.Forall_mem_iff.mp wfpost _ HH).glvars
                         simp at Hwf
                         exact Hwf
@@ -4615,6 +4660,8 @@ theorem callElimStatementCorrect :
                         | intro label HH =>
                         cases HH with
                         | intro attr HH =>
+                        cases HH with
+                        | intro md HH =>
                         have Hwf := (List.Forall_mem_iff.mp wfpost _ HH).glvars
                         simp at Hwf
                         exact Hwf

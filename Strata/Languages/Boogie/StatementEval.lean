@@ -39,7 +39,7 @@ a `.call` statement.
 def callConditions (proc : Procedure)
                    (condType : CondType)
                    (conditions : ListMap String Procedure.Check)
-                   (subst :  Map (Lambda.IdentT Visibility) Expression.Expr) :
+                   (subst :  Map (Lambda.IdentT Lambda.LMonoTy Visibility) Expression.Expr) :
                    ListMap String Procedure.Check :=
   let names := List.map
                (fun k => s!"(Origin_{proc.header.name.name}_{condType}){k}")
@@ -48,8 +48,7 @@ def callConditions (proc : Procedure)
                 (fun p =>
                   List.foldl
                     (fun c (x, v) =>
-                      { expr := LExpr.substFvar c.expr x.fst v ,
-                        attr := c.attr})
+                      { c with expr := LExpr.substFvar c.expr x.fst v })
                     p subst)
                 conditions.values
   List.zip names exprs
@@ -75,17 +74,19 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
   | some proc =>
     -- Create a mapping from the formals to the evaluated actuals.
     let args' := List.map (fun a => E.exprEval (OldExpressions.substsOldExpr old_var_subst a)) args
-    let formal_tys := proc.header.inputs.keys.map (fun k => ((k, none) : (Lambda.IdentT Visibility)))
+    let formal_tys := proc.header.inputs.keys.map
+        (fun k => ((k, none) : (Lambda.IdentT Lambda.LMonoTy Visibility)))
     let formal_arg_subst := List.zip formal_tys args'
     -- Generate fresh variables for the LHS, and then create a mapping
     -- from the procedure's return variables to these LHS fresh
     -- variables.
     let lhs_tys :=
       lhs.map
-      (fun l => (E.exprEnv.state.findD l (none, .fvar l none)).fst)
+      (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
     let lhs_typed := lhs.zip lhs_tys
     let (lhs_fvars, E) := E.genFVars lhs_typed
-    let return_tys := proc.header.outputs.keys.map (fun k => ((k, none) : (Lambda.IdentT Visibility)))
+    let return_tys := proc.header.outputs.keys.map
+        (fun k => ((k, none) : (Lambda.IdentT Lambda.LMonoTy Visibility)))
     let return_lhs_subst := List.zip return_tys lhs_fvars
     -- The LHS fresh variables reflect the values of these variables
     -- in the post-call state.
@@ -103,7 +104,7 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
     -- reflect the post-call value of these globals.
     let modifies_tys :=
         proc.spec.modifies.map
-        (fun l => (E.exprEnv.state.findD l (none, .fvar l none)).fst)
+        (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
     let modifies_typed := proc.spec.modifies.zip modifies_tys
     let (globals_fvars, E) := E.genFVars modifies_typed
     let globals_post_subst := List.zip modifies_typed globals_fvars
@@ -115,7 +116,7 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
     let preconditions :=
         callConditions proc .Requires proc.spec.preconditions subst
     let preconditions := preconditions.map
-                            (fun (l, e) => (toString l, Procedure.Check.mk (E.exprEval e.expr) e.attr))
+                            (fun (l, e) => (toString l, Procedure.Check.mk (E.exprEval e.expr) e.attr e.md))
     -- A free precondition is not checked at call sites, which is
     -- accounted for by `ProofObligations.create` below.
     let deferred_pre := ProofObligations.create E.pathConditions preconditions
@@ -232,7 +233,7 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
             let Ewn := { Ewn with stk := orig_stk.push [] }
             let cond' := Ewn.env.exprEval cond
             match cond' with
-            | .true =>
+            | .true _ =>
               let Ewns := go' Ewn then_ss .none -- Not allowed to jump into a block
               let Ewns := Ewns.map
                               (fun (ewn : EnvWithNext) =>
@@ -240,7 +241,7 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
                                    let s' := Imperative.Stmt.ite cond' { ss := ss' } { ss := [] } md
                                    { ewn with stk := orig_stk.appendToTop [s']})
               Ewns
-            | .false =>
+            | .false _ =>
               let Ewns := go' Ewn else_ss .none -- Not allowed to jump into a block
               let Ewns := Ewns.map
                               (fun (ewn : EnvWithNext) =>
@@ -254,7 +255,7 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
               let label_false := toString (f!"<label_ite_cond_false: !{cond.eraseTypes}>")
               let path_conds_true := Ewn.env.pathConditions.push [(label_true, cond')]
               let path_conds_false := Ewn.env.pathConditions.push
-                                        [(label_false, (.ite cond' LExpr.false LExpr.true))]
+                                        [(label_false, (.ite () cond' (LExpr.false ()) (LExpr.true ())))]
               let Ewns_t := go' {Ewn with env := {Ewn.env with pathConditions := path_conds_true}} then_ss .none
               -- We empty the deferred proof obligations in the `else` path to
               -- avoid duplicate verification checks -- the deferred obligations
@@ -272,12 +273,12 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
               | _, _ =>
                 let Ewns_t := Ewns_t.map
                                   (fun (ewn : EnvWithNext) =>
-                                    let s' := Imperative.Stmt.ite LExpr.true { ss := ewn.stk.top } { ss := [] } md
+                                    let s' := Imperative.Stmt.ite (LExpr.true ()) { ss := ewn.stk.top } { ss := [] } md
                                     { ewn with env := ewn.env.popScope,
                                                stk := orig_stk.appendToTop [s']})
                 let Ewns_f := Ewns_f.map
                                   (fun (ewn : EnvWithNext) =>
-                                    let s' := Imperative.Stmt.ite LExpr.false { ss := [] } { ss := ewn.stk.top } md
+                                    let s' := Imperative.Stmt.ite (LExpr.false ()) { ss := [] } { ss := ewn.stk.top } md
                                     { ewn with env := ewn.env.popScope,
                                                stk := orig_stk.appendToTop [s']})
                 Ewns_t ++ Ewns_f

@@ -8,6 +8,7 @@ import Strata.Languages.Boogie.DDMTransform.Translate
 import Strata.Languages.Boogie.Options
 import Strata.Languages.Boogie.CallGraph
 import Strata.Languages.Boogie.SMTEncoder
+import Strata.DL.Imperative.MetaData
 import Strata.DL.Imperative.SMTUtils
 import Strata.DL.SMT.CexParser
 
@@ -45,7 +46,7 @@ open Lambda Strata.SMT
 
 -- (TODO) Use DL.Imperative.SMTUtils.
 
-abbrev CounterEx := Map (IdentT Visibility) String
+abbrev CounterEx := Map (IdentT LMonoTy Visibility) String
 
 def CounterEx.format (cex : CounterEx) : Format :=
   match cex with
@@ -60,20 +61,21 @@ instance : ToFormat CounterEx where
 /--
 Find the Id for the SMT encoding of `x`.
 -/
-def getSMTId (x : (IdentT Visibility)) (ctx : SMT.Context) (E : EncoderState) : Except Format String := do
-    match x with
-    | (var, none) => .error f!"Expected variable {var} to be annotated with a type!"
-    | (var, some ty) => do
-      let (ty', _) ← LMonoTy.toSMTType ty ctx
-      let key : Strata.SMT.UF := { id := var.name, args := [], out := ty' }
-      .ok (E.ufs[key]!)
+def getSMTId (x : (IdentT LMonoTy Visibility)) (ctx : SMT.Context) (E : EncoderState)
+    : Except Format String := do
+  match x with
+  | (var, none) => .error f!"Expected variable {var} to be annotated with a type!"
+  | (var, some ty) => do
+    let (ty', _) ← LMonoTy.toSMTType ty ctx
+    let key : Strata.SMT.UF := { id := var.name, args := [], out := ty' }
+    .ok (E.ufs[key]!)
 
 def getModel (m : String) : Except Format (List Strata.SMT.CExParser.KeyValue) := do
   let cex ← Strata.SMT.CExParser.parseCEx m
   return cex.pairs
 
 def processModel
-  (vars : List (IdentT Visibility)) (cexs : List Strata.SMT.CExParser.KeyValue)
+  (vars : List (IdentT LMonoTy Visibility)) (cexs : List Strata.SMT.CExParser.KeyValue)
   (ctx : SMT.Context) (E : EncoderState) :
   Except Format CounterEx := do
   match vars with
@@ -116,7 +118,8 @@ def runSolver (solver : String) (args : Array String) : IO String := do
   --                         stdout: {repr output.stdout}"
   return output.stdout
 
-def solverResult (vars : List (IdentT Visibility)) (ans : String) (ctx : SMT.Context) (E : EncoderState) :
+def solverResult (vars : List (IdentT LMonoTy Visibility)) (ans : String)
+    (ctx : SMT.Context) (E : EncoderState) :
   Except Format Result := do
   let pos := (ans.find (fun c => c == '\n')).byteIdx
   let verdict := (ans.take pos).trim
@@ -128,7 +131,18 @@ def solverResult (vars : List (IdentT Visibility)) (ans : String) (ctx : SMT.Con
     .ok (.sat model)
   | "unsat"   =>  .ok .unsat
   | "unknown" =>  .ok .unknown
-  | other     =>  .error other
+  | _     =>  .error ans
+
+open Imperative
+
+def formatPositionMetaData [BEq P.Ident] [ToFormat P.Expr] (md : MetaData P): Option Format := do
+  let file ← md.findElem MetaData.fileLabel
+  let line ← md.findElem MetaData.startLineLabel
+  let col ← md.findElem MetaData.startColumnLabel
+  let baseName := match file.value with
+                  | .msg m => (m.split (λ c => c == '/')).getLast!
+                  | _ => "<no file>"
+  f!"{baseName}({line.value}, {col.value})"
 
 structure VCResult where
   obligation : Imperative.ProofObligation Expression
@@ -178,7 +192,7 @@ def getSolverFlags (options : Options) (solver : String) : Array String :=
 
 def dischargeObligation
   (options : Options)
-  (vars : List (IdentT Visibility)) (smtsolver filename : String)
+  (vars : List (IdentT LMonoTy Visibility)) (smtsolver filename : String)
   (terms : List Term) (ctx : SMT.Context)
   : IO (Except Format (Result × EncoderState)) := do
   if !(← System.FilePath.isDir VC_folder_name) then
@@ -300,21 +314,27 @@ end Boogie
 
 namespace Strata
 
-def Boogie.getProgram (p : Strata.Program) : Boogie.Program × Array String :=
-  TransM.run (translateProgram p)
+open Lean.Parser
 
-def typeCheck (env : Program) (options : Options := Options.default) :
+def typeCheck (ictx : InputContext) (env : Program) (options : Options := Options.default) :
   Except Std.Format Boogie.Program := do
-  let (program, errors) := Boogie.getProgram env
+  let (program, errors) := TransM.run ictx (translateProgram env)
   if errors.isEmpty then
     -- dbg_trace f!"AST: {program}"
     Boogie.typeCheck options program
   else
     .error s!"DDM Transform Error: {repr errors}"
 
-def verify (smtsolver : String) (env : Program)
+def Boogie.getProgram
+  (p : Strata.Program)
+  (ictx : InputContext := Inhabited.default) : Boogie.Program × Array String :=
+  TransM.run ictx (translateProgram p)
+
+def verify
+    (smtsolver : String) (env : Program)
+    (ictx : InputContext := Inhabited.default)
     (options : Options := Options.default) : IO Boogie.VCResults := do
-  let (program, errors) := Boogie.getProgram env
+  let (program, errors) := Boogie.getProgram env ictx
   if errors.isEmpty then
     -- dbg_trace f!"AST: {program}"
     EIO.toIO (fun f => IO.Error.userError (toString f))
