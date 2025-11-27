@@ -5,13 +5,13 @@ import Strata.Languages.Laurel.Grammar.LaurelGrammar
 def assertFalseTest := #strata
 program LaurelMinimal;
 
-val foo = procedure() {
+procedure foo() {
   assert true;
   assert false;
   assert false;
 }
 
-val bar = procedure() {
+procedure bar() {
   assume false;
   assert true;
 }

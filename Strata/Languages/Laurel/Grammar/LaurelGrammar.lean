@@ -24,7 +24,6 @@ op assume (cond : bool) : Command => "assume " cond ";\n";
 op block (stmts : Seq Command) : Command => "{\n" stmts "}\n";
 
 // Procedure definition
-op procedure (body : Command) : Command => "procedure() " body;
-op valDecl (name : Ident, proc : Command) : Command => "val " name " = " proc "\n";
+op procedure (name : Ident, body : Command) : Command => "procedure " name "() " body "\n";
 
 #end

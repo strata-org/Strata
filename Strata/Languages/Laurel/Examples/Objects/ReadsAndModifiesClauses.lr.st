@@ -7,11 +7,11 @@ composite Container {
   var value: int
 }
 
-val permissionLessReader = procedure(c: Container): int
+procedure permissionLessReader(c: Container): int
   { c.value }
 --  ^^^^^^^ error: enclosing procedure 'permissionLessReader' does not have permission to read 'c.value'
 
-val varReader = procedure(c: Container): int
+procedure varReader(c: Container): int
   reads c
   { c.value }
 
@@ -19,15 +19,15 @@ composite ImmutableContainer {
   val value: int
 }
 
-val valReader = procedure(c: ImmutableContainer): int
+procedure valReader(c: ImmutableContainer): int
   { c.value } -- no reads clause needed because value is immutable
 
-val opaqueProcedure = procedure(c: Container): int
+procedure opaqueProcedure(c: Container): int
   reads c
   ensures true 
   { 3 }
 
-val foo = procedure(c: Container, d: Container) 
+procedure foo(c: Container, d: Container) 
 {
   var x = opaqueProcedure(c);
   modifyContainer(d);
@@ -53,7 +53,7 @@ val modifyContainerWithoutPermission(c: Container)
 }
 
 -- Pure types
-val impureTypeUser = procedure(i: pure Container, j: pure Container): boolean {
+procedure impureTypeUser(i: pure Container, j: pure Container): boolean {
   i =&= j
 --  ^^^ reference equality operator '=&=' can not be used on pure types
 }

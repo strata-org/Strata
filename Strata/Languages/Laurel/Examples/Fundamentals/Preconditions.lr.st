@@ -3,7 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-val hasRequires = procedure(x: int): (r: int)
+procedure hasRequires(x: int): (r: int)
   requires x > 2
 {
   assert x > 0; -- pass
@@ -11,7 +11,7 @@ val hasRequires = procedure(x: int): (r: int)
   x + 1
 }
 
-val fooProof = procedure() {
+procedure fooProof() {
   var x = hasRequires(1) -- fail
   var y = hasRequires(3) -- pass
 }

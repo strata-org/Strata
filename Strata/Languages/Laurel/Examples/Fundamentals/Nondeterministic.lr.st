@@ -3,13 +3,13 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-val nonDeterministic = procedure(x: int): (r: nondet int)
+procedure nonDeterministic(x: int): (r: nondet int)
   ensures r > 0
 {
   Math.abs(x) + 1
 }
 
-val fooProof = procedure() {
+procedure fooProof() {
   var x = nonDeterministic(1)
   var y = nonDeterministic(1)
   assert x > 0; -- pass
@@ -36,12 +36,12 @@ val fooProof_BodyProof = proof {
 }
 -/
 
-val nonDeterministicCaller = procedure(x: int): int
+procedure nonDeterministicCaller(x: int): int
 {
   nonDeterministic(x) -- error can not call non-deterministic procedure from deterministic one
 }
 
-val nonDeterminsticTransparant = procedure(x: int): nondet int
+procedure nonDeterminsticTransparant(x: int): nondet int
 -- error, a non-deterministic procedure must have an ensures clause: its body must be opaque
 {
   3

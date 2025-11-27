@@ -12,7 +12,7 @@ composite Immutable {
 
   invariant x + y >= 5
 
-  val construct = procedure()
+  procedure construct()
     constructor
     requires contructing == {this}
     ensures constructing == {}
@@ -23,7 +23,7 @@ composite Immutable {
   }
 }
 
-val foo = procedure() {
+procedure foo() {
   val immutable = Immutable.construct(); -- constructor instance method can be called as a static.
 }
 
@@ -53,7 +53,7 @@ composite ImmutableChainOfTwo {
   }
 }
 
-val foo2 = procedure() {
+procedure foo2() {
   val immutable = ImmutableChainOfTwo.construct();
   val same = immutable.other.other;
   assert immutable =&= same;

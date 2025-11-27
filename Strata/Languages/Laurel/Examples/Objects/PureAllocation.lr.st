@@ -7,7 +7,7 @@
 composite Immutable {
   val x: int
 
-  val construct = procedure(): pure Immutable
+  procedure construct(): pure Immutable
     constructor
     requires constructing = {this}
     ensures constructing == {}
@@ -18,7 +18,7 @@ composite Immutable {
   }
 }
 
-val pureCompositeAllocator = procedure(): boolean {
+procedure pureCompositeAllocator(): boolean {
   var i: pure Empty = Immutable.construct(); -- can be called in a pure context, because it is pure
   var j: pure Empty = Immutable.construct();
   i =&= j

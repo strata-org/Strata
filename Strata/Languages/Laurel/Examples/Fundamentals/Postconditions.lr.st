@@ -3,18 +3,18 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-val opaqueBody = procedure(x: int): (r: int)
+procedure opaqueBody(x: int): (r: int)
   ensures assert 1 == 1; r >= 0
 {
   Math.abs(x)
 }
 
-val transparantBody = procedure(x: int): int
+procedure transparantBody(x: int): int
 {
   Math.abs(x)
 }
 
-val fooProof = procedure() {
+procedure fooProof() {
   assert transparantBody(-1) == 1; -- pass
   assert opaqueBody(-1) >= 0 -- pass
   assert opaqueBody(-1) == 1; -- error
