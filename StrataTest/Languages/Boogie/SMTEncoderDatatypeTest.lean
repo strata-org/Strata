@@ -190,7 +190,7 @@ info: "(declare-datatype TestList (par (α) (\n  (Nil)\n  (Cons (TestList$ConsPr
 -- Test 8: None constructor (zero-argument)
 -- Expected output should show: (None) or similar SMT constructor application
 /--
-info: "(declare-datatype TestOption (par (α) (\n  (None)\n  (Some (TestOption$SomeProj0 α)))))\n(define-fun t0 () (TestOption Int) (None))\n"
+info: "(declare-datatype TestOption (par (α) (\n  (None)\n  (Some (TestOption$SomeProj0 α)))))\n(define-fun t0 () (TestOption Int) (as None (TestOption Int)))\n"
 -/
 #guard_msgs in
 #eval toSMTStringWithDatatypes
@@ -210,7 +210,7 @@ info: "(declare-datatype TestOption (par (α) (\n  (None)\n  (Some (TestOption$S
 -- Test 10: Cons constructor (multi-argument)
 -- Expected output should show: (Cons 1 Nil)
 /--
-info: "(declare-datatype TestList (par (α) (\n  (Nil)\n  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))\n(define-fun t0 () (TestList Int) (Nil))\n(define-fun t1 () (TestList Int) (Cons 1 t0))\n"
+info: "(declare-datatype TestList (par (α) (\n  (Nil)\n  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))\n(define-fun t0 () (TestList Int) (as Nil (TestList Int)))\n(define-fun t1 () (TestList Int) (Cons 1 t0))\n"
 -/
 #guard_msgs in
 #eval toSMTStringWithDatatypes

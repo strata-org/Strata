@@ -35,7 +35,7 @@ structure SMT.Context where
   axms : Array Term := #[]
   tySubst: Map String TermType := []
   datatypes : Array (LDatatype BoogieLParams.IDMeta) := #[]
-  -- declaredDatatypes : Array String := #[]
+  datatypeFuns : Map String (Op.Datatypes × LDatatype BoogieLParams.IDMeta × LConstr BoogieLParams.IDMeta) := Map.empty
 deriving Repr, DecidableEq, Inhabited
 
 def SMT.Context.default : SMT.Context := {}
@@ -68,7 +68,12 @@ def SMT.Context.hasDatatype (ctx : SMT.Context) (name : String) : Bool :=
 
 def SMT.Context.addDatatype (ctx : SMT.Context) (d : LDatatype BoogieLParams.IDMeta) : SMT.Context :=
   if ctx.hasDatatype d.name then ctx
-  else { ctx with datatypes := ctx.datatypes.push d }
+  else
+    let (c, i, s) := d.genFunctionMaps
+    let m := Map.union ctx.datatypeFuns (c.fmap (fun x => (.constructor, x)))
+    let m := Map.union m (i.fmap (fun x => (.tester, x)))
+    let m := Map.union m (s.fmap (fun x => (.selector, x)))
+    { ctx with datatypes := ctx.datatypes.push d, datatypeFuns := m }
 
 def SMT.Context.getDatatype (ctx : SMT.Context) (name : String) : Option (LDatatype BoogieLParams.IDMeta) :=
   ctx.datatypes.find? (fun d => d.name == name)
@@ -111,50 +116,6 @@ def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverM Unit := d
     Strata.SMT.Solver.declareDatatype d.name d.typeArgs constructors
 
 abbrev BoundVars := List (String × TermType)
-
----------------------------------------------------------------------
-
-/--
-Check if a function name matches a constructor in any declared datatype.
-Returns the datatype and constructor info if a match is found.
--/
-def isConstructor (fn : BoogieIdent) (ctx : SMT.Context)
-  : Option (LDatatype BoogieLParams.IDMeta × LConstr BoogieLParams.IDMeta) :=
-  ctx.datatypes.findSome? fun d =>
-    d.constrs.findSome? fun c =>
-      if c.name.name == fn.name then
-        some (d, c)
-      else
-        none
-
-/--
-Check if a function name matches a tester pattern `<DataType>$is<Constructor>`.
-Returns the datatype and constructor info if a match is found.
--/
-def isTester (fn : BoogieIdent) (ctx : SMT.Context)
-  : Option (LDatatype BoogieLParams.IDMeta × LConstr BoogieLParams.IDMeta) :=
-  ctx.datatypes.findSome? fun d =>
-    d.constrs.findSome? fun c =>
-      let pattern := d.name ++ "$is" ++ c.name.name
-      if fn.name == pattern then
-        some (d, c)
-      else
-        none
-
-/--
-Check if a function name matches a destructor pattern `<DataType>$<Constructor>Proj<N>`.
-Returns the datatype, constructor info, and projection index if a match is found.
--/
-def isDestructor (fn : BoogieIdent) (ctx : SMT.Context)
-  : Option (LDatatype BoogieLParams.IDMeta × LConstr BoogieLParams.IDMeta × Nat) :=
-  ctx.datatypes.findSome? fun d =>
-    d.constrs.findSome? fun c =>
-      let pre := d.name ++ "$" ++ c.name.name ++ "Proj"
-      if fn.name.take pre.length == pre then
-        let suffix := fn.name.drop pre.length
-        suffix.toNat?.bind fun idx => some (d, c, idx)
-      else
-        none
 
 ---------------------------------------------------------------------
 partial def unifyTypes (typeVars : List String) (pattern : LMonoTy) (concrete : LMonoTy) (acc : Map String LMonoTy) : Map String LMonoTy :=
@@ -327,34 +288,19 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
     | .error _ => ctx
   let (smt_outty, ctx) ← LMonoTy.toSMTType E outty ctx
 
-  -- Now check if this is a constructor (after datatypes are in context)
-  match isConstructor fn ctx with
-  | some (d, c) =>
-    -- This is a constructor - generate constructor application using datatype_constructor operator
-    -- Create a function that builds the constructor application
-    let constrApp := fun (args : List Term) (retty : TermType) =>
-      Term.app (.datatype_constructor c.name.name) args retty
-    .ok (constrApp, smt_outty, ctx)
+  match ctx.datatypeFuns.find? fn.name with
+  | some (kind, d, c) =>
+    let adtApp := fun (args : List Term) (retty : TermType) =>
+        -- For constructors and testers, use the constructor name
+        -- For selectors (destructors), use the full function name
+        let name := match kind with
+          | .selector => fn.name
+          | _ => c.name.name
+        Term.app (.datatype_op kind name) args retty
+    .ok (adtApp, smt_outty, ctx)
   | none =>
-    -- Check if this is a tester
-    match isTester fn ctx with
-    | some (d, c) =>
-      -- This is a tester - generate tester predicate using datatype_tester operator
-      let testerApp := fun (args : List Term) (retty : TermType) =>
-        Term.app (.datatype_tester c.name.name) args retty
-      .ok (testerApp, smt_outty, ctx)
-    | none =>
-      -- Check if this is a destructor
-      match isDestructor fn ctx with
-      | some (d, c, idx) =>
-        -- This is a destructor - generate selector function using datatype_selector operator
-        -- Use the exact destructor name (no transformation needed)
-        let selectorApp := fun (args : List Term) (retty : TermType) =>
-          Term.app (.datatype_selector fn.name) args retty
-        .ok (selectorApp, smt_outty, ctx)
-      | none =>
-        -- Not a constructor, tester, or destructor, proceed with normal handling
-        match E.factory.getFactoryLFunc fn.name with
+    -- Not a constructor, tester, or destructor, proceed with normal handling
+    match E.factory.getFactoryLFunc fn.name with
     | none => .error f!"Cannot find function {fn} in Boogie's Factory!"
     | some func =>
       match func.name.name with
@@ -622,10 +568,10 @@ info: "; x\n(declare-const f0 Int)\n(define-fun t0 () Bool (exists (($__bv0 Int)
    (.quant () .exist (.some .int) (LExpr.noTrigger ())
    (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
 
--- /--
--- info: "; f\n(declare-fun f0 (Int) Int)\n; x\n(declare-const f1 Int)\n(define-fun t0 () Bool (exists (($__bv0 Int)) (! (= $__bv0 f1) :pattern ((f0 $__bv0)))))\n"
--- -/
--- #guard_msgs in
+/--
+info: "; f\n(declare-fun f0 (Int) Int)\n; x\n(declare-const f1 Int)\n(define-fun t0 () Bool (exists (($__bv0 Int)) (! (= $__bv0 f1) :pattern ((f0 $__bv0)))))\n"
+-/
+#guard_msgs in
 #eval toSMTTermString
    (.quant ()  .exist (.some .int) (.app () (.fvar () "f" (.some (.arrow .int .int))) (.bvar () 0))
    (.eq () (.bvar () 0) (.fvar () "x" (.some .int))))
@@ -668,7 +614,7 @@ info: "; f\n(declare-fun f0 (Int Int) Int)\n; x\n(declare-const f1 Int)\n(define
 #eval toSMTTermString
    (.quant () .all (.some .int) (.bvar () 0) (.quant () .all (.some .int) (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1))
    (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
-   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[])
+   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] [])
    (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with
@@ -686,7 +632,7 @@ info: "; f\n(declare-fun f0 (Int Int) Int)\n; x\n(declare-const f1 Int)\n(define
 #eval toSMTTermString
    (.quant () .all (.some .int) (.bvar () 0) (.quant () .all (.some .int) (.bvar () 0)
    (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
-   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[])
+   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] [])
    (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with

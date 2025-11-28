@@ -269,6 +269,9 @@ def elimFunc [Inhabited T.IDMeta] [BEq T.Identifier] (d: LDatatype T.IDMeta) (m:
 
 -- Generating testers and destructors
 
+def testerFuncName (d: LDatatype IDMeta) (c: LConstr IDMeta) : String :=
+  d.name ++ "$is" ++ c.name.name
+
 /--
 Generate tester body (see `testerFuncs`). The body consists of
 assigning each argument of the eliminator (fun _ ... _ => b), where
@@ -289,7 +292,7 @@ and they are defined in terms of eliminators. For example:
 -/
 def testerFunc {T} [Inhabited T.IDMeta] (d: LDatatype T.IDMeta) (c: LConstr T.IDMeta) (m: T.Metadata) : LFunc T :=
   let arg := genArgName
-  {name := d.name ++ "$is" ++ c.name.name,
+  {name := testerFuncName d c,
    typeArgs := d.typeArgs,
    inputs := [(arg, dataDefault d)],
    output := .bool,
@@ -360,6 +363,20 @@ def LDatatype.genFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabite
       d.constrs.map (fun c => constrFunc c d) ++
       d.constrs.map (fun c => testerFunc d c inst.default) ++
       (d.constrs.map (fun c => destructorFuncs d c)).flatten).toArray
+
+/--
+Constructs maps of generated functions for datatype `d`: map of
+constructors, testers, and destructors in order. Each maps names to
+the datatype and constructor AST.
+-/
+def LDatatype.genFunctionMaps {T: LExprParams} [Inhabited T.IDMeta] [BEq T.Identifier] (d: LDatatype T.IDMeta) :
+  Map String (LDatatype T.IDMeta × LConstr T.IDMeta) ×
+  Map String (LDatatype T.IDMeta × LConstr T.IDMeta) ×
+  Map String (LDatatype T.IDMeta × LConstr T.IDMeta) :=
+  (Map.ofList (d.constrs.map (fun c => (c.name.name, (d, c)))),
+   Map.ofList (d.constrs.map (fun c => (testerFuncName d c, (d, c)))),
+   Map.ofList (d.constrs.map (fun c =>
+      (destructorFuncs d c).map (fun f => (f.name.name, (d, c))))).flatten)
 
 /--
 Generates the Factory (containing all constructor and eliminator functions) for the given `TypeFactory`
