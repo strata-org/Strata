@@ -152,6 +152,7 @@ def ArgF.toExpr {α} [ToExpr α] : ArgF α → Lean.Expr
 | .decimal ann e => astAnnExpr! ArgF.decimal ann (toExpr e)
 | .strlit ann e => astAnnExpr! ArgF.strlit ann (toExpr e)
 | .bytes ann a => astAnnExpr! ArgF.bytes ann (toExpr a)
+| .bool ann b => astAnnExpr! ArgF.bool ann (toExpr b)
 | .option ann a =>
   let tpe := ArgF.typeExpr α
   astAnnExpr! ArgF.option ann (optionToExpr tpe <| a.attach.map fun ⟨e, _⟩ => e.toExpr)

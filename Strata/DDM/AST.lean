@@ -176,6 +176,7 @@ inductive ArgF (α : Type) : Type where
 | type (e : TypeExprF α)
 | ident (ann : α) (i : String)
 | num (ann : α)(v : Nat)
+| bool (ann : α)(v : Bool)
 | decimal (ann : α) (v : Decimal)
 | strlit (ann : α) (i : String)
 | bytes (ann : α) (a : ByteArray)
@@ -1226,7 +1227,7 @@ partial def foldOverArgBindingSpecs {α β}
     : β :=
   match a with
   | .op op => op.foldBindingSpecs m f init
-  | .expr _ | .type _ | .cat _ | .ident .. | .num .. | .decimal .. | .bytes .. | .strlit .. => init
+  | .expr _ | .type _ | .cat _ | .ident .. | .num .. | .decimal .. | .bytes .. | .strlit .. | .bool .. => init
   | .option _ none => init
   | .option _ (some a) => foldOverArgBindingSpecs m f init a
   | .seq _ a => a.attach.foldl (init := init) fun init ⟨a, _⟩ => foldOverArgBindingSpecs m f init a

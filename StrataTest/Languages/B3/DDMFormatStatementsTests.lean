@@ -5,14 +5,13 @@
 -/
 
 import StrataTest.Languages.B3.DDMFormatTests
-import Strata.Languages.B3.DDMTransform.B3ToDDM
-import Strata.Languages.B3.DDMTransform.DDMToB3
+import Strata.Languages.B3.DDMConversion
 
 namespace B3
 
 open Std (Format)
 open Strata
-open Strata.B3DDM
+open Strata.B3CST
 
 -- Helper to strip SourceRange annotations from Statement DDM and replace with Unit
 mutual
@@ -122,7 +121,7 @@ info: B3: .assign () x (.literal () (Lambda.LConst.intConst 42))
 info: x := 42
 -/
 #guard_msgs in
-#eval roundtripStmt $ #strata program B3; x := 42 #end
+#eval roundtripStmt $ #strata program B3CST; x := 42 #end
 
 /--
 info: B3: .check () (.binaryOp () .gt (.literal () (Lambda.LConst.intConst 5)) (.literal () (Lambda.LConst.intConst 0)))
@@ -130,7 +129,7 @@ info: B3: .check () (.binaryOp () .gt (.literal () (Lambda.LConst.intConst 5)) (
 info: check 5 > 0
 -/
 #guard_msgs in
-#eval roundtripStmt $ #strata program B3; check 5 > 0 #end
+#eval roundtripStmt $ #strata program B3CST; check 5 > 0 #end
 
 /--
 info: B3: .assume () (.binaryOp () .ge (.literal () (Lambda.LConst.intConst 10)) (.literal () (Lambda.LConst.intConst 0)))
@@ -138,7 +137,7 @@ info: B3: .assume () (.binaryOp () .ge (.literal () (Lambda.LConst.intConst 10))
 info: assume 10 >= 0
 -/
 #guard_msgs in
-#eval roundtripStmt $ #strata program B3; assume 10 >= 0 #end
+#eval roundtripStmt $ #strata program B3CST; assume 10 >= 0 #end
 
 /--
 info: B3: .assert () (.binaryOp () .gt (.literal () (Lambda.LConst.intConst 5)) (.literal () (Lambda.LConst.intConst 0)))
@@ -146,7 +145,7 @@ info: B3: .assert () (.binaryOp () .gt (.literal () (Lambda.LConst.intConst 5)) 
 info: assert 5 > 0
 -/
 #guard_msgs in
-#eval roundtripStmt $ #strata program B3; assert 5 > 0 #end
+#eval roundtripStmt $ #strata program B3CST; assert 5 > 0 #end
 
 /--
 info: B3: .reach () (.binaryOp () .eq (.literal () (Lambda.LConst.intConst 5)) (.literal () (Lambda.LConst.intConst 5)))
@@ -154,7 +153,7 @@ info: B3: .reach () (.binaryOp () .eq (.literal () (Lambda.LConst.intConst 5)) (
 info: reach 5 == 5
 -/
 #guard_msgs in
-#eval roundtripStmt $ #strata program B3; reach 5 == 5 #end
+#eval roundtripStmt $ #strata program B3CST; reach 5 == 5 #end
 
 /--
 info: B3: .returnStmt ()
@@ -162,7 +161,7 @@ info: B3: .returnStmt ()
 info: return
 -/
 #guard_msgs in
-#eval roundtripStmt $ #strata program B3; return #end
+#eval roundtripStmt $ #strata program B3CST; return #end
 
 /--
 info: B3: .blockStmt () [.assign () x (.literal () (Lambda.LConst.intConst 1)), .assign () y (.literal () (Lambda.LConst.intConst 2))]
@@ -173,7 +172,7 @@ info: {
 }
 -/
 #guard_msgs in
-#eval roundtripStmt $ #strata program B3; { x := 1 y := 2 } #end
+#eval roundtripStmt $ #strata program B3CST; { x := 1 y := 2 } #end
 
 /--
 info: B3: .ifStmt () (.id () flag) (.assign () x (.literal () (Lambda.LConst.intConst 1))) (some (.blockStmt () [.assign () x (.literal () (Lambda.LConst.intConst 0))]))
@@ -186,7 +185,7 @@ else ⏎
   }
 -/
 #guard_msgs in
-#eval roundtripStmt $ #strata program B3; if flag x := 1 else { x := 0 } #end
+#eval roundtripStmt $ #strata program B3CST; if flag x := 1 else { x := 0 } #end
 
 /--
 info: B3: .loop () [] (.blockStmt () [.assign () i (.binaryOp () .add (.id () i) (.literal () (Lambda.LConst.intConst 1)))])
@@ -197,7 +196,7 @@ info: loop ⏎
 }
 -/
 #guard_msgs in
-#eval roundtripStmt $ #strata program B3; loop { i := i + 1 } #end
+#eval roundtripStmt $ #strata program B3CST; loop { i := i + 1 } #end
 
 /--
 info: B3: .loop () [.binaryOp () .ge (.id () i) (.literal () (Lambda.LConst.intConst 0)), .binaryOp () .le (.id () i) (.id () n)] (.blockStmt () [.assign () i (.binaryOp () .add (.id () i) (.literal () (Lambda.LConst.intConst 1)))])
@@ -210,7 +209,7 @@ info: loop
 }
 -/
 #guard_msgs in
-#eval roundtripStmt $ #strata program B3; loop invariant i >= 0 invariant i <= n { i := i + 1 } #end
+#eval roundtripStmt $ #strata program B3CST; loop invariant i >= 0 invariant i <= n { i := i + 1 } #end
 
 /--
 info: B3: .exit () (some "loop_start")
@@ -218,7 +217,7 @@ info: B3: .exit () (some "loop_start")
 info: exit loop_start
 -/
 #guard_msgs in
-#eval roundtripStmt $ #strata program B3; exit loop_start #end
+#eval roundtripStmt $ #strata program B3CST; exit loop_start #end
 
 /--
 info: B3: .labeledStmt () "loop_start" (.assign () x (.literal () (Lambda.LConst.intConst 0)))
@@ -227,7 +226,7 @@ info: loop_start: ⏎
 x := 0
 -/
 #guard_msgs in
-#eval roundtripStmt $ #strata program B3; loop_start: x := 0 #end
+#eval roundtripStmt $ #strata program B3CST; loop_start: x := 0 #end
 
 /--
 info: B3: .probe () "debug_point"
@@ -235,7 +234,7 @@ info: B3: .probe () "debug_point"
 info: probe debug_point
 -/
 #guard_msgs in
-#eval roundtripStmt $ #strata program B3; probe debug_point #end
+#eval roundtripStmt $ #strata program B3CST; probe debug_point #end
 
 /--
 info: B3: .varDecl () x (some "int") none none
@@ -243,7 +242,7 @@ info: B3: .varDecl () x (some "int") none none
 info: var x : int
 -/
 #guard_msgs in
-#eval roundtripStmt $ #strata program B3; var x : int #end
+#eval roundtripStmt $ #strata program B3CST; var x : int #end
 
 /--
 info: B3: .varDecl () x (some "bool") none (some (.literal () (Lambda.LConst.boolConst true)))
@@ -251,7 +250,7 @@ info: B3: .varDecl () x (some "bool") none (some (.literal () (Lambda.LConst.boo
 info: var x : bool := true
 -/
 #guard_msgs in
-#eval roundtripStmt $ #strata program B3; val x : bool := true #end
+#eval roundtripStmt $ #strata program B3CST; val x : bool := true #end
 
 /--
 info: B3: .varDecl () y (some "bool") none (some (.literal () (Lambda.LConst.boolConst true)))
@@ -259,7 +258,7 @@ info: B3: .varDecl () y (some "bool") none (some (.literal () (Lambda.LConst.boo
 info: var y : bool := true
 -/
 #guard_msgs in
-#eval roundtripStmt $ #strata program B3; var y : bool := true #end
+#eval roundtripStmt $ #strata program B3CST; var y : bool := true #end
 
 /--
 info: B3: .varDecl () z (some "int") (some (.binaryOp () .ge (.id () z) (.literal () (Lambda.LConst.intConst 0)))) none
@@ -267,7 +266,7 @@ info: B3: .varDecl () z (some "int") (some (.binaryOp () .ge (.id () z) (.litera
 info: var z : int autoinv z >= 0
 -/
 #guard_msgs in
-#eval roundtripStmt $ #strata program B3; var z : int autoinv z >= 0 #end
+#eval roundtripStmt $ #strata program B3CST; var z : int autoinv z >= 0 #end
 
 /--
 info: B3: .aForall () x "int" (.blockStmt () [.check () (.binaryOp () .ge (.id () x) (.literal () (Lambda.LConst.intConst 0)))])
@@ -278,7 +277,7 @@ info: forall x : int ⏎
 }
 -/
 #guard_msgs in
-#eval roundtripStmt $ #strata program B3; forall x : int { check x >= 0 } #end
+#eval roundtripStmt $ #strata program B3CST; forall x : int { check x >= 0 } #end
 
 /--
 info: B3: .choose () [.blockStmt () [.assign () x (.literal () (Lambda.LConst.intConst 1))], .blockStmt () [.assign () x (.literal () (Lambda.LConst.intConst 2))]]
@@ -292,7 +291,7 @@ info: choose ⏎
 }
 -/
 #guard_msgs in
-#eval roundtripStmt $ #strata program B3; choose { x := 1 } or { x := 2 } #end
+#eval roundtripStmt $ #strata program B3CST; choose { x := 1 } or { x := 2 } #end
 
 /--
 info: B3: .ifCase () [(.binaryOp () .eq (.id () x) (.literal () (Lambda.LConst.intConst 1)), .blockStmt () [.assign () y (.literal () (Lambda.LConst.intConst 10))]), (.binaryOp () .eq (.id () x) (.literal () (Lambda.LConst.intConst 2)), .blockStmt () [.assign () y (.literal () (Lambda.LConst.intConst 20))])]
@@ -308,7 +307,7 @@ case x == 2 ⏎
 }
 -/
 #guard_msgs in
-#eval roundtripStmt $ #strata program B3; if case x == 1 { y := 10 } case x == 2 { y := 20 } #end
+#eval roundtripStmt $ #strata program B3CST; if case x == 1 { y := 10 } case x == 2 { y := 20 } #end
 
 /--
 info: B3: .call () "compute" [.out result, .expr (.id () a), .expr (.id () b)]
@@ -317,7 +316,7 @@ info:
 compute(out result, a, b)
 -/
 #guard_msgs in
-#eval roundtripStmt $ #strata program B3; compute(out result, a, b) #end
+#eval roundtripStmt $ #strata program B3CST; compute(out result, a, b) #end
 
 /--
 info: B3: .call () "modify" [.inout x, .out y]
@@ -326,7 +325,7 @@ info:
 modify(inout x, out y)
 -/
 #guard_msgs in
-#eval roundtripStmt $ #strata program B3; modify(inout x, out y) #end
+#eval roundtripStmt $ #strata program B3CST; modify(inout x, out y) #end
 
 end StatementRoundtripTests
 

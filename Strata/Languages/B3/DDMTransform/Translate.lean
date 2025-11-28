@@ -100,61 +100,61 @@ instance : Inhabited TransBindings where
   default := {}
 
 instance : Inhabited (B3Stmt × TransBindings) where
-  default := (.returnStmt (), {})
+  default := (.returnStmt, {})
 
 instance : Inhabited (List B3Stmt × TransBindings) where
   default := ([], {})
 
 instance : Inhabited (B3Expression × TransBindings) where
-  default := (.literal () (Lambda.LConst.boolConst false), {})
+  default := (B3AST.Expression.literal () sorry, {})
 
 instance : Inhabited B3Expression where
-  default := .literal () (Lambda.LConst.boolConst false)
+  default := B3AST.Expression.literal () sorry
 
 ---------------------------------------------------------------------
 
 instance : Inhabited BinaryOp where
-  default := .add
+  default := B3AST.BinaryOp.add ()
 
 instance : Inhabited UnaryOp where
-  default := .not
+  default := B3AST.UnaryOp.not ()
 
 instance : Inhabited QuantifierKind where
-  default := .forall
+  default := B3AST.QuantifierKind.forall ()
 
 instance : Inhabited B3CallArg where
-  default := .expr (.literal () (Lambda.LConst.boolConst false))
+  default := .expr (B3AST.Expression.literal () sorry)
 
 def translateBinaryOp (name : QualifiedIdent) : TransM BinaryOp :=
   match name with
-  | q`B3.iff => return .iff
-  | q`B3.implies => return .implies
-  | q`B3.impliedBy => return .impliedBy
-  | q`B3.and => return .and
-  | q`B3.or => return .or
-  | q`B3.equal => return .eq
-  | q`B3.not_equal => return .neq
-  | q`B3.lt => return .lt
-  | q`B3.le => return .le
-  | q`B3.ge => return .ge
-  | q`B3.gt => return .gt
-  | q`B3.add_expr => return .add
-  | q`B3.sub_expr => return .sub
-  | q`B3.mul_expr => return .mul
-  | q`B3.div_expr => return .div
-  | q`B3.mod_expr => return .mod
+  | q`B3.iff => return B3AST.BinaryOp.iff ()
+  | q`B3.implies => return B3AST.BinaryOp.implies ()
+  | q`B3.impliedBy => return B3AST.BinaryOp.impliedBy ()
+  | q`B3.and => return B3AST.BinaryOp.and ()
+  | q`B3.or => return B3AST.BinaryOp.or ()
+  | q`B3.equal => return B3AST.BinaryOp.eq ()
+  | q`B3.not_equal => return B3AST.BinaryOp.neq ()
+  | q`B3.lt => return B3AST.BinaryOp.lt ()
+  | q`B3.le => return B3AST.BinaryOp.le ()
+  | q`B3.ge => return B3AST.BinaryOp.ge ()
+  | q`B3.gt => return B3AST.BinaryOp.gt ()
+  | q`B3.add_expr => return B3AST.BinaryOp.add ()
+  | q`B3.sub_expr => return B3AST.BinaryOp.sub ()
+  | q`B3.mul_expr => return B3AST.BinaryOp.mul ()
+  | q`B3.div_expr => return B3AST.BinaryOp.div ()
+  | q`B3.mod_expr => return B3AST.BinaryOp.mod ()
   | _ => TransM.error s!"Unknown binary operator: {name}"
 
 def translateUnaryOp (name : QualifiedIdent) : TransM UnaryOp :=
   match name with
-  | q`B3.not => return .not
-  | q`B3.neg_expr => return .neg
+  | q`B3.not => return B3AST.UnaryOp.not ()
+  | q`B3.neg_expr => return B3AST.UnaryOp.neg ()
   | _ => TransM.error s!"Unknown unary operator: {name}"
 
 def translateQuantifierKind (name : QualifiedIdent) : TransM QuantifierKind :=
   match name with
-  | q`B3.forall => return .forall
-  | q`B3.exists => return .exists
+  | q`B3.forall => return B3AST.QuantifierKind.forall ()
+  | q`B3.exists => return B3AST.QuantifierKind.exists ()
   | _ => TransM.error s!"Unknown quantifier: {name}"
 
 ---------------------------------------------------------------------
@@ -168,31 +168,31 @@ partial def translateExpr (bindings : TransBindings) (arg : Arg) :
   match op, args with
   -- Constants/Literals
   | .fn _ q`B3.btrue, [] =>
-    return .literal () (Lambda.LConst.boolConst true)
+    return B3AST.Expression.literal () sorry
   | .fn _ q`B3.bfalse, [] =>
-    return .literal () (Lambda.LConst.boolConst false)
+    return B3AST.Expression.literal () sorry
   | .fn _ q`B3.natToInt, [xa] =>
-    let n ← translateNat xa
-    return .literal () (Lambda.LConst.intConst n)
+    let _n ← translateNat xa
+    return B3AST.Expression.literal () sorry
   | .fn _ q`B3.strLit, [xa] =>
-    let s ← translateStr xa
-    return .literal () (Lambda.LConst.strConst s)
+    let _s ← translateStr xa
+    return B3AST.Expression.literal () sorry
   -- Binary operators
   | .fn _ fni, [_tpa, xa, ya] =>
     let op ← translateBinaryOp fni
     let x ← translateExpr bindings xa
     let y ← translateExpr bindings ya
-    return .binaryOp () op x y
+    return B3AST.Expression.binaryOp () op x y
   -- Unary operators
   | .fn _ fni, [xa] =>
     let op ← translateUnaryOp fni
     let x ← translateExpr bindings xa
-    return .unaryOp () op x
+    return B3AST.Expression.unaryOp () op x
   -- Variable reference
   | .bvar _ i, [] =>
     if i < bindings.boundVars.size then
-      let id := bindings.boundVars[bindings.boundVars.size - (i+1)]!
-      return .id () id
+      let _id := bindings.boundVars[bindings.boundVars.size - (i+1)]!
+      return B3AST.Expression.id () { val := i, ann := () }
     else
       TransM.error s!"translateExpr out-of-range bound variable: {i}"
   | op, args =>
@@ -214,24 +214,24 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
   | q`B3.assign, #[_tpa, ida, ea] =>
     let id ← translateIdent ida
     let e ← translateExpr bindings ea
-    return (.assign () id e, bindings)
+    return (.assign id.name e, bindings)
   | q`B3.check, #[ca] =>
     let c ← translateExpr bindings ca
-    return (.check () c, bindings)
+    return (.check c, bindings)
   | q`B3.assume, #[ca] =>
     let c ← translateExpr bindings ca
-    return (.assume () c, bindings)
+    return (.assume c, bindings)
   | q`B3.reach, #[ca] =>
     let c ← translateExpr bindings ca
-    return (.reach () c, bindings)
+    return (.reach c, bindings)
   | q`B3.assert, #[ca] =>
     let c ← translateExpr bindings ca
-    return (.assert () c, bindings)
+    return (.assert c, bindings)
   | q`B3.if_statement, #[ca, ta, fa] =>
     let c ← translateExpr bindings ca
     let (thenB, _) ← translateBlock bindings ta
     let (elseB, _) ← translateElse bindings fa
-    return (.ifStmt () c thenB elseB, bindings)
+    return (.ifStmt c thenB elseB, bindings)
   | q`B3.loop_statement, #[invsa, bodya] =>
     let .seq _ invs := invsa
       | TransM.error s!"translateStmt loop expected seq for invariants"
@@ -239,16 +239,16 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
       let args ← checkOpArg inv q`B3.invariant 1
       translateExpr bindings args[0]!)
     let (body, _) ← translateBlock bindings bodya
-    return (.loop () invariants body, bindings)
+    return (.loop invariants body, bindings)
   | q`B3.exit_statement, #[labela] =>
     let label ← translateOption (fun x => match x with
       | none => return none
       | some a => do
         let l ← translateIdent a
         return some l.name) labela
-    return (.exit () label, bindings)
+    return (.exit label, bindings)
   | q`B3.return_statement, #[] =>
-    return (.returnStmt (), bindings)
+    return (.returnStmt, bindings)
   | name, args =>
     TransM.error s!"Unexpected statement {name.fullName} with {args.size} arguments."
 
@@ -260,7 +260,7 @@ partial def translateBlock (bindings : TransBindings) (arg : Arg) :
   let (stmtList, bindings) ← stmts.toList.foldlM (init := ([], bindings)) fun (acc, b) s => do
     let (stmt, b) ← translateStmt b s
     return (acc ++ [stmt], b)
-  return (.blockStmt () stmtList, bindings)
+  return (.blockStmt stmtList, bindings)
 
 partial def translateElse (bindings : TransBindings) (arg : Arg) :
   TransM (Option B3Stmt × TransBindings) := do

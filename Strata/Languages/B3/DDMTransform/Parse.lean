@@ -6,19 +6,86 @@
 
 import Strata.DDM.Integration.Lean
 import Strata.DDM.Util.Format
-import Strata.Languages.B3.Stmt
 
 ---------------------------------------------------------------------
 
 namespace Strata
 
 ---------------------------------------------------------------------
+-- B3AST DDM Dialect for Abstract Syntax Tree
 ---------------------------------------------------------------------
 
-/- DDM support for parsing and pretty-printing B3 -/
+#dialect
+dialect B3AST;
+
+category Literal;
+category Expression;
+category Pattern;
+category BinaryOp;
+category UnaryOp;
+category QuantifierKind;
+
+op intLit (n : Num) : Literal => n;
+op boolLit (b : Bool) : Literal => b;
+op stringLit (s : Str) : Literal => s;
+
+op iff : BinaryOp => "iff";
+op implies : BinaryOp => "implies";
+op impliedBy : BinaryOp => "impliedBy";
+op and : BinaryOp => "and";
+op or : BinaryOp => "or";
+op eq : BinaryOp => "eq";
+op neq : BinaryOp => "neq";
+op lt : BinaryOp => "lt";
+op le : BinaryOp => "le";
+op ge : BinaryOp => "ge";
+op gt : BinaryOp => "gt";
+op add : BinaryOp => "add";
+op sub : BinaryOp => "sub";
+op mul : BinaryOp => "mul";
+op div : BinaryOp => "div";
+op mod : BinaryOp => "mod";
+
+op not : UnaryOp => "not";
+op neg : UnaryOp => "neg";
+
+op forall : QuantifierKind => "forall";
+op exists : QuantifierKind => "exists";
+
+op literal (val : Literal) : Expression => "#" val;
+op id (index : Num) : Expression => index;
+op ite (cond : Expression, thn : Expression, els : Expression) : Expression =>
+  "ite " cond " " thn " " els;
+op binaryOp (binOp : BinaryOp, lhs : Expression, rhs : Expression) : Expression =>
+  "binop " binOp " " lhs " " rhs;
+op unaryOp (unOp : UnaryOp, arg : Expression) : Expression =>
+  "unop " unOp " " arg;
+op functionCall (fnName : Ident, args : CommaSepBy Expression) : Expression =>
+  "call " fnName " (" args ")";
+op labeledExpr (label : Ident, expr : Expression) : Expression =>
+  "labeled " label " " expr;
+op letExpr (var : Ident, value : Expression, body : Expression) : Expression =>
+  "let " var " = " value " in " body;
+op quantifierExpr (quantifier : QuantifierKind, var : Ident, ty : Ident, patterns : Seq Pattern, body : Expression) : Expression =>
+  "quant " quantifier " " var " : " ty " [" patterns "] " body;
+
+op pattern (exprs : CommaSepBy Expression) : Pattern =>
+  "pattern (" exprs ")";
+
+#end
+
+namespace B3AST
+
+#strata_gen B3AST
+
+end B3AST
+
+---------------------------------------------------------------------
+-- B3 DDM Dialect for Concrete Syntax
+---------------------------------------------------------------------
 
 #dialect
-dialect B3;
+dialect B3CST;
 
 category Expression;
 
@@ -162,9 +229,9 @@ op block (c : Seq Statement) : Statement => "\n{" indent(2, c:0) "\n}";
 
 category Decl;
 
-op type_decl (name : Ident) : Decl => "\ntype " name;
+op type_decl (name : Ident) : Decl => "\ntype " name:0;
 
-op tagger_decl (name : Ident, forType : Ident) : Decl => "\ntagger " name " for " forType;
+op tagger_decl (name : Ident, forType : Ident) : Decl => "\ntagger " name:0 " for " forType;
 
 category Injective;
 op injective_none () : Injective => "";
@@ -202,7 +269,7 @@ op axiom (expr : Expression) : AxiomBody =>
   expr;
 
 op axiom_decl (expr : AxiomBody) : Decl =>
-  "\naxiom" expr:0;
+  "\naxiom " expr:0;
 
 category PParamMode;
 op pmode_in () : PParamMode => "";
@@ -231,11 +298,11 @@ op command_stmt (s : Statement) : Command => s;
 op command_decl (d : Decl) : Command => d;
 #end
 
-namespace B3DDM
+namespace B3CST
 
-#strata_gen B3
+#strata_gen B3CST
 
-end B3DDM
+end B3CST
 
 ---------------------------------------------------------------------
 

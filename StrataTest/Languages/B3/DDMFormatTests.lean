@@ -6,51 +6,79 @@
 
 import Strata.Languages.B3.DDMTransform.Parse
 import Strata.Languages.B3.DDMTransform.Translate
-import Strata.Languages.B3.DDMTransform.B3ToDDM
-import Strata.Languages.B3.DDMTransform.DDMToB3
+import Strata.Languages.B3.DDMConversion
 
 namespace B3
 
 open Std (Format)
 open Strata
-open Strata.B3DDM
+open Strata.B3CST
 
 /--
-info: inductive B3.Expression : ExprParams → Type
+info: inductive Strata.B3CST.Expression : Type → Type
 number of parameters: 1
 constructors:
-B3.Expression.literal : {P : ExprParams} → P.Metadata → Lambda.LConst → Expression P
-B3.Expression.id : {P : ExprParams} → P.Metadata → P.Identifier → Expression P
-B3.Expression.ite : {P : ExprParams} → P.Metadata → Expression P → Expression P → Expression P → Expression P
-B3.Expression.binaryOp : {P : ExprParams} → P.Metadata → BinaryOp → Expression P → Expression P → Expression P
-B3.Expression.unaryOp : {P : ExprParams} → P.Metadata → UnaryOp → Expression P → Expression P
-B3.Expression.functionCall : {P : ExprParams} → P.Metadata → P.Identifier → List (Expression P) → Expression P
-B3.Expression.labeledExpr : {P : ExprParams} → P.Metadata → String → Expression P → Expression P
-B3.Expression.letExpr : {P : ExprParams} → P.Metadata → P.Identifier → Expression P → Expression P → Expression P
-B3.Expression.quantifierExpr : {P : ExprParams} →
-  P.Metadata → QuantifierKind → P.Identifier → String → List (Pattern P) → Expression P → Expression P
+Strata.B3CST.Expression.not : {α : Type} → α → B3CST.Expression α → B3CST.Expression α
+Strata.B3CST.Expression.natLit : {α : Type} → α → Ann Nat α → B3CST.Expression α
+Strata.B3CST.Expression.strLit : {α : Type} → α → Ann String α → B3CST.Expression α
+Strata.B3CST.Expression.btrue : {α : Type} → α → B3CST.Expression α
+Strata.B3CST.Expression.bfalse : {α : Type} → α → B3CST.Expression α
+Strata.B3CST.Expression.id : {α : Type} → α → Ann String α → B3CST.Expression α
+Strata.B3CST.Expression.letExpr : {α : Type} →
+  α → Ann String α → B3CST.Expression α → B3CST.Expression α → B3CST.Expression α
+Strata.B3CST.Expression.labeledExpr : {α : Type} → α → Ann String α → B3CST.Expression α → B3CST.Expression α
+Strata.B3CST.Expression.ite : {α : Type} →
+  α → B3CST.Expression α → B3CST.Expression α → B3CST.Expression α → B3CST.Expression α
+Strata.B3CST.Expression.iff : {α : Type} → α → B3CST.Expression α → B3CST.Expression α → B3CST.Expression α
+Strata.B3CST.Expression.implies : {α : Type} → α → B3CST.Expression α → B3CST.Expression α → B3CST.Expression α
+Strata.B3CST.Expression.impliedBy : {α : Type} → α → B3CST.Expression α → B3CST.Expression α → B3CST.Expression α
+Strata.B3CST.Expression.and : {α : Type} → α → B3CST.Expression α → B3CST.Expression α → B3CST.Expression α
+Strata.B3CST.Expression.or : {α : Type} → α → B3CST.Expression α → B3CST.Expression α → B3CST.Expression α
+Strata.B3CST.Expression.equal : {α : Type} → α → B3CST.Expression α → B3CST.Expression α → B3CST.Expression α
+Strata.B3CST.Expression.not_equal : {α : Type} → α → B3CST.Expression α → B3CST.Expression α → B3CST.Expression α
+Strata.B3CST.Expression.le : {α : Type} → α → B3CST.Expression α → B3CST.Expression α → B3CST.Expression α
+Strata.B3CST.Expression.lt : {α : Type} → α → B3CST.Expression α → B3CST.Expression α → B3CST.Expression α
+Strata.B3CST.Expression.ge : {α : Type} → α → B3CST.Expression α → B3CST.Expression α → B3CST.Expression α
+Strata.B3CST.Expression.gt : {α : Type} → α → B3CST.Expression α → B3CST.Expression α → B3CST.Expression α
+Strata.B3CST.Expression.neg : {α : Type} → α → B3CST.Expression α → B3CST.Expression α
+Strata.B3CST.Expression.add : {α : Type} → α → B3CST.Expression α → B3CST.Expression α → B3CST.Expression α
+Strata.B3CST.Expression.sub : {α : Type} → α → B3CST.Expression α → B3CST.Expression α → B3CST.Expression α
+Strata.B3CST.Expression.mul : {α : Type} → α → B3CST.Expression α → B3CST.Expression α → B3CST.Expression α
+Strata.B3CST.Expression.div : {α : Type} → α → B3CST.Expression α → B3CST.Expression α → B3CST.Expression α
+Strata.B3CST.Expression.mod : {α : Type} → α → B3CST.Expression α → B3CST.Expression α → B3CST.Expression α
+Strata.B3CST.Expression.paren : {α : Type} → α → B3CST.Expression α → B3CST.Expression α
+Strata.B3CST.Expression.functionCall : {α : Type} →
+  α → Ann String α → Ann (Array (B3CST.Expression α)) α → B3CST.Expression α
+Strata.B3CST.Expression.forall_expr_no_patterns : {α : Type} →
+  α → Ann String α → Ann String α → B3CST.Expression α → B3CST.Expression α
+Strata.B3CST.Expression.forall_expr : {α : Type} →
+  α → Ann String α → Ann String α → Patterns α → B3CST.Expression α → B3CST.Expression α
+Strata.B3CST.Expression.exists_expr_no_patterns : {α : Type} →
+  α → Ann String α → Ann String α → B3CST.Expression α → B3CST.Expression α
+Strata.B3CST.Expression.exists_expr : {α : Type} →
+  α → Ann String α → Ann String α → Patterns α → B3CST.Expression α → B3CST.Expression α
 -/
 #guard_msgs in
-#print Expression
+#print B3CST.Expression
 
 /--
-info: inductive Strata.B3DDM.Pattern : Type → Type
+info: inductive Strata.B3CST.Pattern : Type → Type
 number of parameters: 1
 constructors:
-Strata.B3DDM.Pattern.pattern : {α : Type} → α → B3DDM.Expression α → B3DDM.Pattern α
+Strata.B3CST.Pattern.pattern : {α : Type} → α → B3CST.Expression α → B3CST.Pattern α
 -/
 #guard_msgs in
-#print B3DDM.Pattern
+#print B3CST.Pattern
 
 /--
-info: inductive Strata.B3DDM.Patterns : Type → Type
+info: inductive Strata.B3CST.Patterns : Type → Type
 number of parameters: 1
 constructors:
-Strata.B3DDM.Patterns.patterns_cons : {α : Type} → α → B3DDM.Pattern α → Patterns α → Patterns α
-Strata.B3DDM.Patterns.patterns_single : {α : Type} → α → B3DDM.Pattern α → Patterns α
+Strata.B3CST.Patterns.patterns_cons : {α : Type} → α → B3CST.Pattern α → Patterns α → Patterns α
+Strata.B3CST.Patterns.patterns_single : {α : Type} → α → B3CST.Pattern α → Patterns α
 -/
 #guard_msgs in
-#print B3DDM.Patterns
+#print B3CST.Patterns
 
 -- Helpers to convert Unit annotations to SourceRange
 mutual
@@ -70,6 +98,7 @@ mutual
     | .decimal () v => .decimal default v
     | .strlit () s => .strlit default s
     | .bytes () v => .bytes default v
+    | .bool () b => .bool default b
     | .option () ma => .option default (ma.map argFUnitToSourceRange)
     | .seq () entries => .seq default (entries.map argFUnitToSourceRange)
     | .commaSepList () entries => .commaSepList default (entries.map argFUnitToSourceRange)
@@ -85,11 +114,11 @@ mutual
 end
 
 -- Create a minimal B3 program to get the dialect context
-def b3Program : Program := #strata program B3; #end
+def b3Program : Program := #strata program B3CST; #end
 
 -- Helper to strip SourceRange annotations and replace with Unit
 mutual
-  partial def stripAnnotations : B3DDM.Expression SourceRange → B3DDM.Expression Unit
+  partial def stripAnnotations : B3CST.Expression SourceRange → B3CST.Expression Unit
     | .natLit _ n => .natLit () ⟨(), n.val⟩
     | .strLit _ s => .strLit () ⟨(), s.val⟩
     | .btrue _ => .btrue ()
@@ -123,10 +152,10 @@ mutual
     | .exists_expr _ var ty patterns body => .exists_expr () ⟨(), var.val⟩ ⟨(), ty.val⟩ (stripPatternsAnnotations patterns) (stripAnnotations body)
     | .paren _ expr => .paren () (stripAnnotations expr)
 
-  partial def stripPatternAnnotations : B3DDM.Pattern SourceRange → B3DDM.Pattern Unit
+  partial def stripPatternAnnotations : B3CST.Pattern SourceRange → B3CST.Pattern Unit
     | .pattern _ expr => .pattern () (stripAnnotations expr)
 
-  partial def stripPatternsAnnotations : B3DDM.Patterns SourceRange → B3DDM.Patterns Unit
+  partial def stripPatternsAnnotations : B3CST.Patterns SourceRange → B3CST.Patterns Unit
     | .patterns_single _ p => .patterns_single () (stripPatternAnnotations p)
     | .patterns_cons _ p ps => .patterns_cons () (stripPatternAnnotations p) (stripPatternsAnnotations ps)
 end
