@@ -6,6 +6,7 @@
 
 import Strata.DDM.AST
 import Strata.Languages.B3.DDMTransform.Parse
+import Strata.Languages.B3.Expression
 import Strata.Languages.B3.Stmt
 
 ---------------------------------------------------------------------
@@ -96,11 +97,14 @@ def translateNat (arg : Arg) : TransM Nat := do
 structure TransBindings where
   boundVars : Array B3Ident := #[]
 
+def TransBindings.lookup (bindings : TransBindings) (name : String) : Nat :=
+  bindings.boundVars.findIdx? (·.name == name) |>.getD bindings.boundVars.size
+
 instance : Inhabited TransBindings where
   default := {}
 
 instance : Inhabited (B3Stmt × TransBindings) where
-  default := (.returnStmt, {})
+  default := (.returnStmt (), {})
 
 instance : Inhabited (List B3Stmt × TransBindings) where
   default := ([], {})
@@ -123,7 +127,7 @@ instance : Inhabited QuantifierKind where
   default := B3AST.QuantifierKind.forall ()
 
 instance : Inhabited B3CallArg where
-  default := .expr (B3AST.Expression.literal () sorry)
+  default := .callArgExpr () (B3AST.Expression.literal () sorry)
 
 def translateBinaryOp (name : QualifiedIdent) : TransM BinaryOp :=
   match name with
@@ -214,24 +218,25 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
   | q`B3.assign, #[_tpa, ida, ea] =>
     let id ← translateIdent ida
     let e ← translateExpr bindings ea
-    return (.assign id.name e, bindings)
+    let idx := bindings.lookup id.name
+    return (.assign () ⟨(), idx⟩ e, bindings)
   | q`B3.check, #[ca] =>
     let c ← translateExpr bindings ca
-    return (.check c, bindings)
+    return (.check () c, bindings)
   | q`B3.assume, #[ca] =>
     let c ← translateExpr bindings ca
-    return (.assume c, bindings)
+    return (.assume () c, bindings)
   | q`B3.reach, #[ca] =>
     let c ← translateExpr bindings ca
-    return (.reach c, bindings)
+    return (.reach () c, bindings)
   | q`B3.assert, #[ca] =>
     let c ← translateExpr bindings ca
-    return (.assert c, bindings)
+    return (.assert () c, bindings)
   | q`B3.if_statement, #[ca, ta, fa] =>
     let c ← translateExpr bindings ca
     let (thenB, _) ← translateBlock bindings ta
     let (elseB, _) ← translateElse bindings fa
-    return (.ifStmt c thenB elseB, bindings)
+    return (.ifStmt () c thenB ⟨(), elseB⟩, bindings)
   | q`B3.loop_statement, #[invsa, bodya] =>
     let .seq _ invs := invsa
       | TransM.error s!"translateStmt loop expected seq for invariants"
@@ -239,16 +244,16 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
       let args ← checkOpArg inv q`B3.invariant 1
       translateExpr bindings args[0]!)
     let (body, _) ← translateBlock bindings bodya
-    return (.loop invariants body, bindings)
+    return (.loop () ⟨(), invariants.toArray⟩ body, bindings)
   | q`B3.exit_statement, #[labela] =>
     let label ← translateOption (fun x => match x with
       | none => return none
       | some a => do
         let l ← translateIdent a
-        return some l.name) labela
-    return (.exit label, bindings)
+        return some ⟨(), l.name⟩) labela
+    return (.exit () ⟨(), label⟩, bindings)
   | q`B3.return_statement, #[] =>
-    return (.returnStmt, bindings)
+    return (.returnStmt (), bindings)
   | name, args =>
     TransM.error s!"Unexpected statement {name.fullName} with {args.size} arguments."
 
@@ -260,7 +265,7 @@ partial def translateBlock (bindings : TransBindings) (arg : Arg) :
   let (stmtList, bindings) ← stmts.toList.foldlM (init := ([], bindings)) fun (acc, b) s => do
     let (stmt, b) ← translateStmt b s
     return (acc ++ [stmt], b)
-  return (.blockStmt stmtList, bindings)
+  return (.blockStmt () ⟨(), stmtList.toArray⟩, bindings)
 
 partial def translateElse (bindings : TransBindings) (arg : Arg) :
   TransM (Option B3Stmt × TransBindings) := do

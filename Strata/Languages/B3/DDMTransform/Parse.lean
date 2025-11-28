@@ -72,6 +72,56 @@ op quantifierExpr (quantifier : QuantifierKind, var : Ident, ty : Ident, pattern
 op pattern (exprs : CommaSepBy Expression) : Pattern =>
   "pattern (" exprs ")";
 
+category Statement;
+category CallArg;
+category OneIfCase;
+
+op varDecl (name : Ident, ty : Option Ident, autoinv : Option Expression, init : Option Expression) : Statement =>
+  "varDecl " name " : " ty " autoinv " autoinv " := " init;
+op assign (lhs : Num, rhs : Expression) : Statement =>
+  "assign @" lhs " := " rhs;
+op reinit (name : Num) : Statement =>
+  "reinit @" name;
+op blockStmt (stmts : Seq Statement) : Statement =>
+  "block {" stmts "}";
+op call (procName : Ident, args : Seq CallArg) : Statement =>
+  "call " procName "(" args ")";
+op check (expr : Expression) : Statement =>
+  "check " expr;
+op assume (expr : Expression) : Statement =>
+  "assume " expr;
+op reach (expr : Expression) : Statement =>
+  "reach " expr;
+op assert (expr : Expression) : Statement =>
+  "assert " expr;
+op aForall (var : Ident, ty : Ident, body : Statement) : Statement =>
+  "forall " var " : " ty " " body;
+op choose (branches : Seq Statement) : Statement =>
+  "choose " branches;
+op ifStmt (cond : Expression, thenBranch : Statement, elseBranch : Option Statement) : Statement =>
+  "if " cond " then " thenBranch " else " elseBranch;
+op oneIfCase (cond : Expression, body : Statement): OneIfCase =>
+  "oneIfCase " cond body;
+op ifCase (cases : Seq OneIfCase) : Statement =>
+  "ifcase " cases;
+op loop (invariants : Seq Expression, body : Statement) : Statement =>
+  "loop invariants " invariants " {" body "}";
+op labeledStmt (label : Ident, stmt : Statement) : Statement =>
+  "labelStmt " label " " stmt;
+op exit (label : Option Ident) : Statement =>
+  "exit " label;
+op returnStmt : Statement =>
+  "return";
+op probe (label : Ident) : Statement =>
+  "probe " label;
+
+op callArgExpr (e : Expression) : CallArg =>
+  "expr " e;
+op callArgOut (id : Ident) : CallArg =>
+  "out " id;
+op callArgInout (id : Ident) : CallArg =>
+  "inout " id;
+
 #end
 
 namespace B3AST
@@ -150,6 +200,7 @@ op exists_expr (var : Ident, ty : Ident, patterns : Patterns, body : Expression)
 category Statement;
 
 op assign (v : Ident, e : Expression) : Statement => "\n" v:0 " := " e:0;
+op reinit_statement (v : Ident) : Statement => "\nreinit " v:0;
 
 category CallArg;
 op call_arg_expr (e : Expression) : CallArg => e:0;
@@ -169,13 +220,13 @@ op else_none () : Else => "";
 op else_some (s : Statement) : Else => @[prec(0)] "\nelse " indent(2, s:0);
 
 op if_statement (c : Expression, t : Statement, f : Else) : Statement =>
-  "if " c:0 " " indent(2, t:0) f:0;
+  "\nif " c:0 " " indent(2, t:0) f:0;
 
 category Invariant;
 op invariant (e : Expression) : Invariant => "\n  invariant " e:0;
 
 op loop_statement (invs : Seq Invariant, body : Statement) : Statement =>
-  "loop" invs " " body:40;
+  "\nloop" invs " " body:40;
 
 op exit_statement (label : Option Ident) : Statement => "\nexit " label:0 ;
 op return_statement () : Statement => "\nreturn";
@@ -213,17 +264,17 @@ op choiceAtom (b : ChoiceBranch) : ChoiceBranches => b:0;
 op choicePush (bs : ChoiceBranches, b : ChoiceBranch) : ChoiceBranches => bs:0 " or " b:0;
 
 op choose_statement (branches : ChoiceBranches) : Statement =>
-  "choose " branches:0;
+  "\nchoose " branches:0;
 
 category IfCaseBranch;
 op if_case_branch (cond : Expression, body : Statement) : IfCaseBranch =>
   "\ncase " cond:0 " " body:40;
 
 op if_case_statement (branches : Seq IfCaseBranch) : Statement =>
-  "if" branches:0;
+  "\nif" branches:0;
 
 op aForall_statement (var : Ident, ty : Ident, body : Statement) : Statement =>
-  "forall " var:0 " : " ty:0 " " body:40;
+  "\nforall " var:0 " : " ty:0 " " body:40;
 
 op block (c : Seq Statement) : Statement => "\n{" indent(2, c:0) "\n}";
 

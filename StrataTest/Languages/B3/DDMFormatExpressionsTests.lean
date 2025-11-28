@@ -71,10 +71,11 @@ def roundtripExpr (p : Program) : Format :=
 
 section ExpressionRoundtripTests
 
+-- We are loosing the context so this is why it's printing that way.
 /--
 info: B3: .id () { ann := (), val := 0 }
 ---
-info: _var0
+info: @0
 -/
 #guard_msgs in
 #eval roundtripExpr $ #strata program B3CST; check x #end

@@ -44,8 +44,30 @@ structure ToCSTContext where
 
 namespace ToCSTContext
 
-def lookup (ctx : ToCSTContext) (idx : Nat) : String :=
-  ctx.vars[idx]? |>.getD s!"_var{idx}"
+def lookup (ctx : ToCSTContext) (idx : Nat): String :=
+  match ctx.vars[idx]? with
+  | .some name =>
+    if name == "" then s!"@{idx}" else
+    -- We need to resolve ambiguities
+    let rec go (vars: List String) (pastIndex: Nat) (idx: Nat): String :=
+      let default := fun _: Unit => if pastIndex == 0 then
+          name  -- No ambiguity
+        else
+          s!"name@{pastIndex}"
+      if idx == 0 then
+        default ()
+      else
+        match vars with
+        | [] => default ()
+        | otherName :: tail =>
+          if name == otherName then
+            go tail (pastIndex + 1) (idx - 1)
+          else
+            go tail pastIndex (idx - 1)
+
+    go ctx.vars 0 idx
+  | .none =>
+    s!"@{idx}"
 
 def push (ctx : ToCSTContext) (name : String) : ToCSTContext :=
   { vars := name :: ctx.vars }
@@ -128,9 +150,9 @@ partial def expressionToCST (ctx : ToCSTContext) : B3.Expression → B3CST.Expre
           | some pats => B3CST.Expression.exists_expr () var ty pats (expressionToCST ctx' body)
 
 partial def callArgToCST (ctx : ToCSTContext) : B3.CallArg → B3CST.CallArg Unit
-  | .expr e => B3CST.CallArg.call_arg_expr () (expressionToCST ctx e)
-  | .out id => B3CST.CallArg.call_arg_out () (mkAnn id)
-  | .inout id => B3CST.CallArg.call_arg_inout () (mkAnn id)
+  | .callArgExpr _ e => B3CST.CallArg.call_arg_expr () (expressionToCST ctx e)
+  | .callArgOut _ id => B3CST.CallArg.call_arg_out () (mkAnn id.val)
+  | .callArgInout _ id => B3CST.CallArg.call_arg_inout () (mkAnn id.val)
 
 partial def buildChoiceBranches : List (B3CST.ChoiceBranch Unit) → B3CST.ChoiceBranches Unit
   | [] => ChoiceBranches.choiceAtom () (ChoiceBranch.choice_branch () (B3CST.Statement.return_statement ()))
@@ -138,44 +160,55 @@ partial def buildChoiceBranches : List (B3CST.ChoiceBranch Unit) → B3CST.Choic
   | b :: bs => ChoiceBranches.choicePush () (buildChoiceBranches bs) b
 
 partial def stmtToCST (ctx : ToCSTContext) : B3.Stmt → B3CST.Statement Unit
-  | .varDecl name ty autoinv init =>
-    let ctx' := ctx.push name
-    match ty, autoinv, init with
-    | some t, some ai, some i => B3CST.Statement.var_decl_full () (mkAnn name) (mkAnn t) (expressionToCST ctx ai) (expressionToCST ctx' i)
-    | some t, some ai, none => B3CST.Statement.var_decl_with_autoinv () (mkAnn name) (mkAnn t) (expressionToCST ctx ai)
-    | some t, none, some i => B3CST.Statement.var_decl_with_init () (mkAnn name) (mkAnn t) (expressionToCST ctx' i)
-    | some t, none, none => B3CST.Statement.var_decl_typed () (mkAnn name) (mkAnn t)
-    | none, _, some i => B3CST.Statement.var_decl_inferred () (mkAnn name) (expressionToCST ctx' i)
-    | none, _, none => B3CST.Statement.var_decl_typed () (mkAnn name) (mkAnn "unknown")
-  | .assign lhs rhs => B3CST.Statement.assign () (mkAnn lhs) (expressionToCST ctx rhs)
-  | .reinit _ => B3CST.Statement.return_statement ()
-  | .blockStmt stmts => B3CST.Statement.block () (mkAnn (stmts.map (stmtToCST ctx)).toArray)
-  | .call procName args => B3CST.Statement.call_statement () (mkAnn procName) (mkAnn (args.map (callArgToCST ctx)).toArray)
-  | .check expr => B3CST.Statement.check () (expressionToCST ctx expr)
-  | .assume expr => B3CST.Statement.assume () (expressionToCST ctx expr)
-  | .reach expr => B3CST.Statement.reach () (expressionToCST ctx expr)
-  | .assert expr => B3CST.Statement.assert () (expressionToCST ctx expr)
-  | .aForall var ty body =>
-      let ctx' := ctx.push var
-      B3CST.Statement.aForall_statement () (mkAnn var) (mkAnn ty) (stmtToCST ctx' body)
-  | .choose branches =>
-      let choiceBranches := branches.map (fun s => ChoiceBranch.choice_branch () (stmtToCST ctx s))
+  | .varDecl _ name ty autoinv init =>
+    let ctx' := ctx.push name.val
+    match ty.val, autoinv.val, init.val with
+    | some t, some ai, some i => B3CST.Statement.var_decl_full () (mkAnn name.val) (mkAnn t.val) (expressionToCST ctx ai) (expressionToCST ctx' i)
+    | some t, some ai, none => B3CST.Statement.var_decl_with_autoinv () (mkAnn name.val) (mkAnn t.val) (expressionToCST ctx ai)
+    | some t, none, some i => B3CST.Statement.var_decl_with_init () (mkAnn name.val) (mkAnn t.val) (expressionToCST ctx' i)
+    | some t, none, none => B3CST.Statement.var_decl_typed () (mkAnn name.val) (mkAnn t.val)
+    | none, _, some i => B3CST.Statement.var_decl_inferred () (mkAnn name.val) (expressionToCST ctx' i)
+    | none, _, none => B3CST.Statement.var_decl_typed () (mkAnn name.val) (mkAnn "unknown")
+  | .assign _ lhs rhs => B3CST.Statement.assign () (mkAnn (ctx.lookup lhs.val)) (expressionToCST ctx rhs)
+  | .reinit _ idx => B3CST.Statement.reinit_statement () (mkAnn (ctx.lookup idx.val))
+  | .blockStmt _ stmts =>
+      let (stmts', _) := stmts.val.toList.foldl (fun (acc, ctx) stmt =>
+        let stmt' := stmtToCST ctx stmt
+        let ctx' := match stmt with
+          | .varDecl _ name _ _ _ => ctx.push name.val
+          | _ => ctx
+        (acc ++ [stmt'], ctx')
+      ) ([], ctx)
+      B3CST.Statement.block () (mkAnn stmts'.toArray)
+  | .call _ procName args => B3CST.Statement.call_statement () (mkAnn procName.val) (mkAnn (args.val.toList.map (callArgToCST ctx)).toArray)
+  | .check _ expr => B3CST.Statement.check () (expressionToCST ctx expr)
+  | .assume _ expr => B3CST.Statement.assume () (expressionToCST ctx expr)
+  | .reach _ expr => B3CST.Statement.reach () (expressionToCST ctx expr)
+  | .assert _ expr => B3CST.Statement.assert () (expressionToCST ctx expr)
+  | .aForall _ var ty body =>
+      let ctx' := ctx.push var.val
+      B3CST.Statement.aForall_statement () (mkAnn var.val) (mkAnn ty.val) (stmtToCST ctx' body)
+  | .choose _ branches =>
+      let choiceBranches := branches.val.toList.map (fun s => ChoiceBranch.choice_branch () (stmtToCST ctx s))
       B3CST.Statement.choose_statement () (buildChoiceBranches choiceBranches)
-  | .ifStmt cond thenB elseB =>
-      match elseB with
+  | .ifStmt _ cond thenB elseB =>
+      match elseB.val with
       | some e => B3CST.Statement.if_statement () (expressionToCST ctx cond) (stmtToCST ctx thenB) (Else.else_some () (stmtToCST ctx e))
       | none => B3CST.Statement.if_statement () (expressionToCST ctx cond) (stmtToCST ctx thenB) (Else.else_none ())
-  | .ifCase cases =>
-      B3CST.Statement.if_case_statement () (mkAnn (cases.map (fun (e, s) => IfCaseBranch.if_case_branch () (expressionToCST ctx e) (stmtToCST ctx s))).toArray)
-  | .loop invariants body =>
-      B3CST.Statement.loop_statement () (mkAnn (invariants.map (fun e => Invariant.invariant () (expressionToCST ctx e))).toArray) (stmtToCST ctx body)
-  | .labeledStmt label stmt => B3CST.Statement.labeled_statement () (mkAnn label) (stmtToCST ctx stmt)
-  | .exit label =>
-      match label with
-      | some l => B3CST.Statement.exit_statement () (mkAnn (some (mkAnn l)))
+  | .ifCase _ cases =>
+      B3CST.Statement.if_case_statement () (mkAnn (cases.val.toList.map (fun c =>
+        match c with
+        | .oneIfCase _ cond body => IfCaseBranch.if_case_branch () (expressionToCST ctx cond) (stmtToCST ctx body)
+      )).toArray)
+  | .loop _ invariants body =>
+      B3CST.Statement.loop_statement () (mkAnn (invariants.val.toList.map (fun e => Invariant.invariant () (expressionToCST ctx e))).toArray) (stmtToCST ctx body)
+  | .labeledStmt _ label stmt => B3CST.Statement.labeled_statement () (mkAnn label.val) (stmtToCST ctx stmt)
+  | .exit _ label =>
+      match label.val with
+      | some l => B3CST.Statement.exit_statement () (mkAnn (some (mkAnn l.val)))
       | none => B3CST.Statement.exit_statement () (mkAnn none)
-  | .returnStmt => B3CST.Statement.return_statement ()
-  | .probe label => B3CST.Statement.probe () (mkAnn label)
+  | .returnStmt _ => B3CST.Statement.return_statement ()
+  | .probe _ label => B3CST.Statement.probe () (mkAnn label.val)
 
 end
 
@@ -277,5 +310,110 @@ def toDDM (e : B3.Expression) : B3CST.Expression Unit :=
   expressionToCST ToCSTContext.empty e
 
 end Expression
+
+-- Add conversion functions for statements
+namespace Stmt
+
+mutual
+
+partial def fromDDM (s : B3CST.Statement Unit) : B3.Stmt :=
+  stmtFromDDM FromDDMContext.empty s
+
+partial def stmtFromDDM (ctx : FromDDMContext) : B3CST.Statement Unit → B3.Stmt
+  | .var_decl_full _ name ty autoinv init =>
+      let ctx' := ctx.push name.val
+      .varDecl () (mkAnn name.val) (mkAnn (some (mkAnn ty.val))) (mkAnn (some (expressionFromDDM ctx autoinv))) (mkAnn (some (expressionFromDDM ctx' init)))
+  | .var_decl_with_autoinv _ name ty autoinv =>
+      .varDecl () (mkAnn name.val) (mkAnn (some (mkAnn ty.val))) (mkAnn (some (expressionFromDDM ctx autoinv))) (mkAnn none)
+  | .var_decl_with_init _ name ty init =>
+      let ctx' := ctx.push name.val
+      .varDecl () (mkAnn name.val) (mkAnn (some (mkAnn ty.val))) (mkAnn none) (mkAnn (some (expressionFromDDM ctx' init)))
+  | .var_decl_typed _ name ty =>
+      .varDecl () (mkAnn name.val) (mkAnn (some (mkAnn ty.val))) (mkAnn none) (mkAnn none)
+  | .var_decl_inferred _ name init =>
+      let ctx' := ctx.push name.val
+      .varDecl () (mkAnn name.val) (mkAnn none) (mkAnn none) (mkAnn (some (expressionFromDDM ctx' init)))
+  | .val_decl _ name ty init =>
+      let ctx' := ctx.push name.val
+      .varDecl () (mkAnn name.val) (mkAnn (some (mkAnn ty.val))) (mkAnn none) (mkAnn (some (expressionFromDDM ctx' init)))
+  | .val_decl_inferred _ name init =>
+      let ctx' := ctx.push name.val
+      .varDecl () (mkAnn name.val) (mkAnn none) (mkAnn none) (mkAnn (some (expressionFromDDM ctx' init)))
+  | .assign _ lhs rhs =>
+      .assign () (mkAnn (ctx.lookup lhs.val)) (expressionFromDDM ctx rhs)
+  | .reinit_statement _ v =>
+      .reinit () (mkAnn (ctx.lookup v.val))
+  | .check _ expr =>
+      .check () (expressionFromDDM ctx expr)
+  | .assume _ expr =>
+      .assume () (expressionFromDDM ctx expr)
+  | .reach _ expr =>
+      .reach () (expressionFromDDM ctx expr)
+  | .assert _ expr =>
+      .assert () (expressionFromDDM ctx expr)
+  | .return_statement _ =>
+      .returnStmt ()
+  | .block _ stmts =>
+      let (stmts', _) := stmts.val.toList.foldl (fun (acc, ctx) stmt =>
+        let stmt' := stmtFromDDM ctx stmt
+        let ctx' := match stmt with
+          | .var_decl_full _ name _ _ _ => ctx.push name.val
+          | .var_decl_with_autoinv _ name _ _ => ctx.push name.val
+          | .var_decl_with_init _ name _ _ => ctx.push name.val
+          | .var_decl_typed _ name _ => ctx.push name.val
+          | .var_decl_inferred _ name _ => ctx.push name.val
+          | .val_decl _ name _ _ => ctx.push name.val
+          | .val_decl_inferred _ name _ => ctx.push name.val
+          | _ => ctx
+        (acc ++ [stmt'], ctx')
+      ) ([], ctx)
+      .blockStmt () (mkAnn stmts'.toArray)
+  | .if_statement _ cond thenB elseB =>
+      let elseBranch := match elseB with
+        | .else_none _ => mkAnn none
+        | .else_some _ stmt => mkAnn (some (stmtFromDDM ctx stmt))
+      .ifStmt () (expressionFromDDM ctx cond) (stmtFromDDM ctx thenB) elseBranch
+  | .loop_statement _ invs body =>
+      let invariants := invs.val.toList.map fun inv =>
+        match inv with
+        | .invariant _ expr => expressionFromDDM ctx expr
+      .loop () (mkAnn invariants.toArray) (stmtFromDDM ctx body)
+  | .exit_statement _ label =>
+      .exit () (mkAnn (label.val.map (fun l => mkAnn l.val)))
+  | .labeled_statement _ label stmt =>
+      .labeledStmt () (mkAnn label.val) (stmtFromDDM ctx stmt)
+  | .probe _ label =>
+      .probe () (mkAnn label.val)
+  | .aForall_statement _ var ty body =>
+      let ctx' := ctx.push var.val
+      .aForall () (mkAnn var.val) (mkAnn ty.val) (stmtFromDDM ctx' body)
+  | .choose_statement _ branches =>
+      .choose () (mkAnn (choiceBranchesToList branches |>.map (stmtFromDDM ctx)).toArray)
+  | .if_case_statement _ cases =>
+      .ifCase () (mkAnn (cases.val.toList.map fun case =>
+        match case with
+        | .if_case_branch _ cond stmt => .oneIfCase () (expressionFromDDM ctx cond) (stmtFromDDM ctx stmt)).toArray)
+  | .call_statement _ procName args =>
+      .call () (mkAnn procName.val) (mkAnn (args.val.toList.map (callArgFromDDM ctx)).toArray)
+
+partial def callArgFromDDM (ctx : FromDDMContext) : B3CST.CallArg Unit → B3.CallArg
+  | .call_arg_expr _ expr => .callArgExpr () (expressionFromDDM ctx expr)
+  | .call_arg_out _ id => .callArgOut () (mkAnn id.val)
+  | .call_arg_inout _ id => .callArgInout () (mkAnn id.val)
+
+partial def choiceBranchesToList : B3CST.ChoiceBranches Unit → List (B3CST.Statement Unit)
+  | .choiceAtom _ branch =>
+      match branch with
+      | .choice_branch _ stmt => [stmt]
+  | .choicePush _ branches branch =>
+      match branch with
+      | .choice_branch _ stmt => stmt :: choiceBranchesToList branches
+
+end
+
+def toDDM (s : B3.Stmt) : B3CST.Statement Unit :=
+  stmtToCST ToCSTContext.empty s
+
+end Stmt
 
 end B3
