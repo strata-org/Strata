@@ -46,7 +46,12 @@ def typeCheck (options : Options) (program : Program) : Except Std.Format Progra
 def typeCheckAndPartialEval (options : Options) (program : Program) :
   Except Std.Format (List (Program × Env)) := do
   let program ← typeCheck options program
-  let E := { Env.init with program := program }
+  -- Extract datatypes from program declarations
+  let datatypes := program.decls.filterMap fun decl =>
+    match decl with
+    | .type (.data d) _ => some d
+    | _ => none
+  let E := { Env.init with program := program, datatypes := datatypes.toArray }
   let pEs := Program.eval E
   if options.verbose then do
     dbg_trace f!"{Std.Format.line}VCs:"

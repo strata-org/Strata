@@ -195,8 +195,25 @@ def defineApp (inBinder : Bool) (tyEnc : String) (op : Op) (tEncs : List String)
       defineTerm inBinder tyEnc s!"{← encodeUF f}"
     else
       defineTerm inBinder tyEnc s!"({← encodeUF f} {args})"
-  | _ =>
+  | .datatype_constructor name =>
+    -- Datatype constructors: handle zero-argument case specially
+    -- Zero-argument constructors are constants in SMT-LIB, not function applications
+    -- For parametric datatypes, we need to cast the constructor to the concrete type
+    if tEncs.isEmpty then
+      defineTerm inBinder tyEnc s!"(as {name} {tyEnc})"
+    else
+      defineTerm inBinder tyEnc s!"({name} {args})"
+  | .datatype_tester _ =>
+    -- Datatype testers: format as (is-Constructor arg)
     defineTerm inBinder tyEnc s!"({encodeOp op} {args})"
+  | .datatype_selector _ =>
+    -- Datatype selectors: format as (selector arg)
+    defineTerm inBinder tyEnc s!"({encodeOp op} {args})"
+  | _ =>
+    if tEncs.isEmpty then
+      defineTerm inBinder tyEnc s!"({encodeOp op})"
+    else
+      defineTerm inBinder tyEnc s!"({encodeOp op} {args})"
 
 -- Helper function for quantifier generation
 def defineQuantifierHelper (inBinder : Bool) (quantKind : String) (varDecls : String) (trEncs: List (List String)) (tEnc : String) : EncoderM String :=

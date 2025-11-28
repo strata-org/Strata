@@ -73,7 +73,88 @@ def SMT.Context.addDatatype (ctx : SMT.Context) (d : LDatatype BoogieLParams.IDM
 def SMT.Context.getDatatype (ctx : SMT.Context) (name : String) : Option (LDatatype BoogieLParams.IDMeta) :=
   ctx.datatypes.find? (fun d => d.name == name)
 
+/--
+Helper function to convert LMonoTy to SMT string representation.
+For now, handles only monomorphic types and type variables without substitution.
+-/
+private def lMonoTyToSMTString (ty : LMonoTy) : String :=
+  match ty with
+  | .bitvec n => s!"(_ BitVec {n})"
+  | .tcons "bool" [] => "Bool"
+  | .tcons "int" [] => "Int"
+  | .tcons "real" [] => "Real"
+  | .tcons "string" [] => "String"
+  | .tcons "regex" [] => "RegLan"
+  | .tcons name args =>
+    if args.isEmpty then name
+    else s!"({name} {String.intercalate " " (args.map lMonoTyToSMTString)})"
+  | .ftvar tv => tv
+
+/--
+Emit datatype declarations to the solver.
+For each datatype in ctx.datatypes, generates a declare-datatype command
+with constructors and selectors following the TypeFactory naming convention.
+-/
+def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverM Unit := do
+  for d in ctx.datatypes do
+    let constructors ← d.constrs.mapM fun c => do
+      let fields := c.args.map fun (_, fieldTy) => lMonoTyToSMTString fieldTy
+      let fieldNames := List.range c.args.length |>.map fun i =>
+        d.name ++ "$" ++ c.name.name ++ "Proj" ++ toString i
+      let fieldPairs := fieldNames.zip fields
+      let fieldStrs := fieldPairs.map fun (name, ty) => s!"({name} {ty})"
+      let fieldsStr := String.intercalate " " fieldStrs
+      if c.args.isEmpty then
+        pure s!"({c.name.name})"
+      else
+        pure s!"({c.name.name} {fieldsStr})"
+    Strata.SMT.Solver.declareDatatype d.name d.typeArgs constructors
+
 abbrev BoundVars := List (String × TermType)
+
+---------------------------------------------------------------------
+
+/--
+Check if a function name matches a constructor in any declared datatype.
+Returns the datatype and constructor info if a match is found.
+-/
+def isConstructor (fn : BoogieIdent) (ctx : SMT.Context)
+  : Option (LDatatype BoogieLParams.IDMeta × LConstr BoogieLParams.IDMeta) :=
+  ctx.datatypes.findSome? fun d =>
+    d.constrs.findSome? fun c =>
+      if c.name.name == fn.name then
+        some (d, c)
+      else
+        none
+
+/--
+Check if a function name matches a tester pattern `<DataType>$is<Constructor>`.
+Returns the datatype and constructor info if a match is found.
+-/
+def isTester (fn : BoogieIdent) (ctx : SMT.Context)
+  : Option (LDatatype BoogieLParams.IDMeta × LConstr BoogieLParams.IDMeta) :=
+  ctx.datatypes.findSome? fun d =>
+    d.constrs.findSome? fun c =>
+      let pattern := d.name ++ "$is" ++ c.name.name
+      if fn.name == pattern then
+        some (d, c)
+      else
+        none
+
+/--
+Check if a function name matches a destructor pattern `<DataType>$<Constructor>Proj<N>`.
+Returns the datatype, constructor info, and projection index if a match is found.
+-/
+def isDestructor (fn : BoogieIdent) (ctx : SMT.Context)
+  : Option (LDatatype BoogieLParams.IDMeta × LConstr BoogieLParams.IDMeta × Nat) :=
+  ctx.datatypes.findSome? fun d =>
+    d.constrs.findSome? fun c =>
+      let pre := d.name ++ "$" ++ c.name.name ++ "Proj"
+      if fn.name.take pre.length == pre then
+        let suffix := fn.name.drop pre.length
+        suffix.toNat?.bind fun idx => some (d, c, idx)
+      else
+        none
 
 ---------------------------------------------------------------------
 partial def unifyTypes (typeVars : List String) (pattern : LMonoTy) (concrete : LMonoTy) (acc : Map String LMonoTy) : Map String LMonoTy :=
@@ -109,8 +190,7 @@ def LMonoTy.toSMTType (E: Env) (ty : LMonoTy) (ctx : SMT.Context) :
   | .tcons id args =>
     let ctx := match E.datatypes.getType id with
     | some d => ctx.addDatatype d
-    | none => ctx
-    let ctx := ctx.addSort { name := id, arity := args.length }
+    | none => ctx.addSort { name := id, arity := args.length }
     let (args', ctx) ← LMonoTys.toSMTType E args ctx
     .ok ((.constr id args'), ctx)
   | .ftvar tyv => match ctx.tySubst.find? tyv with
@@ -235,11 +315,49 @@ partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr BoogieLParams.mo
 
 partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Context) :
   Except Format ((List Term → TermType → Term) × TermType × SMT.Context) :=
-  open LTy.Syntax in
-  match E.factory.getFactoryLFunc fn.name with
-  | none => .error f!"Cannot find function {fn} in Boogie's Factory!"
-  | some func =>
-    match func.name.name with
+  open LTy.Syntax in do
+  -- First, encode the type to ensure any datatypes are registered in the context
+  let tys := LMonoTy.destructArrow fnty
+  let outty := tys.getLast (by exact @LMonoTy.destructArrow_non_empty fnty)
+  let intys := tys.take (tys.length - 1)
+  -- Try to encode input types to register any datatypes they contain
+  -- If this fails (e.g., due to unbound type variables), continue anyway
+  let ctx := match LMonoTys.toSMTType E intys ctx with
+    | .ok (_, ctx') => ctx'
+    | .error _ => ctx
+  let (smt_outty, ctx) ← LMonoTy.toSMTType E outty ctx
+
+  -- Now check if this is a constructor (after datatypes are in context)
+  match isConstructor fn ctx with
+  | some (d, c) =>
+    -- This is a constructor - generate constructor application using datatype_constructor operator
+    -- Create a function that builds the constructor application
+    let constrApp := fun (args : List Term) (retty : TermType) =>
+      Term.app (.datatype_constructor c.name.name) args retty
+    .ok (constrApp, smt_outty, ctx)
+  | none =>
+    -- Check if this is a tester
+    match isTester fn ctx with
+    | some (d, c) =>
+      -- This is a tester - generate tester predicate using datatype_tester operator
+      let testerApp := fun (args : List Term) (retty : TermType) =>
+        Term.app (.datatype_tester c.name.name) args retty
+      .ok (testerApp, smt_outty, ctx)
+    | none =>
+      -- Check if this is a destructor
+      match isDestructor fn ctx with
+      | some (d, c, idx) =>
+        -- This is a destructor - generate selector function using datatype_selector operator
+        -- Use the exact destructor name (no transformation needed)
+        let selectorApp := fun (args : List Term) (retty : TermType) =>
+          Term.app (.datatype_selector fn.name) args retty
+        .ok (selectorApp, smt_outty, ctx)
+      | none =>
+        -- Not a constructor, tester, or destructor, proceed with normal handling
+        match E.factory.getFactoryLFunc fn.name with
+    | none => .error f!"Cannot find function {fn} in Boogie's Factory!"
+    | some func =>
+      match func.name.name with
     | "Bool.And"     => .ok (.app Op.and,        .bool,   ctx)
     | "Bool.Or"      => .ok (.app Op.or,         .bool,   ctx)
     | "Bool.Not"     => .ok (.app Op.not,        .bool,   ctx)

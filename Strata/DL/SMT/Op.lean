@@ -167,10 +167,16 @@ inductive Op : Type where
   | bv : Op.BV → Op
   -- SMTLib theory of unicode strings and regular expressions (`Strings`)
   | str : Op.Strings → Op
-  -- An operator to group triggers together
+  -- An operator to group triggerss together
   | triggers
   -- Core ADT operators with a trusted mapping to SMT
   | option_get
+  -- Datatype constructor (for user-defined algebraic datatypes)
+  | datatype_constructor : String → Op
+  -- Datatype tester (for user-defined algebraic datatypes)
+  | datatype_tester : String → Op
+  -- Datatype selector/destructor (for user-defined algebraic datatypes)
+  | datatype_selector : String → Op
 deriving Repr, DecidableEq, Inhabited, Hashable
 
 -- Generate abbreviations like `Op.not` for `Op.core Op.Core.not` for
@@ -285,6 +291,9 @@ def Op.mkName : Op → String
   | .zero_extend _ => "zero_extend"
   | .triggers      => "triggers"
   | .option_get    => "option.get"
+  | .datatype_constructor name => name
+  | .datatype_tester name => s!"is-{name}"
+  | .datatype_selector name => name
   | .str_length    => "str.len"
   | .str_concat    => "str.++"
   | .str_lt        => "str.<"
@@ -321,6 +330,9 @@ def Op.LT : Op → Op → Bool
   | .zero_extend n₁, .zero_extend n₂  => n₁ < n₂
   | .re_index n₁, .re_index n₂        => n₁ < n₂
   | .re_loop n₁ n₂, .re_loop m₁ m₂    => n₁ < n₂ && m₁ < m₂
+  | .datatype_constructor n₁, .datatype_constructor n₂ => n₁ < n₂
+  | .datatype_tester n₁, .datatype_tester n₂ => n₁ < n₂
+  | .datatype_selector n₁, .datatype_selector n₂ => n₁ < n₂
   | ty₁, ty₂                          => ty₁.mkName < ty₂.mkName
 
 instance : LT Op where
