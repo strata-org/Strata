@@ -6,7 +6,7 @@
 
 
 
-import Strata.DL.Imperative.HasVars
+import Strata.Dialects.Imperative.HasVars
 import Strata.Languages.Boogie.Statement
 
 ---------------------------------------------------------------------

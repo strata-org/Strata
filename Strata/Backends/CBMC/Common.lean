@@ -5,7 +5,7 @@
 -/
 
 import Lean.Data.Json
-import Strata.DL.Util.Map
+import Strata.Dialects.Util.Map
 
 -------------------------------------------------------------------------------
 

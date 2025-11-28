@@ -7,8 +7,8 @@ import Lean.Elab.Command
 
 import Strata.Languages.Boogie.Identifiers
 import Strata.Languages.Boogie.Expressions
-import Strata.DL.Lambda.Factory
-import Strata.DL.Lambda.IntBoolFactory
+import Strata.Dialects.Lambda.Factory
+import Strata.Dialects.Lambda.IntBoolFactory
 ---------------------------------------------------------------------
 
 namespace Boogie

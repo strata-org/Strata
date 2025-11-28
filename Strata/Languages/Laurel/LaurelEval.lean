@@ -10,7 +10,7 @@ Both are defined using the 'eval' function. It will only return a single type or
 
 TODO: implicit casting from primitives types to Dynamic
 -/
-import Strata.DL.HighStrata.HighStrata
+import Strata.Dialects.HighStrata.HighStrata
 import Std.Data.HashMap.Basic
 import Lean.Data.AssocList
 

@@ -8,8 +8,8 @@
 
 import Strata.Languages.Boogie.OldExpressions
 import Strata.Languages.Boogie.Expressions
-import Strata.DL.Imperative.TypeContext
-import Strata.DL.Lambda.Factory
+import Strata.Dialects.Imperative.TypeContext
+import Strata.Dialects.Lambda.Factory
 
 namespace Boogie
 open Lambda Imperative

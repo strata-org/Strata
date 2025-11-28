@@ -6,7 +6,7 @@
 
 
 
-import Strata.DL.Lambda.LExprType
+import Strata.Dialects.Lambda.LExprType
 import Strata.Languages.Boogie.Program
 import Strata.Languages.Boogie.FunctionType
 import Strata.Languages.Boogie.ProcedureType

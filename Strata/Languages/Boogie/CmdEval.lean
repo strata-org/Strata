@@ -9,8 +9,8 @@
 import Strata.Languages.Boogie.OldExpressions
 import Strata.Languages.Boogie.Expressions
 import Strata.Languages.Boogie.Env
-import Strata.DL.Imperative.EvalContext
-import Strata.DL.Imperative.CmdEval
+import Strata.Dialects.Imperative.EvalContext
+import Strata.Dialects.Imperative.CmdEval
 
 namespace Boogie
 open Lambda Imperative

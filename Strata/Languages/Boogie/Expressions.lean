@@ -6,10 +6,10 @@
 
 
 
-import Strata.DL.Lambda.Lambda
-import Strata.DL.Imperative.PureExpr
+import Strata.Dialects.Lambda.Lambda
+import Strata.Dialects.Imperative.PureExpr
 import Strata.Languages.Boogie.Identifiers
-import Strata.DL.Imperative.HasVars
+import Strata.Dialects.Imperative.HasVars
 
 namespace Boogie
 open Std (ToFormat Format format)

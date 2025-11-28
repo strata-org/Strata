@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Imperative.CmdType
+import Strata.Dialects.Imperative.CmdType
 import StrataTest.DL.Imperative.ArithExpr
 
 namespace Arith

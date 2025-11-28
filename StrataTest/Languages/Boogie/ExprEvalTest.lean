@@ -4,12 +4,12 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Lambda.Lambda
-import Strata.DL.Lambda.LExpr
-import Strata.DL.Lambda.LState
-import Strata.DL.Lambda.LTy
-import Strata.DL.SMT.Term
-import Strata.DL.SMT.Encoder
+import Strata.Dialects.Lambda.Lambda
+import Strata.Dialects.Lambda.LExpr
+import Strata.Dialects.Lambda.LState
+import Strata.Dialects.Lambda.LTy
+import Strata.Dialects.SMT.Term
+import Strata.Dialects.SMT.Encoder
 import Strata.Languages.Boogie.Env
 import Strata.Languages.Boogie.Factory
 import Strata.Languages.Boogie.Identifiers

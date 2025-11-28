@@ -5,8 +5,8 @@
 -/
 
 import StrataTest.DL.Imperative.Arith
-import Strata.DL.Imperative.EvalContext
-import Strata.DL.SMT.SMT
+import Strata.Dialects.Imperative.EvalContext
+import Strata.Dialects.SMT.SMT
 import Init.Data.String.Extra
 
 namespace Arith

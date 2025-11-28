@@ -4,10 +4,10 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Imperative.Stmt
-import Strata.DL.Imperative.StmtSemantics
-import Strata.DL.Imperative.NondetStmt
-import Strata.DL.Imperative.NondetStmtSemantics
+import Strata.Dialects.Imperative.Stmt
+import Strata.Dialects.Imperative.StmtSemantics
+import Strata.Dialects.Imperative.NondetStmt
+import Strata.Dialects.Imperative.NondetStmtSemantics
 import Strata.Transform.DetToNondet
 
 /-! # Deterministic-to-Nondeterministic Transformation Correctness Proof

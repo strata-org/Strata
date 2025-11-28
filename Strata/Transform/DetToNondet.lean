@@ -4,9 +4,9 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Imperative.Cmd
-import Strata.DL.Imperative.Stmt
-import Strata.DL.Imperative.NondetStmt
+import Strata.Dialects.Imperative.Cmd
+import Strata.Dialects.Imperative.Stmt
+import Strata.Dialects.Imperative.NondetStmt
 import Strata.Languages.Boogie.StatementType
 
 /-! # Deterministic-to-Nondeterministic Transformation -/

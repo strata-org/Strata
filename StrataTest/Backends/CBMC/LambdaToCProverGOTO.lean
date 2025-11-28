@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Lambda.Lambda
+import Strata.Dialects.Lambda.Lambda
 import Strata.Backends.CBMC.GOTO.Expr
 
 namespace Lambda

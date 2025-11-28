@@ -6,8 +6,8 @@
 
 
 
-import Strata.DL.Lambda.Lambda
-import Strata.DL.Lambda.IntBoolFactory
+import Strata.Dialects.Lambda.Lambda
+import Strata.Dialects.Lambda.IntBoolFactory
 
 ---------------------------------------------------------------------
 

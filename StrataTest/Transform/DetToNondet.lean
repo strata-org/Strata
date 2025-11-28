@@ -8,7 +8,7 @@ import Strata.Transform.DetToNondet
 import Strata.Languages.Boogie.StatementSemantics
 import Strata.Languages.Boogie.ProgramType
 import Strata.Languages.Boogie.ProgramWF
-import Strata.DL.Lambda.IntBoolFactory
+import Strata.Dialects.Lambda.IntBoolFactory
 
 open Boogie
 

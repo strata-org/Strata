@@ -7,7 +7,7 @@
 
 
 import StrataTest.DL.Imperative.ArithExpr
-import Strata.DL.Imperative.CmdEval
+import Strata.Dialects.Imperative.CmdEval
 
 namespace Arith
 

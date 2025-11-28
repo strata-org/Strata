@@ -11,13 +11,13 @@ import Strata.Languages.Boogie.Identifiers
 import Strata.Languages.Boogie.Program
 import Strata.Languages.Boogie.ProgramType
 import Strata.Languages.Boogie.WF
-import Strata.DL.Lambda.Lambda
+import Strata.Dialects.Lambda.Lambda
 import Strata.Transform.BoogieTransform
 import Strata.Transform.CallElim
-import Strata.DL.Imperative.CmdSemantics
+import Strata.Dialects.Imperative.CmdSemantics
 import Strata.Languages.Boogie.StatementSemantics
 import Strata.Languages.Boogie.StatementSemanticsProps
-import Strata.DL.Util.ListUtils
+import Strata.Dialects.Util.ListUtils
 
 /-! # Call Elimination Correctness Proof
 

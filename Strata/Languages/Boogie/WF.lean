@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Util.ListUtils
+import Strata.Dialects.Util.ListUtils
 import Strata.Languages.Boogie.Program
 import Strata.Languages.Boogie.OldExpressions
 

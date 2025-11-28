@@ -7,7 +7,7 @@
 
 
 import Strata.Languages.Boogie.Program
-import Strata.DL.Imperative.EvalContext
+import Strata.Dialects.Imperative.EvalContext
 
 namespace Boogie
 open Std (ToFormat Format format)

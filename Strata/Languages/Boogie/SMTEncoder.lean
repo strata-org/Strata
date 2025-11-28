@@ -7,7 +7,7 @@
 
 
 import Strata.Languages.Boogie.Boogie
-import Strata.DL.SMT.SMT
+import Strata.Dialects.SMT.SMT
 import Init.Data.String.Extra
 import Strata.DDM.Util.DecimalRat
 

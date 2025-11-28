@@ -7,12 +7,12 @@
 
 
 import Strata.Languages.Boogie.Expressions
-import Strata.DL.Imperative.PureExpr
+import Strata.Dialects.Imperative.PureExpr
 import Strata.Languages.Boogie.Identifiers
 import Strata.Languages.Boogie.Factory
-import Strata.DL.Imperative.Stmt
-import Strata.DL.Imperative.HasVars
-import Strata.DL.Lambda.LExpr
+import Strata.Dialects.Imperative.Stmt
+import Strata.Dialects.Imperative.HasVars
+import Strata.Dialects.Lambda.LExpr
 
 namespace Boogie
 open Imperative
