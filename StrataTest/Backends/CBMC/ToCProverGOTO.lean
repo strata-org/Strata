@@ -5,7 +5,7 @@
 -/
 
 import StrataTest.Backends.CBMC.LambdaToCProverGOTO
-import Strata.DL.Imperative.ToCProverGOTO
+import Strata.Dialects.Imperative.ToCProverGOTO
 
 -------------------------------------------------------------------------------
 

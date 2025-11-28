@@ -6,7 +6,7 @@
 
 
 
-import Strata.DL.Util.ListUtils
+import Strata.Dialects.Util.ListUtils
 import Strata.Languages.Boogie.Program
 import Strata.Languages.Boogie.ProcedureType
 import Strata.Languages.Boogie.WF

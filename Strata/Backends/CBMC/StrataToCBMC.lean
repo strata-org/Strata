@@ -5,7 +5,7 @@
 -/
 
 import Lean.Data.Json
-import Strata.DL.Util.Map
+import Strata.Dialects.Util.Map
 import Strata.Languages.C_Simp.C_Simp
 import Strata.Languages.C_Simp.Verify
 import Strata.Backends.CBMC.Common

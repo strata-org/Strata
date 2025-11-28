@@ -8,7 +8,7 @@ import Lean.Data.Json
 import Strata.Languages.Boogie.Env
 import Strata.Languages.Boogie.DDMTransform.Parse
 import Strata.Languages.Boogie.DDMTransform.Translate
-import Strata.DL.Util.Map
+import Strata.Dialects.Util.Map
 import Strata.Languages.Boogie.Boogie
 import Strata.Backends.CBMC.Common
 

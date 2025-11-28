@@ -4,11 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Imperative.CmdSemantics
-import Strata.DL.Imperative.StmtSemantics
-import Strata.DL.Imperative.HasVars
-import Strata.DL.Util.Nodup
-import Strata.DL.Util.ListUtils
+import Strata.Dialects.Imperative.CmdSemantics
+import Strata.Dialects.Imperative.StmtSemantics
+import Strata.Dialects.Imperative.HasVars
+import Strata.Dialects.Util.Nodup
+import Strata.Dialects.Util.ListUtils
 import Strata.Languages.Boogie.Procedure
 import Strata.Languages.Boogie.Statement
 import Strata.Languages.Boogie.OldExpressions

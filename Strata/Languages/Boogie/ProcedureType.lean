@@ -7,7 +7,7 @@
 
 
 import Strata.Languages.Boogie.Procedure
-import Strata.DL.Imperative.HasVars
+import Strata.Dialects.Imperative.HasVars
 import Strata.Languages.Boogie.StatementType
 import Strata.Languages.Boogie.OldExpressions
 

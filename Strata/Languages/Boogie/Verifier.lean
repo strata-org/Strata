@@ -8,9 +8,9 @@ import Strata.Languages.Boogie.DDMTransform.Translate
 import Strata.Languages.Boogie.Options
 import Strata.Languages.Boogie.CallGraph
 import Strata.Languages.Boogie.SMTEncoder
-import Strata.DL.Imperative.MetaData
-import Strata.DL.Imperative.SMTUtils
-import Strata.DL.SMT.CexParser
+import Strata.Dialects.Imperative.MetaData
+import Strata.Dialects.Imperative.SMTUtils
+import Strata.Dialects.SMT.CexParser
 
 ---------------------------------------------------------------------
 

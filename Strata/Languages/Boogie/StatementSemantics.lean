@@ -4,8 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Lambda.LExpr
-import Strata.DL.Imperative.StmtSemantics
+import Strata.Dialects.Lambda.LExpr
+import Strata.Dialects.Imperative.StmtSemantics
 import Strata.Languages.Boogie.OldExpressions
 
 ---------------------------------------------------------------------

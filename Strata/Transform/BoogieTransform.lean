@@ -7,7 +7,7 @@
 import Strata.Languages.Boogie.Statement
 import Strata.Languages.Boogie.Boogie
 import Strata.Languages.Boogie.BoogieGen
-import Strata.DL.Util.LabelGen
+import Strata.Dialects.Util.LabelGen
 
 /-! # Utility functions for program transformation in Boogie -/
 

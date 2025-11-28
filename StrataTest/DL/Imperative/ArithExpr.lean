@@ -4,9 +4,9 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Imperative.Cmd
-import Strata.DL.Imperative.EvalError
-import Strata.DL.Util.Maps
+import Strata.Dialects.Imperative.Cmd
+import Strata.Dialects.Imperative.EvalError
+import Strata.Dialects.Util.Maps
 
 namespace Arith
 open Std (ToFormat Format format)
