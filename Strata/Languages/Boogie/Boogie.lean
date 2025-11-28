@@ -51,7 +51,14 @@ def typeCheckAndPartialEval (options : Options) (program : Program) :
     match decl with
     | .type (.data d) _ => some d
     | _ => none
-  let E := { Env.init with program := program, datatypes := datatypes.toArray }
+  -- Generate factories for all datatypes and add them to the environment
+  let f ← Lambda.TypeFactory.genFactory (T:=BoogieLParams) (datatypes.toArray)
+  let env ← Env.init.addFactory f
+  -- let mut env := Env.init
+  -- for d in datatypes do
+  --   let factory ← d.genFactory (T := BoogieLParams)
+  --   env ← env.addFactory factory
+  let E := { env with program := program, datatypes := datatypes.toArray }
   let pEs := Program.eval E
   if options.verbose then do
     dbg_trace f!"{Std.Format.line}VCs:"
