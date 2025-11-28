@@ -47,7 +47,7 @@ mutual
     | .block _ stmts =>
         .block () ⟨(), stmts.val.map stripStmtAnnotations⟩
     | .if_statement _ cond thenB elseB =>
-        .if_statement () (stripAnnotations cond) (stripStmtAnnotations thenB) (stripElseAnnotations elseB)
+        .if_statement () (stripAnnotations cond) (stripStmtAnnotations thenB) ⟨(), elseB.val.map stripElseAnnotations⟩
     | .loop_statement _ invs body =>
         .loop_statement () ⟨(), invs.val.map stripInvariantAnnotations⟩ (stripStmtAnnotations body)
     | .exit_statement _ label =>
@@ -66,7 +66,6 @@ mutual
         .call_statement () ⟨(), procName.val⟩ ⟨(), args.val.map stripCallArgAnnotations⟩
 
   partial def stripElseAnnotations : B3CST.Else SourceRange → B3CST.Else Unit
-    | .else_none _ => .else_none ()
     | .else_some _ stmt => .else_some () (stripStmtAnnotations stmt)
 
   partial def stripInvariantAnnotations : B3CST.Invariant SourceRange → B3CST.Invariant Unit

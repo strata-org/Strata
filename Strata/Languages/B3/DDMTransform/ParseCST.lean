@@ -16,125 +16,6 @@ namespace Strata
 ---------------------------------------------------------------------
 
 #dialect
-dialect B3AST;
-
-category Literal;
-category Expression;
-category Pattern;
-category BinaryOp;
-category UnaryOp;
-category QuantifierKind;
-
-op intLit (n : Num) : Literal => n;
-op boolLit (b : Bool) : Literal => b;
-op stringLit (s : Str) : Literal => s;
-
-op iff : BinaryOp => "iff";
-op implies : BinaryOp => "implies";
-op impliedBy : BinaryOp => "impliedBy";
-op and : BinaryOp => "and";
-op or : BinaryOp => "or";
-op eq : BinaryOp => "eq";
-op neq : BinaryOp => "neq";
-op lt : BinaryOp => "lt";
-op le : BinaryOp => "le";
-op ge : BinaryOp => "ge";
-op gt : BinaryOp => "gt";
-op add : BinaryOp => "add";
-op sub : BinaryOp => "sub";
-op mul : BinaryOp => "mul";
-op div : BinaryOp => "div";
-op mod : BinaryOp => "mod";
-
-op not : UnaryOp => "not";
-op neg : UnaryOp => "neg";
-
-op forall : QuantifierKind => "forall";
-op exists : QuantifierKind => "exists";
-
-op literal (val : Literal) : Expression => "#" val;
-op id (index : Num) : Expression => index;
-op ite (cond : Expression, thn : Expression, els : Expression) : Expression =>
-  "ite " cond " " thn " " els;
-op binaryOp (binOp : BinaryOp, lhs : Expression, rhs : Expression) : Expression =>
-  "binop " binOp " " lhs " " rhs;
-op unaryOp (unOp : UnaryOp, arg : Expression) : Expression =>
-  "unop " unOp " " arg;
-op functionCall (fnName : Ident, args : CommaSepBy Expression) : Expression =>
-  "call " fnName " (" args ")";
-op labeledExpr (label : Ident, expr : Expression) : Expression =>
-  "labeled " label " " expr;
-op letExpr (var : Ident, value : Expression, body : Expression) : Expression =>
-  "let " var " = " value " in " body;
-op quantifierExpr (quantifier : QuantifierKind, var : Ident, ty : Ident, patterns : Seq Pattern, body : Expression) : Expression =>
-  "quant " quantifier " " var " : " ty " [" patterns "] " body;
-
-op pattern (exprs : CommaSepBy Expression) : Pattern =>
-  "pattern (" exprs ")";
-
-category Statement;
-category CallArg;
-category OneIfCase;
-
-op varDecl (name : Ident, ty : Option Ident, autoinv : Option Expression, init : Option Expression) : Statement =>
-  "varDecl " name " : " ty " autoinv " autoinv " := " init;
-op assign (lhs : Num, rhs : Expression) : Statement =>
-  "assign @" lhs " := " rhs;
-op reinit (name : Num) : Statement =>
-  "reinit @" name;
-op blockStmt (stmts : Seq Statement) : Statement =>
-  "block {" stmts "}";
-op call (procName : Ident, args : Seq CallArg) : Statement =>
-  "call " procName "(" args ")";
-op check (expr : Expression) : Statement =>
-  "check " expr;
-op assume (expr : Expression) : Statement =>
-  "assume " expr;
-op reach (expr : Expression) : Statement =>
-  "reach " expr;
-op assert (expr : Expression) : Statement =>
-  "assert " expr;
-op aForall (var : Ident, ty : Ident, body : Statement) : Statement =>
-  "forall " var " : " ty " " body;
-op choose (branches : Seq Statement) : Statement =>
-  "choose " branches;
-op ifStmt (cond : Expression, thenBranch : Statement, elseBranch : Option Statement) : Statement =>
-  "if " cond " then " thenBranch " else " elseBranch;
-op oneIfCase (cond : Expression, body : Statement): OneIfCase =>
-  "oneIfCase " cond body;
-op ifCase (cases : Seq OneIfCase) : Statement =>
-  "ifcase " cases;
-op loop (invariants : Seq Expression, body : Statement) : Statement =>
-  "loop invariants " invariants " {" body "}";
-op labeledStmt (label : Ident, stmt : Statement) : Statement =>
-  "labelStmt " label " " stmt;
-op exit (label : Option Ident) : Statement =>
-  "exit " label;
-op returnStmt : Statement =>
-  "return";
-op probe (label : Ident) : Statement =>
-  "probe " label;
-
-op callArgExpr (e : Expression) : CallArg =>
-  "expr " e;
-op callArgOut (id : Ident) : CallArg =>
-  "out " id;
-op callArgInout (id : Ident) : CallArg =>
-  "inout " id;
-
-#end
-
-namespace B3AST
-
-#strata_gen B3AST
-
-end B3AST
-
----------------------------------------------------------------------
--- B3 DDM Dialect for Concrete Syntax
----------------------------------------------------------------------
-
-#dialect
 dialect B3CST;
 
 category Expression;
@@ -216,10 +97,9 @@ op reach (c : Expression) : Statement => "\nreach " c:0;
 op assert (c : Expression) : Statement => "\nassert " c:0;
 
 category Else;
-op else_none () : Else => "";
 op else_some (s : Statement) : Else => @[prec(0)] "\nelse " indent(2, s:0);
 
-op if_statement (c : Expression, t : Statement, f : Else) : Statement =>
+op if_statement (c : Expression, t : Statement, f : Option Else) : Statement =>
   "\nif " c:0 " " indent(2, t:0) f:0;
 
 category Invariant;
@@ -282,34 +162,26 @@ category Decl;
 
 op type_decl (name : Ident) : Decl => "\ntype " name:0;
 
-op tagger_decl (name : Ident, forType : Ident) : Decl => "\ntagger " name:0 " for " forType;
+op tagger_decl (name : Ident, forType : Ident) : Decl => "\ntagger " name:0 " for " forType:0;
 
 category Injective;
-op injective_none () : Injective => "";
 op injective_some () : Injective => "injective ";
 
 category FParam;
-op fparam (injective : Injective, name : Ident, ty : Ident) : FParam =>
-  injective name " : " ty;
-
-category FParams;
-op fparams_empty () : FParams => "";
-op fparams_single (p : FParam) : FParams => p;
-op fparams_cons (p : FParam, rest : CommaSepBy FParam) : FParams => p ", " rest;
+op fparam (injective : Option Injective, name : Ident, ty : Ident) : FParam =>
+  injective name:0 " : " ty:0;
 
 category TagClause;
-op tag_none () : TagClause => "";
-op tag_some (t : Ident) : TagClause => " tag " t;
+op tag_some (t : Ident) : TagClause => " tag " t:0;
 
 category WhenClause;
 op when_clause (e : Expression) : WhenClause => "\n  when " e:0;
 
 category FunctionBody;
-op function_body_none () : FunctionBody => "";
-op function_body_some (e : Expression) : FunctionBody => " {" indent(2, "\n" e:0) "\n}";
+op function_body_some (whens : Seq WhenClause, e : Expression) : FunctionBody => whens " {" indent(2, "\n" e:0) "\n}";
 
-op function_decl (name : Ident, params : CommaSepBy FParam, resultType : Ident, tag : TagClause, whens : Seq WhenClause, body : FunctionBody) : Decl =>
-  "\nfunction " name "(" params ")" " : " resultType tag whens body;
+op function_decl (name : Ident, params : CommaSepBy FParam, resultType : Ident, tag : Option TagClause, body : Option FunctionBody) : Decl =>
+  "\nfunction " name:0 "(" params:0 ")" " : " resultType:0 tag body;
 
 category AxiomBody;
 
@@ -323,26 +195,24 @@ op axiom_decl (expr : AxiomBody) : Decl =>
   "\naxiom " expr:0;
 
 category PParamMode;
-op pmode_in () : PParamMode => "";
 op pmode_out () : PParamMode => "out ";
 op pmode_inout () : PParamMode => "inout ";
 
 category PParam;
-op pparam (mode : PParamMode, name : Ident, ty : Ident) : PParam =>
-  mode name " : " ty;
+op pparam (mode : Option PParamMode, name : Ident, ty : Ident) : PParam =>
+  mode name:0 " : " ty:0;
 
-op pparam_with_autoinv (mode : PParamMode, name : Ident, ty : Ident, autoinv : Expression) : PParam =>
-  mode name " : " ty " autoinv " autoinv:0;
+op pparam_with_autoinv (mode : Option PParamMode, name : Ident, ty : Ident, autoinv : Expression) : PParam =>
+  mode name:0 " : " ty:0 " autoinv " autoinv:0;
 
 category Spec;
 op spec_requires (e : Expression) : Spec => "\n  requires " e:0;
 op spec_ensures (e : Expression) : Spec => "\n  ensures " e:0;
 
 category ProcBody;
-op proc_body_none () : ProcBody => "";
 op proc_body_some (s : Statement) : ProcBody => s:40;
 
-op procedure_decl (name : Ident, params : CommaSepBy PParam, specs : Seq Spec, body : ProcBody) : Decl =>
+op procedure_decl (name : Ident, params : CommaSepBy PParam, specs : Seq Spec, body : Option ProcBody) : Decl =>
   "\nprocedure " name "(" params ")" specs body;
 
 op command_stmt (s : Statement) : Command => s;

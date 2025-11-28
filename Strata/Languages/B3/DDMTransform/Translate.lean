@@ -5,7 +5,8 @@
 -/
 
 import Strata.DDM.AST
-import Strata.Languages.B3.DDMTransform.Parse
+import Strata.Languages.B3.DDMTransform.ParseCST
+import Strata.Languages.B3.DDMTransform.DefinitionAST
 import Strata.Languages.B3.Expression
 import Strata.Languages.B3.Stmt
 
