@@ -142,7 +142,10 @@ procedure importFrom(module : string, names : ListStr, level : int) returns ()
 procedure import(names : ListStr) returns ()
 ;
 
-procedure print(msg : string) returns ()
+procedure print(msg : string, opt : StrOrNone) returns ()
+;
+
+procedure json_dumps(msg : string) returns (s: string)
 ;
 
 function str_len(s : string) : int;

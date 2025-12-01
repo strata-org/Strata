@@ -166,12 +166,14 @@ def argsAndKWordsToCanonicalList (func_infos : List PythonFunctionDecl)
                                  (args : Array (Python.expr SourceRange))
                                  (kwords: Array (Python.keyword SourceRange))
                                  (substitution_records : Option (List SubstitutionRecord) := none) : List Boogie.Expression.Expr :=
-  dbg_trace s!"Canonicalizing {fname} (substitution_records: {substitution_records.get!.length})"
-
   -- TODO: we need a more general solution for other functions
-  if fname == "print" then
-    args.toList.map PyExprToBoogie
-  else if func_infos.any (λ e => e.name == fname) then
+  -- if fname == "print" then
+  --   if args.size == 1 then
+  --     args.toList.map PyExprToBoogie
+  --   else
+  --     args.toList.map PyExprToBoogie
+  -- else if
+  if func_infos.any (λ e => e.name == fname) then
     args.toList.map (PyExprToBoogieWithSubst substitution_records)
   else
     let required_order := getFuncSigOrder fname
@@ -190,7 +192,22 @@ def argsAndKWordsToCanonicalList (func_infos : List PythonFunctionDecl)
         else
           p.snd
       | .none => Strata.Python.TypeStrToBoogieExpr (getFuncSigType fname n))
-    args.toList.map (PyExprToBoogieWithSubst substitution_records) ++ ordered_remaining_args
+    let args := args.map (PyExprToBoogieWithSubst substitution_records)
+    let args := (List.range required_order.length).filterMap (λ n =>
+        if h: n < args.size then
+          let arg_name := required_order[n]!
+          let type_str := getFuncSigType fname arg_name
+          if type_str.endsWith "OrNone" then
+            -- Optional param. Need to wrap e.g., string into StrOrNone
+            match type_str with
+            | "StrOrNone" => some (.app () (.op () "StrOrNone_mk_str" none) args[n]!)
+            | "BytesOrStrOrNone" => some (.app () (.op () "BytesOrStrOrNone_mk_str" none) args[n]!)
+            | _ => panic! "Unsupported type_str: "++ type_str
+          else
+            some (args[n]!)
+        else
+          none)
+    args ++ ordered_remaining_args
 
 def handleCallThrow (jmp_target : String) : Boogie.Statement :=
   let cond := .eq () (.app () (.op () "ExceptOrNone_tag" none) (.fvar () "maybe_except" none)) (.op () "EN_STR_TAG" none)
@@ -252,8 +269,11 @@ def isCall (e: Python.expr SourceRange) : Bool :=
   | .Call _ _ _ _ => true
   | _ => false
 
-def initTmpParam (p: Python.expr SourceRange × String) : Boogie.Statement :=
-  .init p.snd t[string] (PyExprToBoogie p.fst)
+def initTmpParam (p: Python.expr SourceRange × String) : List Boogie.Statement :=
+-- [.call lhs fname (argsAndKWordsToCanonicalList func_infos fname args.val kwords.val substitution_records)]
+  match p.fst with
+  | .Call _ f args _ => [(.init p.snd t[string] (.strConst () "trash")), .call [p.snd] "json_dumps" [(.strConst () "dummy")]]
+  | _ => panic! "Expected Call"
 
 mutual
 
@@ -294,8 +314,8 @@ partial def handleFunctionCall (lhs: List Boogie.Expression.Ident)
 
   let substitution_records : List SubstitutionRecord := args_calls_to_tmps.toList.map (λ p => {pyExpr := p.fst, boogieExpr := .fvar () p.snd none}) ++
                                                         kwords_calls_to_tmps.toList.map (λ p => {pyExpr := p.fst, boogieExpr := .fvar () p.snd none})
-  args_calls_to_tmps.toList.map initTmpParam ++
-    kwords_calls_to_tmps.toList.map initTmpParam ++
+  args_calls_to_tmps.toList.flatMap initTmpParam ++
+    kwords_calls_to_tmps.toList.flatMap initTmpParam ++
     [.call lhs fname (argsAndKWordsToCanonicalList func_infos fname args.val kwords.val substitution_records)]
 
 partial def PyStmtToBoogie (jmp_targets: List String) (func_infos : List PythonFunctionDecl) (s : Python.stmt SourceRange) : List Boogie.Statement :=
