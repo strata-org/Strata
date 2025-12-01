@@ -11,9 +11,9 @@ import Strata.DDM.Integration.Lean
 import Strata.DDM.Ion
 
 /- Dialect Library -/
-import Strata.DL.SMT.SMT
-import Strata.DL.Lambda.Lambda
-import Strata.DL.Imperative.Imperative
+import Strata.Dialects.SMT.SMT
+import Strata.Dialects.Lambda.Lambda
+import Strata.Dialects.Imperative.Imperative
 
 /- Boogie -/
 import Strata.Languages.Boogie.Examples.Examples

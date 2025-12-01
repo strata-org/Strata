@@ -30,15 +30,15 @@ Transformations (located in [`Strata.Transform`](../Strata/Transform/)) are a ce
 
 ## Dialect Library
 
-Strata includes several generic dialects that allow it to represent the semantics of a variety of common programming languages. These dialects are currently sufficient to represent the constructs available in Boogie, and allow some flexibility beyond what Boogie provides, as well. These dialects are located in the [`Strata.DL`](../Strata/DL/) namespace.
+Strata includes several generic dialects that allow it to represent the semantics of a variety of common programming languages. These dialects are currently sufficient to represent the constructs available in Boogie, and allow some flexibility beyond what Boogie provides, as well. These dialects are located in the [`Strata.Dialects`](../Strata/DL/) namespace.
 
 ### Lambda
 
-The `Lambda` dialect ([`Strata.DL.Lambda`](../Strata/DL/Lambda/)) is intended to represent pure expressions of the sort that appear in essentially every programming or specification language. This dialect is parameterized by a set of built-in functions, allowing many first-order and higher-order expression languages as specific instantiations.
+The `Lambda` dialect ([`Strata.Dialects.Lambda`](../Strata/DL/Lambda/)) is intended to represent pure expressions of the sort that appear in essentially every programming or specification language. This dialect is parameterized by a set of built-in functions, allowing many first-order and higher-order expression languages as specific instantiations.
 
 ### Imperative
 
-The `Imperative` dialect ([`Strata.DL.Imperative`](../Strata/DL/Imperative/)) is intended to represent imperative statements of the sort that appear in many programming languages. It is built of commands, which execute atomically, and currently has two mechanisms for combining commands:
+The `Imperative` dialect ([`Strata.Dialects.Imperative`](../Strata/DL/Imperative/)) is intended to represent imperative statements of the sort that appear in many programming languages. It is built of commands, which execute atomically, and currently has two mechanisms for combining commands:
 
 * deterministic structured statements (if and while statements with explicit conditions), 
 * non-deterministic structured statements (choice and repetition, with conditions encoded using assumptions), 
@@ -80,7 +80,7 @@ The current Strata implementation includes only one analysis: the Boogie dialect
 
 ## External Reasoning Tools
 
-Strata was designed to be used with external reasoning tools such as SMT solvers, CHC solvers, abstract interpretation engines, model checkers, and others. Currently, the VCG for the Boogie language based on partial evaluation along with an interface to SMT solvers (in [`Strata.DL.SMT`](../Strata/DL/SMT/)).
+Strata was designed to be used with external reasoning tools such as SMT solvers, CHC solvers, abstract interpretation engines, model checkers, and others. Currently, the VCG for the Boogie language based on partial evaluation along with an interface to SMT solvers (in [`Strata.Dialects.SMT`](../Strata/DL/SMT/)).
 
 ## Third-Party Dialects and Analyses
 

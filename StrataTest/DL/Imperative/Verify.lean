@@ -6,7 +6,7 @@
 
 import StrataTest.DL.Imperative.DDMTranslate
 import StrataTest.DL.Imperative.SMTEncoder
-import Strata.DL.Imperative.SMTUtils
+import Strata.Dialects.Imperative.SMTUtils
 
 ---------------------------------------------------------------------
 namespace Arith

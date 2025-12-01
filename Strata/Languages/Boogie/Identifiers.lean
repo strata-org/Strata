@@ -6,8 +6,8 @@
 
 
 
-import Strata.DL.Lambda.LExprTypeEnv
-import Strata.DL.Lambda.Factory
+import Strata.Dialects.Lambda.LExprTypeEnv
+import Strata.Dialects.Lambda.Factory
 namespace Boogie
 
 open Std

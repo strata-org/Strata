@@ -8,8 +8,8 @@
 
 
 import Strata.Languages.Boogie.Statement
-import Strata.DL.Lambda.LTy
-import Strata.DL.Lambda.LExpr
+import Strata.Dialects.Lambda.LTy
+import Strata.Dialects.Lambda.LExpr
 
 namespace Boogie
 ---------------------------------------------------------------------

@@ -5,9 +5,9 @@
 -/
 
 import Strata.Languages.Boogie.Statement
-import Strata.DL.Util.LabelGen
-import Strata.DL.Util.StringGen
-import Strata.DL.Util.ListUtils
+import Strata.Dialects.Util.LabelGen
+import Strata.Dialects.Util.StringGen
+import Strata.Dialects.Util.ListUtils
 open Boogie Lambda Imperative
 
 /-! ## Boogie Identifier Generator

@@ -5,11 +5,11 @@
 -/
 
 import Strata.Languages.C_Simp.DDMTransform.Parse
-import Strata.DL.Imperative.Stmt
-import Strata.DL.Lambda.Lambda
-import Strata.DL.Lambda.LExpr
-import Strata.DL.Lambda.LTy
-import Strata.DL.Lambda.Identifiers
+import Strata.Dialects.Imperative.Stmt
+import Strata.Dialects.Lambda.Lambda
+import Strata.Dialects.Lambda.LExpr
+import Strata.Dialects.Lambda.LTy
+import Strata.Dialects.Lambda.Identifiers
 
 -- We define the AST for our language here.
 

@@ -10,7 +10,7 @@ import Strata.Languages.Boogie.Statement
 import Strata.Languages.Boogie.CmdType
 import Strata.Languages.Boogie.Program
 import Strata.Languages.Boogie.OldExpressions
-import Strata.DL.Imperative.CmdType
+import Strata.Dialects.Imperative.CmdType
 
 namespace Boogie
 namespace Statement
