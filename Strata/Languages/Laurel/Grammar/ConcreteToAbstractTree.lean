@@ -24,8 +24,7 @@ open Strata (QualifiedIdent Arg)
 structure TransState where
   errors : Array String
 
-def TransM := StateM TransState
-  deriving Monad
+abbrev TransM := StateM TransState
 
 def TransM.run (m : TransM α) : (α × Array String) :=
   let (v, s) := StateT.run m { errors := #[] }
@@ -68,6 +67,21 @@ def translateBool (arg : Arg) : TransM Bool := do
 
 ---------------------------------------------------------------------
 
+instance : Inhabited Procedure where
+  default := {
+    name := ""
+    inputs := []
+    output := .TVoid
+    precondition := .LiteralBool true
+    decreases := .LiteralBool true
+    deterministic := true
+    reads := none
+    modifies := .LiteralBool true
+    body := .Transparent (.LiteralBool true)
+  }
+
+---------------------------------------------------------------------
+
 mutual
 
 partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
@@ -107,7 +121,6 @@ end
 def translateProcedure (arg : Arg) : TransM Procedure := do
   let .op op := arg
     | TransM.error s!"translateProcedure expects operation"
-  checkOp op q`LaurelMinimal.procedure 2
   let name ← translateIdent op.args[0]!
   let body ← translateCommand op.args[1]!
   return {
@@ -122,21 +135,18 @@ def translateProcedure (arg : Arg) : TransM Procedure := do
     body := .Transparent body
   }
 
-def translateProgram (prog : Program) : TransM Laurel.Program := do
+def translateProgram (prog : Strata.Program) : TransM Laurel.Program := do
   let mut procedures : List Procedure := []
-  for decl in prog.commands do
-    match decl with
-    | .op op =>
-      if op.name == q`Laurel.procedure then
-        let proc ← translateProcedure decl
-        procedures := procedures ++ [proc]
-      else
-        TransM.error s!"Unknown top-level declaration: {op.name}"
-    | _ => TransM.error s!"translateProgram expects operations"
+  for op in prog.commands do
+    if op.name == q`Laurel.procedure then
+      let proc ← translateProcedure (.op op)
+      procedures := procedures ++ [proc]
+    else
+      TransM.error s!"Unknown top-level declaration: {op.name}"
   return {
     staticProcedures := procedures
     staticFields := []
     types := []
   }
 
-end Strata
+end Laurel

@@ -1,10 +1,11 @@
 -- Test the minimal Laurel grammar
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
-import Strata.Languages.Laurel.Grammar.LaurelParser
+import Strata.Languages.Laurel.LaurelTransform
+import Strata.DDM.Elab
+import Strata.DDM.Parser
 
 open Laurel.Parser
-
-def x := Laurel
+open Strata
 
 -- Test parsing the AssertFalse example
 def testAssertFalse : IO Unit := do
@@ -12,7 +13,30 @@ def testAssertFalse : IO Unit := do
 
   IO.println "=== Parsing AssertFalse.lr.st ===\n"
 
-  match parseProgram content with
+  -- Create LoadedDialects with the Laurel dialect
+  let laurelDialect: Strata.Dialect := Laurel
+  let loader := Elab.LoadedDialects.ofDialects! #[laurelDialect]
+
+  -- Create InputContext from the file content
+  let inputCtx := Strata.Parser.stringInputContext "TestGrammar.lean" content
+
+  -- Create empty Lean environment
+  let leanEnv ← Lean.mkEmptyEnvironment 0
+
+  -- Parse using the dialect
+  let ddmResult := Elab.elabProgram loader leanEnv inputCtx
+
+  -- Translate from DDM AST to Laurel AST
+  let parseResult := match ddmResult with
+    | .ok ddmProgram =>
+      let (laurelProgram, errors) := translateProgram ddmProgram |>.run
+      if errors.isEmpty then
+        .ok laurelProgram
+      else
+        .error s!"Translation errors: {errors}"
+    | .error messages =>
+      .error s!"Parse errors: {messages}"
+  match parseResult with
   | Except.error err =>
     IO.println s!"✗ Parse failed: {err}"
   | Except.ok prog =>
