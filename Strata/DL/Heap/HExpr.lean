@@ -9,7 +9,6 @@ import Strata.DL.Lambda.LExpr
 import Strata.DL.Lambda.LTy
 import Strata.DL.Lambda.Identifiers
 import Strata.DL.Lambda.MetaData
-import Lean
 
 ---------------------------------------------------------------------
 

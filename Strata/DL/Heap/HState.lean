@@ -10,7 +10,6 @@ import Strata.DL.Lambda.LState
 import Strata.DL.Lambda.LTy
 import Strata.DL.Lambda.IntBoolFactory
 import Std.Data.HashMap
-import Lean
 
 ---------------------------------------------------------------------
 
