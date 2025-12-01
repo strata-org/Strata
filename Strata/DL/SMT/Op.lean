@@ -173,7 +173,7 @@ inductive Op : Type where
   | bv : Op.BV → Op
   -- SMTLib theory of unicode strings and regular expressions (`Strings`)
   | str : Op.Strings → Op
-  -- An operator to group triggerss together
+  -- An operator to group triggers together
   | triggers
   -- Core ADT operators with a trusted mapping to SMT
   | option_get

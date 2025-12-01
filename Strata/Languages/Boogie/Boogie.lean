@@ -54,10 +54,6 @@ def typeCheckAndPartialEval (options : Options) (program : Program) :
   -- Generate factories for all datatypes and add them to the environment
   let f ← Lambda.TypeFactory.genFactory (T:=BoogieLParams) (datatypes.toArray)
   let env ← Env.init.addFactory f
-  -- let mut env := Env.init
-  -- for d in datatypes do
-  --   let factory ← d.genFactory (T := BoogieLParams)
-  --   env ← env.addFactory factory
   let E := { env with program := program, datatypes := datatypes.toArray }
   let pEs := Program.eval E
   if options.verbose then do

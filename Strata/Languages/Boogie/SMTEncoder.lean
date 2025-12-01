@@ -75,9 +75,6 @@ def SMT.Context.addDatatype (ctx : SMT.Context) (d : LDatatype BoogieLParams.IDM
     let m := Map.union m (s.fmap (fun x => (.selector, x)))
     { ctx with datatypes := ctx.datatypes.push d, datatypeFuns := m }
 
-def SMT.Context.getDatatype (ctx : SMT.Context) (name : String) : Option (LDatatype BoogieLParams.IDMeta) :=
-  ctx.datatypes.find? (fun d => d.name == name)
-
 /--
 Helper function to convert LMonoTy to SMT string representation.
 For now, handles only monomorphic types and type variables without substitution.
@@ -277,12 +274,11 @@ partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr BoogieLParams.mo
 partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Context) :
   Except Format ((List Term → TermType → Term) × TermType × SMT.Context) :=
   open LTy.Syntax in do
-  -- First, encode the type to ensure any datatypes are registered in the context
+  -- Encode the type to ensure any datatypes are registered in the context
   let tys := LMonoTy.destructArrow fnty
   let outty := tys.getLast (by exact @LMonoTy.destructArrow_non_empty fnty)
   let intys := tys.take (tys.length - 1)
-  -- Try to encode input types to register any datatypes they contain
-  -- If this fails (e.g., due to unbound type variables), continue anyway
+  -- Need to encode arg types also (e.g. for testers)
   let ctx := match LMonoTys.toSMTType E intys ctx with
     | .ok (_, ctx') => ctx'
     | .error _ => ctx
@@ -291,15 +287,17 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
   match ctx.datatypeFuns.find? fn.name with
   | some (kind, d, c) =>
     let adtApp := fun (args : List Term) (retty : TermType) =>
-        -- For constructors and testers, use the constructor name
-        -- For selectors (destructors), use the full function name
+        /-
+        Note: testers use constructor, translated in `Op.mkName` to is-foo
+        Selectors use full function name, directly translated to function app
+        -/
         let name := match kind with
           | .selector => fn.name
           | _ => c.name.name
         Term.app (.datatype_op kind name) args retty
     .ok (adtApp, smt_outty, ctx)
   | none =>
-    -- Not a constructor, tester, or destructor, proceed with normal handling
+    -- Not a constructor, tester, or destructor
     match E.factory.getFactoryLFunc fn.name with
     | none => .error f!"Cannot find function {fn} in Boogie's Factory!"
     | some func =>
