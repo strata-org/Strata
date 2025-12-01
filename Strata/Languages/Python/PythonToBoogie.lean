@@ -214,7 +214,7 @@ def collectVarDecls (stmts: Array (Python.stmt SourceRange)) : List Boogie.State
     | "str" => [(.init name t[string] (.strConst () "")), (.havoc name)]
     | "int" => [(.init name t[int] (.intConst () 0)), (.havoc name)]
     | "bytes" => [(.init name t[string] (.strConst () "")), (.havoc name)]
-    | "S3Client" => [(.init name clientType dummyClient), (.havoc name)]
+    | "Client" => [(.init name clientType dummyClient), (.havoc name)]
     | "Dict[str Any]" => [(.init name dictStrAnyType dummyDictStrAny), (.havoc name)]
     | _ => panic! s!"Unsupported type annotation: `{ty_name}`"
   let foo := dedup.map toBoogie
