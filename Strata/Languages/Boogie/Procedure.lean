@@ -16,6 +16,34 @@ namespace Boogie
 open Std (ToFormat Format format)
 open Lambda
 
+-- Type class instances to enable deriving for structures containing Expression.Expr
+instance : DecidableEq ExpressionMetadata :=
+  show DecidableEq Unit from inferInstance
+
+instance : Repr ExpressionMetadata :=
+  show Repr Unit from inferInstance
+
+instance : DecidableEq (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : LExprParamsT).base.Metadata :=
+  show DecidableEq ExpressionMetadata from inferInstance
+
+instance : DecidableEq (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : LExprParamsT).base.IDMeta :=
+  show DecidableEq BoogieIdent from inferInstance
+
+instance : DecidableEq (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : LExprParamsT).TypeType :=
+  show DecidableEq LMonoTy from inferInstance
+
+instance : Repr (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : LExprParamsT).base.Metadata :=
+  show Repr ExpressionMetadata from inferInstance
+
+instance : Repr (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : LExprParamsT).base.IDMeta :=
+  show Repr BoogieIdent from inferInstance
+
+instance : Repr (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : LExprParamsT).TypeType :=
+  show Repr LMonoTy from inferInstance
+
+instance : Repr Expression.Expr :=
+  show Repr Expression.Expr from inferInstance
+
 /-! # Boogie Procedures -/
 
 structure Procedure.Header where
@@ -51,7 +79,11 @@ instance : Std.ToFormat Procedure.CheckAttr where
 structure Procedure.Check where
   expr : Expression.Expr
   attr : CheckAttr := .Default
+  md : Imperative.MetaData Expression := #[]
   deriving Repr, DecidableEq
+
+instance : Inhabited Procedure.Check where
+  default := { expr := Inhabited.default }
 
 instance : ToFormat Procedure.Check where
   format c := f!"{c.expr}{c.attr}"
@@ -63,7 +95,7 @@ structure Procedure.Spec where
   modifies       : List Expression.Ident
   preconditions  : ListMap BoogieLabel Procedure.Check
   postconditions : ListMap BoogieLabel Procedure.Check
-  deriving Repr, DecidableEq, Inhabited
+  deriving Inhabited, Repr
 
 instance : ToFormat Procedure.Spec where
   format p :=

@@ -88,7 +88,7 @@ namespace SyntaxCatF
 protected def typeExpr (α : Type) [ToExpr α] := mkApp (mkConst ``SyntaxCatF) (toTypeExpr α)
 
 protected def toExpr {α} [ToExpr α] (cat : SyntaxCatF α) : Lean.Expr :=
-  let args := arrayToExpr (SyntaxCatF.typeExpr α) (cat.args.map fun e => e.toExpr)
+  let args := arrayToExpr levelZero (SyntaxCatF.typeExpr α) (cat.args.map fun e => e.toExpr)
   astAnnExpr! SyntaxCatF.mk cat.ann (toExpr cat.name) args
 decreasing_by
   simp [SyntaxCatF.sizeOf_spec cat]
@@ -107,12 +107,12 @@ protected def typeExpr (ann : Lean.Expr) : Lean.Expr :=
 
 protected def toExpr {α} [ToExpr α] : TypeExprF α → Lean.Expr
 | .ident ann nm a =>
-  let ae := arrayToExpr (TypeExprF.typeExpr (toTypeExpr α)) (a.map (·.toExpr))
+  let ae := arrayToExpr levelZero (TypeExprF.typeExpr (toTypeExpr α)) (a.map (·.toExpr))
   astAnnExpr! ident ann (toExpr nm) ae
 | .bvar ann idx =>
   astAnnExpr! bvar ann (toExpr idx)
 | .fvar ann idx a =>
-  let ae := arrayToExpr (TypeExprF.typeExpr (toTypeExpr α)) (a.map (·.toExpr))
+  let ae := arrayToExpr levelZero (TypeExprF.typeExpr (toTypeExpr α)) (a.map (·.toExpr))
   astAnnExpr! fvar ann (toExpr idx) ae
 | .arrow ann a r =>
   astAnnExpr! arrow ann a.toExpr r.toExpr
@@ -157,14 +157,14 @@ def ArgF.toExpr {α} [ToExpr α] : ArgF α → Lean.Expr
   astAnnExpr! ArgF.option ann (optionToExpr tpe <| a.attach.map fun ⟨e, _⟩ => e.toExpr)
 | .seq ann a =>
   let tpe := ArgF.typeExpr α
-  astAnnExpr! ArgF.seq ann <| arrayToExpr tpe <| a.map (·.toExpr)
+  astAnnExpr! ArgF.seq ann <| arrayToExpr .zero tpe <| a.map (·.toExpr)
 | .commaSepList ann a =>
   let tpe := ArgF.typeExpr α
-  astAnnExpr! ArgF.commaSepList ann <| arrayToExpr tpe <| a.map (·.toExpr)
+  astAnnExpr! ArgF.commaSepList ann <| arrayToExpr .zero tpe <| a.map (·.toExpr)
 termination_by a => sizeOf a
 
 protected def OperationF.toExpr {α} [ToExpr α] (op : OperationF α) : Lean.Expr :=
-  let args := arrayToExpr (ArgF.typeExpr α) (op.args.map (·.toExpr))
+  let args := arrayToExpr .zero (ArgF.typeExpr α) (op.args.map (·.toExpr))
   astAnnExpr! OperationF.mk op.ann (toExpr op.name) args
 termination_by sizeOf op
 decreasing_by
@@ -208,11 +208,11 @@ protected def typeExpr : Lean.Expr := mkConst ``PreType
 
 protected def toExpr : PreType → Lean.Expr
 | .ident loc nm a =>
-  let args := arrayToExpr  PreType.typeExpr (a.map (·.toExpr))
+  let args := arrayToExpr .zero PreType.typeExpr (a.map (·.toExpr))
   astExpr! ident (toExpr loc) (toExpr nm) args
 | .bvar loc idx => astExpr! bvar (toExpr loc) (toExpr idx)
 | .fvar loc idx a =>
-    let args := arrayToExpr  PreType.typeExpr (a.map (·.toExpr))
+    let args := arrayToExpr .zero PreType.typeExpr (a.map (·.toExpr))
     astExpr! fvar (toExpr loc) (toExpr idx) args
 | .arrow loc a r =>
   astExpr! arrow (toExpr loc) a.toExpr r.toExpr
@@ -280,7 +280,7 @@ protected def toExpr : SyntaxDefAtom → Lean.Expr
 | .ident v p => astExpr! ident (toExpr v) (toExpr p)
 | .str l     => astExpr! str (toExpr l)
 | .indent n a =>
-  let args := arrayToExpr SyntaxDefAtom.typeExpr (a.map (·.toExpr))
+  let args := arrayToExpr .zero SyntaxDefAtom.typeExpr (a.map (·.toExpr))
   astExpr! indent (toExpr n) args
 
 instance : ToExpr SyntaxDefAtom where
@@ -365,7 +365,7 @@ instance : ToExpr OpDecl where
   toTypeExpr := mkConst ``OpDecl
   toExpr d :=
     let be := toExpr d.argDecls
-    let bindings := arrayToExpr (BindingSpec.typeExpr be) (d.newBindings.map (·.toExpr be))
+    let bindings := arrayToExpr .zero (BindingSpec.typeExpr be) (d.newBindings.map (·.toExpr be))
     astExpr! mk
       (toExpr d.name)
       be

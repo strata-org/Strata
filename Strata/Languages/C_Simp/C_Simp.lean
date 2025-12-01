@@ -21,14 +21,16 @@ import Strata.DL.Lambda.Identifiers
 namespace Strata
 namespace C_Simp
 
+abbrev CSimpLParams: Lambda.LExprParams := {Metadata := Unit, IDMeta := Unit}
+
 -- Our expression language is `DL/Lambda`
 abbrev Expression : Imperative.PureExpr := {
   Ident := Lambda.Identifier Unit,
-  Expr := Lambda.LExpr Lambda.LMonoTy Unit,
+  Expr := Lambda.LExpr CSimpLParams.mono,
   Ty := Lambda.LTy,
-  TyEnv := Lambda.TEnv String,
-  TyContext := Lambda.LContext String,
-  EvalEnv := Lambda.LState String,
+  TyEnv := Lambda.TEnv Unit,
+  TyContext := Lambda.LContext ⟨Unit, Unit⟩,
+  EvalEnv := Lambda.LState ⟨Unit, String⟩,
   EqIdent := Lambda.instDecidableEqIdentifier
 }
 

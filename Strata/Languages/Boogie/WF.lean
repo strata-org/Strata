@@ -62,21 +62,21 @@ def WFCmdExtProp (p : Program) (c : CmdExt Expression) : Prop := match c with
   | .cmd c => WFcmdProp p c
   | .call (lhs : List Expression.Ident) (procName : String) (args : List Expression.Expr) _ => WFcallProp p lhs procName args
 
-structure WFblockProp (Cmd : Type) (p : Program) (label : String) (b : Block Expression Cmd) : Prop where
+structure WFblockProp (Cmd : Type) (p : Program) (label : String) (b : Block) : Prop where
 
-structure WFifProp    (Cmd : Type) (p : Program) (cond : Expression.Expr)  (thenb : Block Expression Cmd) (elseb : Block Expression Cmd) : Prop where
+structure WFifProp    (Cmd : Type) (p : Program) (cond : Expression.Expr)  (thenb : Block) (elseb : Block) : Prop where
 
-structure WFloopProp    (Cmd : Type) (p : Program) (guard : Expression.Expr) (measure : Option Expression.Expr) (invariant : Option Expression.Expr) (b : Block Expression Cmd) : Prop where
+structure WFloopProp    (Cmd : Type) (p : Program) (guard : Expression.Expr) (measure : Option Expression.Expr) (invariant : Option Expression.Expr) (b : Block) : Prop where
 
 structure WFgotoProp  (p : Program) (label : String) : Prop where
 
 @[simp]
 def WFStatementProp (p : Program) (stmt : Statement) : Prop := match stmt with
   | .cmd   cmd => WFCmdExtProp p cmd
-  | .block (label : String) (b : Block Expression (CmdExt Expression)) _ => WFblockProp (CmdExt Expression) p label b
-  | .ite   (cond : Expression.Expr) (thenb : Block Expression (CmdExt Expression)) (elseb : Block Expression (CmdExt Expression)) _ =>
+  | .block (label : String) (b : Block) _ => WFblockProp (CmdExt Expression) p label b
+  | .ite   (cond : Expression.Expr) (thenb : Block) (elseb : Block) _ =>
      WFifProp (CmdExt Expression) p cond thenb elseb
-  | .loop  (guard : Expression.Expr) (measure : Option Expression.Expr) (invariant : Option Expression.Expr) (body : Block Expression (CmdExt Expression)) _ =>
+  | .loop  (guard : Expression.Expr) (measure : Option Expression.Expr) (invariant : Option Expression.Expr) (body : Block) _ =>
      WFloopProp (CmdExt Expression) p guard measure invariant body
   | .goto (label : String) _ => WFgotoProp p label
 

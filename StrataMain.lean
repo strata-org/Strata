@@ -7,6 +7,7 @@
 -- Executable with utilities for working with Strata files.
 import Strata.DDM.Elab
 import Strata.DDM.Ion
+import Strata.Util.IO
 
 import Strata.Languages.Python.Python
 
@@ -94,15 +95,12 @@ def readStrataIon (fm : Strata.DialectFileMap) (path : System.FilePath) (bytes :
       fileReadError path msg
 
 def readFile (fm : Strata.DialectFileMap) (path : System.FilePath) : IO (Strata.Elab.LoadedDialects × Strata.DialectOrProgram) := do
-  let bytes ←
-    match ← IO.FS.readBinFile path |>.toBaseIO with
-    | .error _ =>
-      exitFailure s!"Error reading {path}."
-    | .ok c => pure c
+  let bytes ← Strata.Util.readBinInputSource path.toString
+  let displayPath : System.FilePath := Strata.Util.displayName path.toString
   if bytes.startsWith Ion.binaryVersionMarker then
-    readStrataIon fm path bytes
+    readStrataIon fm displayPath bytes
   else
-    readStrataText fm path bytes
+    readStrataText fm displayPath bytes
 
 structure Command where
   name : String
@@ -161,6 +159,21 @@ def diffCommand : Command where
     | _, _ =>
       exitFailure "Cannot compare dialect def with another dialect/program."
 
+def pyTranslateCommand : Command where
+  name := "pyTranslate"
+  args := [ "file" ]
+  help := "Tranlate a Strata Python Ion file to Strata.Boogie. Write results to stdout."
+  callback := fun searchPath v => do
+    let (ld, pd) ← readFile searchPath v[0]
+    match pd with
+    | .dialect d =>
+      IO.print <| d.format ld.dialects
+    | .program pgm =>
+    let preludePgm := Strata.Python.Internal.Boogie.prelude
+    let bpgm := Strata.pythonToBoogie pgm
+    let newPgm : Boogie.Program := { decls := preludePgm.decls ++ bpgm.decls }
+    IO.print newPgm
+
 def pyAnalyzeCommand : Command where
   name := "pyAnalyze"
   args := [ "file", "verbose" ]
@@ -172,6 +185,8 @@ def pyAnalyzeCommand : Command where
     | .dialect d =>
       IO.print <| d.format ld.dialects
     | .program pgm =>
+    if verbose then
+      IO.print pgm
     let preludePgm := Strata.Python.Internal.Boogie.prelude
     let bpgm := Strata.pythonToBoogie pgm
     let newPgm : Boogie.Program := { decls := preludePgm.decls ++ bpgm.decls }
@@ -190,6 +205,7 @@ def commandList : List Command := [
       printCommand,
       diffCommand,
       pyAnalyzeCommand,
+      pyTranslateCommand,
     ]
 
 def commandMap : Std.HashMap String Command :=
