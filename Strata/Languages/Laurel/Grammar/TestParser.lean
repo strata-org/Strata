@@ -1,10 +1,9 @@
 -- Test the minimal Laurel grammar
-import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Grammar.LaurelParser
 
 open Laurel.Parser
 
-def x := Laurel
+namespace Laurel
 
 -- Test parsing the AssertFalse example
 def testAssertFalse : IO Unit := do
@@ -35,24 +34,23 @@ def testAssertFalse : IO Unit := do
         return
       IO.println "✓ First procedure is named 'foo'"
 
-      match foo.body with
-      | Body.Transparent (StmtExpr.Block stmts none) =>
-        if stmts.length != 3 then
-          IO.println s!"✗ Expected 3 statements in foo, got {stmts.length}"
-          return
-        IO.println "✓ Procedure 'foo' has 3 statements"
+      let .Transparent bodyExpr := foo.body
+        | IO.println "✗ Expected transparent body"; return
+      let .Block stmts none := bodyExpr
+        | IO.println "✗ Expected block in transparent body"; return
+      if stmts.length != 3 then
+        IO.println s!"✗ Expected 3 statements in foo, got {stmts.length}"
+        return
+      IO.println "✓ Procedure 'foo' has 3 statements"
 
-        -- Check statements in foo
-        match stmts with
-        | [StmtExpr.Assert (StmtExpr.LiteralBool true),
-           StmtExpr.Assert (StmtExpr.LiteralBool false),
-           StmtExpr.Assert (StmtExpr.LiteralBool false)] =>
-          IO.println "✓ Procedure 'foo' statements: assert true; assert false; assert false;"
-        | _ =>
-          IO.println s!"✗ Unexpected statement structure in 'foo'"
-          return
+      -- Check statements in foo
+      match stmts with
+      | [StmtExpr.Assert (StmtExpr.LiteralBool true),
+         StmtExpr.Assert (StmtExpr.LiteralBool false),
+         StmtExpr.Assert (StmtExpr.LiteralBool false)] =>
+        IO.println "✓ Procedure 'foo' statements: assert true; assert false; assert false;"
       | _ =>
-        IO.println "✗ Expected transparent body with block"
+        IO.println s!"✗ Unexpected statement structure in 'foo'"
         return
 
     -- Check procedure 'bar'
@@ -66,23 +64,22 @@ def testAssertFalse : IO Unit := do
         return
       IO.println "✓ Second procedure is named 'bar'"
 
-      match bar.body with
-      | Body.Transparent (StmtExpr.Block stmts none) =>
-        if stmts.length != 2 then
-          IO.println s!"✗ Expected 2 statements in bar, got {stmts.length}"
-          return
-        IO.println "✓ Procedure 'bar' has 2 statements"
+      let .Transparent bodyExpr := bar.body
+        | IO.println "✗ Expected transparent body"; return
+      let .Block stmts none := bodyExpr
+        | IO.println "✗ Expected block in transparent body"; return
+      if stmts.length != 2 then
+        IO.println s!"✗ Expected 2 statements in bar, got {stmts.length}"
+        return
+      IO.println "✓ Procedure 'bar' has 2 statements"
 
-        -- Check statements in bar
-        match stmts with
-        | [StmtExpr.Assume (StmtExpr.LiteralBool false),
-           StmtExpr.Assert (StmtExpr.LiteralBool true)] =>
-          IO.println "✓ Procedure 'bar' statements: assume false; assert true;"
-        | _ =>
-          IO.println s!"✗ Unexpected statement structure in 'bar'"
-          return
+      -- Check statements in bar
+      match stmts with
+      | [StmtExpr.Assume (StmtExpr.LiteralBool false),
+         StmtExpr.Assert (StmtExpr.LiteralBool true)] =>
+        IO.println "✓ Procedure 'bar' statements: assume false; assert true;"
       | _ =>
-        IO.println "✗ Expected transparent body with block"
+        IO.println s!"✗ Unexpected statement structure in 'bar'"
         return
 
     IO.println "\n✓✓✓ All checks passed! ✓✓✓"

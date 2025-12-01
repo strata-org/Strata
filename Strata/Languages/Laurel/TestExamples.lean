@@ -5,7 +5,7 @@
 -/
 
 import Strata.Languages.Laurel.Grammar.LaurelParser
-import Strata.Languages.Laurel.Translator
+import Strata.Languages.Laurel.LaurelToBoogieTranslator
 
 namespace Laurel
 
