@@ -39,6 +39,7 @@ Design choices:
 - Construction of composite types is WIP. It needs a design first.
 
 -/
+namespace Laurel
 
 abbrev Identifier := String /- Potentially this could be an Int to save resources. -/
 
