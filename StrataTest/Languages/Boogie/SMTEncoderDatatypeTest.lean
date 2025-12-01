@@ -20,15 +20,6 @@ import Strata.Languages.Boogie.Verifier
 
 /-!
 This file contains unit tests for SMT datatype encoding.
-Tests verify that datatypes are correctly encoded to SMT-LIB format.
-
-Tests cover:
-- Simple datatypes (Option)
-- Recursive datatypes (List)
-- Multiple constructors
-- Zero-argument constructors
-- Multi-field constructors
-- Parametric datatype instantiation
 -/
 
 namespace Boogie
@@ -40,7 +31,7 @@ open Std
 
 /-! ## Test Datatypes -/
 
-/-- Simple Option datatype: Option α = None | Some α -/
+/-- Option α = None | Some α -/
 def optionDatatype : LDatatype Visibility :=
   { name := "TestOption"
     typeArgs := ["α"]
@@ -50,7 +41,7 @@ def optionDatatype : LDatatype Visibility :=
     ]
     constrs_ne := by decide }
 
-/-- Recursive List datatype: List α = Nil | Cons α (List α) -/
+/-- List α = Nil | Cons α (List α) -/
 def listDatatype : LDatatype Visibility :=
   { name := "TestList"
     typeArgs := ["α"]
@@ -63,7 +54,7 @@ def listDatatype : LDatatype Visibility :=
     ]
     constrs_ne := by decide }
 
-/-- Binary tree datatype: Tree α = Leaf | Node α (Tree α) (Tree α) -/
+/-- Tree α = Leaf | Node α (Tree α) (Tree α) -/
 def treeDatatype : LDatatype Visibility :=
   { name := "TestTree"
     typeArgs := ["α"]
@@ -76,26 +67,11 @@ def treeDatatype : LDatatype Visibility :=
         ] }
     ]
     constrs_ne := by decide }
-
-/-! ## Helper Functions -/
-
-/--
-Create an environment with a TypeFactory containing the given datatypes.
--/
-def mkEnvWithDatatypes (datatypes : List (LDatatype Visibility)) : Except Format Env := do
-  let mut env := Env.init
-  for d in datatypes do
-    env := { env with datatypes := env.datatypes.push d }
-    let factory ← d.genFactory (T := BoogieLParams)
-    env ← env.addFactory factory
-  return env
-
 /--
 Convert an expression to full SMT string including datatype declarations.
-This emits the complete SMT-LIB output with declare-datatype commands.
 -/
 def toSMTStringWithDatatypes (e : LExpr BoogieLParams.mono) (datatypes : List (LDatatype Visibility)) : IO String := do
-  match mkEnvWithDatatypes datatypes with
+  match Env.init.addDatatypes datatypes with
   | .error msg => return s!"Error creating environment: {msg}"
   | .ok env =>
     match toSMTTerm env [] e SMT.Context.default with
@@ -122,7 +98,6 @@ def toSMTStringWithDatatypes (e : LExpr BoogieLParams.mono) (datatypes : List (L
 /-! ## Test Cases with Guard Messages -/
 
 -- Test 1: Simple datatype (Option) - zero-argument constructor
--- This tests that a type using Option gets the datatype registered and declared
 /--
 info: "(declare-datatype TestOption (par (α) (\n  (None)\n  (Some (TestOption$SomeProj0 α)))))\n; x\n(declare-const f0 (TestOption Int))\n(define-fun t0 () (TestOption Int) f0)\n"
 -/
@@ -185,10 +160,9 @@ info: "(declare-datatype TestList (par (α) (\n  (Nil)\n  (Cons (TestList$ConsPr
   (.fvar () (BoogieIdent.unres "listOfOption") (.some (.tcons "TestList" [.tcons "TestOption" [.int]])))
   [listDatatype, optionDatatype]
 
-/-! ## Constructor Application Tests (will work after task 4 is complete) -/
+/-! ## Constructor Application Tests -/
 
 -- Test 8: None constructor (zero-argument)
--- Expected output should show: (None) or similar SMT constructor application
 /--
 info: "(declare-datatype TestOption (par (α) (\n  (None)\n  (Some (TestOption$SomeProj0 α)))))\n(define-fun t0 () (TestOption Int) (as None (TestOption Int)))\n"
 -/
@@ -198,7 +172,6 @@ info: "(declare-datatype TestOption (par (α) (\n  (None)\n  (Some (TestOption$S
   [optionDatatype]
 
 -- Test 9: Some constructor (single-argument)
--- Expected output should show: (Some 42)
 /--
 info: "(declare-datatype TestOption (par (α) (\n  (None)\n  (Some (TestOption$SomeProj0 α)))))\n(define-fun t0 () (TestOption Int) (Some 42))\n"
 -/
@@ -208,7 +181,6 @@ info: "(declare-datatype TestOption (par (α) (\n  (None)\n  (Some (TestOption$S
   [optionDatatype]
 
 -- Test 10: Cons constructor (multi-argument)
--- Expected output should show: (Cons 1 Nil)
 /--
 info: "(declare-datatype TestList (par (α) (\n  (Nil)\n  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))\n(define-fun t0 () (TestList Int) (as Nil (TestList Int)))\n(define-fun t1 () (TestList Int) (Cons 1 t0))\n"
 -/
@@ -220,10 +192,9 @@ info: "(declare-datatype TestList (par (α) (\n  (Nil)\n  (Cons (TestList$ConsPr
     (.op () (BoogieIdent.unres "Nil") (.some (.tcons "TestList" [.int]))))
   [listDatatype]
 
-/-! ## Tester Function Tests (will work after task 5 is complete) -/
+/-! ## Tester Function Tests  -/
 
 -- Test 11: isNone tester
--- Expected output should show: (is-None x)
 /--
 info: "(declare-datatype TestOption (par (α) (\n  (None)\n  (Some (TestOption$SomeProj0 α)))))\n; x\n(declare-const f0 (TestOption Int))\n(define-fun t0 () (TestOption Int) f0)\n(define-fun t1 () Bool (is-None t0))\n"
 -/
@@ -234,7 +205,6 @@ info: "(declare-datatype TestOption (par (α) (\n  (None)\n  (Some (TestOption$S
   [optionDatatype]
 
 -- Test 12: isCons tester
--- Expected output should show: (is-Cons xs)
 /--
 info: "(declare-datatype TestList (par (α) (\n  (Nil)\n  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))\n; xs\n(declare-const f0 (TestList Int))\n(define-fun t0 () (TestList Int) f0)\n(define-fun t1 () Bool (is-Cons t0))\n"
 -/
@@ -244,10 +214,9 @@ info: "(declare-datatype TestList (par (α) (\n  (Nil)\n  (Cons (TestList$ConsPr
     (.fvar () (BoogieIdent.unres "xs") (.some (.tcons "TestList" [.int]))))
   [listDatatype]
 
-/-! ## Destructor Function Tests (will work after task 6 is complete) -/
+/-! ## Destructor Function Tests -/
 
 -- Test 13: Some value destructor
--- Expected output should show: (TestOption$SomeProj0 x)
 /--
 info: "(declare-datatype TestOption (par (α) (\n  (None)\n  (Some (TestOption$SomeProj0 α)))))\n; x\n(declare-const f0 (TestOption Int))\n(define-fun t0 () (TestOption Int) f0)\n(define-fun t1 () Int (TestOption$SomeProj0 t0))\n"
 -/
@@ -258,7 +227,6 @@ info: "(declare-datatype TestOption (par (α) (\n  (None)\n  (Some (TestOption$S
   [optionDatatype]
 
 -- Test 14: Cons head destructor
--- Expected output should show: (TestList$ConsProj0 xs)
 /--
 info: "(declare-datatype TestList (par (α) (\n  (Nil)\n  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))\n; xs\n(declare-const f0 (TestList Int))\n(define-fun t0 () (TestList Int) f0)\n(define-fun t1 () Int (TestList$ConsProj0 t0))\n"
 -/
@@ -269,7 +237,6 @@ info: "(declare-datatype TestList (par (α) (\n  (Nil)\n  (Cons (TestList$ConsPr
   [listDatatype]
 
 -- Test 15: Cons tail destructor
--- Expected output should show: (TestList$ConsProj1 xs)
 /--
 info: "(declare-datatype TestList (par (α) (\n  (Nil)\n  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))\n; xs\n(declare-const f0 (TestList Int))\n(define-fun t0 () (TestList Int) f0)\n(define-fun t1 () (TestList Int) (TestList$ConsProj1 t0))\n"
 -/

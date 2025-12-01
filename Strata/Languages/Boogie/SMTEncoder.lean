@@ -35,7 +35,7 @@ structure SMT.Context where
   axms : Array Term := #[]
   tySubst: Map String TermType := []
   datatypes : Array (LDatatype BoogieLParams.IDMeta) := #[]
-  datatypeFuns : Map String (Op.Datatypes × LDatatype BoogieLParams.IDMeta × LConstr BoogieLParams.IDMeta) := Map.empty
+  datatypeFuns : Map String (Op.Datatypes × LConstr BoogieLParams.IDMeta) := Map.empty
 deriving Repr, DecidableEq, Inhabited
 
 def SMT.Context.default : SMT.Context := {}
@@ -70,9 +70,9 @@ def SMT.Context.addDatatype (ctx : SMT.Context) (d : LDatatype BoogieLParams.IDM
   if ctx.hasDatatype d.name then ctx
   else
     let (c, i, s) := d.genFunctionMaps
-    let m := Map.union ctx.datatypeFuns (c.fmap (fun x => (.constructor, x)))
-    let m := Map.union m (i.fmap (fun x => (.tester, x)))
-    let m := Map.union m (s.fmap (fun x => (.selector, x)))
+    let m := Map.union ctx.datatypeFuns (c.fmap (fun (_, x) => (.constructor, x)))
+    let m := Map.union m (i.fmap (fun (_, x) => (.tester, x)))
+    let m := Map.union m (s.fmap (fun (_, x) => (.selector, x)))
     { ctx with datatypes := ctx.datatypes.push d, datatypeFuns := m }
 
 /--
@@ -285,7 +285,7 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
   let (smt_outty, ctx) ← LMonoTy.toSMTType E outty ctx
 
   match ctx.datatypeFuns.find? fn.name with
-  | some (kind, d, c) =>
+  | some (kind, c) =>
     let adtApp := fun (args : List Term) (retty : TermType) =>
         /-
         Note: testers use constructor, translated in `Op.mkName` to is-foo

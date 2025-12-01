@@ -46,15 +46,13 @@ def typeCheck (options : Options) (program : Program) : Except Std.Format Progra
 def typeCheckAndPartialEval (options : Options) (program : Program) :
   Except Std.Format (List (Program × Env)) := do
   let program ← typeCheck options program
-  -- Extract datatypes from program declarations
+  -- Extract datatypes from program declarations and add to environment
   let datatypes := program.decls.filterMap fun decl =>
     match decl with
     | .type (.data d) _ => some d
     | _ => none
-  -- Generate factories for all datatypes and add them to the environment
-  let f ← Lambda.TypeFactory.genFactory (T:=BoogieLParams) (datatypes.toArray)
-  let env ← Env.init.addFactory f
-  let E := { env with program := program, datatypes := datatypes.toArray }
+  let E ← Env.init.addDatatypes datatypes
+  let E := { E with program := program }
   let pEs := Program.eval E
   if options.verbose then do
     dbg_trace f!"{Std.Format.line}VCs:"

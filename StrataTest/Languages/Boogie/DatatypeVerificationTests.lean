@@ -11,18 +11,7 @@ import Strata.DL.Lambda.TypeFactory
 /-!
 # Datatype Verification Integration Tests
 
-This file contains integration tests for datatype encoding in verification conditions.
-These tests create complete Boogie programs with datatype declarations and procedures,
-then verify them using the full verification pipeline.
-
-Tests verify the complete integration of:
-- Task 3: Context serialization for datatypes
-- Task 4: Constructor encoding
-- Task 5: Tester function encoding
-- Task 6: Destructor function encoding
-- Task 7: Integration into encoding pipeline
-
-Each test creates a Boogie Program and calls Boogie.verify to test end-to-end.
+Verify Boogie programs with datatypes, encoding with declare-datatype
 -/
 
 namespace Boogie.DatatypeVerificationTests
@@ -66,7 +55,6 @@ def mkProgramWithDatatypes
   (procName : String)
   (body : List Statement)
   : Except Format Program := do
-  -- Create procedure
   let proc : Procedure := {
     header := {
       name := BoogieIdent.unres procName
@@ -82,17 +70,8 @@ def mkProgramWithDatatypes
     body := body
   }
 
-  -- Create type declarations for datatypes
-  let mut decls : List Decl := []
-  for d in datatypes do
-    -- Add datatype declaration
-    decls := decls ++ [Decl.type (.data d) .empty]
-
-  -- Add procedure
-  decls := decls ++ [Decl.proc proc .empty]
-
-  -- Create program
-  return { decls := decls }
+  let decls := datatypes.map (fun d => Decl.type (.data d) .empty)
+  return { decls := decls ++ [Decl.proc proc .empty] }
 
 /-! ## Helper for Running Tests -/
 
@@ -118,7 +97,14 @@ def runVerificationTest (testName : String) (program : Program) : IO String := d
 
 /--
 Test that constructor applications are properly encoded.
-Creates a procedure that constructs Option values and verifies trivial properties.
+
+datatype Option a = None | Some a
+
+procedure testConstructors () {
+  x := None;
+  y := Some 42;
+  assert true;
+}
 -/
 def test1_constructorApplication : IO String := do
   let statements : List Statement := [
@@ -147,7 +133,16 @@ def test1_constructorApplication : IO String := do
 
 /--
 Test that tester functions (is-None, is-Some) are properly encoded.
-Verifies that None is detected as None and Some is detected as Some.
+
+datatype Option a = None | Some a
+
+procedure testTesters () {
+  x := None;
+  assert (Option$isNone x);
+  y := Some 42;
+  assert (Option$isSome y);
+}
+
 -/
 def test2_testerFunctions : IO String := do
   let statements : List Statement := [
@@ -187,7 +182,20 @@ def test2_testerFunctions : IO String := do
 
 /--
 Test that destructor functions are properly encoded.
-Verifies that extracting values from constructors works correctly.
+
+datatype Option a = None | Some a
+datatype List a = Nil | Cons a (List a)
+
+procedure testDestructors () {
+  opt := Some 42;
+  val := Option$SomeProj0 opt;
+  assert (val == 42);
+
+  list := [1]
+  head := List$ConsProj0 list;
+  assert(head == 1);
+}
+
 -/
 def test3_destructorFunctions : IO String := do
   let statements : List Statement := [
@@ -244,7 +252,18 @@ def test3_destructorFunctions : IO String := do
 
 /--
 Test nested datatypes (List of Option).
-Verifies that multiple datatypes can be used together and nested.
+
+datatype Option a = None | Some a
+datatype List a = Nil | Cons a (List a)
+
+procedure testNested () {
+  listOfOpt := [Some 42];
+  assert (List$isCons listOfOpt);
+  headOpt := List$ConsProj0 listOfOpt;
+  value := Option$ConsProj0 headOpt;
+  assert (value == 42);
+}
+
 -/
 def test4_nestedDatatypes : IO String := do
   let statements : List Statement := [
@@ -270,7 +289,29 @@ def test4_nestedDatatypes : IO String := do
         (LExpr.op () (BoogieIdent.unres "List$isCons")
           (.some (LMonoTy.arrow (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]]) .bool)))
         (LExpr.fvar () (BoogieIdent.unres "listOfOpt")
-          (.some (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]]))))
+          (.some (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]])))),
+
+    -- Extract the head of the list (which is an Option)
+    Statement.init (BoogieIdent.unres "headOpt") (.forAll [] (LMonoTy.tcons "Option" [.int]))
+      (LExpr.app ()
+        (LExpr.op () (BoogieIdent.unres "List$ConsProj0")
+          (.some (LMonoTy.arrow (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]]) (LMonoTy.tcons "Option" [.int]))))
+        (LExpr.fvar () (BoogieIdent.unres "listOfOpt")
+          (.some (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]])))),
+
+    -- Extract the value from the Option
+    Statement.init (BoogieIdent.unres "value") (.forAll [] LMonoTy.int)
+      (LExpr.app ()
+        (LExpr.op () (BoogieIdent.unres "Option$SomeProj0")
+          (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .int)))
+        (LExpr.fvar () (BoogieIdent.unres "headOpt")
+          (.some (LMonoTy.tcons "Option" [.int])))),
+
+    -- Assert that the extracted value is 42
+    Statement.assert "value_is_42"
+      (LExpr.eq ()
+        (LExpr.fvar () (BoogieIdent.unres "value") (.some .int))
+        (LExpr.intConst () 42))
   ]
 
   match mkProgramWithDatatypes [listDatatype, optionDatatype] "testNested" statements with
@@ -279,84 +320,23 @@ def test4_nestedDatatypes : IO String := do
   | .ok program =>
     runVerificationTest "Test 4 - Nested Datatypes" program
 
-/-! ## Test 5: Complete Verification Condition -/
+/-! ## Test 5: Tester with Havoc (requires SMT) -/
 
 /--
-Test a complete verification condition with datatypes.
-Creates a procedure with assumptions and assertions that exercise
-constructors, testers, and destructors together.
+Test tester functions with havoc'd values that require SMT solving and cannot
+be solved only with partial evaluation.
+
+datatype Option a = None | Some a
+
+procedure testTesterHavoc () {
+  x := None;
+  x := havoc();
+  assume (Option$isSome x);
+  assert (not (Option$isNone x));
+}
+
 -/
-def test5_completeVC : IO String := do
-  let statements : List Statement := [
-    -- Create Some(42)
-    Statement.init (BoogieIdent.unres "x") (.forAll [] (LMonoTy.tcons "Option" [.int]))
-      (LExpr.app ()
-        (LExpr.op () (BoogieIdent.unres "Some")
-          (.some (LMonoTy.arrow .int (LMonoTy.tcons "Option" [.int]))))
-        (LExpr.intConst () 42)),
-
-    -- Assume x is Some (should be true)
-    Statement.assume "x_is_some"
-      (LExpr.app ()
-        (LExpr.op () (BoogieIdent.unres "Option$isSome")
-          (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .bool)))
-        (LExpr.fvar () (BoogieIdent.unres "x") (.some (LMonoTy.tcons "Option" [.int])))),
-
-    -- Extract value
-    Statement.init (BoogieIdent.unres "val") (.forAll [] LMonoTy.int)
-      (LExpr.app ()
-        (LExpr.op () (BoogieIdent.unres "Option$SomeProj0")
-          (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .int)))
-        (LExpr.fvar () (BoogieIdent.unres "x") (.some (LMonoTy.tcons "Option" [.int])))),
-
-    -- Assert extracted value is 42
-    Statement.assert "extracted_value_is_42"
-      (LExpr.eq ()
-        (LExpr.fvar () (BoogieIdent.unres "val") (.some .int))
-        (LExpr.intConst () 42)),
-
-    -- Create a list and test it
-    Statement.init (BoogieIdent.unres "list") (.forAll [] (LMonoTy.tcons "List" [.int]))
-      (LExpr.app ()
-        (LExpr.app ()
-          (LExpr.op () (BoogieIdent.unres "Cons")
-            (.some (LMonoTy.arrow .int (LMonoTy.arrow (LMonoTy.tcons "List" [.int]) (LMonoTy.tcons "List" [.int])))))
-          (LExpr.intConst () 10))
-        (LExpr.op () (BoogieIdent.unres "Nil") (.some (LMonoTy.tcons "List" [.int])))),
-
-    -- Assert list is Cons
-    Statement.assert "list_is_cons"
-      (LExpr.app ()
-        (LExpr.op () (BoogieIdent.unres "List$isCons")
-          (.some (LMonoTy.arrow (LMonoTy.tcons "List" [.int]) .bool)))
-        (LExpr.fvar () (BoogieIdent.unres "list") (.some (LMonoTy.tcons "List" [.int])))),
-
-    -- Extract and verify head
-    Statement.init (BoogieIdent.unres "h") (.forAll [] LMonoTy.int)
-      (LExpr.app ()
-        (LExpr.op () (BoogieIdent.unres "List$ConsProj0")
-          (.some (LMonoTy.arrow (LMonoTy.tcons "List" [.int]) .int)))
-        (LExpr.fvar () (BoogieIdent.unres "list") (.some (LMonoTy.tcons "List" [.int])))),
-
-    Statement.assert "head_is_10"
-      (LExpr.eq ()
-        (LExpr.fvar () (BoogieIdent.unres "h") (.some .int))
-        (LExpr.intConst () 10))
-  ]
-
-  match mkProgramWithDatatypes [optionDatatype, listDatatype] "testCompleteVC" statements with
-  | .error err =>
-    return s!"Test 5 - Complete VC: FAILED (program creation)\n  Error: {err.pretty}"
-  | .ok program =>
-    runVerificationTest "Test 5 - Complete VC" program
-
-/-! ## Test 6: Tester with Havoc (requires SMT) -/
-
-/--
-Test tester functions with havoc'd values that require SMT solving.
-Uses havoc to create non-deterministic values that can't be solved by partial evaluation.
--/
-def test6_testerWithHavoc : IO String := do
+def test5_testerWithHavoc : IO String := do
   let statements : List Statement := [
     -- Havoc an Option value (non-deterministic)
     Statement.init (BoogieIdent.unres "x") (.forAll [] (LMonoTy.tcons "Option" [.int]))
@@ -383,17 +363,27 @@ def test6_testerWithHavoc : IO String := do
 
   match mkProgramWithDatatypes [optionDatatype] "testTesterHavoc" statements with
   | .error err =>
-    return s!"Test 6 - Tester with Havoc: FAILED (program creation)\n  Error: {err.pretty}"
+    return s!"Test 5 - Tester with Havoc: FAILED (program creation)\n  Error: {err.pretty}"
   | .ok program =>
-    runVerificationTest "Test 6 - Tester with Havoc" program
+    runVerificationTest "Test 5 - Tester with Havoc" program
 
-/-! ## Test 7: Destructor with Havoc (requires SMT) -/
+/-! ## Test 6: Destructor with Havoc (requires SMT) -/
 
 /--
-Test destructor functions with havoc'd values that require SMT solving.
-Verifies that extracting from a havoc'd Some value works correctly.
+Test destructor functions with havoc'd values.
+
+datatype Option a = None | Some a
+
+procedure testDestructorHavoc () {
+  opt := Some 0;
+  opt := havoc();
+  assume (opt == Some 42);
+  val := Option$SomeProj0 opt;
+  assert (val == 42);
+}
+
 -/
-def test7_destructorWithHavoc : IO String := do
+def test6_destructorWithHavoc : IO String := do
   let statements : List Statement := [
     -- Havoc an Option value
     Statement.init (BoogieIdent.unres "opt") (.forAll [] (LMonoTy.tcons "Option" [.int]))
@@ -428,17 +418,26 @@ def test7_destructorWithHavoc : IO String := do
 
   match mkProgramWithDatatypes [optionDatatype] "testDestructorHavoc" statements with
   | .error err =>
-    return s!"Test 7 - Destructor with Havoc: FAILED (program creation)\n  Error: {err.pretty}"
+    return s!"Test 6 - Destructor with Havoc: FAILED (program creation)\n  Error: {err.pretty}"
   | .ok program =>
-    runVerificationTest "Test 7 - Destructor with Havoc" program
+    runVerificationTest "Test 6 - Destructor with Havoc" program
 
-/-! ## Test 8: List Constructor with Havoc (requires SMT) -/
+/-! ## Test 7: List Constructor with Havoc (requires SMT) -/
 
 /--
-Test list operations with havoc'd values that require SMT solving.
-Verifies that list testers work with non-deterministic values.
+Test list operations with havoc'd values.
+
+datatype List a = Nil | Cons a (List a)
+
+procedure testListHavoc () {
+  xs := Nil;
+  xs := havoc();
+  assume (List$isCons xs);
+  assert (not (List$isNil xs));
+}
+
 -/
-def test8_listWithHavoc : IO String := do
+def test7_listWithHavoc : IO String := do
   let statements : List Statement := [
     -- Havoc a list
     Statement.init (BoogieIdent.unres "xs") (.forAll [] (LMonoTy.tcons "List" [.int]))
@@ -465,9 +464,9 @@ def test8_listWithHavoc : IO String := do
 
   match mkProgramWithDatatypes [listDatatype] "testListHavoc" statements with
   | .error err =>
-    return s!"Test 8 - List with Havoc: FAILED (program creation)\n  Error: {err.pretty}"
+    return s!"Test 7 - List with Havoc: FAILED (program creation)\n  Error: {err.pretty}"
   | .ok program =>
-    runVerificationTest "Test 8 - List with Havoc" program
+    runVerificationTest "Test 7 - List with Havoc" program
 
 /-! ## Run All Tests with #guard_msgs -/
 
@@ -551,43 +550,18 @@ Assumptions:
 Proof Obligation:
 #true
 
+Label: value_is_42
+Assumptions:
+
+
+Proof Obligation:
+#true
+
 ---
-info: "Test 4 - Nested Datatypes: PASSED\n  Verified 1 obligation(s)\n"
+info: "Test 4 - Nested Datatypes: PASSED\n  Verified 2 obligation(s)\n"
 -/
 #guard_msgs in
 #eval test4_nestedDatatypes
-
-/--
-info: [Strata.Boogie] Type checking succeeded.
-
-
-VCs:
-Label: extracted_value_is_42
-Assumptions:
-
-
-Proof Obligation:
-#true
-
-Label: list_is_cons
-Assumptions:
-
-
-Proof Obligation:
-#true
-
-Label: head_is_10
-Assumptions:
-
-
-Proof Obligation:
-#true
-
----
-info: "Test 5 - Complete VC: PASSED\n  Verified 3 obligation(s)\n"
--/
-#guard_msgs in
-#eval test5_completeVC
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -603,10 +577,10 @@ Proof Obligation:
 
 Wrote problem to vcs/x_not_none.smt2.
 ---
-info: "Test 6 - Tester with Havoc: PASSED\n  Verified 1 obligation(s)\n"
+info: "Test 5 - Tester with Havoc: PASSED\n  Verified 1 obligation(s)\n"
 -/
 #guard_msgs in
-#eval test6_testerWithHavoc
+#eval test5_testerWithHavoc
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -622,10 +596,10 @@ Proof Obligation:
 
 Wrote problem to vcs/val_is_42.smt2.
 ---
-info: "Test 7 - Destructor with Havoc: PASSED\n  Verified 1 obligation(s)\n"
+info: "Test 6 - Destructor with Havoc: PASSED\n  Verified 1 obligation(s)\n"
 -/
 #guard_msgs in
-#eval test7_destructorWithHavoc
+#eval test6_destructorWithHavoc
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -641,9 +615,9 @@ Proof Obligation:
 
 Wrote problem to vcs/xs_not_nil.smt2.
 ---
-info: "Test 8 - List with Havoc: PASSED\n  Verified 1 obligation(s)\n"
+info: "Test 7 - List with Havoc: PASSED\n  Verified 1 obligation(s)\n"
 -/
 #guard_msgs in
-#eval test8_listWithHavoc
+#eval test7_listWithHavoc
 
 end Boogie.DatatypeVerificationTests
