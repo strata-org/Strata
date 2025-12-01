@@ -195,16 +195,16 @@ def argsAndKWordsToCanonicalList (func_infos : List PythonFunctionDecl)
     let args := args.map (PyExprToBoogieWithSubst substitution_records)
     let args := (List.range required_order.length).filterMap (λ n =>
         if h: n < args.size then
-          let arg_name := required_order[n]!
+          let arg_name := required_order[n]! -- Guaranteed by range. Using finRange causes breaking coercions to Nat.
           let type_str := getFuncSigType fname arg_name
           if type_str.endsWith "OrNone" then
             -- Optional param. Need to wrap e.g., string into StrOrNone
             match type_str with
-            | "StrOrNone" => some (.app () (.op () "StrOrNone_mk_str" none) args[n]!)
-            | "BytesOrStrOrNone" => some (.app () (.op () "BytesOrStrOrNone_mk_str" none) args[n]!)
+            | "StrOrNone" => some (.app () (.op () "StrOrNone_mk_str" none) args[n])
+            | "BytesOrStrOrNone" => some (.app () (.op () "BytesOrStrOrNone_mk_str" none) args[n])
             | _ => panic! "Unsupported type_str: "++ type_str
           else
-            some (args[n]!)
+            some (args[n])
         else
           none)
     args ++ ordered_remaining_args
