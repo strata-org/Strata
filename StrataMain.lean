@@ -10,6 +10,7 @@ import Strata.DDM.Ion
 import Strata.Util.IO
 
 import Strata.Languages.Python.Python
+import StrataTest.Transform.ProcedureInlining
 
 def exitFailure {α} (message : String) : IO α := do
   IO.eprintln (message  ++ "\n\nRun strata --help for additional help.")
