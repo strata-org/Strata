@@ -13,6 +13,7 @@ namespace Python
 def getFuncSigOrder (fname: String) : List String :=
   match fname with
   | "test_helper_procedure" => ["req_name", "opt_name"]
+  | "print" => ["msg", "opt"]
   | _ => panic! s!"Missing function signature : {fname}"
 
 -- We should extract the function signatures from the prelude:
@@ -22,6 +23,11 @@ def getFuncSigType (fname: String) (arg: String) : String :=
     match arg with
     | "req_name" => "string"
     | "opt_name" => "StrOrNone"
+    | _ => panic! s!"Unrecognized arg : {arg}"
+  | "print" =>
+    match arg with
+    | "msg" => "string"
+    | "opt" => "StrOrNone"
     | _ => panic! s!"Unrecognized arg : {arg}"
   | _ => panic! s!"Missing function signature : {fname}"
 
