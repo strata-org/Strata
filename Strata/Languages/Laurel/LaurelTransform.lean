@@ -9,12 +9,13 @@ import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Laurel
 
 ---------------------------------------------------------------------
-namespace Strata
+namespace Laurel
 
 /- Translating concrete Laurel syntax into abstract Laurel syntax -/
 
 open Laurel
 open Std (ToFormat Format format)
+open Strata (QualifiedIdent Arg)
 
 ---------------------------------------------------------------------
 
@@ -36,7 +37,7 @@ def TransM.error [Inhabited α] (msg : String) : TransM α := do
 
 ---------------------------------------------------------------------
 
-def checkOp (op : Operation) (name : QualifiedIdent) (argc : Nat) :
+def checkOp (op : Strata.Operation) (name : QualifiedIdent) (argc : Nat) :
   TransM Unit := do
   if op.name != name then
     TransM.error s!"Op name mismatch! \n\
@@ -47,6 +48,7 @@ def checkOp (op : Operation) (name : QualifiedIdent) (argc : Nat) :
                    Expected: {argc}\n\
                    Got: {op.args.size}\n\
                    Op: {repr op}"
+  return ()
 
 def translateIdent (arg : Arg) : TransM Identifier := do
   let .ident _ id := arg
@@ -55,10 +57,10 @@ def translateIdent (arg : Arg) : TransM Identifier := do
 
 def translateBool (arg : Arg) : TransM Bool := do
   match arg with
-  | .op op => 
-    if op.name == q`LaurelMinimal.boolTrue then
+  | .op op =>
+    if op.name == q`Laurel.boolTrue then
       return true
-    else if op.name == q`LaurelMinimal.boolFalse then
+    else if op.name == q`Laurel.boolFalse then
       return false
     else
       TransM.error s!"translateBool expects boolTrue or boolFalse"
@@ -68,30 +70,27 @@ def translateBool (arg : Arg) : TransM Bool := do
 
 mutual
 
-def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
+partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
   match arg with
   | .op op =>
-    if op.name == q`LaurelMinimal.assert then
-      checkOp op q`LaurelMinimal.assert 1
+    if op.name == q`Laurel.assert then
       let cond ← translateStmtExpr op.args[0]!
       return .Assert cond
-    else if op.name == q`LaurelMinimal.assume then
-      checkOp op q`LaurelMinimal.assume 1
+    else if op.name == q`Laurel.assume then
       let cond ← translateStmtExpr op.args[0]!
       return .Assume cond
-    else if op.name == q`LaurelMinimal.block then
-      checkOp op q`LaurelMinimal.block 1
+    else if op.name == q`Laurel.block then
       let stmts ← translateSeqCommand op.args[0]!
       return .Block stmts none
-    else if op.name == q`LaurelMinimal.boolTrue then
+    else if op.name == q`Laurel.boolTrue then
       return .LiteralBool true
-    else if op.name == q`LaurelMinimal.boolFalse then
+    else if op.name == q`Laurel.boolFalse then
       return .LiteralBool false
     else
       TransM.error s!"Unknown operation: {op.name}"
   | _ => TransM.error s!"translateStmtExpr expects operation"
 
-def translateSeqCommand (arg : Arg) : TransM (List StmtExpr) := do
+partial def translateSeqCommand (arg : Arg) : TransM (List StmtExpr) := do
   let .seq _ args := arg
     | TransM.error s!"translateSeqCommand expects seq"
   let mut stmts : List StmtExpr := []
@@ -100,7 +99,7 @@ def translateSeqCommand (arg : Arg) : TransM (List StmtExpr) := do
     stmts := stmts ++ [stmt]
   return stmts
 
-def translateCommand (arg : Arg) : TransM StmtExpr := do
+partial def translateCommand (arg : Arg) : TransM StmtExpr := do
   translateStmtExpr arg
 
 end
@@ -125,10 +124,10 @@ def translateProcedure (arg : Arg) : TransM Procedure := do
 
 def translateProgram (prog : Program) : TransM Laurel.Program := do
   let mut procedures : List Procedure := []
-  for decl in prog.decls do
+  for decl in prog.commands do
     match decl with
     | .op op =>
-      if op.name == q`LaurelMinimal.procedure then
+      if op.name == q`Laurel.procedure then
         let proc ← translateProcedure decl
         procedures := procedures ++ [proc]
       else
