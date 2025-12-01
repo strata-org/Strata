@@ -8,22 +8,24 @@
 import Strata
 
 #dialect
-dialect LaurelMinimal;
+dialect Laurel;
 
-// Basic types
-type bool;
-type void;
 
 // Boolean literals
+type bool;
 fn boolTrue : bool => "true";
 fn boolFalse : bool => "false";
 
-// Statements
-op assert (cond : bool) : Command => "assert " cond ";\n";
-op assume (cond : bool) : Command => "assume " cond ";\n";
-op block (stmts : Seq Command) : Command => "{\n" stmts "}\n";
+category StmtExpr;
+op literalBool (b: bool): StmtExpr => b;
 
-// Procedure definition
-op procedure (name : Ident, body : Command) : Command => "procedure " name "() " body "\n";
+op assert (cond : StmtExpr) : StmtExpr => "assert " cond ";\n";
+op assume (cond : StmtExpr) : StmtExpr => "assume " cond ";\n";
+op block (stmts : Seq StmtExpr) : StmtExpr => "{\n" stmts "}\n";
+
+category Procedure;
+op procedure (name : Ident, body : StmtExpr) : Procedure => "procedure " name "() " "=" body;
+
+op program (staticProcedures: Seq Procedure): Command => staticProcedures;
 
 #end
