@@ -47,31 +47,30 @@ instance : HasNot Boogie.Expression where
 abbrev BoogieEval := SemanticEval Expression
 abbrev BoogieStore := SemanticStore Expression
 
-def WellFormedBoogieEvalCong (δ : BoogieEval) : Prop :=
-    (∀ e₁ e₁' σ₀ σ σ₀' σ' m,
-      δ σ₀ σ e₁ = δ σ₀' σ' e₁' →
-      (∀ ty, δ σ₀ σ (.abs m ty e₁) = δ σ₀' σ' (.abs m ty e₁')) ∧
+def WellFormedBoogieEvalCong (δ : BoogieEval)
+    : Prop :=
+    (∀ σ σ' e₁ e₁' ,
+      δ σ e₁ = δ σ' e₁' →
+      (∀ ty m, δ σ (.abs ty m e₁) = δ σ' (.abs ty m e₁'))) ∧
     -- binary congruence
-    (∀ e₂ e₂',
-      δ σ₀ σ e₂ = δ σ₀' σ' e₂' →
-      δ σ₀ σ (.app m e₁ e₂) = δ σ₀' σ' (.app m e₁' e₂') ∧
-      δ σ₀ σ (.eq m e₁ e₂) = δ σ₀' σ' (.eq m e₁' e₂') ∧
-      (∀ k ty, δ σ₀ σ (.quant m k ty e₁ e₂) = δ σ₀' σ' (.quant m k ty e₁' e₂')) ∧
+    (∀ σ σ' e₂ e₂',
+      δ σ e₂ = δ σ' e₂' →
+      (∀ e₁ e₁' m, δ σ (.app m e₁ e₂) = δ σ' (.app m e₁' e₂')) ∧
+      (∀ e₁ e₁' m, δ σ (.eq m e₁ e₂) = δ σ' (.eq m e₁' e₂')) ∧
+      (∀ e₁ e₁' m k ty, δ σ (.quant m k ty e₁ e₂) = δ σ' (.quant m k ty e₁' e₂'))) ∧
     -- ternary congruence
-    (∀ e₃ e₃',
-      δ σ₀ σ e₃ = δ σ₀' σ' e₃' →
-      δ σ₀ σ (.ite m e₃ e₁ e₂) = δ σ₀' σ' (.ite m e₃' e₁' e₂')
-    ))
-    )
+    (∀ σ σ' e₃ e₃',
+      δ σ e₃ = δ σ' e₃' →
+      (∀ e₁ e₁' e₂ e₂' m, δ σ (.ite m e₃ e₁ e₂) = δ σ' (.ite m e₃' e₁' e₂')))
 
-inductive EvalExpressions {P} [HasVarsPure P P.Expr] : SemanticEval P → SemanticStore P → SemanticStore P → List P.Expr → List P.Expr → Prop where
+inductive EvalExpressions {P} [HasVarsPure P P.Expr] : SemanticEval P → SemanticStore P → List P.Expr → List P.Expr → Prop where
   | eval_none :
-    EvalExpressions δ σ₀ σ [] []
+    EvalExpressions δ σ [] []
   | eval_some :
     isDefined σ (HasVarsPure.getVars e) →
-    δ σ₀ σ e = .some v →
-    EvalExpressions δ σ₀ σ es vs →
-    EvalExpressions δ σ₀ σ (e :: es) (v :: vs)
+    δ σ e = .some v →
+    EvalExpressions δ σ es vs →
+    EvalExpressions δ σ (e :: es) (v :: vs)
 
 inductive ReadValues : SemanticStore P → List P.Ident → List P.Expr → Prop where
   | read_none :
@@ -161,24 +160,27 @@ def updatedStates
 def WellFormedBoogieEvalTwoState (δ : BoogieEval) (σ₀ σ : BoogieStore) : Prop :=
     open Boogie.OldExpressions in
       (∃ vs vs' σ₁, HavocVars σ₀ vs σ₁ ∧ InitVars σ₁ vs' σ) ∧
-      (∀ vs vs' σ₀ σ₁ σ m,
+      (∀ vs vs' σ₀ σ₁ σ,
         (HavocVars σ₀ vs σ₁ ∧ InitVars σ₁ vs' σ) →
-        -- if the variable is modified, then old variable should lookup in the old store
-        ∀ v mOp mVar,
-          (v ∈ vs → ∀ oty ty, δ σ₀ σ (@oldVar m (tyold := oty) mOp mVar v (tyv := ty)) = σ₀ v) ∧
+        ∀ v,
+          (v ∈ vs →
+            ∀ oty mApp mOp mVar v ty,
+              δ σ (@oldVar (tyold := oty) mApp mOp mVar v ty) = σ₀ v) ∧
         -- if the variable is not modified, then old variable is identity
-          (¬ v ∈ vs → ∀ oty ty, δ σ₀ σ (@oldVar m (tyold := oty) mOp mVar v (tyv := ty)) = σ v)) ∧
+          (¬ v ∈ vs →
+            ∀ oty mApp mOp mVar v ty,
+              δ σ (@oldVar (tyold := oty) mApp mOp mVar v ty) = σ v)) ∧
       -- evaluating on an old complex expression is the same as evlauating on its normal form
       -- TODO: can possibly break this into more sub-components, proving it using congruence and normalization property
       -- Might not be needed if we assume all expressions are normalized
-      (∀ e σ₀ σ, δ σ₀ σ e = δ σ₀ σ (normalizeOldExpr e))
+      (∀ e σ, δ σ e = δ σ (normalizeOldExpr e))
 
 inductive EvalCommand : (String → Option Procedure)  → BoogieEval →
-  BoogieStore → BoogieStore → Command → BoogieStore → Prop where
-  | cmd_sem {π δ σ₀ σ c σ'} :
-    Imperative.EvalCmd (P:=Expression) δ σ₀ σ c σ' →
+  BoogieStore → Command → BoogieStore → Prop where
+  | cmd_sem {π δ σ c σ'} :
+    Imperative.EvalCmd (P:=Expression) δ σ c σ' →
     ----
-    EvalCommand π δ σ₀ σ (CmdExt.cmd c) σ'
+    EvalCommand π δ σ (CmdExt.cmd c) σ'
 
   /-
   NOTE: If π is NOT the first implicit variable below, Lean complains as
@@ -193,7 +195,7 @@ inductive EvalCommand : (String → Option Procedure)  → BoogieEval →
   -/
   | call_sem {π δ σ₀ σ args vals oVals σA σAO σR n p modvals lhs σ'} :
     π n = .some p →
-    EvalExpressions (P:=Expression) δ σ₀ σ args vals →
+    EvalExpressions (P:=Expression) δ σ args vals →
     ReadValues σ lhs oVals →
     WellFormedSemanticEvalVal δ →
     WellFormedSemanticEvalVar δ →
@@ -213,36 +215,36 @@ inductive EvalCommand : (String → Option Procedure)  → BoogieEval →
     -- Preconditions, if any, must be satisfied for execution to continue.
     (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
       isDefinedOver (HasVarsPure.getVars) σAO pre ∧
-      δ σAO σAO pre = .some HasBool.tt) →
-    @Imperative.EvalStmts Expression Command (EvalCommand π) _ _ _ _ _ _ δ σAO σAO p.body σR →
+      δ σAO pre = .some HasBool.tt) →
+    @Imperative.EvalStmts Expression Command (EvalCommand π) _ _ _ _ _ _ δ σAO p.body σR →
     -- Postconditions, if any, must be satisfied for execution to continue.
     (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
       isDefinedOver (HasVarsPure.getVars) σAO post ∧
-      δ σAO σR post = .some HasBool.tt) →
+      δ σR post = .some HasBool.tt) →
 
     ReadValues σR (ListMap.keys (p.header.outputs) ++ p.spec.modifies) modvals →
     UpdateStates σ (lhs ++ p.spec.modifies) modvals σ' →
     ----
-    EvalCommand π δ σ₀ σ (CmdExt.call lhs n args) σ'
+    EvalCommand π δ σ (CmdExt.call lhs n args) σ'
 
 abbrev EvalStatement (π : String → Option Procedure) : BoogieEval →
-    BoogieStore → BoogieStore → Statement → BoogieStore → Prop :=
+    BoogieStore → Statement → BoogieStore → Prop :=
   Imperative.EvalStmt Expression Command (EvalCommand π)
 
 abbrev EvalStatements (π : String → Option Procedure) : BoogieEval →
-    BoogieStore → BoogieStore → List Statement → BoogieStore → Prop :=
+    BoogieStore → List Statement → BoogieStore → Prop :=
   Imperative.EvalStmts Expression Command (EvalCommand π)
 
 inductive EvalCommandContract : (String → Option Procedure)  → BoogieEval →
-  BoogieStore → BoogieStore → Command → BoogieStore → Prop where
-  | cmd_sem {π δ σ₀ σ c σ'} :
-    Imperative.EvalCmd (P:=Expression) δ σ₀ σ c σ' →
+  BoogieStore → Command → BoogieStore → Prop where
+  | cmd_sem {π δ σ c σ'} :
+    Imperative.EvalCmd (P:=Expression) δ σ c σ' →
     ----
-    EvalCommandContract π δ σ₀ σ (CmdExt.cmd c) σ'
+    EvalCommandContract π δ σ (CmdExt.cmd c) σ'
 
-  | call_sem {π δ σ₀ σ args oVals vals σA σAO σO σR n p modvals lhs σ'} :
+  | call_sem {π δ σ args oVals vals σA σAO σO σR n p modvals lhs σ'} :
     π n = .some p →
-    EvalExpressions (P:=Boogie.Expression) δ σ₀ σ args vals →
+    EvalExpressions (P:=Boogie.Expression) δ σ args vals →
     ReadValues σ lhs oVals →
     WellFormedSemanticEvalVal δ →
     WellFormedSemanticEvalVar δ →
@@ -262,22 +264,22 @@ inductive EvalCommandContract : (String → Option Procedure)  → BoogieEval �
     -- Preconditions, if any, must be satisfied for execution to continue.
     (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
       isDefinedOver (HasVarsPure.getVars) σAO pre ∧
-      δ σAO σAO pre = .some HasBool.tt) →
+      δ σAO pre = .some HasBool.tt) →
     HavocVars σAO (ListMap.keys p.header.outputs) σO →
     HavocVars σO p.spec.modifies σR →
     -- Postconditions, if any, must be satisfied for execution to continue.
     (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
       isDefinedOver (HasVarsPure.getVars) σAO post ∧
-      δ σO σR post = .some HasBool.tt) →
+      δ σR post = .some HasBool.tt) →
     ReadValues σR (ListMap.keys (p.header.outputs) ++ p.spec.modifies) modvals →
     UpdateStates σ (lhs ++ p.spec.modifies) modvals σ' →
     ----
-    EvalCommandContract π δ σ₀ σ (.call lhs n args) σ'
+    EvalCommandContract π δ σ (.call lhs n args) σ'
 
 abbrev EvalStatementContract (π : String → Option Procedure) : BoogieEval →
-    BoogieStore → BoogieStore → Statement → BoogieStore → Prop :=
+    BoogieStore → Statement → BoogieStore → Prop :=
   Imperative.EvalStmt Expression Command (EvalCommandContract π)
 
 abbrev EvalStatementsContract (π : String → Option Procedure) : BoogieEval →
-    BoogieStore → BoogieStore → List Statement → BoogieStore → Prop :=
+    BoogieStore → List Statement → BoogieStore → Prop :=
   Imperative.EvalStmts Expression Command (EvalCommandContract π)
