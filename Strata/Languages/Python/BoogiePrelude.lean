@@ -104,6 +104,7 @@ function BoolOrStrOrNone_mk_bool(b : bool) : (BoolOrStrOrNone);
 function BoolOrStrOrNone_mk_str(s : string) : (BoolOrStrOrNone);
 function BoolOrStrOrNone_mk_none(v : None) : (BoolOrStrOrNone);
 function Client_tag(v : Client) : (ClientTag);
+function DictStrAny_mk(s : string) : (DictStrAny);
 
 // Unique const axioms
 axiom [unique_ExceptOrNoneTag]: EN_STR_TAG != EN_NONE_TAG;
@@ -145,7 +146,13 @@ procedure import(names : ListStr) returns ()
 procedure print(msg : string, opt : StrOrNone) returns ()
 ;
 
-procedure json_dumps(msg : string) returns (s: string)
+procedure json_dumps(msg : DictStrAny, opt_indent : IntOrNone) returns (s: string, maybe_except: ExceptOrNone)
+;
+
+procedure json_loads(msg : string) returns (d: DictStrAny, maybe_except: ExceptOrNone)
+;
+
+procedure input(msg : string) returns (result: string, maybe_except: ExceptOrNone)
 ;
 
 function str_len(s : string) : int;
