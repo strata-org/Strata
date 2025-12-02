@@ -492,6 +492,8 @@ protected def ArgF.toIon {α} [ToIon α] (refs : SymbolIdCache) (arg : ArgF α) 
       return .sexp #[ ionSymbol! "strlit", ← toIon ann, .string s]
     | .bytes ann a =>
       return .sexp #[ ionSymbol! "bytes", ← toIon ann, .blob a ]
+    | .bool ann b =>
+      return .sexp #[ ionSymbol! "bool", ← toIon ann, .bool b ]
     | .option ann o => do
       let mut args : Array (Ion _) := #[ ionSymbol! "option", ← toIon ann ]
       match o with

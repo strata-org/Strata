@@ -109,6 +109,7 @@ protected def ArgF.quote {α} [Quote α] : ArgF α → Term
 | .cat e => Syntax.mkCApp ``ArgF.cat #[quote e]
 | .ident ann e => astQuote! ArgF.ident ann (quote e)
 | .num ann e => astQuote! ArgF.num ann (quote e)
+| .bool ann b => astQuote! ArgF.bool ann (quote b)
 | .decimal ann e => astQuote! ArgF.decimal ann (quote e)
 | .strlit ann e => astQuote! ArgF.strlit ann (quote e)
 | .bytes ann e => astQuote! ArgF.bytes ann (quote e)

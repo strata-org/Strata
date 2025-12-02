@@ -176,6 +176,7 @@ inductive ArgF (α : Type) : Type where
 | type (e : TypeExprF α)
 | ident (ann : α) (i : String)
 | num (ann : α)(v : Nat)
+| bool (ann : α)(v : Bool)
 | decimal (ann : α) (v : Decimal)
 | strlit (ann : α) (i : String)
 | bytes (ann : α) (a : ByteArray)
@@ -330,6 +331,7 @@ def ArgF.beq {α} [BEq α] (a1 a2 : ArgF α) : Bool :=
   | .type t1, .type t2 => t1 == t2
   | .ident a1 i1, .ident a2 i2 => a1 == a2 && i1 == i2
   | .num a1 n1, .num a2 n2 => a1 == a2 && n1 == n2
+  | .bool a1 b1, .bool a2 b2 => a1 == a2 && b1 == b2
   | .decimal a1 v1, .decimal a2 v2 => a1 == a2 && v1 == v2
   | .strlit a1 i1, .strlit a2 i2 => a1 == a2 && i1 == i2
   | .option a1 o1, .option a2 o2 => a1 == a2 &&
@@ -1226,7 +1228,7 @@ partial def foldOverArgBindingSpecs {α β}
     : β :=
   match a with
   | .op op => op.foldBindingSpecs m f init
-  | .expr _ | .type _ | .cat _ | .ident .. | .num .. | .decimal .. | .bytes .. | .strlit .. => init
+  | .expr _ | .type _ | .cat _ | .ident .. | .num .. | .decimal .. | .bytes .. | .strlit .. | .bool .. => init
   | .option _ none => init
   | .option _ (some a) => foldOverArgBindingSpecs m f init a
   | .seq _ a => a.attach.foldl (init := init) fun init ⟨a, _⟩ => foldOverArgBindingSpecs m f init a
