@@ -60,6 +60,30 @@ Strata.B3CST.Expression.exists_expr : {α : Type} →
 #print B3CST.Expression
 
 /--
+info: inductive Strata.B3AST.Expression : Type → Type
+number of parameters: 1
+constructors:
+Strata.B3AST.Expression.literal : {α : Type} → α → B3AST.Literal α → B3AST.Expression α
+Strata.B3AST.Expression.id : {α : Type} → α → Ann Nat α → B3AST.Expression α
+Strata.B3AST.Expression.ite : {α : Type} →
+  α → B3AST.Expression α → B3AST.Expression α → B3AST.Expression α → B3AST.Expression α
+Strata.B3AST.Expression.binaryOp : {α : Type} →
+  α → B3AST.BinaryOp α → B3AST.Expression α → B3AST.Expression α → B3AST.Expression α
+Strata.B3AST.Expression.unaryOp : {α : Type} → α → B3AST.UnaryOp α → B3AST.Expression α → B3AST.Expression α
+Strata.B3AST.Expression.functionCall : {α : Type} →
+  α → Ann String α → Ann (Array (B3AST.Expression α)) α → B3AST.Expression α
+Strata.B3AST.Expression.labeledExpr : {α : Type} → α → Ann String α → B3AST.Expression α → B3AST.Expression α
+Strata.B3AST.Expression.letExpr : {α : Type} →
+  α → Ann String α → B3AST.Expression α → B3AST.Expression α → B3AST.Expression α
+Strata.B3AST.Expression.quantifierExpr : {α : Type} →
+  α →
+    B3AST.QuantifierKind α →
+      Ann String α → Ann String α → Ann (Array (B3AST.Pattern α)) α → B3AST.Expression α → B3AST.Expression α
+-/
+#guard_msgs in
+#print B3AST.Expression
+
+/--
 info: inductive Strata.B3CST.Pattern : Type → Type
 number of parameters: 1
 constructors:
