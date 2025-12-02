@@ -88,6 +88,7 @@ function AnyOrNone_none_val(v : AnyOrNone) : (None);
 function AnyOrNone_mk_str(s : string) : (AnyOrNone);
 function AnyOrNone_mk_none(v : None) : (AnyOrNone);
 function IntOrNone_mk_none(v : None) : (IntOrNone);
+function IntOrNone_mk_int(i : int) : (IntOrNone);
 function BytesOrStrOrNone_mk_none(v : None) : (BytesOrStrOrNone);
 function BytesOrStrOrNone_mk_str(s : string) : (BytesOrStrOrNone);
 function MappingStrStrOrNone_mk_none(v : None) : (MappingStrStrOrNone);
@@ -155,7 +156,20 @@ procedure json_loads(msg : string) returns (d: DictStrAny, maybe_except: ExceptO
 procedure input(msg : string) returns (result: string, maybe_except: ExceptOrNone)
 ;
 
+procedure random_choice(l : ListStr) returns (result: string, maybe_except: ExceptOrNone)
+;
+
 function str_len(s : string) : int;
+
+function str_in_list_str(s : string, l: ListStr) : bool;
+
+function str_in_dict_str_any(s : string, l: DictStrAny) : bool;
+
+function list_str_get(l : ListStr, i: int) : string;
+
+function dict_str_any_get(d : DictStrAny, k: string) : DictStrAny;
+
+function dict_str_any_length(d : DictStrAny) : int;
 
 procedure test_helper_procedure(req_name : string, opt_name : StrOrNone) returns (maybe_except: ExceptOrNone)
 spec {
