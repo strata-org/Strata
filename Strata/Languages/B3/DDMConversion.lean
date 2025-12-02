@@ -541,11 +541,13 @@ def declFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromDDMContext) : B3CST.De
       .tagger m (mapAnn (fun x => x) name) (mapAnn (fun x => x) forType)
   | .function_decl m name params resultType tag body =>
       let paramsAST := fparamsToList params |>.map fParameterFromCST
+      let paramNames := paramsAST.map (fun p => match p with | .fParameter _ _ n _ => n.val)
+      let ctx' := paramNames.foldl (fun acc n => acc.push n) ctx
       let tagAST := tag.val.map (fun t => match t with | .tag_some _ id => mkAnn m id.val)
       let bodyAST := mapAnn (fun opt => opt.map (fun b => match b with
         | .function_body_some bm whens expr =>
-            let whensAST := whens.val.toList.map (fun w => match w with | .when_clause wm e => B3AST.When.when wm (expressionFromDDM ctx e))
-            B3AST.FunctionBody.functionBody bm (mkAnn bm whensAST.toArray) (expressionFromDDM ctx expr))) body
+            let whensAST := whens.val.toList.map (fun w => match w with | .when_clause wm e => B3AST.When.when wm (expressionFromDDM ctx' e))
+            B3AST.FunctionBody.functionBody bm (mkAnn bm whensAST.toArray) (expressionFromDDM ctx' expr))) body
       .function m (mapAnn (fun x => x) name) (mkAnn m paramsAST.toArray) (mapAnn (fun x => x) resultType) (mkAnn m tagAST) bodyAST
   | .axiom_decl m axiomBody =>
       match axiomBody with
@@ -555,69 +557,18 @@ def declFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromDDMContext) : B3CST.De
           let namesAST := names.val.toList.map (fun n => mkAnn m n.val)
           .axiom m (mkAnn m namesAST.toArray) (expressionFromDDM ctx expr)
   | .procedure_decl m name params specs body =>
-      let paramsAST := params.val.toList.map (pParameterFromCST ctx)
-      let paramNames := paramsAST.map (fun p => match p with | .pParameter _ _ n _ _ => n.val)
+      -- First, collect all parameter names to build context for autoinv expressions
+      let paramNames := params.val.toList.map (fun p => match p with
+        | .pparam _ _ n _ => n.val
+        | .pparam_with_autoinv _ _ n _ _ => n.val)
       let ctx' := paramNames.foldl (fun acc n => acc.push n) ctx
+      -- Now convert all parameters with the full context (so autoinv can reference all params)
+      let paramsAST := params.val.toList.map (pParameterFromCST ctx')
       let specsAST := specs.val.toList.map (specFromCST ctx')
       let bodyAST := mapAnn (fun opt => opt.map (fun b => match b with | .proc_body_some _ s => stmtFromDDM ctx' s)) body
       .procedure m (mapAnn (fun x => x) name) (mkAnn m paramsAST.toArray) (mkAnn m specsAST.toArray) bodyAST
 
 end FromDDM
-
----------------------------------------------------------------------
--- Declaration Conversion (ToCST direction)
----------------------------------------------------------------------
-
-section DeclConversion
-
-def paramModeToCST [Inhabited M] : Strata.B3AST.ParamMode M → Ann (Option (B3CST.PParamMode M)) M
-  | .paramModeIn m => mkAnn m none
-  | .paramModeOut m => mkAnn m (some (B3CST.PParamMode.pmode_out m))
-  | .paramModeInout m => mkAnn m (some (B3CST.PParamMode.pmode_inout m))
-
-def fParameterToCST [Inhabited M] (_ctx : ToCSTContext) : Strata.B3AST.FParameter M → B3CST.FParam M
-  | .fParameter m injective name ty =>
-      let inj := mapAnn (fun b => if b then some (B3CST.Injective.injective_some m) else none) injective
-      B3CST.FParam.fparam m inj (mapAnn (fun x => x) name) (mapAnn (fun x => x) ty)
-
-def pParameterToCST [Inhabited M] (ctx : ToCSTContext) : Strata.B3AST.PParameter M → B3CST.PParam M
-  | .pParameter m mode name ty autoinv =>
-      match autoinv.val with
-      | some ai => B3CST.PParam.pparam_with_autoinv m (paramModeToCST mode) (mapAnn (fun x => x) name) (mapAnn (fun x => x) ty) (expressionToCST ctx ai)
-      | none => B3CST.PParam.pparam m (paramModeToCST mode) (mapAnn (fun x => x) name) (mapAnn (fun x => x) ty)
-
-def specToCST [Inhabited M] (ctx : ToCSTContext) : Strata.B3AST.Spec M → B3CST.Spec M
-  | .specRequires m expr => B3CST.Spec.spec_requires m (expressionToCST ctx expr)
-  | .specEnsures m expr => B3CST.Spec.spec_ensures m (expressionToCST ctx expr)
-
-def declToCST [Inhabited M] (ctx : ToCSTContext) : Strata.B3AST.Decl M → B3CST.Decl M
-  | .typeDecl m name =>
-      B3CST.Decl.type_decl m (mapAnn (fun x => x) name)
-  | .tagger m name forType =>
-      B3CST.Decl.tagger_decl m (mapAnn (fun x => x) name) (mapAnn (fun x => x) forType)
-  | .function m name params resultType tag body =>
-      let paramsCST := mapAnn (fun arr => arr.toList.map (fParameterToCST ctx) |>.toArray) params
-      let tagClause := mapAnn (fun opt => opt.map (fun t => B3CST.TagClause.tag_some m (mkAnn m t.val))) tag
-      let bodyCST := mapAnn (fun opt => opt.map (fun b => match b with
-        | .functionBody bm whens expr =>
-            let whensCST := whens.val.toList.map (fun w => match w with | .when wm e => B3CST.WhenClause.when_clause wm (expressionToCST ctx e))
-            B3CST.FunctionBody.function_body_some bm (mkAnn bm whensCST.toArray) (expressionToCST ctx expr))) body
-      B3CST.Decl.function_decl m (mapAnn (fun x => x) name) paramsCST (mapAnn (fun x => x) resultType) tagClause bodyCST
-  | .axiom m explains expr =>
-      let explainsCST := mapAnn (fun arr => arr.toList.map (fun id => mkAnn m id.val) |>.toArray) explains
-      if explains.val.isEmpty then
-        B3CST.Decl.axiom_decl m (B3CST.AxiomBody.axiom m (expressionToCST ctx expr))
-      else
-        B3CST.Decl.axiom_decl m (B3CST.AxiomBody.explain_axiom m explainsCST (expressionToCST ctx expr))
-  | .procedure m name params specs body =>
-      let paramNames := params.val.toList.map (fun p => match p with | .pParameter _ _ n _ _ => n.val)
-      let ctx' := (paramNames.foldl (fun acc n => acc.push n) ctx).enterProcedure
-      let paramsCST := mapAnn (fun arr => arr.toList.map (pParameterToCST ctx) |>.toArray) params
-      let specsCST := specs.val.toList.map (specToCST ctx')
-      let bodyCST := mapAnn (fun opt => opt.map (fun s => B3CST.ProcBody.proc_body_some m (stmtToCST ctx' s))) body
-      B3CST.Decl.procedure_decl m (mapAnn (fun x => x) name) paramsCST (mkAnn m specsCST.toArray) bodyCST
-
-end DeclConversion
 
 ---------------------------------------------------------------------
 -- Annotation-Preserving Conversions (B3CST M ↔ B3AST M)
@@ -1009,12 +960,14 @@ partial def declToCSTSR [Inhabited $ B3CST.Expression M] [Inhabited $ B3CST.Stat
   | .tagger m name forType =>
       B3CST.Decl.tagger_decl m (mkAnn m name.val) (mkAnn m forType.val)
   | .function m name params resultType tag body =>
+      let paramNames := params.val.toList.map (fun p => match p with | .fParameter _ _ n _ => n.val)
+      let ctx' := paramNames.foldl (fun acc n => acc.push n) ctx
       let paramsCST := mkAnn m (params.val.toList.map (fParameterToCSTSR ctx) |>.toArray)
       let tagClause := mapAnn (fun opt => opt.map (fun t => B3CST.TagClause.tag_some m (mkAnn m t.val))) tag
       let bodyCST := mapAnn (fun opt => opt.map (fun b => match b with
         | .functionBody bm whens expr =>
-            let whensCST := whens.val.toList.map (fun w => match w with | .when wm e => B3CST.WhenClause.when_clause wm (expressionToCSTSR ctx e))
-            B3CST.FunctionBody.function_body_some bm (mkAnn bm whensCST.toArray) (expressionToCSTSR ctx expr))) body
+            let whensCST := whens.val.toList.map (fun w => match w with | .when wm e => B3CST.WhenClause.when_clause wm (expressionToCSTSR ctx' e))
+            B3CST.FunctionBody.function_body_some bm (mkAnn bm whensCST.toArray) (expressionToCSTSR ctx' expr))) body
       B3CST.Decl.function_decl m (mkAnn m name.val) paramsCST (mkAnn m resultType.val) tagClause bodyCST
   | .axiom m explains expr =>
       let explainsCST := mkAnn m (explains.val.toList.map (fun id => mkAnn m id.val) |>.toArray)
@@ -1025,7 +978,7 @@ partial def declToCSTSR [Inhabited $ B3CST.Expression M] [Inhabited $ B3CST.Stat
   | .procedure m name params specs body =>
       let paramNames := params.val.toList.map (fun p => match p with | .pParameter _ _ n _ _ => n.val)
       let ctx' := paramNames.foldl (fun acc n => acc.push n) ctx
-      let paramsCST := mkAnn m (params.val.toList.map (pParameterToCSTSR ctx) |>.toArray)
+      let paramsCST := mkAnn m (params.val.toList.map (pParameterToCSTSR ctx') |>.toArray)
       let specsCST := specs.val.toList.map (specToCSTSR ctx')
       let bodyCST := mapAnn (fun opt => opt.map (fun s => B3CST.ProcBody.proc_body_some m (Stmt.stmtToCSTSR ctx' s))) body
       B3CST.Decl.procedure_decl m (mkAnn m name.val) paramsCST (mkAnn m specsCST.toArray) bodyCST
@@ -1065,11 +1018,13 @@ partial def declFromDDMSR [Inhabited $ B3AST.Expression M] [Inhabited $ B3AST.St
       .tagger m (mkAnn m name.val) (mkAnn m forType.val)
   | .function_decl m name params resultType tag body =>
       let paramsAST := fparamsToListSR params |>.map fParameterFromDDMSR
+      let paramNames := paramsAST.map (fun p => match p with | .fParameter _ _ n _ => n.val)
+      let ctx' := paramNames.foldl (fun acc n => acc.push n) ctx
       let tagAST := tag.val.map (fun t => match t with | .tag_some _ id => mkAnn m id.val)
       let bodyAST := mapAnn (fun opt => opt.map (fun b => match b with
         | .function_body_some bm whens expr =>
-            let whensAST := whens.val.toList.map (fun w => match w with | .when_clause wm e => B3AST.When.when wm (expressionFromDDMSR ctx e))
-            B3AST.FunctionBody.functionBody bm (mkAnn bm whensAST.toArray) (expressionFromDDMSR ctx expr))) body
+            let whensAST := whens.val.toList.map (fun w => match w with | .when_clause wm e => B3AST.When.when wm (expressionFromDDMSR ctx' e))
+            B3AST.FunctionBody.functionBody bm (mkAnn bm whensAST.toArray) (expressionFromDDMSR ctx' expr))) body
       .function m (mkAnn m name.val) (mkAnn m paramsAST.toArray) (mkAnn m resultType.val) (mkAnn m tagAST) bodyAST
   | .axiom_decl m axiomBody =>
       match axiomBody with
@@ -1079,9 +1034,13 @@ partial def declFromDDMSR [Inhabited $ B3AST.Expression M] [Inhabited $ B3AST.St
           let namesAST := names.val.toList.map (fun n => mkAnn m n.val)
           .axiom m (mkAnn m namesAST.toArray) (expressionFromDDMSR ctx expr)
   | .procedure_decl m name params specs body =>
-      let paramsAST := params.val.toList.map (pParameterFromDDMSR ctx)
-      let paramNames := paramsAST.map (fun p => match p with | .pParameter _ _ n _ _ => n.val)
+      -- First, collect all parameter names to build context for autoinv expressions
+      let paramNames := params.val.toList.map (fun p => match p with
+        | .pparam _ _ n _ => n.val
+        | .pparam_with_autoinv _ _ n _ _ => n.val)
       let ctx' := paramNames.foldl (fun acc n => acc.push n) ctx
+      -- Now convert all parameters with the full context (so autoinv can reference all params)
+      let paramsAST := params.val.toList.map (pParameterFromDDMSR ctx')
       let specsAST := specs.val.toList.map (specFromDDMSR ctx')
       let bodyAST := mapAnn (fun opt => opt.map (fun b => match b with | .proc_body_some _ s => Stmt.stmtFromDDMSR ctx' s)) body
       .procedure m (mkAnn m name.val) (mkAnn m paramsAST.toArray) (mkAnn m specsAST.toArray) bodyAST

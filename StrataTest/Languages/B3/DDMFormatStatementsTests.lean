@@ -20,14 +20,9 @@ partial def doRoundtripStmt (stmt : OperationF SourceRange) (ctx : FormatContext
   | .ok cstStmt =>
       let b3Stmt := Stmt.toAST cstStmt
       let b3StmtUnit := b3Stmt.toUnit
-      let reprStr := (repr b3StmtUnit).pretty.replace "Strata.B3AST.Statement." "."
-      let reprStr := reprStr.replace "Strata.B3AST.Expression." "."
-      let reprStr := reprStr.replace "Strata.B3AST.Literal." "."
-      let reprStr := reprStr.replace "Strata.B3AST.UnaryOp." "."
-      let reprStr := reprStr.replace "Strata.B3AST.BinaryOp." "."
-      let reprStr := reprStr.replace "Strata.B3AST.Pattern." "."
-      let reprStr := reprStr.replace "Strata.B3AST.CallArg." "."
-      let reprStr := reprStr.replace "Strata.B3AST.OneIfCase." "."
+      let reprStr := (repr b3StmtUnit).pretty
+      let reprStr := cleanupStmtRepr reprStr
+      let reprStr := cleanupUnitRepr reprStr
       dbg_trace f!"B3: {reprStr}"
       let cstStmt' := Stmt.toCST b3Stmt
       let cstAst := cstStmt'.toAst
@@ -52,17 +47,16 @@ section StatementRoundtripTests
 /--
 info: B3: .blockStmt
   ()
-  { ann := (),
-    val := #[.varDecl
-               ()
-               { ann := (), val := "x" }
-               { ann := (), val := some { ann := (), val := "int" } }
-               { ann := (), val := none }
-               { ann := (), val := none },
-             .assign
-               ()
-               { ann := (), val := 0 }
-               (.literal () (.intLit () { ann := (), val := 42 }))] }
+  u #[.varDecl
+    ()
+    u "x"
+    u some u "int"
+    u none
+    u none,
+  .assign
+    ()
+    u 0
+    (.literal () (.intLit () u 42))]
 ---
 info:
 {
@@ -79,8 +73,8 @@ info: B3: .check
   (.binaryOp
     ()
     (.gt ())
-    (.literal () (.intLit () { ann := (), val := 5 }))
-    (.literal () (.intLit () { ann := (), val := 0 })))
+    (.literal () (.intLit () u 5))
+    (.literal () (.intLit () u 0)))
 ---
 info:
 check 5 > 0
@@ -94,8 +88,8 @@ info: B3: .assume
   (.binaryOp
     ()
     (.ge ())
-    (.literal () (.intLit () { ann := (), val := 10 }))
-    (.literal () (.intLit () { ann := (), val := 0 })))
+    (.literal () (.intLit () u 10))
+    (.literal () (.intLit () u 0)))
 ---
 info:
 assume 10 >= 0
@@ -109,8 +103,8 @@ info: B3: .assert
   (.binaryOp
     ()
     (.gt ())
-    (.literal () (.intLit () { ann := (), val := 5 }))
-    (.literal () (.intLit () { ann := (), val := 0 })))
+    (.literal () (.intLit () u 5))
+    (.literal () (.intLit () u 0)))
 ---
 info:
 assert 5 > 0
@@ -124,8 +118,8 @@ info: B3: .reach
   (.binaryOp
     ()
     (.eq ())
-    (.literal () (.intLit () { ann := (), val := 5 }))
-    (.literal () (.intLit () { ann := (), val := 5 })))
+    (.literal () (.intLit () u 5))
+    (.literal () (.intLit () u 5)))
 ---
 info:
 reach 5 == 5
@@ -145,34 +139,32 @@ return
 /--
 info: B3: .blockStmt
   ()
-  { ann := (),
-    val := #[.varDecl
-               ()
-               { ann := (), val := "x" }
-               { ann := (), val := some { ann := (), val := "int" } }
-               { ann := (), val := none }
-               { ann := (), val := none },
-             .varDecl
-               ()
-               { ann := (), val := "y" }
-               { ann := (), val := some { ann := (), val := "int" } }
-               { ann := (), val := none }
-               { ann := (), val := none },
-             .blockStmt
-               ()
-               { ann := (),
-                 val := #[.assign
-                            ()
-                            { ann := (), val := 1 }
-                            (.literal
-                              ()
-                              (.intLit () { ann := (), val := 1 })),
-                          .assign
-                            ()
-                            { ann := (), val := 0 }
-                            (.literal
-                              ()
-                              (.intLit () { ann := (), val := 2 }))] }] }
+  u #[.varDecl
+    ()
+    u "x"
+    u some u "int"
+    u none
+    u none,
+  .varDecl
+    ()
+    u "y"
+    u some u "int"
+    u none
+    u none,
+  .blockStmt
+    ()
+    u #[.assign
+      ()
+      u 1
+      (.literal
+        ()
+        (.intLit () u 1)),
+    .assign
+      ()
+      u 0
+      (.literal
+        ()
+        (.intLit () u 2))]]
 ---
 info:
 {
@@ -190,36 +182,33 @@ info:
 /--
 info: B3: .blockStmt
   ()
-  { ann := (),
-    val := #[.varDecl
-               ()
-               { ann := (), val := "flag" }
-               { ann := (), val := some { ann := (), val := "bool" } }
-               { ann := (), val := none }
-               { ann := (), val := none },
-             .varDecl
-               ()
-               { ann := (), val := "x" }
-               { ann := (), val := some { ann := (), val := "int" } }
-               { ann := (), val := none }
-               { ann := (), val := none },
-             .ifStmt
-               ()
-               (.id () { ann := (), val := 1 })
-               (.assign
-                 ()
-                 { ann := (), val := 0 }
-                 (.literal () (.intLit () { ann := (), val := 1 })))
-               { ann := (),
-                 val := some (.blockStmt
-                          ()
-                          { ann := (),
-                            val := #[.assign
-                                       ()
-                                       { ann := (), val := 0 }
-                                       (.literal
-                                         ()
-                                         (.intLit () { ann := (), val := 0 }))] }) }] }
+  u #[.varDecl
+    ()
+    u "flag"
+    u some u "bool"
+    u none
+    u none,
+  .varDecl
+    ()
+    u "x"
+    u some u "int"
+    u none
+    u none,
+  .ifStmt
+    ()
+    (.id () u 1)
+    (.assign
+      ()
+      u 0
+      (.literal () (.intLit () u 1)))
+    u some (.blockStmt
+      ()
+      u #[.assign
+        ()
+        u 0
+        (.literal
+          ()
+          (.intLit () u 0))])]
 ---
 info:
 {
@@ -239,29 +228,27 @@ info:
 /--
 info: B3: .blockStmt
   ()
-  { ann := (),
-    val := #[.varDecl
-               ()
-               { ann := (), val := "i" }
-               { ann := (), val := some { ann := (), val := "int" } }
-               { ann := (), val := none }
-               { ann := (), val := none },
-             .loop
-               ()
-               { ann := (), val := #[] }
-               (.blockStmt
-                 ()
-                 { ann := (),
-                   val := #[.assign
-                              ()
-                              { ann := (), val := 0 }
-                              (.binaryOp
-                                ()
-                                (.add ())
-                                (.id () { ann := (), val := 0 })
-                                (.literal
-                                  ()
-                                  (.intLit () { ann := (), val := 1 })))] })] }
+  u #[.varDecl
+    ()
+    u "i"
+    u some u "int"
+    u none
+    u none,
+  .loop
+    ()
+    u #[]
+    (.blockStmt
+      ()
+      u #[.assign
+        ()
+        u 0
+        (.binaryOp
+          ()
+          (.add ())
+          (.id () u 0)
+          (.literal
+            ()
+            (.intLit () u 1)))])]
 ---
 info:
 {
@@ -278,47 +265,44 @@ info:
 /--
 info: B3: .blockStmt
   ()
-  { ann := (),
-    val := #[.varDecl
-               ()
-               { ann := (), val := "i" }
-               { ann := (), val := some { ann := (), val := "int" } }
-               { ann := (), val := none }
-               { ann := (), val := none },
-             .varDecl
-               ()
-               { ann := (), val := "n" }
-               { ann := (), val := some { ann := (), val := "int" } }
-               { ann := (), val := none }
-               { ann := (), val := none },
-             .loop
-               ()
-               { ann := (),
-                 val := #[.binaryOp
-                            ()
-                            (.ge ())
-                            (.id () { ann := (), val := 1 })
-                            (.literal
-                              ()
-                              (.intLit () { ann := (), val := 0 })),
-                          .binaryOp
-                            ()
-                            (.le ())
-                            (.id () { ann := (), val := 1 })
-                            (.id () { ann := (), val := 0 })] }
-               (.blockStmt
-                 ()
-                 { ann := (),
-                   val := #[.assign
-                              ()
-                              { ann := (), val := 1 }
-                              (.binaryOp
-                                ()
-                                (.add ())
-                                (.id () { ann := (), val := 1 })
-                                (.literal
-                                  ()
-                                  (.intLit () { ann := (), val := 1 })))] })] }
+  u #[.varDecl
+    ()
+    u "i"
+    u some u "int"
+    u none
+    u none,
+  .varDecl
+    ()
+    u "n"
+    u some u "int"
+    u none
+    u none,
+  .loop
+    ()
+    u #[.binaryOp
+      ()
+      (.ge ())
+      (.id () u 1)
+      (.literal
+        ()
+        (.intLit () u 0)),
+    .binaryOp
+      ()
+      (.le ())
+      (.id () u 1)
+      (.id () u 0)]
+    (.blockStmt
+      ()
+      u #[.assign
+        ()
+        u 1
+        (.binaryOp
+          ()
+          (.add ())
+          (.id () u 1)
+          (.literal
+            ()
+            (.intLit () u 1)))])]
 ---
 info:
 {
@@ -336,7 +320,7 @@ info:
 #eval roundtripStmt $ #strata program B3CST; { var i: int var n: int loop invariant i >= 0 invariant i <= n { i := i + 1 } } #end
 
 /--
-info: B3: .exit () { ann := (), val := some { ann := (), val := "loop_start" } }
+info: B3: .exit () u some u "loop_start"
 ---
 info:
 exit loop_start
@@ -347,20 +331,19 @@ exit loop_start
 /--
 info: B3: .labeledStmt
   ()
-  { ann := (), val := "labeled_block" }
+  u "labeled_block"
   (.blockStmt
     ()
-    { ann := (),
-      val := #[.varDecl
-                 ()
-                 { ann := (), val := "x" }
-                 { ann := (), val := some { ann := (), val := "int" } }
-                 { ann := (), val := none }
-                 { ann := (), val := none },
-               .assign
-                 ()
-                 { ann := (), val := 0 }
-                 (.literal () (.intLit () { ann := (), val := 0 }))] })
+    u #[.varDecl
+      ()
+      u "x"
+      u some u "int"
+      u none
+      u none,
+    .assign
+      ()
+      u 0
+      (.literal () (.intLit () u 0))])
 ---
 info: labeled_block: ⏎
 {
@@ -372,7 +355,7 @@ info: labeled_block: ⏎
 #eval roundtripStmt $ #strata program B3CST; labeled_block: {var x: int x := 0} #end
 
 /--
-info: B3: .probe () { ann := (), val := "debug_point" }
+info: B3: .probe () u "debug_point"
 ---
 info:
 probe debug_point
@@ -383,10 +366,10 @@ probe debug_point
 /--
 info: B3: .varDecl
   ()
-  { ann := (), val := "x" }
-  { ann := (), val := some { ann := (), val := "int" } }
-  { ann := (), val := none }
-  { ann := (), val := none }
+  u "x"
+  u some u "int"
+  u none
+  u none
 ---
 info:
 var x : int
@@ -397,11 +380,10 @@ var x : int
 /--
 info: B3: .varDecl
   ()
-  { ann := (), val := "x" }
-  { ann := (), val := some { ann := (), val := "bool" } }
-  { ann := (), val := none }
-  { ann := (),
-    val := some (.literal () (.boolLit () { ann := (), val := true })) }
+  u "x"
+  u some u "bool"
+  u none
+  u some (.literal () (.boolLit () u true))
 ---
 info:
 var x : bool := true
@@ -412,11 +394,10 @@ var x : bool := true
 /--
 info: B3: .varDecl
   ()
-  { ann := (), val := "y" }
-  { ann := (), val := some { ann := (), val := "bool" } }
-  { ann := (), val := none }
-  { ann := (),
-    val := some (.literal () (.boolLit () { ann := (), val := true })) }
+  u "y"
+  u some u "bool"
+  u none
+  u some (.literal () (.boolLit () u true))
 ---
 info:
 var y : bool := true
@@ -427,15 +408,14 @@ var y : bool := true
 /--
 info: B3: .varDecl
   ()
-  { ann := (), val := "z" }
-  { ann := (), val := some { ann := (), val := "int" } }
-  { ann := (),
-    val := some (.binaryOp
-             ()
-             (.ge ())
-             (.id () { ann := (), val := 0 })
-             (.literal () (.intLit () { ann := (), val := 0 }))) }
-  { ann := (), val := none }
+  u "z"
+  u some u "int"
+  u some (.binaryOp
+    ()
+    (.ge ())
+    (.id () u 0)
+    (.literal () (.intLit () u 0)))
+  u none
 ---
 info:
 var z : int autoinv @0 >= 0
@@ -446,18 +426,17 @@ var z : int autoinv @0 >= 0
 /--
 info: B3: .aForall
   ()
-  { ann := (), val := "x" }
-  { ann := (), val := "int" }
+  u "x"
+  u "int"
   (.blockStmt
     ()
-    { ann := (),
-      val := #[.check
-                 ()
-                 (.binaryOp
-                   ()
-                   (.ge ())
-                   (.id () { ann := (), val := 0 })
-                   (.literal () (.intLit () { ann := (), val := 0 })))] })
+    u #[.check
+      ()
+      (.binaryOp
+        ()
+        (.ge ())
+        (.id () u 0)
+        (.literal () (.intLit () u 0)))])
 ---
 info:
 forall x : int ⏎
@@ -471,93 +450,100 @@ forall x : int ⏎
 /--
 info: B3: .choose
   ()
-  { ann := (),
-    val := #[.blockStmt
-               ()
-               { ann := (),
-                 val := #[.assign
-                            ()
-                            { ann := (), val := 0 }
-                            (.literal
-                              ()
-                              (.intLit () { ann := (), val := 2 }))] },
-             .blockStmt
-               ()
-               { ann := (),
-                 val := #[.assign
-                            ()
-                            { ann := (), val := 0 }
-                            (.literal
-                              ()
-                              (.intLit () { ann := (), val := 1 }))] }] }
+  u #[.blockStmt
+    ()
+    u #[.varDecl
+      ()
+      u "x"
+      u some u "int"
+      u none
+      u none,
+    .assign
+      ()
+      u 0
+      (.literal
+        ()
+        (.intLit () u 2))],
+  .blockStmt
+    ()
+    u #[.varDecl
+      ()
+      u "x"
+      u some u "int"
+      u none
+      u none,
+    .assign
+      ()
+      u 0
+      (.literal
+        ()
+        (.intLit () u 1))]]
 ---
 info:
 choose ⏎
 {
-  @0 := 1
+  var x : int
+  x := 1
 } or ⏎
 {
-  @0 := 2
+  var x : int
+  x := 2
 }
 -/
 #guard_msgs in
-#eval roundtripStmt $ #strata program B3CST; choose { x := 1 } or { x := 2 } #end
+#eval roundtripStmt $ #strata program B3CST; choose { var x: int x := 1 } or { var x: int x := 2 } #end
 
 /--
 info: B3: .blockStmt
   ()
-  { ann := (),
-    val := #[.varDecl
-               ()
-               { ann := (), val := "x" }
-               { ann := (), val := some { ann := (), val := "int" } }
-               { ann := (), val := none }
-               { ann := (), val := none },
-             .varDecl
-               ()
-               { ann := (), val := "y" }
-               { ann := (), val := some { ann := (), val := "int" } }
-               { ann := (), val := none }
-               { ann := (), val := none },
-             .ifCase
-               ()
-               { ann := (),
-                 val := #[.oneIfCase
-                            ()
-                            (.binaryOp
-                              ()
-                              (.eq ())
-                              (.id () { ann := (), val := 1 })
-                              (.literal
-                                ()
-                                (.intLit () { ann := (), val := 1 })))
-                            (.blockStmt
-                              ()
-                              { ann := (),
-                                val := #[.assign
-                                           ()
-                                           { ann := (), val := 0 }
-                                           (.literal
-                                             ()
-                                             (.intLit () { ann := (), val := 10 }))] }),
-                          .oneIfCase
-                            ()
-                            (.binaryOp
-                              ()
-                              (.eq ())
-                              (.id () { ann := (), val := 1 })
-                              (.literal
-                                ()
-                                (.intLit () { ann := (), val := 2 })))
-                            (.blockStmt
-                              ()
-                              { ann := (),
-                                val := #[.assign
-                                           ()
-                                           { ann := (), val := 0 }
-                                           (.literal
-                                             ()
-                                             (.intLit () { ann := (), val := 20 }))] })] }] }
+  u #[.varDecl
+    ()
+    u "x"
+    u some u "int"
+    u none
+    u none,
+  .varDecl
+    ()
+    u "y"
+    u some u "int"
+    u none
+    u none,
+  .ifCase
+    ()
+    u #[.oneIfCase
+      ()
+      (.binaryOp
+        ()
+        (.eq ())
+        (.id () u 1)
+        (.literal
+          ()
+          (.intLit () u 1)))
+      (.blockStmt
+        ()
+        u #[.assign
+          ()
+          u 0
+          (.literal
+            ()
+            (.intLit () u 10))]),
+    .oneIfCase
+      ()
+      (.binaryOp
+        ()
+        (.eq ())
+        (.id () u 1)
+        (.literal
+          ()
+          (.intLit () u 2)))
+      (.blockStmt
+        ()
+        u #[.assign
+          ()
+          u 0
+          (.literal
+            ()
+            (.intLit () u 20))])]]
 ---
 info:
 {
@@ -580,28 +566,26 @@ info:
 /--
 info: B3: .blockStmt
   ()
-  { ann := (),
-    val := #[.varDecl
-               ()
-               { ann := (), val := "a" }
-               { ann := (), val := some { ann := (), val := "int" } }
-               { ann := (), val := none }
-               { ann := (), val := none },
-             .varDecl
-               ()
-               { ann := (), val := "b" }
-               { ann := (), val := some { ann := (), val := "int" } }
-               { ann := (), val := none }
-               { ann := (), val := none },
-             .call
-               ()
-               { ann := (), val := "compute" }
-               { ann := (),
-                 val := #[.callArgOut () { ann := (), val := "result" },
-                          .callArgExpr () (.id () { ann := (), val := 1 }),
-                          .callArgExpr
-                            ()
-                            (.id () { ann := (), val := 0 })] }] }
+  u #[.varDecl
+    ()
+    u "a"
+    u some u "int"
+    u none
+    u none,
+  .varDecl
+    ()
+    u "b"
+    u some u "int"
+    u none
+    u none,
+  .call
+    ()
+    u "compute"
+    u #[.callArgOut () u "result",
+      .callArgExpr () (.id () u 1),
+      .callArgExpr
+        ()
+        (.id () u 0)]]
 ---
 info:
 {
@@ -616,25 +600,23 @@ info:
 /--
 info: B3: .blockStmt
   ()
-  { ann := (),
-    val := #[.varDecl
-               ()
-               { ann := (), val := "x" }
-               { ann := (), val := some { ann := (), val := "int" } }
-               { ann := (), val := none }
-               { ann := (), val := none },
-             .varDecl
-               ()
-               { ann := (), val := "y" }
-               { ann := (), val := some { ann := (), val := "int" } }
-               { ann := (), val := none }
-               { ann := (), val := none },
-             .call
-               ()
-               { ann := (), val := "modify" }
-               { ann := (),
-                 val := #[.callArgInout () { ann := (), val := "x" },
-                          .callArgOut () { ann := (), val := "y" }] }] }
+  u #[.varDecl
+    ()
+    u "x"
+    u some u "int"
+    u none
+    u none,
+  .varDecl
+    ()
+    u "y"
+    u some u "int"
+    u none
+    u none,
+  .call
+    ()
+    u "modify"
+    u #[.callArgInout () u "x",
+      .callArgOut () u "y"]]
 ---
 info:
 {

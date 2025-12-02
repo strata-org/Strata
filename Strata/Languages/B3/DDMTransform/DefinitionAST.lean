@@ -188,24 +188,6 @@ open Strata.B3AST
 private def mapAnn {α M N : Type} (f : M → N) (a : Ann α M) : Ann α N :=
   ⟨f a.ann, a.val⟩
 
-instance [Inhabited M] : Inhabited (Expression M) where
-  default := Expression.literal default (Literal.intLit default ⟨default, 0⟩)
-
-instance [Inhabited M] : Inhabited (Statement M) where
-  default := Statement.returnStmt default
-
-instance [Inhabited M] : Inhabited (Decl M) where
-  default := Decl.typeDecl default ⟨default, "T"⟩
-
-instance [Inhabited M] : Inhabited (Pattern M) where
-  default := Pattern.pattern default ⟨default, #[]⟩
-
-instance [Inhabited M] : Inhabited (CallArg M) where
-  default := CallArg.callArgOut default ⟨default, "x"⟩
-
-instance [Inhabited M] : Inhabited (OneIfCase M) where
-  default := OneIfCase.oneIfCase default default default
-
 mutual
 
 partial def Literal.mapMetadata [Inhabited N] (f : M → N) : Literal M → Literal N

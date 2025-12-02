@@ -170,7 +170,7 @@ op injective_some () : Injective => "injective ";
 
 category FParam;
 op fparam (injective : Option Injective, name : Ident, ty : Ident) : FParam =>
-  injective name:0 " : " ty:0;
+  injective:0 name:0 " : " ty:0;
 
 category TagClause;
 op tag_some (t : Ident) : TagClause => " tag " t:0;
@@ -179,10 +179,10 @@ category WhenClause;
 op when_clause (e : Expression) : WhenClause => "\n  when " e:0;
 
 category FunctionBody;
-op function_body_some (whens : Seq WhenClause, e : Expression) : FunctionBody => whens " {" indent(2, "\n" e:0) "\n}";
+op function_body_some (whens : Seq WhenClause, e : Expression) : FunctionBody => whens:0 " {" indent(2, "\n" e:0) "\n}";
 
 op function_decl (name : Ident, params : CommaSepBy FParam, resultType : Ident, tag : Option TagClause, body : Option FunctionBody) : Decl =>
-  "\nfunction " name:0 "(" params:0 ")" " : " resultType:0 tag body;
+  "\nfunction " name:0 "(" params:0 ")" " : " resultType:0 tag:0 body:0;
 
 category AxiomBody;
 
@@ -201,10 +201,10 @@ op pmode_inout () : PParamMode => "inout ";
 
 category PParam;
 op pparam (mode : Option PParamMode, name : Ident, ty : Ident) : PParam =>
-  mode name:0 " : " ty:0;
+  mode:0 name:0 " : " ty:0;
 
 op pparam_with_autoinv (mode : Option PParamMode, name : Ident, ty : Ident, autoinv : Expression) : PParam =>
-  mode name:0 " : " ty:0 " autoinv " autoinv:0;
+  mode:0 name:0 " : " ty:0 " autoinv " autoinv:0;
 
 category Spec;
 op spec_requires (e : Expression) : Spec => "\n  requires " e:0;
@@ -214,7 +214,7 @@ category ProcBody;
 op proc_body_some (s : Statement) : ProcBody => s:40;
 
 op procedure_decl (name : Ident, params : CommaSepBy PParam, specs : Seq Spec, body : Option ProcBody) : Decl =>
-  "\nprocedure " name "(" params ")" specs body;
+  "\nprocedure " name "(" params ")" specs body:0;
 
 category Program;
 op program (decls : Seq Decl) : Program =>
