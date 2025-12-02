@@ -27,15 +27,19 @@ partial def doRoundtripDecl (decl : OperationF SourceRange) (ctx : FormatContext
       cformat (ArgF.op cstAst) ctx state
   | .error msg => s!"Parse error: {msg}"
 
-partial def doRoundtripProgram (prog : OperationF SourceRange) (ctx : FormatContext) (state : FormatState) : Format :=
+partial def doRoundtripProgram (prog : OperationF SourceRange) (ctx : FormatContext) (state : FormatState) (printIntermediate: Bool := true) : Format :=
   match B3CST.Program.ofAst prog with
   | .ok cstProg =>
       let b3Prog := Program.toAST cstProg
-      let b3ProgUnit := b3Prog.toUnit
-      let reprStr := (repr b3ProgUnit).pretty
-      let reprStr := cleanupDeclRepr reprStr
-      let reprStr := cleanupUnitRepr reprStr
-      dbg_trace f!"B3: {reprStr}"
+      dbg_trace (if printIntermediate then
+          let b3ProgUnit := b3Prog.toUnit
+          let reprStr := (repr b3ProgUnit).pretty
+          let reprStr := cleanupDeclRepr reprStr
+          let reprStr := cleanupUnitRepr reprStr
+          f!"B3: {reprStr}"
+        else
+          f!"<B3 omitted>")
+
       let cstProg' := Program.toCST b3Prog
       let cstAst := cstProg'.toAst
       cformat (ArgF.op cstAst) ctx state
@@ -52,6 +56,8 @@ def roundtripDecl (p : Program) : Format :=
       | _ => "Error: expected program op"
     else s!"Error: expected command_program, got {op.name.name}"
   | _ => "Error: expected single command"
+
+
 
 section DeclarationRoundtripTests
 
