@@ -10,7 +10,6 @@ import Strata.DL.Lambda.LState
 import Strata.DL.Lambda.LTy
 import Strata.DL.Lambda.IntBoolFactory
 import Std.Data.HashMap
-import Lean
 
 ---------------------------------------------------------------------
 
@@ -34,6 +33,10 @@ abbrev HeapMemory := Std.HashMap Address HeapObject
 -- Heap variable environment - maps variable names to (type, value) pairs
 abbrev HeapVarEnv := Std.HashMap String (HMonoTy × HExpr)
 
+-- String-keyed fields for objects
+abbrev StringFieldMap := Std.HashMap String HExpr
+abbrev StringFields := Std.HashMap Nat StringFieldMap
+
 /--
 Heap State extending Lambda state with heap memory and heap variable environment.
 -/
@@ -46,9 +49,11 @@ structure HState where
   nextAddr : Address
   -- Heap variable environment (parallel to Lambda's variable environment)
   heapVars : HeapVarEnv
+  -- String-keyed fields: address -> (key -> value)
+  stringFields : StringFields
 
 instance : Repr HState where
-  reprPrec s _ := s!"HState(nextAddr: {s.nextAddr}, heap: <{s.heap.size} objects>, heapVars: <{s.heapVars.size} vars>)"
+  reprPrec s _ := s!"HState(nextAddr: {s.nextAddr}, heap: <{s.heap.size} objects>, heapVars: <{s.heapVars.size} vars>, stringFields: <{s.stringFields.size} props>)"
 
 namespace HState
 
@@ -81,9 +86,10 @@ def empty : HState :=
     | .ok state => state
     | .error _ => lambdaState  -- Fallback to basic state if factory addition fails
   { lambdaState := lambdaStateWithFactory,
-    heap := Std.HashMap.empty,
+    heap := Std.HashMap.emptyWithCapacity,
     nextAddr := 1,  -- Start addresses from 1 (0 can represent null)
-    heapVars := Std.HashMap.empty }
+    heapVars := Std.HashMap.emptyWithCapacity,
+    stringFields := Std.HashMap.emptyWithCapacity }
 
 -- Heap Variable Environment Operations
 
@@ -161,15 +167,29 @@ def setField (state : HState) (addr : Address) (field : Nat) (value : HExpr) : O
     some { state with heap := newHeap }
   | none => none
 
--- Delete a field from an object in the heap
 def deleteField (state : HState) (addr : Address) (field : Nat) : Option HState :=
+  -- Remove the field from the object's fields
+  -- As an example:
+  --  before array deletion {'0': 1, '1': 5} (delete arr[1])
+  --  after array deletion  {'0': 1} instead of {'0': 1, '1': None}
   match state.getObject addr with
   | some obj =>
-    -- Remove the field from the object (obj is a HashMap, use erase)
     let newObj := obj.erase field
     let newHeap := state.heap.insert addr newObj
     some { state with heap := newHeap }
   | none => none
+
+-- String field operations (for objects with string-keyed fields)
+def getStringField (s : HState) (addr : Nat) (key : String) : Option HExpr :=
+  match s.stringFields.get? addr with
+  | some m => m.get? key
+  | none => none
+
+-- Set a string field in an object
+def setStringField (s : HState) (addr : Nat) (key : String) (val : HExpr) : Option HState :=
+  let existing : StringFieldMap := (s.stringFields.get? addr).getD (Std.HashMap.emptyWithCapacity)
+  let updated := existing.insert key val
+  some { s with stringFields := s.stringFields.insert addr updated }
 
 -- Check if an address is valid (exists in heap)
 def isValidAddr (state : HState) (addr : Address) : Bool :=
@@ -206,6 +226,29 @@ def heapVarsToString (state : HState) : String :=
 
 def toString (state : HState) : String :=
   s!"{state.heapToString}\n{state.heapVarsToString}"
+
+-- Return all string-keyed fields for an address as an association list
+def getAllStringFields (s : HState) (addr : Nat) : List (String × HExpr) :=
+  match s.stringFields.get? addr with
+  | some m => m.toList
+  | none => []
+
+-- Return all fields (numeric and string) as string-keyed pairs
+def getAllFieldsAsStringPairs (s : HState) (addr : Nat) : List (String × HExpr) :=
+  let numeric : List (String × HExpr) :=
+    match s.getObject addr with
+    | some obj => obj.toList.map (fun (i, v) => (s!"{i}", v))
+    | none => []
+  let strk   : List (String × HExpr) := s.getAllStringFields addr
+  -- string keys should override numeric if the same string exists
+  let merged := Id.run do
+    let mut map : Std.HashMap String HExpr := Std.HashMap.emptyWithCapacity
+    for (k, v) in numeric do
+      map := map.insert k v
+    for (k, v) in strk do
+      map := map.insert k v
+    pure map
+  merged.toList
 
 end HState
 

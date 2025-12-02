@@ -151,21 +151,16 @@ mutual
     | _ => none  -- Other expressions not supported yet
 
   partial def extractObjectAsJson (state : HState) (addr : Address) : Option Lean.Json :=
-    match state.getObject addr with
-    | some obj =>
-      -- Convert heap object (field index -> HExpr) to JSON object
-      let fields := obj.toList
-      let jsonFields := fields.filterMap fun (fieldIndex, fieldExpr) =>
-        match extractConcreteValueWithState state fieldExpr with
-        | some fieldJson =>
-          -- Use field index as string key for now
-          some (toString fieldIndex, fieldJson)
-        | none => none
-
-      -- Sort fields by key for consistency
-      let sortedFields := jsonFields.toArray.qsort (fun a b => a.1 < b.1) |>.toList
-      some (Lean.Json.mkObj sortedFields)
-    | none => none
+    -- Merge numeric fields and string-keyed fields from the heap
+    let pairs : List (String × HExpr) := state.getAllFieldsAsStringPairs addr
+    -- Encode each field value recursively
+    let jsonFields : List (String × Lean.Json) := pairs.filterMap fun (k, v) =>
+      match extractConcreteValueWithState state v with
+      | some j => some (k, j)
+      | none   => none
+    -- Sort for stable output
+    let sortedFields := jsonFields.toArray.qsort (fun a b => a.1 < b.1) |>.toList
+    some (Lean.Json.mkObj sortedFields)
 
   -- Legacy function for backward compatibility
   partial def extractConcreteValue (expr : HExpr) : Option String :=

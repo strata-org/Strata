@@ -198,6 +198,25 @@ mutual
     body: TS_Statement
   deriving Repr, Lean.FromJson, Lean.ToJson
 
+  -- inductive TS_Expression where
+  --   | TS_BinaryExpression : TS_BinaryExpression → TS_Expression
+  --   | TS_ConditionalExpression : TS_ConditionalExpression → TS_Expression
+  --   | TS_LogicalExpression : TS_LogicalExpression → TS_Expression
+  --   | TS_AssignmentExpression : TS_AssignmentExpression → TS_Expression
+  --   | TS_NumericLiteral : TS_NumericLiteral → TS_Expression
+  --   | TS_BooleanLiteral : TS_BooleanLiteral → TS_Expression
+  --   | TS_StringLiteral : TS_StringLiteral → TS_Expression
+  --   | TS_NullLiteral : TS_NullLiteral → TS_Expression
+  --   | TS_IdExpression : TS_Identifier → TS_Expression
+  --   | TS_UnaryExpression: TS_UnaryExpression → TS_Expression
+  --   | TS_ObjectExpression: TS_ObjectExpression → TS_Expression
+  --   | TS_ArrayExpression: TS_ArrayExpression → TS_Expression
+  --   | TS_MemberExpression: TS_MemberExpression → TS_Expression
+  --   | TS_CallExpression: TS_CallExpression → TS_Expression
+  --   | TS_FunctionExpression: TS_FunctionExpression → TS_Expression
+  --   | TS_ArrowFunctionExpression: TS_ArrowFunctionExpression → TS_Expression
+  -- deriving Repr, Lean.FromJson, Lean.ToJson
+
   structure TS_VariableDeclarator extends BaseNode where
     id : TS_Identifier
     init: TS_Expression
