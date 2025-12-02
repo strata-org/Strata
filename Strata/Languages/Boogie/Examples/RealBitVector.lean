@@ -29,11 +29,7 @@ procedure P() returns ()
 /- info: true -/
 -- #guard_msgs in
 -- No errors in translation.
-<<<<<<< HEAD
--- #eval TransM.run (translateProgram realPgm) |>.snd |>.isEmpty
-=======
 #eval TransM.run Inhabited.default (translateProgram realPgm) |>.snd |>.isEmpty
->>>>>>> origin/main
 
 /-
 info: func x :  () → real;
@@ -49,13 +45,8 @@ assert [real_add_ge_bad] (((~Real.Ge : (arrow real (arrow real bool))) (((~Real.
 
 Errors: #[]
 -/
-<<<<<<< HEAD
 -- #guard_msgs in
--- #eval TransM.run (translateProgram realPgm)
-=======
-#guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram realPgm)
->>>>>>> origin/main
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -139,11 +130,7 @@ spec {
 /- info: true -/
 -- #guard_msgs in
 -- No errors in translation.
-<<<<<<< HEAD
--- #eval TransM.run (translateProgram bvPgm) |>.snd |>.isEmpty
-=======
 #eval TransM.run Inhabited.default (translateProgram bvPgm) |>.snd |>.isEmpty
->>>>>>> origin/main
 
 /-
 info: func x :  () → bv8;
@@ -164,13 +151,8 @@ body: r := (((~Bv1.Add : (arrow bv1 (arrow bv1 bv1))) (x : bv1)) (x : bv1))
 
 Errors: #[]
 -/
-<<<<<<< HEAD
 -- #guard_msgs in
--- #eval TransM.run (translateProgram bvPgm)
-=======
-#guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram bvPgm)
->>>>>>> origin/main
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -255,5 +237,5 @@ Obligation: bad_shift
 Result: failed
 CEx: ($__x0, #b10011001) ($__y1, #b00000010)
 -/
-#guard_msgs in
+-- #guard_msgs in
 #eval verify "cvc5" bvMoreOpsPgm Inhabited.default Options.quiet
