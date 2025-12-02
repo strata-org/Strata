@@ -29,6 +29,9 @@ def dummyDictStrAny : Boogie.Expression.Expr := .fvar () "DUMMY_DICT_STR_ANY" no
 def strType : Boogie.Expression.Ty := .forAll [] (.tcons "string" [])
 def dummyStr : Boogie.Expression.Expr := .fvar () "DUMMY_STR" none
 
+def listStrType : Boogie.Expression.Ty := .forAll [] (.tcons "ListStr" [])
+def dummyListStr : Boogie.Expression.Expr := .fvar () "DUMMY_LIST_STR" none
+
 
 -------------------------------------------------------------------------------
 
@@ -75,6 +78,12 @@ def handleAdd (lhs rhs: Boogie.Expression.Expr) : Boogie.Expression.Expr :=
   | (.tcons "string" []), (.tcons "string" []) => .app () (.app () (.op () "Str.Concat" mty[string → (string → string)]) lhs) rhs
   | _, _ => panic! s!"Unimplemented add op for {lhs} + {rhs}"
 
+def handleNot (arg: Boogie.Expression.Expr) : Boogie.Expression.Expr :=
+  let ty : Lambda.LMonoTy := (.tcons "ListStr" [])
+  match ty with
+  | (.tcons "ListStr" []) => .eq () arg (.op () "ListStr_nil" none)
+  | _ => panic! s!"Unimplemented not op for {arg}"
+
 def handleDict (keys: Array (Python.opt_expr SourceRange)) (values: Array (Python.expr SourceRange)) : Boogie.Expression.Expr :=
   .app () (.op () "DictStrAny_mk" none) (.strConst () "DefaultDict")
 
@@ -117,9 +126,22 @@ partial def PyExprToBoogie (e : Python.expr SourceRange) (substitution_records :
           assert! rhs.val.size == 1
           let r := PyExprToBoogie rhs.val[0]!
           (.eq () l r)
+        | Strata.Python.cmpop.In _ =>
+          let l := PyExprToBoogie lhs
+          assert! rhs.val.size == 1
+          let r := PyExprToBoogie rhs.val[0]!
+          .app () (.app () (.op () "str_in_dict_str_any" none) l) r
         | _ => panic! s!"Unhandled comparison op: {repr op.val}"
       | _ => panic! s!"Unhandled comparison op: {repr op.val}"
     | .Dict _ keys values => handleDict keys.val values.val
+    | .ListComp _ keys values => panic! "ListComp must be handled at stmt level"
+    | .UnaryOp _ op arg => match op with
+      | .Not _ => handleNot (PyExprToBoogie arg)
+      | _ => panic! "Unsupported UnaryOp: {repr e}"
+    | .Subscript _ v slice _ =>
+      let l := PyExprToBoogie v
+      let k := PyExprToBoogie slice
+      .app () (.app () (.op () "dict_str_any_get" none) l) k
     | _ => panic! s!"Unhandled Expr: {repr e}"
 
 partial def PyExprToBoogieWithSubst (substitution_records : Option (List SubstitutionRecord)) (e : Python.expr SourceRange) : Boogie.Expression.Expr :=
@@ -137,6 +159,10 @@ partial def PyExprToString (e : Python.expr SourceRange) : String :=
       | .Tuple _ elts _ =>
         assert! elts.val.size == 2
         s!"Dict[{PyExprToString elts.val[0]!} {PyExprToString elts.val[1]!}]"
+      | _ => panic! s!"Unsupported slice: {repr slice}"
+    | "List" =>
+      match slice with
+      | .Name _ id _ => s!"List[{id.val}]"
       | _ => panic! s!"Unsupported slice: {repr slice}"
     | _ => panic! s!"Unsupported subscript to string: {repr e}"
   | _ => panic! s!"Unhandled Expr: {repr e}"
@@ -164,6 +190,19 @@ def callCanThrow (func_infos : List PythonFunctionDecl) (stmt: Python.stmt Sourc
     | _ => false
   | _ => false
 
+open Strata.Python.Internal in
+def noneOrExpr (fname n : String) (e: Boogie.Expression.Expr) : Boogie.Expression.Expr :=
+  let type_str := getFuncSigType fname n
+  if type_str.endsWith "OrNone" then
+    -- Optional param. Need to wrap e.g., string into StrOrNone
+    match type_str with
+    | "IntOrNone" => .app () (.op () "IntOrNone_mk_int" none) e
+    | "StrOrNone" => .app () (.op () "StrOrNone_mk_str" none) e
+    | "BytesOrStrOrNone" => .app () (.op () "BytesOrStrOrNone_mk_str" none) e
+    | _ => panic! "Unsupported type_str: "++ type_str
+  else
+    e
+
 -- TODO: we should be checking that args are right
 open Strata.Python.Internal in
 def argsAndKWordsToCanonicalList (func_infos : List PythonFunctionDecl)
@@ -180,29 +219,13 @@ def argsAndKWordsToCanonicalList (func_infos : List PythonFunctionDecl)
     let kws_and_exprs := kwords.toList.map (PyKWordsToBoogie substitution_records)
     let ordered_remaining_args := remaining.map (λ n => match kws_and_exprs.find? (λ p => p.fst == n) with
       | .some p =>
-        let type_str := getFuncSigType fname n
-        if type_str.endsWith "OrNone" then
-          -- Optional param. Need to wrap e.g., string into StrOrNone
-          match type_str with
-          | "StrOrNone" => .app () (.op () "StrOrNone_mk_str" none) p.snd
-          | "BytesOrStrOrNone" => .app () (.op () "BytesOrStrOrNone_mk_str" none) p.snd
-          | _ => panic! "Unsupported type_str: "++ type_str
-        else
-          p.snd
+        noneOrExpr fname n p.snd
       | .none => Strata.Python.TypeStrToBoogieExpr (getFuncSigType fname n))
     let args := args.map (PyExprToBoogieWithSubst substitution_records)
     let args := (List.range required_order.length).filterMap (λ n =>
         if h: n < args.size then
           let arg_name := required_order[n]! -- Guaranteed by range. Using finRange causes breaking coercions to Nat.
-          let type_str := getFuncSigType fname arg_name
-          if type_str.endsWith "OrNone" then
-            -- Optional param. Need to wrap e.g., string into StrOrNone
-            match type_str with
-            | "StrOrNone" => some (.app () (.op () "StrOrNone_mk_str" none) args[n])
-            | "BytesOrStrOrNone" => some (.app () (.op () "BytesOrStrOrNone_mk_str" none) args[n])
-            | _ => panic! "Unsupported type_str: "++ type_str
-          else
-            some (args[n])
+          some (noneOrExpr fname arg_name args[n]!)
         else
           none)
     args ++ ordered_remaining_args
@@ -259,6 +282,7 @@ partial def collectVarDecls (stmts: Array (Python.stmt SourceRange)) : List Boog
     | "bytes" => [(.init name t[string] (.strConst () "")), (.havoc name)]
     | "Client" => [(.init name clientType dummyClient), (.havoc name)]
     | "Dict[str Any]" => [(.init name dictStrAnyType dummyDictStrAny), (.havoc name)]
+    | "List[str]" => [(.init name listStrType dummyListStr), (.havoc name)]
     | _ => panic! s!"Unsupported type annotation: `{ty_name}`"
   let foo := dedup.map toBoogie
   foo.flatten
@@ -349,6 +373,9 @@ partial def PyStmtToBoogie (jmp_targets: List String) (func_infos : List PythonF
     | .AnnAssign _ lhs _ { ann := _ , val := (.some (.Call _ func args kwords))} _ =>
       let fname := PyExprToString func
       handleFunctionCall [PyExprToString lhs, "maybe_except"] fname args kwords jmp_targets func_infos s
+    | .AnnAssign _ lhs _ { ann := _ , val := (.some (.ListComp _ _ _))} _ =>
+      -- TODO: check for errors first
+      [.havoc (PyExprToString lhs)]
     | .AnnAssign _ lhs _ {ann := _, val := (.some e)} _ =>
       [.set (PyExprToString lhs) (PyExprToBoogie e)]
     | .Try _ body handlers _orelse _finalbody =>
@@ -365,6 +392,12 @@ partial def PyStmtToBoogie (jmp_targets: List String) (func_infos : List PythonF
       match v.val with
       | .some v => [.set "ret" (PyExprToBoogie v), .goto jmp_targets[0]!] -- TODO: need to thread return value name here. For now, assume "ret"
       | .none => [.goto jmp_targets[0]!]
+    | .For _ _tgt itr body _ _ =>
+      -- Do one unrolling:
+      let guard := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) (PyExprToBoogie itr)) (.intConst () 0))
+      -- let guard := .boolConst () true
+      [.ite guard {ss := (ArrPyStmtToBoogie func_infos body.val)} {ss := []}]
+      -- TODO: missing havoc
     | _ =>
       panic! s!"Unsupported {repr s}"
   if callCanThrow func_infos s then

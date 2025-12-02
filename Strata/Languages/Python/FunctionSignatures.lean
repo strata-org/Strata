@@ -17,6 +17,7 @@ def getFuncSigOrder (fname: String) : List String :=
   | "json_dumps" => ["msg", "opt_indent"]
   | "json_loads" => ["msg"]
   | "input" => ["msg"]
+  | "random_choice" => ["l"]
   | _ => panic! s!"Missing function signature : {fname}"
 
 -- We should extract the function signatures from the prelude:
@@ -44,6 +45,10 @@ def getFuncSigType (fname: String) (arg: String) : String :=
   | "input" =>
     match arg with
     | "msg" => "string"
+    | _ => panic! s!"Unrecognized arg : {arg}"
+  | "random_choice" =>
+    match arg with
+    | "l" => "ListStr"
     | _ => panic! s!"Unrecognized arg : {arg}"
   | _ => panic! s!"Missing function signature : {fname}"
 

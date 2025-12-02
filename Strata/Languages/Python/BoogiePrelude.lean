@@ -382,6 +382,8 @@ function str_len(s : string) : int;
 
 function dict_str_any_get(d : DictStrAny, k: string) : DictStrAny;
 
+function dict_str_any_length(d : DictStrAny) : int;
+
 procedure test_helper_procedure(req_name : string, opt_name : StrOrNone) returns (maybe_except: ExceptOrNone)
 spec {
   requires [req_name_is_foo]: req_name == "foo";
