@@ -78,11 +78,8 @@ assert [mix] ((((~select : (arrow (Map int int) (arrow int int))) (a : MapII)) #
 
 Errors: #[]
 -/
-<<<<<<< HEAD
-=======
 #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram mapPgm)
->>>>>>> origin/main
 
 -- #guard_msgs in
 -- #eval TransM.run (translateProgram mapPgm)
