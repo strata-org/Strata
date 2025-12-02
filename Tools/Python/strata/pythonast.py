@@ -235,6 +235,6 @@ def parse_module(source : bytes, filename : str | PathLike = "<unknown>") -> tup
     a = ast.parse(source, mode='exec', filename=filename)
     assert isinstance(a, ast.Module)
 
-    p = strata.Program(PythonAST.name)
+    p = strata.Program(PythonAST)
     p.add(ast_to_op(m, a))
     return (m, p)
