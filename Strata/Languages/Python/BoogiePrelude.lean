@@ -25,7 +25,7 @@ axiom [Object_len_ge_zero]: (forall x : Object :: Object_len(x) >= 0);
 function inheritsFrom(child : string, parent : string) : (bool);
 axiom [inheritsFrom_refl]: (forall s: string :: {inheritsFrom(s, s)} inheritsFrom(s, s));
 
-/////////////////////////////////////////////////////////////////////////////////////
+// /////////////////////////////////////////////////////////////////////////////////////
 
 // Exceptions
 // TODO: Formalize the exception hierarchy here:
@@ -148,22 +148,22 @@ axiom [PyReMatchRegex_def_noFlg]:
 // no exception, call PyReMatchRegex.
 function PyReMatchStr(pattern : string, str : string, flags : int) : Except Error bool;
 
-/////////////////////////////////////////////////////////////////////////////////////
+// /////////////////////////////////////////////////////////////////////////////////////
 
 // List of strings
 type ListStr;
 function ListStr_nil() : (ListStr);
 function ListStr_cons(x0 : string, x1 : ListStr) : (ListStr);
 
-/////////////////////////////////////////////////////////////////////////////////////
+// /////////////////////////////////////////////////////////////////////////////////////
 
 // Uninterpreted procedures
 procedure importFrom(module : string, names : ListStr, level : int) returns ();
 procedure import(names : ListStr) returns ();
 procedure print(msg : string) returns ();
 
-/////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////
+// /////////////////////////////////////////////////////////////////////////////////////
+// /////////////////////////////////////////////////////////////////////////////////////
 
 // Temporary Types
 
@@ -311,30 +311,44 @@ axiom (forall v : BoolOrStrOrNone :: {BoolOrStrOrNone_tag(v)}
         BoolOrStrOrNone_tag(v) == BSN_BOOL_TAG ||
         BoolOrStrOrNone_tag(v) == BSN_STR_TAG ||
         BoolOrStrOrNone_tag(v) == BSN_NONE_TAG);
+
+// DictStrStrOrNone
+type DictStrStrOrNone;
+type  DictStrStrOrNoneTag;
+const DSSN_BOOL_TAG : DictStrStrOrNoneTag;
+const DSSN_NONE_TAG : DictStrStrOrNoneTag;
+function DictStrStrOrNone_tag(v : DictStrStrOrNone) : DictStrStrOrNoneTag;
+function DictStrStrOrNone_str_val(v : DictStrStrOrNone) : string;
+function DictStrStrOrNone_none_val(v : DictStrStrOrNone) : None;
+function DictStrStrOrNone_mk_str(s : string) : DictStrStrOrNone;
+function DictStrStrOrNone_mk_none(v : None) : DictStrStrOrNone;
+axiom (forall s : string :: {DictStrStrOrNone_mk_str(s)}
+        DictStrStrOrNone_tag(DictStrStrOrNone_mk_str(s)) == DSSN_BOOL_TAG &&
+        DictStrStrOrNone_str_val(DictStrStrOrNone_mk_str(s)) == s);
+axiom (forall n : None :: {DictStrStrOrNone_mk_none(n)}
+        DictStrStrOrNone_tag(DictStrStrOrNone_mk_none(n)) == DSSN_NONE_TAG &&
+        DictStrStrOrNone_none_val(DictStrStrOrNone_mk_none(n)) == n);
+axiom (forall v : DictStrStrOrNone :: {DictStrStrOrNone_tag(v)}
+        DictStrStrOrNone_tag(v) == DSSN_BOOL_TAG ||
+        DictStrStrOrNone_tag(v) == DSSN_NONE_TAG);
+axiom [unique_DictStrStrOrNoneTag]: DSSN_BOOL_TAG != DSSN_NONE_TAG;
+
+type BytesOrStrOrNone;
+function BytesOrStrOrNone_mk_none(v : None) : (BytesOrStrOrNone);
+function BytesOrStrOrNone_mk_str(s : string) : (BytesOrStrOrNone);
+
+type DictStrAny;
+function DictStrAny_mk(s : string) : (DictStrAny);
+
+type Client;
+type ClientTag;
+const C_S3_TAG : ClientTag;
+const C_CW_TAG : ClientTag;
+function Client_tag(v : Client) : (ClientTag);
+
+// Unique const axioms
 axiom [unique_BoolOrStrOrNoneTag]: BSN_BOOL_TAG != BSN_STR_TAG && BSN_BOOL_TAG != BSN_NONE_TAG && BSN_STR_TAG != BSN_NONE_TAG;
 axiom [unique_ClientTag]: C_S3_TAG != C_CW_TAG;
-
-// Axioms
-axiom [ax_l61c1]: (forall x: Object :: {Object_len(x)} (Object_len(x) >= 0));
-axiom [ax_l93c1]: (forall s: string :: {inheritsFrom(s, s)} inheritsFrom(s, s));
-axiom [ax_l114c1]: (forall s: ExceptCode :: {ExceptOrNone_mk_code(s)} ((ExceptOrNone_tag(ExceptOrNone_mk_code(s)) == EN_STR_TAG) && (ExceptOrNone_code_val(ExceptOrNone_mk_code(s)) == s)));
-axiom [ax_l117c1]: (forall n: ExceptNone :: {ExceptOrNone_mk_none(n)} ((ExceptOrNone_tag(ExceptOrNone_mk_none(n)) == EN_NONE_TAG) && (ExceptOrNone_none_val(ExceptOrNone_mk_none(n)) == n)));
-axiom [ax_l120c1]: (forall v: ExceptOrNone :: {ExceptOrNone_tag(v)} ((ExceptOrNone_tag(v) == EN_STR_TAG) || (ExceptOrNone_tag(v) == EN_NONE_TAG)));
-axiom [ax_l141c1]: (forall s: string :: {StrOrNone_mk_str(s)} ((StrOrNone_tag(StrOrNone_mk_str(s)) == SN_STR_TAG) && (StrOrNone_str_val(StrOrNone_mk_str(s)) == s)));
-axiom [ax_l144c1]: (forall n: None :: {StrOrNone_mk_none(n)} ((StrOrNone_tag(StrOrNone_mk_none(n)) == SN_NONE_TAG) && (StrOrNone_none_val(StrOrNone_mk_none(n)) == n)));
-axiom [ax_l147c1]: (forall v: StrOrNone :: {StrOrNone_tag(v)} ((StrOrNone_tag(v) == SN_STR_TAG) || (StrOrNone_tag(v) == SN_NONE_TAG)));
-axiom [ax_l153c1]: (forall s1: StrOrNone, s2: StrOrNone :: {strOrNone_toObject(s1), strOrNone_toObject(s2)} ((s1 != s2) ==> (strOrNone_toObject(s1) != strOrNone_toObject(s2))));
-axiom [ax_l155c1]: (forall s: StrOrNone :: {StrOrNone_tag(s)} ((StrOrNone_tag(s) == SN_STR_TAG) ==> (Object_len(strOrNone_toObject(s)) == str.len(StrOrNone_str_val(s)))));
-axiom [ax_l170c1]: (forall s: string :: {AnyOrNone_mk_str(s)} ((AnyOrNone_tag(AnyOrNone_mk_str(s)) == AN_ANY_TAG) && (AnyOrNone_str_val(AnyOrNone_mk_str(s)) == s)));
-axiom [ax_l173c1]: (forall n: None :: {AnyOrNone_mk_none(n)} ((AnyOrNone_tag(AnyOrNone_mk_none(n)) == AN_NONE_TAG) && (AnyOrNone_none_val(AnyOrNone_mk_none(n)) == n)));
-axiom [ax_l176c1]: (forall v: AnyOrNone :: {AnyOrNone_tag(v)} ((AnyOrNone_tag(v) == AN_ANY_TAG) || (AnyOrNone_tag(v) == AN_NONE_TAG)));
-axiom [ax_l191c1]: (forall s: string :: {BoolOrNone_mk_str(s)} ((BoolOrNone_tag(BoolOrNone_mk_str(s)) == BN_BOOL_TAG) && (BoolOrNone_str_val(BoolOrNone_mk_str(s)) == s)));
-axiom [ax_l194c1]: (forall n: None :: {BoolOrNone_mk_none(n)} ((BoolOrNone_tag(BoolOrNone_mk_none(n)) == BN_NONE_TAG) && (BoolOrNone_none_val(BoolOrNone_mk_none(n)) == n)));
-axiom [ax_l197c1]: (forall v: BoolOrNone :: {BoolOrNone_tag(v)} ((BoolOrNone_tag(v) == BN_BOOL_TAG) || (BoolOrNone_tag(v) == BN_NONE_TAG)));
-axiom [ax_l215c1]: (forall b: bool :: {BoolOrStrOrNone_mk_bool(b)} ((BoolOrStrOrNone_tag(BoolOrStrOrNone_mk_bool(b)) == BSN_BOOL_TAG) && (BoolOrStrOrNone_bool_val(BoolOrStrOrNone_mk_bool(b)) <==> b)));
-axiom [ax_l218c1]: (forall s: string :: {BoolOrStrOrNone_mk_str(s)} ((BoolOrStrOrNone_tag(BoolOrStrOrNone_mk_str(s)) == BSN_STR_TAG) && (BoolOrStrOrNone_str_val(BoolOrStrOrNone_mk_str(s)) == s)));
-axiom [ax_l221c1]: (forall n: None :: {BoolOrStrOrNone_mk_none(n)} ((BoolOrStrOrNone_tag(BoolOrStrOrNone_mk_none(n)) == BSN_NONE_TAG) && (BoolOrStrOrNone_none_val(BoolOrStrOrNone_mk_none(n)) == n)));
-axiom [ax_l224c1]: (forall v: BoolOrStrOrNone :: {BoolOrStrOrNone_tag(v)} (((BoolOrStrOrNone_tag(v) == BSN_BOOL_TAG) || (BoolOrStrOrNone_tag(v) == BSN_STR_TAG)) || (BoolOrStrOrNone_tag(v) == BSN_NONE_TAG)));
 
 // Uninterpreted procedures
 procedure importFrom(module : string, names : ListStr, level : int) returns ()
@@ -346,10 +360,27 @@ procedure import(names : ListStr) returns ()
 procedure print(msg : string, opt : StrOrNone) returns ()
 ;
 
-procedure json_dumps(msg : string) returns (s: string)
+procedure json_dumps(msg : DictStrAny, opt_indent : IntOrNone) returns (s: string, maybe_except: ExceptOrNone)
 ;
 
+procedure json_loads(msg : string) returns (d: DictStrAny, maybe_except: ExceptOrNone)
+;
+
+procedure input(msg : string) returns (result: string, maybe_except: ExceptOrNone)
+;
+
+procedure random_choice(l : ListStr) returns (result: string, maybe_except: ExceptOrNone)
+;
+
+function str_in_list_str(s : string, l: ListStr) : bool;
+
+function str_in_dict_str_any(s : string, l: DictStrAny) : bool;
+
+function list_str_get(l : ListStr, i: int) : string;
+
 function str_len(s : string) : int;
+
+function dict_str_any_get(d : DictStrAny, k: string) : DictStrAny;
 
 procedure test_helper_procedure(req_name : string, opt_name : StrOrNone) returns (maybe_except: ExceptOrNone)
 spec {
@@ -364,6 +395,7 @@ spec {
   assert [assert_opt_name_none_or_bar]: (if (StrOrNone_tag(opt_name) == SN_STR_TAG) then (StrOrNone_str_val(opt_name) == "bar") else true);
   assume [assume_maybe_except_none]: (ExceptOrNone_tag(maybe_except) == EN_NONE_TAG);
 };
+
 
 #end
 
