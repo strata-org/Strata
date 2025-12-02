@@ -63,9 +63,10 @@ Proof Obligation:
 Wrote problem to vcs/assert_0.smt2.
 
 
-Obligation assert_0: solver error!
+Obligation assert_0: could not be proved!
 
-Error: Cannot find model for id: f1
+Result: failed
+CEx: ⏎
 
 Evaluated program:
 type MapII := (Map int int)
@@ -80,7 +81,8 @@ assert [assert_0] (((~select $__a0) #0) == #1)
 ---
 info:
 Obligation: assert_0
-Result: err Cannot find model for id: f1
+Result: failed
+CEx:
 -/
 #guard_msgs in
 #eval verify "cvc5" failing
