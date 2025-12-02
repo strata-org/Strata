@@ -384,9 +384,7 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     return ([(.cmd (.set id val))], bindings)
   | q`C_Simp.if_command, #[ca, ta, fa] =>
     let c ← translateExpr bindings ca
-    let t := ← translateBlock bindings ta
-    let f := ← translateElse bindings fa
-    return ([(.ite c t f)], bindings)
+    return ([(.ite c (← translateBlock bindings ta) (← translateElse bindings fa))], bindings)
   | q`C_Simp.while_command, #[ga, measurea, invarianta, ba] =>
     -- TODO: Handle measure and invariant
     return ([.loop (← translateExpr bindings ga) (← translateMeasure bindings measurea) (← translateInvariant bindings invarianta) (← translateBlock bindings ba)], bindings)
