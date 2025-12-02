@@ -9,7 +9,6 @@ Your Name <your.email@example.com>
 -/
 
 import Strata.DL.Lambda.LTy
-import Lean
 
 ---------------------------------------------------------------------
 

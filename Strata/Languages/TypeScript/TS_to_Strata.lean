@@ -191,15 +191,25 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
       Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAccess" none) objExpr) fieldExpr
 
   | .TS_ObjectExpression e =>
-    -- Translate {1: value1, 5: value5} to heap allocation
-    let fields := e.properties.toList.map (fun prop =>
-      let key := match prop.key with
-        | .TS_NumericLiteral numLit => Float.floor numLit.value |>.toUInt64.toNat
-        | _ => panic! s!"Expected numeric literal as object key, got: {repr prop.key}"
-      let value := translate_expr prop.value
-      (key, value))
-    -- Use allocSimple which handles the object type automatically
-    Heap.HExpr.allocSimple fields
+    -- Collect numeric props for allocSimple, and *one* list of dynamic (keyExpr,valueExpr)
+    let (numProps, dynProps) :=
+      e.properties.toList.foldl
+        (fun (ns, ds) prop =>
+          let v := translate_expr prop.value
+          match prop.key with
+          | .TS_NumericLiteral numLit =>
+              let idx := Float.floor numLit.value |>.toUInt64.toNat
+              ((idx, v) :: ns, ds)
+          | .TS_StringLiteral strLit =>
+              -- unify: string-literal key becomes a constant string expression
+              (ns, (Heap.HExpr.string strLit.value, v) :: ds)
+          | other =>
+              -- computed or identifier: translate to an expr
+              (ns, (translate_expr other, v) :: ds))
+        ([], [])
+
+    let obj := Heap.HExpr.dynamicAlloc (numProps.reverse) (dynProps.reverse)
+    obj
 
   | .TS_CallExpression call =>
     match call.callee with
@@ -554,8 +564,8 @@ partial def translate_statement_core
                   -- Read the value
                   let popExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAccess" none) objExpr) tempIndexVar
                   let readStmt := .cmd (.set "temp_pop_result" popExpr)
-                  -- Delete the element
-                  let deleteExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "DynamicFieldAssign" none) objExpr) tempIndexVar) Heap.HExpr.null
+                  -- Delete the element (use FieldDelete so the index is removed instead of set to null)
+                  let deleteExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "FieldDelete" none) objExpr) tempIndexVar
                   let deleteStmt := .cmd (.set "temp_delete_result" deleteExpr)
                   (ctx, [tempIndexInit, readStmt, deleteStmt])
                 | "forEach" =>
@@ -1035,50 +1045,6 @@ partial def translate_statement_core
         -- output: init break flag, init statements, then a loop statement
         (ctx1, [initBreakFlag] ++ initStmts ++ [ .loop combinedCondition none none loopBody])
 
-        | .TS_SwitchStatement switchStmt =>
-          -- Handle switch statement: switch discriminant { cases }
-
-          -- Process all cases in their original order, separating regular from default
-          let allCases := switchStmt.cases.toList
-          let (regularCaseStmts, defaultStmts) := allCases.foldl (fun (regCases, defStmts) case =>
-            match case.test with
-            | some expr =>
-              -- Regular case
-              let discrimExpr := translate_expr switchStmt.discriminant
-              let caseValue := translate_expr expr
-              let testExpr := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Eq" none) discrimExpr) caseValue
-              let (caseCtx, stmts) := case.consequent.foldl (fun (accCtx, accStmts) stmt =>
-                let (newCtx, newStmts) := translate_statement_core stmt accCtx
-                (newCtx, accStmts ++ newStmts)) (ctx, [])
-              (regCases ++ [(testExpr, stmts)], defStmts)
-            | none =>
-              -- Default case
-              let (defaultCtx, stmts) := case.consequent.foldl (fun (accCtx, accStmts) stmt =>
-                let (newCtx, newStmts) := translate_statement_core stmt accCtx
-                (newCtx, accStmts ++ newStmts)) (ctx, [])
-              (regCases, stmts)
-          ) ([], [])
-
-          -- Build nested if-then-else structure for regular cases
-          let rec build_cases (cases: List (Heap.HExpr × List TSStrataStatement)) (defaultStmts: List TSStrataStatement) : TSStrataStatement :=
-            match cases with
-            | [] =>
-              -- No regular cases, just execute default if it exists
-              let defaultBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := defaultStmts }
-              .block "default" defaultBlock
-            | [(test, stmts)] =>
-              let thenBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := stmts }
-              let elseBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := defaultStmts }
-              .ite test thenBlock elseBlock
-            | (test, stmts) :: rest =>
-              let thenBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := stmts }
-              let elseBlock := build_cases rest defaultStmts
-              let elseBlockWrapped : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [elseBlock] }
-              .ite test thenBlock elseBlockWrapped
-
-          let switchStructure := build_cases regularCaseStmts defaultStmts
-          (ctx, [switchStructure])
-
         | .TS_ContinueStatement cont =>
           let tgt :=
             match ct.continueLabel? with
@@ -1103,7 +1069,98 @@ partial def translate_statement_core
               | none     => "__unbound_break"
             (ctx, [ .goto tgt ])
 
-        | _ => panic! s!"Unimplemented statement: {repr s}"
+        | .TS_SwitchStatement switchStmt =>
+        -- Handle switch statement with fallthrough and break semantics
+        dbg_trace s!"[DEBUG] Translating switch statement at loc {switchStmt.start_loc}-{switchStmt.end_loc}"
+
+        -- Variables for storing control variables
+        let loc := switchStmt.start_loc
+        let discriminantVar := s!"switch_discriminant_{loc}" -- Stores the switch expression value
+        let fallthroughVar := s!"switch_fallthrough_{loc}" -- Stores fallthrough state
+        let breakFlagVar := s!"switch_break_{loc}" -- Stores break state
+
+        -- Initialize control variables
+        let initDiscriminant : TSStrataStatement := .cmd (.init discriminantVar (infer_type_from_expr switchStmt.discriminant) (translate_expr switchStmt.discriminant))
+        let initFallthrough : TSStrataStatement := .cmd (.init fallthroughVar Heap.HMonoTy.bool Heap.HExpr.false)
+        let initBreakFlag : TSStrataStatement := .cmd (.init breakFlagVar Heap.HMonoTy.bool Heap.HExpr.false)
+
+        -- Helper: split statements at break
+        let splitAtBreak (stmts : List TS_Statement) : List TS_Statement × Bool :=
+          let rec loop acc rest :=
+            match rest with
+            | [] => (acc.reverse, false)
+            | .TS_BreakStatement _ :: _ => (acc.reverse, true)
+            | s :: tail => loop (s :: acc) tail
+          loop [] stmts
+
+        -- Helper: translate case body
+        let translateCaseBody (stmts : List TS_Statement) (caseCtx : TranslationContext) : TranslationContext × List TSStrataStatement :=
+          stmts.foldl (fun (c, acc) stmt =>
+            let (c2, ss) := translate_statement_core stmt c ct
+            (c2, acc ++ ss)) (caseCtx, [])
+
+        -- Helper: build case statements with optional break and fallthrough
+        let buildCaseStmts (caseStmts : List TSStrataStatement) (hasBreak : Bool) (isDefault : Bool) : List TSStrataStatement :=
+          let setFallthrough := .cmd (.set fallthroughVar Heap.HExpr.true)
+          let setBreak := .cmd (.set breakFlagVar Heap.HExpr.true)
+          let stmts := if isDefault then caseStmts else setFallthrough :: caseStmts
+          if hasBreak then stmts ++ [setBreak] else stmts
+
+        -- Flag references
+        let breakFlagRef := Heap.HExpr.lambda (.fvar breakFlagVar none)
+        let discriminantRef := Heap.HExpr.lambda (.fvar discriminantVar none)
+        let fallthroughRef := Heap.HExpr.lambda (.fvar fallthroughVar none)
+
+        -- Helper: create condition (if break then false else baseCondition)
+        let mkCondition (baseCondition : Heap.HExpr) : Heap.HExpr :=
+          Heap.HExpr.deferredIte breakFlagRef Heap.HExpr.false baseCondition
+
+        -- Helper: build case condition for regular case
+        let mkCaseCondition (testExpr : TS_Expression) : Heap.HExpr :=
+          let testVal := translate_expr testExpr
+          let matchCond := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Eq" none) discriminantRef) testVal
+          let matchOrFallthrough := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Bool.Or" none) fallthroughRef) matchCond
+          mkCondition matchOrFallthrough
+
+        -- Recursive case builder
+        let rec buildCases (remainingCases : List TS_SwitchCase) (accCtx : TranslationContext) : TranslationContext × TSStrataStatement :=
+          let emptyBlock : Imperative.Block TSStrataExpression TSStrataCommand := { ss := [] }
+
+          match remainingCases with
+          | [] => (accCtx, .ite Heap.HExpr.false emptyBlock emptyBlock)
+
+          | [singleCase] =>
+            -- Last case: no rest to chain
+            let (stmtsBeforeBreak, hasBreak) := splitAtBreak singleCase.consequent.toList
+            let (caseCtx, caseStmts) := translateCaseBody stmtsBeforeBreak accCtx
+            let isDefault := singleCase.test.isNone
+            let finalStmts := buildCaseStmts caseStmts hasBreak isDefault
+
+            let condition := match singleCase.test with
+              | none => mkCondition Heap.HExpr.true  -- Default: if !break then true
+              | some testExpr => mkCaseCondition testExpr
+
+            (caseCtx, .ite condition { ss := finalStmts } emptyBlock)
+
+          | currentCase :: restCases =>
+            -- Non-last case: chain with rest
+            let (stmtsBeforeBreak, hasBreak) := splitAtBreak currentCase.consequent.toList
+            let (caseCtx, caseStmts) := translateCaseBody stmtsBeforeBreak accCtx
+            let isDefault := currentCase.test.isNone
+            let finalStmts := buildCaseStmts caseStmts hasBreak isDefault
+            let (restCtx, restStmt) := buildCases restCases caseCtx
+
+            let condition := match currentCase.test with
+              | none => mkCondition Heap.HExpr.true  -- Default: if !break then true
+              | some testExpr => mkCaseCondition testExpr
+
+            (restCtx, .ite condition { ss := finalStmts ++ [restStmt] } { ss := [restStmt] })
+
+        let (finalCtx, switchBody) := buildCases switchStmt.cases.toList ctx
+        dbg_trace s!"[DEBUG] Switch statement translated with {switchStmt.cases.size} cases (with break support)"
+        (finalCtx, [initDiscriminant, initFallthrough, initBreakFlag, switchBody])
+
+      | _ => panic! s!"Unimplemented statement: {repr s}"
 
 -- Translate TypeScript statements to TypeScript-Strata statements
 partial def translate_statement (s: TS_Statement) (ctx : TranslationContext) : TranslationContext × List TSStrataStatement :=
