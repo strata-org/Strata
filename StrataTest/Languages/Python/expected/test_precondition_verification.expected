@@ -1,30 +1,33 @@
 
-req_name_is_foo: unknown
+assert_name_is_foo: verified
 
-opt_name_none_or_bar: verified
+assert_opt_name_none_or_bar: verified
 
-opt_name_none_or_bar: unknown
+assert_opt_name_none_or_bar: verified
 
-test_helper_procedure_req_name_is_foo_3: verified
+ensures_maybe_except_none: verified
 
-test_helper_procedure_opt_name_none_or_bar_5: verified
+test_helper_procedure_assert_name_is_foo_3: verified
 
-test_helper_procedure_opt_name_none_or_bar_5: verified
+test_helper_procedure_assert_opt_name_none_or_bar_5: verified
 
-test_helper_procedure_req_name_is_foo_11: verified
+test_helper_procedure_assert_opt_name_none_or_bar_5: verified
 
-test_helper_procedure_opt_name_none_or_bar_13: verified
+test_helper_procedure_assert_name_is_foo_11: verified
 
-test_helper_procedure_opt_name_none_or_bar_13: verified
+test_helper_procedure_assert_opt_name_none_or_bar_13: verified
 
-test_helper_procedure_req_name_is_foo_19: unknown
+test_helper_procedure_assert_opt_name_none_or_bar_13: verified
 
-test_helper_procedure_opt_name_none_or_bar_21: verified
+test_helper_procedure_assert_name_is_foo_19: failed
+CEx: 
 
-test_helper_procedure_opt_name_none_or_bar_21: verified
+test_helper_procedure_assert_opt_name_none_or_bar_21: verified
 
-test_helper_procedure_req_name_is_foo_27: verified
+test_helper_procedure_assert_opt_name_none_or_bar_21: verified
 
-test_helper_procedure_opt_name_none_or_bar_29: verified
+test_helper_procedure_assert_name_is_foo_27: verified
 
-test_helper_procedure_opt_name_none_or_bar_29: unknown
+test_helper_procedure_assert_opt_name_none_or_bar_29: verified
+
+test_helper_procedure_assert_opt_name_none_or_bar_29: unknown

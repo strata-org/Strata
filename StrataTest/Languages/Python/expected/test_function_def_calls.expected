@@ -1,12 +1,27 @@
 
-req_name_is_foo: unknown
+assert_name_is_foo: verified
 
-opt_name_none_or_bar: verified
+assert_opt_name_none_or_bar: verified
 
-opt_name_none_or_bar: unknown
+assert_opt_name_none_or_bar: verified
 
-test_helper_procedure_req_name_is_foo_3: unknown
+ensures_maybe_except_none: verified
 
-test_helper_procedure_opt_name_none_or_bar_5: verified
+test_helper_procedure_assert_name_is_foo_3: failed
+CEx: ($__s8, "")
 
-test_helper_procedure_opt_name_none_or_bar_5: verified
+test_helper_procedure_assert_opt_name_none_or_bar_5: verified
+
+test_helper_procedure_assert_opt_name_none_or_bar_5: verified
+
+(Origin_test_helper_procedure_Requires)req_name_is_foo: verified
+
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: verified
+
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: verified
+
+(Origin_test_helper_procedure_Requires)req_name_is_foo: verified
+
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: verified
+
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: verified
