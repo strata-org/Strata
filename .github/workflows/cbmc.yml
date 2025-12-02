@@ -1,0 +1,64 @@
+name: CBMC
+
+on:
+  workflow_call:
+
+jobs:
+  cbmc_test:
+    name: Run CBMC tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install cvc5
+        shell: bash
+        run: |
+              ARCH=$(uname -m)
+              if [ "$ARCH" = "x86_64" ]; then
+                ARCH_NAME="x86_64"
+              elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+                ARCH_NAME="arm64"
+              else
+                echo "Unsupported architecture: $ARCH"
+                exit 1
+              fi
+              wget https://github.com/cvc5/cvc5/releases/download/cvc5-1.2.1/cvc5-Linux-${ARCH_NAME}-static.zip
+              unzip cvc5-Linux-${ARCH_NAME}-static.zip
+              chmod +x cvc5-Linux-${ARCH_NAME}-static/bin/cvc5
+              echo "$GITHUB_WORKSPACE/cvc5-Linux-${ARCH_NAME}-static/bin/" >> $GITHUB_PATH
+      - name: Install z3
+        shell: bash
+        run: |
+              ARCH=$(uname -m)
+              if [ "$ARCH" = "x86_64" ]; then
+                ARCH_NAME="x86_64"
+                wget https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-x64-glibc-2.39.zip
+                ARCHIVE_NAME="z3-4.15.2-x64-glibc-2.39"
+              elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+                ARCH_NAME="arm64"
+                wget https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-arm64-glibc-2.34.zip
+                ARCHIVE_NAME="z3-4.15.2-arm64-win"
+              else
+                echo "Unsupported architecture: $ARCH"
+                exit 1
+              fi
+              unzip "${ARCHIVE_NAME}.zip"
+              chmod +x "${ARCHIVE_NAME}/bin/z3"
+              echo "$GITHUB_WORKSPACE/${ARCHIVE_NAME}/bin/" >> $GITHUB_PATH
+      - name: Install CBMC
+        shell: bash
+        run: |
+          wget https://github.com/diffblue/cbmc/releases/download/cbmc-6.4.1/ubuntu-22.04-cbmc-6.4.1-Linux.deb
+          sudo dpkg -i ubuntu-22.04-cbmc-6.4.1-Linux.deb
+      - name: Build Strata
+        uses: leanprover/lean-action@v1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      - name: Run CBMC tests
+        shell: bash
+        run: |
+          export CBMC_DIR="/usr/bin/"
+          ./Strata/Backends/CBMC/run_strata_cbmc.sh Strata/Backends/CBMC/tests/simpleTest.csimp.st

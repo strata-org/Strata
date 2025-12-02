@@ -5,11 +5,9 @@
 -/
 
 import Lean.Elab.Command
-import Strata.DDM.BuiltinDialects.StrataDDL
 import Strata.DDM.Integration.Lean.Env
 import Strata.DDM.Integration.Lean.GenTrace
 import Strata.DDM.Integration.Lean.OfAstM
-import Strata.DDM.Integration.Lean.Quote
 import Strata.DDM.Util.Graph.Tarjan
 
 open Lean (Command Name Ident Term TSyntax getEnv logError profileitM quote withTraceNode mkIdentFrom)
@@ -248,6 +246,7 @@ def declaredCategories : Std.HashMap CategoryName Name := .ofList [
   (q`Init.Num, ``Nat),
   (q`Init.Decimal, ``Decimal),
   (q`Init.Str, ``String),
+  (q`Init.ByteArray, ``ByteArray)
 ]
 
 def ignoredCategories : Std.HashSet CategoryName :=
@@ -671,6 +670,8 @@ partial def toAstApplyArg (vn : Name) (cat : SyntaxCat) : GenM Term := do
     return annToAst ``ArgF.decimal v
   | q`Init.Str =>
     return annToAst ``ArgF.strlit v
+  | q`Init.ByteArray =>
+    return annToAst ``ArgF.bytes v
   | q`Init.Type => do
     let toAst ← toAstIdentM cat.name
     ``(ArgF.type ($toAst $v))
@@ -805,6 +806,8 @@ partial def getOfIdentArg (varName : String) (cat : SyntaxCat) (e : Term) : GenM
     ``(OfAstM.ofDecimalM $e)
   | q`Init.Str => do
     ``(OfAstM.ofStrlitM $e)
+  | q`Init.ByteArray => do
+    ``(OfAstM.ofBytesM $e)
   | cid@q`Init.Type => do
     let (vc, vi) ← genFreshIdentPair varName
     let ofAst ← ofAstIdentM cid

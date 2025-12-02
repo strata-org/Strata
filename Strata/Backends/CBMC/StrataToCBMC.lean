@@ -50,7 +50,7 @@ def myFunc : Strata.C_Simp.Function := SimpleTestEnvAST.fst.funcs.head!
 def lexprToCBMC (expr : Strata.C_Simp.Expression.Expr) (functionName : String) : Json :=
   let cfg := CBMCConfig.empty
   match expr with
-  | .app (.app (.op op _) (.fvar varName _)) (.const value) =>
+  | .app () (.app () (.op () op _) (.fvar () varName _)) (.const () value) =>
     mkBinaryOp (opToStr op.name) "2" functionName (config := cfg)
       (Json.mkObj [
         ("id", "symbol"),
@@ -64,7 +64,7 @@ def lexprToCBMC (expr : Strata.C_Simp.Expression.Expr) (functionName : String) :
         ])
       ])
       (mkConstant (toString value) "10" (mkSourceLocation "from_andrew.c" functionName "2" cfg) cfg)
-  | .true =>
+  | .true _ =>
     Json.mkObj [
       ("id", "notequal"),
       ("namedSub", Json.mkObj [
@@ -194,17 +194,17 @@ def getParamJson(func: Strata.C_Simp.Function) : Json :=
 def exprToJson (e : Strata.C_Simp.Expression.Expr) (loc: SourceLoc) : Json :=
   let cfg := CBMCConfig.empty
   match e with
-  | .app (.app (.op op _) left) right =>
+  | .app _ (.app _ (.op _ op _) left) right =>
     let leftJson := match left with
-      | .fvar "z" _ => mkLvalueSymbol s!"{loc.functionName}::1::z" loc.lineNum loc.functionName cfg
-      | .fvar varName _ => mkLvalueSymbol s!"{loc.functionName}::{varName}" loc.lineNum loc.functionName cfg
+      | .fvar _ "z" _ => mkLvalueSymbol s!"{loc.functionName}::1::z" loc.lineNum loc.functionName cfg
+      | .fvar _ varName _ => mkLvalueSymbol s!"{loc.functionName}::{varName}" loc.lineNum loc.functionName cfg
       | _ => exprToJson left loc
     let rightJson := match right with
-      | .fvar varName _ => mkLvalueSymbol s!"{loc.functionName}::{varName}" loc.lineNum loc.functionName cfg
-      | .const value => mkConstant (toString value) "10" (mkSourceLocation "from_andrew.c" loc.functionName loc.lineNum cfg) cfg
+      | .fvar _ varName _ => mkLvalueSymbol s!"{loc.functionName}::{varName}" loc.lineNum loc.functionName cfg
+      | .const _ value => mkConstant (toString value) "10" (mkSourceLocation "from_andrew.c" loc.functionName loc.lineNum cfg) cfg
       | _ => exprToJson right loc
     mkBinaryOp (opToStr op.name) loc.lineNum loc.functionName leftJson rightJson cfg
-  | .intConst n =>
+  | .intConst _ n =>
     mkConstant (toString n) "10" (mkSourceLocation "from_andrew.c" loc.functionName "14" cfg) cfg
   | _ => panic! "Unimplemented"
 

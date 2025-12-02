@@ -7,6 +7,7 @@
 -- Executable for verifying a Strata program from a file.
 import Strata.Languages.Boogie.Verifier
 import Strata.Languages.C_Simp.Verify
+import Strata.Util.IO
 import Std.Internal.Parsec
 
 open Strata
@@ -45,8 +46,8 @@ def usageMessage : Std.Format :=
   Options:{Std.Format.line}\
   {Std.Format.line}  \
   --verbose                   Print extra information during analysis.{Std.Format.line}  \
-  --check                     Process up until SMT generation, but don't solve.{Std.Format.line} \
-  --type-check                Exit after semantic dialect's type inference/checking.{Std.Format.line} \
+  --check                     Process up until SMT generation, but don't solve.{Std.Format.line}  \
+  --type-check                Exit after semantic dialect's type inference/checking.{Std.Format.line}  \
   --parse-only                Exit after DDM parsing and type checking.{Std.Format.line}  \
   --stop-on-first-error       Exit after the first verification error.{Std.Format.line}  \
   --solver-timeout <seconds>  Set the solver time limit per proof goal."
@@ -55,8 +56,8 @@ def main (args : List String) : IO UInt32 := do
   let parseResult := parseOptions args
   match parseResult with
   | .ok (opts, file) => do
-    let text ← IO.FS.readFile file
-    let inputCtx := Lean.Parser.mkInputContext text file
+    let text ← Strata.Util.readInputSource file
+    let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
     let dctx := Elab.LoadedDialects.builtin
     let dctx := dctx.addDialect! Boogie
     let dctx := dctx.addDialect! C_Simp
@@ -71,7 +72,7 @@ def main (args : List String) : IO UInt32 := do
                      C_Simp.typeCheck pgm opts
                    else
                      -- Boogie.
-                     typeCheck pgm opts
+                     typeCheck inputCtx pgm opts
         match ans with
         | .error e =>
           println! f!"Type checking error: {e}"
@@ -84,9 +85,12 @@ def main (args : List String) : IO UInt32 := do
             if file.endsWith ".csimp.st" then
               C_Simp.verify "z3" pgm opts
             else
-              verify "z3" pgm opts
+              verify "z3" pgm inputCtx opts
         for vcResult in vcResults do
-          println! f!"{vcResult.obligation.label}: {vcResult.result}"
+          let posStr := match Boogie.formatPositionMetaData vcResult.obligation.metadata with
+                        | .none => "<none>"
+                        | .some str => s!"{str}"
+          println! f!"{posStr} [{vcResult.obligation.label}]: {vcResult.result}"
         let success := vcResults.all isSuccessVCResult
         if success && !opts.checkOnly then
           println! f!"Proved all {vcResults.size} goals."

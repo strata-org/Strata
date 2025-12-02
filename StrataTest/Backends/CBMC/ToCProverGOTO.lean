@@ -15,14 +15,16 @@ instructions -/
 section
 open Std (ToFormat Format format)
 
-abbrev LExprTP : Imperative.PureExpr :=
-   { Ident := String,
-     Expr := Lambda.LExprT String,
+private abbrev TestParams : Lambda.LExprParams := ⟨Unit, Unit⟩
+
+private abbrev LExprTP : Imperative.PureExpr :=
+   { Ident := TestParams.Identifier,
+     Expr := Lambda.LExprT TestParams.mono,
      Ty := Lambda.LMonoTy,
-     TyEnv := @Lambda.TEnv String,
-     TyContext := @Lambda.LContext String,
-     EvalEnv := Lambda.LState String
-     EqIdent := instDecidableEqString }
+     TyEnv := @Lambda.TEnv TestParams.IDMeta,
+     TyContext := @Lambda.LContext TestParams,
+     EvalEnv := Lambda.LState TestParams
+     EqIdent := inferInstanceAs (DecidableEq TestParams.Identifier) }
 
 /--
 Commands, parameterized by type-annotated Lambda expressions.
@@ -30,11 +32,11 @@ Commands, parameterized by type-annotated Lambda expressions.
 We assume in this test that the Lambda expressions are well-typed. In practice,
 these should after Lambda's type inference pass.
 -/
-abbrev Cmd := Imperative.Cmd LExprTP
+private abbrev Cmd := Imperative.Cmd LExprTP
 
 private def lookupType (T : LExprTP.TyEnv) (i : LExprTP.Ident) : Except Format CProverGOTO.Ty :=
   match T.context.types.find? i with
-  | none => .error s!"Cannot find {i} in the type context!"
+  | none => .error f!"Cannot find {i} in the type context!"
   | some ty =>
     if ty.isMonoType then
       let ty := ty.toMonoTypeUnsafe
@@ -47,7 +49,7 @@ private def updateType (T : LExprTP.TyEnv) (i : LExprTP.Ident) (ty : LExprTP.Ty)
 instance : Imperative.ToGoto LExprTP where
   lookupType := lookupType
   updateType := updateType
-  identToString := (fun i => i)
+  identToString := (fun i => i.name)
   toGotoType := Lambda.LMonoTy.toGotoType
   toGotoExpr := Lambda.LExprT.toGotoExpr
 
@@ -56,8 +58,8 @@ instance : Imperative.ToGoto LExprTP where
 open Lambda.LTy.Syntax
 
 def ExampleProgram1 : Imperative.Cmds LExprTP :=
-  [.init "s" mty[bv32] (.const (.bitvecConst 32 0) mty[bv32]),
-   .set "s" (.const (.bitvecConst 32 100) mty[bv32])]
+  [.init (Lambda.Identifier.mk "s" ()) mty[bv32] (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0)),
+   .set (Lambda.Identifier.mk "s" ()) (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 100))]
 
 /--
 info: ok: #[DECL (decl (s : unsignedbv[32])),
@@ -72,15 +74,15 @@ info: ok: #[DECL (decl (s : unsignedbv[32])),
 
 
 /- (100 : bv32) + (200 : bv32) -/
-private def addBV32LExpr (op1 op2 : Lambda.LExprT String) :=
-  (Lambda.LExprT.app
-    (.app (.op "Bv32.Add" mty[bv32 → bv32 → bv32]) op1 mty[bv32 → bv32])
-    op2
-    mty[bv32])
+private def addBV32LExpr (op1 op2 : Lambda.LExprT TestParams.mono) : Lambda.LExprT TestParams.mono :=
+  (Lambda.LExpr.app { underlying := (), type := mty[bv32] }
+    (Lambda.LExpr.app { underlying := (), type := mty[bv32 → bv32] }
+      (.op { underlying := (), type := mty[bv32 → bv32 → bv32] } (Lambda.Identifier.mk "Bv32.Add" ()) (some mty[bv32 → bv32 → bv32])) op1)
+    op2)
 
 def ExampleProgram2 : Imperative.Cmds LExprTP :=
-  [.init "s" mty[bv32] (.const (.bitvecConst 32 0) mty[bv32]),
-   .set "s" (addBV32LExpr (.const (.bitvecConst 32 100) mty[bv32]) (.const (.bitvecConst 32 200) mty[bv32]))]
+  [.init (Lambda.Identifier.mk "s" ()) mty[bv32] (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0)),
+   .set (Lambda.Identifier.mk "s" ()) (addBV32LExpr (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 100)) (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 200)))]
 
 /--
 info: ok: #[DECL (decl (s : unsignedbv[32])),
@@ -96,11 +98,11 @@ info: ok: #[DECL (decl (s : unsignedbv[32])),
 -- (FIXME) Is this the right way to deal with non-det. expressions?
 
 def ExampleProgram3 : Imperative.Cmds LExprTP :=
-  [.init "x" mty[bv32] (.const (.bitvecConst 32 0) mty[bv32]),
-   .init "y" mty[bv32] (.const (.bitvecConst 32 0) mty[bv32]),
-   .havoc "x",
-   .havoc "y",
-   .init "z" mty[bv32] (addBV32LExpr (.fvar "x" mty[bv32]) (.fvar "y" mty[bv32]))]
+  [.init (Lambda.Identifier.mk "x" ()) mty[bv32] (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0)),
+   .init (Lambda.Identifier.mk "y" ()) mty[bv32] (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0)),
+   .havoc (Lambda.Identifier.mk "x" ()),
+   .havoc (Lambda.Identifier.mk "y" ()),
+   .init (Lambda.Identifier.mk "z" ()) mty[bv32] (addBV32LExpr (.fvar { underlying := (), type := mty[bv32] } (Lambda.Identifier.mk "x" ()) (some mty[bv32])) (.fvar { underlying := (), type := mty[bv32] } (Lambda.Identifier.mk "y" ()) (some mty[bv32])))]
 
 /--
 info: ok: #[DECL (decl (x : unsignedbv[32])),

@@ -15,7 +15,7 @@ open Std (ToFormat Format format)
 open Procedure Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Boogie.Syntax
 
 /--
-info: ok: Error:
+info: Error:
 none
 Subst Map:
 (x, ($__x0 : int)) (y, ($__y1 : int))
@@ -54,6 +54,7 @@ func Bool.Equiv :  ((x : bool) (y : bool)) → bool;
 func Bool.Not :  ((x : bool)) → bool;
 func Str.Length :  ((x : string)) → int;
 func Str.Concat :  ((x : string) (y : string)) → string;
+func Str.Substr :  ((x : string) (i : int) (n : int)) → string;
 func Str.ToRegEx :  ((x : string)) → regex;
 func Str.InRegEx :  ((x : string) (y : regex)) → bool;
 func Re.All :  () → regex;
@@ -66,6 +67,7 @@ func Re.Loop :  ((x : regex) (n1 : int) (n2 : int)) → regex;
 func Re.Union :  ((x : regex) (y : regex)) → regex;
 func Re.Inter :  ((x : regex) (y : regex)) → regex;
 func Re.Comp :  ((x : regex)) → regex;
+func Re.None :  () → regex;
 func old : ∀[a]. ((x : a)) → a;
 func select : ∀[k, v]. ((m : (Map k v)) (i : k)) → v;
 func update : ∀[k, v]. ((m : (Map k v)) (i : k) (x : v)) → (Map k v);
@@ -215,7 +217,7 @@ Proof Obligation:
 ((~Int.Lt (~Int.Neg ($__x0 : int))) #0)
 -/
 #guard_msgs in
-#eval do let E ← Env.init.addFactory Boogie.Factory
+#eval do let E := Env.init
          let (_proc, E) := evalOne E
               { header := {name := "P",
                            typeArgs := [],
@@ -223,8 +225,8 @@ Proof Obligation:
                            outputs := [("y", mty[int])] },
                 spec := {
                     modifies := [],
-                    preconditions := [("0_lt_x", ⟨eb[((~Int.Lt #0) x)], .Default⟩)],
-                    postconditions := [("ret_y_lt_0", ⟨eb[((~Int.Lt y) #0)], .Default⟩)] },
+                    preconditions := [("0_lt_x", ⟨eb[((~Int.Lt #0) x)], .Default, #[]⟩)],
+                    postconditions := [("ret_y_lt_0", ⟨eb[((~Int.Lt y) #0)], .Default, #[]⟩)] },
                 body := [
                   Statement.set "y" eb[(~Int.Neg x)]
                 ]

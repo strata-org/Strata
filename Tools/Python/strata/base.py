@@ -9,7 +9,7 @@ from bisect import bisect_right
 from dataclasses import dataclass
 from decimal import Decimal
 import typing
-from typing import Any
+from typing import Any, Iterable, cast
 
 import amazon.ion.simpleion as ion
 
@@ -105,6 +105,8 @@ class SyntaxCat:
     args: list['SyntaxCat']
 
     def __init__(self, name: QualifiedIdent, args: list['SyntaxCat'] | None = None, *, ann = None):
+        assert isinstance(name, QualifiedIdent)
+        assert args is None or isinstance(args, list) and all(isinstance(a, SyntaxCat) for a in args)
         self.ann = ann
         self.name = name
         self.args = [] if args is None else args
@@ -245,20 +247,43 @@ class ExprFn(Expr):
     def to_ion(self):
         return ion_sexp(ion_symbol("fn"), ann_to_ion(self.ann), self.ident.to_ion())
 
+class OperationArgs:
+    _decls : tuple[ArgDecl, ...]
+    _arg_indices : dict[str, int]
+    _args : tuple['Arg', ...]
+
+    def __init__(self, decls : tuple[ArgDecl, ...], arg_indices : dict[str, int], *args : 'Arg'):
+        assert len(args) == len(decls)
+        self._decls = decls
+        self._arg_indices = arg_indices
+        self._args = args
+
+    def __getitem__[T:'Arg'](self, field : str|int) -> T:
+        if type(field) is int:
+            return cast(T, self._args[field])
+        if type(field) is str:
+            return cast(T, self._args[self._arg_indices[field]])
+        raise ValueError(f'Expected int or str, got {type(field)}')
+
+    def items(self) -> Iterable[tuple[str, 'Arg']]:
+        return ((d.name, a) for (d, a) in zip(self._decls, self._args))
+
+    def __len__(self) -> int:
+        return len(self._args)
+
 class Operation:
     ann : Any
     decl : 'OpDecl'
-    args : dict[str, 'Arg']
+    args : OperationArgs
 
     def __init__(self, decl : 'OpDecl', args : list['Arg']|None = None, *, ann = None):
         self.ann = ann
         self.decl = decl
         if args is None:
-            args = []
-        assert len(decl.args) == len(args)
-        self.args = {}
-        for i in range(len(decl.args)):
-            self.args[decl.args[i].name] = args[i]
+            assert len(decl.args) == 0
+            self.args = OperationArgs(decl.args, decl.arg_name_map)
+        else:
+            self.args = OperationArgs(decl.args, decl.arg_name_map, *args)
 
     def __str__(self) -> str:
         t = ', '.join(f'{n}={str(v)}' for (n,v) in self.args.items())
@@ -268,7 +293,7 @@ class Operation:
         return ion_sexp(
             self.decl.ident.to_ion(),
             ann_to_ion(self.ann),
-            *(arg_to_ion(a) for a in self.args.values())
+            *(arg_to_ion(a) for a in self.args)
         )
 
 @dataclass
@@ -286,21 +311,34 @@ class NumLit:
     value: int
 
     def __init__(self, value: int, *, ann = None):
-        assert isinstance(value, int)
+        # This is to avoid bool values sneaking in
+        assert type(value) is int
         assert value >= 0
         self.ann = ann
         self.value = value
 
 @dataclass
 class DecimalLit:
-    ann : Any
     value: Decimal
+    ann : Any
 
     def __init__(self, value: Decimal, *, ann = None):
-        assert isinstance(value, int)
+        assert type(value) is int
         assert value >= 0
-        self.ann = ann
         self.value = value
+        self.ann = ann
+
+@dataclass
+class BytesLit:
+    ann : Any
+    value: bytes
+
+    def __init__(self, value: bytes, *, ann = None):
+        self.value = value
+        self.ann = ann
+
+    def __str__(self):
+        return f'BytesLit({repr(self.value)})'
 
 @dataclass
 class StrLit:
@@ -315,13 +353,16 @@ class StrLit:
         return f'StrLit({repr(self.value)})'
 
 @dataclass
-class OptionArg:
+class OptionArg[T : 'Arg']:
+    value: T|None
     ann : Any
-    value: 'Arg|None'
 
-    def __init__(self, value: 'Arg|None', *, ann = None):
-        self.ann = ann
+    def __init__(self, value: T|None, *, ann = None):
         self.value = value
+        self.ann = ann
+
+    def __bool__(self) -> bool:
+        return self.value is not None
 
     def __str__(self):
         if self.value is None:
@@ -330,28 +371,36 @@ class OptionArg:
             return f'Some({self.value})'
 
 @dataclass
-class Seq:
+class Seq[T : 'Arg']:
+    values: tuple[T, ...]
     ann : Any
-    values: list['Arg']
 
-    def __init__(self, values: list['Arg'], *, ann = None):
-        self.ann = ann
+    def __init__(self, values: tuple[T, ...], *, ann = None):
+        for v in values:
+            assert not isinstance(v, OpDecl), f'Unexpected value {type(v)}'
         self.values = values
+        self.ann = ann
+
+    def __getitem__(self, index: int):
+        return self.values[index]
+
+    def __len__(self):
+        return len(self.values)
 
     def __str__(self) -> str:
         return f"Seq([{', '.join(str(a) for a in self.values)}])"
 
 @dataclass
-class CommaSepList:
-    ann : Any
+class CommaSepBy:
     values: list['Arg']
+    ann : Any
 
     def __init__(self, values: list['Arg'], *, ann = None):
-        self.ann = ann
         self.values = values
+        self.ann = ann
 
 type Arg = SyntaxCat | Operation | TypeExpr | Expr | Ident \
-    | NumLit | DecimalLit | StrLit | OptionArg | Seq | CommaSepList
+    | BytesLit | NumLit | DecimalLit | StrLit | OptionArg['Arg'] | Seq['Arg'] | CommaSepBy
 
 strlitSym = ion_symbol("strlit")
 numSym = ion_symbol("num")
@@ -393,7 +442,9 @@ def arg_to_ion(a : Arg) -> object:
             val = ion.IonPyText(val)
         else:
             val = ion.IonPyText(a.value)
-        return ion_sexp(ion_symbol("strlit"), ann_to_ion(a.ann), val)
+        return ion_sexp(strlitSym, ann_to_ion(a.ann), val)
+    elif isinstance(a, BytesLit):
+        return ion_sexp(ion_symbol("bytes"), ann_to_ion(a.ann), a.value)
     elif isinstance(a, OptionArg):
         if a.value is None:
             return ion_sexp(optionSym, ann_to_ion(a.ann))
@@ -402,23 +453,26 @@ def arg_to_ion(a : Arg) -> object:
     elif isinstance(a, Seq):
         return ion_sexp(ion_symbol("seq"), ann_to_ion(a.ann), *(arg_to_ion(e) for e in a.values))
     else:
-        assert isinstance(a, CommaSepList), f'Expected {type(a)} to be a CommaSepList.'
+        assert isinstance(a, CommaSepBy), f'Expected {type(a)} to be a CommaSepBy.'
         return ion_sexp(ion_symbol("commaSepList"), ann_to_ion(a.ann), *(arg_to_ion(e) for e in a.values))
 
+_programSym = ion.SymbolToken(u'program', None, None)
+
 class Program:
-    programSym = ion.SymbolToken(u'program', None, None)
+    dialect : str
+    command : list[Operation]
 
     def __init__(self, dialect: str):
         self.dialect = dialect
         self.commands = []
 
-    def add(self, command):
-        assert command is not None
+    def add(self, command : Operation):
+        assert type(command) is Operation
         self.commands.append(command)
 
     def to_ion(self):
         return [
-            ion_sexp(self.programSym, self.dialect),
+            ion_sexp(_programSym, self.dialect),
             *(cmd.to_ion() for cmd in self.commands)
         ]
 
@@ -484,7 +538,13 @@ class SyntaxDefIdent(SyntaxDefAtomBase):
 @dataclass
 class SyntaxDefIndent(SyntaxDefAtomBase):
     indent: int
-    args : list['SyntaxDefAtom']
+    args : tuple['SyntaxDefAtom', ...]
+
+    def __init__(self, indent: int, args: tuple['SyntaxDefAtom', ...]):
+        self.indent = indent
+        self.args = args
+        for a in args:
+            assert not isinstance(a, SyntaxDefIndent)
 
     def to_ion(self):
         return ion_sexp(ion_symbol("indent"), self.indent, *(syntaxdef_atom_to_ion(a) for a in self.args))
@@ -495,6 +555,7 @@ def syntaxdef_atom_to_ion(atom : SyntaxDefAtom) -> object:
     if isinstance(atom, str):
         return atom
     else:
+        assert isinstance(atom, SyntaxDefAtomBase)
         return atom.to_ion()
 
 @dataclass
@@ -508,9 +569,12 @@ class SyntaxDef:
             "prec": self.prec
         }
 
+reserved = { "category", "fn", "import", "metadata", "op", "type" }
+
 class SynCatDecl:
     syncat = ion.SymbolToken(u'syncat', None, None)
     def __init__(self, dialect : str, name : str, args: list[str]|None = None):
+        assert name not in reserved, f'{name} is a reserved word.'
         self.dialect = dialect
         self.name = name
         self.ident = QualifiedIdent(dialect, name)
@@ -534,7 +598,13 @@ class ArgDecl:
     kind : SyntaxCat|TypeExpr
     metadata: Metadata
 
-    def __init__(self, name: str, kind : SyntaxCat|TypeExpr, metadata: Metadata|None = None):
+    def __init__(self, name: str, kind : SyntaxCat|TypeExpr|SynCatDecl, metadata: Metadata|None = None):
+        assert name not in reserved, f'{name} is a reserved word.'
+        if isinstance(kind, SynCatDecl):
+            assert len(kind.argNames) == 0, f'Missing arguments to syntax category'
+            kind = kind()
+        assert isinstance(kind, SyntaxCat) or isinstance(kind, TypeExpr), f'Unexpected kind {type(kind)}'
+
         self.name = name
         self.kind = kind
         self.metadata = [] if metadata is None else metadata
@@ -548,32 +618,123 @@ class ArgDecl:
             flds["metadata"] = metadata_to_ion(self.metadata)
         return flds
 
+maxPrec = 1024
+
+class SyntaxArg:
+    """Argument in syntax expression."""
+    name : str
+    prec : int
+
+    def __init__(self, name : str):
+        (f, s, e) = name.partition(':')
+        prec = maxPrec
+        if len(s) == 0:
+            prec = 0
+        else:
+            prec = int(e)
+        self.name = f
+        self.prec = prec
+
+    def resolve(self, args : dict[str, int]) -> SyntaxDefAtom:
+        level = args.get(self.name, None)
+        if level is None:
+            raise ValueError(f'Unknown argument {self.name}')
+        return SyntaxDefIdent(level, prec=self.prec)
+
+class Indent:
+    prec : int
+    value : Template|SyntaxArg
+
+    def __init__(self, prec : int, value : Template|SyntaxArg):
+        assert type(prec) is int and prec > 0
+        self.prec = prec
+        self.value = value
+
+from string.templatelib import Interpolation, Template
+
+def resolve_template(args : dict[str, int], t : Template) -> list[SyntaxDefAtom|str]:
+    atoms = []
+    for a in t:
+        if isinstance(a, Interpolation):
+            value = a.value
+            if isinstance(value, str):
+                atoms.append(value)
+            elif isinstance(value, SyntaxArg):
+                atoms.append(value.resolve(args))
+            else:
+                assert isinstance(value, Indent)
+                contents = value.value
+                if isinstance(contents, SyntaxArg):
+                    iatoms = (contents.resolve(args),)
+                else:
+                    assert isinstance(contents, Template)
+                    iatoms = tuple(resolve_template(args, contents))
+                atoms.append(SyntaxDefIndent(value.prec, iatoms))
+        else:
+            assert isinstance(a, str)
+            atoms.append(a)
+    return atoms
+
+def resolve_syntax(args : dict[str, int], v : str|Template|SyntaxArg|Indent) -> list[SyntaxDefAtom]:
+    if isinstance(v, str):
+        return [v]
+    elif isinstance(v, Template):
+        return resolve_template(args, v)
+    elif isinstance(v, Indent):
+        contents = v.value
+        if isinstance(contents, SyntaxArg):
+            atoms = (contents.resolve(args),)
+        else:
+            assert isinstance(contents, Template)
+            atoms = tuple(resolve_template(args, contents))
+        return [SyntaxDefIndent(v.prec, atoms)]
+    else:
+        assert isinstance(v, SyntaxArg)
+        return [v.resolve(args)]
+
 class OpDecl:
     opSym = ion.SymbolToken(u'op', None, None)
-    result : QualifiedIdent
+    dialect : str
+    name : str
+    ident : QualifiedIdent
+    arg_name_map : dict[str, int]
+    args : tuple[ArgDecl, ...]
+    result : SyntaxCat
+    metadata : Metadata
+    syntax : SyntaxDef|None
 
     def __init__(self,
                 dialect: str,
                 name: str,
-                args: list[ArgDecl],
+                args: tuple[ArgDecl, ...],
                 result : SyntaxCat,
                 *,
                 syntax : SyntaxDef|None = None,
                 metadata : Metadata|None = None):
-        assert all( isinstance(a, ArgDecl) for a in args)
+        assert all(isinstance(a, ArgDecl) for a in args)
+        assert isinstance(result, SyntaxCat)
+        assert len(result.args) == 0
+        assert name not in reserved, f'{name} is a reserved word.'
+        arg_dict : dict[str, int] = {}
+        for i, a in enumerate(args):
+            assert a.name not in arg_dict
+            arg_dict[a.name] = i
+
         self.dialect = dialect
         self.name = name
         self.ident = QualifiedIdent(dialect, name)
+        self.arg_name_map = arg_dict
         self.args = args
-        assert isinstance(result, SyntaxCat)
-        assert len(result.args) == 0
-        self.result = result.name
-        self.metadata = [] if metadata is None else metadata
+        self.result = result
         self.syntax = syntax
+        self.metadata = [] if metadata is None else metadata
 
     def __call__(self, *args, ann=None):
         assert len(args) == len(self.args), f"{self.ident} given {len(args)} argument(s) when {len(self.args)} expected ({args})"
         return Operation(self, list(args), ann=ann)
+
+    def __str__(self) -> str:
+        return str(self.ident)
 
     def to_ion(self):
         flds = {
@@ -582,7 +743,7 @@ class OpDecl:
         }
         if len(self.args) > 0:
             flds["args"] = [ a.to_ion() for a in self.args ]
-        flds["result"] = self.result.to_ion()
+        flds["result"] = self.result.name.to_ion()
         if self.syntax is not None:
             flds["syntax"] = self.syntax.to_ion()
         if len(self.metadata) > 0:
@@ -592,6 +753,7 @@ class OpDecl:
 class TypeDecl:
     typeSymbol = ion.SymbolToken(u'type', None, None)
     def __init__(self, name, argNames):
+        assert name not in reserved, f'{name} is a reserved word.'
         self.name = name
         self.argNames = argNames
 
@@ -602,8 +764,16 @@ class TypeDecl:
             "argNames": self.argNames
         }
 
+_dialectSym = ion.SymbolToken(u'dialect', None, None)
+
 class Dialect:
-    dialectSym = ion.SymbolToken(u'dialect', None, None)
+    """
+    A Strata dialect
+    """
+
+    name : str
+    imports : list[str]
+    decls : list[SynCatDecl | OpDecl]
 
     def __init__(self, name: str):
         self.name = name
@@ -618,14 +788,40 @@ class Dialect:
         self.add(decl)
         return decl
 
-    def add_op(self, name : str, args: list[ArgDecl], result : SyntaxCat, *,
-            syntax : SyntaxDef|None = None,
+    def add_op(self, name : str, *args: ArgDecl|SyntaxCat,
+            syntax : str|Template|SyntaxArg|Indent|None|list[SyntaxDefAtom] = None,
+            prec : int|None = None,
             metadata : Metadata|None = None) -> OpDecl:
-        decl = OpDecl(self.name, name, args, result, syntax=syntax, metadata=metadata)
+        assert name not in reserved, f'{name} is a reserved word.'
+        assert len(args) > 0
+        result = args[-1]
+        assert isinstance(result, SyntaxCat), f'{name} result must be a SyntaxCat'
+        assert len(result.args) == 0
+        args = args[:-1]
+        assert all((isinstance(a, ArgDecl) for a in args)), f'{name} args must be a ArgDecl'
+        rargs : tuple[ArgDecl, ...] = args # type: ignore
+
+        arg_dict = {}
+        for i, a in enumerate(rargs):
+            assert a.name not in arg_dict
+            arg_dict[a.name] = i
+
+        if syntax is None:
+            assert prec is None
+            syntaxd = None
+        else:
+            if prec is None:
+                prec = maxPrec
+            if isinstance(syntax, list):
+                syntax_atoms = syntax
+            else:
+                syntax_atoms = resolve_syntax(arg_dict, syntax)
+            syntaxd = SyntaxDef(syntax_atoms, prec)
+        decl = OpDecl(self.name, name, rargs, result, syntax=syntaxd, metadata=metadata)
         self.add(decl)
         return decl
 
-    def add(self, decl):
+    def add(self, decl : SynCatDecl | OpDecl):
         assert decl is not None
         if isinstance(decl, SynCatDecl):
             assert (decl.dialect == self.name)
@@ -634,13 +830,13 @@ class Dialect:
             self.__dict__[decl.name] = decl
         elif isinstance(decl, OpDecl):
             assert (decl.dialect == self.name)
-            assert (decl.name not in self.__dict__)
+            assert (decl.name not in self.__dict__), f'{decl.name} already added.'
             self.__dict__[decl.name] = decl
 
         self.decls.append(decl)
 
     def to_ion(self):
-        r : list[object] = [(self.dialectSym, self.name)]
+        r : list[object] = [(_dialectSym, self.name)]
         for i in self.imports:
             r.append({"type": "import", "name": i})
         for d in self.decls:
@@ -653,9 +849,11 @@ class Dialect:
 Init : typing.Any = Dialect('Init')
 Init.add_syncat('Command')
 Init.add_syncat('Expr')
+Init.add_syncat('ByteArray')
+Init.add_syncat('Ident')
 Init.add_syncat('Num')
 Init.add_syncat('Str')
 Init.add_syncat('Type')
-Init.add_syncat('CommaSepList', ['x'])
+Init.add_syncat('CommaSepBy', ['x'])
 Init.add_syncat('Option', ['x'])
 Init.add_syncat('Seq', ['x'])

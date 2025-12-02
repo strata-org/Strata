@@ -11,7 +11,7 @@ from os import PathLike
 import typing
 import types
 import strata
-from .base import ArgDecl, FileMapping, Init, SourceRange, SyntaxCat
+from .base import ArgDecl, FileMapping, Init, SourceRange, SyntaxCat, reserved
 
 @dataclass
 class OpArg:
@@ -26,21 +26,23 @@ class Op:
         self.decl = decl
         self.args = args
 
-Python : typing.Any = strata.Dialect('Python')
-Python.add_import("Init")
-Python.add_syncat("int")
-Python.add_op("IntPos", [ArgDecl("v", Init.Num())], Python.int())
-Python.add_op("IntNeg", [ArgDecl("v", Init.Num())], Python.int())
-Python.add_syncat("constant")
-Python.add_op("ConTrue", [], Python.constant())
-Python.add_op("ConFalse", [], Python.constant())
-Python.add_op("ConPos", [ArgDecl("v", Init.Num())], Python.constant())
-Python.add_op("ConNeg", [ArgDecl("v", Init.Num())], Python.constant())
-Python.add_op("ConString", [ArgDecl("v", Init.Str())], Python.constant())
+PythonAST : typing.Any = strata.Dialect('Python')
+PythonAST.add_import("Init")
+PythonAST.add_syncat("int")
+PythonAST.add_op("IntPos", ArgDecl("v", Init.Num()), PythonAST.int())
+PythonAST.add_op("IntNeg", ArgDecl("v", Init.Num()), PythonAST.int())
+PythonAST.add_syncat("constant")
+PythonAST.add_op("ConTrue", PythonAST.constant())
+PythonAST.add_op("ConFalse", PythonAST.constant())
+PythonAST.add_op("ConPos", ArgDecl("v", Init.Num()), PythonAST.constant())
+PythonAST.add_op("ConNeg", ArgDecl("v", Init.Num()), PythonAST.constant())
+PythonAST.add_op("ConString", ArgDecl("v", Init.Str()), PythonAST.constant())
 # JHx: FIXME:  Support floating point literals
-Python.add_op("ConFloat", [ArgDecl("v", Init.Str())], Python.constant())
-Python.add_op("ConNone", [], Python.constant())
-Python.add_op("ConEllipsis", [], Python.constant())
+PythonAST.add_op("ConFloat", ArgDecl("v", Init.Str()), PythonAST.constant())
+PythonAST.add_op("ConComplex", ArgDecl("real", Init.Str()), ArgDecl("imag", Init.Str()), PythonAST.constant())
+PythonAST.add_op("ConNone", PythonAST.constant())
+PythonAST.add_op("ConEllipsis", PythonAST.constant())
+PythonAST.add_op("ConBytes", ArgDecl("v", Init.ByteArray()), PythonAST.constant())
 
 # Map python AST types to the syntax cat
 Python_catmap : dict[type, SyntaxCat] = {}
@@ -50,12 +52,12 @@ for c in ast.AST.__subclasses__():
     if c is ast.mod:
         decl = Init.Command
     else:
-        decl = Python.add_syncat(name)
+        decl = PythonAST.add_syncat(name)
     Python_catmap[c] = decl()
 
-Python.add_syncat("opt_expr")
-some_expr = Python.add_op("some_expr", [ArgDecl("x", Python.expr())], Python.opt_expr())
-missing_expr = Python.add_op("missing_expr", [], Python.opt_expr())
+PythonAST.add_syncat("opt_expr")
+some_expr = PythonAST.add_op("some_expr", ArgDecl("x", PythonAST.expr()), PythonAST.opt_expr())
+missing_expr = PythonAST.add_op("missing_expr", PythonAST.opt_expr())
 
 op_renamings = {
     'op': 'mk_op',
@@ -67,15 +69,16 @@ Python_opmap : dict[type, Op] = {}
 def translate_op(name : str, op : type, category : SyntaxCat):
     def as_atom_type(tp) -> SyntaxCat:
         if tp is int:
-            return Python.int()
+            return PythonAST.int()
         elif tp is str:
             return Init.Str()
         elif tp is object:
-            return Python.constant()
+            return PythonAST.constant()
         else:
             return Python_catmap[tp]
 
-    used_names = { "category", "op", "type", "fn", "metadata" }
+    used_names = set(reserved)
+
     op_args : list[OpArg]= []
     op_argDecls : list[ArgDecl] = []
 
@@ -83,7 +86,7 @@ def translate_op(name : str, op : type, category : SyntaxCat):
         field_types : dict[str, object] = op._field_types
         for (f, tp) in field_types.items():
             ddm_name : str = op_renamings.get(f, f)
-            assert ddm_name not in used_names, f"{f} in {used_names}"
+            assert ddm_name not in used_names, f'{ddm_name} is used.'
             used_names.add(ddm_name)
             if op is ast.arguments and f == 'kw_defaults':
                 assert isinstance(tp, types.GenericAlias)
@@ -92,7 +95,7 @@ def translate_op(name : str, op : type, category : SyntaxCat):
                 args = typing.get_args(tp)
                 assert len(args) == 1
                 assert args[0] is ast.expr
-                cat = Init.Seq(Python.opt_expr())
+                cat = Init.Seq(PythonAST.opt_expr())
             elif op is ast.Dict and f == 'keys':
                 assert isinstance(tp, types.GenericAlias)
                 origin = typing.get_origin(tp)
@@ -100,7 +103,7 @@ def translate_op(name : str, op : type, category : SyntaxCat):
                 args = typing.get_args(tp)
                 assert len(args) == 1
                 assert args[0] is ast.expr
-                cat = Init.Seq(Python.opt_expr())
+                cat = Init.Seq(PythonAST.opt_expr())
             elif isinstance(tp, types.UnionType):
                 args = typing.get_args(tp)
                 assert len(args) == 2
@@ -121,7 +124,7 @@ def translate_op(name : str, op : type, category : SyntaxCat):
     except AttributeError:
         op_args = []
         op_argDecls = []
-    decl = Python.add_op(name, op_argDecls, category)
+    decl = PythonAST.add_op(name, *op_argDecls, category)
     Python_opmap[op] = Op(decl, op_args)
 
 # Add all operators to Python dialect and op_map.
@@ -157,46 +160,48 @@ def ast_to_arg(mapping : FileMapping, v : object, cat : SyntaxCat) -> strata.Arg
                 return strata.OptionArg(None)
             else:
                 return strata.OptionArg(ast_to_arg(mapping, v, cat.args[0]))
-        case Python.int.ident:
+        case PythonAST.int.ident:
             assert isinstance(v, int)
             if v >= 0:
-                return Python.IntPos(strata.NumLit(v))
+                return PythonAST.IntPos(strata.NumLit(v))
             else:
-                return Python.IntNeg(strata.NumLit(-v))
+                return PythonAST.IntNeg(strata.NumLit(-v))
         case Init.Str.ident:
             assert isinstance(v, str)
             return strata.StrLit(v)
-        case Python.constant.ident:
+        case PythonAST.constant.ident:
             if isinstance(v, bool):
                 if v:
-                    return Python.ConTrue()
+                    return PythonAST.ConTrue()
                 else:
-                    return Python.ConFalse()
+                    return PythonAST.ConFalse()
             elif isinstance(v, int):
                 if v >= 0:
-                    return Python.ConPos(strata.NumLit(v))
+                    return PythonAST.ConPos(strata.NumLit(v))
                 else:
-                    return Python.ConNeg(strata.NumLit(-v))
+                    return PythonAST.ConNeg(strata.NumLit(-v))
             elif isinstance(v, str):
-                return Python.ConString(strata.StrLit(v))
+                return PythonAST.ConString(strata.StrLit(v))
             elif v is None:
-                return Python.ConNone()
+                return PythonAST.ConNone()
             elif isinstance(v, float):
-                return Python.ConFloat(strata.StrLit(str(v)))
+                return PythonAST.ConFloat(strata.StrLit(str(v)))
             elif isinstance(v, types.EllipsisType):
-                return Python.ConEllipsis()
+                return PythonAST.ConEllipsis()
             elif isinstance(v, bytes):
-                return Python.ConEllipsis() # FIXME
+                return PythonAST.ConBytes(strata.BytesLit(v))
             elif isinstance(v, complex):
-                return Python.ConEllipsis() # FIXME
+                r = strata.StrLit(str(v.real))
+                i = strata.StrLit(str(v.imag))
+                return PythonAST.ConComplex(r, i)
             else:
                 raise ValueError(f"Unsupported constant type {type(v)}")
-        case Python.opt_expr.ident:
+        case PythonAST.opt_expr.ident:
             if v is None:
-                return Python.missing_expr()
+                return PythonAST.missing_expr()
             else:
                 assert isinstance(v, ast.expr)
-                return Python.some_expr(ast_to_arg(mapping, v, Python.expr()))
+                return PythonAST.some_expr(ast_to_arg(mapping, v, PythonAST.expr()))
         case Init.Option.ident:
             if v is None:
                 return strata.OptionArg(None)
@@ -205,7 +210,7 @@ def ast_to_arg(mapping : FileMapping, v : object, cat : SyntaxCat) -> strata.Arg
         case Init.Seq.ident:
             assert isinstance(v, list)
             arg_cat = cat.args[0]
-            return strata.Seq([ ast_to_arg(mapping, e, arg_cat) for e in v])
+            return strata.Seq(tuple(ast_to_arg(mapping, e, arg_cat) for e in v))
         case ident:
             assert v is not None, f'None passed to {ident}'
             return ast_to_op(mapping, v)
@@ -230,6 +235,6 @@ def parse_module(source : bytes, filename : str | PathLike = "<unknown>") -> tup
     a = ast.parse(source, mode='exec', filename=filename)
     assert isinstance(a, ast.Module)
 
-    p = strata.Program(Python.name)
+    p = strata.Program(PythonAST.name)
     p.add(ast_to_op(m, a))
     return (m, p)

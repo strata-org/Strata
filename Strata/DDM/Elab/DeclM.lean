@@ -116,7 +116,7 @@ class ElabClass (m : Type → Type) extends Monad m where
 
 export ElabClass (logErrorMessage)
 
-/-
+/--
 Runs action and returns result along with Bool that is true if
 action ran without producing errors.
 -/

@@ -1,5 +1,5 @@
 Successfully parsed.
-entry_invariant_0: verified
-arbitrary_iter_maintain_invariant_0: verified
-sum_ensures_1: verified
+Gauss.boogie.st(18, 4) [entry_invariant_0]: verified
+Gauss.boogie.st(18, 4) [arbitrary_iter_maintain_invariant_0]: verified
+Gauss.boogie.st(11, 2) [sum_ensures_1]: verified
 Proved all 3 goals.

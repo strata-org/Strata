@@ -9,20 +9,20 @@ elif [ ! -f "scripts/gen_dialect.sh" ]; then
   exit 1
 fi
 
-rm -rf cpython-3.13
-git clone https://github.com/python/cpython.git --branch 3.13 --depth 1 cpython-3.13
+rm -rf cpython-3.14
+git clone https://github.com/python/cpython.git --branch 3.14 --depth 1 cpython-3.14
 
 ./scripts/gen_dialect.sh
 
-expected_failures="cpython-3.13/Lib/test/tokenizedata/bad_coding.py"
-expected_failures="${expected_failures};cpython-3.13/Lib/test/tokenizedata/bad_coding2.py"
-expected_failures="${expected_failures};cpython-3.13/Lib/test/tokenizedata/badsyntax_3131.py"
-expected_failures="${expected_failures};cpython-3.13/Lib/test/tokenizedata/badsyntax_pep3120.py"
+expected_failures="cpython-3.14/Lib/test/tokenizedata/bad_coding.py"
+expected_failures="${expected_failures};cpython-3.14/Lib/test/tokenizedata/bad_coding2.py"
+expected_failures="${expected_failures};cpython-3.14/Lib/test/tokenizedata/badsyntax_3131.py"
+expected_failures="${expected_failures};cpython-3.14/Lib/test/tokenizedata/badsyntax_pep3120.py"
 
 
 echo "Generating report in report.xt" | tee report.txt
 count=1
-for i in `find cpython-3.13/Lib/test -name "*.py"`; do
+for i in `find cpython-3.14/Lib/test -name "*.py"`; do
   if [[ "$expected_failures" == *"$i"* ]]; then
     should_fail=1
     echo "$count : $i (expecting failure)" | tee -a report.txt

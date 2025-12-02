@@ -21,25 +21,25 @@ open Lambda
 
 namespace Program
 
-def typeCheck (C: Boogie.Expression.TyContext) (T : Boogie.Expression.TyEnv) (program : Program) :
+def typeCheck (C: Boogie.Expression.TyContext) (Env : Boogie.Expression.TyEnv) (program : Program) :
   Except Format (Program × Boogie.Expression.TyEnv) := do
     -- Push a type substitution scope to store global type variables.
-    let T := T.updateSubst { subst := [[]], isWF := SubstWF_of_empty_empty }
-    let (decls, T) ← go C T program.decls []
-    .ok ({ decls }, T)
+    let Env := Env.updateSubst { subst := [[]], isWF := SubstWF_of_empty_empty }
+    let (decls, Env) ← go C Env program.decls []
+    .ok ({ decls }, Env)
 
-  where go C T remaining acc : Except Format (Decls × Boogie.Expression.TyEnv) :=
+  where go C Env remaining acc : Except Format (Decls × Boogie.Expression.TyEnv) :=
   match remaining with
-  | [] => .ok (acc.reverse, T)
+  | [] => .ok (acc.reverse, Env)
   | decl :: drest => do
     let C := {C with idents := (← C.idents.addWithError decl.name f!"Error in Boogie declaration {decl}: {decl.name} already defined")}
-    let (decl', C, T) ←
+    let (decl', C, Env) ←
       match decl with
 
       | .var x ty val _ =>
-        let (s', T) ← Statement.typeCheck C T program .none [.init x ty val .empty]
+        let (s', Env) ← Statement.typeCheck C Env program .none [.init x ty val .empty]
         match s' with
-        | [.init x' ty' val' _] => .ok (.var x' ty' val', C, T)
+        | [.init x' ty' val' _] => .ok (.var x' ty' val', C, Env)
         | _ => .error f!"Implementation error! \
                          Statement typeChecker returned the following: \
                          {Format.line}\
@@ -53,35 +53,35 @@ def typeCheck (C: Boogie.Expression.TyContext) (T : Boogie.Expression.TyEnv) (pr
                       {td}\n\
                       KnownTypes' names:\n\
                       {C.knownTypes.keywords}"
-            .ok (.type td, C, T)
+            .ok (.type td, C, Env)
           | .syn ts =>
-            let T ← TEnv.addTypeAlias { typeArgs := ts.typeArgs, name := ts.name, type := ts.type } C T
-            .ok (.type td, C, T)
+            let Env ← TEnv.addTypeAlias { typeArgs := ts.typeArgs, name := ts.name, type := ts.type } C Env
+            .ok (.type td, C, Env)
 
       | .ax a _ =>
-        let (ae, T) ← LExprT.fromLExpr C T a.e
+        let (ae, Env) ← LExpr.resolve C Env a.e
         match ae.toLMonoTy with
-        | .bool => .ok (.ax { a with e := ae.toLExpr }, C, T)
+        | .bool => .ok (.ax { a with e := ae.unresolved }, C, Env)
         | _ => .error f!"Axiom has non-boolean type: {a}"
 
       | .distinct l es md =>
-        let es' ← es.mapM (LExprT.fromLExpr C T)
-        .ok (.distinct l (es'.map (λ e => e.fst.toLExpr)) md, C, T)
+        let es' ← es.mapM (LExpr.resolve C Env)
+        .ok (.distinct l (es'.map (λ e => e.fst.unresolved)) md, C, Env)
 
       | .proc proc _ =>
-        let T := T.pushEmptySubstScope
-        let (proc', T) ← Procedure.typeCheck C T program proc
-        let T := T.popSubstScope
-        .ok (.proc proc', C, T)
+        let Env := Env.pushEmptySubstScope
+        let (proc', Env) ← Procedure.typeCheck C Env program proc
+        let Env := Env.popSubstScope
+        .ok (.proc proc', C, Env)
 
       | .func func _ =>
-        let T := T.pushEmptySubstScope
-        let (func', T) ← Function.typeCheck C T func
+        let Env := Env.pushEmptySubstScope
+        let (func', Env) ← Function.typeCheck C Env func
         let C := C.addFactoryFunction func'
-        let T := T.popSubstScope
-        .ok (.func func', C, T)
+        let Env := Env.popSubstScope
+        .ok (.func func', C, Env)
 
-    go C T drest (decl' :: acc)
+    go C Env drest (decl' :: acc)
 
 ---------------------------------------------------------------------
 

@@ -30,7 +30,7 @@ axiom [a2]: (forall l_0: bool, l_1: int, l_2: int, y: int ::
 );
 #end
 
-def boogie_pgm := TransM.run (translateProgram pgm)
+def boogie_pgm := TransM.run Inhabited.default (translateProgram pgm)
 
 /-- info: true -/
 #guard_msgs in
