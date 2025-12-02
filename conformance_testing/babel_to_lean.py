@@ -309,18 +309,7 @@ def parse_continue_statement(j):
     }
     add_missing_node_info(j, target_j)
     return target_j
-
-def parse_for_statement(j):
-    target_body = parse_statement(j['body'])
-    target_j = {
-        "init": parse_variable_declaration(j['init']),
-        "test": parse_expression(j['test']),
-        "update": parse_assignment_expression(j['update']),
-        "body": target_body
-    }
-    add_missing_node_info(j, target_j)
-    return target_j
-
+    
 def parse_switch_statement(j):
     target_j = {
         "discriminant": parse_expression(j['discriminant']),
@@ -341,6 +330,7 @@ def parse_switch_case(j):
     }
     add_missing_node_info(j, target_j)
     return target_j
+
 
 def parse_break_statement(j):
     target_j = {
@@ -363,6 +353,17 @@ def parse_type_alias_declaration(j):
     target_j = {
         "id": parse_identifier(j["id"]),
         "typeAnnotation": union_struct,
+    }
+    add_missing_node_info(j, target_j)
+    return target_j
+    
+def parse_for_statement(j):
+    target_body = parse_statement(j['body'])
+    target_j = {
+        "init": parse_variable_declaration(j['init']),
+        "test": parse_expression(j['test']),
+        "update": parse_assignment_expression(j['update']),
+        "body": target_body
     }
     add_missing_node_info(j, target_j)
     return target_j
