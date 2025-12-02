@@ -7,6 +7,8 @@
 import Strata.DDM.AST
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Laurel
+import Strata.DL.Imperative.MetaData
+import Strata.Languages.Boogie.Expressions
 
 ---------------------------------------------------------------------
 namespace Laurel
@@ -15,24 +17,42 @@ namespace Laurel
 
 open Laurel
 open Std (ToFormat Format format)
-open Strata (QualifiedIdent Arg)
+open Strata (QualifiedIdent Arg SourceRange)
+open Lean.Parser (InputContext)
+open Imperative (MetaData Uri FileRange)
 
 ---------------------------------------------------------------------
 
 /- Translation Monad -/
 
 structure TransState where
+  inputCtx : InputContext
   errors : Array String
 
 abbrev TransM := StateM TransState
 
-def TransM.run (m : TransM α) : (α × Array String) :=
-  let (v, s) := StateT.run m { errors := #[] }
+def TransM.run (ictx : InputContext) (m : TransM α) : (α × Array String) :=
+  let (v, s) := StateT.run m { inputCtx := ictx, errors := #[] }
   (v, s.errors)
 
 def TransM.error [Inhabited α] (msg : String) : TransM α := do
-  modify fun s => { errors := s.errors.push msg }
+  modify fun s => { s with errors := s.errors.push msg }
   return panic msg
+
+---------------------------------------------------------------------
+
+/- Metadata -/
+
+def SourceRange.toMetaData (ictx : InputContext) (sr : SourceRange) : Imperative.MetaData Boogie.Expression :=
+  let file := ictx.fileName
+  let startPos := ictx.fileMap.toPosition sr.start
+  let endPos := ictx.fileMap.toPosition sr.stop
+  let uri : Uri := .file file
+  let fileRangeElt := ⟨ Imperative.MetaDataElem.Field.label "fileRange", .fileRange ⟨ uri, startPos, endPos ⟩ ⟩
+  #[fileRangeElt]
+
+def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Boogie.Expression) :=
+  return arg.ann.toMetaData (← get).inputCtx
 
 ---------------------------------------------------------------------
 
@@ -89,10 +109,12 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
   | .op op =>
     if op.name == q`Laurel.assert then
       let cond ← translateStmtExpr op.args[0]!
-      return .Assert cond
+      let md ← getArgMetaData (.op op)
+      return .Assert cond md
     else if op.name == q`Laurel.assume then
       let cond ← translateStmtExpr op.args[0]!
-      return .Assume cond
+      let md ← getArgMetaData (.op op)
+      return .Assume cond md
     else if op.name == q`Laurel.block then
       let stmts ← translateSeqCommand op.args[0]!
       return .Block stmts none

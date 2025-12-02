@@ -30,7 +30,7 @@ def testAssertFalse : IO Unit := do
   -- Translate from DDM AST to Laurel AST
   let parseResult : Except String Laurel.Program := match ddmResult with
     | Except.ok ddmProgram =>
-      let (laurelProgram, errors) := translateProgram ddmProgram |>.run
+      let (laurelProgram, errors) := TransM.run inputCtx (translateProgram ddmProgram)
       if errors.isEmpty then
         Except.ok laurelProgram
       else

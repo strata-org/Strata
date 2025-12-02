@@ -23,12 +23,12 @@ Translate Laurel StmtExpr to Boogie Statements
 -/
 partial def translateStmt (stmt : StmtExpr) : List Boogie.Statement :=
   match stmt with
-  | .Assert cond =>
+  | @StmtExpr.Assert cond md =>
     let boogieExpr := translateExpr cond
-    [Boogie.Statement.assert "assert" boogieExpr]
-  | .Assume cond =>
+    [Boogie.Statement.assert "assert" boogieExpr md]
+  | @StmtExpr.Assume cond md =>
     let boogieExpr := translateExpr cond
-    [Boogie.Statement.assume "assume" boogieExpr]
+    [Boogie.Statement.assume "assume" boogieExpr md]
   | .Block stmts _ =>
     stmts.flatMap translateStmt
   | _ => []  -- TODO: handle other statements

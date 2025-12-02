@@ -96,13 +96,13 @@ partial def assertStmt : Parser StmtExpr := do
   keyword "assert"
   let cond <- stmtExpr
   symbol ";"
-  return .Assert cond
+  pure (.Assert cond #[])
 
 partial def assumeStmt : Parser StmtExpr := do
   keyword "assume"
   let cond <- stmtExpr
   symbol ";"
-  return .Assume cond
+  pure (.Assume cond #[])
 
 partial def blockStmt : Parser StmtExpr := do
   symbol "{"

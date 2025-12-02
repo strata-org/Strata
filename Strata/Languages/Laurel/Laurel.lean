@@ -4,6 +4,9 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+import Strata.DL.Imperative.MetaData
+import Strata.Languages.Boogie.Expressions
+
 /-
 The Laurel language is supposed to serve as an intermediate verification language for at least Java, Python, JavaScript.
 
@@ -72,7 +75,6 @@ inductive HighType : Type where
   /- Java has implicit intersection types.
      Example: `<cond> ? RustanLeino : AndersHejlsberg` could be typed as `Scientist & Scandinavian`-/
   | Intersection (types : List HighType)
-  deriving Repr
 
 /- No support for something like function-by-method yet -/
 inductive Body where
@@ -145,8 +147,8 @@ inductive StmtExpr : Type where
   | Fresh(value : StmtExpr)
 
 /- Related to proofs -/
-  | Assert (condition: StmtExpr)
-  | Assume (condition: StmtExpr)
+  | Assert (condition: StmtExpr) (md : Imperative.MetaData Boogie.Expression)
+  | Assume (condition: StmtExpr) (md : Imperative.MetaData Boogie.Expression)
   /-
 ProveBy allows writing proof trees. Its semantics are the same as that of the given `value`,
 but the `proof` is used to help prove any assertions in `value`.
