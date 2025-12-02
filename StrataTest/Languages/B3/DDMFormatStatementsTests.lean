@@ -13,88 +13,14 @@ open Std (Format)
 open Strata
 open Strata.B3CST
 
--- Helper to strip SourceRange annotations from Statement DDM and replace with Unit
-mutual
-  partial def stripStmtAnnotations : B3CST.Statement SourceRange → B3CST.Statement Unit
-    | .var_decl_full _ name ty autoinv init =>
-        .var_decl_full () ⟨(), name.val⟩ ⟨(), ty.val⟩ (stripAnnotations autoinv) (stripAnnotations init)
-    | .var_decl_with_autoinv _ name ty autoinv =>
-        .var_decl_with_autoinv () ⟨(), name.val⟩ ⟨(), ty.val⟩ (stripAnnotations autoinv)
-    | .var_decl_with_init _ name ty init =>
-        .var_decl_with_init () ⟨(), name.val⟩ ⟨(), ty.val⟩ (stripAnnotations init)
-    | .var_decl_typed _ name ty =>
-        .var_decl_typed () ⟨(), name.val⟩ ⟨(), ty.val⟩
-    | .var_decl_inferred _ name init =>
-        .var_decl_inferred () ⟨(), name.val⟩ (stripAnnotations init)
-    | .val_decl _ name ty init =>
-        .val_decl () ⟨(), name.val⟩ ⟨(), ty.val⟩ (stripAnnotations init)
-    | .val_decl_inferred _ name init =>
-        .val_decl_inferred () ⟨(), name.val⟩ (stripAnnotations init)
-    | .assign _ lhs rhs =>
-        .assign () ⟨(), lhs.val⟩ (stripAnnotations rhs)
-    | .reinit_statement _ v =>
-        .reinit_statement () ⟨(), v.val⟩
-    | .check _ expr =>
-        .check () (stripAnnotations expr)
-    | .assume _ expr =>
-        .assume () (stripAnnotations expr)
-    | .reach _ expr =>
-        .reach () (stripAnnotations expr)
-    | .assert _ expr =>
-        .assert () (stripAnnotations expr)
-    | .return_statement _ =>
-        .return_statement ()
-    | .block _ stmts =>
-        .block () ⟨(), stmts.val.map stripStmtAnnotations⟩
-    | .if_statement _ cond thenB elseB =>
-        .if_statement () (stripAnnotations cond) (stripStmtAnnotations thenB) ⟨(), elseB.val.map stripElseAnnotations⟩
-    | .loop_statement _ invs body =>
-        .loop_statement () ⟨(), invs.val.map stripInvariantAnnotations⟩ (stripStmtAnnotations body)
-    | .exit_statement _ label =>
-        .exit_statement () ⟨(), label.val.map (fun l => ⟨(), l.val⟩)⟩
-    | .labeled_statement _ label stmt =>
-        .labeled_statement () ⟨(), label.val⟩ (stripStmtAnnotations stmt)
-    | .probe _ label =>
-        .probe () ⟨(), label.val⟩
-    | .aForall_statement _ var ty body =>
-        .aForall_statement () ⟨(), var.val⟩ ⟨(), ty.val⟩ (stripStmtAnnotations body)
-    | .choose_statement _ branches =>
-        .choose_statement () (stripChoiceBranchesAnnotations branches)
-    | .if_case_statement _ cases =>
-        .if_case_statement () ⟨(), cases.val.map stripIfCaseBranchAnnotations⟩
-    | .call_statement _ procName args =>
-        .call_statement () ⟨(), procName.val⟩ ⟨(), args.val.map stripCallArgAnnotations⟩
-
-  partial def stripElseAnnotations : B3CST.Else SourceRange → B3CST.Else Unit
-    | .else_some _ stmt => .else_some () (stripStmtAnnotations stmt)
-
-  partial def stripInvariantAnnotations : B3CST.Invariant SourceRange → B3CST.Invariant Unit
-    | .invariant _ expr => .invariant () (stripAnnotations expr)
-
-  partial def stripChoiceBranchesAnnotations : B3CST.ChoiceBranches SourceRange → B3CST.ChoiceBranches Unit
-    | .choiceAtom _ branch => .choiceAtom () (stripChoiceBranchAnnotations branch)
-    | .choicePush _ branches branch => .choicePush () (stripChoiceBranchesAnnotations branches) (stripChoiceBranchAnnotations branch)
-
-  partial def stripChoiceBranchAnnotations : B3CST.ChoiceBranch SourceRange → B3CST.ChoiceBranch Unit
-    | .choice_branch _ stmt => .choice_branch () (stripStmtAnnotations stmt)
-
-  partial def stripIfCaseBranchAnnotations : B3CST.IfCaseBranch SourceRange → B3CST.IfCaseBranch Unit
-    | .if_case_branch _ cond stmt => .if_case_branch () (stripAnnotations cond) (stripStmtAnnotations stmt)
-
-  partial def stripCallArgAnnotations : B3CST.CallArg SourceRange → B3CST.CallArg Unit
-    | .call_arg_expr _ expr => .call_arg_expr () (stripAnnotations expr)
-    | .call_arg_out _ id => .call_arg_out () ⟨(), id.val⟩
-    | .call_arg_inout _ id => .call_arg_inout () ⟨(), id.val⟩
-end
-
 -- Helper to perform the round-trip transformation for statements
 -- DDM OperationF → B3 Stmt → DDM → formatted output
-def doRoundtripStmt (stmt : OperationF SourceRange) (ctx : FormatContext) (state : FormatState) : Format :=
+partial def doRoundtripStmt (stmt : OperationF SourceRange) (ctx : FormatContext) (state : FormatState) : Format :=
   match B3CST.Statement.ofAst stmt with
   | .ok cstStmt =>
-      let cstStmtUnit := stripStmtAnnotations cstStmt
-      let b3Stmt := Stmt.fromDDM cstStmtUnit
-      let reprStr := (repr b3Stmt).pretty.replace "Strata.B3AST.Statement." "."
+      let b3Stmt := Stmt.toAST cstStmt
+      let b3StmtUnit := b3Stmt.toUnit
+      let reprStr := (repr b3StmtUnit).pretty.replace "Strata.B3AST.Statement." "."
       let reprStr := reprStr.replace "Strata.B3AST.Expression." "."
       let reprStr := reprStr.replace "Strata.B3AST.Literal." "."
       let reprStr := reprStr.replace "Strata.B3AST.UnaryOp." "."
@@ -103,10 +29,9 @@ def doRoundtripStmt (stmt : OperationF SourceRange) (ctx : FormatContext) (state
       let reprStr := reprStr.replace "Strata.B3AST.CallArg." "."
       let reprStr := reprStr.replace "Strata.B3AST.OneIfCase." "."
       dbg_trace f!"B3: {reprStr}"
-      let cstStmt' := b3Stmt.toDDM
+      let cstStmt' := Stmt.toCST b3Stmt
       let cstAst := cstStmt'.toAst
-      let cstAstSR := argFUnitToSourceRange (ArgF.op cstAst)
-      cformat cstAstSR ctx state
+      cformat (ArgF.op cstAst) ctx state
   | .error msg => s!"Parse error: {msg}"
 
 -- Helper to extract statement from a program and apply round-trip transformation

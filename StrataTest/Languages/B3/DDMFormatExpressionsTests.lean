@@ -15,21 +15,20 @@ open Strata.B3CST
 
 -- Helper to perform the round-trip transformation and format
 -- DDM OperationF → B3 AST → DDM → formatted output
-def doRoundtrip (e : OperationF SourceRange) (ctx : FormatContext) (state : FormatState) : Format :=
+partial def doRoundtrip (e : OperationF SourceRange) (ctx : FormatContext) (state : FormatState) : Format :=
   match B3CST.Expression.ofAst e with
   | .ok cstExpr =>
-      let cstExprUnit := stripAnnotations cstExpr
-      let b3Expr := Expression.fromDDM cstExprUnit
-      let reprStr := (repr b3Expr).pretty.replace "Strata.B3AST.Expression." "."
+      let b3Expr := Expression.toAST cstExpr
+      let b3ExprUnit := b3Expr.toUnit
+      let reprStr := (repr b3ExprUnit).pretty.replace "Strata.B3AST.Expression." "."
       let reprStr := reprStr.replace "Strata.B3AST.Literal." "."
       let reprStr := reprStr.replace "Strata.B3AST.UnaryOp." "."
       let reprStr := reprStr.replace "Strata.B3AST.BinaryOp." "."
       let reprStr := reprStr.replace "Strata.B3AST.Pattern." "."
       dbg_trace f!"B3: {reprStr}"
-      let cstExpr' := b3Expr.toDDM
+      let cstExpr' := Expression.toCST b3Expr
       let cstAst := cstExpr'.toAst
-      let cstAstSR := argFUnitToSourceRange (ArgF.op cstAst)
-      cformat cstAstSR ctx state
+      cformat (ArgF.op cstAst) ctx state
   | .error msg => s!"Parse error: {msg}"
 
 -- Helper to extract expression from a program and apply round-trip transformation

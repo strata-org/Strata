@@ -54,3 +54,4 @@ Sometimes you need to know why something in #eval is evaluated a given way becau
 - Do not create extra md files or example files based on files. If it's a lean example, it should be integrated properly in the codebase or disregarded if it was temporary development. If it's documentation, it should be made permanent or integrated into the ongoing design.md document as learnings.
 - Never create a new lean file to override the previous one. It's like that that usually you forget information. Instead, use strReplace or equivalent. If strReplace does not work, re-read the file on disk. If you are sure it should work, do smaller strReplace.
 - If code is mean to be executed, you shall keep it and refactor it. NEVER replace executable with a 'sorry', even if looks like a proof.
+- when asked to "commit" implicitly, include all the files that were modified, not just the files you worked on recently.

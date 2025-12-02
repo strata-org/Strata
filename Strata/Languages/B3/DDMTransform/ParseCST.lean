@@ -28,10 +28,11 @@ op strLit (s : Str) : Expression => s;
 op btrue : Expression => "true";
 op bfalse : Expression => "false";
 
+op old_id (name : Ident) : Expression => "old " name;
 op id (name : Ident) : Expression => name;
 
 op letExpr (name : Ident, value : Expression, body : Expression) : Expression =>
-  @[prec(2)] "vaal " name " := " value:0 " " body:2;
+  @[prec(2)] "val " name " := " value:0 " " body:2;
 
 op labeledExpr (label : Ident, e : Expression) : Expression => @[prec(1)] label ": " e:1;
 
@@ -215,8 +216,12 @@ op proc_body_some (s : Statement) : ProcBody => s:40;
 op procedure_decl (name : Ident, params : CommaSepBy PParam, specs : Seq Spec, body : Option ProcBody) : Decl =>
   "\nprocedure " name "(" params ")" specs body;
 
+category Program;
+op program (decls : Seq Decl) : Program =>
+  decls;
+
 op command_stmt (s : Statement) : Command => s;
-op command_decl (d : Decl) : Command => d;
+op command_program (p : Program) : Command => p;
 #end
 
 namespace B3CST

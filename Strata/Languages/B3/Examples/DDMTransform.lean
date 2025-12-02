@@ -6,7 +6,6 @@
 
 import Strata.Languages.B3.DDMTransform.ParseCST
 import Strata.Languages.B3.DDMTransform.DefinitionAST
-import Strata.Languages.B3.DDMTransform.Translate
 
 ---------------------------------------------------------------------
 namespace Strata

@@ -165,10 +165,184 @@ op axiom (explains : Seq Ident, expr : Expression) : Decl =>
 op procedure (name : Ident, params : Seq PParameter, specs : Seq Spec, body : Option Statement) : Decl =>
   "\nprocedure " name " (" params ") specs " specs " body " body;
 
+category Program;
+op program (decls : Seq Decl) : Program =>
+  decls;
+
 #end
 
 namespace B3AST
 
 #strata_gen B3AST
+
+end B3AST
+
+---------------------------------------------------------------------
+-- Metadata Transformation
+---------------------------------------------------------------------
+
+namespace B3AST
+
+open Strata.B3AST
+
+private def mapAnn {α M N : Type} (f : M → N) (a : Ann α M) : Ann α N :=
+  ⟨f a.ann, a.val⟩
+
+instance [Inhabited M] : Inhabited (Expression M) where
+  default := Expression.literal default (Literal.intLit default ⟨default, 0⟩)
+
+instance [Inhabited M] : Inhabited (Statement M) where
+  default := Statement.returnStmt default
+
+instance [Inhabited M] : Inhabited (Decl M) where
+  default := Decl.typeDecl default ⟨default, "T"⟩
+
+instance [Inhabited M] : Inhabited (Pattern M) where
+  default := Pattern.pattern default ⟨default, #[]⟩
+
+instance [Inhabited M] : Inhabited (CallArg M) where
+  default := CallArg.callArgOut default ⟨default, "x"⟩
+
+instance [Inhabited M] : Inhabited (OneIfCase M) where
+  default := OneIfCase.oneIfCase default default default
+
+mutual
+
+partial def Literal.mapMetadata [Inhabited N] (f : M → N) : Literal M → Literal N
+  | .intLit m n => .intLit (f m) (mapAnn f n)
+  | .boolLit m b => .boolLit (f m) (mapAnn f b)
+  | .stringLit m s => .stringLit (f m) (mapAnn f s)
+
+partial def BinaryOp.mapMetadata [Inhabited N] (f : M → N) : BinaryOp M → BinaryOp N
+  | .iff m => .iff (f m)
+  | .implies m => .implies (f m)
+  | .impliedBy m => .impliedBy (f m)
+  | .and m => .and (f m)
+  | .or m => .or (f m)
+  | .eq m => .eq (f m)
+  | .neq m => .neq (f m)
+  | .lt m => .lt (f m)
+  | .le m => .le (f m)
+  | .ge m => .ge (f m)
+  | .gt m => .gt (f m)
+  | .add m => .add (f m)
+  | .sub m => .sub (f m)
+  | .mul m => .mul (f m)
+  | .div m => .div (f m)
+  | .mod m => .mod (f m)
+
+partial def UnaryOp.mapMetadata [Inhabited N] (f : M → N) : UnaryOp M → UnaryOp N
+  | .not m => .not (f m)
+  | .neg m => .neg (f m)
+
+partial def QuantifierKind.mapMetadata [Inhabited N] (f : M → N) : QuantifierKind M → QuantifierKind N
+  | .forall m => .forall (f m)
+  | .exists m => .exists (f m)
+
+partial def Expression.mapMetadata [Inhabited N] (f : M → N) : Expression M → Expression N
+  | .literal m lit => .literal (f m) (Literal.mapMetadata f lit)
+  | .id m idx => .id (f m) (mapAnn f idx)
+  | .ite m cond thn els => .ite (f m) (Expression.mapMetadata f cond) (Expression.mapMetadata f thn) (Expression.mapMetadata f els)
+  | .binaryOp m op lhs rhs => .binaryOp (f m) (BinaryOp.mapMetadata f op) (Expression.mapMetadata f lhs) (Expression.mapMetadata f rhs)
+  | .unaryOp m op arg => .unaryOp (f m) (UnaryOp.mapMetadata f op) (Expression.mapMetadata f arg)
+  | .functionCall m fnName args => .functionCall (f m) (mapAnn f fnName) ⟨f args.ann, args.val.map (Expression.mapMetadata f)⟩
+  | .labeledExpr m label expr => .labeledExpr (f m) (mapAnn f label) (Expression.mapMetadata f expr)
+  | .letExpr m var value body => .letExpr (f m) (mapAnn f var) (Expression.mapMetadata f value) (Expression.mapMetadata f body)
+  | .quantifierExpr m qkind var ty patterns body =>
+      .quantifierExpr (f m) (QuantifierKind.mapMetadata f qkind) (mapAnn f var) (mapAnn f ty)
+        ⟨f patterns.ann, patterns.val.map (Pattern.mapMetadata f)⟩ (Expression.mapMetadata f body)
+
+partial def Pattern.mapMetadata [Inhabited N] (f : M → N) : Pattern M → Pattern N
+  | .pattern m exprs => .pattern (f m) ⟨f exprs.ann, exprs.val.map (Expression.mapMetadata f)⟩
+
+partial def CallArg.mapMetadata [Inhabited N] (f : M → N) : CallArg M → CallArg N
+  | .callArgExpr m e => .callArgExpr (f m) (Expression.mapMetadata f e)
+  | .callArgOut m id => .callArgOut (f m) (mapAnn f id)
+  | .callArgInout m id => .callArgInout (f m) (mapAnn f id)
+
+partial def OneIfCase.mapMetadata [Inhabited N] (f : M → N) : OneIfCase M → OneIfCase N
+  | .oneIfCase m cond body => .oneIfCase (f m) (Expression.mapMetadata f cond) (Statement.mapMetadata f body)
+
+partial def Statement.mapMetadata [Inhabited N] (f : M → N) : Statement M → Statement N
+  | .varDecl m name ty autoinv init =>
+      .varDecl (f m) (mapAnn f name)
+        ⟨f ty.ann, ty.val.map (mapAnn f)⟩
+        ⟨f autoinv.ann, autoinv.val.map (Expression.mapMetadata f)⟩
+        ⟨f init.ann, init.val.map (Expression.mapMetadata f)⟩
+  | .assign m lhs rhs => .assign (f m) (mapAnn f lhs) (Expression.mapMetadata f rhs)
+  | .reinit m idx => .reinit (f m) (mapAnn f idx)
+  | .blockStmt m stmts => .blockStmt (f m) ⟨f stmts.ann, stmts.val.map (Statement.mapMetadata f)⟩
+  | .call m procName args => .call (f m) (mapAnn f procName) ⟨f args.ann, args.val.map (CallArg.mapMetadata f)⟩
+  | .check m expr => .check (f m) (Expression.mapMetadata f expr)
+  | .assume m expr => .assume (f m) (Expression.mapMetadata f expr)
+  | .reach m expr => .reach (f m) (Expression.mapMetadata f expr)
+  | .assert m expr => .assert (f m) (Expression.mapMetadata f expr)
+  | .aForall m var ty body => .aForall (f m) (mapAnn f var) (mapAnn f ty) (Statement.mapMetadata f body)
+  | .choose m branches => .choose (f m) ⟨f branches.ann, branches.val.map (Statement.mapMetadata f)⟩
+  | .ifStmt m cond thenB elseB =>
+      .ifStmt (f m) (Expression.mapMetadata f cond) (Statement.mapMetadata f thenB)
+        ⟨f elseB.ann, elseB.val.map (Statement.mapMetadata f)⟩
+  | .ifCase m cases => .ifCase (f m) ⟨f cases.ann, cases.val.map (OneIfCase.mapMetadata f)⟩
+  | .loop m invariants body =>
+      .loop (f m) ⟨f invariants.ann, invariants.val.map (Expression.mapMetadata f)⟩ (Statement.mapMetadata f body)
+  | .labeledStmt m label stmt => .labeledStmt (f m) (mapAnn f label) (Statement.mapMetadata f stmt)
+  | .exit m label => .exit (f m) ⟨f label.ann, label.val.map (mapAnn f)⟩
+  | .returnStmt m => .returnStmt (f m)
+  | .probe m label => .probe (f m) (mapAnn f label)
+
+partial def ParamMode.mapMetadata [Inhabited N] (f : M → N) : ParamMode M → ParamMode N
+  | .paramModeIn m => .paramModeIn (f m)
+  | .paramModeOut m => .paramModeOut (f m)
+  | .paramModeInout m => .paramModeInout (f m)
+
+partial def FParameter.mapMetadata [Inhabited N] (f : M → N) : FParameter M → FParameter N
+  | .fParameter m injective name ty => .fParameter (f m) (mapAnn f injective) (mapAnn f name) (mapAnn f ty)
+
+partial def PParameter.mapMetadata [Inhabited N] (f : M → N) : PParameter M → PParameter N
+  | .pParameter m mode name ty autoinv =>
+      .pParameter (f m) (ParamMode.mapMetadata f mode) (mapAnn f name) (mapAnn f ty)
+        ⟨f autoinv.ann, autoinv.val.map (Expression.mapMetadata f)⟩
+
+partial def Spec.mapMetadata [Inhabited N] (f : M → N) : Spec M → Spec N
+  | .specRequires m expr => .specRequires (f m) (Expression.mapMetadata f expr)
+  | .specEnsures m expr => .specEnsures (f m) (Expression.mapMetadata f expr)
+
+partial def When.mapMetadata [Inhabited N] (f : M → N) : When M → When N
+  | .when m cond => .when (f m) (Expression.mapMetadata f cond)
+
+partial def FunctionBody.mapMetadata [Inhabited N] (f : M → N) : FunctionBody M → FunctionBody N
+  | .functionBody m whens body =>
+      .functionBody (f m) ⟨f whens.ann, whens.val.map (When.mapMetadata f)⟩ (Expression.mapMetadata f body)
+
+partial def Decl.mapMetadata [Inhabited N] (f : M → N) : Decl M → Decl N
+  | .typeDecl m name => .typeDecl (f m) (mapAnn f name)
+  | .tagger m name forType => .tagger (f m) (mapAnn f name) (mapAnn f forType)
+  | .function m name params resultType tag body =>
+      .function (f m) (mapAnn f name) ⟨f params.ann, params.val.map (FParameter.mapMetadata f)⟩
+        (mapAnn f resultType) ⟨f tag.ann, tag.val.map (mapAnn f)⟩
+        ⟨f body.ann, body.val.map (FunctionBody.mapMetadata f)⟩
+  | .axiom m explains expr =>
+      .axiom (f m) ⟨f explains.ann, explains.val.map (mapAnn f)⟩ (Expression.mapMetadata f expr)
+  | .procedure m name params specs body =>
+      .procedure (f m) (mapAnn f name) ⟨f params.ann, params.val.map (PParameter.mapMetadata f)⟩
+        ⟨f specs.ann, specs.val.map (Spec.mapMetadata f)⟩
+        ⟨f body.ann, body.val.map (Statement.mapMetadata f)⟩
+
+partial def Program.mapMetadata [Inhabited N] (f : M → N) : Program M → Program N
+  | .program m decls => .program (f m) ⟨f decls.ann, decls.val.map (Decl.mapMetadata f)⟩
+
+end
+
+partial def Expression.toUnit [Inhabited (Expression Unit)] (e : Expression M) : Expression Unit :=
+  e.mapMetadata (fun _ => ())
+
+partial def Statement.toUnit [Inhabited (Expression Unit)] (s : Statement M) : Statement Unit :=
+  s.mapMetadata (fun _ => ())
+
+partial def Decl.toUnit [Inhabited (Expression Unit)] (d : Decl M) : Decl Unit :=
+  d.mapMetadata (fun _ => ())
+
+partial def Program.toUnit [Inhabited (Expression Unit)] (p : Program M) : Program Unit :=
+  p.mapMetadata (fun _ => ())
 
 end B3AST
