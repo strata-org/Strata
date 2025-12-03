@@ -34,25 +34,34 @@ namespace Boogie
    types.
 -/
 
-def typeCheck (options : Options) (program : Program) : Except Std.Format Program := do
+def typeCheck (options : Options) (program : Program)
+    (moreFns : @Lambda.Factory BoogieLParams := Lambda.Factory.default) :
+    Except Std.Format Program := do
   let T := Lambda.TEnv.default
-  let C := { Lambda.LContext.default with functions := Boogie.Factory, knownTypes := Boogie.KnownTypes }
+  let factory ← Boogie.Factory.addFactory moreFns
+  let C := { Lambda.LContext.default with
+                functions := factory,
+                knownTypes := Boogie.KnownTypes }
   let (program, _T) ← Program.typeCheck C T program
   -- dbg_trace f!"[Strata.Boogie] Type variables:\n{T.state.substInfo.subst.length}"
   -- dbg_trace f!"[Strata.Boogie] Annotated program:\n{program}"
   if options.verbose then dbg_trace f!"[Strata.Boogie] Type checking succeeded.\n"
   return program
 
-def typeCheckAndPartialEval (options : Options) (program : Program) :
+def typeCheckAndPartialEval (options : Options) (program : Program)
+  (moreFns : @Lambda.Factory BoogieLParams := Lambda.Factory.default) :
   Except Std.Format (List (Program × Env)) := do
-  let program ← typeCheck options program
+  let program ← typeCheck options program moreFns
   -- Extract datatypes from program declarations and add to environment
   let datatypes := program.decls.filterMap fun decl =>
     match decl with
     | .type (.data d) _ => some d
     | _ => none
-  let E ← Env.init.addDatatypes datatypes
-  let E := { E with program := program }
+  let σ ← (Lambda.LState.init).addFactory Boogie.Factory
+  let σ ← σ.addFactory moreFns
+  let E := { Env.init with exprEnv := σ,
+                           program := program }
+  let E ← E.addDatatypes datatypes
   let pEs := Program.eval E
   if options.verbose then do
     dbg_trace f!"{Std.Format.line}VCs:"
