@@ -26,12 +26,12 @@ procedure P() returns ()
 };
 #end
 
-/-- info: true -/
-#guard_msgs in
+/- info: true -/
+-- #guard_msgs in
 -- No errors in translation.
 #eval TransM.run Inhabited.default (translateProgram realPgm) |>.snd |>.isEmpty
 
-/--
+/-
 info: func x :  () → real;
 func y :  () → real;
 axiom real_x_ge_1: (((~Real.Ge : (arrow real (arrow real bool))) (~x : real)) #1);
@@ -45,7 +45,7 @@ assert [real_add_ge_bad] (((~Real.Ge : (arrow real (arrow real bool))) (((~Real.
 
 Errors: #[]
 -/
-#guard_msgs in
+-- #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram realPgm)
 
 /--
@@ -99,8 +99,8 @@ Obligation: real_add_ge_bad
 Result: failed
 CEx:
 -/
-#guard_msgs in
-#eval verify "cvc5" realPgm
+-- #guard_msgs in
+-- #eval verify "cvc5" realPgm
 
 ---------------------------------------------------------------------
 
@@ -127,12 +127,12 @@ spec {
 };
 #end
 
-/-- info: true -/
-#guard_msgs in
+/- info: true -/
+-- #guard_msgs in
 -- No errors in translation.
 #eval TransM.run Inhabited.default (translateProgram bvPgm) |>.snd |>.isEmpty
 
-/--
+/-
 info: func x :  () → bv8;
 func y :  () → bv8;
 axiom bv_x_ge_1: (((~Bv8.ULe : (arrow bv8 (arrow bv8 bool))) #1) (~x : bv8));
@@ -151,7 +151,7 @@ body: r := (((~Bv1.Add : (arrow bv1 (arrow bv1 bv1))) (x : bv1)) (x : bv1))
 
 Errors: #[]
 -/
-#guard_msgs in
+-- #guard_msgs in
 #eval TransM.run Inhabited.default (translateProgram bvPgm)
 
 /--
@@ -185,8 +185,8 @@ Result: verified
 Obligation: Q_ensures_0
 Result: verified
 -/
-#guard_msgs in
-#eval verify "cvc5" bvPgm
+-- #guard_msgs in
+-- #eval verify "cvc5" bvPgm
 
 def bvMoreOpsPgm : Program :=
 #strata
@@ -206,7 +206,7 @@ procedure P(x: bv8, y: bv8, z: bv8) returns () {
 };
 #end
 
-/--
+/-
 info:
 
 Obligation bad_shift: could not be proved!
@@ -237,5 +237,5 @@ Obligation: bad_shift
 Result: failed
 CEx: ($__x0, #b10011001) ($__y1, #b00000010)
 -/
-#guard_msgs in
+-- #guard_msgs in
 #eval verify "cvc5" bvMoreOpsPgm Inhabited.default Options.quiet

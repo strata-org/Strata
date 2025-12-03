@@ -25,7 +25,7 @@ composite Extender2 extends Base {
   }
 }
 
-val foo = procedure(b: Base) {
+procedure foo(b: Base) {
   var x = b.foo();
   assert x > 3; -- pass
 }
