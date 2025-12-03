@@ -7,7 +7,7 @@
 composite Immutable {
   val x: int
 
-  val construct = procedure(): pure Immutable
+  procedure construct(): pure Immutable
     constructor
     requires constructing = {this}
     ensures constructing == {}

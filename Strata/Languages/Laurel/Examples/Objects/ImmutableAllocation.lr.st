@@ -11,7 +11,7 @@ composite Immutable {
 
   invariant x + y >= 5
 
-  val construct = procedure()
+  procedure construct()
     constructor
     requires this in Immutable.contructing
     ensures this !in Immutable.constructing
@@ -21,7 +21,7 @@ composite Immutable {
     construct this; -- checks that all fields of 'this' have been assigned
   }
 
-  val constructorHelper = procedure() 
+  procedure constructorHelper() 
     constructor
     requires this in Immutable.constructing
     ensures assigned(this.y)
@@ -30,6 +30,6 @@ composite Immutable {
   }
 }
 
-val foo = procedure() {
+procedure foo() {
   val immutable = Immutable.construct(); -- constructor instance method can be called as a static.
 }

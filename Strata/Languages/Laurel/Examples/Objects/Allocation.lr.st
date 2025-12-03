@@ -12,7 +12,7 @@ composite Immutable {
 
   invariant x + y >= 5
 
-  val construct = procedure()
+  procedure construct()
     constructor
     requires contructing == {this}
     ensures constructing == {}
@@ -23,7 +23,7 @@ composite Immutable {
   }
 }
 
-val foo = procedure() {
+procedure foo() {
   val immutable = Immutable.construct(); -- constructor instance method can be called as a static.
 }
 
@@ -33,7 +33,8 @@ composite ImmutableChainOfTwo {
 
   invariant other.other == this -- reading other.other is allowed because the field is immutable
 
-  val construct = constructor() 
+  procedure construct() 
+    constructor
     requires contructing == {this}
     ensures constructing == {}
   {
@@ -47,13 +48,14 @@ composite ImmutableChainOfTwo {
   }
 
   -- only used privately
-  val allocate = constructor()
+  procedure allocate()
+    constructor
     ensures constructing = {this} {    
     -- empty body
   }
 }
 
-val foo2 = procedure() {
+procedure foo2() {
   val immutable = ImmutableChainOfTwo.construct();
   val same = immutable.other.other;
   assert immutable =&= same;
@@ -64,14 +66,16 @@ composite UsesHelperConstructor {
   val x: int
   val y: int
 
-  val setXhelper = constructor() 
+  procedure setXhelper() 
+    constructor
     requires constructing == {this}
     ensures constructing == {this} && assigned(this.x)
   {
     this.x = 3;
   }
 
-  val construct = constructor() 
+  procedure construct() 
+    constructor
     requires contructing == {this}
     ensures constructing == {}
   {

@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 -- body is transparant despite having mutation
-val fooReassign = procedure(): int {
+procedure fooReassign(): int {
   var x = 0;
   x = x + 1;
   assert x == 1;
@@ -12,14 +12,14 @@ val fooReassign = procedure(): int {
   x
 }
 
-val fooSingleAssign = procedure(): int {
+procedure fooSingleAssign(): int {
   var x = 0
   var x2 = x + 1;
   var x3 = x2 + 1;
   x3
 }
 
-val proof = procedure() {
+procedure fooProof() {
   assert fooReassign() == fooSingleAssign(); -- passes
 }
 
