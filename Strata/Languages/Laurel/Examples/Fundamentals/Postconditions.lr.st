@@ -36,8 +36,9 @@ val opaqueBody_BodyProof = proof() {
   assert r >= 0; -- pass
 }
 
-val transparantBody = function(x: int): int
-assume forall((x: int) -> opaqueBody(x) == Math.abs(x));
+val transparantBody = function(x: int): int {
+  Math.abs(x)
+}
 
 var fooProof = proof() {
   assert transparantBody(-1) == 1; -- pass

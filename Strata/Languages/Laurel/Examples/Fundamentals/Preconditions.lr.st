@@ -19,8 +19,9 @@ val fooProof = procedure() {
 /-
 Translation to B3:
 
-val hasRequires = function(x: int): int requires x > 2
-assume forall((x: int) -> var r = hasRequires(x); r = x + 1);
+val hasRequires = function(x: int): int requires x > 2 {
+  x + 1
+}
 
 val hasRequires_BodyProof = proof {
   var x: int;
