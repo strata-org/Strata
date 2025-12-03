@@ -10,6 +10,7 @@ import Strata.DDM.Ion
 import Strata.Util.IO
 
 import Strata.Languages.Python.Python
+import StrataTest.Transform.ProcedureInlining
 
 def exitFailure {α} (message : String) : IO α := do
   IO.eprintln (message  ++ "\n\nRun strata --help for additional help.")
@@ -192,8 +193,15 @@ def pyAnalyzeCommand : Command where
     let newPgm : Boogie.Program := { decls := preludePgm.decls ++ bpgm.decls }
     if verbose then
       IO.print newPgm
+    let newPgm := runInlineCall newPgm
+    if verbose then
+      IO.println "Inlined: "
+      IO.print newPgm
     let vcResults ← EIO.toIO (fun f => IO.Error.userError (toString f))
-                        (Boogie.verify "z3" newPgm { Options.default with stopOnFirstError := false, verbose })
+                        (Boogie.verify "z3" newPgm { Options.default with stopOnFirstError := false,
+                                                                          verbose,
+                                                                          removeIrrelevantAxioms := true }
+                                                   (moreFns := Strata.Python.ReFactory))
     let mut s := ""
     for vcResult in vcResults do
       s := s ++ s!"\n{vcResult.obligation.label}: {Std.format vcResult.result}\n"
