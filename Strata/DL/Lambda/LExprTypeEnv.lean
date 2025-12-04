@@ -237,7 +237,7 @@ Context data that does not change throughout type checking: a
 factory of user-specified functions and data structures for ensuring unique
 names of types and functions.
 Invariant: all functions defined in `TypeFactory.genFactory`
-for `datatypes` must be in `functions`.
+for `datatypes` should be in `functions`.
 -/
 structure LContext (T: LExprParams) where
   functions : @Factory T
@@ -344,7 +344,7 @@ def LContext.addDatatype [Inhabited T.IDMeta] [Inhabited T.Metadata] (C: LContex
   let f ← d.genFactory
   let fs ← C.functions.addFactory f
   -- Add datatype names to knownTypes
-  let ks ← C.knownTypes.add (d.toKnownType)
+  let ks ← C.knownTypes.add d.toKnownType
   .ok {C with datatypes := ds, functions := fs, knownTypes := ks}
 
 def LContext.addTypeFactory [Inhabited T.IDMeta] [Inhabited T.Metadata] (C: LContext T) (f: @TypeFactory T.IDMeta) : Except Format (LContext T) :=

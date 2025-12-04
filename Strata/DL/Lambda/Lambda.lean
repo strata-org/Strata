@@ -47,7 +47,7 @@ def typeCheckAndPartialEval
   let C ← C.addTypeFactory t
   let (et, _T) ← LExpr.annotate C E e
   dbg_trace f!"Annotated expression:{Format.line}{et}{Format.line}"
-  let σ ← (LState.init).addFactory (C.functions)
+  let σ ← (LState.init).addFactory C.functions
   return (LExpr.eval σ.config.fuel σ et)
 
 end Lambda

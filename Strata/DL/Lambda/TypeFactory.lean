@@ -390,18 +390,17 @@ def TypeFactory.getType (F : @TypeFactory IDMeta) (name : String) : Option (LDat
   F.find? (fun d => d.name == name)
 
 /--
-Add an `LDatatype` to an existing `TypeFactory`. This checks that no types are
-duplicated, but does not check for constructors/other functions. Those checks
-are performed via `Factory.addFactoryFunc`.
+Add an `LDatatype` to an existing `TypeFactory`, checking that no
+types are duplicated.
 -/
 def TypeFactory.addDatatype (t: @TypeFactory IDMeta) (d: LDatatype IDMeta) : Except Format (@TypeFactory IDMeta) :=
+  -- Check that type is not redeclared
   match t.getType d.name with
   | none => .ok (t.push d)
   | some d' => .error f!"A datatype of name {d.name} already exists! \
               Redefinitions are not allowed.\n\
               Existing Type: {d'}\n\
               New Type:{d}"
-
 
 
 ---------------------------------------------------------------------
