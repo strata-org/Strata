@@ -159,37 +159,59 @@ def diffCommand : Command where
     | _, _ =>
       exitFailure "Cannot compare dialect def with another dialect/program."
 
-def readPythonStrata (path : String) : IO Strata.Program := do
-  let bytes ← Strata.Util.readBinInputSource path
+def readPythonStrata (strata_path : String) : IO Strata.Program := do
+  let bytes ← Strata.Util.readBinInputSource strata_path
   if ! bytes.startsWith Ion.binaryVersionMarker then
     exitFailure s!"pyAnalyze expected Ion file"
   match Strata.Program.fromIon Strata.Python.Python_map Strata.Python.Python.name bytes with
   | .ok p => pure p
   | .error msg => exitFailure msg
 
+def pyTranslate (py_path : String) (fm : Lean.FileMap) (pgm : Strata.Program) : IO Boogie.Program := do
+  let preludePgm := Strata.Python.Internal.Boogie.prelude
+  let (bpgm, errors) := Strata.Python.pythonToBoogie Strata.Python.funcSigs pgm
+  if errors.size > 0 then
+    IO.eprintln s!"Errors in translation"
+    for e in errors do
+      let spos := fm.toPosition e.loc.start
+      let epos := fm.toPosition e.loc.stop
+      -- Render the error location information in a format VSCode understands
+      let pos :=
+            if spos.line == spos.line then
+              s!"{py_path}:{spos.line}:{spos.column+1}-{epos.column+1}"
+            else
+              s!"{py_path}:{spos.line}:{spos.column+1}"
+
+      IO.eprintln s!"{pos}: {e.message}"
+    IO.Process.exit 1
+  pure { decls := preludePgm.decls ++ bpgm.decls }
+
 def pyTranslateCommand : Command where
   name := "pyTranslate"
-  args := [ "file" ]
+  args := [ "py_file", "strata_file" ]
   help := "Translate a Strata Python Ion file to Strata.Boogie. Write results to stdout."
   callback := fun _ v => do
-    let pgm ← readPythonStrata v[0]
-    let preludePgm := Strata.Python.Internal.Boogie.prelude
-    let bpgm := Strata.pythonToBoogie pgm
-    let newPgm : Boogie.Program := { decls := preludePgm.decls ++ bpgm.decls }
+    let python_file := v[0]
+    let strata_file := v[1]
+    let fm : Lean.FileMap := .ofString (← IO.FS.readFile python_file)
+    let pgm ← readPythonStrata strata_file
+    let newPgm : Boogie.Program ← pyTranslate python_file fm pgm
     IO.print newPgm
 
 def pyAnalyzeCommand : Command where
   name := "pyAnalyze"
-  args := [ "file", "verbose" ]
+  args := [ "py_file", "strata_file", "verbose" ]
   help := "Analyze a Strata Python Ion file. Write results to stdout."
   callback := fun _ v => do
-    let verbose := v[1] == "1"
-    let pgm ← readPythonStrata v[0]
+    let python_file := v[0]
+    let strata_file := v[1]
+    let verbose := v[2] == "1"
+    let fm : Lean.FileMap := .ofString (← IO.FS.readFile python_file)
+
+    let pgm ← readPythonStrata strata_file
     if verbose then
       IO.print pgm
-    let preludePgm := Strata.Python.Internal.Boogie.prelude
-    let bpgm := Strata.pythonToBoogie pgm
-    let newPgm : Boogie.Program := { decls := preludePgm.decls ++ bpgm.decls }
+    let newPgm : Boogie.Program ← pyTranslate python_file fm pgm
     if verbose then
       IO.print newPgm
     let vcResults ← EIO.toIO (fun f => IO.Error.userError (toString f))
