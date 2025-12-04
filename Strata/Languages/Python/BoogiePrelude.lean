@@ -157,14 +157,6 @@ function ListStr_cons(x0 : string, x1 : ListStr) : (ListStr);
 
 // /////////////////////////////////////////////////////////////////////////////////////
 
-// Uninterpreted procedures
-procedure importFrom(module : string, names : ListStr, level : int) returns ();
-procedure import(names : ListStr) returns ();
-procedure print(msg : string) returns ();
-
-// /////////////////////////////////////////////////////////////////////////////////////
-// /////////////////////////////////////////////////////////////////////////////////////
-
 // Temporary Types
 
 type ExceptOrNone;
@@ -348,17 +340,13 @@ function Client_tag(v : Client) : (ClientTag);
 
 // Unique const axioms
 axiom [unique_BoolOrStrOrNoneTag]: BSN_BOOL_TAG != BSN_STR_TAG && BSN_BOOL_TAG != BSN_NONE_TAG && BSN_STR_TAG != BSN_NONE_TAG;
-axiom [unique_ClientTag]: C_S3_TAG != C_CW_TAG;
+
+// /////////////////////////////////////////////////////////////////////////////////////
 
 // Uninterpreted procedures
-procedure importFrom(module : string, names : ListStr, level : int) returns ()
-;
-
-procedure import(names : ListStr) returns ()
-;
-
-procedure print(msg : string, opt : StrOrNone) returns ()
-;
+procedure importFrom(module : string, names : ListStr, level : int) returns ();
+procedure import(names : ListStr) returns ();
+procedure print(msg : string, opt : StrOrNone) returns ();
 
 procedure json_dumps(msg : DictStrAny, opt_indent : IntOrNone) returns (s: string, maybe_except: ExceptOrNone)
 ;
@@ -384,6 +372,9 @@ function dict_str_any_get(d : DictStrAny, k: string) : DictStrAny;
 
 function dict_str_any_length(d : DictStrAny) : int;
 
+// /////////////////////////////////////////////////////////////////////////////////////
+
+
 procedure test_helper_procedure(req_name : string, opt_name : StrOrNone) returns (maybe_except: ExceptOrNone)
 spec {
   requires [req_name_is_foo]: req_name == "foo";
@@ -397,7 +388,6 @@ spec {
   assert [assert_opt_name_none_or_bar]: (if (StrOrNone_tag(opt_name) == SN_STR_TAG) then (StrOrNone_str_val(opt_name) == "bar") else true);
   assume [assume_maybe_except_none]: (ExceptOrNone_tag(maybe_except) == EN_NONE_TAG);
 };
-
 
 #end
 
