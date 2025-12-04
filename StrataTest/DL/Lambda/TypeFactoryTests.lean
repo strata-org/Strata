@@ -459,8 +459,8 @@ def badConstr6: LConstr Unit := {name := "Int.Add", args := [⟨"x", .int⟩]}
 def badTy5 : LDatatype Unit := {name := "Bad", typeArgs := [], constrs := [badConstr6], constrs_ne := rfl}
 
 /-- info: A function of name Int.Add already exists! Redefinitions are not allowed.
-Existing Function: func Int.Add :  ((x : int)) → Bad;
-New Function:func Int.Add :  ((x : int) (y : int)) → int;-/
+Existing Function: func Int.Add :  ((x : int) (y : int)) → int;
+New Function:func Int.Add :  ((x : int)) → Bad;-/
 #guard_msgs in
 #eval format $ typeCheckAndPartialEval #[badTy5] (IntBoolFactory : @Factory TestParams) (intConst () 0)
 

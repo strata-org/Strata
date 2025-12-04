@@ -1299,4 +1299,19 @@ def fromIonFragment (f : Ion.Fragment) (dialects : DialectMap) (dialect : Dialec
     commands := commands
   }
 
+def fromIon (dialects : DialectMap) (dialect : DialectName) (bytes : ByteArray) : Except String Strata.Program := do
+  let (hdr, frag) ←
+    match Strata.Ion.Header.parse bytes with
+    | .error msg =>
+      throw msg
+    | .ok p =>
+      pure p
+  match hdr with
+  | .dialect _ =>
+    throw "Expected a Strata program instead of a dialect."
+  | .program name => do
+    if name != dialect then
+      throw s!"{name} program found when {dialect} expected."
+    fromIonFragment frag dialects dialect
+
 end Program
