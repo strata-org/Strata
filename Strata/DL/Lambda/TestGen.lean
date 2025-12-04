@@ -24,6 +24,11 @@ import Strata.DL.Lambda.PlausibleHelpers
 
 /-! ## Generators for Well-Typed Lambda expressions -/
 
+-- Most of the instance definitions for `ArbitrarySizedSuchThat α P` could be replaced by a call to
+-- `deriving_generator (fun ... => ∃ a : α, P)`, or `deriving_checker ...` if we had a dependency on https://github.com/codyroux/plausible
+-- We avoid this for now, and simply inline the instance declaration.
+-- We leave the relevant calls as comments, in case they need to be re-generated after a change.
+
 open Plausible
 
 deriving instance Arbitrary for Lambda.Identifier
@@ -135,10 +140,8 @@ def instArbitraryLExpr.arbitrary {T}
 
 instance {T} [Arbitrary T.base.Metadata] [Arbitrary T.base.IDMeta] [Arbitrary T.TypeType] : Plausible.ArbitraryFueled (@Lambda.LExpr T) := ⟨instArbitraryLExpr.arbitrary⟩
 
+-- -- Prints a few examples of random expressions.
 -- #eval Gen.printSamples (Arbitrary.arbitrary : Gen <| Lambda.LExpr ⟨⟨String, String⟩, String⟩)
-
--- -- Does not work at the moment, due to restrictions on the constructor types
--- derive_generator (fun idMeta inst env ctx ty => ∃ t, @Lambda.LExpr.HasType idMeta inst env ctx t ty)
 
 open Lambda
 open LTy
@@ -207,106 +210,11 @@ instance instArrayFindSuchThat {α} {a} : ArbitrarySizedSuchThat α (fun x => Ar
   return a[i.val]
 
 
--- This is the original typing relation, which we will redefine for the purposes of easier generation.
-/-
-inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T):
-  (TContext T.IDMeta) → LExpr T.mono → LTy → Prop where
-  | tbool_const : ∀ Γ m b,
-            C.knownTypes.containsName "bool" →
-            HasType C Γ (.boolConst m b) (.forAll [] .bool)
-  | tint_const : ∀ Γ m n,
-            C.knownTypes.containsName "int" →
-            HasType C Γ (.intConst m n) (.forAll [] .int)
-  | treal_const : ∀ Γ m r,
-            C.knownTypes.containsName "real" →
-            HasType C Γ (.realConst m r) (.forAll [] .real)
-  | tstr_const : ∀ Γ m s,
-            C.knownTypes.containsName "string" →
-            HasType C Γ (.strConst m s) (.forAll [] .string)
-  | tbitvec_const : ∀ Γ m n b,
-            C.knownTypes.containsName "bitvec" →
-            HasType C Γ (.bitvecConst m n b) (.forAll [] (.bitvec n))
-  | tvar : ∀ Γ m x ty, Γ.types.find? x = some ty → HasType C Γ (.fvar m x none) ty
-  /-
-  For an annotated free variable (or operator, see `top_annotated`), it must be
-  the case that the claimed type `ty_s` is an instantiation of the general type
-  `ty_o`. It suffices to show the existence of a list `tys` that, when
-  substituted for the bound variables in `ty_o`, results in `ty_s`.
-  -/
-  | tvar_annotated : ∀ Γ m x ty_o ty_s tys,
-            Γ.types.find? x = some ty_o →
-            tys.length = ty_o.boundVars.length →
-            LTy.openFull ty_o tys = ty_s →
-            HasType C Γ (.fvar m x (some ty_s)) (.forAll [] ty_s)
+-- Compare `LExpr.HasType` in `LExprTypeSpec.lean`
 
-  | tabs : ∀ Γ m x x_ty e e_ty o,
-            LExpr.fresh x e →
-            (hx : LTy.isMonoType x_ty) →
-            (he : LTy.isMonoType e_ty) →
-            HasType C { Γ with types := Γ.types.insert x.fst x_ty} (LExpr.varOpen 0 x e) e_ty →
-            o = none ∨ o = some (x_ty.toMonoType hx) →
-            HasType C Γ (.abs m o e)
-                      (.forAll [] (.tcons "arrow" [(LTy.toMonoType x_ty hx),
-                                                   (LTy.toMonoType e_ty he)]))
-  | tapp : ∀ Γ m e1 e2 t1 t2,
-            (h1 : LTy.isMonoType t1) →
-            (h2 : LTy.isMonoType t2) →
-            HasType C Γ e1 (.forAll [] (.tcons "arrow" [(LTy.toMonoType t2 h2),
-                                                     (LTy.toMonoType t1 h1)])) →
-            HasType C Γ e2 t2 →
-            HasType C Γ (.app m e1 e2) t1
-
-  -- `ty` is more general than `e_ty`, so we can instantiate `ty` with `e_ty`.
-  | tinst : ∀ Γ e ty e_ty x x_ty,
-            HasType C Γ e ty →
-            e_ty = LTy.open x x_ty ty →
-            HasType C Γ e e_ty
-
-  -- The generalization rule will let us do things like the following:
-  -- `(·ftvar "a") → (.ftvar "a")` (or `a → a`) will be generalized to
-  -- `(.btvar 0) → (.btvar 0)` (or `∀a. a → a`), assuming `a` is not in the
-  -- context.
-  | tgen : ∀ Γ e a ty,
-            HasType C Γ e ty →
-            TContext.isFresh a Γ →
-            HasType C Γ e (LTy.close a ty)
-
-  | tif : ∀ Γ m c e1 e2 ty,
-          HasType C Γ c (.forAll [] .bool) →
-          HasType C Γ e1 ty →
-          HasType C Γ e2 ty →
-          HasType C Γ (.ite m c e1 e2) ty
-
-  | teq : ∀ Γ m e1 e2 ty,
-          HasType C Γ e1 ty →
-          HasType C Γ e2 ty →
-          HasType C Γ (.eq m e1 e2) (.forAll [] .bool)
-
-  | tquant: ∀ Γ m k tr tr_ty x x_ty e o,
-            LExpr.fresh x e →
-            (hx : LTy.isMonoType x_ty) →
-            HasType C { Γ with types := Γ.types.insert x.fst x_ty} (LExpr.varOpen 0 x e) (.forAll [] .bool) →
-            HasType C {Γ with types := Γ.types.insert x.fst x_ty} (LExpr.varOpen 0 x tr) tr_ty →
-            o = none ∨ o = some (x_ty.toMonoType hx) →
-            HasType C Γ (.quant m k o tr e) (.forAll [] .bool)
-  | top: ∀ Γ m f op ty,
-            C.functions.find? (fun fn => fn.name == op) = some f →
-            f.type = .ok ty →
-            HasType C Γ (.op m op none) ty
-  /-
-  See comments in `tvar_annotated`.
-  -/
-  | top_annotated: ∀ Γ m f op ty_o ty_s tys,
-            C.functions.find? (fun fn => fn.name == op) = some f →
-            f.type = .ok ty_o →
-            tys.length = ty_o.boundVars.length →
-            LTy.openFull ty_o tys = ty_s →
-            HasType C Γ (.op m op (some ty_s)) (.forAll [] ty_s)
-
--/
-
-
--- We massage the `HasType` definition to be more amenable to generation
+-- We massage the `HasType` definition to be more amenable to generation. The main differences are that
+-- polymorphism is not supported, and we tend to move function applications in the "output" position to the conclusion.
+-- This avoids an additional costly check in the hypothesis.
 inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T) : (TContext T.IDMeta) → LExpr T.mono → LTy → Prop where
   | tbool_const : ∀ Γ m b,
             HasType C Γ (.boolConst m b) (.forAll [] .bool)
@@ -324,7 +232,7 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T) : (TCo
   | tabs : ∀ Γ Γ' m x x_ty e e_ty,
             MapsInsert Γ.types x (.forAll [] x_ty : LTy) Γ' →
             HasType C { Γ with types := Γ'} e (.forAll [] e_ty) →
-            HasType C Γ (.abs m .none <| LExpr.varClose 0 (x, none) e)
+            HasType C Γ (.abs m .none <| LExpr.varClose 0 (x, none) e) -- We close in the conclusion rather than opening in the hyps.
                         (.forAll [] (.tcons "arrow" [x_ty, e_ty]))
 
   | tapp : ∀ Γ m e1 e2 t1 t2,
@@ -336,7 +244,7 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T) : (TCo
             HasType C Γ (.app m e1 e2) t1
 
   | tif : ∀ Γ m c e1 e2 ty,
-          HasType C Γ c (.forAll [] (.tcons "bool" [])) →
+          HasType C Γ c (.forAll [] .bool) →
           HasType C Γ e1 ty →
           HasType C Γ e2 ty →
           HasType C Γ (.ite m c e1 e2) ty
@@ -344,7 +252,7 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T) : (TCo
   | teq : ∀ Γ m e1 e2 ty,
           HasType C Γ e1 ty →
           HasType C Γ e2 ty →
-          HasType C Γ (.eq m e1 e2) (.forAll [] (.tcons "bool" []))
+          HasType C Γ (.eq m e1 e2) (.forAll [] .bool)
 
   | top: ∀ Γ m f ty,
             ArrayFind C.functions f →
@@ -735,6 +643,7 @@ instance [DecidableEq α] [DecidableEq β] : ArbitrarySizedSuchThat (Maps α β)
       | Nat.zero =>
         GeneratorCombinators.backtrack
           [(1, do
+                let (_ : β) ← ArbitrarySizedSuchThat.arbitrarySizedST (fun z_1 => @MapsFind α β tys_1 x_1 z_1) initSize;
                 let (Γ_1 : Maps α β) ←
                   ArbitrarySizedSuchThat.arbitrarySizedST (fun (Γ_1 : Maps α β) => MapsReplace tys_1 x_1 ty_1 Γ_1)
                       initSize;
@@ -749,6 +658,7 @@ instance [DecidableEq α] [DecidableEq β] : ArbitrarySizedSuchThat (Maps α β)
       | Nat.succ _size' =>
         GeneratorCombinators.backtrack
           [(1, do
+                let (_ : β) ← ArbitrarySizedSuchThat.arbitrarySizedST (fun z_1 => @MapsFind α β tys_1 x_1 z_1) initSize;
                 let (Γ_1 : Maps α β) ←
                   ArbitrarySizedSuchThat.arbitrarySizedST (fun (Γ_1 : Maps α β) => MapsReplace tys_1 x_1 ty_1 Γ_1)
                       initSize;
@@ -820,19 +730,26 @@ instance [Plausible.Arbitrary α_1] [DecidableEq α_1] [Plausible.Arbitrary β_1
       | _ => throw Plausible.Gen.genericFailure
   fun size => aux_arb size size α_1 β_1 Γ_1
 
-
+/-- info: [[(2, "new")]] -/
+#guard_msgs(info) in
 #eval
   let P : Maps Nat String → Prop := fun m' => MapsInsert [[((2 : Nat), "old")]] 2 "new" m'
   Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 10) 10
 
+/-- info: [[], [(2, "new")]] -/
+#guard_msgs(info) in
 #eval
   let P : Maps Nat String → Prop := fun m' => MapsInsert [[], [((2 : Nat), "old")]] 2 "new" m'
   Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 10) 10
 
+/-- info: [[(2, "new")], [(3, "old")]] -/
+#guard_msgs(info) in
 #eval
   let P : Maps Nat String → Prop := fun m' => MapsInsert [[], [((3 : Nat), "old")]] 2 "new" m'
   Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 10) 10
 
+/-- info: (3, "old") -/
+#guard_msgs(info) in
 #eval
   let P : _ → Prop := fun m => MapsFind₂ [[], [((3 : Nat), "old")]] m
   Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 10) 10
@@ -910,7 +827,7 @@ instance {T : LExprParams}
               | _ => MonadExcept.throw Plausible.Gen.genericFailure),
             (1,
               match ty_1 with
-              | Lambda.LTy.forAll (List.nil) .int => do do
+              | Lambda.LTy.forAll (List.nil) .int => do
                 let m ← Arbitrary.arbitrary
                 let n ← Arbitrary.arbitrary
                 return .intConst m n
@@ -1010,6 +927,7 @@ abbrev example_ctx : TContext Unit := ⟨[[]], []⟩
 -- abbrev example_ty : LTy := .forAll [] <| .tcons "bool" []
 abbrev example_ty : LTy := .forAll [] <| .tcons "arrow" [.tcons "bool" [], .tcons "bool" []]
 
+-- FIXME
 /-- info: [[({ name := "y", metadata := () }, Lambda.LTy.forAll [] (Lambda.LMonoTy.tcons "int" []))]] -/
 #guard_msgs(info) in
 #eval

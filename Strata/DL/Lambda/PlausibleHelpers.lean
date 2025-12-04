@@ -8,7 +8,11 @@ import Plausible.Sampleable
 import Plausible.DeriveArbitrary
 import Plausible.Attr
 
-/-! ## Helpers for using Plausible with Chamelean generated instances. -/
+/-! ## Helpers for using Plausible with Chamelean generated instances.
+
+This entire file may be removed, if a dependency is added on https://github.com/codyroux/plausible (or that fork is merged with upstream)
+
+-/
 
 namespace TestGen
 
