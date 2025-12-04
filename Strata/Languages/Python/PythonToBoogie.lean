@@ -101,51 +101,61 @@ def PyExprIdent (e1 e2: Python.expr SourceRange) : Bool :=
   | .Call sr1 _ _ _, .Call sr2 _ _ _ => sr1 == sr2
   | _ , _ => false
 
-partial def PyExprToBoogie (e : Python.expr SourceRange) (substitution_records : Option (List SubstitutionRecord) := none) : Boogie.Expression.Expr :=
+-- Translating a Python expression can require Boogie statements, e.g., a function call
+-- We translate these by first defining temporary variables to store the results of the stmts
+-- and then using those variables in the expression.
+structure PyExprTranslated where
+  stmts : List Boogie.Statement
+  expr: Boogie.Expression.Expr
+deriving Inhabited
+
+partial def PyExprToBoogie (e : Python.expr SourceRange) (substitution_records : Option (List SubstitutionRecord) := none) : PyExprTranslated :=
   if h : substitution_records.isSome && (substitution_records.get!.find? (λ r => PyExprIdent r.pyExpr e)).isSome then
     have hr : (List.find? (fun r => PyExprIdent r.pyExpr e) substitution_records.get!).isSome = true := by rw [Bool.and_eq_true] at h; exact h.2
     let record := (substitution_records.get!.find? (λ r => PyExprIdent r.pyExpr e)).get hr
-    record.boogieExpr
+    {stmts := [], expr := record.boogieExpr}
   else
     match e with
     | .Call _ f _ _ => panic! s!"Call should be handled at stmt level: \n(func: {repr f}) \n(Records: {repr substitution_records}) \n(AST: {repr e.toAst})"
-    | .Constant _ c _ => PyConstToBoogie c
+    | .Constant _ c _ => {stmts := [], expr :=  PyConstToBoogie c}
     | .Name _ n _ =>
       match n.val with
-      | "AssertionError" | "Exception" => .strConst () n.val
-      | _ => .fvar () n.val none
+      | "AssertionError" | "Exception" => {stmts := [], expr := .strConst () n.val}
+      | _ => {stmts := [], expr := .fvar () n.val none}
     | .JoinedStr _ ss => PyExprToBoogie ss.val[0]! -- TODO: need to actually join strings
-    | .BinOp _ lhs op rhs => match op with
-      | .Add _ => handleAdd (PyExprToBoogie lhs) (PyExprToBoogie rhs)
+    | .BinOp _ lhs op rhs =>
+      let lhs := (PyExprToBoogie lhs)
+      let rhs := (PyExprToBoogie rhs)
+      match op with
+      | .Add _ =>
+        {stmts := lhs.stmts ++ rhs.stmts, expr := handleAdd lhs.expr rhs.expr}
       | _ => panic! s!"Unhandled BinOp: {repr e}"
     | .Compare _ lhs op rhs =>
+      let lhs := PyExprToBoogie lhs
+      assert! rhs.val.size == 1
+      let rhs := PyExprToBoogie rhs.val[0]!
       match op.val with
       | #[v] => match v with
         | Strata.Python.cmpop.Eq _ =>
-          let l := PyExprToBoogie lhs
-          assert! rhs.val.size == 1
-          let r := PyExprToBoogie rhs.val[0]!
-          (.eq () l r)
+          {stmts := lhs.stmts ++ rhs.stmts, expr := (.eq () lhs.expr rhs.expr)}
         | Strata.Python.cmpop.In _ =>
-          let l := PyExprToBoogie lhs
-          assert! rhs.val.size == 1
-          let r := PyExprToBoogie rhs.val[0]!
-          .app () (.app () (.op () "str_in_dict_str_any" none) l) r
+          {stmts := lhs.stmts ++ rhs.stmts, expr := .app () (.app () (.op () "str_in_dict_str_any" none) lhs.expr) rhs.expr}
         | _ => panic! s!"Unhandled comparison op: {repr op.val}"
       | _ => panic! s!"Unhandled comparison op: {repr op.val}"
-    | .Dict _ keys values => handleDict keys.val values.val
+    | .Dict _ keys values => {stmts := [], expr := handleDict keys.val values.val}
     | .ListComp _ keys values => panic! "ListComp must be handled at stmt level"
     | .UnaryOp _ op arg => match op with
-      | .Not _ => handleNot (PyExprToBoogie arg)
+      | .Not _ => {stmts := [], expr := handleNot (PyExprToBoogie arg).expr}
       | _ => panic! "Unsupported UnaryOp: {repr e}"
     | .Subscript _ v slice _ =>
       let l := PyExprToBoogie v
       let k := PyExprToBoogie slice
-      .app () (.app () (.op () "dict_str_any_get" none) l) k
+      let access_check : Boogie.Statement := .assert "subscript_bounds_check" (.app () (.app () (.op () "str_in_dict_str_any" none) k.expr) l.expr)
+      {stmts := l.stmts ++ k.stmts ++ [access_check], expr := .app () (.app () (.op () "dict_str_any_get" none) l.expr) k.expr}
     | _ => panic! s!"Unhandled Expr: {repr e}"
 
 partial def PyExprToBoogieWithSubst (substitution_records : Option (List SubstitutionRecord)) (e : Python.expr SourceRange) : Boogie.Expression.Expr :=
-  PyExprToBoogie e substitution_records
+  (PyExprToBoogie e substitution_records).expr
 
 partial def PyExprToString (e : Python.expr SourceRange) : String :=
   match e with
@@ -223,7 +233,7 @@ def argsAndKWordsToCanonicalList (func_infos : List PythonFunctionDecl)
       | .none => Strata.Python.TypeStrToBoogieExpr (getFuncSigType fname n))
     let args := args.map (PyExprToBoogieWithSubst substitution_records)
     let args := (List.range required_order.length).filterMap (λ n =>
-        if h: n < args.size then
+        if n < args.size then
           let arg_name := required_order[n]! -- Guaranteed by range. Using finRange causes breaking coercions to Nat.
           some (noneOrExpr fname arg_name args[n]!)
         else
@@ -311,9 +321,10 @@ partial def exceptHandlersToBoogie (jmp_targets: List String) (func_infos : List
       let get_ex_tag : Boogie.BoogieIdent := "ExceptOrNone_code_val"
       let exception_ty : Boogie.Expression.Expr := .app () (.op () get_ex_tag none) (.fvar () "maybe_except" none)
       let rhs_curried : Boogie.Expression.Expr := .app () (.op () inherits_from none) exception_ty
-      let rhs : Boogie.Expression.Expr := .app () rhs_curried ((PyExprToBoogie ex_ty))
+      let res := PyExprToBoogie ex_ty
+      let rhs : Boogie.Expression.Expr := .app () rhs_curried (res.expr)
       let call := .set "exception_ty_matches" rhs
-      [call]
+      res.stmts ++ [call]
     | .none =>
       [.set "exception_ty_matches" (.boolConst () false)]
     let cond := .fvar () "exception_ty_matches" none
@@ -342,6 +353,16 @@ partial def handleFunctionCall (lhs: List Boogie.Expression.Ident)
     kwords_calls_to_tmps.toList.flatMap initTmpParam ++
     [.call lhs fname (argsAndKWordsToCanonicalList func_infos fname args.val kwords.val substitution_records)]
 
+partial def handleComprehension (lhs: Python.expr SourceRange) (gen: Array (Python.comprehension SourceRange)) : List Boogie.Statement :=
+  assert! gen.size == 1
+  match gen[0]! with
+  | .mk_comprehension _ _ itr _ _ =>
+    let res := PyExprToBoogie itr
+    let guard := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) res.expr) (.intConst () 0))
+    let then_ss: List Boogie.Statement := [.havoc (PyExprToString lhs)]
+    let else_ss: List Boogie.Statement := [.set (PyExprToString lhs) (.op () "ListStr_nil" none)]
+    res.stmts ++ [.ite guard {ss := then_ss} {ss := else_ss}]
+
 partial def PyStmtToBoogie (jmp_targets: List String) (func_infos : List PythonFunctionDecl) (s : Python.stmt SourceRange) : List Boogie.Statement :=
   assert! jmp_targets.length > 0
   let non_throw := match s with
@@ -369,15 +390,16 @@ partial def PyStmtToBoogie (jmp_targets: List String) (func_infos : List PythonF
       handleFunctionCall [PyExprToString lhs.val[0]!, "maybe_except"] fname args kwords jmp_targets func_infos s
     | .Assign _ lhs rhs _ =>
       assert! lhs.val.size == 1
-      [.set (PyExprToString lhs.val[0]!) (PyExprToBoogie rhs)]
+      let res := PyExprToBoogie rhs
+      res.stmts ++ [.set (PyExprToString lhs.val[0]!) res.expr]
     | .AnnAssign _ lhs _ { ann := _ , val := (.some (.Call _ func args kwords))} _ =>
       let fname := PyExprToString func
       handleFunctionCall [PyExprToString lhs, "maybe_except"] fname args kwords jmp_targets func_infos s
-    | .AnnAssign _ lhs _ { ann := _ , val := (.some (.ListComp _ _ _))} _ =>
-      -- TODO: check for errors first
-      [.havoc (PyExprToString lhs)]
+    | .AnnAssign _ lhs _ { ann := _ , val := (.some (.ListComp _ _ gen))} _ =>
+      handleComprehension lhs gen.val
     | .AnnAssign _ lhs _ {ann := _, val := (.some e)} _ =>
-      [.set (PyExprToString lhs) (PyExprToBoogie e)]
+      let res := (PyExprToBoogie e)
+      res.stmts ++ [.set (PyExprToString lhs) res.expr]
     | .Try _ body handlers _orelse _finalbody =>
         let new_target := s!"excepthandlers_{jmp_targets[0]!}"
         let entry_except_handlers := [.block new_target {ss := []}]
@@ -387,15 +409,14 @@ partial def PyStmtToBoogie (jmp_targets: List String) (func_infos : List PythonF
         [.block "try_block" {ss := var_decls ++ body.val.toList.flatMap (PyStmtToBoogie new_jmp_stack func_infos) ++ entry_except_handlers ++ except_handlers}]
     | .FunctionDef _ _ _ _ _ _ _ _ => panic! "Can't translate FunctionDef to Boogie statement"
     | .If _ test then_b else_b =>
-      [.ite (PyExprToBoogie test) {ss := (ArrPyStmtToBoogie func_infos then_b.val)} {ss := (ArrPyStmtToBoogie func_infos else_b.val)}] -- TODO: fix this
+      [.ite (PyExprToBoogie test).expr {ss := (ArrPyStmtToBoogie func_infos then_b.val)} {ss := (ArrPyStmtToBoogie func_infos else_b.val)}] -- TODO: fix this
     | .Return _ v =>
       match v.val with
-      | .some v => [.set "ret" (PyExprToBoogie v), .goto jmp_targets[0]!] -- TODO: need to thread return value name here. For now, assume "ret"
+      | .some v => [.set "ret" (PyExprToBoogie v).expr, .goto jmp_targets[0]!] -- TODO: need to thread return value name here. For now, assume "ret"
       | .none => [.goto jmp_targets[0]!]
     | .For _ _tgt itr body _ _ =>
       -- Do one unrolling:
-      let guard := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) (PyExprToBoogie itr)) (.intConst () 0))
-      -- let guard := .boolConst () true
+      let guard := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) (PyExprToBoogie itr).expr) (.intConst () 0))
       [.ite guard {ss := (ArrPyStmtToBoogie func_infos body.val)} {ss := []}]
       -- TODO: missing havoc
     | _ =>
