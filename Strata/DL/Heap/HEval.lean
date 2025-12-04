@@ -165,6 +165,15 @@ partial def evalApp (state : HState) (originalExpr e1 e2 : HExpr) : HState × HE
     -- Third application to DynamicFieldAssign - now we can evaluate
     -- This handles obj[field] = value where field is dynamic
     evalDynamicFieldAssign state2 objExpr fieldExpr e2'
+  | .deferredOp "DynamicFieldAssignReturnObj" _ =>
+    -- First application to DynamicFieldAssignReturnObj - return partially applied
+    (state2, .app (.deferredOp "DynamicFieldAssignReturnObj" none) e2')
+  | .app (.deferredOp "DynamicFieldAssignReturnObj" _) objExpr =>
+    -- Second application to DynamicFieldAssignReturnObj - return partially applied
+    (state2, .app (.app (.deferredOp "DynamicFieldAssignReturnObj" none) objExpr) e2')
+  | .app (.app (.deferredOp "DynamicFieldAssignReturnObj" _) objExpr) fieldExpr =>
+    -- Third application to DynamicFieldAssignReturnObj - now we can evaluate
+    evalDynamicFieldAssignReturnObj state2 objExpr fieldExpr e2'
   | .deferredOp "StringFieldAccess" _ =>
     -- First application to StringFieldAccess - return partially applied
     (state2, .app (.deferredOp "StringFieldAccess" none) e2')
@@ -172,6 +181,20 @@ partial def evalApp (state : HState) (originalExpr e1 e2 : HExpr) : HState × HE
     -- Second application to StringFieldAccess - return partially applied
     -- This handles str.fieldName where fieldName is a string literal
     evalStringFieldAccess state2 objExpr e2'
+  | .deferredOp "LengthAccess" _ =>
+    -- First application to LengthAccess - return partially applied
+    (state2, .app (.deferredOp "LengthAccess" none) e2')
+  | .app (.deferredOp "LengthAccess" _) objExpr =>
+    -- Second application to LengthAccess - evaluate
+    evalLengthAccess state2 objExpr e2'
+  | .deferredOp "FieldDelete" _ =>
+    -- First application to FieldDelete - return partially applied
+    (state2, .app (.deferredOp "FieldDelete" none) e2')
+  | .app (.deferredOp "FieldDelete" _) objExpr =>
+    -- Second application to FieldDelete - now we can evaluate
+    -- This handles delete obj[field] where field is dynamic
+    evalFieldDelete state2 objExpr e2'
+
   | .deferredOp op _ =>
     -- First application to a deferred operation - return partially applied
     (state2, .app (.deferredOp op none) e2')
@@ -195,25 +218,69 @@ partial def evalApp (state : HState) (originalExpr e1 e2 : HExpr) : HState × HE
 
 -- Handle dynamic field access: obj[field] where field is dynamic
 partial def evalDynamicFieldAccess (state : HState) (objExpr fieldExpr : HExpr) : HState × HExpr :=
-  -- First try to extract a numeric field index from the field expression
-  match extractFieldIndex fieldExpr with
-  | some fieldIndex =>
-    -- We have a numeric field index, use regular deref
-    evalHExpr state (.deref objExpr fieldIndex)
-  | none =>
-    -- Can't extract a numeric field index, return error
-    (state, .lambda (LExpr.const "error_dynamic_field_access_failed" none))
+  let (s1, objVal) := evalHExpr state objExpr
+  let (s2, keyVal) := evalHExpr s1 fieldExpr
+  match objVal with
+  | .address addr =>
+    match keyVal with
+    | .lambda (LExpr.const k _) =>
+      match k.toNat? with
+      | some n =>
+        match s2.getField addr n with
+        | some v => (s2, v)
+        | none   => (s2, .lambda (LExpr.const s!"error_field_{n}_not_found" none))
+      | none =>
+        match s2.getStringField addr k with
+        | some v => (s2, v)
+        | none   => (s2, .lambda (LExpr.const s!"error_string_field_{k}_not_found" none))
+    | _ => (s2, .lambda (LExpr.const "error_invalid_field_key" none))
+  | .null => (s2, .lambda (LExpr.const "error_null_dereference" none))
+  | _     => (s2, .lambda (LExpr.const "error_invalid_address" none))
 
 -- Handle dynamic field assignment: obj[field] = value where field is dynamic
 partial def evalDynamicFieldAssign (state : HState) (objExpr fieldExpr valueExpr : HExpr) : HState × HExpr :=
-  -- First try to extract a numeric field index from the field expression
-  match extractFieldIndex fieldExpr with
-  | some fieldIndex =>
-    -- We have a numeric field index, use regular assign
-    evalHExpr state (.assign objExpr fieldIndex valueExpr)
-  | none =>
-    -- Can't extract a numeric field index, return error
-    (state, .lambda (LExpr.const "error_dynamic_field_assign_failed" none))
+  let (s1, objVal) := evalHExpr state objExpr
+  let (s2, keyVal) := evalHExpr s1 fieldExpr
+  let (s3, valVal) := evalHExpr s2 valueExpr
+  match objVal with
+  | .address addr =>
+    match keyVal with
+    | .lambda (LExpr.const k _) =>
+      match k.toNat? with
+      | some n =>
+        match s3.setField addr n valVal with
+        | some s' => (s', valVal)
+        | none    => (s3, .lambda (LExpr.const s!"error_cannot_update_field_{n}" none))
+      | none =>
+        match s3.setStringField addr k valVal with
+        | some s' => (s', valVal)
+        | none    => (s3, .lambda (LExpr.const s!"error_cannot_update_string_field_{k}" none))
+    | _ => (s3, .lambda (LExpr.const "error_invalid_field_key" none))
+  | .null => (s3, .lambda (LExpr.const "error_null_assignment" none))
+  | _     => (s3, .lambda (LExpr.const "error_invalid_address_assignment" none))
+
+-- Handle dynamic field assignment but return the *object address* to allow chaining
+partial def evalDynamicFieldAssignReturnObj (state : HState) (objExpr fieldExpr valueExpr : HExpr) : HState × HExpr :=
+  let (s1, objVal) := evalHExpr state objExpr
+  let (s2, keyVal) := evalHExpr s1 fieldExpr
+  let (s3, valVal) := evalHExpr s2 valueExpr
+  match objVal with
+  | .address addr =>
+    match keyVal with
+    | .lambda (LExpr.const k _) =>
+      match k.toNat? with
+      | some n =>
+        match s3.setField addr n valVal with
+        | some s' => (s', .address addr)
+        | none    => (s3, .lambda (LExpr.const s!"error_cannot_update_field_{n}" none))
+      | none =>
+        match s3.setStringField addr k valVal with
+        | some s' => (s', .address addr)
+        | none    => (s3, .lambda (LExpr.const s!"error_cannot_update_string_field_{k}" none))
+    | _ => (s3, .lambda (LExpr.const "error_invalid_field_key" none))
+  | .null => (s3, .lambda (LExpr.const "error_null_assignment" none))
+  | _     => (s3, .lambda (LExpr.const "error_invalid_address_assignment" none))
+
 
 -- Handle string field access: str.fieldName where fieldName is a string literal
 partial def evalStringFieldAccess (state : HState) (objExpr fieldExpr : HExpr) : HState × HExpr :=
@@ -235,11 +302,61 @@ partial def evalStringFieldAccess (state : HState) (objExpr fieldExpr : HExpr) :
     -- Field is not a string literal
     (state, .lambda (LExpr.const "error_non_literal_string_field" none))
 
+-- Handle field deletion: delete obj[field]
+partial def evalFieldDelete (state : HState) (objExpr fieldExpr : HExpr) : HState × HExpr :=
+  -- First try to extract a numeric field index from the field expression
+  match extractFieldIndex fieldExpr with
+  | some fieldIndex =>
+    -- We have a numeric field index, delete the field
+    match objExpr with
+    | .address addr =>
+      -- Delete field from the object at this address
+      match state.deleteField addr fieldIndex with
+      | some newState => (newState, objExpr)  -- Return the object address
+      | none => (state, .lambda (LExpr.const s!"error_cannot_delete_field_{fieldIndex}" none))
+    | _ =>
+      -- First evaluate the object expression to get an address
+      let (state1, objVal) := evalHExpr state objExpr
+      match objVal with
+      | .address addr =>
+        match state1.deleteField addr fieldIndex with
+        | some newState => (newState, objVal)
+        | none => (state1, .lambda (LExpr.const s!"error_cannot_delete_field_{fieldIndex}" none))
+      | _ =>
+        (state1, .lambda (LExpr.const "error_invalid_address_for_delete" none))
+  | none =>
+    -- Can't extract a numeric field index, return error
+    (state, .lambda (LExpr.const "error_field_delete_failed" none))
+
+-- Handle length access for both strings and arrays
+partial def evalLengthAccess (state : HState) (objExpr fieldExpr : HExpr) : HState × HExpr :=
+  match fieldExpr with
+  | .lambda (LExpr.const key _) =>
+    if key == "length" then
+      match objExpr with
+      | .lambda (LExpr.const s _) =>
+        -- String length
+        let len := s.length
+        (state, .lambda (LExpr.const (toString len) (some Lambda.LMonoTy.int)))
+      | .address addr =>
+        -- Array length
+        match state.heap.get? addr with
+        | some obj =>
+          let len := obj.size
+          (state, .lambda (LExpr.const (toString len) (some Lambda.LMonoTy.int)))
+        | none =>
+          (state, .lambda (LExpr.const "error_invalid_address" none))
+      | _ =>
+        (state, .lambda (LExpr.const "error_not_string_or_array" none))
+    else
+      (state, .lambda (LExpr.const "error_unknown_length_property" none))
+  | _ =>
+    (state, .lambda (LExpr.const "error_non_literal_field" none))
+
 -- Extract a numeric field index from an expression
 partial def extractFieldIndex (expr : HExpr) : Option Nat :=
   match expr with
   | .lambda (LExpr.const s _) =>
-    -- Try to parse the string as a natural number
     s.toNat?
   | _ => none
 
@@ -268,6 +385,25 @@ namespace HExpr
 -- Create a simple object allocation
 def allocSimple (fields : List (Nat × HExpr)) : HExpr :=
   .alloc (HMonoTy.mkObj fields.length HMonoTy.int) fields
+
+def dynamicAssign (obj : HExpr) (key : HExpr) (val : HExpr) : HExpr :=
+  HExpr.app
+    (HExpr.app
+      (HExpr.app (HExpr.deferredOp "DynamicFieldAssign" none) obj)
+      key)
+    val
+
+/-- Like `dynamicAssign`, but evaluates to the *object* so it can be chained. --/
+def dynamicAssignReturnObj (obj : HExpr) (key : HExpr) (val : HExpr) : HExpr :=
+  HExpr.app
+    (HExpr.app
+      (HExpr.app (HExpr.deferredOp "DynamicFieldAssignReturnObj" none) obj)
+      key)
+    val
+
+def dynamicAlloc (numFields : List (Nat × HExpr)) (dynFields : List (HExpr × HExpr)) : HExpr :=
+  let obj0 := allocSimple numFields
+  dynFields.foldl (fun acc (k, v) => dynamicAssignReturnObj acc k v) obj0
 
 end HExpr
 
