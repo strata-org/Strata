@@ -895,6 +895,17 @@ def getSyntaxArgs (stx : Syntax) (ident : QualifiedIdent) (expected : Nat) : Ela
       return default
   return ⟨stxArgs, stxArgP⟩
 
+/--
+Unwrap a tree to a raw Arg based on the unwrap specification.
+-/
+def unwrapTree (tree : Tree) (unwrap : Option UnwrapSpec) : Arg :=
+  match unwrap with
+  | none => tree.arg
+  | some .nat =>
+    match tree.info with
+    | .ofNumInfo info => .num info.loc info.val
+    | _ => tree.arg  -- Fallback if type mismatch
+
 mutual
 
 partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
@@ -921,7 +932,11 @@ partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := 
     return default
   let resultCtx ← decl.newBindings.foldlM (init := newCtx) <| fun ctx spec => do
     ctx.push <$> evalBindingSpec loc initSize spec args
-  let op : Operation := { ann := loc, name := i, args := args.toArray.map (·.arg) }
+  -- Apply unwrapping based on unwrapSpecs
+  let unwrappedArgs := args.toArray.mapIdx fun idx tree =>
+    let unwrapSpec := se.unwrapSpecs.getD idx none
+    unwrapTree tree unwrapSpec
+  let op : Operation := { ann := loc, name := i, args := unwrappedArgs }
   if loc.isNone then
     return panic! s!"Missing position info {repr stx}."
   let info : OperationInfo := { loc := loc, inputCtx := tctx, op, resultCtx }

@@ -272,12 +272,22 @@ instance : ToExpr ArgDecl where
 
 end ArgDecl
 
+namespace UnwrapSpec
+
+instance : ToExpr UnwrapSpec where
+  toTypeExpr := mkConst ``UnwrapSpec
+  toExpr
+  | .nat => astExpr! nat
+
+end UnwrapSpec
+
 namespace SyntaxDefAtom
 
 protected def typeExpr : Lean.Expr := mkConst ``SyntaxDefAtom
 
 protected def toExpr : SyntaxDefAtom → Lean.Expr
-| .ident v p => astExpr! ident (toExpr v) (toExpr p)
+| .ident v p none => astExpr! ident (toExpr v) (toExpr p) (toExpr (none : Option UnwrapSpec))
+| .ident v p (some unwrap) => astExpr! ident (toExpr v) (toExpr p) (toExpr (some unwrap))
 | .str l     => astExpr! str (toExpr l)
 | .indent n a =>
   let args := arrayToExpr .zero SyntaxDefAtom.typeExpr (a.map (·.toExpr))
