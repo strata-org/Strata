@@ -160,16 +160,20 @@ def diffCommand : Command where
     | _, _ =>
       exitFailure "Cannot compare dialect def with another dialect/program."
 
+def readPythonStrata (path : String) : IO Strata.Program := do
+  let bytes ← Strata.Util.readBinInputSource path
+  if ! bytes.startsWith Ion.binaryVersionMarker then
+    exitFailure s!"pyAnalyze expected Ion file"
+  match Strata.Program.fromIon Strata.Python.Python_map Strata.Python.Python.name bytes with
+  | .ok p => pure p
+  | .error msg => exitFailure msg
+
 def pyTranslateCommand : Command where
   name := "pyTranslate"
   args := [ "file" ]
-  help := "Tranlate a Strata Python Ion file to Strata.Boogie. Write results to stdout."
-  callback := fun searchPath v => do
-    let (ld, pd) ← readFile searchPath v[0]
-    match pd with
-    | .dialect d =>
-      IO.print <| d.format ld.dialects
-    | .program pgm =>
+  help := "Translate a Strata Python Ion file to Strata.Boogie. Write results to stdout."
+  callback := fun _ v => do
+    let pgm ← readPythonStrata v[0]
     let preludePgm := Strata.Python.Internal.Boogie.prelude
     let bpgm := Strata.pythonToBoogie pgm
     let newPgm : Boogie.Program := { decls := preludePgm.decls ++ bpgm.decls }
@@ -179,13 +183,9 @@ def pyAnalyzeCommand : Command where
   name := "pyAnalyze"
   args := [ "file", "verbose" ]
   help := "Analyze a Strata Python Ion file. Write results to stdout."
-  callback := fun searchPath v => do
+  callback := fun _ v => do
     let verbose := v[1] == "1"
-    let (ld, pd) ← readFile searchPath v[0]
-    match pd with
-    | .dialect d =>
-      IO.print <| d.format ld.dialects
-    | .program pgm =>
+    let pgm ← readPythonStrata v[0]
     if verbose then
       IO.print pgm
     let preludePgm := Strata.Python.Internal.Boogie.prelude
