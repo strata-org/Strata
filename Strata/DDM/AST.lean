@@ -202,6 +202,7 @@ def ArgF.ann {α : Type} : ArgF α → α
 | .type t => t.ann
 | .ident ann _ => ann
 | .num ann _ => ann
+| .bool ann _ => ann
 | .decimal ann _ => ann
 | .bytes ann _ => ann
 | .strlit ann _ => ann
