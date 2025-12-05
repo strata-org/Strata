@@ -1,15 +1,16 @@
-/-
+/*
   Copyright Strata Contributors
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
--/
--- Constrained primitive type
+*/
+
+// Constrained primitive type
 constrained nat = x: int where x >= 0
 
--- Something analogous to an algebriac datatype
-composite OptionBase {}
-composite Some extends OptionBase { 
+// Something analogous to an algebriac datatype
+composite Option {}
+composite Some extends Option { 
   value: int
 }
-composite None extends OptionBase
-constrained Option = x: OptionBase where x is Some || x is None
+composite None extends Option
+constrained SealedOption = x: Option where x is Some || x is None
