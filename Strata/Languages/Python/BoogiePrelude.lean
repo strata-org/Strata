@@ -61,12 +61,175 @@ def pyReMatchStrFunc : Boogie.Function :=
     output := LMonoTy.tcons "Except" [LMonoTy.tcons "Error" [], LMonoTy.bool]
     body := none }
 
+-- ExceptOrNone related definitions
+def exceptCodeSynonym : Boogie.TypeSynonym :=
+  { name := "ExceptCode"
+    typeArgs := []
+    type := LMonoTy.string }
+
+def exceptNoneConstructor : Boogie.TypeConstructor :=
+  { name := "ExceptNone"
+    numargs := 0 }
+
+def exceptOrNoneTagConstructor : Boogie.TypeConstructor :=
+  { name := "ExceptOrNoneTag"
+    numargs := 0 }
+
+def exceptOrNoneDatatype : LDatatype Boogie.Visibility :=
+  { name := "ExceptOrNone"
+    typeArgs := []
+    constrs := [
+      { name := ⟨"ExceptOrNone_mk_code", Boogie.Visibility.unres⟩
+        args := [(⟨"ExceptOrNone_code_val", Boogie.Visibility.unres⟩, LMonoTy.tcons "ExceptCode" [])],
+        testerName := "ExceptOrNone_isCode" },
+      { name := ⟨"ExceptOrNone_mk_none", Boogie.Visibility.unres⟩
+        args := [(⟨"ExceptOrNone_none_val", Boogie.Visibility.unres⟩, LMonoTy.tcons "ExceptNone" [])],
+        testerName := "ExceptOrNone_isNone" }
+    ]
+    constrs_ne := by decide }
+
+-- IntOrNone related definitions
+def intOrNoneTagConstructor : Boogie.TypeConstructor :=
+  { name := "IntOrNoneTag"
+    numargs := 0 }
+
+def intOrNoneDatatype : LDatatype Boogie.Visibility :=
+  { name := "IntOrNone"
+    typeArgs := []
+    constrs := [
+      { name := ⟨"IntOrNone_mk_int", Boogie.Visibility.unres⟩
+        args := [(⟨"IntOrNone_int_val", Boogie.Visibility.unres⟩, LMonoTy.int)],
+        testerName := "IntOrNone_isInt" },
+      { name := ⟨"IntOrNone_mk_none", Boogie.Visibility.unres⟩
+        args := [(⟨"IntOrNone_none_val", Boogie.Visibility.unres⟩, LMonoTy.tcons "None" [])],
+        testerName := "IntOrNone_isNone" }
+    ]
+    constrs_ne := by decide }
+
+-- StrOrNone related definitions
+def strOrNoneTagConstructor : Boogie.TypeConstructor :=
+  { name := "StrOrNoneTag"
+    numargs := 0 }
+
+def strOrNoneDatatype : LDatatype Boogie.Visibility :=
+  { name := "StrOrNone"
+    typeArgs := []
+    constrs := [
+      { name := ⟨"StrOrNone_mk_str", Boogie.Visibility.unres⟩
+        args := [(⟨"StrOrNone_str_val", Boogie.Visibility.unres⟩, LMonoTy.string)],
+        testerName := "StrOrNone_isStr" },
+      { name := ⟨"StrOrNone_mk_none", Boogie.Visibility.unres⟩
+        args := [(⟨"StrOrNone_none_val", Boogie.Visibility.unres⟩, LMonoTy.tcons "None" [])],
+        testerName := "StrOrNone_isNone" }
+    ]
+    constrs_ne := by decide }
+
+-- AnyOrNone related definitions
+def anyOrNoneTagConstructor : Boogie.TypeConstructor :=
+  { name := "AnyOrNoneTag"
+    numargs := 0 }
+
+def anyOrNoneDatatype : LDatatype Boogie.Visibility :=
+  { name := "AnyOrNone"
+    typeArgs := []
+    constrs := [
+      { name := ⟨"AnyOrNone_mk_str", Boogie.Visibility.unres⟩
+        args := [(⟨"AnyOrNone_str_val", Boogie.Visibility.unres⟩, LMonoTy.string)],
+        testerName := "AnyOrNone_isStr" },
+      { name := ⟨"AnyOrNone_mk_none", Boogie.Visibility.unres⟩
+        args := [(⟨"AnyOrNone_none_val", Boogie.Visibility.unres⟩, LMonoTy.tcons "None" [])],
+        testerName := "AnyOrNone_isNone" }
+    ]
+    constrs_ne := by decide }
+
+-- BoolOrNone related definitions
+def boolOrNoneTagConstructor : Boogie.TypeConstructor :=
+  { name := "BoolOrNoneTag"
+    numargs := 0 }
+
+def boolOrNoneDatatype : LDatatype Boogie.Visibility :=
+  { name := "BoolOrNone"
+    typeArgs := []
+    constrs := [
+      { name := ⟨"BoolOrNone_mk_str", Boogie.Visibility.unres⟩
+        args := [(⟨"BoolOrNone_str_val", Boogie.Visibility.unres⟩, LMonoTy.string)],
+        testerName := "BoolOrNone_isStr" },
+      { name := ⟨"BoolOrNone_mk_none", Boogie.Visibility.unres⟩
+        args := [(⟨"BoolOrNone_none_val", Boogie.Visibility.unres⟩, LMonoTy.tcons "None" [])],
+        testerName := "BoolOrNone_isNone" }
+    ]
+    constrs_ne := by decide }
+
+-- BoolOrStrOrNone related definitions
+def boolOrStrOrNoneTagConstructor : Boogie.TypeConstructor :=
+  { name := "BoolOrStrOrNoneTag"
+    numargs := 0 }
+
+def boolOrStrOrNoneDatatype : LDatatype Boogie.Visibility :=
+  { name := "BoolOrStrOrNone"
+    typeArgs := []
+    constrs := [
+      { name := ⟨"BoolOrStrOrNone_mk_bool", Boogie.Visibility.unres⟩
+        args := [(⟨"BoolOrStrOrNone_bool_val", Boogie.Visibility.unres⟩, LMonoTy.bool)],
+        testerName := "BoolOrStrOrNone_isBool" },
+      { name := ⟨"BoolOrStrOrNone_mk_str", Boogie.Visibility.unres⟩
+        args := [(⟨"BoolOrStrOrNone_str_val", Boogie.Visibility.unres⟩, LMonoTy.string)],
+        testerName := "BoolOrStrOrNone_isStr" },
+      { name := ⟨"BoolOrStrOrNone_mk_none", Boogie.Visibility.unres⟩
+        args := [(⟨"BoolOrStrOrNone_none_val", Boogie.Visibility.unres⟩, LMonoTy.tcons "None" [])],
+        testerName := "BoolOrStrOrNone_isNone" }
+    ]
+    constrs_ne := by decide }
+
+-- None type and constant
+def noneConstructor : Boogie.TypeConstructor :=
+  { name := "None"
+    numargs := 0 }
+
+def noneNoneConstant : Boogie.Function :=
+  { name := ⟨"None_none", Boogie.Visibility.unres⟩
+    typeArgs := []
+    inputs := []
+    output := LMonoTy.tcons "None" []
+    body := none }
+
+-- Object type for strOrNone_toObject
+def objectConstructor : Boogie.TypeConstructor :=
+  { name := "Object"
+    numargs := 0 }
+
+-- strOrNone_toObject function
+def strOrNoneToObjectFunc : Boogie.Function :=
+  { name := ⟨"strOrNone_toObject", Boogie.Visibility.unres⟩
+    typeArgs := []
+    inputs := [(⟨"v", Boogie.Visibility.unres⟩, LMonoTy.tcons "StrOrNone" [])]
+    output := LMonoTy.tcons "Object" []
+    body := none }
+
 def errorProgram : Boogie.Program :=
   { decls := [
+      Boogie.Decl.type (Boogie.TypeDecl.con noneConstructor),
+      Boogie.Decl.func noneNoneConstant,
+      Boogie.Decl.type (Boogie.TypeDecl.con objectConstructor),
       Boogie.Decl.type (Boogie.TypeDecl.data errorDatatype),
       Boogie.Decl.type (Boogie.TypeDecl.data exceptDatatype),
       Boogie.Decl.type (Boogie.TypeDecl.syn exceptErrorRegexSynonym),
       Boogie.Decl.func pyReMatchStrFunc,
+      Boogie.Decl.type (Boogie.TypeDecl.syn exceptCodeSynonym),
+      Boogie.Decl.type (Boogie.TypeDecl.con exceptNoneConstructor),
+      Boogie.Decl.type (Boogie.TypeDecl.con exceptOrNoneTagConstructor),
+      Boogie.Decl.type (Boogie.TypeDecl.data exceptOrNoneDatatype),
+      Boogie.Decl.type (Boogie.TypeDecl.con intOrNoneTagConstructor),
+      Boogie.Decl.type (Boogie.TypeDecl.data intOrNoneDatatype),
+      Boogie.Decl.type (Boogie.TypeDecl.con strOrNoneTagConstructor),
+      Boogie.Decl.type (Boogie.TypeDecl.data strOrNoneDatatype),
+      Boogie.Decl.func strOrNoneToObjectFunc,
+      Boogie.Decl.type (Boogie.TypeDecl.con anyOrNoneTagConstructor),
+      Boogie.Decl.type (Boogie.TypeDecl.data anyOrNoneDatatype),
+      Boogie.Decl.type (Boogie.TypeDecl.con boolOrNoneTagConstructor),
+      Boogie.Decl.type (Boogie.TypeDecl.data boolOrNoneDatatype),
+      Boogie.Decl.type (Boogie.TypeDecl.con boolOrStrOrNoneTagConstructor),
+      Boogie.Decl.type (Boogie.TypeDecl.data boolOrStrOrNoneDatatype)
     ] }
 
 def boogiePrelude :=
@@ -116,72 +279,8 @@ procedure print(msg : string) returns ();
 
 // Temporary Types
 
-type ExceptOrNone;
-type ExceptCode := string;
-type ExceptNone;
-const Except_none : ExceptNone;
-type ExceptOrNoneTag;
-const EN_STR_TAG : ExceptOrNoneTag;
-const EN_NONE_TAG : ExceptOrNoneTag;
-function ExceptOrNone_tag(v : ExceptOrNone) : ExceptOrNoneTag;
-function ExceptOrNone_code_val(v : ExceptOrNone) : ExceptCode;
-function ExceptOrNone_none_val(v : ExceptOrNone) : ExceptNone;
-function ExceptOrNone_mk_code(s : ExceptCode) : ExceptOrNone;
-function ExceptOrNone_mk_none(v : ExceptNone) : ExceptOrNone;
-axiom [ExceptOrNone_mk_code_axiom]: (forall s : ExceptCode :: {(ExceptOrNone_mk_code(s))}
-        ExceptOrNone_tag(ExceptOrNone_mk_code(s)) == EN_STR_TAG &&
-        ExceptOrNone_code_val(ExceptOrNone_mk_code(s)) == s);
-axiom [ExceptOrNone_mk_none_axiom]: (forall n : ExceptNone :: {(ExceptOrNone_mk_none(n))}
-        ExceptOrNone_tag(ExceptOrNone_mk_none(n)) == EN_NONE_TAG &&
-        ExceptOrNone_none_val(ExceptOrNone_mk_none(n)) == n);
-axiom [ExceptOrNone_tag_axiom]: (forall v : ExceptOrNone :: {ExceptOrNone_tag(v)}
-        ExceptOrNone_tag(v) == EN_STR_TAG ||
-        ExceptOrNone_tag(v) == EN_NONE_TAG);
-axiom [unique_ExceptOrNoneTag]: EN_STR_TAG != EN_NONE_TAG;
 
-// IntOrNone
-type IntOrNone;
-type IntOrNoneTag;
-const IN_INT_TAG : IntOrNoneTag;
-const IN_NONE_TAG : IntOrNoneTag;
-function IntOrNone_tag(v : IntOrNone) : IntOrNoneTag;
-function IntOrNone_int_val(v : IntOrNone) : int;
-function IntOrNone_none_val(v : IntOrNone) : None;
-function IntOrNone_mk_int(i : int) : IntOrNone;
-function IntOrNone_mk_none(v : None) : IntOrNone;
-axiom (forall i : int :: {(IntOrNone_mk_int(i))}
-        IntOrNone_tag(IntOrNone_mk_int(i)) == IN_INT_TAG &&
-        IntOrNone_int_val(IntOrNone_mk_int(i)) == i);
-axiom (forall n : None :: {(IntOrNone_mk_none(n))}
-        IntOrNone_tag(IntOrNone_mk_none(n)) == IN_NONE_TAG &&
-        IntOrNone_none_val(IntOrNone_mk_none(n)) == n);
-axiom (forall v : IntOrNone :: {IntOrNone_tag(v)}
-        IntOrNone_tag(v) == IN_INT_TAG ||
-        IntOrNone_tag(v) == IN_NONE_TAG);
-axiom [unique_IntOrNoneTag]: IN_INT_TAG != IN_NONE_TAG;
 
-// StrOrNone
-type StrOrNone;
-type StrOrNoneTag;
-const SN_STR_TAG : StrOrNoneTag;
-const SN_NONE_TAG : StrOrNoneTag;
-function StrOrNone_tag(v : StrOrNone) : StrOrNoneTag;
-function StrOrNone_str_val(v : StrOrNone) : string;
-function StrOrNone_none_val(v : StrOrNone) : None;
-function StrOrNone_mk_str(s : string) : StrOrNone;
-function StrOrNone_mk_none(v : None) : StrOrNone;
-
-axiom [StrOrNone_tag_of_mk_str_axiom]: (forall s : string :: {StrOrNone_tag(StrOrNone_mk_str(s)), (StrOrNone_mk_str(s))}
-        StrOrNone_tag(StrOrNone_mk_str(s)) == SN_STR_TAG);
-axiom [StrOrNone_val_of_mk_str_axiom]: (forall s : string :: {StrOrNone_str_val(StrOrNone_mk_str(s)), (StrOrNone_mk_str(s))}
-        StrOrNone_str_val(StrOrNone_mk_str(s)) == s);
-axiom [StrOrNone_mk_none_axiom]: (forall n : None :: {(StrOrNone_mk_none(n))}
-        StrOrNone_tag(StrOrNone_mk_none(n)) == SN_NONE_TAG &&
-        StrOrNone_none_val(StrOrNone_mk_none(n)) == n);
-axiom [StrOrNone_tag_axiom]: (forall v : StrOrNone :: {StrOrNone_tag(v)}
-        StrOrNone_tag(v) == SN_STR_TAG ||
-        StrOrNone_tag(v) == SN_NONE_TAG);
-axiom [unique_StrOrNoneTag]: SN_STR_TAG != SN_NONE_TAG;
 
 function strOrNone_toObject(v : StrOrNone) : Object;
 // Injectivity axiom: different StrOrNone map to different objects.
