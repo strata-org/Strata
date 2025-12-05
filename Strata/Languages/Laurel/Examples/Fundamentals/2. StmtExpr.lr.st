@@ -1,8 +1,8 @@
-/-
+/*
   Copyright Strata Contributors
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
--/
+*/
 procedure nesting(a: int): int
   requires a > 0 && a < 100
   returns
