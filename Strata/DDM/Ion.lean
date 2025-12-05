@@ -652,8 +652,11 @@ namespace SyntaxDefAtom
 protected def toIon (refs : SymbolIdCache) (a : SyntaxDefAtom) : InternM (Ion SymbolId) :=
   ionScope! SyntaxDefAtom refs :
     match a with
-    | .ident idx prec =>
-      return .sexp #[ .symbol ionSymbol! "ident", .int idx, .int prec ]
+    | .ident idx prec unwrap =>
+      let unwrapIon := match unwrap with
+        | none => .null
+        | some .nat => .symbol ionSymbol! "nat"
+      return .sexp #[ .symbol ionSymbol! "ident", .int idx, .int prec, unwrapIon ]
     | .str v =>
       return .string v
     | .indent n args =>
@@ -670,9 +673,23 @@ protected def fromIon (v : Ion SymbolId) : FromIonM SyntaxDefAtom := do
   | .sexp args argsp =>
     match ← .asSymbolString "SyntaxDefAtom kind" args[0] with
     | "ident" => do
-      let ⟨p⟩ ← .checkArgCount "ident" args 3
-      .ident <$> .asNat "SyntaxDef ident level" args[1]
-             <*> .asNat "SyntaxDef ident prec" args[2]
+      -- Support both old format (3 args) and new format (4 args)
+      if args.size = 3 then
+        let level ← .asNat "SyntaxDef ident level" args[1]!
+        let prec ← .asNat "SyntaxDef ident prec" args[2]!
+        return .ident level prec none
+      else
+        let ⟨p⟩ ← .checkArgCount "ident" args 4
+        let level ← .asNat "SyntaxDef ident level" args[1]!
+        let prec ← .asNat "SyntaxDef ident prec" args[2]!
+        let unwrap ← match args[3]! with
+          | .null => pure none
+          | .symbol s =>
+            match ← .asSymbolString "unwrap spec" args[3]! with
+            | "nat" => pure (some UnwrapSpec.nat)
+            | s => throw s!"Unknown unwrap spec {s}"
+          | _ => throw "Expected null or symbol for unwrap spec"
+        return .ident level prec unwrap
     | "indent" => do
       .indent <$> .asNat "SyntaxDef indent value" args[1]!
               <*> args.attach.mapM_off (start := 2) fun ⟨u, _⟩ =>
