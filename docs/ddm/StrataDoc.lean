@@ -88,7 +88,7 @@ fn true_lit : Bool => "true";
 fn false_lit : Bool => "false";
 
 // Introduce basic Boolean operations.
-fn not_expr (tp : Type, a : tp) : tp => "-" a;
+fn not_expr (a : Bool) : Bool => "-" a;
 fn and (a : Bool, b : Bool) : Bool => @[prec(10), leftassoc] a " && " b;
 fn or (a : Bool, b : Bool) : Bool => @[prec(8), leftassoc] a " || " b;
 fn imp (a : Bool, b : Bool) : Bool => @[prec(8), leftassoc] a " ==> " b;

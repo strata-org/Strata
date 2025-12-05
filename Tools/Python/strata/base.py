@@ -456,26 +456,6 @@ def arg_to_ion(a : Arg) -> object:
         assert isinstance(a, CommaSepBy), f'Expected {type(a)} to be a CommaSepBy.'
         return ion_sexp(ion_symbol("commaSepList"), ann_to_ion(a.ann), *(arg_to_ion(e) for e in a.values))
 
-_programSym = ion.SymbolToken(u'program', None, None)
-
-class Program:
-    dialect : str
-    command : list[Operation]
-
-    def __init__(self, dialect: str):
-        self.dialect = dialect
-        self.commands = []
-
-    def add(self, command : Operation):
-        assert type(command) is Operation
-        self.commands.append(command)
-
-    def to_ion(self):
-        return [
-            ion_sexp(_programSym, self.dialect),
-            *(cmd.to_ion() for cmd in self.commands)
-        ]
-
 def metadata_arg_to_ion(value):
     if value is None:
         return "none"
@@ -842,6 +822,27 @@ class Dialect:
         for d in self.decls:
             r.append(d.to_ion())
         return r
+
+_programSym = ion.SymbolToken(u'program', None, None)
+
+class Program:
+    dialect : Dialect
+    command : list[Operation]
+
+    def __init__(self, dialect: Dialect):
+        self.dialect = dialect
+        self.commands = []
+
+    def add(self, command : Operation):
+        assert type(command) is Operation
+        self.commands.append(command)
+
+    def to_ion(self):
+        return [
+            ion_sexp(_programSym, self.dialect.name),
+            *(cmd.to_ion() for cmd in self.commands)
+        ]
+
 
 # FIXME: See if we can find way to keep this in sync with Lean implementation.
 # Perhaps we can have Lean implementation export the dialect as a Ion file and
