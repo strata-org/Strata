@@ -84,25 +84,25 @@ where
           let (c', Env) ← typeCheckCmd C Env P cmd
           .ok (.cmd c', Env)
 
-        | .block label ⟨ bss ⟩ md => do
+        | .block label bss md => do
           let Env := Env.pushEmptyContext
           let (ss', Env) ← go Env bss []
-          let s' := .block label ⟨ss'⟩ md
+          let s' := .block label ss' md
           .ok (s', Env.popContext)
 
-        | .ite cond ⟨ tss ⟩ ⟨ ess ⟩ md => do
+        | .ite cond tss ess md => do
           let _ ← Env.freeVarCheck cond f!"[{s}]"
           let (conda, Env) ← LExpr.resolve C Env cond
           let condty := conda.toLMonoTy
           match condty with
           | .tcons "bool" [] =>
-            let (tb, Env) ← go Env [(.block "$$_then" ⟨ tss ⟩  #[])] []
-            let (eb, Env) ← go Env [(.block "$$_else" ⟨ ess ⟩  #[])] []
-            let s' := .ite conda.unresolved ⟨tb⟩ ⟨eb⟩ md
+            let (tb, Env) ← go Env [(.block "$$_then" tss  #[])] []
+            let (eb, Env) ← go Env [(.block "$$_else" ess  #[])] []
+            let s' := .ite conda.unresolved tb eb md
             .ok (s', Env)
           | _ => .error f!"[{s}]: If's condition {cond} is not of type `bool`!"
 
-        | .loop guard measure invariant ⟨ bss ⟩ md => do
+        | .loop guard measure invariant bss md => do
           let _ ← Env.freeVarCheck guard f!"[{s}]"
           let (conda, Env) ← LExpr.resolve C Env guard
           let condty := conda.toLMonoTy
@@ -125,8 +125,8 @@ where
           | (.tcons "bool" [], some (.tcons "int" []), none)
           | (.tcons "bool" [], none, some (.tcons "bool" []))
           | (.tcons "bool" [], some (.tcons "int" []), some (.tcons "bool" [])) =>
-            let (tb, Env) ← go Env [(.block "$$_loop_body" ⟨bss⟩ #[])] []
-            let s' := .loop conda.unresolved (mt.map LExpr.unresolved) (it.map LExpr.unresolved) ⟨tb⟩ md
+            let (tb, Env) ← go Env [(.block "$$_loop_body" bss #[])] []
+            let s' := .loop conda.unresolved (mt.map LExpr.unresolved) (it.map LExpr.unresolved) tb md
             .ok (s', Env)
           | _ =>
             match condty with
@@ -142,14 +142,14 @@ where
         | .goto label _ =>
           match op with
           | .some p =>
-            if Stmts.hasLabelInside label p.body then
+            if Block.hasLabelInside label p.body then
               .ok (s, Env)
             else
               .error f!"Label {label} does not exist in the body of {p.header.name}"
           | .none => .error f!"{s} occurs outside a procedure."
 
       go Env srest (s' :: acc)
-    termination_by Stmts.sizeOf ss
+    termination_by Block.sizeOf ss
     decreasing_by
     all_goals simp_wf <;> omega
 
@@ -182,12 +182,12 @@ Apply type substitution `S` to a statement.
 def Statement.subst (S : Subst) (s : Statement) : Statement :=
   match s with
   | .cmd cmd => .cmd (Command.subst S cmd)
-  | .block label ⟨ bss ⟩ md =>
-    .block label ⟨go S bss []⟩ md
-  | .ite cond ⟨ tss ⟩ ⟨ ess ⟩ md =>
-    .ite (cond.applySubst S) ⟨go S tss []⟩ ⟨go S ess []⟩ md
-  | .loop guard m i ⟨ bss ⟩ md =>
-    .loop (guard.applySubst S) (substOptionExpr S m) (substOptionExpr S i) ⟨go S bss []⟩ md
+  | .block label bss md =>
+    .block label (go S bss []) md
+  | .ite cond tss ess md =>
+    .ite (cond.applySubst S) (go S tss []) (go S ess []) md
+  | .loop guard m i bss md =>
+    .loop (guard.applySubst S) (substOptionExpr S m) (substOptionExpr S i) (go S bss []) md
   | .goto _ _ => s
   where
     go S ss acc : List Statement :=

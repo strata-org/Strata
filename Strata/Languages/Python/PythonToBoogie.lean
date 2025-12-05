@@ -254,7 +254,7 @@ def argsAndKWordsToCanonicalList (func_infos : List PythonFunctionDecl)
 
 def handleCallThrow (jmp_target : String) : Boogie.Statement :=
   let cond := .eq () (.app () (.op () "ExceptOrNone_tag" none) (.fvar () "maybe_except" none)) (.op () "EN_STR_TAG" none)
-  .ite cond {ss := [.goto jmp_target]} {ss := []}
+  .ite cond [.goto jmp_target] []
 
 -- TODO: handle rest of names
 def PyListStrToBoogie (names : Array (Python.alias SourceRange)) : Boogie.Expression.Expr :=
@@ -341,7 +341,7 @@ partial def exceptHandlersToBoogie (jmp_targets: List String) (func_infos : List
       [.set "exception_ty_matches" (.boolConst () false)]
     let cond := .fvar () "exception_ty_matches" none
     let body_if_matches := body.val.toList.flatMap (PyStmtToBoogie jmp_targets func_infos) ++ [.goto jmp_targets[1]!]
-    set_ex_ty_matches ++ [.ite cond {ss := body_if_matches} {ss := []}]
+    set_ex_ty_matches ++ [.ite cond  body_if_matches []]
 
 partial def handleFunctionCall (lhs: List Boogie.Expression.Ident)
                                (fname: String)
@@ -373,7 +373,7 @@ partial def handleComprehension (lhs: Python.expr SourceRange) (gen: Array (Pyth
     let guard := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) res.expr) (.intConst () 0))
     let then_ss: List Boogie.Statement := [.havoc (PyExprToString lhs)]
     let else_ss: List Boogie.Statement := [.set (PyExprToString lhs) (.op () "ListStr_nil" none)]
-    res.stmts ++ [.ite guard {ss := then_ss} {ss := else_ss}]
+    res.stmts ++ [.ite guard then_ss else_ss]
 
 partial def PyStmtToBoogie (jmp_targets: List String) (func_infos : List PythonFunctionDecl) (s : Python.stmt SourceRange) : List Boogie.Statement :=
   assert! jmp_targets.length > 0
@@ -414,14 +414,14 @@ partial def PyStmtToBoogie (jmp_targets: List String) (func_infos : List PythonF
       res.stmts ++ [.set (PyExprToString lhs) res.expr]
     | .Try _ body handlers _orelse _finalbody =>
         let new_target := s!"excepthandlers_{jmp_targets[0]!}"
-        let entry_except_handlers := [.block new_target {ss := []}]
+        let entry_except_handlers := [.block new_target []]
         let new_jmp_stack := new_target :: jmp_targets
         let except_handlers := handlers.val.toList.flatMap (exceptHandlersToBoogie new_jmp_stack func_infos)
         let var_decls := collectVarDecls body.val
-        [.block "try_block" {ss := var_decls ++ body.val.toList.flatMap (PyStmtToBoogie new_jmp_stack func_infos) ++ entry_except_handlers ++ except_handlers}]
+        [.block "try_block" (var_decls ++ body.val.toList.flatMap (PyStmtToBoogie new_jmp_stack func_infos) ++ entry_except_handlers ++ except_handlers)]
     | .FunctionDef _ _ _ _ _ _ _ _ => panic! "Can't translate FunctionDef to Boogie statement"
     | .If _ test then_b else_b =>
-      [.ite (PyExprToBoogie test).expr {ss := (ArrPyStmtToBoogie func_infos then_b.val)} {ss := (ArrPyStmtToBoogie func_infos else_b.val)}] -- TODO: fix this
+      [.ite (PyExprToBoogie test).expr (ArrPyStmtToBoogie func_infos then_b.val) (ArrPyStmtToBoogie func_infos else_b.val)] -- TODO: fix this
     | .Return _ v =>
       match v.val with
       | .some v => [.set "ret" (PyExprToBoogie v).expr, .goto jmp_targets[0]!] -- TODO: need to thread return value name here. For now, assume "ret"
@@ -429,7 +429,7 @@ partial def PyStmtToBoogie (jmp_targets: List String) (func_infos : List PythonF
     | .For _ _tgt itr body _ _ =>
       -- Do one unrolling:
       let guard := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) (PyExprToBoogie itr).expr) (.intConst () 0))
-      [.ite guard {ss := (ArrPyStmtToBoogie func_infos body.val)} {ss := []}]
+      [.ite guard (ArrPyStmtToBoogie func_infos body.val) []]
       -- TODO: missing havoc
     | _ =>
       panic! s!"Unsupported {repr s}"
@@ -457,7 +457,7 @@ def translateFunctions (a : Array (Python.stmt SourceRange)) (func_infos : List 
                inputs := [],
                outputs := [("maybe_except", (.tcons "ExceptOrNone" []))]},
         spec := default,
-        body := varDecls ++ ArrPyStmtToBoogie func_infos body.val ++ [.block "end" {ss := []}]
+        body := varDecls ++ ArrPyStmtToBoogie func_infos body.val ++ [.block "end" []]
       }
       some (.proc proc)
     | _ => none)
@@ -471,7 +471,7 @@ def pythonFuncToBoogie (name : String) (args: List (String × String)) (body: Ar
   let inputs : List (Lambda.Identifier Boogie.Visibility × Lambda.LMonoTy) := args.map (λ p => (p.fst, pyTyStrToLMonoTy p.snd))
   let varDecls := collectVarDecls body ++ [(.init "exception_ty_matches" t[bool] (.boolConst () false)), (.havoc "exception_ty_matches")]
   let stmts := ArrPyStmtToBoogie func_infos body
-  let body := varDecls ++ stmts ++ [.block "end" {ss := []}]
+  let body := varDecls ++ stmts ++ [.block "end" []]
   let outputs : Lambda.LMonoTySignature := match ret with
   | .some v => [("ret", (.tcons "DictStrAny" [])), ("maybe_except", (.tcons "ExceptOrNone" []))]
   | .none => [("maybe_except", (.tcons "ExceptOrNone" []))]
