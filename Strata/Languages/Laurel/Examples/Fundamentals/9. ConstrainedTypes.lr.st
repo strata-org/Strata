@@ -14,3 +14,8 @@ composite Some extends Option {
 }
 composite None extends Option
 constrained SealedOption = x: Option where x is Some || x is None witness None
+
+procedure foo() returns (r: nat) {
+  // no assign to r. 
+  // this is accepted. there is no definite-asignment checking since types are never empty
+}
