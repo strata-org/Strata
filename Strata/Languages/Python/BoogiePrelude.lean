@@ -449,6 +449,11 @@ procedure datetime_date(dt: Datetime) returns (d : Datetime, maybe_except: Excep
 spec{}
 {havoc d;};
 
+procedure datetime_strptime(time: string, format: string) returns (d : Datetime, maybe_except: ExceptOrNone)
+spec{}
+{havoc d;};
+
+
 /////////////////////////////////////////////////////////////////////////////////////
 
 
