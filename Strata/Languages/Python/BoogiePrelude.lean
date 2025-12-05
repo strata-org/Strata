@@ -451,7 +451,9 @@ spec{}
 
 procedure datetime_strptime(time: string, format: string) returns (d : Datetime, maybe_except: ExceptOrNone)
 spec{}
-{havoc d;};
+{
+  havoc d;
+};
 
 
 /////////////////////////////////////////////////////////////////////////////////////

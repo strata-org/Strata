@@ -161,6 +161,8 @@ partial def PyExprToBoogie (e : Python.expr SourceRange) (substitution_records :
       match op with
       | .Add _ =>
         {stmts := lhs.stmts ++ rhs.stmts, expr := handleAdd lhs.expr rhs.expr}
+      | .Sub _ =>
+        {stmts := lhs.stmts ++ rhs.stmts, expr := handleSub lhs.expr rhs.expr}
       | .Mult _ =>
         {stmts := lhs.stmts ++ rhs.stmts, expr := handleMult lhs.expr rhs.expr}
       | _ => panic! s!"Unhandled BinOp: {repr e}"
