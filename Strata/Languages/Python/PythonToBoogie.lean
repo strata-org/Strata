@@ -373,7 +373,7 @@ partial def handleComprehension (lhs: Python.expr SourceRange) (gen: Array (Pyth
     let guard := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) res.expr) (.intConst () 0))
     let then_ss: List Boogie.Statement := [.havoc (PyExprToString lhs)]
     let else_ss: List Boogie.Statement := [.set (PyExprToString lhs) (.op () "ListStr_nil" none)]
-    res.stmts ++ [.ite guard {ss := then_ss} {ss := else_ss}]
+    res.stmts ++ [.ite guard then_ss else_ss]
 
 partial def PyStmtToBoogie (jmp_targets: List String) (func_infos : List PythonFunctionDecl) (s : Python.stmt SourceRange) : List Boogie.Statement :=
   assert! jmp_targets.length > 0
