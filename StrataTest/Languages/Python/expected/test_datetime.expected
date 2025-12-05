@@ -1,4 +1,6 @@
 
+timedelta_sign_matches: verified
+
 datetime_now_ensures_0: unknown
 
 assert_name_is_foo: verified
@@ -9,5 +11,5 @@ assert_opt_name_none_or_bar: verified
 
 ensures_maybe_except_none: verified
 
-py_assertion: unknown
+py_assertion: verified
 

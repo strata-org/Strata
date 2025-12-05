@@ -110,6 +110,11 @@ def handleNot (arg: Boogie.Expression.Expr) : Boogie.Expression.Expr :=
   | (.tcons "ListStr" []) => .eq () arg (.op () "ListStr_nil" none)
   | _ => panic! s!"Unimplemented not op for {arg}"
 
+def handleLtE (lhs rhs: Boogie.Expression.Expr) : Boogie.Expression.Expr :=
+  let eq := (.eq () lhs rhs)
+  let lt := (.app () (.app () (.op () "Datetime_lt" none) lhs) rhs)
+  (.app () (.app () (.op () "Bool.Or" none) eq) lt)
+
 def handleDict (keys: Array (Python.opt_expr SourceRange)) (values: Array (Python.expr SourceRange)) : Boogie.Expression.Expr :=
   .app () (.op () "DictStrAny_mk" none) (.strConst () "DefaultDict")
 
@@ -170,7 +175,7 @@ partial def PyExprToBoogie (e : Python.expr SourceRange) (substitution_records :
         | Strata.Python.cmpop.In _ =>
           {stmts := lhs.stmts ++ rhs.stmts, expr := .app () (.app () (.op () "str_in_dict_str_any" none) lhs.expr) rhs.expr}
         | Strata.Python.cmpop.LtE _ =>
-          {stmts := lhs.stmts ++ rhs.stmts, expr := (.eq () lhs.expr rhs.expr)}
+          {stmts := lhs.stmts ++ rhs.stmts, expr := handleLtE lhs.expr rhs.expr}
         | _ => panic! s!"Unhandled comparison op: {repr op.val}"
       | _ => panic! s!"Unhandled comparison op: {repr op.val}"
     | .Dict _ keys values => {stmts := [], expr := handleDict keys.val values.val}

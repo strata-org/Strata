@@ -367,7 +367,9 @@ axiom [unique_BoolOrStrOrNoneTag]: BSN_BOOL_TAG != BSN_STR_TAG && BSN_BOOL_TAG !
 
 
 procedure timedelta(days: int) returns (delta : int, maybe_except: ExceptOrNone)
-spec{}
+spec{
+  free ensures [timedelta_sign_matches]: (delta == (days * 3600 * 24));
+}
 {};
 
 function Timedelta_mk(days : int, seconds : int, microseconds : int): int {
