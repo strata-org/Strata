@@ -8,6 +8,8 @@
 
 
 import Strata.Languages.Boogie.Statement
+import Strata.DL.Lambda.LTy
+import Strata.DL.Lambda.LExpr
 
 namespace Boogie
 ---------------------------------------------------------------------
@@ -25,8 +27,10 @@ the responsibility of the user to ensure that they are consistent.
 
 structure Axiom where
   name : BoogieLabel
-  e : LExpr LMonoTy Visibility
-  deriving DecidableEq, Inhabited
+  e : LExpr BoogieLParams.mono
+
+instance : ToFormat (BoogieLParams.mono : LExprParamsT).base.Identifier :=
+  show ToFormat BoogieIdent from inferInstance
 
 instance : ToFormat Axiom where
   format a := f!"axiom {a.name}: {a.e};"

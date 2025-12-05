@@ -229,22 +229,22 @@ private def prog1 : Statements :=
  [
  .init "x" t[int] eb[#0],
  .init "y" t[int] eb[#6],
- .block "label_0" { ss :=
+ .block "label_0"
 
    [Statement.init "z" t[bool] eb[zinit],
     Statement.assume "z_false" eb[z == #false],
 
    .ite eb[z == #false]
-     { ss := [Statement.set "x" eb[y]] }
+     [Statement.set "x" eb[y]]
      -- The "trivial" assertion, though unreachable, is still verified away by the
      -- PE because the conclusion of the proof obligation evaluates to `true`.
      -- However, if the conclusion were anything else (including `false`) and
      -- the path conditions weren't empty, then this proof obligation would be
      -- sent on to the SMT solver.
-     { ss := [Statement.assert "trivial" eb[#true]]},
+     [Statement.assert "trivial" eb[#true]],
 
    Statement.assert "x_eq_y_label_0" eb[x == y],
-   ]},
+   ],
  .assert "x_eq_y" eb[x == y]
  ]
 
@@ -312,9 +312,9 @@ private def prog2 : Statements := [
 /--
 info: init (x : int) := #0
 x := #1
-#[<var x: ($__x0 : int)>] havoc x
+havoc x
 assert [x_eq_1] ($__x0 == #1)
-#[<var x: ($__x1 : int)>] havoc x
+havoc x
 x := #8
 -/
 #guard_msgs in

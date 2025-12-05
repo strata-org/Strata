@@ -21,21 +21,21 @@ def StmtToNondetStmt {P : PureExpr} [Imperative.HasBool P] [HasNot P]
   Imperative.NondetStmt P (Cmd P) :=
   match st with
   | .cmd    cmd => .cmd cmd
-  | .block  _ ⟨ bss ⟩ _ => StmtsToNondetStmt bss
-  | .ite    cond ⟨ tss ⟩ ⟨ ess ⟩ md =>
+  | .block  _ bss _ => BlockToNondetStmt bss
+  | .ite    cond tss ess md =>
     .choice
-      (.seq (.assume "true_cond" cond md) (StmtsToNondetStmt tss))
-      (.seq ((.assume "false_cond" (Imperative.HasNot.not cond) md)) (StmtsToNondetStmt ess))
-  | .loop   guard _measure _inv ⟨ bss ⟩ md =>
-    .loop (.seq (.assume "guard" guard md) (StmtsToNondetStmt bss))
+      (.seq (.assume "true_cond" cond md) (BlockToNondetStmt tss))
+      (.seq ((.assume "false_cond" (Imperative.HasNot.not cond) md)) (BlockToNondetStmt ess))
+  | .loop   guard _measure _inv bss md =>
+    .loop (.seq (.assume "guard" guard md) (BlockToNondetStmt bss))
   | .goto _ _ => (.assume "skip" Imperative.HasBool.tt)
 
 /-- Deterministic-to-nondeterministic transformation for multiple
 (deterministic) statements -/
-def StmtsToNondetStmt {P : Imperative.PureExpr} [Imperative.HasBool P] [HasNot P]
-  (ss : Imperative.Stmts P (Cmd P)) :
+def BlockToNondetStmt {P : Imperative.PureExpr} [Imperative.HasBool P] [HasNot P]
+  (ss : Imperative.Block P (Cmd P)) :
   Imperative.NondetStmt P (Cmd P) :=
   match ss with
   | [] => (.assume "skip" Imperative.HasBool.tt)
-  | s :: ss => .seq (StmtToNondetStmt s) (StmtsToNondetStmt ss)
+  | s :: ss => .seq (StmtToNondetStmt s) (BlockToNondetStmt ss)
 end

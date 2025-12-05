@@ -79,14 +79,13 @@ postconditions: (g_lt_10, (((~Int.Lt : (arrow int (arrow int bool))) (g : int)) 
 body: assume [g_eq_15] ($__g0 == #15)
 assert [g_gt_10_internal] ((~Int.Gt $__g0) #10)
 g := ((~Int.Add $__g0) #1)
-#[<[g_lt_10]: (((~Int.Lt : (arrow int (arrow int bool))) (g : int)) #10)>,
- <[g_lt_10]: FreePostCondition>] assert [g_lt_10] #true
+assert [g_lt_10] #true
 
 (procedure ProcCaller :  () → ((x : int)))
 modifies: []
 preconditions: ⏎
 postconditions: ⏎
-body: #[<var g: ($__g2 : int)>] call Proc([])
+body: call Proc([])
 assert [g_eq_15_internal] ($__g2 == #15)
 
 ---

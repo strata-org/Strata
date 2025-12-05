@@ -1,6 +1,6 @@
 Successfully parsed.
-assert_0: verified
-assert_1: verified
-assert_2: failed
+BooleanQuantification2.boogie.st(18, 4) [assert_0]: verified
+BooleanQuantification2.boogie.st(19, 4) [assert_1]: verified
+BooleanQuantification2.boogie.st(20, 4) [assert_2]: failed
 CEx: 
 Finished with 2 goals proved, 1 failed.

@@ -73,18 +73,17 @@ Extract function calls from an expression. We ignore Boogie's builtin functions
 -/
 def extractFunctionCallsFromExpr (expr : Expression.Expr) : List String :=
   match expr with
-  | .fvar _ _ => []
-  | .bvar _ => []
-  | .mdata _ e => extractFunctionCallsFromExpr e
-  | .op fname _ =>
+  | .fvar _ _ _ => []
+  | .bvar _ _ => []
+  | .op _ fname _ =>
     let fname := BoogieIdent.toPretty fname
     if builtinFunctions.contains fname then [] else [fname]
-  | .const _ => []
-  | .app fn arg => extractFunctionCallsFromExpr fn ++ extractFunctionCallsFromExpr arg
-  | .ite c t e => extractFunctionCallsFromExpr c ++ extractFunctionCallsFromExpr t ++ extractFunctionCallsFromExpr e
-  | .eq e1 e2 => extractFunctionCallsFromExpr e1 ++ extractFunctionCallsFromExpr e2
-  | .abs _ body => extractFunctionCallsFromExpr body
-  | .quant _ _ trigger body => extractFunctionCallsFromExpr trigger ++ extractFunctionCallsFromExpr body
+  | .const _ _ => []
+  | .app _ fn arg => extractFunctionCallsFromExpr fn ++ extractFunctionCallsFromExpr arg
+  | .ite _ c t e => extractFunctionCallsFromExpr c ++ extractFunctionCallsFromExpr t ++ extractFunctionCallsFromExpr e
+  | .eq _ e1 e2 => extractFunctionCallsFromExpr e1 ++ extractFunctionCallsFromExpr e2
+  | .abs _ _ body => extractFunctionCallsFromExpr body
+  | .quant _ _ _ trigger body => extractFunctionCallsFromExpr trigger ++ extractFunctionCallsFromExpr body
 
 def extractCallsFromFunction (func : Function) : List String :=
   match func.body with
@@ -97,11 +96,11 @@ partial def extractCallsFromStatement (stmt : Statement) : List String :=
   match stmt with
   | .cmd (.call _ procName _ _) => [procName]
   | .cmd _ => []
-  | .block _ body _ => extractCallsFromStatements body.ss
+  | .block _ body _ => extractCallsFromStatements body
   | .ite _ thenBody elseBody _ =>
-    extractCallsFromStatements thenBody.ss ++
-    extractCallsFromStatements elseBody.ss
-  | .loop _ _ _ body _ => extractCallsFromStatements body.ss
+    extractCallsFromStatements thenBody ++
+    extractCallsFromStatements elseBody
+  | .loop _ _ _ body _ => extractCallsFromStatements body
   | .goto _ _ => []
 
 /-- Extract procedure calls from a list of statements -/
