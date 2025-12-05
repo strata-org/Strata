@@ -1,7 +1,7 @@
 
-timedelta_sign_matches: verified
+ensure_timedelta_sign_matches: verified
 
-datetime_now_ensures_0: unknown
+datetime_now_ensures_0: verified
 
 assert_name_is_foo: verified
 

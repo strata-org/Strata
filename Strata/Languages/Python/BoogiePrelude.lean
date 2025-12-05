@@ -368,9 +368,12 @@ axiom [unique_BoolOrStrOrNoneTag]: BSN_BOOL_TAG != BSN_STR_TAG && BSN_BOOL_TAG !
 
 procedure timedelta(days: int) returns (delta : int, maybe_except: ExceptOrNone)
 spec{
-  free ensures [timedelta_sign_matches]: (delta == (days * 3600 * 24));
+  free ensures [ensure_timedelta_sign_matches]: (delta == (days * 3600 * 24));
 }
-{};
+{
+  havoc delta;
+  assume [assume_timedelta_sign_matches]: (delta == (days * 3600 * 24));
+};
 
 function Timedelta_mk(days : int, seconds : int, microseconds : int): int {
   ((days * 3600 * 24) + seconds) * 1000000 + microseconds
@@ -412,6 +415,10 @@ function Datetime_get_timedelta(d : Datetime) : int;
 procedure datetime_now() returns (d:Datetime, maybe_except: ExceptOrNone)
 spec {
   ensures (Datetime_get_timedelta(d) == Timedelta_mk(0,0,0));
+}
+{
+  havoc d;
+  assume [assume_datetime_now]: (Datetime_get_timedelta(d) == Timedelta_mk(0,0,0));
 };
 
 // Addition/subtraction of Datetime and Timedelta.
@@ -440,7 +447,7 @@ axiom [Datetime_lt_ax]:
 type Date;
 procedure datetime_date(dt: Datetime) returns (d : Datetime, maybe_except: ExceptOrNone)
 spec{}
-{};
+{havoc d;};
 
 /////////////////////////////////////////////////////////////////////////////////////
 
