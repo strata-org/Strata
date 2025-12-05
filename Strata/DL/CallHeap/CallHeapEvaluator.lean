@@ -112,7 +112,7 @@ partial def evalFunctionCall (funcName : String) (args : List HExpr) (lhs : List
       finalContext
     | [lhsVar] =>
       dbg_trace s!"[DEBUG] Assigning captured return value {repr returnValue} to {lhsVar}"
-      let finalHState2 := HState.setHeapVar finalContext.hstate lhsVar HMonoTy.int returnValue
+      let finalHState2 := HState.updateHeapVar finalContext.hstate lhsVar HMonoTy.int returnValue
       { finalContext with hstate := finalHState2 }
     | _ =>
       dbg_trace s!"[DEBUG] Multiple return values not supported"
@@ -125,7 +125,7 @@ partial def evalStatementWithContext (stmt : CallHeapStrataStatement) (ctx : Cal
     dbg_trace s!"[DEBUG] Executing init: {name} : {repr ty} = {repr expr}"
     let (newState, value) := Heap.evalHExpr ctx.hstate expr
     dbg_trace s!"[DEBUG] Evaluated init expr to: {repr value}"
-    let finalState := HState.setHeapVar newState name ty value
+    let finalState := HState.initHeapVar newState name ty value
     { ctx with hstate := finalState }
 
   | .cmd (.imperativeCmd (.set name expr _)) =>
@@ -135,7 +135,7 @@ partial def evalStatementWithContext (stmt : CallHeapStrataStatement) (ctx : Cal
     let ty := match HState.getHeapVarType newState name with
       | some existingTy => existingTy
       | none => HMonoTy.int
-    let finalState := HState.setHeapVar newState name ty value
+    let finalState := HState.updateHeapVar newState name ty value
     dbg_trace s!"[DEBUG] Set {name} to {repr value}"
     { ctx with hstate := finalState }
 
