@@ -63,7 +63,7 @@ def TypeStrToBoogieExpr (ty: String) : Boogie.Expression.Expr :=
     | "AnyOrNone" => .app () (.op () "AnyOrNone_mk_none" none) (.op () "None_none" none)
     | "IntOrNone" => .app () (.op () "IntOrNone_mk_none" none) (.op () "None_none" none)
     | "BytesOrStrOrNone" => .app () (.op () "BytesOrStrOrNone_mk_none" none) (.op () "None_none" none)
-    | "MappingStrStrOrNone" => .app () (.op () "MappingStrStrOrNone_mk_none" none) (.op () "None_none" none)
+    | "DictStrStrOrNone" => .app () (.op () "DictStrStrOrNone_mk_none" none) (.op () "None_none" none)
     | _ => panic! s!"unsupported type: {ty}"
 
 end Python

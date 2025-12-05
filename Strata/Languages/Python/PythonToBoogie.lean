@@ -78,6 +78,16 @@ def handleAdd (lhs rhs: Boogie.Expression.Expr) : Boogie.Expression.Expr :=
   | (.tcons "string" []), (.tcons "string" []) => .app () (.app () (.op () "Str.Concat" mty[string → (string → string)]) lhs) rhs
   | _, _ => panic! s!"Unimplemented add op for {lhs} + {rhs}"
 
+def handleMult (lhs rhs: Boogie.Expression.Expr) : Boogie.Expression.Expr :=
+  let lty : Lambda.LMonoTy := mty[string]
+  let rty : Lambda.LMonoTy := mty[int]
+  match lty, rty with
+  | (.tcons "string" []), (.tcons "int" []) =>
+    match lhs, rhs with
+    | .strConst () s, .intConst () i => .strConst () (String.join (List.replicate i.toNat s))
+    | _, _ => panic! s!"We only handle str * int for constant strings and ints. Got: {lhs} and {rhs}"
+  | _, _ => panic! s!"Unimplemented add op for {lhs} + {rhs}"
+
 def handleNot (arg: Boogie.Expression.Expr) : Boogie.Expression.Expr :=
   let ty : Lambda.LMonoTy := (.tcons "ListStr" [])
   match ty with
@@ -129,6 +139,8 @@ partial def PyExprToBoogie (e : Python.expr SourceRange) (substitution_records :
       match op with
       | .Add _ =>
         {stmts := lhs.stmts ++ rhs.stmts, expr := handleAdd lhs.expr rhs.expr}
+      | .Mult _ =>
+        {stmts := lhs.stmts ++ rhs.stmts, expr := handleMult lhs.expr rhs.expr}
       | _ => panic! s!"Unhandled BinOp: {repr e}"
     | .Compare _ lhs op rhs =>
       let lhs := PyExprToBoogie lhs
