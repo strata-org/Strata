@@ -1,6 +1,6 @@
 // Basic array literal
 // TODO: add assertion tests AST test + verification test (as a user) pre/post-condi
-let numbers: number[] = [1, 2, 3, 4, 5];
+let numbers: number[] = [1, 2, 3, 4];
 
 // Empty array initialization
 let empty: number[] = [];
@@ -20,6 +20,11 @@ numbers[index] = 30;
 // Array in expressions
 let sum: number = numbers[0] + numbers[1];
 let isEqual: boolean = numbers[2] == 3
+
+let strings: string[] = ["hello", "world"];
+
+const numLen: number = numbers.length;
+const strLen: number = strings.length;
 
 // Mixed with objects
 // let data: number[] = [100, 200, 300];

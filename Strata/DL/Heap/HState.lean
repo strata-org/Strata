@@ -143,7 +143,7 @@ def getHeapVarNames (state : HState) : List String :=
 -- Allocate a new object in the heap
 def alloc (state : HState) (fields : List (Nat × HExpr)) : HState × Address :=
   let addr := state.nextAddr
-  let obj := Std.HashMap.ofList fields -- I think the fields need to be evaluated
+  let obj := Std.HashMap.ofList fields
   let newHeap := state.heap.insert addr obj
   let newState := { state with heap := newHeap, nextAddr := addr + 1 }
   (newState, addr)
@@ -198,6 +198,17 @@ def isValidAddr (state : HState) (addr : Address) : Bool :=
 -- Get all addresses in the heap
 def getAllAddrs (state : HState) : List Address :=
   state.heap.toList.map (·.1)
+
+-- Get the logical length of an array (highest index + 1, ignoring gaps)
+def getArrayLength (state : HState) (addr : Address) : Nat :=
+  match state.getObject addr with
+  | some obj =>
+    let indices := obj.toList.map (·.1)
+    if indices.isEmpty then
+      0
+    else
+      indices.foldl Nat.max 0 + 1
+  | none => 0
 
 -- Pretty printing helpers
 def heapToString (state : HState) : String :=
