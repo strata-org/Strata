@@ -100,10 +100,10 @@ with constructors and selectors following the TypeFactory naming convention.
 def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverM Unit := do
   for d in ctx.datatypes do
     let constructors ← d.constrs.mapM fun c => do
-      let fields := c.args.map fun (_, fieldTy) => lMonoTyToSMTString fieldTy
-      let fieldNames := List.range c.args.length |>.map fun i =>
-        d.name ++ "$" ++ c.name.name ++ "Proj" ++ toString i
-      let fieldPairs := fieldNames.zip fields
+      let fieldPairs := c.args.map fun (name, fieldTy) => (name.name, lMonoTyToSMTString fieldTy)
+      -- let fieldNames := List.range c.args.length |>.map fun i =>
+      --   d.name ++ "$" ++ c.name.name ++ "Proj" ++ toString i
+      -- let fieldPairs := fieldNames.zip fields
       let fieldStrs := fieldPairs.map fun (name, ty) => s!"({name} {ty})"
       let fieldsStr := String.intercalate " " fieldStrs
       if c.args.isEmpty then
