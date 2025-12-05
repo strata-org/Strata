@@ -36,8 +36,8 @@ def optionDatatype : LDatatype Visibility :=
   { name := "TestOption"
     typeArgs := ["α"]
     constrs := [
-      { name := ⟨"None", .unres⟩, args := [] },
-      { name := ⟨"Some", .unres⟩, args := [(⟨"value", .unres⟩, .ftvar "α")] }
+      { name := ⟨"None", .unres⟩, args := [], testerName := "TestOption$isNone" },
+      { name := ⟨"Some", .unres⟩, args := [(⟨"TestOption$SomeProj0", .unres⟩, .ftvar "α")], testerName := "TestOption$isSome"  }
     ]
     constrs_ne := by decide }
 
@@ -46,11 +46,11 @@ def listDatatype : LDatatype Visibility :=
   { name := "TestList"
     typeArgs := ["α"]
     constrs := [
-      { name := ⟨"Nil", .unres⟩, args := [] },
+      { name := ⟨"Nil", .unres⟩, args := [], testerName := "TestList$isNil" },
       { name := ⟨"Cons", .unres⟩, args := [
-          (⟨"head", .unres⟩, .ftvar "α"),
-          (⟨"tail", .unres⟩, .tcons "TestList" [.ftvar "α"])
-        ] }
+          (⟨"TestList$ConsProj0", .unres⟩, .ftvar "α"),
+          (⟨"TestList$ConsProj1", .unres⟩, .tcons "TestList" [.ftvar "α"])
+        ], testerName := "TestList$isCons" }
     ]
     constrs_ne := by decide }
 
@@ -59,12 +59,12 @@ def treeDatatype : LDatatype Visibility :=
   { name := "TestTree"
     typeArgs := ["α"]
     constrs := [
-      { name := ⟨"Leaf", .unres⟩, args := [] },
+      { name := ⟨"Leaf", .unres⟩, args := [], testerName := "TestTree$isLeaf" },
       { name := ⟨"Node", .unres⟩, args := [
-          (⟨"value", .unres⟩, .ftvar "α"),
-          (⟨"left", .unres⟩, .tcons "TestTree" [.ftvar "α"]),
-          (⟨"right", .unres⟩, .tcons "TestTree" [.ftvar "α"])
-        ] }
+          (⟨"TestTree$NodeProj0", .unres⟩, .ftvar "α"),
+          (⟨"TestTree$NodeProj1", .unres⟩, .tcons "TestTree" [.ftvar "α"]),
+          (⟨"TestTree$NodeProj2", .unres⟩, .tcons "TestTree" [.ftvar "α"])
+        ], testerName := "TestTree$isNode" }
     ]
     constrs_ne := by decide }
 /--

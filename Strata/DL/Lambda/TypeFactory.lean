@@ -40,11 +40,13 @@ A type constructor description. The free type variables in `args` must be a subs
 structure LConstr (IDMeta : Type) where
   name : Identifier IDMeta
   args : List (Identifier IDMeta × LMonoTy)
+  testerName : String
 deriving Repr, DecidableEq
 
 instance: ToFormat (LConstr IDMeta) where
   format c := f!"Name:{Format.line}{c.name}{Format.line}\
-                 Args:{Format.line}{c.args}{Format.line}"
+                 Args:{Format.line}{c.args}{Format.line}\
+                 Tester:{Format.line}{c.testerName}{Format.line}"
 
 /--
 A datatype description. `typeArgs` contains the free type variables of the given datatype.
@@ -57,7 +59,7 @@ structure LDatatype (IDMeta : Type) where
 deriving Repr, DecidableEq
 
 instance : ToFormat (LDatatype IDMeta) where
-  format d := f!"Name:{Format.line}{d.name}{Format.line}\
+  format d := f!"type:{Format.line}{d.name}{Format.line}\
               Type Arguments:{Format.line}{d.typeArgs}{Format.line}\
               Constructors:{Format.line}{d.constrs}{Format.line}"
 
@@ -114,7 +116,7 @@ def checkStrictPosUnifTy (c: String) (d: LDatatype IDMeta) (ty: LMonoTy) : Excep
 Check for strict positivity and uniformity of a datatype
 -/
 def checkStrictPosUnif (d: LDatatype IDMeta) : Except Format Unit :=
-  List.foldrM (fun ⟨name, args⟩ _ =>
+  List.foldrM (fun ⟨name, args, _⟩ _ =>
     List.foldrM (fun ⟨ _, ty ⟩ _ =>
       checkStrictPosUnifTy name.name d ty
     ) () args
@@ -269,8 +271,8 @@ def elimFunc [Inhabited T.IDMeta] [BEq T.Identifier] (d: LDatatype T.IDMeta) (m:
 
 -- Generating testers and destructors
 
-def testerFuncName (d: LDatatype IDMeta) (c: LConstr IDMeta) : String :=
-  d.name ++ "$is" ++ c.name.name
+-- def testerFuncName (d: LDatatype IDMeta) (c: LConstr IDMeta) : String :=
+--   d.name ++ "$is" ++ c.name.name
 
 /--
 Generate tester body (see `testerFuncs`). The body consists of
@@ -292,7 +294,7 @@ and they are defined in terms of eliminators. For example:
 -/
 def testerFunc {T} [Inhabited T.IDMeta] (d: LDatatype T.IDMeta) (c: LConstr T.IDMeta) (m: T.Metadata) : LFunc T :=
   let arg := genArgName
-  {name := testerFuncName d c,
+  {name := c.testerName,
    typeArgs := d.typeArgs,
    inputs := [(arg, dataDefault d)],
    output := .bool,
@@ -328,10 +330,11 @@ constructor components, e.g.
 These functions are partial, `List@ConsProj0 Nil` is undefined.
 -/
 def destructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta]  (d: LDatatype T.IDMeta) (c: LConstr T.IDMeta) : List (LFunc T) :=
-  c.args.mapIdx (fun i (_, ty) =>
+  c.args.mapIdx (fun i (name, ty) =>
     let arg := genArgName
     {
-      name := d.name ++ "$" ++ c.name.name ++ "Proj" ++ (toString i),
+      name := name,
+      --  d.name ++ "$" ++ c.name.name ++ "Proj" ++ (toString i),
       typeArgs := d.typeArgs,
       inputs := [(arg, dataDefault d)],
       output := ty,
@@ -374,7 +377,7 @@ def LDatatype.genFunctionMaps {T: LExprParams} [Inhabited T.IDMeta] [BEq T.Ident
   Map String (LDatatype T.IDMeta × LConstr T.IDMeta) ×
   Map String (LDatatype T.IDMeta × LConstr T.IDMeta) :=
   (Map.ofList (d.constrs.map (fun c => (c.name.name, (d, c)))),
-   Map.ofList (d.constrs.map (fun c => (testerFuncName d c, (d, c)))),
+   Map.ofList (d.constrs.map (fun c => (c.testerName, (d, c)))),
    Map.ofList (d.constrs.map (fun c =>
       (destructorFuncs d c).map (fun f => (f.name.name, (d, c))))).flatten)
 

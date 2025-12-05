@@ -11,6 +11,64 @@ import Strata.Languages.Boogie.Verifier
 
 namespace Strata
 
+open Boogie Lambda
+
+def errorDatatype : LDatatype Boogie.Visibility :=
+  { name := "Error"
+    typeArgs := []
+    constrs := [
+      { name := ⟨"TypeError", Boogie.Visibility.unres⟩
+        args := [(⟨"Error_getTypeError", Boogie.Visibility.unres⟩, LMonoTy.string)]
+        testerName := "Error_isTypeError" },
+      { name := ⟨"AttributeError", Boogie.Visibility.unres⟩
+        args := [(⟨"Error_getAttributeError", Boogie.Visibility.unres⟩, LMonoTy.string)]
+        testerName := "Error_isAttributeError" },
+      { name := ⟨"RePatternError", Boogie.Visibility.unres⟩
+        args := [(⟨"Error_getRePatternError", Boogie.Visibility.unres⟩, LMonoTy.string)]
+        testerName := "Error_isRePatternError" },
+      { name := ⟨"Unimplemented", Boogie.Visibility.unres⟩
+        args := [(⟨"Error_getUnimplemented", Boogie.Visibility.unres⟩, LMonoTy.string)]
+        testerName := "Error_isUnimplemented" }
+    ]
+    constrs_ne := by decide }
+
+def exceptDatatype : LDatatype Boogie.Visibility :=
+  { name := "Except"
+    typeArgs := ["err", "ok"]
+    constrs := [
+      { name := ⟨"mkOK", Boogie.Visibility.unres⟩
+        args := [(⟨"Except_getOK", Boogie.Visibility.unres⟩, LMonoTy.ftvar "ok")]
+        testerName := "Except_isOK" },
+      { name := ⟨"mkErr", Boogie.Visibility.unres⟩
+        args := [(⟨"Except_getErr", Boogie.Visibility.unres⟩, LMonoTy.ftvar "err")]
+        testerName := "Except_isErr"}
+    ]
+    constrs_ne := by decide }
+
+def exceptErrorRegexSynonym : Boogie.TypeSynonym :=
+  { name := "ExceptErrorRegex"
+    typeArgs := []
+    type := LMonoTy.tcons "Except" [LMonoTy.tcons "Error" [], LMonoTy.tcons "regex" []] }
+
+def pyReMatchStrFunc : Boogie.Function :=
+  { name := ⟨"PyReMatchStr", Boogie.Visibility.unres⟩
+    typeArgs := []
+    inputs := [
+      (⟨"pattern", Boogie.Visibility.unres⟩, LMonoTy.string),
+      (⟨"str", Boogie.Visibility.unres⟩, LMonoTy.string),
+      (⟨"flags", Boogie.Visibility.unres⟩, LMonoTy.int)
+    ]
+    output := LMonoTy.tcons "Except" [LMonoTy.tcons "Error" [], LMonoTy.bool]
+    body := none }
+
+def errorProgram : Boogie.Program :=
+  { decls := [
+      Boogie.Decl.type (Boogie.TypeDecl.data errorDatatype),
+      Boogie.Decl.type (Boogie.TypeDecl.data exceptDatatype),
+      Boogie.Decl.type (Boogie.TypeDecl.syn exceptErrorRegexSynonym),
+      Boogie.Decl.func pyReMatchStrFunc,
+    ] }
+
 def boogiePrelude :=
 #strata
 program Boogie;
@@ -27,114 +85,9 @@ axiom [inheritsFrom_refl]: (forall s: string :: {inheritsFrom(s, s)} inheritsFro
 
 /////////////////////////////////////////////////////////////////////////////////////
 
-// Exceptions
-// TODO: Formalize the exception hierarchy here:
-// https://docs.python.org/3/library/exceptions.html#exception-hierarchy
-// We use the name "Error" to stand for Python's Exceptions +
-// our own special indicator, Unimplemented which is an artifact of
-// Strata that indicates that our models is partial.
-type Error;
-
-// Constructors
-function Error_TypeError (msg : string) : Error;
-function Error_AttributeError (msg : string) : Error;
-function Error_RePatternError (msg : string) : Error;
-function Error_Unimplemented (msg : string) : Error;
-
-// Testers
-function Error_isTypeError (e : Error) : bool;
-function Error_isAttributeError (e : Error) : bool;
-function Error_isRePatternError (e : Error) : bool;
-function Error_isUnimplemented (e : Error) : bool;
-
-// Destructors
-function Error_getTypeError (e : Error) : string;
-function Error_getAttributeError (e : Error) : string;
-function Error_getRePatternError (e : Error) : string;
-function Error_getUnimplemented (e : Error) : string;
-
-// Axioms
-// Testers of Constructors
-axiom [Error_isTypeError_TypeError]:
-    (forall msg : string :: {(Error_TypeError(msg))}
-        Error_isTypeError(Error_TypeError(msg)));
-axiom [Error_isAttributeError_AttributeError]:
-    (forall msg : string :: {(Error_AttributeError(msg))}
-        Error_isAttributeError(Error_AttributeError(msg)));
-axiom [Error_isRePatternError_RePatternError]:
-    (forall msg : string ::
-        Error_isRePatternError(Error_RePatternError(msg)));
-axiom [Error_isUnimplemented_Unimplemented]:
-   (forall msg : string ::
-        Error_isUnimplemented(Error_Unimplemented(msg)));
-// Destructors of Constructors
-axiom [Error_getTypeError_TypeError]:
-    (forall msg : string ::
-        Error_getTypeError(Error_TypeError(msg)) == msg);
-axiom [Error_getAttributeError_AttributeError]:
-    (forall msg : string ::
-        Error_getAttributeError(Error_AttributeError(msg)) == msg);
-axiom [Error_getUnimplemented_Unimplemented]:
-    (forall msg : string ::
-        Error_getUnimplemented(Error_Unimplemented(msg)) == msg);
-
 // /////////////////////////////////////////////////////////////////////////////////////
 // /////////////////////////////////////////////////////////////////////////////////////
 // Regular Expressions
-
-type Except (err : Type, ok : Type);
-
-// FIXME:
-// Once DDM support polymorphic functions (and not just type declarations),
-// we will be able to define the following generic functions and axioms. For now,
-// we manually define appropriate instantiations.
-// Also: when ADT support is lifted up to Boogie, all these
-// constructors, testers, destructors, and axioms will be auto-generated.
-// How will the DDM keep track of them?
-
-// // Constructors
-// function Except_mkOK(err : Type, ok : Type, val : ok) : Except err ok;
-// function Except_mkErr(err : Type, ok : Type, val : err) : Except err ok;
-// // Testers
-// function Except_isOK(err : Type, ok : Type, x : Except err ok) : bool;
-// function Except_isErr(err : Type, ok : Type, x : Except err ok) : bool;
-// // Destructors
-// function Except_getOK(err : Type, ok : Type, x : Except err ok) : ok;
-// function Except_getErr(err : Type, ok : Type, x : Except err ok) : err;
-// // Axioms
-// // Testers of Constructors
-// axiom [Except_isOK_mkOK]: (forall x : ok :: Except_isOK(Except_mkOK x));
-// axiom [Except_isErr_mkErr]: (forall x : err :: Except_isErr(Except_mkErr x));
-// // Destructors of Constructors
-// axiom [Except_getOK_mkOK]: (forall x : ok :: Except_getOK(Except_mkOK x) == x);
-// axiom [Except_getErr_mkErr]: (forall x : err :: Except_isErr(Except_mkErr x));
-
-type ExceptErrorRegex := Except Error regex;
-
-// Constructors
-function ExceptErrorRegex_mkOK(x : regex) : ExceptErrorRegex;
-function ExceptErrorRegex_mkErr(x : Error) : ExceptErrorRegex;
-// Testers
-function ExceptErrorRegex_isOK(x : ExceptErrorRegex) : bool;
-function ExceptErrorRegex_isErr(x : ExceptErrorRegex) : bool;
-// Destructors
-function ExceptErrorRegex_getOK(x : ExceptErrorRegex) : regex;
-function ExceptErrorRegex_getErr(x : ExceptErrorRegex) : Error;
-// Axioms
-// Testers of Constructors
-axiom [ExceptErrorRegex_isOK_mkOK]:
-    (forall x : regex :: {(ExceptErrorRegex_mkOK(x))}
-        ExceptErrorRegex_isOK(ExceptErrorRegex_mkOK(x)));
-axiom [ExceptErrorRegex_isError_mkErr]:
-    (forall e : Error :: {(ExceptErrorRegex_mkErr(e))}
-        ExceptErrorRegex_isErr(ExceptErrorRegex_mkErr(e)));
-// Destructors of Constructors
-axiom [ExceptErrorRegex_getOK_mkOK]:
-    (forall x : regex :: {(ExceptErrorRegex_mkOK(x))}
-        ExceptErrorRegex_getOK(ExceptErrorRegex_mkOK(x)) == x);
-axiom [ExceptErrorRegex_getError_mkError]:
-    (forall e : Error :: {(ExceptErrorRegex_mkErr(e))}
-        ExceptErrorRegex_getErr(ExceptErrorRegex_mkErr(e)) == e);
 
 // NOTE: `re.match` returns a `Re.Match` object, but for now, we are interested
 // only in match/nomatch, which is why we return `bool` here.
@@ -143,10 +96,6 @@ function PyReMatchRegex(pattern : regex, str : string, flags : int) : bool;
 axiom [PyReMatchRegex_def_noFlg]:
   (forall pattern : regex, str : string :: {PyReMatchRegex(pattern, str, 0)}
     PyReMatchRegex(pattern, str, 0) == str.in.re(str, pattern));
-
-// Unsupported/uninterpreted: eventually, this would first call PyReCompile and if there's
-// no exception, call PyReMatchRegex.
-function PyReMatchStr(pattern : string, str : string, flags : int) : Except Error bool;
 
 /////////////////////////////////////////////////////////////////////////////////////
 
@@ -329,6 +278,6 @@ spec {
 #end
 
 def Boogie.prelude : Boogie.Program :=
-   Boogie.getProgram Strata.boogiePrelude |>.fst
+   {decls := errorProgram.decls ++ (Boogie.getProgram Strata.boogiePrelude |>.fst).decls}
 
 end Strata
