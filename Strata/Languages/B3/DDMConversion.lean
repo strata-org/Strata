@@ -252,9 +252,8 @@ partial def expressionToCST [Inhabited (B3CST.Expression M)] (ctx : ToCSTContext
       let convertPattern (p : Strata.B3AST.Pattern M) : B3CST.Pattern M :=
         match p with
         | .pattern pm exprs =>
-            match exprs.val.toList with
-            | [e] => B3CST.Pattern.pattern pm (expressionToCST ctx' e)
-            | _ => B3CST.Pattern.pattern pm (B3CST.Expression.btrue pm)
+            let exprsCST := exprs.val.map (expressionToCST ctx')
+            B3CST.Pattern.pattern pm (mkAnn pm exprsCST)
       let patternsDDM := match patterns.val.toList with
         | [] => none
         | [p] => some (Patterns.patterns_single m (convertPattern p))
@@ -406,7 +405,7 @@ partial def expressionFromDDM [Inhabited M] [B3AnnFromCST M] (ctx : FromDDMConte
       let ctx' := ctx.push var.val
       let convertPattern (p : B3CST.Pattern M) : Strata.B3AST.Pattern M :=
         match p with
-        | .pattern pann expr => .pattern (B3AnnFromCST.annForPattern pann) ⟨B3AnnFromCST.annForPatternExprs pann, #[expressionFromDDM ctx' expr]⟩
+        | .pattern pann exprs => .pattern (B3AnnFromCST.annForPattern pann) ⟨B3AnnFromCST.annForPatternExprs pann, exprs.val.map (expressionFromDDM ctx')⟩
       let patternsArray := patternsToArray patterns |>.map convertPattern
       .quantifierExpr (B3AnnFromCST.annForQuantifierExpr ann) (.forall (B3AnnFromCST.annForQuantifierKind ann)) ⟨B3AnnFromCST.annForQuantifierVar ann, var.val⟩ ⟨B3AnnFromCST.annForQuantifierType ann, ty.val⟩ ⟨B3AnnFromCST.annForQuantifierPatterns ann, patternsArray⟩ (expressionFromDDM ctx' body)
   | .exists_expr_no_patterns ann var ty body =>
@@ -416,7 +415,7 @@ partial def expressionFromDDM [Inhabited M] [B3AnnFromCST M] (ctx : FromDDMConte
       let ctx' := ctx.push var.val
       let convertPattern (p : B3CST.Pattern M) : Strata.B3AST.Pattern M :=
         match p with
-        | .pattern pann expr => .pattern (B3AnnFromCST.annForPattern pann) ⟨B3AnnFromCST.annForPatternExprs pann, #[expressionFromDDM ctx' expr]⟩
+        | .pattern pann exprs => .pattern (B3AnnFromCST.annForPattern pann) ⟨B3AnnFromCST.annForPatternExprs pann, exprs.val.map (expressionFromDDM ctx')⟩
       let patternsArray := patternsToArray patterns |>.map convertPattern
       .quantifierExpr (B3AnnFromCST.annForQuantifierExpr ann) (.exists (B3AnnFromCST.annForQuantifierKind ann)) ⟨B3AnnFromCST.annForQuantifierVar ann, var.val⟩ ⟨B3AnnFromCST.annForQuantifierType ann, ty.val⟩ ⟨B3AnnFromCST.annForQuantifierPatterns ann, patternsArray⟩ (expressionFromDDM ctx' body)
   | .paren _ expr => expressionFromDDM ctx expr
@@ -684,9 +683,8 @@ partial def expressionToCSTSR [Inhabited $ Strata.B3CST.Expression M] (ctx : ToC
       let convertPattern (p : Strata.B3AST.Pattern M) : B3CST.Pattern M :=
         match p with
         | .pattern pann exprs =>
-            match exprs.val.toList with
-            | [e] => B3CST.Pattern.pattern pann (expressionToCSTSR ctx' e)
-            | _ => B3CST.Pattern.pattern pann (B3CST.Expression.btrue pann)
+            let exprsCST := exprs.val.map (expressionToCSTSR ctx')
+            B3CST.Pattern.pattern pann (mkAnn pann exprsCST)
       let patternsDDM := match patterns.val.toList with
         | [] => none
         | [p] => some (Patterns.patterns_single ann (convertPattern p))
@@ -745,7 +743,7 @@ partial def expressionFromDDMSR [Inhabited $ Strata.B3AST.Expression M] (ctx : F
       let ctx' := ctx.push var.val
       let convertPattern (p : B3CST.Pattern M) : Strata.B3AST.Pattern M :=
         match p with
-        | .pattern pann expr => .pattern pann (mkAnn pann #[expressionFromDDMSR ctx' expr])
+        | .pattern pann exprs => .pattern pann (mkAnn pann (exprs.val.map (expressionFromDDMSR ctx')))
       let patternsArray := patternsToArraySR patterns |>.map convertPattern
       .quantifierExpr ann (.forall ann) (mkAnn ann var.val) (mkAnn ann ty.val) (mkAnn ann patternsArray) (expressionFromDDMSR ctx' body)
   | .exists_expr_no_patterns ann var ty body =>
@@ -755,7 +753,7 @@ partial def expressionFromDDMSR [Inhabited $ Strata.B3AST.Expression M] (ctx : F
       let ctx' := ctx.push var.val
       let convertPattern (p : B3CST.Pattern M) : Strata.B3AST.Pattern M :=
         match p with
-        | .pattern pann expr => .pattern pann (mkAnn pann #[expressionFromDDMSR ctx' expr])
+        | .pattern pann exprs => .pattern pann (mkAnn pann (exprs.val.map (expressionFromDDMSR ctx')))
       let patternsArray := patternsToArraySR patterns |>.map convertPattern
       .quantifierExpr ann (.exists ann) (mkAnn ann var.val) (mkAnn ann ty.val) (mkAnn ann patternsArray) (expressionFromDDMSR ctx' body)
   | .paren _ expr => expressionFromDDMSR ctx expr

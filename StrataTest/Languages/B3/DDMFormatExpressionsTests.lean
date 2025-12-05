@@ -414,6 +414,10 @@ info: B3: .quantifierExpr
     u #[.functionCall
       ()
       u "f"
+      u #[.id () u 0],
+    .functionCall
+      ()
+      u "f"
       u #[.id () u 0]]]
   (.binaryOp
     ()
@@ -424,10 +428,10 @@ info: B3: .quantifierExpr
       u #[.id () u 0])
     (.literal () (.intLit () u 0)))
 ---
-info: forall x : int pattern f(x), f(x) > 0
+info: forall x : int pattern f(x), f(x) f(x) > 0
 -/
 #guard_msgs in
-#eval roundtripExpr $ #strata program B3CST; check forall x : int pattern f(x), f(x) > 0 #end
+#eval roundtripExpr $ #strata program B3CST; check forall x : int pattern f(x), f(x) f(x) > 0 #end
 
 /--
 info: B3: .quantifierExpr
@@ -453,10 +457,10 @@ info: B3: .quantifierExpr
       (.not ())
       (.id () u 0)))
 ---
-info: exists y : bool pattern y, pattern !y, y || !y
+info: exists y : bool pattern y pattern !y y || !y
 -/
 #guard_msgs in
-#eval roundtripExpr $ #strata program B3CST; check exists y : bool pattern y, pattern !y, y || !y #end
+#eval roundtripExpr $ #strata program B3CST; check exists y : bool pattern y pattern !y y || !y #end
 
 /--
 info: B3: .quantifierExpr
@@ -491,10 +495,10 @@ info: B3: .quantifierExpr
     (.id () u 0)
     (.literal () (.intLit () u 0)))
 ---
-info: forall z : int pattern z, pattern z + 1, pattern z * 2, z > 0
+info: forall z : int pattern z pattern z + 1 pattern z * 2 z > 0
 -/
 #guard_msgs in
-#eval roundtripExpr $ #strata program B3CST; check forall z : int pattern z, pattern z + 1, pattern z * 2, z > 0 #end
+#eval roundtripExpr $ #strata program B3CST; check forall z : int pattern z pattern z + 1 pattern z * 2 z > 0 #end
 
 end ExpressionRoundtripTests
 

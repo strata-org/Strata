@@ -88,7 +88,7 @@ procedure CreateClient(name : string, out result : CResult)
 function UserOwnsBucket(name : string) : bool
 type Client
 procedure ListBuckets(c : Client, out aresult : AResult)
-  ensures AIsSuccess(aresult) ==> (forall bucket : Bucket pattern BucketTODODotDotname(bucket), pattern in(bucket, AResponseTODODotDotbuckets(ASuccessTODODotDotvalue(aresult))), in(bucket, AResponseTODODotDotbuckets(ASuccessTODODotDotvalue(aresult))) ==> UserOwnsBucket(BucketTODODotDotname(bucket)))
+  ensures AIsSuccess(aresult) ==> (forall bucket : Bucket pattern BucketTODODotDotname(bucket) pattern in(bucket, AResponseTODODotDotbuckets(ASuccessTODODotDotvalue(aresult))) in(bucket, AResponseTODODotDotbuckets(ASuccessTODODotDotvalue(aresult))) ==> UserOwnsBucket(BucketTODODotDotname(bucket)))
 procedure GetPublicAccessBlock(c : Client, Bucket : string, out result : BResult)
   requires UserOwnsBucket(Bucket)
 type AResponse
@@ -131,10 +131,10 @@ function BIsSuccess(r : BResult) : bool {
 type BucketSeq
 function select(s : BucketSeq, i : int) : Bucket
 function length(s : BucketSeq) : int
-axiom explains length,
-  forall s : BucketSeq pattern length(s), 0 <= length(s)
+axiom explains length
+  forall s : BucketSeq pattern length(s) 0 <= length(s)
 function in(b : Bucket, s : BucketSeq) : bool {
-  exists i : int pattern select(s, i), 0 <= i && i < length(s) && select(s, i) == b
+  exists i : int pattern select(s, i) 0 <= i && i < length(s) && select(s, i) == b
 }
 type string
 procedure Print(a : string, b : string, c : string)
@@ -238,8 +238,8 @@ type Client
 procedure ListBuckets(c: Client, out aresult: AResult)
   ensures AIsSuccess(aresult) ==>
     forall bucket: Bucket
-      pattern BucketTODODotDotname(bucket),
-      pattern in(bucket, AResponseTODODotDotbuckets(ASuccessTODODotDotvalue(aresult))),
+      pattern BucketTODODotDotname(bucket)
+      pattern in(bucket, AResponseTODODotDotbuckets(ASuccessTODODotDotvalue(aresult)))
       in(bucket, AResponseTODODotDotbuckets(ASuccessTODODotDotvalue(aresult))) ==>
       UserOwnsBucket(BucketTODODotDotname(bucket))
 
@@ -343,14 +343,14 @@ function select(s: BucketSeq, i: int): Bucket
 
 function length(s: BucketSeq): int
 
-axiom explains length,
+axiom explains length
   forall s: BucketSeq
-    pattern length(s),
+    pattern length(s)
     0 <= length(s)
 
 function in(b: Bucket, s: BucketSeq): bool {
   exists i: int
-    pattern select(s, i),
+    pattern select(s, i)
     0 <= i && i < length(s) && select(s, i) == b
 }
 

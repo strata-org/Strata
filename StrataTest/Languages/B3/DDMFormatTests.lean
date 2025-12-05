@@ -87,7 +87,7 @@ Strata.B3AST.Expression.quantifierExpr : {α : Type} →
 info: inductive Strata.B3CST.Pattern : Type → Type
 number of parameters: 1
 constructors:
-Strata.B3CST.Pattern.pattern : {α : Type} → α → Expression α → Pattern α
+Strata.B3CST.Pattern.pattern : {α : Type} → α → Ann (Array (Expression α)) α → Pattern α
 -/
 #guard_msgs in
 #print B3CST.Pattern

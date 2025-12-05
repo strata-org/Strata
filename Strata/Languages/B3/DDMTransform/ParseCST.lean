@@ -61,7 +61,7 @@ op paren (a : Expression) : Expression => @[prec(30)] "(" a ")";
 op functionCall (name : Ident, args : CommaSepBy Expression) : Expression => @[prec(40)] name "(" args ")";
 
 category Pattern;
-op pattern (e : Expression) : Pattern => "pattern " e:0 ", ";
+op pattern (e : CommaSepBy Expression) : Pattern => " pattern " e:0;
 
 category Patterns;
 op patterns_cons (p : Pattern, ps : Patterns) : Patterns => @[prec(0)] p:0 ps:0;
@@ -71,13 +71,13 @@ op forall_expr_no_patterns (var : Ident, ty : Ident, body : Expression) : Expres
   @[prec(1)] "forall " var " : " ty " " body:1;
 
 op forall_expr (var : Ident, ty : Ident, patterns : Patterns, body : Expression) : Expression =>
-  @[prec(1)] "forall " var " : " ty " " patterns body:1;
+  @[prec(1)] "forall " var " : " ty patterns " " body:1;
 
 op exists_expr_no_patterns (var : Ident, ty : Ident, body : Expression) : Expression =>
   @[prec(1)] "exists " var " : " ty " " body:1;
 
 op exists_expr (var : Ident, ty : Ident, patterns : Patterns, body : Expression) : Expression =>
-  @[prec(1)] "exists " var " : " ty " " patterns body:1;
+  @[prec(1)] "exists " var " : " ty patterns " " body:1;
 
 category Statement;
 
@@ -186,8 +186,8 @@ op function_decl (name : Ident, params : CommaSepBy FParam, resultType : Ident, 
 
 category AxiomBody;
 
-op explain_axiom (names: Seq Ident, expr : Expression) : AxiomBody =>
-  "explains " names:0 "," indent(2, "\n" expr:0);
+op explain_axiom (names: CommaSepBy Ident, expr : Expression) : AxiomBody =>
+  "explains " names:0 indent(2, "\n" expr:0);
 
 op axiom (expr : Expression) : AxiomBody =>
   expr;
