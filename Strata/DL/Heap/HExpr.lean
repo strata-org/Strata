@@ -43,6 +43,7 @@ inductive HExpr : Type where
   | deferredOp (op : String) (ty : Option HMonoTy)           -- Deferred operation, like Lambda's .op
   | app (fn arg : HExpr)                                      -- Application, like Lambda's .app
   | deferredIte (guard consequent alternate : HExpr)         -- Deferred conditional, like Lambda's .ite
+  | deferredEq (e1 e2 : HExpr)                               -- Deferred equality, delegates to Lambda's .eq
   deriving Repr
 
 ---------------------------------------------------------------------

@@ -117,9 +117,10 @@ partial def translate_expr (e: TS_Expression) : Heap.HExpr :=
     | "*" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Mul" none) lhs) rhs
     | "/" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Div" none) lhs) rhs
     | "%" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Mod" none) lhs) rhs
-    -- TODO: handle weak and strict equality properly
-    | "===" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Eq" none) lhs) rhs
-    | "==" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Eq" none) lhs) rhs
+    -- Use deferredEq which delegates to Lambda's .eq at evaluation time
+    | "===" => Heap.HExpr.deferredEq lhs rhs
+    -- [TODO] For simplicity, treat "==" same as "===" for now
+    | "==" => Heap.HExpr.deferredEq lhs rhs
     --------------------------------------------------------
     | "<=" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Le" none) lhs) rhs
     | "<" => Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Lt" none) lhs) rhs
@@ -963,7 +964,7 @@ partial def translate_statement_core
         -- Helper: build case condition for regular case
         let mkCaseCondition (testExpr : TS_Expression) : Heap.HExpr :=
           let testVal := translate_expr testExpr
-          let matchCond := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Int.Eq" none) discriminantRef) testVal
+          let matchCond := Heap.HExpr.deferredEq discriminantRef testVal
           let matchOrFallthrough := Heap.HExpr.app (Heap.HExpr.app (Heap.HExpr.deferredOp "Bool.Or" none) fallthroughRef) matchCond
           mkCondition matchOrFallthrough
 
