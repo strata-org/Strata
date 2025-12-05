@@ -365,6 +365,11 @@ axiom [unique_BoolOrStrOrNoneTag]: BSN_BOOL_TAG != BSN_STR_TAG && BSN_BOOL_TAG !
 // In Boogie representation, an int type that corresponds to the full
 // milliseconds is simply used. See Timedelta_mk.
 
+
+procedure timedelta(days: int) returns (delta : int, maybe_except: ExceptOrNone)
+spec{}
+{};
+
 function Timedelta_mk(days : int, seconds : int, microseconds : int): int {
   ((days * 3600 * 24) + seconds) * 1000000 + microseconds
 }
@@ -402,7 +407,7 @@ function Datetime_get_timedelta(d : Datetime) : int;
 // means subtracting an 'old' timestamp from a 'new' timestamp may return
 // a negative difference.
 
-procedure Datetime_now() returns (d:Datetime)
+procedure datetime_now() returns (d:Datetime, maybe_except: ExceptOrNone)
 spec {
   ensures (Datetime_get_timedelta(d) == Timedelta_mk(0,0,0));
 };
@@ -413,7 +418,7 @@ function Datetime_sub(d:Datetime, timedelta:int):Datetime {
   Datetime_add(d, -timedelta)
 }
 
-axiom [Datetime_add]:
+axiom [Datetime_add_ax]:
     (forall d:Datetime, timedelta:int :: {}
         Datetime_get_base(Datetime_add(d,timedelta)) == Datetime_get_base(d) &&
         Datetime_get_timedelta(Datetime_add(d,timedelta)) ==
@@ -423,11 +428,17 @@ axiom [Datetime_add]:
 // meaningful only if the two datetimes have same base.
 function Datetime_lt(d1:Datetime, d2:Datetime):bool;
 
-axiom [Datetime_lt]:
+axiom [Datetime_lt_ax]:
     (forall d1:Datetime, d2:Datetime :: {}
         Datetime_get_base(d1) == Datetime_get_base(d2)
         ==> Datetime_lt(d1, d2) ==
             (Datetime_get_timedelta(d1) < Datetime_get_timedelta(d2)));
+
+
+type Date;
+procedure datetime_date(dt: Datetime) returns (d : Datetime, maybe_except: ExceptOrNone)
+spec{}
+{};
 
 /////////////////////////////////////////////////////////////////////////////////////
 
@@ -472,6 +483,7 @@ function dict_str_any_get(d : DictStrAny, k: string) : DictStrAny;
 function dict_str_any_length(d : DictStrAny) : int;
 
 // /////////////////////////////////////////////////////////////////////////////////////
+
 
 
 procedure test_helper_procedure(req_name : string, opt_name : StrOrNone) returns (maybe_except: ExceptOrNone)
