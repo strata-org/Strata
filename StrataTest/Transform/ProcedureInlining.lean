@@ -178,8 +178,7 @@ partial def alphaEquivStatement (s1 s2: Boogie.Statement) (map:IdMap)
       if ¬ alphaEquivExprs e1 e2 map then
         mk_err f!"RHS of sets do not match \
         \n(subst of e1: {repr (substExpr e1 map.vars.fst false)})\n(e2: {repr e2})
-        \n(subst of e2: {repr (substExpr e2 map.vars.snd true)})\n(e1: {repr e1})
-        \n(map1: {repr map.vars.fst})\n(map2: {repr map.vars.snd})"
+        \n(subst of e2: {repr (substExpr e2 map.vars.snd true)})\n(e1: {repr e1})"
       else if ¬ alphaEquivIdents n1 n2 map then
         mk_err "LHS of sets do not match"
       else
