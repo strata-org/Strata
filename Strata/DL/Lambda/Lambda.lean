@@ -42,14 +42,12 @@ def typeCheckAndPartialEval
   (f : Factory (T:=T) := Factory.default)
   (e : LExpr T.mono) :
   Except Std.Format (LExpr T.mono) := do
-  let fTy ← t.genFactory
-  let fAll ← Factory.addFactory fTy f
-  let T := TEnv.default
-  let C := LContext.default.addFactoryFunctions fAll
-  let C ← C.addKnownTypes t.toKnownTypes
-  let (et, _T) ← LExpr.annotate C T e
+  let E := TEnv.default
+  let C := LContext.default.addFactoryFunctions f
+  let C ← C.addTypeFactory t
+  let (et, _T) ← LExpr.annotate C E e
   dbg_trace f!"Annotated expression:{Format.line}{et}{Format.line}"
-  let σ ← (LState.init).addFactory fAll
+  let σ ← (LState.init).addFactory C.functions
   return (LExpr.eval σ.config.fuel σ et)
 
 end Lambda

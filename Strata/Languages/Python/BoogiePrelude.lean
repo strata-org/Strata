@@ -25,7 +25,7 @@ axiom [Object_len_ge_zero]: (forall x : Object :: Object_len(x) >= 0);
 function inheritsFrom(child : string, parent : string) : (bool);
 axiom [inheritsFrom_refl]: (forall s: string :: {inheritsFrom(s, s)} inheritsFrom(s, s));
 
-/////////////////////////////////////////////////////////////////////////////////////
+// /////////////////////////////////////////////////////////////////////////////////////
 
 // Exceptions
 // TODO: Formalize the exception hierarchy here:
@@ -148,22 +148,14 @@ axiom [PyReMatchRegex_def_noFlg]:
 // no exception, call PyReMatchRegex.
 function PyReMatchStr(pattern : string, str : string, flags : int) : Except Error bool;
 
-/////////////////////////////////////////////////////////////////////////////////////
+// /////////////////////////////////////////////////////////////////////////////////////
 
 // List of strings
 type ListStr;
 function ListStr_nil() : (ListStr);
 function ListStr_cons(x0 : string, x1 : ListStr) : (ListStr);
 
-/////////////////////////////////////////////////////////////////////////////////////
-
-// Uninterpreted procedures
-procedure importFrom(module : string, names : ListStr, level : int) returns ();
-procedure import(names : ListStr) returns ();
-procedure print(msg : string) returns ();
-
-/////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////
+// /////////////////////////////////////////////////////////////////////////////////////
 
 // Temporary Types
 
@@ -311,15 +303,91 @@ axiom (forall v : BoolOrStrOrNone :: {BoolOrStrOrNone_tag(v)}
         BoolOrStrOrNone_tag(v) == BSN_BOOL_TAG ||
         BoolOrStrOrNone_tag(v) == BSN_STR_TAG ||
         BoolOrStrOrNone_tag(v) == BSN_NONE_TAG);
+
+// DictStrStrOrNone
+type DictStrStrOrNone;
+type  DictStrStrOrNoneTag;
+const DSSN_BOOL_TAG : DictStrStrOrNoneTag;
+const DSSN_NONE_TAG : DictStrStrOrNoneTag;
+function DictStrStrOrNone_tag(v : DictStrStrOrNone) : DictStrStrOrNoneTag;
+function DictStrStrOrNone_str_val(v : DictStrStrOrNone) : string;
+function DictStrStrOrNone_none_val(v : DictStrStrOrNone) : None;
+function DictStrStrOrNone_mk_str(s : string) : DictStrStrOrNone;
+function DictStrStrOrNone_mk_none(v : None) : DictStrStrOrNone;
+axiom (forall s : string :: {DictStrStrOrNone_mk_str(s)}
+        DictStrStrOrNone_tag(DictStrStrOrNone_mk_str(s)) == DSSN_BOOL_TAG &&
+        DictStrStrOrNone_str_val(DictStrStrOrNone_mk_str(s)) == s);
+axiom (forall n : None :: {DictStrStrOrNone_mk_none(n)}
+        DictStrStrOrNone_tag(DictStrStrOrNone_mk_none(n)) == DSSN_NONE_TAG &&
+        DictStrStrOrNone_none_val(DictStrStrOrNone_mk_none(n)) == n);
+axiom (forall v : DictStrStrOrNone :: {DictStrStrOrNone_tag(v)}
+        DictStrStrOrNone_tag(v) == DSSN_BOOL_TAG ||
+        DictStrStrOrNone_tag(v) == DSSN_NONE_TAG);
+axiom [unique_DictStrStrOrNoneTag]: DSSN_BOOL_TAG != DSSN_NONE_TAG;
+
+type BytesOrStrOrNone;
+function BytesOrStrOrNone_mk_none(v : None) : (BytesOrStrOrNone);
+function BytesOrStrOrNone_mk_str(s : string) : (BytesOrStrOrNone);
+
+type DictStrAny;
+function DictStrAny_mk(s : string) : (DictStrAny);
+
+type Client;
+type ClientTag;
+const C_S3_TAG : ClientTag;
+const C_CW_TAG : ClientTag;
+function Client_tag(v : Client) : (ClientTag);
+
+// Unique const axioms
 axiom [unique_BoolOrStrOrNoneTag]: BSN_BOOL_TAG != BSN_STR_TAG && BSN_BOOL_TAG != BSN_NONE_TAG && BSN_STR_TAG != BSN_NONE_TAG;
+
+// /////////////////////////////////////////////////////////////////////////////////////
+
+// Uninterpreted procedures
+procedure importFrom(module : string, names : ListStr, level : int) returns ();
+procedure import(names : ListStr) returns ();
+procedure print(msg : string, opt : StrOrNone) returns ();
+
+procedure json_dumps(msg : DictStrAny, opt_indent : IntOrNone) returns (s: string, maybe_except: ExceptOrNone)
+;
+
+procedure json_loads(msg : string) returns (d: DictStrAny, maybe_except: ExceptOrNone)
+;
+
+procedure input(msg : string) returns (result: string, maybe_except: ExceptOrNone)
+;
+
+procedure random_choice(l : ListStr) returns (result: string, maybe_except: ExceptOrNone)
+;
+
+function str_in_list_str(s : string, l: ListStr) : bool;
+
+function str_in_dict_str_any(s : string, l: DictStrAny) : bool;
+
+function list_str_get(l : ListStr, i: int) : string;
+
+function str_len(s : string) : int;
+
+function dict_str_any_get(d : DictStrAny, k: string) : DictStrAny;
+
+function dict_str_any_length(d : DictStrAny) : int;
+
+// /////////////////////////////////////////////////////////////////////////////////////
+
+
 procedure test_helper_procedure(req_name : string, opt_name : StrOrNone) returns (maybe_except: ExceptOrNone)
 spec {
   requires [req_name_is_foo]: req_name == "foo";
-  requires [opt_name_none_or_str]: (if (StrOrNone_tag(opt_name) != SN_NONE_TAG) then (StrOrNone_tag(opt_name) == SN_STR_TAG) else true);
-  requires [opt_name_none_or_bar]: (if (StrOrNone_tag(opt_name) == SN_STR_TAG) then (StrOrNone_str_val(opt_name) == "bar") else true);
-  free ensures [ensures_maybe_except_none]: (ExceptOrNone_tag(maybe_except) == EN_NONE_TAG);
+  requires [req_opt_name_none_or_str]: (if (StrOrNone_tag(opt_name) != SN_NONE_TAG) then (StrOrNone_tag(opt_name) == SN_STR_TAG) else true);
+  requires [req_opt_name_none_or_bar]: (if (StrOrNone_tag(opt_name) == SN_STR_TAG) then (StrOrNone_str_val(opt_name) == "bar") else true);
+  ensures [ensures_maybe_except_none]: (ExceptOrNone_tag(maybe_except) == EN_NONE_TAG);
 }
-{};
+{
+  assert [assert_name_is_foo]: req_name == "foo";
+  assert [assert_opt_name_none_or_str]: (if (StrOrNone_tag(opt_name) != SN_NONE_TAG) then (StrOrNone_tag(opt_name) == SN_STR_TAG) else true);
+  assert [assert_opt_name_none_or_bar]: (if (StrOrNone_tag(opt_name) == SN_STR_TAG) then (StrOrNone_str_val(opt_name) == "bar") else true);
+  assume [assume_maybe_except_none]: (ExceptOrNone_tag(maybe_except) == EN_NONE_TAG);
+};
 
 #end
 
