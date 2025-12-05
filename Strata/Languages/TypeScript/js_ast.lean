@@ -129,6 +129,7 @@ mutual
     | TS_BreakStatement : TS_BreakStatement → TS_Statement
     | TS_SwitchStatement : TS_SwitchStatement → TS_Statement
     | TS_ContinueStatement: TS_ContinueStatement → TS_Statement
+    | TS_TypeAliasDeclaration : TS_TypeAliasDeclaration → TS_Statement
   deriving Repr, Lean.FromJson, Lean.ToJson
 
   inductive TS_AssignmentIdentifier where
@@ -298,7 +299,7 @@ mutual
     id : TS_Identifier
     typeAnnotation : TS_TSUnionType
   deriving Repr, Lean.FromJson, Lean.ToJson
-  
+
 end
 
 instance : Inhabited TS_Expression where
