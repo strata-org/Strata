@@ -154,6 +154,8 @@ Factory Functions:
 
 
 
+Datatypes:
+
 Path Conditions:
 
 
@@ -194,6 +196,8 @@ Variable gen count: 0
 Factory Functions:
 
 
+
+Datatypes:
 
 Path Conditions:
 

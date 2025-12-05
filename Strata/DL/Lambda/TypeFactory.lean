@@ -28,9 +28,11 @@ variable {IDMeta : Type} [DecidableEq IDMeta] [Inhabited IDMeta]
 /-
 Prefixes for newly generated type and term variables.
 See comment for `TEnv.genExprVar` for naming.
+Note that `exprPrefix` is designed to avoid clashes with `exprPrefix`
+in `LExprTypeEnv.lean`.
 -/
 def tyPrefix : String := "$__ty"
-def exprPrefix : String := "$__var"
+def exprPrefix : String := "$__tvar"
 
 /--
 A type constructor description. The free type variables in `args` must be a subset of the `typeArgs` of the corresponding datatype.
@@ -133,6 +135,10 @@ Generate `n` strings for argument names for the eliminator. Since there is no bo
 -/
 private def genArgNames (n: Nat) : List (Identifier IDMeta) :=
   (List.range n).map (fun i => ⟨exprPrefix ++ toString i, Inhabited.default⟩)
+
+private def genArgName : Identifier IDMeta :=
+  have H: genArgNames 1 ≠ [] := by unfold genArgNames; grind
+  List.head (genArgNames 1) H
 
 /--
 Find `n` type arguments (string) not present in list by enumeration. Inefficient on large inputs.
@@ -249,13 +255,88 @@ def elimConcreteEval {T: LExprParams} [BEq T.Identifier] (d: LDatatype T.IDMeta)
       | .none => e
     | _ => e
 
+def elimFuncName (d: LDatatype IDMeta) : Identifier IDMeta :=
+  d.name ++ "$Elim"
+
 /--
 The `LFunc` corresponding to the eliminator for datatype `d`, called e.g. `List$Elim` for type `List`.
 -/
 def elimFunc [Inhabited T.IDMeta] [BEq T.Identifier] (d: LDatatype T.IDMeta) (m: T.Metadata) : LFunc T :=
   let outTyId := freshTypeArg d.typeArgs
-  let elimName := d.name ++ "$Elim";
-  { name := elimName, typeArgs := outTyId :: d.typeArgs, inputs := List.zip (genArgNames (d.constrs.length + 1)) (dataDefault d :: d.constrs.map (elimTy (.ftvar outTyId) d)), output := .ftvar outTyId, concreteEval := elimConcreteEval d m elimName}
+  { name := elimFuncName d, typeArgs := outTyId :: d.typeArgs, inputs := List.zip (genArgNames (d.constrs.length + 1)) (dataDefault d :: d.constrs.map (elimTy (.ftvar outTyId) d)), output := .ftvar outTyId, concreteEval := elimConcreteEval d m (elimFuncName d)}
+
+---------------------------------------------------------------------
+
+-- Generating testers and destructors
+
+def testerFuncName (d: LDatatype IDMeta) (c: LConstr IDMeta) : String :=
+  d.name ++ "$is" ++ c.name.name
+
+/--
+Generate tester body (see `testerFuncs`). The body consists of
+assigning each argument of the eliminator (fun _ ... _ => b), where
+b is true for the constructor's index and false otherwise. This requires
+knowledge of the number of arguments for each argument to the eliminator.-/
+def testerFuncBody {T : LExprParams} [Inhabited T.IDMeta] (d: LDatatype T.IDMeta) (c: LConstr T.IDMeta) (input: LExpr T.mono) (m: T.Metadata) : LExpr T.mono :=
+  -- Number of arguments is number of constr args + number of recursive args
+  let numargs (c: LConstr T.IDMeta) := c.args.length + ((c.args.map Prod.snd).filter (isRecTy d)).length
+  let args := List.map (fun c1 => LExpr.absMultiInfer m (numargs c1) (.boolConst m (c.name.name == c1.name.name))) d.constrs
+  .mkApp m (.op m (elimFuncName d) .none) (input :: args)
+
+/--
+Generate tester function for a constructor (e.g. `List$isCons` and
+`List$isNil`). The semantics of the testers are given via a body,
+and they are defined in terms of eliminators. For example:
+`List$isNil l := List$Elim l true (fun _ _ _ => false)`
+`List$isCons l := List$Elim l false (fun _ _ _ => true)`
+-/
+def testerFunc {T} [Inhabited T.IDMeta] (d: LDatatype T.IDMeta) (c: LConstr T.IDMeta) (m: T.Metadata) : LFunc T :=
+  let arg := genArgName
+  {name := testerFuncName d c,
+   typeArgs := d.typeArgs,
+   inputs := [(arg, dataDefault d)],
+   output := .bool,
+   body := testerFuncBody d c (.fvar m arg .none) m,
+   attr := #["inline_if_val"]
+  }
+
+/--
+Concrete evaluator for destructor: if given instance of the constructor,
+the `i`th projection retrieves the `i`th argument of the application
+-/
+def destructorConcreteEval {T: LExprParams} [BEq T.Identifier] (d: LDatatype T.IDMeta) (c: LConstr T.IDMeta) (idx: Nat) :
+  (LExpr T.mono) → List (LExpr T.mono) → (LExpr T.mono) :=
+  fun e args =>
+    match args with
+    | [x] =>
+      match datatypeGetConstr d x with
+      | .some (c1, _, a, _) =>
+        if c1.name.name == c.name.name then
+          match a[idx]? with
+          | .some y => y
+          | .none => e
+        -- TODO: unsound right now, need concreteEval to give option
+        else e
+      | .none => e
+    | _ => e
+
+/--
+Generate destructor functions for a constructor, which extract the
+constructor components, e.g.
+`List$ConsProj0 (Cons h t) = h`
+`List$ConsProj1 (Cons h t) = t`
+These functions are partial, `List@ConsProj0 Nil` is undefined.
+-/
+def destructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta]  (d: LDatatype T.IDMeta) (c: LConstr T.IDMeta) : List (LFunc T) :=
+  c.args.mapIdx (fun i (_, ty) =>
+    let arg := genArgName
+    {
+      name := d.name ++ "$" ++ c.name.name ++ "Proj" ++ (toString i),
+      typeArgs := d.typeArgs,
+      inputs := [(arg, dataDefault d)],
+      output := ty,
+      concreteEval := destructorConcreteEval d c i })
+
 
 ---------------------------------------------------------------------
 
@@ -263,17 +344,39 @@ def elimFunc [Inhabited T.IDMeta] [BEq T.Identifier] (d: LDatatype T.IDMeta) (m:
 
 def TypeFactory := Array (LDatatype IDMeta)
 
+instance: ToFormat (@TypeFactory IDMeta) where
+  format f := Std.Format.joinSep f.toList f!"{Format.line}"
+
 instance : Inhabited (@TypeFactory IDMeta) where
   default := #[]
 
 def TypeFactory.default : @TypeFactory IDMeta := #[]
 
 /--
-Generates the Factory (containing all constructor and eliminator functions) for a single datatype
+Generates the Factory (containing the eliminator, constructors, testers,
+and destructors for a single datatype.
 -/
 def LDatatype.genFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabited T.IDMeta]  [ToFormat T.IDMeta] [BEq T.Identifier] (d: LDatatype T.IDMeta): Except Format (@Lambda.Factory T) := do
   _ ← checkStrictPosUnif d
-  Factory.default.addFactory (elimFunc d inst.default :: d.constrs.map (fun c => constrFunc c d)).toArray
+  Factory.default.addFactory (
+      elimFunc d inst.default ::
+      d.constrs.map (fun c => constrFunc c d) ++
+      d.constrs.map (fun c => testerFunc d c inst.default) ++
+      (d.constrs.map (fun c => destructorFuncs d c)).flatten).toArray
+
+/--
+Constructs maps of generated functions for datatype `d`: map of
+constructors, testers, and destructors in order. Each maps names to
+the datatype and constructor AST.
+-/
+def LDatatype.genFunctionMaps {T: LExprParams} [Inhabited T.IDMeta] [BEq T.Identifier] (d: LDatatype T.IDMeta) :
+  Map String (LDatatype T.IDMeta × LConstr T.IDMeta) ×
+  Map String (LDatatype T.IDMeta × LConstr T.IDMeta) ×
+  Map String (LDatatype T.IDMeta × LConstr T.IDMeta) :=
+  (Map.ofList (d.constrs.map (fun c => (c.name.name, (d, c)))),
+   Map.ofList (d.constrs.map (fun c => (testerFuncName d c, (d, c)))),
+   Map.ofList (d.constrs.map (fun c =>
+      (destructorFuncs d c).map (fun f => (f.name.name, (d, c))))).flatten)
 
 /--
 Generates the Factory (containing all constructor and eliminator functions) for the given `TypeFactory`
