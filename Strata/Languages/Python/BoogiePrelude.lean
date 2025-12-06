@@ -449,12 +449,17 @@ procedure datetime_date(dt: Datetime) returns (d : Datetime, maybe_except: Excep
 spec{}
 {havoc d;};
 
+function datetime_to_str(dt : Datetime) : string;
+
 procedure datetime_strptime(time: string, format: string) returns (d : Datetime, maybe_except: ExceptOrNone)
-spec{}
+spec{
+  requires [req_format_str]: (format == "%Y-%m-%d");
+  ensures [ensures_str_strp_reverse]: (forall dt : Datetime :: {} ((time == datetime_to_str(dt)) ==> (d == dt)));
+}
 {
   havoc d;
+  assume [assume_str_strp_reverse]: (forall dt : Datetime :: {} ((time == datetime_to_str(dt)) ==> (d == dt)));
 };
-
 
 /////////////////////////////////////////////////////////////////////////////////////
 

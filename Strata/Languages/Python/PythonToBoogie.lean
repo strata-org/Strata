@@ -347,7 +347,15 @@ def initTmpParam (p: Python.expr SourceRange × String) : List Boogie.Statement 
 -- [.call lhs fname (argsAndKWordsToCanonicalList func_infos fname args.val kwords.val substitution_records)]
   match p.fst with
   | .Call _ f args _ =>
-    [(.init p.snd t[string] (.strConst () "")), .call [p.snd, "maybe_except"] "json_dumps" [(.app () (.op () "DictStrAny_mk" none) (.strConst () "DefaultDict")), (Strata.Python.TypeStrToBoogieExpr "IntOrNone")]]
+    match f with
+    | .Name _ n _ =>
+      match n.val with
+      | "json_dumps" => [(.init p.snd t[string] (.strConst () "")), .call [p.snd, "maybe_except"] "json_dumps" [(.app () (.op () "DictStrAny_mk" none) (.strConst () "DefaultDict")), (Strata.Python.TypeStrToBoogieExpr "IntOrNone")]]
+      | "str" =>
+        assert! args.val.size == 1
+        [(.init p.snd t[string] (.strConst () "")), .set p.snd (.app () (.op () "datetime_to_str" none) ((PyExprToBoogie args.val[0]!).expr))]
+      | _ => panic! s!"Unsupported name {n.val}"
+    | _ => panic! s!"Unsupported tmp param init call: {repr f}"
   | _ => panic! "Expected Call"
 
 mutual
