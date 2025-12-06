@@ -830,6 +830,82 @@ def dictStrAnyLengthFunc : Boogie.Function :=
 --   assume [assume_maybe_except_none]: (ExceptOrNone_tag(maybe_except) == EN_NONE_TAG);
 -- };
 
+-- Translated version
+-- procedure test_helper_procedure(req_name : string, opt_name : StrOrNone) returns (maybe_except: ExceptOrNone)
+-- spec {
+--   requires [req_name_is_foo]: req_name == "foo";
+--   requires [req_opt_name_none_or_str]: (if !(StrOrNone_isNone(opt_name)) then StrOrNone_isStr(opt_name) else true);
+--   requires [req_opt_name_none_or_bar]: (if StrOrNone_isStr(opt_name) then StrOrNone_str_val(opt_name) == "bar" else true);
+--   ensures [ensures_maybe_except_none]: (ExceptOrNone_isNone(maybe_except))
+-- }
+-- {
+--   assert [assert_name_is_foo]: req_name == "foo";
+--   assert [assert_opt_name_none_or_str]: (if !(StrOrNone_isNone(opt_name)) then StrOrNone_isStr(opt_name) else true);
+--   assert [assert_opt_name_none_or_bar]: (if StrOrNone_isStr(opt_name) then StrOrNone_str_val(opt_name) == "bar" else true);
+--   assume [assume_maybe_except_none]: (ExceptOrNone_isNone(maybe_except));
+-- };
+
+def testHelperProcedureProc : Boogie.Procedure :=
+  -- Helper expressions
+  let reqNameVar := LExpr.fvar () ⟨"req_name", Boogie.Visibility.unres⟩ none
+  let optNameVar := LExpr.fvar () ⟨"opt_name", Boogie.Visibility.unres⟩ none
+  let maybeExceptVar := LExpr.fvar () ⟨"maybe_except", Boogie.Visibility.unres⟩ none
+  let fooStr := LExpr.strConst () "foo"
+  let barStr := LExpr.strConst () "bar"
+  let trueConst := LExpr.boolConst () true
+
+  let strOrNoneIsNone := LExpr.app () (LExpr.op () ⟨"StrOrNone_isNone", Boogie.Visibility.unres⟩ none) optNameVar
+  let strOrNoneIsStr := LExpr.app () (LExpr.op () ⟨"StrOrNone_isStr", Boogie.Visibility.unres⟩ none) optNameVar
+  let strOrNoneStrVal := LExpr.app () (LExpr.op () ⟨"StrOrNone_str_val", Boogie.Visibility.unres⟩ none) optNameVar
+  let exceptOrNoneIsNone := LExpr.app () (LExpr.op () ⟨"ExceptOrNone_isNone", Boogie.Visibility.unres⟩ none) maybeExceptVar
+
+  -- Preconditions
+  let reqNameIsFoo := LExpr.eq () reqNameVar fooStr
+  -- if !(StrOrNone_isNone(opt_name)) then StrOrNone_isStr(opt_name) else true
+  let reqOptNameNoneOrStr := LExpr.ite () (LExpr.app () (LExpr.op () ⟨"Not", Boogie.Visibility.unres⟩ none) strOrNoneIsNone) strOrNoneIsStr trueConst
+  -- if StrOrNone_isStr(opt_name) then StrOrNone_str_val(opt_name) == "bar" else true
+  let reqOptNameNoneOrBar := LExpr.ite () strOrNoneIsStr (LExpr.eq () strOrNoneStrVal barStr) trueConst
+
+  -- Postcondition
+  let ensuresMaybeExceptNone := exceptOrNoneIsNone
+
+  -- Body statements (same expressions as preconditions)
+  let bodyStmts := [
+    Boogie.Statement.assert "assert_name_is_foo" reqNameIsFoo,
+    Boogie.Statement.assert "assert_opt_name_none_or_str" reqOptNameNoneOrStr,
+    Boogie.Statement.assert "assert_opt_name_none_or_bar" reqOptNameNoneOrBar,
+    Boogie.Statement.assume "assume_maybe_except_none" ensuresMaybeExceptNone
+  ]
+
+  {
+    header := {
+      name := ⟨"test_helper_procedure", Boogie.Visibility.unres⟩
+      typeArgs := []
+      inputs := [
+        (⟨"req_name", Boogie.Visibility.unres⟩, LMonoTy.string),
+        (⟨"opt_name", Boogie.Visibility.unres⟩, LMonoTy.tcons "StrOrNone" [])
+      ]
+      outputs := [
+        (⟨"maybe_except", Boogie.Visibility.unres⟩, LMonoTy.tcons "ExceptOrNone" [])
+      ]
+    }
+    spec := {
+      modifies := []
+      preconditions := [
+        ("req_name_is_foo", { expr := reqNameIsFoo }),
+        ("req_opt_name_none_or_str", { expr := reqOptNameNoneOrStr }),
+        ("req_opt_name_none_or_bar", { expr := reqOptNameNoneOrBar })
+      ]
+      postconditions := [
+        ("ensures_maybe_except_none", { expr := ensuresMaybeExceptNone })
+      ]
+    }
+    body := bodyStmts
+  }
+
+-- for assert and assume, which is complex. For now, we include it in the DDM block above.
+-- If needed, it can be added to errorProgram as an uninterpreted procedure (no body, no spec).
+
 
 def Boogie.prelude : Boogie.Program :=
   { decls := [
@@ -872,7 +948,8 @@ def Boogie.prelude : Boogie.Program :=
       Boogie.Decl.func listStrGetFunc,
       Boogie.Decl.func strLenFunc,
       Boogie.Decl.func dictStrAnyGetFunc,
-      Boogie.Decl.func dictStrAnyLengthFunc
+      Boogie.Decl.func dictStrAnyLengthFunc,
+      Boogie.Decl.proc testHelperProcedureProc
     ] }
 
 
