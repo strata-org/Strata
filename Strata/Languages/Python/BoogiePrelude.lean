@@ -320,6 +320,10 @@ def listStrDatatype : LDatatype Boogie.Visibility :=
 --         ExceptOrNone_tag(v) == EN_NONE_TAG);
 -- axiom [unique_ExceptOrNoneTag]: EN_STR_TAG != EN_NONE_TAG;
 
+def exceptNoneConstructor : Boogie.TypeConstructor :=
+  { name := "ExceptNone"
+    numargs := 0 }
+
 def exceptOrNoneDatatype : LDatatype Boogie.Visibility :=
   { name := "ExceptOrNone"
     typeArgs := []
@@ -328,7 +332,7 @@ def exceptOrNoneDatatype : LDatatype Boogie.Visibility :=
         args := [(⟨"ExceptOrNone_code_val", Boogie.Visibility.unres⟩, LMonoTy.string)],
         testerName := "ExceptOrNone_isCode" },
       { name := ⟨"ExceptOrNone_mk_none", Boogie.Visibility.unres⟩
-        args := [(⟨"ExceptOrNone_none_val", Boogie.Visibility.unres⟩, LMonoTy.tcons "ExceptOrNone" [])],
+        args := [(⟨"ExceptOrNone_none_val", Boogie.Visibility.unres⟩, LMonoTy.tcons "ExceptNone" [])],
         testerName := "ExceptOrNone_isNone" }
     ]
     constrs_ne := by decide }
@@ -910,6 +914,7 @@ def Boogie.prelude : Boogie.Program :=
       Boogie.Decl.type (Boogie.TypeDecl.con noneConstructor),
       Boogie.Decl.func noneNoneConstant,
       Boogie.Decl.type (Boogie.TypeDecl.con objectConstructor),
+      Boogie.Decl.type (Boogie.TypeDecl.con exceptNoneConstructor),
       Boogie.Decl.func objectLenFunc,
       Boogie.Decl.ax objectLenGeZeroAxiom,
       Boogie.Decl.func inheritsFromFunc,
