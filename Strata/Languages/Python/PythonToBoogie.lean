@@ -166,7 +166,7 @@ def argsAndKWordsToCanonicalList (func_infos : List PythonFunctionDecl) (fname: 
     args.toList.map PyExprToBoogie ++ ordered_remaining_args
 
 def handleCallThrow (jmp_target : String) : Boogie.Statement :=
-  let cond := .eq () (.app () (.op () "ExceptOrNone_tag" none) (.fvar () "maybe_except" none)) (.op () "EN_STR_TAG" none)
+  let cond := (.app () (.op () "ExceptOrNone_isCode" none) (.fvar () "maybe_except" none))
   .ite cond {ss := [.goto jmp_target]} {ss := []}
 
 -- TODO: handle rest of names

@@ -51,8 +51,7 @@ def objectLenGeZeroAxiom : Boogie.Axiom :=
   let obj_len_x := mkFuncCall "Object_len" [x]
   let zero := LExpr.const () (.intConst 0)
   let ge := mkFuncCall "Int.Ge" [obj_len_x, zero]
-  let trigger := mkFuncCall "Triggers.mk" [obj_len_x]
-  let quant := LExpr.quant () .all (some (LMonoTy.tcons "Object" [])) trigger ge
+  let quant := LExpr.quant () .all (some (LMonoTy.tcons "Object" [])) obj_len_x ge
   { name := "Object_len_ge_zero"
     e := quant }
 
@@ -71,8 +70,7 @@ def inheritsFromFunc : Boogie.Function :=
 def inheritsFromReflAxiom : Boogie.Axiom :=
   let s := LExpr.bvar () 0
   let inherits_s_s := mkFuncCall "inheritsFrom" [s, s]
-  let trigger := mkFuncCall "Triggers.mk" [inherits_s_s]
-  let quant := LExpr.quant () .all (some LMonoTy.string) trigger inherits_s_s
+  let quant := LExpr.quant () .all (some LMonoTy.string) inherits_s_s inherits_s_s
   { name := "inheritsFrom_refl"
     e := quant }
 
@@ -248,12 +246,10 @@ def pyReMatchRegexDefNoFlgAxiom : Boogie.Axiom :=
   let str := LExpr.bvar () 0      -- str is inner quantifier
   let zero := LExpr.const () (.intConst 0)
   let pyReMatch_call := mkFuncCall "PyReMatchRegex" [pattern, str, zero]
-  let str_in_re_call := mkFuncCall "str.in.re" [str, pattern]
+  let str_in_re_call := mkFuncCall "Str.InRegEx" [str, pattern]
   let equality := LExpr.eq () pyReMatch_call str_in_re_call
-  let trigger2 := mkFuncCall "Triggers.mk" [pyReMatch_call]
-  let inner_quant := LExpr.quant () .all (some LMonoTy.string) trigger2 equality
-  let trigger1 := mkFuncCall "Triggers.mk" []
-  let outer_quant := LExpr.quant () .all (some (LMonoTy.tcons "regex" [])) trigger1 inner_quant
+  let inner_quant := LExpr.quant () .all (some LMonoTy.string) pyReMatch_call equality
+  let outer_quant := LExpr.quant () .all (some (LMonoTy.tcons "regex" [])) (Lambda.LExpr.noTrigger ()) inner_quant
   { name := "PyReMatchRegex_def_noFlg"
     e := outer_quant }
 
@@ -329,10 +325,10 @@ def exceptOrNoneDatatype : LDatatype Boogie.Visibility :=
     typeArgs := []
     constrs := [
       { name := ⟨"ExceptOrNone_mk_code", Boogie.Visibility.unres⟩
-        args := [(⟨"ExceptOrNone_code_val", Boogie.Visibility.unres⟩, LMonoTy.tcons "ExceptCode" [])],
+        args := [(⟨"ExceptOrNone_code_val", Boogie.Visibility.unres⟩, LMonoTy.string)],
         testerName := "ExceptOrNone_isCode" },
       { name := ⟨"ExceptOrNone_mk_none", Boogie.Visibility.unres⟩
-        args := [(⟨"ExceptOrNone_none_val", Boogie.Visibility.unres⟩, LMonoTy.tcons "ExceptNone" [])],
+        args := [(⟨"ExceptOrNone_none_val", Boogie.Visibility.unres⟩, LMonoTy.tcons "ExceptOrNone" [])],
         testerName := "ExceptOrNone_isNone" }
     ]
     constrs_ne := by decide }
@@ -415,6 +411,10 @@ def strOrNoneToObjectFunc : Boogie.Function :=
     output := LMonoTy.tcons "Object" []
     body := none }
 
+-- HACK
+def trigger_list (L: List (LExpr Boogie.BoogieLParams.mono)) : LExpr Boogie.BoogieLParams.mono :=
+  L.foldl (fun g t => .app () (.app () Boogie.addTriggerOp t) g) Boogie.emptyTriggerGroupOp
+
 -- // Injectivity axiom: different StrOrNone map to different objects.
 -- axiom (forall s1:StrOrNone, s2: StrOrNone :: {strOrNone_toObject(s1), strOrNone_toObject(s2)}
 --         s1 != s2 ==>
@@ -427,10 +427,9 @@ def strOrNoneToObjectInjectivityAxiom : Boogie.Axiom :=
   let toObj_s2 := mkFuncCall "strOrNone_toObject" [s2]
   let toObj_s1_ne_toObj_s2 := LExpr.app () (.op () ⟨"Bool.Not", Boogie.Visibility.unres⟩ none) (LExpr.eq () toObj_s1 toObj_s2)
   let implication := mkFuncCall "Bool.Implies" [s1_ne_s2, toObj_s1_ne_toObj_s2]
-  let trigger2 := mkFuncCall "Triggers.mk" [toObj_s1, toObj_s2]
+  let trigger2 := trigger_list [toObj_s1, toObj_s2]
   let inner_quant := LExpr.quant () .all (some (LMonoTy.tcons "StrOrNone" [])) trigger2 implication
-  let trigger1 := mkFuncCall "Triggers.mk" []
-  let outer_quant := LExpr.quant () .all (some (LMonoTy.tcons "StrOrNone" [])) trigger1 inner_quant
+  let outer_quant := LExpr.quant () .all (some (LMonoTy.tcons "StrOrNone" [])) (LExpr.noTrigger ()) inner_quant
   { name := "strOrNone_toObject_injectivity"
     e := outer_quant }
 
@@ -440,15 +439,14 @@ def strOrNoneToObjectInjectivityAxiom : Boogie.Axiom :=
 --         Object_len(strOrNone_toObject(s)) == str.len(StrOrNone_str_val(s)));
 def strOrNoneToObjectLengthAxiom : Boogie.Axiom :=
   let s := LExpr.bvar () 0
-  let isStr_s := mkFuncCall "StrOrNone$isStr" [s]
+  let isStr_s := mkFuncCall "StrOrNone_isStr" [s]
   let toObj_s := mkFuncCall "strOrNone_toObject" [s]
   let obj_len := mkFuncCall "Object_len" [toObj_s]
-  let str_val_s := mkFuncCall "StrOrNone$StrProj0" [s]
-  let str_len := mkFuncCall "str.len" [str_val_s]
+  let str_val_s := mkFuncCall "StrOrNone_str_val" [s]
+  let str_len := mkFuncCall "Str.Length" [str_val_s]
   let len_eq := LExpr.eq () obj_len str_len
   let implication := mkFuncCall "Bool.Implies" [isStr_s, len_eq]
-  let trigger := mkFuncCall "Triggers.mk" [isStr_s]
-  let quant := LExpr.quant () .all (some (LMonoTy.tcons "StrOrNone" [])) trigger implication
+  let quant := LExpr.quant () .all (some (LMonoTy.tcons "StrOrNone" [])) isStr_s implication
   { name := "strOrNone_toObject_length"
     e := quant }
 
@@ -862,7 +860,7 @@ def testHelperProcedureProc : Boogie.Procedure :=
   -- Preconditions
   let reqNameIsFoo := LExpr.eq () reqNameVar fooStr
   -- if !(StrOrNone_isNone(opt_name)) then StrOrNone_isStr(opt_name) else true
-  let reqOptNameNoneOrStr := LExpr.ite () (LExpr.app () (LExpr.op () ⟨"Not", Boogie.Visibility.unres⟩ none) strOrNoneIsNone) strOrNoneIsStr trueConst
+  let reqOptNameNoneOrStr := LExpr.ite () (LExpr.app () (LExpr.op () ⟨"Bool.Not", Boogie.Visibility.unres⟩ none) strOrNoneIsNone) strOrNoneIsStr trueConst
   -- if StrOrNone_isStr(opt_name) then StrOrNone_str_val(opt_name) == "bar" else true
   let reqOptNameNoneOrBar := LExpr.ite () strOrNoneIsStr (LExpr.eq () strOrNoneStrVal barStr) trueConst
 
