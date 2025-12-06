@@ -138,6 +138,10 @@ def ofNumM {α} [Repr α] : ArgF α → OfAstM (Ann Nat α)
 | .num ann val => pure { ann := ann, val := val }
 | a => .throwExpected "numeric literal" a
 
+def ofBoolM {α} [Repr α] : ArgF α → OfAstM (Ann Bool α)
+| .bool ann val => pure { ann := ann, val := val }
+| a => .throwExpected "boolean literal" a
+
 def ofDecimalM {α} [Repr α] : ArgF α → OfAstM (Ann Decimal α)
 | .decimal ann val => pure { ann := ann, val := val }
 | a => .throwExpected "scientific literal" a

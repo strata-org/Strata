@@ -244,6 +244,7 @@ representation.
 def declaredCategories : Std.HashMap CategoryName Name := .ofList [
   (q`Init.Ident, ``String),
   (q`Init.Num, ``Nat),
+  (q`Init.Bool, ``Bool),
   (q`Init.Decimal, ``Decimal),
   (q`Init.Str, ``String),
   (q`Init.ByteArray, ``ByteArray)
@@ -666,6 +667,8 @@ partial def toAstApplyArg (vn : Name) (cat : SyntaxCat) : GenM Term := do
     return annToAst ``ArgF.ident v
   | q`Init.Num =>
     return annToAst ``ArgF.num v
+  | q`Init.Bool =>
+    return annToAst ``ArgF.bool v
   | q`Init.Decimal =>
     return annToAst ``ArgF.decimal v
   | q`Init.Str =>
@@ -802,6 +805,8 @@ partial def getOfIdentArg (varName : String) (cat : SyntaxCat) (e : Term) : GenM
     ``(OfAstM.ofIdentM $e)
   | q`Init.Num => do
     ``(OfAstM.ofNumM $e)
+  | q`Init.Bool => do
+    ``(OfAstM.ofBoolM $e)
   | q`Init.Decimal => do
     ``(OfAstM.ofDecimalM $e)
   | q`Init.Str => do
@@ -1053,6 +1058,7 @@ def gen (categories : Array (QualifiedIdent × Array DefaultCtor)) : GenM Unit :
         profileitM Lean.Exception s!"Generating inductives {cats}" (← getOptions) do
           let inductives ← allCtors.mapM fun (cat, ctors) => do
             assert! q`Init.Num ≠ cat
+            assert! q`Init.Bool ≠ cat
             assert! q`Init.Str ≠ cat
             mkInductive cat ctors
           runCmd <| elabCommands inductives

@@ -42,6 +42,7 @@ def initParsers : Parser.ParsingContext where
   fixedParsers := .ofList [
     (q`Init.Ident, Parser.identifier),
     (q`Init.Num, Parser.numLit),
+    (q`Init.Bool, Parser.identifier),
     (q`Init.ByteArray, Parser.byteArray),
     (q`Init.Decimal, Parser.decimalLit),
     (q`Init.Str, Parser.strLit)
