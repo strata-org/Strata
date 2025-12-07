@@ -57,6 +57,10 @@ structure TS_TSTypeAnnotation extends BaseNode where
   typeAnnotation : Option TS_TSTypeKeyword
 deriving Repr, Lean.FromJson, Lean.ToJson
 
+structure TS_TSUnionType extends BaseNode where
+  types : Array TS_TSTypeKeyword
+deriving Repr, Lean.FromJson, Lean.ToJson
+
 structure TS_Identifier extends BaseNode where
   name : String
   typeAnnotation : Option TS_TSTypeAnnotation
@@ -125,6 +129,7 @@ mutual
     | TS_BreakStatement : TS_BreakStatement → TS_Statement
     | TS_SwitchStatement : TS_SwitchStatement → TS_Statement
     | TS_ContinueStatement: TS_ContinueStatement → TS_Statement
+    | TS_TypeAliasDeclaration : TS_TypeAliasDeclaration → TS_Statement
   deriving Repr, Lean.FromJson, Lean.ToJson
 
   inductive TS_AssignmentIdentifier where
@@ -289,6 +294,12 @@ mutual
     discriminant : TS_Expression
     cases : Array TS_SwitchCase
   deriving Repr, Lean.FromJson, Lean.ToJson
+
+    structure TS_TypeAliasDeclaration extends BaseNode where
+    id : TS_Identifier
+    typeAnnotation : TS_TSUnionType
+  deriving Repr, Lean.FromJson, Lean.ToJson
+
 end
 
 instance : Inhabited TS_Expression where
