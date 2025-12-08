@@ -14,6 +14,11 @@ procedure nestedImpureStatements(): int {
   }
 }
 
+procedure assertLocallyImpureCode()
+{
+  assert nestedImpureStatements() != 0; // pass
+}
+
 /*
 Translation towards SMT:
 

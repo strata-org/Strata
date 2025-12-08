@@ -5,7 +5,9 @@
 */
 
 /*
-When a procedure is non-deterministic, it is a bit like having an IO monad.
+When a procedure is non-deterministic, 
+every invocation might return a different result, even if the inputs are the same.
+It's comparable to having an IO monad.
 */
 nondet procedure nonDeterministic(x: int): (r: int)
   ensures r > 0
@@ -21,7 +23,7 @@ procedure caller() {
 }
 
 /*
-Translation to B3:
+Translation towards SMT:
 
 function nonDeterministic_ensures(x: int, r: int): boolean {
   r > 0
@@ -55,7 +57,7 @@ nondet procedure nonDeterminsticTransparant(x: int): (r: int)
 }
 
 /*
-Translation to B3:
+Translation towards SMT:
 
 function nonDeterminsticTransparant_ensures(x: int, r: int): boolean {
   nonDeterministic_ensures(x + 1, r)
