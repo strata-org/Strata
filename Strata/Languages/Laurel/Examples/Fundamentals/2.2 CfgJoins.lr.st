@@ -3,9 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 */
-procedure nesting(a: int): int
-  requires a > 0 && a < 100
-  returns
+procedure guards(a: int): int
 {
   var b = a + 2;
   if (b > 2) {
@@ -20,11 +18,14 @@ procedure nesting(a: int): int
   e
 }
 
-procedure nestedImpureCalls(): int {
-    var x = 0;
-    var y = 0;
-    if ((x = x + 1) == (y = x)) {
-        return;
-    }
-    assert false;
+/*
+Translation towards SMT:
+
+function guards(a: int): int {
+  var b = a + 2;
+  if (b > 2) {
+
+  }
 }
+
+*/
