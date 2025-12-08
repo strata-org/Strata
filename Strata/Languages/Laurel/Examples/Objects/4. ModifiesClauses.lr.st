@@ -11,21 +11,27 @@ This modifies axiom states how the in and out heap of the procedure relate.
 
 A modifies clause is crucial on opaque procedures, 
 since otherwise all heap state is lost after calling them.
+
 */
 composite Container {
   var value: int
 }
 
-procedure modifyContainer(c: Container) 
-  ensures true
+procedure modifyContainerOpaque(c: Container) 
+  ensures true // makes this procedure opaque. Maybe we should use explicit syntax
   modifies c
+{
+  modifyContainerTransparant(c);
+}
+
+procedure modifyContainerTransparant(c: Container) 
 {
   c.value = c.value + 1;
 }
 
 procedure caller(c: Container, d: Container) {
   var x = d.value;
-  modifyContainer(c);
+  modifyContainerOpaque(c);
   assert x == d.value; // pass
 }
 

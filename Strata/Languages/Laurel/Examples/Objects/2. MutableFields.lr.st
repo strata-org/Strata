@@ -20,6 +20,10 @@ procedure caller(c: Container, d: Container) {
   var x = foo(c, d);
 }
 
+procedure impureContract(c: Container)
+  ensures foo(c, c) 
+//           ^ error: a procedure that modifies the heap may not be called in pure context.
+
 /*
 Translation towards SMT:
 

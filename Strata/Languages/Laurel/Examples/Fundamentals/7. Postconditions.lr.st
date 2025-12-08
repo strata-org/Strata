@@ -4,7 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 */
 procedure opaqueBody(x: int): (r: int)
-  ensures assert 1 == 1; r >= 0
+// the presence of the ensures make the body opaque. we can consider more explicit syntax.
+  ensures assert 1 == 1; r >= 0 
 {
   Math.abs(x)
 }

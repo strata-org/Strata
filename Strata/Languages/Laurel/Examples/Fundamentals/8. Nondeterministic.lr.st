@@ -3,6 +3,10 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 */
+
+/*
+When a procedure is non-deterministic, it is a bit like having an IO monad.
+*/
 nondet procedure nonDeterministic(x: int): (r: int)
   ensures r > 0
 {
