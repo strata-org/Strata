@@ -66,30 +66,8 @@ def processLaurelFile (filePath : String) : IO (List Diagnostic) := do
         return s!"{msg}  {e.pos.line}:{e.pos.column}: {← e.data.toString}\n"
       throw (IO.userError errMsg)
 
-  -- The parsed program has a single `program` operation wrapping the procedures
-  -- We need to extract the actual procedure commands from within it
-  let procedureCommands : Array Strata.Operation :=
-    if strataProgram.commands.size == 1 &&
-       strataProgram.commands[0]!.name == q`Laurel.program then
-      -- Extract procedures from the program operation's first argument (Seq Procedure)
-      match strataProgram.commands[0]!.args[0]! with
-      | .seq _ procs => procs.filterMap fun arg =>
-          match arg with
-          | .op op => some op
-          | _ => none
-      | _ => strataProgram.commands
-    else
-      strataProgram.commands
-
-  -- Create a new Strata.Program with just the procedures
-  let procedureProgram : Strata.Program := {
-    dialects := strataProgram.dialects
-    dialect := strataProgram.dialect
-    commands := procedureCommands
-  }
-
-  -- Convert to Laurel.Program using parseProgram from the Grammar module
-  let (laurelProgram, transErrors) := Laurel.TransM.run inputContext (Laurel.parseProgram procedureProgram)
+  -- Convert to Laurel.Program using parseProgram (handles unwrapping the program operation)
+  let (laurelProgram, transErrors) := Laurel.TransM.run inputContext (Laurel.parseProgram strataProgram)
   if transErrors.size > 0 then
     throw (IO.userError s!"Translation errors: {transErrors}")
 

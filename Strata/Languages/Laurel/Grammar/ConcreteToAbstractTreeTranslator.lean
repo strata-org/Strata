@@ -169,8 +169,22 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
   }
 
 def parseProgram (prog : Strata.Program) : TransM Laurel.Program := do
+  -- Unwrap the program operation if present
+  -- The parsed program may have a single `program` operation wrapping the procedures
+  let commands : Array Strata.Operation :=
+    if prog.commands.size == 1 && prog.commands[0]!.name == q`Laurel.program then
+      -- Extract procedures from the program operation's first argument (Seq Procedure)
+      match prog.commands[0]!.args[0]! with
+      | .seq _ procs => procs.filterMap fun arg =>
+          match arg with
+          | .op op => some op
+          | _ => none
+      | _ => prog.commands
+    else
+      prog.commands
+
   let mut procedures : List Procedure := []
-  for op in prog.commands do
+  for op in commands do
     if op.name == q`Laurel.procedure then
       let proc ← parseProcedure (.op op)
       procedures := procedures ++ [proc]
