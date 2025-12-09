@@ -40,6 +40,10 @@ structure LConstr (IDMeta : Type) where
   args : List (Identifier IDMeta × LMonoTy)
 deriving Repr, DecidableEq
 
+instance: ToFormat (LConstr IDMeta) where
+  format c := f!"Name:{Format.line}{c.name}{Format.line}\
+                 Args:{Format.line}{c.args}{Format.line}"
+
 /--
 A datatype description. `typeArgs` contains the free type variables of the given datatype.
 -/
@@ -49,6 +53,11 @@ structure LDatatype (IDMeta : Type) where
   constrs: List (@LConstr IDMeta)
   constrs_ne : constrs.length != 0
 deriving Repr, DecidableEq
+
+instance : ToFormat (LDatatype IDMeta) where
+  format d := f!"Name:{Format.line}{d.name}{Format.line}\
+              Type Arguments:{Format.line}{d.typeArgs}{Format.line}\
+              Constructors:{Format.line}{d.constrs}{Format.line}"
 
 /--
 A datatype applied to arguments
@@ -254,21 +263,42 @@ def elimFunc [Inhabited T.IDMeta] [BEq T.Identifier] (d: LDatatype T.IDMeta) (m:
 
 def TypeFactory := Array (LDatatype IDMeta)
 
+instance : Inhabited (@TypeFactory IDMeta) where
+  default := #[]
+
 def TypeFactory.default : @TypeFactory IDMeta := #[]
 
 /--
 Generates the Factory (containing all constructor and eliminator functions) for a single datatype
 -/
-def LDatatype.genFactory {T: LExprParams} [Inhabited T.IDMeta] [BEq T.Identifier] (d: LDatatype T.IDMeta) (m: T.Metadata): @Lambda.Factory T :=
-  (elimFunc d m :: d.constrs.map (fun c => constrFunc c d)).toArray
+def LDatatype.genFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabited T.IDMeta]  [ToFormat T.IDMeta] [BEq T.Identifier] (d: LDatatype T.IDMeta): Except Format (@Lambda.Factory T) := do
+  _ ← checkStrictPosUnif d
+  Factory.default.addFactory (elimFunc d inst.default :: d.constrs.map (fun c => constrFunc c d)).toArray
 
 /--
 Generates the Factory (containing all constructor and eliminator functions) for the given `TypeFactory`
 -/
 def TypeFactory.genFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabited T.IDMeta] [ToFormat T.IDMeta] [BEq T.Identifier] (t: @TypeFactory T.IDMeta) : Except Format (@Lambda.Factory T) :=
   t.foldlM (fun f d => do
-    _ ← checkStrictPosUnif d
-    f.addFactory (d.genFactory inst.default)) Factory.default
+    let f' ← d.genFactory
+    f.addFactory f') Factory.default
+
+def TypeFactory.getType (F : @TypeFactory IDMeta) (name : String) : Option (LDatatype IDMeta) :=
+  F.find? (fun d => d.name == name)
+
+/--
+Add an `LDatatype` to an existing `TypeFactory`, checking that no
+types are duplicated.
+-/
+def TypeFactory.addDatatype (t: @TypeFactory IDMeta) (d: LDatatype IDMeta) : Except Format (@TypeFactory IDMeta) :=
+  -- Check that type is not redeclared
+  match t.getType d.name with
+  | none => .ok (t.push d)
+  | some d' => .error f!"A datatype of name {d.name} already exists! \
+              Redefinitions are not allowed.\n\
+              Existing Type: {d'}\n\
+              New Type:{d}"
+
 
 ---------------------------------------------------------------------
 

@@ -22,7 +22,7 @@ open Transform
 mutual
 partial def Block.substFvar (b : Block) (fr:Expression.Ident)
       (to:Expression.Expr) : Block :=
-  { b with ss := List.map (fun s => Statement.substFvar s fr to) b.ss }
+  List.map (fun s => Statement.substFvar s fr to) b
 
 partial def Statement.substFvar (s : Boogie.Statement)
       (fr:Expression.Ident)
@@ -56,7 +56,7 @@ end
 
 mutual
 partial def Block.renameLhs (b : Block) (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility) : Block :=
-  { b with ss := List.map (fun s => Statement.renameLhs s fr to) b.ss }
+  List.map (fun s => Statement.renameLhs s fr to) b
 
 partial def Statement.renameLhs (s : Boogie.Statement) (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility)
     : Statement :=
@@ -82,7 +82,7 @@ end
 -- Unlike Stmt.hasLabel, this gathers labels in assert and assume as well.
 mutual
 partial def Block.labels (b : Block): List String :=
-  List.flatMap (fun s => Statement.labels s) b.ss
+  List.flatMap (fun s => Statement.labels s) b
 
 -- Assume and Assert's labels have special meanings, so they must not be
 -- mangled during procedure inlining.
@@ -99,7 +99,7 @@ end
 mutual
 partial def Block.replaceLabels (b : Block) (map:Map String String)
     : Block :=
-   { b with ss := b.ss.map (fun s => Statement.replaceLabels s map) }
+   b.map (fun s => Statement.replaceLabels s map)
 
 partial def Statement.replaceLabels
     (s : Boogie.Statement) (map:Map String String) : Boogie.Statement :=
@@ -232,9 +232,8 @@ def inlineCallStmt (st: Statement) (p : Program)
 
         let stmts:List (Imperative.Stmt Boogie.Expression Boogie.Command)
           := inputInit ++ outputInit ++ proc.body ++ outputSetStmts
-        let new_blk := Imperative.Block.mk stmts
 
-        return [.block (procName ++ "$inlined") new_blk]
+        return [.block (procName ++ "$inlined") stmts]
       | _ => return [st]
 
 def inlineCallStmts (ss: List Statement) (prog : Program)

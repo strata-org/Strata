@@ -5,11 +5,9 @@
 -/
 
 import Lean.Elab.Command
-import Strata.DDM.BuiltinDialects.StrataDDL
 import Strata.DDM.Integration.Lean.Env
 import Strata.DDM.Integration.Lean.GenTrace
 import Strata.DDM.Integration.Lean.OfAstM
-import Strata.DDM.Integration.Lean.Quote
 import Strata.DDM.Util.Graph.Tarjan
 
 open Lean (Command Name Ident Term TSyntax getEnv logError profileitM quote withTraceNode mkIdentFrom)

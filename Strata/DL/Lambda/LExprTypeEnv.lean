@@ -235,16 +235,19 @@ deriving Inhabited
 /--
 Context data that does not change throughout type checking: a
 factory of user-specified functions and data structures for ensuring unique
-names of types and functions
+names of types and functions.
+Invariant: all functions defined in `TypeFactory.genFactory`
+for `datatypes` should be in `functions`.
 -/
 structure LContext (T: LExprParams) where
   functions : @Factory T
+  datatypes : @TypeFactory T.IDMeta
   knownTypes : KnownTypes
   idents : Identifiers T.IDMeta
 deriving Inhabited
 
 def LContext.empty {IDMeta} : LContext IDMeta :=
-  ⟨#[], {}, {}⟩
+  ⟨#[], #[], {}, {}⟩
 
 instance : EmptyCollection (LContext IDMeta) where
   emptyCollection := LContext.empty
@@ -281,6 +284,7 @@ def TEnv.default : TEnv IDMeta :=
 
 def LContext.default : LContext T :=
   { functions := #[],
+    datatypes := #[],
     knownTypes := KnownTypes.default,
     idents := Identifiers.default }
 
@@ -321,6 +325,30 @@ def LContext.addFactoryFunction (C : LContext T) (fn : LFunc T) : LContext T :=
 
 def LContext.addFactoryFunctions (C : LContext T) (fact : @Factory T) : LContext T :=
   { C with functions := C.functions.append fact }
+
+/--
+Add a datatype `d` to an `LContext` `C`.
+This adds `d` to `C.datatypes`, adds the derived functions
+(e.g. eliminators, testers) to `C.functions`, and adds `d` to
+`C.knownTypes`. It performs error checking for name clashes.
+-/
+def LContext.addDatatype [Inhabited T.IDMeta] [Inhabited T.Metadata] (C: LContext T) (d: LDatatype T.IDMeta) : Except Format (LContext T) := do
+  -- Ensure not in known types
+  if C.knownTypes.containsName d.name then
+    .error f!"Cannot name datatype same as known type!\n\
+                      {d}\n\
+                      KnownTypes' names:\n\
+                      {C.knownTypes.keywords}"
+  let ds ← C.datatypes.addDatatype d
+  -- Add factory functions, checking for name clashes
+  let f ← d.genFactory
+  let fs ← C.functions.addFactory f
+  -- Add datatype names to knownTypes
+  let ks ← C.knownTypes.add d.toKnownType
+  .ok {C with datatypes := ds, functions := fs, knownTypes := ks}
+
+def LContext.addTypeFactory [Inhabited T.IDMeta] [Inhabited T.Metadata] (C: LContext T) (f: @TypeFactory T.IDMeta) : Except Format (LContext T) :=
+  Array.foldlM (fun C d => C.addDatatype d) C f
 
 /--
 Replace the global substitution in `T.state.subst` with `S`.
