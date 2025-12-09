@@ -25,7 +25,6 @@ import Strata.Languages.C_Simp.Examples.Examples
 /- Dyn -/
 import Strata.Languages.Dyn.Examples.Examples
 
-
 /- Code Transforms -/
 import Strata.Transform.CallElimCorrect
 import Strata.Transform.DetToNondetCorrect

@@ -15,7 +15,7 @@ def testAssertFalse : IO Unit := do
   let loader := Elab.LoadedDialects.ofDialects! #[initDialect, laurelDialect]
 
   -- Test the file
-  let result ← testGrammarFile loader "Laurel" "Strata/Languages/Laurel/Examples/Fundamentals/AssertFalse.lr.st"
+  let result ← testGrammarFile loader "Laurel" "Strata/Languages/Laurel/Examples/AssertFalse.lr.st"
 
   -- Print results
   printTestResult "AssertFalse.lr.st" result (showFormatted := true)
