@@ -193,10 +193,10 @@ def pyAnalyzeCommand : Command where
     let newPgm : Boogie.Program := { decls := preludePgm.decls ++ bpgm.decls }
     if verbose then
       IO.print newPgm
-    -- let newPgm := runInlineCall newPgm
-    -- if verbose then
-    --   IO.println "Inlined: "
-    --   IO.print newPgm
+    let newPgm := runInlineCall newPgm
+    if verbose then
+      IO.println "Inlined: "
+      IO.print newPgm
     let vcResults ← EIO.toIO (fun f => IO.Error.userError (toString f))
                         (Boogie.verify "z3" newPgm { Options.default with stopOnFirstError := false,
                                                                           verbose,
