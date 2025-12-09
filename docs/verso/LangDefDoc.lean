@@ -115,6 +115,8 @@ expressions parameterized by `LTy` as output.
 
 The syntax of lambda expressions is provided by the `LExpr` type.
 
+{docstring Lambda.LConst}
+
 {docstring Lambda.LExpr}
 
 ## Type System
@@ -123,7 +125,7 @@ Although {name LExpr}`LExpr` can be parameterized by an arbitrary type system,
 Strata currently implements one, based on the types {name LMonoTy}`LMonoTy` and
 {name LTy}`LTy`.
 
-The first, {name LMonoTy}`LMonoTy` represents monomorphic types. It's a separate type because
+The first, {name LMonoTy}`LMonoTy`, represents monomorphic types. It's a separate type because
 some contexts allow only monomorphic types.
 
 {docstring Lambda.LMonoTy}
@@ -133,7 +135,8 @@ quantifiers, creating polymorphic types.
 
 {docstring Lambda.LTy}
 
-The relationshp between {name LExpr}`LExpr` and {name LTy}`LTy` is expressed by the
+A expression {name LExpr}`LExpr` parameterized by {name LTy}`LTy` is well-typed
+according to the
 {name LExpr.HasType}`HasType` relation.
 
 {docstring Lambda.LExpr.HasType}
@@ -142,10 +145,10 @@ The relationshp between {name LExpr}`LExpr` and {name LTy}`LTy` is expressed by 
 
 ## Operational Semantics
 
-TODO: talk about `Factory`
-
 The semantics of the {name LExpr}`LExpr` type are specified in a standard way
 using the small-step inductive relation {name Lambda.Step}`Lambda.Step`.
+This relation is parameterized by a `Factory`, which describes built-in
+functions via an optional body and/or evaluation function.
 
 {docstring Lambda.Step}
 
