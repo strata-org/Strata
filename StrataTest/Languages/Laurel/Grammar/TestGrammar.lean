@@ -9,15 +9,18 @@ open StrataTest.DDM
 namespace Laurel
 
 -- Test parsing the AssertFalse example
-def testAssertFalse : IO Unit := do
+def testAssertFalse : IO Bool := do
   -- Create LoadedDialects with the Init and Laurel dialects
   let laurelDialect: Strata.Dialect := Laurel
   let loader := Elab.LoadedDialects.ofDialects! #[initDialect, laurelDialect]
 
   -- Test the file
-  let result ← testGrammarFile loader "Laurel" "Strata/Languages/Laurel/Examples/AssertFalse.lr.st"
+  let filePath := "Strata/Languages/Laurel/Examples/AssertFalse.lr.st"
+  let result ← testGrammarFile loader "Laurel" filePath
 
-  -- Print results
-  printTestResult "AssertFalse.lr.st" result (showFormatted := true)
+  pure result.normalizedMatch
 
-#eval testAssertFalse
+#eval do
+  let success ← testAssertFalse
+  if !success then
+    throw (IO.userError "Test failed: formatted output does not match input")

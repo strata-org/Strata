@@ -12,15 +12,42 @@ open Strata
 
 namespace StrataTest.DDM
 
+/-- Remove C-style comments (// and /* */) from a string -/
+def stripComments (s : String) : String :=
+  let rec stripMultiLine (str : String) (startIdx : Nat) (acc : String) : String :=
+    if startIdx >= str.length then acc
+    else
+      let remaining := str.drop startIdx
+      match remaining.splitOn "/*" with
+      | [] => acc
+      | [rest] => acc ++ rest
+      | beforeComment :: afterStart =>
+        let afterStartStr := "/*".intercalate afterStart
+        match afterStartStr.splitOn "*/" with
+        | [] => acc ++ beforeComment
+        | afterComment :: _ =>
+          let newIdx := startIdx + beforeComment.length + 2 + afterComment.length + 2
+          stripMultiLine str newIdx (acc ++ beforeComment)
+  termination_by str.length - startIdx
+
+  let withoutMultiLine := stripMultiLine s 0 ""
+  let lines := withoutMultiLine.splitOn "\n"
+  let withoutSingleLine := lines.map fun line =>
+    match line.splitOn "//" with
+    | [] => line
+    | first :: _ => first
+  "\n".intercalate withoutSingleLine
+
 /-- Normalize whitespace in a string by splitting on whitespace and rejoining with single spaces -/
 def normalizeWhitespace (s : String) : String :=
-  let words := s.splitOn.filter (·.isEmpty.not)
+  let words := (s.split Char.isWhitespace).filter (·.isEmpty.not)
   " ".intercalate words
 
 /-- Result of a grammar test -/
 structure GrammarTestResult where
   parseSuccess : Bool
-  formatted : String
+  normalizedInput : String
+  normalizedOutput : String
   normalizedMatch : Bool
   errorMessages : List String := []
 
@@ -53,7 +80,8 @@ def testGrammarFile (loader : Elab.LoadedDialects) (dialectName : String) (fileP
     let errorMsgs ← messages.toList.mapM (fun msg => msg.toString)
     return {
       parseSuccess := false
-      formatted := ""
+      normalizedInput := ""
+      normalizedOutput := ""
       normalizedMatch := false
       errorMessages := errorMsgs
     }
@@ -61,8 +89,8 @@ def testGrammarFile (loader : Elab.LoadedDialects) (dialectName : String) (fileP
     -- Format the DDM program back to a string
     let formatted := ddmProgram.format.render
 
-    -- Normalize whitespace in both strings
-    let normalizedInput := normalizeWhitespace content
+    -- Strip comments and normalize whitespace in both strings
+    let normalizedInput := normalizeWhitespace (stripComments content)
     let normalizedOutput := normalizeWhitespace formatted
 
     -- Compare
@@ -70,14 +98,14 @@ def testGrammarFile (loader : Elab.LoadedDialects) (dialectName : String) (fileP
 
     return {
       parseSuccess := true
-      formatted := formatted
+      normalizedInput := normalizedInput
+      normalizedOutput := normalizedOutput
       normalizedMatch := isMatch
       errorMessages := []
     }
 
 /-- Print detailed test results -/
-def printTestResult (filePath : String) (result : GrammarTestResult) (showFormatted : Bool := true) : IO Unit := do
-  IO.println s!"=== Testing {filePath} ===\n"
+def printTestResult (result : GrammarTestResult) (showFormatted : Bool := true) : IO Unit := do
 
   if !result.parseSuccess then
     IO.println s!"✗ Parse failed: {result.errorMessages.length} error(s)"
@@ -87,8 +115,10 @@ def printTestResult (filePath : String) (result : GrammarTestResult) (showFormat
     IO.println "✓ Parse succeeded!\n"
 
     if showFormatted then
+      IO.println "=== Formatted input ===\n"
+      IO.println result.normalizedInput
       IO.println "=== Formatted output ===\n"
-      IO.println result.formatted
+      IO.println result.normalizedOutput
 
     IO.println "\n=== Comparison ===\n"
     if result.normalizedMatch then
