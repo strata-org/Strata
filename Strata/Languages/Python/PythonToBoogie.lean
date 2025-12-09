@@ -322,7 +322,6 @@ def remapFname (translation_ctx: TranslationContext) (fname: String) : String :=
     | "float" => "str_to_float"
     | _ => fname
 
-
 mutual
 
 partial def PyExprToBoogieWithSubst (translation_ctx : TranslationContext)  (substitution_records : Option (List SubstitutionRecord)) (e : Python.expr SourceRange) : PyExprTranslated :=
@@ -345,7 +344,7 @@ partial def argsAndKWordsToCanonicalList (translation_ctx : TranslationContext)
     if translation_ctx.func_infos.any (λ e => e.name == fname) then
       (args.toList.map (λ a => (PyExprToBoogieWithSubst default substitution_records a).expr), [])
     else
-      ([], [])
+      (args.toList.map (λ a => (PyExprToBoogieWithSubst default substitution_records a).expr), [])
   else
     let required_order := Strata.Python.Internal.getFuncSigOrder fname
     assert! args.size <= required_order.length
@@ -463,7 +462,6 @@ partial def PyExprToBoogie (translation_ctx : TranslationContext) (e : Python.ex
           let access_check : Boogie.Statement := .assert "subscript_bounds_check" (.app () (.app () (.op () "str_in_dict_str_any" none) k.expr) l.expr)
           {stmts := l.stmts ++ k.stmts ++ [access_check], expr := .app () (.app () (.op () "dict_str_any_get" none) l.expr) k.expr}
     | .List _ elmts _ =>
-      assert! elmts.val.size == 1
       match elmts.val[0]! with
       | .Constant _ expr _ => match expr with
         | .ConString _ s => handleList elmts.val (.tcons "ListStr" [])
@@ -482,6 +480,7 @@ partial def initTmpParam (p: Python.expr SourceRange × String) : List Boogie.St
       | "str" =>
         assert! args.val.size == 1
         [(.init p.snd t[string] (.strConst () "")), .set p.snd (.app () (.op () "datetime_to_str" none) ((PyExprToBoogie default args.val[0]!).expr))]
+      | "int" => [(.init p.snd t[int] (.intConst () 0)), .set p.snd (.op () "datetime_to_int" none)]
       | _ => panic! s!"Unsupported name {n.val}"
     | _ => panic! s!"Unsupported tmp param init call: {repr f}"
   | _ => panic! "Expected Call"
@@ -561,8 +560,11 @@ partial def PyStmtToBoogie (jmp_targets: List String) (translation_ctx : Transla
         handleFunctionCall ["maybe_except"] fname args kwords jmp_targets translation_ctx s
       else
         handleFunctionCall [] fname args kwords jmp_targets translation_ctx s
+    | .Expr _ (.Constant _ (.ConString _ _) _) =>
+      -- TODO: Check that it's a doc string
+      [] -- Doc string
     | .Expr _ _ =>
-      panic! "Can't handle Expr statements that aren't calls"
+      panic! s!"Can't handle Expr statements that aren't calls: {repr s}"
     | .Assign _ lhs (.Call _ func args kwords) _ =>
       assert! lhs.val.size == 1
       let fname := PyExprToString func
@@ -649,6 +651,7 @@ def translateFunctions (a : Array (Python.stmt SourceRange)) (translation_ctx: T
 def pyTyStrToLMonoTy (ty_str: String) : Lambda.LMonoTy :=
   match ty_str with
   | "str" => mty[string]
+  | "int" => mty[int]
   | "datetime" => (.tcons "Datetime" [])
   | _ => panic! s!"Unsupported type: {ty_str}"
 
@@ -679,12 +682,17 @@ def unpackPyArguments (args: Python.arguments SourceRange) : List (String × Str
 -- arguments = (arg* posonlyargs, arg* args, arg? vararg, arg* kwonlyargs,
 --                  expr* kw_defaults, arg? kwarg, expr* defaults)
   match args with -- TODO: Error if any other types of args
-  | .mk_arguments _ _ args _ _ _ _ _ => args.val.toList.map (λ a =>
+  | .mk_arguments _ _ args _ _ _ _ _ =>
+    let combined := args.val
+    combined.toList.filterMap (λ a =>
     match a with
     | .mk_arg _ name oty _ =>
-      match oty.val with
-      | .some ty => (name.val, PyExprToString ty)
-      | _ => panic! s!"Missing type annotation on arg: {repr a} ({repr args})")
+      if name.val == "self" then
+        none
+      else
+        match oty.val with
+        | .some ty => some (name.val, PyExprToString ty)
+        | _ => panic! s!"Missing type annotation on arg: {repr a} ({repr args})")
 
 def PyFuncDefToBoogie (s: Python.stmt SourceRange) (translation_ctx: TranslationContext) : List Boogie.Decl × PythonFunctionDecl :=
   match s with
@@ -696,16 +704,15 @@ def PyFuncDefToBoogie (s: Python.stmt SourceRange) (translation_ctx: Translation
 def PyClassDefToBoogie (s: Python.stmt SourceRange) (translation_ctx: TranslationContext) : List Boogie.Decl × PythonClassDecl :=
   match s with
   | .ClassDef _ c_name _ _ body _ _ =>
-
-    let member_fn_defs : List PythonFunctionDecl := body.val.toList.filterMap (λ s => match s with
-      | .FunctionDef _ name _ _ _ _ _ _ => some {name := name.val, args := [], ret := ""}
+    let member_fn_defs := body.val.toList.filterMap (λ s => match s with
+      | .FunctionDef _ name args body _ ret _ _ => some (name, args, body, ret)
       | _ => none)
-
     (member_fn_defs.map (λ f =>
-      .proc (pythonFuncToBoogie (c_name.val++"_"++f.name) [] #[] none default translation_ctx)), {name := c_name.val})
-
-
-    -- ([.proc (pythonFuncToBoogie (name.val++"___init__") [] #[] none default translation_ctx true)], {name := name.val})
+      let name := f.fst.val
+      let args := unpackPyArguments f.snd.fst
+      let body := f.snd.snd.fst.val
+      let ret := f.snd.snd.snd.val
+      .proc (pythonFuncToBoogie (c_name.val++"_"++name) args body ret default translation_ctx)), {name := c_name.val})
   | _ => panic! s!"Expected function def: {repr s}"
 
 def pythonToBoogie (pgm: Strata.Program): Boogie.Program :=

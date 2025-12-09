@@ -19,6 +19,7 @@ def getFuncSigOrder (fname: String) : List String :=
   | "input" => ["msg"]
   | "random_choice" => ["l"]
   | "datetime_now" => []
+  | "datetime_utcnow" => []
   | "datetime_date" => ["dt"]
   | "timedelta" => ["days"]
   | "datetime_strptime" => ["time", "format"]
@@ -56,6 +57,9 @@ def getFuncSigType (fname: String) (arg: String) : String :=
     | "l" => "ListStr"
     | _ => panic! s!"Unrecognized arg : {arg}"
   | "datetime_now" =>
+    match arg with
+    | _ => panic! s!"Unrecognized arg : {arg}"
+  | "datetime_utcnow" =>
     match arg with
     | _ => panic! s!"Unrecognized arg : {arg}"
   | "datetime_date" =>
