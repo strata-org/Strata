@@ -76,14 +76,21 @@ def translateIdent (arg : Arg) : TransM Identifier := do
 
 def translateBool (arg : Arg) : TransM Bool := do
   match arg with
+  | .expr (.fn _ name) =>
+    if name == q`Laurel.boolTrue then
+      return true
+    else if name == q`Laurel.boolFalse then
+      return false
+    else
+      TransM.error s!"translateBool expects boolTrue or boolFalse, got {repr name}"
   | .op op =>
     if op.name == q`Laurel.boolTrue then
       return true
     else if op.name == q`Laurel.boolFalse then
       return false
     else
-      TransM.error s!"translateBool expects boolTrue or boolFalse"
-  | _ => TransM.error s!"translateBool expects operation"
+      TransM.error s!"translateBool expects boolTrue or boolFalse, got {repr op.name}"
+  | x => TransM.error s!"translateBool expects expression or operation, got {repr x}"
 
 ---------------------------------------------------------------------
 
@@ -118,6 +125,10 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
     else if op.name == q`Laurel.block then
       let stmts ← translateSeqCommand op.args[0]!
       return .Block stmts none
+    else if op.name == q`Laurel.literalBool then
+      -- literalBool wraps a bool value (boolTrue or boolFalse)
+      let boolVal ← translateBool op.args[0]!
+      return .LiteralBool boolVal
     else if op.name == q`Laurel.boolTrue then
       return .LiteralBool true
     else if op.name == q`Laurel.boolFalse then
@@ -140,9 +151,9 @@ partial def translateCommand (arg : Arg) : TransM StmtExpr := do
 
 end
 
-def translateProcedure (arg : Arg) : TransM Procedure := do
+def parseProcedure (arg : Arg) : TransM Procedure := do
   let .op op := arg
-    | TransM.error s!"translateProcedure expects operation"
+    | TransM.error s!"parseProcedure expects operation"
   let name ← translateIdent op.args[0]!
   let body ← translateCommand op.args[1]!
   return {
@@ -157,11 +168,11 @@ def translateProcedure (arg : Arg) : TransM Procedure := do
     body := .Transparent body
   }
 
-def translateProgram (prog : Strata.Program) : TransM Laurel.Program := do
+def parseProgram (prog : Strata.Program) : TransM Laurel.Program := do
   let mut procedures : List Procedure := []
   for op in prog.commands do
     if op.name == q`Laurel.procedure then
-      let proc ← translateProcedure (.op op)
+      let proc ← parseProcedure (.op op)
       procedures := procedures ++ [proc]
     else
       TransM.error s!"Unknown top-level declaration: {op.name}"
