@@ -1,4 +1,11 @@
 /*
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+*/
+// Work in progress
+
+/*
 Dafny example:
 
 method hasClosure() returns (r: int) 
