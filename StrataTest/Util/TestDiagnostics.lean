@@ -57,9 +57,9 @@ def parseDiagnosticExpectations (content : String) : List DiagnosticExpectation 
             let message := (": ".intercalate messageParts).trim
 
             -- Calculate column positions (carets are relative to line start including comment spacing)
-            let commentPrefix := line.takeWhile (fun c => c == ' ' || c == '\t')
-            let caretColStart := commentPrefix.length + caretStart.byteIdx
-            let caretColEnd := commentPrefix.length + caretEnd.byteIdx
+            let commentPrefix := (line.takeWhile (fun c => c == ' ' || c == '\t')).length + "//".length
+            let caretColStart := commentPrefix + caretStart.byteIdx
+            let caretColEnd := commentPrefix + caretEnd.byteIdx
 
             -- The diagnostic is on the previous line
             if i > 0 then
