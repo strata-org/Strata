@@ -52,7 +52,7 @@ inductive StepStmt
   /-- Block: a labeled block steps to its statement list -/
   | step_block :
     StepStmt P EvalCmd δ σ
-      (.stmt (.block _ ⟨ss⟩ _) σ)
+      (.stmt (.block _ ss _) σ)
       (.stmts ss σ)
 
   /-- Conditional (true): if condition evaluates to true, step to then-branch -/
@@ -61,7 +61,7 @@ inductive StepStmt
     WellFormedSemanticEvalBool δ →
     ----
     StepStmt P EvalCmd δ σ
-      (.stmt (.ite c ⟨tss⟩ ⟨ess⟩ _) σ)
+      (.stmt (.ite c tss ess _) σ)
       (.stmts tss σ)
 
   /-- Conditional (false): if condition evaluates to false, step to else-branch -/
@@ -70,7 +70,7 @@ inductive StepStmt
     WellFormedSemanticEvalBool δ →
     ----
     StepStmt P EvalCmd δ σ
-      (.stmt (.ite c ⟨tss⟩ ⟨ess⟩ _) σ)
+      (.stmt (.ite c tss ess _) σ)
       (.stmts ess σ)
 
   /-- Loop (guard true): if guard is true, execute body then loop again -/
@@ -79,8 +79,8 @@ inductive StepStmt
     WellFormedSemanticEvalBool δ →
     ----
     StepStmt P EvalCmd δ σ
-      (.stmt (.loop g m inv ⟨body⟩ md) σ)
-      (.stmts (body ++ [.loop g m inv ⟨body⟩ md]) σ)
+      (.stmt (.loop g m inv body md) σ)
+      (.stmts (body ++ [.loop g m inv body md]) σ)
 
   /-- Loop (guard false): if guard is false, terminate the loop -/
   | step_loop_exit :
@@ -88,7 +88,7 @@ inductive StepStmt
     WellFormedSemanticEvalBool δ →
     ----
     StepStmt P EvalCmd δ σ
-      (.stmt (.loop g m inv ⟨body⟩ _) σ)
+      (.stmt (.loop g m inv body _) σ)
       (.terminal σ)
 
   /- Goto: not implemented, because we plan to remove it. -/
@@ -137,7 +137,7 @@ def EvalStmtSmall
   [HasBool P] [HasNot P]
   (EvalCmd : EvalCmdParam P CmdT)
   (δ : SemanticEval P)
-  (σ σ : SemanticStore P)
+  (σ : SemanticStore P)
   (s : Stmt P CmdT)
   (σ' : SemanticStore P) : Prop :=
   StepStmtStar P EvalCmd δ σ (.stmt s σ) (.terminal σ')
@@ -152,7 +152,7 @@ def EvalStmtsSmall
   [HasBool P] [HasNot P]
   (EvalCmd : EvalCmdParam P CmdT)
   (δ : SemanticEval P)
-  (σ σ : SemanticStore P)
+  (σ : SemanticStore P)
   (ss : List (Stmt P CmdT))
   (σ' : SemanticStore P) : Prop :=
   StepStmtStar P EvalCmd δ σ (.stmts ss σ) (.terminal σ')
@@ -170,9 +170,9 @@ theorem evalStmtsSmallNil
   [HasVarsImp P CmdT] [HasFvar P] [HasVal P]
   [HasBool P] [HasNot P]
   (δ : SemanticEval P)
-  (σ σ : SemanticStore P)
+  (σ : SemanticStore P)
   (EvalCmd : EvalCmdParam P CmdT) :
-  EvalStmtsSmall P EvalCmd δ σ σ [] σ := by
+  EvalStmtsSmall P EvalCmd δ σ [] σ := by
     unfold EvalStmtsSmall
     apply StepStmtStar.step
     · exact StepStmt.step_stmts_nil
@@ -202,7 +202,7 @@ theorem terminalIsTerminal
   [HasVarsImp P (List (Stmt P CmdT))]
   [HasVarsImp P CmdT] [HasFvar P] [HasVal P]
   [HasBool P] [HasNot P]
-  (σ σ : SemanticStore P)
+  (σ : SemanticStore P)
   (δ : SemanticEval P)
   (EvalCmd : EvalCmdParam P CmdT) :
   IsTerminal P δ σ EvalCmd (.terminal σ) := by

@@ -106,12 +106,10 @@ mutual
 
 partial def alphaEquivBlock (b1 b2: Boogie.Block) (map:IdMap)
     : Except Format IdMap := do
-  let st1 := b1.ss
-  let st2 := b2.ss
-  if st1.length ≠ st2.length then
+  if b1.length ≠ b2.length then
     .error "Block lengths do not match"
   else
-    (st1.zip st2).foldlM
+    (b1.zip b2).foldlM
       (fun (map:IdMap) (st1,st2) => do
         let newmap ← alphaEquivStatement st1 st2 map
         return newmap)
