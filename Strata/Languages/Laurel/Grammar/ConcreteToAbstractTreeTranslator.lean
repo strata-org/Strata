@@ -1,0 +1,174 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
+import Strata.DDM.AST
+import Strata.Languages.Laurel.Grammar.LaurelGrammar
+import Strata.Languages.Laurel.Laurel
+import Strata.DL.Imperative.MetaData
+import Strata.Languages.Boogie.Expressions
+
+---------------------------------------------------------------------
+namespace Laurel
+
+/- Translating concrete Laurel syntax into abstract Laurel syntax -/
+
+open Laurel
+open Std (ToFormat Format format)
+open Strata (QualifiedIdent Arg SourceRange)
+open Lean.Parser (InputContext)
+open Imperative (MetaData Uri FileRange)
+
+---------------------------------------------------------------------
+
+/- Translation Monad -/
+
+structure TransState where
+  inputCtx : InputContext
+  errors : Array String
+
+abbrev TransM := StateM TransState
+
+def TransM.run (ictx : InputContext) (m : TransM α) : (α × Array String) :=
+  let (v, s) := StateT.run m { inputCtx := ictx, errors := #[] }
+  (v, s.errors)
+
+def TransM.error [Inhabited α] (msg : String) : TransM α := do
+  modify fun s => { s with errors := s.errors.push msg }
+  return panic msg
+
+---------------------------------------------------------------------
+
+/- Metadata -/
+
+def SourceRange.toMetaData (ictx : InputContext) (sr : SourceRange) : Imperative.MetaData Boogie.Expression :=
+  let file := ictx.fileName
+  let startPos := ictx.fileMap.toPosition sr.start
+  let endPos := ictx.fileMap.toPosition sr.stop
+  let uri : Uri := .file file
+  let fileRangeElt := ⟨ Imperative.MetaDataElem.Field.label "fileRange", .fileRange ⟨ uri, startPos, endPos ⟩ ⟩
+  #[fileRangeElt]
+
+def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Boogie.Expression) :=
+  return arg.ann.toMetaData (← get).inputCtx
+
+---------------------------------------------------------------------
+
+def checkOp (op : Strata.Operation) (name : QualifiedIdent) (argc : Nat) :
+  TransM Unit := do
+  if op.name != name then
+    TransM.error s!"Op name mismatch! \n\
+                   Name: {repr name}\n\
+                   Op: {repr op}"
+  if op.args.size != argc then
+    TransM.error s!"Op arg count mismatch! \n\
+                   Expected: {argc}\n\
+                   Got: {op.args.size}\n\
+                   Op: {repr op}"
+  return ()
+
+def translateIdent (arg : Arg) : TransM Identifier := do
+  let .ident _ id := arg
+    | TransM.error s!"translateIdent expects ident"
+  return id
+
+def translateBool (arg : Arg) : TransM Bool := do
+  match arg with
+  | .op op =>
+    if op.name == q`Laurel.boolTrue then
+      return true
+    else if op.name == q`Laurel.boolFalse then
+      return false
+    else
+      TransM.error s!"translateBool expects boolTrue or boolFalse"
+  | _ => TransM.error s!"translateBool expects operation"
+
+---------------------------------------------------------------------
+
+instance : Inhabited Procedure where
+  default := {
+    name := ""
+    inputs := []
+    output := .TVoid
+    precondition := .LiteralBool true
+    decreases := .LiteralBool true
+    deterministic := true
+    reads := none
+    modifies := .LiteralBool true
+    body := .Transparent (.LiteralBool true)
+  }
+
+---------------------------------------------------------------------
+
+mutual
+
+partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
+  match arg with
+  | .op op =>
+    if op.name == q`Laurel.assert then
+      let cond ← translateStmtExpr op.args[0]!
+      let md ← getArgMetaData (.op op)
+      return .Assert cond md
+    else if op.name == q`Laurel.assume then
+      let cond ← translateStmtExpr op.args[0]!
+      let md ← getArgMetaData (.op op)
+      return .Assume cond md
+    else if op.name == q`Laurel.block then
+      let stmts ← translateSeqCommand op.args[0]!
+      return .Block stmts none
+    else if op.name == q`Laurel.boolTrue then
+      return .LiteralBool true
+    else if op.name == q`Laurel.boolFalse then
+      return .LiteralBool false
+    else
+      TransM.error s!"Unknown operation: {op.name}"
+  | _ => TransM.error s!"translateStmtExpr expects operation"
+
+partial def translateSeqCommand (arg : Arg) : TransM (List StmtExpr) := do
+  let .seq _ args := arg
+    | TransM.error s!"translateSeqCommand expects seq"
+  let mut stmts : List StmtExpr := []
+  for arg in args do
+    let stmt ← translateStmtExpr arg
+    stmts := stmts ++ [stmt]
+  return stmts
+
+partial def translateCommand (arg : Arg) : TransM StmtExpr := do
+  translateStmtExpr arg
+
+end
+
+def translateProcedure (arg : Arg) : TransM Procedure := do
+  let .op op := arg
+    | TransM.error s!"translateProcedure expects operation"
+  let name ← translateIdent op.args[0]!
+  let body ← translateCommand op.args[1]!
+  return {
+    name := name
+    inputs := []
+    output := .TVoid
+    precondition := .LiteralBool true
+    decreases := .LiteralBool true
+    deterministic := true
+    reads := none
+    modifies := .LiteralBool true
+    body := .Transparent body
+  }
+
+def translateProgram (prog : Strata.Program) : TransM Laurel.Program := do
+  let mut procedures : List Procedure := []
+  for op in prog.commands do
+    if op.name == q`Laurel.procedure then
+      let proc ← translateProcedure (.op op)
+      procedures := procedures ++ [proc]
+    else
+      TransM.error s!"Unknown top-level declaration: {op.name}"
+  return {
+    staticProcedures := procedures
+    staticFields := []
+    types := []
+  }
+
+end Laurel

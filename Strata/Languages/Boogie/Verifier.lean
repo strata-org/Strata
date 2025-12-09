@@ -141,13 +141,13 @@ def solverResult (vars : List (IdentT LMonoTy Visibility)) (ans : String)
 open Imperative
 
 def formatPositionMetaData [BEq P.Ident] [ToFormat P.Expr] (md : MetaData P): Option Format := do
-  let file ← md.findElem MetaData.fileLabel
-  let line ← md.findElem MetaData.startLineLabel
-  let col ← md.findElem MetaData.startColumnLabel
-  let baseName := match file.value with
-                  | .msg m => (m.split (λ c => c == '/')).getLast!
-                  | _ => "<no file>"
-  f!"{baseName}({line.value}, {col.value})"
+  let fileRangeElem ← md.findElem MetaData.fileRange
+  match fileRangeElem.value with
+  | .fileRange m =>
+    let baseName := match m.file with
+                    | .file path => (path.split (· == '/')).getLast!
+    return f!"{baseName}({m.start.line}, {m.start.column})"
+  | _ => none
 
 structure VCResult where
   obligation : Imperative.ProofObligation Expression
