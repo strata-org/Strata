@@ -5,6 +5,7 @@
 -/
 
 import Strata.DL.Imperative.CmdSemantics
+import Strata.DL.Util.Relations
 
 ---------------------------------------------------------------------
 
@@ -111,20 +112,14 @@ inductive StepStmt
 /--
 Multi-step execution: reflexive transitive closure of single steps.
 -/
-inductive StepStmtStar
+def StepStmtStar
   {CmdT : Type}
   (P : PureExpr)
   (EvalCmd : EvalCmdParam P CmdT)
   [HasVarsImp P (List (Stmt P CmdT))]
   [HasVarsImp P CmdT] [HasFvar P] [HasVal P]
   [HasBool P] [HasNot P] :
-  SemanticEval P → SemanticStore P → Config P CmdT → Config P CmdT → Prop where
-  | refl :
-    StepStmtStar P EvalCmd δ σ c c
-  | step :
-    StepStmt P EvalCmd δ σ c₁ c₂ →
-    StepStmtStar P EvalCmd δ σ c₂ c₃ →
-    StepStmtStar P EvalCmd δ σ c₁ c₃
+  SemanticEval P → SemanticStore P → Config P CmdT → Config P CmdT → Prop := fun δ σ => ReflTrans (StepStmt P EvalCmd δ σ)
 
 /-- A statement evaluates successfully if it can step to a terminal
 configuration.
@@ -174,9 +169,9 @@ theorem evalStmtsSmallNil
   (EvalCmd : EvalCmdParam P CmdT) :
   EvalStmtsSmall P EvalCmd δ σ [] σ := by
     unfold EvalStmtsSmall
-    apply StepStmtStar.step
+    apply ReflTrans.step
     · exact StepStmt.step_stmts_nil
-    · exact StepStmtStar.refl
+    · apply ReflTrans.refl
 
 /--
 Configuration is terminal if no further steps are possible.
