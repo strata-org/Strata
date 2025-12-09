@@ -37,8 +37,8 @@ def parseDiagnosticExpectations (content : String) : List DiagnosticExpectation 
   for i in [0:lines.length] do
     let line := lines[i]!
     -- Check if this is a comment line with diagnostic expectation
-    if line.trimLeft.startsWith "--" then
-      let trimmed := line.trimLeft.drop 2  -- Remove "--"
+    if line.trimLeft.startsWith "//" then
+      let trimmed := line.trimLeft.drop 2  -- Remove "//"
       -- Find the caret sequence
       let caretStart := trimmed.find (· == '^')
       if caretStart.byteIdx < trimmed.length then
