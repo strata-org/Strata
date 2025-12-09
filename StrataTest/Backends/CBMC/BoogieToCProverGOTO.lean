@@ -185,7 +185,7 @@ def transformToGoto (boogie : Boogie.Program) : Except Format CProverGOTO.Contex
       let formals_renamed := formals.zip new_formals
       let formals_tys : Map String CProverGOTO.Ty := formals.zip formals_tys
 
-      let locals := (Imperative.Stmts.definedVars p.body).map Boogie.BoogieIdent.toPretty
+      let locals := (Imperative.Block.definedVars p.body).map Boogie.BoogieIdent.toPretty
       let new_locals := locals.map (fun l => CProverGOTO.mkLocalSymbol pname l)
       let locals_renamed := locals.zip new_locals
 

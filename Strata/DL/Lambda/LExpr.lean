@@ -73,6 +73,12 @@ abbrev LExprParams.typed (T: LExprParams): LExprParams :=
 abbrev LExprParamsT.typed (T: LExprParamsT): LExprParamsT :=
   ⟨T.base.typed, LMonoTy⟩
 
+/--
+Lambda constants.
+
+Constants are integers, strings, reals, bitvectors of a fixed length, or
+booleans.
+-/
 inductive LConst : Type where
   | intConst (i: Int)
   | strConst (s: String)
@@ -93,9 +99,9 @@ We leave placeholders for type annotations only for constants
 (`.const`), operations (`.op`), binders (`.abs`, `.quant`), and free
 variables (`.fvar`).
 
-LExpr is parameterized by `TypeType`, which represents user-allowed type
-annotations (optional), and `Identifier` for allowed identifiers. Type inference
-adds any missing type annotations.
+LExpr is parameterized by `LExprParamsT`, which includes arbitrary metadata,
+user-allowed type annotations (optional), and special metadata to attach to
+`Identifier`s. Type inference adds any missing type annotations.
 -/
 inductive LExpr (T : LExprParamsT) : Type where
   /-- A constant (in the sense of literals). -/
@@ -106,10 +112,10 @@ inductive LExpr (T : LExprParamsT) : Type where
   | bvar    (m: T.base.Metadata) (deBruijnIndex : Nat)
   /-- A free variable, with an optional type annotation. -/
   | fvar    (m: T.base.Metadata) (name : Identifier T.base.IDMeta) (ty : Option T.TypeType)
-  /-- An abstraction, where `ty` the is type of bound variable. -/
+  /-- An abstraction, where `ty` the is (optional) type of bound variable. -/
   | abs     (m: T.base.Metadata) (ty : Option T.TypeType) (e : LExpr T)
   /-- A quantified expression, where `k` indicates whether it is universally or
-  existentially quantified, `ty` the is type of bound variable, and `trigger` is
+  existentially quantified, `ty` is the type of bound variable, and `trigger` is
   a trigger pattern (primarily for use with SMT). -/
   | quant   (m: T.base.Metadata) (k : QuantifierKind) (ty : Option T.TypeType) (trigger: LExpr T) (e : LExpr T)
   /-- A function application. -/

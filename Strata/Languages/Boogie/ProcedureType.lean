@@ -47,8 +47,8 @@ def typeCheck (C: Boogie.Expression.TyContext) (Env : Boogie.Expression.TyEnv) (
               clause must exist in the context! \
               Modifies: {proc.spec.modifies}"
   else do
-    let modifiedVars := (Imperative.Stmts.modifiedVars proc.body).eraseDups
-    let definedVars := (Imperative.Stmts.definedVars proc.body).eraseDups
+    let modifiedVars := (Imperative.Block.modifiedVars proc.body).eraseDups
+    let definedVars := (Imperative.Block.definedVars proc.body).eraseDups
     let allowedVars := proc.header.outputs.keys ++ proc.spec.modifies ++ definedVars
     if modifiedVars.any (fun v => v ∉ allowedVars) then
       .error f!"[{proc.header.name}]: This procedure modifies variables it is not allowed to!\n\

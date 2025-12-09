@@ -54,7 +54,7 @@ inductive StepStmt
   /-- A labeled block steps to its statement list. -/
   | step_block :
     StepStmt P EvalCmd δ σ
-      (.stmt (.block _ ⟨ss⟩ _) σ)
+      (.stmt (.block _ ss _) σ)
       (.stmts ss σ)
 
   /-- If the condition of an `ite` statement evaluates to true, step to the then
@@ -64,7 +64,7 @@ inductive StepStmt
     WellFormedSemanticEvalBool δ →
     ----
     StepStmt P EvalCmd δ σ
-      (.stmt (.ite c ⟨tss⟩ ⟨ess⟩ _) σ)
+      (.stmt (.ite c tss ess _) σ)
       (.stmts tss σ)
 
   /-- If the condition of an `ite` statement evaluates to false, step to the else
@@ -74,7 +74,7 @@ inductive StepStmt
     WellFormedSemanticEvalBool δ →
     ----
     StepStmt P EvalCmd δ σ
-      (.stmt (.ite c ⟨tss⟩ ⟨ess⟩ _) σ)
+      (.stmt (.ite c tss ess _) σ)
       (.stmts ess σ)
 
   /-- If a loop guard is true, execute the body and then loop again. -/
@@ -83,8 +83,8 @@ inductive StepStmt
     WellFormedSemanticEvalBool δ →
     ----
     StepStmt P EvalCmd δ σ
-      (.stmt (.loop g m inv ⟨body⟩ md) σ)
-      (.stmts (body ++ [.loop g m inv ⟨body⟩ md]) σ)
+      (.stmt (.loop g m inv body md) σ)
+      (.stmts (body ++ [.loop g m inv body md]) σ)
 
   /-- If a loop guard is false, terminate the loop. -/
   | step_loop_exit :
@@ -92,7 +92,7 @@ inductive StepStmt
     WellFormedSemanticEvalBool δ →
     ----
     StepStmt P EvalCmd δ σ
-      (.stmt (.loop g m inv ⟨body⟩ _) σ)
+      (.stmt (.loop g m inv body _) σ)
       (.terminal σ)
 
   /- Goto: not implemented, because we plan to remove it. -/
