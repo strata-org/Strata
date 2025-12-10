@@ -16,9 +16,10 @@ procedure transparantBody(x: int): int
 }
 
 procedure caller() {
-  assert transparantBody(-1) == 1; -- pass
-  assert opaqueBody(-1) >= 0 -- pass
-  assert opaqueBody(-1) == 1; -- error
+  assert transparantBody(-1) == 1; // pass
+  assert opaqueBody(-1) >= 0 // pass
+  assert opaqueBody(-3) == opaqueBody(-3); // pass because no heap is used and this is a det procedure
+  assert opaqueBody(-1) == 1; // error
 }
 
 /*
