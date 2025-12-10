@@ -12,7 +12,7 @@ It's comparable to having an IO monad.
 nondet procedure nonDeterministic(x: int): (r: int)
   ensures r > 0
 {
-  Math.abs(x) + 1
+  assumed
 }
 
 procedure caller() {
@@ -25,31 +25,26 @@ procedure caller() {
 /*
 Translation towards SMT:
 
-function nonDeterministic_ensures(x: int, r: int): boolean {
-  r > 0
-}
+function nonDeterministic_relation(x: int, r: int): boolean
+// ensures axiom
+axiom forall x, r: int ontrigger nonDeterministic_relation(x, r) :: r > 0
 
 proof nonDeterministic_body {
   var x: int;
   var r := Math.abs(x) + 1
-  assert nonDeterministic_ensures(x, r);
+  assert nonDeterministic_relation(x, r);
 }
 
 proof caller_body {
   var x: int;
-  assume nonDeterministic_Ensures(1, x);
+  assume nonDeterministic_relation(1, x);
   assert x > 0; // pass
 
   var y: int;
-  assume nonDeterministic_Ensures(1, y);
+  assume nonDeterministic_relation(1, y);
   assert x == y; // fail
 }
 */
-
-procedure nonDeterministicCaller(x: int): int
-{
-  nonDeterministic(x) // error: can not call non-deterministic procedure from deterministic one
-}
 
 nondet procedure nonDeterminsticTransparant(x: int): (r: int)
 {
@@ -59,7 +54,12 @@ nondet procedure nonDeterminsticTransparant(x: int): (r: int)
 /*
 Translation towards SMT:
 
-function nonDeterminsticTransparant_ensures(x: int, r: int): boolean {
-  nonDeterministic_ensures(x + 1, r)
+function nonDeterminsticTransparant_relation(x: int, r: int): boolean {
+  nonDeterministic_relation(x + 1, r)
 }
 */
+
+procedure nonDeterministicCaller(x: int): int
+{
+  nonDeterministic(x) // error: can not call non-deterministic procedure from deterministic one
+}
