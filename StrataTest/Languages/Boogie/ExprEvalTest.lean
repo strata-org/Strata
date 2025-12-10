@@ -16,6 +16,9 @@ import Strata.Languages.Boogie.Identifiers
 import Strata.Languages.Boogie.Options
 import Strata.Languages.Boogie.SMTEncoder
 import Strata.Languages.Boogie.Verifier
+import Strata.DL.Lambda.TestGen
+import Strata.DL.Lambda.PlausibleHelpers
+import Plausible.Gen
 
 /-! This file does random testing of Boogie operations registered in factory, by
 (1) choosing random constant inputs to the operations
@@ -181,8 +184,46 @@ open Lambda.LTy.Syntax
 #guard_msgs in #eval (checkValid
   (.app () (.app () (.op () (BoogieIdent.unres "Int.Add") .none) eb[#100]) eb[#50]))
 
--- This may take a while (~ 1min)
-#eval (checkFactoryOps false)
+open Plausible TestGen
+
+deriving instance Arbitrary for Visibility
+
+#eval Gen.printSamples (Arbitrary.arbitrary : Gen <| Lambda.LExpr BoogieLParams.mono)
+
+def test_lctx : LContext BoogieLParams :=
+{
+  LContext.empty with
+  functions := Boogie.Factory
+  knownTypes := Boogie.KnownTypes
+}
+
+def test_ctx : TContext Visibility := ⟨[[]], []⟩
+
+-- abbrev test_ty : LTy := .forAll [] <| .tcons "arrow" [.tcons "bool" [], .tcons "bool" []]
+abbrev test_ty : LTy := .forAll [] <| .tcons "bool" []
+
+
+#eval do
+    let P : LExpr BoogieLParams.mono → Prop := fun t => HasType test_lctx test_ctx t test_ty
+    let t ← Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 5) 5
+    IO.println s!"Generated {t}"
+
+
+#eval do
+    let P : LFunc BoogieLParams → Prop := fun f => ArrayFind test_lctx.functions f
+    let t ← Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 5) 5
+    IO.println s!"Generated {t.name} : {t.type}"
+
+#eval do
+    let P : LExpr BoogieLParams.mono → Prop := fun t => HasType test_lctx test_ctx t test_ty
+    let t ← Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 5) 5
+    IO.println s!"Generated {t}"
+    let b ← checkValid t
+    if ¬ b then
+      IO.println s!"Invalid!"
+
+-- -- This may take a while (~ 1min)
+-- #eval (checkFactoryOps false)
 
 end Tests
 
