@@ -10,10 +10,8 @@ import Strata.Languages.Laurel.Laurel
 import Strata.DL.Imperative.MetaData
 import Strata.Languages.Boogie.Expressions
 
----------------------------------------------------------------------
 namespace Laurel
 
-/- Translating concrete Laurel syntax into abstract Laurel syntax -/
 
 open Laurel
 open Std (ToFormat Format format)
@@ -21,7 +19,6 @@ open Strata (QualifiedIdent Arg SourceRange)
 open Lean.Parser (InputContext)
 open Imperative (MetaData Uri FileRange)
 
----------------------------------------------------------------------
 
 /- Translation Monad -/
 
@@ -39,8 +36,6 @@ def TransM.error [Inhabited α] (msg : String) : TransM α := do
   modify fun s => { s with errors := s.errors.push msg }
   return panic msg
 
----------------------------------------------------------------------
-
 /- Metadata -/
 
 def SourceRange.toMetaData (ictx : InputContext) (sr : SourceRange) : Imperative.MetaData Boogie.Expression :=
@@ -53,8 +48,6 @@ def SourceRange.toMetaData (ictx : InputContext) (sr : SourceRange) : Imperative
 
 def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Boogie.Expression) :=
   return arg.ann.toMetaData (← get).inputCtx
-
----------------------------------------------------------------------
 
 def checkOp (op : Strata.Operation) (name : QualifiedIdent) (argc : Nat) :
   TransM Unit := do
@@ -92,22 +85,17 @@ def translateBool (arg : Arg) : TransM Bool := do
       TransM.error s!"translateBool expects boolTrue or boolFalse, got {repr op.name}"
   | x => TransM.error s!"translateBool expects expression or operation, got {repr x}"
 
----------------------------------------------------------------------
-
 instance : Inhabited Procedure where
   default := {
     name := ""
     inputs := []
     output := .TVoid
     precondition := .LiteralBool true
-    decreases := .LiteralBool true
-    deterministic := true
-    reads := none
-    modifies := .LiteralBool true
+    decreases := none
+    determinism := Determinism.deterministic none
+    modifies := none
     body := .Transparent (.LiteralBool true)
   }
-
----------------------------------------------------------------------
 
 mutual
 
@@ -161,17 +149,18 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
     inputs := []
     output := .TVoid
     precondition := .LiteralBool true
-    decreases := .LiteralBool true
-    deterministic := true
-    reads := none
-    modifies := .LiteralBool true
+    decreases := none
+    determinism := Determinism.deterministic none
+    modifies := none
     body := .Transparent body
   }
 
+/- Translate concrete Laurel syntax into abstract Laurel syntax -/
 def parseProgram (prog : Strata.Program) : TransM Laurel.Program := do
   -- Unwrap the program operation if present
   -- The parsed program may have a single `program` operation wrapping the procedures
   let commands : Array Strata.Operation :=
+    -- support the program optionally being wrapped in a top level command
     if prog.commands.size == 1 && prog.commands[0]!.name == q`Laurel.program then
       -- Extract procedures from the program operation's first argument (Seq Procedure)
       match prog.commands[0]!.args[0]! with

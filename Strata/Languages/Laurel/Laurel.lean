@@ -52,12 +52,14 @@ structure Procedure: Type where
   inputs : List Parameter
   output : HighType
   precondition : StmtExpr
-  decreases : StmtExpr
-  deterministic: Bool
-  /- Reads clause defaults to empty for deterministic procedures, and everything for non-det ones -/
-  reads : Option StmtExpr
-  modifies : StmtExpr
+  decreases : Option StmtExpr -- optionally prove termination
+  determinism: Determinism
+  modifies : Option StmtExpr
   body : Body
+
+inductive Determinism where
+  | deterministic (reads: Option StmtExpr)
+  | nondeterministic
 
 structure Parameter where
   name : Identifier
