@@ -341,6 +341,124 @@ function Client_tag(v : Client) : (ClientTag);
 // Unique const axioms
 axiom [unique_BoolOrStrOrNoneTag]: BSN_BOOL_TAG != BSN_STR_TAG && BSN_BOOL_TAG != BSN_NONE_TAG && BSN_STR_TAG != BSN_NONE_TAG;
 
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// Datetime
+
+////// 1. Timedelta.
+
+// According to http://docs.python.org/3/library/datetime.html,
+// ""
+//  Only days, seconds and microseconds are stored internally. Arguments are
+//  converted to those units:
+//  - A millisecond is converted to 1000 microseconds.
+//  - A minute is converted to 60 seconds.
+//  - An hour is converted to 3600 seconds.
+//  - A week is converted to 7 days.
+//  and days, seconds and microseconds are then normalized so that the
+//  representation is unique, with
+//  - 0 <= microseconds < 1000000
+//  - 0 <= seconds < 3600*24 (the number of seconds in one day)
+//  - -999999999 <= days <= 999999999
+// ""
+
+// In Boogie representation, an int type that corresponds to the full
+// milliseconds is simply used. See Timedelta_mk.
+
+
+procedure timedelta(days: int) returns (delta : int, maybe_except: ExceptOrNone)
+spec{
+  free ensures [ensure_timedelta_sign_matches]: (delta == (days * 3600 * 24));
+}
+{
+  havoc delta;
+  assume [assume_timedelta_sign_matches]: (delta == (days * 3600 * 24));
+};
+
+function Timedelta_mk(days : int, seconds : int, microseconds : int): int {
+  ((days * 3600 * 24) + seconds) * 1000000 + microseconds
+}
+
+function Timedelta_get_days(timedelta : int) : int;
+function Timedelta_get_seconds(timedelta : int) : int;
+function Timedelta_get_microseconds(timedelta : int) : int;
+
+axiom [Timedelta_deconstructors]:
+    (forall days0 : int, seconds0 : int, msecs0 : int,
+            days : int, seconds : int, msecs : int
+            :: {(Timedelta_mk(days0, seconds0, msecs0))}
+      Timedelta_mk(days0, seconds0, msecs0) ==
+          Timedelta_mk(days, seconds, msecs) &&
+      0 <= msecs && msecs < 1000000 &&
+      0 <= seconds && seconds < 3600 * 24 &&
+      -999999999 <= days && days <= 999999999
+      ==> Timedelta_get_days(Timedelta_mk(days0, seconds0, msecs0)) == days &&
+          Timedelta_get_seconds(Timedelta_mk(days0, seconds0, msecs0)) == seconds &&
+          Timedelta_get_microseconds(Timedelta_mk(days0, seconds0, msecs0)) == msecs);
+
+
+////// Datetime.
+// Datetime is abstractly defined as a pair of (base time, relative timedelta).
+// datetime.now() returns (<the curent datetime>, 0).
+// Adding or subtracting datetime.timedelta updates
+type Datetime;
+type Datetime_base;
+
+function Datetime_get_base(d : Datetime) : Datetime_base;
+function Datetime_get_timedelta(d : Datetime) : int;
+
+// now() returns an abstract, fresh current datetime.
+// This abstract now() does not guarantee monotonic increase of time, and this
+// means subtracting an 'old' timestamp from a 'new' timestamp may return
+// a negative difference.
+
+procedure datetime_now() returns (d:Datetime, maybe_except: ExceptOrNone)
+spec {
+  ensures (Datetime_get_timedelta(d) == Timedelta_mk(0,0,0));
+}
+{
+  havoc d;
+  assume [assume_datetime_now]: (Datetime_get_timedelta(d) == Timedelta_mk(0,0,0));
+};
+
+// Addition/subtraction of Datetime and Timedelta.
+function Datetime_add(d:Datetime, timedelta:int):Datetime;
+function Datetime_sub(d:Datetime, timedelta:int):Datetime {
+  Datetime_add(d, -timedelta)
+}
+
+axiom [Datetime_add_ax]:
+    (forall d:Datetime, timedelta:int :: {}
+        Datetime_get_base(Datetime_add(d,timedelta)) == Datetime_get_base(d) &&
+        Datetime_get_timedelta(Datetime_add(d,timedelta)) ==
+          Datetime_get_timedelta(d)  + timedelta);
+
+// Comparison of Datetimes is abstractly defined so that the result is
+// meaningful only if the two datetimes have same base.
+function Datetime_lt(d1:Datetime, d2:Datetime):bool;
+
+axiom [Datetime_lt_ax]:
+    (forall d1:Datetime, d2:Datetime :: {}
+        Datetime_get_base(d1) == Datetime_get_base(d2)
+        ==> Datetime_lt(d1, d2) ==
+            (Datetime_get_timedelta(d1) < Datetime_get_timedelta(d2)));
+
+
+type Date;
+procedure datetime_date(dt: Datetime) returns (d : Datetime, maybe_except: ExceptOrNone)
+spec{}
+{havoc d;};
+
+procedure datetime_strptime(time: string, format: string) returns (d : Datetime, maybe_except: ExceptOrNone)
+spec{}
+{
+  havoc d;
+};
+
+
+/////////////////////////////////////////////////////////////////////////////////////
+
+
 // /////////////////////////////////////////////////////////////////////////////////////
 
 // Uninterpreted procedures
@@ -349,15 +467,23 @@ procedure import(names : ListStr) returns ();
 procedure print(msg : string, opt : StrOrNone) returns ();
 
 procedure json_dumps(msg : DictStrAny, opt_indent : IntOrNone) returns (s: string, maybe_except: ExceptOrNone)
+spec{}
+{havoc s;}
 ;
 
 procedure json_loads(msg : string) returns (d: DictStrAny, maybe_except: ExceptOrNone)
+spec{}
+{havoc d;}
 ;
 
 procedure input(msg : string) returns (result: string, maybe_except: ExceptOrNone)
+spec{}
+{havoc result;}
 ;
 
 procedure random_choice(l : ListStr) returns (result: string, maybe_except: ExceptOrNone)
+spec{}
+{havoc result;}
 ;
 
 function str_in_list_str(s : string, l: ListStr) : bool;
@@ -373,6 +499,7 @@ function dict_str_any_get(d : DictStrAny, k: string) : DictStrAny;
 function dict_str_any_length(d : DictStrAny) : int;
 
 // /////////////////////////////////////////////////////////////////////////////////////
+
 
 
 procedure test_helper_procedure(req_name : string, opt_name : StrOrNone) returns (maybe_except: ExceptOrNone)
