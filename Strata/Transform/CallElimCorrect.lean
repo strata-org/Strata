@@ -23,7 +23,7 @@ import Strata.DL.Util.ListUtils
 
   This file contains the main proof that the call elimination transformation is
   semantics preserving (see `callElimStatementCorrect`).
-  Additionally, `callElimStmtsNoExcept` shows that the call elimination
+  Additionally, `callElimBlockNoExcept` shows that the call elimination
   transformation always succeeds on well-formed statements.
 -/
 
@@ -164,7 +164,7 @@ theorem getIdentTys!_no_throw :
     simp [pure, StateT.pure]
 
 -- Step 1. A theorem stating that given a well-formed program, call-elim will return no exception
-theorem callElimStmtsNoExcept :
+theorem callElimBlockNoExcept :
   ∀ (st : Boogie.Statement)
     (p : Boogie.Program),
     WF.WFStatementsProp p [st] →
@@ -661,7 +661,7 @@ theorem EvalStatementsContractInitVars :
     | mk pair v =>
     cases pair with
     | mk v' ty =>
-    apply Imperative.EvalStmts.stmts_some_sem
+    apply Imperative.EvalBlock.stmts_some_sem
     apply EvalStatementContractInitVar <;> try assumption
     apply Hndef <;> simp_all
     unfold updatedStates
@@ -732,7 +732,7 @@ theorem EvalStatementsContractInits :
     | mk pair v =>
     cases pair with
     | mk v' ty =>
-    apply Imperative.EvalStmts.stmts_some_sem
+    apply Imperative.EvalBlock.stmts_some_sem
     apply EvalStatementContractInit <;> try assumption
     apply Hndef <;> simp_all
     unfold updatedStates
@@ -853,12 +853,12 @@ theorem EvalStatementsContractHavocVars :
   case nil =>
     have Heq := HavocVarsEmpty Hhav
     simp_all
-    exact Imperative.EvalStmts.stmts_none_sem
+    exact Imperative.EvalBlock.stmts_none_sem
   case cons h t ih =>
     simp [createHavoc]
     cases Hhav with
     | update_some Hup Hhav =>
-    apply Imperative.EvalStmts.stmts_some_sem
+    apply Imperative.EvalBlock.stmts_some_sem
     apply EvalStmtRefinesContract
     apply Imperative.EvalStmt.cmd_sem
     apply EvalCommand.cmd_sem
@@ -3596,7 +3596,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
                       (argTrips.unzip.fst.unzip.fst ++
                       outTrips.unzip.fst.unzip.fst ++
                       oldTrips.unzip.fst.unzip.fst) := by
-        simp only [EvalStmtsEmpty Heval2] at *
+        simp only [EvalBlockEmpty Heval2] at *
         apply UpdateStatesNotDefMonotone ?_ Hupdate
         intros v Hin
         have Htemp : v.isTemp = true := by
