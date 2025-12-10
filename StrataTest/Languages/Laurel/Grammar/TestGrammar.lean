@@ -1,3 +1,9 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
 -- Test the minimal Laurel grammar
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import StrataTest.DDM.TestGrammar

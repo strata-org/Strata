@@ -1,3 +1,9 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
 import Strata.Languages.Boogie.Program
 import Strata.Languages.Boogie.Verifier
 import Strata.Languages.Boogie.Statement
