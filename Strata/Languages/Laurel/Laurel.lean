@@ -24,7 +24,7 @@ Design choices:
 - Pure contracts: contracts may only contain pure code. Pure code does not modify the heap, neither by modifying existing objects are creating new ones.
 - Procedures: instead of functions and methods we have a single more general concept called a 'procedure'.
 - Determinism: procedures can be marked as deterministic or not. For deterministic procedures with a non-empty reads clause, we can assumption the result is unchanged if the read references are the same.
-- Opacity: procedures can have a body that's transparant or opaque. Only an opaque body may declare a postcondition. A transparant procedure must be deterministic.
+- Opacity: procedures can have a body that's transparant or opaque. Only an opaque body may declare a postcondition.
 - StmtExpr: Statements and expressions are part of the same type. This reduces duplication since the same concepts are needed in both, such as conditions and variable declarations.
 - Loops: The only loop is a while, but this can be used to compile do-while and for loops to as well.
 - Jumps: Instead of break and continue statements, there is a labelled block that can be exited from using an exit statement inside of it.

@@ -60,23 +60,11 @@ structure GrammarTestResult where
 
     Returns:
     - GrammarTestResult with parse/format results -/
-def testGrammarFile (loader : Elab.LoadedDialects) (dialectName : String) (filePath : String) : IO GrammarTestResult := do
-  let fileContent ← IO.FS.readFile filePath
-
-  -- Add program header to the content
-  let content := s!"program {dialectName};\n\n" ++ fileContent
-
-  -- Create InputContext from the file content
-  let inputCtx := Strata.Parser.stringInputContext filePath content
-
-  -- Create empty Lean environment
-  let leanEnv ← Lean.mkEmptyEnvironment 0
-
-  -- Parse using the dialect
-  let ddmResult := Elab.elabProgram loader leanEnv inputCtx
+def testGrammarFile (dialect: Dialect) (filePath : String) : IO GrammarTestResult := do
+  let ddmResult := Strata.Elab.parseDialectIntoConcreteAst filePath dialect
 
   match ddmResult with
-  | Except.error messages =>
+  | .error messages _ =>
     let errorMsgs ← messages.toList.mapM (fun msg => msg.toString)
     return {
       parseSuccess := false
@@ -85,15 +73,11 @@ def testGrammarFile (loader : Elab.LoadedDialects) (dialectName : String) (fileP
       normalizedMatch := false
       errorMessages := errorMsgs
     }
-  | Except.ok ddmProgram =>
-    -- Format the DDM program back to a string
+  | .ok ddmProgram =>
     let formatted := ddmProgram.format.render
-
-    -- Strip comments and normalize whitespace in both strings
     let normalizedInput := normalizeWhitespace (stripComments content)
     let normalizedOutput := normalizeWhitespace formatted
 
-    -- Compare
     let isMatch := normalizedInput == normalizedOutput
 
     return {
@@ -104,7 +88,6 @@ def testGrammarFile (loader : Elab.LoadedDialects) (dialectName : String) (fileP
       errorMessages := []
     }
 
-/-- Print detailed test results -/
 def printTestResult (result : GrammarTestResult) (showFormatted : Bool := true) : IO Unit := do
 
   if !result.parseSuccess then
