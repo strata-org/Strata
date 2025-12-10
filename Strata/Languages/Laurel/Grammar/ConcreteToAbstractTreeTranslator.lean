@@ -12,15 +12,11 @@ import Strata.Languages.Boogie.Expressions
 
 namespace Laurel
 
-
 open Laurel
 open Std (ToFormat Format format)
 open Strata (QualifiedIdent Arg SourceRange)
 open Lean.Parser (InputContext)
 open Imperative (MetaData Uri FileRange)
-
-
-/- Translation Monad -/
 
 structure TransState where
   inputCtx : InputContext
@@ -35,8 +31,6 @@ def TransM.run (ictx : InputContext) (m : TransM α) : (α × Array String) :=
 def TransM.error [Inhabited α] (msg : String) : TransM α := do
   modify fun s => { s with errors := s.errors.push msg }
   return panic msg
-
-/- Metadata -/
 
 def SourceRange.toMetaData (ictx : InputContext) (sr : SourceRange) : Imperative.MetaData Boogie.Expression :=
   let file := ictx.fileName
@@ -114,7 +108,6 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
       let stmts ← translateSeqCommand op.args[0]!
       return .Block stmts none
     else if op.name == q`Laurel.literalBool then
-      -- literalBool wraps a bool value (boolTrue or boolFalse)
       let boolVal ← translateBool op.args[0]!
       return .LiteralBool boolVal
     else if op.name == q`Laurel.boolTrue then

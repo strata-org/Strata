@@ -7,7 +7,7 @@ procedure foo() {
     assert true;
     assert false;
 //  ^^^^^^^^^^^^^ error: assertion does not hold
-    assert false; // TODO: decide if this has an error
+    assert false;
 //  ^^^^^^^^^^^^^ error: assertion does not hold
 }
 
