@@ -353,6 +353,35 @@ def verify
   else
     panic! s!"DDM Transform Error: {repr errors}"
 
+/-- A diagnostic produced by analyzing a file -/
+structure Diagnostic where
+  start : Lean.Position
+  ending : Lean.Position
+  message : String
+  deriving Repr, BEq
+
+def toDiagnostic (vcr : Boogie.VCResult) : Option Diagnostic := do
+  -- Only create a diagnostic if the result is not .unsat (i.e., verification failed)
+  match vcr.result with
+  | .unsat => none  -- Verification succeeded, no diagnostic
+  | result =>
+    -- Extract file range from metadata
+    let fileRangeElem ← vcr.obligation.metadata.findElem Imperative.MetaData.fileRange
+    match fileRangeElem.value with
+    | .fileRange range =>
+      let message := match result with
+        | .sat _ => "assertion does not hold"
+        | .unknown => "assertion verification result is unknown"
+        | .err msg => s!"verification error: {msg}"
+        | _ => "verification failed"
+      some {
+        -- Subtract headerOffset to account for program header we added
+        start := { line := range.start.line, column := range.start.column }
+        ending := { line := range.ending.line, column := range.ending.column }
+        message := message
+      }
+    | _ => none
+
 end Strata
 
 ---------------------------------------------------------------------

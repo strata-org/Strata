@@ -14,6 +14,7 @@ import Strata.Languages.Laurel.Laurel
 namespace Laurel
 
 open Boogie (VCResult VCResults)
+open Strata
 
 /-
 Translate Laurel StmtExpr to Boogie Expression
@@ -75,10 +76,14 @@ def translate (program : Program) : Boogie.Program :=
 /-
 Verify a Laurel program using an SMT solver
 -/
-def verify (smtsolver : String) (program : Program)
+def verifyToVcResults (smtsolver : String) (program : Program)
     (options : Options := Options.default) : IO VCResults := do
   let boogieProgram := translate program
   EIO.toIO (fun f => IO.Error.userError (toString f))
       (Boogie.verify smtsolver boogieProgram options)
+
+def verifyToDiagnostics (smtsolver : String) (program : Program): IO (Array Diagnostic)  := do
+  let results <- verifyToVcResults smtsolver program
+  return results.filterMap toDiagnostic
 
 end Laurel

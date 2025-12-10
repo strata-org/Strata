@@ -4,20 +4,10 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+import Strata.Languages.Boogie.Verifier
+
+open Strata
 namespace StrataTest.Util
-
-/-- A position in a source file -/
-structure Position where
-  line : Nat
-  column : Nat
-  deriving Repr, BEq
-
-/-- A diagnostic produced by analyzing a file -/
-structure Diagnostic where
-  start : Position
-  ending : Position
-  message : String
-  deriving Repr, BEq
 
 /-- A diagnostic expectation parsed from source comments -/
 structure DiagnosticExpectation where
@@ -57,7 +47,7 @@ def parseDiagnosticExpectations (content : String) : List DiagnosticExpectation 
             let message := (": ".intercalate messageParts).trim
 
             -- Calculate column positions (carets are relative to line start including comment spacing)
-            let commentPrefix := (line.takeWhile (fun c => c == ' ' || c == '\t')).length + 1 + "//".length
+            let commentPrefix := (line.takeWhile (fun c => c == ' ' || c == '\t')).length + "//".length
             let caretColStart := commentPrefix + caretStart.byteIdx
             let caretColEnd := commentPrefix + caretEnd.byteIdx
 
@@ -88,7 +78,7 @@ def matchesDiagnostic (diag : Diagnostic) (exp : DiagnosticExpectation) : Bool :
 
 /-- Generic test function for files with diagnostic expectations.
     Takes a function that processes a file path and returns a list of diagnostics. -/
-def testFile (processFn : String -> IO (List Diagnostic)) (filePath : String) : IO Unit := do
+def testFile (processFn : String -> IO (Array Diagnostic)) (filePath : String) : IO Unit := do
   let content <- IO.FS.readFile filePath
 
   -- Parse diagnostic expectations from comments
@@ -117,14 +107,14 @@ def testFile (processFn : String -> IO (List Diagnostic)) (filePath : String) : 
       unmatchedDiagnostics := unmatchedDiagnostics.append [diag]
 
   -- Report results
-  if allMatched && diagnostics.length == expectedErrors.length then
+  if allMatched && diagnostics.size == expectedErrors.length then
     IO.println s!"✓ Test passed: All {expectedErrors.length} error(s) matched"
     -- Print details of matched expectations
     for exp in expectedErrors do
       IO.println s!"  - Line {exp.line}, Col {exp.colStart}-{exp.colEnd}: {exp.message}"
   else
     IO.println s!"✗ Test failed: Mismatched diagnostics"
-    IO.println s!"\nExpected {expectedErrors.length} error(s), got {diagnostics.length} diagnostic(s)"
+    IO.println s!"\nExpected {expectedErrors.length} error(s), got {diagnostics.size} diagnostic(s)"
 
     if unmatchedExpectations.length > 0 then
       IO.println s!"\nUnmatched expected diagnostics:"

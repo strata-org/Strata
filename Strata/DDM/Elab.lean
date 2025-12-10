@@ -421,8 +421,11 @@ def parseDialectIntoConcreteAst (filePath : String) (dialect: Dialect) : IO (Inp
 
   let leanEnv ← Lean.mkEmptyEnvironment 0
   let inputContext := Strata.Parser.stringInputContext filePath contents
+  let returnedInputContext := {inputContext with
+    fileMap := { source := fileContent, positions := inputContext.fileMap.positions.drop 2 }
+  }
   let strataProgram ← match Strata.Elab.elabProgram dialects leanEnv inputContext with
-    | .ok program => pure (inputContext, program)
+    | .ok program => pure (returnedInputContext, program)
     | .error errors =>
       let errMsg ← errors.foldlM (init := "Parse errors:\n") fun msg e =>
         return s!"{msg}  {e.pos.line}:{e.pos.column}: {← e.data.toString}\n"
