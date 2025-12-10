@@ -40,31 +40,9 @@ def vcResultToDiagnostic (headerOffset : Nat) (vcr : Boogie.VCResult) : Option D
     | _ => none
 
 def processLaurelFile (filePath : String) : IO (List Diagnostic) := do
-  -- Read file content
-  let bytes ← Strata.Util.readBinInputSource filePath
-  let fileContent ← match String.fromUTF8? bytes with
-    | some s => pure s
-    | none => throw (IO.userError s!"File {filePath} contains non UTF-8 data")
 
-  -- Create LoadedDialects with the Init and Laurel dialects
   let laurelDialect : Strata.Dialect := Laurel
-  let dialects := Elab.LoadedDialects.ofDialects! #[initDialect, laurelDialect]
-  let dialect : Strata.DialectName := "Laurel"
-
-  -- Add program header to the content
-  let contents := s!"program {dialect};\n\n" ++ fileContent
-
-  -- Parse the file content as a Laurel program
-  let leanEnv ← Lean.mkEmptyEnvironment 0
-  let inputContext := Strata.Parser.stringInputContext filePath contents
-
-  -- Parse using elabProgram which handles the program header
-  let strataProgram ← match Strata.Elab.elabProgram dialects leanEnv inputContext with
-    | .ok program => pure program
-    | .error errors =>
-      let errMsg ← errors.foldlM (init := "Parse errors:\n") fun msg e =>
-        return s!"{msg}  {e.pos.line}:{e.pos.column}: {← e.data.toString}\n"
-      throw (IO.userError errMsg)
+  let (inputContext, strataProgram) ← Strata.Elab.parseDialectIntoConcreteAst filePath laurelDialect
 
   -- Convert to Laurel.Program using parseProgram (handles unwrapping the program operation)
   let (laurelProgram, transErrors) := Laurel.TransM.run inputContext (Laurel.parseProgram strataProgram)

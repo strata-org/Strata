@@ -54,26 +54,17 @@ structure GrammarTestResult where
 /-- Test parsing and formatting a file with a given dialect.
 
     Takes:
-    - loader: The dialect loader containing all required dialects
-    - dialectName: Name of the dialect (for the "program" header)
+    - dialect: The dialect to use for parsing
     - filePath: Path to the source file to test
 
     Returns:
     - GrammarTestResult with parse/format results -/
 def testGrammarFile (dialect: Dialect) (filePath : String) : IO GrammarTestResult := do
-  let ddmResult := Strata.Elab.parseDialectIntoConcreteAst filePath dialect
+  -- Read file content
+  let content ← IO.FS.readFile filePath
 
-  match ddmResult with
-  | .error messages _ =>
-    let errorMsgs ← messages.toList.mapM (fun msg => msg.toString)
-    return {
-      parseSuccess := false
-      normalizedInput := ""
-      normalizedOutput := ""
-      normalizedMatch := false
-      errorMessages := errorMsgs
-    }
-  | .ok ddmProgram =>
+  try
+    let (_, ddmProgram) ← Strata.Elab.parseDialectIntoConcreteAst filePath dialect
     let formatted := ddmProgram.format.render
     let normalizedInput := normalizeWhitespace (stripComments content)
     let normalizedOutput := normalizeWhitespace formatted
@@ -86,6 +77,14 @@ def testGrammarFile (dialect: Dialect) (filePath : String) : IO GrammarTestResul
       normalizedOutput := normalizedOutput
       normalizedMatch := isMatch
       errorMessages := []
+    }
+  catch e =>
+    return {
+      parseSuccess := false
+      normalizedInput := ""
+      normalizedOutput := ""
+      normalizedMatch := false
+      errorMessages := [toString e]
     }
 
 def printTestResult (result : GrammarTestResult) (showFormatted : Bool := true) : IO Unit := do

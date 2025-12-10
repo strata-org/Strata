@@ -408,7 +408,7 @@ def elabDialect
   | .dialect loc dialect =>
     elabDialectRest fm dialects #[] inputContext loc dialect startPos stopPos
 
-def parseDialectIntoConcreteAst (filePath : String) (dialect: Dialect) : IO Strata.Program := do
+def parseDialectIntoConcreteAst (filePath : String) (dialect: Dialect) : IO (InputContext × Strata.Program) := do
   let dialects := Elab.LoadedDialects.ofDialects! #[initDialect, dialect]
 
   let bytes ← Strata.Util.readBinInputSource filePath
@@ -422,7 +422,7 @@ def parseDialectIntoConcreteAst (filePath : String) (dialect: Dialect) : IO Stra
   let leanEnv ← Lean.mkEmptyEnvironment 0
   let inputContext := Strata.Parser.stringInputContext filePath contents
   let strataProgram ← match Strata.Elab.elabProgram dialects leanEnv inputContext with
-    | .ok program => pure program
+    | .ok program => pure (inputContext, program)
     | .error errors =>
       let errMsg ← errors.foldlM (init := "Parse errors:\n") fun msg e =>
         return s!"{msg}  {e.pos.line}:{e.pos.column}: {← e.data.toString}\n"
