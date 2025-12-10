@@ -16,10 +16,8 @@ namespace Laurel
 
 def testAssertFalse : IO Unit := do
   let laurelDialect: Strata.Dialect := Laurel
-  let loader := Elab.LoadedDialects.ofDialects! #[initDialect, laurelDialect]
-
   let filePath := "Strata/Languages/Laurel/Examples/AssertFalse.lr.st"
-  let result ← testGrammarFile loader "Laurel" filePath
+  let result ← testGrammarFile laurelDialect filePath
 
   if !result.normalizedMatch then
     throw (IO.userError "Test failed: formatted output does not match input")
