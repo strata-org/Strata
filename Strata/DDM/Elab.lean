@@ -408,7 +408,7 @@ def elabDialect
   | .dialect loc dialect =>
     elabDialectRest fm dialects #[] inputContext loc dialect startPos stopPos
 
-def parseDialectIntoConcreteAst (filePath : String) (dialect: Dialect) : IO (InputContext × Strata.Program) := do
+def parseStrataProgramFromDialect (filePath : String) (dialect: Dialect) : IO (InputContext × Strata.Program) := do
   let dialects := Elab.LoadedDialects.ofDialects! #[initDialect, dialect]
 
   let bytes ← Strata.Util.readBinInputSource filePath

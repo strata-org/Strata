@@ -61,7 +61,7 @@ structure GrammarTestResult where
     - GrammarTestResult with parse/format results -/
 def testGrammarFile (dialect: Dialect) (filePath : String) : IO GrammarTestResult := do
   try
-    let (inputContext, ddmProgram) ← Strata.Elab.parseDialectIntoConcreteAst filePath dialect
+    let (inputContext, ddmProgram) ← Strata.Elab.parseStrataProgramFromDialect filePath dialect
     let formatted := ddmProgram.format.render
     let normalizedInput := normalizeWhitespace (stripComments inputContext.inputString)
     let normalizedOutput := normalizeWhitespace formatted

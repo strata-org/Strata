@@ -21,7 +21,7 @@ namespace Laurel
 def processLaurelFile (filePath : String) : IO (Array Diagnostic) := do
 
   let laurelDialect : Strata.Dialect := Laurel
-  let (inputContext, strataProgram) ← Strata.Elab.parseDialectIntoConcreteAst filePath laurelDialect
+  let (inputContext, strataProgram) ← Strata.Elab.parseStrataProgramFromDialect filePath laurelDialect
 
   -- Convert to Laurel.Program using parseProgram (handles unwrapping the program operation)
   let (laurelProgram, transErrors) := Laurel.TransM.run inputContext (Laurel.parseProgram strataProgram)
