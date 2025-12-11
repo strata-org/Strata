@@ -297,11 +297,8 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
            results := results.push { obligation, result, estate, verbose := options.verbose }
            if result ≠ .unsat then
             let prog := f!"\n\nEvaluated program:\n{p}"
-            let resultMsg := match result with
-              | .sat cex => if options.verbose then f!"failed\nCEx: {cex}" else "failed"
-              | _ => f!"{result}"
             dbg_trace f!"\n\nObligation {obligation.label}: could not be proved!\
-                         \n\nResult: {resultMsg}\
+                         \n\nResult: {result.formatWithVerbose options.verbose}\
                          {if options.verbose then prog else ""}"
            if options.stopOnFirstError then break
         | .error e =>
