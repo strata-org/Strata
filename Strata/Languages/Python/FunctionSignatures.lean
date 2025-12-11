@@ -21,7 +21,7 @@ def getFuncSigOrder (fname: String) : List String :=
   | "datetime_now" => []
   | "datetime_utcnow" => []
   | "datetime_date" => ["dt"]
-  | "timedelta" => ["days"]
+  | "timedelta" => ["days", "hours"]
   | "datetime_strptime" => ["time", "format"]
   | "str_to_float" => ["s"]
   | _ => panic! s!"Missing function signature : {fname}"
@@ -68,7 +68,8 @@ def getFuncSigType (fname: String) (arg: String) : String :=
     | _ => panic! s!"Unrecognized arg : {arg}"
   | "timedelta" =>
     match arg with
-    | "days" => "int"
+    | "days" => "IntOrNone"
+    | "hours" => "IntOrNone"
     | _ => panic! s!"Unrecognized arg : {arg}"
   | "datetime_strptime" =>
     match arg with

@@ -176,7 +176,7 @@ def getSolverPrelude : String → SolverM Unit
   -- These options are set by the standard Boogie implementation and are
   -- generally good for the Boogie dialect, too, though we may want to
   -- have more fine-grained criteria for when to use them.
-  Solver.setOption "smt.mbqi" "false"
+  Solver.setOption "smt.mbqi" "true"
   Solver.setOption "auto_config" "false"
 | "cvc5" => return ()
 | _ => return ()
