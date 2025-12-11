@@ -521,6 +521,17 @@ spec {
   assume [assume_maybe_except_none]: (ExceptOrNone_tag(maybe_except) == EN_NONE_TAG);
 };
 
+type LayoutTensor;
+procedure LayoutTensor_mk() returns (result: LayoutTensor, maybe_except: ExceptOrNone)
+spec{}
+{
+};
+
+procedure barrier() returns (maybe_except: ExceptOrNone)
+spec{}
+{
+};
+
 #end
 
 def Boogie.prelude : Boogie.Program :=

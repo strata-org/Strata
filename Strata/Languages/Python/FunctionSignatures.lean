@@ -24,6 +24,10 @@ def getFuncSigOrder (fname: String) : List String :=
   | "timedelta" => ["days", "hours"]
   | "datetime_strptime" => ["time", "format"]
   | "str_to_float" => ["s"]
+  | "LayoutTensor_mk" => []
+  | "LayoutTensor_get" => ["i"]
+  | "LayoutTensor_set" => ["i"]
+  | "barrier" => []
   | _ => panic! s!"Missing function signature : {fname}"
 
 -- We should extract the function signatures from the prelude:
@@ -79,6 +83,20 @@ def getFuncSigType (fname: String) (arg: String) : String :=
   | "str_to_float" =>
     match arg with
     | "s" => "string"
+    | _ => panic! s!"Unrecognized arg : {arg}"
+  | "LayoutTensor_mk" =>
+    match arg with
+    | _ => panic! s!"Unrecognized arg : {arg}"
+  | "LayoutTensor_get" =>
+    match arg with
+    | "i" => "int"
+    | _ => panic! s!"Unrecognized arg : {arg}"
+  | "LayoutTensor_set" =>
+    match arg with
+    | "i" => "int"
+    | _ => panic! s!"Unrecognized arg : {arg}"
+  | "barrier" =>
+    match arg with
     | _ => panic! s!"Unrecognized arg : {arg}"
   | _ => panic! s!"Missing function signature : {fname}"
 

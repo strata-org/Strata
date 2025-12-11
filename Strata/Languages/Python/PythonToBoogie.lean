@@ -41,6 +41,37 @@ def dummyDate : Boogie.Expression.Expr := .fvar () "DUMMY_DATE" none
 def timedeltaType : Boogie.Expression.Ty := .forAll [] (.tcons "int" [])
 def dummyTimedelta : Boogie.Expression.Expr := .fvar () "DUMMY_Timedelta" none
 
+def layoutTensorType : Boogie.Expression.Ty := .forAll [] (.tcons "LayoutTensor" [])
+def dummyLayoutTensor : Boogie.Expression.Expr := .fvar () "DUMMY_LayoutTensor" none
+
+-------------------------------------------------------------------------------
+
+-- Translating a Python expression can require Boogie statements, e.g., a function call
+-- We translate these by first defining temporary variables to store the results of the stmts
+-- and then using those variables in the expression.
+structure PyExprTranslated where
+  stmts : List Boogie.Statement
+  expr: Boogie.Expression.Expr
+  post_stmts : List Boogie.Statement := []
+deriving Inhabited
+
+
+structure PythonFunctionDecl where
+  name : String
+  args : List (String × String) -- Elements are (arg_name, arg_ty) where `arg_ty` is the string representation of the type in Python
+  ret : String
+deriving Repr, BEq, Inhabited
+
+structure PythonClassDecl where
+  name : String
+deriving Repr, BEq, Inhabited
+
+structure TranslationContext where
+  expectedType : Option (Lambda.LMonoTy)
+  variableTypes : List (String × Lambda.LMonoTy)
+  func_infos : List PythonFunctionDecl
+  class_infos : List PythonClassDecl
+deriving Inhabited
 
 -------------------------------------------------------------------------------
 
@@ -95,15 +126,25 @@ def handleSub (lhs rhs: Boogie.Expression.Expr) : Boogie.Expression.Expr :=
   | (.tcons "Datetime" []), (.tcons "int" []) => .app () (.app () (.op () "Datetime_sub" none) lhs) rhs
   | _, _ => panic! s!"Unimplemented add op for {lhs} + {rhs}"
 
-def handleMult (lhs rhs: Boogie.Expression.Expr) : Boogie.Expression.Expr :=
-  let lty : Lambda.LMonoTy := mty[string]
-  let rty : Lambda.LMonoTy := mty[int]
-  match lty, rty with
-  | (.tcons "string" []), (.tcons "int" []) =>
-    match lhs, rhs with
-    | .strConst () s, .intConst () i => .strConst () (String.join (List.replicate i.toNat s))
-    | _, _ => panic! s!"We only handle str * int for constant strings and ints. Got: {lhs} and {rhs}"
-  | _, _ => panic! s!"Unimplemented add op for {lhs} + {rhs}"
+def handleMult (translation_ctx: TranslationContext) (lhs rhs: Boogie.Expression.Expr) : Boogie.Expression.Expr :=
+  match lhs, rhs with
+  | .strConst () s, .intConst () i => .strConst () (String.join (List.replicate i.toNat s))
+  | .intConst () l, .intConst () r => .intConst () (l * r)
+  | .fvar () l _, .fvar () r _ =>
+    let l := translation_ctx.variableTypes.find? (λ p => p.fst == l.name)
+    let r := translation_ctx.variableTypes.find? (λ p => p.fst == r.name)
+    match l, r with
+    | .some lty, .some rty =>
+      match lty.snd, rty.snd with
+      | .tcons "int" [], .tcons "int" [] => .app () (.app () (.op () "Int.Mul" mty[int → (int → int)]) lhs) rhs
+      | _, _ => panic! s!"Unsupported types for fvar *. Types: {lty} and {rty}"
+    | _, _ => panic! s!"Missing needed type information for *. Exprs: {lhs} and {rhs}"
+  | .app () (.app () (.op () "layouttensor_get" none) _) _, .app () (.app () (.op () "layouttensor_get" none) _) _ =>
+    .intConst () 1234
+  | _ , _ => panic! s!"Unsupported args for * . Got: {lhs} and {rhs}"
+
+def handleFloorDiv (_translation_ctx: TranslationContext) (lhs rhs: Boogie.Expression.Expr) : Boogie.Expression.Expr :=
+  .app () (.app () (.op () "Int.Div" mty[int → (int → int)]) lhs) rhs
 
 def handleNot (arg: Boogie.Expression.Expr) : Boogie.Expression.Expr :=
   let ty : Lambda.LMonoTy := (.tcons "ListStr" [])
@@ -118,6 +159,9 @@ def handleLtE (lhs rhs: Boogie.Expression.Expr) : Boogie.Expression.Expr :=
 
 def handleGt (lhs rhs: Boogie.Expression.Expr) : Boogie.Expression.Expr :=
   (.app () (.app () (.op () "Float_gt" none) lhs) rhs)
+
+def handleLt (lhs rhs: Boogie.Expression.Expr) : Boogie.Expression.Expr :=
+  (.app () (.app () (.op () "Int.Lt" none) lhs) rhs)
 
 structure SubstitutionRecord where
   pyExpr : Python.expr SourceRange
@@ -137,33 +181,6 @@ def PyExprIdent (e1 e2: Python.expr SourceRange) : Bool :=
 def PyListStrToBoogie (names : Array (Python.alias SourceRange)) : Boogie.Expression.Expr :=
   .app () (.app () (.op () "ListStr_cons" mty[string → (ListStr → ListStr)]) (PyAliasToBoogieExpr names[0]!))
        (.op () "ListStr_nil" mty[ListStr])
-
--- Translating a Python expression can require Boogie statements, e.g., a function call
--- We translate these by first defining temporary variables to store the results of the stmts
--- and then using those variables in the expression.
-structure PyExprTranslated where
-  stmts : List Boogie.Statement
-  expr: Boogie.Expression.Expr
-  post_stmts : List Boogie.Statement := []
-deriving Inhabited
-
-
-structure PythonFunctionDecl where
-  name : String
-  args : List (String × String) -- Elements are (arg_name, arg_ty) where `arg_ty` is the string representation of the type in Python
-  ret : String
-deriving Repr, BEq, Inhabited
-
-structure PythonClassDecl where
-  name : String
-deriving Repr, BEq, Inhabited
-
-structure TranslationContext where
-  expectedType : Option (Lambda.LMonoTy)
-  variableTypes : List (String × Lambda.LMonoTy)
-  func_infos : List PythonFunctionDecl
-  class_infos : List PythonClassDecl
-deriving Inhabited
 
 def handleList (_elmts: Array (Python.expr SourceRange)) (expected_type : Lambda.LMonoTy): PyExprTranslated :=
   match expected_type with
@@ -193,7 +210,7 @@ partial def PyExprToString (e : Python.expr SourceRange) : String :=
       match slice with
       | .Name _ id _ => s!"List[{id.val}]"
       | _ => panic! s!"Unsupported slice: {repr slice}"
-    | _ => panic! s!"Unsupported subscript to string: {repr e}"
+    | _ => PyExprToString v
   | _ => panic! s!"Unhandled Expr: {repr e}"
 
 def PyExprToMonoTy (e : Python.expr SourceRange) : Lambda.LMonoTy :=
@@ -211,6 +228,7 @@ def PyExprToMonoTy (e : Python.expr SourceRange) : Lambda.LMonoTy :=
     | "timedelta" => .tcons "Timedelta" []
     | "Client" => .tcons "Client" []
     | "LatencyAnalyzer" => .tcons "LatencyAnalyzer" []
+    | "LayoutTensor" => .tcons "LayoutTensor" []
     | _ => panic! s!"Unhandled name: {repr e}"
   | .Subscript _ val _slice _ =>
     match val with
@@ -299,6 +317,7 @@ partial def collectVarDecls (translation_ctx : TranslationContext) (stmts: Array
     | "datetime" => [(.init name datetimeType dummyDatetime), (.havoc name)]
     | "date" => [(.init name dateType dummyDate), (.havoc name)]
     | "timedelta" => [(.init name timedeltaType dummyTimedelta), (.havoc name)]
+    | "LayoutTensor" => [(.init name layoutTensorType dummyLayoutTensor), (.havoc name)]
     | _ =>
       let user_defined_class := translation_ctx.class_infos.find? (λ i => i.name == ty_name)
       match user_defined_class with
@@ -413,15 +432,17 @@ partial def PyExprToBoogie (translation_ctx : TranslationContext) (e : Python.ex
         | .none => {stmts := [], expr := .fvar () n.val none}
     | .JoinedStr _ ss => PyExprToBoogie translation_ctx ss.val[0]! -- TODO: need to actually join strings
     | .BinOp _ lhs op rhs =>
-      let lhs := (PyExprToBoogie translation_ctx lhs)
-      let rhs := (PyExprToBoogie translation_ctx rhs)
+      let lhs := (PyExprToBoogie {translation_ctx with expectedType := .some (.tcons "int" [])} lhs)
+      let rhs := (PyExprToBoogie {translation_ctx with expectedType := .some (.tcons "int" [])} rhs)
       match op with
       | .Add _ =>
         {stmts := lhs.stmts ++ rhs.stmts, expr := handleAdd lhs.expr rhs.expr}
       | .Sub _ =>
         {stmts := lhs.stmts ++ rhs.stmts, expr := handleSub lhs.expr rhs.expr}
       | .Mult _ =>
-        {stmts := lhs.stmts ++ rhs.stmts, expr := handleMult lhs.expr rhs.expr}
+        {stmts := lhs.stmts ++ rhs.stmts, expr := handleMult translation_ctx lhs.expr rhs.expr}
+      | .FloorDiv _ =>
+        {stmts := lhs.stmts ++ rhs.stmts, expr := handleFloorDiv translation_ctx lhs.expr rhs.expr}
       | _ => panic! s!"Unhandled BinOp: {repr e}"
     | .Compare _ lhs op rhs =>
       let lhs := PyExprToBoogie translation_ctx lhs
@@ -437,6 +458,8 @@ partial def PyExprToBoogie (translation_ctx : TranslationContext) (e : Python.ex
           {stmts := lhs.stmts ++ rhs.stmts, expr := handleLtE lhs.expr rhs.expr}
         | Strata.Python.cmpop.Gt _ =>
           {stmts := lhs.stmts ++ rhs.stmts, expr := handleGt lhs.expr rhs.expr}
+        | Strata.Python.cmpop.Lt _ =>
+          {stmts := lhs.stmts ++ rhs.stmts, expr := handleLt lhs.expr rhs.expr}
         | _ => panic! s!"Unhandled comparison op: {repr op.val}"
       | _ => panic! s!"Unhandled comparison op: {repr op.val}"
     | .Dict _ keys values =>
@@ -462,6 +485,8 @@ partial def PyExprToBoogie (translation_ctx : TranslationContext) (e : Python.ex
         | .some (.tcons "ListStr" []) =>
           let access_check : Boogie.Statement := .assert "subscript_bounds_check" (.app () (.app () (.op () "str_in_dict_str_any" none) k.expr) l.expr)
           {stmts := l.stmts ++ k.stmts ++ [access_check], expr := .app () (.app () (.op () "dict_str_any_get_list_str" none) l.expr) k.expr}
+        | .some (.tcons "int" []) =>
+          {stmts := l.stmts ++ k.stmts, expr := .app () (.app () (.op () "layouttensor_get" none) l.expr) k.expr}
         | _ =>
           let access_check : Boogie.Statement := .assert "subscript_bounds_check" (.app () (.app () (.op () "str_in_dict_str_any" none) k.expr) l.expr)
           {stmts := l.stmts ++ k.stmts ++ [access_check], expr := .app () (.app () (.op () "dict_str_any_get" none) l.expr) k.expr}
@@ -609,6 +634,11 @@ partial def PyStmtToBoogie (jmp_targets: List String) (translation_ctx : Transla
         ([.ite guard {ss := assign_tgt ++ (ArrPyStmtToBoogie translation_ctx body.val).fst} {ss := []}], none)
       | _ => panic! s!"tgt must be single name: {repr tgt}"
       -- TODO: missing havoc
+    | .While _ test body _ =>
+      -- Do one unrolling:
+      let guard := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) (PyExprToBoogie default test).expr) (.intConst () 0))
+      ([.ite guard {ss := (ArrPyStmtToBoogie translation_ctx body.val).fst} {ss := []}], none)
+      -- TODO: missing havoc
     | .Assert _ a _ =>
       let res := PyExprToBoogie translation_ctx a
       ([(.assert "py_assertion" res.expr)], none)
@@ -619,6 +649,18 @@ partial def PyStmtToBoogie (jmp_targets: List String) (translation_ctx : Transla
         | .Name _ n _ =>
           let rhs := PyExprToBoogie translation_ctx rhs
           let new_lhs := (.strConst () "DUMMY_FLOAT")
+          (rhs.stmts ++ [.set n.val new_lhs], none)
+        | .Subscript _ (.Name _ n _ ) slice _ =>
+          let rhs := PyExprToBoogie translation_ctx rhs
+          let slice := PyExprToBoogie translation_ctx slice
+          (rhs.stmts ++ [.set n.val (.app () (.op () "layouttensor_set" none) slice.expr), .havoc n.val], none)
+        | _ => panic! s!"Expected lhs to be name: {repr lhs}"
+      | .FloorDiv _ =>
+        match lhs with
+        | .Name _ n _ =>
+          let lhs := PyExprToBoogie translation_ctx lhs
+          let rhs := PyExprToBoogie translation_ctx rhs
+          let new_lhs := .app () (.app () (.op () "Int.Div" mty[int → (int → int)]) lhs.expr) rhs.expr
           (rhs.stmts ++ [.set n.val new_lhs], none)
         | _ => panic! s!"Expected lhs to be name: {repr lhs}"
       | _ => panic! s!"Unsupported AugAssign op: {repr op}"
@@ -663,6 +705,7 @@ def pyTyStrToLMonoTy (ty_str: String) : Lambda.LMonoTy :=
   | "str" => mty[string]
   | "int" => mty[int]
   | "datetime" => (.tcons "Datetime" [])
+  | "LayoutTensor" => (.tcons "LayoutTensor" [])
   | _ => panic! s!"Unsupported type: {ty_str}"
 
 def pythonFuncToBoogie (name : String) (args: List (String × String)) (body: Array (Python.stmt SourceRange)) (ret : Option (Python.expr SourceRange)) (spec : Boogie.Procedure.Spec) (translation_ctx : TranslationContext) : Boogie.Procedure :=
