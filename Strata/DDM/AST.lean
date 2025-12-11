@@ -8,8 +8,22 @@ import Std.Data.HashMap
 import Strata.DDM.Util.Array
 import Strata.DDM.Util.ByteArray
 import Strata.DDM.Util.Decimal
+import Std.Data.HashMap.Lemmas
 
 set_option autoImplicit false
+
+namespace Strata.Array
+
+theorem mem_iff_back_or_pop {α} (a : α) {as : Array α} (p : as.size > 0 := by get_elem_tactic) :
+  a ∈ as ↔ (a = as.back ∨ a ∈ as.pop) := by
+  simp [Array.mem_iff_getElem]
+  grind
+
+theorem of_mem_pop {α} {a : α} {as : Array α} : a ∈ as.pop → a ∈ as := by
+  simp [Array.mem_iff_getElem]
+  grind
+
+end Strata.Array
 
 namespace Strata
 
@@ -1160,12 +1174,18 @@ instance {α β} [BEq α] [Hashable α] [BEq β]: BEq (Std.HashMap α β) where
 
 structure DialectMap where
   map : Std.HashMap DialectName Dialect
-deriving BEq, Inhabited
+  closed : ∀(d : DialectName) (p: d ∈ map), map[d].imports.all (· ∈ map)
 
 namespace DialectMap
 
+instance : BEq DialectMap where
+  beq x y := x.map == y.map
+
 instance : EmptyCollection DialectMap where
-  emptyCollection := .mk {}
+  emptyCollection := { map := {}, closed := by simp }
+
+instance : Inhabited DialectMap where
+  default := {}
 
 instance : Membership DialectName DialectMap where
   mem m d := d ∈ m.map
@@ -1179,22 +1199,60 @@ instance : GetElem? DialectMap DialectName Dialect (fun m d => d ∈ m) where
   getElem! m d := m.map[d]!
 
 /--
+This inserts a new dialect into the dialect map.
+
+This requires propositions to ensure we do not change the semantics
+of dialects and imports are already in dialect.
+-/
+def insert (m : DialectMap) (d : Dialect) (_d_new : d.name ∉ m) (d_imports_ok : d.imports.all (· ∈ m)) : DialectMap :=
+  { map := m.map.insert d.name d
+    closed := by
+      intro name mem
+      if eq : d.name = name then
+        simp at d_imports_ok
+        simp [eq]
+        intro i lt
+        exact Or.inr (d_imports_ok i lt)
+      else
+        simp only [Std.HashMap.mem_insert, eq, beq_iff_eq, false_or] at mem
+        have cl := m.closed name mem
+        simp at cl
+        simp [Std.HashMap.getElem_insert, eq]
+        intro i lt
+        exact Or.inr (cl i lt)
+  }
+
+/--
 This inserts a dialect in to the dialect map.
 
 It panics if a dialect with the same name is already in the map
 or if the dialect imports a dialect not already in the map.
 -/
 def insert! (m : DialectMap) (d : Dialect) : DialectMap :=
-  assert! d.name ∉ m
-  assert! d.imports.all (· ∈ m)
-  { map := m.map.insert d.name d }
+  if d_new : d.name ∈ m then
+    panic! s!"{d.name} already in map."
+  else
+    if d_imports_ok : d.imports.all (· ∈ m) then
+      m.insert d d_new d_imports_ok
+    else
+      panic! s!"Missing import."
 
 def ofList! (l : List Dialect) : DialectMap :=
-  let m := l.foldl (init := {}) fun m d =>
-    assert! d.name ∉ m;
-    m.insert d.name d
-  assert! l.all fun d => d.imports.all (· ∈ m)
-  { map := m }
+  let map : Std.HashMap DialectName Dialect :=
+        l.foldl (init := .emptyWithCapacity l.length) fun m d =>
+          m.insert d.name d
+  let check := map.toArray.all fun (nm, d) => d.imports.all (· ∈ map)
+  if p : check then
+    { map := map,
+      closed := by
+        intro name name_mem
+        simp only [check, Array.all_eq_true_iff_forall_mem (xs := map.toArray)] at p
+        have mem : (name, map[name]) ∈ map.toArray := by
+          simp [Std.HashMap.mem_toArray_iff_getElem?_eq_some]
+        exact p (name, map[name]) mem
+    }
+  else
+    panic! "Invalid list"
 
 def toList (m : DialectMap) : List Dialect := m.map.values
 
@@ -1216,24 +1274,60 @@ Return set of all dialects that are imported by `dialect`.
 
 This includes transitive imports.
 -/
-partial def importedDialects! (map : DialectMap) (dialect : DialectName) : DialectMap := aux (.ofList [(d.name, d)]) [d]
-  where d :=
-          match map[dialect]? with
-          | none => panic! s!"Unknown dialect {dialect}"
-          | some d => d
-        aux (all : Std.HashMap DialectName Dialect) (next : List Dialect) : DialectMap :=
-          match next with
-          | d :: next =>
-            let (all, next) := d.imports.foldl (init := (all, next)) fun (all, next) i =>
-              if i ∈ all then
-                (all, next)
-              else
-                let d := match map[i]? with
-                          | none => panic! s!"Unknown dialect {i}"
-                          | some d => d
-               (all.insert i d, d :: next)
-            aux all next
-          | [] => DialectMap.mk all
+partial def importedDialects (dm : DialectMap) (dialect : DialectName) (p : dialect ∈ dm) : DialectMap :=
+    aux {} #[dialect] (by simp; exact p) (by simp)
+  where aux (map : Std.HashMap DialectName Dialect)
+            (next : Array DialectName)
+            (nextp : ∀name, name ∈ next → name ∈ dm)
+            (inv : ∀name (mem : name ∈ map), map[name].imports.all (fun i => i ∈ map ∨ i ∈ next))
+            : DialectMap :=
+          if emptyP : next.isEmpty then
+            { map := map,
+              closed := by intro d mem; grind
+            }
+          else
+            have next_size_pos : next.size > 0 := by
+              simp only [Array.isEmpty_iff] at emptyP
+              grind
+            let name  := next.back (h := next_size_pos)
+            if name_mem : name ∈ map then
+              aux map next.pop
+                (by
+                  intro d p
+                  exact nextp _ (Array.of_mem_pop p))
+                (by
+                  simp only [Array.all_eq_true']
+                  intro d d_mem e e_mem
+                  simp only [Array.all_eq_true'] at inv
+                  have inv2 := inv d d_mem e e_mem
+                  simp only [Array.mem_iff_back_or_pop e next_size_pos] at inv2
+                  grind)
+            else
+              have name_in_dm : name ∈ dm := nextp name (by grind)
+              let d := dm[name]
+              aux (map.insert name d) (next.pop ++ d.imports)
+                (by
+                  intro nm nm_mem
+                  simp at nm_mem
+                  match nm_mem with
+                  | .inl nm_mem =>
+                    exact nextp _ (Array.of_mem_pop nm_mem)
+                  | .inr nm_mem =>
+                    have inv := dm.closed name name_in_dm
+                    simp only [Array.all_eq_true'] at inv
+                    have inv2 := inv nm nm_mem
+                    simp at inv2
+                    exact inv2)
+                (by
+                  intro n n_mem
+                  if n_eq : name = n then
+                    simp [n_eq]
+                  else
+                    simp [n_eq] at n_mem
+                    simp [n_eq, Std.HashMap.getElem_insert]
+                    intro i lt
+                    have mem := Array.mem_iff_back_or_pop (map[n].imports[i]) next_size_pos
+                    grind)
 
 end DialectMap
 
