@@ -165,7 +165,7 @@ ProveBy(
 /-
 Abstract can be used as the root expr in a contract for reads/modifies/precondition/postcondition. For example: `reads(abstract)`
 It can only be used for instance procedures and it makes the containing type abstract, meaning it can not be instantiated.
-An extending type can become concrete by redefining any procedures that had abstracts contracts and providing non-abstract contracts.
+An extending type can become concrete by redefining all procedures that had abstract contracts and providing non-abstract contracts.
 -/
   | Abstract
   | All -- All refers to all objects in the heap. Can be used in a reads or modifies clause
