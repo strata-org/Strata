@@ -69,9 +69,6 @@ theorem String.append_eq_prefix (as as' bs : String):
 theorem List.reverse_injective :
   List.reverse l₁ = List.reverse l₂ → l₁ = l₂ := List.reverse_inj.mp
 
---theorem String.data_wrap : pf = { data:= pf : String}.data := rfl
-theorem String.data_wrap_eq (a b : String) : a.data = b.data → a = b := String.ext
-
 theorem StringGenState.contains :
   StringGenState.gen pf σ = (s, σ') →
   s ∈ σ'.generated.unzip.2 := by
@@ -100,7 +97,7 @@ theorem Nat_digitchar_neq_underscore {x: Nat}: ¬ '_' =  Nat.digitChar x := by
   unfold Nat.digitChar
   repeat (cases x; simp; rename_i x; simp [*])
 
-theorem Nat_toDigitsCore_not_contain_underscore {n m l} : '_' ∉ l → '_' ∉ (Nat.toDigitsCore 10 n m l) := by
+theorem Nat_toDigitsCore_not_contain_underscore {n m l} : '_' ∉ l → '_' ∉ Nat.toDigitsCore 10 n m l := by
   intro Hnin
   induction n using Nat.strongRecOn generalizing m l
   rename_i n ind
@@ -123,21 +120,14 @@ theorem Nat_digitChar_index: x.digitChar =
   repeat (cases x; simp; rename_i x)
   any_goals simp
 
-theorem neq_elem_of_neq_index_of_nodup (H: List.Nodup a) (Hl1: x < a.length) (Hl2: y < a.length) (Hneq: ¬ x = y): ¬ a[x]'Hl1 = a[y]'Hl2 := by
+theorem nodup_implies_injective (H: List.Nodup a) (Hl1: x < a.length) (Hl2: y < a.length) (eq : a[x]'Hl1 = a[y]'Hl2) : x = y := by
   unfold List.Nodup at H
   induction a generalizing x y
-  simp at Hl1
-  rename_i h t ind
-  simp at H
-  cases x; cases y
-  contradiction
-  simp
-  apply H.left _ (by simp)
-  cases y <;> simp
-  rename_i y
-  simp [Eq.comm, H.left (t[y]'(by simp at Hl1; omega)) (by simp)]
-  rename_i x y
-  simp_all
+  case nil =>
+    simp at Hl1
+  case cons h t ind =>
+    simp only [List.pairwise_cons] at H
+    grind
 
 theorem Nat_eq_of_digitChar_eq : n < 16 → m < 16 → n.digitChar = m.digitChar → n = m := by
   intro H1 H2
@@ -147,11 +137,8 @@ theorem Nat_eq_of_digitChar_eq : n < 16 → m < 16 → n.digitChar = m.digitChar
   have: min m 16 = m := by omega
   simp [this]
   intro H
-  false_or_by_contra
-  have : ¬ ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f', '*'][n]'(by simp; omega) =
-    ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f', '*'][m]'(by simp; omega) :=by
-    apply neq_elem_of_neq_index_of_nodup (by simp) (by simp; omega) (by simp; omega) (by assumption)
-  contradiction
+  apply nodup_implies_injective (by simp) _ _ H
+
 
 theorem Nat_toDigitsCore_list_suffix : l <:+ Nat.toDigitsCore 10 x n l := by
   induction x generalizing n l <;> simp [Nat.toDigitsCore]
