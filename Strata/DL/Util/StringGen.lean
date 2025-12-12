@@ -139,7 +139,6 @@ theorem Nat_eq_of_digitChar_eq : n < 16 → m < 16 → n.digitChar = m.digitChar
   intro H
   apply nodup_implies_injective (by simp) _ _ H
 
-
 theorem Nat_toDigitsCore_list_suffix : l <:+ Nat.toDigitsCore 10 x n l := by
   induction x generalizing n l <;> simp [Nat.toDigitsCore]
   split
@@ -231,8 +230,6 @@ theorem Nat_eq_of_toString_eq {x y: Nat}: (toString x) = (toString y) → x = y 
   simp only [toString, Nat.repr] at H
   apply Nat_eq_of_toDigitsCore_eq (by simp) (by simp) (List.asString_injective H)
 
-set_option linter.unusedSimpArgs false
-
 theorem Nat_eq_of_StringGen_suffix {x y: Nat}: ("_" ++ toString x).IsSuffix (s ++ "_" ++ toString y) → x = y := by
   intro Hsuf
   simp only [String.IsSuffix, String.data_append] at Hsuf
@@ -243,7 +240,8 @@ theorem Nat_eq_of_StringGen_suffix {x y: Nat}: ("_" ++ toString x).IsSuffix (s +
     apply List.suffix_append_of_suffix
     simp
   have h : ['_'] ++ (toString x).data <:+ (toString y).data := by
-    simp [← List.append_assoc] at Hsuf
+    simp only [List.append_assoc] at Hsuf
+    simp only [List.append_assoc] at Hsuf'
     apply List.suffix_of_suffix_length_le Hsuf Hsuf'
     simp
     omega
@@ -278,10 +276,10 @@ theorem Nat_eq_of_StringGen_suffix {x y: Nat}: ("_" ++ toString x).IsSuffix (s +
   have Hsuf : (toString x).data <:+ s.data ++ ['_'] ++ (toString y).data := by
     obtain ⟨t, H⟩ := Hsuf
     exists t ++ ['_']
-    simp only [← List.append_assoc, String.data_append] at *
+    simp only [← List.append_assoc] at *
     exact H
   have Hsuf': (toString y).data  <:+ s.data ++ ['_'] ++ (toString y).data := by
-    simp [← List.append_assoc]
+    grind
   simp [List.suffix_iff_eq_drop, Hc] at *
   rw [← Hsuf] at Hsuf'
   simp [String.ext_iff, Hsuf']
