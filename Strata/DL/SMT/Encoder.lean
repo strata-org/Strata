@@ -294,7 +294,7 @@ def termToString (e : Term) : IO String := do
   let solver ← Solver.bufferWriter b
   let _ ← ((Encoder.encodeTerm False e).run EncoderState.init).run solver
   let contents ← b.get
-  if h: String.validateUTF8 contents.data
+  if h: contents.data.IsValidUTF8
   then pure (String.fromUTF8 contents.data h)
   else pure "Converting SMT Term to bytes produced an invalid UTF-8 sequence."
 

@@ -317,9 +317,9 @@ As an example, in the string `"123abc\ndef"`, the string
 -/
 structure SourceRange where
   /-- The starting offset of the source range. -/
-  start : String.Pos
+  start : String.Pos.Raw
   /-- One past the end of the range. -/
-  stop : String.Pos
+  stop : String.Pos.Raw
 deriving BEq, Inhabited, Repr
 
 namespace SourceRange

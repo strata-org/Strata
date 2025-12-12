@@ -2498,17 +2498,19 @@ theorem Procedure.find.go_in_decls :
 
 theorem Procedure.find_in_decls :
   Program.Procedure.find? p name = some proc →
-  ∃ md,
-  .proc proc md ∈ p.decls := by
+  ∃ md, .proc proc md ∈ p.decls := by
   intros Hsome
-  simp [Program.Procedure.find?] at Hsome
-  split at Hsome <;> simp_all
-  simp [Decl.getProc] at Hsome
-  split at Hsome <;> simp_all
-  next md heq =>
-  exists md
-  simp [Program.find?] at heq
-  exact find.go_in_decls heq
+  simp only [Program.Procedure.find?] at Hsome
+  split at Hsome
+  case h_1 =>
+    grind
+  case h_2 d heq =>
+    simp only [Decl.getProc, Option.some.injEq] at Hsome
+    split at Hsome
+    case h_1 _ _ proc' md _ =>
+      exists md
+      simp only [Hsome] at heq
+      exact find.go_in_decls heq
 
 theorem Program.find.go_decl_kind_match :
   Program.find?.go d name decls = some decl →

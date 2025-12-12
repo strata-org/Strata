@@ -182,7 +182,7 @@ elab "#genOpAbbrevs" : command => do
 
   if let some (.inductInfo coreInfo) := env.find? `Strata.SMT.Op.Core then
     for ctor in coreInfo.ctors do
-      let ctorName := ctor.toString.split (· == '.') |>.getLast!
+      let ctorName := ctor.toString.splitToList (· == '.') |>.getLast!
       let name := Lean.Name.mkStr2 "Op" ctorName
       if ctorName == "uf" then
         let abbrevCmd ← `(command| abbrev $(mkIdent name) (arg : UF) := Op.core (Op.Core.uf arg))
@@ -193,14 +193,14 @@ elab "#genOpAbbrevs" : command => do
 
   if let some (.inductInfo numInfo) := env.find? `Strata.SMT.Op.Num then
     for ctor in numInfo.ctors do
-      let ctorName := ctor.toString.split (· == '.') |>.getLast!
+      let ctorName := ctor.toString.splitToList (· == '.') |>.getLast!
       let name := Lean.Name.mkStr2 "Op" ctorName
       let abbrevCmd ← `(command| abbrev $(mkIdent name) := Op.num $(mkIdent ctor))
       abbrevs := abbrevs.push (name, abbrevCmd)
 
   if let some (.inductInfo bvInfo) := env.find? `Strata.SMT.Op.BV then
     for ctor in bvInfo.ctors do
-      let ctorName := ctor.toString.split (· == '.') |>.getLast!
+      let ctorName := ctor.toString.splitToList (· == '.') |>.getLast!
       let name := Lean.Name.mkStr2 "Op" ctorName
       if ctorName == "zero_extend" then
         let abbrevCmd ← `(command| abbrev $(mkIdent name) (n : Nat) := Op.bv (Op.BV.zero_extend n))
@@ -211,7 +211,7 @@ elab "#genOpAbbrevs" : command => do
 
   if let some (.inductInfo strInfo) := env.find? `Strata.SMT.Op.Strings then
     for ctor in strInfo.ctors do
-      let ctorName := ctor.toString.split (· == '.') |>.getLast!
+      let ctorName := ctor.toString.splitToList (· == '.') |>.getLast!
       let name := Lean.Name.mkStr2 "Op" ctorName
       if ctorName == "re_index" then
         let abbrevCmd ← `(command| abbrev $(mkIdent name) (n : Nat) := Op.str (Op.Strings.re_index n))

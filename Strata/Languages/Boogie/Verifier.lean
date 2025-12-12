@@ -145,7 +145,7 @@ def formatPositionMetaData [BEq P.Ident] [ToFormat P.Expr] (md : MetaData P): Op
   let line ← md.findElem MetaData.startLineLabel
   let col ← md.findElem MetaData.startColumnLabel
   let baseName := match file.value with
-                  | .msg m => (m.split (λ c => c == '/')).getLast!
+                  | .msg m => (m.splitToList (λ c => c == '/')).getLast!
                   | _ => "<no file>"
   f!"{baseName}({line.value}, {col.value})"
 
