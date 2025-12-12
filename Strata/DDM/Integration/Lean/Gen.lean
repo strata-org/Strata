@@ -246,7 +246,8 @@ def declaredCategories : Std.HashMap CategoryName Name := .ofList [
   (q`Init.Num, ``Nat),
   (q`Init.Decimal, ``Decimal),
   (q`Init.Str, ``String),
-  (q`Init.ByteArray, ``ByteArray)
+  (q`Init.ByteArray, ``ByteArray),
+  (q`Bool.BoolLit, ``Bool)
 ]
 
 def ignoredCategories : Std.HashSet CategoryName :=

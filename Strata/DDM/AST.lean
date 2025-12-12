@@ -189,7 +189,7 @@ inductive ArgF (α : Type) : Type where
 | expr (e : ExprF α)
 | type (e : TypeExprF α)
 | ident (ann : α) (i : String)
-| num (ann : α)(v : Nat)
+| num (ann : α) (v : Nat)
 | decimal (ann : α) (v : Decimal)
 | strlit (ann : α) (i : String)
 | bytes (ann : α) (a : ByteArray)
