@@ -673,7 +673,7 @@ protected def fromIon (v : Ion SymbolId) : FromIonM SyntaxDefAtom := do
   | .sexp args argsp =>
     match ← .asSymbolString "SyntaxDefAtom kind" args[0] with
     | "ident" => do
-      -- Support both old format (3 args) and new format (4 args)
+      -- Support both formats: 3 args (without unwrap) and 4 args (with unwrap spec)
       if args.size = 3 then
         let level ← .asNat "SyntaxDef ident level" args[1]!
         let prec ← .asNat "SyntaxDef ident prec" args[2]!

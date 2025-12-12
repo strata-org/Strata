@@ -4,22 +4,43 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DDM.AST
+import Strata.DDM.Integration.Lean
 
 open Strata
 
--- Test that UnwrapSpec exists and can be used
-def testUnwrapSpec : UnwrapSpec := UnwrapSpec.nat
+#dialect
+dialect TestUnwrap;
 
--- Test that SyntaxDefAtom.ident accepts unwrap parameter
-def testSyntaxAtom : SyntaxDefAtom := SyntaxDefAtom.ident 0 0 (some UnwrapSpec.nat)
+category Expression;
 
--- Test that it defaults to none
-def testSyntaxAtomDefault : SyntaxDefAtom := SyntaxDefAtom.ident 0 0 none
+op var (name : Ident) : Expression => name;
+op index (id : Num) : Expression => id:Nat;
 
-#guard testSyntaxAtom != testSyntaxAtomDefault
+#end
 
--- Verify the structure
-#guard match testSyntaxAtom with
-  | SyntaxDefAtom.ident _ _ (some UnwrapSpec.nat) => true
-  | _ => false
+namespace TestUnwrap
+
+#strata_gen TestUnwrap
+
+end TestUnwrap
+
+/--
+info: TestUnwrap.Expression (α : Type) : Type
+-/
+#guard_msgs in
+#check TestUnwrap.Expression
+
+/--
+info: TestUnwrap.Expression.var {α : Type} : α → (name : Ann String α) → TestUnwrap.Expression α
+-/
+#guard_msgs in
+#check TestUnwrap.Expression.var
+
+/--
+info: TestUnwrap.Expression.index {α : Type} : α → (id : Nat) → TestUnwrap.Expression α
+-/
+#guard_msgs in
+#check TestUnwrap.Expression.index
+
+-- Verify that index uses unwrapped Nat (not Ann Nat α)
+example : TestUnwrap.Expression Unit := .index () 42
