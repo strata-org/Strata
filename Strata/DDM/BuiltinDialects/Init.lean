@@ -22,7 +22,6 @@ def initDialect : Dialect := BuiltinM.create! "Init" #[] do
 
   declareAtomicCat q`Init.Ident
   declareAtomicCat q`Init.Num
-  declareAtomicCat q`Init.Bool
   declareAtomicCat q`Init.ByteArray
   declareAtomicCat q`Init.Decimal
   declareAtomicCat q`Init.Str

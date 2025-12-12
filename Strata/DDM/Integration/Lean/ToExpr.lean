@@ -149,7 +149,6 @@ def ArgF.toExpr {α} [ToExpr α] : ArgF α → Lean.Expr
 | .cat e => mkApp2 (mkConst ``ArgF.cat) (toTypeExpr α) (toExpr e)
 | .ident ann e => astAnnExpr! ArgF.ident ann (toExpr e)
 | .num ann e => astAnnExpr! ArgF.num ann (toExpr e)
-| .bool ann b => astAnnExpr! ArgF.bool ann (toExpr b)
 | .decimal ann e => astAnnExpr! ArgF.decimal ann (toExpr e)
 | .strlit ann e => astAnnExpr! ArgF.strlit ann (toExpr e)
 | .bytes ann a => astAnnExpr! ArgF.bytes ann (toExpr a)

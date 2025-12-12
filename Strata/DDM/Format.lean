@@ -319,7 +319,6 @@ private partial def ArgF.mformatM {α} : ArgF α → FormatM PrecFormat
 | .decimal _ v => pformat v
 | .strlit _ s => return .atom (.text <| escapeStringLit s)
 | .bytes _ v => return .atom <| .text <| ByteArray.escapeBytes v
-| .bool _ b => return .atom (.text (if b then "true" else "false"))
 | .option _ ma =>
   match ma with
   | none => pure (.atom .nil)

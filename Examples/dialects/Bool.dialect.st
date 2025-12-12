@@ -1,10 +1,12 @@
 dialect Bool;
-// Introduce Boolean type
+
+// Bool type for use in function signatures
 type Bool;
 
-// Introduce literals as constants.
-fn true_lit : Bool => "true";
-fn false_lit : Bool => "false";
+// BoolLit category with two operators (for parsing true/false literals)
+category BoolLit;
+op boolTrue : BoolLit => "true";
+op boolFalse : BoolLit => "false";
 
 // Introduce basic Boolean operations.
 fn not_expr (tp : Type, a : tp) : tp => "-" a;
