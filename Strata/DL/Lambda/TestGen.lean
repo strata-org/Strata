@@ -1262,7 +1262,7 @@ in factory
                 factory\n{example_lctx.functions.map (fun f : LFunc TrivialParams => f.name)}\n"
   for i in List.range 100 do
     let P : LExpr TrivialParams.mono → Prop := fun t => HasType example_lctx example_ctx t example_ty
-    let t ← Gen.runUntil (.some 10) (ArbitrarySizedSuchThat.arbitrarySizedST P 5) 5
+    let t ← Gen.runUntil (.some 1000) (ArbitrarySizedSuchThat.arbitrarySizedST P 5) 5
     -- IO.println s!"Generated {t}"
     if !(canAnnotate t) then
       let .error e := annotate t | throw <| IO.Error.userError "Unreachable"
@@ -1290,7 +1290,7 @@ in factory
                 factory\n{example_lctx.functions.map (fun f : LFunc _ => f.name)}\n"
   for _i in List.range 100 do
     let P : LExpr TrivialParams.mono → Prop := fun t => HasType example_lctx example_ctx t (.forAll [] (.tcons "int" []))
-    let t ← Gen.runUntil (.some 10) (ArbitrarySizedSuchThat.arbitrarySizedST P 5) 5
+    let t ← Gen.runUntil (.some 1000) (ArbitrarySizedSuchThat.arbitrarySizedST P 5) 5
     -- Unfortunately this *can* fail, if we compare two terms at arrow types, or try to take mod 0 etc.
     if !(reduces t) then
       -- IO.println s!"NOT A VALUE({i}): {t}\nREDUCES TO\n{t.eval 10000 example_lstate}\n\n"
