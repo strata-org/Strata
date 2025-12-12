@@ -256,7 +256,8 @@ def ignoredCategories : Std.HashSet CategoryName :=
 namespace CatOpMap
 
 def addCat (m : CatOpMap) (cat : CategoryName) : CatOpMap :=
-  if cat ∈ ignoredCategories then
+  -- Allow Bool.BoolLit even though it's in ignoredCategories
+  if cat ∈ ignoredCategories && cat ≠ q`Bool.BoolLit then
     m
   else
     m.insert cat #[]
@@ -282,7 +283,9 @@ def addDecl (d : DialectName) (decl : Decl) : CatOpM Unit :=
   | .syncat decl =>
     addCatM ⟨d, decl.name⟩
   | .op decl => do
-    if decl.category ∈ ignoredCategories ∨ decl.category ∈ specialCategories then
+    -- Allow Bool.BoolLit operators (boolTrue, boolFalse) even though BoolLit is in declaredCategories
+    let isBoolLitOp := decl.category == q`Bool.BoolLit && (decl.name == "boolTrue" || decl.name == "boolFalse")
+    if (decl.category ∈ ignoredCategories ∨ decl.category ∈ specialCategories) && !isBoolLitOp then
       if d ≠ "Init" then
         .addError s!"Skipping operation {decl.name} in {d}: {decl.category.fullName} cannot be extended."
     else
@@ -630,7 +633,7 @@ def mkInductive (cat : QualifiedIdent) (ctors : Array DefaultCtor) : GenM Comman
   `(inductive $ident ($annType : Type) : Type where
     $builtinCtors:ctor*
     $(← ctors.mapM (genCtor annType)):ctor*
-    deriving Repr)
+    deriving Repr, Inhabited)
 
 def categoryToAstTypeIdent (cat : QualifiedIdent) (annType : Term) : Term :=
   let ident :=
