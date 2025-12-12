@@ -17,8 +17,7 @@ import Strata.DL.Util.Counter
 /-- `s.IsSuffix t` checks if the string `s` is a suffix of the string `t`.
 from mathlib https://github.com/leanprover-community/mathlib4/blob/f3c56c29d5c787d62f66c207e097a159ff66318a/Mathlib/Data/String/Defs.lean#L37-L39
 -/
-def String.IsSuffix : String → String → Prop
-  | ⟨d1⟩, ⟨d2⟩ => List.IsSuffix d1 d2
+abbrev String.IsSuffix (s1 s2 : String) : Prop := List.IsSuffix s1.data s2.data
 
 /-- Wrapper around CounterState to allow a prefix -/
 structure StringGenState where
@@ -66,19 +65,11 @@ theorem String.append_eq_prefix (as as' bs : String):
   (as ++ bs = as' ++ bs) → as = as' := by
   intros Heq
   by_cases as = as' <;> simp_all
-  next Hne =>
-  have Heq' := String.ext_iff.mp Heq
-  have Hne' : ¬ as.data = as'.data := by
-    intros Heq
-    have HH := String.ext_iff.mpr Heq
-    contradiction
-  simp [String.data_append] at *
-  contradiction
 
 theorem List.reverse_injective :
   List.reverse l₁ = List.reverse l₂ → l₁ = l₂ := List.reverse_inj.mp
 
-theorem String.data_wrap : pf = { data:= pf : String}.data := rfl
+--theorem String.data_wrap : pf = { data:= pf : String}.data := rfl
 theorem String.data_wrap_eq (a b : String) : a.data = b.data → a = b := String.ext
 
 theorem StringGenState.contains :
@@ -109,21 +100,21 @@ theorem Nat_digitchar_neq_underscore {x: Nat}: ¬ '_' =  Nat.digitChar x := by
   unfold Nat.digitChar
   repeat (cases x; simp; rename_i x; simp [*])
 
-theorem Nat_toDigitsCore_not_contain_underscore: ¬'_' ∈ l → ¬'_' ∈ (Nat.toDigitsCore 10 n m l).asString.data := by
+theorem Nat_toDigitsCore_not_contain_underscore {n m l} : '_' ∉ l → '_' ∉ (Nat.toDigitsCore 10 n m l) := by
   intro Hnin
   induction n using Nat.strongRecOn generalizing m l
   rename_i n ind
   cases n
-  simp [Nat.toDigitsCore, List.asString, Hnin]
+  simp [Nat.toDigitsCore, Hnin]
   rename_i n
-  simp [Nat.toDigitsCore, List.asString]
+  simp [Nat.toDigitsCore]
   split
   simp [Nat_digitchar_neq_underscore, Hnin]
   apply ind <;> simp [*, Nat_digitchar_neq_underscore]
 
-theorem Nat_toString_not_contain_underscore {x: Nat} : ¬ '_' ∈ (toString x).data := by
+theorem Nat_toString_not_contain_underscore {x: Nat} : '_' ∉ (toString x).data := by
   simp [toString, Nat.repr, Nat.toDigits]
-  exact Nat_toDigitsCore_not_contain_underscore (by simp)
+  exact Nat_toDigitsCore_not_contain_underscore (l := []) (by simp)
 
 theorem Nat_digitChar_index: x.digitChar =
     #['0','1','2','3','4','5','6','7','8','9','a','b','c','d','e','f','*'][min x 16]'(by simp; omega) := by
@@ -250,64 +241,60 @@ theorem Nat_eq_of_toDigitsCore_eq : x > n → y > m
 
 theorem Nat_eq_of_toString_eq {x y: Nat}: (toString x) = (toString y) → x = y := by
   intro H
-  simp [toString, Nat.repr, Nat.toDigits, List.asString] at H
-  apply Nat_eq_of_toDigitsCore_eq (by simp) (by simp) H
+  simp only [toString, Nat.repr] at H
+  apply Nat_eq_of_toDigitsCore_eq (by simp) (by simp) (List.asString_injective H)
+
+set_option linter.unusedSimpArgs false
 
 theorem Nat_eq_of_StringGen_suffix {x y: Nat}: ("_" ++ toString x).IsSuffix (s ++ "_" ++ toString y) → x = y := by
   intro Hsuf
+  simp only [String.IsSuffix, String.data_append] at Hsuf
+  change ['_'] ++ (toString x).data <:+ s.data ++ ['_'] ++ (toString y).data at Hsuf
   apply Nat_eq_of_toString_eq
-  simp only [String.IsSuffix] at Hsuf
   by_cases Hc: (toString x).length < (toString y).length
-  have Hsuf':  (toString y).data  <:+ ((s ++ "_").append (toString y)).data := by
-    simp only [String.append, List.append_assoc, List.cons_append, List.nil_append, toString]
+  have Hsuf':  (toString y).data  <:+ s.data ++ ['_'] ++ (toString y).data := by
     apply List.suffix_append_of_suffix
     simp
-  have : ("_".append (toString x)).data <:+ (toString y).data := by
+  have h : ['_'] ++ (toString x).data <:+ (toString y).data := by
+    simp [← List.append_assoc] at Hsuf
     apply List.suffix_of_suffix_length_le Hsuf Hsuf'
-    simp [String.append, String.length, toString] at *
+    simp
     omega
-  have : ¬ ("_".append (toString x)).data <:+ (toString y).data := by
-    intro h;
-    simp [String.append, List.IsSuffix] at h
-    obtain ⟨t, h⟩ := h
-    have : '_' ∈ (toString y).data := by simp [← h]
-    have := @Nat_toString_not_contain_underscore y
-    contradiction
+  obtain ⟨t, h⟩ := h
+  have : '_' ∈ (toString y).data := by simp [← h]
+  have := @Nat_toString_not_contain_underscore y
   contradiction
   --case 2
   by_cases Hc: (toString x).length > (toString y).length
-  have Hsuf : (toString x).data <:+ ((s ++ "_").append (toString y)).data := by
-    simp [String.append, toString, List.IsSuffix] at *
+  have Hsuf : (toString x).data <:+ s.data ++ ['_'] ++ (toString y).data := by
+    simp [toString, List.IsSuffix] at *
     obtain ⟨t, H⟩ := Hsuf
     exists t ++ ['_']
     simp [← H]
-  have Hsuf':  ("_".append (toString y)).data  <:+ ((s ++ "_").append (toString y)).data := by
-    simp only [String.append, List.append_assoc, List.cons_append, List.nil_append]
+  have Hsuf': ['_'] ++ (toString y).data  <:+ s.data ++ ['_'] ++ (toString y).data := by
+    simp only [List.append_assoc]
     apply List.suffix_append_of_suffix
     simp
-  have H: ("_".append (toString y)).data <:+ (toString x).data := by
+  have H: ['_'] ++ (toString y).data <:+ (toString x).data := by
     apply List.suffix_of_suffix_length_le Hsuf' Hsuf
-    simp [String.append, String.length, toString] at *
+    simp
     omega
-  have : ¬ ("_".append (toString y)).data <:+ (toString x).data := by
+  have : ¬ (['_'] ++ (toString y).data) <:+ (toString x).data := by
     intro h;
-    simp [String.append, List.IsSuffix] at h
     obtain ⟨t, h⟩ := h
     have : '_' ∈ (toString x).data := by simp [← h]
     have := @Nat_toString_not_contain_underscore x
     contradiction
   contradiction
   -- case 3
-  have Hc: (toString x).data.length = (toString y).data.length := by simp [String.length, toString] at *; omega
-  have Hsuf : (toString x).data <:+ ((s ++ "_").append (toString y)).data := by
-    simp [String.append, toString, List.IsSuffix] at *
+  have Hc: (toString x).data.length = (toString y).data.length := by simp; omega
+  have Hsuf : (toString x).data <:+ s.data ++ ['_'] ++ (toString y).data := by
     obtain ⟨t, H⟩ := Hsuf
     exists t ++ ['_']
-    simp [← H]
-  have Hsuf':  (toString y).data  <:+ ((s ++ "_").append (toString y)).data := by
-    simp only [String.append, List.append_assoc, List.cons_append, List.nil_append, toString]
-    apply List.suffix_append_of_suffix
-    simp
+    simp only [← List.append_assoc, String.data_append] at *
+    exact H
+  have Hsuf': (toString y).data  <:+ s.data ++ ['_'] ++ (toString y).data := by
+    simp [← List.append_assoc]
   simp [List.suffix_iff_eq_drop, Hc] at *
   rw [← Hsuf] at Hsuf'
   simp [String.ext_iff, Hsuf']
@@ -334,7 +321,7 @@ theorem StringGenState.WFMono :
   simp at Hcontra
   intro c s H
   cases H
-  rename_i H
-  simp [H.right, H.left, String.IsSuffix, String.append]
-  apply List.suffix_append
-  apply Hwf.right.right.right <;> assumption
+  · rename_i H
+    simp only [H.right, H.left, String.IsSuffix, String.append_assoc, String.data_append]
+    apply List.suffix_append
+  · apply Hwf.right.right.right <;> assumption
