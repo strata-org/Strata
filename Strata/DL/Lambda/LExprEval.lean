@@ -128,10 +128,8 @@ expressions, along with supporting dynamically-typed languages.
 
 Currently evaluator only supports LExpr with LMonoTy because LFuncs registered
 at Factory must have LMonoTy.
-
-TODO: Once we are on Lean 4.25 or more, we ought to be able to remove the "partial" because this fix should have been merged https://github.com/leanprover/lean4/issues/10353
 -/
-partial def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
+def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
     : LExpr TBase.mono :=
   match n with
   | 0 => e
@@ -164,7 +162,7 @@ partial def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
         -- Not a call of a factory function.
         evalCore n' σ e
 
-partial def evalCore  (n' : Nat) (σ : LState TBase) (e : LExpr TBase.mono) : LExpr TBase.mono :=
+def evalCore  (n' : Nat) (σ : LState TBase) (e : LExpr TBase.mono) : LExpr TBase.mono :=
   match e with
   | .const _ _  => e
   | .op _ _ _     => e
@@ -178,7 +176,7 @@ partial def evalCore  (n' : Nat) (σ : LState TBase) (e : LExpr TBase.mono) : LE
   | .eq m e1 e2 => evalEq n' σ m e1 e2
   | .ite m c t f => evalIte n' σ m c t f
 
-partial def evalIte (n' : Nat) (σ : LState TBase) (m: TBase.Metadata) (c t f : LExpr TBase.mono) : LExpr TBase.mono :=
+def evalIte (n' : Nat) (σ : LState TBase) (m: TBase.Metadata) (c t f : LExpr TBase.mono) : LExpr TBase.mono :=
   let c' := eval n' σ c
   match c' with
   | .true _ => eval n' σ t
@@ -194,7 +192,7 @@ partial def evalIte (n' : Nat) (σ : LState TBase) (m: TBase.Metadata) (c t f : 
     let f' := substFvarsFromState σ f
     .ite m c' t' f'
 
-partial def evalEq (n' : Nat) (σ : LState TBase) (m: TBase.Metadata) (e1 e2 : LExpr TBase.mono) : LExpr TBase.mono :=
+def evalEq (n' : Nat) (σ : LState TBase) (m: TBase.Metadata) (e1 e2 : LExpr TBase.mono) : LExpr TBase.mono :=
   open LTy.Syntax in
   let e1' := eval n' σ e1
   let e2' := eval n' σ e2
@@ -209,7 +207,7 @@ partial def evalEq (n' : Nat) (σ : LState TBase) (m: TBase.Metadata) (e1 e2 : L
   else
     .eq m e1' e2'
 
-partial def evalApp (n' : Nat) (σ : LState TBase) (e e1 e2 : LExpr TBase.mono) : LExpr TBase.mono :=
+def evalApp (n' : Nat) (σ : LState TBase) (e e1 e2 : LExpr TBase.mono) : LExpr TBase.mono :=
   let e1' := eval n' σ e1
   let e2' := eval n' σ e2
   match e1' with
