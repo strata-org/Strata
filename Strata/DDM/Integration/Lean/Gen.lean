@@ -155,6 +155,14 @@ def specialCategories : Std.HashSet CategoryName := {
 }
 
 /--
+Argument declaration for code generation.
+-/
+structure GenArgDecl where
+  name : String
+  cat : SyntaxCat
+  unwrap : Bool := false
+
+/--
 A constructor in a generated datatype.
 
 This could be from the dialect or it could be a builtin constructor.
@@ -209,7 +217,7 @@ def ofOpDecl (d : DialectName) (o : OpDecl) : Except String CatOp := do
 
 def ofTypeDecl (d : DialectName) (o : TypeDecl) : CatOp := {
   name := ⟨d, o.name⟩
-  argDecls := o.argNames |>.map fun anm => ⟨anm.val, .atom .none q`Init.Type⟩
+  argDecls := o.argNames |>.map fun anm => { name := anm.val, cat := .atom .none q`Init.Type }
 }
 
 def ofFunctionDecl (d : DialectName) (o : FunctionDecl) : Except String CatOp := do
@@ -376,7 +384,7 @@ partial def mkUsedCategories.aux (m : CatOpMap) (s : WorkSet CategoryName) : Cat
     | _ =>
       let ops := m.getD c #[]
       let addArgs {α:Type} (f : α → CategoryName → α) (a : α) (op : CatOp) :=
-        op.argDecls.foldl (init := a) fun r (_, c, _unwrap) => c.foldOverAtomicCategories (init := r) f
+        op.argDecls.foldl (init := a) fun r arg => arg.cat.foldOverAtomicCategories (init := r) f
       let addName (pa : WorkSet CategoryName) (c : CategoryName) := pa.add c
       let s := ops.foldl (init := s) (addArgs addName)
       mkUsedCategories.aux m s
@@ -399,21 +407,16 @@ def mkUsedCategories (m : CatOpMap) (d : Dialect) : CategorySet :=
     | .metadata _ => s
   mkUsedCategories.aux m (.ofSet cats)
 
-structure GenArgDecl where
-  name : String
-  cat : SyntaxCat
-  unwrap : Bool := false
-
 def mkStandardCtors (exprHasEta : Bool) (cat : QualifiedIdent) : Array DefaultCtor :=
   match cat with
   | q`Init.Expr =>
     if exprHasEta then
       #[
-        .mk "bvar" none #[⟨"idx", .atom .none q`Init.Num⟩],
+        .mk "bvar" none #[{ name := "idx", cat := .atom .none q`Init.Num }],
         .mk "lambda" none #[
-          ⟨"var", .atom .none q`Init.Str⟩,
-          ⟨"type", .atom .none q`Init.Type⟩,
-          ⟨"fn", .atom .none cat⟩
+          { name := "var", cat := .atom .none q`Init.Str },
+          { name := "type", cat := .atom .none q`Init.Type },
+          { name := "fn", cat := .atom .none cat }
         ]
       ]
     else
@@ -497,8 +500,8 @@ def orderedSyncatGroups (categories : Array (QualifiedIdent × Array DefaultCtor
             g.addEdge typeIdx resIdx
           | _ =>
             ops.foldl (init := g) fun g op =>
-              op.argDecls.foldl (init := g) fun g (_, c, _unwrap) =>
-                addArgIndices cat op.leanNameStr c g resIdx
+              op.argDecls.foldl (init := g) fun g arg =>
+                addArgIndices cat op.leanNameStr arg.cat g resIdx
   let indices := OutGraph.tarjan g
   indices.map (·.map (categories[·]))
 
@@ -944,8 +947,8 @@ def ofAstTypeArgs (argDecls : Array GenArgDecl) (argsVar : Ident) : GenM (Array 
   let argCount := argDecls.size
   let ofAst ← ofAstIdentM q`Init.Type
   let args ← Array.ofFnM (n := argCount) fun ⟨i, _isLt⟩  => do
-    let (vnm, _, _unwrap) := argDecls[i]
-    let v ← genFreshLeanName vnm
+    let arg := argDecls[i]
+    let v ← genFreshLeanName arg.name
     let src := (←read).src
     let rhs ← ``($ofAst $argsVar[$(quote i)])
     let stmt ← `(doSeqItem| let $(mkIdentFrom src v true) ← $rhs:term)
@@ -1072,8 +1075,8 @@ def checkInhabited (cat : QualifiedIdent) (ops : Array DefaultCtor) : StateT Inh
   let catTerm ← getCategoryTerm cat annType
   for op in ops do
     let inhabited ← get
-    let isInhabited := op.argDecls.all fun (_, c, _unwrap) =>
-        match c.name with
+    let isInhabited := op.argDecls.all fun arg =>
+        match arg.cat.name with
         | q`Init.Seq => true
         | q`Init.CommaSepBy => true
         | q`Init.Option => true
