@@ -79,6 +79,25 @@ def translateBool (arg : Arg) : TransM Bool := do
       TransM.error s!"translateBool expects boolTrue or boolFalse, got {repr op.name}"
   | x => TransM.error s!"translateBool expects expression or operation, got {repr x}"
 
+instance : Inhabited HighType where
+  default := .TVoid
+
+def translateHighType (arg : Arg) : TransM HighType := do
+  match arg with
+  | .op op =>
+    if op.name == q`Laurel.intType then
+      return .TInt
+    else if op.name == q`Laurel.boolType then
+      return .TBool
+    else
+      TransM.error s!"translateHighType expects intType or boolType, got {repr op.name}"
+  | _ => TransM.error s!"translateHighType expects operation"
+
+def translateNat (arg : Arg) : TransM Nat := do
+  let .num _ n := arg
+    | TransM.error s!"translateNat expects num literal"
+  return n
+
 instance : Inhabited Procedure where
   default := {
     name := ""
@@ -107,13 +126,59 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
     else if op.name == q`Laurel.block then
       let stmts ← translateSeqCommand op.args[0]!
       return .Block stmts none
-    else if op.name == q`Laurel.literalBool then
-      let boolVal ← translateBool op.args[0]!
-      return .LiteralBool boolVal
     else if op.name == q`Laurel.boolTrue then
       return .LiteralBool true
     else if op.name == q`Laurel.boolFalse then
       return .LiteralBool false
+    else if op.name == q`Laurel.int then
+      let n ← translateNat op.args[0]!
+      return .LiteralInt n
+    else if op.name == q`Laurel.varDecl then
+      let name ← translateIdent op.args[0]!
+      let value ← translateStmtExpr op.args[1]!
+      -- For now, we'll use TInt as default type, but this should be inferred
+      return .LocalVariable name .TInt (some value)
+    else if op.name == q`Laurel.identifier then
+      let name ← translateIdent op.args[0]!
+      return .Identifier name
+    else if op.name == q`Laurel.parenthesis then
+      -- Parentheses don't affect the AST, just pass through
+      translateStmtExpr op.args[0]!
+    else if op.name == q`Laurel.assign then
+      let target ← translateStmtExpr op.args[0]!
+      let value ← translateStmtExpr op.args[1]!
+      return .Assign target value
+    else if op.name == q`Laurel.add then
+      let lhs ← translateStmtExpr op.args[0]!
+      let rhs ← translateStmtExpr op.args[1]!
+      return .PrimitiveOp .Add [lhs, rhs]
+    else if op.name == q`Laurel.eq then
+      let lhs ← translateStmtExpr op.args[0]!
+      let rhs ← translateStmtExpr op.args[1]!
+      return .PrimitiveOp .Eq [lhs, rhs]
+    else if op.name == q`Laurel.neq then
+      let lhs ← translateStmtExpr op.args[0]!
+      let rhs ← translateStmtExpr op.args[1]!
+      return .PrimitiveOp .Neq [lhs, rhs]
+    else if op.name == q`Laurel.call then
+      -- Handle function calls
+      let callee ← translateStmtExpr op.args[0]!
+      -- Extract the function name
+      let calleeName := match callee with
+        | .Identifier name => name
+        | _ => ""
+      -- Translate arguments from CommaSepBy
+      let argsSeq := op.args[1]!
+      let argsList ← match argsSeq with
+        | .commaSepList _ args =>
+          args.toList.mapM translateStmtExpr
+        | _ => pure []
+      return .StaticCall calleeName argsList
+    else if op.name == q`Laurel.ifThenElse then
+      let cond ← translateStmtExpr op.args[0]!
+      let thenBranch ← translateStmtExpr op.args[1]!
+      let elseBranch ← translateStmtExpr op.args[2]!
+      return .IfThenElse cond thenBranch (some elseBranch)
     else
       TransM.error s!"Unknown operation: {op.name}"
   | _ => TransM.error s!"translateStmtExpr expects operation"
@@ -135,18 +200,36 @@ end
 def parseProcedure (arg : Arg) : TransM Procedure := do
   let .op op := arg
     | TransM.error s!"parseProcedure expects operation"
-  let name ← translateIdent op.args[0]!
-  let body ← translateCommand op.args[1]!
-  return {
-    name := name
-    inputs := []
-    output := .TVoid
-    precondition := .LiteralBool true
-    decreases := none
-    determinism := Determinism.deterministic none
-    modifies := none
-    body := .Transparent body
-  }
+
+  if op.name == q`Laurel.procedure then
+    let name ← translateIdent op.args[0]!
+    let body ← translateCommand op.args[1]!
+    return {
+      name := name
+      inputs := []
+      output := .TVoid
+      precondition := .LiteralBool true
+      decreases := none
+      determinism := Determinism.deterministic none
+      modifies := none
+      body := .Transparent body
+    }
+  else if op.name == q`Laurel.procedureWithReturnType then
+    let name ← translateIdent op.args[0]!
+    let returnType ← translateHighType op.args[1]!
+    let body ← translateCommand op.args[2]!
+    return {
+      name := name
+      inputs := []
+      output := returnType
+      precondition := .LiteralBool true
+      decreases := none
+      determinism := Determinism.deterministic none
+      modifies := none
+      body := .Transparent body
+    }
+  else
+    TransM.error s!"parseProcedure expects procedure or procedureWithReturnType, got {repr op.name}"
 
 /- Translate concrete Laurel syntax into abstract Laurel syntax -/
 def parseProgram (prog : Strata.Program) : TransM Laurel.Program := do
@@ -167,7 +250,7 @@ def parseProgram (prog : Strata.Program) : TransM Laurel.Program := do
 
   let mut procedures : List Procedure := []
   for op in commands do
-    if op.name == q`Laurel.procedure then
+    if op.name == q`Laurel.procedure || op.name == q`Laurel.procedureWithReturnType then
       let proc ← parseProcedure (.op op)
       procedures := procedures ++ [proc]
     else
