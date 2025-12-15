@@ -594,13 +594,6 @@ def appPrec := 20
 def arrowPrec :=  17
 
 /--
-Specifies how to unwrap a category value to a raw type.
--/
-inductive UnwrapSpec where
-| nat  -- Unwrap Num to Nat
-deriving BEq, Inhabited, Repr
-
-/--
 This describes how to format an operator.
 -/
 inductive SyntaxDefAtom
@@ -608,8 +601,8 @@ inductive SyntaxDefAtom
 -- Surround with parenthesis if the precedence of the argument is less than `prec`.
 -- Note. If `prec` is zero, then parenthesis will never be added (even with pp.parens is true).
 -- This is to avoid parens in categories that do not support them.
--- The optional unwrap parameter specifies if the value should be unwrapped to a raw type.
-| ident (level : Nat) (prec : Nat) (unwrap : Option UnwrapSpec := none)
+-- The unwrap parameter specifies if the value should be unwrapped to a raw type.
+| ident (level : Nat) (prec : Nat) (unwrap : Bool := false)
 | str (lit : String)
 | indent (n : Nat) (args : Array SyntaxDefAtom)
 deriving BEq, Inhabited, Repr

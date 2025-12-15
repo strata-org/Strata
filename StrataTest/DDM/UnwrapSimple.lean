@@ -14,8 +14,10 @@ dialect TestUnwrap;
 category Expression;
 
 op var (name : Ident) : Expression => name;
-op index (id : Num) : Expression => id:Nat;
+op index (@[unwrap] id : Num) : Expression => id;
 op index_nounwrap (id : Num) : Expression => id;
+op name (@[unwrap] n : Ident) : Expression => n;
+op text (@[unwrap] s : Str) : Expression => s;
 
 #end
 
@@ -49,8 +51,26 @@ info: TestUnwrap.Expression.index_nounwrap {α : Type} : α → (id : Ann Nat α
 #guard_msgs in
 #check TestUnwrap.Expression.index_nounwrap
 
+/--
+info: TestUnwrap.Expression.name {α : Type} : α → (n : String) → TestUnwrap.Expression α
+-/
+#guard_msgs in
+#check TestUnwrap.Expression.name
+
+/--
+info: TestUnwrap.Expression.text {α : Type} : α → (s : String) → TestUnwrap.Expression α
+-/
+#guard_msgs in
+#check TestUnwrap.Expression.text
+
 -- Verify that index uses unwrapped Nat (not Ann Nat α)
 example : TestUnwrap.Expression Unit := .index () 42
 
 -- Verify that index_nounwrap uses wrapped Ann Nat
 example : TestUnwrap.Expression Unit := .index_nounwrap () ⟨(), 42⟩
+
+-- Verify that name uses unwrapped String
+example : TestUnwrap.Expression Unit := .name () "foo"
+
+-- Verify that text uses unwrapped String
+example : TestUnwrap.Expression Unit := .text () "bar"

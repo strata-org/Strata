@@ -445,21 +445,6 @@ def elabSyntaxDefAtom {argc} (argDecls : ArgDeclsMap argc) (defaultPrec : Nat) (
             panic! s!"elabSyntaxDefAtom invalid prec {eformat children[1]!.arg}"
     checkIdentUsedArgs argDecls.decls argLevel
     return .ident argLevel prec
-  | q`Init.syntaxAtomIdentUnwrapNat, #[.node (.ofIdentInfo vInfo) #[], .node (.ofOptionInfo _) precArgs ] =>
-    let v := vInfo.val
-    let some argLevel := argDecls.argLevel? v
-      | .lift <| logError vInfo.loc s!"Unknown variable {v}"
-        return default
-    let prec : Nat :=
-          match precArgs with
-          | #[] => defaultPrec
-          | #[.node (.ofOperationInfo info) #[.node (.ofNumInfo p) #[]]] =>
-            assert! info.op.name = q`Init.syntaxAtomPrec
-            p.val
-          | _ =>
-            panic! s!"elabSyntaxDefAtom invalid prec {eformat children[1]!.arg}"
-    checkIdentUsedArgs argDecls.decls argLevel
-    return .ident argLevel prec (some .nat)
   | q`Init.syntaxAtomString, #[.node (.ofStrlitInfo info) #[] ] =>
     return .str info.val
   | q`Init.syntaxAtomIndent, #[.node (.ofNumInfo nInfo) #[], .node (.ofSeqInfo _) args ] => do

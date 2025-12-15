@@ -20,8 +20,8 @@ structure ArgElaborator where
   argLevel : Nat
   -- Index of argument to use for typing context (if specified, must be less than argIndex)
   contextLevel : Option (Fin argLevel) := .none
-  -- Optional unwrap specification for this argument
-  unwrap : Option UnwrapSpec := .none
+  -- Whether to unwrap this argument
+  unwrap : Bool := false
 deriving Inhabited, Repr
 
 abbrev ArgElaboratorArray (sc : Nat) :=
@@ -64,7 +64,7 @@ def push (as : ArgElaborators)
 def pushWithUnwrap (as : ArgElaborators)
          (argDecls : ArgDecls)
          (argLevel : Fin argDecls.size)
-         (unwrap : Option UnwrapSpec) : ArgElaborators :=
+         (unwrap : Bool) : ArgElaborators :=
   let sc := as.syntaxCount
   let as := as.inc
   let newElab : ArgElaborator := {
@@ -100,7 +100,7 @@ structure SyntaxElaborator where
   argElaborators : ArgElaboratorArray syntaxCount
   resultScope : Option Nat
   /-- Unwrap specifications for each argument (indexed by argLevel) -/
-  unwrapSpecs : Array (Option UnwrapSpec) := #[]
+  unwrapSpecs : Array Bool := #[]
 deriving Inhabited, Repr
 
 def mkSyntaxElab (argDecls : ArgDecls) (stx : SyntaxDef) (opMd : Metadata) : SyntaxElaborator :=
@@ -114,7 +114,7 @@ def mkSyntaxElab (argDecls : ArgDecls) (stx : SyntaxDef) (opMd : Metadata) : Syn
   let as := if as.syntaxCount = 0 then as.inc else as
   let elabs := as.argElaborators.qsort (·.val.argLevel < ·.val.argLevel)
   -- Build unwrapSpecs array indexed by argLevel
-  let unwrapSpecs := Array.replicate argDecls.size none
+  let unwrapSpecs := Array.replicate argDecls.size false
   let unwrapSpecs := elabs.foldl (init := unwrapSpecs) fun arr ⟨ae, _⟩ =>
     arr.set! ae.argLevel ae.unwrap
   {

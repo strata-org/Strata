@@ -272,16 +272,6 @@ def initDialect : Dialect := BuiltinM.create! "Init" #[] do
     metadata := .empty,
   }
   declareOp {
-    name := "syntaxAtomIdentUnwrapNat",
-    argDecls := .ofArray #[
-      { ident := "ident", kind := Ident },
-      { ident := "prec", kind := .cat <| .mkOpt <| .atom .none SyntaxAtomPrec }
-    ],
-    category := SyntaxAtom,
-    syntaxDef := .ofList [.ident 0 0, .ident 1 0, .str ":Nat"],
-    metadata := .empty,
-  }
-  declareOp {
     name := "syntaxAtomString",
     argDecls := .ofArray #[
       { ident := "value", kind := .cat Str }

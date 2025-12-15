@@ -898,13 +898,17 @@ def getSyntaxArgs (stx : Syntax) (ident : QualifiedIdent) (expected : Nat) : Ela
 /--
 Unwrap a tree to a raw Arg based on the unwrap specification.
 -/
-def unwrapTree (tree : Tree) (unwrap : Option UnwrapSpec) : Arg :=
-  match unwrap with
-  | none => tree.arg
-  | some .nat =>
+def unwrapTree (tree : Tree) (unwrap : Bool) : Arg :=
+  if !unwrap then
+    tree.arg
+  else
     match tree.info with
     | .ofNumInfo info => .num info.loc info.val
-    | _ => tree.arg  -- Fallback if type mismatch
+    | .ofIdentInfo info => .ident info.loc info.val
+    | .ofStrlitInfo info => .strlit info.loc info.val
+    | .ofDecimalInfo info => .decimal info.loc info.val
+    | .ofBytesInfo info => .bytes info.loc info.val
+    | _ => tree.arg  -- Fallback for non-unwrappable types
 
 mutual
 
@@ -934,8 +938,8 @@ partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := 
     ctx.push <$> evalBindingSpec loc initSize spec args
   -- Apply unwrapping based on unwrapSpecs
   let unwrappedArgs := args.toArray.mapIdx fun idx tree =>
-    let unwrapSpec := se.unwrapSpecs.getD idx none
-    unwrapTree tree unwrapSpec
+    let unwrap := se.unwrapSpecs.getD idx false
+    unwrapTree tree unwrap
   let op : Operation := { ann := loc, name := i, args := unwrappedArgs }
   if loc.isNone then
     return panic! s!"Missing position info {repr stx}."

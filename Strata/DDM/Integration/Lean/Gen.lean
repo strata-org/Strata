@@ -171,7 +171,7 @@ structure DefaultCtor where
   this must be an auto generated constructor.
   -/
   strataName : Option QualifiedIdent
-  argDecls : Array (String × SyntaxCat × Option UnwrapSpec)
+  argDecls : Array (String × SyntaxCat × Bool)
 
 def DefaultCtor.leanName (c : DefaultCtor) : Name := .str .anonymous c.leanNameStr
 
@@ -180,7 +180,7 @@ An operation at the category level.
 -/
 structure CatOp where
   name : QualifiedIdent
-  argDecls : Array (String × SyntaxCat × Option UnwrapSpec)
+  argDecls : Array (String × SyntaxCat × Bool)
 
 namespace CatOp
 
@@ -190,7 +190,7 @@ partial def checkCat (op : QualifiedIdent) (c : SyntaxCat) : Except String Unit 
   if f ∈ forbiddenCategories then
     throw s!"{op.fullName} refers to unsupported category {f.fullName}."
 
-def ofArgDecl (op : QualifiedIdent) (d : ArgDecl) : Except String (String × SyntaxCat × Option UnwrapSpec) := do
+def ofArgDecl (op : QualifiedIdent) (d : ArgDecl) : Except String (String × SyntaxCat × Bool) := do
   let cat ←
     match d.kind with
     | .type tp =>
@@ -198,30 +198,18 @@ def ofArgDecl (op : QualifiedIdent) (d : ArgDecl) : Except String (String × Syn
     | .cat c =>
       checkCat op c
       pure c
-  -- Unwrap spec comes from SyntaxDef, not ArgDecl
-  pure ⟨d.ident, cat, none⟩
+  -- Check if unwrap metadata is present
+  let unwrap := q`StrataDDL.unwrap ∈ d.metadata
+  pure ⟨d.ident, cat, unwrap⟩
 
 def ofOpDecl (d : DialectName) (o : OpDecl) : Except String CatOp := do
   let name := ⟨d, o.name⟩
-  -- Extract unwrap specs from syntaxDef
-  let unwrapSpecs := extractUnwrapSpecs o.syntaxDef o.argDecls
-  let argDecls ← o.argDecls.toArray |>.mapIdxM fun idx argDecl => do
-    let (ident, cat, _) ← ofArgDecl name argDecl
-    let unwrap := unwrapSpecs.get! idx
-    pure (ident, cat, unwrap)
+  let argDecls ← o.argDecls.toArray |>.mapM (ofArgDecl name)
   return { name, argDecls }
-
-where
-  extractUnwrapSpecs (syntaxDef : SyntaxDef) (argDecls : ArgDecls) : Array (Option UnwrapSpec) :=
-    let unwrapMap := syntaxDef.atoms.foldl (init := Std.HashMap.empty) fun map atom =>
-      match atom with
-      | .ident level _prec unwrap => map.insert level unwrap
-      | _ => map
-    Array.ofFn (n := argDecls.size) fun i => unwrapMap.getD i.val none
 
 def ofTypeDecl (d : DialectName) (o : TypeDecl) : CatOp := {
   name := ⟨d, o.name⟩
-  argDecls := o.argNames |>.map fun anm => ⟨anm.val, .atom .none q`Init.Type, none⟩
+  argDecls := o.argNames |>.map fun anm => ⟨anm.val, .atom .none q`Init.Type, false⟩
 }
 
 def ofFunctionDecl (d : DialectName) (o : FunctionDecl) : Except String CatOp := do
@@ -416,11 +404,11 @@ def mkStandardCtors (exprHasEta : Bool) (cat : QualifiedIdent) : Array DefaultCt
   | q`Init.Expr =>
     if exprHasEta then
       #[
-        .mk "bvar" none #[("idx", .atom .none q`Init.Num, none)],
+        .mk "bvar" none #[("idx", .atom .none q`Init.Num, false)],
         .mk "lambda" none #[
-          ("var", .atom .none q`Init.Str, none),
-          ("type", .atom .none q`Init.Type, none),
-          ("fn", .atom .none cat, none)
+          ("var", .atom .none q`Init.Str, false),
+          ("type", .atom .none q`Init.Type, false),
+          ("fn", .atom .none cat, false)
         ]
       ]
     else
@@ -565,8 +553,8 @@ def getCategoryTerm (cat : QualifiedIdent) (annType : Ident) : GenM Term := do
 def getCategoryOpIdent (cat : QualifiedIdent) (name : Name) : GenM Ident := do
   currScopedIdent <| (← getCategoryScopedName cat) ++ name
 
-partial def ppCatWithUnwrap (annType : Ident) (c : SyntaxCat) (unwrap : Option UnwrapSpec) : GenM Term := do
-  let args ← c.args.mapM (ppCatWithUnwrap annType · none)
+partial def ppCatWithUnwrap (annType : Ident) (c : SyntaxCat) (unwrap : Bool) : GenM Term := do
+  let args ← c.args.mapM (ppCatWithUnwrap annType · false)
   match c.name, eq : args.size with
   | q`Init.CommaSepBy, 1 =>
     return mkCApp ``Ann #[mkCApp ``Array #[args[0]], annType]
@@ -577,9 +565,9 @@ partial def ppCatWithUnwrap (annType : Ident) (c : SyntaxCat) (unwrap : Option U
   | cat, 0 =>
     match declaredCategories[cat]? with
     | some nm =>
-      -- Check if unwrap is specified for Num
-      if cat == q`Init.Num && unwrap == some UnwrapSpec.nat then
-        pure <| mkRootIdent nm  -- Return unwrapped Nat
+      -- Check if unwrap is specified
+      if unwrap && cat ∈ declaredCategories then
+        pure <| mkRootIdent nm  -- Return unwrapped type
       else
         pure <| mkCApp ``Ann #[mkRootIdent nm, annType]
     | none => do
@@ -587,7 +575,7 @@ partial def ppCatWithUnwrap (annType : Ident) (c : SyntaxCat) (unwrap : Option U
   | f, _ => throwError "Unsupported {f.fullName}"
 
 partial def ppCat (annType : Ident) (c : SyntaxCat) : GenM Term := do
-  ppCatWithUnwrap annType c none
+  ppCatWithUnwrap annType c false
 
 def elabCommands (commands : Array Command) : CommandElabM Unit := do
   let messageCount := (← get).messages.unreported.size
@@ -680,30 +668,39 @@ def annToAst (argCtor : Name) (annTerm : Term) : Term :=
 mutual
 
 partial def toAstApplyArg (vn : Name) (cat : SyntaxCat) : GenM Term := do
-  toAstApplyArgWithUnwrap vn cat none
+  toAstApplyArgWithUnwrap vn cat false
 
-partial def toAstApplyArgWithUnwrap (vn : Name) (cat : SyntaxCat) (unwrap : Option UnwrapSpec) : GenM Term := do
+partial def toAstApplyArgWithUnwrap (vn : Name) (cat : SyntaxCat) (unwrap : Bool) : GenM Term := do
   let v := mkIdentFrom (←read).src vn
   match cat.name with
   | q`Init.Num =>
-    -- Check if unwrapped
-    if unwrap == some UnwrapSpec.nat then
-      -- Unwrapped Num - use value directly
+    if unwrap then
       ``(ArgF.num default $v)
     else
-      -- Wrapped Num - extract from Ann
       return annToAst ``ArgF.num v
+  | q`Init.Ident =>
+    if unwrap then
+      ``(ArgF.ident default $v)
+    else
+      return annToAst ``ArgF.ident v
+  | q`Init.Str =>
+    if unwrap then
+      ``(ArgF.strlit default $v)
+    else
+      return annToAst ``ArgF.strlit v
+  | q`Init.Decimal =>
+    if unwrap then
+      ``(ArgF.decimal default $v)
+    else
+      return annToAst ``ArgF.decimal v
+  | q`Init.ByteArray =>
+    if unwrap then
+      ``(ArgF.bytes default $v)
+    else
+      return annToAst ``ArgF.bytes v
   | cid@q`Init.Expr => do
     let toAst ← toAstIdentM cid
     return mkCApp ``ArgF.expr #[mkApp toAst #[v]]
-  | q`Init.Ident =>
-    return annToAst ``ArgF.ident v
-  | q`Init.Decimal =>
-    return annToAst ``ArgF.decimal v
-  | q`Init.Str =>
-    return annToAst ``ArgF.strlit v
-  | q`Init.ByteArray =>
-    return annToAst ``ArgF.bytes v
   | q`Init.Type => do
     let toAst ← toAstIdentM cat.name
     ``(ArgF.type ($toAst $v))
@@ -782,7 +779,7 @@ def toAstMatch (cat : QualifiedIdent) (op : DefaultCtor) : GenM MatchAlt := do
   let argDecls := op.argDecls
   let (annC, annI) ← genFreshIdentPair "ann"
   let ctor : Ident ← getCategoryOpIdent cat op.leanName
-  let args : Array (Name × SyntaxCat × Option UnwrapSpec) ← argDecls.mapM fun (nm, c, unwrap) =>
+  let args : Array (Name × SyntaxCat × Bool) ← argDecls.mapM fun (nm, c, unwrap) =>
     return (← genFreshLeanName nm, c, unwrap)
   let argTerms : Array Term := args.map fun p => mkCanIdent src p.fst
   let pat : Term ← ``($ctor $annC $argTerms:term*)
@@ -829,32 +826,49 @@ def genToAst (cat : QualifiedIdent) (ops : Array DefaultCtor) : GenM Command := 
 mutual
 
 partial def getOfIdentArg (varName : String) (cat : SyntaxCat) (e : Term) : GenM Term := do
-  getOfIdentArgWithUnwrap varName cat none e
+  getOfIdentArgWithUnwrap varName cat false e
 
-partial def getOfIdentArgWithUnwrap (varName : String) (cat : SyntaxCat) (unwrap : Option UnwrapSpec) (e : Term) : GenM Term := do
+partial def getOfIdentArgWithUnwrap (varName : String) (cat : SyntaxCat) (unwrap : Bool) (e : Term) : GenM Term := do
   match cat.name with
   | q`Init.Num =>
-    -- Check if unwrapped
-    if unwrap == some UnwrapSpec.nat then
-      -- Unwrapped Num - extract Nat directly
+    if unwrap then
       ``((fun arg => match arg with
           | ArgF.num _ val => pure val
           | a => OfAstM.throwExpected "numeric literal" a) $e)
     else
-      -- Wrapped Num - use ofNumM
       ``(OfAstM.ofNumM $e)
+  | q`Init.Ident =>
+    if unwrap then
+      ``((fun arg => match arg with
+          | ArgF.ident _ val => pure val
+          | a => OfAstM.throwExpected "identifier" a) $e)
+    else
+      ``(OfAstM.ofIdentM $e)
+  | q`Init.Str =>
+    if unwrap then
+      ``((fun arg => match arg with
+          | ArgF.strlit _ val => pure val
+          | a => OfAstM.throwExpected "string literal" a) $e)
+    else
+      ``(OfAstM.ofStrlitM $e)
+  | q`Init.Decimal =>
+    if unwrap then
+      ``((fun arg => match arg with
+          | ArgF.decimal _ val => pure val
+          | a => OfAstM.throwExpected "decimal literal" a) $e)
+    else
+      ``(OfAstM.ofDecimalM $e)
+  | q`Init.ByteArray =>
+    if unwrap then
+      ``((fun arg => match arg with
+          | ArgF.bytes _ val => pure val
+          | a => OfAstM.throwExpected "byte array" a) $e)
+    else
+      ``(OfAstM.ofBytesM $e)
   | cid@q`Init.Expr => do
     let (vc, vi) ← genFreshIdentPair <| varName ++ "_inner"
     let ofAst ← ofAstIdentM cid
     ``(OfAstM.ofExpressionM $e fun $vc _ => $ofAst $vi)
-  | q`Init.Ident => do
-    ``(OfAstM.ofIdentM $e)
-  | q`Init.Decimal => do
-    ``(OfAstM.ofDecimalM $e)
-  | q`Init.Str => do
-    ``(OfAstM.ofStrlitM $e)
-  | q`Init.ByteArray => do
-    ``(OfAstM.ofBytesM $e)
   | cid@q`Init.Type => do
     let (vc, vi) ← genFreshIdentPair varName
     let ofAst ← ofAstIdentM cid
@@ -885,7 +899,7 @@ partial def getOfIdentArgWithUnwrap (varName : String) (cat : SyntaxCat) (unwrap
 
 end
 
-def ofAstArgs (argDecls : Array (String × SyntaxCat × Option UnwrapSpec)) (argsVar : Ident) : GenM (Array Ident × Array (TSyntax ``doSeqItem)) := do
+def ofAstArgs (argDecls : Array (String × SyntaxCat × Bool)) (argsVar : Ident) : GenM (Array Ident × Array (TSyntax ``doSeqItem)) := do
   let argCount := argDecls.size
   let args ← Array.ofFnM (n := argCount) fun ⟨i, _isLt⟩  => do
     let (vnm, c, unwrap) := argDecls[i]
@@ -921,7 +935,7 @@ def ofAstExprMatch (nameIndexMap : Std.HashMap QualifiedIdent Nat)
   let rhs ← ofAstExprMatchRhs cat annI argsVar op
   ofAstMatch nameIndexMap op rhs
 
-def ofAstTypeArgs (argDecls : Array (String × SyntaxCat × Option UnwrapSpec)) (argsVar : Ident) : GenM (Array Ident × Array (TSyntax ``doSeqItem)) := do
+def ofAstTypeArgs (argDecls : Array (String × SyntaxCat × Bool)) (argsVar : Ident) : GenM (Array Ident × Array (TSyntax ``doSeqItem)) := do
   let argCount := argDecls.size
   let ofAst ← ofAstIdentM q`Init.Type
   let args ← Array.ofFnM (n := argCount) fun ⟨i, _isLt⟩  => do
