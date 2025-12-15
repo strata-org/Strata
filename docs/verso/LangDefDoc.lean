@@ -58,11 +58,15 @@ ultimately represented internally using the same Core language.
 Dialects are used to describe both the initial artifacts being analyzed by
 Strata and more low-level representations of those artifacts used to communicate
 with external reasoning tools such as model checkers or SMT solvers. In both
-situations, Stata uses dialects as a mechanism for communicating with external
+situations, Strata uses dialects as a mechanism for communicating with external
 tools (either language front ends or generic automated reasoning tools like SMT
 solvers).
 
-(TODO: hourglass diagram showing various dialects in relation to Strata Core)
+The following "hourglass" diagram illustrates how various existing (blue) or
+hypothetical (gray) input dialects could be translated into Strata Core and
+then into the input language for various back end tools.
+
+![Strata hourglass diagram](strata-hourglass.png)
 
 The Strata Core language is constructed using a few building blocks that can be
 combined in different ways. This allows concrete dialects to systematically use
@@ -92,8 +96,8 @@ fundamental constructs, and this document will be updated as it does. We intend
 for Strata Core to be close to a superset of [B3](https://b3-lang.org/), but it
 may at times make different choices to support its goal of being useful for a
 wide range of analyses, rather than being optimized for deductive verification.
-
-TODO: for everything below, describe what the parameters for Strata Core are.
+In particular, Strata aims to make it possible to encode most input artifacts
+without the need for axioms.
 
 # Lambda
 
@@ -161,7 +165,7 @@ quantifiers that bind these type variables, creating polymorphic types.
 
 {docstring Lambda.LTy}
 
-A expression {name LExpr}`LExpr` parameterized by {name LTy}`LTy` is
+An expression {name LExpr}`LExpr` parameterized by {name LTy}`LTy` is
 well-typed according to the {name LExpr.HasType}`HasType` relation.
 This relation depends on two types of context.
 
@@ -209,20 +213,15 @@ Commands represent atomic operations that do not induce control flow (except
 possibly in the form of procedure calls that follow a stack discipline, though
 the current core set of commands does not include calls). Statements are
 parameterized by a command type and describe the control flow surrounding those
-commands. Statements exist in two forms, corresponding to the most common
-alternative representations. These forms are:
+commands. Currently, `Imperative` has structured, deterministic statements, each
+of which can be: a command, a sequence of statements in a block, a deterministic
+conditional, a deterministic loop with a condition, or a forward `goto`
+statement. (Note: we plan to replace `goto` with a block exit statement, and
+have a separate unstructured CFG representation.)
 
-* Structured deterministic statements, each of which can be: a command, a
-  sequence of statements in a block, a deterministic conditional, a deterministic
-  loop with a condition, or a forward `goto` statement. (Note: we plan to replace
-  `goto` with a block exit statement, and have a separate unstructured CFG
-  representation.
-
-* Structured non-deterministic statements, each of which can be: a command, a
-  sequence of two statements, an arbitrary choice between two statements, or an
-  iteration of a statement an arbitrary number of times.
-
-A translation exists from structured deterministic statements into structured
+We plan to add non-deterministic statements, as in [Kleene Algebra with
+Tests](https://www.cs.cornell.edu/~kozen/Papers/kat.pdf), and support a
+translation from structured deterministic statements into structured
 non-deterministic statements.
 
 We also expect to add unstructured control-flow graphs where each basic block
@@ -302,7 +301,7 @@ relation.
 Metadata allows additional information to be attached to nodes in the Strata
 AST. This may include information such as the provenance of specific AST nodes
 (_e.g._, the locations in source code that gave rise to them), facts inferred by
-specific analyses, of indications of the goal of a specific analysis, among many
+specific analyses, or indications of the goal of a specific analysis, among many
 other possibilities.
 
 Each metadata element maps a field to a value. A field can be named with a
