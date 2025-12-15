@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from os import PathLike
 import typing
 import types
-import strata
+import strata.base as strata
 from .base import ArgDecl, FileMapping, Init, SourceRange, SyntaxCat, reserved
 
 @dataclass
