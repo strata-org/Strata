@@ -93,4 +93,4 @@ example : TestUnwrap.Expression Unit := .text () "bar"
 example : TestUnwrap.Expression Unit := .decimal_val () { mantissa := 123, exponent := -2 }
 
 -- Verify that bytes_val uses unwrapped ByteArray
-example : TestUnwrap.Expression Unit := .bytes_val () #[0x48, 0x69]
+example : TestUnwrap.Expression Unit := .bytes_val () (ByteArray.mk #[0x48, 0x69])
