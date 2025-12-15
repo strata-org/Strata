@@ -8,6 +8,7 @@ import Lean.Elab.Command
 import Strata.DDM.Integration.Lean.Env
 import Strata.DDM.Integration.Lean.GenTrace
 import Strata.DDM.Integration.Lean.OfAstM
+import Strata.DDM.Integration.Lean.BoolConv
 import Strata.DDM.Util.Graph.Tarjan
 
 open Lean (Command Name Ident Term TSyntax getEnv logError profileitM quote withTraceNode mkIdentFrom)
@@ -247,7 +248,7 @@ def declaredCategories : Std.HashMap CategoryName Name := .ofList [
   (q`Init.Decimal, ``Decimal),
   (q`Init.Str, ``String),
   (q`Init.ByteArray, ``ByteArray),
-  (q`Bool.BoolLit, ``Bool)
+  (q`Init.Bool, ``Bool)
 ]
 
 def ignoredCategories : Std.HashSet CategoryName :=
@@ -256,8 +257,8 @@ def ignoredCategories : Std.HashSet CategoryName :=
 namespace CatOpMap
 
 def addCat (m : CatOpMap) (cat : CategoryName) : CatOpMap :=
-  -- Allow Bool.BoolLit even though it's in ignoredCategories
-  if cat ∈ ignoredCategories && cat ≠ q`Bool.BoolLit then
+  -- Allow Init.Bool even though it's in ignoredCategories
+  if cat ∈ ignoredCategories && cat ≠ q`Init.Bool then
     m
   else
     m.insert cat #[]
@@ -283,9 +284,9 @@ def addDecl (d : DialectName) (decl : Decl) : CatOpM Unit :=
   | .syncat decl =>
     addCatM ⟨d, decl.name⟩
   | .op decl => do
-    -- Allow Bool.BoolLit operators (boolTrue, boolFalse) even though BoolLit is in declaredCategories
-    let isBoolLitOp := decl.category == q`Bool.BoolLit && (decl.name == "boolTrue" || decl.name == "boolFalse")
-    if (decl.category ∈ ignoredCategories ∨ decl.category ∈ specialCategories) && !isBoolLitOp then
+    -- Allow Init.Bool operators even though Bool is in declaredCategories
+    let isBoolOp := decl.category == q`Init.Bool && (decl.name == "boolTrue" || decl.name == "boolFalse")
+    if (decl.category ∈ ignoredCategories ∨ decl.category ∈ specialCategories) && !isBoolOp then
       if d ≠ "Init" then
         .addError s!"Skipping operation {decl.name} in {d}: {decl.category.fullName} cannot be extended."
     else
@@ -633,7 +634,7 @@ def mkInductive (cat : QualifiedIdent) (ctors : Array DefaultCtor) : GenM Comman
   `(inductive $ident ($annType : Type) : Type where
     $builtinCtors:ctor*
     $(← ctors.mapM (genCtor annType)):ctor*
-    deriving Repr, Inhabited)
+    deriving Repr)
 
 def categoryToAstTypeIdent (cat : QualifiedIdent) (annType : Term) : Term :=
   let ident :=
@@ -670,6 +671,9 @@ partial def toAstApplyArg (vn : Name) (cat : SyntaxCat) : GenM Term := do
     return annToAst ``ArgF.ident v
   | q`Init.Num =>
     return annToAst ``ArgF.num v
+  | q`Init.Bool => do
+    let boolToAst := mkCApp ``Strata.Bool.toAst #[v]
+    return mkCApp ``ArgF.op #[boolToAst]
   | q`Init.Decimal =>
     return annToAst ``ArgF.decimal v
   | q`Init.Str =>
@@ -806,6 +810,10 @@ partial def getOfIdentArg (varName : String) (cat : SyntaxCat) (e : Term) : GenM
     ``(OfAstM.ofIdentM $e)
   | q`Init.Num => do
     ``(OfAstM.ofNumM $e)
+  | q`Init.Bool => do
+    let (vc, vi) ← genFreshIdentPair varName
+    let boolOfAst := mkCApp ``Strata.Bool.ofAst #[vi]
+    ``(OfAstM.ofOperationM $e fun $vc _ => $boolOfAst)
   | q`Init.Decimal => do
     ``(OfAstM.ofDecimalM $e)
   | q`Init.Str => do

@@ -1,11 +1,10 @@
 dialect Bool;
 
-// BoolType for the type-level Bool
+// BoolType for use in function signatures
 type BoolType;
 
-// BoolLit category with a single operator that takes a Bool value
-category BoolLit;
-op boolLit (b : Bool) : BoolLit => b;
+// Function to lift Init.Bool literals to expressions
+fn boolLit (b : Bool) : BoolType => b;
 
 // Introduce basic Boolean operations.
 fn not_expr (tp : Type, a : tp) : tp => "-" a;
