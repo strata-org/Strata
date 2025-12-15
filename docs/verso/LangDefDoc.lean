@@ -108,15 +108,14 @@ predicates) and includes a constructor for if-then-else to allow it to have lazy
 semantics.
 
 Although `Lambda` can be parameterized by an arbitrary type system, the Strata
-code base includes an implementation of a polymorphic Hindley-Milner type system
-(TODO: link) and inference algorithm (TODO: link) over the type `LTy` (described
-below). This allows universal quantification over types and the use of arbitrary
-named type constructors (as well as special support for bit vector types, to
-allow them to be parameterized by size).
-
-Type inference and checking with this type system takes as input expressions
-parameterized by {name Unit}`Unit` as the type of types (TODO: is this true?),
-and produces expressions parameterized by {name LTy}`LTy` as output.
+code base includes a
+[formalization](https://github.com/strata-org/Strata/blob/main/Strata/DL/Lambda/LExprTypeSpec.lean)
+of a polymorphic Hindley-Milner type system and an
+[implementation](https://github.com/strata-org/Strata/blob/main/Strata/DL/Lambda/LTyUnify.lean)
+of an inference algorithm over the type `LTy` (described below). This allows
+universal quantification over types and the use of arbitrary named type
+constructors (as well as special support for bit vector types, to allow them to
+be parameterized by size).
 
 ## Syntax
 
@@ -268,9 +267,9 @@ a standard way.
 
 Statements allow commands to be organized into standard control flow
 arrangements, including sequencing, alternation, and iteration. Sequencing
-statements occurs by grouping them into blocks.
-
-(TODO: say more about loop invariants, measures?)
+statements occurs by grouping them into blocks. Loops can be annotated with
+optional invariants and decreasing measures, which can be used for deductive
+verification.
 
 {docstring Imperative.Stmt}
 
@@ -306,10 +305,20 @@ AST. This may include information such as the provenance of specific AST nodes
 specific analyses, of indications of the goal of a specific analysis, among many
 other possibilities.
 
+Each metadata element maps a field to a value. A field can be named with a
+variable or an arbitrary string.
+
 {docstring Imperative.MetaDataElem.Field}
+
+A value can take the form of an expression or an arbitrary string.
 
 {docstring Imperative.MetaDataElem.Value}
 
+A metadata element pairs a field with a value.
+
 {docstring Imperative.MetaDataElem}
+
+And, finally, the metadata attached to an AST node consists of an array of
+metadata elements.
 
 {docstring Imperative.MetaData}
