@@ -254,18 +254,9 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
         let fns := obligation.obligation.getOps.map BoogieIdent.toPretty
         let relevant_fns := (assumption_fns ++ fns ++ (CallGraph.getAllCalleesClosure cg fns)).dedup
 
-        if obligation.label == "py_assertion" then
-          dbg_trace s!"obligation:\n{obligation.obligation}"
-          -- dbg_trace s!"assumptions:\n{repr obligation.assumptions}"
-          dbg_trace s!"Relevant functions:\n{String.intercalate "\n" relevant_fns}"
-          let irrelevant_axs := Program.getIrrelevantAxioms p relevant_fns
-          dbg_trace s!"Irrelevant axioms:\n{String.intercalate "\n" irrelevant_axs}"
-          let new_assumptions := Imperative.PathConditions.removeByNames obligation.assumptions irrelevant_axs
-          { obligation with assumptions := new_assumptions }
-        else
-          let irrelevant_axs := Program.getIrrelevantAxioms p relevant_fns
-          let new_assumptions := Imperative.PathConditions.removeByNames obligation.assumptions irrelevant_axs
-          { obligation with assumptions := new_assumptions }
+        let irrelevant_axs := Program.getIrrelevantAxioms p relevant_fns
+        let new_assumptions := Imperative.PathConditions.removeByNames obligation.assumptions irrelevant_axs
+        { obligation with assumptions := new_assumptions }
       else
         obligation
       -- At this point, we solely rely on the SMT backend.
