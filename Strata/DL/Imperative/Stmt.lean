@@ -40,6 +40,7 @@ inductive Stmt (P : PureExpr) (Cmd : Type) : Type where
   | goto     (label : String) (md : MetaData P := .empty)
   deriving Inhabited
 
+/-- A block is simply an abbreviation for a list of commands. -/
 abbrev Block (P : PureExpr) (Cmd : Type) := List (Stmt P Cmd)
 
 def Stmt.isCmd {P : PureExpr} {Cmd : Type} (s : Stmt P Cmd) : Bool :=

@@ -24,7 +24,7 @@ open Std (ToFormat Format format)
 
 variable {Identifier : Type} [DecidableEq Identifier] [ToFormat Identifier] [Inhabited Identifier]
 
-/-- A metadata field.
+/-- A metadata field, which can be either a variable or an arbitrary string label.
 
 For now, we only track the variables modified by a construct, but we will expand
 this in the future.
@@ -61,7 +61,7 @@ instance [Repr P.Ident] : Repr (MetaDataElem.Field P) where
       | .label s => f!"MetaDataElem.Field.label {s}"
     Repr.addAppParen res prec
 
-/-- A metadata value. -/
+/-- A metadata value, which can be either an expression or a message. -/
 inductive MetaDataElem.Value (P : PureExpr) where
   | expr (e : P.Expr)
   | msg (s : String)

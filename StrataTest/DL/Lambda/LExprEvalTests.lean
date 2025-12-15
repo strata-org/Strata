@@ -33,11 +33,11 @@ macro "discharge_isCanonicalValue": tactic => `(tactic|
   )
 -- Take a small step.
 macro "take_step": tactic => `(tactic |
-    (conv => lhs; reduce) <;> apply StepStar.step
+    (conv => lhs; reduce) <;> apply ReflTrans.step
   )
 -- Finish taking small steps!
 macro "take_refl": tactic => `(tactic |
-    (conv => lhs; reduce) <;> apply StepStar.refl
+    (conv => lhs; reduce) <;> apply ReflTrans.refl
   )
 -- Do beta reduction.
 macro "reduce_beta": tactic => `(tactic |
@@ -112,7 +112,7 @@ example: steps_well test2 := by
   · apply Step.eq_reduce <;> try discharge_isCanonicalValue
     · inhabited_metadata
   take_step; apply Step.ite_reduce_else
-  apply StepStar.refl
+  apply ReflTrans.refl
 
 
 def test3 := TestCase.mk

@@ -8,6 +8,7 @@ import Strata.DL.Lambda.LExpr
 import Strata.DL.Lambda.LExprEval
 import Strata.DL.Lambda.LExprWF
 import Strata.DL.Lambda.LState
+import Strata.DL.Util.Relations
 
 ---------------------------------------------------------------------
 
@@ -149,16 +150,8 @@ theorem step_const_stuck:
 /--
 Multi-step execution: reflexive transitive closure of single steps.
 -/
-inductive StepStar (F:@Factory Tbase) (rf:Env Tbase)
-  : LExpr Tbase.mono → LExpr Tbase.mono → Prop where
-
-/-- Reflexivity: an expression `e` can evaluate to itself in zero steps. -/
-| refl : StepStar F rf e e
-
-/-- Transitivity: if `e` can reach `e'` in some number of steps and `e'` can
-reach `e''` in some number of steps, `e` can reach `e''` in some number of
-steps. -/
-| step : ∀ e e' e'', Step F rf e e' → StepStar F rf e' e''
-        → StepStar F rf e e''
+def StepStar (F:@Factory Tbase) (rf:Env Tbase)
+  : LExpr Tbase.mono → LExpr Tbase.mono → Prop :=
+  ReflTrans (Step F rf)
 
 end Lambda

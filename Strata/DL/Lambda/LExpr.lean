@@ -80,10 +80,20 @@ Constants are integers, strings, reals, bitvectors of a fixed length, or
 booleans.
 -/
 inductive LConst : Type where
+  /-- An unbounded integer constant. -/
   | intConst (i: Int)
+
+  /-- A string constant, using Lean's `String` type for a sequence of Unicode
+  code points encoded with UTF-8. -/
   | strConst (s: String)
+
+  /-- A real constant, represented as a rational number. -/
   | realConst (r: Rat)
+
+  /-- A bit vector constant, represented using Lean's `BitVec` type. -/
   | bitvecConst (n: Nat) (b: BitVec n)
+
+  /-- A Boolean constant. -/
   | boolConst (b: Bool)
 deriving Repr, DecidableEq
 
