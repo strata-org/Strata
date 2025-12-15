@@ -25,7 +25,7 @@ axiom [Object_len_ge_zero]: (forall x : Object :: Object_len(x) >= 0);
 function inheritsFrom(child : string, parent : string) : (bool);
 axiom [inheritsFrom_refl]: (forall s: string :: {inheritsFrom(s, s)} inheritsFrom(s, s));
 
-/////////////////////////////////////////////////////////////////////////////////////
+// /////////////////////////////////////////////////////////////////////////////////////
 
 // Exceptions
 // TODO: Formalize the exception hierarchy here:
@@ -148,22 +148,14 @@ axiom [PyReMatchRegex_def_noFlg]:
 // no exception, call PyReMatchRegex.
 function PyReMatchStr(pattern : string, str : string, flags : int) : Except Error bool;
 
-/////////////////////////////////////////////////////////////////////////////////////
+// /////////////////////////////////////////////////////////////////////////////////////
 
 // List of strings
 type ListStr;
 function ListStr_nil() : (ListStr);
 function ListStr_cons(x0 : string, x1 : ListStr) : (ListStr);
 
-/////////////////////////////////////////////////////////////////////////////////////
-
-// Uninterpreted procedures
-procedure importFrom(module : string, names : ListStr, level : int) returns ();
-procedure import(names : ListStr) returns ();
-procedure print(msg : string) returns ();
-
-/////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////
+// /////////////////////////////////////////////////////////////////////////////////////
 
 // Temporary Types
 
@@ -311,7 +303,205 @@ axiom (forall v : BoolOrStrOrNone :: {BoolOrStrOrNone_tag(v)}
         BoolOrStrOrNone_tag(v) == BSN_BOOL_TAG ||
         BoolOrStrOrNone_tag(v) == BSN_STR_TAG ||
         BoolOrStrOrNone_tag(v) == BSN_NONE_TAG);
+
+// DictStrStrOrNone
+type DictStrStrOrNone;
+type  DictStrStrOrNoneTag;
+const DSSN_BOOL_TAG : DictStrStrOrNoneTag;
+const DSSN_NONE_TAG : DictStrStrOrNoneTag;
+function DictStrStrOrNone_tag(v : DictStrStrOrNone) : DictStrStrOrNoneTag;
+function DictStrStrOrNone_str_val(v : DictStrStrOrNone) : string;
+function DictStrStrOrNone_none_val(v : DictStrStrOrNone) : None;
+function DictStrStrOrNone_mk_str(s : string) : DictStrStrOrNone;
+function DictStrStrOrNone_mk_none(v : None) : DictStrStrOrNone;
+axiom (forall s : string :: {DictStrStrOrNone_mk_str(s)}
+        DictStrStrOrNone_tag(DictStrStrOrNone_mk_str(s)) == DSSN_BOOL_TAG &&
+        DictStrStrOrNone_str_val(DictStrStrOrNone_mk_str(s)) == s);
+axiom (forall n : None :: {DictStrStrOrNone_mk_none(n)}
+        DictStrStrOrNone_tag(DictStrStrOrNone_mk_none(n)) == DSSN_NONE_TAG &&
+        DictStrStrOrNone_none_val(DictStrStrOrNone_mk_none(n)) == n);
+axiom (forall v : DictStrStrOrNone :: {DictStrStrOrNone_tag(v)}
+        DictStrStrOrNone_tag(v) == DSSN_BOOL_TAG ||
+        DictStrStrOrNone_tag(v) == DSSN_NONE_TAG);
+axiom [unique_DictStrStrOrNoneTag]: DSSN_BOOL_TAG != DSSN_NONE_TAG;
+
+type BytesOrStrOrNone;
+function BytesOrStrOrNone_mk_none(v : None) : (BytesOrStrOrNone);
+function BytesOrStrOrNone_mk_str(s : string) : (BytesOrStrOrNone);
+
+type DictStrAny;
+function DictStrAny_mk(s : string) : (DictStrAny);
+
+type Client;
+type ClientTag;
+const C_S3_TAG : ClientTag;
+const C_CW_TAG : ClientTag;
+function Client_tag(v : Client) : (ClientTag);
+
+// Unique const axioms
 axiom [unique_BoolOrStrOrNoneTag]: BSN_BOOL_TAG != BSN_STR_TAG && BSN_BOOL_TAG != BSN_NONE_TAG && BSN_STR_TAG != BSN_NONE_TAG;
+
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// Datetime
+
+////// 1. Timedelta.
+
+// According to http://docs.python.org/3/library/datetime.html,
+// ""
+//  Only days, seconds and microseconds are stored internally. Arguments are
+//  converted to those units:
+//  - A millisecond is converted to 1000 microseconds.
+//  - A minute is converted to 60 seconds.
+//  - An hour is converted to 3600 seconds.
+//  - A week is converted to 7 days.
+//  and days, seconds and microseconds are then normalized so that the
+//  representation is unique, with
+//  - 0 <= microseconds < 1000000
+//  - 0 <= seconds < 3600*24 (the number of seconds in one day)
+//  - -999999999 <= days <= 999999999
+// ""
+
+// In Boogie representation, an int type that corresponds to the full
+// milliseconds is simply used. See Timedelta_mk.
+
+
+procedure timedelta(days: int) returns (delta : int, maybe_except: ExceptOrNone)
+spec{
+  free ensures [ensure_timedelta_sign_matches]: (delta == (days * 3600 * 24));
+}
+{
+  havoc delta;
+  assume [assume_timedelta_sign_matches]: (delta == (days * 3600 * 24));
+};
+
+function Timedelta_mk(days : int, seconds : int, microseconds : int): int {
+  ((days * 3600 * 24) + seconds) * 1000000 + microseconds
+}
+
+function Timedelta_get_days(timedelta : int) : int;
+function Timedelta_get_seconds(timedelta : int) : int;
+function Timedelta_get_microseconds(timedelta : int) : int;
+
+axiom [Timedelta_deconstructors]:
+    (forall days0 : int, seconds0 : int, msecs0 : int,
+            days : int, seconds : int, msecs : int
+            :: {(Timedelta_mk(days0, seconds0, msecs0))}
+      Timedelta_mk(days0, seconds0, msecs0) ==
+          Timedelta_mk(days, seconds, msecs) &&
+      0 <= msecs && msecs < 1000000 &&
+      0 <= seconds && seconds < 3600 * 24 &&
+      -999999999 <= days && days <= 999999999
+      ==> Timedelta_get_days(Timedelta_mk(days0, seconds0, msecs0)) == days &&
+          Timedelta_get_seconds(Timedelta_mk(days0, seconds0, msecs0)) == seconds &&
+          Timedelta_get_microseconds(Timedelta_mk(days0, seconds0, msecs0)) == msecs);
+
+
+////// Datetime.
+// Datetime is abstractly defined as a pair of (base time, relative timedelta).
+// datetime.now() returns (<the curent datetime>, 0).
+// Adding or subtracting datetime.timedelta updates
+type Datetime;
+type Datetime_base;
+
+function Datetime_get_base(d : Datetime) : Datetime_base;
+function Datetime_get_timedelta(d : Datetime) : int;
+
+// now() returns an abstract, fresh current datetime.
+// This abstract now() does not guarantee monotonic increase of time, and this
+// means subtracting an 'old' timestamp from a 'new' timestamp may return
+// a negative difference.
+
+procedure datetime_now() returns (d:Datetime, maybe_except: ExceptOrNone)
+spec {
+  ensures (Datetime_get_timedelta(d) == Timedelta_mk(0,0,0));
+}
+{
+  havoc d;
+  assume [assume_datetime_now]: (Datetime_get_timedelta(d) == Timedelta_mk(0,0,0));
+};
+
+// Addition/subtraction of Datetime and Timedelta.
+function Datetime_add(d:Datetime, timedelta:int):Datetime;
+function Datetime_sub(d:Datetime, timedelta:int):Datetime {
+  Datetime_add(d, -timedelta)
+}
+
+axiom [Datetime_add_ax]:
+    (forall d:Datetime, timedelta:int :: {}
+        Datetime_get_base(Datetime_add(d,timedelta)) == Datetime_get_base(d) &&
+        Datetime_get_timedelta(Datetime_add(d,timedelta)) ==
+          Datetime_get_timedelta(d)  + timedelta);
+
+// Comparison of Datetimes is abstractly defined so that the result is
+// meaningful only if the two datetimes have same base.
+function Datetime_lt(d1:Datetime, d2:Datetime):bool;
+
+axiom [Datetime_lt_ax]:
+    (forall d1:Datetime, d2:Datetime :: {}
+        Datetime_get_base(d1) == Datetime_get_base(d2)
+        ==> Datetime_lt(d1, d2) ==
+            (Datetime_get_timedelta(d1) < Datetime_get_timedelta(d2)));
+
+
+type Date;
+procedure datetime_date(dt: Datetime) returns (d : Datetime, maybe_except: ExceptOrNone)
+spec{}
+{havoc d;};
+
+procedure datetime_strptime(time: string, format: string) returns (d : Datetime, maybe_except: ExceptOrNone)
+spec{}
+{
+  havoc d;
+};
+
+
+/////////////////////////////////////////////////////////////////////////////////////
+
+
+// /////////////////////////////////////////////////////////////////////////////////////
+
+// Uninterpreted procedures
+procedure importFrom(module : string, names : ListStr, level : int) returns ();
+procedure import(names : ListStr) returns ();
+procedure print(msg : string, opt : StrOrNone) returns ();
+
+procedure json_dumps(msg : DictStrAny, opt_indent : IntOrNone) returns (s: string, maybe_except: ExceptOrNone)
+spec{}
+{havoc s;}
+;
+
+procedure json_loads(msg : string) returns (d: DictStrAny, maybe_except: ExceptOrNone)
+spec{}
+{havoc d;}
+;
+
+procedure input(msg : string) returns (result: string, maybe_except: ExceptOrNone)
+spec{}
+{havoc result;}
+;
+
+procedure random_choice(l : ListStr) returns (result: string, maybe_except: ExceptOrNone)
+spec{}
+{havoc result;}
+;
+
+function str_in_list_str(s : string, l: ListStr) : bool;
+
+function str_in_dict_str_any(s : string, l: DictStrAny) : bool;
+
+function list_str_get(l : ListStr, i: int) : string;
+
+function str_len(s : string) : int;
+
+function dict_str_any_get(d : DictStrAny, k: string) : DictStrAny;
+
+function dict_str_any_length(d : DictStrAny) : int;
+
+// /////////////////////////////////////////////////////////////////////////////////////
+
+
+
 procedure test_helper_procedure(req_name : string, opt_name : StrOrNone) returns (maybe_except: ExceptOrNone)
 spec {
   requires [req_name_is_foo]: req_name == "foo";
