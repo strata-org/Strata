@@ -5,16 +5,18 @@
 */
 
 
-procedure nestedImpureStatements(): int {
-  var x := 0;
 
+procedure nestedImpureStatements(x: int): int {
   var y := 0;
+  var z := x;
 
-  if ((x := x + 1) == (y := x)) {
 
+  if ((z := z + 1) == (y == z)) {
+    assert y == x + 1;
     1
   } else {
-    2
+    assert false;
+    3
   }
 }
 

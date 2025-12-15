@@ -46,10 +46,13 @@ op assert (cond : StmtExpr) : StmtExpr => "assert " cond ";\n";
 op assume (cond : StmtExpr) : StmtExpr => "assume " cond ";\n";
 op block (stmts : Seq StmtExpr) : StmtExpr => @[prec(1000)] "{\n" stmts "}\n";
 
+category Parameter;
+op parameter (name: Ident, paramType: LaurelType): Parameter => name ":" paramType;
+
 category Procedure;
 op procedure (name : Ident, body : StmtExpr) : Procedure => "procedure " name "() " body:0;
-op procedureWithReturnType (name : Ident, returnType : LaurelType, body : StmtExpr) : Procedure =>
-  "procedure " name "(): " returnType " " body:0;
+op procedureWithReturnType (name : Ident, parameters: CommaSepBy Parameter, returnType : LaurelType, body : StmtExpr) : Procedure =>
+  "procedure " name "(" parameters "): " returnType " " body:0;
 
 op program (staticProcedures: Seq Procedure): Command => staticProcedures;
 
