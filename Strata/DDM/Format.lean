@@ -563,14 +563,17 @@ instance Decl.instToStrataFormat : ToStrataFormat Decl where
   | .function d => mformat d
   | .metadata d => mformat d
 
-namespace Dialect
+namespace DialectMap
 
-protected def format (dialects : DialectMap) (d : Dialect) (opts : FormatOptions := {}) : Format :=
-  assert! d.name ∈ dialects
+/--
+Pretty print the dialect with the given name in the map.
+-/
+protected def format (dialects : DialectMap) (name : DialectName) (mem : name ∈ dialects) (opts : FormatOptions := {}) : Format :=
+  let d := dialects[name]
   let c := FormatContext.ofDialects dialects {} opts
-  let imports := dialects.importedDialects! d.name
+  let imports := dialects.importedDialects name mem
   let s : FormatState := { openDialects := imports.map.fold (init := {}) fun s n _ => s.insert n }
-  let f := f!"dialect {d.name};\n"
+  let f := f!"dialect {name};\n"
   let f := d.imports.foldl (init := f) fun f i =>
     if i = "Init" then
       f
@@ -578,7 +581,7 @@ protected def format (dialects : DialectMap) (d : Dialect) (opts : FormatOptions
       f!"{f}import {i}\n"
   d.declarations.foldl (init := f) fun f d => f ++ (mformat d c s).format
 
-end Dialect
+end DialectMap
 
 namespace Program
 
@@ -598,9 +601,10 @@ instance : ToString Program where
   toString p := p.format |>.render
 
 protected def ppDialect! (p : Program) (name : DialectName := p.dialect) (opts : FormatOptions := {}) : Format :=
-  match p.dialects[name]? with
-  | some d => d.format p.dialects opts
-  | none => panic! s!"Unknown dialect {name}"
+  if mem : name ∈ p.dialects then
+    p.dialects.format name mem opts
+  else
+    panic! s!"Unknown dialect {name}"
 
 end Program
 
