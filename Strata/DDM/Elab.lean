@@ -413,19 +413,16 @@ def elabDialect
   | .dialect loc dialect =>
     elabDialectRest fm dialects #[] inputContext loc dialect startPos stopPos
 
-def parseStrataProgramFromDialect (filePath : String) (dialect: Dialect) : IO (InputContext × Strata.Program) := do
+def parseStrataProgramFromDialect (input : InputContext) (dialect: Dialect) : IO (InputContext × Strata.Program) := do
   let dialects := Elab.LoadedDialects.ofDialects! #[initDialect, dialect]
 
-  let bytes ← Strata.Util.readBinInputSource filePath
-  let fileContent ← match String.fromUTF8? bytes with
-    | some s => pure s
-    | none => throw (IO.userError s!"File {filePath} contains non UTF-8 data")
+  let fileContent := input.inputString
 
   -- Add program header to the content
   let contents := s!"program {dialect.name};\n\n" ++ fileContent
 
   let leanEnv ← Lean.mkEmptyEnvironment 0
-  let inputContext := Strata.Parser.stringInputContext filePath contents
+  let inputContext := Strata.Parser.stringInputContext input.fileName contents
   let returnedInputContext := {inputContext with
     fileMap := { source := fileContent, positions := inputContext.fileMap.positions.drop 2 }
   }

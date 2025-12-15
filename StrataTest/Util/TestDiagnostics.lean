@@ -78,15 +78,14 @@ def matchesDiagnostic (diag : Diagnostic) (exp : DiagnosticExpectation) : Bool :
 
 /-- Generic test function for files with diagnostic expectations.
     Takes a function that processes a file path and returns a list of diagnostics. -/
-def testFile (processFn : String -> IO (Array Diagnostic)) (filePath : String) : IO Unit := do
-  let content <- IO.FS.readFile filePath
+def testInputContext (input : Parser.InputContext) (process : Lean.Parser.InputContext -> IO (Array Diagnostic)) : IO Unit := do
 
   -- Parse diagnostic expectations from comments
-  let expectations := parseDiagnosticExpectations content
+  let expectations := parseDiagnosticExpectations input.inputString
   let expectedErrors := expectations.filter (fun e => e.level == "error")
 
   -- Get actual diagnostics from the language-specific processor
-  let diagnostics <- processFn filePath
+  let diagnostics <- process input
 
   -- Check if all expected errors are matched
   let mut allMatched := true
@@ -125,5 +124,8 @@ def testFile (processFn : String -> IO (Array Diagnostic)) (filePath : String) :
       IO.println s!"\nUnexpected diagnostics:"
       for diag in unmatchedDiagnostics do
         IO.println s!"  - Line {diag.start.line}, Col {diag.start.column}-{diag.ending.column}: {diag.message}"
+
+def testInput (filename: String) (input : String) (process : Lean.Parser.InputContext -> IO (Array Diagnostic)) : IO Unit :=
+  testInputContext (Parser.stringInputContext filename input) process
 
 end StrataTest.Util

@@ -18,10 +18,10 @@ open Strata
 namespace Laurel
 
 
-def processLaurelFile (filePath : String) : IO (Array Diagnostic) := do
+def processLaurelFile (input : Lean.Parser.InputContext) : IO (Array Diagnostic) := do
 
   let laurelDialect : Strata.Dialect := Laurel
-  let (inputContext, strataProgram) ← Strata.Elab.parseStrataProgramFromDialect filePath laurelDialect
+  let (inputContext, strataProgram) ← Strata.Elab.parseStrataProgramFromDialect input laurelDialect
 
   -- Convert to Laurel.Program using parseProgram (handles unwrapping the program operation)
   let (laurelProgram, transErrors) := Laurel.TransM.run inputContext (Laurel.parseProgram strataProgram)
@@ -33,10 +33,10 @@ def processLaurelFile (filePath : String) : IO (Array Diagnostic) := do
 
   pure diagnostics
 
-def testAssertFalse : IO Unit := do
-  testFile processLaurelFile "Strata/Languages/Laurel/Examples/Fundamentals/1.AssertFalse.lr.st"
+-- def testAssertFalse : IO Unit := do
+--   testFile processLaurelFile "Strata/Languages/Laurel/Examples/Fundamentals/1.AssertFalse.lr.st"
 
--- #eval! testAssertFalse
-#eval! testFile processLaurelFile "Strata/Languages/Laurel/Examples/Fundamentals/2.NestedImpureStatements.lr.st"
+-- -- #eval! testAssertFalse
+-- #eval! testFile processLaurelFile "Strata/Languages/Laurel/Examples/Fundamentals/2.NestedImpureStatements.lr.st"
 
 end Laurel

@@ -207,6 +207,10 @@ Verify a Laurel program using an SMT solver
 def verifyToVcResults (smtsolver : String) (program : Program)
     (options : Options := Options.default) : IO VCResults := do
   let boogieProgram := translate program
+  -- Debug: Print the generated Boogie program
+  IO.println "=== Generated Boogie Program ==="
+  IO.println (toString (Std.Format.pretty (Std.ToFormat.format boogieProgram)))
+  IO.println "================================="
   EIO.toIO (fun f => IO.Error.userError (toString f))
       (Boogie.verify smtsolver boogieProgram options)
 
