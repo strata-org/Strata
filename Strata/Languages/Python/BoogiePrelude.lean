@@ -192,13 +192,13 @@ function IntOrNone_int_val(v : IntOrNone) : int;
 function IntOrNone_none_val(v : IntOrNone) : None;
 function IntOrNone_mk_int(i : int) : IntOrNone;
 function IntOrNone_mk_none(v : None) : IntOrNone;
-axiom (forall i : int :: {(IntOrNone_mk_int(i))}
+axiom [IntOrNone_mk_int_axiom]: (forall i : int :: {(IntOrNone_mk_int(i))}
         IntOrNone_tag(IntOrNone_mk_int(i)) == IN_INT_TAG &&
         IntOrNone_int_val(IntOrNone_mk_int(i)) == i);
-axiom (forall n : None :: {(IntOrNone_mk_none(n))}
+axiom [IntOrNone_mk_none_axiom]: (forall n : None :: {(IntOrNone_mk_none(n))}
         IntOrNone_tag(IntOrNone_mk_none(n)) == IN_NONE_TAG &&
         IntOrNone_none_val(IntOrNone_mk_none(n)) == n);
-axiom (forall v : IntOrNone :: {IntOrNone_tag(v)}
+axiom [IntOrNone_tag_axiom]: (forall v : IntOrNone :: {IntOrNone_tag(v)}
         IntOrNone_tag(v) == IN_INT_TAG ||
         IntOrNone_tag(v) == IN_NONE_TAG);
 axiom [unique_IntOrNoneTag]: IN_INT_TAG != IN_NONE_TAG;
