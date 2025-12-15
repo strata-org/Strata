@@ -921,5 +921,4 @@ def runCatParser (tokenTable : TokenTable)
   let p := dynamicParser cat
   p.fn.run inputContext pmc tokenTable leanParserState
 
-
 end Strata.Parser
