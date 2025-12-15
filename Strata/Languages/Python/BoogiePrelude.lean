@@ -332,6 +332,9 @@ function BytesOrStrOrNone_mk_str(s : string) : (BytesOrStrOrNone);
 type DictStrAny;
 function DictStrAny_mk(s : string) : (DictStrAny);
 
+type ListDictStrAny;
+function ListDictStrAny_nil() : (ListDictStrAny);
+
 type Client;
 type ClientTag;
 const C_S3_TAG : ClientTag;
@@ -366,13 +369,20 @@ axiom [unique_BoolOrStrOrNoneTag]: BSN_BOOL_TAG != BSN_STR_TAG && BSN_BOOL_TAG !
 // milliseconds is simply used. See Timedelta_mk.
 
 
-procedure timedelta(days: int) returns (delta : int, maybe_except: ExceptOrNone)
+procedure timedelta(days: IntOrNone, hours: IntOrNone) returns (delta : int, maybe_except: ExceptOrNone)
 spec{
-  free ensures [ensure_timedelta_sign_matches]: (delta == (days * 3600 * 24));
 }
 {
   havoc delta;
-  assume [assume_timedelta_sign_matches]: (delta == (days * 3600 * 24));
+  var days_i : int := 0;
+  if (IntOrNone_tag(days) == IN_INT_TAG) {
+        days_i := IntOrNone_int_val(days);
+  }
+  var hours_i : int := 0;
+  if (IntOrNone_tag(hours) == IN_INT_TAG) {
+        days_i := IntOrNone_int_val(hours);
+  }
+  assume [assume_timedelta_sign_matches]: (delta == (((days_i * 24) + hours_i) * 3600) * 1000000);
 };
 
 function Timedelta_mk(days : int, seconds : int, microseconds : int): int {
@@ -421,6 +431,15 @@ spec {
   assume [assume_datetime_now]: (Datetime_get_timedelta(d) == Timedelta_mk(0,0,0));
 };
 
+procedure datetime_utcnow() returns (d:Datetime, maybe_except: ExceptOrNone)
+spec {
+  ensures (Datetime_get_timedelta(d) == Timedelta_mk(0,0,0));
+}
+{
+  havoc d;
+  assume [assume_datetime_now]: (Datetime_get_timedelta(d) == Timedelta_mk(0,0,0));
+};
+
 // Addition/subtraction of Datetime and Timedelta.
 function Datetime_add(d:Datetime, timedelta:int):Datetime;
 function Datetime_sub(d:Datetime, timedelta:int):Datetime {
@@ -450,6 +469,8 @@ spec{}
 {havoc d;};
 
 function datetime_to_str(dt : Datetime) : string;
+
+function datetime_to_int() : int;
 
 procedure datetime_strptime(time: string, format: string) returns (d : Datetime, maybe_except: ExceptOrNone)
 spec{
@@ -501,10 +522,18 @@ function str_len(s : string) : int;
 
 function dict_str_any_get(d : DictStrAny, k: string) : DictStrAny;
 
+function dict_str_any_get_list_str(d : DictStrAny, k: string) : ListStr;
+
+function dict_str_any_get_str(d : DictStrAny, k: string) : string;
+
 function dict_str_any_length(d : DictStrAny) : int;
 
-// /////////////////////////////////////////////////////////////////////////////////////
+procedure str_to_float(s : string) returns (result: string, maybe_except: ExceptOrNone)
+;
 
+function Float_gt(lhs : string, rhs: string) : bool;
+
+// /////////////////////////////////////////////////////////////////////////////////////
 
 
 procedure test_helper_procedure(req_name : string, opt_name : StrOrNone) returns (maybe_except: ExceptOrNone)
