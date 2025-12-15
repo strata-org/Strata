@@ -6,156 +6,244 @@ on:
 
 env:
   SOLUTION: Tools/BoogieToStrata/BoogieToStrata.sln
+  CVC5_VERSION: '1.2.1'
+  Z3_VERSION: '4.15.2'
 
 jobs:
-  get-branch-name:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Get branch name
-        shell: bash
-        # The workflow is triggered by pull_request so we use `GITHUB_BASE_REF`
-        run: echo "branch_name=${GITHUB_BASE_REF}" >> $GITHUB_OUTPUT
-        id: get_branch_name
-    outputs:
-      branch_name: ${{ steps.get_branch_name.outputs.branch_name }}
-
-  build_and_test_lean:
-    name: Build and test Lean
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        toolchain:
-          - stable
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Install cvc5
-        shell: bash
-        run: |
-              ARCH=$(uname -m)
-              if [ "$ARCH" = "x86_64" ]; then
-                ARCH_NAME="x86_64"
-              elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-                ARCH_NAME="arm64"
-              else
-                echo "Unsupported architecture: $ARCH"
-                exit 1
-              fi
-              wget https://github.com/cvc5/cvc5/releases/download/cvc5-1.2.1/cvc5-Linux-${ARCH_NAME}-static.zip
-              unzip cvc5-Linux-${ARCH_NAME}-static.zip
-              chmod +x cvc5-Linux-${ARCH_NAME}-static/bin/cvc5
-              echo "$GITHUB_WORKSPACE/cvc5-Linux-${ARCH_NAME}-static/bin/" >> $GITHUB_PATH
-      - name: Install z3
-        shell: bash
-        run: |
-              ARCH=$(uname -m)
-              if [ "$ARCH" = "x86_64" ]; then
-                ARCH_NAME="x86_64"
-                wget https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-x64-glibc-2.39.zip
-                ARCHIVE_NAME="z3-4.15.2-x64-glibc-2.39"
-              elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-                ARCH_NAME="arm64"
-                wget https://github.com/Z3Prover/z3/releases/download/z3-4.15.2/z3-4.15.2-arm64-glibc-2.34.zip
-                ARCHIVE_NAME="z3-4.15.2-arm64-win"
-              else
-                echo "Unsupported architecture: $ARCH"
-                exit 1
-              fi
-              unzip "${ARCHIVE_NAME}.zip"
-              chmod +x "${ARCHIVE_NAME}/bin/z3"
-              echo "$GITHUB_WORKSPACE/${ARCHIVE_NAME}/bin/" >> $GITHUB_PATH
-      - name: Install .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.0.x'
-      - name: Build and test Strata
-        uses: leanprover/lean-action@v1
-      - name: Build and run StrataVerify
-        run: lake exe StrataVerify Examples/SimpleProc.boogie.st
-      - name: Build BoogieToStrata
-        run: dotnet build -warnaserror ${SOLUTION}
-      - name: Test BoogieToStrata
-        run: dotnet test ${SOLUTION}
-      - name: Test Strata Command line
-        run: .github/scripts/testStrataCommand.sh        
-      - name: Verify examples
-        shell: bash
-        run: |
-              find "Examples" -maxdepth 1 -type f -name "*.st" | while IFS= read -r file; do
-                  source ~/.profile && lake exe StrataVerify "$file"
-              done
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.14'
-      - name: Build using pip
-        run: pip install .
-        working-directory: Tools/Python
-      - name: Run pyAnalyze tests
-        working-directory: StrataTest/Languages/Python
-        shell: bash
-        run: ./run_py_analyze.sh
-
-  lint_checks:
-    name: Run lint checks
+  build:
+    name: Build Strata
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    strategy:
-      matrix:
-        toolchain:
-          - stable
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Check copyright headers
-        run: python3 .github/scripts/check_copyright_headers.py .
-        shell: bash
-      - name: Check for trailing whitespace
-        run: .github/scripts/lintWhitespace.sh
-      - name: Check for import Lean
-        run: .github/scripts/checkLeanImport.sh
+      - uses: actions/checkout@v4
+      
+      - name: Load SMT solvers from cache
+        id: cache-smt
+        uses: actions/cache@v4
+        with:
+          path: ~/smt-solvers
+          key: smt-${{ runner.os }}-${{ runner.arch }}-cvc5-${{ env.CVC5_VERSION }}-z3-${{ env.Z3_VERSION }}
+      
+      - name: Install SMT solvers
+        if: steps.cache-smt.outputs.cache-hit != 'true'
+        run: |
+          ARCH=$(uname -m)
+          mkdir -p ~/smt-solvers/bin
+          
+          if [ "$ARCH" = "x86_64" ]; then
+            wget -q https://github.com/cvc5/cvc5/releases/download/cvc5-${{ env.CVC5_VERSION }}/cvc5-Linux-x86_64-static.zip
+            unzip -q cvc5-Linux-x86_64-static.zip
+            mv cvc5-Linux-x86_64-static/bin/cvc5 ~/smt-solvers/bin/
+            
+            wget -q https://github.com/Z3Prover/z3/releases/download/z3-${{ env.Z3_VERSION }}/z3-${{ env.Z3_VERSION }}-x64-glibc-2.39.zip
+            unzip -q z3-${{ env.Z3_VERSION }}-x64-glibc-2.39.zip
+            mv z3-${{ env.Z3_VERSION }}-x64-glibc-2.39/bin/z3 ~/smt-solvers/bin/
+          elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+            wget -q https://github.com/cvc5/cvc5/releases/download/cvc5-${{ env.CVC5_VERSION }}/cvc5-Linux-arm64-static.zip
+            unzip -q cvc5-Linux-arm64-static.zip
+            mv cvc5-Linux-arm64-static/bin/cvc5 ~/smt-solvers/bin/
+            
+            wget -q https://github.com/Z3Prover/z3/releases/download/z3-${{ env.Z3_VERSION }}/z3-${{ env.Z3_VERSION }}-arm64-glibc-2.34.zip
+            unzip -q z3-${{ env.Z3_VERSION }}-arm64-glibc-2.34.zip
+            mv z3-${{ env.Z3_VERSION }}-arm64-glibc-2.34/bin/z3 ~/smt-solvers/bin/
+          fi
+          chmod +x ~/smt-solvers/bin/*
+      
+      - name: Add SMT solvers to PATH
+        run: echo "$HOME/smt-solvers/bin" >> $GITHUB_PATH
+      
+      - uses: leanprover/lean-action@v1
+      
+      - name: Upload SMT solvers
+        uses: actions/upload-artifact@v4
+        with:
+          name: smt-solvers
+          path: ~/smt-solvers
+          retention-days: 1
 
-  build_doc:
+  test-lean:
+    name: Test Lean
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download SMT solvers
+        uses: actions/download-artifact@v4
+        with:
+          name: smt-solvers
+          path: ~/smt-solvers
+      
+      - name: Restore executable permissions
+        run: chmod +x ~/smt-solvers/bin/*
+      
+      - name: Add SMT solvers to PATH
+        run: echo "$HOME/smt-solvers/bin" >> $GITHUB_PATH
+      
+      - uses: leanprover/lean-action@v1
+      
+      - name: Test StrataVerify
+        run: lake exe StrataVerify Examples/SimpleProc.boogie.st
+      
+      - name: Test Strata Command line
+        run: .github/scripts/testStrataCommand.sh
+      
+      - name: Verify examples
+        run: |
+          find "Examples" -maxdepth 1 -type f -name "*.st" | while IFS= read -r file; do
+            source ~/.profile && lake exe StrataVerify "$file"
+          done
+
+  test-dotnet:
+    name: Test .NET
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - uses: leanprover/lean-action@v1
+      - run: dotnet build -warnaserror ${SOLUTION}
+      - run: dotnet test ${SOLUTION}
+
+  test-python:
+    name: Test Python
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download SMT solvers
+        uses: actions/download-artifact@v4
+        with:
+          name: smt-solvers
+          path: ~/smt-solvers
+      
+      - name: Restore executable permissions
+        run: chmod +x ~/smt-solvers/bin/*
+      
+      - name: Add SMT solvers to PATH
+        run: echo "$HOME/smt-solvers/bin" >> $GITHUB_PATH
+      
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      
+      - uses: leanprover/lean-action@v1
+      
+      - name: Install Python package
+        run: pip install .
+        working-directory: Tools/Python
+      
+      - name: Run pyAnalyze tests
+        run: ./run_py_analyze.sh
+        working-directory: StrataTest/Languages/Python
+
+  test-python-cpython:
+    name: Test Python CPython
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      
+      - uses: leanprover/lean-action@v1
+        with:
+          auto-config: false
+          build: true
+          build-args: "strata:exe"
+      
+      - name: Install Python package
+        run: pip install .
+        working-directory: Tools/Python
+      
+      - name: Run CPython tests
+        run: ./scripts/run_cpython_tests.sh
+        working-directory: Tools/Python
+
+  test-cbmc:
+    name: Test CBMC
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download SMT solvers
+        uses: actions/download-artifact@v4
+        with:
+          name: smt-solvers
+          path: ~/smt-solvers
+      
+      - name: Restore executable permissions
+        run: chmod +x ~/smt-solvers/bin/*
+      
+      - name: Add SMT solvers to PATH
+        run: echo "$HOME/smt-solvers/bin" >> $GITHUB_PATH
+      
+      - name: Load CBMC from cache
+        id: cache-cbmc
+        uses: actions/cache@v4
+        with:
+          path: ~/cbmc
+          key: cbmc-${{ runner.os }}-6.4.1
+      
+      - name: Install CBMC
+        if: steps.cache-cbmc.outputs.cache-hit != 'true'
+        run: |
+          wget -q https://github.com/diffblue/cbmc/releases/download/cbmc-6.4.1/ubuntu-22.04-cbmc-6.4.1-Linux.deb
+          mkdir -p ~/cbmc
+          dpkg -x ubuntu-22.04-cbmc-6.4.1-Linux.deb ~/cbmc
+      
+      - name: Add CBMC to PATH
+        run: echo "$HOME/cbmc/usr/bin" >> $GITHUB_PATH
+      
+      - uses: leanprover/lean-action@v1
+      
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      
+      - name: Run CBMC tests
+        run: |
+          export CBMC_DIR="$HOME/cbmc/usr/bin/"
+          ./Strata/Backends/CBMC/run_strata_cbmc.sh Strata/Backends/CBMC/tests/simpleTest.csimp.st
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 .github/scripts/check_copyright_headers.py .
+      - run: .github/scripts/lintWhitespace.sh
+      - run: .github/scripts/checkLeanImport.sh
+
+  docs:
     name: Build Documentation
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - name: Build documentation package
-        uses: leanprover/lean-action@v1
+      - uses: leanprover/lean-action@v1
         with:
           build-args: '--wfail'
           lake-package-directory: 'docs/ddm'
-      - name: Build Documentation
-        run: lake exe docs 
+      - run: lake exe docs
         working-directory: docs/ddm
-
-  build_python:
-    name: Build and test Python
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v5
-      with:
-        python-version: '3.14'
-    - name: Build using pip
-      run: pip install .
-      working-directory: Tools/Python
-    - name: Build Lean strata executable for testing purposes.
-      uses: leanprover/lean-action@v1
-      with:
-        auto-config: false
-        build: true
-        build-args: "strata:exe"
-    - name: Run test script
-      run: ./scripts/run_cpython_tests.sh
-      working-directory: Tools/Python
-
-  cbmc:
-    needs: build_and_test_lean
-    permissions:
-      contents: read
-    uses: ./.github/workflows/cbmc.yml
