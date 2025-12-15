@@ -266,18 +266,15 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C : LContext T) : (TC
   | tvar : ∀ Γ m x ty, MapsFind Γ.types x ty → HasType C Γ (.fvar m x none) ty
 
   | tabs : ∀ Γ Γ' m x x_ty e e_ty,
-            MapsInsert Γ.types x (.forAll [] x_ty : LTy) Γ' →
+            MapsInsert Γ.types (id x) (.forAll [] x_ty : LTy) Γ' →
             HasType C { Γ with types := Γ'} e (.forAll [] e_ty) →
             HasType C Γ (.abs m .none <| LExpr.varClose 0 (x, none) e) -- We close in the conclusion rather than opening in the hyps.
                         (.forAll [] (.tcons "arrow" [x_ty, e_ty]))
 
   | tapp : ∀ Γ m e1 e2 t1 t2,
-            (h1 : LTy.isMonoType t1) →
-            (h2 : LTy.isMonoType t2) →
-            HasType C Γ e1 (.forAll [] (.tcons "arrow" [(LTy.toMonoType t2 h2),
-                                                        (LTy.toMonoType t1 h1)])) →
-            HasType C Γ e2 t2 →
-            HasType C Γ (.app m e1 e2) t1
+            HasType C Γ e1 (.forAll [] (.tcons "arrow" [t2, t1])) →
+            HasType C Γ e2 (.forAll [] t2) →
+            HasType C Γ (.app m e1 e2) (.forAll [] t1)
 
   | tif : ∀ Γ m c e1 e2 ty,
           HasType C Γ c (.forAll [] .bool) →
