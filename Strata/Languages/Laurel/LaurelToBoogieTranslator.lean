@@ -10,6 +10,7 @@ import Strata.Languages.Boogie.Statement
 import Strata.Languages.Boogie.Procedure
 import Strata.Languages.Boogie.Options
 import Strata.Languages.Laurel.Laurel
+import Strata.Languages.Laurel.SequenceAssignments
 
 namespace Laurel
 
@@ -193,7 +194,10 @@ def translateProcedure (proc : Procedure) : Boogie.Procedure :=
 Translate Laurel Program to Boogie Program
 -/
 def translate (program : Program) : Boogie.Program :=
-  let procedures := program.staticProcedures.map translateProcedure
+  -- First, sequence all assignments (move them out of expression positions)
+  let sequencedProgram := sequenceProgram program
+  -- Then translate to Boogie
+  let procedures := sequencedProgram.staticProcedures.map translateProcedure
   let decls := procedures.map (fun p => Boogie.Decl.proc p .empty)
   { decls := decls }
 
