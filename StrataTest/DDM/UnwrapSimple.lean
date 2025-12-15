@@ -18,6 +18,8 @@ op index (@[unwrap] id : Num) : Expression => id;
 op index_nounwrap (id : Num) : Expression => id;
 op name (@[unwrap] n : Ident) : Expression => n;
 op text (@[unwrap] s : Str) : Expression => s;
+op decimal_val (@[unwrap] d : Decimal) : Expression => d;
+op bytes_val (@[unwrap] b : ByteArray) : Expression => b;
 
 #end
 
@@ -63,6 +65,18 @@ info: TestUnwrap.Expression.text {α : Type} : α → (s : String) → TestUnwra
 #guard_msgs in
 #check TestUnwrap.Expression.text
 
+/--
+info: TestUnwrap.Expression.decimal_val {α : Type} : α → (d : Decimal) → TestUnwrap.Expression α
+-/
+#guard_msgs in
+#check TestUnwrap.Expression.decimal_val
+
+/--
+info: TestUnwrap.Expression.bytes_val {α : Type} : α → (b : ByteArray) → TestUnwrap.Expression α
+-/
+#guard_msgs in
+#check TestUnwrap.Expression.bytes_val
+
 -- Verify that index uses unwrapped Nat (not Ann Nat α)
 example : TestUnwrap.Expression Unit := .index () 42
 
@@ -74,3 +88,9 @@ example : TestUnwrap.Expression Unit := .name () "foo"
 
 -- Verify that text uses unwrapped String
 example : TestUnwrap.Expression Unit := .text () "bar"
+
+-- Verify that decimal_val uses unwrapped Decimal
+example : TestUnwrap.Expression Unit := .decimal_val () { mantissa := 123, exponent := -2 }
+
+-- Verify that bytes_val uses unwrapped ByteArray
+example : TestUnwrap.Expression Unit := .bytes_val () #[0x48, 0x69]
