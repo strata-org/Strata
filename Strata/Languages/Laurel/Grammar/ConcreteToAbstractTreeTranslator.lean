@@ -82,6 +82,9 @@ def translateBool (arg : Arg) : TransM Bool := do
 instance : Inhabited HighType where
   default := .TVoid
 
+instance : Inhabited Parameter where
+  default := { name := "", type := .TVoid }
+
 def translateHighType (arg : Arg) : TransM HighType := do
   match arg with
   | .op op =>
@@ -97,6 +100,21 @@ def translateNat (arg : Arg) : TransM Nat := do
   let .num _ n := arg
     | TransM.error s!"translateNat expects num literal"
   return n
+
+def translateParameter (arg : Arg) : TransM Parameter := do
+  let .op op := arg
+    | TransM.error s!"translateParameter expects operation"
+  if op.name != q`Laurel.parameter then
+    TransM.error s!"translateParameter expects parameter operation, got {repr op.name}"
+  let name ← translateIdent op.args[0]!
+  let paramType ← translateHighType op.args[1]!
+  return { name := name, type := paramType }
+
+def translateParameters (arg : Arg) : TransM (List Parameter) := do
+  match arg with
+  | .commaSepList _ args =>
+    args.toList.mapM translateParameter
+  | _ => pure []
 
 instance : Inhabited Procedure where
   default := {
@@ -216,11 +234,12 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
     }
   else if op.name == q`Laurel.procedureWithReturnType then
     let name ← translateIdent op.args[0]!
-    let returnType ← translateHighType op.args[1]!
-    let body ← translateCommand op.args[2]!
+    let parameters ← translateParameters op.args[1]!
+    let returnType ← translateHighType op.args[2]!
+    let body ← translateCommand op.args[3]!
     return {
       name := name
-      inputs := []
+      inputs := parameters
       output := returnType
       precondition := .LiteralBool true
       decreases := none
