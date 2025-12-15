@@ -15,14 +15,16 @@ procedure nestedImpureStatements(x: int): int {
     assert y == x + 1;
     1
   } else {
-    assert false;
-    3
+    assert y == x + 1;
+//  ^^^^^^^^^^^^^^^^^ error: could not prove assertion
+    2
   }
 }
 
 procedure assertLocallyImpureCode()
 {
-  assert 3 != 0; // pass
+    assert nestedImpureStatements(1) == 3; // fail
+//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: could not prove assertion
 }
 
 /*
