@@ -46,6 +46,18 @@ namespace Laurel
 
 abbrev Identifier := String /- Potentially this could be an Int to save resources. -/
 
+/- We will support these operations for dynamic types as well -/
+/- The 'truthy' concept from JavaScript should be implemented using a library function -/
+inductive Operation: Type where
+  /- Works on Bool -/
+    /- Equality on composite types uses reference equality for impure types, and structural equality for pure ones -/
+  | Eq | Neq
+  | And | Or | Not
+  /- Works on Int/Float64 -/
+  | Neg | Add | Sub | Mul | Div | Mod
+  | Lt | Leq | Gt | Geq
+  deriving Repr
+
 mutual
 structure Procedure: Type where
   name : Identifier
@@ -86,17 +98,6 @@ inductive Body where
 /- An abstract body is useful for types that are extending.
     A type containing any members with abstract bodies can not be instantiated. -/
   | Abstract (postcondition : StmtExpr)
-
-/- We will support these operations for dynamic types as well -/
-/- The 'truthy' concept from JavaScript should be implemented using a library function -/
-inductive Operation: Type where
-  /- Works on Bool -/
-    /- Equality on composite types uses reference equality for impure types, and structural equality for pure ones -/
-  | Eq | Neq
-  | And | Or | Not
-  /- Works on Int/Float64 -/
-  | Neg | Add | Sub | Mul | Div | Mod
-  | Lt | Leq | Gt | Geq
 
 /-
 A StmtExpr contains both constructs that we typically find in statements and those in expressions.
@@ -180,6 +181,9 @@ An extending type can become concrete by redefining all procedures that had abst
 inductive ContractType where
   | Reads | Modifies | Precondition | PostCondition
 end
+
+instance : Inhabited StmtExpr where
+  default := .Hole
 
 partial def highEq (a: HighType) (b: HighType) : Bool := match a, b with
   | HighType.TVoid, HighType.TVoid => true
