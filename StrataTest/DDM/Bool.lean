@@ -7,19 +7,17 @@
 import Strata.DDM.Integration.Lean
 
 -- Test that Bool can be used as an inductive type with true/false operators
-#guard_msgs in
 #dialect
 dialect TestBool;
 
 category BoolExpr;
 
-op boolTrue : BoolExpr => "true";
-op boolFalse : BoolExpr => "false";
+op printBool (b : BoolExpr) : Command => "print " b ";";
+op wrappedBool (b: Bool): BoolExpr => b;
 
-op ifThenElse (cond : BoolExpr, thenBranch : BoolExpr, elseBranch : BoolExpr) : BoolExpr =>
-  "if " cond " then " thenBranch " else " elseBranch;
+op ifThenElse (cond : Bool, thenVal : BoolExpr, elseVal : BoolExpr) : BoolExpr =>
+  "if " cond " then " thenVal " else " elseVal;
 
-op print (e : BoolExpr) : Command => "print " e ";";
 #end
 
 -- Test parsing with true

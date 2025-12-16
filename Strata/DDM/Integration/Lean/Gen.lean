@@ -693,9 +693,15 @@ partial def toAstApplyArgWithUnwrap (vn : Name) (cat : SyntaxCat) (unwrap : Bool
       return annToAst ``ArgF.num v
   | q`Init.Bool => do
     if unwrap then
-      let boolToAst := mkCApp ``Strata.Bool.toAst #[v]
-      return mkCApp ``ArgF.op #[boolToAst]
+      -- When unwrapped, v is a plain Bool. Create OperationF directly based on the value.
+      let defaultAnn ← ``(default)
+      let emptyArray ← ``(#[])
+      let trueOp := mkCApp ``OperationF.mk #[defaultAnn, quote q`Init.boolTrue, emptyArray]
+      let falseOp := mkCApp ``OperationF.mk #[defaultAnn, quote q`Init.boolFalse, emptyArray]
+      let opExpr ← ``(if $v then $trueOp else $falseOp)
+      ``(ArgF.op $opExpr)
     else
+      -- When wrapped, v is already Ann Bool α
       let boolToAst := mkCApp ``Strata.Bool.toAst #[v]
       return mkCApp ``ArgF.op #[boolToAst]
   | q`Init.Ident =>
@@ -887,10 +893,9 @@ partial def getOfIdentArgWithUnwrap (varName : String) (cat : SyntaxCat) (unwrap
       ``(OfAstM.ofBytesM $e)
   | q`Init.Bool => do
     if unwrap then
-      let (vc, vi) ← genFreshIdentPair varName
-      let boolOfAst := mkCApp ``Strata.Bool.ofAst #[vi]
+      -- When unwrapped, extract just the Bool value from Ann Bool α
       ``((fun arg => match arg with
-          | ArgF.op op => $boolOfAst op
+          | ArgF.op op => Functor.map Ann.val (Strata.Bool.ofAst op)
           | a => OfAstM.throwExpected "boolean" a) $e)
     else
       let (vc, vi) ← genFreshIdentPair varName
