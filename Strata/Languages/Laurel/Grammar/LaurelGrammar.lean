@@ -22,8 +22,14 @@ op boolFalse() : StmtExpr => "false";
 op int(n : Num) : StmtExpr => n;
 
 // Variable declarations
-op varDecl (name: Ident, value: StmtExpr): StmtExpr => "var " name " := " value ";";
-op varDeclTyped (name: Ident, varType: LaurelType): StmtExpr => "var " name ": " varType ";";
+category OptionalType;
+op optionalType(varType: LaurelType): OptionalType => ":" varType;
+
+category OptionalAssignment;
+op optionalAssignment(value: StmtExpr): OptionalType => "=" value;
+
+op varDecl (name: Ident, varType: Option OptionalType, assignment: Option OptionalAssignment): StmtExpr
+  => "var " name varType assignment ";";
 
 // Identifiers/Variables
 op identifier (name: Ident): StmtExpr => name;
@@ -41,17 +47,16 @@ op gt (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs " > " rhs;
 op call(callee: StmtExpr, args: CommaSepBy StmtExpr): StmtExpr => callee "(" args ")";
 
 // If-else
-op ifThenElse (cond: StmtExpr, thenBranch: StmtExpr, elseBranch: StmtExpr): StmtExpr =>
-  @[prec(20)] "if (" cond ") " thenBranch:0 " else " elseBranch:0;
+category OptionalElse;
+op optionalElse(stmts : StmtExpr) : OptionalElse => "else" stmts;
 
-// If without else
-op ifThen (cond: StmtExpr, thenBranch: StmtExpr): StmtExpr =>
-  @[prec(20)] "if (" cond ") " thenBranch:0;
+op ifThenElse (cond: StmtExpr, thenBranch: StmtExpr, elseBranch: Option OptionalElse): StmtExpr =>
+  @[prec(20)] "if (" cond ") " thenBranch:0 " else " elseBranch:0;
 
 op assert (cond : StmtExpr) : StmtExpr => "assert " cond ";";
 op assume (cond : StmtExpr) : StmtExpr => "assume " cond ";";
 op return (value : StmtExpr) : StmtExpr => "return " value ";";
-op block (stmts : Seq StmtExpr) : StmtExpr => @[prec(1000)] "{\n" stmts "\n}";
+op block (stmts : Seq StmtExpr) : StmtExpr => @[prec(1000)] "{" stmts "}";
 
 category Parameter;
 op parameter (name: Ident, paramType: LaurelType): Parameter => name ":" paramType;

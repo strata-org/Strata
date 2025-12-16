@@ -197,6 +197,10 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
       let thenBranch ← translateStmtExpr op.args[1]!
       let elseBranch ← translateStmtExpr op.args[2]!
       return .IfThenElse cond thenBranch (some elseBranch)
+    else if op.name == q`Laurel.ifThen then
+      let cond ← translateStmtExpr op.args[0]!
+      let thenBranch ← translateStmtExpr op.args[1]!
+      return .IfThenElse cond thenBranch none
     else
       TransM.error s!"Unknown operation: {op.name}"
   | _ => TransM.error s!"translateStmtExpr expects operation"
