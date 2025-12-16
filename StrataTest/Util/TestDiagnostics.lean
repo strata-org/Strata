@@ -33,9 +33,8 @@ def parseDiagnosticExpectations (content : String) : List DiagnosticExpectation 
       -- Find the caret sequence
       let caretStart := trimmed.find (· == '^')
       let mut currentCaret := caretStart
-      let currentChar := Pos.Raw.get trimmed currentCaret
-      while not (Pos.Raw.atEnd trimmed currentCaret) && currentChar == '^' do
-        currentCaret := currentCaret + currentChar
+      while not (Pos.Raw.atEnd trimmed currentCaret) && (Pos.Raw.get trimmed currentCaret) == '^' do
+        currentCaret := trimmed.next currentCaret
 
       -- Get the message part after carets
       let afterCarets := trimmed.drop currentCaret.byteIdx |>.trim
