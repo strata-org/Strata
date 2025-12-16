@@ -1,30 +1,30 @@
-/*
+/-
   Copyright Strata Contributors
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
-*/
+-/
 
-/*
-A decreases clause CAN be added to a procedure to prove that it terminates.
-A procedure with a decreases clause may be called in an erased context.
-*/
+import StrataTest.Util.TestDiagnostics
+import StrataTest.Languages.Laurel.TestExamples
 
+open StrataTest.Util
+open Strata
+
+namespace Laurel
+
+def program := r"
 procedure noDecreases(x: int): boolean
 procedure caller(x: int)
-  requires noDecreases(x) // error: noDecreases can not be called from a contract, because ...
+  requires noDecreases(x)
 
-// Non-recursive procedures can use an empty decreases list and still prove termination
-procedure noCyclicCalls() 
+procedure noCyclicCalls()
   decreases []
 {
-  leaf(); // call passes since leaf is lower in the SCC call-graph.
+  leaf();
 }
 
 procedure leaf() decreases [1] { }
 
-// Decreases clauses are needed for recursive procedure calls.
-
-// Decreases clauses take a list of arguments
 procedure mutualRecursionA(x: nat)
   decreases [x, 1]
 {
@@ -36,8 +36,14 @@ procedure mutualRecursionB(x: nat)
 {
   if x != 0 { mutualRecursionA(x-1); }
 }
+"
 
-/*
+#eval! testInput "Decreases" program processLaurelFile
+
+/-
+A decreases clause CAN be added to a procedure to prove that it terminates.
+A procedure with a decreases clause may be called in an erased context.
+
 Translation towards SMT:
 
 proof foo_body {
@@ -51,5 +57,4 @@ proof bar_body {
     assert decreases([x, 0], [x - 1, 1]);
   }
 }
-
-*/
+-/
