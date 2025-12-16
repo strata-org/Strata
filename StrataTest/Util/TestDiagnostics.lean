@@ -34,8 +34,9 @@ def parseDiagnosticExpectations (content : String) : List DiagnosticExpectation 
       if caretStart.byteIdx < trimmed.length then
         -- Count carets
         let mut caretEnd := caretStart
-        while caretEnd.byteIdx < trimmed.length && trimmed.get caretEnd == '^' do
-          caretEnd := caretEnd + ⟨1⟩
+        let currentChar := String.Pos.Raw.get trimmed caretEnd
+        while caretEnd.byteIdx < trimmed.bytes.size && currentChar == '^' do
+          caretEnd := caretEnd + currentChar
 
         -- Get the message part after carets
         let afterCarets := trimmed.drop caretEnd.byteIdx |>.trim
