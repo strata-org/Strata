@@ -30,12 +30,12 @@ inductive ParseError where
     parentheses) or when some other error occurs during compilation or matching.
     It is never an error if a string contains no match for a pattern."
   -/
-  | patternError  (message : String) (pattern : String) (pos : String.Pos)
+  | patternError  (message : String) (pattern : String) (pos : String.Pos.Raw)
   /--
   `unimplemented` is raised whenever we don't support some regex operations
   (e.g., lookahead assertions).
   -/
-  | unimplemented (message : String) (pattern : String) (pos : String.Pos)
+  | unimplemented (message : String) (pattern : String) (pos : String.Pos.Raw)
   deriving Repr
 
 def ParseError.toString : ParseError → String
@@ -85,75 +85,75 @@ inductive RegexAST where
 
 /-- Parse character class like [a-z], [0-9], etc. into union of ranges and
   chars. Note that this parses `|` as a character. -/
-def parseCharClass (s : String) (pos : String.Pos) : Except ParseError (RegexAST × String.Pos) := do
-  if s.get? pos != some '[' then throw (.patternError "Expected '[' at start of character class" s pos)
-  let mut i := s.next pos
+def parseCharClass (s : String) (pos : String.Pos.Raw) : Except ParseError (RegexAST × String.Pos.Raw) := do
+  if pos.get? s != some '[' then throw (.patternError "Expected '[' at start of character class" s pos)
+  let mut i := pos.next s
 
   -- Check for complement (negation) with leading ^
-  let isComplement := !s.atEnd i && s.get? i == some '^'
+  let isComplement := !i.atEnd s && i.get? s == some '^'
   if isComplement then
-    i := s.next i
+    i := i.next s
 
   let mut result : Option RegexAST := none
 
   -- Process each element in the character class.
-  while !s.atEnd i && s.get? i != some ']' do
-    let some c1 := s.get? i | throw (.patternError "Invalid character in class" s i)
-    let i1 := s.next i
+  while !i.atEnd s && i.get? s != some ']' do
+    let some c1 := i.get? s | throw (.patternError "Invalid character in class" s i)
+    let i1 := i.next s
     -- Check for range pattern: c1-c2.
-    if !s.atEnd i1 && s.get? i1 == some '-' then
-      let i2 := s.next i1
-      if !s.atEnd i2 && s.get? i2 != some ']' then
-        let some c2 := s.get? i2 | throw (.patternError "Invalid character in range" s i2)
+    if !i1.atEnd s && i1.get? s == some '-' then
+      let i2 := i1.next s
+      if !i2.atEnd s && i2.get? s != some ']' then
+        let some c2 := i2.get? s | throw (.patternError "Invalid character in range" s i2)
         if c1 > c2 then
           throw (.patternError s!"Invalid character range [{c1}-{c2}]: \
                                   start character '{c1}' is greater than end character '{c2}'" s i)
         let r := RegexAST.range c1 c2
         -- Union with previous elements.
         result := some (match result with | none => r | some prev => RegexAST.union prev r)
-        i := s.next i2
+        i := i2.next s
         continue
     -- Single character.
     let r := RegexAST.char c1
     result := some (match result with | none => r | some prev => RegexAST.union prev r)
-    i := s.next i
+    i := i.next s
 
   let some ast := result | throw (.patternError "Unterminated character set" s pos)
   let finalAst := if isComplement then RegexAST.complement ast else ast
-  pure (finalAst, s.next i)
+  pure (finalAst, i.next s)
 
 -------------------------------------------------------------------------------
 
 /-- Parse numeric repeats like `{10}` or `{1,10}` into min and max bounds. -/
-def parseBounds (s : String) (pos : String.Pos) : Except ParseError (Nat × Nat × String.Pos) := do
-  if s.get? pos != some '{' then throw (.patternError "Expected '{' at start of bounds" s pos)
-  let mut i := s.next pos
+def parseBounds (s : String) (pos : String.Pos.Raw) : Except ParseError (Nat × Nat × String.Pos.Raw) := do
+  if pos.get? s != some '{' then throw (.patternError "Expected '{' at start of bounds" s pos)
+  let mut i := pos.next s
   let mut numStr := ""
 
   -- Parse first number.
-  while !s.atEnd i && (s.get? i).any Char.isDigit do
-    numStr := numStr.push ((s.get? i).get!)
-    i := s.next i
+  while !i.atEnd s && (i.get? s).any Char.isDigit do
+    numStr := numStr.push ((i.get? s).get!)
+    i := i.next s
 
   let some n := numStr.toNat? | throw (.patternError "Invalid minimum bound" s pos)
 
   -- Check for comma (range) or closing brace (exact count).
-  match s.get? i with
-  | some '}' => pure (n, n, s.next i)  -- {n} means exactly n times.
+  match i.get? s with
+  | some '}' => pure (n, n, i.next s)  -- {n} means exactly n times.
   | some ',' =>
-    i := s.next i
+    i := i.next s
     -- Parse maximum bound
     numStr := ""
-    while !s.atEnd i && (s.get? i).any Char.isDigit do
-      numStr := numStr.push ((s.get? i).get!)
-      i := s.next i
+    while !i.atEnd s && (i.get? s).any Char.isDigit do
+      numStr := numStr.push ((i.get? s).get!)
+      i := i.next s
     let some max := numStr.toNat? | throw (.patternError "Invalid maximum bound" s i)
-    if s.get? i != some '}' then throw (.patternError "Expected '}' at end of bounds" s i)
+    if i.get? s != some '}' then throw (.patternError "Expected '}' at end of bounds" s i)
     -- Validate bounds order
     if max < n then
       throw (.patternError s!"Invalid repeat bounds \{{n},{max}}: \
                               maximum {max} is less than minimum {n}" s pos)
-    pure (n, max, s.next i)
+    pure (n, max, i.next s)
   | _ => throw (.patternError "Invalid bounds syntax" s i)
 
 -------------------------------------------------------------------------------
@@ -163,10 +163,10 @@ mutual
 Parse atom: single element (char, class, anchor, group) with optional
 quantifier. Stops at the first `|`.
 -/
-partial def parseAtom (s : String) (pos : String.Pos) : Except ParseError (RegexAST × String.Pos) := do
-  if s.atEnd pos then throw (.patternError "Unexpected end of regex" s pos)
+partial def parseAtom (s : String) (pos : String.Pos.Raw) : Except ParseError (RegexAST × String.Pos.Raw) := do
+  if pos.atEnd s then throw (.patternError "Unexpected end of regex" s pos)
 
-  let some c := s.get? pos | throw (.patternError "Invalid position" s pos)
+  let some c := pos.get? s | throw (.patternError "Invalid position" s pos)
 
   -- Detect invalid quantifier at start
   if c == '*' || c == '+' || c == '{' || c == '?' then
@@ -178,19 +178,19 @@ partial def parseAtom (s : String) (pos : String.Pos) : Except ParseError (Regex
 
   -- Parse base element (anchor, char class, group, anychar, escape, or single char).
   let (base, nextPos) ← match c with
-    | '^' => pure (RegexAST.anchor_start, s.next pos)
-    | '$' => pure (RegexAST.anchor_end, s.next pos)
+    | '^' => pure (RegexAST.anchor_start, pos.next s)
+    | '$' => pure (RegexAST.anchor_end, pos.next s)
     | '[' => parseCharClass s pos
     | '(' => parseExplicitGroup s pos
-    | '.' => pure (RegexAST.anychar, s.next pos)
+    | '.' => pure (RegexAST.anychar, pos.next s)
     | '\\' =>
       -- Handle escape sequence.
       -- Note: Python uses a single backslash as an escape character, but Lean
       -- strings need to escape that. After DDMification, we will see two
       -- backslashes in Strata for every Python backslash.
-      let nextPos := s.next pos
-      if s.atEnd nextPos then throw (.patternError "Incomplete escape sequence at end of regex" s pos)
-      let some escapedChar := s.get? nextPos | throw (.patternError "Invalid escape position" s nextPos)
+      let nextPos := pos.next s
+      if nextPos.atEnd s then throw (.patternError "Incomplete escape sequence at end of regex" s pos)
+      let some escapedChar := nextPos.get? s | throw (.patternError "Invalid escape position" s nextPos)
       -- Check for special sequences (unsupported right now).
       match escapedChar with
       | 'A' | 'b' | 'B' | 'd' | 'D' | 's' | 'S' | 'w' | 'W' | 'z' | 'Z' =>
@@ -201,38 +201,38 @@ partial def parseAtom (s : String) (pos : String.Pos) : Except ParseError (Regex
         if c.isDigit then
           throw (.unimplemented s!"Backreference \\{c} is not supported" s pos)
         else
-          pure (RegexAST.char escapedChar, s.next nextPos)
-    | _ => pure (RegexAST.char c, s.next pos)
+          pure (RegexAST.char escapedChar, nextPos.next s)
+    | _ => pure (RegexAST.char c, pos.next s)
 
   -- Check for numeric repeat suffix on base element (but not on anchors)
   match base with
   | .anchor_start | .anchor_end => pure (base, nextPos)
   | _ =>
-    if !s.atEnd nextPos then
-      match s.get? nextPos with
+    if !nextPos.atEnd s then
+      match nextPos.get? s with
       | some '{' =>
         let (min, max, finalPos) ← parseBounds s nextPos
         pure (RegexAST.loop base min max, finalPos)
       | some '*' =>
-        let afterStar := s.next nextPos
-        if !s.atEnd afterStar then
-          match s.get? afterStar with
+        let afterStar := nextPos.next s
+        if !afterStar.atEnd s then
+          match afterStar.get? s with
           | some '?' => throw (.unimplemented "Non-greedy quantifier *? is not supported" s nextPos)
           | some '+' => throw (.unimplemented "Possessive quantifier *+ is not supported" s nextPos)
           | _ => pure (RegexAST.star base, afterStar)
         else pure (RegexAST.star base, afterStar)
       | some '+' =>
-        let afterPlus := s.next nextPos
-        if !s.atEnd afterPlus then
-          match s.get? afterPlus with
+        let afterPlus := nextPos.next s
+        if !afterPlus.atEnd s then
+          match afterPlus.get? s with
           | some '?' => throw (.unimplemented "Non-greedy quantifier +? is not supported" s nextPos)
           | some '+' => throw (.unimplemented "Possessive quantifier ++ is not supported" s nextPos)
           | _ => pure (RegexAST.plus base, afterPlus)
         else pure (RegexAST.plus base, afterPlus)
       | some '?' =>
-        let afterQuestion := s.next nextPos
-        if !s.atEnd afterQuestion then
-          match s.get? afterQuestion with
+        let afterQuestion := nextPos.next s
+        if !afterQuestion.atEnd s then
+          match afterQuestion.get? s with
           | some '?' => throw (.unimplemented "Non-greedy quantifier ?? is not supported" s nextPos)
           | some '+' => throw (.unimplemented "Possessive quantifier ?+ is not supported" s nextPos)
           | _ => pure (RegexAST.optional base, afterQuestion)
@@ -242,15 +242,15 @@ partial def parseAtom (s : String) (pos : String.Pos) : Except ParseError (Regex
       pure (base, nextPos)
 
 /-- Parse explicit group with parentheses. -/
-partial def parseExplicitGroup (s : String) (pos : String.Pos) : Except ParseError (RegexAST × String.Pos) := do
-  if s.get? pos != some '(' then throw (.patternError "Expected '(' at start of group" s pos)
-  let mut i := s.next pos
+partial def parseExplicitGroup (s : String) (pos : String.Pos.Raw) : Except ParseError (RegexAST × String.Pos.Raw) := do
+  if pos.get? s != some '(' then throw (.patternError "Expected '(' at start of group" s pos)
+  let mut i := pos.next s
 
   -- Check for extension notation (?...
-  if !s.atEnd i && s.get? i == some '?' then
-    let i1 := s.next i
-    if !s.atEnd i1 then
-      match s.get? i1 with
+  if !i.atEnd s && i.get? s == some '?' then
+    let i1 := i.next s
+    if !i1.atEnd s then
+      match i1.get? s with
       | some '=' => throw (.unimplemented "Positive lookahead (?=...) is not supported" s pos)
       | some '!' => throw (.unimplemented "Negative lookahead (?!...) is not supported" s pos)
       | _ => throw (.unimplemented "Extension notation (?...) is not supported" s pos)
@@ -259,17 +259,17 @@ partial def parseExplicitGroup (s : String) (pos : String.Pos) : Except ParseErr
   pure (.group inner, finalPos)
 
 /-- Parse group: handles alternation and concatenation at current scope. -/
-partial def parseGroup (s : String) (pos : String.Pos) (endChar : Option Char) :
-    Except ParseError (RegexAST × String.Pos) := do
+partial def parseGroup (s : String) (pos : String.Pos.Raw) (endChar : Option Char) :
+    Except ParseError (RegexAST × String.Pos.Raw) := do
   let mut alternatives : List (List RegexAST) := [[]]
   let mut i := pos
 
   -- Parse until end of string or `endChar`.
-  while !s.atEnd i && (endChar.isNone || s.get? i != endChar) do
-    if s.get? i == some '|' then
+  while !i.atEnd s && (endChar.isNone || i.get? s != endChar) do
+    if i.get? s == some '|' then
       -- Push a new scope to `alternatives`.
       alternatives := [] :: alternatives
-      i := s.next i
+      i := i.next s
     else
       let (ast, nextPos) ← parseAtom s i
       alternatives := match alternatives with
@@ -279,9 +279,9 @@ partial def parseGroup (s : String) (pos : String.Pos) (endChar : Option Char) :
 
   -- Check for expected end character.
   if let some ec := endChar then
-    if s.get? i != some ec then
+    if i.get? s != some ec then
       throw (.patternError s!"Expected '{ec}'" s i)
-    i := s.next i
+    i := i.next s
 
   -- Build result: concatenate each alternative, then union them.
   let concatAlts := alternatives.reverse.filterMap fun alt =>

@@ -185,9 +185,9 @@ instance OperationF.instToExpr {α} [ToExpr α] : ToExpr (OperationF α) where
   toTypeExpr := OperationF.typeExpr (toTypeExpr α)
   toExpr := OperationF.toExpr
 
-instance : ToExpr String.Pos where
-  toTypeExpr := mkConst ``String.Pos
-  toExpr e := mkApp (mkConst ``String.Pos.mk) (toExpr e.byteIdx)
+instance : ToExpr String.Pos.Raw where
+  toTypeExpr := mkConst ``String.Pos.Raw
+  toExpr e := mkApp (mkConst ``String.Pos.Raw.mk) (toExpr e.byteIdx)
 
 instance SourceRange.instToExpr : ToExpr SourceRange where
   toTypeExpr := mkConst ``SourceRange
