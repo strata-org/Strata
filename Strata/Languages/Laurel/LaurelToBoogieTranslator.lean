@@ -18,7 +18,7 @@ namespace Laurel
 open Boogie (VCResult VCResults)
 open Strata
 
-open Boogie (intAddOp boolNotOp)
+open Boogie (intAddOp intSubOp intMulOp intDivOp intModOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp)
 open Lambda (LMonoTy LTy)
 
 /-
@@ -41,40 +41,28 @@ partial def translateExpr (expr : StmtExpr) : Boogie.Expression.Expr :=
   | .Identifier name =>
       let ident := Boogie.BoogieIdent.locl name
       .fvar () ident (some LMonoTy.int)  -- Default to int type
-  | .PrimitiveOp .Add args =>
-      match args with
-      | [e1, e2] =>
-          let be1 := translateExpr e1
-          let be2 := translateExpr e2
-          .app () (.app () intAddOp be1) be2
-      | e1 :: e2 :: _ =>  -- More than 2 args
-          let be1 := translateExpr e1
-          let be2 := translateExpr e2
-          .app () (.app () intAddOp be1) be2
-      | [_] | [] => .const () (.intConst 0)  -- Error cases
-  | .PrimitiveOp .Eq args =>
-      match args with
-      | [e1, e2] =>
-          let be1 := translateExpr e1
-          let be2 := translateExpr e2
-          .eq () be1 be2
-      | e1 :: e2 :: _ =>  -- More than 2 args
-          let be1 := translateExpr e1
-          let be2 := translateExpr e2
-          .eq () be1 be2
-      | [_] | [] => .const () (.boolConst false)  -- Error cases
-  | .PrimitiveOp .Neq args =>
-      match args with
-      | [e1, e2] =>
-          let be1 := translateExpr e1
-          let be2 := translateExpr e2
-          -- Negate equality
-          .app () (.op () (Boogie.BoogieIdent.glob "Bool.Not") (some LMonoTy.bool)) (.eq () be1 be2)
-      | e1 :: e2 :: _ =>  -- More than 2 args
-          let be1 := translateExpr e1
-          let be2 := translateExpr e2
-          .app () (.op () (Boogie.BoogieIdent.glob "Bool.Not") (some LMonoTy.bool)) (.eq () be1 be2)
-      | [_] | [] => .const () (.boolConst false)  -- Error cases
+  | .PrimitiveOp op args =>
+      let binOp (bop : Boogie.Expression.Expr) (e1 e2 : StmtExpr) : Boogie.Expression.Expr :=
+        .app () (.app () bop (translateExpr e1)) (translateExpr e2)
+      let unOp (uop : Boogie.Expression.Expr) (e : StmtExpr) : Boogie.Expression.Expr :=
+        .app () uop (translateExpr e)
+      match op, args with
+      | .Eq, [e1, e2] => .eq () (translateExpr e1) (translateExpr e2)
+      | .Neq, [e1, e2] => .app () boolNotOp (.eq () (translateExpr e1) (translateExpr e2))
+      | .And, [e1, e2] => binOp boolAndOp e1 e2
+      | .Or, [e1, e2] => binOp boolOrOp e1 e2
+      | .Not, [e] => unOp boolNotOp e
+      | .Neg, [e] => unOp intNegOp e
+      | .Add, [e1, e2] => binOp intAddOp e1 e2
+      | .Sub, [e1, e2] => binOp intSubOp e1 e2
+      | .Mul, [e1, e2] => binOp intMulOp e1 e2
+      | .Div, [e1, e2] => binOp intDivOp e1 e2
+      | .Mod, [e1, e2] => binOp intModOp e1 e2
+      | .Lt, [e1, e2] => binOp intLtOp e1 e2
+      | .Leq, [e1, e2] => binOp intLeOp e1 e2
+      | .Gt, [e1, e2] => binOp intGtOp e1 e2
+      | .Geq, [e1, e2] => binOp intGeOp e1 e2
+      | _, _ => panic! s!"translateExpr: PrimitiveOp {repr op} with {args.length} args"
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond := translateExpr cond
       let bthen := translateExpr thenBranch
@@ -112,7 +100,6 @@ partial def translateExpr (expr : StmtExpr) : Boogie.Expression.Expr :=
   | .Abstract => panic! "translateExpr: Abstract"
   | .All => panic! "translateExpr: All"
   | .Hole => panic! "translateExpr: Hole"
-  | .PrimitiveOp op _ => panic! s!"translateExpr: unhandled PrimitiveOp {repr op}"
 
 /-
 Translate Laurel StmtExpr to Boogie Statements
