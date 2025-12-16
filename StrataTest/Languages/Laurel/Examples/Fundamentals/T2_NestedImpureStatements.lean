@@ -18,9 +18,11 @@ procedure nestedImpureStatements(x: int): int {
   var z := x;
 
   if ((z := z + 1) == (y := z)) {
+assert false;
     assert y == x + 1;
     1
   } else {
+assert false;
     assert y == x + 1;
 //  ^^^^^^^^^^^^^^^^^^ error: could not prove assertion
     2

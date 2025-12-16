@@ -11,6 +11,7 @@ import Strata.Languages.Boogie.Procedure
 import Strata.Languages.Boogie.Options
 import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.SequenceAssignments
+import Strata.DL.Imperative.Stmt
 
 namespace Laurel
 
@@ -130,15 +131,8 @@ partial def translateStmt (stmt : StmtExpr) : List Boogie.Statement :=
       let belse := match elseBranch with
                   | some e => translateStmt e
                   | none => []
-      -- Boogie doesn't have if-else statements directly, we need to use havoc + assume
-      -- For now, just translate branches and add conditional assumes
-      let thenStmts := (Boogie.Statement.assume "then" bcond) :: bthen
-      let elseStmts := match elseBranch with
-                      | some _ =>
-                          let notCond := .app () boolNotOp bcond
-                          (Boogie.Statement.assume "else" notCond) :: belse
-                      | none => []
-      thenStmts ++ elseStmts
+      -- Use Boogie's if-then-else construct
+      [Imperative.Stmt.ite bcond bthen belse .empty]
   | .StaticCall name args =>
       let boogieArgs := args.map translateExpr
       [Boogie.Statement.call [] name boogieArgs]
