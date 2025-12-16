@@ -58,9 +58,9 @@ deriving Inhabited
 partial def elabHeader
     (leanEnv : Lean.Environment)
     (inputContext : InputContext)
-    (startPos : String.Pos := 0)
-    (stopPos : String.Pos := inputContext.endPos)
-     : Header × Array Message × String.Pos :=
+    (startPos : String.Pos.Raw := 0)
+    (stopPos : String.Pos.Raw := inputContext.endPos)
+     : Header × Array Message × String.Pos.Raw :=
   let s : DeclState := .initDeclState
   let s := s.openLoadedDialect! .builtin headerDialect
   let s := { s with pos := startPos }
@@ -82,7 +82,7 @@ partial def elabHeader
   else
     (default, s.errors, 0)
 
-partial def runCommand (leanEnv : Lean.Environment) (commands : Array Operation) (stopPos : String.Pos) : DeclM (Array Operation) := do
+partial def runCommand (leanEnv : Lean.Environment) (commands : Array Operation) (stopPos : String.Pos.Raw) : DeclM (Array Operation) := do
   let iniPos := (←get).pos
   if iniPos >= stopPos then
     return commands
@@ -102,8 +102,8 @@ def elabProgramRest
     (loc : SourceRange)
     (dialect : DialectName)
     (known : dialect ∈ loader.dialects)
-    (startPos : String.Pos)
-    (stopPos : String.Pos := inputContext.endPos)
+    (startPos : String.Pos.Raw)
+    (stopPos : String.Pos.Raw := inputContext.endPos)
     : Except (Array Message) Program := do
   let some d := loader.dialects[dialect]?
     | .error #[Lean.mkStringMessage inputContext loc.start s!"Unknown dialect {dialect}."]
@@ -123,8 +123,8 @@ partial def elabProgram
     (loader : LoadedDialects)
     (leanEnv : Lean.Environment)
     (inputContext : InputContext)
-    (startPos : String.Pos := 0)
-    (stopPos : String.Pos := inputContext.endPos) : Except (Array Message) Program :=
+    (startPos : String.Pos.Raw := 0)
+    (stopPos : String.Pos.Raw := inputContext.endPos) : Except (Array Message) Program :=
   assert! "Init" ∈ loader.dialects
   let (header, errors, startPos) := elabHeader leanEnv inputContext startPos stopPos
   if errors.size > 0 then
@@ -322,8 +322,8 @@ partial def elabDialectRest
       (inputContext : Parser.InputContext)
       (loc : SourceRange)
       (dialect : DialectName)
-      (startPos : String.Pos := 0)
-      (stopPos : String.Pos := inputContext.endPos)
+      (startPos : String.Pos.Raw := 0)
+      (stopPos : String.Pos.Raw := inputContext.endPos)
       : BaseIO (LoadedDialects × Dialect × DeclState) := do
   let leanEnv ←
     match ← mkEmptyEnvironment 0 |>.toBaseIO with
@@ -394,8 +394,8 @@ def elabDialect
     (fm : DialectFileMap)
     (dialects : LoadedDialects)
     (inputContext : Parser.InputContext)
-    (startPos : String.Pos := 0)
-    (stopPos : String.Pos := inputContext.endPos)
+    (startPos : String.Pos.Raw := 0)
+    (stopPos : String.Pos.Raw := inputContext.endPos)
      : BaseIO (LoadedDialects × Dialect × DeclState) := do
   let leanEnv ←
     match ← mkEmptyEnvironment 0 |>.toBaseIO with

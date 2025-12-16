@@ -16,7 +16,7 @@ namespace Laurel
 
 def testAssertFalse : IO Unit := do
   let laurelDialect: Strata.Dialect := Laurel
-  let filePath := "Strata/Languages/Laurel/Examples/AssertFalse.lr.st"
+  let filePath := "Strata/Languages/Laurel/Examples/Fundamentals/1.AssertFalse.lr.st"
   let result ← testGrammarFile laurelDialect filePath
 
   if !result.normalizedMatch then
