@@ -26,23 +26,23 @@ category OptionalType;
 op optionalType(varType: LaurelType): OptionalType => ":" varType;
 
 category OptionalAssignment;
-op optionalAssignment(value: StmtExpr): OptionalType => "=" value;
+op optionalAssignment(value: StmtExpr): OptionalType => ":=" value:0;
 
 op varDecl (name: Ident, varType: Option OptionalType, assignment: Option OptionalAssignment): StmtExpr
-  => "var " name varType assignment ";";
+  => @[prec(0)] "var " name varType assignment ";";
 
 // Identifiers/Variables
 op identifier (name: Ident): StmtExpr => name;
 op parenthesis (inner: StmtExpr): StmtExpr => "(" inner ")";
 
 // Assignment
-op assign (target: StmtExpr, value: StmtExpr): StmtExpr => target " := " value ";";
+op assign (target: StmtExpr, value: StmtExpr): StmtExpr => target ":=" value ";";
 
 // Binary operators
-op add (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60)] lhs " + " rhs;
-op eq (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs " == " rhs;
-op neq (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs " != " rhs;
-op gt (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs " > " rhs;
+op add (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60)] lhs "+" rhs;
+op eq (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs "==" rhs;
+op neq (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs "!=" rhs;
+op gt (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs ">" rhs;
 
 op call(callee: StmtExpr, args: CommaSepBy StmtExpr): StmtExpr => callee "(" args ")";
 
@@ -51,7 +51,7 @@ category OptionalElse;
 op optionalElse(stmts : StmtExpr) : OptionalElse => "else" stmts;
 
 op ifThenElse (cond: StmtExpr, thenBranch: StmtExpr, elseBranch: Option OptionalElse): StmtExpr =>
-  @[prec(20)] "if (" cond ") " thenBranch:0 " else " elseBranch:0;
+  @[prec(20)] "if (" cond ") " thenBranch:0 elseBranch:0;
 
 op assert (cond : StmtExpr) : StmtExpr => "assert " cond ";";
 op assume (cond : StmtExpr) : StmtExpr => "assume " cond ";";

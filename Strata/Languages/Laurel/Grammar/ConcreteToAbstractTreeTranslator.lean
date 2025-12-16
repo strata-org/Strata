@@ -153,9 +153,23 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
       return .LiteralInt n
     else if op.name == q`Laurel.varDecl then
       let name ← translateIdent op.args[0]!
-      let value ← translateStmtExpr op.args[1]!
-      -- For now, we'll use TInt as default type, but this should be inferred
-      return .LocalVariable name .TInt (some value)
+      let typeArg := op.args[1]!
+      let assignArg := op.args[2]!
+      let varType ← match typeArg with
+        | .option _ (some (.op typeOp)) =>
+          if typeOp.name == q`Laurel.optionalType then
+            translateHighType typeOp.args[0]!
+          else
+            pure .TInt
+        | _ => pure .TInt
+      let value ← match assignArg with
+        | .option _ (some (.op assignOp)) =>
+          if assignOp.name == q`Laurel.optionalAssignment then
+            translateStmtExpr assignOp.args[0]! >>= (pure ∘ some)
+          else
+            pure none
+        | _ => pure none
+      return .LocalVariable name varType value
     else if op.name == q`Laurel.identifier then
       let name ← translateIdent op.args[0]!
       return .Identifier name
@@ -178,6 +192,10 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
       let lhs ← translateStmtExpr op.args[0]!
       let rhs ← translateStmtExpr op.args[1]!
       return .PrimitiveOp .Neq [lhs, rhs]
+    else if op.name == q`Laurel.gt then
+      let lhs ← translateStmtExpr op.args[0]!
+      let rhs ← translateStmtExpr op.args[1]!
+      return .PrimitiveOp .Gt [lhs, rhs]
     else if op.name == q`Laurel.call then
       -- Handle function calls
       let callee ← translateStmtExpr op.args[0]!
@@ -192,15 +210,21 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
           args.toList.mapM translateStmtExpr
         | _ => pure []
       return .StaticCall calleeName argsList
+    else if op.name == q`Laurel.return then
+      let value ← translateStmtExpr op.args[0]!
+      return .Return value
     else if op.name == q`Laurel.ifThenElse then
       let cond ← translateStmtExpr op.args[0]!
       let thenBranch ← translateStmtExpr op.args[1]!
-      let elseBranch ← translateStmtExpr op.args[2]!
-      return .IfThenElse cond thenBranch (some elseBranch)
-    else if op.name == q`Laurel.ifThen then
-      let cond ← translateStmtExpr op.args[0]!
-      let thenBranch ← translateStmtExpr op.args[1]!
-      return .IfThenElse cond thenBranch none
+      let elseArg := op.args[2]!
+      let elseBranch ← match elseArg with
+        | .option _ (some (.op elseOp)) =>
+          if elseOp.name == q`Laurel.optionalElse then
+            translateStmtExpr elseOp.args[0]! >>= (pure ∘ some)
+          else
+            pure none
+        | _ => pure none
+      return .IfThenElse cond thenBranch elseBranch
     else
       TransM.error s!"Unknown operation: {op.name}"
   | _ => TransM.error s!"translateStmtExpr expects operation"

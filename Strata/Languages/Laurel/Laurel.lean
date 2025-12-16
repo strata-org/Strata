@@ -176,7 +176,6 @@ An extending type can become concrete by redefining all procedures that had abst
   | All -- All refers to all objects in the heap. Can be used in a reads or modifies clause
 /- Hole has a dynamic type and is useful when programs are only partially available -/
   | Hole
-  deriving Inhabited
 
 inductive ContractType where
   | Reads | Modifies | Precondition | PostCondition
