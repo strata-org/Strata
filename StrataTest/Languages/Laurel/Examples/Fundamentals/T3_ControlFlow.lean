@@ -34,14 +34,12 @@ procedure dag(a: int): int
 
   if (a > 0) {
     b := 1;
-  } else {
-    b := 2;
   }
   b
 }
 "
 
-#eval! testInput "ControlFlow" program processLaurelFile
+#eval! testInputWithOffset "ControlFlow" program 15 processLaurelFile
 
 /-
 Translation towards expression form:

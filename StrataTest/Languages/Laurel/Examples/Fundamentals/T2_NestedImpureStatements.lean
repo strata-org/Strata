@@ -16,8 +16,8 @@ def program: String := r"
 procedure nestedImpureStatements(x: int): int {
   var y := 0;
   var z := x;
+  if (z := z + 1; == y := y + 1;) {
 
-  if ((z := z + 1) == (y := y + 1)) {
     assert y == x + 1;
     1
   } else {
