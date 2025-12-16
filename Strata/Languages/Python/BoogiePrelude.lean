@@ -475,11 +475,11 @@ function datetime_to_int() : int;
 procedure datetime_strptime(time: string, format: string) returns (d : Datetime, maybe_except: ExceptOrNone)
 spec{
   requires [req_format_str]: (format == "%Y-%m-%d");
-  ensures [ensures_str_strp_reverse]: (forall dt : Datetime :: {} ((time == datetime_to_str(dt)) ==> (d == dt)));
+  ensures [ensures_str_strp_reverse]: (forall dt : Datetime :: {d == dt} ((time == datetime_to_str(dt)) <==> (d == dt)));
 }
 {
   havoc d;
-  assume [assume_str_strp_reverse]: (forall dt : Datetime :: {} ((time == datetime_to_str(dt)) ==> (d == dt)));
+  assume [assume_str_strp_reverse]: (forall dt : Datetime :: {d == dt} ((time == datetime_to_str(dt)) <==> (d == dt)));
 };
 
 /////////////////////////////////////////////////////////////////////////////////////

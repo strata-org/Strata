@@ -20,7 +20,7 @@ start : datetime = end - delta
 
 assert start <= end
 
-# These require mbqi
+# These require mbqi / autoconfig
 start_dt : datetime = datetime.strptime(str(start), "%Y-%m-%d")
 assert start_dt == start
 end_dt : datetime = datetime.strptime(str(end), "%Y-%m-%d")
