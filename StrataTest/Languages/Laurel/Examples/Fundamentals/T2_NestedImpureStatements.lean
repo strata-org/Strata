@@ -17,14 +17,12 @@ procedure nestedImpureStatements(x: int): int {
   var y := 0;
   var z := x;
 
-  if ((z := z + 1) == (y := z)) {
-assert false;
+  if ((z := z + 1) == (y := y + 1)) {
     assert y == x + 1;
     1
   } else {
-assert false;
     assert y == x + 1;
-//  ^^^^^^^^^^^^^^^^^^ error: could not prove assertion
+//  ^^^^^^^^^^^^^^^^^^ error: assertion does not hold
     2
   }
 }

@@ -123,6 +123,7 @@ def testInputContext (input : Parser.InputContext) (process : Lean.Parser.InputC
       IO.println s!"\nUnexpected diagnostics:"
       for diag in unmatchedDiagnostics do
         IO.println s!"  - Line {diag.start.line}, Col {diag.start.column}-{diag.ending.column}: {diag.message}"
+    throw (IO.userError "Test failed")
 
 def testInput (filename: String) (input : String) (process : Lean.Parser.InputContext -> IO (Array Diagnostic)) : IO Unit :=
   testInputContext (Parser.stringInputContext filename input) process
