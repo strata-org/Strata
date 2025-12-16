@@ -9,8 +9,7 @@ import Strata.DDM.Elab
 import Strata.DDM.Ion
 import Strata.Util.IO
 
-import Strata.Languages.Python.Python
-import StrataTest.Transform.ProcedureInlining
+import Strata.Languages.Python.Verify
 
 def exitFailure {α} (message : String) : IO α := do
   IO.eprintln (message  ++ "\n\nRun strata --help for additional help.")
@@ -113,6 +112,7 @@ structure Command where
   args : List String
   help : String
   callback : Strata.DialectFileMap → Vector String args.length → IO Unit
+  flagsCallback : Option (Strata.DialectFileMap → Vector String args.length → Strata.Languages.Python.CommandFlags → IO Unit) := none
 
 def checkCommand : Command where
   name := "check"
@@ -168,52 +168,21 @@ def diffCommand : Command where
     | _, _ =>
       exitFailure "Cannot compare dialect def with another dialect/program."
 
-def readPythonStrata (path : String) : IO Strata.Program := do
-  let bytes ← Strata.Util.readBinInputSource path
-  if ! bytes.startsWith Ion.binaryVersionMarker then
-    exitFailure s!"pyAnalyze expected Ion file"
-  match Strata.Program.fromIon Strata.Python.Python_map Strata.Python.Python.name bytes with
-  | .ok p => pure p
-  | .error msg => exitFailure msg
-
 def pyTranslateCommand : Command where
   name := "pyTranslate"
   args := [ "file" ]
   help := "Translate a Strata Python Ion file to Strata.Boogie. Write results to stdout."
   callback := fun _ v => do
-    let pgm ← readPythonStrata v[0]
-    let preludePgm := Strata.Python.Internal.Boogie.prelude
-    let bpgm := Strata.pythonToBoogie pgm
-    let newPgm : Boogie.Program := { decls := preludePgm.decls ++ bpgm.decls }
-    IO.print newPgm
+    Strata.Languages.Python.pyTranslate v[0]
 
 def pyAnalyzeCommand : Command where
   name := "pyAnalyze"
-  args := [ "file", "verbose" ]
-  help := "Analyze a Strata Python Ion file. Write results to stdout."
+  args := [ "file" ]
+  help := "Analyze a Strata Python Ion file. Write results to stdout. Use --verbose for verbose output, --noinline to disable inlining."
   callback := fun _ v => do
-    let verbose := v[1] == "1"
-    let pgm ← readPythonStrata v[0]
-    if verbose then
-      IO.print pgm
-    let preludePgm := Strata.Python.Internal.Boogie.prelude
-    let bpgm := Strata.pythonToBoogie pgm
-    let newPgm : Boogie.Program := { decls := preludePgm.decls ++ bpgm.decls }
-    if verbose then
-      IO.print newPgm
-    let newPgm := runInlineCall newPgm
-    if verbose then
-      IO.println "Inlined: "
-      IO.print newPgm
-    let vcResults ← EIO.toIO (fun f => IO.Error.userError (toString f))
-                        (Boogie.verify "z3" newPgm { Options.default with stopOnFirstError := false,
-                                                                          verbose,
-                                                                          removeIrrelevantAxioms := true }
-                                                   (moreFns := Strata.Python.ReFactory))
-    let mut s := ""
-    for vcResult in vcResults do
-      s := s ++ s!"\n{vcResult.obligation.label}: {Std.format vcResult.result}\n"
-    IO.println s
+    Strata.Languages.Python.pyAnalyze v[0] {}
+  flagsCallback := some (fun _ v flags => do
+    Strata.Languages.Python.pyAnalyze v[0] flags)
 
 def commandList : List Command := [
       checkCommand,
@@ -236,11 +205,22 @@ def main (args : List String) : IO Unit := do
       IO.println s!"  {args}: {cmd.help}"
     IO.println "\nFlags:"
     IO.println "  --include path: Adds a path to Strata for searching for dialects."
+    IO.println "  --verbose: Enable verbose output (for pyAnalyze command)."
+    IO.println "  --noinline: Disable inlining (for pyAnalyze command)."
   | cmd :: args =>
     match commandMap[cmd]? with
     | none => exitFailure s!"Unknown command {cmd}"
     | some cmd =>
       let expectedArgs := cmd.args.length
+      let rec extractFlags (args : List String) (flags : Strata.Languages.Python.CommandFlags) : (Strata.Languages.Python.CommandFlags × List String) :=
+        match args with
+        | [] => (flags, [])
+        | "--verbose" :: rest => extractFlags rest { flags with verbose := true }
+        | "--noinline" :: rest => extractFlags rest { flags with noinline := true }
+        | arg :: rest =>
+          let (f, r) := extractFlags rest flags
+          (f, arg :: r)
+      let (flags, remainingArgs) := extractFlags args {}
       let rec process (sp : Strata.DialectFileMap) args (cmdArgs : List String) : IO _ := do
             match cmdArgs with
             | cmd :: cmdArgs =>
@@ -257,9 +237,11 @@ def main (args : List String) : IO Unit := do
                 process sp (args.push cmd) cmdArgs
             | [] =>
               pure (sp, args)
-      let (sp, args) ← process {} #[] args
+      let (sp, args) ← process {} #[] remainingArgs
       if p : args.size = cmd.args.length then
-        cmd.callback sp ⟨args, p⟩
+        match cmd.flagsCallback with
+        | some flagsCb => flagsCb sp ⟨args, p⟩ flags
+        | none => cmd.callback sp ⟨args, p⟩
       else
         exitFailure s!"{cmd.name} expects {expectedArgs} argument(s)."
   | [] => do
