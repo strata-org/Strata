@@ -17,7 +17,7 @@ namespace Laurel
 open Boogie (VCResult VCResults)
 open Strata
 
-open Boogie (intAddOp)
+open Boogie (intAddOp boolNotOp)
 open Lambda (LMonoTy LTy)
 
 /-
@@ -135,7 +135,7 @@ partial def translateStmt (stmt : StmtExpr) : List Boogie.Statement :=
       let thenStmts := (Boogie.Statement.assume "then" bcond) :: bthen
       let elseStmts := match elseBranch with
                       | some _ =>
-                          let notCond := .app () (.op () (Boogie.BoogieIdent.glob "Bool.Not") (some LMonoTy.bool)) bcond
+                          let notCond := .app () boolNotOp bcond
                           (Boogie.Statement.assume "else" notCond) :: belse
                       | none => []
       thenStmts ++ elseStmts
