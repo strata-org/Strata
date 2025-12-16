@@ -5,9 +5,11 @@
 -/
 
 import Strata.Languages.Boogie.Verifier
+import Lean.Elab.Command
 
 open Strata
 open String
+open Lean Elab
 namespace StrataTest.Util
 
 /-- A diagnostic expectation parsed from source comments -/
@@ -127,5 +129,57 @@ def testInputContext (input : Parser.InputContext) (process : Lean.Parser.InputC
 
 def testInput (filename: String) (input : String) (process : Lean.Parser.InputContext -> IO (Array Diagnostic)) : IO Unit :=
   testInputContext (Parser.stringInputContext filename input) process
+
+/-- Test input with line offset - reports diagnostic line numbers offset by the given amount -/
+def testInputWithOffset (filename: String) (input : String) (lineOffset : Nat)
+    (process : Lean.Parser.InputContext -> IO (Array Diagnostic)) : IO Unit := do
+
+  let inputContext := Parser.stringInputContext filename input
+
+  -- Parse diagnostic expectations from comments
+  let expectations := parseDiagnosticExpectations input
+  let expectedErrors := expectations.filter (fun e => e.level == "error")
+
+  -- Get actual diagnostics from the language-specific processor
+  let diagnostics <- process inputContext
+
+  -- Check if all expected errors are matched
+  let mut allMatched := true
+  let mut unmatchedExpectations := []
+
+  for exp in expectedErrors do
+    let matched := diagnostics.any (fun diag => matchesDiagnostic diag exp)
+    if !matched then
+      allMatched := false
+      unmatchedExpectations := unmatchedExpectations.append [exp]
+
+  -- Check if there are unexpected diagnostics
+  let mut unmatchedDiagnostics := []
+  for diag in diagnostics do
+    let matched := expectedErrors.any (fun exp => matchesDiagnostic diag exp)
+    if !matched then
+      allMatched := false
+      unmatchedDiagnostics := unmatchedDiagnostics.append [diag]
+
+  -- Report results with adjusted line numbers
+  if allMatched && diagnostics.size == expectedErrors.length then
+    IO.println s!"✓ Test passed: All {expectedErrors.length} error(s) matched"
+    -- Print details of matched expectations with offset line numbers
+    for exp in expectedErrors do
+      IO.println s!"  - Line {exp.line + lineOffset}, Col {exp.colStart}-{exp.colEnd}: {exp.message}"
+  else
+    IO.println s!"✗ Test failed: Mismatched diagnostics"
+    IO.println s!"\nExpected {expectedErrors.length} error(s), got {diagnostics.size} diagnostic(s)"
+
+    if unmatchedExpectations.length > 0 then
+      IO.println s!"\nUnmatched expected diagnostics:"
+      for exp in unmatchedExpectations do
+        IO.println s!"  - Line {exp.line + lineOffset}, Col {exp.colStart}-{exp.colEnd}: {exp.message}"
+
+    if unmatchedDiagnostics.length > 0 then
+      IO.println s!"\nUnexpected diagnostics:"
+      for diag in unmatchedDiagnostics do
+        IO.println s!"  - Line {diag.start.line + lineOffset}, Col {diag.start.column}-{diag.ending.column}: {diag.message}"
+    throw (IO.userError "Test failed")
 
 end StrataTest.Util

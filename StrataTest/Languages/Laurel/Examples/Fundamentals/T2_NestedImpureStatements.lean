@@ -28,7 +28,7 @@ procedure nestedImpureStatements(x: int): int {
 }
 "
 
-#eval! testInput "NestedImpureStatements" program processLaurelFile
+#eval! testInputWithOffset "NestedImpureStatements" program 15 processLaurelFile
 
 /-
 Translation towards SMT:
@@ -48,3 +48,5 @@ function nestedImpureStatements(): int {
 }
 
 -/
+
+end Laurel

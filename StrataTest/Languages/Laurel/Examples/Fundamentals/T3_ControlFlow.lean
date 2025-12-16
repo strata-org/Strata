@@ -15,16 +15,16 @@ namespace Laurel
 def program := r"
 procedure guards(a: int): int
 {
-  var b = a + 2;
+  var b := a + 2;
   if (b > 2) {
-      var c = b + 3;
+      var c := b + 3;
       if (c > 3) {
           return c + 4;
       }
-      var d = c + 5;
+      var d := c + 5;
       return d + 6;
   }
-  var e = b + 1;
+  var e := b + 1;
   e
 }
 
@@ -33,9 +33,9 @@ procedure dag(a: int): int
   var b: int;
 
   if (a > 0) {
-    b = 1;
+    b := 1;
   } else {
-    b = 2;
+    b := 2;
   }
   b
 }
