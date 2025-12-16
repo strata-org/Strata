@@ -20,6 +20,8 @@ structure ArgElaborator where
   argLevel : Nat
   -- Index of argument to use for typing context (if specified, must be less than argIndex)
   contextLevel : Option (Fin argLevel) := .none
+  -- Whether to unwrap this argument
+  unwrap : Bool := false
 deriving Inhabited, Repr
 
 abbrev ArgElaboratorArray (sc : Nat) :=
@@ -59,13 +61,28 @@ def push (as : ArgElaborators)
   have scp : sc < sc + 1 := by grind
   { as with argElaborators := as.argElaborators.push ⟨newElab, scp⟩ }
 
+def pushWithUnwrap (as : ArgElaborators)
+         (argDecls : ArgDecls)
+         (argLevel : Fin argDecls.size)
+         (unwrap : Bool) : ArgElaborators :=
+  let sc := as.syntaxCount
+  let as := as.inc
+  let newElab : ArgElaborator := {
+    syntaxLevel := sc
+    argLevel := argLevel.val
+    contextLevel := argDecls.argScopeLevel argLevel
+    unwrap := unwrap
+  }
+  have scp : sc < sc + 1 := by grind
+  { as with argElaborators := as.argElaborators.push ⟨newElab, scp⟩ }
+
 end ArgElaborators
 
 def addElaborators (argDecls : ArgDecls) (p : ArgElaborators) (a : SyntaxDefAtom) : ArgElaborators :=
   match a with
-  | .ident level _prec =>
+  | .ident level _prec unwrap =>
     if h : level < argDecls.size then
-      p.push argDecls ⟨level, h⟩
+      p.pushWithUnwrap argDecls ⟨level, h⟩ unwrap
     else
       panic! "Invalid index"
   | .str s =>
@@ -82,6 +99,8 @@ structure SyntaxElaborator where
   syntaxCount : Nat
   argElaborators : ArgElaboratorArray syntaxCount
   resultScope : Option Nat
+  /-- Unwrap specifications for each argument (indexed by argLevel) -/
+  unwrapSpecs : Array Bool := #[]
 deriving Inhabited, Repr
 
 def mkSyntaxElab (argDecls : ArgDecls) (stx : SyntaxDef) (opMd : Metadata) : SyntaxElaborator :=
@@ -94,10 +113,15 @@ def mkSyntaxElab (argDecls : ArgDecls) (stx : SyntaxDef) (opMd : Metadata) : Syn
   -- syntax argument with the empty string.
   let as := if as.syntaxCount = 0 then as.inc else as
   let elabs := as.argElaborators.qsort (·.val.argLevel < ·.val.argLevel)
+  -- Build unwrapSpecs array indexed by argLevel
+  let unwrapSpecs := Array.replicate argDecls.size false
+  let unwrapSpecs := elabs.foldl (init := unwrapSpecs) fun arr ⟨ae, _⟩ =>
+    arr.set! ae.argLevel ae.unwrap
   {
     syntaxCount := as.syntaxCount
     argElaborators := elabs
     resultScope := opMd.resultLevel argDecls.size
+    unwrapSpecs := unwrapSpecs
   }
 
 def opDeclElaborator (decl : OpDecl) : SyntaxElaborator :=
