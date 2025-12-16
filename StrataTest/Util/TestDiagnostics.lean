@@ -7,6 +7,7 @@
 import Strata.Languages.Boogie.Verifier
 
 open Strata
+open String
 namespace StrataTest.Util
 
 /-- A diagnostic expectation parsed from source comments -/
@@ -31,37 +32,35 @@ def parseDiagnosticExpectations (content : String) : List DiagnosticExpectation 
       let trimmed := line.trimLeft.drop 2  -- Remove "//"
       -- Find the caret sequence
       let caretStart := trimmed.find (· == '^')
-      if caretStart.byteIdx < trimmed.length then
-        -- Count carets
-        let mut caretEnd := caretStart
-        let currentChar := String.Pos.Raw.get trimmed caretEnd
-        while caretEnd.byteIdx < trimmed.bytes.size && currentChar == '^' do
-          caretEnd := caretEnd + currentChar
+      let mut currentCaret := caretStart
+      let currentChar := Pos.Raw.get trimmed currentCaret
+      while not (Pos.Raw.atEnd trimmed currentCaret) && currentChar == '^' do
+        currentCaret := currentCaret + currentChar
 
-        -- Get the message part after carets
-        let afterCarets := trimmed.drop caretEnd.byteIdx |>.trim
-        if afterCarets.length > 0 then
-          -- Parse level and message
-          match afterCarets.splitOn ":" with
-          | level :: messageParts =>
-            let level := level.trim
-            let message := (": ".intercalate messageParts).trim
+      -- Get the message part after carets
+      let afterCarets := trimmed.drop currentCaret.byteIdx |>.trim
+      if afterCarets.length > 0 then
+        -- Parse level and message
+        match afterCarets.splitOn ":" with
+        | level :: messageParts =>
+          let level := level.trim
+          let message := (": ".intercalate messageParts).trim
 
-            -- Calculate column positions (carets are relative to line start including comment spacing)
-            let commentPrefix := (line.takeWhile (fun c => c == ' ' || c == '\t')).length + "//".length
-            let caretColStart := commentPrefix + caretStart.byteIdx
-            let caretColEnd := commentPrefix + caretEnd.byteIdx
+          -- Calculate column positions (carets are relative to line start including comment spacing)
+          let commentPrefix := (line.takeWhile (fun c => c == ' ' || c == '\t')).length + "//".length
+          let caretColStart := commentPrefix + caretStart.byteIdx
+          let caretColEnd := commentPrefix + currentCaret.byteIdx
 
-            -- The diagnostic is on the previous line
-            if i > 0 then
-              expectations := expectations.append [{
-                line := i,  -- 1-indexed line number (the line before the comment)
-                colStart := caretColStart,
-                colEnd := caretColEnd,
-                level := level,
-                message := message
-              }]
-          | [] => pure ()
+          -- The diagnostic is on the previous line
+          if i > 0 then
+            expectations := expectations.append [{
+              line := i,  -- 1-indexed line number (the line before the comment)
+              colStart := caretColStart,
+              colEnd := caretColEnd,
+              level := level,
+              message := message
+            }]
+        | [] => pure ()
 
   expectations
 
