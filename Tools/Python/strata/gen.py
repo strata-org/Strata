@@ -9,7 +9,7 @@ Command line script for exporting Python dialect and program to files.
 import amazon.ion.simpleion as ion
 import argparse
 from pathlib import Path
-from strata import Program
+from strata.base import Program
 import strata.pythonast as pythonast
 import sys
 
