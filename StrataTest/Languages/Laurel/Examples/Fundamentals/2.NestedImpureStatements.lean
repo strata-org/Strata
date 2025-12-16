@@ -17,15 +17,18 @@ procedure nestedImpureStatements(x: int): int {
   var y := 0;
   var z := x;
 
-  if (z == (3 == 2)) {
+  if ((z := z + 1) == (y := z)) {
+    assert y == x + 1;
     1
   } else {
+    assert y == x + 1;
+//  ^^^^^^^^^^^^^^^^^^ error: could not prove assertion
     2
   }
 }
 "
 
-#eval! testInput "bla" program processLaurelFile
+#eval! testInput "NestedImpureStatements" program processLaurelFile
 
 /-
 Translation towards SMT:
