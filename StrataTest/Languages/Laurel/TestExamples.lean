@@ -33,10 +33,4 @@ def processLaurelFile (input : Lean.Parser.InputContext) : IO (Array Diagnostic)
 
   pure diagnostics
 
--- def testAssertFalse : IO Unit := do
---   testFile processLaurelFile "Strata/Languages/Laurel/Examples/Fundamentals/1.AssertFalse.lr.st"
-
--- -- #eval! testAssertFalse
--- #eval! testFile processLaurelFile "Strata/Languages/Laurel/Examples/Fundamentals/2.NestedImpureStatements.lr.st"
-
 end Laurel
