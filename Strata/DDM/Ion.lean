@@ -315,9 +315,9 @@ protected def toIon (d : QualifiedIdent) : Ion.InternM (Ion SymbolId) := do
 def fromIonStringSymbol (fullname : String) : FromIonM QualifiedIdent := do
   let pos := fullname.find (·='.')
   if pos < fullname.endPos then
-    let dialect := fullname.extract 0 pos
+    let dialect := String.Pos.Raw.extract fullname 0 pos
     -- . is one byte
-    let name := fullname.extract (pos + '.') fullname.endPos
+    let name := String.Pos.Raw.extract fullname (pos + '.') fullname.endPos
     return { dialect,  name }
   else
     throw s!"Invalid symbol {fullname}"
@@ -1289,14 +1289,18 @@ instance : CachedToIon Program where
 
 #declareIonSymbolTable Program
 
-def fromIonFragment (f : Ion.Fragment) (dialects : DialectMap) (dialect : DialectName) : Except String Program := do
+def fromIonFragmentCommands (f : Ion.Fragment) : Except String (Array Operation) := do
   let ctx : FromIonContext := ⟨f.symbols⟩
-  let commands ← f.values.foldlM (init := #[]) (start := f.offset) fun cmds u => do
+  f.values.foldlM (init := #[]) (start := f.offset) fun cmds u => do
     cmds.push <$> OperationF.fromIon u ctx
+
+def fromIonFragment (f : Ion.Fragment)
+      (dialects : DialectMap)
+      (dialect : DialectName) : Except String Program :=
   return {
-    dialects := dialects.importedDialects! dialect
+    dialects := dialects
     dialect := dialect
-    commands := commands
+    commands := ← fromIonFragmentCommands f
   }
 
 def fromIon (dialects : DialectMap) (dialect : DialectName) (bytes : ByteArray) : Except String Strata.Program := do

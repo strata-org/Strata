@@ -249,7 +249,7 @@ def noneOrExpr (fname n : String) (e: Boogie.Expression.Expr) : Boogie.Expressio
 
 def handleCallThrow (jmp_target : String) : Boogie.Statement :=
   let cond := .eq () (.app () (.op () "ExceptOrNone_tag" none) (.fvar () "maybe_except" none)) (.op () "EN_STR_TAG" none)
-  .ite cond {ss := [.goto jmp_target]} {ss := []}
+  .ite cond [.goto jmp_target] []
 
 def deduplicateTypeAnnotations (l : List (String × Option String)) : List (String × String) := Id.run do
   let mut m : Map String String := []
@@ -543,7 +543,7 @@ partial def handleComprehension (lhs: Python.expr SourceRange) (gen: Array (Pyth
     let guard := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) res.expr) (.intConst () 0))
     let then_ss: List Boogie.Statement := [.havoc (PyExprToString lhs)]
     let else_ss: List Boogie.Statement := [.set (PyExprToString lhs) (.op () "ListStr_nil" none)]
-    res.stmts ++ [.ite guard {ss := then_ss} {ss := else_ss}]
+    res.stmts ++ [.ite guard then_ss else_ss]
 
 partial def PyStmtToBoogie (jmp_targets: List String) (translation_ctx : TranslationContext) (s : Python.stmt SourceRange) : List Boogie.Statement × TranslationContext :=
   assert! jmp_targets.length > 0
@@ -587,7 +587,7 @@ partial def PyStmtToBoogie (jmp_targets: List String) (translation_ctx : Transla
       (res.stmts ++ [.set (PyExprToString lhs) res.expr], some (PyExprToString lhs, PyExprToMonoTy ty))
     | .Try _ body handlers _orelse _finalbody =>
         let new_target := s!"excepthandlers_{jmp_targets[0]!}"
-        let entry_except_handlers := [.block new_target {ss := []}]
+        let entry_except_handlers := [.block new_target []]
         let new_jmp_stack := new_target :: jmp_targets
         let except_handlers := handlers.val.toList.flatMap (exceptHandlersToBoogie new_jmp_stack translation_ctx)
         let var_decls := collectVarDecls translation_ctx body.val

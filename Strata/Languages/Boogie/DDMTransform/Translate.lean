@@ -977,13 +977,13 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let (tss, bindings) ← translateBlock p bindings ta
     let (fss, bindings) ← translateElse p bindings fa
     let md ← getOpMetaData op
-    return ([.ite c { ss := tss } { ss := fss } md], bindings)
+    return ([.ite c tss fss md], bindings)
   | q`Boogie.while_statement, #[ca, ia, ba] =>
     let c ← translateExpr p bindings ca
     let i ← translateInvariant p bindings ia
     let (bodyss, bindings) ← translateBlock p bindings ba
     let md ← getOpMetaData op
-    return ([.loop c .none i { ss := bodyss } md], bindings)
+    return ([.loop c .none i bodyss md], bindings)
   | q`Boogie.call_statement, #[lsa, fa, esa] =>
     let ls  ← translateCommaSep (translateIdent BoogieIdent) lsa
     let f   ← translateIdent String fa
@@ -999,7 +999,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let l ← translateIdent String la
     let (ss, bindings) ← translateBlock p bindings ba
     let md ← getOpMetaData op
-    return ([.block l { ss := ss } md], bindings)
+    return ([.block l ss md], bindings)
   | q`Boogie.goto_statement, #[la] =>
     let l ← translateIdent String la
     let md ← getOpMetaData op

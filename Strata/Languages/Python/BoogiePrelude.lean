@@ -536,6 +536,7 @@ function Float_gt(lhs : string, rhs: string) : bool;
 // /////////////////////////////////////////////////////////////////////////////////////
 
 
+
 procedure test_helper_procedure(req_name : string, opt_name : StrOrNone) returns (maybe_except: ExceptOrNone)
 spec {
   requires [req_name_is_foo]: req_name == "foo";

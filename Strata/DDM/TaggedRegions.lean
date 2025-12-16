@@ -17,7 +17,7 @@ def parserFn (endToken : String) : ParserFn := fun c s => Id.run do
   if s.hasError then
     return s
   let startPos := s.pos
-  let some stopPos := c.inputString.indexOf endToken s.pos
+  let some stopPos := c.inputString.indexOfRaw endToken s.pos
         | s.setError { unexpected := s!"Could not find end token {endToken}" }
   let s := s.setPos stopPos
   let leading   := c.mkEmptySubstringAt startPos
@@ -31,7 +31,7 @@ def mkParser (n : SyntaxNodeKind) (startToken endToken : String) : Parser :=
 open Syntax Syntax.MonadTraverser
 open Lean.PrettyPrinter.Formatter
 
-private def SourceInfo.getExprPos? : SourceInfo → Option String.Pos
+private def SourceInfo.getExprPos? : SourceInfo → Option String.Pos.Raw
   | SourceInfo.synthetic (pos := pos) .. => pos
   | _ => none
 
