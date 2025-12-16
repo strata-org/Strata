@@ -251,6 +251,7 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
         let cg := Program.toFunctionCG p
         let fns := obligation.obligation.getOps.map BoogieIdent.toPretty
         let relevant_fns := (fns ++ (CallGraph.getAllCalleesClosure cg fns)).dedup
+
         let irrelevant_axs := Program.getIrrelevantAxioms p relevant_fns
         let new_assumptions := Imperative.PathConditions.removeByNames obligation.assumptions irrelevant_axs
         { obligation with assumptions := new_assumptions }

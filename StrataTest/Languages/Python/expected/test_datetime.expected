@@ -3,6 +3,8 @@ ensure_timedelta_sign_matches: verified
 
 datetime_now_ensures_0: verified
 
+ensures_str_strp_reverse: verified
+
 assert_name_is_foo: verified
 
 assert_opt_name_none_or_str: verified
@@ -15,7 +17,7 @@ py_assertion: unknown
 
 py_assertion: unknown
 
-my_f_py_assertion_35: verified
+py_assertion: unknown
 
-my_f_str_py_assertion_57: unknown
+py_assertion: unknown
 
