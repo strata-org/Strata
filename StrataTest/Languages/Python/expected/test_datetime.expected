@@ -1,7 +1,7 @@
 
-ensure_timedelta_sign_matches: verified
-
 datetime_now_ensures_0: verified
+
+datetime_utcnow_ensures_0: verified
 
 ensures_str_strp_reverse: verified
 
@@ -13,11 +13,10 @@ assert_opt_name_none_or_bar: verified
 
 ensures_maybe_except_none: verified
 
-py_assertion: unknown
+py_assertion_start_leq_end: verified
 
-py_assertion: unknown
+py_assertion_start_dt_eq_start: verified
 
-py_assertion: unknown
+py_assertion_end_dt_eq_end: verified
 
-py_assertion: unknown
-
+py_assertion_start_dt_leq_end_dt: verified

@@ -208,7 +208,8 @@ def pyAnalyzeCommand : Command where
     let vcResults ← EIO.toIO (fun f => IO.Error.userError (toString f))
                         (Boogie.verify "z3" newPgm { Options.default with stopOnFirstError := false,
                                                                           verbose,
-                                                                          removeIrrelevantAxioms := true }
+                                                                          removeIrrelevantAxioms := false,
+                                                                          z3Options := some {options := []} }
                                                    (moreFns := Strata.Python.ReFactory))
     let mut s := ""
     for vcResult in vcResults do

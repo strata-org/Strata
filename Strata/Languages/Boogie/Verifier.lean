@@ -171,15 +171,27 @@ instance : ToFormat VCResults where
 instance : ToString VCResults where
   toString rs := toString (VCResults.format rs)
 
-def getSolverPrelude : String → SolverM Unit
-| "z3" => do
-  -- These options are set by the standard Boogie implementation and are
-  -- generally good for the Boogie dialect, too, though we may want to
-  -- have more fine-grained criteria for when to use them.
-  Solver.setOption "smt.mbqi" "false"
-  Solver.setOption "auto_config" "false"
-| "cvc5" => return ()
-| _ => return ()
+def getSolverPrelude (z3Options : Option Z3Options) (solverName : String) : SolverM Unit :=
+  match z3Options with
+  | .some l => do
+      let rec go := (λ l =>
+        match l with
+        | [] => return ()
+        | h :: t => do
+          Solver.setOption h.fst h.snd
+          go t
+        )
+      go l.options
+  | _ =>
+    match solverName with
+    | "z3" => do
+      -- These options are set by the standard Boogie implementation and are
+      -- generally good for the Boogie dialect, too, though we may want to
+      -- have more fine-grained criteria for when to use them.
+      Solver.setOption "smt.mbqi" "false"
+      Solver.setOption "auto_config" "false"
+    | "cvc5" => return ()
+    | _ => return ()
 
 def getSolverFlags (options : Options) (solver : String) : Array String :=
   let produceModels :=
@@ -205,7 +217,7 @@ def dischargeObligation
   let filename := s!"{VC_folder_name}/{filename}"
   let handle ← IO.FS.Handle.mk filename IO.FS.Mode.write
   let solver ← Solver.fileWriter handle
-  let prelude := getSolverPrelude smtsolver
+  let prelude := getSolverPrelude options.z3Options smtsolver
   let (ids, estate) ← Strata.SMT.Encoder.encodeBoogie ctx prelude terms solver
   let _ ← solver.checkSat ids -- Will return unknown for Solver.fileWriter
   if options.verbose then IO.println s!"Wrote problem to {filename}."
