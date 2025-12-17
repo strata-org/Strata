@@ -56,7 +56,7 @@ info: B3: .blockStmt
   .assign
     ()
     u 0
-    (.literal () (.intLit () u 42))]
+    (.literal () (.intLit () 42))]
 ---
 info:
 {
@@ -73,8 +73,8 @@ info: B3: .check
   (.binaryOp
     ()
     (.gt ())
-    (.literal () (.intLit () u 5))
-    (.literal () (.intLit () u 0)))
+    (.literal () (.intLit () 5))
+    (.literal () (.intLit () 0)))
 ---
 info:
 check 5 > 0
@@ -88,8 +88,8 @@ info: B3: .assume
   (.binaryOp
     ()
     (.ge ())
-    (.literal () (.intLit () u 10))
-    (.literal () (.intLit () u 0)))
+    (.literal () (.intLit () 10))
+    (.literal () (.intLit () 0)))
 ---
 info:
 assume 10 >= 0
@@ -103,8 +103,8 @@ info: B3: .assert
   (.binaryOp
     ()
     (.gt ())
-    (.literal () (.intLit () u 5))
-    (.literal () (.intLit () u 0)))
+    (.literal () (.intLit () 5))
+    (.literal () (.intLit () 0)))
 ---
 info:
 assert 5 > 0
@@ -118,8 +118,8 @@ info: B3: .reach
   (.binaryOp
     ()
     (.eq ())
-    (.literal () (.intLit () u 5))
-    (.literal () (.intLit () u 5)))
+    (.literal () (.intLit () 5))
+    (.literal () (.intLit () 5)))
 ---
 info:
 reach 5 == 5
@@ -156,15 +156,11 @@ info: B3: .blockStmt
     u #[.assign
       ()
       u 1
-      (.literal
-        ()
-        (.intLit () u 1)),
+      (.literal () (.intLit () 1)),
     .assign
       ()
       u 0
-      (.literal
-        ()
-        (.intLit () u 2))]]
+      (.literal () (.intLit () 2))]]
 ---
 info:
 {
@@ -196,19 +192,17 @@ info: B3: .blockStmt
     u none,
   .ifStmt
     ()
-    (.id () u 1)
+    (.id () 1)
     (.assign
       ()
       u 0
-      (.literal () (.intLit () u 1)))
+      (.literal () (.intLit () 1)))
     u some (.blockStmt
       ()
       u #[.assign
         ()
         u 0
-        (.literal
-          ()
-          (.intLit () u 0))])]
+        (.literal () (.intLit () 0))])]
 ---
 info:
 {
@@ -245,10 +239,8 @@ info: B3: .blockStmt
         (.binaryOp
           ()
           (.add ())
-          (.id () u 0)
-          (.literal
-            ()
-            (.intLit () u 1)))])]
+          (.id () 0)
+          (.literal () (.intLit () 1)))])]
 ---
 info:
 {
@@ -282,15 +274,13 @@ info: B3: .blockStmt
     u #[.binaryOp
       ()
       (.ge ())
-      (.id () u 1)
-      (.literal
-        ()
-        (.intLit () u 0)),
+      (.id () 1)
+      (.literal () (.intLit () 0)),
     .binaryOp
       ()
       (.le ())
-      (.id () u 1)
-      (.id () u 0)]
+      (.id () 1)
+      (.id () 0)]
     (.blockStmt
       ()
       u #[.assign
@@ -299,10 +289,8 @@ info: B3: .blockStmt
         (.binaryOp
           ()
           (.add ())
-          (.id () u 1)
-          (.literal
-            ()
-            (.intLit () u 1)))])]
+          (.id () 1)
+          (.literal () (.intLit () 1)))])]
 ---
 info:
 {
@@ -343,7 +331,7 @@ info: B3: .labeledStmt
     .assign
       ()
       u 0
-      (.literal () (.intLit () u 0))])
+      (.literal () (.intLit () 0))])
 ---
 info: labeled_block: ⏎
 {
@@ -383,7 +371,7 @@ info: B3: .varDecl
   u "x"
   u some u "bool"
   u none
-  u some (.literal () (.boolLit () u true))
+  u some (.literal () (.boolLit () true))
 ---
 info:
 var x : bool := true
@@ -397,7 +385,7 @@ info: B3: .varDecl
   u "y"
   u some u "bool"
   u none
-  u some (.literal () (.boolLit () u true))
+  u some (.literal () (.boolLit () true))
 ---
 info:
 var y : bool := true
@@ -413,8 +401,8 @@ info: B3: .varDecl
   u some (.binaryOp
     ()
     (.ge ())
-    (.id () u 0)
-    (.literal () (.intLit () u 0)))
+    (.id () 0)
+    (.literal () (.intLit () 0)))
   u none
 ---
 info:
@@ -435,8 +423,8 @@ info: B3: .aForall
       (.binaryOp
         ()
         (.ge ())
-        (.id () u 0)
-        (.literal () (.intLit () u 0)))])
+        (.id () 0)
+        (.literal () (.intLit () 0)))])
 ---
 info:
 forall x : int ⏎
@@ -461,9 +449,7 @@ info: B3: .choose
     .assign
       ()
       u 0
-      (.literal
-        ()
-        (.intLit () u 2))],
+      (.literal () (.intLit () 2))],
   .blockStmt
     ()
     u #[.varDecl
@@ -475,9 +461,7 @@ info: B3: .choose
     .assign
       ()
       u 0
-      (.literal
-        ()
-        (.intLit () u 1))]]
+      (.literal () (.intLit () 1))]]
 ---
 info:
 choose ⏎
@@ -515,27 +499,21 @@ info: B3: .blockStmt
       (.binaryOp
         ()
         (.eq ())
-        (.id () u 1)
-        (.literal
-          ()
-          (.intLit () u 1)))
+        (.id () 1)
+        (.literal () (.intLit () 1)))
       (.blockStmt
         ()
         u #[.assign
           ()
           u 0
-          (.literal
-            ()
-            (.intLit () u 10))]),
+          (.literal () (.intLit () 10))]),
     .oneIfCase
       ()
       (.binaryOp
         ()
         (.eq ())
-        (.id () u 1)
-        (.literal
-          ()
-          (.intLit () u 2)))
+        (.id () 1)
+        (.literal () (.intLit () 2)))
       (.blockStmt
         ()
         u #[.assign
@@ -543,7 +521,7 @@ info: B3: .blockStmt
           u 0
           (.literal
             ()
-            (.intLit () u 20))])]]
+            (.intLit () 20))])]]
 ---
 info:
 {
@@ -582,10 +560,8 @@ info: B3: .blockStmt
     ()
     u "compute"
     u #[.callArgOut () u "result",
-      .callArgExpr () (.id () u 1),
-      .callArgExpr
-        ()
-        (.id () u 0)]]
+      .callArgExpr () (.id () 1),
+      .callArgExpr () (.id () 0)]]
 ---
 info:
 {

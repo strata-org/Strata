@@ -70,7 +70,7 @@ section ExpressionRoundtripTests
 
 -- We are loosing the context so this is why it's printing that way.
 /--
-info: B3: .id () u 0
+info: B3: .id () 0
 ---
 info: @0
 -/
@@ -81,8 +81,8 @@ info: @0
 info: B3: .binaryOp
   ()
   (.add ())
-  (.literal () (.intLit () u 5))
-  (.literal () (.intLit () u 3))
+  (.literal () (.intLit () 5))
+  (.literal () (.intLit () 3))
 ---
 info: 5 + 3
 -/
@@ -90,7 +90,7 @@ info: 5 + 3
 #eval roundtripExpr $ #strata program B3CST; check 5 + 3 #end
 
 /--
-info: B3: .literal () (.boolLit () u true)
+info: B3: .literal () (.boolLit () true)
 ---
 info: true
 -/
@@ -98,7 +98,7 @@ info: true
 #eval roundtripExpr $ #strata program B3CST; check true #end
 
 /--
-info: B3: .literal () (.boolLit () u false)
+info: B3: .literal () (.boolLit () false)
 ---
 info: false
 -/
@@ -109,7 +109,7 @@ info: false
 info: B3: .unaryOp
   ()
   (.not ())
-  (.literal () (.boolLit () u true))
+  (.literal () (.boolLit () true))
 ---
 info: !true
 -/
@@ -120,8 +120,8 @@ info: !true
 info: B3: .binaryOp
   ()
   (.sub ())
-  (.literal () (.intLit () u 10))
-  (.literal () (.intLit () u 3))
+  (.literal () (.intLit () 10))
+  (.literal () (.intLit () 3))
 ---
 info: 10 - 3
 -/
@@ -132,8 +132,8 @@ info: 10 - 3
 info: B3: .binaryOp
   ()
   (.mul ())
-  (.literal () (.intLit () u 4))
-  (.literal () (.intLit () u 5))
+  (.literal () (.intLit () 4))
+  (.literal () (.intLit () 5))
 ---
 info: 4 * 5
 -/
@@ -144,8 +144,8 @@ info: 4 * 5
 info: B3: .binaryOp
   ()
   (.div ())
-  (.literal () (.intLit () u 20))
-  (.literal () (.intLit () u 4))
+  (.literal () (.intLit () 20))
+  (.literal () (.intLit () 4))
 ---
 info: 20 div 4
 -/
@@ -156,8 +156,8 @@ info: 20 div 4
 info: B3: .binaryOp
   ()
   (.mod ())
-  (.literal () (.intLit () u 17))
-  (.literal () (.intLit () u 5))
+  (.literal () (.intLit () 17))
+  (.literal () (.intLit () 5))
 ---
 info: 17 mod 5
 -/
@@ -168,8 +168,8 @@ info: 17 mod 5
 info: B3: .binaryOp
   ()
   (.eq ())
-  (.literal () (.intLit () u 5))
-  (.literal () (.intLit () u 5))
+  (.literal () (.intLit () 5))
+  (.literal () (.intLit () 5))
 ---
 info: 5 == 5
 -/
@@ -180,8 +180,8 @@ info: 5 == 5
 info: B3: .binaryOp
   ()
   (.neq ())
-  (.literal () (.intLit () u 3))
-  (.literal () (.intLit () u 7))
+  (.literal () (.intLit () 3))
+  (.literal () (.intLit () 7))
 ---
 info: 3 != 7
 -/
@@ -192,8 +192,8 @@ info: 3 != 7
 info: B3: .binaryOp
   ()
   (.le ())
-  (.literal () (.intLit () u 3))
-  (.literal () (.intLit () u 5))
+  (.literal () (.intLit () 3))
+  (.literal () (.intLit () 5))
 ---
 info: 3 <= 5
 -/
@@ -204,8 +204,8 @@ info: 3 <= 5
 info: B3: .binaryOp
   ()
   (.lt ())
-  (.literal () (.intLit () u 2))
-  (.literal () (.intLit () u 8))
+  (.literal () (.intLit () 2))
+  (.literal () (.intLit () 8))
 ---
 info: 2 < 8
 -/
@@ -216,8 +216,8 @@ info: 2 < 8
 info: B3: .binaryOp
   ()
   (.ge ())
-  (.literal () (.intLit () u 10))
-  (.literal () (.intLit () u 5))
+  (.literal () (.intLit () 10))
+  (.literal () (.intLit () 5))
 ---
 info: 10 >= 5
 -/
@@ -228,8 +228,8 @@ info: 10 >= 5
 info: B3: .binaryOp
   ()
   (.gt ())
-  (.literal () (.intLit () u 15))
-  (.literal () (.intLit () u 3))
+  (.literal () (.intLit () 15))
+  (.literal () (.intLit () 3))
 ---
 info: 15 > 3
 -/
@@ -240,12 +240,12 @@ info: 15 > 3
 info: B3: .binaryOp
   ()
   (.add ())
-  (.literal () (.intLit () u 2))
+  (.literal () (.intLit () 2))
   (.binaryOp
     ()
     (.mul ())
-    (.literal () (.intLit () u 3))
-    (.literal () (.intLit () u 4)))
+    (.literal () (.intLit () 3))
+    (.literal () (.intLit () 4)))
 ---
 info: 2 + 3 * 4
 -/
@@ -259,9 +259,9 @@ info: B3: .binaryOp
   (.binaryOp
     ()
     (.add ())
-    (.literal () (.intLit () u 2))
-    (.literal () (.intLit () u 3)))
-  (.literal () (.intLit () u 4))
+    (.literal () (.intLit () 2))
+    (.literal () (.intLit () 3)))
+  (.literal () (.intLit () 4))
 ---
 info: (2 + 3) * 4
 -/
@@ -275,9 +275,9 @@ info: B3: .binaryOp
   (.binaryOp
     ()
     (.add ())
-    (.literal () (.intLit () u 1))
-    (.literal () (.intLit () u 2)))
-  (.literal () (.intLit () u 3))
+    (.literal () (.intLit () 1))
+    (.literal () (.intLit () 2)))
+  (.literal () (.intLit () 3))
 ---
 info: 1 + 2 + 3
 -/
@@ -291,9 +291,9 @@ info: B3: .binaryOp
   (.binaryOp
     ()
     (.add ())
-    (.literal () (.intLit () u 1))
-    (.literal () (.intLit () u 2)))
-  (.literal () (.intLit () u 5))
+    (.literal () (.intLit () 1))
+    (.literal () (.intLit () 2)))
+  (.literal () (.intLit () 5))
 ---
 info: 1 + 2 < 5
 -/
@@ -307,9 +307,9 @@ info: B3: .binaryOp
   (.binaryOp
     ()
     (.sub ())
-    (.literal () (.intLit () u 10))
-    (.literal () (.intLit () u 3)))
-  (.literal () (.intLit () u 2))
+    (.literal () (.intLit () 10))
+    (.literal () (.intLit () 3)))
+  (.literal () (.intLit () 2))
 ---
 info: 10 - 3 + 2
 -/
@@ -323,9 +323,9 @@ info: B3: .binaryOp
   (.binaryOp
     ()
     (.div ())
-    (.literal () (.intLit () u 20))
-    (.literal () (.intLit () u 4)))
-  (.literal () (.intLit () u 3))
+    (.literal () (.intLit () 20))
+    (.literal () (.intLit () 4)))
+  (.literal () (.intLit () 3))
 ---
 info: 20 div 4 * 3
 -/
@@ -336,16 +336,16 @@ info: 20 div 4 * 3
 info: B3: .binaryOp
   ()
   (.lt ())
-  (.literal () (.intLit () u 1))
+  (.literal () (.intLit () 1))
   (.binaryOp
     ()
     (.add ())
     (.binaryOp
       ()
       (.mul ())
-      (.literal () (.intLit () u 2))
-      (.literal () (.intLit () u 3)))
-    (.literal () (.intLit () u 4)))
+      (.literal () (.intLit () 2))
+      (.literal () (.intLit () 3)))
+    (.literal () (.intLit () 4)))
 ---
 info: 1 < 2 * 3 + 4
 -/
@@ -355,9 +355,9 @@ info: 1 < 2 * 3 + 4
 /--
 info: B3: .ite
   ()
-  (.literal () (.boolLit () u true))
-  (.literal () (.intLit () u 1))
-  (.literal () (.intLit () u 0))
+  (.literal () (.boolLit () true))
+  (.literal () (.intLit () 1))
+  (.literal () (.intLit () 0))
 ---
 info: if true then 1 else 0
 -/
@@ -374,8 +374,8 @@ info: B3: .quantifierExpr
   (.binaryOp
     ()
     (.ge ())
-    (.id () u 0)
-    (.literal () (.intLit () u 0)))
+    (.id () 0)
+    (.literal () (.intLit () 0)))
 ---
 info: forall i : int i >= 0
 -/
@@ -392,11 +392,8 @@ info: B3: .quantifierExpr
   (.binaryOp
     ()
     (.or ())
-    (.id () u 0)
-    (.unaryOp
-      ()
-      (.not ())
-      (.id () u 0)))
+    (.id () 0)
+    (.unaryOp () (.not ()) (.id () 0)))
 ---
 info: exists y : bool y || !y
 -/
@@ -414,19 +411,19 @@ info: B3: .quantifierExpr
     u #[.functionCall
       ()
       u "f"
-      u #[.id () u 0],
+      u #[.id () 0],
     .functionCall
       ()
       u "f"
-      u #[.id () u 0]]]
+      u #[.id () 0]]]
   (.binaryOp
     ()
     (.gt ())
     (.functionCall
       ()
       u "f"
-      u #[.id () u 0])
-    (.literal () (.intLit () u 0)))
+      u #[.id () 0])
+    (.literal () (.intLit () 0)))
 ---
 info: forall x : int pattern f(x), f(x) f(x) > 0
 -/
@@ -444,18 +441,13 @@ info: B3: .quantifierExpr
     u #[.unaryOp
       ()
       (.not ())
-      (.id () u 0)],
-  .pattern
-    ()
-    u #[.id () u 0]]
+      (.id () 0)],
+  .pattern () u #[.id () 0]]
   (.binaryOp
     ()
     (.or ())
-    (.id () u 0)
-    (.unaryOp
-      ()
-      (.not ())
-      (.id () u 0)))
+    (.id () 0)
+    (.unaryOp () (.not ()) (.id () 0)))
 ---
 info: exists y : bool pattern y pattern !y y || !y
 -/
@@ -473,27 +465,21 @@ info: B3: .quantifierExpr
     u #[.binaryOp
       ()
       (.mul ())
-      (.id () u 0)
-      (.literal
-        ()
-        (.intLit () u 2))],
+      (.id () 0)
+      (.literal () (.intLit () 2))],
   .pattern
     ()
     u #[.binaryOp
       ()
       (.add ())
-      (.id () u 0)
-      (.literal
-        ()
-        (.intLit () u 1))],
-  .pattern
-    ()
-    u #[.id () u 0]]
+      (.id () 0)
+      (.literal () (.intLit () 1))],
+  .pattern () u #[.id () 0]]
   (.binaryOp
     ()
     (.gt ())
-    (.id () u 0)
-    (.literal () (.intLit () u 0)))
+    (.id () 0)
+    (.literal () (.intLit () 0)))
 ---
 info: forall z : int pattern z pattern z + 1 pattern z * 2 z > 0
 -/

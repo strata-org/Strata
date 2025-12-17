@@ -357,11 +357,18 @@ info: B3: .program
         (.binaryOp
           ()
           (.add ())
-          (.id () 0)
+          (.id () 1)
           (.literal () (.intLit () 1))))]
     u some (.blockStmt
       ()
-      u #[.assign
+      u #[.assert
+        ()
+        (.binaryOp
+          ()
+          (.eq ())
+          (.id () 0)
+          (.id () 1)),
+      .assign
         ()
         u 0
         (.binaryOp
@@ -378,7 +385,7 @@ info: B3: .program
           (.binaryOp
             ()
             (.add ())
-            (.id () 0)
+            (.id () 1)
             (.literal
               ()
               (.intLit () 1))))])]
@@ -387,12 +394,16 @@ info:
 procedure increment(inout x : int)
   ensures x == old x + 1
 {
+  assert x == old x
   x := x + 1
   assert x == old x + 1
 }
 -/
 #guard_msgs in
-#eval roundtripDecl $ #strata program B3CST; procedure increment(inout x: int) ensures x == old x + 1 { x := x + 1 assert x == old x + 1 } #end
+#eval roundtripDecl $ #strata program B3CST; procedure increment(inout x: int) ensures x == old x + 1 { assert x == old x
+  x := x + 1
+  assert x == old x + 1
+} #end
 
 -- Procedure with mixed parameters
 /--
@@ -424,11 +435,11 @@ info: B3: .program
       ()
       u #[.assign
         ()
-        u 1
+        u 2
         (.binaryOp
           ()
           (.add ())
-          (.id () 2)
+          (.id () 3)
           (.id () 0)),
       .assign
         ()
