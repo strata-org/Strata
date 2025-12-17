@@ -19,9 +19,11 @@ def getFuncSigOrder (fname: String) : List String :=
   | "input" => ["msg"]
   | "random_choice" => ["l"]
   | "datetime_now" => []
+  | "datetime_utcnow" => []
   | "datetime_date" => ["dt"]
-  | "timedelta" => ["days"]
+  | "timedelta" => ["days", "hours"]
   | "datetime_strptime" => ["time", "format"]
+  | "str_to_float" => ["s"]
   | _ => panic! s!"Missing function signature : {fname}"
 
 -- We should extract the function signatures from the prelude:
@@ -57,18 +59,26 @@ def getFuncSigType (fname: String) (arg: String) : String :=
   | "datetime_now" =>
     match arg with
     | _ => panic! s!"Unrecognized arg : {arg}"
+  | "datetime_utcnow" =>
+    match arg with
+    | _ => panic! s!"Unrecognized arg : {arg}"
   | "datetime_date" =>
     match arg with
     | "dt" => "Datetime"
     | _ => panic! s!"Unrecognized arg : {arg}"
   | "timedelta" =>
     match arg with
-    | "days" => "int"
+    | "days" => "IntOrNone"
+    | "hours" => "IntOrNone"
     | _ => panic! s!"Unrecognized arg : {arg}"
   | "datetime_strptime" =>
     match arg with
     | "time" => "string"
     | "format" => "string"
+    | _ => panic! s!"Unrecognized arg : {arg}"
+  | "str_to_float" =>
+    match arg with
+    | "s" => "string"
     | _ => panic! s!"Unrecognized arg : {arg}"
   | _ => panic! s!"Missing function signature : {fname}"
 
