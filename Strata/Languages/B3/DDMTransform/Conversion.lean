@@ -159,24 +159,29 @@ def lookup (ctx : ToCSTContext) (idx : Nat): String × Bool :=
     let isOld :=
       -- Check if there's a later occurrence (lower index) with the same name
       ctx.vars.take idx |>.any (· == name)
-    -- We need to resolve ambiguities
-    let rec go (vars: List String) (pastIndex: Nat) (idx: Nat): String :=
-      let default := fun _: Unit => if pastIndex == 0 then
-          name  -- No ambiguity
-        else
-          s!"name@{pastIndex}"
-      if idx == 0 then
-        default ()
-      else
-        match vars with
-        | [] => default ()
-        | otherName :: tail =>
-          if name == otherName then
-            go tail (pastIndex + 1) (idx - 1)
+    -- For old values, just return the name without disambiguation
+    -- For current values, check for ambiguity (excluding the old value entry)
+    if isOld then
+      (name, true)
+    else
+      -- We need to resolve ambiguities for non-old values
+      let rec go (vars: List String) (pastIndex: Nat) (idx: Nat): String :=
+        let default := fun _: Unit => if pastIndex == 0 then
+            name  -- No ambiguity
           else
-            go tail pastIndex (idx - 1)
+            s!"name@{pastIndex}"
+        if idx == 0 then
+          default ()
+        else
+          match vars with
+          | [] => default ()
+          | otherName :: tail =>
+            if name == otherName then
+              go tail (pastIndex + 1) (idx - 1)
+            else
+              go tail pastIndex (idx - 1)
 
-    (go ctx.vars 0 idx, isOld)
+      (go ctx.vars 0 idx, false)
   | .none =>
     (s!"@{idx}", false)
 
@@ -263,17 +268,17 @@ partial def expressionToCST [Inhabited (B3CST.Expression M)] (ctx : ToCSTContext
           | none => B3CST.Expression.exists_expr_no_patterns m (mapAnn (fun x => x) var) (mapAnn (fun x => x) ty) (expressionToCST ctx' body)
           | some pats => B3CST.Expression.exists_expr m (mapAnn (fun x => x) var) (mapAnn (fun x => x) ty) pats (expressionToCST ctx' body)
 
-partial def callArgToCST [Inhabited M] (ctx : ToCSTContext) : Strata.B3AST.CallArg M → B3CST.CallArg M
+partial def callArgToCST [Inhabited (B3CST.Expression M)] (ctx : ToCSTContext) : Strata.B3AST.CallArg M → B3CST.CallArg M
   | .callArgExpr m e => B3CST.CallArg.call_arg_expr m (expressionToCST ctx e)
   | .callArgOut m id => B3CST.CallArg.call_arg_out m (mapAnn (fun x => x) id)
   | .callArgInout m id => B3CST.CallArg.call_arg_inout m (mapAnn (fun x => x) id)
 
-partial def buildChoiceBranches [Inhabited M] : M → List (B3CST.ChoiceBranch M) → B3CST.ChoiceBranches M
+partial def buildChoiceBranches [Inhabited (B3CST.Expression M)] : M → List (B3CST.ChoiceBranch M) → B3CST.ChoiceBranches M
   | m, [] => ChoiceBranches.choiceAtom m (ChoiceBranch.choice_branch m (B3CST.Statement.return_statement m))
   | m, [b] => ChoiceBranches.choiceAtom m b
   | m, b :: bs => ChoiceBranches.choicePush m (buildChoiceBranches m bs) b
 
-partial def stmtToCST [Inhabited M] (ctx : ToCSTContext) : Strata.B3AST.Statement M → B3CST.Statement M
+partial def stmtToCST [Inhabited (B3CST.Expression M)] [Inhabited (B3CST.Statement M)] (ctx : ToCSTContext) : Strata.B3AST.Statement M → B3CST.Statement M
   | .varDecl m name ty autoinv init =>
     let ctx' := ctx.push name.val
     match ty.val, autoinv.val, init.val with
@@ -321,6 +326,63 @@ partial def stmtToCST [Inhabited M] (ctx : ToCSTContext) : Strata.B3AST.Statemen
   | .probe m label => B3CST.Statement.probe m (mapAnn (fun x => x) label)
 
 end
+
+def fParameterToCST : Strata.B3AST.FParameter M → B3CST.FParam M
+  | .fParameter m injective name ty =>
+      let inj := mapAnn (fun b => if b then some (B3CST.Injective.injective_some m) else none) injective
+      B3CST.FParam.fparam m inj (mkAnn m name.val) (mkAnn m ty.val)
+
+def pParameterToCST [Inhabited (B3CST.Expression M)] (ctx : ToCSTContext) : Strata.B3AST.PParameter M → B3CST.PParam M
+  | .pParameter m mode name ty autoinv =>
+      let modeCST := match mode with
+        | .paramModeIn _ => mkAnn m none
+        | .paramModeOut _ => mkAnn m (some (B3CST.PParamMode.pmode_out m))
+        | .paramModeInout _ => mkAnn m (some (B3CST.PParamMode.pmode_inout m))
+      match autoinv.val with
+      | some ai => B3CST.PParam.pparam_with_autoinv m modeCST (mkAnn m name.val) (mkAnn m ty.val) (expressionToCST ctx ai)
+      | none => B3CST.PParam.pparam m modeCST (mkAnn m name.val) (mkAnn m ty.val)
+
+def specToCST [Inhabited (B3CST.Expression M)] (ctx : ToCSTContext) : Strata.B3AST.Spec M → B3CST.Spec M
+  | .specRequires m expr => B3CST.Spec.spec_requires m (expressionToCST ctx expr)
+  | .specEnsures m expr => B3CST.Spec.spec_ensures m (expressionToCST ctx expr)
+
+def declToCST [Inhabited M] [Inhabited (B3CST.Expression M)] [Inhabited (B3CST.Statement M)] (ctx : ToCSTContext) : Strata.B3AST.Decl M → B3CST.Decl M
+  | .typeDecl m name =>
+      B3CST.Decl.type_decl m (mkAnn m name.val)
+  | .tagger m name forType =>
+      B3CST.Decl.tagger_decl m (mkAnn m name.val) (mkAnn m forType.val)
+  | .function m name params resultType tag body =>
+      let paramNames := params.val.toList.map (fun p => match p with | .fParameter _ _ n _ => n.val)
+      let ctx' := paramNames.foldl (fun acc n => acc.push n) ctx
+      let paramsCST := mkAnn m (params.val.toList.map fParameterToCST |>.toArray)
+      let tagClause := mapAnn (fun opt => opt.map (fun t => B3CST.TagClause.tag_some m (mkAnn m t.val))) tag
+      let bodyCST := mapAnn (fun opt => opt.map (fun b => match b with
+        | .functionBody bm whens expr =>
+            let whensCST := whens.val.toList.map (fun w => match w with | .when wm e => B3CST.WhenClause.when_clause wm (expressionToCST ctx' e))
+            B3CST.FunctionBody.function_body_some bm (mkAnn bm whensCST.toArray) (expressionToCST ctx' expr))) body
+      B3CST.Decl.function_decl m (mkAnn m name.val) paramsCST (mkAnn m resultType.val) tagClause bodyCST
+  | .axiom m explains expr =>
+      let explainsCST := mkAnn m (explains.val.toList.map (fun id => mkAnn m id.val) |>.toArray)
+      if explains.val.isEmpty then
+        B3CST.Decl.axiom_decl m (B3CST.AxiomBody.axiom m (expressionToCST ctx expr))
+      else
+        B3CST.Decl.axiom_decl m (B3CST.AxiomBody.explain_axiom m explainsCST (expressionToCST ctx expr))
+  | .procedure m name params specs body =>
+      -- Build context: inout parameters need two entries (old and current)
+      let ctx' := params.val.toList.foldl (fun acc p =>
+        match p with
+        | .pParameter _ mode pname _ _ =>
+          match mode with
+          | .paramModeInout _ => acc.push pname.val |>.push pname.val  -- Push twice for inout
+          | _ => acc.push pname.val
+      ) ctx
+      let paramsCST := mkAnn m (params.val.toList.map (pParameterToCST ctx') |>.toArray)
+      let specsCST := specs.val.toList.map (specToCST ctx')
+      let bodyCST := mapAnn (fun opt => opt.map (fun s => B3CST.ProcBody.proc_body_some m (stmtToCST ctx' s))) body
+      B3CST.Decl.procedure_decl m (mkAnn m name.val) paramsCST (mkAnn m specsCST.toArray) bodyCST
+
+def programToCST [Inhabited M] [Inhabited (B3CST.Expression M)] [Inhabited (B3CST.Statement M)] (ctx : ToCSTContext) : Strata.B3AST.Program M → B3CST.Program M
+  | .program m decls => .program m (mkAnn m (decls.val.toList.map (declToCST ctx) |>.toArray))
 
 end ToCST
 
@@ -563,6 +625,9 @@ def declFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromCSTContext) : B3CST.De
       let specsAST := specs.val.toList.map (specFromCST ctx')
       let bodyAST := mapAnn (fun opt => opt.map (fun b => match b with | .proc_body_some _ s => stmtFromCST ctx' s)) body
       .procedure m (mapAnn (fun x => x) name) (mkAnn m paramsAST.toArray) (mkAnn m specsAST.toArray) bodyAST
+
+def programFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromCSTContext) : B3CST.Program M → Strata.B3AST.Program M
+  | .program m decls => .program m (mkAnn m (decls.val.toList.map (declFromCST ctx) |>.toArray))
 
 end FromCST
 

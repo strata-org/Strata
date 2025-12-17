@@ -16,13 +16,13 @@ open Strata.B3CST
 partial def doRoundtripDecl (decl : OperationF SourceRange) (ctx : FormatContext) (state : FormatState) : Format :=
   match B3CST.Decl.ofAst decl with
   | .ok cstDecl =>
-      let b3Decl := Decl.toAST cstDecl
+      let b3Decl := B3.declFromCST B3.FromCSTContext.empty cstDecl
       let b3DeclUnit := b3Decl.toUnit
       let reprStr := (repr b3DeclUnit).pretty
       let reprStr := cleanupDeclRepr reprStr
       let reprStr := cleanupUnitRepr reprStr
       dbg_trace f!"B3: {reprStr}"
-      let cstDecl' := Decl.toCST b3Decl
+      let cstDecl' := B3.declToCST B3.ToCSTContext.empty b3Decl
       let cstAst := cstDecl'.toAst
       cformat (ArgF.op cstAst) ctx state
   | .error msg => s!"Parse error: {msg}"
@@ -30,7 +30,7 @@ partial def doRoundtripDecl (decl : OperationF SourceRange) (ctx : FormatContext
 partial def doRoundtripProgram (prog : OperationF SourceRange) (ctx : FormatContext) (state : FormatState) (printIntermediate: Bool := true) : Format :=
   match B3CST.Program.ofAst prog with
   | .ok cstProg =>
-      let b3Prog := Program.toAST cstProg
+      let b3Prog := B3.programFromCST B3.FromCSTContext.empty cstProg
       dbg_trace (if printIntermediate then
           let b3ProgUnit := b3Prog.toUnit
           let reprStr := (repr b3ProgUnit).pretty
@@ -40,7 +40,7 @@ partial def doRoundtripProgram (prog : OperationF SourceRange) (ctx : FormatCont
         else
           f!"<B3 omitted>")
 
-      let cstProg' := Program.toCST b3Prog
+      let cstProg' := B3.programToCST B3.ToCSTContext.empty b3Prog
       let cstAst := cstProg'.toAst
       cformat (ArgF.op cstAst) ctx state
   | .error msg => s!"Parse error: {msg}"

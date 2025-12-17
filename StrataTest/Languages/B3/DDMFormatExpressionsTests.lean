@@ -18,13 +18,13 @@ open Strata.B3CST
 partial def doRoundtrip (e : OperationF SourceRange) (ctx : FormatContext) (state : FormatState) : Format :=
   match B3CST.Expression.ofAst e with
   | .ok cstExpr =>
-      let b3Expr := Expression.toAST cstExpr
+      let b3Expr := B3.expressionFromCST B3.FromCSTContext.empty cstExpr
       let b3ExprUnit := b3Expr.toUnit
       let reprStr := (repr b3ExprUnit).pretty
       let reprStr := cleanupExprRepr reprStr
       let reprStr := cleanupUnitRepr reprStr
       dbg_trace f!"B3: {reprStr}"
-      let cstExpr' := Expression.toCST b3Expr
+      let cstExpr' := B3.expressionToCST B3.ToCSTContext.empty b3Expr
       let cstAst := cstExpr'.toAst
       cformat (ArgF.op cstAst) ctx state
   | .error msg => s!"Parse error: {msg}"

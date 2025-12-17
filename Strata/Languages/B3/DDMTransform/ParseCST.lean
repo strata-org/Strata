@@ -28,7 +28,7 @@ op strLit (s : Str) : Expression => s;
 op btrue : Expression => "true";
 op bfalse : Expression => "false";
 
-op old_id (name : Ident) : Expression => "old " name;
+op old_id (name : Ident) : Expression => "old " name:0;
 op id (name : Ident) : Expression => name;
 
 op letExpr (name : Ident, value : Expression, body : Expression) : Expression =>
