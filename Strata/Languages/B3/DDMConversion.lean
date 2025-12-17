@@ -222,18 +222,18 @@ partial def unaryOpToCST [Inhabited (B3CST.Expression M)] : B3AST.UnaryOp M →
   | .neg _ => B3CST.Expression.neg
 
 partial def literalToCST [Inhabited (B3CST.Expression M)] : B3AST.Literal M → B3CST.Expression M
-  | .intLit m n => B3CST.Expression.natLit m n
-  | .boolLit m b => match b with | ⟨_, true⟩ => B3CST.Expression.btrue m | ⟨_, false⟩ => B3CST.Expression.bfalse m
-  | .stringLit m s => B3CST.Expression.strLit m s
+  | .intLit m n => B3CST.Expression.natLit m (mkAnn m n)
+  | .boolLit m b => if b then B3CST.Expression.btrue m else B3CST.Expression.bfalse m
+  | .stringLit m s => B3CST.Expression.strLit m (mkAnn m s)
 
 partial def expressionToCST [Inhabited (B3CST.Expression M)] (ctx : ToCSTContext) : B3AST.Expression M → B3CST.Expression M
   | .literal _m lit =>
       literalToCST lit
   | .id m idx =>
-      if ctx.inProcedure && ctx.isShadowed idx.val then
-        B3CST.Expression.old_id m (mkAnn m (ctx.lookup idx.val))
+      if ctx.inProcedure && ctx.isShadowed idx then
+        B3CST.Expression.old_id m (mkAnn m (ctx.lookup idx))
       else
-        B3CST.Expression.id m (mkAnn m (ctx.lookup idx.val))
+        B3CST.Expression.id m (mkAnn m (ctx.lookup idx))
   | .ite m cond thn els =>
       B3CST.Expression.ite m (expressionToCST ctx cond) (expressionToCST ctx thn) (expressionToCST ctx els)
   | .binaryOp m op lhs rhs =>
@@ -368,12 +368,12 @@ partial def patternsToArray [Inhabited M] : B3CST.Patterns M → Array (B3CST.Pa
   | .patterns_cons _ p ps => patternsToArray ps |>.push p
 
 partial def expressionFromDDM [Inhabited M] [B3AnnFromCST M] (ctx : FromDDMContext) : B3CST.Expression M → Strata.B3AST.Expression M
-  | .natLit ann n => .literal (B3AnnFromCST.annForLiteral ann) (.intLit (B3AnnFromCST.annForLiteralType ann) ⟨B3AnnFromCST.annForLiteralValue ann, n.val⟩)
-  | .strLit ann s => .literal (B3AnnFromCST.annForLiteral ann) (.stringLit (B3AnnFromCST.annForLiteralType ann) ⟨B3AnnFromCST.annForLiteralValue ann, s.val⟩)
-  | .btrue ann => .literal (B3AnnFromCST.annForLiteral ann) (.boolLit (B3AnnFromCST.annForLiteralType ann) ⟨B3AnnFromCST.annForLiteralValue ann, true⟩)
-  | .bfalse ann => .literal (B3AnnFromCST.annForLiteral ann) (.boolLit (B3AnnFromCST.annForLiteralType ann) ⟨B3AnnFromCST.annForLiteralValue ann, false⟩)
-  | .id ann name => .id (B3AnnFromCST.annForId ann) ⟨B3AnnFromCST.annForIdValue ann, ctx.lookup name.val⟩
-  | .old_id ann name => .id (B3AnnFromCST.annForId ann) ⟨B3AnnFromCST.annForIdValue ann, ctx.lookupLast name.val⟩
+  | .natLit ann n => .literal (B3AnnFromCST.annForLiteral ann) (.intLit (B3AnnFromCST.annForLiteralType ann) n.val)
+  | .strLit ann s => .literal (B3AnnFromCST.annForLiteral ann) (.stringLit (B3AnnFromCST.annForLiteralType ann) s.val)
+  | .btrue ann => .literal (B3AnnFromCST.annForLiteral ann) (.boolLit (B3AnnFromCST.annForLiteralType ann) true)
+  | .bfalse ann => .literal (B3AnnFromCST.annForLiteral ann) (.boolLit (B3AnnFromCST.annForLiteralType ann) false)
+  | .id ann name => .id (B3AnnFromCST.annForId ann) (ctx.lookup name.val)
+  | .old_id ann name => .id (B3AnnFromCST.annForId ann) (ctx.lookupLast name.val)
   | .not ann arg => .unaryOp (B3AnnFromCST.annForUnaryOp ann) (.not (B3AnnFromCST.annForUnaryOpType ann)) (expressionFromDDM ctx arg)
   | .neg ann arg => .unaryOp (B3AnnFromCST.annForUnaryOp ann) (.neg (B3AnnFromCST.annForUnaryOpType ann)) (expressionFromDDM ctx arg)
   | .iff ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.iff (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromDDM ctx lhs) (expressionFromDDM ctx rhs)
@@ -639,15 +639,13 @@ They duplicate the Unit-based conversions but thread M through all recursive cal
 mutual
 
 partial def literalToCSTSR [Inhabited $ Strata.B3CST.Expression M] (ann : M) : B3AST.Literal M → B3CST.Expression M
-  | .intLit _ n => B3CST.Expression.natLit ann (mkAnn ann n.val)
-  | .boolLit _ b => match b with
-    | ⟨_, true⟩ => B3CST.Expression.btrue ann
-    | ⟨_, false⟩ => B3CST.Expression.bfalse ann
-  | .stringLit _ s => B3CST.Expression.strLit ann (mkAnn ann s.val)
+  | .intLit _ n => B3CST.Expression.natLit ann (mkAnn ann n)
+  | .boolLit _ b => if b then B3CST.Expression.btrue ann else B3CST.Expression.bfalse ann
+  | .stringLit _ s => B3CST.Expression.strLit ann (mkAnn ann s)
 
 partial def expressionToCSTSR [Inhabited $ Strata.B3CST.Expression M] (ctx : ToCSTContextSR) : Strata.B3AST.Expression M → B3CST.Expression M
   | .literal ann lit => literalToCSTSR ann lit
-  | .id ann idx => B3CST.Expression.id ann (mkAnn ann (ctx.lookup idx.val))
+  | .id ann idx => B3CST.Expression.id ann (mkAnn ann (ctx.lookup idx))
   | .ite ann cond thn els => B3CST.Expression.ite ann (expressionToCSTSR ctx cond) (expressionToCSTSR ctx thn) (expressionToCSTSR ctx els)
   | .binaryOp ann op lhs rhs =>
       let ctor := match op with
@@ -706,12 +704,12 @@ partial def patternsToArraySR [Inhabited $ Strata.B3AST.Expression M] : B3CST.Pa
   | .patterns_cons _ p ps => patternsToArraySR ps |>.push p
 
 partial def expressionFromDDMSR [Inhabited $ Strata.B3AST.Expression M] (ctx : FromDDMContextSR) : B3CST.Expression M → Strata.B3AST.Expression M
-  | .natLit ann n => .literal ann (.intLit ann (mkAnn ann n.val))
-  | .strLit ann s => .literal ann (.stringLit ann (mkAnn ann s.val))
-  | .btrue ann => .literal ann (.boolLit ann (mkAnn ann true))
-  | .bfalse ann => .literal ann (.boolLit ann (mkAnn ann false))
-  | .id ann name => .id ann (mkAnn ann (ctx.lookup name.val))
-  | .old_id ann name => .id ann (mkAnn ann (ctx.lookupLast name.val))
+  | .natLit ann n => .literal ann (.intLit ann n.val)
+  | .strLit ann s => .literal ann (.stringLit ann s.val)
+  | .btrue ann => .literal ann (.boolLit ann true)
+  | .bfalse ann => .literal ann (.boolLit ann false)
+  | .id ann name => .id ann (ctx.lookup name.val)
+  | .old_id ann name => .id ann (ctx.lookupLast name.val)
   | .not ann arg => .unaryOp ann (.not ann) (expressionFromDDMSR ctx arg)
   | .neg ann arg => .unaryOp ann (.neg ann) (expressionFromDDMSR ctx arg)
   | .iff ann lhs rhs => .binaryOp ann (.iff ann) (expressionFromDDMSR ctx lhs) (expressionFromDDMSR ctx rhs)

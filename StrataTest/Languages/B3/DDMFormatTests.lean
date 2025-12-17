@@ -64,7 +64,7 @@ info: inductive Strata.B3AST.Expression : Type → Type
 number of parameters: 1
 constructors:
 Strata.B3AST.Expression.literal : {α : Type} → α → B3AST.Literal α → B3AST.Expression α
-Strata.B3AST.Expression.id : {α : Type} → α → Ann Nat α → B3AST.Expression α
+Strata.B3AST.Expression.id : {α : Type} → α → Nat → B3AST.Expression α
 Strata.B3AST.Expression.ite : {α : Type} →
   α → B3AST.Expression α → B3AST.Expression α → B3AST.Expression α → B3AST.Expression α
 Strata.B3AST.Expression.binaryOp : {α : Type} →
@@ -120,7 +120,6 @@ mutual
     | .decimal () v => .decimal default v
     | .strlit () s => .strlit default s
     | .bytes () v => .bytes default v
-    | .bool () b => .bool default b
     | .option () ma => .option default (ma.map argFUnitToSourceRange)
     | .seq () entries => .seq default (entries.map argFUnitToSourceRange)
     | .commaSepList () entries => .commaSepList default (entries.map argFUnitToSourceRange)
