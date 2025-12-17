@@ -5,7 +5,7 @@
 -/
 
 import StrataTest.Languages.B3.DDMFormatTests
-import Strata.Languages.B3.DDMConversion
+import Strata.Languages.B3.DDMTransform.Conversion
 
 namespace B3
 
