@@ -41,7 +41,7 @@ def SourceRange.toMetaData (ictx : InputContext) (sr : SourceRange) : Imperative
   #[fileRangeElt]
 
 def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Boogie.Expression) :=
-  return arg.ann.toMetaData (← get).inputCtx
+  return SourceRange.toMetaData (← get).inputCtx arg.ann
 
 def checkOp (op : Strata.Operation) (name : QualifiedIdent) (argc : Nat) :
   TransM Unit := do
@@ -167,8 +167,11 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
           if assignOp.name == q`Laurel.optionalAssignment then
             translateStmtExpr assignOp.args[0]! >>= (pure ∘ some)
           else
-            pure none
-        | _ => pure none
+            panic s!"DEBUG: assignArg {repr assignArg} didn't match expected pattern for {name}"
+        | .option _ none =>
+          pure none
+        | _ =>
+          panic s!"DEBUG: assignArg {repr assignArg} didn't match expected pattern {name}"
       return .LocalVariable name varType value
     else if op.name == q`Laurel.identifier then
       let name ← translateIdent op.args[0]!

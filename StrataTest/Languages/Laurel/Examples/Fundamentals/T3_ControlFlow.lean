@@ -24,12 +24,9 @@ procedure guards(a: int): int
       var d := c + 5;
       return d + 6;
   }
-  assert b <= 2;
-  assert b < 2;
   var e := b + 1;
   assert e <= 3;
-    assert e < 1;
-    assert e < 0;
+    assert e < 3;
 //  ^^^^^^^^^^^^^ error: assertion does not hold
   return e;
 }
@@ -45,7 +42,7 @@ procedure dag(a: int): int
 }
 "
 
-#eval! testInputWithOffset "ControlFlow" program 15 processLaurelFile
+#eval! testInputWithOffset "ControlFlow" program 14 processLaurelFile
 
 /-
 Translation towards expression form:

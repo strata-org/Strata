@@ -26,7 +26,7 @@ category OptionalType;
 op optionalType(varType: LaurelType): OptionalType => ":" varType;
 
 category OptionalAssignment;
-op optionalAssignment(value: StmtExpr): OptionalType => ":=" value:0;
+op optionalAssignment(value: StmtExpr): OptionalAssignment => ":=" value:0;
 
 op varDecl (name: Ident, varType: Option OptionalType, assignment: Option OptionalAssignment): StmtExpr
   => @[prec(0)] "var " name varType assignment ";";
