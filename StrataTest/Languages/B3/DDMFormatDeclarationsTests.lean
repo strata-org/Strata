@@ -428,18 +428,18 @@ info: B3: .program
         (.binaryOp
           ()
           (.add ())
-          (.id () u 2)
-          (.id () u 0)),
+          (.id () 2)
+          (.id () 0)),
       .assign
         ()
         u 0
         (.binaryOp
           ()
           (.add ())
-          (.id () u 0)
+          (.id () 0)
           (.literal
             ()
-            (.intLit () u 1)))])]
+            (.intLit () 1)))])]
 ---
 info:
 procedure compute(x : int, out y : int, inout z : int)
@@ -469,10 +469,8 @@ info: B3: .program
       (.binaryOp
         ()
         (.gt ())
-        (.id () u 0)
-        (.literal
-          ()
-          (.intLit () u 0)))]
+        (.id () 0)
+        (.literal () (.intLit () 0)))]
     u some (.blockStmt
       ()
       u #[.check
@@ -480,10 +478,10 @@ info: B3: .program
         (.binaryOp
           ()
           (.gt ())
-          (.id () u 0)
+          (.id () 0)
           (.literal
             ()
-            (.intLit () u 0)))])]
+            (.intLit () 0)))])]
 ---
 info:
 procedure safe(x : int)
@@ -513,18 +511,14 @@ info: B3: .program
       (.binaryOp
         ()
         (.gt ())
-        (.id () u 0)
-        (.literal
-          ()
-          (.intLit () u 0)))]
+        (.id () 0)
+        (.literal () (.intLit () 0)))]
     u some (.blockStmt
       ()
       u #[.assign
         ()
         u 0
-        (.literal
-          ()
-          (.intLit () u 1))])]
+        (.literal () (.intLit () 1))])]
 ---
 info:
 procedure positive(out x : int)
@@ -560,25 +554,21 @@ info: B3: .program
       (.binaryOp
         ()
         (.ge ())
-        (.id () u 1)
-        (.literal
-          ()
-          (.intLit () u 0))),
+        (.id () 1)
+        (.literal () (.intLit () 0))),
     .specEnsures
       ()
       (.binaryOp
         ()
         (.ge ())
-        (.id () u 0)
-        (.literal
-          ()
-          (.intLit () u 0)))]
+        (.id () 0)
+        (.literal () (.intLit () 0)))]
     u some (.blockStmt
       ()
       u #[.assign
         ()
         u 0
-        (.id () u 1)])]
+        (.id () 1)])]
 ---
 info:
 procedure bounded(x : int, out y : int)
@@ -609,11 +599,9 @@ info: B3: .program
         (.binaryOp
           ()
           (.add ())
-          (.id () u 1)
-          (.id () u 0))
-        (.literal
-          ()
-          (.intLit () u 0))),
+          (.id () 1)
+          (.id () 0))
+        (.literal () (.intLit () 0))),
     .pParameter
       ()
       (.paramModeIn ())
@@ -622,11 +610,11 @@ info: B3: .program
       u some (.binaryOp
         ()
         (.ge ())
-        (.id () u 0)
+        (.id () 0)
         (.unaryOp
           ()
           (.neg ())
-          (.id () u 1)))]
+          (.id () 1)))]
     u #[]
     u some (.blockStmt
       ()
@@ -635,10 +623,10 @@ info: B3: .program
         (.binaryOp
           ()
           (.ge ())
-          (.id () u 1)
+          (.id () 1)
           (.literal
             ()
-            (.intLit () u 0)))])]
+            (.intLit () 0)))])]
 ---
 info:
 procedure withAutoinv(x : int autoinv x + y >= 0, y : int autoinv y >= -(x))
@@ -715,7 +703,7 @@ info: B3: .program
     .axiom
       ()
       u #[]
-      (.literal () (.boolLit () u true)),
+      (.literal () (.boolLit () true)),
     .function
       ()
       u "f"
@@ -729,7 +717,7 @@ info: B3: .program
       u some (.functionBody
         ()
         u #[]
-        (.id () u 0))]
+        (.id () 0))]
 ---
 info:
 type T
@@ -740,6 +728,72 @@ function f(x : int) : int {
 -/
 #guard_msgs in
 #eval roundtripDecl $ #strata program B3CST; type T axiom true function f(x: int) : int { x } #end
+
+-- Procedure with inout parameter using old values in spec and body
+/--
+info: B3: .program
+  ()
+  u #[.procedure
+    ()
+    u "incrementWithOld"
+    u #[.pParameter
+      ()
+      (.paramModeInout ())
+      u "x"
+      u "int"
+      u none]
+    u #[.specEnsures
+      ()
+      (.binaryOp
+        ()
+        (.eq ())
+        (.id () 0)
+        (.binaryOp
+          ()
+          (.add ())
+          (.id () 1)
+          (.literal () (.intLit () 1))))]
+    u some (.blockStmt
+      ()
+      u #[.assign
+        ()
+        u 0
+        (.binaryOp
+          ()
+          (.add ())
+          (.id () 0)
+          (.literal () (.intLit () 1))),
+      .assert
+        ()
+        (.binaryOp
+          ()
+          (.eq ())
+          (.id () 0)
+          (.binaryOp
+            ()
+            (.add ())
+            (.id () 1)
+            (.literal
+              ()
+              (.intLit () 1))))])]
+---
+info:
+procedure incrementWithOld(inout x : int)
+  ensures x == old x + 1
+{
+  x := x + 1
+  assert x == old x + 1
+}
+-/
+#guard_msgs in
+#eval roundtripDecl $ #strata program B3CST;
+procedure incrementWithOld(inout x: int)
+  ensures x == old x + 1
+{
+  x := x + 1
+  assert x == old x + 1
+}
+#end
 
 end DeclarationRoundtripTests
 

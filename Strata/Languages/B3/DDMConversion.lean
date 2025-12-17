@@ -152,10 +152,14 @@ structure ToCSTContext where
 
 namespace ToCSTContext
 
-def lookup (ctx : ToCSTContext) (idx : Nat): String :=
+def lookup (ctx : ToCSTContext) (idx : Nat): String × Bool :=
   match ctx.vars[idx]? with
   | .some name =>
-    if name == "" then s!"@{idx}" else
+    if name == "" then (s!"@{idx}", false) else
+    -- Determine if this is an old value: first occurrence with shadowing
+    let isOld :=
+      -- Check if there's a later occurrence (lower index) with the same name
+      ctx.vars.take idx |>.any (· == name)
     -- We need to resolve ambiguities
     let rec go (vars: List String) (pastIndex: Nat) (idx: Nat): String :=
       let default := fun _: Unit => if pastIndex == 0 then
@@ -173,17 +177,14 @@ def lookup (ctx : ToCSTContext) (idx : Nat): String :=
           else
             go tail pastIndex (idx - 1)
 
-    go ctx.vars 0 idx
+    (go ctx.vars 0 idx, isOld)
   | .none =>
-    s!"@{idx}"
+    (s!"@{idx}", false)
 
 -- Check if a variable at index idx is shadowed (has a later occurrence with same name)
+-- This is now computed in lookup, but kept for compatibility
 def isShadowed (ctx : ToCSTContext) (idx : Nat) : Bool :=
-  match ctx.vars[idx]? with
-  | .some name =>
-      -- Check if there's another occurrence of this name at a lower index (later in the list)
-      ctx.vars.take idx |>.any (· == name)
-  | .none => false
+  (ctx.lookup idx).2
 
 def push (ctx : ToCSTContext) (name : String) : ToCSTContext :=
   { vars := name :: ctx.vars, inProcedure := ctx.inProcedure }
@@ -230,10 +231,11 @@ partial def expressionToCST [Inhabited (B3CST.Expression M)] (ctx : ToCSTContext
   | .literal _m lit =>
       literalToCST lit
   | .id m idx =>
-      if ctx.inProcedure && ctx.isShadowed idx then
-        B3CST.Expression.old_id m (mkAnn m (ctx.lookup idx))
+      let (name, isOld) := ctx.lookup idx
+      if isOld then
+        B3CST.Expression.old_id m (mkAnn m name)
       else
-        B3CST.Expression.id m (mkAnn m (ctx.lookup idx))
+        B3CST.Expression.id m (mkAnn m name)
   | .ite m cond thn els =>
       B3CST.Expression.ite m (expressionToCST ctx cond) (expressionToCST ctx thn) (expressionToCST ctx els)
   | .binaryOp m op lhs rhs =>
@@ -290,8 +292,8 @@ partial def stmtToCST [Inhabited M] (ctx : ToCSTContext) : Strata.B3AST.Statemen
     | some t, none, none => B3CST.Statement.var_decl_typed m (mapAnn (fun x => x) name) (mkAnn m t.val)
     | none, _, some i => B3CST.Statement.var_decl_inferred m (mapAnn (fun x => x) name) (expressionToCST ctx' i)
     | none, _, none => B3CST.Statement.var_decl_typed m (mapAnn (fun x => x) name) (mkAnn m "unknown")
-  | .assign m lhs rhs => B3CST.Statement.assign m (mkAnn m (ctx.lookup lhs.val)) (expressionToCST ctx rhs)
-  | .reinit m idx => B3CST.Statement.reinit_statement m (mkAnn m (ctx.lookup idx.val))
+  | .assign m lhs rhs => B3CST.Statement.assign m (mkAnn m (ctx.lookup lhs.val).1) (expressionToCST ctx rhs)
+  | .reinit m idx => B3CST.Statement.reinit_statement m (mkAnn m (ctx.lookup idx.val).1)
   | .blockStmt m stmts =>
       let (stmts', _) := stmts.val.toList.foldl (fun (acc, ctx) stmt =>
         let stmt' := stmtToCST ctx stmt
@@ -556,11 +558,15 @@ def declFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromCSTContext) : B3CST.De
           let namesAST := names.val.toList.map (fun n => mkAnn m n.val)
           .axiom m (mkAnn m namesAST.toArray) (expressionFromCST ctx expr)
   | .procedure_decl m name params specs body =>
-      -- First, collect all parameter names to build context for autoinv expressions
-      let paramNames := params.val.toList.map (fun p => match p with
-        | .pparam _ _ n _ => n.val
-        | .pparam_with_autoinv _ _ n _ _ => n.val)
-      let ctx' := paramNames.foldl (fun acc n => acc.push n) ctx
+      -- Build context for parameters: inout parameters need two entries (old and current)
+      let ctx' := params.val.toList.foldl (fun acc p =>
+        let (pname, mode) := match p with
+          | .pparam _ mode n _ => (n.val, mode.val)
+          | .pparam_with_autoinv _ mode n _ _ => (n.val, mode.val)
+        match mode with
+        | some (.pmode_inout _) => acc.push pname |>.push pname  -- Push twice: old value, then current value
+        | _ => acc.push pname  -- Push once for in/out parameters
+      ) ctx
       -- Now convert all parameters with the full context (so autoinv can reference all params)
       let paramsAST := params.val.toList.map (pParameterFromCST ctx')
       let specsAST := specs.val.toList.map (specFromCST ctx')
@@ -580,10 +586,12 @@ structure ToCSTContextSR where
 
 namespace ToCSTContextSR
 
-def lookup (ctx : ToCSTContextSR) (idx : Nat): String :=
+def lookup (ctx : ToCSTContextSR) (idx : Nat): String × Bool :=
   match ctx.vars[idx]? with
   | .some name =>
-    if name == "" then s!"@{idx}" else
+    if name == "" then (s!"@{idx}", false) else
+    -- Determine if this is an old value: first occurrence with shadowing
+    let isOld := ctx.vars.take idx |>.any (· == name)
     let rec go (vars: List String) (pastIndex: Nat) (idx: Nat): String :=
       let default := fun _: Unit => if pastIndex == 0 then name else s!"name@{pastIndex}"
       if idx == 0 then default ()
@@ -593,8 +601,8 @@ def lookup (ctx : ToCSTContextSR) (idx : Nat): String :=
         | otherName :: tail =>
           if name == otherName then go tail (pastIndex + 1) (idx - 1)
           else go tail pastIndex (idx - 1)
-    go ctx.vars 0 idx
-  | .none => s!"@{idx}"
+    (go ctx.vars 0 idx, isOld)
+  | .none => (s!"@{idx}", false)
 
 def push (ctx : ToCSTContextSR) (name : String) : ToCSTContextSR :=
   { vars := name :: ctx.vars }
@@ -645,7 +653,12 @@ partial def literalToCSTSR [Inhabited $ Strata.B3CST.Expression M] (ann : M) : B
 
 partial def expressionToCSTSR [Inhabited $ Strata.B3CST.Expression M] (ctx : ToCSTContextSR) : Strata.B3AST.Expression M → B3CST.Expression M
   | .literal ann lit => literalToCSTSR ann lit
-  | .id ann idx => B3CST.Expression.id ann (mkAnn ann (ctx.lookup idx))
+  | .id ann idx =>
+      let (name, isOld) := ctx.lookup idx
+      if isOld then
+        B3CST.Expression.old_id ann (mkAnn ann name)
+      else
+        B3CST.Expression.id ann (mkAnn ann name)
   | .ite ann cond thn els => B3CST.Expression.ite ann (expressionToCSTSR ctx cond) (expressionToCSTSR ctx thn) (expressionToCSTSR ctx els)
   | .binaryOp ann op lhs rhs =>
       let ctor := match op with
@@ -792,8 +805,8 @@ partial def stmtToCSTSR [Inhabited (B3CST.Expression M)] [Inhabited $ B3CST.Stat
     | some t, none, none => B3CST.Statement.var_decl_typed m (mkAnn m name.val) (mkAnn m t.val)
     | none, _, some i => B3CST.Statement.var_decl_inferred m (mkAnn m name.val) (expressionToCSTSR ctx' i)
     | none, _, none => B3CST.Statement.var_decl_typed m (mkAnn m name.val) (mkAnn m "unknown")
-  | .assign m lhs rhs => B3CST.Statement.assign m (mkAnn m (ctx.lookup lhs.val)) (expressionToCSTSR ctx rhs)
-  | .reinit m idx => B3CST.Statement.reinit_statement m (mkAnn m (ctx.lookup idx.val))
+  | .assign m lhs rhs => B3CST.Statement.assign m (mkAnn m (ctx.lookup lhs.val).fst) (expressionToCSTSR ctx rhs)
+  | .reinit m idx => B3CST.Statement.reinit_statement m (mkAnn m (ctx.lookup idx.val).fst)
   | .blockStmt m stmts =>
       let (stmts', _) := stmts.val.toList.foldl (fun (acc, ctx) stmt =>
         let stmt' := stmtToCSTSR ctx stmt
@@ -972,8 +985,14 @@ partial def declToCSTSR [Inhabited $ B3CST.Expression M] [Inhabited $ B3CST.Stat
       else
         B3CST.Decl.axiom_decl m (B3CST.AxiomBody.explain_axiom m explainsCST (expressionToCSTSR ctx expr))
   | .procedure m name params specs body =>
-      let paramNames := params.val.toList.map (fun p => match p with | .pParameter _ _ n _ _ => n.val)
-      let ctx' := paramNames.foldl (fun acc n => acc.push n) ctx
+      -- Build context: inout parameters need two entries (old and current)
+      let ctx' := params.val.toList.foldl (fun acc p =>
+        match p with
+        | .pParameter _ mode pname _ _ =>
+          match mode with
+          | .paramModeInout _ => acc.push s!"old {pname.val}" |>.push pname.val  -- Push "old x" then "x"
+          | _ => acc.push pname.val
+      ) ctx
       let paramsCST := mkAnn m (params.val.toList.map (pParameterToCSTSR ctx') |>.toArray)
       let specsCST := specs.val.toList.map (specToCSTSR ctx')
       let bodyCST := mapAnn (fun opt => opt.map (fun s => B3CST.ProcBody.proc_body_some m (Stmt.stmtToCSTSR ctx' s))) body
@@ -1030,11 +1049,15 @@ partial def declFromCSTSR [Inhabited $ B3AST.Expression M] [Inhabited $ B3AST.St
           let namesAST := names.val.toList.map (fun n => mkAnn m n.val)
           .axiom m (mkAnn m namesAST.toArray) (expressionFromCSTSR ctx expr)
   | .procedure_decl m name params specs body =>
-      -- First, collect all parameter names to build context for autoinv expressions
-      let paramNames := params.val.toList.map (fun p => match p with
-        | .pparam _ _ n _ => n.val
-        | .pparam_with_autoinv _ _ n _ _ => n.val)
-      let ctx' := paramNames.foldl (fun acc n => acc.push n) ctx
+      -- Build context for parameters: inout parameters need two entries (old and current)
+      let ctx' := params.val.toList.foldl (fun acc p =>
+        let (pname, mode) := match p with
+          | .pparam _ mode n _ => (n.val, mode.val)
+          | .pparam_with_autoinv _ mode n _ _ => (n.val, mode.val)
+        match mode with
+        | some (.pmode_inout _) => acc.push pname |>.push pname  -- Push twice: old value, then current value
+        | _ => acc.push pname  -- Push once for in/out parameters
+      ) ctx
       -- Now convert all parameters with the full context (so autoinv can reference all params)
       let paramsAST := params.val.toList.map (pParameterFromCSTSR ctx')
       let specsAST := specs.val.toList.map (specFromCSTSR ctx')
