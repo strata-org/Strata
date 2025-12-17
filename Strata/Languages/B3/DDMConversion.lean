@@ -181,11 +181,6 @@ def lookup (ctx : ToCSTContext) (idx : Nat): String × Bool :=
   | .none =>
     (s!"@{idx}", false)
 
--- Check if a variable at index idx is shadowed (has a later occurrence with same name)
--- This is now computed in lookup, but kept for compatibility
-def isShadowed (ctx : ToCSTContext) (idx : Nat) : Bool :=
-  (ctx.lookup idx).2
-
 def push (ctx : ToCSTContext) (name : String) : ToCSTContext :=
   { vars := name :: ctx.vars, inProcedure := ctx.inProcedure }
 
