@@ -148,7 +148,6 @@ section ToCST
 
 structure ToCSTContext where
   vars : List String
-  inProcedure : Bool := false
 
 namespace ToCSTContext
 
@@ -182,12 +181,9 @@ def lookup (ctx : ToCSTContext) (idx : Nat): String × Bool :=
     (s!"@{idx}", false)
 
 def push (ctx : ToCSTContext) (name : String) : ToCSTContext :=
-  { vars := name :: ctx.vars, inProcedure := ctx.inProcedure }
+  { vars := name :: ctx.vars }
 
-def enterProcedure (ctx : ToCSTContext) : ToCSTContext :=
-  { ctx with inProcedure := true }
-
-def empty : ToCSTContext := { vars := [], inProcedure := false }
+def empty : ToCSTContext := { vars := [] }
 
 end ToCSTContext
 
