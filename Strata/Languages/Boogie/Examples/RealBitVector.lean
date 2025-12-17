@@ -212,7 +212,6 @@ info:
 Obligation bad_shift: could not be proved!
 
 Result: failed
-CEx: ($__x0, #b10011001) ($__y1, #b00000010)
 ---
 info:
 Obligation: add_comm
@@ -235,7 +234,6 @@ Result: verified
 
 Obligation: bad_shift
 Result: failed
-CEx: ($__x0, #b10011001) ($__y1, #b00000010)
 -/
 #guard_msgs in
 #eval verify "cvc5" bvMoreOpsPgm Inhabited.default Options.quiet

@@ -99,12 +99,15 @@ inductive Result where
   | err (msg : String)
 deriving DecidableEq, Repr
 
+def Result.formatWithVerbose (r : Result) (verbose : Bool) : Format :=
+  match r with
+  | .sat cex  => if verbose then f!"failed\nCEx: {cex}" else "failed"
+  | .unsat => f!"verified"
+  | .unknown => f!"unknown"
+  | .err msg => f!"err {msg}"
+
 instance : ToFormat Result where
-  format r := match r with
-    | .sat cex  => f!"failed\nCEx: {cex}"
-    | .unsat => f!"verified"
-    | .unknown => f!"unknown"
-    | .err msg => f!"err {msg}"
+  format r := r.formatWithVerbose true
 
 def VC_folder_name: String := "vcs"
 
@@ -153,10 +156,15 @@ structure VCResult where
   obligation : Imperative.ProofObligation Expression
   result : Result := .unknown
   estate : EncoderState := EncoderState.init
+  verbose : Bool := true
+
+def VCResult.formatWithVerbose (r : VCResult) (verbose : Bool) : Format :=
+  f!"Obligation: {r.obligation.label}\n\
+     Result: {r.result.formatWithVerbose verbose}"
 
 instance : ToFormat VCResult where
   format r := f!"Obligation: {r.obligation.label}\n\
-                 Result: {r.result}"
+                 Result: {r.result.formatWithVerbose r.verbose}"
                 --  EState : {repr r.estate.terms}
 
 abbrev VCResults := Array VCResult
@@ -229,7 +237,7 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
       -- We don't need the SMT solver if PE (partial evaluation) is enough to
       -- reduce the consequent to true.
       if obligation.obligation.isTrue then
-        results := results.push { obligation, result := .unsat }
+        results := results.push { obligation, result := .unsat, verbose := options.verbose }
         continue
       -- If PE determines that the consequent is false and the path conditions
       -- are empty, then we can immediate report a verification failure. Note
@@ -241,7 +249,7 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
         dbg_trace f!"\n\nObligation {obligation.label}: failed!\
                      \n\nResult obtained during partial evaluation.\
                      {if options.verbose then prog else ""}"
-        results := results.push { obligation, result := .sat .empty }
+        results := results.push { obligation, result := .sat .empty, verbose := options.verbose }
         if options.stopOnFirstError then break
       let obligation :=
       if options.removeIrrelevantAxioms then
@@ -265,7 +273,7 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
                      {err}\n\n\
                      Evaluated program: {p}\n\n"
         let _ ← dbg_trace msg
-        results := results.push { obligation, result := .err msg }
+        results := results.push { obligation, result := .err msg, verbose := options.verbose }
         if options.stopOnFirstError then break
       | .ok (terms, ctx) =>
         -- let ufids := (ctx.ufs.map (fun f => f.id))
@@ -287,15 +295,15 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
                 terms ctx)
         match ans with
         | .ok (result, estate) =>
-           results := results.push { obligation, result, estate }
+           results := results.push { obligation, result, estate, verbose := options.verbose }
            if result ≠ .unsat then
             let prog := f!"\n\nEvaluated program:\n{p}"
             dbg_trace f!"\n\nObligation {obligation.label}: could not be proved!\
-                         \n\nResult: {result}\
+                         \n\nResult: {result.formatWithVerbose options.verbose}\
                          {if options.verbose then prog else ""}"
            if options.stopOnFirstError then break
         | .error e =>
-           results := results.push { obligation, result := .err (toString e) }
+           results := results.push { obligation, result := .err (toString e), verbose := options.verbose }
            let prog := f!"\n\nEvaluated program:\n{p}"
            dbg_trace f!"\n\nObligation {obligation.label}: solver error!\
                         \n\nError: {e}\
