@@ -335,17 +335,17 @@ end ToCST
 -- B3CST → B3AST Conversion (Concrete to Abstract)
 ---------------------------------------------------------------------
 
-section FromDDM
+section FromCST
 
-structure FromDDMContext where
+structure FromCSTContext where
   vars : List String
 
-namespace FromDDMContext
+namespace FromCSTContext
 
-def lookup (ctx : FromDDMContext) (name : String) : Nat :=
+def lookup (ctx : FromCSTContext) (name : String) : Nat :=
   ctx.vars.findIdx? (· == name) |>.getD ctx.vars.length
 
-def lookupLast (ctx : FromDDMContext) (name : String) : Nat :=
+def lookupLast (ctx : FromCSTContext) (name : String) : Nat :=
   -- Find the last occurrence by searching from the end
   let rec findLast (vars : List String) (idx : Nat) : Option Nat :=
     match vars with
@@ -356,72 +356,72 @@ def lookupLast (ctx : FromDDMContext) (name : String) : Nat :=
         | none => if v == name then some idx else none
   findLast ctx.vars 0 |>.getD ctx.vars.length
 
-def push (ctx : FromDDMContext) (name : String) : FromDDMContext :=
+def push (ctx : FromCSTContext) (name : String) : FromCSTContext :=
   { vars := name :: ctx.vars }
 
-def empty : FromDDMContext := { vars := [] }
+def empty : FromCSTContext := { vars := [] }
 
-end FromDDMContext
+end FromCSTContext
 
 partial def patternsToArray [Inhabited M] : B3CST.Patterns M → Array (B3CST.Pattern M)
   | .patterns_single _ p => #[p]
   | .patterns_cons _ p ps => patternsToArray ps |>.push p
 
-partial def expressionFromDDM [Inhabited M] [B3AnnFromCST M] (ctx : FromDDMContext) : B3CST.Expression M → Strata.B3AST.Expression M
+partial def expressionFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromCSTContext) : B3CST.Expression M → Strata.B3AST.Expression M
   | .natLit ann n => .literal (B3AnnFromCST.annForLiteral ann) (.intLit (B3AnnFromCST.annForLiteralType ann) n.val)
   | .strLit ann s => .literal (B3AnnFromCST.annForLiteral ann) (.stringLit (B3AnnFromCST.annForLiteralType ann) s.val)
   | .btrue ann => .literal (B3AnnFromCST.annForLiteral ann) (.boolLit (B3AnnFromCST.annForLiteralType ann) true)
   | .bfalse ann => .literal (B3AnnFromCST.annForLiteral ann) (.boolLit (B3AnnFromCST.annForLiteralType ann) false)
   | .id ann name => .id (B3AnnFromCST.annForId ann) (ctx.lookup name.val)
   | .old_id ann name => .id (B3AnnFromCST.annForId ann) (ctx.lookupLast name.val)
-  | .not ann arg => .unaryOp (B3AnnFromCST.annForUnaryOp ann) (.not (B3AnnFromCST.annForUnaryOpType ann)) (expressionFromDDM ctx arg)
-  | .neg ann arg => .unaryOp (B3AnnFromCST.annForUnaryOp ann) (.neg (B3AnnFromCST.annForUnaryOpType ann)) (expressionFromDDM ctx arg)
-  | .iff ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.iff (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromDDM ctx lhs) (expressionFromDDM ctx rhs)
-  | .implies ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.implies (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromDDM ctx lhs) (expressionFromDDM ctx rhs)
-  | .impliedBy ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.impliedBy (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromDDM ctx lhs) (expressionFromDDM ctx rhs)
-  | .and ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.and (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromDDM ctx lhs) (expressionFromDDM ctx rhs)
-  | .or ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.or (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromDDM ctx lhs) (expressionFromDDM ctx rhs)
-  | .equal ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.eq (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromDDM ctx lhs) (expressionFromDDM ctx rhs)
-  | .not_equal ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.neq (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromDDM ctx lhs) (expressionFromDDM ctx rhs)
-  | .lt ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.lt (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromDDM ctx lhs) (expressionFromDDM ctx rhs)
-  | .le ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.le (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromDDM ctx lhs) (expressionFromDDM ctx rhs)
-  | .ge ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.ge (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromDDM ctx lhs) (expressionFromDDM ctx rhs)
-  | .gt ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.gt (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromDDM ctx lhs) (expressionFromDDM ctx rhs)
-  | .add ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.add (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromDDM ctx lhs) (expressionFromDDM ctx rhs)
-  | .sub ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.sub (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromDDM ctx lhs) (expressionFromDDM ctx rhs)
-  | .mul ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.mul (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromDDM ctx lhs) (expressionFromDDM ctx rhs)
-  | .div ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.div (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromDDM ctx lhs) (expressionFromDDM ctx rhs)
-  | .mod ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.mod (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromDDM ctx lhs) (expressionFromDDM ctx rhs)
-  | .functionCall ann fn args => .functionCall (B3AnnFromCST.annForFunctionCall ann) ⟨B3AnnFromCST.annForFunctionCallName ann, fn.val⟩ ⟨B3AnnFromCST.annForFunctionCallArgs ann, args.val.map (expressionFromDDM ctx)⟩
-  | .labeledExpr ann label expr => .labeledExpr (B3AnnFromCST.annForLabeledExpr ann) ⟨B3AnnFromCST.annForLabeledExprLabel ann, label.val⟩ (expressionFromDDM ctx expr)
+  | .not ann arg => .unaryOp (B3AnnFromCST.annForUnaryOp ann) (.not (B3AnnFromCST.annForUnaryOpType ann)) (expressionFromCST ctx arg)
+  | .neg ann arg => .unaryOp (B3AnnFromCST.annForUnaryOp ann) (.neg (B3AnnFromCST.annForUnaryOpType ann)) (expressionFromCST ctx arg)
+  | .iff ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.iff (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromCST ctx lhs) (expressionFromCST ctx rhs)
+  | .implies ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.implies (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromCST ctx lhs) (expressionFromCST ctx rhs)
+  | .impliedBy ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.impliedBy (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromCST ctx lhs) (expressionFromCST ctx rhs)
+  | .and ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.and (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromCST ctx lhs) (expressionFromCST ctx rhs)
+  | .or ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.or (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromCST ctx lhs) (expressionFromCST ctx rhs)
+  | .equal ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.eq (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromCST ctx lhs) (expressionFromCST ctx rhs)
+  | .not_equal ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.neq (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromCST ctx lhs) (expressionFromCST ctx rhs)
+  | .lt ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.lt (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromCST ctx lhs) (expressionFromCST ctx rhs)
+  | .le ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.le (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromCST ctx lhs) (expressionFromCST ctx rhs)
+  | .ge ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.ge (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromCST ctx lhs) (expressionFromCST ctx rhs)
+  | .gt ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.gt (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromCST ctx lhs) (expressionFromCST ctx rhs)
+  | .add ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.add (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromCST ctx lhs) (expressionFromCST ctx rhs)
+  | .sub ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.sub (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromCST ctx lhs) (expressionFromCST ctx rhs)
+  | .mul ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.mul (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromCST ctx lhs) (expressionFromCST ctx rhs)
+  | .div ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.div (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromCST ctx lhs) (expressionFromCST ctx rhs)
+  | .mod ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.mod (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromCST ctx lhs) (expressionFromCST ctx rhs)
+  | .functionCall ann fn args => .functionCall (B3AnnFromCST.annForFunctionCall ann) ⟨B3AnnFromCST.annForFunctionCallName ann, fn.val⟩ ⟨B3AnnFromCST.annForFunctionCallArgs ann, args.val.map (expressionFromCST ctx)⟩
+  | .labeledExpr ann label expr => .labeledExpr (B3AnnFromCST.annForLabeledExpr ann) ⟨B3AnnFromCST.annForLabeledExprLabel ann, label.val⟩ (expressionFromCST ctx expr)
   | .letExpr ann var value body =>
       let ctx' := ctx.push var.val
-      .letExpr (B3AnnFromCST.annForLetExpr ann) ⟨B3AnnFromCST.annForLetExprVar ann, var.val⟩ (expressionFromDDM ctx value) (expressionFromDDM ctx' body)
-  | .ite ann cond thenExpr elseExpr => .ite (B3AnnFromCST.annForIte ann) (expressionFromDDM ctx cond) (expressionFromDDM ctx thenExpr) (expressionFromDDM ctx elseExpr)
+      .letExpr (B3AnnFromCST.annForLetExpr ann) ⟨B3AnnFromCST.annForLetExprVar ann, var.val⟩ (expressionFromCST ctx value) (expressionFromCST ctx' body)
+  | .ite ann cond thenExpr elseExpr => .ite (B3AnnFromCST.annForIte ann) (expressionFromCST ctx cond) (expressionFromCST ctx thenExpr) (expressionFromCST ctx elseExpr)
   | .forall_expr_no_patterns ann var ty body =>
       let ctx' := ctx.push var.val
-      .quantifierExpr (B3AnnFromCST.annForQuantifierExpr ann) (.forall (B3AnnFromCST.annForQuantifierKind ann)) ⟨B3AnnFromCST.annForQuantifierVar ann, var.val⟩ ⟨B3AnnFromCST.annForQuantifierType ann, ty.val⟩ ⟨B3AnnFromCST.annForQuantifierPatterns ann, #[]⟩ (expressionFromDDM ctx' body)
+      .quantifierExpr (B3AnnFromCST.annForQuantifierExpr ann) (.forall (B3AnnFromCST.annForQuantifierKind ann)) ⟨B3AnnFromCST.annForQuantifierVar ann, var.val⟩ ⟨B3AnnFromCST.annForQuantifierType ann, ty.val⟩ ⟨B3AnnFromCST.annForQuantifierPatterns ann, #[]⟩ (expressionFromCST ctx' body)
   | .forall_expr ann var ty patterns body =>
       let ctx' := ctx.push var.val
       let convertPattern (p : B3CST.Pattern M) : Strata.B3AST.Pattern M :=
         match p with
-        | .pattern pann exprs => .pattern (B3AnnFromCST.annForPattern pann) ⟨B3AnnFromCST.annForPatternExprs pann, exprs.val.map (expressionFromDDM ctx')⟩
+        | .pattern pann exprs => .pattern (B3AnnFromCST.annForPattern pann) ⟨B3AnnFromCST.annForPatternExprs pann, exprs.val.map (expressionFromCST ctx')⟩
       let patternsArray := patternsToArray patterns |>.map convertPattern
-      .quantifierExpr (B3AnnFromCST.annForQuantifierExpr ann) (.forall (B3AnnFromCST.annForQuantifierKind ann)) ⟨B3AnnFromCST.annForQuantifierVar ann, var.val⟩ ⟨B3AnnFromCST.annForQuantifierType ann, ty.val⟩ ⟨B3AnnFromCST.annForQuantifierPatterns ann, patternsArray⟩ (expressionFromDDM ctx' body)
+      .quantifierExpr (B3AnnFromCST.annForQuantifierExpr ann) (.forall (B3AnnFromCST.annForQuantifierKind ann)) ⟨B3AnnFromCST.annForQuantifierVar ann, var.val⟩ ⟨B3AnnFromCST.annForQuantifierType ann, ty.val⟩ ⟨B3AnnFromCST.annForQuantifierPatterns ann, patternsArray⟩ (expressionFromCST ctx' body)
   | .exists_expr_no_patterns ann var ty body =>
       let ctx' := ctx.push var.val
-      .quantifierExpr (B3AnnFromCST.annForQuantifierExpr ann) (.exists (B3AnnFromCST.annForQuantifierKind ann)) ⟨B3AnnFromCST.annForQuantifierVar ann, var.val⟩ ⟨B3AnnFromCST.annForQuantifierType ann, ty.val⟩ ⟨B3AnnFromCST.annForQuantifierPatterns ann, #[]⟩ (expressionFromDDM ctx' body)
+      .quantifierExpr (B3AnnFromCST.annForQuantifierExpr ann) (.exists (B3AnnFromCST.annForQuantifierKind ann)) ⟨B3AnnFromCST.annForQuantifierVar ann, var.val⟩ ⟨B3AnnFromCST.annForQuantifierType ann, ty.val⟩ ⟨B3AnnFromCST.annForQuantifierPatterns ann, #[]⟩ (expressionFromCST ctx' body)
   | .exists_expr ann var ty patterns body =>
       let ctx' := ctx.push var.val
       let convertPattern (p : B3CST.Pattern M) : Strata.B3AST.Pattern M :=
         match p with
-        | .pattern pann exprs => .pattern (B3AnnFromCST.annForPattern pann) ⟨B3AnnFromCST.annForPatternExprs pann, exprs.val.map (expressionFromDDM ctx')⟩
+        | .pattern pann exprs => .pattern (B3AnnFromCST.annForPattern pann) ⟨B3AnnFromCST.annForPatternExprs pann, exprs.val.map (expressionFromCST ctx')⟩
       let patternsArray := patternsToArray patterns |>.map convertPattern
-      .quantifierExpr (B3AnnFromCST.annForQuantifierExpr ann) (.exists (B3AnnFromCST.annForQuantifierKind ann)) ⟨B3AnnFromCST.annForQuantifierVar ann, var.val⟩ ⟨B3AnnFromCST.annForQuantifierType ann, ty.val⟩ ⟨B3AnnFromCST.annForQuantifierPatterns ann, patternsArray⟩ (expressionFromDDM ctx' body)
-  | .paren _ expr => expressionFromDDM ctx expr
+      .quantifierExpr (B3AnnFromCST.annForQuantifierExpr ann) (.exists (B3AnnFromCST.annForQuantifierKind ann)) ⟨B3AnnFromCST.annForQuantifierVar ann, var.val⟩ ⟨B3AnnFromCST.annForQuantifierType ann, ty.val⟩ ⟨B3AnnFromCST.annForQuantifierPatterns ann, patternsArray⟩ (expressionFromCST ctx' body)
+  | .paren _ expr => expressionFromCST ctx expr
 
-partial def callArgFromDDM [Inhabited M] [B3AnnFromCST M] (ctx : FromDDMContext) : B3CST.CallArg M → Strata.B3AST.CallArg M
-  | .call_arg_expr m expr => .callArgExpr m (expressionFromDDM ctx expr)
+partial def callArgFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromCSTContext) : B3CST.CallArg M → Strata.B3AST.CallArg M
+  | .call_arg_expr m expr => .callArgExpr m (expressionFromCST ctx expr)
   | .call_arg_out m id => .callArgOut m (mapAnn (fun x => x) id)
   | .call_arg_inout m id => .callArgInout m (mapAnn (fun x => x) id)
 
@@ -433,43 +433,43 @@ partial def choiceBranchesToList [Inhabited M] : B3CST.ChoiceBranches M → List
       match branch with
       | .choice_branch _ stmt => stmt :: choiceBranchesToList branches
 
-partial def stmtFromDDM [Inhabited M] [B3AnnFromCST M] (ctx : FromDDMContext) : B3CST.Statement M → Strata.B3AST.Statement M
+partial def stmtFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromCSTContext) : B3CST.Statement M → Strata.B3AST.Statement M
   | .var_decl_full m name ty autoinv init =>
       let ctx' := ctx.push name.val
-      .varDecl m (mapAnn (fun x => x) name) (mapAnn (fun t => some (mkAnn m t)) ty) (mkAnn m (some (expressionFromDDM ctx autoinv))) (mkAnn m (some (expressionFromDDM ctx' init)))
+      .varDecl m (mapAnn (fun x => x) name) (mapAnn (fun t => some (mkAnn m t)) ty) (mkAnn m (some (expressionFromCST ctx autoinv))) (mkAnn m (some (expressionFromCST ctx' init)))
   | .var_decl_with_autoinv m name ty autoinv =>
-      .varDecl m (mapAnn (fun x => x) name) (mapAnn (fun t => some (mkAnn m t)) ty) (mkAnn m (some (expressionFromDDM ctx autoinv))) (mkAnn m none)
+      .varDecl m (mapAnn (fun x => x) name) (mapAnn (fun t => some (mkAnn m t)) ty) (mkAnn m (some (expressionFromCST ctx autoinv))) (mkAnn m none)
   | .var_decl_with_init m name ty init =>
       let ctx' := ctx.push name.val
-      .varDecl m (mapAnn (fun x => x) name) (mapAnn (fun t => some (mkAnn m t)) ty) (mkAnn m none) (mkAnn m (some (expressionFromDDM ctx' init)))
+      .varDecl m (mapAnn (fun x => x) name) (mapAnn (fun t => some (mkAnn m t)) ty) (mkAnn m none) (mkAnn m (some (expressionFromCST ctx' init)))
   | .var_decl_typed m name ty =>
       .varDecl m (mapAnn (fun x => x) name) (mapAnn (fun t => some (mkAnn m t)) ty) (mkAnn m none) (mkAnn m none)
   | .var_decl_inferred m name init =>
       let ctx' := ctx.push name.val
-      .varDecl m (mapAnn (fun x => x) name) (mkAnn m none) (mkAnn m none) (mkAnn m (some (expressionFromDDM ctx' init)))
+      .varDecl m (mapAnn (fun x => x) name) (mkAnn m none) (mkAnn m none) (mkAnn m (some (expressionFromCST ctx' init)))
   | .val_decl m name ty init =>
       let ctx' := ctx.push name.val
-      .varDecl m (mapAnn (fun x => x) name) (mapAnn (fun t => some (mkAnn m t)) ty) (mkAnn m none) (mkAnn m (some (expressionFromDDM ctx' init)))
+      .varDecl m (mapAnn (fun x => x) name) (mapAnn (fun t => some (mkAnn m t)) ty) (mkAnn m none) (mkAnn m (some (expressionFromCST ctx' init)))
   | .val_decl_inferred m name init =>
       let ctx' := ctx.push name.val
-      .varDecl m (mapAnn (fun x => x) name) (mkAnn m none) (mkAnn m none) (mkAnn m (some (expressionFromDDM ctx' init)))
+      .varDecl m (mapAnn (fun x => x) name) (mkAnn m none) (mkAnn m none) (mkAnn m (some (expressionFromCST ctx' init)))
   | .assign m lhs rhs =>
-      .assign m (mkAnn m (ctx.lookup lhs.val)) (expressionFromDDM ctx rhs)
+      .assign m (mkAnn m (ctx.lookup lhs.val)) (expressionFromCST ctx rhs)
   | .reinit_statement m v =>
       .reinit m (mkAnn m (ctx.lookup v.val))
   | .check m expr =>
-      .check m (expressionFromDDM ctx expr)
+      .check m (expressionFromCST ctx expr)
   | .assume m expr =>
-      .assume m (expressionFromDDM ctx expr)
+      .assume m (expressionFromCST ctx expr)
   | .reach m expr =>
-      .reach m (expressionFromDDM ctx expr)
+      .reach m (expressionFromCST ctx expr)
   | .assert m expr =>
-      .assert m (expressionFromDDM ctx expr)
+      .assert m (expressionFromCST ctx expr)
   | .return_statement m =>
       .returnStmt m
   | .block m stmts =>
       let (stmts', _) := stmts.val.toList.foldl (fun (acc, ctx) stmt =>
-        let stmt' := stmtFromDDM ctx stmt
+        let stmt' := stmtFromCST ctx stmt
         let ctx' := match stmt with
           | .var_decl_full _ name _ _ _ => ctx.push name.val
           | .var_decl_with_autoinv _ name _ _ => ctx.push name.val
@@ -483,30 +483,30 @@ partial def stmtFromDDM [Inhabited M] [B3AnnFromCST M] (ctx : FromDDMContext) : 
       ) ([], ctx)
       .blockStmt m (mkAnn m stmts'.toArray)
   | .if_statement m cond thenB elseB =>
-      let elseBranch := mapAnn (fun opt => opt.map (fun e => match e with | .else_some _ stmt => stmtFromDDM ctx stmt)) elseB
-      .ifStmt m (expressionFromDDM ctx cond) (stmtFromDDM ctx thenB) elseBranch
+      let elseBranch := mapAnn (fun opt => opt.map (fun e => match e with | .else_some _ stmt => stmtFromCST ctx stmt)) elseB
+      .ifStmt m (expressionFromCST ctx cond) (stmtFromCST ctx thenB) elseBranch
   | .loop_statement m invs body =>
       let invariants := invs.val.toList.map fun inv =>
         match inv with
-        | .invariant _ expr => expressionFromDDM ctx expr
-      .loop m (mkAnn m invariants.toArray) (stmtFromDDM ctx body)
+        | .invariant _ expr => expressionFromCST ctx expr
+      .loop m (mkAnn m invariants.toArray) (stmtFromCST ctx body)
   | .exit_statement m label =>
       .exit m (mapAnn (fun opt => opt.map (fun l => mkAnn m l.val)) label)
   | .labeled_statement m label stmt =>
-      .labeledStmt m (mapAnn (fun x => x) label) (stmtFromDDM ctx stmt)
+      .labeledStmt m (mapAnn (fun x => x) label) (stmtFromCST ctx stmt)
   | .probe m label =>
       .probe m (mapAnn (fun x => x) label)
   | .aForall_statement m var ty body =>
       let ctx' := ctx.push var.val
-      .aForall m (mapAnn (fun x => x) var) (mapAnn (fun x => x) ty) (stmtFromDDM ctx' body)
+      .aForall m (mapAnn (fun x => x) var) (mapAnn (fun x => x) ty) (stmtFromCST ctx' body)
   | .choose_statement m branches =>
-      .choose m (mkAnn m (choiceBranchesToList branches |>.map (stmtFromDDM ctx)).toArray)
+      .choose m (mkAnn m (choiceBranchesToList branches |>.map (stmtFromCST ctx)).toArray)
   | .if_case_statement m cases =>
       .ifCase m (mapAnn (fun arr => arr.toList.map (fun case =>
         match case with
-        | .if_case_branch cm cond stmt => .oneIfCase cm (expressionFromDDM ctx cond) (stmtFromDDM ctx stmt)) |>.toArray) cases)
+        | .if_case_branch cm cond stmt => .oneIfCase cm (expressionFromCST ctx cond) (stmtFromCST ctx stmt)) |>.toArray) cases)
   | .call_statement m procName args =>
-      .call m (mapAnn (fun x => x) procName) (mapAnn (fun arr => arr.toList.map (callArgFromDDM ctx) |>.toArray) args)
+      .call m (mapAnn (fun x => x) procName) (mapAnn (fun arr => arr.toList.map (callArgFromCST ctx) |>.toArray) args)
 
 def paramModeFromCST [Inhabited M] : Ann (Option (B3CST.PParamMode M)) M → Strata.B3AST.ParamMode M
   | ⟨m, none⟩ => .paramModeIn m
@@ -520,20 +520,20 @@ def fParameterFromCST [Inhabited M] : B3CST.FParam M → Strata.B3AST.FParameter
         | none => false
       .fParameter m (mkAnn m inj) (mapAnn (fun x => x) name) (mapAnn (fun x => x) ty)
 
-def pParameterFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromDDMContext) : B3CST.PParam M → Strata.B3AST.PParameter M
+def pParameterFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromCSTContext) : B3CST.PParam M → Strata.B3AST.PParameter M
   | .pparam m mode name ty =>
       .pParameter m (paramModeFromCST mode) (mapAnn (fun x => x) name) (mapAnn (fun x => x) ty) (mkAnn m none)
   | .pparam_with_autoinv m mode name ty autoinv =>
-      .pParameter m (paramModeFromCST mode) (mapAnn (fun x => x) name) (mapAnn (fun x => x) ty) (mkAnn m (some (expressionFromDDM ctx autoinv)))
+      .pParameter m (paramModeFromCST mode) (mapAnn (fun x => x) name) (mapAnn (fun x => x) ty) (mkAnn m (some (expressionFromCST ctx autoinv)))
 
-def specFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromDDMContext) : B3CST.Spec M → Strata.B3AST.Spec M
-  | .spec_requires m expr => .specRequires m (expressionFromDDM ctx expr)
-  | .spec_ensures m expr => .specEnsures m (expressionFromDDM ctx expr)
+def specFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromCSTContext) : B3CST.Spec M → Strata.B3AST.Spec M
+  | .spec_requires m expr => .specRequires m (expressionFromCST ctx expr)
+  | .spec_ensures m expr => .specEnsures m (expressionFromCST ctx expr)
 
 def fparamsToList : Ann (Array (B3CST.FParam M)) M → List (B3CST.FParam M)
   | ⟨_, arr⟩ => arr.toList
 
-def declFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromDDMContext) : B3CST.Decl M → Strata.B3AST.Decl M
+def declFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromCSTContext) : B3CST.Decl M → Strata.B3AST.Decl M
   | .type_decl m name =>
       .typeDecl m (mapAnn (fun x => x) name)
   | .tagger_decl m name forType =>
@@ -545,16 +545,16 @@ def declFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromDDMContext) : B3CST.De
       let tagAST := tag.val.map (fun t => match t with | .tag_some _ id => mkAnn m id.val)
       let bodyAST := mapAnn (fun opt => opt.map (fun b => match b with
         | .function_body_some bm whens expr =>
-            let whensAST := whens.val.toList.map (fun w => match w with | .when_clause wm e => B3AST.When.when wm (expressionFromDDM ctx' e))
-            B3AST.FunctionBody.functionBody bm (mkAnn bm whensAST.toArray) (expressionFromDDM ctx' expr))) body
+            let whensAST := whens.val.toList.map (fun w => match w with | .when_clause wm e => B3AST.When.when wm (expressionFromCST ctx' e))
+            B3AST.FunctionBody.functionBody bm (mkAnn bm whensAST.toArray) (expressionFromCST ctx' expr))) body
       .function m (mapAnn (fun x => x) name) (mkAnn m paramsAST.toArray) (mapAnn (fun x => x) resultType) (mkAnn m tagAST) bodyAST
   | .axiom_decl m axiomBody =>
       match axiomBody with
       | .axiom _ expr =>
-          .axiom m (mkAnn m #[]) (expressionFromDDM ctx expr)
+          .axiom m (mkAnn m #[]) (expressionFromCST ctx expr)
       | .explain_axiom _ names expr =>
           let namesAST := names.val.toList.map (fun n => mkAnn m n.val)
-          .axiom m (mkAnn m namesAST.toArray) (expressionFromDDM ctx expr)
+          .axiom m (mkAnn m namesAST.toArray) (expressionFromCST ctx expr)
   | .procedure_decl m name params specs body =>
       -- First, collect all parameter names to build context for autoinv expressions
       let paramNames := params.val.toList.map (fun p => match p with
@@ -564,10 +564,10 @@ def declFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromDDMContext) : B3CST.De
       -- Now convert all parameters with the full context (so autoinv can reference all params)
       let paramsAST := params.val.toList.map (pParameterFromCST ctx')
       let specsAST := specs.val.toList.map (specFromCST ctx')
-      let bodyAST := mapAnn (fun opt => opt.map (fun b => match b with | .proc_body_some _ s => stmtFromDDM ctx' s)) body
+      let bodyAST := mapAnn (fun opt => opt.map (fun b => match b with | .proc_body_some _ s => stmtFromCST ctx' s)) body
       .procedure m (mapAnn (fun x => x) name) (mkAnn m paramsAST.toArray) (mkAnn m specsAST.toArray) bodyAST
 
-end FromDDM
+end FromCST
 
 ---------------------------------------------------------------------
 -- Annotation-Preserving Conversions (B3CST M ↔ B3AST M)
@@ -603,15 +603,15 @@ def empty : ToCSTContextSR := { vars := [] }
 
 end ToCSTContextSR
 
-structure FromDDMContextSR where
+structure FromCSTContextSR where
   vars : List String
 
-namespace FromDDMContextSR
+namespace FromCSTContextSR
 
-def lookup (ctx : FromDDMContextSR) (name : String) : Nat :=
+def lookup (ctx : FromCSTContextSR) (name : String) : Nat :=
   ctx.vars.findIdx? (· == name) |>.getD ctx.vars.length
 
-def lookupLast (ctx : FromDDMContextSR) (name : String) : Nat :=
+def lookupLast (ctx : FromCSTContextSR) (name : String) : Nat :=
   -- Find the last occurrence by searching from the end
   let rec findLast (vars : List String) (idx : Nat) : Option Nat :=
     match vars with
@@ -622,12 +622,12 @@ def lookupLast (ctx : FromDDMContextSR) (name : String) : Nat :=
         | none => if v == name then some idx else none
   findLast ctx.vars 0 |>.getD ctx.vars.length
 
-def push (ctx : FromDDMContextSR) (name : String) : FromDDMContextSR :=
+def push (ctx : FromCSTContextSR) (name : String) : FromCSTContextSR :=
   { vars := name :: ctx.vars }
 
-def empty : FromDDMContextSR := { vars := [] }
+def empty : FromCSTContextSR := { vars := [] }
 
-end FromDDMContextSR
+end FromCSTContextSR
 
 /-!
 ## Annotation-Preserving Conversions
@@ -703,65 +703,65 @@ partial def patternsToArraySR [Inhabited $ Strata.B3AST.Expression M] : B3CST.Pa
   | .patterns_single _ p => #[p]
   | .patterns_cons _ p ps => patternsToArraySR ps |>.push p
 
-partial def expressionFromDDMSR [Inhabited $ Strata.B3AST.Expression M] (ctx : FromDDMContextSR) : B3CST.Expression M → Strata.B3AST.Expression M
+partial def expressionFromCSTSR [Inhabited $ Strata.B3AST.Expression M] (ctx : FromCSTContextSR) : B3CST.Expression M → Strata.B3AST.Expression M
   | .natLit ann n => .literal ann (.intLit ann n.val)
   | .strLit ann s => .literal ann (.stringLit ann s.val)
   | .btrue ann => .literal ann (.boolLit ann true)
   | .bfalse ann => .literal ann (.boolLit ann false)
   | .id ann name => .id ann (ctx.lookup name.val)
   | .old_id ann name => .id ann (ctx.lookupLast name.val)
-  | .not ann arg => .unaryOp ann (.not ann) (expressionFromDDMSR ctx arg)
-  | .neg ann arg => .unaryOp ann (.neg ann) (expressionFromDDMSR ctx arg)
-  | .iff ann lhs rhs => .binaryOp ann (.iff ann) (expressionFromDDMSR ctx lhs) (expressionFromDDMSR ctx rhs)
-  | .implies ann lhs rhs => .binaryOp ann (.implies ann) (expressionFromDDMSR ctx lhs) (expressionFromDDMSR ctx rhs)
-  | .impliedBy ann lhs rhs => .binaryOp ann (.impliedBy ann) (expressionFromDDMSR ctx lhs) (expressionFromDDMSR ctx rhs)
-  | .and ann lhs rhs => .binaryOp ann (.and ann) (expressionFromDDMSR ctx lhs) (expressionFromDDMSR ctx rhs)
-  | .or ann lhs rhs => .binaryOp ann (.or ann) (expressionFromDDMSR ctx lhs) (expressionFromDDMSR ctx rhs)
-  | .equal ann lhs rhs => .binaryOp ann (.eq ann) (expressionFromDDMSR ctx lhs) (expressionFromDDMSR ctx rhs)
-  | .not_equal ann lhs rhs => .binaryOp ann (.neq ann) (expressionFromDDMSR ctx lhs) (expressionFromDDMSR ctx rhs)
-  | .lt ann lhs rhs => .binaryOp ann (.lt ann) (expressionFromDDMSR ctx lhs) (expressionFromDDMSR ctx rhs)
-  | .le ann lhs rhs => .binaryOp ann (.le ann) (expressionFromDDMSR ctx lhs) (expressionFromDDMSR ctx rhs)
-  | .ge ann lhs rhs => .binaryOp ann (.ge ann) (expressionFromDDMSR ctx lhs) (expressionFromDDMSR ctx rhs)
-  | .gt ann lhs rhs => .binaryOp ann (.gt ann) (expressionFromDDMSR ctx lhs) (expressionFromDDMSR ctx rhs)
-  | .add ann lhs rhs => .binaryOp ann (.add ann) (expressionFromDDMSR ctx lhs) (expressionFromDDMSR ctx rhs)
-  | .sub ann lhs rhs => .binaryOp ann (.sub ann) (expressionFromDDMSR ctx lhs) (expressionFromDDMSR ctx rhs)
-  | .mul ann lhs rhs => .binaryOp ann (.mul ann) (expressionFromDDMSR ctx lhs) (expressionFromDDMSR ctx rhs)
-  | .div ann lhs rhs => .binaryOp ann (.div ann) (expressionFromDDMSR ctx lhs) (expressionFromDDMSR ctx rhs)
-  | .mod ann lhs rhs => .binaryOp ann (.mod ann) (expressionFromDDMSR ctx lhs) (expressionFromDDMSR ctx rhs)
-  | .functionCall ann fn args => .functionCall ann (mkAnn ann fn.val) (mkAnn ann (args.val.map (expressionFromDDMSR ctx)))
-  | .labeledExpr ann label expr => .labeledExpr ann (mkAnn ann label.val) (expressionFromDDMSR ctx expr)
+  | .not ann arg => .unaryOp ann (.not ann) (expressionFromCSTSR ctx arg)
+  | .neg ann arg => .unaryOp ann (.neg ann) (expressionFromCSTSR ctx arg)
+  | .iff ann lhs rhs => .binaryOp ann (.iff ann) (expressionFromCSTSR ctx lhs) (expressionFromCSTSR ctx rhs)
+  | .implies ann lhs rhs => .binaryOp ann (.implies ann) (expressionFromCSTSR ctx lhs) (expressionFromCSTSR ctx rhs)
+  | .impliedBy ann lhs rhs => .binaryOp ann (.impliedBy ann) (expressionFromCSTSR ctx lhs) (expressionFromCSTSR ctx rhs)
+  | .and ann lhs rhs => .binaryOp ann (.and ann) (expressionFromCSTSR ctx lhs) (expressionFromCSTSR ctx rhs)
+  | .or ann lhs rhs => .binaryOp ann (.or ann) (expressionFromCSTSR ctx lhs) (expressionFromCSTSR ctx rhs)
+  | .equal ann lhs rhs => .binaryOp ann (.eq ann) (expressionFromCSTSR ctx lhs) (expressionFromCSTSR ctx rhs)
+  | .not_equal ann lhs rhs => .binaryOp ann (.neq ann) (expressionFromCSTSR ctx lhs) (expressionFromCSTSR ctx rhs)
+  | .lt ann lhs rhs => .binaryOp ann (.lt ann) (expressionFromCSTSR ctx lhs) (expressionFromCSTSR ctx rhs)
+  | .le ann lhs rhs => .binaryOp ann (.le ann) (expressionFromCSTSR ctx lhs) (expressionFromCSTSR ctx rhs)
+  | .ge ann lhs rhs => .binaryOp ann (.ge ann) (expressionFromCSTSR ctx lhs) (expressionFromCSTSR ctx rhs)
+  | .gt ann lhs rhs => .binaryOp ann (.gt ann) (expressionFromCSTSR ctx lhs) (expressionFromCSTSR ctx rhs)
+  | .add ann lhs rhs => .binaryOp ann (.add ann) (expressionFromCSTSR ctx lhs) (expressionFromCSTSR ctx rhs)
+  | .sub ann lhs rhs => .binaryOp ann (.sub ann) (expressionFromCSTSR ctx lhs) (expressionFromCSTSR ctx rhs)
+  | .mul ann lhs rhs => .binaryOp ann (.mul ann) (expressionFromCSTSR ctx lhs) (expressionFromCSTSR ctx rhs)
+  | .div ann lhs rhs => .binaryOp ann (.div ann) (expressionFromCSTSR ctx lhs) (expressionFromCSTSR ctx rhs)
+  | .mod ann lhs rhs => .binaryOp ann (.mod ann) (expressionFromCSTSR ctx lhs) (expressionFromCSTSR ctx rhs)
+  | .functionCall ann fn args => .functionCall ann (mkAnn ann fn.val) (mkAnn ann (args.val.map (expressionFromCSTSR ctx)))
+  | .labeledExpr ann label expr => .labeledExpr ann (mkAnn ann label.val) (expressionFromCSTSR ctx expr)
   | .letExpr ann var value body =>
       let ctx' := ctx.push var.val
-      .letExpr ann (mkAnn ann var.val) (expressionFromDDMSR ctx value) (expressionFromDDMSR ctx' body)
-  | .ite ann cond thenExpr elseExpr => .ite ann (expressionFromDDMSR ctx cond) (expressionFromDDMSR ctx thenExpr) (expressionFromDDMSR ctx elseExpr)
+      .letExpr ann (mkAnn ann var.val) (expressionFromCSTSR ctx value) (expressionFromCSTSR ctx' body)
+  | .ite ann cond thenExpr elseExpr => .ite ann (expressionFromCSTSR ctx cond) (expressionFromCSTSR ctx thenExpr) (expressionFromCSTSR ctx elseExpr)
   | .forall_expr_no_patterns ann var ty body =>
       let ctx' := ctx.push var.val
-      .quantifierExpr ann (.forall ann) (mkAnn ann var.val) (mkAnn ann ty.val) (mkAnn ann #[]) (expressionFromDDMSR ctx' body)
+      .quantifierExpr ann (.forall ann) (mkAnn ann var.val) (mkAnn ann ty.val) (mkAnn ann #[]) (expressionFromCSTSR ctx' body)
   | .forall_expr ann var ty patterns body =>
       let ctx' := ctx.push var.val
       let convertPattern (p : B3CST.Pattern M) : Strata.B3AST.Pattern M :=
         match p with
-        | .pattern pann exprs => .pattern pann (mkAnn pann (exprs.val.map (expressionFromDDMSR ctx')))
+        | .pattern pann exprs => .pattern pann (mkAnn pann (exprs.val.map (expressionFromCSTSR ctx')))
       let patternsArray := patternsToArraySR patterns |>.map convertPattern
-      .quantifierExpr ann (.forall ann) (mkAnn ann var.val) (mkAnn ann ty.val) (mkAnn ann patternsArray) (expressionFromDDMSR ctx' body)
+      .quantifierExpr ann (.forall ann) (mkAnn ann var.val) (mkAnn ann ty.val) (mkAnn ann patternsArray) (expressionFromCSTSR ctx' body)
   | .exists_expr_no_patterns ann var ty body =>
       let ctx' := ctx.push var.val
-      .quantifierExpr ann (.exists ann) (mkAnn ann var.val) (mkAnn ann ty.val) (mkAnn ann #[]) (expressionFromDDMSR ctx' body)
+      .quantifierExpr ann (.exists ann) (mkAnn ann var.val) (mkAnn ann ty.val) (mkAnn ann #[]) (expressionFromCSTSR ctx' body)
   | .exists_expr ann var ty patterns body =>
       let ctx' := ctx.push var.val
       let convertPattern (p : B3CST.Pattern M) : Strata.B3AST.Pattern M :=
         match p with
-        | .pattern pann exprs => .pattern pann (mkAnn pann (exprs.val.map (expressionFromDDMSR ctx')))
+        | .pattern pann exprs => .pattern pann (mkAnn pann (exprs.val.map (expressionFromCSTSR ctx')))
       let patternsArray := patternsToArraySR patterns |>.map convertPattern
-      .quantifierExpr ann (.exists ann) (mkAnn ann var.val) (mkAnn ann ty.val) (mkAnn ann patternsArray) (expressionFromDDMSR ctx' body)
-  | .paren _ expr => expressionFromDDMSR ctx expr
+      .quantifierExpr ann (.exists ann) (mkAnn ann var.val) (mkAnn ann ty.val) (mkAnn ann patternsArray) (expressionFromCSTSR ctx' body)
+  | .paren _ expr => expressionFromCSTSR ctx expr
 
 end
 
 namespace Expression
 
 def toAST [Inhabited $ Strata.B3AST.Expression M] (e : B3CST.Expression M) : Strata.B3AST.Expression M :=
-  expressionFromDDMSR FromDDMContextSR.empty e
+  expressionFromCSTSR FromCSTContextSR.empty e
 
 def toCST [Inhabited $ Strata.B3CST.Expression M] (e : Strata.B3AST.Expression M) : B3CST.Expression M :=
   expressionToCSTSR ToCSTContextSR.empty e
@@ -829,8 +829,8 @@ partial def stmtToCSTSR [Inhabited (B3CST.Expression M)] [Inhabited $ B3CST.Stat
   | .returnStmt m => B3CST.Statement.return_statement m
   | .probe m label => B3CST.Statement.probe m (mkAnn m label.val)
 
-partial def callArgFromDDMSR [Inhabited (B3AST.Expression M)] (ctx : FromDDMContextSR) : B3CST.CallArg M → Strata.B3AST.CallArg M
-  | .call_arg_expr m expr => .callArgExpr m (expressionFromDDMSR ctx expr)
+partial def callArgFromCSTSR [Inhabited (B3AST.Expression M)] (ctx : FromCSTContextSR) : B3CST.CallArg M → Strata.B3AST.CallArg M
+  | .call_arg_expr m expr => .callArgExpr m (expressionFromCSTSR ctx expr)
   | .call_arg_out m id => .callArgOut m (mkAnn m id.val)
   | .call_arg_inout m id => .callArgInout m (mkAnn m id.val)
 
@@ -842,43 +842,43 @@ partial def choiceBranchesToListSR : B3CST.ChoiceBranches M → List (B3CST.Stat
       match branch with
       | .choice_branch _ stmt => stmt :: choiceBranchesToListSR branches
 
-partial def stmtFromDDMSR [Inhabited $ B3AST.Expression M] [Inhabited $ B3AST.Statement M] (ctx : FromDDMContextSR) : B3CST.Statement M → Strata.B3AST.Statement M
+partial def stmtFromCSTSR [Inhabited $ B3AST.Expression M] [Inhabited $ B3AST.Statement M] (ctx : FromCSTContextSR) : B3CST.Statement M → Strata.B3AST.Statement M
   | .var_decl_full m name ty autoinv init =>
       let ctx' := ctx.push name.val
-      .varDecl m (mkAnn m name.val) (mkAnn m (some (mkAnn m ty.val))) (mkAnn m (some (expressionFromDDMSR ctx autoinv))) (mkAnn m (some (expressionFromDDMSR ctx' init)))
+      .varDecl m (mkAnn m name.val) (mkAnn m (some (mkAnn m ty.val))) (mkAnn m (some (expressionFromCSTSR ctx autoinv))) (mkAnn m (some (expressionFromCSTSR ctx' init)))
   | .var_decl_with_autoinv m name ty autoinv =>
-      .varDecl m (mkAnn m name.val) (mkAnn m (some (mkAnn m ty.val))) (mkAnn m (some (expressionFromDDMSR ctx autoinv))) (mkAnn m none)
+      .varDecl m (mkAnn m name.val) (mkAnn m (some (mkAnn m ty.val))) (mkAnn m (some (expressionFromCSTSR ctx autoinv))) (mkAnn m none)
   | .var_decl_with_init m name ty init =>
       let ctx' := ctx.push name.val
-      .varDecl m (mkAnn m name.val) (mkAnn m (some (mkAnn m ty.val))) (mkAnn m none) (mkAnn m (some (expressionFromDDMSR ctx' init)))
+      .varDecl m (mkAnn m name.val) (mkAnn m (some (mkAnn m ty.val))) (mkAnn m none) (mkAnn m (some (expressionFromCSTSR ctx' init)))
   | .var_decl_typed m name ty =>
       .varDecl m (mkAnn m name.val) (mkAnn m (some (mkAnn m ty.val))) (mkAnn m none) (mkAnn m none)
   | .var_decl_inferred m name init =>
       let ctx' := ctx.push name.val
-      .varDecl m (mkAnn m name.val) (mkAnn m none) (mkAnn m none) (mkAnn m (some (expressionFromDDMSR ctx' init)))
+      .varDecl m (mkAnn m name.val) (mkAnn m none) (mkAnn m none) (mkAnn m (some (expressionFromCSTSR ctx' init)))
   | .val_decl m name ty init =>
       let ctx' := ctx.push name.val
-      .varDecl m (mkAnn m name.val) (mkAnn m (some (mkAnn m ty.val))) (mkAnn m none) (mkAnn m (some (expressionFromDDMSR ctx' init)))
+      .varDecl m (mkAnn m name.val) (mkAnn m (some (mkAnn m ty.val))) (mkAnn m none) (mkAnn m (some (expressionFromCSTSR ctx' init)))
   | .val_decl_inferred m name init =>
       let ctx' := ctx.push name.val
-      .varDecl m (mkAnn m name.val) (mkAnn m none) (mkAnn m none) (mkAnn m (some (expressionFromDDMSR ctx' init)))
+      .varDecl m (mkAnn m name.val) (mkAnn m none) (mkAnn m none) (mkAnn m (some (expressionFromCSTSR ctx' init)))
   | .assign m lhs rhs =>
-      .assign m (mkAnn m (ctx.lookup lhs.val)) (expressionFromDDMSR ctx rhs)
+      .assign m (mkAnn m (ctx.lookup lhs.val)) (expressionFromCSTSR ctx rhs)
   | .reinit_statement m v =>
       .reinit m (mkAnn m (ctx.lookup v.val))
   | .check m expr =>
-      .check m (expressionFromDDMSR ctx expr)
+      .check m (expressionFromCSTSR ctx expr)
   | .assume m expr =>
-      .assume m (expressionFromDDMSR ctx expr)
+      .assume m (expressionFromCSTSR ctx expr)
   | .reach m expr =>
-      .reach m (expressionFromDDMSR ctx expr)
+      .reach m (expressionFromCSTSR ctx expr)
   | .assert m expr =>
-      .assert m (expressionFromDDMSR ctx expr)
+      .assert m (expressionFromCSTSR ctx expr)
   | .return_statement m =>
       .returnStmt m
   | .block m stmts =>
       let (stmts', _) := stmts.val.toList.foldl (fun (acc, ctx) stmt =>
-        let stmt' := stmtFromDDMSR ctx stmt
+        let stmt' := stmtFromCSTSR ctx stmt
         let ctx' := match stmt with
           | .var_decl_full _ name _ _ _ => ctx.push name.val
           | .var_decl_with_autoinv _ name _ _ => ctx.push name.val
@@ -892,35 +892,35 @@ partial def stmtFromDDMSR [Inhabited $ B3AST.Expression M] [Inhabited $ B3AST.St
       ) ([], ctx)
       .blockStmt m (mkAnn m stmts'.toArray)
   | .if_statement m cond thenB elseB =>
-      let elseBranch := mapAnn (fun opt => opt.map (fun e => match e with | .else_some _ stmt => stmtFromDDMSR ctx stmt)) elseB
-      .ifStmt m (expressionFromDDMSR ctx cond) (stmtFromDDMSR ctx thenB) elseBranch
+      let elseBranch := mapAnn (fun opt => opt.map (fun e => match e with | .else_some _ stmt => stmtFromCSTSR ctx stmt)) elseB
+      .ifStmt m (expressionFromCSTSR ctx cond) (stmtFromCSTSR ctx thenB) elseBranch
   | .loop_statement m invs body =>
       let invariants := invs.val.toList.map fun inv =>
         match inv with
-        | .invariant _ expr => expressionFromDDMSR ctx expr
-      .loop m (mkAnn m invariants.toArray) (stmtFromDDMSR ctx body)
+        | .invariant _ expr => expressionFromCSTSR ctx expr
+      .loop m (mkAnn m invariants.toArray) (stmtFromCSTSR ctx body)
   | .exit_statement m label =>
       .exit m (mapAnn (fun opt => opt.map (fun l => mkAnn m l.val)) label)
   | .labeled_statement m label stmt =>
-      .labeledStmt m (mkAnn m label.val) (stmtFromDDMSR ctx stmt)
+      .labeledStmt m (mkAnn m label.val) (stmtFromCSTSR ctx stmt)
   | .probe m label =>
       .probe m (mkAnn m label.val)
   | .aForall_statement m var ty body =>
       let ctx' := ctx.push var.val
-      .aForall m (mkAnn m var.val) (mkAnn m ty.val) (stmtFromDDMSR ctx' body)
+      .aForall m (mkAnn m var.val) (mkAnn m ty.val) (stmtFromCSTSR ctx' body)
   | .choose_statement m branches =>
-      .choose m (mkAnn m (choiceBranchesToListSR branches |>.map (stmtFromDDMSR ctx)).toArray)
+      .choose m (mkAnn m (choiceBranchesToListSR branches |>.map (stmtFromCSTSR ctx)).toArray)
   | .if_case_statement m cases =>
       .ifCase m (mkAnn m (cases.val.toList.map (fun case =>
         match case with
-        | .if_case_branch cm cond stmt => .oneIfCase cm (expressionFromDDMSR ctx cond) (stmtFromDDMSR ctx stmt)) |>.toArray))
+        | .if_case_branch cm cond stmt => .oneIfCase cm (expressionFromCSTSR ctx cond) (stmtFromCSTSR ctx stmt)) |>.toArray))
   | .call_statement m procName args =>
-      .call m (mkAnn m procName.val) (mkAnn m (args.val.toList.map (callArgFromDDMSR ctx) |>.toArray))
+      .call m (mkAnn m procName.val) (mkAnn m (args.val.toList.map (callArgFromCSTSR ctx) |>.toArray))
 
 end
 
 def toAST   [Inhabited $ B3AST.Expression M] [Inhabited $ B3AST.Statement M] (s : B3CST.Statement M) : Strata.B3AST.Statement M :=
-  stmtFromDDMSR FromDDMContextSR.empty s
+  stmtFromCSTSR FromCSTContextSR.empty s
 
 def toCST [Inhabited $ B3CST.Expression M] [Inhabited $ B3CST.Statement M] (s : Strata.B3AST.Statement M) : B3CST.Statement M :=
   stmtToCSTSR ToCSTContextSR.empty s
@@ -979,14 +979,14 @@ partial def declToCSTSR [Inhabited $ B3CST.Expression M] [Inhabited $ B3CST.Stat
       let bodyCST := mapAnn (fun opt => opt.map (fun s => B3CST.ProcBody.proc_body_some m (Stmt.stmtToCSTSR ctx' s))) body
       B3CST.Decl.procedure_decl m (mkAnn m name.val) paramsCST (mkAnn m specsCST.toArray) bodyCST
 
-partial def fParameterFromDDMSR : B3CST.FParam M → Strata.B3AST.FParameter M
+partial def fParameterFromCSTSR : B3CST.FParam M → Strata.B3AST.FParameter M
   | .fparam m injective name ty =>
       let inj := match injective.val with
         | some (.injective_some _) => true
         | none => false
       .fParameter m (mkAnn m inj) (mkAnn m name.val) (mkAnn m ty.val)
 
-partial def pParameterFromDDMSR [Inhabited $ B3AST.Expression M] (ctx : FromDDMContextSR) : B3CST.PParam M → Strata.B3AST.PParameter M
+partial def pParameterFromCSTSR [Inhabited $ B3AST.Expression M] (ctx : FromCSTContextSR) : B3CST.PParam M → Strata.B3AST.PParameter M
   | .pparam m mode name ty =>
       let modeAST := match mode.val with
         | none => Strata.B3AST.ParamMode.paramModeIn m
@@ -998,37 +998,37 @@ partial def pParameterFromDDMSR [Inhabited $ B3AST.Expression M] (ctx : FromDDMC
         | none => Strata.B3AST.ParamMode.paramModeIn m
         | some (.pmode_out _) => Strata.B3AST.ParamMode.paramModeOut m
         | some (.pmode_inout _) => Strata.B3AST.ParamMode.paramModeInout m
-      .pParameter m modeAST (mkAnn m name.val) (mkAnn m ty.val) (mkAnn m (some (expressionFromDDMSR ctx autoinv)))
+      .pParameter m modeAST (mkAnn m name.val) (mkAnn m ty.val) (mkAnn m (some (expressionFromCSTSR ctx autoinv)))
 
-partial def specFromDDMSR [Inhabited $ B3AST.Expression M] (ctx : FromDDMContextSR) : B3CST.Spec M → Strata.B3AST.Spec M
-  | .spec_requires m expr => .specRequires m (expressionFromDDMSR ctx expr)
-  | .spec_ensures m expr => .specEnsures m (expressionFromDDMSR ctx expr)
+partial def specFromCSTSR [Inhabited $ B3AST.Expression M] (ctx : FromCSTContextSR) : B3CST.Spec M → Strata.B3AST.Spec M
+  | .spec_requires m expr => .specRequires m (expressionFromCSTSR ctx expr)
+  | .spec_ensures m expr => .specEnsures m (expressionFromCSTSR ctx expr)
 
 partial def fparamsToListSR : Ann (Array (B3CST.FParam M)) M → List (B3CST.FParam M)
   | ⟨_, arr⟩ => arr.toList
 
-partial def declFromDDMSR [Inhabited $ B3AST.Expression M] [Inhabited $ B3AST.Statement M]  (ctx : FromDDMContextSR) : B3CST.Decl M → Strata.B3AST.Decl M
+partial def declFromCSTSR [Inhabited $ B3AST.Expression M] [Inhabited $ B3AST.Statement M]  (ctx : FromCSTContextSR) : B3CST.Decl M → Strata.B3AST.Decl M
   | .type_decl m name =>
       .typeDecl m (mkAnn m name.val)
   | .tagger_decl m name forType =>
       .tagger m (mkAnn m name.val) (mkAnn m forType.val)
   | .function_decl m name params resultType tag body =>
-      let paramsAST := fparamsToListSR params |>.map fParameterFromDDMSR
+      let paramsAST := fparamsToListSR params |>.map fParameterFromCSTSR
       let paramNames := paramsAST.map (fun p => match p with | .fParameter _ _ n _ => n.val)
       let ctx' := paramNames.foldl (fun acc n => acc.push n) ctx
       let tagAST := tag.val.map (fun t => match t with | .tag_some _ id => mkAnn m id.val)
       let bodyAST := mapAnn (fun opt => opt.map (fun b => match b with
         | .function_body_some bm whens expr =>
-            let whensAST := whens.val.toList.map (fun w => match w with | .when_clause wm e => B3AST.When.when wm (expressionFromDDMSR ctx' e))
-            B3AST.FunctionBody.functionBody bm (mkAnn bm whensAST.toArray) (expressionFromDDMSR ctx' expr))) body
+            let whensAST := whens.val.toList.map (fun w => match w with | .when_clause wm e => B3AST.When.when wm (expressionFromCSTSR ctx' e))
+            B3AST.FunctionBody.functionBody bm (mkAnn bm whensAST.toArray) (expressionFromCSTSR ctx' expr))) body
       .function m (mkAnn m name.val) (mkAnn m paramsAST.toArray) (mkAnn m resultType.val) (mkAnn m tagAST) bodyAST
   | .axiom_decl m axiomBody =>
       match axiomBody with
       | .axiom _ expr =>
-          .axiom m (mkAnn m #[]) (expressionFromDDMSR ctx expr)
+          .axiom m (mkAnn m #[]) (expressionFromCSTSR ctx expr)
       | .explain_axiom _ names expr =>
           let namesAST := names.val.toList.map (fun n => mkAnn m n.val)
-          .axiom m (mkAnn m namesAST.toArray) (expressionFromDDMSR ctx expr)
+          .axiom m (mkAnn m namesAST.toArray) (expressionFromCSTSR ctx expr)
   | .procedure_decl m name params specs body =>
       -- First, collect all parameter names to build context for autoinv expressions
       let paramNames := params.val.toList.map (fun p => match p with
@@ -1036,15 +1036,15 @@ partial def declFromDDMSR [Inhabited $ B3AST.Expression M] [Inhabited $ B3AST.St
         | .pparam_with_autoinv _ _ n _ _ => n.val)
       let ctx' := paramNames.foldl (fun acc n => acc.push n) ctx
       -- Now convert all parameters with the full context (so autoinv can reference all params)
-      let paramsAST := params.val.toList.map (pParameterFromDDMSR ctx')
-      let specsAST := specs.val.toList.map (specFromDDMSR ctx')
-      let bodyAST := mapAnn (fun opt => opt.map (fun b => match b with | .proc_body_some _ s => Stmt.stmtFromDDMSR ctx' s)) body
+      let paramsAST := params.val.toList.map (pParameterFromCSTSR ctx')
+      let specsAST := specs.val.toList.map (specFromCSTSR ctx')
+      let bodyAST := mapAnn (fun opt => opt.map (fun b => match b with | .proc_body_some _ s => Stmt.stmtFromCSTSR ctx' s)) body
       .procedure m (mkAnn m name.val) (mkAnn m paramsAST.toArray) (mkAnn m specsAST.toArray) bodyAST
 
 end
 
 def toAST [Inhabited $ B3AST.Expression M] [Inhabited $ B3AST.Statement M]  (d : B3CST.Decl M) : Strata.B3AST.Decl M :=
-  declFromDDMSR FromDDMContextSR.empty d
+  declFromCSTSR FromCSTContextSR.empty d
 
 def toCST [Inhabited $ B3CST.Expression M] [Inhabited $ B3CST.Statement M]  (d : Strata.B3AST.Decl M) : B3CST.Decl M :=
   declToCSTSR ToCSTContextSR.empty d
@@ -1053,14 +1053,14 @@ end Decl
 
 namespace Program
 
-partial def programFromDDMSR [Inhabited $ B3AST.Expression M] [Inhabited $ B3AST.Statement M] (ctx : FromDDMContextSR) : B3CST.Program M → Strata.B3AST.Program M
-  | .program m decls => .program m (mkAnn m (decls.val.toList.map (Decl.declFromDDMSR ctx) |>.toArray))
+partial def programFromCSTSR [Inhabited $ B3AST.Expression M] [Inhabited $ B3AST.Statement M] (ctx : FromCSTContextSR) : B3CST.Program M → Strata.B3AST.Program M
+  | .program m decls => .program m (mkAnn m (decls.val.toList.map (Decl.declFromCSTSR ctx) |>.toArray))
 
 partial def programToCSTSR [Inhabited $ B3CST.Expression M] [Inhabited $ B3CST.Statement M] (ctx : ToCSTContextSR) : Strata.B3AST.Program M → B3CST.Program M
   | .program m decls => .program m (mkAnn m (decls.val.toList.map (Decl.declToCSTSR ctx) |>.toArray))
 
 def toAST [Inhabited $ B3AST.Expression M] [Inhabited $ B3AST.Statement M] (p : B3CST.Program M) : Strata.B3AST.Program M :=
-  programFromDDMSR FromDDMContextSR.empty p
+  programFromCSTSR FromCSTContextSR.empty p
 
 def toCST [Inhabited $ B3CST.Expression M] [Inhabited $ B3CST.Statement M] (p : Strata.B3AST.Program M) : B3CST.Program M :=
   programToCSTSR ToCSTContextSR.empty p

@@ -90,7 +90,7 @@ info: B3: .program
   u #[.axiom
     ()
     u #[]
-    (.literal () (.boolLit () u true))]
+    (.literal () (.boolLit () true))]
 ---
 info:
 axiom true
@@ -114,9 +114,7 @@ info: B3: .program
     u some (.functionBody
       ()
       u #[]
-      (.literal
-        ()
-        (.intLit () u 1)))]
+      (.literal () (.intLit () 1)))]
 ---
 info:
 function F(x : int) : int {
@@ -151,8 +149,8 @@ info: B3: .program
       (.binaryOp
         ()
         (.add ())
-        (.id () u 1)
-        (.id () u 0)))]
+        (.id () 1)
+        (.id () 0)))]
 ---
 info:
 function add(x : int, y : int) : int {
@@ -179,7 +177,7 @@ info: B3: .program
     u some (.functionBody
       ()
       u #[]
-      (.id () u 0))]
+      (.id () 0))]
 ---
 info:
 function id(injective x : int) : int {
@@ -206,7 +204,7 @@ info: B3: .program
     u some (.functionBody
       ()
       u #[]
-      (.id () u 0))]
+      (.id () 0))]
 ---
 info:
 function tagged(x : int) : int tag mytag {
@@ -237,11 +235,9 @@ info: B3: .program
         (.binaryOp
           ()
           (.gt ())
-          (.id () u 0)
-          (.literal
-            ()
-            (.intLit () u 0)))]
-      (.id () u 0))]
+          (.id () 0)
+          (.literal () (.intLit () 0)))]
+      (.id () 0))]
 ---
 info:
 function conditional(x : int) : int
@@ -295,10 +291,10 @@ info: B3: .program
         (.binaryOp
           ()
           (.gt ())
-          (.id () u 0)
+          (.id () 0)
           (.literal
             ()
-            (.intLit () u 0)))])]
+            (.intLit () 0)))])]
 ---
 info:
 procedure process(x : int)
@@ -328,9 +324,7 @@ info: B3: .program
       u #[.assign
         ()
         u 0
-        (.literal
-          ()
-          (.intLit () u 42))])]
+        (.literal () (.intLit () 42))])]
 ---
 info:
 procedure getResult(out result : int)
@@ -354,7 +348,17 @@ info: B3: .program
       u "x"
       u "int"
       u none]
-    u #[]
+    u #[.specEnsures
+      ()
+      (.binaryOp
+        ()
+        (.eq ())
+        (.id () 0)
+        (.binaryOp
+          ()
+          (.add ())
+          (.id () 0)
+          (.literal () (.intLit () 1))))]
     u some (.blockStmt
       ()
       u #[.assign
@@ -363,19 +367,32 @@ info: B3: .program
         (.binaryOp
           ()
           (.add ())
-          (.id () u 0)
-          (.literal
+          (.id () 0)
+          (.literal () (.intLit () 1))),
+      .assert
+        ()
+        (.binaryOp
+          ()
+          (.eq ())
+          (.id () 0)
+          (.binaryOp
             ()
-            (.intLit () u 1)))])]
+            (.add ())
+            (.id () 0)
+            (.literal
+              ()
+              (.intLit () 1))))])]
 ---
 info:
 procedure increment(inout x : int)
+  ensures x == old x + 1
 {
   x := x + 1
+  assert x == old x + 1
 }
 -/
 #guard_msgs in
-#eval roundtripDecl $ #strata program B3CST; procedure increment(inout x: int) { x := x + 1 } #end
+#eval roundtripDecl $ #strata program B3CST; procedure increment(inout x: int) ensures x == old x + 1 { x := x + 1 assert x == old x + 1 } #end
 
 -- Procedure with mixed parameters
 /--
@@ -666,20 +683,18 @@ info: B3: .program
         (.binaryOp
           ()
           (.add ())
-          (.id () u 2)
-          (.literal
-            ()
-            (.intLit () u 1))),
+          (.id () 2)
+          (.literal () (.intLit () 1))),
       .assign
         ()
         u 1
         (.binaryOp
           ()
           (.mul ())
-          (.id () u 0)
+          (.id () 0)
           (.literal
             ()
-            (.intLit () u 2)))])]
+            (.intLit () 2)))])]
 ---
 info:
 procedure multi(x : int, out y : int)
