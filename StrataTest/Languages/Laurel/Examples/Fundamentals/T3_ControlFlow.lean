@@ -38,6 +38,9 @@ procedure dag(a: int): int
   if (a > 0) {
     b := 1;
   }
+  assert if (a > 0) { b == 1 } else { true };
+    assert if (a > 0) { b == 2 } else { true };
+//  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
   return b;
 }
 "

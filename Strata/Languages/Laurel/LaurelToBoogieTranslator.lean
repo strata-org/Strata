@@ -77,7 +77,10 @@ partial def translateExpr (expr : StmtExpr) : Boogie.Expression.Expr :=
       let fnOp := .op () ident (some LMonoTy.int)  -- Assume int return type
       args.foldl (fun acc arg => .app () acc (translateExpr arg)) fnOp
   | .Return _ => panic! "translateExpr: Return"
-  | .Block _ _ => panic! "translateExpr: Block"
+  | .Block stmts _ =>
+      match stmts with
+      | [single] => translateExpr single
+      | _ => panic! "translateExpr: Block with multiple statements"
   | .LocalVariable _ _ _ => panic! "translateExpr: LocalVariable"
   | .While _ _ _ _ => panic! "translateExpr: While"
   | .Exit _ => panic! "translateExpr: Exit"
