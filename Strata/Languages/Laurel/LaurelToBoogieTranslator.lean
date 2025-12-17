@@ -147,7 +147,15 @@ partial def translateStmt (stmt : StmtExpr) : List Boogie.Statement :=
   | .StaticCall name args =>
       let boogieArgs := args.map translateExpr
       [Boogie.Statement.call [] name boogieArgs]
-  | .Return _ => panic! "translateStmt: Return"
+  | .Return valueOpt =>
+      let returnStmt := match valueOpt with
+        | some value =>
+            let ident := Boogie.BoogieIdent.locl "result"
+            let boogieExpr := translateExpr value
+            Boogie.Statement.set ident boogieExpr
+        | none => Boogie.Statement.assume "return" (.const () (.boolConst false)) .empty
+      let noFallThrough := Boogie.Statement.assume "return" (.const () (.boolConst false)) .empty
+      [returnStmt, noFallThrough]
   | .LiteralInt _ => panic! "translateStmt: LiteralInt"
   | .LiteralBool _ => panic! "translateStmt: LiteralBool"
   | .Identifier _ => panic! "translateStmt: Identifier"

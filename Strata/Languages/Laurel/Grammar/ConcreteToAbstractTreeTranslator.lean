@@ -196,6 +196,18 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
       let lhs ← translateStmtExpr op.args[0]!
       let rhs ← translateStmtExpr op.args[1]!
       return .PrimitiveOp .Gt [lhs, rhs]
+    else if op.name == q`Laurel.lt then
+      let lhs ← translateStmtExpr op.args[0]!
+      let rhs ← translateStmtExpr op.args[1]!
+      return .PrimitiveOp .Lt [lhs, rhs]
+    else if op.name == q`Laurel.le then
+      let lhs ← translateStmtExpr op.args[0]!
+      let rhs ← translateStmtExpr op.args[1]!
+      return .PrimitiveOp .Leq [lhs, rhs]
+    else if op.name == q`Laurel.ge then
+      let lhs ← translateStmtExpr op.args[0]!
+      let rhs ← translateStmtExpr op.args[1]!
+      return .PrimitiveOp .Geq [lhs, rhs]
     else if op.name == q`Laurel.call then
       -- Handle function calls
       let callee ← translateStmtExpr op.args[0]!

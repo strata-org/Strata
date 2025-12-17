@@ -24,8 +24,14 @@ procedure guards(a: int): int
       var d := c + 5;
       return d + 6;
   }
+  assert b <= 2;
+  assert b < 2;
   var e := b + 1;
-  e
+  assert e <= 3;
+    assert e < 1;
+    assert e < 0;
+//  ^^^^^^^^^^^^^ error: assertion does not hold
+  return e;
 }
 
 procedure dag(a: int): int
@@ -35,7 +41,7 @@ procedure dag(a: int): int
   if (a > 0) {
     b := 1;
   }
-  b
+  return b;
 }
 "
 
