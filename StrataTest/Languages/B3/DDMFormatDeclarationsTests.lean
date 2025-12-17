@@ -1,0 +1,731 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
+import StrataTest.Languages.B3.DDMFormatTests
+import Strata.Languages.B3.DDMConversion
+
+namespace B3
+
+open Std (Format)
+open Strata
+open Strata.B3CST
+
+partial def doRoundtripDecl (decl : OperationF SourceRange) (ctx : FormatContext) (state : FormatState) : Format :=
+  match B3CST.Decl.ofAst decl with
+  | .ok cstDecl =>
+      let b3Decl := Decl.toAST cstDecl
+      let b3DeclUnit := b3Decl.toUnit
+      let reprStr := (repr b3DeclUnit).pretty
+      let reprStr := cleanupDeclRepr reprStr
+      let reprStr := cleanupUnitRepr reprStr
+      dbg_trace f!"B3: {reprStr}"
+      let cstDecl' := Decl.toCST b3Decl
+      let cstAst := cstDecl'.toAst
+      cformat (ArgF.op cstAst) ctx state
+  | .error msg => s!"Parse error: {msg}"
+
+partial def doRoundtripProgram (prog : OperationF SourceRange) (ctx : FormatContext) (state : FormatState) (printIntermediate: Bool := true) : Format :=
+  match B3CST.Program.ofAst prog with
+  | .ok cstProg =>
+      let b3Prog := Program.toAST cstProg
+      dbg_trace (if printIntermediate then
+          let b3ProgUnit := b3Prog.toUnit
+          let reprStr := (repr b3ProgUnit).pretty
+          let reprStr := cleanupDeclRepr reprStr
+          let reprStr := cleanupUnitRepr reprStr
+          f!"B3: {reprStr}"
+        else
+          f!"<B3 omitted>")
+
+      let cstProg' := Program.toCST b3Prog
+      let cstAst := cstProg'.toAst
+      cformat (ArgF.op cstAst) ctx state
+  | .error msg => s!"Parse error: {msg}"
+
+def roundtripDecl (p : Program) : Format :=
+  let ctx := p.formatContext {}
+  let state := p.formatState
+  match p.commands.toList with
+  | [op] =>
+    if op.name.name == "command_program" then
+      match op.args.toList with
+      | [ArgF.op prog] => doRoundtripProgram prog ctx state
+      | _ => "Error: expected program op"
+    else s!"Error: expected command_program, got {op.name.name}"
+  | _ => "Error: expected single command"
+
+
+
+section DeclarationRoundtripTests
+
+-- Type declaration
+/--
+info: B3: .program () u #[.typeDecl () u "MyType"]
+---
+info:
+type MyType
+-/
+#guard_msgs in
+#eval roundtripDecl $ #strata program B3CST; type MyType #end
+
+-- Tagger declaration
+/--
+info: B3: .program
+  ()
+  u #[.tagger () u "MyTagger" u "MyType"]
+---
+info:
+tagger MyTagger for MyType
+-/
+#guard_msgs in
+#eval roundtripDecl $ #strata program B3CST; tagger MyTagger for MyType #end
+
+-- Simple axiom
+/--
+info: B3: .program
+  ()
+  u #[.axiom
+    ()
+    u #[]
+    (.literal () (.boolLit () u true))]
+---
+info:
+axiom true
+-/
+#guard_msgs in
+#eval roundtripDecl $ #strata program B3CST; axiom true #end
+
+/--
+info: B3: .program
+  ()
+  u #[.function
+    ()
+    u "F"
+    u #[.fParameter
+      ()
+      u false
+      u "x"
+      u "int"]
+    u "int"
+    u none
+    u some (.functionBody
+      ()
+      u #[]
+      (.literal
+        ()
+        (.intLit () u 1)))]
+---
+info:
+function F(x : int) : int {
+  1
+}
+-/
+#guard_msgs in
+#eval roundtripDecl $ #strata program B3CST; function F(x: int) : int { 1 } #end
+
+-- Function with multiple parameters
+/--
+info: B3: .program
+  ()
+  u #[.function
+    ()
+    u "add"
+    u #[.fParameter
+      ()
+      u false
+      u "x"
+      u "int",
+    .fParameter
+      ()
+      u false
+      u "y"
+      u "int"]
+    u "int"
+    u none
+    u some (.functionBody
+      ()
+      u #[]
+      (.binaryOp
+        ()
+        (.add ())
+        (.id () u 1)
+        (.id () u 0)))]
+---
+info:
+function add(x : int, y : int) : int {
+  x + y
+}
+-/
+#guard_msgs in
+#eval roundtripDecl $ #strata program B3CST; function add(x: int, y: int) : int { x + y } #end
+
+-- Function with injective parameter
+/--
+info: B3: .program
+  ()
+  u #[.function
+    ()
+    u "id"
+    u #[.fParameter
+      ()
+      u true
+      u "x"
+      u "int"]
+    u "int"
+    u none
+    u some (.functionBody
+      ()
+      u #[]
+      (.id () u 0))]
+---
+info:
+function id(injective x : int) : int {
+  x
+}
+-/
+#guard_msgs in
+#eval roundtripDecl $ #strata program B3CST; function id(injective x: int) : int { x } #end
+
+-- Function with tag
+/--
+info: B3: .program
+  ()
+  u #[.function
+    ()
+    u "tagged"
+    u #[.fParameter
+      ()
+      u false
+      u "x"
+      u "int"]
+    u "int"
+    u some u "mytag"
+    u some (.functionBody
+      ()
+      u #[]
+      (.id () u 0))]
+---
+info:
+function tagged(x : int) : int tag mytag {
+  x
+}
+-/
+#guard_msgs in
+#eval roundtripDecl $ #strata program B3CST; function tagged(x: int) : int tag mytag { x } #end
+
+-- Function with when clause
+/--
+info: B3: .program
+  ()
+  u #[.function
+    ()
+    u "conditional"
+    u #[.fParameter
+      ()
+      u false
+      u "x"
+      u "int"]
+    u "int"
+    u none
+    u some (.functionBody
+      ()
+      u #[.when
+        ()
+        (.binaryOp
+          ()
+          (.gt ())
+          (.id () u 0)
+          (.literal
+            ()
+            (.intLit () u 0)))]
+      (.id () u 0))]
+---
+info:
+function conditional(x : int) : int
+  when x > 0 {
+  x
+}
+-/
+#guard_msgs in
+#eval roundtripDecl $ #strata program B3CST; function conditional(x: int) : int when x > 0 { x } #end
+
+-- Simple procedure with no parameters
+/--
+info: B3: .program
+  ()
+  u #[.procedure
+    ()
+    u "noop"
+    u #[]
+    u #[]
+    u some (.blockStmt
+      ()
+      u #[.returnStmt ()])]
+---
+info:
+procedure noop()
+{
+  return
+}
+-/
+#guard_msgs in
+#eval roundtripDecl $ #strata program B3CST; procedure noop() { return } #end
+
+-- Procedure with in parameter
+/--
+info: B3: .program
+  ()
+  u #[.procedure
+    ()
+    u "process"
+    u #[.pParameter
+      ()
+      (.paramModeIn ())
+      u "x"
+      u "int"
+      u none]
+    u #[]
+    u some (.blockStmt
+      ()
+      u #[.check
+        ()
+        (.binaryOp
+          ()
+          (.gt ())
+          (.id () u 0)
+          (.literal
+            ()
+            (.intLit () u 0)))])]
+---
+info:
+procedure process(x : int)
+{
+  check x > 0
+}
+-/
+#guard_msgs in
+#eval roundtripDecl $ #strata program B3CST; procedure process(x: int) { check x > 0 } #end
+
+-- Procedure with out parameter
+/--
+info: B3: .program
+  ()
+  u #[.procedure
+    ()
+    u "getResult"
+    u #[.pParameter
+      ()
+      (.paramModeOut ())
+      u "result"
+      u "int"
+      u none]
+    u #[]
+    u some (.blockStmt
+      ()
+      u #[.assign
+        ()
+        u 0
+        (.literal
+          ()
+          (.intLit () u 42))])]
+---
+info:
+procedure getResult(out result : int)
+{
+  result := 42
+}
+-/
+#guard_msgs in
+#eval roundtripDecl $ #strata program B3CST; procedure getResult(out result: int) { result := 42 } #end
+
+-- Procedure with inout parameter
+/--
+info: B3: .program
+  ()
+  u #[.procedure
+    ()
+    u "increment"
+    u #[.pParameter
+      ()
+      (.paramModeInout ())
+      u "x"
+      u "int"
+      u none]
+    u #[]
+    u some (.blockStmt
+      ()
+      u #[.assign
+        ()
+        u 0
+        (.binaryOp
+          ()
+          (.add ())
+          (.id () u 0)
+          (.literal
+            ()
+            (.intLit () u 1)))])]
+---
+info:
+procedure increment(inout x : int)
+{
+  x := x + 1
+}
+-/
+#guard_msgs in
+#eval roundtripDecl $ #strata program B3CST; procedure increment(inout x: int) { x := x + 1 } #end
+
+-- Procedure with mixed parameters
+/--
+info: B3: .program
+  ()
+  u #[.procedure
+    ()
+    u "compute"
+    u #[.pParameter
+      ()
+      (.paramModeIn ())
+      u "x"
+      u "int"
+      u none,
+    .pParameter
+      ()
+      (.paramModeOut ())
+      u "y"
+      u "int"
+      u none,
+    .pParameter
+      ()
+      (.paramModeInout ())
+      u "z"
+      u "int"
+      u none]
+    u #[]
+    u some (.blockStmt
+      ()
+      u #[.assign
+        ()
+        u 1
+        (.binaryOp
+          ()
+          (.add ())
+          (.id () u 2)
+          (.id () u 0)),
+      .assign
+        ()
+        u 0
+        (.binaryOp
+          ()
+          (.add ())
+          (.id () u 0)
+          (.literal
+            ()
+            (.intLit () u 1)))])]
+---
+info:
+procedure compute(x : int, out y : int, inout z : int)
+{
+  y := x + z
+  z := z + 1
+}
+-/
+#guard_msgs in
+#eval roundtripDecl $ #strata program B3CST; procedure compute(x: int, out y: int, inout z: int) { y := x + z z := z + 1 } #end
+
+-- Procedure with requires spec
+/--
+info: B3: .program
+  ()
+  u #[.procedure
+    ()
+    u "safe"
+    u #[.pParameter
+      ()
+      (.paramModeIn ())
+      u "x"
+      u "int"
+      u none]
+    u #[.specRequires
+      ()
+      (.binaryOp
+        ()
+        (.gt ())
+        (.id () u 0)
+        (.literal
+          ()
+          (.intLit () u 0)))]
+    u some (.blockStmt
+      ()
+      u #[.check
+        ()
+        (.binaryOp
+          ()
+          (.gt ())
+          (.id () u 0)
+          (.literal
+            ()
+            (.intLit () u 0)))])]
+---
+info:
+procedure safe(x : int)
+  requires x > 0
+{
+  check x > 0
+}
+-/
+#guard_msgs in
+#eval roundtripDecl $ #strata program B3CST; procedure safe(x: int) requires x > 0 { check x > 0 } #end
+
+-- Procedure with ensures spec
+/--
+info: B3: .program
+  ()
+  u #[.procedure
+    ()
+    u "positive"
+    u #[.pParameter
+      ()
+      (.paramModeOut ())
+      u "x"
+      u "int"
+      u none]
+    u #[.specEnsures
+      ()
+      (.binaryOp
+        ()
+        (.gt ())
+        (.id () u 0)
+        (.literal
+          ()
+          (.intLit () u 0)))]
+    u some (.blockStmt
+      ()
+      u #[.assign
+        ()
+        u 0
+        (.literal
+          ()
+          (.intLit () u 1))])]
+---
+info:
+procedure positive(out x : int)
+  ensures x > 0
+{
+  x := 1
+}
+-/
+#guard_msgs in
+#eval roundtripDecl $ #strata program B3CST; procedure positive(out x: int) ensures x > 0 { x := 1 } #end
+
+-- Procedure with both requires and ensures
+/--
+info: B3: .program
+  ()
+  u #[.procedure
+    ()
+    u "bounded"
+    u #[.pParameter
+      ()
+      (.paramModeIn ())
+      u "x"
+      u "int"
+      u none,
+    .pParameter
+      ()
+      (.paramModeOut ())
+      u "y"
+      u "int"
+      u none]
+    u #[.specRequires
+      ()
+      (.binaryOp
+        ()
+        (.ge ())
+        (.id () u 1)
+        (.literal
+          ()
+          (.intLit () u 0))),
+    .specEnsures
+      ()
+      (.binaryOp
+        ()
+        (.ge ())
+        (.id () u 0)
+        (.literal
+          ()
+          (.intLit () u 0)))]
+    u some (.blockStmt
+      ()
+      u #[.assign
+        ()
+        u 0
+        (.id () u 1)])]
+---
+info:
+procedure bounded(x : int, out y : int)
+  requires x >= 0
+  ensures y >= 0
+{
+  y := x
+}
+-/
+#guard_msgs in
+#eval roundtripDecl $ #strata program B3CST; procedure bounded(x: int, out y: int) requires x >= 0 ensures y >= 0 { y := x } #end
+
+-- Procedure with parameter autoinv
+/--
+info: B3: .program
+  ()
+  u #[.procedure
+    ()
+    u "withAutoinv"
+    u #[.pParameter
+      ()
+      (.paramModeIn ())
+      u "x"
+      u "int"
+      u some (.binaryOp
+        ()
+        (.ge ())
+        (.binaryOp
+          ()
+          (.add ())
+          (.id () u 1)
+          (.id () u 0))
+        (.literal
+          ()
+          (.intLit () u 0))),
+    .pParameter
+      ()
+      (.paramModeIn ())
+      u "y"
+      u "int"
+      u some (.binaryOp
+        ()
+        (.ge ())
+        (.id () u 0)
+        (.unaryOp
+          ()
+          (.neg ())
+          (.id () u 1)))]
+    u #[]
+    u some (.blockStmt
+      ()
+      u #[.check
+        ()
+        (.binaryOp
+          ()
+          (.ge ())
+          (.id () u 1)
+          (.literal
+            ()
+            (.intLit () u 0)))])]
+---
+info:
+procedure withAutoinv(x : int autoinv x + y >= 0, y : int autoinv y >= -(x))
+{
+  check x >= 0
+}
+-/
+#guard_msgs in
+#eval roundtripDecl $ #strata program B3CST; procedure withAutoinv(x: int autoinv x + y >= 0, y: int autoinv y >= -x) { check x >= 0 } #end
+
+-- Procedure with body containing multiple statements
+/--
+info: B3: .program
+  ()
+  u #[.procedure
+    ()
+    u "multi"
+    u #[.pParameter
+      ()
+      (.paramModeIn ())
+      u "x"
+      u "int"
+      u none,
+    .pParameter
+      ()
+      (.paramModeOut ())
+      u "y"
+      u "int"
+      u none]
+    u #[]
+    u some (.blockStmt
+      ()
+      u #[.varDecl
+        ()
+        u "temp"
+        u some u "int"
+        u none
+        u none,
+      .assign
+        ()
+        u 0
+        (.binaryOp
+          ()
+          (.add ())
+          (.id () u 2)
+          (.literal
+            ()
+            (.intLit () u 1))),
+      .assign
+        ()
+        u 1
+        (.binaryOp
+          ()
+          (.mul ())
+          (.id () u 0)
+          (.literal
+            ()
+            (.intLit () u 2)))])]
+---
+info:
+procedure multi(x : int, out y : int)
+{
+  var temp : int
+  temp := x + 1
+  y := temp * 2
+}
+-/
+#guard_msgs in
+#eval roundtripDecl $ #strata program B3CST; procedure multi(x: int, out y: int) { var temp : int temp := x + 1 y := temp * 2 } #end
+
+-- Multiple declarations in a program
+/--
+info: B3: .program
+  ()
+  u #[.typeDecl () u "T",
+    .axiom
+      ()
+      u #[]
+      (.literal () (.boolLit () u true)),
+    .function
+      ()
+      u "f"
+      u #[.fParameter
+        ()
+        u false
+        u "x"
+        u "int"]
+      u "int"
+      u none
+      u some (.functionBody
+        ()
+        u #[]
+        (.id () u 0))]
+---
+info:
+type T
+axiom true
+function f(x : int) : int {
+  x
+}
+-/
+#guard_msgs in
+#eval roundtripDecl $ #strata program B3CST; type T axiom true function f(x: int) : int { x } #end
+
+end DeclarationRoundtripTests
+
+end B3
