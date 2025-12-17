@@ -101,49 +101,41 @@ Result: unknown
 Obligation assert_4: could not be proved!
 
 Result: failed
-CEx: ($__x0, 3)
 
 
 Obligation assert_5: could not be proved!
 
 Result: failed
-CEx: ($__x0, 3)
 
 
 Obligation assert_6: could not be proved!
 
 Result: failed
-CEx: ($__x1, 3)
 
 
 Obligation assert_7: could not be proved!
 
 Result: failed
-CEx: ($__x1, 3)
 
 
 Obligation assert_8: could not be proved!
 
 Result: failed
-CEx: ($__x2, 3)
 
 
 Obligation assert_9: could not be proved!
 
 Result: failed
-CEx: ($__x2, 3)
 
 
 Obligation assert_10: could not be proved!
 
 Result: failed
-CEx: ($__x3, 3)
 
 
 Obligation assert_11: could not be proved!
 
 Result: failed
-CEx: ($__x3, 3)
 ---
 info:
 Obligation: assert_0
@@ -160,35 +152,27 @@ Result: unknown
 
 Obligation: assert_4
 Result: failed
-CEx: ($__x0, 3)
 
 Obligation: assert_5
 Result: failed
-CEx: ($__x0, 3)
 
 Obligation: assert_6
 Result: failed
-CEx: ($__x1, 3)
 
 Obligation: assert_7
 Result: failed
-CEx: ($__x1, 3)
 
 Obligation: assert_8
 Result: failed
-CEx: ($__x2, 3)
 
 Obligation: assert_9
 Result: failed
-CEx: ($__x2, 3)
 
 Obligation: assert_10
 Result: failed
-CEx: ($__x3, 3)
 
 Obligation: assert_11
 Result: failed
-CEx: ($__x3, 3)
 -/
 #guard_msgs in
 #eval verify "z3" irrelevantAxiomsTestPgm Inhabited.default {Options.quiet with removeIrrelevantAxioms := true}
