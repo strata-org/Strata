@@ -28,6 +28,7 @@ structure FuncDecl where
   keywordOnly : Nat := args.size
   /-- Map from argument names to their index in args. -/
   argIndexMap : Std.HashMap String (Fin args.size)
+deriving Inhabited
 
 /-- The name of a Python method as encoded in the Boogie dialect-/
 abbrev FuncName := String
@@ -82,8 +83,12 @@ def decl (name : FuncName) (args : List ArgDecl)
   let decl : FuncDecl := { args, posOnlyCount, keywordOnly, argIndexMap }
   modify fun m => { m with functions := m.functions.insert name decl }
 
-scoped macro v:ident ":<" t:ident : term => do
-  `(ArgDecl.mk $(Lean.Syntax.mkStrLit (toString v)) $(Lean.Syntax.mkStrLit (toString t)))
+private def identToStr (t : Lean.TSyntax `ident) : Lean.StrLit :=
+  match t.raw.isIdOrAtom? with
+  | none => panic! "Unexpected string"
+  | some s => Lean.Syntax.mkStrLit s
+
+scoped macro v:ident ":<" t:ident : term => `(ArgDecl.mk $(identToStr v) $(identToStr t))
 
 end SignatureM
 
