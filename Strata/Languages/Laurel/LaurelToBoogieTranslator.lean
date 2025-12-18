@@ -12,6 +12,7 @@ import Strata.Languages.Boogie.Options
 import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.SequenceAssignments
 import Strata.DL.Imperative.Stmt
+import Strata.Languages.Laurel.LaurelFormat
 
 namespace Laurel
 
@@ -77,10 +78,7 @@ partial def translateExpr (expr : StmtExpr) : Boogie.Expression.Expr :=
       let fnOp := .op () ident (some LMonoTy.int)  -- Assume int return type
       args.foldl (fun acc arg => .app () acc (translateExpr arg)) fnOp
   | .Return _ => panic! "translateExpr: Return"
-  | .Block stmts _ =>
-      match stmts with
-      | [single] => translateExpr single
-      | _ => panic! "translateExpr: Block with multiple statements"
+  | .Block _ _ => panic! "translateExpr: Block"
   | .LocalVariable _ _ _ => panic! "translateExpr: LocalVariable"
   | .While _ _ _ _ => panic! "translateExpr: While"
   | .Exit _ => panic! "translateExpr: Exit"
@@ -232,20 +230,23 @@ def translateProcedure (proc : Procedure) : Boogie.Procedure :=
 /-
 Translate Laurel Program to Boogie Program
 -/
-def translate (program : Program) : Boogie.Program :=
+def translate (program : Program) : IO Boogie.Program := do
   -- First, sequence all assignments (move them out of expression positions)
   let sequencedProgram := sequenceProgram program
+  IO.println "=== Sequenced program Program ==="
+  IO.println (toString (Std.Format.pretty (Std.ToFormat.format sequencedProgram)))
+  IO.println "================================="
   -- Then translate to Boogie
   let procedures := sequencedProgram.staticProcedures.map translateProcedure
   let decls := procedures.map (fun p => Boogie.Decl.proc p .empty)
-  { decls := decls }
+  pure { decls := decls }
 
 /-
 Verify a Laurel program using an SMT solver
 -/
 def verifyToVcResults (smtsolver : String) (program : Program)
     (options : Options := Options.default) : IO VCResults := do
-  let boogieProgram := translate program
+  let boogieProgram <- translate program
   -- Debug: Print the generated Boogie program
   IO.println "=== Generated Boogie Program ==="
   IO.println (toString (Std.Format.pretty (Std.ToFormat.format boogieProgram)))

@@ -15,20 +15,20 @@ namespace Laurel
 def program: String := r"
 procedure nestedImpureStatements(x: int): int {
   var y := 0;
-  var z := x;
-  if (z := z + 1; == { z := z + 1; y := y + 1; }) {
-
+  if (y := y + 1; == { y := y + 1; x }) {
+    assert x == 1;
     assert y == x + 1;
-    1
   } else {
-    assert y == x + 1;
-//  ^^^^^^^^^^^^^^^^^^ error: assertion does not hold
-    2
+    assert x != 1;
   }
+  assert y == 2;
+    assert false;
+//  ^^^^^^^^^^^^^ error: assertion does not hold
+  return 42;
 }
 "
 
-#eval! testInputWithOffset "NestedImpureStatements" program 15 processLaurelFile
+#eval! testInputWithOffset "NestedImpureStatements" program 14 processLaurelFile
 
 /-
 Translation towards SMT:

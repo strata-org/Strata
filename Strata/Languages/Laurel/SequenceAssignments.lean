@@ -23,6 +23,8 @@ Becomes:
 structure SequenceState where
   -- Accumulated statements to be prepended
   prependedStmts : List StmtExpr := []
+  -- Counter for generating unique temporary variable names
+  tempCounter : Nat := 0
 
 abbrev SequenceM := StateM SequenceState
 
@@ -34,6 +36,11 @@ def SequenceM.getPrependedStmts : SequenceM (List StmtExpr) := do
   modify fun s => { s with prependedStmts := [] }
   return stmts
 
+def SequenceM.freshTemp : SequenceM Identifier := do
+  let counter := (← get).tempCounter
+  modify fun s => { s with tempCounter := s.tempCounter + 1 }
+  return s!"__t{counter}"
+
 mutual
 /-
 Process an expression, extracting any assignments to preceding statements.
@@ -43,12 +50,18 @@ partial def sequenceExpr (expr : StmtExpr) : SequenceM StmtExpr := do
   match expr with
   | .Assign target value =>
       -- This is an assignment in expression context
-      -- Extract it to a statement and return just the target variable
+      -- We need to: 1) execute the assignment, 2) capture the value in a temporary
+      -- This prevents subsequent assignments to the same variable from changing the value
       let seqValue ← sequenceExpr value
       let assignStmt := StmtExpr.Assign target seqValue
       SequenceM.addPrependedStmt assignStmt
-      -- Return the target as the expression value
-      return target
+      -- Create a temporary variable to capture the assigned value
+      -- Use TInt as the type (could be refined with type inference)
+      let tempName ← SequenceM.freshTemp
+      let tempDecl := StmtExpr.LocalVariable tempName .TInt (some target)
+      SequenceM.addPrependedStmt tempDecl
+      -- Return the temporary variable as the expression value
+      return .Identifier tempName
 
   | .PrimitiveOp op args =>
       -- Process arguments, which might contain assignments
@@ -58,15 +71,13 @@ partial def sequenceExpr (expr : StmtExpr) : SequenceM StmtExpr := do
   | .IfThenElse cond thenBranch elseBranch =>
       -- Process condition first (assignments here become preceding statements)
       let seqCond ← sequenceExpr cond
-      -- Then process branches as statements (not expressions)
-      let seqThen ← sequenceStmt thenBranch
-      let thenBlock := .Block seqThen none
+      -- For if-expressions, branches should be processed as expressions
+      -- If a branch is a block, extract all but the last statement, then use the last as the value
+      let seqThen ← sequenceExpr thenBranch
       let seqElse ← match elseBranch with
-        | some e =>
-            let se ← sequenceStmt e
-            pure (some (.Block se none))
+        | some e => sequenceExpr e >>= (pure ∘ some)
         | none => pure none
-      return .IfThenElse seqCond thenBlock seqElse
+      return .IfThenElse seqCond seqThen seqElse
 
   | .StaticCall name args =>
       -- Process arguments
@@ -74,9 +85,20 @@ partial def sequenceExpr (expr : StmtExpr) : SequenceM StmtExpr := do
       return .StaticCall name seqArgs
 
   | .Block stmts metadata =>
-      -- Process block as a statement context
-      let seqStmts ← stmts.mapM sequenceStmt
-      return .Block (seqStmts.flatten) metadata
+      -- Block in expression position: move all but last statement to prepended
+      match stmts.reverse with
+      | [] =>
+          -- Empty block, return as-is
+          return .Block [] metadata
+      | lastStmt :: restReversed =>
+          -- Process all but the last statement and add to prepended
+          let priorStmts := restReversed.reverse
+          for stmt in priorStmts do
+            let seqStmt ← sequenceStmt stmt
+            for s in seqStmt do
+              SequenceM.addPrependedStmt s
+          -- Process and return the last statement as an expression
+          sequenceExpr lastStmt
 
   -- Base cases: no assignments to extract
   | .LiteralBool _ => return expr
