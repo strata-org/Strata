@@ -199,7 +199,7 @@ def getSolverFlags (options : Options) (solver : String) : Array String :=
   let setTimeout :=
     match solver with
     | "cvc5" => #[s!"--tlimit={options.solverTimeout*1000}"]
-    | "z3" => #[s!"-t:{options.solverTimeout*1000}"]
+    | "z3" => #[s!"-T:{options.solverTimeout*1000}"]
     | _ => #[]
   produceModels ++ setTimeout
 
