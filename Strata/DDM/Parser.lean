@@ -302,7 +302,49 @@ def identFnAux (startPos : String.Pos.Raw) (tk : Option Token) : ParserFn := fun
     s.mkEOIError
   else
     let curr := c.get' i h
-    if isIdBeginEscape curr then
+    if curr == '|' then
+      -- Check if we have a matched token (like ||) or should parse pipe-delimited identifier
+      match tk with
+      | some token =>
+        -- If token is longer than 1 character, it's an operator like ||
+        if token.endPos.byteIdx > 1 then
+          mkTokenAndFixPos startPos tk c s
+        else
+          -- Single | token - could be pipe-delimited identifier
+          let nextPos := c.next' i h
+          if c.atEnd nextPos then
+            -- Single | at end of input - treat as token
+            mkTokenAndFixPos startPos tk c s
+          else
+            -- Handle pipe-delimited identifiers: |identifier|
+            let startPart := nextPos
+            let s         := takeUntilFn (· == '|') c (s.setPos startPart)
+            if h : c.atEnd s.pos then
+              s.mkUnexpectedErrorAt "unterminated pipe-delimited identifier" startPart
+            else
+              let stopPart  := s.pos
+              let s         := s.next' c s.pos h
+              if isToken startPos s.pos tk then
+                mkTokenAndFixPos startPos tk c s
+              else
+                let val := c.extract startPart stopPart
+                mkIdResult startPos val c s
+      | none =>
+        -- No token matched, parse as pipe-delimited identifier
+        let nextPos := c.next' i h
+        if c.atEnd nextPos then
+          s.mkError "identifier"
+        else
+          let startPart := nextPos
+          let s         := takeUntilFn (· == '|') c (s.setPos startPart)
+          if h : c.atEnd s.pos then
+            s.mkUnexpectedErrorAt "unterminated pipe-delimited identifier" startPart
+          else
+            let stopPart  := s.pos
+            let s         := s.next' c s.pos h
+            let val := c.extract startPart stopPart
+            mkIdResult startPos val c s
+    else if isIdBeginEscape curr then
       let startPart := c.next' i h
       let s         := takeUntilFn isIdEndEscape c (s.setPos startPart)
       if h : c.atEnd s.pos then
