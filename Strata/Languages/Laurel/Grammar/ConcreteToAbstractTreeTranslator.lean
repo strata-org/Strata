@@ -120,7 +120,7 @@ instance : Inhabited Procedure where
   default := {
     name := ""
     inputs := []
-    output := .TVoid
+    outputs := []
     precondition := .LiteralBool true
     decreases := none
     determinism := Determinism.deterministic none
@@ -216,7 +216,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
       return .StaticCall calleeName argsList
     else if op.name == q`Laurel.return then
       let value ← translateStmtExpr op.args[0]!
-      return .Return value
+      return .Return (some value)
     else if op.name == q`Laurel.ifThenElse then
       let cond ← translateStmtExpr op.args[0]!
       let thenBranch ← translateStmtExpr op.args[1]!
@@ -254,11 +254,19 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
   if op.name == q`Laurel.procedure then
     let name ← translateIdent op.args[0]!
     let parameters ← translateParameters op.args[1]!
-    let body ← translateCommand op.args[2]!
+    -- args[2] is ReturnParameters category, need to unwrap returnParameters operation
+    let returnParameters ← match op.args[2]! with
+      | .op returnOp =>
+        if returnOp.name == q`Laurel.returnParameters then
+          translateParameters returnOp.args[0]!
+        else
+          TransM.error s!"Expected returnParameters operation, got {repr returnOp.name}"
+      | _ => TransM.error s!"Expected returnParameters operation"
+    let body ← translateCommand op.args[3]!
     return {
       name := name
       inputs := parameters
-      output := .TVoid
+      outputs := returnParameters
       precondition := .LiteralBool true
       decreases := none
       determinism := Determinism.deterministic none
@@ -266,7 +274,7 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       body := .Transparent body
     }
   else
-    TransM.error s!"parseProcedure expects procedure or procedureWithReturnType, got {repr op.name}"
+    TransM.error s!"parseProcedure expects procedure, got {repr op.name}"
 
 /- Translate concrete Laurel syntax into abstract Laurel syntax -/
 def parseProgram (prog : Strata.Program) : TransM Laurel.Program := do
@@ -287,7 +295,7 @@ def parseProgram (prog : Strata.Program) : TransM Laurel.Program := do
 
   let mut procedures : List Procedure := []
   for op in commands do
-    if op.name == q`Laurel.procedure || op.name == q`Laurel.procedureWithReturnType then
+    if op.name == q`Laurel.procedure then
       let proc ← parseProcedure (.op op)
       procedures := procedures ++ [proc]
     else

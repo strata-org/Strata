@@ -23,7 +23,7 @@ procedure foo() {
 
 procedure bar() {
     assume false;
-    assert true;
+    assert false;
 }
 "
 

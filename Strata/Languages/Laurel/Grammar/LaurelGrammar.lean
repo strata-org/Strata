@@ -64,9 +64,14 @@ op block (stmts : Seq StmtExpr) : StmtExpr => @[prec(1000)] "{" stmts "}";
 category Parameter;
 op parameter (name: Ident, paramType: LaurelType): Parameter => name ":" paramType;
 
+category ReturnParameters;
+op returnParameters(parameters: CommaSepBy Parameter): ReturnParameters => "returns" "(" parameters ")";
+
 category Procedure;
-op procedure (name : Ident, parameters: CommaSepBy Parameter, body : StmtExpr) : Procedure =>
-  "procedure " name "(" parameters ")" body:0;
+op procedure (name : Ident, parameters: CommaSepBy Parameter,
+  returnParameters: ReturnParameters,
+  body : StmtExpr) : Procedure =>
+  "procedure " name "(" parameters ")" returnParameters body:0;
 
 op program (staticProcedures: Seq Procedure): Command => staticProcedures;
 

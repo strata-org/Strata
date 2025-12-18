@@ -380,7 +380,7 @@ def toDiagnostic (vcr : Boogie.VCResult) : Option Diagnostic := do
     | .fileRange range =>
       let message := match result with
         | .sat _ => "assertion does not hold"
-        | .unknown => "assertion verification result is unknown"
+        | .unknown => "assertion could not be proved"
         | .err msg => s!"verification error: {msg}"
         | _ => "verification failed"
       some {

@@ -13,7 +13,7 @@ open Strata
 namespace Laurel
 
 def program := r"
-procedure guards(a: int): int
+procedure guards(a: int) returns (r: int)
 {
   var b := a + 2;
   if (b > 2) {
@@ -31,7 +31,7 @@ procedure guards(a: int): int
   return e;
 }
 
-procedure dag(a: int): int
+procedure dag(a: int) returns (r: int)
 {
   var b: int;
 

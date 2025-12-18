@@ -62,7 +62,7 @@ mutual
 structure Procedure: Type where
   name : Identifier
   inputs : List Parameter
-  output : HighType
+  outputs : List Parameter
   precondition : StmtExpr
   decreases : Option StmtExpr -- optionally prove termination
   determinism: Determinism

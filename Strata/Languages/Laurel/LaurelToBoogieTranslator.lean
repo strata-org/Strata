@@ -81,8 +81,9 @@ partial def translateExpr (expr : StmtExpr) : Boogie.Expression.Expr :=
 
 /-
 Translate Laurel StmtExpr to Boogie Statements
+Takes the list of output parameter names to handle return statements correctly
 -/
-partial def translateStmt (stmt : StmtExpr) : List Boogie.Statement :=
+partial def translateStmt (outputParams : List Parameter) (stmt : StmtExpr) : List Boogie.Statement :=
   match stmt with
   | @StmtExpr.Assert cond md =>
       let boogieExpr := translateExpr cond
@@ -91,7 +92,7 @@ partial def translateStmt (stmt : StmtExpr) : List Boogie.Statement :=
       let boogieExpr := translateExpr cond
       [Boogie.Statement.assume "assume" boogieExpr md]
   | .Block stmts _ =>
-      stmts.flatMap translateStmt
+      stmts.flatMap (translateStmt outputParams)
   | .LocalVariable name ty initializer =>
       let boogieMonoType := translateType ty
       let boogieType := LTy.forAll [] boogieMonoType
@@ -116,9 +117,9 @@ partial def translateStmt (stmt : StmtExpr) : List Boogie.Statement :=
       | _ => []  -- Can only assign to simple identifiers
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond := translateExpr cond
-      let bthen := translateStmt thenBranch
+      let bthen := translateStmt outputParams thenBranch
       let belse := match elseBranch with
-                  | some e => translateStmt e
+                  | some e => translateStmt outputParams e
                   | none => []
       -- Use Boogie's if-then-else construct
       [Imperative.Stmt.ite bcond bthen belse .empty]
@@ -126,14 +127,22 @@ partial def translateStmt (stmt : StmtExpr) : List Boogie.Statement :=
       let boogieArgs := args.map translateExpr
       [Boogie.Statement.call [] name boogieArgs]
   | .Return valueOpt =>
-      let returnStmt := match valueOpt with
-        | some value =>
-            let ident := Boogie.BoogieIdent.locl "result"
-            let boogieExpr := translateExpr value
-            Boogie.Statement.set ident boogieExpr
-        | none => Boogie.Statement.assume "return" (.const () (.boolConst false)) .empty
-      let noFallThrough := Boogie.Statement.assume "return" (.const () (.boolConst false)) .empty
-      [returnStmt, noFallThrough]
+      -- In Boogie, returns are done by assigning to output parameters
+      match valueOpt, outputParams.head? with
+      | some value, some outParam =>
+          -- Assign to the first output parameter, then assume false for no fallthrough
+          let ident := Boogie.BoogieIdent.locl outParam.name
+          let boogieExpr := translateExpr value
+          let assignStmt := Boogie.Statement.set ident boogieExpr
+          let noFallThrough := Boogie.Statement.assume "return" (.const () (.boolConst false)) .empty
+          [assignStmt, noFallThrough]
+      | none, _ =>
+          -- Return with no value - just indicate no fallthrough
+          let noFallThrough := Boogie.Statement.assume "return" (.const () (.boolConst false)) .empty
+          [noFallThrough]
+      | some _, none =>
+          -- Error: trying to return a value but no output parameters
+          panic! "Return statement with value but procedure has no output parameters"
   | _ => panic! Std.Format.pretty (Std.ToFormat.format stmt)
 
 /-
@@ -152,20 +161,11 @@ def translateProcedure (proc : Procedure) : Boogie.Procedure :=
   let inputPairs := proc.inputs.map translateParameterToBoogie
   let inputs := inputPairs
 
-  -- Translate output type
-  let outputs :=
-    match proc.output with
-    | .TVoid => []  -- No return value
-    | _ =>
-        let retTy := translateType proc.output
-        let retIdent := Boogie.BoogieIdent.locl "result"
-        [(retIdent, retTy)]
-
   let header : Boogie.Procedure.Header := {
     name := proc.name
     typeArgs := []
     inputs := inputs
-    outputs := outputs
+    outputs := proc.outputs.map translateParameterToBoogie
   }
   let spec : Boogie.Procedure.Spec := {
     modifies := []
@@ -174,7 +174,7 @@ def translateProcedure (proc : Procedure) : Boogie.Procedure :=
   }
   let body : List Boogie.Statement :=
     match proc.body with
-    | .Transparent bodyExpr => translateStmt bodyExpr
+    | .Transparent bodyExpr => translateStmt proc.outputs bodyExpr
     | _ => []  -- TODO: handle Opaque and Abstract bodies
   {
     header := header

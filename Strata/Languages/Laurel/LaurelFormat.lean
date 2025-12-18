@@ -123,8 +123,8 @@ partial def formatBody : Body → Format
 
 partial def formatProcedure (proc : Procedure) : Format :=
   "procedure " ++ Format.text proc.name ++
-  "(" ++ Format.joinSep (proc.inputs.map formatParameter) ", " ++ "): " ++
-  formatHighType proc.output ++ " " ++ formatBody proc.body
+  "(" ++ Format.joinSep (proc.inputs.map formatParameter) ", " ++ ") returns " ++ Format.line ++
+  "(" ++ Format.joinSep (proc.outputs.map formatParameter) ", " ++ ")" ++ Format.line ++ formatBody proc.body
 
 partial def formatField (f : Field) : Format :=
   (if f.isMutable then "var " else "val ") ++
