@@ -32,19 +32,14 @@ open Strata.B3AST
 
 /--
 Typeclass for creating annotations when converting CST → AST.
-Methods are named specifically for where they're used. Each should be used exactly once.
+Methods are used to extract multiple metadata from a single CST metadata,
+or to combine multiple CST metadata into fewer AST metadata.
 -/
 class B3AnnFromCST (α : Type) where
   /-- Used in: literal cases (.natLit, .strLit, .btrue, .bfalse) for .literal wrapper -/
   annForLiteral : α → α
   /-- Used in: literal cases for the specific literal type (.intLit, .stringLit, .boolLit) -/
   annForLiteralType : α → α
-  /-- Used in: literal cases for Ann wrapping the value -/
-  annForLiteralValue : α → α
-  /-- Used in: .id case for .id wrapper -/
-  annForId : α → α
-  /-- Used in: .id case for Ann wrapping the looked-up index -/
-  annForIdValue : α → α
   /-- Used in: unary op cases (.not, .neg) for .unaryOp wrapper -/
   annForUnaryOp : α → α
   /-- Used in: unary op cases for the op type (.not, .neg) -/
@@ -87,9 +82,6 @@ class B3AnnFromCST (α : Type) where
 instance : B3AnnFromCST Unit where
   annForLiteral _ := ()
   annForLiteralType _ := ()
-  annForLiteralValue _ := ()
-  annForId _ := ()
-  annForIdValue _ := ()
   annForUnaryOp _ := ()
   annForUnaryOpType _ := ()
   annForBinaryOp _ := ()
@@ -113,9 +105,6 @@ instance : B3AnnFromCST Unit where
 instance : B3AnnFromCST M where
   annForLiteral := id
   annForLiteralType := id
-  annForLiteralValue := id
-  annForId := id
-  annForIdValue := id
   annForUnaryOp := id
   annForUnaryOpType := id
   annForBinaryOp := id
@@ -427,8 +416,8 @@ partial def expressionFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromCSTConte
   | .strLit ann s => .literal (B3AnnFromCST.annForLiteral ann) (.stringLit (B3AnnFromCST.annForLiteralType ann) s)
   | .btrue ann => .literal (B3AnnFromCST.annForLiteral ann) (.boolLit (B3AnnFromCST.annForLiteralType ann) true)
   | .bfalse ann => .literal (B3AnnFromCST.annForLiteral ann) (.boolLit (B3AnnFromCST.annForLiteralType ann) false)
-  | .id ann name => .id (B3AnnFromCST.annForId ann) (ctx.lookup name)
-  | .old_id ann name => .id (B3AnnFromCST.annForId ann) (ctx.lookupLast name.val)
+  | .id ann name => .id ann (ctx.lookup name)
+  | .old_id ann name => .id ann (ctx.lookupLast name.val)
   | .not ann arg => .unaryOp (B3AnnFromCST.annForUnaryOp ann) (.not (B3AnnFromCST.annForUnaryOpType ann)) (expressionFromCST ctx arg)
   | .neg ann arg => .unaryOp (B3AnnFromCST.annForUnaryOp ann) (.neg (B3AnnFromCST.annForUnaryOpType ann)) (expressionFromCST ctx arg)
   | .iff ann lhs rhs => .binaryOp (B3AnnFromCST.annForBinaryOp ann) (.iff (B3AnnFromCST.annForBinaryOpType ann)) (expressionFromCST ctx lhs) (expressionFromCST ctx rhs)
