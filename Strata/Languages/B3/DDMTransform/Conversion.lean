@@ -32,51 +32,50 @@ open Strata.B3AST
 
 /--
 Typeclass for creating annotations when converting CST → AST.
-Methods are used to extract multiple metadata from a single CST metadata,
-or to combine multiple CST metadata into fewer AST metadata.
+Methods extract multiple metadata from a single CST metadata when AST needs more.
 -/
 class B3AnnFromCST (α : Type) where
-  /-- Used in: literal cases (.natLit, .strLit, .btrue, .bfalse) for .literal wrapper -/
+  /-- CST: `.natLit ann n` (1 metadata) → AST: `.literal m (.intLit m2 n)` (2 metadata). Extract for .literal wrapper. -/
   annForLiteral : α → α
-  /-- Used in: literal cases for the specific literal type (.intLit, .stringLit, .boolLit) -/
+  /-- CST: `.natLit ann n` (1 metadata) → AST: `.literal m (.intLit m2 n)` (2 metadata). Extract for .intLit/.stringLit/.boolLit. -/
   annForLiteralType : α → α
-  /-- Used in: unary op cases (.not, .neg) for .unaryOp wrapper -/
+  /-- CST: `.not ann arg` (1 metadata) → AST: `.unaryOp m (.not m2) arg` (2 metadata). Extract for .unaryOp wrapper. -/
   annForUnaryOp : α → α
-  /-- Used in: unary op cases for the op type (.not, .neg) -/
+  /-- CST: `.not ann arg` (1 metadata) → AST: `.unaryOp m (.not m2) arg` (2 metadata). Extract for .not/.neg. -/
   annForUnaryOpType : α → α
-  /-- Used in: binary op cases for .binaryOp wrapper -/
+  /-- CST: `.add ann lhs rhs` (1 metadata) → AST: `.binaryOp m (.add m2) lhs rhs` (2 metadata). Extract for .binaryOp wrapper. -/
   annForBinaryOp : α → α
-  /-- Used in: binary op cases for the op type -/
+  /-- CST: `.add ann lhs rhs` (1 metadata) → AST: `.binaryOp m (.add m2) lhs rhs` (2 metadata). Extract for .add/.sub/etc. -/
   annForBinaryOpType : α → α
-  /-- Used in: .functionCall for wrapper -/
+  /-- CST: `.functionCall ann fn args` (1 metadata) → AST: `.functionCall m ⟨m2, fn⟩ ⟨m3, args⟩` (3 metadata). Extract for wrapper. -/
   annForFunctionCall : α → α
-  /-- Used in: .functionCall for Ann wrapping function name -/
+  /-- CST: `.functionCall ann fn args` (1 metadata) → AST: `.functionCall m ⟨m2, fn⟩ ⟨m3, args⟩` (3 metadata). Extract for fn Ann. -/
   annForFunctionCallName : α → α
-  /-- Used in: .functionCall for Ann wrapping args array -/
+  /-- CST: `.functionCall ann fn args` (1 metadata) → AST: `.functionCall m ⟨m2, fn⟩ ⟨m3, args⟩` (3 metadata). Extract for args Ann. -/
   annForFunctionCallArgs : α → α
-  /-- Used in: .labeledExpr for wrapper -/
+  /-- CST: `.labeledExpr ann label expr` (1 metadata) → AST: `.labeledExpr m ⟨m2, label⟩ expr` (2 metadata). Extract for wrapper. -/
   annForLabeledExpr : α → α
-  /-- Used in: .labeledExpr for Ann wrapping label -/
+  /-- CST: `.labeledExpr ann label expr` (1 metadata) → AST: `.labeledExpr m ⟨m2, label⟩ expr` (2 metadata). Extract for label Ann. -/
   annForLabeledExprLabel : α → α
-  /-- Used in: .letExpr for wrapper -/
+  /-- CST: `.letExpr ann var value body` (1 metadata) → AST: `.letExpr m ⟨m2, var⟩ value body` (2 metadata). Extract for wrapper. -/
   annForLetExpr : α → α
-  /-- Used in: .letExpr for Ann wrapping var name -/
+  /-- CST: `.letExpr ann var value body` (1 metadata) → AST: `.letExpr m ⟨m2, var⟩ value body` (2 metadata). Extract for var Ann. -/
   annForLetExprVar : α → α
-  /-- Used in: .ite for wrapper -/
+  /-- CST: `.ite ann cond thn els` (1 metadata) → AST: `.ite m cond thn els` (1 metadata). Passthrough (no extraction needed). -/
   annForIte : α → α
-  /-- Used in: quantifier cases for .quantifierExpr wrapper -/
+  /-- CST: `.forall_expr ann var ty patterns body` (1 metadata) → AST: `.quantifierExpr m (.forall m2) ⟨m3, var⟩ ⟨m4, ty⟩ ⟨m5, patterns⟩ body` (5 metadata). Extract for wrapper. -/
   annForQuantifierExpr : α → α
-  /-- Used in: quantifier cases for quantifier kind (.forall, .exists) -/
+  /-- CST: `.forall_expr ann var ty patterns body` (1 metadata) → AST: `.quantifierExpr m (.forall m2) ⟨m3, var⟩ ⟨m4, ty⟩ ⟨m5, patterns⟩ body` (5 metadata). Extract for .forall/.exists. -/
   annForQuantifierKind : α → α
-  /-- Used in: quantifier cases for Ann wrapping var name -/
+  /-- CST: `.forall_expr ann var ty patterns body` (1 metadata) → AST: `.quantifierExpr m (.forall m2) ⟨m3, var⟩ ⟨m4, ty⟩ ⟨m5, patterns⟩ body` (5 metadata). Extract for var Ann. -/
   annForQuantifierVar : α → α
-  /-- Used in: quantifier cases for Ann wrapping type -/
+  /-- CST: `.forall_expr ann var ty patterns body` (1 metadata) → AST: `.quantifierExpr m (.forall m2) ⟨m3, var⟩ ⟨m4, ty⟩ ⟨m5, patterns⟩ body` (5 metadata). Extract for ty Ann. -/
   annForQuantifierType : α → α
-  /-- Used in: quantifier cases for Ann wrapping patterns array -/
+  /-- CST: `.forall_expr ann var ty patterns body` (1 metadata) → AST: `.quantifierExpr m (.forall m2) ⟨m3, var⟩ ⟨m4, ty⟩ ⟨m5, patterns⟩ body` (5 metadata). Extract for patterns Ann. -/
   annForQuantifierPatterns : α → α
-  /-- Used in: pattern case for .pattern wrapper -/
+  /-- CST: `.pattern pann exprs` (1 metadata) → AST: `.pattern m ⟨m2, exprs⟩` (2 metadata). Extract for wrapper. -/
   annForPattern : α → α
-  /-- Used in: pattern case for Ann wrapping expressions array -/
+  /-- CST: `.pattern pann exprs` (1 metadata) → AST: `.pattern m ⟨m2, exprs⟩` (2 metadata). Extract for exprs Ann. -/
   annForPatternExprs : α → α
 
 instance : B3AnnFromCST Unit where
