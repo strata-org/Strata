@@ -63,8 +63,12 @@ tools (either language front ends or generic automated reasoning tools like SMT
 solvers).
 
 The following "hourglass" diagram illustrates how various existing (blue) or
-hypothetical (gray) input dialects could be translated into Strata Core and
-then into the input language for various back end tools.
+potential (gray) input dialects could be translated into Strata Core and then
+into the input language for various back end tools. Solid lines indicate
+translation paths that exist (though experimentally in the connection between
+Strata Core and CBMC), and dotted lines indicate translations that illustrate
+the sorts of use cases we expect Strata to support but that haven't yet been
+implemented.
 
 ![Strata hourglass diagram](strata-hourglass.png)
 
