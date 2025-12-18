@@ -262,7 +262,7 @@ This pretty prints the argument an op atom has.
 -/
 private def SyntaxDefAtom.formatArgs (opts : FormatOptions) (args : Array PrecFormat) (stx : SyntaxDefAtom) : Format :=
   match stx with
-  | .ident lvl prec =>
+  | .ident lvl prec _ =>
     let ⟨r, innerPrec⟩ := args[lvl]!
     if prec > 0 ∧ (innerPrec ≤ prec ∨ opts.alwaysParen) then
       f!"({r})"
@@ -481,7 +481,7 @@ end ArgDecls
 namespace SyntaxDefAtom
 
 protected def mformat : SyntaxDefAtom → StrataFormat
-| .ident lvl prec => mf!"{StrataFormat.lvlVar lvl}:{prec}" -- FIXME.  This may be wrong.
+| .ident lvl prec _ => mf!"{StrataFormat.lvlVar lvl}:{prec}" -- FIXME.  This may be wrong.
 | .str lit => mformat (escapeStringLit lit)
 | .indent n f =>
   let r := f.attach.map fun ⟨a, _⟩ => a.mformat

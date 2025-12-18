@@ -192,13 +192,13 @@ function IntOrNone_int_val(v : IntOrNone) : int;
 function IntOrNone_none_val(v : IntOrNone) : None;
 function IntOrNone_mk_int(i : int) : IntOrNone;
 function IntOrNone_mk_none(v : None) : IntOrNone;
-axiom (forall i : int :: {(IntOrNone_mk_int(i))}
+axiom [IntOrNone_mk_int_axiom]: (forall i : int :: {(IntOrNone_mk_int(i))}
         IntOrNone_tag(IntOrNone_mk_int(i)) == IN_INT_TAG &&
         IntOrNone_int_val(IntOrNone_mk_int(i)) == i);
-axiom (forall n : None :: {(IntOrNone_mk_none(n))}
+axiom [IntOrNone_mk_none_axiom]: (forall n : None :: {(IntOrNone_mk_none(n))}
         IntOrNone_tag(IntOrNone_mk_none(n)) == IN_NONE_TAG &&
         IntOrNone_none_val(IntOrNone_mk_none(n)) == n);
-axiom (forall v : IntOrNone :: {IntOrNone_tag(v)}
+axiom [IntOrNone_tag_axiom]: (forall v : IntOrNone :: {IntOrNone_tag(v)}
         IntOrNone_tag(v) == IN_INT_TAG ||
         IntOrNone_tag(v) == IN_NONE_TAG);
 axiom [unique_IntOrNoneTag]: IN_INT_TAG != IN_NONE_TAG;
@@ -332,6 +332,9 @@ function BytesOrStrOrNone_mk_str(s : string) : (BytesOrStrOrNone);
 type DictStrAny;
 function DictStrAny_mk(s : string) : (DictStrAny);
 
+type ListDictStrAny;
+function ListDictStrAny_nil() : (ListDictStrAny);
+
 type Client;
 type ClientTag;
 const C_S3_TAG : ClientTag;
@@ -366,13 +369,20 @@ axiom [unique_BoolOrStrOrNoneTag]: BSN_BOOL_TAG != BSN_STR_TAG && BSN_BOOL_TAG !
 // milliseconds is simply used. See Timedelta_mk.
 
 
-procedure timedelta(days: int) returns (delta : int, maybe_except: ExceptOrNone)
+procedure timedelta(days: IntOrNone, hours: IntOrNone) returns (delta : int, maybe_except: ExceptOrNone)
 spec{
-  free ensures [ensure_timedelta_sign_matches]: (delta == (days * 3600 * 24));
 }
 {
   havoc delta;
-  assume [assume_timedelta_sign_matches]: (delta == (days * 3600 * 24));
+  var days_i : int := 0;
+  if (IntOrNone_tag(days) == IN_INT_TAG) {
+        days_i := IntOrNone_int_val(days);
+  }
+  var hours_i : int := 0;
+  if (IntOrNone_tag(hours) == IN_INT_TAG) {
+        days_i := IntOrNone_int_val(hours);
+  }
+  assume [assume_timedelta_sign_matches]: (delta == (((days_i * 24) + hours_i) * 3600) * 1000000);
 };
 
 function Timedelta_mk(days : int, seconds : int, microseconds : int): int {
@@ -421,6 +431,15 @@ spec {
   assume [assume_datetime_now]: (Datetime_get_timedelta(d) == Timedelta_mk(0,0,0));
 };
 
+procedure datetime_utcnow() returns (d:Datetime, maybe_except: ExceptOrNone)
+spec {
+  ensures (Datetime_get_timedelta(d) == Timedelta_mk(0,0,0));
+}
+{
+  havoc d;
+  assume [assume_datetime_now]: (Datetime_get_timedelta(d) == Timedelta_mk(0,0,0));
+};
+
 // Addition/subtraction of Datetime and Timedelta.
 function Datetime_add(d:Datetime, timedelta:int):Datetime;
 function Datetime_sub(d:Datetime, timedelta:int):Datetime {
@@ -449,12 +468,19 @@ procedure datetime_date(dt: Datetime) returns (d : Datetime, maybe_except: Excep
 spec{}
 {havoc d;};
 
+function datetime_to_str(dt : Datetime) : string;
+
+function datetime_to_int() : int;
+
 procedure datetime_strptime(time: string, format: string) returns (d : Datetime, maybe_except: ExceptOrNone)
-spec{}
+spec{
+  requires [req_format_str]: (format == "%Y-%m-%d");
+  ensures [ensures_str_strp_reverse]: (forall dt : Datetime :: {d == dt} ((time == datetime_to_str(dt)) <==> (d == dt)));
+}
 {
   havoc d;
+  assume [assume_str_strp_reverse]: (forall dt : Datetime :: {d == dt} ((time == datetime_to_str(dt)) <==> (d == dt)));
 };
-
 
 /////////////////////////////////////////////////////////////////////////////////////
 
@@ -496,7 +522,16 @@ function str_len(s : string) : int;
 
 function dict_str_any_get(d : DictStrAny, k: string) : DictStrAny;
 
+function dict_str_any_get_list_str(d : DictStrAny, k: string) : ListStr;
+
+function dict_str_any_get_str(d : DictStrAny, k: string) : string;
+
 function dict_str_any_length(d : DictStrAny) : int;
+
+procedure str_to_float(s : string) returns (result: string, maybe_except: ExceptOrNone)
+;
+
+function Float_gt(lhs : string, rhs: string) : bool;
 
 // /////////////////////////////////////////////////////////////////////////////////////
 

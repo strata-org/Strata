@@ -189,7 +189,7 @@ inductive ArgF (α : Type) : Type where
 | expr (e : ExprF α)
 | type (e : TypeExprF α)
 | ident (ann : α) (i : String)
-| num (ann : α)(v : Nat)
+| num (ann : α) (v : Nat)
 | decimal (ann : α) (v : Decimal)
 | strlit (ann : α) (i : String)
 | bytes (ann : α) (a : ByteArray)
@@ -601,7 +601,8 @@ inductive SyntaxDefAtom
 -- Surround with parenthesis if the precedence of the argument is less than `prec`.
 -- Note. If `prec` is zero, then parenthesis will never be added (even with pp.parens is true).
 -- This is to avoid parens in categories that do not support them.
-| ident (level : Nat) (prec : Nat)
+-- The unwrap parameter specifies if the value should be unwrapped to a raw type.
+| ident (level : Nat) (prec : Nat) (unwrap : Bool := false)
 | str (lit : String)
 | indent (n : Nat) (args : Array SyntaxDefAtom)
 deriving BEq, Inhabited, Repr
