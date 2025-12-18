@@ -40,7 +40,7 @@ def stripComments (s : String) : String :=
 
 /-- Normalize whitespace in a string by splitting on whitespace and rejoining with single spaces -/
 def normalizeWhitespace (s : String) : String :=
-  let words := (s.split Char.isWhitespace).filter (·.isEmpty.not)
+  let words := (s.splitToList Char.isWhitespace).filter (·.isEmpty.not)
   " ".intercalate words
 
 /-- Result of a grammar test -/
@@ -59,9 +59,9 @@ structure GrammarTestResult where
 
     Returns:
     - GrammarTestResult with parse/format results -/
-def testGrammarFile (dialect: Dialect) (filePath : String) : IO GrammarTestResult := do
+def testGrammarFile (dialect: Dialect) (ctx : Lean.Parser.InputContext) : IO GrammarTestResult := do
   try
-    let (inputContext, ddmProgram) ← Strata.Elab.parseStrataProgramFromDialect filePath dialect
+    let (inputContext, ddmProgram) ← Strata.Elab.parseStrataProgramFromDialect ctx dialect
     let formatted := ddmProgram.format.render
     let normalizedInput := normalizeWhitespace (stripComments inputContext.inputString)
     let normalizedOutput := normalizeWhitespace formatted
