@@ -51,7 +51,7 @@ abbrev Parser := Std.Internal.Parsec.String.Parser
 def varToken : Parser String := do
   let chars ← many1 (satisfy (fun c =>
     !c.isWhitespace && c ≠ '(' && c ≠ ')'))
-  return String.mk chars.toList
+  return String.ofList chars.toList
 
 def valToken : Parser String := do
   (attempt (do
@@ -59,7 +59,7 @@ def valToken : Parser String := do
     let _open_paren ← pchar '('
     let content ← many (satisfy (fun c => c ≠ ')'))
     let _close_paren ← pchar ')'
-    return s!"({String.mk content.toList})")) <|>
+    return s!"({String.ofList content.toList})")) <|>
     -- Handle regular token.
     varToken
 
@@ -91,9 +91,9 @@ def parseCEx1 : Parser CEx := do
     return { pairs := [] }))
 
 def parseCEx (cex : String) : Except Format CEx :=
-  match parseCEx1 (String.mkIterator cex) with
+  match parseCEx1 ⟨cex, cex.startValidPos⟩ with
   | Std.Internal.Parsec.ParseResult.success _ result => Except.ok result
-  | Std.Internal.Parsec.ParseResult.error pos msg => Except.error s!"Parse error at {pos}: {msg}"
+  | Std.Internal.Parsec.ParseResult.error ⟨_, pos⟩ msg => Except.error s!"Parse error at {pos.offset}: {msg}"
 
 /-- info: -/
 #guard_msgs in
