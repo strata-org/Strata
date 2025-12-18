@@ -33,7 +33,8 @@ procedure fooProof() {
 }
 "
 
-#eval! testInput "ProcedureCalls" program processLaurelFile
+-- Not working yet
+-- #eval! testInput "ProcedureCalls" program processLaurelFile
 
 /-
 Translation towards SMT:

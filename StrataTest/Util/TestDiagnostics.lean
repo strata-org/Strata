@@ -130,14 +130,16 @@ def testInputContext (input : Parser.InputContext) (process : Lean.Parser.InputC
 def testInput (filename: String) (input : String) (process : Lean.Parser.InputContext -> IO (Array Diagnostic)) : IO Unit :=
   testInputContext (Parser.stringInputContext filename input) process
 
-/-- Test input with line offset - reports diagnostic line numbers offset by the given amount -/
+/-- Test input with line offset - adds imaginary newlines to the start of the input -/
 def testInputWithOffset (filename: String) (input : String) (lineOffset : Nat)
     (process : Lean.Parser.InputContext -> IO (Array Diagnostic)) : IO Unit := do
 
-  let inputContext := Parser.stringInputContext filename input
+  -- Add imaginary newlines to the start of the input
+  let offsetInput := String.join (List.replicate lineOffset "\n") ++ input
+  let inputContext := Parser.stringInputContext filename offsetInput
 
   -- Parse diagnostic expectations from comments
-  let expectations := parseDiagnosticExpectations input
+  let expectations := parseDiagnosticExpectations offsetInput
   let expectedErrors := expectations.filter (fun e => e.level == "error")
 
   -- Get actual diagnostics from the language-specific processor
@@ -161,12 +163,12 @@ def testInputWithOffset (filename: String) (input : String) (lineOffset : Nat)
       allMatched := false
       unmatchedDiagnostics := unmatchedDiagnostics.append [diag]
 
-  -- Report results with adjusted line numbers
+  -- Report results
   if allMatched && diagnostics.size == expectedErrors.length then
     IO.println s!"✓ Test passed: All {expectedErrors.length} error(s) matched"
-    -- Print details of matched expectations with offset line numbers
+    -- Print details of matched expectations
     for exp in expectedErrors do
-      IO.println s!"  - Line {exp.line + lineOffset}, Col {exp.colStart}-{exp.colEnd}: {exp.message}"
+      IO.println s!"  - Line {exp.line}, Col {exp.colStart}-{exp.colEnd}: {exp.message}"
   else
     IO.println s!"✗ Test failed: Mismatched diagnostics"
     IO.println s!"\nExpected {expectedErrors.length} error(s), got {diagnostics.size} diagnostic(s)"
@@ -174,12 +176,12 @@ def testInputWithOffset (filename: String) (input : String) (lineOffset : Nat)
     if unmatchedExpectations.length > 0 then
       IO.println s!"\nUnmatched expected diagnostics:"
       for exp in unmatchedExpectations do
-        IO.println s!"  - Line {exp.line + lineOffset}, Col {exp.colStart}-{exp.colEnd}: {exp.message}"
+        IO.println s!"  - Line {exp.line}, Col {exp.colStart}-{exp.colEnd}: {exp.message}"
 
     if unmatchedDiagnostics.length > 0 then
       IO.println s!"\nUnexpected diagnostics:"
       for diag in unmatchedDiagnostics do
-        IO.println s!"  - Line {diag.start.line + lineOffset}, Col {diag.start.column}-{diag.ending.column}: {diag.message}"
+        IO.println s!"  - Line {diag.start.line}, Col {diag.start.column}-{diag.ending.column}: {diag.message}"
     throw (IO.userError "Test failed")
 
 end StrataTest.Util

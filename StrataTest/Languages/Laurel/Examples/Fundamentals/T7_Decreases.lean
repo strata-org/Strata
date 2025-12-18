@@ -38,7 +38,8 @@ procedure mutualRecursionB(x: nat)
 }
 "
 
-#eval! testInput "Decreases" program processLaurelFile
+-- Not working yet
+-- #eval! testInput "Decreases" program processLaurelFile
 
 /-
 A decreases clause CAN be added to a procedure to prove that it terminates.

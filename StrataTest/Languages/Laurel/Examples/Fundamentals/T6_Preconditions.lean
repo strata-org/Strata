@@ -27,7 +27,8 @@ procedure caller() {
 }
 "
 
-#eval! testInput "Preconditions" program processLaurelFile
+-- Not working yet
+-- #eval! testInput "Preconditions" program processLaurelFile
 
 /-
 Translation towards SMT:

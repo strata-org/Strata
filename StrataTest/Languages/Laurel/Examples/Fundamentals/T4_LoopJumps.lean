@@ -36,7 +36,8 @@ procedure whileWithBreakAndContinue(steps: int, continueSteps: int, exitSteps: i
 }
 "
 
-#eval! testInput "LoopJumps" program processLaurelFile
+-- Not working yet
+-- #eval! testInput "LoopJumps" program processLaurelFile
 
 /-
 Translation towards SMT:

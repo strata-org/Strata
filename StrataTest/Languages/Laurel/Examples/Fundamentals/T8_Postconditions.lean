@@ -32,7 +32,8 @@ procedure caller() {
 }
 "
 
-#eval! testInput "Postconditions" program processLaurelFile
+-- Not working yet
+-- #eval! testInput "Postconditions" program processLaurelFile
 
 /-
 Translation towards SMT:

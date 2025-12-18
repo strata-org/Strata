@@ -27,4 +27,4 @@ procedure bar() {
 }
 "
 
-#eval! testInput "AssertFalse" program processLaurelFile
+#eval! testInputWithOffset "AssertFalse" program 14 processLaurelFile

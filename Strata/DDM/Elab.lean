@@ -423,14 +423,14 @@ def parseStrataProgramFromDialect (input : InputContext) (dialect: Dialect) : IO
 
   let leanEnv ← Lean.mkEmptyEnvironment 0
   let inputContext := Strata.Parser.stringInputContext input.fileName contents
-  let returnedInputContext := {inputContext with
+  let returnedInputContext := { inputContext with
     fileMap := { source := fileContent, positions := inputContext.fileMap.positions.drop 2 }
   }
   let strataProgram ← match Strata.Elab.elabProgram dialects leanEnv inputContext with
     | .ok program => pure (returnedInputContext, program)
     | .error errors =>
       let errMsg ← errors.foldlM (init := "Parse errors:\n") fun msg e =>
-        return s!"{msg}  {e.pos.line}:{e.pos.column}: {← e.data.toString}\n"
+        return s!"{msg}  {e.pos.line - 2}:{e.pos.column}: {← e.data.toString}\n"
       throw (IO.userError errMsg)
 
 end Strata.Elab
