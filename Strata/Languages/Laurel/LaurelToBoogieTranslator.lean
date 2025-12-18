@@ -230,27 +230,27 @@ def translateProcedure (proc : Procedure) : Boogie.Procedure :=
 /-
 Translate Laurel Program to Boogie Program
 -/
-def translate (program : Program) : IO Boogie.Program := do
+def translate (program : Program) : Boogie.Program := do
   -- First, sequence all assignments (move them out of expression positions)
   let sequencedProgram := sequenceProgram program
-  IO.println "=== Sequenced program Program ==="
-  IO.println (toString (Std.Format.pretty (Std.ToFormat.format sequencedProgram)))
-  IO.println "================================="
+  dbg_trace "=== Sequenced program Program ==="
+  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format sequencedProgram)))
+  dbg_trace "================================="
   -- Then translate to Boogie
   let procedures := sequencedProgram.staticProcedures.map translateProcedure
   let decls := procedures.map (fun p => Boogie.Decl.proc p .empty)
-  pure { decls := decls }
+  { decls := decls }
 
 /-
 Verify a Laurel program using an SMT solver
 -/
 def verifyToVcResults (smtsolver : String) (program : Program)
     (options : Options := Options.default) : IO VCResults := do
-  let boogieProgram <- translate program
+  let boogieProgram := translate program
   -- Debug: Print the generated Boogie program
-  IO.println "=== Generated Boogie Program ==="
-  IO.println (toString (Std.Format.pretty (Std.ToFormat.format boogieProgram)))
-  IO.println "================================="
+  dbg_trace "=== Generated Boogie Program ==="
+  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format boogieProgram)))
+  dbg_trace "================================="
   EIO.toIO (fun f => IO.Error.userError (toString f))
       (Boogie.verify smtsolver boogieProgram options)
 
