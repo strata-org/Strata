@@ -18,17 +18,35 @@ structure ArgDecl where
   type : TypeId
 deriving Inhabited
 
-/-- A function signature including information about what is a. -/
+/-- A function signature with argument information. -/
 structure FuncDecl where
   /-- Array of arguments. -/
   args : Array ArgDecl
-  /-- Number of position-only arguments. -/
+  /--
+  Number of position-only arguments.
+
+  Position only arguments occur before other arguments.
+  -/
   posOnlyCount : Nat := 0
-  /-- First index for keyword only arguments -/
+  /--
+  First index for keyword only arguments.
+
+  Keyword only arguments appear after other arguments in args.
+   -/
   keywordOnly : Nat := args.size
+  /--
+  Position only arguments are before start of keyword only.
+  -/
+  posOnlyBound : posOnlyCount <= keywordOnly := by omega
+  /--
+  Keyword only arguments (if any) come at end
+  -/
+  keywordBound : keywordOnly <= args.size := by omega
   /-- Map from argument names to their index in args. -/
   argIndexMap : Std.HashMap String (Fin args.size)
-deriving Inhabited
+
+instance : Inhabited FuncDecl where
+  default := { args := #[], argIndexMap := {} }
 
 /-- The name of a Python method as encoded in the Boogie dialect-/
 abbrev FuncName := String
@@ -80,7 +98,19 @@ def decl (name : FuncName) (args : List ArgDecl)
       assert! a.name ∉ m
       m.insert a.name i
 
-  let decl : FuncDecl := { args, posOnlyCount, keywordOnly, argIndexMap }
+  let .isTrue posOnlyBound := inferInstanceAs (Decidable (posOnlyCount <= keywordOnly))
+    | return panic! "Invalid number of position-only parameters."
+  let .isTrue keywordBound := inferInstanceAs (Decidable (keywordOnly <= args.size))
+    | return panic! "Invalid start for keyword only parameters."
+
+  let decl : FuncDecl := {
+    args,
+    posOnlyCount,
+    keywordOnly,
+    posOnlyBound,
+    keywordBound,
+    argIndexMap,
+  }
   modify fun m => { m with functions := m.functions.insert name decl }
 
 private def identToStr (t : Lean.TSyntax `ident) : Lean.StrLit :=
