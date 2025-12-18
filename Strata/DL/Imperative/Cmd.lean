@@ -30,11 +30,12 @@ variable declaration and assignment, and assertions and assumptions.
 /--
 A an atomic command in the `Imperative` dialect.
 
-Commands generally don't involve control flow on their own, and are typically
-used as a parameter to `Imperative.Stmt` or other similar types.
+Commands don't create local control flow, and are typically used as a parameter
+to `Imperative.Stmt` or other similar types.
 -/
 inductive Cmd (P : PureExpr) : Type where
-  /-- Define a variable called `name` with type `ty` and initial value `e`. -/
+  /-- Define a variable called `name` with type `ty` and initial value `e`.
+  Note: we may make the initial value optional. -/
   | init     (name : P.Ident) (ty : P.Ty) (e : P.Expr) (md : (MetaData P) := .empty)
   /-- Assign `e` to a pre-existing variable `name`. -/
   | set      (name : P.Ident) (e : P.Expr) (md : (MetaData P) := .empty)
