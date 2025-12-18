@@ -128,7 +128,6 @@ instance : Inhabited Procedure where
     body := .Transparent (.LiteralBool true)
   }
 
-/- Map from Laurel operation names to Operation constructors -/
 def binaryOpMap : List (QualifiedIdent × Operation) := [
   (q`Laurel.add, Operation.Add),
   (q`Laurel.eq, Operation.Eq),
@@ -139,7 +138,6 @@ def binaryOpMap : List (QualifiedIdent × Operation) := [
   (q`Laurel.ge, Operation.Geq)
 ]
 
-/- Helper to check if an operation is a binary operator and return its Operation -/
 def getBinaryOp? (name : QualifiedIdent) : Option Operation :=
   binaryOpMap.lookup name
 
@@ -189,25 +187,20 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
       let name ← translateIdent op.args[0]!
       return .Identifier name
     else if op.name == q`Laurel.parenthesis then
-      -- Parentheses don't affect the AST, just pass through
       translateStmtExpr op.args[0]!
     else if op.name == q`Laurel.assign then
       let target ← translateStmtExpr op.args[0]!
       let value ← translateStmtExpr op.args[1]!
       return .Assign target value
     else if let some primOp := getBinaryOp? op.name then
-      -- Handle all binary operators uniformly
       let lhs ← translateStmtExpr op.args[0]!
       let rhs ← translateStmtExpr op.args[1]!
       return .PrimitiveOp primOp [lhs, rhs]
     else if op.name == q`Laurel.call then
-      -- Handle function calls
       let callee ← translateStmtExpr op.args[0]!
-      -- Extract the function name
       let calleeName := match callee with
         | .Identifier name => name
         | _ => ""
-      -- Translate arguments from CommaSepBy
       let argsSeq := op.args[1]!
       let argsList ← match argsSeq with
         | .commaSepList _ args =>

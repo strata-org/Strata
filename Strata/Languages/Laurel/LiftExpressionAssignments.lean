@@ -23,9 +23,7 @@ Becomes:
 -/
 
 structure SequenceState where
-  -- Accumulated statements to be prepended
   prependedStmts : List StmtExpr := []
-  -- Counter for generating unique temporary variable names
   tempCounter : Nat := 0
 
 abbrev SequenceM := StateM SequenceState
@@ -48,13 +46,13 @@ mutual
 Process an expression, extracting any assignments to preceding statements.
 Returns the transformed expression with assignments replaced by variable references.
 -/
-partial def sequenceExpr (expr : StmtExpr) : SequenceM StmtExpr := do
+partial def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
   match expr with
   | .Assign target value =>
       -- This is an assignment in expression context
       -- We need to: 1) execute the assignment, 2) capture the value in a temporary
       -- This prevents subsequent assignments to the same variable from changing the value
-      let seqValue ← sequenceExpr value
+      let seqValue ← transformExpr value
       let assignStmt := StmtExpr.Assign target seqValue
       SequenceM.addPrependedStmt assignStmt
       -- Create a temporary variable to capture the assigned value
@@ -66,24 +64,19 @@ partial def sequenceExpr (expr : StmtExpr) : SequenceM StmtExpr := do
       return .Identifier tempName
 
   | .PrimitiveOp op args =>
-      -- Process arguments, which might contain assignments
-      let seqArgs ← args.mapM sequenceExpr
+      let seqArgs ← args.mapM transformExpr
       return .PrimitiveOp op seqArgs
 
   | .IfThenElse cond thenBranch elseBranch =>
-      -- Process condition first (assignments here become preceding statements)
-      let seqCond ← sequenceExpr cond
-      -- For if-expressions, branches should be processed as expressions
-      -- If a branch is a block, extract all but the last statement, then use the last as the value
-      let seqThen ← sequenceExpr thenBranch
+      let seqCond ← transformExpr cond
+      let seqThen ← transformExpr thenBranch
       let seqElse ← match elseBranch with
-        | some e => sequenceExpr e >>= (pure ∘ some)
+        | some e => transformExpr e >>= (pure ∘ some)
         | none => pure none
       return .IfThenElse seqCond seqThen seqElse
 
   | .StaticCall name args =>
-      -- Process arguments
-      let seqArgs ← args.mapM sequenceExpr
+      let seqArgs ← args.mapM transformExpr
       return .StaticCall name seqArgs
 
   | .Block stmts metadata =>
@@ -96,11 +89,11 @@ partial def sequenceExpr (expr : StmtExpr) : SequenceM StmtExpr := do
           -- Process all but the last statement and add to prepended
           let priorStmts := restReversed.reverse
           for stmt in priorStmts do
-            let seqStmt ← sequenceStmt stmt
+            let seqStmt ← transformStmt stmt
             for s in seqStmt do
               SequenceM.addPrependedStmt s
           -- Process and return the last statement as an expression
-          sequenceExpr lastStmt
+          transformExpr lastStmt
 
   -- Base cases: no assignments to extract
   | .LiteralBool _ => return expr
@@ -113,28 +106,27 @@ partial def sequenceExpr (expr : StmtExpr) : SequenceM StmtExpr := do
 Process a statement, handling any assignments in its sub-expressions.
 Returns a list of statements (the original one may be split into multiple).
 -/
-partial def sequenceStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
+partial def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
   match stmt with
   | @StmtExpr.Assert cond md =>
       -- Process the condition, extracting any assignments
-      let seqCond ← sequenceExpr cond
+      let seqCond ← transformExpr cond
       let prepended ← SequenceM.getPrependedStmts
       return prepended ++ [StmtExpr.Assert seqCond md]
 
   | @StmtExpr.Assume cond md =>
-      let seqCond ← sequenceExpr cond
+      let seqCond ← transformExpr cond
       let prepended ← SequenceM.getPrependedStmts
       return prepended ++ [StmtExpr.Assume seqCond md]
 
   | .Block stmts metadata =>
-      -- Process each statement in the block
-      let seqStmts ← stmts.mapM sequenceStmt
+      let seqStmts ← stmts.mapM transformStmt
       return [.Block (seqStmts.flatten) metadata]
 
   | .LocalVariable name ty initializer =>
       match initializer with
       | some initExpr => do
-          let seqInit ← sequenceExpr initExpr
+          let seqInit ← transformExpr initExpr
           let prepended ← SequenceM.getPrependedStmts
           return prepended ++ [.LocalVariable name ty (some seqInit)]
       | none =>
@@ -142,23 +134,23 @@ partial def sequenceStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
 
   | .Assign target value =>
       -- Top-level assignment (statement context)
-      let seqTarget ← sequenceExpr target
-      let seqValue ← sequenceExpr value
+      let seqTarget ← transformExpr target
+      let seqValue ← transformExpr value
       let prepended ← SequenceM.getPrependedStmts
       return prepended ++ [.Assign seqTarget seqValue]
 
   | .IfThenElse cond thenBranch elseBranch =>
       -- Process condition (extract assignments)
-      let seqCond ← sequenceExpr cond
+      let seqCond ← transformExpr cond
       let prependedCond ← SequenceM.getPrependedStmts
 
       -- Process branches
-      let seqThen ← sequenceStmt thenBranch
+      let seqThen ← transformStmt thenBranch
       let thenBlock := .Block seqThen none
 
       let seqElse ← match elseBranch with
         | some e =>
-            let se ← sequenceStmt e
+            let se ← transformStmt e
             pure (some (.Block se none))
         | none => pure none
 
@@ -166,26 +158,25 @@ partial def sequenceStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
       return prependedCond ++ [ifStmt]
 
   | .StaticCall name args =>
-      let seqArgs ← args.mapM sequenceExpr
+      let seqArgs ← args.mapM transformExpr
       let prepended ← SequenceM.getPrependedStmts
       return prepended ++ [.StaticCall name seqArgs]
 
   | _ =>
-      -- Other statements pass through
       return [stmt]
 
 end
 
-def liftInProcedureBody (body : StmtExpr) : StmtExpr :=
-  let (seqStmts, _) := sequenceStmt body |>.run {}
+def transformProcedureBody (body : StmtExpr) : StmtExpr :=
+  let (seqStmts, _) := transformStmt body |>.run {}
   match seqStmts with
   | [single] => single
   | multiple => .Block multiple none
 
-def liftInProcedure (proc : Procedure) : Procedure :=
+def transformProcedure (proc : Procedure) : Procedure :=
   match proc.body with
   | .Transparent bodyExpr =>
-      let seqBody := liftInProcedureBody bodyExpr
+      let seqBody := transformProcedureBody bodyExpr
       { proc with body := .Transparent seqBody }
   | _ => proc  -- Opaque and Abstract bodies unchanged
 
@@ -193,7 +184,7 @@ def liftInProcedure (proc : Procedure) : Procedure :=
 Transform a program to lift all assignments that occur in an expression context.
 -/
 def liftExpressionAssignments (program : Program) : Program :=
-  let seqProcedures := program.staticProcedures.map liftInProcedure
+  let seqProcedures := program.staticProcedures.map transformProcedure
   { program with staticProcedures := seqProcedures }
 
 end Laurel
