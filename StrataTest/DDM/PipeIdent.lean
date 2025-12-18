@@ -18,6 +18,7 @@ op var (name : Ident) : Expression => name;
 op assign (lhs : Ident, rhs : Expression) : Command => lhs " := " rhs ";";
 op add (a : Expression, b : Expression) : Expression => @[prec(10), leftassoc] a " + " b;
 op or (a : Expression, b : Expression) : Expression => @[prec(5), leftassoc] a " || " b;
+op bitwiseOr (a : Expression, b : Expression) : Expression => @[prec(6), leftassoc] a " | " b;
 op intLit (n : Num) : Expression => n;
 
 #end
@@ -253,3 +254,61 @@ info: testEscapes : Program
 -/
 #guard_msgs in
 #check testEscapes
+
+
+-- Test 12: Single | operator works (bitwise OR)
+def testBitwiseOr := #strata
+program PipeIdent;
+result := a | b;
+#end
+
+/--
+info: "program PipeIdent;\n(result) := a | b;"
+-/
+#guard_msgs in
+#eval toString testBitwiseOr.format
+
+/--
+info: testBitwiseOr : Program
+-/
+#guard_msgs in
+#check testBitwiseOr
+
+-- Test 13: Both | operator and |identifier| coexist
+def testBothOperators := #strata
+program PipeIdent;
+|x-value| := 10;
+|y-value| := 20;
+result := |x-value| | |y-value|;
+#end
+
+/--
+info: "program PipeIdent;\n(|x-value|) := 10;(|y-value|) := 20;(result) := |x-value| | |y-value|;"
+-/
+#guard_msgs in
+#eval toString testBothOperators.format
+
+/--
+info: testBothOperators : Program
+-/
+#guard_msgs in
+#check testBothOperators
+
+-- Test 14: Whitespace after | makes it an operator
+def testOperatorWhitespace := #strata
+program PipeIdent;
+x := a | b;
+y := c| d;
+#end
+
+/--
+info: "program PipeIdent;\n(x) := a | b;(y) := c | d;"
+-/
+#guard_msgs in
+#eval toString testOperatorWhitespace.format
+
+/--
+info: testOperatorWhitespace : Program
+-/
+#guard_msgs in
+#check testOperatorWhitespace
