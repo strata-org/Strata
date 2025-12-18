@@ -311,7 +311,7 @@ def identFnAux (startPos : String.Pos.Raw) (tk : Option Token) : ParserFn := fun
       match tk with
       | some token =>
         -- If token is longer than 1 character, it's an operator like ||
-        if token.endPos.byteIdx > 1 then
+        if token.rawEndPos.byteIdx > 1 then
           mkTokenAndFixPos startPos tk c s
         else
           -- Single | token - need to disambiguate
@@ -359,12 +359,21 @@ def identFnAux (startPos : String.Pos.Raw) (tk : Option Token) : ParserFn := fun
             if c.atEnd stopPart then
               s.mkUnexpectedErrorAt "unterminated pipe-delimited identifier" startPart
             else
-              let s := s.setPos (c.next stopPart)  -- Skip closing |
+              let closingPipePos := stopPart
+              let s := s.setPos (c.next closingPipePos)  -- Skip closing |
               if isToken startPos s.pos tk then
                 mkTokenAndFixPos startPos tk c s
               else
-                -- Use the unescaped string
-                mkIdResult startPos unescaped c s
+                -- Create identifier with unescaped string
+                let stopPos := s.pos
+                let rawVal := c.substring startPos stopPos
+                let s := whitespace c s
+                let trailingStopPos := s.pos
+                let leading := c.mkEmptySubstringAt startPos
+                let trailing := c.substring (startPos := stopPos) (stopPos := trailingStopPos)
+                let info := SourceInfo.original leading startPos trailing stopPos
+                let atom := mkIdent info rawVal (.str .anonymous unescaped)
+                s.pushSyntax atom
       | none =>
         -- No token matched, parse as pipe-delimited identifier
         let nextPos := c.next' i h
@@ -397,8 +406,17 @@ def identFnAux (startPos : String.Pos.Raw) (tk : Option Token) : ParserFn := fun
           if c.atEnd stopPart then
             s.mkUnexpectedErrorAt "unterminated pipe-delimited identifier" startPart
           else
-            let s := s.setPos (c.next stopPart)
-            mkIdResult startPos unescaped c s
+            let closingPipePos := stopPart
+            let s := s.setPos (c.next closingPipePos)
+            let stopPos := s.pos
+            let rawVal := c.substring startPos stopPos
+            let s := whitespace c s
+            let trailingStopPos := s.pos
+            let leading := c.mkEmptySubstringAt startPos
+            let trailing := c.substring (startPos := stopPos) (stopPos := trailingStopPos)
+            let info := SourceInfo.original leading startPos trailing stopPos
+            let atom := mkIdent info rawVal (.str .anonymous unescaped)
+            s.pushSyntax atom
     else if isIdBeginEscape curr then
       let startPart := c.next' i h
       let s         := takeUntilFn isIdEndEscape c (s.setPos startPart)
