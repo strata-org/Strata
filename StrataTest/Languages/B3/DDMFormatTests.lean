@@ -23,7 +23,7 @@ Strata.B3CST.Expression.natLit : {α : Type} → α → Nat → Expression α
 Strata.B3CST.Expression.strLit : {α : Type} → α → String → Expression α
 Strata.B3CST.Expression.btrue : {α : Type} → α → Expression α
 Strata.B3CST.Expression.bfalse : {α : Type} → α → Expression α
-Strata.B3CST.Expression.old_id : {α : Type} → α → String → Expression α
+Strata.B3CST.Expression.old_id : {α : Type} → α → Ann String α → Expression α
 Strata.B3CST.Expression.id : {α : Type} → α → String → Expression α
 Strata.B3CST.Expression.letExpr : {α : Type} → α → Ann String α → Expression α → Expression α → Expression α
 Strata.B3CST.Expression.labeledExpr : {α : Type} → α → Ann String α → Expression α → Expression α

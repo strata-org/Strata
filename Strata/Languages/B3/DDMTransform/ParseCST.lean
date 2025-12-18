@@ -28,7 +28,7 @@ op strLit (@[unwrap] s : Str) : Expression => s;
 op btrue : Expression => "true";
 op bfalse : Expression => "false";
 
-op old_id (@[unwrap] name : Ident) : Expression => "old " name:0;
+op old_id (name : Ident) : Expression => "old " name:0;
 op id (@[unwrap] name : Ident) : Expression => name;
 
 op letExpr (name : Ident, value : Expression, body : Expression) : Expression =>
@@ -81,13 +81,13 @@ op exists_expr (var : Ident, ty : Ident, patterns : Patterns, body : Expression)
 
 category Statement;
 
-op assign (@[unwrap] v : Ident, e : Expression) : Statement => "\n" v:0 " := " e:0;
-op reinit_statement (@[unwrap] v : Ident) : Statement => "\nreinit " v:0;
+op assign (v : Ident, e : Expression) : Statement => "\n" v:0 " := " e:0;
+op reinit_statement (v : Ident) : Statement => "\nreinit " v:0;
 
 category CallArg;
 op call_arg_expr (e : Expression) : CallArg => e:0;
-op call_arg_out (@[unwrap] id : Ident) : CallArg => "out " id:0;
-op call_arg_inout (@[unwrap] id : Ident) : CallArg => "inout " id:0;
+op call_arg_out (id : Ident) : CallArg => "out " id:0;
+op call_arg_inout (id : Ident) : CallArg => "inout " id:0;
 
 op call_statement (proc : Ident, args : CommaSepBy CallArg) : Statement =>
   "\n" proc "(" args ")";
@@ -112,9 +112,9 @@ op loop_statement (invs : Seq Invariant, body : Statement) : Statement =>
 op exit_statement (label : Option Ident) : Statement => "\nexit " label:0 ;
 op return_statement () : Statement => "\nreturn";
 
-op labeled_statement (@[unwrap] label : Ident, s : Statement) : Statement => label:0 ": " s:0;
+op labeled_statement (label : Ident, s : Statement) : Statement => label:0 ": " s:0;
 
-op probe (@[unwrap] name : Ident) : Statement => "\nprobe " name:0 ;
+op probe (name : Ident) : Statement => "\nprobe " name:0 ;
 
 op var_decl_full (name : Ident, ty : Ident, autoinv : Expression, init : Expression) : Statement =>
   "\nvar " name:0 " : " ty:0 " autoinv " autoinv:0 " := " init:0 ;
@@ -161,9 +161,9 @@ op block (c : Seq Statement) : Statement => "\n{" indent(2, c:0) "\n}";
 
 category Decl;
 
-op type_decl (@[unwrap] name : Ident) : Decl => "\ntype " name:0;
+op type_decl (name : Ident) : Decl => "\ntype " name:0;
 
-op tagger_decl (@[unwrap] name : Ident, @[unwrap] forType : Ident) : Decl => "\ntagger " name:0 " for " forType:0;
+op tagger_decl (name : Ident, forType : Ident) : Decl => "\ntagger " name:0 " for " forType:0;
 
 category Injective;
 op injective_some () : Injective => "injective ";
@@ -173,7 +173,7 @@ op fparam (injective : Option Injective, name : Ident, ty : Ident) : FParam =>
   injective:0 name:0 " : " ty:0;
 
 category TagClause;
-op tag_some (@[unwrap] t : Ident) : TagClause => " tag " t:0;
+op tag_some (t : Ident) : TagClause => " tag " t:0;
 
 category WhenClause;
 op when_clause (e : Expression) : WhenClause => "\n  when " e:0;
