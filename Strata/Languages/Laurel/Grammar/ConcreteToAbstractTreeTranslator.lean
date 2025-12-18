@@ -128,6 +128,21 @@ instance : Inhabited Procedure where
     body := .Transparent (.LiteralBool true)
   }
 
+/- Map from Laurel operation names to Operation constructors -/
+def binaryOpMap : List (QualifiedIdent × Operation) := [
+  (q`Laurel.add, Operation.Add),
+  (q`Laurel.eq, Operation.Eq),
+  (q`Laurel.neq, Operation.Neq),
+  (q`Laurel.gt, Operation.Gt),
+  (q`Laurel.lt, Operation.Lt),
+  (q`Laurel.le, Operation.Leq),
+  (q`Laurel.ge, Operation.Geq)
+]
+
+/- Helper to check if an operation is a binary operator and return its Operation -/
+def getBinaryOp? (name : QualifiedIdent) : Option Operation :=
+  binaryOpMap.lookup name
+
 mutual
 
 partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
@@ -164,10 +179,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
         | _ => pure .TInt
       let value ← match assignArg with
         | .option _ (some (.op assignOp)) =>
-          if assignOp.name == q`Laurel.optionalAssignment then
-            translateStmtExpr assignOp.args[0]! >>= (pure ∘ some)
-          else
-            panic s!"DEBUG: assignArg {repr assignArg} didn't match expected pattern for {name}"
+          translateStmtExpr assignOp.args[0]! >>= (pure ∘ some)
         | .option _ none =>
           pure none
         | _ =>
@@ -183,34 +195,11 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
       let target ← translateStmtExpr op.args[0]!
       let value ← translateStmtExpr op.args[1]!
       return .Assign target value
-    else if op.name == q`Laurel.add then
+    else if let some primOp := getBinaryOp? op.name then
+      -- Handle all binary operators uniformly
       let lhs ← translateStmtExpr op.args[0]!
       let rhs ← translateStmtExpr op.args[1]!
-      return .PrimitiveOp .Add [lhs, rhs]
-    else if op.name == q`Laurel.eq then
-      let lhs ← translateStmtExpr op.args[0]!
-      let rhs ← translateStmtExpr op.args[1]!
-      return .PrimitiveOp .Eq [lhs, rhs]
-    else if op.name == q`Laurel.neq then
-      let lhs ← translateStmtExpr op.args[0]!
-      let rhs ← translateStmtExpr op.args[1]!
-      return .PrimitiveOp .Neq [lhs, rhs]
-    else if op.name == q`Laurel.gt then
-      let lhs ← translateStmtExpr op.args[0]!
-      let rhs ← translateStmtExpr op.args[1]!
-      return .PrimitiveOp .Gt [lhs, rhs]
-    else if op.name == q`Laurel.lt then
-      let lhs ← translateStmtExpr op.args[0]!
-      let rhs ← translateStmtExpr op.args[1]!
-      return .PrimitiveOp .Lt [lhs, rhs]
-    else if op.name == q`Laurel.le then
-      let lhs ← translateStmtExpr op.args[0]!
-      let rhs ← translateStmtExpr op.args[1]!
-      return .PrimitiveOp .Leq [lhs, rhs]
-    else if op.name == q`Laurel.ge then
-      let lhs ← translateStmtExpr op.args[0]!
-      let rhs ← translateStmtExpr op.args[1]!
-      return .PrimitiveOp .Geq [lhs, rhs]
+      return .PrimitiveOp primOp [lhs, rhs]
     else if op.name == q`Laurel.call then
       -- Handle function calls
       let callee ← translateStmtExpr op.args[0]!
