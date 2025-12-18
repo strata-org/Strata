@@ -696,7 +696,7 @@ def checkLeftRec (thisCatName : QualifiedIdent) (argDecls : ArgDecls) (as : List
     checkLeftRec thisCatName argDecls (as.toList ++ bs)
   | .str _ :: _ =>
     .isLeading as
-  | .ident v argPrec :: rest => Id.run do
+  | .ident v argPrec _ :: rest => Id.run do
     let .isTrue lt := inferInstanceAs (Decidable (v < argDecls.size))
       | return panic! "Invalid index"
     let cat := argDecls[v].kind.categoryOf
@@ -815,7 +815,7 @@ the first symbol.
 -/
 private def prependSyntaxDefAtomParser (ctx : ParsingContext) (argDecls : ArgDecls) (o : SyntaxDefAtom) (r : Parser) : Parser :=
   match o with
-  | .ident v prec => Id.run do
+  | .ident v prec _ => Id.run do
     let .isTrue lt := inferInstanceAs (Decidable (v < argDecls.size))
       | return panic! s!"Invalid ident index {v} in bindings {eformat argDecls}"
     let addParser (p : Parser) :=
