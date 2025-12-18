@@ -406,7 +406,7 @@ info: B3: .varDecl
   u none
 ---
 info:
-var z : int autoinv @0 >= 0
+var z : int autoinv z >= 0
 -/
 #guard_msgs in
 #eval roundtripStmt $ #strata program B3CST; var z : int autoinv z >= 0 #end
