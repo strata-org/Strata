@@ -23,7 +23,7 @@ variable {T : LExprParams} [Coe String T.Identifier]
 
 def unaryOp (n : T.Identifier)
             (ty : LMonoTy)
-            (ceval : Option (LExpr T.mono → List (LExpr T.mono) → LExpr T.mono)) : LFunc T :=
+            (ceval : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono))) : LFunc T :=
   { name := n,
     inputs := [("x", ty)],
     output := ty,
@@ -31,7 +31,7 @@ def unaryOp (n : T.Identifier)
 
 def binaryOp (n : T.Identifier)
              (ty : LMonoTy)
-             (ceval : Option (LExpr T.mono → List (LExpr T.mono) → LExpr T.mono)) : LFunc T :=
+             (ceval : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono))) : LFunc T :=
   { name := n,
     inputs := [("x", ty), ("y", ty)],
     output := ty,
@@ -39,7 +39,7 @@ def binaryOp (n : T.Identifier)
 
 def binaryPredicate (n : T.Identifier)
                     (ty : LMonoTy)
-                    (ceval : Option (LExpr T.mono → List (LExpr T.mono) → LExpr T.mono)) : LFunc T :=
+                    (ceval : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono))) : LFunc T :=
   { name := n,
     inputs := [("x", ty), ("y", ty)],
     output := .bool,
@@ -48,53 +48,53 @@ def binaryPredicate (n : T.Identifier)
 def unOpCeval (InTy OutTy : Type) [ToString OutTy]
                 (mkConst : T.Metadata → OutTy → LExpr T.mono)
                 (cevalInTy : (LExpr T.mono) → Option InTy) (op : InTy → OutTy) :
-                (LExpr T.mono) → List (LExpr T.mono) → (LExpr T.mono) :=
-  (fun e args => match args with
+                T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono) :=
+  (fun m args => match args with
    | [e1] =>
      let e1i := cevalInTy e1
      match e1i with
-     | some x => mkConst e1.metadata (op x)
-     | _ => e
-   | _ => e)
+     | some x => .some (mkConst m (op x))
+     | _ => .none
+   | _ => .none)
 
 def binOpCeval (InTy OutTy : Type) [ToString OutTy]
                 (mkConst : T.Metadata → OutTy → LExpr T.mono)
                 (cevalInTy : LExpr T.mono → Option InTy) (op : InTy → InTy → OutTy) :
-                (LExpr T.mono) → List (LExpr T.mono) → (LExpr T.mono) :=
-  (fun e args => match args with
+                T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono) :=
+  (fun m args => match args with
    | [e1, e2] =>
      let e1i := cevalInTy e1
      let e2i := cevalInTy e2
      match e1i, e2i with
-     | some x, some y => mkConst e1.metadata (op x y)
-     | _, _ => e
-   | _ => e)
+     | some x, some y => mkConst m (op x y)
+     | _, _ => .none
+   | _ => .none)
 
 -- We hand-code a denotation for `Int.Div` to leave the expression
 -- unchanged if we have `0` for the denominator.
-def cevalIntDiv (e : LExpr T.mono) (args : List (LExpr T.mono)) : LExpr T.mono :=
+def cevalIntDiv (m:T.Metadata) (args : List (LExpr T.mono)) : Option (LExpr T.mono) :=
   match args with
   | [e1, e2] =>
     let e1i := LExpr.denoteInt e1
     let e2i := LExpr.denoteInt e2
     match e1i, e2i with
     | some x, some y =>
-      if y == 0 then e else .intConst e.metadata (x / y)
-    | _, _ => e
-  | _ => e
+      if y == 0 then .none else .some (.intConst m (x / y))
+    | _, _ => .none
+  | _ => .none
 
 -- We hand-code a denotation for `Int.Mod` to leave the expression
 -- unchanged if we have `0` for the denominator.
-def cevalIntMod (e : LExpr T.mono) (args : List (LExpr T.mono)) : LExpr T.mono :=
+def cevalIntMod (m:T.Metadata) (args : List (LExpr T.mono)) : Option (LExpr T.mono) :=
   match args with
   | [e1, e2] =>
     let e1i := LExpr.denoteInt e1
     let e2i := LExpr.denoteInt e2
     match e1i, e2i with
     | some x, some y =>
-      if y == 0 then e else .intConst e.metadata (x % y)
-    | _, _ => e
-  | _ => e
+      if y == 0 then .none else .some (.intConst m (x % y))
+    | _, _ => .none
+  | _ => .none
 
 /- Integer Arithmetic Operations -/
 

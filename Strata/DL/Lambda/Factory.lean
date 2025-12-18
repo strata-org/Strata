@@ -94,7 +94,9 @@ structure LFunc (T : LExprParams) where
   -- (TODO): Add support for a fixed set of attributes (e.g., whether to inline
   -- a function, etc.).
   attr     : Array String := #[]
-  concreteEval : Option ((LExpr T.mono) → List (LExpr T.mono) → (LExpr T.mono)) := .none
+  -- The T.Metadata argument is the metadata that will be attached to the
+  -- resulting expression of concreteEval if evaluation was successful.
+  concreteEval : Option (T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono)) := .none
   axioms   : List (LExpr T.mono) := []  -- For axiomatic definitions
 
 instance [Inhabited T.Metadata] [Inhabited T.IDMeta] : Inhabited (LFunc T) where
