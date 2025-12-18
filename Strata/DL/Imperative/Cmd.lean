@@ -38,7 +38,7 @@ inductive Cmd (P : PureExpr) : Type where
   | init     (name : P.Ident) (ty : P.Ty) (e : P.Expr) (md : (MetaData P) := .empty)
   /-- Assign `e` to a pre-existing variable `name`. -/
   | set      (name : P.Ident) (e : P.Expr) (md : (MetaData P) := .empty)
-  /-- Assign a random value to a pre-existing variable `name`. -/
+  /-- Assigns an arbitrary value to an existing variable `name`. -/
   | havoc    (name : P.Ident) (md : (MetaData P) := .empty)
   /-- Check whether condition `b` is true, failing if not. -/
   | assert   (label : String) (b : P.Expr) (md : (MetaData P) := .empty)
