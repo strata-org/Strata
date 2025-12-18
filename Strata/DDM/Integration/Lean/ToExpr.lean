@@ -277,7 +277,7 @@ namespace SyntaxDefAtom
 protected def typeExpr : Lean.Expr := mkConst ``SyntaxDefAtom
 
 protected def toExpr : SyntaxDefAtom → Lean.Expr
-| .ident v p => astExpr! ident (toExpr v) (toExpr p)
+| .ident v p unwrap => astExpr! ident (toExpr v) (toExpr p) (toExpr unwrap)
 | .str l     => astExpr! str (toExpr l)
 | .indent n a =>
   let args := arrayToExpr .zero SyntaxDefAtom.typeExpr (a.map (·.toExpr))

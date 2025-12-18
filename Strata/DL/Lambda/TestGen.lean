@@ -145,16 +145,22 @@ instance {T} [Arbitrary T.base.Metadata] [Arbitrary T.base.IDMeta] [Arbitrary T.
 
 open Lambda
 open LTy
+
+-- Comment this out when depending on Chamelean
 open TestGen
 
 -- We make a bunch of functions inductive predicates to play nice with Chamelean.
 inductive MapFind : Map α β → α → β → Prop where
 | hd : MapFind ((x, y) :: m) x y
-| tl : MapFind m x y → MapFind (p :: m) x y
+| tl : p.fst ≠ x → MapFind m x y → MapFind (p :: m) x y
+
+inductive MapNotFound : Map α β → α → Prop where
+| nil : MapNotFound [] x
+| cons : z ≠ x → MapNotFound m x → MapNotFound ((z, w) :: m) x
 
 inductive MapsFind : Maps α β → α → β → Prop where
 | hd : MapFind m x y → MapsFind (m :: ms) x y
-| tl : MapsFind ms x y → MapsFind (m :: ms) x y
+| tl : MapNotFound m x → MapsFind ms x y → MapsFind (m :: ms) x y
 
 -- Sadly, we need these versions as well for the time being, because
 -- we can only generate one output at a time for a given inductive constraint.
@@ -177,10 +183,6 @@ inductive MapsReplace : Maps α β → α → β → Maps α β → Prop where
 -- We do redundant work here but it's ok
 | cons : MapReplace m x y m' → MapsReplace ms x y ms' → MapsReplace (m::ms) x y (m'::ms')
 
-inductive MapNotFound : Map α β → α → Prop where
-| nil : MapNotFound [] x
-| cons : x ≠ z → MapNotFound m x → MapNotFound ((z, w) :: m) x
-
 inductive MapsNotFound : Maps α β → α → Prop where
 | nil : MapsNotFound [] x
 | cons : MapNotFound m x → MapsNotFound ms x → MapsNotFound (m::ms) x
@@ -200,7 +202,6 @@ instance instStringSuchThatIsInt : ArbitrarySizedSuchThat String (fun s => s.isI
   let P : String → Prop := fun s => s.isInt
   Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 10) 10
 
--- FIXME: remove this
 def ArrayFind (a : Array α) (x : α)  := x ∈ a
 
 instance instArrayFindSuchThat {α} {a} : ArbitrarySizedSuchThat α (fun x => ArrayFind a x) where
@@ -210,38 +211,70 @@ instance instArrayFindSuchThat {α} {a} : ArbitrarySizedSuchThat α (fun x => Ar
   return a[i.val]
 
 
+inductive IsUnaryArg : LTy → LTy → LTy → Prop where
+| mk (ty₁ ty₂ : LMonoTy) : IsUnaryArg (.forAll [] (.tcons "arrow" [ty₁, ty₂])) (.forAll [] ty₁) (.forAll [] ty₂)
+
+inductive IsBinaryArg : LTy → (LTy × LTy) → LTy → Prop where
+| mk (ty₁ ty₂ ty₃ : LMonoTy) : IsBinaryArg (.forAll [] (.tcons "arrow" [ty₁, .tcons "arrow" [ty₂, ty₃]])) ((.forAll [] ty₁), (.forAll [] ty₂)) (.forAll [] ty₃)
+
 -- Compare `LExpr.HasType` in `LExprTypeSpec.lean`
+
+-- Parameters for terms without metadata
+abbrev TrivialParams : LExprParams := ⟨Unit, Unit⟩
+
+def varClose (k : Nat) (x : IdentT LMonoTy TrivialParams.IDMeta) (e : LExpr TrivialParams.mono) : LExpr TrivialParams.mono :=
+  match e with
+  | .const m c => .const m c
+  | .op m o ty => .op m o ty
+  | .bvar m i => .bvar m i
+  | .fvar m y yty => if x.fst == y && (yty == x.snd) then
+                      (.bvar m k) else (.fvar m y yty)
+  | .abs m ty e' => .abs m ty (varClose (k + 1) x e')
+  | .quant m qk ty tr' e' => .quant m qk ty (varClose (k + 1) x tr') (varClose (k + 1) x e')
+  | .app m e1 e2 => .app m (varClose k x e1) (varClose k x e2)
+  | .ite m c t e => .ite m (varClose k x c) (varClose k x t) (varClose k x e)
+  | .eq m e1 e2 => .eq m (varClose k x e1) (varClose k x e2)
+
+def LFunc.type! (f : (LFunc T)) : LTy :=
+  let input_tys := f.inputs.values
+  let output_tys := Lambda.LMonoTy.destructArrow f.output
+  match input_tys with
+  | [] => .forAll f.typeArgs f.output
+  | ity :: irest =>
+    .forAll f.typeArgs (Lambda.LMonoTy.mkArrow ity (irest ++ output_tys))
 
 -- We massage the `HasType` definition to be more amenable to generation. The main differences are that
 -- polymorphism is not supported, and we tend to move function applications in the "output" position to the conclusion.
 -- This avoids an additional costly check in the hypothesis.
-inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T) : (TContext T.IDMeta) → LExpr T.mono → LTy → Prop where
+inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C : LContext T) : (TContext T.IDMeta) → LExpr T.mono → LTy → Prop where
   | tbool_const : ∀ Γ m b,
+            C.knownTypes.containsName "bool" →
             HasType C Γ (.boolConst m b) (.forAll [] .bool)
   | tint_const : ∀ Γ m n,
+            C.knownTypes.containsName "int" →
             HasType C Γ (.intConst m n) (.forAll [] .int)
   | treal_const : ∀ Γ m r,
+            C.knownTypes.containsName "real" →
             HasType C Γ (.realConst m r) (.forAll [] .real)
   | tstr_const : ∀ Γ m s,
+            C.knownTypes.containsName "string" →
             HasType C Γ (.strConst m s) (.forAll [] .string)
   | tbitvec_const : ∀ Γ m n b,
+            C.knownTypes.containsName "bitvec" →
             HasType C Γ (.bitvecConst m n b) (.forAll [] (.bitvec n))
 
   | tvar : ∀ Γ m x ty, MapsFind Γ.types x ty → HasType C Γ (.fvar m x none) ty
 
   | tabs : ∀ Γ Γ' m x x_ty e e_ty,
-            MapsInsert Γ.types x (.forAll [] x_ty : LTy) Γ' →
+            MapsInsert Γ.types (id x) (.forAll [] x_ty : LTy) Γ' →
             HasType C { Γ with types := Γ'} e (.forAll [] e_ty) →
             HasType C Γ (.abs m .none <| LExpr.varClose 0 (x, none) e) -- We close in the conclusion rather than opening in the hyps.
                         (.forAll [] (.tcons "arrow" [x_ty, e_ty]))
 
   | tapp : ∀ Γ m e1 e2 t1 t2,
-            (h1 : LTy.isMonoType t1) →
-            (h2 : LTy.isMonoType t2) →
-            HasType C Γ e1 (.forAll [] (.tcons "arrow" [(LTy.toMonoType t2 h2),
-                                                        (LTy.toMonoType t1 h1)])) →
-            HasType C Γ e2 t2 →
-            HasType C Γ (.app m e1 e2) t1
+            HasType C Γ e1 (.forAll [] (.tcons "arrow" [t2, t1])) →
+            HasType C Γ e2 (.forAll [] t2) →
+            HasType C Γ (.app m e1 e2) (.forAll [] t1)
 
   | tif : ∀ Γ m c e1 e2 ty,
           HasType C Γ c (.forAll [] .bool) →
@@ -255,15 +288,24 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T) : (TCo
           HasType C Γ (.eq m e1 e2) (.forAll [] .bool)
 
   | top: ∀ Γ m f ty,
+            ty = (LFunc.type! f) →
             ArrayFind C.functions f →
             HasType C Γ (.op m f.name none) ty
 
+  | top₁: ∀ Γ m f ty₁ ty₂,
+            ArrayFind C.functions f →
+            IsUnaryArg (LFunc.type! f) ty₁ ty₂ →
+            HasType C Γ t₁ ty₁ →
+            HasType C Γ (.app m (.op m f.name none) t₁) ty₂
+
+  | top₂: ∀ Γ m f ty₁ ty₂ ty₃,
+            ArrayFind C.functions f →
+            IsBinaryArg (LFunc.type! f) (ty₁, ty₂) ty₃ →
+            HasType C Γ t₁ ty₁ →
+            HasType C Γ t₂ ty₂ →
+            HasType C Γ (.app m (.app m (.op m f.name none) t₁) t₂) ty₃
+
   -- -- We only generate monomorphic types for now
-
--- -- We hand write this for more readable type names
-instance : Arbitrary TyIdentifier where
-  arbitrary := Gen.oneOf #[return "A", return "B", return "C", return "D"]
-
 
 -- -- We hand write this instance to control the base type names.
 instance : Arbitrary LMonoTy where
@@ -280,7 +322,7 @@ instance : Arbitrary LMonoTy where
         let ty2 ← aux n'
         return .tcons "arrow" [ty1, ty2]
     else
-      let n ← Gen.chooseNatLt 0 4 (by simp) -- Keep things bounded
+      let n ← Gen.oneOf #[return 1, return 8, return 16, return 32, return 64]
       return .bitvec n
   do
     let ⟨size⟩ ← read
@@ -431,13 +473,10 @@ instance instArbitrarySizedSuchThatFresh {T : LExprParams} [DecidableEq T.IDMeta
     let pre ← Arbitrary.arbitrary
     return getFreshIdent pre allTyVars
 
--- Parameters for terms without metadata
-abbrev trivialParams : LExprParams := ⟨Unit, Unit⟩
-
 #guard_msgs(drop info) in
 #eval
   let ty := .forAll [] (LMonoTy.bool)
-  let ctx : TContext trivialParams.IDMeta := ⟨[[(⟨"foo", ()⟩, ty)]], []⟩
+  let ctx : TContext TrivialParams.IDMeta := ⟨[[(⟨"foo", ()⟩, ty)]], []⟩
   let P : TyIdentifier → Prop := fun s : String => TContext.isFresh s ctx
   Gen.runUntil .none (@ArbitrarySizedSuchThat.arbitrarySizedST _ P (@instArbitrarySizedSuchThatFresh _ _ ctx) 10) 10
 
@@ -761,19 +800,123 @@ instance [Plausible.Arbitrary α_1] [DecidableEq α_1] [Plausible.Arbitrary β_1
   let P : String × Nat → Prop := fun m => MapsFind₂ [[], []] m
   Gen.runUntil (.some 10) (ArbitrarySizedSuchThat.arbitrarySizedST P 10) 10
 
+
+-- -- This works
+-- derive_generator fun ty ty₂ => ∃ ty₁, IsUnaryArg ty ty₁ ty₂
+
+instance : ArbitrarySizedSuchThat LTy (fun ty₁_1 => @IsUnaryArg ty_1 ty₁_1 ty₂_1) where
+  arbitrarySizedST :=
+    let rec aux_arb (initSize : Nat) (size : Nat) (ty_1 : LTy) (ty₂_1 : LTy) : Plausible.Gen LTy :=
+      (match size with
+      | Nat.zero =>
+        GeneratorCombinators.backtrack
+          [(1,
+              match ty₂_1 with
+              | Lambda.LTy.forAll (List.nil) ty₂ =>
+                match ty_1 with
+                |
+                Lambda.LTy.forAll (List.nil)
+                    (Lambda.LMonoTy.tcons unk_0 (List.cons ty₁ (List.cons ty₂_1_1 (List.nil)))) =>
+                  match @DecOpt.decOpt (@Eq (@Lambda.LMonoTy) ty₂_1_1 ty₂) _ initSize with
+                  | Except.ok Bool.true =>
+                    match @DecOpt.decOpt (@Eq (@String) unk_0 "arrow") _ initSize with
+                    | Except.ok Bool.true => return Lambda.LTy.forAll (List.nil) ty₁
+                    | _ => MonadExcept.throw Plausible.Gen.genericFailure
+                  | _ => MonadExcept.throw Plausible.Gen.genericFailure
+                | _ => MonadExcept.throw Plausible.Gen.genericFailure
+              | _ => MonadExcept.throw Plausible.Gen.genericFailure)]
+      | Nat.succ _size' =>
+        GeneratorCombinators.backtrack
+          [(1,
+              match ty₂_1 with
+              | Lambda.LTy.forAll (List.nil) ty₂ =>
+                match ty_1 with
+                |
+                Lambda.LTy.forAll (List.nil)
+                    (Lambda.LMonoTy.tcons unk_0 (List.cons ty₁ (List.cons ty₂_1_1 (List.nil)))) =>
+                  match @DecOpt.decOpt (@Eq (@Lambda.LMonoTy) ty₂_1_1 ty₂) _ initSize with
+                  | Except.ok Bool.true =>
+                    match @DecOpt.decOpt (@Eq (@String) unk_0 "arrow") _ initSize with
+                    | Except.ok Bool.true => return Lambda.LTy.forAll (List.nil) ty₁
+                    | _ => MonadExcept.throw Plausible.Gen.genericFailure
+                  | _ => MonadExcept.throw Plausible.Gen.genericFailure
+                | _ => MonadExcept.throw Plausible.Gen.genericFailure
+              | _ => MonadExcept.throw Plausible.Gen.genericFailure),
+            ])
+    fun size => aux_arb size size ty_1 ty₂_1
+
+
+-- -- This works
+-- derive_generator fun ty ty₂ => ∃ ty₁, IsUnaryArg ty ty₁ ty₂
+
+instance : ArbitrarySizedSuchThat (LTy × LTy) (fun ty_pair_1 => @IsBinaryArg ty_1 ty_pair_1 ty₃_1) where
+  arbitrarySizedST :=
+    let rec aux_arb (initSize : Nat) (size : Nat) (ty_1 : LTy) (ty₃_1 : LTy) : Plausible.Gen (LTy × LTy) :=
+      (match size with
+      | Nat.zero =>
+        GeneratorCombinators.backtrack
+          [(1,
+              match ty₃_1 with
+              | Lambda.LTy.forAll (List.nil) ty₃ =>
+                match ty_1 with
+                |
+                Lambda.LTy.forAll (List.nil)
+                    (Lambda.LMonoTy.tcons unk_0
+                      (List.cons ty₁
+                        (List.cons (Lambda.LMonoTy.tcons unk_1 (List.cons ty₂ (List.cons ty₃_1_1 (List.nil))))
+                          (List.nil)))) =>
+                  match @DecOpt.decOpt (@Eq (@Lambda.LMonoTy) ty₃_1_1 ty₃) _ initSize with
+                  | Except.ok Bool.true =>
+                    match @DecOpt.decOpt (@Eq (@String) unk_1 "arrow") _ initSize with
+                    | Except.ok Bool.true =>
+                      match @DecOpt.decOpt (@Eq (@String) unk_0 "arrow") _ initSize with
+                      | Except.ok Bool.true =>
+                        return Prod.mk (Lambda.LTy.forAll (List.nil) ty₁) (Lambda.LTy.forAll (List.nil) ty₂)
+                      | _ => MonadExcept.throw Plausible.Gen.genericFailure
+                    | _ => MonadExcept.throw Plausible.Gen.genericFailure
+                  | _ => MonadExcept.throw Plausible.Gen.genericFailure
+                | _ => MonadExcept.throw Plausible.Gen.genericFailure
+              | _ => MonadExcept.throw Plausible.Gen.genericFailure)]
+      | Nat.succ _size' =>
+        GeneratorCombinators.backtrack
+          [(1,
+              match ty₃_1 with
+              | Lambda.LTy.forAll (List.nil) ty₃ =>
+                match ty_1 with
+                |
+                Lambda.LTy.forAll (List.nil)
+                    (Lambda.LMonoTy.tcons unk_0
+                      (List.cons ty₁
+                        (List.cons (Lambda.LMonoTy.tcons unk_1 (List.cons ty₂ (List.cons ty₃_1_1 (List.nil))))
+                          (List.nil)))) =>
+                  match @DecOpt.decOpt (@Eq (@Lambda.LMonoTy) ty₃_1_1 ty₃) _ initSize with
+                  | Except.ok Bool.true =>
+                    match @DecOpt.decOpt (@Eq (@String) unk_1 "arrow") _ initSize with
+                    | Except.ok Bool.true =>
+                      match @DecOpt.decOpt (@Eq (@String) unk_0 "arrow") _ initSize with
+                      | Except.ok Bool.true =>
+                        return Prod.mk (Lambda.LTy.forAll (List.nil) ty₁) (Lambda.LTy.forAll (List.nil) ty₂)
+                      | _ => MonadExcept.throw Plausible.Gen.genericFailure
+                    | _ => MonadExcept.throw Plausible.Gen.genericFailure
+                  | _ => MonadExcept.throw Plausible.Gen.genericFailure
+                | _ => MonadExcept.throw Plausible.Gen.genericFailure
+              | _ => MonadExcept.throw Plausible.Gen.genericFailure),
+            ])
+    fun size => aux_arb size size ty_1 ty₃_1
+
+
 -- We don't quite handle this case yet, if `α` is a type variable.
 -- Monomorphising `α` and removing the `DecidableEq` constraint gives us an almost perfect generator!
 
 -- derive_generator (fun α eqdec fact ctx ty => ∃ t, @HasType α eqdec fact ctx t ty)
 
-
 -- For now though, we hand write a specialized version, without certain constants and without polymorphism.
 instance {T : LExprParams}
-  {fact_1 : LContext T}
+  {C : LContext T}
   {ctx_1 : TContext T.IDMeta}
   [Arbitrary T.mono.base.Metadata]
   [Arbitrary T.IDMeta]
-  [DecidableEq T.IDMeta] : ArbitrarySizedSuchThat (LExpr T.mono) (fun t_1 => HasType fact_1 ctx_1 t_1 ty_1) where
+  [DecidableEq T.IDMeta] : ArbitrarySizedSuchThat (LExpr T.mono) (fun t_1 => HasType C ctx_1 t_1 ty_1) where
   arbitrarySizedST :=
     let rec aux_arb (initSize : Nat) (size : Nat) (ctx_1 : TContext T.IDMeta) (ty_1 : LTy) :
       Plausible.Gen (LExpr T.mono) :=
@@ -783,21 +926,54 @@ instance {T : LExprParams}
           [(1,
               match ty_1 with
               | Lambda.LTy.forAll (List.nil) .bool => do
+              if C.knownTypes.containsName "bool" then
                 let m ← Arbitrary.arbitrary
                 return .boolConst m true
+              else MonadExcept.throw Plausible.Gen.genericFailure
               | _ => MonadExcept.throw Plausible.Gen.genericFailure),
             (1,
               match ty_1 with
               | Lambda.LTy.forAll (List.nil) .bool => do
+              if C.knownTypes.containsName "bool" then
                 let m ← Arbitrary.arbitrary
                 return .boolConst m false
+              else MonadExcept.throw Plausible.Gen.genericFailure
               | _ => MonadExcept.throw Plausible.Gen.genericFailure),
             (1,
               match ty_1 with
               | Lambda.LTy.forAll (List.nil) .int => do
+              if C.knownTypes.containsName "int" then
                 let m ← Arbitrary.arbitrary
                 let n ← Arbitrary.arbitrary
                 return .intConst m n
+              else MonadExcept.throw Plausible.Gen.genericFailure
+              | _ => MonadExcept.throw Plausible.Gen.genericFailure),
+            (1,
+              match ty_1 with
+              | Lambda.LTy.forAll (List.nil) (.bitvec n) => do
+              if C.knownTypes.containsName "bitvec" then
+                let m ← Arbitrary.arbitrary
+                let bv ← Arbitrary.arbitrary
+                return .bitvecConst m n bv
+              else MonadExcept.throw Plausible.Gen.genericFailure
+              | _ => MonadExcept.throw Plausible.Gen.genericFailure),
+            (1,
+              match ty_1 with
+              | Lambda.LTy.forAll (List.nil) .real => do
+              if C.knownTypes.containsName "real" then
+                let m ← Arbitrary.arbitrary
+                let r ← Arbitrary.arbitrary
+                return .realConst m r
+              else MonadExcept.throw Plausible.Gen.genericFailure
+              | _ => MonadExcept.throw Plausible.Gen.genericFailure),
+            (1,
+              match ty_1 with
+              | Lambda.LTy.forAll (List.nil) .string => do
+              if C.knownTypes.containsName "string" then
+                let m ← Arbitrary.arbitrary
+                let s ← Arbitrary.arbitrary
+                return .strConst m s
+              else MonadExcept.throw Plausible.Gen.genericFailure
               | _ => MonadExcept.throw Plausible.Gen.genericFailure),
             (1, do
                 let (x : Identifier _ × LTy) ←
@@ -816,22 +992,56 @@ instance {T : LExprParams}
           (1,
               match ty_1 with
               | Lambda.LTy.forAll (List.nil) .bool => do
+              if C.knownTypes.containsName "bool" then
                 let m ← Arbitrary.arbitrary
                 return .boolConst m true
+              else MonadExcept.throw Plausible.Gen.genericFailure
               | _ => MonadExcept.throw Plausible.Gen.genericFailure),
             (1,
               match ty_1 with
               | Lambda.LTy.forAll (List.nil) .bool => do
+              if C.knownTypes.containsName "bool" then
                 let m ← Arbitrary.arbitrary
                 return .boolConst m false
+              else MonadExcept.throw Plausible.Gen.genericFailure
               | _ => MonadExcept.throw Plausible.Gen.genericFailure),
             (1,
               match ty_1 with
               | Lambda.LTy.forAll (List.nil) .int => do
+              if C.knownTypes.containsName "int" then
                 let m ← Arbitrary.arbitrary
                 let n ← Arbitrary.arbitrary
                 return .intConst m n
+              else MonadExcept.throw Plausible.Gen.genericFailure
               | _ => MonadExcept.throw Plausible.Gen.genericFailure),
+            (1,
+              match ty_1 with
+              | Lambda.LTy.forAll (List.nil) (.bitvec n) => do
+              if C.knownTypes.containsName "bitvec" then
+                let m ← Arbitrary.arbitrary
+                let bv ← Arbitrary.arbitrary
+                return .bitvecConst m n bv
+              else MonadExcept.throw Plausible.Gen.genericFailure
+              | _ => MonadExcept.throw Plausible.Gen.genericFailure),
+            (1,
+              match ty_1 with
+              | Lambda.LTy.forAll (List.nil) .real => do
+              if C.knownTypes.containsName "real" then
+                let m ← Arbitrary.arbitrary
+                let r ← Arbitrary.arbitrary
+                return .realConst m r
+              else MonadExcept.throw Plausible.Gen.genericFailure
+              | _ => MonadExcept.throw Plausible.Gen.genericFailure),
+            (1,
+              match ty_1 with
+              | Lambda.LTy.forAll (List.nil) .string => do
+              if C.knownTypes.containsName "string" then
+                let m ← Arbitrary.arbitrary
+                let s ← Arbitrary.arbitrary
+                return .strConst m s
+              else MonadExcept.throw Plausible.Gen.genericFailure
+              | _ => MonadExcept.throw Plausible.Gen.genericFailure),
+
             (size', do
                 let m ← Arbitrary.arbitrary
                 let (x : Identifier _ × LTy) ←
@@ -841,7 +1051,7 @@ instance {T : LExprParams}
                   return Lambda.LExpr.fvar m x.fst none
                 else
                   throw Gen.genericFailure),
-            (Nat.succ size',
+            (0, -- FIXME: for now we avoid generating lambdas for the boogie translator.
               match ty_1 with
               |
               Lambda.LTy.forAll (List.nil)
@@ -896,21 +1106,49 @@ instance {T : LExprParams}
                     let m ← Arbitrary.arbitrary
                     return Lambda.LExpr.eq m e1 e2
               | _ => MonadExcept.throw Plausible.Gen.genericFailure),
-            (10, do
+            (1, do
               let (f : LFunc _) ←
                 @ArbitrarySizedSuchThat.arbitrarySizedST _
                     (fun (f : LFunc _) =>
-                      @ArrayFind (@Lambda.LFunc _) (@Lambda.LContext.functions _ fact_1) f)
+                      @ArrayFind (@Lambda.LFunc _) (@Lambda.LContext.functions _ C) f)
                     _ initSize;
               do
                 match f.type with
                 | .ok f_ty =>
-                  if f_ty  = ty_1 then do
+                  if f_ty = ty_1 then do
                     let m ← Arbitrary.arbitrary
                     return Lambda.LExpr.op m f.name (Option.none)
                   else throw Plausible.Gen.genericFailure
                 | _ => throw Plausible.Gen.genericFailure
-                )
+                ),
+            (10, do
+                  let (f : LFunc T) ←
+                    @ArbitrarySizedSuchThat.arbitrarySizedST _
+                        (fun (f : LFunc T) =>
+                          @ArrayFind (@Lambda.LFunc T) (@Lambda.LContext.functions T C)
+                            f)
+                        _ initSize;
+                  let (ty₁ : LTy) ←  @ArbitrarySizedSuchThat.arbitrarySizedST _ (fun (ty₁ : LTy) => @IsUnaryArg (@LFunc.type! T f) ty₁ ty_1) _ initSize;
+                  let (t₁ : LExpr (LExprParams.mono T)) ← aux_arb initSize size' ctx_1 ty₁;
+                  let (m : _) ← Plausible.Arbitrary.arbitrary;
+                  return Lambda.LExpr.app m (Lambda.LExpr.op m f.name (Option.none)) t₁),
+            (10, do
+                    let (f : LFunc T) ←
+                      @ArbitrarySizedSuchThat.arbitrarySizedST _
+                          (fun (f : LFunc T) =>
+                            @ArrayFind (@Lambda.LFunc T)
+                              (@Lambda.LContext.functions T C) f)
+                          _ initSize;
+                    do
+                      let vty₁_ty₂ ←
+                        @ArbitrarySizedSuchThat.arbitrarySizedST _
+                            (fun vty₁_ty₂ => @IsBinaryArg (@LFunc.type! T f) vty₁_ty₂ ty_1) _ initSize;
+                      match vty₁_ty₂ with
+                        | @Prod.mk (@Lambda.LTy) (@Lambda.LTy) ty₁ ty₂ => do
+                          let (t₂ : LExpr (LExprParams.mono T)) ← aux_arb initSize size' ctx_1 ty₂;
+                          let (t₁ : LExpr (LExprParams.mono T)) ← aux_arb initSize size' ctx_1 ty₁;
+                          let (m : _) ← Plausible.Arbitrary.arbitrary;
+                          return Lambda.LExpr.app m (Lambda.LExpr.app m (Lambda.LExpr.op m f.name (Option.none)) t₁) t₂)
         ])
     fun size => aux_arb size size ctx_1 ty_1
 
@@ -918,7 +1156,7 @@ instance {T : LExprParams}
 #guard_msgs(drop info) in
 #eval Gen.printSamples (Arbitrary.arbitrary : Gen LMonoTy)
 
-abbrev example_lctx : LContext trivialParams :=
+abbrev example_lctx : LContext TrivialParams :=
 { LContext.empty with knownTypes := KnownTypes.default
                       functions := Lambda.IntBoolFactory
 }
@@ -927,7 +1165,6 @@ abbrev example_ctx : TContext Unit := ⟨[[]], []⟩
 -- abbrev example_ty : LTy := .forAll [] <| .tcons "bool" []
 abbrev example_ty : LTy := .forAll [] <| .tcons "arrow" [.tcons "bool" [], .tcons "bool" []]
 
--- FIXME
 /-- info: [[({ name := "y", metadata := () }, Lambda.LTy.forAll [] (Lambda.LMonoTy.tcons "int" []))]] -/
 #guard_msgs(info) in
 #eval
@@ -937,12 +1174,13 @@ abbrev example_ty : LTy := .forAll [] <| .tcons "arrow" [.tcons "bool" [], .tcon
 
 #guard_msgs(drop info) in
 #time #eval
-    let P : LExpr trivialParams.mono → Prop := fun t => HasType example_lctx example_ctx t example_ty
+    let P : LExpr TrivialParams.mono → Prop := fun t => HasType example_lctx example_ctx t example_ty
     Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 4) 4
+
 def example_lstate :=
-  { LState.init (T := trivialParams) with config :=
-    { LState.init.config (T := trivialParams) with
-      factory := Lambda.IntBoolFactory (T := trivialParams)}
+  { LState.init (T := TrivialParams) with config :=
+    { LState.init.config (T := TrivialParams) with
+      factory := Lambda.IntBoolFactory (T := TrivialParams)}
   }
 
 /-- `Monad` instance for List.
@@ -986,25 +1224,26 @@ match shrinked with
 
 /-- info: [LExpr.fvar () { name := "x", metadata := () } none, LExpr.fvar () { name := "y", metadata := () } none] -/
 #guard_msgs(info) in
-#eval Shrinkable.shrink (LExpr.eq (T := trivialParams.mono) () (.fvar () "x" .none) (.fvar () "y" .none))
+#eval Shrinkable.shrink (LExpr.eq (T := TrivialParams.mono) () (.fvar () "x" .none) (.fvar () "y" .none))
 
 /-- info: 2 -/
 #guard_msgs(info) in
 #eval shrinkFun (fun n : Nat => n % 3 == 2) 42
 
-def annotate (t : LExpr trivialParams.mono) :=
+def annotate (t : LExpr TrivialParams.mono) :=
   let state : TState := {}
   let env : TEnv Unit := { genEnv := ⟨example_ctx, state⟩ }
   LExpr.annotate example_lctx env t
 
-def canAnnotate (t : LExpr trivialParams.mono) : Bool :=
+def canAnnotate (t : LExpr TrivialParams.mono) : Bool :=
   (annotate t).isOk
 
 
--- #eval do
---     let P : LExpr trivialParams.mono → Prop := fun t => HasType example_lctx example_ctx t example_ty
---     let t ← Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 5) 5
---     IO.println s!"Generated {t}"
+#guard_msgs(drop info) in
+#eval do
+    let P : LExpr TrivialParams.mono → Prop := fun t => HasType example_lctx example_ctx t example_ty
+    let t ← Gen.runUntil (.some 10) (ArbitrarySizedSuchThat.arbitrarySizedST P 5) 5
+    IO.println s!"Generated {t}"
 
 
 /-- info: Generating terms of type
@@ -1017,21 +1256,21 @@ in factory
 #guard_msgs in
 #eval do
   IO.println s!"Generating terms of type\n{example_ty}\nin context\n{repr example_ctx}\nin \
-                factory\n{example_lctx.functions.map (fun f : LFunc trivialParams => f.name)}\n"
+                factory\n{example_lctx.functions.map (fun f : LFunc TrivialParams => f.name)}\n"
   for i in List.range 100 do
-    let P : LExpr trivialParams.mono → Prop := fun t => HasType example_lctx example_ctx t example_ty
-    let t ← Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 5) 5
+    let P : LExpr TrivialParams.mono → Prop := fun t => HasType example_lctx example_ctx t example_ty
+    let t ← Gen.runUntil (.some 1000) (ArbitrarySizedSuchThat.arbitrarySizedST P 5) 5
     -- IO.println s!"Generated {t}"
     if !(canAnnotate t) then
       let .error e := annotate t | throw <| IO.Error.userError "Unreachable"
       IO.println s!"FAILED({i}): {e}\n{t}\n\nSHRUNK TO:\n{shrinkFun (not ∘ canAnnotate) t}\n\n"
 
-def isIntConst (t : LExpr trivialParams.mono) : Bool :=
+def isIntConst (t : LExpr TrivialParams.mono) : Bool :=
 match t with
 | .const _ (.intConst _) => true
 | _ => false
 
-def reduces (t : LExpr trivialParams.mono) : Bool :=
+def reduces (t : LExpr TrivialParams.mono) : Bool :=
   let t' := t.eval 1000 example_lstate
   isIntConst t'
 
@@ -1046,9 +1285,10 @@ in factory
 #eval do
   IO.println s!"Generating terms of type\n{example_ty}\nin context\n{repr example_ctx}\nin \
                 factory\n{example_lctx.functions.map (fun f : LFunc _ => f.name)}\n"
-  for i in List.range 100 do
-    let P : LExpr trivialParams.mono → Prop := fun t => HasType example_lctx example_ctx t (.forAll [] (.tcons "int" []))
-    let t ← Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 5) 5
-    -- Unfortunately this *can* fail, if we compare two terms at arrow types.
+  for _i in List.range 100 do
+    let P : LExpr TrivialParams.mono → Prop := fun t => HasType example_lctx example_ctx t (.forAll [] (.tcons "int" []))
+    let t ← Gen.runUntil (.some 1000) (ArbitrarySizedSuchThat.arbitrarySizedST P 5) 5
+    -- Unfortunately this *can* fail, if we compare two terms at arrow types, or try to take mod 0 etc.
     if !(reduces t) then
-      IO.println s!"NOT A VALUE({i}): {t}\nREDUCES TO\n{t.eval 10000 example_lstate}\n\n"
+      -- IO.println s!"NOT A VALUE({i}): {t}\nREDUCES TO\n{t.eval 10000 example_lstate}\n\n"
+      continue
