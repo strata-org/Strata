@@ -20,21 +20,21 @@ namespace Lambda
 open Std (ToFormat Format format)
 
 
+/-- Type identifiers. For now, these are just strings. -/
 abbrev TyIdentifier := String
 
 instance : Coe String TyIdentifier where
   coe := id
 
-/--
-Types in Lambda: these are mono-types. Note that all free type variables
-(`.ftvar`) are implicitly universally quantified.
--/
+/-- Monomorphic types in Lambda. Note that all free type variables (`.ftvar`)
+are implicitly universally quantified.  -/
 inductive LMonoTy : Type where
-  /-- Type variable. -/
+  /-- A type variable. -/
   | ftvar (name : TyIdentifier)
-  /-- Type constructor. -/
+  /-- A type constructor. -/
   | tcons (name : String) (args : List LMonoTy)
-  /-- Special support for bitvector types of every size. -/
+  /-- A bit vector type. This is a special case so that it can be parameterized
+  by a size. -/
   | bitvec (size : Nat)
   deriving Inhabited, Repr
 
@@ -120,9 +120,10 @@ def LMonoTy.getArrowArgs (t: LMonoTy) : List LMonoTy :=
   | _ => []
 
 /--
-Type schemes (poly-types) in Lambda.
+Polymorphic type schemes in Lambda.
 -/
 inductive LTy : Type where
+  /-- A type containing universally quantified type variables. -/
   | forAll (vars : List TyIdentifier) (ty : LMonoTy)
   deriving Inhabited, Repr
 
