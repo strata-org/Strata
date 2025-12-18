@@ -125,7 +125,7 @@ jobs:
       - name: Build documentation package
         uses: leanprover/lean-action@v1
         with:
-          #build-args: '--wfail'
+          build-args: '--wfail'
           lake-package-directory: 'docs/verso'
       - name: Build documentation
         run: ./generate.sh
