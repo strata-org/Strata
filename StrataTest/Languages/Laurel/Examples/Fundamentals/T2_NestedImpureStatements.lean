@@ -13,7 +13,7 @@ open Strata
 namespace Laurel
 
 def program: String := r"
-procedure nestedImpureStatements(x: int): int {
+procedure nestedImpureStatements(x: int) {
   var y := 0;
   if (y := y + 1; == { y := y + 1; x }) {
     assert x == 1;
@@ -24,29 +24,10 @@ procedure nestedImpureStatements(x: int): int {
   assert y == 2;
     assert false;
 //  ^^^^^^^^^^^^^ error: assertion does not hold
-  return 42;
 }
 "
 
 #eval! testInputWithOffset "NestedImpureStatements" program 14 processLaurelFile
 
-/-
-Translation towards SMT:
-
-function nestedImpureStatements(): int {
-  var x := 0;
-  var y := 0;
-  x := x + 1;
-  var t1 := x;
-  y := x;
-  var t2 := x;
-  if (t1 == t2) {
-    1
-  } else {
-    2
-  }
-}
-
--/
 
 end Laurel

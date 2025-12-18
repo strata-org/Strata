@@ -65,9 +65,8 @@ category Parameter;
 op parameter (name: Ident, paramType: LaurelType): Parameter => name ":" paramType;
 
 category Procedure;
-op procedure (name : Ident, body : StmtExpr) : Procedure => "procedure " name "() " body:0;
-op procedureWithReturnType (name : Ident, parameters: CommaSepBy Parameter, returnType : LaurelType, body : StmtExpr) : Procedure =>
-  "procedure " name "(" parameters "): " returnType " " body:0;
+op procedure (name : Ident, parameters: CommaSepBy Parameter, body : StmtExpr) : Procedure =>
+  "procedure " name "(" parameters ")" body:0;
 
 op program (staticProcedures: Seq Procedure): Command => staticProcedures;
 

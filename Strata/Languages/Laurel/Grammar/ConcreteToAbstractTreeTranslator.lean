@@ -253,26 +253,12 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
 
   if op.name == q`Laurel.procedure then
     let name ← translateIdent op.args[0]!
-    let body ← translateCommand op.args[1]!
-    return {
-      name := name
-      inputs := []
-      output := .TVoid
-      precondition := .LiteralBool true
-      decreases := none
-      determinism := Determinism.deterministic none
-      modifies := none
-      body := .Transparent body
-    }
-  else if op.name == q`Laurel.procedureWithReturnType then
-    let name ← translateIdent op.args[0]!
     let parameters ← translateParameters op.args[1]!
-    let returnType ← translateHighType op.args[2]!
-    let body ← translateCommand op.args[3]!
+    let body ← translateCommand op.args[2]!
     return {
       name := name
       inputs := parameters
-      output := returnType
+      output := .TVoid
       precondition := .LiteralBool true
       decreases := none
       determinism := Determinism.deterministic none
