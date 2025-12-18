@@ -119,11 +119,12 @@ inductive Step (F:@Factory Tbase) (rf:Env Tbase)
 -- If LFunc has a concrete evaluator, this can be used to 'jump' to the final
 -- result of the function.
 | eval_fn:
-  ∀ (e callee:LExpr Tbase.mono) args fn denotefn,
+  ∀ (e callee e':LExpr Tbase.mono) args fn denotefn,
     F.callOfLFunc e = .some (callee,args,fn) →
     args.all (LExpr.isCanonicalValue F) →
     fn.concreteEval = .some denotefn →
-    Step F rf e (denotefn (LExpr.mkApp m callee args) args)
+    .some e' = denotefn m args →
+    Step F rf e e'
 
 
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
