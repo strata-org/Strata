@@ -15,9 +15,11 @@ For example:
   if ((x := x + 1) == (y := x)) { ... }
 
 Becomes:
-  x := x + 1;
-  y := x;
-  if (x == y) { ... }
+  var x1 := x + 1;
+  x := x1;
+  var y1 := x;
+  y := y1;
+  if (x1 == y1) { ... }
 -/
 
 structure SequenceState where
@@ -174,30 +176,24 @@ partial def sequenceStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
 
 end
 
-/-
-Transform a procedure body to sequence all assignments.
--/
-def sequenceProcedureBody (body : StmtExpr) : StmtExpr :=
+def liftInProcedureBody (body : StmtExpr) : StmtExpr :=
   let (seqStmts, _) := sequenceStmt body |>.run {}
   match seqStmts with
   | [single] => single
   | multiple => .Block multiple none
 
-/-
-Transform a procedure to sequence all assignments in its body.
--/
-def sequenceProcedure (proc : Procedure) : Procedure :=
+def liftInProcedure (proc : Procedure) : Procedure :=
   match proc.body with
   | .Transparent bodyExpr =>
-      let seqBody := sequenceProcedureBody bodyExpr
+      let seqBody := liftInProcedureBody bodyExpr
       { proc with body := .Transparent seqBody }
   | _ => proc  -- Opaque and Abstract bodies unchanged
 
 /-
-Transform a program to sequence all assignments.
+Transform a program to lift all assignments that occur in an expression context.
 -/
-def sequenceProgram (program : Program) : Program :=
-  let seqProcedures := program.staticProcedures.map sequenceProcedure
+def liftExpressionAssignments (program : Program) : Program :=
+  let seqProcedures := program.staticProcedures.map liftInProcedure
   { program with staticProcedures := seqProcedures }
 
 end Laurel

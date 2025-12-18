@@ -10,7 +10,7 @@ import Strata.Languages.Boogie.Statement
 import Strata.Languages.Boogie.Procedure
 import Strata.Languages.Boogie.Options
 import Strata.Languages.Laurel.Laurel
-import Strata.Languages.Laurel.SequenceAssignments
+import Strata.Languages.Laurel.LiftExpressionAssignments
 import Strata.DL.Imperative.Stmt
 import Strata.Languages.Laurel.LaurelFormat
 
@@ -187,7 +187,7 @@ Translate Laurel Program to Boogie Program
 -/
 def translate (program : Program) : Boogie.Program :=
   -- First, sequence all assignments (move them out of expression positions)
-  let sequencedProgram := sequenceProgram program
+  let sequencedProgram := liftExpressionAssignments program
   dbg_trace "=== Sequenced program Program ==="
   dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format sequencedProgram)))
   dbg_trace "================================="
