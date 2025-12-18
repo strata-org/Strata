@@ -77,59 +77,6 @@ def matchesDiagnostic (diag : Diagnostic) (exp : DiagnosticExpectation) : Bool :
   diag.ending.column == exp.colEnd &&
   stringContains diag.message exp.message
 
-/-- Generic test function for files with diagnostic expectations.
-    Takes a function that processes a file path and returns a list of diagnostics. -/
-def testInputContext (input : Parser.InputContext) (process : Lean.Parser.InputContext -> IO (Array Diagnostic)) : IO Unit := do
-
-  -- Parse diagnostic expectations from comments
-  let expectations := parseDiagnosticExpectations input.inputString
-  let expectedErrors := expectations.filter (fun e => e.level == "error")
-
-  -- Get actual diagnostics from the language-specific processor
-  let diagnostics <- process input
-
-  -- Check if all expected errors are matched
-  let mut allMatched := true
-  let mut unmatchedExpectations := []
-
-  for exp in expectedErrors do
-    let matched := diagnostics.any (fun diag => matchesDiagnostic diag exp)
-    if !matched then
-      allMatched := false
-      unmatchedExpectations := unmatchedExpectations.append [exp]
-
-  -- Check if there are unexpected diagnostics
-  let mut unmatchedDiagnostics := []
-  for diag in diagnostics do
-    let matched := expectedErrors.any (fun exp => matchesDiagnostic diag exp)
-    if !matched then
-      allMatched := false
-      unmatchedDiagnostics := unmatchedDiagnostics.append [diag]
-
-  -- Report results
-  if allMatched && diagnostics.size == expectedErrors.length then
-    IO.println s!"✓ Test passed: All {expectedErrors.length} error(s) matched"
-    -- Print details of matched expectations
-    for exp in expectedErrors do
-      IO.println s!"  - Line {exp.line}, Col {exp.colStart}-{exp.colEnd}: {exp.message}"
-  else
-    IO.println s!"✗ Test failed: Mismatched diagnostics"
-    IO.println s!"\nExpected {expectedErrors.length} error(s), got {diagnostics.size} diagnostic(s)"
-
-    if unmatchedExpectations.length > 0 then
-      IO.println s!"\nUnmatched expected diagnostics:"
-      for exp in unmatchedExpectations do
-        IO.println s!"  - Line {exp.line}, Col {exp.colStart}-{exp.colEnd}: {exp.message}"
-
-    if unmatchedDiagnostics.length > 0 then
-      IO.println s!"\nUnexpected diagnostics:"
-      for diag in unmatchedDiagnostics do
-        IO.println s!"  - Line {diag.start.line}, Col {diag.start.column}-{diag.ending.column}: {diag.message}"
-    throw (IO.userError "Test failed")
-
-def testInput (filename: String) (input : String) (process : Lean.Parser.InputContext -> IO (Array Diagnostic)) : IO Unit :=
-  testInputContext (Parser.stringInputContext filename input) process
-
 /-- Test input with line offset - adds imaginary newlines to the start of the input -/
 def testInputWithOffset (filename: String) (input : String) (lineOffset : Nat)
     (process : Lean.Parser.InputContext -> IO (Array Diagnostic)) : IO Unit := do
@@ -183,5 +130,8 @@ def testInputWithOffset (filename: String) (input : String) (lineOffset : Nat)
       for diag in unmatchedDiagnostics do
         IO.println s!"  - Line {diag.start.line}, Col {diag.start.column}-{diag.ending.column}: {diag.message}"
     throw (IO.userError "Test failed")
+
+def testInput (filename: String) (input : String) (process : Lean.Parser.InputContext -> IO (Array Diagnostic)) : IO Unit :=
+  testInputWithOffset filename input 0 process
 
 end StrataTest.Util

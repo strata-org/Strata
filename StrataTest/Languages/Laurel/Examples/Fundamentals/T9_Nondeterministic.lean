@@ -23,7 +23,8 @@ procedure caller() {
   var x = nonDeterministic(1)
   assert x > 0;
   var y = nonDeterministic(1)
-  assert x == y;
+    assert x == y;
+//  ^^^^^^^^^^^^^^ error: assertion does not hold
 }
 
 nondet procedure nonDeterminsticTransparant(x: int): (r: int)

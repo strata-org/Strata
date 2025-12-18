@@ -17,13 +17,15 @@ procedure hasRequires(x: int): (r: int)
   requires assert 1 == 1; x > 2
 {
   assert x > 0;
-  assert x > 3;
+    assert x > 3;
+//  ^^^^^^^^^^^^^ error: assertion does not hold
   x + 1
 }
 
 procedure caller() {
-  var x = hasRequires(1)
-  var y = hasRequires(3)
+    var x = hasRequires(1);
+//          ^^^^^^^^^^^^^^ error: precondition does not hold
+  var y = hasRequires(3);
 }
 "
 

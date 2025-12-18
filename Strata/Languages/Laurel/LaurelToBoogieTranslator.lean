@@ -77,30 +77,7 @@ partial def translateExpr (expr : StmtExpr) : Boogie.Expression.Expr :=
       let ident := Boogie.BoogieIdent.glob name
       let fnOp := .op () ident (some LMonoTy.int)  -- Assume int return type
       args.foldl (fun acc arg => .app () acc (translateExpr arg)) fnOp
-  | .Return _ => panic! "translateExpr: Return"
-  | .Block _ _ => panic! "translateExpr: Block"
-  | .LocalVariable _ _ _ => panic! "translateExpr: LocalVariable"
-  | .While _ _ _ _ => panic! "translateExpr: While"
-  | .Exit _ => panic! "translateExpr: Exit"
-  | .FieldSelect _ _ => panic! "translateExpr: FieldSelect"
-  | .PureFieldUpdate _ _ _ => panic! "translateExpr: PureFieldUpdate"
-  | .This => panic! "translateExpr: This"
-  | .ReferenceEquals _ _ => panic! "translateExpr: ReferenceEquals"
-  | .AsType _ _ => panic! "translateExpr: AsType"
-  | .IsType _ _ => panic! "translateExpr: IsType"
-  | .InstanceCall _ _ _ => panic! "translateExpr: InstanceCall"
-  | .Forall _ _ _ => panic! "translateExpr: Forall"
-  | .Exists _ _ _ => panic! "translateExpr: Exists"
-  | .Assigned _ => panic! "translateExpr: Assigned"
-  | .Old _ => panic! "translateExpr: Old"
-  | .Fresh _ => panic! "translateExpr: Fresh"
-  | .Assert _ _ => panic! "translateExpr: Assert"
-  | .Assume _ _ => panic! "translateExpr: Assume"
-  | .ProveBy _ _ => panic! "translateExpr: ProveBy"
-  | .ContractOf _ _ => panic! "translateExpr: ContractOf"
-  | .Abstract => panic! "translateExpr: Abstract"
-  | .All => panic! "translateExpr: All"
-  | .Hole => panic! "translateExpr: Hole"
+  | _ => panic! Std.Format.pretty (Std.ToFormat.format expr)
 
 /-
 Translate Laurel StmtExpr to Boogie Statements
@@ -157,29 +134,7 @@ partial def translateStmt (stmt : StmtExpr) : List Boogie.Statement :=
         | none => Boogie.Statement.assume "return" (.const () (.boolConst false)) .empty
       let noFallThrough := Boogie.Statement.assume "return" (.const () (.boolConst false)) .empty
       [returnStmt, noFallThrough]
-  | .LiteralInt _ => panic! "translateStmt: LiteralInt"
-  | .LiteralBool _ => panic! "translateStmt: LiteralBool"
-  | .Identifier _ => panic! "translateStmt: Identifier"
-  | .While _ _ _ _ => panic! "translateStmt: While"
-  | .Exit _ => panic! "translateStmt: Exit"
-  | .FieldSelect _ _ => panic! "translateStmt: FieldSelect"
-  | .PureFieldUpdate _ _ _ => panic! "translateStmt: PureFieldUpdate"
-  | .This => panic! "translateStmt: This"
-  | .ReferenceEquals _ _ => panic! "translateStmt: ReferenceEquals"
-  | .AsType _ _ => panic! "translateStmt: AsType"
-  | .IsType _ _ => panic! "translateStmt: IsType"
-  | .InstanceCall _ _ _ => panic! "translateStmt: InstanceCall"
-  | .Forall _ _ _ => panic! "translateStmt: Forall"
-  | .Exists _ _ _ => panic! "translateStmt: Exists"
-  | .Assigned _ => panic! "translateStmt: Assigned"
-  | .Old _ => panic! "translateStmt: Old"
-  | .Fresh _ => panic! "translateStmt: Fresh"
-  | .ProveBy _ _ => panic! "translateStmt: ProveBy"
-  | .ContractOf _ _ => panic! "translateStmt: ContractOf"
-  | .Abstract => panic! "translateStmt: Abstract"
-  | .All => panic! "translateStmt: All"
-  | .Hole => panic! "translateStmt: Hole"
-  | .PrimitiveOp op _ => panic! s!"translateStmt: unhandled PrimitiveOp {repr op}"
+  | _ => panic! Std.Format.pretty (Std.ToFormat.format stmt)
 
 /-
 Translate Laurel Parameter to Boogie Signature entry
@@ -230,7 +185,7 @@ def translateProcedure (proc : Procedure) : Boogie.Procedure :=
 /-
 Translate Laurel Program to Boogie Program
 -/
-def translate (program : Program) : Boogie.Program := do
+def translate (program : Program) : Boogie.Program :=
   -- First, sequence all assignments (move them out of expression positions)
   let sequencedProgram := sequenceProgram program
   dbg_trace "=== Sequenced program Program ==="

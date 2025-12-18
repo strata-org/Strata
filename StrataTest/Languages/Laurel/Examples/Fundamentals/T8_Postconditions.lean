@@ -14,6 +14,7 @@ namespace Laurel
 
 def program := r"
 procedure opaqueBody(x: int): (r: int)
+// the presence of the ensures make the body opaque. we can consider more explicit syntax.
   ensures assert 1 == 1; r >= 0
 {
   Math.abs(x)
@@ -28,7 +29,8 @@ procedure caller() {
   assert transparantBody(-1) == 1;
   assert opaqueBody(-1) >= 0
   assert opaqueBody(-3) == opaqueBody(-3);
-  assert opaqueBody(-1) == 1;
+    assert opaqueBody(-1) == 1;
+//  ^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 }
 "
 
