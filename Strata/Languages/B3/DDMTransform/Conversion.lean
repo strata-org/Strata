@@ -35,47 +35,38 @@ Typeclass for creating annotations when converting CST → AST.
 Methods extract multiple metadata from a single CST metadata when AST needs more.
 -/
 class B3AnnFromCST (α : Type) where
-  /-- CST: `.natLit ann n` (1 metadata) → AST: `.literal m (.intLit m2 n)` (2 metadata). Extract for .literal wrapper. -/
+  -- Literals: AST needs one extra metadata for the literal wrapper
   annForLiteral : α → α
-  /-- CST: `.natLit ann n` (1 metadata) → AST: `.literal m (.intLit m2 n)` (2 metadata). Extract for .intLit/.stringLit/.boolLit. -/
+  -- Literals: AST needs one extra metadata for the literal type (.intLit/.stringLit/.boolLit)
   annForLiteralType : α → α
-  /-- CST: `.not ann arg` (1 metadata) → AST: `.unaryOp m (.not m2) arg` (2 metadata). Extract for .unaryOp wrapper. -/
+  -- Unary ops: AST needs one extra metadata for the .unaryOp wrapper
   annForUnaryOp : α → α
-  /-- CST: `.not ann arg` (1 metadata) → AST: `.unaryOp m (.not m2) arg` (2 metadata). Extract for .not/.neg. -/
+  -- Unary ops: AST needs one extra metadata for the op type (.not/.neg)
   annForUnaryOpType : α → α
-  /-- CST: `.add ann lhs rhs` (1 metadata) → AST: `.binaryOp m (.add m2) lhs rhs` (2 metadata). Extract for .binaryOp wrapper. -/
+  -- Binary ops: AST needs one extra metadata for the .binaryOp wrapper
   annForBinaryOp : α → α
-  /-- CST: `.add ann lhs rhs` (1 metadata) → AST: `.binaryOp m (.add m2) lhs rhs` (2 metadata). Extract for .add/.sub/etc. -/
+  -- Binary ops: AST needs one extra metadata for the op type (.add/.sub/etc)
   annForBinaryOpType : α → α
-  /-- CST: `.functionCall ann fn args` (1 metadata) → AST: `.functionCall m ⟨m2, fn⟩ ⟨m3, args⟩` (3 metadata). Extract for wrapper. -/
+  -- Function calls: AST needs two extra metadata for fn and args Anns
   annForFunctionCall : α → α
-  /-- CST: `.functionCall ann fn args` (1 metadata) → AST: `.functionCall m ⟨m2, fn⟩ ⟨m3, args⟩` (3 metadata). Extract for fn Ann. -/
   annForFunctionCallName : α → α
-  /-- CST: `.functionCall ann fn args` (1 metadata) → AST: `.functionCall m ⟨m2, fn⟩ ⟨m3, args⟩` (3 metadata). Extract for args Ann. -/
   annForFunctionCallArgs : α → α
-  /-- CST: `.labeledExpr ann label expr` (1 metadata) → AST: `.labeledExpr m ⟨m2, label⟩ expr` (2 metadata). Extract for wrapper. -/
+  -- Labeled expressions: AST needs one extra metadata for the label Ann
   annForLabeledExpr : α → α
-  /-- CST: `.labeledExpr ann label expr` (1 metadata) → AST: `.labeledExpr m ⟨m2, label⟩ expr` (2 metadata). Extract for label Ann. -/
   annForLabeledExprLabel : α → α
-  /-- CST: `.letExpr ann var value body` (1 metadata) → AST: `.letExpr m ⟨m2, var⟩ value body` (2 metadata). Extract for wrapper. -/
+  -- Let expressions: AST needs one extra metadata for the var Ann
   annForLetExpr : α → α
-  /-- CST: `.letExpr ann var value body` (1 metadata) → AST: `.letExpr m ⟨m2, var⟩ value body` (2 metadata). Extract for var Ann. -/
   annForLetExprVar : α → α
-  /-- CST: `.ite ann cond thn els` (1 metadata) → AST: `.ite m cond thn els` (1 metadata). Passthrough (no extraction needed). -/
+  -- If-then-else: AST has same metadata count (passthrough)
   annForIte : α → α
-  /-- CST: `.forall_expr ann var ty patterns body` (1 metadata) → AST: `.quantifierExpr m (.forall m2) ⟨m3, var⟩ ⟨m4, ty⟩ ⟨m5, patterns⟩ body` (5 metadata). Extract for wrapper. -/
+  -- Quantifiers: AST needs four extra metadata for kind, var, ty, and patterns Anns
   annForQuantifierExpr : α → α
-  /-- CST: `.forall_expr ann var ty patterns body` (1 metadata) → AST: `.quantifierExpr m (.forall m2) ⟨m3, var⟩ ⟨m4, ty⟩ ⟨m5, patterns⟩ body` (5 metadata). Extract for .forall/.exists. -/
   annForQuantifierKind : α → α
-  /-- CST: `.forall_expr ann var ty patterns body` (1 metadata) → AST: `.quantifierExpr m (.forall m2) ⟨m3, var⟩ ⟨m4, ty⟩ ⟨m5, patterns⟩ body` (5 metadata). Extract for var Ann. -/
   annForQuantifierVar : α → α
-  /-- CST: `.forall_expr ann var ty patterns body` (1 metadata) → AST: `.quantifierExpr m (.forall m2) ⟨m3, var⟩ ⟨m4, ty⟩ ⟨m5, patterns⟩ body` (5 metadata). Extract for ty Ann. -/
   annForQuantifierType : α → α
-  /-- CST: `.forall_expr ann var ty patterns body` (1 metadata) → AST: `.quantifierExpr m (.forall m2) ⟨m3, var⟩ ⟨m4, ty⟩ ⟨m5, patterns⟩ body` (5 metadata). Extract for patterns Ann. -/
   annForQuantifierPatterns : α → α
-  /-- CST: `.pattern pann exprs` (1 metadata) → AST: `.pattern m ⟨m2, exprs⟩` (2 metadata). Extract for wrapper. -/
+  -- Patterns: AST needs one extra metadata for the exprs Ann
   annForPattern : α → α
-  /-- CST: `.pattern pann exprs` (1 metadata) → AST: `.pattern m ⟨m2, exprs⟩` (2 metadata). Extract for exprs Ann. -/
   annForPatternExprs : α → α
 
 instance : B3AnnFromCST Unit where
