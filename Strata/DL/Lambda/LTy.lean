@@ -20,6 +20,7 @@ namespace Lambda
 open Std (ToFormat Format format)
 
 
+/-- Type identifiers. For now, these are just strings. -/
 abbrev TyIdentifier := String
 
 instance : Coe String TyIdentifier where

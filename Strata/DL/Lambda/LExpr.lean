@@ -42,7 +42,9 @@ Expected interface for pure expressions that can be used to specialize the
 Imperative dialect.
 -/
 structure LExprParams : Type 1 where
+  /-- The type of metadata allowed on expressions. -/
   Metadata: Type
+  /-- The type of metadata allowed on identifiers. -/
   IDMeta : Type
   deriving Inhabited
 
@@ -50,7 +52,9 @@ structure LExprParams : Type 1 where
 Extended LExprParams that includes TypeType parameter.
 -/
 structure LExprParamsT : Type 1 where
+  /-- The base parameters, with the types for expression and identifier metadata. -/
   base : LExprParams
+  /-- The type of types used to annotate expressions. -/
   TypeType : Type
   deriving Inhabited
 
