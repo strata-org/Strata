@@ -12,6 +12,8 @@ open Strata
 
 namespace Laurel
 
+- We need to support multiple assignments to the same variable in one expression
+- That requires creating new variables to hold the intermediate results
 def program: String := r"
 procedure nestedImpureStatements(x: int): int {
   var y := 0;
