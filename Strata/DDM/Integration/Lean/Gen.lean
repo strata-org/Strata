@@ -8,6 +8,7 @@ import Lean.Elab.Command
 import Strata.DDM.Integration.Lean.Env
 import Strata.DDM.Integration.Lean.GenTrace
 import Strata.DDM.Integration.Lean.OfAstM
+import Strata.DDM.Integration.Lean.BoolConv
 import Strata.DDM.Util.Graph.Tarjan
 
 open Lean (Command Name Ident Term TSyntax getEnv logError profileitM quote withTraceNode mkIdentFrom)
@@ -256,7 +257,8 @@ def declaredCategories : Std.HashMap CategoryName Name := .ofList [
   (q`Init.Num, ``Nat),
   (q`Init.Decimal, ``Decimal),
   (q`Init.Str, ``String),
-  (q`Init.ByteArray, ``ByteArray)
+  (q`Init.ByteArray, ``ByteArray),
+  (q`Init.Bool, ``Bool)
 ]
 
 def ignoredCategories : Std.HashSet CategoryName :=
@@ -265,7 +267,8 @@ def ignoredCategories : Std.HashSet CategoryName :=
 namespace CatOpMap
 
 def addCat (m : CatOpMap) (cat : CategoryName) : CatOpMap :=
-  if cat ∈ ignoredCategories then
+  -- Allow Init.Bool even though it's in ignoredCategories
+  if cat ∈ ignoredCategories && cat ≠ q`Init.Bool then
     m
   else
     m.insert cat #[]
@@ -291,7 +294,9 @@ def addDecl (d : DialectName) (decl : Decl) : CatOpM Unit :=
   | .syncat decl =>
     addCatM ⟨d, decl.name⟩
   | .op decl => do
-    if decl.category ∈ ignoredCategories ∨ decl.category ∈ specialCategories then
+    -- Allow Init.Bool operators even though Bool is in declaredCategories
+    let isBoolOp := decl.category == q`Init.Bool && (decl.name == "boolTrue" || decl.name == "boolFalse")
+    if (decl.category ∈ ignoredCategories ∨ decl.category ∈ specialCategories) && !isBoolOp then
       if d ≠ "Init" then
         .addError s!"Skipping operation {decl.name} in {d}: {decl.category.fullName} cannot be extended."
     else
@@ -686,6 +691,19 @@ partial def toAstApplyArgWithUnwrap (vn : Name) (cat : SyntaxCat) (unwrap : Bool
       ``(ArgF.num default $v)
     else
       return annToAst ``ArgF.num v
+  | q`Init.Bool => do
+    if unwrap then
+      -- When unwrapped, v is a plain Bool. Create OperationF directly based on the value.
+      let defaultAnn ← ``(default)
+      let emptyArray ← ``(#[])
+      let trueOp := mkCApp ``OperationF.mk #[defaultAnn, quote q`Init.boolTrue, emptyArray]
+      let falseOp := mkCApp ``OperationF.mk #[defaultAnn, quote q`Init.boolFalse, emptyArray]
+      let opExpr ← ``(if $v then $trueOp else $falseOp)
+      ``(ArgF.op $opExpr)
+    else
+      -- When wrapped, v is already Ann Bool α
+      let boolToAst := mkCApp ``Strata.Bool.toAst #[v]
+      return mkCApp ``ArgF.op #[boolToAst]
   | q`Init.Ident =>
     if unwrap then
       ``(ArgF.ident default $v)
@@ -873,6 +891,16 @@ partial def getOfIdentArgWithUnwrap (varName : String) (cat : SyntaxCat) (unwrap
           | a => OfAstM.throwExpected "byte array" a) $e)
     else
       ``(OfAstM.ofBytesM $e)
+  | q`Init.Bool => do
+    if unwrap then
+      -- When unwrapped, extract just the Bool value from Ann Bool α
+      ``((fun arg => match arg with
+          | ArgF.op op => Functor.map Ann.val (Strata.Bool.ofAst op)
+          | a => OfAstM.throwExpected "boolean" a) $e)
+    else
+      let (vc, vi) ← genFreshIdentPair varName
+      let boolOfAst := mkCApp ``Strata.Bool.ofAst #[vi]
+      ``(OfAstM.ofOperationM $e fun $vc _ => $boolOfAst)
   | cid@q`Init.Expr => do
     let (vc, vi) ← genFreshIdentPair <| varName ++ "_inner"
     let ofAst ← ofAstIdentM cid
