@@ -41,7 +41,7 @@ def SourceRange.toMetaData (ictx : InputContext) (sr : SourceRange) : Imperative
   #[fileRangeElt]
 
 def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Boogie.Expression) :=
-  return arg.ann.toMetaData (← get).inputCtx
+  return SourceRange.toMetaData (← get).inputCtx arg.ann
 
 def checkOp (op : Strata.Operation) (name : QualifiedIdent) (argc : Nat) :
   TransM Unit := do
