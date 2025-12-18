@@ -12,7 +12,7 @@ namespace Python
 /-- A type identifier in the Python Boogie prelude. -/
 abbrev TypeId := String
 
-/-- An argument declarartion for a Python method -/
+/-- An argument declaration for a Python method -/
 structure ArgDecl where
   name : String
   type : TypeId
