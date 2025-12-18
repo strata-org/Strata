@@ -12,13 +12,11 @@ open Strata
 
 namespace Laurel
 
-- We need to support multiple assignments to the same variable in one expression
-- That requires creating new variables to hold the intermediate results
 def program: String := r"
 procedure nestedImpureStatements(x: int): int {
   var y := 0;
   var z := x;
-  if (z := z + 1; == y := y + 1;) {
+  if (z := z + 1; == { z := z + 1; y := y + 1; }) {
 
     assert y == x + 1;
     1
