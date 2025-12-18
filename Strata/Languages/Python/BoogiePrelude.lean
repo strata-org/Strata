@@ -393,18 +393,18 @@ function Timedelta_get_days(timedelta : int) : int;
 function Timedelta_get_seconds(timedelta : int) : int;
 function Timedelta_get_microseconds(timedelta : int) : int;
 
-axiom [Timedelta_deconstructors]:
-    (forall days0 : int, seconds0 : int, msecs0 : int,
-            days : int, seconds : int, msecs : int
-            :: {(Timedelta_mk(days0, seconds0, msecs0))}
-      Timedelta_mk(days0, seconds0, msecs0) ==
-          Timedelta_mk(days, seconds, msecs) &&
-      0 <= msecs && msecs < 1000000 &&
-      0 <= seconds && seconds < 3600 * 24 &&
-      -999999999 <= days && days <= 999999999
-      ==> Timedelta_get_days(Timedelta_mk(days0, seconds0, msecs0)) == days &&
-          Timedelta_get_seconds(Timedelta_mk(days0, seconds0, msecs0)) == seconds &&
-          Timedelta_get_microseconds(Timedelta_mk(days0, seconds0, msecs0)) == msecs);
+//axiom [Timedelta_deconstructors]:
+//    (forall days0 : int, seconds0 : int, msecs0 : int,
+//            days : int, seconds : int, msecs : int
+//            :: {(Timedelta_mk(days0, seconds0, msecs0))}
+//      Timedelta_mk(days0, seconds0, msecs0) ==
+//          Timedelta_mk(days, seconds, msecs) &&
+//      0 <= msecs && msecs < 1000000 &&
+//      0 <= seconds && seconds < 3600 * 24 &&
+//      -999999999 <= days && days <= 999999999
+//      ==> Timedelta_get_days(Timedelta_mk(days0, seconds0, msecs0)) == days &&
+//          Timedelta_get_seconds(Timedelta_mk(days0, seconds0, msecs0)) == seconds &&
+//          Timedelta_get_microseconds(Timedelta_mk(days0, seconds0, msecs0)) == msecs);
 
 
 ////// Datetime.

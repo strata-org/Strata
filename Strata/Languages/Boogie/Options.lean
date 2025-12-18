@@ -4,6 +4,10 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+structure Z3Options where
+  -- Will prepend `(set-option e.fst e.snd)` ... for each `e: String × String` in `options`
+  options : List (String × String)
+
 structure Options where
   verbose : Bool
   parseOnly : Bool
@@ -13,6 +17,8 @@ structure Options where
   removeIrrelevantAxioms : Bool
   /-- Solver time limit in seconds -/
   solverTimeout : Nat
+  z3Options: Option Z3Options
+
 
 def Options.default : Options := {
   verbose := true,
@@ -21,7 +27,8 @@ def Options.default : Options := {
   checkOnly := false,
   stopOnFirstError := false,
   removeIrrelevantAxioms := false,
-  solverTimeout := 10
+  solverTimeout := 10,
+  z3Options := none,
 }
 
 instance : Inhabited Options where

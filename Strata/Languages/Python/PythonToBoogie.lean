@@ -194,6 +194,7 @@ partial def PyExprToString (e : Python.expr SourceRange) : String :=
       | .Name _ id _ => s!"List[{id.val}]"
       | _ => panic! s!"Unsupported slice: {repr slice}"
     | _ => panic! s!"Unsupported subscript to string: {repr e}"
+  | .Constant _ (.ConString _ s) _ => s.val
   | _ => panic! s!"Unhandled Expr: {repr e}"
 
 def PyExprToMonoTy (e : Python.expr SourceRange) : Lambda.LMonoTy :=
@@ -609,9 +610,13 @@ partial def PyStmtToBoogie (jmp_targets: List String) (translation_ctx : Transla
         ([.ite guard (assign_tgt ++ (ArrPyStmtToBoogie translation_ctx body.val).fst) []], none)
       | _ => panic! s!"tgt must be single name: {repr tgt}"
       -- TODO: missing havoc
-    | .Assert _ a _ =>
+    | .Assert _ a msg =>
       let res := PyExprToBoogie translation_ctx a
-      ([(.assert "py_assertion" res.expr)], none)
+      match msg.val with
+      | .some s =>
+        ([(.assert ("py_assertion_" ++ PyExprToString s) res.expr), (.assume ("py_assertion_assume_" ++ PyExprToString s) res.expr)], none)
+      | _ =>
+        ([(.assert "py_assertion" res.expr), (.assume "py_assertion_assume" res.expr)], none)
     | .AugAssign _ lhs op rhs =>
       match op with
       | .Add _ =>
