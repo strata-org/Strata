@@ -42,7 +42,7 @@ inductive Cmd (P : PureExpr) : Type where
   | havoc    (name : P.Ident) (md : (MetaData P) := .empty)
   /-- Check whether condition `b` is true, failing if not. -/
   | assert   (label : String) (b : P.Expr) (md : (MetaData P) := .empty)
-  /-- Constrain execution to the states in which `b` is true. -/
+  /-- Ignore any execution state in which `b` is not true. -/
   | assume   (label : String) (b : P.Expr) (md : (MetaData P) := .empty)
 
 abbrev Cmds (P : PureExpr) := List (Cmd P)
