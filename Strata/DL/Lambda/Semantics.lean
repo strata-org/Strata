@@ -132,11 +132,12 @@ available in the `Factory` argument `F`.  Note that it might also be possible to
 evaluate with `expand_fn`. A key correctnes property is that doing so will yield
 the same result. -/
 | eval_fn:
-  ∀ (e callee:LExpr Tbase.mono) args fn denotefn,
+  ∀ (e callee e':LExpr Tbase.mono) args fn denotefn,
     F.callOfLFunc e = .some (callee,args,fn) →
     args.all (LExpr.isCanonicalValue F) →
     fn.concreteEval = .some denotefn →
-    Step F rf e (denotefn (LExpr.mkApp m callee args) args)
+    .some e' = denotefn m args →
+    Step F rf e e'
 
 
 omit [DecidableEq Tbase.Metadata] [DecidableEq Tbase.Identifier] in
