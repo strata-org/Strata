@@ -40,8 +40,19 @@ private def needsPipeDelimiters (s : String) : Bool :=
     !isIdBegin chars.head! || chars.any (fun c => !isIdContinue c)
 
 /--
+Escape a string for use in pipe-delimited identifiers (SMT-LIB 2.6).
+Escapes \ as \\ and | as \|
+-/
+private def escapePipeIdent (s : String) : String :=
+  s.foldl (init := "") fun acc c =>
+    if c == '\\' then acc ++ "\\\\"
+    else if c == '|' then acc ++ "\\|"
+    else acc.push c
+
+/--
 Format a string as an identifier, using pipe delimiters if needed.
 Strips Lean's «» notation if present.
+Follows SMT-LIB 2.6 specification for quoted symbols.
 -/
 private def formatIdent (s : String) : Format :=
   -- Strip Lean's «» notation if present
@@ -50,7 +61,7 @@ private def formatIdent (s : String) : Format :=
            else
              s
   if needsPipeDelimiters s then
-    Format.text ("|" ++ s ++ "|")
+    Format.text ("|" ++ escapePipeIdent s ++ "|")
   else
     Format.text s
 

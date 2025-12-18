@@ -233,3 +233,23 @@ info: manualConstruction : PipeIdent.Expression Unit
 example : PipeIdent.Expression Unit := .var () ⟨(), "x-coordinate"⟩
 example : PipeIdent.Expression Unit := .var () ⟨(), "name with spaces"⟩
 example : PipeIdent.Expression Unit := .var () ⟨(), "123numeric"⟩
+
+-- Test 11: Escape sequences (SMT-LIB 2.6 spec)
+def testEscapes := #strata
+program PipeIdent;
+|name\|with\|pipes| := 1;
+|path\\to\\file| := 2;
+result := |name\|with\|pipes| + |path\\to\\file|;
+#end
+
+/--
+info: "program PipeIdent;\n(|name\\|with\\|pipes|) := 1;(|path\\\\to\\\\file|) := 2;(result) := |name\\|with\\|pipes| + |path\\\\to\\\\file|;"
+-/
+#guard_msgs in
+#eval toString testEscapes.format
+
+/--
+info: testEscapes : Program
+-/
+#guard_msgs in
+#check testEscapes

@@ -310,25 +310,57 @@ def identFnAux (startPos : String.Pos.Raw) (tk : Option Token) : ParserFn := fun
         if token.endPos.byteIdx > 1 then
           mkTokenAndFixPos startPos tk c s
         else
-          -- Single | token - could be pipe-delimited identifier
+          -- Single | token - need to disambiguate
           let nextPos := c.next' i h
           if c.atEnd nextPos then
             -- Single | at end of input - treat as token
             mkTokenAndFixPos startPos tk c s
           else
+            let nextChar := c.get nextPos
+            -- If next char is | or unescaped whitespace, it's an operator token
+            -- Exception: |\ (backslash-space) starts a pipe-delimited identifier
+            if nextChar == '|' then
+              mkTokenAndFixPos startPos tk c s
+            else if nextChar.isWhitespace && nextChar != '\\' then
+              mkTokenAndFixPos startPos tk c s
+            else
             -- Handle pipe-delimited identifiers: |identifier|
+            -- SMT-LIB 2.6: Can contain any printable ASCII and whitespace except \ and |
+            -- Escape sequences: \| for pipe, \\ for backslash
             let startPart := nextPos
-            let s         := takeUntilFn (· == '|') c (s.setPos startPart)
-            if h : c.atEnd s.pos then
+            -- Parse and unescape the identifier content
+            let (stopPart, unescaped) := Id.run do
+              let mut pos := startPart
+              let mut result := ""
+              while !c.atEnd pos do
+                let ch := c.get pos
+                if ch == '|' then
+                  return (pos, result)  -- Found closing pipe
+                else if ch == '\\' then
+                  pos := c.next pos
+                  if !c.atEnd pos then
+                    let nextCh := c.get pos
+                    if nextCh == '|' || nextCh == '\\' then
+                      result := result.push nextCh  -- Unescape: \| -> | or \\ -> \
+                      pos := c.next pos
+                    else
+                      -- Invalid escape, keep backslash
+                      result := result.push '\\'
+                  else
+                    result := result.push '\\'
+                else
+                  result := result.push ch
+                  pos := c.next pos
+              return (pos, result)
+            if c.atEnd stopPart then
               s.mkUnexpectedErrorAt "unterminated pipe-delimited identifier" startPart
             else
-              let stopPart  := s.pos
-              let s         := s.next' c s.pos h
+              let s := s.setPos (c.next stopPart)  -- Skip closing |
               if isToken startPos s.pos tk then
                 mkTokenAndFixPos startPos tk c s
               else
-                let val := c.extract startPart stopPart
-                mkIdResult startPos val c s
+                -- Use the unescaped string
+                mkIdResult startPos unescaped c s
       | none =>
         -- No token matched, parse as pipe-delimited identifier
         let nextPos := c.next' i h
@@ -336,14 +368,33 @@ def identFnAux (startPos : String.Pos.Raw) (tk : Option Token) : ParserFn := fun
           s.mkError "identifier"
         else
           let startPart := nextPos
-          let s         := takeUntilFn (· == '|') c (s.setPos startPart)
-          if h : c.atEnd s.pos then
+          let (stopPart, unescaped) := Id.run do
+            let mut pos := startPart
+            let mut result := ""
+            while !c.atEnd pos do
+              let ch := c.get pos
+              if ch == '|' then
+                return (pos, result)
+              else if ch == '\\' then
+                pos := c.next pos
+                if !c.atEnd pos then
+                  let nextCh := c.get pos
+                  if nextCh == '|' || nextCh == '\\' then
+                    result := result.push nextCh
+                    pos := c.next pos
+                  else
+                    result := result.push '\\'
+                else
+                  result := result.push '\\'
+              else
+                result := result.push ch
+                pos := c.next pos
+            return (pos, result)
+          if c.atEnd stopPart then
             s.mkUnexpectedErrorAt "unterminated pipe-delimited identifier" startPart
           else
-            let stopPart  := s.pos
-            let s         := s.next' c s.pos h
-            let val := c.extract startPart stopPart
-            mkIdResult startPos val c s
+            let s := s.setPos (c.next stopPart)
+            mkIdResult startPos unescaped c s
     else if isIdBeginEscape curr then
       let startPart := c.next' i h
       let s         := takeUntilFn isIdEndEscape c (s.setPos startPart)
