@@ -86,3 +86,32 @@ result := |x-value| | |y-value| | regularVar;
 program PipeIdent;
 result := |x-value| | |y-value| | regularVar;
 #end).format
+
+-- Test dialect with | operator that has NO spaces in syntax definition
+#dialect
+dialect PipeIdentNoSpace;
+
+category Expression;
+
+op var (name : Ident) : Expression => name;
+op bitwiseOr (a : Expression, b : Expression) : Expression => @[prec(6), leftassoc] a "|" b;
+op exprStmt (e : Expression) : Command => e ";";
+
+#end
+
+namespace PipeIdentNoSpace
+
+#strata_gen PipeIdentNoSpace
+
+end PipeIdentNoSpace
+
+-- Edge case: | operator without spaces can create ambiguous output
+-- "normalId|pipe" is parsed as normalId followed by unterminated pipe-delimited identifier
+/--
+error: unterminated pipe-delimited identifier
+-/
+#guard_msgs in
+#eval (#strata
+program PipeIdentNoSpace;
+normalId|pipe;
+#end).format
