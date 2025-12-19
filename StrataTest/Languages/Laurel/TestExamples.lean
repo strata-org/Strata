@@ -34,7 +34,7 @@ def processLaurelFile (filePath : String) : IO (Array Diagnostic) := do
   pure diagnostics
 
 def testAssertFalse : IO Unit := do
-  testFile processLaurelFile "Strata/Languages/Laurel/Examples/Fundamentals/1.AssertFalse.lr.st"
+  testFile processLaurelFile "StrataTest/Languages/Laurel/Examples/Fundamentals/1. AssertFalse.lr.st"
 
 #eval! testAssertFalse
 
