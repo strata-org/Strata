@@ -9,78 +9,139 @@ import Strata.Languages.Boogie.Boogie
 namespace Strata
 namespace Python
 
--- We should extract the function signatures from the prelude:
-def getFuncSigOrder (fname: String) : List String :=
-  match fname with
-  | "test_helper_procedure" => ["req_name", "opt_name"]
-  | "print" => ["msg", "opt"]
-  | "json_dumps" => ["msg", "opt_indent"]
-  | "json_loads" => ["msg"]
-  | "input" => ["msg"]
-  | "random_choice" => ["l"]
-  | "datetime_now" => []
-  | "datetime_utcnow" => []
-  | "datetime_date" => ["dt"]
-  | "timedelta" => ["days", "hours"]
-  | "datetime_strptime" => ["time", "format"]
-  | "str_to_float" => ["s"]
-  | _ => panic! s!"Missing function signature : {fname}"
+/-- A type identifier in the Python Boogie prelude. -/
+abbrev TypeId := String
+
+/-- An argument declaration for a Python method -/
+structure ArgDecl where
+  name : String
+  type : TypeId
+deriving Inhabited
+
+/-- A function signature with argument information. -/
+structure FuncDecl where
+  /-- Array of arguments. -/
+  args : Array ArgDecl
+  /--
+  Number of position-only arguments.
+
+  Position only arguments occur before other arguments.
+  -/
+  posOnlyCount : Nat := 0
+  /--
+  First index for keyword only arguments.
+
+  Keyword only arguments appear after other arguments in args.
+   -/
+  keywordOnly : Nat := args.size
+  /--
+  Position only arguments are before start of keyword only.
+  -/
+  posOnlyBound : posOnlyCount <= keywordOnly := by omega
+  /--
+  Keyword only arguments (if any) come at end
+  -/
+  keywordBound : keywordOnly <= args.size := by omega
+  /-- Map from argument names to their index in args. -/
+  argIndexMap : Std.HashMap String (Fin args.size)
+
+instance : Inhabited FuncDecl where
+  default := { args := #[], argIndexMap := {} }
+
+/-- The name of a Python method as encoded in the Boogie dialect-/
+abbrev FuncName := String
+
+/-- A collection of function signatures. -/
+class Signatures where
+  functions : Std.HashMap FuncName FuncDecl := {}
+deriving Inhabited
+
+namespace Signatures
+
+def getFuncSigOrder (db : Signatures) (fname: FuncName) : List String :=
+  match  db.functions[fname]? with
+  | some decl => decl.args |>.map (·.name) |>.toList
+  | none => panic! s!"Missing function signature : {fname}"
 
 -- We should extract the function signatures from the prelude:
-def getFuncSigType (fname: String) (arg: String) : String :=
-  match fname with
-  | "test_helper_procedure" =>
-    match arg with
-    | "req_name" => "string"
-    | "opt_name" => "StrOrNone"
-    | _ => panic! s!"Unrecognized arg : {arg}"
-  | "print" =>
-    match arg with
-    | "msg" => "string"
-    | "opt" => "StrOrNone"
-    | _ => panic! s!"Unrecognized arg : {arg}"
-  | "json_dumps" =>
-    match arg with
-    | "msg" => "DictStrAny"
-    | "opt_indent" => "IntOrNone"
-    | _ => panic! s!"Unrecognized arg : {arg}"
-  | "json_loads" =>
-    match arg with
-    | "msg" => "string"
-    | _ => panic! s!"Unrecognized arg : {arg}"
-  | "input" =>
-    match arg with
-    | "msg" => "string"
-    | _ => panic! s!"Unrecognized arg : {arg}"
-  | "random_choice" =>
-    match arg with
-    | "l" => "ListStr"
-    | _ => panic! s!"Unrecognized arg : {arg}"
-  | "datetime_now" =>
-    match arg with
-    | _ => panic! s!"Unrecognized arg : {arg}"
-  | "datetime_utcnow" =>
-    match arg with
-    | _ => panic! s!"Unrecognized arg : {arg}"
-  | "datetime_date" =>
-    match arg with
-    | "dt" => "Datetime"
-    | _ => panic! s!"Unrecognized arg : {arg}"
-  | "timedelta" =>
-    match arg with
-    | "days" => "IntOrNone"
-    | "hours" => "IntOrNone"
-    | _ => panic! s!"Unrecognized arg : {arg}"
-  | "datetime_strptime" =>
-    match arg with
-    | "time" => "string"
-    | "format" => "string"
-    | _ => panic! s!"Unrecognized arg : {arg}"
-  | "str_to_float" =>
-    match arg with
-    | "s" => "string"
-    | _ => panic! s!"Unrecognized arg : {arg}"
-  | _ => panic! s!"Missing function signature : {fname}"
+def getFuncSigType (db : Signatures) (fname: FuncName) (arg: String) : String :=
+  match  db.functions[fname]? with
+  | none => panic! s!"Missing function signature : {fname}"
+  | some decl =>
+    match decl.argIndexMap[arg]? with
+    | none => panic! s!"Unrecognized arg : {arg}"
+    | some idx => decl.args[idx].type
+
+end Signatures
+
+/--
+Monad for extending a signatures collection.
+-/
+def SignatureM := StateM Signatures
+deriving Monad, MonadState Signatures
+
+namespace SignatureM
+
+def run (m : SignatureM Unit) (init : Signatures := {}) : Signatures := m init |>.snd
+
+def decl (name : FuncName) (args : List ArgDecl)
+         (posOnlyCount : Nat := 0)
+         (keywordOnly := args.length) : SignatureM Unit := do
+  assert! name ∉ (←get).functions
+  assert! posOnlyCount <= keywordOnly
+  let args := args.toArray
+  assert! keywordOnly <= args.size
+
+  let argIndexMap : Std.HashMap String (Fin args.size) :=
+    Fin.foldl args.size (init := {}) fun m i =>
+      let a := args[i]
+      assert! a.name ∉ m
+      m.insert a.name i
+
+  let .isTrue posOnlyBound := inferInstanceAs (Decidable (posOnlyCount <= keywordOnly))
+    | return panic! "Invalid number of position-only parameters."
+  let .isTrue keywordBound := inferInstanceAs (Decidable (keywordOnly <= args.size))
+    | return panic! "Invalid start for keyword only parameters."
+
+  let decl : FuncDecl := {
+    args,
+    posOnlyCount,
+    keywordOnly,
+    posOnlyBound,
+    keywordBound,
+    argIndexMap,
+  }
+  modify fun m => { m with functions := m.functions.insert name decl }
+
+private def identToStr (t : Lean.TSyntax `ident) : Lean.StrLit :=
+  match t.raw.isIdOrAtom? with
+  | none => panic! "Unexpected string"
+  | some s => Lean.Syntax.mkStrLit s
+
+scoped macro v:ident ":<" t:ident : term => `(ArgDecl.mk $(identToStr v) $(identToStr t))
+
+end SignatureM
+
+section
+open SignatureM
+
+def addCoreDecls : SignatureM Unit := do
+  decl "test_helper_procedure" [req_name :< string, opt_name :< StrOrNone]
+  decl "print" [msg :< string, opt :< StrOrNone]
+  decl "json_dumps" [msg :< DictStrAny, opt_indent :< IntOrNone]
+  decl "json_loads" [msg :< string]
+  decl "input" [msg :< string]
+  decl "random_choice" [l :< ListStr]
+  decl "datetime_now" []
+  decl "datetime_utcnow" []
+  decl "datetime_date" [dt :< Datetime]
+  decl "timedelta" [ days :< IntOrNone, hours :< IntOrNone]
+  decl "datetime_strptime" [time :< string, format :< string]
+  decl "str_to_float" [s :< string]
+
+def coreSignatures : Signatures := addCoreDecls |>.run
+
+end
 
 def TypeStrToBoogieExpr (ty: String) : Boogie.Expression.Expr :=
   if !ty.endsWith "OrNone" then
