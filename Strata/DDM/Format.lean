@@ -263,7 +263,7 @@ instance : ToStrataFormat QualifiedIdent where
     if ident.dialect ∈ s.openDialects then
       .atom (formatIdent ident.name)
     else
-      .atom (formatIdent ident.dialect ++ Format.text "." ++ formatIdent ident.name)
+      .atom (Format.text ident.dialect ++ Format.text "." ++ formatIdent ident.name)
 
 namespace TypeExprF
 
