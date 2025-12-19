@@ -22,16 +22,18 @@ def run_z3_config(smt_content, config_pair, timeout):
         f.write(smt_content)
         f.flush()
         
+        process = None
         try:
-            result = subprocess.run(
+            process = subprocess.Popen(
                 ['z3', f'-T:{timeout}', f.name],
-                capture_output=True,
-                text=True,
-                timeout=timeout
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True
             )
+            stdout, stderr = process.communicate(timeout=timeout)
             Path(f.name).unlink()
             
-            output = result.stdout.strip()
+            output = stdout.strip()
             first_line = output.split('\n')[0].lower() if output else ''
             if first_line == 'sat':
                 return 'sat', output
@@ -39,6 +41,9 @@ def run_z3_config(smt_content, config_pair, timeout):
                 return 'unsat', output
             return None, output
         except subprocess.TimeoutExpired:
+            if process:
+                process.kill()
+                process.wait()
             Path(f.name).unlink()
             return None, "timeout"
         except Exception as e:
