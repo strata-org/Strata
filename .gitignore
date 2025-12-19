@@ -10,3 +10,7 @@ conformance_testing/__pycache__
 conformance_testing/failures
 
 test_single_file.sh
+
+node_modules
+package-lock.json
+package.json
