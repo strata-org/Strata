@@ -30,14 +30,15 @@ namespace PipeIdent
 end PipeIdent
 
 -- Various special characters in pipe-delimited identifiers
+-- Including «» which tests that Lean's «» notation is properly stripped
 /--
 info: program PipeIdent;
-result := |special-name| + |name with spaces| + |name@with#special$chars| + |123numeric| + |name-with-émojis-🎉| + regularName;
+result := |special-name| + |name with spaces| + |name@with#special$chars| + |123numeric| + |name-with-émojis-🎉| + |name«with»guillemets| + regularName;
 -/
 #guard_msgs in
 #eval (#strata
 program PipeIdent;
-result := |special-name| + |name with spaces| + |name@with#special$chars| + |123numeric| + |name-with-émojis-🎉| + regularName;
+result := |special-name| + |name with spaces| + |name@with#special$chars| + |123numeric| + |name-with-émojis-🎉| + |name«with»guillemets| + regularName;
 #end).format
 
 -- || operator is not confused with pipe-delimited identifiers
