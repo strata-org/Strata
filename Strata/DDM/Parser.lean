@@ -3,11 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Std.Data.HashSet
-import Strata.DDM.Format
-import Strata.DDM.Elab.Env
-import Strata.DDM.Util.PrattParsingTables
+public import Strata.DDM.Elab.Env
+public import Strata.DDM.Format
+import Strata.DDM.Util.ByteArray
 
 open Lean
 open Parser (
@@ -48,29 +48,20 @@ open Parser (
     trailingNodeFn
     )
 
+public section
 namespace Lean.Parser.SyntaxStack
 
-def ofArray (a:Array Syntax) : SyntaxStack :=
+private def ofArray (a:Array Syntax) : SyntaxStack :=
   a.foldl SyntaxStack.push .empty
 
-def toArray (s : SyntaxStack) : Array Syntax :=
+private def toArray (s : SyntaxStack) : Array Syntax :=
   s.toSubarray.toArray
 
-instance : Repr SyntaxStack where
+private instance : Repr SyntaxStack where
   reprPrec s  _ := "SyntaxStack.ofArray " ++ repr s.toArray
-
-instance : Repr SyntaxStack where
-  reprPrec a p := reprPrec (a.toSubarray) p
 
 end Lean.Parser.SyntaxStack
 
-namespace Lean.Parser.TokenTable
-
-def addParser (tt : TokenTable) (p : Parser) : TokenTable :=
-  let tkns := p.info.collectTokens []
-  tkns.foldl (λtt t => tt.insert t t) tt
-
-end Lean.Parser.TokenTable
 
 namespace Strata.Parser
 
@@ -82,7 +73,11 @@ export Lean.Parser (
     skip
     )
 
-def nodeFn (n : SyntaxNodeKind) (p : ParserFn) : ParserFn := fun c s =>
+def TokenTable.addParser (tt : TokenTable) (p : Parser) : TokenTable :=
+  let tkns := p.info.collectTokens []
+  tkns.foldl (λtt t => tt.insert t t) tt
+
+private def nodeFn (n : SyntaxNodeKind) (p : ParserFn) : ParserFn := fun c s =>
   let iniSz := s.stackSize
   let s     := p c s
   s.mkNode n iniSz
@@ -145,7 +140,7 @@ s.lhsPrec is used in trailing nodes to indicate the precedence of the leading no
 To respect the invariant, we need to check that the lhsPrec is at least the minimum
 first argument precedence.
 -/
-def trailingNode (n : SyntaxNodeKind) (prec minLhsPrec : Nat) (p : Parser) : TrailingParser :=
+private def trailingNode (n : SyntaxNodeKind) (prec minLhsPrec : Nat) (p : Parser) : TrailingParser :=
   { info := nodeInfo n p.info
     fn :=
       fun c s =>
@@ -162,7 +157,7 @@ def trailingNode (n : SyntaxNodeKind) (prec minLhsPrec : Nat) (p : Parser) : Tra
   }
 
 variable (pushMissingOnError : Bool) in
-partial def finishCommentBlock : ParserFn := fun c s =>
+private partial def finishCommentBlock : ParserFn := fun c s =>
   let i     := s.pos
   if h : c.atEnd i then
     eoi s
@@ -188,7 +183,7 @@ Parses a sequence of the form `many (many '_' >> many1 digit)`, but if `needDigi
 Note: this does not report that it is expecting `_` if we reach EOI or an unexpected character.
 Rationale: this error happens if there is already a `_`, and while sequences of `_` are allowed, it's a bit perverse to suggest extending the sequence.
 -/
-partial def takeDigitsFn (isDigit : Char → Bool) (expecting : String) (needDigit : Bool) : ParserFn := fun c s =>
+private partial def takeDigitsFn (isDigit : Char → Bool) (expecting : String) (needDigit : Bool) : ParserFn := fun c s =>
   let i     := s.pos
   if h : c.atEnd i then
     if needDigit then
@@ -203,7 +198,7 @@ partial def takeDigitsFn (isDigit : Char → Bool) (expecting : String) (needDig
     else s
 
 /-- Consume whitespace and comments -/
-partial def whitespace : ParserFn := fun c s =>
+private partial def whitespace : ParserFn := fun c s =>
   let i     := s.pos
   if h : c.atEnd i then s
   else
@@ -241,7 +236,7 @@ partial def whitespace : ParserFn := fun c s =>
         s
     else s
 
-def mkTokenAndFixPos (startPos : String.Pos.Raw) (tk : Option Token) : ParserFn := fun c s =>
+private def mkTokenAndFixPos (startPos : String.Pos.Raw) (tk : Option Token) : ParserFn := fun c s =>
   match tk with
   | none    => s.mkErrorAt "token" startPos
   | some tk =>
@@ -257,7 +252,7 @@ def mkTokenAndFixPos (startPos : String.Pos.Raw) (tk : Option Token) : ParserFn 
       let atom      := Parser.mkAtom (SourceInfo.original leading startPos trailing stopPos) tk
       s.pushSyntax atom
 
-def mkIdResult (startPos : String.Pos.Raw) (tk : Option Token) (startPart stopPart : String.Pos.Raw) : ParserFn := fun c s =>
+private def mkIdResult (startPos : String.Pos.Raw) (tk : Option Token) (startPart stopPart : String.Pos.Raw) : ParserFn := fun c s =>
   if isToken startPos s.pos tk then
     mkTokenAndFixPos startPos tk c s
   else
@@ -273,7 +268,7 @@ def mkIdResult (startPos : String.Pos.Raw) (tk : Option Token) (startPart stopPa
     s.pushSyntax atom
 
 /-- Push `(Syntax.node tk <new-atom>)` onto syntax stack if parse was successful. -/
-def mkNodeToken (n : SyntaxNodeKind) (startPos : String.Pos.Raw) : ParserFn := fun c s => Id.run do
+private def mkNodeToken (n : SyntaxNodeKind) (startPos : String.Pos.Raw) : ParserFn := fun c s => Id.run do
   if s.hasError then
     return s
   let stopPos   := s.pos
@@ -737,7 +732,7 @@ structure DeclParser where
 
 class ParsingContext where
   fixedParsers : Std.HashMap QualifiedIdent Parser := {}
-  deriving Inhabited
+deriving Inhabited
 
 namespace ParsingContext
 
@@ -803,7 +798,7 @@ partial def catParser (ctx : ParsingContext) (cat : SyntaxCat) : Except SyntaxCa
       .ok (atomCatParser ctx qid)
     else
       .error cat
-/-
+/--
 This walks the SyntaxDefAtomParser and prepends extracted parser to state.
 
 This is essentially a right-to-left fold and is implemented so that the parser starts with
@@ -895,7 +890,7 @@ def mkDialectParsers (ctx : ParsingContext) (d : Dialect) : Except StrataFormat 
 
 end ParsingContext
 
-structure ParserState where
+private structure ParserState where
   -- Dynamic parser categories
   categoryMap : PrattParsingTableMap := {}
   deriving Inhabited

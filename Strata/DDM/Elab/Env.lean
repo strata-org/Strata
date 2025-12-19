@@ -3,17 +3,19 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.AST
-import Lean.Parser.Basic
+public import Strata.DDM.AST
+public import Lean.Parser.Basic
+public import Lean.Environment
 
 namespace Strata
 
 open Lean
 
-abbrev PrattParsingTableMap := Std.HashMap QualifiedIdent Parser.PrattParsingTables
+public abbrev PrattParsingTableMap := Std.HashMap QualifiedIdent Parser.PrattParsingTables
 
-initialize parserExt : EnvExtension PrattParsingTableMap ←
+public initialize parserExt : EnvExtension PrattParsingTableMap ←
   registerEnvExtension (pure {})
 
 end Strata

@@ -3,13 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 import Strata.DDM.Util.List
 
+public section
 namespace Array
 
 @[simp]
-theorem Array.anyM_empty {α} [Monad m] (f : α → m Bool) (start : Nat := 0) (stop : Nat := 0)
+theorem anyM_empty {α} [Monad m] (f : α → m Bool) (start : Nat := 0) (stop : Nat := 0)
   : Array.anyM f #[] start stop = @pure m _ _ false := by
   unfold Array.anyM
   split
@@ -20,11 +22,6 @@ theorem Array.anyM_empty {α} [Monad m] (f : α → m Bool) (start : Nat := 0) (
   case isFalse stopGT =>
     unfold anyM.loop
     simp
-
-@[simp]
-theorem Array.any_empty (f : α → Bool) (start : Nat := 0) (stop : Nat := 0)
-  : Array.any #[] f start stop = false := by
-    simp [Array.any]
 
 def map_off {α β} (as : Array α) (f : α → β)
       (start : Nat := 0) (stop : Nat := as.size)
@@ -38,7 +35,7 @@ def mapM_off {α β m} [Monad m] (as : Array α) (f : α → m β)
   as.foldlM (init := init) (start := start) (stop := stop)
             fun r e => r.push <$> f e
 
-theorem extract_loop_succ_upper {α} (as b : Array α) (i j : Nat) (h : i + j < as.size) :
+private theorem extract_loop_succ_upper {α} (as b : Array α) (i j : Nat) (h : i + j < as.size) :
     Array.extract.loop as (i + 1) j b =
       (Array.extract.loop as i j b).push (as[i + j]'h) := by
   revert b j
@@ -55,14 +52,14 @@ theorem extract_loop_succ_upper {α} (as b : Array α) (i j : Nat) (h : i + j < 
     have p : j + (i + 1) = j + 1 + i := by omega
     simp [g, hyp _ _ h, p]
 
-theorem extract_succ {α} (as : Array α) {i : Nat} (g : i ≤ j) (h : j < as.size) : as.extract i (j + 1) = (as.extract i j).push (as[j]'h) := by
+private theorem extract_succ {α} (as : Array α) {i : Nat} (g : i ≤ j) (h : j < as.size) : as.extract i (j + 1) = (as.extract i j).push (as[j]'h) := by
   have j1_le : (j + 1) ≤ as.size := by omega
   have j_le : j ≤ as.size := by omega
   have p : j + 1 - i = j - i + 1 := by omega
   have q : j - i + i = j := by omega
   simp [Array.extract, Nat.min_eq_left, j1_le, j_le, p, Array.extract_loop_succ_upper, q, h]
 
-theorem sizeOf_toList {α} [SizeOf α] (as : Array α) :
+private theorem sizeOf_toList {α} [SizeOf α] (as : Array α) :
   sizeOf as = 1 + sizeOf as.toList := rfl
 
 theorem sizeOf_min [SizeOf α] (as : Array α) : sizeOf as ≥ 2 := by
@@ -93,8 +90,7 @@ theorem sizeOf_swap [h : SizeOf α] (a : Array α) (i : Nat) (j : Nat)  (hi : i 
   simp [Array.getElem_set]
   omega
 
-private
-theorem sizeOf_reverse_loop {α} [h : SizeOf α] (as : Array α) (i : Nat) (j : Fin as.size) : sizeOf (reverse.loop as i j) = sizeOf as := by
+private theorem sizeOf_reverse_loop {α} [h : SizeOf α] (as : Array α) (i : Nat) (j : Fin as.size) : sizeOf (reverse.loop as i j) = sizeOf as := by
   unfold reverse.loop
   split
   case isTrue p =>
@@ -117,4 +113,14 @@ theorem sizeOf_lt_of_mem_strict [SizeOf α] {as : Array α} (h : a ∈ as) : siz
   cases as with | _ as =>
   simp +arith [List.sizeOf_lt_of_mem_strict h.val]
 
+theorem mem_iff_back_or_pop {α} (a : α) {as : Array α} (p : as.size > 0 := by get_elem_tactic) :
+  a ∈ as ↔ (a = as.back ∨ a ∈ as.pop) := by
+  simp [Array.mem_iff_getElem]
+  grind
+
+theorem of_mem_pop {α} {a : α} {as : Array α} : a ∈ as.pop → a ∈ as := by
+  simp [Array.mem_iff_getElem]
+  grind
+
 end Array
+end
