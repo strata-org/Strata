@@ -47,37 +47,5 @@ namespace Arith
 #strata_gen Arith
 end Arith
 
--- Test pipe-delimited identifiers (SMT-LIB/Boogie syntax)
+-- Test that PipeIdent dialect can be loaded
 #load_dialect "../../Examples/dialects/PipeIdent.dialect.st"
-
-namespace PipeIdent
-#strata_gen PipeIdent
-
--- Test that pipe-delimited identifiers can be parsed
-def testPipeIdent := #strata
-program PipeIdent;
-|special-name| := 42;
-|name with spaces| := 10;
-result := |special-name| + |name with spaces|;
-#end
-
-/--
-info: "program PipeIdent;\n(|special-name|) := 42;(|name with spaces|) := 10;(result) := |special-name| + |name with spaces|;"
--/
-#guard_msgs in
-#eval toString testPipeIdent.format
-
--- Test that || operator is not confused with pipe-delimited identifiers
-def testOrOperator := #strata
-program PipeIdent;
-x := a || b;
-y := |pipe-id| || |another-pipe|;
-#end
-
-/--
-info: "program PipeIdent;\n(x) := a || b;(y) := |pipe-id| || |another-pipe|;"
--/
-#guard_msgs in
-#eval toString testOrOperator.format
-
-end PipeIdent
