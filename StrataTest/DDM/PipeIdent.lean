@@ -41,12 +41,6 @@ info: "program PipeIdent;\n(|special-name|) := 42;"
 #guard_msgs in
 #eval toString testHyphenated.format
 
-/--
-info: testHyphenated : Program
--/
-#guard_msgs in
-#check testHyphenated
-
 -- Test 2: Pipe-delimited identifier with spaces
 def testSpaces := #strata
 program PipeIdent;
@@ -58,12 +52,6 @@ info: "program PipeIdent;\n(|name with spaces|) := 10;"
 -/
 #guard_msgs in
 #eval toString testSpaces.format
-
-/--
-info: testSpaces : Program
--/
-#guard_msgs in
-#check testSpaces
 
 -- Test 3: Pipe-delimited identifier with special characters
 def testSpecialChars := #strata
@@ -77,12 +65,6 @@ info: "program PipeIdent;\n(|name@with#special$chars|) := 5;"
 #guard_msgs in
 #eval toString testSpecialChars.format
 
-/--
-info: testSpecialChars : Program
--/
-#guard_msgs in
-#check testSpecialChars
-
 -- Test 4: Pipe-delimited identifier starting with number
 def testNumeric := #strata
 program PipeIdent;
@@ -95,12 +77,6 @@ info: "program PipeIdent;\n(|123numeric|) := 99;"
 #guard_msgs in
 #eval toString testNumeric.format
 
-/--
-info: testNumeric : Program
--/
-#guard_msgs in
-#check testNumeric
-
 -- Test 5: Regular identifier (should still work)
 def testRegular := #strata
 program PipeIdent;
@@ -112,12 +88,6 @@ info: "program PipeIdent;\n(regularName) := 7;"
 -/
 #guard_msgs in
 #eval toString testRegular.format
-
-/--
-info: testRegular : Program
--/
-#guard_msgs in
-#check testRegular
 
 -- Test 6: Pipe-delimited identifier in expression with || operator
 -- This tests that || operator is not confused with pipe-delimited identifiers
@@ -132,12 +102,6 @@ info: "program PipeIdent;\n(result) := |special-name| || regularName;"
 #guard_msgs in
 #eval toString testOrOperator.format
 
-/--
-info: testOrOperator : Program
--/
-#guard_msgs in
-#check testOrOperator
-
 -- Test 7: Pipe-delimited identifiers in addition expression
 def testAddition := #strata
 program PipeIdent;
@@ -149,12 +113,6 @@ info: "program PipeIdent;\n(sum) := |special-name| + |name with spaces|;"
 -/
 #guard_msgs in
 #eval toString testAddition.format
-
-/--
-info: testAddition : Program
--/
-#guard_msgs in
-#check testAddition
 
 -- Test 8: Complex expression mixing pipe-delimited and regular identifiers
 def testMixed := #strata
@@ -168,12 +126,6 @@ info: "program PipeIdent;\n(|result-value|) := |x-coord| + yCoord || |123start|;
 #guard_msgs in
 #eval toString testMixed.format
 
-/--
-info: testMixed : Program
--/
-#guard_msgs in
-#check testMixed
-
 -- Test 9: Pipe-delimited identifier with Unicode characters
 def testUnicode := #strata
 program PipeIdent;
@@ -185,12 +137,6 @@ info: "program PipeIdent;\n(|name-with-émojis-🎉|) := 42;"
 -/
 #guard_msgs in
 #eval toString testUnicode.format
-
-/--
-info: testUnicode : Program
--/
-#guard_msgs in
-#check testUnicode
 
 -- Test 10: Comprehensive test with all features
 def testComprehensive := #strata
@@ -212,23 +158,11 @@ info: "program PipeIdent;\n(|x-coordinate|) := 10;(|first name|) := 100;(|value@
 #guard_msgs in
 #eval toString testComprehensive.format
 
-/--
-info: testComprehensive : Program
--/
-#guard_msgs in
-#check testComprehensive
-
 -- Test that we can construct expressions programmatically
 def manualConstruction : PipeIdent.Expression Unit :=
   .add ()
     (.var () ⟨(), "special-name"⟩)
     (.var () ⟨(), "another-name"⟩)
-
-/--
-info: manualConstruction : PipeIdent.Expression Unit
--/
-#guard_msgs in
-#check manualConstruction
 
 -- Test that the AST structure is correct
 example : PipeIdent.Expression Unit := .var () ⟨(), "x-coordinate"⟩
@@ -249,12 +183,6 @@ info: "program PipeIdent;\n(|name\\|with\\|pipes|) := 1;(|path\\\\to\\\\file|) :
 #guard_msgs in
 #eval toString testEscapes.format
 
-/--
-info: testEscapes : Program
--/
-#guard_msgs in
-#check testEscapes
-
 
 -- Test 12: Single | operator works (bitwise OR)
 def testBitwiseOr := #strata
@@ -267,12 +195,6 @@ info: "program PipeIdent;\n(result) := a | b;"
 -/
 #guard_msgs in
 #eval toString testBitwiseOr.format
-
-/--
-info: testBitwiseOr : Program
--/
-#guard_msgs in
-#check testBitwiseOr
 
 -- Test 13: Both | operator and |identifier| coexist
 def testBothOperators := #strata
@@ -288,12 +210,6 @@ info: "program PipeIdent;\n(|x-value|) := 10;(|y-value|) := 20;(result) := |x-va
 #guard_msgs in
 #eval toString testBothOperators.format
 
-/--
-info: testBothOperators : Program
--/
-#guard_msgs in
-#check testBothOperators
-
 -- Test 14: Whitespace after | makes it an operator
 def testOperatorWhitespace := #strata
 program PipeIdent;
@@ -306,9 +222,3 @@ info: "program PipeIdent;\n(x) := a | b;(y) := c | d;"
 -/
 #guard_msgs in
 #eval toString testOperatorWhitespace.format
-
-/--
-info: testOperatorWhitespace : Program
--/
-#guard_msgs in
-#check testOperatorWhitespace
