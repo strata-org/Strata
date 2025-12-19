@@ -8,7 +8,7 @@ import Strata.DDM.Integration.Lean
 
 open Strata
 
--- Test dialect for pipe-delimited identifiers (SMT-LIB/Boogie syntax)
+-- Test dialect for pipe-delimited identifiers (SMT-LIB 2.6 syntax)
 #dialect
 dialect PipeIdent;
 
