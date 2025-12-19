@@ -46,6 +46,3 @@ end Bool
 namespace Arith
 #strata_gen Arith
 end Arith
-
--- Test that PipeIdent dialect can be loaded
-#load_dialect "../../Examples/dialects/PipeIdent.dialect.st"
