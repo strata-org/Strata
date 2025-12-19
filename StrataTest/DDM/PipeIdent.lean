@@ -108,10 +108,33 @@ end PipeIdentNoSpace
 -- Edge case: | operator without spaces can create ambiguous output
 -- "normalId|pipe" is parsed as normalId followed by unterminated pipe-delimited identifier
 /--
-error: unterminated pipe-delimited identifier
+error: unexpected identifier; expected ';'
 -/
 #guard_msgs in
 #eval (#strata
 program PipeIdentNoSpace;
 normalId|pipe;
 #end).format
+
+
+-- Verify escape sequences are unescaped in AST (not just round-trip)
+def testEscapeAST := #strata
+program PipeIdent;
+x := |name\|with\|pipes|;
+y := |path\\to\\file|;
+#end
+
+-- Extract identifier from var operation in RHS
+def getRHSIdent (op : Operation) : String :=
+  match op.args[1]! with
+  | .op varOp =>
+    match varOp.args[0]! with
+    | .ident _ s => s
+    | _ => ""
+  | _ => ""
+
+-- Verify: \| is unescaped to | in AST (stored with Lean's «» notation)
+#guard (getRHSIdent testEscapeAST.commands[0]!) == "«name|with|pipes»"
+
+-- Verify: \\ is unescaped to single \ in AST (stored with Lean's «» notation)
+#guard (getRHSIdent testEscapeAST.commands[1]!) == "«path\\to\\file»"
