@@ -26,13 +26,15 @@ open Lean (Position)
 
 variable {Identifier : Type} [DecidableEq Identifier] [ToFormat Identifier] [Inhabited Identifier]
 
-/-- A metadata field.
+/-- A metadata field, which can be either a variable or an arbitrary string label.
 
 For now, we only track the variables modified by a construct, but we will expand
 this in the future.
 -/
 inductive MetaDataElem.Field (P : PureExpr) where
+  /-- Metadata indexed by a Strata variable. -/
   | var (v : P.Ident)
+  /-- Metadata indexed by an arbitrary label. -/
   | label (l : String)
 
 @[grind]
@@ -79,9 +81,11 @@ structure FileRange where
 instance : ToFormat FileRange where
  format fr := f!"{fr.file}:{fr.start}-{fr.ending}"
 
-/-- A metadata value. -/
+/-- A metadata value, which can be either an expression, a message, or a fileRange -/
 inductive MetaDataElem.Value (P : PureExpr) where
+  /-- Metadata value in the form of a structured expression. -/
   | expr (e : P.Expr)
+  /-- Metadata value in the form of an arbitrary string. -/
   | msg (s : String)
   | fileRange (r: FileRange)
 
@@ -125,7 +129,9 @@ instance [DecidableEq P.Expr] : DecidableEq (MetaDataElem.Value P) :=
 
 /-- A metadata element -/
 structure MetaDataElem (P : PureExpr) where
+  /-- The field or key used to identify the metadata. -/
   fld   : MetaDataElem.Field P
+  /-- The value of the metadata. -/
   value : MetaDataElem.Value P
 
 /-- Metadata is an array of tagged elements. -/

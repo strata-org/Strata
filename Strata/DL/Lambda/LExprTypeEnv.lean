@@ -55,18 +55,20 @@ instance : ToFormat TypeAlias where
 variable {T: LExprParams} [DecidableEq T.IDMeta] [ToFormat T.Metadata] [ToFormat T.IDMeta]
 
 /--
-A type context contains two maps: `types` and `aliases`.
-
-The `types` field maps free variables in expressions (i.e., `LExpr.fvar`s) to
-their type schemes. This is essentially a stack to account for variable scopes.
-
-The `aliases` field maps type synonyms to their corresponding type definitions.
-We expect these type definitions to not be aliases themselves, to avoid any
-cycles in the map (see `TEnv.addTypeAlias`).
+A type context describing the types of free variables and the mappings of type
+aliases.
 -/
 structure TContext (IDMeta : Type) where
+
+  /-- A map from free variables in expressions (i.e., `LExpr.fvar`s) to their
+  type schemes. This is essentially a stack to account for variable scopes.  -/
   types   :  Maps (Identifier IDMeta) LTy := []
+
+  /-- A map from type synonym names to their corresponding type definitions.  We
+  expect these type definitions to not be aliases themselves, to avoid any
+  cycles in the map (see `TEnv.addTypeAlias`).  -/
   aliases :  List TypeAlias := []
+
   deriving DecidableEq, Repr, Inhabited
 
 instance {IDMeta} [ToFormat IDMeta] : ToFormat (TContext IDMeta) where
@@ -240,9 +242,13 @@ Invariant: all functions defined in `TypeFactory.genFactory`
 for `datatypes` should be in `functions`.
 -/
 structure LContext (T: LExprParams) where
+  /-- Descriptions of all built-in functions. -/
   functions : @Factory T
+  /-- Descriptions of all built-in datatypes. -/
   datatypes : @TypeFactory T.IDMeta
+  /-- A list of known built-in types. -/
   knownTypes : KnownTypes
+  /-- The set of identifiers that have been seen or generated so far. -/
   idents : Identifiers T.IDMeta
 deriving Inhabited
 

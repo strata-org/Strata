@@ -131,7 +131,7 @@ private def isToken (idStartPos idStopPos : String.Pos.Raw) (tk : Option Token) 
   | some tk =>
      -- if a token is both a symbol and a valid identifier (i.e. a keyword),
      -- we want it to be recognized as a symbol
-    tk.endPos.byteIdx ≥ idStopPos.byteIdx - idStartPos.byteIdx
+    tk.rawEndPos.byteIdx ≥ idStopPos.byteIdx - idStartPos.byteIdx
 
 /--
 Create a trailing node
@@ -241,30 +241,6 @@ partial def whitespace : ParserFn := fun c s =>
         s
     else s
 
-def mkIdResult (startPos : String.Pos.Raw) (val : String) : ParserFn := fun c s =>
-  let stopPos         := s.pos
-  let rawVal          := c.substring startPos stopPos
-  let s               := whitespace c s
-  let trailingStopPos := s.pos
-  let leading         := c.mkEmptySubstringAt startPos
-  let trailing        := c.substring (startPos := stopPos) (stopPos := trailingStopPos)
-  let info            := SourceInfo.original leading startPos trailing stopPos
-  let atom            := mkIdent info rawVal (.str .anonymous val)
-  s.pushSyntax atom
-
-/-- Push `(Syntax.node tk <new-atom>)` onto syntax stack if parse was successful. -/
-def mkNodeToken (n : SyntaxNodeKind) (startPos : String.Pos.Raw) : ParserFn := fun c s => Id.run do
-  if s.hasError then
-    return s
-  let stopPos   := s.pos
-  let leading   := c.mkEmptySubstringAt startPos
-  let val       := c.extract startPos stopPos
-  let s         := whitespace c s
-  let wsStopPos := s.pos
-  let trailing  := c.substring (startPos := stopPos) (stopPos := wsStopPos)
-  let info      := SourceInfo.original leading startPos trailing stopPos
-  s.pushSyntax (Syntax.mkLit n val info)
-
 def mkTokenAndFixPos (startPos : String.Pos.Raw) (tk : Option Token) : ParserFn := fun c s =>
   match tk with
   | none    => s.mkErrorAt "token" startPos
@@ -280,6 +256,34 @@ def mkTokenAndFixPos (startPos : String.Pos.Raw) (tk : Option Token) : ParserFn 
       let trailing  := c.substring (startPos := stopPos) (stopPos := wsStopPos)
       let atom      := Parser.mkAtom (SourceInfo.original leading startPos trailing stopPos) tk
       s.pushSyntax atom
+
+def mkIdResult (startPos : String.Pos.Raw) (tk : Option Token) (startPart stopPart : String.Pos.Raw) : ParserFn := fun c s =>
+  if isToken startPos s.pos tk then
+    mkTokenAndFixPos startPos tk c s
+  else
+    let val := c.extract startPart stopPart
+    let stopPos         := s.pos
+    let rawVal          := c.substring startPos stopPos
+    let s               := whitespace c s
+    let trailingStopPos := s.pos
+    let leading         := c.mkEmptySubstringAt startPos
+    let trailing        := c.substring (startPos := stopPos) (stopPos := trailingStopPos)
+    let info            := SourceInfo.original leading startPos trailing stopPos
+    let atom            := mkIdent info rawVal (.str .anonymous val)
+    s.pushSyntax atom
+
+/-- Push `(Syntax.node tk <new-atom>)` onto syntax stack if parse was successful. -/
+def mkNodeToken (n : SyntaxNodeKind) (startPos : String.Pos.Raw) : ParserFn := fun c s => Id.run do
+  if s.hasError then
+    return s
+  let stopPos   := s.pos
+  let leading   := c.mkEmptySubstringAt startPos
+  let val       := c.extract startPos stopPos
+  let s         := whitespace c s
+  let wsStopPos := s.pos
+  let trailing  := c.substring (startPos := stopPos) (stopPos := wsStopPos)
+  let info      := SourceInfo.original leading startPos trailing stopPos
+  s.pushSyntax (Syntax.mkLit n val info)
 
 def charLitFnAux (startPos : String.Pos.Raw) : ParserFn := fun c s =>
   let i     := s.pos
@@ -310,20 +314,12 @@ def identFnAux (startPos : String.Pos.Raw) (tk : Option Token) : ParserFn := fun
       else
         let stopPart  := s.pos
         let s         := s.next' c s.pos h
-        if isToken startPos s.pos tk then
-          mkTokenAndFixPos startPos tk c s
-        else
-          let val := c.extract startPart stopPart
-          mkIdResult startPos val c s
+        mkIdResult startPos tk startPart stopPart c s
     else if isIdFirst curr then
       let startPart := i
       let s         := takeWhileFn isIdRest c (s.next c i)
       let stopPart  := s.pos
-      if isToken startPos s.pos tk then
-        mkTokenAndFixPos startPos tk c s
-      else
-        let val := c.extract startPart stopPart
-        mkIdResult startPos val c s
+      mkIdResult startPos tk startPart stopPart c s
     else
       mkTokenAndFixPos startPos tk c s
 

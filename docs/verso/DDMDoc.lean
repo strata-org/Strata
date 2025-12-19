@@ -18,7 +18,7 @@ set_option pp.rawOnError true
 #doc (Manual) "The Strata DDM Manual" =>
 %%%
 authors := ["Joe Hendrix"]
-shortTitle := "Strata"
+shortTitle := "Strata DDM"
 %%%
 
 The Strata Dialect Definition Mechanism (DDM) is a set of tools for defining
