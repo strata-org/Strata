@@ -365,7 +365,7 @@ def identFnAux (startPos : String.Pos.Raw) (tk : Option Token) : ParserFn := fun
         let nextChar := c.get nextPos
         -- Check if this is an operator token or pipe-delimited identifier
         let isOperator := match tk with
-          | some token => token.rawEndPos.byteIdx > 1 || nextChar == '|' || (nextChar.isWhitespace && nextChar != '\\')
+          | some token => token.rawEndPos.byteIdx > 1 || nextChar == '|' || nextChar.isWhitespace
           | none => false
         if isOperator then
           mkTokenAndFixPos startPos tk c s
