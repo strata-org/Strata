@@ -87,6 +87,7 @@ inductive MetaDataElem.Value (P : PureExpr) where
   | expr (e : P.Expr)
   /-- Metadata value in the form of an arbitrary string. -/
   | msg (s : String)
+  /-- Metadata value in the form of a fileRange. -/
   | fileRange (r: FileRange)
 
 
