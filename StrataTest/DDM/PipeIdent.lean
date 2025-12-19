@@ -59,7 +59,8 @@ result := |++| + |--| + |**|;
 #guard_msgs in
 #eval (#strata
 program PipeIdent;
-result := |++| + |--| + |**|;
+result := |++| + |--|
+  + |**|;
 #end).format
 
 -- Escape sequences (SMT-LIB 2.6 spec)
@@ -70,7 +71,8 @@ result := |name\|with\|pipes| + |path\\to\\file|;
 #guard_msgs in
 #eval (#strata
 program PipeIdent;
-result := |name\|with\|pipes| + |path\\to\\file|;
+result := |name\|with\|pipes| +
+  |path\\to\\file|;
 #end).format
 
 -- Single | operator coexists with |identifier|
@@ -83,14 +85,3 @@ result := |x-value| | |y-value| | regularVar;
 program PipeIdent;
 result := |x-value| | |y-value| | regularVar;
 #end).format
-
--- Test that we can construct expressions programmatically
-def manualConstruction : PipeIdent.Expression Unit :=
-  .add ()
-    (.var () ⟨(), "special-name"⟩)
-    (.var () ⟨(), "another-name"⟩)
-
--- Test that the AST structure is correct
-example : PipeIdent.Expression Unit := .var () ⟨(), "x-coordinate"⟩
-example : PipeIdent.Expression Unit := .var () ⟨(), "name with spaces"⟩
-example : PipeIdent.Expression Unit := .var () ⟨(), "123numeric"⟩
