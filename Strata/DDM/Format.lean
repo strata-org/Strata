@@ -111,7 +111,7 @@ def fvarName (ctx : FormatContext) (idx : FreeVarIndex) : String :=
   else
     s!"fvar!{idx}"
 
-protected def ofDialects (dialects : DialectMap) (globalContext : GlobalContext) (opts : FormatOptions) : FormatContext where
+protected def ofDialects (dialects : DialectMap) (globalContext : GlobalContext := {}) (opts : FormatOptions := {}) : FormatContext where
   opts := opts
   getFnDecl sym := Id.run do
     let .function f := dialects.decl! sym
@@ -441,13 +441,13 @@ private partial def OperationF.mformatM (op : OperationF α) : FormatM PrecForma
 
 end
 
-instance Expr.instToStrataFormat : ToStrataFormat Expr where
+instance Expr.instToStrataFormat : ToStrataFormat (ExprF α) where
   mformat e c s := e.mformatM #[] c s |>.fst
 
-instance Arg.instToStrataFormat : ToStrataFormat Arg where
+instance Arg.instToStrataFormat : ToStrataFormat (ArgF α) where
   mformat a c s := a.mformatM c s |>.fst
 
-instance Operation.instToStrataFormat : ToStrataFormat Operation where
+instance Operation.instToStrataFormat : ToStrataFormat (OperationF α) where
   mformat o c s := o.mformatM c s |>.fst
 
 namespace MetadataArg
