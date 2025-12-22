@@ -77,13 +77,14 @@ def makeVCResult (label : String) (result : Boogie.Result) (md : MetaData Expres
 /-! ## Location Extraction Tests -/
 
 -- Test location extraction from complete metadata
+#guard_msgs in
 #eval
   let md := makeMetadata "/test/file.st" 10 5
   let loc? := extractLocation md
   match loc? with
   | some loc =>
     if loc.uri = "/test/file.st" && loc.startLine = 10 && loc.startColumn = 5 then
-      IO.println "Location extraction test passed"
+      pure ()
     else
       IO.println s!"Location extraction test failed: uri={loc.uri} line={loc.startLine} col={loc.startColumn}"
   | none => IO.println "Location extraction test failed: no location"
@@ -102,6 +103,7 @@ def makeVCResult (label : String) (result : Boogie.Result) (md : MetaData Expres
 /-! ## VCResult to SARIF Conversion Tests -/
 
 -- Test converting a successful VCResult
+#guard_msgs in
 #eval
   let md := makeMetadata "/test/file.st" 10 5
   let vcr := makeVCResult "test_obligation" .unsat md
@@ -109,11 +111,12 @@ def makeVCResult (label : String) (result : Boogie.Result) (md : MetaData Expres
   if sarifResult.ruleId = "test_obligation" &&
      sarifResult.level = Level.none &&
      sarifResult.locations.size = 1 then
-    IO.println "Successful VCResult conversion test passed"
+    pure ()
   else
     IO.println s!"Successful VCResult conversion test failed: {repr sarifResult}"
 
 -- Test converting a failed VCResult
+#guard_msgs in
 #eval
   let md := makeMetadata "/test/file.st" 20 10
   let vcr := makeVCResult "failed_obligation" (.sat []) md
@@ -121,34 +124,37 @@ def makeVCResult (label : String) (result : Boogie.Result) (md : MetaData Expres
   if sarifResult.ruleId = "failed_obligation" &&
      sarifResult.level = Level.error &&
      sarifResult.message.text = "Verification failed" then
-    IO.println "Failed VCResult conversion test passed"
+    pure ()
   else
     IO.println s!"Failed VCResult conversion test failed: {repr sarifResult}"
 
 -- Test converting an unknown VCResult
+#guard_msgs in
 #eval
   let vcr := makeVCResult "unknown_obligation" .unknown
   let sarifResult := vcResultToSarifResult vcr
   if sarifResult.ruleId = "unknown_obligation" &&
      sarifResult.level = Level.warning &&
      sarifResult.locations.size = 0 then
-    IO.println "Unknown VCResult conversion test passed"
+    pure ()
   else
     IO.println s!"Unknown VCResult conversion test failed: {repr sarifResult}"
 
 -- Test converting an error VCResult
+#guard_msgs in
 #eval
   let vcr := makeVCResult "error_obligation" (.err "SMT solver error")
   let sarifResult := vcResultToSarifResult vcr
   if sarifResult.ruleId = "error_obligation" &&
      sarifResult.level = Level.error &&
      (sarifResult.message.text.startsWith "Verification error:") then
-    IO.println "Error VCResult conversion test passed"
+    pure ()
   else
     IO.println s!"Error VCResult conversion test failed: {repr sarifResult}"
 
 /-! ## SARIF Document Structure Tests -/
 
+#guard_msgs in
 #eval
   let vcResults : VCResults := #[]
   let sarif := vcResultsToSarif vcResults
@@ -156,11 +162,12 @@ def makeVCResult (label : String) (result : Boogie.Result) (md : MetaData Expres
      sarif.runs.size = 1 &&
      sarif.runs[0]!.results.size = 0 &&
      sarif.runs[0]!.tool.driver.name = "Strata" then
-    IO.println "Empty SARIF document test passed"
+    pure ()
   else
     IO.println s!"Empty SARIF document test failed"
 
 -- Test creating a SARIF document with multiple VCResults
+#guard_msgs in
 #eval
   let md1 := makeMetadata "/test/file1.st" 10 5
   let md2 := makeMetadata "/test/file2.st" 20 10
@@ -176,7 +183,7 @@ def makeVCResult (label : String) (result : Boogie.Result) (md : MetaData Expres
      sarif.runs[0]!.results[0]!.level = Level.none &&
      sarif.runs[0]!.results[1]!.level = Level.error &&
      sarif.runs[0]!.results[2]!.level = Level.warning then
-    IO.println "Multiple VCResults SARIF document test passed"
+    pure ()
   else
     IO.println s!"Multiple VCResults SARIF document test failed"
 
@@ -184,19 +191,22 @@ def makeVCResult (label : String) (result : Boogie.Result) (md : MetaData Expres
 
 /-! ## JSON Serialization Tests -/
 
+#guard_msgs in
 #eval
   let json := Lean.ToJson.toJson Level.none
   match json with
-  | Json.str "none" => IO.println "Level serialization test passed"
+  | Json.str "none" => pure ()
   | _ => IO.println s!"Level serialization test failed: {json}"
 
+#guard_msgs in
 #eval
   let msg : Message := { text := "Test message" }
-  let json := Lean.ToJson.toJson msg
+  let _ := Lean.ToJson.toJson msg
   -- Just check that it serializes without error
-  IO.println "Message serialization test passed"
+  pure ()
 
 -- Test full SARIF document JSON generation
+#guard_msgs in
 #eval
   let md := makeMetadata "/test/example.st" 15 7
   let vcResults : VCResults := #[
@@ -209,11 +219,12 @@ def makeVCResult (label : String) (result : Boogie.Result) (md : MetaData Expres
   if (jsonStr.splitOn "\"version\":\"2.1.0\"").length > 1 &&
      (jsonStr.splitOn "\"Strata\"").length > 1 &&
      (jsonStr.splitOn "test_assertion").length > 1 then
-    IO.println "SARIF document JSON generation test passed"
+    pure ()
   else
     IO.println s!"SARIF document JSON generation test failed"
 
 -- Test pretty JSON generation
+#guard_msgs in
 #eval
   let vcResults : VCResults := #[
     makeVCResult "simple_test" .unsat
@@ -223,13 +234,14 @@ def makeVCResult (label : String) (result : Boogie.Result) (md : MetaData Expres
 
   -- Pretty JSON should contain newlines for formatting
   if prettyJson.contains '\n' then
-    IO.println "Pretty JSON generation test passed"
+    pure ()
   else
     IO.println s!"Pretty JSON generation test failed"
 
 /-! ## Integration Test with Counter-Examples -/
 
 -- Test SARIF output with counter-example
+#guard_msgs in
 #eval
   let cex : CounterEx := [((BoogieIdent.unres "x", some .int), "42")]
   let md := makeMetadata "/test/cex.st" 25 3
@@ -239,16 +251,17 @@ def makeVCResult (label : String) (result : Boogie.Result) (md : MetaData Expres
   if sarifResult.level = Level.error &&
      (sarifResult.message.text.splitOn "counterexample").length > 1 &&
      sarifResult.locations.size = 1 then
-    IO.println "Counter-example SARIF test passed"
+    pure ()
   else
     IO.println s!"Counter-example SARIF test failed: {repr sarifResult}"
 
 /-! ## Schema URI Test -/
 
+#guard_msgs in
 #eval
   let sarif := vcResultsToSarif #[]
   if sarif.schema = "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json" then
-    IO.println "Schema URI test passed"
+    pure ()
   else
     IO.println s!"Schema URI test failed: {sarif.schema}"
 

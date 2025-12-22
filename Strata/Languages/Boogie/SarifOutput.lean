@@ -99,19 +99,13 @@ instance : Inhabited Result where
 structure Driver where
   name : String
   version : String := "0.1.0"
-  informationUri : String := "https://github.com/tautschnig/strata-private"
-  deriving Repr, ToJson, FromJson
-
-instance : Inhabited Driver where
-  default := { name := "" }
+  informationUri : String := "https://github.com/strata-org/Strata"
+  deriving Repr, ToJson, FromJson, Inhabited
 
 /-- SARIF tool information -/
 structure Tool where
   driver : Driver
-  deriving Repr, ToJson, FromJson
-
-instance : Inhabited Tool where
-  default := { driver := default }
+  deriving Repr, ToJson, FromJson, Inhabited
 
 /-- SARIF run representing a single analysis run -/
 structure Run where
