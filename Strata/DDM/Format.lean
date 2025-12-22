@@ -37,8 +37,7 @@ private def needsPipeDelimiters (s : String) : Bool :=
   if h : s.isEmpty then
     true
   else
-    let firstPos := s.startValidPos
-    let firstChar := firstPos.get (String.nonEmptyStringsHaveADifferentStartEndPos s h)
+    let firstChar := s.startValidPos.get (by simp_all [String.isEmpty])
     !isIdBegin firstChar || s.any (fun c => !isIdContinue c)
 
 /--
