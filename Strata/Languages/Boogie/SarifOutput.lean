@@ -194,7 +194,7 @@ def vcResultsToSarif (vcResults : VCResults) : SarifDocument :=
     driver := {
       name := "Strata",
       version := "0.1.0",
-      informationUri := "https://github.com/tautschnig/strata-private"
+      informationUri := "https://github.com/strata-org/Strata"
     }
   }
 
