@@ -134,9 +134,11 @@ def Cmds.toGotoTransform {P} [G: ToGoto P] (T : P.TyEnv)
 
 /-! ## Imperative's Statements to CProverGOTO's Instructions -/
 
--- Mutual recursion between Stmt.toGotoInstructions and Block.toGotoInstructions:
--- Statements can contain blocks (e.g., in .ite and .loop), and blocks contain statements.
--- This mutual dependency requires both functions to be defined in a mutual block.
+/-
+Mutual recursion between Stmt.toGotoInstructions and Block.toGotoInstructions:
+Statements can contain blocks (e.g., in .ite and .loop), and blocks contain statements.
+This mutual dependency requires both functions to be defined in a mutual block.
+-/
 mutual
 
 /--
@@ -167,56 +169,50 @@ def Stmt.toGotoInstructions {P} [G: ToGoto P]
     Block.toGotoInstructions trans.T functionName body trans
 
   | .ite cond thenb elseb _md =>
-    -- Conditional: if cond then thenb else elseb
-    -- Structure:
-    --   GOTO [!cond] else_label    ; jump to else branch if condition is false
-    --   <then branch instructions>
-    --   GOTO end_label             ; skip else branch
-    --   LOCATION else_label        ; else branch starts here
-    --   <else branch instructions>
-    --   LOCATION end_label         ; after conditional
-
+    /-
+    Conditional: if cond then thenb else elseb
+    Structure:
+      GOTO [!cond] else_label    ; jump to else branch if condition is false
+      <then branch instructions>
+      GOTO end_label             ; skip else branch
+      LOCATION else_label        ; else branch starts here
+      <else branch instructions>
+      LOCATION end_label         ; after conditional
+    -/
     let else_label := s!"else_{trans.nextLoc}"
     let end_label := s!"end_if_{trans.nextLoc}"
 
-    -- Negate condition and create conditional GOTO to else branch
+    -- Emit conditional GOTO to else branch
     let cond_expr ← G.toGotoExpr cond
     let neg_cond := Expr.not cond_expr
     let goto_else_inst : Instruction :=
-      { type := .GOTO,
-        locationNum := trans.nextLoc,
+      { type := .GOTO, locationNum := trans.nextLoc,
         sourceLoc := { SourceLocation.nil with function := functionName },
-        guard := neg_cond,
-        target := .none }  -- Will be filled with actual location later
-
+        guard := neg_cond, target := .none }
     let trans := { trans with
                     instructions := trans.instructions.push goto_else_inst,
                     nextLoc := trans.nextLoc + 1 }
-    let goto_else_loc := trans.nextLoc - 1  -- Remember location of GOTO for patching
+    let goto_else_loc := trans.nextLoc - 1
 
     -- Process then branch
     let trans ← Block.toGotoInstructions trans.T functionName thenb trans
 
-    -- Add unconditional GOTO to skip else branch
+    -- Emit unconditional GOTO to end
     let goto_end_inst : Instruction :=
-      { type := .GOTO,
-        locationNum := trans.nextLoc,
+      { type := .GOTO, locationNum := trans.nextLoc,
         sourceLoc := { SourceLocation.nil with function := functionName },
-        guard := Expr.true,
-        target := .none }  -- Will be filled later
+        guard := Expr.true, target := .none }
     let trans := { trans with
                     instructions := trans.instructions.push goto_end_inst,
                     nextLoc := trans.nextLoc + 1 }
-    let goto_end_loc := trans.nextLoc - 1  -- Remember location for patching
+    let goto_end_loc := trans.nextLoc - 1
 
-    -- Mark else branch start with LOCATION
+    -- Emit else branch label
     let else_loc := trans.nextLoc
     let else_label_inst : Instruction :=
-      { type := .LOCATION,
-        locationNum := else_loc,
+      { type := .LOCATION, locationNum := else_loc,
         sourceLoc := { SourceLocation.nil with function := functionName },
-        labels := [else_label],
-        code := Code.skip }
+        labels := [else_label], code := Code.skip }
     let trans := { trans with
                     instructions := trans.instructions.push else_label_inst,
                     nextLoc := trans.nextLoc + 1 }
@@ -224,14 +220,12 @@ def Stmt.toGotoInstructions {P} [G: ToGoto P]
     -- Process else branch
     let trans ← Block.toGotoInstructions trans.T functionName elseb trans
 
-    -- Mark end of conditional with LOCATION
+    -- Emit end label
     let end_loc := trans.nextLoc
     let end_label_inst : Instruction :=
-      { type := .LOCATION,
-        locationNum := end_loc,
+      { type := .LOCATION, locationNum := end_loc,
         sourceLoc := { SourceLocation.nil with function := functionName },
-        labels := [end_label],
-        code := Code.skip }
+        labels := [end_label], code := Code.skip }
     let trans := { trans with
                     instructions := trans.instructions.push end_label_inst,
                     nextLoc := trans.nextLoc + 1 }
@@ -242,42 +236,38 @@ def Stmt.toGotoInstructions {P} [G: ToGoto P]
       { insts[goto_else_loc]! with target := .some else_loc }
     let insts := insts.set! goto_end_loc
       { insts[goto_end_loc]! with target := .some end_loc }
-
     return { trans with instructions := insts }
 
   | .loop guard _measure _invariant body _md =>
-    -- Loop: while guard do body
-    -- Structure:
-    --   LOCATION loop_start        ; loop entry point
-    --   GOTO [!guard] loop_end     ; exit loop if guard false
-    --   <body instructions>
-    --   GOTO loop_start            ; back edge
-    --   LOCATION loop_end          ; after loop
-
+    /-
+    Loop: while guard do body
+    Structure:
+      LOCATION loop_start        ; loop entry point
+      GOTO [!guard] loop_end     ; exit loop if guard false
+      <body instructions>
+      GOTO loop_start            ; back edge
+      LOCATION loop_end          ; after loop
+    -/
     let loop_start_label := s!"loop_start_{trans.nextLoc}"
     let loop_end_label := s!"loop_end_{trans.nextLoc}"
 
-    -- Mark loop start with LOCATION
+    -- Emit loop start label
     let loop_start_loc := trans.nextLoc
     let loop_start_inst : Instruction :=
-      { type := .LOCATION,
-        locationNum := loop_start_loc,
+      { type := .LOCATION, locationNum := loop_start_loc,
         sourceLoc := { SourceLocation.nil with function := functionName },
-        labels := [loop_start_label],
-        code := Code.skip }
+        labels := [loop_start_label], code := Code.skip }
     let trans := { trans with
                     instructions := trans.instructions.push loop_start_inst,
                     nextLoc := trans.nextLoc + 1 }
 
-    -- Add conditional GOTO to exit loop
+    -- Emit conditional GOTO to exit loop
     let guard_expr ← G.toGotoExpr guard
     let neg_guard := Expr.not guard_expr
     let goto_end_inst : Instruction :=
-      { type := .GOTO,
-        locationNum := trans.nextLoc,
+      { type := .GOTO, locationNum := trans.nextLoc,
         sourceLoc := { SourceLocation.nil with function := functionName },
-        guard := neg_guard,
-        target := .none }  -- Will be filled later
+        guard := neg_guard, target := .none }
     let trans := { trans with
                     instructions := trans.instructions.push goto_end_inst,
                     nextLoc := trans.nextLoc + 1 }
@@ -286,25 +276,21 @@ def Stmt.toGotoInstructions {P} [G: ToGoto P]
     -- Process loop body
     let trans ← Block.toGotoInstructions trans.T functionName body trans
 
-    -- Add unconditional GOTO back to loop start
+    -- Emit unconditional GOTO back to loop start
     let goto_start_inst : Instruction :=
-      { type := .GOTO,
-        locationNum := trans.nextLoc,
+      { type := .GOTO, locationNum := trans.nextLoc,
         sourceLoc := { SourceLocation.nil with function := functionName },
-        guard := Expr.true,
-        target := .some loop_start_loc }
+        guard := Expr.true, target := .some loop_start_loc }
     let trans := { trans with
                     instructions := trans.instructions.push goto_start_inst,
                     nextLoc := trans.nextLoc + 1 }
 
-    -- Mark loop end with LOCATION
+    -- Emit loop end label
     let loop_end_loc := trans.nextLoc
     let loop_end_inst : Instruction :=
-      { type := .LOCATION,
-        locationNum := loop_end_loc,
+      { type := .LOCATION, locationNum := loop_end_loc,
         sourceLoc := { SourceLocation.nil with function := functionName },
-        labels := [loop_end_label],
-        code := Code.skip }
+        labels := [loop_end_label], code := Code.skip }
     let trans := { trans with
                     instructions := trans.instructions.push loop_end_inst,
                     nextLoc := trans.nextLoc + 1 }
@@ -313,7 +299,6 @@ def Stmt.toGotoInstructions {P} [G: ToGoto P]
     let insts := trans.instructions
     let insts := insts.set! goto_end_loc
       { insts[goto_end_loc]! with target := .some loop_end_loc }
-
     return { trans with instructions := insts }
 
   | .goto label _md =>
@@ -329,7 +314,7 @@ def Stmt.toGotoInstructions {P} [G: ToGoto P]
               nextLoc := trans.nextLoc + 1,
               T := trans.T }
 termination_by Stmt.sizeOf s
-decreasing_by all_goals sorry
+decreasing_by all_goals simp [*] at * <;> omega
 
 /--
 Convert a block (list of statements) to GOTO instructions.
@@ -337,18 +322,13 @@ Convert a block (list of statements) to GOTO instructions.
 def Block.toGotoInstructions {P} [G: ToGoto P]
     (T : P.TyEnv) (functionName : String) (stmts : Block P (Cmd P)) (trans : GotoTransform P.TyEnv) :
     Except Format (GotoTransform P.TyEnv) := do
-  let rec go (trans : GotoTransform P.TyEnv) (stmts' : List (Stmt P (Cmd P))) :
-      Except Format (GotoTransform P.TyEnv) :=
-    match stmts' with
-    | [] => .ok trans
-    | s :: rest => do
-      let new_trans ← Stmt.toGotoInstructions trans.T functionName s trans
-      go new_trans rest
-  termination_by Block.sizeOf stmts'
-  decreasing_by all_goals simp [*] at * <;> omega
-  go trans stmts
+  match stmts with
+  | [] => return trans
+  | s :: rest => do
+    let new_trans ← Stmt.toGotoInstructions T functionName s trans
+    Block.toGotoInstructions T functionName rest new_trans
 termination_by Block.sizeOf stmts
-decreasing_by all_goals sorry
+decreasing_by all_goals simp [*] at * <;> omega
 end
 
 /--
