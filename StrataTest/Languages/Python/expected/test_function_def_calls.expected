@@ -14,7 +14,7 @@ assert_opt_name_none_or_bar: verified
 ensures_maybe_except_none: verified
 
 test_helper_procedure_assert_name_is_foo_3: failed
-CEx: ($__s49, "")
+CEx: 
 
 test_helper_procedure_assert_opt_name_none_or_str_4: verified
 

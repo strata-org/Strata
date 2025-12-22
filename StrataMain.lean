@@ -205,10 +205,9 @@ def pyAnalyzeCommand : Command where
     if verbose then
       IO.println "Inlined: "
       IO.print newPgm
+    let solverName : String := "Strata/Languages/Python/z3_parallel.py"
     let vcResults ← EIO.toIO (fun f => IO.Error.userError (toString f))
-                        (Boogie.verify "z3" newPgm { Options.default with stopOnFirstError := false,
-                                                                          verbose,
-                                                                          removeIrrelevantAxioms := true }
+                        (Boogie.verify solverName newPgm { Options.default with stopOnFirstError := false, verbose, removeIrrelevantAxioms := true }
                                                    (moreFns := Strata.Python.ReFactory))
     let mut s := ""
     for vcResult in vcResults do
