@@ -67,7 +67,7 @@ info: ok: #[DECL (decl (s : unsignedbv[32])),
  ASSIGN (assign (s : unsignedbv[32]) (100 : unsignedbv[32]))]
 -/
 #guard_msgs in
-#eval! do let ans ← Imperative.Cmds.toGotoTransform Lambda.TEnv.default "one" ExampleProgram1
+#eval do let ans ← Imperative.Cmds.toGotoTransform Lambda.TEnv.default "one" ExampleProgram1
           return format ans.instructions
 
 -------------------------------------------------------------------------------
@@ -90,7 +90,7 @@ info: ok: #[DECL (decl (s : unsignedbv[32])),
  ASSIGN (assign (s : unsignedbv[32]) (((100 : unsignedbv[32]) + (200 : unsignedbv[32])) : unsignedbv[32]))]
 -/
 #guard_msgs in
-#eval! do let ans ← Imperative.Cmds.toGotoTransform Lambda.TEnv.default "two" ExampleProgram2
+#eval do let ans ← Imperative.Cmds.toGotoTransform Lambda.TEnv.default "two" ExampleProgram2
           return format ans.instructions
 
 -------------------------------------------------------------------------------
@@ -115,7 +115,7 @@ info: ok: #[DECL (decl (x : unsignedbv[32])),
  ASSIGN (assign (z : unsignedbv[32]) (((x : unsignedbv[32]) + (y : unsignedbv[32])) : unsignedbv[32]))]
 -/
 #guard_msgs in
-#eval! do let ans ← Imperative.Cmds.toGotoTransform Lambda.TEnv.default "three" ExampleProgram3
+#eval do let ans ← Imperative.Cmds.toGotoTransform Lambda.TEnv.default "three" ExampleProgram3
           return format ans.instructions
 
 -------------------------------------------------------------------------------
@@ -136,7 +136,7 @@ info: ok: #[LOCATION skip,
  ASSIGN (assign (x : unsignedbv[32]) (20 : unsignedbv[32]))]
 -/
 #guard_msgs in
-#eval! do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test1" ExampleStmt1
+#eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test1" ExampleStmt1
           return format ans.instructions
 
 -------------------------------------------------------------------------------
@@ -164,7 +164,7 @@ info: ok: #[DECL (decl (x : unsignedbv[32])),
  LOCATION skip]
 -/
 #guard_msgs in
-#eval! do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test2" ExampleStmt2
+#eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test2" ExampleStmt2
           return format ans.instructions
 
 -------------------------------------------------------------------------------
@@ -191,7 +191,7 @@ info: ok: #[DECL (decl (i : unsignedbv[32])),
  LOCATION skip]
 -/
 #guard_msgs in
-#eval! do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test3" ExampleStmt3
+#eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test3" ExampleStmt3
           return format ans.instructions
 
 -------------------------------------------------------------------------------
@@ -218,7 +218,7 @@ info: ok: #[LOCATION skip,
  LOCATION skip]
 -/
 #guard_msgs in
-#eval! do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test4" ExampleStmt4
+#eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test4" ExampleStmt4
           return format ans.instructions
 
 -------------------------------------------------------------------------------
@@ -241,7 +241,7 @@ info: ok: #[DECL (decl (x : unsignedbv[32])),
  ASSIGN (assign (x : unsignedbv[32]) (20 : unsignedbv[32]))]
 -/
 #guard_msgs in
-#eval! do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test5" ExampleStmt5
+#eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test5" ExampleStmt5
           return format ans.instructions
 
 -------------------------------------------------------------------------------
@@ -283,7 +283,7 @@ info: ok: #[DECL (decl (i : unsignedbv[32])),
  LOCATION skip]
 -/
 #guard_msgs in
-#eval! do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test6" ExampleStmt6
+#eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test6" ExampleStmt6
           return format ans.instructions
 
 -------------------------------------------------------------------------------
@@ -314,7 +314,7 @@ info: ok: #[LOCATION skip,
  ASSIGN (assign (x : unsignedbv[32]) (((x : unsignedbv[32]) + (y : unsignedbv[32])) : unsignedbv[32]))]
 -/
 #guard_msgs in
-#eval! do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test7" ExampleStmt7
+#eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test7" ExampleStmt7
           return format ans.instructions
 
 -------------------------------------------------------------------------------
@@ -338,7 +338,7 @@ info: ok: #[DECL (decl (x : unsignedbv[32])),
  LOCATION skip]
 -/
 #guard_msgs in
-#eval! do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test8" ExampleStmt8
+#eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test8" ExampleStmt8
           return format ans.instructions
 
 -------------------------------------------------------------------------------
@@ -356,7 +356,7 @@ def ExampleStmt9 : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
 info: ok: #[LOCATION skip, GOTO skip [((not(false : bool)) : bool)], GOTO skip, LOCATION skip]
 -/
 #guard_msgs in
-#eval! do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test9" ExampleStmt9
+#eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test9" ExampleStmt9
           return format ans.instructions
 
 -------------------------------------------------------------------------------
@@ -384,7 +384,7 @@ info: ok: #[DECL (decl (x : unsignedbv[32])),
  LOCATION skip]
 -/
 #guard_msgs in
-#eval! do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test10" ExampleStmt10
+#eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test10" ExampleStmt10
           return format ans.instructions
 
 -------------------------------------------------------------------------------
