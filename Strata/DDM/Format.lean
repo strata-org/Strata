@@ -36,8 +36,8 @@ private def needsPipeDelimiters (s : String) : Bool :=
   if s.isEmpty then
     true
   else
-    let chars := s.toList
-    !isIdBegin chars.head! || chars.any (fun c => !isIdContinue c)
+    let firstChar := s.front
+    !isIdBegin firstChar || s.any (fun c => !isIdContinue c)
 
 /--
 Escape a string for use in pipe-delimited identifiers (SMT-LIB 2.6).
