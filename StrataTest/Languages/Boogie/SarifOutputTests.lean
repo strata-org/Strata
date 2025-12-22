@@ -189,8 +189,6 @@ def makeVCResult (label : String) (result : Boogie.Result) (md : MetaData Expres
 
 /-! ## JSON Serialization Tests -/
 
-/-! ## JSON Serialization Tests -/
-
 #guard_msgs in
 #eval
   let json := Lean.ToJson.toJson Level.none
