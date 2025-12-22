@@ -4,6 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+import all Init.Data.String.Defs
 
 /-
 This file contains auxillary definitions for String that could be
@@ -43,6 +44,14 @@ private def escapeStringLitAux (acc : String) (c : Char) : String :=
 
 def escapeStringLit (s : String) : String :=
   s.foldl escapeStringLitAux "\"" ++ "\""
+
+namespace String
+
+@[simp]
+theorem isEmpty_eq (s : _root_.String) : s.isEmpty = (s == "") := by
+  simp only [String.isEmpty, BEq.beq, String.utf8ByteSize_eq_zero_iff]
+
+end String
 
 end Strata
 
