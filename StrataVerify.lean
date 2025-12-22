@@ -104,8 +104,11 @@ def main (args : List String) : IO UInt32 := do
             let sarifDoc := Boogie.Sarif.vcResultsToSarif vcResults
             let sarifJson := Boogie.Sarif.toPrettyJsonString sarifDoc
             let sarifFile := file ++ ".sarif"
-            IO.FS.writeFile sarifFile sarifJson
-            println! f!"SARIF output written to {sarifFile}"
+            try
+              IO.FS.writeFile sarifFile sarifJson
+              println! f!"SARIF output written to {sarifFile}"
+            catch e =>
+              println! f!"Error writing SARIF output to {sarifFile}: {e.toString}"
 
         -- Also output standard format
         for vcResult in vcResults do
