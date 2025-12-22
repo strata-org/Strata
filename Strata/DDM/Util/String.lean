@@ -107,4 +107,24 @@ info: [""]
 #guard_msgs in
 #eval "".splitLines
 
+theorem nonEmptyStringsHaveADifferentStartEndPos (s: String) (h: ¬s.isEmpty = true):
+s.startValidPos ≠ s.endValidPos :=
+  by
+  intro heq
+  unfold String.startValidPos at heq
+  unfold String.endValidPos at heq
+  have endPosZero: s.rawEndPos = 0 := by grind
+  unfold String.rawEndPos at endPosZero
+  unfold String.isEmpty at h
+  have h0 : (0 : Nat) = s.utf8ByteSize := by
+    have := congrArg (·.byteIdx) endPosZero
+    simp at this
+    rw [this]
+    decide
+  have h1 : (s.utf8ByteSize == 0) := by
+    rw [← h0]  -- Rewrite s.utf8ByteSize with 0
+    rfl
+  rw [h1] at h
+  contradiction
+
 end String

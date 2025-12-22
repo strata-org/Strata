@@ -8,6 +8,7 @@ import Strata.DDM.AST
 import Strata.DDM.Util.Fin
 import Strata.DDM.Util.Format
 import Strata.DDM.Util.Nat
+import Strata.DDM.Util.String
 import Std.Data.HashSet
 
 open Std (Format format)
@@ -33,10 +34,11 @@ Check if a string needs pipe delimiters when formatted as an identifier.
 Returns true if the string contains special characters, spaces, or starts with a digit.
 -/
 private def needsPipeDelimiters (s : String) : Bool :=
-  if s.isEmpty then
+  if h : s.isEmpty then
     true
   else
-    let firstChar := s.front
+    let firstPos := s.startValidPos
+    let firstChar := firstPos.get (String.nonEmptyStringsHaveADifferentStartEndPos s h)
     !isIdBegin firstChar || s.any (fun c => !isIdContinue c)
 
 /--
