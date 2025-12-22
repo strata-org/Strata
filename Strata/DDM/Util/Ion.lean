@@ -91,7 +91,7 @@ syntax (name := declareSystemSymbolIds) "#declare_system_symbol_ids" : command -
 def declareSystemSymbolIdsImpl : CommandElab := fun _stx => do
   for sym in SymbolTable.ionSharedSymbolTableEntries do
     -- To simplify name, strip out non-alphanumeric characters.
-    let simplifiedName : String := .mk <| sym.data.filter (·.isAlphanum)
+    let simplifiedName : String := .ofList <| sym.toList.filter (·.isAlphanum)
     let leanName := Lean.mkLocalDeclId simplifiedName
     let cmd : TSyntax `command ← `(command|
       def $(leanName) : SymbolId := systemSymbolId! $(Lean.Syntax.mkStrLit sym)

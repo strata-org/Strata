@@ -17,7 +17,9 @@ import Strata.DL.Util.Counter
 /-- `s.IsSuffix t` checks if the string `s` is a suffix of the string `t`.
 from mathlib https://github.com/leanprover-community/mathlib4/blob/f3c56c29d5c787d62f66c207e097a159ff66318a/Mathlib/Data/String/Defs.lean#L37-L39
 -/
-abbrev String.IsSuffix (s1 s2 : String) : Prop := List.IsSuffix s1.data s2.data
+abbrev String.IsSuffix (s1 s2 : String) : Prop := List.IsSuffix s1.toList s2.toList
+
+local infixl:50 " <:+ " => String.IsSuffix
 
 /-- Wrapper around CounterState to allow a prefix -/
 structure StringGenState where
@@ -54,11 +56,11 @@ theorem String.append_eq_suffix (as bs bs' : String):
   by_cases bs = bs' <;> simp_all
   next Hne =>
   have Heq' := String.ext_iff.mp Heq
-  have Hne' : ¬ bs.data = bs'.data := by
+  have Hne' : ¬ bs.toList = bs'.toList := by
     intros Heq
     have HH := String.ext_iff.mpr Heq
     contradiction
-  simp [String.data_append] at *
+  simp at *
   contradiction
 
 theorem String.append_eq_prefix (as as' bs : String):
@@ -109,7 +111,7 @@ theorem Nat_toDigitsCore_not_contain_underscore {n m l} : '_' ∉ l → '_' ∉ 
   simp [Nat_digitchar_neq_underscore, Hnin]
   apply ind <;> simp [*, Nat_digitchar_neq_underscore]
 
-theorem Nat_toString_not_contain_underscore {x: Nat} : '_' ∉ (toString x).data := by
+theorem Nat_toString_not_contain_underscore {x: Nat} : '_' ∉ (toString x).toList := by
   simp [toString, Nat.repr, Nat.toDigits]
   exact Nat_toDigitsCore_not_contain_underscore (l := []) (by simp)
 
@@ -228,61 +230,43 @@ theorem Nat_eq_of_toDigitsCore_eq : x > n → y > m
 theorem Nat_eq_of_toString_eq {x y: Nat}: (toString x) = (toString y) → x = y := by
   intro H
   simp only [toString, Nat.repr] at H
-  apply Nat_eq_of_toDigitsCore_eq (by simp) (by simp) (List.asString_injective H)
+  apply Nat_eq_of_toDigitsCore_eq (by simp) (by simp) (String.ofList_injective H)
+
+private theorem under_toList : "_".toList = ['_'] := rfl
 
 theorem Nat_eq_of_StringGen_suffix {x y: Nat}: ("_" ++ toString x).IsSuffix (s ++ "_" ++ toString y) → x = y := by
   intro Hsuf
-  simp only [String.IsSuffix, String.data_append] at Hsuf
-  change ['_'] ++ (toString x).data <:+ s.data ++ ['_'] ++ (toString y).data at Hsuf
   apply Nat_eq_of_toString_eq
-  by_cases Hc: (toString x).length < (toString y).length
-  have Hsuf':  (toString y).data  <:+ s.data ++ ['_'] ++ (toString y).data := by
-    apply List.suffix_append_of_suffix
-    simp
-  have h : ['_'] ++ (toString x).data <:+ (toString y).data := by
-    simp only [List.append_assoc] at Hsuf
-    simp only [List.append_assoc] at Hsuf'
-    apply List.suffix_of_suffix_length_le Hsuf Hsuf'
-    simp
-    omega
-  obtain ⟨t, h⟩ := h
-  have : '_' ∈ (toString y).data := by simp [← h]
-  have := @Nat_toString_not_contain_underscore y
-  contradiction
-  --case 2
-  by_cases Hc: (toString x).length > (toString y).length
-  have Hsuf : (toString x).data <:+ s.data ++ ['_'] ++ (toString y).data := by
-    simp [toString, List.IsSuffix] at *
-    obtain ⟨t, H⟩ := Hsuf
-    exists t ++ ['_']
-    simp [← H]
-  have Hsuf': ['_'] ++ (toString y).data  <:+ s.data ++ ['_'] ++ (toString y).data := by
-    simp only [List.append_assoc]
-    apply List.suffix_append_of_suffix
-    simp
-  have H: ['_'] ++ (toString y).data <:+ (toString x).data := by
-    apply List.suffix_of_suffix_length_le Hsuf' Hsuf
-    simp
-    omega
-  have : ¬ (['_'] ++ (toString y).data) <:+ (toString x).data := by
-    intro h;
-    obtain ⟨t, h⟩ := h
-    have : '_' ∈ (toString x).data := by simp [← h]
+  if x_lt : (toString x).length < (toString y).length then
+    simp only [String.IsSuffix, String.toList_append, under_toList] at Hsuf
+    have Hsuf': (toString y).toList  <:+ s.toList ++ ['_'] ++ (toString y).toList :=
+      List.suffix_append_of_suffix (List.suffix_refl _)
+    have ⟨t, h⟩ : ['_'] ++ (toString x).toList <:+ (toString y).toList :=
+      List.suffix_of_suffix_length_le Hsuf Hsuf' (by simp; exact x_lt)
+    have : '_' ∈ (toString y).toList := by simp [← h]
+    have := @Nat_toString_not_contain_underscore y
+    contradiction
+  else if x_gt : (toString x).length > (toString y).length then
+    have Hsuf : (toString x).toList <:+ s.toList ++ ['_'] ++ (toString y).toList := by
+      obtain ⟨t, H⟩ := Hsuf
+      exists t ++ ['_']
+      simp only [String.toList_append, under_toList, List.append_assoc] at H
+      simp only [List.append_assoc]
+      exact H
+    have Hsuf': ['_'] ++ (toString y).toList  <:+ s.toList ++ ['_'] ++ (toString y).toList := by
+      simp only [List.append_assoc]
+      exact List.suffix_append_of_suffix (List.suffix_refl _)
+    have ⟨t, h⟩ : ['_'] ++ (toString y).toList <:+ (toString x).toList :=
+      List.suffix_of_suffix_length_le Hsuf' Hsuf (by simp; omega)
+    have : '_' ∈ (toString x).toList := by simp [← h]
     have := @Nat_toString_not_contain_underscore x
     contradiction
-  contradiction
-  -- case 3
-  have Hc: (toString x).data.length = (toString y).data.length := by simp; omega
-  have Hsuf : (toString x).data <:+ s.data ++ ['_'] ++ (toString y).data := by
-    obtain ⟨t, H⟩ := Hsuf
-    exists t ++ ['_']
-    simp only [← List.append_assoc] at *
-    exact H
-  have Hsuf': (toString y).data  <:+ s.data ++ ['_'] ++ (toString y).data := by
-    grind
-  simp [List.suffix_iff_eq_drop, Hc] at *
-  rw [← Hsuf] at Hsuf'
-  simp [String.ext_iff, Hsuf']
+  else
+    have eq_len: (toString x).length = (toString y).length := by omega
+    obtain ⟨cs, H⟩ := Hsuf
+    simp only [String.toList_append, ← List.append_assoc] at H
+    have this := List.append_inj_right' H eq_len
+    exact String.toList_inj.mp this
 
 /--
 The uniqueness of the generated string follows from the following: given that the numbers at the end of all strings are unique, then the strings themselves must be unique.
@@ -307,6 +291,6 @@ theorem StringGenState.WFMono :
   intro c s H
   cases H
   · rename_i H
-    simp only [H.right, H.left, String.IsSuffix, String.append_assoc, String.data_append]
+    simp only [H.right, H.left, String.IsSuffix, String.toList_append, List.append_assoc]
     apply List.suffix_append
   · apply Hwf.right.right.right <;> assumption

@@ -42,7 +42,7 @@ partial def mkErrorMessage (c : InputContext) (pos : String.Pos.Raw) (stk : Synt
     data := toString e }
 where
   -- Error recovery might lead to there being some "junk" on the stack
-  lastTrailing (s : SyntaxStack) : Option Substring :=
+  lastTrailing (s : SyntaxStack) : Option Substring.Raw :=
     s.toSubarray.findSomeRevM? (m := Id) fun stx =>
       if let .original (trailing := trailing) .. := stx.getTailInfo then pure (some trailing)
         else none

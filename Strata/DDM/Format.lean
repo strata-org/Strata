@@ -8,11 +8,63 @@ import Strata.DDM.AST
 import Strata.DDM.Util.Fin
 import Strata.DDM.Util.Format
 import Strata.DDM.Util.Nat
+import Strata.DDM.Util.String
 import Std.Data.HashSet
 
 open Std (Format format)
 
 namespace Strata
+
+/--
+Check if a character is valid for starting a regular identifier.
+Regular identifiers must start with a letter or underscore.
+-/
+private def isIdBegin (c : Char) : Bool :=
+  c.isAlpha || c == '_'
+
+/--
+Check if a character is valid for continuing a regular identifier.
+Regular identifiers can contain letters, digits, underscores, and apostrophes.
+-/
+private def isIdContinue (c : Char) : Bool :=
+  c.isAlphanum || c == '_' || c == '\''
+
+/--
+Check if a string needs pipe delimiters when formatted as an identifier.
+Returns true if the string contains special characters, spaces, or starts with a digit.
+-/
+private def needsPipeDelimiters (s : String) : Bool :=
+  if h : s.isEmpty then
+    true
+  else
+    let firstChar := s.startValidPos.get (by simp_all [String.isEmpty])
+    !isIdBegin firstChar || s.any (fun c => !isIdContinue c)
+
+/--
+Escape a string for use in pipe-delimited identifiers (SMT-LIB 2.6).
+Escapes \ as \\ and | as \|
+-/
+private def escapePipeIdent (s : String) : String :=
+  s.foldl (init := "") fun acc c =>
+    if c == '\\' then acc ++ "\\\\"
+    else if c == '|' then acc ++ "\\|"
+    else acc.push c
+
+/--
+Format a string as an identifier, using pipe delimiters if needed.
+Strips Lean's «» notation if present.
+Follows SMT-LIB 2.6 specification for quoted symbols.
+-/
+private def formatIdent (s : String) : Format :=
+  -- Strip Lean's «» notation if present
+  let s := if s.startsWith "«" && s.endsWith "»" then
+             s.drop 1 |>.dropRight 1
+           else
+             s
+  if needsPipeDelimiters s then
+    Format.text ("|" ++ escapePipeIdent s ++ "|")
+  else
+    Format.text s
 
 structure PrecFormat where
   format : Format
@@ -210,9 +262,9 @@ macro_rules
 instance : ToStrataFormat QualifiedIdent where
   mformat (ident : QualifiedIdent) _ s :=
     if ident.dialect ∈ s.openDialects then
-      .ofFormat ident.name
+      .atom (formatIdent ident.name)
     else
-      .atom f!"{ident.dialect}.{ident.name}"
+      .atom f!"{ident.dialect}.{formatIdent ident.name}"
 
 namespace TypeExprF
 
@@ -314,7 +366,7 @@ private partial def ArgF.mformatM {α} : ArgF α → FormatM PrecFormat
 | .expr e => e.mformatM
 | .type e => pformat e
 | .cat e => pformat e
-| .ident _ x => pformat x
+| .ident _ x => return .atom (formatIdent x)
 | .num _ x => pformat x
 | .decimal _ v => pformat v
 | .strlit _ s => return .atom (.text <| escapeStringLit s)

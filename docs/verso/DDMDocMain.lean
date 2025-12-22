@@ -6,7 +6,7 @@
 
 
 
-import StrataDoc
+import DDMDoc
 open Verso.Genre.Manual (Config manualMain)
 
 def config : Config where
@@ -15,4 +15,4 @@ def config : Config where
   emitHtmlMulti := false
   htmlDepth := 2
 
-def main := manualMain (%doc StrataDoc) (config := config)
+def main := manualMain (%doc DDMDoc) (config := config)

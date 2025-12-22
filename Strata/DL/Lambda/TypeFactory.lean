@@ -237,17 +237,17 @@ Examples:
 
 -/
 def elimConcreteEval {T: LExprParams} [BEq T.Identifier] (d: LDatatype T.IDMeta) (m: T.Metadata) (elimName : Identifier T.IDMeta) :
-  (LExpr T.mono) → List (LExpr T.mono) → (LExpr T.mono) :=
-  fun e args =>
+  T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono) :=
+  fun _ args =>
     match args with
     | x :: xs =>
       match datatypeGetConstr d x with
       | .some (_, i, a, recs) =>
         match xs[i]? with
         | .some f => f.mkApp m (a ++ recs.map (fun (r, rty) => elimRecCall d r rty xs m elimName))
-        | .none => e
-      | .none => e
-    | _ => e
+        | .none => .none
+      | .none => .none
+    | _ => .none
 
 /--
 The `LFunc` corresponding to the eliminator for datatype `d`, called e.g. `List$Elim` for type `List`.
@@ -255,7 +255,12 @@ The `LFunc` corresponding to the eliminator for datatype `d`, called e.g. `List$
 def elimFunc [Inhabited T.IDMeta] [BEq T.Identifier] (d: LDatatype T.IDMeta) (m: T.Metadata) : LFunc T :=
   let outTyId := freshTypeArg d.typeArgs
   let elimName := d.name ++ "$Elim";
-  { name := elimName, typeArgs := outTyId :: d.typeArgs, inputs := List.zip (genArgNames (d.constrs.length + 1)) (dataDefault d :: d.constrs.map (elimTy (.ftvar outTyId) d)), output := .ftvar outTyId, concreteEval := elimConcreteEval d m elimName}
+  { name := elimName, typeArgs := outTyId :: d.typeArgs,
+    inputs := List.zip
+        (genArgNames (d.constrs.length + 1))
+        (dataDefault d :: d.constrs.map (elimTy (.ftvar outTyId) d)),
+    output := .ftvar outTyId,
+    concreteEval := elimConcreteEval d m elimName}
 
 ---------------------------------------------------------------------
 

@@ -58,31 +58,51 @@ def LTy.openFull (ty: LTy) (tys: List LMonoTy) : LMonoTy :=
   LMonoTy.subst [(List.zip (LTy.boundVars ty) tys)] (LTy.toMonoTypeUnsafe ty)
 
 /--
-Typing relation for `LExpr`s.
+Typing relation for `LExpr`s with respect to `LTy`.
+
+The typing relation is parameterized by two contexts. An `LContext` contains
+known types and functions while a `TContext` associates free variables with
+their types.
 -/
 inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T):
   (TContext T.IDMeta) → LExpr T.mono → LTy → Prop where
+
+  /-- A boolean constant has type `.bool` if `bool` is a known type in this
+  context. -/
   | tbool_const : ∀ Γ m b,
             C.knownTypes.containsName "bool" →
             HasType C Γ (.boolConst m b) (.forAll [] .bool)
+
+  /-- An integer constant has type `.int` if `int` is a known type in this
+  context. -/
   | tint_const : ∀ Γ m n,
             C.knownTypes.containsName "int" →
             HasType C Γ (.intConst m n) (.forAll [] .int)
+
+  /-- A real constant has type `.real` if `real` is a known type in this
+  context. -/
   | treal_const : ∀ Γ m r,
             C.knownTypes.containsName "real" →
             HasType C Γ (.realConst m r) (.forAll [] .real)
+
+  /-- A string constant has type `.string` if `string` is a known type in this
+  context. -/
   | tstr_const : ∀ Γ m s,
             C.knownTypes.containsName "string" →
             HasType C Γ (.strConst m s) (.forAll [] .string)
+
+  /-- A bit vector constant of size `n` has type `.bitvec n` if `bitvec` is a
+  known type in this context. -/
   | tbitvec_const : ∀ Γ m n b,
             C.knownTypes.containsName "bitvec" →
             HasType C Γ (.bitvecConst m n b) (.forAll [] (.bitvec n))
+
+  /-- An un-annotated variable has the type recorded for it in `Γ`, if any. -/
   | tvar : ∀ Γ m x ty, Γ.types.find? x = some ty → HasType C Γ (.fvar m x none) ty
-  /-
-  For an annotated free variable (or operator, see `top_annotated`), it must be
-  the case that the claimed type `ty_s` is an instantiation of the general type
-  `ty_o`. It suffices to show the existence of a list `tys` that, when
-  substituted for the bound variables in `ty_o`, results in `ty_s`.
+
+  /--
+  An annotated free variable has its claimed type `ty_s` if `ty_s` is an
+  instantiation of the type `ty_o` recorded for it in `Γ`.
   -/
   | tvar_annotated : ∀ Γ m x ty_o ty_s tys,
             Γ.types.find? x = some ty_o →
@@ -90,6 +110,11 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T):
             LTy.openFull ty_o tys = ty_s →
             HasType C Γ (.fvar m x (some ty_s)) (.forAll [] ty_s)
 
+  /--
+  An abstraction `λ x.e` has type `x_ty → e_ty` if the claimed type of `x` is
+  `x_ty` or None and if `e` has type `e_ty` when `Γ` is extended with the
+  binding `(x → x_ty)`.
+  -/
   | tabs : ∀ Γ m x x_ty e e_ty o,
             LExpr.fresh x e →
             (hx : LTy.isMonoType x_ty) →
@@ -99,6 +124,11 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T):
             HasType C Γ (.abs m o e)
                       (.forAll [] (.tcons "arrow" [(LTy.toMonoType x_ty hx),
                                                    (LTy.toMonoType e_ty he)]))
+
+  /--
+  An application `e₁e₂` has type `t1` if `e₁` has type `t2 → t1` and `e₂` has
+  type `t2`.
+  -/
   | tapp : ∀ Γ m e1 e2 t1 t2,
             (h1 : LTy.isMonoType t1) →
             (h2 : LTy.isMonoType t2) →
@@ -107,32 +137,46 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T):
             HasType C Γ e2 t2 →
             HasType C Γ (.app m e1 e2) t1
 
-  -- `ty` is more general than `e_ty`, so we can instantiate `ty` with `e_ty`.
+  /--
+  If expression `e` has type `ty` and `ty` is more general than `e_ty`,
+  then `e` has type `e_ty` (i.e. we can instantiate `ty` with `e_ty`).
+  -/
   | tinst : ∀ Γ e ty e_ty x x_ty,
             HasType C Γ e ty →
             e_ty = LTy.open x x_ty ty →
             HasType C Γ e e_ty
 
-  -- The generalization rule will let us do things like the following:
-  -- `(·ftvar "a") → (.ftvar "a")` (or `a → a`) will be generalized to
-  -- `(.btvar 0) → (.btvar 0)` (or `∀a. a → a`), assuming `a` is not in the
-  -- context.
+  /--
+  If `e` has type `ty`, it also has type `∀ a. ty` as long as `a` is fresh.
+  For instance, `(·ftvar "a") → (.ftvar "a")` (or `a → a`)
+  can be generalized to `(.btvar 0) → (.btvar 0)` (or `∀a. a → a`), assuming
+ `a` is not in the context.
+  -/
   | tgen : ∀ Γ e a ty,
             HasType C Γ e ty →
             TContext.isFresh a Γ →
             HasType C Γ e (LTy.close a ty)
 
+  /-- If `e1` and `e2` have the same type `ty`, and `c` has type `.bool`, then
+  `.ite c e1 e2` has type `ty`. -/
   | tif : ∀ Γ m c e1 e2 ty,
           HasType C Γ c (.forAll [] .bool) →
           HasType C Γ e1 ty →
           HasType C Γ e2 ty →
           HasType C Γ (.ite m c e1 e2) ty
 
+  /-- If `e1` and `e2` have the same type `ty`, then `.eq e1 e2` has type
+  `.bool`. -/
   | teq : ∀ Γ m e1 e2 ty,
           HasType C Γ e1 ty →
           HasType C Γ e2 ty →
           HasType C Γ (.eq m e1 e2) (.forAll [] .bool)
 
+  /--
+  A quantifier `∀/∃ {x: tr}.e` has type `bool` if the claimed type of `x` is
+  `x_ty` or None, and if, when `Γ` is extended with the binding `(x → x_ty)`,
+  `e` has type `bool` and `tr` is well-typed.
+  -/
   | tquant: ∀ Γ m k tr tr_ty x x_ty e o,
             LExpr.fresh x e →
             (hx : LTy.isMonoType x_ty) →
@@ -140,12 +184,17 @@ inductive HasType {T: LExprParams} [DecidableEq T.IDMeta] (C: LContext T):
             HasType C {Γ with types := Γ.types.insert x.fst x_ty} (LExpr.varOpen 0 x tr) tr_ty →
             o = none ∨ o = some (x_ty.toMonoType hx) →
             HasType C Γ (.quant m k o tr e) (.forAll [] .bool)
+
+  /--
+  An un-annotated operator has the type recorded for it in `C.functions`, if any.
+  -/
   | top: ∀ Γ m f op ty,
             C.functions.find? (fun fn => fn.name == op) = some f →
             f.type = .ok ty →
             HasType C Γ (.op m op none) ty
-  /-
-  See comments in `tvar_annotated`.
+  /--
+  Similarly to free variables, an annotated operator has its claimed type `ty_s` if `ty_s` is an
+  instantiation of the type `ty_o` recorded for it in `C.functions`.
   -/
   | top_annotated: ∀ Γ m f op ty_o ty_s tys,
             C.functions.find? (fun fn => fn.name == op) = some f →

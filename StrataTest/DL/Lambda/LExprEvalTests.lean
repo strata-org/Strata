@@ -216,9 +216,9 @@ private def testBuiltIn : @Factory TestParams :=
                           let e1i := LExpr.denoteInt e1
                           let e2i := LExpr.denoteInt e2
                           match e1i, e2i with
-                          | some x, some y => .intConst e1.metadata (x + y)
-                          | _, _ => e
-                        | _ => e) },
+                          | some x, some y => .some (.intConst e1.metadata (x + y))
+                          | _, _ => .none
+                        | _ => .none) },
     { name := "Int.Div",
       inputs := [("x", mty[int]), ("y", mty[int])],
       output := mty[int],
@@ -228,9 +228,10 @@ private def testBuiltIn : @Factory TestParams :=
                             let e2i := LExpr.denoteInt e2
                             match e1i, e2i with
                             | some x, some y =>
-                              if y == 0 then e else .intConst e1.metadata (x / y)
-                            | _, _ => e
-                          | _ => e) },
+                              if y == 0 then .none
+                              else .some (.intConst e1.metadata (x / y))
+                            | _, _ => .none
+                          | _ => .none) },
     { name := "Int.Neg",
       inputs := [("x", mty[int])],
       output := mty[int],
@@ -238,9 +239,9 @@ private def testBuiltIn : @Factory TestParams :=
                               | [e1] =>
                                 let e1i := LExpr.denoteInt e1
                                 match e1i with
-                                | some x => .intConst e1.metadata (- x)
-                                | _ => e
-                              | _ => e) },
+                                | some x => .some (.intConst e1.metadata (- x))
+                                | _ => .none
+                              | _ => .none) },
 
     { name := "IntAddAlias",
       attr := #["inline"],
@@ -298,7 +299,7 @@ example: stuck test9 := by
     conv at Hconst => lhs; reduce; unfold isCanonicalValue; reduce
     contradiction
   case eval_fn =>
-    rename_i Hlfunc
+    rename_i Hlfunc _
     conv at Hlfunc => lhs; reduce
     cases Hlfunc
     rename_i Hconst Htmp
@@ -425,7 +426,7 @@ example: stuck test15 := by
     cases a <;> try contradiction
     · rename_i a a2 _
       cases a2; cases a
-    · rename_i a a2 a3
+    · rename_i a a2 a3 _
       cases a3
       conv at a => lhs ; reduce; unfold isCanonicalValue; reduce
       contradiction
@@ -434,7 +435,7 @@ example: stuck test15 := by
     cases a2
     contradiction
   case eval_fn =>
-    rename_i a a2 a3
+    rename_i a a2 a3 _
     cases a3
     conv at a => lhs ; reduce; unfold isCanonicalValue; reduce
     contradiction
@@ -462,7 +463,7 @@ example: stuck test16 := by
     cases a2
     contradiction
   case eval_fn =>
-    rename_i a a2 a3
+    rename_i a a2 a3 _
     cases a3
     conv at a => lhs ; reduce; unfold isCanonicalValue; reduce
     contradiction
@@ -505,6 +506,7 @@ example: steps_well test18 := by
   · apply Step.eval_fn <;> try discharge_isCanonicalValue
     · inhabited_metadata
   take_step; apply Step.eval_fn <;> try discharge_isCanonicalValue
+  · simp; rfl
   · inhabited_metadata
   take_refl
 
@@ -528,8 +530,8 @@ example: steps_well test19 := by
       · inhabited_metadata
   take_step
   · apply Step.eval_fn <;> try rfl
-    · inhabited_metadata
     · conv => lhs; reduce; unfold isCanonicalValue; reduce
+    · inhabited_metadata
   take_refl
 
 
