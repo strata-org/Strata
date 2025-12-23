@@ -166,7 +166,7 @@ partial def cleanupUnitRepr (s : String) : String :=
                   else findClose (d :: rest) (depth - 1) (c :: acc)
                 else findClose (d :: rest) depth (c :: acc)
           match findClose (chars.drop 1) 0 [] with
-          | none => removeAnnStructs (chars.drop 1) (acc ++ String.mk [chars.head!])
+          | none => removeAnnStructs (chars.drop 1) (acc ++ String.ofList [chars.head!])
           | some (innerChars, afterClose) =>
               -- innerChars contains everything between { and }, like "ann := (),\n  val := X" or "ann := (), val := X"
               -- Find "val := " and extract everything after it
@@ -182,10 +182,10 @@ partial def cleanupUnitRepr (s : String) : String :=
                       | [] => none
                       | _ :: rest => findValStart rest
               match findValStart innerChars with
-              | none => removeAnnStructs (chars.drop 1) (acc ++ String.mk [chars.head!])
-              | some valueOnly => removeAnnStructs afterClose (acc ++ "u " ++ String.mk valueOnly)
+              | none => removeAnnStructs (chars.drop 1) (acc ++ String.ofList [chars.head!])
+              | some valueOnly => removeAnnStructs afterClose (acc ++ "u " ++ String.ofList valueOnly)
         else
-          removeAnnStructs (chars.drop 1) (acc ++ String.mk [chars.head!])
+          removeAnnStructs (chars.drop 1) (acc ++ String.ofList [chars.head!])
 
   -- Apply removal 10 times to handle nested structures up to depth 10
   let rec applyNTimes (n : Nat) (str : String) : String :=
@@ -229,7 +229,7 @@ partial def cleanupUnitRepr (s : String) : String :=
                   popUntil indentStack
           -- New indent is (stack depth - 1) * 2
           let newIndent := (newStack.length - 1) * 2
-          let newLine := String.mk (List.replicate newIndent ' ') ++ content
+          let newLine := String.ofList (List.replicate newIndent ' ') ++ content
           processLines rest newStack (newLine :: acc)
 
   String.intercalate "\n" (processLines lines [] [])

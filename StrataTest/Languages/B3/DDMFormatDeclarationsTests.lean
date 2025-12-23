@@ -16,13 +16,23 @@ open Strata.B3CST
 partial def doRoundtripDecl (decl : OperationF SourceRange) (ctx : FormatContext) (state : FormatState) : Format :=
   match B3CST.Decl.ofAst decl with
   | .ok cstDecl =>
-      let b3Decl := B3.declFromCST B3.FromCSTContext.empty cstDecl
-      let b3DeclUnit := b3Decl.toUnit
+      let (b3Decl, cstToAstErrors) := B3.declFromCST B3.FromCSTContext.empty cstDecl
+      let (cstDecl', astToCstErrors) := B3.declToCST B3.ToCSTContext.empty b3Decl
+      -- Convert to Unit metadata for repr
+      let b3DeclUnit := B3AST.Decl.mapMetadata (fun _ => ()) b3Decl
       let reprStr := (repr b3DeclUnit).pretty
       let reprStr := cleanupDeclRepr reprStr
       let reprStr := cleanupUnitRepr reprStr
-      dbg_trace f!"B3: {reprStr}"
-      let cstDecl' := B3.declToCST B3.ToCSTContext.empty b3Decl
+      let errorStr := if cstToAstErrors.isEmpty && astToCstErrors.isEmpty then ""
+        else
+          let cstErrs := cstToAstErrors.map Std.format |> List.map (·.pretty) |> String.intercalate "\n  "
+          let astErrs := astToCstErrors.map Std.format |> List.map (·.pretty) |> String.intercalate "\n  "
+          let parts := [
+            if cstToAstErrors.isEmpty then "" else s!"\nCST→AST Errors:\n  {cstErrs}",
+            if astToCstErrors.isEmpty then "" else s!"\nAST→CST Errors:\n  {astErrs}"
+          ]
+          String.join parts
+      dbg_trace f!"B3: {reprStr}{errorStr}"
       let cstAst := cstDecl'.toAst
       cformat (ArgF.op cstAst) ctx state
   | .error msg => s!"Parse error: {msg}"
@@ -30,17 +40,26 @@ partial def doRoundtripDecl (decl : OperationF SourceRange) (ctx : FormatContext
 partial def doRoundtripProgram (prog : OperationF SourceRange) (ctx : FormatContext) (state : FormatState) (printIntermediate: Bool := true) : Format :=
   match B3CST.Program.ofAst prog with
   | .ok cstProg =>
-      let b3Prog := B3.programFromCST B3.FromCSTContext.empty cstProg
+      let (b3Prog, cstToAstErrors) := B3.programFromCST B3.FromCSTContext.empty cstProg
+      let (cstProg', astToCstErrors) := B3.programToCST B3.ToCSTContext.empty b3Prog
+      let errorStr := if cstToAstErrors.isEmpty && astToCstErrors.isEmpty then ""
+        else
+          let cstErrs := cstToAstErrors.map Std.format |> List.map (·.pretty) |> String.intercalate "\n  "
+          let astErrs := astToCstErrors.map Std.format |> List.map (·.pretty) |> String.intercalate "\n  "
+          let parts := [
+            if cstToAstErrors.isEmpty then "" else s!"\nCST→AST Errors:\n  {cstErrs}",
+            if astToCstErrors.isEmpty then "" else s!"\nAST→CST Errors:\n  {astErrs}"
+          ]
+          String.join parts
       dbg_trace (if printIntermediate then
-          let b3ProgUnit := b3Prog.toUnit
+          -- Convert to Unit metadata for repr
+          let b3ProgUnit := B3AST.Program.mapMetadata (fun _ => ()) b3Prog
           let reprStr := (repr b3ProgUnit).pretty
           let reprStr := cleanupDeclRepr reprStr
           let reprStr := cleanupUnitRepr reprStr
-          f!"B3: {reprStr}"
+          f!"B3: {reprStr}{errorStr}"
         else
-          f!"<B3 omitted>")
-
-      let cstProg' := B3.programToCST B3.ToCSTContext.empty b3Prog
+          f!"<B3 omitted>{errorStr}")
       let cstAst := cstProg'.toAst
       cformat (ArgF.op cstAst) ctx state
   | .error msg => s!"Parse error: {msg}"

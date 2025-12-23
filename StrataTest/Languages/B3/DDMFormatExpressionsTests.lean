@@ -18,13 +18,23 @@ open Strata.B3CST
 partial def doRoundtrip (e : OperationF SourceRange) (ctx : FormatContext) (state : FormatState) : Format :=
   match B3CST.Expression.ofAst e with
   | .ok cstExpr =>
-      let b3Expr := B3.expressionFromCST B3.FromCSTContext.empty cstExpr
-      let b3ExprUnit := b3Expr.toUnit
+      let (b3Expr, cstToAstErrors) := B3.expressionFromCST B3.FromCSTContext.empty cstExpr
+      let (cstExpr', astToCstErrors) := B3.expressionToCST B3.ToCSTContext.empty b3Expr
+      -- Convert to Unit metadata for repr
+      let b3ExprUnit := B3AST.Expression.mapMetadata (fun _ => ()) b3Expr
       let reprStr := (repr b3ExprUnit).pretty
       let reprStr := cleanupExprRepr reprStr
       let reprStr := cleanupUnitRepr reprStr
-      dbg_trace f!"B3: {reprStr}"
-      let cstExpr' := B3.expressionToCST B3.ToCSTContext.empty b3Expr
+      let errorStr := if cstToAstErrors.isEmpty && astToCstErrors.isEmpty then ""
+        else
+          let cstErrs := cstToAstErrors.map Std.format |> List.map (·.pretty) |> String.intercalate "\n  "
+          let astErrs := astToCstErrors.map Std.format |> List.map (·.pretty) |> String.intercalate "\n  "
+          let parts := [
+            if cstToAstErrors.isEmpty then "" else s!"\nCST→AST Errors:\n  {cstErrs}",
+            if astToCstErrors.isEmpty then "" else s!"\nAST→CST Errors:\n  {astErrs}"
+          ]
+          String.join parts
+      dbg_trace f!"B3: {reprStr}{errorStr}"
       let cstAst := cstExpr'.toAst
       cformat (ArgF.op cstAst) ctx state
   | .error msg => s!"Parse error: {msg}"
@@ -71,8 +81,12 @@ section ExpressionRoundtripTests
 -- We are loosing the context so this is why it's printing that way.
 /--
 info: B3: .id () 0
+CST→AST Errors:
+  Unresolved identifier 'x'
+AST→CST Errors:
+  Variable index @0 is out of bounds (context has 0 variables)
 ---
-info: @0
+info: |@0|
 -/
 #guard_msgs in
 #eval roundtripExpr $ #strata program B3CST; check x #end

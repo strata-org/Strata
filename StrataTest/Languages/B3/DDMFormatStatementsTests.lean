@@ -18,13 +18,23 @@ open Strata.B3CST
 partial def doRoundtripStmt (stmt : OperationF SourceRange) (ctx : FormatContext) (state : FormatState) : Format :=
   match B3CST.Statement.ofAst stmt with
   | .ok cstStmt =>
-      let b3Stmt := B3.stmtFromCST B3.FromCSTContext.empty cstStmt
-      let b3StmtUnit := b3Stmt.toUnit
+      let (b3Stmt, cstToAstErrors) := B3.stmtFromCST B3.FromCSTContext.empty cstStmt
+      let (cstStmt', astToCstErrors) := B3.stmtToCST B3.ToCSTContext.empty b3Stmt
+      -- Convert to Unit metadata for repr
+      let b3StmtUnit := B3AST.Statement.mapMetadata (fun _ => ()) b3Stmt
       let reprStr := (repr b3StmtUnit).pretty
       let reprStr := cleanupStmtRepr reprStr
       let reprStr := cleanupUnitRepr reprStr
-      dbg_trace f!"B3: {reprStr}"
-      let cstStmt' := B3.stmtToCST B3.ToCSTContext.empty b3Stmt
+      let errorStr := if cstToAstErrors.isEmpty && astToCstErrors.isEmpty then ""
+        else
+          let cstErrs := cstToAstErrors.map Std.format |> List.map (·.pretty) |> String.intercalate "\n  "
+          let astErrs := astToCstErrors.map Std.format |> List.map (·.pretty) |> String.intercalate "\n  "
+          let parts := [
+            if cstToAstErrors.isEmpty then "" else s!"\nCST→AST Errors:\n  {cstErrs}",
+            if astToCstErrors.isEmpty then "" else s!"\nAST→CST Errors:\n  {astErrs}"
+          ]
+          String.join parts
+      dbg_trace f!"B3: {reprStr}{errorStr}"
       let cstAst := cstStmt'.toAst
       cformat (ArgF.op cstAst) ctx state
   | .error msg => s!"Parse error: {msg}"
