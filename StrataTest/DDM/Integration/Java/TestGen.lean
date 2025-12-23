@@ -298,41 +298,25 @@ elab "#testBoogie" : command => do
   pure ()
 
 -- Test 12: Roundtrip - verify Lean can read Java-generated Ion
-def simpleDialect : Strata.Dialect := 
-  let cat (d n : String) : Strata.SyntaxCat := ⟨.none, ⟨d, n⟩, #[]⟩
-  let seq c : Strata.SyntaxCat := ⟨.none, ⟨"Init", "Seq"⟩, #[c]⟩
-  let opt c : Strata.SyntaxCat := ⟨.none, ⟨"Init", "Option"⟩, #[c]⟩
-  let arg n c : Strata.ArgDecl := { ident := n, kind := .cat c }
-  let op n args (c : Strata.QualifiedIdent) : Strata.Decl := 
-    .op { name := n, argDecls := .ofArray args, category := c, syntaxDef := { atoms := #[], prec := 0 } }
-  { name := "Simple", imports := #[], declarations := #[
-    .syncat { name := "Expr", argNames := #[] },
-    op "num" #[arg "value" (cat "Init" "Num")] ⟨"Simple", "Expr"⟩,
-    op "add" #[arg "left" (cat "Simple" "Expr"), arg "right" (cat "Simple" "Expr")] ⟨"Simple", "Expr"⟩,
-    op "neg" #[arg "inner" (cat "Simple" "Expr")] ⟨"Simple", "Expr"⟩,
-    .syncat { name := "Stmt", argNames := #[] },
-    op "print" #[arg "msg" (cat "Init" "Str")] ⟨"Simple", "Stmt"⟩,
-    op "assign" #[arg "name" (cat "Init" "Ident"), arg "value" (cat "Simple" "Expr")] ⟨"Simple", "Stmt"⟩,
-    op "block" #[arg "stmts" (seq (cat "Simple" "Stmt"))] ⟨"Simple", "Stmt"⟩,
-    op "ifStmt" #[arg "cond" (cat "Init" "Bool"), arg "then" (cat "Simple" "Stmt"), arg "else" (opt (cat "Simple" "Stmt"))] ⟨"Simple", "Stmt"⟩,
-    op "data" #[arg "bytes" (cat "Init" "ByteArray")] ⟨"Simple", "Stmt"⟩,
-    op "decimal" #[arg "value" (cat "Init" "Decimal")] ⟨"Simple", "Stmt"⟩
-  ]}
+#load_dialect "testdata/Simple.dialect.st"
 
-#eval do
-  let dm := Strata.DialectMap.ofList! [Strata.initDialect, simpleDialect]
+elab "#testRoundtrip" : command => do
+  let env ← Lean.getEnv
+  let state := Strata.dialectExt.getState env
+  let some simple := state.loaded.dialects["Simple"]?
+    | Lean.logError "Simple dialect not found"; return
+  let dm := Strata.DialectMap.ofList! [Strata.initDialect, simple]
   let ionBytes ← IO.FS.readBinFile "StrataTest/DDM/Integration/Java/testdata/comprehensive.ion"
   match Strata.Program.fromIon dm "Simple" ionBytes with
-  | .error e => IO.eprintln s!"Roundtrip test failed: {e}"; assert! false
+  | .error e => Lean.logError s!"Roundtrip test failed: {e}"
   | .ok prog =>
-    -- Verify structure: 1 block command with 4 statements
-    assert! prog.commands.size == 1
+    if prog.commands.size != 1 then Lean.logError "Expected 1 command"; return
     let cmd := prog.commands[0]!
-    assert! cmd.name == (⟨"Simple", "block"⟩ : Strata.QualifiedIdent)
-    let arg := cmd.args[0]!
-    if let .seq _ stmts := arg then
-      assert! stmts.size == 4
-    else
-      assert! false
+    if cmd.name != (⟨"Simple", "block"⟩ : Strata.QualifiedIdent) then Lean.logError "Expected block command"; return
+    if let .seq _ stmts := cmd.args[0]! then
+      if stmts.size != 4 then Lean.logError s!"Expected 4 statements, got {stmts.size}"
+    else Lean.logError "Expected seq argument"
+
+#testRoundtrip
 
 end Strata.Java.Test
