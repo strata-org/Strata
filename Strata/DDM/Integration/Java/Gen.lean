@@ -420,17 +420,15 @@ def groupOpsByCategory (d : Dialect) (names : NameAssignments)
   d.declarations.foldl (init := {}) fun acc decl =>
     match decl with
     | .op op =>
-      let javaName := names.operators.getD (op.category, op.name) ""
-      match acc[op.category]? with
-      | some ops => acc.insert op.category (ops.push javaName)
-      | none => acc.insert op.category #[javaName]
+      let javaName := names.operators[(op.category, op.name)]!
+      acc.alter op.category (fun ops? => some ((ops?.getD #[]).push javaName))
     | _ => acc
 
 def opDeclToJavaRecord (dialectName : String) (names : NameAssignments) (op : OpDecl)
     : JavaRecord :=
-  { name := names.operators.getD (op.category, op.name) ""
+  { name := names.operators[(op.category, op.name)]!
     operationName := ⟨dialectName, op.name⟩
-    implements := names.categories.getD op.category ""
+    implements := names.categories[op.category]!
     fields := op.argDecls.toArray.map argDeclToJavaField }
 
 def generateBuilders (package : String) (dialectName : String) (d : Dialect) (names : NameAssignments) : String :=
@@ -441,7 +439,7 @@ def generateBuilders (package : String) (dialectName : String) (d : Dialect) (na
       | .simple "java.math.BigInteger" _ => (ps.push s!"long {f.name}", as.push s!"java.math.BigInteger.valueOf({f.name})")
       | .simple "java.math.BigDecimal" _ => (ps.push s!"double {f.name}", as.push s!"java.math.BigDecimal.valueOf({f.name})")
       | t => (ps.push s!"{t.toJava} {f.name}", as.push f.name)
-    s!"    public static {names.categories.getD op.category ""} {op.name}({", ".intercalate ps.toList}) \{ return new {names.operators.getD (op.category, op.name) ""}(SourceRange.NONE{if as.isEmpty then "" else ", " ++ ", ".intercalate as.toList}); }"
+    s!"    public static {names.categories[op.category]!} {op.name}({", ".intercalate ps.toList}) \{ return new {names.operators[(op.category, op.name)]!}(SourceRange.NONE{if as.isEmpty then "" else ", " ++ ", ".intercalate as.toList}); }"
   let methods := d.declarations.filterMap fun | .op op => some (method op) | _ => none
   s!"package {package};\n\npublic class {dialectName} \{\n{"\n".intercalate methods.toList}\n}\n"
 
@@ -451,7 +449,7 @@ def generateDialect (d : Dialect) (package : String) : GeneratedFiles :=
 
   -- Categories with operators get sealed interfaces with permits clauses
   let sealedInterfaces := opsByCategory.toList.map fun (cat, ops) =>
-    let name := names.categories.getD cat ""
+    let name := names.categories[cat]!
     let iface : JavaInterface := { name, permits := ops }
     (s!"{name}.java", iface.toJava package)
 
@@ -463,7 +461,7 @@ def generateDialect (d : Dialect) (package : String) : GeneratedFiles :=
   let records := d.declarations.toList.filterMap fun decl =>
     match decl with
     | .op op =>
-      let name := names.operators.getD (op.category, op.name) ""
+      let name := names.operators[(op.category, op.name)]!
       some (s!"{name}.java", (opDeclToJavaRecord d.name names op).toJava package)
     | _ => none
 
