@@ -10,6 +10,7 @@ import Strata.DDM.Ion
 import Strata.Util.IO
 
 import Strata.Languages.Python.Python
+import Strata.DDM.Integration.Java.Gen
 import StrataTest.Transform.ProcedureInlining
 
 def exitFailure {α} (message : String) : IO α := do
@@ -215,7 +216,22 @@ def pyAnalyzeCommand : Command where
       s := s ++ s!"\n{vcResult.obligation.label}: {Std.format vcResult.result}\n"
     IO.println s
 
+def javaGenCommand : Command where
+  name := "javaGen"
+  args := [ "dialect-file", "package", "output-dir" ]
+  help := "Generate Java classes from a DDM dialect file."
+  callback := fun fm v => do
+    let (ld, pd) ← readFile fm v[0]
+    match pd with
+    | .dialect d =>
+      let files := Strata.Java.generateDialect d v[1]
+      Strata.Java.writeJavaFiles v[2] v[1] files
+      IO.println s!"Generated Java files for {d.name} in {v[2]}/{Strata.Java.packageToPath v[1]}"
+    | .program _ =>
+      exitFailure "Expected a dialect file, not a program file."
+
 def commandList : List Command := [
+      javaGenCommand,
       checkCommand,
       toIonCommand,
       printCommand,
