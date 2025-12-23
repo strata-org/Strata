@@ -335,6 +335,15 @@ def simpleDialect : Strata.Dialect :=
   let ionBytes ← IO.FS.readBinFile "StrataTest/DDM/Integration/Java/testdata/comprehensive.ion"
   match Strata.Program.fromIon dm "Simple" ionBytes with
   | .error e => IO.eprintln s!"Roundtrip test failed: {e}"; assert! false
-  | .ok prog => assert! prog.commands.size == 1
+  | .ok prog =>
+    -- Verify structure: 1 block command with 4 statements
+    assert! prog.commands.size == 1
+    let cmd := prog.commands[0]!
+    assert! cmd.name == (⟨"Simple", "block"⟩ : Strata.QualifiedIdent)
+    let arg := cmd.args[0]!
+    if let .seq _ stmts := arg then
+      assert! stmts.size == 4
+    else
+      assert! false
 
 end Strata.Java.Test
