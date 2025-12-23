@@ -30,27 +30,41 @@ section ProgramRoundtripTests
 -- Type declaration
 /--
 info: <B3 omitted>
+CST→AST Errors:
+  Unresolved identifier '«myFileSystemName: string»'
+  Unresolved identifier '«BlockPublicAcls: string»'
+  Unresolved identifier '«bucket: string»'
+  Unresolved identifier '«is-blocked: string»'
+  Unresolved identifier '«bucket: string»'
+  Unresolved identifier '«is-not-blocked: string»'
+AST→CST Errors:
+  Variable index @2 is out of bounds (context has 2 variables)
+  Variable index @12 is out of bounds (context has 12 variables)
+  Variable index @12 is out of bounds (context has 12 variables)
+  Variable index @12 is out of bounds (context has 12 variables)
+  Variable index @12 is out of bounds (context has 12 variables)
+  Variable index @12 is out of bounds (context has 12 variables)
 ---
 info:
 procedure Good(out result : XResult)
 {
   var cresult : CResult
-  CreateClient(@2, out cresult)
+  CreateClient(|@2|, out cresult)
   if !CIsSuccess(cresult) ⏎
     {
-      result := XFailure(CFailureTODODotDotmsg(cresult))
+      result := XFailure(CFailure..msg(cresult))
       return
     }
-  var fileSystem := CSuccessTODODotDotvalue(cresult)
+  var fileSystem := CSuccess..value(cresult)
   var aresult : AResult
   ListBuckets(fileSystem, out aresult)
   if !AIsSuccess(aresult) ⏎
     {
-      result := XFailure(AFailureTODODotDotmsg(aresult))
+      result := XFailure(AFailure..msg(aresult))
       return
     }
-  var aresponse := ASuccessTODODotDotvalue(aresult)
-  var buckets := AResponseTODODotDotbuckets(aresponse)
+  var aresponse := ASuccess..value(aresult)
+  var buckets := AResponse..buckets(aresponse)
   var i := 0
   loop
     invariant 0 <= i && i <= length(buckets) ⏎
@@ -61,23 +75,23 @@ procedure Good(out result : XResult)
       }
     check 0 <= i && i < length(buckets)
     var bucket := select(buckets, i)
-    var bucketName := BucketTODODotDotname(bucket)
+    var bucketName := Bucket..name(bucket)
     var bresult : BResult
     GetPublicAccessBlock(fileSystem, bucketName, out bresult)
     if !BIsSuccess(bresult) ⏎
       {
-        result := XFailure(BFailureTODODotDotmsg(bresult))
+        result := XFailure(BFailure..msg(bresult))
         return
       }
-    var bresponse := BSuccessTODODotDotvalue(bresult)
-    var isBlocked := GetAttributeValue(BResponseTODODotDotgetConfig(bresponse), @12)
+    var bresponse := BSuccess..value(bresult)
+    var isBlocked := GetAttributeValue(BResponse..getConfig(bresponse), |@12|)
     if isBlocked ⏎
       {
-        Print(@12, bucketName, @12)
+        Print(|@12|, bucketName, |@12|)
       }
     else ⏎
       {
-        Print(@12, bucketName, @12)
+        Print(|@12|, bucketName, |@12|)
       }
     i := i + 1
   }
@@ -88,7 +102,7 @@ procedure CreateClient(name : string, out result : CResult)
 function UserOwnsBucket(name : string) : bool
 type Client
 procedure ListBuckets(c : Client, out aresult : AResult)
-  ensures AIsSuccess(aresult) ==> (forall bucket : Bucket pattern BucketTODODotDotname(bucket) pattern in(bucket, AResponseTODODotDotbuckets(ASuccessTODODotDotvalue(aresult))) in(bucket, AResponseTODODotDotbuckets(ASuccessTODODotDotvalue(aresult))) ==> UserOwnsBucket(BucketTODODotDotname(bucket)))
+  ensures AIsSuccess(aresult) ==> (forall bucket : Bucket pattern Bucket..name(bucket) pattern in(bucket, AResponse..buckets(ASuccess..value(aresult))) in(bucket, AResponse..buckets(ASuccess..value(aresult))) ==> UserOwnsBucket(Bucket..name(bucket)))
 procedure GetPublicAccessBlock(c : Client, Bucket : string, out result : BResult)
   requires UserOwnsBucket(Bucket)
 type AResponse
@@ -105,28 +119,28 @@ tagger XResultTag for XResult
 function XSuccess(injective value : X) : XResult tag XResultTag
 function XFailure(injective msg : string) : XResult tag XResultTag
 function XIsSuccess(r : XResult) : bool {
-  XResultTag(r) == XSuccessTODODotDottag()
+  XResultTag(r) == XSuccess..tag()
 }
 type CResult
 tagger CResultTag for CResult
 function CSuccess(injective value : Client) : CResult tag CResultTag
 function CFailure(injective msg : string) : CResult tag CResultTag
 function CIsSuccess(r : CResult) : bool {
-  CResultTag(r) == CSuccessTODODotDottag()
+  CResultTag(r) == CSuccess..tag()
 }
 type AResult
 tagger AResultTag for AResult
 function ASuccess(injective value : AResponse) : AResult tag AResultTag
 function AFailure(injective msg : string) : AResult tag AResultTag
 function AIsSuccess(r : AResult) : bool {
-  AResultTag(r) == ASuccessTODODotDottag()
+  AResultTag(r) == ASuccess..tag()
 }
 type BResult
 tagger BResultTag for BResult
 function BSuccess(injective value : BResponse) : BResult tag BResultTag
 function BFailure(injective msg : string) : BResult tag BResultTag
 function BIsSuccess(r : BResult) : bool {
-  BResultTag(r) == BSuccessTODODotDottag()
+  BResultTag(r) == BSuccess..tag()
 }
 type BucketSeq
 function select(s : BucketSeq, i : int) : Bucket
