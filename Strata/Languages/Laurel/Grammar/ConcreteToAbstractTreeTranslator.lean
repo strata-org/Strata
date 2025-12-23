@@ -249,12 +249,13 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
     let parameters ← translateParameters op.args[1]!
     -- args[2] is ReturnParameters category, need to unwrap returnParameters operation
     let returnParameters ← match op.args[2]! with
-      | .op returnOp =>
+      | .option _ (some (.op returnOp)) =>
         if returnOp.name == q`Laurel.returnParameters then
           translateParameters returnOp.args[0]!
         else
           TransM.error s!"Expected returnParameters operation, got {repr returnOp.name}"
-      | _ => TransM.error s!"Expected returnParameters operation"
+      | .option _ none => pure []
+      | _ => TransM.error s!"Expected returnParameters operation, got {repr op.args[2]!}"
     let body ← translateCommand op.args[3]!
     return {
       name := name

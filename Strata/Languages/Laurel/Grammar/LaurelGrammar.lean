@@ -69,7 +69,7 @@ op returnParameters(parameters: CommaSepBy Parameter): ReturnParameters => "retu
 
 category Procedure;
 op procedure (name : Ident, parameters: CommaSepBy Parameter,
-  returnParameters: ReturnParameters,
+  returnParameters: Option ReturnParameters,
   body : StmtExpr) : Procedure =>
   "procedure " name "(" parameters ")" returnParameters body:0;
 
