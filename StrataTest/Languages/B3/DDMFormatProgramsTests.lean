@@ -163,28 +163,28 @@ procedure Print(a : string, b : string, c : string)
 //       }
 //      }
 //
-// Note that B3 identifiers may contain "." characters. B3 uses "TODODotDot" as part of the
+// Note that B3 identifiers may contain "." characters. B3 uses ".." as part of the
 // name when it generates functions (for example, the function names generated as a result
 // of declaring a parameter to be "injective").
 
 procedure Good(out result: XResult) {
   var cresult: CResult
-  CreateClient(TODOVerticalBarIdentifiers, out cresult)
+  CreateClient(|myFileSystemName: string|, out cresult)
   if !CIsSuccess(cresult) {
-    result := XFailure(CFailureTODODotDotmsg(cresult))
+    result := XFailure(CFailure..msg(cresult))
     return
   }
-  var fileSystem := CSuccessTODODotDotvalue(cresult)
+  var fileSystem := CSuccess..value(cresult)
 
   var aresult: AResult
   ListBuckets(fileSystem, out aresult)
   if !AIsSuccess(aresult) {
-    result := XFailure(AFailureTODODotDotmsg(aresult))
+    result := XFailure(AFailure..msg(aresult))
     return
   }
-  var aresponse := ASuccessTODODotDotvalue(aresult)
+  var aresponse := ASuccess..value(aresult)
 
-  var buckets := AResponseTODODotDotbuckets(aresponse)
+  var buckets := AResponse..buckets(aresponse)
 
   var i := 0
   loop
@@ -197,22 +197,22 @@ procedure Good(out result: XResult) {
     check 0 <= i && i < length(buckets)
     var bucket := select(buckets, i)
 
-    var bucketName := BucketTODODotDotname(bucket)
+    var bucketName := Bucket..name(bucket)
 
     var bresult: BResult
     GetPublicAccessBlock(fileSystem, bucketName, out bresult)
     if !BIsSuccess(bresult) {
-      result := XFailure(BFailureTODODotDotmsg(bresult))
+      result := XFailure(BFailure..msg(bresult))
       return
     }
-    var bresponse := BSuccessTODODotDotvalue(bresult)
+    var bresponse := BSuccess..value(bresult)
 
-    var isBlocked := GetAttributeValue(BResponseTODODotDotgetConfig(bresponse), TODOBarIdentifierBlockPublicAcls)
+    var isBlocked := GetAttributeValue(BResponse..getConfig(bresponse), |BlockPublicAcls: string|)
 
     if isBlocked {
-      Print(TODOBarIdentifierbucket, bucketName, TODOBarIdentifier)
+      Print(|bucket: string|, bucketName, |is-blocked: string|)
     } else {
-      Print(TODOBarIdentifierbucket, bucketName, TODOBarIdentifierIsNotBlocked)
+      Print(|bucket: string|, bucketName, |is-not-blocked: string|)
     }
 
     i := i + 1
@@ -238,10 +238,10 @@ type Client
 procedure ListBuckets(c: Client, out aresult: AResult)
   ensures AIsSuccess(aresult) ==>
     forall bucket: Bucket
-      pattern BucketTODODotDotname(bucket)
-      pattern in(bucket, AResponseTODODotDotbuckets(ASuccessTODODotDotvalue(aresult)))
-      in(bucket, AResponseTODODotDotbuckets(ASuccessTODODotDotvalue(aresult))) ==>
-      UserOwnsBucket(BucketTODODotDotname(bucket))
+      pattern Bucket..name(bucket)
+      pattern in(bucket, AResponse..buckets(ASuccess..value(aresult)))
+      in(bucket, AResponse..buckets(ASuccess..value(aresult))) ==>
+      UserOwnsBucket(Bucket..name(bucket))
 
 procedure GetPublicAccessBlock(c: Client, Bucket: string, out result: BResult)
   requires UserOwnsBucket(Bucket)
@@ -301,7 +301,7 @@ tagger XResultTag for XResult
 function XSuccess(injective value: X): XResult tag XResultTag
 function XFailure(injective msg: string): XResult tag XResultTag
 function XIsSuccess(r: XResult): bool {
-  XResultTag(r) == XSuccessTODODotDottag()
+  XResultTag(r) == XSuccess..tag()
 }
 
 type CResult // Result<Client>
@@ -309,7 +309,7 @@ tagger CResultTag for CResult
 function CSuccess(injective value: Client): CResult tag CResultTag
 function CFailure(injective msg: string): CResult tag CResultTag
 function CIsSuccess(r: CResult): bool {
-  CResultTag(r) == CSuccessTODODotDottag()
+  CResultTag(r) == CSuccess..tag()
 }
 
 type AResult // Result<AResponse>
@@ -317,7 +317,7 @@ tagger AResultTag for AResult
 function ASuccess(injective value: AResponse): AResult tag AResultTag
 function AFailure(injective msg: string): AResult tag AResultTag
 function AIsSuccess(r: AResult): bool {
-  AResultTag(r) == ASuccessTODODotDottag()
+  AResultTag(r) == ASuccess..tag()
 }
 
 type BResult // Result<BResponse>
@@ -325,7 +325,7 @@ tagger BResultTag for BResult
 function BSuccess(injective value: BResponse): BResult tag BResultTag
 function BFailure(injective msg: string): BResult tag BResultTag
 function BIsSuccess(r: BResult): bool {
-  BResultTag(r) == BSuccessTODODotDottag()
+  BResultTag(r) == BSuccess..tag()
 }
 
 // --------------------------------------------------------------------
