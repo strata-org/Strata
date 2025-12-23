@@ -122,10 +122,6 @@ def stringInputContext (fileName : System.FilePath) (contents : String) : InputC
   fileName := fileName.toString
   fileMap  := FileMap.ofString contents
 
--- Custom identifier character classification for Strata DDM
--- Allows dots in identifiers (unlike Lean's default)
--- But excludes colons to preserve precedence syntax (e.g., "arg:40")
--- Includes ? and ! to match Lean's identifier conventions
 private def strataIsIdFirst (c : Char) : Bool :=
   c.isAlpha || c == '_'
 
