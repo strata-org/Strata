@@ -34,3 +34,7 @@ name = "StrataToCBMC"
 
 [[lean_exe]]
 name = "BoogieToGoto"
+
+[[lean_exe]]
+name = "B3VerifierTest"
+root = "StrataTest.Languages.B3.VerifierTest"

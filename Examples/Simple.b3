@@ -1,0 +1,6 @@
+// Minimal B3 test program
+
+procedure SimpleTest(x: int) {
+  var y: int
+  y := x
+}

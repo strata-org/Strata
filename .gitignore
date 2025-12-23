@@ -7,3 +7,5 @@ vcs/*.smt2
 Strata.code-workspace
 
 StrataTest/Internal
+/docs/verso/.lake
+/docs/verso/_out

@@ -18,6 +18,9 @@ import Strata.DL.Imperative.Imperative
 /- Boogie -/
 import Strata.Languages.Boogie.StatementSemantics
 
+/- B3 -/
+import Strata.Languages.B3.Verifier
+
 /- Code Transforms -/
 import Strata.Transform.CallElimCorrect
 import Strata.Transform.DetToNondetCorrect
