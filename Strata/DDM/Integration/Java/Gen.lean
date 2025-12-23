@@ -16,7 +16,8 @@ Generates Java source files from DDM dialect definitions:
 - Sealed interfaces for categories with operators
 - Non-sealed stub interfaces for abstract categories (e.g., Init.Expr)
 - Record classes for operators
-- Ion serializer for AST serialization
+- Static factory methods for ergonomic AST construction
+- Ion serializer for Lean interop
 
 All names are disambiguated to avoid collisions with Java reserved words,
 base classes (Node, SourceRange), and each other.
