@@ -238,50 +238,33 @@ elab "#testBoogie" : command => do
 #testBoogie
 
 -- Test 11: Generated Java compiles (requires javac)
-#eval do
+-- Test 12: Roundtrip - verify Lean can read Java-generated Ion
+#load_dialect "testdata/Simple.dialect.st"
+
+elab "#testCompile" : command => do
   let javacCheck ← IO.Process.output { cmd := "javac", args := #["--version"] }
   if javacCheck.exitCode != 0 then
-    IO.println "Test 11 skipped: javac not found"
+    Lean.logInfo "Test 11 skipped: javac not found"
     return
 
-  let testDialect : Strata.Dialect := {
-    name := "Compile"
-    imports := #[]
-    declarations := #[
-      .syncat { name := "MyExpr", argNames := #[] },
-      .op {
-        name := "num"
-        argDecls := .ofArray #[
-          { ident := "value", kind := .cat (.atom .none ⟨"Init", "Num"⟩) }
-        ]
-        category := ⟨"Compile", "MyExpr"⟩
-        syntaxDef := { atoms := #[], prec := 0 }
-      },
-      .op {
-        name := "add"
-        argDecls := .ofArray #[
-          { ident := "left", kind := .cat (.atom .none ⟨"Compile", "MyExpr"⟩) },
-          { ident := "right", kind := .cat (.atom .none ⟨"Compile", "MyExpr"⟩) }
-        ]
-        category := ⟨"Compile", "MyExpr"⟩
-        syntaxDef := { atoms := #[], prec := 0 }
-      }
-    ]
-  }
-  let files := generateDialect testDialect "com.test"
-  
-  -- Write to temp directory  
+  let env ← Lean.getEnv
+  let state := Strata.dialectExt.getState env
+  let some simple := state.loaded.dialects["Simple"]?
+    | Lean.logError "Simple dialect not found"; return
+  let files := generateDialect simple "com.test"
+
   let dir := "/tmp/strata-java-test"
   IO.FS.createDirAll (dir ++ "/com/test")
   IO.FS.writeFile (dir ++ "/com/test/SourceRange.java") files.sourceRange
   IO.FS.writeFile (dir ++ "/com/test/Node.java") files.node
+  IO.FS.writeFile (dir ++ "/com/test/" ++ files.builders.1) files.builders.2
   for (name, content) in files.interfaces do
     IO.FS.writeFile (dir ++ "/com/test/" ++ name) content
   for (name, content) in files.records do
     IO.FS.writeFile (dir ++ "/com/test/" ++ name) content
 
-  let fileNames := #["SourceRange.java", "Node.java"] 
-                   ++ files.interfaces.map Prod.fst 
+  let fileNames := #["SourceRange.java", "Node.java", files.builders.1]
+                   ++ files.interfaces.map Prod.fst
                    ++ files.records.map Prod.fst
   let filePaths := fileNames.map (dir ++ "/com/test/" ++ ·)
 
@@ -293,12 +276,9 @@ elab "#testBoogie" : command => do
   IO.FS.removeDirAll dir
 
   if result.exitCode != 0 then
-    IO.eprintln s!"javac failed:\n{result.stderr}"
-    assert! false
-  pure ()
+    Lean.logError s!"javac failed:\n{result.stderr}"
 
--- Test 12: Roundtrip - verify Lean can read Java-generated Ion
-#load_dialect "testdata/Simple.dialect.st"
+#testCompile
 
 elab "#testRoundtrip" : command => do
   let env ← Lean.getEnv
