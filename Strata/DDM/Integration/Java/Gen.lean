@@ -439,7 +439,8 @@ def generateBuilders (package : String) (dialectName : String) (d : Dialect) (na
       | .simple "java.math.BigInteger" _ => (ps.push s!"long {f.name}", as.push s!"java.math.BigInteger.valueOf({f.name})")
       | .simple "java.math.BigDecimal" _ => (ps.push s!"double {f.name}", as.push s!"java.math.BigDecimal.valueOf({f.name})")
       | t => (ps.push s!"{t.toJava} {f.name}", as.push f.name)
-    s!"    public static {names.categories[op.category]!} {op.name}({", ".intercalate ps.toList}) \{ return new {names.operators[(op.category, op.name)]!}(SourceRange.NONE{if as.isEmpty then "" else ", " ++ ", ".intercalate as.toList}); }"
+    let methodName := escapeJavaName op.name
+    s!"    public static {names.categories[op.category]!} {methodName}({", ".intercalate ps.toList}) \{ return new {names.operators[(op.category, op.name)]!}(SourceRange.NONE{if as.isEmpty then "" else ", " ++ ", ".intercalate as.toList}); }"
   let methods := d.declarations.filterMap fun | .op op => some (method op) | _ => none
   s!"package {package};\n\npublic class {dialectName} \{\n{"\n".intercalate methods.toList}\n}\n"
 
