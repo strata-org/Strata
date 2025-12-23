@@ -116,7 +116,7 @@ jobs:
         run: .github/scripts/checkLeanImport.sh
 
   build_doc:
-    name: Build Documentation
+    name: Build documentation
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -126,10 +126,10 @@ jobs:
         uses: leanprover/lean-action@v1
         with:
           build-args: '--wfail'
-          lake-package-directory: 'docs/ddm'
-      - name: Build Documentation
-        run: lake exe docs 
-        working-directory: docs/ddm
+          lake-package-directory: 'docs/verso'
+      - name: Build documentation
+        run: ./generate.sh
+        working-directory: docs/verso
 
   build_python:
     name: Build and test Python

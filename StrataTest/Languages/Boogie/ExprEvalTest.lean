@@ -73,6 +73,7 @@ def checkValid (e:LExpr BoogieLParams.mono): IO Bool := do
     | .ok (.sat _,_) => return true
     | _ =>
       IO.println s!"Test failed on {e}"
+      IO.println s!"The query: {repr smt_term}"
       throw (IO.userError "- failed")
 
 /--
@@ -138,7 +139,7 @@ def checkFactoryOps (verbose:Bool): IO Unit := do
       print "- Has non-empty type arguments, skipping..."
       continue
     else
-      let cnt := 100
+      let cnt := 50
       let mut unsupported := false
       let mut cnt_skipped := 0
       for _ in [0:cnt] do

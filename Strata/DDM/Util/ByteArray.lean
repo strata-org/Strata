@@ -30,9 +30,8 @@ def foldr {β} (f : UInt8 → β → β) (init : β) (as : ByteArray) (start := 
   aux (min start as.size) (Nat.min_le_right _ _) init
 
 def byteToHex (b : UInt8) : String :=
-  let cl := Nat.toDigits 16 b.toNat
-  let cl := if cl.length < 2 then '0' :: cl else cl
-  cl.asString
+  let cl : String := .ofList (Nat.toDigits 16 b.toNat)
+  if cl.length < 2 then "0" ++ cl else cl
 
 def asHex (a : ByteArray) : String :=
   a.foldl (init := "") fun s b => s ++ byteToHex b
@@ -95,7 +94,7 @@ def escapeChars : Std.HashMap Char UInt8 := .ofList <|
     ByteArray.escapedBytes.toList |>.map fun (i, c) => (c, i)
 
 partial def unescapeBytesRawAux (s : String) (i0 : String.Pos.Raw) (a : ByteArray) : Except (String.Pos.Raw × String.Pos.Raw × String) (ByteArray × String.Pos.Raw) :=
-  if i0 = s.endPos then
+  if i0 = s.rawEndPos then
     .error (i0, i0, "unexpected end of input, expected closing quote")
   else
     let ch := i0.get s
@@ -104,19 +103,19 @@ partial def unescapeBytesRawAux (s : String) (i0 : String.Pos.Raw) (a : ByteArra
       .ok (a, i)
     else if ch == '\\' then
       -- Escape sequence
-      if i = s.endPos then
+      if i = s.rawEndPos then
         .error (i0, i, "unexpected end of input after backslash")
       else
         let escCh := i.get s
         let i := i.next s
         if escCh = 'x' then
           -- Hex escape: \xHH
-          if i = s.endPos then
+          if i = s.rawEndPos then
             .error (i0, i, "incomplete hex escape sequence")
           else
             let c1 := i.get s
             let j := i.next s
-            if j = s.endPos then
+            if j = s.rawEndPos then
               .error (i0, j, "incomplete hex escape sequence")
             else
               let c2 := j.get s

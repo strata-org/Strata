@@ -14,8 +14,9 @@ namespace Imperative
 mutual
 
 /-- An inductively-defined operational semantics for non-deterministic
-statements that depends on environment lookup and evaluation functions
-for expressions.  -/
+statements that depends on environment lookup and evaluation functions for
+expressions.  **NOTE:** This will probably be replaced with a small-step
+semantics. -/
 inductive EvalNondetStmt (P : PureExpr) (Cmd : Type) (EvalCmd : EvalCmdParam P Cmd)
   [HasVarsImp P (List (Stmt P Cmd))] [HasVarsImp P Cmd] [HasFvar P] [HasBool P] [HasNot P] :
   SemanticEval P → SemanticStore P → NondetStmt P Cmd → SemanticStore P → Prop where

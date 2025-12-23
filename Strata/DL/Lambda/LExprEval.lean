@@ -154,7 +154,11 @@ def eval (n : Nat) (σ : LState TBase) (e : (LExpr TBase.mono))
             -- We can, provided a denotation function, evaluate this function
             -- call.
             match lfunc.concreteEval with
-            | none => new_e | some ceval => eval n' σ (ceval new_e args)
+            | none => new_e
+            | some ceval =>
+              match ceval new_e.metadata args with
+              | .some e' => eval n' σ e'
+              | .none => new_e
           else
             -- At least one argument in the function call is symbolic.
             new_e

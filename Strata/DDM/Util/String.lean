@@ -74,9 +74,9 @@ def Pos.Raw.indexOfAux (s sub : String) (subp : sub.utf8ByteSize > 0) (i : Pos.R
       (i.next s).indexOfAux s sub subp
   else
     none
-termination_by s.endPos.byteIdx - i.byteIdx
+termination_by s.rawEndPos.byteIdx - i.byteIdx
 decreasing_by
-  simp only [Pos.Raw.next, Pos.Raw.add_char_eq, endPos]
+  simp only [Pos.Raw.next, Pos.Raw.add_char_eq, rawEndPos]
   have p : (i.get s).utf8Size > 0 := Char.utf8Size_pos _
   grind
 
