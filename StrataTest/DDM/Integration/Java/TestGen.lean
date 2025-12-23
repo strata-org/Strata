@@ -41,7 +41,6 @@ def check (s sub : String) : Bool := (s.splitOn sub).length > 1
     ]
   }
   let files := generateDialect testDialect "com.test"
-  -- Expr interface should be generated (sealed, with operators)
   assert! files.interfaces.any (fun i => check i.2 "sealed interface Expr")
   assert! files.records.size = 2
   assert! files.records.any (fun r => check r.1 "Literal")
@@ -56,7 +55,7 @@ def check (s sub : String) : Bool := (s.splitOn sub).length > 1
     declarations := #[
       .syncat { name := "Stmt", argNames := #[] },
       .op {
-        name := "int"  -- lowercase reserved word that stays lowercase after PascalCase? No...
+        name := "int"
         argDecls := .ofArray #[
           { ident := "public", kind := .cat (.atom .none ⟨"Init", "Ident"⟩) }
         ]
@@ -66,8 +65,6 @@ def check (s sub : String) : Bool := (s.splitOn sub).length > 1
     ]
   }
   let files := generateDialect testDialect "com.test"
-  -- Operator "int" -> "Int" (PascalCase, not reserved since Java is case-sensitive)
-  -- Field "public" -> "public_" (escaped reserved word)
   assert! files.records.any (fun r => r.1 == "Int.java")
   assert! files.records.any (fun r => check r.2 "public_")
   pure ()
@@ -108,7 +105,6 @@ def check (s sub : String) : Bool := (s.splitOn sub).length > 1
   }
   let files := generateDialect testDialect "com.test"
   let recordNames := files.records.map Prod.fst
-  -- All should be unique
   assert! recordNames.toList.eraseDups.length == recordNames.size
   pure ()
 
@@ -124,7 +120,6 @@ def check (s sub : String) : Bool := (s.splitOn sub).length > 1
   }
   let files := generateDialect testDialect "com.test"
   let allNames := #["Node.java", "SourceRange.java"] ++ files.interfaces.map Prod.fst ++ files.records.map Prod.fst
-  -- All filenames should be unique
   assert! allNames.toList.eraseDups.length == allNames.size
   pure ()
 
@@ -223,9 +218,7 @@ def check (s sub : String) : Bool := (s.splitOn sub).length > 1
     ]
   }
   let files := generateDialect testDialect "com.test"
-  -- Stmt should be sealed (has operators)
   assert! files.interfaces.any (fun i => check i.2 "sealed interface Stmt")
-  -- Expr should be non-sealed stub (referenced but no operators)
   assert! files.interfaces.any (fun i => check i.2 "non-sealed interface Expr")
   pure ()
 
@@ -246,13 +239,11 @@ elab "#testBoogie" : command => do
 
 -- Test 11: Generated Java compiles (requires javac)
 #eval do
-  -- Check if javac is available (cross-platform)
   let javacCheck ← IO.Process.output { cmd := "javac", args := #["--version"] }
   if javacCheck.exitCode != 0 then
     IO.println "Test 11 skipped: javac not found"
     return
-    
-  -- Generate files for a test dialect
+
   let testDialect : Strata.Dialect := {
     name := "Compile"
     imports := #[]
@@ -288,21 +279,19 @@ elab "#testBoogie" : command => do
     IO.FS.writeFile (dir ++ "/com/test/" ++ name) content
   for (name, content) in files.records do
     IO.FS.writeFile (dir ++ "/com/test/" ++ name) content
-  
-  -- Compile all generated files except IonSerializer
+
   let fileNames := #["SourceRange.java", "Node.java"] 
                    ++ files.interfaces.map Prod.fst 
                    ++ files.records.map Prod.fst
   let filePaths := fileNames.map (dir ++ "/com/test/" ++ ·)
-  
+
   let result ← IO.Process.output {
     cmd := "javac"
     args := #["--enable-preview", "--release", "17"] ++ filePaths
   }
-  
-  -- Cleanup
+
   IO.FS.removeDirAll dir
-  
+
   if result.exitCode != 0 then
     IO.eprintln s!"javac failed:\n{result.stderr}"
     assert! false
