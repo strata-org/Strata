@@ -51,7 +51,7 @@ def escapeJavaName (name : String) : String :=
   if javaReservedWords.contains cleaned then cleaned ++ "_" else cleaned
 
 def toPascalCase (s : String) : String :=
-  s.splitOn "_" 
+  s.splitOn "_"
   |>.filter (!·.isEmpty)
   |>.map (fun part => match part.toList with
     | [] => ""
@@ -118,7 +118,7 @@ def argDeclKindToJavaType : ArgDeclKind → JavaType
 partial def syntaxCatToInterfaceName (cat : SyntaxCat) : Option String :=
   match cat.name with
   -- Primitives map to Java types, no interface needed
-  | ⟨"Init", "Ident"⟩ | ⟨"Init", "Num"⟩ | ⟨"Init", "Decimal"⟩ 
+  | ⟨"Init", "Ident"⟩ | ⟨"Init", "Num"⟩ | ⟨"Init", "Decimal"⟩
   | ⟨"Init", "Str"⟩ | ⟨"Init", "ByteArray"⟩ | ⟨"Init", "Bool"⟩ => none
   -- Containers - recurse into element type
   | ⟨"Init", "Option"⟩ | ⟨"Init", "Seq"⟩ | ⟨"Init", "CommaSepBy"⟩ =>
@@ -161,6 +161,7 @@ structure NameAssignments where
   categories : Std.HashMap QualifiedIdent String
   operators : Std.HashMap (QualifiedIdent × String) String
   stubs : Std.HashMap String String
+  builders : String
 
 /-! ## Code Generation -/
 
@@ -242,7 +243,7 @@ public class IonSerializer \{
         IonSexp sexp = ion.newEmptySexp();
         sexp.add(ion.newSymbol(node.operationName()));
         sexp.add(serializeSourceRange(node.sourceRange()));
-        
+
         for (var component : node.getClass().getRecordComponents()) \{
             if (component.getName().equals(\"sourceRange\")) continue;
             try \{
@@ -367,7 +368,7 @@ public class IonSerializer \{
 /-- Assign unique Java names to all generated types -/
 def assignAllNames (d : Dialect) : NameAssignments :=
   let baseNames : Std.HashSet String := Std.HashSet.ofList ["node", "sourcerange", "ionserializer"]
-  
+
   -- Collect unique categories and referenced types
   let init : Array QualifiedIdent × Std.HashSet String := (#[], {})
   let (cats, refs) := d.declarations.foldl (init := init) fun (cats, refs) decl =>
@@ -382,14 +383,14 @@ def assignAllNames (d : Dialect) : NameAssignments :=
           | none => refs
       (cats, refs)
     | _ => (cats, refs)
-  
+
   -- Assign category names
   let catInit : Std.HashMap QualifiedIdent String × Std.HashSet String := ({}, baseNames)
   let (categoryNames, used) := cats.foldl (init := catInit) fun (map, used) cat =>
     let base := escapeJavaName (toPascalCase cat.name)
     let (name, newUsed) := disambiguate base used
     (map.insert cat name, newUsed)
-  
+
   -- Assign operator names
   let opInit : Std.HashMap (QualifiedIdent × String) String × Std.HashSet String := ({}, used)
   let (operatorNames, used) := d.declarations.foldl (init := opInit) fun (map, used) decl =>
@@ -399,20 +400,22 @@ def assignAllNames (d : Dialect) : NameAssignments :=
       let (name, newUsed) := disambiguate base used
       (map.insert (op.category, op.name) name, newUsed)
     | _ => (map, used)
-  
+
   -- Assign stub names (referenced types without operators)
   let catNameSet := Std.HashSet.ofList (categoryNames.toList.map Prod.snd)
   let stubInit : Std.HashMap String String × Std.HashSet String := ({}, used)
-  let (stubNames, _) := refs.toList.foldl (init := stubInit) fun (map, used) ref =>
+  let (stubNames, used) := refs.toList.foldl (init := stubInit) fun (map, used) ref =>
     if catNameSet.contains ref then (map, used)
     else
       let (name, newUsed) := disambiguate ref used
       (map.insert ref name, newUsed)
-  
-  { categories := categoryNames, operators := operatorNames, stubs := stubNames }
+
+  let (buildersName, _) := disambiguate d.name used
+
+  { categories := categoryNames, operators := operatorNames, stubs := stubNames, builders := buildersName }
 
 /-- Group operators by their target category -/
-def groupOpsByCategory (d : Dialect) (names : NameAssignments) 
+def groupOpsByCategory (d : Dialect) (names : NameAssignments)
     : Std.HashMap QualifiedIdent (Array String) :=
   d.declarations.foldl (init := {}) fun acc decl =>
     match decl with
@@ -423,7 +426,7 @@ def groupOpsByCategory (d : Dialect) (names : NameAssignments)
       | none => acc.insert op.category #[javaName]
     | _ => acc
 
-def opDeclToJavaRecord (dialectName : String) (names : NameAssignments) (op : OpDecl) 
+def opDeclToJavaRecord (dialectName : String) (names : NameAssignments) (op : OpDecl)
     : JavaRecord :=
   { name := names.operators.getD (op.category, op.name) ""
     operationName := ⟨dialectName, op.name⟩
@@ -431,7 +434,7 @@ def opDeclToJavaRecord (dialectName : String) (names : NameAssignments) (op : Op
     fields := op.argDecls.toArray.map argDeclToJavaField }
 
 def generateBuilders (package : String) (dialectName : String) (d : Dialect) (names : NameAssignments) : String :=
-  let method (op : OpDecl) := 
+  let method (op : OpDecl) :=
     let fields := op.argDecls.toArray.map argDeclToJavaField
     let (ps, as) := fields.foldl (init := (#[], #[])) fun (ps, as) f =>
       match f.type with
@@ -445,33 +448,33 @@ def generateBuilders (package : String) (dialectName : String) (d : Dialect) (na
 def generateDialect (d : Dialect) (package : String) : GeneratedFiles :=
   let names := assignAllNames d
   let opsByCategory := groupOpsByCategory d names
-  
+
   -- Categories with operators get sealed interfaces with permits clauses
   let sealedInterfaces := opsByCategory.toList.map fun (cat, ops) =>
     let name := names.categories.getD cat ""
     let iface : JavaInterface := { name, permits := ops }
     (s!"{name}.java", iface.toJava package)
-  
+
   -- Stub interfaces for referenced types without operators
   let stubInterfaces := names.stubs.toList.map fun (_, name) =>
     generateStubInterface package name
-  
+
   -- Generate records for operators
   let records := d.declarations.toList.filterMap fun decl =>
     match decl with
-    | .op op => 
+    | .op op =>
       let name := names.operators.getD (op.category, op.name) ""
       some (s!"{name}.java", (opDeclToJavaRecord d.name names op).toJava package)
     | _ => none
-  
+
   -- All interface names for Node permits clause
   let allInterfaceNames := (sealedInterfaces ++ stubInterfaces).map (·.1.dropRight 5)
-  
+
   { sourceRange := generateSourceRange package
     node := generateNodeInterface package allInterfaceNames
     interfaces := sealedInterfaces.toArray ++ stubInterfaces.toArray
     records := records.toArray
-    builders := (s!"{d.name}.java", generateBuilders package d.name d names)
+    builders := (s!"{names.builders}.java", generateBuilders package names.builders d names)
     serializer := generateSerializer package }
 
 /-! ## File Output -/
@@ -483,15 +486,15 @@ def packageToPath (package : String) : System.FilePath :=
 def writeJavaFiles (baseDir : System.FilePath) (package : String) (files : GeneratedFiles) : IO Unit := do
   let dir := baseDir / packageToPath package
   IO.FS.createDirAll dir
-  
+
   IO.FS.writeFile (dir / "SourceRange.java") files.sourceRange
   IO.FS.writeFile (dir / "Node.java") files.node
   IO.FS.writeFile (dir / "IonSerializer.java") files.serializer
   IO.FS.writeFile (dir / files.builders.1) files.builders.2
-  
+
   for (filename, content) in files.interfaces do
     IO.FS.writeFile (dir / filename) content
-  
+
   for (filename, content) in files.records do
     IO.FS.writeFile (dir / filename) content
 
