@@ -47,7 +47,7 @@ def check (s sub : String) : Bool := (s.splitOn sub).length > 1
   assert! files.records.any (fun r => check r.1 "Add")
   pure ()
 
--- Test 2: Java reserved word escaping
+-- Test 2: Reserved word escaping for fields
 #eval do
   let testDialect : Strata.Dialect := {
     name := "Reserved"
