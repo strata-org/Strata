@@ -8,6 +8,9 @@ import Strata.DDM.Elab
 import Strata.DDM.Parser
 import Strata.DDM.Format
 
+/-
+Allows testing whether a DDM dialect can parse and print a given program without losing information.
+-/
 open Strata
 
 namespace StrataTest.DDM
