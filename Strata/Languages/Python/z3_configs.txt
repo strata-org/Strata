@@ -1,0 +1,2 @@
+  
+(set-option :smt.mbqi false) (set-option :auto_config false)

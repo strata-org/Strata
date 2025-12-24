@@ -32,7 +32,7 @@ def translateType (ty : HighType) : LMonoTy :=
   | .TVoid => LMonoTy.bool  -- Using bool as placeholder for void
   | _ => LMonoTy.int  -- Default to int for other types
 
-/-
+/--
 Translate Laurel StmtExpr to Boogie Expression
 -/
 partial def translateExpr (expr : StmtExpr) : Boogie.Expression.Expr :=
@@ -79,7 +79,7 @@ partial def translateExpr (expr : StmtExpr) : Boogie.Expression.Expr :=
       args.foldl (fun acc arg => .app () acc (translateExpr arg)) fnOp
   | _ => panic! Std.Format.pretty (Std.ToFormat.format expr)
 
-/-
+/--
 Translate Laurel StmtExpr to Boogie Statements
 Takes the list of output parameter names to handle return statements correctly
 -/
@@ -145,7 +145,7 @@ partial def translateStmt (outputParams : List Parameter) (stmt : StmtExpr) : Li
           panic! "Return statement with value but procedure has no output parameters"
   | _ => panic! Std.Format.pretty (Std.ToFormat.format stmt)
 
-/-
+/--
 Translate Laurel Parameter to Boogie Signature entry
 -/
 def translateParameterToBoogie (param : Parameter) : (Boogie.BoogieIdent × LMonoTy) :=
@@ -153,7 +153,7 @@ def translateParameterToBoogie (param : Parameter) : (Boogie.BoogieIdent × LMon
   let ty := translateType param.type
   (ident, ty)
 
-/-
+/--
 Translate Laurel Procedure to Boogie Procedure
 -/
 def translateProcedure (proc : Procedure) : Boogie.Procedure :=
@@ -182,7 +182,7 @@ def translateProcedure (proc : Procedure) : Boogie.Procedure :=
     body := body
   }
 
-/-
+/--
 Translate Laurel Program to Boogie Program
 -/
 def translate (program : Program) : Boogie.Program :=
@@ -196,7 +196,7 @@ def translate (program : Program) : Boogie.Program :=
   let decls := procedures.map (fun p => Boogie.Decl.proc p .empty)
   { decls := decls }
 
-/-
+/--
 Verify a Laurel program using an SMT solver
 -/
 def verifyToVcResults (smtsolver : String) (program : Program)

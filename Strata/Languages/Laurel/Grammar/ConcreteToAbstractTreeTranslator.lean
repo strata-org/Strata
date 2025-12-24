@@ -12,7 +12,6 @@ import Strata.Languages.Boogie.Expressions
 
 namespace Laurel
 
-open Laurel
 open Std (ToFormat Format format)
 open Strata (QualifiedIdent Arg SourceRange)
 open Lean.Parser (InputContext)
@@ -270,7 +269,9 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
   else
     TransM.error s!"parseProcedure expects procedure, got {repr op.name}"
 
-/- Translate concrete Laurel syntax into abstract Laurel syntax -/
+/--
+Translate concrete Laurel syntax into abstract Laurel syntax
+-/
 def parseProgram (prog : Strata.Program) : TransM Laurel.Program := do
   -- Unwrap the program operation if present
   -- The parsed program may have a single `program` operation wrapping the procedures

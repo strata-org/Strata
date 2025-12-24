@@ -81,7 +81,7 @@ def matchesDiagnostic (diag : Diagnostic) (exp : DiagnosticExpectation) : Bool :
 def testInputWithOffset (filename: String) (input : String) (lineOffset : Nat)
     (process : Lean.Parser.InputContext -> IO (Array Diagnostic)) : IO Unit := do
 
-  -- Add imaginary newlines to the start of the input
+  -- Add imaginary newlines to the start of the input so the reported line numbers match the Lean source file
   let offsetInput := String.join (List.replicate lineOffset "\n") ++ input
   let inputContext := Parser.stringInputContext filename offsetInput
 

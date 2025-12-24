@@ -14,11 +14,12 @@ import Strata.Languages.Laurel.LaurelToBoogieTranslator
 
 open StrataTest.Util
 open Strata
+open Lean.Parser
 
 namespace Laurel
 
 
-def processLaurelFile (input : Lean.Parser.InputContext) : IO (Array Diagnostic) := do
+def processLaurelFile (input : InputContext) : IO (Array Diagnostic) := do
 
   let laurelDialect : Strata.Dialect := Laurel
   let (inputContext, strataProgram) ← Strata.Elab.parseStrataProgramFromDialect input laurelDialect
