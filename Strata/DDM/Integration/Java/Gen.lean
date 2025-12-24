@@ -99,11 +99,11 @@ partial def syntaxCatToJavaType (cat : SyntaxCat) : JavaType :=
   | ⟨"Init", "Option"⟩ =>
     match cat.args[0]? with
     | some inner => .optional (syntaxCatToJavaType inner)
-    | none => .optional (.simple "java.lang.Object")
+    | none => panic! "Init.Option requires a type argument"
   | ⟨"Init", "Seq"⟩ | ⟨"Init", "CommaSepBy"⟩ =>
     match cat.args[0]? with
     | some inner => .list (syntaxCatToJavaType inner)
-    | none => .list (.simple "java.lang.Object")
+    | none => panic! "Init.Seq/CommaSepBy requires a type argument"
   | ⟨"Init", "Expr"⟩ => .simple "Expr"
   | ⟨"Init", "TypeExpr"⟩ => .simple "TypeExpr"
   | ⟨"Init", "Type"⟩ => .simple "Type_"
@@ -149,6 +149,7 @@ structure JavaInterface where
   name : String
   permits : Array String
 
+/-- All generated Java source files for a dialect. -/
 structure GeneratedFiles where
   sourceRange : String
   node : String
@@ -156,7 +157,9 @@ structure GeneratedFiles where
   records : Array (String × String)
   builders : String × String  -- (filename, content)
   serializer : String
+  warnings : Array String := #[]  -- Warnings about unsupported declarations
 
+/-- Mapping from DDM names to disambiguated Java identifiers. -/
 structure NameAssignments where
   categories : Std.HashMap QualifiedIdent String
   operators : Std.HashMap (QualifiedIdent × String) String
@@ -448,6 +451,13 @@ def generateDialect (d : Dialect) (package : String) : GeneratedFiles :=
   let names := assignAllNames d
   let opsByCategory := groupOpsByCategory d names
 
+  -- Collect warnings for unsupported declarations
+  let warnings := d.declarations.filterMap fun decl =>
+    match decl with
+    | .type t => some s!"type declaration '{t.name}' is not supported in Java generation"
+    | .function f => some s!"function declaration '{f.name}' is not supported in Java generation"
+    | _ => none
+
   -- Categories with operators get sealed interfaces with permits clauses
   let sealedInterfaces := opsByCategory.toList.map fun (cat, ops) =>
     let name := names.categories[cat]!
@@ -474,7 +484,8 @@ def generateDialect (d : Dialect) (package : String) : GeneratedFiles :=
     interfaces := sealedInterfaces.toArray ++ stubInterfaces.toArray
     records := records.toArray
     builders := (s!"{names.builders}.java", generateBuilders package names.builders d names)
-    serializer := generateSerializer package }
+    serializer := generateSerializer package
+    warnings := warnings }
 
 /-! ## File Output -/
 
