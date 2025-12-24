@@ -564,9 +564,9 @@ def test8_hiddenTypeRecursion : IO String := do
 
   match mkProgramWithDatatypes [hiddenDatatype, containerDatatype] "testHiddenTypeRecursion" statements with
   | .error err =>
-    return s!"Test 10 - Hidden Type Recursion: FAILED (program creation)\n  Error: {err.pretty}"
+    return s!"Test 8 - Hidden Type Recursion: FAILED (program creation)\n  Error: {err.pretty}"
   | .ok program =>
-    runVerificationTest "Test 10 - Hidden Type Recursion" program
+    runVerificationTest "Test 8 - Hidden Type Recursion" program
 
 
 
@@ -728,6 +728,7 @@ VCs:
 Label: container_is_with_hidden
 Assumptions:
 (container_not_empty, (~Bool.Not (~isEmpty $__container0)))
+(visible_part_is_42, ((~visiblePart $__container0) == #42))
 
 Proof Obligation:
 (~isWithHidden $__container0)

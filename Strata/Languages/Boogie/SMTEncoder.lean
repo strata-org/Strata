@@ -10,6 +10,7 @@ import Strata.Languages.Boogie.Boogie
 import Strata.DL.SMT.SMT
 import Init.Data.String.Extra
 import Strata.DDM.Util.DecimalRat
+import Strata.DDM.Util.Graph.Tarjan
 
 ---------------------------------------------------------------------
 
@@ -93,24 +94,88 @@ private def lMonoTyToSMTString (ty : LMonoTy) : String :=
   | .ftvar tv => tv
 
 /--
-Emit datatype declarations to the solver.
+Build a dependency graph for datatypes.
+Returns a mapping from datatype names to their dependencies.
+-/
+private def buildDatatypeDependencyGraph (datatypes : Array (LDatatype BoogieLParams.IDMeta)) :
+  Map String (Array String) :=
+  let depMap := datatypes.foldl (fun acc d =>
+    let deps := d.constrs.foldl (fun deps c =>
+      c.args.foldl (fun deps (_, fieldTy) =>
+        match fieldTy with
+        | .tcons typeName _ =>
+          -- Only include dependencies on other datatypes in our set
+          if datatypes.any (fun dt => dt.name == typeName) then
+            deps.push typeName
+          else deps
+        | _ => deps
+      ) deps
+    ) #[]
+    acc.insert d.name deps
+  ) Map.empty
+  depMap
+
+/--
+Convert datatype dependency map to OutGraph for Tarjan's algorithm.
+Returns the graph and a mapping from node indices to datatype names.
+-/
+private def dependencyMapToGraph (depMap : Map String (Array String)) :
+  (n : Nat) × Strata.OutGraph n × Array String :=
+  let names := depMap.keys.toArray
+  let n := names.size
+  let nameToIndex : Map String Nat :=
+    names.mapIdx (fun i name => (name, i)) |>.foldl (fun acc (name, i) => acc.insert name i) Map.empty
+
+  let edges := depMap.foldl (fun edges (fromName, deps) =>
+    match nameToIndex.find? fromName with
+    | none => edges
+    | some fromIdx =>
+      deps.foldl (fun edges depName =>
+        match nameToIndex.find? depName with
+        | none => edges
+        | some toIdx => edges.push (fromIdx, toIdx)
+      ) edges
+  ) #[]
+
+  let graph := Strata.OutGraph.ofEdges! n edges.toList
+  ⟨n, graph, names⟩
+
+/--
+Emit datatype declarations to the solver in topologically sorted order.
 For each datatype in ctx.datatypes, generates a declare-datatype command
 with constructors and selectors following the TypeFactory naming convention.
+Dependencies are emitted before the datatypes that depend on them, and
+mutually recursive datatypes are not (yet) supported.
 -/
 def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverM Unit := do
-  for d in ctx.datatypes do
-    let constructors ← d.constrs.mapM fun c => do
-      let fieldPairs := c.args.map fun (name, fieldTy) => (name.name, lMonoTyToSMTString fieldTy)
-      -- let fieldNames := List.range c.args.length |>.map fun i =>
-      --   d.name ++ "$" ++ c.name.name ++ "Proj" ++ toString i
-      -- let fieldPairs := fieldNames.zip fields
-      let fieldStrs := fieldPairs.map fun (name, ty) => s!"({name} {ty})"
-      let fieldsStr := String.intercalate " " fieldStrs
-      if c.args.isEmpty then
-        pure s!"({c.name.name})"
-      else
-        pure s!"({c.name.name} {fieldsStr})"
-    Strata.SMT.Solver.declareDatatype d.name d.typeArgs constructors
+  if ctx.datatypes.isEmpty then return
+
+  -- Build dependency graph and SCCs
+  let depMap := buildDatatypeDependencyGraph ctx.datatypes
+  let ⟨_, graph, names⟩ := dependencyMapToGraph depMap
+  let sccs := Strata.OutGraph.tarjan graph
+
+  -- Emit datatypes in topological order (reverse of SCC order)
+  for scc in sccs.reverse do
+    if scc.size > 1 then
+      let sccNames := scc.map (fun idx => names[idx]!)
+      throw (IO.userError s!"Mutually recursive datatypes not supported: {sccNames.toList}")
+    else
+      for nodeIdx in scc do
+        let datatypeName := names[nodeIdx]!
+        -- Find the datatype by name
+        match ctx.datatypes.find? (fun d => d.name == datatypeName) with
+        | none => throw (IO.userError s!"Datatype {datatypeName} not found in context")
+        | some d =>
+          let constructors ← d.constrs.mapM fun c => do
+            let fieldPairs := c.args.map fun (name, fieldTy) => (name.name, lMonoTyToSMTString fieldTy)
+            let fieldStrs := fieldPairs.map fun (name, ty) => s!"({name} {ty})"
+            let fieldsStr := String.intercalate " " fieldStrs
+            if c.args.isEmpty then
+              pure s!"({c.name.name})"
+            else
+              pure s!"({c.name.name} {fieldsStr})"
+          Strata.SMT.Solver.declareDatatype d.name d.typeArgs constructors
 
 abbrev BoundVars := List (String × TermType)
 
