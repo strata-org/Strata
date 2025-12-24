@@ -135,6 +135,30 @@ def extractTypeInstantiations (typeVars : List String) (patterns : List LMonoTy)
     Map.empty
 
 
+/-
+Add a type to the context. Sorts are easy, but datatypes are tricky:
+we must also ensure we add the types of all arguments in the constructors
+to the context, recursively. This is very tricky to prove terminating, so
+we leave as `partial` for now.
+-/
+partial def SMT.Context.addType (E: Env) (id: String) (args: List LMonoTy) (ctx: SMT.Context) :
+  SMT.Context :=
+  match E.datatypes.getType id with
+  | some d =>
+    if ctx.hasDatatype id then ctx else
+    let ctx := ctx.addDatatype d
+    d.constrs.foldl (fun (ctx : SMT.Context) c =>
+      c.args.foldl (fun (ctx: SMT.Context) (_, t) =>
+        match t with
+        | .bool | .int | .real | .string | .tcons "regex" [] => ctx
+        | .tcons id1 args1 => SMT.Context.addType E id1 args1 ctx
+        | _ => ctx
+        ) ctx
+      ) ctx
+  | none =>
+    ctx.addSort { name := id, arity := args.length }
+
+
 mutual
 def LMonoTy.toSMTType (E: Env) (ty : LMonoTy) (ctx : SMT.Context) :
   Except Format (TermType × SMT.Context) := do
@@ -146,9 +170,7 @@ def LMonoTy.toSMTType (E: Env) (ty : LMonoTy) (ctx : SMT.Context) :
   | .tcons "string"  [] => .ok (.string, ctx)
   | .tcons "regex" [] => .ok (.regex, ctx)
   | .tcons id args =>
-    let ctx := match E.datatypes.getType id with
-    | some d => ctx.addDatatype d
-    | none => ctx.addSort { name := id, arity := args.length }
+    let ctx := SMT.Context.addType E id args ctx
     let (args', ctx) ← LMonoTys.toSMTType E args ctx
     .ok ((.constr id args'), ctx)
   | .ftvar tyv => match ctx.tySubst.find? tyv with
