@@ -45,6 +45,30 @@ def listDatatype : LDatatype Visibility :=
     ]
     constrs_ne := by decide }
 
+/-- Hidden datatype that is never directly used in the program -/
+def hiddenDatatype : LDatatype Visibility :=
+  { name := "Hidden"
+    typeArgs := ["a"]
+    constrs := [
+      { name := ⟨"HiddenValue", .unres⟩, args := [
+          (⟨"hiddenField", .unres⟩, .ftvar "a")
+        ], testerName := "isHiddenValue" }
+    ]
+    constrs_ne := by decide }
+
+/-- Container datatype that references Hidden but we never use Hidden directly -/
+def containerDatatype : LDatatype Visibility :=
+  { name := "Container"
+    typeArgs := ["a"]
+    constrs := [
+      { name := ⟨"Empty", .unres⟩, args := [], testerName := "isEmpty" },
+      { name := ⟨"WithHidden", .unres⟩, args := [
+          (⟨"hiddenPart", .unres⟩, .tcons "Hidden" [.ftvar "a"]),
+          (⟨"visiblePart", .unres⟩, .ftvar "a")
+        ], testerName := "isWithHidden" }
+    ]
+    constrs_ne := by decide }
+
 /-! ## Helper Functions -/
 
 /--
@@ -468,7 +492,83 @@ def test7_listWithHavoc : IO String := do
   | .ok program =>
     runVerificationTest "Test 7 - List with Havoc" program
 
-/-! ## Run All Tests with #guard_msgs -/
+/-! ## Test 8: Hidden Type Recursive Addition -/
+
+/--
+Test that SMT.Context.addType correctly handles the recursive case where
+a datatype constructor has another datatype as an argument, but this
+argument datatype is NEVER directly referenced in the program.
+
+This is the true test of SMT.Context.addType recursive behavior:
+- Container has Hidden as a constructor argument
+- Hidden is NEVER directly used in the program (no variables, no constructors, no operations)
+- Hidden should ONLY be added to SMT context through the recursive call in SMT.Context.addType
+- If SMT.Context.addType didn't recursively add Hidden, the SMT generation would fail
+
+datatype Hidden a = HiddenValue a
+datatype Container a = Empty | WithHidden (Hidden a) a
+
+procedure testHiddenTypeRecursion () {
+  // We ONLY use Container, never Hidden directly
+  container := Empty;
+  container := havoc();
+
+  // We can only test Container properties, never Hidden properties
+  assume (not (isEmpty container));
+
+  // This should work even though Hidden was never directly referenced
+  assert (isWithHidden container);
+}
+-/
+def test8_hiddenTypeRecursion : IO String := do
+  let statements : List Statement := [
+    -- Initialize with Empty Container - note we NEVER use Hidden directly
+    Statement.init (BoogieIdent.unres "container")
+      (.forAll [] (LMonoTy.tcons "Container" [.int]))
+      (LExpr.op () (BoogieIdent.unres "Empty") (.some (LMonoTy.tcons "Container" [.int]))),
+
+    -- Havoc the container to make it non-deterministic
+    Statement.havoc (BoogieIdent.unres "container"),
+
+    -- Assume container is not Empty (so it must be WithHidden)
+    Statement.assume "container_not_empty"
+      (LExpr.app ()
+        (LExpr.op () (BoogieIdent.unres "Bool.Not")
+          (.some (LMonoTy.arrow .bool .bool)))
+        (LExpr.app ()
+          (LExpr.op () (BoogieIdent.unres "isEmpty")
+            (.some (LMonoTy.arrow (LMonoTy.tcons "Container" [.int]) .bool)))
+          (LExpr.fvar () (BoogieIdent.unres "container") (.some (LMonoTy.tcons "Container" [.int]))))),
+
+    -- Extract the visible part (this forces SMT to understand Container structure)
+    Statement.init (BoogieIdent.unres "visiblePart") (.forAll [] LMonoTy.int)
+      (LExpr.app ()
+        (LExpr.op () (BoogieIdent.unres "visiblePart")
+          (.some (LMonoTy.arrow (LMonoTy.tcons "Container" [.int]) .int)))
+        (LExpr.fvar () (BoogieIdent.unres "container") (.some (LMonoTy.tcons "Container" [.int])))),
+
+    -- Assume the visible part has a specific value
+    Statement.assume "visible_part_is_42"
+      (LExpr.eq ()
+        (LExpr.fvar () (BoogieIdent.unres "visiblePart") (.some .int))
+        (LExpr.intConst () 42)),
+
+    -- Assert that container is WithHidden - this requires SMT reasoning about Container
+    -- which internally references Hidden datatype (but Hidden is never directly used!)
+    Statement.assert "container_is_with_hidden"
+      (LExpr.app ()
+        (LExpr.op () (BoogieIdent.unres "isWithHidden")
+          (.some (LMonoTy.arrow (LMonoTy.tcons "Container" [.int]) .bool)))
+        (LExpr.fvar () (BoogieIdent.unres "container") (.some (LMonoTy.tcons "Container" [.int]))))
+  ]
+
+  match mkProgramWithDatatypes [hiddenDatatype, containerDatatype] "testHiddenTypeRecursion" statements with
+  | .error err =>
+    return s!"Test 10 - Hidden Type Recursion: FAILED (program creation)\n  Error: {err.pretty}"
+  | .ok program =>
+    runVerificationTest "Test 10 - Hidden Type Recursion" program
+
+
 
 /--
 info: [Strata.Boogie] Type checking succeeded.
@@ -619,5 +719,25 @@ info: "Test 7 - List with Havoc: PASSED\n  Verified 1 obligation(s)\n"
 -/
 #guard_msgs in
 #eval test7_listWithHavoc
+
+/--
+info: [Strata.Boogie] Type checking succeeded.
+
+
+VCs:
+Label: container_is_with_hidden
+Assumptions:
+(container_not_empty, (~Bool.Not (~isEmpty $__container0)))
+
+Proof Obligation:
+(~isWithHidden $__container0)
+
+Wrote problem to vcs/container_is_with_hidden.smt2.
+---
+info: "Test 8 - Hidden Type Recursion: PASSED\n  Verified 1 obligation(s)\n"
+-/
+#guard_msgs in
+#eval test8_hiddenTypeRecursion
+
 
 end Boogie.DatatypeVerificationTests
