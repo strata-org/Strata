@@ -87,6 +87,28 @@ program PipeIdent;
 result := |x-value| | |y-value| | regularVar;
 #end).format
 
+-- Identifiers with dots don't require pipe delimiters
+/--
+info: program PipeIdent;
+result := qualified.name + another.dotted.identifier + x.y;
+-/
+#guard_msgs in
+#eval (#strata
+program PipeIdent;
+result := qualified.name + another.dotted.identifier + x.y;
+#end).format
+
+-- Identifiers with consecutive dots
+/--
+info: program PipeIdent;
+result := a..b + x...y + trailing..end;
+-/
+#guard_msgs in
+#eval (#strata
+program PipeIdent;
+result := a..b + x...y + trailing..end;
+#end).format
+
 -- Verify escape sequences are unescaped in AST (not just round-trip)
 def testEscapeAST := #strata
 program PipeIdent;
@@ -108,6 +130,23 @@ def getRHSIdent (op : Operation) : String :=
 
 -- Verify: \\ is unescaped to single \ in AST (stored with Lean's «» notation)
 #guard (getRHSIdent testEscapeAST.commands[1]!) == "«path\\to\\file»"
+
+-- Verify dots are preserved in AST
+def testDotIdent := #strata
+program PipeIdent;
+x := qualified.name;
+y := another.dotted.identifier;
+z := a..b;
+w := x...y;
+v := trailing..end;
+#end
+
+-- Verify: dots are preserved in identifier names in AST (stored with Lean's «» notation)
+#guard (getRHSIdent testDotIdent.commands[0]!) == "«qualified.name»"
+#guard (getRHSIdent testDotIdent.commands[1]!) == "«another.dotted.identifier»"
+#guard (getRHSIdent testDotIdent.commands[2]!) == "«a..b»"
+#guard (getRHSIdent testDotIdent.commands[3]!) == "«x...y»"
+#guard (getRHSIdent testDotIdent.commands[4]!) == "«trailing..end»"
 
 -- Test dialect with | operator that has NO spaces in syntax definition
 #dialect

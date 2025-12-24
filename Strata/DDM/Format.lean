@@ -24,10 +24,9 @@ private def isIdBegin (c : Char) : Bool :=
 
 /--
 Check if a character is valid for continuing a regular identifier.
-Regular identifiers can contain letters, digits, underscores, and apostrophes.
 -/
 private def isIdContinue (c : Char) : Bool :=
-  c.isAlphanum || c == '_' || c == '\''
+  c.isAlphanum || c == '_' || c == '\'' || c == '.' || c == '?' || c == '!'
 
 /--
 Check if a string needs pipe delimiters when formatted as an identifier.
