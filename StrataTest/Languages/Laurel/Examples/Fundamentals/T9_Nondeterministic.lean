@@ -1,14 +1,18 @@
-/*
+/-
   Copyright Strata Contributors
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
-*/
+-/
 
-/*
-When a procedure is non-deterministic, 
-every invocation might return a different result, even if the inputs are the same.
-It's comparable to having an IO monad.
-*/
+import StrataTest.Util.TestDiagnostics
+import StrataTest.Languages.Laurel.TestExamples
+
+open StrataTest.Util
+open Strata
+
+namespace Laurel
+
+def program := r"
 nondet procedure nonDeterministic(x: int): (r: int)
   ensures r > 0
 {
@@ -17,12 +21,31 @@ nondet procedure nonDeterministic(x: int): (r: int)
 
 procedure caller() {
   var x = nonDeterministic(1)
-  assert x > 0; -- pass
+  assert x > 0;
   var y = nonDeterministic(1)
-  assert x == y; -- fail
+    assert x == y;
+//  ^^^^^^^^^^^^^^ error: assertion does not hold
 }
 
-/*
+nondet procedure nonDeterminsticTransparant(x: int): (r: int)
+{
+  nonDeterministic(x + 1)
+}
+
+procedure nonDeterministicCaller(x: int): int
+{
+  nonDeterministic(x)
+}
+"
+
+-- Not working yet
+-- #eval! testInput "Nondeterministic" program processLaurelFile
+
+/-
+When a procedure is non-deterministic,
+every invocation might return a different result, even if the inputs are the same.
+It's comparable to having an IO monad.
+
 Translation towards SMT:
 
 function nonDeterministic_relation(x: int, r: int): boolean
@@ -44,22 +67,8 @@ proof caller_body {
   assume nonDeterministic_relation(1, y);
   assert x == y; // fail
 }
-*/
-
-nondet procedure nonDeterminsticTransparant(x: int): (r: int)
-{
-  nonDeterministic(x + 1)
-}
-
-/*
-Translation towards SMT:
 
 function nonDeterminsticTransparant_relation(x: int, r: int): boolean {
   nonDeterministic_relation(x + 1, r)
 }
-*/
-
-procedure nonDeterministicCaller(x: int): int
-{
-  nonDeterministic(x) // error: can not call non-deterministic procedure from deterministic one
-}
+-/

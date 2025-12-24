@@ -14,14 +14,15 @@ import Strata.Languages.Laurel.LaurelToBoogieTranslator
 
 open StrataTest.Util
 open Strata
+open Lean.Parser
 
 namespace Laurel
 
 
-def processLaurelFile (filePath : String) : IO (Array Diagnostic) := do
+def processLaurelFile (input : InputContext) : IO (Array Diagnostic) := do
 
   let laurelDialect : Strata.Dialect := Laurel
-  let (inputContext, strataProgram) ← Strata.Elab.parseStrataProgramFromDialect filePath laurelDialect
+  let (inputContext, strataProgram) ← Strata.Elab.parseStrataProgramFromDialect input laurelDialect
 
   -- Convert to Laurel.Program using parseProgram (handles unwrapping the program operation)
   let (laurelProgram, transErrors) := Laurel.TransM.run inputContext (Laurel.parseProgram strataProgram)
@@ -32,10 +33,5 @@ def processLaurelFile (filePath : String) : IO (Array Diagnostic) := do
   let diagnostics ← Laurel.verifyToDiagnostics "z3" laurelProgram
 
   pure diagnostics
-
-def testAssertFalse : IO Unit := do
-  testFile processLaurelFile "StrataTest/Languages/Laurel/Examples/Fundamentals/1. AssertFalse.lr.st"
-
-#eval! testAssertFalse
 
 end Laurel
