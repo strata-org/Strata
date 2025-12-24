@@ -144,13 +144,13 @@ def solverResult (vars : List (IdentT LMonoTy Visibility)) (ans : String)
 open Imperative
 
 def formatPositionMetaData [BEq P.Ident] [ToFormat P.Expr] (md : MetaData P): Option Format := do
-  let file ← md.findElem MetaData.fileLabel
-  let line ← md.findElem MetaData.startLineLabel
-  let col ← md.findElem MetaData.startColumnLabel
-  let baseName := match file.value with
-                  | .msg m => (m.splitToList (λ c => c == '/')).getLast!
-                  | _ => "<no file>"
-  f!"{baseName}({line.value}, {col.value})"
+  let fileRangeElem ← md.findElem MetaData.fileRange
+  match fileRangeElem.value with
+  | .fileRange m =>
+    let baseName := match m.file with
+                    | .file path => (path.splitToList (· == '/')).getLast!
+    return f!"{baseName}({m.start.line}, {m.start.column})"
+  | _ => none
 
 structure VCResult where
   obligation : Imperative.ProofObligation Expression
@@ -361,6 +361,35 @@ def verify
                 (Boogie.verify smtsolver program options moreFns)
   else
     panic! s!"DDM Transform Error: {repr errors}"
+
+/-- A diagnostic produced by analyzing a file -/
+structure Diagnostic where
+  start : Lean.Position
+  ending : Lean.Position
+  message : String
+  deriving Repr, BEq
+
+def toDiagnostic (vcr : Boogie.VCResult) : Option Diagnostic := do
+  -- Only create a diagnostic if the result is not .unsat (i.e., verification failed)
+  match vcr.result with
+  | .unsat => none  -- Verification succeeded, no diagnostic
+  | result =>
+    -- Extract file range from metadata
+    let fileRangeElem ← vcr.obligation.metadata.findElem Imperative.MetaData.fileRange
+    match fileRangeElem.value with
+    | .fileRange range =>
+      let message := match result with
+        | .sat _ => "assertion does not hold"
+        | .unknown => "assertion verification result is unknown"
+        | .err msg => s!"verification error: {msg}"
+        | _ => "verification failed"
+      some {
+        -- Subtract headerOffset to account for program header we added
+        start := { line := range.start.line, column := range.start.column }
+        ending := { line := range.ending.line, column := range.ending.column }
+        message := message
+      }
+    | _ => none
 
 end Strata
 
