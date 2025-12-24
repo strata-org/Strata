@@ -46,7 +46,7 @@ datatype Point { Point(x: int, y: int) };
 def test_datatype_with_fields :=
 #strata
 program Boogie;
-datatype Point { Point(x: int, y: int) };
+datatype Point { mkPoint(x: int, y: int) };
 #end
 
 /-- info: true -/

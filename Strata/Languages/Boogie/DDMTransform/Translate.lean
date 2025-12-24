@@ -1255,6 +1255,118 @@ def translateGlobalVar (bindings : TransBindings) (op : Operation) :
 
 ---------------------------------------------------------------------
 
+def translateField (bindings : TransBindings) (arg : Arg) : TransM (BoogieIdent × LMonoTy) := do
+    let args ← checkOpArg arg q`Boogie.field_mk 2
+    let name ← translateIdent String args[0]!
+    let ty ← translateLMonoTy bindings args[1]!
+    return (BoogieIdent.unres name, ty)
+
+partial def translateFieldList (bindings : TransBindings) (arg : Arg) : TransM (List (BoogieIdent × LMonoTy)) := do
+    let .op op := arg
+      | TransM.error s!"translateFieldList expected op {repr arg}"
+    match op.name with
+    | q`Boogie.fieldListAtom =>
+      let args ← checkOpArg arg q`Boogie.fieldListAtom 1
+      let field ← translateField bindings args[0]!
+      return [field]
+    | q`Boogie.fieldListPush =>
+      let args ← checkOpArg arg q`Boogie.fieldListPush 2
+      let rest ← translateFieldList bindings args[0]!
+      let field ← translateField bindings args[1]!
+      return rest ++ [field]
+    | _ => TransM.error s!"translateFieldList unimplemented for {repr op}"
+    -- termination_by sizeOf arg
+    -- decreasing_by
+    --   simp_wf
+    --   sorry
+
+def translateConstructor (bindings : TransBindings) (arg : Arg) : TransM (LConstr Boogie.Visibility) := do
+    let args ← checkOpArg arg q`Boogie.constructor_mk 2
+    let name ← translateIdent String args[0]!
+    let fields ← translateOption (fun maybeFields => do
+      match maybeFields with
+      | none => return []
+      | some fieldsArg => translateFieldList bindings fieldsArg)
+      args[1]!
+    return {
+      name := BoogieIdent.unres name,
+      args := fields,
+      testerName := name ++ "$is" ++ name
+    }
+
+partial def translateConstructorList (bindings : TransBindings) (arg : Arg) : TransM (List (LConstr Boogie.Visibility)) := do
+    let .op op := arg
+      | TransM.error s!"translateConstructorList expected op {repr arg}"
+    match op.name with
+    | q`Boogie.constructorListAtom =>
+      let args ← checkOpArg arg q`Boogie.constructorListAtom 1
+      let constr ← translateConstructor bindings args[0]!
+      return [constr]
+    | q`Boogie.constructorListPush =>
+      let args ← checkOpArg arg q`Boogie.constructorListPush 2
+      let rest ← translateConstructorList bindings args[0]!
+      let constr ← translateConstructor bindings args[1]!
+      return rest ++ [constr]
+    | _ => TransM.error s!"translateConstructorList unimplemented for {repr op}"
+    -- termination_by sizeOf arg
+    -- decreasing_by
+    --   simp_wf
+    --   sorry
+
+def translateDatatype (bindings : TransBindings) (op : Operation) :
+  TransM (List Boogie.Decl × TransBindings) := do
+  let _ ← @checkOp (List Boogie.Decl × TransBindings) op q`Boogie.command_datatype 3
+  let name ← translateIdent TyIdentifier op.args[0]!
+  let typeParams ← translateOption (fun maybearg => do
+    match maybearg with
+    | none => pure []
+    | some arg =>
+      let bargs ← checkOpArg arg q`Boogie.mkBindings 1
+      let args ← match bargs[0]! with
+        | .commaSepList _ args =>
+          let (arr, _) ← translateTypeBindings bindings args
+          return arr.toList
+        | _ => TransM.error s!"translateDatatype expects a comma separated list: {repr bargs[0]!}")
+    op.args[1]!
+
+  -- Parse constructors from ConstructorList
+  let constructors ← translateConstructorList bindings op.args[2]!
+
+  -- Ensure we have at least one constructor
+  if h: constructors.isEmpty then
+    TransM.error s!"Datatype {name} must have at least one constructor"
+  else
+  -- Create the LDatatype
+  let datatype : LDatatype Visibility := {
+    name := name,
+    typeArgs := typeParams,
+    constrs := constructors,
+    constrs_ne := by
+      have := @List.isEmpty_iff_length_eq_zero _ constructors; grind
+  }
+
+  -- Generate the datatype declaration
+  let datatypeDecl := Boogie.Decl.type (.data datatype)
+
+  -- Generate constructor function declarations
+  -- let constructorDecls ← constructors.mapM (fun constr => do
+  --   let funcDecl := Boogie.Decl.func {
+  --     name := BoogieIdent.unres constr.name.name,
+  --     typeArgs := typeParams,
+  --     inputs := constr.args.map (fun (id, ty) => (BoogieIdent.unres id.name, ty)),
+  --     output := LMonoTy.tcons name (typeParams.map LMonoTy.ftvar),
+  --     body := none,
+  --     attr := #[]
+  --   }
+  --   return funcDecl)
+
+  -- let allDecls := datatypeDecl :: constructorDecls
+  let newBindings := [datatypeDecl].foldl (fun b decl => { b with freeVars := b.freeVars.push decl }) bindings
+
+  return ([datatypeDecl], newBindings)
+
+
+
 partial def translateBoogieDecls (p : Program) (bindings : TransBindings) :
   TransM Boogie.Decls := do
   let (decls, _) ← go 0 p.commands.size bindings p.commands
@@ -1264,29 +1376,41 @@ partial def translateBoogieDecls (p : Program) (bindings : TransBindings) :
   | 0 => return ([], bindings)
   | _ + 1 =>
     let op := ops[count]!
-    let (decl, bindings) ←
+    let (newdecls, bindings) ←
       match op.name with
-      | q`Boogie.command_var =>
-        translateGlobalVar bindings op
-      | q`Boogie.command_constdecl =>
-        translateConstant bindings op
-      | q`Boogie.command_typedecl =>
-        translateTypeDecl bindings op
-      | q`Boogie.command_typesynonym =>
-        translateTypeSynonym bindings op
-      | q`Boogie.command_axiom =>
-        translateAxiom p bindings op
-      | q`Boogie.command_distinct =>
-        translateDistinct p bindings op
-      | q`Boogie.command_procedure =>
-        translateProcedure p bindings op
-      | q`Boogie.command_fndef =>
-        translateFunction .Definition p bindings op
-      | q`Boogie.command_fndecl =>
-        translateFunction .Declaration p bindings op
+      | q`Boogie.command_var => (do
+        let (decl, bindings) ← translateGlobalVar bindings op
+        return ([decl], bindings))
+      | q`Boogie.command_constdecl => (do
+        let (decl, bindings) ← translateConstant bindings op
+        return ([decl], bindings))
+      | q`Boogie.command_typedecl => (do
+        let (decl, bindings) ← translateTypeDecl bindings op
+        return ([decl], bindings))
+      | q`Boogie.command_typesynonym => (do
+        let (decl, bindings) ← translateTypeSynonym bindings op
+        return ([decl], bindings))
+      | q`Boogie.command_axiom => (do
+        let (decl, bindings) ← translateAxiom p bindings op
+        return ([decl], bindings))
+      | q`Boogie.command_distinct => (do
+        let (decl, bindings) ← translateDistinct p bindings op
+        return ([decl], bindings))
+      | q`Boogie.command_procedure => (do
+        let (decl, bindings) ← translateProcedure p bindings op
+        return ([decl], bindings))
+      | q`Boogie.command_fndef => (do
+        let (decl, bindings) ← translateFunction .Definition p bindings op
+        return ([decl], bindings))
+      | q`Boogie.command_fndecl => (do
+        let (decl, bindings) ← translateFunction .Declaration p bindings op
+        return ([decl], bindings))
+      | q`Boogie.command_datatype => (do
+        let (decls, bindings) ← translateDatatype bindings op
+        return (decls, bindings))
       | _ => TransM.error s!"translateBoogieDecls unimplemented for {repr op}"
     let (decls, bindings) ← go (count + 1) max bindings ops
-    return ((decl :: decls), bindings)
+    return ((newdecls ++ decls), bindings)
 
 def translateProgram (p : Program) : TransM Boogie.Program := do
   let decls ← translateBoogieDecls p {}

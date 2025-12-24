@@ -736,7 +736,7 @@ Indices for introducing multiple function signatures from a single datatype decl
 -/
 structure DatatypeBindingSpec (argDecls : ArgDecls) where
   nameIndex : DebruijnIndex argDecls.size
-  typeParamsIndex : DebruijnIndex argDecls.size  
+  typeParamsIndex : DebruijnIndex argDecls.size
   constructorsIndex : DebruijnIndex argDecls.size
   testerNamesIndex : Option (DebruijnIndex argDecls.size)
 deriving Repr
@@ -1446,7 +1446,18 @@ def addCommand (dialects : DialectMap) (init : GlobalContext) (op : Operation) :
           match b with
           | .datatype datatypeSpec =>
             -- Handle multi-declaration for datatypes
-            addDatatypeBindings gctx l datatypeSpec args
+            let datatypeName :=
+                  match args[datatypeSpec.nameIndex.toLevel] with
+                  | .ident _ name => name
+                  | a => panic! s!"Expected datatype name to be ident, got {repr a}"
+
+            -- Add the datatype itself as a type declaration
+            let datatypeKind := GlobalKind.type [] none
+            let gctx := gctx.push datatypeName datatypeKind
+
+            -- Add constructor functions (simplified version)
+            let constructorsArg := args[datatypeSpec.constructorsIndex.toLevel]
+            addConstructorsSimple gctx datatypeName constructorsArg
           | _ =>
             -- Handle single declaration (existing behavior)
             let name :=
@@ -1455,18 +1466,51 @@ def addCommand (dialects : DialectMap) (init : GlobalContext) (op : Operation) :
                   | a => panic! s!"Expected ident at {b.nameIndex.toLevel} {repr a}"
             let kind := resolveBindingIndices dialects l b args
             gctx.push name kind
-        
-        addDatatypeBindings (gctx : GlobalContext) (l : SourceRange) {argDecls : ArgDecls} (spec : DatatypeBindingSpec argDecls) (args : Vector Arg argDecls.size) : GlobalContext :=
-          -- Extract datatype information from arguments
-          let datatypeName := 
-                match args[spec.nameIndex.toLevel] with
-                | .ident _ name => name
-                | a => panic! s!"Expected datatype name to be ident, got {repr a}"
-          
-          -- For now, just add the datatype itself as a type declaration
-          -- TODO: Generate constructor, tester, and destructor function signatures
-          let datatypeKind := GlobalKind.type [] none
-          gctx.push datatypeName datatypeKind
+
+        addConstructorsSimple (gctx : GlobalContext) (datatypeName : String) (constructorsArg : Arg) : GlobalContext :=
+          -- For now, just add placeholder constructor functions
+          -- This is a simplified implementation that adds basic constructor support
+          match constructorsArg with
+          | .op op =>
+            if h1: op.name.name == "constructorListAtom" && op.args.size == 1 then
+              have: 0 < op.args.size := by grind
+              addSingleConstructor gctx datatypeName op.args[0]
+            else if h2: op.name.name == "constructorListPush" && op.args.size == 2 then
+              have: 0 < op.args.size := by grind
+              have: 1 < op.args.size := by grind
+              let gctx := addSingleConstructor gctx datatypeName op.args[1]
+              -- Recursively handle the rest (simplified)
+              match h: op.args[0] with
+              | .op prevOp => addConstructorsSimple gctx datatypeName (.op prevOp)
+              | _ => gctx
+            else
+              gctx
+          | _ => gctx
+          termination_by sizeOf constructorsArg
+          decreasing_by
+            simp_wf
+            have : 0 < op.args.size := by grind
+            apply (@Nat.lt_trans _ (sizeOf (op.args[0])))
+            . rw[h]; simp
+            . rw[OperationF.sizeOf_spec];
+              apply (@Nat.lt_trans _ (sizeOf op.args)) <;> try omega
+              apply Array.sizeOf_lt_of_mem; grind
+
+
+
+        addSingleConstructor (gctx : GlobalContext) (datatypeName : String) (constructorArg : Arg) : GlobalContext :=
+          match constructorArg with
+          | .op op =>
+            if op.name.name == "constructor_mk" && op.args.size >= 1 then
+              match op.args[0]! with
+              | .ident _ constructorName =>
+                let returnType := TypeExprF.ident default ⟨"", datatypeName⟩ #[]
+                let constructorKind := GlobalKind.expr returnType
+                gctx.push constructorName constructorKind
+              | _ => gctx
+            else
+              gctx
+          | _ => gctx
 
 end GlobalContext
 
