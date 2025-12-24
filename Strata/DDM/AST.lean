@@ -732,11 +732,22 @@ structure TypeBindingSpec (argDecls : ArgDecls) where
 deriving Repr
 
 /-
+Indices for introducing multiple function signatures from a single datatype declaration.
+-/
+structure DatatypeBindingSpec (argDecls : ArgDecls) where
+  nameIndex : DebruijnIndex argDecls.size
+  typeParamsIndex : DebruijnIndex argDecls.size  
+  constructorsIndex : DebruijnIndex argDecls.size
+  testerNamesIndex : Option (DebruijnIndex argDecls.size)
+deriving Repr
+
+/-
 A spec for introducing a new binding into a type context.
 -/
 inductive BindingSpec (argDecls : ArgDecls) where
 | value (_ : ValueBindingSpec argDecls)
 | type (_ : TypeBindingSpec argDecls)
+| datatype (_ : DatatypeBindingSpec argDecls)
 deriving Repr
 
 namespace BindingSpec
@@ -744,6 +755,7 @@ namespace BindingSpec
 def nameIndex {argDecls} : BindingSpec argDecls → DebruijnIndex argDecls.size
 | .value v => v.nameIndex
 | .type v => v.nameIndex
+| .datatype v => v.nameIndex
 
 end BindingSpec
 
@@ -759,6 +771,17 @@ private def checkNameIndexIsIdent (args : ArgDecls) (nameIndex : DebruijnIndex a
     pure ()
   | _ =>
     newBindingErr s!"Expected {b.ident} to be an Ident."
+
+private def mkDatatypeBindingSpec
+            (argDecls : ArgDecls)
+            (nameIndex : DebruijnIndex argDecls.size)
+            (typeParamsIndex : DebruijnIndex argDecls.size)
+            (constructorsIndex : DebruijnIndex argDecls.size)
+            (testerNamesIndex : Option (DebruijnIndex argDecls.size) := none)
+            : NewBindingM (DatatypeBindingSpec argDecls) := do
+  checkNameIndexIsIdent argDecls nameIndex
+  -- TODO: Add validation for typeParams and constructors arguments
+  return { nameIndex, typeParamsIndex, constructorsIndex, testerNamesIndex }
 
 private def mkValueBindingSpec
             (argDecls : ArgDecls)
@@ -849,6 +872,32 @@ def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec 
             newBindingErr s!"Scope of definition must match arg scope."
           let defIndex := ⟨defIndex, defP⟩
           some <$> .type <$> pure { nameIndex, argsIndex, defIndex := some defIndex }
+        | q`StrataDDL.declareDatatype => do
+          let args := attr.args
+          match args with
+          | #[.catbvar nameIndex, .catbvar typeParamsIndex, .catbvar constructorsIndex] => do
+            -- Basic form without custom tester names
+            let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < argDecls.size))
+              | return panic! "Invalid name index"
+            let .isTrue typeParamsP := inferInstanceAs (Decidable (typeParamsIndex < argDecls.size))
+              | return panic! "Invalid typeParams index"
+            let .isTrue constructorsP := inferInstanceAs (Decidable (constructorsIndex < argDecls.size))
+              | return panic! "Invalid constructors index"
+            some <$> .datatype <$> mkDatatypeBindingSpec argDecls ⟨nameIndex, nameP⟩ ⟨typeParamsIndex, typeParamsP⟩ ⟨constructorsIndex, constructorsP⟩
+          | #[.catbvar nameIndex, .catbvar typeParamsIndex, .catbvar constructorsIndex, .catbvar testerNamesIndex] => do
+            -- Extended form with custom tester names
+            let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < argDecls.size))
+              | return panic! "Invalid name index"
+            let .isTrue typeParamsP := inferInstanceAs (Decidable (typeParamsIndex < argDecls.size))
+              | return panic! "Invalid typeParams index"
+            let .isTrue constructorsP := inferInstanceAs (Decidable (constructorsIndex < argDecls.size))
+              | return panic! "Invalid constructors index"
+            let .isTrue testerNamesP := inferInstanceAs (Decidable (testerNamesIndex < argDecls.size))
+              | return panic! "Invalid testerNames index"
+            some <$> .datatype <$> mkDatatypeBindingSpec argDecls ⟨nameIndex, nameP⟩ ⟨typeParamsIndex, typeParamsP⟩ ⟨constructorsIndex, constructorsP⟩ (some ⟨testerNamesIndex, testerNamesP⟩)
+          | _ => do
+            newBindingErr "declareDatatype expects 3 or 4 arguments."
+            return none
         | _ =>
           pure none
   (md.toArray.filterMapM ins) #[]
@@ -1348,6 +1397,11 @@ partial def resolveBindingIndices { argDecls : ArgDecls } (m : DialectMap) (src 
                 some tp
               | _ => panic! "Bad arg"
     .type params.toList value
+  | .datatype b =>
+    -- For now, return a placeholder. The actual multi-declaration logic
+    -- will be handled at a higher level in the DDM processing.
+    -- This case represents the datatype declaration itself.
+    .type [] none
 
 /--
 Typing environment created from declarations in an environment.
@@ -1389,12 +1443,30 @@ def kindOf! (ctx : GlobalContext) (idx : FreeVarIndex) : GlobalKind :=
 def addCommand (dialects : DialectMap) (init : GlobalContext) (op : Operation) : GlobalContext :=
     op.foldBindingSpecs dialects addBinding init
   where addBinding (gctx : GlobalContext) l _ b args :=
-          let name :=
-                match args[b.nameIndex.toLevel] with
-                | .ident _ e => e
-                | a => panic! s!"Expected ident at {b.nameIndex.toLevel} {repr a}"
-          let kind := resolveBindingIndices dialects l b args
-          gctx.push name kind
+          match b with
+          | .datatype datatypeSpec =>
+            -- Handle multi-declaration for datatypes
+            addDatatypeBindings gctx l datatypeSpec args
+          | _ =>
+            -- Handle single declaration (existing behavior)
+            let name :=
+                  match args[b.nameIndex.toLevel] with
+                  | .ident _ e => e
+                  | a => panic! s!"Expected ident at {b.nameIndex.toLevel} {repr a}"
+            let kind := resolveBindingIndices dialects l b args
+            gctx.push name kind
+        
+        addDatatypeBindings (gctx : GlobalContext) (l : SourceRange) {argDecls : ArgDecls} (spec : DatatypeBindingSpec argDecls) (args : Vector Arg argDecls.size) : GlobalContext :=
+          -- Extract datatype information from arguments
+          let datatypeName := 
+                match args[spec.nameIndex.toLevel] with
+                | .ident _ name => name
+                | a => panic! s!"Expected datatype name to be ident, got {repr a}"
+          
+          -- For now, just add the datatype itself as a type declaration
+          -- TODO: Generate constructor, tester, and destructor function signatures
+          let datatypeKind := GlobalKind.type [] none
+          gctx.push datatypeName datatypeKind
 
 end GlobalContext
 
@@ -1408,7 +1480,7 @@ structure Program where
   commands : Array Operation := #[]
   /-- Final global context for program. -/
   globalContext : GlobalContext :=
-    commands.foldl (init := {}) (·.addCommand dialects ·)
+    commands.foldl (init := {}) (GlobalContext.addCommand dialects)
 
 namespace Program
 
@@ -1421,7 +1493,7 @@ instance : Inhabited Program where
 def addCommand (env : Program) (cmd : Operation) : Program :=
   { env with
     commands := env.commands.push cmd,
-    globalContext := env.globalContext.addCommand env.dialects cmd
+    globalContext := GlobalContext.addCommand env.dialects env.globalContext cmd
   }
 
 /--

@@ -278,6 +278,27 @@ op command_fndef (name : Ident,
                   inline? : Option Inline) : Command =>
   inline? "function " name typeArgs b " : " r " {\n" indent(2, c) "\n}\n";
 
+// Datatype syntax categories and operations
+category Field;
+op field_mk (name : Ident, tp : Type) : Field => name ":" tp;
+
+category FieldList;
+op fieldListAtom (f : Field) : FieldList => f;
+op fieldListPush (fl : FieldList, f : Field) : FieldList => fl "," f;
+
+category Constructor;
+op constructor_mk (name : Ident, fields : Option FieldList) : Constructor => name "(" fields ")";
+
+category ConstructorList;
+op constructorListAtom (c : Constructor) : ConstructorList => c;
+op constructorListPush (cl : ConstructorList, c : Constructor) : ConstructorList => cl "," c;
+
+@[declareDatatype(name, typeParams, constructors)]
+op command_datatype (name : Ident,
+                     typeParams : Option Bindings,
+                     constructors : ConstructorList) : Command =>
+  "datatype " name " " typeParams " {" constructors "}" ";\n";
+
 @[scope(b)]
 op command_var (b : Bind) : Command =>
   @[prec(10)] "var " b ";\n";
@@ -292,7 +313,7 @@ op command_distinct (label : Option Label, exprs : CommaSepBy Expr) : Command =>
 
 namespace BoogieDDM
 
---#strata_gen Boogie
+#strata_gen Boogie
 
 end BoogieDDM
 

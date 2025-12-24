@@ -798,6 +798,11 @@ def evalBindingSpec
             | _ =>
               panic! "Bad arg"
     pure { ident, kind := .type loc params.toList value }
+  | .datatype b =>
+    -- For now, handle datatype binding as a simple type declaration
+    -- TODO: Implement full multi-declaration logic for constructors, testers, destructors
+    let ident := evalBindingNameIndex args b.nameIndex
+    pure { ident, kind := .type loc [] none }
 
 /--
 Given a type expression and a natural number, this returns a
