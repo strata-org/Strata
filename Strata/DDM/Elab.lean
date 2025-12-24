@@ -9,6 +9,7 @@ import Strata.DDM.BuiltinDialects.StrataDDL
 import Strata.DDM.BuiltinDialects.StrataHeader
 import Strata.DDM.Util.ByteArray
 import Strata.DDM.Ion
+import Strata.Util.IO
 
 open Lean (
     Message
@@ -411,5 +412,28 @@ def elabDialect
     return (dialects, default, { errors := #[msg] })
   | .dialect loc dialect =>
     elabDialectRest fm dialects #[] inputContext loc dialect startPos stopPos
+
+def parseStrataProgramFromDialect (filePath : String) (dialect: Dialect) : IO (InputContext × Strata.Program) := do
+  let dialects := Elab.LoadedDialects.ofDialects! #[initDialect, dialect]
+
+  let bytes ← Strata.Util.readBinInputSource filePath
+  let fileContent ← match String.fromUTF8? bytes with
+    | some s => pure s
+    | none => throw (IO.userError s!"File {filePath} contains non UTF-8 data")
+
+  -- Add program header to the content
+  let contents := s!"program {dialect.name};\n\n" ++ fileContent
+
+  let leanEnv ← Lean.mkEmptyEnvironment 0
+  let inputContext := Strata.Parser.stringInputContext filePath contents
+  let returnedInputContext := {inputContext with
+    fileMap := { source := fileContent, positions := inputContext.fileMap.positions.drop 2 }
+  }
+  let strataProgram ← match Strata.Elab.elabProgram dialects leanEnv inputContext with
+    | .ok program => pure (returnedInputContext, program)
+    | .error errors =>
+      let errMsg ← errors.foldlM (init := "Parse errors:\n") fun msg e =>
+        return s!"{msg}  {e.pos.line}:{e.pos.column}: {← e.data.toString}\n"
+      throw (IO.userError errMsg)
 
 end Strata.Elab

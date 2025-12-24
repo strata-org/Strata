@@ -122,8 +122,14 @@ def stringInputContext (fileName : System.FilePath) (contents : String) : InputC
   fileName := fileName.toString
   fileMap  := FileMap.ofString contents
 
+private def strataIsIdFirst (c : Char) : Bool :=
+  c.isAlpha || c == '_'
+
+private def strataIsIdRest (c : Char) : Bool :=
+  c.isAlphanum || c == '_' || c == '\'' || c == '.' || c == '?' || c == '!'
+
 private def isIdFirstOrBeginEscape (c : Char) : Bool :=
-  isIdFirst c || isIdBeginEscape c
+  strataIsIdFirst c || isIdBeginEscape c
 
 private def isToken (idStartPos idStopPos : String.Pos.Raw) (tk : Option Token) : Bool :=
   match tk with
@@ -385,9 +391,9 @@ def identFnAux (startPos : String.Pos.Raw) (tk : Option Token) : ParserFn := fun
         let stopPart  := s.pos
         let s         := s.next' c s.pos h
         mkIdResult startPos tk startPart stopPart c s
-    else if isIdFirst curr then
+    else if strataIsIdFirst curr then
       let startPart := i
-      let s         := takeWhileFn isIdRest c (s.next c i)
+      let s         := takeWhileFn strataIsIdRest c (s.next c i)
       let stopPart  := s.pos
       mkIdResult startPos tk startPart stopPart c s
     else
