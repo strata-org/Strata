@@ -499,24 +499,16 @@ Test that SMT.Context.addType correctly handles the recursive case where
 a datatype constructor has another datatype as an argument, but this
 argument datatype is NEVER directly referenced in the program.
 
-This is the true test of SMT.Context.addType recursive behavior:
-- Container has Hidden as a constructor argument
-- Hidden is NEVER directly used in the program (no variables, no constructors, no operations)
-- Hidden should ONLY be added to SMT context through the recursive call in SMT.Context.addType
-- If SMT.Context.addType didn't recursively add Hidden, the SMT generation would fail
-
 datatype Hidden a = HiddenValue a
 datatype Container a = Empty | WithHidden (Hidden a) a
 
 procedure testHiddenTypeRecursion () {
   // We ONLY use Container, never Hidden directly
   container := Empty;
-  container := havoc();
-
-  // We can only test Container properties, never Hidden properties
+  havoc container;
   assume (not (isEmpty container));
-
-  // This should work even though Hidden was never directly referenced
+  visiblePart := visiblePart container;
+  assume (visiblePart == 42);
   assert (isWithHidden container);
 }
 -/
@@ -540,7 +532,7 @@ def test8_hiddenTypeRecursion : IO String := do
             (.some (LMonoTy.arrow (LMonoTy.tcons "Container" [.int]) .bool)))
           (LExpr.fvar () (BoogieIdent.unres "container") (.some (LMonoTy.tcons "Container" [.int]))))),
 
-    -- Extract the visible part (this forces SMT to understand Container structure)
+    -- Extract the visible part
     Statement.init (BoogieIdent.unres "visiblePart") (.forAll [] LMonoTy.int)
       (LExpr.app ()
         (LExpr.op () (BoogieIdent.unres "visiblePart")
@@ -553,8 +545,7 @@ def test8_hiddenTypeRecursion : IO String := do
         (LExpr.fvar () (BoogieIdent.unres "visiblePart") (.some .int))
         (LExpr.intConst () 42)),
 
-    -- Assert that container is WithHidden - this requires SMT reasoning about Container
-    -- which internally references Hidden datatype (but Hidden is never directly used!)
+    -- Assert that container is WithHidden
     Statement.assert "container_is_with_hidden"
       (LExpr.app ()
         (LExpr.op () (BoogieIdent.unres "isWithHidden")

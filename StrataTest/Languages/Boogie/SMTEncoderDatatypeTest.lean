@@ -248,7 +248,7 @@ info: "(declare-datatype TestList (par (α) (\n  (Nil)\n  (Cons (TestList$ConsPr
 
 /-! ## Complex Dependency Topological Sorting Tests -/
 
--- Test 18: Very complex dependency graph requiring sophisticated topological sorting
+-- Test 16: Very complex dependency graph requiring sophisticated topological sorting
 -- Dependencies: Alpha -> Beta, Gamma
 --              Beta -> Delta, Epsilon
 --              Gamma -> Epsilon, Zeta
