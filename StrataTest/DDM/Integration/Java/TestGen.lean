@@ -6,6 +6,7 @@
 
 import Strata.DDM.Integration.Java
 import Strata.DDM.Integration.Lean.Env  -- For dialectExt
+import Strata.DDM.Integration.Lean.HashCommands  -- For #load_dialect
 import Strata.Languages.Boogie.DDMTransform.Parse  -- Loads Boogie dialect into env
 
 namespace Strata.Java.Test
@@ -243,7 +244,7 @@ elab "#testBoogie" : command => do
 elab "#testCompile" : command => do
   let javacCheck ← IO.Process.output { cmd := "javac", args := #["--version"] }
   if javacCheck.exitCode != 0 then
-    Lean.logError "Test 11 failed: javac not found (required for CI)"
+    Lean.logError "Test 11 failed: javac not found"
     return
 
   let env ← Lean.getEnv

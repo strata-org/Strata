@@ -494,6 +494,9 @@ def packageToPath (package : String) : System.FilePath :=
   ⟨String.intercalate "/" parts⟩
 
 def writeJavaFiles (baseDir : System.FilePath) (package : String) (files : GeneratedFiles) : IO Unit := do
+  for warning in files.warnings do
+    IO.eprintln s!"Warning: {warning}"
+
   let dir := baseDir / packageToPath package
   IO.FS.createDirAll dir
 
