@@ -11,6 +11,7 @@ import Strata.Languages.Boogie.SMTEncoder
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Imperative.SMTUtils
 import Strata.DL.SMT.CexParser
+import Strata.Util.Diagnostic
 
 ---------------------------------------------------------------------
 
@@ -362,12 +363,6 @@ def verify
   else
     panic! s!"DDM Transform Error: {repr errors}"
 
-/-- A diagnostic produced by analyzing a file -/
-structure Diagnostic where
-  start : Lean.Position
-  ending : Lean.Position
-  message : String
-  deriving Repr, BEq
 
 def toDiagnostic (vcr : Boogie.VCResult) : Option Diagnostic := do
   -- Only create a diagnostic if the result is not .unsat (i.e., verification failed)

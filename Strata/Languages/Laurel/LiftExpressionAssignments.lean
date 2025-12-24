@@ -5,6 +5,7 @@
 -/
 
 import Strata.Languages.Laurel.Laurel
+import Strata.Languages.Boogie.Verifier
 
 namespace Laurel
 
@@ -24,9 +25,13 @@ Becomes:
 
 structure SequenceState where
   prependedStmts : List StmtExpr := []
+  diagnostics : List Diagnostic
   tempCounter : Nat := 0
 
 abbrev SequenceM := StateM SequenceState
+
+def SequenceM.addDiagnostic (diagnostic : Diagnostic) : SequenceM Unit :=
+  modify fun s => { s with diagnostics := s.diagnostics ++ [diagnostic] }
 
 def SequenceM.addPrependedStmt (stmt : StmtExpr) : SequenceM Unit :=
   modify fun s => { s with prependedStmts := s.prependedStmts ++ [stmt] }

@@ -25,7 +25,7 @@ procedure conditionalAssignmentInExpression(x: int) {
 }
 "
 
-#eval! testInputWithOffset "NestedImpureStatements" program 14 processLaurelFile
+#eval! testInputWithOffset "T2_ImpureExpressionsNotSupported" program 14 processLaurelFile
 
 
 end Laurel
