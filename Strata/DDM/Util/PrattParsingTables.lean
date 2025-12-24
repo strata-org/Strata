@@ -3,12 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Lean.Parser.Basic
+public import Lean.Parser.Basic
 
+public section
 namespace Lean.Parser.PrattParsingTables
 
-def addLeadingParser (tables : PrattParsingTables) (p : Parser) (prio : Nat) : PrattParsingTables :=
+private def addLeadingParser (tables : PrattParsingTables) (p : Parser) (prio : Nat) : PrattParsingTables :=
   let addTokens (tks : List Token) : PrattParsingTables :=
     let tks    := tks.map Name.mkSimple
     let tables := tks.eraseDups.foldl (init := tables) fun tables tk =>
@@ -35,3 +37,4 @@ def addParser (tables : PrattParsingTables) (leading : Bool) (p : Parser) (prio 
   | false, p => addTrailingParser tables p prio
 
 end Lean.Parser.PrattParsingTables
+end

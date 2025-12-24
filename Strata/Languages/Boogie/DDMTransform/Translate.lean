@@ -408,9 +408,9 @@ def translateOptionMonoDeclList (bindings : TransBindings) (arg : Arg) :
 partial def dealiasTypeExpr (p : Program) (te : TypeExpr) : TypeExpr :=
   match te with
   | (.fvar _ idx #[]) =>
-    match p.globalContext.vars[idx]! with
-    | (_, (.expr te)) => te
-    | (_, (.type [] (.some te))) => te
+    match p.globalContext.kindOf! idx with
+    | .expr te => te
+    | .type [] (.some te) => te
     | _ => te
   | _ => te
 
@@ -858,7 +858,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   | .fvar _ i, [] =>
     assert! i < bindings.freeVars.size
     let decl := bindings.freeVars[i]!
-    let ty? ← match p.globalContext.vars[i]!.2 with
+    let ty? ← match p.globalContext.kindOf! i with
               |.expr te => pure (some (← translateLMonoTy bindings (.type te)))
               | _ => pure none
     match decl with

@@ -28,7 +28,7 @@ eval b"ab\x12\r\\";
 
 #guard
   match Command.ofAst bvExample.commands[0] with
-  | .ok (Command.eval _ bv) => bv.val == .mk ("ab\x12\r\\".data.toArray.map Char.toUInt8)
+  | .ok (Command.eval _ bv) => bv.val == .mk ("ab\x12\r\\".toList.toArray.map Char.toUInt8)
   | _ => false
 
 /--

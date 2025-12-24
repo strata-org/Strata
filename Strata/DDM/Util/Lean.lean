@@ -3,11 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
-import Lean.Parser.Types
+module
+public import Lean.Expr
+public import Lean.Message
+public import Lean.Parser.Types
 
 open Lean Parser
 
+public section
 namespace Lean
 
 /- Creates a local variable name from a string -/
@@ -47,7 +50,7 @@ where
       if let .original (trailing := trailing) .. := stx.getTailInfo then pure (some trailing)
         else none
 
-partial def mkStringMessage (c : InputContext) (pos : String.Pos.Raw) (msg : String) (isSilent : Bool := false) : Message :=
+def mkStringMessage (c : InputContext) (pos : String.Pos.Raw) (msg : String) (isSilent : Bool := false) : Message :=
   mkErrorMessage c pos SyntaxStack.empty { unexpected := msg } (isSilent := isSilent)
 
 instance : Quote Int where
@@ -73,3 +76,4 @@ def listToExpr (level : Level) (type : Lean.Expr) (es : List Lean.Expr) : Lean.E
   es.foldr (init := nilFn) (mkApp2 consFn)
 
 end Lean
+end

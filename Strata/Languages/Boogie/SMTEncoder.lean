@@ -126,7 +126,7 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr BoogieLParams.mono)
   | .intConst _ i => .ok (Term.int i, ctx)
   | .realConst _ r =>
     match Strata.Decimal.fromRat r with
-    | some d => .ok (Term.real d.toString, ctx)
+    | some d => .ok (Term.real (toString d), ctx)
     | none => .error f!"Non-decimal real value {e}"
   | .bitvecConst _ n b => .ok (Term.bitvec b, ctx)
   | .strConst _ s => .ok (Term.string s, ctx)

@@ -3,7 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public section
 namespace Vector
 
 @[inline]
@@ -15,3 +17,4 @@ def modify! (v : Vector α n) (i : Nat) (f : α → α) : Vector α n where
 def modify (v : Vector α n) (i : Fin n) (f : α → α) : Vector α n := v.modify! i.val f
 
 end Vector
+end

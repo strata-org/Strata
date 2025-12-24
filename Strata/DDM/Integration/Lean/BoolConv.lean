@@ -3,9 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Integration.Lean.OfAstM
+public import Strata.DDM.Integration.Lean.OfAstM
 
+public section
 namespace Strata
 
 /-- Convert Init.Bool inductive to OperationF -/
@@ -32,3 +34,4 @@ def Bool.ofAst {α} [Inhabited α] [Repr α] (op : OperationF α) : OfAstM (Ann 
     .error s!"Unknown Bool operator: {op.name}"
 
 end Strata
+end

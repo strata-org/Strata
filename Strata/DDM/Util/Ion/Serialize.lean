@@ -3,8 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Util.Ion.AST
+public import Strata.DDM.Util.Ion.AST
 import Strata.DDM.Util.ByteArray
 
 namespace Ion
@@ -88,7 +89,7 @@ def encodeUIntLsb1 (x : Nat) : ByteArray :=
   let init : ByteArray := .empty |>.push x.toUInt8
   encodeUIntLsbAux (x >>> 8) init
 
-/-
+/--
 Emit a UInt64 with most-significant byte first.
 -/
 def emitUInt64_msb (u : UInt64) : Serialize :=
@@ -187,8 +188,8 @@ def serialize : Ion SymbolId → Serialize
 end Ion
 
 /-- Create binary version marker -/
-def binaryVersionMarker (major : UInt8 := 1) (minor : UInt8 := 0) : ByteArray :=
+public def binaryVersionMarker (major : UInt8 := 1) (minor : UInt8 := 0) : ByteArray :=
   .mk #[ 0xE0, major, minor, 0xEA ]
 
-def serialize (values : Array (Ion SymbolId)) : ByteArray :=
+public def serialize (values : Array (Ion SymbolId)) : ByteArray :=
   values.foldl (init := binaryVersionMarker) fun s v => v.serialize s |>.snd
