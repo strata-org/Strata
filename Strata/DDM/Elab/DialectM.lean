@@ -513,7 +513,7 @@ structure DialectContext where
   /-- Callback to load dialects dynamically upon demand. -/
   loadDialect : LoadDialectCallback
   inputContext : Parser.InputContext
-  stopPos : String.Pos
+  stopPos : String.Pos.Raw
 
 structure DialectState where
   loaded : LoadedDialects

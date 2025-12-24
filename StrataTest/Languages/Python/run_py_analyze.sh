@@ -1,5 +1,7 @@
 #!/bin/bash
 
+failed=0
+
 for test_file in tests/test_*.py; do
     if [ -f "$test_file" ]; then
         base_name=$(basename "$test_file" .py)
@@ -14,7 +16,10 @@ for test_file in tests/test_*.py; do
             if ! echo "$output" | diff -q "$expected_file" - > /dev/null; then
                 echo "ERROR: Analysis output for $base_name does not match expected result"
                 echo "$output" | diff "$expected_file" -
+                failed=1
             fi
         fi
     fi
 done
+
+exit $failed

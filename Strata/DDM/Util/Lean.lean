@@ -15,7 +15,7 @@ def mkLocalDeclId (name : String) : TSyntax `Lean.Parser.Command.declId :=
   let dName := .anonymous |>.str name
   .mk (.ident .none name.toSubstring dName [])
 
-partial def mkErrorMessage (c : InputContext) (pos : String.Pos) (stk : SyntaxStack) (e : Parser.Error) (isSilent : Bool := false) : Message := Id.run do
+partial def mkErrorMessage (c : InputContext) (pos : String.Pos.Raw) (stk : SyntaxStack) (e : Parser.Error) (isSilent : Bool := false) : Message := Id.run do
   let mut pos := pos
   let mut endPos? := none
   let mut e := e
@@ -42,12 +42,12 @@ partial def mkErrorMessage (c : InputContext) (pos : String.Pos) (stk : SyntaxSt
     data := toString e }
 where
   -- Error recovery might lead to there being some "junk" on the stack
-  lastTrailing (s : SyntaxStack) : Option Substring :=
+  lastTrailing (s : SyntaxStack) : Option Substring.Raw :=
     s.toSubarray.findSomeRevM? (m := Id) fun stx =>
       if let .original (trailing := trailing) .. := stx.getTailInfo then pure (some trailing)
         else none
 
-partial def mkStringMessage (c : InputContext) (pos : String.Pos) (msg : String) (isSilent : Bool := false) : Message :=
+partial def mkStringMessage (c : InputContext) (pos : String.Pos.Raw) (msg : String) (isSilent : Bool := false) : Message :=
   mkErrorMessage c pos SyntaxStack.empty { unexpected := msg } (isSilent := isSilent)
 
 instance : Quote Int where

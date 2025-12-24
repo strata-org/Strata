@@ -4,6 +4,9 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+import Strata.DL.Imperative.MetaData
+import Strata.Languages.Boogie.Expressions
+
 /-
 The Laurel language is supposed to serve as an intermediate verification language for at least Java, Python, JavaScript.
 
@@ -19,17 +22,16 @@ Features currently not present:
 
 Design choices:
 - Pure contracts: contracts may only contain pure code. Pure code does not modify the heap, neither by modifying existing objects are creating new ones.
-- Callables: instead of functions and methods we have a single more general concept called a 'callable'.
-- Purity: Callables can be marked as pure or impure. Pure callables have a reads clause while impure ones have a modifies clause.
-  A reads clause is currently not useful for impure callables, since reads clauses are used to determine when the output changes, but impure callables can be non-determinismic so the output can always change.
-- Opacity: callables can have a body that's transparant or opaque. Only an opaque body may declare a postcondition. A transparant callable must be pure.
+- Procedures: instead of functions and methods we have a single more general concept called a 'procedure'.
+- Determinism: procedures can be marked as deterministic or not. For deterministic procedures with a non-empty reads clause, we can assume the result is unchanged if the read references are the same.
+- Opacity: procedures can have a body that's transparant or opaque. Only an opaque body may declare a postcondition.
 - StmtExpr: Statements and expressions are part of the same type. This reduces duplication since the same concepts are needed in both, such as conditions and variable declarations.
 - Loops: The only loop is a while, but this can be used to compile do-while and for loops to as well.
 - Jumps: Instead of break and continue statements, there is a labelled block that can be exited from using an exit statement inside of it.
   This can be used to model break statements and continue statements for both while and for loops.
 
 - User defined types consist of two categories: composite types and constrained types.
-- Composite types have fields and callables, and may extend other composite types.
+- Composite types have fields and procedures, and may extend other composite types.
   - Fields state whether they are mutable, which impacts what permissions are needed to access them
   - Fields state their type, which is needed to know the resulting type when reading a field.
 - Constrained types are defined by a base type and a constraint over that type.
@@ -40,18 +42,24 @@ Design choices:
 - Construction of composite types is WIP. It needs a design first.
 
 -/
+namespace Laurel
 
 abbrev Identifier := String /- Potentially this could be an Int to save resources. -/
 
 mutual
-structure Callable: Type where
+structure Procedure: Type where
   name : Identifier
   inputs : List Parameter
   output : HighType
   precondition : StmtExpr
-  decreases : StmtExpr
-  purity : Purity
+  decreases : Option StmtExpr -- optionally prove termination
+  determinism: Determinism
+  modifies : Option StmtExpr
   body : Body
+
+inductive Determinism where
+  | deterministic (reads: Option StmtExpr)
+  | nondeterministic
 
 structure Parameter where
   name : Identifier
@@ -69,15 +77,6 @@ inductive HighType : Type where
   /- Java has implicit intersection types.
      Example: `<cond> ? RustanLeino : AndersHejlsberg` could be typed as `Scientist & Scandinavian`-/
   | Intersection (types : List HighType)
-  deriving Repr
-
-inductive Purity: Type where
-/-
-Since a reads clause is used to determine when the result of a call changes,
-a reads clause is only useful for deterministic callables.
--/
-  | Pure (reads : StmtExpr)
-  | Impure (modifies : StmtExpr)
 
 /- No support for something like function-by-method yet -/
 inductive Body where
@@ -150,8 +149,8 @@ inductive StmtExpr : Type where
   | Fresh(value : StmtExpr)
 
 /- Related to proofs -/
-  | Assert (condition: StmtExpr)
-  | Assume (condition: StmtExpr)
+  | Assert (condition: StmtExpr) (md : Imperative.MetaData Boogie.Expression)
+  | Assume (condition: StmtExpr) (md : Imperative.MetaData Boogie.Expression)
   /-
 ProveBy allows writing proof trees. Its semantics are the same as that of the given `value`,
 but the `proof` is used to help prove any assertions in `value`.
@@ -170,13 +169,14 @@ ProveBy(
   | ContractOf (type: ContractType) (function: StmtExpr)
 /-
 Abstract can be used as the root expr in a contract for reads/modifies/precondition/postcondition. For example: `reads(abstract)`
-It can only be used for instance callables and it makes the containing type abstract, meaning it can not be instantiated.
-An extending type can become concrete by redefining any callables that had abstracts contracts and providing non-abstract contracts.
+It can only be used for instance procedures and it makes the containing type abstract, meaning it can not be instantiated.
+An extending type can become concrete by redefining all procedures that had abstract contracts and providing non-abstract contracts.
 -/
   | Abstract
   | All -- All refers to all objects in the heap. Can be used in a reads or modifies clause
 /- Hole has a dynamic type and is useful when programs are only partially available -/
   | Hole
+  deriving Inhabited
 
 inductive ContractType where
   | Reads | Modifies | Precondition | PostCondition
@@ -210,11 +210,11 @@ structure CompositeType where
   name : Identifier
   /-
   The type hierarchy affects the results of IsType and AsType,
-  and can add checks to the postcondition of callables that extend another one
+  and can add checks to the postcondition of procedures that extend another one
   -/
   extending : List Identifier
   fields : List Field
-  instanceCallables : List Callable
+  instanceProcedures : List Procedure
 
 structure ConstrainedType where
   name : Identifier
@@ -240,6 +240,6 @@ inductive TypeDefinition where
   | Constrainted {ConstrainedType} (ty : ConstrainedType)
 
 structure Program where
-  staticCallables : List Callable
+  staticProcedures : List Procedure
   staticFields : List Field
   types : List TypeDefinition

@@ -11,64 +11,6 @@ import Strata.Languages.Boogie.Verifier
 
 namespace Strata
 
-open Boogie Lambda
-
-def errorDatatype : LDatatype Boogie.Visibility :=
-  { name := "Error"
-    typeArgs := []
-    constrs := [
-      { name := ⟨"TypeError", Boogie.Visibility.unres⟩
-        args := [(⟨"Error_getTypeError", Boogie.Visibility.unres⟩, LMonoTy.string)]
-        testerName := "Error_isTypeError" },
-      { name := ⟨"AttributeError", Boogie.Visibility.unres⟩
-        args := [(⟨"Error_getAttributeError", Boogie.Visibility.unres⟩, LMonoTy.string)]
-        testerName := "Error_isAttributeError" },
-      { name := ⟨"RePatternError", Boogie.Visibility.unres⟩
-        args := [(⟨"Error_getRePatternError", Boogie.Visibility.unres⟩, LMonoTy.string)]
-        testerName := "Error_isRePatternError" },
-      { name := ⟨"Unimplemented", Boogie.Visibility.unres⟩
-        args := [(⟨"Error_getUnimplemented", Boogie.Visibility.unres⟩, LMonoTy.string)]
-        testerName := "Error_isUnimplemented" }
-    ]
-    constrs_ne := by decide }
-
-def exceptDatatype : LDatatype Boogie.Visibility :=
-  { name := "Except"
-    typeArgs := ["err", "ok"]
-    constrs := [
-      { name := ⟨"mkOK", Boogie.Visibility.unres⟩
-        args := [(⟨"Except_getOK", Boogie.Visibility.unres⟩, LMonoTy.ftvar "ok")]
-        testerName := "Except_isOK" },
-      { name := ⟨"mkErr", Boogie.Visibility.unres⟩
-        args := [(⟨"Except_getErr", Boogie.Visibility.unres⟩, LMonoTy.ftvar "err")]
-        testerName := "Except_isErr"}
-    ]
-    constrs_ne := by decide }
-
-def exceptErrorRegexSynonym : Boogie.TypeSynonym :=
-  { name := "ExceptErrorRegex"
-    typeArgs := []
-    type := LMonoTy.tcons "Except" [LMonoTy.tcons "Error" [], LMonoTy.tcons "regex" []] }
-
-def pyReMatchStrFunc : Boogie.Function :=
-  { name := ⟨"PyReMatchStr", Boogie.Visibility.unres⟩
-    typeArgs := []
-    inputs := [
-      (⟨"pattern", Boogie.Visibility.unres⟩, LMonoTy.string),
-      (⟨"str", Boogie.Visibility.unres⟩, LMonoTy.string),
-      (⟨"flags", Boogie.Visibility.unres⟩, LMonoTy.int)
-    ]
-    output := LMonoTy.tcons "Except" [LMonoTy.tcons "Error" [], LMonoTy.bool]
-    body := none }
-
-def errorProgram : Boogie.Program :=
-  { decls := [
-      Boogie.Decl.type (Boogie.TypeDecl.data errorDatatype),
-      Boogie.Decl.type (Boogie.TypeDecl.data exceptDatatype),
-      Boogie.Decl.type (Boogie.TypeDecl.syn exceptErrorRegexSynonym),
-      Boogie.Decl.func pyReMatchStrFunc,
-    ] }
-
 def boogiePrelude :=
 #strata
 program Boogie;
@@ -83,11 +25,116 @@ axiom [Object_len_ge_zero]: (forall x : Object :: Object_len(x) >= 0);
 function inheritsFrom(child : string, parent : string) : (bool);
 axiom [inheritsFrom_refl]: (forall s: string :: {inheritsFrom(s, s)} inheritsFrom(s, s));
 
-/////////////////////////////////////////////////////////////////////////////////////
+// /////////////////////////////////////////////////////////////////////////////////////
+
+// Exceptions
+// TODO: Formalize the exception hierarchy here:
+// https://docs.python.org/3/library/exceptions.html#exception-hierarchy
+// We use the name "Error" to stand for Python's Exceptions +
+// our own special indicator, Unimplemented which is an artifact of
+// Strata that indicates that our models is partial.
+type Error;
+
+// Constructors
+function Error_TypeError (msg : string) : Error;
+function Error_AttributeError (msg : string) : Error;
+function Error_RePatternError (msg : string) : Error;
+function Error_Unimplemented (msg : string) : Error;
+
+// Testers
+function Error_isTypeError (e : Error) : bool;
+function Error_isAttributeError (e : Error) : bool;
+function Error_isRePatternError (e : Error) : bool;
+function Error_isUnimplemented (e : Error) : bool;
+
+// Destructors
+function Error_getTypeError (e : Error) : string;
+function Error_getAttributeError (e : Error) : string;
+function Error_getRePatternError (e : Error) : string;
+function Error_getUnimplemented (e : Error) : string;
+
+// Axioms
+// Testers of Constructors
+axiom [Error_isTypeError_TypeError]:
+    (forall msg : string :: {(Error_TypeError(msg))}
+        Error_isTypeError(Error_TypeError(msg)));
+axiom [Error_isAttributeError_AttributeError]:
+    (forall msg : string :: {(Error_AttributeError(msg))}
+        Error_isAttributeError(Error_AttributeError(msg)));
+axiom [Error_isRePatternError_RePatternError]:
+    (forall msg : string ::
+        Error_isRePatternError(Error_RePatternError(msg)));
+axiom [Error_isUnimplemented_Unimplemented]:
+   (forall msg : string ::
+        Error_isUnimplemented(Error_Unimplemented(msg)));
+// Destructors of Constructors
+axiom [Error_getTypeError_TypeError]:
+    (forall msg : string ::
+        Error_getTypeError(Error_TypeError(msg)) == msg);
+axiom [Error_getAttributeError_AttributeError]:
+    (forall msg : string ::
+        Error_getAttributeError(Error_AttributeError(msg)) == msg);
+axiom [Error_getUnimplemented_Unimplemented]:
+    (forall msg : string ::
+        Error_getUnimplemented(Error_Unimplemented(msg)) == msg);
 
 // /////////////////////////////////////////////////////////////////////////////////////
 // /////////////////////////////////////////////////////////////////////////////////////
 // Regular Expressions
+
+type Except (err : Type, ok : Type);
+
+// FIXME:
+// Once DDM support polymorphic functions (and not just type declarations),
+// we will be able to define the following generic functions and axioms. For now,
+// we manually define appropriate instantiations.
+// Also: when ADT support is lifted up to Boogie, all these
+// constructors, testers, destructors, and axioms will be auto-generated.
+// How will the DDM keep track of them?
+
+// // Constructors
+// function Except_mkOK(err : Type, ok : Type, val : ok) : Except err ok;
+// function Except_mkErr(err : Type, ok : Type, val : err) : Except err ok;
+// // Testers
+// function Except_isOK(err : Type, ok : Type, x : Except err ok) : bool;
+// function Except_isErr(err : Type, ok : Type, x : Except err ok) : bool;
+// // Destructors
+// function Except_getOK(err : Type, ok : Type, x : Except err ok) : ok;
+// function Except_getErr(err : Type, ok : Type, x : Except err ok) : err;
+// // Axioms
+// // Testers of Constructors
+// axiom [Except_isOK_mkOK]: (forall x : ok :: Except_isOK(Except_mkOK x));
+// axiom [Except_isErr_mkErr]: (forall x : err :: Except_isErr(Except_mkErr x));
+// // Destructors of Constructors
+// axiom [Except_getOK_mkOK]: (forall x : ok :: Except_getOK(Except_mkOK x) == x);
+// axiom [Except_getErr_mkErr]: (forall x : err :: Except_isErr(Except_mkErr x));
+
+type ExceptErrorRegex := Except Error regex;
+
+// Constructors
+function ExceptErrorRegex_mkOK(x : regex) : ExceptErrorRegex;
+function ExceptErrorRegex_mkErr(x : Error) : ExceptErrorRegex;
+// Testers
+function ExceptErrorRegex_isOK(x : ExceptErrorRegex) : bool;
+function ExceptErrorRegex_isErr(x : ExceptErrorRegex) : bool;
+// Destructors
+function ExceptErrorRegex_getOK(x : ExceptErrorRegex) : regex;
+function ExceptErrorRegex_getErr(x : ExceptErrorRegex) : Error;
+// Axioms
+// Testers of Constructors
+axiom [ExceptErrorRegex_isOK_mkOK]:
+    (forall x : regex :: {(ExceptErrorRegex_mkOK(x))}
+        ExceptErrorRegex_isOK(ExceptErrorRegex_mkOK(x)));
+axiom [ExceptErrorRegex_isError_mkErr]:
+    (forall e : Error :: {(ExceptErrorRegex_mkErr(e))}
+        ExceptErrorRegex_isErr(ExceptErrorRegex_mkErr(e)));
+// Destructors of Constructors
+axiom [ExceptErrorRegex_getOK_mkOK]:
+    (forall x : regex :: {(ExceptErrorRegex_mkOK(x))}
+        ExceptErrorRegex_getOK(ExceptErrorRegex_mkOK(x)) == x);
+axiom [ExceptErrorRegex_getError_mkError]:
+    (forall e : Error :: {(ExceptErrorRegex_mkErr(e))}
+        ExceptErrorRegex_getErr(ExceptErrorRegex_mkErr(e)) == e);
 
 // NOTE: `re.match` returns a `Re.Match` object, but for now, we are interested
 // only in match/nomatch, which is why we return `bool` here.
@@ -97,22 +144,18 @@ axiom [PyReMatchRegex_def_noFlg]:
   (forall pattern : regex, str : string :: {PyReMatchRegex(pattern, str, 0)}
     PyReMatchRegex(pattern, str, 0) == str.in.re(str, pattern));
 
-/////////////////////////////////////////////////////////////////////////////////////
+// Unsupported/uninterpreted: eventually, this would first call PyReCompile and if there's
+// no exception, call PyReMatchRegex.
+function PyReMatchStr(pattern : string, str : string, flags : int) : Except Error bool;
+
+// /////////////////////////////////////////////////////////////////////////////////////
 
 // List of strings
 type ListStr;
 function ListStr_nil() : (ListStr);
 function ListStr_cons(x0 : string, x1 : ListStr) : (ListStr);
 
-/////////////////////////////////////////////////////////////////////////////////////
-
-// Uninterpreted procedures
-procedure importFrom(module : string, names : ListStr, level : int) returns ();
-procedure import(names : ListStr) returns ();
-procedure print(msg : string) returns ();
-
-/////////////////////////////////////////////////////////////////////////////////////
-/////////////////////////////////////////////////////////////////////////////////////
+// /////////////////////////////////////////////////////////////////////////////////////
 
 // Temporary Types
 
@@ -149,13 +192,13 @@ function IntOrNone_int_val(v : IntOrNone) : int;
 function IntOrNone_none_val(v : IntOrNone) : None;
 function IntOrNone_mk_int(i : int) : IntOrNone;
 function IntOrNone_mk_none(v : None) : IntOrNone;
-axiom (forall i : int :: {(IntOrNone_mk_int(i))}
+axiom [IntOrNone_mk_int_axiom]: (forall i : int :: {(IntOrNone_mk_int(i))}
         IntOrNone_tag(IntOrNone_mk_int(i)) == IN_INT_TAG &&
         IntOrNone_int_val(IntOrNone_mk_int(i)) == i);
-axiom (forall n : None :: {(IntOrNone_mk_none(n))}
+axiom [IntOrNone_mk_none_axiom]: (forall n : None :: {(IntOrNone_mk_none(n))}
         IntOrNone_tag(IntOrNone_mk_none(n)) == IN_NONE_TAG &&
         IntOrNone_none_val(IntOrNone_mk_none(n)) == n);
-axiom (forall v : IntOrNone :: {IntOrNone_tag(v)}
+axiom [IntOrNone_tag_axiom]: (forall v : IntOrNone :: {IntOrNone_tag(v)}
         IntOrNone_tag(v) == IN_INT_TAG ||
         IntOrNone_tag(v) == IN_NONE_TAG);
 axiom [unique_IntOrNoneTag]: IN_INT_TAG != IN_NONE_TAG;
@@ -260,7 +303,240 @@ axiom (forall v : BoolOrStrOrNone :: {BoolOrStrOrNone_tag(v)}
         BoolOrStrOrNone_tag(v) == BSN_BOOL_TAG ||
         BoolOrStrOrNone_tag(v) == BSN_STR_TAG ||
         BoolOrStrOrNone_tag(v) == BSN_NONE_TAG);
+
+// DictStrStrOrNone
+type DictStrStrOrNone;
+type  DictStrStrOrNoneTag;
+const DSSN_BOOL_TAG : DictStrStrOrNoneTag;
+const DSSN_NONE_TAG : DictStrStrOrNoneTag;
+function DictStrStrOrNone_tag(v : DictStrStrOrNone) : DictStrStrOrNoneTag;
+function DictStrStrOrNone_str_val(v : DictStrStrOrNone) : string;
+function DictStrStrOrNone_none_val(v : DictStrStrOrNone) : None;
+function DictStrStrOrNone_mk_str(s : string) : DictStrStrOrNone;
+function DictStrStrOrNone_mk_none(v : None) : DictStrStrOrNone;
+axiom (forall s : string :: {DictStrStrOrNone_mk_str(s)}
+        DictStrStrOrNone_tag(DictStrStrOrNone_mk_str(s)) == DSSN_BOOL_TAG &&
+        DictStrStrOrNone_str_val(DictStrStrOrNone_mk_str(s)) == s);
+axiom (forall n : None :: {DictStrStrOrNone_mk_none(n)}
+        DictStrStrOrNone_tag(DictStrStrOrNone_mk_none(n)) == DSSN_NONE_TAG &&
+        DictStrStrOrNone_none_val(DictStrStrOrNone_mk_none(n)) == n);
+axiom (forall v : DictStrStrOrNone :: {DictStrStrOrNone_tag(v)}
+        DictStrStrOrNone_tag(v) == DSSN_BOOL_TAG ||
+        DictStrStrOrNone_tag(v) == DSSN_NONE_TAG);
+axiom [unique_DictStrStrOrNoneTag]: DSSN_BOOL_TAG != DSSN_NONE_TAG;
+
+type BytesOrStrOrNone;
+function BytesOrStrOrNone_mk_none(v : None) : (BytesOrStrOrNone);
+function BytesOrStrOrNone_mk_str(s : string) : (BytesOrStrOrNone);
+
+type DictStrAny;
+function DictStrAny_mk(s : string) : (DictStrAny);
+
+type ListDictStrAny;
+function ListDictStrAny_nil() : (ListDictStrAny);
+
+type Client;
+type ClientTag;
+const C_S3_TAG : ClientTag;
+const C_CW_TAG : ClientTag;
+function Client_tag(v : Client) : (ClientTag);
+
+// Unique const axioms
 axiom [unique_BoolOrStrOrNoneTag]: BSN_BOOL_TAG != BSN_STR_TAG && BSN_BOOL_TAG != BSN_NONE_TAG && BSN_STR_TAG != BSN_NONE_TAG;
+
+
+// /////////////////////////////////////////////////////////////////////////////////////
+// Datetime
+
+////// 1. Timedelta.
+
+// According to http://docs.python.org/3/library/datetime.html,
+// ""
+//  Only days, seconds and microseconds are stored internally. Arguments are
+//  converted to those units:
+//  - A millisecond is converted to 1000 microseconds.
+//  - A minute is converted to 60 seconds.
+//  - An hour is converted to 3600 seconds.
+//  - A week is converted to 7 days.
+//  and days, seconds and microseconds are then normalized so that the
+//  representation is unique, with
+//  - 0 <= microseconds < 1000000
+//  - 0 <= seconds < 3600*24 (the number of seconds in one day)
+//  - -999999999 <= days <= 999999999
+// ""
+
+// In Boogie representation, an int type that corresponds to the full
+// milliseconds is simply used. See Timedelta_mk.
+
+
+procedure timedelta(days: IntOrNone, hours: IntOrNone) returns (delta : int, maybe_except: ExceptOrNone)
+spec{
+}
+{
+  havoc delta;
+  var days_i : int := 0;
+  if (IntOrNone_tag(days) == IN_INT_TAG) {
+        days_i := IntOrNone_int_val(days);
+  }
+  var hours_i : int := 0;
+  if (IntOrNone_tag(hours) == IN_INT_TAG) {
+        days_i := IntOrNone_int_val(hours);
+  }
+  assume [assume_timedelta_sign_matches]: (delta == (((days_i * 24) + hours_i) * 3600) * 1000000);
+};
+
+function Timedelta_mk(days : int, seconds : int, microseconds : int): int {
+  ((days * 3600 * 24) + seconds) * 1000000 + microseconds
+}
+
+function Timedelta_get_days(timedelta : int) : int;
+function Timedelta_get_seconds(timedelta : int) : int;
+function Timedelta_get_microseconds(timedelta : int) : int;
+
+axiom [Timedelta_deconstructors]:
+    (forall days0 : int, seconds0 : int, msecs0 : int,
+            days : int, seconds : int, msecs : int
+            :: {(Timedelta_mk(days0, seconds0, msecs0))}
+      Timedelta_mk(days0, seconds0, msecs0) ==
+          Timedelta_mk(days, seconds, msecs) &&
+      0 <= msecs && msecs < 1000000 &&
+      0 <= seconds && seconds < 3600 * 24 &&
+      -999999999 <= days && days <= 999999999
+      ==> Timedelta_get_days(Timedelta_mk(days0, seconds0, msecs0)) == days &&
+          Timedelta_get_seconds(Timedelta_mk(days0, seconds0, msecs0)) == seconds &&
+          Timedelta_get_microseconds(Timedelta_mk(days0, seconds0, msecs0)) == msecs);
+
+
+////// Datetime.
+// Datetime is abstractly defined as a pair of (base time, relative timedelta).
+// datetime.now() returns (<the curent datetime>, 0).
+// Adding or subtracting datetime.timedelta updates
+type Datetime;
+type Datetime_base;
+
+function Datetime_get_base(d : Datetime) : Datetime_base;
+function Datetime_get_timedelta(d : Datetime) : int;
+
+// now() returns an abstract, fresh current datetime.
+// This abstract now() does not guarantee monotonic increase of time, and this
+// means subtracting an 'old' timestamp from a 'new' timestamp may return
+// a negative difference.
+
+procedure datetime_now() returns (d:Datetime, maybe_except: ExceptOrNone)
+spec {
+  ensures (Datetime_get_timedelta(d) == Timedelta_mk(0,0,0));
+}
+{
+  havoc d;
+  assume [assume_datetime_now]: (Datetime_get_timedelta(d) == Timedelta_mk(0,0,0));
+};
+
+procedure datetime_utcnow() returns (d:Datetime, maybe_except: ExceptOrNone)
+spec {
+  ensures (Datetime_get_timedelta(d) == Timedelta_mk(0,0,0));
+}
+{
+  havoc d;
+  assume [assume_datetime_now]: (Datetime_get_timedelta(d) == Timedelta_mk(0,0,0));
+};
+
+// Addition/subtraction of Datetime and Timedelta.
+function Datetime_add(d:Datetime, timedelta:int):Datetime;
+function Datetime_sub(d:Datetime, timedelta:int):Datetime {
+  Datetime_add(d, -timedelta)
+}
+
+axiom [Datetime_add_ax]:
+    (forall d:Datetime, timedelta:int :: {}
+        Datetime_get_base(Datetime_add(d,timedelta)) == Datetime_get_base(d) &&
+        Datetime_get_timedelta(Datetime_add(d,timedelta)) ==
+          Datetime_get_timedelta(d)  + timedelta);
+
+// Comparison of Datetimes is abstractly defined so that the result is
+// meaningful only if the two datetimes have same base.
+function Datetime_lt(d1:Datetime, d2:Datetime):bool;
+
+axiom [Datetime_lt_ax]:
+    (forall d1:Datetime, d2:Datetime :: {}
+        Datetime_get_base(d1) == Datetime_get_base(d2)
+        ==> Datetime_lt(d1, d2) ==
+            (Datetime_get_timedelta(d1) < Datetime_get_timedelta(d2)));
+
+
+type Date;
+procedure datetime_date(dt: Datetime) returns (d : Datetime, maybe_except: ExceptOrNone)
+spec{}
+{havoc d;};
+
+function datetime_to_str(dt : Datetime) : string;
+
+function datetime_to_int() : int;
+
+procedure datetime_strptime(time: string, format: string) returns (d : Datetime, maybe_except: ExceptOrNone)
+spec{
+  requires [req_format_str]: (format == "%Y-%m-%d");
+  ensures [ensures_str_strp_reverse]: (forall dt : Datetime :: {d == dt} ((time == datetime_to_str(dt)) <==> (d == dt)));
+}
+{
+  havoc d;
+  assume [assume_str_strp_reverse]: (forall dt : Datetime :: {d == dt} ((time == datetime_to_str(dt)) <==> (d == dt)));
+};
+
+/////////////////////////////////////////////////////////////////////////////////////
+
+
+// /////////////////////////////////////////////////////////////////////////////////////
+
+// Uninterpreted procedures
+procedure importFrom(module : string, names : ListStr, level : int) returns ();
+procedure import(names : ListStr) returns ();
+procedure print(msg : string, opt : StrOrNone) returns ();
+
+procedure json_dumps(msg : DictStrAny, opt_indent : IntOrNone) returns (s: string, maybe_except: ExceptOrNone)
+spec{}
+{havoc s;}
+;
+
+procedure json_loads(msg : string) returns (d: DictStrAny, maybe_except: ExceptOrNone)
+spec{}
+{havoc d;}
+;
+
+procedure input(msg : string) returns (result: string, maybe_except: ExceptOrNone)
+spec{}
+{havoc result;}
+;
+
+procedure random_choice(l : ListStr) returns (result: string, maybe_except: ExceptOrNone)
+spec{}
+{havoc result;}
+;
+
+function str_in_list_str(s : string, l: ListStr) : bool;
+
+function str_in_dict_str_any(s : string, l: DictStrAny) : bool;
+
+function list_str_get(l : ListStr, i: int) : string;
+
+function str_len(s : string) : int;
+
+function dict_str_any_get(d : DictStrAny, k: string) : DictStrAny;
+
+function dict_str_any_get_list_str(d : DictStrAny, k: string) : ListStr;
+
+function dict_str_any_get_str(d : DictStrAny, k: string) : string;
+
+function dict_str_any_length(d : DictStrAny) : int;
+
+procedure str_to_float(s : string) returns (result: string, maybe_except: ExceptOrNone)
+;
+
+function Float_gt(lhs : string, rhs: string) : bool;
+
+// /////////////////////////////////////////////////////////////////////////////////////
+
+
+
 procedure test_helper_procedure(req_name : string, opt_name : StrOrNone) returns (maybe_except: ExceptOrNone)
 spec {
   requires [req_name_is_foo]: req_name == "foo";
@@ -278,6 +554,6 @@ spec {
 #end
 
 def Boogie.prelude : Boogie.Program :=
-   {decls := errorProgram.decls ++ (Boogie.getProgram Strata.boogiePrelude |>.fst).decls}
+   Boogie.getProgram Strata.boogiePrelude |>.fst
 
 end Strata

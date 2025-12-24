@@ -314,10 +314,10 @@ protected def toIon (d : QualifiedIdent) : Ion.InternM (Ion SymbolId) := do
 
 def fromIonStringSymbol (fullname : String) : FromIonM QualifiedIdent := do
   let pos := fullname.find (·='.')
-  if pos < fullname.endPos then
-    let dialect := fullname.extract 0 pos
+  if pos < fullname.rawEndPos then
+    let dialect := String.Pos.Raw.extract fullname 0 pos
     -- . is one byte
-    let name := fullname.extract (pos + '.') fullname.endPos
+    let name := String.Pos.Raw.extract fullname (pos + '.') fullname.rawEndPos
     return { dialect,  name }
   else
     throw s!"Invalid symbol {fullname}"
@@ -652,8 +652,8 @@ namespace SyntaxDefAtom
 protected def toIon (refs : SymbolIdCache) (a : SyntaxDefAtom) : InternM (Ion SymbolId) :=
   ionScope! SyntaxDefAtom refs :
     match a with
-    | .ident idx prec =>
-      return .sexp #[ .symbol ionSymbol! "ident", .int idx, .int prec ]
+    | .ident idx prec unwrap =>
+      return .sexp #[ .symbol ionSymbol! "ident", .int idx, .int prec, .bool unwrap ]
     | .str v =>
       return .string v
     | .indent n args =>
@@ -670,9 +670,19 @@ protected def fromIon (v : Ion SymbolId) : FromIonM SyntaxDefAtom := do
   | .sexp args argsp =>
     match ← .asSymbolString "SyntaxDefAtom kind" args[0] with
     | "ident" => do
-      let ⟨p⟩ ← .checkArgCount "ident" args 3
-      .ident <$> .asNat "SyntaxDef ident level" args[1]
-             <*> .asNat "SyntaxDef ident prec" args[2]
+      -- Support both formats: 3 args (without unwrap) and 4 args (with unwrap spec)
+      if args.size = 3 then
+        let level ← .asNat "SyntaxDef ident level" args[1]!
+        let prec ← .asNat "SyntaxDef ident prec" args[2]!
+        return .ident level prec false
+      else
+        let ⟨p⟩ ← .checkArgCount "ident" args 4
+        let level ← .asNat "SyntaxDef ident level" args[1]!
+        let prec ← .asNat "SyntaxDef ident prec" args[2]!
+        let unwrap ← match args[3]! with
+          | .bool b => pure b
+          | _ => throw "Expected boolean for unwrap"
+        return .ident level prec unwrap
     | "indent" => do
       .indent <$> .asNat "SyntaxDef indent value" args[1]!
               <*> args.attach.mapM_off (start := 2) fun ⟨u, _⟩ =>
@@ -1289,14 +1299,18 @@ instance : CachedToIon Program where
 
 #declareIonSymbolTable Program
 
-def fromIonFragment (f : Ion.Fragment) (dialects : DialectMap) (dialect : DialectName) : Except String Program := do
+def fromIonFragmentCommands (f : Ion.Fragment) : Except String (Array Operation) := do
   let ctx : FromIonContext := ⟨f.symbols⟩
-  let commands ← f.values.foldlM (init := #[]) (start := f.offset) fun cmds u => do
+  f.values.foldlM (init := #[]) (start := f.offset) fun cmds u => do
     cmds.push <$> OperationF.fromIon u ctx
+
+def fromIonFragment (f : Ion.Fragment)
+      (dialects : DialectMap)
+      (dialect : DialectName) : Except String Program :=
   return {
-    dialects := dialects.importedDialects! dialect
+    dialects := dialects
     dialect := dialect
-    commands := commands
+    commands := ← fromIonFragmentCommands f
   }
 
 def fromIon (dialects : DialectMap) (dialect : DialectName) (bytes : ByteArray) : Except String Strata.Program := do

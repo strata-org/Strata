@@ -30,9 +30,8 @@ def foldr {β} (f : UInt8 → β → β) (init : β) (as : ByteArray) (start := 
   aux (min start as.size) (Nat.min_le_right _ _) init
 
 def byteToHex (b : UInt8) : String :=
-  let cl := Nat.toDigits 16 b.toNat
-  let cl := if cl.length < 2 then '0' :: cl else cl
-  cl.asString
+  let cl : String := .ofList (Nat.toDigits 16 b.toNat)
+  if cl.length < 2 then "0" ++ cl else cl
 
 def asHex (a : ByteArray) : String :=
   a.foldl (init := "") fun s b => s ++ byteToHex b
@@ -94,36 +93,81 @@ def hexDigitToUInt8 (c : Char) : Option UInt8 :=
 def escapeChars : Std.HashMap Char UInt8 := .ofList <|
     ByteArray.escapedBytes.toList |>.map fun (i, c) => (c, i)
 
-partial def unescapeBytesAux (s : String) (i0 : String.Pos) (a : ByteArray) : Except (String.Pos × String.Pos × String) (ByteArray × String.Pos) :=
-  if h : s.atEnd i0 then
+partial def unescapeBytesRawAux (s : String) (i0 : String.Pos.Raw) (a : ByteArray) : Except (String.Pos.Raw × String.Pos.Raw × String) (ByteArray × String.Pos.Raw) :=
+  if i0 = s.rawEndPos then
     .error (i0, i0, "unexpected end of input, expected closing quote")
   else
-    let ch := s.get' i0 h
-    let i := s.next' i0 h
+    let ch := i0.get s
+    let i := i0.next s
     if ch == '"' then
       .ok (a, i)
     else if ch == '\\' then
       -- Escape sequence
-      if h : s.atEnd i then
+      if i = s.rawEndPos then
         .error (i0, i, "unexpected end of input after backslash")
       else
-        let escCh := s.get' i h
-        let i := s.next' i h
+        let escCh := i.get s
+        let i := i.next s
         if escCh = 'x' then
           -- Hex escape: \xHH
-          let j := s.next i
-          if h : s.atEnd j then
-            .error (i0, j, "incomplete hex escape sequence")
+          if i = s.rawEndPos then
+            .error (i0, i, "incomplete hex escape sequence")
           else
-            let c1 := s.get i
-            let c2 := s.get' j h
-            let k := s.next' j h
-            match hexDigitToUInt8 c1, hexDigitToUInt8 c2 with
-            | some b1, some b2 =>
-              let b := b1 * 16 + b2
-              unescapeBytesAux s k (a.push b)
-            | none, _ => .error (i0, k, "Invalid hex escape sequence")
-            | _, none => .error (i0, k, "Invalid hex escape sequence")
+            let c1 := i.get s
+            let j := i.next s
+            if j = s.rawEndPos then
+              .error (i0, j, "incomplete hex escape sequence")
+            else
+              let c2 := j.get s
+              let k := j.next s
+              match hexDigitToUInt8 c1, hexDigitToUInt8 c2 with
+              | some b1, some b2 =>
+                let b := b1 * 16 + b2
+                unescapeBytesRawAux s k (a.push b)
+              | none, _ => .error (i0, k, "Invalid hex escape sequence")
+              | _, none => .error (i0, k, "Invalid hex escape sequence")
+        else
+          match escapeChars[escCh]? with
+          | some b =>
+            unescapeBytesRawAux s i (a.push b)
+          | none =>
+            .error (i0, i, "invalid escape sequence: {escCh}")
+    else
+      unescapeBytesRawAux s i (a.push ch.toUInt8)
+
+partial def unescapeBytesAux (s : String) (i0 : String.ValidPos s) (a : ByteArray) : Except (String.ValidPos s × String.ValidPos s × String) (ByteArray × String.ValidPos s) :=
+  if h : i0 = s.endValidPos then
+    .error (i0, i0, "unexpected end of input, expected closing quote")
+  else
+    let ch := i0.get h
+    let i := i0.next h
+    if ch == '"' then
+      .ok (a, i)
+    else if ch == '\\' then
+      -- Escape sequence
+      if h : i = s.endValidPos then
+        .error (i0, i, "unexpected end of input after backslash")
+      else
+        let escCh := i.get h
+        let i := i.next h
+        if escCh = 'x' then
+          -- Hex escape: \xHH
+          if h : i = s.endValidPos then
+            .error (i0, i, "incomplete hex escape sequence")
+          else
+            let c1 := i.get h
+            let j := i.next h
+            if h : j = s.endValidPos then
+              .error (i0, j, "incomplete hex escape sequence")
+            else
+              let c2 := j.get h
+              let k := j.next h
+              match hexDigitToUInt8 c1, hexDigitToUInt8 c2 with
+              | some b1, some b2 =>
+                let b := b1 * 16 + b2
+                unescapeBytesAux s k (a.push b)
+              | none, _ => .error (i0, k, "Invalid hex escape sequence")
+              | _, none => .error (i0, k, "Invalid hex escape sequence")
         else
           match escapeChars[escCh]? with
           | some b =>
@@ -133,9 +177,8 @@ partial def unescapeBytesAux (s : String) (i0 : String.Pos) (a : ByteArray) : Ex
     else
       unescapeBytesAux s i (a.push ch.toUInt8)
 
-
-def unescapeBytes (s : String) : Except (String.Pos × String.Pos × String) ByteArray :=
-  let i := s.next <| s.next 0
+def unescapeBytes (s : String) : Except (String.ValidPos s × String.ValidPos s × String) ByteArray :=
+  let i : String.ValidPos s := s.startValidPos  |>.next! |>.next!
   match unescapeBytesAux s i .empty with
   | .error (f, e, msg) => .error (f, e, msg)
   | .ok (a, _) => .ok a

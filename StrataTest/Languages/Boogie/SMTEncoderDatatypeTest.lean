@@ -90,7 +90,7 @@ def toSMTStringWithDatatypes (e : LExpr BoogieLParams.mono) (datatypes : List (L
       | .error e => return s!"Error: {e}"
       | .ok _ =>
         let contents ← b.get
-        if h: String.validateUTF8 contents.data then
+        if h: contents.data.IsValidUTF8 then
           return String.fromUTF8 contents.data h
         else
           return "Invalid UTF-8 in output"

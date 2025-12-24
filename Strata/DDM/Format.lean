@@ -8,11 +8,62 @@ import Strata.DDM.AST
 import Strata.DDM.Util.Fin
 import Strata.DDM.Util.Format
 import Strata.DDM.Util.Nat
+import Strata.DDM.Util.String
 import Std.Data.HashSet
 
 open Std (Format format)
 
 namespace Strata
+
+/--
+Check if a character is valid for starting a regular identifier.
+Regular identifiers must start with a letter or underscore.
+-/
+private def isIdBegin (c : Char) : Bool :=
+  c.isAlpha || c == '_'
+
+/--
+Check if a character is valid for continuing a regular identifier.
+-/
+private def isIdContinue (c : Char) : Bool :=
+  c.isAlphanum || c == '_' || c == '\'' || c == '.' || c == '?' || c == '!'
+
+/--
+Check if a string needs pipe delimiters when formatted as an identifier.
+Returns true if the string contains special characters, spaces, or starts with a digit.
+-/
+private def needsPipeDelimiters (s : String) : Bool :=
+  if h : s.isEmpty then
+    true
+  else
+    let firstChar := s.startValidPos.get (by simp_all [String.isEmpty])
+    !isIdBegin firstChar || s.any (fun c => !isIdContinue c)
+
+/--
+Escape a string for use in pipe-delimited identifiers (SMT-LIB 2.6).
+Escapes \ as \\ and | as \|
+-/
+private def escapePipeIdent (s : String) : String :=
+  s.foldl (init := "") fun acc c =>
+    if c == '\\' then acc ++ "\\\\"
+    else if c == '|' then acc ++ "\\|"
+    else acc.push c
+
+/--
+Format a string as an identifier, using pipe delimiters if needed.
+Strips Lean's «» notation if present.
+Follows SMT-LIB 2.6 specification for quoted symbols.
+-/
+private def formatIdent (s : String) : Format :=
+  -- Strip Lean's «» notation if present
+  let s := if s.startsWith "«" && s.endsWith "»" then
+             s.drop 1 |>.dropRight 1
+           else
+             s
+  if needsPipeDelimiters s then
+    Format.text ("|" ++ escapePipeIdent s ++ "|")
+  else
+    Format.text s
 
 structure PrecFormat where
   format : Format
@@ -210,9 +261,9 @@ macro_rules
 instance : ToStrataFormat QualifiedIdent where
   mformat (ident : QualifiedIdent) _ s :=
     if ident.dialect ∈ s.openDialects then
-      .ofFormat ident.name
+      .atom (formatIdent ident.name)
     else
-      .atom f!"{ident.dialect}.{ident.name}"
+      .atom f!"{ident.dialect}.{formatIdent ident.name}"
 
 namespace TypeExprF
 
@@ -262,7 +313,7 @@ This pretty prints the argument an op atom has.
 -/
 private def SyntaxDefAtom.formatArgs (opts : FormatOptions) (args : Array PrecFormat) (stx : SyntaxDefAtom) : Format :=
   match stx with
-  | .ident lvl prec =>
+  | .ident lvl prec _ =>
     let ⟨r, innerPrec⟩ := args[lvl]!
     if prec > 0 ∧ (innerPrec ≤ prec ∨ opts.alwaysParen) then
       f!"({r})"
@@ -314,7 +365,7 @@ private partial def ArgF.mformatM {α} : ArgF α → FormatM PrecFormat
 | .expr e => e.mformatM
 | .type e => pformat e
 | .cat e => pformat e
-| .ident _ x => pformat x
+| .ident _ x => return .atom (formatIdent x)
 | .num _ x => pformat x
 | .decimal _ v => pformat v
 | .strlit _ s => return .atom (.text <| escapeStringLit s)
@@ -481,7 +532,7 @@ end ArgDecls
 namespace SyntaxDefAtom
 
 protected def mformat : SyntaxDefAtom → StrataFormat
-| .ident lvl prec => mf!"{StrataFormat.lvlVar lvl}:{prec}" -- FIXME.  This may be wrong.
+| .ident lvl prec _ => mf!"{StrataFormat.lvlVar lvl}:{prec}" -- FIXME.  This may be wrong.
 | .str lit => mformat (escapeStringLit lit)
 | .indent n f =>
   let r := f.attach.map fun ⟨a, _⟩ => a.mformat
@@ -563,14 +614,17 @@ instance Decl.instToStrataFormat : ToStrataFormat Decl where
   | .function d => mformat d
   | .metadata d => mformat d
 
-namespace Dialect
+namespace DialectMap
 
-protected def format (dialects : DialectMap) (d : Dialect) (opts : FormatOptions := {}) : Format :=
-  assert! d.name ∈ dialects
+/--
+Pretty print the dialect with the given name in the map.
+-/
+protected def format (dialects : DialectMap) (name : DialectName) (mem : name ∈ dialects) (opts : FormatOptions := {}) : Format :=
+  let d := dialects[name]
   let c := FormatContext.ofDialects dialects {} opts
-  let imports := dialects.importedDialects! d.name
+  let imports := dialects.importedDialects name mem
   let s : FormatState := { openDialects := imports.map.fold (init := {}) fun s n _ => s.insert n }
-  let f := f!"dialect {d.name};\n"
+  let f := f!"dialect {name};\n"
   let f := d.imports.foldl (init := f) fun f i =>
     if i = "Init" then
       f
@@ -578,7 +632,7 @@ protected def format (dialects : DialectMap) (d : Dialect) (opts : FormatOptions
       f!"{f}import {i}\n"
   d.declarations.foldl (init := f) fun f d => f ++ (mformat d c s).format
 
-end Dialect
+end DialectMap
 
 namespace Program
 
@@ -598,9 +652,10 @@ instance : ToString Program where
   toString p := p.format |>.render
 
 protected def ppDialect! (p : Program) (name : DialectName := p.dialect) (opts : FormatOptions := {}) : Format :=
-  match p.dialects[name]? with
-  | some d => d.format p.dialects opts
-  | none => panic! s!"Unknown dialect {name}"
+  if mem : name ∈ p.dialects then
+    p.dialects.format name mem opts
+  else
+    panic! s!"Unknown dialect {name}"
 
 end Program
 

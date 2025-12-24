@@ -67,7 +67,7 @@ instance [ToFormat Expression.Ident] [ToFormat Expression.Expr] [ToFormat Expres
 
 instance [ToFormat Expression.Ident] [ToFormat Expression.Expr] [ToFormat Expression.Ty] [ToFormat Command]:
   ToFormat (List Statement) where
-  format ss := Imperative.formatStmts Expression ss
+  format ss := Imperative.formatBlock Expression ss
 
 instance : Std.ToFormat Function where
   format f :=
