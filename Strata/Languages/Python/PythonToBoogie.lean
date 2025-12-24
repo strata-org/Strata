@@ -14,7 +14,7 @@ import Strata.Languages.Python.PythonDialect
 import Strata.Languages.Python.FunctionSignatures
 import Strata.Languages.Python.Regex.ReToBoogie
 import Strata.Languages.Python.PyFactory
-import StrataTest.Internal.InternalFunctionSignatures
+import Strata.Languages.Python.FunctionSignatures
 
 namespace Strata
 open Lambda.LTy.Syntax
@@ -52,7 +52,6 @@ structure PyExprTranslated where
   post_stmts : List Boogie.Statement := []
 deriving Inhabited
 
-
 structure PythonFunctionDecl where
   name : String
   args : List (String × String) -- Elements are (arg_name, arg_ty) where `arg_ty` is the string representation of the type in Python
@@ -64,10 +63,11 @@ structure PythonClassDecl where
 deriving Repr, BEq, Inhabited
 
 structure TranslationContext where
-  expectedType : Option (Lambda.LMonoTy)
-  variableTypes : List (String × Lambda.LMonoTy)
-  func_infos : List PythonFunctionDecl
-  class_infos : List PythonClassDecl
+  signatures : Python.Signatures
+  expectedType : Option (Lambda.LMonoTy) := none
+  variableTypes : List (String × Lambda.LMonoTy) := []
+  func_infos : List PythonFunctionDecl := []
+  class_infos : List PythonClassDecl := []
 deriving Inhabited
 
 -------------------------------------------------------------------------------
@@ -243,9 +243,8 @@ def callCanThrow (func_infos : List PythonFunctionDecl) (stmt: Python.stmt Sourc
     | _ => false
   | _ => false
 
-open Strata.Python.Internal in
-def noneOrExpr (fname n : String) (e: Boogie.Expression.Expr) : Boogie.Expression.Expr :=
-  let type_str := getFuncSigType fname n
+def noneOrExpr (translation_ctx : TranslationContext) (fname n : String) (e: Boogie.Expression.Expr) : Boogie.Expression.Expr :=
+  let type_str := translation_ctx.signatures.getFuncSigType fname n
   if type_str.endsWith "OrNone" then
     -- Optional param. Need to wrap e.g., string into StrOrNone
     match type_str with
@@ -357,19 +356,19 @@ partial def argsAndKWordsToCanonicalList (translation_ctx : TranslationContext)
     else
       (args.toList.map (λ a => (PyExprToBoogieWithSubst default substitution_records a).expr), [])
   else
-    let required_order := Strata.Python.Internal.getFuncSigOrder fname
+    let required_order := translation_ctx.signatures.getFuncSigOrder fname
     assert! args.size <= required_order.length
     let remaining := required_order.drop args.size
     let kws_and_exprs := kwords.toList.map (PyKWordsToBoogie substitution_records)
     let ordered_remaining_args := remaining.map (λ n => match kws_and_exprs.find? (λ p => p.fst == n) with
       | .some p =>
-        noneOrExpr fname n p.snd.expr
-      | .none => Strata.Python.TypeStrToBoogieExpr (Strata.Python.Internal.getFuncSigType fname n))
+        noneOrExpr translation_ctx fname n p.snd.expr
+      | .none => Strata.Python.TypeStrToBoogieExpr (translation_ctx.signatures.getFuncSigType fname n))
     let args := args.map (PyExprToBoogieWithSubst default substitution_records)
     let args := (List.range required_order.length).filterMap (λ n =>
         if n < args.size then
           let arg_name := required_order[n]! -- Guaranteed by range. Using finRange causes breaking coercions to Nat.
-          some (noneOrExpr fname arg_name args[n]!.expr)
+          some (noneOrExpr translation_ctx fname arg_name args[n]!.expr)
         else
           none)
     (args ++ ordered_remaining_args, kws_and_exprs.flatMap (λ p => p.snd.stmts))
@@ -747,7 +746,7 @@ def PyClassDefToBoogie (s: Python.stmt SourceRange) (translation_ctx: Translatio
       .proc (pythonFuncToBoogie (c_name.val++"_"++name) args body ret default translation_ctx)), {name := c_name.val})
   | _ => panic! s!"Expected function def: {repr s}"
 
-def pythonToBoogie (pgm: Strata.Program): Boogie.Program :=
+def pythonToBoogie (signatures : Python.Signatures) (pgm: Strata.Program): Boogie.Program :=
   let pyCmds := toPyCommands pgm.commands
   assert! pyCmds.size == 1
   let insideMod := unwrapModule pyCmds[0]!
@@ -776,8 +775,9 @@ def pythonToBoogie (pgm: Strata.Program): Boogie.Program :=
     let new_acc := update acc info
     let (ys, acc'') := helper f update new_acc xs
     (y ++ ys, acc'')
+  let func_info : TranslationContext := { signatures }
 
-  let func_defs_and_infos := helper PyFuncDefToBoogie (fun acc info => {acc with func_infos := info :: acc.func_infos}) default func_defs.toList
+  let func_defs_and_infos := helper PyFuncDefToBoogie (fun acc info => {acc with func_infos := info :: acc.func_infos}) func_info func_defs.toList
   let func_defs := func_defs_and_infos.fst
   let func_infos := func_defs_and_infos.snd
 
