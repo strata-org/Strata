@@ -36,7 +36,7 @@ structure SMT.Context where
   axms : Array Term := #[]
   tySubst: Map String TermType := []
   datatypes : Array (LDatatype BoogieLParams.IDMeta) := #[]
-  datatypeFuns : Map String (Op.Datatypes × LConstr BoogieLParams.IDMeta) := Map.empty
+  datatypeFuns : Map String (Op.DatatypeFuncs × LConstr BoogieLParams.IDMeta) := Map.empty
 deriving Repr, DecidableEq, Inhabited
 
 def SMT.Context.default : SMT.Context := {}

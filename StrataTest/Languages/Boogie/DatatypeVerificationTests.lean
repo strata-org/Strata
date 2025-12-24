@@ -104,7 +104,7 @@ Run verification and return a summary string.
 -/
 def runVerificationTest (testName : String) (program : Program) : IO String := do
   try
-    match ← EIO.toIO' (Boogie.verify "cvc5" program) with
+    match ← EIO.toIO' (Boogie.verify "cvc5" program Options.quiet) with
     | .error err =>
       return s!"{testName}: FAILED\n  Error: {err}"
     | .ok results =>
@@ -571,170 +571,48 @@ def test8_hiddenTypeRecursion : IO String := do
 
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
-
-
-VCs:
-Label: trivial
-Assumptions:
-
-
-Proof Obligation:
-#true
-
----
 info: "Test 1 - Constructor Application: PASSED\n  Verified 1 obligation(s)\n"
 -/
 #guard_msgs in
 #eval test1_constructorApplication
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
-
-
-VCs:
-Label: x_is_none
-Assumptions:
-
-
-Proof Obligation:
-#true
-
-Label: y_is_some
-Assumptions:
-
-
-Proof Obligation:
-#true
-
----
 info: "Test 2 - Tester Functions: PASSED\n  Verified 2 obligation(s)\n"
 -/
 #guard_msgs in
 #eval test2_testerFunctions
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
-
-
-VCs:
-Label: val_is_42
-Assumptions:
-
-
-Proof Obligation:
-#true
-
-Label: head_is_1
-Assumptions:
-
-
-Proof Obligation:
-#true
-
----
 info: "Test 3 - Destructor Functions: PASSED\n  Verified 2 obligation(s)\n"
 -/
 #guard_msgs in
 #eval test3_destructorFunctions
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
-
-
-VCs:
-Label: list_is_cons
-Assumptions:
-
-
-Proof Obligation:
-#true
-
-Label: value_is_42
-Assumptions:
-
-
-Proof Obligation:
-#true
-
----
 info: "Test 4 - Nested Datatypes: PASSED\n  Verified 2 obligation(s)\n"
 -/
 #guard_msgs in
 #eval test4_nestedDatatypes
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
-
-
-VCs:
-Label: x_not_none
-Assumptions:
-(x_is_some, (~isSome $__x0))
-
-Proof Obligation:
-(~Bool.Not (~isNone $__x0))
-
-Wrote problem to vcs/x_not_none.smt2.
----
 info: "Test 5 - Tester with Havoc: PASSED\n  Verified 1 obligation(s)\n"
 -/
 #guard_msgs in
 #eval test5_testerWithHavoc
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
-
-
-VCs:
-Label: val_is_42
-Assumptions:
-(opt_is_some_42, ($__opt0 == (~Some #42)))
-
-Proof Obligation:
-((~OptionVal $__opt0) == #42)
-
-Wrote problem to vcs/val_is_42.smt2.
----
 info: "Test 6 - Destructor with Havoc: PASSED\n  Verified 1 obligation(s)\n"
 -/
 #guard_msgs in
 #eval test6_destructorWithHavoc
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
-
-
-VCs:
-Label: xs_not_nil
-Assumptions:
-(xs_is_cons, (~isCons $__xs0))
-
-Proof Obligation:
-(~Bool.Not (~isNil $__xs0))
-
-Wrote problem to vcs/xs_not_nil.smt2.
----
 info: "Test 7 - List with Havoc: PASSED\n  Verified 1 obligation(s)\n"
 -/
 #guard_msgs in
 #eval test7_listWithHavoc
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
-
-
-VCs:
-Label: container_is_with_hidden
-Assumptions:
-(container_not_empty, (~Bool.Not (~isEmpty $__container0)))
-(visible_part_is_42, ((~visiblePart $__container0) == #42))
-
-Proof Obligation:
-(~isWithHidden $__container0)
-
-Wrote problem to vcs/container_is_with_hidden.smt2.
----
 info: "Test 8 - Hidden Type Recursion: PASSED\n  Verified 1 obligation(s)\n"
 -/
 #guard_msgs in

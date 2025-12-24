@@ -158,10 +158,10 @@ inductive Op.Strings : Type where
   | re_index : Nat → Op.Strings
 deriving Repr, DecidableEq, Inhabited, Hashable
 
-inductive Op.Datatypes : Type where
-  | constructor : Op.Datatypes
-  | tester : Op.Datatypes
-  | selector : Op.Datatypes
+inductive Op.DatatypeFuncs : Type where
+  | constructor : Op.DatatypeFuncs
+  | tester : Op.DatatypeFuncs
+  | selector : Op.DatatypeFuncs
 deriving Repr, DecidableEq, Inhabited, Hashable
 
 inductive Op : Type where
@@ -178,7 +178,7 @@ inductive Op : Type where
   -- Core ADT operators with a trusted mapping to SMT
   | option_get
   -- Datatype ops (for user-defined algebraic datatypes)
-  | datatype_op : Op.Datatypes → String → Op
+  | datatype_op : Op.DatatypeFuncs → String → Op
 deriving Repr, DecidableEq, Inhabited, Hashable
 
 -- Generate abbreviations like `Op.not` for `Op.core Op.Core.not` for
