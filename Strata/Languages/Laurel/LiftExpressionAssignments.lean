@@ -180,7 +180,7 @@ def transformProcedure (proc : Procedure) : Procedure :=
       { proc with body := .Transparent seqBody }
   | _ => proc  -- Opaque and Abstract bodies unchanged
 
-/-
+/--
 Transform a program to lift all assignments that occur in an expression context.
 -/
 def liftExpressionAssignments (program : Program) : Program :=
