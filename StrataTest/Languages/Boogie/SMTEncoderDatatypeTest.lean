@@ -153,7 +153,7 @@ info: "(declare-datatype TestTree (par (α) (\n  (Leaf)\n  (Node (TestTree$NodeP
 
 -- Test 7: Nested parametric types - List of Option (should declare both datatypes)
 /--
-info: "(declare-datatype TestList (par (α) (\n  (Nil)\n  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))\n(declare-datatype TestOption (par (α) (\n  (None)\n  (Some (TestOption$SomeProj0 α)))))\n; listOfOption\n(declare-const f0 (TestList (TestOption Int)))\n(define-fun t0 () (TestList (TestOption Int)) f0)\n"
+info: "(declare-datatype TestOption (par (α) (\n  (None)\n  (Some (TestOption$SomeProj0 α)))))\n(declare-datatype TestList (par (α) (\n  (Nil)\n  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))\n; listOfOption\n(declare-const f0 (TestList (TestOption Int)))\n(define-fun t0 () (TestList (TestOption Int)) f0)\n"
 -/
 #guard_msgs in
 #eval toSMTStringWithDatatypes
@@ -245,6 +245,140 @@ info: "(declare-datatype TestList (par (α) (\n  (Nil)\n  (Cons (TestList$ConsPr
   (.app () (.op () (BoogieIdent.unres "TestList$ConsProj1") (.some (.arrow (.tcons "TestList" [.int]) (.tcons "TestList" [.int]))))
     (.fvar () (BoogieIdent.unres "xs") (.some (.tcons "TestList" [.int]))))
   [listDatatype]
+
+/-! ## Complex Dependency Topological Sorting Tests -/
+
+-- Test 18: Very complex dependency graph requiring sophisticated topological sorting
+-- Dependencies: Alpha -> Beta, Gamma
+--              Beta -> Delta, Epsilon
+--              Gamma -> Epsilon, Zeta
+--              Delta -> Zeta
+--              Epsilon -> Zeta
+-- Actual topological order: Zeta, Epsilon, Gamma, Delta, Beta, Alpha
+
+/-- Alpha = AlphaValue Beta Gamma -/
+def alphaDatatype : LDatatype Visibility :=
+  { name := "Alpha"
+    typeArgs := []
+    constrs := [
+      { name := ⟨"AlphaValue", .unres⟩, args := [
+          (⟨"Alpha$AlphaValueProj0", .unres⟩, .tcons "Beta" []),
+          (⟨"Alpha$AlphaValueProj1", .unres⟩, .tcons "Gamma" [])
+        ], testerName := "Alpha$isAlphaValue" }
+    ]
+    constrs_ne := by decide }
+
+/-- Beta = BetaValue Delta Epsilon -/
+def betaDatatype : LDatatype Visibility :=
+  { name := "Beta"
+    typeArgs := []
+    constrs := [
+      { name := ⟨"BetaValue", .unres⟩, args := [
+          (⟨"Beta$BetaValueProj0", .unres⟩, .tcons "Delta" []),
+          (⟨"Beta$BetaValueProj1", .unres⟩, .tcons "Epsilon" [])
+        ], testerName := "Beta$isBetaValue" }
+    ]
+    constrs_ne := by decide }
+
+/-- Gamma = GammaValue Epsilon Zeta -/
+def gammaDatatype : LDatatype Visibility :=
+  { name := "Gamma"
+    typeArgs := []
+    constrs := [
+      { name := ⟨"GammaValue", .unres⟩, args := [
+          (⟨"Gamma$GammaValueProj0", .unres⟩, .tcons "Epsilon" []),
+          (⟨"Gamma$GammaValueProj1", .unres⟩, .tcons "Zeta" [])
+        ], testerName := "Gamma$isGammaValue" }
+    ]
+    constrs_ne := by decide }
+
+/-- Delta = DeltaValue Zeta -/
+def deltaDatatype : LDatatype Visibility :=
+  { name := "Delta"
+    typeArgs := []
+    constrs := [
+      { name := ⟨"DeltaValue", .unres⟩, args := [(⟨"Delta$DeltaValueProj0", .unres⟩, .tcons "Zeta" [])], testerName := "Delta$isDeltaValue" }
+    ]
+    constrs_ne := by decide }
+
+/-- Epsilon = EpsilonValue Zeta -/
+def epsilonDatatype : LDatatype Visibility :=
+  { name := "Epsilon"
+    typeArgs := []
+    constrs := [
+      { name := ⟨"EpsilonValue", .unres⟩, args := [(⟨"Epsilon$EpsilonValueProj0", .unres⟩, .tcons "Zeta" [])], testerName := "Epsilon$isEpsilonValue" }
+    ]
+    constrs_ne := by decide }
+
+/-- Zeta = ZetaValue int -/
+def zetaDatatype : LDatatype Visibility :=
+  { name := "Zeta"
+    typeArgs := []
+    constrs := [
+      { name := ⟨"ZetaValue", .unres⟩, args := [(⟨"Zeta$ZetaValueProj0", .unres⟩, .int)], testerName := "Zeta$isZetaValue" }
+    ]
+    constrs_ne := by decide }
+
+/--
+info: "(declare-datatype Zeta (\n  (ZetaValue (Zeta$ZetaValueProj0 Int))))\n(declare-datatype Epsilon (\n  (EpsilonValue (Epsilon$EpsilonValueProj0 Zeta))))\n(declare-datatype Gamma (\n  (GammaValue (Gamma$GammaValueProj0 Epsilon) (Gamma$GammaValueProj1 Zeta))))\n(declare-datatype Delta (\n  (DeltaValue (Delta$DeltaValueProj0 Zeta))))\n(declare-datatype Beta (\n  (BetaValue (Beta$BetaValueProj0 Delta) (Beta$BetaValueProj1 Epsilon))))\n(declare-datatype Alpha (\n  (AlphaValue (Alpha$AlphaValueProj0 Beta) (Alpha$AlphaValueProj1 Gamma))))\n; alphaVar\n(declare-const f0 Alpha)\n(define-fun t0 () Alpha f0)\n"
+-/
+#guard_msgs in
+#eval toSMTStringWithDatatypes
+  (.fvar () (BoogieIdent.unres "alphaVar") (.some (.tcons "Alpha" [])))
+  [alphaDatatype, betaDatatype, gammaDatatype, deltaDatatype, epsilonDatatype, zetaDatatype]
+
+-- Test 17: Diamond dependency pattern
+-- Dependencies: Diamond -> Left, Right
+--              Left -> Root
+--              Right -> Root
+-- Actual topological order: Root, Right, Left, Diamond (or Root, Left, Right, Diamond)
+
+/-- Root = RootValue int -/
+def rootDatatype : LDatatype Visibility :=
+  { name := "Root"
+    typeArgs := []
+    constrs := [
+      { name := ⟨"RootValue", .unres⟩, args := [(⟨"Root$RootValueProj0", .unres⟩, .int)], testerName := "Root$isRootValue" }
+    ]
+    constrs_ne := by decide }
+
+/-- Left = LeftValue Root -/
+def leftDatatype : LDatatype Visibility :=
+  { name := "Left"
+    typeArgs := []
+    constrs := [
+      { name := ⟨"LeftValue", .unres⟩, args := [(⟨"Left$LeftValueProj0", .unres⟩, .tcons "Root" [])], testerName := "Left$isLeftValue" }
+    ]
+    constrs_ne := by decide }
+
+/-- Right = RightValue Root -/
+def rightDatatype : LDatatype Visibility :=
+  { name := "Right"
+    typeArgs := []
+    constrs := [
+      { name := ⟨"RightValue", .unres⟩, args := [(⟨"Right$RightValueProj0", .unres⟩, .tcons "Root" [])], testerName := "Right$isRightValue" }
+    ]
+    constrs_ne := by decide }
+
+/-- Diamond = DiamondValue Left Right -/
+def diamondDatatype : LDatatype Visibility :=
+  { name := "Diamond"
+    typeArgs := []
+    constrs := [
+      { name := ⟨"DiamondValue", .unres⟩, args := [
+          (⟨"Diamond$DiamondValueProj0", .unres⟩, .tcons "Left" []),
+          (⟨"Diamond$DiamondValueProj1", .unres⟩, .tcons "Right" [])
+        ], testerName := "Diamond$isDiamondValue" }
+    ]
+    constrs_ne := by decide }
+
+/--
+info: "(declare-datatype Root (\n  (RootValue (Root$RootValueProj0 Int))))\n(declare-datatype Right (\n  (RightValue (Right$RightValueProj0 Root))))\n(declare-datatype Left (\n  (LeftValue (Left$LeftValueProj0 Root))))\n(declare-datatype Diamond (\n  (DiamondValue (Diamond$DiamondValueProj0 Left) (Diamond$DiamondValueProj1 Right))))\n; diamondVar\n(declare-const f0 Diamond)\n(define-fun t0 () Diamond f0)\n"
+-/
+#guard_msgs in
+#eval toSMTStringWithDatatypes
+  (.fvar () (BoogieIdent.unres "diamondVar") (.some (.tcons "Diamond" [])))
+  [diamondDatatype, leftDatatype, rightDatatype, rootDatatype]
 
 end DatatypeTests
 
