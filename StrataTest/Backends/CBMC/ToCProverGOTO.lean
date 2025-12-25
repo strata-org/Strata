@@ -120,4 +120,273 @@ info: ok: #[DECL (decl (x : unsignedbv[32])),
 
 -------------------------------------------------------------------------------
 
+/-! ## Tests for Statement Transformation -/
+
+/-- Test block statement transformation -/
+def ExampleStmt1 : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
+  [.block "test_block"
+    [.cmd (.init (Lambda.Identifier.mk "x" ()) mty[bv32] (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 10))),
+     .cmd (.set (Lambda.Identifier.mk "x" ()) (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 20)))]
+    {}]
+
+/--
+info: ok: #[LOCATION skip,
+ DECL (decl (x : unsignedbv[32])),
+ ASSIGN (assign (x : unsignedbv[32]) (10 : unsignedbv[32])),
+ ASSIGN (assign (x : unsignedbv[32]) (20 : unsignedbv[32]))]
+-/
+#guard_msgs in
+#eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test1" ExampleStmt1
+          return format ans.instructions
+
+-------------------------------------------------------------------------------
+
+/-- Test if-then-else (ite) statement transformation -/
+def ExampleStmt2 : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
+  [.cmd (.init (Lambda.Identifier.mk "x" ()) mty[bv32] (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))),
+   .cmd (.init (Lambda.Identifier.mk "y" ()) mty[bv32] (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))),
+   .ite
+     (.const { underlying := (), type := mty[bool] } (.boolConst true))
+     [.cmd (.set (Lambda.Identifier.mk "x" ()) (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 10)))]
+     [.cmd (.set (Lambda.Identifier.mk "y" ()) (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 20)))]
+     {}]
+
+/--
+info: ok: #[DECL (decl (x : unsignedbv[32])),
+ ASSIGN (assign (x : unsignedbv[32]) (0 : unsignedbv[32])),
+ DECL (decl (y : unsignedbv[32])),
+ ASSIGN (assign (y : unsignedbv[32]) (0 : unsignedbv[32])),
+ GOTO skip [((not(true : bool)) : bool)],
+ ASSIGN (assign (x : unsignedbv[32]) (10 : unsignedbv[32])),
+ GOTO skip,
+ LOCATION skip,
+ ASSIGN (assign (y : unsignedbv[32]) (20 : unsignedbv[32])),
+ LOCATION skip]
+-/
+#guard_msgs in
+#eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test2" ExampleStmt2
+          return format ans.instructions
+
+-------------------------------------------------------------------------------
+
+/-- Test loop statement transformation -/
+def ExampleStmt3 : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
+  [.cmd (.init (Lambda.Identifier.mk "i" ()) mty[bv32] (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))),
+   .loop
+     (.const { underlying := (), type := mty[bool] } (.boolConst true))
+     none
+     none
+     [.cmd (.set (Lambda.Identifier.mk "i" ()) (addBV32LExpr
+       (.fvar { underlying := (), type := mty[bv32] } (Lambda.Identifier.mk "i" ()) (some mty[bv32]))
+       (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 1))))]
+     {}]
+
+/--
+info: ok: #[DECL (decl (i : unsignedbv[32])),
+ ASSIGN (assign (i : unsignedbv[32]) (0 : unsignedbv[32])),
+ LOCATION skip,
+ GOTO skip [((not(true : bool)) : bool)],
+ ASSIGN (assign (i : unsignedbv[32]) (((i : unsignedbv[32]) + (1 : unsignedbv[32])) : unsignedbv[32])),
+ GOTO skip,
+ LOCATION skip]
+-/
+#guard_msgs in
+#eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test3" ExampleStmt3
+          return format ans.instructions
+
+-------------------------------------------------------------------------------
+
+/-- Test nested control flow: if inside block -/
+def ExampleStmt4 : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
+  [.block "outer"
+    [.cmd (.init (Lambda.Identifier.mk "x" ()) mty[bv32] (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))),
+     .ite
+       (.const { underlying := (), type := mty[bool] } (.boolConst true))
+       [.cmd (.set (Lambda.Identifier.mk "x" ()) (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 100)))]
+       []
+       {}]
+    {}]
+
+/--
+info: ok: #[LOCATION skip,
+ DECL (decl (x : unsignedbv[32])),
+ ASSIGN (assign (x : unsignedbv[32]) (0 : unsignedbv[32])),
+ GOTO skip [((not(true : bool)) : bool)],
+ ASSIGN (assign (x : unsignedbv[32]) (100 : unsignedbv[32])),
+ GOTO skip,
+ LOCATION skip,
+ LOCATION skip]
+-/
+#guard_msgs in
+#eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test4" ExampleStmt4
+          return format ans.instructions
+
+-------------------------------------------------------------------------------
+
+/-- Test goto statement transformation -/
+def ExampleStmt5 : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
+  [.cmd (.init (Lambda.Identifier.mk "x" ()) mty[bv32] (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))),
+   .goto "target_label" {},
+   .cmd (.set (Lambda.Identifier.mk "x" ()) (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 10))),
+   .block "target_label"
+     [.cmd (.set (Lambda.Identifier.mk "x" ()) (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 20)))]
+     {}]
+
+/--
+info: ok: #[DECL (decl (x : unsignedbv[32])),
+ ASSIGN (assign (x : unsignedbv[32]) (0 : unsignedbv[32])),
+ INCOMPLETE_GOTO goto target_label,
+ ASSIGN (assign (x : unsignedbv[32]) (10 : unsignedbv[32])),
+ LOCATION skip,
+ ASSIGN (assign (x : unsignedbv[32]) (20 : unsignedbv[32]))]
+-/
+#guard_msgs in
+#eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test5" ExampleStmt5
+          return format ans.instructions
+
+-------------------------------------------------------------------------------
+
+/-- Test complex nested control flow: loop with if inside -/
+def ExampleStmt6 : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
+  [.cmd (.init (Lambda.Identifier.mk "i" ()) mty[bv32] (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))),
+   .cmd (.init (Lambda.Identifier.mk "sum" ()) mty[bv32] (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))),
+   .loop
+     (.const { underlying := (), type := mty[bool] } (.boolConst true))
+     none
+     none
+     [.ite
+       (.const { underlying := (), type := mty[bool] } (.boolConst true))
+       [.cmd (.set (Lambda.Identifier.mk "sum" ()) (addBV32LExpr
+         (.fvar { underlying := (), type := mty[bv32] } (Lambda.Identifier.mk "sum" ()) (some mty[bv32]))
+         (.fvar { underlying := (), type := mty[bv32] } (Lambda.Identifier.mk "i" ()) (some mty[bv32]))))]
+       []
+       {},
+      .cmd (.set (Lambda.Identifier.mk "i" ()) (addBV32LExpr
+        (.fvar { underlying := (), type := mty[bv32] } (Lambda.Identifier.mk "i" ()) (some mty[bv32]))
+        (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 1))))]
+     {}]
+
+/--
+info: ok: #[DECL (decl (i : unsignedbv[32])),
+ ASSIGN (assign (i : unsignedbv[32]) (0 : unsignedbv[32])),
+ DECL (decl (sum : unsignedbv[32])),
+ ASSIGN (assign (sum : unsignedbv[32]) (0 : unsignedbv[32])),
+ LOCATION skip,
+ GOTO skip [((not(true : bool)) : bool)],
+ GOTO skip [((not(true : bool)) : bool)],
+ ASSIGN (assign (sum : unsignedbv[32]) (((sum : unsignedbv[32]) + (i : unsignedbv[32])) : unsignedbv[32])),
+ GOTO skip,
+ LOCATION skip,
+ LOCATION skip,
+ ASSIGN (assign (i : unsignedbv[32]) (((i : unsignedbv[32]) + (1 : unsignedbv[32])) : unsignedbv[32])),
+ GOTO skip,
+ LOCATION skip]
+-/
+#guard_msgs in
+#eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test6" ExampleStmt6
+          return format ans.instructions
+
+-------------------------------------------------------------------------------
+
+/-- Test multiple blocks in sequence -/
+def ExampleStmt7 : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
+  [.block "block1"
+     [.cmd (.init (Lambda.Identifier.mk "x" ()) mty[bv32] (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 10)))]
+     {},
+   .block "block2"
+     [.cmd (.init (Lambda.Identifier.mk "y" ()) mty[bv32] (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 20)))]
+     {},
+   .block "block3"
+     [.cmd (.set (Lambda.Identifier.mk "x" ())
+       (addBV32LExpr
+         (.fvar { underlying := (), type := mty[bv32] } (Lambda.Identifier.mk "x" ()) (some mty[bv32]))
+         (.fvar { underlying := (), type := mty[bv32] } (Lambda.Identifier.mk "y" ()) (some mty[bv32]))))]
+     {}]
+
+/--
+info: ok: #[LOCATION skip,
+ DECL (decl (x : unsignedbv[32])),
+ ASSIGN (assign (x : unsignedbv[32]) (10 : unsignedbv[32])),
+ LOCATION skip,
+ DECL (decl (y : unsignedbv[32])),
+ ASSIGN (assign (y : unsignedbv[32]) (20 : unsignedbv[32])),
+ LOCATION skip,
+ ASSIGN (assign (x : unsignedbv[32]) (((x : unsignedbv[32]) + (y : unsignedbv[32])) : unsignedbv[32]))]
+-/
+#guard_msgs in
+#eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test7" ExampleStmt7
+          return format ans.instructions
+
+-------------------------------------------------------------------------------
+
+/-- Test empty branches in if-then-else -/
+def ExampleStmt8 : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
+  [.cmd (.init (Lambda.Identifier.mk "x" ()) mty[bv32] (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 0))),
+   .ite
+     (.const { underlying := (), type := mty[bool] } (.boolConst true))
+     []
+     [.cmd (.set (Lambda.Identifier.mk "x" ()) (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 100)))]
+     {}]
+
+/--
+info: ok: #[DECL (decl (x : unsignedbv[32])),
+ ASSIGN (assign (x : unsignedbv[32]) (0 : unsignedbv[32])),
+ GOTO skip [((not(true : bool)) : bool)],
+ GOTO skip,
+ LOCATION skip,
+ ASSIGN (assign (x : unsignedbv[32]) (100 : unsignedbv[32])),
+ LOCATION skip]
+-/
+#guard_msgs in
+#eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test8" ExampleStmt8
+          return format ans.instructions
+
+-------------------------------------------------------------------------------
+
+/-- Test loop with empty body -/
+def ExampleStmt9 : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
+  [.loop
+     (.const { underlying := (), type := mty[bool] } (.boolConst false))
+     none
+     none
+     []
+     {}]
+
+/--
+info: ok: #[LOCATION skip, GOTO skip [((not(false : bool)) : bool)], GOTO skip, LOCATION skip]
+-/
+#guard_msgs in
+#eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test9" ExampleStmt9
+          return format ans.instructions
+
+-------------------------------------------------------------------------------
+
+/-- Test assertions and assumptions within control flow -/
+def ExampleStmt10 : List (Imperative.Stmt LExprTP (Imperative.Cmd LExprTP)) :=
+  [.cmd (.init (Lambda.Identifier.mk "x" ()) mty[bv32] (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 5))),
+   .ite
+     (.const { underlying := (), type := mty[bool] } (.boolConst true))
+     [.cmd (.assume "precond" (.const { underlying := (), type := mty[bool] } (.boolConst true))),
+      .cmd (.set (Lambda.Identifier.mk "x" ()) (.const { underlying := (), type := mty[bv32] } (.bitvecConst 32 10))),
+      .cmd (.assert "postcond" (.const { underlying := (), type := mty[bool] } (.boolConst true)))]
+     []
+     {}]
+
+/--
+info: ok: #[DECL (decl (x : unsignedbv[32])),
+ ASSIGN (assign (x : unsignedbv[32]) (5 : unsignedbv[32])),
+ GOTO skip [((not(true : bool)) : bool)],
+ ASSUME skip,
+ ASSIGN (assign (x : unsignedbv[32]) (10 : unsignedbv[32])),
+ ASSERT skip,
+ GOTO skip,
+ LOCATION skip,
+ LOCATION skip]
+-/
+#guard_msgs in
+#eval do let ans ← Imperative.Stmts.toGotoTransform Lambda.TEnv.default "test10" ExampleStmt10
+          return format ans.instructions
+
+-------------------------------------------------------------------------------
+
 end
