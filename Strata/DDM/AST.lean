@@ -1566,10 +1566,10 @@ def addCommand (dialects : DialectMap) (init : GlobalContext) (op : Operation) :
           -- Process constructor list and add constructor functions to context
           match constructorsArg with
           | .op op =>
-            if h1: op.name == ⟨"Boogie", "constructorListAtom"⟩ && op.args.size == 1 then
+            if h1: op.name.name == "constructorListAtom" && op.args.size == 1 then
               have: 0 < op.args.size := by grind
               addSingleConstructor gctx datatypeName op.args[0]
-            else if h2: op.name == ⟨"Boogie", "constructorListPush"⟩ && op.args.size == 2 then
+            else if h2: op.name.name == "constructorListPush" && op.args.size == 2 then
               have: 0 < op.args.size := by grind
               have: 1 < op.args.size := by grind
               let gctx := addSingleConstructor gctx datatypeName op.args[1]
@@ -1595,16 +1595,62 @@ def addCommand (dialects : DialectMap) (init : GlobalContext) (op : Operation) :
         addSingleConstructor (gctx : GlobalContext) (datatypeName : String) (constructorArg : Arg) : GlobalContext :=
           match constructorArg with
           | .op op =>
-            if op.name.name == "constructor_mk" && op.args.size >= 1 then
-              match op.args[0]! with
-              | .ident _ constructorName =>
-                let returnType := TypeExprF.ident default ⟨"", datatypeName⟩ #[]
-                let constructorKind := GlobalKind.expr returnType
+            if op.name.name == "constructor_mk" && op.args.size >= 2 then
+              match op.args[0]!, op.args[1]! with
+              | .ident _ constructorName, fieldsArg =>
+                -- Extract field types from the fields argument
+                let fieldTypes := extractFieldTypes fieldsArg
+                -- Build constructor function type: field1 → field2 → ... → datatypeName
+                let datatypeType := TypeExprF.ident default ⟨"", datatypeName⟩ #[]
+                let constructorType := fieldTypes.foldr (init := datatypeType) fun fieldType acc =>
+                  TypeExprF.arrow default fieldType acc
+                let constructorKind := GlobalKind.expr constructorType
                 gctx.push constructorName constructorKind
-              | _ => gctx
+              | _, _ => gctx
             else
               gctx
           | _ => gctx
+
+        -- Helper function to extract field types from constructor fields
+        extractFieldTypes (fieldsArg : Arg) : Array TypeExpr :=
+          match fieldsArg with
+          | .option _ (some fieldListArg) => extractFieldListTypes fieldListArg
+          | .option _ none => #[]
+          | _ => #[]
+
+        -- Helper function to extract types from field list
+        extractFieldListTypes (fieldListArg : Arg) : Array TypeExpr :=
+          match fieldListArg with
+          | .op op =>
+            if op.name.name == "fieldListAtom" && op.args.size == 1 then
+              let fieldType := extractSingleFieldType op.args[0]!
+              #[fieldType]
+            else if h: op.name.name == "fieldListPush" && op.args.size == 2 then
+              have : sizeOf op.args[0]! < 1 + sizeOf op := by
+                rw[OperationF.sizeOf_spec];
+                have: sizeOf op.args[0]! < sizeOf op.args := by
+                  apply Array.sizeOf_lt_of_mem; grind
+                omega
+              let restTypes := extractFieldListTypes op.args[0]!
+              let fieldType := extractSingleFieldType op.args[1]!
+              restTypes.push fieldType
+            else
+              #[]
+          | _ => #[]
+          termination_by sizeOf fieldListArg
+
+
+        -- Helper function to extract type from a single field
+        extractSingleFieldType (fieldArg : Arg) : TypeExpr :=
+          match fieldArg with
+          | .op op =>
+            if op.name.name == "field_mk" && op.args.size >= 2 then
+              match op.args[1]! with
+              | .type tp => tp
+              | _ => TypeExprF.ident default ⟨"", "unknown"⟩ #[]
+            else
+              TypeExprF.ident default ⟨"", "unknown"⟩ #[]
+          | _ => TypeExprF.ident default ⟨"", "unknown"⟩ #[]
 
 end GlobalContext
 
