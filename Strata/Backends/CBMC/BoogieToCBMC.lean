@@ -173,7 +173,7 @@ partial def blockToJson {P : Imperative.PureExpr} (I : Lambda.LExprParams) [Iden
       ("statement", Json.mkObj [("id", "block")]),
       ("type", emptyType)
     ]),
-    ("sub", Json.arr (b.ss.map (stmtToJson (I:=I) · loc)).toArray)
+    ("sub", Json.arr (b.map (stmtToJson (I:=I) · loc)).toArray)
   ]
 
 partial def stmtToJson {P : Imperative.PureExpr} (I : Lambda.LExprParams) [IdentToStr (Lambda.Identifier I.IDMeta)] [HasLExpr P I]

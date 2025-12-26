@@ -245,17 +245,17 @@ Examples:
 
 -/
 def elimConcreteEval {T: LExprParams} [BEq T.Identifier] (d: LDatatype T.IDMeta) (m: T.Metadata) (elimName : Identifier T.IDMeta) :
-  (LExpr T.mono) → List (LExpr T.mono) → (LExpr T.mono) :=
-  fun e args =>
+  T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono) :=
+  fun _ args =>
     match args with
     | x :: xs =>
       match datatypeGetConstr d x with
       | .some (_, i, a, recs) =>
         match xs[i]? with
         | .some f => f.mkApp m (a ++ recs.map (fun (r, rty) => elimRecCall d r rty xs m elimName))
-        | .none => e
-      | .none => e
-    | _ => e
+        | .none => .none
+      | .none => .none
+    | _ => .none
 
 def elimFuncName (d: LDatatype IDMeta) : Identifier IDMeta :=
   d.name ++ "$Elim"
@@ -307,20 +307,14 @@ Concrete evaluator for destructor: if given instance of the constructor,
 the `i`th projection retrieves the `i`th argument of the application
 -/
 def destructorConcreteEval {T: LExprParams} [BEq T.Identifier] (d: LDatatype T.IDMeta) (c: LConstr T.IDMeta) (idx: Nat) :
-  (LExpr T.mono) → List (LExpr T.mono) → (LExpr T.mono) :=
-  fun e args =>
+  List (LExpr T.mono) → Option (LExpr T.mono) :=
+  fun args =>
     match args with
     | [x] =>
-      match datatypeGetConstr d x with
-      | .some (c1, _, a, _) =>
-        if c1.name.name == c.name.name then
-          match a[idx]? with
-          | .some y => y
-          | .none => e
-        -- TODO: unsound right now, need concreteEval to give option
-        else e
-      | .none => e
-    | _ => e
+      (datatypeGetConstr d x).bind (fun (c1, _, a, _) =>
+        if c1.name.name == c.name.name
+        then a[idx]? else none)
+    | _ => none
 
 /--
 Generate destructor functions for a constructor, which extract the
@@ -338,7 +332,7 @@ def destructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta]  (d: LDatatype T
       typeArgs := d.typeArgs,
       inputs := [(arg, dataDefault d)],
       output := ty,
-      concreteEval := destructorConcreteEval d c i })
+      concreteEval := some (fun _ => destructorConcreteEval d c i)})
 
 
 ---------------------------------------------------------------------

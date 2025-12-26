@@ -42,7 +42,9 @@ Expected interface for pure expressions that can be used to specialize the
 Imperative dialect.
 -/
 structure LExprParams : Type 1 where
+  /-- The type of metadata allowed on expressions. -/
   Metadata: Type
+  /-- The type of metadata allowed on identifiers. -/
   IDMeta : Type
   deriving Inhabited
 
@@ -50,7 +52,9 @@ structure LExprParams : Type 1 where
 Extended LExprParams that includes TypeType parameter.
 -/
 structure LExprParamsT : Type 1 where
+  /-- The base parameters, with the types for expression and identifier metadata. -/
   base : LExprParams
+  /-- The type of types used to annotate expressions. -/
   TypeType : Type
   deriving Inhabited
 
@@ -73,16 +77,32 @@ abbrev LExprParams.typed (T: LExprParams): LExprParams :=
 abbrev LExprParamsT.typed (T: LExprParamsT): LExprParamsT :=
   ⟨T.base.typed, LMonoTy⟩
 
+/--
+Lambda constants.
+
+Constants are integers, strings, reals, bitvectors of a fixed length, or
+booleans.
+-/
 inductive LConst : Type where
+  /-- An unbounded integer constant. -/
   | intConst (i: Int)
+
+  /-- A string constant, using Lean's `String` type for a sequence of Unicode
+  code points encoded with UTF-8. -/
   | strConst (s: String)
+
+  /-- A real constant, represented as a rational number. -/
   | realConst (r: Rat)
+
+  /-- A bit vector constant, represented using Lean's `BitVec` type. -/
   | bitvecConst (n: Nat) (b: BitVec n)
+
+  /-- A Boolean constant. -/
   | boolConst (b: Bool)
 deriving Repr, DecidableEq
 
 /--
-Lambda Expressions with Quantifiers.
+Lambda expressions with quantifiers.
 
 Like Lean's own expressions, we use the locally nameless
 representation for this abstract syntax.
@@ -93,29 +113,32 @@ We leave placeholders for type annotations only for constants
 (`.const`), operations (`.op`), binders (`.abs`, `.quant`), and free
 variables (`.fvar`).
 
-LExpr is parameterized by `TypeType`, which represents
-user-allowed type annotations (optional), and `Identifier` for allowed
-identifiers. For a fully annotated AST, see `LExprT` that is created after the
-type inference transform.
+LExpr is parameterized by `LExprParamsT`, which includes arbitrary metadata,
+user-allowed type annotations (optional), and special metadata to attach to
+`Identifier`s. Type inference adds any missing type annotations.
 -/
 inductive LExpr (T : LExprParamsT) : Type where
-  /-- `.const c ty`: constants (in the sense of literals). -/
+  /-- A constant (in the sense of literals). -/
   | const   (m: T.base.Metadata) (c: LConst)
-  /-- `.op c ty`: operation names. -/
+  /-- A built-in operation, referred to by name. -/
   | op      (m: T.base.Metadata) (o : Identifier T.base.IDMeta) (ty : Option T.TypeType)
-  /-- `.bvar deBruijnIndex`: bound variable. -/
+  /-- A bound variable, in de Bruijn form. -/
   | bvar    (m: T.base.Metadata) (deBruijnIndex : Nat)
-  /-- `.fvar name ty`: free variable, with an option (mono)type annotation. -/
+  /-- A free variable, with an optional type annotation. -/
   | fvar    (m: T.base.Metadata) (name : Identifier T.base.IDMeta) (ty : Option T.TypeType)
-  /-- `.abs ty e`: abstractions; `ty` the is type of bound variable. -/
+  /-- An abstraction, where `ty` the is (optional) type of bound variable. -/
   | abs     (m: T.base.Metadata) (ty : Option T.TypeType) (e : LExpr T)
-  /-- `.quant k ty tr e`: quantified expressions; `ty` the is type of bound variable, and `tr` the trigger. -/
+  /-- A quantified expression, where `k` indicates whether it is universally or
+  existentially quantified, `ty` is the type of bound variable, and `trigger` is
+  a trigger pattern (primarily for use with SMT). -/
   | quant   (m: T.base.Metadata) (k : QuantifierKind) (ty : Option T.TypeType) (trigger: LExpr T) (e : LExpr T)
-  /-- `.app fn e`: function application. -/
+  /-- A function application. -/
   | app     (m: T.base.Metadata) (fn e : LExpr T)
-  /-- `.ite c t e`: if-then-else expression. -/
+  /-- A conditional expression. This is a constructor rather than a built-in
+  operation because it occurs so frequently. -/
   | ite     (m: T.base.Metadata) (c t e : LExpr T)
-  /-- `.eq e1 e2`: equality expression. -/
+  /-- An equality expression. This is a constructor rather than a built-in
+  operation because it occurs so frequently. -/
   | eq      (m: T.base.Metadata) (e1 e2 : LExpr T)
 
 instance [Repr T.base.Metadata] [Repr T.TypeType] [Repr T.base.IDMeta] : Repr (LExpr T) where

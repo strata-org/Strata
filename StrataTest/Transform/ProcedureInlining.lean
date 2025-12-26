@@ -29,16 +29,18 @@ section ProcedureInliningExamples
 
 
 structure IdMap where
-  vars: Map String String
+  vars: (Map String String × Map String String)
   labels: Map String String
 
 private def IdMap.updateVars (map:IdMap) (newmap: List (String × String))
   : Except Format IdMap := do
-  let newvars ← newmap.foldlM (fun m ((oldid,newid):String × String) =>
-    match Map.find? m oldid with
-    | .some x => .error  (f!"Has duplicated definition of var " ++ oldid ++
+  let newvars ← newmap.foldlM (fun (m1, m2) ((oldid,newid):String × String) =>
+    match Map.find? m1 oldid, Map.find? m2 newid with
+    | .some x, _ => .error  (f!"Has duplicated definition of var " ++ oldid ++
         "(previously mapped to " ++ x ++ ")")
-    | .none => return (m.insert oldid newid))
+    | _, .some y => .error  (f!"Has duplicated definition of var " ++ newid ++
+        "(previously mapped to " ++ y ++ ")")
+    | .none, .none => return (m1.insert oldid newid, m2.insert newid oldid))
     map.vars
   return { map with vars := newvars }
 
@@ -52,34 +54,34 @@ private def IdMap.updateLabel (map:IdMap) (frlbl:String) (tolbl:String)
     else .error ("Label " ++ frlbl ++ " is already mapped to " ++ x ++
       " but tried to map to " ++ tolbl)
 
-private def IdMap.varMapsTo (map:IdMap) (fr:String) (to:String): Bool :=
-  match Map.find? map.vars fr with
-  | .none => false
-  | .some x => x == to
-
 private def IdMap.lblMapsTo (map:IdMap) (fr:String) (to:String): Bool :=
   match Map.find? map.labels fr with
   | .none => false
   | .some x => x == to
 
 
-private def substExpr (e1:Expression.Expr) (map:IdMap) :=
-  map.vars.foldl
+private def substExpr (e1:Expression.Expr) (map:Map String String) (isReverse: Bool) :=
+  map.foldl
     (fun (e:Expression.Expr) ((i1,i2):String × String) =>
       -- old_id has visibility of temp because the new local variables were
       -- created by BoogieGenM.
-      let old_id:Expression.Ident := { name := i1, metadata := Visibility.temp }
       -- new_expr has visibility of unres because that is the default setting
       -- from DDM parsed program, and the substituted program is supposed to be
       -- equivalent to the answer program translated from DDM
+      -- These must be reversed when checking e2 -> e1
+      let old_vis := if not isReverse then Visibility.temp else  Visibility.unres
+      let new_vis := if not isReverse then Visibility.unres else Visibility.temp
+      let old_id:Expression.Ident := { name := i1, metadata := old_vis }
+
       let new_expr:Expression.Expr := .fvar ()
-          { name := i2, metadata := Visibility.unres } .none
+          { name := i2, metadata := new_vis } .none
       e.substFvar old_id new_expr)
     e1
 
 private def alphaEquivExprs (e1 e2: Expression.Expr) (map:IdMap)
     : Bool :=
-  (substExpr e1 map).eraseTypes == e2.eraseTypes
+  (substExpr e1 (map.vars.fst) false).eraseTypes == e2.eraseTypes &&
+  (substExpr e2 (map.vars.snd) true).eraseTypes == e1.eraseTypes
 
 private def alphaEquivExprsOpt (e1 e2: Option Expression.Expr) (map:IdMap)
     : Except Format Bool :=
@@ -97,21 +99,20 @@ private def alphaEquivIdents (e1 e2: Expression.Ident) (map:IdMap)
    (e1.metadata == Visibility.temp && e2.metadata == Visibility.unres) ||
    -- Caes 2: both e1 and e2 are from DDM
    (e1.metadata == e2.metadata)) &&
-  (match Map.find? map.vars e1.name with
-    | .some n' => n' == e2.name
-    | .none => e1.name == e2.name)
+  (match Map.find? map.vars.fst e1.name, Map.find? map.vars.snd e2.name with
+    | .some n', .some m' => n' == e2.name && m' == e1.name
+    | .none, .none => e1.name == e2.name
+    | _, _ => false )
 
 
 mutual
 
 partial def alphaEquivBlock (b1 b2: Boogie.Block) (map:IdMap)
     : Except Format IdMap := do
-  let st1 := b1.ss
-  let st2 := b2.ss
-  if st1.length ≠ st2.length then
+  if b1.length ≠ b2.length then
     .error "Block lengths do not match"
   else
-    (st1.zip st2).foldlM
+    (b1.zip b2).foldlM
       (fun (map:IdMap) (st1,st2) => do
         let newmap ← alphaEquivStatement st1 st2 map
         return newmap)
@@ -174,7 +175,8 @@ partial def alphaEquivStatement (s1 s2: Boogie.Statement) (map:IdMap)
     | (.cmd (.set n1 e1 _), .cmd (.set n2 e2 _)) =>
       if ¬ alphaEquivExprs e1 e2 map then
         mk_err f!"RHS of sets do not match \
-        \n(subst of e1: {repr (substExpr e1 map)})\n(e2: {repr e2})"
+        \n(subst of e1: {repr (substExpr e1 map.vars.fst false)})\n(e2: {repr e2})
+        \n(subst of e2: {repr (substExpr e2 map.vars.snd true)})\n(e1: {repr e1})"
       else if ¬ alphaEquivIdents n1 n2 map then
         mk_err "LHS of sets do not match"
       else
@@ -208,12 +210,13 @@ private def alphaEquiv (p1 p2:Boogie.Procedure):Except Format Bool := do
     .error (s!"# statements do not match: inlined fn one has {p1.body.length}"
         ++ s!" whereas the answer has {p2.body.length}")
   else
-    let newmap:IdMap := IdMap.mk [] []
+    let newmap:IdMap := IdMap.mk ([], []) []
     let stmts := (p1.body.zip p2.body)
-    let _ ← List.foldlM (fun (map:IdMap) (s1,s2) =>
+    let m ← List.foldlM (fun (map:IdMap) (s1,s2) =>
         alphaEquivStatement s1 s2 map)
       newmap stmts
-    return .true
+    -- The corresponding outputs should be pairwise α-equivalent
+    return ((p1.header.outputs.zip p2.header.outputs).map (fun ((x, _), (y, _)) => alphaEquivIdents x y m)).all id
 
 
 

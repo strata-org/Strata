@@ -1,4 +1,10 @@
 
+datetime_now_ensures_0: verified
+
+datetime_utcnow_ensures_0: verified
+
+ensures_str_strp_reverse: verified
+
 assert_name_is_foo: verified
 
 assert_opt_name_none_or_str: verified

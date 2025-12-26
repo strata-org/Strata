@@ -45,6 +45,30 @@ def listDatatype : LDatatype Visibility :=
     ]
     constrs_ne := by decide }
 
+/-- Hidden datatype that is never directly used in the program -/
+def hiddenDatatype : LDatatype Visibility :=
+  { name := "Hidden"
+    typeArgs := ["a"]
+    constrs := [
+      { name := ⟨"HiddenValue", .unres⟩, args := [
+          (⟨"hiddenField", .unres⟩, .ftvar "a")
+        ], testerName := "isHiddenValue" }
+    ]
+    constrs_ne := by decide }
+
+/-- Container datatype that references Hidden but we never use Hidden directly -/
+def containerDatatype : LDatatype Visibility :=
+  { name := "Container"
+    typeArgs := ["a"]
+    constrs := [
+      { name := ⟨"Empty", .unres⟩, args := [], testerName := "isEmpty" },
+      { name := ⟨"WithHidden", .unres⟩, args := [
+          (⟨"hiddenPart", .unres⟩, .tcons "Hidden" [.ftvar "a"]),
+          (⟨"visiblePart", .unres⟩, .ftvar "a")
+        ], testerName := "isWithHidden" }
+    ]
+    constrs_ne := by decide }
+
 /-! ## Helper Functions -/
 
 /--
@@ -80,7 +104,7 @@ Run verification and return a summary string.
 -/
 def runVerificationTest (testName : String) (program : Program) : IO String := do
   try
-    match ← EIO.toIO' (Boogie.verify "cvc5" program) with
+    match ← EIO.toIO' (Boogie.verify "cvc5" program Options.quiet) with
     | .error err =>
       return s!"{testName}: FAILED\n  Error: {err}"
     | .ok results =>
@@ -468,156 +492,122 @@ def test7_listWithHavoc : IO String := do
   | .ok program =>
     runVerificationTest "Test 7 - List with Havoc" program
 
-/-! ## Run All Tests with #guard_msgs -/
+/-! ## Test 8: Hidden Type Recursive Addition -/
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+Test that SMT.Context.addType correctly handles the recursive case where
+a datatype constructor has another datatype as an argument, but this
+argument datatype is NEVER directly referenced in the program.
+
+datatype Hidden a = HiddenValue a
+datatype Container a = Empty | WithHidden (Hidden a) a
+
+procedure testHiddenTypeRecursion () {
+  // We ONLY use Container, never Hidden directly
+  container := Empty;
+  havoc container;
+  assume (not (isEmpty container));
+  visiblePart := visiblePart container;
+  assume (visiblePart == 42);
+  assert (isWithHidden container);
+}
+-/
+def test8_hiddenTypeRecursion : IO String := do
+  let statements : List Statement := [
+    -- Initialize with Empty Container - note we NEVER use Hidden directly
+    Statement.init (BoogieIdent.unres "container")
+      (.forAll [] (LMonoTy.tcons "Container" [.int]))
+      (LExpr.op () (BoogieIdent.unres "Empty") (.some (LMonoTy.tcons "Container" [.int]))),
+
+    -- Havoc the container to make it non-deterministic
+    Statement.havoc (BoogieIdent.unres "container"),
+
+    -- Assume container is not Empty (so it must be WithHidden)
+    Statement.assume "container_not_empty"
+      (LExpr.app ()
+        (LExpr.op () (BoogieIdent.unres "Bool.Not")
+          (.some (LMonoTy.arrow .bool .bool)))
+        (LExpr.app ()
+          (LExpr.op () (BoogieIdent.unres "isEmpty")
+            (.some (LMonoTy.arrow (LMonoTy.tcons "Container" [.int]) .bool)))
+          (LExpr.fvar () (BoogieIdent.unres "container") (.some (LMonoTy.tcons "Container" [.int]))))),
+
+    -- Extract the visible part
+    Statement.init (BoogieIdent.unres "visiblePart") (.forAll [] LMonoTy.int)
+      (LExpr.app ()
+        (LExpr.op () (BoogieIdent.unres "visiblePart")
+          (.some (LMonoTy.arrow (LMonoTy.tcons "Container" [.int]) .int)))
+        (LExpr.fvar () (BoogieIdent.unres "container") (.some (LMonoTy.tcons "Container" [.int])))),
+
+    -- Assume the visible part has a specific value
+    Statement.assume "visible_part_is_42"
+      (LExpr.eq ()
+        (LExpr.fvar () (BoogieIdent.unres "visiblePart") (.some .int))
+        (LExpr.intConst () 42)),
+
+    -- Assert that container is WithHidden
+    Statement.assert "container_is_with_hidden"
+      (LExpr.app ()
+        (LExpr.op () (BoogieIdent.unres "isWithHidden")
+          (.some (LMonoTy.arrow (LMonoTy.tcons "Container" [.int]) .bool)))
+        (LExpr.fvar () (BoogieIdent.unres "container") (.some (LMonoTy.tcons "Container" [.int]))))
+  ]
+
+  match mkProgramWithDatatypes [hiddenDatatype, containerDatatype] "testHiddenTypeRecursion" statements with
+  | .error err =>
+    return s!"Test 8 - Hidden Type Recursion: FAILED (program creation)\n  Error: {err.pretty}"
+  | .ok program =>
+    runVerificationTest "Test 8 - Hidden Type Recursion" program
 
 
-VCs:
-Label: trivial
-Assumptions:
 
-
-Proof Obligation:
-#true
-
----
+/--
 info: "Test 1 - Constructor Application: PASSED\n  Verified 1 obligation(s)\n"
 -/
 #guard_msgs in
 #eval test1_constructorApplication
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
-
-
-VCs:
-Label: x_is_none
-Assumptions:
-
-
-Proof Obligation:
-#true
-
-Label: y_is_some
-Assumptions:
-
-
-Proof Obligation:
-#true
-
----
 info: "Test 2 - Tester Functions: PASSED\n  Verified 2 obligation(s)\n"
 -/
 #guard_msgs in
 #eval test2_testerFunctions
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
-
-
-VCs:
-Label: val_is_42
-Assumptions:
-
-
-Proof Obligation:
-#true
-
-Label: head_is_1
-Assumptions:
-
-
-Proof Obligation:
-#true
-
----
 info: "Test 3 - Destructor Functions: PASSED\n  Verified 2 obligation(s)\n"
 -/
 #guard_msgs in
 #eval test3_destructorFunctions
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
-
-
-VCs:
-Label: list_is_cons
-Assumptions:
-
-
-Proof Obligation:
-#true
-
-Label: value_is_42
-Assumptions:
-
-
-Proof Obligation:
-#true
-
----
 info: "Test 4 - Nested Datatypes: PASSED\n  Verified 2 obligation(s)\n"
 -/
 #guard_msgs in
 #eval test4_nestedDatatypes
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
-
-
-VCs:
-Label: x_not_none
-Assumptions:
-(x_is_some, (~isSome $__x0))
-
-Proof Obligation:
-(~Bool.Not (~isNone $__x0))
-
-Wrote problem to vcs/x_not_none.smt2.
----
 info: "Test 5 - Tester with Havoc: PASSED\n  Verified 1 obligation(s)\n"
 -/
 #guard_msgs in
 #eval test5_testerWithHavoc
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
-
-
-VCs:
-Label: val_is_42
-Assumptions:
-(opt_is_some_42, ($__opt0 == (~Some #42)))
-
-Proof Obligation:
-((~OptionVal $__opt0) == #42)
-
-Wrote problem to vcs/val_is_42.smt2.
----
 info: "Test 6 - Destructor with Havoc: PASSED\n  Verified 1 obligation(s)\n"
 -/
 #guard_msgs in
 #eval test6_destructorWithHavoc
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
-
-
-VCs:
-Label: xs_not_nil
-Assumptions:
-(xs_is_cons, (~isCons $__xs0))
-
-Proof Obligation:
-(~Bool.Not (~isNil $__xs0))
-
-Wrote problem to vcs/xs_not_nil.smt2.
----
 info: "Test 7 - List with Havoc: PASSED\n  Verified 1 obligation(s)\n"
 -/
 #guard_msgs in
 #eval test7_listWithHavoc
+
+/--
+info: "Test 8 - Hidden Type Recursion: PASSED\n  Verified 1 obligation(s)\n"
+-/
+#guard_msgs in
+#eval test8_hiddenTypeRecursion
+
 
 end Boogie.DatatypeVerificationTests

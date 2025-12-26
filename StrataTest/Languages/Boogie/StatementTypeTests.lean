@@ -60,17 +60,17 @@ subst:
                     [
                     .init "x" t[int] eb[#0],
                     .init "y" t[int] eb[#6],
-                    .block "label_0" { ss :=
+                    .block "label_0"
 
                       [Statement.init "z" t[bool] eb[zinit],
                        Statement.assume "z_false" eb[z == #false],
 
                       .ite eb[z == #false]
-                        { ss := [Statement.set "x" eb[y]] }
-                        { ss := [Statement.assert "trivial" eb[#true]]},
+                        [Statement.set "x" eb[y]]
+                        [Statement.assert "trivial" eb[#true]],
 
                       Statement.assert "x_eq_y_label_0" eb[x == y],
-                      ]},
+                      ],
                     .assert "x_eq_y" eb[x == y]
                     ]
           return format ans.snd
@@ -92,11 +92,8 @@ info: error: Type Checking [init (x : int) := #1]: Variable x of type bool alrea
 #eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
                     [
                     .init "x" t[bool] eb[#true],
-                    .block "label_0" {
-                      ss := [
-                        Statement.init "x" t[int] eb[#1]
-                      ]
-                    }
+                    .block "label_0"
+                      [ Statement.init "x" t[int] eb[#1] ]
                     ]
           return format ans
 
@@ -116,15 +113,11 @@ subst: [($__ty0, int)]
                     [
                     .init "x" t[int] eb[#0],
                     .ite eb[x == #3]
-                    { ss := [
+                    [
                       Statement.init "y" t[∀α. %α] eb[x],
                       Statement.assert "local_y_eq_3" eb[y == #3]
-                    ]}
-                    {
-                      ss := [
-                        Statement.init "z" t[bool] eb[#true]
-                      ]
-                    }
+                    ]
+                    [ Statement.init "z" t[bool] eb[#true] ]
                     ]
           return format ans.snd
 

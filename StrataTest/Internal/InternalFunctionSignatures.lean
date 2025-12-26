@@ -11,15 +11,7 @@ namespace Strata
 namespace Python
 namespace Internal
 
--- We should extract the function signatures from the prelude:
-def getFuncSigOrder (fname: String) : List String :=
-  match fname with
-  | _ => Strata.Python.getFuncSigOrder fname
-
--- We should extract the function signatures from the prelude:
-def getFuncSigType (fname: String) (arg: String) : String :=
-  match fname with
-  | _ => Strata.Python.getFuncSigType fname arg
+protected def signatures : Signatures := Strata.Python.coreSignatures
 
 end Internal
 end Python

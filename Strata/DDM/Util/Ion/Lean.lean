@@ -126,7 +126,7 @@ instance [h : CachedToIon α] : CachedToIon (List α) where
 
 end CachedToIon
 
-private def resolveGlobalDecl {m : Type → Type} [Monad m] [MonadResolveName m] [MonadEnv m] [MonadError m] (tp : Syntax) : m Name := do
+private def resolveGlobalDecl {m : Type → Type} [AddMessageContext m] [Monad m] [MonadResolveName m] [MonadEnv m] [MonadError m] [MonadLog m] [MonadOptions m] (tp : Syntax) : m Name := do
   let cs ← resolveGlobalName tp.getId
   match cs with
   | [(tpName, [])] =>

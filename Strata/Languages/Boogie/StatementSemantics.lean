@@ -187,7 +187,7 @@ inductive EvalCommand : (String → Option Procedure)  → BoogieEval →
   follows; wish this error message actually mentioned which local variable was
   the problematic one.
 
-  invalid nested inductive datatype 'Imperative.EvalStmts', nested inductive
+  invalid nested inductive datatype 'Imperative.EvalBlock', nested inductive
   datatypes parameters cannot contain local variables.
 
   Here's a Zulip thread that can shed some light on this error message:
@@ -216,7 +216,7 @@ inductive EvalCommand : (String → Option Procedure)  → BoogieEval →
     (∀ pre, (Procedure.Spec.getCheckExprs p.spec.preconditions).contains pre →
       isDefinedOver (HasVarsPure.getVars) σAO pre ∧
       δ σAO pre = .some HasBool.tt) →
-    @Imperative.EvalStmts Expression Command (EvalCommand π) _ _ _ _ _ _ δ σAO p.body σR →
+    @Imperative.EvalBlock Expression Command (EvalCommand π) _ _ _ _ _ _ δ σAO p.body σR →
     -- Postconditions, if any, must be satisfied for execution to continue.
     (∀ post, (Procedure.Spec.getCheckExprs p.spec.postconditions).contains post →
       isDefinedOver (HasVarsPure.getVars) σAO post ∧
@@ -233,7 +233,7 @@ abbrev EvalStatement (π : String → Option Procedure) : BoogieEval →
 
 abbrev EvalStatements (π : String → Option Procedure) : BoogieEval →
     BoogieStore → List Statement → BoogieStore → Prop :=
-  Imperative.EvalStmts Expression Command (EvalCommand π)
+  Imperative.EvalBlock Expression Command (EvalCommand π)
 
 inductive EvalCommandContract : (String → Option Procedure)  → BoogieEval →
   BoogieStore → Command → BoogieStore → Prop where
@@ -282,4 +282,4 @@ abbrev EvalStatementContract (π : String → Option Procedure) : BoogieEval →
 
 abbrev EvalStatementsContract (π : String → Option Procedure) : BoogieEval →
     BoogieStore → List Statement → BoogieStore → Prop :=
-  Imperative.EvalStmts Expression Command (EvalCommandContract π)
+  Imperative.EvalBlock Expression Command (EvalCommandContract π)

@@ -101,12 +101,15 @@ inductive Result where
   | err (msg : String)
 deriving DecidableEq, Repr
 
+def Result.formatWithVerbose (r : Result) (verbose : Bool) : Format :=
+  match r with
+  | .sat cex  => if verbose then f!"failed\nCEx: {cex}" else "failed"
+  | .unsat => f!"verified"
+  | .unknown => f!"unknown"
+  | .err msg => f!"err {msg}"
+
 instance : ToFormat Result where
-  format r := match r with
-    | .sat cex  => f!"failed\nCEx: {cex}"
-    | .unsat => f!"verified"
-    | .unknown => f!"unknown"
-    | .err msg => f!"err {msg}"
+  format r := r.formatWithVerbose true
 
 def VC_folder_name: String := "vcs"
 
@@ -143,22 +146,27 @@ def solverResult (vars : List (IdentT LMonoTy Visibility)) (ans : String)
 open Imperative
 
 def formatPositionMetaData [BEq P.Ident] [ToFormat P.Expr] (md : MetaData P): Option Format := do
-  let file ← md.findElem MetaData.fileLabel
-  let line ← md.findElem MetaData.startLineLabel
-  let col ← md.findElem MetaData.startColumnLabel
-  let baseName := match file.value with
-                  | .msg m => (m.split (λ c => c == '/')).getLast!
-                  | _ => "<no file>"
-  f!"{baseName}({line.value}, {col.value})"
+  let fileRangeElem ← md.findElem MetaData.fileRange
+  match fileRangeElem.value with
+  | .fileRange m =>
+    let baseName := match m.file with
+                    | .file path => (path.splitToList (· == '/')).getLast!
+    return f!"{baseName}({m.start.line}, {m.start.column})"
+  | _ => none
 
 structure VCResult where
   obligation : Imperative.ProofObligation Expression
   result : Result := .unknown
   estate : EncoderState := EncoderState.init
+  verbose : Bool := true
+
+def VCResult.formatWithVerbose (r : VCResult) (verbose : Bool) : Format :=
+  f!"Obligation: {r.obligation.label}\n\
+     Result: {r.result.formatWithVerbose verbose}"
 
 instance : ToFormat VCResult where
   format r := f!"Obligation: {r.obligation.label}\n\
-                 Result: {r.result}"
+                 Result: {r.result.formatWithVerbose r.verbose}"
                 --  EState : {repr r.estate.terms}
 
 abbrev VCResults := Array VCResult
@@ -193,7 +201,7 @@ def getSolverFlags (options : Options) (solver : String) : Array String :=
   let setTimeout :=
     match solver with
     | "cvc5" => #[s!"--tlimit={options.solverTimeout*1000}"]
-    | "z3" => #[s!"-t:{options.solverTimeout*1000}"]
+    | "z3" => #[s!"-T:{options.solverTimeout}"]
     | _ => #[]
   produceModels ++ setTimeout
 
@@ -231,7 +239,7 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
       -- We don't need the SMT solver if PE (partial evaluation) is enough to
       -- reduce the consequent to true.
       if obligation.obligation.isTrue then
-        results := results.push { obligation, result := .unsat }
+        results := results.push { obligation, result := .unsat, verbose := options.verbose }
         continue
       -- If PE determines that the consequent is false and the path conditions
       -- are empty, then we can immediate report a verification failure. Note
@@ -243,7 +251,7 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
         dbg_trace f!"\n\nObligation {obligation.label}: failed!\
                      \n\nResult obtained during partial evaluation.\
                      {if options.verbose then prog else ""}"
-        results := results.push { obligation, result := .sat .empty }
+        results := results.push { obligation, result := .sat .empty, verbose := options.verbose }
         if options.stopOnFirstError then break
       let obligation :=
       if options.removeIrrelevantAxioms then
@@ -253,6 +261,7 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
         let cg := Program.toFunctionCG p
         let fns := obligation.obligation.getOps.map BoogieIdent.toPretty
         let relevant_fns := (fns ++ (CallGraph.getAllCalleesClosure cg fns)).dedup
+
         let irrelevant_axs := Program.getIrrelevantAxioms p relevant_fns
         let new_assumptions := Imperative.PathConditions.removeByNames obligation.assumptions irrelevant_axs
         { obligation with assumptions := new_assumptions }
@@ -266,7 +275,7 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
                      {err}\n\n\
                      Evaluated program: {p}\n\n"
         let _ ← dbg_trace msg
-        results := results.push { obligation, result := .err msg }
+        results := results.push { obligation, result := .err msg, verbose := options.verbose }
         if options.stopOnFirstError then break
       | .ok (terms, ctx) =>
         -- let ufids := (ctx.ufs.map (fun f => f.id))
@@ -288,15 +297,15 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
                 terms ctx)
         match ans with
         | .ok (result, estate) =>
-           results := results.push { obligation, result, estate }
+           results := results.push { obligation, result, estate, verbose := options.verbose }
            if result ≠ .unsat then
             let prog := f!"\n\nEvaluated program:\n{p}"
             dbg_trace f!"\n\nObligation {obligation.label}: could not be proved!\
-                         \n\nResult: {result}\
+                         \n\nResult: {result.formatWithVerbose options.verbose}\
                          {if options.verbose then prog else ""}"
            if options.stopOnFirstError then break
         | .error e =>
-           results := results.push { obligation, result := .err (toString e) }
+           results := results.push { obligation, result := .err (toString e), verbose := options.verbose }
            let prog := f!"\n\nEvaluated program:\n{p}"
            dbg_trace f!"\n\nObligation {obligation.label}: solver error!\
                         \n\nError: {e}\
@@ -354,6 +363,35 @@ def verify
                 (Boogie.verify smtsolver program options moreFns)
   else
     panic! s!"DDM Transform Error: {repr errors}"
+
+/-- A diagnostic produced by analyzing a file -/
+structure Diagnostic where
+  start : Lean.Position
+  ending : Lean.Position
+  message : String
+  deriving Repr, BEq
+
+def toDiagnostic (vcr : Boogie.VCResult) : Option Diagnostic := do
+  -- Only create a diagnostic if the result is not .unsat (i.e., verification failed)
+  match vcr.result with
+  | .unsat => none  -- Verification succeeded, no diagnostic
+  | result =>
+    -- Extract file range from metadata
+    let fileRangeElem ← vcr.obligation.metadata.findElem Imperative.MetaData.fileRange
+    match fileRangeElem.value with
+    | .fileRange range =>
+      let message := match result with
+        | .sat _ => "assertion does not hold"
+        | .unknown => "assertion verification result is unknown"
+        | .err msg => s!"verification error: {msg}"
+        | _ => "verification failed"
+      some {
+        -- Subtract headerOffset to account for program header we added
+        start := { line := range.start.line, column := range.start.column }
+        ending := { line := range.ending.line, column := range.ending.column }
+        message := message
+      }
+    | _ => none
 
 end Strata
 

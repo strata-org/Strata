@@ -23,7 +23,7 @@ def infoSourceRange (info : Lean.SourceInfo) : Option SourceRange :=
     some { start := pos, stop := endPos }
   | .none  => none
 
-def sourceLocPos (stx:Syntax) : Option String.Pos :=
+def sourceLocPos (stx:Syntax) : Option String.Pos.Raw :=
   match stx with
   | .atom info .. | .ident info .. =>
     infoSourceRange info |>.map (·.start)
@@ -38,7 +38,7 @@ def sourceLocPos (stx:Syntax) : Option String.Pos :=
         none
   | .missing => none
 
-def sourceLocEnd (stx:Syntax) : Option String.Pos :=
+def sourceLocEnd (stx:Syntax) : Option String.Pos.Raw :=
   match stx with
   | .atom info ..  | .ident info .. =>
     infoSourceRange info |>.map (·.stop)
@@ -140,7 +140,7 @@ def logErrorMF {m} [ElabClass m] (loc : SourceRange) (msg : StrataFormat) (isSil
 
 structure DeclContext where
   inputContext : InputContext
-  stopPos : String.Pos
+  stopPos : String.Pos.Raw
   -- Map from dialect names to the dialect definition
   loader : LoadedDialects
   /-- Flag indicating imports are missing (silences some errors). -/
@@ -255,7 +255,7 @@ structure DeclState where
   -- Operations at the global level
   globalContext : GlobalContext := {}
   -- String position in file.
-  pos : String.Pos := 0
+  pos : String.Pos.Raw := 0
   -- Errors found in elaboration.
   errors : Array Message := #[]
   deriving Inhabited

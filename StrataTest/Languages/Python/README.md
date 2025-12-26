@@ -9,7 +9,7 @@ python -m strata.gen dialect test_results/dialects
 ## Generate Ion files per source program:
 ```
 cd Tools/Python
-python -m strata.gen parse ../../StrataTest/Languages/Python/test.py ../../StrataTest/Languages/Python/test.python.st.ion
+python -m strata.gen py_to_strata ../../StrataTest/Languages/Python/test.py ../../StrataTest/Languages/Python/test.python.st.ion
 ```
 
 ## Run analysis:

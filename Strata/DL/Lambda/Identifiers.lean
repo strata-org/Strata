@@ -20,7 +20,10 @@ section Identifiers
 Identifiers with a name and additional metadata
 -/
 structure Identifier (IDMeta : Type) : Type where
+  /-- A unique name. -/
   name : String
+  /-- Any additional metadata that it would be useful to attach to an
+  identifier. -/
   metadata : IDMeta
 deriving Repr, DecidableEq, Inhabited
 

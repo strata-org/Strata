@@ -26,6 +26,20 @@ def initDialect : Dialect := BuiltinM.create! "Init" #[] do
   declareAtomicCat q`Init.Decimal
   declareAtomicCat q`Init.Str
 
+  declareCat q`Init.Bool
+  declareOp {
+    name := "boolTrue",
+    argDecls := .empty,
+    category := q`Init.Bool,
+    syntaxDef := .ofList [.str "true"],
+  }
+  declareOp {
+    name := "boolFalse",
+    argDecls := .empty,
+    category := q`Init.Bool,
+    syntaxDef := .ofList [.str "false"],
+  }
+
   declareCat q`Init.Option #["a"]
 
   declareCat q`Init.Seq #["a"]
