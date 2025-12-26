@@ -99,64 +99,102 @@ def toSMTStringWithDatatypes (e : LExpr BoogieLParams.mono) (datatypes : List (L
 
 -- Test 1: Simple datatype (Option) - zero-argument constructor
 /--
-info: "(declare-datatype TestOption (par (α) (\n  (None)\n  (Some (TestOption$SomeProj0 α)))))\n; x\n(declare-const f0 (TestOption Int))\n(define-fun t0 () (TestOption Int) f0)\n"
+info: (declare-datatype TestOption (par (α) (
+  (None)
+  (Some (TestOption$SomeProj0 α)))))
+; x
+(declare-const f0 (TestOption Int))
+(define-fun t0 () (TestOption Int) f0)
 -/
 #guard_msgs in
-#eval toSMTStringWithDatatypes
+#eval format <$> toSMTStringWithDatatypes
   (.fvar () (BoogieIdent.unres "x") (.some (.tcons "TestOption" [.int])))
   [optionDatatype]
 
 -- Test 2: Recursive datatype (List) - using List type
 /--
-info: "(declare-datatype TestList (par (α) (\n  (Nil)\n  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))\n; xs\n(declare-const f0 (TestList Int))\n(define-fun t0 () (TestList Int) f0)\n"
+info: (declare-datatype TestList (par (α) (
+  (Nil)
+  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))
+; xs
+(declare-const f0 (TestList Int))
+(define-fun t0 () (TestList Int) f0)
 -/
 #guard_msgs in
-#eval toSMTStringWithDatatypes
+#eval format <$> toSMTStringWithDatatypes
   (.fvar () (BoogieIdent.unres "xs") (.some (.tcons "TestList" [.int])))
   [listDatatype]
 
 -- Test 3: Multiple constructors - Tree with Leaf and Node
 /--
-info: "(declare-datatype TestTree (par (α) (\n  (Leaf)\n  (Node (TestTree$NodeProj0 α) (TestTree$NodeProj1 (TestTree α)) (TestTree$NodeProj2 (TestTree α))))))\n; tree\n(declare-const f0 (TestTree Bool))\n(define-fun t0 () (TestTree Bool) f0)\n"
+info: (declare-datatype TestTree (par (α) (
+  (Leaf)
+  (Node (TestTree$NodeProj0 α) (TestTree$NodeProj1 (TestTree α)) (TestTree$NodeProj2 (TestTree α))))))
+; tree
+(declare-const f0 (TestTree Bool))
+(define-fun t0 () (TestTree Bool) f0)
 -/
 #guard_msgs in
-#eval toSMTStringWithDatatypes
+#eval format <$> toSMTStringWithDatatypes
   (.fvar () (BoogieIdent.unres "tree") (.some (.tcons "TestTree" [.bool])))
   [treeDatatype]
 
 -- Test 4: Parametric datatype instantiation - List Int
 /--
-info: "(declare-datatype TestList (par (α) (\n  (Nil)\n  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))\n; intList\n(declare-const f0 (TestList Int))\n(define-fun t0 () (TestList Int) f0)\n"
+info: (declare-datatype TestList (par (α) (
+  (Nil)
+  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))
+; intList
+(declare-const f0 (TestList Int))
+(define-fun t0 () (TestList Int) f0)
 -/
 #guard_msgs in
-#eval toSMTStringWithDatatypes
+#eval format <$> toSMTStringWithDatatypes
   (.fvar () (BoogieIdent.unres "intList") (.some (.tcons "TestList" [.int])))
   [listDatatype]
 
 -- Test 5: Parametric datatype instantiation - List Bool (should reuse same datatype)
 /--
-info: "(declare-datatype TestList (par (α) (\n  (Nil)\n  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))\n; boolList\n(declare-const f0 (TestList Bool))\n(define-fun t0 () (TestList Bool) f0)\n"
+info: (declare-datatype TestList (par (α) (
+  (Nil)
+  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))
+; boolList
+(declare-const f0 (TestList Bool))
+(define-fun t0 () (TestList Bool) f0)
 -/
 #guard_msgs in
-#eval toSMTStringWithDatatypes
+#eval format <$> toSMTStringWithDatatypes
   (.fvar () (BoogieIdent.unres "boolList") (.some (.tcons "TestList" [.bool])))
   [listDatatype]
 
 -- Test 6: Multi-field constructor - Tree with 3 fields
 /--
-info: "(declare-datatype TestTree (par (α) (\n  (Leaf)\n  (Node (TestTree$NodeProj0 α) (TestTree$NodeProj1 (TestTree α)) (TestTree$NodeProj2 (TestTree α))))))\n; intTree\n(declare-const f0 (TestTree Int))\n(define-fun t0 () (TestTree Int) f0)\n"
+info: (declare-datatype TestTree (par (α) (
+  (Leaf)
+  (Node (TestTree$NodeProj0 α) (TestTree$NodeProj1 (TestTree α)) (TestTree$NodeProj2 (TestTree α))))))
+; intTree
+(declare-const f0 (TestTree Int))
+(define-fun t0 () (TestTree Int) f0)
 -/
 #guard_msgs in
-#eval toSMTStringWithDatatypes
+#eval format <$> toSMTStringWithDatatypes
   (.fvar () (BoogieIdent.unres "intTree") (.some (.tcons "TestTree" [.int])))
   [treeDatatype]
 
 -- Test 7: Nested parametric types - List of Option (should declare both datatypes)
 /--
-info: "(declare-datatype TestOption (par (α) (\n  (None)\n  (Some (TestOption$SomeProj0 α)))))\n(declare-datatype TestList (par (α) (\n  (Nil)\n  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))\n; listOfOption\n(declare-const f0 (TestList (TestOption Int)))\n(define-fun t0 () (TestList (TestOption Int)) f0)\n"
+info: (declare-datatype TestOption (par (α) (
+  (None)
+  (Some (TestOption$SomeProj0 α)))))
+(declare-datatype TestList (par (α) (
+  (Nil)
+  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))
+; listOfOption
+(declare-const f0 (TestList (TestOption Int)))
+(define-fun t0 () (TestList (TestOption Int)) f0)
 -/
 #guard_msgs in
-#eval toSMTStringWithDatatypes
+#eval format <$> toSMTStringWithDatatypes
   (.fvar () (BoogieIdent.unres "listOfOption") (.some (.tcons "TestList" [.tcons "TestOption" [.int]])))
   [listDatatype, optionDatatype]
 
@@ -164,28 +202,38 @@ info: "(declare-datatype TestOption (par (α) (\n  (None)\n  (Some (TestOption$S
 
 -- Test 8: None constructor (zero-argument)
 /--
-info: "(declare-datatype TestOption (par (α) (\n  (None)\n  (Some (TestOption$SomeProj0 α)))))\n(define-fun t0 () (TestOption Int) (as None (TestOption Int)))\n"
+info: (declare-datatype TestOption (par (α) (
+  (None)
+  (Some (TestOption$SomeProj0 α)))))
+(define-fun t0 () (TestOption Int) (as None (TestOption Int)))
 -/
 #guard_msgs in
-#eval toSMTStringWithDatatypes
+#eval format <$> toSMTStringWithDatatypes
   (.op () (BoogieIdent.unres "None") (.some (.tcons "TestOption" [.int])))
   [optionDatatype]
 
 -- Test 9: Some constructor (single-argument)
 /--
-info: "(declare-datatype TestOption (par (α) (\n  (None)\n  (Some (TestOption$SomeProj0 α)))))\n(define-fun t0 () (TestOption Int) (Some 42))\n"
+info: (declare-datatype TestOption (par (α) (
+  (None)
+  (Some (TestOption$SomeProj0 α)))))
+(define-fun t0 () (TestOption Int) (Some 42))
 -/
 #guard_msgs in
-#eval toSMTStringWithDatatypes
+#eval format <$> toSMTStringWithDatatypes
   (.app () (.op () (BoogieIdent.unres "Some") (.some (.arrow .int (.tcons "TestOption" [.int])))) (.intConst () 42))
   [optionDatatype]
 
 -- Test 10: Cons constructor (multi-argument)
 /--
-info: "(declare-datatype TestList (par (α) (\n  (Nil)\n  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))\n(define-fun t0 () (TestList Int) (as Nil (TestList Int)))\n(define-fun t1 () (TestList Int) (Cons 1 t0))\n"
+info: (declare-datatype TestList (par (α) (
+  (Nil)
+  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))
+(define-fun t0 () (TestList Int) (as Nil (TestList Int)))
+(define-fun t1 () (TestList Int) (Cons 1 t0))
 -/
 #guard_msgs in
-#eval toSMTStringWithDatatypes
+#eval format <$> toSMTStringWithDatatypes
   (.app ()
     (.app () (.op () (BoogieIdent.unres "Cons") (.some (.arrow .int (.arrow (.tcons "TestList" [.int]) (.tcons "TestList" [.int])))))
       (.intConst () 1))
@@ -196,20 +244,32 @@ info: "(declare-datatype TestList (par (α) (\n  (Nil)\n  (Cons (TestList$ConsPr
 
 -- Test 11: isNone tester
 /--
-info: "(declare-datatype TestOption (par (α) (\n  (None)\n  (Some (TestOption$SomeProj0 α)))))\n; x\n(declare-const f0 (TestOption Int))\n(define-fun t0 () (TestOption Int) f0)\n(define-fun t1 () Bool (is-None t0))\n"
+info: (declare-datatype TestOption (par (α) (
+  (None)
+  (Some (TestOption$SomeProj0 α)))))
+; x
+(declare-const f0 (TestOption Int))
+(define-fun t0 () (TestOption Int) f0)
+(define-fun t1 () Bool (is-None t0))
 -/
 #guard_msgs in
-#eval toSMTStringWithDatatypes
+#eval format <$> toSMTStringWithDatatypes
   (.app () (.op () (BoogieIdent.unres "TestOption$isNone") (.some (.arrow (.tcons "TestOption" [.int]) .bool)))
     (.fvar () (BoogieIdent.unres "x") (.some (.tcons "TestOption" [.int]))))
   [optionDatatype]
 
 -- Test 12: isCons tester
 /--
-info: "(declare-datatype TestList (par (α) (\n  (Nil)\n  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))\n; xs\n(declare-const f0 (TestList Int))\n(define-fun t0 () (TestList Int) f0)\n(define-fun t1 () Bool (is-Cons t0))\n"
+info: (declare-datatype TestList (par (α) (
+  (Nil)
+  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))
+; xs
+(declare-const f0 (TestList Int))
+(define-fun t0 () (TestList Int) f0)
+(define-fun t1 () Bool (is-Cons t0))
 -/
 #guard_msgs in
-#eval toSMTStringWithDatatypes
+#eval format <$> toSMTStringWithDatatypes
   (.app () (.op () (BoogieIdent.unres "TestList$isCons") (.some (.arrow (.tcons "TestList" [.int]) .bool)))
     (.fvar () (BoogieIdent.unres "xs") (.some (.tcons "TestList" [.int]))))
   [listDatatype]
@@ -218,30 +278,48 @@ info: "(declare-datatype TestList (par (α) (\n  (Nil)\n  (Cons (TestList$ConsPr
 
 -- Test 13: Some value destructor
 /--
-info: "(declare-datatype TestOption (par (α) (\n  (None)\n  (Some (TestOption$SomeProj0 α)))))\n; x\n(declare-const f0 (TestOption Int))\n(define-fun t0 () (TestOption Int) f0)\n(define-fun t1 () Int (TestOption$SomeProj0 t0))\n"
+info: (declare-datatype TestOption (par (α) (
+  (None)
+  (Some (TestOption$SomeProj0 α)))))
+; x
+(declare-const f0 (TestOption Int))
+(define-fun t0 () (TestOption Int) f0)
+(define-fun t1 () Int (TestOption$SomeProj0 t0))
 -/
 #guard_msgs in
-#eval toSMTStringWithDatatypes
+#eval format <$> toSMTStringWithDatatypes
   (.app () (.op () (BoogieIdent.unres "TestOption$SomeProj0") (.some (.arrow (.tcons "TestOption" [.int]) .int)))
     (.fvar () (BoogieIdent.unres "x") (.some (.tcons "TestOption" [.int]))))
   [optionDatatype]
 
 -- Test 14: Cons head destructor
 /--
-info: "(declare-datatype TestList (par (α) (\n  (Nil)\n  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))\n; xs\n(declare-const f0 (TestList Int))\n(define-fun t0 () (TestList Int) f0)\n(define-fun t1 () Int (TestList$ConsProj0 t0))\n"
+info: (declare-datatype TestList (par (α) (
+  (Nil)
+  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))
+; xs
+(declare-const f0 (TestList Int))
+(define-fun t0 () (TestList Int) f0)
+(define-fun t1 () Int (TestList$ConsProj0 t0))
 -/
 #guard_msgs in
-#eval toSMTStringWithDatatypes
+#eval format <$> toSMTStringWithDatatypes
   (.app () (.op () (BoogieIdent.unres "TestList$ConsProj0") (.some (.arrow (.tcons "TestList" [.int]) .int)))
     (.fvar () (BoogieIdent.unres "xs") (.some (.tcons "TestList" [.int]))))
   [listDatatype]
 
 -- Test 15: Cons tail destructor
 /--
-info: "(declare-datatype TestList (par (α) (\n  (Nil)\n  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))\n; xs\n(declare-const f0 (TestList Int))\n(define-fun t0 () (TestList Int) f0)\n(define-fun t1 () (TestList Int) (TestList$ConsProj1 t0))\n"
+info: (declare-datatype TestList (par (α) (
+  (Nil)
+  (Cons (TestList$ConsProj0 α) (TestList$ConsProj1 (TestList α))))))
+; xs
+(declare-const f0 (TestList Int))
+(define-fun t0 () (TestList Int) f0)
+(define-fun t1 () (TestList Int) (TestList$ConsProj1 t0))
 -/
 #guard_msgs in
-#eval toSMTStringWithDatatypes
+#eval format <$> toSMTStringWithDatatypes
   (.app () (.op () (BoogieIdent.unres "TestList$ConsProj1") (.some (.arrow (.tcons "TestList" [.int]) (.tcons "TestList" [.int]))))
     (.fvar () (BoogieIdent.unres "xs") (.some (.tcons "TestList" [.int]))))
   [listDatatype]
@@ -320,10 +398,24 @@ def zetaDatatype : LDatatype Visibility :=
     constrs_ne := by decide }
 
 /--
-info: "(declare-datatype Zeta (\n  (ZetaValue (Zeta$ZetaValueProj0 Int))))\n(declare-datatype Epsilon (\n  (EpsilonValue (Epsilon$EpsilonValueProj0 Zeta))))\n(declare-datatype Gamma (\n  (GammaValue (Gamma$GammaValueProj0 Epsilon) (Gamma$GammaValueProj1 Zeta))))\n(declare-datatype Delta (\n  (DeltaValue (Delta$DeltaValueProj0 Zeta))))\n(declare-datatype Beta (\n  (BetaValue (Beta$BetaValueProj0 Delta) (Beta$BetaValueProj1 Epsilon))))\n(declare-datatype Alpha (\n  (AlphaValue (Alpha$AlphaValueProj0 Beta) (Alpha$AlphaValueProj1 Gamma))))\n; alphaVar\n(declare-const f0 Alpha)\n(define-fun t0 () Alpha f0)\n"
+info: (declare-datatype Zeta (
+  (ZetaValue (Zeta$ZetaValueProj0 Int))))
+(declare-datatype Epsilon (
+  (EpsilonValue (Epsilon$EpsilonValueProj0 Zeta))))
+(declare-datatype Gamma (
+  (GammaValue (Gamma$GammaValueProj0 Epsilon) (Gamma$GammaValueProj1 Zeta))))
+(declare-datatype Delta (
+  (DeltaValue (Delta$DeltaValueProj0 Zeta))))
+(declare-datatype Beta (
+  (BetaValue (Beta$BetaValueProj0 Delta) (Beta$BetaValueProj1 Epsilon))))
+(declare-datatype Alpha (
+  (AlphaValue (Alpha$AlphaValueProj0 Beta) (Alpha$AlphaValueProj1 Gamma))))
+; alphaVar
+(declare-const f0 Alpha)
+(define-fun t0 () Alpha f0)
 -/
 #guard_msgs in
-#eval toSMTStringWithDatatypes
+#eval format <$> toSMTStringWithDatatypes
   (.fvar () (BoogieIdent.unres "alphaVar") (.some (.tcons "Alpha" [])))
   [alphaDatatype, betaDatatype, gammaDatatype, deltaDatatype, epsilonDatatype, zetaDatatype]
 
@@ -373,10 +465,20 @@ def diamondDatatype : LDatatype Visibility :=
     constrs_ne := by decide }
 
 /--
-info: "(declare-datatype Root (\n  (RootValue (Root$RootValueProj0 Int))))\n(declare-datatype Right (\n  (RightValue (Right$RightValueProj0 Root))))\n(declare-datatype Left (\n  (LeftValue (Left$LeftValueProj0 Root))))\n(declare-datatype Diamond (\n  (DiamondValue (Diamond$DiamondValueProj0 Left) (Diamond$DiamondValueProj1 Right))))\n; diamondVar\n(declare-const f0 Diamond)\n(define-fun t0 () Diamond f0)\n"
+info: (declare-datatype Root (
+  (RootValue (Root$RootValueProj0 Int))))
+(declare-datatype Right (
+  (RightValue (Right$RightValueProj0 Root))))
+(declare-datatype Left (
+  (LeftValue (Left$LeftValueProj0 Root))))
+(declare-datatype Diamond (
+  (DiamondValue (Diamond$DiamondValueProj0 Left) (Diamond$DiamondValueProj1 Right))))
+; diamondVar
+(declare-const f0 Diamond)
+(define-fun t0 () Diamond f0)
 -/
 #guard_msgs in
-#eval toSMTStringWithDatatypes
+#eval format <$> toSMTStringWithDatatypes
   (.fvar () (BoogieIdent.unres "diamondVar") (.some (.tcons "Diamond" [])))
   [diamondDatatype, leftDatatype, rightDatatype, rootDatatype]
 
