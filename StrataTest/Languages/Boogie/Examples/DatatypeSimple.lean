@@ -25,15 +25,18 @@ datatype IntOption {
   Some(value: int)
 };
 
+function testNone (r: IntOption) : bool;
+
 procedure testIntOption(x: int) returns (r: IntOption)
 spec {
+  requires [test]: (testNone(r));
   ensures [r_is_some]: (IntOption..isSome(r));
-  ensures [r_value]: (IntOption..SomeProj0(r) == x);
+  ensures [r_value]: (IntOption..value(r) == x);
 }
 {
   r := Some(x);
   assert [r_is_some]: IntOption..isSome(r);
-  assert [r_value_correct]: (IntOption..SomeProj0(r) == x);
+  assert [r_value_correct]: (IntOption..value(r) == x);
 };
 #end
 
@@ -109,13 +112,13 @@ datatype IntOption {
 
 procedure testNone() returns (r: IntOption)
 spec {
-  ensures [r_is_none]: (IntOption$isNone(r));
-  ensures [r_not_some]: (!IntOption$isSome(r));
+  ensures [r_is_none]: (IntOption..isNone(r));
+  ensures [r_not_some]: (!IntOption..isSome(r));
 }
 {
   r := None();
-  assert [r_is_none]: IntOption$isNone(r);
-  assert [r_not_some]: !IntOption$isSome(r);
+  assert [r_is_none]: IntOption..isNone(r);
+  assert [r_not_some]: !IntOption..isSome(r);
 };
 #end
 
@@ -190,12 +193,12 @@ datatype IntOption {
 
 procedure getOrDefault(opt: IntOption, default: int) returns (result: int)
 spec {
-  ensures [none_case]: (IntOption$isNone(opt) ==> (result == default));
-  ensures [some_case]: (IntOption$isSome(opt) ==> (result == IntOption$SomeProj0(opt)));
+  ensures [none_case]: (IntOption..isNone(opt) ==> (result == default));
+  ensures [some_case]: (IntOption..isSome(opt) ==> (result == IntOption..value(opt)));
 }
 {
-  if (IntOption$isSome(opt)) {
-    result := IntOption$SomeProj0(opt);
+  if (IntOption..isSome(opt)) {
+    result := IntOption..value(opt);
   } else {
     result := default;
   }
@@ -260,13 +263,13 @@ datatype BoolResult {
 
 procedure testBoolResult(b: bool) returns (r: BoolResult)
 spec {
-  ensures [r_is_success]: (BoolResult$isSuccess(r));
-  ensures [r_value]: (BoolResult$SuccessProj0(r) == b);
+  ensures [r_is_success]: (BoolResult..isSuccess(r));
+  ensures [r_value]: (BoolResult..value(r) == b);
 }
 {
   r := Success(b);
-  assert [r_is_success]: BoolResult$isSuccess(r);
-  assert [r_value_correct]: (BoolResult$SuccessProj0(r) == b);
+  assert [r_is_success]: BoolResult..isSuccess(r);
+  assert [r_value_correct]: (BoolResult..value(r) == b);
 };
 #end
 
@@ -288,13 +291,13 @@ datatype IntPair {
 
 procedure makePair(x: int, y: int) returns (p: IntPair)
 spec {
-  ensures [first_correct]: (IntPair$PairProj0(p) == x);
-  ensures [second_correct]: (IntPair$PairProj1(p) == y);
+  ensures [first_correct]: (IntPair..first(p) == x);
+  ensures [second_correct]: (IntPair..second(p) == y);
 }
 {
   p := Pair(x, y);
-  assert [first_check]: (IntPair$PairProj0(p) == x);
-  assert [second_check]: (IntPair$PairProj1(p) == y);
+  assert [first_check]: (IntPair..first(p) == x);
+  assert [second_check]: (IntPair..second(p) == y);
 };
 #end
 

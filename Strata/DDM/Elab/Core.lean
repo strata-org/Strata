@@ -355,6 +355,30 @@ partial def checkExpressionType (tctx : TypingContext) (itype rtype : TypeExpr) 
       return true
     else
       return false
+  | .ident _ iq ia, .fvar _ ri ra =>
+    -- Handle case where one type is .ident and the other is .fvar
+    -- This can happen with recursive datatypes
+    let fvarName := tctx.globalContext.nameOf? ri
+    if fvarName == some iq.name && ia.size = ra.size then do
+      for i in [:ia.size] do
+        if h : i < ia.size ∧ i < ra.size then
+          if !(← checkExpressionType tctx ia[i] ra[i]) then
+            return false
+      return true
+    else
+      return false
+  | .fvar _ ii ia, .ident _ rq ra =>
+    -- Handle case where one type is .fvar and the other is .ident
+    -- This can happen with recursive datatypes
+    let fvarName := tctx.globalContext.nameOf? ii
+    if fvarName == some rq.name && ia.size = ra.size then do
+      for i in [:ia.size] do
+        if h : i < ia.size ∧ i < ra.size then
+          if !(← checkExpressionType tctx ia[i] ra[i]) then
+            return false
+      return true
+    else
+      return false
   | .arrow _ ia ir, .arrow _ ra rr =>
     return (← checkExpressionType tctx ia ra)
         && (← checkExpressionType tctx ir rr)
@@ -422,6 +446,17 @@ partial def unifyTypes
         return args
       assert! ea.size = ia.size
       unifyTypeVectors b argLevel0 ea tctx exprSyntax ia args
+    | .fvar _ fidx ia =>
+      -- Handle case where expected is .ident but inferred is .fvar
+      -- This can happen with recursive datatypes
+      let fvarName := tctx.globalContext.nameOf? fidx
+      if fvarName != some eid.name then
+        logErrorMF exprLoc mf!"Encountered {inferredHead} expression when {expectedType} expected."
+        return args
+      if ea.size != ia.size then
+        logErrorMF exprLoc mf!"Type argument count mismatch: {inferredHead} vs {expectedType}."
+        return args
+      unifyTypeVectors b argLevel0 ea tctx exprSyntax ia args
     | _ =>
       logErrorMF exprLoc mf!"Encountered {inferredHead} expression when {expectedType} expected."
       return args
@@ -432,6 +467,17 @@ partial def unifyTypes
         logErrorMF exprLoc mf!"Encountered {inferredType} expression when {expectedType} expected."
         return args
       assert! ea.size = ia.size
+      unifyTypeVectors b argLevel0 ea tctx exprSyntax ia args
+    | .ident _ iid ia =>
+      -- Handle case where expected is .fvar but inferred is .ident
+      -- This can happen with recursive datatypes
+      let fvarName := tctx.globalContext.nameOf? eid
+      if fvarName != some iid.name then
+        logErrorMF exprLoc mf!"Encountered {inferredType} expression when {expectedType} expected."
+        return args
+      if ea.size != ia.size then
+        logErrorMF exprLoc mf!"Type argument count mismatch: {inferredType} vs {expectedType}."
+        return args
       unifyTypeVectors b argLevel0 ea tctx exprSyntax ia args
     | ih =>
       logErrorMF exprLoc mf!"Encountered {ih} expression when {expectedType} expected."
@@ -1251,6 +1297,25 @@ def runElab {α} (action : ElabM α) : DeclM α := do
 
 -- Exported interface
 
+/--
+Extract the datatype name from a datatype command syntax.
+Returns the dialect name and datatype name if this is a datatype command.
+-/
+private def extractDatatypeInfo? (stx : Syntax) : Option (String × String) := do
+  -- Check if this is a datatype command by looking at the syntax kind
+  let kind := stx.getKind
+  -- The kind should be something like `Boogie.command_datatype`
+  let kindStr := kind.toString
+  guard (kindStr.endsWith "command_datatype")
+  -- Extract dialect name from the kind (e.g., "Boogie" from "Boogie.command_datatype")
+  let dialect := kindStr.dropRight "command_datatype".length |>.dropRight 1  -- drop the trailing dot
+  -- The first identifier argument should be the datatype name
+  let args := stx.getArgs
+  for arg in args do
+    if arg.getKind == `ident then
+      return (dialect, arg.getId.toString)
+  none
+
 partial def elabCommand (leanEnv : Lean.Environment) : DeclM (Option Tree) := do
   let inputContext := (←read).inputContext
   let leanParserState :=
@@ -1273,6 +1338,12 @@ partial def elabCommand (leanEnv : Lean.Environment) : DeclM (Option Tree) := do
   let stx := leanParserState.stxStack.back
   modify fun s => { s with pos := leanParserState.pos }
   assert! stx.getKind ≠ nullKind
+  -- For datatype commands, add the datatype name to the type map BEFORE elaboration
+  -- so that recursive type references can be resolved
+  if let some (dialect, datatypeName) := extractDatatypeInfo? stx then
+    let tempTypeDecl : TypeDecl := { name := datatypeName, argNames := #[] }
+    let tempTypeOrCatDecl : TypeOrCatDecl := .type tempTypeDecl
+    modify fun s => { s with typeOrCatDeclMap := s.typeOrCatDeclMap.add dialect tempTypeOrCatDecl }
   let glbl := (←get).globalContext
   runElab <| some <$> elabOperation (.empty glbl) stx
 

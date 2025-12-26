@@ -1348,21 +1348,63 @@ def translateDatatype (bindings : TransBindings) (op : Operation) :
   -- Generate the datatype declaration
   let datatypeDecl := Boogie.Decl.type (.data datatype)
 
-  -- Generate constructor function declarations
-  -- let constructorDecls ← constructors.mapM (fun constr => do
-  --   let funcDecl := Boogie.Decl.func {
-  --     name := BoogieIdent.unres constr.name.name,
-  --     typeArgs := typeParams,
-  --     inputs := constr.args.map (fun (id, ty) => (BoogieIdent.unres id.name, ty)),
-  --     output := LMonoTy.tcons name (typeParams.map LMonoTy.ftvar),
-  --     body := none,
-  --     attr := #[]
-  --   }
-  --   return funcDecl)
+  -- CRITICAL: Generate placeholder declarations that exactly match AST.lean order and types
+  -- Order must be: datatype, constructors, testers (same as AST.lean)
+  
+  -- 1. Datatype type declaration (matches AST.lean: datatypeKind := GlobalKind.type)
+  -- AST.lean adds: gctx.push datatypeName (GlobalKind.type typeParams.toList none)
+  let datatypeTypeDecl := Boogie.Decl.type (.con { name := name, numargs := typeParams.length })
 
-  -- let allDecls := datatypeDecl :: constructorDecls
-  let newBindings := [datatypeDecl].foldl (fun b decl => { b with freeVars := b.freeVars.push decl }) bindings
+  -- 2. Constructor function placeholders (matches AST.lean: constructorKind := GlobalKind.expr constructorType)
+  let constructorDecls : Array Boogie.Decl := constructors.toArray.map (fun constr =>
+    .func {
+      name := constr.name.name,
+      typeArgs := [],
+      inputs := constr.args,
+      output := LMonoTy.tcons name [],
+      body := none,
+      attr := #[]
+    }
+  )
 
+  -- 3. Tester function placeholders (matches AST.lean: testerKind := GlobalKind.expr testerType)
+  let testerDecls : Array Boogie.Decl := constructors.toArray.map (fun constr =>
+    let testerName := s!"{name}..is{constr.name.name}"
+    .func {
+      name := testerName,
+      typeArgs := [],
+      inputs := [("arg", LMonoTy.tcons name [])],
+      output := LMonoTy.bool,
+      body := none,
+      attr := #[]
+    }
+  )
+
+  -- 4. Projector function placeholders (matches AST.lean: projectorKind := GlobalKind.expr projectorType)
+  -- Projector naming: {DatatypeName}..{fieldName}
+  let projectorDecls : Array Boogie.Decl := Id.run do
+    let mut result : Array Boogie.Decl := #[]
+    for constr in constructors do
+      for (fieldName, fieldType) in constr.args do
+        let projectorName := s!"{name}..{fieldName.name}"
+        let newDecl := Boogie.Decl.func {
+          name := projectorName,
+          typeArgs := [],
+          inputs := [("arg", LMonoTy.tcons name [])],
+          output := fieldType,
+          body := none,
+          attr := #[]
+        }
+        result := result.push newDecl
+    return result
+
+  -- Combine all declarations in exact AST.lean order: datatype, constructors, testers, projectors
+  let allDecls := #[datatypeTypeDecl] ++ constructorDecls ++ testerDecls ++ projectorDecls
+  
+  -- Update bindings with all declarations to keep fvar indices in sync
+  let newBindings := { bindings with freeVars := bindings.freeVars ++ allDecls }
+  
+  -- Return only the datatype declaration, but with updated bindings that include all placeholders
   return ([datatypeDecl], newBindings)
 
 

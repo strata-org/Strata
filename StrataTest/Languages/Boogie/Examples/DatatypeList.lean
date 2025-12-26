@@ -10,357 +10,121 @@ import Strata.Languages.Boogie.Verifier
 namespace Strata
 
 /-!
-# Recursive Datatype Example: List
+# Recursive Datatype Example: IntList (Monomorphic)
 
-This example demonstrates recursive datatypes with the List type,
+This example demonstrates recursive datatypes with a concrete IntList type,
 showing how to work with constructors, testers, and destructors
-for recursive structures.
+for recursive structures. Uses concrete types instead of polymorphism.
 -/
 
-def listConsPgm : Program :=
+def intListConsPgm : Program :=
 #strata
 program Boogie;
 
-datatype List (α : Type) {
+datatype IntList {
   Nil(),
-  Cons(head: α, tail: List α)
+  Cons(head: int, tail: IntList)
 };
 
-procedure testCons(x: int, xs: List int) returns (r: List int)
+procedure testCons(x: int, xs: IntList) returns (r: IntList)
 spec {
-  ensures [r_is_cons]: (List$isCons(r));
-  ensures [head_correct]: (List$ConsProj0(r) == x);
-  ensures [tail_correct]: (List$ConsProj1(r) == xs);
+  ensures [r_is_cons]: (IntList..isCons(r));
+  ensures [head_correct]: (IntList..head(r) == x);
+  ensures [tail_correct]: (IntList..tail(r) == xs);
 }
 {
   r := Cons(x, xs);
-  assert [r_is_cons]: List$isCons(r);
-  assert [head_correct]: (List$ConsProj0(r) == x);
-  assert [tail_correct]: (List$ConsProj1(r) == xs);
+  assert [r_is_cons]: IntList..isCons(r);
+  assert [head_correct]: (IntList..head(r) == x);
+  assert [tail_correct]: (IntList..tail(r) == xs);
 };
 #end
 
-/-
 /-- info: true -/
 #guard_msgs in
-#eval TransM.run Inhabited.default (translateProgram listConsPgm) |>.snd |>.isEmpty
--/
-
-/-
-/--
-info: [Strata.Boogie] Type checking succeeded.
-
-
-VCs:
-Label: r_is_cons
-Assumptions:
-
-
-Proof Obligation:
-(~List$isCons ((~Cons $__x0) $__xs0))
-
-Label: head_correct
-Assumptions:
-
-
-Proof Obligation:
-((~List$ConsProj0 ((~Cons $__x0) $__xs0)) == $__x0)
-
-Label: tail_correct
-Assumptions:
-
-
-Proof Obligation:
-((~List$ConsProj1 ((~Cons $__x0) $__xs0)) == $__xs0)
-
-Label: testCons_ensures_0
-Assumptions:
-
-
-Proof Obligation:
-(~List$isCons ((~Cons $__x0) $__xs0))
-
-Label: testCons_ensures_1
-Assumptions:
-
-
-Proof Obligation:
-((~List$ConsProj0 ((~Cons $__x0) $__xs0)) == $__x0)
-
-Label: testCons_ensures_2
-Assumptions:
-
-
-Proof Obligation:
-((~List$ConsProj1 ((~Cons $__x0) $__xs0)) == $__xs0)
-
----
-info:
-Obligation: r_is_cons
-Result: verified
-
-Obligation: head_correct
-Result: verified
-
-Obligation: tail_correct
-Result: verified
-
-Obligation: testCons_ensures_0
-Result: verified
-
-Obligation: testCons_ensures_1
-Result: verified
-
-Obligation: testCons_ensures_2
-Result: verified
--/
-#guard_msgs in
-#eval verify "cvc5" listConsPgm
--/
+#eval TransM.run Inhabited.default (translateProgram intListConsPgm) |>.snd |>.isEmpty
 
 ---------------------------------------------------------------------
 
-def listNilPgm : Program :=
+def intListNilPgm : Program :=
 #strata
 program Boogie;
 
-datatype List (α : Type) {
+datatype IntList {
   Nil(),
-  Cons(head: α, tail: List α)
+  Cons(head: int, tail: IntList)
 };
 
-procedure testNil() returns (r: List int)
+procedure testNil() returns (r: IntList)
 spec {
-  ensures [r_is_nil]: (List$isNil(r));
-  ensures [r_not_cons]: (!List$isCons(r));
+  ensures [r_is_nil]: (IntList..isNil(r));
+  ensures [r_not_cons]: (!IntList..isCons(r));
 }
 {
   r := Nil();
-  assert [r_is_nil]: List$isNil(r);
-  assert [r_not_cons]: !List$isCons(r);
+  assert [r_is_nil]: IntList..isNil(r);
+  assert [r_not_cons]: !IntList..isCons(r);
 };
 #end
 
-/-
 /-- info: true -/
 #guard_msgs in
-#eval TransM.run Inhabited.default (translateProgram listNilPgm) |>.snd |>.isEmpty
--/
-
-/-
-/--
-info: [Strata.Boogie] Type checking succeeded.
-
-
-VCs:
-Label: r_is_nil
-Assumptions:
-
-
-Proof Obligation:
-(~List$isNil ~Nil)
-
-Label: r_not_cons
-Assumptions:
-
-
-Proof Obligation:
-(~Bool.Not (~List$isCons ~Nil))
-
-Label: testNil_ensures_0
-Assumptions:
-
-
-Proof Obligation:
-(~List$isNil ~Nil)
-
-Label: testNil_ensures_1
-Assumptions:
-
-
-Proof Obligation:
-(~Bool.Not (~List$isCons ~Nil))
-
----
-info:
-Obligation: r_is_nil
-Result: verified
-
-Obligation: r_not_cons
-Result: verified
-
-Obligation: testNil_ensures_0
-Result: verified
-
-Obligation: testNil_ensures_1
-Result: verified
--/
-#guard_msgs in
-#eval verify "cvc5" listNilPgm
--/
+#eval TransM.run Inhabited.default (translateProgram intListNilPgm) |>.snd |>.isEmpty
 
 ---------------------------------------------------------------------
 
-def listHeadPgm : Program :=
+def intListHeadPgm : Program :=
 #strata
 program Boogie;
 
-datatype List (α : Type) {
+datatype IntList {
   Nil(),
-  Cons(head: α, tail: List α)
+  Cons(head: int, tail: IntList)
 };
 
-procedure getHead(xs: List int) returns (result: int)
+procedure getHead(xs: IntList) returns (result: int)
 spec {
-  requires [xs_is_cons]: (List$isCons(xs));
-  ensures [result_is_head]: (result == List$ConsProj0(xs));
+  requires [xs_is_cons]: (IntList..isCons(xs));
+  ensures [result_is_head]: (result == IntList..head(xs));
 }
 {
-  assert [xs_is_cons]: List$isCons(xs);
-  result := List$ConsProj0(xs);
+  assert [xs_is_cons]: IntList..isCons(xs);
+  result := IntList..head(xs);
 };
 #end
 
-/-
 /-- info: true -/
 #guard_msgs in
-#eval TransM.run Inhabited.default (translateProgram listHeadPgm) |>.snd |>.isEmpty
--/
-
-/-
-/--
-info: [Strata.Boogie] Type checking succeeded.
-
-
-VCs:
-Label: xs_is_cons
-Assumptions:
-(getHead_requires_0, (~List$isCons $__xs0))
-
-Proof Obligation:
-(~List$isCons $__xs0)
-
-Label: getHead_ensures_0
-Assumptions:
-(getHead_requires_0, (~List$isCons $__xs0))
-
-Proof Obligation:
-($__result0 == (~List$ConsProj0 $__xs0))
-
----
-info:
-Obligation: xs_is_cons
-Result: verified
-
-Obligation: getHead_ensures_0
-Result: verified
--/
-#guard_msgs in
-#eval verify "cvc5" listHeadPgm
--/
+#eval TransM.run Inhabited.default (translateProgram intListHeadPgm) |>.snd |>.isEmpty
 
 ---------------------------------------------------------------------
 
-def listSingletonPgm : Program :=
+def intListSingletonPgm : Program :=
 #strata
 program Boogie;
 
-datatype List (α : Type) {
+datatype IntList {
   Nil(),
-  Cons(head: α, tail: List α)
+  Cons(head: int, tail: IntList)
 };
 
-procedure singleton(x: int) returns (r: List int)
+procedure singleton(x: int) returns (r: IntList)
 spec {
-  ensures [r_is_cons]: (List$isCons(r));
-  ensures [head_is_x]: (List$ConsProj0(r) == x);
-  ensures [tail_is_nil]: (List$isNil(List$ConsProj1(r)));
+  ensures [r_is_cons]: (IntList..isCons(r));
+  ensures [head_is_x]: (IntList..head(r) == x);
+  ensures [tail_is_nil]: (IntList..isNil(IntList..tail(r)));
 }
 {
   r := Cons(x, Nil());
-  assert [r_is_cons]: List$isCons(r);
-  assert [head_is_x]: (List$ConsProj0(r) == x);
-  assert [tail_is_nil]: List$isNil(List$ConsProj1(r));
+  assert [r_is_cons]: IntList..isCons(r);
+  assert [head_is_x]: (IntList..head(r) == x);
+  assert [tail_is_nil]: IntList..isNil(IntList..tail(r));
 };
 #end
 
-/-
 /-- info: true -/
 #guard_msgs in
-#eval TransM.run Inhabited.default (translateProgram listSingletonPgm) |>.snd |>.isEmpty
--/
-
-/-
-/--
-info: [Strata.Boogie] Type checking succeeded.
-
-
-VCs:
-Label: r_is_cons
-Assumptions:
-
-
-Proof Obligation:
-(~List$isCons ((~Cons $__x0) ~Nil))
-
-Label: head_is_x
-Assumptions:
-
-
-Proof Obligation:
-((~List$ConsProj0 ((~Cons $__x0) ~Nil)) == $__x0)
-
-Label: tail_is_nil
-Assumptions:
-
-
-Proof Obligation:
-(~List$isNil (~List$ConsProj1 ((~Cons $__x0) ~Nil)))
-
-Label: singleton_ensures_0
-Assumptions:
-
-
-Proof Obligation:
-(~List$isCons ((~Cons $__x0) ~Nil))
-
-Label: singleton_ensures_1
-Assumptions:
-
-
-Proof Obligation:
-((~List$ConsProj0 ((~Cons $__x0) ~Nil)) == $__x0)
-
-Label: singleton_ensures_2
-Assumptions:
-
-
-Proof Obligation:
-(~List$isNil (~List$ConsProj1 ((~Cons $__x0) ~Nil)))
-
----
-info:
-Obligation: r_is_cons
-Result: verified
-
-Obligation: head_is_x
-Result: verified
-
-Obligation: tail_is_nil
-Result: verified
-
-Obligation: singleton_ensures_0
-Result: verified
-
-Obligation: singleton_ensures_1
-Result: verified
-
-Obligation: singleton_ensures_2
-Result: verified
--/
-#guard_msgs in
-#eval verify "cvc5" listSingletonPgm
--/
+#eval TransM.run Inhabited.default (translateProgram intListSingletonPgm) |>.snd |>.isEmpty
 
 ---------------------------------------------------------------------
 

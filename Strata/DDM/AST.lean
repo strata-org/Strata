@@ -1447,45 +1447,45 @@ inductive GlobalKind where
 | type (params : List String) (definition : Option TypeExpr)
 deriving BEq, Inhabited, Repr
 
-/-
-A function generator that can create additional functions from datatype information.
-This allows dialects to extend datatype declarations with their own derived functions
-(e.g., testers, projectors, etc.) without hardcoding dialect-specific logic in the DDM.
--/
-structure DatatypeFunctionGenerator where
-  /-- Generate additional function signatures from datatype specification -/
-  generateFunctions : (datatypeName : String) →
-                     (typeParams : Array String) →
-                     (constructors : Array (String × Array TypeExpr)) →
-                     Array (String × GlobalKind)
-deriving Inhabited
+-- /-
+-- A function generator that can create additional functions from datatype information.
+-- This allows dialects to extend datatype declarations with their own derived functions
+-- (e.g., testers, projectors, etc.) without hardcoding dialect-specific logic in the DDM.
+-- -/
+-- structure DatatypeFunctionGenerator where
+--   /-- Generate additional function signatures from datatype specification -/
+--   generateFunctions : (datatypeName : String) →
+--                      (typeParams : Array String) →
+--                      (constructors : Array (String × Array TypeExpr)) →
+--                      Array (String × GlobalKind)
+-- deriving Inhabited
 
-instance : BEq DatatypeFunctionGenerator where
-  beq _ _ := true  -- Function equality is undecidable, so we use structural equality
+-- instance : BEq DatatypeFunctionGenerator where
+--   beq _ _ := true  -- Function equality is undecidable, so we use structural equality
 
-instance : Repr DatatypeFunctionGenerator where
-  reprPrec _ _ := "⟨DatatypeFunctionGenerator⟩"
+-- instance : Repr DatatypeFunctionGenerator where
+--   reprPrec _ _ := "⟨DatatypeFunctionGenerator⟩"
 
 /-
 Registry for datatype function generators, indexed by dialect name.
 This allows different dialects to register their own function generation logic.
 -/
-structure DatatypeGeneratorRegistry where
-  generators : Std.HashMap String DatatypeFunctionGenerator
-deriving Inhabited, BEq, Repr
+-- structure DatatypeGeneratorRegistry where
+--   generators : Std.HashMap String DatatypeFunctionGenerator
+-- deriving Inhabited, BEq, Repr
 
-namespace DatatypeGeneratorRegistry
+-- namespace DatatypeGeneratorRegistry
 
-def empty : DatatypeGeneratorRegistry := { generators := {} }
+-- def empty : DatatypeGeneratorRegistry := { generators := {} }
 
-def register (registry : DatatypeGeneratorRegistry) (dialectName : String)
-             (generator : DatatypeFunctionGenerator) : DatatypeGeneratorRegistry :=
-  { registry with generators := registry.generators.insert dialectName generator }
+-- def register (registry : DatatypeGeneratorRegistry) (dialectName : String)
+--              (generator : DatatypeFunctionGenerator) : DatatypeGeneratorRegistry :=
+--   { registry with generators := registry.generators.insert dialectName generator }
 
-def get? (registry : DatatypeGeneratorRegistry) (dialectName : String) : Option DatatypeFunctionGenerator :=
-  registry.generators.get? dialectName
+-- def get? (registry : DatatypeGeneratorRegistry) (dialectName : String) : Option DatatypeFunctionGenerator :=
+--   registry.generators.get? dialectName
 
-end DatatypeGeneratorRegistry
+-- end DatatypeGeneratorRegistry
 
 /-- Resolves a binding spec into a global kind. -/
 partial def resolveBindingIndices { argDecls : ArgDecls } (m : DialectMap) (src : SourceRange) (b : BindingSpec argDecls) (args : Vector Arg argDecls.size) : GlobalKind :=
@@ -1544,7 +1544,7 @@ Typing environment created from declarations in an environment.
 structure GlobalContext where
   nameMap : Std.HashMap Var FreeVarIndex := {}
   vars : Array (Var × GlobalKind) := #[]
-  datatypeGenerators : DatatypeGeneratorRegistry := DatatypeGeneratorRegistry.empty
+  -- datatypeGenerators : DatatypeGeneratorRegistry := DatatypeGeneratorRegistry.empty
 deriving BEq, Repr
 
 namespace GlobalContext
@@ -1567,9 +1567,9 @@ def push (ctx : GlobalContext) (v : Var) (k : GlobalKind) : GlobalContext :=
     let idx := ctx.vars.size
     { ctx with nameMap := ctx.nameMap.insert v idx, vars := ctx.vars.push (v, k) }
 
-def registerDatatypeGenerator (ctx : GlobalContext) (dialectName : String)
-                              (generator : DatatypeFunctionGenerator) : GlobalContext :=
-  { ctx with datatypeGenerators := ctx.datatypeGenerators.register dialectName generator }
+-- def registerDatatypeGenerator (ctx : GlobalContext) (dialectName : String)
+--                               (generator : DatatypeFunctionGenerator) : GlobalContext :=
+--   { ctx with datatypeGenerators := ctx.datatypeGenerators.register dialectName generator }
 
 /-- Return the index of the variable with the given name. -/
 def findIndex? (ctx : GlobalContext) (v : Var) : Option FreeVarIndex := ctx.nameMap.get? v
@@ -1581,178 +1581,249 @@ def kindOf! (ctx : GlobalContext) (idx : FreeVarIndex) : GlobalKind :=
   ctx.vars[idx]!.snd
 
 def addCommand (dialects : DialectMap) (init : GlobalContext) (op : Operation) : GlobalContext :=
-    op.foldBindingSpecs dialects addBinding init
-  where addBinding (gctx : GlobalContext) l _ b args :=
-          match b with
-          | .datatype datatypeSpec =>
-            -- Handle multi-declaration for datatypes
-            let datatypeName :=
-                  match args[datatypeSpec.nameIndex.toLevel] with
-                  | .ident _ name => name
-                  | a => panic! s!"Expected datatype name to be ident, got {repr a}"
+  op.foldBindingSpecs dialects addBinding init
+where
+  addBinding (gctx : GlobalContext) l _ b args :=
+    match b with
+    | .datatype datatypeSpec =>
+      -- Handle multi-declaration for datatypes
+      let datatypeName :=
+            match args[datatypeSpec.nameIndex.toLevel] with
+            | .ident _ name => name
+            | a => panic! s!"Expected datatype name to be ident, got {repr a}"
 
-            -- Extract type parameters
-            let typeParams := extractTypeParams args[datatypeSpec.typeParamsIndex.toLevel]
+      -- Extract type parameters
+      let typeParams := extractTypeParams args[datatypeSpec.typeParamsIndex.toLevel]
 
-            -- Extract constructor information
-            let constructorsArg := args[datatypeSpec.constructorsIndex.toLevel]
-            let constructorInfo := extractConstructorInfo constructorsArg
+      -- Extract constructor information
+      let constructorsArg := args[datatypeSpec.constructorsIndex.toLevel]
+      let constructorInfo := extractConstructorInfo constructorsArg
 
-            -- Add the datatype itself as a type declaration
-            let datatypeKind := GlobalKind.type typeParams.toList none
-            let gctx := gctx.push datatypeName datatypeKind
+      -- Add the datatype itself as a type declaration FIRST
+      let datatypeKind := GlobalKind.type typeParams.toList none
+      let gctx := gctx.push datatypeName datatypeKind
 
-            -- Add constructor functions
-            let gctx := addConstructorsFromInfo gctx datatypeName constructorInfo
+      -- Get the index of the datatype we just added (it's the last entry)
+      let datatypeIdx := gctx.vars.size - 1
 
-            -- Generate additional functions using registered generators
-            let gctx := generateAdditionalFunctions gctx op.name.dialect datatypeName typeParams constructorInfo
+      -- Create the proper type reference for this datatype using fvar
+      -- This ensures type unification works correctly when comparing with
+      -- user-defined function parameter types (which are also fvars)
+      let datatypeTypeRef := if typeParams.isEmpty then
+        TypeExprF.fvar default datatypeIdx #[]
+      else
+        -- For parameterized types, we need to create type arguments as bvars
+        let typeArgs := typeParams.mapIdx fun i _ => TypeExprF.bvar default i
+        TypeExprF.fvar default datatypeIdx typeArgs
 
-            gctx
-          | _ =>
-            -- Handle single declaration (existing behavior)
-            let name :=
-                  match args[b.nameIndex.toLevel] with
-                  | .ident _ e => e
-                  | a => panic! s!"Expected ident at {b.nameIndex.toLevel} {repr a}"
-            let kind := resolveBindingIndices dialects l b args
-            gctx.push name kind
+      -- Add constructor functions SECOND (after datatype is registered)
+      let gctx := addConstructorsFromInfo gctx datatypeName datatypeTypeRef constructorInfo
 
-        -- Helper function to extract type parameters
-        extractTypeParams (typeParamsArg : Arg) : Array String :=
-          match typeParamsArg with
-          | .option _ (some bindingsArg) => extractBindingNames bindingsArg
-          | .option _ none => #[]
-          | _ => #[]
+      -- Add tester functions THIRD (after both datatype and constructors are registered)
+      let gctx := addTestersFromInfo gctx datatypeName datatypeTypeRef "Boogie" constructorInfo
 
-        -- Helper function to extract binding names from bindings
-        extractBindingNames (bindingsArg : Arg) : Array String :=
-          match bindingsArg with
-          | .op op =>
-            if op.name.name == "mkBindings" && op.args.size == 1 then
-              extractCommaSepNames op.args[0]!
-            else
-              #[]
-          | _ => #[]
+      -- Add projector/destructor functions LAST (after datatype, constructors, and testers)
+      let gctx := addProjectorsFromInfo gctx datatypeName datatypeTypeRef constructorInfo
 
-        -- Helper function to extract names from comma-separated list
-        extractCommaSepNames (commaSepArg : Arg) : Array String :=
-          match commaSepArg with
-          | .commaSepList _ args => args.filterMap extractIdentName
-          | _ => #[]
+      gctx
+    | _ =>
+      -- Handle single declaration (existing behavior)
+      let name :=
+              match args[b.nameIndex.toLevel] with
+              | .ident _ e => e
+              | a => panic! s!"Expected ident at {b.nameIndex.toLevel} {repr a}"
+        let kind := resolveBindingIndices dialects l b args
+        gctx.push name kind
 
-        -- Helper function to extract identifier name
-        extractIdentName (arg : Arg) : Option String :=
-          match arg with
-          | .ident _ name => some name
-          | .op op =>
-            if op.name.name == "mkBinding" && op.args.size >= 1 then
-              match op.args[0]! with
-              | .ident _ name => some name
-              | _ => none
-            else
-              none
-          | _ => none
+  extractTypeParams (typeParamsArg : Arg) : Array String :=
+    match typeParamsArg with
+    | .option _ (some bindingsArg) => extractBindingNames bindingsArg
+    | .option _ none => #[]
+    | _ => #[]
 
-        -- Helper function to extract constructor information
-        extractConstructorInfo (constructorsArg : Arg) : Array (String × Array TypeExpr) :=
-          match constructorsArg with
-          | .op op =>
-            if op.name.name == "constructorListAtom" && op.args.size == 1 then
-              let constructorData := extractSingleConstructorInfo op.args[0]!
-              #[constructorData]
-            else if op.name.name == "constructorListPush" && op.args.size == 2 then
-              let restConstructors := extractConstructorInfo op.args[0]!
-              let constructorData := extractSingleConstructorInfo op.args[1]!
-              restConstructors.push constructorData
-            else
-              #[]
-          | _ => #[]
-          termination_by sizeOf constructorsArg
-          decreasing_by
-            simp_wf
-            rw[OperationF.sizeOf_spec]
-            have : sizeOf op.args[0]! < sizeOf op.args := by
-              apply Array.sizeOf_lt_of_mem; grind
-            omega
+  extractBindingNames (bindingsArg : Arg) : Array String :=
+    match bindingsArg with
+    | .op op =>
+      if op.name.name == "mkBindings" && op.args.size == 1 then
+        extractCommaSepNames op.args[0]!
+      else
+        #[]
+    | _ => #[]
 
-        -- Helper function to extract single constructor information
-        extractSingleConstructorInfo (constructorArg : Arg) : (String × Array TypeExpr) :=
-          match constructorArg with
-          | .op op =>
-            if op.name.name == "constructor_mk" && op.args.size >= 2 then
-              match op.args[0]! with
-              | .ident _ constructorName =>
-                let fieldTypes := extractFieldTypes op.args[1]!
-                (constructorName, fieldTypes)
-              | _ => ("unknown", #[])
-            else
-              ("unknown", #[])
-          | _ => ("unknown", #[])
+  extractCommaSepNames (commaSepArg : Arg) : Array String :=
+    match commaSepArg with
+    | .commaSepList _ args => args.filterMap extractIdentName
+    | _ => #[]
 
-        -- Helper function to add constructors from extracted info
-        addConstructorsFromInfo (gctx : GlobalContext) (datatypeName : String)
-                               (constructorInfo : Array (String × Array TypeExpr)) : GlobalContext :=
-          constructorInfo.foldl (fun gctx (constructorName, fieldTypes) =>
-            let datatypeType := TypeExprF.ident default ⟨"", datatypeName⟩ #[]
-            let constructorType := fieldTypes.foldr (init := datatypeType) fun fieldType acc =>
-              TypeExprF.arrow default fieldType acc
-            let constructorKind := GlobalKind.expr constructorType
-            gctx.push constructorName constructorKind
-          ) gctx
+  extractIdentName (arg : Arg) : Option String :=
+    match arg with
+    | .ident _ name => some name
+    | .op op =>
+      if op.name.name == "mkBinding" && op.args.size >= 1 then
+        match op.args[0]! with
+        | .ident _ name => some name
+        | _ => none
+      else
+        none
+    | _ => none
 
-        -- Helper function to generate additional functions using registered generators
-        generateAdditionalFunctions (gctx : GlobalContext) (dialectName : String)
-                                   (datatypeName : String) (typeParams : Array String)
-                                   (constructorInfo : Array (String × Array TypeExpr)) : GlobalContext :=
-          match gctx.datatypeGenerators.get? dialectName with
-          | some generator =>
-            let additionalFunctions := generator.generateFunctions datatypeName typeParams constructorInfo
-            additionalFunctions.foldl (fun gctx (funcName, funcKind) =>
-              gctx.push funcName funcKind
-            ) gctx
-          | none => gctx
+  -- Returns Array of (constructorName, Array of (fieldName, fieldType))
+  extractConstructorInfo (constructorsArg : Arg) : Array (String × Array (String × TypeExpr)) :=
+    match constructorsArg with
+    | .op op =>
+      if op.name.name == "constructorListAtom" && op.args.size == 1 then
+        let constructorData := extractSingleConstructorInfo op.args[0]!
+        #[constructorData]
+      else if op.name.name == "constructorListPush" && op.args.size == 2 then
+        let restConstructors := extractConstructorInfo op.args[0]!
+        let constructorData := extractSingleConstructorInfo op.args[1]!
+        restConstructors.push constructorData
+      else
+        #[]
+    | _ => #[]
+    termination_by sizeOf constructorsArg
+    decreasing_by
+      simp_wf
+      rw[OperationF.sizeOf_spec]
+      have : sizeOf op.args[0]! < sizeOf op.args := by
+        apply Array.sizeOf_lt_of_mem; grind
+      omega
 
-        -- Helper function to extract field types from constructor fields
-        extractFieldTypes (fieldsArg : Arg) : Array TypeExpr :=
-          match fieldsArg with
-          | .option _ (some fieldListArg) => extractFieldListTypes fieldListArg
-          | .option _ none => #[]
-          | _ => #[]
+  extractSingleConstructorInfo (constructorArg : Arg) : (String × Array (String × TypeExpr)) :=
+    match constructorArg with
+    | .op op =>
+      if op.name.name == "constructor_mk" && op.args.size >= 2 then
+        match op.args[0]! with
+        | .ident _ constructorName =>
+          let fields := extractFieldsWithNames op.args[1]!
+          (constructorName, fields)
+        | _ => ("unknown", #[])
+      else
+        ("unknown", #[])
+    | _ => ("unknown", #[])
 
-        -- Helper function to extract types from field list
-        extractFieldListTypes (fieldListArg : Arg) : Array TypeExpr :=
-          match fieldListArg with
-          | .op op =>
-            if op.name.name == "fieldListAtom" && op.args.size == 1 then
-              let fieldType := extractSingleFieldType op.args[0]!
-              #[fieldType]
-            else if op.name.name == "fieldListPush" && op.args.size == 2 then
-              let restTypes := extractFieldListTypes op.args[0]!
-              let fieldType := extractSingleFieldType op.args[1]!
-              restTypes.push fieldType
-            else
-              #[]
-          | _ => #[]
-          termination_by sizeOf fieldListArg
-          decreasing_by
-            simp_wf
-            rw[OperationF.sizeOf_spec]
-            have : sizeOf op.args[0]! < sizeOf op.args := by
-              apply Array.sizeOf_lt_of_mem; grind
-            omega
+  addConstructorsFromInfo (gctx : GlobalContext) (datatypeName : String) (datatypeTypeRef : TypeExpr)
+                         (constructorInfo : Array (String × Array (String × TypeExpr))) : GlobalContext :=
+    constructorInfo.foldl (fun gctx (constructorName, fields) =>
+      let fieldTypes := fields.map (·.snd)
+      let constructorType := fieldTypes.foldr (init := datatypeTypeRef) fun fieldType acc =>
+        TypeExprF.arrow default fieldType acc
+      let constructorKind := GlobalKind.expr constructorType
+      gctx.push constructorName constructorKind
+    ) gctx
 
-        -- Helper function to extract type from a single field
-        extractSingleFieldType (fieldArg : Arg) : TypeExpr :=
-          match fieldArg with
-          | .op op =>
-            if op.name.name == "field_mk" && op.args.size >= 2 then
-              match op.args[1]! with
-              | .type tp => tp
-              | _ => TypeExprF.ident default ⟨"", "unknown"⟩ #[]
-            else
-              TypeExprF.ident default ⟨"", "unknown"⟩ #[]
+  addTestersFromInfo (gctx : GlobalContext) (datatypeName : String) (datatypeTypeRef : TypeExpr) (dialectName : String)
+                    (constructorInfo : Array (String × Array (String × TypeExpr))) : GlobalContext :=
+    constructorInfo.foldl (fun gctx (constructorName, _fields) =>
+      let testerName := s!"{datatypeName}..is{constructorName}"
+      let boolType := TypeExprF.ident default ⟨dialectName, "bool"⟩ #[]
+      let testerType := TypeExprF.arrow default datatypeTypeRef boolType
+      let testerKind := GlobalKind.expr testerType
+      let gctx := gctx.push testerName testerKind
+      gctx) gctx
+
+  -- Add projector/destructor functions for each field of each constructor
+  -- Projector naming: {DatatypeName}..{fieldName}
+  -- Projector type: DatatypeType -> FieldType
+  addProjectorsFromInfo (gctx : GlobalContext) (datatypeName : String) (datatypeTypeRef : TypeExpr)
+                       (constructorInfo : Array (String × Array (String × TypeExpr))) : GlobalContext :=
+    constructorInfo.foldl (fun gctx (_constructorName, fields) =>
+      addProjectorsForConstructor gctx datatypeName datatypeTypeRef fields 0
+    ) gctx
+
+  addProjectorsForConstructor (gctx : GlobalContext) (datatypeName : String) (datatypeTypeRef : TypeExpr)
+                              (fields : Array (String × TypeExpr)) (idx : Nat) : GlobalContext :=
+    if h : idx < fields.size then
+      let (fieldName, fieldType) := fields[idx]
+      let projectorName := s!"{datatypeName}..{fieldName}"
+      let projectorType := TypeExprF.arrow default datatypeTypeRef fieldType
+      let projectorKind := GlobalKind.expr projectorType
+      let gctx := gctx.push projectorName projectorKind
+      addProjectorsForConstructor gctx datatypeName datatypeTypeRef fields (idx + 1)
+    else
+      gctx
+  termination_by fields.size - idx
+
+  -- Extract fields with both names and types
+  extractFieldsWithNames (fieldsArg : Arg) : Array (String × TypeExpr) :=
+    match fieldsArg with
+    | .option _ (some fieldListArg) => extractFieldListWithNames fieldListArg
+    | .option _ none => #[]
+    | _ => #[]
+
+  extractFieldListWithNames (fieldListArg : Arg) : Array (String × TypeExpr) :=
+    match fieldListArg with
+    | .op op =>
+      if op.name.name == "fieldListAtom" && op.args.size == 1 then
+        let field := extractSingleFieldWithName op.args[0]!
+        #[field]
+      else if op.name.name == "fieldListPush" && op.args.size == 2 then
+        let restFields := extractFieldListWithNames op.args[0]!
+        let field := extractSingleFieldWithName op.args[1]!
+        restFields.push field
+      else
+        #[]
+    | _ => #[]
+    termination_by sizeOf fieldListArg
+    decreasing_by
+      simp_wf
+      rw[OperationF.sizeOf_spec]
+      have : sizeOf op.args[0]! < sizeOf op.args := by
+        apply Array.sizeOf_lt_of_mem; grind
+      omega
+
+  extractSingleFieldWithName (fieldArg : Arg) : (String × TypeExpr) :=
+    match fieldArg with
+    | .op op =>
+      if op.name.name == "field_mk" && op.args.size >= 2 then
+        let fieldName := match op.args[0]! with
+          | .ident _ name => name
+          | _ => "unknown"
+        let fieldType := match op.args[1]! with
+          | .type tp => tp
           | _ => TypeExprF.ident default ⟨"", "unknown"⟩ #[]
+        (fieldName, fieldType)
+      else
+        ("unknown", TypeExprF.ident default ⟨"", "unknown"⟩ #[])
+    | _ => ("unknown", TypeExprF.ident default ⟨"", "unknown"⟩ #[])
+
+  extractFieldTypes (fieldsArg : Arg) : Array TypeExpr :=
+    match fieldsArg with
+    | .option _ (some fieldListArg) => extractFieldListTypes fieldListArg
+    | .option _ none => #[]
+    | _ => #[]
+
+  extractFieldListTypes (fieldListArg : Arg) : Array TypeExpr :=
+    match fieldListArg with
+    | .op op =>
+      if op.name.name == "fieldListAtom" && op.args.size == 1 then
+        let fieldType := extractSingleFieldType op.args[0]!
+        #[fieldType]
+      else if op.name.name == "fieldListPush" && op.args.size == 2 then
+        let restTypes := extractFieldListTypes op.args[0]!
+        let fieldType := extractSingleFieldType op.args[1]!
+        restTypes.push fieldType
+      else
+        #[]
+    | _ => #[]
+    termination_by sizeOf fieldListArg
+    decreasing_by
+      simp_wf
+      rw[OperationF.sizeOf_spec]
+      have : sizeOf op.args[0]! < sizeOf op.args := by
+        apply Array.sizeOf_lt_of_mem; grind
+      omega
+
+  extractSingleFieldType (fieldArg : Arg) : TypeExpr :=
+    match fieldArg with
+    | .op op =>
+      if op.name.name == "field_mk" && op.args.size >= 2 then
+        match op.args[1]! with
+        | .type tp => tp
+        | _ => TypeExprF.ident default ⟨"", "unknown"⟩ #[]
+      else
+        TypeExprF.ident default ⟨"", "unknown"⟩ #[]
+    | _ => TypeExprF.ident default ⟨"", "unknown"⟩ #[]
 
 end GlobalContext
 
@@ -1777,17 +1848,20 @@ instance : Inhabited Program where
   default := { dialects := {}, dialect := default }
 
 def addCommand (env : Program) (cmd : Operation) : Program :=
-  { env with
+  -- DEBUG: Add debug output for command processing
+  let y := { env with
     commands := env.commands.push cmd,
     globalContext := GlobalContext.addCommand env.dialects env.globalContext cmd
   }
+  dbg_trace "DEBUG addCommand: processing command {cmd.name.fullName}"; y
+
 
 /--
 This creates a program.  It is added in addition to `Program.mk` to simplify the
 `ToExpr Program` instance.
 -/
 def create (dialects : DialectMap) (dialect : DialectName) (commands : Array Operation) : Program :=
-  { dialects, dialect, commands }
+  { dialects, dialect, commands, globalContext := commands.foldl (init := {}) (GlobalContext.addCommand dialects) }
 
 end Program
 
