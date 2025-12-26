@@ -57,6 +57,9 @@ def typeCheck (C: Boogie.Expression.TyContext) (Env : Boogie.Expression.TyEnv) (
           | .syn ts =>
             let Env ← TEnv.addTypeAlias { typeArgs := ts.typeArgs, name := ts.name, type := ts.type } C Env
             .ok (.type td, C, Env)
+          | .data d =>
+            let C ← C.addDatatype d
+            .ok (.type td, C, Env)
 
       | .ax a _ =>
         let (ae, Env) ← LExpr.resolve C Env a.e
