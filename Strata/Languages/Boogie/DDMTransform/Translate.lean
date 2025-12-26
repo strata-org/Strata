@@ -1288,10 +1288,12 @@ def translateConstructor (bindings : TransBindings) (arg : Arg) : TransM (LConst
       | none => return []
       | some fieldsArg => translateFieldList bindings fieldsArg)
       args[1]!
+    -- Note: testerName is a placeholder here; it will be updated in translateDatatype
+    -- with the correct naming convention: DatatypeName..isConstructorName
     return {
       name := BoogieIdent.unres name,
       args := fields,
-      testerName := name ++ "$is" ++ name
+      testerName := name ++ "$is" ++ name  -- Placeholder, updated in translateDatatype
     }
 
 partial def translateConstructorList (bindings : TransBindings) (arg : Arg) : TransM (List (LConstr Boogie.Visibility)) := do
@@ -1330,7 +1332,11 @@ def translateDatatype (bindings : TransBindings) (op : Operation) :
     op.args[1]!
 
   -- Parse constructors from ConstructorList
-  let constructors ← translateConstructorList bindings op.args[2]!
+  let constructorsParsed ← translateConstructorList bindings op.args[2]!
+
+  -- Fix tester names to use the correct DDM convention: DatatypeName..isConstructorName
+  let constructors := constructorsParsed.map (fun constr =>
+    { constr with testerName := s!"{name}..is{constr.name.name}" })
 
   -- Ensure we have at least one constructor
   if h: constructors.isEmpty then
@@ -1381,12 +1387,12 @@ def translateDatatype (bindings : TransBindings) (op : Operation) :
   )
 
   -- 4. Projector function placeholders (matches AST.lean: projectorKind := GlobalKind.expr projectorType)
-  -- Projector naming: {DatatypeName}..{fieldName}
+  -- Projector naming: just use the field name directly (must be unique across datatypes)
   let projectorDecls : Array Boogie.Decl := Id.run do
     let mut result : Array Boogie.Decl := #[]
     for constr in constructors do
       for (fieldName, fieldType) in constr.args do
-        let projectorName := s!"{name}..{fieldName.name}"
+        let projectorName := fieldName.name
         let newDecl := Boogie.Decl.func {
           name := projectorName,
           typeArgs := [],

@@ -1725,7 +1725,7 @@ where
       gctx) gctx
 
   -- Add projector/destructor functions for each field of each constructor
-  -- Projector naming: {DatatypeName}..{fieldName}
+  -- Projector naming: just use the field name directly (must be unique across datatypes)
   -- Projector type: DatatypeType -> FieldType
   addProjectorsFromInfo (gctx : GlobalContext) (datatypeName : String) (datatypeTypeRef : TypeExpr)
                        (constructorInfo : Array (String × Array (String × TypeExpr))) : GlobalContext :=
@@ -1737,7 +1737,7 @@ where
                               (fields : Array (String × TypeExpr)) (idx : Nat) : GlobalContext :=
     if h : idx < fields.size then
       let (fieldName, fieldType) := fields[idx]
-      let projectorName := s!"{datatypeName}..{fieldName}"
+      let projectorName := fieldName  -- Use field name directly, no prefix
       let projectorType := TypeExprF.arrow default datatypeTypeRef fieldType
       let projectorKind := GlobalKind.expr projectorType
       let gctx := gctx.push projectorName projectorKind
