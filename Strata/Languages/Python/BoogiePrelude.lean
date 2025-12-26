@@ -19,18 +19,16 @@ def mkFuncCall (fname : String) (args : List Boogie.Expression.Expr) : Boogie.Ex
 
 -- Define Boogie prelude by hand until datatypes are in DDM
 
--- type None;
-def noneConstructor : Boogie.TypeConstructor :=
+-- type None = | None_none;
+def noneDatatype : LDatatype Boogie.Visibility :=
   { name := "None"
-    numargs := 0 }
-
--- const None_none : None;
-def noneNoneConstant : Boogie.Function :=
-  { name := ⟨"None_none", Boogie.Visibility.unres⟩
     typeArgs := []
-    inputs := []
-    output := LMonoTy.tcons "None" []
-    body := none }
+    constrs := [
+      { name := ⟨"None_none", Boogie.Visibility.unres⟩
+        args := []
+        testerName := "None_isNone" }
+    ]
+    constrs_ne := by decide }
 
 -- type Object;
 def objectConstructor : Boogie.TypeConstructor :=
@@ -911,8 +909,7 @@ def testHelperProcedureProc : Boogie.Procedure :=
 
 def Boogie.prelude : Boogie.Program :=
   { decls := [
-      Boogie.Decl.type (Boogie.TypeDecl.con noneConstructor),
-      Boogie.Decl.func noneNoneConstant,
+      Boogie.Decl.type (Boogie.TypeDecl.data noneDatatype),
       Boogie.Decl.type (Boogie.TypeDecl.con objectConstructor),
       Boogie.Decl.type (Boogie.TypeDecl.con exceptNoneConstructor),
       Boogie.Decl.func objectLenFunc,
