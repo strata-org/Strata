@@ -8,35 +8,36 @@ Command line script for exporting Python dialect and program to files.
 """
 import amazon.ion.simpleion as ion
 import argparse
-from strata import Dialect, Program
+from pathlib import Path
+from strata.base import Program
 import strata.pythonast as pythonast
 import sys
-from pathlib import Path
 
 def write_dialect(dir : Path):
     dialect = pythonast.PythonAST
 
-    if not dir.is_dir():
-        print(f"Directory {dir} does not exist.", file=sys.stderr)
-        exit(1)
+    if dir.exists():
+        if not dir.is_dir():
+            print(f"{dir} is not a directory.", file=sys.stderr)
+            sys.exit(1)
+    else:
+        dir.mkdir(parents=True)
     output = dir / f"{dialect.name}.dialect.st.ion"
     with output.open('wb') as w:
         ion.dump(dialect.to_ion(), w, binary=True)
     print(f"Wrote {dialect.name} dialect to {output}")
 
-def parse_ast(contents : bytes, path : Path) -> Program:
+def parse_ast(path : Path) -> Program:
     try:
-        (_, p) = pythonast.parse_module(contents, path)
+        (_, p) = pythonast.parse_module(path.read_bytes(), path)
     except SyntaxError as e:
         print(f"Error parsing {path}:\n  {e}", file=sys.stderr)
-        exit(1)
+        sys.exit(1)
     return p
 
 def py_to_strata_imp(args):
     path = Path(args.python)
-    with path.open('rb') as r:
-        contents = r.read()
-    p = parse_ast(contents, path)
+    p = parse_ast(path)
     with open(args.output, 'wb') as w:
         ion.dump(p.to_ion(), w, binary=True)
 
@@ -53,9 +54,7 @@ def check_ast_imp(args):
     for p in files:
         total += 1
         try:
-            with p.open('rb') as r:
-                contents = r.read()
-            _ = pythonast.parse_module(contents, p)
+            _ = pythonast.parse_module(p.read_bytes(), p)
         except SyntaxError as e:
             print(f'{p} {type(e).__name__}: {e}')
             total -= 1

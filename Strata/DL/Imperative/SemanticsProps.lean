@@ -21,7 +21,7 @@ theorem eval_stmt_assert_store_cst
 
 theorem eval_stmts_assert_store_cst
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasVarsImp P (Cmd P)] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
-  EvalStmts P (Cmd P) (EvalCmd P) δ σ [(.cmd (Cmd.assert l e md))] σ' → σ = σ' := by
+  EvalBlock P (Cmd P) (EvalCmd P) δ σ [(.cmd (Cmd.assert l e md))] σ' → σ = σ' := by
   intros Heval; cases Heval with
   | stmts_some_sem H1 H2 =>
     cases H1 with
@@ -49,8 +49,8 @@ theorem eval_stmt_assert_eq_of_pure_expr_eq
 theorem eval_stmts_assert_elim
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
   WellFormedSemanticEvalBool δ →
-  EvalStmts P (Cmd P) (EvalCmd P) δ σ (.cmd (.assert l1 e md1) :: cmds) σ' →
-  EvalStmts P (Cmd P) (EvalCmd P) δ σ cmds σ' := by
+  EvalBlock P (Cmd P) (EvalCmd P) δ σ (.cmd (.assert l1 e md1) :: cmds) σ' →
+  EvalBlock P (Cmd P) (EvalCmd P) δ σ cmds σ' := by
   intros Hwf Heval
   cases Heval with
   | @stmts_some_sem _ _ _ σ1 _ _ Has1 Has2 =>
@@ -60,8 +60,8 @@ theorem eval_stmts_assert_elim
 theorem assert_elim
   [HasVarsImp P (List (Stmt P (Cmd P)))] [HasFvar P] [HasVal P] [HasBool P] [HasNot P] :
   WellFormedSemanticEvalBool δ →
-  EvalStmts P (Cmd P) (EvalCmd P) δ σ (.cmd (.assert l1 e md1) :: [.cmd (.assert l2 e md2)]) σ' →
-  EvalStmts P (Cmd P) (EvalCmd P) δ σ [.cmd (.assert l3 e md3)] σ' := by
+  EvalBlock P (Cmd P) (EvalCmd P) δ σ (.cmd (.assert l1 e md1) :: [.cmd (.assert l2 e md2)]) σ' →
+  EvalBlock P (Cmd P) (EvalCmd P) δ σ [.cmd (.assert l3 e md3)] σ' := by
   intro Hwf Heval
   have Heval := eval_stmts_assert_elim Hwf Heval
   rw [eval_stmts_singleton] at *
@@ -200,8 +200,8 @@ theorem eval_stmts_set_comm
   ¬ x1 = x2 →
   ¬ x1 ∈ HasVarsPure.getVars v2 →
   ¬ x2 ∈ HasVarsPure.getVars v1 →
-  EvalStmts P (Cmd P) (EvalCmd P) δ σ [(.cmd (Cmd.set x1 v1)), (.cmd (Cmd.set x2 v2))] σ' →
-  EvalStmts P (Cmd P) (EvalCmd P) δ σ [(.cmd (Cmd.set x2 v2)), (.cmd (Cmd.set x1 v1))] σ'' →
+  EvalBlock P (Cmd P) (EvalCmd P) δ σ [(.cmd (Cmd.set x1 v1)), (.cmd (Cmd.set x2 v2))] σ' →
+  EvalBlock P (Cmd P) (EvalCmd P) δ σ [(.cmd (Cmd.set x2 v2)), (.cmd (Cmd.set x1 v1))] σ'' →
   σ' = σ'' := by
   intro Hwf Hneq Hnin1 Hnin2 Hss1 Hss2
   cases Hss1; cases Hss2

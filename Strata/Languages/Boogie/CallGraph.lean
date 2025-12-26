@@ -96,11 +96,11 @@ partial def extractCallsFromStatement (stmt : Statement) : List String :=
   match stmt with
   | .cmd (.call _ procName _ _) => [procName]
   | .cmd _ => []
-  | .block _ body _ => extractCallsFromStatements body.ss
+  | .block _ body _ => extractCallsFromStatements body
   | .ite _ thenBody elseBody _ =>
-    extractCallsFromStatements thenBody.ss ++
-    extractCallsFromStatements elseBody.ss
-  | .loop _ _ _ body _ => extractCallsFromStatements body.ss
+    extractCallsFromStatements thenBody ++
+    extractCallsFromStatements elseBody
+  | .loop _ _ _ body _ => extractCallsFromStatements body
   | .goto _ _ => []
 
 /-- Extract procedure calls from a list of statements -/

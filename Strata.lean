@@ -16,15 +16,7 @@ import Strata.DL.Lambda.Lambda
 import Strata.DL.Imperative.Imperative
 
 /- Boogie -/
-import Strata.Languages.Boogie.Examples.Examples
 import Strata.Languages.Boogie.StatementSemantics
-
-/- CSimp -/
-import Strata.Languages.C_Simp.Examples.Examples
-
-/- Dyn -/
-import Strata.Languages.Dyn.Examples.Examples
-
 
 /- Code Transforms -/
 import Strata.Transform.CallElimCorrect

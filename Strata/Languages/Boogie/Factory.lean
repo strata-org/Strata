@@ -54,6 +54,54 @@ match ine with
     | .eq m e1 e2 => .eq m (ToBoogieIdent e1) (ToBoogieIdent e2)
 
 
+private def bvBinaryOp (fn:∀ {n}, BitVec n → BitVec n → BitVec n)
+  (check:∀ {n}, BitVec n → BitVec n → Bool)
+  (m:BoogieLParams.Metadata)
+  (ops:List (LExpr BoogieLParams.mono))
+    : Option (LExpr BoogieLParams.mono) :=
+  match ops with
+  | [.bitvecConst _ n1 b1, .bitvecConst _ n2 b2] =>
+    if h : n1 = n2 then
+      if check (h ▸ b1) b2 then
+        .some (.bitvecConst m n2 (fn (h ▸ b1) b2))
+      else .none
+    else .none
+  | _ => .none
+
+private def bvShiftOp (fn:∀ {n}, BitVec n → Nat → BitVec n)
+  (m:BoogieLParams.Metadata)
+  (ops:List (LExpr BoogieLParams.mono))
+    : Option (LExpr BoogieLParams.mono) :=
+  match ops with
+  | [.bitvecConst _ n1 b1, .bitvecConst _ n2 b2] =>
+    let i2 := BitVec.toNat b2
+    if n1 = n2 && i2 < n1 then
+      .some (.bitvecConst m n1 (fn b1 i2))
+    else .none
+  | _ => .none
+
+private def bvUnaryOp (fn:∀ {n}, BitVec n → BitVec n)
+  (m:BoogieLParams.Metadata)
+  (ops:List (LExpr BoogieLParams.mono))
+    : Option (LExpr BoogieLParams.mono) :=
+  match ops with
+  | [.bitvecConst _ n b] => .some (.bitvecConst m n (fn b))
+  | _ => .none
+
+private def bvBinaryPred (fn:∀ {n}, BitVec n → BitVec n → Bool)
+  (swap:Bool)
+  (m:BoogieLParams.Metadata)
+  (ops:List (LExpr BoogieLParams.mono))
+    : Option (LExpr BoogieLParams.mono) :=
+  match ops with
+  | [.bitvecConst _ n1 b1, .bitvecConst _ n2 b2] =>
+    if h : n1 = n2 then
+      let res := if swap then fn b2 (h ▸ b1) else fn (h ▸ b1) b2
+      .some (.boolConst m res)
+    else .none
+  | _ => .none
+
+
 private def BVOpNames :=
   ["Neg", "Add", "Sub", "Mul", "UDiv", "UMod", "SDiv", "SMod",
    "Not", "And", "Or", "Xor", "Shl", "UShr", "SShr",
@@ -65,6 +113,31 @@ private def BVOpAritys :=
    "unaryOp", "binaryOp", "binaryOp", "binaryOp", "binaryOp", "binaryOp", "binaryOp",
    "binaryPredicate", "binaryPredicate", "binaryPredicate", "binaryPredicate",
    "binaryPredicate", "binaryPredicate", "binaryPredicate", "binaryPredicate" ]
+
+private def BVOpEvals :=
+  [("Neg", Option.some (bvUnaryOp BitVec.neg)),
+   ("Add", .some (bvBinaryOp BitVec.add (λ_ _ => true))),
+   ("Sub", .some (bvBinaryOp BitVec.sub (λ_ _ => true))),
+   ("Mul", .some (bvBinaryOp BitVec.mul (λ_ _ => true))),
+   ("UDiv", .some (bvBinaryOp BitVec.udiv (λ_ y => y ≠ 0))),
+   ("UMod", .some (bvBinaryOp BitVec.umod (λ_ y => y ≠ 0))),
+   ("SDiv", .some (bvBinaryOp BitVec.sdiv (λ_ y => y ≠ 0))),
+   ("SMod", .some (bvBinaryOp BitVec.srem (λ_ y => y ≠ 0))),
+   ("Not", .some (bvUnaryOp BitVec.not)),
+   ("And", .some (bvBinaryOp BitVec.and (λ_ _ => true))),
+   ("Or", .some (bvBinaryOp BitVec.or (λ_ _ => true))),
+   ("Xor", .some (bvBinaryOp BitVec.xor (λ_ _ => true))),
+   ("Shl", .some (bvShiftOp BitVec.shiftLeft)),
+   ("UShr", .some (bvShiftOp BitVec.ushiftRight)),
+   ("SShr", .some (bvShiftOp BitVec.sshiftRight)),
+   ("ULt", .some (bvBinaryPred BitVec.ult false)),
+   ("ULe", .some (bvBinaryPred BitVec.ule false)),
+   ("UGt", .some (bvBinaryPred BitVec.ult true)),
+   ("UGe", .some (bvBinaryPred BitVec.ule true)),
+   ("SLt", .some (bvBinaryPred BitVec.slt false)),
+   ("SLe", .some (bvBinaryPred BitVec.sle false)),
+   ("SGt", .some (bvBinaryPred BitVec.slt true)),
+   ("SGe", .some (bvBinaryPred BitVec.sle true))]
 
 /--
 info: [("Neg", "unaryOp"), ("Add", "binaryOp"), ("Sub", "binaryOp"), ("Mul", "binaryOp"), ("UDiv", "binaryOp"),
@@ -87,7 +160,10 @@ elab "ExpandBVOpFuncDefs" "[" sizes:num,* "]" : command => do
       let funcArity := mkIdent (.str (.str .anonymous "Lambda") arity)
       let opName := Syntax.mkStrLit s!"Bv{s}.{op}"
       let bvTypeName := Name.mkSimple s!"bv{s}"
-      elabCommand (← `(def $funcName : LFunc BoogieLParams := $funcArity $opName mty[$(mkIdent bvTypeName):ident] none))
+      let opStr := Syntax.mkStrLit op
+      elabCommand (← `(def $funcName : LFunc BoogieLParams :=
+        $funcArity $opName mty[$(mkIdent bvTypeName):ident]
+        ((BVOpEvals.find? (fun (k,_) => k == $opStr)).bind (fun (_,w)=>w))))
 
 ExpandBVOpFuncDefs[1, 2, 8, 16, 32, 64]
 

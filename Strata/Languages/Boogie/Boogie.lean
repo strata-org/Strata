@@ -49,8 +49,8 @@ def typeCheck (options : Options) (program : Program)
   return program
 
 def typeCheckAndPartialEval (options : Options) (program : Program)
-  (moreFns : @Lambda.Factory BoogieLParams := Lambda.Factory.default) :
-  Except Std.Format (List (Program × Env)) := do
+    (moreFns : @Lambda.Factory BoogieLParams := Lambda.Factory.default) :
+    Except Std.Format (List (Program × Env)) := do
   let program ← typeCheck options program moreFns
   -- Extract datatypes from program declarations and add to environment
   let datatypes := program.decls.filterMap fun decl =>
