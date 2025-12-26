@@ -1581,9 +1581,11 @@ def kindOf! (ctx : GlobalContext) (idx : FreeVarIndex) : GlobalKind :=
   ctx.vars[idx]!.snd
 
 def addCommand (dialects : DialectMap) (init : GlobalContext) (op : Operation) : GlobalContext :=
-  op.foldBindingSpecs dialects addBinding init
+  -- Extract dialect name from the operation for use in datatype processing
+  let dialectName := op.name.dialect
+  op.foldBindingSpecs dialects (addBinding dialectName dialects) init
 where
-  addBinding (gctx : GlobalContext) l _ b args :=
+  addBinding (dialectName : String) (dialects : DialectMap) (gctx : GlobalContext) (l : SourceRange) {argDecls : ArgDecls} (b : BindingSpec argDecls) (args : Vector Arg argDecls.size) : GlobalContext :=
     match b with
     | .datatype datatypeSpec =>
       -- Handle multi-declaration for datatypes
@@ -1620,7 +1622,7 @@ where
       let gctx := addConstructorsFromInfo gctx datatypeName datatypeTypeRef constructorInfo
 
       -- Add tester functions THIRD (after both datatype and constructors are registered)
-      let gctx := addTestersFromInfo gctx datatypeName datatypeTypeRef "Boogie" constructorInfo
+      let gctx := addTestersFromInfo gctx datatypeName datatypeTypeRef dialectName constructorInfo
 
       -- Add projector/destructor functions LAST (after datatype, constructors, and testers)
       let gctx := addProjectorsFromInfo gctx datatypeName datatypeTypeRef constructorInfo
