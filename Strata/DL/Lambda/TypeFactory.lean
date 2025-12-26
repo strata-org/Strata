@@ -271,9 +271,6 @@ def elimFunc [Inhabited T.IDMeta] [BEq T.Identifier] (d: LDatatype T.IDMeta) (m:
 
 -- Generating testers and destructors
 
--- def testerFuncName (d: LDatatype IDMeta) (c: LConstr IDMeta) : String :=
---   d.name ++ "$is" ++ c.name.name
-
 /--
 Generate tester body (see `testerFuncs`). The body consists of
 assigning each argument of the eliminator (fun _ ... _ => b), where
@@ -328,7 +325,6 @@ def destructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta]  (d: LDatatype T
     let arg := genArgName
     {
       name := name,
-      --  d.name ++ "$" ++ c.name.name ++ "Proj" ++ (toString i),
       typeArgs := d.typeArgs,
       inputs := [(arg, dataDefault d)],
       output := ty,
