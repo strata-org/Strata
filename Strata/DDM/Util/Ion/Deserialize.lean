@@ -25,11 +25,9 @@ inductive PartialValue
 | sexp (vals : Array (Ion SymbolId))
 | struct (vals : Array (SymbolId × Ion SymbolId))
 | ann (annot : Array SymbolId)
-deriving Inhabited
+deriving Inhabited, Repr
 
 namespace PartialValue
-
-deriving instance Repr for PartialValue
 
 def append (pv : PartialValue) (s : SymbolId) (v : Ion SymbolId) : PartialValue ⊕ Ion SymbolId :=
   match pv with
