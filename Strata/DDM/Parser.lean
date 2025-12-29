@@ -808,7 +808,7 @@ structure DeclParser where
 
 class ParsingContext where
   fixedParsers : Std.HashMap QualifiedIdent Parser := {}
-deriving Inhabited
+  deriving Inhabited
 
 namespace ParsingContext
 
