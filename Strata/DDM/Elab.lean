@@ -10,6 +10,7 @@ public import Strata.DDM.Ion
 import Strata.DDM.Elab.DialectM
 import Strata.DDM.BuiltinDialects
 import Strata.DDM.Util.Ion.Serialize
+import Strata.Util.IO
 
 open Lean (Message)
 open Strata.Parser (InputContext)
@@ -78,14 +79,12 @@ def elabProgramRest
     (loader : LoadedDialects)
     (leanEnv : Lean.Environment)
     (inputContext : InputContext)
-    (loc : SourceRange)
     (dialect : DialectName)
     (known : dialect ∈ loader.dialects)
     (startPos : String.Pos.Raw)
     (stopPos : String.Pos.Raw := inputContext.endPos)
     : Except (Array Message) Program := do
-  let some d := loader.dialects[dialect]?
-    | .error #[Lean.mkStringMessage inputContext loc.start s!"Unknown dialect {dialect}."]
+  let d := loader.dialects[dialect]
   let s := DeclState.initDeclState
   let s := { s with pos := startPos }
   let s := s.openLoadedDialect! loader d
@@ -114,7 +113,7 @@ def elabProgram
       .error #[Lean.mkStringMessage inputContext loc.start "Expected program name"]
     | .program loc dialect => do
       if p : dialect ∈ loader.dialects then
-        elabProgramRest loader leanEnv inputContext loc dialect p startPos stopPos
+        elabProgramRest loader leanEnv inputContext dialect p startPos stopPos
       else
         .error #[Lean.mkStringMessage inputContext loc.start s!"Unknown dialect {dialect}."]
 
@@ -390,6 +389,27 @@ def elabDialect
     return (dialects, default, { errors := #[msg] })
   | .dialect loc dialect =>
     elabDialectRest fm dialects #[] inputContext loc dialect startPos stopPos
+
+def parseStrataProgramFromDialect (dialects : LoadedDialects) (dialect : DialectName) (filePath : String) : IO (InputContext × Strata.Program) := do
+  let bytes ← Strata.Util.readBinInputSource filePath
+  let fileContent ← match String.fromUTF8? bytes with
+    | some s => pure s
+    | none => throw (IO.userError s!"File {filePath} contains non UTF-8 data")
+
+  let leanEnv ← Lean.mkEmptyEnvironment 0
+  let inputContext := Strata.Parser.stringInputContext filePath fileContent
+
+  let isTrue mem := inferInstanceAs (Decidable (dialect ∈ dialects.dialects))
+    | throw <| IO.userError "Internal {dialect} missing from loaded dialects."
+
+  let strataProgram ←
+    match elabProgramRest dialects leanEnv inputContext dialect mem 0 with
+    | .ok program =>
+      pure (inputContext, program)
+    | .error errors =>
+      let errMsg ← errors.foldlM (init := "Parse errors:\n") fun msg e =>
+        return s!"{msg}  {e.pos.line}:{e.pos.column}: {← e.data.toString}\n"
+      throw (IO.userError errMsg)
 
 end Strata.Elab
 end

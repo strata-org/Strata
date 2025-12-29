@@ -6,6 +6,7 @@
 
 import Strata.DL.Imperative.PureExpr
 import Strata.DL.Util.DecidableEq
+import Lean.Data.Position
 
 namespace Imperative
 
@@ -21,6 +22,7 @@ implicitly modified by a language construct).
 -/
 
 open Std (ToFormat Format format)
+open Lean (Position)
 
 variable {Identifier : Type} [DecidableEq Identifier] [ToFormat Identifier] [Inhabited Identifier]
 
@@ -63,15 +65,34 @@ instance [Repr P.Ident] : Repr (MetaDataElem.Field P) where
       | .label s => f!"MetaDataElem.Field.label {s}"
     Repr.addAppParen res prec
 
-/-- A metadata value, which can be either an expression or a message. -/
+inductive Uri where
+  | file (path: String)
+  deriving DecidableEq
+
+instance : ToFormat Uri where
+ format fr := match fr with | .file path => path
+
+structure FileRange where
+  file: Uri
+  start: Lean.Position
+  ending: Lean.Position
+  deriving DecidableEq
+
+instance : ToFormat FileRange where
+ format fr := f!"{fr.file}:{fr.start}-{fr.ending}"
+
+/-- A metadata value, which can be either an expression, a message, or a fileRange -/
 inductive MetaDataElem.Value (P : PureExpr) where
   /-- Metadata value in the form of a structured expression. -/
   | expr (e : P.Expr)
   /-- Metadata value in the form of an arbitrary string. -/
   | msg (s : String)
+  /-- Metadata value in the form of a fileRange. -/
+  | fileRange (r: FileRange)
+
 
 instance [ToFormat P.Expr] : ToFormat (MetaDataElem.Value P) where
-  format f := match f with | .expr e => f!"{e}" | .msg s => f!"{s}"
+  format f := match f with | .expr e => f!"{e}" | .msg s => f!"{s}" | .fileRange r => f!"{r}"
 
 instance [Repr P.Expr] : Repr (MetaDataElem.Value P) where
   reprPrec v prec :=
@@ -79,12 +100,14 @@ instance [Repr P.Expr] : Repr (MetaDataElem.Value P) where
       match v with
       | .expr e => f!"MetaDataElem.Value.expr {reprPrec e prec}"
       | .msg s => f!"MetaDataElem.Value.msg {s}"
+      | .fileRange fr => f!"MetaDataElem.Value.fileRange {fr}"
     Repr.addAppParen res prec
 
 def MetaDataElem.Value.beq [BEq P.Expr] (v1 v2 : MetaDataElem.Value P) :=
   match v1, v2 with
   | .expr e1, .expr e2 => e1 == e2
   | .msg m1, .msg m2 => m1 == m2
+  | .fileRange r1, .fileRange r2 => r1 == r2
   | _, _ => false
 
 instance [BEq P.Expr] : BEq (MetaDataElem.Value P) where
@@ -158,8 +181,6 @@ instance [Repr P.Expr] [Repr P.Ident] : Repr (MetaDataElem P) where
 
 /-! ### Common metadata fields -/
 
-def MetaData.fileLabel : MetaDataElem.Field P := .label "file"
-def MetaData.startLineLabel : MetaDataElem.Field P := .label "startLine"
-def MetaData.startColumnLabel : MetaDataElem.Field P := .label "startColumn"
+def MetaData.fileRange : MetaDataElem.Field P := .label "fileRange"
 
 end Imperative
