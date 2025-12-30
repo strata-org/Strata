@@ -1279,7 +1279,7 @@ def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec 
           some <$> .type <$> pure { nameIndex, argsIndex, defIndex := some defIndex }
         | { dialect := _, name := "declareDatatype" } => do
           -- Parse required arguments: name, typeParams, constructors indices
-          -- This metadata can be declared by any dialect (e.g., Boogie)
+          -- This metadata can be declared by any dialect
           let args := attr.args
           if args.size < 3 then
             newBindingErr "declareDatatype expects at least 3 arguments (name, typeParams, constructors)."
@@ -1948,6 +1948,7 @@ private def addDatatypeBindings
     (dialects : DialectMap)
     (gctx : GlobalContext)
     (src : SourceRange)
+    (dialectName : DialectName)
     {argDecls : ArgDecls}
     (b : DatatypeBindingSpec argDecls)
     (args : Vector Arg argDecls.size)
@@ -1966,11 +1967,7 @@ private def addDatatypeBindings
         | a => panic! s!"Expected ident for type param {repr a}"
     foldOverArgAtLevel dialects addBinding #[] argDecls args b.typeParamsIndex.toLevel
 
-  -- Get dialect name from the operation (we need it for type references)
-  -- We'll use the first dialect that has the datatype operation
-  let dialectName := "Boogie" -- TODO: Get from context properly
-
-  -- Extract constructor info
+  -- Extract constructor info using the dialect name for type references
   let constructorInfo := extractConstructorInfo dialectName args[b.constructorsIndex.toLevel]
 
   -- Step 1: Add datatype type
@@ -2001,12 +1998,13 @@ private def addDatatypeBindings
       gctx.push funcName (.expr funcType)
 
 def addCommand (dialects : DialectMap) (init : GlobalContext) (op : Operation) : GlobalContext :=
-    op.foldBindingSpecs dialects addBinding init
-  where addBinding (gctx : GlobalContext) l {argDecls} (b : BindingSpec argDecls) args :=
+    let dialectName := op.name.dialect
+    op.foldBindingSpecs dialects (addBinding dialectName) init
+  where addBinding (dialectName : DialectName) (gctx : GlobalContext) l {argDecls} (b : BindingSpec argDecls) args :=
           match b with
           | .datatype datatypeSpec =>
             -- Datatype bindings are handled specially to add multiple entries
-            addDatatypeBindings dialects gctx l datatypeSpec args
+            addDatatypeBindings dialects gctx l dialectName datatypeSpec args
           | _ =>
             -- For non-datatype bindings, use the standard approach
             let name :=
