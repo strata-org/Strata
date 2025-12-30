@@ -12,7 +12,12 @@ import Strata.DDM.Util.Format
 namespace Strata
 
 ---------------------------------------------------------------------
--- B3AST DDM Dialect for Abstract Syntax Tree
+-- B3CST DDM Dialect for Concrete Syntax Tree
+---------------------------------------------------------------------
+-- B3CST represents the concrete syntax with named identifiers (e.g., "x", "y").
+-- Used for parsing user-written code and formatting/pretty-printing.
+-- Variables are referenced by name, which must be resolved to indices.
+-- Supports "old x" syntax for referencing previous values of inout parameters.
 ---------------------------------------------------------------------
 
 #dialect

@@ -78,7 +78,7 @@ def roundtripExpr (p : Program) : Format :=
 
 section ExpressionRoundtripTests
 
--- We are loosing the context so this is why it's printing that way.
+-- We are losing the context so this is why it's printing that way.
 /--
 info: B3: .id () 0
 CST→AST Errors:

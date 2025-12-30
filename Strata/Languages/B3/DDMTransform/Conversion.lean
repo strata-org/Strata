@@ -248,34 +248,30 @@ private def resolveVarName (vars : List String) (name : String) (idx : Nat) : St
   go vars 0 idx
 
 def lookup (ctx : ToCSTContext) (idx : Nat) (m : M) : String × Bool × List (ASTToCSTError M) :=
-  -- First check if index is out of bounds
-  if idx >= ctx.vars.length then
-    (s!"@{idx}", false, [.variableOutOfBounds idx ctx.vars.length m])
-  else
-    match ctx.vars[idx]? with
-    | .some name =>
-      if name == "" then (s!"@{idx}", false, []) else
-      -- Determine if this is an old value: first occurrence with shadowing
-      let isOld :=
-        -- Check if there's a later occurrence (lower index) with the same name
-        ctx.vars.take idx |>.any (· == name)
-      -- Old values in procedure contexts are always supported
-      if isOld && ctx.inProcedure then
-        (name, true, [])
+  match ctx.vars[idx]? with
+  | .some name =>
+    if name == "" then (s!"@{idx}", false, []) else
+    -- Determine if this is an old value: first occurrence with shadowing
+    let isOld :=
+      -- Check if there's a later occurrence (lower index) with the same name
+      ctx.vars.take idx |>.any (· == name)
+    -- Old values in procedure contexts are always supported
+    if isOld && ctx.inProcedure then
+      (name, true, [])
+    else
+      -- Check if this reference is supported in concrete syntax
+      if !ctx.isSupported idx then
+        -- Not supported - return error
+        let resolvedName := if isOld then name else resolveVarName ctx.vars name idx
+        (resolvedName, isOld, [.unsupportedVariableReference idx m])
       else
-        -- Check if this reference is supported in concrete syntax
-        if !ctx.isSupported idx then
-          -- Not supported - return error
-          let resolvedName := if isOld then name else resolveVarName ctx.vars name idx
-          (resolvedName, isOld, [.unsupportedVariableReference idx m])
+        -- Supported - return without error
+        if isOld then
+          (name, true, [])
         else
-          -- Supported - return without error
-          if isOld then
-            (name, true, [])
-          else
-            (resolveVarName ctx.vars name idx, false, [])
-    | .none =>
-      (s!"@{idx}", false, [.variableOutOfBounds idx ctx.vars.length m])
+          (resolveVarName ctx.vars name idx, false, [])
+  | .none =>
+    (s!"@{idx}", false, [.variableOutOfBounds idx ctx.vars.length m])
 
 def push (ctx : ToCSTContext) (name : String) : ToCSTContext :=
   { vars := name :: ctx.vars, inProcedure := ctx.inProcedure }
@@ -595,29 +591,25 @@ structure FromCSTContext where
 namespace FromCSTContext
 
 def lookup (ctx : FromCSTContext) (name : String) (m : M) : Nat × List (CSTToASTError M) :=
-  let idx := ctx.vars.findIdx? (· == name) |>.getD ctx.vars.length
-  if idx >= ctx.vars.length then
-    (idx, [.unresolvedIdentifier name m])
-  else
+  match ctx.vars.findIdx? (· == name) with
+  | .some idx =>
     (idx, [])
+  | .none =>
+    (ctx.vars.length, [.unresolvedIdentifier name m])
 
 def lookupLast (ctx : FromCSTContext) (name : String) (m : M) : Nat × List (CSTToASTError M) :=
-  -- Find the last occurrence by searching from the end
-  let rec findLast (vars : List String) (idx : Nat) : Option Nat :=
+  let rec findLast (vars : List String) (idx : Nat) (acc : Option Nat) : Option Nat :=
     match vars with
-    | [] => none
+    | [] => acc
     | v :: vs =>
-        match findLast vs (idx + 1) with
-        | some found => some found
-        | none => if v == name then some idx else none
-  let idx := findLast ctx.vars 0 |>.getD ctx.vars.length
-  if idx >= ctx.vars.length then
-    (idx, [.unresolvedIdentifier name m])
-  else
-    (idx, [])
+      let newAcc := if v == name then some idx else acc
+      findLast vs (idx + 1) newAcc
+  match findLast ctx.vars 0 none with
+    | some idx => (idx, [])
+    | none => (ctx.vars.length, [.unresolvedIdentifier name m])
 
 def push (ctx : FromCSTContext) (name : String) : FromCSTContext :=
-  { vars := name :: ctx.vars }
+  { ctx with vars := name :: ctx.vars }
 
 def empty : FromCSTContext := { vars := [] }
 
