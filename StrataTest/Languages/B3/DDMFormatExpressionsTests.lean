@@ -36,13 +36,13 @@ partial def doRoundtrip (e : OperationF SourceRange) (ctx : FormatContext) (stat
           String.join parts
       dbg_trace f!"B3: {reprStr}{errorStr}"
       let cstAst := cstExpr'.toAst
-      cformat (ArgF.op cstAst) ctx state
+      (mformat (ArgF.op cstAst) ctx state).format
   | .error msg => s!"Parse error: {msg}"
 
 -- Helper to extract expression from a program and apply round-trip transformation
 def roundtripExpr (p : Program) : Format :=
-  let ctx := p.formatContext {}
-  let state := p.formatState
+  let ctx := FormatContext.ofDialects p.dialects p.globalContext {}
+  let state : FormatState := { openDialects := p.dialects.toList.foldl (init := {}) fun a d => a.insert d.name }
   match p.commands.toList with
   | [op] =>
     if op.name.name == "command_stmt" then

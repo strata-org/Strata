@@ -14,8 +14,8 @@ open Strata
 open Strata.B3CST
 
 def roundtripProgram (p : Program) : Format :=
-  let ctx := p.formatContext {}
-  let state := p.formatState
+  let ctx := FormatContext.ofDialects p.dialects p.globalContext {}
+  let state : FormatState := { openDialects := p.dialects.toList.foldl (init := {}) fun a d => a.insert d.name }
   match p.commands.toList with
   | [op] =>
     if op.name.name == "command_program" then

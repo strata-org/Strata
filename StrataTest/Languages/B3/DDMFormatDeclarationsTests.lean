@@ -34,7 +34,7 @@ partial def doRoundtripDecl (decl : OperationF SourceRange) (ctx : FormatContext
           String.join parts
       dbg_trace f!"B3: {reprStr}{errorStr}"
       let cstAst := cstDecl'.toAst
-      cformat (ArgF.op cstAst) ctx state
+      (mformat (ArgF.op cstAst) ctx state).format
   | .error msg => s!"Parse error: {msg}"
 
 partial def doRoundtripProgram (prog : OperationF SourceRange) (ctx : FormatContext) (state : FormatState) (printIntermediate: Bool := true) : Format :=
@@ -61,12 +61,12 @@ partial def doRoundtripProgram (prog : OperationF SourceRange) (ctx : FormatCont
         else
           f!"<B3 omitted>{errorStr}")
       let cstAst := cstProg'.toAst
-      cformat (ArgF.op cstAst) ctx state
+      (mformat (ArgF.op cstAst) ctx state).format
   | .error msg => s!"Parse error: {msg}"
 
 def roundtripDecl (p : Program) : Format :=
-  let ctx := p.formatContext {}
-  let state := p.formatState
+  let ctx := FormatContext.ofDialects p.dialects p.globalContext {}
+  let state : FormatState := { openDialects := p.dialects.toList.foldl (init := {}) fun a d => a.insert d.name }
   match p.commands.toList with
   | [op] =>
     if op.name.name == "command_program" then
