@@ -3,8 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Strata.DDM.Util.ByteArray
-import Strata.DDM.Util.Decimal
+module
+
+public import Strata.DDM.Util.ByteArray
+public import Strata.DDM.Util.Decimal
+
+public section
 
 namespace Ion
 
@@ -67,29 +71,29 @@ structure Ion (α : Type) where
 
 namespace Ion
 
-def null (tp : CoreType := .null) : Ion Sym := .mk (.null tp)
+@[expose] def null {Sym} (tp : CoreType := .null) : Ion Sym := .mk (.null tp)
 
-def bool (b : Bool) : Ion Sym := .mk (.bool b)
+@[expose] def bool {Sym} (b : Bool) : Ion Sym := .mk (.bool b)
 
-def int (i : Int) : Ion Sym := .mk (.int i)
+@[expose] def int {Sym} (i : Int) : Ion Sym := .mk (.int i)
 
-def float (f : Float) : Ion Sym := .mk (.float f)
+@[expose] def float {Sym} (f : Float) : Ion Sym := .mk (.float f)
 
-def decimal (d : Decimal) : Ion Sym := .mk (.decimal d)
+@[expose] def decimal {Sym} (d : Decimal) : Ion Sym := .mk (.decimal d)
 
-def string (s : String) : Ion Sym := .mk (.string s)
+@[expose] def string {Sym} (s : String) : Ion Sym := .mk (.string s)
 
-def symbol {Sym} (s : Sym) : Ion Sym := .mk (.symbol s)
+@[expose] def symbol {Sym} (s : Sym) : Ion Sym := .mk (.symbol s)
 
-def blob {Sym} (s : ByteArray) : Ion Sym := .mk (.blob s)
+@[expose] def blob {Sym} (s : ByteArray) : Ion Sym := .mk (.blob s)
 
-def struct (s : Array (Sym × Ion Sym)) : Ion Sym := .mk (.struct s)
+@[expose] def struct {Sym} (s : Array (Sym × Ion Sym)) : Ion Sym := .mk (.struct s)
 
-def list (a : Array (Ion Sym)) : Ion Sym := .mk (.list a)
+@[expose] def list {Sym} (a : Array (Ion Sym)) : Ion Sym := .mk (.list a)
 
-def sexp (a : Array (Ion Sym)) : Ion Sym := .mk (.sexp a)
+@[expose] def sexp {Sym} (a : Array (Ion Sym)) : Ion Sym := .mk (.sexp a)
 
-def annotation (annot : Array Sym) (v : Ion Sym) : Ion Sym := .mk (.annotation annot v)
+@[expose] def annotation {Sym} (annot : Array Sym) (v : Ion Sym) : Ion Sym := .mk (.annotation annot v)
 
 end Ion
 
@@ -107,6 +111,7 @@ protected def zero : SymbolId := ⟨0⟩
 end SymbolId
 
 instance : Coe SymbolId (Ion SymbolId) where
-  coe := .symbol
+  coe := private .symbol
 
 end Ion
+end

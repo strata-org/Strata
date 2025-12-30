@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 import Lean.Data.Json.Basic
 
@@ -46,26 +47,29 @@ Specific changes include:
  - Sexpressions become lists.
  - Annotations are discarded.
 -/
-def toJson : Ion String → Lean.Json
-| .null _ => .null
-| .bool b => .bool b
-| .int i => .num <| .fromInt i
-| .float f => .str (toString f)
-| .decimal d => .num d.toJsonNumber
-| .string s => .str s
-| .symbol s => .str s
-| .blob v => .arr <| v.data.map fun b => .num (.fromNat b.toNat)
-| .struct a => .obj <| a.attach.foldl (init := {}) fun m ⟨(nm, v), _⟩ =>
-  m.insert nm v.toJson
-| .sexp l | .list l => .arr <| l.map (·.toJson)
-| .annotation _ v => v.toJson
-  termination_by t => t
-  decreasing_by
-    · rename_i p
-      have q := Array.sizeOf_lt_of_mem p
-      simp only [Prod.mk.sizeOf_spec] at q
-      decreasing_tactic
-    all_goals decreasing_tactic
+def toJson : Ion String -> Lean.Json
+| { app := ap } =>
+  match ap with
+  | .null _ => .null
+  | .bool b => .bool b
+  | .int i => .num <| .fromInt i
+  | .float f => .str (toString f)
+  | .decimal d => .num d.toJsonNumber
+  | .string s => .str s
+  | .symbol s => .str s
+  | .blob v => .arr <| v.data.map fun b => .num (.fromNat b.toNat)
+  | .struct a => .obj <| a.attach.foldl (init := {}) fun m ⟨(nm, v), _⟩ =>
+    m.insert nm v.toJson
+  | .sexp l | .list l => .arr <| l.map (·.toJson)
+  | .annotation _ v => v.toJson
+termination_by t => t
+decreasing_by
+  · rename_i mem
+    have q := Array.sizeOf_lt_of_mem mem
+    simp only [Prod.mk.sizeOf_spec] at q
+    simp
+    decreasing_tactic
+  all_goals decreasing_tactic
 
 /-- Constructs an ion value from a JSON object. -/
 partial def ofJson : Lean.Json → Ion String

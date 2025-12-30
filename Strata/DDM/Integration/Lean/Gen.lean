@@ -3,12 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
 import Lean.Elab.Command
+
+import Strata.DDM.BuiltinDialects.Init
+import Strata.DDM.BuiltinDialects.StrataDDL
+import Strata.DDM.Integration.Lean.BoolConv
 import Strata.DDM.Integration.Lean.Env
 import Strata.DDM.Integration.Lean.GenTrace
 import Strata.DDM.Integration.Lean.OfAstM
-import Strata.DDM.Integration.Lean.BoolConv
 import Strata.DDM.Util.Graph.Tarjan
 
 open Lean (Command Name Ident Term TSyntax getEnv logError profileitM quote withTraceNode mkIdentFrom)
@@ -678,12 +680,7 @@ def mkAnnWithTerm (argCtor : Name) (annTerm v : Term) : Term :=
 def annToAst (argCtor : Name) (annTerm : Term) : Term :=
   mkCApp argCtor #[mkCApp ``Ann.ann #[annTerm], mkCApp ``Ann.val #[annTerm]]
 
-mutual
-
-partial def toAstApplyArg (vn : Name) (cat : SyntaxCat) : GenM Term := do
-  toAstApplyArgWithUnwrap vn cat false
-
-partial def toAstApplyArgWithUnwrap (vn : Name) (cat : SyntaxCat) (unwrap : Bool) : GenM Term := do
+partial def toAstApplyArg (vn : Name) (cat : SyntaxCat) (unwrap : Bool := false) : GenM Term := do
   let v := mkIdentFrom (←read).src vn
   match cat.name with
   | q`Init.Num =>
@@ -771,8 +768,6 @@ partial def toAstApplyArgWithUnwrap (vn : Name) (cat : SyntaxCat) (unwrap : Bool
     let toAst ← toAstIdentM qid
     ``(ArgF.op ($toAst $v))
 
-end
-
 abbrev MatchAlt := TSyntax ``Lean.Parser.Term.matchAlt
 
 def toAstBuiltinMatches (cat : QualifiedIdent) : GenM (Array MatchAlt) := do
@@ -817,7 +812,7 @@ def toAstMatch (cat : QualifiedIdent) (op : DefaultCtor) : GenM MatchAlt := do
             | return panic! s!"Unexpected builtin expression {lname}"
           let init := mkCApp ``ExprF.fn #[annI, quote nm]
           args.foldlM (init := init) fun a (nm, tp, unwrap) => do
-            let e ← toAstApplyArgWithUnwrap nm tp unwrap
+            let e ← toAstApplyArg nm tp unwrap
             return Lean.Syntax.mkCApp ``ExprF.app #[annI, a, e]
         | q`Init.Type => do
           let some nm := op.strataName
@@ -832,7 +827,7 @@ def toAstMatch (cat : QualifiedIdent) (op : DefaultCtor) : GenM MatchAlt := do
             match op.strataName with
             | some n => pure n
             | none => throwError s!"Internal: Operation requires strata name"
-          let argTerms : Array Term ← args.mapM fun (nm, tp, unwrap) => toAstApplyArgWithUnwrap nm tp unwrap
+          let argTerms : Array Term ← args.mapM fun (nm, tp, unwrap) => toAstApplyArg nm tp unwrap
           pure <| mkCApp ``OperationF.mk #[annI, quote mName, ← arrayLit argTerms]
   `(matchAltExpr| | $pat => $rhs)
 
@@ -1207,7 +1202,7 @@ def genAstImpl : CommandElab := fun stx =>
     let .str .anonymous dialectName := dialectStx.getId
       | throwErrorAt dialectStx s!"Expected dialect name"
     let loader := dialectExt.getState (← getEnv) |>.loaded
-    let depDialectNames := generateDependentDialects (loader.dialects.map[·]?) dialectName
+    let depDialectNames := generateDependentDialects (loader.dialects[·]?) dialectName
     let usedDialects ← depDialectNames.mapM fun nm =>
           match loader.dialects[nm]? with
           | some d => pure d

@@ -3,15 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Lean.Environment
-import Lean.ToExpr
+public import Lean.Environment
+public import Lean.ToExpr
 
 namespace Ion
 
 open Lean
 
-inductive SymbolTableEntry where
+public inductive SymbolTableEntry where
 | string (s : String)
 | record (name : Lean.Name)
 deriving DecidableEq, Hashable, Repr
@@ -19,17 +20,18 @@ deriving DecidableEq, Hashable, Repr
 instance : Coe String SymbolTableEntry where
   coe := .string
 
-instance : ToExpr SymbolTableEntry where
-  toTypeExpr :=  mkConst ``SymbolTableEntry
-  toExpr
-  | .string s =>  mkApp (mkConst ``SymbolTableEntry.string) (toExpr s)
-  | .record n =>  mkApp (mkConst ``SymbolTableEntry.record) (toExpr n)
+public instance : ToExpr SymbolTableEntry where
+  toTypeExpr := private mkConst ``SymbolTableEntry
+  toExpr := private fun e =>
+    match e with
+    | .string s =>  mkApp (mkConst ``SymbolTableEntry.string) (toExpr s)
+    | .record n =>  mkApp (mkConst ``SymbolTableEntry.record) (toExpr n)
 
-structure NameSymbols where
+public structure NameSymbols where
   name : Lean.Name
   entries : Array SymbolTableEntry
 
-structure SymbolTableEntries where
+public structure SymbolTableEntries where
   array : Array SymbolTableEntry := #[]
   names : Std.HashMap SymbolTableEntry Nat := {}
 
@@ -44,7 +46,7 @@ def SymbolTableEntries.ofArray (a : Array SymbolTableEntry) : SymbolTableEntries
   array := a
   names := a.size.fold (init := {}) fun i lt m => m.insert a[i] i
 
-structure IonTypeState where
+public structure IonTypeState where
   map₁   : Std.HashMap Name (Array SymbolTableEntry) := {}
   map₂   : Lean.PHashMap Name SymbolTableEntries := {}
   scope : Option (Name × Expr) := .none
@@ -57,17 +59,17 @@ def addType (s : IonTypeState) (d : NameSymbols) : IonTypeState where
   map₂ := s.map₂.insert d.name (.ofArray d.entries)
   scope := s.scope
 
-def getEntries? (s : IonTypeState) (name : Lean.Name) : Option (Array SymbolTableEntry) :=
+public def getEntries? (s : IonTypeState) (name : Lean.Name) : Option (Array SymbolTableEntry) :=
   match s.map₂.find? name with
   | some e => some e.array
   | none => s.map₁[name]?
 
-def getEntries (s : IonTypeState) (name : Lean.Name) : Array SymbolTableEntry :=
+public def getEntries (s : IonTypeState) (name : Lean.Name) : Array SymbolTableEntry :=
   match s.map₂.find? name with
   | some e => e.array
   | none => s.map₁.getD name #[]
 
-def getIndexOf (s : IonTypeState) (name : Lean.Name) (entry : SymbolTableEntry) : Nat :=
+public def getIndexOf (s : IonTypeState) (name : Lean.Name) (entry : SymbolTableEntry) : Nat :=
   if name ∈ s.map₁ then
     panic! "Cannot extend imported names"
   else
@@ -75,7 +77,7 @@ def getIndexOf (s : IonTypeState) (name : Lean.Name) (entry : SymbolTableEntry) 
     | none => panic! s!"Cannot find {name}"
     | some e => e.names.getD entry e.array.size
 
-def addEntry (s : IonTypeState) (name : Lean.Name) (entry : SymbolTableEntry) : IonTypeState :=
+public def addEntry (s : IonTypeState) (name : Lean.Name) (entry : SymbolTableEntry) : IonTypeState :=
   if name ∈ s.map₁ then
     panic! "Cannot extend imported names"
   else
@@ -96,7 +98,7 @@ def mkImported (e : Array (Array NameSymbols)) : ImportM IonTypeState :=
 
 end IonTypeState
 
-initialize ionDialectExt : PersistentEnvExtension NameSymbols NameSymbols IonTypeState ←
+public initialize ionDialectExt : PersistentEnvExtension NameSymbols NameSymbols IonTypeState ←
   registerPersistentEnvExtension {
     mkInitial := pure {},
     addImportedFn := IonTypeState.mkImported
