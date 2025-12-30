@@ -15,6 +15,22 @@ namespace Strata
 -- B3AST DDM Dialect for Abstract Syntax Tree
 ---------------------------------------------------------------------
 
+/-!
+# B3 Abstract Syntax Tree (AST)
+
+The B3 AST differs from the B3 CST in two ways. First, the AST uses de Bruijn indices for
+variable references instead of identifier names. Where the CST parses `i` and `old i` as
+distinct identifiers, the AST represents both as de Bruijn bound variables. Second, where
+the CST has multiple syntactic forms for the same semantic construct, the AST has a single
+canonical representation.
+
+The CST is suitable for parsing and pretty-printing the B3 language, while the AST is
+suitable as a target for encoding Strata Core. The bidirectional conversion in
+`Conversion.lean` handles name resolution, de Bruijn index assignment, and special cases
+like shadowed variables and `inout` parameters (modeled as two context values). Conversions
+return a list of errors for issues like unresolved identifiers or out-of-bounds references.
+-/
+
 #dialect
 dialect B3AST;
 
@@ -234,7 +250,7 @@ def Expression.mapMetadata [Inhabited N] (f : M → N) (e: Expression M) :Expres
   | .quantifierExpr m qkind var ty patterns body =>
       .quantifierExpr (f m) (QuantifierKind.mapMetadata f qkind) (mapAnn f var) (mapAnn f ty)
         ⟨f patterns.ann, patterns.val.map (fun p =>
-          match hp: p with
+          match _: p with
           | .pattern m exprs => .pattern (f m) ⟨f exprs.ann, exprs.val.map (Expression.mapMetadata f)⟩)⟩
         (Expression.mapMetadata f body)
   termination_by SizeOf.sizeOf e
