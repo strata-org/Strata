@@ -714,6 +714,38 @@ partial def translateBindingKind (tree : Tree) : ElabM BindingKind := do
     let nameTree := argChildren[0]
     let tpId := translateQualifiedIdent nameTree
     let nameLoc := nameTree.info.loc
+    let tctx := nameTree.info.inputCtx
+    -- First check if the type is in the GlobalContext (for user-defined types like datatypes)
+    if let .name name := tpId then
+      if let some binding := tctx.lookupVar name then
+        let tpArgs ← args.mapM translateTypeExpr
+        match binding with
+        | .fvar fidx k =>
+          match k with
+          | .type params _ =>
+            let params := params.toArray
+            if params.size = tpArgs.size then
+              return .expr (.fvar nameLoc fidx tpArgs)
+            else if let some a := tpArgs[params.size]? then
+              logErrorMF a.ann mf!"Unexpected argument to {name}."
+              return default
+            else
+              logErrorMF nameLoc mf!"{name} expects {params.size} arguments."
+              return default
+          | .expr _ =>
+            logErrorMF nameLoc mf!"Expected a type instead of expression {name}."
+            return default
+        | .bvar idx k =>
+          if let .type loc [] _ := k then
+            if tpArgs.isEmpty then
+              return .expr (.bvar loc idx)
+            else
+              logErrorMF nameLoc mf!"Unexpected arguments to type variable {name}."
+              return default
+          else
+            logErrorMF nameLoc mf!"Expected a type instead of {k}"
+            return default
+    -- Fall back to dialect-defined types
     let some (name, decl) ← resolveTypeOrCat nameLoc tpId
       | return default
     match decl with
@@ -798,6 +830,11 @@ def evalBindingSpec
             | _ =>
               panic! "Bad arg"
     pure { ident, kind := .type loc params.toList value }
+  | .datatype b =>
+    -- TODO: Full datatype binding implementation in task 6
+    -- For now, just add the datatype type to the context
+    let ident := evalBindingNameIndex args b.nameIndex
+    pure { ident, kind := .type loc [] none }
 
 /--
 Given a type expression and a natural number, this returns a
@@ -957,13 +994,41 @@ partial def runSyntaxElaborator
     let argLevel := ae.argLevel
     let .isTrue argLevelP := inferInstanceAs (Decidable (argLevel < argc))
         | return panic! "Invalid argLevel"
+    -- Compute the typing context for this argument
     let tctx ←
-      match ae.contextLevel with
-      | some idx =>
-        match trees[idx] with
-        | some t => pure t.resultContext
-        | none => continue
-      | none => pure tctx0
+      -- First, check if we have a datatypeScope (for recursive datatype definitions)
+      match ae.datatypeScope with
+      | some (nameLevel, typeParamsLevel) =>
+        -- Get the datatype name from the name tree
+        let nameTree := trees[nameLevel]
+        let typeParamsTree := trees[typeParamsLevel]
+        match nameTree, typeParamsTree with
+        | some nameT, some typeParamsT =>
+          -- Extract the datatype name
+          let datatypeName :=
+            match nameT.info with
+            | .ofIdentInfo info => info.val
+            | _ => panic! "Expected identifier for datatype name"
+          -- Start with the type params context (which has type params in scope)
+          let baseCtx := typeParamsT.resultContext
+          -- Add the datatype name to the GlobalContext as a type
+          -- This ensures it gets resolved as a free variable (fvar) rather than bound variable (bvar)
+          let gctx := baseCtx.globalContext
+          -- Only add if not already present (to avoid panic on duplicate)
+          let gctx :=
+            if datatypeName ∈ gctx then gctx
+            else gctx.push datatypeName (GlobalKind.type [] none)
+          -- Create a new typing context with the updated GlobalContext
+          pure (baseCtx.withGlobalContext gctx)
+        | _, _ => continue
+      | none =>
+        -- Fall back to regular scope handling
+        match ae.contextLevel with
+        | some idx =>
+          match trees[idx] with
+          | some t => pure t.resultContext
+          | none => continue
+        | none => pure tctx0
     let astx := args[ae.syntaxLevel]
     let expectedKind := argDecls[argLevel].kind
     match expectedKind with

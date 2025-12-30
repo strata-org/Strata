@@ -20,6 +20,11 @@ namespace Strata
 #dialect
 dialect Boogie;
 
+// Declare Boogie-specific metadata for datatype declarations
+// Arguments: name index, typeParams index, constructors index, followed by function templates
+metadata declareDatatype (name : Ident, typeParams : Ident, constructors : Ident,
+                          testerTemplate : FunctionTemplate, accessorTemplate : FunctionTemplate);
+
 type bool;
 type int;
 type string;
@@ -287,6 +292,44 @@ op command_axiom (label : Option Label, e : bool) : Command =>
 
 op command_distinct (label : Option Label, exprs : CommaSepBy Expr) : Command =>
   "distinct " label "[" exprs "]" ";\n";
+
+// =====================================================================
+// Datatype Syntax Categories
+// =====================================================================
+
+// Field syntax for datatype constructors
+category Field;
+category FieldList;
+
+@[declare(name, tp)]
+op field_mk (name : Ident, tp : Type) : Field => name ":" tp;
+
+op fieldListAtom (f : Field) : FieldList => f;
+@[scope(fl)]
+op fieldListPush (fl : FieldList, @[scope(fl)] f : Field) : FieldList => fl "," f;
+
+// Constructor syntax for datatypes
+category Constructor;
+category ConstructorList;
+
+op constructor_mk (name : Ident, fields : Option FieldList) : Constructor =>
+  name "(" fields ")";
+
+op constructorListAtom (c : Constructor) : ConstructorList => c;
+op constructorListPush (cl : ConstructorList, c : Constructor) : ConstructorList =>
+  cl "," c;
+
+// Datatype command
+// Function templates for testers and field accessors
+// @[scopeDatatype(name, typeParams)] brings both the datatype name and type parameters into scope
+// when parsing constructors, enabling recursive type references like `tail: List`
+@[declareDatatype(name, typeParams, constructors,
+    perConstructor([.datatype, .literal "..is", .constructor], [.datatype], .builtin "bool"),
+    perField([.field], [.datatype], .fieldType))]
+op command_datatype (name : Ident,
+                     typeParams : Option Bindings,
+                     @[scopeDatatype(name, typeParams)] constructors : ConstructorList) : Command =>
+  "datatype " name typeParams " {" constructors "}" ";\n";
 
 #end
 

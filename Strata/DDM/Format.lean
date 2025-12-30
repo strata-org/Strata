@@ -459,6 +459,7 @@ protected def mformat : MetadataArg → StrataFormat
   match ma with
   | none => mf!"none"
   | some a => a.mformat
+| .functionTemplate t => mf!"functionTemplate({repr t})"
 
 instance : ToStrataFormat MetadataArg where
   mformat := MetadataArg.mformat
@@ -592,6 +593,7 @@ protected def mformat : MetadataArgType → StrataFormat
   | .ident => mf!"Ident"
   | .bool => mf!"Bool"
   | .opt tp => mf!"Option {tp.mformat |>.ensurePrec (appPrec + 1)}" |>.setPrec appPrec
+  | .functionTemplate => mf!"FunctionTemplate"
 
 instance : ToStrataFormat MetadataArgType where
   mformat := MetadataArgType.mformat
