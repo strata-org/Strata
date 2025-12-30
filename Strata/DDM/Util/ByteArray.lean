@@ -3,21 +3,22 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 /-
 Functions for ByteArray that could potentially be upstreamed to Lean.
 -/
 import Std.Data.HashMap
+public import Lean.ToExpr
 
+public section
 namespace ByteArray
 
-deriving instance DecidableEq for ByteArray
+private def back! (a : ByteArray) : UInt8 := a.get! (a.size - 1)
 
-def back! (a : ByteArray) : UInt8 := a.get! (a.size - 1)
+private def back? (a : ByteArray) : Option UInt8 := a[a.size - 1]?
 
-def back? (a : ByteArray) : Option UInt8 := a[a.size - 1]?
-
-def pop (a : ByteArray) : ByteArray := a.extract 0 (a.size - 1)
+private def pop (a : ByteArray) : ByteArray := a.extract 0 (a.size - 1)
 
 @[inline]
 def foldr {β} (f : UInt8 → β → β) (init : β) (as : ByteArray) (start := as.size) (stop := 0) : β :=
@@ -29,7 +30,7 @@ def foldr {β} (f : UInt8 → β → β) (init : β) (as : ByteArray) (start := 
         aux (i-1) (by omega) (f as[i-1] b)
   aux (min start as.size) (Nat.min_le_right _ _) init
 
-def byteToHex (b : UInt8) : String :=
+private def byteToHex (b : UInt8) : String :=
   let cl : String := .ofList (Nat.toDigits 16 b.toNat)
   if cl.length < 2 then "0" ++ cl else cl
 
@@ -42,13 +43,11 @@ def startsWith (a pre : ByteArray) :=
   else
     pre.size.all fun i _ => a[i] = pre[i]
 
+private protected def reprPrec (a : ByteArray) (p : Nat) :=
+  Repr.addAppParen ("ByteArray.mk " ++ reprArg a.data) p
+
 instance : Repr ByteArray where
-  reprPrec a p := Repr.addAppParen ("ByteArray.mk " ++ reprArg a.data) p
-
-def ofNatArray (a : Array Nat) : ByteArray := .mk (a.map UInt8.ofNat)
-
-instance : Lean.Quote ByteArray where
-  quote b := Lean.Syntax.mkCApp ``ofNatArray #[Lean.quote (b.data.map fun b => b.toNat)]
+  reprPrec := private ByteArray.reprPrec
 
 end ByteArray
 
@@ -59,6 +58,13 @@ end ByteArray
 #guard let a := ByteArray.empty |>.push 0 |>.push 1; (a |>.push 2 |>.pop) = a
 
 namespace Strata.ByteArray
+
+def ofNatArray (a : Array Nat) : ByteArray := .mk (a.map UInt8.ofNat)
+
+open Lean in
+instance : Lean.ToExpr ByteArray where
+  toTypeExpr := private mkConst ``ByteArray
+  toExpr a := private mkApp (mkConst ``ByteArray.ofNatArray) <| toExpr <| a.data.map (·.toNat)
 
 def escapedBytes : Std.HashMap UInt8 Char := Std.HashMap.ofList [
     (9, 't'),
