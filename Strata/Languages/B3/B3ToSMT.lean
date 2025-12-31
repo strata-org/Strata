@@ -60,8 +60,8 @@ end ConversionContext
 /-- Create SMT terms without constant folding to preserve structure -/
 partial def binaryOpToSMTRaw : B3AST.BinaryOp M → (Term → Term → Term)
   | .iff _ => fun t1 t2 => Term.app .eq [t1, t2] .bool
-  | .implies _ => fun t1 t2 => Term.app .or [Term.app .not [t1] .bool, t2] .bool
-  | .impliedBy _ => fun t1 t2 => Term.app .or [Term.app .not [t2] .bool, t1] .bool
+  | .implies _ => fun t1 t2 => Term.app .implies [t1, t2] .bool
+  | .impliedBy _ => fun t1 t2 => Term.app .implies [t2, t1] .bool
   | .and _ => fun t1 t2 => Term.app .and [t1, t2] .bool
   | .or _ => fun t1 t2 => Term.app .or [t1, t2] .bool
   | .eq _ => fun t1 t2 => Term.app .eq [t1, t2] .bool
@@ -121,12 +121,26 @@ partial def expressionToSMT (ctx : ConversionContext) : B3AST.Expression M → O
       match expressionToSMT ctx value, expressionToSMT ctx' body with
       | some _, some b => some b  -- Simplified: just return body
       | _, _ => none
-  | .quantifierExpr _ qkind var _ty _ body =>
+  | .quantifierExpr _ qkind var _ty patterns body =>
       -- Quantifiers introduce a new bound variable
       let ctx' := ctx.push var.val
       match expressionToSMT ctx' body with
       | some b =>
-          let trigger := Factory.mkSimpleTrigger var.val .int  -- Simplified trigger
+          -- Convert patterns to SMT triggers
+          let patternTerms := patterns.val.toList.filterMap (fun p =>
+            match p with
+            | .pattern _ exprs =>
+                let terms := exprs.val.toList.filterMap (expressionToSMT ctx')
+                if terms.length == exprs.val.size then some terms else none
+          )
+          -- Create trigger term from patterns
+          let trigger := if patternTerms.isEmpty then
+            Factory.mkSimpleTrigger var.val .int
+          else
+            -- Build trigger from pattern expressions
+            patternTerms.foldl (fun acc terms =>
+              terms.foldl (fun t term => Factory.addTrigger term t) acc
+            ) (Term.app .triggers [] .trigger)
           match qkind with
           | .forall _ => some (Factory.quant .all var.val .int trigger b)
           | .exists _ => some (Factory.quant .exist var.val .int trigger b)
@@ -164,11 +178,24 @@ partial def formatTermDirect : Term → String
   | Term.prim (.int i) => toString i
   | Term.prim (.string s) => s!"\"{ s}\""
   | Term.var v => v.id
-  | Term.quant qk args _trigger body =>
+  | Term.quant qk args trigger body =>
       let qkStr := match qk with | .all => "forall" | .exist => "exists"
       let varDecls := args.map (fun v => s!"({v.id} {formatType v.ty})")
       let varDeclsStr := String.intercalate " " varDecls
-      s!"({qkStr} ({varDeclsStr}) {formatTermDirect body})"
+      -- Check if trigger has meaningful patterns
+      match trigger with
+      | Term.app .triggers triggerExprs .trigger =>
+          if triggerExprs.isEmpty then
+            -- No patterns, simple quantifier
+            s!"({qkStr} ({varDeclsStr}) {formatTermDirect body})"
+          else
+            -- Has patterns, format with :pattern annotation
+            let patternStrs := triggerExprs.map (fun t => s!"({formatTermDirect t})")
+            let patternStr := String.intercalate " " (patternStrs.map (fun p => s!":pattern {p}"))
+            s!"({qkStr} ({varDeclsStr}) (! {formatTermDirect body} {patternStr}))"
+      | _ =>
+          -- Fallback for non-trigger terms
+          s!"({qkStr} ({varDeclsStr}) {formatTermDirect body})"
   | Term.app op args _ =>
       match op with
       | .uf f =>
@@ -191,6 +218,7 @@ partial def formatTermDirect : Term → String
       | .not => s!"(not {formatTermDirect args[0]!})"
       | .and => s!"(and {formatTermDirect args[0]!} {formatTermDirect args[1]!})"
       | .or => s!"(or {formatTermDirect args[0]!} {formatTermDirect args[1]!})"
+      | .implies => s!"(=> {formatTermDirect args[0]!} {formatTermDirect args[1]!})"
       | .neg => s!"(- {formatTermDirect args[0]!})"
       | _ => s!"(unsupported-op {args.length})"
   | _ => "(unsupported-term)"
@@ -299,7 +327,7 @@ def testB3ToSMT (prog : Program) : IO Unit := do
 
 /--
 info: (declare-fun abs (Int) Int)
-(assert (forall ((x Int)) (= (abs x) (ite (>= x 0) x (- x)))))
+(assert (forall ((x Int)) (! (= (abs x) (ite (>= x 0) x (- x))) :pattern (x))))
 (push 1)
 (assert (not (= (abs (- 5)) 5)))
 (check-sat)
@@ -316,8 +344,8 @@ check abs(-5) == 5
 /--
 info: (declare-fun isEven (Int) Int)
 (declare-fun isOdd (Int) Int)
-(assert (forall ((n Int)) (= (isEven n) (ite (= n 0) 1 (isOdd (- n 1))))))
-(assert (forall ((n Int)) (= (isOdd n) (ite (= n 0) 0 (isEven (- n 1))))))
+(assert (forall ((n Int)) (! (= (isEven n) (ite (= n 0) 1 (isOdd (- n 1)))) :pattern (n))))
+(assert (forall ((n Int)) (! (= (isOdd n) (ite (= n 0) 0 (isEven (- n 1)))) :pattern (n))))
 (push 1)
 (assert (not (= (isEven 4) 1)))
 (check-sat)
@@ -332,6 +360,21 @@ function isOdd(n : int) : int {
   if n == 0 then 0 else isEven(n - 1)
 }
 check isEven(4) == 1
+#end
+
+/--
+info: (declare-fun f (Int) Int)
+(assert (forall ((x Int)) (! (=> (> x 0) (> (f x) 0)) :pattern ((f x)))))
+(push 1)
+(assert (not (=> (> 5 0) (> (f 5) 0))))
+(check-sat)
+(pop 1)
+-/
+#guard_msgs in
+#eval testB3ToSMT $ #strata program B3CST;
+function f(x : int) : int
+axiom forall x : int pattern f(x) x > 0 ==> f(x) > 0
+check 5 > 0 ==> f(5) > 0
 #end
 
 end Strata.B3ToSMT
