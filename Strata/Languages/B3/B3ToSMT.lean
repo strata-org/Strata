@@ -203,72 +203,69 @@ where
     | .bitvec n => s!"(_ BitVec {n})"
     | _ => "UnknownType"
 
-/-- Convert B3AST declaration to SMT commands (declarations and assertions) -/
-def declToSMT (ctx : ConversionContext) : B3AST.Decl M → List String
-  | .function _ name params _ _ body =>
-      -- Generate (declare-fun name (arg-types) return-type)
-      let argTypes := params.val.toList.map (fun _ => "Int")  -- Simplified: all args are Int
-      let argTypeStr := String.intercalate " " argTypes
-      let decl := s!"(declare-fun {name.val} ({argTypeStr}) Int)"
-      -- If function has a body, generate definition axiom
-      match body.val with
-      | some (.functionBody _ whens bodyExpr) =>
-          -- Build context with function parameters
-          let paramNames := params.val.toList.map (fun p => match p with | .fParameter _ _ n _ => n.val)
-          let ctx' := paramNames.foldl (fun acc n => acc.push n) ctx
-          -- Convert body expression
-          match expressionToSMT ctx' bodyExpr with
-          | some bodyTerm =>
-              -- Generate function call with parameters as variables
-              let paramVars := paramNames.map (fun n => Term.var ⟨n, .int⟩)
-              let uf : UF := { id := name.val, args := paramVars.map (fun t => ⟨"_", t.typeOf⟩), out := .int }
-              let funcCall := Term.app (.uf uf) paramVars .int
-              let equality := Term.app .eq [funcCall, bodyTerm] .bool
-              -- If there are when clauses, add them as antecedents
-              let axiomBody := if whens.val.isEmpty then
-                equality
-              else
-                -- Convert when clauses and combine with implications
-                let whenTerms := whens.val.toList.filterMap (fun w =>
-                  match w with
-                  | .when _ e => expressionToSMT ctx' e
-                )
-                let antecedent := whenTerms.foldl (fun acc t => Term.app .and [acc, t] .bool) (Term.bool true)
-                Term.app .or [Term.app .not [antecedent] .bool, equality] .bool
-              -- Wrap in quantifier if there are parameters
-              let axiomTerm := if paramNames.isEmpty then
-                axiomBody
-              else
-                -- Create quantified formula
-                paramNames.foldl (fun body pname =>
-                  let trigger := Factory.mkSimpleTrigger pname .int
-                  Factory.quant .all pname .int trigger body
-                ) axiomBody
-              [decl, s!"(assert {formatTermDirect axiomTerm})"]
-          | none => [decl]
-      | none => [decl]
-  | .axiom _ _ expr =>
-      -- Generate (assert expr)
-      match expressionToSMT ctx expr with
-      | some term => [s!"(assert {formatTermDirect term})"]
-      | none => []
-  | .checkDecl _ expr =>
-      -- Generate (push), (assert (not expr)), (check-sat), (pop)
-      match expressionToSMT ctx expr with
-      | some term =>
-          [ "(push 1)"
-          , s!"(assert (not {formatTermDirect term}))"
-          , "(check-sat)"
-          , "(pop 1)"
-          ]
-      | none => []
-  | _ => []
-
 /-- Convert B3AST program to list of SMT commands -/
 def programToSMTCommands (prog : B3AST.Program M) : List String :=
   match prog with
   | .program _ decls =>
-      decls.val.toList.flatMap (declToSMT ConversionContext.empty)
+      let declList := decls.val.toList
+      -- First pass: declare all function signatures
+      let functionDecls := declList.filterMap (fun d =>
+        match d with
+        | .function _ name params _ _ _ =>
+            let argTypes := params.val.toList.map (fun _ => "Int")
+            let argTypeStr := String.intercalate " " argTypes
+            some s!"(declare-fun {name.val} ({argTypeStr}) Int)"
+        | _ => none
+      )
+      -- Second pass: generate axioms for function bodies, axioms, and checks
+      let axioms := declList.flatMap (fun d =>
+        match d with
+        | .function _ name params _ _ body =>
+            -- Generate definition axiom if function has a body
+            match body.val with
+            | some (.functionBody _ whens bodyExpr) =>
+                let paramNames := params.val.toList.map (fun p => match p with | .fParameter _ _ n _ => n.val)
+                let ctx' := paramNames.foldl (fun acc n => acc.push n) ConversionContext.empty
+                match expressionToSMT ctx' bodyExpr with
+                | some bodyTerm =>
+                    let paramVars := paramNames.map (fun n => Term.var ⟨n, .int⟩)
+                    let uf : UF := { id := name.val, args := paramVars.map (fun t => ⟨"_", t.typeOf⟩), out := .int }
+                    let funcCall := Term.app (.uf uf) paramVars .int
+                    let equality := Term.app .eq [funcCall, bodyTerm] .bool
+                    let axiomBody := if whens.val.isEmpty then
+                      equality
+                    else
+                      let whenTerms := whens.val.toList.filterMap (fun w =>
+                        match w with | .when _ e => expressionToSMT ctx' e
+                      )
+                      let antecedent := whenTerms.foldl (fun acc t => Term.app .and [acc, t] .bool) (Term.bool true)
+                      Term.app .or [Term.app .not [antecedent] .bool, equality] .bool
+                    let axiomTerm := if paramNames.isEmpty then
+                      axiomBody
+                    else
+                      paramNames.foldl (fun body pname =>
+                        let trigger := Factory.mkSimpleTrigger pname .int
+                        Factory.quant .all pname .int trigger body
+                      ) axiomBody
+                    [s!"(assert {formatTermDirect axiomTerm})"]
+                | none => []
+            | none => []
+        | .axiom _ _ expr =>
+            match expressionToSMT ConversionContext.empty expr with
+            | some term => [s!"(assert {formatTermDirect term})"]
+            | none => []
+        | .checkDecl _ expr =>
+            match expressionToSMT ConversionContext.empty expr with
+            | some term =>
+                [ "(push 1)"
+                , s!"(assert (not {formatTermDirect term}))"
+                , "(check-sat)"
+                , "(pop 1)"
+                ]
+            | none => []
+        | _ => []
+      )
+      functionDecls ++ axioms
 
 ---------------------------------------------------------------------
 -- Test
@@ -314,6 +311,27 @@ function abs(x : int) : int {
   if x >= 0 then x else -x
 }
 check abs(-5) == 5
+#end
+
+/--
+info: (declare-fun isEven (Int) Int)
+(declare-fun isOdd (Int) Int)
+(assert (forall ((n Int)) (= (isEven n) (ite (= n 0) 1 (isOdd (- n 1))))))
+(assert (forall ((n Int)) (= (isOdd n) (ite (= n 0) 0 (isEven (- n 1))))))
+(push 1)
+(assert (not (= (isEven 4) 1)))
+(check-sat)
+(pop 1)
+-/
+#guard_msgs in
+#eval testB3ToSMT $ #strata program B3CST;
+function isEven(n : int) : int {
+  if n == 0 then 1 else isOdd(n - 1)
+}
+function isOdd(n : int) : int {
+  if n == 0 then 0 else isEven(n - 1)
+}
+check isEven(4) == 1
 #end
 
 end Strata.B3ToSMT
