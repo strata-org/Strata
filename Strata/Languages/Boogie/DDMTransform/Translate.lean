@@ -1251,51 +1251,6 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
 ---------------------------------------------------------------------
 
 /--
-Extract field information from a field_mk operation.
-Expected format: field_mk(name : Ident, tp : Type)
-Returns (fieldName, fieldType) pair.
--/
-private def translateFieldInfo (bindings : TransBindings) (arg : Arg) :
-    TransM (Option (BoogieIdent × LMonoTy)) := do
-  let .op op := arg
-    | return none
-  -- Check if this is a field_mk operation
-  if op.name.name == "field_mk" && op.args.size == 2 then
-    match op.args[0]!, op.args[1]! with
-    | .ident _ fieldName, _ =>
-      let fieldType ← translateLMonoTy bindings op.args[1]!
-      return some (fieldName, fieldType)
-    | _, _ => return none
-  else
-    return none
-
-/--
-Extract fields from a field list argument.
-Handles both fieldListAtom (single field) and fieldListPush (multiple fields).
-Returns array of (fieldName, fieldType) pairs.
--/
-private partial def translateFieldList (bindings : TransBindings) (arg : Arg) :
-    TransM (Array (BoogieIdent × LMonoTy)) := do
-  let .op op := arg
-    | return #[]
-  -- fieldListAtom: single field
-  if op.name.name == "fieldListAtom" && op.args.size == 1 then
-    match ← translateFieldInfo bindings op.args[0]! with
-    | some field => return #[field]
-    | none => return #[]
-  -- fieldListPush: list followed by another field
-  else if op.name.name == "fieldListPush" && op.args.size == 2 then
-    let prevFields ← translateFieldList bindings op.args[0]!
-    match ← translateFieldInfo bindings op.args[1]! with
-    | some field => return prevFields.push field
-    | none => return prevFields
-  -- Could be a direct field_mk
-  else
-    match ← translateFieldInfo bindings arg with
-    | some field => return #[field]
-    | none => return #[]
-
-/--
 Information about a single constructor extracted during translation.
 -/
 structure TransConstructorInfo where
@@ -1306,60 +1261,31 @@ structure TransConstructorInfo where
   deriving Repr
 
 /--
-Extract constructor information from a constructor_mk operation.
-Expected format: constructor_mk(name : Ident, fields : Option FieldList)
-Returns TransConstructorInfo with name and fields.
+Translate constructor information from AST.ConstructorInfo to TransConstructorInfo.
+This translates the TypeExpr field types to LMonoTy.
 -/
-private def translateSingleConstructor (bindings : TransBindings) (arg : Arg) :
-    TransM (Option TransConstructorInfo) := do
-  let .op op := arg
-    | return none
-  -- Check if this is a constructor_mk operation
-  if op.name.name == "constructor_mk" && op.args.size == 2 then
-    match op.args[0]! with
-    | .ident _ constrName =>
-      -- Extract fields from the optional field list
-      let fields ← match op.args[1]! with
-        | .option _ (some fieldListArg) => translateFieldList bindings fieldListArg
-        | .option _ none => pure #[]
-        | other => translateFieldList bindings other
-      return some { name := constrName, fields := fields }
-    | _ => return none
-  else
-    return none
+private def translateConstructorInfo (bindings : TransBindings) (info : ConstructorInfo) :
+    TransM TransConstructorInfo := do
+  let fields ← info.fields.mapM fun (fieldName, fieldType) => do
+    let translatedType ← translateLMonoTy bindings (.type fieldType)
+    return (fieldName, translatedType)
+  return { name := info.name, fields := fields }
 
 /--
-Extract constructor information from a constructor list argument.
-Handles constructorListAtom (single constructor) and constructorListPush (multiple constructors).
-Returns array of TransConstructorInfo.
+Extract and translate constructor information from a constructor list argument.
+Uses the annotation-based extractConstructorInfo from AST, then translates types.
 -/
-partial def translateConstructorList (bindings : TransBindings) (arg : Arg) :
+def translateConstructorList (p : Program) (bindings : TransBindings) (arg : Arg) :
     TransM (Array TransConstructorInfo) := do
-  let .op op := arg
-    | return #[]
-  -- constructorListAtom: single constructor
-  if op.name.name == "constructorListAtom" && op.args.size == 1 then
-    match ← translateSingleConstructor bindings op.args[0]! with
-    | some constr => return #[constr]
-    | none => return #[]
-  -- constructorListPush: list followed by another constructor
-  else if op.name.name == "constructorListPush" && op.args.size == 2 then
-    let prevConstrs ← translateConstructorList bindings op.args[0]!
-    match ← translateSingleConstructor bindings op.args[1]! with
-    | some constr => return prevConstrs.push constr
-    | none => return prevConstrs
-  -- Could be a direct constructor_mk
-  else
-    match ← translateSingleConstructor bindings arg with
-    | some constr => return #[constr]
-    | none => return #[]
+  let constructorInfos := GlobalContext.extractConstructorInfo p.dialects arg
+  constructorInfos.mapM (translateConstructorInfo bindings)
 
 /--
 Translate a datatype declaration to Boogie declarations.
 Creates an LDatatype with tester names from BoogieDatatypeConfig,
 generates factory using LDatatype.genFactory, and returns all declarations.
 -/
-def translateDatatype (bindings : TransBindings) (op : Operation) :
+def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) :
     TransM (Boogie.Decls × TransBindings) := do
   -- Check operation has correct name and argument count
   let _ ← @checkOp (Boogie.Decls × TransBindings) op q`Boogie.command_datatype 3
@@ -1398,7 +1324,7 @@ def translateDatatype (bindings : TransBindings) (op : Operation) :
   let bindingsWithPlaceholder := { bindings with freeVars := bindings.freeVars.push placeholderDecl }
 
   -- Extract constructor information (now recursive references will resolve correctly)
-  let constructors ← translateConstructorList bindingsWithPlaceholder op.args[2]!
+  let constructors ← translateConstructorList p bindingsWithPlaceholder op.args[2]!
 
   -- Check that we have at least one constructor
   if h : constructors.size == 0 then
@@ -1520,7 +1446,7 @@ partial def translateBoogieDecls (p : Program) (bindings : TransBindings) :
     let (newDecls, bindings) ←
       match op.name with
       | q`Boogie.command_datatype =>
-        translateDatatype bindings op
+        translateDatatype p bindings op
       | _ =>
         -- All other commands produce a single declaration
         let (decl, bindings) ←
