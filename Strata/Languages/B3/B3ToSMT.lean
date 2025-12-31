@@ -164,6 +164,11 @@ partial def formatTermDirect : Term → String
   | Term.prim (.int i) => toString i
   | Term.prim (.string s) => s!"\"{ s}\""
   | Term.var v => v.id
+  | Term.quant qk args _trigger body =>
+      let qkStr := match qk with | .all => "forall" | .exist => "exists"
+      let varDecls := args.map (fun v => s!"({v.id} {formatType v.ty})")
+      let varDeclsStr := String.intercalate " " varDecls
+      s!"({qkStr} ({varDeclsStr}) {formatTermDirect body})"
   | Term.app op args _ =>
       match op with
       | .uf f =>
@@ -189,14 +194,59 @@ partial def formatTermDirect : Term → String
       | .neg => s!"(- {formatTermDirect args[0]!})"
       | _ => s!"(unsupported-op {args.length})"
   | _ => "(unsupported-term)"
+where
+  formatType : TermType → String
+    | .bool => "Bool"
+    | .int => "Int"
+    | .real => "Real"
+    | .string => "String"
+    | .bitvec n => s!"(_ BitVec {n})"
+    | _ => "UnknownType"
 
 /-- Convert B3AST declaration to SMT commands (declarations and assertions) -/
 def declToSMT (ctx : ConversionContext) : B3AST.Decl M → List String
-  | .function _ name params _ _ _ =>
+  | .function _ name params _ _ body =>
       -- Generate (declare-fun name (arg-types) return-type)
       let argTypes := params.val.toList.map (fun _ => "Int")  -- Simplified: all args are Int
       let argTypeStr := String.intercalate " " argTypes
-      [s!"(declare-fun {name.val} ({argTypeStr}) Int)"]
+      let decl := s!"(declare-fun {name.val} ({argTypeStr}) Int)"
+      -- If function has a body, generate definition axiom
+      match body.val with
+      | some (.functionBody _ whens bodyExpr) =>
+          -- Build context with function parameters
+          let paramNames := params.val.toList.map (fun p => match p with | .fParameter _ _ n _ => n.val)
+          let ctx' := paramNames.foldl (fun acc n => acc.push n) ctx
+          -- Convert body expression
+          match expressionToSMT ctx' bodyExpr with
+          | some bodyTerm =>
+              -- Generate function call with parameters as variables
+              let paramVars := paramNames.map (fun n => Term.var ⟨n, .int⟩)
+              let uf : UF := { id := name.val, args := paramVars.map (fun t => ⟨"_", t.typeOf⟩), out := .int }
+              let funcCall := Term.app (.uf uf) paramVars .int
+              let equality := Term.app .eq [funcCall, bodyTerm] .bool
+              -- If there are when clauses, add them as antecedents
+              let axiomBody := if whens.val.isEmpty then
+                equality
+              else
+                -- Convert when clauses and combine with implications
+                let whenTerms := whens.val.toList.filterMap (fun w =>
+                  match w with
+                  | .when _ e => expressionToSMT ctx' e
+                )
+                let antecedent := whenTerms.foldl (fun acc t => Term.app .and [acc, t] .bool) (Term.bool true)
+                Term.app .or [Term.app .not [antecedent] .bool, equality] .bool
+              -- Wrap in quantifier if there are parameters
+              let axiomTerm := if paramNames.isEmpty then
+                axiomBody
+              else
+                -- Create quantified formula
+                paramNames.foldl (fun body pname =>
+                  let trigger := Factory.mkSimpleTrigger pname .int
+                  Factory.quant .all pname .int trigger body
+                ) axiomBody
+              [decl, s!"(assert {formatTermDirect axiomTerm})"]
+          | none => [decl]
+      | none => [decl]
   | .axiom _ _ expr =>
       -- Generate (assert expr)
       match expressionToSMT ctx expr with
@@ -251,18 +301,19 @@ def testB3ToSMT (prog : Program) : IO Unit := do
     IO.println cmd
 
 /--
-info: (declare-fun getValue () Int)
-(assert (= (+ (getValue) 1) 2))
+info: (declare-fun abs (Int) Int)
+(assert (forall ((x Int)) (= (abs x) (ite (>= x 0) x (- x)))))
 (push 1)
-(assert (not (= (ite (> (getValue) 0) (getValue) (- (getValue))) 1)))
+(assert (not (= (abs (- 5)) 5)))
 (check-sat)
 (pop 1)
 -/
 #guard_msgs in
 #eval testB3ToSMT $ #strata program B3CST;
-function getValue() : int
-axiom getValue() + 1 == 2
-check (if getValue() > 0 then getValue() else -getValue()) == 1
+function abs(x : int) : int {
+  if x >= 0 then x else -x
+}
+check abs(-5) == 5
 #end
 
 end Strata.B3ToSMT
