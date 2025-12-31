@@ -158,20 +158,58 @@ def b3CSTToAST (cst : B3CST.Program SourceRange) : B3AST.Program Unit × List (B
   let (prog, errors) := B3.programFromCST B3.FromCSTContext.empty cst
   (B3AST.Program.mapMetadata (fun _ => ()) prog, errors)
 
-/-- Convert B3AST axiom declaration to SMT term -/
-def axiomDeclToSMT (ctx : ConversionContext) : B3AST.Decl M → Option Term
-  | .axiom _ _ expr => expressionToSMT ctx expr
-  | _ => none
+/-- Format SMT term directly without ANF (A-normal form) -/
+partial def formatTermDirect : Term → String
+  | Term.prim (.bool b) => if b then "true" else "false"
+  | Term.prim (.int i) => toString i
+  | Term.prim (.string s) => s!"\"{ s}\""
+  | Term.var v => v.id
+  | Term.app op args _ =>
+      match op with
+      | .uf f =>
+          let argStrs := args.map formatTermDirect
+          if argStrs.isEmpty then
+            s!"({f.id})"  -- 0-ary function call needs parentheses
+          else
+            s!"({f.id} {String.intercalate " " argStrs})"
+      | .eq => s!"(= {formatTermDirect args[0]!} {formatTermDirect args[1]!})"
+      | .add => s!"(+ {formatTermDirect args[0]!} {formatTermDirect args[1]!})"
+      | .sub => s!"(- {formatTermDirect args[0]!} {formatTermDirect args[1]!})"
+      | .mul => s!"(* {formatTermDirect args[0]!} {formatTermDirect args[1]!})"
+      | .div => s!"(div {formatTermDirect args[0]!} {formatTermDirect args[1]!})"
+      | .mod => s!"(mod {formatTermDirect args[0]!} {formatTermDirect args[1]!})"
+      | .lt => s!"(< {formatTermDirect args[0]!} {formatTermDirect args[1]!})"
+      | .le => s!"(<= {formatTermDirect args[0]!} {formatTermDirect args[1]!})"
+      | .gt => s!"(> {formatTermDirect args[0]!} {formatTermDirect args[1]!})"
+      | .ge => s!"(>= {formatTermDirect args[0]!} {formatTermDirect args[1]!})"
+      | .not => s!"(not {formatTermDirect args[0]!})"
+      | .and => s!"(and {formatTermDirect args[0]!} {formatTermDirect args[1]!})"
+      | .or => s!"(or {formatTermDirect args[0]!} {formatTermDirect args[1]!})"
+      | .neg => s!"(- {formatTermDirect args[0]!})"
+      | _ => s!"(unsupported-op {args.length})"
+  | _ => "(unsupported-term)"
 
-/-- Convert B3AST program to list of SMT terms -/
-def programToSMT (prog : B3AST.Program M) : List Term :=
+/-- Convert B3AST declaration to SMT commands (declarations and assertions) -/
+def declToSMT (ctx : ConversionContext) : B3AST.Decl M → List String
+  | .function _ name params _ _ _ =>
+      -- Generate (declare-fun name (arg-types) return-type)
+      let argTypes := params.val.toList.map (fun _ => "Int")  -- Simplified: all args are Int
+      let argTypeStr := String.intercalate " " argTypes
+      [s!"(declare-fun {name.val} ({argTypeStr}) Int)"]
+  | .axiom _ _ expr =>
+      -- Generate (assert expr)
+      match expressionToSMT ctx expr with
+      | some term =>
+          -- We need to format the term directly without the encoder's ANF
+          [s!"(assert {formatTermDirect term})"]
+      | none => []
+  | _ => []
+
+/-- Convert B3AST program to list of SMT commands -/
+def programToSMTCommands (prog : B3AST.Program M) : List String :=
   match prog with
   | .program _ decls =>
-      decls.val.toList.filterMap (axiomDeclToSMT ConversionContext.empty)
-
-/-- Format the SMT term as a string -/
-def formatSMT (t : Term) : IO String :=
-  Encoder.termToString t
+      decls.val.toList.flatMap (declToSMT ConversionContext.empty)
 
 ---------------------------------------------------------------------
 -- Test
@@ -199,17 +237,13 @@ def formatB3Program (prog : Program) : String :=
 def testB3ToSMT (prog : Program) : IO Unit := do
   let cst := programToB3CST prog
   let (ast, _errors) := b3CSTToAST cst
-  let smtTerms := programToSMT ast
-  for term in smtTerms do
-    let formatted ← formatSMT term
-    IO.print formatted
+  let smtCommands := programToSMTCommands ast
+  for cmd in smtCommands do
+    IO.println cmd
 
 /--
-info: ; getValue
-(declare-const f0 Int)
-(define-fun t0 () Int f0)
-(define-fun t1 () Int (+ t0 1))
-(define-fun t2 () Bool (= t1 2))
+info: (declare-fun getValue () Int)
+(assert (= (+ (getValue) 1) 2))
 -/
 #guard_msgs in
 #eval testB3ToSMT $ #strata program B3CST;
