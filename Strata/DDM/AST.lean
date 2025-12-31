@@ -820,99 +820,6 @@ structure ConstructorInfo where
   deriving Repr
 
 /--
-Extract field information from a field_mk operation.
-Expected format: field_mk(name : Ident, tp : Type)
-Returns (fieldName, fieldType) pair.
--/
-private def extractFieldInfo (_dialectName : String) (arg : Arg) : Option (String × TypeExpr) :=
-  match arg with
-  | .op op =>
-    -- Check if this is a field_mk operation (dialect.field_mk)
-    if op.name.name == "field_mk" && op.args.size == 2 then
-      match op.args[0]!, op.args[1]! with
-      | .ident _ fieldName, .type fieldType =>
-        some (fieldName, fieldType)
-      | _, _ => none
-    else
-      none
-  | _ => none
-
-/--
-Extract fields from a field list argument.
-Handles both fieldListAtom (single field) and fieldListPush (multiple fields).
-Returns array of (fieldName, fieldType) pairs.
--/
-private partial def extractFieldList (dialectName : String) (arg : Arg) : Array (String × TypeExpr) :=
-  match arg with
-  | .op op =>
-    -- fieldListAtom: single field
-    if op.name.name == "fieldListAtom" && op.args.size == 1 then
-      match extractFieldInfo dialectName op.args[0]! with
-      | some field => #[field]
-      | none => #[]
-    -- fieldListPush: list followed by another field
-    else if op.name.name == "fieldListPush" && op.args.size == 2 then
-      let prevFields := extractFieldList dialectName op.args[0]!
-      match extractFieldInfo dialectName op.args[1]! with
-      | some field => prevFields.push field
-      | none => prevFields
-    -- Could be a direct field_mk
-    else
-      match extractFieldInfo dialectName arg with
-      | some field => #[field]
-      | none => #[]
-  | _ => #[]
-
-/--
-Extract constructor information from a constructor_mk operation.
-Expected format: constructor_mk(name : Ident, fields : Option FieldList)
-Returns ConstructorInfo with name and fields.
--/
-private def extractSingleConstructor (dialectName : String) (arg : Arg) : Option ConstructorInfo :=
-  match arg with
-  | .op op =>
-    -- Check if this is a constructor_mk operation
-    if op.name.name == "constructor_mk" && op.args.size == 2 then
-      match op.args[0]! with
-      | .ident _ constrName =>
-        -- Extract fields from the optional field list
-        let fields := match op.args[1]! with
-          | .option _ (some fieldListArg) => extractFieldList dialectName fieldListArg
-          | .option _ none => #[]
-          | other => extractFieldList dialectName other
-        some { name := constrName, fields := fields }
-      | _ => none
-    else
-      none
-  | _ => none
-
-/--
-Extract constructor information from a constructor list argument.
-Handles constructorListAtom (single constructor) and constructorListPush (multiple constructors).
-Returns array of ConstructorInfo.
--/
-partial def extractConstructorInfo (dialectName : String) (arg : Arg) : Array ConstructorInfo :=
-  match arg with
-  | .op op =>
-    -- constructorListAtom: single constructor
-    if op.name.name == "constructorListAtom" && op.args.size == 1 then
-      match extractSingleConstructor dialectName op.args[0]! with
-      | some constr => #[constr]
-      | none => #[]
-    -- constructorListPush: list followed by another constructor
-    else if op.name.name == "constructorListPush" && op.args.size == 2 then
-      let prevConstrs := extractConstructorInfo dialectName op.args[0]!
-      match extractSingleConstructor dialectName op.args[1]! with
-      | some constr => prevConstrs.push constr
-      | none => prevConstrs
-    -- Could be a direct constructor_mk
-    else
-      match extractSingleConstructor dialectName arg with
-      | some constr => #[constr]
-      | none => #[]
-  | _ => #[]
-
-/--
 Build a TypeExpr reference to the datatype with type parameters.
 Creates a type expression like `List<T>` or `Option<A>` from the datatype's
 FreeVarIndex and its type parameter names.
@@ -1924,6 +1831,42 @@ private def getFieldAnnotation (opDecl : OpDecl) : Option (Nat × Nat) :=
   | _ => none
 
 /--
+Check if an operation has the @[fieldListAtom(f)] annotation.
+Returns the field index if present.
+-/
+private def getFieldListAtomAnnotation (opDecl : OpDecl) : Option Nat :=
+  match opDecl.metadata[q`StrataDDL.fieldListAtom]? with
+  | some #[.catbvar fieldIdx] => some fieldIdx
+  | _ => none
+
+/--
+Check if an operation has the @[fieldListPush(list, f)] annotation.
+Returns the (listIndex, fieldIndex) if present.
+-/
+private def getFieldListPushAnnotation (opDecl : OpDecl) : Option (Nat × Nat) :=
+  match opDecl.metadata[q`StrataDDL.fieldListPush]? with
+  | some #[.catbvar listIdx, .catbvar fieldIdx] => some (listIdx, fieldIdx)
+  | _ => none
+
+/--
+Check if an operation has the @[constructorListAtom(c)] annotation.
+Returns the constructor index if present.
+-/
+private def getConstructorListAtomAnnotation (opDecl : OpDecl) : Option Nat :=
+  match opDecl.metadata[q`StrataDDL.constructorListAtom]? with
+  | some #[.catbvar constrIdx] => some constrIdx
+  | _ => none
+
+/--
+Check if an operation has the @[constructorListPush(list, c)] annotation.
+Returns the (listIndex, constructorIndex) if present.
+-/
+private def getConstructorListPushAnnotation (opDecl : OpDecl) : Option (Nat × Nat) :=
+  match opDecl.metadata[q`StrataDDL.constructorListPush]? with
+  | some #[.catbvar listIdx, .catbvar constrIdx] => some (listIdx, constrIdx)
+  | _ => none
+
+/--
 Extract field information using the @[field] annotation.
 Looks up the operation in the dialect and uses the annotation indices.
 -/
@@ -1953,26 +1896,48 @@ private def extractFieldInfoM (dialects : DialectMap) (arg : Arg) : Option (Stri
 
 /--
 Extract fields from a field list argument using annotations.
-Handles both fieldListAtom (single field) and fieldListPush (multiple fields).
+Handles both @[fieldListAtom] (single field) and @[fieldListPush] (multiple fields).
 -/
 private partial def extractFieldListM (dialects : DialectMap) (arg : Arg) : Array (String × TypeExpr) :=
   match arg with
   | .op op =>
-    -- Check if this is a field list operation (atom or push)
-    if op.name.name == "fieldListAtom" && op.args.size == 1 then
-      match extractFieldInfoM dialects op.args[0]! with
-      | some field => #[field]
-      | none => #[]
-    else if op.name.name == "fieldListPush" && op.args.size == 2 then
-      let prevFields := extractFieldListM dialects op.args[0]!
-      match extractFieldInfoM dialects op.args[1]! with
-      | some field => prevFields.push field
-      | none => prevFields
-    -- Could be a direct field operation
-    else
-      match extractFieldInfoM dialects arg with
-      | some field => #[field]
-      | none => #[]
+    match lookupOpDecl dialects op.name with
+    | none => #[]
+    | some opDecl =>
+      -- Check for @[fieldListAtom(f)] annotation
+      match getFieldListAtomAnnotation opDecl with
+      | some fieldIdx =>
+        let argCount := opDecl.argDecls.size
+        if fieldIdx < argCount then
+          let fieldLevel := argCount - fieldIdx - 1
+          if h : fieldLevel < op.args.size then
+            match extractFieldInfoM dialects op.args[fieldLevel] with
+            | some field => #[field]
+            | none => #[]
+          else #[]
+        else #[]
+      | none =>
+        -- Check for @[fieldListPush(list, f)] annotation
+        match getFieldListPushAnnotation opDecl with
+        | some (listIdx, fieldIdx) =>
+          let argCount := opDecl.argDecls.size
+          if listIdx < argCount && fieldIdx < argCount then
+            let listLevel := argCount - listIdx - 1
+            let fieldLevel := argCount - fieldIdx - 1
+            if h1 : listLevel < op.args.size then
+              if h2 : fieldLevel < op.args.size then
+                let prevFields := extractFieldListM dialects op.args[listLevel]
+                match extractFieldInfoM dialects op.args[fieldLevel] with
+                | some field => prevFields.push field
+                | none => prevFields
+              else #[]
+            else #[]
+          else #[]
+        | none =>
+          -- Could be a direct field operation
+          match extractFieldInfoM dialects arg with
+          | some field => #[field]
+          | none => #[]
   | _ => #[]
 
 /--
@@ -2016,21 +1981,43 @@ This is the annotation-based alternative to `extractConstructorInfo`.
 partial def extractConstructorInfoM (dialects : DialectMap) (arg : Arg) : Array ConstructorInfo :=
   match arg with
   | .op op =>
-    -- Check if this is a constructor list operation (atom or push)
-    if op.name.name == "constructorListAtom" && op.args.size == 1 then
-      match extractSingleConstructorM dialects op.args[0]! with
-      | some constr => #[constr]
-      | none => #[]
-    else if op.name.name == "constructorListPush" && op.args.size == 2 then
-      let prevConstrs := extractConstructorInfoM dialects op.args[0]!
-      match extractSingleConstructorM dialects op.args[1]! with
-      | some constr => prevConstrs.push constr
-      | none => prevConstrs
-    -- Could be a direct constructor operation
-    else
-      match extractSingleConstructorM dialects arg with
-      | some constr => #[constr]
-      | none => #[]
+    match lookupOpDecl dialects op.name with
+    | none => #[]
+    | some opDecl =>
+      -- Check for @[constructorListAtom(c)] annotation
+      match getConstructorListAtomAnnotation opDecl with
+      | some constrIdx =>
+        let argCount := opDecl.argDecls.size
+        if constrIdx < argCount then
+          let constrLevel := argCount - constrIdx - 1
+          if h : constrLevel < op.args.size then
+            match extractSingleConstructorM dialects op.args[constrLevel] with
+            | some constr => #[constr]
+            | none => #[]
+          else #[]
+        else #[]
+      | none =>
+        -- Check for @[constructorListPush(list, c)] annotation
+        match getConstructorListPushAnnotation opDecl with
+        | some (listIdx, constrIdx) =>
+          let argCount := opDecl.argDecls.size
+          if listIdx < argCount && constrIdx < argCount then
+            let listLevel := argCount - listIdx - 1
+            let constrLevel := argCount - constrIdx - 1
+            if h1 : listLevel < op.args.size then
+              if h2 : constrLevel < op.args.size then
+                let prevConstrs := extractConstructorInfoM dialects op.args[listLevel]
+                match extractSingleConstructorM dialects op.args[constrLevel] with
+                | some constr => prevConstrs.push constr
+                | none => prevConstrs
+              else #[]
+            else #[]
+          else #[]
+        | none =>
+          -- Could be a direct constructor operation
+          match extractSingleConstructorM dialects arg with
+          | some constr => #[constr]
+          | none => #[]
   | _ => #[]
 
 /--

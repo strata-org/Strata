@@ -307,8 +307,12 @@ category FieldList;
 @[declare(name, tp), field(name, tp)]
 op field_mk (name : Ident, tp : Type) : Field => name ":" tp;
 
+// @[fieldListAtom(f)] marks this as a single-field list
+@[fieldListAtom(f)]
 op fieldListAtom (f : Field) : FieldList => f;
-@[scope(fl)]
+
+// @[fieldListPush(fl, f)] marks this as a list-push operation
+@[scope(fl), fieldListPush(fl, f)]
 op fieldListPush (fl : FieldList, @[scope(fl)] f : Field) : FieldList => fl "," f;
 
 // Constructor syntax for datatypes
@@ -321,7 +325,12 @@ category ConstructorList;
 op constructor_mk (name : Ident, fields : Option FieldList) : Constructor =>
   name "(" fields ")";
 
+// @[constructorListAtom(c)] marks this as a single-constructor list
+@[constructorListAtom(c)]
 op constructorListAtom (c : Constructor) : ConstructorList => c;
+
+// @[constructorListPush(cl, c)] marks this as a list-push operation
+@[constructorListPush(cl, c)]
 op constructorListPush (cl : ConstructorList, c : Constructor) : ConstructorList =>
   cl "," c;
 

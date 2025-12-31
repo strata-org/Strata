@@ -164,6 +164,18 @@ def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
   -- Used by extractConstructorInfo to identify field operations generically
   -- Arguments: name index (which arg contains field name), type index (which arg contains field type)
   declareMetadata { name := "field", args := #[.mk "name" .ident, .mk "type" .ident] }
+  -- Metadata for marking an operation as a field list atom (single field)
+  -- Arguments: field index (which arg contains the field)
+  declareMetadata { name := "fieldListAtom", args := #[.mk "field" .ident] }
+  -- Metadata for marking an operation as a field list push (list followed by field)
+  -- Arguments: list index (which arg contains the list), field index (which arg contains the field)
+  declareMetadata { name := "fieldListPush", args := #[.mk "list" .ident, .mk "field" .ident] }
+  -- Metadata for marking an operation as a constructor list atom (single constructor)
+  -- Arguments: constructor index (which arg contains the constructor)
+  declareMetadata { name := "constructorListAtom", args := #[.mk "constructor" .ident] }
+  -- Metadata for marking an operation as a constructor list push (list followed by constructor)
+  -- Arguments: list index (which arg contains the list), constructor index (which arg contains the constructor)
+  declareMetadata { name := "constructorListPush", args := #[.mk "list" .ident, .mk "constructor" .ident] }
   declareMetadata { name := "declareType", args := #[.mk "name" .ident, .mk "args" (.opt .ident)] }
   declareMetadata { name := "aliasType",   args := #[.mk "name" .ident, .mk "args" (.opt .ident), .mk "def" .ident] }
   declareMetadata { name := "declare",     args := #[.mk "name" .ident, .mk "type" .ident] }
