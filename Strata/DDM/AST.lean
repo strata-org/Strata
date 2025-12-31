@@ -8,6 +8,7 @@ module
 public import Std.Data.HashMap.Basic
 public import Strata.DDM.Util.ByteArray
 public import Strata.DDM.Util.Decimal
+public import Strata.DDM.AST.Datatype
 
 import Std.Data.HashMap
 import Strata.DDM.Util.Array
@@ -309,63 +310,18 @@ instance {α} [BEq α] : BEq (ExprF α) where beq := private ExprF.beq
 instance {α} [BEq α] : BEq (OperationF α) where beq := private OperationF.beq
 instance {α} [BEq α] : BEq (ArgF α) where beq := private ArgF.beq
 
-/--
-Iteration scope for function template expansion.
-Determines how many functions are generated from a template.
--/
-inductive FunctionIterScope where
-  /-- One function per constructor -/
-  | perConstructor
-  /-- One function per field (across all constructors) -/
-  | perField
-  /-- One function per (constructor, field) pair -/
-  | perConstructorField
-  deriving BEq, Repr, DecidableEq, Inhabited
+/-! ## Datatype Template Types
 
-/--
-Type reference in a function specification.
-Used to specify parameter and return types in function templates.
--/
-inductive TypeRef where
-  /-- The datatype being declared -/
-  | datatype
-  /-- The type of the current field (only valid in perField/perConstructorField scope) -/
-  | fieldType
-  /-- A built-in type like "bool", "int" -/
-  | builtin (name : String)
-  deriving BEq, Repr, DecidableEq, Inhabited
+The following types are imported from `Strata.DDM.AST.Datatype`:
+- `FunctionIterScope` - Iteration scope for function template expansion
+- `TypeRef` - Type reference in function specifications
+- `NamePatternPart` - Parts of a name pattern
+- `FunctionTemplate` - Function template specification
 
-/--
-A part of a name pattern - either a literal string or a placeholder.
-Used to construct function names from datatype/constructor/field information.
+The following functions are also imported:
+- `expandNamePattern` - Expand a name pattern with concrete values
+- `validateNamePattern` - Validate a name pattern for scope compatibility
 -/
-inductive NamePatternPart where
-  /-- A literal string to include verbatim in the generated name -/
-  | literal (s : String)
-  /-- Placeholder for the datatype name -/
-  | datatype
-  /-- Placeholder for the constructor name (only valid in perConstructor/perConstructorField) -/
-  | constructor
-  /-- Placeholder for the field name (only valid in perField/perConstructorField) -/
-  | field
-  /-- Placeholder for the field index (only valid in perField/perConstructorField) -/
-  | fieldIndex
-  deriving BEq, Repr, DecidableEq, Inhabited
-
-/--
-A function template specification.
-Describes how to generate additional functions based on datatype structure.
--/
-structure FunctionTemplate where
-  /-- Iteration scope -/
-  scope : FunctionIterScope
-  /-- Name pattern as structured parts (type-safe, no string parsing needed) -/
-  namePattern : Array NamePatternPart
-  /-- Parameter types (list of type references) -/
-  paramTypes : Array TypeRef
-  /-- Return type reference -/
-  returnType : TypeRef
-  deriving BEq, Repr, DecidableEq, Inhabited
 
 inductive MetadataArg where
 | bool (e : Bool)
@@ -744,27 +700,11 @@ structure TypeBindingSpec (argDecls : ArgDecls) where
   defIndex : Option (DebruijnIndex argDecls.size)
 deriving Repr
 
-/--
-Expand a name pattern with concrete values.
-Each part is expanded based on its type:
-- `literal s` → the literal string s
-- `datatype` → the datatype name
-- `constructor` → the constructor name (or empty string if not provided)
-- `field` → the field name (or empty string if not provided)
-- `fieldIndex` → the field index as a string (or empty string if not provided)
+/-! ## Datatype Type Building Functions
+
+These functions depend on `TypeExpr` and other AST types, so they remain in this file
+rather than in `AST/Datatype.lean`.
 -/
-def expandNamePattern (pattern : Array NamePatternPart)
-    (datatypeName : String)
-    (constructorName : Option String := none)
-    (fieldName : Option String := none)
-    (fieldIdx : Option Nat := none) : String :=
-  pattern.foldl (init := "") fun acc part =>
-    acc ++ match part with
-    | .literal s => s
-    | .datatype => datatypeName
-    | .constructor => constructorName.getD ""
-    | .field => fieldName.getD ""
-    | .fieldIndex => fieldIdx.map toString |>.getD ""
 
 /--
 Resolve a type reference to a concrete TypeExpr.
@@ -783,31 +723,6 @@ def resolveTypeRef (ref : TypeRef)
     | some ft => .ok ft
     | none => .error "TypeRef.fieldType is only valid in perField or perConstructorField scope"
   | .builtin name => .ok <| TypeExprF.ident default ⟨dialectName, name⟩ #[]
-
-/--
-Validate a name pattern for scope compatibility.
-Returns `none` if valid, or `some errorMessage` if invalid.
-- `perConstructor` scope cannot use `.field` or `.fieldIndex` placeholders
-- `perField` scope cannot use `.constructor` placeholder
-- `perConstructorField` scope can use all placeholders
--/
-def validateNamePattern (pattern : Array NamePatternPart) (scope : FunctionIterScope)
-    : Option String :=
-  match scope with
-  | .perConstructor =>
-    if pattern.any (· == .field) then
-      some "Placeholder 'field' is not available in perConstructor scope"
-    else if pattern.any (· == .fieldIndex) then
-      some "Placeholder 'fieldIndex' is not available in perConstructor scope"
-    else
-      none
-  | .perField =>
-    if pattern.any (· == .constructor) then
-      some "Placeholder 'constructor' is not available in perField scope"
-    else
-      none
-  | .perConstructorField =>
-    none
 
 /--
 Information about a single constructor in a datatype.
