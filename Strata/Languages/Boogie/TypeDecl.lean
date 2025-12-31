@@ -86,6 +86,7 @@ def TypeSynonym.toRHSLTy (t : TypeSynonym) : LTy :=
 inductive TypeDecl where
   | con : TypeConstructor → TypeDecl
   | syn : TypeSynonym → TypeDecl
+  | data : LDatatype Visibility → TypeDecl
   deriving Repr
 
 instance : ToFormat TypeDecl where
@@ -93,10 +94,12 @@ instance : ToFormat TypeDecl where
     match d with
     | .con tc => f!"{tc}"
     | .syn ts => f!"{ts}"
+    | .data td => f!"{td}"
 
 def TypeDecl.name (d : TypeDecl) : Expression.Ident :=
   match d with
   | .con tc => tc.name
   | .syn ts => ts.name
+  | .data td => td.name
 
 ---------------------------------------------------------------------

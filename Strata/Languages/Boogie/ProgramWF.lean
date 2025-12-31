@@ -280,6 +280,12 @@ theorem addKnownTypeWithErrorIdents {C: Expression.TyContext}: C.addKnownTypeWit
   case error => intros _; contradiction
   case ok k'=> simp[Except.bind]; intros T'; subst T'; rfl
 
+theorem addDatatypeIdents {C: Expression.TyContext}: C.addDatatype d = .ok C' → C.idents = C'.idents := by
+  unfold LContext.addDatatype;
+  simp only[bind, Except.bind, pure, Except.pure]; intros Hok
+  repeat (split at Hok <;> try contradiction)
+  cases Hok <;> rfl
+
 /--
 If a program typechecks successfully, then every identifier in the list of
 program decls is not in the original `LContext`
@@ -306,10 +312,11 @@ theorem Program.typeCheckFunctionDisjoint : Program.typeCheck.go p C T decls acc
     . rename_i x v heq
       have id_eq := addKnownTypeWithErrorIdents heq; simp at id_eq; grind
     . grind
+    . rename_i Heq; have :=addDatatypeIdents Heq; grind
     . grind
     . grind
     . grind
-    . simp[LContext.addFactoryFunction] at a_notin; grind
+    . simp only [LContext.addFactoryFunction] at a_notin; grind
 
 /--
 If a program typechecks succesfully, all identifiers defined in the program are
@@ -342,10 +349,11 @@ theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decls acc = 
           have := addKnownTypeWithErrorIdents heq; symm; exact this
         grind
       . grind
+      . rename_i Heq; have :=addDatatypeIdents Heq; grind
       . grind
       . grind
       . grind
-      . simp[LContext.addFactoryFunction] at x_notin; grind
+      . simp only[LContext.addFactoryFunction] at x_notin; grind
 
 /--
 The main lemma stating that a program 'p' that passes type checking is well formed

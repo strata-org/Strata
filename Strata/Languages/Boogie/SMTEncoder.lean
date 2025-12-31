@@ -10,6 +10,7 @@ import Strata.Languages.Boogie.Boogie
 import Strata.DL.SMT.SMT
 import Init.Data.String.Extra
 import Strata.DDM.Util.DecimalRat
+import Strata.DDM.Util.Graph.Tarjan
 
 ---------------------------------------------------------------------
 
@@ -34,6 +35,8 @@ structure SMT.Context where
   ifs : Array SMT.IF := #[]
   axms : Array Term := #[]
   tySubst: Map String TermType := []
+  datatypes : Array (LDatatype BoogieLParams.IDMeta) := #[]
+  datatypeFuns : Map String (Op.DatatypeFuncs × LConstr BoogieLParams.IDMeta) := Map.empty
 deriving Repr, DecidableEq, Inhabited
 
 def SMT.Context.default : SMT.Context := {}
@@ -61,6 +64,119 @@ def SMT.Context.addSubst (ctx : SMT.Context) (newSubst: Map String TermType) : S
 def SMT.Context.removeSubst (ctx : SMT.Context) (newSubst: Map String TermType) : SMT.Context :=
   { ctx with tySubst := newSubst.foldl (fun acc_m p => acc_m.erase p.fst) ctx.tySubst }
 
+def SMT.Context.hasDatatype (ctx : SMT.Context) (name : String) : Bool :=
+  (ctx.datatypes.map LDatatype.name).contains name
+
+def SMT.Context.addDatatype (ctx : SMT.Context) (d : LDatatype BoogieLParams.IDMeta) : SMT.Context :=
+  if ctx.hasDatatype d.name then ctx
+  else
+    let (c, i, s) := d.genFunctionMaps
+    let m := Map.union ctx.datatypeFuns (c.fmap (fun (_, x) => (.constructor, x)))
+    let m := Map.union m (i.fmap (fun (_, x) => (.tester, x)))
+    let m := Map.union m (s.fmap (fun (_, x) => (.selector, x)))
+    { ctx with datatypes := ctx.datatypes.push d, datatypeFuns := m }
+
+/--
+Helper function to convert LMonoTy to SMT string representation.
+For now, handles only monomorphic types and type variables without substitution.
+-/
+private def lMonoTyToSMTString (ty : LMonoTy) : String :=
+  match ty with
+  | .bitvec n => s!"(_ BitVec {n})"
+  | .tcons "bool" [] => "Bool"
+  | .tcons "int" [] => "Int"
+  | .tcons "real" [] => "Real"
+  | .tcons "string" [] => "String"
+  | .tcons "regex" [] => "RegLan"
+  | .tcons name args =>
+    if args.isEmpty then name
+    else s!"({name} {String.intercalate " " (args.map lMonoTyToSMTString)})"
+  | .ftvar tv => tv
+
+/--
+Build a dependency graph for datatypes.
+Returns a mapping from datatype names to their dependencies.
+-/
+private def buildDatatypeDependencyGraph (datatypes : Array (LDatatype BoogieLParams.IDMeta)) :
+  Map String (Array String) :=
+  let depMap := datatypes.foldl (fun acc d =>
+    let deps := d.constrs.foldl (fun deps c =>
+      c.args.foldl (fun deps (_, fieldTy) =>
+        match fieldTy with
+        | .tcons typeName _ =>
+          -- Only include dependencies on other datatypes in our set
+          if datatypes.any (fun dt => dt.name == typeName) then
+            deps.push typeName
+          else deps
+        | _ => deps
+      ) deps
+    ) #[]
+    acc.insert d.name deps
+  ) Map.empty
+  depMap
+
+/--
+Convert datatype dependency map to OutGraph for Tarjan's algorithm.
+Returns the graph and a mapping from node indices to datatype names.
+-/
+private def dependencyMapToGraph (depMap : Map String (Array String)) :
+  (n : Nat) × Strata.OutGraph n × Array String :=
+  let names := depMap.keys.toArray
+  let n := names.size
+  let nameToIndex : Map String Nat :=
+    names.mapIdx (fun i name => (name, i)) |>.foldl (fun acc (name, i) => acc.insert name i) Map.empty
+
+  let edges := depMap.foldl (fun edges (fromName, deps) =>
+    match nameToIndex.find? fromName with
+    | none => edges
+    | some fromIdx =>
+      deps.foldl (fun edges depName =>
+        match nameToIndex.find? depName with
+        | none => edges
+        | some toIdx => edges.push (fromIdx, toIdx)
+      ) edges
+  ) #[]
+
+  let graph := Strata.OutGraph.ofEdges! n edges.toList
+  ⟨n, graph, names⟩
+
+/--
+Emit datatype declarations to the solver in topologically sorted order.
+For each datatype in ctx.datatypes, generates a declare-datatype command
+with constructors and selectors following the TypeFactory naming convention.
+Dependencies are emitted before the datatypes that depend on them, and
+mutually recursive datatypes are not (yet) supported.
+-/
+def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverM Unit := do
+  if ctx.datatypes.isEmpty then return
+
+  -- Build dependency graph and SCCs
+  let depMap := buildDatatypeDependencyGraph ctx.datatypes
+  let ⟨_, graph, names⟩ := dependencyMapToGraph depMap
+  let sccs := Strata.OutGraph.tarjan graph
+
+  -- Emit datatypes in topological order (reverse of SCC order)
+  for scc in sccs.reverse do
+    if scc.size > 1 then
+      let sccNames := scc.map (fun idx => names[idx]!)
+      throw (IO.userError s!"Mutually recursive datatypes not supported: {sccNames.toList}")
+    else
+      for nodeIdx in scc do
+        let datatypeName := names[nodeIdx]!
+        -- Find the datatype by name
+        match ctx.datatypes.find? (fun d => d.name == datatypeName) with
+        | none => throw (IO.userError s!"Datatype {datatypeName} not found in context")
+        | some d =>
+          let constructors ← d.constrs.mapM fun c => do
+            let fieldPairs := c.args.map fun (name, fieldTy) => (name.name, lMonoTyToSMTString fieldTy)
+            let fieldStrs := fieldPairs.map fun (name, ty) => s!"({name} {ty})"
+            let fieldsStr := String.intercalate " " fieldStrs
+            if c.args.isEmpty then
+              pure s!"({c.name.name})"
+            else
+              pure s!"({c.name.name} {fieldsStr})"
+          Strata.SMT.Solver.declareDatatype d.name d.typeArgs constructors
+
 abbrev BoundVars := List (String × TermType)
 
 ---------------------------------------------------------------------
@@ -84,8 +200,32 @@ def extractTypeInstantiations (typeVars : List String) (patterns : List LMonoTy)
     Map.empty
 
 
+/-
+Add a type to the context. Sorts are easy, but datatypes are tricky:
+we must also ensure we add the types of all arguments in the constructors
+to the context, recursively. This is very tricky to prove terminating, so
+we leave as `partial` for now.
+-/
+partial def SMT.Context.addType (E: Env) (id: String) (args: List LMonoTy) (ctx: SMT.Context) :
+  SMT.Context :=
+  match E.datatypes.getType id with
+  | some d =>
+    if ctx.hasDatatype id then ctx else
+    let ctx := ctx.addDatatype d
+    d.constrs.foldl (fun (ctx : SMT.Context) c =>
+      c.args.foldl (fun (ctx: SMT.Context) (_, t) =>
+        match t with
+        | .bool | .int | .real | .string | .tcons "regex" [] => ctx
+        | .tcons id1 args1 => SMT.Context.addType E id1 args1 ctx
+        | _ => ctx
+        ) ctx
+      ) ctx
+  | none =>
+    ctx.addSort { name := id, arity := args.length }
+
+
 mutual
-def LMonoTy.toSMTType (ty : LMonoTy) (ctx : SMT.Context) :
+def LMonoTy.toSMTType (E: Env) (ty : LMonoTy) (ctx : SMT.Context) :
   Except Format (TermType × SMT.Context) := do
   match ty with
   | .bitvec n => .ok (.bitvec n, ctx)
@@ -95,21 +235,21 @@ def LMonoTy.toSMTType (ty : LMonoTy) (ctx : SMT.Context) :
   | .tcons "string"  [] => .ok (.string, ctx)
   | .tcons "regex" [] => .ok (.regex, ctx)
   | .tcons id args =>
-    let ctx := ctx.addSort { name := id, arity := args.length }
-    let (args', ctx) ← LMonoTys.toSMTType args ctx
+    let ctx := SMT.Context.addType E id args ctx
+    let (args', ctx) ← LMonoTys.toSMTType E args ctx
     .ok ((.constr id args'), ctx)
   | .ftvar tyv => match ctx.tySubst.find? tyv with
                     | .some termTy =>
                       .ok (termTy, ctx)
                     | _ => .error f!"Unimplemented encoding for type var {tyv}"
 
-def LMonoTys.toSMTType (args : LMonoTys) (ctx : SMT.Context) :
+def LMonoTys.toSMTType (E: Env) (args : LMonoTys) (ctx : SMT.Context) :
     Except Format ((List TermType) × SMT.Context) := do
   match args with
   | [] => .ok ([], ctx)
   | t :: trest =>
-    let (t', ctx) ← LMonoTy.toSMTType t ctx
-    let (trest', ctx) ← LMonoTys.toSMTType trest ctx
+    let (t', ctx) ← LMonoTy.toSMTType E t ctx
+    let (trest', ctx) ← LMonoTys.toSMTType E trest ctx
     .ok ((t' :: trest'), ctx)
 end
 
@@ -149,7 +289,7 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr BoogieLParams.mono)
     match ty with
     | none => .error f!"Cannot encode unannotated free variable {e}"
     | some ty =>
-      let (tty, ctx) ← LMonoTy.toSMTType ty ctx
+      let (tty, ctx) ← LMonoTy.toSMTType E ty ctx
       let uf := { id := (toString $ format f), args := [], out := tty }
       .ok (.app (.uf uf) [] tty, ctx.addUF uf)
 
@@ -158,7 +298,7 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr BoogieLParams.mono)
   | .quant _ _ .none _ _ => .error f!"Cannot encode untyped quantifier {e}"
   | .quant _ qk (.some ty) tr e =>
     let x := s!"$__bv{bvs.length}"
-    let (ety, ctx) ← LMonoTy.toSMTType ty ctx
+    let (ety, ctx) ← LMonoTy.toSMTType E ty ctx
     let (trt, ctx) ← appToSMTTerm E ((x, ety) :: bvs) tr [] ctx
     let (et, ctx) ← toSMTTerm E ((x, ety) :: bvs) e ctx
     .ok (Factory.quant (convertQuantifierKind qk) x ety trt et, ctx)
@@ -207,8 +347,8 @@ partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr BoogieLParams.mo
       let (e1t, ctx) ← toSMTTerm E bvs e1 ctx
       .ok (op (e1t :: acc) retty, ctx)
   | .app _ (.fvar _ fn (.some (.arrow intty outty))) e1 => do
-    let (smt_outty, ctx) ← LMonoTy.toSMTType outty ctx
-    let (smt_intty, ctx) ← LMonoTy.toSMTType intty ctx
+    let (smt_outty, ctx) ← LMonoTy.toSMTType E outty ctx
+    let (smt_intty, ctx) ← LMonoTy.toSMTType E intty ctx
     let argvars := [TermVar.mk (toString $ format intty) smt_intty]
     let (e1t, ctx) ← toSMTTerm E bvs e1 ctx
     let uf := UF.mk (id := (toString $ format fn)) (args := argvars) (out := smt_outty)
@@ -220,11 +360,35 @@ partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr BoogieLParams.mo
 
 partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Context) :
   Except Format ((List Term → TermType → Term) × TermType × SMT.Context) :=
-  open LTy.Syntax in
-  match E.factory.getFactoryLFunc fn.name with
-  | none => .error f!"Cannot find function {fn} in Boogie's Factory!"
-  | some func =>
-    match func.name.name with
+  open LTy.Syntax in do
+  -- Encode the type to ensure any datatypes are registered in the context
+  let tys := LMonoTy.destructArrow fnty
+  let outty := tys.getLast (by exact @LMonoTy.destructArrow_non_empty fnty)
+  let intys := tys.take (tys.length - 1)
+  -- Need to encode arg types also (e.g. for testers)
+  let ctx := match LMonoTys.toSMTType E intys ctx with
+    | .ok (_, ctx') => ctx'
+    | .error _ => ctx
+  let (smt_outty, ctx) ← LMonoTy.toSMTType E outty ctx
+
+  match ctx.datatypeFuns.find? fn.name with
+  | some (kind, c) =>
+    let adtApp := fun (args : List Term) (retty : TermType) =>
+        /-
+        Note: testers use constructor, translated in `Op.mkName` to is-foo
+        Selectors use full function name, directly translated to function app
+        -/
+        let name := match kind with
+          | .selector => fn.name
+          | _ => c.name.name
+        Term.app (.datatype_op kind name) args retty
+    .ok (adtApp, smt_outty, ctx)
+  | none =>
+    -- Not a constructor, tester, or destructor
+    match E.factory.getFactoryLFunc fn.name with
+    | none => .error f!"Cannot find function {fn} in Boogie's Factory!"
+    | some func =>
+      match func.name.name with
     | "Bool.And"     => .ok (.app Op.and,        .bool,   ctx)
     | "Bool.Or"      => .ok (.app Op.or,         .bool,   ctx)
     | "Bool.Not"     => .ok (.app Op.not,        .bool,   ctx)
@@ -401,11 +565,11 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
       let formalStrs := formals.map (toString ∘ format)
       let tys := LMonoTy.destructArrow fnty
       let intys := tys.take (tys.length - 1)
-      let (smt_intys, ctx) ← LMonoTys.toSMTType intys ctx
+      let (smt_intys, ctx) ← LMonoTys.toSMTType E intys ctx
       let bvs := formalStrs.zip smt_intys
       let argvars := bvs.map (fun a => TermVar.mk (toString $ format a.fst) a.snd)
       let outty := tys.getLast (by exact @LMonoTy.destructArrow_non_empty fnty)
-      let (smt_outty, ctx) ← LMonoTy.toSMTType outty ctx
+      let (smt_outty, ctx) ← LMonoTy.toSMTType E outty ctx
       let uf := ({id := (toString $ format fn), args := argvars, out := smt_outty})
       let (ctx, isNew) ←
         match func.body with
@@ -427,7 +591,7 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
         -- Extract type instantiations by matching patterns against concrete types
         let type_instantiations: Map String LMonoTy := extractTypeInstantiations func.typeArgs allPatterns (intys ++ [outty])
         let smt_ty_inst ← type_instantiations.foldlM (fun acc_map (tyVar, monoTy) => do
-          let (smtTy, _) ← LMonoTy.toSMTType monoTy ctx
+          let (smtTy, _) ← LMonoTy.toSMTType E monoTy ctx
           .ok (acc_map.insert tyVar smtTy)
         ) Map.empty
         -- Add all axioms for this function to the context, with types binding for the type variables in the expr
@@ -535,7 +699,7 @@ info: "; f\n(declare-fun f0 (Int Int) Int)\n; x\n(declare-const f1 Int)\n(define
 #eval toSMTTermString
    (.quant () .all (.some .int) (.bvar () 0) (.quant () .all (.some .int) (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1))
    (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
-   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [])
+   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] [])
    (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with
@@ -553,7 +717,7 @@ info: "; f\n(declare-fun f0 (Int Int) Int)\n; x\n(declare-const f1 Int)\n(define
 #eval toSMTTermString
    (.quant () .all (.some .int) (.bvar () 0) (.quant () .all (.some .int) (.bvar () 0)
    (.eq () (.app () (.app () (.op () "f" (.some (.arrow .int (.arrow .int .int)))) (.bvar () 0)) (.bvar () 1)) (.fvar () "x" (.some .int)))))
-   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [])
+   (ctx := SMT.Context.mk #[] #[UF.mk "f" ((TermVar.mk "m" TermType.int) ::(TermVar.mk "n" TermType.int) :: []) TermType.int] #[] #[] [] #[] [])
    (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with
