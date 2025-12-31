@@ -80,7 +80,7 @@ Proof Obligation:
 ---
 info: ok: [(type Boogie.Boundedness.Infinite Foo [_, _]
   type FooAlias a := (Foo int bool)
-  func fooAliasVal : ∀[α]. () → (FooAlias α);
+  func fooAliasVal :  () → (Foo int bool);
   func fooVal :  () → (Foo int bool);
   (procedure P :  () → ())
   modifies: []
@@ -275,7 +275,7 @@ info: ok: [(type Boogie.Boundedness.Infinite Foo [_, _]
   func Bv64.SLe :  ((x : bv64) (y : bv64)) → bool;
   func Bv64.SGt :  ((x : bv64) (y : bv64)) → bool;
   func Bv64.SGe :  ((x : bv64) (y : bv64)) → bool;
-  func fooAliasVal : ∀[α]. () → (FooAlias α);
+  func fooAliasVal :  () → (Foo int bool);
   func fooVal :  () → (Foo int bool);
   ⏎
   ⏎
