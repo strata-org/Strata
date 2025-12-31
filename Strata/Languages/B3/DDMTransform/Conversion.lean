@@ -10,7 +10,7 @@ import Strata.Languages.B3.DDMTransform.DefinitionAST
 /-!
 # B3 ↔ DDM Bidirectional Conversion
 
-This module provides bidirectional conversion between B3 AST types and DDM AST types.
+This module provides bidirectional conversion between B3 AST types and B3 CST types.
 
 ## B3AST → B3CST Conversion
 Converts abstract syntax (de Bruijn indices) to concrete syntax (named identifiers).

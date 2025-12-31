@@ -8,6 +8,13 @@ import Strata.Languages.B3.DDMTransform.ParseCST
 import Strata.Languages.B3.DDMTransform.DefinitionAST
 import Strata.Languages.B3.DDMTransform.Conversion
 
+/-!
+# B3 DDM Formatting Test Utilities
+
+Common utilities and helper functions for B3 formatting tests.
+Provides string cleanup functions and shared formatting infrastructure used across expression, statement, declaration, and program formatting tests.
+-/
+
 namespace B3
 
 open Std (Format)

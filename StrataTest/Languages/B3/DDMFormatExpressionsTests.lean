@@ -7,6 +7,21 @@
 import StrataTest.Languages.B3.DDMFormatTests
 import Strata.Languages.B3.DDMTransform.Conversion
 
+/-!
+# B3 Expression Formatting Tests
+
+Tests for round-trip conversion and formatting of B3 expressions.
+Verifies that DDM AST → B3 AST → B3 CST → formatted output preserves structure and catches conversion errors.
+
+## Note on Test Syntax
+
+Expressions are wrapped in `check` statements (e.g., `check 5 + 3`) because:
+- our encoding of the B3 grammar doesn't allow bare expressions at the top level.
+- Commands can only contain statements and declarations, not expressions
+- The test extracts only the expression from the `check` statement for round-trip testing
+- The `check` wrapper itself is not part of the tested AST - only the expression `5 + 3` is tested
+-/
+
 namespace B3
 
 open Std (Format)

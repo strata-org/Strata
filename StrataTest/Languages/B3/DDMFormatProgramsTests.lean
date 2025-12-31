@@ -7,6 +7,13 @@
 import StrataTest.Languages.B3.DDMFormatDeclarationsTests
 import Strata.Languages.B3.DDMTransform.Conversion
 
+/-!
+# B3 Program Formatting Tests
+
+Tests for round-trip conversion and formatting of complete B3 programs.
+Verifies that DDM AST → B3 AST → B3 CST → formatted output preserves structure and catches conversion errors.
+-/
+
 namespace B3
 
 open Std (Format)
