@@ -3,12 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public import Strata.DDM.AST
+import Strata.DDM.BuiltinDialects.BuiltinM
 import Strata.DDM.BuiltinDialects.Init
 
-namespace Strata
+open Strata.Elab
 
-open Elab
+public section
+namespace Strata
 
 def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
   let Ident : ArgDeclKind := .cat <| .atom .none q`Init.Ident
@@ -160,3 +164,6 @@ def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
   -- Used for recursive datatype definitions where the datatype name must be visible
   -- when parsing constructor field types (e.g., `tail: List` in `Cons(head: int, tail: List)`)
   declareMetadata { name := "scopeDatatype", args := #[.mk "name" .ident, .mk "typeParams" .ident] }
+
+end Strata
+end

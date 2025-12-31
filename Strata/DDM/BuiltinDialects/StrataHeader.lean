@@ -4,13 +4,19 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+module
+
+public import Strata.DDM.AST
+import Strata.DDM.BuiltinDialects.BuiltinM
 import Strata.DDM.BuiltinDialects.Init
 
+open Strata.Elab
+
+public section
 namespace Strata
 
-open Elab
 
-def headerDialect : Dialect := BuiltinM.create! "StrataHeader" #[initDialect] do
+def headerDialect : Dialect := Elab.BuiltinM.create! "StrataHeader" #[initDialect] do
   let Ident : ArgDeclKind := .cat <| .atom .none q`Init.Ident
   let Command := q`Init.Command
 
@@ -30,3 +36,5 @@ def headerDialect : Dialect := BuiltinM.create! "StrataHeader" #[initDialect] do
      category := Command,
      syntaxDef := .ofList [.str "program", .ident 0 0, .str ";"],
   }
+end Strata
+end

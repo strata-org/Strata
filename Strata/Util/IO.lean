@@ -3,7 +3,9 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public section
 namespace Strata.Util
 
 /-- Read from stdin if path is "-", otherwise read from file -/
@@ -27,3 +29,4 @@ def displayName (path : String) : String :=
   if path == "-" then "<stdin>" else path
 
 end Strata.Util
+end
