@@ -203,9 +203,14 @@ def declToSMT (ctx : ConversionContext) : B3AST.Decl M → List String
       | some term => [s!"(assert {formatTermDirect term})"]
       | none => []
   | .checkDecl _ expr =>
-      -- Generate (assert expr) - same as axiom
+      -- Generate (push), (assert (not expr)), (check-sat), (pop)
       match expressionToSMT ctx expr with
-      | some term => [s!"(assert {formatTermDirect term})"]
+      | some term =>
+          [ "(push 1)"
+          , s!"(assert (not {formatTermDirect term}))"
+          , "(check-sat)"
+          , "(pop 1)"
+          ]
       | none => []
   | _ => []
 
@@ -248,7 +253,10 @@ def testB3ToSMT (prog : Program) : IO Unit := do
 /--
 info: (declare-fun getValue () Int)
 (assert (= (+ (getValue) 1) 2))
-(assert (= (ite (> (getValue) 0) (getValue) (- (getValue))) 1))
+(push 1)
+(assert (not (= (ite (> (getValue) 0) (getValue) (- (getValue))) 1)))
+(check-sat)
+(pop 1)
 -/
 #guard_msgs in
 #eval testB3ToSMT $ #strata program B3CST;
