@@ -44,7 +44,7 @@ subset of the `typeArgs` of the corresponding datatype.
 structure LConstr (IDMeta : Type) where
   name : Identifier IDMeta
   args : List (Identifier IDMeta × LMonoTy)
-  testerName : String
+  testerName : String := "is" ++ name.name
 deriving Repr, DecidableEq
 
 instance: ToFormat (LConstr IDMeta) where

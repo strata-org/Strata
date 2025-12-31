@@ -22,7 +22,9 @@ open Imperative
 
 /-! ## Test Datatypes -/
 
-/-- Simple Option datatype: Option a = None | Some a -/
+/-- Simple Option datatype: Option a = None | Some(OptionVal: a)
+    Testers: isNone, isSome
+    Destructors: OptionVal -/
 def optionDatatype : LDatatype Visibility :=
   { name := "Option"
     typeArgs := ["a"]
@@ -32,7 +34,9 @@ def optionDatatype : LDatatype Visibility :=
     ]
     constrs_ne := by decide }
 
-/-- Recursive List datatype: List a = Nil | Cons a (List a) -/
+/-- Recursive List datatype: List a = Nil | Cons(hd: a, tl: List a)
+    Testers: isNil, isCons
+    Destructors: hd, tl -/
 def listDatatype : LDatatype Visibility :=
   { name := "List"
     typeArgs := ["a"]
