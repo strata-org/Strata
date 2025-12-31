@@ -301,7 +301,10 @@ op command_distinct (label : Option Label, exprs : CommaSepBy Expr) : Command =>
 category Field;
 category FieldList;
 
-@[declare(name, tp)]
+// @[field(name, tp)] marks this operation as a field definition
+// @[declare(name, tp)] adds the field to the binding context
+// Used by extractConstructorInfo to identify field operations generically
+@[declare(name, tp), field(name, tp)]
 op field_mk (name : Ident, tp : Type) : Field => name ":" tp;
 
 op fieldListAtom (f : Field) : FieldList => f;
@@ -312,6 +315,9 @@ op fieldListPush (fl : FieldList, @[scope(fl)] f : Field) : FieldList => fl "," 
 category Constructor;
 category ConstructorList;
 
+// @[constructor(name, fields)] marks this operation as a constructor definition
+// Used by extractConstructorInfo to identify constructor operations generically
+@[constructor(name, fields)]
 op constructor_mk (name : Ident, fields : Option FieldList) : Constructor =>
   name "(" fields ")";
 

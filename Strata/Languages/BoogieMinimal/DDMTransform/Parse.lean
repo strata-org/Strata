@@ -68,7 +68,9 @@ fn sub_expr (tp : Type, a : tp, b : tp) : tp => @[prec(25), leftassoc] a "-" b;
 category Field;
 category FieldList;
 
-@[declare(name, tp)]
+// @[field(name, tp)] marks this operation as a field definition
+// @[declare(name, tp)] adds the field to the binding context
+@[declare(name, tp), field(name, tp)]
 op field_mk (name : Ident, tp : Type) : Field => name ":" tp;
 
 op fieldListAtom (f : Field) : FieldList => f;
@@ -79,6 +81,8 @@ op fieldListPush (fl : FieldList, @[scope(fl)] f : Field) : FieldList => fl "," 
 category Constructor;
 category ConstructorList;
 
+// @[constructor(name, fields)] marks this operation as a constructor definition
+@[constructor(name, fields)]
 op constructor_mk (name : Ident, fields : Option FieldList) : Constructor =>
   name "(" fields ")";
 

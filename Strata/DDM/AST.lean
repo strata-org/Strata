@@ -1882,6 +1882,157 @@ def kindOf! (ctx : GlobalContext) (idx : FreeVarIndex) : GlobalKind :=
   assert! idx < ctx.vars.size
   ctx.vars[idx]!.snd
 
+/-!
+## Annotation-based Constructor Info Extraction
+
+The following functions provide an alternative implementation of constructor info extraction
+that uses `@[constructor(name, fields)]` and `@[field(name, tp)]` annotations instead of
+hard-coded operation names. This makes the DDM more generic - it doesn't need to know
+about specific operation names like "constructor_mk" or "field_mk".
+
+The annotation-based approach:
+1. Looks up the operation in the dialect's operation declarations
+2. Checks if the operation has the appropriate metadata annotation
+3. Uses the indices from the annotation to extract the relevant arguments
+-/
+
+/--
+Look up an operation's metadata in the dialect.
+Returns the OpDecl if found, or none if the operation is not in the dialect.
+-/
+private def lookupOpDecl (dialects : DialectMap) (opName : QualifiedIdent) : Option OpDecl :=
+  match dialects[opName.dialect]? with
+  | none => none
+  | some dialect => dialect.ops[opName.name]?
+
+/--
+Check if an operation has the @[constructor(name, fields)] annotation.
+Returns the (nameIndex, fieldsIndex) if present.
+-/
+private def getConstructorAnnotation (opDecl : OpDecl) : Option (Nat × Nat) :=
+  match opDecl.metadata[q`StrataDDL.constructor]? with
+  | some #[.catbvar nameIdx, .catbvar fieldsIdx] => some (nameIdx, fieldsIdx)
+  | _ => none
+
+/--
+Check if an operation has the @[field(name, tp)] annotation.
+Returns the (nameIndex, typeIndex) if present.
+-/
+private def getFieldAnnotation (opDecl : OpDecl) : Option (Nat × Nat) :=
+  match opDecl.metadata[q`StrataDDL.field]? with
+  | some #[.catbvar nameIdx, .catbvar typeIdx] => some (nameIdx, typeIdx)
+  | _ => none
+
+/--
+Extract field information using the @[field] annotation.
+Looks up the operation in the dialect and uses the annotation indices.
+-/
+private def extractFieldInfoM (dialects : DialectMap) (arg : Arg) : Option (String × TypeExpr) :=
+  match arg with
+  | .op op =>
+    match lookupOpDecl dialects op.name with
+    | none => none
+    | some opDecl =>
+      match getFieldAnnotation opDecl with
+      | none => none
+      | some (nameIdx, typeIdx) =>
+        -- Convert deBruijn indices to levels (indices count from end, levels from start)
+        let argCount := opDecl.argDecls.size
+        if nameIdx < argCount && typeIdx < argCount then
+          let nameLevel := argCount - nameIdx - 1
+          let typeLevel := argCount - typeIdx - 1
+          if h1 : nameLevel < op.args.size then
+            if h2 : typeLevel < op.args.size then
+              match op.args[nameLevel], op.args[typeLevel] with
+              | .ident _ fieldName, .type fieldType => some (fieldName, fieldType)
+              | _, _ => none
+            else none
+          else none
+        else none
+  | _ => none
+
+/--
+Extract fields from a field list argument using annotations.
+Handles both fieldListAtom (single field) and fieldListPush (multiple fields).
+-/
+private partial def extractFieldListM (dialects : DialectMap) (arg : Arg) : Array (String × TypeExpr) :=
+  match arg with
+  | .op op =>
+    -- Check if this is a field list operation (atom or push)
+    if op.name.name == "fieldListAtom" && op.args.size == 1 then
+      match extractFieldInfoM dialects op.args[0]! with
+      | some field => #[field]
+      | none => #[]
+    else if op.name.name == "fieldListPush" && op.args.size == 2 then
+      let prevFields := extractFieldListM dialects op.args[0]!
+      match extractFieldInfoM dialects op.args[1]! with
+      | some field => prevFields.push field
+      | none => prevFields
+    -- Could be a direct field operation
+    else
+      match extractFieldInfoM dialects arg with
+      | some field => #[field]
+      | none => #[]
+  | _ => #[]
+
+/--
+Extract constructor information using the @[constructor] annotation.
+Looks up the operation in the dialect and uses the annotation indices.
+-/
+private def extractSingleConstructorM (dialects : DialectMap) (arg : Arg) : Option ConstructorInfo :=
+  match arg with
+  | .op op =>
+    match lookupOpDecl dialects op.name with
+    | none => none
+    | some opDecl =>
+      match getConstructorAnnotation opDecl with
+      | none => none
+      | some (nameIdx, fieldsIdx) =>
+        -- Convert deBruijn indices to levels
+        let argCount := opDecl.argDecls.size
+        if nameIdx < argCount && fieldsIdx < argCount then
+          let nameLevel := argCount - nameIdx - 1
+          let fieldsLevel := argCount - fieldsIdx - 1
+          if h1 : nameLevel < op.args.size then
+            if h2 : fieldsLevel < op.args.size then
+              match op.args[nameLevel] with
+              | .ident _ constrName =>
+                -- Extract fields from the optional field list
+                let fields := match op.args[fieldsLevel] with
+                  | .option _ (some fieldListArg) => extractFieldListM dialects fieldListArg
+                  | .option _ none => #[]
+                  | other => extractFieldListM dialects other
+                some { name := constrName, fields := fields }
+              | _ => none
+            else none
+          else none
+        else none
+  | _ => none
+
+/--
+Extract constructor information from a constructor list argument using annotations.
+This is the annotation-based alternative to `extractConstructorInfo`.
+-/
+partial def extractConstructorInfoM (dialects : DialectMap) (arg : Arg) : Array ConstructorInfo :=
+  match arg with
+  | .op op =>
+    -- Check if this is a constructor list operation (atom or push)
+    if op.name.name == "constructorListAtom" && op.args.size == 1 then
+      match extractSingleConstructorM dialects op.args[0]! with
+      | some constr => #[constr]
+      | none => #[]
+    else if op.name.name == "constructorListPush" && op.args.size == 2 then
+      let prevConstrs := extractConstructorInfoM dialects op.args[0]!
+      match extractSingleConstructorM dialects op.args[1]! with
+      | some constr => prevConstrs.push constr
+      | none => prevConstrs
+    -- Could be a direct constructor operation
+    else
+      match extractSingleConstructorM dialects arg with
+      | some constr => #[constr]
+      | none => #[]
+  | _ => #[]
+
 /--
 Add all bindings for a datatype declaration to the GlobalContext.
 This includes:
@@ -1916,8 +2067,9 @@ private def addDatatypeBindings
         | a => panic! s!"Expected ident for type param {repr a}"
     foldOverArgAtLevel dialects addBinding #[] argDecls args b.typeParamsIndex.toLevel
 
-  -- Extract constructor info using the dialect name for type references
-  let constructorInfo := extractConstructorInfo dialectName args[b.constructorsIndex.toLevel]
+  -- Extract constructor info using the annotation-based approach
+  -- This uses @[constructor] and @[field] annotations instead of hard-coded operation names
+  let constructorInfo := extractConstructorInfoM dialects args[b.constructorsIndex.toLevel]
 
   -- Step 1: Add datatype type
   let gctx := gctx.push datatypeName (GlobalKind.type typeParams.toList none)
