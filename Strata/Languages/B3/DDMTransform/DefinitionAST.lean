@@ -178,6 +178,9 @@ op function (name : Ident, params : Seq FParameter, resultType : Ident, tag : Op
 op axiom (explains : Seq Ident, expr : Expression) : Decl =>
   "\naxiom explains " explains "," expr;
 
+op checkDecl (expr : Expression) : Decl =>
+  "\ncheck " expr;
+
 op procedure (name : Ident, params : Seq PParameter, specs : Seq Spec, body : Option Statement) : Decl =>
   "\nprocedure " name " (" params ") specs " specs " body " body;
 
@@ -344,6 +347,8 @@ def Decl.mapMetadata [Inhabited N] (f : M → N) : Decl M → Decl N
         ⟨f body.ann, body.val.map (FunctionBody.mapMetadata f)⟩
   | .axiom m explains expr =>
       .axiom (f m) ⟨f explains.ann, explains.val.map (mapAnn f)⟩ (Expression.mapMetadata f expr)
+  | .checkDecl m expr =>
+      .checkDecl (f m) (Expression.mapMetadata f expr)
   | .procedure m name params specs body =>
       .procedure (f m) (mapAnn f name) ⟨f params.ann, params.val.map (PParameter.mapMetadata f)⟩
         ⟨f specs.ann, specs.val.map (Spec.mapMetadata f)⟩

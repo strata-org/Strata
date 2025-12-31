@@ -172,6 +172,7 @@ partial def formatTermDirect : Term → String
             s!"({f.id})"  -- 0-ary function call needs parentheses
           else
             s!"({f.id} {String.intercalate " " argStrs})"
+      | .ite => s!"(ite {formatTermDirect args[0]!} {formatTermDirect args[1]!} {formatTermDirect args[2]!})"
       | .eq => s!"(= {formatTermDirect args[0]!} {formatTermDirect args[1]!})"
       | .add => s!"(+ {formatTermDirect args[0]!} {formatTermDirect args[1]!})"
       | .sub => s!"(- {formatTermDirect args[0]!} {formatTermDirect args[1]!})"
@@ -199,9 +200,12 @@ def declToSMT (ctx : ConversionContext) : B3AST.Decl M → List String
   | .axiom _ _ expr =>
       -- Generate (assert expr)
       match expressionToSMT ctx expr with
-      | some term =>
-          -- We need to format the term directly without the encoder's ANF
-          [s!"(assert {formatTermDirect term})"]
+      | some term => [s!"(assert {formatTermDirect term})"]
+      | none => []
+  | .checkDecl _ expr =>
+      -- Generate (assert expr) - same as axiom
+      match expressionToSMT ctx expr with
+      | some term => [s!"(assert {formatTermDirect term})"]
       | none => []
   | _ => []
 
@@ -244,11 +248,13 @@ def testB3ToSMT (prog : Program) : IO Unit := do
 /--
 info: (declare-fun getValue () Int)
 (assert (= (+ (getValue) 1) 2))
+(assert (= (ite (> (getValue) 0) (getValue) (- (getValue))) 1))
 -/
 #guard_msgs in
 #eval testB3ToSMT $ #strata program B3CST;
 function getValue() : int
 axiom getValue() + 1 == 2
+check (if getValue() > 0 then getValue() else -getValue()) == 1
 #end
 
 end Strata.B3ToSMT

@@ -200,6 +200,9 @@ op axiom (expr : Expression) : AxiomBody =>
 op axiom_decl (expr : AxiomBody) : Decl =>
   "\naxiom " expr:0;
 
+op check_decl (expr : Expression) : Decl =>
+  "\ncheck " expr:0;
+
 category PParamMode;
 op pmode_out () : PParamMode => "out ";
 op pmode_inout () : PParamMode => "inout ";
