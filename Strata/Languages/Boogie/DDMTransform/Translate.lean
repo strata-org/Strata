@@ -1252,17 +1252,28 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
 
 /--
 Information about a single constructor extracted during translation.
+This is the Boogie-specific version of `ConstructorInfo` from AST.lean,
+with types translated from `TypeExpr` to `LMonoTy`.
 -/
 structure TransConstructorInfo where
   /-- Constructor name -/
   name : BoogieIdent
-  /-- Fields as (fieldName, fieldType) pairs -/
+  /-- Fields as (fieldName, fieldType) pairs with translated types -/
   fields : Array (BoogieIdent × LMonoTy)
   deriving Repr
 
 /--
 Translate constructor information from AST.ConstructorInfo to TransConstructorInfo.
-This translates the TypeExpr field types to LMonoTy.
+
+This bridges the gap between the generic DDM representation (`ConstructorInfo` with
+`TypeExpr` field types) and the Boogie-specific representation (`TransConstructorInfo`
+with `LMonoTy` field types).
+
+**Parameters:**
+- `bindings`: Current translation bindings (for type variable resolution)
+- `info`: Generic constructor info from AST.extractConstructorInfo
+
+**Returns:** Boogie-specific constructor info with translated types.
 -/
 private def translateConstructorInfo (bindings : TransBindings) (info : ConstructorInfo) :
     TransM TransConstructorInfo := do
@@ -1273,7 +1284,18 @@ private def translateConstructorInfo (bindings : TransBindings) (info : Construc
 
 /--
 Extract and translate constructor information from a constructor list argument.
-Uses the annotation-based extractConstructorInfo from AST, then translates types.
+
+This function combines the generic annotation-based extraction from AST.lean with
+Boogie-specific type translation. It:
+1. Uses `GlobalContext.extractConstructorInfo` to get generic constructor info
+2. Translates each field's `TypeExpr` to `LMonoTy` using the current bindings
+
+**Parameters:**
+- `p`: The DDM Program (provides dialect map for annotation lookup)
+- `bindings`: Current translation bindings (for type variable resolution)
+- `arg`: The constructor list argument from the parsed datatype command
+
+**Returns:** Array of `TransConstructorInfo` with Boogie-specific types.
 -/
 def translateConstructorList (p : Program) (bindings : TransBindings) (arg : Arg) :
     TransM (Array TransConstructorInfo) := do
@@ -1282,8 +1304,27 @@ def translateConstructorList (p : Program) (bindings : TransBindings) (arg : Arg
 
 /--
 Translate a datatype declaration to Boogie declarations.
-Creates an LDatatype with tester names from BoogieDatatypeConfig,
-generates factory using LDatatype.genFactory, and returns all declarations.
+
+This is the main entry point for translating DDM datatype syntax to Boogie's internal
+representation. It performs the following steps:
+
+1. **Extract metadata**: Datatype name and type parameters from the operation
+2. **Handle recursion**: Adds a placeholder declaration so recursive field types resolve
+3. **Extract constructors**: Uses `translateConstructorList` to get constructor info
+4. **Build LDatatype**: Creates the internal datatype representation with tester names
+5. **Generate factory**: Uses `LDatatype.genFactory` for constructor/destructor functions
+6. **Update bindings**: Adds all generated declarations to the translation context
+
+**Important:** The returned `Boogie.Decls` only contains the type declaration itself.
+Factory functions (constructors, testers, destructors) are generated automatically
+by `Env.addDatatypes` during program evaluation to avoid duplicates.
+
+**Parameters:**
+- `p`: The DDM Program (provides dialect map)
+- `bindings`: Current translation bindings
+- `op`: The `command_datatype` operation to translate
+
+**Returns:** Tuple of (declarations to add, updated bindings).
 -/
 def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) :
     TransM (Boogie.Decls × TransBindings) := do

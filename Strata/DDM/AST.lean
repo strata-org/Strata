@@ -869,9 +869,28 @@ structure TemplateExpansionResult where
 
 /--
 Expand a single function template based on its scope.
-- perConstructor: generates one function per constructor
-- perField: generates one function per unique field across all constructors
-- perConstructorField: generates one function per (constructor, field) pair
+
+Function templates specify patterns for generating auxiliary functions from datatype
+declarations. This function expands one template according to its iteration scope:
+
+- **perConstructor**: Generates one function per constructor (e.g., testers like `..isNone`)
+- **perField**: Generates one function per unique field across all constructors (e.g., accessors)
+- **perConstructorField**: Generates one function per (constructor, field) pair
+
+**Parameters:**
+- `datatypeName`: Name of the datatype (used in name pattern expansion)
+- `datatypeType`: TypeExpr for the datatype (used in function signatures)
+- `constructorInfo`: Array of constructor information
+- `template`: The function template to expand
+- `dialectName`: Dialect name (for resolving builtin types)
+- `existingNames`: Set of already-used names (for duplicate detection)
+
+**Returns:** `TemplateExpansionResult` with generated function signatures and any errors.
+
+**Example:** For `perConstructor` template with pattern `[.datatype, .literal "..is", .constructor]`
+on `Option<T>` with constructors `None` and `Some`, generates:
+- `Option..isNone : Option<T> -> bool`
+- `Option..isSome : Option<T> -> bool`
 -/
 def expandSingleTemplate
     (datatypeName : String)
@@ -933,8 +952,25 @@ def expandSingleTemplate
 
 /--
 Expand all function templates and return the generated function signatures.
-Templates are processed in order, maintaining deterministic ordering.
-Duplicate names are detected across all templates.
+
+This function processes an array of function templates in order, generating function
+signatures for each. Templates are typically specified in `@[declareDatatype]` annotations
+to automatically generate auxiliary functions like testers and field accessors.
+
+**Ordering guarantees:**
+- Templates are processed in array order
+- Within each template, functions are generated in constructor/field declaration order
+- Duplicate names are detected across all templates (not just within one)
+
+**Parameters:**
+- `datatypeName`: Name of the datatype
+- `datatypeType`: TypeExpr for the datatype
+- `constructorInfo`: Array of constructor information
+- `templates`: Array of function templates to expand
+- `dialectName`: Dialect name (for resolving builtin types)
+- `existingNames`: Optional set of pre-existing names to avoid
+
+**Returns:** `TemplateExpansionResult` with all generated functions and accumulated errors.
 -/
 def expandFunctionTemplates
     (datatypeName : String)
@@ -1976,7 +2012,31 @@ private def extractSingleConstructor (dialects : DialectMap) (arg : Arg) : Optio
 
 /--
 Extract constructor information from a constructor list argument using annotations.
-Returns array of ConstructorInfo with constructor names and fields.
+
+This function traverses a constructor list AST node and extracts structured information
+about each constructor, including its name and fields. It uses dialect annotations
+(`@[constructor]`, `@[field]`, `@[constructorListAtom]`, `@[constructorListPush]`)
+to identify the relevant operations, making it generic across different dialects.
+
+**How it works:**
+1. Looks up the operation in the dialect to get its metadata
+2. Checks for `@[constructorListAtom]` annotation (single constructor)
+3. Checks for `@[constructorListPush]` annotation (list of constructors)
+4. Falls back to checking if it's a direct constructor operation
+
+**Parameters:**
+- `dialects`: Map of all loaded dialects (needed for annotation lookup)
+- `arg`: The constructor list argument from the parsed datatype command
+
+**Returns:** Array of `ConstructorInfo` with constructor names and field information.
+
+**Example:** For `{ None(), Some(value: T) }`, returns:
+```
+#[
+  { name := "None", fields := #[] },
+  { name := "Some", fields := #[("value", <TypeExpr for T>)] }
+]
+```
 -/
 partial def extractConstructorInfo (dialects : DialectMap) (arg : Arg) : Array ConstructorInfo :=
   match arg with
@@ -2022,14 +2082,33 @@ partial def extractConstructorInfo (dialects : DialectMap) (arg : Arg) : Array C
 
 /--
 Add all bindings for a datatype declaration to the GlobalContext.
-This includes:
-1. The datatype type itself
-2. Constructor signatures
-3. Template-generated function signatures
 
-The order is: datatype type, then constructors (in declaration order),
-then template functions (in template specification order).
-All entries get consecutive FreeVarIndex values.
+This function is called during DDM elaboration when a `@[declareDatatype]` annotated
+operation is encountered. It populates the GlobalContext with entries for:
+
+1. **The datatype type itself** - Added as a `GlobalKind.type` with type parameters
+2. **Constructor signatures** - Each constructor gets an entry with its arrow type
+   (e.g., `T -> List<T> -> List<T>` for a `Cons` constructor)
+3. **Template-generated functions** - Functions specified via `perConstructor` or
+   `perField` templates in the `@[declareDatatype]` annotation
+
+The order of entries is deterministic and matches what downstream translation expects:
+datatype type first, then constructors in declaration order, then template functions
+in template specification order. All entries receive consecutive FreeVarIndex values.
+
+**Parameters:**
+- `dialects`: Map of all loaded dialects (needed for annotation lookup)
+- `gctx`: Current GlobalContext to extend
+- `src`: Source location for generated type expressions
+- `dialectName`: Name of the dialect containing the datatype
+- `b`: DatatypeBindingSpec with indices for name, type params, constructors, and templates
+- `args`: Actual arguments from the parsed operation
+
+**Returns:** Updated GlobalContext with all datatype-related bindings added.
+
+**Example:** For `datatype Option<T> { None(), Some(value: T) }` with a tester template,
+this adds entries for: `Option` (type), `None` (constructor), `Some` (constructor),
+`Option..isNone` (tester), `Option..isSome` (tester).
 -/
 private def addDatatypeBindings
     (dialects : DialectMap)
@@ -2085,6 +2164,21 @@ private def addDatatypeBindings
     result.functions.foldl (init := gctx) fun gctx (funcName, funcType) =>
       gctx.push funcName (.expr funcType)
 
+/--
+Process a command operation and add its bindings to the GlobalContext.
+
+This is the main entry point for populating the GlobalContext during DDM elaboration.
+It dispatches to specialized handlers based on the binding specification type:
+- For datatype bindings (`@[declareDatatype]`), calls `addDatatypeBindings`
+- For other bindings (variables, functions, types), uses the standard single-entry approach
+
+**Parameters:**
+- `dialects`: Map of all loaded dialects
+- `init`: Initial GlobalContext
+- `op`: The command operation to process
+
+**Returns:** Updated GlobalContext with new bindings added.
+-/
 def addCommand (dialects : DialectMap) (init : GlobalContext) (op : Operation) : GlobalContext :=
     let dialectName := op.name.dialect
     op.foldBindingSpecs dialects (addBinding dialectName) init
