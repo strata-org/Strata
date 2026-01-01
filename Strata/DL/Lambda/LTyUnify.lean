@@ -1117,8 +1117,8 @@ end
 /--
 `Constraints.unify` is Lambda's type unification function, which implements a
 bottom-up Hindley-Milner style algorithm that finds the most general type
-(principal type) of an expression by finding a substitution that makes all the
-types in the input constraints equal.
+(principal type) of an expression. It does so by finding a substitution that
+makes all the types in the input constraints equal.
 -/
 def Constraints.unify (constraints : Constraints) (S : SubstInfo) :
     Except Format SubstInfo := do

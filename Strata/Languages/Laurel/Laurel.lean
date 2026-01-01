@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.DL.Imperative.MetaData
+import Strata.DL.Util.MetaData
 import Strata.Languages.Boogie.Expressions
 
 /-
@@ -43,6 +43,7 @@ Design choices:
 
 -/
 namespace Laurel
+open MetaData (MetaData)
 
 abbrev Identifier := String /- Potentially this could be an Int to save resources. -/
 
@@ -149,8 +150,8 @@ inductive StmtExpr : Type where
   | Fresh(value : StmtExpr)
 
 /- Related to proofs -/
-  | Assert (condition: StmtExpr) (md : Imperative.MetaData Boogie.Expression)
-  | Assume (condition: StmtExpr) (md : Imperative.MetaData Boogie.Expression)
+  | Assert (condition: StmtExpr) (md : MetaData Boogie.Expression)
+  | Assume (condition: StmtExpr) (md : MetaData Boogie.Expression)
   /-
 ProveBy allows writing proof trees. Its semantics are the same as that of the given `value`,
 but the `proof` is used to help prove any assertions in `value`.

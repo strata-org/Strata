@@ -6,7 +6,6 @@
 
 import Strata.DL.Imperative.PureExpr
 import Strata.DL.Imperative.HasVars
-import Strata.DL.Imperative.MetaData
 
 import Strata.DL.Imperative.CmdEval
 import Strata.DL.Imperative.CmdType

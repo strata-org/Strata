@@ -81,15 +81,16 @@ def main (args : List String) : IO UInt32 := do
           println! f!"Program typechecked."
           return 0
       else -- !typeCheckOnly
-        let vcResults ←
-            if file.endsWith ".csimp.st" then
-              C_Simp.verify "z3" pgm opts
-            else
-              verify "z3" pgm inputCtx opts
+        let vcResults ← try
+          if file.endsWith ".csimp.st" then
+            C_Simp.verify "z3" pgm opts
+          else
+            verify "z3" pgm inputCtx opts
+        catch e =>
+          println! f!"{e}"
+          return (1 : UInt32)
         for vcResult in vcResults do
-          let posStr := match Boogie.formatPositionMetaData vcResult.obligation.metadata with
-                        | .none => "<none>"
-                        | .some str => s!"{str}"
+          let posStr := MetaData.formatFileRangeD vcResult.obligation.metadata
           println! f!"{posStr} [{vcResult.obligation.label}]: {vcResult.result}"
         let success := vcResults.all isSuccessVCResult
         if success && !opts.checkOnly then

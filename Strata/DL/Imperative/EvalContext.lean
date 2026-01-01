@@ -8,7 +8,6 @@
 
 import Strata.DL.Imperative.Cmd
 import Strata.DL.Imperative.EvalError
-import Strata.DL.Imperative.MetaData
 import Strata.DL.Util.ListMap
 import Strata.DL.Util.Maps
 

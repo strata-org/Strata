@@ -5,7 +5,7 @@
 -/
 
 import Strata.DL.Imperative.PureExpr
-import Strata.DL.Imperative.MetaData
+import Strata.DL.Util.MetaData
 import Strata.DL.Imperative.HasVars
 import Strata.DL.Lambda.LExpr
 
@@ -13,6 +13,9 @@ import Strata.DL.Lambda.LExpr
 
 namespace Imperative
 
+abbrev MetaData (P : PureExpr) :=
+  MetaData.MetaData { Identifier := P.Ident,
+                      Expr := P.Expr }
 
 /-! # Imperative Dialect
 
@@ -81,8 +84,8 @@ class HasPassiveCmds (P : PureExpr) (CmdT : Type) where
   assert : String → P.Expr → MetaData P → CmdT
 
 instance : HasPassiveCmds P (Cmd P) where
-  assume l e (md := MetaData.empty):= .assume l e md
-  assert l e (md := MetaData.empty):= .assert l e md
+  assume l e (md := .empty):= .assume l e md
+  assert l e (md := .empty):= .assert l e md
 
 class HasHavoc (P : PureExpr) (CmdT : Type) where
   havoc : P.Ident → CmdT

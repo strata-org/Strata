@@ -11,6 +11,7 @@ import Strata.DL.Imperative.TypeContext
 
 namespace Imperative
 open Std (ToFormat Format format)
+open MetaData (formatFileRangeD MetaDataElem)
 
 ---------------------------------------------------------------------
 
@@ -21,7 +22,7 @@ def Cmd.typeCheck [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
     [DecidableEq P.Ident] [TC : TypeContext P C T (MetaData P)]
     (ctx: C) (τ : T) (c : Cmd P) : Except Format (Cmd P × T) := do
 
-  let mdfun := fun (md : MetaData P) => f!"({MetaData.formatFileRange md}) "
+  let mdfun := fun (md : MetaData P) => f!"({formatFileRangeD md}) "
   match c with
 
   | .init x xty e md =>
@@ -84,7 +85,7 @@ def Cmd.typeCheck [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
 Type checker for Imperative's Commands.
 -/
 def Cmds.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
-    [ToFormat (MetaDataElem P)]
+    [ToFormat (MetaDataElem { Expr := P.Expr, Identifier := P.Ident})]
     [DecidableEq P.Ident] [TC : TypeContext P C T (MetaData P)]
     (ctx: C) (τ : T) (cs : Cmds P) : Except Format (Cmds P × T) := do
   match cs with

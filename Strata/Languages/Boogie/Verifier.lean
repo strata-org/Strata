@@ -8,7 +8,7 @@ import Strata.Languages.Boogie.DDMTransform.Translate
 import Strata.Languages.Boogie.Options
 import Strata.Languages.Boogie.CallGraph
 import Strata.Languages.Boogie.SMTEncoder
-import Strata.DL.Imperative.MetaData
+import Strata.DL.Util.MetaData
 import Strata.DL.Imperative.SMTUtils
 import Strata.DL.SMT.CexParser
 
@@ -142,15 +142,6 @@ def solverResult (vars : List (IdentT LMonoTy Visibility)) (ans : String)
   | _     =>  .error ans
 
 open Imperative
-
-def formatPositionMetaData [BEq P.Ident] [ToFormat P.Expr] (md : MetaData P): Option Format := do
-  let fileRangeElem ← md.findElem MetaData.fileRange
-  match fileRangeElem.value with
-  | .fileRange m =>
-    let baseName := match m.file with
-                    | .file path => (path.splitToList (· == '/')).getLast!
-    return f!"{baseName}({m.start.line}, {m.start.column})"
-  | _ => none
 
 structure VCResult where
   obligation : Imperative.ProofObligation Expression
@@ -330,7 +321,7 @@ end Boogie
 ---------------------------------------------------------------------
 
 namespace Strata
-
+open MetaData (formatFileRange? fileRange)
 open Lean.Parser
 
 def typeCheck (ictx : InputContext) (env : Program) (options : Options := Options.default)
@@ -375,7 +366,7 @@ def toDiagnostic (vcr : Boogie.VCResult) : Option Diagnostic := do
   | .unsat => none  -- Verification succeeded, no diagnostic
   | result =>
     -- Extract file range from metadata
-    let fileRangeElem ← vcr.obligation.metadata.findElem Imperative.MetaData.fileRange
+    let fileRangeElem ← vcr.obligation.metadata.findElem fileRange
     match fileRangeElem.value with
     | .fileRange range =>
       let message := match result with

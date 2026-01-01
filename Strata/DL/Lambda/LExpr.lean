@@ -6,7 +6,6 @@
 
 import Strata.DL.Lambda.LTy
 import Strata.DL.Lambda.Identifiers
-import Strata.DL.Lambda.MetaData
 import Strata.DL.Util.DecidableEq
 
 /-! ## Lambda Expressions with Quantifiers
@@ -109,9 +108,8 @@ representation for this abstract syntax.
 See this [paper](https://chargueraud.org/research/2009/ln/main.pdf)
 for details.
 
-We leave placeholders for type annotations only for constants
-(`.const`), operations (`.op`), binders (`.abs`, `.quant`), and free
-variables (`.fvar`).
+We leave placeholders for type annotations only for operations (`.op`), binders
+(`.abs`, `.quant`), and free variables (`.fvar`).
 
 LExpr is parameterized by `LExprParamsT`, which includes arbitrary metadata,
 user-allowed type annotations (optional), and special metadata to attach to

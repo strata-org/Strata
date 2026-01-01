@@ -7,7 +7,7 @@
 import Strata.DDM.AST
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Laurel
-import Strata.DL.Imperative.MetaData
+import Strata.DL.Util.MetaData
 import Strata.Languages.Boogie.Expressions
 
 namespace Laurel
@@ -16,7 +16,7 @@ open Laurel
 open Std (ToFormat Format format)
 open Strata (QualifiedIdent Arg SourceRange)
 open Lean.Parser (InputContext)
-open Imperative (MetaData Uri FileRange)
+open MetaData (MetaData Uri FileRange)
 
 structure TransState where
   inputCtx : InputContext

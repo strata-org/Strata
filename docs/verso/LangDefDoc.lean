@@ -12,7 +12,7 @@ import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.StmtSemanticsSmallStep
 import Strata.DL.Imperative.NondetStmt
 import Strata.DL.Imperative.NondetStmtSemantics
-import Strata.DL.Imperative.MetaData
+import Strata.DL.Util.MetaData
 import Strata.DL.Lambda.LExpr
 import Strata.DL.Lambda.Semantics
 import Strata.DL.Lambda.LExprTypeSpec

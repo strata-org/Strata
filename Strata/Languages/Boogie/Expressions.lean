@@ -6,9 +6,9 @@
 
 
 
+import Strata.DL.Util.MetaData
 import Strata.DL.Lambda.Lambda
 import Strata.DL.Imperative.PureExpr
-import Strata.DL.Imperative.MetaData
 import Strata.Languages.Boogie.Identifiers
 import Strata.DL.Imperative.HasVars
 

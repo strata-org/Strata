@@ -19,6 +19,7 @@ namespace Boogie
 namespace Statement
 
 open Std (ToFormat Format format)
+open MetaData (MetaDataElem.mk)
 open Lambda
 
 ---------------------------------------------------------------------
@@ -131,7 +132,7 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
     -- Update the LHS and global variables to reflect the post-call state.
     let post_vars_mdata := post_subst.map
                               (fun ((old, _), new) =>
-                                Imperative.MetaDataElem.mk (.var old) (.expr new))
+                                MetaDataElem.mk (.var old) (.expr new))
     let md' := md ++ post_vars_mdata.toArray
     let c' := CmdExt.call lhs pname args md'
     let E := E.addToContext post_subst

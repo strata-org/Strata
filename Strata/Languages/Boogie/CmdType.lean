@@ -14,6 +14,7 @@ import Strata.DL.Lambda.Factory
 namespace Boogie
 open Lambda Imperative
 open Std (ToFormat Format format)
+open MetaData (formatFileRangeD)
 
 ---------------------------------------------------------------------
 
@@ -42,7 +43,7 @@ def preprocess (C: LContext BoogieLParams) (Env : TEnv Visibility) (ty : LTy) (m
     Except Format (LTy × TEnv Visibility) := do
   match ty.instantiateWithCheck C Env with
   | .ok (mty, Env) => return (.forAll [] mty, Env)
-  | .error e => .error f!"{Format.line}({MetaData.formatFileRange md}) {e}"
+  | .error e => .error f!"{Format.line}{formatFileRangeD md} {e}"
 
 def postprocess (_: LContext BoogieLParams) (Env: TEnv Visibility) (ty : LTy) (md : MetaData Expression) :
     Except Format (LTy × TEnv Visibility) := do
@@ -50,7 +51,7 @@ def postprocess (_: LContext BoogieLParams) (Env: TEnv Visibility) (ty : LTy) (m
     let ty := LMonoTy.subst Env.stateSubstInfo.subst (ty.toMonoType h)
     .ok (.forAll [] ty, Env)
   else
-    .error f!"{Format.line}({MetaData.formatFileRange md}) Expected mono-type; instead got {ty}"
+    .error f!"{Format.line}{formatFileRangeD md} Expected mono-type; instead got {ty}"
 
 /--
 The inferred type of `e` will be an `LMonoTy`, but we return an `LTy` with no
@@ -70,7 +71,7 @@ def inferType (C: LContext BoogieLParams) (Env: TEnv Visibility) (c : Cmd Expres
       .ok Env
   let e := OldExpressions.normalizeOldExpr e
   match LExpr.resolve C T e with
-  | .error e => .error f!"{Format.line}({MetaData.formatFileRange md}) {e}"
+  | .error e => .error f!"{Format.line}{formatFileRangeD md} {e}"
   | .ok (ea, T) =>
     let ety := ea.toLMonoTy
     return (ea.unresolved, (.forAll [] ety), T)
@@ -100,10 +101,10 @@ def unifyTypes (Env: TEnv Visibility)
     (md : MetaData Expression) :
     Except Format (TEnv Visibility) := do
   match canonicalizeConstraints constraints with
-  | .error e => .error f!"{Format.line}({MetaData.formatFileRange md}) {e}"
+  | .error e => .error f!"{Format.line}{formatFileRangeD md} {e}"
   | .ok constraints =>
     match Constraints.unify constraints Env.stateSubstInfo with
-    | .error e => .error f!"{Format.line}({MetaData.formatFileRange md}) {e}"
+    | .error e => .error f!"{Format.line}{formatFileRangeD md} {e}"
     | .ok S =>
       let Env := Env.updateSubst S
       return Env
