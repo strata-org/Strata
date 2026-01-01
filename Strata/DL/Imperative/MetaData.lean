@@ -36,6 +36,7 @@ inductive MetaDataElem.Field (P : PureExpr) where
   | var (v : P.Ident)
   /-- Metadata indexed by an arbitrary label. -/
   | label (l : String)
+  deriving Inhabited
 
 @[grind]
 def MetaDataElem.Field.beq [BEq P.Ident] (f1 f2 : MetaDataElem.Field P) :=
@@ -67,7 +68,7 @@ instance [Repr P.Ident] : Repr (MetaDataElem.Field P) where
 
 inductive Uri where
   | file (path: String)
-  deriving DecidableEq
+  deriving DecidableEq, Inhabited
 
 instance : ToFormat Uri where
  format fr := match fr with | .file path => path
@@ -76,7 +77,7 @@ structure FileRange where
   file: Uri
   start: Lean.Position
   ending: Lean.Position
-  deriving DecidableEq
+  deriving DecidableEq, Inhabited
 
 instance : ToFormat FileRange where
  format fr := f!"{fr.file}:{fr.start}-{fr.ending}"
@@ -89,7 +90,7 @@ inductive MetaDataElem.Value (P : PureExpr) where
   | msg (s : String)
   /-- Metadata value in the form of a fileRange. -/
   | fileRange (r: FileRange)
-
+  deriving Inhabited
 
 instance [ToFormat P.Expr] : ToFormat (MetaDataElem.Value P) where
   format f := match f with | .expr e => f!"{e}" | .msg s => f!"{s}" | .fileRange r => f!"{r}"
@@ -134,6 +135,7 @@ structure MetaDataElem (P : PureExpr) where
   fld   : MetaDataElem.Field P
   /-- The value of the metadata. -/
   value : MetaDataElem.Value P
+  deriving Inhabited
 
 /-- Metadata is an array of tagged elements. -/
 abbrev MetaData (P : PureExpr) := Array (MetaDataElem P)
@@ -182,5 +184,15 @@ instance [Repr P.Expr] [Repr P.Ident] : Repr (MetaDataElem P) where
 /-! ### Common metadata fields -/
 
 def MetaData.fileRange : MetaDataElem.Field P := .label "fileRange"
+
+def MetaData.formatFileRange [BEq P.Ident] (md : MetaData P) : Std.Format :=
+  let maybe_elem := md.findElem fileRange
+  if h : maybe_elem.isSome then
+    let value := (maybe_elem.get h).value
+    match value with
+    | .fileRange fr => f!"{fr}"
+    | _ => f!""
+  else
+    f!""
 
 end Imperative

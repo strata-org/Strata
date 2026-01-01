@@ -38,22 +38,26 @@ Preprocess a user-facing type in Boogie amounts to converting a poly-type (i.e.,
 `LTy`) to a mono-type (i.e., `LMonoTy`) via instantiation. We still return an
 `LTy`, with no bound variables.
 -/
-def preprocess (C: LContext BoogieLParams) (Env : TEnv Visibility) (ty : LTy) : Except Format (LTy × TEnv Visibility) := do
-  let (mty, Env) ← ty.instantiateWithCheck C Env
-  return (.forAll [] mty, Env)
+def preprocess (C: LContext BoogieLParams) (Env : TEnv Visibility) (ty : LTy) (md : MetaData Expression):
+    Except Format (LTy × TEnv Visibility) := do
+  match ty.instantiateWithCheck C Env with
+  | .ok (mty, Env) => return (.forAll [] mty, Env)
+  | .error e => .error f!"{Format.line}({MetaData.formatFileRange md}) {e}"
 
-def postprocess (_: LContext BoogieLParams) (Env: TEnv Visibility) (ty : LTy) : Except Format (LTy × TEnv Visibility) := do
+def postprocess (_: LContext BoogieLParams) (Env: TEnv Visibility) (ty : LTy) (md : MetaData Expression) :
+    Except Format (LTy × TEnv Visibility) := do
   if h: ty.isMonoType then
     let ty := LMonoTy.subst Env.stateSubstInfo.subst (ty.toMonoType h)
     .ok (.forAll [] ty, Env)
   else
-    .error f!"[postprocess] Expected mono-type; instead got {ty}"
+    .error f!"{Format.line}({MetaData.formatFileRange md}) Expected mono-type; instead got {ty}"
 
 /--
 The inferred type of `e` will be an `LMonoTy`, but we return an `LTy` with no
 bound variables.
 -/
-def inferType (C: LContext BoogieLParams) (Env: TEnv Visibility) (c : Cmd Expression) (e : LExpr BoogieLParams.mono) :
+def inferType (C: LContext BoogieLParams) (Env: TEnv Visibility) (c : Cmd Expression)
+    (e : LExpr BoogieLParams.mono) (md : MetaData Expression) :
     Except Format ((LExpr BoogieLParams.mono) × LTy × TEnv Visibility) := do
   -- We only allow free variables to appear in `init` statements. Any other
   -- occurrence leads to an error.
@@ -65,9 +69,11 @@ def inferType (C: LContext BoogieLParams) (Env: TEnv Visibility) (c : Cmd Expres
       let _ ← Env.freeVarCheck e f!"[{c}]"
       .ok Env
   let e := OldExpressions.normalizeOldExpr e
-  let (ea, T) ← LExpr.resolve C T e
-  let ety := ea.toLMonoTy
-  return (ea.unresolved, (.forAll [] ety), T)
+  match LExpr.resolve C T e with
+  | .error e => .error f!"{Format.line}({MetaData.formatFileRange md}) {e}"
+  | .ok (ea, T) =>
+    let ety := ea.toLMonoTy
+    return (ea.unresolved, (.forAll [] ety), T)
 
 /--
 Type constraints come from functions `inferType` and `preprocess`, both of which
@@ -84,19 +90,28 @@ def canonicalizeConstraints (constraints : List (LTy × LTy)) : Except Format Co
       let c_rest ← canonicalizeConstraints c_rest
       .ok ((t1, t2) :: c_rest)
     else
-      .error f!"[canonicalizeConstraints] Expected to see only mono-types in \
+      .error f!"[Implementation Error in canonicalizeConstraints] \
+                Expected to see only mono-types in \
                 type constraints, but found the following instead:\n\
                 t1: {t1}\nt2: {t2}\n"
 
-def unifyTypes (Env: TEnv Visibility) (constraints : List (LTy × LTy)) : Except Format (TEnv Visibility) := do
-  let constraints ← canonicalizeConstraints constraints
-  let S ← Constraints.unify constraints Env.stateSubstInfo
-  let Env := Env.updateSubst S
-  return Env
+def unifyTypes (Env: TEnv Visibility)
+    (constraints : List (LTy × LTy))
+    (md : MetaData Expression) :
+    Except Format (TEnv Visibility) := do
+  match canonicalizeConstraints constraints with
+  | .error e => .error f!"{Format.line}({MetaData.formatFileRange md}) {e}"
+  | .ok constraints =>
+    match Constraints.unify constraints Env.stateSubstInfo with
+    | .error e => .error f!"{Format.line}({MetaData.formatFileRange md}) {e}"
+    | .ok S =>
+      let Env := Env.updateSubst S
+      return Env
 
 ---------------------------------------------------------------------
 
-instance : Imperative.TypeContext Expression (LContext BoogieLParams) (TEnv Visibility) where
+instance : Imperative.TypeContext Expression
+            (LContext BoogieLParams) (TEnv Visibility) (MetaData Expression) where
   isBoolType  := CmdType.isBoolType
   freeVars    := CmdType.freeVars
   preprocess  := CmdType.preprocess

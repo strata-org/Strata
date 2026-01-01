@@ -900,23 +900,25 @@ def translateInvariant (p : Program) (bindings : TransBindings) (arg : Arg) : Tr
     translateExpr p bindings args[0]!
   | _ => pure none
 
-def initVarStmts (tpids : ListMap Expression.Ident LTy) (bindings : TransBindings) :
-  TransM ((List Boogie.Statement) × TransBindings) := do
+def initVarStmts (tpids : ListMap Expression.Ident LTy) (bindings : TransBindings)
+    (md : MetaData Boogie.Expression) :
+    TransM ((List Boogie.Statement) × TransBindings) := do
   match tpids with
   | [] => return ([], bindings)
   | (id, tp) :: rest =>
-    let s := Boogie.Statement.init id tp (Names.initVarValue (id.name ++ "_" ++ (toString bindings.gen.var_def)))
+    let s := Boogie.Statement.init id tp (Names.initVarValue (id.name ++ "_" ++ (toString bindings.gen.var_def))) md
     let bindings := incrNum .var_def bindings
-    let (stmts, bindings) ← initVarStmts rest bindings
+    let (stmts, bindings) ← initVarStmts rest bindings md
     return ((s :: stmts), bindings)
 
-def translateVarStatement (bindings : TransBindings) (decls : Array Arg) :
-  TransM ((List Boogie.Statement) × TransBindings) := do
+def translateVarStatement (bindings : TransBindings) (decls : Array Arg)
+    (md : MetaData Boogie.Expression) :
+    TransM ((List Boogie.Statement) × TransBindings) := do
   if decls.size != 1 then
     TransM.error s!"translateVarStatement unexpected decls length {repr decls}"
   else
     let tpids ← translateDeclList bindings decls[0]!
-    let (stmts, bindings) ← initVarStmts tpids bindings
+    let (stmts, bindings) ← initVarStmts tpids bindings md
     let newVars ← tpids.mapM (fun (id, ty) =>
                     if h: ty.isMonoType then
                       return ((LExpr.fvar () id (ty.toMonoType h)): LExpr BoogieLParams.mono)
@@ -925,8 +927,9 @@ def translateVarStatement (bindings : TransBindings) (decls : Array Arg) :
     let bbindings := bindings.boundVars ++ newVars
     return (stmts, { bindings with boundVars := bbindings })
 
-def translateInitStatement (p : Program) (bindings : TransBindings) (args : Array Arg) :
-  TransM ((List Boogie.Statement) × TransBindings) := do
+def translateInitStatement (p : Program) (bindings : TransBindings) (args : Array Arg)
+    (md : MetaData Boogie.Expression) :
+    TransM ((List Boogie.Statement) × TransBindings) := do
   if args.size != 3 then
     TransM.error "translateInitStatement unexpected arg length {repr decls}"
   else
@@ -936,7 +939,7 @@ def translateInitStatement (p : Program) (bindings : TransBindings) (args : Arra
     let ty := (.forAll [] mty)
     let newBinding: LExpr BoogieLParams.mono := LExpr.fvar () lhs mty
     let bbindings := bindings.boundVars ++ [newBinding]
-    return ([.init lhs ty val], { bindings with boundVars := bbindings })
+    return ([.init lhs ty val md], { bindings with boundVars := bbindings })
 
 mutual
 partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
@@ -946,9 +949,11 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
 
   match op.name, op.args with
   | q`Boogie.varStatement, declsa =>
-    translateVarStatement bindings declsa
+    let md ← getOpMetaData op
+    translateVarStatement bindings declsa md
   | q`Boogie.initStatement, args =>
-    translateInitStatement p bindings args
+    let md ← getOpMetaData op
+    translateInitStatement p bindings args md
   | q`Boogie.assign, #[_tpa, lhsa, ea] =>
     let lhs ← translateLhs lhsa
     let val ← translateExpr p bindings ea

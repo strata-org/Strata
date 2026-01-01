@@ -36,8 +36,8 @@ def typeCheck (C: Boogie.Expression.TyContext) (Env : Boogie.Expression.TyEnv) (
     let (decl', C, Env) ←
       match decl with
 
-      | .var x ty val _ =>
-        let (s', Env) ← Statement.typeCheck C Env program .none [.init x ty val .empty]
+      | .var x ty val md =>
+        let (s', Env) ← Statement.typeCheck C Env program .none [.init x ty val md]
         match s' with
         | [.init x' ty' val' _] => .ok (.var x' ty' val', C, Env)
         | _ => .error f!"Implementation error! \

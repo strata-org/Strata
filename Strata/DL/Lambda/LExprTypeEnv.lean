@@ -223,11 +223,11 @@ def TypeFactory.toKnownTypes (t: @TypeFactory IDMeta) : KnownTypes :=
 
 /--
 A type environment `TEnv` contains
-- genEnv: `TGenEnv` to track the generator state as well as the typing context
+- `genEnv`: `TGenEnv` to track the generator state as well as the typing context
   (mapping from variables to their types, type aliases, etc)
-- stateSubstInfo: `SubstInfo` to track type substitution info.
+- `stateSubstInfo`: `SubstInfo` to track type substitution info.
 This is the top-level data structure that is used by type inference functions
-such as LExpr.annotate.
+such as `LExpr.annotate`.
 -/
 structure TEnv (IDMeta : Type) where
   genEnv : TGenEnv IDMeta
@@ -794,7 +794,9 @@ def LMonoTy.instantiateWithCheck (mty : LMonoTy) (C: LContext T) (Env : TEnv T.I
 Instantiate `ty`, with resolution of type aliases to type definitions and checks
 for registered types.
 -/
-def LTy.instantiateWithCheck [ToFormat T.IDMeta] (ty : LTy) (C: LContext T) (Env : TEnv T.IDMeta) : Except Format (LMonoTy × TEnv T.IDMeta) := do
+def LTy.instantiateWithCheck [ToFormat T.IDMeta]
+    (ty : LTy) (C: LContext T) (Env : TEnv T.IDMeta) :
+    Except Format (LMonoTy × TEnv T.IDMeta) := do
   let (mty, Env) := match ty.resolveAliases Env with
                   | (some ty', Env) => (ty', Env)
                   | (none, Env) =>
