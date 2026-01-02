@@ -88,6 +88,29 @@ def formatExpressionError (prog : Program) (expr : B3AST.Expression SourceRange)
 
   s!"{loc}: {formatted}"
 
+def testAutoDiagnosis (prog : Program) : IO Unit := do
+  let ast := programToB3AST prog
+  let reports ← verifyWithDiagnosis ast
+
+  for report in reports do
+    IO.println s!"Procedure {report.procedureName}:"
+    for (result, diagnosis) in report.results do
+      match result.decision with
+      | .unsat =>
+          IO.println "  ✓ Verified"
+      | _ =>
+          IO.println "  ✗ Could not prove"
+          match result.sourceStmt with
+          | some stmt =>
+              IO.println s!"    {formatStatementError prog stmt}"
+          | none => pure ()
+          match diagnosis with
+          | some diag =>
+              if !diag.diagnosedFailures.isEmpty then
+                for (_desc, failedExpr, _) in diag.diagnosedFailures do
+                  IO.println s!"    Related: {formatExpressionError prog failedExpr}"
+          | none => pure ()
+
 def testVerification (prog : Program) : IO Unit := do
   let ast := programToB3AST prog
   let results ← verifyProgram ast
@@ -200,31 +223,8 @@ procedure test_fail() {
 #end
 
 ---------------------------------------------------------------------
--- Automatic Refinement Tests
+-- Automatic Diagnosis Tests
 ---------------------------------------------------------------------
-
-def testAutoDiagnosis (prog : Program) : IO Unit := do
-  let ast := programToB3AST prog
-  let reports ← verifyWithDiagnosis ast
-
-  for report in reports do
-    IO.println s!"Procedure {report.procedureName}:"
-    for (result, refinement) in report.results do
-      match result.decision with
-      | .unsat =>
-          IO.println "  ✓ Verified"
-      | _ =>
-          IO.println "  ✗ Could not prove"
-          match result.sourceStmt with
-          | some stmt =>
-              IO.println s!"    {formatStatementError prog stmt}"
-          | none => pure ()
-          match refinement with
-          | some ref =>
-              if !ref.diagnosedFailures.isEmpty then
-                for (_desc, failedExpr, _) in ref.diagnosedFailures do
-                  IO.println s!"    Related: {formatExpressionError prog failedExpr}"
-          | none => pure ()
 
 /--
 info: Procedure test:
@@ -237,6 +237,19 @@ info: Procedure test:
 function f(x : int) : int
 procedure test() {
   check 5 == 5 && f(5) == 10
+}
+#end
+
+/--
+info: Verification results:
+  test_reach: ✓ verified
+-/
+#guard_msgs in
+#eval testVerification $ #strata program B3CST;
+function f(x : int) : int
+axiom forall x : int pattern f(x) f(x) > 0
+procedure test_reach() {
+  reach f(5) < 0
 }
 #end
 
