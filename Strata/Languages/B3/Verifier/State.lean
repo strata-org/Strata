@@ -81,8 +81,7 @@ structure CheckResult where
   result : B3Result  -- B3-level result
   model : Option String := none
 
-def initVerificationState (solverPath : String := "z3") : IO B3VerificationState := do
-  let solver ← Solver.spawn solverPath #["-smt2", "-in"]
+def initVerificationState (solver : Solver) : IO B3VerificationState := do
   let _ ← (Solver.setLogic "ALL").run solver
   let _ ← (Solver.setOption "produce-models" "true").run solver
   return {
@@ -205,5 +204,19 @@ def addDeclaration (state : B3VerificationState) (decl : B3AST.Decl SourceRange)
       | some term => addAxiom state term
       | none => return state
   | _ => return state
+
+---------------------------------------------------------------------
+-- Solver Creation Helpers
+---------------------------------------------------------------------
+
+/-- Create an interactive solver (Z3/CVC5) -/
+def createInteractiveSolver (solverPath : String := "z3") : IO Solver :=
+  Solver.spawn solverPath #["-smt2", "-in"]
+
+/-- Create a buffer solver for SMT command generation -/
+def createBufferSolver : IO (Solver × IO.Ref IO.FS.Stream.Buffer) := do
+  let buffer ← IO.mkRef {}
+  let solver ← Solver.bufferWriter buffer
+  return (solver, buffer)
 
 end Strata.B3.Verifier

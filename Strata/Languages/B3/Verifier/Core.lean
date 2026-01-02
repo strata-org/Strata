@@ -26,9 +26,9 @@ open Strata.B3AST
 -- Batch Verification API
 ---------------------------------------------------------------------
 
-/-- Verify a B3 program using incremental API -/
-def verifyProgram (prog : B3AST.Program SourceRange) (solverPath : String := "z3") : IO (List (Except String CheckResult)) := do
-  let mut state ← initVerificationState solverPath
+/-- Verify a B3 program with a given solver -/
+def verifyProgramWithSolver (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List (Except String CheckResult)) := do
+  let mut state ← initVerificationState solver
   let mut results := []
 
   match prog with
@@ -100,78 +100,13 @@ def verifyProgram (prog : B3AST.Program SourceRange) (solverPath : String := "z3
 -- SMT Command Generation (for debugging/inspection)
 ---------------------------------------------------------------------
 
-/-- Generate SMT-LIB commands for a B3 program (without running solver) -/
-def programToSMTCommands (prog : B3AST.Program SourceRange) : List String :=
-  match prog with
-  | .program _ decls =>
-      let declList := decls.val.toList
-      let functionDecls := declList.filterMap (fun d =>
-        match d with
-        | .function _ name params _ _ _ =>
-            let argTypes := params.val.toList.map (fun _ => "Int")
-            let argTypeStr := String.intercalate " " argTypes
-            some s!"(declare-fun {name.val} ({argTypeStr}) Int)"
-        | _ => none
-      )
-      let axioms := declList.flatMap (fun d =>
-        match d with
-        | .function _ name params _ _ body =>
-            match body.val with
-            | some (.functionBody _ whens bodyExpr) =>
-                let paramNames := params.val.toList.map (fun p => match p with | .fParameter _ _ n _ => n.val)
-                let ctx' := paramNames.foldl (fun acc n => acc.push n) ConversionContext.empty
-                match expressionToSMT ctx' bodyExpr with
-                | some bodyTerm =>
-                    let paramVars := paramNames.map (fun n => Term.var ⟨n, .int⟩)
-                    let uf : UF := { id := name.val, args := paramVars.map (fun t => ⟨"_", t.typeOf⟩), out := .int }
-                    let funcCall := Term.app (.uf uf) paramVars .int
-                    let equality := Term.app .eq [funcCall, bodyTerm] .bool
-                    let axiomBody := if whens.val.isEmpty then
-                      equality
-                    else
-                      let whenTerms := whens.val.toList.filterMap (fun w =>
-                        match w with | .when _ e => expressionToSMT ctx' e
-                      )
-                      let antecedent := whenTerms.foldl (fun acc t => Term.app .and [acc, t] .bool) (Term.bool true)
-                      Term.app .or [Term.app .not [antecedent] .bool, equality] .bool
-                    let trigger := Term.app .triggers [funcCall] .trigger
-                    let axiomTerm := if paramNames.isEmpty then
-                      axiomBody
-                    else
-                      paramNames.foldl (fun body pname =>
-                        Factory.quant .all pname .int trigger body
-                      ) axiomBody
-                    [s!"(assert {formatTermDirect axiomTerm})"]
-                | none => []
-            | none => []
-        | .axiom _ _ expr =>
-            match expressionToSMT ConversionContext.empty expr with
-            | some term => [s!"(assert {formatTermDirect term})"]
-            | none => []
-        | .procedure _ _name params _specs body =>
-            -- Generate VCs for parameter-free procedures
-            if params.val.isEmpty && body.val.isSome then
-              let bodyStmt := body.val.get!
-              let vcState := statementToVCs ConversionContext.empty VCGenState.empty bodyStmt
-              vcState.verificationConditions.reverse.flatMap (fun (vc, _) =>
-                [ "(push 1)"
-                , s!"(assert (not {formatTermDirect vc}))"
-                , "(check-sat)"
-                , "(pop 1)"
-                ]
-              )
-            else []
-        | _ => []
-      )
-      functionDecls ++ axioms
-
 ---------------------------------------------------------------------
 -- State Building Utilities
 ---------------------------------------------------------------------
 
 /-- Build verification state from B3 program (functions and axioms only, no procedures) -/
-def buildProgramState (prog : Strata.B3AST.Program SourceRange) (solverPath : String := "z3") : IO B3VerificationState := do
-  let mut state ← initVerificationState solverPath
+def buildProgramState (prog : Strata.B3AST.Program SourceRange) (solver : Solver) : IO B3VerificationState := do
+  let mut state ← initVerificationState solver
   match prog with
   | .program _ decls =>
       for decl in decls.val.toList do
@@ -219,5 +154,22 @@ def buildProgramState (prog : Strata.B3AST.Program SourceRange) (solverPath : St
         | _ => pure ()
 
       return state
+
+/-- Verify a B3 program (convenience wrapper with interactive solver) -/
+def verifyProgram (prog : Strata.B3AST.Program SourceRange) (solverPath : String := "z3") : IO (List (Except String CheckResult)) := do
+  let solver ← createInteractiveSolver solverPath
+  let results ← verifyProgramWithSolver prog solver
+  let _ ← (Solver.exit).run solver
+  return results
+
+/-- Generate SMT commands for a B3 program -/
+def programToSMTCommands (prog : Strata.B3AST.Program SourceRange) : IO String := do
+  let (solver, buffer) ← createBufferSolver
+  let _ ← (Solver.setLogic "ALL").run solver
+  let _ ← verifyProgramWithSolver prog solver
+  let contents ← buffer.get
+  if h: contents.data.IsValidUTF8
+  then return String.fromUTF8 contents.data h
+  else return "Error: Invalid UTF-8 in SMT output"
 
 end Strata.B3.Verifier
