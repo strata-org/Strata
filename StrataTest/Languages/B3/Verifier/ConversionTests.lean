@@ -63,7 +63,9 @@ info: (declare-fun abs (Int) Int)
 function abs(x : int) : int {
   if x >= 0 then x else -x
 }
-check abs(-5) == 5
+procedure test() {
+  check abs(-5) == 5
+}
 #end
 
 /--
@@ -84,7 +86,9 @@ function isEven(n : int) : int {
 function isOdd(n : int) : int {
   if n == 0 then 0 else isEven(n - 1)
 }
-check isEven(4) == 1
+procedure test() {
+  check isEven(4) == 1
+}
 #end
 
 /--
@@ -99,7 +103,9 @@ info: (declare-fun f (Int) Int)
 #eval testB3ToSMT $ #strata program B3CST;
 function f(x : int) : int
 axiom forall x : int pattern f(x) x > 0 ==> f(x) > 0
-check 5 > 0 ==> f(5) > 0
+procedure test() {
+  check 5 > 0 ==> f(5) > 0
+}
 #end
 
 end B3.Verifier.Tests

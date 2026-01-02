@@ -83,18 +83,23 @@ partial def statementToVCs (ctx : ConversionContext) (state : VCGenState) : B3AS
           else
             let pathCond := state.pathConditions.foldl (fun acc t => Term.app .and [acc, t] .bool) (Term.bool true)
             Term.app .implies [pathCond, term] .bool
-          state.addVC vc (.check () expr)
+          let exprUnit := B3AST.Expression.mapMetadata (fun _ => ()) expr
+          state.addVC vc (.check () exprUnit)
       | none => state
   | .assert _ expr =>
-      -- Same as check
+      -- Assert = check + assume
       match expressionToSMT ctx expr with
       | some term =>
+          -- First, generate VC like check
           let vc := if state.pathConditions.isEmpty then
             term
           else
             let pathCond := state.pathConditions.foldl (fun acc t => Term.app .and [acc, t] .bool) (Term.bool true)
             Term.app .implies [pathCond, term] .bool
-          state.addVC vc (.assert () expr)
+          let exprUnit := B3AST.Expression.mapMetadata (fun _ => ()) expr
+          let state' := state.addVC vc (.assert () exprUnit)
+          -- Then, add to path conditions like assume
+          state'.addPathCondition term
       | none => state
   | .assume _ expr =>
       -- Add to path conditions

@@ -44,14 +44,16 @@ def b3CSTToAST (cst : B3CST.Program SourceRange) : B3AST.Program Unit × List (B
 
 /--
 info: Check results:
-  check: unsat (verified)
+  procedure test: unsat (verified)
 -/
 #guard_msgs in
 #eval do
   let prog := #strata program B3CST;
   function f(x : int) : int
   axiom forall x : int pattern f(x) x > 0 ==> f(x) > 0
-  check 5 > 0 ==> f(5) > 0
+  procedure test() {
+    check 5 > 0 ==> f(5) > 0
+  }
   #end
   let cst := programToB3CST prog
   let (ast, _) := b3CSTToAST cst
@@ -59,12 +61,12 @@ info: Check results:
   IO.println "Check results:"
   for result in results do
     match result.decl with
-    | .checkDecl _ _expr =>
+    | .procedure _ name _ _ _ =>
         let status := match result.decision with
           | .unsat => "unsat (verified)"
           | .sat => "sat (counterexample found)"
           | .unknown => "unknown"
-        IO.println s!"  check: {status}"
+        IO.println s!"  procedure {name.val}: {status}"
     | _ => pure ()
 
 end B3.Verifier.Tests

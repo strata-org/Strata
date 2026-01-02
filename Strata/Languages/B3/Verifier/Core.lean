@@ -7,6 +7,7 @@
 import Strata.Languages.B3.Verifier.State
 import Strata.Languages.B3.Verifier.Conversion
 import Strata.Languages.B3.Verifier.Formatter
+import Strata.Languages.B3.Verifier.Statements
 
 /-!
 # B3 Verifier
@@ -74,12 +75,19 @@ def verifyProgram (prog : B3AST.Program Unit) (solverPath : String := "z3") : IO
             match expressionToSMT ConversionContext.empty expr with
             | some term => state := addAssertion state term
             | none => pure ()
-        | .checkDecl _ expr =>
-            match expressionToSMT ConversionContext.empty expr with
-            | some term =>
-                let result ← checkProperty state term decl solverPath
+        | .procedure _ name params specs body =>
+            -- Only verify parameter-free procedures
+            if params.val.isEmpty && body.val.isSome then
+              let bodyStmt := body.val.get!
+              let bodyStmtUnit := B3AST.Statement.mapMetadata (fun _ => ()) bodyStmt
+              -- Generate VCs from procedure body
+              let vcState := statementToVCs ConversionContext.empty VCGenState.empty bodyStmtUnit
+              -- Check each VC
+              for (vc, _sourceStmt) in vcState.verificationConditions.reverse do
+                let result ← checkProperty state vc (.procedure () name params specs body) solverPath
                 results := results ++ [result]
-            | none => pure ()
+            else
+              pure ()  -- Skip procedures with parameters for now
         | _ => pure ()
 
       return results
@@ -89,7 +97,7 @@ def verifyProgram (prog : B3AST.Program Unit) (solverPath : String := "z3") : IO
 ---------------------------------------------------------------------
 
 /-- Generate SMT-LIB commands for a B3 program (without running solver) -/
-def programToSMTCommands (prog : B3AST.Program M) : List String :=
+def programToSMTCommands (prog : B3AST.Program Unit) : List String :=
   match prog with
   | .program _ decls =>
       let declList := decls.val.toList
@@ -136,15 +144,20 @@ def programToSMTCommands (prog : B3AST.Program M) : List String :=
             match expressionToSMT ConversionContext.empty expr with
             | some term => [s!"(assert {formatTermDirect term})"]
             | none => []
-        | .checkDecl _ expr =>
-            match expressionToSMT ConversionContext.empty expr with
-            | some term =>
+        | .procedure _ _name params _specs body =>
+            -- Generate VCs for parameter-free procedures
+            if params.val.isEmpty && body.val.isSome then
+              let bodyStmt := body.val.get!
+              let bodyStmtUnit := B3AST.Statement.mapMetadata (fun _ => ()) bodyStmt
+              let vcState := statementToVCs ConversionContext.empty VCGenState.empty bodyStmtUnit
+              vcState.verificationConditions.reverse.flatMap (fun (vc, _) =>
                 [ "(push 1)"
-                , s!"(assert (not {formatTermDirect term}))"
+                , s!"(assert (not {formatTermDirect vc}))"
                 , "(check-sat)"
                 , "(pop 1)"
                 ]
-            | none => []
+              )
+            else []
         | _ => []
       )
       functionDecls ++ axioms
