@@ -24,7 +24,6 @@ Tests for B3 to SMT conversion and verification.
 - ✅ Quantifiers (forall, exists) with patterns
 - ✅ Labeled expressions (labels stripped)
 - ❌ Let expressions (needs proper substitution)
-- ❌ Old values (old x) for inout parameters
 
 **Declarations:**
 - ✅ Function declarations
