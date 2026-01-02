@@ -118,12 +118,24 @@ def testVerification (prog : Program) : IO Unit := do
   for result in results do
     match result.decl with
     | .procedure _ name _ _ _ =>
-        let status := match result.decision with
+        -- Check if this is a reach statement
+        let isReach := match result.sourceStmt with
+          | some (.reach _ _) => true
+          | _ => false
+
+        let status := if isReach then
+          match result.decision with
+          | .unsat => "✓ unreachable"
+          | .sat => "⚠ reachable"
+          | .unknown => "? unknown"
+        else
+          match result.decision with
           | .unsat => "✓ verified"
           | .sat => "✗ proved wrong"
           | .unknown => "? unknown"
+
         IO.println s!"  {name.val}: {status}"
-        if result.decision != .unsat then
+        if result.decision != .unsat && !isReach then
           match result.sourceStmt with
           | some stmt =>
               IO.println s!"    {formatStatementError prog stmt}"
@@ -242,7 +254,7 @@ procedure test() {
 
 /--
 info: Verification results:
-  test_reach: ✓ verified
+  test_reach: ✓ unreachable
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
