@@ -545,9 +545,6 @@ def declToCST [Inhabited M] [Inhabited (B3CST.Expression M)] [Inhabited (B3CST.S
         (B3CST.Decl.axiom_decl m (B3CST.AxiomBody.axiom m expr'), errs)
       else
         (B3CST.Decl.axiom_decl m (B3CST.AxiomBody.explain_axiom m explainsCST expr'), errs)
-  | .checkDecl m expr =>
-      let (expr', errs) := expressionToCST ctx expr
-      (B3CST.Decl.check_decl m expr', errs)
   | .procedure m name params specs body =>
       -- Build context: inout parameters need two entries (old and current)
       let ctx' := params.val.toList.foldl (fun acc p =>
@@ -955,9 +952,6 @@ def declFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromCSTContext) : B3CST.De
           let namesAST := names.val.toList.map (fun n => mkAnn m n.val)
           let (expr', errs) := expressionFromCST ctx expr
           (.axiom m (mkAnn m namesAST.toArray) expr', errs)
-  | .check_decl m expr =>
-      let (expr', errs) := expressionFromCST ctx expr
-      (.checkDecl m expr', errs)
   | .procedure_decl m name params specs body =>
       -- Build context for parameters: inout parameters need two entries (old and current)
       let ctx' := params.val.toList.foldl (fun acc p =>

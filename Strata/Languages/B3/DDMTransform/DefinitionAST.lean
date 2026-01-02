@@ -178,9 +178,6 @@ op function (name : Ident, params : Seq FParameter, resultType : Ident, tag : Op
 op axiom (explains : Seq Ident, expr : Expression) : Decl =>
   "\naxiom explains " explains "," expr;
 
-op checkDecl (expr : Expression) : Decl =>
-  "\ncheck " expr;
-
 op procedure (name : Ident, params : Seq PParameter, specs : Seq Spec, body : Option Statement) : Decl =>
   "\nprocedure " name " (" params ") specs " specs " body " body;
 
@@ -294,7 +291,7 @@ def Statement.mapMetadata [Inhabited N] (f : M → N) (s: Statement M) : Stateme
       -- Unlike List and Array, Option.map does not use `attach` by default for wf proofs
         ⟨f elseB.ann, elseB.val.attach.map (fun x => Statement.mapMetadata f x.1)⟩
   | .ifCase m cases => .ifCase (f m) ⟨f cases.ann, cases.val.map (fun o =>
-      match ho: o with
+      match _: o with
       | .oneIfCase m cond body => .oneIfCase (f m) (Expression.mapMetadata f cond) (Statement.mapMetadata f body))⟩
   | .loop m invariants body =>
       .loop (f m) ⟨f invariants.ann, invariants.val.map (Expression.mapMetadata f)⟩ (Statement.mapMetadata f body)
@@ -347,8 +344,6 @@ def Decl.mapMetadata [Inhabited N] (f : M → N) : Decl M → Decl N
         ⟨f body.ann, body.val.map (FunctionBody.mapMetadata f)⟩
   | .axiom m explains expr =>
       .axiom (f m) ⟨f explains.ann, explains.val.map (mapAnn f)⟩ (Expression.mapMetadata f expr)
-  | .checkDecl m expr =>
-      .checkDecl (f m) (Expression.mapMetadata f expr)
   | .procedure m name params specs body =>
       .procedure (f m) (mapAnn f name) ⟨f params.ann, params.val.map (PParameter.mapMetadata f)⟩
         ⟨f specs.ann, specs.val.map (Spec.mapMetadata f)⟩

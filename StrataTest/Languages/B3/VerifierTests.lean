@@ -172,15 +172,85 @@ procedure test() {
 info: Verification results:
   test_fail: ✗ counterexample
     Failed at: offset +52
-    check f(5) == 10
+    check 5 == 5 && f(5) == 10
     Model: model available
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
 function f(x : int) : int
 procedure test_fail() {
-  check f(5)
-    == 10
+  check 5 == 5 && f(5) == 10
+}
+#end
+
+---------------------------------------------------------------------
+-- Refinement Strategy Tests
+---------------------------------------------------------------------
+
+/-- Test conjunction splitting refinement -/
+def testConjunctionRefinement (prog : Program) : IO Unit := do
+  let ast := programToB3AST prog
+
+  match ast with
+  | .program _ decls =>
+      -- Find the procedure with check
+      let procInfo := decls.val.toList.findSome? (fun d =>
+        match d with
+        | .procedure _ _ params _ body =>
+            if params.val.isEmpty && body.val.isSome then
+              let bodyStmt := body.val.get!
+              match bodyStmt with
+              | .check _ expr => some (expr, d)
+              | .blockStmt _ stmts =>
+                  -- Look for check in block
+                  stmts.val.toList.findSome? (fun s =>
+                    match s with
+                    | .check _ expr => some (expr, d)
+                    | _ => none
+                  )
+              | _ => none
+            else none
+        | _ => none
+      )
+
+      match procInfo with
+      | none => IO.println "No check found"
+      | some (expr, procDecl) =>
+          -- Build state
+          let mut state := initVerificationState
+          for decl in decls.val.toList do
+            match decl with
+            | .function _ name params _ _ _ =>
+                state := addFunctionDecl state name.val (params.val.toList.map (fun _ => "Int")) "Int"
+            | _ => pure ()
+
+          -- Run refinement
+          let result ← refineConjunction state expr procDecl
+
+          IO.println "Checking full expression..."
+          let fullStatus := match result.fullCheck.decision with
+            | .unsat => "✓ verified"
+            | _ => "✗ failed"
+          IO.println s!"  {fullStatus}"
+
+          if !result.refinements.isEmpty then
+            IO.println "  Splitting conjunction..."
+            for (desc, refResult) in result.refinements do
+              let status := if refResult.decision == .unsat then "✓" else "✗"
+              IO.println s!"    {desc}: {status}"
+
+/--
+info: Checking full expression...
+  ✗ failed
+  Splitting conjunction...
+    left conjunct: ✓
+    right conjunct: ✗
+-/
+#guard_msgs in
+#eval testConjunctionRefinement $ #strata program B3CST;
+function f(x : int) : int
+procedure test() {
+  check 5 == 5 && f(5) == 10
 }
 #end
 
