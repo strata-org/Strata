@@ -9,9 +9,9 @@ import Strata.Languages.B3.DDMTransform.ParseCST
 import Strata.Languages.B3.DDMTransform.Conversion
 
 /-!
-# B3 to SMT Conversion Tests
+# B3 Verifier Tests
 
-Tests for converting B3 programs to SMT commands.
+Tests for B3 to SMT conversion and verification.
 -/
 
 namespace B3.Verifier.Tests
@@ -19,35 +19,47 @@ namespace B3.Verifier.Tests
 open Strata
 open Strata.B3.Verifier
 
-/-- Helper to extract B3 program from DDM parse result -/
-def programToB3CST (prog : Program) : B3CST.Program SourceRange :=
+---------------------------------------------------------------------
+-- Test Helpers
+---------------------------------------------------------------------
+
+def programToB3AST (prog : Program) : B3AST.Program Unit :=
   match prog.commands.toList with
   | [op] =>
       if op.name.name == "command_program" then
         match op.args.toList with
         | [ArgF.op progOp] =>
             match B3CST.Program.ofAst progOp with
-            | .ok cstProg => cstProg
+            | .ok cstProg =>
+                let (ast, _) := B3.programFromCST B3.FromCSTContext.empty cstProg
+                B3AST.Program.mapMetadata (fun _ => ()) ast
             | .error _ => default
         | _ => default
       else default
   | _ => default
 
-/-- Helper to convert B3CST to B3AST -/
-def b3CSTToAST (cst : B3CST.Program SourceRange) : B3AST.Program Unit × List (B3.CSTToASTError SourceRange) :=
-  let (prog, errors) := B3.programFromCST B3.FromCSTContext.empty cst
-  (B3AST.Program.mapMetadata (fun _ => ()) prog, errors)
-
-/-- Test B3 to SMT command generation -/
-def testB3ToSMT (prog : Program) : IO Unit := do
-  let cst := programToB3CST prog
-  let (ast, _errors) := b3CSTToAST cst
-  let smtCommands := programToSMTCommands ast
-  for cmd in smtCommands do
+def testSMTGeneration (prog : Program) : IO Unit := do
+  let ast := programToB3AST prog
+  let commands := programToSMTCommands ast
+  for cmd in commands do
     IO.println cmd
 
+def testVerification (prog : Program) : IO Unit := do
+  let ast := programToB3AST prog
+  let results ← verifyProgram ast
+  IO.println "Verification results:"
+  for result in results do
+    match result.decl with
+    | .procedure _ name _ _ _ =>
+        let status := match result.decision with
+          | .unsat => "✓ verified"
+          | .sat => "✗ counterexample"
+          | .unknown => "? unknown"
+        IO.println s!"  {name.val}: {status}"
+    | _ => pure ()
+
 ---------------------------------------------------------------------
--- Tests
+-- SMT Generation Tests
 ---------------------------------------------------------------------
 
 /--
@@ -59,7 +71,7 @@ info: (declare-fun abs (Int) Int)
 (pop 1)
 -/
 #guard_msgs in
-#eval testB3ToSMT $ #strata program B3CST;
+#eval testSMTGeneration $ #strata program B3CST;
 function abs(x : int) : int {
   if x >= 0 then x else -x
 }
@@ -79,7 +91,7 @@ info: (declare-fun isEven (Int) Int)
 (pop 1)
 -/
 #guard_msgs in
-#eval testB3ToSMT $ #strata program B3CST;
+#eval testSMTGeneration $ #strata program B3CST;
 function isEven(n : int) : int {
   if n == 0 then 1 else isOdd(n - 1)
 }
@@ -100,7 +112,24 @@ info: (declare-fun f (Int) Int)
 (pop 1)
 -/
 #guard_msgs in
-#eval testB3ToSMT $ #strata program B3CST;
+#eval testSMTGeneration $ #strata program B3CST;
+function f(x : int) : int
+axiom forall x : int pattern f(x) x > 0 ==> f(x) > 0
+procedure test() {
+  check 5 > 0 ==> f(5) > 0
+}
+#end
+
+---------------------------------------------------------------------
+-- Solver Integration Tests
+---------------------------------------------------------------------
+
+/--
+info: Verification results:
+  test: ✓ verified
+-/
+#guard_msgs in
+#eval testVerification $ #strata program B3CST;
 function f(x : int) : int
 axiom forall x : int pattern f(x) x > 0 ==> f(x) > 0
 procedure test() {
