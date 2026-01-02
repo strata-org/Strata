@@ -61,7 +61,7 @@ partial def executeStatementsWithDiagnosis (ctx : ConversionContext) (state : B3
       match expressionToSMT ctx expr with
       | some term =>
           let result ← reach state term sourceDecl (some (.reach m expr))
-          let diag ← if !result.result.isError then
+          let diag ← if result.result.isError then  -- Diagnose when unreachable (error)
             let d ← diagnoseUnreachable state expr sourceDecl (.reach m expr)
             pure (some d)
           else

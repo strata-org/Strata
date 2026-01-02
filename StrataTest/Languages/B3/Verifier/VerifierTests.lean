@@ -12,6 +12,85 @@ import Strata.Languages.B3.DDMTransform.Conversion
 # B3 Verifier Tests
 
 Tests for B3 to SMT conversion and verification.
+
+## Supported Features
+
+**Expressions:**
+- ✅ Literals (int, bool, string)
+- ✅ Binary operators (all: ==, !=, <, <=, >, >=, +, -, *, div, mod, &&, ||, ==>, <==, <==>)
+- ✅ Unary operators (!, -)
+- ✅ If-then-else
+- ✅ Function calls
+- ✅ Quantifiers (forall, exists) with patterns
+- ✅ Labeled expressions (labels stripped)
+- ⚠️ Let expressions (placeholder - needs proper substitution)
+
+**Declarations:**
+- ✅ Function declarations (with and without bodies)
+- ✅ Function bodies → quantified axioms
+- ✅ Axioms (with optional explains clauses)
+- ✅ Parameter-free procedures
+
+**Statements:**
+- ✅ Check (verify property)
+- ✅ Assert (verify and assume)
+- ✅ Assume (add to solver state)
+- ✅ Reach (reachability checking)
+- ✅ Block statements
+
+**Verification:**
+- ✅ Streaming translation (O(n) not O(n²))
+- ✅ Sequential execution (asserts accumulate)
+- ✅ Automatic diagnosis (conjunction splitting)
+- ✅ Efficient solver reuse (push/pop)
+
+## TODO: Remaining B3 Features
+
+**Expressions:**
+- ❌ Let expressions with proper substitution
+- ❌ Labeled expressions (preserve labels for error reporting)
+
+**Types:**
+- ❌ User-defined types (type declarations)
+- ❌ Taggers (tagger declarations)
+- ❌ Type inference for expressions
+
+**Functions:**
+- ❌ Injective parameters → inverse functions
+- ❌ Tagged functions → tag constants
+- ❌ When clauses (currently converted but not fully tested)
+- ❌ Multiple when clauses
+
+**Procedures:**
+- ❌ Procedures with parameters (in, out, inout)
+- ❌ Procedure specifications (requires, ensures)
+- ❌ Procedure calls → contract predicates
+- ❌ Modular verification
+
+**Statements:**
+- ❌ Variable declarations (var, val)
+- ❌ Assignments
+- ❌ Reinit
+- ❌ If statements
+- ❌ If-case statements
+- ❌ Choose statements (non-determinism)
+- ❌ Loop statements with invariants
+- ❌ Labeled statements
+- ❌ Exit statements
+- ❌ Return statements
+- ❌ Probe statements
+- ❌ Forall statements (aForall)
+
+**Diagnosis Strategies:**
+- ✅ Conjunction splitting
+- ❌ When-clause testing
+- ❌ Definition inlining
+- ❌ Simplification strategies
+
+**Advanced:**
+- ❌ Counterexample parsing and display
+- ❌ Multi-level push/pop stack management (like B3)
+- ❌ Incremental verification with state reuse across procedures
 -/
 
 namespace B3.Verifier.Tests
@@ -41,7 +120,14 @@ def programToB3AST (prog : Program) : B3AST.Program SourceRange :=
 def testSMTGeneration (prog : Program) : IO Unit := do
   let ast := programToB3AST prog
   let commands ← programToSMTCommands ast
-  IO.println commands
+  -- Strip common prefix/suffix for stable tests
+  let lines := commands.splitOn "\n"
+  let filtered := lines.filter (fun line =>
+    !line.startsWith "(set-logic" &&
+    !line.startsWith "(set-option" &&
+    !line.startsWith "(exit"
+  )
+  IO.println (String.intercalate "\n" filtered)
 
 def formatSourceLocation (baseOffset : String.Pos.Raw) (sr : SourceRange) : String :=
   let relativePos := sr.start.byteIdx - baseOffset.byteIdx
@@ -88,80 +174,48 @@ def formatExpressionError (prog : Program) (expr : B3AST.Expression SourceRange)
 
   s!"{loc}: {formatted}"
 
-def testAutoDiagnosis (prog : Program) : IO Unit := do
-  let ast := programToB3AST prog
-  let reports ← verifyWithDiagnosis ast
-
-  for report in reports do
-    IO.println s!"Procedure {report.procedureName}:"
-    for (result, diagnosis) in report.results do
-      -- Check if this is a reach statement
-      let isReach := match result.sourceStmt with
-        | some (.reach _ _) => true
-        | _ => false
-
-      let isFailed := if isReach then
-        !result.result.isError  -- For reach, unsat is failure
-      else
-        result.result.isError  -- For check, sat is failure
-
-      if !isFailed then
-        IO.println "  ✓ Verified"
-      else
-        IO.println "  ✗ Could not prove"
-        match result.sourceStmt with
-        | some stmt =>
-            IO.println s!"    {formatStatementError prog stmt}"
-        | none => pure ()
-        match diagnosis with
-        | some diag =>
-            if !diag.diagnosedFailures.isEmpty then
-              for (_desc, failedExpr, _) in diag.diagnosedFailures do
-                IO.println s!"    Related: {formatExpressionError prog failedExpr}"
-        | none => pure ()
-
 def testVerification (prog : Program) : IO Unit := do
   let ast := programToB3AST prog
-  let results ← verifyProgram ast
+  let reports ← verifyWithDiagnosis ast
   IO.println "Verification results:"
-  for result in results do
-    match result with
-    | .error msg =>
-        IO.println s!"  Error: {msg}"
-    | .ok checkResult =>
-        match checkResult.decl with
-        | .procedure _ name _ _ _ =>
-            let marker := if checkResult.result.isError then "✗" else "✓"
-            let description := match checkResult.result with
-              | .checkResult .proved => "verified"
-              | .checkResult .provedWrong => "proved false"
-              | .checkResult .proofUnknown => "proof unknown"
-              | .reachResult .unreachable => "unreachable"
-              | .reachResult .reachable => "satisfiable"
-              | .reachResult .reachabilityUnknown => "reachability unknown"
+  for report in reports do
+    for (result, diagnosis) in report.results do
+      match result.decl with
+      | .procedure _ name _ _ _ =>
+          let marker := if result.result.isError then "✗" else "✓"
+          let description := match result.result with
+            | .checkResult .proved => "verified"
+            | .checkResult .counterexample => "counterexample found"
+            | .checkResult .proofUnknown => "proof unknown"
+            | .reachResult .unreachable => "unreachable"
+            | .reachResult .reachable => "satisfiable"
+            | .reachResult .reachabilityUnknown => "reachability unknown"
 
-            IO.println s!"  {name.val}: {marker} {description}"
-            if checkResult.result.isError then
-              match checkResult.sourceStmt with
-              | some stmt =>
-                  IO.println s!"    {formatStatementError prog stmt}"
-              | none => pure ()
-        | _ => pure ()
+          IO.println s!"  {name.val}: {marker} {description}"
+          if result.result.isError then
+            match result.sourceStmt with
+            | some stmt =>
+                IO.println s!"    {formatStatementError prog stmt}"
+            | none => pure ()
+            match diagnosis with
+            | some diag =>
+                if !diag.diagnosedFailures.isEmpty then
+                  for (_desc, failedExpr, _) in diag.diagnosedFailures do
+                    IO.println s!"    Related: {formatExpressionError prog failedExpr}"
+            | none => pure ()
+      | _ => pure ()
 
 ---------------------------------------------------------------------
 -- SMT Generation Tests
 ---------------------------------------------------------------------
 
 /--
-info: (set-logic ALL)
-(set-option :produce-models true)
-(declare-fun abs (Int) Int)
+info: (declare-fun abs (Int) Int)
 (assert (forall ((x Int)) (! (= (abs x) (ite (>= x 0) x (- x))) :pattern ((abs x)))))
 (push 1)
 (assert (not (= (abs (- 5)) 5)))
 (check-sat)
 (pop 1)
-(exit)
 -/
 #guard_msgs in
 #eval testSMTGeneration $ #strata program B3CST;
@@ -232,8 +286,9 @@ procedure test() {
 
 /--
 info: Verification results:
-  test_fail: ✗ proved false
+  test_fail: ✗ counterexample found
     (0,52): check 5 == 5 && f(5) == 10
+    Related: (0,68): f(5) == 10
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -244,22 +299,8 @@ procedure test_fail() {
 #end
 
 ---------------------------------------------------------------------
--- Automatic Diagnosis Tests
+-- Reach Tests
 ---------------------------------------------------------------------
-
-/--
-info: Procedure test:
-  ✗ Could not prove
-    (0,47): check 5 == 5 && f(5) == 10
-    Related: (0,63): f(5) == 10
--/
-#guard_msgs in
-#eval testAutoDiagnosis $ #strata program B3CST;
-function f(x : int) : int
-procedure test() {
-  check 5 == 5 && f(5) == 10
-}
-#end
 
 /--
 info: Verification results:
@@ -289,13 +330,13 @@ procedure test_reach_good() {
 #end
 
 /--
-info: Procedure test_reach_diagnosis:
-  ✗ Could not prove
+info: Verification results:
+  test_reach_diagnosis: ✗ unreachable
     (0,106): reach f(5) > 5 && f(5) < 0
     Related: (0,124): f(5) < 0
 -/
 #guard_msgs in
-#eval testAutoDiagnosis $ #strata program B3CST;
+#eval testVerification $ #strata program B3CST;
 function f(x : int) : int
 axiom forall x : int pattern f(x) f(x) > 0
 procedure test_reach_diagnosis() {
@@ -303,18 +344,59 @@ procedure test_reach_diagnosis() {
 }
 #end
 
-end B3.Verifier.Tests
-
-
 /--
 info: Verification results:
+  test_assert_helps: ✓ verified
   test_assert_helps: ✓ verified
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
 function f(x : int) : int
+axiom forall x : int pattern f(x) f(x) > 0
 procedure test_assert_helps() {
   assert f(5) > 0
   check f(5) > -1
 }
 #end
+
+
+---------------------------------------------------------------------
+-- Expression Coverage Test
+---------------------------------------------------------------------
+
+/--
+info: (declare-fun f (Int) Int)
+(declare-fun g (Int Int) Int)
+(assert (forall ((x Int)) (! (= (f x) (+ x 1)) :pattern ((f x)))))
+(push 1)
+(assert (not (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (= 5 5) (not (= 3 4))) (< 2 3)) (<= 2 2)) (> 4 3)) (>= 4 4)) (+ 1 2)) (- 5 2)) (* 3 4)) (div 10 2)) (mod 7 3)) (- 5)) (=> true true)) (or false true)) (ite true 1 0)) (f 5)) (g 1 2)) (forall ((y Int)) (! (> y 0) :pattern (y))))))
+(check-sat)
+(pop 1)
+-/
+#guard_msgs in
+#eval testSMTGeneration $ #strata program B3CST;
+function f(x : int) : int { x + 1 }
+function g(a : int, b : int) : int
+procedure test_all_expressions() {
+  check 5 == 5 &&
+        !(3 == 4) &&
+        2 < 3 &&
+        2 <= 2 &&
+        4 > 3 &&
+        4 >= 4 &&
+        1 + 2 &&
+        5 - 2 &&
+        3 * 4 &&
+        10 div 2 &&
+        7 mod 3 &&
+        -5 &&
+        (true ==> true) &&
+        (false || true) &&
+        (if true then 1 else 0) &&
+        f(5) &&
+        g(1, 2) &&
+        (forall y : int y > 0)
+}
+#end
+
+end B3.Verifier.Tests

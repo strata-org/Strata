@@ -27,12 +27,12 @@ open Strata.B3AST
 
 inductive B3CheckResult where
   | proved : B3CheckResult
-  | provedWrong : B3CheckResult
+  | counterexample : B3CheckResult
   | proofUnknown : B3CheckResult
 
 def B3CheckResult.isError : B3CheckResult → Bool
   | .proved => false
-  | .provedWrong => true
+  | .counterexample => true
   | .proofUnknown => true
 
 inductive B3ReachResult where
@@ -56,7 +56,7 @@ def B3Result.isError : B3Result → Bool
 def B3Result.fromDecisionForProve (d : Decision) : B3Result :=
   match d with
   | .unsat => .checkResult .proved
-  | .sat => .checkResult .provedWrong
+  | .sat => .checkResult .counterexample
   | .unknown => .checkResult .proofUnknown
 
 def B3Result.fromDecisionForReach (d : Decision) : B3Result :=
