@@ -259,6 +259,71 @@ def elabMetadataName (loc : SourceRange) (mi : MaybeQualifiedIdent) : ElabM (Qua
       logError loc s!"{ident} is ambiguous; declared in {d} and {d_alt}"
     return ({ dialect := d, name := ident }, decl.val)
 
+/-- Translate a FunctionIterScope syntax tree to the AST type -/
+def translateFunctionIterScope (tree : Tree) : ElabM FunctionIterScope := do
+  let .ofOperationInfo opInfo := tree.info
+    | panic! "Expected operation for FunctionIterScope"
+  match opInfo.op.name with
+  | q`Init.scopePerConstructor => return .perConstructor
+  | q`Init.scopePerField => return .perField
+  | name => panic! s!"Unknown FunctionIterScope: {name.fullName}"
+
+/-- Translate a NamePatternPart syntax tree to the AST type -/
+def translateNamePatternPart (tree : Tree) : ElabM NamePatternPart := do
+  let .ofOperationInfo opInfo := tree.info
+    | panic! "Expected operation for NamePatternPart"
+  match opInfo.op.name with
+  | q`Init.patternLiteral =>
+    let .ofStrlitInfo strInfo := tree[0]!.info
+      | panic! "Expected string literal for pattern literal"
+    return .literal strInfo.val
+  | q`Init.patternDatatype => return .datatype
+  | q`Init.patternConstructor => return .constructor
+  | q`Init.patternField => return .field
+  | name => panic! s!"Unknown NamePatternPart: {name.fullName}"
+
+/-- Translate a NamePattern syntax tree (array of NamePatternPart) -/
+def translateNamePattern (tree : Tree) : ElabM (Array NamePatternPart) := do
+  let .ofOperationInfo opInfo := tree.info
+    | panic! "Expected operation for NamePattern"
+  assert! opInfo.op.name == q`Init.namePatternMk
+  let some parts := tree[0]!.asCommaSepInfo?
+    | panic! "Expected comma-separated list for name pattern"
+  parts.mapM translateNamePatternPart
+
+/-- Translate a TypeRef syntax tree to the AST type -/
+def translateTypeRef (tree : Tree) : ElabM TypeRef := do
+  let .ofOperationInfo opInfo := tree.info
+    | panic! "Expected operation for TypeRef"
+  match opInfo.op.name with
+  | q`Init.typeRefDatatype => return .datatype
+  | q`Init.typeRefFieldType => return .fieldType
+  | q`Init.typeRefBuiltin =>
+    let .ofStrlitInfo strInfo := tree[0]!.info
+      | panic! "Expected string literal for builtin type name"
+    return .builtin strInfo.val
+  | name => panic! s!"Unknown TypeRef: {name.fullName}"
+
+/-- Translate a TypeRefList syntax tree (array of TypeRef) -/
+def translateTypeRefList (tree : Tree) : ElabM (Array TypeRef) := do
+  let .ofOperationInfo opInfo := tree.info
+    | panic! "Expected operation for TypeRefList"
+  assert! opInfo.op.name == q`Init.typeRefListMk
+  let some types := tree[0]!.asCommaSepInfo?
+    | panic! "Expected comma-separated list for type ref list"
+  types.mapM translateTypeRef
+
+/-- Translate a FunctionTemplate syntax tree to the AST type -/
+def translateFunctionTemplate (tree : Tree) : ElabM FunctionTemplate := do
+  let .ofOperationInfo opInfo := tree.info
+    | panic! "Expected operation for FunctionTemplate"
+  assert! opInfo.op.name == q`Init.functionTemplateMk
+  let scope ← translateFunctionIterScope tree[0]!
+  let namePattern ← translateNamePattern tree[1]!
+  let paramTypes ← translateTypeRefList tree[2]!
+  let returnType ← translateTypeRef tree[3]!
+  return { scope, namePattern, paramTypes, returnType }
+
 partial def translateMetadataArg {argc} (args : ArgDeclsMap argc) (argName : String) (expected : MetadataArgType) (tree : Tree) : ElabM MetadataArg := do
   let .ofOperationInfo argInfo := tree.info
     | panic! "Expected an operator"
@@ -313,6 +378,14 @@ partial def translateMetadataArg {argc} (args : ArgDeclsMap argc) (argName : Str
       return .option none
     | _ =>
       logErrorMF argInfo.loc mf!"Expected {expected} value."
+      return default
+  | q`Init.MetadataArgFunctionTemplate =>
+    match expected with
+    | .functionTemplate =>
+      let template ← translateFunctionTemplate tree[0]!
+      return .functionTemplate template
+    | _ =>
+      logErrorMF argInfo.loc mf!"Expected {expected} value, got function template."
       return default
   | name =>
     panic! s!"Unknown metadata arg kind {name.fullName}"
@@ -406,6 +479,7 @@ partial def elabMetadataArgCatType (loc : SourceRange) (cat : SyntaxCat) : DeclM
   | q`Init.Option =>
     assert! cat.args.size = 1
     .opt <$> elabMetadataArgCatType loc cat.args[0]!
+  | q`Init.FunctionTemplate => pure .functionTemplate
   | c =>
     logErrorMF loc mf!"Unsupported metadata category {c}"
     pure default

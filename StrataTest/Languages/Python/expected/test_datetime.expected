@@ -13,7 +13,7 @@ assert_opt_name_none_or_bar: verified
 
 ensures_maybe_except_none: verified
 
-py_assertion: unknown
+py_assertion: verified
 
 py_assertion: verified
 

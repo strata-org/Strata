@@ -206,6 +206,130 @@ def initDialect : Dialect := BuiltinM.create! "Init" #[] do
     syntaxDef := .ofList [.str "none"]
   }
 
+  -- =====================================================================
+  -- Function Template Syntax for Datatype Declarations
+  -- =====================================================================
+
+  -- FunctionIterScope: perConstructor | perField
+  let FunctionIterScope := q`Init.FunctionIterScope
+  declareCat FunctionIterScope
+  declareOp {
+    name := "scopePerConstructor",
+    argDecls := .empty,
+    category := FunctionIterScope,
+    syntaxDef := .ofList [.str "perConstructor"]
+  }
+  declareOp {
+    name := "scopePerField",
+    argDecls := .empty,
+    category := FunctionIterScope,
+    syntaxDef := .ofList [.str "perField"]
+  }
+
+  -- NamePatternPart: .literal "str" | .datatype | .constructor | .field
+  let NamePatternPart := q`Init.NamePatternPart
+  declareCat NamePatternPart
+  declareOp {
+    name := "patternLiteral",
+    argDecls := .ofArray #[
+      { ident := "value", kind := .cat Str }
+    ],
+    category := NamePatternPart,
+    syntaxDef := .ofList [.str ".literal", .ident 0 0]
+  }
+  declareOp {
+    name := "patternDatatype",
+    argDecls := .empty,
+    category := NamePatternPart,
+    syntaxDef := .ofList [.str ".datatype"]
+  }
+  declareOp {
+    name := "patternConstructor",
+    argDecls := .empty,
+    category := NamePatternPart,
+    syntaxDef := .ofList [.str ".constructor"]
+  }
+  declareOp {
+    name := "patternField",
+    argDecls := .empty,
+    category := NamePatternPart,
+    syntaxDef := .ofList [.str ".field"]
+  }
+
+  -- NamePattern: array of NamePatternPart
+  let NamePattern := q`Init.NamePattern
+  declareCat NamePattern
+  declareOp {
+    name := "namePatternMk",
+    argDecls := .ofArray #[
+      { ident := "parts", kind := .cat <| .mkCommaSepBy <| .atom .none NamePatternPart }
+    ],
+    category := NamePattern,
+    syntaxDef := .ofList [.str "[", .ident 0 0, .str "]"]
+  }
+
+  -- TypeRef: .datatype | .fieldType | .builtin "name"
+  let TypeRefCat := q`Init.TypeRef
+  declareCat TypeRefCat
+  declareOp {
+    name := "typeRefDatatype",
+    argDecls := .empty,
+    category := TypeRefCat,
+    syntaxDef := .ofList [.str ".datatype"]
+  }
+  declareOp {
+    name := "typeRefFieldType",
+    argDecls := .empty,
+    category := TypeRefCat,
+    syntaxDef := .ofList [.str ".fieldType"]
+  }
+  declareOp {
+    name := "typeRefBuiltin",
+    argDecls := .ofArray #[
+      { ident := "name", kind := .cat Str }
+    ],
+    category := TypeRefCat,
+    syntaxDef := .ofList [.str ".builtin", .ident 0 0]
+  }
+
+  -- TypeRefList: array of TypeRef for parameter types
+  let TypeRefList := q`Init.TypeRefList
+  declareCat TypeRefList
+  declareOp {
+    name := "typeRefListMk",
+    argDecls := .ofArray #[
+      { ident := "types", kind := .cat <| .mkCommaSepBy <| .atom .none TypeRefCat }
+    ],
+    category := TypeRefList,
+    syntaxDef := .ofList [.str "[", .ident 0 0, .str "]"]
+  }
+
+  -- FunctionTemplate: scope(namePattern, paramTypes, returnType)
+  -- Example: perConstructor([.datatype, .literal "..is", .constructor], [.datatype], .builtin "bool")
+  let FunctionTemplate := q`Init.FunctionTemplate
+  declareCat FunctionTemplate
+  declareOp {
+    name := "functionTemplateMk",
+    argDecls := .ofArray #[
+      { ident := "scope", kind := .cat <| .atom .none FunctionIterScope },
+      { ident := "namePattern", kind := .cat <| .atom .none NamePattern },
+      { ident := "paramTypes", kind := .cat <| .atom .none TypeRefList },
+      { ident := "returnType", kind := .cat <| .atom .none TypeRefCat }
+    ],
+    category := FunctionTemplate,
+    syntaxDef := .ofList [.ident 0 0, .str "(", .ident 1 0, .str ",", .ident 2 0, .str ",", .ident 3 0, .str ")"]
+  }
+
+  -- MetadataArg for function templates - allows using function templates in metadata annotations
+  declareOp {
+    name := "MetadataArgFunctionTemplate",
+    argDecls := .ofArray #[
+      { ident := "template", kind := .cat <| .atom .none FunctionTemplate }
+    ],
+    category := MetadataArg,
+    syntaxDef := .ofList [.ident 0 0]
+  }
+
   let MetadataArgs := q`Init.MetadataArgs
   declareCat MetadataArgs
   declareOp {
