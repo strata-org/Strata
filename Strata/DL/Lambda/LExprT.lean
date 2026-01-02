@@ -190,7 +190,8 @@ def inferFVar (C: LContext T) (Env : TEnv T.IDMeta) (x : T.Identifier) (fty : Op
     | none => .ok (ty, Env)
     | some fty =>
       let (fty, Env) ← LMonoTy.instantiateWithCheck fty C Env
-      let S ← Constraints.unify [(fty, ty)] Env.stateSubstInfo
+      let constraint := (fty, ty)
+      let S ← Constraints.unify [(constraint, (ConstraintDebugInfo.mk constraint ""))] Env.stateSubstInfo
       .ok (ty, TEnv.updateSubst Env S)
 
 /--
@@ -262,7 +263,8 @@ partial def inferOp (C: LContext T) (Env : TEnv T.IDMeta) (o : T.Identifier) (ot
             let (body_typed, Env) ← resolveAux C Env body
             let bodyty := body_typed.toLMonoTy
             let (retty, Env) ← func.outputPolyType.instantiateWithCheck C Env
-            let S ← Constraints.unify [(retty, bodyty)] Env.stateSubstInfo
+            let constraint := (retty, bodyty)
+            let S ← Constraints.unify [(constraint, (ConstraintDebugInfo.mk constraint ""))] Env.stateSubstInfo
             let Env := Env.updateSubst S
             let Env := Env.popContext
             .ok Env
@@ -273,7 +275,8 @@ partial def inferOp (C: LContext T) (Env : TEnv T.IDMeta) (o : T.Identifier) (ot
       | none => .ok (ty, Env)
       | some oty =>
         let (oty, Env) ← LMonoTy.instantiateWithCheck oty C Env
-        let S ← Constraints.unify [(ty, oty)] Env.stateSubstInfo
+        let constraint := (ty, oty)
+        let S ← Constraints.unify [(constraint, (ConstraintDebugInfo.mk constraint ""))] Env.stateSubstInfo
         .ok (ty, TEnv.updateSubst Env S)
 
 partial def resolveAux.ite (C: LContext T) (Env : TEnv T.IDMeta) (m : T.Metadata) (c th el : LExpr ⟨T, LMonoTy⟩) := do
@@ -283,7 +286,11 @@ partial def resolveAux.ite (C: LContext T) (Env : TEnv T.IDMeta) (m : T.Metadata
   let cty := ct.toLMonoTy
   let tty := tt.toLMonoTy
   let ety := et.toLMonoTy
-  let S ← Constraints.unify [(cty, LMonoTy.bool), (tty, ety)] Env.stateSubstInfo
+  let constraint1 := (cty, LMonoTy.bool)
+  let constraint2 := (tty, ety)
+  let S ← Constraints.unify [(constraint1, (ConstraintDebugInfo.mk constraint1 "")),
+                             (constraint2, (ConstraintDebugInfo.mk constraint2 ""))]
+            Env.stateSubstInfo
   .ok (.ite ⟨m, tty⟩ ct tt et, Env.updateSubst S)
 
 partial def resolveAux.eq (C: LContext T) (Env : TEnv T.IDMeta) (m: T.Metadata) (e1 e2 : LExpr T.mono) := do
@@ -293,7 +300,8 @@ partial def resolveAux.eq (C: LContext T) (Env : TEnv T.IDMeta) (m: T.Metadata) 
   let (e2t, Env) ← resolveAux C Env e2
   let ty1 := e1t.toLMonoTy
   let ty2 := e2t.toLMonoTy
-  let S ← Constraints.unify [(ty1, ty2)] Env.stateSubstInfo
+  let constraint := (ty1, ty2)
+  let S ← Constraints.unify [(constraint, (ConstraintDebugInfo.mk constraint ""))] Env.stateSubstInfo
   .ok (.eq ⟨m, LMonoTy.bool⟩ e1t e2t, TEnv.updateSubst Env S)
 
 partial def resolveAux.abs (C: LContext T) (Env : TEnv T.IDMeta) (m: T.Metadata) (bty : Option LMonoTy) (e : LExpr T.mono): Except Format (LExprT T.mono × TEnv T.IDMeta) := do
@@ -346,8 +354,8 @@ partial def resolveAux.app (C: LContext T) (Env : TEnv T.IDMeta) (m: T.Metadata)
   let (fresh_name, Env) := TEnv.genTyVar Env
   let freshty := (.ftvar fresh_name)
   -- `ty1` must be of the form `ty2 → freshty`.
-  let constraints := [(ty1, (.tcons "arrow" [ty2, freshty]))]
-  let S ← Constraints.unify constraints Env.stateSubstInfo
+  let constraint := (ty1, (.tcons "arrow" [ty2, freshty]))
+  let S ← Constraints.unify [(constraint, ConstraintDebugInfo.mk constraint "")]  Env.stateSubstInfo
   let mty := LMonoTy.subst S.subst freshty
   -- `freshty` can now be safely removed from the substitution list.
   have hWF : SubstWF (Maps.remove S.subst fresh_name) := by

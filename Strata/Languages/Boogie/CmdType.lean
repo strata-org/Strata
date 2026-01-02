@@ -103,7 +103,7 @@ def unifyTypes (Env: TEnv Visibility)
   match canonicalizeConstraints constraints with
   | .error e => .error f!"{Format.line}{formatFileRangeD md} {e}"
   | .ok constraints =>
-    match Constraints.unify constraints Env.stateSubstInfo with
+    match Constraints.unify (Constraints.toDebugConstraints constraints) Env.stateSubstInfo with
     | .error e => .error f!"{Format.line}{formatFileRangeD md} {e}"
     | .ok S =>
       let Env := Env.updateSubst S

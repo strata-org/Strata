@@ -46,7 +46,7 @@ def typeCheck (C: Boogie.Expression.TyContext) (Env : Boogie.Expression.TyEnv) (
     let (bodya, Env) ← LExpr.resolve C Env body
     let bodyty := bodya.toLMonoTy
     let (retty, Env) ← func.outputPolyType.instantiateWithCheck C Env
-    let S ← Constraints.unify [(retty, bodyty)] Env.stateSubstInfo
+    let S ← Constraints.unify (Constraints.toDebugConstraints [(retty, bodyty)]) Env.stateSubstInfo
     let Env := Env.updateSubst S
     let Env := Env.popContext
     -- Resolve type aliases and monomorphize the body.
