@@ -13,85 +13,63 @@ import Strata.Languages.B3.DDMTransform.Conversion
 
 Tests for B3 to SMT conversion and verification.
 
-## Supported Features
+## Implementation Status
 
 **Expressions:**
 - ✅ Literals (int, bool, string)
-- ✅ Binary operators (all: ==, !=, <, <=, >, >=, +, -, *, div, mod, &&, ||, ==>, <==, <==>)
+- ✅ Binary operators (==, !=, <, <=, >, >=, +, -, *, div, mod, &&, ||, ==>, <==, <==>)
 - ✅ Unary operators (!, -)
 - ✅ If-then-else
 - ✅ Function calls
 - ✅ Quantifiers (forall, exists) with patterns
 - ✅ Labeled expressions (labels stripped)
-- ⚠️ Let expressions (placeholder - needs proper substitution)
+- ❌ Let expressions (needs proper substitution)
 
 **Declarations:**
-- ✅ Function declarations (with and without bodies)
+- ✅ Function declarations
 - ✅ Function bodies → quantified axioms
 - ✅ Axioms
-- ✅ Parameter-free procedures
+- ❌ Explains clauses (parsed but ignored)
+- ❌ Type declarations
+- ❌ Tagger declarations
+- ❌ Injective parameters → inverse functions
+- ❌ Tagged functions → tag constants
+- ❌ When clauses (parsed but not fully tested)
 
 **Statements:**
 - ✅ Check (verify property)
 - ✅ Assert (verify and assume)
-- ✅ Assume (add to solver state)
-- ✅ Reach (reachability checking)
+- ✅ Assume (add to solver)
+- ✅ Reach (reachability)
 - ✅ Block statements
+- ❌ Variable declarations (var, val)
+- ❌ Assignments
+- ❌ Reinit
+- ❌ If statements
+- ❌ If-case statements
+- ❌ Choose statements
+- ❌ Loop statements with invariants
+- ❌ Labeled statements
+- ❌ Exit/Return statements
+- ❌ Probe statements
+- ❌ Forall statements (aForall)
+
+**Procedures:**
+- ✅ Parameter-free procedures
+- ❌ Procedures with parameters (in, out, inout)
+- ❌ Procedure specifications (requires, ensures)
+- ❌ Procedure calls → contract predicates
+- ❌ Modular verification
 
 **Verification:**
 - ✅ Streaming translation (O(n) not O(n²))
 - ✅ Sequential execution (asserts accumulate)
 - ✅ Automatic diagnosis (conjunction splitting)
 - ✅ Efficient solver reuse (push/pop)
-
-## TODO: Remaining B3 Features
-
-**Expressions:**
-- ❌ Let expressions with proper substitution
-- ❌ Labeled expressions (preserve labels for error reporting)
-
-**Types:**
-- ❌ User-defined types (type declarations)
-- ❌ Taggers (tagger declarations)
-- ❌ Type inference for expressions
-
-**Functions:**
-- ❌ Explains clauses (currently ignored)
-- ❌ Injective parameters → inverse functions
-- ❌ Tagged functions → tag constants
-- ❌ When clauses (currently converted but not fully tested)
-- ❌ Multiple when clauses
-
-**Procedures:**
-- ❌ Procedures with parameters (in, out, inout)
-- ❌ Procedure specifications (requires, ensures)
-- ❌ Procedure calls → contract predicates
-- ❌ Modular verification
-
-**Statements:**
-- ❌ Variable declarations (var, val)
-- ❌ Assignments
-- ❌ Reinit
-- ❌ If statements
-- ❌ If-case statements
-- ❌ Choose statements (non-determinism)
-- ❌ Loop statements with invariants
-- ❌ Labeled statements
-- ❌ Exit statements
-- ❌ Return statements
-- ❌ Probe statements
-- ❌ Forall statements (aForall)
-
-**Diagnosis Strategies:**
-- ✅ Conjunction splitting
-- ❌ When-clause testing
-- ❌ Definition inlining
-- ❌ Simplification strategies
-
-**Advanced:**
+- ❌ When-clause testing in diagnosis
+- ❌ Definition inlining in diagnosis
 - ❌ Counterexample parsing and display
-- ❌ Multi-level push/pop stack management (like B3)
-- ❌ Incremental verification with state reuse across procedures
+- ❌ Multi-level push/pop stack management
 -/
 
 namespace B3.Verifier.Tests
