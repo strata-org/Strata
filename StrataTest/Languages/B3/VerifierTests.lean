@@ -184,76 +184,41 @@ procedure test_fail() {
 #end
 
 ---------------------------------------------------------------------
--- Refinement Strategy Tests
+-- Automatic Refinement Tests
 ---------------------------------------------------------------------
 
-/-- Test conjunction splitting refinement -/
-def testConjunctionRefinement (prog : Program) : IO Unit := do
+def formatExpressionSimple (prog : Program) (expr : B3AST.Expression SourceRange) : String :=
+  let (cstExpr, _) := B3.expressionToCST B3.ToCSTContext.empty expr
+  let ctx := FormatContext.ofDialects prog.dialects prog.globalContext {}
+  let fmtState : FormatState := { openDialects := prog.dialects.toList.foldl (init := {}) fun a (dialect : Dialect) => a.insert dialect.name }
+  (mformat (ArgF.op cstExpr.toAst) ctx fmtState).format.pretty.trim
+
+def testAutoRefinement (prog : Program) : IO Unit := do
   let ast := programToB3AST prog
+  let reports ← verifyWithRefinement ast
 
-  -- Extract check expression from procedure
-  let checkInfo := match ast with
-  | .program _ decls =>
-      decls.val.toList.findSome? (fun (d : B3AST.Decl SourceRange) =>
-        match d with
-        | .procedure _ _ params _ body =>
-            if params.val.isEmpty && body.val.isSome then
-              let bodyStmt := body.val.get!
-              match bodyStmt with
-              | B3AST.Statement.check _ expr => some (expr, d)
-              | B3AST.Statement.blockStmt _ stmts =>
-                  stmts.val.toList.findSome? (fun (s : B3AST.Statement SourceRange) =>
-                    match s with
-                    | B3AST.Statement.check _ expr => some (expr, d)
-                    | _ => none
-                  )
-              | _ => none
-            else none
-        | _ => none
-      )
-
-  match checkInfo with
-  | none => IO.println "No check found"
-  | some (expr, procDecl) =>
-      let state := buildProgramState ast
-      let result ← refineConjunction state expr procDecl
-
-      match result.fullCheck.decision with
+  for report in reports do
+    IO.println s!"Procedure {report.procedureName}:"
+    for (result, refinement) in report.results do
+      match result.decision with
       | .unsat =>
-          IO.println "✓ Verified"
+          IO.println "  ✓ Verified"
       | _ =>
-          IO.println "✗ Could not prove"
-          if !result.refinements.isEmpty then
-            for (desc, refResult) in result.refinements do
-              match refResult.decision with
-              | .unsat => pure ()
-              | _ =>
-                  let subExpr := match desc with
-                    | "left conjunct" =>
-                        match expr with
-                        | .binaryOp _ (.and _) lhs _ =>
-                            let (cstExpr, _) := B3.expressionToCST B3.ToCSTContext.empty lhs
-                            let ctx := FormatContext.ofDialects prog.dialects prog.globalContext {}
-                            let fmtState : FormatState := { openDialects := prog.dialects.toList.foldl (init := {}) fun a (dialect : Dialect) => a.insert dialect.name }
-                            (mformat (ArgF.op cstExpr.toAst) ctx fmtState).format.pretty.trim
-                        | _ => "<expr>"
-                    | "right conjunct" =>
-                        match expr with
-                        | .binaryOp _ (.and _) _ rhs =>
-                            let (cstExpr, _) := B3.expressionToCST B3.ToCSTContext.empty rhs
-                            let ctx := FormatContext.ofDialects prog.dialects prog.globalContext {}
-                            let fmtState : FormatState := { openDialects := prog.dialects.toList.foldl (init := {}) fun a (dialect : Dialect) => a.insert dialect.name }
-                            (mformat (ArgF.op cstExpr.toAst) ctx fmtState).format.pretty.trim
-                        | _ => "<expr>"
-                    | _ => desc
-                  IO.println s!"  Refinement: {subExpr} could not be proved"
+          IO.println "  ✗ Could not prove"
+          match refinement with
+          | some ref =>
+              for (_desc, failedExpr, _) in ref.refinedFailures do
+                let exprStr := formatExpressionSimple prog failedExpr
+                IO.println s!"    Refinement: {exprStr} could not be proved"
+          | none => pure ()
 
 /--
-info: ✗ Could not prove
-  Refinement: f(5) == 10 could not be proved
+info: Procedure test:
+  ✗ Could not prove
+    Refinement: f(5) == 10 could not be proved
 -/
 #guard_msgs in
-#eval testConjunctionRefinement $ #strata program B3CST;
+#eval testAutoRefinement $ #strata program B3CST;
 function f(x : int) : int
 procedure test() {
   check 5 == 5 && f(5) == 10

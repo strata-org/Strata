@@ -23,49 +23,46 @@ namespace Strata.B3.Verifier
 open Strata.SMT
 
 structure RefinementResult where
-  fullCheck : CheckResult
-  refinements : List (String × CheckResult)  -- Description and result for each refinement
+  originalCheck : CheckResult
+  refinedFailures : List (String × B3AST.Expression SourceRange × CheckResult)  -- Description, expression, result
 
-/-- Split a conjunction and check each side separately -/
-def refineConjunction (state : B3VerificationState) (expr : B3AST.Expression SourceRange) (sourceDecl : B3AST.Decl SourceRange) (solverPath : String := "z3") : IO RefinementResult := do
-  -- Check the full expression first
+/-- Automatically refine a failed check to find root cause -/
+def refineFailure (state : B3VerificationState) (expr : B3AST.Expression SourceRange) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : B3AST.Statement SourceRange) (solverPath : String := "z3") : IO RefinementResult := do
   match expressionToSMT ConversionContext.empty expr with
   | none =>
       let dummyResult : CheckResult := {
         decl := sourceDecl
-        sourceStmt := none
+        sourceStmt := some sourceStmt
         decision := .unknown
         model := none
       }
-      return { fullCheck := dummyResult, refinements := [] }
-  | some fullTerm =>
-      let fullResult ← checkProperty state fullTerm sourceDecl none solverPath
+      return { originalCheck := dummyResult, refinedFailures := [] }
+  | some term =>
+      let originalResult ← checkProperty state term sourceDecl (some sourceStmt) solverPath
 
-      -- If verified, no need to refine
-      if fullResult.decision == .unsat then
-        return { fullCheck := fullResult, refinements := [] }
+      if originalResult.decision == .unsat then
+        return { originalCheck := originalResult, refinedFailures := [] }
 
-      -- Try to split if it's a conjunction
+      let mut refinements := []
+
+      -- Strategy: Split conjunctions
       match expr with
       | .binaryOp _ (.and _) lhs rhs =>
-          let mut refinements := []
-
-          -- Check left side
           match expressionToSMT ConversionContext.empty lhs with
           | some lhsTerm =>
-              let lhsResult ← checkProperty state lhsTerm sourceDecl none solverPath
-              refinements := refinements ++ [("left conjunct", lhsResult)]
+              let lhsResult ← checkProperty state lhsTerm sourceDecl (some sourceStmt) solverPath
+              if lhsResult.decision != .unsat then
+                refinements := refinements ++ [("left conjunct", lhs, lhsResult)]
           | none => pure ()
 
-          -- Check right side
           match expressionToSMT ConversionContext.empty rhs with
           | some rhsTerm =>
-              let rhsResult ← checkProperty state rhsTerm sourceDecl none solverPath
-              refinements := refinements ++ [("right conjunct", rhsResult)]
+              let rhsResult ← checkProperty state rhsTerm sourceDecl (some sourceStmt) solverPath
+              if rhsResult.decision != .unsat then
+                refinements := refinements ++ [("right conjunct", rhs, rhsResult)]
           | none => pure ()
+      | _ => pure ()
 
-          return { fullCheck := fullResult, refinements := refinements }
-      | _ =>
-          return { fullCheck := fullResult, refinements := [] }
+      return { originalCheck := originalResult, refinedFailures := refinements }
 
 end Strata.B3.Verifier
