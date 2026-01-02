@@ -29,7 +29,7 @@ structure DiagnosisResult where
 /-- Automatically diagnose a failed check to find root cause -/
 def diagnoseFailureGeneric
     (checkFn : B3VerificationState → Term → B3AST.Decl SourceRange → Option (B3AST.Statement SourceRange) → IO CheckResult)
-    (isFailure : Decision → Bool)
+    (isFailure : B3Result → Bool)
     (state : B3VerificationState)
     (expr : B3AST.Expression SourceRange)
     (sourceDecl : B3AST.Decl SourceRange)
@@ -39,14 +39,14 @@ def diagnoseFailureGeneric
       let dummyResult : CheckResult := {
         decl := sourceDecl
         sourceStmt := some sourceStmt
-        decision := .unknown
+        result := .checkResult .proofUnknown  -- Conversion failure treated as unknown
         model := none
       }
       return { originalCheck := dummyResult, diagnosedFailures := [] }
   | some term =>
       let originalResult ← checkFn state term sourceDecl (some sourceStmt)
 
-      if !isFailure originalResult.decision then
+      if !isFailure originalResult.result then
         return { originalCheck := originalResult, diagnosedFailures := [] }
 
       let mut diagnosements := []
@@ -57,26 +57,26 @@ def diagnoseFailureGeneric
           match expressionToSMT ConversionContext.empty lhs with
           | some lhsTerm =>
               let lhsResult ← checkFn state lhsTerm sourceDecl (some sourceStmt)
-              if isFailure lhsResult.decision then
+              if isFailure lhsResult.result then
                 diagnosements := diagnosements ++ [("left conjunct", lhs, lhsResult)]
           | none => pure ()
 
           match expressionToSMT ConversionContext.empty rhs with
           | some rhsTerm =>
               let rhsResult ← checkFn state rhsTerm sourceDecl (some sourceStmt)
-              if isFailure rhsResult.decision then
+              if isFailure rhsResult.result then
                 diagnosements := diagnosements ++ [("right conjunct", rhs, rhsResult)]
           | none => pure ()
       | _ => pure ()
 
       return { originalCheck := originalResult, diagnosedFailures := diagnosements }
 
-/-- Diagnose a failed check/assert (sat = failure) -/
+/-- Diagnose a failed check/assert -/
 def diagnoseFailure (state : B3VerificationState) (expr : B3AST.Expression SourceRange) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : B3AST.Statement SourceRange) : IO DiagnosisResult :=
-  diagnoseFailureGeneric prove (fun d => d != .unsat) state expr sourceDecl sourceStmt
+  diagnoseFailureGeneric prove (fun r => r.isError) state expr sourceDecl sourceStmt
 
-/-- Diagnose an unreachable reach (unsat = failure) -/
+/-- Diagnose an unreachable reach -/
 def diagnoseUnreachable (state : B3VerificationState) (expr : B3AST.Expression SourceRange) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : B3AST.Statement SourceRange) : IO DiagnosisResult :=
-  diagnoseFailureGeneric reach (fun d => d == .unsat) state expr sourceDecl sourceStmt
+  diagnoseFailureGeneric reach (fun r => r.isError) state expr sourceDecl sourceStmt
 
 end Strata.B3.Verifier

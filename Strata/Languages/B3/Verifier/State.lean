@@ -69,11 +69,18 @@ def B3Result.fromDecisionForReach (d : Decision) : B3Result :=
 -- Verification State
 ---------------------------------------------------------------------
 
-structure B3VerificationState where
-  solver : Solver  -- Single solver instance reused for all checks
+---------------------------------------------------------------------
+-- SMT Solver State (reusable for any language)
+---------------------------------------------------------------------
+
+structure SMTSolverState where
+  solver : Solver
   declaredFunctions : List (String × List String × String)
   assertions : List Term
-  context : ConversionContext
+
+structure B3VerificationState where
+  smtState : SMTSolverState
+  context : ConversionContext  -- B3-specific: maps de Bruijn indices to names
 
 structure CheckResult where
   decl : B3AST.Decl SourceRange
@@ -85,28 +92,30 @@ def initVerificationState (solver : Solver) : IO B3VerificationState := do
   let _ ← (Solver.setLogic "ALL").run solver
   let _ ← (Solver.setOption "produce-models" "true").run solver
   return {
-    solver := solver
-    declaredFunctions := []
-    assertions := []
+    smtState := {
+      solver := solver
+      declaredFunctions := []
+      assertions := []
+    }
     context := ConversionContext.empty
   }
 
 def addFunctionDecl (state : B3VerificationState) (name : String) (argTypes : List String) (returnType : String) : IO B3VerificationState := do
-  let _ ← (Solver.declareFun name argTypes returnType).run state.solver
-  return { state with declaredFunctions := (name, argTypes, returnType) :: state.declaredFunctions }
+  let _ ← (Solver.declareFun name argTypes returnType).run state.smtState.solver
+  return { state with smtState := { state.smtState with declaredFunctions := (name, argTypes, returnType) :: state.smtState.declaredFunctions } }
 
 def addAxiom (state : B3VerificationState) (term : Term) : IO B3VerificationState := do
-  let _ ← (Solver.assert (formatTermDirect term)).run state.solver
-  return { state with assertions := term :: state.assertions }
+  let _ ← (Solver.assert (formatTermDirect term)).run state.smtState.solver
+  return { state with smtState := { state.smtState with assertions := term :: state.smtState.assertions } }
 
 def push (state : B3VerificationState) : IO B3VerificationState := do
-  let solver := state.solver
+  let solver := state.smtState.solver
   solver.smtLibInput.putStr "(push 1)\n"
   solver.smtLibInput.flush
   return state
 
 def pop (state : B3VerificationState) : IO B3VerificationState := do
-  let solver := state.solver
+  let solver := state.smtState.solver
   solver.smtLibInput.putStr "(pop 1)\n"
   solver.smtLibInput.flush
   return state
@@ -119,7 +128,7 @@ def prove (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl S
     let decision ← Solver.checkSat []
     let model := if decision == .sat then some "model available" else none
     return (decision, model)
-  let (decision, model) ← runCheck.run state.solver
+  let (decision, model) ← runCheck.run state.smtState.solver
   let _ ← pop state
   return {
     decl := sourceDecl
@@ -136,7 +145,7 @@ def reach (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl S
     let decision ← Solver.checkSat []
     let model := if decision == .sat then some "reachable" else none
     return (decision, model)
-  let (decision, model) ← runCheck.run state.solver
+  let (decision, model) ← runCheck.run state.smtState.solver
   let _ ← pop state
   return {
     decl := sourceDecl
@@ -146,7 +155,7 @@ def reach (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl S
   }
 
 def closeVerificationState (state : B3VerificationState) : IO Unit := do
-  let _ ← (Solver.exit).run state.solver
+  let _ ← (Solver.exit).run state.smtState.solver
   pure ()
 
 ---------------------------------------------------------------------

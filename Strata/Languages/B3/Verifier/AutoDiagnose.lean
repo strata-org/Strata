@@ -35,21 +35,19 @@ structure VerificationReport where
   procedureName : String
   results : List (CheckResult × Option DiagnosisResult)  -- Each VC with optional diagnosement
 
-/-- Verify a B3 program with automatic diagnosement on failures -/
+/-- Verify a B3 program with automatic diagnosis -/
 def verifyWithDiagnosis (prog : Strata.B3AST.Program SourceRange) (solverPath : String := "z3") : IO (List VerificationReport) := do
-  let state ← buildProgramState prog solverPath
+  let solver ← createInteractiveSolver solverPath
+  let state ← buildProgramState prog solver
   let mut reports := []
 
   match prog with
   | .program _ decls =>
-      -- Verify each parameter-free procedure
       for decl in decls.val.toList do
         match decl with
         | .procedure _ name params _ body =>
             if params.val.isEmpty && body.val.isSome then
               let bodyStmt := body.val.get!
-
-              -- Execute statements with diagnosis via streaming translation
               let (results, _finalState) ← executeStatementsWithDiagnosis ConversionContext.empty state decl bodyStmt
 
               reports := reports ++ [{
@@ -57,7 +55,7 @@ def verifyWithDiagnosis (prog : Strata.B3AST.Program SourceRange) (solverPath : 
                 results := results
               }]
             else
-              pure ()  -- Skip procedures with parameters
+              pure ()
         | _ => pure ()
 
   closeVerificationState state

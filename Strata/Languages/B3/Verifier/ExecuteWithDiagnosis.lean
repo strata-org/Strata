@@ -18,7 +18,7 @@ namespace Strata.B3.Verifier
 open Strata.SMT
 
 /-- Execute statements with automatic diagnosis on failures -/
-partial def executeStatementsWithDiagnosis (ctx : ConversionContext) (state : B3VerificationState) (sourceDecl : B3AST.Decl SourceRange) : B3AST.Statement SourceRange → IO (List (CheckResult × Option DiagnosisResult), B3VerificationState)
+partial def executeStatementsWithDiagnosis (ctx : ConversionContext) (state : B3VerificationState) (sourceDecl : B3AST.Decl SourceRange) : B3AST.Statement SourceRange → IO (List (CheckResult × Option DiagnosisResult) × B3VerificationState)
   | .check m expr => do
       match expressionToSMT ctx expr with
       | some term =>
