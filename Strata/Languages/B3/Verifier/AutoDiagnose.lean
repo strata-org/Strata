@@ -50,26 +50,49 @@ def verifyWithDiagnosis (prog : Strata.B3AST.Program SourceRange) (solverPath : 
               let vcState := statementToVCs ConversionContext.empty VCGenState.empty bodyStmt
 
               let mut procResults := []
-              -- Check each VC
+              let mut currentState := state
+
+              -- Check VCs sequentially, accumulating successful asserts
               for (vc, sourceStmt) in vcState.verificationConditions.reverse do
-                let result ← match sourceStmt with
-                  | .reach _ _ => reach state vc decl (some sourceStmt)
-                  | _ => prove state vc decl (some sourceStmt)
-
-                -- If failed, try diagnosement
-                let diagnosement ← if result.decision != .unsat then
-                  match sourceStmt with
+                let (result, diagnosis, newState) ← match sourceStmt with
                   | .check _ expr =>
-                      let refResult ← diagnoseFailure state expr decl sourceStmt
-                      pure (some refResult)
-                  | .assert _ expr =>
-                      let refResult ← diagnoseFailure state expr decl sourceStmt
-                      pure (some refResult)
-                  | _ => pure none
-                else
-                  pure none
+                      let result ← prove currentState vc decl (some sourceStmt)
+                      let diag ← if result.decision != .unsat then
+                        let d ← diagnoseFailure currentState expr decl sourceStmt
+                        pure (some d)
+                      else
+                        pure none
+                      pure (result, diag, currentState)
 
-                procResults := procResults ++ [(result, diagnosement)]
+                  | .assert _ expr =>
+                      let result ← prove currentState vc decl (some sourceStmt)
+                      let diag ← if result.decision != .unsat then
+                        let d ← diagnoseFailure currentState expr decl sourceStmt
+                        pure (some d)
+                      else
+                        pure none
+                      -- Add successful assert to state
+                      let newState ← if result.decision == .unsat then
+                        addAxiom currentState vc
+                      else
+                        pure currentState
+                      pure (result, diag, newState)
+
+                  | .reach _ expr =>
+                      let result ← reach currentState vc decl (some sourceStmt)
+                      let diag ← if result.decision == .unsat then
+                        let d ← diagnoseUnreachable currentState expr decl sourceStmt
+                        pure (some d)
+                      else
+                        pure none
+                      pure (result, diag, currentState)
+
+                  | _ =>
+                      let result ← prove currentState vc decl (some sourceStmt)
+                      pure (result, none, currentState)
+
+                currentState := newState
+                procResults := procResults ++ [(result, diagnosis)]
 
               reports := reports ++ [{
                 procedureName := name.val

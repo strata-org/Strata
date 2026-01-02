@@ -96,21 +96,30 @@ def testAutoDiagnosis (prog : Program) : IO Unit := do
   for report in reports do
     IO.println s!"Procedure {report.procedureName}:"
     for (result, diagnosis) in report.results do
-      match result.decision with
-      | .unsat =>
-          IO.println "  ✓ Verified"
-      | _ =>
-          IO.println "  ✗ Could not prove"
-          match result.sourceStmt with
-          | some stmt =>
-              IO.println s!"    {formatStatementError prog stmt}"
-          | none => pure ()
-          match diagnosis with
-          | some diag =>
-              if !diag.diagnosedFailures.isEmpty then
-                for (_desc, failedExpr, _) in diag.diagnosedFailures do
-                  IO.println s!"    Related: {formatExpressionError prog failedExpr}"
-          | none => pure ()
+      -- Check if this is a reach statement
+      let isReach := match result.sourceStmt with
+        | some (.reach _ _) => true
+        | _ => false
+
+      let isFailed := if isReach then
+        result.decision == .unsat  -- For reach, unsat is failure
+      else
+        result.decision != .unsat  -- For check, sat is failure
+
+      if !isFailed then
+        IO.println "  ✓ Verified"
+      else
+        IO.println "  ✗ Could not prove"
+        match result.sourceStmt with
+        | some stmt =>
+            IO.println s!"    {formatStatementError prog stmt}"
+        | none => pure ()
+        match diagnosis with
+        | some diag =>
+            if !diag.diagnosedFailures.isEmpty then
+              for (_desc, failedExpr, _) in diag.diagnosedFailures do
+                IO.println s!"    Related: {formatExpressionError prog failedExpr}"
+        | none => pure ()
 
 def testVerification (prog : Program) : IO Unit := do
   let ast := programToB3AST prog
@@ -126,8 +135,8 @@ def testVerification (prog : Program) : IO Unit := do
 
         let status := if isReach then
           match result.decision with
-          | .unsat => "✗ unreachable (precondition never satisfied)"
-          | .sat => "✓ reachable"
+          | .unsat => "✗ unreachable"
+          | .sat => "✓ satisfiable"
           | .unknown => "? unknown"
         else
           match result.decision with
@@ -256,7 +265,7 @@ procedure test() {
 
 /--
 info: Verification results:
-  test_reach_bad: ✗ unreachable (precondition never satisfied)
+  test_reach_bad: ✗ unreachable
     (0,100): reach f(5) < 0
 -/
 #guard_msgs in
@@ -270,7 +279,7 @@ procedure test_reach_bad() {
 
 /--
 info: Verification results:
-  test_reach_good: ✓ reachable
+  test_reach_good: ✓ satisfiable
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -278,6 +287,21 @@ function f(x : int) : int
 axiom forall x : int pattern f(x) f(x) > 0
 procedure test_reach_good() {
   reach f(5) > 5
+}
+#end
+
+/--
+info: Procedure test_reach_diagnosis:
+  ✗ Could not prove
+    (0,106): reach f(5) > 5 && f(5) < 0
+    Related: (0,124): f(5) < 0
+-/
+#guard_msgs in
+#eval testAutoDiagnosis $ #strata program B3CST;
+function f(x : int) : int
+axiom forall x : int pattern f(x) f(x) > 0
+procedure test_reach_diagnosis() {
+  reach f(5) > 5 && f(5) < 0
 }
 #end
 

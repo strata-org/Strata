@@ -81,14 +81,8 @@ def verifyProgram (prog : B3AST.Program SourceRange) (solverPath : String := "z3
             -- Only verify parameter-free procedures
             if params.val.isEmpty && body.val.isSome then
               let bodyStmt := body.val.get!
-              -- Generate VCs from procedure body
-              let vcState := statementToVCs ConversionContext.empty VCGenState.empty bodyStmt
-              -- Check each VC
-              for (vc, sourceStmt) in vcState.verificationConditions.reverse do
-                let result ← match sourceStmt with
-                  | .reach _ _ => reach state vc (.procedure m name params specs body) (some sourceStmt)
-                  | _ => prove state vc (.procedure m name params specs body) (some sourceStmt)
-                results := results ++ [result]
+              let execResult ← executeStatements ConversionContext.empty state decl bodyStmt
+              results := results ++ execResult.results
             else
               pure ()  -- Skip procedures with parameters for now
         | _ => pure ()

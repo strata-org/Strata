@@ -5,119 +5,86 @@
 -/
 
 import Strata.Languages.B3.Verifier.Conversion
-import Strata.DL.SMT.SMT
+import Strata.Languages.B3.Verifier.State
 
 /-!
-# B3 Statement to SMT Conversion
+# B3 Statement Streaming Translation
 
-Converts B3 statements to SMT verification conditions via symbolic execution.
+Translates B3 statements to SMT via streaming execution (NOT batch VCG).
 
-## Verification Condition Generation (VCG)
+## Streaming Translation
 
-Statements are converted to verification conditions using symbolic execution:
-- `var x := e` - introduces a new SMT constant
-- `x := e` - updates the variable mapping
-- `assert e` - generates a verification condition (check e holds)
-- `assume e` - adds e to the path condition
-- `check e` - like assert, generates a VC
-- `if c then s1 else s2` - symbolic execution on both branches
+Statements are translated and executed immediately:
+- `assert e` - prove e, then add to solver state
+- `check e` - prove e (push/pop, doesn't affect state)
+- `assume e` - add to solver state
+- `reach e` - check satisfiability (push/pop)
 
-## State Management
-
-During VCG, we maintain:
-- Variable incarnations (SSA-style renaming)
-- Path conditions (accumulated assumptions)
-- Verification conditions (assertions to check)
+This allows the solver to learn from asserts, making later checks easier.
+Key advantage: O(n) not O(n²), solver accumulates lemmas.
 -/
 
 namespace Strata.B3.Verifier
 
 open Strata.SMT
 
-structure VCGenState where
-  varIncarnations : List (String × Nat)  -- Maps variable name to current incarnation number
-  pathConditions : List Term  -- Accumulated assumptions
-  verificationConditions : List (Term × B3AST.Statement SourceRange)  -- VCs with source statements
+inductive StatementResult where
+  | verified : CheckResult → StatementResult  -- Successful check/reach/assert
+  | conversionError : String → StatementResult
 
-namespace VCGenState
+structure ExecutionResult where
+  results : List StatementResult
+  finalState : B3VerificationState
 
-def empty : VCGenState := {
-  varIncarnations := []
-  pathConditions := []
-  verificationConditions := []
-}
-
-def freshIncarnation (state : VCGenState) (varName : String) : VCGenState × String :=
-  match state.varIncarnations.find? (fun (n, _) => n == varName) with
-  | some (_, inc) =>
-      let newInc := inc + 1
-      let newState := { state with
-        varIncarnations := (varName, newInc) :: state.varIncarnations.filter (fun (n, _) => n != varName)
-      }
-      (newState, s!"{varName}_{newInc}")
-  | none =>
-      let newState := { state with varIncarnations := (varName, 0) :: state.varIncarnations }
-      (newState, s!"{varName}_0")
-
-def getCurrentIncarnation (state : VCGenState) (varName : String) : Option String :=
-  match state.varIncarnations.find? (fun (n, _) => n == varName) with
-  | some (_, inc) => some s!"{varName}_{inc}"
-  | none => none
-
-def addPathCondition (state : VCGenState) (cond : Term) : VCGenState :=
-  { state with pathConditions := cond :: state.pathConditions }
-
-def addVC (state : VCGenState) (vc : Term) (source : B3AST.Statement SourceRange) : VCGenState :=
-  { state with verificationConditions := (vc, source) :: state.verificationConditions }
-
-end VCGenState
-
-/-- Convert B3 statement to verification conditions -/
-partial def statementToVCs (ctx : ConversionContext) (state : VCGenState) : B3AST.Statement SourceRange → VCGenState
-  | .check m expr =>
-      -- Generate VC: path conditions => expr
+/-- Execute B3 statements via streaming translation to SMT -/
+partial def executeStatements (ctx : ConversionContext) (state : B3VerificationState) (sourceDecl : B3AST.Decl SourceRange) : B3AST.Statement SourceRange → IO ExecutionResult
+  | .check m expr => do
       match expressionToSMT ctx expr with
       | some term =>
-          let vc := if state.pathConditions.isEmpty then
-            term
-          else
-            let pathCond := state.pathConditions.foldl (fun acc t => Term.app .and [acc, t] .bool) (Term.bool true)
-            Term.app .implies [pathCond, term] .bool
-          state.addVC vc (.check m expr)
-      | none => state
-  | .assert m expr =>
-      -- Assert = check + assume
+          let result ← prove state term sourceDecl (some (.check m expr))
+          pure { results := [.verified result], finalState := state }
+      | none =>
+          pure { results := [.conversionError "Failed to convert expression to SMT"], finalState := state }
+
+  | .assert m expr => do
       match expressionToSMT ctx expr with
       | some term =>
-          -- First, generate VC like check
-          let vc := if state.pathConditions.isEmpty then
-            term
+          let result ← prove state term sourceDecl (some (.assert m expr))
+          -- Add to solver state if successful
+          let newState ← if result.decision == .unsat then
+            addAxiom state term
           else
-            let pathCond := state.pathConditions.foldl (fun acc t => Term.app .and [acc, t] .bool) (Term.bool true)
-            Term.app .implies [pathCond, term] .bool
-          let state' := state.addVC vc (.assert m expr)
-          -- Then, add to path conditions like assume
-          state'.addPathCondition term
-      | none => state
-  | .assume _ expr =>
-      -- Add to path conditions
-      match expressionToSMT ctx expr with
-      | some term => state.addPathCondition term
-      | none => state
-  | .reach m expr =>
-      -- Generate reachability check
+            pure state
+          pure { results := [.verified result], finalState := newState }
+      | none =>
+          pure { results := [.conversionError "Failed to convert expression to SMT"], finalState := state }
+
+  | .assume _ expr => do
       match expressionToSMT ctx expr with
       | some term =>
-          let vc := if state.pathConditions.isEmpty then
-            term
-          else
-            let pathCond := state.pathConditions.foldl (fun acc t => Term.app .and [acc, t] .bool) (Term.bool true)
-            Term.app .and [pathCond, term] .bool
-          state.addVC vc (.reach m expr)
-      | none => state
-  | .blockStmt _ stmts =>
-      -- Process statements sequentially
-      stmts.val.toList.foldl (statementToVCs ctx) state
-  | _ => state  -- TODO: Other statements
+          let newState ← addAxiom state term
+          pure { results := [], finalState := newState }
+      | none =>
+          pure { results := [.conversionError "Failed to convert expression to SMT"], finalState := state }
+
+  | .reach m expr => do
+      match expressionToSMT ctx expr with
+      | some term =>
+          let result ← reach state term sourceDecl (some (.reach m expr))
+          pure { results := [.verified result], finalState := state }
+      | none =>
+          pure { results := [.conversionError "Failed to convert expression to SMT"], finalState := state }
+
+  | .blockStmt _ stmts => do
+      let mut currentState := state
+      let mut allResults := []
+      for stmt in stmts.val.toList do
+        let execResult ← executeStatements ctx currentState sourceDecl stmt
+        currentState := execResult.finalState
+        allResults := allResults ++ execResult.results
+      pure { results := allResults, finalState := currentState }
+
+  | _ =>
+      pure { results := [], finalState := state }
 
 end Strata.B3.Verifier
