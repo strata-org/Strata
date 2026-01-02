@@ -27,7 +27,7 @@ structure RefinementResult where
   refinedFailures : List (String × B3AST.Expression SourceRange × CheckResult)  -- Description, expression, result
 
 /-- Automatically refine a failed check to find root cause -/
-def refineFailure (state : B3VerificationState) (expr : B3AST.Expression SourceRange) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : B3AST.Statement SourceRange) (solverPath : String := "z3") : IO RefinementResult := do
+def refineFailure (state : B3VerificationState) (expr : B3AST.Expression SourceRange) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : B3AST.Statement SourceRange) : IO RefinementResult := do
   match expressionToSMT ConversionContext.empty expr with
   | none =>
       let dummyResult : CheckResult := {
@@ -38,7 +38,7 @@ def refineFailure (state : B3VerificationState) (expr : B3AST.Expression SourceR
       }
       return { originalCheck := dummyResult, refinedFailures := [] }
   | some term =>
-      let originalResult ← checkProperty state term sourceDecl (some sourceStmt) solverPath
+      let originalResult ← checkProperty state term sourceDecl (some sourceStmt)
 
       if originalResult.decision == .unsat then
         return { originalCheck := originalResult, refinedFailures := [] }
@@ -50,14 +50,14 @@ def refineFailure (state : B3VerificationState) (expr : B3AST.Expression SourceR
       | .binaryOp _ (.and _) lhs rhs =>
           match expressionToSMT ConversionContext.empty lhs with
           | some lhsTerm =>
-              let lhsResult ← checkProperty state lhsTerm sourceDecl (some sourceStmt) solverPath
+              let lhsResult ← checkProperty state lhsTerm sourceDecl (some sourceStmt)
               if lhsResult.decision != .unsat then
                 refinements := refinements ++ [("left conjunct", lhs, lhsResult)]
           | none => pure ()
 
           match expressionToSMT ConversionContext.empty rhs with
           | some rhsTerm =>
-              let rhsResult ← checkProperty state rhsTerm sourceDecl (some sourceStmt) solverPath
+              let rhsResult ← checkProperty state rhsTerm sourceDecl (some sourceStmt)
               if rhsResult.decision != .unsat then
                 refinements := refinements ++ [("right conjunct", rhs, rhsResult)]
           | none => pure ()

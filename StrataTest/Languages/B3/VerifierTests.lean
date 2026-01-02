@@ -46,7 +46,7 @@ def testSMTGeneration (prog : Program) : IO Unit := do
 
 def formatSourceLocation (baseOffset : String.Pos.Raw) (sr : SourceRange) : String :=
   let relativePos := sr.start.byteIdx - baseOffset.byteIdx
-  s!"offset +{relativePos}"
+  s!"(0,{relativePos})"
 
 def formatStatementError (prog : Program) (stmt : B3AST.Statement SourceRange) : String :=
   let baseOffset := match prog.commands.toList with
@@ -58,14 +58,35 @@ def formatStatementError (prog : Program) (stmt : B3AST.Statement SourceRange) :
     | .assume m _ => formatSourceLocation baseOffset m
     | _ => "unknown location"
 
-  -- Convert statement back to concrete syntax
   let (cstStmt, _errors) := B3.stmtToCST B3.ToCSTContext.empty stmt
   let ctx := FormatContext.ofDialects prog.dialects prog.globalContext {}
   let state : FormatState := { openDialects := prog.dialects.toList.foldl (init := {}) fun a (dialect : Dialect) => a.insert dialect.name }
   let stmtAst := cstStmt.toAst
   let formatted := (mformat (ArgF.op stmtAst) ctx state).format.pretty.trim
 
-  s!"{loc}\n    {formatted}"
+  s!"{loc}: {formatted}"
+
+def formatExpressionError (prog : Program) (expr : B3AST.Expression SourceRange) : String :=
+  let baseOffset := match prog.commands.toList with
+    | [op] => op.ann.start
+    | _ => { byteIdx := 0 }
+  let loc := match expr with
+    | .binaryOp m _ _ _ => formatSourceLocation baseOffset m
+    | .literal m _ => formatSourceLocation baseOffset m
+    | .id m _ => formatSourceLocation baseOffset m
+    | .ite m _ _ _ => formatSourceLocation baseOffset m
+    | .unaryOp m _ _ => formatSourceLocation baseOffset m
+    | .functionCall m _ _ => formatSourceLocation baseOffset m
+    | .labeledExpr m _ _ => formatSourceLocation baseOffset m
+    | .letExpr m _ _ _ => formatSourceLocation baseOffset m
+    | .quantifierExpr m _ _ _ _ _ => formatSourceLocation baseOffset m
+
+  let (cstExpr, _) := B3.expressionToCST B3.ToCSTContext.empty expr
+  let ctx := FormatContext.ofDialects prog.dialects prog.globalContext {}
+  let fmtState : FormatState := { openDialects := prog.dialects.toList.foldl (init := {}) fun a (dialect : Dialect) => a.insert dialect.name }
+  let formatted := (mformat (ArgF.op cstExpr.toAst) ctx fmtState).format.pretty.trim
+
+  s!"{loc}: {formatted}"
 
 def testVerification (prog : Program) : IO Unit := do
   let ast := programToB3AST prog
@@ -76,13 +97,13 @@ def testVerification (prog : Program) : IO Unit := do
     | .procedure _ name _ _ _ =>
         let status := match result.decision with
           | .unsat => "✓ verified"
-          | .sat => "✗ counterexample"
+          | .sat => "✗ proved wrong"
           | .unknown => "? unknown"
         IO.println s!"  {name.val}: {status}"
         if result.decision != .unsat then
           match result.sourceStmt with
           | some stmt =>
-              IO.println s!"    Failed at: {formatStatementError prog stmt}"
+              IO.println s!"    {formatStatementError prog stmt}"
           | none => pure ()
     | _ => pure ()
 
@@ -167,9 +188,8 @@ procedure test() {
 
 /--
 info: Verification results:
-  test_fail: ✗ counterexample
-    Failed at: offset +52
-    check 5 == 5 && f(5) == 10
+  test_fail: ✗ proved wrong
+    (0,52): check 5 == 5 && f(5) == 10
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -182,12 +202,6 @@ procedure test_fail() {
 ---------------------------------------------------------------------
 -- Automatic Refinement Tests
 ---------------------------------------------------------------------
-
-def formatExpressionSimple (prog : Program) (expr : B3AST.Expression SourceRange) : String :=
-  let (cstExpr, _) := B3.expressionToCST B3.ToCSTContext.empty expr
-  let ctx := FormatContext.ofDialects prog.dialects prog.globalContext {}
-  let fmtState : FormatState := { openDialects := prog.dialects.toList.foldl (init := {}) fun a (dialect : Dialect) => a.insert dialect.name }
-  (mformat (ArgF.op cstExpr.toAst) ctx fmtState).format.pretty.trim
 
 def testAutoRefinement (prog : Program) : IO Unit := do
   let ast := programToB3AST prog
@@ -203,22 +217,20 @@ def testAutoRefinement (prog : Program) : IO Unit := do
           IO.println "  ✗ Could not prove"
           match result.sourceStmt with
           | some stmt =>
-              IO.println s!"    Failed at: {formatStatementError prog stmt}"
+              IO.println s!"    {formatStatementError prog stmt}"
           | none => pure ()
           match refinement with
           | some ref =>
               if !ref.refinedFailures.isEmpty then
                 for (_desc, failedExpr, _) in ref.refinedFailures do
-                  let exprStr := formatExpressionSimple prog failedExpr
-                  IO.println s!"    Precisely: check {exprStr} could not be proved"
+                  IO.println s!"    Related: {formatExpressionError prog failedExpr}"
           | none => pure ()
 
 /--
 info: Procedure test:
   ✗ Could not prove
-    Failed at: offset +47
-    check 5 == 5 && f(5) == 10
-    Precisely: check f(5) == 10 could not be proved
+    (0,47): check 5 == 5 && f(5) == 10
+    Related: (0,63): f(5) == 10
 -/
 #guard_msgs in
 #eval testAutoRefinement $ #strata program B3CST;

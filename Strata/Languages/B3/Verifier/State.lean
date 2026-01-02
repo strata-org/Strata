@@ -23,49 +23,67 @@ open Strata.SMT
 ---------------------------------------------------------------------
 
 structure B3VerificationState where
-  declaredFunctions : List (String × List String × String)  -- (name, argTypes, returnType)
-  assertions : List Term  -- Accumulated assertions (axioms, function definitions)
+  solver : Solver  -- Single solver instance reused for all checks
+  declaredFunctions : List (String × List String × String)
+  assertions : List Term
   context : ConversionContext
 
 structure CheckResult where
-  decl : B3AST.Decl SourceRange  -- Source declaration with location info
-  sourceStmt : Option (B3AST.Statement SourceRange) := none  -- Specific statement that failed
+  decl : B3AST.Decl SourceRange
+  sourceStmt : Option (B3AST.Statement SourceRange) := none
   decision : Decision
   model : Option String := none
 
-def initVerificationState : B3VerificationState := {
-  declaredFunctions := []
-  assertions := []
-  context := ConversionContext.empty
-}
-
-def addFunctionDecl (state : B3VerificationState) (name : String) (argTypes : List String) (returnType : String) : B3VerificationState :=
-  { state with declaredFunctions := (name, argTypes, returnType) :: state.declaredFunctions }
-
-def addAssertion (state : B3VerificationState) (term : Term) : B3VerificationState :=
-  { state with assertions := term :: state.assertions }
-
-def checkProperty (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : Option (B3AST.Statement SourceRange)) (solverPath : String := "z3") : IO CheckResult := do
+def initVerificationState (solverPath : String := "z3") : IO B3VerificationState := do
   let solver ← Solver.spawn solverPath #["-smt2", "-in"]
+  let _ ← (Solver.setLogic "ALL").run solver
+  let _ ← (Solver.setOption "produce-models" "true").run solver
+  return {
+    solver := solver
+    declaredFunctions := []
+    assertions := []
+    context := ConversionContext.empty
+  }
+
+def addFunctionDecl (state : B3VerificationState) (name : String) (argTypes : List String) (returnType : String) : IO B3VerificationState := do
+  let _ ← (Solver.declareFun name argTypes returnType).run state.solver
+  return { state with declaredFunctions := (name, argTypes, returnType) :: state.declaredFunctions }
+
+def addAssertion (state : B3VerificationState) (term : Term) : IO B3VerificationState := do
+  let _ ← (Solver.assert (formatTermDirect term)).run state.solver
+  return { state with assertions := term :: state.assertions }
+
+def checkProperty (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : Option (B3AST.Statement SourceRange)) : IO CheckResult := do
+  -- Use push/pop for isolated check - reuses existing solver state!
   let runCheck : SolverM (Decision × Option String) := do
-    Solver.setLogic "ALL"
-    Solver.setOption "produce-models" "true"
-    for (name, argTypes, returnType) in state.declaredFunctions.reverse do
-      Solver.declareFun name argTypes returnType
-    for assertion in state.assertions.reverse do
-      Solver.assert (formatTermDirect assertion)
+    -- Push new scope
+    let solver ← read
+    solver.smtLibInput.putStr "(push 1)\n"
+    solver.smtLibInput.flush
+
+    -- Assert negation
     Solver.assert s!"(not {formatTermDirect term})"
+
+    -- Check sat
     let decision ← Solver.checkSat []
-    -- Get model if sat (simplified - just return decision for now)
+
+    -- Pop scope (restore state)
+    solver.smtLibInput.putStr "(pop 1)\n"
+    solver.smtLibInput.flush
+
     let model := if decision == .sat then some "model available" else none
     return (decision, model)
-  let (decision, model) ← runCheck.run solver
-  let _ ← (Solver.exit).run solver
+
+  let (decision, model) ← runCheck.run state.solver
   return {
     decl := sourceDecl
     sourceStmt := sourceStmt
     decision := decision
     model := model
   }
+
+def closeVerificationState (state : B3VerificationState) : IO Unit := do
+  let _ ← (Solver.exit).run state.solver
+  pure ()
 
 end Strata.B3.Verifier

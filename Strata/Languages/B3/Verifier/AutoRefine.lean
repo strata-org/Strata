@@ -36,7 +36,7 @@ structure VerificationReport where
 
 /-- Verify a B3 program with automatic refinement on failures -/
 def verifyWithRefinement (prog : Strata.B3AST.Program SourceRange) (solverPath : String := "z3") : IO (List VerificationReport) := do
-  let state := buildProgramState prog
+  let state ← buildProgramState prog solverPath
   let mut reports := []
 
   match prog with
@@ -52,17 +52,16 @@ def verifyWithRefinement (prog : Strata.B3AST.Program SourceRange) (solverPath :
               let mut procResults := []
               -- Check each VC
               for (vc, sourceStmt) in vcState.verificationConditions.reverse do
-                let result ← checkProperty state vc decl (some sourceStmt) solverPath
+                let result ← checkProperty state vc decl (some sourceStmt)
 
                 -- If failed, try refinement
                 let refinement ← if result.decision != .unsat then
-                  -- Extract the expression from the source statement
                   match sourceStmt with
                   | .check _ expr =>
-                      let refResult ← refineFailure state expr decl sourceStmt solverPath
+                      let refResult ← refineFailure state expr decl sourceStmt
                       pure (some refResult)
                   | .assert _ expr =>
-                      let refResult ← refineFailure state expr decl sourceStmt solverPath
+                      let refResult ← refineFailure state expr decl sourceStmt
                       pure (some refResult)
                   | _ => pure none
                 else
@@ -78,6 +77,7 @@ def verifyWithRefinement (prog : Strata.B3AST.Program SourceRange) (solverPath :
               pure ()  -- Skip procedures with parameters
         | _ => pure ()
 
+  closeVerificationState state
   return reports
 
 end Strata.B3.Verifier

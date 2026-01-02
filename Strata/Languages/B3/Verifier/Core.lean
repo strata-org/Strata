@@ -28,7 +28,7 @@ open Strata.B3AST
 
 /-- Verify a B3 program using incremental API -/
 def verifyProgram (prog : B3AST.Program SourceRange) (solverPath : String := "z3") : IO (List CheckResult) := do
-  let mut state := initVerificationState
+  let mut state ← initVerificationState solverPath
   let mut results := []
 
   match prog with
@@ -38,7 +38,7 @@ def verifyProgram (prog : B3AST.Program SourceRange) (solverPath : String := "z3
         match decl with
         | .function _ name params _ _ _ =>
             let argTypes := params.val.toList.map (fun _ => "Int")
-            state := addFunctionDecl state name.val argTypes "Int"
+            state ← addFunctionDecl state name.val argTypes "Int"
         | _ => pure ()
 
       -- Second pass: add axioms and check properties
@@ -70,12 +70,12 @@ def verifyProgram (prog : B3AST.Program SourceRange) (solverPath : String := "z3
                       paramNames.foldl (fun body pname =>
                         Factory.quant .all pname .int trigger body
                       ) axiomBody
-                    state := addAssertion state axiomTerm
+                    state ← addAssertion state axiomTerm
                 | none => pure ()
             | none => pure ()
         | .axiom _ _ expr =>
             match expressionToSMT ConversionContext.empty expr with
-            | some term => state := addAssertion state term
+            | some term => state ← addAssertion state term
             | none => pure ()
         | .procedure m name params specs body =>
             -- Only verify parameter-free procedures
@@ -85,12 +85,13 @@ def verifyProgram (prog : B3AST.Program SourceRange) (solverPath : String := "z3
               let vcState := statementToVCs ConversionContext.empty VCGenState.empty bodyStmt
               -- Check each VC
               for (vc, sourceStmt) in vcState.verificationConditions.reverse do
-                let result ← checkProperty state vc (.procedure m name params specs body) (some sourceStmt) solverPath
+                let result ← checkProperty state vc (.procedure m name params specs body) (some sourceStmt)
                 results := results ++ [result]
             else
               pure ()  -- Skip procedures with parameters for now
         | _ => pure ()
 
+      closeVerificationState state
       return results
 
 ---------------------------------------------------------------------
@@ -167,21 +168,18 @@ def programToSMTCommands (prog : B3AST.Program SourceRange) : List String :=
 ---------------------------------------------------------------------
 
 /-- Build verification state from B3 program (functions and axioms only, no procedures) -/
-def buildProgramState (prog : Strata.B3AST.Program SourceRange) : B3VerificationState :=
+def buildProgramState (prog : Strata.B3AST.Program SourceRange) (solverPath : String := "z3") : IO B3VerificationState := do
+  let mut state ← initVerificationState solverPath
   match prog with
   | .program _ decls =>
-      let declList := decls.val.toList
-      -- Declare all functions
-      let state1 := declList.foldl (fun state decl =>
+      for decl in decls.val.toList do
         match decl with
         | .function _ name params _ _ _ =>
             let argTypes := params.val.toList.map (fun _ => "Int")
-            addFunctionDecl state name.val argTypes "Int"
-        | _ => state
-      ) initVerificationState
+            state ← addFunctionDecl state name.val argTypes "Int"
+        | _ => pure ()
 
-      -- Add function definitions and axioms
-      declList.foldl (fun state decl =>
+      for decl in decls.val.toList do
         match decl with
         | .function _ name params _ _ body =>
             match body.val with
@@ -209,14 +207,15 @@ def buildProgramState (prog : Strata.B3AST.Program SourceRange) : B3Verification
                       paramNames.foldl (fun body pname =>
                         Factory.quant .all pname .int trigger body
                       ) axiomBody
-                    addAssertion state axiomTerm
-                | none => state
-            | none => state
+                    state ← addAssertion state axiomTerm
+                | none => pure ()
+            | none => pure ()
         | .axiom _ _ expr =>
             match expressionToSMT ConversionContext.empty expr with
-            | some term => addAssertion state term
-            | none => state
-        | _ => state
-      ) state1
+            | some term => state ← addAssertion state term
+            | none => pure ()
+        | _ => pure ()
+
+      return state
 
 end Strata.B3.Verifier
