@@ -355,7 +355,7 @@ private def startsAndEndsWithNonIdentifierChar (a:SyntaxDefAtom) (n:Nat) :
 -- May conservatively return true even if a space is not necessary in practice,
 -- to avoid expensive calculation.
 private def needsSpaceBetween (a1 a2:SyntaxDefAtom) : Bool :=
-  let fuel := 40
+  let fuel := 5
   match a1, a2 with
   | .ident _ _, _ => ¬ (startsAndEndsWithNonIdentifierChar a2 fuel).fst
   | _, .ident _ _ => ¬ (startsAndEndsWithNonIdentifierChar a1 fuel).snd

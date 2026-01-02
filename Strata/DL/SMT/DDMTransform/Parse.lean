@@ -169,7 +169,7 @@ op sc_str (@[unwrap] s:Str) : SpecConstant => s;
 // representation cannot be recognized by Z3, make a workaround which is to have
 // separate `*_neg` categories for sc_numeral.
 op sc_numeral_neg (@[unwrap] n:Num) : SpecConstant => "-" n:0;
-op sc_numeral_dec (@[unwrap] n:Decimal) : SpecConstant => "-" n:0;
+op sc_decimal_neg (@[unwrap] n:Decimal) : SpecConstant => "-" n:0;
 
 category SExpr;
 op se_spec_const (s:SpecConstant) : SExpr => s;

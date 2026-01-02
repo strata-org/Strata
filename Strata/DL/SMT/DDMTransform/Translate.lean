@@ -169,7 +169,7 @@ def toString (t:SMT.Term): Except String String := do
 #guard_msgs in #eval (toString
     (.app SMT.Op.add [(.prim (.int 10)), (.prim (.int (-20)))] .int))
 
-/-- info: Except.ok "(+ 1e10 2e10)" -/
+/-- info: Except.ok "(+ 0.1 0.2)" -/
 #guard_msgs in #eval (toString
     (.app SMT.Op.add [(.prim (.real (Decimal.mk 1 (-1)))),
                       (.prim (.real (Decimal.mk 2 (-2))))] .int))
