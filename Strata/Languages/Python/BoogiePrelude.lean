@@ -197,7 +197,7 @@ spec{
   }
   var hours_i : int := 0;
   if (IntOrNone..isIntOrNone_mk_int(hours)) {
-        hours_i := IntOrNone_int_val(hours);
+        days_i := IntOrNone_int_val(hours);
   }
   assume [assume_timedelta_sign_matches]: (delta == (((days_i * 24) + hours_i) * 3600) * 1000000);
 };
