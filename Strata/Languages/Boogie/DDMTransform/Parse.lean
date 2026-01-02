@@ -301,16 +301,12 @@ op command_distinct (label : Option Label, exprs : CommaSepBy Expr) : Command =>
 category Field;
 category FieldList;
 
-// @[field(name, tp)] marks this operation as a field definition
-// @[declare(name, tp)] adds the field to the binding context
 @[declare(name, tp), field(name, tp)]
 op field_mk (name : Ident, tp : Type) : Field => name ":" tp;
 
-// @[fieldListAtom(f)] marks this as a single-field list
 @[fieldListAtom(f)]
 op fieldListAtom (f : Field) : FieldList => f;
 
-// @[fieldListPush(fl, f)] marks this as a list-push operation
 @[scope(fl), fieldListPush(fl, f)]
 op fieldListPush (fl : FieldList, @[scope(fl)] f : Field) : FieldList => fl "," f;
 
