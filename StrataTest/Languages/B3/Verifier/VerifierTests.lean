@@ -56,6 +56,7 @@ def formatStatementError (prog : Program) (stmt : B3AST.Statement SourceRange) :
     | .check m _ => formatSourceLocation baseOffset m
     | .assert m _ => formatSourceLocation baseOffset m
     | .assume m _ => formatSourceLocation baseOffset m
+    | .reach m _ => formatSourceLocation baseOffset m
     | _ => "unknown location"
 
   let (cstStmt, _errors) := B3.stmtToCST B3.ToCSTContext.empty stmt
@@ -125,8 +126,8 @@ def testVerification (prog : Program) : IO Unit := do
 
         let status := if isReach then
           match result.decision with
-          | .unsat => "✓ unreachable"
-          | .sat => "⚠ reachable"
+          | .unsat => "✗ unreachable (precondition never satisfied)"
+          | .sat => "✓ reachable"
           | .unknown => "? unknown"
         else
           match result.decision with
@@ -135,7 +136,8 @@ def testVerification (prog : Program) : IO Unit := do
           | .unknown => "? unknown"
 
         IO.println s!"  {name.val}: {status}"
-        if result.decision != .unsat && !isReach then
+        -- Show details for failures
+        if (result.decision != .unsat && !isReach) || (result.decision == .unsat && isReach) then
           match result.sourceStmt with
           | some stmt =>
               IO.println s!"    {formatStatementError prog stmt}"
@@ -254,14 +256,28 @@ procedure test() {
 
 /--
 info: Verification results:
-  test_reach: ✓ unreachable
+  test_reach_bad: ✗ unreachable (precondition never satisfied)
+    (0,100): reach f(5) < 0
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
 function f(x : int) : int
 axiom forall x : int pattern f(x) f(x) > 0
-procedure test_reach() {
+procedure test_reach_bad() {
   reach f(5) < 0
+}
+#end
+
+/--
+info: Verification results:
+  test_reach_good: ✓ reachable
+-/
+#guard_msgs in
+#eval testVerification $ #strata program B3CST;
+function f(x : int) : int
+axiom forall x : int pattern f(x) f(x) > 0
+procedure test_reach_good() {
+  reach f(5) > 5
 }
 #end
 
