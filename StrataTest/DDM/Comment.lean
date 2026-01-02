@@ -32,10 +32,10 @@ decl bar;
 
 /--
 info: program Comment;
- decl foo ;
-/*@ annotation */ decl bar ;
-//@ inline ⏎
- decl bar ;
+ decl foo;
+/*@annotation*/ decl bar;
+//@inline
+ decl bar;
 -/
 #guard_msgs in
 #eval IO.println <| example1.format

@@ -34,18 +34,18 @@ int procedure loopTrivial (n: int)
 
 /--
 info: program C_Simp;
-(int) procedure loopTrivial  ( n : int ) //@pre (n) >= (0) ;
- //@post true ;
+(int) procedure loopTrivial  (n:int)//@pre (n)>=(0) ;
+//@post true ;
  ({
-   var i : int ;
-  (i) = 0 ;
-  while ( (i) < (n) )
-   //@decreases ((n) - (i)) //@invariant ((i) <= (n)) ({
-   (i) = (i) + (1) ;
-   }
-  )//@assert [ i_eq_n ] (i) == (n) ;
-  return i ;
-   }
+  var i:int;
+  (i)=0;
+  while((i)<(n))
+  //@decreases ((n)-(i)) //@invariant ((i)<=(n)) ({
+  (i)=(i)+(1);
+  }
+  )//@assert [i_eq_n](i)==(n);
+  return i;
+  }
   )
 -/
 #guard_msgs in

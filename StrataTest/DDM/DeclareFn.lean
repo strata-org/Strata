@@ -37,8 +37,8 @@ assert f(true, 2);
 
 /--
 info: program TestDeclareFn;
-function f ( b : bool, i : int ) : bool ;
-assert f(true, 2) ;
+function f (b:bool, i:int):bool;
+assert f(true, 2);
 -/
 #guard_msgs in
 #eval IO.println testDeclareFnPgm
@@ -93,17 +93,17 @@ check a : F Int;
 
 /--
 info: program TestDeclareType;
-type Int ;
-type_fn Nat  ;
-type_fn Array ( name : Type ) ;
-type_fn Array2 ( a : Type, b : Type ) ;
-type_alias F ( name : Type ) = Array name ;
-var a : Array Int ;
-check_type Nat ;
-check_type Int ;
-check_type Array Int ;
-check_type F Int ;
-check a : F Int ;
+type Int;
+type_fn Nat ;
+type_fn Array (name:Type);
+type_fn Array2 (a:Type, b:Type);
+type_alias F (name:Type)=Array name;
+var a:Array Int;
+check_type Nat;
+check_type Int;
+check_type Array Int;
+check_type F Int;
+check a:F Int;
 -/
 #guard_msgs in
 #eval IO.println testDeclareTypePgm

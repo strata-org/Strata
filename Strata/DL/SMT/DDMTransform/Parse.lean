@@ -72,7 +72,7 @@ private def reservedKeywords := [
   This makes the below list exclude "_" and "!" because it is already in
   reservedKeywords.
 -/
-private def specialCharsInSimpleSymbol := [
+def specialCharsInSimpleSymbol := [
     ("plus", "+"),
     ("minus", "-"),
     -- ("slash", "/"), -- This causes an error in the SMT dialect definition
@@ -136,7 +136,7 @@ import SMTReservedKeywords;
 // <string> is Str.
 
 // <simple_symbol> is QualifiedIdent.
-op simple_symbol_qid (s:QualifiedIdent) : SimpleSymbol => s;
+op simple_symbol_qid (@[unwrap] s:QualifiedIdent) : SimpleSymbol => s;
 // The two symbols "true" and "false" are not parsed as QualifiedIdent.
 // This is because they are currently used as keywords in the Init dialect
 // (see Strata/DDM/BuiltinDialects/Init.lean)
@@ -148,18 +148,18 @@ op simple_symbol_ff () : SimpleSymbol => "false";
 //   * Support quoted symbols
 //   * Support symbols with non-ascii characters (&, ., !, etc)
 category Symbol;
-op symbol (s:SimpleSymbol) : Symbol => s;
+op symbol (@[unwrap] s:SimpleSymbol) : Symbol => s;
 
 category Keyword;
-op kw_symbol (s:SimpleSymbol) : Keyword => ":" s;
+op kw_symbol (@[unwrap] s:SimpleSymbol) : Keyword => ":" s;
 
 
 // 2. S-expressions
 // Special constants
 category SpecConstant;
-op sc_numeral (n:Num) : SpecConstant => n;
-op sc_decimal (d:Decimal) : SpecConstant => d;
-op sc_str (s:Str) : SpecConstant => s;
+op sc_numeral (@[unwrap] n:Num) : SpecConstant => n;
+op sc_decimal (@[unwrap] d:Decimal) : SpecConstant => d;
+op sc_str (@[unwrap] s:Str) : SpecConstant => s;
 
 category SExpr;
 op se_spec_const (s:SpecConstant) : SExpr => s;
@@ -170,22 +170,23 @@ op se_keyword (s:Keyword) : SExpr => s;
 op se_ls (s:Seq SExpr) : SExpr => "(" s ")";
 
 
-// 3. Identifier
+// 3. Identifier. Use 'SMTIdentifier' because the 'Identifier' category is
+// already defined in DDM
 category Index;
-op ind_numeral (n:Num) : Index => n;
-op ind_symbol (s:Symbol) : Index => s;
+op ind_numeral (@[unwrap] n:Num) : Index => n;
+op ind_symbol (@[unwrap] s:Symbol) : Index => s;
 
-category Identifier;
-op iden_simple (s:Symbol) : Identifier => s;
-op iden_indexed (s:Symbol, i0:Index, il:Seq Index) : Identifier =>
+category SMTIdentifier;
+op iden_simple (s:Symbol) : SMTIdentifier => s;
+op iden_indexed (s:Symbol, i0:Index, il:Seq Index) : SMTIdentifier =>
   "(" "_" s i0 il ")";
 
 
 // 4. Sorts
 category SMTSort;
-op smtsort_ident (s:Identifier) : SMTSort => s;
+op smtsort_ident (s:SMTIdentifier) : SMTSort => s;
 
-op smtsort_param (s:Identifier, s0:SMTSort, sl:Seq SMTSort) : SMTSort
+op smtsort_param (s:SMTIdentifier, s0:SMTSort, sl:Seq SMTSort) : SMTSort
   => "(" s s0 sl ")";
 
 
@@ -201,8 +202,8 @@ op att_kw (k:Keyword, av:Option AttributeValue) : Attribute => k av;
 
 // 6. Terms
 category QualIdentifier;
-op qi_ident (i:Identifier) : QualIdentifier => i;
-op qi_isort (i:Identifier, s:SMTSort) : QualIdentifier => "(" "as" i s ")";
+op qi_ident (i:SMTIdentifier) : QualIdentifier => i;
+op qi_isort (i:SMTIdentifier, s:SMTSort) : QualIdentifier => "(" "as" i s ")";
 
 category Term; // Forward declaration
 
@@ -482,7 +483,7 @@ op parse_keyword (x:Keyword): Command => "parse_keyword" x ";";
 op parse_spec_constant (x:SpecConstant): Command => "parse_spec_constant" x ";";
 op parse_sexpr (x:SExpr): Command => "parse_sexpr" x ";";
 op parse_index (x:Index): Command => "parse_index" x ";";
-op parse_identifier (x:Identifier): Command => "parse_identifier" x ";";
+op parse_identifier (x:SMTIdentifier): Command => "parse_identifier" x ";";
 op parse_sort (x:SMTSort): Command => "parse_sort" x ";";
 op parse_attribute_value (x:AttributeValue): Command
   => "parse_attribute_value" x ";";
@@ -657,7 +658,7 @@ namespace SMTDDM
 deriving instance BEq for
   SpecConstant, QualifiedIdent, SimpleSymbol, Symbol, Reserved,
   Keyword, SExpr, AttributeValue, BValue, Attribute, SMTOption, Index,
-  Identifier, SMTSort, SortedVar, QualIdentifier, ValBinding, Term,
+  SMTIdentifier, SMTSort, SortedVar, QualIdentifier, ValBinding, Term,
   InfoFlag, FunctionDef, Command
 
 end SMTDDM

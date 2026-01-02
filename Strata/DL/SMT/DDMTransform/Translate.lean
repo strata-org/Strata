@@ -16,12 +16,32 @@ private def mkQualifiedIdent (s:String):QualifiedIdent SourceRange :=
   .qualifiedIdentImplicit SourceRange.none (Ann.mk SourceRange.none s)
 
 private def mkSimpleSymbol (s:String):SimpleSymbol SourceRange :=
-  .simple_symbol_qid SourceRange.none (mkQualifiedIdent s)
+  match List.find? (fun (_,sym) => sym = s) specialCharsInSimpleSymbol with
+  | .some (name,_) =>
+    -- This needs hard-coded for now.
+    (match name with
+    | "plus" => .simple_symbol_plus SourceRange.none
+    | "minus" => .simple_symbol_minus SourceRange.none
+    | "star" => .simple_symbol_star SourceRange.none
+    | "eq" => .simple_symbol_eq SourceRange.none
+    | "percent" => .simple_symbol_percent SourceRange.none
+    | "questionmark" => .simple_symbol_questionmark SourceRange.none
+    | "period" => .simple_symbol_period SourceRange.none
+    | "dollar" => .simple_symbol_dollar SourceRange.none
+    | "tilde" => .simple_symbol_tilde SourceRange.none
+    | "amp" => .simple_symbol_amp SourceRange.none
+    | "caret" => .simple_symbol_caret SourceRange.none
+    | "lt" => .simple_symbol_lt SourceRange.none
+    | "gt" => .simple_symbol_gt SourceRange.none
+    | "at" => .simple_symbol_at SourceRange.none
+    | _ => panic! s!"Unknown simple symbol: {name}")
+  | .none =>
+    .simple_symbol_qid SourceRange.none (mkQualifiedIdent s)
 
 private def mkSymbol (s:String):Symbol SourceRange :=
   .symbol SourceRange.none (mkSimpleSymbol s)
 
-private def mkIdentifier (s:String):Identifier SourceRange :=
+private def mkIdentifier (s:String):SMTIdentifier SourceRange :=
   .iden_simple SourceRange.none (mkSymbol s)
 
 private def translateFromTermPrim (t:SMT.TermPrim):
@@ -35,8 +55,7 @@ private def translateFromTermPrim (t:SMT.TermPrim):
       (.qi_ident srnone (.iden_simple srnone (.symbol srnone ss))))
   | .int i =>
     let abs_i := if i < 0 then -i else i
-    let s: Ann Nat SourceRange := Ann.mk srnone abs_i.toNat
-    let v := .spec_constant_term srnone (.sc_numeral srnone s)
+    let v := .spec_constant_term srnone (.sc_numeral srnone abs_i.toNat)
     return (
       if i >= 0 then v
       else
@@ -48,12 +67,12 @@ private def translateFromTermPrim (t:SMT.TermPrim):
     return (.qual_identifier srnone (.qi_ident srnone (mkIdentifier str_repr)))
   | .bitvec bv =>
     let bvty := mkSymbol (s!"bv{bv.toNat}")
-    let val:Index SourceRange := .ind_numeral srnone (Ann.mk srnone bv.width)
+    let val:Index SourceRange := .ind_numeral srnone bv.width
     return (.qual_identifier srnone
       (.qi_ident srnone (.iden_indexed srnone bvty val
         (Ann.mk srnone #[]))))
   | .string s =>
-    return .spec_constant_term srnone (.sc_str srnone (Ann.mk srnone s))
+    return .spec_constant_term srnone (.sc_str srnone s)
 
 private def translateFromTermType (t:SMT.TermType):
     Except String (SMTDDM.SMTSort SourceRange) := do
@@ -65,7 +84,7 @@ private def translateFromTermType (t:SMT.TermType):
       return (.smtsort_ident srnone
         (.iden_indexed srnone
           (mkSymbol "BitVec")
-          (.ind_numeral srnone (Ann.mk srnone n))
+          (.ind_numeral srnone n)
           (Ann.mk srnone #[])))
     | .trigger =>
       throw "don't know how to translate a trigger type"
@@ -106,7 +125,7 @@ def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term SourceRange) := d
           argsh (Ann.mk srnone (Array.mk argst)))
     | [] =>
       return (.qual_identifier srnone (.qi_ident srnone (mkIdentifier op.mkName)))
-  | .quant qkind args tr body =>
+  | .quant qkind args _tr body =>
     let args_sorted:List (SMTDDM.SortedVar SourceRange) <-
       args.mapM
         (fun ⟨name,ty⟩ => do
@@ -140,11 +159,11 @@ def toString (t:SMT.Term): Except String String := do
   return fmt.format |>.render
 
 
-/-- info: Except.ok "( + 10 20 )" -/
+/-- info: Except.ok "(+ 10 20)" -/
 #guard_msgs in #eval (toString
     (.app SMT.Op.add [(.prim (.int 10)), (.prim (.int 20))] .int))
 
-/-- info: Except.ok "( _ bv1 32  )" -/
+/-- info: Except.ok "( _ bv1 32 )" -/
 #guard_msgs in #eval (toString
     (.prim (.bitvec (BitVec.ofNat 32/-width-/ 1/-value-/))))
 

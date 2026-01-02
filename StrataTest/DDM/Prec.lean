@@ -25,7 +25,7 @@ def ppParen (pgm : Strata.Program) :=
 
 /--
 info: program TestPrec;
-assert ((t) && (t)) && (t) ;
+assert ((t)&&(t))&&(t);
 -/
 #guard_msgs in
 #eval ppParen #strata
@@ -35,7 +35,7 @@ assert t && t && t;
 
 /--
 info: program TestPrec;
-assert (t) => ((t) => (t)) ;
+assert (t)=>((t)=>(t));
 -/
 #guard_msgs in
 #eval ppParen #strata
@@ -45,7 +45,7 @@ assert t => t => t;
 
 /--
 info: program TestPrec;
-assert (f) ^^ (f) ;
+assert (f)^^(f);
 -/
 #guard_msgs in
 #eval ppParen #strata
@@ -65,7 +65,7 @@ assert f ^^ f ^^ f;
 
 /--
 info: program TestPrec;
-assert ((t) && (t)) || (t) ;
+assert ((t)&&(t))||(t);
 -/
 #guard_msgs in
 #eval ppParen #strata
@@ -75,7 +75,7 @@ assert t && t || t;
 
 /--
 info: program TestPrec;
-assert (t) || ((t) && (t)) ;
+assert (t)||((t)&&(t));
 -/
 #guard_msgs in
 #eval ppParen #strata
@@ -85,7 +85,7 @@ assert t || t && t;
 
 /--
 info: program TestPrec;
-assert ((t) || (f)) => (t) ;
+assert ((t)||(f))=>(t);
 -/
 #guard_msgs in
 #eval ppParen #strata

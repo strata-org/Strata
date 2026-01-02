@@ -21,7 +21,7 @@ eval b"ab\x12\r\\";
 
 /--
 info: program Test;
-eval  b"ab\x12\r\\" ;
+eval b"ab\x12\r\\";
 -/
 #guard_msgs in
 #eval IO.print bvExample

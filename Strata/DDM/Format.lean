@@ -328,10 +328,51 @@ private def SyntaxDefAtom.formatArgs (opts : FormatOptions) (args : Array PrecFo
     let r := Format.join (f.attach.map (fun ⟨a, _⟩ => a.formatArgs opts args) |>.toList)
     .nest n r
 
+-- Returns true if 'a' must start/end with a character that cannot be part of an
+-- identifier. Returns a pair (starts?, ends?). If not sure, conservatively
+-- return (false, false).
+-- This is a recursive function; for termination, invest up to depth of n.
+private def startsAndEndsWithNonIdentifierChar (a:SyntaxDefAtom) (n:Nat) :
+  Bool × Bool :=
+  match n with
+  | .zero => (.false, .false)
+  | .succ n' =>
+    match a with
+    | .str lit =>
+      if ¬ lit.isEmpty then
+        (¬ isIdContinue (lit.front), ¬ isIdContinue (lit.back))
+      else (false, false)
+    | .ident _ _ _ => (false, false)
+    | .indent _ arr =>
+      if ¬ arr.isEmpty then
+        match arr[0]? with
+        | .some k => startsAndEndsWithNonIdentifierChar k n'
+        | _ => (false, false)
+      else (false, false)
+
+-- Returns true if a space must be inserted between two SyntaxDefAtoms, to avoid
+-- wrong interpretation of identifier + string as one longer identifier.
+-- May conservatively return true even if a space is not necessary in practice,
+-- to avoid expensive calculation.
+private def needsSpaceBetween (a1 a2:SyntaxDefAtom) : Bool :=
+  let fuel := 40
+  match a1, a2 with
+  | .ident _ _, _ => ¬ (startsAndEndsWithNonIdentifierChar a2 fuel).fst
+  | _, .ident _ _ => ¬ (startsAndEndsWithNonIdentifierChar a1 fuel).snd
+  | _, _ => true
+
 private def ppOp (opts : FormatOptions) (stx : SyntaxDef) (args : Array PrecFormat) : PrecFormat :=
-  let fmts:List Format := ((·.formatArgs opts args) <$> stx.atoms).toList
-  let fmts2 := fmts.intersperse (" ":Format)
-  ⟨Format.join fmts2, stx.prec⟩
+  let fmts_with_space :=
+    let rec format_with_space (atoms: List SyntaxDefAtom) : List Format :=
+      match atoms with
+      | a1::a2::fmts' =>
+        (if needsSpaceBetween a1 a2 then
+          [a1.formatArgs opts args, (" ":Format)]
+         else [a1.formatArgs opts args])
+        ++ (format_with_space (a2::fmts'))
+      | atoms => atoms.map (·.formatArgs opts args)
+    format_with_space (stx.atoms.toList)
+  ⟨Format.join fmts_with_space, stx.prec⟩
 
 private abbrev FormatM := ReaderT FormatContext (StateM FormatState)
 

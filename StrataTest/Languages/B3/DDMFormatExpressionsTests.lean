@@ -113,7 +113,7 @@ info: B3: .binaryOp
   (.literal () (.intLit () 5))
   (.literal () (.intLit () 3))
 ---
-info: 5 + 3
+info: 5+3
 -/
 #guard_msgs in
 #eval roundtripExpr $ #strata program B3CST; check 5 + 3 #end
@@ -140,7 +140,7 @@ info: B3: .unaryOp
   (.not ())
   (.literal () (.boolLit () true))
 ---
-info: !true
+info: ! true
 -/
 #guard_msgs in
 #eval roundtripExpr $ #strata program B3CST; check !true #end
@@ -152,7 +152,7 @@ info: B3: .binaryOp
   (.literal () (.intLit () 10))
   (.literal () (.intLit () 3))
 ---
-info: 10 - 3
+info: 10-3
 -/
 #guard_msgs in
 #eval roundtripExpr $ #strata program B3CST; check 10 - 3 #end
@@ -164,7 +164,7 @@ info: B3: .binaryOp
   (.literal () (.intLit () 4))
   (.literal () (.intLit () 5))
 ---
-info: 4 * 5
+info: 4*5
 -/
 #guard_msgs in
 #eval roundtripExpr $ #strata program B3CST; check 4 * 5 #end
@@ -200,7 +200,7 @@ info: B3: .binaryOp
   (.literal () (.intLit () 5))
   (.literal () (.intLit () 5))
 ---
-info: 5 == 5
+info: 5==5
 -/
 #guard_msgs in
 #eval roundtripExpr $ #strata program B3CST; check 5 == 5 #end
@@ -212,7 +212,7 @@ info: B3: .binaryOp
   (.literal () (.intLit () 3))
   (.literal () (.intLit () 7))
 ---
-info: 3 != 7
+info: 3 !=7
 -/
 #guard_msgs in
 #eval roundtripExpr $ #strata program B3CST; check 3 != 7 #end
@@ -224,7 +224,7 @@ info: B3: .binaryOp
   (.literal () (.intLit () 3))
   (.literal () (.intLit () 5))
 ---
-info: 3 <= 5
+info: 3<=5
 -/
 #guard_msgs in
 #eval roundtripExpr $ #strata program B3CST; check 3 <= 5 #end
@@ -236,7 +236,7 @@ info: B3: .binaryOp
   (.literal () (.intLit () 2))
   (.literal () (.intLit () 8))
 ---
-info: 2 < 8
+info: 2<8
 -/
 #guard_msgs in
 #eval roundtripExpr $ #strata program B3CST; check 2 < 8 #end
@@ -248,7 +248,7 @@ info: B3: .binaryOp
   (.literal () (.intLit () 10))
   (.literal () (.intLit () 5))
 ---
-info: 10 >= 5
+info: 10>=5
 -/
 #guard_msgs in
 #eval roundtripExpr $ #strata program B3CST; check 10 >= 5 #end
@@ -260,7 +260,7 @@ info: B3: .binaryOp
   (.literal () (.intLit () 15))
   (.literal () (.intLit () 3))
 ---
-info: 15 > 3
+info: 15>3
 -/
 #guard_msgs in
 #eval roundtripExpr $ #strata program B3CST; check 15 > 3 #end
@@ -276,7 +276,7 @@ info: B3: .binaryOp
     (.literal () (.intLit () 3))
     (.literal () (.intLit () 4)))
 ---
-info: 2 + 3 * 4
+info: 2+3*4
 -/
 #guard_msgs in
 #eval roundtripExpr $ #strata program B3CST; check 2 + 3 * 4 #end
@@ -292,7 +292,7 @@ info: B3: .binaryOp
     (.literal () (.intLit () 3)))
   (.literal () (.intLit () 4))
 ---
-info: (2 + 3) * 4
+info: (2+3)*4
 -/
 #guard_msgs in
 #eval roundtripExpr $ #strata program B3CST; check (2 + 3) * 4 #end
@@ -308,7 +308,7 @@ info: B3: .binaryOp
     (.literal () (.intLit () 2)))
   (.literal () (.intLit () 3))
 ---
-info: 1 + 2 + 3
+info: 1+2+3
 -/
 #guard_msgs in
 #eval roundtripExpr $ #strata program B3CST; check 1 + 2 + 3 #end
@@ -324,7 +324,7 @@ info: B3: .binaryOp
     (.literal () (.intLit () 2)))
   (.literal () (.intLit () 5))
 ---
-info: 1 + 2 < 5
+info: 1+2<5
 -/
 #guard_msgs in
 #eval roundtripExpr $ #strata program B3CST; check 1 + 2 < 5 #end
@@ -340,7 +340,7 @@ info: B3: .binaryOp
     (.literal () (.intLit () 3)))
   (.literal () (.intLit () 2))
 ---
-info: 10 - 3 + 2
+info: 10-3+2
 -/
 #guard_msgs in
 #eval roundtripExpr $ #strata program B3CST; check 10 - 3 + 2 #end
@@ -356,7 +356,7 @@ info: B3: .binaryOp
     (.literal () (.intLit () 4)))
   (.literal () (.intLit () 3))
 ---
-info: 20 div 4 * 3
+info: 20 div 4*3
 -/
 #guard_msgs in
 #eval roundtripExpr $ #strata program B3CST; check 20 div 4 * 3 #end
@@ -376,7 +376,7 @@ info: B3: .binaryOp
       (.literal () (.intLit () 3)))
     (.literal () (.intLit () 4)))
 ---
-info: 1 < 2 * 3 + 4
+info: 1<2*3+4
 -/
 #guard_msgs in
 #eval roundtripExpr $ #strata program B3CST; check 1 < 2 * 3 + 4 #end
@@ -406,7 +406,7 @@ info: B3: .quantifierExpr
     (.id () 0)
     (.literal () (.intLit () 0)))
 ---
-info: forall i : int i >= 0
+info: forall i:int i>=0
 -/
 #guard_msgs in
 #eval roundtripExpr $ #strata program B3CST; check forall i : int i >= 0 #end
@@ -424,7 +424,7 @@ info: B3: .quantifierExpr
     (.id () 0)
     (.unaryOp () (.not ()) (.id () 0)))
 ---
-info: exists y : bool y || !y
+info: exists y:bool y||! y
 -/
 #guard_msgs in
 #eval roundtripExpr $ #strata program B3CST; check exists y : bool y || !y #end
@@ -454,7 +454,7 @@ info: B3: .quantifierExpr
       u #[.id () 0])
     (.literal () (.intLit () 0)))
 ---
-info: forall x : int pattern f(x), f(x) f(x) > 0
+info: forall x:int pattern f(x), f(x) f(x)>0
 -/
 #guard_msgs in
 #eval roundtripExpr $ #strata program B3CST; check forall x : int pattern f(x), f(x) f(x) > 0 #end
@@ -478,7 +478,7 @@ info: B3: .quantifierExpr
     (.id () 0)
     (.unaryOp () (.not ()) (.id () 0)))
 ---
-info: exists y : bool pattern y pattern !y y || !y
+info: exists y:bool pattern y pattern ! y y||! y
 -/
 #guard_msgs in
 #eval roundtripExpr $ #strata program B3CST; check exists y : bool pattern y pattern !y y || !y #end
@@ -510,7 +510,7 @@ info: B3: .quantifierExpr
     (.id () 0)
     (.literal () (.intLit () 0)))
 ---
-info: forall z : int pattern z pattern z + 1 pattern z * 2 z > 0
+info: forall z:int pattern z pattern z+1 pattern z*2 z>0
 -/
 #guard_msgs in
 #eval roundtripExpr $ #strata program B3CST; check forall z : int pattern z pattern z + 1 pattern z * 2 z > 0 #end

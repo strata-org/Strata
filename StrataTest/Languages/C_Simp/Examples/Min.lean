@@ -26,16 +26,16 @@ int procedure min (a: int, b: int)
 
 /--
 info: program C_Simp;
-(int) procedure min  ( a : int, b : int ) //@pre true ;
- //@post true ;
+(int) procedure min  (a:int, b:int)//@pre true ;
+//@post true ;
  ({
-   if ( (a) < (b) ) {
-   return a ;
-   }
+  if((a)<(b)){
+  return a;
+  }
    (else ({
-   return b ;
-   }
-  )) }
+  return b;
+  }
+  ))}
   )
 -/
 #guard_msgs in

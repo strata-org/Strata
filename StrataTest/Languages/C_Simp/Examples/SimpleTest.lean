@@ -31,21 +31,21 @@ int procedure simpleTest (x: int, y: int)
 
 /--
 info: program C_Simp;
-(int) procedure simpleTest  ( x : int, y : int ) //@pre (y) > (0) ;
- //@post true ;
+(int) procedure simpleTest  (x:int, y:int)//@pre (y)>(0) ;
+//@post true ;
  ({
-   var z : int ;
-  (z) = (x) + (y) ;
-  //@assert [ test_assert ] (z) > (x) ;
-  if ( (z) > (10) ) {
-   (z) = (z) - (1) ;
-   }
+  var z:int;
+  (z)=(x)+(y);
+  //@assert [test_assert](z)>(x);
+  if((z)>(10)){
+  (z)=(z)-(1);
+  }
    (else ({
-   (z) = (z) + (1) ;
-   }
-  ))//@assume [ test_assume ] (z) > (0) ;
-  return 0 ;
-   }
+  (z)=(z)+(1);
+  }
+  ))//@assume [test_assume](z)>(0);
+  return 0;
+  }
   )
 -/
 #guard_msgs in

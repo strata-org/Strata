@@ -22,11 +22,11 @@ bool procedure trivial ()
 
 /--
 info: program C_Simp;
-(bool) procedure trivial  (  ) //@pre true ;
- //@post true ;
+(bool) procedure trivial  ()//@pre true ;
+//@post true ;
  ({
-   return true ;
-   }
+  return true;
+  }
   )
 -/
 #guard_msgs in

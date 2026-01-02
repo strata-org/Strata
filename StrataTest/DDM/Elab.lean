@@ -19,7 +19,7 @@ op ws (i : Num, j : Num) : Command => "ws " i " " j ";";
 
 def testProgram := #strata program Test; decimal 1e99; #end
 
-/-- info: "program Test;\ndecimal 1e99 ;" -/
+/-- info: "program Test;\ndecimal 1e99;" -/
 #guard_msgs in
 #eval toString testProgram
 
@@ -113,8 +113,8 @@ eval ((fun (x : bool) => x)) : bool -> bool;
 
 /--
 info: program Test;
-str "\r€•\x9d\n\t" ;
-str "\\n\"" ;
+str "\r€•\x9d\n\t";
+str "\\n\"";
 -/
 #guard_msgs in
 #eval IO.println #strata
