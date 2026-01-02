@@ -24,6 +24,7 @@ Tests for B3 to SMT conversion and verification.
 - ✅ Quantifiers (forall, exists) with patterns
 - ✅ Labeled expressions (labels stripped)
 - ❌ Let expressions (needs proper substitution)
+- ❌ Old values (old x) for inout parameters
 
 **Declarations:**
 - ✅ Function declarations
@@ -66,10 +67,10 @@ Tests for B3 to SMT conversion and verification.
 - ✅ Sequential execution (asserts accumulate)
 - ✅ Automatic diagnosis (conjunction splitting)
 - ✅ Efficient solver reuse (push/pop)
+- ✅ Incremental API (init, addDeclaration, prove, reach, push, pop)
 - ❌ When-clause testing in diagnosis
 - ❌ Definition inlining in diagnosis
 - ❌ Counterexample parsing and display
-- ❌ Multi-level push/pop stack management
 -/
 
 namespace B3.Verifier.Tests
