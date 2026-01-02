@@ -25,23 +25,31 @@ open Strata.B3AST
 -- B3 Verification Results
 ---------------------------------------------------------------------
 
+inductive B3CheckResult where
+  | proved : B3CheckResult
+  | provedWrong : B3CheckResult
+  | proofUnknown : B3CheckResult  -- Solver timeout/incomplete
+
+inductive B3ReachResult where
+  | unreachable : B3ReachResult
+  | reachable : B3ReachResult
+  | reachabilityUnknown : B3ReachResult  -- Conservative: might be reachable
+
 inductive B3Result where
-  | proved : B3Result  -- Property verified
-  | provedWrong : B3Result  -- Property has counterexample
-  | unreachable : B3Result  -- Code is dead (reach: unsat)
-  | satisfiable : B3Result  -- Code might be reachable (reach: sat or unknown)
+  | checkResult : B3CheckResult → B3Result
+  | reachResult : B3ReachResult → B3Result
 
 def B3Result.fromDecisionForProve (d : Decision) : B3Result :=
   match d with
-  | .unsat => .proved
-  | .sat => .provedWrong
-  | .unknown => .provedWrong  -- Treat unknown as failure for prove
+  | .unsat => .checkResult .proved
+  | .sat => .checkResult .provedWrong
+  | .unknown => .checkResult .proofUnknown
 
 def B3Result.fromDecisionForReach (d : Decision) : B3Result :=
   match d with
-  | .unsat => .unreachable
-  | .sat => .satisfiable
-  | .unknown => .satisfiable  -- Conservative: treat unknown as potentially reachable
+  | .unsat => .reachResult .unreachable
+  | .sat => .reachResult .reachable
+  | .unknown => .reachResult .reachabilityUnknown
 
 ---------------------------------------------------------------------
 -- Verification State
