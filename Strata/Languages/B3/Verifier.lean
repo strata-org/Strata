@@ -8,6 +8,7 @@ import Strata.Languages.B3.Verifier.Conversion
 import Strata.Languages.B3.Verifier.Formatter
 import Strata.Languages.B3.Verifier.State
 import Strata.Languages.B3.Verifier.Core
+import Strata.Languages.B3.Verifier.Refinement
 
 /-!
 # B3 Verifier

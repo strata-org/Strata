@@ -61,7 +61,7 @@ def formatStatementError (prog : Program) (stmt : B3AST.Statement SourceRange) :
   -- Convert statement back to concrete syntax
   let (cstStmt, _errors) := B3.stmtToCST B3.ToCSTContext.empty stmt
   let ctx := FormatContext.ofDialects prog.dialects prog.globalContext {}
-  let state : FormatState := { openDialects := prog.dialects.toList.foldl (init := {}) fun a d => a.insert d.name }
+  let state : FormatState := { openDialects := prog.dialects.toList.foldl (init := {}) fun a (dialect : Dialect) => a.insert dialect.name }
   let stmtAst := cstStmt.toAst
   let formatted := (mformat (ArgF.op stmtAst) ctx state).format.pretty.trim
 
@@ -191,21 +191,20 @@ procedure test_fail() {
 def testConjunctionRefinement (prog : Program) : IO Unit := do
   let ast := programToB3AST prog
 
-  match ast with
+  -- Extract check expression from procedure
+  let checkInfo := match ast with
   | .program _ decls =>
-      -- Find the procedure with check
-      let procInfo := decls.val.toList.findSome? (fun d =>
+      decls.val.toList.findSome? (fun (d : B3AST.Decl SourceRange) =>
         match d with
         | .procedure _ _ params _ body =>
             if params.val.isEmpty && body.val.isSome then
               let bodyStmt := body.val.get!
               match bodyStmt with
-              | .check _ expr => some (expr, d)
-              | .blockStmt _ stmts =>
-                  -- Look for check in block
-                  stmts.val.toList.findSome? (fun s =>
+              | B3AST.Statement.check _ expr => some (expr, d)
+              | B3AST.Statement.blockStmt _ stmts =>
+                  stmts.val.toList.findSome? (fun (s : B3AST.Statement SourceRange) =>
                     match s with
-                    | .check _ expr => some (expr, d)
+                    | B3AST.Statement.check _ expr => some (expr, d)
                     | _ => none
                   )
               | _ => none
@@ -213,38 +212,45 @@ def testConjunctionRefinement (prog : Program) : IO Unit := do
         | _ => none
       )
 
-      match procInfo with
-      | none => IO.println "No check found"
-      | some (expr, procDecl) =>
-          -- Build state
-          let mut state := initVerificationState
-          for decl in decls.val.toList do
-            match decl with
-            | .function _ name params _ _ _ =>
-                state := addFunctionDecl state name.val (params.val.toList.map (fun _ => "Int")) "Int"
-            | _ => pure ()
+  match checkInfo with
+  | none => IO.println "No check found"
+  | some (expr, procDecl) =>
+      let state := buildProgramState ast
+      let result ← refineConjunction state expr procDecl
 
-          -- Run refinement
-          let result ← refineConjunction state expr procDecl
-
-          IO.println "Checking full expression..."
-          let fullStatus := match result.fullCheck.decision with
-            | .unsat => "✓ verified"
-            | _ => "✗ failed"
-          IO.println s!"  {fullStatus}"
-
+      match result.fullCheck.decision with
+      | .unsat =>
+          IO.println "✓ Verified"
+      | _ =>
+          IO.println "✗ Could not prove"
           if !result.refinements.isEmpty then
-            IO.println "  Splitting conjunction..."
             for (desc, refResult) in result.refinements do
-              let status := if refResult.decision == .unsat then "✓" else "✗"
-              IO.println s!"    {desc}: {status}"
+              match refResult.decision with
+              | .unsat => pure ()
+              | _ =>
+                  let subExpr := match desc with
+                    | "left conjunct" =>
+                        match expr with
+                        | .binaryOp _ (.and _) lhs _ =>
+                            let (cstExpr, _) := B3.expressionToCST B3.ToCSTContext.empty lhs
+                            let ctx := FormatContext.ofDialects prog.dialects prog.globalContext {}
+                            let fmtState : FormatState := { openDialects := prog.dialects.toList.foldl (init := {}) fun a (dialect : Dialect) => a.insert dialect.name }
+                            (mformat (ArgF.op cstExpr.toAst) ctx fmtState).format.pretty.trim
+                        | _ => "<expr>"
+                    | "right conjunct" =>
+                        match expr with
+                        | .binaryOp _ (.and _) _ rhs =>
+                            let (cstExpr, _) := B3.expressionToCST B3.ToCSTContext.empty rhs
+                            let ctx := FormatContext.ofDialects prog.dialects prog.globalContext {}
+                            let fmtState : FormatState := { openDialects := prog.dialects.toList.foldl (init := {}) fun a (dialect : Dialect) => a.insert dialect.name }
+                            (mformat (ArgF.op cstExpr.toAst) ctx fmtState).format.pretty.trim
+                        | _ => "<expr>"
+                    | _ => desc
+                  IO.println s!"  Refinement: {subExpr} could not be proved"
 
 /--
-info: Checking full expression...
-  ✗ failed
-  Splitting conjunction...
-    left conjunct: ✓
-    right conjunct: ✗
+info: ✗ Could not prove
+  Refinement: f(5) == 10 could not be proved
 -/
 #guard_msgs in
 #eval testConjunctionRefinement $ #strata program B3CST;

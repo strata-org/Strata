@@ -18,7 +18,9 @@ Provides both batch and incremental verification APIs.
 
 namespace Strata.B3.Verifier
 
+open Strata
 open Strata.SMT
+open Strata.B3AST
 
 ---------------------------------------------------------------------
 -- Batch Verification API
@@ -159,5 +161,62 @@ def programToSMTCommands (prog : B3AST.Program SourceRange) : List String :=
         | _ => []
       )
       functionDecls ++ axioms
+
+---------------------------------------------------------------------
+-- State Building Utilities
+---------------------------------------------------------------------
+
+/-- Build verification state from B3 program (functions and axioms only, no procedures) -/
+def buildProgramState (prog : Strata.B3AST.Program SourceRange) : B3VerificationState :=
+  match prog with
+  | .program _ decls =>
+      let declList := decls.val.toList
+      -- Declare all functions
+      let state1 := declList.foldl (fun state decl =>
+        match decl with
+        | .function _ name params _ _ _ =>
+            let argTypes := params.val.toList.map (fun _ => "Int")
+            addFunctionDecl state name.val argTypes "Int"
+        | _ => state
+      ) initVerificationState
+
+      -- Add function definitions and axioms
+      declList.foldl (fun state decl =>
+        match decl with
+        | .function _ name params _ _ body =>
+            match body.val with
+            | some (.functionBody _ whens bodyExpr) =>
+                let paramNames := params.val.toList.map (fun p => match p with | .fParameter _ _ n _ => n.val)
+                let ctx' := paramNames.foldl (fun acc n => acc.push n) ConversionContext.empty
+                match expressionToSMT ctx' bodyExpr with
+                | some bodyTerm =>
+                    let paramVars := paramNames.map (fun n => Term.var ⟨n, .int⟩)
+                    let uf : UF := { id := name.val, args := paramVars.map (fun t => ⟨"_", t.typeOf⟩), out := .int }
+                    let funcCall := Term.app (.uf uf) paramVars .int
+                    let equality := Term.app .eq [funcCall, bodyTerm] .bool
+                    let axiomBody := if whens.val.isEmpty then
+                      equality
+                    else
+                      let whenTerms := whens.val.toList.filterMap (fun w =>
+                        match w with | .when _ e => expressionToSMT ctx' e
+                      )
+                      let antecedent := whenTerms.foldl (fun acc t => Term.app .and [acc, t] .bool) (Term.bool true)
+                      Term.app .or [Term.app .not [antecedent] .bool, equality] .bool
+                    let trigger := Term.app .triggers [funcCall] .trigger
+                    let axiomTerm := if paramNames.isEmpty then
+                      axiomBody
+                    else
+                      paramNames.foldl (fun body pname =>
+                        Factory.quant .all pname .int trigger body
+                      ) axiomBody
+                    addAssertion state axiomTerm
+                | none => state
+            | none => state
+        | .axiom _ _ expr =>
+            match expressionToSMT ConversionContext.empty expr with
+            | some term => addAssertion state term
+            | none => state
+        | _ => state
+      ) state1
 
 end Strata.B3.Verifier
