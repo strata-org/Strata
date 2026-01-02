@@ -15,8 +15,9 @@ def boogiePrelude :=
 #strata
 program Boogie;
 
-type None;
-const None_none : None;
+datatype None () {
+  None_none()
+};
 
 type Object;
 function Object_len(x : Object) : int;
