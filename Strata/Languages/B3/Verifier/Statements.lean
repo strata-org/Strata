@@ -37,7 +37,7 @@ open Strata.SMT
 structure VCGenState where
   varIncarnations : List (String × Nat)  -- Maps variable name to current incarnation number
   pathConditions : List Term  -- Accumulated assumptions
-  verificationConditions : List (Term × B3AST.Statement Unit)  -- VCs with source statements
+  verificationConditions : List (Term × B3AST.Statement SourceRange)  -- VCs with source statements
 
 namespace VCGenState
 
@@ -67,14 +67,14 @@ def getCurrentIncarnation (state : VCGenState) (varName : String) : Option Strin
 def addPathCondition (state : VCGenState) (cond : Term) : VCGenState :=
   { state with pathConditions := cond :: state.pathConditions }
 
-def addVC (state : VCGenState) (vc : Term) (source : B3AST.Statement Unit) : VCGenState :=
+def addVC (state : VCGenState) (vc : Term) (source : B3AST.Statement SourceRange) : VCGenState :=
   { state with verificationConditions := (vc, source) :: state.verificationConditions }
 
 end VCGenState
 
 /-- Convert B3 statement to verification conditions -/
-partial def statementToVCs (ctx : ConversionContext) (state : VCGenState) : B3AST.Statement M → VCGenState
-  | .check _ expr =>
+partial def statementToVCs (ctx : ConversionContext) (state : VCGenState) : B3AST.Statement SourceRange → VCGenState
+  | .check m expr =>
       -- Generate VC: path conditions => expr
       match expressionToSMT ctx expr with
       | some term =>
@@ -83,10 +83,9 @@ partial def statementToVCs (ctx : ConversionContext) (state : VCGenState) : B3AS
           else
             let pathCond := state.pathConditions.foldl (fun acc t => Term.app .and [acc, t] .bool) (Term.bool true)
             Term.app .implies [pathCond, term] .bool
-          let exprUnit := B3AST.Expression.mapMetadata (fun _ => ()) expr
-          state.addVC vc (.check () exprUnit)
+          state.addVC vc (.check m expr)
       | none => state
-  | .assert _ expr =>
+  | .assert m expr =>
       -- Assert = check + assume
       match expressionToSMT ctx expr with
       | some term =>
@@ -96,8 +95,7 @@ partial def statementToVCs (ctx : ConversionContext) (state : VCGenState) : B3AS
           else
             let pathCond := state.pathConditions.foldl (fun acc t => Term.app .and [acc, t] .bool) (Term.bool true)
             Term.app .implies [pathCond, term] .bool
-          let exprUnit := B3AST.Expression.mapMetadata (fun _ => ()) expr
-          let state' := state.addVC vc (.assert () exprUnit)
+          let state' := state.addVC vc (.assert m expr)
           -- Then, add to path conditions like assume
           state'.addPathCondition term
       | none => state

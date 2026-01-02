@@ -28,7 +28,8 @@ structure B3VerificationState where
   context : ConversionContext
 
 structure CheckResult where
-  decl : B3AST.Decl Unit  -- Source declaration for error reporting
+  decl : B3AST.Decl SourceRange  -- Source declaration with location info
+  sourceStmt : Option (B3AST.Statement SourceRange) := none  -- Specific statement that failed
   decision : Decision
   model : Option String := none
 
@@ -44,7 +45,7 @@ def addFunctionDecl (state : B3VerificationState) (name : String) (argTypes : Li
 def addAssertion (state : B3VerificationState) (term : Term) : B3VerificationState :=
   { state with assertions := term :: state.assertions }
 
-def checkProperty (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl Unit) (solverPath : String := "z3") : IO CheckResult := do
+def checkProperty (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : Option (B3AST.Statement SourceRange)) (solverPath : String := "z3") : IO CheckResult := do
   let solver ← Solver.spawn solverPath #["-smt2", "-in"]
   let runCheck : SolverM Decision := do
     Solver.setLogic "ALL"
@@ -58,6 +59,7 @@ def checkProperty (state : B3VerificationState) (term : Term) (sourceDecl : B3AS
   let _ ← (Solver.exit).run solver
   return {
     decl := sourceDecl
+    sourceStmt := sourceStmt
     decision := decision
     model := none
   }
