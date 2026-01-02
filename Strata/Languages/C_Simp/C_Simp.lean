@@ -48,6 +48,9 @@ instance : Imperative.HasVarsImp Expression Command where
 
 -- A program is a list of functions. We start by defining functions
 
+-- Inhabited instance needed for Function
+instance : Inhabited Expression.Expr := ⟨Lambda.LExpr.true .empty⟩
+
 structure Function where
   name: Expression.Ident
   pre : Expression.Expr
@@ -55,6 +58,7 @@ structure Function where
   body : List Statement
   ret_ty : Lambda.LMonoTy
   inputs : ListMap Expression.Ident Lambda.LMonoTy
+  deriving Inhabited
 
 structure Program where
   funcs : List Function

@@ -21,9 +21,9 @@ Translate Laurel StmtExpr to Boogie Expression
 -/
 partial def translateExpr (expr : StmtExpr) : Boogie.Expression.Expr :=
   match expr with
-  | .LiteralBool true => .boolConst () true
-  | .LiteralBool false => .boolConst () false
-  | _ => .boolConst () true  -- TODO: handle other expressions
+  | .LiteralBool true => .boolConst .empty true
+  | .LiteralBool false => .boolConst .empty false
+  | _ => .boolConst .empty true  -- TODO: handle other expressions
 
 /-
 Translate Laurel StmtExpr to Boogie Statements

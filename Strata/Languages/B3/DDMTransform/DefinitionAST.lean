@@ -291,7 +291,7 @@ def Statement.mapMetadata [Inhabited N] (f : M → N) (s: Statement M) : Stateme
       -- Unlike List and Array, Option.map does not use `attach` by default for wf proofs
         ⟨f elseB.ann, elseB.val.attach.map (fun x => Statement.mapMetadata f x.1)⟩
   | .ifCase m cases => .ifCase (f m) ⟨f cases.ann, cases.val.map (fun o =>
-      match ho: o with
+      match _ho: o with
       | .oneIfCase m cond body => .oneIfCase (f m) (Expression.mapMetadata f cond) (Statement.mapMetadata f body))⟩
   | .loop m invariants body =>
       .loop (f m) ⟨f invariants.ann, invariants.val.map (Expression.mapMetadata f)⟩ (Statement.mapMetadata f body)

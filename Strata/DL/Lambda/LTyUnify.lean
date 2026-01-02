@@ -1033,19 +1033,19 @@ def DebugConstraint (MetaData : Type) := Constraint × Option (ConstraintDebugIn
 def DebugConstraints (MetaData : Type) := List (DebugConstraint MetaData)
 
 -- Helper functions for constraints with debugging information.
-def DebugConstraint.constraint (dc : DebugConstraint MetaData) : Constraint :=
+def DebugConstraint.constraint {MetaData} (dc : DebugConstraint MetaData) : Constraint :=
   dc.fst
-def DebugConstraint.debugInfo (dc : DebugConstraint MetaData) : Option (ConstraintDebugInfo MetaData) :=
+def DebugConstraint.debugInfo {MetaData} (dc : DebugConstraint MetaData) : Option (ConstraintDebugInfo MetaData) :=
   dc.snd
-def DebugConstraints.toConstraints (dcs : DebugConstraints MetaData) : Constraints :=
+def DebugConstraints.toConstraints {MetaData} (dcs : DebugConstraints MetaData) : Constraints :=
   dcs.map (fun dc => dc.constraint)
-def DebugConstraints.freeVars (dcs : DebugConstraints MetaData) : List TyIdentifier :=
+def DebugConstraints.freeVars {MetaData} (dcs : DebugConstraints MetaData) : List TyIdentifier :=
   Constraints.freeVars (dcs.toConstraints)
-def DebugConstraints.size (dcs : DebugConstraints MetaData) : Nat :=
+def DebugConstraints.size {MetaData} (dcs : DebugConstraints MetaData) : Nat :=
   Constraints.size (dcs.toConstraints)
 
 mutual
-def Constraint.unifyOne (dc : DebugConstraint MetaData) (S : SubstInfo)
+def Constraint.unifyOne {MetaData} (dc : DebugConstraint MetaData) (S : SubstInfo)
     (mdFmt : MetaData → Std.Format) :
     Except Format (ValidSubstRelation [dc.constraint] S) :=
   let debugInfo := dc.debugInfo.getD { originalConstraint := dc.constraint }

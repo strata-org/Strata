@@ -33,11 +33,18 @@ def bad_prog : Program := { decls := [
                   postconditions := [] },
               body := [
                 Statement.assert "test" eb[(~fooAliasVal == ~fooVal)]
+                    #[{fld := MetaData.fileRange,
+                       value := .fileRange {file := ⟨"no_file"⟩, start := ⟨1,0⟩, ending := ⟨1, 10⟩}}]
               ]
       }
 ]}
 
-/-- info: error: Cannot unify differently named type constructors bool and int! -/
+/--
+info: error: ⏎
+no_file(1, 0) (first type: (Foo bool bool))
+(second type: (Foo int bool))
+Cannot unify differently named type constructors bool and int!
+-/
 #guard_msgs in
 #eval do let ans ← typeCheckAndPartialEval Options.default bad_prog
          return (format ans)

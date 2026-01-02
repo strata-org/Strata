@@ -215,6 +215,32 @@ def formatFileRangeD {P} [BEq P.Identifier] (md : MetaData P) (includeEnd? : Boo
   | .none => "<no sourceLoc info>"
   | .some f => f
 
+def lValue {Ident} : MetaDataElem.Field Ident := .label "LValue"
+
+def formatLValue? {P} [BEq (MetaDataElem.Field P.Identifier)] (md : MetaData P) : Option Std.Format := do
+  let lvalue ← md.findElem lValue
+  match lvalue.value with
+  | .msg s => return f!"target variable {s}"
+  | _ => none
+
+def formatLValueD {P} [BEq (MetaDataElem.Field P.Identifier)] (md : MetaData P) : Std.Format :=
+  match formatLValue? md with
+  | .none => ""
+  | .some f => f
+
+def rValueOf {Ident} : MetaDataElem.Field Ident := .label "RValueOf"
+
+def formatRValueOf? {P} [BEq (MetaDataElem.Field P.Identifier)] (md : MetaData P) : Option Std.Format := do
+  let rvalue ← md.findElem rValueOf
+  match rvalue.value with
+  | .msg s => return f!"expression being assigned to {s}"
+  | _ => none
+
+def formatRValueOfD {P} [BEq (MetaDataElem.Field P.Identifier)] (md : MetaData P) : Std.Format :=
+  match formatRValueOf? md with
+  | .none => ""
+  | .some f => f
+
 end MetaData
 
 ---------------------------------------------------------------------

@@ -72,7 +72,7 @@ def reCompileFunc : LFunc Boogie.BoogieLParams :=
       output := mty[ExceptErrorRegex],
       concreteEval := some
         (fun _ args => match args with
-          | [LExpr.strConst () s, LExpr.intConst () 0] =>
+          | [LExpr.strConst .empty s, LExpr.intConst .empty 0] =>
             -- This function has a concrete evaluation implementation only when
             -- flags == 0.
             -- (FIXME): We use `.match` mode below because we support only
@@ -84,13 +84,13 @@ def reCompileFunc : LFunc Boogie.BoogieLParams :=
               -- Note: Do not use `eb` (in Boogie.Syntax) here (e.g., see below)
               -- eb[(~ExceptErrorRegex_mkOK expr)]
               -- that captures `expr` as an `.fvar`.
-              .some (LExpr.mkApp () (.op () "ExceptErrorRegex_mkOK" none) [expr])
+              .some (LExpr.mkApp .empty (.op .empty "ExceptErrorRegex_mkOK" none) [expr])
             | some (ParseError.unimplemented msg _pattern _pos) =>
-              .some (LExpr.mkApp () (.op () "ExceptErrorRegex_mkErr" none)
-                  [LExpr.mkApp () (.op () "Error_Unimplemented" none) [.strConst () (toString msg)]])
+              .some (LExpr.mkApp .empty (.op .empty "ExceptErrorRegex_mkErr" none)
+                  [LExpr.mkApp .empty (.op .empty "Error_Unimplemented" none) [.strConst .empty (toString msg)]])
             | some (ParseError.patternError msg _pattern _pos) =>
-              .some (LExpr.mkApp () (.op () "ExceptErrorRegex_mkErr" none)
-                  [LExpr.mkApp () (.op () "Error_RePatternErr" none) [.strConst () (toString msg)]])
+              .some (LExpr.mkApp .empty (.op .empty "ExceptErrorRegex_mkErr" none)
+                  [LExpr.mkApp .empty (.op .empty "Error_RePatternErr" none) [.strConst .empty (toString msg)]])
           | _ => .none)
       }
 

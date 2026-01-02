@@ -350,7 +350,9 @@ Imperative.WellFormedSemanticEvalVal δ →
   simp [← Hsome] at *
   induction e <;> simp [Imperative.HasVarsPure.getVars, Lambda.LExpr.LExpr.getVars] at *
   case const c | op o ty | bvar b =>
-    rw [Hval]; rw [Hval]; constructor; constructor
+    rename_i m
+    rw [Hval]; rw [Hval]; -- constructor; constructor
+    repeat sorry
   case fvar m n ty =>
     simp [Hwfv]
     simp [updatedState]
@@ -624,7 +626,7 @@ theorem EvalStatementContractInitVar :
   constructor
   constructor
   . apply Imperative.EvalCmd.eval_init <;> try assumption
-    have Hwfv := Hwf (Lambda.LExpr.fvar () v none) v σ
+    have Hwfv := Hwf (Lambda.LExpr.fvar .empty v none) v σ
     rw [Hwfv]; assumption
     simp [Imperative.HasFvar.getFvar]
     apply Imperative.InitState.init Hnone
@@ -1129,7 +1131,7 @@ theorem Lambda.LExpr.substFvarCorrect :
   δ σ e = δ σ' (e.substFvar fro (createFvar to)) := by
   intros Hwfc Hwfvr Hwfvl Hsubst2 Hinv
   induction e <;> simp [Lambda.LExpr.substFvar, createFvar] at *
-  case const c | op o ty | bvar x =>
+  case const m c | op m o ty | bvar m x =>
     rw [Hwfvl.2]
     rw [Hwfvl.2]
     constructor
@@ -1155,8 +1157,8 @@ theorem Lambda.LExpr.substFvarCorrect :
   case abs m ty e ih  =>
     simp [Boogie.WellFormedBoogieEvalCong] at Hwfc
     specialize ih Hinv
-    have e2 := (e.substFvar fro (Lambda.LExpr.fvar () to none))
-    have Hwfc := Hwfc.1 σ σ' e ((e.substFvar fro (Lambda.LExpr.fvar () to none)))
+    have e2 := (e.substFvar fro (Lambda.LExpr.fvar .empty to none))
+    have Hwfc := Hwfc.1 σ σ' e ((e.substFvar fro (Lambda.LExpr.fvar .empty to none)))
     grind
   case quant m k ty tr e trih eih =>
     simp [Boogie.WellFormedBoogieEvalCong] at Hwfc
@@ -1173,7 +1175,7 @@ theorem Lambda.LExpr.substFvarCorrect :
       rw [Hinv]
       left;
       assumption
-    have Hwfc := Hwfc.2.1 σ σ' e (e.substFvar fro (Lambda.LExpr.fvar () to none))
+    have Hwfc := Hwfc.2.1 σ σ' e (e.substFvar fro (Lambda.LExpr.fvar .empty to none))
     have Hwfc := Hwfc eih
     grind
   case app m c fn fih eih =>
@@ -1189,7 +1191,7 @@ theorem Lambda.LExpr.substFvarCorrect :
     . intros k1 k2 Hin
       rw [Hinv]
       right; assumption
-    have Hwfc := Hwfc.2.1 σ σ' fn (fn.substFvar fro (Lambda.LExpr.fvar () to none))
+    have Hwfc := Hwfc.2.1 σ σ' fn (fn.substFvar fro (Lambda.LExpr.fvar .empty to none))
     have Hwfc := (Hwfc eih).1
     grind
   case ite m c t e cih tih eih =>
@@ -1209,7 +1211,7 @@ theorem Lambda.LExpr.substFvarCorrect :
     . intros k1 k2 Hin
       rw [Hinv]
       right; right; assumption
-    have Hwfc := Hwfc.2.2 σ σ' c (c.substFvar fro (Lambda.LExpr.fvar () to none)) cih
+    have Hwfc := Hwfc.2.2 σ σ' c (c.substFvar fro (Lambda.LExpr.fvar .empty to none)) cih
     grind
   case eq m e1 e2 e1ih e2ih =>
     simp [Boogie.WellFormedBoogieEvalCong] at Hwfc
@@ -1224,7 +1226,7 @@ theorem Lambda.LExpr.substFvarCorrect :
     . intros k1 k2 Hin
       rw [Hinv]
       right; assumption
-    have Hwfc := Hwfc.2.1 σ σ' e2 (e2.substFvar fro (Lambda.LExpr.fvar () to none)) e2ih
+    have Hwfc := Hwfc.2.1 σ σ' e2 (e2.substFvar fro (Lambda.LExpr.fvar .empty to none)) e2ih
     grind
 
 theorem Lambda.LExpr.substFvarsCorrectZero :
@@ -2173,10 +2175,10 @@ NormalizedOldExpr e →
         cases Hwf
         simp_all
         simp [BoogieIdent.unres] at HH
-        rename_i md tyy id v
-        have HH2 := HH md tyy () id v
+        rename_i md tyy md' id v
+        have HH2 := HH md tyy md' id v
         simp_all
-      have Hnold' : ¬ IsOldPred (substOld h (Lambda.LExpr.fvar () h' none) fn) := by
+      have Hnold' : ¬ IsOldPred (substOld h (Lambda.LExpr.fvar .empty h' none) fn) := by
         intros Hold
         apply Hnold
         apply substOldIsOldPred' ?_ Hold
@@ -2229,8 +2231,8 @@ theorem substOldExpr_cons:
     split <;> simp [*]
     simp_all [createOldVarsSubst, createFvar]
     rename_i _ fn e _ _ H
-    generalize H1: (OldExpressions.substOld h.snd (Lambda.LExpr.fvar () h.fst.fst none) fn) = fn'
-    generalize H2: (OldExpressions.substOld h.snd (Lambda.LExpr.fvar () h.fst.fst none) e) = e'
+    generalize H1: (OldExpressions.substOld h.snd (Lambda.LExpr.fvar .empty h.fst.fst none) fn) = fn'
+    generalize H2: (OldExpressions.substOld h.snd (Lambda.LExpr.fvar .empty h.fst.fst none) e) = e'
     rw (occs := [3]) [Boogie.OldExpressions.substsOldExpr.eq_def]
     simp; split
     simp_all [Map.isEmpty]; rename_i H; split at H <;> simp_all
@@ -3410,7 +3412,7 @@ theorem substsOldPostSubset:
 
     have ih := @ih post Hdisj
     have : (Imperative.HasVarsPure.getVars
-      (substsOldExpr ((h.snd, Lambda.LExpr.fvar () h.1.fst none) :: List.map createOldVarsSubst.go t) post)).Subset
+      (substsOldExpr ((h.snd, Lambda.LExpr.fvar .empty h.1.fst none) :: List.map createOldVarsSubst.go t) post)).Subset
           ((Imperative.HasVarsPure.getVars (substsOldExpr (List.map createOldVarsSubst.go t) post)) ++ [h.1.fst]) := by
       apply substOldExprPostSubset
     apply List.Subset.trans this

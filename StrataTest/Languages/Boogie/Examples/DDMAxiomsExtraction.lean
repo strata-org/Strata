@@ -395,13 +395,13 @@ info: #[{ ann := { start := { byteIdx := 295 }, stop := { byteIdx := 302 } },
 #eval examplePgm.commands
 
 /--
-info: [LExpr.quant () QuantifierKind.all (some Lambda.LMonoTy.tcons
+info: [LExpr.quant #[] QuantifierKind.all (some Lambda.LMonoTy.tcons
    "Map"
    [Lambda.LMonoTy.ftvar "k",
     Lambda.LMonoTy.ftvar
-      "v"]) (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all (some Lambda.LMonoTy.ftvar
-   "k") (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all (some Lambda.LMonoTy.ftvar
-   "v") (LExpr.bvar () 0) (LExpr.eq () (LExpr.app () (LExpr.app () (LExpr.op () { name := "select",
+      "v"]) (LExpr.bvar #[] 0) (LExpr.quant #[] QuantifierKind.all (some Lambda.LMonoTy.ftvar
+   "k") (LExpr.bvar #[] 0) (LExpr.quant #[] QuantifierKind.all (some Lambda.LMonoTy.ftvar
+   "v") (LExpr.bvar #[] 0) (LExpr.eq #[] (LExpr.app #[] (LExpr.app #[] (LExpr.op #[] { name := "select",
    metadata := Boogie.Visibility.unres } (some Lambda.LMonoTy.tcons
    "arrow"
    [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
@@ -409,7 +409,7 @@ info: [LExpr.quant () QuantifierKind.all (some Lambda.LMonoTy.tcons
       "arrow"
       [Lambda.LMonoTy.ftvar "k",
        Lambda.LMonoTy.ftvar
-         "v"]])) (LExpr.app () (LExpr.app () (LExpr.app () (LExpr.op () { name := "update",
+         "v"]])) (LExpr.app #[] (LExpr.app #[] (LExpr.app #[] (LExpr.op #[] { name := "update",
    metadata := Boogie.Visibility.unres } (some Lambda.LMonoTy.tcons
    "arrow"
    [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
@@ -423,15 +423,15 @@ info: [LExpr.quant () QuantifierKind.all (some Lambda.LMonoTy.tcons
             "Map"
             [Lambda.LMonoTy.ftvar "k",
              Lambda.LMonoTy.ftvar
-               "v"]]]])) (LExpr.bvar () 2)) (LExpr.bvar () 1)) (LExpr.bvar () 0))) (LExpr.bvar () 1)) (LExpr.bvar () 0)))),
- LExpr.quant () QuantifierKind.all (some Lambda.LMonoTy.tcons
+               "v"]]]])) (LExpr.bvar #[] 2)) (LExpr.bvar #[] 1)) (LExpr.bvar #[] 0))) (LExpr.bvar #[] 1)) (LExpr.bvar #[] 0)))),
+ LExpr.quant #[] QuantifierKind.all (some Lambda.LMonoTy.tcons
    "Map"
    [Lambda.LMonoTy.ftvar "k",
     Lambda.LMonoTy.ftvar
-      "v"]) (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all (some Lambda.LMonoTy.ftvar
-   "k") (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all (some Lambda.LMonoTy.ftvar
-   "k") (LExpr.bvar () 0) (LExpr.quant () QuantifierKind.all (some Lambda.LMonoTy.ftvar
-   "v") (LExpr.bvar () 0) (LExpr.eq () (LExpr.app () (LExpr.app () (LExpr.op () { name := "select",
+      "v"]) (LExpr.bvar #[] 0) (LExpr.quant #[] QuantifierKind.all (some Lambda.LMonoTy.ftvar
+   "k") (LExpr.bvar #[] 0) (LExpr.quant #[] QuantifierKind.all (some Lambda.LMonoTy.ftvar
+   "k") (LExpr.bvar #[] 0) (LExpr.quant #[] QuantifierKind.all (some Lambda.LMonoTy.ftvar
+   "v") (LExpr.bvar #[] 0) (LExpr.eq #[] (LExpr.app #[] (LExpr.app #[] (LExpr.op #[] { name := "select",
    metadata := Boogie.Visibility.unres } (some Lambda.LMonoTy.tcons
    "arrow"
    [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
@@ -439,7 +439,7 @@ info: [LExpr.quant () QuantifierKind.all (some Lambda.LMonoTy.tcons
       "arrow"
       [Lambda.LMonoTy.ftvar "k",
        Lambda.LMonoTy.ftvar
-         "v"]])) (LExpr.app () (LExpr.app () (LExpr.app () (LExpr.op () { name := "update",
+         "v"]])) (LExpr.app #[] (LExpr.app #[] (LExpr.app #[] (LExpr.op #[] { name := "update",
    metadata := Boogie.Visibility.unres } (some Lambda.LMonoTy.tcons
    "arrow"
    [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
@@ -453,13 +453,13 @@ info: [LExpr.quant () QuantifierKind.all (some Lambda.LMonoTy.tcons
             "Map"
             [Lambda.LMonoTy.ftvar "k",
              Lambda.LMonoTy.ftvar
-               "v"]]]])) (LExpr.bvar () 3)) (LExpr.bvar () 1)) (LExpr.bvar () 0))) (LExpr.bvar () 2)) (LExpr.app () (LExpr.app () (LExpr.op () { name := "select",
+               "v"]]]])) (LExpr.bvar #[] 3)) (LExpr.bvar #[] 1)) (LExpr.bvar #[] 0))) (LExpr.bvar #[] 2)) (LExpr.app #[] (LExpr.app #[] (LExpr.op #[] { name := "select",
    metadata := Boogie.Visibility.unres } (some Lambda.LMonoTy.tcons
    "arrow"
    [Lambda.LMonoTy.tcons "Map" [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"],
     Lambda.LMonoTy.tcons
       "arrow"
-      [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]])) (LExpr.bvar () 3)) (LExpr.bvar () 2))))))]
+      [Lambda.LMonoTy.ftvar "k", Lambda.LMonoTy.ftvar "v"]])) (LExpr.bvar #[] 3)) (LExpr.bvar #[] 2))))))]
 -/
 #guard_msgs in
 #eval

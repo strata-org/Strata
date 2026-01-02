@@ -21,25 +21,25 @@ open Lambda.LTy.Syntax
 -- Some hard-coded things we'll need to fix later:
 
 def clientType : Boogie.Expression.Ty := .forAll [] (.tcons "Client" [])
-def dummyClient : Boogie.Expression.Expr := .fvar () "DUMMY_CLIENT" none
+def dummyClient : Boogie.Expression.Expr := .fvar .empty "DUMMY_CLIENT" none
 
 def dictStrAnyType : Boogie.Expression.Ty := .forAll [] (.tcons "DictStrAny" [])
-def dummyDictStrAny : Boogie.Expression.Expr := .fvar () "DUMMY_DICT_STR_ANY" none
+def dummyDictStrAny : Boogie.Expression.Expr := .fvar .empty "DUMMY_DICT_STR_ANY" none
 
 def strType : Boogie.Expression.Ty := .forAll [] (.tcons "string" [])
-def dummyStr : Boogie.Expression.Expr := .fvar () "DUMMY_STR" none
+def dummyStr : Boogie.Expression.Expr := .fvar .empty "DUMMY_STR" none
 
 def listStrType : Boogie.Expression.Ty := .forAll [] (.tcons "ListStr" [])
-def dummyListStr : Boogie.Expression.Expr := .fvar () "DUMMY_LIST_STR" none
+def dummyListStr : Boogie.Expression.Expr := .fvar .empty "DUMMY_LIST_STR" none
 
 def datetimeType : Boogie.Expression.Ty := .forAll [] (.tcons "Datetime" [])
-def dummyDatetime : Boogie.Expression.Expr := .fvar () "DUMMY_DATETIME" none
+def dummyDatetime : Boogie.Expression.Expr := .fvar .empty "DUMMY_DATETIME" none
 
 def dateType : Boogie.Expression.Ty := .forAll [] (.tcons "Date" [])
-def dummyDate : Boogie.Expression.Expr := .fvar () "DUMMY_DATE" none
+def dummyDate : Boogie.Expression.Expr := .fvar .empty "DUMMY_DATE" none
 
 def timedeltaType : Boogie.Expression.Ty := .forAll [] (.tcons "int" [])
-def dummyTimedelta : Boogie.Expression.Expr := .fvar () "DUMMY_Timedelta" none
+def dummyTimedelta : Boogie.Expression.Expr := .fvar .empty "DUMMY_Timedelta" none
 
 -------------------------------------------------------------------------------
 
@@ -84,10 +84,10 @@ def unwrapModule (c : Python.Command SourceRange) : Array (Python.stmt SourceRan
   | _ => panic! "Expected module"
 
 def strToBoogieExpr (s: String) : Boogie.Expression.Expr :=
-  .strConst () s
+  .strConst .empty s
 
 def intToBoogieExpr (i: Int) : Boogie.Expression.Expr :=
-  .intConst () i
+  .intConst .empty i
 
 def PyIntToInt (i : Python.int SourceRange) : Int :=
   match i with
@@ -96,64 +96,64 @@ def PyIntToInt (i : Python.int SourceRange) : Int :=
 
 def PyConstToBoogie (c: Python.constant SourceRange) : Boogie.Expression.Expr :=
   match c with
-  | .ConString _ s => .strConst () s.val
-  | .ConPos _ i => .intConst () i.val
-  | .ConNeg _ i => .intConst () (-i.val)
-  | .ConBytes _ _b => .const () (.strConst "") -- TODO: fix
-  | .ConFloat _ f => .strConst () (f.val)
+  | .ConString _ s => .strConst .empty s.val
+  | .ConPos _ i => .intConst .empty i.val
+  | .ConNeg _ i => .intConst .empty (-i.val)
+  | .ConBytes _ _b => .const .empty (.strConst "") -- TODO: fix
+  | .ConFloat _ f => .strConst .empty (f.val)
   | _ => panic! s!"Unhandled Constant: {repr c}"
 
 def PyAliasToBoogieExpr (a : Python.alias SourceRange) : Boogie.Expression.Expr :=
   match a with
   | .mk_alias _ n as_n =>
   assert! as_n.val.isNone
-  .strConst () n.val
+  .strConst .empty n.val
 
 def handleAdd (lhs rhs: Boogie.Expression.Expr) : Boogie.Expression.Expr :=
   let lty : Lambda.LMonoTy := mty[string]
   let rty : Lambda.LMonoTy := mty[string]
   match lty, rty with
-  | (.tcons "string" []), (.tcons "string" []) => .app () (.app () (.op () "Str.Concat" mty[string → (string → string)]) lhs) rhs
+  | (.tcons "string" []), (.tcons "string" []) => .app .empty (.app .empty (.op .empty "Str.Concat" mty[string → (string → string)]) lhs) rhs
   | _, _ => panic! s!"Unimplemented add op for {lhs} + {rhs}"
 
 def handleSub (lhs rhs: Boogie.Expression.Expr) : Boogie.Expression.Expr :=
   let lty : Lambda.LMonoTy := (.tcons "Datetime" [])
   let rty : Lambda.LMonoTy := (.tcons "int" [])
   match lty, rty with
-  | (.tcons "Datetime" []), (.tcons "int" []) => .app () (.app () (.op () "Datetime_sub" none) lhs) rhs
+  | (.tcons "Datetime" []), (.tcons "int" []) => .app .empty (.app .empty (.op .empty "Datetime_sub" none) lhs) rhs
   | _, _ => panic! s!"Unimplemented add op for {lhs} + {rhs}"
 
 def handleMult (translation_ctx: TranslationContext) (lhs rhs: Boogie.Expression.Expr) : Boogie.Expression.Expr :=
   match lhs, rhs with
-  | .strConst () s, .intConst () i => .strConst () (String.join (List.replicate i.toNat s))
-  | .intConst () l, .intConst () r => .intConst () (l * r)
-  | .fvar () l _, .fvar () r _ =>
+  | .strConst .empty s, .intConst .empty i => .strConst .empty (String.join (List.replicate i.toNat s))
+  | .intConst .empty l, .intConst .empty r => .intConst .empty (l * r)
+  | .fvar .empty l _, .fvar .empty r _ =>
     let l := translation_ctx.variableTypes.find? (λ p => p.fst == l.name)
     let r := translation_ctx.variableTypes.find? (λ p => p.fst == r.name)
     match l, r with
     | .some lty, .some rty =>
       match lty.snd, rty.snd with
-      | .tcons "int" [], .tcons "int" [] => .app () (.app () (.op () "Int.Mul" mty[int → (int → int)]) lhs) rhs
+      | .tcons "int" [], .tcons "int" [] => .app .empty (.app .empty (.op .empty "Int.Mul" mty[int → (int → int)]) lhs) rhs
       | _, _ => panic! s!"Unsupported types for fvar *. Types: {lty} and {rty}"
     | _, _ => panic! s!"Missing needed type information for *. Exprs: {lhs} and {rhs}"
   | _ , _ => panic! s!"Unsupported args for * . Got: {lhs} and {rhs}"
 
 def handleFloorDiv (_translation_ctx: TranslationContext) (lhs rhs: Boogie.Expression.Expr) : Boogie.Expression.Expr :=
-  .app () (.app () (.op () "Int.Div" mty[int → (int → int)]) lhs) rhs
+  .app .empty (.app .empty (.op .empty "Int.Div" mty[int → (int → int)]) lhs) rhs
 
 def handleNot (arg: Boogie.Expression.Expr) : Boogie.Expression.Expr :=
   let ty : Lambda.LMonoTy := (.tcons "ListStr" [])
   match ty with
-  | (.tcons "ListStr" []) => .eq () arg (.op () "ListStr_nil" none)
+  | (.tcons "ListStr" []) => .eq .empty arg (.op .empty "ListStr_nil" none)
   | _ => panic! s!"Unimplemented not op for {arg}"
 
 def handleLtE (lhs rhs: Boogie.Expression.Expr) : Boogie.Expression.Expr :=
-  let eq := (.eq () lhs rhs)
-  let lt := (.app () (.app () (.op () "Datetime_lt" none) lhs) rhs)
-  (.app () (.app () (.op () "Bool.Or" none) eq) lt)
+  let eq := (.eq .empty lhs rhs)
+  let lt := (.app .empty (.app .empty (.op .empty "Datetime_lt" none) lhs) rhs)
+  (.app .empty (.app .empty (.op .empty "Bool.Or" none) eq) lt)
 
 def handleGt (lhs rhs: Boogie.Expression.Expr) : Boogie.Expression.Expr :=
-  (.app () (.app () (.op () "Float_gt" none) lhs) rhs)
+  (.app .empty (.app .empty (.op .empty "Float_gt" none) lhs) rhs)
 
 structure SubstitutionRecord where
   pyExpr : Python.expr SourceRange
@@ -171,13 +171,13 @@ def PyExprIdent (e1 e2: Python.expr SourceRange) : Bool :=
 
 -- TODO: handle rest of names
 def PyListStrToBoogie (names : Array (Python.alias SourceRange)) : Boogie.Expression.Expr :=
-  .app () (.app () (.op () "ListStr_cons" mty[string → (ListStr → ListStr)]) (PyAliasToBoogieExpr names[0]!))
-       (.op () "ListStr_nil" mty[ListStr])
+  .app .empty (.app .empty (.op .empty "ListStr_cons" mty[string → (ListStr → ListStr)]) (PyAliasToBoogieExpr names[0]!))
+       (.op .empty "ListStr_nil" mty[ListStr])
 
 def handleList (_elmts: Array (Python.expr SourceRange)) (expected_type : Lambda.LMonoTy): PyExprTranslated :=
   match expected_type with
-  | (.tcons "ListStr" _) => {stmts := [], expr := (.op () "ListStr_nil" expected_type)}
-  | (.tcons "ListDictStrAny" _) => {stmts := [], expr := (.op () "ListDictStrAny_nil" expected_type)}
+  | (.tcons "ListStr" _) => {stmts := [], expr := (.op .empty "ListStr_nil" expected_type)}
+  | (.tcons "ListDictStrAny" _) => {stmts := [], expr := (.op .empty "ListDictStrAny_nil" expected_type)}
   | _ => panic! s!"Unexpected type : {expected_type}"
 
 def PyOptExprToString (e : Python.opt_expr SourceRange) : String :=
@@ -248,15 +248,15 @@ def noneOrExpr (translation_ctx : TranslationContext) (fname n : String) (e: Boo
   if type_str.endsWith "OrNone" then
     -- Optional param. Need to wrap e.g., string into StrOrNone
     match type_str with
-    | "IntOrNone" => .app () (.op () "IntOrNone_mk_int" none) e
-    | "StrOrNone" => .app () (.op () "StrOrNone_mk_str" none) e
-    | "BytesOrStrOrNone" => .app () (.op () "BytesOrStrOrNone_mk_str" none) e
+    | "IntOrNone" => .app .empty (.op .empty "IntOrNone_mk_int" none) e
+    | "StrOrNone" => .app .empty (.op .empty "StrOrNone_mk_str" none) e
+    | "BytesOrStrOrNone" => .app .empty (.op .empty "BytesOrStrOrNone_mk_str" none) e
     | _ => panic! "Unsupported type_str: "++ type_str
   else
     e
 
 def handleCallThrow (jmp_target : String) : Boogie.Statement :=
-  let cond := .eq () (.app () (.op () "ExceptOrNone_tag" none) (.fvar () "maybe_except" none)) (.op () "EN_STR_TAG" none)
+  let cond := .eq .empty (.app .empty (.op .empty "ExceptOrNone_tag" none) (.fvar .empty "maybe_except" none)) (.op .empty "EN_STR_TAG" none)
   .ite cond [.goto jmp_target] []
 
 def deduplicateTypeAnnotations (l : List (String × Option String)) : List (String × String) := Id.run do
@@ -296,11 +296,11 @@ partial def collectVarDecls (translation_ctx : TranslationContext) (stmts: Array
     let name := p.fst
     let ty_name := p.snd
     match ty_name with
-    | "bool" => [(.init name t[bool] (.boolConst () false)), (.havoc name)]
-    | "str" => [(.init name t[string] (.strConst () "")), (.havoc name)]
-    | "int" => [(.init name t[int] (.intConst () 0)), (.havoc name)]
-    | "float" => [(.init name t[string] (.strConst () "0.0")), (.havoc name)] -- Floats as strs for now
-    | "bytes" => [(.init name t[string] (.strConst () "")), (.havoc name)]
+    | "bool" => [(.init name t[bool] (.boolConst .empty false)), (.havoc name)]
+    | "str" => [(.init name t[string] (.strConst .empty "")), (.havoc name)]
+    | "int" => [(.init name t[int] (.intConst .empty 0)), (.havoc name)]
+    | "float" => [(.init name t[string] (.strConst .empty "0.0")), (.havoc name)] -- Floats as strs for now
+    | "bytes" => [(.init name t[string] (.strConst .empty "")), (.havoc name)]
     | "Client" => [(.init name clientType dummyClient), (.havoc name)]
     | "Dict[str Any]" => [(.init name dictStrAnyType dummyDictStrAny), (.havoc name)]
     | "List[str]" => [(.init name listStrType dummyListStr), (.havoc name)]
@@ -312,7 +312,7 @@ partial def collectVarDecls (translation_ctx : TranslationContext) (stmts: Array
       match user_defined_class with
       | .some i =>
         let user_defined_class_ty := .forAll [] (.tcons i.name [])
-        let user_defined_class_dummy := .fvar () ("DUMMY_" ++ i.name) none
+        let user_defined_class_dummy := .fvar .empty ("DUMMY_" ++ i.name) none
         [(.init name user_defined_class_ty user_defined_class_dummy), (.havoc name)]
       | .none => panic! s!"Unsupported type annotation: `{ty_name}`"
   let foo := dedup.map toBoogie
@@ -374,24 +374,24 @@ partial def argsAndKWordsToCanonicalList (translation_ctx : TranslationContext)
     (args ++ ordered_remaining_args, kws_and_exprs.flatMap (λ p => p.snd.stmts))
 
 partial def handleDict (keys: Array (Python.opt_expr SourceRange)) (values: Array (Python.expr SourceRange)) : PyExprTranslated :=
-  let dict := .app () (.op () "DictStrAny_mk" none) (.strConst () "DefaultDict") -- TODO: need to generate unique dict arg
+  let dict := .app .empty (.op .empty "DictStrAny_mk" none) (.strConst .empty "DefaultDict") -- TODO: need to generate unique dict arg
   assert! keys.size == values.size
   let zipped := Array.zip keys values
 
   let res := zipped.toList.flatMap (λ (k, v) =>
     let n := PyOptExprToString k
-    let in_dict := (.assume s!"assume_{n}_in_dict" (.app () (.app () (.op () "str_in_dict_str_any" none) (.strConst () n)) dict))
+    let in_dict := (.assume s!"assume_{n}_in_dict" (.app .empty (.app .empty (.op .empty "str_in_dict_str_any" none) (.strConst .empty n)) dict))
     match v with
     | .Call _ f args _ =>
       match f with
       | .Name _ {ann := _ , val := "str"} _ =>
         assert! args.val.size == 1
-        let dt := (.app () (.op () "datetime_to_str" none) ((PyExprToBoogie default args.val[0]!).expr))
-        let dict_of_v_is_k := (.assume s!"assume_{n}_key" (.eq () (.app () (.app () (.op () "dict_str_any_get_str" none) dict) (.strConst () n)) dt))
+        let dt := (.app .empty (.op .empty "datetime_to_str" none) ((PyExprToBoogie default args.val[0]!).expr))
+        let dict_of_v_is_k := (.assume s!"assume_{n}_key" (.eq .empty (.app .empty (.app .empty (.op .empty "dict_str_any_get_str" none) dict) (.strConst .empty n)) dt))
         [in_dict, dict_of_v_is_k]
       | _ => panic! "Unsupported function when constructing map"
     | _ =>
-      let dict_of_v_is_k := (.assume s!"assume_{n}_key" (.eq () (.app () (.app () (.op () "dict_str_any_get_str" none) dict) (.strConst () n)) (.strConst () "DummyVal")))
+      let dict_of_v_is_k := (.assume s!"assume_{n}_key" (.eq .empty (.app .empty (.app .empty (.op .empty "dict_str_any_get_str" none) dict) (.strConst .empty n)) (.strConst .empty "DummyVal")))
       [in_dict, dict_of_v_is_k])
 
   {stmts := res , expr := dict, post_stmts := []}
@@ -408,17 +408,17 @@ partial def PyExprToBoogie (translation_ctx : TranslationContext) (e : Python.ex
     | .Constant _ c _ => {stmts := [], expr :=  PyConstToBoogie c}
     | .Name _ n _ =>
       match n.val with
-      | "AssertionError" | "Exception" => {stmts := [], expr := .strConst () n.val}
+      | "AssertionError" | "Exception" => {stmts := [], expr := .strConst .empty n.val}
       | s =>
         match translation_ctx.variableTypes.find? (λ p => p.fst == s) with
         | .some p =>
           if translation_ctx.expectedType == some (.tcons "bool" []) && p.snd == (.tcons "DictStrAny" []) then
-            let a := .fvar () n.val none
-            let e := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) a) (.intConst () 0))
+            let a := .fvar .empty n.val none
+            let e := .app .empty (.op .empty "Bool.Not" none) (.eq .empty (.app .empty (.op .empty "dict_str_any_length" none) a) (.intConst .empty 0))
             {stmts := [], expr := e}
           else
-            {stmts := [], expr := .fvar () n.val none}
-        | .none => {stmts := [], expr := .fvar () n.val none}
+            {stmts := [], expr := .fvar .empty n.val none}
+        | .none => {stmts := [], expr := .fvar .empty n.val none}
     | .JoinedStr _ ss => PyExprToBoogie translation_ctx ss.val[0]! -- TODO: need to actually join strings
     | .BinOp _ lhs op rhs =>
       let lhs := (PyExprToBoogie translation_ctx lhs)
@@ -438,9 +438,9 @@ partial def PyExprToBoogie (translation_ctx : TranslationContext) (e : Python.ex
       match op.val with
       | #[v] => match v with
         | Strata.Python.cmpop.Eq _ =>
-          {stmts := lhs.stmts ++ rhs.stmts, expr := (.eq () lhs.expr rhs.expr)}
+          {stmts := lhs.stmts ++ rhs.stmts, expr := (.eq .empty lhs.expr rhs.expr)}
         | Strata.Python.cmpop.In _ =>
-          {stmts := lhs.stmts ++ rhs.stmts, expr := .app () (.app () (.op () "str_in_dict_str_any" none) lhs.expr) rhs.expr}
+          {stmts := lhs.stmts ++ rhs.stmts, expr := .app .empty (.app .empty (.op .empty "str_in_dict_str_any" none) lhs.expr) rhs.expr}
         | Strata.Python.cmpop.LtE _ =>
           {stmts := lhs.stmts ++ rhs.stmts, expr := handleLtE lhs.expr rhs.expr}
         | Strata.Python.cmpop.Gt _ =>
@@ -459,20 +459,20 @@ partial def PyExprToBoogie (translation_ctx : TranslationContext) (e : Python.ex
       let k := PyExprToBoogie translation_ctx slice
       -- TODO: we need to plumb the type of `v` here
       match s!"{repr l.expr}" with
-      | "LExpr.fvar () { name := \"keys\", metadata := Boogie.Visibility.unres } none" =>
-          -- let access_check : Boogie.Statement := .assert "subscript_bounds_check" (.app () (.app () (.op () "str_in_dict_str_any" none) k.expr) l.expr)
-          {stmts := l.stmts ++ k.stmts, expr := .app () (.app () (.op () "list_str_get" none) l.expr) k.expr}
-      | "LExpr.fvar () { name := \"blended_cost\", metadata := Boogie.Visibility.unres } none" =>
-          -- let access_check : Boogie.Statement := .assert "subscript_bounds_check" (.app () (.app () (.op () "str_in_dict_str_any" none) k.expr) l.expr)
-          {stmts := l.stmts ++ k.stmts, expr := .app () (.app () (.op () "dict_str_any_get_str" none) l.expr) k.expr}
+      | "LExpr.fvar .empty { name := \"keys\", metadata := Boogie.Visibility.unres } none" =>
+          -- let access_check : Boogie.Statement := .assert "subscript_bounds_check" (.app .empty (.app .empty (.op .empty "str_in_dict_str_any" none) k.expr) l.expr)
+          {stmts := l.stmts ++ k.stmts, expr := .app .empty (.app .empty (.op .empty "list_str_get" none) l.expr) k.expr}
+      | "LExpr.fvar .empty { name := \"blended_cost\", metadata := Boogie.Visibility.unres } none" =>
+          -- let access_check : Boogie.Statement := .assert "subscript_bounds_check" (.app .empty (.app .empty (.op .empty "str_in_dict_str_any" none) k.expr) l.expr)
+          {stmts := l.stmts ++ k.stmts, expr := .app .empty (.app .empty (.op .empty "dict_str_any_get_str" none) l.expr) k.expr}
       | _ =>
         match translation_ctx.expectedType with
         | .some (.tcons "ListStr" []) =>
-          let access_check : Boogie.Statement := .assert "subscript_bounds_check" (.app () (.app () (.op () "str_in_dict_str_any" none) k.expr) l.expr)
-          {stmts := l.stmts ++ k.stmts ++ [access_check], expr := .app () (.app () (.op () "dict_str_any_get_list_str" none) l.expr) k.expr}
+          let access_check : Boogie.Statement := .assert "subscript_bounds_check" (.app .empty (.app .empty (.op .empty "str_in_dict_str_any" none) k.expr) l.expr)
+          {stmts := l.stmts ++ k.stmts ++ [access_check], expr := .app .empty (.app .empty (.op .empty "dict_str_any_get_list_str" none) l.expr) k.expr}
         | _ =>
-          let access_check : Boogie.Statement := .assert "subscript_bounds_check" (.app () (.app () (.op () "str_in_dict_str_any" none) k.expr) l.expr)
-          {stmts := l.stmts ++ k.stmts ++ [access_check], expr := .app () (.app () (.op () "dict_str_any_get" none) l.expr) k.expr}
+          let access_check : Boogie.Statement := .assert "subscript_bounds_check" (.app .empty (.app .empty (.op .empty "str_in_dict_str_any" none) k.expr) l.expr)
+          {stmts := l.stmts ++ k.stmts ++ [access_check], expr := .app .empty (.app .empty (.op .empty "dict_str_any_get" none) l.expr) k.expr}
     | .List _ elmts _ =>
       match elmts.val[0]! with
       | .Constant _ expr _ => match expr with
@@ -488,11 +488,11 @@ partial def initTmpParam (p: Python.expr SourceRange × String) : List Boogie.St
     match f with
     | .Name _ n _ =>
       match n.val with
-      | "json_dumps" => [(.init p.snd t[string] (.strConst () "")), .call [p.snd, "maybe_except"] "json_dumps" [(.app () (.op () "DictStrAny_mk" none) (.strConst () "DefaultDict")), (Strata.Python.TypeStrToBoogieExpr "IntOrNone")]]
+      | "json_dumps" => [(.init p.snd t[string] (.strConst .empty "")), .call [p.snd, "maybe_except"] "json_dumps" [(.app .empty (.op .empty "DictStrAny_mk" none) (.strConst .empty "DefaultDict")), (Strata.Python.TypeStrToBoogieExpr "IntOrNone")]]
       | "str" =>
         assert! args.val.size == 1
-        [(.init p.snd t[string] (.strConst () "")), .set p.snd (.app () (.op () "datetime_to_str" none) ((PyExprToBoogie default args.val[0]!).expr))]
-      | "int" => [(.init p.snd t[int] (.intConst () 0)), .set p.snd (.op () "datetime_to_int" none)]
+        [(.init p.snd t[string] (.strConst .empty "")), .set p.snd (.app .empty (.op .empty "datetime_to_str" none) ((PyExprToBoogie default args.val[0]!).expr))]
+      | "int" => [(.init p.snd t[int] (.intConst .empty 0)), .set p.snd (.op .empty "datetime_to_int" none)]
       | _ => panic! s!"Unsupported name {n.val}"
     | _ => panic! s!"Unsupported tmp param init call: {repr f}"
   | _ => panic! "Expected Call"
@@ -505,15 +505,15 @@ partial def exceptHandlersToBoogie (jmp_targets: List String) (translation_ctx: 
     | .some ex_ty =>
       let inherits_from : Boogie.BoogieIdent := "inheritsFrom"
       let get_ex_tag : Boogie.BoogieIdent := "ExceptOrNone_code_val"
-      let exception_ty : Boogie.Expression.Expr := .app () (.op () get_ex_tag none) (.fvar () "maybe_except" none)
-      let rhs_curried : Boogie.Expression.Expr := .app () (.op () inherits_from none) exception_ty
+      let exception_ty : Boogie.Expression.Expr := .app .empty (.op .empty get_ex_tag none) (.fvar .empty "maybe_except" none)
+      let rhs_curried : Boogie.Expression.Expr := .app .empty (.op .empty inherits_from none) exception_ty
       let res := PyExprToBoogie translation_ctx ex_ty
-      let rhs : Boogie.Expression.Expr := .app () rhs_curried (res.expr)
+      let rhs : Boogie.Expression.Expr := .app .empty rhs_curried (res.expr)
       let call := .set "exception_ty_matches" rhs
       res.stmts ++ [call]
     | .none =>
-      [.set "exception_ty_matches" (.boolConst () false)]
-    let cond := .fvar () "exception_ty_matches" none
+      [.set "exception_ty_matches" (.boolConst .empty false)]
+    let cond := .fvar .empty "exception_ty_matches" none
     let body_if_matches := body.val.toList.flatMap (λ s => (PyStmtToBoogie jmp_targets translation_ctx s).fst) ++ [.goto jmp_targets[1]!]
     set_ex_ty_matches ++ [.ite cond body_if_matches []]
 
@@ -536,8 +536,8 @@ partial def handleFunctionCall (lhs: List Boogie.Expression.Ident)
     if isCall arg then some arg else none)
   let kwords_calls_to_tmps := nested_kwords_calls.map (λ a => (a, s!"call_kword_tmp_{a.toAst.ann.start}"))
 
-  let substitution_records : List SubstitutionRecord := args_calls_to_tmps.toList.map (λ p => {pyExpr := p.fst, boogieExpr := .fvar () p.snd none}) ++
-                                                        kwords_calls_to_tmps.toList.map (λ p => {pyExpr := p.fst, boogieExpr := .fvar () p.snd none})
+  let substitution_records : List SubstitutionRecord := args_calls_to_tmps.toList.map (λ p => {pyExpr := p.fst, boogieExpr := .fvar .empty p.snd none}) ++
+                                                        kwords_calls_to_tmps.toList.map (λ p => {pyExpr := p.fst, boogieExpr := .fvar .empty p.snd none})
   let res := argsAndKWordsToCanonicalList translation_ctx fname args.val kwords.val substitution_records
   args_calls_to_tmps.toList.flatMap initTmpParam ++
     kwords_calls_to_tmps.toList.flatMap initTmpParam ++
@@ -548,9 +548,9 @@ partial def handleComprehension (lhs: Python.expr SourceRange) (gen: Array (Pyth
   match gen[0]! with
   | .mk_comprehension _ _ itr _ _ =>
     let res := PyExprToBoogie default itr
-    let guard := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) res.expr) (.intConst () 0))
+    let guard := .app .empty (.op .empty "Bool.Not" none) (.eq .empty (.app .empty (.op .empty "dict_str_any_length" none) res.expr) (.intConst .empty 0))
     let then_ss: List Boogie.Statement := [.havoc (PyExprToString lhs)]
-    let else_ss: List Boogie.Statement := [.set (PyExprToString lhs) (.op () "ListStr_nil" none)]
+    let else_ss: List Boogie.Statement := [.set (PyExprToString lhs) (.op .empty "ListStr_nil" none)]
     res.stmts ++ [.ite guard then_ss else_ss]
 
 partial def PyStmtToBoogie (jmp_targets: List String) (translation_ctx : TranslationContext) (s : Python.stmt SourceRange) : List Boogie.Statement × TranslationContext :=
@@ -610,7 +610,7 @@ partial def PyStmtToBoogie (jmp_targets: List String) (translation_ctx : Transla
       | .none => ([.goto jmp_targets[0]!], none)
     | .For _ tgt itr body _ _ =>
       -- Do one unrolling:
-      let guard := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) (PyExprToBoogie default itr).expr) (.intConst () 0))
+      let guard := .app .empty (.op .empty "Bool.Not" none) (.eq .empty (.app .empty (.op .empty "dict_str_any_length" none) (PyExprToBoogie default itr).expr) (.intConst .empty 0))
       match tgt with
       | .Name _ n _ =>
         let assign_tgt := [(.init n.val dictStrAnyType dummyDictStrAny)]
@@ -619,7 +619,7 @@ partial def PyStmtToBoogie (jmp_targets: List String) (translation_ctx : Transla
       -- TODO: missing havoc
     | .While _ test body _ =>
       -- Do one unrolling:
-      let guard := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) (PyExprToBoogie default test).expr) (.intConst () 0))
+      let guard := .app .empty (.op .empty "Bool.Not" none) (.eq .empty (.app .empty (.op .empty "dict_str_any_length" none) (PyExprToBoogie default test).expr) (.intConst .empty 0))
       ([.ite guard (ArrPyStmtToBoogie translation_ctx body.val).fst []], none)
       -- TODO: missing havoc
     | .Assert _ a _ =>
@@ -631,7 +631,7 @@ partial def PyStmtToBoogie (jmp_targets: List String) (translation_ctx : Transla
         match lhs with
         | .Name _ n _ =>
           let rhs := PyExprToBoogie translation_ctx rhs
-          let new_lhs := (.strConst () "DUMMY_FLOAT")
+          let new_lhs := (.strConst .empty "DUMMY_FLOAT")
           (rhs.stmts ++ [.set n.val new_lhs], none)
         | _ => panic! s!"Expected lhs to be name: {repr lhs}"
       | .FloorDiv _ =>
@@ -639,7 +639,7 @@ partial def PyStmtToBoogie (jmp_targets: List String) (translation_ctx : Transla
         | .Name _ n _ =>
           let lhs := PyExprToBoogie translation_ctx lhs
           let rhs := PyExprToBoogie translation_ctx rhs
-          let new_lhs := .app () (.app () (.op () "Int.Div" mty[int → (int → int)]) lhs.expr) rhs.expr
+          let new_lhs := .app .empty (.app .empty (.op .empty "Int.Div" mty[int → (int → int)]) lhs.expr) rhs.expr
           (rhs.stmts ++ [.set n.val new_lhs], none)
         | _ => panic! s!"Expected lhs to be name: {repr lhs}"
       | _ => panic! s!"Unsupported AugAssign op: {repr op}"
@@ -688,7 +688,7 @@ def pyTyStrToLMonoTy (ty_str: String) : Lambda.LMonoTy :=
 
 def pythonFuncToBoogie (name : String) (args: List (String × String)) (body: Array (Python.stmt SourceRange)) (ret : Option (Python.expr SourceRange)) (spec : Boogie.Procedure.Spec) (translation_ctx : TranslationContext) : Boogie.Procedure :=
   let inputs : List (Lambda.Identifier Boogie.Visibility × Lambda.LMonoTy) := args.map (λ p => (p.fst, pyTyStrToLMonoTy p.snd))
-  let varDecls := collectVarDecls translation_ctx body ++ [(.init "exception_ty_matches" t[bool] (.boolConst () false)), (.havoc "exception_ty_matches")]
+  let varDecls := collectVarDecls translation_ctx body ++ [(.init "exception_ty_matches" t[bool] (.boolConst .empty false)), (.havoc "exception_ty_matches")]
   let stmts := (ArrPyStmtToBoogie translation_ctx body).fst
   let body := varDecls ++ stmts ++ [.block "end" []]
   let constructor := name.endsWith "___init__"
@@ -763,7 +763,7 @@ def pythonToBoogie (signatures : Python.Signatures) (pgm: Strata.Program): Boogi
   | .ClassDef _ _ _ _ _ _ _ => false
   | _ => true)
 
-  let globals := [(.var "__name__" (.forAll [] mty[string]) (.strConst () "__main__"))]
+  let globals := [(.var "__name__" (.forAll [] mty[string]) (.strConst .empty "__main__"))]
 
   let rec helper {α : Type} (f : Python.stmt SourceRange → TranslationContext → List Boogie.Decl × α)
                (update : TranslationContext → α → TranslationContext)

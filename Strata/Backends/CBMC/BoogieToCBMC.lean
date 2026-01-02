@@ -200,7 +200,7 @@ end
 
 def listToExpr (l: ListMap BoogieLabel Boogie.Procedure.Check) : Boogie.Expression.Expr :=
   match l with
-  | _ => .true ()
+  | _ => .true .empty
 
 def createContractSymbolFromAST (func : Boogie.Procedure) : CBMCSymbol :=
   let location : Location := {

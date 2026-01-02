@@ -32,7 +32,6 @@ import Strata.DL.Lambda.PlausibleHelpers
 open Plausible
 
 deriving instance Arbitrary for Lambda.Identifier
-deriving instance Arbitrary for Lambda.Info
 deriving instance Arbitrary for Lambda.QuantifierKind
 
 instance instArbitraryRat : Arbitrary Rat where

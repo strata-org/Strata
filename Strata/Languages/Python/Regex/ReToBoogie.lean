@@ -14,6 +14,7 @@ namespace Python
 
 open Lambda.LExpr
 open Boogie
+open MetaData (MetaData.empty)
 
 /--
 Python regexes can be interpreted differently based on the matching mode.
@@ -37,7 +38,7 @@ Consider the regex pattern: `^x$`.
 For search, match, and fullmatch, this is equivalent to `x`.
 -/
 inductive MatchMode where
-  | search     -- `re.search()`    - match anywhere in string
+  | search     -- `re.search.empty`    - match anywhere in string
   | match      -- `re.match()`     - match at start of string
   | fullmatch  -- `re.fullmatch()` - match entire string
   deriving Repr, BEq
@@ -67,27 +68,27 @@ def RegexAST.alwaysConsume (r : RegexAST) : Bool :=
 Empty regex pattern; matches an empty string.
 -/
 def Boogie.emptyRegex : Boogie.Expression.Expr :=
-  mkApp () (.op () strToRegexFunc.name none) [strConst () ""]
+  mkApp .empty (.op .empty strToRegexFunc.name none) [strConst .empty ""]
 
 /--
 Unmatchable regex pattern.
 -/
 def Boogie.unmatchableRegex : Boogie.Expression.Expr :=
-  mkApp () (.op () reNoneFunc.name none) []
+  mkApp .empty (.op .empty reNoneFunc.name none) []
 
 partial def RegexAST.toBoogie (r : RegexAST) (atStart atEnd : Bool) :
     Boogie.Expression.Expr :=
   match r with
   | .char c =>
-    (mkApp () (.op () strToRegexFunc.name none) [strConst () (toString c)])
+    (mkApp .empty (.op .empty strToRegexFunc.name none) [strConst .empty (toString c)])
   | .range c1 c2 =>
-    mkApp () (.op () reRangeFunc.name none) [strConst () (toString c1), strConst () (toString c2)]
+    mkApp .empty (.op .empty reRangeFunc.name none) [strConst .empty (toString c1), strConst .empty (toString c2)]
   | .anychar =>
-    mkApp () (.op () reAllCharFunc.name none) []
+    mkApp .empty (.op .empty reAllCharFunc.name none) []
   | .empty => Boogie.emptyRegex
   | .complement r =>
     let rb := toBoogie r atStart atEnd
-    mkApp () (.op () reCompFunc.name none) [rb]
+    mkApp .empty (.op .empty reCompFunc.name none) [rb]
   | .anchor_start =>
     if atStart then Boogie.emptyRegex else Boogie.unmatchableRegex
   | .anchor_end =>
@@ -102,13 +103,13 @@ partial def RegexAST.toBoogie (r : RegexAST) (atStart atEnd : Bool) :
         let r1b := toBoogie r1 atStart false -- r1 at the beginning
         let r2b := toBoogie r1 false false   -- r1s in the middle
         let r3b := toBoogie r1 false atEnd   -- r1 at the end
-        let r2b := mkApp () (.op () reStarFunc.name none) [r2b]
-        mkApp () (.op () reConcatFunc.name none)
-          [mkApp () (.op () reConcatFunc.name none) [r1b, r2b], r3b]
+        let r2b := mkApp MetaData.empty (.op MetaData.empty reStarFunc.name none) [r2b]
+        mkApp .empty (.op .empty reConcatFunc.name none)
+          [mkApp .empty (.op .empty reConcatFunc.name none) [r1b, r2b], r3b]
       | false =>
-        mkApp () (.op () reStarFunc.name none) [r1b]
-    mkApp () (.op () reUnionFunc.name none)
-      [mkApp () (.op () reUnionFunc.name none) [Boogie.emptyRegex, r1b], r2b]
+        mkApp .empty (.op .empty reStarFunc.name none) [r1b]
+    mkApp .empty (.op .empty reUnionFunc.name none)
+      [mkApp .empty (.op .empty reUnionFunc.name none) [Boogie.emptyRegex, r1b], r2b]
   | .optional r1 =>
     toBoogie (.union .empty r1) atStart atEnd
   | .loop r1 n m =>
@@ -122,12 +123,12 @@ partial def RegexAST.toBoogie (r : RegexAST) (atStart atEnd : Bool) :
                   let r1b := toBoogie r1 atStart false -- r1 at the beginning
                   let r2b := toBoogie r1 false false   -- r1s in the middle
                   let r3b := toBoogie r1 false atEnd   -- r1 at the end
-                  let r2b := mkApp () (.op () reLoopFunc.name none) [r2b, intConst () 0, intConst () (m-2)]
-                  mkApp () (.op () reConcatFunc.name none) [mkApp () (.op () reConcatFunc.name none) [r1b, r2b], r3b]
+                  let r2b := mkApp MetaData.empty (.op MetaData.empty reLoopFunc.name none) [r2b, intConst .empty 0, intConst .empty (m-2)]
+                  mkApp .empty (.op .empty reConcatFunc.name none) [mkApp .empty (.op .empty reConcatFunc.name none) [r1b, r2b], r3b]
                 | false =>
-                  mkApp () (.op () reLoopFunc.name none) [r1b, intConst () 0, intConst () m]
-      mkApp () (.op () reUnionFunc.name none)
-            [mkApp () (.op () reUnionFunc.name none) [Boogie.emptyRegex, r1b],
+                  mkApp .empty (.op .empty reLoopFunc.name none) [r1b, intConst .empty 0, intConst .empty m]
+      mkApp .empty (.op .empty reUnionFunc.name none)
+            [mkApp .empty (.op .empty reUnionFunc.name none) [Boogie.emptyRegex, r1b],
             r2b]
     | _, _ =>
       toBoogie (.concat r1 (.loop r1 (n - 1) (m - 1))) atStart atEnd
@@ -137,28 +138,28 @@ partial def RegexAST.toBoogie (r : RegexAST) (atStart atEnd : Bool) :
     | true, true =>
       let r1b := toBoogie r1 atStart false
       let r2b := toBoogie r2 false atEnd
-      mkApp () (.op () reConcatFunc.name none) [r1b, r2b]
+      mkApp .empty (.op .empty reConcatFunc.name none) [r1b, r2b]
     | true, false =>
       let r1b := toBoogie r1 atStart atEnd
       let r2b := toBoogie r2 false atEnd
-      mkApp () (.op () reConcatFunc.name none) [r1b, r2b]
+      mkApp .empty (.op .empty reConcatFunc.name none) [r1b, r2b]
     | false, true =>
       let r1b := toBoogie r1 atStart false
       let r2b := toBoogie r2 true atEnd
-      mkApp () (.op () reConcatFunc.name none) [r1b, r2b]
+      mkApp .empty (.op .empty reConcatFunc.name none) [r1b, r2b]
     | false, false =>
       let r1b := toBoogie r1 atStart atEnd
       let r2b := toBoogie r2 atStart atEnd
-      mkApp () (.op () reConcatFunc.name none) [r1b, r2b]
+      mkApp .empty (.op .empty reConcatFunc.name none) [r1b, r2b]
   | .union r1 r2 =>
       let r1b := toBoogie r1 atStart atEnd
       let r2b := toBoogie r2 atStart atEnd
-      mkApp () (.op () reUnionFunc.name none) [r1b, r2b]
+      mkApp .empty (.op .empty reUnionFunc.name none) [r1b, r2b]
 
 def pythonRegexToBoogie (pyRegex : String) (mode : MatchMode := .fullmatch) :
     Boogie.Expression.Expr × Option ParseError :=
   match parseTop pyRegex with
-  | .error err => (mkApp () (.op () reAllFunc.name none) [], some err)
+  | .error err => (mkApp .empty (.op .empty reAllFunc.name none) [], some err)
   | .ok ast =>
     let dotStar := (RegexAST.star (.anychar))
     -- Wrap with `.*` based on mode.

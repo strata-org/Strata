@@ -148,13 +148,13 @@ def TypeStrToBoogieExpr (ty: String) : Boogie.Expression.Expr :=
     panic! s!"Should only be called for possibly None types. Called for: {ty}"
   else
     match ty with
-    | "StrOrNone" => .app () (.op () "StrOrNone_mk_none" none) (.op () "None_none" none)
-    | "BoolOrNone" => .app () (.op () "BoolOrNone_mk_none" none) (.op () "None_none" none)
-    | "BoolOrStrOrNone" => .app () (.op () "BoolOrStrOrNone_mk_none" none) (.op () "None_none" none)
-    | "AnyOrNone" => .app () (.op () "AnyOrNone_mk_none" none) (.op () "None_none" none)
-    | "IntOrNone" => .app () (.op () "IntOrNone_mk_none" none) (.op () "None_none" none)
-    | "BytesOrStrOrNone" => .app () (.op () "BytesOrStrOrNone_mk_none" none) (.op () "None_none" none)
-    | "DictStrStrOrNone" => .app () (.op () "DictStrStrOrNone_mk_none" none) (.op () "None_none" none)
+    | "StrOrNone" => .app .empty (.op .empty "StrOrNone_mk_none" none) (.op .empty "None_none" none)
+    | "BoolOrNone" => .app .empty (.op .empty "BoolOrNone_mk_none" none) (.op .empty "None_none" none)
+    | "BoolOrStrOrNone" => .app .empty (.op .empty "BoolOrStrOrNone_mk_none" none) (.op .empty "None_none" none)
+    | "AnyOrNone" => .app .empty (.op .empty "AnyOrNone_mk_none" none) (.op .empty "None_none" none)
+    | "IntOrNone" => .app .empty (.op .empty "IntOrNone_mk_none" none) (.op .empty "None_none" none)
+    | "BytesOrStrOrNone" => .app .empty (.op .empty "BytesOrStrOrNone_mk_none" none) (.op .empty "None_none" none)
+    | "DictStrStrOrNone" => .app .empty (.op .empty "DictStrStrOrNone_mk_none" none) (.op .empty "None_none" none)
     | _ => panic! s!"unsupported type: {ty}"
 
 end Python

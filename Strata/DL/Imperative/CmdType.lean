@@ -15,35 +15,6 @@ open MetaData (formatFileRangeD MetaDataElem)
 
 ---------------------------------------------------------------------
 
--- Formatting metadata for Imperative:
-
-def lValue : MetaDataElem.Field Ident := .label "LValue"
-def rValueOf : MetaDataElem.Field Ident := .label "RValueOf"
-
-def formatLValue? {P} [BEq (MetaDataElem.Field P.Ident)] (md : MetaData P) : Option Std.Format := do
-  let lvalue ← md.findElem lValue
-  match lvalue.value with
-  | .msg s => return f!"target variable {s}"
-  | _ => none
-
-def formatLValueD {P} [BEq (MetaDataElem.Field P.Ident)] (md : MetaData P) : Std.Format :=
-  match formatLValue? md with
-  | .none => ""
-  | .some f => f
-
-def formatRValueOf? {P} [BEq (MetaDataElem.Field P.Ident)] (md : MetaData P) : Option Std.Format := do
-  let rvalue ← md.findElem rValueOf
-  match rvalue.value with
-  | .msg s => return f!"expression being assigned to {s}"
-  | _ => none
-
-def formatRValueOfD {P} [BEq (MetaDataElem.Field P.Ident)] (md : MetaData P) : Std.Format :=
-  match formatRValueOf? md with
-  | .none => ""
-  | .some f => f
-
----------------------------------------------------------------------
-
 /--
 Type checker for an Imperative Command.
 -/
@@ -61,9 +32,9 @@ def Cmd.typeCheck [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
         .error f!"{Format.line}{mdfun md}Type Checking [{c}]: \
                   Variable {x} cannot appear in its own initialization expression!"
       else
-        let xty_md := (md.pushElem (.label "LValue") (.msg s!"variable {format x}"))
+        let xty_md := (md.pushElem MetaData.lValue (.msg s!"{format x}"))
         let (xty, τ) ← TC.preprocess ctx τ xty xty_md
-        let ety_md := (md.pushElem (.label "RValueOf") (.msg s!"variable {format x}"))
+        let ety_md := (md.pushElem MetaData.rValueOf (.msg s!"{format x}"))
         let (e, ety, τ) ← TC.inferType ctx τ c e ety_md
         let τ ← TC.unifyTypes τ [((xty, ety), some (xty_md, ety_md))] md
         let (xty, τ) ← TC.postprocess ctx τ xty md
@@ -80,8 +51,8 @@ def Cmd.typeCheck [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
                         Cannot set undefined variable {x}."
     | some xty =>
       let (e, ety, τ) ← TC.inferType ctx τ c e md
-      let xty_md := (md.pushElem (.label "LValue") (.msg s!"variable {format x}"))
-      let ety_md := (md.pushElem (.label "RValueOf") (.msg s!"variable {format x}"))
+      let xty_md := (md.pushElem MetaData.lValue (.msg s!"{format x}"))
+      let ety_md := (md.pushElem MetaData.rValueOf (.msg s!"{format x}"))
       let τ ← TC.unifyTypes τ [((xty, ety), some (xty_md, ety_md))] md
       let c := Cmd.set x e md
       .ok (c, τ)

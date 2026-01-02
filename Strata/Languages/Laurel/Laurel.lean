@@ -150,8 +150,8 @@ inductive StmtExpr : Type where
   | Fresh(value : StmtExpr)
 
 /- Related to proofs -/
-  | Assert (condition: StmtExpr) (md : MetaData Boogie.Expression)
-  | Assume (condition: StmtExpr) (md : MetaData Boogie.Expression)
+  | Assert (condition: StmtExpr) (md : MetaData {Identifier := Boogie.Expression.Ident, Expr := Boogie.Expression.Expr})
+  | Assume (condition: StmtExpr) (md : MetaData {Identifier := Boogie.Expression.Ident, Expr := Boogie.Expression.Expr})
   /-
 ProveBy allows writing proof trees. Its semantics are the same as that of the given `value`,
 but the `proof` is used to help prove any assertions in `value`.

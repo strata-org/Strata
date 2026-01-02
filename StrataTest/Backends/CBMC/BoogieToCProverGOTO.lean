@@ -46,7 +46,7 @@ private def lookupType (T : Boogie.Expression.TyEnv) (i : Boogie.Expression.Iden
 
 private def updateType (T : Boogie.Expression.TyEnv) (i : Boogie.Expression.Ident)
     (ty : Boogie.Expression.Ty) : Boogie.Expression.TyEnv :=
-  @Lambda.TEnv.insertInContext ⟨Boogie.ExpressionMetadata, Boogie.Visibility⟩ _ T i ty
+  @Lambda.TEnv.insertInContext Boogie.BoogieLParams _ T i ty
 
 instance : Imperative.ToGoto Boogie.Expression where
   lookupType := lookupType

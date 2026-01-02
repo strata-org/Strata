@@ -16,7 +16,7 @@ import Strata.DL.Imperative.CmdType
 namespace Boogie
 open Lambda Imperative
 open Std (ToFormat Format format)
-open MetaData (formatFileRangeD)
+open MetaData (formatFileRangeD formatLValueD formatRValueOfD)
 
 ---------------------------------------------------------------------
 
@@ -101,6 +101,8 @@ def canonicalizeConstraints (constraints : CmdConstraints) : Except Format CmdCo
                 type constraints, but found the following instead:\n\
                 t1: {t1}\nt2: {t2}\n"
 
+---------------------------------------------------------------------
+
 def unifyTypes (Env: TEnv Visibility)
     (constraints : CmdConstraints)
     (md : MetaData Expression) :
@@ -117,17 +119,7 @@ def unifyTypes (Env: TEnv Visibility)
             ((constraint, some {originalConstraint := constraint,
                                 type1_md := md1, type2_md := md2})))
     let mdf : MetaData Expression → Format :=
-      fun (md : MetaData Expression) =>
-        let f := f!""
-        let lvalue := md.findElem (.label "LValue")
-        let f := match lvalue with
-          | none => f
-          | some v => f!"{v.value}"
-      let rvalueof := md.findElem (.label "RValueOf")
-      let f := match rvalueof with
-        | none => f
-        | some v => f!"RHS of {v.value}"
-      f
+      fun (md : MetaData Expression) => f!"{formatLValueD md}{formatRValueOfD md}"
     let unifyAns := Constraints.unify dbgConstraints Env.stateSubstInfo mdf
     match unifyAns with
     | .error e => .error f!"{Format.line}{formatFileRangeD md} {e}"

@@ -14,10 +14,10 @@ namespace Boogie
 
 /-- expressions that can't be reduced when evaluating -/
 inductive Value : Boogie.Expression.Expr → Prop where
-  | const :  Value (.const .empty _)
-  | bvar  :  Value (.bvar .empty _)
-  | op    :  Value (.op .empty _ _)
-  | abs   :  Value (.abs .empty _ _)
+  | const :  Value (.const _ _)
+  | bvar  :  Value (.bvar _ _)
+  | op    :  Value (.op _ _ _)
+  | abs   :  Value (.abs _ _ _)
 
 open Imperative
 

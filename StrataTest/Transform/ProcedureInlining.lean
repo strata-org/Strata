@@ -73,7 +73,7 @@ private def substExpr (e1:Expression.Expr) (map:Map String String) (isReverse: B
       let new_vis := if not isReverse then Visibility.unres else Visibility.temp
       let old_id:Expression.Ident := { name := i1, metadata := old_vis }
 
-      let new_expr:Expression.Expr := .fvar ()
+      let new_expr:Expression.Expr := .fvar .empty
           { name := i2, metadata := new_vis } .none
       e.substFvar old_id new_expr)
     e1

@@ -31,7 +31,7 @@ variable declaration and assignment, and assertions and assumptions.
 -/
 
 /--
-A an atomic command in the `Imperative` dialect.
+An atomic command in the `Imperative` dialect.
 
 Commands don't create local control flow, and are typically used as a parameter
 to `Imperative.Stmt` or other similar types.
