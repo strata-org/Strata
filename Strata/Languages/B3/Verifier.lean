@@ -21,11 +21,11 @@ Converts B3 programs to SMT and verifies them using Z3/CVC5.
 **Incremental API** (for interactive debugging):
 - `initVerificationState` - Spawn solver and create initial state
 - `addFunctionDecl` - Declare a function (sends to solver)
-- `addAssertion` - Add an axiom (sends to solver)
+- `addAxiom` - Add an axiom (sends to solver)
 - `push` - Push solver scope
 - `pop` - Pop solver scope
-- `checkProperty` - Assert negation and check-sat (caller manages push/pop)
-- `checkPropertyIsolated` - Convenience wrapper (does push/pop automatically)
+- `prove` - Prove a property holds (check statement)
+- `reach` - Check if a property is reachable (reach statement)
 - `closeVerificationState` - Exit solver cleanly
 
 **Batch API** (built on incremental):
@@ -46,27 +46,19 @@ let results ← verifyProgram myB3Program
 -- Batch with automatic diagnosis
 let reports ← verifyWithDiagnosis myB3Program
 
--- Incremental verification with explicit scope management
+-- Incremental verification
 let state ← initVerificationState
-let state ← addFunctionDecl state "f" ["Int"] "Int"
-let state ← addAssertion state myAxiom
-let state ← push state
-let result ← checkProperty state myProperty sourceDecl sourceStmt
-let state ← pop state
-closeVerificationState state
-
--- Or use the convenience wrapper
-let state ← initVerificationState
-let state ← addFunctionDecl state "f" ["Int"] "Int"
-let result ← checkPropertyIsolated state myProperty sourceDecl sourceStmt
+let state ← addFunctionDecl state myFunctionDecl
+let state ← addAxiom state myAxiomTerm
+let result ← prove state myPropertyTerm sourceDecl sourceStmt
 closeVerificationState state
 ```
 
 ## Key Design Principles
 
-1. **Single solver reuse** - ONE solver for entire program, not fresh per check
-2. **Push/pop for isolation** - Each check uses push/pop, not full re-initialization
-3. **Provable equivalence** - Batch mode = incremental API called in sequence
-4. **Automatic diagnosis** - Failures are automatically narrowed to root cause
-5. **SMT Term intermediate** - B3 AST → SMT Term → Solver (provable conversion)
+1. **Single solver reuse** - ONE solver for entire program
+2. **Push/pop for isolation** - Each check uses push/pop
+3. **Provable equivalence** - Batch mode = incremental API in sequence
+4. **Automatic diagnosis** - Failures automatically narrowed to root cause
+5. **SMT Term intermediate** - B3 AST → SMT Term → Solver
 -/

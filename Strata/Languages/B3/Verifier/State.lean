@@ -28,16 +28,30 @@ open Strata.B3AST
 inductive B3CheckResult where
   | proved : B3CheckResult
   | provedWrong : B3CheckResult
-  | proofUnknown : B3CheckResult  -- Solver timeout/incomplete
+  | proofUnknown : B3CheckResult
+
+def B3CheckResult.isError : B3CheckResult → Bool
+  | .proved => false
+  | .provedWrong => true
+  | .proofUnknown => true
 
 inductive B3ReachResult where
   | unreachable : B3ReachResult
   | reachable : B3ReachResult
-  | reachabilityUnknown : B3ReachResult  -- Conservative: might be reachable
+  | reachabilityUnknown : B3ReachResult
+
+def B3ReachResult.isError : B3ReachResult → Bool
+  | .unreachable => true
+  | .reachable => false
+  | .reachabilityUnknown => false
 
 inductive B3Result where
   | checkResult : B3CheckResult → B3Result
   | reachResult : B3ReachResult → B3Result
+
+def B3Result.isError : B3Result → Bool
+  | .checkResult r => r.isError
+  | .reachResult r => r.isError
 
 def B3Result.fromDecisionForProve (d : Decision) : B3Result :=
   match d with
@@ -98,38 +112,27 @@ def pop (state : B3VerificationState) : IO B3VerificationState := do
   solver.smtLibInput.flush
   return state
 
-def checkProperty (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : Option (B3AST.Statement SourceRange)) : IO CheckResult := do
-  -- Just assert negation and check (caller manages push/pop)
+/-- Prove a property holds (check/assert statement) -/
+def prove (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : Option (B3AST.Statement SourceRange)) : IO CheckResult := do
+  let _ ← push state
   let runCheck : SolverM (Decision × Option String) := do
     Solver.assert s!"(not {formatTermDirect term})"
     let decision ← Solver.checkSat []
     let model := if decision == .sat then some "model available" else none
     return (decision, model)
-
   let (decision, model) ← runCheck.run state.solver
+  let _ ← pop state
   return {
     decl := sourceDecl
     sourceStmt := sourceStmt
-    decision := decision
+    result := B3Result.fromDecisionForProve decision
     model := model
   }
-
-def prove (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : Option (B3AST.Statement SourceRange)) : IO CheckResult := do
-  let _ ← push state
-  let result ← checkProperty state term sourceDecl sourceStmt
-  let _ ← pop state
-  return result
-
-def closeVerificationState (state : B3VerificationState) : IO Unit := do
-  let _ ← (Solver.exit).run state.solver
-  pure ()
 
 /-- Check if a property is reachable (reach statement) -/
 def reach (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : Option (B3AST.Statement SourceRange)) : IO CheckResult := do
   let _ ← push state
   let runCheck : SolverM (Decision × Option String) := do
-    -- Assert the property itself (not negation)
-    -- sat = reachable, unsat = provably unreachable
     Solver.assert (formatTermDirect term)
     let decision ← Solver.checkSat []
     let model := if decision == .sat then some "reachable" else none
@@ -139,9 +142,13 @@ def reach (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl S
   return {
     decl := sourceDecl
     sourceStmt := sourceStmt
-    decision := decision
+    result := B3Result.fromDecisionForReach decision
     model := model
   }
+
+def closeVerificationState (state : B3VerificationState) : IO Unit := do
+  let _ ← (Solver.exit).run state.solver
+  pure ()
 
 ---------------------------------------------------------------------
 -- Higher-level API (works with B3AST types)

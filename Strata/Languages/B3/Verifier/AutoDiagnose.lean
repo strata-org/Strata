@@ -8,6 +8,7 @@ import Strata.Languages.B3.Verifier.State
 import Strata.Languages.B3.Verifier.Core
 import Strata.Languages.B3.Verifier.Diagnosis
 import Strata.Languages.B3.Verifier.Statements
+import Strata.Languages.B3.Verifier.ExecuteWithDiagnosis
 
 /-!
 # Automatic Verification with Diagnosis
@@ -47,56 +48,13 @@ def verifyWithDiagnosis (prog : Strata.B3AST.Program SourceRange) (solverPath : 
         | .procedure _ name params _ body =>
             if params.val.isEmpty && body.val.isSome then
               let bodyStmt := body.val.get!
-              let vcState := statementToVCs ConversionContext.empty VCGenState.empty bodyStmt
 
-              let mut procResults := []
-              let mut currentState := state
-
-              -- Check VCs sequentially, accumulating successful asserts
-              for (vc, sourceStmt) in vcState.verificationConditions.reverse do
-                let (result, diagnosis, newState) ← match sourceStmt with
-                  | .check _ expr =>
-                      let result ← prove currentState vc decl (some sourceStmt)
-                      let diag ← if result.decision != .unsat then
-                        let d ← diagnoseFailure currentState expr decl sourceStmt
-                        pure (some d)
-                      else
-                        pure none
-                      pure (result, diag, currentState)
-
-                  | .assert _ expr =>
-                      let result ← prove currentState vc decl (some sourceStmt)
-                      let diag ← if result.decision != .unsat then
-                        let d ← diagnoseFailure currentState expr decl sourceStmt
-                        pure (some d)
-                      else
-                        pure none
-                      -- Add successful assert to state
-                      let newState ← if result.decision == .unsat then
-                        addAxiom currentState vc
-                      else
-                        pure currentState
-                      pure (result, diag, newState)
-
-                  | .reach _ expr =>
-                      let result ← reach currentState vc decl (some sourceStmt)
-                      let diag ← if result.decision == .unsat then
-                        let d ← diagnoseUnreachable currentState expr decl sourceStmt
-                        pure (some d)
-                      else
-                        pure none
-                      pure (result, diag, currentState)
-
-                  | _ =>
-                      let result ← prove currentState vc decl (some sourceStmt)
-                      pure (result, none, currentState)
-
-                currentState := newState
-                procResults := procResults ++ [(result, diagnosis)]
+              -- Execute statements with diagnosis via streaming translation
+              let (results, _finalState) ← executeStatementsWithDiagnosis ConversionContext.empty state decl bodyStmt
 
               reports := reports ++ [{
                 procedureName := name.val
-                results := procResults
+                results := results
               }]
             else
               pure ()  -- Skip procedures with parameters

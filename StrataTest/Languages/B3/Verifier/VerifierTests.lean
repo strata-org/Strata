@@ -102,9 +102,9 @@ def testAutoDiagnosis (prog : Program) : IO Unit := do
         | _ => false
 
       let isFailed := if isReach then
-        result.decision == .unsat  -- For reach, unsat is failure
+        !result.result.isError  -- For reach, unsat is failure
       else
-        result.decision != .unsat  -- For check, sat is failure
+        result.result.isError  -- For check, sat is failure
 
       if !isFailed then
         IO.println "  ✓ Verified"
@@ -146,7 +146,7 @@ def testVerification (prog : Program) : IO Unit := do
 
         IO.println s!"  {name.val}: {status}"
         -- Show details for failures
-        if (result.decision != .unsat && !isReach) || (result.decision == .unsat && isReach) then
+        if (result.result.isError && !isReach) || (!result.result.isError && isReach) then
           match result.sourceStmt with
           | some stmt =>
               IO.println s!"    {formatStatementError prog stmt}"
@@ -306,3 +306,17 @@ procedure test_reach_diagnosis() {
 #end
 
 end B3.Verifier.Tests
+
+
+/--
+info: Verification results:
+  test_assert_helps: ✓ verified
+-/
+#guard_msgs in
+#eval testVerification $ #strata program B3CST;
+function f(x : int) : int
+procedure test_assert_helps() {
+  assert f(5) > 0
+  check f(5) > -1
+}
+#end

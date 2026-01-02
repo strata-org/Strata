@@ -23,7 +23,7 @@ partial def executeStatementsWithDiagnosis (ctx : ConversionContext) (state : B3
       match expressionToSMT ctx expr with
       | some term =>
           let result ← prove state term sourceDecl (some (.check m expr))
-          let diag ← if result.decision != .unsat then
+          let diag ← if result.result.isError then
             let d ← diagnoseFailure state expr sourceDecl (.check m expr)
             pure (some d)
           else
@@ -36,12 +36,12 @@ partial def executeStatementsWithDiagnosis (ctx : ConversionContext) (state : B3
       match expressionToSMT ctx expr with
       | some term =>
           let result ← prove state term sourceDecl (some (.assert m expr))
-          let diag ← if result.decision != .unsat then
+          let diag ← if result.result.isError then
             let d ← diagnoseFailure state expr sourceDecl (.assert m expr)
             pure (some d)
           else
             pure none
-          let newState ← if result.decision == .unsat then
+          let newState ← if !result.result.isError then
             addAxiom state term
           else
             pure state
@@ -61,7 +61,7 @@ partial def executeStatementsWithDiagnosis (ctx : ConversionContext) (state : B3
       match expressionToSMT ctx expr with
       | some term =>
           let result ← reach state term sourceDecl (some (.reach m expr))
-          let diag ← if result.decision == .unsat then
+          let diag ← if !result.result.isError then
             let d ← diagnoseUnreachable state expr sourceDecl (.reach m expr)
             pure (some d)
           else

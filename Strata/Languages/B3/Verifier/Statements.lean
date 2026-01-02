@@ -50,8 +50,8 @@ partial def executeStatements (ctx : ConversionContext) (state : B3VerificationS
       match expressionToSMT ctx expr with
       | some term =>
           let result ← prove state term sourceDecl (some (.assert m expr))
-          -- Add to solver state if successful
-          let newState ← if result.decision == .unsat then
+          -- Add to solver state if successful (not an error)
+          let newState ← if !result.result.isError then
             addAxiom state term
           else
             pure state

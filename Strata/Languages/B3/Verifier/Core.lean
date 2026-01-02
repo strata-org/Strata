@@ -27,7 +27,7 @@ open Strata.B3AST
 ---------------------------------------------------------------------
 
 /-- Verify a B3 program using incremental API -/
-def verifyProgram (prog : B3AST.Program SourceRange) (solverPath : String := "z3") : IO (List CheckResult) := do
+def verifyProgram (prog : B3AST.Program SourceRange) (solverPath : String := "z3") : IO (List (Except String CheckResult)) := do
   let mut state ← initVerificationState solverPath
   let mut results := []
 
@@ -82,7 +82,13 @@ def verifyProgram (prog : B3AST.Program SourceRange) (solverPath : String := "z3
             if params.val.isEmpty && body.val.isSome then
               let bodyStmt := body.val.get!
               let execResult ← executeStatements ConversionContext.empty state decl bodyStmt
-              results := results ++ execResult.results
+              -- Convert StatementResult to Except String CheckResult
+              let converted := execResult.results.map (fun r =>
+                match r with
+                | .verified checkResult => .ok checkResult
+                | .conversionError msg => .error msg
+              )
+              results := results ++ converted
             else
               pure ()  -- Skip procedures with parameters for now
         | _ => pure ()
