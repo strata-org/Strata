@@ -359,6 +359,7 @@ private def needsSpaceBetween (a1 a2:SyntaxDefAtom) : Bool :=
   match a1, a2 with
   | .ident _ _, _ => ¬ (startsAndEndsWithNonIdentifierChar a2 fuel).fst
   | _, .ident _ _ => ¬ (startsAndEndsWithNonIdentifierChar a1 fuel).snd
+  | .str "", _ | _, .str "" => false
   | _, _ => true
 
 private def ppOp (opts : FormatOptions) (stx : SyntaxDef) (args : Array PrecFormat) : PrecFormat :=

@@ -32,12 +32,12 @@ int procedure simpleTest (x: int, y: int)
 /--
 info: program C_Simp;
 (int) procedure simpleTest  (x:int, y:int)//@pre (y)>(0) ;
-//@post true ;
+ //@post true ;
  ({
   var z:int;
   (z)=(x)+(y);
   //@assert [test_assert](z)>(x);
-  if((z)>(10)){
+  if ((z)>(10)){
   (z)=(z)-(1);
   }
    (else ({

@@ -36,13 +36,13 @@ int procedure loopSimple (n: int)
 /--
 info: program C_Simp;
 (int) procedure loopSimple  (n:int)//@pre (n)>=(0) ;
-//@post true ;
+ //@post true ;
  ({
   var sum:int;
   var i:int;
   (sum)=0;
   (i)=0;
-  while((i)<(n))
+  while ((i)<(n))
   //@decreases ((n)-(i)) //@invariant (((i)<=(n))&&((((i)*((i)-(1)))/(2))==(sum))) ({
   (sum)=(sum)+(i);
   (i)=(i)+(1);

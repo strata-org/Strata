@@ -35,11 +35,11 @@ int procedure loopTrivial (n: int)
 /--
 info: program C_Simp;
 (int) procedure loopTrivial  (n:int)//@pre (n)>=(0) ;
-//@post true ;
+ //@post true ;
  ({
   var i:int;
   (i)=0;
-  while((i)<(n))
+  while ((i)<(n))
   //@decreases ((n)-(i)) //@invariant ((i)<=(n)) ({
   (i)=(i)+(1);
   }

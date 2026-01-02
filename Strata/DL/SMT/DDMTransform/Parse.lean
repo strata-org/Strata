@@ -155,11 +155,21 @@ op kw_symbol (@[unwrap] s:SimpleSymbol) : Keyword => ":" s;
 
 
 // 2. S-expressions
-// Special constants
+// Special constants.
 category SpecConstant;
 op sc_numeral (@[unwrap] n:Num) : SpecConstant => n;
 op sc_decimal (@[unwrap] d:Decimal) : SpecConstant => d;
 op sc_str (@[unwrap] s:Str) : SpecConstant => s;
+
+// sign is not a part of the standard, but it seems CVC5 and Z3
+// support this for convenience.
+// Note that negative integers like '-1231' are symbols in Std! (Sec 3.1. Lexicon)
+// The only way to create a unary symbol is through idenitifers, but this
+// makes its DDM format wrapped with pipes, like '|-1231|`. Since such
+// representation cannot be recognized by Z3, make a workaround which is to have
+// separate `*_neg` categories for sc_numeral.
+op sc_numeral_neg (@[unwrap] n:Num) : SpecConstant => "-" n:0;
+op sc_numeral_dec (@[unwrap] n:Decimal) : SpecConstant => "-" n:0;
 
 category SExpr;
 op se_spec_const (s:SpecConstant) : SExpr => s;
@@ -526,7 +536,9 @@ parse_symbol + ;
 parse_keyword :aaa ;
 
 parse_spec_constant 1;
+parse_spec_constant -1;
 parse_spec_constant 1.5;
+parse_spec_constant -1.5;
 parse_spec_constant "test";
 
 parse_sexpr 1;

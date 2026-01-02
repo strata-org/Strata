@@ -7,6 +7,7 @@
 import Strata.DL.SMT.DDMTransform.Parse
 import Strata.DL.SMT.Term
 import Strata.DDM.Format
+import Strata.DDM.Util.DecimalRat
 
 namespace Strata
 
@@ -55,16 +56,17 @@ private def translateFromTermPrim (t:SMT.TermPrim):
       (.qi_ident srnone (.iden_simple srnone (.symbol srnone ss))))
   | .int i =>
     let abs_i := if i < 0 then -i else i
-    let v := .spec_constant_term srnone (.sc_numeral srnone abs_i.toNat)
-    return (
-      if i >= 0 then v
-      else
-        -- Note that negative integers like '-1231' are symbols! (Sec 3.1. Lexicon)
-        -- Since the only way to create a unary term from symbol is through
-        -- idenitifer, use mkIdentifier.
-        .qual_identifier srnone (.qi_ident srnone (mkIdentifier (toString i))))
-  | .real str_repr =>
-    return (.qual_identifier srnone (.qi_ident srnone (mkIdentifier str_repr)))
+    if i >= 0 then
+      return .spec_constant_term srnone (.sc_numeral srnone abs_i.toNat)
+    else
+      -- Note that negative integers like '-1231' are symbols in Std! (Sec 3.1. Lexicon)
+      -- The only way to create a unary symbol is through idenitifers, but this
+      -- makes its DDM format wrapped with pipes, like '|-1231|`. Since such
+      -- representation cannot be recognized by Z3, make a workaround which is to have
+      -- separate `*_neg` categories for sc_numeral/decimal.
+      return .spec_constant_term srnone (.sc_numeral_neg srnone abs_i.toNat)
+  | .real dec =>
+    return .spec_constant_term srnone (.sc_decimal srnone dec)
   | .bitvec bv =>
     let bvty := mkSymbol (s!"bv{bv.toNat}")
     let val:Index SourceRange := .ind_numeral srnone bv.width
@@ -162,6 +164,15 @@ def toString (t:SMT.Term): Except String String := do
 /-- info: Except.ok "(+ 10 20)" -/
 #guard_msgs in #eval (toString
     (.app SMT.Op.add [(.prim (.int 10)), (.prim (.int 20))] .int))
+
+/-- info: Except.ok "(+ 10 -20)" -/
+#guard_msgs in #eval (toString
+    (.app SMT.Op.add [(.prim (.int 10)), (.prim (.int (-20)))] .int))
+
+/-- info: Except.ok "(+ 1e10 2e10)" -/
+#guard_msgs in #eval (toString
+    (.app SMT.Op.add [(.prim (.real (Decimal.mk 1 (-1)))),
+                      (.prim (.real (Decimal.mk 2 (-2))))] .int))
 
 /-- info: Except.ok "( _ bv1 32 )" -/
 #guard_msgs in #eval (toString
