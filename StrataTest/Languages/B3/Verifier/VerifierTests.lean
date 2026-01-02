@@ -28,7 +28,7 @@ Tests for B3 to SMT conversion and verification.
 **Declarations:**
 - ✅ Function declarations (with and without bodies)
 - ✅ Function bodies → quantified axioms
-- ✅ Axioms (with optional explains clauses)
+- ✅ Axioms
 - ✅ Parameter-free procedures
 
 **Statements:**
@@ -56,6 +56,7 @@ Tests for B3 to SMT conversion and verification.
 - ❌ Type inference for expressions
 
 **Functions:**
+- ❌ Explains clauses (currently ignored)
 - ❌ Injective parameters → inverse functions
 - ❌ Tagged functions → tag constants
 - ❌ When clauses (currently converted but not fully tested)
