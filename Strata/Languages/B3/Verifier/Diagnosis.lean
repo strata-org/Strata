@@ -38,7 +38,7 @@ def diagnoseFailure (state : B3VerificationState) (expr : B3AST.Expression Sourc
       }
       return { originalCheck := dummyResult, diagnosedFailures := [] }
   | some term =>
-      let originalResult ← checkPropertyIsolated state term sourceDecl (some sourceStmt)
+      let originalResult ← prove state term sourceDecl (some sourceStmt)
 
       if originalResult.decision == .unsat then
         return { originalCheck := originalResult, diagnosedFailures := [] }
@@ -50,14 +50,14 @@ def diagnoseFailure (state : B3VerificationState) (expr : B3AST.Expression Sourc
       | .binaryOp _ (.and _) lhs rhs =>
           match expressionToSMT ConversionContext.empty lhs with
           | some lhsTerm =>
-              let lhsResult ← checkPropertyIsolated state lhsTerm sourceDecl (some sourceStmt)
+              let lhsResult ← prove state lhsTerm sourceDecl (some sourceStmt)
               if lhsResult.decision != .unsat then
                 diagnosements := diagnosements ++ [("left conjunct", lhs, lhsResult)]
           | none => pure ()
 
           match expressionToSMT ConversionContext.empty rhs with
           | some rhsTerm =>
-              let rhsResult ← checkPropertyIsolated state rhsTerm sourceDecl (some sourceStmt)
+              let rhsResult ← prove state rhsTerm sourceDecl (some sourceStmt)
               if rhsResult.decision != .unsat then
                 diagnosements := diagnosements ++ [("right conjunct", rhs, rhsResult)]
           | none => pure ()

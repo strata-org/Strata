@@ -52,7 +52,9 @@ def verifyWithDiagnosis (prog : Strata.B3AST.Program SourceRange) (solverPath : 
               let mut procResults := []
               -- Check each VC
               for (vc, sourceStmt) in vcState.verificationConditions.reverse do
-                let result ← checkPropertyIsolated state vc decl (some sourceStmt)
+                let result ← match sourceStmt with
+                  | .reach _ _ => reach state vc decl (some sourceStmt)
+                  | _ => prove state vc decl (some sourceStmt)
 
                 -- If failed, try diagnosement
                 let diagnosement ← if result.decision != .unsat then

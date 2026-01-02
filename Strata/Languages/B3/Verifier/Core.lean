@@ -70,12 +70,12 @@ def verifyProgram (prog : B3AST.Program SourceRange) (solverPath : String := "z3
                       paramNames.foldl (fun body pname =>
                         Factory.quant .all pname .int trigger body
                       ) axiomBody
-                    state ← addAssertion state axiomTerm
+                    state ← addAxiom state axiomTerm
                 | none => pure ()
             | none => pure ()
         | .axiom _ _ expr =>
             match expressionToSMT ConversionContext.empty expr with
-            | some term => state ← addAssertion state term
+            | some term => state ← addAxiom state term
             | none => pure ()
         | .procedure m name params specs body =>
             -- Only verify parameter-free procedures
@@ -85,7 +85,9 @@ def verifyProgram (prog : B3AST.Program SourceRange) (solverPath : String := "z3
               let vcState := statementToVCs ConversionContext.empty VCGenState.empty bodyStmt
               -- Check each VC
               for (vc, sourceStmt) in vcState.verificationConditions.reverse do
-                let result ← checkPropertyIsolated state vc (.procedure m name params specs body) (some sourceStmt)
+                let result ← match sourceStmt with
+                  | .reach _ _ => reach state vc (.procedure m name params specs body) (some sourceStmt)
+                  | _ => prove state vc (.procedure m name params specs body) (some sourceStmt)
                 results := results ++ [result]
             else
               pure ()  -- Skip procedures with parameters for now
@@ -207,12 +209,12 @@ def buildProgramState (prog : Strata.B3AST.Program SourceRange) (solverPath : St
                       paramNames.foldl (fun body pname =>
                         Factory.quant .all pname .int trigger body
                       ) axiomBody
-                    state ← addAssertion state axiomTerm
+                    state ← addAxiom state axiomTerm
                 | none => pure ()
             | none => pure ()
         | .axiom _ _ expr =>
             match expressionToSMT ConversionContext.empty expr with
-            | some term => state ← addAssertion state term
+            | some term => state ← addAxiom state term
             | none => pure ()
         | _ => pure ()
 

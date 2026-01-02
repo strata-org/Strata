@@ -104,6 +104,17 @@ partial def statementToVCs (ctx : ConversionContext) (state : VCGenState) : B3AS
       match expressionToSMT ctx expr with
       | some term => state.addPathCondition term
       | none => state
+  | .reach m expr =>
+      -- Generate reachability check
+      match expressionToSMT ctx expr with
+      | some term =>
+          let vc := if state.pathConditions.isEmpty then
+            term
+          else
+            let pathCond := state.pathConditions.foldl (fun acc t => Term.app .and [acc, t] .bool) (Term.bool true)
+            Term.app .and [pathCond, term] .bool
+          state.addVC vc (.reach m expr)
+      | none => state
   | .blockStmt _ stmts =>
       -- Process statements sequentially
       stmts.val.toList.foldl (statementToVCs ctx) state

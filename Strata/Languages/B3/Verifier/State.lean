@@ -6,6 +6,7 @@
 
 import Strata.Languages.B3.Verifier.Conversion
 import Strata.Languages.B3.Verifier.Formatter
+import Strata.Languages.B3.DDMTransform.DefinitionAST
 import Strata.DL.SMT.Solver
 
 /-!
@@ -49,7 +50,7 @@ def addFunctionDecl (state : B3VerificationState) (name : String) (argTypes : Li
   let _ ← (Solver.declareFun name argTypes returnType).run state.solver
   return { state with declaredFunctions := (name, argTypes, returnType) :: state.declaredFunctions }
 
-def addAssertion (state : B3VerificationState) (term : Term) : IO B3VerificationState := do
+def addAxiom (state : B3VerificationState) (term : Term) : IO B3VerificationState := do
   let _ ← (Solver.assert (formatTermDirect term)).run state.solver
   return { state with assertions := term :: state.assertions }
 
@@ -81,7 +82,7 @@ def checkProperty (state : B3VerificationState) (term : Term) (sourceDecl : B3AS
     model := model
   }
 
-def checkPropertyIsolated (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : Option (B3AST.Statement SourceRange)) : IO CheckResult := do
+def prove (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : Option (B3AST.Statement SourceRange)) : IO CheckResult := do
   let _ ← push state
   let result ← checkProperty state term sourceDecl sourceStmt
   let _ ← pop state
@@ -91,4 +92,36 @@ def closeVerificationState (state : B3VerificationState) : IO Unit := do
   let _ ← (Solver.exit).run state.solver
   pure ()
 
+/-- Check if a property is reachable (reach statement) -/
+def reach (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : Option (B3AST.Statement SourceRange)) : IO CheckResult := do
+  let _ ← push state
+  let runCheck : SolverM (Decision × Option String) := do
+    -- Assert the property itself (not negation)
+    -- sat = reachable, unsat = provably unreachable
+    Solver.assert (formatTermDirect term)
+    let decision ← Solver.checkSat []
+    let model := if decision == .sat then some "reachable" else none
+    return (decision, model)
+  let (decision, model) ← runCheck.run state.solver
+  let _ ← pop state
+  return {
+    decl := sourceDecl
+    sourceStmt := sourceStmt
+    decision := decision
+    model := model
+  }
+
 end Strata.B3.Verifier
+
+
+---------------------------------------------------------------------
+-- Higher-level API (works with B3AST types)
+---------------------------------------------------------------------
+
+/-- Add a B3 function declaration to the verification state -/
+def addFunction (state : B3VerificationState) (decl : B3AST.Decl SourceRange) : IO B3VerificationState := do
+  match decl with
+  | .function _ name params _ _ _ =>
+      let argTypes := params.val.toList.map (fun _ => "Int")  -- TODO: proper type conversion
+      addFunctionDecl state name.val argTypes "Int"
+  | _ => return state
