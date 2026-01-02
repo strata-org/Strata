@@ -17,7 +17,9 @@ Manages incremental verification state for interactive debugging.
 
 namespace Strata.B3.Verifier
 
+open Strata
 open Strata.SMT
+open Strata.B3AST
 
 ---------------------------------------------------------------------
 -- Verification State
@@ -124,4 +126,48 @@ def addFunction (state : B3VerificationState) (decl : B3AST.Decl SourceRange) : 
   | .function _ name params _ _ _ =>
       let argTypes := params.val.toList.map (fun _ => "Int")  -- TODO: proper type conversion
       addFunctionDecl state name.val argTypes "Int"
+  | _ => return state
+
+
+/-- Add a B3 declaration (function or axiom) to the verification state -/
+def addDeclaration (state : B3VerificationState) (decl : B3AST.Decl SourceRange) : IO B3VerificationState := do
+  match decl with
+  | .function _ name params _ _ body =>
+      -- Declare function signature
+      let argTypes := params.val.toList.map (fun _ => "Int")
+      let mut state' ← addFunctionDecl state name.val argTypes "Int"
+
+      -- Add function definition as axiom if body exists
+      match body.val with
+      | some (.functionBody _ whens bodyExpr) =>
+          let paramNames := params.val.toList.map (fun p => match p with | .fParameter _ _ n _ => n.val)
+          let ctx' := paramNames.foldl (fun acc n => acc.push n) ConversionContext.empty
+          match expressionToSMT ctx' bodyExpr with
+          | some bodyTerm =>
+              let paramVars := paramNames.map (fun n => Term.var ⟨n, .int⟩)
+              let uf : UF := { id := name.val, args := paramVars.map (fun t => ⟨"_", t.typeOf⟩), out := .int }
+              let funcCall := Term.app (.uf uf) paramVars .int
+              let equality := Term.app .eq [funcCall, bodyTerm] .bool
+              let axiomBody := if whens.val.isEmpty then
+                equality
+              else
+                let whenTerms := whens.val.toList.filterMap (fun w =>
+                  match w with | .when _ e => expressionToSMT ctx' e
+                )
+                let antecedent := whenTerms.foldl (fun acc t => Term.app .and [acc, t] .bool) (Term.bool true)
+                Term.app .or [Term.app .not [antecedent] .bool, equality] .bool
+              let trigger := Term.app .triggers [funcCall] .trigger
+              let axiomTerm := if paramNames.isEmpty then
+                axiomBody
+              else
+                paramNames.foldl (fun body pname =>
+                  Factory.quant .all pname .int trigger body
+                ) axiomBody
+              addAxiom state' axiomTerm
+          | none => return state'
+      | none => return state'
+  | .axiom _ _ expr =>
+      match expressionToSMT ConversionContext.empty expr with
+      | some term => addAxiom state term
+      | none => return state
   | _ => return state
