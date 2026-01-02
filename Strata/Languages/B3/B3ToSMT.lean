@@ -275,8 +275,9 @@ def programToSMTCommands (prog : B3AST.Program M) : List String :=
                     let axiomTerm := if paramNames.isEmpty then
                       axiomBody
                     else
+                      -- Create trigger from the function call (e.g., f(x) not just x)
+                      let trigger := Term.app .triggers [funcCall] .trigger
                       paramNames.foldl (fun body pname =>
-                        let trigger := Factory.mkSimpleTrigger pname .int
                         Factory.quant .all pname .int trigger body
                       ) axiomBody
                     [s!"(assert {formatTermDirect axiomTerm})"]
@@ -331,7 +332,7 @@ def testB3ToSMT (prog : Program) : IO Unit := do
 
 /--
 info: (declare-fun abs (Int) Int)
-(assert (forall ((x Int)) (! (= (abs x) (ite (>= x 0) x (- x))) :pattern (x))))
+(assert (forall ((x Int)) (! (= (abs x) (ite (>= x 0) x (- x))) :pattern ((abs x)))))
 (push 1)
 (assert (not (= (abs (- 5)) 5)))
 (check-sat)
@@ -348,8 +349,8 @@ check abs(-5) == 5
 /--
 info: (declare-fun isEven (Int) Int)
 (declare-fun isOdd (Int) Int)
-(assert (forall ((n Int)) (! (= (isEven n) (ite (= n 0) 1 (isOdd (- n 1)))) :pattern (n))))
-(assert (forall ((n Int)) (! (= (isOdd n) (ite (= n 0) 0 (isEven (- n 1)))) :pattern (n))))
+(assert (forall ((n Int)) (! (= (isEven n) (ite (= n 0) 1 (isOdd (- n 1)))) :pattern ((isEven n)))))
+(assert (forall ((n Int)) (! (= (isOdd n) (ite (= n 0) 0 (isEven (- n 1)))) :pattern ((isOdd n)))))
 (push 1)
 (assert (not (= (isEven 4) 1)))
 (check-sat)
