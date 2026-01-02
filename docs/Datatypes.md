@@ -115,7 +115,6 @@ Templates are defined with three key properties:
 1. **Iteration Scope**: Determines how many functions are generated
    - `perConstructor`: One function per constructor (e.g., testers)
    - `perField`: One function per unique field name (e.g., accessors)
-   - `perConstructorField`: One function per (constructor, field) pair
 
 2. **Name Pattern**: How to construct the function name
    - `.datatype` - The datatype name

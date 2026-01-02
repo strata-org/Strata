@@ -17,7 +17,7 @@ Most users should import `Strata.DDM.AST` rather than this module directly.
 
 Function templates specify patterns for generating auxiliary functions from datatype
 declarations. Each template has:
-- An iteration scope (perConstructor, perField, or perConstructorField)
+- An iteration scope (perConstructor or perField)
 - A name pattern for generating function names
 - Parameter and return type specifications
 -/
@@ -37,8 +37,6 @@ inductive FunctionIterScope where
   | perConstructor
   /-- One function per field (across all constructors) -/
   | perField
-  /-- One function per (constructor, field) pair -/
-  | perConstructorField
   deriving BEq, Repr, DecidableEq, Inhabited
 
 /--
@@ -66,8 +64,6 @@ inductive NamePatternPart where
   | constructor
   /-- Placeholder for the field name -/
   | field
-  /-- Placeholder for the field index -/
-  | fieldIndex
   deriving BEq, Repr, DecidableEq, Inhabited
 
 /--
@@ -94,27 +90,23 @@ Each part is expanded based on its type:
 - `datatype` → the datatype name
 - `constructor` → the constructor name (or empty string if not provided)
 - `field` → the field name (or empty string if not provided)
-- `fieldIndex` → the field index as a string (or empty string if not provided)
 -/
 def expandNamePattern (pattern : Array NamePatternPart)
     (datatypeName : String)
     (constructorName : Option String := none)
-    (fieldName : Option String := none)
-    (fieldIdx : Option Nat := none) : String :=
+    (fieldName : Option String := none) : String :=
   pattern.foldl (init := "") fun acc part =>
     acc ++ match part with
     | .literal s => s
     | .datatype => datatypeName
     | .constructor => constructorName.getD ""
     | .field => fieldName.getD ""
-    | .fieldIndex => fieldIdx.map toString |>.getD ""
 
 /--
 Validate a name pattern for scope compatibility.
 Returns `none` if valid, or `some errorMessage` if invalid.
-- `perConstructor` scope cannot use `.field` or `.fieldIndex` placeholders
+- `perConstructor` scope cannot use `.field` placeholder
 - `perField` scope cannot use `.constructor` placeholder
-- `perConstructorField` scope can use all placeholders
 -/
 def validateNamePattern (pattern : Array NamePatternPart) (scope : FunctionIterScope)
     : Option String :=
@@ -122,8 +114,6 @@ def validateNamePattern (pattern : Array NamePatternPart) (scope : FunctionIterS
   | .perConstructor =>
     if pattern.any (· == .field) then
       some "Placeholder 'field' is not available in perConstructor scope"
-    else if pattern.any (· == .fieldIndex) then
-      some "Placeholder 'fieldIndex' is not available in perConstructor scope"
     else
       none
   | .perField =>
@@ -131,8 +121,6 @@ def validateNamePattern (pattern : Array NamePatternPart) (scope : FunctionIterS
       some "Placeholder 'constructor' is not available in perField scope"
     else
       none
-  | .perConstructorField =>
-    none
 
 end Strata
 end

@@ -754,14 +754,12 @@ private instance : CachedToIon FunctionIterScope where
     return match v with
     | .perConstructor => ionSymbol! "perConstructor"
     | .perField => ionSymbol! "perField"
-    | .perConstructorField => ionSymbol! "perConstructorField"
 
 private instance : FromIon FunctionIterScope where
   fromIon v := do
     match ← .asSymbolString "FunctionIterScope" v with
     | "perConstructor" => return .perConstructor
     | "perField" => return .perField
-    | "perConstructorField" => return .perConstructorField
     | s => throw s!"Unknown FunctionIterScope: {s}"
 
 end FunctionIterScope
@@ -800,7 +798,6 @@ private instance : CachedToIon NamePatternPart where
     | .datatype => ionSymbol! "datatype"
     | .constructor => ionSymbol! "constructor"
     | .field => ionSymbol! "field"
-    | .fieldIndex => ionSymbol! "fieldIndex"
 
 private instance : FromIon NamePatternPart where
   fromIon v := do
@@ -810,7 +807,6 @@ private instance : FromIon NamePatternPart where
       | "datatype" => return .datatype
       | "constructor" => return .constructor
       | "field" => return .field
-      | "fieldIndex" => return .fieldIndex
       | _ => throw s!"Unknown NamePatternPart symbol: {s}"
     | .sexp args _ =>
       let ⟨p⟩ ← .checkArgCount "NamePatternPart" args 2

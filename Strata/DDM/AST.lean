@@ -703,7 +703,7 @@ def resolveTypeRef (ref : TypeRef)
   | .fieldType =>
     match fieldType with
     | some ft => .ok ft
-    | none => .error "TypeRef.fieldType is only valid in perField or perConstructorField scope"
+    | none => .error "TypeRef.fieldType is only valid in perField scope"
   | .builtin name => .ok <| TypeExprF.ident default ⟨dialectName, name⟩ #[]
 
 /--
@@ -770,7 +770,6 @@ its iteration scope:
 like `..isNone`)
 - **perField**: Generates one function per unique field across all constructors
 (e.g., accessors)
-- **perConstructorField**: Generates one function per (constructor, field) pair
 
 **Parameters:**
 - `datatypeName`: Name of the datatype (used in name pattern expansion)
@@ -835,21 +834,6 @@ def expandSingleTemplate
             (funcs.push (funcName, funcType), errs, names.insert funcName)
           | .error e =>
             (funcs, errs.push e, names)
-      { functions := funcs, errors := errs }
-
-    | .perConstructorField =>
-      -- Generate one function per (constructor, field) pair
-      let (funcs, errs, _) := constructorInfo.foldl (init := (#[], #[], existingNames)) fun acc constr =>
-        constr.fields.foldl (init := acc) fun (funcs, errs, names) (fieldName, fieldTp) =>
-          let funcName := expandNamePattern template.namePattern datatypeName (some constr.name) (some fieldName)
-          if names.contains funcName then
-            (funcs, errs.push s!"Duplicate function name: {funcName}", names)
-          else
-            match buildFunctionType template datatypeType (some fieldTp) dialectName with
-            | .ok funcType =>
-              (funcs.push (funcName, funcType), errs, names.insert funcName)
-            | .error e =>
-              (funcs, errs.push e, names)
       { functions := funcs, errors := errs }
 
 /--

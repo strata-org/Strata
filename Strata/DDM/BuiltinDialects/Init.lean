@@ -210,7 +210,7 @@ def initDialect : Dialect := BuiltinM.create! "Init" #[] do
   -- Function Template Syntax for Datatype Declarations
   -- =====================================================================
 
-  -- FunctionIterScope: perConstructor | perField | perConstructorField
+  -- FunctionIterScope: perConstructor | perField
   let FunctionIterScope := q`Init.FunctionIterScope
   declareCat FunctionIterScope
   declareOp {
@@ -225,14 +225,8 @@ def initDialect : Dialect := BuiltinM.create! "Init" #[] do
     category := FunctionIterScope,
     syntaxDef := .ofList [.str "perField"]
   }
-  declareOp {
-    name := "scopePerConstructorField",
-    argDecls := .empty,
-    category := FunctionIterScope,
-    syntaxDef := .ofList [.str "perConstructorField"]
-  }
 
-  -- NamePatternPart: .literal "str" | .datatype | .constructor | .field | .fieldIndex
+  -- NamePatternPart: .literal "str" | .datatype | .constructor | .field
   let NamePatternPart := q`Init.NamePatternPart
   declareCat NamePatternPart
   declareOp {
@@ -260,12 +254,6 @@ def initDialect : Dialect := BuiltinM.create! "Init" #[] do
     argDecls := .empty,
     category := NamePatternPart,
     syntaxDef := .ofList [.str ".field"]
-  }
-  declareOp {
-    name := "patternFieldIndex",
-    argDecls := .empty,
-    category := NamePatternPart,
-    syntaxDef := .ofList [.str ".fieldIndex"]
   }
 
   -- NamePattern: array of NamePatternPart

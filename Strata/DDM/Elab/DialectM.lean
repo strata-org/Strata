@@ -266,7 +266,6 @@ def translateFunctionIterScope (tree : Tree) : ElabM FunctionIterScope := do
   match opInfo.op.name with
   | q`Init.scopePerConstructor => return .perConstructor
   | q`Init.scopePerField => return .perField
-  | q`Init.scopePerConstructorField => return .perConstructorField
   | name => panic! s!"Unknown FunctionIterScope: {name.fullName}"
 
 /-- Translate a NamePatternPart syntax tree to the AST type -/
@@ -281,7 +280,6 @@ def translateNamePatternPart (tree : Tree) : ElabM NamePatternPart := do
   | q`Init.patternDatatype => return .datatype
   | q`Init.patternConstructor => return .constructor
   | q`Init.patternField => return .field
-  | q`Init.patternFieldIndex => return .fieldIndex
   | name => panic! s!"Unknown NamePatternPart: {name.fullName}"
 
 /-- Translate a NamePattern syntax tree (array of NamePatternPart) -/

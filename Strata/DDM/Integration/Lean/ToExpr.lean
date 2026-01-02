@@ -235,7 +235,6 @@ instance : ToExpr FunctionIterScope where
   toExpr
   | .perConstructor => mkConst ``FunctionIterScope.perConstructor
   | .perField => mkConst ``FunctionIterScope.perField
-  | .perConstructorField => mkConst ``FunctionIterScope.perConstructorField
 
 end FunctionIterScope
 
@@ -259,7 +258,6 @@ instance : ToExpr NamePatternPart where
   | .datatype => mkConst ``NamePatternPart.datatype
   | .constructor => mkConst ``NamePatternPart.constructor
   | .field => mkConst ``NamePatternPart.field
-  | .fieldIndex => mkConst ``NamePatternPart.fieldIndex
 
 end NamePatternPart
 
