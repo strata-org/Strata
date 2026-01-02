@@ -34,7 +34,7 @@ open LTy.Syntax LExpr.SyntaxMono in
                         typeArgs := ["a", "b"],
                         inputs := [(BoogieIdent.locl "w", mty[int]), (BoogieIdent.locl "x", mty[%a]), (BoogieIdent.locl "y", mty[%b]), (BoogieIdent.locl "z", mty[%a])],
                         output := mty[%a],
-                        body := some (LExpr.fvar () (BoogieIdent.locl "x") none) } : Function)
+                        body := some (LExpr.fvar .empty (BoogieIdent.locl "x") none) } : Function)
          return format type
 
 ---------------------------------------------------------------------

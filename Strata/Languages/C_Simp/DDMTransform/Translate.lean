@@ -19,11 +19,12 @@ namespace C_Simp
 
 open C_Simp Lambda Imperative
 open Std (ToFormat Format format)
+open MetaData (MetaData.empty)
 
 ---------------------------------------------------------------------
 
 def initVarValue (id : String) : LExpr CSimpLParams.mono :=
-  .fvar () ("init_" ++ id) none
+  .fvar .empty ("init_" ++ id) none
 
 ---------------------------------------------------------------------
 
@@ -117,7 +118,7 @@ instance : Inhabited (List Statement × TransBindings) where
   default := ([], {})
 
 instance : Inhabited (C_Simp.Function × TransBindings) where
-  default := ({name := "badfun", pre := .true (), post := .true (), body := [], ret_ty := (.tcons "bad" []), inputs := {} }, {})
+  default := ({name := "badfun", pre := .true .empty, post := .true .empty, body := [], ret_ty := (.tcons "bad" []), inputs := {} }, {})
 
 instance : Inhabited (List C_Simp.Function × TransBindings) where
   default := ([], {})
@@ -160,22 +161,25 @@ end
 
 ---------------------------------------------------------------------
 
+instance : Inhabited (LExpr CSimpLParams.mono) where
+  default := .fvar .empty "false" .none
+
 def translateFn (q : QualifiedIdent) : TransM (LExpr CSimpLParams.mono) :=
   match q with
-  | q`C_Simp.and      => return (.op () "Bool.And"     none)
-  | q`C_Simp.or       => return (.op () "Bool.Or"      none)
-  | q`C_Simp.not      => return (.op () "Bool.Not"     none)
-  | q`C_Simp.le       => return (.op () "Int.Le"       none)
-  | q`C_Simp.lt       => return (.op () "Int.Lt"       none)
-  | q`C_Simp.ge       => return (.op () "Int.Ge"       none)
-  | q`C_Simp.gt       => return (.op () "Int.Gt"       none)
-  | q`C_Simp.add      => return (.op () "Int.Add"      none)
-  | q`C_Simp.sub      => return (.op () "Int.Sub"      none)
-  | q`C_Simp.mul      => return (.op () "Int.Mul"      none)
-  | q`C_Simp.div      => return (.op () "Int.Div"      none)
-  | q`C_Simp.mod      => return (.op () "Int.Mod"      none)
-  | q`C_Simp.len      => return (.op () "Array.Len"    none)
-  | q`C_Simp.get      => return (.op () "Array.Get"    none)
+  | q`C_Simp.and      => return (.op .empty "Bool.And"     none)
+  | q`C_Simp.or       => return (.op .empty "Bool.Or"      none)
+  | q`C_Simp.not      => return (.op .empty "Bool.Not"     none)
+  | q`C_Simp.le       => return (.op .empty "Int.Le"       none)
+  | q`C_Simp.lt       => return (.op .empty "Int.Lt"       none)
+  | q`C_Simp.ge       => return (.op .empty "Int.Ge"       none)
+  | q`C_Simp.gt       => return (.op .empty "Int.Gt"       none)
+  | q`C_Simp.add      => return (.op .empty "Int.Add"      none)
+  | q`C_Simp.sub      => return (.op .empty "Int.Sub"      none)
+  | q`C_Simp.mul      => return (.op .empty "Int.Mul"      none)
+  | q`C_Simp.div      => return (.op .empty "Int.Div"      none)
+  | q`C_Simp.mod      => return (.op .empty "Int.Mod"      none)
+  | q`C_Simp.len      => return (.op .empty "Array.Len"    none)
+  | q`C_Simp.get      => return (.op .empty "Array.Get"    none)
   | _                 => TransM.error s!"translateFn: Unknown/unimplemented function {repr q}"
 
 mutual
@@ -187,51 +191,51 @@ partial def translateExpr (bindings : TransBindings) (arg : Arg) :
   match op, args with
   -- Constants/Literals
   | .fn _ q`C_Simp.btrue, [] =>
-    return .true ()
+    return .true .empty
   | .fn _ q`C_Simp.bfalse, [] =>
-    return .false ()
+    return .false .empty
   | .fn _ q`C_Simp.to_int, [xa] =>
     let n ← translateNat xa
-    return .intConst () n
+    return .intConst .empty n
   -- Equality
   | .fn _ q`C_Simp.eq, [_tpa, xa, ya] =>
     let x ← translateExpr bindings xa
     let y ← translateExpr bindings ya
-    return .eq () x y
+    return .eq .empty x y
   -- Unary function applications
   | .fn _ q`C_Simp.not, [xa] =>
-    let fn := LExpr.op () ⟨"Bool.Not", ()⟩ none
+    let fn := LExpr.op MetaData.empty ⟨"Bool.Not", Boogie.Visibility.unres⟩ none
     let x ← translateExpr bindings xa
-    return .mkApp () fn [x]
+    return .mkApp .empty fn [x]
   -- Unary array operations
   | .fn _ q`C_Simp.len, [xa] =>
     let fn ← translateFn q`C_Simp.len
     let x ← translateExpr bindings xa
-    return .mkApp () fn [x]
+    return .mkApp .empty fn [x]
   -- Binary function applications
   | .fn _ fni, [xa, ya] =>
     let fn ← translateFn fni
     let x ← translateExpr bindings xa
     let y ← translateExpr bindings ya
-    return .mkApp () fn [x, y]
+    return .mkApp .empty fn [x, y]
   -- NOTE: Bound and free variables are numbered differently. Bound variables
   -- ascending order (so closer to deBrujin levels).
   | .bvar _ i, [] =>
     assert! i < bindings.boundVars.size
     let expr := bindings.boundVars[bindings.boundVars.size - (i+1)]!
     match expr with
-    | .bvar _ _ => return .bvar () i
+    | .bvar _ _ => return .bvar .empty i
     | _ => return expr
   | .fvar _ i, [] =>
     assert! i < bindings.freeVars.size
     let name := bindings.freeVars[i]!
-    return (.fvar () name none)
+    return (.fvar .empty name none)
   | .fvar _ i, argsa =>
     -- Call of a function declared/defined in C_Simp.
     assert! i < bindings.freeVars.size
     let name := bindings.freeVars[i]!
     let args ← translateExprs bindings argsa.toArray
-    return .mkApp () (.op () name none) args.toList
+    return .mkApp .empty (.op .empty name none) args.toList
   | op, args =>
     TransM.error s!"translateExpr unimplemented op:\n\
                      Op: {repr op}\n\
@@ -313,7 +317,7 @@ partial def translateDeclList (bindings : TransBindings) (arg : Arg) :
     let fst ← translateDeclList bindings args[0]!
     let (id, targs, mty) ← translateBindMk bindings args[1]!
     let lty : LTy := .forAll targs mty
-    let id : Lambda.Identifier Unit := ⟨id, ()⟩
+    let id : Lambda.Identifier Boogie.Visibility := ⟨id, .unres⟩
     pure (fst ++ ListMap.ofList [(id, lty)])
   | _ => TransM.error s!"translateDeclList unimplemented for {repr op}"
 
@@ -330,7 +334,7 @@ partial def translateMonoDeclList (bindings : TransBindings) (arg : Arg) :
     let args ← checkOpArg arg q`C_Simp.monoDeclPush 2
     let fst ← translateMonoDeclList bindings args[0]!
     let (id, mty) ← translateMonoBindMk bindings args[1]!
-    let id : Lambda.Identifier Unit := ⟨id, ()⟩
+    let id : Lambda.Identifier Boogie.Visibility := ⟨id, .unres⟩
     pure (fst ++ ListMap.ofList [(id, mty)])
   | _ => TransM.error s!"translateMonoDeclList unimplemented for {repr op}"
 
@@ -343,7 +347,7 @@ def translateBindings (bindings : TransBindings) (op : Arg) :
       let bargs ← checkOpArg op q`C_Simp.mkBinding 2
       let id ← translateIdent bargs[0]!
       let tp ← translateLMonoTy bindings bargs[1]!
-      let id : Lambda.Identifier Unit := ⟨id, ()⟩
+      let id : Lambda.Identifier Boogie.Visibility := ⟨id, .unres⟩
       return (id, tp))
     return arr.toList
   | _ =>
@@ -361,7 +365,7 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     let id ← translateIdent ida
     let tp ← translateLMonoTy bindings tpa
     let ty := (.forAll [] tp)
-    let newFVar: LExpr CSimpLParams.mono := LExpr.fvar () id none
+    let newFVar: LExpr CSimpLParams.mono := LExpr.fvar .empty id none
     let bbindings := bindings.boundVars ++ [newFVar]
     let newBindings := { bindings with
                          boundVars := bbindings,
@@ -372,7 +376,7 @@ partial def translateStmt (bindings : TransBindings) (arg : Arg) :
     let tp ← translateLMonoTy bindings tpa
     let val ← translateExpr bindings ea
     let ty := (.forAll [] tp)
-    let newFVar: LExpr CSimpLParams.mono := LExpr.fvar () id none
+    let newFVar: LExpr CSimpLParams.mono := LExpr.fvar .empty id none
     let bbindings := bindings.boundVars ++ [newFVar]
     let newBindings := { bindings with
                          boundVars := bbindings,
@@ -444,7 +448,7 @@ def translateProcedure (bindings : TransBindings) (op : Operation) :
   let pname ← translateIdent op.args[3]!
 
   -- Add parameters to bindings for pre/post/body translation
-  let paramBindings := (sig.keys.map (fun v => (LExpr.fvar () v none))).toArray
+  let paramBindings := (sig.keys.map (fun v => (LExpr.fvar MetaData.empty v none))).toArray
   let extendedBindings := { bindings with
                             boundVars := bindings.boundVars ++ paramBindings,
                             freeVars := bindings.freeVars ++ sig.keys.toArray.map Identifier.name }

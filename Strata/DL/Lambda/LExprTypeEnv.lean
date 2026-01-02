@@ -581,7 +581,8 @@ def LMonoTy.aliasDef? [ToFormat IDMeta] (mty : LMonoTy) (Env : TEnv IDMeta) :
       let alias_inst := lst[0]!
       let alias_def := lst[1]!
       let constraint := (mty, alias_inst)
-      match Constraints.unify [(constraint, (ConstraintDebugInfo.mk constraint ""))] Env.stateSubstInfo with
+      let info := ({ originalConstraint := constraint } : ConstraintDebugInfo Unit)
+      match Constraints.unify [(constraint, some info)] Env.stateSubstInfo with
       | .error e =>
         panic! s!"[LMonoTy.aliasDef?] {e}"
       | .ok S =>

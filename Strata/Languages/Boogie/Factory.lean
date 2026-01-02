@@ -297,6 +297,7 @@ def mapSelectFunc : LFunc BoogieLParams :=
      inputs := [("m", mapTy mty[%k] mty[%v]), ("i", mty[%k])],
      output := mty[%v] }
 
+open Boogie.Syntax in
 /- A `Map` update function with type `∀k, v. Map k v → k → v → Map k v`. -/
 def mapUpdateFunc : LFunc BoogieLParams :=
    { name := "update",
@@ -306,7 +307,7 @@ def mapUpdateFunc : LFunc BoogieLParams :=
      axioms :=
      [
       -- updateSelect: forall m: Map k v, kk: k, vv: v :: m[kk := vv][kk] == vv
-      ToBoogieIdent esM[∀(Map %k %v):
+      eb[∀(Map %k %v):
           (∀ (%k):
             (∀ (%v):{
               (((~select : (Map %k %v) → %k → %v)
@@ -314,7 +315,7 @@ def mapUpdateFunc : LFunc BoogieLParams :=
               (((~select : (Map %k %v) → %k → %v)
                 ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %2) %1) %0)) %1) == %0))],
       -- updatePreserve: forall m: Map k v, okk: k, kk: k, vv: v :: okk != kk ==> m[kk := vv][okk] == m[okk]
-      ToBoogieIdent esM[∀ (Map %k %v): -- %3 m
+      eb[∀ (Map %k %v): -- %3 m
           (∀ (%k): -- %2 okk
             (∀ (%k): -- %1 kk
               (∀ (%v): -- %0 vv
@@ -480,7 +481,7 @@ elab "DefBVOpFuncExprs" "[" sizes:num,* "]" : command => do
       elabCommand (← `(def $opName : Expression.Expr := ($funcName).opExpr))
 
 instance : Inhabited BoogieLParams.Metadata where
-  default := ()
+  default := .empty
 
 DefBVOpFuncExprs [1, 8, 16, 32, 64]
 
@@ -503,8 +504,8 @@ def addTriggerGroupOp : Expression.Expr := addTriggerGroupFunc.opExpr
 def emptyTriggerGroupOp : Expression.Expr :=  emptyTriggerGroupFunc.opExpr
 def addTriggerOp : Expression.Expr := addTriggerFunc.opExpr
 
-instance : Inhabited (⟨ExpressionMetadata, BoogieIdent⟩: LExprParams).Metadata where
-  default := ()
+instance : Inhabited (⟨BoogieExprMetadata, BoogieIdent⟩: LExprParams).Metadata where
+  default := .empty
 
 def intAddOp : Expression.Expr := intAddFunc.opExpr
 def intSubOp : Expression.Expr := intSubFunc.opExpr
@@ -551,11 +552,11 @@ def mapSelectOp : Expression.Expr := mapSelectFunc.opExpr
 def mapUpdateOp : Expression.Expr := mapUpdateFunc.opExpr
 
 def mkTriggerGroup (ts : List Expression.Expr) : Expression.Expr :=
-  ts.foldl (fun g t => .app () (.app () addTriggerOp t) g) emptyTriggerGroupOp
+  ts.foldl (fun g t => .app .empty (.app .empty addTriggerOp t) g) emptyTriggerGroupOp
 
 def mkTriggerExpr (ts : List (List Expression.Expr)) : Expression.Expr :=
   let groups := ts.map mkTriggerGroup
-  groups.foldl (fun gs g => .app () (.app () addTriggerGroupOp g) gs) emptyTriggersOp
+  groups.foldl (fun gs g => .app .empty (.app .empty addTriggerGroupOp g) gs) emptyTriggersOp
 
 /--
 Get all the built-in functions supported by Boogie.

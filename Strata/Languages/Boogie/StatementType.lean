@@ -63,7 +63,7 @@ def typeCheckCmd (C: LContext BoogieLParams) (Env : TEnv Visibility) (P : Progra
            let (inp_sig, Env) ← LMonoTySignature.instantiate C Env proc.header.typeArgs proc.header.inputs
            let inp_mtys := LMonoTys.subst Env.stateSubstInfo.subst inp_sig.values
            let lhs_inp_constraints := (args_tys.zip inp_mtys)
-           let S ← Constraints.unify (Constraints.toDebugConstraints (lhs_inp_constraints ++ ret_lhs_constraints)) Env.stateSubstInfo
+           let S ← Constraints.unify (@Constraints.toDebugConstraints (MetaData Expression) (lhs_inp_constraints ++ ret_lhs_constraints)) Env.stateSubstInfo
            let Env := Env.updateSubst S
            let s' := .call lhs pname args' md
            .ok (s', Env)

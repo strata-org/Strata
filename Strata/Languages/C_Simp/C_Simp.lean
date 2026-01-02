@@ -10,6 +10,7 @@ import Strata.DL.Lambda.Lambda
 import Strata.DL.Lambda.LExpr
 import Strata.DL.Lambda.LTy
 import Strata.DL.Lambda.Identifiers
+import Strata.Languages.Boogie.Identifiers
 
 -- We define the AST for our language here.
 
@@ -21,11 +22,11 @@ import Strata.DL.Lambda.Identifiers
 namespace Strata
 namespace C_Simp
 
-abbrev CSimpLParams: Lambda.LExprParams := {Metadata := Unit, IDMeta := Unit}
+abbrev CSimpLParams: Lambda.LExprParams := Boogie.BoogieLParams
 
 -- Our expression language is `DL/Lambda`
 abbrev Expression : Imperative.PureExpr := {
-  Ident := Lambda.Identifier Unit,
+  Ident := Lambda.Identifier Boogie.Visibility,
   Expr := Lambda.LExpr CSimpLParams.mono,
   Ty := Lambda.LTy,
   TyEnv := Lambda.TEnv Unit,
@@ -54,7 +55,6 @@ structure Function where
   body : List Statement
   ret_ty : Lambda.LMonoTy
   inputs : ListMap Expression.Ident Lambda.LMonoTy
-deriving Inhabited
 
 structure Program where
   funcs : List Function

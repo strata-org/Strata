@@ -8,6 +8,7 @@
 
 import Strata.DL.Lambda.LExprTypeEnv
 import Strata.DL.Lambda.Factory
+import Strata.DL.Util.MetaData
 namespace Boogie
 
 open Std
@@ -54,8 +55,8 @@ abbrev BoogieIdent := Lambda.Identifier Visibility
 instance : ToString Visibility where
   toString v := toString $ ToFormat.format v
 
-abbrev BoogieExprMetadata := Unit
-abbrev BoogieLParams: Lambda.LExprParams := {Metadata := BoogieExprMetadata, IDMeta := Visibility}
+def BoogieExprMetadata := MetaData.MetaData { Identifier := BoogieIdent, Expr := Unit }
+abbrev BoogieLParams: Lambda.LExprParams := { Metadata := BoogieExprMetadata, IDMeta := Visibility }
 abbrev BoogieLabel := String
 
 def BoogieIdentDec : DecidableEq BoogieIdent := inferInstanceAs (DecidableEq (Lambda.Identifier Visibility))
@@ -132,6 +133,13 @@ namespace Syntax
 
 open Lean Elab Meta Lambda.LExpr.SyntaxMono
 
+instance : MkLExprParams BoogieLParams where
+  elabIdent := elabStrIdent
+  toExpr := mkApp2 (mkConst ``Lambda.LExprParams.mk) (mkConst ``MetaData.MetaData) (mkConst ``Unit)
+  defaultMetaData := mkApp (mkConst ``MetaData.MetaData.empty)
+                      (mkApp2 (mkConst ``MetaData.MetaDataParams.mk)
+                              (mkConst ``BoogieIdent) (mkConst ``Unit))
+
 scoped syntax ident : lidentmono
 /-- Elaborator for String identifiers, construct a String instance -/
 def elabBoogieIdent : Syntax → MetaM Expr
@@ -144,19 +152,24 @@ def elabBoogieIdent : Syntax → MetaM Expr
 instance : MkLExprParams ⟨BoogieExprMetadata, Visibility⟩ where
   elabIdent := elabBoogieIdent
   toExpr := mkApp2 (mkConst ``Lambda.LExprParams.mk) (mkConst ``BoogieExprMetadata) (.const ``Visibility [])
+  defaultMetaData := mkApp (mkConst ``MetaData.MetaData.empty)
+                      (mkApp2 (mkConst ``MetaData.MetaDataParams.mk)
+                              (mkConst ``BoogieIdent) (mkConst ``Unit))
 
 elab "eb[" e:lexprmono "]" : term => elabLExprMono (T:=⟨BoogieExprMetadata, Visibility⟩) e
 
+open MetaData.MetaData
+
 /--
-info: Lambda.LExpr.op () (BoogieIdent.unres "old")
+info: Lambda.LExpr.op empty (BoogieIdent.unres "old")
   none : Lambda.LExpr { Metadata := BoogieExprMetadata, IDMeta := Visibility }.mono
 -/
 #guard_msgs in
 #check eb[~old]
 
 /--
-info: Lambda.LExpr.app () (Lambda.LExpr.op () (BoogieIdent.unres "old") none)
-  (Lambda.LExpr.fvar () (BoogieIdent.unres "a")
+info: Lambda.LExpr.app empty (Lambda.LExpr.op empty (BoogieIdent.unres "old") none)
+  (Lambda.LExpr.fvar empty (BoogieIdent.unres "a")
     none) : Lambda.LExpr { Metadata := BoogieExprMetadata, IDMeta := Visibility }.mono
 -/
 #guard_msgs in
@@ -165,7 +178,7 @@ info: Lambda.LExpr.app () (Lambda.LExpr.op () (BoogieIdent.unres "old") none)
 open Lambda.LTy.Syntax in
 
 /--
-info: Lambda.LExpr.fvar () (BoogieIdent.unres "x")
+info: Lambda.LExpr.fvar empty (BoogieIdent.unres "x")
   (some (Lambda.LMonoTy.tcons "bool" [])) : Lambda.LExpr { Metadata := BoogieExprMetadata, IDMeta := Visibility }.mono
 -/
 #guard_msgs in

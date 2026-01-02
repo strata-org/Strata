@@ -13,14 +13,6 @@ namespace Boogie
 open Std (ToFormat Format format)
 open Imperative
 
-instance : ToFormat ExpressionMetadata :=
-  show ToFormat Unit from inferInstance
-
--- ToFormat instance for Expression.Expr
-instance : ToFormat Expression.Expr := by
-  show ToFormat (Lambda.LExpr BoogieLParams.mono)
-  infer_instance
-
 -- Custom ToFormat instance for our specific Scope type to get the desired formatting
 private def formatScope (m : Map BoogieIdent (Option Lambda.LMonoTy × Expression.Expr)) : Std.Format :=
   match m with
@@ -36,14 +28,8 @@ private def formatScope (m : Map BoogieIdent (Option Lambda.LMonoTy × Expressio
 instance : ToFormat (Map BoogieIdent (Option Lambda.LMonoTy × Expression.Expr)) where
   format := formatScope
 
-instance : Inhabited ExpressionMetadata :=
-  show Inhabited Unit from inferInstance
-
-instance : Lambda.Traceable Lambda.LExpr.EvalProvenance ExpressionMetadata where
-  combine _ := ()
-
-instance : Inhabited (Lambda.LExpr ⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩) :=
-  show Inhabited (Lambda.LExpr ⟨⟨Unit, BoogieIdent⟩, LMonoTy⟩) from inferInstance
+instance : Lambda.Traceable Lambda.LExpr.EvalProvenance BoogieExprMetadata where
+  combine _ := .empty
 
 ---------------------------------------------------------------------
 
@@ -253,8 +239,8 @@ def Env.genFVar (E : Env) (xt : (Lambda.IdentT Lambda.LMonoTy Visibility)) :
   Expression.Expr × Env :=
   let (xid, E) := E.genVar xt.ident
   let xe := match xt.ty? with
-            | none => .fvar () xid none
-            | some xty => .fvar () xid xty
+            | none => .fvar .empty xid none
+            | some xty => .fvar .empty xid xty
   (xe, E)
 
 /--
@@ -281,7 +267,7 @@ def Env.insertFreeVarsInOldestScope
   (xs : List (Lambda.IdentT Lambda.LMonoTy Visibility)) (E : Env) : Env :=
   let (xis, xtyei) := xs.foldl
     (fun (acc_ids, acc_pairs) x =>
-      (x.fst :: acc_ids, (x.snd, .fvar () x.fst x.snd) :: acc_pairs))
+      (x.fst :: acc_ids, (x.snd, .fvar .empty x.fst x.snd) :: acc_pairs))
     ([], [])
   let state' := Maps.addInOldest E.exprEnv.state xis xtyei
   { E with exprEnv := { E.exprEnv with state := state' }}
@@ -290,10 +276,10 @@ def Env.insertFreeVarsInOldestScope
 open Imperative Lambda in
 def PathCondition.merge (cond : Expression.Expr) (pc1 pc2 : PathCondition Expression) : PathCondition Expression :=
   let pc1' := pc1.map (fun (label, e) => (label, mkImplies cond e))
-  let pc2' := pc2.map (fun (label, e) => (label, mkImplies (LExpr.ite () cond (LExpr.false ()) (LExpr.true ())) e))
+  let pc2' := pc2.map (fun (label, e) => (label, mkImplies (LExpr.ite .empty cond (LExpr.false .empty) (LExpr.true .empty)) e))
   pc1' ++ pc2'
   where mkImplies (ant con : Expression.Expr) : Expression.Expr :=
-  LExpr.ite () ant con (LExpr.true ())
+  LExpr.ite .empty ant con (LExpr.true .empty)
 
 def Env.performMerge (cond : Expression.Expr) (E1 E2 : Env)
     (_h1 : E1.error.isNone) (_h2 : E2.error.isNone) : Env :=

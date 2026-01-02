@@ -21,6 +21,7 @@ procedure TestLambdaTypeCheck() returns (y : Map int bool)
 {
   var x : Map int int;
   // var x : int;
+  // y := if true then y else x;
   y := x;
 };
 

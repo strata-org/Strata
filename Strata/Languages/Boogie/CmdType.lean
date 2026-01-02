@@ -11,6 +11,8 @@ import Strata.Languages.Boogie.Expressions
 import Strata.DL.Imperative.TypeContext
 import Strata.DL.Lambda.Factory
 
+import Strata.DL.Imperative.CmdType
+
 namespace Boogie
 open Lambda Imperative
 open Std (ToFormat Format format)
@@ -76,20 +78,23 @@ def inferType (C: LContext BoogieLParams) (Env: TEnv Visibility) (c : Cmd Expres
     let ety := ea.toLMonoTy
     return (ea.unresolved, (.forAll [] ety), T)
 
+abbrev CmdConstraints := List ((LTy × LTy) × Option ((MetaData Expression) × (MetaData Expression)))
+abbrev CmdConstraintsMono := List ((LMonoTy × LMonoTy) × Option ((MetaData Expression) × (MetaData Expression)))
+
 /--
 Type constraints come from functions `inferType` and `preprocess`, both of which
 are expected to return `LTy`s with no bound variables which can be safely
 converted to `LMonoTy`s.
 -/
-def canonicalizeConstraints (constraints : List (LTy × LTy)) : Except Format Constraints := do
+def canonicalizeConstraints (constraints : CmdConstraints) : Except Format CmdConstraintsMono := do
   match constraints with
   | [] => .ok []
-  | (t1, t2) :: c_rest =>
+  | ((t1, t2), md) :: c_rest =>
     if h: t1.isMonoType && t2.isMonoType then
       let t1 := t1.toMonoType (by simp_all)
       let t2 := t2.toMonoType (by simp at h; simp_all only)
       let c_rest ← canonicalizeConstraints c_rest
-      .ok ((t1, t2) :: c_rest)
+      .ok (((t1, t2), md) :: c_rest)
     else
       .error f!"[Implementation Error in canonicalizeConstraints] \
                 Expected to see only mono-types in \
@@ -97,13 +102,34 @@ def canonicalizeConstraints (constraints : List (LTy × LTy)) : Except Format Co
                 t1: {t1}\nt2: {t2}\n"
 
 def unifyTypes (Env: TEnv Visibility)
-    (constraints : List (LTy × LTy))
+    (constraints : CmdConstraints)
     (md : MetaData Expression) :
     Except Format (TEnv Visibility) := do
   match canonicalizeConstraints constraints with
   | .error e => .error f!"{Format.line}{formatFileRangeD md} {e}"
   | .ok constraints =>
-    match Constraints.unify (Constraints.toDebugConstraints constraints) Env.stateSubstInfo with
+    let dbgConstraints := constraints.map (fun c =>
+             let constraint := c.fst
+             let (md1, md2) := if h : c.snd.isSome then
+                                  (some (c.snd.get h).fst, some (c.snd.get h).snd)
+                               else
+                                (.none, .none)
+            ((constraint, some {originalConstraint := constraint,
+                                type1_md := md1, type2_md := md2})))
+    let mdf : MetaData Expression → Format :=
+      fun (md : MetaData Expression) =>
+        let f := f!""
+        let lvalue := md.findElem (.label "LValue")
+        let f := match lvalue with
+          | none => f
+          | some v => f!"{v.value}"
+      let rvalueof := md.findElem (.label "RValueOf")
+      let f := match rvalueof with
+        | none => f
+        | some v => f!"RHS of {v.value}"
+      f
+    let unifyAns := Constraints.unify dbgConstraints Env.stateSubstInfo mdf
+    match unifyAns with
     | .error e => .error f!"{Format.line}{formatFileRangeD md} {e}"
     | .ok S =>
       let Env := Env.updateSubst S

@@ -51,8 +51,8 @@ are only left with `old(var)` expressions:
 -/
 @[match_pattern]
 def oldExpr
-  (mApp: ExpressionMetadata)
-  (mOp: ExpressionMetadata)
+  (mApp: BoogieExprMetadata)
+  (mOp: BoogieExprMetadata)
   {tyold : Option Lambda.LMonoTy}
   (e : Expression.Expr)
   : Expression.Expr
@@ -61,9 +61,9 @@ def oldExpr
 
 @[match_pattern]
 def oldVar
-  (mApp: ExpressionMetadata)
-  (mOp: ExpressionMetadata)
-  (mVar: ExpressionMetadata)
+  (mApp: BoogieExprMetadata)
+  (mOp: BoogieExprMetadata)
+  (mVar: BoogieExprMetadata)
   {tyold : Option Lambda.LMonoTy}
   (v : Expression.Ident)
   {tyv : Option Lambda.LMonoTy}
@@ -85,11 +85,11 @@ def IsOldPred.decidablePred (e : Expression.Expr): Decidable (IsOldPred e) :=
     by apply isFalse; intros Hold; cases Hold
 
 inductive IsFvar : Expression.Expr → Prop where
-  | fvar : IsFvar (.fvar () v ty)
+  | fvar : IsFvar (.fvar md v ty)
 
 def IsFvar.decidablePred (e : Expression.Expr): Decidable (IsFvar e) :=
   match He : e with
-  | .fvar _ v ty => isTrue fvar
+  | .fvar md v ty => isTrue fvar
   | .op _ _ _ | .const _ _ | .bvar _ _ | .abs _ _ _
   | .quant _ _ _ _ _ | .app _ _ _ | .ite _ _ _ _  | .eq _ _ _ =>
     by apply isFalse; intros H; cases H
@@ -493,7 +493,8 @@ case app fn e fn_ih e_ih =>
       split at Hnorm <;> simp_all
       simp [normalizeOldExpr] at Hnorm
       next o ty o' ty' _he h heq =>
-      generalize Hop : (Lambda.LExpr.op () o' ty') = op at Hnorm
+      rename_i m1 m2 _ _
+      generalize Hop : (Lambda.LExpr.op m2 o' ty') = op at Hnorm
       generalize Hne : (normalizeOldExpr e) = ne at *
       cases Hnorm <;> simp_all
     . intros Hold

@@ -191,7 +191,7 @@ instance {P} [Repr P.Expr] [Repr P.Identifier] : Repr (MetaDataElem P) where
 
 /-! ### Common metadata fields -/
 
-def fileRange {P} : MetaDataElem.Field P := .label "fileRange"
+def fileRange {Ident} : MetaDataElem.Field Ident := .label "fileRange"
 
 def formatFileRange? {P} [BEq P.Identifier] (md : MetaData P) (includeEnd? : Bool := false) :
     Option Std.Format := do
@@ -212,8 +212,8 @@ def formatFileRange? {P} [BEq P.Identifier] (md : MetaData P) (includeEnd? : Boo
 def formatFileRangeD {P} [BEq P.Identifier] (md : MetaData P) (includeEnd? : Bool := false)
     : Std.Format :=
   match formatFileRange? md includeEnd? with
-  | .none => "<no position info>"
-  | .some str => s!"{str}"
+  | .none => "<no sourceLoc info>"
+  | .some f => f
 
 end MetaData
 

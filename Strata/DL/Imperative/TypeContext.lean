@@ -21,7 +21,7 @@ class TypeContext (P : PureExpr) (C: Type) (T : Type) (MD : Type) where
   update       : T → P.Ident → P.Ty → T
   lookup       : T → P.Ident → Option P.Ty
   inferType    : C → T → Cmd P → P.Expr → MD → Except Format (P.Expr × P.Ty × T)
-  unifyTypes   : T → List (P.Ty × P.Ty) → MD → Except Format T
+  unifyTypes   : T → List ((P.Ty × P.Ty) × Option (MD × MD)) → MD → Except Format T
 
 ---------------------------------------------------------------------
 end Imperative

@@ -19,7 +19,7 @@ namespace Boogie
 namespace Statement
 
 open Std (ToFormat Format format)
-open MetaData (MetaDataElem.mk)
+open MetaData (MetaDataElem.mk MetaData.empty)
 open Lambda
 
 ---------------------------------------------------------------------
@@ -83,7 +83,7 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
     -- variables.
     let lhs_tys :=
       lhs.map
-      (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
+      (fun l => (E.exprEnv.state.findD l (none, .fvar .empty l none)).fst)
     let lhs_typed := lhs.zip lhs_tys
     let (lhs_fvars, E) := E.genFVars lhs_typed
     let return_tys := proc.header.outputs.keys.map
@@ -105,7 +105,7 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
     -- reflect the post-call value of these globals.
     let modifies_tys :=
         proc.spec.modifies.map
-        (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
+        (fun l => (E.exprEnv.state.findD l (none, .fvar .empty l none)).fst)
     let modifies_typed := proc.spec.modifies.zip modifies_tys
     let (globals_fvars, E) := E.genFVars modifies_typed
     let globals_post_subst := List.zip modifies_typed globals_fvars
@@ -256,7 +256,7 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
               let label_false := toString (f!"<label_ite_cond_false: !{cond.eraseTypes}>")
               let path_conds_true := Ewn.env.pathConditions.push [(label_true, cond')]
               let path_conds_false := Ewn.env.pathConditions.push
-                                        [(label_false, (.ite () cond' (LExpr.false ()) (LExpr.true ())))]
+                                        [(label_false, (.ite .empty cond' (LExpr.false .empty) (LExpr.true .empty)))]
               let Ewns_t := go' {Ewn with env := {Ewn.env with pathConditions := path_conds_true}} then_ss .none
               -- We empty the deferred proof obligations in the `else` path to
               -- avoid duplicate verification checks -- the deferred obligations
@@ -274,12 +274,12 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
               | _, _ =>
                 let Ewns_t := Ewns_t.map
                                   (fun (ewn : EnvWithNext) =>
-                                    let s' := Imperative.Stmt.ite (LExpr.true ()) ewn.stk.top [] md
+                                    let s' := Imperative.Stmt.ite (LExpr.true MetaData.empty) ewn.stk.top [] md
                                     { ewn with env := ewn.env.popScope,
                                                stk := orig_stk.appendToTop [s']})
                 let Ewns_f := Ewns_f.map
                                   (fun (ewn : EnvWithNext) =>
-                                    let s' := Imperative.Stmt.ite (LExpr.false ()) [] ewn.stk.top md
+                                    let s' := Imperative.Stmt.ite (LExpr.false MetaData.empty) [] ewn.stk.top md
                                     { ewn with env := ewn.env.popScope,
                                                stk := orig_stk.appendToTop [s']})
                 Ewns_t ++ Ewns_f

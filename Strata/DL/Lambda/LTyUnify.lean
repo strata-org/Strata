@@ -1011,30 +1011,44 @@ private theorem Constraints.unify_termination_goal_2
   done
 
 /-- Information needed for debugging type unification errors -/
-structure ConstraintDebugInfo where
+structure ConstraintDebugInfo (MetaData : Type) where
   originalConstraint : Constraint
-  description : String := ""
+  type1_md : Option MetaData := .none
+  type2_md : Option MetaData := .none
+
+def ConstraintDebugInfo.format {MetaData}
+    (mdFmt : MetaData → Std.Format) (info : ConstraintDebugInfo MetaData) :
+    Std.Format :=
+  let mdf  := fun (mdo : Option MetaData) (mty : LMonoTy) (msg : String) =>
+                if h : mdo.isSome then
+                  let md := mdo.get h
+                  f!"{mdFmt md} has type {mty}"
+              else
+                  f!"({msg} type: {mty})"
+  f!"{mdf info.type1_md info.originalConstraint.fst "first"}\n\
+     {mdf info.type2_md info.originalConstraint.snd "second"}"
 
 -- Constraints, with debugging information.
-def DebugConstraint := Constraint × Option ConstraintDebugInfo
-def DebugConstraints := List DebugConstraint
+def DebugConstraint (MetaData : Type) := Constraint × Option (ConstraintDebugInfo MetaData)
+def DebugConstraints (MetaData : Type) := List (DebugConstraint MetaData)
 
 -- Helper functions for constraints with debugging information.
-def DebugConstraint.constraint (dc : DebugConstraint) : Constraint :=
+def DebugConstraint.constraint (dc : DebugConstraint MetaData) : Constraint :=
   dc.fst
-def DebugConstraint.debugInfo (dc : DebugConstraint) : Option ConstraintDebugInfo :=
+def DebugConstraint.debugInfo (dc : DebugConstraint MetaData) : Option (ConstraintDebugInfo MetaData) :=
   dc.snd
-def DebugConstraints.toConstraints (dcs : DebugConstraints) : Constraints :=
+def DebugConstraints.toConstraints (dcs : DebugConstraints MetaData) : Constraints :=
   dcs.map (fun dc => dc.constraint)
-def DebugConstraints.freeVars (dcs : DebugConstraints) : List TyIdentifier :=
+def DebugConstraints.freeVars (dcs : DebugConstraints MetaData) : List TyIdentifier :=
   Constraints.freeVars (dcs.toConstraints)
-def DebugConstraints.size (dcs : DebugConstraints) : Nat :=
+def DebugConstraints.size (dcs : DebugConstraints MetaData) : Nat :=
   Constraints.size (dcs.toConstraints)
 
 mutual
-def Constraint.unifyOne (dc : DebugConstraint) (S : SubstInfo) :
-  Except Format (ValidSubstRelation [dc.constraint] S) :=
-  let debugInfo := dc.debugInfo
+def Constraint.unifyOne (dc : DebugConstraint MetaData) (S : SubstInfo)
+    (mdFmt : MetaData → Std.Format) :
+    Except Format (ValidSubstRelation [dc.constraint] S) :=
+  let debugInfo := dc.debugInfo.getD { originalConstraint := dc.constraint }
   /-
   (FIXME) Instead of projecting `t1` and `t2` out from `dc` separately, I'd
   really like to do the following:
@@ -1063,16 +1077,14 @@ def Constraint.unifyOne (dc : DebugConstraint) (S : SubstInfo) :
       else if _h4 : id ∈ lty.freeVars then
         -- Occurs check: `id` should not appear in the free type variables of
         -- `lty`.
-        let origConstraintStr := debugInfo.map (·.originalConstraint) |>.getD dc.constraint
-        let descriptionStr := debugInfo.map (·.description) |>.getD ""
-        .error f!"{descriptionStr}Ftvar {id} is in the free variables of {lty}! \
-                  Original constraint: {origConstraintStr}"
+        .error f!"{ConstraintDebugInfo.format mdFmt debugInfo}\n\
+                  Ftvar {id} is in the free variables of {lty}!"
       else
         -- At this point, `id` cannot be a free variable in `lty`.
         match _h5 : S.subst.find? id with
         | some sty =>
           -- `sty` must unify with `lty`.
-          let relS ← Constraint.unifyOne ((sty, lty), debugInfo) S
+          let relS ← Constraint.unifyOne ((sty, lty), debugInfo) S mdFmt
           have h_sub1_new : Subst.freeVars_subset_prop [(LMonoTy.ftvar id, orig_lty)] relS.newS S := by
             exact Subst.freeVars_subset_prop_of_ftvar_id_when_id_in_S
                   S id orig_lty sty lty rfl _h4 _h5 relS
@@ -1100,14 +1112,12 @@ def Constraint.unifyOne (dc : DebugConstraint) (S : SubstInfo) :
       if _h7 : n1 == n2 then
         .ok { newS := SubstInfo.mk [] (by simp [SubstWF]), goodSubset := by grind }
       else
-        let descriptionStr := debugInfo.map (·.description) |>.getD ""
-        let origConstraintStr := debugInfo.map (·.originalConstraint) |>.getD dc.constraint
-        .error f!"{descriptionStr}Cannot unify differently sized bitvector types {t1} and {t2}! \
-                  Original constraint: {origConstraintStr}"
+        .error f!"{ConstraintDebugInfo.format mdFmt debugInfo}\n\
+                  Cannot unify differently sized bitvector types {t1} and {t2}!"
     | .tcons name1 args1, .tcons name2 args2 => do
       if _h6 : name1 == name2 && args1.length == args2.length then
-       let new_constraints := (args1.zip args2).map (fun c => (c, debugInfo))
-       let relS ← Constraints.unifyCore new_constraints S
+       let new_constraints := (args1.zip args2).map (fun c => (c, some debugInfo))
+       let relS ← Constraints.unifyCore new_constraints S mdFmt
        have h_sub_helper : (DebugConstraints.toConstraints new_constraints) = args1.zip args2 := by
         simp [DebugConstraints.toConstraints, new_constraints]
         exact List.map_id'' (congrFun rfl) (args1.zip args2)
@@ -1117,20 +1127,14 @@ def Constraint.unifyOne (dc : DebugConstraint) (S : SubstInfo) :
          exact Subst.freeVars_subset_prop_of_tcons S name1 name2 args1 args2 h_sub_helper relS_orig
        .ok { newS := relS.newS, goodSubset := by simp [h_dc, h_sub] }
       else
-        let descriptionStr := debugInfo.map (·.description) |>.getD ""
-        let origConstraintStr := debugInfo.map (·.originalConstraint) |>.getD dc.constraint
-        .error f!"{descriptionStr}Cannot unify differently named type constructors {t1} and {t2}! \
-                  Original constraint: {origConstraintStr}"
+        .error f!"{ConstraintDebugInfo.format mdFmt debugInfo}\n\
+                  Cannot unify differently named type constructors {t1} and {t2}!"
     | .bitvec _, .tcons _ _ =>
-        let descriptionStr := debugInfo.map (·.description) |>.getD ""
-        let origConstraintStr := debugInfo.map (·.originalConstraint) |>.getD dc.constraint
-        .error f!"{descriptionStr}Cannot unify bv type {t1} and type constructor {t2}! \
-                  Original constraint: {origConstraintStr}"
+        .error f!"{ConstraintDebugInfo.format mdFmt debugInfo}\n\
+                  Cannot unify bv type {t1} and type constructor {t2}!"
     | .tcons _ _, .bitvec _ =>
-        let descriptionStr := debugInfo.map (·.description) |>.getD ""
-        let origConstraintStr := debugInfo.map (·.originalConstraint) |>.getD dc.constraint
-        .error f!"{descriptionStr}Cannot unify type constructor {t1} and bv type {t2}! \
-                  Original constraint: {origConstraintStr}"
+        .error f!"{ConstraintDebugInfo.format mdFmt debugInfo}\n\
+                  Cannot unify type constructor {t1} and bv type {t2}! \n"
   termination_by ((((Constraints.freeVars [dc.constraint]) ++ S.subst.freeVars).dedup.length),
                   Constraints.size [dc.constraint],
                   0)
@@ -1142,20 +1146,26 @@ def Constraint.unifyOne (dc : DebugConstraint) (S : SubstInfo) :
     -- Subgoal 2
     · exact @Constraint.unify_termination_goal_2 S id orig_lty lty sty (by exact rfl) _h4 _h5
     -- Subgoal 3
-    · have : (List.map ((fun (dc : DebugConstraint) => dc.constraint) ∘
-                         fun c => (c, dc.debugInfo)) (args1.zip args2)) = (args1.zip args2) := by
+    · have : (List.map ((fun (dc : DebugConstraint MetaData) => dc.constraint) ∘
+                         fun c =>
+                          (c, some
+                              (dc.debugInfo.getD
+                                { originalConstraint := (LMonoTy.tcons name2 args1,
+                                                         LMonoTy.tcons name2 args2) })))
+                       (args1.zip args2)) = (args1.zip args2) := by
         exact List.map_id'' (congrFun rfl) (args1.zip args2)
       simp [this]; clear this
       exact @Constraint.unify_termination_goal_3 S name1 name2 args1 args2 _h6
 
-def Constraints.unifyCore (dcs : DebugConstraints) (S : SubstInfo) :
+def Constraints.unifyCore (dcs : DebugConstraints MetaData) (S : SubstInfo)
+     (mdFmt : MetaData → Std.Format) :
     Except Format (ValidSubstRelation (dcs.toConstraints) S) := do
   match _h0 : dcs with
   | [] => .ok { newS := S, goodSubset := by simp [DebugConstraints.toConstraints,
                                                   Subst.freeVars_subset_prop_of_empty] }
   | dc :: dc_rest =>
-    let relS ← Constraint.unifyOne dc S
-    let new_relS ← Constraints.unifyCore dc_rest relS.newS
+    let relS ← Constraint.unifyOne dc S mdFmt
+    let new_relS ← Constraints.unifyCore dc_rest relS.newS mdFmt
     .ok { newS := new_relS.newS, goodSubset := by simp [DebugConstraints.toConstraints,
                                                         Subst.freeVars_subset_prop_mk_cons] }
   termination_by ((((DebugConstraints.freeVars dcs) ++ S.subst.freeVars).dedup.length),
@@ -1177,34 +1187,38 @@ bottom-up Hindley-Milner style algorithm that finds the most general type
 makes all the types in the input constraints equal.
 Now includes debug information for better error reporting.
 -/
-def Constraints.unify (debugConstraints : DebugConstraints) (S : SubstInfo) :
+def Constraints.unify {MetaData} (debugConstraints : DebugConstraints MetaData) (S : SubstInfo)
+    (mdFmt : MetaData → Std.Format := fun _ => f!"") :
     Except Format SubstInfo := do
-    let relS ← Constraints.unifyCore debugConstraints S
+    let relS ← Constraints.unifyCore debugConstraints S mdFmt
     .ok relS.newS
 
--- Helper function to convert regular constraints to debug constraints
-def Constraints.toDebugConstraints (constraints : Constraints) : DebugConstraints :=
+/-- Convert regular constraints to constraints with minimal debugging
+  information -/
+def Constraints.toDebugConstraints {MetaData} (constraints : Constraints) : DebugConstraints MetaData :=
   constraints.map (fun c => (c, some {originalConstraint := c}))
 
 /-- info: ok: [(a, int) (b, (arrow c d))] -/
 #guard_msgs in
 open LTy.Syntax in
-#eval  do let debugConstraints := Constraints.toDebugConstraints [(mty[%a → %b], mty[int → (%c → %d)])]
+#eval  do let debugConstraints := @Constraints.toDebugConstraints Unit [(mty[%a → %b], mty[int → (%c → %d)])]
            let S ← Constraints.unify debugConstraints SubstInfo.empty
            return (format S.subst)
 
 
 /--
-info: error: test message
-Cannot unify differently named type constructors bool and int! Original constraint: ((arrow bool b),
- (arrow int (arrow c d)))
+info: error: Variable x has type (arrow bool b)
+Expression a + b has type (arrow int (arrow c d))
+Cannot unify differently named type constructors bool and int!
 -/
 #guard_msgs in
 open LTy.Syntax in
-#eval  do  let info := ConstraintDebugInfo.mk
-                        ((mty[bool → %b], mty[int → (%c → %d)])) "test message\n"
+#eval  do  let info := ({ originalConstraint := ((mty[bool → %b], mty[int → (%c → %d)])),
+                          type1_md := "Variable x",
+                          type2_md := "Expression a + b" } : ConstraintDebugInfo String)
            let debugConstraints := [((mty[bool → %b], mty[int → (%c → %d)]), some info)]
-           let S ← Constraints.unify debugConstraints SubstInfo.empty
+           let mdFmt := fun x => f!"{x}"
+           let S ← Constraints.unify debugConstraints SubstInfo.empty mdFmt
            return (format S.subst)
 
 ---------------------------------------------------------------------
