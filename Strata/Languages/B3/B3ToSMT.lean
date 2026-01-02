@@ -301,6 +301,119 @@ def programToSMTCommands (prog : B3AST.Program M) : List String :=
       functionDecls ++ axioms
 
 ---------------------------------------------------------------------
+-- Verification State and Incremental API
+---------------------------------------------------------------------
+
+structure B3VerificationState where
+  declaredFunctions : List (String × List String × String)  -- (name, argTypes, returnType)
+  assertions : List Term  -- Accumulated assertions (axioms, function definitions)
+  context : ConversionContext
+
+structure CheckResult where
+  decl : B3AST.Decl Unit  -- Source declaration for error reporting
+  decision : Decision
+  model : Option String := none
+
+def initVerificationState : B3VerificationState := {
+  declaredFunctions := []
+  assertions := []
+  context := ConversionContext.empty
+}
+
+def addFunctionDecl (state : B3VerificationState) (name : String) (argTypes : List String) (returnType : String) : B3VerificationState :=
+  { state with declaredFunctions := (name, argTypes, returnType) :: state.declaredFunctions }
+
+def addAssertion (state : B3VerificationState) (term : Term) : B3VerificationState :=
+  { state with assertions := term :: state.assertions }
+
+def checkProperty (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl Unit) (solverPath : String := "z3") : IO CheckResult := do
+  -- Create a fresh solver for this check
+  let solver ← Solver.spawn solverPath #["-smt2", "-in"]
+  let runCheck : SolverM Decision := do
+    Solver.setLogic "ALL"
+    -- Declare all functions
+    for (name, argTypes, returnType) in state.declaredFunctions.reverse do
+      Solver.declareFun name argTypes returnType
+    -- Assert all accumulated assertions
+    for assertion in state.assertions.reverse do
+      Solver.assert (formatTermDirect assertion)
+    -- Check the property by asserting its negation
+    Solver.assert s!"(not {formatTermDirect term})"
+    Solver.checkSat []
+  let decision ← runCheck.run solver
+  let _ ← (Solver.exit).run solver
+  return {
+    decl := sourceDecl
+    decision := decision
+    model := none
+  }
+
+---------------------------------------------------------------------
+-- Batch API (Built on Incremental)
+---------------------------------------------------------------------
+
+def verifyProgramIncremental (prog : B3AST.Program Unit) (solverPath : String := "z3") : IO (List CheckResult) := do
+  let mut state := initVerificationState
+  let mut results := []
+
+  match prog with
+  | .program _ decls =>
+      -- First pass: declare all functions
+      for decl in decls.val.toList do
+        match decl with
+        | .function _ name params _ _ _ =>
+            let argTypes := params.val.toList.map (fun _ => "Int")
+            state := addFunctionDecl state name.val argTypes "Int"
+        | _ => pure ()
+
+      -- Second pass: add axioms and check properties
+      for decl in decls.val.toList do
+        match decl with
+        | .function _ name params _ _ body =>
+            -- Add function definition axiom if body exists
+            match body.val with
+            | some (.functionBody _ whens bodyExpr) =>
+                let paramNames := params.val.toList.map (fun p => match p with | .fParameter _ _ n _ => n.val)
+                let ctx' := paramNames.foldl (fun acc n => acc.push n) ConversionContext.empty
+                match expressionToSMT ctx' bodyExpr with
+                | some bodyTerm =>
+                    let paramVars := paramNames.map (fun n => Term.var ⟨n, .int⟩)
+                    let uf : UF := { id := name.val, args := paramVars.map (fun t => ⟨"_", t.typeOf⟩), out := .int }
+                    let funcCall := Term.app (.uf uf) paramVars .int
+                    let equality := Term.app .eq [funcCall, bodyTerm] .bool
+                    let axiomBody := if whens.val.isEmpty then
+                      equality
+                    else
+                      let whenTerms := whens.val.toList.filterMap (fun w =>
+                        match w with | .when _ e => expressionToSMT ctx' e
+                      )
+                      let antecedent := whenTerms.foldl (fun acc t => Term.app .and [acc, t] .bool) (Term.bool true)
+                      Term.app .or [Term.app .not [antecedent] .bool, equality] .bool
+                    let trigger := Term.app .triggers [funcCall] .trigger
+                    let axiomTerm := if paramNames.isEmpty then
+                      axiomBody
+                    else
+                      paramNames.foldl (fun body pname =>
+                        Factory.quant .all pname .int trigger body
+                      ) axiomBody
+                    state := addAssertion state axiomTerm
+                | none => pure ()
+            | none => pure ()
+        | .axiom _ _ expr =>
+            match expressionToSMT ConversionContext.empty expr with
+            | some term => state := addAssertion state term
+            | none => pure ()
+        | .checkDecl _ expr =>
+            match expressionToSMT ConversionContext.empty expr with
+            | some term =>
+                let result ← checkProperty state term decl solverPath
+                results := results ++ [result]
+            | none => pure ()
+        | _ => pure ()
+
+      return results
+
+---------------------------------------------------------------------
 -- Test
 ---------------------------------------------------------------------
 
@@ -381,5 +494,30 @@ function f(x : int) : int
 axiom forall x : int pattern f(x) x > 0 ==> f(x) > 0
 check 5 > 0 ==> f(5) > 0
 #end
+
+/--
+info: Check results:
+  check: unsat (verified)
+-/
+#guard_msgs in
+#eval do
+  let prog := #strata program B3CST;
+  function f(x : int) : int
+  axiom forall x : int pattern f(x) x > 0 ==> f(x) > 0
+  check 5 > 0 ==> f(5) > 0
+  #end
+  let cst := programToB3CST prog
+  let (ast, _) := b3CSTToAST cst
+  let results ← verifyProgramIncremental ast
+  IO.println "Check results:"
+  for result in results do
+    match result.decl with
+    | .checkDecl _ _expr =>
+        let status := match result.decision with
+          | .unsat => "unsat (verified)"
+          | .sat => "sat (counterexample found)"
+          | .unknown => "unknown"
+        IO.println s!"  check: {status}"
+    | _ => pure ()
 
 end Strata.B3ToSMT
