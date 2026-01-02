@@ -8,12 +8,10 @@ module
 /-!
 # Datatype Support for DDM
 
-This module provides datatype-related types and functions for the Dialect Definition
-Mechanism (DDM). It includes:
-
-- **Function Templates**: A system for generating auxiliary functions (testers, accessors)
-  from datatype declarations
-- **Name Pattern Expansion**: Utilities for generating function names from patterns
+This module provides datatype-related types and functions for the DDM, including
+function templates and name pattern expansion.
+This module is imported by `Strata.DDM.AST` and its types are re-exported there.
+Most users should import `Strata.DDM.AST` rather than this module directly.
 
 ## Function Template System
 
@@ -22,17 +20,6 @@ declarations. Each template has:
 - An iteration scope (perConstructor, perField, or perConstructorField)
 - A name pattern for generating function names
 - Parameter and return type specifications
-
-## Usage
-
-This module is imported by `Strata.DDM.AST` and its types are re-exported there.
-Most users should import `Strata.DDM.AST` rather than this module directly.
-
-## Design Notes
-
-The types in this module are intentionally kept dependency-free to allow them to be
-defined separately from the main AST types. Functions that depend on `TypeExpr`,
-`Arg`, `GlobalContext`, etc. remain in `AST.lean`.
 -/
 
 set_option autoImplicit false
@@ -44,7 +31,6 @@ namespace Strata
 
 /--
 Iteration scope for function template expansion.
-Determines how many functions are generated from a template.
 -/
 inductive FunctionIterScope where
   /-- One function per constructor -/
@@ -56,13 +42,13 @@ inductive FunctionIterScope where
   deriving BEq, Repr, DecidableEq, Inhabited
 
 /--
-Type reference in a function specification.
-Used to specify parameter and return types in function templates.
+Type reference in a function specification, used to specify parameter and
+ return types in function templates.
 -/
 inductive TypeRef where
   /-- The datatype being declared -/
   | datatype
-  /-- The type of the current field (only valid in perField/perConstructorField scope) -/
+  /-- The type of the current field -/
   | fieldType
   /-- A built-in type like "bool", "int" -/
   | builtin (name : String)
@@ -70,18 +56,17 @@ inductive TypeRef where
 
 /--
 A part of a name pattern - either a literal string or a placeholder.
-Used to construct function names from datatype/constructor/field information.
 -/
 inductive NamePatternPart where
   /-- A literal string to include verbatim in the generated name -/
   | literal (s : String)
   /-- Placeholder for the datatype name -/
   | datatype
-  /-- Placeholder for the constructor name (only valid in perConstructor/perConstructorField) -/
+  /-- Placeholder for the constructor name -/
   | constructor
-  /-- Placeholder for the field name (only valid in perField/perConstructorField) -/
+  /-- Placeholder for the field name -/
   | field
-  /-- Placeholder for the field index (only valid in perField/perConstructorField) -/
+  /-- Placeholder for the field index -/
   | fieldIndex
   deriving BEq, Repr, DecidableEq, Inhabited
 
@@ -92,7 +77,7 @@ Describes how to generate additional functions based on datatype structure.
 structure FunctionTemplate where
   /-- Iteration scope -/
   scope : FunctionIterScope
-  /-- Name pattern as structured parts (type-safe, no string parsing needed) -/
+  /-- Name pattern as structured parts -/
   namePattern : Array NamePatternPart
   /-- Parameter types (list of type references) -/
   paramTypes : Array TypeRef

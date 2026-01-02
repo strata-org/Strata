@@ -15,8 +15,6 @@ Verifies:
 - Tester functions (Tree..isLeaf, Tree..isNode)
 - Destructor functions (val, left, right) for field access
 - Type-checking and verification with binary recursive type
-
-Requirements: 6.1, 6.2, 6.5, 9.1
 -/
 
 namespace Strata.DatatypeTreeTest
@@ -30,7 +28,6 @@ def treeTesterPgm : Program :=
 program Boogie;
 
 // Define Tree datatype with Leaf(val: int) and Node(left: Tree, right: Tree) constructors
-// Note: This is a binary recursive datatype - both left and right have type Tree
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
 procedure TestTreeTesters() returns ()

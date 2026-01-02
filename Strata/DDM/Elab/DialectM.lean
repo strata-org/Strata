@@ -384,7 +384,6 @@ partial def translateMetadataArg {argc} (args : ArgDeclsMap argc) (argName : Str
   | q`Init.MetadataArgFunctionTemplate =>
     match expected with
     | .functionTemplate =>
-      -- The child is a FunctionTemplate tree
       let template ← translateFunctionTemplate tree[0]!
       return .functionTemplate template
     | _ =>

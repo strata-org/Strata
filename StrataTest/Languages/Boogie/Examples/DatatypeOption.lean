@@ -15,8 +15,6 @@ datatype declaration syntax. Verifies:
 - Tester functions (Option..isNone, Option..isSome)
 - Destructor function (val) for field access
 - Type-checking and verification
-
-Requirements: 6.1, 6.2, 6.5, 9.1
 -/
 
 namespace Strata.DatatypeOptionTest

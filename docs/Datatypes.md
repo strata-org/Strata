@@ -6,7 +6,7 @@ This document describes the datatype system in Strata, including how to declare 
 
 Strata supports algebraic datatypes (ADTs) similar to those found in functional programming languages. Datatypes allow you to define custom types with multiple constructors, each of which can have zero or more fields.
 
-Example in Boogie syntax:
+Example in Boogie/Strata Core syntax:
 ```boogie
 datatype Option<T> () {
   None(),
@@ -16,9 +16,9 @@ datatype Option<T> () {
 
 ## Datatype Declaration Syntax
 
-### Boogie Dialect
+### Boogie/Strata Core Dialect
 
-In the Boogie dialect, datatypes are declared using the `datatype` keyword:
+Datatypes are declared using the `datatype` keyword:
 
 ```boogie
 datatype <Name> (<TypeParams>) {
@@ -102,7 +102,11 @@ For each field, an accessor function is generated:
 
 ## Function Template System
 
-The DDM uses a **function template system** to generate auxiliary functions. This system is configurable per-dialect, allowing different dialects to generate different sets of functions.
+The DDM uses a **function template system** to generate auxiliary
+functions. This system is configurable per-dialect, allowing
+different dialects to generate different sets of functions.
+For example, a different dialect might generate indexer/tagger
+functions rather than testers.
 
 ### Template Types
 
@@ -140,17 +144,16 @@ The Boogie dialect uses two templates:
 - Return type: `.fieldType`
 - Example: `val : Option<T> -> T`
 
-### BoogieMinimal Templates
+### Other Templates
 
-The BoogieMinimal dialect demonstrates an alternative encoding using indexers instead of boolean testers:
+If instead we wanted indexers instead of boolean testers,
+we could use:
 
 **Indexer Template (perConstructor):**
 - Name pattern: `[.datatype, .literal "..idx", .constructor]`
 - Parameters: `[.datatype]`
 - Return type: `.builtin "int"`
 - Example: `Option..idxNone : Option<T> -> int`
-
-This shows how the template system allows different dialects to generate different auxiliary functions.
 
 ## Annotation-Based Constructor Extraction
 
@@ -178,50 +181,24 @@ Datatypes are encoded to SMT-LIB using the `declare-datatypes` command:
 ))
 ```
 
-The SMT encoding includes:
-- The datatype declaration with type parameters
-- Constructor definitions with field selectors
-- Automatic generation of tester predicates (`is-None`, `is-Some`)
+The generated functions (constructors, testers, accessors) are 
+mapped to the generated SMT functions (e.g. `Option..isNone` is
+automatically mapped to `is-None`).
 
-## Verification Properties
+This SMT encoding allows one to prove standard properties of the
+generated datatypes, including exhaustiveness, disjointness and
+injectivity of constructors.
 
-The SMT solver automatically provides several properties for datatypes:
+## Limitations
 
-1. **Exhaustiveness**: Every value matches exactly one constructor
-2. **Distinctness**: Different constructors produce different values
-3. **Injectivity**: Constructors are injective (equal outputs imply equal inputs)
-4. **Accessor correctness**: Accessors return the correct field values
-
-Example verification:
-```boogie
-procedure TestOption() {
-  var x : Option<int>;
-  havoc x;
-  
-  // Exhaustiveness: exactly one tester is true
-  assert Option..isNone(x) || Option..isSome(x);
-  
-  // Mutual exclusion
-  assert !(Option..isNone(x) && Option..isSome(x));
-  
-  // Accessor correctness
-  x := Some(42);
-  assert val(x) == 42;
-}
-```
-
-## Implementation Files
-
-Key files for the datatype implementation:
-
-| Component | File |
-|-----------|------|
-| Template types | `Strata/DDM/AST/Datatype.lean` |
-| AST integration | `Strata/DDM/AST.lean` |
-| Boogie config | `Strata/Languages/Boogie/DDMTransform/DatatypeConfig.lean` |
-| Boogie translation | `Strata/Languages/Boogie/DDMTransform/Translate.lean` |
-| SMT encoding | `Strata/Languages/Boogie/SMTEncoder.lean` |
-| DDM annotations | `Strata/DDM/BuiltinDialects/StrataDDL.lean` |
+1. The DDM does not yet support polymorphic functions, including
+datatype constructors. Polymorphism is supported at the AST level.
+Example: `StrataTest/Languages/Boogie/DatatypeVerificationTests.lean`
+2. The AST also generates eliminators per data type, allowing
+the definition of terms defined by pattern matching and/or 
+recursion, with the correct computational behavior.
+This is also not yet available at the DDM level.
+Example: `StrataTest/DL/Lambda/TypeFactoryTests.lean`
 
 ## Test Examples
 
@@ -231,4 +208,3 @@ See the following test files for working examples:
 - `StrataTest/Languages/Boogie/Examples/DatatypeOption.lean` - Option type
 - `StrataTest/Languages/Boogie/Examples/DatatypeList.lean` - Recursive lists
 - `StrataTest/Languages/Boogie/Examples/DatatypeTree.lean` - Binary trees
-- `StrataTest/Languages/BoogieMinimal/DatatypeTest.lean` - Alternative encoding

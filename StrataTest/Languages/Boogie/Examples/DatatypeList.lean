@@ -16,7 +16,6 @@ Verifies:
 - Destructor functions (head, tail) for field access
 - Type-checking and verification with recursive type
 
-Requirements: 6.1, 6.2, 6.5, 9.1
 -/
 
 namespace Strata.DatatypeListTest

@@ -592,12 +592,12 @@ instance FunctionDecl.instToStrataFormat : ToStrataFormat FunctionDecl where
 
 namespace MetadataArgType
 
-protected def mformat : MetadataArgType → StrataFormat
-  | .num => mf!"Num"
-  | .ident => mf!"Ident"
-  | .bool => mf!"Bool"
-  | .opt tp => mf!"Option {tp.mformat |>.ensurePrec (appPrec + 1)}" |>.setPrec appPrec
-  | .functionTemplate => mf!"FunctionTemplate"
+private protected def mformat : MetadataArgType → StrataFormat
+| .num => mf!"Num"
+| .ident => mf!"Ident"
+| .bool => mf!"Bool"
+| .opt tp => mf!"Option {tp.mformat |>.ensurePrec (appPrec + 1)}" |>.setPrec appPrec
+| .functionTemplate => mf!"FunctionTemplate"
 
 instance : ToStrataFormat MetadataArgType where
   mformat := private MetadataArgType.mformat

@@ -710,7 +710,7 @@ def translateTypeExpr (tree : Tree) : ElabM TypeExpr := do
 /--
 Evaluate the tree as a type expression.
 -/
-partial def translateBindingKind (tree : Tree) : ElabM BindingKind := do
+def translateBindingKind (tree : Tree) : ElabM BindingKind := do
   let (⟨argInfo, argChildren⟩, args) := flattenTypeApp tree #[]
   let opInfo :=
         match argInfo with
@@ -752,7 +752,7 @@ partial def translateBindingKind (tree : Tree) : ElabM BindingKind := do
           else
             logErrorMF nameLoc mf!"Expected a type instead of {k}"
             return default
-    -- Fall back to dialect-defined types
+    -- Dialect-defined types
     let some (name, decl) ← resolveTypeOrCat nameLoc tpId
       | return default
     match decl with
@@ -838,8 +838,6 @@ def evalBindingSpec
               panic! "Bad arg"
     pure { ident, kind := .type loc params.toList value }
   | .datatype b =>
-    -- TODO: Full datatype binding implementation in task 6
-    -- For now, just add the datatype type to the context
     let ident := evalBindingNameIndex args b.nameIndex
     pure { ident, kind := .type loc [] none }
 
@@ -1003,25 +1001,21 @@ partial def runSyntaxElaborator
         | return panic! "Invalid argLevel"
     -- Compute the typing context for this argument
     let tctx ←
-      -- First, check if we have a datatypeScope (for recursive datatype definitions)
+      /- Recursive datatypes make this a bit complicated, since we need to make
+      sure the type is resolved as an fvar even while processing it. -/
       match ae.datatypeScope with
       | some (nameLevel, typeParamsLevel) =>
-        -- Get the datatype name from the name tree
         let nameTree := trees[nameLevel]
         let typeParamsTree := trees[typeParamsLevel]
         match nameTree, typeParamsTree with
         | some nameT, some typeParamsT =>
-          -- Extract the datatype name
           let datatypeName :=
             match nameT.info with
             | .ofIdentInfo info => info.val
             | _ => panic! "Expected identifier for datatype name"
-          -- Start with the type params context (which has type params in scope)
           let baseCtx := typeParamsT.resultContext
           -- Add the datatype name to the GlobalContext as a type
-          -- This ensures it gets resolved as a free variable (fvar) rather than bound variable (bvar)
           let gctx := baseCtx.globalContext
-          -- Only add if not already present (to avoid panic on duplicate)
           let gctx :=
             if datatypeName ∈ gctx then gctx
             else gctx.push datatypeName (GlobalKind.type [] none)
@@ -1029,7 +1023,6 @@ partial def runSyntaxElaborator
           pure (baseCtx.withGlobalContext gctx)
         | _, _ => continue
       | none =>
-        -- Fall back to regular scope handling
         match ae.contextLevel with
         | some idx =>
           match trees[idx] with

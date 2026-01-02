@@ -21,9 +21,9 @@ namespace Strata
 dialect Boogie;
 
 // Declare Boogie-specific metadata for datatype declarations
-// Arguments: name index, typeParams index, constructors index, followed by function templates
-metadata declareDatatype (name : Ident, typeParams : Ident, constructors : Ident,
-                          testerTemplate : FunctionTemplate, accessorTemplate : FunctionTemplate);
+metadata declareDatatype (name : Ident, typeParams : Ident,
+constructors : Ident, testerTemplate : FunctionTemplate,
+accessorTemplate : FunctionTemplate);
 
 type bool;
 type int;
@@ -303,7 +303,6 @@ category FieldList;
 
 // @[field(name, tp)] marks this operation as a field definition
 // @[declare(name, tp)] adds the field to the binding context
-// Used by extractConstructorInfo to identify field operations generically
 @[declare(name, tp), field(name, tp)]
 op field_mk (name : Ident, tp : Type) : Field => name ":" tp;
 
@@ -319,25 +318,19 @@ op fieldListPush (fl : FieldList, @[scope(fl)] f : Field) : FieldList => fl "," 
 category Constructor;
 category ConstructorList;
 
-// @[constructor(name, fields)] marks this operation as a constructor definition
-// Used by extractConstructorInfo to identify constructor operations generically
 @[constructor(name, fields)]
 op constructor_mk (name : Ident, fields : Option FieldList) : Constructor =>
   name "(" fields ")";
 
-// @[constructorListAtom(c)] marks this as a single-constructor list
 @[constructorListAtom(c)]
 op constructorListAtom (c : Constructor) : ConstructorList => c;
 
-// @[constructorListPush(cl, c)] marks this as a list-push operation
 @[constructorListPush(cl, c)]
 op constructorListPush (cl : ConstructorList, c : Constructor) : ConstructorList =>
   cl "," c;
 
-// Datatype command
-// Function templates for testers and field accessors
-// @[scopeDatatype(name, typeParams)] brings both the datatype name and type parameters into scope
-// when parsing constructors, enabling recursive type references like `tail: List`
+// @[scopeDatatype(name, typeParams)] brings datatype name and parameters into
+// scope when parsing constructors for recursive types
 @[declareDatatype(name, typeParams, constructors,
     perConstructor([.datatype, .literal "..is", .constructor], [.datatype], .builtin "bool"),
     perField([.field], [.datatype], .fieldType))]

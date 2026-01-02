@@ -14,8 +14,6 @@ datatype declaration syntax. Verifies:
 - Parsing of enum datatype declarations
 - Tester functions (Color..isRed, Color..isGreen, Color..isBlue)
 - Type-checking and verification
-
-Requirements: 6.1, 6.5, 9.1
 -/
 
 namespace Strata.DatatypeEnumTest

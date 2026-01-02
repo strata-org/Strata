@@ -5,7 +5,6 @@
 -/
 
 import Strata.DDM.AST
-import Strata.Languages.Boogie.DDMTransform.DatatypeConfig
 import Strata.Languages.Boogie.DDMTransform.Parse
 import Strata.Languages.Boogie.BoogieGen
 import Strata.DDM.Util.DecimalRat
@@ -252,7 +251,6 @@ partial def translateLMonoTy (bindings : TransBindings) (arg : Arg) :
                     pure ty
                   | .type (.data ldatatype) =>
                     -- Datatype Declaration
-                    -- Create a type constructor with the datatype name and type arguments
                     let args := ldatatype.typeArgs.map LMonoTy.ftvar
                     pure (.tcons ldatatype.name args)
                   | _ =>
@@ -1264,16 +1262,6 @@ structure TransConstructorInfo where
 
 /--
 Translate constructor information from AST.ConstructorInfo to TransConstructorInfo.
-
-This bridges the gap between the generic DDM representation (`ConstructorInfo` with
-`TypeExpr` field types) and the Boogie-specific representation (`TransConstructorInfo`
-with `LMonoTy` field types).
-
-**Parameters:**
-- `bindings`: Current translation bindings (for type variable resolution)
-- `info`: Generic constructor info from AST.extractConstructorInfo
-
-**Returns:** Boogie-specific constructor info with translated types.
 -/
 private def translateConstructorInfo (bindings : TransBindings) (info : ConstructorInfo) :
     TransM TransConstructorInfo := do
@@ -1285,17 +1273,10 @@ private def translateConstructorInfo (bindings : TransBindings) (info : Construc
 /--
 Extract and translate constructor information from a constructor list argument.
 
-This function combines the generic annotation-based extraction from AST.lean with
-Boogie-specific type translation. It:
-1. Uses `GlobalContext.extractConstructorInfo` to get generic constructor info
-2. Translates each field's `TypeExpr` to `LMonoTy` using the current bindings
-
 **Parameters:**
 - `p`: The DDM Program (provides dialect map for annotation lookup)
 - `bindings`: Current translation bindings (for type variable resolution)
 - `arg`: The constructor list argument from the parsed datatype command
-
-**Returns:** Array of `TransConstructorInfo` with Boogie-specific types.
 -/
 def translateConstructorList (p : Program) (bindings : TransBindings) (arg : Arg) :
     TransM (Array TransConstructorInfo) := do
@@ -1303,35 +1284,24 @@ def translateConstructorList (p : Program) (bindings : TransBindings) (arg : Arg
   constructorInfos.mapM (translateConstructorInfo bindings)
 
 /--
-Translate a datatype declaration to Boogie declarations.
+Translate a datatype declaration to Boogie declarations, updating bindings
+appropriately.
 
-This is the main entry point for translating DDM datatype syntax to Boogie's internal
-representation. It performs the following steps:
-
-1. **Extract metadata**: Datatype name and type parameters from the operation
-2. **Handle recursion**: Adds a placeholder declaration so recursive field types resolve
-3. **Extract constructors**: Uses `translateConstructorList` to get constructor info
-4. **Build LDatatype**: Creates the internal datatype representation with tester names
-5. **Generate factory**: Uses `LDatatype.genFactory` for constructor/destructor functions
-6. **Update bindings**: Adds all generated declarations to the translation context
-
-**Important:** The returned `Boogie.Decls` only contains the type declaration itself.
-Factory functions (constructors, testers, destructors) are generated automatically
-by `Env.addDatatypes` during program evaluation to avoid duplicates.
+**Important:** The returned `Boogie.Decls` only contains the type declaration
+itself. Factory functions (constructors, testers, destructors) are generated
+automatically by `Env.addDatatypes` during program evaluation to avoid
+duplicates.
 
 **Parameters:**
 - `p`: The DDM Program (provides dialect map)
 - `bindings`: Current translation bindings
 - `op`: The `command_datatype` operation to translate
-
-**Returns:** Tuple of (declarations to add, updated bindings).
 -/
 def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) :
     TransM (Boogie.Decls × TransBindings) := do
   -- Check operation has correct name and argument count
   let _ ← @checkOp (Boogie.Decls × TransBindings) op q`Boogie.command_datatype 3
 
-  -- Extract datatype name
   let datatypeName ← translateIdent String op.args[0]!
 
   -- Extract type arguments (optional bindings)
@@ -1351,115 +1321,90 @@ def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) 
                           s!"translateDatatype expects a comma separated list: {repr bargs[0]!}")
                     op.args[1]!
 
-  -- IMPORTANT: Add a placeholder for the datatype type BEFORE translating constructors.
-  -- This is needed for recursive datatypes where constructor fields reference the datatype itself.
-  -- The placeholder will be replaced with the actual datatype declaration later.
-  -- We create a minimal LDatatype placeholder with the correct name and type args.
+  /- Note: Add a placeholder for the datatype type BEFORE translating
+  constructors, for recursive constructors. Replaced with actual declaration
+  later. -/
   let placeholderLDatatype : LDatatype Visibility :=
     { name := datatypeName
       typeArgs := typeArgs
-      -- Use a dummy constructor - this will be replaced
       constrs := [{ name := datatypeName, args := [], testerName := "" }]
       constrs_ne := by simp }
   let placeholderDecl := Boogie.Decl.type (.data placeholderLDatatype)
   let bindingsWithPlaceholder := { bindings with freeVars := bindings.freeVars.push placeholderDecl }
 
-  -- Extract constructor information (now recursive references will resolve correctly)
+  -- Extract constructor information (possibly recursive)
   let constructors ← translateConstructorList p bindingsWithPlaceholder op.args[2]!
 
-  -- Check that we have at least one constructor
   if h : constructors.size == 0 then
     TransM.error s!"Datatype {datatypeName} must have at least one constructor"
   else
-  -- Use the default Boogie datatype config for tester naming
-  let config := defaultDatatypeConfig
+    -- Build LConstr list from TransConstructorInfo
+    let testerPattern : Array NamePatternPart := #[.datatype, .literal "..is", .constructor]
+    let lConstrs : List (LConstr Visibility) := constructors.toList.map fun constr =>
+      let testerName := expandNamePattern testerPattern datatypeName (some constr.name.name)
+      { name := constr.name
+        args := constr.fields.toList.map fun (fieldName, fieldType) => (fieldName, fieldType)
+        testerName := testerName }
 
-  -- Build LConstr list from TransConstructorInfo
-  let lConstrs : List (LConstr Visibility) := constructors.toList.map fun constr =>
-    let testerName := expandNamePattern config.testerPattern datatypeName (some constr.name.name)
-    { name := constr.name
-      args := constr.fields.toList.map fun (fieldName, fieldType) => (fieldName, fieldType)
-      testerName := testerName }
+    have constrs_ne : lConstrs.length != 0 := by
+      simp [lConstrs]
+      intro heq; subst_vars; apply h; rfl
 
-  -- Prove that constructors list is non-empty
-  have constrs_ne : lConstrs.length != 0 := by
-    simp [lConstrs]
-    intro heq; subst_vars; apply h; rfl
+    let ldatatype : LDatatype Visibility :=
+      { name := datatypeName
+        typeArgs := typeArgs
+        constrs := lConstrs
+        constrs_ne := constrs_ne }
 
-  -- Build LDatatype
-  let ldatatype : LDatatype Visibility :=
-    { name := datatypeName
-      typeArgs := typeArgs
-      constrs := lConstrs
-      constrs_ne := constrs_ne }
+    -- Generate factory from LDatatype and convert to Boogie.Decl
+    -- (used only for bindings.freeVars, not for allDecls)
+    let factory ← match ldatatype.genFactory (T := BoogieLParams) with
+      | .ok f => pure f
+      | .error e => TransM.error s!"Failed to generate datatype factory: {e}"
+    let funcDecls : List Boogie.Decl := factory.toList.map fun func =>
+      Boogie.Decl.func func
 
-  -- Generate factory from LDatatype (used only for bindings.freeVars, not for allDecls)
-  let factory ← match ldatatype.genFactory (T := BoogieLParams) with
-    | .ok f => pure f
-    | .error e => TransM.error s!"Failed to generate datatype factory: {e}"
+    -- Only includes typeDecl, factory functions generated later
+    let typeDecl := Boogie.Decl.type (.data ldatatype)
+    let allDecls := [typeDecl]
 
-  -- Create type declaration
-  let typeDecl := Boogie.Decl.type (.data ldatatype)
+    /-
+    We must add to bindings.freeVars in the same order as the DDM's
+    `addDatatypeBindings`: type, constructors, template functions. We do NOT
+    include eliminators here because the DDM does not (yet) produce them.
+    -/
 
-  -- Convert factory functions to Boogie.Decl (for bindings only)
-  let funcDecls : List Boogie.Decl := factory.toList.map fun func =>
-    Boogie.Decl.func func
+    let constructorNames : List String := lConstrs.map fun c => c.name.name
+    let testerNames : List String := lConstrs.map fun c => c.testerName
 
-  -- IMPORTANT: allDecls should only contain the type declaration.
-  -- The factory functions (eliminator, constructors, testers, destructors) will be
-  -- generated automatically by Env.addDatatypes when the program is evaluated.
-  -- Including them here would cause duplicate function errors.
-  let allDecls := [typeDecl]
+    -- Extract all field names across all constructors for field projections
+    -- Note: DDM validates that field names are unique across constructors
+    let fieldNames : List String := lConstrs.foldl (fun acc c =>
+      acc ++ (c.args.map fun (fieldName, _) => fieldName.name)) []
 
-  -- IMPORTANT: bindings.freeVars must match the order used by DDM's addDatatypeBindings:
-  -- 1. Type declaration
-  -- 2. Constructors
-  -- 3. Template functions (testers from perConstructor, then field accessors from perField)
-  -- The factory produces: eliminator, constructors, testers, destructors
-  -- We must NOT include eliminator in bindings.freeVars because DDM GlobalContext doesn't include it.
-  -- We MUST include destructors (field accessors) because DDM's perField template generates them.
+    -- Filter factory functions to get constructors, testers, projections
+    -- TODO: this could be more efficient via `LDatatype.genFunctionMaps`
+    let constructorDecls := funcDecls.filter fun decl =>
+      match decl with
+      | .func f => constructorNames.contains f.name.name
+      | _ => false
 
-  -- Extract constructor names for filtering
-  let constructorNames : List String := lConstrs.map fun c => c.name.name
+    let testerDecls := funcDecls.filter fun decl =>
+      match decl with
+      | .func f => testerNames.contains f.name.name
+      | _ => false
 
-  -- Extract tester names for filtering
-  let testerNames : List String := lConstrs.map fun c => c.testerName
+    let fieldAccessorDecls := funcDecls.filter fun decl =>
+      match decl with
+      | .func f => fieldNames.contains f.name.name
+      | _ => false
 
-  -- Extract unique field names across all constructors (for field accessors/destructors)
-  -- DDM's perField template generates one function per unique field name
-  let allFieldNames : List String := lConstrs.foldl (fun acc c =>
-    acc ++ (c.args.map fun (fieldName, _) => fieldName.name)) []
-  -- Remove duplicates while preserving order (first occurrence wins)
-  let uniqueFieldNames : List String := allFieldNames.foldl (fun acc name =>
-    if acc.contains name then acc else acc ++ [name]) []
+    let bindingDecls := typeDecl :: constructorDecls ++ testerDecls ++ fieldAccessorDecls
+    let bindings := bindingDecls.foldl (fun b d =>
+      { b with freeVars := b.freeVars.push d }
+    ) bindings
 
-  -- Filter factory functions to get only constructors and testers (in that order)
-  let constructorDecls := funcDecls.filter fun decl =>
-    match decl with
-    | .func f => constructorNames.contains f.name.name
-    | _ => false
-
-  let testerDecls := funcDecls.filter fun decl =>
-    match decl with
-    | .func f => testerNames.contains f.name.name
-    | _ => false
-
-  -- Filter factory functions to get field accessors (destructors)
-  -- These are named after the field names directly
-  let fieldAccessorDecls := funcDecls.filter fun decl =>
-    match decl with
-    | .func f => uniqueFieldNames.contains f.name.name
-    | _ => false
-
-  -- Declarations for bindings.freeVars: type, constructors, testers, field accessors (matching DDM order)
-  let bindingDecls := typeDecl :: constructorDecls ++ testerDecls ++ fieldAccessorDecls
-
-  -- Update bindings with only the declarations that match DDM GlobalContext order
-  let bindings := bindingDecls.foldl (fun b d =>
-    { b with freeVars := b.freeVars.push d }
-  ) bindings
-
-  return (allDecls, bindings)
+    return (allDecls, bindings)
 
 ---------------------------------------------------------------------
 
@@ -1483,7 +1428,7 @@ partial def translateBoogieDecls (p : Program) (bindings : TransBindings) :
   | 0 => return ([], bindings)
   | _ + 1 =>
     let op := ops[count]!
-    -- Handle commands that produce multiple declarations
+    -- Commands that produce multiple declarations
     let (newDecls, bindings) ←
       match op.name with
       | q`Boogie.command_datatype =>
