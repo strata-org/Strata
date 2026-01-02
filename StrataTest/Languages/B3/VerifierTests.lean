@@ -173,12 +173,14 @@ info: Verification results:
   test_fail: ✗ counterexample
     Failed at: offset +52
     check f(5) == 10
+    Model: model available
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
 function f(x : int) : int
 procedure test_fail() {
-  check f(5) == 10
+  check f(5)
+    == 10
 }
 #end
 
