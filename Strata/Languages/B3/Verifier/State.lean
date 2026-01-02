@@ -22,6 +22,28 @@ open Strata.SMT
 open Strata.B3AST
 
 ---------------------------------------------------------------------
+-- B3 Verification Results
+---------------------------------------------------------------------
+
+inductive B3Result where
+  | proved : B3Result  -- Property verified
+  | provedWrong : B3Result  -- Property has counterexample
+  | unreachable : B3Result  -- Code is dead (reach: unsat)
+  | satisfiable : B3Result  -- Code might be reachable (reach: sat or unknown)
+
+def B3Result.fromDecisionForProve (d : Decision) : B3Result :=
+  match d with
+  | .unsat => .proved
+  | .sat => .provedWrong
+  | .unknown => .provedWrong  -- Treat unknown as failure for prove
+
+def B3Result.fromDecisionForReach (d : Decision) : B3Result :=
+  match d with
+  | .unsat => .unreachable
+  | .sat => .satisfiable
+  | .unknown => .satisfiable  -- Conservative: treat unknown as potentially reachable
+
+---------------------------------------------------------------------
 -- Verification State
 ---------------------------------------------------------------------
 
@@ -34,7 +56,7 @@ structure B3VerificationState where
 structure CheckResult where
   decl : B3AST.Decl SourceRange
   sourceStmt : Option (B3AST.Statement SourceRange) := none
-  decision : Decision
+  result : B3Result  -- B3-level result
   model : Option String := none
 
 def initVerificationState (solverPath : String := "z3") : IO B3VerificationState := do
