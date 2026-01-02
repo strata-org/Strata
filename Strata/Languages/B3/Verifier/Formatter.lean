@@ -10,6 +10,30 @@ import Strata.DL.SMT.SMT
 # SMT Term Formatting
 
 Formats SMT terms directly to SMT-LIB syntax without A-normal form.
+
+## Why not use Encoder.termToString?
+
+The SMT Encoder (`Strata.DL.SMT.Encoder`) is designed for full verification pipelines
+and produces A-normal form (ANF) output with intermediate definitions:
+
+```smt2
+(define-fun t0 () Int (+ 1 1))
+(define-fun t1 () Bool (= t0 2))
+(assert t1)
+```
+
+For B3 verification, we want direct, readable SMT-LIB that matches B3's output:
+
+```smt2
+(assert (= (+ 1 1) 2))
+```
+
+This formatter provides direct translation without ANF, making the output:
+- More readable for debugging
+- Matches B3's SMT generation
+- Simpler for our use case (no need for state management)
+
+If we need ANF in the future (e.g., for term sharing), we can switch to using the Encoder.
 -/
 
 namespace Strata.B3.Verifier
