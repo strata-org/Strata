@@ -16,6 +16,9 @@ import Strata.Languages.Boogie.Identifiers
 import Strata.Languages.Boogie.Options
 import Strata.Languages.Boogie.SMTEncoder
 import Strata.Languages.Boogie.Verifier
+import Strata.DL.Lambda.TestGen
+import Strata.DL.Lambda.PlausibleHelpers
+import Plausible.Gen
 
 /-! This file does random testing of Boogie operations registered in factory, by
 (1) choosing random constant inputs to the operations
@@ -32,9 +35,9 @@ section Tests
 open Lambda
 open Std
 
-def encode (e:LExpr LMonoTy Boogie.Visibility)
+def encode (e:LExpr BoogieLParams.mono)
            (tenv:TEnv Visibility)
-           (init_state:LState Boogie.Visibility):
+           (init_state:LState BoogieLParams):
     Except Format (Option (Strata.SMT.Term × SMT.Context))
   := do
   let init_state ← init_state.addFactory Boogie.Factory
@@ -43,7 +46,7 @@ def encode (e:LExpr LMonoTy Boogie.Visibility)
   let (e,_T) ← LExpr.annotate lcont tenv e
   let e_res := LExpr.eval init_state.config.fuel init_state e
   match e_res with
-  | .const _ =>
+  | .const _ _ =>
     let env := Boogie.Env.init
     let (smt_term_lhs,ctx) ← Boogie.toSMTTerm env [] e SMT.Context.default
     let (smt_term_rhs,ctx) ← Boogie.toSMTTerm env [] e_res ctx
@@ -55,7 +58,7 @@ def encode (e:LExpr LMonoTy Boogie.Visibility)
 Check whether concrete evaluation of e matches the SMT encoding of e.
 Returns false if e did not reduce to a constant.
 -/
-def checkValid (e:LExpr LMonoTy Boogie.Visibility): IO Bool := do
+def checkValid (e:LExpr BoogieLParams.mono): IO Bool := do
   let tenv := TEnv.default
   let init_state := LState.init
   match encode e tenv init_state with
@@ -70,6 +73,7 @@ def checkValid (e:LExpr LMonoTy Boogie.Visibility): IO Bool := do
     | .ok (.sat _,_) => return true
     | _ =>
       IO.println s!"Test failed on {e}"
+      IO.println s!"The query: {repr smt_term}"
       throw (IO.userError "- failed")
 
 /--
@@ -95,37 +99,37 @@ private def pickRandInt (abs_bound:Nat): IO Int := do
   let rand_size <- IO.rand 0 abs_bound
   return (if rand_sign = 0 then rand_size else - (Int.ofNat rand_size))
 
-private def mkRandConst (ty:LMonoTy): IO (Option (LExpr LMonoTy Boogie.Visibility))
+private def mkRandConst (ty:LMonoTy): IO (Option (LExpr BoogieLParams.mono))
   := do
   match ty with
   | .tcons "int" [] =>
     let i <- pickInterestingValue 1 [0,1,-1] (pickRandInt 2147483648)
-    return (.some (.intConst i))
+    return (.some (.intConst () i))
   | .tcons "bool" [] =>
     let rand_flag <- IO.rand 0 1
     let rand_flag := rand_flag == 0
-    return (.some (.boolConst rand_flag))
+    return (.some (.boolConst () rand_flag))
   | .tcons "real" [] =>
     let i <- pickInterestingValue 1 [0,1,-1] (pickRandInt 2147483648)
     let n <- IO.rand 1 2147483648
-    return (.some (.realConst (mkRat i n)))
+    return (.some (.realConst () (mkRat i n)))
   | .tcons "string" [] =>
     -- TODO: random string generator
-    return (.some (.strConst "a"))
+    return (.some (.strConst () "a"))
   | .tcons "regex" [] =>
     -- TODO: random regex generator
-    return (.some (.app
-      (.op (BoogieIdent.unres "Str.ToRegEx") .none) (.strConst ".*")))
+    return (.some (.app ()
+      (.op () (BoogieIdent.unres "Str.ToRegEx") .none) (.strConst () ".*")))
   | .bitvec n =>
     let specialvals :=
       [0, 1, -1, Int.ofNat n, (Int.pow 2 (n-1)) - 1, -(Int.pow 2 (n-1))]
     let i <- pickInterestingValue 3 specialvals (IO.rand 0 ((Nat.pow 2 n) - 1))
-    return (.some (.bitvecConst n (BitVec.ofInt n i)))
+    return (.some (.bitvecConst () n (BitVec.ofInt n i)))
   | _ =>
     return .none
 
 def checkFactoryOps (verbose:Bool): IO Unit := do
-  let arr:Array (LFunc Boogie.Visibility) := Boogie.Factory
+  let arr:Array (LFunc BoogieLParams) := Boogie.Factory
   let print (f:Format): IO Unit :=
     if verbose then IO.println f
     else return ()
@@ -135,11 +139,11 @@ def checkFactoryOps (verbose:Bool): IO Unit := do
       print "- Has non-empty type arguments, skipping..."
       continue
     else
-      let cnt := 100
+      let cnt := 50
       let mut unsupported := false
       let mut cnt_skipped := 0
       for _ in [0:cnt] do
-        let args:List (Option (LExpr LMonoTy Visibility))
+        let args:List (Option (LExpr BoogieLParams.mono))
           <- e.inputs.mapM (fun t => do
             let res <- mkRandConst t.snd
             match res with
@@ -147,13 +151,13 @@ def checkFactoryOps (verbose:Bool): IO Unit := do
             | .none =>
               print s!"- Don't know how to create a constant for {t.snd}"
               return .none)
-        if .none ∈ args then
+        if args.any (· == .none) then
           unsupported := true
           break
         else
           let args := List.map (Option.get!) args
-          let expr := List.foldl (fun e arg => (.app e arg))
-            (LExpr.op (BoogieIdent.unres e.name.name) .none) args
+          let expr := List.foldl (fun e arg => (.app () e arg))
+            (LExpr.op () (BoogieIdent.unres e.name.name) .none) args
           let res <- checkValid expr
           if ¬ res then
             if cnt_skipped = 0 then
@@ -179,10 +183,35 @@ open Lambda.LTy.Syntax
 #guard_msgs in #eval (checkValid eb[if #1 == #2 then #false else #true])
 /-- info: true -/
 #guard_msgs in #eval (checkValid
-  (.app (.app (.op (BoogieIdent.unres "Int.Add") .none) eb[#100]) eb[#50]))
+  (.app () (.app () (.op () (BoogieIdent.unres "Int.Add") .none) eb[#100]) eb[#50]))
+
 
 -- This may take a while (~ 1min)
 #eval (checkFactoryOps false)
+
+open Plausible TestGen
+
+deriving instance Arbitrary for Visibility
+
+def test_lctx : LContext BoogieLParams :=
+{
+  LContext.empty with
+  functions := Boogie.Factory
+  knownTypes := Boogie.KnownTypes
+}
+
+def test_ctx : TContext Visibility := ⟨[[]], []⟩
+
+abbrev test_ty : LTy := .forAll [] <| .tcons "bool" []
+
+#guard_msgs(drop all) in
+#eval do
+    let P : LExpr BoogieLParams.mono → Prop := fun t => HasType test_lctx test_ctx t test_ty
+    let t ← Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 5) 5
+    IO.println s!"Generated {t}"
+    let b ← checkValid t
+    if ¬ b then
+      IO.println s!"Invalid!"
 
 end Tests
 

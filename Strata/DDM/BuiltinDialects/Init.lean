@@ -3,13 +3,17 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
+
+public import Strata.DDM.AST
 
 import Strata.DDM.BuiltinDialects.BuiltinM
 
+open Strata.Elab
+
+public section
 namespace Strata
 
-open Elab
-open Parser (minPrec)
 
 def SyntaxCat.mkOpt (c:SyntaxCat) : SyntaxCat := { ann := .none, name := q`Init.Option, args := #[c] }
 def SyntaxCat.mkSeq (c:SyntaxCat) : SyntaxCat := { ann := .none, name := q`Init.Seq, args := #[c] }
@@ -25,6 +29,20 @@ def initDialect : Dialect := BuiltinM.create! "Init" #[] do
   declareAtomicCat q`Init.ByteArray
   declareAtomicCat q`Init.Decimal
   declareAtomicCat q`Init.Str
+
+  declareCat q`Init.Bool
+  declareOp {
+    name := "boolTrue",
+    argDecls := .empty,
+    category := q`Init.Bool,
+    syntaxDef := .ofList [.str "true"],
+  }
+  declareOp {
+    name := "boolFalse",
+    argDecls := .empty,
+    category := q`Init.Bool,
+    syntaxDef := .ofList [.str "false"],
+  }
 
   declareCat q`Init.Option #["a"]
 

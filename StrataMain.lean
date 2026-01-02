@@ -7,8 +7,10 @@
 -- Executable with utilities for working with Strata files.
 import Strata.DDM.Elab
 import Strata.DDM.Ion
+import Strata.Util.IO
 
 import Strata.Languages.Python.Python
+import StrataTest.Transform.ProcedureInlining
 
 def exitFailure {α} (message : String) : IO α := do
   IO.eprintln (message  ++ "\n\nRun strata --help for additional help.")
@@ -47,14 +49,16 @@ def readStrataText (fm : Strata.DialectFileMap) (input : System.FilePath) (bytes
   if errors.size > 0 then
     exitFailure  (← Strata.mkErrorReport input errors)
   match header with
-  | .program stx dialect =>
+  | .program _ dialect =>
     let dialects ←
       match ← Strata.Elab.loadDialect fm .builtin dialect with
       | (dialects, .ok _) => pure dialects
       | (_, .error msg) => exitFailure msg
-    match Strata.Elab.elabProgramRest dialects leanEnv inputContext stx dialect startPos with
+    let .isTrue mem := inferInstanceAs (Decidable (dialect ∈ dialects.dialects))
+      | panic! "internal: loadDialect failed"
+    match Strata.Elab.elabProgramRest dialects leanEnv inputContext dialect mem startPos with
     | .ok program => pure (dialects, .program program)
-    | .error errors =>     exitFailure  (← Strata.mkErrorReport input errors)
+    | .error errors => exitFailure (← Strata.mkErrorReport input errors)
   | .dialect stx dialect =>
     let (loaded, d, s) ←
       Strata.Elab.elabDialectRest fm .builtin #[] inputContext stx dialect startPos
@@ -87,22 +91,22 @@ def readStrataIon (fm : Strata.DialectFileMap) (path : System.FilePath) (bytes :
       match ← Strata.Elab.loadDialect fm .builtin dialect with
       | (loaded, .ok _) => pure loaded
       | (_, .error msg) => exitFailure msg
-    match Strata.Program.fromIonFragment frag dialects.dialects dialect with
+    let .isTrue mem := inferInstanceAs (Decidable (dialect ∈ dialects.dialects))
+      | panic! "loadDialect failed"
+    let dm := dialects.dialects.importedDialects dialect mem
+    match Strata.Program.fromIonFragment frag dm dialect with
     | .ok pgm =>
       pure (dialects, .program pgm)
     | .error msg =>
       fileReadError path msg
 
 def readFile (fm : Strata.DialectFileMap) (path : System.FilePath) : IO (Strata.Elab.LoadedDialects × Strata.DialectOrProgram) := do
-  let bytes ←
-    match ← IO.FS.readBinFile path |>.toBaseIO with
-    | .error _ =>
-      exitFailure s!"Error reading {path}."
-    | .ok c => pure c
+  let bytes ← Strata.Util.readBinInputSource path.toString
+  let displayPath : System.FilePath := Strata.Util.displayName path.toString
   if bytes.startsWith Ion.binaryVersionMarker then
-    readStrataIon fm path bytes
+    readStrataIon fm displayPath bytes
   else
-    readStrataText fm path bytes
+    readStrataText fm displayPath bytes
 
 structure Command where
   name : String
@@ -138,7 +142,10 @@ def printCommand : Command where
     let (ld, pd) ← readFile searchPath v[0]
     match pd with
     | .dialect d =>
-      IO.print <| d.format ld.dialects
+      let .isTrue mem := inferInstanceAs (Decidable (d.name ∈ ld.dialects))
+        | IO.eprintln s!"Internal error reading file."
+          return
+      IO.print <| ld.dialects.format d.name mem
     | .program pgm =>
       IO.print <| toString pgm
 
@@ -161,26 +168,47 @@ def diffCommand : Command where
     | _, _ =>
       exitFailure "Cannot compare dialect def with another dialect/program."
 
+def readPythonStrata (path : String) : IO Strata.Program := do
+  let bytes ← Strata.Util.readBinInputSource path
+  if ! bytes.startsWith Ion.binaryVersionMarker then
+    exitFailure s!"pyAnalyze expected Ion file"
+  match Strata.Program.fromIon Strata.Python.Python_map Strata.Python.Python.name bytes with
+  | .ok p => pure p
+  | .error msg => exitFailure msg
+
+def pyTranslateCommand : Command where
+  name := "pyTranslate"
+  args := [ "file" ]
+  help := "Translate a Strata Python Ion file to Strata.Boogie. Write results to stdout."
+  callback := fun _ v => do
+    let pgm ← readPythonStrata v[0]
+    let preludePgm := Strata.Python.Internal.Boogie.prelude
+    let bpgm := Strata.pythonToBoogie Strata.Python.Internal.signatures pgm
+    let newPgm : Boogie.Program := { decls := preludePgm.decls ++ bpgm.decls }
+    IO.print newPgm
+
 def pyAnalyzeCommand : Command where
   name := "pyAnalyze"
   args := [ "file", "verbose" ]
   help := "Analyze a Strata Python Ion file. Write results to stdout."
-  callback := fun searchPath v => do
+  callback := fun _ v => do
     let verbose := v[1] == "1"
-    let (ld, pd) ← readFile searchPath v[0]
-    match pd with
-    | .dialect d =>
-      IO.print <| d.format ld.dialects
-    | .program pgm =>
+    let pgm ← readPythonStrata v[0]
     if verbose then
       IO.print pgm
     let preludePgm := Strata.Python.Internal.Boogie.prelude
-    let bpgm := Strata.pythonToBoogie pgm
+    let bpgm := Strata.pythonToBoogie Strata.Python.Internal.signatures pgm
     let newPgm : Boogie.Program := { decls := preludePgm.decls ++ bpgm.decls }
     if verbose then
       IO.print newPgm
+    let newPgm := runInlineCall newPgm
+    if verbose then
+      IO.println "Inlined: "
+      IO.print newPgm
+    let solverName : String := "Strata/Languages/Python/z3_parallel.py"
     let vcResults ← EIO.toIO (fun f => IO.Error.userError (toString f))
-                        (Boogie.verify "z3" newPgm { Options.default with stopOnFirstError := false, verbose })
+                        (Boogie.verify solverName newPgm { Options.default with stopOnFirstError := false, verbose, removeIrrelevantAxioms := true }
+                                                   (moreFns := Strata.Python.ReFactory))
     let mut s := ""
     for vcResult in vcResults do
       s := s ++ s!"\n{vcResult.obligation.label}: {Std.format vcResult.result}\n"
@@ -192,6 +220,7 @@ def commandList : List Command := [
       printCommand,
       diffCommand,
       pyAnalyzeCommand,
+      pyTranslateCommand,
     ]
 
 def commandMap : Std.HashMap String Command :=

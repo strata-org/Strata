@@ -3,17 +3,24 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Elab.LoadedDialects
-import Strata.DDM.Parser
-import Strata.DDM.Util.Lean
+public import Lean.Parser.Types
+
+public import Strata.DDM.AST
+public import Strata.DDM.Parser
+public import Strata.DDM.Util.Lean
+public import Strata.DDM.Elab.LoadedDialects
+
+import Strata.DDM.Util.PrattParsingTables
 
 set_option autoImplicit false
 
 open Lean (Syntax Message)
 
-open Strata.Parser (DeclParser InputContext Parser ParsingContext ParserState)
+open Strata.Parser (DeclParser InputContext Parser ParsingContext)
 
+public section
 namespace Strata
 
 def infoSourceRange (info : Lean.SourceInfo) : Option SourceRange :=
@@ -23,7 +30,7 @@ def infoSourceRange (info : Lean.SourceInfo) : Option SourceRange :=
     some { start := pos, stop := endPos }
   | .none  => none
 
-def sourceLocPos (stx:Syntax) : Option String.Pos :=
+def sourceLocPos (stx:Syntax) : Option String.Pos.Raw :=
   match stx with
   | .atom info .. | .ident info .. =>
     infoSourceRange info |>.map (·.start)
@@ -38,7 +45,7 @@ def sourceLocPos (stx:Syntax) : Option String.Pos :=
         none
   | .missing => none
 
-def sourceLocEnd (stx:Syntax) : Option String.Pos :=
+def sourceLocEnd (stx:Syntax) : Option String.Pos.Raw :=
   match stx with
   | .atom info ..  | .ident info .. =>
     infoSourceRange info |>.map (·.stop)
@@ -74,14 +81,14 @@ def mkSourceRange? (stx:Syntax) : Option SourceRange :=
 
 namespace PrattParsingTableMap
 
-def addSynCat! (tables : PrattParsingTableMap) (dialect : String) (decl : SynCatDecl) : PrattParsingTableMap :=
+private def addSynCat! (tables : PrattParsingTableMap) (dialect : String) (decl : SynCatDecl) : PrattParsingTableMap :=
   let cat : QualifiedIdent := { dialect, name := decl.name }
   if cat ∈ tables then
     panic! s!"{cat} already declared."
   else
     tables.insert cat {}
 
-def addParserToCat! (tables : PrattParsingTableMap) (dp : DeclParser) : PrattParsingTableMap :=
+private def addParserToCat! (tables : PrattParsingTableMap) (dp : DeclParser) : PrattParsingTableMap :=
   tables.alter dp.category fun mtables =>
     match mtables with
     | none => panic s!"Category {dp.category.fullName} not declared."
@@ -89,7 +96,7 @@ def addParserToCat! (tables : PrattParsingTableMap) (dp : DeclParser) : PrattPar
       let r := tables |>.addParser dp.isLeading dp.parser dp.outerPrec
       some r
 
-def addDialect! (tables : PrattParsingTableMap) (dialect : Dialect) (parsers : Array DeclParser) : PrattParsingTableMap :=
+private def addDialect! (tables : PrattParsingTableMap) (dialect : Dialect) (parsers : Array DeclParser) : PrattParsingTableMap :=
   dialect.syncats.fold (init := tables) (·.addSynCat! dialect.name ·)
   |> parsers.foldl PrattParsingTableMap.addParserToCat!
 
@@ -116,7 +123,7 @@ class ElabClass (m : Type → Type) extends Monad m where
 
 export ElabClass (logErrorMessage)
 
-/-
+/--
 Runs action and returns result along with Bool that is true if
 action ran without producing errors.
 -/
@@ -140,7 +147,7 @@ def logErrorMF {m} [ElabClass m] (loc : SourceRange) (msg : StrataFormat) (isSil
 
 structure DeclContext where
   inputContext : InputContext
-  stopPos : String.Pos
+  stopPos : String.Pos.Raw
   -- Map from dialect names to the dialect definition
   loader : LoadedDialects
   /-- Flag indicating imports are missing (silences some errors). -/
@@ -237,6 +244,9 @@ def get (m : TypeOrCatDeclMap) (name : String) : Array (DialectName × { d : Typ
 
 end TypeOrCatDeclMap
 
+private def initTokenTable : Lean.Parser.TokenTable :=
+  initParsers.fixedParsers.fold (init := {}) fun tt _ p => Parser.TokenTable.addParser tt p
+
 structure DeclState where
   -- Fixed parser map
   fixedParsers : ParsingContext := {}
@@ -255,17 +265,17 @@ structure DeclState where
   -- Operations at the global level
   globalContext : GlobalContext := {}
   -- String position in file.
-  pos : String.Pos := 0
+  pos : String.Pos.Raw := 0
   -- Errors found in elaboration.
   errors : Array Message := #[]
-  deriving Inhabited
+deriving Inhabited
 
 namespace DeclState
 
 def addParserToCat! (s : DeclState) (dp : DeclParser) : DeclState :=
   assert! dp.category ∈ s.parserMap
   { s with
-      tokenTable := s.tokenTable.addParser dp.parser
+      tokenTable := Parser.TokenTable.addParser s.tokenTable dp.parser
       parserMap := s.parserMap.addParserToCat! dp
   }
 
@@ -282,7 +292,7 @@ def openParserDialect! (s : DeclState) (loader : LoadedDialects) (dialect : Dial
   { s with
     metadataDeclMap := s.metadataDeclMap.addDialect dialect
     parserMap := s.parserMap.addDialect! dialect parsers
-    tokenTable := parsers.foldl (init := s.tokenTable) (·.addParser ·.parser)
+    tokenTable := parsers.foldl (init := s.tokenTable) (Parser.TokenTable.addParser · ·.parser)
   }
 
 mutual
@@ -321,9 +331,17 @@ partial def openLoadedDialect! (s : DeclState) (loaded : LoadedDialects) (dialec
   else
     s.addDialect! loaded dialect
 
+def ofDialects (ds : LoadedDialects) : DeclState :=
+  let s : DeclState := {
+    openDialects := #[]
+    openDialectSet := {}
+    tokenTable := initTokenTable
+  }
+  ds.dialects.toList.foldl (init := s) (·.openLoadedDialect! ds ·)
+
 end DeclState
 
-@[reducible]
+@[reducible, expose]
 def DeclM := ReaderT DeclContext (StateM DeclState)
 
 namespace DeclM
@@ -343,3 +361,6 @@ def addTypeOrCatDecl (dialect : DialectName) (tpcd : TypeOrCatDecl) : DeclM Unit
   modify fun s => {
     s with typeOrCatDeclMap := s.typeOrCatDeclMap.add dialect tpcd
   }
+
+end Strata.Elab
+end

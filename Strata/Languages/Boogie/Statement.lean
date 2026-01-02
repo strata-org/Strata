@@ -39,8 +39,8 @@ We parameterize Boogie's Commands with Lambda dialect's expressions.
 abbrev Command := CmdExt Expression
 
 instance : HasPassiveCmds Expression Command where
-  assert l e := .cmd (.assert l e)
-  assume l e := .cmd (.assume l e)
+  assert l e md := .cmd (.assert l e md)
+  assume l e md := .cmd (.assume l e md)
 
 instance : HasHavoc Expression Command where
   havoc x := .cmd (.havoc x)
@@ -58,8 +58,8 @@ instance [ToFormat (Cmd P)] [ToFormat (MetaData P)]
     ToFormat (CmdExt P) where
   format c := match c with
     | .cmd c => format c
-    | .call lhs pname args md =>
-      f!"{md}call " ++ (if lhs.isEmpty then f!"" else f!"{lhs} := ") ++
+    | .call lhs pname args _md =>
+      f!"call " ++ (if lhs.isEmpty then f!"" else f!"{lhs} := ") ++
       f!"{pname}({args})"
 
 ---------------------------------------------------------------------
@@ -91,6 +91,10 @@ abbrev Statement.call (lhs : List Expression.Ident) (pname : String) (args : Lis
 
 ---------------------------------------------------------------------
 
+abbrev Block := Imperative.Block Boogie.Expression Boogie.Command
+
+---------------------------------------------------------------------
+
 def Command.eraseTypes (c : Command) : Command :=
   match c with
   | .cmd c =>
@@ -107,15 +111,15 @@ mutual
 def Statement.eraseTypes (s : Statement) : Statement :=
   match s with
   | .cmd c => .cmd (Command.eraseTypes c)
-  | .block label ⟨ bss ⟩ md =>
+  | .block label bss md =>
     let ss' := Statements.eraseTypes bss
-    .block label { ss := ss' } md
-  | .ite cond ⟨ tss ⟩ ⟨ ess ⟩ md =>
-    let thenb' := { ss := Statements.eraseTypes tss }
-    let elseb' := { ss := Statements.eraseTypes ess }
+    .block label ss' md
+  | .ite cond tss ess md =>
+    let thenb' := Statements.eraseTypes tss
+    let elseb' := Statements.eraseTypes ess
     .ite cond thenb' elseb' md
-  | .loop guard measure invariant ⟨ bss ⟩ md =>
-    let body' := { ss := Statements.eraseTypes bss }
+  | .loop guard measure invariant bss md =>
+    let body' := Statements.eraseTypes bss
     .loop guard measure invariant body' md
   | .goto l md => .goto l md
   termination_by (Stmt.sizeOf s)
@@ -164,10 +168,10 @@ instance : HasVarsImp Expression Statement where
   touchedVars := Stmt.touchedVars
 
 instance : HasVarsImp Expression (List Statement) where
-  definedVars := Stmts.definedVars
-  modifiedVars := Stmts.modifiedVars
+  definedVars := Block.definedVars
+  modifiedVars := Block.modifiedVars
   -- order matters for Havoc, so needs to override the default
-  touchedVars := Stmts.touchedVars
+  touchedVars := Block.touchedVars
 
 ---------------------------------------------------------------------
 
@@ -190,10 +194,10 @@ def Statement.modifiedVarsTrans
   : List Expression.Ident := match s with
   | .cmd cmd => Command.modifiedVarsTrans π cmd
   | .goto _ _ => []
-  | .block _ ⟨ bss ⟩ _ => Statements.modifiedVarsTrans π bss
-  | .ite _ ⟨ tbss ⟩ ⟨ ebss ⟩ _ =>
+  | .block _ bss _ => Statements.modifiedVarsTrans π bss
+  | .ite _ tbss ebss _ =>
     Statements.modifiedVarsTrans π tbss ++ Statements.modifiedVarsTrans π ebss
-  | .loop _ _ _ ⟨ bss ⟩ _ =>
+  | .loop _ _ _ bss _ =>
     Statements.modifiedVarsTrans π bss
   termination_by (Stmt.sizeOf s)
 
@@ -204,7 +208,7 @@ def Statements.modifiedVarsTrans
   : List Expression.Ident := match ss with
   | [] => []
   | s :: ss => Statement.modifiedVarsTrans π s ++ Statements.modifiedVarsTrans π ss
-  termination_by (Stmts.sizeOf ss)
+  termination_by (Block.sizeOf ss)
 end
 
 def Command.getVarsTrans
@@ -228,10 +232,10 @@ def Statement.getVarsTrans
   : List Expression.Ident := match s with
   | .cmd cmd => Command.getVarsTrans π cmd
   | .goto _ _ => []
-  | .block _ ⟨ bss ⟩ _ => Statements.getVarsTrans π bss
-  | .ite _ ⟨ tbss ⟩ ⟨ ebss ⟩ _ =>
+  | .block _ bss _ => Statements.getVarsTrans π bss
+  | .ite _ tbss ebss _ =>
     Statements.getVarsTrans π tbss ++ Statements.getVarsTrans π ebss
-  | .loop _ _ _ ⟨ bss ⟩  _ =>
+  | .loop _ _ _ bss  _ =>
     Statements.getVarsTrans π bss
   termination_by (Stmt.sizeOf s)
 
@@ -242,7 +246,7 @@ def Statements.getVarsTrans
   : List Expression.Ident := match ss with
   | [] => []
   | s :: ss => Statement.getVarsTrans π s ++ Statements.getVarsTrans π ss
-  termination_by (Stmts.sizeOf ss)
+  termination_by (Block.sizeOf ss)
 end
 
 -- don't need to transitively lookup for procedures
@@ -261,7 +265,7 @@ def Statement.definedVarsTrans
 -- since call statement does not define any new variables
 def Statements.definedVarsTrans
   (_ : String → Option ProcType) (s : Statements) :=
-  Stmts.definedVars s
+  Block.definedVars s
 
 mutual
 /-- get all variables touched by the statement `s`. -/
@@ -273,9 +277,9 @@ def Statement.touchedVarsTrans
   match s with
   | .cmd cmd => Command.definedVarsTrans π cmd ++ Command.modifiedVarsTrans π cmd
   | .goto _ _ => []
-  | .block _ ⟨ bss ⟩ _ => Statements.touchedVarsTrans π bss
-  | .ite _ ⟨ tbss ⟩ ⟨ ebss ⟩ _ => Statements.touchedVarsTrans π tbss ++ Statements.touchedVarsTrans π ebss
-  | .loop _ _ _ ⟨ bss ⟩ _ => Statements.touchedVarsTrans π bss
+  | .block _ bss _ => Statements.touchedVarsTrans π bss
+  | .ite _ tbss ebss _ => Statements.touchedVarsTrans π tbss ++ Statements.touchedVarsTrans π ebss
+  | .loop _ _ _ bss _ => Statements.touchedVarsTrans π bss
   termination_by (Stmt.sizeOf s)
 
 def Statements.touchedVarsTrans
@@ -286,7 +290,7 @@ def Statements.touchedVarsTrans
   match ss with
   | [] => []
   | s :: srest => Statement.touchedVarsTrans π s ++ Statements.touchedVarsTrans π srest
-  termination_by (Stmts.sizeOf ss)
+  termination_by (Block.sizeOf ss)
 end
 
 def Statement.allVarsTrans
@@ -299,5 +303,69 @@ def Statements.allVarsTrans
   (π : String → Option ProcType) (ss : Statements) := match ss with
   | [] => []
   | s :: ss => Statement.allVarsTrans π s ++ Statements.allVarsTrans π ss
+
+---------------------------------------------------------------------
+
+mutual
+partial def Block.substFvar (b : Block) (fr:Expression.Ident)
+      (to:Expression.Expr) : Block :=
+  List.map (fun s => Statement.substFvar s fr to) b
+
+partial def Statement.substFvar (s : Boogie.Statement)
+      (fr:Expression.Ident)
+      (to:Expression.Expr) : Statement :=
+  match s with
+  | .init lhs ty rhs metadata =>
+    .init lhs ty (Lambda.LExpr.substFvar rhs fr to) metadata
+  | .set lhs rhs metadata =>
+    .set lhs (Lambda.LExpr.substFvar rhs fr to) metadata
+  | .havoc _ _ => s
+  | .assert lbl b metadata =>
+    .assert lbl (Lambda.LExpr.substFvar b fr to) metadata
+  | .assume lbl b metadata =>
+    .assume lbl (Lambda.LExpr.substFvar b fr to) metadata
+  | .call lhs pname args metadata =>
+    .call lhs pname (List.map (Lambda.LExpr.substFvar · fr to) args) metadata
+
+  | .block lbl b metadata =>
+    .block lbl (Block.substFvar b fr to) metadata
+  | .ite cond thenb elseb metadata =>
+    .ite (Lambda.LExpr.substFvar cond fr to) (Block.substFvar thenb fr to)
+          (Block.substFvar elseb fr to) metadata
+  | .loop guard measure invariant body metadata =>
+    .loop (Lambda.LExpr.substFvar guard fr to)
+          (Option.map (Lambda.LExpr.substFvar · fr to) measure)
+          (Option.map (Lambda.LExpr.substFvar · fr to) invariant)
+          (Block.substFvar body fr to)
+          metadata
+  | .goto _ _ => s
+end
+
+---------------------------------------------------------------------
+
+mutual
+partial def Block.renameLhs (b : Block)
+    (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility) : Block :=
+  List.map (fun s => Statement.renameLhs s fr to) b
+
+partial def Statement.renameLhs (s : Boogie.Statement)
+    (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility)
+    : Statement :=
+  match s with
+  | .init lhs ty rhs metadata =>
+    .init (if lhs.name == fr then to else lhs) ty rhs metadata
+  | .set lhs rhs metadata =>
+    .set (if lhs.name == fr then to else lhs) rhs metadata
+  | .call lhs pname args metadata =>
+    .call (lhs.map (fun l =>
+      if l.name == fr  then to else l)) pname args metadata
+  | .block lbl b metadata =>
+    .block lbl (Block.renameLhs b fr to) metadata
+  | .havoc _ _ | .assert _ _ _ | .assume _ _ _ | .ite _ _ _ _
+  | .loop _ _ _ _ _ | .goto _ _ => s
+end
+
+---------------------------------------------------------------------
+
 
 end Boogie

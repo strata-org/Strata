@@ -1,19 +1,19 @@
 Successfully parsed.
-assert_0: verified
-assert_1: verified
-assert_2: failed
+Where.boogie.st(16, 4) [assert_0]: verified
+Where.boogie.st(17, 4) [assert_1]: verified
+Where.boogie.st(18, 4) [assert_2]: failed
 CEx: (init_y_1, 5) (init_x_0, 0)
-assert_3: verified
-assert_4: verified
-assert_5: failed
+Where.boogie.st(34, 4) [assert_3]: verified
+Where.boogie.st(37, 4) [assert_4]: verified
+Where.boogie.st(38, 4) [assert_5]: failed
 CEx: ($__x1, 6) ($__y0, 5) (init_x_2, 0) (init_y_3, 0)
-assert_6: failed
+Where.boogie.st(55, 4) [assert_6]: failed
 CEx: ($__x3, 1) ($__y2, 0) (init_x_4, 0) (init_y_5, 0)
-assert_7: verified
-assert_8: failed
+Where.boogie.st(73, 4) [assert_7]: verified
+Where.boogie.st(74, 4) [assert_8]: failed
 CEx: ($__y5, 0) (init_x_6, 0) (init_y_7, 0) ($__x4, 0)
-assert_9: verified
-assert_10: verified
-assert_11: failed
+Where.boogie.st(91, 4) [assert_9]: verified
+Where.boogie.st(96, 4) [assert_10]: verified
+Where.boogie.st(97, 4) [assert_11]: failed
 CEx: ($__x9, 0) (init_x_8, 0) (init_y_9, 0) ($__x6, 0) ($__y7, 0) ($__y8, 0)
 Finished with 7 goals proved, 5 failed.

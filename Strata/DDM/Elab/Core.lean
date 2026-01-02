@@ -3,8 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Strata.DDM.Elab.DeclM
-import Strata.DDM.Elab.Tree
+module
+
+public import Strata.DDM.Elab.DeclM
+public import Strata.DDM.Elab.Tree
+
+import Strata.DDM.Util.Array
+import Strata.DDM.Util.Fin
+import Strata.DDM.HNF
 
 open Lean (
     Message
@@ -12,8 +18,9 @@ open Lean (
     Syntax
     nullKind
   )
-open Strata.Parser (DeclParser InputContext ParserState)
+open Strata.Parser (DeclParser InputContext)
 
+public section
 namespace Strata
 
 namespace TypeExprF
@@ -23,7 +30,7 @@ This applies global context to instantiate types and variables.
 
 Free type alias variables bound to alias
 -/
-protected def instType (d : TypeExprF α) (bindings : Array (TypeExprF α)) : TypeExprF α := Id.run <|
+protected def instType {α} (d : TypeExprF α) (bindings : Array (TypeExprF α)) : TypeExprF α := Id.run <|
   d.instTypeM fun n idx =>
     if p : idx < bindings.size then
       pure <| bindings[bindings.size - (idx+1)]
@@ -138,7 +145,7 @@ structure ElabState where
   -- Errors found in elaboration.
   errors : Array Message := #[]
 
-@[reducible]
+@[reducible, expose]
 def ElabM α := ReaderT ElabContext (StateM ElabState) α
 
 instance : ElabClass ElabM where
@@ -769,7 +776,7 @@ def evalBindingSpec
               panic! s!"Cannot bind {ident} unexpected category {repr info.cat}"
             else if !bindings.isEmpty then
               panic! s!"Arguments not allowed on category."
-            else if let .atom loc q`Init.Type := info.cat then
+            else if info.cat.name == q`Init.Type then
               pure <| .type loc [] none
             else
               pure <| .cat info.cat
@@ -881,6 +888,35 @@ partial def translateTypeTree (arg : Tree) : ElabM Tree := do
   | _ =>
     panic! s!"translateTypeExpr expected operator {repr arg}"
 
+/--
+Return the arguments to the given syntax declaration.
+
+This should alway succeeed, but captures an internal error if an invariant check fails.
+-/
+def getSyntaxArgs (stx : Syntax) (ident : QualifiedIdent) (expected : Nat) : ElabM (Vector Syntax expected) := do
+  let some loc := mkSourceRange? stx
+    | panic! s!"elabOperation missing source location {repr stx}"
+  let stxArgs := stx.getArgs
+  let .isTrue stxArgP := inferInstanceAs (Decidable (stxArgs.size = expected))
+    | logInternalError loc s!"{ident} expected {expected} arguments when {stxArgs.size} seen.\n  {repr stxArgs[0]!}"
+      return default
+  return ⟨stxArgs, stxArgP⟩
+
+/--
+Unwrap a tree to a raw Arg based on the unwrap specification.
+-/
+def unwrapTree (tree : Tree) (unwrap : Bool) : Arg :=
+  if !unwrap then
+    tree.arg
+  else
+    match tree.info with
+    | .ofNumInfo info => .num info.loc info.val
+    | .ofIdentInfo info => .ident info.loc info.val
+    | .ofStrlitInfo info => .strlit info.loc info.val
+    | .ofDecimalInfo info => .decimal info.loc info.val
+    | .ofBytesInfo info => .bytes info.loc info.val
+    | _ => tree.arg  -- Fallback for non-unwrappable types
+
 mutual
 
 partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
@@ -899,12 +935,19 @@ partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := 
     | return panic! s!"Unknown elaborator {i.fullName}"
   let initSize := tctx.bindings.size
   let argDecls := decl.argDecls.toArray.toVector
-  let ((args, newCtx), success) ← runChecked <| runSyntaxElaborator se argDecls tctx stx.getArgs
+  let (stxArgs, success) ← runChecked <| getSyntaxArgs stx i se.syntaxCount
+  if not success then
+    return default
+  let ((args, newCtx), success) ← runChecked <| runSyntaxElaborator argDecls se tctx stxArgs
   if !success then
     return default
   let resultCtx ← decl.newBindings.foldlM (init := newCtx) <| fun ctx spec => do
     ctx.push <$> evalBindingSpec loc initSize spec args
-  let op : Operation := { ann := loc, name := i, args := args.toArray.map (·.arg) }
+  -- Apply unwrapping based on unwrapSpecs
+  let unwrappedArgs := args.toArray.mapIdx fun idx tree =>
+    let unwrap := se.unwrapSpecs.getD idx false
+    unwrapTree tree unwrap
+  let op : Operation := { ann := loc, name := i, args := unwrappedArgs }
   if loc.isNone then
     return panic! s!"Missing position info {repr stx}."
   let info : OperationInfo := { loc := loc, inputCtx := tctx, op, resultCtx }
@@ -912,14 +955,12 @@ partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := 
 
 partial def runSyntaxElaborator
   {argc : Nat}
+  (argDecls : Vector ArgDecl argc)
   (se : SyntaxElaborator)
-  (b : Vector ArgDecl argc)
   (tctx0 : TypingContext)
-  (args : Array Syntax) : ElabM (Vector Tree argc × TypingContext) := do
+  (args : Vector Syntax se.syntaxCount) : ElabM (Vector Tree argc × TypingContext) := do
   let mut trees : Vector (Option Tree) argc := .replicate argc none
-  for ae in se.argElaborators do
-    let .isTrue syntaxLevelP := inferInstanceAs (Decidable (ae.syntaxLevel < args.size))
-        | return panic! "Invalid syntaxLevel"
+  for ⟨ae, sp⟩ in se.argElaborators do
     let argLevel := ae.argLevel
     let .isTrue argLevelP := inferInstanceAs (Decidable (argLevel < argc))
         | return panic! "Invalid argLevel"
@@ -931,7 +972,7 @@ partial def runSyntaxElaborator
         | none => continue
       | none => pure tctx0
     let astx := args[ae.syntaxLevel]
-    let expectedKind := b[argLevel].kind
+    let expectedKind := argDecls[argLevel].kind
     match expectedKind with
     | .type expectedType =>
       let (tree, success) ← runChecked <| elabExpr tctx astx
@@ -948,7 +989,7 @@ partial def runSyntaxElaborator
         | .error () =>
           panic! "Could not infer type."
         | .ok expectedType => do
-          trees ← unifyTypes b ⟨argLevel, argLevelP⟩ expectedType tctx astx inferredType trees
+          trees ← unifyTypes argDecls ⟨argLevel, argLevelP⟩ expectedType tctx astx inferredType trees
           assert! trees[argLevel].isNone
           trees := trees.set argLevel (some tree)
       | .cat c =>
@@ -1152,11 +1193,13 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
           { ident := "", kind := .type (.ofType tp) }
     let argDecls := argTypes.map mkArgDecl
     let se : SyntaxElaborator := {
-            argElaborators := Array.ofFn fun (⟨lvl, _⟩ : Fin args.size) =>
-               { syntaxLevel := lvl, argLevel := lvl }
+            syntaxCount := args.size
+            argElaborators := Array.ofFn fun (⟨lvl, lvlp⟩ : Fin args.size) =>
+              let e := { syntaxLevel := lvl, argLevel := lvl }
+              ⟨e, lvlp⟩
             resultScope := none
           }
-    let (args, _) ← runSyntaxElaborator se argDecls tctx args
+    let (args, _) ← runSyntaxElaborator argDecls se tctx ⟨args, Eq.refl args.size⟩
     let e := args.toArray.foldl (init := fvar) fun e t =>
       .app { start := fnLoc.start, stop := t.info.loc.stop } e t.arg
     let info : ExprInfo := { toElabInfo := einfo, expr := e }
@@ -1174,7 +1217,10 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
     let some se := (←read).syntaxElabs[i]?
       | return panic! s!"Unknown expression elaborator {i.fullName}"
     let argDecls := fn.argDecls.toArray.toVector
-    let ((args, _), success) ← runChecked <| runSyntaxElaborator se argDecls tctx stx.getArgs
+    let (stxArgs, success) ← runChecked <| getSyntaxArgs stx i se.syntaxCount
+    if !success then
+      return default
+    let ((args, _), success) ← runChecked <| runSyntaxElaborator argDecls se tctx stxArgs
     if !success then
       return default
     -- N.B. Every subterm gets the function location.
@@ -1233,3 +1279,4 @@ partial def elabCommand (leanEnv : Lean.Environment) : DeclM (Option Tree) := do
   runElab <| some <$> elabOperation (.empty glbl) stx
 
 end Strata.Elab
+end

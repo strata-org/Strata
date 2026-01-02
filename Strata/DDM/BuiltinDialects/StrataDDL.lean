@@ -3,12 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public import Strata.DDM.AST
+import Strata.DDM.BuiltinDialects.BuiltinM
 import Strata.DDM.BuiltinDialects.Init
 
-namespace Strata
+open Strata.Elab
 
-open Elab
+public section
+namespace Strata
 
 def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
   let Ident : ArgDeclKind := .cat <| .atom .none q`Init.Ident
@@ -151,7 +155,11 @@ def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
   declareMetadata { name := "rightassoc", args := #[] }
 
   declareMetadata { name := "scope", args := #[.mk "scope" .ident] }
+  declareMetadata { name := "unwrap", args := #[] }
   declareMetadata { name := "declareType", args := #[.mk "name" .ident, .mk "args" (.opt .ident)] }
   declareMetadata { name := "aliasType",   args := #[.mk "name" .ident, .mk "args" (.opt .ident), .mk "def" .ident] }
   declareMetadata { name := "declare",     args := #[.mk "name" .ident, .mk "type" .ident] }
   declareMetadata { name := "declareFn",   args := #[.mk "name" .ident, .mk "args" .ident, .mk "type" .ident] }
+
+end Strata
+end

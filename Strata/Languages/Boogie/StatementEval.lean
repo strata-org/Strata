@@ -48,8 +48,7 @@ def callConditions (proc : Procedure)
                 (fun p =>
                   List.foldl
                     (fun c (x, v) =>
-                      { expr := LExpr.substFvar c.expr x.fst v ,
-                        attr := c.attr})
+                      { c with expr := LExpr.substFvar c.expr x.fst v })
                     p subst)
                 conditions.values
   List.zip names exprs
@@ -83,7 +82,7 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
     -- variables.
     let lhs_tys :=
       lhs.map
-      (fun l => (E.exprEnv.state.findD l (none, .fvar l none)).fst)
+      (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
     let lhs_typed := lhs.zip lhs_tys
     let (lhs_fvars, E) := E.genFVars lhs_typed
     let return_tys := proc.header.outputs.keys.map
@@ -105,7 +104,7 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
     -- reflect the post-call value of these globals.
     let modifies_tys :=
         proc.spec.modifies.map
-        (fun l => (E.exprEnv.state.findD l (none, .fvar l none)).fst)
+        (fun l => (E.exprEnv.state.findD l (none, .fvar () l none)).fst)
     let modifies_typed := proc.spec.modifies.zip modifies_tys
     let (globals_fvars, E) := E.genFVars modifies_typed
     let globals_post_subst := List.zip modifies_typed globals_fvars
@@ -117,7 +116,7 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
     let preconditions :=
         callConditions proc .Requires proc.spec.preconditions subst
     let preconditions := preconditions.map
-                            (fun (l, e) => (toString l, Procedure.Check.mk (E.exprEval e.expr) e.attr))
+                            (fun (l, e) => (toString l, Procedure.Check.mk (E.exprEval e.expr) e.attr e.md))
     -- A free precondition is not checked at call sites, which is
     -- accounted for by `ProofObligations.create` below.
     let deferred_pre := ProofObligations.create E.pathConditions preconditions
@@ -195,7 +194,7 @@ def processGoto : Statements → Option String → (Statements × Option String)
 def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : Option String) :
   List EnvWithNext :=
   open LTy.Syntax in
-  go (Imperative.Stmts.sizeOf ss) (EnvWithNext.mk E .none []) ss optLabel
+  go (Imperative.Block.sizeOf ss) (EnvWithNext.mk E .none []) ss optLabel
   where go steps Ewn ss optLabel :=
   match steps, Ewn.env.error with
   | _, some _ => [{Ewn with nextLabel := .none}]
@@ -215,7 +214,7 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
                         env := E,
                         nextLabel := .none }]
 
-          | .block label { ss } md =>
+          | .block label ss md =>
             let orig_stk := Ewn.stk
             let Ewn := { Ewn with env := Ewn.env.pushEmptyScope,
                                   stk := orig_stk.push [] }
@@ -225,29 +224,29 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
                                  { ewn with env := ewn.env.popScope,
                                             stk :=
                                               let ss' := ewn.stk.top
-                                              let s' := Imperative.Stmt.block label { ss := ss' } md
+                                              let s' := Imperative.Stmt.block label ss' md
                                               orig_stk.appendToTop [s'] })
             Ewns
 
-          | .ite cond { ss := then_ss } { ss := else_ss } md =>
+          | .ite cond then_ss else_ss md =>
             let orig_stk := Ewn.stk
             let Ewn := { Ewn with stk := orig_stk.push [] }
             let cond' := Ewn.env.exprEval cond
             match cond' with
-            | .true =>
+            | .true _ =>
               let Ewns := go' Ewn then_ss .none -- Not allowed to jump into a block
               let Ewns := Ewns.map
                               (fun (ewn : EnvWithNext) =>
                                    let ss' := ewn.stk.top
-                                   let s' := Imperative.Stmt.ite cond' { ss := ss' } { ss := [] } md
+                                   let s' := Imperative.Stmt.ite cond' ss' [] md
                                    { ewn with stk := orig_stk.appendToTop [s']})
               Ewns
-            | .false =>
+            | .false _ =>
               let Ewns := go' Ewn else_ss .none -- Not allowed to jump into a block
               let Ewns := Ewns.map
                               (fun (ewn : EnvWithNext) =>
                                    let ss' := ewn.stk.top
-                                   let s' := Imperative.Stmt.ite cond' { ss := [] } { ss := ss' } md
+                                   let s' := Imperative.Stmt.ite cond' [] ss' md
                                    { ewn with stk := orig_stk.appendToTop [s']})
               Ewns
             | _ =>
@@ -256,7 +255,7 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
               let label_false := toString (f!"<label_ite_cond_false: !{cond.eraseTypes}>")
               let path_conds_true := Ewn.env.pathConditions.push [(label_true, cond')]
               let path_conds_false := Ewn.env.pathConditions.push
-                                        [(label_false, (.ite cond' LExpr.false LExpr.true))]
+                                        [(label_false, (.ite () cond' (LExpr.false ()) (LExpr.true ())))]
               let Ewns_t := go' {Ewn with env := {Ewn.env with pathConditions := path_conds_true}} then_ss .none
               -- We empty the deferred proof obligations in the `else` path to
               -- avoid duplicate verification checks -- the deferred obligations
@@ -267,19 +266,19 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
                 -- with no next label, we can merge both states into one.
               | [{ stk := stk_t, env := E_t, nextLabel := .none}],
                 [{ stk := stk_f, env := E_f, nextLabel := .none}] =>
-                let s' := Imperative.Stmt.ite cond' { ss := stk_t.top } { ss := stk_f.top } md
+                let s' := Imperative.Stmt.ite cond' stk_t.top stk_f.top md
                 [EnvWithNext.mk (Env.merge cond' E_t E_f).popScope
                                 .none
                                 (orig_stk.appendToTop [s'])]
               | _, _ =>
                 let Ewns_t := Ewns_t.map
                                   (fun (ewn : EnvWithNext) =>
-                                    let s' := Imperative.Stmt.ite LExpr.true { ss := ewn.stk.top } { ss := [] } md
+                                    let s' := Imperative.Stmt.ite (LExpr.true ()) ewn.stk.top [] md
                                     { ewn with env := ewn.env.popScope,
                                                stk := orig_stk.appendToTop [s']})
                 let Ewns_f := Ewns_f.map
                                   (fun (ewn : EnvWithNext) =>
-                                    let s' := Imperative.Stmt.ite LExpr.false { ss := [] } { ss := ewn.stk.top } md
+                                    let s' := Imperative.Stmt.ite (LExpr.false ()) [] ewn.stk.top md
                                     { ewn with env := ewn.env.popScope,
                                                stk := orig_stk.appendToTop [s']})
                 Ewns_t ++ Ewns_f

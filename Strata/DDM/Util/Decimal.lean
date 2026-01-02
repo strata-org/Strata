@@ -3,11 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
+
 import Lean.ToExpr
 import Strata.DDM.Util.Lean
+public import Lean.ToExpr
 
 private def String.replicate (n : Nat) (c : Char) := n.repeat (a := "") (·.push c)
 
+public section
 namespace Strata
 
 structure Decimal where
@@ -21,9 +25,9 @@ def zero : Decimal := { mantissa := 0, exponent := 0 }
 
 protected def ofInt (x : Int) : Decimal := { mantissa := x, exponent := 0 }
 
-opaque maxPrettyExponent : Int := 5
+private opaque maxPrettyExponent : Int := 5
 
-opaque minPrettyExponent : Int := -5
+private opaque minPrettyExponent : Int := -5
 
 def toString (d : Decimal) : String :=
   let m := d.mantissa
@@ -44,7 +48,7 @@ def toString (d : Decimal) : String :=
     s!"{m}e{e}"
 
 instance : ToString Decimal where
-  toString := Decimal.toString
+  toString := private Decimal.toString
 
 section
 
@@ -55,7 +59,7 @@ instance : ToExpr Decimal where
   toExpr d :=
     mkApp2 (mkConst ``Decimal.mk) (toExpr d.mantissa) (toExpr d.exponent)
 
-instance : Quote Decimal where
+private instance : Quote Decimal where
   quote d := Syntax.mkCApp ``Decimal.mk #[quote d.mantissa, quote d.exponent]
 
 end

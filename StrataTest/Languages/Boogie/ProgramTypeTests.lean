@@ -80,7 +80,7 @@ Proof Obligation:
 ---
 info: ok: [(type Boogie.Boundedness.Infinite Foo [_, _]
   type FooAlias a := (Foo int bool)
-  func fooAliasVal : ∀[α]. () → (FooAlias α);
+  func fooAliasVal :  () → (Foo int bool);
   func fooVal :  () → (Foo int bool);
   (procedure P :  () → ())
   modifies: []
@@ -275,7 +275,7 @@ info: ok: [(type Boogie.Boundedness.Infinite Foo [_, _]
   func Bv64.SLe :  ((x : bv64) (y : bv64)) → bool;
   func Bv64.SGt :  ((x : bv64) (y : bv64)) → bool;
   func Bv64.SGe :  ((x : bv64) (y : bv64)) → bool;
-  func fooAliasVal : ∀[α]. () → (FooAlias α);
+  func fooAliasVal :  () → (Foo int bool);
   func fooVal :  () → (Foo int bool);
   ⏎
   ⏎
@@ -313,12 +313,12 @@ def outOfScopeVarProg : Program := { decls := [
               body := [
                 Statement.set "y" eb[((~Bool.Or x) x)],
                 .ite eb[(x == #true)]
-                  { ss := [Statement.init "q" t[int] eb[#0],
+                  [Statement.init "q" t[int] eb[#0],
                            Statement.set "q" eb[#1],
-                           Statement.set "y" eb[#true]] }
-                  { ss := [Statement.init "q" t[int] eb[#0],
+                           Statement.set "y" eb[#true]]
+                  [Statement.init "q" t[int] eb[#0],
                            Statement.set "q" eb[#2],
-                           Statement.set "y" eb[#true]] },
+                           Statement.set "y" eb[#true]],
                 Statement.assert "y_check" eb[y == #true],
                 Statement.assert "q_check" eb[q == #1]
               ]

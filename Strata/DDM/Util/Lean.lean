@@ -3,11 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
-import Lean.Parser.Types
+module
+public import Lean.Expr
+public import Lean.Message
+public import Lean.Parser.Types
 
 open Lean Parser
 
+public section
 namespace Lean
 
 /- Creates a local variable name from a string -/
@@ -15,7 +18,7 @@ def mkLocalDeclId (name : String) : TSyntax `Lean.Parser.Command.declId :=
   let dName := .anonymous |>.str name
   .mk (.ident .none name.toSubstring dName [])
 
-partial def mkErrorMessage (c : InputContext) (pos : String.Pos) (stk : SyntaxStack) (e : Parser.Error) (isSilent : Bool := false) : Message := Id.run do
+partial def mkErrorMessage (c : InputContext) (pos : String.Pos.Raw) (stk : SyntaxStack) (e : Parser.Error) (isSilent : Bool := false) : Message := Id.run do
   let mut pos := pos
   let mut endPos? := none
   let mut e := e
@@ -42,12 +45,12 @@ partial def mkErrorMessage (c : InputContext) (pos : String.Pos) (stk : SyntaxSt
     data := toString e }
 where
   -- Error recovery might lead to there being some "junk" on the stack
-  lastTrailing (s : SyntaxStack) : Option Substring :=
+  lastTrailing (s : SyntaxStack) : Option Substring.Raw :=
     s.toSubarray.findSomeRevM? (m := Id) fun stx =>
       if let .original (trailing := trailing) .. := stx.getTailInfo then pure (some trailing)
         else none
 
-partial def mkStringMessage (c : InputContext) (pos : String.Pos) (msg : String) (isSilent : Bool := false) : Message :=
+def mkStringMessage (c : InputContext) (pos : String.Pos.Raw) (msg : String) (isSilent : Bool := false) : Message :=
   mkErrorMessage c pos SyntaxStack.empty { unexpected := msg } (isSilent := isSilent)
 
 instance : Quote Int where
@@ -62,9 +65,15 @@ def optionToExpr (type : Lean.Expr) (a : Option Lean.Expr) : Lean.Expr :=
   | some a => mkApp2 (mkConst ``Option.some [levelZero]) type a
 
 @[inline]
-def arrayToExpr (type : Lean.Expr) (a : Array Lean.Expr) : Lean.Expr :=
-  let init := mkApp2 (mkConst ``Array.mkEmpty [levelZero]) type (toExpr a.size)
-  let pushFn := mkApp (mkConst ``Array.push [levelZero]) type
+def arrayToExpr (level : Level) (type : Lean.Expr) (a : Array Lean.Expr) : Lean.Expr :=
+  let init := mkApp2 (mkConst ``Array.mkEmpty [level]) type (toExpr a.size)
+  let pushFn := mkApp (mkConst ``Array.push [level]) type
   a.foldl (init := init) (mkApp2 pushFn)
 
+def listToExpr (level : Level) (type : Lean.Expr) (es : List Lean.Expr) : Lean.Expr :=
+  let nilFn  := mkApp (mkConst ``List.nil [level]) type
+  let consFn := mkApp (mkConst ``List.cons [level]) type
+  es.foldr (init := nilFn) (mkApp2 consFn)
+
 end Lean
+end
