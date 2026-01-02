@@ -85,7 +85,7 @@ def verifyProgram (prog : B3AST.Program SourceRange) (solverPath : String := "z3
               let vcState := statementToVCs ConversionContext.empty VCGenState.empty bodyStmt
               -- Check each VC
               for (vc, sourceStmt) in vcState.verificationConditions.reverse do
-                let result ← checkProperty state vc (.procedure m name params specs body) (some sourceStmt)
+                let result ← checkPropertyIsolated state vc (.procedure m name params specs body) (some sourceStmt)
                 results := results ++ [result]
             else
               pure ()  -- Skip procedures with parameters for now

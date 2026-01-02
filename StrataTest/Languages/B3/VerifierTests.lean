@@ -203,9 +203,9 @@ procedure test_fail() {
 -- Automatic Refinement Tests
 ---------------------------------------------------------------------
 
-def testAutoRefinement (prog : Program) : IO Unit := do
+def testAutoDiagnosis (prog : Program) : IO Unit := do
   let ast := programToB3AST prog
-  let reports ← verifyWithRefinement ast
+  let reports ← verifyWithDiagnosis ast
 
   for report in reports do
     IO.println s!"Procedure {report.procedureName}:"
@@ -221,8 +221,8 @@ def testAutoRefinement (prog : Program) : IO Unit := do
           | none => pure ()
           match refinement with
           | some ref =>
-              if !ref.refinedFailures.isEmpty then
-                for (_desc, failedExpr, _) in ref.refinedFailures do
+              if !ref.diagnosedFailures.isEmpty then
+                for (_desc, failedExpr, _) in ref.diagnosedFailures do
                   IO.println s!"    Related: {formatExpressionError prog failedExpr}"
           | none => pure ()
 
@@ -233,7 +233,7 @@ info: Procedure test:
     Related: (0,63): f(5) == 10
 -/
 #guard_msgs in
-#eval testAutoRefinement $ #strata program B3CST;
+#eval testAutoDiagnosis $ #strata program B3CST;
 function f(x : int) : int
 procedure test() {
   check 5 == 5 && f(5) == 10

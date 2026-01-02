@@ -8,7 +8,7 @@ import Strata.Languages.B3.Verifier.State
 import Strata.Languages.B3.Verifier.Conversion
 
 /-!
-# Verification Refinement Strategies
+# Verification Diagnosis Strategies
 
 Interactive debugging strategies for failed verifications.
 
@@ -22,12 +22,12 @@ namespace Strata.B3.Verifier
 
 open Strata.SMT
 
-structure RefinementResult where
+structure DiagnosisResult where
   originalCheck : CheckResult
-  refinedFailures : List (String × B3AST.Expression SourceRange × CheckResult)  -- Description, expression, result
+  diagnosedFailures : List (String × B3AST.Expression SourceRange × CheckResult)  -- Description, expression, result
 
-/-- Automatically refine a failed check to find root cause -/
-def refineFailure (state : B3VerificationState) (expr : B3AST.Expression SourceRange) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : B3AST.Statement SourceRange) : IO RefinementResult := do
+/-- Automatically diagnose a failed check to find root cause -/
+def diagnoseFailure (state : B3VerificationState) (expr : B3AST.Expression SourceRange) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : B3AST.Statement SourceRange) : IO DiagnosisResult := do
   match expressionToSMT ConversionContext.empty expr with
   | none =>
       let dummyResult : CheckResult := {
@@ -36,33 +36,33 @@ def refineFailure (state : B3VerificationState) (expr : B3AST.Expression SourceR
         decision := .unknown
         model := none
       }
-      return { originalCheck := dummyResult, refinedFailures := [] }
+      return { originalCheck := dummyResult, diagnosedFailures := [] }
   | some term =>
-      let originalResult ← checkProperty state term sourceDecl (some sourceStmt)
+      let originalResult ← checkPropertyIsolated state term sourceDecl (some sourceStmt)
 
       if originalResult.decision == .unsat then
-        return { originalCheck := originalResult, refinedFailures := [] }
+        return { originalCheck := originalResult, diagnosedFailures := [] }
 
-      let mut refinements := []
+      let mut diagnosements := []
 
       -- Strategy: Split conjunctions
       match expr with
       | .binaryOp _ (.and _) lhs rhs =>
           match expressionToSMT ConversionContext.empty lhs with
           | some lhsTerm =>
-              let lhsResult ← checkProperty state lhsTerm sourceDecl (some sourceStmt)
+              let lhsResult ← checkPropertyIsolated state lhsTerm sourceDecl (some sourceStmt)
               if lhsResult.decision != .unsat then
-                refinements := refinements ++ [("left conjunct", lhs, lhsResult)]
+                diagnosements := diagnosements ++ [("left conjunct", lhs, lhsResult)]
           | none => pure ()
 
           match expressionToSMT ConversionContext.empty rhs with
           | some rhsTerm =>
-              let rhsResult ← checkProperty state rhsTerm sourceDecl (some sourceStmt)
+              let rhsResult ← checkPropertyIsolated state rhsTerm sourceDecl (some sourceStmt)
               if rhsResult.decision != .unsat then
-                refinements := refinements ++ [("right conjunct", rhs, rhsResult)]
+                diagnosements := diagnosements ++ [("right conjunct", rhs, rhsResult)]
           | none => pure ()
       | _ => pure ()
 
-      return { originalCheck := originalResult, refinedFailures := refinements }
+      return { originalCheck := originalResult, diagnosedFailures := diagnosements }
 
 end Strata.B3.Verifier

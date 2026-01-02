@@ -53,24 +53,23 @@ def addAssertion (state : B3VerificationState) (term : Term) : IO B3Verification
   let _ ← (Solver.assert (formatTermDirect term)).run state.solver
   return { state with assertions := term :: state.assertions }
 
+def push (state : B3VerificationState) : IO B3VerificationState := do
+  let solver := state.solver
+  solver.smtLibInput.putStr "(push 1)\n"
+  solver.smtLibInput.flush
+  return state
+
+def pop (state : B3VerificationState) : IO B3VerificationState := do
+  let solver := state.solver
+  solver.smtLibInput.putStr "(pop 1)\n"
+  solver.smtLibInput.flush
+  return state
+
 def checkProperty (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : Option (B3AST.Statement SourceRange)) : IO CheckResult := do
-  -- Use push/pop for isolated check - reuses existing solver state!
+  -- Just assert negation and check (caller manages push/pop)
   let runCheck : SolverM (Decision × Option String) := do
-    -- Push new scope
-    let solver ← read
-    solver.smtLibInput.putStr "(push 1)\n"
-    solver.smtLibInput.flush
-
-    -- Assert negation
     Solver.assert s!"(not {formatTermDirect term})"
-
-    -- Check sat
     let decision ← Solver.checkSat []
-
-    -- Pop scope (restore state)
-    solver.smtLibInput.putStr "(pop 1)\n"
-    solver.smtLibInput.flush
-
     let model := if decision == .sat then some "model available" else none
     return (decision, model)
 
@@ -81,6 +80,12 @@ def checkProperty (state : B3VerificationState) (term : Term) (sourceDecl : B3AS
     decision := decision
     model := model
   }
+
+def checkPropertyIsolated (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : Option (B3AST.Statement SourceRange)) : IO CheckResult := do
+  let _ ← push state
+  let result ← checkProperty state term sourceDecl sourceStmt
+  let _ ← pop state
+  return result
 
 def closeVerificationState (state : B3VerificationState) : IO Unit := do
   let _ ← (Solver.exit).run state.solver
