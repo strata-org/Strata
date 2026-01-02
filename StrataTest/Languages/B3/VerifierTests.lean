@@ -83,6 +83,9 @@ def testVerification (prog : Program) : IO Unit := do
           match result.sourceStmt with
           | some stmt =>
               IO.println s!"    Failed at: {formatStatementError prog stmt}"
+              match result.model with
+              | some model => IO.println s!"    Model: {model}"
+              | none => pure ()
           | none => pure ()
     | _ => pure ()
 

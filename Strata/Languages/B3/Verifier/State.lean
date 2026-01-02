@@ -47,21 +47,25 @@ def addAssertion (state : B3VerificationState) (term : Term) : B3VerificationSta
 
 def checkProperty (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : Option (B3AST.Statement SourceRange)) (solverPath : String := "z3") : IO CheckResult := do
   let solver ← Solver.spawn solverPath #["-smt2", "-in"]
-  let runCheck : SolverM Decision := do
+  let runCheck : SolverM (Decision × Option String) := do
     Solver.setLogic "ALL"
+    Solver.setOption "produce-models" "true"
     for (name, argTypes, returnType) in state.declaredFunctions.reverse do
       Solver.declareFun name argTypes returnType
     for assertion in state.assertions.reverse do
       Solver.assert (formatTermDirect assertion)
     Solver.assert s!"(not {formatTermDirect term})"
-    Solver.checkSat []
-  let decision ← runCheck.run solver
+    let decision ← Solver.checkSat []
+    -- Get model if sat (simplified - just return decision for now)
+    let model := if decision == .sat then some "model available" else none
+    return (decision, model)
+  let (decision, model) ← runCheck.run solver
   let _ ← (Solver.exit).run solver
   return {
     decl := sourceDecl
     sourceStmt := sourceStmt
     decision := decision
-    model := none
+    model := model
   }
 
 end Strata.B3.Verifier
