@@ -113,9 +113,6 @@ def reach (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl S
     model := model
   }
 
-end Strata.B3.Verifier
-
-
 ---------------------------------------------------------------------
 -- Higher-level API (works with B3AST types)
 ---------------------------------------------------------------------
@@ -171,3 +168,5 @@ def addDeclaration (state : B3VerificationState) (decl : B3AST.Decl SourceRange)
       | some term => addAxiom state term
       | none => return state
   | _ => return state
+
+end Strata.B3.Verifier
