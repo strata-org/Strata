@@ -83,9 +83,6 @@ def testVerification (prog : Program) : IO Unit := do
           match result.sourceStmt with
           | some stmt =>
               IO.println s!"    Failed at: {formatStatementError prog stmt}"
-              match result.model with
-              | some model => IO.println s!"    Model: {model}"
-              | none => pure ()
           | none => pure ()
     | _ => pure ()
 
@@ -173,7 +170,6 @@ info: Verification results:
   test_fail: ✗ counterexample
     Failed at: offset +52
     check 5 == 5 && f(5) == 10
-    Model: model available
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -205,17 +201,24 @@ def testAutoRefinement (prog : Program) : IO Unit := do
           IO.println "  ✓ Verified"
       | _ =>
           IO.println "  ✗ Could not prove"
+          match result.sourceStmt with
+          | some stmt =>
+              IO.println s!"    Failed at: {formatStatementError prog stmt}"
+          | none => pure ()
           match refinement with
           | some ref =>
-              for (_desc, failedExpr, _) in ref.refinedFailures do
-                let exprStr := formatExpressionSimple prog failedExpr
-                IO.println s!"    Refinement: {exprStr} could not be proved"
+              if !ref.refinedFailures.isEmpty then
+                for (_desc, failedExpr, _) in ref.refinedFailures do
+                  let exprStr := formatExpressionSimple prog failedExpr
+                  IO.println s!"    Precisely: check {exprStr} could not be proved"
           | none => pure ()
 
 /--
 info: Procedure test:
   ✗ Could not prove
-    Refinement: f(5) == 10 could not be proved
+    Failed at: offset +47
+    check 5 == 5 && f(5) == 10
+    Precisely: check f(5) == 10 could not be proved
 -/
 #guard_msgs in
 #eval testAutoRefinement $ #strata program B3CST;
