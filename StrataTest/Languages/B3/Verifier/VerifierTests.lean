@@ -40,9 +40,8 @@ def programToB3AST (prog : Program) : B3AST.Program SourceRange :=
 
 def testSMTGeneration (prog : Program) : IO Unit := do
   let ast := programToB3AST prog
-  let commands := programToSMTCommands ast
-  for cmd in commands do
-    IO.println cmd
+  let commands ← programToSMTCommands ast
+  IO.println commands
 
 def formatSourceLocation (baseOffset : String.Pos.Raw) (sr : SourceRange) : String :=
   let relativePos := sr.start.byteIdx - baseOffset.byteIdx
@@ -126,44 +125,43 @@ def testVerification (prog : Program) : IO Unit := do
   let results ← verifyProgram ast
   IO.println "Verification results:"
   for result in results do
-    match result.decl with
-    | .procedure _ name _ _ _ =>
-        -- Check if this is a reach statement
-        let isReach := match result.sourceStmt with
-          | some (.reach _ _) => true
-          | _ => false
+    match result with
+    | .error msg =>
+        IO.println s!"  Error: {msg}"
+    | .ok checkResult =>
+        match checkResult.decl with
+        | .procedure _ name _ _ _ =>
+            let marker := if checkResult.result.isError then "✗" else "✓"
+            let description := match checkResult.result with
+              | .checkResult .proved => "verified"
+              | .checkResult .provedWrong => "proved false"
+              | .checkResult .proofUnknown => "proof unknown"
+              | .reachResult .unreachable => "unreachable"
+              | .reachResult .reachable => "satisfiable"
+              | .reachResult .reachabilityUnknown => "reachability unknown"
 
-        let status := if isReach then
-          match result.decision with
-          | .unsat => "✗ unreachable"
-          | .sat => "✓ satisfiable"
-          | .unknown => "? unknown"
-        else
-          match result.decision with
-          | .unsat => "✓ verified"
-          | .sat => "✗ proved wrong"
-          | .unknown => "? unknown"
-
-        IO.println s!"  {name.val}: {status}"
-        -- Show details for failures
-        if (result.result.isError && !isReach) || (!result.result.isError && isReach) then
-          match result.sourceStmt with
-          | some stmt =>
-              IO.println s!"    {formatStatementError prog stmt}"
-          | none => pure ()
-    | _ => pure ()
+            IO.println s!"  {name.val}: {marker} {description}"
+            if checkResult.result.isError then
+              match checkResult.sourceStmt with
+              | some stmt =>
+                  IO.println s!"    {formatStatementError prog stmt}"
+              | none => pure ()
+        | _ => pure ()
 
 ---------------------------------------------------------------------
 -- SMT Generation Tests
 ---------------------------------------------------------------------
 
 /--
-info: (declare-fun abs (Int) Int)
+info: (set-logic ALL)
+(set-option :produce-models true)
+(declare-fun abs (Int) Int)
 (assert (forall ((x Int)) (! (= (abs x) (ite (>= x 0) x (- x))) :pattern ((abs x)))))
 (push 1)
 (assert (not (= (abs (- 5)) 5)))
 (check-sat)
 (pop 1)
+(exit)
 -/
 #guard_msgs in
 #eval testSMTGeneration $ #strata program B3CST;
@@ -234,7 +232,7 @@ procedure test() {
 
 /--
 info: Verification results:
-  test_fail: ✗ proved wrong
+  test_fail: ✗ proved false
     (0,52): check 5 == 5 && f(5) == 10
 -/
 #guard_msgs in
