@@ -175,7 +175,7 @@ Obligation: assert_11
 Result: failed
 -/
 #guard_msgs in
-#eval verify "z3" irrelevantAxiomsTestPgm1 Inhabited.default {Options.quiet with removeIrrelevantAxioms := true}
+#eval verify "z3" irrelevantAxiomsTestPgm1 Inhabited.default {Options.quiet with removeIrrelevantAxioms := .Aggressive}
 
 ---------------------------------------------------------------------
 
@@ -269,7 +269,9 @@ Obligation: assert_11
 Result: unknown
 -/
 #guard_msgs in
-#eval verify "z3" irrelevantAxiomsTestPgm1 Inhabited.default {Options.quiet with removeIrrelevantAxioms := false}
+#eval verify "z3" irrelevantAxiomsTestPgm1 Inhabited.default {Options.quiet with removeIrrelevantAxioms := .Precise}
+-- Note: Precise irrelevant axiom removal performs just like no axiom removal in
+-- this case.
 
 ---------------------------------------------------------------------
 
