@@ -91,7 +91,7 @@ meta def addDefn (name : Lean.Name)
 /--
 Declare dialect and add to environment.
 -/
-meta def declareDialect (d : Dialect) : CommandElabM Unit := do
+public meta def declareDialect (d : Dialect) : CommandElabM Unit := do
   -- Identifier for dialect
   let dialectName := Name.anonymous |>.str d.name
   let dialectAbsName ← mkScopedName dialectName
