@@ -28,6 +28,7 @@ the responsibility of the user to ensure that they are consistent.
 structure Axiom where
   name : BoogieLabel
   e : LExpr BoogieLParams.mono
+  deriving Inhabited
 
 instance : ToFormat (BoogieLParams.mono : LExprParamsT).base.Identifier :=
   show ToFormat BoogieIdent from inferInstance

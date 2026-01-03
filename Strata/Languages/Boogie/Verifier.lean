@@ -223,6 +223,12 @@ def dischargeObligation
   | .error e => return .error e
   | .ok result => return .ok (result, estate)
 
+private def List.fromMarker (xs : List (String × α)) (marker : String) :
+    List (String × α) :=
+  match xs.dropWhile (fun x => x.fst ≠ marker) with
+  | [] => xs
+  | _ :: ys => ys
+
 def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Options) :
     EIO Format VCResults := do
   let (p, E) := pE
@@ -252,19 +258,33 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
         results := results.push { obligation, result := .sat .empty, verbose := options.verbose }
         if options.stopOnFirstError then break
       let obligation :=
-      if options.removeIrrelevantAxioms then
-        -- We attempt to prune the path conditions by excluding all irrelevant
-        -- axioms w.r.t. the consequent to reduce the size of the proof
-        -- obligation.
-        let cg := Program.toFunctionCG p
-        let fns := obligation.obligation.getOps.map BoogieIdent.toPretty
-        let relevant_fns := (fns ++ (CallGraph.getAllCalleesClosure cg fns)).dedup
-
-        let irrelevant_axs := Program.getIrrelevantAxioms p relevant_fns
-        let new_assumptions := Imperative.PathConditions.removeByNames obligation.assumptions irrelevant_axs
-        { obligation with assumptions := new_assumptions }
-      else
-        obligation
+        match options.removeIrrelevantAxioms with
+        | .Off => obligation
+        | irrelvantAxMode =>
+          -- We attempt to prune the path conditions by excluding all irrelevant
+          -- axioms to reduce the size of the proof obligation and brittleness due
+          -- to quantifiers.
+          let consequent_fns := obligation.obligation.getOps.map BoogieIdent.toPretty
+          let relevant_fns :=
+            if irrelvantAxMode == IrrelevantAxiomsMode.Aggressive then
+              -- Do not consider functions in the antedent.
+              consequent_fns
+            else
+            -- (HACK) Special marker to grab functions from the VC's assumptions,
+            -- and not from an ever-present prelude. After all, the goal is to
+            -- minimize axioms in this prelude.
+            let non_prelude_assumptions := List.fromMarker obligation.assumptions.flatten "__end_of_prelude_marker"
+            let assumption_fns := non_prelude_assumptions.flatMap (fun a => a.snd.getOps.map BoogieIdent.toPretty)
+            (consequent_fns ++ assumption_fns).dedup
+          let irrelevant_axs := Program.getIrrelevantAxioms p relevant_fns
+          let new_assumptions := Imperative.PathConditions.removeByNames obligation.assumptions irrelevant_axs
+          let new_obligation := ({ obligation with assumptions := new_assumptions } : ProofObligation Expression)
+          if options.verbose then
+            dbg_trace f!"Pruned Proof Obligation:"
+            dbg_trace f!"{format new_obligation}"
+            new_obligation
+          else
+            new_obligation
       -- At this point, we solely rely on the SMT backend.
       let maybeTerms := ProofObligation.toSMTTerms E obligation
       match maybeTerms with
