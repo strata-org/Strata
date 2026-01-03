@@ -76,9 +76,9 @@ info: B3: .blockStmt
     (.literal () (.intLit () 42))]
 ---
 info:
-{ ⏎
-  var x:int
-  x:=42 ⏎
+{
+  var x : int
+  x := 42
 }
 -/
 #guard_msgs in
@@ -94,7 +94,7 @@ info: B3: .check
     (.literal () (.intLit () 0)))
 ---
 info:
-check 5>0
+check 5 > 0
 -/
 #guard_msgs in
 #eval roundtripStmt $ #strata program B3CST; check 5 > 0 #end
@@ -109,7 +109,7 @@ info: B3: .assume
     (.literal () (.intLit () 0)))
 ---
 info:
-assume 10>=0
+assume 10 >= 0
 -/
 #guard_msgs in
 #eval roundtripStmt $ #strata program B3CST; assume 10 >= 0 #end
@@ -124,7 +124,7 @@ info: B3: .assert
     (.literal () (.intLit () 0)))
 ---
 info:
-assert 5>0
+assert 5 > 0
 -/
 #guard_msgs in
 #eval roundtripStmt $ #strata program B3CST; assert 5 > 0 #end
@@ -139,7 +139,7 @@ info: B3: .reach
     (.literal () (.intLit () 5)))
 ---
 info:
-reach 5==5
+reach 5 == 5
 -/
 #guard_msgs in
 #eval roundtripStmt $ #strata program B3CST; reach 5 == 5 #end
@@ -180,13 +180,13 @@ info: B3: .blockStmt
       (.literal () (.intLit () 2))]]
 ---
 info:
-{ ⏎
-  var x:int
-  var y:int
-  { ⏎
-    x:=1
-    y:=2 ⏎
-  } ⏎
+{
+  var x : int
+  var y : int
+  {
+    x := 1
+    y := 2
+  }
 }
 -/
 #guard_msgs in
@@ -222,15 +222,15 @@ info: B3: .blockStmt
         (.literal () (.intLit () 0))])]
 ---
 info:
-{ ⏎
-  var flag:bool
-  var x:int
+{
+  var flag : bool
+  var x : int
   if flag ⏎
-    x:=1 ⏎
+    x := 1
   else ⏎
-    { ⏎
-      x:=0 ⏎
-    } ⏎
+    {
+      x := 0
+    }
 }
 -/
 #guard_msgs in
@@ -260,12 +260,12 @@ info: B3: .blockStmt
           (.literal () (.intLit () 1)))])]
 ---
 info:
-{ ⏎
-  var i:int
-  loop  ⏎
-  { ⏎
-    i:=i+1 ⏎
-  } ⏎
+{
+  var i : int
+  loop ⏎
+  {
+    i := i + 1
+  }
 }
 -/
 #guard_msgs in
@@ -310,15 +310,15 @@ info: B3: .blockStmt
           (.literal () (.intLit () 1)))])]
 ---
 info:
-{ ⏎
-  var i:int
-  var n:int
-  loop ⏎
-    invariant i>=0
-    invariant i<=n ⏎
-  { ⏎
-    i:=i+1 ⏎
-  } ⏎
+{
+  var i : int
+  var n : int
+  loop
+    invariant i >= 0
+    invariant i <= n ⏎
+  {
+    i := i + 1
+  }
 }
 -/
 #guard_msgs in
@@ -350,10 +350,10 @@ info: B3: .labeledStmt
       u 0
       (.literal () (.intLit () 0))])
 ---
-info: labeled_block:
-{ ⏎
-  var x:int
-  x:=0 ⏎
+info: labeled_block: ⏎
+{
+  var x : int
+  x := 0
 }
 -/
 #guard_msgs in
@@ -377,7 +377,7 @@ info: B3: .varDecl
   u none
 ---
 info:
-var x:int
+var x : int
 -/
 #guard_msgs in
 #eval roundtripStmt $ #strata program B3CST; var x : int #end
@@ -391,7 +391,7 @@ info: B3: .varDecl
   u some (.literal () (.boolLit () true))
 ---
 info:
-var x:bool:=true
+var x : bool := true
 -/
 #guard_msgs in
 #eval roundtripStmt $ #strata program B3CST; val x : bool := true #end
@@ -405,7 +405,7 @@ info: B3: .varDecl
   u some (.literal () (.boolLit () true))
 ---
 info:
-var y:bool:=true
+var y : bool := true
 -/
 #guard_msgs in
 #eval roundtripStmt $ #strata program B3CST; var y : bool := true #end
@@ -423,7 +423,7 @@ info: B3: .varDecl
   u none
 ---
 info:
-var z:int autoinv z>=0
+var z : int autoinv z >= 0
 -/
 #guard_msgs in
 #eval roundtripStmt $ #strata program B3CST; var z : int autoinv z >= 0 #end
@@ -444,9 +444,9 @@ info: B3: .aForall
         (.literal () (.intLit () 0)))])
 ---
 info:
-forall x:int ⏎
-{ ⏎
-  check x>=0 ⏎
+forall x : int ⏎
+{
+  check x >= 0
 }
 -/
 #guard_msgs in
@@ -482,13 +482,13 @@ info: B3: .choose
 ---
 info:
 choose ⏎
-{ ⏎
-  var x:int
-  x:=1 ⏎
+{
+  var x : int
+  x := 1
 } or ⏎
-{ ⏎
-  var x:int
-  x:=2 ⏎
+{
+  var x : int
+  x := 2
 }
 -/
 #guard_msgs in
@@ -541,18 +541,18 @@ info: B3: .blockStmt
             (.intLit () 20))])]]
 ---
 info:
-{ ⏎
-  var x:int
-  var y:int
-  if ⏎
-  case x==1 ⏎
-  { ⏎
-    y:=10 ⏎
+{
+  var x : int
+  var y : int
+  if
+  case x == 1 ⏎
+  {
+    y := 10
   }
-  case x==2 ⏎
-  { ⏎
-    y:=20 ⏎
-  } ⏎
+  case x == 2 ⏎
+  {
+    y := 20
+  }
 }
 -/
 #guard_msgs in
@@ -581,10 +581,10 @@ info: B3: .blockStmt
       .callArgExpr () (.id () 0)]]
 ---
 info:
-{ ⏎
-  var a:int
-  var b:int
-  compute(out result, a, b) ⏎
+{
+  var a : int
+  var b : int
+  compute(out result, a, b)
 }
 -/
 #guard_msgs in
@@ -612,10 +612,10 @@ info: B3: .blockStmt
       .callArgOut () u "y"]]
 ---
 info:
-{ ⏎
-  var x:int
-  var y:int
-  modify(inout x, out y) ⏎
+{
+  var x : int
+  var y : int
+  modify(inout x, out y)
 }
 -/
 #guard_msgs in

@@ -143,8 +143,8 @@ info: B3: .program
       (.literal () (.intLit () 1)))]
 ---
 info:
-function F( x:int) :int  { ⏎
-  1 ⏎
+function F(x : int) : int {
+  1
 }
 -/
 #guard_msgs in
@@ -179,8 +179,8 @@ info: B3: .program
         (.id () 0)))]
 ---
 info:
-function add( x:int,  y:int) :int  { ⏎
-  x+y ⏎
+function add(x : int, y : int) : int {
+  x + y
 }
 -/
 #guard_msgs in
@@ -206,8 +206,8 @@ info: B3: .program
       (.id () 0))]
 ---
 info:
-function id(injective x:int) :int  { ⏎
-  x ⏎
+function id(injective x : int) : int {
+  x
 }
 -/
 #guard_msgs in
@@ -233,8 +233,8 @@ info: B3: .program
       (.id () 0))]
 ---
 info:
-function tagged( x:int) :int tag mytag { ⏎
-  x ⏎
+function tagged(x : int) : int tag mytag {
+  x
 }
 -/
 #guard_msgs in
@@ -266,9 +266,9 @@ info: B3: .program
       (.id () 0))]
 ---
 info:
-function conditional( x:int) :int  ⏎
-  when x>0{ ⏎
-  x ⏎
+function conditional(x : int) : int
+  when x > 0 {
+  x
 }
 -/
 #guard_msgs in
@@ -288,9 +288,9 @@ info: B3: .program
       u #[.returnStmt ()])]
 ---
 info:
-procedure noop() ⏎
-{ ⏎
-  return ⏎
+procedure noop()
+{
+  return
 }
 -/
 #guard_msgs in
@@ -323,9 +323,9 @@ info: B3: .program
             (.intLit () 0)))])]
 ---
 info:
-procedure process( x:int) ⏎
-{ ⏎
-  check x>0 ⏎
+procedure process(x : int)
+{
+  check x > 0
 }
 -/
 #guard_msgs in
@@ -353,9 +353,9 @@ info: B3: .program
         (.literal () (.intLit () 42))])]
 ---
 info:
-procedure getResult(out result:int) ⏎
-{ ⏎
-  result:=42 ⏎
+procedure getResult(out result : int)
+{
+  result := 42
 }
 -/
 #guard_msgs in
@@ -417,12 +417,12 @@ info: B3: .program
               (.intLit () 1))))])]
 ---
 info:
-procedure increment(inout x:int)
-  ensures x==old x+1 ⏎
-{ ⏎
-  assert x==old x
-  x:=x+1
-  assert x==old x+1 ⏎
+procedure increment(inout x : int)
+  ensures x == old x + 1
+{
+  assert x == old x
+  x := x + 1
+  assert x == old x + 1
 }
 -/
 #guard_msgs in
@@ -479,10 +479,10 @@ info: B3: .program
             (.intLit () 1)))])]
 ---
 info:
-procedure compute( x:int, out y:int, inout z:int) ⏎
-{ ⏎
-  y:=x+z
-  z:=z+1 ⏎
+procedure compute(x : int, out y : int, inout z : int)
+{
+  y := x + z
+  z := z + 1
 }
 -/
 #guard_msgs in
@@ -521,10 +521,10 @@ info: B3: .program
             (.intLit () 0)))])]
 ---
 info:
-procedure safe( x:int)
-  requires x>0 ⏎
-{ ⏎
-  check x>0 ⏎
+procedure safe(x : int)
+  requires x > 0
+{
+  check x > 0
 }
 -/
 #guard_msgs in
@@ -558,10 +558,10 @@ info: B3: .program
         (.literal () (.intLit () 1))])]
 ---
 info:
-procedure positive(out x:int)
-  ensures x>0 ⏎
-{ ⏎
-  x:=1 ⏎
+procedure positive(out x : int)
+  ensures x > 0
+{
+  x := 1
 }
 -/
 #guard_msgs in
@@ -608,11 +608,11 @@ info: B3: .program
         (.id () 1)])]
 ---
 info:
-procedure bounded( x:int, out y:int)
-  requires x>=0
-  ensures y>=0 ⏎
-{ ⏎
-  y:=x ⏎
+procedure bounded(x : int, out y : int)
+  requires x >= 0
+  ensures y >= 0
+{
+  y := x
 }
 -/
 #guard_msgs in
@@ -666,9 +666,9 @@ info: B3: .program
             (.intLit () 0)))])]
 ---
 info:
-procedure withAutoinv( x:int autoinv x+y>=0,  y:int autoinv y>=-(x)) ⏎
-{ ⏎
-  check x>=0 ⏎
+procedure withAutoinv(x : int autoinv x + y >= 0, y : int autoinv y >= -(x))
+{
+  check x >= 0
 }
 -/
 #guard_msgs in
@@ -722,11 +722,11 @@ info: B3: .program
             (.intLit () 2)))])]
 ---
 info:
-procedure multi( x:int, out y:int) ⏎
-{ ⏎
-  var temp:int
-  temp:=x+1
-  y:=temp*2 ⏎
+procedure multi(x : int, out y : int)
+{
+  var temp : int
+  temp := x + 1
+  y := temp * 2
 }
 -/
 #guard_msgs in
@@ -759,8 +759,8 @@ info: B3: .program
 info:
 type T
 axiom true
-function f( x:int) :int  { ⏎
-  x ⏎
+function f(x : int) : int {
+  x
 }
 -/
 #guard_msgs in
@@ -815,11 +815,11 @@ info: B3: .program
               (.intLit () 1))))])]
 ---
 info:
-procedure incrementWithOld(inout x:int)
-  ensures x==old x+1 ⏎
-{ ⏎
-  x:=x+1
-  assert x==old x+1 ⏎
+procedure incrementWithOld(inout x : int)
+  ensures x == old x + 1
+{
+  x := x + 1
+  assert x == old x + 1
 }
 -/
 #guard_msgs in
