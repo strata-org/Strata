@@ -13,6 +13,10 @@ import Strata.Languages.Python.Python
 import Strata.DDM.Integration.Java.Gen
 import StrataTest.Transform.ProcedureInlining
 
+import Strata.Languages.Laurel.Grammar.LaurelGrammar
+import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
+import Strata.Languages.Laurel.LaurelToBoogieTranslator
+
 def exitFailure {α} (message : String) : IO α := do
   IO.eprintln (message  ++ "\n\nRun strata --help for additional help.")
   IO.Process.exit 1
@@ -229,6 +233,44 @@ def javaGenCommand : Command where
     | .program _ =>
       exitFailure "Expected a dialect file, not a program file."
 
+def readLaurelIon (bytes : ByteArray) : IO Strata.Program := do
+  -- Create a DialectMap with the Laurel dialect
+  let laurelDialect : Strata.Dialect := Laurel
+  let dialectMap := Strata.DialectMap.insert! {} laurelDialect
+
+  -- Parse the Ion bytes to get a Strata.Program
+  match Strata.Program.fromIon dialectMap "Laurel" bytes with
+  | .ok p => pure p
+  | .error msg => exitFailure msg
+
+def laurelAnalyzeCommand : Command where
+  name := "laurelAnalyze"
+  args := []
+  help := "Analyze a Laurel Ion program from stdin. Write diagnostics to stdout."
+  callback := fun _ _ => do
+    -- Read bytes from stdin
+    let stdinBytes ← (← IO.getStdin).readToEnd.map String.toUTF8
+
+    -- Parse Ion format
+    let strataProgram ← readLaurelIon stdinBytes
+
+    -- Create input context for error reporting
+    let inputPath : System.FilePath := "<stdin>"
+    let inputContext := Strata.Parser.stringInputContext inputPath ""
+
+    -- Convert to Laurel.Program using parseProgram
+    let (laurelProgram, transErrors) := Laurel.TransM.run inputContext (Laurel.parseProgram strataProgram)
+    if transErrors.size > 0 then
+      exitFailure s!"Translation errors: {transErrors}"
+
+    -- Verify the program and get diagnostics
+    let solverName : String := "z3"
+    let diagnostics ← Laurel.verifyToDiagnostics solverName laurelProgram
+
+    -- Print diagnostics to stdout
+    for diag in diagnostics do
+      IO.println s!"{diag.start.line}:{diag.start.column}-{diag.ending.line}:{diag.ending.column}: {diag.message}"
+
 def commandList : List Command := [
       javaGenCommand,
       checkCommand,
@@ -237,6 +279,7 @@ def commandList : List Command := [
       diffCommand,
       pyAnalyzeCommand,
       pyTranslateCommand,
+      laurelAnalyzeCommand,
     ]
 
 def commandMap : Std.HashMap String Command :=
