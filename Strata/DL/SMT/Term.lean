@@ -49,7 +49,7 @@ def TermPrim.mkName : TermPrim → String
 def TermPrim.lt : TermPrim → TermPrim → Bool
   | .bool b₁, .bool b₂         => b₁ < b₂
   | .int  i₁, .int i₂          => i₁ < i₂
-  | .real r₁, .real r₂         => r₁.toRat < r₂.toRat -- TODO
+  | .real r₁, .real r₂         => r₁.toRat < r₂.toRat
   | @TermPrim.bitvec n₁ bv₁,
     @TermPrim.bitvec n₂ bv₂    => n₁ < n₂ || (n₁ = n₂ && bv₁.toNat < bv₂.toNat)
   | .string s₁, .string s₂     => s₁ < s₂

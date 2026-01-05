@@ -168,7 +168,7 @@ op sc_str (@[unwrap] s:Str) : SpecConstant => s;
 // sign is not a part of the standard, but it seems CVC5 and Z3
 // support this for convenience.
 // Note that negative integers like '-1231' are symbols in Std! (Sec 3.1. Lexicon)
-// The only way to create a unary symbol is through idenitifers, but this
+// The only way to create a unary symbol is through identifiers, but this
 // makes its DDM format wrapped with pipes, like '|-1231|`. Since such
 // representation cannot be recognized by Z3, make a workaround which is to have
 // separate `*_neg` categories for sc_numeral.
@@ -188,13 +188,13 @@ op seqpse_cons (se:SExpr, sse:SeqPSExpr) : SeqPSExpr => se " " sse;
 op se_ls (s:Option SeqPSExpr) : SExpr => "(" s ")";
 
 
+category SMTIdentifier;
 // 3. Identifier. Use 'SMTIdentifier' because the 'Identifier' category is
 // already defined in DDM
 category Index;
 op ind_numeral (@[unwrap] n:Num) : Index => n;
 op ind_symbol (@[unwrap] s:Symbol) : Index => s;
 
-category SMTIdentifier;
 op iden_simple (s:Symbol) : SMTIdentifier => s;
 
 category SeqPIndex; // For spacing; P means "+"
@@ -637,6 +637,12 @@ parse_term (- 1 (+ 2 3)) ;
 
 // Attribute
 parse_term (=> (! (> x y) :named p1) (! (= x z) :named p2 )) ;
+// page 34, 3.6.5. Term attributes
+parse_term (forall ((x0 A) (x1 A) (x2 A))
+    (! (=> (and (r x0 x1) (r x1 x2)) (r x0 x2))
+    :pattern ((r x0 x1) (r x1 x2))
+    :pattern ((p x0 a))
+    ));
 
 // Let
 parse_term (let ((x (+ 1 2))) x) ;
