@@ -35,6 +35,7 @@ private def reservedKeywords := [
     ("check_sat_assuming", "check-sat-assuming"),
     ("declare_const", "declare-const"),
     ("declare_datatype", "declare-datatype"),
+    ("declare_datatypes", "declare-datatypes"),
     ("declare_fun", "declare-fun"),
     ("declare_sort", "declare-sort"),
     ("declare_sort_parameter", "declare-sort-parameter"),
@@ -137,11 +138,13 @@ import SMTReservedKeywords;
 
 // <simple_symbol> is QualifiedIdent.
 op simple_symbol_qid (@[unwrap] s:QualifiedIdent) : SimpleSymbol => s;
-// The two symbols "true" and "false" are not parsed as QualifiedIdent.
+// These strings are not parsed as QualifiedIdent.
 // This is because they are currently used as keywords in the Init dialect
 // (see Strata/DDM/BuiltinDialects/Init.lean)
 op simple_symbol_tt () : SimpleSymbol => "true";
 op simple_symbol_ff () : SimpleSymbol => "false";
+op simple_symbol_none () : SimpleSymbol => "none";
+op simple_symbol_some () : SimpleSymbol => "some";
 
 // <symbol> is simplified to <simple_symbol>.
 // - TODO:
@@ -335,16 +338,21 @@ op smtoption_attr (a:Attribute) : SMTOption => a;
 category SortDec;
 op sort_dec (s:Symbol, n:Num) : SortDec => "(" s n ")";
 
+category SeqPSortDec; // For spacing; P for "+"
+op seqpsod_one (i:SortDec) : SeqPSortDec => i;
+op seqpsod_cons (i:SortDec, spi:SeqPSortDec) : SeqPSortDec =>
+  i " " spi;
+
 category SelectorDec;
 op selector_dec (s:Symbol, so:SMTSort) : SelectorDec => "(" s so ")";
 
-category SeqSelectorDec; // For spacing
-op seqsd_nil () : SeqSelectorDec => ;
-op seqsd_one (i:SelectorDec) : SeqSelectorDec => i;
-op seqsd_cons (i:SelectorDec, spi:SeqSelectorDec) : SeqSelectorDec => i " " spi;
+category SeqPSelectorDec; // For spacing; P for "+"
+op seqpsd_one (i:SelectorDec) : SeqPSelectorDec => i;
+op seqpsd_cons (i:SelectorDec, spi:SeqPSelectorDec) : SeqPSelectorDec =>
+  i " " spi;
 
 category ConstructorDec;
-op constructor_dec (s:Symbol, sdl:SeqSelectorDec) : ConstructorDec =>
+op constructor_dec (s:Symbol, sdl:Option SeqPSelectorDec) : ConstructorDec =>
   "(" s " " sdl ")";
 
 category SeqPConstructorDec; // For spacing; P for "+"
@@ -355,7 +363,13 @@ op seqcd_cons (i:ConstructorDec, spi:SeqPConstructorDec) : SeqPConstructorDec =>
 category DatatypeDec;
 op datatype_dec (cs:SeqPConstructorDec) : DatatypeDec
   => "(" cs ")";
-// TODO: ( par ( <symbol>+ ) ( <constructor_dec>+ ))
+op datatype_par_dec (symbols: SeqPSymbol, cs:SeqPConstructorDec) : DatatypeDec
+  => "(" "par " "(" symbols ")" "(" cs ")" ")";
+
+category SeqPDatatypeDec; // For spacing; P for "+"
+op seqpdad_one (i:DatatypeDec) : SeqPDatatypeDec => i;
+op seqpdad_cons (i:DatatypeDec, spi:SeqPDatatypeDec) : SeqPDatatypeDec =>
+  i " " spi;
 
 category FunctionDec;
 op function_dec (s:Symbol, sv:Seq SortedVar, so:SMTSort) : FunctionDec
@@ -364,6 +378,11 @@ op function_dec (s:Symbol, sv:Seq SortedVar, so:SMTSort) : FunctionDec
 category FunctionDef;
 op function_def (s:Symbol, sv:Seq SortedVar, so:SMTSort, t:Term) : FunctionDef
   => s "(" sv ")" so t;
+
+category SeqPFunctionDef; // For spacing; P for "+"
+op seqpfdef_one (i:FunctionDef) : SeqPFunctionDef => i;
+op seqpfdef_cons (i:FunctionDef, spi:SeqPFunctionDef) : SeqPFunctionDef =>
+  i " " spi;
 
 #end
 
@@ -379,13 +398,16 @@ import SMTCore;
 // cmd_' is necessary, otherwise it raises "unexpected token 'assert'; expected identifier"
 op cmd_assert (t:Term) : Command => "(" "assert " t ")";
 op check_sat () : Command => "(" "check-sat" ")";
-op check_sat_assuming (ts:Seq Term) : Command =>
+op check_sat_assuming (ts:Option SeqPTerm) : Command =>
   "(" "check-sat-assuming " ts ")";
 op declare_const (s:Symbol, so:SMTSort) : Command =>
   "(" "declare-const " s so ")";
-op declare_datatype (s:Symbol, so:SMTSort) : Command =>
+op declare_datatype (s:Symbol, so:DatatypeDec) : Command =>
   "(" "declare-datatype " s so ")";
-// TODO: declare-datatypes; what is ^(n+1)?
+// The size of SortDec and DatatypeDec must be equal, but omit the check in
+// this DDM definition because its representation can be quite ugly.
+op declare_datatypes (s:SeqPSortDec, so:SeqPDatatypeDec) : Command =>
+  "(" "declare-datatypes" "(" s ")" "(" so ")" ")";
 op declare_fun (s:Symbol, sol:Option SeqPSMTSort, range:SMTSort) : Command =>
   "(" "declare-fun " s "(" sol ")" range ")";
 op declare_sort (s:Symbol, n:Num) : Command =>
@@ -398,6 +420,8 @@ op define_fun (fdef:FunctionDef) : Command =>
   "(" "define-fun " fdef ")";
 op define_fun_rec (fdef:FunctionDef) : Command =>
   "(" "define-fun-rec " fdef ")";
+op define_funs_rec (fdefs:SeqPFunctionDef, terms:SeqPTerm) : Command =>
+  "(" "define-funs-rec" "(" fdefs ")" "(" terms ")" ")";
 op define_sort (s:Symbol, sl:Seq Symbol, so:SMTSort) : Command =>
   "(" "define-sort " s "(" sl ")" so ")";
 op cmd_echo (s:Str) : Command => "(" "echo " s ")";
@@ -410,8 +434,8 @@ op get_option (kw:Keyword) : Command => "(" "get-option " kw ")";
 op get_proof () : Command => "(" "get-proof" ")";
 op get_unsat_assumptions () : Command => "(" "get-unsat-assumptions" ")";
 op get_unsat_core () : Command => "(" "get-unsat-core" ")";
-op get_value (t0:Term, tl:Seq Term) : Command =>
-  "(" "get-value" "(" t0 " " tl ")" ")";
+op get_value (tl:SeqPTerm) : Command =>
+  "(" "get-value" "(" tl ")" ")";
 op cmd_pop (n:Num) : Command => "(" "pop " n ")";
 op cmd_push (n:Num) : Command => "(" "push " n ")";
 op cmd_reset () : Command => "(" "reset" ")";
@@ -470,13 +494,17 @@ op seqpir_cons (i: InfoResponse, is: SeqPInfoResponse) : SeqPInfoResponse
 category ValuationPair;
 op valuation_pair (t1:Term, t2:Term) : ValuationPair => "(" t1 " " t2 ")";
 
+category SeqPValuationPair;
+op seqv_one (i: ValuationPair) : SeqPValuationPair => i;
+op seqv_cons (i: ValuationPair, is: SeqPValuationPair) : SeqPValuationPair
+  => i is;
+
 category TValuationPair;
 op t_valuation_pair (t1:Symbol, t2:BValue) : TValuationPair => "(" t1 " " t2 ")";
 
-category SeqTValuationPair;
-op seqtv_nil () : SeqTValuationPair => ;
-op seqtv_one (i: TValuationPair) : SeqTValuationPair => i;
-op seqtv_cons (i: TValuationPair, is: SeqTValuationPair) : SeqTValuationPair
+category SeqPTValuationPair;
+op seqtv_one (i: TValuationPair) : SeqPTValuationPair => i;
+op seqtv_cons (i: TValuationPair, is: SeqPTValuationPair) : SeqPTValuationPair
   => i is;
 
 category CheckSatResponse;
@@ -492,7 +520,8 @@ op get_assertions_response (t:Option SeqPTerm) : GetAssertionsResponse =>
   "(" t ")";
 
 category GetAssignmentResponse;
-op get_assignment_response (t:SeqTValuationPair) : GetAssignmentResponse =>
+op get_assignment_response (t:Option SeqPTValuationPair)
+    : GetAssignmentResponse =>
   "(" t ")";
 
 category GetInfoResponse;
@@ -518,8 +547,8 @@ op get_unsat_core_response (ss:Option SeqPSymbol) : GetUnsatCoreResponse =>
   "(" ss ")";
 
 category GetValueResponse;
-op get_value_response (vp:ValuationPair, vps:Seq ValuationPair)
-  : GetValueResponse => "(" vp vps ")";
+op get_value_response (vps:Option SeqPValuationPair)
+  : GetValueResponse => "(" vps ")";
 
 category SpecificSuccessResponse;
 op ssr_check_sat (r:CheckSatResponse) : SpecificSuccessResponse => r;
@@ -672,7 +701,40 @@ program SMT;
 (check-sat)
 (check-sat-assuming x y)
 (declare-const x Int)
-(declare-datatype X Int)
+
+// declare-datatype examples at page 66
+(declare-datatype Color ((red) (green) (blue)))
+(declare-datatype IntList (
+  (empty)
+  (insert (head Int) (tail IntList))))
+(declare-datatype List
+  (par (E) (
+    (nil)
+    (cons (car E) (cdr (List E))))))
+(declare-datatype Option
+  (par (X) (
+    (none)
+    (some (val X)))))
+(declare-datatype Pair
+  (par (X Y)
+    ((pair (first X) (second Y)))))
+
+// declare-datatypes examples at page 65
+(declare-datatypes ((Color 0)) (
+  ((red) (green) (blue))))
+(declare-datatypes ((IntList 0)) (
+  ((empty) (insert (head Int) (tail IntList)))))
+(declare-datatypes ((List 1)) (
+  (par (T) ((nil) (cons (car T) (cdr (List T)))))))
+(declare-datatypes ((Option 1)) (
+  (par (X) ((none) (some (val X))))))
+(declare-datatypes ((Pair 2)) (
+  (par (X Y) ((pair (first X) (second Y))))))
+(declare-datatypes ((Tree 1) (TreeList 1)) (
+  (par (X) ((node (value X) (children (TreeList X)))))
+  (par (Y) ((empty)
+    (insert (head (Tree Y)) (tail (TreeList Y)))))))
+
 (declare-fun f (Int Int) Int)
 (declare-sort Int 10)
 (declare-sort-parameter X)
@@ -741,7 +803,10 @@ namespace SMTDDM
 
 deriving instance BEq for
   -- Sequences
-  SpecConstant, QualifiedIdent, SimpleSymbol, Symbol, Reserved,
+  SpecConstant, QualifiedIdent, SimpleSymbol,
+  Symbol, SeqPSymbol,
+  SortDec, SeqPSortDec,
+  Reserved,
   Keyword, SExpr, AttributeValue, BValue,
   Attribute, SeqPAttribute,
   SMTOption,
@@ -749,8 +814,14 @@ deriving instance BEq for
   SMTIdentifier,
   SMTSort, SeqPSMTSort,
   SortedVar, SeqPSortedVar,
-  QualIdentifier, ValBinding, Term,
-  InfoFlag, FunctionDef, Command
+  QualIdentifier, ValBinding,
+  Term, SeqPTerm,
+  InfoFlag,
+  SelectorDec, SeqPSelectorDec,
+  ConstructorDec, SeqPConstructorDec,
+  DatatypeDec, SeqPDatatypeDec,
+  FunctionDef, SeqPFunctionDef,
+  Command
 
 end SMTDDM
 
