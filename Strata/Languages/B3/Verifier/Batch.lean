@@ -5,16 +5,17 @@
 -/
 
 import Strata.Languages.B3.Verifier.State
+import Strata.Languages.B3.Verifier.API
 import Strata.Languages.B3.Verifier.Conversion
 import Strata.Languages.B3.Verifier.Formatter
 import Strata.Languages.B3.Verifier.Statements
 import Strata.Languages.B3.Transform.FunctionToAxiom
 
 /-!
-# B3 Verifier
+# B3 Batch Verifier
 
-Main entry point for B3 program verification.
-Provides both batch and incremental verification APIs.
+Batch verification API for B3 programs.
+Verifies entire programs in one pass.
 -/
 
 namespace Strata.B3.Verifier

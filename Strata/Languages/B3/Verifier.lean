@@ -7,7 +7,8 @@
 import Strata.Languages.B3.Verifier.Conversion
 import Strata.Languages.B3.Verifier.Formatter
 import Strata.Languages.B3.Verifier.State
-import Strata.Languages.B3.Verifier.Core
+import Strata.Languages.B3.Verifier.API
+import Strata.Languages.B3.Verifier.Batch
 import Strata.Languages.B3.Verifier.Diagnosis
 import Strata.Languages.B3.Verifier.AutoDiagnose
 
