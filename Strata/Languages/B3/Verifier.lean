@@ -9,7 +9,6 @@ import Strata.Languages.B3.Verifier.Formatter
 import Strata.Languages.B3.Verifier.State
 import Strata.Languages.B3.Verifier.Batch
 import Strata.Languages.B3.Verifier.Diagnosis
-import Strata.Languages.B3.Verifier.AutoDiagnose
 
 /-!
 # B3 Verifier

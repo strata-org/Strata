@@ -83,8 +83,8 @@ def diagnoseUnreachable (state : B3VerificationState) (expr : B3AST.Expression S
 -- Statement Execution with Diagnosis
 ---------------------------------------------------------------------
 
-/-- Execute statements with automatic diagnosis on failures -/
-partial def executeStatementsWithDiagnosis (ctx : ConversionContext) (state : B3VerificationState) (sourceDecl : B3AST.Decl SourceRange) : B3AST.Statement SourceRange → IO (List (VerificationReport × Option DiagnosisResult) × B3VerificationState)
+/-- Verify statements with automatic diagnosis on failures -/
+partial def verifyStatementsWithDiagnosis (ctx : ConversionContext) (state : B3VerificationState) (sourceDecl : B3AST.Decl SourceRange) : B3AST.Statement SourceRange → IO (List (VerificationReport × Option DiagnosisResult) × B3VerificationState)
   | .check m expr => do
       match expressionToSMT ctx expr with
       | .ok term =>
@@ -140,7 +140,7 @@ partial def executeStatementsWithDiagnosis (ctx : ConversionContext) (state : B3
       let mut currentState := state
       let mut allResults := []
       for stmt in stmts.val.toList do
-        let (results, newState) ← executeStatementsWithDiagnosis ctx currentState sourceDecl stmt
+        let (results, newState) ← verifyStatementsWithDiagnosis ctx currentState sourceDecl stmt
         currentState := newState
         allResults := allResults ++ results
       pure (allResults, currentState)

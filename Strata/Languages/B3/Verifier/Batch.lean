@@ -8,6 +8,7 @@ import Strata.Languages.B3.Verifier.State
 import Strata.Languages.B3.Verifier.Conversion
 import Strata.Languages.B3.Verifier.Formatter
 import Strata.Languages.B3.Verifier.Statements
+import Strata.Languages.B3.Verifier.Diagnosis
 import Strata.Languages.B3.Transform.FunctionToAxiom
 
 /-!
@@ -56,7 +57,7 @@ private def addDeclarationsAndAxioms (state : B3VerificationState) (prog : B3AST
   return (state, errors)
 
 /-- Verify a B3 program with a given solver -/
-def verifyProgramWithSolver (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List (Except String CheckResult)) := do
+def verifyProgramWithSolver (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List (Except String VerificationReport)) := do
   let mut state ← initVerificationState solver
   let mut results := []
 
@@ -81,10 +82,10 @@ def verifyProgramWithSolver (prog : B3AST.Program SourceRange) (solver : Solver)
             if params.val.isEmpty && body.val.isSome then
               let bodyStmt := body.val.get!
               let execResult ← executeStatements ConversionContext.empty state decl bodyStmt
-              -- Convert StatementResult to Except String CheckResult
+              -- Convert StatementResult to Except String VerificationReport
               let converted := execResult.results.map (fun r =>
                 match r with
-                | .verified checkResult => .ok checkResult
+                | .verified report => .ok report
                 | .conversionError msg => .error msg
               )
               results := results ++ converted
@@ -110,7 +111,7 @@ def buildProgramState (prog : Strata.B3AST.Program SourceRange) (solver : Solver
   return newState
 
 /-- Verify a B3 program (convenience wrapper with interactive solver) -/
-def verifyProgram (prog : Strata.B3AST.Program SourceRange) (solverPath : String := "z3") : IO (List (Except String CheckResult)) := do
+def verifyProgram (prog : Strata.B3AST.Program SourceRange) (solverPath : String := "z3") : IO (List (Except String VerificationReport)) := do
   let solver ← createInteractiveSolver solverPath
   let results ← verifyProgramWithSolver prog solver
   let _ ← (Solver.exit).run solver
@@ -125,5 +126,50 @@ def programToSMTCommands (prog : Strata.B3AST.Program SourceRange) : IO String :
   if h: contents.data.IsValidUTF8
   then return String.fromUTF8 contents.data h
   else return "Error: Invalid UTF-8 in SMT output"
+
+---------------------------------------------------------------------
+-- Batch Verification with Automatic Diagnosis
+---------------------------------------------------------------------
+
+structure ProcedureReport where
+  procedureName : String
+  results : List (VerificationReport × Option DiagnosisResult)
+
+/-- Verify a B3 program with automatic diagnosis.
+
+Main entry point for verification with automatic debugging.
+
+Workflow:
+1. Build program state (functions, axioms)
+2. For each parameter-free procedure:
+   - Generate VCs from body
+   - Check each VC
+   - If failed, automatically diagnose to find root cause
+3. Report all results with diagnosements
+-/
+def verifyWithDiagnosis (prog : Strata.B3AST.Program SourceRange) (solverPath : String := "z3") : IO (List ProcedureReport) := do
+  let solver ← createInteractiveSolver solverPath
+  let state ← buildProgramState prog solver
+  let mut reports := []
+
+  match prog with
+  | .program _ decls =>
+      for decl in decls.val.toList do
+        match decl with
+        | .procedure _ name params _ body =>
+            if params.val.isEmpty && body.val.isSome then
+              let bodyStmt := body.val.get!
+              let (results, _finalState) ← verifyStatementsWithDiagnosis ConversionContext.empty state decl bodyStmt
+
+              reports := reports ++ [{
+                procedureName := name.val
+                results := results
+              }]
+            else
+              pure ()
+        | _ => pure ()
+
+  closeVerificationState state
+  return reports
 
 end Strata.B3.Verifier
