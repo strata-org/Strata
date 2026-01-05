@@ -159,4 +159,18 @@ def closeVerificationState (state : B3VerificationState) : IO Unit := do
   let _ ← (Solver.exit).run state.smtState.solver
   pure ()
 
+---------------------------------------------------------------------
+-- Solver Creation Helpers
+---------------------------------------------------------------------
+
+/-- Create an interactive solver (Z3/CVC5) -/
+def createInteractiveSolver (solverPath : String := "z3") : IO Solver :=
+  Solver.spawn solverPath #["-smt2", "-in"]
+
+/-- Create a buffer solver for SMT command generation -/
+def createBufferSolver : IO (Solver × IO.Ref IO.FS.Stream.Buffer) := do
+  let buffer ← IO.mkRef {}
+  let solver ← Solver.bufferWriter buffer
+  return (solver, buffer)
+
 end Strata.B3.Verifier
