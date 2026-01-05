@@ -26,6 +26,8 @@ open Strata.B3.Verifier (UF_ARG_PLACEHOLDER)
 -- B3 Verification Results
 ---------------------------------------------------------------------
 
+/-- B3-specific check result (proved/counterexample/unknown).
+This represents the SMT solver's decision for a check/assert statement. -/
 inductive B3CheckResult where
   | proved : B3CheckResult
   | counterexample : B3CheckResult
@@ -36,6 +38,8 @@ def B3CheckResult.isError : B3CheckResult → Bool
   | .counterexample => true
   | .proofUnknown => true
 
+/-- B3-specific reachability result (reachable/unreachable/unknown).
+This represents the SMT solver's decision for a reach statement. -/
 inductive B3ReachResult where
   | unreachable : B3ReachResult
   | reachable : B3ReachResult
@@ -46,6 +50,8 @@ def B3ReachResult.isError : B3ReachResult → Bool
   | .reachable => false
   | .reachabilityUnknown => false
 
+/-- Unified B3 result type (check or reach).
+This allows uniform handling of both verification types. -/
 inductive B3Result where
   | checkResult : B3CheckResult → B3Result
   | reachResult : B3ReachResult → B3Result
@@ -70,24 +76,31 @@ def B3Result.fromDecisionForReach (d : Decision) : B3Result :=
 -- Verification State
 ---------------------------------------------------------------------
 
+/-- CheckResult combines B3Result with source location information.
+This is the top-level result type returned to users, containing:
+- The B3-specific result (B3Result)
+- Source location (decl and optional statement)
+- Optional model/counterexample information -/
+structure CheckResult where
+  decl : B3AST.Decl SourceRange
+  sourceStmt : Option (B3AST.Statement SourceRange) := none
+  result : B3Result
+  model : Option String := none
+
 ---------------------------------------------------------------------
--- SMT Solver State (reusable for any language)
+-- SMT Solver State
 ---------------------------------------------------------------------
 
+/-- SMT solver state (reusable for any language) -/
 structure SMTSolverState where
   solver : Solver
   declaredFunctions : List (String × List String × String)
   assertions : List Term
 
+/-- B3-specific verification state -/
 structure B3VerificationState where
   smtState : SMTSolverState
-  context : ConversionContext  -- B3-specific: maps de Bruijn indices to names
-
-structure CheckResult where
-  decl : B3AST.Decl SourceRange
-  sourceStmt : Option (B3AST.Statement SourceRange) := none
-  result : B3Result  -- B3-level result
-  model : Option String := none
+  context : ConversionContext  -- Maps de Bruijn indices to names
 
 def initVerificationState (solver : Solver) : IO B3VerificationState := do
   let _ ← (Solver.setLogic "ALL").run solver
