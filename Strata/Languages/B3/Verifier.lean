@@ -16,6 +16,45 @@ import Strata.Languages.B3.Verifier.AutoDiagnose
 
 Converts B3 programs to SMT and verifies them using Z3/CVC5.
 
+## Architecture Overview
+
+```
+B3 Program (CST)
+      ↓
+   Parse (DDM)
+      ↓
+  B3 AST (de Bruijn indices)
+      ↓
+FunctionToAxiom Transform
+      ↓
+  B3 AST (declarations + axioms)
+      ↓
+expressionToSMT (Conversion)
+      ↓
+  SMT Terms
+      ↓
+formatTermDirect (Formatter)
+      ↓
+  SMT-LIB strings
+      ↓
+  Solver (Z3/CVC5)
+      ↓
+  Results (proved/counterexample/unknown)
+      ↓
+Diagnosis (if failed)
+```
+
+## Module Organization
+
+- **State.lean** - Pure state types and basic operations
+- **Conversion.lean** - B3 AST → SMT Term conversion with error handling
+- **Formatter.lean** - SMT Term → SMT-LIB string formatting
+- **Statements.lean** - Statement execution (check, assert, assume, reach)
+- **Batch.lean** - Batch verification API
+- **Diagnosis.lean** - Automatic failure diagnosis
+- **AutoDiagnose.lean** - Batch verification with diagnosis
+- **Transform/FunctionToAxiom.lean** - Function definition → axiom transformation
+
 ## Architecture
 
 **Incremental API** (for interactive debugging):

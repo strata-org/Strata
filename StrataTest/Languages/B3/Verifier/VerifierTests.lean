@@ -23,18 +23,18 @@ Tests for B3 to SMT conversion and verification.
 - ✅ Function calls
 - ✅ Quantifiers (forall, exists) with patterns
 - ✅ Labeled expressions (labels stripped)
-- ❌ Let expressions (needs proper substitution)
+- ✅ Let expressions (variable binding with de Bruijn indices)
 
 **Declarations:**
 - ✅ Function declarations
 - ✅ Function bodies → quantified axioms
 - ✅ Axioms
-- ❌ Explains clauses (parsed but ignored)
-- ❌ Type declarations
-- ❌ Tagger declarations
-- ❌ Injective parameters → inverse functions
-- ❌ Tagged functions → tag constants
-- ❌ When clauses (parsed but not fully tested)
+- ⚠️  Explains clauses (parsed but not used in SMT encoding)
+- ❌ Type declarations (not yet encoded to SMT)
+- ❌ Tagger declarations (not yet encoded to SMT)
+- ❌ Injective parameters → inverse functions (not yet implemented)
+- ❌ Tagged functions → tag constants (not yet implemented)
+- ✅ When clauses (implemented and tested)
 
 **Statements:**
 - ✅ Check (verify property)
@@ -66,10 +66,17 @@ Tests for B3 to SMT conversion and verification.
 - ✅ Sequential execution (asserts accumulate)
 - ✅ Automatic diagnosis (conjunction splitting)
 - ✅ Efficient solver reuse (push/pop)
-- ✅ Incremental API (init, addDeclaration, prove, reach, push, pop)
-- ❌ When-clause testing in diagnosis
-- ❌ Definition inlining in diagnosis
-- ❌ Counterexample parsing and display
+- ✅ Incremental API (init, addFunctionDecl, addAxiom, prove, reach, push, pop)
+- ✅ Proper error handling (Except ConversionError)
+- ✅ Termination proofs (expressionToSMT is total)
+- ❌ When-clause testing in diagnosis (not yet implemented)
+- ❌ Definition inlining in diagnosis (not yet implemented)
+- ❌ Counterexample parsing and display (not yet implemented)
+
+**Testing:**
+- ✅ Unit tests for conversion (ConversionTests.lean)
+- ✅ Integration tests with SMT solvers (VerifierTests.lean)
+- ❌ Property-based tests with Plausible (future work)
 -/
 
 namespace B3.Verifier.Tests
