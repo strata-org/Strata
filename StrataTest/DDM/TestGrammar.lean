@@ -64,9 +64,11 @@ structure GrammarTestResult where
     - GrammarTestResult with parse/format results -/
 def testGrammarFile (dialect: Dialect) (ctx : Lean.Parser.InputContext) : IO GrammarTestResult := do
   try
-    let (inputContext, ddmProgram) ← Strata.Elab.parseStrataProgramFromDialect ctx dialect
+    let loaded := .ofDialects! #[initDialect, dialect]
+    let ddmProgram ← Strata.Elab.parseStrataProgramFromDialect loaded dialect.name ctx
     let formatted := ddmProgram.format.render
-    let normalizedInput := normalizeWhitespace (stripComments inputContext.inputString)
+    let normalizedInput := normalizeWhitespace <| stripComments <|
+      s!"program {dialect.name}; " ++ ctx.inputString
     let normalizedOutput := normalizeWhitespace formatted
 
     let isMatch := normalizedInput == normalizedOutput

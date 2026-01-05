@@ -3,6 +3,7 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
 import Strata.DDM.Util.String
 
@@ -75,5 +76,7 @@ def renderAux (a : Array Std.Format) : RenderM Unit :=
       renderAux (a |>.push f)
 
 /-- Alternative render format for string -/
-def render (fmt : Std.Format) : String :=
+public def render (fmt : Std.Format) : String :=
   renderAux #[fmt] 0 { soFar := "" } |>.snd |>.soFar
+
+end Std.Format
