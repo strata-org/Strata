@@ -234,12 +234,9 @@ def javaGenCommand : Command where
       exitFailure "Expected a dialect file, not a program file."
 
 def readLaurelIon (bytes : ByteArray) : IO Strata.Program := do
-  -- Create a DialectMap with the Laurel dialect
-  let laurelDialect : Strata.Dialect := Laurel
-  let dialectMap := Strata.DialectMap.insert! {} laurelDialect
 
   -- Parse the Ion bytes to get a Strata.Program
-  match Strata.Program.fromIon dialectMap "Laurel" bytes with
+  match Strata.Program.fromIon Strata.Laurel.Laurel_map Strata.Laurel.Laurel.name bytes with
   | .ok p => pure p
   | .error msg => exitFailure msg
 
@@ -249,7 +246,7 @@ def laurelAnalyzeCommand : Command where
   help := "Analyze a Laurel Ion program from stdin. Write diagnostics to stdout."
   callback := fun _ _ => do
     -- Read bytes from stdin
-    let stdinBytes ← (← IO.getStdin).readToEnd.map String.toUTF8
+    let stdinBytes ← (← IO.getStdin).readBinToEnd
 
     -- Parse Ion format
     let strataProgram ← readLaurelIon stdinBytes

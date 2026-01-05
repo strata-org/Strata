@@ -177,7 +177,7 @@ protected def asList (v : Ion SymbolId) : FromIonM { a : Array (Ion SymbolId) //
   match v with
   | .mk (.list args) =>
     return .mk args (by simp; omega)
-  | _ => throw s!"Expected list"
+  | x => throw s!"Expected list but got {repr x}"
 
 protected def asSexp (name : String) (v : Ion SymbolId) : FromIonM ({ a : Array (Ion SymbolId) // a.size > 0 ∧ sizeOf a < sizeOf v}) :=
   match v with
@@ -278,7 +278,7 @@ def deserializeValue {α} (bs : ByteArray) (act : Ion SymbolId → FromIonM α) 
       throw s!"Error reading Ion: {msg} (offset = {off})"
     | .ok a => pure a
   let .isTrue p := inferInstanceAs (Decidable (a.size = 1))
-    | throw s!"Expected single Ion value."
+    | throw s!"Expected single Ion value. Instead of {repr a}"
   let entries := a[0]
   let .isTrue p := inferInstanceAs (Decidable (entries.size = 2))
     | throw s!"Expected symbol table and value in dialect."
