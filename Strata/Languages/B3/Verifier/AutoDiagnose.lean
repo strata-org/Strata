@@ -8,7 +8,6 @@ import Strata.Languages.B3.Verifier.State
 import Strata.Languages.B3.Verifier.Batch
 import Strata.Languages.B3.Verifier.Diagnosis
 import Strata.Languages.B3.Verifier.Statements
-import Strata.Languages.B3.Verifier.ExecuteWithDiagnosis
 
 /-!
 # Automatic Verification with Diagnosis
@@ -31,12 +30,12 @@ namespace Strata.B3.Verifier
 
 open Strata.SMT
 
-structure VerificationReport where
+structure ProcedureReport where
   procedureName : String
-  results : List (CheckResult × Option DiagnosisResult)  -- Each VC with optional diagnosement
+  results : List (VerificationReport × Option DiagnosisResult)
 
 /-- Verify a B3 program with automatic diagnosis -/
-def verifyWithDiagnosis (prog : Strata.B3AST.Program SourceRange) (solverPath : String := "z3") : IO (List VerificationReport) := do
+def verifyWithDiagnosis (prog : Strata.B3AST.Program SourceRange) (solverPath : String := "z3") : IO (List ProcedureReport) := do
   let solver ← createInteractiveSolver solverPath
   let state ← buildProgramState prog solver
   let mut reports := []

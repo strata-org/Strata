@@ -170,12 +170,12 @@ def testVerification (prog : Program) : IO Unit := do
       | .procedure _ name _ _ _ =>
           let marker := if result.result.isError then "✗" else "✓"
           let description := match result.result with
-            | .checkResult .proved => "verified"
-            | .checkResult .counterexample => "counterexample found"
-            | .checkResult .proofUnknown => "proof unknown"
-            | .reachResult .unreachable => "unreachable"
-            | .reachResult .reachable => "satisfiable"
-            | .reachResult .reachabilityUnknown => "reachability unknown"
+            | .proofResult .proved => "verified"
+            | .proofResult .counterexample => "counterexample found"
+            | .proofResult .proofUnknown => "proof unknown"
+            | .reachabilityResult .unreachable => "unreachable"
+            | .reachabilityResult .reachable => "satisfiable"
+            | .reachabilityResult .reachabilityUnknown => "reachability unknown"
 
           IO.println s!"  {name.val}: {marker} {description}"
           if result.result.isError then

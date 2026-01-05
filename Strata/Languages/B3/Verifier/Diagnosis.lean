@@ -23,23 +23,23 @@ namespace Strata.B3.Verifier
 open Strata.SMT
 
 structure DiagnosisResult where
-  originalCheck : CheckResult
-  diagnosedFailures : List (String × B3AST.Expression SourceRange × CheckResult)  -- Description, expression, result
+  originalCheck : VerificationReport
+  diagnosedFailures : List (String × B3AST.Expression SourceRange × VerificationReport)
 
 /-- Automatically diagnose a failed check to find root cause -/
 def diagnoseFailureGeneric
-    (checkFn : B3VerificationState → Term → B3AST.Decl SourceRange → Option (B3AST.Statement SourceRange) → IO CheckResult)
-    (isFailure : B3Result → Bool)
+    (checkFn : B3VerificationState → Term → B3AST.Decl SourceRange → Option (B3AST.Statement SourceRange) → IO VerificationReport)
+    (isFailure : VerificationResult → Bool)
     (state : B3VerificationState)
     (expr : B3AST.Expression SourceRange)
     (sourceDecl : B3AST.Decl SourceRange)
     (sourceStmt : B3AST.Statement SourceRange) : IO DiagnosisResult := do
   match expressionToSMT ConversionContext.empty expr with
   | .error _ =>
-      let dummyResult : CheckResult := {
+      let dummyResult : VerificationReport := {
         decl := sourceDecl
         sourceStmt := some sourceStmt
-        result := .checkResult .proofUnknown  -- Conversion failure treated as unknown
+        result := .proofResult .proofUnknown
         model := none
       }
       return { originalCheck := dummyResult, diagnosedFailures := [] }
@@ -78,5 +78,74 @@ def diagnoseFailure (state : B3VerificationState) (expr : B3AST.Expression Sourc
 /-- Diagnose an unreachable reach -/
 def diagnoseUnreachable (state : B3VerificationState) (expr : B3AST.Expression SourceRange) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : B3AST.Statement SourceRange) : IO DiagnosisResult :=
   diagnoseFailureGeneric reach (fun r => r.isError) state expr sourceDecl sourceStmt
+
+---------------------------------------------------------------------
+-- Statement Execution with Diagnosis
+---------------------------------------------------------------------
+
+/-- Execute statements with automatic diagnosis on failures -/
+partial def executeStatementsWithDiagnosis (ctx : ConversionContext) (state : B3VerificationState) (sourceDecl : B3AST.Decl SourceRange) : B3AST.Statement SourceRange → IO (List (VerificationReport × Option DiagnosisResult) × B3VerificationState)
+  | .check m expr => do
+      match expressionToSMT ctx expr with
+      | .ok term =>
+          let result ← prove state term sourceDecl (some (.check m expr))
+          let diag ← if result.result.isError then
+            let d ← diagnoseFailure state expr sourceDecl (.check m expr)
+            pure (some d)
+          else
+            pure none
+          pure ([(result, diag)], state)
+      | .error _ =>
+          pure ([], state)
+
+  | .assert m expr => do
+      match expressionToSMT ctx expr with
+      | .ok term =>
+          let result ← prove state term sourceDecl (some (.assert m expr))
+          let diag ← if result.result.isError then
+            let d ← diagnoseFailure state expr sourceDecl (.assert m expr)
+            pure (some d)
+          else
+            pure none
+          let newState ← if !result.result.isError then
+            addAxiom state term
+          else
+            pure state
+          pure ([(result, diag)], newState)
+      | .error _ =>
+          pure ([], state)
+
+  | .assume _ expr => do
+      match expressionToSMT ctx expr with
+      | .ok term =>
+          let newState ← addAxiom state term
+          pure ([], newState)
+      | .error _ =>
+          pure ([], state)
+
+  | .reach m expr => do
+      match expressionToSMT ctx expr with
+      | .ok term =>
+          let result ← reach state term sourceDecl (some (.reach m expr))
+          let diag ← if result.result.isError then
+            let d ← diagnoseUnreachable state expr sourceDecl (.reach m expr)
+            pure (some d)
+          else
+            pure none
+          pure ([(result, diag)], state)
+      | .error _ =>
+          pure ([], state)
+
+  | .blockStmt _ stmts => do
+      let mut currentState := state
+      let mut allResults := []
+      for stmt in stmts.val.toList do
+        let (results, newState) ← executeStatementsWithDiagnosis ctx currentState sourceDecl stmt
+        currentState := newState
+        allResults := allResults ++ results
+      pure (allResults, currentState)
+
+  | _ =>
+      pure ([], state)
 
 end Strata.B3.Verifier

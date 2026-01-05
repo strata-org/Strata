@@ -26,65 +26,65 @@ open Strata.B3.Verifier (UF_ARG_PLACEHOLDER)
 -- B3 Verification Results
 ---------------------------------------------------------------------
 
-/-- B3-specific check result (proved/counterexample/unknown).
-This represents the SMT solver's decision for a check/assert statement. -/
-inductive B3CheckResult where
-  | proved : B3CheckResult
-  | counterexample : B3CheckResult
-  | proofUnknown : B3CheckResult
+/-- Result of a proof check (check/assert statement).
+Represents the SMT solver's decision. -/
+inductive ProofResult where
+  | proved : ProofResult
+  | counterexample : ProofResult
+  | proofUnknown : ProofResult
 
-def B3CheckResult.isError : B3CheckResult → Bool
+def ProofResult.isError : ProofResult → Bool
   | .proved => false
   | .counterexample => true
   | .proofUnknown => true
 
-/-- B3-specific reachability result (reachable/unreachable/unknown).
-This represents the SMT solver's decision for a reach statement. -/
-inductive B3ReachResult where
-  | unreachable : B3ReachResult
-  | reachable : B3ReachResult
-  | reachabilityUnknown : B3ReachResult
+/-- Result of a reachability check (reach statement).
+Represents the SMT solver's decision. -/
+inductive ReachabilityResult where
+  | unreachable : ReachabilityResult
+  | reachable : ReachabilityResult
+  | reachabilityUnknown : ReachabilityResult
 
-def B3ReachResult.isError : B3ReachResult → Bool
+def ReachabilityResult.isError : ReachabilityResult → Bool
   | .unreachable => true
   | .reachable => false
   | .reachabilityUnknown => false
 
-/-- Unified B3 result type (check or reach).
-This allows uniform handling of both verification types. -/
-inductive B3Result where
-  | checkResult : B3CheckResult → B3Result
-  | reachResult : B3ReachResult → B3Result
+/-- Unified verification result (proof or reachability).
+Allows uniform handling of both verification types. -/
+inductive VerificationResult where
+  | proofResult : ProofResult → VerificationResult
+  | reachabilityResult : ReachabilityResult → VerificationResult
 
-def B3Result.isError : B3Result → Bool
-  | .checkResult r => r.isError
-  | .reachResult r => r.isError
+def VerificationResult.isError : VerificationResult → Bool
+  | .proofResult r => r.isError
+  | .reachabilityResult r => r.isError
 
-def B3Result.fromDecisionForProve (d : Decision) : B3Result :=
+def VerificationResult.fromDecisionForProve (d : Decision) : VerificationResult :=
   match d with
-  | .unsat => .checkResult .proved
-  | .sat => .checkResult .counterexample
-  | .unknown => .checkResult .proofUnknown
+  | .unsat => .proofResult .proved
+  | .sat => .proofResult .counterexample
+  | .unknown => .proofResult .proofUnknown
 
-def B3Result.fromDecisionForReach (d : Decision) : B3Result :=
+def VerificationResult.fromDecisionForReach (d : Decision) : VerificationResult :=
   match d with
-  | .unsat => .reachResult .unreachable
-  | .sat => .reachResult .reachable
-  | .unknown => .reachResult .reachabilityUnknown
+  | .unsat => .reachabilityResult .unreachable
+  | .sat => .reachabilityResult .reachable
+  | .unknown => .reachabilityResult .reachabilityUnknown
 
 ---------------------------------------------------------------------
 -- Verification State
 ---------------------------------------------------------------------
 
-/-- CheckResult combines B3Result with source location information.
-This is the top-level result type returned to users, containing:
-- The B3-specific result (B3Result)
-- Source location (decl and optional statement)
+/-- VerificationReport combines VerificationResult with source location.
+Top-level result type returned to users, containing:
+- The verification result (proved/counterexample/reachable/etc.)
+- Source location (declaration and optional statement)
 - Optional model/counterexample information -/
-structure CheckResult where
+structure VerificationReport where
   decl : B3AST.Decl SourceRange
   sourceStmt : Option (B3AST.Statement SourceRange) := none
-  result : B3Result
+  result : VerificationResult
   model : Option String := none
 
 ---------------------------------------------------------------------
@@ -135,7 +135,7 @@ def pop (state : B3VerificationState) : IO B3VerificationState := do
   return state
 
 /-- Prove a property holds (check/assert statement) -/
-def prove (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : Option (B3AST.Statement SourceRange)) : IO CheckResult := do
+def prove (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : Option (B3AST.Statement SourceRange)) : IO VerificationReport := do
   let _ ← push state
   let runCheck : SolverM (Decision × Option String) := do
     Solver.assert s!"(not {formatTermDirect term})"
@@ -147,12 +147,12 @@ def prove (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl S
   return {
     decl := sourceDecl
     sourceStmt := sourceStmt
-    result := B3Result.fromDecisionForProve decision
+    result := VerificationResult.fromDecisionForProve decision
     model := model
   }
 
 /-- Check if a property is reachable (reach statement) -/
-def reach (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : Option (B3AST.Statement SourceRange)) : IO CheckResult := do
+def reach (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : Option (B3AST.Statement SourceRange)) : IO VerificationReport := do
   let _ ← push state
   let runCheck : SolverM (Decision × Option String) := do
     Solver.assert (formatTermDirect term)
@@ -164,7 +164,7 @@ def reach (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl S
   return {
     decl := sourceDecl
     sourceStmt := sourceStmt
-    result := B3Result.fromDecisionForReach decision
+    result := VerificationResult.fromDecisionForReach decision
     model := model
   }
 
