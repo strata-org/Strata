@@ -21,7 +21,7 @@ open Strata.SMT
 partial def executeStatementsWithDiagnosis (ctx : ConversionContext) (state : B3VerificationState) (sourceDecl : B3AST.Decl SourceRange) : B3AST.Statement SourceRange → IO (List (CheckResult × Option DiagnosisResult) × B3VerificationState)
   | .check m expr => do
       match expressionToSMT ctx expr with
-      | some term =>
+      | .ok term =>
           let result ← prove state term sourceDecl (some (.check m expr))
           let diag ← if result.result.isError then
             let d ← diagnoseFailure state expr sourceDecl (.check m expr)
@@ -29,12 +29,12 @@ partial def executeStatementsWithDiagnosis (ctx : ConversionContext) (state : B3
           else
             pure none
           pure ([(result, diag)], state)
-      | none =>
+      | .error _ =>
           pure ([], state)
 
   | .assert m expr => do
       match expressionToSMT ctx expr with
-      | some term =>
+      | .ok term =>
           let result ← prove state term sourceDecl (some (.assert m expr))
           let diag ← if result.result.isError then
             let d ← diagnoseFailure state expr sourceDecl (.assert m expr)
@@ -46,20 +46,20 @@ partial def executeStatementsWithDiagnosis (ctx : ConversionContext) (state : B3
           else
             pure state
           pure ([(result, diag)], newState)
-      | none =>
+      | .error _ =>
           pure ([], state)
 
   | .assume _ expr => do
       match expressionToSMT ctx expr with
-      | some term =>
+      | .ok term =>
           let newState ← addAxiom state term
           pure ([], newState)
-      | none =>
+      | .error _ =>
           pure ([], state)
 
   | .reach m expr => do
       match expressionToSMT ctx expr with
-      | some term =>
+      | .ok term =>
           let result ← reach state term sourceDecl (some (.reach m expr))
           let diag ← if result.result.isError then  -- Diagnose when unreachable (error)
             let d ← diagnoseUnreachable state expr sourceDecl (.reach m expr)
@@ -67,7 +67,7 @@ partial def executeStatementsWithDiagnosis (ctx : ConversionContext) (state : B3
           else
             pure none
           pure ([(result, diag)], state)
-      | none =>
+      | .error _ =>
           pure ([], state)
 
   | .blockStmt _ stmts => do

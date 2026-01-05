@@ -35,7 +35,7 @@ def diagnoseFailureGeneric
     (sourceDecl : B3AST.Decl SourceRange)
     (sourceStmt : B3AST.Statement SourceRange) : IO DiagnosisResult := do
   match expressionToSMT ConversionContext.empty expr with
-  | none =>
+  | .error _ =>
       let dummyResult : CheckResult := {
         decl := sourceDecl
         sourceStmt := some sourceStmt
@@ -43,7 +43,7 @@ def diagnoseFailureGeneric
         model := none
       }
       return { originalCheck := dummyResult, diagnosedFailures := [] }
-  | some term =>
+  | .ok term =>
       let originalResult ← checkFn state term sourceDecl (some sourceStmt)
 
       if !isFailure originalResult.result then
@@ -55,18 +55,18 @@ def diagnoseFailureGeneric
       match expr with
       | .binaryOp _ (.and _) lhs rhs =>
           match expressionToSMT ConversionContext.empty lhs with
-          | some lhsTerm =>
+          | .ok lhsTerm =>
               let lhsResult ← checkFn state lhsTerm sourceDecl (some sourceStmt)
               if isFailure lhsResult.result then
                 diagnosements := diagnosements ++ [("left conjunct", lhs, lhsResult)]
-          | none => pure ()
+          | .error _ => pure ()
 
           match expressionToSMT ConversionContext.empty rhs with
-          | some rhsTerm =>
+          | .ok rhsTerm =>
               let rhsResult ← checkFn state rhsTerm sourceDecl (some sourceStmt)
               if isFailure rhsResult.result then
                 diagnosements := diagnosements ++ [("right conjunct", rhs, rhsResult)]
-          | none => pure ()
+          | .error _ => pure ()
       | _ => pure ()
 
       return { originalCheck := originalResult, diagnosedFailures := diagnosements }

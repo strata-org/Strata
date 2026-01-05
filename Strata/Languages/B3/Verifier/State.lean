@@ -20,6 +20,7 @@ namespace Strata.B3.Verifier
 open Strata
 open Strata.SMT
 open Strata.B3AST
+open Strata.B3.Verifier (UF_ARG_PLACEHOLDER)
 
 ---------------------------------------------------------------------
 -- B3 Verification Results
@@ -185,16 +186,20 @@ def addDeclaration (state : B3VerificationState) (decl : B3AST.Decl SourceRange)
           let paramNames := params.val.toList.map (fun p => match p with | .fParameter _ _ n _ => n.val)
           let ctx' := paramNames.foldl (fun acc n => acc.push n) ConversionContext.empty
           match expressionToSMT ctx' bodyExpr with
-          | some bodyTerm =>
+          | .ok bodyTerm =>
               let paramVars := paramNames.map (fun n => Term.var ⟨n, .int⟩)
-              let uf : UF := { id := name.val, args := paramVars.map (fun t => ⟨"_", t.typeOf⟩), out := .int }
+              let uf : UF := { id := name.val, args := paramVars.map (fun t => ⟨UF_ARG_PLACEHOLDER, t.typeOf⟩), out := .int }
               let funcCall := Term.app (.uf uf) paramVars .int
               let equality := Term.app .eq [funcCall, bodyTerm] .bool
               let axiomBody := if whens.val.isEmpty then
                 equality
               else
                 let whenTerms := whens.val.toList.filterMap (fun w =>
-                  match w with | .when _ e => expressionToSMT ctx' e
+                  match w with
+                  | .when _ e =>
+                      match expressionToSMT ctx' e with
+                      | .ok term => some term
+                      | .error _ => none
                 )
                 let antecedent := whenTerms.foldl (fun acc t => Term.app .and [acc, t] .bool) (Term.bool true)
                 Term.app .or [Term.app .not [antecedent] .bool, equality] .bool
@@ -206,12 +211,12 @@ def addDeclaration (state : B3VerificationState) (decl : B3AST.Decl SourceRange)
                   Factory.quant .all pname .int trigger body
                 ) axiomBody
               addAxiom state' axiomTerm
-          | none => return state'
+          | .error _ => return state'
       | none => return state'
   | .axiom _ _ expr =>
       match expressionToSMT ConversionContext.empty expr with
-      | some term => addAxiom state term
-      | none => return state
+      | .ok term => addAxiom state term
+      | .error _ => return state
   | _ => return state
 
 ---------------------------------------------------------------------

@@ -40,15 +40,15 @@ structure ExecutionResult where
 partial def executeStatements (ctx : ConversionContext) (state : B3VerificationState) (sourceDecl : B3AST.Decl SourceRange) : B3AST.Statement SourceRange → IO ExecutionResult
   | .check m expr => do
       match expressionToSMT ctx expr with
-      | some term =>
+      | .ok term =>
           let result ← prove state term sourceDecl (some (.check m expr))
           pure { results := [.verified result], finalState := state }
-      | none =>
-          pure { results := [.conversionError "Failed to convert expression to SMT"], finalState := state }
+      | .error err =>
+          pure { results := [.conversionError s!"Failed to convert expression: {err}"], finalState := state }
 
   | .assert m expr => do
       match expressionToSMT ctx expr with
-      | some term =>
+      | .ok term =>
           let result ← prove state term sourceDecl (some (.assert m expr))
           -- Add to solver state if successful (not an error)
           let newState ← if !result.result.isError then
@@ -56,24 +56,24 @@ partial def executeStatements (ctx : ConversionContext) (state : B3VerificationS
           else
             pure state
           pure { results := [.verified result], finalState := newState }
-      | none =>
-          pure { results := [.conversionError "Failed to convert expression to SMT"], finalState := state }
+      | .error err =>
+          pure { results := [.conversionError s!"Failed to convert expression: {err}"], finalState := state }
 
   | .assume _ expr => do
       match expressionToSMT ctx expr with
-      | some term =>
+      | .ok term =>
           let newState ← addAxiom state term
           pure { results := [], finalState := newState }
-      | none =>
-          pure { results := [.conversionError "Failed to convert expression to SMT"], finalState := state }
+      | .error err =>
+          pure { results := [.conversionError s!"Failed to convert expression: {err}"], finalState := state }
 
   | .reach m expr => do
       match expressionToSMT ctx expr with
-      | some term =>
+      | .ok term =>
           let result ← reach state term sourceDecl (some (.reach m expr))
           pure { results := [.verified result], finalState := state }
-      | none =>
-          pure { results := [.conversionError "Failed to convert expression to SMT"], finalState := state }
+      | .error err =>
+          pure { results := [.conversionError s!"Failed to convert expression: {err}"], finalState := state }
 
   | .blockStmt _ stmts => do
       let mut currentState := state

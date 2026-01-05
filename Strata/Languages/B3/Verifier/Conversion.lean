@@ -25,6 +25,27 @@ open Strata.SMT.Factory
 -- Conversion Context
 ---------------------------------------------------------------------
 
+/-- Errors that can occur during B3 to SMT conversion -/
+inductive ConversionError where
+  | unsupportedConstruct : String → ConversionError
+  | unboundVariable : Nat → ConversionError
+  | typeMismatch : String → ConversionError
+  | invalidFunctionCall : String → ConversionError
+  deriving Inhabited
+
+namespace ConversionError
+
+def toString : ConversionError → String
+  | unsupportedConstruct msg => s!"Unsupported construct: {msg}"
+  | unboundVariable idx => s!"Unbound variable at index {idx}"
+  | typeMismatch msg => s!"Type mismatch: {msg}"
+  | invalidFunctionCall msg => s!"Invalid function call: {msg}"
+
+instance : ToString ConversionError where
+  toString := ConversionError.toString
+
+end ConversionError
+
 structure ConversionContext where
   vars : List String  -- Maps de Bruijn index to variable name
 
@@ -43,6 +64,11 @@ end ConversionContext
 ---------------------------------------------------------------------
 -- Operator Conversion
 ---------------------------------------------------------------------
+
+/-- Placeholder name for UF argument types in SMT encoding.
+SMT solvers don't require actual parameter names for uninterpreted functions,
+only the types matter for type checking. -/
+def UF_ARG_PLACEHOLDER := "_"
 
 /-- Convert B3 binary operators to SMT terms without constant folding -/
 partial def binaryOpToSMT : B3AST.BinaryOp M → (Term → Term → Term)
@@ -69,7 +95,7 @@ partial def unaryOpToSMT : B3AST.UnaryOp M → (Term → Term)
   | .neg _ => fun t => Term.app .neg [t] .int
 
 /-- Convert B3 literals to SMT terms -/
-partial def literalToSMT : B3AST.Literal M → Term
+def literalToSMT : B3AST.Literal M → Term
   | .intLit _ n => Term.int n
   | .boolLit _ b => Term.bool b
   | .stringLit _ s => Term.string s
@@ -79,59 +105,65 @@ partial def literalToSMT : B3AST.Literal M → Term
 ---------------------------------------------------------------------
 
 /-- Convert B3 expressions to SMT terms -/
-partial def expressionToSMT (ctx : ConversionContext) : B3AST.Expression M → Option Term
-  | .literal _ lit => some (literalToSMT lit)
+def expressionToSMT (ctx : ConversionContext) (e : B3AST.Expression M) : Except ConversionError Term :=
+  match e with
+  | .literal _ lit => .ok (literalToSMT lit)
   | .id _ idx =>
       match ctx.lookup idx with
-      | some name => some (Term.var ⟨name, .int⟩)
-      | none => none
-  | .ite _ cond thn els =>
-      match expressionToSMT ctx cond, expressionToSMT ctx thn, expressionToSMT ctx els with
-      | some c, some t, some e => some (Term.app .ite [c, t, e] t.typeOf)
-      | _, _, _ => none
-  | .binaryOp _ op lhs rhs =>
-      match expressionToSMT ctx lhs, expressionToSMT ctx rhs with
-      | some l, some r => some ((binaryOpToSMT op) l r)
-      | _, _ => none
-  | .unaryOp _ op arg =>
-      match expressionToSMT ctx arg with
-      | some a => some ((unaryOpToSMT op) a)
-      | none => none
-  | .functionCall _ fnName args =>
-      let argTerms := args.val.toList.filterMap (expressionToSMT ctx)
-      if argTerms.length == args.val.size then
-        let uf : UF := {
-          id := fnName.val,
-          args := argTerms.map (fun t => ⟨"_", t.typeOf⟩),
-          out := .int
-        }
-        some (Term.app (.uf uf) argTerms .int)
-      else none
+      | some name => .ok (Term.var ⟨name, .int⟩)
+      | none => .error (ConversionError.unboundVariable idx)
+  | .ite _ cond thn els => do
+      let c ← expressionToSMT ctx cond
+      let t ← expressionToSMT ctx thn
+      let e ← expressionToSMT ctx els
+      return Term.app .ite [c, t, e] t.typeOf
+  | .binaryOp _ op lhs rhs => do
+      let l ← expressionToSMT ctx lhs
+      let r ← expressionToSMT ctx rhs
+      return (binaryOpToSMT op) l r
+  | .unaryOp _ op arg => do
+      let a ← expressionToSMT ctx arg
+      return (unaryOpToSMT op) a
+  | .functionCall _ fnName args => do
+      let argTerms ← args.val.mapM (expressionToSMT ctx)
+      let uf : UF := {
+        id := fnName.val,
+        args := argTerms.toList.map (fun t => ⟨UF_ARG_PLACEHOLDER, t.typeOf⟩),
+        out := .int
+      }
+      return Term.app (.uf uf) argTerms.toList .int
   | .labeledExpr _ _ expr => expressionToSMT ctx expr
-  | .letExpr _ _var value body =>
+  | .letExpr _ _var value body => do
       let ctx' := ctx.push _var.val
-      match expressionToSMT ctx value, expressionToSMT ctx' body with
-      | some _v, some b => some b
-      | _, _ => none
-  | .quantifierExpr _ qkind var _ty patterns body =>
+      let _v ← expressionToSMT ctx value
+      let b ← expressionToSMT ctx' body
+      return b
+  | .quantifierExpr _ qkind var _ty patterns body => do
       let ctx' := ctx.push var.val
-      match expressionToSMT ctx' body with
-      | some b =>
-          let patternTerms := patterns.val.toList.filterMap (fun p =>
-            match p with
-            | .pattern _ exprs =>
-                let terms := exprs.val.toList.filterMap (expressionToSMT ctx')
-                if terms.length == exprs.val.size then some terms else none
-          )
-          let trigger := if patternTerms.isEmpty then
-            Factory.mkSimpleTrigger var.val .int
-          else
-            patternTerms.foldl (fun acc terms =>
-              terms.foldl (fun t term => Factory.addTrigger term t) acc
-            ) (Term.app .triggers [] .trigger)
-          match qkind with
-          | .forall _ => some (Factory.quant .all var.val .int trigger b)
-          | .exists _ => some (Factory.quant .exist var.val .int trigger b)
-      | none => none
+      let b ← expressionToSMT ctx' body
+      let patternTerms ← patterns.val.mapM (fun p =>
+        match  _: p with
+        | .pattern _ exprs =>
+            exprs.val.mapM (expressionToSMT ctx')
+      )
+      let trigger := if patternTerms.toList.isEmpty then
+        Factory.mkSimpleTrigger var.val .int
+      else
+        patternTerms.toList.foldl (fun acc terms =>
+          terms.toList.foldl (fun t term => Factory.addTrigger term t) acc
+        ) (Term.app .triggers [] .trigger)
+      match qkind with
+      | .forall _ => return Factory.quant .all var.val .int trigger b
+      | .exists _ => return Factory.quant .exist var.val .int trigger b
+  termination_by SizeOf.sizeOf e
+  decreasing_by
+    all_goals (simp_wf <;> try omega)
+    . cases args ; simp_all
+      rename_i h; have := Array.sizeOf_lt_of_mem h; omega
+    . cases exprs; cases patterns; simp_all; subst_vars
+      rename_i h1 h2
+      have := Array.sizeOf_lt_of_mem h1
+      have Hpsz := Array.sizeOf_lt_of_mem h2
+      simp at Hpsz; omega
 
 end Strata.B3.Verifier
