@@ -25,12 +25,13 @@ open Std (ToFormat Format format)
 structure TransState where
   inputCtx : InputContext
   errors : Array String
+  tyVarCounter : Nat := 0
 
 def TransM := StateM TransState
   deriving Monad
 
 def TransM.run (ictx : InputContext) (m : TransM α) : (α × Array String) :=
-  let (v, s) := StateT.run m { inputCtx := ictx, errors := #[] }
+  let (v, s) := StateT.run m { inputCtx := ictx, errors := #[], tyVarCounter := 0 }
   (v, s.errors)
 
 instance : ToString (Boogie.Program × Array String) where
@@ -40,6 +41,27 @@ instance : ToString (Boogie.Program × Array String) where
 def TransM.error [Inhabited α] (msg : String) : TransM α := do
   fun s => ((), { s with errors := s.errors.push msg })
   return panic msg
+
+/--
+Rename type variables in a monotype to fresh names.
+Given a list of original type variable names, generates fresh names
+using the monad's counter and returns the renamed type.
+Uses prefix `$_ty` to avoid collision with Lambda type checker's `$__ty` prefix.
+-/
+def TransM.renameTypeVars (typeArgs : List String) (ty : LMonoTy) : TransM LMonoTy :=
+  if typeArgs.isEmpty then pure ty
+  else fun s =>
+    let startCounter := s.tyVarCounter
+    -- Create substitution mapping old names to fresh names
+    -- Use `$_ty` prefix to avoid collision with Lambda type checker's `$__ty` prefix
+    let (substMap, endCounter) := typeArgs.foldl (fun (acc, counter) name =>
+      let freshName := s!"$_ty{counter}"
+      (acc.insert name (LMonoTy.ftvar freshName), counter + 1)
+    ) ((Map.empty : Map String LMonoTy), startCounter)
+    -- Apply substitution (Subst is List (Map ...), so wrap in a list)
+    let subst : Lambda.Subst := [substMap]
+    let result := LMonoTy.subst subst ty
+    (result, { s with tyVarCounter := endCounter })
 
 ---------------------------------------------------------------------
 
@@ -270,7 +292,14 @@ partial def translateLMonoTy (bindings : TransBindings) (arg : Arg) :
     assert! i < bindings.boundTypeVars.size
     let var := bindings.boundTypeVars[bindings.boundTypeVars.size - (i+1)]!
     return (.ftvar var)
-  | _ => TransM.error s!"translateLMonoTy not yet implemented {repr tp}"
+  | .tvar _ name =>
+    -- Type variable translates directly to Lambda free type variable
+    return (.ftvar name)
+  | .arrow _ a r =>
+    -- Arrow types: translate both sides and construct function type
+    let aType ← translateLMonoTy bindings (.type a)
+    let rType ← translateLMonoTy bindings (.type r)
+    return (.arrow aType rType)
 
 partial def translateLMonoTys (bindings : TransBindings) (args : Array Arg) :
   TransM (Array LMonoTy) :=
@@ -413,7 +442,7 @@ partial def dealiasTypeExpr (p : Program) (te : TypeExpr) : TypeExpr :=
   match te with
   | (.fvar _ idx #[]) =>
     match p.globalContext.kindOf! idx with
-    | .expr te => te
+    | .expr _ te => te
     | .type [] (.some te) => te
     | _ => te
   | _ => te
@@ -863,7 +892,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     assert! i < bindings.freeVars.size
     let decl := bindings.freeVars[i]!
     let ty? ← match p.globalContext.kindOf! i with
-              |.expr te => pure (some (← translateLMonoTy bindings (.type te)))
+              |.expr _ te => pure (some (← translateLMonoTy bindings (.type te)))
               | _ => pure none
     match decl with
     | .var name _ty _expr =>
@@ -881,7 +910,20 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     match decl with
     | .func func =>
       let args ← translateExprs p bindings argsa.toArray
-      return .mkApp () func.opExpr args.toList
+      -- Generate fresh type variable names for this call site
+      -- to avoid conflicts when the same polymorphic function is called multiple times
+      let opExpr ← if func.typeArgs.isEmpty then
+        pure func.opExpr
+      else
+        -- Get the monotype from opExpr and rename its type variables
+        let input_tys := func.inputs.values
+        let output_tys := Lambda.LMonoTy.destructArrow func.output
+        let ty := match input_tys with
+                  | [] => func.output
+                  | ity :: irest => Lambda.LMonoTy.mkArrow ity (irest ++ output_tys)
+        let freshTy ← TransM.renameTypeVars func.typeArgs ty
+        pure (.op () func.name (some freshTy))
+      return .mkApp () opExpr args.toList
     | _ =>
      TransM.error s!"translateExpr unimplemented fvar decl: {format decl}"
   | op, args =>
@@ -1219,8 +1261,11 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
     | .Declaration => @checkOp (Boogie.Decl × TransBindings) op q`Boogie.command_fndecl 4
   let fname ← translateIdent BoogieIdent op.args[0]!
   let typeArgs ← translateTypeArgs op.args[1]!
-  let sig ← translateBindings bindings op.args[2]!
-  let ret ← translateLMonoTy bindings op.args[3]!
+  -- Add type parameters to boundTypeVars so that .bvar indices in the signature
+  -- can be resolved to type variable names (e.g., for `function identity<a>(x : a) : a`)
+  let bindingsWithTypeArgs := { bindings with boundTypeVars := bindings.boundTypeVars ++ typeArgs }
+  let sig ← translateBindings bindingsWithTypeArgs op.args[2]!
+  let ret ← translateLMonoTy bindingsWithTypeArgs op.args[3]!
   let in_bindings := (sig.map (fun (v, ty) => (LExpr.fvar () v ty))).toArray
   -- This bindings order -- original, then inputs, is
   -- critical here. Is this right though?

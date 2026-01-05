@@ -54,6 +54,7 @@ partial def expandMacros (m : DialectMap) (f : PreType) (args : Nat → Option A
   | .arrow loc a b => .arrow loc <$> expandMacros m a args <*> expandMacros m b args
   | .fvar loc i a => .fvar loc i <$> a.mapM fun e => expandMacros m e args
   | .bvar loc idx => pure (.bvar loc idx)
+  | .tvar loc name => pure (.tvar loc name)
   | .funMacro loc i r => do
     let r ← expandMacros m r args
     match args i with
@@ -62,7 +63,7 @@ partial def expandMacros (m : DialectMap) (f : PreType) (args : Nat → Option A
     | some a =>
       let addType (tps : Array TypeExpr) loc _ s args : Array TypeExpr :=
         match resolveBindingIndices m loc s args with
-        | .expr tp => tps.push tp
+        | .expr _ tp => tps.push tp
         | .type _ _ => panic! s!"Expected binding to be expression."
       let argTypes := foldOverArgBindingSpecs m addType (init := #[]) a
       pure <| argTypes.foldr (init := r) (.arrow loc)
@@ -77,24 +78,33 @@ the head is in a normal form.
 -/
 partial def hnf (tctx : TypingContext) (e : TypeExpr) : TypeExpr :=
   match e with
-  | .arrow .. | .ident .. => e
+  | .arrow .. | .ident .. | .tvar .. => e
   | .fvar _ idx args =>
     let gctx := tctx.globalContext
     match gctx.kindOf! idx with
-    | .expr _ => panic! "Type free variable bound to expression."
+    | .expr _ _ => panic! "Type free variable bound to expression."
     | .type params (some d) =>
       assert! params.length = args.size
       assert! !d.hasUnboundVar (bindingCount := args.size)
       hnf (.empty gctx) (d.instType args)
     | .type _ none => e
   | .bvar _ idx =>
-    match tctx.bindings[tctx.bindings.size - 1 - idx]!.kind with
-    | .type _ params (some d) =>
-      assert! params.isEmpty
-      assert! d.isGround
-      hnf (tctx.drop (idx + 1)) d
-    | .type _ _ none => e
-    | _ => panic! "Expected a type"
+    -- For polymorphic functions, .bvar indices may refer to type parameters
+    -- that are not in tctx.bindings. In this case, return the bvar as-is.
+    if idx >= tctx.bindings.size then
+      e
+    else
+      match tctx.bindings[tctx.bindings.size - 1 - idx]!.kind with
+      | .type _ params (some d) =>
+        assert! params.isEmpty
+        assert! d.isGround
+        hnf (tctx.drop (idx + 1)) d
+      | .type _ _ none => e
+      -- For polymorphic functions, .bvar indices may refer to type parameters
+      -- but the binding at that index might be an expression binding (from the
+      -- procedure body). In this case, return the bvar as-is and let the Lambda
+      -- typechecker handle type inference.
+      | .expr _ | .cat _ => e
 
 /--
 Attempt to interpret `e` as a `n`-ary function, and
@@ -174,14 +184,18 @@ def resolveTypeBinding (tctx : TypingContext) (loc : SourceRange) (name : String
       logErrorMF a.info.loc mf!"Unexpected arguments to {name}."
       return default
     if let .type loc [] _ := k then
-      let info : TypeInfo := { inputCtx := tctx, loc := loc, typeExpr := .bvar loc idx, isInferred := false }
+      -- For polymorphic type parameters (e.g., `a` in `function identity<a>(x : a) : a`),
+      -- we use `.tvar` with the parameter name. This allows the DDM to pass through
+      -- type variables without attempting unification - type inference is delegated
+      -- to the Lambda typechecker.
+      let info : TypeInfo := { inputCtx := tctx, loc := loc, typeExpr := .tvar loc name, isInferred := false }
       return .node (.ofTypeInfo info) #[]
     else
       logErrorMF loc mf!"Expected a type instead of {k}"
       return default
   | .fvar fidx k =>
     match k with
-    | .expr tp =>
+    | .expr _ tp =>
       logErrorMF loc mf!"Expected a type instead of expression with type {tp}."
       return default
     | .type params _ =>
@@ -323,10 +337,10 @@ N.B. This expects that macros have already been expanded in e.
 -/
 partial def headExpandTypeAlias (gctx : GlobalContext) (e : TypeExpr) : TypeExpr :=
   match e with
-  | .arrow .. | .ident .. | .bvar .. => e
+  | .arrow .. | .ident .. | .bvar .. | .tvar .. => e
   | .fvar _ idx args =>
     match gctx.kindOf! idx with
-    | .expr _ => panic! "Type free variable bound to expression."
+    | .expr _ _ => panic! "Type free variable bound to expression."
     | .type params (some d) =>
       assert! params.length = args.size
       assert! !d.hasUnboundVar (bindingCount := args.size)
@@ -344,6 +358,9 @@ partial def checkExpressionType (tctx : TypingContext) (itype rtype : TypeExpr) 
   let itype := tctx.hnf itype
   let rtype := tctx.hnf rtype
   match itype, rtype with
+  | .tvar _ n1, .tvar _ n2 => return n1 == n2  -- Same type variable
+  | .tvar _ _, _ => return true  -- Type variable matches anything (inferred later)
+  | _, .tvar _ _ => return true  -- Type variable matches anything (inferred later)
   | .ident _ iq ia, .ident _ rq ra =>
     if p : iq = rq ∧ ia.size = ra.size then do
       for i in Fin.range ia.size do
@@ -420,6 +437,9 @@ partial def unifyTypes
   let some exprLoc := mkSourceRange? exprSyntax
     | panic! "unifyTypes missing source location"
   match expectedType with
+  | .tvar _ _ =>
+    -- Type variable: skip DDM unification, let Lambda typechecker handle it
+    pure args
   | .ident _ eid ea =>
     let inferredHead := tctx.hnf inferredType
     match inferredHead with
@@ -444,30 +464,41 @@ partial def unifyTypes
       logErrorMF exprLoc mf!"Encountered {ih} expression when {expectedType} expected."
       return args
   | .bvar _ idx =>
-    let .isTrue idxP := inferInstanceAs (Decidable (idx < argLevel))
-      | return panic! "Invalid index"
-    let typeLevel := argLevel - (idx + 1)
-    -- Verify type level is a type parameter.
-    assert! b[typeLevel].kind.isType
-
-    match args[typeLevel] with
-    | none => do
-      let info : TypeInfo := {
-        loc := exprLoc
-        inputCtx := tctx
-        typeExpr := inferredType
-        isInferred := true
-      }
-      return args.set typeLevel (some (.node (.ofTypeInfo info) #[]))
-    | some t => do
-      let .ofTypeInfo info := t.info
-        | panic! "Expected type info"
-      if !(← checkExpressionType tctx inferredType info.typeExpr) then
-        logErrorMF exprLoc mf!"Expression has type {withBindings tctx.bindings (mformat inferredType)} when {withBindings tctx.bindings (mformat info.typeExpr)} expected."
+    -- For polymorphic functions declared via `function` command (e.g., `function identity<a>(x : a) : a`),
+    -- the .bvar indices refer to type parameters that are NOT in the args array.
+    -- In this case, idx >= argLevel, and we should skip type inference for these type parameters.
+    -- Type inference for polymorphic functions is delegated to the Lambda typechecker.
+    if idx < argLevel then
+      let typeLevel := argLevel - (idx + 1)
+      -- Check if type level is a type parameter.
+      -- For polymorphic functions, the .bvar indices refer to type parameters that are
+      -- not in the args array, so b[typeLevel].kind.isType will be false.
+      -- In this case, skip DDM type inference and let Lambda typechecker handle it.
+      if !b[typeLevel].kind.isType then
+        pure args
+      else
+        match args[typeLevel] with
+        | none => do
+          let info : TypeInfo := {
+            loc := exprLoc
+            inputCtx := tctx
+            typeExpr := inferredType
+            isInferred := true
+          }
+          return args.set typeLevel (some (.node (.ofTypeInfo info) #[]))
+        | some t => do
+          let .ofTypeInfo info := t.info
+            | panic! "Expected type info"
+          if !(← checkExpressionType tctx inferredType info.typeExpr) then
+            logErrorMF exprLoc mf!"Expression has type {withBindings tctx.bindings (mformat inferredType)} when {withBindings tctx.bindings (mformat info.typeExpr)} expected."
+          pure args
+    else
+      -- Type parameter is outside the current argument scope (polymorphic function).
+      -- Skip DDM type inference and let Lambda typechecker handle it.
       pure args
   | .arrow _ ea er =>
     match inferredType with
-    | .ident .. | .bvar .. | .fvar .. =>
+    | .ident .. | .bvar .. | .fvar .. | .tvar .. =>
       logErrorMF exprLoc mf!"Expected {expectedType} when {inferredType} found"
       pure args
     | .arrow _ ia ir =>
@@ -509,14 +540,20 @@ def evalBindingNameIndex (trees : Vector Tree n) (idx : DebruijnIndex n) : Strin
 This collects the results of applying a function `f` to the bindings added to the
 resulting context of `tree` after the initial number of bindings given by
 `initialScope`.
+
+Note: We use the tree's inputCtx.bindings.size as the actual starting point,
+not initialScope. This ensures we only collect bindings added by the tree itself,
+not bindings added by @[scope] annotations before the tree was parsed.
 -/
-def collectNewBindingsM [Monad m] (initialScope : Nat) (tree : Tree)
+def collectNewBindingsM [Monad m] (_initialScope : Nat) (tree : Tree)
     (f : SourceRange → Binding → m α) : m (Array α) := do
-  assert! (initialScope ≤ tree.info.inputCtx.bindings.size)
   let loc := tree.info.loc
   let bindings := tree.resultContext.bindings.toArray
-  let init : Array α := .mkEmpty (bindings.size - initialScope)
-  bindings.foldlM (init := init) (start := initialScope) fun r b => r.push <$> f loc b
+  -- Use the tree's inputCtx size as the starting point to skip bindings
+  -- added by @[scope] annotations (like type parameters)
+  let startIdx := tree.info.inputCtx.bindings.size
+  let init : Array α := .mkEmpty (bindings.size - startIdx)
+  bindings.foldlM (init := init) (start := startIdx) fun r b => r.push <$> f loc b
 
 def elabArgIndex {α} {n}
     (initialScope : Nat)
@@ -659,7 +696,44 @@ def translateTypeExpr (tree : Tree) : ElabM TypeExpr := do
       | return panic! "Invalid arguments to Init.TypeIdent"
     let ident := argChildren[0]
     let tpId := translateQualifiedIdent ident
-    let some (qname, decl) ← resolveTypeOrCat ident.info.loc tpId
+    let nameLoc := ident.info.loc
+    let tctx := ident.info.inputCtx
+    -- First check if the type is a type parameter in the typing context
+    if let .name name := tpId then
+      if let some binding := tctx.lookupVar name then
+        let tpArgs ← args.attach.mapM fun ⟨a, _⟩ => translateTypeExpr a
+        match binding with
+        | .fvar fidx k =>
+          match k with
+          | .type params _ =>
+            let params := params.toArray
+            if params.size = tpArgs.size then
+              return .fvar nameLoc fidx tpArgs
+            else if let some a := tpArgs[params.size]? then
+              logErrorMF a.ann mf!"Unexpected argument to {name}."
+              return default
+            else
+              logErrorMF nameLoc mf!"{name} expects {params.size} arguments."
+              return default
+          | .expr _ _ =>
+            logErrorMF nameLoc mf!"Expected a type instead of expression {name}."
+            return default
+        | .bvar idx k =>
+          if let .type loc [] _ := k then
+            if tpArgs.isEmpty then
+              -- For polymorphic type parameters (e.g., `a` in `function identity<a>(x : a) : a`),
+              -- we use `.tvar` with the parameter name. This allows the DDM to pass through
+              -- type variables without attempting unification - type inference is delegated
+              -- to the Lambda typechecker.
+              return .tvar loc name
+            else
+              logErrorMF nameLoc mf!"Unexpected arguments to type variable {name}."
+              return default
+          else
+            logErrorMF nameLoc mf!"Expected a type instead of {k}"
+            return default
+    -- Dialect-defined types
+    let some (qname, decl) ← resolveTypeOrCat nameLoc tpId
       | return default
     match decl with
     | .type decl =>
@@ -685,6 +759,7 @@ def translateTypeExpr (tree : Tree) : ElabM TypeExpr := do
     return default
   termination_by tree
   decreasing_by
+    -- Case 1: Recursive call in type parameter lookup (args.attach.mapM)
     · have argsP : sizeOf args ≤ sizeOf tree := by
           have p := flattenTypeApp_size tree #[]
           have q := Array.sizeOf_min argChildren
@@ -692,6 +767,15 @@ def translateTypeExpr (tree : Tree) : ElabM TypeExpr := do
           omega
       have p : sizeOf a < sizeOf args := by decreasing_tactic
       decreasing_tactic
+    -- Case 2: Recursive call in dialect-defined types (args.attach.mapM)
+    · have argsP : sizeOf args ≤ sizeOf tree := by
+          have p := flattenTypeApp_size tree #[]
+          have q := Array.sizeOf_min argChildren
+          simp [feq] at p
+          omega
+      have p : sizeOf a < sizeOf args := by decreasing_tactic
+      decreasing_tactic
+    -- Case 3: Recursive call for arrow type (aTree = argChildren[0])
     · have argcP : sizeOf argChildren < sizeOf tree := by
         have p := flattenTypeApp_size tree #[]
         have q := Array.sizeOf_min args
@@ -699,6 +783,7 @@ def translateTypeExpr (tree : Tree) : ElabM TypeExpr := do
         omega
       have p : sizeOf argChildren[0] < sizeOf argChildren := by decreasing_tactic
       decreasing_tactic
+    -- Case 4: Recursive call for arrow type (rTree = argChildren[1])
     · have argcP : sizeOf argChildren < sizeOf tree := by
         have p := flattenTypeApp_size tree #[]
         have q := Array.sizeOf_min args
@@ -739,13 +824,17 @@ def translateBindingKind (tree : Tree) : ElabM BindingKind := do
             else
               logErrorMF nameLoc mf!"{name} expects {params.size} arguments."
               return default
-          | .expr _ =>
+          | .expr _ _ =>
             logErrorMF nameLoc mf!"Expected a type instead of expression {name}."
             return default
         | .bvar idx k =>
           if let .type loc [] _ := k then
             if tpArgs.isEmpty then
-              return .expr (.bvar loc idx)
+              -- For polymorphic type parameters (e.g., `a` in `function identity<a>(x : a) : a`),
+              -- we use `.tvar` with the parameter name. This allows the DDM to pass through
+              -- type variables without attempting unification - type inference is delegated
+              -- to the Lambda typechecker.
+              return .expr (.tvar loc name)
             else
               logErrorMF nameLoc mf!"Unexpected arguments to type variable {name}."
               return default
@@ -868,7 +957,9 @@ partial def inferType (tctx : TypingContext) (e : Expr) : ElabM TypeExpr := do
     | _ => panic! "Expected an expression"
   | .fvar _ idx =>
     match tctx.globalContext.kindOf! idx with
-    | .expr tp =>
+    | .expr _typeParams tp =>
+      -- For polymorphic functions, the type contains .bvar indices referring to type parameters.
+      -- These are handled by the Lambda typechecker, not the DDM.
       return resultType! tctx tp a.val.size
     | .type _ _ => panic! "Expected expression instead of type."
   | .fn _ ident => do
@@ -952,6 +1043,53 @@ def unwrapTree (tree : Tree) (unwrap : Bool) : Arg :=
     | .ofBytesInfo info => .bytes info.loc info.val
     | _ => tree.arg  -- Fallback for non-unwrappable types
 
+/--
+Extract type parameter identifiers from a tree.
+
+This handles the case where @[scope(typeArgs)] is used and typeArgs contains
+identifiers that should be treated as type parameters. The function handles:
+- Option wrappers (unwraps the option)
+- Operation wrappers (unwraps to get to the CommaSepBy)
+- CommaSepBy Ident (extracts all identifier names)
+
+Returns an array of identifier names that should be added as type bindings.
+This is a generic DDM mechanism - any scoped argument that ultimately contains
+a CommaSepBy of identifiers will have those identifiers extracted as type parameters.
+-/
+def extractTypeParamIdentifiers (tree : Tree) : Array String :=
+  -- Handle Option wrapper
+  match tree with
+  | .node info children =>
+    match info with
+    | .ofOptionInfo _ =>
+      -- Unwrap Option and recurse
+      if hp : 0 < children.size then
+        have : sizeOf children[0] < sizeOf (Tree.node info children) := by
+          have q := Array.sizeOf_getElem children 0 hp
+          simp
+          omega
+        extractTypeParamIdentifiers children[0]
+      else
+        #[]  -- None case
+    | .ofOperationInfo _ =>
+      -- Unwrap operation and recurse into children
+      -- Operations like type_args wrap a CommaSepBy Ident
+      if hp : 0 < children.size then
+        have : sizeOf children[0] < sizeOf (Tree.node info children) := by
+          have q := Array.sizeOf_getElem children 0 hp
+          simp
+          omega
+        extractTypeParamIdentifiers children[0]
+      else
+        #[]
+    | .ofCommaSepInfo _ =>
+      -- Extract identifiers from CommaSepBy Ident
+      children.filterMap fun child =>
+        match child.info with
+        | .ofIdentInfo identInfo => some identInfo.val
+        | _ => none
+    | _ => #[]
+
 mutual
 
 partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
@@ -1026,7 +1164,20 @@ partial def runSyntaxElaborator
         match ae.contextLevel with
         | some idx =>
           match trees[idx] with
-          | some t => pure t.resultContext
+          | some t =>
+            -- Check if the scoped tree contains type parameter identifiers
+            -- that need to be added as type bindings.
+            -- This handles the case where @[scope(typeArgs)] is used and
+            -- typeArgs is a CommaSepBy Ident (or Option TypeArgs).
+            let baseCtx := t.resultContext
+            let typeParamBindings := extractTypeParamIdentifiers t
+            if typeParamBindings.isEmpty then
+              pure baseCtx
+            else
+              -- Add type bindings for each identifier
+              let loc := t.info.loc
+              pure <| typeParamBindings.foldl (init := baseCtx) fun ctx name =>
+                ctx.push { ident := name, kind := .type loc [] none }
           | none => continue
         | none => pure tctx0
     let astx := args[ae.syntaxLevel]
@@ -1210,7 +1361,7 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
         logErrorMF loc mf!"{name} has category {c} when an expression is required."
         return default
     | .fvar idx k =>
-      let .expr _ := k
+      let .expr _ _ := k
         | logError loc s!"{name} is a type when expression required."
           return default
       let info : ExprInfo := { toElabInfo := einfo, expr := .fvar loc idx }
@@ -1233,7 +1384,7 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
       | none =>
         logError fnLoc s!"Unknown variable {fn}"
         return default
-    let .expr tp := k
+    let .expr _typeParams tp := k
       | logError fnLoc s!"Expression expected."
         return default
     let (argTypes, r) ← do

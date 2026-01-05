@@ -25,16 +25,9 @@ def typeCheck (C: Boogie.Expression.TyContext) (Env : Boogie.Expression.TyEnv) (
   --
   -- `LFunc.type` below will also catch any ill-formed functions (e.g.,
   -- where there are duplicates in the formals, etc.).
-  let type ← func.type
-  let (monoty, Env) ← LTy.instantiateWithCheck type C Env
-  let monotys := monoty.destructArrow
-  let input_mtys := monotys.dropLast
-  let output_mty := monotys.getLast (by exact LMonoTy.destructArrow_non_empty monoty)
-  -- Resolve type aliases and monomorphize inputs and output.
-  let func := { func with
-                  typeArgs := []
-                  inputs := func.inputs.keys.zip input_mtys,
-                  output := output_mty}
+  let _type ← func.type
+  -- Keep the original function signature with typeArgs preserved.
+  -- The type checking of the body (if present) will verify consistency.
   match func.body with
   | none => .ok (func, Env)
   | some body =>
@@ -49,7 +42,8 @@ def typeCheck (C: Boogie.Expression.TyContext) (Env : Boogie.Expression.TyEnv) (
     let S ← Constraints.unify [(retty, bodyty)] Env.stateSubstInfo
     let Env := Env.updateSubst S
     let Env := Env.popContext
-    -- Resolve type aliases and monomorphize the body.
+    -- Keep typeArgs, inputs, and output from the original function.
+    -- Only update the body with the type-checked version.
     let new_func := { func with body := some bodya.unresolved }
     .ok (new_func, Env)
 

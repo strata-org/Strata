@@ -88,8 +88,14 @@ abbrev FreeVarIndex := Nat
 inductive TypeExprF (α : Type) where
   /-- A dialect defined type. -/
 | ident (ann : α) (name : QualifiedIdent) (args : Array (TypeExprF α))
-  /-- A bound type variable at the given deBruijn index in the context. -/
+  /-- A bound type variable at the given deBruijn index in the context.
+      Used for type alias parameters that get substituted on instantiation. -/
 | bvar (ann : α) (index : Nat)
+  /-- A universally quantified type variable (polymorphic type parameter).
+      Used for polymorphic function type parameters like `a` in `function identity<a>(x : a) : a`.
+      Unlike bvar, tvar uses a named identifier and is passed through by the DDM
+      without unification - type inference is delegated to the Lambda typechecker. -/
+| tvar (ann : α) (name : String)
   /-- A reference to a global variable along with any arguments to ensure it is well-typed. -/
 | fvar (ann : α) (fvar : FreeVarIndex) (args : Array (TypeExprF α))
   /-- A function type. -/
@@ -101,6 +107,7 @@ namespace TypeExprF
 def ann {α} : TypeExprF α → α
 | .ident ann _ _ => ann
 | .bvar ann _ => ann
+| .tvar ann _ => ann
 | .fvar ann _ _ => ann
 | .arrow ann _ _ => ann
 
@@ -112,6 +119,7 @@ protected def incIndices {α} (tp : TypeExprF α) (count : Nat) : TypeExprF α :
   | .ident n i args => .ident n i (args.attach.map fun ⟨e, _⟩ => e.incIndices count)
   | .fvar n f args => .fvar n f (args.attach.map fun ⟨e, _⟩ => e.incIndices count)
   | .bvar n idx => .bvar n (idx + count)
+  | .tvar n name => .tvar n name  -- tvar doesn't use indices, pass through unchanged
   | .arrow n a r => .arrow n (a.incIndices count) (r.incIndices count)
 
 /-- Return true if type expression has a bound variable. -/
@@ -119,6 +127,7 @@ protected def hasUnboundVar {α} (bindingCount : Nat := 0) : TypeExprF α → Bo
 | .ident _ _ args => args.attach.any (fun ⟨e, _⟩ => e.hasUnboundVar bindingCount)
 | .fvar _ _ args => args.attach.any (fun ⟨e, _⟩ => e.hasUnboundVar bindingCount)
 | .bvar _ idx => idx ≥ bindingCount
+| .tvar _ _ => false  -- tvar is a free type variable, not a bound one
 | .arrow _ a r => a.hasUnboundVar bindingCount || r.hasUnboundVar bindingCount
 termination_by e => e
 
@@ -135,6 +144,7 @@ protected def instTypeM {m α} [Monad m] (d : TypeExprF α) (bindings : α → N
   | .ident n i a =>
     .ident n i <$> a.attach.mapM (fun ⟨e, _⟩ => e.instTypeM bindings)
   | .bvar n idx => bindings n idx
+  | .tvar n name => pure (.tvar n name)  -- tvar doesn't get substituted by type alias instantiation
   | .fvar n idx a => .fvar n idx <$> a.attach.mapM (fun ⟨e, _⟩ => e.instTypeM bindings)
   | .arrow n a b => .arrow n <$> a.instTypeM bindings <*> b.instTypeM bindings
 termination_by d
@@ -478,6 +488,11 @@ inductive PreType where
 | ident (ann : SourceRange) (name : QualifiedIdent) (args : Array PreType)
   /-- A bound type variable at the given deBruijn index in the context. -/
 | bvar (ann : SourceRange) (index : Nat)
+  /-- A universally quantified type variable (polymorphic type parameter).
+      Used for polymorphic function type parameters like `a` in `function identity<a>(x : a) : a`.
+      Unlike bvar, tvar uses a named identifier and is passed through by the DDM
+      without unification - type inference is delegated to the Lambda typechecker. -/
+| tvar (ann : SourceRange) (name : String)
   /-- A reference to a global variable along with any arguments to ensure it is well-typed. -/
 | fvar (ann : SourceRange) (fvar : FreeVarIndex) (args : Array PreType)
   /-- A function type. -/
@@ -492,6 +507,7 @@ namespace PreType
 def ann : PreType → SourceRange
 | .ident ann _ _ => ann
 | .bvar ann _ => ann
+| .tvar ann _ => ann
 | .fvar ann _ _ => ann
 | .arrow ann _ _ => ann
 | .funMacro ann _ _ => ann
@@ -499,6 +515,7 @@ def ann : PreType → SourceRange
 def ofType : TypeExprF SourceRange → PreType
 | .ident loc name args => .ident loc name (args.map fun a => .ofType a)
 | .bvar loc idx => .bvar loc idx
+| .tvar loc name => .tvar loc name
 | .fvar loc idx args => .fvar loc idx (args.map fun a => .ofType a)
 | .arrow loc a r => .arrow loc (.ofType a) (.ofType r)
 termination_by tp => tp
@@ -1598,7 +1615,12 @@ private partial def foldOverArgAtLevel {α β}
 end
 
 inductive GlobalKind where
-| expr (tp : TypeExpr)
+/-- An expression (function or constant) with optional type parameters.
+    For polymorphic functions like `function identity<a>(x : a) : a`,
+    `typeParams` contains `["a"]` and `tp` contains `.bvar` indices
+    referring to these type parameters. -/
+| expr (typeParams : List String) (tp : TypeExpr)
+/-- A type declaration with optional type parameters and definition. -/
 | type (params : List String) (definition : Option TypeExpr)
 deriving BEq, Inhabited, Repr
 
@@ -1610,17 +1632,17 @@ partial def resolveBindingIndices { argDecls : ArgDecls } (m : DialectMap) (src 
     | .type tp =>
       match b.argsIndex with
       | none =>
-        .expr tp
+        .expr [] tp
       | some idx =>
         let f (a : Array _) (l : SourceRange) {argDecls : ArgDecls} (b : BindingSpec argDecls) args :=
                 let type :=
                       match resolveBindingIndices m l b args with
-                      | .expr tp => tp
+                      | .expr _ tp => tp
                       | .type _ _ => panic! s!"Expected binding to be expression."
                 a.push type
         let fnBindings : Array TypeExpr :=
           foldOverArgAtLevel m f #[] argDecls args idx.toLevel
-        .expr <| fnBindings.foldr (init := tp) fun argType tp => .arrow src argType tp
+        .expr [] <| fnBindings.foldr (init := tp) fun argType tp => .arrow src argType tp
     | .cat c =>
       if c.name = q`Init.Type then
         .type [] none
@@ -1991,11 +2013,13 @@ private def addDatatypeBindings
   let datatypeType := mkDatatypeTypeRef src datatypeIndex typeParams
 
   -- Step 2: Add constructor signatures
+  -- Constructors inherit the datatype's type parameters
   let gctx := constructorInfo.foldl (init := gctx) fun gctx constr =>
     let constrType := mkConstructorType src datatypeType constr.fields
-    gctx.push constr.name (.expr constrType)
+    gctx.push constr.name (.expr typeParams.toList constrType)
 
   -- Step 3: Expand and add function templates
+  -- Template-generated functions also inherit the datatype's type parameters
   let existingNames : Std.HashSet String := gctx.nameMap.fold (init := {}) fun s name _ => s.insert name
   let result := expandFunctionTemplates datatypeName datatypeType constructorInfo b.functionTemplates dialectName existingNames
 
@@ -2003,7 +2027,7 @@ private def addDatatypeBindings
     panic! s!"Datatype template expansion errors: {result.errors}"
   else
     result.functions.foldl (init := gctx) fun gctx (funcName, funcType) =>
-      gctx.push funcName (.expr funcType)
+      gctx.push funcName (.expr typeParams.toList funcType)
 
 def addCommand (dialects : DialectMap) (init : GlobalContext) (op : Operation) : GlobalContext :=
     let dialectName := op.name.dialect
