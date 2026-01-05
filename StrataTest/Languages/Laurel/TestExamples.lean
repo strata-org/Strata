@@ -15,6 +15,7 @@ import Strata.Languages.Laurel.LaurelToBoogieTranslator
 open StrataTest.Util
 open Strata
 
+namespace Strata
 namespace Laurel
 
 
