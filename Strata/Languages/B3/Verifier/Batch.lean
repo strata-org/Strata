@@ -97,11 +97,7 @@ def verifyProgramWithSolver (prog : B3AST.Program SourceRange) (solver : Solver)
   return results
 
 ---------------------------------------------------------------------
--- SMT Command Generation (for debugging/inspection)
----------------------------------------------------------------------
-
----------------------------------------------------------------------
--- State Building Utilities
+-- Convenience Wrappers
 ---------------------------------------------------------------------
 
 /-- Build verification state from B3 program (functions and axioms only, no procedures) -/
