@@ -49,9 +49,8 @@ Diagnosis (if failed)
 - **Conversion.lean** - B3 AST → SMT Term conversion with error handling
 - **Formatter.lean** - SMT Term → SMT-LIB string formatting
 - **Statements.lean** - Statement execution (check, assert, assume, reach)
-- **Batch.lean** - Batch verification API
-- **Diagnosis.lean** - Automatic failure diagnosis
-- **AutoDiagnose.lean** - Batch verification with diagnosis
+- **Batch.lean** - Batch verification API and program state building
+- **Diagnosis.lean** - Automatic failure diagnosis and batch verification with diagnosis
 - **Transform/FunctionToAxiom.lean** - Function definition → axiom transformation
 
 ## Architecture

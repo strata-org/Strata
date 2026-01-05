@@ -29,7 +29,7 @@ namespace Strata.B3.Verifier
 open Strata.SMT
 
 inductive StatementResult where
-  | verified : CheckResult → StatementResult  -- Successful check/reach/assert
+  | verified : VerificationReport → StatementResult  -- Successful check/reach/assert
   | conversionError : String → StatementResult
 
 structure ExecutionResult where
