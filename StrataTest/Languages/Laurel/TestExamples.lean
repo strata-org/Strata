@@ -15,6 +15,7 @@ import Strata.Languages.Laurel.LaurelToBoogieTranslator
 open StrataTest.Util
 open Strata
 open Strata.Elab (parseStrataProgramFromDialect)
+open Lean.Parser (InputContext)
 
 namespace Laurel
 
