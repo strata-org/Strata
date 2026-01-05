@@ -71,22 +71,22 @@ private def translateFromTermPrim (t:SMT.TermPrim):
     let bvty := mkSymbol (s!"bv{bv.toNat}")
     let val:Index SourceRange := .ind_numeral srnone bv.width
     return (.qual_identifier srnone
-      (.qi_ident srnone (.iden_indexed srnone bvty (.seqpidx_one srnone val))))
+      (.qi_ident srnone (.iden_indexed srnone bvty (.index_list_one srnone val))))
   | .string s =>
     return .spec_constant_term srnone (.sc_str srnone s)
 
 -- List of SMTSort to SeqPSMTSort.
 -- Hope this could be elided away later. :(
 private def translateFromSMTSortList (l: List (SMTSort SourceRange)):
-    Option (SeqPSMTSort SourceRange) :=
+    Option (SMTSortList SourceRange) :=
   let srnone := SourceRange.none
   match l with
   | [] => .none
-  | h::[] => .some (SeqPSMTSort.seqpsort_one srnone h)
+  | h::[] => .some (.smtsort_list_one srnone h)
   | h1::h2::t => .some (
     match translateFromSMTSortList t with
-    | .none => .seqpsort_cons srnone h1 (.seqpsort_one srnone h2)
-    | .some t => .seqpsort_cons srnone h1 (.seqpsort_cons srnone h2 t))
+    | .none => .smtsort_list_cons srnone h1 (.smtsort_list_one srnone h2)
+    | .some t => .smtsort_list_cons srnone h1 (.smtsort_list_cons srnone h2 t))
 
 private def translateFromTermType (t:SMT.TermType):
     Except String (SMTDDM.SMTSort SourceRange) := do
@@ -98,7 +98,7 @@ private def translateFromTermType (t:SMT.TermType):
       return (.smtsort_ident srnone
         (.iden_indexed srnone
           (mkSymbol "BitVec")
-          (.seqpidx_one srnone (.ind_numeral srnone n))))
+          (.index_list_one srnone (.ind_numeral srnone n))))
     | .trigger =>
       throw "don't know how to translate a trigger type"
     | _ =>
@@ -122,28 +122,29 @@ private def translateFromTermType (t:SMT.TermType):
 -- List of SortedVar to SeqPSortedVar.
 -- Hope this could be elided away later. :(
 private def translateFromSortedVarList (l: List (SortedVar SourceRange)):
-    Option (SeqPSortedVar SourceRange) :=
+    Option (SortedVarList SourceRange) :=
   let srnone := SourceRange.none
   match l with
   | [] => .none
-  | h::[] => .some (.seqsv_one srnone h)
+  | h::[] => .some (.sorted_var_list_one srnone h)
   | h1::h2::t => .some (
     match translateFromSortedVarList t with
-    | .none => .seqsv_cons srnone h1 (.seqsv_one srnone h2)
-    | .some t => .seqsv_cons srnone h1 (.seqsv_cons srnone h2 t))
+    | .none => .sorted_var_list_cons srnone h1 (.sorted_var_list_one srnone h2)
+    | .some t =>
+      .sorted_var_list_cons srnone h1 (.sorted_var_list_cons srnone h2 t))
 
 -- List of SortedVar to SeqPSortedVar.
 -- Hope this could be elided away later. :(
 private def translateFromTermList (l: List (Term SourceRange)):
-    Option (SeqPTerm SourceRange) :=
+    Option (TermList SourceRange) :=
   let srnone := SourceRange.none
   match l with
   | [] => .none
-  | h::[] => .some (.seqt_one srnone h)
+  | h::[] => .some (.term_list_one srnone h)
   | h1::h2::t => .some (
     match translateFromTermList t with
-    | .none => .seqt_cons srnone h1 (.seqt_one srnone h2)
-    | .some t => .seqt_cons srnone h1 (.seqt_cons srnone h2 t))
+    | .none => .term_list_cons srnone h1 (.term_list_one srnone h2)
+    | .some t => .term_list_cons srnone h1 (.term_list_cons srnone h2 t))
 
 def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term SourceRange) := do
   let srnone := SourceRange.none

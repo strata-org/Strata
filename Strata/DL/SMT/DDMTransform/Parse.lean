@@ -153,9 +153,9 @@ op simple_symbol_some () : SimpleSymbol => "some";
 category Symbol;
 op symbol (@[unwrap] s:SimpleSymbol) : Symbol => s;
 
-category SeqPSymbol; // For spacing, P for "+"
-op seqsy_one (se:Symbol) : SeqPSymbol => se;
-op seqsy_cons (se:Symbol, sse:SeqPSymbol) : SeqPSymbol => se " " sse;
+category SymbolList; // For spacing, has at least one element
+op symbol_list_one (se:Symbol) : SymbolList => se;
+op symbol_list_cons (se:Symbol, sse:SymbolList) : SymbolList => se " " sse;
 
 category Keyword;
 op kw_symbol (@[unwrap] s:SimpleSymbol) : Keyword => ":" s;
@@ -184,11 +184,11 @@ op se_symbol (s:Symbol) : SExpr => s;
 op se_reserved (s:Reserved) : SExpr => s;
 op se_keyword (s:Keyword) : SExpr => s;
 
-category SeqPSExpr; // For spacing, P for "+"
-op seqpse_one (se:SExpr) : SeqPSExpr => se;
-op seqpse_cons (se:SExpr, sse:SeqPSExpr) : SeqPSExpr => se " " sse;
+category SExprList; // For spacing, has at least one element
+op sexpr_list_one (se:SExpr) : SExprList => se;
+op sexpr_list_cons (se:SExpr, sse:SExprList) : SExprList => se " " sse;
 
-op se_ls (s:Option SeqPSExpr) : SExpr => "(" s ")";
+op se_ls (s:Option SExprList) : SExpr => "(" s ")";
 
 
 category SMTIdentifier;
@@ -200,11 +200,11 @@ op ind_symbol (@[unwrap] s:Symbol) : Index => s;
 
 op iden_simple (s:Symbol) : SMTIdentifier => s;
 
-category SeqPIndex; // For spacing; P means "+"
-op seqpidx_one (i:Index) : SeqPIndex => i;
-op seqpidx_cons (i:Index, spi:SeqPIndex) : SeqPIndex => i " " spi;
+category IndexList; // For spacing; has at least one element
+op index_list_one (i:Index) : IndexList => i;
+op index_list_cons (i:Index, spi:IndexList) : IndexList => i " " spi;
 
-op iden_indexed (s:Symbol, si:SeqPIndex) : SMTIdentifier =>
+op iden_indexed (s:Symbol, si:IndexList) : SMTIdentifier =>
   "(" "_ " s " " si ")";
 
 
@@ -212,11 +212,11 @@ op iden_indexed (s:Symbol, si:SeqPIndex) : SMTIdentifier =>
 category SMTSort;
 op smtsort_ident (s:SMTIdentifier) : SMTSort => s;
 
-category SeqPSMTSort; // For spacing; P means "+"
-op seqpsort_one (i:SMTSort) : SeqPSMTSort => i;
-op seqpsort_cons (i:SMTSort, spi:SeqPSMTSort) : SeqPSMTSort => i " " spi;
+category SMTSortList; // For spacing; has at least one element
+op smtsort_list_one (i:SMTSort) : SMTSortList => i;
+op smtsort_list_cons (i:SMTSort, spi:SMTSortList) : SMTSortList => i " " spi;
 
-op smtsort_param (s:SMTIdentifier, sl:SeqPSMTSort) : SMTSort
+op smtsort_param (s:SMTIdentifier, sl:SMTSortList) : SMTSort
   => "(" s " " sl ")";
 
 
@@ -229,9 +229,9 @@ op av_sel (s:Seq SExpr) : AttributeValue => "(" s ")";
 category Attribute;
 op att_kw (k:Keyword, av:Option AttributeValue) : Attribute => k av;
 
-category SeqPAttribute; // For spacing; P means "+"
-op seqpa_one (i:Attribute) : SeqPAttribute => i;
-op seqpa_cons (i:Attribute, spi:SeqPAttribute) : SeqPAttribute => i " " spi;
+category AttributeList; // For spacing; has at least one element
+op att_list_one (i:Attribute) : AttributeList => i;
+op att_list_cons (i:Attribute, spi:AttributeList) : AttributeList => i " " spi;
 
 
 // 6. Terms
@@ -242,41 +242,41 @@ op qi_isort (i:SMTIdentifier, s:SMTSort) : QualIdentifier =>
 
 category Term; // Forward declaration
 
-category SeqPTerm; // For Spacing
-op seqt_one (i:Term) : SeqPTerm => i:0;
-op seqt_cons (i:Term, spi:SeqPTerm) : SeqPTerm => i:0 " " spi:0;
+category TermList; // For Spacing
+op term_list_one (i:Term) : TermList => i:0;
+op term_list_cons (i:Term, spi:TermList) : TermList => i:0 " " spi:0;
 
 category ValBinding;
 op val_binding (s:Symbol, t:Term) : ValBinding => "(" s " " t ")";
 
-category SeqPValBinding; // For spacing; P means "+"
-op seqpvb_one (i:ValBinding) : SeqPValBinding => i;
-op seqpvb_cons (i:ValBinding, spi:SeqPValBinding) : SeqPValBinding => i " " spi;
+category ValBindingList; // For spacing; has at least one element
+op val_binding_list_one (i:ValBinding) : ValBindingList => i;
+op val_binding_list_cons (i:ValBinding, spi:ValBindingList) : ValBindingList => i " " spi;
 
 category SortedVar;
 op sorted_var (s:Symbol, so:SMTSort) : SortedVar => "(" s " " so ")";
 
-category SeqPSortedVar; // For spacing; P means "+"
-op seqsv_one (i:SortedVar) : SeqPSortedVar => i;
-op seqsv_cons (i:SortedVar, spi:SeqPSortedVar) : SeqPSortedVar => i " " spi;
+category SortedVarList; // For spacing; has at least one element
+op sorted_var_list_one (i:SortedVar) : SortedVarList => i;
+op sorted_var_list_cons (i:SortedVar, spi:SortedVarList) : SortedVarList => i " " spi;
 
 // TODO: support the match statement
 // category Pattern;
 
 op spec_constant_term (sc:SpecConstant) : Term => sc;
 op qual_identifier (qi:QualIdentifier) : Term => qi;
-op qual_identifier_args (qi:QualIdentifier, ts:SeqPTerm) : Term =>
+op qual_identifier_args (qi:QualIdentifier, ts:TermList) : Term =>
   "(" qi " " ts ")";
 
-op let_smt (vbps: SeqPValBinding, t:Term) : Term =>
+op let_smt (vbps: ValBindingList, t:Term) : Term =>
   "(" "let" "(" vbps ")" t ")";
-op lambda_smt (svs: SeqPSortedVar, t:Term) : Term =>
+op lambda_smt (svs: SortedVarList, t:Term) : Term =>
   "(" "lambda" "(" svs ")" t ")";
-op forall_smt (svs: SeqPSortedVar, t:Term) : Term =>
+op forall_smt (svs: SortedVarList, t:Term) : Term =>
   "(" "forall" "(" svs ")" t ")";
-op exists_smt (svs: SeqPSortedVar, t:Term) : Term =>
+op exists_smt (svs: SortedVarList, t:Term) : Term =>
   "(" "exists" "(" svs ")" t ")";
-op bang (t:Term, attrs:SeqPAttribute) : Term =>
+op bang (t:Term, attrs:AttributeList) : Term =>
   "(" "!" t " " attrs ")";
 
 
@@ -338,37 +338,39 @@ op smtoption_attr (a:Attribute) : SMTOption => a;
 category SortDec;
 op sort_dec (s:Symbol, n:Num) : SortDec => "(" s n ")";
 
-category SeqPSortDec; // For spacing; P for "+"
-op seqpsod_one (i:SortDec) : SeqPSortDec => i;
-op seqpsod_cons (i:SortDec, spi:SeqPSortDec) : SeqPSortDec =>
+category SortDecList; // For spacing; has at least one element
+op sort_dec_list_one (i:SortDec) : SortDecList => i;
+op sort_dec_list_cons (i:SortDec, spi:SortDecList) : SortDecList =>
   i " " spi;
 
 category SelectorDec;
 op selector_dec (s:Symbol, so:SMTSort) : SelectorDec => "(" s so ")";
 
-category SeqPSelectorDec; // For spacing; P for "+"
-op seqpsd_one (i:SelectorDec) : SeqPSelectorDec => i;
-op seqpsd_cons (i:SelectorDec, spi:SeqPSelectorDec) : SeqPSelectorDec =>
+category SelectorDecList; // For spacing; has at least one element
+op selector_dec_list_one (i:SelectorDec) : SelectorDecList => i;
+op selector_dec_list_cons (i:SelectorDec, spi:SelectorDecList) : SelectorDecList =>
   i " " spi;
 
 category ConstructorDec;
-op constructor_dec (s:Symbol, sdl:Option SeqPSelectorDec) : ConstructorDec =>
+op constructor_dec (s:Symbol, sdl:Option SelectorDecList) : ConstructorDec =>
   "(" s " " sdl ")";
 
-category SeqPConstructorDec; // For spacing; P for "+"
-op seqcd_one (i:ConstructorDec) : SeqPConstructorDec => i;
-op seqcd_cons (i:ConstructorDec, spi:SeqPConstructorDec) : SeqPConstructorDec =>
+category ConstructorDecList; // For spacing; has at least one element
+op constructor_list_one (i:ConstructorDec) : ConstructorDecList => i;
+op constructor_list_cons (i:ConstructorDec, spi:ConstructorDecList)
+  : ConstructorDecList =>
   i " " spi;
 
 category DatatypeDec;
-op datatype_dec (cs:SeqPConstructorDec) : DatatypeDec
+op datatype_dec (cs:ConstructorDecList) : DatatypeDec
   => "(" cs ")";
-op datatype_par_dec (symbols: SeqPSymbol, cs:SeqPConstructorDec) : DatatypeDec
+op datatype_dec_par (symbols: SymbolList, cs:ConstructorDecList) : DatatypeDec
   => "(" "par " "(" symbols ")" "(" cs ")" ")";
 
-category SeqPDatatypeDec; // For spacing; P for "+"
-op seqpdad_one (i:DatatypeDec) : SeqPDatatypeDec => i;
-op seqpdad_cons (i:DatatypeDec, spi:SeqPDatatypeDec) : SeqPDatatypeDec =>
+category DatatypeDecList; // For spacing; has at least one element
+op datatype_dec_list_one (i:DatatypeDec) : DatatypeDecList => i;
+op datatype_dec_list_cons (i:DatatypeDec, spi:DatatypeDecList)
+  : DatatypeDecList =>
   i " " spi;
 
 category FunctionDec;
@@ -379,9 +381,10 @@ category FunctionDef;
 op function_def (s:Symbol, sv:Seq SortedVar, so:SMTSort, t:Term) : FunctionDef
   => s "(" sv ")" so t;
 
-category SeqPFunctionDef; // For spacing; P for "+"
-op seqpfdef_one (i:FunctionDef) : SeqPFunctionDef => i;
-op seqpfdef_cons (i:FunctionDef, spi:SeqPFunctionDef) : SeqPFunctionDef =>
+category FunctionDefList; // For spacing; has at least one element
+op function_def_list_one (i:FunctionDef) : FunctionDefList => i;
+op function_def_list_cons (i:FunctionDef, spi:FunctionDefList)
+  : FunctionDefList =>
   i " " spi;
 
 #end
@@ -398,7 +401,7 @@ import SMTCore;
 // cmd_' is necessary, otherwise it raises "unexpected token 'assert'; expected identifier"
 op cmd_assert (t:Term) : Command => "(" "assert " t ")";
 op check_sat () : Command => "(" "check-sat" ")";
-op check_sat_assuming (ts:Option SeqPTerm) : Command =>
+op check_sat_assuming (ts:Option TermList) : Command =>
   "(" "check-sat-assuming " ts ")";
 op declare_const (s:Symbol, so:SMTSort) : Command =>
   "(" "declare-const " s so ")";
@@ -406,9 +409,9 @@ op declare_datatype (s:Symbol, so:DatatypeDec) : Command =>
   "(" "declare-datatype " s so ")";
 // The size of SortDec and DatatypeDec must be equal, but omit the check in
 // this DDM definition because its representation can be quite ugly.
-op declare_datatypes (s:SeqPSortDec, so:SeqPDatatypeDec) : Command =>
+op declare_datatypes (s:SortDecList, so:DatatypeDecList) : Command =>
   "(" "declare-datatypes" "(" s ")" "(" so ")" ")";
-op declare_fun (s:Symbol, sol:Option SeqPSMTSort, range:SMTSort) : Command =>
+op declare_fun (s:Symbol, sol:Option SMTSortList, range:SMTSort) : Command =>
   "(" "declare-fun " s "(" sol ")" range ")";
 op declare_sort (s:Symbol, n:Num) : Command =>
   "(" "declare-sort " s n ")";
@@ -420,7 +423,7 @@ op define_fun (fdef:FunctionDef) : Command =>
   "(" "define-fun " fdef ")";
 op define_fun_rec (fdef:FunctionDef) : Command =>
   "(" "define-fun-rec " fdef ")";
-op define_funs_rec (fdefs:SeqPFunctionDef, terms:SeqPTerm) : Command =>
+op define_funs_rec (fdefs:FunctionDefList, terms:TermList) : Command =>
   "(" "define-funs-rec" "(" fdefs ")" "(" terms ")" ")";
 op define_sort (s:Symbol, sl:Seq Symbol, so:SMTSort) : Command =>
   "(" "define-sort " s "(" sl ")" so ")";
@@ -434,7 +437,7 @@ op get_option (kw:Keyword) : Command => "(" "get-option " kw ")";
 op get_proof () : Command => "(" "get-proof" ")";
 op get_unsat_assumptions () : Command => "(" "get-unsat-assumptions" ")";
 op get_unsat_core () : Command => "(" "get-unsat-core" ")";
-op get_value (tl:SeqPTerm) : Command =>
+op get_value (tl:TermList) : Command =>
   "(" "get-value" "(" tl ")" ")";
 op cmd_pop (n:Num) : Command => "(" "pop " n ")";
 op cmd_push (n:Num) : Command => "(" "push " n ")";
@@ -486,25 +489,27 @@ op ir_unknown (r:ReasonUnknown) : InfoResponse => ":reason-unknown " r;
 op ir_ver (s:Str) : InfoResponse => ":version " s;
 op ir_attr (a:Attribute) : InfoResponse => a;
 
-category SeqPInfoResponse;
-op seqpir_one (i: InfoResponse) : SeqPInfoResponse => i;
-op seqpir_cons (i: InfoResponse, is: SeqPInfoResponse) : SeqPInfoResponse
+category InfoResponseList;
+op ir_list_one (i: InfoResponse) : InfoResponseList => i;
+op ir_list_cons (i: InfoResponse, is: InfoResponseList) : InfoResponseList
   => i is;
 
 category ValuationPair;
 op valuation_pair (t1:Term, t2:Term) : ValuationPair => "(" t1 " " t2 ")";
 
-category SeqPValuationPair;
-op seqv_one (i: ValuationPair) : SeqPValuationPair => i;
-op seqv_cons (i: ValuationPair, is: SeqPValuationPair) : SeqPValuationPair
+category ValuationPairList;
+op valuation_pair_list_one (i: ValuationPair) : ValuationPairList => i;
+op valuation_pair_list_cons (i: ValuationPair, is: ValuationPairList)
+  : ValuationPairList
   => i is;
 
 category TValuationPair;
 op t_valuation_pair (t1:Symbol, t2:BValue) : TValuationPair => "(" t1 " " t2 ")";
 
-category SeqPTValuationPair;
-op seqtv_one (i: TValuationPair) : SeqPTValuationPair => i;
-op seqtv_cons (i: TValuationPair, is: SeqPTValuationPair) : SeqPTValuationPair
+category TValuationPairList;
+op t_valuation_pair_list_one (i: TValuationPair) : TValuationPairList => i;
+op t_valuation_pair_list_cons (i: TValuationPair, is: TValuationPairList)
+  : TValuationPairList
   => i is;
 
 category CheckSatResponse;
@@ -516,16 +521,16 @@ category EchoResponse;
 op echo_response (s:Str) : EchoResponse => s;
 
 category GetAssertionsResponse;
-op get_assertions_response (t:Option SeqPTerm) : GetAssertionsResponse =>
+op get_assertions_response (t:Option TermList) : GetAssertionsResponse =>
   "(" t ")";
 
 category GetAssignmentResponse;
-op get_assignment_response (t:Option SeqPTValuationPair)
+op get_assignment_response (t:Option TValuationPairList)
     : GetAssignmentResponse =>
   "(" t ")";
 
 category GetInfoResponse;
-op get_info_response (i2:SeqPInfoResponse) : GetInfoResponse =>
+op get_info_response (i2:InfoResponseList) : GetInfoResponse =>
   "(" i2 ")";
 
 category GetModelResponse;
@@ -539,15 +544,15 @@ category GetProofResponse;
 op get_proof_response (s:SExpr) : GetProofResponse => s;
 
 category GetUnsatAssumpResponse;
-op get_unsat_assump_response (ts:Option SeqPTerm) : GetUnsatAssumpResponse =>
+op get_unsat_assump_response (ts:Option TermList) : GetUnsatAssumpResponse =>
   "(" ts ")";
 
 category GetUnsatCoreResponse;
-op get_unsat_core_response (ss:Option SeqPSymbol) : GetUnsatCoreResponse =>
+op get_unsat_core_response (ss:Option SymbolList) : GetUnsatCoreResponse =>
   "(" ss ")";
 
 category GetValueResponse;
-op get_value_response (vps:Option SeqPValuationPair)
+op get_value_response (vps:Option ValuationPairList)
   : GetValueResponse => "(" vps ")";
 
 category SpecificSuccessResponse;
@@ -804,23 +809,23 @@ namespace SMTDDM
 deriving instance BEq for
   -- Sequences
   SpecConstant, QualifiedIdent, SimpleSymbol,
-  Symbol, SeqPSymbol,
-  SortDec, SeqPSortDec,
+  Symbol, SymbolList,
+  SortDec, SortDecList,
   Reserved,
   Keyword, SExpr, AttributeValue, BValue,
-  Attribute, SeqPAttribute,
+  Attribute, AttributeList,
   SMTOption,
-  Index, SeqPIndex,
+  Index, IndexList,
   SMTIdentifier,
-  SMTSort, SeqPSMTSort,
-  SortedVar, SeqPSortedVar,
+  SMTSort, SMTSortList,
+  SortedVar, SortedVarList,
   QualIdentifier, ValBinding,
-  Term, SeqPTerm,
+  Term, TermList,
   InfoFlag,
-  SelectorDec, SeqPSelectorDec,
-  ConstructorDec, SeqPConstructorDec,
-  DatatypeDec, SeqPDatatypeDec,
-  FunctionDef, SeqPFunctionDef,
+  SelectorDec, SelectorDecList,
+  ConstructorDec, ConstructorDecList,
+  DatatypeDec, DatatypeDecList,
+  FunctionDef, FunctionDefList,
   Command
 
 end SMTDDM
