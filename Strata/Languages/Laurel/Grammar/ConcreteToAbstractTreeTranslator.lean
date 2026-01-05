@@ -64,16 +64,16 @@ def translateIdent (arg : Arg) : TransM Identifier := do
 def translateBool (arg : Arg) : TransM Bool := do
   match arg with
   | .expr (.fn _ name) =>
-    if name == q`Laurel.boolTrue then
+    if name == q`Init.boolTrue then
       return true
-    else if name == q`Laurel.boolFalse then
+    else if name == q`Init.boolFalse then
       return false
     else
       TransM.error s!"translateBool expects boolTrue or boolFalse, got {repr name}"
   | .op op =>
-    if op.name == q`Laurel.boolTrue then
+    if op.name == q`Init.boolTrue then
       return true
-    else if op.name == q`Laurel.boolFalse then
+    else if op.name == q`Init.boolFalse then
       return false
     else
       TransM.error s!"translateBool expects boolTrue or boolFalse, got {repr op.name}"
