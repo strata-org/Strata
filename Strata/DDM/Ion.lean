@@ -1289,6 +1289,7 @@ instance : FromIon Dialect where
 end Dialect
 
 structure StrataFile where
+  filePath : String
   program : Program
   lineOffsets : Array String.Pos.Raw
   deriving Inhabited
@@ -1371,11 +1372,16 @@ def fromIonFiles (dialects : DialectMap) (bytes : ByteArray) : Except String (Li
   let ⟨filesList, _⟩ ← FromIonM.asList ctx[1]! ionCtx
 
   let tbl := symbols
+  let filePathId := tbl.symbolId! "filePath"
   let programId := tbl.symbolId! "program"
   let lineOffsetsId := tbl.symbolId! "lineOffsets"
 
   filesList.toList.mapM fun fileEntry => do
     let fields ← FromIonM.asStruct0 fileEntry ionCtx
+
+    -- Find file path
+    let some (_, filePathData) := fields.find? (·.fst == filePathId)
+      | throw "Could not find 'filePath' field"
 
     -- Find program data
     let some (_, programData) := fields.find? (·.fst == programId)
@@ -1384,6 +1390,9 @@ def fromIonFiles (dialects : DialectMap) (bytes : ByteArray) : Except String (Li
     -- Find lineOffsets data
     let some (_, lineOffsetsData) := fields.find? (·.fst == lineOffsetsId)
       | throw "Could not find 'lineOffsets' field"
+
+    -- Parse the file path
+    let filePath ← FromIonM.asString "filePath" filePathData ionCtx
 
     -- Parse the program
     let ⟨programValues, _⟩ ← FromIonM.asList programData ionCtx
@@ -1404,6 +1413,6 @@ def fromIonFiles (dialects : DialectMap) (bytes : ByteArray) : Except String (Li
     let program ← fromIonFragment frag dialects dialect
     let lineOffsets ← parseLineOffsets lineOffsetsData ionCtx
 
-    pure { program := program, lineOffsets := lineOffsets }
+    pure { filePath := filePath, program := program, lineOffsets := lineOffsets }
 
 end Program

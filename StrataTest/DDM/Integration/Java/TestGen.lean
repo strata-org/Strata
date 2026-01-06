@@ -313,6 +313,9 @@ elab "#testRoundtripFiles" : command => do
 
     -- Check first file
     let file1 := files[0]!
+    if file1.filePath != "file1.st" then
+      Lean.logError s!"File 1: Expected path 'file1.st', got '{file1.filePath}'"
+      return
     if file1.program.commands.size != 1 then
       Lean.logError s!"File 1: Expected 1 command, got {file1.program.commands.size}"
       return
@@ -334,6 +337,9 @@ elab "#testRoundtripFiles" : command => do
 
     -- Check second file
     let file2 := files[1]!
+    if file2.filePath != "file2.st" then
+      Lean.logError s!"File 2: Expected path 'file2.st', got '{file2.filePath}'"
+      return
     if file2.program.commands.size != 1 then
       Lean.logError s!"File 2: Expected 1 command, got {file2.program.commands.size}"
       return

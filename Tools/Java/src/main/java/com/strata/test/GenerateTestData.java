@@ -89,12 +89,14 @@ public class GenerateTestData {
 
         // First file entry
         IonStruct file1 = ion.newEmptyStruct();
+        file1.put("filePath", ion.newString("file1.st"));
         file1.put("program", program1);
         file1.put("lineOffsets", lineOffsets1);
         files.add(file1);
 
         // Second file entry
         IonStruct file2 = ion.newEmptyStruct();
+        file2.put("filePath", ion.newString("file2.st"));
         file2.put("program", program2);
         file2.put("lineOffsets", lineOffsets2);
         files.add(file2);
