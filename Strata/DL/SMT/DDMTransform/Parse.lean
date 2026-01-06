@@ -8,6 +8,13 @@ import Strata.DDM.BuiltinDialects.BuiltinM
 import Strata.DDM.Integration.Lean
 import Strata.DDM.Util.Format
 
+/-! # The SMTLib syntax
+
+This file defines the syntax of SMTLib 2.7, which is defined at
+https://smt-lib.org/papers/smt-lib-reference-v2.7-r2025-07-07.pdf,
+Appendix B. Concrete Syntax.
+-/
+
 namespace Strata
 
 open Elab
