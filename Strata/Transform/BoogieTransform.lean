@@ -229,11 +229,7 @@ def runStmtsRec (f : Command → Program → BoogieTransformM (List Statement))
     return (sres ++ ss'')
 termination_by sizeOf ss
 decreasing_by
-  · unfold Imperative.instSizeOfBlock; decreasing_tactic
-  · unfold Imperative.instSizeOfBlock; decreasing_tactic
-  · unfold Imperative.instSizeOfBlock; decreasing_tactic
-  · unfold Imperative.instSizeOfBlock; decreasing_tactic
-  · unfold Imperative.instSizeOfBlock; decreasing_tactic
+  all_goals (unfold Imperative.instSizeOfBlock; decreasing_tactic)
 
 def runProcedures (f : Command → Program → BoogieTransformM (List Statement))
     (dcls : List Decl) (inputProg : Program)
