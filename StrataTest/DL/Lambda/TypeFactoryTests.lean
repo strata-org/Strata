@@ -46,7 +46,7 @@ end ==> 3
 
 -/
 
-def weekTy : LDatatype Unit := {name := "Day", typeArgs := [], constrs := List.map (fun x => {name := x, args := []}) ["Su", "M", "T", "W", "Th", "F", "Sa"], constrs_ne := rfl}
+def weekTy : LDatatype Unit := {name := "Day", typeArgs := [], constrs := List.map (fun (x: String) => {name := x, args := [], testerName := "Day$is" ++ x}) ["Su", "M", "T", "W", "Th", "F", "Sa"], constrs_ne := rfl}
 
 /--
 info: Annotated expression:
@@ -58,6 +58,31 @@ info: #3
 #guard_msgs in
 #eval format $
   typeCheckAndPartialEval #[weekTy]  (Factory.default : @Factory TestParams) ((LExpr.op () ("Day$Elim" : TestParams.Identifier) .none).mkApp () (.op () ("W" : TestParams.Identifier) (.some (.tcons "Day" [])) :: (List.range 7).map (intConst () ∘ Int.ofNat)))
+
+
+/--
+info: Annotated expression:
+((~Day$isW : (arrow Day bool)) (~W : Day))
+
+---
+info: #true
+-/
+#guard_msgs in
+#eval format $
+  typeCheckAndPartialEval #[weekTy] (Factory.default : @Factory TestParams)
+    ((LExpr.op () ("Day$isW" : TestParams.Identifier) .none).mkApp () [.op () ("W" : TestParams.Identifier) (.some (.tcons "Day" []))])
+
+/--
+info: Annotated expression:
+((~Day$isW : (arrow Day bool)) (~M : Day))
+
+---
+info: #false
+-/
+#guard_msgs in
+#eval format $
+  typeCheckAndPartialEval #[weekTy] (Factory.default : @Factory TestParams)
+    ((LExpr.op () ("Day$isW" : TestParams.Identifier) .none).mkApp () [.op () ("M" : TestParams.Identifier) (.some (.tcons "Day" []))])
 
 
 -- Test 2: Polymorphic tuples
@@ -74,7 +99,7 @@ fst (snd ("a", (1, "b"))) ==> 1
 
 -/
 
-def tupTy : LDatatype Unit := {name := "Tup", typeArgs := ["a", "b"], constrs := [{name := "Prod", args := [("x", .ftvar "a"), ("y", .ftvar "b")]}], constrs_ne := rfl}
+def tupTy : LDatatype Unit := {name := "Tup", typeArgs := ["a", "b"], constrs := [{name := "Prod", args := [("x", .ftvar "a"), ("y", .ftvar "b")], testerName := "Tup$isProd"}], constrs_ne := rfl}
 
 def fst (e: LExpr TestParams.mono) := (LExpr.op () ("Tup$Elim" : TestParams.Identifier) .none).mkApp () [e, .abs () .none (.abs () .none (.bvar () 1))]
 
@@ -127,8 +152,8 @@ match [2] with | Nil => 0 | Cons x _ => x end ==> 2
 
 -/
 
-def nilConstr : LConstr Unit := {name := "Nil", args := []}
-def consConstr : LConstr Unit := {name := "Cons", args := [("h", .ftvar "a"), ("t", .tcons "List" [.ftvar "a"])]}
+def nilConstr : LConstr Unit := {name := "Nil", args := [], testerName := "isNil"}
+def consConstr : LConstr Unit := {name := "Cons", args := [("hd", .ftvar "a"), ("tl", .tcons "List" [.ftvar "a"])], testerName:= "isCons"}
 def listTy : LDatatype Unit := {name := "List", typeArgs := ["a"], constrs := [nilConstr, consConstr], constrs_ne := rfl}
 
 -- Syntactic sugar
@@ -161,6 +186,107 @@ info: #2
 #guard_msgs in
 #eval format $
   typeCheckAndPartialEval #[listTy]  (Factory.default : @Factory TestParams) ((LExpr.op () ("List$Elim" : TestParams.Identifier) .none).mkApp () [listExpr [intConst () 2], intConst () 0, .abs () .none (.abs () .none (.abs () .none (bvar () 2)))])
+
+-- Test testers (isNil and isCons)
+
+/-- info: Annotated expression:
+((~isNil : (arrow (List $__ty11) bool)) (~Nil : (List $__ty11)))
+
+---
+info: #true
+-/
+#guard_msgs in
+#eval format $
+  typeCheckAndPartialEval #[listTy]  (Factory.default : @Factory TestParams)
+  ((LExpr.op () ("isNil" : TestParams.Identifier) .none).mkApp () [nil])
+
+/-- info: Annotated expression:
+((~isNil : (arrow (List int) bool)) (((~Cons : (arrow int (arrow (List int) (List int)))) #1) (~Nil : (List int))))
+
+---
+info: #false
+-/
+#guard_msgs in
+#eval format $
+  typeCheckAndPartialEval #[listTy]  (Factory.default : @Factory TestParams)
+  ((LExpr.op () ("isNil" : TestParams.Identifier) .none).mkApp () [cons (intConst () 1) nil])
+
+/-- info: Annotated expression:
+((~isCons : (arrow (List $__ty11) bool)) (~Nil : (List $__ty11)))
+
+---
+info: #false
+-/
+#guard_msgs in
+#eval format $
+  typeCheckAndPartialEval #[listTy]  (Factory.default : @Factory TestParams)
+  ((LExpr.op () ("isCons" : TestParams.Identifier) .none).mkApp () [nil])
+
+/-- info: Annotated expression:
+((~isCons : (arrow (List int) bool)) (((~Cons : (arrow int (arrow (List int) (List int)))) #1) (~Nil : (List int))))
+
+---
+info: #true
+-/
+#guard_msgs in
+#eval format $
+  typeCheckAndPartialEval #[listTy]  (Factory.default : @Factory TestParams)
+  ((LExpr.op () ("isCons" : TestParams.Identifier) .none).mkApp () [cons (intConst () 1) nil])
+
+-- But a non-value should NOT reduce
+
+def ex_list : LFunc TestParams :=
+  {name := "l", inputs := [], output := (.tcons "List" [.int])}
+
+/-- info: Annotated expression:
+((~isCons : (arrow (List int) bool)) (~l : (List int)))
+
+---
+info: ((~isCons : (arrow (List int) bool)) (~l : (List int)))
+-/
+#guard_msgs in
+#eval format $ do
+  let f ← ((Factory.default : @Factory TestParams).addFactoryFunc ex_list)
+  (typeCheckAndPartialEval (T:=TestParams) #[listTy] f
+  ((LExpr.op () ("isCons" : TestParams.Identifier) (some (LMonoTy.arrow (.tcons "List" [.int]) .bool))).mkApp () [.op () "l" .none]))
+
+-- Test destructors
+
+/--
+info: Annotated expression:
+((~hd : (arrow (List int) int)) (((~Cons : (arrow int (arrow (List int) (List int)))) #1) (~Nil : (List int))))
+
+---
+info: #1
+-/
+#guard_msgs in
+#eval format $
+  typeCheckAndPartialEval #[listTy]  (Factory.default : @Factory TestParams)
+  ((LExpr.op () ("hd" : TestParams.Identifier) .none).mkApp () [cons (intConst () 1) nil])
+
+/--
+info: Annotated expression: ((~tl : (arrow (List int) (List int))) (((~Cons : (arrow int (arrow (List int) (List int)))) #1) (((~Cons : (arrow int (arrow (List int) (List int)))) #2) (~Nil : (List int)))))
+
+---
+info: (((~Cons : (arrow int (arrow (List int) (List int)))) #2) (~Nil : (List int)))
+-/
+#guard_msgs in
+#eval format $
+  typeCheckAndPartialEval #[listTy]  (Factory.default : @Factory TestParams)
+  ((LExpr.op () ("tl" : TestParams.Identifier) .none).mkApp () [cons (intConst () 1) (cons (intConst () 2) nil)])
+
+-- Destructor does not evaluate on a different constructor
+
+/--
+info: Annotated expression: ((~tl : (arrow (List $__ty1) (List $__ty1))) (~Nil : (List $__ty1)))
+
+---
+info: ((~tl : (arrow (List $__ty1) (List $__ty1))) (~Nil : (List $__ty1)))-/
+#guard_msgs in
+#eval format $
+  typeCheckAndPartialEval #[listTy]  (Factory.default : @Factory TestParams)
+  ((LExpr.op () ("tl" : TestParams.Identifier) .none).mkApp () [nil])
+
 
 -- Test 4: Multiple types and Factories
 
@@ -255,8 +381,8 @@ def toList (t: binTree a) =
 
 -/
 
-def leafConstr : LConstr Unit := {name := "Leaf", args := []}
-def nodeConstr : LConstr Unit := {name := "Node", args := [("x", .ftvar "a"), ("l", .tcons "binTree" [.ftvar "a"]), ("r", .tcons "binTree" [.ftvar "a"])]}
+def leafConstr : LConstr Unit := {name := "Leaf", args := [], testerName := "isLeaf"}
+def nodeConstr : LConstr Unit := {name := "Node", args := [("x", .ftvar "a"), ("l", .tcons "binTree" [.ftvar "a"]), ("r", .tcons "binTree" [.ftvar "a"])], testerName := "isNode"}
 def binTreeTy : LDatatype Unit := {name := "binTree", typeArgs := ["a"], constrs := [leafConstr, nodeConstr], constrs_ne := rfl}
 
 -- syntactic sugar
@@ -312,8 +438,8 @@ Example tree: Node (fun x => Node (fun y => if x + y == 0 then Node (fun _ => Le
 
 -/
 
-def leafConstr : LConstr Unit := {name := "Leaf", args := [("x", .ftvar "a")]}
-def nodeConstr : LConstr Unit := {name := "Node", args := [("f", .arrow .int (.tcons "tree" [.ftvar "a"]))]}
+def leafConstr : LConstr Unit := {name := "Leaf", args := [("x", .ftvar "a")], testerName := "isLeaf"}
+def nodeConstr : LConstr Unit := {name := "Node", args := [("f", .arrow .int (.tcons "tree" [.ftvar "a"]))], testerName := "isNode"}
 def treeTy : LDatatype Unit := {name := "tree", typeArgs := ["a"], constrs := [leafConstr, nodeConstr], constrs_ne := rfl}
 
 -- syntactic sugar
@@ -358,7 +484,7 @@ end Tree
 type Bad := | C (Bad -> Bad)
 -/
 
-def badConstr1: LConstr Unit := {name := "C", args := [⟨"x", .arrow (.tcons "Bad" []) (.tcons "Bad" [])⟩]}
+def badConstr1: LConstr Unit := {name := "C", args := [⟨"x", .arrow (.tcons "Bad" []) (.tcons "Bad" [])⟩], testerName := "isC"}
 def badTy1 : LDatatype Unit := {name := "Bad", typeArgs := [], constrs := [badConstr1], constrs_ne := rfl}
 
 /-- info: Error in constructor C: Non-strictly positive occurrence of Bad in type (arrow Bad Bad)
@@ -371,7 +497,7 @@ def badTy1 : LDatatype Unit := {name := "Bad", typeArgs := [], constrs := [badCo
 type Bad a := | C ((Bad a -> int) -> int)
 -/
 
-def badConstr2: LConstr Unit := {name := "C", args := [⟨"x", .arrow (.arrow (.tcons "Bad" [.ftvar "a"]) .int) .int⟩]}
+def badConstr2: LConstr Unit := {name := "C", args := [⟨"x", .arrow (.arrow (.tcons "Bad" [.ftvar "a"]) .int) .int⟩], testerName := "isC"}
 def badTy2 : LDatatype Unit := {name := "Bad", typeArgs := ["a"], constrs := [badConstr2], constrs_ne := rfl}
 
 /-- info: Error in constructor C: Non-strictly positive occurrence of Bad in type (arrow (arrow (Bad a) int) int)-/
@@ -383,7 +509,7 @@ def badTy2 : LDatatype Unit := {name := "Bad", typeArgs := ["a"], constrs := [ba
 type Bad a := | C (int -> (Bad a -> int))
 -/
 
-def badConstr3: LConstr Unit := {name := "C", args := [⟨"x", .arrow .int (.arrow (.tcons "Bad" [.ftvar "a"]) .int)⟩]}
+def badConstr3: LConstr Unit := {name := "C", args := [⟨"x", .arrow .int (.arrow (.tcons "Bad" [.ftvar "a"]) .int)⟩], testerName := "isC"}
 def badTy3 : LDatatype Unit := {name := "Bad", typeArgs := ["a"], constrs := [badConstr3], constrs_ne := rfl}
 
 /--info: Error in constructor C: Non-strictly positive occurrence of Bad in type (arrow (Bad a) int)-/
@@ -395,7 +521,7 @@ def badTy3 : LDatatype Unit := {name := "Bad", typeArgs := ["a"], constrs := [ba
 type Good := | C (int -> (int -> Good))
 -/
 
-def goodConstr1: LConstr Unit := {name := "C", args := [⟨"x", .arrow .int (.arrow .int (.tcons "Good" [.ftvar "a"]))⟩]}
+def goodConstr1: LConstr Unit := {name := "C", args := [⟨"x", .arrow .int (.arrow .int (.tcons "Good" [.ftvar "a"]))⟩], testerName := "isC"}
 def goodTy1 : LDatatype Unit := {name := "Good", typeArgs := ["a"], constrs := [goodConstr1], constrs_ne := rfl}
 
 /-- info: Annotated expression:
@@ -411,7 +537,7 @@ info: #0
 5. Non-uniform type
 type Nonunif a := | C (int -> Nonunif (List a))
 -/
-def nonUnifConstr1: LConstr Unit := {name := "C", args := [⟨"x", .arrow .int (.arrow .int (.tcons "Nonunif" [.tcons "List" [.ftvar "a"]]))⟩]}
+def nonUnifConstr1: LConstr Unit := {name := "C", args := [⟨"x", .arrow .int (.arrow .int (.tcons "Nonunif" [.tcons "List" [.ftvar "a"]]))⟩], testerName := "isC"}
 def nonUnifTy1 : LDatatype Unit := {name := "Nonunif", typeArgs := ["a"], constrs := [nonUnifConstr1], constrs_ne := rfl}
 
 /-- info: Error in constructor C: Non-uniform occurrence of Nonunif, which is applied to [(List a)] when it should be applied to [a]-/
@@ -422,7 +548,7 @@ def nonUnifTy1 : LDatatype Unit := {name := "Nonunif", typeArgs := ["a"], constr
 6. Nested types are allowed, though they won't produce a useful elimination principle
 type Nest a := | C (List (Nest a))
 -/
-def nestConstr1: LConstr Unit := {name := "C", args := [⟨"x", .tcons "List" [.tcons "Nest" [.ftvar "a"]]⟩]}
+def nestConstr1: LConstr Unit := {name := "C", args := [⟨"x", .tcons "List" [.tcons "Nest" [.ftvar "a"]]⟩], testerName := "isC"}
 def nestTy1 : LDatatype Unit := {name := "Nest", typeArgs := ["a"], constrs := [nestConstr1], constrs_ne := rfl}
 
 /-- info: Annotated expression:
@@ -439,8 +565,8 @@ info: #0
 type Bad = | C (int) | C (Bad)
 -/
 
-def badConstr4: LConstr Unit := {name := "C", args := [⟨"x", .int⟩]}
-def badConstr5: LConstr Unit := {name := "C", args := [⟨"x", .tcons "Bad" [.ftvar "a"]⟩]}
+def badConstr4: LConstr Unit := {name := "C", args := [⟨"x", .int⟩], testerName := "isC1"}
+def badConstr5: LConstr Unit := {name := "C", args := [⟨"x", .tcons "Bad" [.ftvar "a"]⟩], testerName := "isC"}
 def badTy4 : LDatatype Unit := {name := "Bad", typeArgs := ["a"], constrs := [badConstr4, badConstr5], constrs_ne := rfl}
 
 /--
@@ -455,7 +581,7 @@ New Function:func C : ∀[a]. ((x : (Bad a))) → (Bad a);
 8. Constructor with same name as function not allowed
 type Bad = | Int.add (int)
 -/
-def badConstr6: LConstr Unit := {name := "Int.Add", args := [⟨"x", .int⟩]}
+def badConstr6: LConstr Unit := {name := "Int.Add", args := [⟨"x", .int⟩], testerName := "isAdd"}
 def badTy5 : LDatatype Unit := {name := "Bad", typeArgs := [], constrs := [badConstr6], constrs_ne := rfl}
 
 /-- info: A function of name Int.Add already exists! Redefinitions are not allowed.
