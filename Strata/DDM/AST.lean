@@ -446,6 +446,15 @@ def scopeDatatypeIndex (metadata : Metadata) : Option (Nat × Nat) :=
   | some #[.catbvar nameIdx, .catbvar typeParamsIdx] => some (nameIdx, typeParamsIdx)
   | some _ => panic! s!"Unexpected argument count to scopeDatatype"
 
+/-- Returns the typeArgs index if @[scopeTypeVars] is present.
+    Used for polymorphic function declarations where type parameters should be
+    added as .tvar bindings. -/
+def scopeTypeVarsIndex (metadata : Metadata) : Option Nat :=
+  match metadata[q`StrataDDL.scopeTypeVars]? with
+  | none => none
+  | some #[.catbvar typeArgsIdx] => some typeArgsIdx
+  | some _ => panic! s!"Unexpected argument count to scopeTypeVars"
+
 /-- Returns the index of the value in the binding for the given variable of the scope to use. -/
 private def resultIndex (metadata : Metadata) : Option Nat :=
   match metadata[MetadataAttr.scopeName]? with
@@ -675,6 +684,18 @@ def argScopeDatatypeLevel (argDecls : ArgDecls) (level : Fin argDecls.size) : Op
         panic! s!"scopeDatatype typeParams index {typeParamsIdx} out of bounds ({level.val})"
     else
       panic! s!"scopeDatatype name index {nameIdx} out of bounds ({level.val})"
+
+/-- Returns the typeArgs level if @[scopeTypeVars] is present.
+    This is used for polymorphic function declarations where type parameters like `<a, b>`
+    should be added as .tvar bindings when parsing parameter types and return type. -/
+def argScopeTypeVarsLevel (argDecls : ArgDecls) (level : Fin argDecls.size) : Option (Fin level.val) :=
+  match argDecls[level].metadata.scopeTypeVarsIndex with
+  | none => none
+  | some typeArgsIdx =>
+    if h : typeArgsIdx < level.val then
+      some ⟨level.val - (typeArgsIdx + 1), by omega⟩
+    else
+      panic! s!"scopeTypeVars typeArgs index {typeArgsIdx} out of bounds ({level.val})"
 
 end ArgDecls
 

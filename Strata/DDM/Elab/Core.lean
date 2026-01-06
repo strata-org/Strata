@@ -95,6 +95,7 @@ partial def hnf (tctx : TypingContext) (e : TypeExpr) : TypeExpr :=
       assert! d.isGround
       hnf (tctx.drop (idx + 1)) d
     | .type _ _ none => e
+    | .tvar _ _ => e  -- tvar is already in normal form
     | _ => panic! "Expected a type"
 
 /--
@@ -176,6 +177,10 @@ def resolveTypeBinding (tctx : TypingContext) (loc : SourceRange) (name : String
       return default
     if let .type loc [] _ := k then
       let info : TypeInfo := { inputCtx := tctx, loc := loc, typeExpr := .bvar loc idx, isInferred := false }
+      return .node (.ofTypeInfo info) #[]
+    else if let .tvar loc tvarName := k then
+      -- Type variable: produce a .tvar TypeExpr node
+      let info : TypeInfo := { inputCtx := tctx, loc := loc, typeExpr := .tvar loc tvarName, isInferred := false }
       return .node (.ofTypeInfo info) #[]
     else
       logErrorMF loc mf!"Expected a type instead of {k}"
@@ -758,6 +763,13 @@ def translateBindingKind (tree : Tree) : ElabM BindingKind := do
             else
               logErrorMF nameLoc mf!"Unexpected arguments to type variable {name}."
               return default
+          else if let .tvar loc tvarName := k then
+            -- Type variable: produce a .tvar TypeExpr node
+            if tpArgs.isEmpty then
+              return .expr (.tvar loc tvarName)
+            else
+              logErrorMF nameLoc mf!"Unexpected arguments to type variable {name}."
+              return default
           else
             logErrorMF nameLoc mf!"Expected a type instead of {k}"
             return default
@@ -798,15 +810,21 @@ def evalBindingSpec
   match b with
   | .value b =>
     let ident := evalBindingNameIndex args b.nameIndex
+    -- Collect only .expr bindings, skipping .tvar (type parameters) and .type/.cat
     let (bindings, success) ← runChecked <| elabArgIndex initSize args b.argsIndex fun argLoc b =>
           match b.kind with
           | .expr tp =>
-            pure (b.ident, tp)
+            pure (some (b.ident, tp))
+          | .tvar .. =>
+            -- Skip type variable bindings - they are type parameters, not expression parameters
+            pure none
           | .type .. | .cat _ => do
             logError argLoc "Expecting expressions in variable binding"
-            pure default
+            pure none
     if !success then
       return default
+    -- Filter out None values (from skipped .tvar bindings)
+    let bindings := bindings.filterMap id
     let typeTree := args[b.typeIndex.toLevel]
     let kind ←
           match typeTree.info with
@@ -832,6 +850,9 @@ def evalBindingSpec
     let params ← elabArgIndex initSize args b.argsIndex fun argLoc b => do
           match b.kind with
           | .type _ [] _ =>
+            pure ()
+          | .tvar _ _ =>
+            -- tvar is a type variable, which is valid as a type parameter
             pure ()
           | .type .. | .expr _ | .cat _ => do
             logError argLoc s!"{b.ident} must be have type Type instead of {repr b.kind}."
@@ -961,6 +982,35 @@ def unwrapTree (tree : Tree) (unwrap : Bool) : Arg :=
     | .ofBytesInfo info => .bytes info.loc info.val
     | _ => tree.arg  -- Fallback for non-unwrappable types
 
+/--
+Extract type variable names from a TypeArgs tree (or Option TypeArgs).
+TypeArgs is an operation `type_args` with one child that is `CommaSepBy Ident`.
+Option TypeArgs wraps this in an OptionInfo node.
+-/
+def extractTypeVarNames (tree : Tree) : Array String :=
+  -- First, unwrap Option if present
+  let innerTree :=
+    match tree.info with
+    | .ofOptionInfo _ =>
+      -- Option TypeArgs: check if Some or None
+      match tree.children[0]? with
+      | none => none  -- None case
+      | some t => some t
+    | _ => some tree
+  match innerTree with
+  | none => #[]  -- No type args (None case)
+  | some typeArgsTree =>
+    -- typeArgsTree should be the type_args operation
+    -- Its first child should be CommaSepBy Ident
+    match typeArgsTree.children[0]? with
+    | none => #[]
+    | some commaSepTree =>
+      -- commaSepTree has CommaSepInfo with children that are Ident trees
+      commaSepTree.children.filterMap fun identTree =>
+        match identTree.info with
+        | .ofIdentInfo info => some info.val
+        | _ => none
+
 mutual
 
 partial def elabOperation (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
@@ -1032,12 +1082,27 @@ partial def runSyntaxElaborator
           pure (baseCtx.withGlobalContext gctx)
         | _, _ => continue
       | none =>
-        match ae.contextLevel with
-        | some idx =>
-          match trees[idx] with
-          | some t => pure t.resultContext
+        -- Check for typeVarsScope (polymorphic function type parameters)
+        match ae.typeVarsScope with
+        | some typeArgsLevel =>
+          match trees[typeArgsLevel] with
+          | some typeArgsTree =>
+            -- Extract identifiers from TypeArgs (or Option TypeArgs) and add as .tvar bindings
+            let baseCtx := typeArgsTree.resultContext
+            let typeVarNames := extractTypeVarNames typeArgsTree
+            -- Add each type variable as a binding with .tvar kind
+            let tctx := typeVarNames.foldl (init := baseCtx) fun ctx name =>
+              let loc := typeArgsTree.info.loc
+              ctx.push { ident := name, kind := .tvar loc name }
+            pure tctx
           | none => continue
-        | none => pure tctx0
+        | none =>
+          match ae.contextLevel with
+          | some idx =>
+            match trees[idx] with
+            | some t => pure t.resultContext
+            | none => continue
+          | none => pure tctx0
     let astx := args[ae.syntaxLevel]
     let expectedKind := argDecls[argLevel].kind
     match expectedKind with
@@ -1214,6 +1279,9 @@ partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
         return .node (.ofExprInfo info) #[]
       | .type _ _params _ =>
         logErrorMF loc mf!"{name} is a type when an expression is required."
+        return default
+      | .tvar _ _ =>
+        logErrorMF loc mf!"{name} is a type variable when an expression is required."
         return default
       | .cat c =>
         logErrorMF loc mf!"{name} has category {c} when an expression is required."
