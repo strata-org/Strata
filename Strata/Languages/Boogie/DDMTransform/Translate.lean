@@ -270,6 +270,9 @@ partial def translateLMonoTy (bindings : TransBindings) (arg : Arg) :
     assert! i < bindings.boundTypeVars.size
     let var := bindings.boundTypeVars[bindings.boundTypeVars.size - (i+1)]!
     return (.ftvar var)
+  | .tvar _ name =>
+    -- Polymorphic type variable translates directly to Lambda free type variable
+    return (.ftvar name)
   | _ => TransM.error s!"translateLMonoTy not yet implemented {repr tp}"
 
 partial def translateLMonoTys (bindings : TransBindings) (args : Array Arg) :

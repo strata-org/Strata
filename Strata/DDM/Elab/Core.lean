@@ -54,6 +54,7 @@ partial def expandMacros (m : DialectMap) (f : PreType) (args : Nat → Option A
   | .arrow loc a b => .arrow loc <$> expandMacros m a args <*> expandMacros m b args
   | .fvar loc i a => .fvar loc i <$> a.mapM fun e => expandMacros m e args
   | .bvar loc idx => pure (.bvar loc idx)
+  | .tvar loc name => pure (.tvar loc name)  -- tvar passes through unchanged
   | .funMacro loc i r => do
     let r ← expandMacros m r args
     match args i with
@@ -77,7 +78,7 @@ the head is in a normal form.
 -/
 partial def hnf (tctx : TypingContext) (e : TypeExpr) : TypeExpr :=
   match e with
-  | .arrow .. | .ident .. => e
+  | .arrow .. | .ident .. | .tvar .. => e  -- tvar is already in normal form
   | .fvar _ idx args =>
     let gctx := tctx.globalContext
     match gctx.kindOf! idx with
@@ -323,7 +324,7 @@ N.B. This expects that macros have already been expanded in e.
 -/
 partial def headExpandTypeAlias (gctx : GlobalContext) (e : TypeExpr) : TypeExpr :=
   match e with
-  | .arrow .. | .ident .. | .bvar .. => e
+  | .arrow .. | .ident .. | .bvar .. | .tvar .. => e  -- tvar is already in normal form
   | .fvar _ idx args =>
     match gctx.kindOf! idx with
     | .expr _ => panic! "Type free variable bound to expression."
@@ -344,6 +345,10 @@ partial def checkExpressionType (tctx : TypingContext) (itype rtype : TypeExpr) 
   let itype := tctx.hnf itype
   let rtype := tctx.hnf rtype
   match itype, rtype with
+  -- tvar matches anything (will be inferred by Lambda typechecker)
+  | .tvar _ n1, .tvar _ n2 => return n1 == n2  -- Same type variable
+  | .tvar _ _, _ => return true  -- Type variable matches anything (inferred later)
+  | _, .tvar _ _ => return true  -- Type variable matches anything (inferred later)
   | .ident _ iq ia, .ident _ rq ra =>
     if p : iq = rq ∧ ia.size = ra.size then do
       for i in Fin.range ia.size do
@@ -465,9 +470,13 @@ partial def unifyTypes
       if !(← checkExpressionType tctx inferredType info.typeExpr) then
         logErrorMF exprLoc mf!"Expression has type {withBindings tctx.bindings (mformat inferredType)} when {withBindings tctx.bindings (mformat info.typeExpr)} expected."
       pure args
+  | .tvar _ _ =>
+    -- Type variable: skip DDM unification, let Lambda typechecker handle it
+    -- tvar nodes are passed through without attempting unification
+    pure args
   | .arrow _ ea er =>
     match inferredType with
-    | .ident .. | .bvar .. | .fvar .. =>
+    | .ident .. | .bvar .. | .fvar .. | .tvar .. =>
       logErrorMF exprLoc mf!"Expected {expectedType} when {inferredType} found"
       pure args
     | .arrow _ ia ir =>
