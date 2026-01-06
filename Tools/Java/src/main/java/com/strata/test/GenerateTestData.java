@@ -12,26 +12,98 @@ public class GenerateTestData {
     public static void main(String[] args) throws Exception {
         var ion = IonSystemBuilder.standard().build();
         var serializer = new IonSerializer(ion);
-        
+
+        // Generate comprehensive.ion (single program)
+        generateSingleProgram(ion, serializer, args[0]);
+
+        // Generate comprehensive-files.ion (array of StrataFile)
+        if (args.length > 1) {
+            generateMultipleFiles(ion, serializer, args[1]);
+        }
+    }
+
+    private static void generateSingleProgram(IonSystem ion, IonSerializer serializer, String outPath) throws Exception {
         // AST covering: Num, Str, Ident, Bool, Decimal, ByteArray, Option, Seq, nesting
         Node ast = block(List.of(
             assign("x", add(num(1), neg(num(2)))),
             print("hello"),
             ifStmt(true, data(new byte[]{0x01, (byte)0xFF}), Optional.of(decimal(3.14))),
             ifStmt(false, block(List.of()), Optional.empty())));
-        
+
         IonList program = ion.newEmptyList();
         IonSexp header = ion.newEmptySexp();
         header.add(ion.newSymbol("program"));
         header.add(ion.newString("Simple"));
         program.add(header);
         program.add(serializer.serializeCommand(ast));
-        
-        try (var out = new FileOutputStream(args[0])) {
+
+        try (var out = new FileOutputStream(outPath)) {
             var writer = IonBinaryWriterBuilder.standard().build(out);
             program.writeTo(writer);
             writer.close();
         }
-        System.out.println("Generated: " + args[0]);
+        System.out.println("Generated: " + outPath);
+    }
+
+    private static void generateMultipleFiles(IonSystem ion, IonSerializer serializer, String outPath) throws Exception {
+        // Create first program with 2 statements
+        Node ast1 = block(List.of(
+            assign("x", num(42)),
+            print("first file")));
+
+        IonList program1 = ion.newEmptyList();
+        IonSexp header1 = ion.newEmptySexp();
+        header1.add(ion.newSymbol("program"));
+        header1.add(ion.newString("Simple"));
+        program1.add(header1);
+        program1.add(serializer.serializeCommand(ast1));
+
+        // Line offsets for first file (simulating source at positions 0, 15, 30)
+        IonList lineOffsets1 = ion.newEmptyList();
+        lineOffsets1.add(ion.newInt(0));
+        lineOffsets1.add(ion.newInt(15));
+        lineOffsets1.add(ion.newInt(30));
+
+        // Create second program with 3 statements
+        Node ast2 = block(List.of(
+            assign("y", add(num(1), num(2))),
+            print("second file"),
+            ifStmt(true, block(List.of()), Optional.empty())));
+
+        IonList program2 = ion.newEmptyList();
+        IonSexp header2 = ion.newEmptySexp();
+        header2.add(ion.newSymbol("program"));
+        header2.add(ion.newString("Simple"));
+        program2.add(header2);
+        program2.add(serializer.serializeCommand(ast2));
+
+        // Line offsets for second file (simulating source at positions 0, 20, 45, 70)
+        IonList lineOffsets2 = ion.newEmptyList();
+        lineOffsets2.add(ion.newInt(0));
+        lineOffsets2.add(ion.newInt(20));
+        lineOffsets2.add(ion.newInt(45));
+        lineOffsets2.add(ion.newInt(70));
+
+        // Create array of StrataFile structs
+        IonList files = ion.newEmptyList();
+
+        // First file entry
+        IonStruct file1 = ion.newEmptyStruct();
+        file1.put("program", program1);
+        file1.put("lineOffsets", lineOffsets1);
+        files.add(file1);
+
+        // Second file entry
+        IonStruct file2 = ion.newEmptyStruct();
+        file2.put("program", program2);
+        file2.put("lineOffsets", lineOffsets2);
+        files.add(file2);
+
+        try (var out = new FileOutputStream(outPath)) {
+            var writer = IonBinaryWriterBuilder.standard().build(out);
+            files.writeTo(writer);
+            writer.close();
+        }
+        System.out.println("Generated: " + outPath);
     }
 }

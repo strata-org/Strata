@@ -1288,6 +1288,11 @@ instance : FromIon Dialect where
 
 end Dialect
 
+structure StrataFile where
+  program : Program
+  lineOffsets : Array String.Pos.Raw
+  deriving Inhabited
+
 namespace Program
 
 instance : CachedToIon Program where
@@ -1327,5 +1332,78 @@ def fromIon (dialects : DialectMap) (dialect : DialectName) (bytes : ByteArray) 
     if name != dialect then
       throw s!"{name} program found when {dialect} expected."
     fromIonFragment frag dialects dialect
+/-- Parse line offsets from an Ion list of integers -/
+private def parseLineOffsets (v : Ion SymbolId) : FromIonM (Array String.Pos.Raw) := do
+  match v with
+  | .list offsets =>
+    offsets.mapM fun offset => do
+      match offset.asNat? with
+      | some n => pure ⟨n⟩
+      | none => throw s!"Expected line offset to be a nat, got {repr offset}"
+  | _ => throw "Expected line offsets to be a list"
+
+/-- Parse a list of StrataFile from Ion data.
+    Expected format: A list where each entry is a struct with:
+    - "program": the program data
+    - "lineOffsets": array of line offset positions
+-/
+def fromIonFiles (dialects : DialectMap) (bytes : ByteArray) : Except String (List StrataFile) := do
+  let ctx ←
+    match Ion.deserialize bytes with
+    | .error (off, msg) => throw s!"Error reading Ion: {msg} (offset = {off})"
+    | .ok a =>
+      if p : a.size = 1 then
+        pure a[0]
+      else
+        throw s!"Expected single Ion value"
+
+  let .isTrue p := inferInstanceAs (Decidable (ctx.size = 2))
+    | throw "Expected symbol table and value"
+
+  let symbols ←
+    match SymbolTable.ofLocalSymbolTable ctx[0] with
+    | .error (p, msg) => throw s!"Error at {p}: {msg}"
+    | .ok symbols => pure symbols
+
+  let ionCtx : FromIonContext := ⟨symbols⟩
+
+  -- Parse the main list
+  let ⟨filesList, _⟩ ← FromIonM.asList ctx[1]! ionCtx
+
+  let tbl := symbols
+  let programId := tbl.symbolId! "program"
+  let lineOffsetsId := tbl.symbolId! "lineOffsets"
+
+  filesList.toList.mapM fun fileEntry => do
+    let fields ← FromIonM.asStruct0 fileEntry ionCtx
+
+    -- Find program data
+    let some (_, programData) := fields.find? (·.fst == programId)
+      | throw "Could not find 'program' field"
+
+    -- Find lineOffsets data
+    let some (_, lineOffsetsData) := fields.find? (·.fst == lineOffsetsId)
+      | throw "Could not find 'lineOffsets' field"
+
+    -- Parse the program
+    let ⟨programValues, _⟩ ← FromIonM.asList programData ionCtx
+    let .isTrue ne := inferInstanceAs (Decidable (programValues.size ≥ 1))
+      | throw "Expected program header"
+
+    let hdr ← Ion.Header.fromIon programValues[0] ionCtx
+    let dialect ← match hdr with
+      | .program name => pure name
+      | .dialect _ => throw "Expected program, not dialect"
+
+    let frag : Ion.Fragment := {
+      symbols := symbols,
+      values := programValues,
+      offset := 1
+    }
+
+    let program ← fromIonFragment frag dialects dialect
+    let lineOffsets ← parseLineOffsets lineOffsetsData ionCtx
+
+    pure { program := program, lineOffsets := lineOffsets }
 
 end Program
