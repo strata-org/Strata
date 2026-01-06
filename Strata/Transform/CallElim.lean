@@ -14,12 +14,12 @@ namespace CallElim
 open Boogie.Transform
 
 /--
-The main call elimination transformation algorithm on a single statement.
+The main call elimination transformation algorithm on a single command.
 The returned result is a sequence of statements
 -/
-def callElimStmt (st: Statement) (p : Program)
+def callElimCmd (cmd: Command) (p : Program)
   : BoogieTransformM (List Statement) := do
-    match st with
+    match cmd with
       | .call lhs procName args _ =>
 
         let some proc := Program.Procedure.find? p procName | throw s!"Procedure {procName} not found in program"
@@ -83,18 +83,19 @@ def callElimStmt (st: Statement) (p : Program)
                         (arg_subst ++ ret_subst)
 
         return argInit ++ outInit ++ oldInit ++ asserts ++ havocs ++ assumes
-      | _ => return [ st ]
+      | _ => return [ .cmd cmd ]
 
+-- Visits top-level statements and do call elimination
 def callElimStmts (ss: List Statement) (prog : Program) :=
-  runStmts callElimStmt ss prog
+  runStmts callElimCmd ss prog
 
 def callElimL (dcls : List Decl) (prog : Program) :=
-  runProcedures callElimStmt dcls prog
+  runProcedures callElimCmd dcls prog
 
 /-- Call Elimination for an entire program by walking through all procedure
 bodies -/
 def callElim' (p : Program) : BoogieTransformM Program :=
-  runProgram callElimStmt p
+  runProgram callElimCmd p
 
 end CallElim
 end Boogie

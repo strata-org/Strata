@@ -179,10 +179,10 @@ This function does not update the specification because inlineCallStmt will not
 use the specification. This will have to change if Strata also wants to support
 the reachability query.
 -/
-def inlineCallStmt (st: Statement) (p : Program)
+def inlineCallCmd (cmd: Command) (p : Program)
   : BoogieTransformM (List Statement) :=
     open Lambda in do
-    match st with
+    match cmd with
       | .call lhs procName args _ =>
 
         let some proc := Program.Procedure.find? p procName
@@ -211,12 +211,14 @@ def inlineCallStmt (st: Statement) (p : Program)
 
         -- Create a fresh var statement for each LHS
         let outputTrips ← genOutExprIdentsTrip sigOutputs sigOutputs.unzip.fst
-        let outputInit := createInitVars
+        let outputInits := createInitVars
           (outputTrips.map (fun ((tmpvar,ty),orgvar) => ((orgvar,ty),tmpvar)))
+        let outputHavocs := outputTrips.map (fun
+          (_,orgvar) => Statement.havoc orgvar)
         -- Create a var statement for each procedure input arguments.
         -- The input parameter expression is assigned to these new vars.
         --let inputTrips ← genArgExprIdentsTrip sigInputs args
-        let inputInit := createInits (sigInputs.zip args)
+        let inputInits := createInits (sigInputs.zip args)
         -- Assign the output variables in the signature to the actual output
         -- variables used in the callee.
         let outputSetStmts :=
@@ -231,29 +233,20 @@ def inlineCallStmt (st: Statement) (p : Program)
             outs_lhs_and_sig
 
         let stmts:List (Imperative.Stmt Boogie.Expression Boogie.Command)
-          := inputInit ++ outputInit ++ proc.body ++ outputSetStmts
+          := inputInits ++ outputInits ++ outputHavocs ++ proc.body ++
+             outputSetStmts
 
         return [.block (procName ++ "$inlined") stmts]
-      | _ => return [st]
 
-def inlineCallStmts (ss: List Statement) (prog : Program)
-  : BoogieTransformM (List Statement) := do match ss with
-    | [] => return []
-    | s :: ss =>
-      let s' := (inlineCallStmt s prog)
-      let ss' := (inlineCallStmts ss prog)
-      return (← s') ++ (← ss')
+      | _ => return [.cmd cmd]
+
+def inlineCallStmtsRec (ss: List Statement) (prog : Program)
+  : BoogieTransformM (List Statement) :=
+  runStmtsRec inlineCallCmd ss prog
 
 def inlineCallL (dcls : List Decl) (prog : Program)
   : BoogieTransformM (List Decl) :=
-  match dcls with
-  | [] => return []
-  | d :: ds =>
-    match d with
-    | .proc p =>
-      return Decl.proc { p with body := ← (inlineCallStmts p.body prog ) } ::
-        (← (inlineCallL ds prog))
-    | _       => return d :: (← (inlineCallL ds prog))
+  runProcedures inlineCallCmd dcls prog
 
 end ProcedureInlining
 end Boogie
