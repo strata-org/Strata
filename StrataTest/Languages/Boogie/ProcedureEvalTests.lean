@@ -204,6 +204,8 @@ func Bv64.SGt :  ((x : bv64) (y : bv64)) → bool;
 func Bv64.SGe :  ((x : bv64) (y : bv64)) → bool;
 
 
+Datatypes:
+
 Path Conditions:
 
 

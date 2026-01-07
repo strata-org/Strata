@@ -17,13 +17,13 @@
 /StrataTest/DDM/ @joehendrix @shigoel @aqjune-aws
 
 # Dialects
-/Strata/DL/Lambda/ @shigoel @atomb @aqjune-aws
-/StrataTest/DL/Lambda/ @shigoel @atomb @aqjune-aws
+/Strata/DL/Lambda/ @shigoel @atomb @aqjune-aws @joscoh
+/StrataTest/DL/Lambda/ @shigoel @atomb @aqjune-aws @joscoh
 
-/Strata/DL/Imperative/ @atomb @shigoel @aqjune-aws
-/StrataTest/DL/Imperative/ @atomb @shigoel @aqjune-aws
+/Strata/DL/Imperative/ @atomb @shigoel @aqjune-aws @joscoh
+/StrataTest/DL/Imperative/ @atomb @shigoel @aqjune-aws @joscoh
 
-/Strata/DL/SMT/ @andrewmwells-amazon @atomb
+/Strata/DL/SMT/ @andrewmwells-amazon @atomb @aqjune-aws
 
 /Strata/DL/Utils/ @shigoel @atomb @aqjune-aws
 
@@ -32,6 +32,8 @@
 /StrataTest/Languages/Boogie/ @atomb @shigoel @MikaelMayer
 
 /Strata/Languages/C_Simp/ @andrewmwells-amazon @shigoel
+
+/Strata/Languages/Python/ @andrewmwells-amazon @joehendrix @shigoel
 
 /Strata/Transform/ @atomb @andrewmwells-amazon
 

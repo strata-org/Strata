@@ -25,6 +25,7 @@ def encodeBoogie (ctx : Boogie.SMT.Context) (prelude : SolverM Unit) (ts : List 
   Solver.setLogic "ALL"
   prelude
   let _ ← ctx.sorts.mapM (fun s => Solver.declareSort s.name s.arity)
+  ctx.emitDatatypes
   let (_ufs, estate) ← ctx.ufs.mapM (fun uf => encodeUF uf) |>.run EncoderState.init
   let (_ifs, estate) ← ctx.ifs.mapM (fun fn => encodeFunction fn.uf fn.body) |>.run estate
   let (_axms, estate) ← ctx.axms.mapM (fun ax => encodeTerm False ax) |>.run estate
@@ -66,7 +67,8 @@ def getSMTId (x : (IdentT LMonoTy Visibility)) (ctx : SMT.Context) (E : EncoderS
   match x with
   | (var, none) => .error f!"Expected variable {var} to be annotated with a type!"
   | (var, some ty) => do
-    let (ty', _) ← LMonoTy.toSMTType ty ctx
+    -- NOTE: OK to use Env.init here because ctx should already contain datatypes
+    let (ty', _) ← LMonoTy.toSMTType Env.init ty ctx
     let key : Strata.SMT.UF := { id := var.name, args := [], out := ty' }
     .ok (E.ufs[key]!)
 
