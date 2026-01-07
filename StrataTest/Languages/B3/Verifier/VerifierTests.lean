@@ -91,40 +91,17 @@ def formatStatementError (prog : Program) (stmt : B3AST.Statement SourceRange) :
   let baseOffset := match prog.commands.toList with
     | [op] => op.ann.start
     | _ => { byteIdx := 0 }
-  let loc := match stmt with
-    | .check m _ => formatSourceLocation baseOffset m
-    | .assert m _ => formatSourceLocation baseOffset m
-    | .assume m _ => formatSourceLocation baseOffset m
-    | .reach m _ => formatSourceLocation baseOffset m
-    | _ => "unknown location"
-
-  let (cstStmt, _errors) := B3.stmtToCST B3.ToCSTContext.empty stmt
-  let ctx := FormatContext.ofDialects prog.dialects prog.globalContext {}
-  let state : FormatState := { openDialects := prog.dialects.toList.foldl (init := {}) fun a (dialect : Dialect) => a.insert dialect.name }
-  let stmtAst := cstStmt.toAst
-  let formatted := (mformat (ArgF.op stmtAst) ctx state).format.pretty.trim
-
+  let loc := formatSourceLocation baseOffset (getStatementMetadata stmt)
+  let formatted := formatStatement prog stmt B3.ToCSTContext.empty
   s!"{loc}: {formatted}"
 
 def formatExpressionError (prog : Program) (expr : B3AST.Expression SourceRange) : String :=
   let baseOffset := match prog.commands.toList with
     | [op] => op.ann.start
     | _ => { byteIdx := 0 }
-  let loc := match expr with
-    | .binaryOp m _ _ _ => formatSourceLocation baseOffset m
-    | .literal m _ => formatSourceLocation baseOffset m
-    | .id m _ => formatSourceLocation baseOffset m
-    | .ite m _ _ _ => formatSourceLocation baseOffset m
-    | .unaryOp m _ _ => formatSourceLocation baseOffset m
-    | .functionCall m _ _ => formatSourceLocation baseOffset m
-    | .labeledExpr m _ _ => formatSourceLocation baseOffset m
-    | .letExpr m _ _ _ => formatSourceLocation baseOffset m
-    | .quantifierExpr m _ _ _ _ _ => formatSourceLocation baseOffset m
+  let loc := formatSourceLocation baseOffset (getExpressionMetadata expr)
 
-  let (cstExpr, _) := B3.expressionToCST B3.ToCSTContext.empty expr
-  let ctx := FormatContext.ofDialects prog.dialects prog.globalContext {}
-  let fmtState : FormatState := { openDialects := prog.dialects.toList.foldl (init := {}) fun a (dialect : Dialect) => a.insert dialect.name }
-  let formatted := (mformat (ArgF.op cstExpr.toAst) ctx fmtState).format.pretty.trim
+  let formatted := formatExpression prog expr B3.ToCSTContext.empty
 
   s!"{loc}: {formatted}"
 
@@ -132,16 +109,7 @@ def formatExpressionLocation (prog : Program) (expr : B3AST.Expression SourceRan
   let baseOffset := match prog.commands.toList with
     | [op] => op.ann.start
     | _ => { byteIdx := 0 }
-  match expr with
-    | .binaryOp m _ _ _ => formatSourceLocation baseOffset m
-    | .literal m _ => formatSourceLocation baseOffset m
-    | .id m _ => formatSourceLocation baseOffset m
-    | .ite m _ _ _ => formatSourceLocation baseOffset m
-    | .unaryOp m _ _ => formatSourceLocation baseOffset m
-    | .functionCall m _ _ => formatSourceLocation baseOffset m
-    | .labeledExpr m _ _ => formatSourceLocation baseOffset m
-    | .letExpr m _ _ _ => formatSourceLocation baseOffset m
-    | .quantifierExpr m _ _ _ _ _ => formatSourceLocation baseOffset m
+  formatSourceLocation baseOffset (getExpressionMetadata expr)
 
 def formatExpressionOnly (prog : Program) (expr : B3AST.Expression SourceRange) : String :=
   let (cstExpr, _) := B3.expressionToCST B3.ToCSTContext.empty expr
@@ -169,12 +137,12 @@ def testVerification (prog : Program) : IO Unit := do
       | .procedure _ name _ _ _ =>
           let marker := if result.result.isError then "✗" else "✓"
           let description := match result.result with
-            | .proofResult .proved => "verified"
-            | .proofResult .counterexample => "counterexample found"
-            | .proofResult .proofUnknown => "proof unknown"
-            | .reachabilityResult .unreachable => "unreachable"
-            | .reachabilityResult .reachable => "satisfiable"
-            | .reachabilityResult .reachabilityUnknown => "reachability unknown"
+            | .error .counterexample => "counterexample found"
+            | .error .unknown => "unknown"
+            | .error .refuted => "refuted"
+            | .success .verified => "verified"
+            | .success .reachable => "reachable"
+            | .success .reachabilityUnknown => "reachability unknown"
 
           IO.println s!"{name.val}: {marker} {description}"
           if result.result.isError then
@@ -193,12 +161,10 @@ def testVerification (prog : Program) : IO Unit := do
                       for failure in diag.diagnosedFailures do
                         let exprLoc := formatExpressionLocation prog failure.expression
                         let exprFormatted := formatExpressionOnly prog failure.expression
-                        let diagnosisPrefix := if failure.isProvablyFalse then
-                          MSG_IMPOSSIBLE
-                        else
-                          match result.result with
-                          | .proofResult _ => MSG_COULD_NOT_PROVE
-                          | .reachabilityResult _ => MSG_IMPOSSIBLE  -- Reachability is always impossibility
+                        let diagnosisPrefix := match failure.report.result with
+                          | .error .refuted => MSG_IMPOSSIBLE
+                          | .error .counterexample | .error .unknown => MSG_COULD_NOT_PROVE
+                          | .success _ => MSG_COULD_NOT_PROVE  -- Shouldn't happen
 
                         -- Get statement location for comparison
                         let stmtLoc := match stmt with
@@ -211,10 +177,10 @@ def testVerification (prog : Program) : IO Unit := do
                         else
                           IO.println s!"  └─ {exprLoc}: {diagnosisPrefix} {exprFormatted}"
 
-                        -- Show assumptions for this failure (aligned with opening paren of location)
-                        if !failure.pathCondition.isEmpty then
+                        -- Show assumptions for this failure (from report context)
+                        if !failure.report.context.pathCondition.isEmpty then
                           IO.println s!"     {MSG_UNDER_ASSUMPTIONS}"
-                          for expr in failure.pathCondition.reverse do
+                          for expr in failure.report.context.pathCondition.reverse do
                             -- Flatten conjunctions to show each on separate line
                             for conjunct in flattenConjunction expr do
                               let formatted := formatExpressionOnly prog conjunct
@@ -423,7 +389,7 @@ procedure test_assert_with_trace() {
 ---------------------------------------------------------------------
 
 /--
-info: test_reach_bad: ✗ unreachable
+info: test_reach_bad: ✗ refuted
   (0,100): reach f(5) < 0
   └─ (0,100): it is impossible that f(5) < 0
      under the assumptions
@@ -439,7 +405,7 @@ procedure test_reach_bad() {
 #end
 
 /--
-info: test_reach_good: ✓ satisfiable
+info: test_reach_good: ✓ reachable
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;
@@ -451,7 +417,7 @@ procedure test_reach_good() {
 #end
 
 /--
-info: test_reach_with_trace: ✗ unreachable
+info: test_reach_with_trace: ✗ refuted
   (0,137): reach f(5) < 0
   └─ (0,137): it is impossible that f(5) < 0
      under the assumptions
@@ -474,7 +440,7 @@ procedure test_reach_with_trace() {
 ---------------------------------------------------------------------
 
 /--
-info: test_reach_diagnosis: ✗ unreachable
+info: test_reach_diagnosis: ✗ refuted
   (0,106): reach f(5) > 5 && f(5) < 0
   └─ (0,124): it is impossible that f(5) < 0
      under the assumptions
@@ -493,7 +459,7 @@ procedure test_reach_diagnosis() {
 
 
 /--
-info: test_all_expressions: ✗ unreachable
+info: test_all_expressions: ✗ refuted
   (0,127): reach (false || true) && (if true then true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -(5) == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall y : int pattern f(y) f(y) || !f(y)) && (forall y : int y > 0 || y <= 0)
   └─ (0,358): it is impossible that 1 + 2 == 4
      under the assumptions
@@ -540,7 +506,7 @@ procedure test_all_expressions() {
 
 
 /--
-info: test_all_expressions: ✗ unreachable
+info: test_all_expressions: ✗ refuted
   (0,85): reach notalwaystrue(1, 2) && !notalwaystrue(1, 2) && 5 == 4
   └─ (0,122): it is impossible that !notalwaystrue(1, 2)
      under the assumptions

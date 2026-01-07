@@ -52,42 +52,22 @@ Diagnosis (if failed)
 Use `verify` for automatic diagnosis (recommended) - provides detailed error analysis.
 Use `verifyWithoutDiagnosis` for faster verification without diagnosis - returns raw results.
 
-## Diagnosis Behavior
-
-**For proof checks (check/assert):**
-- Recursively splits conjunctions to find all atomic failures
-- Reports multiple failures: "could not prove A", "it is impossible that B"
-- Assumes LHS when diagnosing RHS (context-aware)
-- Continues diagnosis even after finding provably false conjuncts
-
-**For reachability checks (reach):**
-- Stops at first unreachable or provably false conjunct
-- Reports single failure: "it is impossible that A"
-- All subsequent conjuncts are trivially unreachable if LHS is unreachable
-- Always uses "it is impossible that" (reachability is an impossibility proof)
-
-**Provably false detection:**
-- "could not prove" - assertion is unprovable (sat/unknown when checking `not A`)
-- "it is impossible that" - assertion is provably false (unsat when checking `A`)
-- Diagnosis stops when provably false found (root cause identified)
-
 ## Usage
 -/
 
 -- Example: Verify a simple B3 program (meta to avoid including in production)
+-- This is not a test, it only demonstrates the end-to-end API
 meta def exampleVerification : IO Unit := do
   -- Parse B3 program using DDM syntax
   let ddmProgram : Strata.Program := #strata program B3CST;
     function f(x : int) : int { x + 1 }
     procedure test() {
-      check f(5) == 6
+      check 8 == 8 && f(5) == 7
     }
   #end
 
   -- For parsing from files, use: parseStrataProgramFromDialect dialects "B3CST" "file.b3cst.st"
 
-  -- Convert Strata.Program to B3AST.Program
-  -- (internally: Strata.Program → B3CST.Program → B3AST.Program)
   let b3AST : B3AST.Program SourceRange ← match programToB3AST ddmProgram with
     | .ok ast => pure ast
     | .error msg => throw (IO.userError s!"Failed to parse: {msg}")
@@ -103,34 +83,57 @@ meta def exampleVerification : IO Unit := do
   let results : List (VerificationReport × Option DiagnosisResult) := report.results
 
   let [(verificationReport, diagnosisOpt)] ← pure results | throw (IO.userError "Expected one result")
-  let context : VerificationContext := verificationReport.context
-  let _result : VerificationResult := verificationReport.result
-  let _model : Option String := verificationReport.model
 
-  let _decl : B3AST.Decl SourceRange := context.decl
-  let _stmt : B3AST.Statement SourceRange := context.stmt
-  let _pathCondition : List (B3AST.Expression SourceRange) := context.pathCondition
+  let analyseVerificationReport (verificationReport: VerificationReport) : IO Unit :=
+    do
+    let context : VerificationContext := verificationReport.context
+    let result : VerificationResult := verificationReport.result
+    let _model : Option String := verificationReport.model
 
-  match diagnosisOpt with
-  | some diagnosis =>
-      let diagnosedFailures : List DiagnosedFailure := diagnosis.diagnosedFailures
-      let [failure] ← pure diagnosedFailures | pure ()
-      let _expression : B3AST.Expression SourceRange := failure.expression
-      let _failurePathCondition : List (B3AST.Expression SourceRange) := failure.pathCondition
-      let _isProvablyFalse : Bool := failure.isProvablyFalse
-      pure ()
-  | none => pure ()
+    let _decl : B3AST.Decl SourceRange := context.decl
+    let _stmt : B3AST.Statement SourceRange := context.stmt
+    let pathCondition : List (B3AST.Expression SourceRange) := context.pathCondition
+
+    -- Interpret verification result (merged error and success cases)
+    match result with
+    | .error .counterexample => IO.println "✗ Counterexample (possibly wrong)"
+    | .error .unknown => IO.println "✗ Unknown"
+    | .error .refuted => IO.println "✗ Refuted (proved false/unreachable)"
+    | .success .verified => IO.println "✓ Verified (proved)"
+    | .success .reachable => IO.println "✓ Reachable/Satisfiable"
+    | .success .reachabilityUnknown => IO.println "✓ Reachability unknown"
+
+    -- Print path condition if present
+    if !pathCondition.isEmpty then
+      IO.println "  Path condition:"
+      for expr in pathCondition do
+        IO.println s!"    {B3.Verifier.formatExpression ddmProgram expr B3.ToCSTContext.empty}"
+
+  analyseVerificationReport verificationReport
+
+  let (.some diagnosis) ← pure diagnosisOpt | throw (IO.userError "Expected a diagnosis")
+
+  -- Interpret diagnosis (if available)
+  let diagnosedFailures : List DiagnosedFailure := diagnosis.diagnosedFailures
+  IO.println s!"  Found {diagnosedFailures.length} diagnosed failures"
+
+  for failure in diagnosedFailures do
+    let expression : B3AST.Expression SourceRange := failure.expression
+    IO.println s!"Failing expression: {B3.Verifier.formatExpression ddmProgram expression B3.ToCSTContext.empty}"
+    analyseVerificationReport failure.report
 
   pure ()
 
-  match diagnosisOpt with
-  | some diagnosis =>
-      let diagnosedFailures : List DiagnosedFailure := diagnosis.diagnosedFailures
-      let [failure] ← pure diagnosedFailures | pure ()
-      let _expression : B3AST.Expression SourceRange := failure.expression
-      let _failurePathCondition : List (B3AST.Expression SourceRange) := failure.pathCondition
-      let _isProvablyFalse : Bool := failure.isProvablyFalse
-      pure ()
-  | none => pure ()
-
-  pure ()
+/--
+info: ✗ Counterexample (possibly wrong)
+  Path condition:
+    forall x : int pattern f(x) f(x) == x + 1
+  Found 1 diagnosed failures
+Failing expression: f(5) == 7
+✗ Refuted (proved false/unreachable)
+  Path condition:
+    8 == 8
+    forall x : int pattern f(x) f(x) == x + 1
+-/
+#guard_msgs in
+#eval exampleVerification

@@ -25,9 +25,7 @@ open Strata.SMT
 
 structure DiagnosedFailure where
   expression : B3AST.Expression SourceRange
-  report : VerificationReport
-  pathCondition : List (B3AST.Expression SourceRange)
-  isProvablyFalse : Bool  -- True if the expression is provably false (not just unprovable)
+  report : VerificationReport  -- Contains context (with pathCondition), result (refuted if provably false), model
 
 structure DiagnosisResult where
   originalCheck : VerificationReport
@@ -54,7 +52,7 @@ partial def diagnoseFailureGeneric
     let vctx : VerificationContext := { decl := sourceDecl, stmt := sourceStmt, pathCondition := state.pathCondition }
     let dummyResult : VerificationReport := {
       context := vctx
-      result := .proofResult .proofUnknown
+      result := .error .unknown
       model := none
     }
     return { originalCheck := dummyResult, diagnosedFailures := [] }
@@ -90,12 +88,14 @@ partial def diagnoseFailureGeneric
           -- Recursively diagnose the left conjunct
           let lhsDiag ← diagnoseFailureGeneric isReachCheck state lhs sourceDecl sourceStmt
           if lhsDiag.diagnosedFailures.isEmpty then
-            -- Atomic failure
+            -- Atomic failure - upgrade to refuted if provably false
+            let finalResult := if isProvablyFalse then
+              { lhsResult with result := .error .refuted }
+            else
+              lhsResult
             diagnosements := diagnosements ++ [{
               expression := lhs
-              report := lhsResult
-              pathCondition := state.pathCondition
-              isProvablyFalse := isProvablyFalse
+              report := finalResult
             }]
           else
             -- Has sub-failures - add those instead
@@ -115,7 +115,8 @@ partial def diagnoseFailureGeneric
       if lhsConv.errors.isEmpty && rhsConv.errors.isEmpty then
         -- Add lhs as assumption when checking rhs (for both proof and reachability checks)
         let stateForRhs ← addPathCondition state lhs lhsConv.term
-        let rhsResult ← checkFn stateForRhs rhsConv.term vctx
+        let vctxForRhs : VerificationContext := { decl := sourceDecl, stmt := sourceStmt, pathCondition := stateForRhs.pathCondition }
+        let rhsResult ← checkFn stateForRhs rhsConv.term vctxForRhs
         if isFailure rhsResult.result then
           -- Check if RHS is provably false (not just unprovable)
           let _ ← push stateForRhs
@@ -129,12 +130,14 @@ partial def diagnoseFailureGeneric
           -- Recursively diagnose the right conjunct
           let rhsDiag ← diagnoseFailureGeneric isReachCheck stateForRhs rhs sourceDecl sourceStmt
           if rhsDiag.diagnosedFailures.isEmpty then
-            -- Atomic failure
+            -- Atomic failure - upgrade to refuted if provably false
+            let finalResult := if isProvablyFalse then
+              { rhsResult with result := .error .refuted }
+            else
+              rhsResult
             diagnosements := diagnosements ++ [{
               expression := rhs
-              report := rhsResult
-              pathCondition := stateForRhs.pathCondition
-              isProvablyFalse := isProvablyFalse
+              report := finalResult
             }]
           else
             -- Has sub-failures - add those instead

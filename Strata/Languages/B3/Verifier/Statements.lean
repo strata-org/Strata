@@ -6,6 +6,10 @@
 
 import Strata.Languages.B3.Verifier.Expression
 import Strata.Languages.B3.Verifier.State
+import Strata.Languages.B3.DDMTransform.ParseCST
+import Strata.Languages.B3.DDMTransform.Conversion
+import Strata.DDM.Integration.Lean
+import Strata.DDM.Util.Format
 
 /-!
 # B3 Statement Streaming Translation
@@ -26,6 +30,7 @@ Key advantage: O(n) not O(n²), solver accumulates lemmas.
 
 namespace Strata.B3.Verifier
 
+open Strata
 open Strata.SMT
 
 inductive StatementResult where
@@ -78,5 +83,40 @@ partial def symbolicExecuteStatements (ctx : ConversionContext) (state : B3Verif
 
   | _ =>
       pure { results := [], finalState := state }
+
+---------------------------------------------------------------------
+-- Statement Formatting
+---------------------------------------------------------------------
+
+def formatStatement (prog : Program) (stmt : B3AST.Statement SourceRange) (ctx: B3.ToCSTContext): String :=
+  let (cstStmt, _) := B3.stmtToCST ctx stmt
+  let fmtCtx := FormatContext.ofDialects prog.dialects prog.globalContext {}
+  let fmtState : FormatState := { openDialects := prog.dialects.toList.foldl (init := {}) fun a (dialect : Dialect) => a.insert dialect.name }
+  (mformat (ArgF.op cstStmt.toAst) fmtCtx fmtState).format.pretty.trim
+
+---------------------------------------------------------------------
+-- Metadata Extraction
+---------------------------------------------------------------------
+
+/-- Extract metadata from any B3 statement -/
+def getStatementMetadata : B3AST.Statement M → M
+  | .check m _ => m
+  | .assert m _ => m
+  | .assume m _ => m
+  | .reach m _ => m
+  | .blockStmt m _ => m
+  | .probe m _ => m
+  | .varDecl m _ _ _ _ => m
+  | .assign m _ _ => m
+  | .reinit m _ => m
+  | .ifStmt m _ _ _ => m
+  | .ifCase m _ => m
+  | .choose m _ => m
+  | .loop m _ _ => m
+  | .labeledStmt m _ _ => m
+  | .exit m _ => m
+  | .returnStmt m => m
+  | .aForall m _ _ _ => m
+  | .call m _ _ => m
 
 end Strata.B3.Verifier
