@@ -3,16 +3,23 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Elab.Core
+public import Strata.DDM.AST
+public import Strata.DDM.Elab.Core
+
+import Std.Data.HashMap
+import Strata.DDM.Util.Array
+import Strata.DDM.Util.Fin
 
 set_option autoImplicit false
 
+public section
 namespace Strata
 
 namespace PreType
 
-/-
+/--
 Apply a function f over all bound variables in expression.
 
 Note this does not return variables referenced by .funMacro.
@@ -54,7 +61,7 @@ def isType {argc} (m : ArgDeclsMap argc) (lvl : Fin argc) := m.decls[lvl].val.ki
 def empty (capacity : Nat := 0) : ArgDeclsMap 0 := {
   argIndexMap := {},
   decls := .emptyWithCapacity capacity,
-  argIndexMapSize := rfl
+  argIndexMapSize := by simp
   mapIndicesValid := fun v p => by simp at p
 }
 
@@ -597,7 +604,7 @@ def elabDialectImportCommand : DialectElab := fun tree => do
       let loadCallback ← (·.loadDialect) <$> read
       let r ← fun _ ref => do
         let loaded := (← ref.get).loaded
-        assert! "StrataDDL" ∈ loaded.dialects.map.keys
+        assert! "StrataDDL" ∈ loaded.dialects
         let (loaded, r) ← loadCallback loaded name
         ref.modify fun s => { s with loaded := loaded }
         pure r
@@ -737,7 +744,7 @@ def elabFnCommand : DialectElab := fun tree => do
   if !stxSuccess then
     return
 
-  let ident := { dialect := d.name, name }
+  let ident : QualifiedIdent := { dialect := d.name, name }
   match (←getDeclState).fixedParsers.opSyntaxParser q`Init.Expr ident argDecls opStx with
   | .error msg =>
     logErrorMF tree.info.loc msg
@@ -808,7 +815,7 @@ def dialectElabs : Std.HashMap QualifiedIdent DialectElab :=
     ]
 
 partial def runDialectCommand (leanEnv : Lean.Environment) : DialectM Bool := do
-  assert! "StrataDDL" ∈ (← get).loaded.dialects.map.keys
+  assert! "StrataDDL" ∈ (← get).loaded.dialects
   let (mtree, success) ← MonadLift.monadLift <| runChecked <| elabCommand leanEnv
   match mtree with
   | none =>

@@ -49,14 +49,14 @@ def readStrataText (fm : Strata.DialectFileMap) (input : System.FilePath) (bytes
   if errors.size > 0 then
     exitFailure  (← Strata.mkErrorReport input errors)
   match header with
-  | .program stx dialect =>
+  | .program _ dialect =>
     let dialects ←
       match ← Strata.Elab.loadDialect fm .builtin dialect with
       | (dialects, .ok _) => pure dialects
       | (_, .error msg) => exitFailure msg
     let .isTrue mem := inferInstanceAs (Decidable (dialect ∈ dialects.dialects))
-      | panic! "loadDialect failed"
-    match Strata.Elab.elabProgramRest dialects leanEnv inputContext stx dialect mem startPos with
+      | panic! "internal: loadDialect failed"
+    match Strata.Elab.elabProgramRest dialects leanEnv inputContext dialect mem startPos with
     | .ok program => pure (dialects, .program program)
     | .error errors => exitFailure (← Strata.mkErrorReport input errors)
   | .dialect stx dialect =>

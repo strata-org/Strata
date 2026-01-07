@@ -48,10 +48,10 @@ def TransM.error [Inhabited α] (msg : String) : TransM α := do
 def SourceRange.toMetaData (ictx : InputContext) (sr : SourceRange) : Imperative.MetaData Boogie.Expression :=
   let file := ictx.fileName
   let startPos := ictx.fileMap.toPosition sr.start
-  let fileElt := ⟨ MetaData.fileLabel, .msg file ⟩
-  let lineElt := ⟨ MetaData.startLineLabel, .msg s!"{startPos.line}" ⟩
-  let colElt := ⟨ MetaData.startColumnLabel, .msg s!"{startPos.column}" ⟩
-  #[fileElt, lineElt, colElt]
+  let endPos := ictx.fileMap.toPosition sr.stop
+  let uri: Uri := .file file
+  let fileRangeElt := ⟨ MetaData.fileRange, .fileRange ⟨ uri, startPos, endPos ⟩ ⟩
+  #[fileRangeElt]
 
 def getOpMetaData (op : Operation) : TransM (Imperative.MetaData Boogie.Expression) :=
   return op.ann.toMetaData (← StateT.get).inputCtx
@@ -408,9 +408,9 @@ def translateOptionMonoDeclList (bindings : TransBindings) (arg : Arg) :
 partial def dealiasTypeExpr (p : Program) (te : TypeExpr) : TypeExpr :=
   match te with
   | (.fvar _ idx #[]) =>
-    match p.globalContext.vars[idx]! with
-    | (_, (.expr te)) => te
-    | (_, (.type [] (.some te))) => te
+    match p.globalContext.kindOf! idx with
+    | .expr te => te
+    | .type [] (.some te) => te
     | _ => te
   | _ => te
 
@@ -858,7 +858,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   | .fvar _ i, [] =>
     assert! i < bindings.freeVars.size
     let decl := bindings.freeVars[i]!
-    let ty? ← match p.globalContext.vars[i]!.2 with
+    let ty? ← match p.globalContext.kindOf! i with
               |.expr te => pure (some (← translateLMonoTy bindings (.type te)))
               | _ => pure none
     match decl with

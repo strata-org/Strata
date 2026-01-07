@@ -3,10 +3,11 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
+module
 import Strata.DDM.Util.Fin
 import Strata.DDM.Util.Vector
 
+public section
 namespace Strata
 
 structure OutGraph (nodeCount : Nat) where
@@ -38,7 +39,7 @@ protected def ofEdges! (n : Nat) (edges : List (Nat × Nat)) : OutGraph n :=
 def nodesOut (g : OutGraph n) (node : Node n) : Array (Node n) :=
     g.edges[node]
 
-structure TarjanState (n : Nat) where
+private structure TarjanState (n : Nat) where
   index : Fin (n+1) := 0
   stk : Array (Fin n) := #[]
   indices : Vector (Fin (n + 1)) n := .replicate n (Fin.last n)
@@ -47,10 +48,10 @@ structure TarjanState (n : Nat) where
   components : Array (Array (Fin n)) := #[]
 deriving Inhabited
 
-def TarjanState.mergeLowlink (s : TarjanState n) (v : Fin n) (w : Fin n): TarjanState n :=
+private def TarjanState.mergeLowlink (s : TarjanState n) (v : Fin n) (w : Fin n): TarjanState n :=
   { s with lowlinks := s.lowlinks.modify v (min s.lowlinks[w]) }
 
-def popTo (v : Fin n) (s : TarjanState n) (comp : Array (Fin n)) : TarjanState n :=
+private def popTo (v : Fin n) (s : TarjanState n) (comp : Array (Fin n)) : TarjanState n :=
   if p : s.stk.size > 0 then
     let w := s.stk[s.stk.size - 1]
     let s := { s with stk := s.stk.pop, onStack := s.onStack.set w false  }
@@ -62,7 +63,7 @@ def popTo (v : Fin n) (s : TarjanState n) (comp : Array (Fin n)) : TarjanState n
   else
     panic "Unexpected empty stack"
 
-partial def strongconnect (g : OutGraph n) (v : Node n) (s : TarjanState n) : TarjanState n :=
+private partial def strongconnect (g : OutGraph n) (v : Node n) (s : TarjanState n) : TarjanState n :=
   -- Set the depth index for v to the smallest unused index
   let s := { s with
     index := s.index + 1,
@@ -100,8 +101,8 @@ def tarjan {n} (g : OutGraph n) : Array (Array (Node n)) :=
       s
   s.components
 
-/--
-info: #[#[0, 1, 2, 4], #[3]]
--/
-#guard_msgs in
-#eval tarjan (.ofEdges! 5 [(0, 1), (1, 2), (2, 3), (2, 0), (2, 4), (4, 3), (4, 1)])
+end Strata.OutGraph
+end
+
+open Strata.OutGraph
+#guard tarjan (.ofEdges! 5 [(0, 1), (1, 2), (2, 3), (2, 0), (2, 4), (4, 3), (4, 1)]) == #[#[0, 1, 2, 4], #[3]]

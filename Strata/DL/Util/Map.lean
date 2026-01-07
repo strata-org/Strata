@@ -111,6 +111,9 @@ def Map.values (m : Map α β) : List β :=
 def Map.disjointp [DecidableEq α] (m1 m2 : Map α β) : Prop :=
   ∀ k, (m1.find? k) = none ∨ (m2.find? k = none)
 
+def Map.fmap (f: β → γ) (m: Map α β) : Map α γ :=
+  List.map (fun (x, y) => (x, f y)) m
+
 ---------------------------------------------------------------------
 
 theorem Map.find?_mem_keys [DecidableEq α] (m : Map α β)

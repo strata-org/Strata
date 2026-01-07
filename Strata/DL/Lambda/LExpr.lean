@@ -358,6 +358,11 @@ def absMulti (m: Metadata) (tys: List TypeType) (body: LExpr ⟨⟨Metadata, IDM
     : LExpr ⟨⟨Metadata, IDMeta⟩, TypeType⟩ :=
   List.foldr (fun ty e => .abs m (.some ty) e) body tys
 
+/-- An iterated/multi-argument lambda with n inferred arguments and body `body`-/
+def absMultiInfer (m: Metadata) (n: Nat) (body: LExpr ⟨⟨Metadata, IDMeta⟩, TypeType⟩)
+    : LExpr ⟨⟨Metadata, IDMeta⟩, TypeType⟩ :=
+  List.foldr (fun _ e => .abs m .none e) body (List.range n)
+
 /--
 If `e` is an `LExpr` boolean, then denote that into a Lean `Bool`.
 -/

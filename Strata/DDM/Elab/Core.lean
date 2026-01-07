@@ -3,8 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Strata.DDM.Elab.DeclM
-import Strata.DDM.Elab.Tree
+module
+
+public import Strata.DDM.Elab.DeclM
+public import Strata.DDM.Elab.Tree
+
+import Strata.DDM.Util.Array
+import Strata.DDM.Util.Fin
+import Strata.DDM.HNF
 
 open Lean (
     Message
@@ -12,8 +18,9 @@ open Lean (
     Syntax
     nullKind
   )
-open Strata.Parser (DeclParser InputContext ParserState)
+open Strata.Parser (DeclParser InputContext)
 
+public section
 namespace Strata
 
 namespace TypeExprF
@@ -23,7 +30,7 @@ This applies global context to instantiate types and variables.
 
 Free type alias variables bound to alias
 -/
-protected def instType (d : TypeExprF α) (bindings : Array (TypeExprF α)) : TypeExprF α := Id.run <|
+protected def instType {α} (d : TypeExprF α) (bindings : Array (TypeExprF α)) : TypeExprF α := Id.run <|
   d.instTypeM fun n idx =>
     if p : idx < bindings.size then
       pure <| bindings[bindings.size - (idx+1)]
@@ -138,7 +145,7 @@ structure ElabState where
   -- Errors found in elaboration.
   errors : Array Message := #[]
 
-@[reducible]
+@[reducible, expose]
 def ElabM α := ReaderT ElabContext (StateM ElabState) α
 
 instance : ElabClass ElabM where
@@ -769,7 +776,7 @@ def evalBindingSpec
               panic! s!"Cannot bind {ident} unexpected category {repr info.cat}"
             else if !bindings.isEmpty then
               panic! s!"Arguments not allowed on category."
-            else if let .atom loc q`Init.Type := info.cat then
+            else if info.cat.name == q`Init.Type then
               pure <| .type loc [] none
             else
               pure <| .cat info.cat
@@ -1272,3 +1279,4 @@ partial def elabCommand (leanEnv : Lean.Environment) : DeclM (Option Tree) := do
   runElab <| some <$> elabOperation (.empty glbl) stx
 
 end Strata.Elab
+end

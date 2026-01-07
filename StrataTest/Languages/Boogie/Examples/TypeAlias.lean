@@ -97,3 +97,45 @@ Result: verified
 #eval verify "cvc5" goodTypeAlias
 
 --------------------------------------------------------------------
+
+def funcAndTypeAliasesPgm : Program :=
+#strata
+program Boogie;
+
+type MapInt := Map int int;
+
+function MapInt_get (d : MapInt, k : int) : int;
+function MapGetEq (d: MapInt, k: int, v : int) : bool {
+  MapInt_get (d, k) == v
+}
+
+procedure test () returns () {
+  var d : MapInt, k : int, v : int, b : bool;
+  b := MapGetEq(d, k, v);
+  assume (v == 0);
+  assert (b == MapGetEq(d, k, 0));
+};
+#end
+
+/--
+info: [Strata.Boogie] Type checking succeeded.
+
+
+VCs:
+Label: assert_0
+Assumptions:
+(assume_0, (init_v_2 == #0))
+
+Proof Obligation:
+((((~MapGetEq init_d_0) init_k_1) init_v_2) == (((~MapGetEq init_d_0) init_k_1) #0))
+
+Wrote problem to vcs/assert_0.smt2.
+---
+info:
+Obligation: assert_0
+Result: verified
+-/
+#guard_msgs in
+#eval verify "cvc5" funcAndTypeAliasesPgm
+
+--------------------------------------------------------------------

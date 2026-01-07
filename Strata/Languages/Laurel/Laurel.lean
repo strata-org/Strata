@@ -4,6 +4,9 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+import Strata.DL.Imperative.MetaData
+import Strata.Languages.Boogie.Expressions
+
 /-
 The Laurel language is supposed to serve as an intermediate verification language for at least Java, Python, JavaScript.
 
@@ -39,6 +42,7 @@ Design choices:
 - Construction of composite types is WIP. It needs a design first.
 
 -/
+namespace Laurel
 
 abbrev Identifier := String /- Potentially this could be an Int to save resources. -/
 
@@ -48,12 +52,14 @@ structure Procedure: Type where
   inputs : List Parameter
   output : HighType
   precondition : StmtExpr
-  decreases : StmtExpr
-  deterministic: Bool
-  /- Reads clause defaults to empty for deterministic procedures, and everything for non-det ones -/
-  reads : Option StmtExpr
-  modifies : StmtExpr
+  decreases : Option StmtExpr -- optionally prove termination
+  determinism: Determinism
+  modifies : Option StmtExpr
   body : Body
+
+inductive Determinism where
+  | deterministic (reads: Option StmtExpr)
+  | nondeterministic
 
 structure Parameter where
   name : Identifier
@@ -71,7 +77,6 @@ inductive HighType : Type where
   /- Java has implicit intersection types.
      Example: `<cond> ? RustanLeino : AndersHejlsberg` could be typed as `Scientist & Scandinavian`-/
   | Intersection (types : List HighType)
-  deriving Repr
 
 /- No support for something like function-by-method yet -/
 inductive Body where
@@ -144,8 +149,8 @@ inductive StmtExpr : Type where
   | Fresh(value : StmtExpr)
 
 /- Related to proofs -/
-  | Assert (condition: StmtExpr)
-  | Assume (condition: StmtExpr)
+  | Assert (condition: StmtExpr) (md : Imperative.MetaData Boogie.Expression)
+  | Assume (condition: StmtExpr) (md : Imperative.MetaData Boogie.Expression)
   /-
 ProveBy allows writing proof trees. Its semantics are the same as that of the given `value`,
 but the `proof` is used to help prove any assertions in `value`.
@@ -171,6 +176,7 @@ An extending type can become concrete by redefining all procedures that had abst
   | All -- All refers to all objects in the heap. Can be used in a reads or modifies clause
 /- Hole has a dynamic type and is useful when programs are only partially available -/
   | Hole
+  deriving Inhabited
 
 inductive ContractType where
   | Reads | Modifies | Precondition | PostCondition

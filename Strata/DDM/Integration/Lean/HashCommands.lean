@@ -3,10 +3,19 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Integration.Lean.Env
-import Strata.DDM.Integration.Lean.ToExpr
+public import Lean.Parser.Types
+
+public import Lean.Elab.Command
+
+public meta import Strata.DDM.Integration.Lean.ToExpr
 import Strata.DDM.TaggedRegions
+
+public meta import Strata.DDM.Integration.Lean.Env
+public meta import Strata.DDM.Elab
+
+meta import Strata.DDM.TaggedRegions
 
 open Lean
 open Lean.Elab (throwUnsupportedSyntax)
@@ -22,9 +31,9 @@ class HasInputContext (m : Type → Type _) [Functor m] where
   getFileName : m FilePath :=
     (fun ctx => FilePath.mk ctx.fileName) <$> getInputContext
 
-export HasInputContext (getInputContext)
+--export HasInputContext (getInputContext)
 
-instance : HasInputContext CommandElabM where
+meta instance : HasInputContext CommandElabM where
   getInputContext := do
     let ctx ← read
     pure {
@@ -34,7 +43,7 @@ instance : HasInputContext CommandElabM where
     }
   getFileName := return (← read).fileName
 
-instance : HasInputContext CoreM where
+meta instance : HasInputContext CoreM where
   getInputContext := do
     let ctx ← read
     pure {
@@ -44,7 +53,7 @@ instance : HasInputContext CoreM where
     }
   getFileName := return (← read).fileName
 
-private def mkScopedName {m} [Monad m] [MonadError m] [MonadEnv m] [MonadResolveName m] (name : Name) : m Name := do
+private meta def mkScopedName {m} [Monad m] [MonadError m] [MonadEnv m] [MonadResolveName m] (name : Name) : m Name := do
   let scope ← getCurrNamespace
   let fullName := scope ++ name
   let env ← getEnv
@@ -62,7 +71,7 @@ private def mkAbsIdent (name : Lean.Name) : Ident :=
 /--
 Add a definition to environment and compile it.
 -/
-def addDefn (name : Lean.Name)
+meta def addDefn (name : Lean.Name)
             (type : Lean.Expr)
             (value : Lean.Expr)
             (levelParams : List Name := [])
@@ -82,7 +91,7 @@ def addDefn (name : Lean.Name)
 /--
 Declare dialect and add to environment.
 -/
-def declareDialect (d : Dialect) : CommandElabM Unit := do
+meta def declareDialect (d : Dialect) : CommandElabM Unit := do
   -- Identifier for dialect
   let dialectName := Name.anonymous |>.str d.name
   let dialectAbsName ← mkScopedName dialectName
@@ -111,12 +120,12 @@ def declareDialect (d : Dialect) : CommandElabM Unit := do
 declare_tagged_region command strataDialectCommand "#dialect" "#end"
 
 @[command_elab strataDialectCommand]
-def strataDialectImpl: Lean.Elab.Command.CommandElab := fun (stx : Syntax) => do
+public meta def strataDialectImpl: Lean.Elab.Command.CommandElab := fun (stx : Syntax) => do
   let .atom i v := stx[1]
         | throwError s!"Bad {stx[1]}"
   let .original _ p _ e := i
         | throwError s!"Expected input context"
-  let inputCtx ← getInputContext
+  let inputCtx ← HasInputContext.getInputContext
   let loaded := (dialectExt.getState (←Lean.getEnv)).loaded
   let (_, d, s) ← Strata.Elab.elabDialect {} loaded inputCtx p e
   if !s.errors.isEmpty then
@@ -129,12 +138,12 @@ def strataDialectImpl: Lean.Elab.Command.CommandElab := fun (stx : Syntax) => do
 declare_tagged_region term strataProgram "#strata" "#end"
 
 @[term_elab strataProgram]
-def strataProgramImpl : TermElab := fun stx tp => do
+public meta def strataProgramImpl : TermElab := fun stx tp => do
   let .atom i v := stx[1]
         | throwError s!"Bad {stx[1]}"
   let .original _ p _ e := i
         | throwError s!"Expected input context"
-  let inputCtx ← (getInputContext : CoreM _)
+  let inputCtx ← (HasInputContext.getInputContext : CoreM _)
   let s := (dialectExt.getState (←Lean.getEnv))
   let leanEnv ← Lean.mkEmptyEnvironment 0
   match Elab.elabProgram s.loaded leanEnv inputCtx p e with
@@ -159,7 +168,7 @@ def strataProgramImpl : TermElab := fun stx tp => do
 
 syntax (name := loadDialectCommand) "#load_dialect" str : command
 
-def resolveLeanRelPath {m} [Monad m] [HasInputContext m] [MonadError m] (path : FilePath) : m FilePath := do
+meta def resolveLeanRelPath {m} [Monad m] [HasInputContext m] [MonadError m] (path : FilePath) : m FilePath := do
   if path.isAbsolute then
     pure path
   else
@@ -169,7 +178,7 @@ def resolveLeanRelPath {m} [Monad m] [HasInputContext m] [MonadError m] (path : 
     pure <| leanDir / path
 
 @[command_elab loadDialectCommand]
-def loadDialectImpl: CommandElab := fun (stx : Syntax) => do
+public meta def loadDialectImpl: CommandElab := fun (stx : Syntax) => do
   match stx with
   | `(command|#load_dialect $pathStx) =>
     let dialectPath : FilePath := pathStx.getString

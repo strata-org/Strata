@@ -133,6 +133,7 @@ structure Env where
   program : Program
   substMap : SubstMap
   exprEnv : Expression.EvalEnv
+  datatypes : @Lambda.TypeFactory Visibility
   distinct : List (List Expression.Expr)
   pathConditions : Imperative.PathConditions Expression
   warnings : List (Imperative.EvalWarning Expression)
@@ -145,6 +146,7 @@ def Env.init (empty_factory:=false): Env :=
     program := Program.init,
     substMap := [],
     exprEnv := σ,
+    datatypes := #[],
     distinct := [],
     pathConditions := [],
     warnings := []
@@ -158,10 +160,11 @@ instance : Inhabited Env where
 
 instance : ToFormat Env where
   format s :=
-    let { error, program := _, substMap, exprEnv, distinct := _, pathConditions, warnings, deferred }  := s
+    let { error, program := _, substMap, exprEnv, datatypes, distinct := _, pathConditions, warnings, deferred }  := s
     format f!"Error:{Format.line}{error}{Format.line}\
               Subst Map:{Format.line}{substMap}{Format.line}\
               Expression Env:{Format.line}{exprEnv}{Format.line}\
+              Datatypes:{Format.line}{datatypes}{Format.line}\
               Path Conditions:{Format.line}{PathConditions.format pathConditions}{Format.line}{Format.line}\
               Warnings:{Format.line}{warnings}{Format.line}\
               Deferred Proof Obligations:{Format.line}{deferred}{Format.line}"
@@ -315,6 +318,11 @@ def Env.merge (cond : Expression.Expr) (E1 E2 : Env) : Env :=
     E2
   else
     Env.performMerge cond E1 E2 (by simp_all) (by simp_all)
+
+def Env.addDatatypes (E: Env) (datatypes: List (Lambda.LDatatype Visibility)) : Except Format Env := do
+  let f ← Lambda.TypeFactory.genFactory (T:=BoogieLParams) (datatypes.toArray)
+  let env ← E.addFactory f
+  return { env with datatypes := datatypes.toArray }
 
 end Boogie
 
