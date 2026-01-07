@@ -5,7 +5,7 @@
 -/
 module
 
-import Strata.DDM.Util.String
+import all Strata.DDM.Util.String
 
 namespace Std.Format
 

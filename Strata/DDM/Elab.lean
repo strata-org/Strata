@@ -12,6 +12,8 @@ import Strata.DDM.BuiltinDialects
 import Strata.DDM.Util.Ion.Serialize
 import Strata.Util.IO
 
+import all Strata.DDM.Util.ByteArray
+
 open Lean (Message)
 open Strata.Parser (InputContext)
 

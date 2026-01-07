@@ -6,7 +6,7 @@
 module
 public import Strata.DDM.AST
 public import Strata.DDM.HNF
-import Strata.DDM.Util.Array
+import all Strata.DDM.Util.Array
 
 public section
 namespace Strata

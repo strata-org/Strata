@@ -10,7 +10,8 @@ public import Strata.DDM.Util.ByteArray
 public import Strata.DDM.Util.Decimal
 
 import Std.Data.HashMap
-import Strata.DDM.Util.Array
+import all Strata.DDM.Util.Array
+import all Strata.DDM.Util.ByteArray
 
 set_option autoImplicit false
 
