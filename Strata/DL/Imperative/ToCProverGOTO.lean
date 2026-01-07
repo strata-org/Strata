@@ -311,8 +311,7 @@ def Stmt.toGotoInstructions {P} [G: ToGoto P]
         code := Code.goto label }
     return { trans with
               instructions := trans.instructions.push goto_inst,
-              nextLoc := trans.nextLoc + 1,
-              T := trans.T }
+              nextLoc := trans.nextLoc + 1 }
 termination_by Stmt.sizeOf s
 decreasing_by all_goals simp [*] at * <;> omega
 
