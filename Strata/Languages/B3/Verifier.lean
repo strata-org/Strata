@@ -57,16 +57,35 @@ Use `verifyWithoutDiagnosis` for faster verification without diagnosis - returns
 
 -- Example: Verify a simple B3 program (meta to avoid including in production)
 meta def exampleVerification : IO Unit := do
-  -- Parse B3 program using DDM
-  let b3Program : Program := #strata program B3CST;
+  -- Option 1: Parse from string
+  let programStr := "
+    function f(x : int) : int { x + 1 }
+    procedure test() {
+      check f(5) == 6
+    }
+  "
+  let ddmProgram : Strata.Program ← Strata.B3CST.parse programStr
+
+  -- Option 2: Use DDM syntax directly
+  let ddmProgram2 : Strata.Program := #strata program B3CST;
     function f(x : int) : int { x + 1 }
     procedure test() {
       check f(5) == 6
     }
   #end
 
-  -- Convert to B3 AST
-  let b3AST : B3AST.Program SourceRange ← match programToB3AST b3Program with
+  -- Convert Strata.Program (DDM) to B3CST.Program
+  let b3CST : B3CST.Program SourceRange ← match B3CST.Program.ofAst ddmProgram with
+    | .ok cst => pure cst
+    | .error msg => throw (IO.userError s!"Failed to convert to B3 CST: {msg}")
+
+  -- Convert B3CST.Program to B3AST.Program
+  let (b3AST, errors) := B3.programFromCST B3.FromCSTContext.empty b3CST
+  if !errors.isEmpty then
+    throw (IO.userError s!"CST to AST errors: {errors}")
+
+  -- Or use the convenience helper that does both steps:
+  let b3AST2 : B3AST.Program SourceRange ← match programToB3AST ddmProgram with
     | .ok ast => pure ast
     | .error msg => throw (IO.userError s!"Failed to parse: {msg}")
 
