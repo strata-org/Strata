@@ -39,28 +39,13 @@ def resultToMessage : Boogie.Result → String
 
 /-- Extract location information from metadata -/
 def extractLocation (md : Imperative.MetaData Expression) : Option Location := do
-  let file ← md.findElem Imperative.MetaData.fileLabel
-  let line ← md.findElem Imperative.MetaData.startLineLabel
-  let col ← md.findElem Imperative.MetaData.startColumnLabel
-
-  let uri? := match file.value with
-              | .msg m => some m
-              | _ => none
-
-  let startLine? := match line.value with
-                    | .msg s => s.toNat?
-                    | _ => none
-
-  let startColumn? := match col.value with
-                      | .msg s => s.toNat?
-                      | _ => none
-
-  match uri?, startLine?, startColumn? with
-  | some uri, some startLine, some startColumn => pure { uri, startLine, startColumn }
-  | some uri, some startLine, none => pure { uri, startLine, startColumn := 1 }
-  | some uri, none, some startColumn => pure { uri, startLine := 1, startColumn }
-  | some uri, none, none => pure { uri, startLine := 1, startColumn := 1 }
-  | none, _, _ => none
+  let fileRangeElem ← md.findElem Imperative.MetaData.fileRange
+  match fileRangeElem.value with
+  | .fileRange fr =>
+    let uri := match fr.file with
+               | .file path => path
+    pure { uri, startLine := fr.start.line, startColumn := fr.start.column }
+  | _ => none
 
 /-- Convert a VCResult to a SARIF Result -/
 def vcResultToSarifResult (vcr : VCResult) : Strata.Sarif.Result :=

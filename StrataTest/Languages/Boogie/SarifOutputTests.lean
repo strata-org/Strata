@@ -28,11 +28,10 @@ open Strata.Sarif (Level Message)
 
 /-- Create a simple metadata with file and location information -/
 def makeMetadata (file : String) (line col : Nat) : MetaData Expression :=
-  #[
-    { fld := .label "file", value := .msg file },
-    { fld := .label "startLine", value := .msg (toString line) },
-    { fld := .label "startColumn", value := .msg (toString col) }
-  ]
+  let uri := Imperative.Uri.file file
+  let pos : Lean.Position := { line := line, column := col }
+  let fr : Imperative.FileRange := { file := uri, start := pos, ending := pos }
+  #[{ fld := Imperative.MetaData.fileRange, value := .fileRange fr }]
 
 /-- Create a simple proof obligation for testing -/
 def makeObligation (label : String) (md : MetaData Expression := #[]) : ProofObligation Expression :=
@@ -93,11 +92,10 @@ def makeVCResult (label : String) (result : Boogie.Result) (md : MetaData Expres
 -- Test location extraction from empty metadata
 #guard (extractLocation #[] == none)
 
--- Test location extraction from incomplete metadata (missing column)
+-- Test location extraction from metadata with wrong value type
 #guard
   let md : MetaData Expression := #[
-    { fld := .label "file", value := .msg "/test/file.st" },
-    { fld := .label "startLine", value := .msg "10" }
+    { fld := Imperative.MetaData.fileRange, value := .msg "not a fileRange" }
   ]
   (extractLocation md == none)
 
