@@ -26,51 +26,38 @@ open Strata.B3.Verifier (UF_ARG_PLACEHOLDER)
 -- B3 Verification Results
 ---------------------------------------------------------------------
 
-/-- Result of a proof check (check/assert statement).
-Represents the SMT solver's decision. -/
-inductive ProofResult where
-  | proved : ProofResult
-  | counterexample : ProofResult
-  | proofUnknown : ProofResult
+/-- Verification outcome when check fails -/
+inductive VerificationError where
+  | counterexample : VerificationError  -- Possibly wrong (sat)
+  | unknown : VerificationError  -- Couldn't determine
+  | refuted : VerificationError  -- Proved false/unreachable (unsat)
 
-def ProofResult.isError : ProofResult → Bool
-  | .proved => false
-  | .counterexample => true
-  | .proofUnknown => true
+/-- Verification outcome when check succeeds -/
+inductive VerificationSuccess where
+  | verified : VerificationSuccess  -- Proved
+  | reachable : VerificationSuccess  -- Reachability confirmed
+  | reachabilityUnknown : VerificationSuccess  -- Couldn't determine, but not an error
 
-/-- Result of a reachability check (reach statement).
-Represents the SMT solver's decision. -/
-inductive ReachabilityResult where
-  | unreachable : ReachabilityResult
-  | reachable : ReachabilityResult
-  | reachabilityUnknown : ReachabilityResult
-
-def ReachabilityResult.isError : ReachabilityResult → Bool
-  | .unreachable => true
-  | .reachable => false
-  | .reachabilityUnknown => false
-
-/-- Unified verification result (proof or reachability).
-Allows uniform handling of both verification types. -/
+/-- Unified verification result -/
 inductive VerificationResult where
-  | proofResult : ProofResult → VerificationResult
-  | reachabilityResult : ReachabilityResult → VerificationResult
+  | error : VerificationError → VerificationResult
+  | success : VerificationSuccess → VerificationResult
 
 def VerificationResult.isError : VerificationResult → Bool
-  | .proofResult r => r.isError
-  | .reachabilityResult r => r.isError
+  | .error _ => true
+  | .success _ => false
 
 def VerificationResult.fromDecisionForProve (d : Decision) : VerificationResult :=
   match d with
-  | .unsat => .proofResult .proved
-  | .sat => .proofResult .counterexample
-  | .unknown => .proofResult .proofUnknown
+  | .unsat => .success .verified
+  | .sat => .error .counterexample
+  | .unknown => .error .unknown
 
 def VerificationResult.fromDecisionForReach (d : Decision) : VerificationResult :=
   match d with
-  | .unsat => .reachabilityResult .unreachable
-  | .sat => .reachabilityResult .reachable
-  | .unknown => .reachabilityResult .reachabilityUnknown
+  | .unsat => .error .refuted
+  | .sat => .success .reachable
+  | .unknown => .success .reachabilityUnknown
 
 ---------------------------------------------------------------------
 -- Verification State

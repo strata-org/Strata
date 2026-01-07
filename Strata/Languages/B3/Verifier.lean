@@ -109,6 +109,7 @@ meta def exampleVerification : IO Unit := do
       for expr in pathCondition do
         IO.println s!"    {B3.Verifier.formatExpression ddmProgram expr B3.ToCSTContext.empty}"
 
+  IO.println s!"Statement: {B3.Verifier.formatStatement ddmProgram verificationReport.context.stmt B3.ToCSTContext.empty}"
   analyseVerificationReport verificationReport
 
   let (.some diagnosis) ← pure diagnosisOpt | throw (IO.userError "Expected a diagnosis")
@@ -125,7 +126,8 @@ meta def exampleVerification : IO Unit := do
   pure ()
 
 /--
-info: ✗ Counterexample (possibly wrong)
+info: Statement: check 8 == 8 && f(5) == 7
+✗ Counterexample (possibly wrong)
   Path condition:
     forall x : int pattern f(x) f(x) == x + 1
   Found 1 diagnosed failures

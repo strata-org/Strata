@@ -7,6 +7,7 @@
 import Strata.Languages.B3.DDMTransform.DefinitionAST
 import Strata.DL.SMT.SMT
 import Strata.DL.SMT.Factory
+import Strata.Languages.B3.DDMTransform.Conversion
 
 /-!
 # B3 AST to SMT Term Conversion
@@ -173,13 +174,29 @@ def validatePatternExprs (patterns : Array (B3AST.Expression M)) (patternM : M) 
       .ok ()
 
 ---------------------------------------------------------------------
+-- Metadata Extraction
+---------------------------------------------------------------------
+
+/-- Extract metadata from any B3 expression -/
+def getExpressionMetadata : B3AST.Expression M → M
+  | .binaryOp m _ _ _ => m
+  | .literal m _ => m
+  | .id m _ => m
+  | .ite m _ _ _ => m
+  | .unaryOp m _ _ => m
+  | .functionCall m _ _ => m
+  | .labeledExpr m _ _ => m
+  | .letExpr m _ _ _ => m
+  | .quantifierExpr m _ _ _ _ _ => m
+
+---------------------------------------------------------------------
 -- Expression Conversion
 ---------------------------------------------------------------------
 
 /-- Convert B3 expressions to SMT terms with error accumulation -/
 def expressionToSMT (ctx : ConversionContext) (e : B3AST.Expression M) : ConversionResult M :=
   match e with
-  | .literal m lit =>
+  | .literal _m lit =>
       ConversionResult.ok (literalToSMT lit)
 
   | .id m idx =>
@@ -187,7 +204,7 @@ def expressionToSMT (ctx : ConversionContext) (e : B3AST.Expression M) : Convers
       | some name => ConversionResult.ok (Term.var ⟨name, .int⟩)
       | none => ConversionResult.withError (ConversionError.unboundVariable idx m)
 
-  | .ite m cond thn els =>
+  | .ite _m cond thn els =>
       let condResult := expressionToSMT ctx cond
       let thnResult := expressionToSMT ctx thn
       let elsResult := expressionToSMT ctx els
@@ -195,14 +212,14 @@ def expressionToSMT (ctx : ConversionContext) (e : B3AST.Expression M) : Convers
       let term := Term.app .ite [condResult.term, thnResult.term, elsResult.term] thnResult.term.typeOf
       { term := term, errors := errors }
 
-  | .binaryOp m op lhs rhs =>
+  | .binaryOp _m op lhs rhs =>
       let lhsResult := expressionToSMT ctx lhs
       let rhsResult := expressionToSMT ctx rhs
       let errors := lhsResult.errors ++ rhsResult.errors
       let term := (binaryOpToSMT op) lhsResult.term rhsResult.term
       { term := term, errors := errors }
 
-  | .unaryOp m op arg =>
+  | .unaryOp _m op arg =>
       let argResult := expressionToSMT ctx arg
       let term := (unaryOpToSMT op) argResult.term
       { term := term, errors := argResult.errors }
@@ -219,10 +236,10 @@ def expressionToSMT (ctx : ConversionContext) (e : B3AST.Expression M) : Convers
       let term := Term.app (.uf uf) argTerms .int
       { term := term, errors := errors }
 
-  | .labeledExpr m _ expr =>
+  | .labeledExpr _m _ expr =>
       expressionToSMT ctx expr
 
-  | .letExpr m _var value body =>
+  | .letExpr _m _var value body =>
       let ctx' := ctx.push _var.val
       let valueResult := expressionToSMT ctx value
       let bodyResult := expressionToSMT ctx' body
@@ -285,5 +302,12 @@ def expressionToSMT (ctx : ConversionContext) (e : B3AST.Expression M) : Convers
       have := Array.sizeOf_lt_of_mem h1
       have Hpsz := Array.sizeOf_lt_of_mem h2
       simp at Hpsz; omega
+
+def formatExpression (prog : Program) (expr : B3AST.Expression SourceRange) (ctx: B3.ToCSTContext): String :=
+  let (cstExpr, _) := B3.expressionToCST ctx expr
+  let ctx := FormatContext.ofDialects prog.dialects prog.globalContext {}
+  let fmtState : FormatState := { openDialects := prog.dialects.toList.foldl (init := {}) fun a (dialect : Dialect) => a.insert dialect.name }
+  let formatted := (mformat (ArgF.op cstExpr.toAst) ctx fmtState).format.pretty.trim
+  formatted
 
 end Strata.B3.Verifier
