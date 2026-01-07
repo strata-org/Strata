@@ -58,6 +58,7 @@ def main (args : List String) : IO UInt32 := do
   | .ok (opts, file) => do
     let text ← Strata.Util.readInputSource file
     let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
+    let files := Map.insert Map.empty (Imperative.Uri.file file) inputCtx.fileMap
     let dctx := Elab.LoadedDialects.builtin
     let dctx := dctx.addDialect! Boogie
     let dctx := dctx.addDialect! C_Simp
@@ -87,7 +88,7 @@ def main (args : List String) : IO UInt32 := do
             else
               verify "z3" pgm inputCtx opts
         for vcResult in vcResults do
-          let posStr := match Boogie.formatPositionMetaData vcResult.obligation.metadata with
+          let posStr := match Boogie.formatPositionMetaData files vcResult.obligation.metadata with
                         | .none => "<none>"
                         | .some str => s!"{str}"
           println! f!"{posStr} [{vcResult.obligation.label}]: {vcResult.result}"

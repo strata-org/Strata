@@ -291,11 +291,12 @@ def laurelAnalyzeCommand : Command where
 
     -- Verify the combined program and get diagnostics
     let solverName : String := "z3"
-    let diagnostics ← Laurel.verifyToDiagnostics solverName combinedProgram
+
+    let diagnostics ← Laurel.verifyToDiagnosticsModel solverName combinedProgram
 
     -- Print diagnostics to stdout
     for diag in diagnostics do
-      IO.println s!"{diag.start.line}:{diag.start.column}-{diag.ending.line}:{diag.ending.column}: {diag.message}"
+      IO.println s!"{repr diag.fileRange.file}:{diag.fileRange.range.start}-{diag.fileRange.range.stop}: {diag.message}"
 
 def commandList : List Command := [
       javaGenCommand,

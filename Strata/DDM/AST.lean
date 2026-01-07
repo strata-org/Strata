@@ -26,6 +26,7 @@ theorem of_mem_pop {α} {a : α} {as : Array α} : a ∈ as.pop → a ∈ as := 
 end Strata.Array
 
 namespace Strata
+open Std (ToFormat Format format)
 
 abbrev DialectName := String
 
@@ -320,7 +321,10 @@ structure SourceRange where
   start : String.Pos.Raw
   /-- One past the end of the range. -/
   stop : String.Pos.Raw
-deriving BEq, Inhabited, Repr
+deriving DecidableEq, Inhabited, Repr
+
+instance : ToFormat SourceRange where
+ format fr := f!"{fr.start}-{fr.stop}"
 
 namespace SourceRange
 

@@ -17,6 +17,7 @@ import Strata.DL.SMT.CexParser
 namespace Strata.SMT.Encoder
 
 open Strata.SMT.Encoder
+open Imperative (Uri)
 
 -- Derived from Strata.SMT.Encoder.encode.
 def encodeBoogie (ctx : Boogie.SMT.Context) (prelude : SolverM Unit) (ts : List Term) :
@@ -143,13 +144,17 @@ def solverResult (vars : List (IdentT LMonoTy Visibility)) (ans : String)
 
 open Imperative
 
-def formatPositionMetaData [BEq P.Ident] [ToFormat P.Expr] (md : MetaData P): Option Format := do
+def formatPositionMetaData [BEq P.Ident] [ToFormat P.Expr]
+  (files: Map Imperative.Uri Lean.FileMap)
+  (md : MetaData P): Option Format := do
   let fileRangeElem ← md.findElem MetaData.fileRange
   match fileRangeElem.value with
-  | .fileRange m =>
-    let baseName := match m.file with
+  | .fileRange fileRange =>
+    let fileMap := (files.find? fileRange.file).get!
+    let startPos := fileMap.toPosition fileRange.range.start
+    let baseName := match fileRange.file with
                     | .file path => (path.splitToList (· == '/')).getLast!
-    return f!"{baseName}({m.start.line}, {m.start.column})"
+    return f!"{baseName}({startPos.line}, {startPos.column})"
   | _ => none
 
 structure VCResult where
@@ -363,13 +368,12 @@ def verify
     panic! s!"DDM Transform Error: {repr errors}"
 
 /-- A diagnostic produced by analyzing a file -/
-structure Diagnostic where
-  start : Lean.Position
-  ending : Lean.Position
+structure DiagnosticModel where
+  fileRange : Imperative.FileRange
   message : String
   deriving Repr, BEq
 
-def toDiagnostic (vcr : Boogie.VCResult) : Option Diagnostic := do
+def toDiagnosticModel (vcr : Boogie.VCResult) : Option DiagnosticModel := do
   -- Only create a diagnostic if the result is not .unsat (i.e., verification failed)
   match vcr.result with
   | .unsat => none  -- Verification succeeded, no diagnostic
@@ -377,16 +381,50 @@ def toDiagnostic (vcr : Boogie.VCResult) : Option Diagnostic := do
     -- Extract file range from metadata
     let fileRangeElem ← vcr.obligation.metadata.findElem Imperative.MetaData.fileRange
     match fileRangeElem.value with
-    | .fileRange range =>
+    | .fileRange fileRange =>
       let message := match result with
         | .sat _ => "assertion does not hold"
         | .unknown => "assertion verification result is unknown"
         | .err msg => s!"verification error: {msg}"
         | _ => "verification failed"
+
       some {
         -- Subtract headerOffset to account for program header we added
-        start := { line := range.start.line, column := range.start.column }
-        ending := { line := range.ending.line, column := range.ending.column }
+        fileRange := fileRange
+        message := message
+      }
+    | _ => none
+
+/-- A diagnostic produced by analyzing a file -/
+structure Diagnostic where
+  start : Lean.Position
+  ending : Lean.Position
+  message : String
+  deriving Repr, BEq
+
+
+def toDiagnostic (files: Map Imperative.Uri Lean.FileMap) (vcr : Boogie.VCResult) : Option Diagnostic := do
+  -- Only create a diagnostic if the result is not .unsat (i.e., verification failed)
+  match vcr.result with
+  | .unsat => none  -- Verification succeeded, no diagnostic
+  | result =>
+    -- Extract file range from metadata
+    let fileRangeElem ← vcr.obligation.metadata.findElem Imperative.MetaData.fileRange
+    match fileRangeElem.value with
+    | .fileRange fileRange =>
+      let message := match result with
+        | .sat _ => "assertion does not hold"
+        | .unknown => "assertion verification result is unknown"
+        | .err msg => s!"verification error: {msg}"
+        | _ => "verification failed"
+
+      let fileMap := (files.find? fileRange.file).get!
+      let startPos := fileMap.toPosition fileRange.range.start
+      let endPos := fileMap.toPosition fileRange.range.stop
+      some {
+        -- Subtract headerOffset to account for program header we added
+        start := { line := startPos.line, column := startPos.column }
+        ending := { line := endPos.line, column := endPos.column }
         message := message
       }
     | _ => none

@@ -6,6 +6,7 @@
 
 import Strata.DL.Imperative.PureExpr
 import Strata.DL.Util.DecidableEq
+import Strata.DDM.AST
 import Lean.Data.Position
 
 namespace Imperative
@@ -67,19 +68,18 @@ instance [Repr P.Ident] : Repr (MetaDataElem.Field P) where
 
 inductive Uri where
   | file (path: String)
-  deriving DecidableEq
+  deriving DecidableEq, Repr
 
 instance : ToFormat Uri where
  format fr := match fr with | .file path => path
 
 structure FileRange where
   file: Uri
-  start: Lean.Position
-  ending: Lean.Position
-  deriving DecidableEq
+  range: Strata.SourceRange
+  deriving DecidableEq, Repr
 
 instance : ToFormat FileRange where
- format fr := f!"{fr.file}:{fr.start}-{fr.ending}"
+ format fr := f!"{fr.file}:{fr.range}"
 
 /-- A metadata value, which can be either an expression, a message, or a fileRange -/
 inductive MetaDataElem.Value (P : PureExpr) where

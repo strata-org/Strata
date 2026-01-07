@@ -82,8 +82,12 @@ def verifyToVcResults (smtsolver : String) (program : Program)
   EIO.toIO (fun f => IO.Error.userError (toString f))
       (Boogie.verify smtsolver boogieProgram options)
 
-def verifyToDiagnostics (smtsolver : String) (program : Program): IO (Array Diagnostic)  := do
+def verifyToDiagnostics (smtsolver : String) (files: Map Imperative.Uri Lean.FileMap) (program : Program): IO (Array Diagnostic) := do
   let results <- verifyToVcResults smtsolver program
-  return results.filterMap toDiagnostic
+  return results.filterMap (toDiagnostic files)
+
+def verifyToDiagnosticsModel (smtsolver : String) (program : Program): IO (Array DiagnosticModel) := do
+  let results <- verifyToVcResults smtsolver program
+  return results.filterMap toDiagnosticModel
 
 end Laurel

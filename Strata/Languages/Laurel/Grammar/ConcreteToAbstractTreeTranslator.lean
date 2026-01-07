@@ -34,10 +34,8 @@ def TransM.error [Inhabited α] (msg : String) : TransM α := do
 
 def SourceRange.toMetaData (ictx : InputContext) (sr : SourceRange) : Imperative.MetaData Boogie.Expression :=
   let file := ictx.fileName
-  let startPos := ictx.fileMap.toPosition sr.start
-  let endPos := ictx.fileMap.toPosition sr.stop
   let uri : Uri := .file file
-  let fileRangeElt := ⟨ Imperative.MetaDataElem.Field.label "fileRange", .fileRange ⟨ uri, startPos, endPos ⟩ ⟩
+  let fileRangeElt := ⟨ Imperative.MetaDataElem.Field.label "fileRange", .fileRange ⟨ uri, sr.start, sr.stop ⟩ ⟩
   #[fileRangeElt]
 
 def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Boogie.Expression) :=
