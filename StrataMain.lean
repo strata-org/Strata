@@ -18,7 +18,7 @@ import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
 import Strata.Languages.Laurel.LaurelToBoogieTranslator
 
 def exitFailure {α} (message : String) : IO α := do
-  IO.eprintln (message  ++ "\n\nRun strata --help for additional help.")
+  IO.eprintln ("Exception: " ++ message  ++ "\n\nRun strata --help for additional help.")
   IO.Process.exit 1
 
 namespace Strata
@@ -295,6 +295,7 @@ def laurelAnalyzeCommand : Command where
     let diagnostics ← Laurel.verifyToDiagnosticsModel solverName combinedProgram
 
     -- Print diagnostics to stdout
+    IO.println s!"==== DIAGNOSTICS ===="
     for diag in diagnostics do
       IO.println s!"{Std.format diag.fileRange.file}:{diag.fileRange.range.start}-{diag.fileRange.range.stop}: {diag.message}"
 
