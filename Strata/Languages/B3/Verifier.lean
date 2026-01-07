@@ -4,11 +4,15 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.B3.Verifier.Conversion
+import Strata.Languages.B3.Verifier.Expression
 import Strata.Languages.B3.Verifier.Formatter
 import Strata.Languages.B3.Verifier.State
-import Strata.Languages.B3.Verifier.Batch
+import Strata.Languages.B3.Verifier.Program
 import Strata.Languages.B3.Verifier.Diagnosis
+
+open Strata
+open Strata.B3.Verifier
+open Strata.SMT
 
 /-!
 # B3 Verifier
@@ -43,59 +47,56 @@ formatTermDirect (Formatter)
 Diagnosis (if failed)
 ```
 
-## Module Organization
+## API Choice
 
-- **State.lean** - Pure state types and basic operations
-- **Conversion.lean** - B3 AST → SMT Term conversion with error handling
-- **Formatter.lean** - SMT Term → SMT-LIB string formatting
-- **Statements.lean** - Statement execution (check, assert, assume, reach)
-- **Batch.lean** - Batch verification API and program state building
-- **Diagnosis.lean** - Automatic failure diagnosis and batch verification with diagnosis
-- **Transform/FunctionToAxiom.lean** - Function definition → axiom transformation
-
-## Architecture
-
-**Incremental API** (for interactive debugging):
-- `initVerificationState` - Spawn solver and create initial state
-- `addFunctionDecl` - Declare a function (sends to solver)
-- `addAxiom` - Add an axiom (sends to solver)
-- `push` - Push solver scope
-- `pop` - Pop solver scope
-- `prove` - Prove a property holds (check statement)
-- `reach` - Check if a property is reachable (reach statement)
-- `closeVerificationState` - Exit solver cleanly
-
-**Batch API** (built on incremental):
-- `verifyProgram` - Verify entire B3 program
-- `verifyWithDiagnosis` - Verify with automatic failure diagnosis
-- `programToSMTCommands` - Generate SMT commands for inspection
-
-**Diagnosis API** (automatic debugging):
-- `diagnoseFailure` - Automatically narrow down root cause of failure
-- Strategies: conjunction splitting, when-clause testing (future), inlining (future)
+Use `verify` for automatic diagnosis (recommended) - provides detailed error analysis.
+Use `verifyWithoutDiagnosis` for faster verification without diagnosis - returns raw results.
 
 ## Usage
-
-```lean
--- Batch verification
-let results ← verifyProgram myB3Program
-
--- Batch with automatic diagnosis
-let reports ← verifyWithDiagnosis myB3Program
-
--- Incremental verification
-let state ← initVerificationState
-let state ← addFunctionDecl state myFunctionDecl
-let state ← addAxiom state myAxiomTerm
-let result ← prove state myPropertyTerm sourceDecl sourceStmt
-closeVerificationState state
-```
-
-## Key Design Principles
-
-1. **Single solver reuse** - ONE solver for entire program
-2. **Push/pop for isolation** - Each check uses push/pop
-3. **Provable equivalence** - Batch mode = incremental API in sequence
-4. **Automatic diagnosis** - Failures automatically narrowed to root cause
-5. **SMT Term intermediate** - B3 AST → SMT Term → Solver
 -/
+
+-- Example: Verify a simple B3 program (meta to avoid including in production)
+meta def exampleVerification : IO Unit := do
+  -- Parse B3 program using DDM
+  let b3Program : Program := #strata program B3CST;
+    function f(x : int) : int { x + 1 }
+    procedure test() {
+      check f(5) == 6
+    }
+  #end
+
+  -- Convert to B3 AST
+  let b3AST : B3AST.Program SourceRange ← match programToB3AST b3Program with
+    | .ok ast => pure ast
+    | .error msg => throw (IO.userError s!"Failed to parse: {msg}")
+
+  -- Create solver and verify
+  let solver : Solver ← createInteractiveSolver "z3"
+  let reports : List ProcedureReport ← verify b3AST solver
+  let _ ← (Solver.exit).run solver
+
+  -- Destructure results to show types (self-documenting)
+  let [report] ← pure reports | throw (IO.userError "Expected one procedure")
+  let _procedureName : String := report.procedureName
+  let results : List (VerificationReport × Option DiagnosisResult) := report.results
+
+  let [(verificationReport, diagnosisOpt)] ← pure results | throw (IO.userError "Expected one result")
+  let context : VerificationContext := verificationReport.context
+  let _result : VerificationResult := verificationReport.result
+  let _model : Option String := verificationReport.model
+
+  let _decl : B3AST.Decl SourceRange := context.decl
+  let _stmt : B3AST.Statement SourceRange := context.stmt
+  let _pathCondition : List (B3AST.Expression SourceRange) := context.pathCondition
+
+  match diagnosisOpt with
+  | some diagnosis =>
+      let diagnosedFailures : List DiagnosedFailure := diagnosis.diagnosedFailures
+      let [failure] ← pure diagnosedFailures | pure ()
+      let _expression : B3AST.Expression SourceRange := failure.expression
+      let _failurePathCondition : List (B3AST.Expression SourceRange) := failure.pathCondition
+      let _isProvablyFalse : Bool := failure.isProvablyFalse
+      pure ()
+  | none => pure ()
+
+  pure ()

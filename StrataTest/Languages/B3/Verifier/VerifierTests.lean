@@ -7,6 +7,7 @@
 import Strata.Languages.B3.Verifier
 import Strata.Languages.B3.DDMTransform.ParseCST
 import Strata.Languages.B3.DDMTransform.Conversion
+import Strata.DL.SMT.Solver
 
 /-!
 # B3 Verifier Integration Tests
@@ -71,6 +72,7 @@ namespace B3.Verifier.Tests
 
 open Strata
 open Strata.B3.Verifier
+open Strata.SMT
 
 ---------------------------------------------------------------------
 -- Test Helpers
@@ -80,21 +82,6 @@ open Strata.B3.Verifier
 private def MSG_COULD_NOT_PROVE := "could not prove"
 private def MSG_IMPOSSIBLE := "it is impossible that"
 private def MSG_UNDER_ASSUMPTIONS := "under the assumptions"
-
-def programToB3AST (prog : Program) : B3AST.Program SourceRange :=
-  match prog.commands.toList with
-  | [op] =>
-      if op.name.name == "command_program" then
-        match op.args.toList with
-        | [ArgF.op progOp] =>
-            match B3CST.Program.ofAst progOp with
-            | .ok cstProg =>
-                let (ast, _) := B3.programFromCST B3.FromCSTContext.empty cstProg
-                ast
-            | .error _ => default
-        | _ => default
-      else default
-  | _ => default
 
 def formatSourceLocation (baseOffset : String.Pos.Raw) (sr : SourceRange) : String :=
   let relativePos := sr.start.byteIdx - baseOffset.byteIdx
@@ -169,8 +156,13 @@ def flattenConjunction : B3AST.Expression SourceRange → List (B3AST.Expression
   termination_by e => SizeOf.sizeOf e
 
 def testVerification (prog : Program) : IO Unit := do
-  let ast := programToB3AST prog
-  let reports ← verifyWithDiagnosis ast
+  let result : Except String (B3AST.Program SourceRange) := programToB3AST prog
+  let ast ← match result with
+    | .ok ast => pure ast
+    | .error msg => throw (IO.userError s!"Parse error: {msg}")
+  let solver ← createInteractiveSolver "z3"
+  let reports ← verify ast solver
+  let _ ← (Solver.exit).run solver
   for report in reports do
     for (result, diagnosis) in report.results do
       match result.context.decl with

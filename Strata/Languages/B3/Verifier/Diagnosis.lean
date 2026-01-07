@@ -5,7 +5,7 @@
 -/
 
 import Strata.Languages.B3.Verifier.State
-import Strata.Languages.B3.Verifier.Conversion
+import Strata.Languages.B3.Verifier.Expression
 import Strata.Languages.B3.Verifier.Statements
 
 /-!
