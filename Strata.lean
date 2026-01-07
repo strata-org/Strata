@@ -15,6 +15,9 @@ import Strata.DL.SMT.SMT
 import Strata.DL.Lambda.Lambda
 import Strata.DL.Imperative.Imperative
 
+/- Utilities -/
+import Strata.Util.Sarif
+
 /- Boogie -/
 import Strata.Languages.Boogie.StatementSemantics
 import Strata.Languages.Boogie.SarifOutput

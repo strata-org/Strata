@@ -23,25 +23,25 @@ def isSuccessVCResult (vcResult : Boogie.VCResult) :=
 def isFailureVCResult (vcResult : Boogie.VCResult) :=
   !isSuccessResult vcResult.result
 
-def parseOptions (args : List String) : Except Std.Format (Options × String × Bool) :=
-  go Options.quiet args false
+def parseOptions (args : List String) : Except Std.Format (Options × String) :=
+  go Options.quiet args
     where
-      go : Options → List String → Bool → Except Std.Format (Options × String × Bool)
-      | opts, "--verbose" :: rest, sarif => go {opts with verbose := true} rest sarif
-      | opts, "--check" :: rest, sarif => go {opts with checkOnly := true} rest sarif
-      | opts, "--type-check" :: rest, sarif => go {opts with typeCheckOnly := true} rest sarif
-      | opts, "--parse-only" :: rest, sarif => go {opts with parseOnly := true} rest sarif
-      | opts, "--stop-on-first-error" :: rest, sarif => go {opts with stopOnFirstError := true} rest sarif
-      | opts, "--sarif" :: rest, _ => go opts rest true
-      | opts, "--output-format=sarif" :: rest, _ => go opts rest true
-      | opts, "--solver-timeout" :: secondsStr :: rest, sarif =>
+      go : Options → List String → Except Std.Format (Options × String)
+      | opts, "--verbose" :: rest => go {opts with verbose := true} rest
+      | opts, "--check" :: rest => go {opts with checkOnly := true} rest
+      | opts, "--type-check" :: rest => go {opts with typeCheckOnly := true} rest
+      | opts, "--parse-only" :: rest => go {opts with parseOnly := true} rest
+      | opts, "--stop-on-first-error" :: rest => go {opts with stopOnFirstError := true} rest
+      | opts, "--sarif" :: rest => go {opts with outputSarif := true} rest
+      | opts, "--output-format=sarif" :: rest => go {opts with outputSarif := true} rest
+      | opts, "--solver-timeout" :: secondsStr :: rest =>
          let n? := String.toNat? secondsStr
          match n? with
          | .none => .error f!"Invalid number of seconds: {secondsStr}"
-         | .some n => go {opts with solverTimeout := n} rest sarif
-      | opts, [file], sarif => pure (opts, file, sarif)
-      | _, [], _ => .error "StrataVerify requires a file as input"
-      | _, args, _ => .error f!"Unknown options: {args}"
+         | .some n => go {opts with solverTimeout := n} rest
+      | opts, [file] => pure (opts, file)
+      | _, [] => .error "StrataVerify requires a file as input"
+      | _, args => .error f!"Unknown options: {args}"
 
 def usageMessage : Std.Format :=
   f!"Usage: StrataVerify [OPTIONS] <file.\{boogie, csimp}.st>{Std.Format.line}\
@@ -60,7 +60,7 @@ def usageMessage : Std.Format :=
 def main (args : List String) : IO UInt32 := do
   let parseResult := parseOptions args
   match parseResult with
-  | .ok (opts, file, outputSarif) => do
+  | .ok (opts, file) => do
     let text ← Strata.Util.readInputSource file
     let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
     let dctx := Elab.LoadedDialects.builtin
@@ -93,7 +93,7 @@ def main (args : List String) : IO UInt32 := do
               verify "z3" pgm inputCtx opts
 
         -- Output in SARIF format if requested
-        if outputSarif then
+        if opts.outputSarif then
           -- Skip SARIF generation for C_Simp files because the translation from C_Simp to
           -- Boogie discards metadata (file, line, column information), making SARIF output
           -- less useful. The vcResultsToSarif function would work type-wise (both produce
@@ -102,7 +102,7 @@ def main (args : List String) : IO UInt32 := do
             println! "SARIF output is not supported for C_Simp files (.csimp.st) because location metadata is not preserved during translation to Boogie."
           else
             let sarifDoc := Boogie.Sarif.vcResultsToSarif vcResults
-            let sarifJson := Boogie.Sarif.toPrettyJsonString sarifDoc
+            let sarifJson := Strata.Sarif.toPrettyJsonString sarifDoc
             let sarifFile := file ++ ".sarif"
             try
               IO.FS.writeFile sarifFile sarifJson

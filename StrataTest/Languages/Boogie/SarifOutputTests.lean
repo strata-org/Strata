@@ -22,6 +22,7 @@ namespace Boogie.Sarif.Tests
 
 open Lean (Json)
 open Imperative
+open Strata.Sarif (Level Message)
 
 /-! ## Test Helpers -/
 
@@ -211,7 +212,7 @@ def makeVCResult (label : String) (result : Boogie.Result) (md : MetaData Expres
     makeVCResult "test_assertion" .unsat md
   ]
   let sarif := vcResultsToSarif vcResults
-  let jsonStr := toJsonString sarif
+  let jsonStr := Strata.Sarif.toJsonString sarif
 
   -- Check that the JSON contains expected fields
   if (jsonStr.splitOn "\"version\":\"2.1.0\"").length > 1 &&
@@ -228,7 +229,7 @@ def makeVCResult (label : String) (result : Boogie.Result) (md : MetaData Expres
     makeVCResult "simple_test" .unsat
   ]
   let sarif := vcResultsToSarif vcResults
-  let prettyJson := toPrettyJsonString sarif
+  let prettyJson := Strata.Sarif.toPrettyJsonString sarif
 
   -- Pretty JSON should contain newlines for formatting
   if prettyJson.contains '\n' then
