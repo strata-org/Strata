@@ -3,43 +3,24 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
+public import Strata.DDM.Elab.DeclM
+public import Strata.DDM.Ion
 
 import Strata.DDM.Elab.DialectM
-import Strata.DDM.BuiltinDialects.StrataDDL
-import Strata.DDM.BuiltinDialects.StrataHeader
-import Strata.DDM.Util.ByteArray
-import Strata.DDM.Ion
+import Strata.DDM.BuiltinDialects
+import Strata.DDM.Util.Ion.Serialize
+import Strata.Util.IO
 
-open Lean (
-    Message
-    MessageData
-    Name
-    Syntax
-    SyntaxNodeKind
-    TSyntax
-    TSyntaxArray
-    MacroM
-    mkEmptyEnvironment    mkStringMessage
-    quote
-    nullKind
-  )
+open Lean (Message)
+open Strata.Parser (InputContext)
 
-open Strata.Parser (DeclParser InputContext ParsingContext ParserState)
-
-namespace Strata
-
-
-namespace Elab
-
-namespace LoadedDialects
-
-def builtin : LoadedDialects := .ofDialects! #[initDialect, headerDialect, StrataDDL]
-
-end LoadedDialects
+public section
+namespace Strata.Elab
 
 namespace DeclState
 
-def initDeclState : DeclState :=
+private def initDeclState : DeclState :=
   let s : DeclState := {
     openDialects := #[]
     openDialectSet := {}
@@ -81,7 +62,7 @@ partial def elabHeader
   else
     (default, s.errors, 0)
 
-partial def runCommand (leanEnv : Lean.Environment) (commands : Array Operation) (stopPos : String.Pos.Raw) : DeclM (Array Operation) := do
+private partial def runCommand (leanEnv : Lean.Environment) (commands : Array Operation) (stopPos : String.Pos.Raw) : DeclM (Array Operation) := do
   let iniPos := (←get).pos
   if iniPos >= stopPos then
     return commands
@@ -98,14 +79,12 @@ def elabProgramRest
     (loader : LoadedDialects)
     (leanEnv : Lean.Environment)
     (inputContext : InputContext)
-    (loc : SourceRange)
     (dialect : DialectName)
     (known : dialect ∈ loader.dialects)
     (startPos : String.Pos.Raw)
     (stopPos : String.Pos.Raw := inputContext.endPos)
     : Except (Array Message) Program := do
-  let some d := loader.dialects[dialect]?
-    | .error #[Lean.mkStringMessage inputContext loc.start s!"Unknown dialect {dialect}."]
+  let d := loader.dialects[dialect]
   let s := DeclState.initDeclState
   let s := { s with pos := startPos }
   let s := s.openLoadedDialect! loader d
@@ -118,7 +97,7 @@ def elabProgramRest
     .error s.errors
 
 /- Elaborate a Strata program -/
-partial def elabProgram
+def elabProgram
     (loader : LoadedDialects)
     (leanEnv : Lean.Environment)
     (inputContext : InputContext)
@@ -134,7 +113,7 @@ partial def elabProgram
       .error #[Lean.mkStringMessage inputContext loc.start "Expected program name"]
     | .program loc dialect => do
       if p : dialect ∈ loader.dialects then
-        elabProgramRest loader leanEnv inputContext loc dialect p startPos stopPos
+        elabProgramRest loader leanEnv inputContext dialect p startPos stopPos
       else
         .error #[Lean.mkStringMessage inputContext loc.start s!"Unknown dialect {dialect}."]
 
@@ -174,7 +153,7 @@ private def checkDialectName (ld : LoadedDialects) (actual : DialectName) (expec
 /--
 Create a Lean.Message without position information from parsing a binary.
 -/
-private def mkBinaryMessage (fileName : System.FilePath) (msg : MessageData) : Lean.Message :=
+private def mkBinaryMessage (fileName : System.FilePath) (msg : Lean.MessageData) : Lean.Message :=
   {
     fileName := fileName.toString
     pos := { line := 0, column := 0 }
@@ -263,7 +242,7 @@ partial def loadDialectFromPath
         pure contents
     readDialectTextfile fm ld stk path contents (expected := expected)
 
-partial def loadDialectRec
+private partial def loadDialectRec
   (fm : DialectFileMap)
   (ld : LoadedDialects)
   (stk : Array DialectName)
@@ -293,16 +272,16 @@ def readDialectTextfile
   let leanEnv ←
     match ← (Lean.mkEmptyEnvironment 0) |>.toBaseIO with
     | .ok e => pure e
-    | .error _ => return (ld, .error #[mkStringMessage inputContext 0 "Internal error: Failed to create Lean environment"])
+    | .error _ => return (ld, .error #[Lean.mkStringMessage inputContext 0 "Internal error: Failed to create Lean environment"])
   let (header, errors, startPos) := Elab.elabHeader leanEnv inputContext
   if errors.size > 0 then
     return (ld, .error errors)
   match header with
   | .program loc _ =>
-    return (ld, .error #[mkStringMessage inputContext loc.start s!"Expected dialect."])
+    return (ld, .error #[Lean.mkStringMessage inputContext loc.start s!"Expected dialect."])
   | .dialect loc dialect =>
     if let .error msg := checkDialectName ld dialect expected then
-      return (ld, .error #[mkStringMessage inputContext loc.start msg])
+      return (ld, .error #[Lean.mkStringMessage inputContext loc.start msg])
     let stk := stk.push dialect
     let (ld, d, s) ← Elab.elabDialectRest fm ld stk inputContext loc dialect startPos
     if s.errors.size > 0 then
@@ -325,13 +304,13 @@ partial def elabDialectRest
       (stopPos : String.Pos.Raw := inputContext.endPos)
       : BaseIO (LoadedDialects × Dialect × DeclState) := do
   let leanEnv ←
-    match ← mkEmptyEnvironment 0 |>.toBaseIO with
+    match ← Lean.mkEmptyEnvironment 0 |>.toBaseIO with
     | .ok env => pure env
     | .error _ =>
-      let m : Message := mkStringMessage inputContext 0 "Failed to create Lean environment."
+      let m : Message := Lean.mkStringMessage inputContext 0 "Failed to create Lean environment."
       return (dialects, default, { errors := #[m] })
 
-  assert! "StrataDDL" ∈ dialects.dialects.map
+  assert! "StrataDDL" ∈ dialects.dialects
   let rec run : DialectM Unit := do
         let iniPos := (←getDeclState).pos
         if iniPos >= stopPos then
@@ -385,7 +364,6 @@ partial def loadDialect
   (ld : LoadedDialects)
   (dialect : Strata.DialectName) :
   BaseIO (Elab.LoadedDialects × Except String Strata.Dialect) := do
-
   loadDialectRec fm ld #[] dialect
 
 /- Elaborate a Strata dialect definition. -/
@@ -397,7 +375,7 @@ def elabDialect
     (stopPos : String.Pos.Raw := inputContext.endPos)
      : BaseIO (LoadedDialects × Dialect × DeclState) := do
   let leanEnv ←
-    match ← mkEmptyEnvironment 0 |>.toBaseIO with
+    match ← Lean.mkEmptyEnvironment 0 |>.toBaseIO with
     | .ok env => pure env
     | .error _ =>
       let m : Message := Lean.mkStringMessage inputContext 0 "Failed to create Lean environment."
@@ -412,4 +390,26 @@ def elabDialect
   | .dialect loc dialect =>
     elabDialectRest fm dialects #[] inputContext loc dialect startPos stopPos
 
+def parseStrataProgramFromDialect (dialects : LoadedDialects) (dialect : DialectName) (filePath : String) : IO (InputContext × Strata.Program) := do
+  let bytes ← Strata.Util.readBinInputSource filePath
+  let fileContent ← match String.fromUTF8? bytes with
+    | some s => pure s
+    | none => throw (IO.userError s!"File {filePath} contains non UTF-8 data")
+
+  let leanEnv ← Lean.mkEmptyEnvironment 0
+  let inputContext := Strata.Parser.stringInputContext filePath fileContent
+
+  let isTrue mem := inferInstanceAs (Decidable (dialect ∈ dialects.dialects))
+    | throw <| IO.userError "Internal {dialect} missing from loaded dialects."
+
+  let strataProgram ←
+    match elabProgramRest dialects leanEnv inputContext dialect mem 0 with
+    | .ok program =>
+      pure (inputContext, program)
+    | .error errors =>
+      let errMsg ← errors.foldlM (init := "Parse errors:\n") fun msg e =>
+        return s!"{msg}  {e.pos.line}:{e.pos.column}: {← e.data.toString}\n"
+      throw (IO.userError errMsg)
+
 end Strata.Elab
+end

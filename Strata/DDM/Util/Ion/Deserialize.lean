@@ -3,9 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+public import Strata.DDM.Util.Ion.AST
+
+import Strata.DDM.Util.ByteArray
 import Strata.DDM.Util.Deser
-import Strata.DDM.Util.Ion.AST
 
 namespace Ion
 
@@ -375,10 +378,12 @@ def deserializeAux {size} (ds : DeserializeState size) : AReader (DeserializeSta
       | .startAnn l annot =>
         cleanupRecords  <| ds.pushPartialValue sym (.ann annot) l
 
-def deserialize (contents : ByteArray) : Except (Nat × String) (Array (Array (Ion.Ion SymbolId))) :=
+public def deserialize (contents : ByteArray) : Except (Nat × String) (Array (Array (Ion.Ion SymbolId))) :=
   if contents.isEmpty then
     return #[]
   else
     match BufferM.ofReader contents.size (deserializeAux (.empty contents.size)) contents with
     | .error (pos, msg) => .error (pos, msg)
     | .ok (r, _) => .ok r.close
+
+end Ion
