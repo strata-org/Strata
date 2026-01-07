@@ -5,10 +5,8 @@
 -/
 module
 
-public import Strata.DDM.AST
-
 import Std.Data.HashSet
-
+public import Strata.DDM.AST
 import Strata.DDM.Util.Format
 import Strata.DDM.Util.Nat
 import all Strata.DDM.Util.String
@@ -113,7 +111,7 @@ private def fvarName (ctx : FormatContext) (idx : FreeVarIndex) : String :=
   else
     s!"fvar!{idx}"
 
-protected def ofDialects (dialects : DialectMap) (globalContext : GlobalContext) (opts : FormatOptions) : FormatContext where
+protected def ofDialects (dialects : DialectMap) (globalContext : GlobalContext := {}) (opts : FormatOptions := {}) : FormatContext where
   opts := opts
   getFnDecl sym := Id.run do
     let .function f := dialects.decl! sym
@@ -443,13 +441,13 @@ private partial def OperationF.mformatM (op : OperationF α) : FormatM PrecForma
 
 end
 
-instance Expr.instToStrataFormat : ToStrataFormat Expr where
+instance Expr.instToStrataFormat {α} : ToStrataFormat (ExprF α) where
   mformat e c s := private e.mformatM #[] c s |>.fst
 
-instance Arg.instToStrataFormat : ToStrataFormat Arg where
+instance Arg.instToStrataFormat {α} : ToStrataFormat (ArgF α) where
   mformat a c s := private a.mformatM c s |>.fst
 
-instance Operation.instToStrataFormat : ToStrataFormat Operation where
+instance Operation.instToStrataFormat {α} : ToStrataFormat (OperationF α) where
   mformat o c s := private o.mformatM c s |>.fst
 
 namespace MetadataArg
