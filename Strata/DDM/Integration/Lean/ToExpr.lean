@@ -348,9 +348,6 @@ instance SynCatDecl.instToExpr : ToExpr SynCatDecl where
 
 namespace DebruijnIndex
 
-private protected def ofNat {n : Nat} [NeZero n] (a : Nat) : DebruijnIndex n :=
-  ⟨a % n, Nat.mod_lt _ (Nat.pos_of_neZero n)⟩
-
 instance {n} : ToExpr (DebruijnIndex n) where
   toTypeExpr := private .app (mkConst ``DebruijnIndex) (toExpr n)
   toExpr a := private
