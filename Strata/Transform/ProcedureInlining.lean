@@ -179,11 +179,14 @@ This function does not update the specification because inlineCallStmt will not
 use the specification. This will have to change if Strata also wants to support
 the reachability query.
 -/
-def inlineCallCmd (cmd: Command) (p : Program)
+def inlineCallCmd (excluded_calls:List String := [])
+                  (cmd: Command) (p : Program)
   : BoogieTransformM (List Statement) :=
     open Lambda in do
     match cmd with
       | .call lhs procName args _ =>
+
+        if procName ∈ excluded_calls then return [.cmd cmd] else
 
         let some proc := Program.Procedure.find? p procName
           | throw s!"Procedure {procName} not found in program"
