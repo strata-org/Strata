@@ -47,21 +47,27 @@ instance : HasNot Boogie.Expression where
 abbrev BoogieEval := SemanticEval Expression
 abbrev BoogieStore := SemanticStore Expression
 
-def WellFormedBoogieEvalCong (δ : BoogieEval)
-    : Prop :=
-    (∀ σ σ' e₁ e₁' ,
+structure WellFormedBoogieEvalCong (δ : BoogieEval): Prop where
+    abscongr: (∀ σ σ' e₁ e₁' ,
       δ σ e₁ = δ σ' e₁' →
-      (∀ ty m, δ σ (.abs ty m e₁) = δ σ' (.abs ty m e₁'))) ∧
-    -- binary congruence
-    (∀ σ σ' e₂ e₂',
+      (∀ ty m, δ σ (.abs ty m e₁) = δ σ' (.abs ty m e₁')))
+    appcongr: (∀ σ σ' m e₁ e₁' e₂ e₂',
+      δ σ e₁ = δ σ' e₁' →
       δ σ e₂ = δ σ' e₂' →
-      (∀ e₁ e₁' m, δ σ (.app m e₁ e₂) = δ σ' (.app m e₁' e₂')) ∧
-      (∀ e₁ e₁' m, δ σ (.eq m e₁ e₂) = δ σ' (.eq m e₁' e₂')) ∧
-      (∀ e₁ e₁' m k ty, δ σ (.quant m k ty e₁ e₂) = δ σ' (.quant m k ty e₁' e₂'))) ∧
-    -- ternary congruence
-    (∀ σ σ' e₃ e₃',
+      (δ σ (.app m e₁ e₂) = δ σ' (.app m e₁' e₂')))
+    eqcongr: (∀ σ σ' m e₁ e₁' e₂ e₂',
+      δ σ e₁ = δ σ' e₁' →
+      δ σ e₂ = δ σ' e₂' →
+      (δ σ (.eq m e₁ e₂) = δ σ' (.eq m e₁' e₂')))
+    quantcongr: (∀ σ σ' m k ty e₁ e₁' e₂ e₂',
+      δ σ e₁ = δ σ' e₁' →
+      δ σ e₂ = δ σ' e₂' →
+      (δ σ (.quant m k ty e₁ e₂) = δ σ' (.quant m k ty e₁' e₂')))
+    itecongr: (∀ σ σ' m e₁ e₁' e₂ e₂' e₃ e₃',
+      δ σ e₁ = δ σ' e₁' →
+      δ σ e₂ = δ σ' e₂' →
       δ σ e₃ = δ σ' e₃' →
-      (∀ e₁ e₁' e₂ e₂' m, δ σ (.ite m e₃ e₁ e₂) = δ σ' (.ite m e₃' e₁' e₂')))
+      (δ σ (.ite m e₃ e₁ e₂) = δ σ' (.ite m e₃' e₁' e₂')))
 
 inductive EvalExpressions {P} [HasVarsPure P P.Expr] : SemanticEval P → SemanticStore P → List P.Expr → List P.Expr → Prop where
   | eval_none :
@@ -164,11 +170,11 @@ def WellFormedBoogieEvalTwoState (δ : BoogieEval) (σ₀ σ : BoogieStore) : Pr
         (HavocVars σ₀ vs σ₁ ∧ InitVars σ₁ vs' σ) →
         ∀ v,
           (v ∈ vs →
-            ∀ oty mApp mOp mVar v ty,
+            ∀ oty mApp mOp mVar ty,
               δ σ (@oldVar (tyold := oty) mApp mOp mVar v ty) = σ₀ v) ∧
         -- if the variable is not modified, then old variable is identity
           (¬ v ∈ vs →
-            ∀ oty mApp mOp mVar v ty,
+            ∀ oty mApp mOp mVar ty,
               δ σ (@oldVar (tyold := oty) mApp mOp mVar v ty) = σ v)) ∧
       -- evaluating on an old complex expression is the same as evlauating on its normal form
       -- TODO: can possibly break this into more sub-components, proving it using congruence and normalization property
