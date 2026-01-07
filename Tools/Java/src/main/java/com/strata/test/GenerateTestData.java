@@ -58,12 +58,6 @@ public class GenerateTestData {
         program1.add(header1);
         program1.add(serializer.serializeCommand(ast1));
 
-        // Line offsets for first file (simulating source at positions 0, 15, 30)
-        IonList lineOffsets1 = ion.newEmptyList();
-        lineOffsets1.add(ion.newInt(0));
-        lineOffsets1.add(ion.newInt(15));
-        lineOffsets1.add(ion.newInt(30));
-
         // Create second program with 3 statements
         Node ast2 = block(List.of(
             assign("y", add(num(1), num(2))),
@@ -77,13 +71,6 @@ public class GenerateTestData {
         program2.add(header2);
         program2.add(serializer.serializeCommand(ast2));
 
-        // Line offsets for second file (simulating source at positions 0, 20, 45, 70)
-        IonList lineOffsets2 = ion.newEmptyList();
-        lineOffsets2.add(ion.newInt(0));
-        lineOffsets2.add(ion.newInt(20));
-        lineOffsets2.add(ion.newInt(45));
-        lineOffsets2.add(ion.newInt(70));
-
         // Create array of StrataFile structs
         IonList files = ion.newEmptyList();
 
@@ -91,14 +78,12 @@ public class GenerateTestData {
         IonStruct file1 = ion.newEmptyStruct();
         file1.put("filePath", ion.newString("file1.st"));
         file1.put("program", program1);
-        file1.put("lineOffsets", lineOffsets1);
         files.add(file1);
 
         // Second file entry
         IonStruct file2 = ion.newEmptyStruct();
         file2.put("filePath", ion.newString("file2.st"));
         file2.put("program", program2);
-        file2.put("lineOffsets", lineOffsets2);
         files.add(file2);
 
         try (var out = new FileOutputStream(outPath)) {

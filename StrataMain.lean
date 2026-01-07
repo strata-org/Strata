@@ -265,10 +265,9 @@ def laurelAnalyzeCommand : Command where
     }
 
     for strataFile in strataFiles do
-      -- Create FileMap with the lineOffsets from the StrataFile
       let fileMap : Lean.FileMap := {
-        source := ""  -- Empty source as specified
-        positions := strataFile.lineOffsets
+        source := ""
+        positions := Array.empty
       }
 
       -- Create input context for this file

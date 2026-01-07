@@ -328,12 +328,6 @@ elab "#testRoundtripFiles" : command => do
         return
     else
       Lean.logError "File 1: Expected seq argument"; return
-    if file1.lineOffsets.size != 3 then
-      Lean.logError s!"File 1: Expected 3 line offsets, got {file1.lineOffsets.size}"
-      return
-    if file1.lineOffsets[0]!.byteIdx != 0 || file1.lineOffsets[1]!.byteIdx != 15 || file1.lineOffsets[2]!.byteIdx != 30 then
-      Lean.logError s!"File 1: Line offsets don't match expected values"
-      return
 
     -- Check second file
     let file2 := files[1]!
@@ -352,12 +346,6 @@ elab "#testRoundtripFiles" : command => do
         return
     else
       Lean.logError "File 2: Expected seq argument"; return
-    if file2.lineOffsets.size != 4 then
-      Lean.logError s!"File 2: Expected 4 line offsets, got {file2.lineOffsets.size}"
-      return
-    if file2.lineOffsets[0]!.byteIdx != 0 || file2.lineOffsets[1]!.byteIdx != 20 || file2.lineOffsets[2]!.byteIdx != 45 || file2.lineOffsets[3]!.byteIdx != 70 then
-      Lean.logError s!"File 2: Line offsets don't match expected values"
-      return
 
 #testRoundtripFiles
 
