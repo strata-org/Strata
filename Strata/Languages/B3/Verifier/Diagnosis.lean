@@ -51,9 +51,9 @@ partial def diagnoseFailureGeneric
 
   -- If there are conversion errors, return early
   if !convResult.errors.isEmpty then
+    let vctx : VerificationContext := { decl := sourceDecl, stmt := sourceStmt, pathCondition := state.pathCondition }
     let dummyResult : VerificationReport := {
-      decl := sourceDecl
-      sourceStmt := some sourceStmt
+      context := vctx
       result := .proofResult .proofUnknown
       model := none
     }
@@ -63,7 +63,8 @@ partial def diagnoseFailureGeneric
   let checkFn := if isReachCheck then reach else prove
   let isFailure := fun r => r.isError
 
-  let originalResult ← checkFn state convResult.term sourceDecl (some sourceStmt)
+  let vctx : VerificationContext := { decl := sourceDecl, stmt := sourceStmt, pathCondition := state.pathCondition }
+  let originalResult ← checkFn state convResult.term vctx
 
   if !isFailure originalResult.result then
     return { originalCheck := originalResult, diagnosedFailures := [] }
@@ -75,7 +76,7 @@ partial def diagnoseFailureGeneric
   | .binaryOp _ (.and _) lhs rhs =>
       let lhsConv := expressionToSMT ConversionContext.empty lhs
       if lhsConv.errors.isEmpty then
-        let lhsResult ← checkFn state lhsConv.term sourceDecl (some sourceStmt)
+        let lhsResult ← checkFn state lhsConv.term vctx
         if isFailure lhsResult.result then
           -- Check if LHS is provably false (not just unprovable)
           let _ ← push state
@@ -114,7 +115,7 @@ partial def diagnoseFailureGeneric
       if lhsConv.errors.isEmpty && rhsConv.errors.isEmpty then
         -- Add lhs as assumption when checking rhs (for both proof and reachability checks)
         let stateForRhs ← addPathCondition state lhs lhsConv.term
-        let rhsResult ← checkFn stateForRhs rhsConv.term sourceDecl (some sourceStmt)
+        let rhsResult ← checkFn stateForRhs rhsConv.term vctx
         if isFailure rhsResult.result then
           -- Check if RHS is provably false (not just unprovable)
           let _ ← push stateForRhs
@@ -171,14 +172,14 @@ partial def symbolicExecuteStatementsWithDiagnosis (ctx : ConversionContext) (st
         | .verified report =>
             -- If verification failed, diagnose it
             let diag ← if report.result.isError then
-              match report.sourceStmt with
-              | some (.check m expr) =>
+              match report.context.stmt with
+              | .check m expr =>
                   let d ← diagnoseFailure state expr sourceDecl (.check m expr)
                   pure (some d)
-              | some (.assert m expr) =>
+              | .assert m expr =>
                   let d ← diagnoseFailure state expr sourceDecl (.assert m expr)
                   pure (some d)
-              | some (.reach m expr) =>
+              | .reach m expr =>
                   let d ← diagnoseUnreachable state expr sourceDecl (.reach m expr)
                   pure (some d)
               | _ => pure none

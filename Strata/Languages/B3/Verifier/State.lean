@@ -76,18 +76,26 @@ def VerificationResult.fromDecisionForReach (d : Decision) : VerificationResult 
 -- Verification State
 ---------------------------------------------------------------------
 
-/-- VerificationReport combines VerificationResult with source location.
+---------------------------------------------------------------------
+-- Verification Context and Results
+---------------------------------------------------------------------
+
+/-- Context for a verification check (where in the program and what we know) -/
+structure VerificationContext where
+  decl : B3AST.Decl SourceRange
+  stmt : B3AST.Statement SourceRange
+  pathCondition : List (B3AST.Expression SourceRange)  -- Accumulated assertions
+
+/-- VerificationReport combines VerificationResult with source context.
 Top-level result type returned to users, containing:
 - The verification result (proved/counterexample/reachable/etc.)
-- Source location (declaration and optional statement)
-- Optional model/counterexample information
-- Path condition (accumulated assertions) for debugging failures -/
+- Source context (declaration, statement, and path condition)
+- Optional model/counterexample information (TODO: use structured Model type instead of String)
+-/
 structure VerificationReport where
-  decl : B3AST.Decl SourceRange
-  sourceStmt : Option (B3AST.Statement SourceRange) := none
+  context : VerificationContext
   result : VerificationResult
-  model : Option String := none
-  pathCondition : List (B3AST.Expression SourceRange) := []  -- For debugging failures
+  model : Option String := none  -- TODO: Replace with structured Model type (Map String Term)
 
 ---------------------------------------------------------------------
 -- SMT Solver State
@@ -143,7 +151,7 @@ def pop (state : B3VerificationState) : IO B3VerificationState := do
   return state
 
 /-- Prove a property holds (check/assert statement) -/
-def prove (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : Option (B3AST.Statement SourceRange)) : IO VerificationReport := do
+def prove (state : B3VerificationState) (term : Term) (ctx : VerificationContext) : IO VerificationReport := do
   let _ ← push state
   let runCheck : SolverM (Decision × Option String) := do
     Solver.assert s!"(not {formatTermDirect term})"
@@ -153,15 +161,13 @@ def prove (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl S
   let (decision, model) ← runCheck.run state.smtState.solver
   let _ ← pop state
   return {
-    decl := sourceDecl
-    sourceStmt := sourceStmt
+    context := ctx
     result := VerificationResult.fromDecisionForProve decision
     model := model
-    pathCondition := state.pathCondition
   }
 
 /-- Check if a property is reachable (reach statement) -/
-def reach (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : Option (B3AST.Statement SourceRange)) : IO VerificationReport := do
+def reach (state : B3VerificationState) (term : Term) (ctx : VerificationContext) : IO VerificationReport := do
   let _ ← push state
   let runCheck : SolverM (Decision × Option String) := do
     Solver.assert (formatTermDirect term)
@@ -171,11 +177,9 @@ def reach (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl S
   let (decision, model) ← runCheck.run state.smtState.solver
   let _ ← pop state
   return {
-    decl := sourceDecl
-    sourceStmt := sourceStmt
+    context := ctx
     result := VerificationResult.fromDecisionForReach decision
     model := model
-    pathCondition := state.pathCondition
   }
 
 def closeVerificationState (state : B3VerificationState) : IO Unit := do

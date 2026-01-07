@@ -40,14 +40,16 @@ structure SymbolicExecutionResult where
 partial def symbolicExecuteStatements (ctx : ConversionContext) (state : B3VerificationState) (sourceDecl : B3AST.Decl SourceRange) : B3AST.Statement SourceRange → IO SymbolicExecutionResult
   | .check m expr => do
       let convResult := expressionToSMT ctx expr
-      let result ← prove state convResult.term sourceDecl (some (.check m expr))
+      let vctx : VerificationContext := { decl := sourceDecl, stmt := .check m expr, pathCondition := state.pathCondition }
+      let result ← prove state convResult.term vctx
       let errorResults := convResult.errors.map (fun err => StatementResult.conversionError (toString err))
       pure { results := errorResults ++ [.verified result], finalState := state }
 
   | .assert m expr => do
       let convResult := expressionToSMT ctx expr
-      let result ← prove state convResult.term sourceDecl (some (.assert m expr))
-      -- Always add to solver state (assert assumes its condition regardless of proof result)
+      let vctx : VerificationContext := { decl := sourceDecl, stmt := .assert m expr, pathCondition := state.pathCondition }
+      let result ← prove state convResult.term vctx
+      -- Always add to path condition (assert assumes its condition regardless of proof result)
       let newState ← addPathCondition state expr convResult.term
       let errorResults := convResult.errors.map (fun err => StatementResult.conversionError (toString err))
       pure { results := errorResults ++ [.verified result], finalState := newState }
@@ -60,7 +62,8 @@ partial def symbolicExecuteStatements (ctx : ConversionContext) (state : B3Verif
 
   | .reach m expr => do
       let convResult := expressionToSMT ctx expr
-      let result ← reach state convResult.term sourceDecl (some (.reach m expr))
+      let vctx : VerificationContext := { decl := sourceDecl, stmt := .reach m expr, pathCondition := state.pathCondition }
+      let result ← reach state convResult.term vctx
       let errorResults := convResult.errors.map (fun err => StatementResult.conversionError (toString err))
       pure { results := errorResults ++ [.verified result], finalState := state }
 
