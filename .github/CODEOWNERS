@@ -20,8 +20,8 @@
 /Strata/DL/Lambda/ @shigoel @atomb @aqjune-aws @joscoh
 /StrataTest/DL/Lambda/ @shigoel @atomb @aqjune-aws @joscoh
 
-/Strata/DL/Imperative/ @atomb @shigoel @aqjune-aws
-/StrataTest/DL/Imperative/ @atomb @shigoel @aqjune-aws
+/Strata/DL/Imperative/ @atomb @shigoel @aqjune-aws @joscoh
+/StrataTest/DL/Imperative/ @atomb @shigoel @aqjune-aws @joscoh
 
 /Strata/DL/SMT/ @andrewmwells-amazon @atomb @aqjune-aws
 
@@ -33,7 +33,7 @@
 
 /Strata/Languages/C_Simp/ @andrewmwells-amazon @shigoel
 
-/Strata/Languages/Python/ @andrewmwells-amazon
+/Strata/Languages/Python/ @andrewmwells-amazon @joehendrix @shigoel
 
 /Strata/Transform/ @atomb @andrewmwells-amazon
 
