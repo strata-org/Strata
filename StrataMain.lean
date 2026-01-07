@@ -296,7 +296,7 @@ def laurelAnalyzeCommand : Command where
 
     -- Print diagnostics to stdout
     for diag in diagnostics do
-      IO.println s!"{repr diag.fileRange.file}:{diag.fileRange.range.start}-{diag.fileRange.range.stop}: {diag.message}"
+      IO.println s!"{Std.format diag.fileRange.file}:{diag.fileRange.range.start}-{diag.fileRange.range.stop}: {diag.message}"
 
 def commandList : List Command := [
       javaGenCommand,
