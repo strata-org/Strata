@@ -52,6 +52,25 @@ Diagnosis (if failed)
 Use `verify` for automatic diagnosis (recommended) - provides detailed error analysis.
 Use `verifyWithoutDiagnosis` for faster verification without diagnosis - returns raw results.
 
+## Diagnosis Behavior
+
+**For proof checks (check/assert):**
+- Recursively splits conjunctions to find all atomic failures
+- Reports multiple failures: "could not prove A", "it is impossible that B"
+- Assumes LHS when diagnosing RHS (context-aware)
+- Continues diagnosis even after finding provably false conjuncts
+
+**For reachability checks (reach):**
+- Stops at first unreachable or provably false conjunct
+- Reports single failure: "it is impossible that A"
+- All subsequent conjuncts are trivially unreachable if LHS is unreachable
+- Always uses "it is impossible that" (reachability is an impossibility proof)
+
+**Provably false detection:**
+- "could not prove" - assertion is unprovable (sat/unknown when checking `not A`)
+- "it is impossible that" - assertion is provably false (unsat when checking `A`)
+- Diagnosis stops when provably false found (root cause identified)
+
 ## Usage
 -/
 
