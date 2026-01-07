@@ -337,5 +337,53 @@ Free Variables: [q]
 
 ---------------------------------------------------------------------
 
+def polyFuncProg : Program := { decls := [
+  -- function identity<a>(x : a) : a;
+  .func { name := "identity",
+          typeArgs := ["a"],
+          inputs := [("x", .ftvar "a")],
+          output := .ftvar "a" },
+  -- function makePair<a, b>(x : a, y : b) : Map a b;
+  .func { name := "makePair",
+          typeArgs := ["a", "b"],
+          inputs := [("x", .ftvar "a"), ("y", .ftvar "b")],
+          output := .tcons "Map" [.ftvar "a", .ftvar "b"] },
+  -- procedure Test()
+  .proc { header := { name := "Test",
+                      typeArgs := [],
+                      inputs := [],
+                      outputs := [] },
+          spec := { modifies := [],
+                    preconditions := [],
+                    postconditions := [] },
+          body := [
+            -- var m : Map int bool;
+            Statement.init "m" (.forAll [] (.tcons "Map" [.tcons "int" [], .tcons "bool" []])) eb[init_m_0],
+            -- m := makePair(identity(42), identity(true));
+            Statement.set "m" eb[((~makePair (~identity #42)) (~identity #true))]
+          ]
+  }
+]}
+
+/--
+info: [Strata.Boogie] Type checking succeeded.
+
+---
+info: ok: func identity : ∀[$__ty0]. ((x : $__ty0)) → $__ty0;
+func makePair : ∀[$__ty1, $__ty2]. ((x : $__ty1) (y : $__ty2)) → (Map $__ty1 $__ty2);
+(procedure Test :  () → ())
+modifies: []
+preconditions: 
+postconditions: 
+body: init (m : (Map int bool)) := (init_m_0 : (Map int bool))
+m := (((~makePair : (arrow int (arrow bool (Map int bool)))) ((~identity : (arrow int int)) #42)) ((~identity : (arrow bool bool)) #true))
+-/
+#guard_msgs in
+#eval do
+  let ans ← typeCheck Options.default polyFuncProg
+  return (format ans)
+
+---------------------------------------------------------------------
+
 end Tests
 end Boogie
