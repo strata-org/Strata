@@ -240,6 +240,12 @@ def readLaurelIon (bytes : ByteArray) : IO Strata.Program := do
   | .ok p => pure p
   | .error msg => exitFailure msg
 
+def readLaurelIonFiles (bytes : ByteArray) : IO (List Strata.StrataFile) := do
+  -- Parse the Ion bytes to get a list of StrataFiles
+  match Strata.Program.fromIonFiles Strata.Laurel.Laurel_map bytes with
+  | .ok files => pure files
+  | .error msg => exitFailure msg
+
 def laurelAnalyzeCommand : Command where
   name := "laurelAnalyze"
   args := []
@@ -248,21 +254,45 @@ def laurelAnalyzeCommand : Command where
     -- Read bytes from stdin
     let stdinBytes ← (← IO.getStdin).readBinToEnd
 
-    -- Parse Ion format
-    let strataProgram ← readLaurelIon stdinBytes
+    -- Parse Ion format to get list of StrataFiles
+    let strataFiles ← readLaurelIonFiles stdinBytes
 
-    -- Create input context for error reporting
-    let inputPath : System.FilePath := "<stdin>"
-    let inputContext := Strata.Parser.stringInputContext inputPath ""
+    -- Process each file and combine results
+    let mut combinedProgram : Laurel.Program := {
+      staticProcedures := []
+      staticFields := []
+      types := []
+    }
 
-    -- Convert to Laurel.Program using parseProgram
-    let (laurelProgram, transErrors) := Laurel.TransM.run inputContext (Laurel.parseProgram strataProgram)
-    if transErrors.size > 0 then
-      exitFailure s!"Translation errors: {transErrors}"
+    for strataFile in strataFiles do
+      -- Create FileMap with the lineOffsets from the StrataFile
+      let fileMap : Lean.FileMap := {
+        source := ""  -- Empty source as specified
+        positions := strataFile.lineOffsets
+      }
 
-    -- Verify the program and get diagnostics
+      -- Create input context for this file
+      let inputContext : Strata.Parser.InputContext := {
+        inputString := ""
+        fileName := strataFile.filePath
+        fileMap := fileMap
+      }
+
+      -- Convert to Laurel.Program using parseProgram
+      let (laurelProgram, transErrors) := Laurel.TransM.run inputContext (Laurel.parseProgram strataFile.program)
+      if transErrors.size > 0 then
+        exitFailure s!"Translation errors in {strataFile.filePath}: {transErrors}"
+
+      -- Combine with accumulated program
+      combinedProgram := {
+        staticProcedures := combinedProgram.staticProcedures ++ laurelProgram.staticProcedures
+        staticFields := combinedProgram.staticFields ++ laurelProgram.staticFields
+        types := combinedProgram.types ++ laurelProgram.types
+      }
+
+    -- Verify the combined program and get diagnostics
     let solverName : String := "z3"
-    let diagnostics ← Laurel.verifyToDiagnostics solverName laurelProgram
+    let diagnostics ← Laurel.verifyToDiagnostics solverName combinedProgram
 
     -- Print diagnostics to stdout
     for diag in diagnostics do
