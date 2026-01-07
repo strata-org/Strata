@@ -7,6 +7,3 @@ vcs/*.smt2
 Strata.code-workspace
 
 StrataTest/Internal
-
-# Test artifacts
-test_output.txt
