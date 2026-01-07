@@ -11,7 +11,8 @@ public import Strata.DDM.Util.Decimal
 public import Strata.DDM.AST.Datatype
 
 import Std.Data.HashMap
-import Strata.DDM.Util.Array
+import all Strata.DDM.Util.Array
+import all Strata.DDM.Util.ByteArray
 
 set_option autoImplicit false
 

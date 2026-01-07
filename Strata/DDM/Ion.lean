@@ -17,6 +17,16 @@ open Lean.Elab.Command
 
 open Ion
 
+namespace Array
+
+def mapM_off {α β m} [Monad m] (as : Array α) (f : α → m β)
+      (start : Nat := 0) (stop := as.size)
+      (init : Array β := Array.mkEmpty ((min as.size stop) - start)) : m (Array β) :=
+  as.foldlM (init := init) (start := start) (stop := stop)
+            fun r e => r.push <$> f e
+
+end Array
+
 public section
 namespace Ion.Ion
 

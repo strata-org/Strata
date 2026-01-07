@@ -7,12 +7,11 @@ module
 
 public import Strata.DDM.AST
 
-import Strata.DDM.Util.Format
-import Strata.DDM.Util.Nat
-import Strata.DDM.Util.String
 import Std.Data.HashSet
 
-meta import Strata.DDM.AST
+import Strata.DDM.Util.Format
+import Strata.DDM.Util.Nat
+import all Strata.DDM.Util.String
 
 open Std (Format format)
 
