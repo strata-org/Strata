@@ -273,7 +273,11 @@ partial def translateLMonoTy (bindings : TransBindings) (arg : Arg) :
   | .tvar _ name =>
     -- Polymorphic type variable translates directly to Lambda free type variable
     return (.ftvar name)
-  | _ => TransM.error s!"translateLMonoTy not yet implemented {repr tp}"
+  | .arrow _ argTp resTp =>
+     -- Arrow type translates to LMonoTy.arrow
+     let argTy ← translateLMonoTy bindings (.type argTp)
+     let resTy ← translateLMonoTy bindings (.type resTp)
+     return (.arrow argTy resTy)
 
 partial def translateLMonoTys (bindings : TransBindings) (args : Array Arg) :
   TransM (Array LMonoTy) :=
