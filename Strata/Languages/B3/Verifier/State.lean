@@ -80,12 +80,14 @@ def VerificationResult.fromDecisionForReach (d : Decision) : VerificationResult 
 Top-level result type returned to users, containing:
 - The verification result (proved/counterexample/reachable/etc.)
 - Source location (declaration and optional statement)
-- Optional model/counterexample information -/
+- Optional model/counterexample information
+- Path condition (accumulated assertions) for debugging failures -/
 structure VerificationReport where
   decl : B3AST.Decl SourceRange
   sourceStmt : Option (B3AST.Statement SourceRange) := none
   result : VerificationResult
   model : Option String := none
+  pathCondition : List (B3AST.Expression SourceRange) := []  -- For debugging failures
 
 ---------------------------------------------------------------------
 -- SMT Solver State
@@ -100,7 +102,8 @@ structure SMTSolverState where
 /-- B3-specific verification state -/
 structure B3VerificationState where
   smtState : SMTSolverState
-  context : ConversionContext  -- Maps de Bruijn indices to names
+  context : ConversionContext
+  pathCondition : List (B3AST.Expression SourceRange)  -- Accumulated assertions for debugging
 
 def initVerificationState (solver : Solver) : IO B3VerificationState := do
   let _ ← (Solver.setLogic "ALL").run solver
@@ -112,15 +115,20 @@ def initVerificationState (solver : Solver) : IO B3VerificationState := do
       assertions := []
     }
     context := ConversionContext.empty
+    pathCondition := []
   }
 
 def addFunctionDecl (state : B3VerificationState) (name : String) (argTypes : List String) (returnType : String) : IO B3VerificationState := do
   let _ ← (Solver.declareFun name argTypes returnType).run state.smtState.solver
   return { state with smtState := { state.smtState with declaredFunctions := (name, argTypes, returnType) :: state.smtState.declaredFunctions } }
 
-def addAxiom (state : B3VerificationState) (term : Term) : IO B3VerificationState := do
+def addPathCondition (state : B3VerificationState) (expr : B3AST.Expression SourceRange) (term : Term) : IO B3VerificationState := do
   let _ ← (Solver.assert (formatTermDirect term)).run state.smtState.solver
-  return { state with smtState := { state.smtState with assertions := term :: state.smtState.assertions } }
+  return {
+    state with
+    smtState := { state.smtState with assertions := term :: state.smtState.assertions }
+    pathCondition := expr :: state.pathCondition
+  }
 
 def push (state : B3VerificationState) : IO B3VerificationState := do
   let solver := state.smtState.solver
@@ -149,6 +157,7 @@ def prove (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl S
     sourceStmt := sourceStmt
     result := VerificationResult.fromDecisionForProve decision
     model := model
+    pathCondition := state.pathCondition
   }
 
 /-- Check if a property is reachable (reach statement) -/
@@ -166,6 +175,7 @@ def reach (state : B3VerificationState) (term : Term) (sourceDecl : B3AST.Decl S
     sourceStmt := sourceStmt
     result := VerificationResult.fromDecisionForReach decision
     model := model
+    pathCondition := state.pathCondition
   }
 
 def closeVerificationState (state : B3VerificationState) : IO Unit := do

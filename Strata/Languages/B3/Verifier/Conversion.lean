@@ -22,29 +22,65 @@ open Strata.SMT
 open Strata.SMT.Factory
 
 ---------------------------------------------------------------------
+-- Type Conversion
+---------------------------------------------------------------------
+
+/-- Convert B3 type name to SMT-LIB type name -/
+def b3TypeToSMT (typeName : String) : String :=
+  match typeName with
+  | "int" => "Int"
+  | "bool" => "Bool"
+  | "real" => "Real"
+  | "string" => "String"
+  | other => other  -- User-defined types pass through as-is
+
+---------------------------------------------------------------------
 -- Conversion Context
 ---------------------------------------------------------------------
 
 /-- Errors that can occur during B3 to SMT conversion -/
-inductive ConversionError where
-  | unsupportedConstruct : String → ConversionError
-  | unboundVariable : Nat → ConversionError
-  | typeMismatch : String → ConversionError
-  | invalidFunctionCall : String → ConversionError
+inductive ConversionError (M : Type) where
+  | unsupportedConstruct : String → M → ConversionError M
+  | unboundVariable : Nat → M → ConversionError M
+  | typeMismatch : String → M → ConversionError M
+  | invalidFunctionCall : String → M → ConversionError M
+  | invalidPattern : String → M → ConversionError M
   deriving Inhabited
 
 namespace ConversionError
 
-def toString : ConversionError → String
-  | unsupportedConstruct msg => s!"Unsupported construct: {msg}"
-  | unboundVariable idx => s!"Unbound variable at index {idx}"
-  | typeMismatch msg => s!"Type mismatch: {msg}"
-  | invalidFunctionCall msg => s!"Invalid function call: {msg}"
+def toString [Repr M] : ConversionError M → String
+  | unsupportedConstruct msg m => s!"Unsupported construct at {repr m}: {msg}"
+  | unboundVariable idx m => s!"Unbound variable at index {idx} at {repr m}"
+  | typeMismatch msg m => s!"Type mismatch at {repr m}: {msg}"
+  | invalidFunctionCall msg m => s!"Invalid function call at {repr m}: {msg}"
+  | invalidPattern msg m => s!"Invalid pattern at {repr m}: {msg}"
 
-instance : ToString ConversionError where
+instance [Repr M] : ToString (ConversionError M) where
   toString := ConversionError.toString
 
 end ConversionError
+
+---------------------------------------------------------------------
+-- Conversion Result with Error Accumulation
+---------------------------------------------------------------------
+
+/-- Conversion result that can carry both a term and errors -/
+structure ConversionResult (M : Type) where
+  term : Term
+  errors : List (ConversionError M)
+
+namespace ConversionResult
+
+/-- Create a successful conversion result -/
+def ok {M : Type} (term : Term) : ConversionResult M :=
+  { term := term, errors := [] }
+
+/-- Create a conversion result with an error and placeholder term -/
+def withError {M : Type} (err : ConversionError M) : ConversionResult M :=
+  { term := Term.bool false, errors := [err] }
+
+end ConversionResult
 
 structure ConversionContext where
   vars : List String  -- Maps de Bruijn index to variable name
@@ -101,64 +137,148 @@ def literalToSMT : B3AST.Literal M → Term
   | .stringLit _ s => Term.string s
 
 ---------------------------------------------------------------------
+-- Pattern Validation
+---------------------------------------------------------------------
+
+/-- Collect bound variable indices from a pattern expression.
+Returns error if the expression is not structurally valid as a pattern.
+Valid patterns consist only of function applications, bound variables, and literals. -/
+partial def collectPatternBoundVars (expr : B3AST.Expression M) (exprM : M) : Except (ConversionError M) (List Nat) :=
+  match expr with
+  | .id _ idx => .ok [idx]
+  | .literal _ _ => .ok []
+  | .functionCall _ _ args => do
+      let results ← args.val.toList.mapM (fun arg => collectPatternBoundVars arg exprM)
+      return results.flatten
+  | _ => .error (ConversionError.invalidPattern "patterns must consist only of function applications, variables, and literals" exprM)
+
+/-- Validate pattern expressions for a quantifier -/
+def validatePatternExprs (patterns : Array (B3AST.Expression M)) (patternM : M) : Except (ConversionError M) Unit :=
+  if patterns.isEmpty then
+    .ok ()  -- Empty patterns are OK (solver will auto-generate)
+  else do
+    -- Check that each pattern expression is a function application (not just a variable or literal)
+    for p in patterns do
+      match p with
+      | .functionCall _ _ _ => pure ()  -- Valid
+      | _ => throw (ConversionError.invalidPattern "each pattern expression must be a function application" patternM)
+
+    -- Collect all bound variables from all patterns
+    let allBoundVars ← patterns.toList.mapM (fun p => collectPatternBoundVars p patternM)
+    let flatVars := allBoundVars.flatten
+    -- Check if the bound variable (id 0) appears in at least one pattern
+    if !flatVars.contains 0 then
+      .error (ConversionError.invalidPattern "bound variable must appear in at least one pattern" patternM)
+    else
+      .ok ()
+
+---------------------------------------------------------------------
 -- Expression Conversion
 ---------------------------------------------------------------------
 
-/-- Convert B3 expressions to SMT terms -/
-def expressionToSMT (ctx : ConversionContext) (e : B3AST.Expression M) : Except ConversionError Term :=
+/-- Convert B3 expressions to SMT terms with error accumulation -/
+def expressionToSMT (ctx : ConversionContext) (e : B3AST.Expression M) : ConversionResult M :=
   match e with
-  | .literal _ lit => .ok (literalToSMT lit)
-  | .id _ idx =>
+  | .literal m lit =>
+      ConversionResult.ok (literalToSMT lit)
+
+  | .id m idx =>
       match ctx.lookup idx with
-      | some name => .ok (Term.var ⟨name, .int⟩)
-      | none => .error (ConversionError.unboundVariable idx)
-  | .ite _ cond thn els => do
-      let c ← expressionToSMT ctx cond
-      let t ← expressionToSMT ctx thn
-      let e ← expressionToSMT ctx els
-      return Term.app .ite [c, t, e] t.typeOf
-  | .binaryOp _ op lhs rhs => do
-      let l ← expressionToSMT ctx lhs
-      let r ← expressionToSMT ctx rhs
-      return (binaryOpToSMT op) l r
-  | .unaryOp _ op arg => do
-      let a ← expressionToSMT ctx arg
-      return (unaryOpToSMT op) a
-  | .functionCall _ fnName args => do
-      let argTerms ← args.val.mapM (expressionToSMT ctx)
+      | some name => ConversionResult.ok (Term.var ⟨name, .int⟩)
+      | none => ConversionResult.withError (ConversionError.unboundVariable idx m)
+
+  | .ite m cond thn els =>
+      let condResult := expressionToSMT ctx cond
+      let thnResult := expressionToSMT ctx thn
+      let elsResult := expressionToSMT ctx els
+      let errors := condResult.errors ++ thnResult.errors ++ elsResult.errors
+      let term := Term.app .ite [condResult.term, thnResult.term, elsResult.term] thnResult.term.typeOf
+      { term := term, errors := errors }
+
+  | .binaryOp m op lhs rhs =>
+      let lhsResult := expressionToSMT ctx lhs
+      let rhsResult := expressionToSMT ctx rhs
+      let errors := lhsResult.errors ++ rhsResult.errors
+      let term := (binaryOpToSMT op) lhsResult.term rhsResult.term
+      { term := term, errors := errors }
+
+  | .unaryOp m op arg =>
+      let argResult := expressionToSMT ctx arg
+      let term := (unaryOpToSMT op) argResult.term
+      { term := term, errors := argResult.errors }
+
+  | .functionCall m fnName args =>
+      let argResults := args.val.map (fun arg => match _: arg with | a => expressionToSMT ctx a)
+      let errors := argResults.toList.foldl (fun acc r => acc ++ r.errors) []
+      let argTerms := argResults.toList.map (·.term)
       let uf : UF := {
         id := fnName.val,
-        args := argTerms.toList.map (fun t => ⟨UF_ARG_PLACEHOLDER, t.typeOf⟩),
+        args := argTerms.map (fun t => ⟨UF_ARG_PLACEHOLDER, t.typeOf⟩),
         out := .int
       }
-      return Term.app (.uf uf) argTerms.toList .int
-  | .labeledExpr _ _ expr => expressionToSMT ctx expr
-  | .letExpr _ _var value body => do
+      let term := Term.app (.uf uf) argTerms .int
+      { term := term, errors := errors }
+
+  | .labeledExpr m _ expr =>
+      expressionToSMT ctx expr
+
+  | .letExpr m _var value body =>
       let ctx' := ctx.push _var.val
-      let _v ← expressionToSMT ctx value
-      let b ← expressionToSMT ctx' body
-      return b
-  | .quantifierExpr _ qkind var _ty patterns body => do
+      let valueResult := expressionToSMT ctx value
+      let bodyResult := expressionToSMT ctx' body
+      let errors := valueResult.errors ++ bodyResult.errors
+      { term := bodyResult.term, errors := errors }
+
+  | .quantifierExpr m qkind var _ty patterns body =>
       let ctx' := ctx.push var.val
-      let b ← expressionToSMT ctx' body
-      let patternTerms ← patterns.val.mapM (fun p =>
-        match  _: p with
+
+      -- Convert body
+      let bodyResult := expressionToSMT ctx' body
+
+      -- Convert pattern expressions and collect errors
+      let patternResults : Array (List Term × List (ConversionError M)) := patterns.val.map (fun p =>
+        match _: p with
         | .pattern _ exprs =>
-            exprs.val.mapM (expressionToSMT ctx')
+            let results : Array (ConversionResult M) := exprs.val.map (fun e => match _: e with | expr => expressionToSMT ctx' expr)
+            (results.toList.map (·.term), results.toList.foldl (fun acc r => acc ++ r.errors) [])
       )
-      let trigger := if patternTerms.toList.isEmpty then
+      let patternTermLists : List (List Term) := patternResults.toList.map (·.1)
+      let patternErrors : List (ConversionError M) := patternResults.toList.foldl (fun acc r => acc ++ r.2) []
+
+      -- Validate pattern structure
+      let patternExprArray := patterns.val.flatMap (fun p =>
+        match _: p with
+        | .pattern _ exprs => exprs.val
+      )
+      let validationErrors := match validatePatternExprs patternExprArray m with
+        | .ok () => []
+        | .error err => [err]
+
+      -- Build trigger from pattern terms
+      let allPatternTerms := patternTermLists.foldl (· ++ ·) []
+      let trigger := if patterns.val.isEmpty then
+        -- No patterns specified in source - don't generate a trigger
+        Term.app .triggers [] .trigger
+      else if allPatternTerms.isEmpty then
+        -- Patterns specified but empty (shouldn't happen) - generate simple trigger
         Factory.mkSimpleTrigger var.val .int
       else
-        patternTerms.toList.foldl (fun acc terms =>
-          terms.toList.foldl (fun t term => Factory.addTrigger term t) acc
-        ) (Term.app .triggers [] .trigger)
-      match qkind with
-      | .forall _ => return Factory.quant .all var.val .int trigger b
-      | .exists _ => return Factory.quant .exist var.val .int trigger b
+        -- Patterns specified - use them
+        allPatternTerms.foldl (fun acc term => Factory.addTrigger term acc) (Term.app .triggers [] .trigger)
+
+      -- Build quantifier term
+      let term := match _: qkind with
+        | .forall _ => Factory.quant .all var.val .int trigger bodyResult.term
+        | .exists _ => Factory.quant .exist var.val .int trigger bodyResult.term
+
+      -- Accumulate all errors
+      let allErrors := bodyResult.errors ++ validationErrors ++ patternErrors
+      { term := term, errors := allErrors }
+
   termination_by SizeOf.sizeOf e
   decreasing_by
     all_goals (simp_wf <;> try omega)
-    . cases args ; simp_all
+    . cases args; simp_all
       rename_i h; have := Array.sizeOf_lt_of_mem h; omega
     . cases exprs; cases patterns; simp_all; subst_vars
       rename_i h1 h2

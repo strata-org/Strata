@@ -6,6 +6,7 @@
 
 import Strata.Languages.B3.Verifier.State
 import Strata.Languages.B3.Verifier.Conversion
+import Strata.Languages.B3.Verifier.Statements
 
 /-!
 # Verification Diagnosis Strategies
@@ -22,130 +23,172 @@ namespace Strata.B3.Verifier
 
 open Strata.SMT
 
+structure DiagnosedFailure where
+  expression : B3AST.Expression SourceRange
+  report : VerificationReport
+  pathCondition : List (B3AST.Expression SourceRange)
+  isProvablyFalse : Bool  -- True if the expression is provably false (not just unprovable)
+
 structure DiagnosisResult where
   originalCheck : VerificationReport
-  diagnosedFailures : List (String × B3AST.Expression SourceRange × VerificationReport)
+  diagnosedFailures : List DiagnosedFailure
 
-/-- Automatically diagnose a failed check to find root cause -/
-def diagnoseFailureGeneric
-    (checkFn : B3VerificationState → Term → B3AST.Decl SourceRange → Option (B3AST.Statement SourceRange) → IO VerificationReport)
-    (isFailure : VerificationResult → Bool)
+/-- Automatically diagnose a failed check to find root cause.
+
+For proof checks (check/assert): Recursively splits conjunctions to find all atomic failures.
+When checking RHS, assumes LHS holds to provide context-aware diagnosis.
+
+For reachability checks (reach): Stops after finding first unreachable LHS conjunct,
+since all subsequent conjuncts are trivially unreachable if LHS is unreachable.
+-/
+partial def diagnoseFailureGeneric
+    (isReachCheck : Bool)
     (state : B3VerificationState)
     (expr : B3AST.Expression SourceRange)
     (sourceDecl : B3AST.Decl SourceRange)
     (sourceStmt : B3AST.Statement SourceRange) : IO DiagnosisResult := do
-  match expressionToSMT ConversionContext.empty expr with
-  | .error _ =>
-      let dummyResult : VerificationReport := {
-        decl := sourceDecl
-        sourceStmt := some sourceStmt
-        result := .proofResult .proofUnknown
-        model := none
-      }
-      return { originalCheck := dummyResult, diagnosedFailures := [] }
-  | .ok term =>
-      let originalResult ← checkFn state term sourceDecl (some sourceStmt)
+  let convResult := expressionToSMT ConversionContext.empty expr
 
-      if !isFailure originalResult.result then
-        return { originalCheck := originalResult, diagnosedFailures := [] }
+  -- If there are conversion errors, return early
+  if !convResult.errors.isEmpty then
+    let dummyResult : VerificationReport := {
+      decl := sourceDecl
+      sourceStmt := some sourceStmt
+      result := .proofResult .proofUnknown
+      model := none
+    }
+    return { originalCheck := dummyResult, diagnosedFailures := [] }
 
-      let mut diagnosements := []
+  -- Determine check function based on check type
+  let checkFn := if isReachCheck then reach else prove
+  let isFailure := fun r => r.isError
 
-      -- Strategy: Split conjunctions
-      match expr with
-      | .binaryOp _ (.and _) lhs rhs =>
-          match expressionToSMT ConversionContext.empty lhs with
-          | .ok lhsTerm =>
-              let lhsResult ← checkFn state lhsTerm sourceDecl (some sourceStmt)
-              if isFailure lhsResult.result then
-                diagnosements := diagnosements ++ [("left conjunct", lhs, lhsResult)]
-          | .error _ => pure ()
+  let originalResult ← checkFn state convResult.term sourceDecl (some sourceStmt)
 
-          match expressionToSMT ConversionContext.empty rhs with
-          | .ok rhsTerm =>
-              let rhsResult ← checkFn state rhsTerm sourceDecl (some sourceStmt)
-              if isFailure rhsResult.result then
-                diagnosements := diagnosements ++ [("right conjunct", rhs, rhsResult)]
-          | .error _ => pure ()
-      | _ => pure ()
+  if !isFailure originalResult.result then
+    return { originalCheck := originalResult, diagnosedFailures := [] }
 
-      return { originalCheck := originalResult, diagnosedFailures := diagnosements }
+  let mut diagnosements := []
+
+  -- Strategy: Split conjunctions and recursively diagnose
+  match expr with
+  | .binaryOp _ (.and _) lhs rhs =>
+      let lhsConv := expressionToSMT ConversionContext.empty lhs
+      if lhsConv.errors.isEmpty then
+        let lhsResult ← checkFn state lhsConv.term sourceDecl (some sourceStmt)
+        if isFailure lhsResult.result then
+          -- Check if LHS is provably false (not just unprovable)
+          let _ ← push state
+          let runCheck : SolverM Decision := do
+            Solver.assert (formatTermDirect lhsConv.term)
+            Solver.checkSat []
+          let decision ← runCheck.run state.smtState.solver
+          let _ ← pop state
+          let isProvablyFalse := decision == .unsat
+
+          -- Recursively diagnose the left conjunct
+          let lhsDiag ← diagnoseFailureGeneric isReachCheck state lhs sourceDecl sourceStmt
+          if lhsDiag.diagnosedFailures.isEmpty then
+            -- Atomic failure
+            diagnosements := diagnosements ++ [{
+              expression := lhs
+              report := lhsResult
+              pathCondition := state.pathCondition
+              isProvablyFalse := isProvablyFalse
+            }]
+          else
+            -- Has sub-failures - add those instead
+            diagnosements := diagnosements ++ lhsDiag.diagnosedFailures
+
+          -- If provably false, stop here (found root cause, no need to check RHS)
+          if isProvablyFalse then
+            return { originalCheck := originalResult, diagnosedFailures := diagnosements }
+
+          -- For reachability checks: if LHS is unreachable, stop here
+          -- All subsequent conjuncts are trivially unreachable
+          if isReachCheck then
+            return { originalCheck := originalResult, diagnosedFailures := diagnosements }
+
+      -- Check right conjunct assuming left conjunct holds
+      let rhsConv := expressionToSMT ConversionContext.empty rhs
+      if lhsConv.errors.isEmpty && rhsConv.errors.isEmpty then
+        -- Add lhs as assumption when checking rhs (for both proof and reachability checks)
+        let stateForRhs ← addPathCondition state lhs lhsConv.term
+        let rhsResult ← checkFn stateForRhs rhsConv.term sourceDecl (some sourceStmt)
+        if isFailure rhsResult.result then
+          -- Check if RHS is provably false (not just unprovable)
+          let _ ← push stateForRhs
+          let runCheck : SolverM Decision := do
+            Solver.assert (formatTermDirect rhsConv.term)
+            Solver.checkSat []
+          let decision ← runCheck.run stateForRhs.smtState.solver
+          let _ ← pop stateForRhs
+          let isProvablyFalse := decision == .unsat
+
+          -- Recursively diagnose the right conjunct
+          let rhsDiag ← diagnoseFailureGeneric isReachCheck stateForRhs rhs sourceDecl sourceStmt
+          if rhsDiag.diagnosedFailures.isEmpty then
+            -- Atomic failure
+            diagnosements := diagnosements ++ [{
+              expression := rhs
+              report := rhsResult
+              pathCondition := stateForRhs.pathCondition
+              isProvablyFalse := isProvablyFalse
+            }]
+          else
+            -- Has sub-failures - add those instead
+            diagnosements := diagnosements ++ rhsDiag.diagnosedFailures
+  | _ => pure ()
+
+  return { originalCheck := originalResult, diagnosedFailures := diagnosements }
 
 /-- Diagnose a failed check/assert -/
 def diagnoseFailure (state : B3VerificationState) (expr : B3AST.Expression SourceRange) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : B3AST.Statement SourceRange) : IO DiagnosisResult :=
-  diagnoseFailureGeneric prove (fun r => r.isError) state expr sourceDecl sourceStmt
+  diagnoseFailureGeneric false state expr sourceDecl sourceStmt
 
 /-- Diagnose an unreachable reach -/
 def diagnoseUnreachable (state : B3VerificationState) (expr : B3AST.Expression SourceRange) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : B3AST.Statement SourceRange) : IO DiagnosisResult :=
-  diagnoseFailureGeneric reach (fun r => r.isError) state expr sourceDecl sourceStmt
+  diagnoseFailureGeneric true state expr sourceDecl sourceStmt
 
 ---------------------------------------------------------------------
--- Statement Execution with Diagnosis
+-- Statement Symbolic Execution with Diagnosis
 ---------------------------------------------------------------------
 
-/-- Verify statements with automatic diagnosis on failures -/
-partial def verifyStatementsWithDiagnosis (ctx : ConversionContext) (state : B3VerificationState) (sourceDecl : B3AST.Decl SourceRange) : B3AST.Statement SourceRange → IO (List (VerificationReport × Option DiagnosisResult) × B3VerificationState)
-  | .check m expr => do
-      match expressionToSMT ctx expr with
-      | .ok term =>
-          let result ← prove state term sourceDecl (some (.check m expr))
-          let diag ← if result.result.isError then
-            let d ← diagnoseFailure state expr sourceDecl (.check m expr)
-            pure (some d)
-          else
-            pure none
-          pure ([(result, diag)], state)
-      | .error _ =>
-          pure ([], state)
+/-- Symbolically execute statements with automatic diagnosis on failures.
 
-  | .assert m expr => do
-      match expressionToSMT ctx expr with
-      | .ok term =>
-          let result ← prove state term sourceDecl (some (.assert m expr))
-          let diag ← if result.result.isError then
-            let d ← diagnoseFailure state expr sourceDecl (.assert m expr)
-            pure (some d)
-          else
-            pure none
-          let newState ← if !result.result.isError then
-            addAxiom state term
-          else
-            pure state
-          pure ([(result, diag)], newState)
-      | .error _ =>
-          pure ([], state)
+This wraps symbolicExecuteStatements and adds diagnosis for failed checks/asserts/reach.
+The diagnosis analyzes failures but does not modify the verification state.
+-/
+partial def symbolicExecuteStatementsWithDiagnosis (ctx : ConversionContext) (state : B3VerificationState) (sourceDecl : B3AST.Decl SourceRange) : B3AST.Statement SourceRange → IO (List (VerificationReport × Option DiagnosisResult) × B3VerificationState)
+  | stmt => do
+      -- Symbolically execute the statement to get results and updated state
+      let execResult ← symbolicExecuteStatements ctx state sourceDecl stmt
 
-  | .assume _ expr => do
-      match expressionToSMT ctx expr with
-      | .ok term =>
-          let newState ← addAxiom state term
-          pure ([], newState)
-      | .error _ =>
-          pure ([], state)
+      -- Add diagnosis to any failed verification results
+      let mut resultsWithDiag := []
+      for stmtResult in execResult.results do
+        match stmtResult with
+        | .verified report =>
+            -- If verification failed, diagnose it
+            let diag ← if report.result.isError then
+              match report.sourceStmt with
+              | some (.check m expr) =>
+                  let d ← diagnoseFailure state expr sourceDecl (.check m expr)
+                  pure (some d)
+              | some (.assert m expr) =>
+                  let d ← diagnoseFailure state expr sourceDecl (.assert m expr)
+                  pure (some d)
+              | some (.reach m expr) =>
+                  let d ← diagnoseUnreachable state expr sourceDecl (.reach m expr)
+                  pure (some d)
+              | _ => pure none
+            else
+              pure none
+            resultsWithDiag := resultsWithDiag ++ [(report, diag)]
+        | .conversionError _ =>
+            -- Conversion errors don't produce VerificationReports, skip them
+            pure ()
 
-  | .reach m expr => do
-      match expressionToSMT ctx expr with
-      | .ok term =>
-          let result ← reach state term sourceDecl (some (.reach m expr))
-          let diag ← if result.result.isError then
-            let d ← diagnoseUnreachable state expr sourceDecl (.reach m expr)
-            pure (some d)
-          else
-            pure none
-          pure ([(result, diag)], state)
-      | .error _ =>
-          pure ([], state)
-
-  | .blockStmt _ stmts => do
-      let mut currentState := state
-      let mut allResults := []
-      for stmt in stmts.val.toList do
-        let (results, newState) ← verifyStatementsWithDiagnosis ctx currentState sourceDecl stmt
-        currentState := newState
-        allResults := allResults ++ results
-      pure (allResults, currentState)
-
-  | _ =>
-      pure ([], state)
+      pure (resultsWithDiag, execResult.finalState)
 
 end Strata.B3.Verifier

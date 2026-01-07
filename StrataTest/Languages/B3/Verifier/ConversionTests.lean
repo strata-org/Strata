@@ -41,7 +41,32 @@ def programToB3AST (prog : Program) : B3AST.Program SourceRange :=
 
 def testSMTGeneration (prog : Program) : IO Unit := do
   let ast := programToB3AST prog
-  let commands ← programToSMTCommands ast
+
+  -- Create a buffer solver to capture SMT commands
+  let (solver, buffer) ← createBufferSolver
+
+  -- Run verification to get both SMT and errors
+  let results ← verifyProgramWithSolver ast solver
+
+  -- Collect and print conversion errors first (strip location info for stable tests)
+  let errors := results.filterMap (fun r =>
+    match r with
+    | .error msg => some msg
+    | .ok _ => none
+  )
+  for err in errors do
+    -- Strip location information (anything between "at {" and "}: ") for stable tests
+    let cleanErr := err.splitOn "at {" |>.head!
+    let suffix := err.splitOn "}: " |>.tail.headD ""
+    let finalErr := if suffix.isEmpty then cleanErr else cleanErr ++ suffix
+    IO.println s!"error: {finalErr.trim}"
+
+  -- Get and print SMT commands
+  let contents ← buffer.get
+  let commands := if h: contents.data.IsValidUTF8
+    then String.fromUTF8 contents.data h
+    else "Error: Invalid UTF-8 in SMT output"
+
   -- Strip common prefix/suffix for stable tests
   let lines := commands.splitOn "\n"
   let filtered := lines.filter (fun line =>
@@ -114,18 +139,18 @@ procedure test() {
 #end
 
 /--
-info: (declare-fun f (Int) Int)
-(declare-fun g (Int Int) Int)
-(assert (forall ((x Int)) (! (= (f x) (+ x 1)) :pattern ((f x)))))
+info: (declare-fun f (Int) Bool)
+(declare-fun g (Int Int) Bool)
+(assert (forall ((x Int)) (! (= (f x) (= (+ x 1) 6)) :pattern ((f x)))))
 (push 1)
-(assert (not (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (= 5 5) (not (= 3 4))) (< 2 3)) (<= 2 2)) (> 4 3)) (>= 4 4)) (+ 1 2)) (- 5 2)) (* 3 4)) (div 10 2)) (mod 7 3)) (- 5)) (=> true true)) (or false true)) (ite true 1 0)) (f 5)) (g 1 2)) (forall ((y Int)) (! (> y 0) :pattern (y))))))
+(assert (not (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (and (= 5 5) (not (= 3 4))) (< 2 3)) (<= 2 2)) (> 4 3)) (>= 4 4)) (= (+ 1 2) 4)) (= (- 5 2) 3)) (= (* 3 4) 12)) (= (div 10 2) 5)) (= (mod 7 3) 1)) (= (- 5) (- 0 5))) (=> true true)) (or false true)) (ite true true false)) (f 5)) (g 1 2)) (forall ((y Int)) (! (or (f y) (not (f y))) :pattern ((f y))))) (forall ((y Int)) (or (> y 0) (<= y 0))))))
 (check-sat)
 (pop 1)
 -/
 #guard_msgs in
 #eval testSMTGeneration $ #strata program B3CST;
-function f(x : int) : int { x + 1 }
-function g(a : int, b : int) : int
+function f(x : int) : bool { x + 1 == 6 }
+function g(a : int, b : int) : bool
 procedure test_all_expressions() {
   check 5 == 5 &&
         !(3 == 4) &&
@@ -133,18 +158,40 @@ procedure test_all_expressions() {
         2 <= 2 &&
         4 > 3 &&
         4 >= 4 &&
-        1 + 2 &&
-        5 - 2 &&
-        3 * 4 &&
-        10 div 2 &&
-        7 mod 3 &&
-        -5 &&
+        1 + 2 == 4 &&
+        5 - 2 == 3 &&
+        3 * 4 == 12 &&
+        10 div 2 == 5 &&
+        7 mod 3 == 1 &&
+        -5 == 0 - 5 &&
         (true ==> true) &&
         (false || true) &&
-        (if true then 1 else 0) &&
+        (if true then true else false) &&
         f(5) &&
         g(1, 2) &&
-        (forall y : int y > 0)
+        (forall y : int pattern f(y) f(y) || !f(y)) &&
+        (forall y : int y > 0 || y <= 0)
+}
+#end
+
+---------------------------------------------------------------------
+-- Invalid Pattern Tests
+---------------------------------------------------------------------
+
+-- The test below should return an error and the SMT code.
+/--
+info: error: Invalid pattern each pattern expression must be a function application
+(declare-fun f (Int) Bool)
+(push 1)
+(assert (not (forall ((y Int)) (! (> y 0) :pattern (y)))))
+(check-sat)
+(pop 1)
+-/
+#guard_msgs in
+#eval testSMTGeneration $ #strata program B3CST;
+function f(x : int) : bool
+procedure test_invalid_pattern() {
+  check forall y : int pattern y y > 0
 }
 #end
 

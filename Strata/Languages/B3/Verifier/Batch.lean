@@ -38,20 +38,24 @@ private def addDeclarationsAndAxioms (state : B3VerificationState) (prog : B3AST
       -- First pass: declare all functions
       for decl in decls.val.toList do
         match decl with
-        | .function _ name params _ _ body =>
+        | .function _ name params resultType _ body =>
             -- After transformation, functions should have no body
             if body.val.isNone then
-              let argTypes := params.val.toList.map (fun _ => "Int")
-              state ← addFunctionDecl state name.val argTypes "Int"
+              let argTypes := params.val.toList.map (fun p =>
+                match p with
+                | .fParameter _ _ _ ty => b3TypeToSMT ty.val
+              )
+              let retType := b3TypeToSMT resultType.val
+              state ← addFunctionDecl state name.val argTypes retType
         | _ => pure ()
 
       -- Second pass: add axioms
       for decl in decls.val.toList do
         match decl with
         | .axiom _ _ expr =>
-            match expressionToSMT ConversionContext.empty expr with
-            | .ok term => state ← addAxiom state term
-            | .error err => errors := errors ++ [s!"Failed to convert axiom: {err}"]
+            let convResult := expressionToSMT ConversionContext.empty expr
+            state ← addPathCondition state expr convResult.term
+            errors := errors ++ convResult.errors.map toString
         | _ => pure ()
 
   return (state, errors)
@@ -81,7 +85,7 @@ def verifyProgramWithSolver (prog : B3AST.Program SourceRange) (solver : Solver)
             -- Only verify parameter-free procedures
             if params.val.isEmpty && body.val.isSome then
               let bodyStmt := body.val.get!
-              let execResult ← executeStatements ConversionContext.empty state decl bodyStmt
+              let execResult ← symbolicExecuteStatements ConversionContext.empty state decl bodyStmt
               -- Convert StatementResult to Except String VerificationReport
               let converted := execResult.results.map (fun r =>
                 match r with
@@ -159,7 +163,7 @@ def verifyWithDiagnosis (prog : Strata.B3AST.Program SourceRange) (solverPath : 
         | .procedure _ name params _ body =>
             if params.val.isEmpty && body.val.isSome then
               let bodyStmt := body.val.get!
-              let (results, _finalState) ← verifyStatementsWithDiagnosis ConversionContext.empty state decl bodyStmt
+              let (results, _finalState) ← symbolicExecuteStatementsWithDiagnosis ConversionContext.empty state decl bodyStmt
 
               reports := reports ++ [{
                 procedureName := name.val
