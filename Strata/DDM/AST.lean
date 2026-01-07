@@ -753,10 +753,10 @@ structure ConstructorInfo where
 
 /--
 Build a TypeExpr reference to the datatype with type parameters, using
-`.fvar` for the datatype's GlobalContext index.
+`.fvar` for the datatype's GlobalContext index and `.tvar` for type parameters.
 -/
 def mkDatatypeTypeRef (ann : SourceRange) (datatypeIndex : FreeVarIndex) (typeParams : Array String) : TypeExpr :=
-  let typeArgs := typeParams.mapIdx fun i _ => TypeExprF.bvar ann i
+  let typeArgs := typeParams.map fun name => TypeExprF.tvar ann name
   TypeExprF.fvar ann datatypeIndex typeArgs
 
 /--

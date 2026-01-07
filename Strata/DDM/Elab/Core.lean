@@ -1073,13 +1073,22 @@ partial def runSyntaxElaborator
             | .ofIdentInfo info => info.val
             | _ => panic! "Expected identifier for datatype name"
           let baseCtx := typeParamsT.resultContext
-          -- Add the datatype name to the GlobalContext as a type
+          -- Extract type parameter names from the bindings
+          let typeParamNames := baseCtx.bindings.toArray.filterMap fun b =>
+            match b.kind with
+            | .type _ [] _ => some b.ident  -- Type parameter (no params, no definition)
+            | _ => none
+          -- Add the datatype name to the GlobalContext as a type with the correct arity
           let gctx := baseCtx.globalContext
           let gctx :=
             if datatypeName ∈ gctx then gctx
-            else gctx.push datatypeName (GlobalKind.type [] none)
-          -- Create a new typing context with the updated GlobalContext
-          pure (baseCtx.withGlobalContext gctx)
+            else gctx.push datatypeName (GlobalKind.type typeParamNames.toList none)
+          -- Add .tvar bindings for type parameters (like polymorphic functions do)
+          -- This shadows the .type bindings so type params resolve to .tvar
+          let loc := typeParamsT.info.loc
+          let tctx := typeParamNames.foldl (init := baseCtx.withGlobalContext gctx) fun ctx name =>
+            ctx.push { ident := name, kind := .tvar loc name }
+          pure tctx
         | _, _ => continue
       | none =>
         -- Check for typeVarsScope (polymorphic function type parameters)
