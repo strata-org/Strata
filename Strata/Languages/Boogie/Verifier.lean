@@ -113,7 +113,7 @@ instance : ToFormat Result where
 
 def VC_folder_name: String := "vcs"
 
-def runSolver (solver : String) (args : Array String) : IO (String × String) := do
+def runSolver (solver : String) (args : Array String) : IO IO.Process.Output := do
   let output ← IO.Process.output {
     cmd := solver
     args := args
@@ -121,11 +121,12 @@ def runSolver (solver : String) (args : Array String) : IO (String × String) :=
   -- dbg_trace f!"runSolver: exitcode: {repr output.exitCode}\n\
   --                         stderr: {repr output.stderr}\n\
   --                         stdout: {repr output.stdout}"
-  return (output.stdout, output.stderr)
+  return output
 
-def solverResult (vars : List (IdentT LMonoTy Visibility)) (stdout : String) (stderr : String)
+def solverResult (vars : List (IdentT LMonoTy Visibility)) (output: IO.Process.Output)
     (ctx : SMT.Context) (E : EncoderState) :
   Except Format Result := do
+  let stdout := output.stdout
   let pos := (stdout.find (fun c => c == '\n')).byteIdx
   let verdict := (stdout.take pos).trim
   let rest := stdout.drop pos
@@ -141,7 +142,7 @@ def solverResult (vars : List (IdentT LMonoTy Visibility)) (stdout : String) (st
     | .error _model_err => (.ok (.sat []))
   | "unsat"   =>  .ok .unsat
   | "unknown" =>  .ok .unknown
-  | _     =>  .error (stdout ++ stderr)
+  | _     =>  .error (stdout ++ output.stderr)
 
 open Imperative
 
@@ -220,8 +221,8 @@ def dischargeObligation
   let _ ← solver.checkSat ids -- Will return unknown for Solver.fileWriter
   if options.verbose then IO.println s!"Wrote problem to {filename}."
   let flags := getSolverFlags options smtsolver
-  let (solver_out, solver_err) ← runSolver smtsolver (#[filename] ++ flags)
-  match solverResult vars solver_out solver_err ctx estate with
+  let output ← runSolver smtsolver (#[filename] ++ flags)
+  match solverResult vars output ctx estate with
   | .error e => return .error e
   | .ok result => return .ok (result, estate)
 
