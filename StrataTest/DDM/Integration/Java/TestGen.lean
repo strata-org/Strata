@@ -290,7 +290,7 @@ elab "#testCompile" : command => do
 
   let result ← IO.Process.output {
     cmd := "javac"
-    args := filePaths -- #["--enable-preview", "--release", "17"] ++
+    args := filePaths
   }
 
   IO.FS.removeDirAll dir
