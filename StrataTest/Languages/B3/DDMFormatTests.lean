@@ -55,13 +55,13 @@ Strata.B3CST.Expression.mod : {α : Type} → α → Expression α → Expressio
 Strata.B3CST.Expression.paren : {α : Type} → α → Expression α → Expression α
 Strata.B3CST.Expression.functionCall : {α : Type} → α → Ann String α → Ann (Array (Expression α)) α → Expression α
 Strata.B3CST.Expression.forall_expr_no_patterns : {α : Type} →
-  α → Ann String α → Ann String α → Expression α → Expression α
+  α → Ann (Array (VarDecl α)) α → Expression α → Expression α
 Strata.B3CST.Expression.forall_expr : {α : Type} →
-  α → Ann String α → Ann String α → Patterns α → Expression α → Expression α
+  α → Ann (Array (VarDecl α)) α → Patterns α → Expression α → Expression α
 Strata.B3CST.Expression.exists_expr_no_patterns : {α : Type} →
-  α → Ann String α → Ann String α → Expression α → Expression α
+  α → Ann (Array (VarDecl α)) α → Expression α → Expression α
 Strata.B3CST.Expression.exists_expr : {α : Type} →
-  α → Ann String α → Ann String α → Patterns α → Expression α → Expression α
+  α → Ann (Array (VarDecl α)) α → Patterns α → Expression α → Expression α
 -/
 #guard_msgs in
 #print B3CST.Expression
@@ -85,7 +85,7 @@ Strata.B3AST.Expression.letExpr : {α : Type} →
 Strata.B3AST.Expression.quantifierExpr : {α : Type} →
   α →
     B3AST.QuantifierKind α →
-      Ann String α → Ann String α → Ann (Array (B3AST.Pattern α)) α → B3AST.Expression α → B3AST.Expression α
+      Ann (Array (B3AST.VarDecl α)) α → Ann (Array (B3AST.Pattern α)) α → B3AST.Expression α → B3AST.Expression α
 -/
 #guard_msgs in
 #print B3AST.Expression
@@ -249,6 +249,7 @@ def cleanupExprRepr (s : String) : String :=
   let s := s.replace "Strata.B3AST.UnaryOp." "."
   let s := s.replace "Strata.B3AST.BinaryOp." "."
   let s := s.replace "Strata.B3AST.Pattern." "."
+  let s := s.replace "Strata.B3AST.VarDecl." "."
   s
 
 /-- Remove Strata.B3AST namespace prefixes for statement types -/
