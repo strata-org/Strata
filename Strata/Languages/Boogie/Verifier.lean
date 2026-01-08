@@ -370,7 +370,6 @@ def verify
   else
     panic! s!"DDM Transform Error: {repr errors}"
 
-/-- A diagnostic produced by analyzing a file -/
 structure DiagnosticModel where
   fileRange : Strata.FileRange
   message : String
@@ -396,13 +395,11 @@ def toDiagnosticModel (vcr : Boogie.VCResult) : Option DiagnosticModel := do
       }
     | _ => none
 
-/-- A diagnostic produced by analyzing a file -/
 structure Diagnostic where
   start : Lean.Position
   ending : Lean.Position
   message : String
   deriving Repr, BEq
-
 
 def toDiagnostic (files: Map Strata.Uri Lean.FileMap) (vcr : Boogie.VCResult) : Option Diagnostic := do
   let modelOption := toDiagnosticModel vcr
