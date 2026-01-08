@@ -7,6 +7,7 @@
 import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Boogie.Verifier
 
+namespace Strata
 namespace Laurel
 
 /-
@@ -22,6 +23,7 @@ Becomes:
   y := y1;
   if (x1 == y1) { ... }
 -/
+
 
 structure SequenceState where
   prependedStmts : List StmtExpr := []
@@ -172,24 +174,24 @@ partial def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
 
 end
 
-def transformProcedureBody (body : StmtExpr) : StmtExpr :=
-  let (seqStmts, _) := transformStmt body |>.run {}
+def transformProcedureBody (body : StmtExpr) : SequenceM StmtExpr := do
+  let seqStmts <- transformStmt body
   match seqStmts with
-  | [single] => single
-  | multiple => .Block multiple none
+  | [single] => pure single
+  | multiple => pure <| .Block multiple none
 
-def transformProcedure (proc : Procedure) : Procedure :=
+def transformProcedure (proc : Procedure) : SequenceM Procedure := do
   match proc.body with
   | .Transparent bodyExpr =>
-      let seqBody := transformProcedureBody bodyExpr
-      { proc with body := .Transparent seqBody }
-  | _ => proc  -- Opaque and Abstract bodies unchanged
+      let seqBody <- transformProcedureBody bodyExpr
+      pure { proc with body := .Transparent seqBody }
+  | _ => pure proc  -- Opaque and Abstract bodies unchanged
 
 /--
 Transform a program to lift all assignments that occur in an expression context.
 -/
 def liftExpressionAssignments (program : Program) : Program :=
-  let seqProcedures := program.staticProcedures.map transformProcedure
+  let seqProcedures := run (program.staticProcedures.mapM transformProcedure) { diagnostics := {} }
   { program with staticProcedures := seqProcedures }
 
 end Laurel

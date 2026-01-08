@@ -6,6 +6,7 @@
 
 import Strata.Languages.Laurel.Laurel
 
+namespace Strata
 namespace Laurel
 
 open Std (Format)

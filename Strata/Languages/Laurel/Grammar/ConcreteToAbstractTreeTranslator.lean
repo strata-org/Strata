@@ -10,10 +10,10 @@ import Strata.Languages.Laurel.Laurel
 import Strata.DL.Imperative.MetaData
 import Strata.Languages.Boogie.Expressions
 
+namespace Strata
 namespace Laurel
 
 open Std (ToFormat Format format)
-open Strata (QualifiedIdent Arg SourceRange)
 open Lean.Parser (InputContext)
 open Imperative (MetaData Uri FileRange)
 

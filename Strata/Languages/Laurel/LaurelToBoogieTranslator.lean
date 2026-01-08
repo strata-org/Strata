@@ -14,12 +14,13 @@ import Strata.Languages.Laurel.LiftExpressionAssignments
 import Strata.DL.Imperative.Stmt
 import Strata.Languages.Laurel.LaurelFormat
 
-namespace Laurel
-
 open Boogie (VCResult VCResults)
+open Boogie (intAddOp intSubOp intMulOp intDivOp intModOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp)
+
+namespace Strata.Laurel
+
 open Strata
 
-open Boogie (intAddOp intSubOp intMulOp intDivOp intModOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp)
 open Lambda (LMonoTy LTy)
 
 /-
@@ -187,7 +188,7 @@ Translate Laurel Program to Boogie Program
 -/
 def translate (program : Program) : Boogie.Program :=
   -- First, sequence all assignments (move them out of expression positions)
-  let sequencedProgram := liftExpressionAssignments program
+  let sequencedProgram <- liftExpressionAssignments program
   dbg_trace "=== Sequenced program Program ==="
   dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format sequencedProgram)))
   dbg_trace "================================="
