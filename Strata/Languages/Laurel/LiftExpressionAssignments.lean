@@ -191,7 +191,7 @@ def transformProcedure (proc : Procedure) : SequenceM Procedure := do
 Transform a program to lift all assignments that occur in an expression context.
 -/
 def liftExpressionAssignments (program : Program) : Program :=
-  let seqProcedures := run (program.staticProcedures.mapM transformProcedure) { diagnostics := {} }
+  let (seqProcedures, _) := (program.staticProcedures.mapM transformProcedure).run { diagnostics := [] }
   { program with staticProcedures := seqProcedures }
 
 end Laurel

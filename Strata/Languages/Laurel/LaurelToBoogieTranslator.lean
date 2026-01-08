@@ -188,7 +188,7 @@ Translate Laurel Program to Boogie Program
 -/
 def translate (program : Program) : Boogie.Program :=
   -- First, sequence all assignments (move them out of expression positions)
-  let sequencedProgram <- liftExpressionAssignments program
+  let sequencedProgram := liftExpressionAssignments program
   dbg_trace "=== Sequenced program Program ==="
   dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format sequencedProgram)))
   dbg_trace "================================="
