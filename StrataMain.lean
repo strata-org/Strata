@@ -256,17 +256,8 @@ def laurelAnalyzeCommand : Command where
 
     for strataFile in strataFiles do
 
-      let dummyContext : Strata.Parser.InputContext := {
-        inputString := ""
-        fileName := strataFile.filePath
-        fileMap := {
-          source := ""
-          positions := Array.empty
-        }
-      }
-
       -- Convert to Laurel.Program using parseProgram
-      let (laurelProgram, transErrors) := Laurel.TransM.run dummyContext (Laurel.parseProgram strataFile.program)
+      let (laurelProgram, transErrors) := Laurel.TransM.run (Strata.Uri.file strataFile.filePath) (Laurel.parseProgram strataFile.program)
       if transErrors.size > 0 then
         exitFailure s!"Translation errors in {strataFile.filePath}: {transErrors}"
 

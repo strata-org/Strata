@@ -19,27 +19,25 @@ open Lean.Parser (InputContext)
 open Imperative (MetaData)
 
 structure TransState where
-  inputCtx : InputContext
+  uri : Uri
   errors : Array String
 
 abbrev TransM := StateM TransState
 
-def TransM.run (ictx : InputContext) (m : TransM α) : (α × Array String) :=
-  let (v, s) := StateT.run m { inputCtx := ictx, errors := #[] }
+def TransM.run (uri : Uri) (m : TransM α) : (α × Array String) :=
+  let (v, s) := StateT.run m { uri := uri, errors := #[] }
   (v, s.errors)
 
 def TransM.error [Inhabited α] (msg : String) : TransM α := do
   modify fun s => { s with errors := s.errors.push msg }
   return panic msg
 
-def SourceRange.toMetaData (ictx : InputContext) (sr : SourceRange) : Imperative.MetaData Boogie.Expression :=
-  let file := ictx.fileName
-  let uri : Uri := .file file
+def SourceRange.toMetaData (uri : Uri) (sr : SourceRange) : Imperative.MetaData Boogie.Expression :=
   let fileRangeElt := ⟨ Imperative.MetaDataElem.Field.label "fileRange", .fileRange ⟨ uri, sr.start, sr.stop ⟩ ⟩
   #[fileRangeElt]
 
 def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Boogie.Expression) :=
-  return SourceRange.toMetaData (← get).inputCtx arg.ann
+  return SourceRange.toMetaData (← get).uri arg.ann
 
 def checkOp (op : Strata.Operation) (name : QualifiedIdent) (argc : Nat) :
   TransM Unit := do
