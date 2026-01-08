@@ -158,6 +158,12 @@ inductive Op.Strings : Type where
   | re_index : Nat → Op.Strings
 deriving Repr, DecidableEq, Inhabited, Hashable
 
+inductive Op.DatatypeFuncs : Type where
+  | constructor : Op.DatatypeFuncs
+  | tester : Op.DatatypeFuncs
+  | selector : Op.DatatypeFuncs
+deriving Repr, DecidableEq, Inhabited, Hashable
+
 inductive Op : Type where
   -- SMTLib core theory of equality with uninterpreted functions (`UF`)
   | core : Op.Core → Op
@@ -171,6 +177,8 @@ inductive Op : Type where
   | triggers
   -- Core ADT operators with a trusted mapping to SMT
   | option_get
+  -- Datatype ops (for user-defined algebraic datatypes)
+  | datatype_op : Op.DatatypeFuncs → String → Op
 deriving Repr, DecidableEq, Inhabited, Hashable
 
 -- Generate abbreviations like `Op.not` for `Op.core Op.Core.not` for
@@ -285,6 +293,8 @@ def Op.mkName : Op → String
   | .zero_extend _ => "zero_extend"
   | .triggers      => "triggers"
   | .option_get    => "option.get"
+  | .datatype_op .tester name => s!"is-{name}"
+  | .datatype_op _ name => name
   | .str_length    => "str.len"
   | .str_concat    => "str.++"
   | .str_lt        => "str.<"

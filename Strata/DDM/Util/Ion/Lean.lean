@@ -8,18 +8,26 @@
 This file provides type classes that work together with a Lean environment
 extension to create high performance Ion serialization and deserialization.
 -/
-import Strata.DDM.Util.Ion
-import Strata.DDM.Util.Ion.Env
-import Lean.Meta.Eval
+module
 
+public import Lean.Elab.Command
+public import Lean.Elab.Term.TermElabM
+public import Strata.DDM.Util.Ion
+
+public meta import Strata.DDM.Util.Ion.Env
+public meta import Strata.DDM.Util.Ion.SymbolTable
+public meta import Lean.Meta.Eval
+
+open Lean
+open Lean.Elab
+
+public section
 namespace Ion
-
-open Lean Elab
 
 /--
 Stores tables used to efficiently serialize values.
 -/
-structure SymbolIdCache where
+public structure SymbolIdCache where
   /-- Global array for entries -/
   globalCache : Array Nat
   /-- Offset into global array for this type. -/
@@ -33,7 +41,7 @@ def id! (refs : SymbolIdCache) (i : Nat) : SymbolId :=
   else
     panic! s!"Invalid string id {refs.offset} + {i} (max = {refs.globalCache.size})"
 
-/-
+/--
 Returns the symbol id cache for the given type and index.
 -/
 def ref! (refs : SymbolIdCache) (tp : String) (i : Nat) : SymbolIdCache where
@@ -46,7 +54,7 @@ def ref! (refs : SymbolIdCache) (tp : String) (i : Nat) : SymbolIdCache where
 
 end SymbolIdCache
 
-structure LeanSymbolTableMap where
+meta structure LeanSymbolTableMap where
   symtab : Ion.SymbolTable := .system
   nameMap : Std.HashMap Lean.Name Nat := {}
   entries : Array Nat := #[]
@@ -54,7 +62,7 @@ deriving Inhabited
 
 namespace LeanSymbolTableMap
 
-def addEntry : SymbolTableEntry → StateM LeanSymbolTableMap Nat
+meta def addEntry : SymbolTableEntry → StateM LeanSymbolTableMap Nat
 | .record nm, tbl =>
   match tbl.nameMap[nm]? with
   | none => panic! s!"Unknown name {nm}"
@@ -65,7 +73,7 @@ def addEntry : SymbolTableEntry → StateM LeanSymbolTableMap Nat
   let (sym, symtab) := symtab.intern s
   (sym.value, { tbl with symtab := symtab })
 
-def addRecord (tbl : LeanSymbolTableMap) (name : Lean.Name) (entries : Array SymbolTableEntry) : Nat × LeanSymbolTableMap :=
+meta def addRecord (tbl : LeanSymbolTableMap) (name : Lean.Name) (entries : Array SymbolTableEntry) : Nat × LeanSymbolTableMap :=
   let (entries, tbl) := entries.mapM addEntry tbl
   let thisIdx := tbl.entries.size
   let tbl := { tbl with
@@ -74,7 +82,7 @@ def addRecord (tbl : LeanSymbolTableMap) (name : Lean.Name) (entries : Array Sym
   }
   (thisIdx, tbl)
 
-partial def addToSymbolTable (s : IonTypeState) (name : Name) : StateT LeanSymbolTableMap (Except String) Nat := do
+meta partial def addToSymbolTable (s : IonTypeState) (name : Name) : StateT LeanSymbolTableMap (Except String) Nat := do
   match (← get).nameMap[name]? with
   | some n => return n
   | none => pure ()
@@ -106,11 +114,11 @@ partial def addToSymbolTable (s : IonTypeState) (name : Name) : StateT LeanSymbo
 
 end LeanSymbolTableMap
 
-structure FromIonCache where
+private structure FromIonCache where
   entries : Array String
   cache : SymbolIdCache
 
-class FromIon (α : Type _) where
+private class FromIon (α : Type _) where
   fromIon : FromIonCache → Ion SymbolId → α
 
 class CachedToIon (α : Type _) where
@@ -118,15 +126,15 @@ class CachedToIon (α : Type _) where
 
 namespace CachedToIon
 
-instance [h : CachedToIon α] : CachedToIon (Array α) where
-  cachedToIon refs a := .list <$> a.mapM (cachedToIon refs)
+instance {α} [h : CachedToIon α] : CachedToIon (Array α) where
+  cachedToIon refs a := private .list <$> a.mapM (cachedToIon refs)
 
-instance [h : CachedToIon α] : CachedToIon (List α) where
-  cachedToIon refs a := .list <$> a.toArray.mapM (cachedToIon refs)
+instance {α} [h : CachedToIon α] : CachedToIon (List α) where
+  cachedToIon refs a := private .list <$> a.toArray.mapM (cachedToIon refs)
 
 end CachedToIon
 
-private def resolveGlobalDecl {m : Type → Type} [AddMessageContext m] [Monad m] [MonadResolveName m] [MonadEnv m] [MonadError m] [MonadLog m] [MonadOptions m] (tp : Syntax) : m Name := do
+private meta def resolveGlobalDecl {m : Type → Type} [AddMessageContext m] [Monad m] [MonadResolveName m] [MonadEnv m] [MonadError m] [MonadLog m] [MonadOptions m] (tp : Syntax) : m Name := do
   let cs ← resolveGlobalName tp.getId
   match cs with
   | [(tpName, [])] =>
@@ -134,7 +142,7 @@ private def resolveGlobalDecl {m : Type → Type} [AddMessageContext m] [Monad m
   | _ =>
     throwErrorAt tp s!"Could not identify unique type for {tp}."
 
-def resolveEntry (stx : Syntax) (entry : SymbolTableEntry) : TermElabM (Lean.Expr × Lean.Expr) := do
+private meta def resolveEntry (stx : Syntax) (entry : SymbolTableEntry) : TermElabM (Lean.Expr × Lean.Expr) := do
   let s := Ion.ionDialectExt.getState (← getEnv)
   match s |>.scope with
   | .none =>  throw <| .error stx m!"Mising scope: Use ionScope!"
@@ -146,7 +154,7 @@ def resolveEntry (stx : Syntax) (entry : SymbolTableEntry) : TermElabM (Lean.Exp
 syntax (name := declareIonScope) "ionScope!" ident term ":" term : term -- declare the syntax
 
 @[term_elab declareIonScope]
-def declareIonScopeImpl : Elab.Term.TermElab := fun stx expectedType =>
+public meta def declareIonScopeImpl : Elab.Term.TermElab := fun stx expectedType =>
   match stx with
   | `(ionScope! $tp $r : $e) => do
     match Ion.ionDialectExt.getState (← getEnv) |>.scope with
@@ -172,7 +180,7 @@ def declareIonScopeImpl : Elab.Term.TermElab := fun stx expectedType =>
 syntax:max (name := declareIonSymbol) "ionSymbol!" str : term -- declare the syntax
 
 @[term_elab declareIonSymbol]
-def declareIonSymbolImpl : Elab.Term.TermElab := fun stx _ =>
+meta def declareIonSymbolImpl : Elab.Term.TermElab := fun stx _ =>
   match stx with
   | `(ionSymbol! $fld) => do
     let (r, e) ← resolveEntry stx (.string fld.getString)
@@ -180,14 +188,14 @@ def declareIonSymbolImpl : Elab.Term.TermElab := fun stx _ =>
   | _ =>
     throwUnsupportedSyntax
 
-def typeOf {α : Type u} (_ : α) : Type u := α
+private def typeOf {α : Type u} (_ : α) : Type u := α
 
 initialize Lean.registerTraceClass `Strata.ionTypeOf
 
 syntax (name := declareIonTypeOf) "ionTypeOf!" term : term -- declare the syntax
 
 @[term_elab declareIonTypeOf]
-def declareIonTypeOfImpl : Elab.Term.TermElab := fun stx _ =>
+meta def declareIonTypeOfImpl : Elab.Term.TermElab := fun stx _ =>
   match stx with
   | `(ionTypeOf! $fld) => do
     let fldName ← do
@@ -204,11 +212,10 @@ def declareIonTypeOfImpl : Elab.Term.TermElab := fun stx _ =>
   | _ =>
     throwUnsupportedSyntax
 
-
 syntax (name := declareIonRefEntry) "ionRefEntry!" term : term -- declare the syntax
 
 @[term_elab declareIonRefEntry]
-unsafe def declareIonRefCacheImpl : Elab.Term.TermElab := fun stx _ =>
+meta unsafe def declareIonRefCacheImpl : Elab.Term.TermElab := fun stx _ =>
   match stx with
   | `(ionRefEntry! $fldNameStx) => do
     let nameType : Expr := .const `Lean.Name []
@@ -224,7 +231,7 @@ notation "ionRef!" s => CachedToIon.cachedToIon (ionRefEntry! (ionTypeOf! s)) s
 syntax (name := getIonEntries) "ionEntries!" "(" ident ")" : term -- declare the syntax
 
 @[term_elab getIonEntries]
-def getIonEntriesImpl : Lean.Elab.Term.TermElab := fun stx _ =>
+public meta def getIonEntriesImpl : Lean.Elab.Term.TermElab := fun stx _ =>
   match stx with
   | `(ionEntries!($tp)) => do
     let name := tp.getId
@@ -233,12 +240,12 @@ def getIonEntriesImpl : Lean.Elab.Term.TermElab := fun stx _ =>
   | _ =>
     throwUnsupportedSyntax
 
-private def mkIdent (si : SourceInfo) (n : Name) : TSyntax `ident := ⟨.ident si n.toString.toSubstring n []⟩
+private meta def mkIdent (si : SourceInfo) (n : Name) : TSyntax `ident := ⟨.ident si n.toString.toSubstring n []⟩
 
 syntax (name := declareIonSymbolTable) "#declareIonSymbolTable" ident : command -- declare the syntax
 
 @[command_elab declareIonSymbolTable]
-def declareIonSymbolTableImpl : Command.CommandElab := fun stx =>
+public meta def declareIonSymbolTableImpl : Command.CommandElab := fun stx =>
   match stx with
   | `(#declareIonSymbolTable $tp) => do
     let name ← resolveGlobalDecl tp
@@ -254,16 +261,16 @@ def declareIonSymbolTableImpl : Command.CommandElab := fun stx =>
     let toIonPair : TSyntax `ident := mkIdent si (.str name "toIonValues")
     let toIon : TSyntax `ident := mkIdent si (.str name "toIon")
     Command.elabCommand =<< `(
-      def $ionSymbolCache : SymbolIdCache := { globalCache := $(quote tbl.entries), offset := $(quote tblIdx) }
+      private def $ionSymbolCache : SymbolIdCache := { globalCache := $(quote tbl.entries), offset := $(quote tblIdx) }
     )
     Command.elabCommand =<< `(
-      def $ionSymbolTable : SymbolTable := $(quote tbl.symtab)
+      private def $ionSymbolTable : SymbolTable := $(quote tbl.symtab)
     )
     let toIonImplDef ← ``(fun v =>
           runIntern (symbols := $ionSymbolTable) (CachedToIon.cachedToIon $ionSymbolCache v)
     )
     Command.elabCommand =<< `(
-      def $toIonPair : $tp → SymbolTable × Ion SymbolId := $toIonImplDef
+      private def $toIonPair : $tp → SymbolTable × Ion SymbolId := $toIonImplDef
     )
     Command.elabCommand =<< `(
       def $toIon (x : $tp) : ByteArray :=
@@ -274,3 +281,4 @@ def declareIonSymbolTableImpl : Command.CommandElab := fun stx =>
     throwUnsupportedSyntax
 
 end Ion
+end

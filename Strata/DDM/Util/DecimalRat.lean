@@ -3,12 +3,12 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-import Strata.DDM.Util.Decimal
+module
+public import Strata.DDM.Util.Decimal
+meta import Strata.DDM.Util.Decimal
 
-namespace Strata
-
-namespace Decimal
-
+public section
+namespace Strata.Decimal
 
 def toRat (d: Decimal) : Rat :=
   if d.exponent < 0 then mkRat d.mantissa (10 ^ (d.exponent).natAbs) else
@@ -97,5 +97,5 @@ def fromRat (r : Rat) : Option Decimal :=
 #guard (Decimal.fromRat (1/2 : Rat)).get!.toRat = (1/2 : Rat)
 #guard (Decimal.fromRat (22/5 : Rat)).get!.toRat = (22/5 : Rat)
 
-end Decimal
-end Strata
+end Strata.Decimal
+end
