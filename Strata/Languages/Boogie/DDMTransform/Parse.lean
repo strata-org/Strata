@@ -301,13 +301,13 @@ op command_distinct (label : Option Label, exprs : CommaSepBy Expr) : Command =>
 category Field;
 category FieldList;
 
-@[declare(name, tp), field(name, tp)]
+@[field(name, tp)]
 op field_mk (name : Ident, tp : Type) : Field => name ":" tp;
 
 @[fieldListAtom(f)]
 op fieldListAtom (f : Field) : FieldList => f;
 
-@[scope(fl), fieldListPush(fl, f)]
+@[fieldListPush(fl, f)]
 op fieldListPush (fl : FieldList, @[scope(fl)] f : Field) : FieldList => fl "," f;
 
 // Constructor syntax for datatypes
