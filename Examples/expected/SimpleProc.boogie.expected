@@ -1,0 +1,5 @@
+Successfully parsed.
+SimpleProc.boogie.st(21, 2) [Test_ensures_0]: verified
+SimpleProc.boogie.st(22, 2) [Test_ensures_1]: verified
+SimpleProc.boogie.st(23, 2) [Test_ensures_2]: verified
+Proved all 3 goals.

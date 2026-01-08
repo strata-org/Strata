@@ -111,7 +111,6 @@ theorem Statement.typeCheckAux_go_WF :
     | goto l =>
       simp [Except.bind] at tcok
       split at tcok <;> try contradiction
-      split at tcok <;> try contradiction
       have tcok := Statement.typeCheckAux_elim_singleton tcok
       rw[List.append_cons];
       apply ih tcok <;> try assumption
