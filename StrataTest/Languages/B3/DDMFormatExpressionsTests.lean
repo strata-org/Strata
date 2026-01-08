@@ -461,13 +461,13 @@ info: B3: .quantifierExpr
   ()
   (.exists ())
   u #[.quantVarDecl () u "y" u "bool"]
-  u #[.pattern
-    ()
-    u #[.unaryOp
+  u #[.pattern () u #[.id () 0],
+    .pattern
       ()
-      (.not ())
-      (.id () 0)],
-  .pattern () u #[.id () 0]]
+      u #[.unaryOp
+        ()
+        (.not ())
+        (.id () 0)]]
   (.binaryOp
     ()
     (.or ())
@@ -484,21 +484,21 @@ info: B3: .quantifierExpr
   ()
   (.forall ())
   u #[.quantVarDecl () u "z" u "int"]
-  u #[.pattern
-    ()
-    u #[.binaryOp
+  u #[.pattern () u #[.id () 0],
+    .pattern
       ()
-      (.mul ())
-      (.id () 0)
-      (.literal () (.intLit () 2))],
-  .pattern
-    ()
-    u #[.binaryOp
+      u #[.binaryOp
+        ()
+        (.add ())
+        (.id () 0)
+        (.literal () (.intLit () 1))],
+    .pattern
       ()
-      (.add ())
-      (.id () 0)
-      (.literal () (.intLit () 1))],
-  .pattern () u #[.id () 0]]
+      u #[.binaryOp
+        ()
+        (.mul ())
+        (.id () 0)
+        (.literal () (.intLit () 2))]]
   (.binaryOp
     ()
     (.gt ())
