@@ -326,6 +326,21 @@ deriving DecidableEq, Inhabited, Repr
 instance : ToFormat SourceRange where
  format fr := f!"{fr.start}-{fr.stop}"
 
+inductive Uri where
+  | file (path: String)
+  deriving DecidableEq, Repr
+
+instance : ToFormat Uri where
+ format fr := match fr with | .file path => path
+
+structure FileRange where
+  file: Uri
+  range: Strata.SourceRange
+  deriving DecidableEq, Repr
+
+instance : ToFormat FileRange where
+ format fr := f!"{fr.file}:{fr.range}"
+
 namespace SourceRange
 
 def none : SourceRange := { start := 0, stop := 0 }

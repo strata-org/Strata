@@ -177,7 +177,7 @@ def readPythonStrata (path : String) : IO Strata.Program := do
   let bytes ← Strata.Util.readBinInputSource path
   if ! bytes.startsWith Ion.binaryVersionMarker then
     exitFailure s!"pyAnalyze expected Ion file"
-  match Strata.Program.fromIon Strata.Python.Python_map Strata.Python.Python.name bytes with
+  match Strata.Program.fileFromIon Strata.Python.Python_map Strata.Python.Python.name bytes with
   | .ok p => pure p
   | .error msg => exitFailure msg
 
@@ -233,16 +233,8 @@ def javaGenCommand : Command where
     | .program _ =>
       exitFailure "Expected a dialect file, not a program file."
 
-def readLaurelIon (bytes : ByteArray) : IO Strata.Program := do
-
-  -- Parse the Ion bytes to get a Strata.Program
-  match Strata.Program.fromIon Strata.Laurel.Laurel_map Strata.Laurel.Laurel.name bytes with
-  | .ok p => pure p
-  | .error msg => exitFailure msg
-
-def readLaurelIonFiles (bytes : ByteArray) : IO (List Strata.StrataFile) := do
-  -- Parse the Ion bytes to get a list of StrataFiles
-  match Strata.Program.fromIonFiles Strata.Laurel.Laurel_map bytes with
+def deserializeIonToLaurelFiles (bytes : ByteArray) : IO (List Strata.StrataFile) := do
+  match Strata.Program.filesFromIon Strata.Laurel.Laurel_map bytes with
   | .ok files => pure files
   | .error msg => exitFailure msg
 
@@ -254,10 +246,8 @@ def laurelAnalyzeCommand : Command where
     -- Read bytes from stdin
     let stdinBytes ← (← IO.getStdin).readBinToEnd
 
-    -- Parse Ion format to get list of StrataFiles
-    let strataFiles ← readLaurelIonFiles stdinBytes
+    let strataFiles ← deserializeIonToLaurelFiles stdinBytes
 
-    -- Process each file and combine results
     let mut combinedProgram : Laurel.Program := {
       staticProcedures := []
       staticFields := []
@@ -265,20 +255,18 @@ def laurelAnalyzeCommand : Command where
     }
 
     for strataFile in strataFiles do
-      let fileMap : Lean.FileMap := {
-        source := ""
-        positions := Array.empty
-      }
 
-      -- Create input context for this file
-      let inputContext : Strata.Parser.InputContext := {
+      let dummyContext : Strata.Parser.InputContext := {
         inputString := ""
         fileName := strataFile.filePath
-        fileMap := fileMap
+        fileMap := {
+          source := ""
+          positions := Array.empty
+        }
       }
 
       -- Convert to Laurel.Program using parseProgram
-      let (laurelProgram, transErrors) := Laurel.TransM.run inputContext (Laurel.parseProgram strataFile.program)
+      let (laurelProgram, transErrors) := Laurel.TransM.run dummyContext (Laurel.parseProgram strataFile.program)
       if transErrors.size > 0 then
         exitFailure s!"Translation errors in {strataFile.filePath}: {transErrors}"
 
@@ -292,7 +280,7 @@ def laurelAnalyzeCommand : Command where
     -- Verify the combined program and get diagnostics
     let solverName : String := "z3"
 
-    let diagnostics ← Laurel.verifyToDiagnosticsModel solverName combinedProgram
+    let diagnostics ← Laurel.verifyToDiagnosticModels solverName combinedProgram
 
     -- Print diagnostics to stdout
     IO.println s!"==== DIAGNOSTICS ===="

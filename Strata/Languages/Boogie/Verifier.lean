@@ -11,13 +11,14 @@ import Strata.Languages.Boogie.SMTEncoder
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Imperative.SMTUtils
 import Strata.DL.SMT.CexParser
+import Strata.DDM.AST
 
 ---------------------------------------------------------------------
 
 namespace Strata.SMT.Encoder
 
 open Strata.SMT.Encoder
-open Imperative (Uri)
+open Strata
 
 -- Derived from Strata.SMT.Encoder.encode.
 def encodeBoogie (ctx : Boogie.SMT.Context) (prelude : SolverM Unit) (ts : List Term) :
@@ -145,7 +146,7 @@ def solverResult (vars : List (IdentT LMonoTy Visibility)) (ans : String)
 open Imperative
 
 def formatPositionMetaData [BEq P.Ident] [ToFormat P.Expr]
-  (files: Map Imperative.Uri Lean.FileMap)
+  (files: Map Strata.Uri Lean.FileMap)
   (md : MetaData P): Option Format := do
   let fileRangeElem ← md.findElem MetaData.fileRange
   match fileRangeElem.value with
@@ -369,16 +370,14 @@ def verify
 
 /-- A diagnostic produced by analyzing a file -/
 structure DiagnosticModel where
-  fileRange : Imperative.FileRange
+  fileRange : Strata.FileRange
   message : String
   deriving Repr, BEq
 
 def toDiagnosticModel (vcr : Boogie.VCResult) : Option DiagnosticModel := do
-  -- Only create a diagnostic if the result is not .unsat (i.e., verification failed)
   match vcr.result with
   | .unsat => none  -- Verification succeeded, no diagnostic
   | result =>
-    -- Extract file range from metadata
     let fileRangeElem ← vcr.obligation.metadata.findElem Imperative.MetaData.fileRange
     match fileRangeElem.value with
     | .fileRange fileRange =>
@@ -403,31 +402,18 @@ structure Diagnostic where
   deriving Repr, BEq
 
 
-def toDiagnostic (files: Map Imperative.Uri Lean.FileMap) (vcr : Boogie.VCResult) : Option Diagnostic := do
-  -- Only create a diagnostic if the result is not .unsat (i.e., verification failed)
-  match vcr.result with
-  | .unsat => none  -- Verification succeeded, no diagnostic
-  | result =>
-    -- Extract file range from metadata
-    let fileRangeElem ← vcr.obligation.metadata.findElem Imperative.MetaData.fileRange
-    match fileRangeElem.value with
-    | .fileRange fileRange =>
-      let message := match result with
-        | .sat _ => "assertion does not hold"
-        | .unknown => "assertion verification result is unknown"
-        | .err msg => s!"verification error: {msg}"
-        | _ => "verification failed"
-
-      let fileMap := (files.find? fileRange.file).get!
-      let startPos := fileMap.toPosition fileRange.range.start
-      let endPos := fileMap.toPosition fileRange.range.stop
-      some {
-        -- Subtract headerOffset to account for program header we added
+def toDiagnostic (files: Map Strata.Uri Lean.FileMap) (vcr : Boogie.VCResult) : Option Diagnostic := do
+  let modelOption := toDiagnosticModel vcr
+  modelOption.map (fun dm =>
+      let fileMap := (files.find? dm.fileRange.file).get!
+      let startPos := fileMap.toPosition dm.fileRange.range.start
+      let endPos := fileMap.toPosition dm.fileRange.range.stop
+      {
         start := { line := startPos.line, column := startPos.column }
         ending := { line := endPos.line, column := endPos.column }
-        message := message
+        message := dm.message
       }
-    | _ => none
+    )
 
 end Strata
 

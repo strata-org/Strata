@@ -14,9 +14,9 @@ namespace Laurel
 
 open Laurel
 open Std (ToFormat Format format)
-open Strata (QualifiedIdent Arg SourceRange)
+open Strata (QualifiedIdent Arg SourceRange Uri FileRange)
 open Lean.Parser (InputContext)
-open Imperative (MetaData Uri FileRange)
+open Imperative (MetaData)
 
 structure TransState where
   inputCtx : InputContext

@@ -66,21 +66,6 @@ instance [Repr P.Ident] : Repr (MetaDataElem.Field P) where
       | .label s => f!"MetaDataElem.Field.label {s}"
     Repr.addAppParen res prec
 
-inductive Uri where
-  | file (path: String)
-  deriving DecidableEq, Repr
-
-instance : ToFormat Uri where
- format fr := match fr with | .file path => path
-
-structure FileRange where
-  file: Uri
-  range: Strata.SourceRange
-  deriving DecidableEq, Repr
-
-instance : ToFormat FileRange where
- format fr := f!"{fr.file}:{fr.range}"
-
 /-- A metadata value, which can be either an expression, a message, or a fileRange -/
 inductive MetaDataElem.Value (P : PureExpr) where
   /-- Metadata value in the form of a structured expression. -/
@@ -88,8 +73,7 @@ inductive MetaDataElem.Value (P : PureExpr) where
   /-- Metadata value in the form of an arbitrary string. -/
   | msg (s : String)
   /-- Metadata value in the form of a fileRange. -/
-  | fileRange (r: FileRange)
-
+  | fileRange (r: Strata.FileRange)
 
 instance [ToFormat P.Expr] : ToFormat (MetaDataElem.Value P) where
   format f := match f with | .expr e => f!"{e}" | .msg s => f!"{s}" | .fileRange r => f!"{r}"

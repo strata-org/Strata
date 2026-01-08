@@ -278,7 +278,7 @@ def deserializeValue {α} (bs : ByteArray) (act : Ion SymbolId → FromIonM α) 
       throw s!"Error reading Ion: {msg} (offset = {off})"
     | .ok a => pure a
   let .isTrue p := inferInstanceAs (Decidable (a.size = 1))
-    | throw s!"Expected single Ion value. Instead of {repr a}"
+    | throw s!"Expected single Ion value, but got {repr a}."
   let entries := a[0]
   let .isTrue p := inferInstanceAs (Decidable (entries.size = 2))
     | throw s!"Expected symbol table and value in dialect."
@@ -1318,7 +1318,7 @@ def fromIonFragment (f : Ion.Fragment)
     commands := ← fromIonFragmentCommands f
   }
 
-def fromIon (dialects : DialectMap) (dialect : DialectName) (bytes : ByteArray) : Except String Strata.Program := do
+def fileFromIon (dialects : DialectMap) (dialect : DialectName) (bytes : ByteArray) : Except String Strata.Program := do
   let (hdr, frag) ←
     match Strata.Ion.Header.parse bytes with
     | .error msg =>
@@ -1333,11 +1333,7 @@ def fromIon (dialects : DialectMap) (dialect : DialectName) (bytes : ByteArray) 
       throw s!"{name} program found when {dialect} expected."
     fromIonFragment frag dialects dialect
 
-/-- Parse a list of StrataFile from Ion data.
-    Expected format: A list where each entry is a struct with:
-    - "program": the program data
--/
-def fromIonFiles (dialects : DialectMap) (bytes : ByteArray) : Except String (List StrataFile) := do
+def filesFromIon (dialects : DialectMap) (bytes : ByteArray) : Except String (List StrataFile) := do
   let ctx ←
     match Ion.deserialize bytes with
     | .error (off, msg) => throw s!"Error reading Ion: {msg} (offset = {off})"
@@ -1357,7 +1353,6 @@ def fromIonFiles (dialects : DialectMap) (bytes : ByteArray) : Except String (Li
 
   let ionCtx : FromIonContext := ⟨symbols⟩
 
-  -- Parse the main list
   let ⟨filesList, _⟩ ← FromIonM.asList ctx[1]! ionCtx
 
   let tbl := symbols
@@ -1375,7 +1370,6 @@ def fromIonFiles (dialects : DialectMap) (bytes : ByteArray) : Except String (Li
 
     let filePath ← FromIonM.asString "filePath" filePathData ionCtx
 
-    -- Parse the program
     let ⟨programValues, _⟩ ← FromIonM.asList programData ionCtx
     let .isTrue ne := inferInstanceAs (Decidable (programValues.size ≥ 1))
       | throw "Expected program header"
