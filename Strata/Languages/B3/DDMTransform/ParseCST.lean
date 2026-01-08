@@ -68,23 +68,13 @@ op functionCall (name : Ident, args : CommaSepBy Expression) : Expression => @[p
 category Pattern;
 op pattern (e : CommaSepBy Expression) : Pattern => " pattern " e:0;
 
-category Patterns;
-op patterns_cons (p : Pattern, ps : Patterns) : Patterns => @[prec(0)] p:0 ps:0;
-op patterns_single (p : Pattern) : Patterns => @[prec(0)] p:0;
-
 category VarDecl;
 op var_decl (name : Ident, ty : Ident) : VarDecl => name:0 " : " ty:0;
 
-op forall_expr_no_patterns (vars : CommaSepBy VarDecl, body : Expression) : Expression =>
-  @[prec(1)] "forall " vars:0 " " body:1;
-
-op forall_expr (vars : CommaSepBy VarDecl, patterns : Patterns, body : Expression) : Expression =>
+op forall_expr (vars : CommaSepBy VarDecl, patterns : Seq Pattern, body : Expression) : Expression =>
   @[prec(1)] "forall " vars:0 patterns " " body:1;
 
-op exists_expr_no_patterns (vars : CommaSepBy VarDecl, body : Expression) : Expression =>
-  @[prec(1)] "exists " vars:0 " " body:1;
-
-op exists_expr (vars : CommaSepBy VarDecl, patterns : Patterns, body : Expression) : Expression =>
+op exists_expr (vars : CommaSepBy VarDecl, patterns : Seq Pattern, body : Expression) : Expression =>
   @[prec(1)] "exists " vars:0 patterns " " body:1;
 
 category Statement;
