@@ -403,7 +403,7 @@ def parseStrataProgramFromDialect (dialects : LoadedDialects) (dialect : Dialect
       pure program
     | .error errors =>
       let errMsg ← errors.foldlM (init := "Parse errors:\n") fun msg e =>
-        return s!"{msg}  {e.pos.line - 2}:{e.pos.column}: {← e.data.toString}\n"
+        return s!"{msg}  {e.pos.line}:{e.pos.column}: {← e.data.toString}\n"
       throw (IO.userError errMsg)
 
 end Strata.Elab
