@@ -308,21 +308,27 @@ theorem Program.typeCheckFunctionDisjoint : Program.typeCheck.go p C T decls acc
       have a_in' : a.name ∈ Program.getNames.go rs := by
         unfold Program.getNames.go; rw[List.mem_map ]; exists a
       have a_notin := IH a.name a_in';
-      have Hcontains := Identifiers.addWithErrorContains Hid a.name
-      try grind)
-    all_goals(
-      rename_i x v hmatch1
+      have Hcontains := Identifiers.addWithErrorContains Hid a.name)
+    case _ => grind
+    case _ x v hmatch1 =>
       split at hmatch1 <;> try grind
       rename_i hmatch2; split at hmatch2 <;> try grind
-      )
-    · split at hmatch2 <;> try grind
+      split at hmatch2 <;> try grind
       rename_i heq
       have id_eq := addKnownTypeWithErrorIdents heq
       simp at id_eq; grind
-    · split at hmatch2 <;> try grind
+      split at hmatch2 <;> try grind
       rename_i Heq
       have :=addDatatypeIdents Heq; grind
-    · simp only [LContext.addFactoryFunction] at hmatch2; grind
+    case _ => grind
+    case _ => grind
+    case _ => grind
+    case _ x v hmatch1 =>
+      rename_i x v hmatch1
+      split at hmatch1 <;> try grind
+      rename_i hmatch2; split at hmatch2 <;> try grind
+      simp only [LContext.addFactoryFunction] at hmatch2; grind
+    done
 
 /--
 If a program typechecks succesfully, all identifiers defined in the program are
@@ -350,21 +356,26 @@ theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decls acc = 
           unfold Program.getNames.go; rw[List.mem_map]; exists x;
         have x_notin := (Program.typeCheckFunctionDisjoint C x.name x_in')
         intro name_eq
-        have x_contains := (Identifiers.addWithErrorContains Hid x.name)
-        try grind)
-      all_goals(
+        have x_contains := (Identifiers.addWithErrorContains Hid x.name))
+      case _ => grind
+      case _ x v hmatch1 =>
         rename_i x v hmatch1
         split at hmatch1 <;> try grind
-        rename_i hmatch2; split at hmatch2 <;> try grind
-        )
-      · split at hmatch2 <;> try grind
+        rename_i hmatch2; split at hmatch2 <;> split at hmatch2 <;> try grind
         rename_i heq
         have id_eq := addKnownTypeWithErrorIdents heq
         simp at id_eq; grind
-      · split at hmatch2 <;> try grind
         rename_i Heq
-        have :=addDatatypeIdents Heq; grind
-      · simp only [LContext.addFactoryFunction] at hmatch2; grind
+        have := addDatatypeIdents Heq; grind
+      case _ => grind
+      case _ => grind
+      case _ => grind
+      case _ =>
+        rename_i x v hmatch1
+        split at hmatch1 <;> try grind
+        rename_i hmatch2; split at hmatch2 <;> try grind
+        simp only [LContext.addFactoryFunction] at hmatch2; grind
+    done
 
 /--
 The main lemma stating that a program 'p' that passes type checking is well formed

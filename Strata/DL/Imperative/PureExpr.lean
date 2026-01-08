@@ -14,7 +14,7 @@ Imperative dialect.
 -/
 structure PureExpr : Type 1 where
   /-- Kinds of identifiers allowed in expressions. We expect identifiers to have
-   propositional equality; see `EqIdent`. -/
+   decidable equality; see `EqIdent`. -/
   Ident   : Type
   EqIdent : DecidableEq Ident
   /-- Expressions -/
