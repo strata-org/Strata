@@ -248,11 +248,11 @@ class ExprFn(Expr):
         return ion_sexp(ion_symbol("fn"), ann_to_ion(self.ann), self.ident.to_ion())
 
 class OperationArgs:
-    _decls : tuple[ArgDecl, ...]
+    _decls : tuple['ArgDecl', ...]
     _arg_indices : dict[str, int]
     _args : tuple['Arg', ...]
 
-    def __init__(self, decls : tuple[ArgDecl, ...], arg_indices : dict[str, int], *args : 'Arg'):
+    def __init__(self, decls : tuple['ArgDecl', ...], arg_indices : dict[str, int], *args : 'Arg'):
         assert len(args) == len(decls)
         self._decls = decls
         self._arg_indices = arg_indices
@@ -623,50 +623,20 @@ class SyntaxArg:
 
 class Indent:
     prec : int
-    value : Template|SyntaxArg
+    value : SyntaxArg
 
-    def __init__(self, prec : int, value : Template|SyntaxArg):
+    def __init__(self, prec : int, value : SyntaxArg):
         assert type(prec) is int and prec > 0
         self.prec = prec
         self.value = value
 
-from string.templatelib import Interpolation, Template
-
-def resolve_template(args : dict[str, int], t : Template) -> list[SyntaxDefAtom|str]:
-    atoms = []
-    for a in t:
-        if isinstance(a, Interpolation):
-            value = a.value
-            if isinstance(value, str):
-                atoms.append(value)
-            elif isinstance(value, SyntaxArg):
-                atoms.append(value.resolve(args))
-            else:
-                assert isinstance(value, Indent)
-                contents = value.value
-                if isinstance(contents, SyntaxArg):
-                    iatoms = (contents.resolve(args),)
-                else:
-                    assert isinstance(contents, Template)
-                    iatoms = tuple(resolve_template(args, contents))
-                atoms.append(SyntaxDefIndent(value.prec, iatoms))
-        else:
-            assert isinstance(a, str)
-            atoms.append(a)
-    return atoms
-
-def resolve_syntax(args : dict[str, int], v : str|Template|SyntaxArg|Indent) -> list[SyntaxDefAtom]:
+def resolve_syntax(args : dict[str, int], v : str|SyntaxArg|Indent) -> list[SyntaxDefAtom]:
     if isinstance(v, str):
         return [v]
-    elif isinstance(v, Template):
-        return resolve_template(args, v)
     elif isinstance(v, Indent):
         contents = v.value
-        if isinstance(contents, SyntaxArg):
-            atoms = (contents.resolve(args),)
-        else:
-            assert isinstance(contents, Template)
-            atoms = tuple(resolve_template(args, contents))
+        assert isinstance(contents, SyntaxArg)
+        atoms = (contents.resolve(args),)
         return [SyntaxDefIndent(v.prec, atoms)]
     else:
         assert isinstance(v, SyntaxArg)
@@ -769,7 +739,7 @@ class Dialect:
         return decl
 
     def add_op(self, name : str, *args: ArgDecl|SyntaxCat,
-            syntax : str|Template|SyntaxArg|Indent|None|list[SyntaxDefAtom] = None,
+            syntax : str|SyntaxArg|Indent|None|list[SyntaxDefAtom] = None,
             prec : int|None = None,
             metadata : Metadata|None = None) -> OpDecl:
         assert name not in reserved, f'{name} is a reserved word.'
