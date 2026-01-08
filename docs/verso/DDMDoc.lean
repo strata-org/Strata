@@ -439,7 +439,7 @@ tag := "datatypes"
 
 The DDM has special support for defining dialects with algebraic datatypes (ADTs) similar to those found in functional programming
 languages. Datatypes allow one to define custom types with multiple constructors, each of
-which can have zero or more fields.
+which can have zero or more fields (constructor arguments).
 
 Datatypes differ from other language constructs (e.g. types, operators), since
 they define several operations simultaneously. For example, an
@@ -462,7 +462,7 @@ datatype IntList {
 };
 ```
 
-This declares a list type with two constructors. The Boogie dialect automatically generates:
+This declares a list type with two constructors (`Nil` and `Cons`) and two fields (`head` and `tail`). The Boogie dialect automatically generates:
 
 * Constructors: `Nil : IntList` and `Cons : int -> IntList -> IntList`
 * Testers: `IntList..isNil : IntList -> bool` and `IntList..isCons : IntList -> bool`
