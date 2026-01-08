@@ -32,7 +32,7 @@ def typeCheck (C: Boogie.Expression.TyContext) (Env : Boogie.Expression.TyEnv) (
   let output_mty := monotys.getLast (by exact LMonoTy.destructArrow_non_empty monoty)
   -- Resolve type aliases and monomorphize inputs and output.
   let func := { func with
-                  typeArgs := []
+                  typeArgs := monoty.freeVars.eraseDups,
                   inputs := func.inputs.keys.zip input_mtys,
                   output := output_mty}
   match func.body with
