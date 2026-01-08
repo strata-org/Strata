@@ -256,22 +256,17 @@ def laurelAnalyzeCommand : Command where
 
     for strataFile in strataFiles do
 
-      -- Convert to Laurel.Program using parseProgram
       let (laurelProgram, transErrors) := Laurel.TransM.run (Strata.Uri.file strataFile.filePath) (Laurel.parseProgram strataFile.program)
       if transErrors.size > 0 then
         exitFailure s!"Translation errors in {strataFile.filePath}: {transErrors}"
 
-      -- Combine with accumulated program
       combinedProgram := {
         staticProcedures := combinedProgram.staticProcedures ++ laurelProgram.staticProcedures
         staticFields := combinedProgram.staticFields ++ laurelProgram.staticFields
         types := combinedProgram.types ++ laurelProgram.types
       }
 
-    -- Verify the combined program and get diagnostics
-    let solverName : String := "z3"
-
-    let diagnostics ← Laurel.verifyToDiagnosticModels solverName combinedProgram
+    let diagnostics ← Laurel.verifyToDiagnosticModels "z3" combinedProgram
 
     -- Print diagnostics to stdout
     IO.println s!"==== DIAGNOSTICS ===="

@@ -12,11 +12,8 @@ public class GenerateTestData {
     public static void main(String[] args) throws Exception {
         var ion = IonSystemBuilder.standard().build();
         var serializer = new IonSerializer(ion);
-
-        // Generate comprehensive.ion (single program)
         generateSingleProgram(ion, serializer, args[0]);
 
-        // Generate comprehensive-files.ion (array of StrataFile)
         if (args.length > 1) {
             generateMultipleFiles(ion, serializer, args[1]);
         }
@@ -46,7 +43,6 @@ public class GenerateTestData {
     }
 
     private static void generateMultipleFiles(IonSystem ion, IonSerializer serializer, String outPath) throws Exception {
-        // Create first program with 2 statements
         Node ast1 = block(List.of(
             assign("x", num(42)),
             print("first file")));
@@ -58,7 +54,6 @@ public class GenerateTestData {
         program1.add(header1);
         program1.add(serializer.serializeCommand(ast1));
 
-        // Create second program with 3 statements
         Node ast2 = block(List.of(
             assign("y", add(num(1), num(2))),
             print("second file"),
@@ -71,16 +66,13 @@ public class GenerateTestData {
         program2.add(header2);
         program2.add(serializer.serializeCommand(ast2));
 
-        // Create array of StrataFile structs
         IonList files = ion.newEmptyList();
 
-        // First file entry
         IonStruct file1 = ion.newEmptyStruct();
         file1.put("filePath", ion.newString("file1.st"));
         file1.put("program", program1);
         files.add(file1);
 
-        // Second file entry
         IonStruct file2 = ion.newEmptyStruct();
         file2.put("filePath", ion.newString("file2.st"));
         file2.put("program", program2);
