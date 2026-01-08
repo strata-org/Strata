@@ -4,40 +4,15 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+public import Strata.DDM.Util.Graph.OutGraph
+
 import all Strata.DDM.Util.Fin
 import all Strata.DDM.Util.Vector
 
+meta import Strata.DDM.Util.Graph.OutGraph
+
 public section
-namespace Strata
-
-structure OutGraph (nodeCount : Nat) where
-  edges : Vector (Array (Fin nodeCount)) nodeCount
-  deriving Inhabited, Repr
-
-namespace OutGraph
-
-abbrev Node n := Fin n
-
-protected def empty (n : Nat) : OutGraph n where
-  edges := .replicate n ∅
-
-protected def addEdge (g : OutGraph n) (f t : Node n) : OutGraph n :=
-  { edges := g.edges.modify ⟨t, by omega⟩ (·.push ⟨f, by omega⟩)
-  }
-
-protected def addEdge! (g : OutGraph n) (f t : Nat) : OutGraph n :=
-  if fp : f ≥ n then
-    @panic _ ⟨g⟩ s!"Invalid from edge {f}"
-  else if tp : t ≥ n then
-    @panic _ ⟨g⟩ s!"Invalid to edge {t}"
-  else
-    g.addEdge ⟨f, Nat.lt_of_not_le fp⟩ ⟨t, Nat.lt_of_not_le tp⟩
-
-protected def ofEdges! (n : Nat) (edges : List (Nat × Nat)) : OutGraph n :=
-  edges.foldl (fun g (f, t) => g.addEdge! f t) (.empty n)
-
-def nodesOut (g : OutGraph n) (node : Node n) : Array (Node n) :=
-    g.edges[node]
+namespace Strata.OutGraph
 
 private structure TarjanState (n : Nat) where
   index : Fin (n+1) := 0
@@ -48,10 +23,10 @@ private structure TarjanState (n : Nat) where
   components : Array (Array (Fin n)) := #[]
 deriving Inhabited
 
-private def TarjanState.mergeLowlink (s : TarjanState n) (v : Fin n) (w : Fin n): TarjanState n :=
-  { s with lowlinks := s.lowlinks.modify v (min s.lowlinks[w]) }
+private def TarjanState.mergeLowlink {n} (s : TarjanState n) (v : Fin n) (w : Fin n): TarjanState n :=
+  { s with lowlinks := Vector.modify s.lowlinks v (min s.lowlinks[w]) }
 
-private def popTo (v : Fin n) (s : TarjanState n) (comp : Array (Fin n)) : TarjanState n :=
+private def popTo {n} (v : Fin n) (s : TarjanState n) (comp : Array (Fin n)) : TarjanState n :=
   if p : s.stk.size > 0 then
     let w := s.stk[s.stk.size - 1]
     let s := { s with stk := s.stk.pop, onStack := s.onStack.set w false  }
@@ -63,7 +38,7 @@ private def popTo (v : Fin n) (s : TarjanState n) (comp : Array (Fin n)) : Tarja
   else
     panic "Unexpected empty stack"
 
-private partial def strongconnect (g : OutGraph n) (v : Node n) (s : TarjanState n) : TarjanState n :=
+private partial def strongconnect {n} (g : OutGraph n) (v : Node n) (s : TarjanState n) : TarjanState n :=
   -- Set the depth index for v to the smallest unused index
   let s := { s with
     index := s.index + 1,

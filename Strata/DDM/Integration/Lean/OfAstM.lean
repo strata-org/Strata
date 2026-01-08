@@ -44,13 +44,13 @@ instance : Monad OfAstM := inferInstanceAs (Monad (Except _))
 /--
 Thrown when an expression is provided but not expected.
 -/
-def throwUnknownExpr (tp : QualifiedIdent) (e : Expr) : OfAstM α :=
+def throwUnknownExpr {α} (tp : QualifiedIdent) (e : Expr) : OfAstM α :=
   Except.error s!"Unknown expr {repr e} when parsing as {tp}."
 
 /--
 Thrown when an expression is provided but not expected.
 -/
-def throwUnknownType (e : TypeExpr) : OfAstM α :=
+def throwUnknownType {α} (e : TypeExpr) : OfAstM α :=
   Except.error s!"Unknown type {repr e}."
 
 /--
@@ -133,25 +133,30 @@ def ofOperationM {α β} [Repr α] [SizeOf α]
   | .op a1 => act a1 (by decreasing_tactic)
   | a => .throwExpected "operation" a
 
-def ofIdentM {α} [Repr α] : ArgF α → OfAstM (Ann String α)
-| .ident ann val => pure { ann := ann, val := val }
-| a => .throwExpected "identifier" a
+def ofBytesM {α} [Repr α] : ArgF α → OfAstM ByteArray
+| .bytes _ val => pure val
+| a => .throwExpected "byte array" a
 
-def ofNumM {α} [Repr α] : ArgF α → OfAstM (Ann Nat α)
-| .num ann val => pure { ann := ann, val := val }
-| a => .throwExpected "numeric literal" a
-
-def ofDecimalM {α} [Repr α] : ArgF α → OfAstM (Ann Decimal α)
-| .decimal ann val => pure { ann := ann, val := val }
+@[inline]
+def ofDecimalM {α} [Repr α] : ArgF α → OfAstM Decimal
+| .decimal _ val => pure val
 | a => .throwExpected "scientific literal" a
 
-def ofStrlitM {α} [Repr α] : ArgF α → OfAstM (Ann String α)
-| .strlit ann val => pure { ann := ann, val := val }
-| a => .throwExpected "string literal" a
+@[inline]
+def ofIdentM {α} [Repr α] : ArgF α → OfAstM String
+| .ident _ val => pure val
+| a => .throwExpected "identifier" a
 
-def ofBytesM {α} [Repr α] : ArgF α → OfAstM (Ann ByteArray α)
-| .bytes ann val => pure { ann := ann, val := val }
-| a => .throwExpected "byte array" a
+@[inline]
+def ofNumM {α} [Repr α] : ArgF α → OfAstM Nat
+| .num _ val => pure val
+| a => .throwExpected "numeric literal" a
+
+
+@[inline]
+def ofStrlitM {α} [Repr α] : ArgF α → OfAstM String
+| .strlit _ val => pure val
+| a => .throwExpected "string literal" a
 
 def ofOptionM {α β} [Repr α] [SizeOf α]
       (arg : ArgF α)
@@ -226,6 +231,17 @@ def exprEtaArg{Ann α T} [Repr Ann] [HasEta α T] {e : Expr} {n : Nat} (as : Siz
   else
     let i := n - 1 - lvl
     return HasEta.bvar i
+
+def matchTypeParamOrType {Ann α} [Repr Ann] (a : ArgF Ann) (onTypeParam : Ann → α) (onType : TypeExprF Ann → OfAstM α) : OfAstM α :=
+  match a with
+  | .type tp => onType tp
+  | .cat c =>
+    if c.name = q`Init.Type then
+      pure (onTypeParam c.ann)
+    else
+      .throwExpected "Type parameter or type expression" a
+  | _ =>
+    .throwExpected "Type parameter or type expression" a
 
 end Strata.OfAstM
 end

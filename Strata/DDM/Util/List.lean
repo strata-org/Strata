@@ -57,4 +57,22 @@ theorem sizeOf_set {α} [h : SizeOf α] (as : List α) (i : Nat) (v : α)  :
   case h_3 =>
     simp
 
+/--
+Rewrites non-emptty list membership to drop last and get last.
+-/
+theorem mem_ne_as_dropLast {α} (a : α) {as : List α} (ne : as ≠ []) :
+    a ∈ as ↔ a ∈ as.dropLast ∨ a = as.getLast ne :=
+  match as with
+  | []    => by
+    simp at ne
+  | [b]   => by
+    simp
+  | b0 :: b1 :: bs => by
+    if h : a = b0 then
+      simp [h]
+    else
+      have ne' : b1 :: bs ≠ [] := by simp
+      have p := List.mem_ne_as_dropLast a ne'
+      grind
+
 end List

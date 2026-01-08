@@ -110,4 +110,48 @@ theorem of_mem_pop {α} {a : α} {as : Array α} : a ∈ as.pop → a ∈ as := 
   simp [Array.mem_iff_getElem]
   grind
 
+theorem mem_pop_ne {α} {a : α} {as : Array α} (ne : as.size > 0) :
+    a ∈ as ↔ a ∈ as.pop ∨ a = as.back := by
+  have as_ne : as ≠ #[] := Array.ne_empty_of_size_pos ne
+  have ne' : as.toList ≠ [] :=
+          as_ne ∘ Array.toList_eq_nil_iff.mp
+  simp only [
+    ← Array.mem_toList_iff,
+    List.mem_ne_as_dropLast _ ne',
+    Array.getLast_toList,
+    Array.toList_pop
+  ]
+
+theorem size_filter_pos {α} {p : α → Bool} {as : Array α} {i : Nat}
+   {h : i < as.size} (witness : p as[i] = true) : (Array.filter p as).size > 0 := by
+  have as_eq : as.filter p = (as.set i as[i] h).filter p := by
+    simp [Array.set_getElem_self]
+  rw [as_eq]
+  simp only [Array.set_eq_push_extract_append_extract]
+  simp only [Array.filter_append, Array.size_append, Array.filter_push]
+  simp [witness]
+  omega
+
+theorem size_filter_set {α} (p : α → Bool) (as : Array α) (i : Nat) (v : α)
+          (h : i < as.size := by get_elem_tactic) : (Array.filter p (as.set i v)).size =
+    (Array.filter p as).size
+      + (if p v then 1 else 0)
+      - (if p as[i] = true then 1 else 0) := by
+  have as_eq : as.filter p = (as.set i as[i] h).filter p := by
+    simp [Array.set_getElem_self]
+  rw [as_eq]
+  simp only [Array.set_eq_push_extract_append_extract]
+  simp only [Array.filter_append, Array.size_append, Array.filter_push]
+  if newp : p v = true then
+    if oldp : p as[i] = true then
+      simp [newp, oldp]
+    else
+      simp [newp, oldp]
+      omega
+  else
+    if oldp : p as[i] = true then
+      simp [newp, oldp]
+    else
+      simp [newp, oldp]
+
 end Array

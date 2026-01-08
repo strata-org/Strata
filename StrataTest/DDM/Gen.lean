@@ -3,14 +3,19 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Integration.Lean
+import Strata.DDM.Integration.Lean.Gen
+import Strata.DDM.Integration.Lean.HashCommands
+
+public import Strata.DDM.AST
+public import Strata.DDM.Integration.Lean.OfAstM
 
 namespace Strata
 
 class IsAST (β : Type → Type) (M : outParam (Type → Type)) where
-  toAst [Inhabited α] : β α → M α
-  ofAst [Inhabited α] [Repr α] : M α → OfAstM (β α)
+  toAst {α} [Inhabited α] : β α → M α
+  ofAst {α} [Inhabited α] [Repr α] : M α → OfAstM (β α)
 
 end Strata
 
@@ -55,7 +60,16 @@ op mkMutACommaSep (a : CommaSepBy MutA) : MutACommaSep => a;
 
 namespace TestDialect
 
+set_option trace.Strata.generator true
+
 #strata_gen TestDialect
+
+#print TestDialect.TestDialectType
+
+#eval ``TestDialectType
+public section
+
+end
 
 /--
 info: inductive TestDialect.test : Type → Type
@@ -97,6 +111,32 @@ TestDialect.TypeP.type : {α : Type} → α → TypeP α
 -/
 #guard_msgs in
 #print TypeP
+
+/--
+info: def TestDialect.TypeP.ann : {α : Type} → TypeP α → α :=
+fun {α} a => TypeP.casesOn a (fun tp => tp.ann) fun ann => ann
+-/
+#guard_msgs in
+#print TypeP.ann
+
+/--
+info: inductive TestDialect.Expr : Type → Type
+number of parameters: 1
+constructors:
+TestDialect.Expr.fvar : {α : Type} → α → Nat → Expr α
+TestDialect.Expr.trueExpr : {α : Type} → α → Expr α
+TestDialect.Expr.and : {α : Type} → α → Expr α → Expr α → Expr α
+TestDialect.Expr.lambda : {α : Type} → α → TestDialectType α → Bindings α → Expr α → Expr α
+-/
+#guard_msgs in
+#print Expr
+
+/--
+info: def TestDialect.Expr.ann : {α : Type} → Expr α → α :=
+fun {α} a => Expr.casesOn a (fun ann idx => ann) (fun ann => ann) (fun ann x y => ann) fun ann tp b res => ann
+-/
+#guard_msgs in
+#print Expr.ann
 
 /--
 info: Strata.ExprF.fvar () 1
