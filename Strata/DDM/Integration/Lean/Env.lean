@@ -3,15 +3,16 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
-import Lean.Environment
-import Strata.DDM.Elab
+module
+public import Lean.Environment
+public import Strata.DDM.Elab.LoadedDialects
+import Strata.DDM.BuiltinDialects
 
 namespace Strata
 
 open Lean Parser
 
-structure PersistentDialect where
+public structure PersistentDialect where
   leanName : Lean.Name
   name : DialectName
   -- Names of dialects that are imported into this dialect
@@ -31,19 +32,26 @@ def dialect (pd : PersistentDialect) : Dialect :=
 
 end PersistentDialect
 
-structure DialectState where
-  loaded : Elab.LoadedDialects := .builtin
-  nameMap : Std.HashMap DialectName Name := .ofList [
-    (initDialect.name, ``initDialect),
-    (headerDialect.name, ``headerDialect),
-    (StrataDDL.name, ``StrataDDL),
-  ]
-  newDialects : Array (Name × Dialect) := #[]
+public structure DialectState where
+  loaded : Elab.LoadedDialects
+  nameMap : Std.HashMap DialectName Name
+  newDialects : Array (Name × Dialect)
 deriving Inhabited
 
 namespace DialectState
 
-def addDialect! (s : DialectState) (d : Dialect) (name : Name) (isNew : Bool) : DialectState where
+instance : EmptyCollection DialectState where
+  emptyCollection := {
+    loaded := .builtin,
+    nameMap := .ofList [
+      (initDialect.name, ``initDialect),
+      (headerDialect.name, ``headerDialect),
+      (StrataDDL.name, ``StrataDDL),
+    ],
+    newDialects := #[]
+  }
+
+public def addDialect! (s : DialectState) (d : Dialect) (name : Name) (isNew : Bool) : DialectState where
   loaded :=
     assert! d.name ∉ s.loaded.dialects
     s.loaded.addDialect! d
@@ -64,7 +72,7 @@ def mkImported (e : Array (Array PersistentDialect)) : ImportM DialectState :=
 def exportEntries (s : DialectState) : Array PersistentDialect :=
   s.newDialects.map fun (n, d) => .ofDialect n d
 
-initialize dialectExt : PersistentEnvExtension PersistentDialect (Name × Dialect) DialectState ←
+public initialize dialectExt : PersistentEnvExtension PersistentDialect (Name × Dialect) DialectState ←
   registerPersistentEnvExtension {
     mkInitial := pure {},
     addImportedFn := mkImported

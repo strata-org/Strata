@@ -3,12 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
+import all Init.Data.String.Defs
 
 /-
-This file contains auxillary definitions for Lean core types that could be
+This file contains auxillary definitions for String that could be
 potentially useful to add.
 -/
 
+public section
 namespace Strata
 
 /--
@@ -42,6 +45,14 @@ private def escapeStringLitAux (acc : String) (c : Char) : String :=
 def escapeStringLit (s : String) : String :=
   s.foldl escapeStringLitAux "\"" ++ "\""
 
+namespace String
+
+@[simp]
+theorem isEmpty_eq (s : _root_.String) : s.isEmpty = (s == "") := by
+  simp only [String.isEmpty, BEq.beq, String.utf8ByteSize_eq_zero_iff]
+
+end String
+
 end Strata
 
 namespace String
@@ -51,7 +62,7 @@ Indicates s has a substring at the given index.
 
 Requires a bound check that shows index is in bounds.
 -/
-def hasSubstringAt (s sub : String) (i : Pos.Raw) (index_bound : i.byteIdx + sub.utf8ByteSize ≤ s.utf8ByteSize) : Bool :=
+private def hasSubstringAt (s sub : String) (i : Pos.Raw) (index_bound : i.byteIdx + sub.utf8ByteSize ≤ s.utf8ByteSize) : Bool :=
   sub.bytes.size.all fun j jb =>
     have p : i.byteIdx + j < s.bytes.size := by
       change i.byteIdx + sub.bytes.size ≤ s.bytes.size at index_bound
@@ -66,7 +77,7 @@ Auxiliary for `indexOf`. Preconditions:
 
 It represents the state where the first `j` bytes of `sep` match the bytes `i-j .. i` of `s`.
 -/
-def Pos.Raw.indexOfAux (s sub : String) (subp : sub.utf8ByteSize > 0) (i : Pos.Raw) : Option Pos.Raw :=
+private def Pos.Raw.indexOfAux (s sub : String) (subp : sub.utf8ByteSize > 0) (i : Pos.Raw) : Option Pos.Raw :=
   if h : i.byteIdx + sub.utf8ByteSize ≤ s.utf8ByteSize then
     if s.hasSubstringAt sub i h then
       some i
@@ -87,7 +98,7 @@ the bytes in `sub`.
 N.B. This will potentially read the same character multiple times.  It could be
 made more efficient by using Boyer-Moore string search.
 -/
-public def indexOfRaw (s sub : String) (b : Pos.Raw := 0) : Option Pos.Raw :=
+def indexOfRaw (s sub : String) (b : Pos.Raw := 0) : Option Pos.Raw :=
   if subp : sub.utf8ByteSize > 0 then
     b.indexOfAux s sub subp
   else
@@ -108,3 +119,4 @@ info: [""]
 #eval "".splitLines
 
 end String
+end

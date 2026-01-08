@@ -3,13 +3,17 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
+
+public import Strata.DDM.AST
 
 import Strata.DDM.BuiltinDialects.BuiltinM
 
+open Strata.Elab
+
+public section
 namespace Strata
 
-open Elab
-open Parser (minPrec)
 
 def SyntaxCat.mkOpt (c:SyntaxCat) : SyntaxCat := { ann := .none, name := q`Init.Option, args := #[c] }
 def SyntaxCat.mkSeq (c:SyntaxCat) : SyntaxCat := { ann := .none, name := q`Init.Seq, args := #[c] }

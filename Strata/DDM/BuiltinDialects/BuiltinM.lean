@@ -3,27 +3,15 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
-import Strata.DDM.Elab.DeclM
+public import Strata.DDM.Elab.DeclM
+public import Lean.Parser.Types
+public import Strata.DDM.Elab.LoadedDialects
 
-namespace Strata
 
-namespace Elab
-
-def initTokenTable : Lean.Parser.TokenTable :=
-  initParsers.fixedParsers.fold (init := {}) fun tt _ p => tt.addParser p
-
-namespace DeclState
-
-def ofDialects (ds : LoadedDialects) : DeclState :=
-  let s : DeclState := {
-    openDialects := #[]
-    openDialectSet := {}
-    tokenTable := initTokenTable
-  }
-  ds.dialects.toList.foldl (init := s) (·.openLoadedDialect! ds ·)
-
-end DeclState
+public section
+namespace Strata.Elab
 
 abbrev BuiltinM := StateT Dialect DeclM
 
@@ -37,7 +25,6 @@ def create! (name : DialectName) (dialects : Array Dialect) (act : BuiltinM Unit
     panic! "Initial program state initialization failed"
   else
     d
-
 
 def addDecl (decl : Decl) : BuiltinM Unit := do
   modify fun d => d.addDecl decl

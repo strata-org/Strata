@@ -22,4 +22,5 @@ def testAssertFalse : IO Unit := do
   if !result.normalizedMatch then
     throw (IO.userError "Test failed: formatted output does not match input")
 
+#guard_msgs in
 #eval testAssertFalse

@@ -1,6 +1,6 @@
 # Generated during regenerate-testdata.sh (cleaned up after)
 src/main/java/com/strata/simple/
+*.class
 
-# Gradle
-.gradle/
-build/
+# Downloaded dependency
+ion-java-*.jar

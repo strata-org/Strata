@@ -105,7 +105,7 @@ partial def syntaxCatToJavaType (cat : SyntaxCat) : JavaType :=
     | some inner => .list (syntaxCatToJavaType inner)
     | none => panic! "Init.Seq/CommaSepBy requires a type argument"
   | ⟨"Init", "Expr"⟩ => .simple "Expr"
-  | ⟨"Init", "TypeExpr"⟩ => .simple "TypeExpr"
+  | ⟨"Init", "TypeExpr"⟩ => panic! "Init.TypeExpr is internal DDM machinery; use Init.Type or Init.TypeP instead"
   | ⟨"Init", "Type"⟩ => .simple "Type_"
   | ⟨"Init", "TypeP"⟩ => .simple "TypeP"
   | ⟨_, name⟩ => .simple (escapeJavaName (toPascalCase name))
@@ -114,24 +114,23 @@ def argDeclKindToJavaType : ArgDeclKind → JavaType
   | .type _ => .simple "Expr"
   | .cat c => syntaxCatToJavaType c
 
-/-- Extract the Java interface name from a SyntaxCat, or none if it maps to a primitive -/
-partial def syntaxCatToInterfaceName (cat : SyntaxCat) : Option String :=
+/-- Extract the QualifiedIdent for categories that need Java interfaces, or none for primitives -/
+partial def syntaxCatToQualifiedName (cat : SyntaxCat) : Option QualifiedIdent :=
   match cat.name with
   -- Primitives map to Java types, no interface needed
   | ⟨"Init", "Ident"⟩ | ⟨"Init", "Num"⟩ | ⟨"Init", "Decimal"⟩
   | ⟨"Init", "Str"⟩ | ⟨"Init", "ByteArray"⟩ | ⟨"Init", "Bool"⟩ => none
   -- Containers - recurse into element type
   | ⟨"Init", "Option"⟩ | ⟨"Init", "Seq"⟩ | ⟨"Init", "CommaSepBy"⟩ =>
-    cat.args[0]?.bind syntaxCatToInterfaceName
+    cat.args[0]?.bind syntaxCatToQualifiedName
   -- Abstract Init categories (extension points for dialects)
-  | ⟨"Init", "Expr"⟩ => some "Expr"
-  | ⟨"Init", "TypeExpr"⟩ => some "TypeExpr"
-  | ⟨"Init", "Type"⟩ => some "Type_"
-  | ⟨"Init", "TypeP"⟩ => some "TypeP"
+  | ⟨"Init", "Expr"⟩ => some ⟨"Init", "Expr"⟩
+  | ⟨"Init", "Type"⟩ => some ⟨"Init", "Type"⟩
+  | ⟨"Init", "TypeP"⟩ => some ⟨"Init", "TypeP"⟩
   -- Other Init types are internal DDM machinery
   | ⟨"Init", _⟩ => none
   -- Dialect-defined categories
-  | ⟨_, name⟩ => some (escapeJavaName (toPascalCase name))
+  | qid => some qid
 
 /-! ## Java Structures -/
 
@@ -157,13 +156,12 @@ structure GeneratedFiles where
   records : Array (String × String)
   builders : String × String  -- (filename, content)
   serializer : String
-  warnings : Array String := #[]  -- Warnings about unsupported declarations
 
 /-- Mapping from DDM names to disambiguated Java identifiers. -/
 structure NameAssignments where
   categories : Std.HashMap QualifiedIdent String
   operators : Std.HashMap (QualifiedIdent × String) String
-  stubs : Std.HashMap String String
+  stubs : Std.HashMap QualifiedIdent String
   builders : String
 
 /-! ## Code Generation -/
@@ -373,25 +371,38 @@ def assignAllNames (d : Dialect) : NameAssignments :=
   let baseNames : Std.HashSet String := Std.HashSet.ofList ["node", "sourcerange", "ionserializer"]
 
   -- Collect unique categories and referenced types
-  let init : Array QualifiedIdent × Std.HashSet String := (#[], {})
+  let init : Array QualifiedIdent × Std.HashSet QualifiedIdent := (#[], {})
   let (cats, refs) := d.declarations.foldl (init := init) fun (cats, refs) decl =>
     match decl with
     | .op op =>
       let cats := if cats.contains op.category then cats else cats.push op.category
       let refs := op.argDecls.toArray.foldl (init := refs) fun refs arg =>
         match arg.kind with
-        | .type _ => refs.insert "Expr"
-        | .cat c => match syntaxCatToInterfaceName c with
-          | some name => refs.insert name
+        | .type _ => refs.insert ⟨"Init", "Expr"⟩
+        | .cat c => match syntaxCatToQualifiedName c with
+          | some qid => refs.insert qid
           | none => refs
       (cats, refs)
     | _ => (cats, refs)
 
+  -- All QualifiedIdents that need Java names (categories + refs)
+  let allQids := cats ++ refs.toArray.filter (!cats.contains ·)
+
+  -- Count name occurrences to detect collisions
+  let nameCounts : Std.HashMap String Nat := allQids.foldl (init := {}) fun m qid =>
+    m.alter qid.name (fun v => some (v.getD 0 + 1))
+
+  -- Assign Java names, prefixing with dialect when there's a collision
+  let assignName (used : Std.HashSet String) (qid : QualifiedIdent) : String × Std.HashSet String :=
+    let base := if nameCounts.getD qid.name 0 > 1
+                then escapeJavaName (toPascalCase s!"{qid.dialect}_{qid.name}")
+                else escapeJavaName (toPascalCase qid.name)
+    disambiguate base used
+
   -- Assign category names
   let catInit : Std.HashMap QualifiedIdent String × Std.HashSet String := ({}, baseNames)
   let (categoryNames, used) := cats.foldl (init := catInit) fun (map, used) cat =>
-    let base := escapeJavaName (toPascalCase cat.name)
-    let (name, newUsed) := disambiguate base used
+    let (name, newUsed) := assignName used cat
     (map.insert cat name, newUsed)
 
   -- Assign operator names
@@ -404,13 +415,12 @@ def assignAllNames (d : Dialect) : NameAssignments :=
       (map.insert (op.category, op.name) name, newUsed)
     | _ => (map, used)
 
-  -- Assign stub names (referenced types without operators)
-  let catNameSet := Std.HashSet.ofList (categoryNames.toList.map Prod.snd)
-  let stubInit : Std.HashMap String String × Std.HashSet String := ({}, used)
-  let (stubNames, used) := refs.toList.foldl (init := stubInit) fun (map, used) ref =>
-    if catNameSet.contains ref then (map, used)
+  -- Assign stub names (referenced types not in this dialect's categories)
+  let stubInit : Std.HashMap QualifiedIdent String × Std.HashSet String := ({}, used)
+  let (stubNames, used) := refs.toArray.foldl (init := stubInit) fun (map, used) ref =>
+    if categoryNames.contains ref then (map, used)
     else
-      let (name, newUsed) := disambiguate ref used
+      let (name, newUsed) := assignName used ref
       (map.insert ref name, newUsed)
 
   let (buildersName, _) := disambiguate d.name used
@@ -451,13 +461,6 @@ def generateDialect (d : Dialect) (package : String) : GeneratedFiles :=
   let names := assignAllNames d
   let opsByCategory := groupOpsByCategory d names
 
-  -- Collect warnings for unsupported declarations
-  let warnings := d.declarations.filterMap fun decl =>
-    match decl with
-    | .type t => some s!"type declaration '{t.name}' is not supported in Java generation"
-    | .function f => some s!"function declaration '{f.name}' is not supported in Java generation"
-    | _ => none
-
   -- Categories with operators get sealed interfaces with permits clauses
   let sealedInterfaces := opsByCategory.toList.map fun (cat, ops) =>
     let name := names.categories[cat]!
@@ -468,9 +471,11 @@ def generateDialect (d : Dialect) (package : String) : GeneratedFiles :=
   let stubInterfaces := names.stubs.toList.map fun (_, name) =>
     generateStubInterface package name
 
-  -- Generate records for operators
+  -- Generate records for operators (fail on unsupported declarations)
   let records := d.declarations.toList.filterMap fun decl =>
     match decl with
+    | .type t => panic! s!"type declaration '{t.name}' is not supported in Java generation"
+    | .function f => panic! s!"function declaration '{f.name}' is not supported in Java generation"
     | .op op =>
       let name := names.operators[(op.category, op.name)]!
       some (s!"{name}.java", (opDeclToJavaRecord d.name names op).toJava package)
@@ -484,8 +489,7 @@ def generateDialect (d : Dialect) (package : String) : GeneratedFiles :=
     interfaces := sealedInterfaces.toArray ++ stubInterfaces.toArray
     records := records.toArray
     builders := (s!"{names.builders}.java", generateBuilders package names.builders d names)
-    serializer := generateSerializer package
-    warnings := warnings }
+    serializer := generateSerializer package }
 
 /-! ## File Output -/
 
@@ -494,9 +498,6 @@ def packageToPath (package : String) : System.FilePath :=
   ⟨String.intercalate "/" parts⟩
 
 def writeJavaFiles (baseDir : System.FilePath) (package : String) (files : GeneratedFiles) : IO Unit := do
-  for warning in files.warnings do
-    IO.eprintln s!"Warning: {warning}"
-
   let dir := baseDir / packageToPath package
   IO.FS.createDirAll dir
 
