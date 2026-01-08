@@ -10,12 +10,13 @@ import StrataTest.Languages.Laurel.TestExamples
 open StrataTest.Util
 open Strata
 
-namespace Laurel
+namespace Strata.Laurel
 
 def program: String := r"
 procedure conditionalAssignmentInExpression(x: int) {
   var y := 0;
   var z := if (x > 0) { y := y + 1; } else { 0 };
+// ^^^ error: Could not lift assigment in expression that is evaluated conditionally
   if (x > 0) {
     assert y == 1;
   } else {

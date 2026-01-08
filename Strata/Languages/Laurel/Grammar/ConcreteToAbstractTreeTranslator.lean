@@ -190,7 +190,8 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
     else if op.name == q`Laurel.assign then
       let target ← translateStmtExpr op.args[0]!
       let value ← translateStmtExpr op.args[1]!
-      return .Assign target value
+      let md ← getArgMetaData (.op op)
+      return .Assign target value md
     else if let some primOp := getBinaryOp? op.name then
       let lhs ← translateStmtExpr op.args[0]!
       let rhs ← translateStmtExpr op.args[1]!

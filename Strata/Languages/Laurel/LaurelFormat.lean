@@ -66,7 +66,7 @@ partial def formatStmtExpr : StmtExpr → Format
   | .LiteralInt n => Format.text (toString n)
   | .LiteralBool b => if b then "true" else "false"
   | .Identifier name => Format.text name
-  | .Assign target value =>
+  | .Assign target value _ =>
       formatStmtExpr target ++ " := " ++ formatStmtExpr value
   | .FieldSelect target field =>
       formatStmtExpr target ++ "." ++ Format.text field

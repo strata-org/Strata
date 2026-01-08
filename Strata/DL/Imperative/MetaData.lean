@@ -67,7 +67,7 @@ instance [Repr P.Ident] : Repr (MetaDataElem.Field P) where
 
 inductive Uri where
   | file (path: String)
-  deriving DecidableEq
+  deriving DecidableEq, Inhabited
 
 instance : ToFormat Uri where
  format fr := match fr with | .file path => path
@@ -76,7 +76,7 @@ structure FileRange where
   file: Uri
   start: Lean.Position
   ending: Lean.Position
-  deriving DecidableEq
+  deriving DecidableEq, Inhabited
 
 instance : ToFormat FileRange where
  format fr := f!"{fr.file}:{fr.start}-{fr.ending}"

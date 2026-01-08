@@ -10,7 +10,7 @@ import StrataTest.Languages.Laurel.TestExamples
 open StrataTest.Util
 open Strata
 
-namespace Laurel
+namespace Strata.Laurel
 
 def program: String := r"
 procedure conditionalAssignmentInExpression(x: int) {
@@ -21,6 +21,7 @@ procedure conditionalAssignmentInExpression(x: int) {
   } else {
     assert z == 0;
     assert y == 0;
+//  ^^^^^^^^^^^^^^ error: assertion does not hold
   }
 }
 "

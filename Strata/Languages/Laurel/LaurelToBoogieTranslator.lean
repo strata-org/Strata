@@ -72,7 +72,7 @@ partial def translateExpr (expr : StmtExpr) : Boogie.Expression.Expr :=
                   | some e => translateExpr e
                   | none => .const () (.intConst 0)
       .ite () bcond bthen belse
-  | .Assign _ value => translateExpr value  -- For expressions, just translate the value
+  | .Assign _ value _ => translateExpr value  -- For expressions, just translate the value
   | .StaticCall name args =>
       -- Create function call as an op application
       let ident := Boogie.BoogieIdent.glob name
@@ -109,7 +109,7 @@ partial def translateStmt (outputParams : List Parameter) (stmt : StmtExpr) : Li
                             | .TBool => .const () (.boolConst false)
                             | _ => .const () (.intConst 0)
           [Boogie.Statement.init ident boogieType defaultExpr]
-  | .Assign target value =>
+  | .Assign target value _ =>
       match target with
       | .Identifier name =>
           let ident := Boogie.BoogieIdent.locl name

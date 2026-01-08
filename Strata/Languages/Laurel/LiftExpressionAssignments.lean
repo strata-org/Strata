@@ -26,6 +26,7 @@ Becomes:
 
 
 structure SequenceState where
+  insideCondition : Bool
   prependedStmts : List StmtExpr := []
   diagnostics : List Diagnostic
   tempCounter : Nat := 0
@@ -35,8 +36,26 @@ abbrev SequenceM := StateM SequenceState
 def SequenceM.addDiagnostic (diagnostic : Diagnostic) : SequenceM Unit :=
   modify fun s => { s with diagnostics := s.diagnostics ++ [diagnostic] }
 
-def SequenceM.addPrependedStmt (stmt : StmtExpr) : SequenceM Unit :=
+def getFileRange (md: Imperative.MetaData Boogie.Expression): Imperative.FileRange :=
+  let elemOption := md.findElem Imperative.MetaData.fileRange
+  match elemOption with
+    | some { value := .fileRange fileRange, .. } => fileRange
+    | _ => panic "metadata does not have fileRange"
+
+def checkOutsideCondition(md: Imperative.MetaData Boogie.Expression): SequenceM Unit := do
+  if ((<- get).insideCondition) then
+    let fileRange := getFileRange md
+    SequenceM.addDiagnostic {
+        start := fileRange.start,
+        ending := fileRange.ending,
+        message := "Could not lift assigment in expression that is evaluated conditionally"
+    }
+
+def SequenceM.addPrependedStmt (stmt : StmtExpr) : SequenceM Unit := do
   modify fun s => { s with prependedStmts := s.prependedStmts ++ [stmt] }
+
+def SequenceM.setInsideCondition : SequenceM Unit := do
+  modify fun s => { s with insideCondition := true }
 
 def SequenceM.getPrependedStmts : SequenceM (List StmtExpr) := do
   let stmts := (← get).prependedStmts
@@ -55,12 +74,13 @@ Returns the transformed expression with assignments replaced by variable referen
 -/
 partial def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
   match expr with
-  | .Assign target value =>
+  | .Assign target value md =>
+      checkOutsideCondition md
       -- This is an assignment in expression context
       -- We need to: 1) execute the assignment, 2) capture the value in a temporary
       -- This prevents subsequent assignments to the same variable from changing the value
       let seqValue ← transformExpr value
-      let assignStmt := StmtExpr.Assign target seqValue
+      let assignStmt := StmtExpr.Assign target seqValue md
       SequenceM.addPrependedStmt assignStmt
       -- Create a temporary variable to capture the assigned value
       -- Use TInt as the type (could be refined with type inference)
@@ -139,19 +159,20 @@ partial def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
       | none =>
           return [stmt]
 
-  | .Assign target value =>
+  | .Assign target value md =>
       -- Top-level assignment (statement context)
       let seqTarget ← transformExpr target
       let seqValue ← transformExpr value
       let prepended ← SequenceM.getPrependedStmts
-      return prepended ++ [.Assign seqTarget seqValue]
+      return prepended ++ [.Assign seqTarget seqValue md]
 
   | .IfThenElse cond thenBranch elseBranch =>
       -- Process condition (extract assignments)
       let seqCond ← transformExpr cond
       let prependedCond ← SequenceM.getPrependedStmts
 
-      -- Process branches
+      SequenceM.setInsideCondition
+
       let seqThen ← transformStmt thenBranch
       let thenBlock := .Block seqThen none
 
@@ -191,7 +212,8 @@ def transformProcedure (proc : Procedure) : SequenceM Procedure := do
 Transform a program to lift all assignments that occur in an expression context.
 -/
 def liftExpressionAssignments (program : Program) : Program :=
-  let (seqProcedures, _) := (program.staticProcedures.mapM transformProcedure).run { diagnostics := [] }
+  let (seqProcedures, _) := (program.staticProcedures.mapM transformProcedure).run
+    { insideCondition := false, diagnostics := [] }
   { program with staticProcedures := seqProcedures }
 
 end Laurel
