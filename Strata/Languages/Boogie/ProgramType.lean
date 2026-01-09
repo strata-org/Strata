@@ -32,21 +32,25 @@ def typeCheck (C: Boogie.Expression.TyContext) (Env : Boogie.Expression.TyEnv) (
   match remaining with
   | [] => .ok (acc.reverse, Env)
   | decl :: drest => do
-    let C := {C with idents := (← C.idents.addWithError decl.name f!"Error in Boogie declaration {decl}: {decl.name} already defined")}
+    let sourceLoc := Imperative.MetaData.formatFileRangeD decl.metadata (includeEnd? := true)
+    let errorWithSourceLoc := fun e => if sourceLoc.isEmpty then e else f!"{sourceLoc} {e}"
+    let C := {C with idents := (← C.idents.addWithError decl.name
+                                    f!"{sourceLoc} Error in {decl.kind} {decl.name}: \
+                                       a declaration of this name already exists.")}
     let (decl', C, Env) ←
       match decl with
 
-      | .var x ty val _ =>
-        let (s', Env) ← Statement.typeCheck C Env program .none [.init x ty val .empty]
+      | .var x ty val md =>
+        let (s', Env) ← Statement.typeCheck C Env program .none [.init x ty val md]
         match s' with
         | [.init x' ty' val' _] => .ok (.var x' ty' val', C, Env)
-        | _ => .error f!"Implementation error! \
+        | _ => .error f!"{sourceLoc}Implementation error! \
                          Statement typeChecker returned the following: \
                          {Format.line}\
                          {s'}{Format.line}
                          Declaration: {decl}"
 
-      | .type td _ =>
+      | .type td _ => try
           match td with
           | .con tc =>
             let C ← C.addKnownTypeWithError { name := tc.name, metadata := tc.numargs } f!"This type declaration's name is reserved!\n\
@@ -60,29 +64,38 @@ def typeCheck (C: Boogie.Expression.TyContext) (Env : Boogie.Expression.TyEnv) (
           | .data d =>
             let C ← C.addDatatype d
             .ok (.type td, C, Env)
+          catch e =>
+            .error (errorWithSourceLoc e)
 
-      | .ax a _ =>
+      | .ax a _ => try
         let (ae, Env) ← LExpr.resolve C Env a.e
         match ae.toLMonoTy with
         | .bool => .ok (.ax { a with e := ae.unresolved }, C, Env)
-        | _ => .error f!"Axiom has non-boolean type: {a}"
+        | _ => .error f!"Axiom {a.name} has non-boolean type."
+          catch e =>
+            .error (errorWithSourceLoc e)
 
-      | .distinct l es md =>
+      | .distinct l es md => try
         let es' ← es.mapM (LExpr.resolve C Env)
         .ok (.distinct l (es'.map (λ e => e.fst.unresolved)) md, C, Env)
+        catch e =>
+          .error (errorWithSourceLoc e)
 
-      | .proc proc _ =>
+      | .proc proc md =>
+        -- Already reports source locations.
         let Env := Env.pushEmptySubstScope
-        let (proc', Env) ← Procedure.typeCheck C Env program proc
+        let (proc', Env) ← Procedure.typeCheck C Env program proc md
         let Env := Env.popSubstScope
         .ok (.proc proc', C, Env)
 
-      | .func func _ =>
+      | .func func _ => try
         let Env := Env.pushEmptySubstScope
         let (func', Env) ← Function.typeCheck C Env func
         let C := C.addFactoryFunction func'
         let Env := Env.popSubstScope
         .ok (.func func', C, Env)
+          catch e =>
+            .error (errorWithSourceLoc e)
 
     go C Env drest (decl' :: acc)
 

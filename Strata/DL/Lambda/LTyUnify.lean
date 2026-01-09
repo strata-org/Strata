@@ -1010,9 +1010,48 @@ private theorem Constraints.unify_termination_goal_2
   omega
   done
 
+/--
+Kinds of errors that can occur during type unification. Also includes the
+failing constraint.
+-/
+inductive UnifyError where
+  | ImpossibleToUnify (c : Constraint) (original : Option Constraint := .none)
+  | FailedOccursCheck (tyvar : TyIdentifier) (ty : LMonoTy) (c : Constraint) (original : Option Constraint := .none)
+  deriving Repr, Inhabited, DecidableEq
+
+def UnifyError.addOriginalConstraint (e : UnifyError) (o : Constraint) : UnifyError :=
+  match e with
+  | ImpossibleToUnify c _ => ImpossibleToUnify c o
+  | FailedOccursCheck tyvar ty c _ => FailedOccursCheck tyvar ty c o
+
+instance : ToFormat UnifyError where
+  format u := match u with
+    | .ImpossibleToUnify c opt_original =>
+      let msg_fn := fun (x : Constraint) => f!"Impossible to unify {x.fst} with {x.snd}."
+      match opt_original with
+      | none => msg_fn c
+      | some original =>
+        if c == original then
+          msg_fn c
+        else
+          (msg_fn original) ++ f!"\nFirst mismatch: {c.fst} with {c.snd}."
+    | .FailedOccursCheck tyvar ty c opt_original =>
+      let msg_fn := f!"Failed occurs check: \
+                      {tyvar} cannot be unified with {ty} because it would \
+                      create a circular dependency during unification."
+        match opt_original with
+        | none => msg_fn
+        | some original =>
+          if original == c then msg_fn
+          else msg_fn ++ f!" Failure occurred when unifying {original.fst} with {original.snd}."
+
 mutual
+/--
+Type unification for a single constraint `c` w.r.t. a well-formed type
+substitution `S`. See `Constraints.unify` for the top-level function.
+-/
 def Constraint.unifyOne (c : Constraint) (S : SubstInfo) :
-  Except Format (ValidSubstRelation [c] S) :=
+  Except UnifyError (ValidSubstRelation [c] S) :=
   let (t1, t2) := c
   if _h1: t1 == t2 then
      have h_sub : Subst.freeVars_subset_prop [(t1, t2)] S S := by
@@ -1032,7 +1071,7 @@ def Constraint.unifyOne (c : Constraint) (S : SubstInfo) :
       else if _h4 : id ∈ lty.freeVars then
         -- Occurs check: `id` should not appear in the free type variables of
         -- `lty`.
-        .error f!"Ftvar {id} is in the free variables of {lty}!"
+        .error (.FailedOccursCheck id lty (t1, t2))
       else
         -- At this point, `id` cannot be a free variable in `lty`.
         match _h5 : S.subst.find? id with
@@ -1067,7 +1106,7 @@ def Constraint.unifyOne (c : Constraint) (S : SubstInfo) :
       if _h7 : n1 == n2 then
         .ok { newS := SubstInfo.mk [] (by simp [SubstWF]), goodSubset := by grind }
       else
-        .error f!"Cannot unify differently sized bitvector types {t1} and {t2}!"
+        .error (.ImpossibleToUnify (t1, t2))
     | .tcons name1 args1, .tcons name2 args2 => do
       if _h6 : name1 == name2 && args1.length == args2.length then
        let new_constraints := List.zip args1 args2
@@ -1077,11 +1116,11 @@ def Constraint.unifyOne (c : Constraint) (S : SubstInfo) :
          exact Subst.freeVars_subset_prop_of_tcons S name1 name2 args1 args2 rfl relS
        .ok { newS := relS.newS, goodSubset := by simp [h_sub] }
       else
-        .error f!"Cannot unify differently named type constructors {t1} and {t2}!"
+        .error (.ImpossibleToUnify (t1, t2))
     | .bitvec _, .tcons _ _ =>
-        .error f!"Cannot unify bv type {t1} and type constructor {t2}!"
+        .error (.ImpossibleToUnify (t1, t2))
     | .tcons _ _, .bitvec _ =>
-        .error f!"Cannot unify type constructor {t1} and bv type {t2}!"
+        .error (.ImpossibleToUnify (t1, t2))
   termination_by ((((Constraints.freeVars [c]) ++ S.subst.freeVars).dedup.length),
                   Constraints.size [c],
                   0)
@@ -1094,12 +1133,16 @@ def Constraint.unifyOne (c : Constraint) (S : SubstInfo) :
     -- Subgoal 3
     · exact @Constraint.unify_termination_goal_3 S name1 name2 args1 args2 _h6
 
+/--
+Type unification for constraints `cs` w.r.t. a well-formed type
+substitution `S`. See `Constraints.unify` for the top-level function.
+-/
 def Constraints.unifyCore (cs : Constraints) (S : SubstInfo) :
-    Except Format (ValidSubstRelation cs S) := do
+    Except UnifyError (ValidSubstRelation cs S) := do
   match _h0 : cs with
   | [] => .ok { newS := S, goodSubset := by simp [Subst.freeVars_subset_prop_of_empty] }
   | c :: c_rest =>
-    let relS ← Constraint.unifyOne c S
+    let relS ← Constraint.unifyOne c S |> .mapError (fun e => UnifyError.addOriginalConstraint e c)
     let new_relS ← Constraints.unifyCore c_rest relS.newS
     .ok { newS := new_relS.newS, goodSubset := by simp [Subst.freeVars_subset_prop_mk_cons] }
   termination_by ((((Constraints.freeVars cs) ++ S.subst.freeVars).dedup.length),
@@ -1119,17 +1162,48 @@ end
 bottom-up Hindley-Milner style algorithm that finds the most general type
 (principal type) of an expression by finding a substitution that makes all the
 types in the input constraints equal.
+
+On failure, returns the constraint that cannot be unified --
+note that this can be different from a constraint `c` in `cs` because it could
+involve subterms of types in `c` (e.g., `Map int bool` and `Map int int` fail to
+unify because `bool` and `int` can't be unified). The constraint returned on
+failure would be the _first_ mismatching one, not necessarily the only one.
+
+Returns a well-formed `S` w.r.t. `cs` otherwise.
 -/
 def Constraints.unify (constraints : Constraints) (S : SubstInfo) :
-    Except Format SubstInfo := do
+    Except UnifyError SubstInfo := do
     let relS ← Constraints.unifyCore constraints S
     .ok relS.newS
 
-/-- info: ok: [(a, int) (b, (arrow c d))] -/
+/-- info: [(a, int) (b, (arrow c d))] -/
 #guard_msgs in
 open LTy.Syntax in
-#eval  do let S ← Constraints.unify [(mty[%a → %b], mty[int → (%c → %d)])] SubstInfo.empty
-           return (format S.subst)
+#eval match Constraints.unify [(mty[%a → %b], mty[int → (%c → %d)])] SubstInfo.empty with
+  | .ok S => format S.subst
+  | .error e => format e
+
+/--
+info: Impossible to unify (Map int int) with (Map int bool).
+First mismatch: int with bool.
+-/
+#guard_msgs in
+open LTy.Syntax in
+#eval match Constraints.unify [(mty[Map int int], mty[Map int bool])] SubstInfo.empty with
+  | .ok S => format S.subst
+  | .error e => format e
+
+/--
+info: Impossible to unify (Map (Map bool int) int) with (Map int bool).
+First mismatch: (Map bool int) with int.
+-/
+#guard_msgs in
+open LTy.Syntax in
+#eval match Constraints.unify [(mty[int], mty[int]),
+                               (mty[Map (Map bool int) int], mty[Map int bool])]
+                              SubstInfo.empty with
+  | .ok S => format S.subst
+  | .error e => format e
 
 ---------------------------------------------------------------------
 

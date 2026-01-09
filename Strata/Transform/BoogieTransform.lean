@@ -238,10 +238,10 @@ def runProcedures (f : Command → Program → BoogieTransformM (List Statement)
   | [] => return []
   | d :: ds =>
     match d with
-    | .proc p =>
+    | .proc p md =>
       return Decl.proc {
           p with body := ← (runStmtsRec f p.body inputProg)
-        } :: (← (runProcedures f ds inputProg))
+        } md :: (← (runProcedures f ds inputProg))
     | _ => return d :: (← (runProcedures f ds inputProg))
 
 def runProgram (f : Command → Program → BoogieTransformM (List Statement))
