@@ -96,14 +96,15 @@ def translateNat (arg : Arg) : TransM Nat := do
 def translateParameter (arg : Arg) : TransM Parameter := do
   let .op op := arg
     | TransM.error s!"translateParameter expects operation"
-  if op.name != q`Laurel.parameter then
-    TransM.error s!"translateParameter expects parameter operation, got {repr op.name}"
-  if op.args.size == 2 then
-    let name ← translateIdent op.args[0]!
-    let paramType ← translateHighType op.args[1]!
+  match op.name, op.args with
+  | q`Laurel.parameter, #[arg0, arg1] =>
+    let name ← translateIdent arg0
+    let paramType ← translateHighType arg1
     return { name := name, type := paramType }
-  else
-    TransM.error s!"parameter needs two arguments, not {repr op.args.size}"
+  | q`Laurel.parameter, args =>
+    TransM.error s!"parameter needs two arguments, not {args.size}"
+  | _, _ =>
+    TransM.error s!"translateParameter expects parameter operation, got {repr op.name}"
 
 def translateParameters (arg : Arg) : TransM (List Parameter) := do
   match arg with
@@ -123,92 +124,88 @@ instance : Inhabited Procedure where
     body := .Transparent (.LiteralBool true)
   }
 
-def binaryOpMap : List (QualifiedIdent × Operation) := [
-  (q`Laurel.add, Operation.Add),
-  (q`Laurel.eq, Operation.Eq),
-  (q`Laurel.neq, Operation.Neq),
-  (q`Laurel.gt, Operation.Gt),
-  (q`Laurel.lt, Operation.Lt),
-  (q`Laurel.le, Operation.Leq),
-  (q`Laurel.ge, Operation.Geq)
-]
-
 def getBinaryOp? (name : QualifiedIdent) : Option Operation :=
-  binaryOpMap.lookup name
+  match name with
+  | q`Laurel.add => some Operation.Add
+  | q`Laurel.eq => some Operation.Eq
+  | q`Laurel.neq => some Operation.Neq
+  | q`Laurel.gt => some Operation.Gt
+  | q`Laurel.lt => some Operation.Lt
+  | q`Laurel.le => some Operation.Leq
+  | q`Laurel.ge => some Operation.Geq
+  | _ => none
 
 mutual
 
 partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
   match arg with
-  | .op op => match op.name with
-    | q`Laurel.assert =>
-      let cond ← translateStmtExpr op.args[0]!
+  | .op op => match op.name, op.args with
+    | q`Laurel.assert, #[arg0] =>
+      let cond ← translateStmtExpr arg0
       let md ← getArgMetaData (.op op)
       return .Assert cond md
-    | q`Laurel.assume =>
-      let cond ← translateStmtExpr op.args[0]!
+    | q`Laurel.assume, #[arg0] =>
+      let cond ← translateStmtExpr arg0
       let md ← getArgMetaData (.op op)
       return .Assume cond md
-    | q`Laurel.block =>
-      let stmts ← translateSeqCommand op.args[0]!
+    | q`Laurel.block, #[arg0] =>
+      let stmts ← translateSeqCommand arg0
       return .Block stmts none
-    | q`Laurel.boolTrue => return .LiteralBool true
-    | q`Laurel.boolFalse => return .LiteralBool false
-    | q`Laurel.int =>
-      let n ← translateNat op.args[0]!
+    | q`Laurel.boolTrue, _ => return .LiteralBool true
+    | q`Laurel.boolFalse, _ => return .LiteralBool false
+    | q`Laurel.int, #[arg0] =>
+      let n ← translateNat arg0
       return .LiteralInt n
-    | q`Laurel.varDecl =>
-      let name ← translateIdent op.args[0]!
-      let typeArg := op.args[1]!
-      let assignArg := op.args[2]!
+    | q`Laurel.varDecl, #[arg0, typeArg, assignArg] =>
+      let name ← translateIdent arg0
       let varType ← match typeArg with
-        | .option _ (some (.op typeOp)) => match typeOp.name with
-          | q`Laurel.optionalType => translateHighType typeOp.args[0]!
-          | _ => pure .TInt
+        | .option _ (some (.op typeOp)) => match typeOp.name, typeOp.args with
+          | q`Laurel.optionalType, #[typeArg0] => translateHighType typeArg0
+          | _, _ => pure .TInt
         | _ => pure .TInt
       let value ← match assignArg with
-        | .option _ (some (.op assignOp)) =>
-          translateStmtExpr assignOp.args[0]! >>= (pure ∘ some)
+        | .option _ (some (.op assignOp)) => match assignOp.args with
+          | #[assignArg0] => translateStmtExpr assignArg0 >>= (pure ∘ some)
+          | _ => TransM.error s!"assignArg {repr assignArg} didn't match expected pattern for variable {name}"
         | .option _ none => pure none
         | _ => TransM.error s!"assignArg {repr assignArg} didn't match expected pattern for variable {name}"
       return .LocalVariable name varType value
-    | q`Laurel.identifier =>
-      let name ← translateIdent op.args[0]!
+    | q`Laurel.identifier, #[arg0] =>
+      let name ← translateIdent arg0
       return .Identifier name
-    | q`Laurel.parenthesis => translateStmtExpr op.args[0]!
-    | q`Laurel.assign =>
-      let target ← translateStmtExpr op.args[0]!
-      let value ← translateStmtExpr op.args[1]!
+    | q`Laurel.parenthesis, #[arg0] => translateStmtExpr arg0
+    | q`Laurel.assign, #[arg0, arg1] =>
+      let target ← translateStmtExpr arg0
+      let value ← translateStmtExpr arg1
       return .Assign target value
-    | q`Laurel.call =>
-      let callee ← translateStmtExpr op.args[0]!
+    | q`Laurel.call, #[arg0, argsSeq] =>
+      let callee ← translateStmtExpr arg0
       let calleeName := match callee with
         | .Identifier name => name
         | _ => ""
-      let argsSeq := op.args[1]!
       let argsList ← match argsSeq with
         | .commaSepList _ args => args.toList.mapM translateStmtExpr
         | _ => pure []
       return .StaticCall calleeName argsList
-    | q`Laurel.return =>
-      let value ← translateStmtExpr op.args[0]!
+    | q`Laurel.return, #[arg0] =>
+      let value ← translateStmtExpr arg0
       return .Return (some value)
-    | q`Laurel.ifThenElse =>
-      let cond ← translateStmtExpr op.args[0]!
-      let thenBranch ← translateStmtExpr op.args[1]!
-      let elseArg := op.args[2]!
+    | q`Laurel.ifThenElse, #[arg0, arg1, elseArg] =>
+      let cond ← translateStmtExpr arg0
+      let thenBranch ← translateStmtExpr arg1
       let elseBranch ← match elseArg with
-        | .option _ (some (.op elseOp)) => match elseOp.name with
-          | q`Laurel.optionalElse => translateStmtExpr elseOp.args[0]! >>= (pure ∘ some)
-          | _ => pure none
+        | .option _ (some (.op elseOp)) => match elseOp.name, elseOp.args with
+          | q`Laurel.optionalElse, #[elseArg0] => translateStmtExpr elseArg0 >>= (pure ∘ some)
+          | _, _ => pure none
         | _ => pure none
       return .IfThenElse cond thenBranch elseBranch
-    | _ => match getBinaryOp? op.name with
+    | _, #[arg0, arg1] => match getBinaryOp? op.name with
       | some primOp =>
-        let lhs ← translateStmtExpr op.args[0]!
-        let rhs ← translateStmtExpr op.args[1]!
+        let lhs ← translateStmtExpr arg0
+        let rhs ← translateStmtExpr arg1
         return .PrimitiveOp primOp [lhs, rhs]
       | none => TransM.error s!"Unknown operation: {op.name}"
+    | _, _ => TransM.error s!"Unknown operation: {op.name}"
   | _ => TransM.error s!"translateStmtExpr expects operation"
 
 partial def translateSeqCommand (arg : Arg) : TransM (List StmtExpr) := do
@@ -229,17 +226,18 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
   let .op op := arg
     | TransM.error s!"parseProcedure expects operation"
 
-  if op.name == q`Laurel.procedure then
-    let name ← translateIdent op.args[0]!
-    let parameters ← translateParameters op.args[1]!
-    -- args[2] is ReturnParameters category, need to unwrap returnParameters operation
-    let returnParameters ← match op.args[2]! with
-      | .option _ (some (.op returnOp)) => match returnOp.name with
-        | q`Laurel.returnParameters => translateParameters returnOp.args[0]!
-        | _ => TransM.error s!"Expected returnParameters operation, got {repr returnOp.name}"
+  match op.name, op.args with
+  | q`Laurel.procedure, #[arg0, arg1, returnParamsArg, arg3] =>
+    let name ← translateIdent arg0
+    let parameters ← translateParameters arg1
+    -- returnParamsArg is ReturnParameters category, need to unwrap returnParameters operation
+    let returnParameters ← match returnParamsArg with
+      | .option _ (some (.op returnOp)) => match returnOp.name, returnOp.args with
+        | q`Laurel.returnParameters, #[returnArg0] => translateParameters returnArg0
+        | _, _ => TransM.error s!"Expected returnParameters operation, got {repr returnOp.name}"
       | .option _ none => pure []
-      | _ => TransM.error s!"Expected returnParameters operation, got {repr op.args[2]!}"
-    let body ← translateCommand op.args[3]!
+      | _ => TransM.error s!"Expected returnParameters operation, got {repr returnParamsArg}"
+    let body ← translateCommand arg3
     return {
       name := name
       inputs := parameters
@@ -250,7 +248,10 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       modifies := none
       body := .Transparent body
     }
-  else TransM.error s!"parseProcedure expects procedure, got {repr op.name}"
+  | q`Laurel.procedure, args =>
+    TransM.error s!"parseProcedure expects 4 arguments, got {args.size}"
+  | _, _ =>
+    TransM.error s!"parseProcedure expects procedure, got {repr op.name}"
 
 /--
 Translate concrete Laurel syntax into abstract Laurel syntax
