@@ -29,6 +29,15 @@ inductive DeclKind : Type where
   | var | type | ax | distinct | proc | func
   deriving DecidableEq, Repr
 
+instance : ToFormat DeclKind where
+  format k := match k with
+    | .var => "variable"
+    | .type => "type"
+    | .ax => "axiom"
+    | .distinct => "distinct"
+    | .proc => "procedure"
+    | .func => "function"
+
 /--
 A Boogie declaration.
 Note: constants are 0-ary functions.
@@ -42,6 +51,15 @@ inductive Decl where
   | proc (d : Procedure) (md : MetaData Boogie.Expression := .empty)
   | func (f : Function) (md : MetaData Boogie.Expression := .empty)
   deriving Inhabited
+
+def Decl.metadata (d : Decl) : MetaData Expression :=
+  match d with
+  | .var _ _ _ md    => md
+  | .type _ md       => md
+  | .ax _ md         => md
+  | .distinct _ _ md => md
+  | .proc _ md       => md
+  | .func _ md       => md
 
 def Decl.kind (d : Decl) : DeclKind :=
   match d with
@@ -105,16 +123,20 @@ def Decl.eraseTypes (d : Decl) : Decl :=
   | .ax a md     => .ax a.eraseTypes md
   | .proc p md   => .proc p.eraseTypes md
   | .func f md   => .func f.eraseTypes md
-  | _ => d
+  | .var _ _ _ _ | .type _ _ | .distinct _ _ _ => d
 
+-- Metadata not included.
 instance : ToFormat Decl where
   format d := match d with
-    | .var name ty e md => f!"{md}var ({name} : {ty}) := {e}"
-    | .type t md => f!"{md}{t}"
-    | .ax a md  => f!"{md}{a}"
-    | .distinct l es md  => f!"{md}distinct [{l}] {es}"
-    | .proc p md => f!"{md}{p}"
-    | .func f md => f!"{md}{f}"
+    | .var name ty e _md => f!"var ({name} : {ty}) := {e}"
+    | .type t _md => f!"{t}"
+    | .ax a _md  => f!"{a}"
+    | .distinct l es _md  => f!"distinct [{l}] {es}"
+    | .proc p _md => f!"{p}"
+    | .func f _md => f!"{f}"
+
+def Decl.formatWithMetaData (decl : Decl) : Format :=
+  f!"{decl.metadata}{decl}"
 
 abbrev Decls := List Decl
 
@@ -133,6 +155,9 @@ instance : Inhabited Program where
 
 def Program.eraseTypes (p : Program) : Program :=
   { p with decls := p.decls.map Decl.eraseTypes }
+
+def Program.formatWithMetaData  (p : Program) : Format :=
+  Std.Format.joinSep (List.map Decl.formatWithMetaData p.decls) Format.line
 
 ---------------------------------------------------------------------
 

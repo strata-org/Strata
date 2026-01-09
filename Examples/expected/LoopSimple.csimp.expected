@@ -1,0 +1,10 @@
+Successfully parsed.
+ [entry_invariant]: verified
+ [assert_measure_pos]: verified
+ [measure_decreases]: verified
+ [measure_imp_not_guard]: verified
+ [arbitrary_iter_maintain_invariant]: verified
+ [sum_assert]: verified
+ [neg_cond]: verified
+ [post]: verified
+Proved all 8 goals.
