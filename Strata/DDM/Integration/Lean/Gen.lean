@@ -1191,13 +1191,14 @@ def genAstImpl : CommandElab := fun stx =>
     let .str .anonymous dialectName := dialectStx.getId
       | throwErrorAt dialectStx s!"Expected dialect name"
     let loader := dialectExt.getState (← getEnv) |>.loaded
+    let some d := loader.dialects[dialectName]?
+      | throwErrorAt dialectStx "Missing dialect {dialectName}"
+
     let depDialectNames := generateDependentDialects (loader.dialects[·]?) dialectName
     let usedDialects ← depDialectNames.mapM fun nm =>
           match loader.dialects[nm]? with
           | some d => pure d
           | none => panic! s!"Missing dialect {nm}"
-    let some d := loader.dialects[dialectName]?
-      | throwErrorAt dialectStx "Missing dialect"
     let (cm, errs) := mkCatOpMap usedDialects
     if errs.size > 0 then
       for e in errs do
