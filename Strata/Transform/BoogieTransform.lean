@@ -207,8 +207,8 @@ def runProcedures (f : Statement → Program → BoogieTransformM (List Statemen
   | [] => return []
   | d :: ds =>
     match d with
-    | .proc p =>
-      return Decl.proc { p with body := ← (runStmts f p.body inputProg ) } ::
+    | .proc p md =>
+      return Decl.proc { p with body := ← (runStmts f p.body inputProg ) } md ::
         (← (runProcedures f ds inputProg))
     | _ => return d :: (← (runProcedures f ds inputProg))
 
