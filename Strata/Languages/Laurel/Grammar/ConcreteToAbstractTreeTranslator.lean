@@ -19,17 +19,16 @@ open Imperative (MetaData Uri FileRange)
 
 structure TransState where
   inputCtx : InputContext
-  errors : Array String
 
-abbrev TransM := StateM TransState
+abbrev TransM := StateT TransState (Except String)
 
-def TransM.run (ictx : InputContext) (m : TransM α) : (α × Array String) :=
-  let (v, s) := StateT.run m { inputCtx := ictx, errors := #[] }
-  (v, s.errors)
+def TransM.run (ictx : InputContext) (m : TransM α) : Except String α :=
+  match StateT.run m { inputCtx := ictx } with
+  | .ok (v, _) => .ok v
+  | .error e => .error e
 
-def TransM.error [Inhabited α] (msg : String) : TransM α := do
-  modify fun s => { s with errors := s.errors.push msg }
-  return panic msg
+def TransM.error (msg : String) : TransM α :=
+  throw msg
 
 def SourceRange.toMetaData (ictx : InputContext) (sr : SourceRange) : Imperative.MetaData Boogie.Expression :=
   let file := ictx.fileName
@@ -99,7 +98,7 @@ def translateParameter (arg : Arg) : TransM Parameter := do
     | TransM.error s!"translateParameter expects operation"
   if op.name != q`Laurel.parameter then
     TransM.error s!"translateParameter expects parameter operation, got {repr op.name}"
-  if h : op.args.size == 2 then
+  if op.args.size == 2 then
     let name ← translateIdent op.args[0]!
     let paramType ← translateHighType op.args[1]!
     return { name := name, type := paramType }
@@ -171,7 +170,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
         | .option _ (some (.op assignOp)) =>
           translateStmtExpr assignOp.args[0]! >>= (pure ∘ some)
         | .option _ none => pure none
-        | _ => panic s!"DEBUG: assignArg {repr assignArg} didn't match expected pattern {name}"
+        | _ => TransM.error s!"assignArg {repr assignArg} didn't match expected pattern for variable {name}"
       return .LocalVariable name varType value
     | q`Laurel.identifier =>
       let name ← translateIdent op.args[0]!
