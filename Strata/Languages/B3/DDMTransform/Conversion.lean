@@ -653,7 +653,9 @@ def patternsToArray_mem [Inhabited M] {p: B3CST.Pattern M} {ps: B3CST.Patterns M
   | .patterns_cons _ p1 ps => by
     have H := @patternsToArray_mem _ _ p ps; simp; grind
 
-def B3CST.Patterns.mem_sizeOf [Inhabited M] {p: B3CST.Pattern M} {ps: B3CST.Patterns M} (hp: B3CST.Patterns.mem p ps) : SizeOf.sizeOf p < SizeOf.sizeOf ps :=
+def B3CST.Patterns.mem_sizeOf [Inhabited M] {p: B3CST.Pattern M}
+{ps: B3CST.Patterns M} (hp: B3CST.Patterns.mem p ps) :
+SizeOf.sizeOf p < SizeOf.sizeOf ps :=
   match h: ps with
   | .patterns_single _ p1 => by simp_all
   | .patterns_cons _ p1 ps => by
@@ -852,8 +854,9 @@ def choiceBranchesToList_mem [Inhabited M] {stmt: B3CST.Statement M} {bs: B3CST.
     have H := @choiceBranchesToList_mem _ _ stmt branches
     simp; grind
 
-def B3CST.ChoiceBranches.mem_sizeOf [Inhabited M] {stmt: B3CST.Statement M} {bs: B3CST.ChoiceBranches M}
-    (h: B3CST.ChoiceBranches.mem stmt bs) : SizeOf.sizeOf stmt < SizeOf.sizeOf bs :=
+def B3CST.ChoiceBranches.mem_sizeOf [Inhabited M] {stmt: B3CST.Statement M}
+{bs: B3CST.ChoiceBranches M} (h: B3CST.ChoiceBranches.mem stmt bs) :
+SizeOf.sizeOf stmt < SizeOf.sizeOf bs :=
   match hbs: bs with
   | .choiceAtom _ (.choice_branch _ s) => by simp_all; grind
   | .choicePush _ branches (.choice_branch _ s) => by

@@ -90,8 +90,7 @@ def Ty.beq (x y : Ty) : Bool :=
   x.id == y.id && x.sourceLoc == y.sourceLoc &&
   go x.subtypes y.subtypes
   termination_by (SizeOf.sizeOf x)
-  decreasing_by
-    cases x; simp; omega
+  decreasing_by cases x; simp; omega
   where go xs ys :=
   match xs, ys with
   | [], [] => true

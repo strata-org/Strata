@@ -118,8 +118,7 @@ def alphaEquivBlock (b1 b2: Boogie.Block) (map:IdMap)
         return newmap)
       map
   termination_by b1.sizeOf
-  decreasing_by
-    cases st1; apply Imperative.sizeOf_stmt_in_block; assumption
+  decreasing_by cases st1; apply Imperative.sizeOf_stmt_in_block; assumption
 
 def alphaEquivStatement (s1 s2: Boogie.Statement) (map:IdMap)
     : Except Format IdMap := do
@@ -204,8 +203,7 @@ def alphaEquivStatement (s1 s2: Boogie.Statement) (map:IdMap)
 
   | (_,_) => mk_err "Statements do not match"
   termination_by s1.sizeOf
-  decreasing_by
-  all_goals(cases hs; simp_all; try omega)
+  decreasing_by all_goals(cases hs; simp_all; try omega)
 
 end
 

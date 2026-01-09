@@ -130,8 +130,7 @@ def Code.beq (x y : Code) : Bool :=
   goExpr x.operands y.operands &&
   goCode x.statements y.statements
   termination_by (SizeOf.sizeOf x)
-  decreasing_by
-    cases x; simp_wf; omega
+  decreasing_by cases x; simp_wf; omega
   where
     goExpr xs ys :=
       match xs, ys with

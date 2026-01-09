@@ -178,8 +178,7 @@ def Expr.beq (x y : Expr) : Bool :=
   x.id == y.id && x.type == y.type && x.sourceLoc == y.sourceLoc &&
   go x.operands y.operands
   termination_by (SizeOf.sizeOf x)
-  decreasing_by
-    cases x; simp_wf; omega
+  decreasing_by cases x; simp_wf; omega
   where go xs ys :=
   match xs, ys with
   | [], [] => true
