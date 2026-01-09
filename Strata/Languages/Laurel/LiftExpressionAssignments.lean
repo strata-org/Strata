@@ -46,7 +46,7 @@ mutual
 Process an expression, extracting any assignments to preceding statements.
 Returns the transformed expression with assignments replaced by variable references.
 -/
-partial def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
+def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
   match expr with
   | .Assign target value =>
       -- This is an assignment in expression context
@@ -81,19 +81,16 @@ partial def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
 
   | .Block stmts metadata =>
       -- Block in expression position: move all but last statement to prepended
-      match stmts.reverse with
-      | [] =>
-          -- Empty block, return as-is
-          return .Block [] metadata
-      | lastStmt :: restReversed =>
-          -- Process all but the last statement and add to prepended
-          let priorStmts := restReversed.reverse
-          for stmt in priorStmts do
-            let seqStmt ← transformStmt stmt
+      let rec next := fun (remStmts: List StmtExpr) => match remStmts with
+        | last :: [] => transformExpr last
+        | head :: tail => do
+            let seqStmt ← transformStmt head
             for s in seqStmt do
               SequenceM.addPrependedStmt s
-          -- Process and return the last statement as an expression
-          transformExpr lastStmt
+            next tail
+        | [] => return .Block [] metadata
+
+      next stmts
 
   -- Base cases: no assignments to extract
   | .LiteralBool _ => return expr
@@ -106,7 +103,7 @@ partial def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
 Process a statement, handling any assignments in its sub-expressions.
 Returns a list of statements (the original one may be split into multiple).
 -/
-partial def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
+def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
   match stmt with
   | @StmtExpr.Assert cond md =>
       -- Process the condition, extracting any assignments

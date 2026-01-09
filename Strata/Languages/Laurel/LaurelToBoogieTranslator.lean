@@ -12,6 +12,7 @@ import Strata.Languages.Boogie.Options
 import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LiftExpressionAssignments
 import Strata.DL.Imperative.Stmt
+import Strata.DL.Lambda.LExpr
 import Strata.Languages.Laurel.LaurelFormat
 
 namespace Laurel
@@ -20,7 +21,7 @@ open Boogie (VCResult VCResults)
 open Strata
 
 open Boogie (intAddOp intSubOp intMulOp intDivOp intModOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp)
-open Lambda (LMonoTy LTy)
+open Lambda (LMonoTy LTy LExpr)
 
 /-
 Translate Laurel HighType to Boogie Type
@@ -44,7 +45,7 @@ partial def translateExpr (expr : StmtExpr) : Boogie.Expression.Expr :=
       .fvar () ident (some LMonoTy.int)  -- Default to int type
   | .PrimitiveOp op args =>
       let binOp (bop : Boogie.Expression.Expr) (e1 e2 : StmtExpr) : Boogie.Expression.Expr :=
-        .app () (.app () bop (translateExpr e1)) (translateExpr e2)
+        LExpr.mkApp () bop [translateExpr e1, translateExpr e2]
       let unOp (uop : Boogie.Expression.Expr) (e : StmtExpr) : Boogie.Expression.Expr :=
         .app () uop (translateExpr e)
       match op, args with
