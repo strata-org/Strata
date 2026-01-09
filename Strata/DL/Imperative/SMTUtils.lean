@@ -140,7 +140,9 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
     .ok (.sat model)
   | "unsat"   =>  .ok .unsat
   | "unknown" =>  .ok .unknown
-  | _     =>  .error s!"solver stdout: {output.stdout}\nstderr:{output.stderr}"
+  | _     =>  .error s!"solver stdout: {output.stdout}
+  stderr:{output.stderr}
+  "
 
 def VC_folder_name: String := "vcs"
 

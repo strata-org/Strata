@@ -144,7 +144,9 @@ def solverResult (vars : List (IdentT LMonoTy Visibility)) (output : IO.Process.
     | .error _model_err => (.ok (.sat []))
   | "unsat"   =>  .ok .unsat
   | "unknown" =>  .ok .unknown
-  | _     =>  .error s!"solver stdout: {output.stdout}\nstderr:{output.stderr}"
+  | _     =>  .error s!"solver stdout: {output.stdout}
+  stderr:{output.stderr}
+  "
 
 open Imperative
 
@@ -297,7 +299,7 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
         -- let rand_suffix ← IO.rand 0 0xFFFFFFFF
         let ans ←
             IO.toEIO
-              (fun e => f!"{e}")
+              (fun e => f!"IO error: {e}")
               (dischargeObligation options
                 (ProofObligation.getVars obligation) smtsolver
                   (Imperative.smt2_filename obligation.label)
