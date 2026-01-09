@@ -8,7 +8,77 @@ module
 public import Strata.DDM.Util.Ion.AST
 import Strata.DDM.Util.ByteArray
 
+namespace Strata.ByteArray
+
+theorem size_set (a : ByteArray) (i : Nat) (v : UInt8) (p : _) : (a.set i v p).size = a.size := by
+  simp only [ByteArray.set, ByteArray.size, Array.set]
+  simp
+
+theorem size_push (as : ByteArray) (v : UInt8) : (as.push v).size = as.size + 1 := by
+  simp only [ByteArray.size]
+  simp
+
+public def zeros (n : Nat) : ByteArray :=
+  n.fold (init := .emptyWithCapacity n) fun _ _ a => a.push 0
+
+@[simp]
+theorem zeros_size (n : Nat) : (zeros n).size = n := by
+  unfold zeros
+  induction n with
+  | zero =>
+    simp
+  | succ n hyp =>
+    simp_all [ByteArray.size_push]
+    exact hyp
+
+end Strata.ByteArray
+
 namespace Ion
+
+abbrev ByteVector n := { a : ByteArray // a.size = n }
+
+namespace ByteVector
+
+@[inline]
+def set {n} (bs : ByteVector n) (i : Nat) (b : UInt8) (p : i < n := by get_elem_tactic) : ByteVector n :=
+  match bs with
+  | ⟨a, p⟩ => ⟨a.set i b, by simp [Strata.ByteArray.size_set]; exact p⟩
+
+def setBytes {n} (v : ByteVector n) (off : Nat) (bs : ByteArray)
+     (p : off + bs.size ≤ n) : ByteVector n :=
+  let ⟨as, ap⟩ := v
+  ⟨bs.copySlice 0 as off bs.size, by
+    let ⟨as⟩ := as
+    let ⟨bs⟩ := bs
+    simp only [ByteArray.copySlice, ByteArray.size, Array.size_append] at *;
+    simp
+    omega⟩
+
+@[specialize]
+def setFoldrBytes' {n} {α β} (s : Nat) (e : Nat) (ep : e ≤ n)
+      (f : α → UInt8 × α)
+      (g : α → ByteVector n → β)
+      (x : α)
+      (cur : ByteVector n) : β :=
+  if p : s < e then
+    let e := e - 1
+    let (b, x) := f x
+    setFoldrBytes' s e (by omega) f g x (cur.set e b)
+  else
+    g x cur
+termination_by e
+
+@[inline]
+def setFoldrBytes {n} {α} (s : Nat) (e : Nat) (ep : e ≤ n) (f : α → UInt8 × α) (x : α)
+      (cur : ByteVector n) : ByteVector n :=
+  setFoldrBytes' s e ep f (fun _ bytes => bytes) x cur
+
+open Strata
+
+def zeros (n : Nat) : ByteVector n :=
+  ⟨.zeros n, ByteArray.zeros_size n⟩
+
+end ByteVector
 
 namespace CoreType
 
@@ -29,161 +99,270 @@ def code : CoreType → UInt8
 
 end CoreType
 
-namespace Ion
+structure SerializeState where
+  prev : Array (Σ (a : ByteArray), Fin a.size)
+  prev_size : Nat
+  cur : ByteArray
+  next : Nat
+  next_valid : next ≤ cur.size := by grind
 
-abbrev SerializeM := StateM ByteArray
+namespace SerializeState
 
-abbrev Serialize := SerializeM Unit
+abbrev init_cap := 1024
 
-def runSerialize (act : Serialize) : SerializeM ByteArray :=
-  return act .empty |>.snd
+def empty : SerializeState where
+  prev := #[]
+  prev_size := 0
+  cur := .empty
+  next := 0
+
+instance : Inhabited SerializeState where
+  default := empty
+
+def size (s : SerializeState) : Nat := s.prev_size + (s.cur.size - s.next)
+
+def render (s : SerializeState) : ByteArray :=
+  let a := ByteArray.emptyWithCapacity s.size
+  let a := ByteArray.copySlice s.cur s.next a 0 (s.cur.size - s.next)
+  let r := s.prev.foldr (init := a) fun ⟨c, o⟩ a =>
+    c.copySlice o.val a a.size (c.size - o.val)
+  assert! r.size = s.size
+  r
+
+
+end SerializeState
+
+
+def Serialize := SerializeState → SerializeState
+
+@[inline]
+def Serialize.cat (a : Serialize) (b : Serialize) : Serialize := fun s => a (b s)
+
+@[inline]
+def withReserve (cnt : Nat)
+       (act : ∀{n}, ByteVector n → ∀(i : Nat), i + cnt ≤ n → ByteVector n)
+      : Serialize := fun s =>
+  let { prev, prev_size, cur, next, next_valid } := s
+  if p : next ≥ cnt then
+    let next' := next - cnt
+    let ⟨cur, curp⟩ := act ⟨cur, Eq.refl cur.size⟩ next' (by omega)
+    { prev, prev_size, cur, next := next', next_valid := by omega }
+  else
+    let prev :=
+      if p : next < cur.size then
+        prev.push ⟨cur, ⟨next, p⟩⟩
+      else
+        prev
+    let prev_size := prev_size + (cur.size - next)
+    let min := SerializeState.init_cap
+    if p : min > cnt then
+      let cur := Strata.ByteArray.zeros min
+      let next' := min - cnt
+      have p : cur.size = min := by simp [cur]
+      let ⟨cur, curp⟩ := act ⟨cur, p⟩ next' (by omega)
+      { prev, prev_size, cur, next := next', next_valid := by omega }
+    else
+      let cur := Strata.ByteArray.zeros cnt
+      have p : cur.size = cnt := by simp [cur]
+      let ⟨cur, curp⟩ := act ⟨cur, p⟩ 0 (by omega)
+      { prev, prev_size, cur, next := 0, next_valid := by omega }
+
+def serializeArray (a : ByteArray) : Serialize :=
+  withReserve a.size fun bytes off offp =>
+    bytes.setBytes off a offp
 
 def encodeTypeByte (tp : UInt8) (v : UInt8) : UInt8 := tp <<< 4 ||| v
 
-def emitByte (v : UInt8) : Serialize := do
-  modify (·.push v)
+/--
+Return the number of bytes required to encode a natural number.
+-/
+@[specialize]
+def bytesRequired (x : Nat) : Nat := aux 0 x
+  where aux c x :=
+          if x = 0 then
+            c
+          else
+            aux (c+1) (x >>> 8)
+        termination_by x
 
-def emitBytes (bytes : ByteArray) : Serialize :=
-  modify (· ++ bytes)
+/--
+Return the number of bytes using the 7-bit varint encoding.
+-/
+@[specialize]
+def varbytesRequired (x : Nat) : Nat := aux 0 x
+  where aux c x :=
+          if x = 0 then
+            c
+          else
+            aux (c+1) (x >>> 7)
+        termination_by x
 
-def emitReversed (bytes : ByteArray) : Serialize :=
-  modify fun s => bytes.foldr (init := s) fun b s => s.push b
+#guard varbytesRequired 0x7f = 1
+#guard varbytesRequired 0x80 = 2
 
-def encodeVarUIntLsb (x : Nat) : ByteArray :=
-  let rec aux (x : Nat) (b : ByteArray) : ByteArray :=
-        if x = 0 then
-          b
-        else
-          aux (x >>> 7) (b.push (x.toUInt8 &&& 0x7f))
-  let init : ByteArray := .empty |>.push (0x80 ||| (x.toUInt8 &&& 0x7f))
-  aux (x >>> 7) init
+def appendUInt {n} (x : Nat) (cnt : Nat)
+      (bytes : ByteVector n) (off : Nat) (offp : off + cnt ≤ n := by omega) : ByteVector n :=
+  let f x := (x.toUInt8, x >>> 8)
+  bytes.setFoldrBytes off (off+cnt) offp f x
 
-def encodeVarIntLsb (i : Int) : ByteArray :=
-  let rec aux (x : Nat) (b : ByteArray) (l : UInt8) : ByteArray × UInt8 :=
-        if x = 0 then
-          (b, l)
-        else
-          aux (x >>> 7) (b.push l) (x.toUInt8 &&& 0x7f)
-  let n := i.natAbs
-  let first := 0x80 ||| (n.toUInt8 &&& 0x7f)
-  let (b, l) := aux (n >>> 7) .empty first
-  let signValue : UInt8 := if i < 0 then 0x40 else 0
-  if l &&& 0x40 = 0 then
-    b |>.push (l ||| signValue)
-  else
-    b |>.push l |>.push signValue
+/--
+`appendVarUInt x nt_cnt bytes off p` encodes `7*(nt_cnt + 1)` low order
+bits of `x` into `bytes` starting at offset `off`.
+-/
+def appendVarUInt (x : Nat) (nt_cnt : Nat) {n} (bytes : ByteVector n) (off : Nat) (offp : off + nt_cnt < n) : ByteVector n :=
+  let f x : UInt8 × Nat := ((x.toUInt8 &&& 0x7f), x >>> 7)
+  let bytes := bytes.set (off+nt_cnt) (0x80 ||| (x.toUInt8 &&& 0x7f))
+  let bytes := bytes.setFoldrBytes off (off+nt_cnt) (by omega) f (x >>> 7)
+  bytes
 
-def emitVarUInt (x : Nat) : Serialize :=
-  emitReversed <| encodeVarUIntLsb x
-
-def encodeUIntLsbAux (x : Nat) (b : ByteArray) : ByteArray :=
-  if x = 0 then
-    b
-  else
-    encodeUIntLsbAux (x >>> 8) (b.push x.toUInt8)
-
-def encodeUIntLsb0 (x : Nat) : ByteArray :=
-  encodeUIntLsbAux x .empty
-
-def encodeUIntLsb1 (x : Nat) : ByteArray :=
-  let init : ByteArray := .empty |>.push x.toUInt8
-  encodeUIntLsbAux (x >>> 8) init
+def serializeVarUInt (x : Nat) : Serialize :=
+  let cnt := varbytesRequired (x >>> 7)
+  withReserve (cnt+1) fun bytes off offp =>
+    appendVarUInt x cnt bytes off offp
 
 /--
 Emit a UInt64 with most-significant byte first.
 -/
-def emitUInt64_msb (u : UInt64) : Serialize :=
-  let rec appendBytes cnt s :=
-        match cnt with
-        | 0 => s
-        | cnt + 1 => appendBytes cnt (s.push (u >>> (8*cnt).toUInt64).toUInt8)
-  modify (appendBytes 8)
+def appendUInt64 {n} (u : UInt64)
+  (bytes : ByteVector n) (off : Nat) (offp : off + 8 ≤ n) : ByteVector n :=
+  let f (x : UInt64) := (x.toUInt8, x >>> 8)
+  bytes.setFoldrBytes off (off+8) offp f u
 
-def encodeIntLsb (isNeg : Bool) (x : Nat) : ByteArray :=
-  let rec aux (x : Nat) (b : ByteArray) (l : UInt8) : ByteArray × UInt8 :=
-    if x = 0 then
-      (b, l)
-    else
-      aux (x >>> 8) (b.push l) x.toUInt8
-  let (b, l) := aux (x >>> 8) .empty x.toUInt8
-  let signValue : UInt8 := if isNeg then 0x80 else 0
-  if l &&& 0x80 = 0 then
-    b |>.push (l ||| signValue)
+/--
+Given an integer, return a pair consisting of the number of bytes
+and the natural number value to encode.
+-/
+def encodeInt (v : Int) : Nat × Nat :=
+  if v = 0 then
+    (0, 0)
   else
-    b |>.push l |>.push signValue
+    let isNeg := v < 0
+    let x := v.natAbs
+    -- Compute number of bytes required excluding byte with sign.
+    let base_cnt := bytesRequired (x >>> 7)
+    let r := if isNeg then (0x80 <<< (8 * base_cnt)) ||| x else x
+    (base_cnt + 1, r)
 
-def emitTypeByte (tp : UInt8) (v : UInt8) : Serialize :=
-  emitByte <| encodeTypeByte tp v
+def encodeVarInt (v : Int) : Nat × Nat :=
+  let isNeg := v < 0
+  let x := v.natAbs
+  -- Compute number of bytes required excluding byte with sign.
+  let base_cnt := varbytesRequired (x >>> 6)
+  let r := if isNeg then (0x40 <<< (7 * base_cnt)) ||| x else x
+  (base_cnt, r)
 
-def emitTypeAndLen (tp : UInt8) (len : Nat) : Serialize :=
-  if len < 14 then
-    emitTypeByte tp len.toUInt8
-  else do
-    emitTypeByte tp 14
-    emitVarUInt len
+@[inline]
+def serializeTypeDesc (tp : UInt8) (v : UInt8) : Serialize :=
+  withReserve 1 fun bytes off offp =>
+    bytes.set off (encodeTypeByte tp v) offp
 
-def emitTypedBytes (tp : CoreType) (contents : ByteArray) : Serialize := do
-  emitTypeAndLen tp.code contents.size
-  emitBytes contents
+def typeDescSize (contents_size : Nat) : Nat :=
+  if contents_size < 14 then
+    1
+  else if contents_size < 0x80 then
+    2
+  else
+    2 + varbytesRequired (contents_size >>> 7)
 
-def serialize : Ion SymbolId → Serialize
+def appendTypeDesc
+      {n len cnt}
+      (tp : UInt8)
+      (cnt_eq : cnt = typeDescSize len)
+      (bytes : ByteVector n)
+      (off : Nat)
+      (offp : off + cnt ≤ n)
+      : ByteVector n :=
+  if h : len < 14 then
+    have p : cnt > 0 := by simp [cnt_eq, typeDescSize]; grind
+    bytes.set off (encodeTypeByte tp len.toUInt8)
+  else
+    have cntp : cnt ≥ 2 := by simp [cnt_eq, typeDescSize, h]; grind
+    let bytes := bytes.set off (encodeTypeByte tp 14)
+    appendVarUInt len (cnt-2) bytes (off+1) (by omega)
+
+def serializeTypedBytes (tp : CoreType) (contents : ByteArray) : Serialize :=
+  let cnt := typeDescSize contents.size
+  withReserve (cnt + contents.size) fun bytes off offp =>
+    let bytes := appendTypeDesc tp.code (.refl cnt) bytes off (by omega)
+    let bytes := bytes.setBytes (off+cnt) contents (by omega)
+    bytes
+
+@[inline]
+def serializeTyped (tp : UInt8) (act : Serialize) : Serialize := fun s =>
+  let old_mark := s.size
+  let s := act s
+  let new_mark := s.size
+  assert! new_mark ≥ old_mark
+  let contents_size := new_mark - old_mark
+  let header_size := typeDescSize contents_size
+  let header_act {n} (bytes : ByteVector n) off offp :=
+    appendTypeDesc tp (.refl header_size) bytes off offp
+  withReserve header_size header_act s
+
+@[inline]
+def serializeTypedUInt (tp : UInt8) (x : Nat) : Serialize :=
+  let len := bytesRequired x
+  let cnt := typeDescSize len
+  withReserve (cnt+len) fun bytes off offp =>
+    let bytes := appendTypeDesc tp (.refl cnt) bytes off (by omega)
+    appendUInt x len bytes (off + cnt)
+
+@[inline]
+def serializeTypedArray {α} (tp : UInt8) (as : Array α) (act : α → Serialize) : Serialize :=
+  serializeTyped tp (fun s => as.foldr (init := s) act)
+
+namespace Ion
+
+partial def serialize : Ion SymbolId → Serialize
 | .mk app =>
   match app with
   | .null tp =>
-    emitTypeByte tp.code 0xf
+    serializeTypeDesc tp.code 0xf
   | .bool b =>
-    emitTypeByte CoreType.bool.code (if b then 1 else 0)
-  | .int i => do
-    let b := encodeUIntLsb0 i.natAbs
-    emitTypeAndLen (if i ≥ 0 then 2 else 3) b.size
-    emitReversed b
-  | .float v => do
-    emitTypeByte CoreType.float.code 8
-    emitUInt64_msb v.toBits
-  | .decimal v => do
+    serializeTypeDesc CoreType.bool.code (if b then 1 else 0)
+  | .int i =>
+     serializeTypedUInt (if i ≥ 0 then 2 else 3) i.natAbs
+  | .float v =>
+    withReserve 9 fun bytes off offp =>
+      let bytes := bytes.set off (encodeTypeByte CoreType.float.code 8)
+      appendUInt64 v.toBits bytes (off+1) (by omega)
+
+  | .decimal v =>
     if v = .zero then
-      emitTypeByte CoreType.decimal.code 0
+      serializeTypeDesc CoreType.decimal.code 0
     else
-      let exp := encodeVarIntLsb v.exponent
-      let coef := encodeIntLsb (v.mantissa < 0) v.mantissa.natAbs
-      let len := exp.size + coef.size
-      emitTypeAndLen CoreType.decimal.code len
-      emitReversed exp
-      emitReversed coef
-  | .string v => do
-    emitTypedBytes .string v.toUTF8
-  | .symbol v => do
-    let sym := encodeUIntLsb0 v.value
-    let len := sym.size
-    emitTypeAndLen CoreType.symbol.code len
-    emitReversed sym
-  | .blob v => do
-    emitTypedBytes .blob v
-  | .list v => do
-    let s ← runSerialize (v.size.forM fun i isLt => serialize v[i])
-    emitTypedBytes .list s
-  | .sexp v => do
-    let s ← runSerialize (v.size.forM fun i isLt => serialize v[i])
-    emitTypedBytes .sexp s
-  | .struct v => do
-    let s ← runSerialize <| v.size.forM fun i isLt => do
-      let p := v[i]
-      emitVarUInt p.fst.value
-      have p1 : sizeOf v[i].snd < sizeOf v[i] := by
-        match v[i] with
-        | ⟨nm, v⟩ => decreasing_trivial
-      have p2 : sizeOf v[i] < sizeOf v := by
-        apply Array.sizeOf_getElem
-      serialize p.snd
-    emitTypedBytes .struct s
-  | .annotation annot v => do
-    let s ← runSerialize do
-      let s := annot.foldl (init := .empty) (fun s v => s ++ encodeVarUIntLsb v.value)
-      emitVarUInt s.size
-      emitReversed s
-      v.serialize
-    emitTypeAndLen 0xE s.size
-    emitBytes s
+      let (nt_exp_cnt, exp) := encodeVarInt v.exponent
+      let (mantissa_cnt, mantissa) := encodeInt v.mantissa
+      let contents_size := nt_exp_cnt + 1 + mantissa_cnt
+      let header_size := typeDescSize contents_size
+      withReserve (header_size + contents_size) fun bytes off offp =>
+        let code := CoreType.decimal.code
+        let bytes := appendTypeDesc code (.refl header_size) bytes off (by omega)
+        let off := off + header_size
+        let bytes := appendVarUInt exp nt_exp_cnt bytes off (by omega)
+        let off := off + nt_exp_cnt + 1
+        appendUInt mantissa mantissa_cnt bytes off
+  | .string v =>
+    serializeTypedBytes .string v.toUTF8
+  | .symbol v =>
+    serializeTypedUInt CoreType.symbol.code v.value
+  | .blob v =>
+    serializeTypedBytes .blob v
+  | .list v =>
+    serializeTypedArray CoreType.list.code v.attach fun ⟨e, _⟩ => serialize e
+  | .sexp v =>
+    serializeTypedArray CoreType.sexp.code v.attach fun ⟨e, _⟩ => serialize e
+  | .struct v =>
+    serializeTypedArray CoreType.struct.code v.attach fun ⟨⟨sym, e⟩, _⟩ =>
+      .cat (serializeVarUInt sym.value) (serialize e)
+  | .annotation annot v =>
+    serializeTyped 0xE $ fun s =>
+      let s := v.serialize s
+      let old_mark := s.size
+      let s := annot.foldr (fun v s => serializeVarUInt v.value s) s
+      let new_mark := s.size
+      assert! new_mark ≥ old_mark
+      serializeVarUInt (new_mark - old_mark) s
 
 end Ion
 
@@ -192,4 +371,7 @@ public def binaryVersionMarker (major : UInt8 := 1) (minor : UInt8 := 0) : ByteA
   .mk #[ 0xE0, major, minor, 0xEA ]
 
 public def serialize (values : Array (Ion SymbolId)) : ByteArray :=
-  values.foldl (init := binaryVersionMarker) fun s v => v.serialize s |>.snd
+  let s : Ion.SerializeState := .empty
+  let s := values.foldr (init := s) fun v s => v.serialize s
+  let s := Ion.serializeArray binaryVersionMarker s
+  s.render

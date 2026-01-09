@@ -127,11 +127,10 @@ class B3AnnFromCST (α : Type) where
   annForLetExprVar : α → α
   -- If-then-else: AST has same metadata count (passthrough)
   annForIte : α → α
-  -- Quantifiers: AST needs four extra metadata for kind, var, ty, and patterns Anns
+  -- Quantifiers: AST needs three extra metadata for kind, vars (Seq), and patterns Anns
   annForQuantifierExpr : α → α
   annForQuantifierKind : α → α
-  annForQuantifierVar : α → α
-  annForQuantifierType : α → α
+  annForQuantifierVars : α → α
   annForQuantifierPatterns : α → α
   -- Patterns: AST needs one extra metadata for the exprs Ann
   annForPattern : α → α
@@ -154,8 +153,7 @@ instance : B3AnnFromCST Unit where
   annForIte _ := ()
   annForQuantifierExpr _ := ()
   annForQuantifierKind _ := ()
-  annForQuantifierVar _ := ()
-  annForQuantifierType _ := ()
+  annForQuantifierVars _ := ()
   annForQuantifierPatterns _ := ()
   annForPattern _ := ()
   annForPatternExprs _ := ()
@@ -177,8 +175,7 @@ instance : B3AnnFromCST M where
   annForIte := id
   annForQuantifierExpr := id
   annForQuantifierKind := id
-  annForQuantifierVar := id
-  annForQuantifierType := id
+  annForQuantifierVars := id
   annForQuantifierPatterns := id
   annForPattern := id
   annForPatternExprs := id
@@ -348,10 +345,15 @@ def expressionToCST [Inhabited (B3CST.Expression M)] (ctx : ToCSTContext) (e: B3
       let (value', e1) := expressionToCST ctx value
       let (body', e2) := expressionToCST ctx' body
       (B3CST.Expression.letExpr m (mapAnn (fun x => x) var) value' body', e1 ++ e2)
-  | .quantifierExpr m qkind var ty patterns body =>
-      let ctx' := ctx.push var.val
+  | .quantifierExpr m qkind vars patterns body =>
+      -- Build context with all variables
+      let varList := vars.val.toList
+      let ctx' := varList.foldl (fun acc v =>
+        match v with
+        | .quantVarDecl _ name _ => acc.push name.val
+      ) ctx
       let convertPattern (p : Strata.B3AST.Pattern M) (Hp: p ∈ patterns.val.toList) : B3CST.Pattern M × List (ASTToCSTError M) :=
-        match _: p with
+        match p with
         | .pattern pm exprs =>
             let (exprsConverted, errors) := exprs.val.toList.attach.foldl (fun (acc, errs) e =>
               let (e', err) := expressionToCST ctx' e.1
@@ -362,22 +364,18 @@ def expressionToCST [Inhabited (B3CST.Expression M)] (ctx : ToCSTContext) (e: B3
         let (p', e) := convertPattern p.1 p.2
         (acc ++ [p'], errs ++ e)
       ) ([], [])
-      let patternsDDM := match patternsConverted with
-        | [] => none
-        | [p] => some (Patterns.patterns_single m p)
-        | p :: ps =>
-            some (ps.foldl (init := Patterns.patterns_single m p) fun acc p =>
-              Patterns.patterns_cons m p acc)
+      let patternsDDM : Ann (Array (B3CST.Pattern M)) M := mkAnn m patternsConverted.toArray
       let (body', bodyErrs) := expressionToCST ctx' body
+      -- Convert VarDecl list to CST VarDecl list
+      let varDeclsCST := varList.map (fun v =>
+        match v with
+        | .quantVarDecl vm name ty => B3CST.VarDecl.var_decl vm (mkAnn vm name.val) (mkAnn vm ty.val)
+      )
       let result := match qkind with
       | .forall _qm =>
-          match patternsDDM with
-          | none => B3CST.Expression.forall_expr_no_patterns m (mapAnn (fun x => x) var) (mapAnn (fun x => x) ty) body'
-          | some pats => B3CST.Expression.forall_expr m (mapAnn (fun x => x) var) (mapAnn (fun x => x) ty) pats body'
+          B3CST.Expression.forall_expr m (mkAnn m varDeclsCST.toArray) patternsDDM body'
       | .exists _qm =>
-          match patternsDDM with
-          | none => B3CST.Expression.exists_expr_no_patterns m (mapAnn (fun x => x) var) (mapAnn (fun x => x) ty) body'
-          | some pats => B3CST.Expression.exists_expr m (mapAnn (fun x => x) var) (mapAnn (fun x => x) ty) pats body'
+          B3CST.Expression.exists_expr m (mkAnn m varDeclsCST.toArray) patternsDDM body'
       (result, patternErrors ++ bodyErrs)
   termination_by e
   decreasing_by
@@ -636,33 +634,6 @@ def empty : FromCSTContext := { vars := [] }
 
 end FromCSTContext
 
-@[simp]
-def patternsToArray [Inhabited M] : B3CST.Patterns M → Array (B3CST.Pattern M)
-  | .patterns_single _ p => #[p]
-  | .patterns_cons _ p ps => patternsToArray ps |>.push p
-
-@[simp]
-def B3CST.Patterns.mem [Inhabited M] (p: B3CST.Pattern M) (ps: B3CST.Patterns M) :=
-  match ps with
-  | .patterns_single _ p1 => p = p1
-  | .patterns_cons _ p1 ps => p = p1 ∨ B3CST.Patterns.mem p ps
-
-def patternsToArray_mem [Inhabited M] {p: B3CST.Pattern M} {ps: B3CST.Patterns M} : B3CST.Patterns.mem p ps ↔ p ∈ patternsToArray ps :=
-  match ps with
-  | .patterns_single _ p1 => by simp
-  | .patterns_cons _ p1 ps => by
-    have H := @patternsToArray_mem _ _ p ps; simp; grind
-
-def B3CST.Patterns.mem_sizeOf [Inhabited M] {p: B3CST.Pattern M}
-{ps: B3CST.Patterns M} (hp: B3CST.Patterns.mem p ps) :
-SizeOf.sizeOf p < SizeOf.sizeOf ps :=
-  match h: ps with
-  | .patterns_single _ p1 => by simp_all
-  | .patterns_cons _ p1 ps => by
-    simp_all; rcases hp with ⟨hp | hp⟩
-    . grind
-    . rename_i hmem; have hps := B3CST.Patterns.mem_sizeOf hmem; omega
-
 def expressionFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromCSTContext) (e: B3CST.Expression M): Strata.B3AST.Expression M × List (CSTToASTError M) :=
   match he: e with
   | .natLit ann n => (.literal (B3AnnFromCST.annForLiteral ann) (.intLit (B3AnnFromCST.annForLiteralType ann) n), [])
@@ -764,13 +735,14 @@ def expressionFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromCSTContext) (e: 
       let (then', e2) := expressionFromCST ctx thenExpr
       let (else', e3) := expressionFromCST ctx elseExpr
       (.ite (B3AnnFromCST.annForIte ann) cond' then' else', e1 ++ e2 ++ e3)
-  | .forall_expr_no_patterns ann var ty body =>
-      let ctx' := ctx.push var.val
-      let (body', errs) := expressionFromCST ctx' body
-      (.quantifierExpr (B3AnnFromCST.annForQuantifierExpr ann) (.forall (B3AnnFromCST.annForQuantifierKind ann)) ⟨B3AnnFromCST.annForQuantifierVar ann, var.val⟩ ⟨B3AnnFromCST.annForQuantifierType ann, ty.val⟩ ⟨B3AnnFromCST.annForQuantifierPatterns ann, #[]⟩ body', errs)
-  | .forall_expr ann var ty patterns body =>
-      let ctx' := ctx.push var.val
-      let convertPattern (p : B3CST.Pattern M) (Hp: B3CST.Patterns.mem p patterns) : Strata.B3AST.Pattern M × List (CSTToASTError M) :=
+  | .forall_expr ann vars patterns body =>
+      -- Convert VarDecl array to AST VarDecl array and build context
+      let varList := vars.val.toList
+      let ctx' := varList.foldl (fun acc v =>
+        match v with
+        | .var_decl _ name ty => acc.push name.val
+      ) ctx
+      let convertPattern (p : B3CST.Pattern M) (Hp: p ∈ patterns.val) : Strata.B3AST.Pattern M × List (CSTToASTError M) :=
         match hp: p with
         | .pattern pann exprs =>
             let (exprsConverted, errors) := exprs.val.toList.attach.foldl (fun (acc, errs) e =>
@@ -778,22 +750,30 @@ def expressionFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromCSTContext) (e: 
               (acc ++ [e'], errs ++ err)
             ) ([], [])
             (.pattern (B3AnnFromCST.annForPattern pann) ⟨B3AnnFromCST.annForPatternExprs pann, exprsConverted.toArray⟩, errors)
-      let (patternsConverted, patternErrors) := (patternsToArray patterns).toList.attach.foldl (fun (acc, errs) p =>
-        have hp : B3CST.Patterns.mem p patterns := by
-          rw[patternsToArray_mem]; cases p;
-          rename_i hval; simp at hval; simp; apply hval
-        let (p', e) := convertPattern p.1 hp
+      let (patternsConverted, patternErrors) := patterns.val.toList.attach.foldl (fun (acc, errs) p =>
+        let (p', e) := convertPattern p.1 (by have hp := p.2; simp at hp; exact hp)
         (acc ++ [p'], errs ++ e)
       ) ([], [])
       let (body', bodyErrs) := expressionFromCST ctx' body
-      (.quantifierExpr (B3AnnFromCST.annForQuantifierExpr ann) (.forall (B3AnnFromCST.annForQuantifierKind ann)) ⟨B3AnnFromCST.annForQuantifierVar ann, var.val⟩ ⟨B3AnnFromCST.annForQuantifierType ann, ty.val⟩ ⟨B3AnnFromCST.annForQuantifierPatterns ann, patternsConverted.toArray⟩ body', patternErrors ++ bodyErrs)
-  | .exists_expr_no_patterns ann var ty body =>
-      let ctx' := ctx.push var.val
-      let (body', errs) := expressionFromCST ctx' body
-      (.quantifierExpr (B3AnnFromCST.annForQuantifierExpr ann) (.exists (B3AnnFromCST.annForQuantifierKind ann)) ⟨B3AnnFromCST.annForQuantifierVar ann, var.val⟩ ⟨B3AnnFromCST.annForQuantifierType ann, ty.val⟩ ⟨B3AnnFromCST.annForQuantifierPatterns ann, #[]⟩ body', errs)
-  | .exists_expr ann var ty patterns body =>
-      let ctx' := ctx.push var.val
-      let convertPattern (p : B3CST.Pattern M) (Hp: B3CST.Patterns.mem p patterns) : Strata.B3AST.Pattern M × List (CSTToASTError M) :=
+      -- Convert CST VarDecls to AST VarDecls
+      let varDeclsAST := varList.map (fun v =>
+        match v with
+        | .var_decl vann name ty =>
+            Strata.B3AST.VarDecl.quantVarDecl vann (mkAnn vann name.val) (mkAnn vann ty.val)
+      )
+      (.quantifierExpr (B3AnnFromCST.annForQuantifierExpr ann)
+        (.forall (B3AnnFromCST.annForQuantifierKind ann))
+        ⟨B3AnnFromCST.annForQuantifierVars ann, varDeclsAST.toArray⟩
+        ⟨B3AnnFromCST.annForQuantifierPatterns ann, patternsConverted.toArray⟩
+        body', patternErrors ++ bodyErrs)
+  | .exists_expr ann vars patterns body =>
+      -- Convert VarDecl array to AST VarDecl array and build context
+      let varList := vars.val.toList
+      let ctx' := varList.foldl (fun acc v =>
+        match v with
+        | .var_decl _ name ty => acc.push name.val
+      ) ctx
+      let convertPattern (p : B3CST.Pattern M) (Hp: p ∈ patterns.val) : Strata.B3AST.Pattern M × List (CSTToASTError M) :=
         match hp: p with
         | .pattern pann exprs =>
             let (exprsConverted, errors) := exprs.val.toList.attach.foldl (fun (acc, errs) e =>
@@ -801,27 +781,36 @@ def expressionFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromCSTContext) (e: 
               (acc ++ [e'], errs ++ err)
             ) ([], [])
             (.pattern (B3AnnFromCST.annForPattern pann) ⟨B3AnnFromCST.annForPatternExprs pann, exprsConverted.toArray⟩, errors)
-      let (patternsConverted, patternErrors) := (patternsToArray patterns).toList.attach.foldl (fun (acc, errs) p =>
-        have hp : B3CST.Patterns.mem p patterns := by
-          rw[patternsToArray_mem]; cases p;
-          rename_i hval; simp at hval; simp; apply hval
-        let (p', e) := convertPattern p.1 hp
+      let (patternsConverted, patternErrors) := patterns.val.toList.attach.foldl (fun (acc, errs) p =>
+        let (p', e) := convertPattern p.1 (by have hp := p.2; simp at hp; exact hp)
         (acc ++ [p'], errs ++ e)
       ) ([], [])
       let (body', bodyErrs) := expressionFromCST ctx' body
-      (.quantifierExpr (B3AnnFromCST.annForQuantifierExpr ann) (.exists (B3AnnFromCST.annForQuantifierKind ann)) ⟨B3AnnFromCST.annForQuantifierVar ann, var.val⟩ ⟨B3AnnFromCST.annForQuantifierType ann, ty.val⟩ ⟨B3AnnFromCST.annForQuantifierPatterns ann, patternsConverted.toArray⟩ body', patternErrors ++ bodyErrs)
+      -- Convert CST VarDecls to AST VarDecls
+      let varDeclsAST := varList.map (fun v =>
+        match v with
+        | .var_decl vann name ty =>
+            Strata.B3AST.VarDecl.quantVarDecl vann (mkAnn vann name.val) (mkAnn vann ty.val)
+      )
+      (.quantifierExpr (B3AnnFromCST.annForQuantifierExpr ann)
+        (.exists (B3AnnFromCST.annForQuantifierKind ann))
+        ⟨B3AnnFromCST.annForQuantifierVars ann, varDeclsAST.toArray⟩
+        ⟨B3AnnFromCST.annForQuantifierPatterns ann, patternsConverted.toArray⟩
+        body', patternErrors ++ bodyErrs)
   | .paren _ expr => expressionFromCST ctx expr
   termination_by e
   decreasing_by
   all_goals(simp_wf; try omega)
   . cases args; simp_all; rename_i harg; have:= Array.sizeOf_lt_of_mem harg; omega
-  . cases e; cases exprs; rename_i val_in; subst_vars; simp_all; simp at val_in
-    have := B3CST.Patterns.mem_sizeOf Hp
+  . cases e; cases exprs; cases patterns; rename_i val_in; subst_vars; simp_all
+    rename_i val_in1 _ _; simp at val_in1
     have:= Array.sizeOf_lt_of_mem val_in
+    have:= Array.sizeOf_lt_of_mem val_in1
     simp_all; omega
-  . cases e; cases exprs; rename_i val_in; subst_vars; simp_all; simp at val_in
-    have := B3CST.Patterns.mem_sizeOf Hp
+  . cases e; cases exprs; cases patterns; rename_i val_in; subst_vars; simp_all
+    rename_i val_in1 _ _; simp at val_in1
     have:= Array.sizeOf_lt_of_mem val_in
+    have:= Array.sizeOf_lt_of_mem val_in1
     simp_all; omega
 
 def callArgFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromCSTContext) : B3CST.CallArg M → Strata.B3AST.CallArg M × List (CSTToASTError M)

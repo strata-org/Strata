@@ -82,8 +82,12 @@ op labeledExpr (label : Ident, expr : Expression) : Expression =>
   "labeled " label " " expr;
 op letExpr (var : Ident, value : Expression, body : Expression) : Expression =>
   "let " var " = " value " in " body;
-op quantifierExpr (quantifier : QuantifierKind, var : Ident, ty : Ident, patterns : Seq Pattern, body : Expression) : Expression =>
-  "quant " quantifier " " var " : " ty " [" patterns "] " body;
+category VarDecl;
+op quantVarDecl (name : Ident, ty : Ident) : VarDecl =>
+  name " : " ty;
+
+op quantifierExpr (quantifier : QuantifierKind, vars : Seq VarDecl, patterns : Seq Pattern, body : Expression) : Expression =>
+  "quant " quantifier " [" vars "] [" patterns "] " body;
 
 op pattern (exprs : CommaSepBy Expression) : Pattern =>
   "pattern (" exprs ")";
@@ -235,6 +239,9 @@ def QuantifierKind.mapMetadata [Inhabited N] (f : M → N) : QuantifierKind M �
   | .forall m => .forall (f m)
   | .exists m => .exists (f m)
 
+def VarDecl.mapMetadata [Inhabited N] (f : M → N) : VarDecl M → VarDecl N
+  | .quantVarDecl m name ty => .quantVarDecl (f m) (mapAnn f name) (mapAnn f ty)
+
 mutual
 
 def Expression.mapMetadata [Inhabited N] (f : M → N) (e: Expression M) :Expression N :=
@@ -247,8 +254,9 @@ def Expression.mapMetadata [Inhabited N] (f : M → N) (e: Expression M) :Expres
   | .functionCall m fnName args => .functionCall (f m) (mapAnn f fnName) ⟨f args.ann, args.val.map (Expression.mapMetadata f)⟩
   | .labeledExpr m label expr => .labeledExpr (f m) (mapAnn f label) (Expression.mapMetadata f expr)
   | .letExpr m var value body => .letExpr (f m) (mapAnn f var) (Expression.mapMetadata f value) (Expression.mapMetadata f body)
-  | .quantifierExpr m qkind var ty patterns body =>
-      .quantifierExpr (f m) (QuantifierKind.mapMetadata f qkind) (mapAnn f var) (mapAnn f ty)
+  | .quantifierExpr m qkind vars patterns body =>
+      .quantifierExpr (f m) (QuantifierKind.mapMetadata f qkind)
+        ⟨f vars.ann, vars.val.map (VarDecl.mapMetadata f)⟩
         ⟨f patterns.ann, patterns.val.map (fun p =>
           match _: p with
           | .pattern m exprs => .pattern (f m) ⟨f exprs.ann, exprs.val.map (Expression.mapMetadata f)⟩)⟩
