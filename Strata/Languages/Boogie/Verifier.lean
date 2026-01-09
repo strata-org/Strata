@@ -144,9 +144,7 @@ def solverResult (vars : List (IdentT LMonoTy Visibility)) (output : IO.Process.
     | .error _model_err => (.ok (.sat []))
   | "unsat"   =>  .ok .unsat
   | "unknown" =>  .ok .unknown
-  | _     =>  .error s!"solver stdout: {output.stdout}
-  stderr:{output.stderr}
-  "
+  | _     =>  .error s!"stderr:{output.stderr}\nsolver stdout: {output.stdout}\n"
 
 open Imperative
 
