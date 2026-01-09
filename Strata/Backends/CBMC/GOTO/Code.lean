@@ -146,7 +146,6 @@ def Code.beq (x y : Code) : Bool :=
         Code.beq x y && goCode xrest yrest
     termination_by (SizeOf.sizeOf xs)
 
-
 instance : BEq Code where
   beq := Code.beq
 

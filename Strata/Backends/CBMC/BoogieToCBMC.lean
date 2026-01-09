@@ -176,8 +176,7 @@ def blockToJson {P : Imperative.PureExpr} (I : Lambda.LExprParams) [IdentToStr (
     ("sub", Json.arr (b.map (stmtToJson (I:=I) · loc)).toArray)
   ]
   termination_by (Imperative.Block.sizeOf b)
-  decreasing_by
-    rename_i x_in; apply (Imperative.sizeOf_stmt_in_block x_in)
+  decreasing_by rename_i x_in; apply (Imperative.sizeOf_stmt_in_block x_in)
 
 def stmtToJson {P : Imperative.PureExpr} (I : Lambda.LExprParams) [IdentToStr (Lambda.Identifier I.IDMeta)] [HasLExpr P I]
   (e : Imperative.Stmt P Command) (loc: SourceLoc) : Json :=

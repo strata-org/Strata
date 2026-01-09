@@ -661,7 +661,7 @@ SizeOf.sizeOf p < SizeOf.sizeOf ps :=
   | .patterns_cons _ p1 ps => by
     simp_all; rcases hp with ⟨hp | hp⟩
     . grind
-    . rename_i hmem; have hps :=B3CST.Patterns.mem_sizeOf hmem; omega
+    . rename_i hmem; have hps := B3CST.Patterns.mem_sizeOf hmem; omega
 
 def expressionFromCST [Inhabited M] [B3AnnFromCST M] (ctx : FromCSTContext) (e: B3CST.Expression M): Strata.B3AST.Expression M × List (CSTToASTError M) :=
   match he: e with
