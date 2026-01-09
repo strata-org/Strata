@@ -1,0 +1,6 @@
+Successfully parsed.
+LoopSimple.boogie.st(13, 2) [entry_invariant_0]: verified
+LoopSimple.boogie.st(13, 2) [arbitrary_iter_maintain_invariant_0]: verified
+LoopSimple.boogie.st(19, 2) [sum_assert]: verified
+LoopSimple.boogie.st(20, 2) [neg_cond]: verified
+Proved all 4 goals.
