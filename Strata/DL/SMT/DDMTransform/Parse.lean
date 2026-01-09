@@ -324,7 +324,7 @@ category DatatypeDec;
 op datatype_dec (cs:SpaceSepByNonEmpty ConstructorDec) : DatatypeDec
   => "(" cs ")";
 op datatype_dec_par (symbols: SpaceSepByNonEmpty Symbol, cs:SpaceSepByNonEmpty ConstructorDec) : DatatypeDec
-  => "(" "par" "(" symbols ")" "(" cs ")" ")";
+  => "(" "par " "(" symbols ")" "(" cs ")" ")";
 
 category FunctionDec;
 op function_dec (s:Symbol, sv:Seq SortedVar, so:SMTSort) : FunctionDec
@@ -351,48 +351,48 @@ op check_sat () : Command => "(" "check-sat" ")";
 op check_sat_assuming (ts:SpacePrefixedBy Term) : Command =>
   "(" "check-sat-assuming" ts ")";
 op declare_const (s:Symbol, so:SMTSort) : Command =>
-  "(" "declare-const" s so ")";
+  "(" "declare-const " s so ")";
 op declare_datatype (s:Symbol, so:DatatypeDec) : Command =>
-  "(" "declare-datatype" s so ")";
+  "(" "declare-datatype " s so ")";
 // The size of SortDec and DatatypeDec must be equal, but omit the check in
 // this DDM definition because its representation can be quite ugly.
 op declare_datatypes (s:SpaceSepByNonEmpty SortDec, so:SpaceSepByNonEmpty DatatypeDec) : Command =>
   "(" "declare-datatypes" "(" s ")" "(" so ")" ")";
 op declare_fun (s:Symbol, sol:SpaceSepBy SMTSort, range:SMTSort) : Command =>
-  "(" "declare-fun" s "(" sol ")" range ")";
+  "(" "declare-fun " s "(" sol ")" range ")";
 op declare_sort (s:Symbol, n:Num) : Command =>
-  "(" "declare-sort" s n ")";
+  "(" "declare-sort " s n ")";
 op declare_sort_parameter (s:Symbol) : Command =>
-  "(" "declare-sort-parameter" s ")";
+  "(" "declare-sort-parameter " s ")";
 op define_const (s:Symbol, so:SMTSort, t:Term) : Command =>
-  "(" "define-const" s so t ")";
+  "(" "define-const " s so t ")";
 op define_fun (fdef:FunctionDef) : Command =>
-  "(" "define-fun" fdef ")";
+  "(" "define-fun " fdef ")";
 op define_fun_rec (fdef:FunctionDef) : Command =>
-  "(" "define-fun-rec" fdef ")";
+  "(" "define-fun-rec " fdef ")";
 op define_funs_rec (fdefs:SpaceSepByNonEmpty FunctionDef, terms:SpaceSepByNonEmpty Term) : Command =>
   "(" "define-funs-rec" "(" fdefs ")" "(" terms ")" ")";
 op define_sort (s:Symbol, sl:Seq Symbol, so:SMTSort) : Command =>
-  "(" "define-sort" s "(" sl ")" so ")";
-op cmd_echo (s:Str) : Command => "(" "echo" s ")";
+  "(" "define-sort " s "(" sl ")" so ")";
+op cmd_echo (s:Str) : Command => "(" "echo " s ")";
 op cmd_exit () : Command => "(" "exit" ")";
 op get_assertions () : Command => "(" "get-assertions" ")";
 op get_assignment () : Command => "(" "get-assignment" ")";
-op get_info (x:InfoFlag) : Command => "(" "get-info" x ")";
+op get_info (x:InfoFlag) : Command => "(" "get-info " x ")";
 op get_model () : Command => "(" "get-model" ")";
-op get_option (kw:Keyword) : Command => "(" "get-option" kw ")";
+op get_option (kw:Keyword) : Command => "(" "get-option " kw ")";
 op get_proof () : Command => "(" "get-proof" ")";
 op get_unsat_assumptions () : Command => "(" "get-unsat-assumptions" ")";
 op get_unsat_core () : Command => "(" "get-unsat-core" ")";
 op get_value (tl:SpaceSepByNonEmpty Term) : Command =>
   "(" "get-value" "(" tl ")" ")";
-op cmd_pop (n:Num) : Command => "(" "pop" n ")";
-op cmd_push (n:Num) : Command => "(" "push" n ")";
+op cmd_pop (n:Num) : Command => "(" "pop " n ")";
+op cmd_push (n:Num) : Command => "(" "push " n ")";
 op cmd_reset () : Command => "(" "reset" ")";
 op reset_assertions () : Command => "(" "reset-assertions" ")";
-op set_info (a:Attribute) : Command => "(" "set-info" a ")";
-op set_logic (s:Symbol) : Command => "(" "set-logic" s ")";
-op set_option (s:SMTOption) : Command => "(" "set-option" s ")";
+op set_info (a:Attribute) : Command => "(" "set-info " a ")";
+op set_logic (s:Symbol) : Command => "(" "set-logic " s ")";
+op set_option (s:SMTOption) : Command => "(" "set-option " s ")";
 
 #end
 
