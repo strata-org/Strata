@@ -39,6 +39,7 @@ info: ok: ((procedure P :  ((x : int)) → ((y : int)))
                                  Statement.set "y" eb[((~Int.Sub #0) x)]
                                ]
                              }
+                            .empty
          return format ans
 
 /--
@@ -66,7 +67,7 @@ body: g := (((~Int.Add : (arrow int (arrow int int))) (a : int)) (g : int))
                             [("P.g_eq_a", ⟨eb[g == ((~Int.Add (~old g)) a)], .Default, #[]⟩)] },
                           body :=
                             [Statement.set "g" eb[((~Int.Add a) g)]]
-                        }
+                        } .empty
           return format ans.fst
 
 /--
@@ -95,7 +96,7 @@ body: g := (((~Int.Add : (arrow int (arrow int int))) (a : int)) (g : int))
                             [("P.g_eq_a", ⟨eb[g == (~old ((~Int.Add a) g))], .Default, #[]⟩)] },
                           body :=
                             [Statement.set "g" eb[((~Int.Add a) g)]]
-                        }
+                        } .empty
           return format ans.fst
 
 
