@@ -470,44 +470,20 @@ This declares a list type with two constructors (`Nil` and `Cons`) and two field
 
 ### Defining Datatype Syntax in a Dialect
 
-To support datatypes in a dialect, you must define several syntactic categories and
+To support datatypes in a dialect, you must define syntactic categories and
 operators with appropriate annotations. The Boogie dialect provides a complete example.
-
-#### Field Syntax
-
-Fields represent the arguments to a constructor. Each field has a name and a type.
-
-```
-category Field;
-category FieldList;
-
-@[field(name, tp)]
-op field_mk (name : Ident, tp : Type) : Field => name ":" tp;
-
-@[fieldListAtom(f)]
-op fieldListAtom (f : Field) : FieldList => f;
-
-@[fieldListPush(fl, f)]
-op fieldListPush (fl : FieldList, @[scope(fl)] f : Field) : FieldList => fl "," f;
-```
-
-The annotations serve specific purposes:
-
-* `@[field(name, tp)]` marks this operation as a field definition to allow its
-use in auxiliary definitions
-* `@[fieldListAtom(f)]` marks a single-element field list
-* `@[fieldListPush(fl, f)]` marks an operation that extends a field list
 
 #### Constructor Syntax
 
-Constructors define the variants of a datatype.
+Constructors define the variants of a datatype. Constructor fields are specified
+via Bindings like other function declarations.
 
 ```
 category Constructor;
 category ConstructorList;
 
 @[constructor(name, fields)]
-op constructor_mk (name : Ident, fields : Option FieldList) : Constructor =>
+op constructor_mk (name : Ident, fields : Option (CommaSepBy Binding)) : Constructor =>
   name "(" fields ")";
 
 @[constructorListAtom(c)]
@@ -520,7 +496,9 @@ op constructorListPush (cl : ConstructorList, c : Constructor) : ConstructorList
 
 The annotations:
 
-* `@[constructor(name, fields)]` marks this operation as a constructor definition to allow its use in auxiliary definitions
+* `@[constructor(name, fields)]` marks this operation as a constructor
+definition, where `fields` is a `Bindings` argument containing the constructor
+arguments
 * `@[constructorListAtom(c)]` marks a single-element constructor list
 * `@[constructorListPush(cl, c)]` marks an operation that extends a constructor list
 

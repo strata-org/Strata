@@ -158,12 +158,6 @@ def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
   declareMetadata { name := "unwrap", args := #[] }
   -- Metadata for marking an operation as a constructor definition
   declareMetadata { name := "constructor", args := #[.mk "name" .ident, .mk "fields" .ident] }
-  -- Metadata for marking an operation as a field definition
-  declareMetadata { name := "field", args := #[.mk "name" .ident, .mk "type" .ident] }
-  -- Metadata for marking an operation as a field list atom (single field)
-  declareMetadata { name := "fieldListAtom", args := #[.mk "field" .ident] }
-  -- Metadata for marking an operation as a field list push (list followed by field)
-  declareMetadata { name := "fieldListPush", args := #[.mk "list" .ident, .mk "field" .ident] }
   -- Metadata for marking an operation as a constructor list atom (single constructor)
   declareMetadata { name := "constructorListAtom", args := #[.mk "constructor" .ident] }
   -- Metadata for marking an operation as a constructor list push (list followed by constructor)
