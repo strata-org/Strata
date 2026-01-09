@@ -30,7 +30,7 @@ def translateType (ty : HighType) : LMonoTy :=
   | .TInt => LMonoTy.int
   | .TBool => LMonoTy.bool
   | .TVoid => LMonoTy.bool  -- Using bool as placeholder for void
-  | _ => LMonoTy.int  -- Default to int for other types
+  | _ => panic s!"unsupported type {repr ty}"
 
 /--
 Translate Laurel StmtExpr to Boogie Expression

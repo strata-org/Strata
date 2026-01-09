@@ -6,6 +6,7 @@
 
 import Strata.DL.Imperative.MetaData
 import Strata.Languages.Boogie.Expressions
+import Strata.Languages.Boogie.Procedure
 
 /-
 The Laurel language is supposed to serve as an intermediate verification language for at least Java, Python, JavaScript.
@@ -46,8 +47,6 @@ namespace Laurel
 
 abbrev Identifier := String /- Potentially this could be an Int to save resources. -/
 
-/- We will support these operations for dynamic types as well -/
-/- The 'truthy' concept from JavaScript should be implemented using a library function -/
 inductive Operation: Type where
   /- Works on Bool -/
     /- Equality on composite types uses reference equality for impure types, and structural equality for pure ones -/
@@ -57,6 +56,9 @@ inductive Operation: Type where
   | Neg | Add | Sub | Mul | Div | Mod
   | Lt | Leq | Gt | Geq
   deriving Repr
+
+-- Explicit instance needed for deriving Repr in the mutual block
+instance : Repr (Imperative.MetaData Boogie.Expression) := inferInstance
 
 mutual
 structure Procedure: Type where
@@ -89,6 +91,7 @@ inductive HighType : Type where
   /- Java has implicit intersection types.
      Example: `<cond> ? RustanLeino : AndersHejlsberg` could be typed as `Scientist & Scandinavian`-/
   | Intersection (types : List HighType)
+  deriving Repr
 
 /- No support for something like function-by-method yet -/
 inductive Body where

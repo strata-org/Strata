@@ -67,7 +67,7 @@ instance [Repr P.Ident] : Repr (MetaDataElem.Field P) where
 
 inductive Uri where
   | file (path: String)
-  deriving DecidableEq
+  deriving DecidableEq, Repr
 
 instance : ToFormat Uri where
  format fr := match fr with | .file path => path
@@ -76,7 +76,7 @@ structure FileRange where
   file: Uri
   start: Lean.Position
   ending: Lean.Position
-  deriving DecidableEq
+  deriving DecidableEq, Repr
 
 instance : ToFormat FileRange where
  format fr := f!"{fr.file}:{fr.start}-{fr.ending}"
@@ -100,7 +100,7 @@ instance [Repr P.Expr] : Repr (MetaDataElem.Value P) where
       match v with
       | .expr e => f!"MetaDataElem.Value.expr {reprPrec e prec}"
       | .msg s => f!"MetaDataElem.Value.msg {s}"
-      | .fileRange fr => f!"MetaDataElem.Value.fileRange {fr}"
+      | .fileRange fr => f!"MetaDataElem.Value.fileRange {repr fr}"
     Repr.addAppParen res prec
 
 def MetaDataElem.Value.beq [BEq P.Expr] (v1 v2 : MetaDataElem.Value P) :=

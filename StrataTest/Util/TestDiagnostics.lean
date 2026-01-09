@@ -102,7 +102,6 @@ def testInputWithOffset (filename: String) (input : String) (lineOffset : Nat)
       allMatched := false
       unmatchedExpectations := unmatchedExpectations.append [exp]
 
-  -- Check if there are unexpected diagnostics
   let mut unmatchedDiagnostics := []
   for diag in diagnostics do
     let matched := expectedErrors.any (fun exp => matchesDiagnostic diag exp)
@@ -112,10 +111,10 @@ def testInputWithOffset (filename: String) (input : String) (lineOffset : Nat)
 
   -- Report results
   if allMatched && diagnostics.size == expectedErrors.length then
-    IO.println s!"✓ Test passed: All {expectedErrors.length} error(s) matched"
-    -- Print details of matched expectations
-    for exp in expectedErrors do
-      IO.println s!"  - Line {exp.line}, Col {exp.colStart}-{exp.colEnd}: {exp.message}"
+    return
+    -- IO.println s!"✓ Test passed: All {expectedErrors.length} error(s) matched"
+    -- for exp in expectedErrors do
+    --   IO.println s!"  - Line {exp.line}, Col {exp.colStart}-{exp.colEnd}: {exp.message}"
   else
     IO.println s!"✗ Test failed: Mismatched diagnostics"
     IO.println s!"\nExpected {expectedErrors.length} error(s), got {diagnostics.size} diagnostic(s)"
