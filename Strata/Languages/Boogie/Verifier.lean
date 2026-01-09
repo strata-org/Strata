@@ -143,7 +143,7 @@ def solverResult (vars : List (IdentT LMonoTy Visibility)) (ans : String)
     | .error _model_err => (.ok (.sat []))
   | "unsat"   =>  .ok .unsat
   | "unknown" =>  .ok .unknown
-  | _     =>  .error ans
+  | _     =>  .error s!"solver result: {ans}"
 
 open Imperative
 
