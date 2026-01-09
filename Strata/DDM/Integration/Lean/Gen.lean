@@ -573,6 +573,14 @@ partial def ppCatWithUnwrap (annType : Ident) (c : SyntaxCat) (unwrap : Bool) : 
   match c.name, eq : args.size with
   | q`Init.CommaSepBy, 1 =>
     return mkCApp ``Ann #[mkCApp ``Array #[args[0]], annType]
+  | q`Init.SpaceSepBy, 1 =>
+    return mkCApp ``Ann #[mkCApp ``Array #[args[0]], annType]
+  | q`Init.SpaceSepByNonEmpty, 1 =>
+    return mkCApp ``Ann #[mkCApp ``Array #[args[0]], annType]
+  | q`Init.SpacePrefixedBy, 1 =>
+    return mkCApp ``Ann #[mkCApp ``Array #[args[0]], annType]
+  | q`Init.SpacePrefixedByNonEmpty, 1 =>
+    return mkCApp ``Ann #[mkCApp ``Array #[args[0]], annType]
   | q`Init.Option, 1 =>
     return mkCApp ``Ann #[mkCApp ``Option #[args[0]], annType]
   | q`Init.Seq, 1 =>
@@ -741,6 +749,50 @@ partial def toAstApplyArg (vn : Name) (cat : SyntaxCat) (unwrap : Bool := false)
           mkCApp ``Array.attach #[mkCApp ``Ann.val #[v]]
     ]
     return mkAnnWithTerm ``ArgF.commaSepList v args
+  | q`Init.SpaceSepBy => do
+    assert! cat.args.size = 1
+    let c := cat.args[0]!
+    let e ← genFreshLeanName "e"
+    let canE ← genIdentFrom e (canonical := true)
+    let t ← toAstApplyArg e c
+    let args := mkCApp ``Array.map #[
+          ←`(fun ⟨$canE, _⟩ => $t),
+          mkCApp ``Array.attach #[mkCApp ``Ann.val #[v]]
+    ]
+    return mkAnnWithTerm ``ArgF.spaceSepList v args
+  | q`Init.SpaceSepByNonEmpty => do
+    assert! cat.args.size = 1
+    let c := cat.args[0]!
+    let e ← genFreshLeanName "e"
+    let canE ← genIdentFrom e (canonical := true)
+    let t ← toAstApplyArg e c
+    let args := mkCApp ``Array.map #[
+          ←`(fun ⟨$canE, _⟩ => $t),
+          mkCApp ``Array.attach #[mkCApp ``Ann.val #[v]]
+    ]
+    return mkAnnWithTerm ``ArgF.spaceSepListNonEmpty v args
+  | q`Init.SpacePrefixedBy => do
+    assert! cat.args.size = 1
+    let c := cat.args[0]!
+    let e ← genFreshLeanName "e"
+    let canE ← genIdentFrom e (canonical := true)
+    let t ← toAstApplyArg e c
+    let args := mkCApp ``Array.map #[
+          ←`(fun ⟨$canE, _⟩ => $t),
+          mkCApp ``Array.attach #[mkCApp ``Ann.val #[v]]
+    ]
+    return mkAnnWithTerm ``ArgF.spacePrefixedList v args
+  | q`Init.SpacePrefixedByNonEmpty => do
+    assert! cat.args.size = 1
+    let c := cat.args[0]!
+    let e ← genFreshLeanName "e"
+    let canE ← genIdentFrom e (canonical := true)
+    let t ← toAstApplyArg e c
+    let args := mkCApp ``Array.map #[
+          ←`(fun ⟨$canE, _⟩ => $t),
+          mkCApp ``Array.attach #[mkCApp ``Ann.val #[v]]
+    ]
+    return mkAnnWithTerm ``ArgF.spacePrefixedListNonEmpty v args
   | q`Init.Option => do
     assert! cat.args.size = 1
     let c := cat.args[0]!
@@ -912,6 +964,26 @@ partial def getOfIdentArgWithUnwrap (varName : String) (cat : SyntaxCat) (unwrap
     let (vc, vi) ← genFreshIdentPair varName
     let body ← getOfIdentArg varName c vi
     ``(OfAstM.ofCommaSepByM $e fun $vc _ => $body)
+  | q`Init.SpaceSepBy => do
+    let c := cat.args[0]!
+    let (vc, vi) ← genFreshIdentPair varName
+    let body ← getOfIdentArg varName c vi
+    ``(OfAstM.ofSpaceSepByM $e fun $vc _ => $body)
+  | q`Init.SpaceSepByNonEmpty => do
+    let c := cat.args[0]!
+    let (vc, vi) ← genFreshIdentPair varName
+    let body ← getOfIdentArg varName c vi
+    ``(OfAstM.ofSpaceSepByNonEmptyM $e fun $vc _ => $body)
+  | q`Init.SpacePrefixedBy => do
+    let c := cat.args[0]!
+    let (vc, vi) ← genFreshIdentPair varName
+    let body ← getOfIdentArg varName c vi
+    ``(OfAstM.ofSpacePrefixedByM $e fun $vc _ => $body)
+  | q`Init.SpacePrefixedByNonEmpty => do
+    let c := cat.args[0]!
+    let (vc, vi) ← genFreshIdentPair varName
+    let body ← getOfIdentArg varName c vi
+    ``(OfAstM.ofSpacePrefixedByNonEmptyM $e fun $vc _ => $body)
   | q`Init.Option => do
     let c := cat.args[0]!
     let (vc, vi) ← genFreshIdentPair varName
@@ -1102,6 +1174,10 @@ def checkInhabited (cat : QualifiedIdent) (ops : Array DefaultCtor) : StateT Inh
         match arg.cat.name with
         | q`Init.Seq => true
         | q`Init.CommaSepBy => true
+        | q`Init.SpaceSepBy => true
+        | q`Init.SpaceSepByNonEmpty => true
+        | q`Init.SpacePrefixedBy => true
+        | q`Init.SpacePrefixedByNonEmpty => true
         | q`Init.Option => true
         | c => c ∈ inhabited
     if !isInhabited then

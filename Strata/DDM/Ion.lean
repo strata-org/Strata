@@ -513,13 +513,25 @@ private protected def ArgF.toIon {α} [ToIon α] (refs : SymbolIdCache) (arg : A
       let args : Array (Ion _) := #[ ionSymbol! "commaSepList", ← toIon ann ]
       let args ← l.attach.mapM_off (init := args) fun ⟨v, _⟩ => v.toIon refs
       return .sexp args
+    | .spaceSepList ann l => do
+      let args : Array (Ion _) := #[ ionSymbol! "spaceSepList", ← toIon ann ]
+      let args ← l.attach.mapM_off (init := args) fun ⟨v, _h⟩ => v.toIon refs
+      return .sexp args
+    | .spaceSepListNonEmpty ann l => do
+      let args : Array (Ion _) := #[ ionSymbol! "spaceSepListNonEmpty", ← toIon ann ]
+      let args ← l.attach.mapM_off (init := args) fun ⟨v, _h⟩ => v.toIon refs
+      return .sexp args
+    | .spacePrefixedList ann l => do
+      let args : Array (Ion _) := #[ ionSymbol! "spacePrefixedList", ← toIon ann ]
+      let args ← l.attach.mapM_off (init := args) fun ⟨v, _h⟩ => v.toIon refs
+      return .sexp args
+    | .spacePrefixedListNonEmpty ann l => do
+      let args : Array (Ion _) := #[ ionSymbol! "spacePrefixedListNonEmpty", ← toIon ann ]
+      let args ← l.attach.mapM_off (init := args) fun ⟨v, _h⟩ => v.toIon refs
+      return .sexp args
   termination_by sizeOf arg
   decreasing_by
-    · decreasing_tactic
-    · decreasing_tactic
-    · decreasing_tactic
-    · decreasing_tactic
-    · decreasing_tactic
+    all_goals decreasing_tactic
 
 end
 
@@ -629,6 +641,30 @@ private protected def ArgF.fromIon {α} [FromIon α] (v : Ion SymbolId) : FromIo
     let args ← sexp.attach.mapM_off (start := 2) fun ⟨u, _⟩ =>
       Strata.ArgF.fromIon u
     return .commaSepList ann args
+  | "spaceSepList" => do
+    let ⟨p⟩ ← .checkArgMin "spaceSepList" sexp 2
+    let ann ← fromIon sexp[1]
+    let args ← sexp.attach.mapM_off (start := 2) fun ⟨u, _⟩ =>
+      Strata.ArgF.fromIon u
+    return .spaceSepList ann args
+  | "spaceSepListNonEmpty" => do
+    let ⟨p⟩ ← .checkArgMin "spaceSepListNonEmpty" sexp 2
+    let ann ← fromIon sexp[1]
+    let args ← sexp.attach.mapM_off (start := 2) fun ⟨u, _⟩ =>
+      Strata.ArgF.fromIon u
+    return .spaceSepListNonEmpty ann args
+  | "spacePrefixedList" => do
+    let ⟨p⟩ ← .checkArgMin "spacePrefixedList" sexp 2
+    let ann ← fromIon sexp[1]
+    let args ← sexp.attach.mapM_off (start := 2) fun ⟨u, _⟩ =>
+      Strata.ArgF.fromIon u
+    return .spacePrefixedList ann args
+  | "spacePrefixedListNonEmpty" => do
+    let ⟨p⟩ ← .checkArgMin "spacePrefixedListNonEmpty" sexp 2
+    let ann ← fromIon sexp[1]
+    let args ← sexp.attach.mapM_off (start := 2) fun ⟨u, _⟩ =>
+      Strata.ArgF.fromIon u
+    return .spacePrefixedListNonEmpty ann args
   | str =>
     throw s!"Unexpected identifier {str}"
 termination_by v
@@ -638,6 +674,14 @@ decreasing_by
   · have _ : sizeOf sexp[1] < sizeOf sexp := by decreasing_tactic
     decreasing_tactic
   · have _ : sizeOf sexp[2] < sizeOf sexp := by decreasing_tactic
+    decreasing_tactic
+  · have _ : sizeOf u < sizeOf sexp := by decreasing_tactic
+    decreasing_tactic
+  · have _ : sizeOf u < sizeOf sexp := by decreasing_tactic
+    decreasing_tactic
+  · have _ : sizeOf u < sizeOf sexp := by decreasing_tactic
+    decreasing_tactic
+  · have _ : sizeOf u < sizeOf sexp := by decreasing_tactic
     decreasing_tactic
   · have _ : sizeOf u < sizeOf sexp := by decreasing_tactic
     decreasing_tactic

@@ -246,6 +246,26 @@ structure CommaSepInfo extends ElabInfo where
   resultCtx : TypingContext
 deriving Inhabited, Repr
 
+structure SpaceSepInfo extends ElabInfo where
+  args : Array Arg
+  resultCtx : TypingContext
+deriving Inhabited, Repr
+
+structure SpaceSepNonEmptyInfo extends ElabInfo where
+  args : Array Arg
+  resultCtx : TypingContext
+deriving Inhabited, Repr
+
+structure SpacePrefixedInfo extends ElabInfo where
+  args : Array Arg
+  resultCtx : TypingContext
+deriving Inhabited, Repr
+
+structure SpacePrefixedNonEmptyInfo extends ElabInfo where
+  args : Array Arg
+  resultCtx : TypingContext
+deriving Inhabited, Repr
+
 inductive Info
 | ofOperationInfo (info : OperationInfo)
 | ofCatInfo (info : CatInfo)
@@ -259,6 +279,10 @@ inductive Info
 | ofOptionInfo (info : OptionInfo)
 | ofSeqInfo (info : SeqInfo)
 | ofCommaSepInfo (info : CommaSepInfo)
+| ofSpaceSepInfo (info : SpaceSepInfo)
+| ofSpaceSepNonEmptyInfo (info : SpaceSepNonEmptyInfo)
+| ofSpacePrefixedInfo (info : SpacePrefixedInfo)
+| ofSpacePrefixedNonEmptyInfo (info : SpacePrefixedNonEmptyInfo)
 deriving Inhabited, Repr
 
 namespace Info
@@ -293,6 +317,10 @@ def elabInfo (info : Info) : ElabInfo :=
   | .ofOptionInfo info => info.toElabInfo
   | .ofSeqInfo info => info.toElabInfo
   | .ofCommaSepInfo info => info.toElabInfo
+  | .ofSpaceSepInfo info => info.toElabInfo
+  | .ofSpaceSepNonEmptyInfo info => info.toElabInfo
+  | .ofSpacePrefixedInfo info => info.toElabInfo
+  | .ofSpacePrefixedNonEmptyInfo info => info.toElabInfo
 
 def inputCtx (info : Info) : TypingContext := info.elabInfo.inputCtx
 
@@ -340,6 +368,10 @@ def arg : Tree → Arg
     .option info.loc r
   | .ofSeqInfo info => .seq info.loc info.args
   | .ofCommaSepInfo info => .commaSepList info.loc info.args
+  | .ofSpaceSepInfo info => .spaceSepList info.loc info.args
+  | .ofSpaceSepNonEmptyInfo info => .spaceSepListNonEmpty info.loc info.args
+  | .ofSpacePrefixedInfo info => .spacePrefixedList info.loc info.args
+  | .ofSpacePrefixedNonEmptyInfo info => .spacePrefixedListNonEmpty info.loc info.args
 
 theorem sizeOf_children (t : Tree) (i : Nat) (p : i < t.children.size) : sizeOf t[i] < sizeOf t := by
   match t with
@@ -362,6 +394,10 @@ def resultContext (t : Tree) : TypingContext :=
       info.inputCtx
   | .ofSeqInfo info => info.resultCtx
   | .ofCommaSepInfo info => info.resultCtx
+  | .ofSpaceSepInfo info => info.resultCtx
+  | .ofSpaceSepNonEmptyInfo info => info.resultCtx
+  | .ofSpacePrefixedInfo info => info.resultCtx
+  | .ofSpacePrefixedNonEmptyInfo info => info.resultCtx
 termination_by t
 
 def isSpecificOp (tree : Tree) (expected : QualifiedIdent) : Bool :=

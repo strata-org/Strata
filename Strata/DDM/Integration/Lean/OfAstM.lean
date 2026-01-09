@@ -188,6 +188,50 @@ def ofSeqM {α β} [Repr α] [SizeOf α]
     pure { ann := ann, val := val }
   | _ => throwExpected "seq" arg
 
+def ofSpaceSepByM {α β} [Repr α] [SizeOf α]
+      (arg : ArgF α)
+      (act : ∀(e : ArgF α), sizeOf e < sizeOf arg → OfAstM β)
+      : OfAstM (Ann (Array β) α) :=
+  match arg with
+  | .spaceSepList ann a => do
+    let val ← a.attach.mapM fun ⟨v, vIn⟩ =>
+      act v (by decreasing_tactic)
+    pure { ann := ann, val := val }
+  | _ => throwExpected "spaceSepBy" arg
+
+def ofSpaceSepByNonEmptyM {α β} [Repr α] [SizeOf α]
+      (arg : ArgF α)
+      (act : ∀(e : ArgF α), sizeOf e < sizeOf arg → OfAstM β)
+      : OfAstM (Ann (Array β) α) :=
+  match arg with
+  | .spaceSepListNonEmpty ann a => do
+    let val ← a.attach.mapM fun ⟨v, vIn⟩ =>
+      act v (by decreasing_tactic)
+    pure { ann := ann, val := val }
+  | _ => throwExpected "spaceSepByNonEmpty" arg
+
+def ofSpacePrefixedByM {α β} [Repr α] [SizeOf α]
+      (arg : ArgF α)
+      (act : ∀(e : ArgF α), sizeOf e < sizeOf arg → OfAstM β)
+      : OfAstM (Ann (Array β) α) :=
+  match arg with
+  | .spacePrefixedList ann a => do
+    let val ← a.attach.mapM fun ⟨v, vIn⟩ =>
+      act v (by decreasing_tactic)
+    pure { ann := ann, val := val }
+  | _ => throwExpected "spacePrefixedBy" arg
+
+def ofSpacePrefixedByNonEmptyM {α β} [Repr α] [SizeOf α]
+      (arg : ArgF α)
+      (act : ∀(e : ArgF α), sizeOf e < sizeOf arg → OfAstM β)
+      : OfAstM (Ann (Array β) α) :=
+  match arg with
+  | .spacePrefixedListNonEmpty ann a => do
+    let val ← a.attach.mapM fun ⟨v, vIn⟩ =>
+      act v (by decreasing_tactic)
+    pure { ann := ann, val := val }
+  | _ => throwExpected "spacePrefixedByNonEmpty" arg
+
 /--
 Get the expression at index `lvl` in the arguments.
 

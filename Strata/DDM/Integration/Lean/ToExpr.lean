@@ -165,6 +165,18 @@ private def ArgF.toExpr {α} [ToExpr α] : ArgF α → Lean.Expr
 | .commaSepList ann a =>
   let tpe := ArgF.typeExpr α
   astAnnExpr! ArgF.commaSepList ann <| arrayToExpr .zero tpe <| a.map (·.toExpr)
+| .spaceSepList ann a =>
+  let tpe := ArgF.typeExpr α
+  astAnnExpr! ArgF.spaceSepList ann <| arrayToExpr .zero tpe <| a.map (·.toExpr)
+| .spaceSepListNonEmpty ann a =>
+  let tpe := ArgF.typeExpr α
+  astAnnExpr! ArgF.spaceSepListNonEmpty ann <| arrayToExpr .zero tpe <| a.map (·.toExpr)
+| .spacePrefixedList ann a =>
+  let tpe := ArgF.typeExpr α
+  astAnnExpr! ArgF.spacePrefixedList ann <| arrayToExpr .zero tpe <| a.map (·.toExpr)
+| .spacePrefixedListNonEmpty ann a =>
+  let tpe := ArgF.typeExpr α
+  astAnnExpr! ArgF.spacePrefixedListNonEmpty ann <| arrayToExpr .zero tpe <| a.map (·.toExpr)
 termination_by a => sizeOf a
 
 private protected def OperationF.toExpr {α} [ToExpr α] (op : OperationF α) : Lean.Expr :=

@@ -116,6 +116,10 @@ mutual
     | .option () ma => .option default (ma.map argFUnitToSourceRange)
     | .seq () entries => .seq default (entries.map argFUnitToSourceRange)
     | .commaSepList () entries => .commaSepList default (entries.map argFUnitToSourceRange)
+    | .spaceSepList () entries => .spaceSepList default (entries.map argFUnitToSourceRange)
+    | .spaceSepListNonEmpty () entries => .spaceSepListNonEmpty default (entries.map argFUnitToSourceRange)
+    | .spacePrefixedList () entries => .spacePrefixedList default (entries.map argFUnitToSourceRange)
+    | .spacePrefixedListNonEmpty () entries => .spacePrefixedListNonEmpty default (entries.map argFUnitToSourceRange)
 
   partial def typeExprFUnitToSourceRange : TypeExprF Unit → TypeExprF SourceRange
     | .ident () tp a => .ident default tp (a.map typeExprFUnitToSourceRange)

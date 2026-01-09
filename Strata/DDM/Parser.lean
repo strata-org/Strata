@@ -775,6 +775,13 @@ def checkLeftRec (thisCatName : QualifiedIdent) (argDecls : ArgDecls) (as : List
         .invalid mf!"Leading symbol cannot be recursive call to {c}"
       else
         .isLeading as
+    | q`Init.SpaceSepBy | q`Init.SpaceSepByNonEmpty | q`Init.SpacePrefixedBy | q`Init.SpacePrefixedByNonEmpty =>
+      assert! cat.args.size = 1
+      let c := cat.args[0]!
+      if c.name == thisCatName then
+        .invalid mf!"Leading symbol cannot be recursive call to {c}"
+      else
+        .isLeading as
     | q`Init.Option =>
       assert! cat.args.size = 1
       let c := cat.args[0]!
@@ -840,6 +847,59 @@ private def sepByParser (p sep : Parser) (allowTrailingSep : Bool := false) : Pa
         s
 }
 
+private def sepBy1Parser (p sep : Parser) (allowTrailingSep : Bool := false) : Parser := {
+  info := sepByInfo p.info sep.info
+  fn   := fun c s =>
+    let s := sepByFn allowTrailingSep p.fn sep.fn c s
+    if s.hasError then
+      s
+    else
+      match s.stxStack.back with
+      | .node .none k args =>
+        if args.isEmpty then
+          -- Require at least one element
+          s.mkError "expected at least one element"
+        else
+          s
+      | _ =>
+        s
+}
+
+private def spacePrefixedParser (p : Parser) : Parser := {
+  info := noFirstTokenInfo p.info
+  fn   := fun c s =>
+    let s := manyFn (andthenFn (symbolNoAntiquot " ").fn p.fn) c s
+    if s.hasError then
+      s
+    else
+      match s.stxStack.back with
+      | .node .none _k args =>
+        if args.isEmpty then
+          s.popSyntax.pushSyntax (.node (emptySourceInfo c s.pos) _k args)
+        else
+          s
+      | _ =>
+        s
+}
+
+private def spacePrefixed1Parser (p : Parser) : Parser := {
+  info := noFirstTokenInfo p.info
+  fn   := fun c s =>
+    let s := manyFn (andthenFn (symbolNoAntiquot " ").fn p.fn) c s
+    if s.hasError then
+      s
+    else
+      match s.stxStack.back with
+      | .node .none _k args =>
+        if args.isEmpty then
+          -- Require at least one element
+          s.mkError "expected at least one element"
+        else
+          s
+      | _ =>
+        s
+}
+
 def manyParser (p : Parser) : Parser := {
   info := noFirstTokenInfo p.info
   fn   := fun c s =>
@@ -848,9 +908,26 @@ def manyParser (p : Parser) : Parser := {
       s
     else
       match s.stxStack.back with
-      | .node .none k args =>
+      | .node .none _k args =>
         if args.isEmpty then
-          s.popSyntax.pushSyntax (.node (emptySourceInfo c s.pos) k args)
+          s.popSyntax.pushSyntax (.node (emptySourceInfo c s.pos) _k args)
+        else
+          s
+      | _ =>
+        s
+}
+
+def many1Parser (p : Parser) : Parser := {
+  info := p.info
+  fn   := fun c s =>
+    let s := manyFn p.fn c s
+    if s.hasError then
+      s
+    else
+      match s.stxStack.back with
+      | .node .none _k args =>
+        if args.isEmpty then
+          s.mkError "expected at least one element"
         else
           s
       | _ =>
@@ -863,6 +940,18 @@ partial def catParser (ctx : ParsingContext) (cat : SyntaxCat) : Except SyntaxCa
   | q`Init.CommaSepBy =>
     assert! cat.args.size = 1
     (sepByParser · (symbolNoAntiquot ",")) <$> catParser ctx cat.args[0]!
+  | q`Init.SpaceSepBy =>
+    assert! cat.args.size = 1
+    manyParser <$> catParser ctx cat.args[0]!
+  | q`Init.SpaceSepByNonEmpty =>
+    assert! cat.args.size = 1
+    many1Parser <$> catParser ctx cat.args[0]!
+  | q`Init.SpacePrefixedBy =>
+    assert! cat.args.size = 1
+    manyParser <$> catParser ctx cat.args[0]!
+  | q`Init.SpacePrefixedByNonEmpty =>
+    assert! cat.args.size = 1
+    many1Parser <$> catParser ctx cat.args[0]!
   | q`Init.Option =>
     assert! cat.args.size = 1
     optionalNoAntiquot <$> catParser ctx cat.args[0]!
