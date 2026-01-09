@@ -16,19 +16,21 @@ open Std (ToFormat Format format)
 
 /--
 Type checker for an Imperative Command.
+
+The `TypeError` parameter for the `TypeContext` instance `TC` is a concrete type
+here. We can change this to a more generic type in the future, if needed.
 -/
-def Cmd.typeCheck [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
-    [DecidableEq P.Ident] [TC : TypeContext P C T]
+def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
+    [DecidableEq P.Ident] [TC : TypeContext P C T Format]
     (ctx: C) (τ : T) (c : Cmd P) : Except Format (Cmd P × T) := do
 
-  match c with
+  try match c with
 
   | .init x xty e md =>
     match TC.lookup τ x with
     | none =>
       if x ∈ TC.freeVars e then
-        .error f!"Type Checking [{c}]: \
-                  Variable {x} cannot appear in its own initialization expression!"
+        .error f!"Variable {x} cannot appear in its own initialization expression!"
       else
         let (xty, τ) ← TC.preprocess ctx τ xty
         let (e, ety, τ) ← TC.inferType ctx τ c e
@@ -38,11 +40,11 @@ def Cmd.typeCheck [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
         let c := Cmd.init x xty e md
         .ok (c, τ)
     | some xty =>
-      .error f!"Type Checking [{c}]: Variable {x} of type {xty} already in context."
+      .error f!"Variable {x} of type {xty} already in context."
 
   | .set x e md =>
     match TC.lookup τ x with
-    | none => .error f!"Type Checking [{c}]: Cannot set undefined variable {x}."
+    | none => .error f!"Cannot set undeclared variable {x}."
     | some xty =>
       let (e, ety, τ) ← TC.inferType ctx τ c e
       let τ ← TC.unifyTypes τ [(xty, ety)]
@@ -52,7 +54,7 @@ def Cmd.typeCheck [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
   | .havoc x _md =>
     match TC.lookup τ x with
     | some _ => .ok (c, τ)
-    | none => .error f!"Type Checking [{c}]: Cannot havoc undefined variable {x}."
+    | none => .error f!"Cannot havoc undeclared variable {x}."
 
   | .assert label e md =>
     let (e, ety, τ) ← TC.inferType ctx τ c e
@@ -60,8 +62,8 @@ def Cmd.typeCheck [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
        let c := Cmd.assert label e md
        .ok (c, τ)
     else
-      .error f!"Type Checking [assert {label}]: \
-                Assertion expected to be of type boolean, but inferred type is {ety}."
+      .error f!"Assertion {label} expected to be of type boolean, \
+                but inferred type is {ety}."
 
   | .assume label e md =>
     let (e, ety, τ) ← TC.inferType ctx τ c e
@@ -69,14 +71,21 @@ def Cmd.typeCheck [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
        let c := Cmd.assume label e md
        .ok (c, τ)
     else
-      .error f!"Type Checking [assume {label}]: \
-                Assumption expected to be of type boolean, but inferred type is {ety}."
+      .error f!"Assumption {label} expected to be of type boolean, \
+                but inferred type is {ety}."
+  catch e =>
+    -- Add source location to error messages.
+    let sourceLoc := MetaData.formatFileRangeD c.getMetaData
+    if sourceLoc.isEmpty then
+      .error e
+    else
+      .error f!"{sourceLoc} {e}"
 
 /--
 Type checker for Imperative's Commands.
 -/
 def Cmds.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
-    [DecidableEq P.Ident] [TC : TypeContext P C T]
+    [DecidableEq P.Ident] [TC : TypeContext P C T Format]
     (ctx: C) (τ : T) (cs : Cmds P) : Except Format (Cmds P × T) := do
   match cs with
   | [] => .ok ([], τ)

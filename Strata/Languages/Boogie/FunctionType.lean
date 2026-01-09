@@ -19,7 +19,7 @@ open Lambda Imperative
 open Std (ToFormat Format format)
 
 def typeCheck (C: Boogie.Expression.TyContext) (Env : Boogie.Expression.TyEnv) (func : Function) :
-  Except Format (Function × Boogie.Expression.TyEnv) := do
+    Except Format (Function × Boogie.Expression.TyEnv) := do
   -- (FIXME) Very similar to `Lambda.inferOp`, except that the body is annotated
   -- using `LExprT.resolve`. Can we share code here?
   --
@@ -32,7 +32,7 @@ def typeCheck (C: Boogie.Expression.TyContext) (Env : Boogie.Expression.TyEnv) (
   let output_mty := monotys.getLast (by exact LMonoTy.destructArrow_non_empty monoty)
   -- Resolve type aliases and monomorphize inputs and output.
   let func := { func with
-                  typeArgs := []
+                  typeArgs := monoty.freeVars.eraseDups,
                   inputs := func.inputs.keys.zip input_mtys,
                   output := output_mty}
   match func.body with
@@ -46,7 +46,7 @@ def typeCheck (C: Boogie.Expression.TyContext) (Env : Boogie.Expression.TyEnv) (
     let (bodya, Env) ← LExpr.resolve C Env body
     let bodyty := bodya.toLMonoTy
     let (retty, Env) ← func.outputPolyType.instantiateWithCheck C Env
-    let S ← Constraints.unify [(retty, bodyty)] Env.stateSubstInfo
+    let S ← Constraints.unify [(retty, bodyty)] Env.stateSubstInfo |>.mapError format
     let Env := Env.updateSubst S
     let Env := Env.popContext
     -- Resolve type aliases and monomorphize the body.
