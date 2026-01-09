@@ -19,7 +19,7 @@ open Strata
 /-
 Translate Laurel StmtExpr to Boogie Expression
 -/
-partial def translateExpr (expr : StmtExpr) : Boogie.Expression.Expr :=
+def translateExpr (expr : StmtExpr) : Boogie.Expression.Expr :=
   match expr with
   | .LiteralBool true => .boolConst () true
   | .LiteralBool false => .boolConst () false
@@ -28,7 +28,7 @@ partial def translateExpr (expr : StmtExpr) : Boogie.Expression.Expr :=
 /-
 Translate Laurel StmtExpr to Boogie Statements
 -/
-partial def translateStmt (stmt : StmtExpr) : List Boogie.Statement :=
+def translateStmt (stmt : StmtExpr) : List Boogie.Statement :=
   match stmt with
   | @StmtExpr.Assert cond md =>
     let boogieExpr := translateExpr cond

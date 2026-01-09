@@ -20,11 +20,13 @@ namespace ProcedureInlining
 open Transform
 
 mutual
-partial def Block.substFvar (b : Block) (fr:Expression.Ident)
+def Block.substFvar (b : Block) (fr:Expression.Ident)
       (to:Expression.Expr) : Block :=
   List.map (fun s => Statement.substFvar s fr to) b
+  termination_by b.sizeOf
+  decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
 
-partial def Statement.substFvar (s : Boogie.Statement)
+def Statement.substFvar (s : Boogie.Statement)
       (fr:Expression.Ident)
       (to:Expression.Expr) : Statement :=
   match s with
@@ -52,13 +54,16 @@ partial def Statement.substFvar (s : Boogie.Statement)
           (Block.substFvar body fr to)
           metadata
   | .goto _ _ => s
+  termination_by s.sizeOf
 end
 
 mutual
-partial def Block.renameLhs (b : Block) (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility) : Block :=
+def Block.renameLhs (b : Block) (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility) : Block :=
   List.map (fun s => Statement.renameLhs s fr to) b
+  termination_by b.sizeOf
+  decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
 
-partial def Statement.renameLhs (s : Boogie.Statement) (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility)
+def Statement.renameLhs (s : Boogie.Statement) (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility)
     : Statement :=
   match s with
   | .init lhs ty rhs metadata =>
@@ -77,16 +82,19 @@ partial def Statement.renameLhs (s : Boogie.Statement) (fr: Lambda.Identifier Vi
   | .havoc l md => .havoc (if l.name == fr then to else l) md
   | .assert _ _ _ | .assume _ _ _
   | .goto _ _ => s
+  termination_by s.sizeOf
 end
 
 -- Unlike Stmt.hasLabel, this gathers labels in assert and assume as well.
 mutual
-partial def Block.labels (b : Block): List String :=
+def Block.labels (b : Block): List String :=
   List.flatMap (fun s => Statement.labels s) b
+  termination_by b.sizeOf
+  decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
 
 -- Assume and Assert's labels have special meanings, so they must not be
 -- mangled during procedure inlining.
-partial def Statement.labels (s : Boogie.Statement) : List String :=
+def Statement.labels (s : Boogie.Statement) : List String :=
   match s with
   | .block lbl b _ => lbl :: (Block.labels b)
   | .ite _ thenb elseb _ => (Block.labels thenb) ++ (Block.labels elseb)
@@ -94,14 +102,17 @@ partial def Statement.labels (s : Boogie.Statement) : List String :=
   | .assume lbl _ _ => [lbl]
   | .assert lbl _ _ => [lbl]
   | _ => []
+  termination_by s.sizeOf
 end
 
 mutual
-partial def Block.replaceLabels (b : Block) (map:Map String String)
+def Block.replaceLabels (b : Block) (map:Map String String)
     : Block :=
-   b.map (fun s => Statement.replaceLabels s map)
+  b.map (fun s => Statement.replaceLabels s map)
+  termination_by b.sizeOf
+  decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
 
-partial def Statement.replaceLabels
+def Statement.replaceLabels
     (s : Boogie.Statement) (map:Map String String) : Boogie.Statement :=
   let app (s:String) :=
     match Map.find? map s with
@@ -117,6 +128,7 @@ partial def Statement.replaceLabels
   | .assume lbl e m => .assume (app lbl) e m
   | .assert lbl e m => .assert (app lbl) e m
   | _ => s
+  termination_by s.sizeOf
 end
 
 
