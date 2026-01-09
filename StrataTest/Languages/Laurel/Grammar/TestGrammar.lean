@@ -15,7 +15,7 @@ open StrataTest.DDM
 namespace Laurel
 
 def testAssertFalse : IO Unit := do
-  let laurelDialect: Strata.Dialect := Laurel
+  let laurelDialect: Strata.Dialect := Strata.Laurel.Laurel
   let filePath := "StrataTest/Languages/Laurel/Examples/Fundamentals/1. AssertFalse.lr.st"
   let result ← testGrammarFile laurelDialect filePath
 
@@ -23,4 +23,4 @@ def testAssertFalse : IO Unit := do
     throw (IO.userError "Test failed: formatted output does not match input")
 
 #guard_msgs in
-#eval testAssertFalse
+#eval! testAssertFalse
