@@ -186,32 +186,38 @@ def translateProcedure (proc : Procedure) : Boogie.Procedure :=
 /--
 Translate Laurel Program to Boogie Program
 -/
-def translate (program : Program) : Boogie.Program :=
+def translate (program : Program) : Except (Array Diagnostic) Boogie.Program := do
   -- First, sequence all assignments (move them out of expression positions)
-  let sequencedProgram := liftExpressionAssignments program
+  let sequencedProgram ← liftExpressionAssignments program
   dbg_trace "=== Sequenced program Program ==="
   dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format sequencedProgram)))
   dbg_trace "================================="
   -- Then translate to Boogie
   let procedures := sequencedProgram.staticProcedures.map translateProcedure
   let decls := procedures.map (fun p => Boogie.Decl.proc p .empty)
-  { decls := decls }
+  return { decls := decls }
 
 /--
 Verify a Laurel program using an SMT solver
 -/
 def verifyToVcResults (smtsolver : String) (program : Program)
-    (options : Options := Options.default) : IO VCResults := do
-  let boogieProgram := translate program
+    (options : Options := Options.default) : IO (Except (Array Diagnostic) VCResults) := do
+  let boogieProgramExcept := translate program
   -- Debug: Print the generated Boogie program
-  dbg_trace "=== Generated Boogie Program ==="
-  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format boogieProgram)))
-  dbg_trace "================================="
-  EIO.toIO (fun f => IO.Error.userError (toString f))
-      (Boogie.verify smtsolver boogieProgram options)
+  match boogieProgramExcept with
+    | .error e => return .error e
+    | .ok boogieProgram =>
+      dbg_trace "=== Generated Boogie Program ==="
+      dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format boogieProgram)))
+      dbg_trace "================================="
+      let ioResult <- EIO.toIO (fun f => IO.Error.userError (toString f))
+          (Boogie.verify smtsolver boogieProgram options)
+      return .ok ioResult
 
 def verifyToDiagnostics (smtsolver : String) (program : Program): IO (Array Diagnostic)  := do
   let results <- verifyToVcResults smtsolver program
-  return results.filterMap toDiagnostic
+  return match results with
+    | .error diagnostics => diagnostics
+    | .ok vcResults => vcResults.filterMap toDiagnostic
 
 end Laurel

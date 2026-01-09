@@ -13,16 +13,13 @@ open Strata
 namespace Strata.Laurel
 
 def program: String := r"
-procedure conditionalAssignmentInExpression(x: int) {
+procedure NestedImpureStatements() {
   var y := 0;
-  var z := if (x > 0) { y := y + 1; } else { 0 };
-  if (x > 0) {
-    assert y == 1;
-  } else {
-    assert z == 0;
-    assert y == 0;
+  var x := y;
+  var z := y := y + 1;;
+    assert x == y;
 //  ^^^^^^^^^^^^^^ error: assertion does not hold
-  }
+  assert z == y;
 }
 "
 

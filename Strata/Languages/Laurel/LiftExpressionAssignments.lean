@@ -5,7 +5,9 @@
 -/
 
 import Strata.Languages.Laurel.Laurel
+import Strata.Languages.Laurel.LaurelFormat
 import Strata.Languages.Boogie.Verifier
+
 
 namespace Strata
 namespace Laurel
@@ -43,7 +45,8 @@ def getFileRange (md: Imperative.MetaData Boogie.Expression): Imperative.FileRan
     | _ => panic "metadata does not have fileRange"
 
 def checkOutsideCondition(md: Imperative.MetaData Boogie.Expression): SequenceM Unit := do
-  if ((<- get).insideCondition) then
+  let state <- get
+  if state.insideCondition then
     let fileRange := getFileRange md
     SequenceM.addDiagnostic {
         start := fileRange.start,
@@ -96,6 +99,7 @@ partial def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
 
   | .IfThenElse cond thenBranch elseBranch =>
       let seqCond ← transformExpr cond
+      SequenceM.setInsideCondition
       let seqThen ← transformExpr thenBranch
       let seqElse ← match elseBranch with
         | some e => transformExpr e >>= (pure ∘ some)
@@ -211,9 +215,12 @@ def transformProcedure (proc : Procedure) : SequenceM Procedure := do
 /--
 Transform a program to lift all assignments that occur in an expression context.
 -/
-def liftExpressionAssignments (program : Program) : Program :=
-  let (seqProcedures, _) := (program.staticProcedures.mapM transformProcedure).run
+def liftExpressionAssignments (program : Program) : Except (Array Diagnostic) Program :=
+  let (seqProcedures, afterState) := (program.staticProcedures.mapM transformProcedure).run
     { insideCondition := false, diagnostics := [] }
-  { program with staticProcedures := seqProcedures }
+  if !afterState.diagnostics.isEmpty then
+    .error afterState.diagnostics.toArray
+  else
+    .ok { program with staticProcedures := seqProcedures }
 
 end Laurel
