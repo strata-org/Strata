@@ -103,7 +103,7 @@ private instance : Coe String TestParams.Identifier where
          return (format ans.fst.toLMonoTy)
 
 /--
-info: error: Failed occurs check: $__ty0 should not occur in the type variables of (arrow $__ty0 $__ty3).
+info: error: Failed occurs check: $__ty0 cannot be unified with (arrow $__ty0 $__ty3) because it would create a circular dependency during unification.
 -/
 #guard_msgs in
 #eval do let ans ← LExpr.resolve (T:=TestParams) LContext.default TEnv.default
@@ -137,7 +137,7 @@ info: ok: (arrow (arrow $__ty2 (arrow $__ty8 $__ty9)) (arrow (arrow $__ty2 $__ty
          return (format $ ans.fst.toLMonoTy)
 
 /--
-info: error: Failed occurs check: $__ty1 should not occur in the type variables of (arrow $__ty1 $__ty5).
+info: error: Failed occurs check: $__ty1 cannot be unified with (arrow $__ty1 $__ty5) because it would create a circular dependency during unification.
 -/
 #guard_msgs in
 #eval do let ans ← LExpr.resolve (T:=TestParams) LContext.default TEnv.default

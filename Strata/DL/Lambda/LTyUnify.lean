@@ -1036,7 +1036,9 @@ instance : ToFormat UnifyError where
         else
           (msg_fn original) ++ f!"\nFirst mismatch: {c.fst} with {c.snd}."
     | .FailedOccursCheck tyvar ty c opt_original =>
-      let msg_fn := f!"Failed occurs check: {tyvar} should not occur in the type variables of {ty}."
+      let msg_fn := f!"Failed occurs check: \
+                      {tyvar} cannot be unified with {ty} because it would \
+                      create a circular dependency during unification."
         match opt_original with
         | none => msg_fn
         | some original =>

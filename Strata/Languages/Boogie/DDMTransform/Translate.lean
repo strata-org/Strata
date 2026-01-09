@@ -871,7 +871,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
       -- 0-ary Function
       return (.op () func.name ty?)
     | _ =>
-      TransM.error s!"1 translateExpr unimplemented fvar decl: {format decl}"
+      TransM.error s!"translateExpr unimplemented fvar decl (no args): {format decl}"
   | .fvar _ i, argsa =>
     -- Call of a function declared/defined in Boogie.
     assert! i < bindings.freeVars.size
@@ -881,7 +881,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
       let args ← translateExprs p bindings argsa.toArray
       return .mkApp () func.opExpr args.toList
     | _ =>
-     TransM.error s!"2 translateExpr unimplemented fvar decl: {format decl}"
+     TransM.error s!"translateExpr unimplemented fvar decl: {format decl} \nargs:{repr argsa}"
   | op, args =>
     TransM.error s!"translateExpr unimplemented op:\n\
                      Op: {repr op}\n\
