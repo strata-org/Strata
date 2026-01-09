@@ -30,9 +30,7 @@ init (y : int) := (xinit : int)
          return format ans.fst
 
 
-/--
-info: error: Type Checking [init (x : bool) := #true]: Variable x of type bool already in context.
--/
+/-- info: error: Variable x of type bool already in context. -/
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default (TEnv.default.updateContext { types := [[("x", t[bool])]] })
                    Program.init
@@ -75,7 +73,7 @@ subst:
                     ]
           return format ans.snd
 
-/-- info: error: Cannot unify differently named type constructors bool and int! -/
+/-- info: error: Impossible to unify bool with int. -/
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
                     [
@@ -85,9 +83,7 @@ subst:
                     ]
           return format ans
 
-/--
-info: error: Type Checking [init (x : int) := #1]: Variable x of type bool already in context.
--/
+/-- info: error: Variable x of type bool already in context. -/
 #guard_msgs in
 #eval do let ans ← typeCheck LContext.default TEnv.default Program.init none
                     [
