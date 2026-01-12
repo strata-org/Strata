@@ -57,9 +57,7 @@ def Cmd.eval [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P × S :=
       let assumptions := EC.getPathConditions σ
       let c' := .assert label e md
       match EC.denoteBool e with
-      | some true =>
-        -- dbg_trace f!"{Format.line}Obligation {label} proved via evaluation!{Format.line}"
-        -- (c', σ)
+      | some true => -- Proved via evaluation.
         (c', EC.deferObligation σ (ProofObligation.mk label assumptions e md))
       | some false =>
         if assumptions.isEmpty then
@@ -74,14 +72,20 @@ def Cmd.eval [EC : EvalContext P S] (σ : S) (c : Cmd P) : Cmd P × S :=
       let e := EC.eval σ e
       let c' := .assume label e md
       match EC.denoteBool e with
-      | some true =>
-        -- dbg_trace f!"[assume] {label} satisfied via evaluation.\n"
+      | some true => -- Satisified via evaluation.
         (c', σ)
       | some false =>
         let σ := EC.addWarning σ (.AssumeFail label e)
         (c', EC.addPathCondition σ [(label, e)])
       | none =>
         (c', EC.addPathCondition σ [(label, e)])
+
+    | .cover label e md =>
+      let (e, σ) := EC.preprocess σ c e
+      let e := EC.eval σ e
+      let assumptions := EC.getPathConditions σ
+      let c' := .cover label e md
+      (c', EC.deferObligation σ (ProofObligation.mk label assumptions e md))
 
 /--
 Partial evaluator for Imperative's Commands.

@@ -47,17 +47,17 @@ open Lambda Strata.SMT
 
 -- (TODO) Use DL.Imperative.SMTUtils.
 
-abbrev CounterEx := Map (IdentT LMonoTy Visibility) String
+abbrev SMTModel := Map (IdentT LMonoTy Visibility) String
 
-def CounterEx.format (cex : CounterEx) : Format :=
-  match cex with
+def SMTModel.format (model : SMTModel) : Format :=
+  match model with
   | [] => ""
   | [((k, _), v)] => f!"({k}, {v})"
   | ((k, _), v) :: rest =>
-    (f!"({k}, {v}) ") ++ CounterEx.format rest
+    (f!"({k}, {v}) ") ++ SMTModel.format rest
 
-instance : ToFormat CounterEx where
-  format := CounterEx.format
+instance : ToFormat SMTModel where
+  format := SMTModel.format
 
 /--
 Find the Id for the SMT encoding of `x`.
@@ -79,7 +79,7 @@ def getModel (m : String) : Except Format (List Strata.SMT.CExParser.KeyValue) :
 def processModel
   (vars : List (IdentT LMonoTy Visibility)) (cexs : List Strata.SMT.CExParser.KeyValue)
   (ctx : SMT.Context) (E : EncoderState) :
-  Except Format CounterEx := do
+  Except Format SMTModel := do
   match vars with
   | [] => return []
   | var :: vrest =>
@@ -95,15 +95,21 @@ def processModel
 
 inductive Result where
   -- Also see Strata.SMT.Decision.
-  | sat (cex : CounterEx)
+  | sat (m : SMTModel)
   | unsat
   | unknown
   | err (msg : String)
 deriving DecidableEq, Repr
 
+def Result.isSat (r : Result) : Bool :=
+  match r with | .sat _ => true | _ => false
+
 def Result.formatWithVerbose (r : Result) (verbose : Bool) : Format :=
   match r with
-  | .sat cex  => if verbose then f!"failed\nCEx: {cex}" else "failed"
+  | .sat m  =>
+    if verbose || m.isEmpty then
+      f!"failed"
+    else f!"failed\nModel: {m}"
   | .unsat => f!"verified"
   | .unknown => f!"unknown"
   | .err msg => f!"err {msg}"
@@ -132,9 +138,9 @@ def solverResult (vars : List (IdentT LMonoTy Visibility)) (ans : String)
   match verdict with
   | "sat"     =>
     let rawModel ← getModel rest
-    -- We suppress any counterexample processing errors.
+    -- We suppress any model processing errors.
     -- Likely, these would be because of the suboptimal implementation
-    -- of the counterexample parser, which shouldn't hold back useful
+    -- of the model parser, which shouldn't hold back useful
     -- feedback (i.e., problem was `sat`) from the user.
     match (processModel vars rawModel ctx E) with
     | .ok model => .ok (.sat model)
@@ -144,15 +150,6 @@ def solverResult (vars : List (IdentT LMonoTy Visibility)) (ans : String)
   | _     =>  .error ans
 
 open Imperative
-
-def formatPositionMetaData [BEq P.Ident] [ToFormat P.Expr] (md : MetaData P): Option Format := do
-  let fileRangeElem ← md.findElem MetaData.fileRange
-  match fileRangeElem.value with
-  | .fileRange m =>
-    let baseName := match m.file with
-                    | .file path => (path.splitToList (· == '/')).getLast!
-    return f!"{baseName}({m.start.line}, {m.start.column})"
-  | _ => none
 
 structure VCResult where
   obligation : Imperative.ProofObligation Expression
@@ -225,6 +222,108 @@ def dischargeObligation
   | .error e => return .error e
   | .ok result => return .ok (result, estate)
 
+def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
+    (options : Options) : EIO Format (ProofObligation Expression × Option VCResult) := do
+  if !obligation.metadata.hasWellFormedObligation then
+    .error f!"[Implementation Error] Metadata for obligation {obligation.label}\
+              is ill-formed.\n\
+              Metadata: {obligation.metadata}"
+  else if obligation.metadata.hasCoverObligation then
+    -- We do not preprocess any cover obligations.
+    return (obligation, none)
+  -- Now, we have only assert proof obligations.
+  else if obligation.obligation.isTrue then
+    -- We don't need the SMT solver if PE (partial evaluation) is enough to
+    -- reduce the consequent to true.
+    let result := { obligation, result := .unsat, verbose := options.verbose }
+    return (obligation, some result)
+  else if obligation.obligation.isFalse && obligation.assumptions.isEmpty then
+    -- If PE determines that the consequent is false and the path conditions
+    -- are empty, then we can immediate report a verification failure. Note
+    -- that we go to the SMT solver if the path conditions aren't empty --
+    -- after all, the path conditions could imply false, which the PE isn't
+    -- capable enough to infer.
+    let prog := f!"\n\nEvaluated program:\n{p}"
+    dbg_trace f!"\n\nObligation {obligation.label}: failed!\
+                 \n\nResult obtained during partial evaluation.\
+                 {if options.verbose then prog else ""}"
+    let result := { obligation, result := .sat .empty, verbose := options.verbose }
+    return (obligation, some result)
+    -- !!!! if options.stopOnFirstError then break
+  else if options.removeIrrelevantAxioms then
+    -- We attempt to prune the path conditions by excluding all irrelevant
+    -- axioms w.r.t. the consequent to reduce the size of the proof
+    -- obligation.
+    let cg := Program.toFunctionCG p
+    let fns := obligation.obligation.getOps.map BoogieIdent.toPretty
+    let relevant_fns := (fns ++ (CallGraph.getAllCalleesClosure cg fns)).dedup
+    let irrelevant_axs := Program.getIrrelevantAxioms p relevant_fns
+    let new_assumptions := Imperative.PathConditions.removeByNames obligation.assumptions irrelevant_axs
+    return ({ obligation with assumptions := new_assumptions }, none)
+  else
+    return (obligation, none)
+
+abbrev ErrorIndicator := Bool
+
+def getObligationSMTResult (terms : List Term) (ctx : SMT.Context)
+    (obligation : ProofObligation Expression) (p : Program)
+    (smtsolver : String) (options : Options) : EIO Format (VCResult × ErrorIndicator) := do
+  let prog := f!"\n\nEvaluated program:\n{p}"
+  let ans ←
+      IO.toEIO
+        (fun e => f!"{e}")
+        (dischargeObligation options
+          (ProofObligation.getVars obligation) smtsolver
+            (Imperative.smt2_filename obligation.label)
+          terms ctx)
+  match ans with
+  | .error e =>
+     let errorIndicator := true
+     let result := { obligation, result := .err (toString e), verbose := options.verbose }
+     dbg_trace f!"\n\nObligation {obligation.label}: solver invocation error!\
+                  \n\nError: {e}\
+                  {if options.verbose then prog else ""}"
+     return (result, errorIndicator)
+  | .ok (smt_result, estate) =>
+     let result := ({ obligation, result := smt_result, estate, verbose := options.verbose } : VCResult)
+     match smt_result with
+     | Result.unsat =>
+      if MetaData.hasCoverObligation obligation.metadata then
+        let errorIndicator := true
+        dbg_trace f!"\n\n[MetaData.formatFileRangeD obligation.metadata]\
+                     Cover obligation {obligation.label} violated!\n\
+                     \n\nResult: {result.formatWithVerbose options.verbose}\
+                     {if options.verbose then prog else ""}"
+        return (result, errorIndicator)
+      else
+        let errorIndicator := false
+        return (result, errorIndicator)
+     | Result.sat _model =>
+      if MetaData.hasCoverObligation obligation.metadata then
+        let errorIndicator := false
+        return (result, errorIndicator)
+      else
+        let errorIndicator := true
+        dbg_trace f!"\n\n[MetaData.formatFileRangeD obligation.metadata]\
+                     Assert obligation {obligation.label} violated!\
+                     \n\nResult: {result.formatWithVerbose options.verbose}\
+                     {if options.verbose then prog else ""}"
+        return (result, errorIndicator)
+     | Result.unknown =>
+      let errorIndicator := true
+      dbg_trace f!"\n\n[MetaData.formatFileRangeD obligation.metadata]\
+                   Obligation {obligation.label} could not be determined.\
+                   \n\nResult: {result.formatWithVerbose options.verbose}\
+                   {if options.verbose then prog else ""}"
+      return (result, errorIndicator)
+     | Result.err err =>
+      let errorIndicator := true
+      dbg_trace f!"\n\n[MetaData.formatFileRangeD obligation.metadata]\
+                   Solver error for obligation {obligation.label}: {err}\
+                   \n\nResult: {result.formatWithVerbose options.verbose}\
+                   {if options.verbose then prog else ""}"
+      return (result, errorIndicator)
+
 def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Options) :
     EIO Format VCResults := do
   let (p, E) := pE
@@ -236,37 +335,12 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
   | _ =>
     let mut results := (#[] : VCResults)
     for obligation in E.deferred do
-      -- We don't need the SMT solver if PE (partial evaluation) is enough to
-      -- reduce the consequent to true.
-      if obligation.obligation.isTrue then
-        results := results.push { obligation, result := .unsat, verbose := options.verbose }
-        continue
-      -- If PE determines that the consequent is false and the path conditions
-      -- are empty, then we can immediate report a verification failure. Note
-      -- that we go to the SMT solver if the path conditions aren't empty --
-      -- after all, the path conditions could imply false, which the PE isn't
-      -- capable enough to infer.
-      if obligation.obligation.isFalse && obligation.assumptions.isEmpty then
-        let prog := f!"\n\nEvaluated program:\n{p}"
-        dbg_trace f!"\n\nObligation {obligation.label}: failed!\
-                     \n\nResult obtained during partial evaluation.\
-                     {if options.verbose then prog else ""}"
-        results := results.push { obligation, result := .sat .empty, verbose := options.verbose }
-        if options.stopOnFirstError then break
-      let obligation :=
-      if options.removeIrrelevantAxioms then
-        -- We attempt to prune the path conditions by excluding all irrelevant
-        -- axioms w.r.t. the consequent to reduce the size of the proof
-        -- obligation.
-        let cg := Program.toFunctionCG p
-        let fns := obligation.obligation.getOps.map BoogieIdent.toPretty
-        let relevant_fns := (fns ++ (CallGraph.getAllCalleesClosure cg fns)).dedup
-
-        let irrelevant_axs := Program.getIrrelevantAxioms p relevant_fns
-        let new_assumptions := Imperative.PathConditions.removeByNames obligation.assumptions irrelevant_axs
-        { obligation with assumptions := new_assumptions }
-      else
-        obligation
+      let (obligation, maybe_result) ← preprocessObligation obligation p options
+      if h : maybe_result.isSome then
+        let result := Option.get maybe_result h
+        results := results.push result
+        if result.result.isSat && options.stopOnFirstError then
+          break
       -- At this point, we solely rely on the SMT backend.
       let maybeTerms := ProofObligation.toSMTTerms E obligation
       match maybeTerms with
@@ -278,16 +352,6 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
         results := results.push { obligation, result := .err msg, verbose := options.verbose }
         if options.stopOnFirstError then break
       | .ok (terms, ctx) =>
-        -- let ufids := (ctx.ufs.map (fun f => f.id))
-        -- let ufs := f!"Uninterpreted Functions:{Format.line}\
-        --              {Std.Format.joinSep ufids.toList Std.Format.line}\
-        --              {Format.line}"
-        -- let ifids := ctx.ifs.map (fun f => f.uf.id)
-        -- let ifs := f!"Interpreted Functions:{Format.line}\
-        --            {Std.Format.joinSep ifids.toList Std.Format.line}\
-        --            {Format.line}"
-        -- if !(ufids.isEmpty && ifids.isEmpty) then dbg_trace f!"{ufs}{ifs}"
-        -- let rand_suffix ← IO.rand 0 0xFFFFFFFF
         let ans ←
             IO.toEIO
               (fun e => f!"{e}")

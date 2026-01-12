@@ -37,6 +37,8 @@ partial def Statement.substFvar (s : Boogie.Statement)
     .assert lbl (Lambda.LExpr.substFvar b fr to) metadata
   | .assume lbl b metadata =>
     .assume lbl (Lambda.LExpr.substFvar b fr to) metadata
+  | .cover lbl b metadata =>
+    .cover lbl (Lambda.LExpr.substFvar b fr to) metadata
   | .call lhs pname args metadata =>
     .call lhs pname (List.map (Lambda.LExpr.substFvar · fr to) args) metadata
 
@@ -75,8 +77,7 @@ partial def Statement.renameLhs (s : Boogie.Statement) (fr: Lambda.Identifier Vi
   | .loop m g i b md =>
     .loop m g i (Block.renameLhs b fr to) md
   | .havoc l md => .havoc (if l.name == fr then to else l) md
-  | .assert _ _ _ | .assume _ _ _
-  | .goto _ _ => s
+  | .assert _ _ _ | .assume _ _ _ | .cover _ _ _ | .goto _ _ => s
 end
 
 -- Unlike Stmt.hasLabel, this gathers labels in assert and assume as well.
