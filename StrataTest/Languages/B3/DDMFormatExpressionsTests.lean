@@ -397,8 +397,7 @@ info: if true then 1 else 0
 info: B3: .quantifierExpr
   ()
   (.forall ())
-  u "i"
-  u "int"
+  u #[.quantVarDecl () u "i" u "int"]
   u #[]
   (.binaryOp
     ()
@@ -415,8 +414,7 @@ info: forall i : int i >= 0
 info: B3: .quantifierExpr
   ()
   (.exists ())
-  u "y"
-  u "bool"
+  u #[.quantVarDecl () u "y" u "bool"]
   u #[]
   (.binaryOp
     ()
@@ -433,8 +431,7 @@ info: exists y : bool y || !y
 info: B3: .quantifierExpr
   ()
   (.forall ())
-  u "x"
-  u "int"
+  u #[.quantVarDecl () u "x" u "int"]
   u #[.pattern
     ()
     u #[.functionCall
@@ -463,15 +460,14 @@ info: forall x : int pattern f(x), f(x) f(x) > 0
 info: B3: .quantifierExpr
   ()
   (.exists ())
-  u "y"
-  u "bool"
-  u #[.pattern
-    ()
-    u #[.unaryOp
+  u #[.quantVarDecl () u "y" u "bool"]
+  u #[.pattern () u #[.id () 0],
+    .pattern
       ()
-      (.not ())
-      (.id () 0)],
-  .pattern () u #[.id () 0]]
+      u #[.unaryOp
+        ()
+        (.not ())
+        (.id () 0)]]
   (.binaryOp
     ()
     (.or ())
@@ -487,23 +483,22 @@ info: exists y : bool pattern y pattern !y y || !y
 info: B3: .quantifierExpr
   ()
   (.forall ())
-  u "z"
-  u "int"
-  u #[.pattern
-    ()
-    u #[.binaryOp
+  u #[.quantVarDecl () u "z" u "int"]
+  u #[.pattern () u #[.id () 0],
+    .pattern
       ()
-      (.mul ())
-      (.id () 0)
-      (.literal () (.intLit () 2))],
-  .pattern
-    ()
-    u #[.binaryOp
+      u #[.binaryOp
+        ()
+        (.add ())
+        (.id () 0)
+        (.literal () (.intLit () 1))],
+    .pattern
       ()
-      (.add ())
-      (.id () 0)
-      (.literal () (.intLit () 1))],
-  .pattern () u #[.id () 0]]
+      u #[.binaryOp
+        ()
+        (.mul ())
+        (.id () 0)
+        (.literal () (.intLit () 2))]]
   (.binaryOp
     ()
     (.gt ())
@@ -514,6 +509,75 @@ info: forall z : int pattern z pattern z + 1 pattern z * 2 z > 0
 -/
 #guard_msgs in
 #eval roundtripExpr $ #strata program B3CST; check forall z : int pattern z pattern z + 1 pattern z * 2 z > 0 #end
+
+/--
+info: B3: .quantifierExpr
+  ()
+  (.forall ())
+  u #[.quantVarDecl () u "x" u "int",
+    .quantVarDecl () u "y" u "int"]
+  u #[]
+  (.binaryOp
+    ()
+    (.le ())
+    (.id () 1)
+    (.id () 0))
+---
+info: forall x : int, y : int x <= y
+-/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check forall x : int, y : int x <= y #end
+
+/--
+info: B3: .quantifierExpr
+  ()
+  (.exists ())
+  u #[.quantVarDecl () u "a" u "bool",
+    .quantVarDecl () u "b" u "bool",
+    .quantVarDecl () u "c" u "bool"]
+  u #[]
+  (.binaryOp
+    ()
+    (.and ())
+    (.binaryOp
+      ()
+      (.and ())
+      (.id () 2)
+      (.id () 1))
+    (.id () 0))
+---
+info: exists a : bool, b : bool, c : bool a && b && c
+-/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check exists a : bool, b : bool, c : bool a && b && c #end
+
+/--
+info: B3: .quantifierExpr
+  ()
+  (.forall ())
+  u #[.quantVarDecl () u "i" u "int",
+    .quantVarDecl () u "j" u "int"]
+  u #[.pattern
+    ()
+    u #[.binaryOp
+      ()
+      (.add ())
+      (.id () 1)
+      (.id () 0)]]
+  (.binaryOp
+    ()
+    (.ge ())
+    (.binaryOp
+      ()
+      (.add ())
+      (.id () 1)
+      (.id () 0))
+    (.literal () (.intLit () 0)))
+---
+info: forall i : int, j : int pattern i + j i + j >= 0
+-/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check forall i : int, j : int pattern i + j i + j >= 0 #end
 
 end ExpressionRoundtripTests
 

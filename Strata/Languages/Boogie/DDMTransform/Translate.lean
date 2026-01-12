@@ -239,14 +239,14 @@ partial def translateLMonoTy (bindings : TransBindings) (arg : Arg) :
     assert! i < bindings.freeVars.size
     let decl := bindings.freeVars[i]!
     let ty_core ← match decl with
-                  | .type (.con tcons) =>
+                  | .type (.con tcons) _md =>
                     -- Type Declaration
                     let ty := tcons.toType
                     -- While the "unsafe" below looks scary, we should be alright as far as
                     -- Boogie is concerned. See `Boogie.TypeConstructor`, where there is no
                     -- facility for providing the type arguments.
                     pure ty.toMonoTypeUnsafe
-                  | .type (.syn syn) =>
+                  | .type (.syn syn) _md =>
                     let ty := syn.toLHSLMonoTy
                     pure ty
                   | _ =>
@@ -301,7 +301,8 @@ def translateTypeSynonym (bindings : TransBindings) (op : Operation) :
                           s!"translateTypeSynonym expects a comma separated list: {repr bargs[0]!}")
                     op.args[1]!
   let typedef ← translateLMonoTy bindings op.args[3]!
-  let decl := Boogie.Decl.type (.syn { name := name, typeArgs := targs, type := typedef })
+  let md ← getOpMetaData op
+  let decl := Boogie.Decl.type (.syn { name := name, typeArgs := targs, type := typedef }) md
   return (decl, { bindings with freeVars := bindings.freeVars.push decl })
 
 
@@ -322,9 +323,10 @@ def translateTypeDecl (bindings : TransBindings) (op : Operation) :
                   | _ => TransM.error
                           s!"translateTypeDecl expects a comma separated list: {repr bargs[0]!}")
                     op.args[1]!
+  let md ← getOpMetaData op
   -- Only the number of type arguments is important; the exact identifiers are
   -- irrelevant.
-  let decl := Boogie.Decl.type (.con { name := name, numargs := numargs })
+  let decl := Boogie.Decl.type (.con { name := name, numargs := numargs }) md
   return (decl, { bindings with freeVars := bindings.freeVars.push decl })
 
 ---------------------------------------------------------------------
@@ -862,24 +864,24 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
               |.expr te => pure (some (← translateLMonoTy bindings (.type te)))
               | _ => pure none
     match decl with
-    | .var name _ty _expr =>
+    | .var name _ty _expr _md =>
       -- Global Variable
       return (.fvar () name ty?)
-    | .func func =>
+    | .func func _md =>
       -- 0-ary Function
       return (.op () func.name ty?)
     | _ =>
-      TransM.error s!"translateExpr unimplemented fvar decl: {format decl}"
+      TransM.error s!"translateExpr unimplemented fvar decl (no args): {format decl}"
   | .fvar _ i, argsa =>
     -- Call of a function declared/defined in Boogie.
     assert! i < bindings.freeVars.size
     let decl := bindings.freeVars[i]!
     match decl with
-    | .func func =>
+    | .func func _md =>
       let args ← translateExprs p bindings argsa.toArray
       return .mkApp () func.opExpr args.toList
     | _ =>
-     TransM.error s!"translateExpr unimplemented fvar decl: {format decl}"
+     TransM.error s!"translateExpr unimplemented fvar decl: {format decl} \nargs:{repr argsa}"
   | op, args =>
     TransM.error s!"translateExpr unimplemented op:\n\
                      Op: {repr op}\n\
@@ -1140,6 +1142,7 @@ def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation)
     | TransM.error s!"translateProcedure body expected here: {repr op.args[4]!}"
   let (body, bindings) ← if bodya.isSome then translateBlock p bindings bodya.get! else pure ([], bindings)
   let origBindings := { origBindings with gen := bindings.gen }
+  let md ← getOpMetaData op
   return (.proc { header := { name := pname,
                               typeArgs := typeArgs.toList,
                               inputs := sig,
@@ -1148,7 +1151,8 @@ def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation)
                             preconditions := requires,
                             postconditions := ensures },
                   body := body
-                },
+                }
+                md,
           origBindings)
 
 ---------------------------------------------------------------------
@@ -1159,11 +1163,13 @@ def translateConstant (bindings : TransBindings) (op : Operation) :
   let cname ← translateIdent BoogieIdent op.args[0]!
   let typeArgs ← translateTypeArgs op.args[1]!
   let ret ← translateLMonoTy bindings op.args[2]!
+  let md ← getOpMetaData op
   let decl := .func { name := cname,
                       typeArgs := typeArgs.toList,
                       inputs := [],
                       output := ret,
                       body := none }
+                    md
   return (decl, { bindings with freeVars := bindings.freeVars.push decl })
 
 ---------------------------------------------------------------------
@@ -1175,7 +1181,8 @@ def translateAxiom (p : Program) (bindings : TransBindings) (op : Operation) :
   let bindings := incrNum .axiom_def bindings
   let l ← translateOptionLabel default_name op.args[0]!
   let e ← translateExpr p bindings op.args[1]!
-  return (.ax (Axiom.mk l e), bindings)
+  let md ← getOpMetaData op
+  return (.ax (Axiom.mk l e) md, bindings)
 
 def translateDistinct (p : Program) (bindings : TransBindings) (op : Operation) :
   TransM (Boogie.Decl × TransBindings) := do
@@ -1186,7 +1193,8 @@ def translateDistinct (p : Program) (bindings : TransBindings) (op : Operation) 
   let es ← translateCommaSep (translateExpr p bindings) op.args[1]!
   if !(es.all LExpr.isOp) then
     TransM.error s!"arguments to `distinct` must all be constant names: {es}"
-  return (.distinct l es.toList, bindings)
+  let md ← getOpMetaData op
+  return (.distinct l es.toList md, bindings)
 
 ---------------------------------------------------------------------
 
@@ -1231,12 +1239,13 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
   let inline? ← match status with
                  | .Definition => translateOptionInline op.args[5]!
                  | .Declaration => pure #[]
+  let md ← getOpMetaData op
   let decl := .func { name := fname,
                       typeArgs := typeArgs.toList,
                       inputs := sig,
                       output := ret,
                       body := body,
-                      attr := inline? }
+                      attr := inline? } md
   return (decl,
           { bindings with
             boundVars := orig_bbindings,
@@ -1249,7 +1258,8 @@ def translateGlobalVar (bindings : TransBindings) (op : Operation) :
   let _ ← @checkOp (Boogie.Decl × TransBindings) op q`Boogie.command_var 1
   let (id, targs, mty) ← translateBindMk bindings op.args[0]!
   let ty := LTy.forAll targs mty
-  let decl := (.var id ty (Names.initVarValue (id.name ++ "_" ++ (toString bindings.gen.var_def))))
+  let md ← getOpMetaData op
+  let decl := (.var id ty (Names.initVarValue (id.name ++ "_" ++ (toString bindings.gen.var_def))) md)
   let bindings := incrNum .var_def bindings
   return (decl, { bindings with freeVars := bindings.freeVars.push decl})
 

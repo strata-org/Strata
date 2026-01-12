@@ -120,7 +120,8 @@ type int := bool;
 #end
 
 /--
-error: [Strata.Boogie] Type checking error: This type declaration's name is reserved!
+error: [Strata.Boogie] Type checking error.
+(0, (0-0)) This type declaration's name is reserved!
 int := bool
 KnownTypes' names:
 [arrow, TriggerGroup, real, string, bitvec, Triggers, int, bool, Map, regex]
