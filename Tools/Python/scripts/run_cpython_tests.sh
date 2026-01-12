@@ -1,6 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
+# This script run the CPython parser on all the examples for the
+# select CPython version.  If the FAIL_FAST variable is set to a
+# non-empty string, then it will stop on the first failure and print
+# the failure report.  This is predominantly used in CI.
+
 if [ ! -f "scripts/run_test.sh" ]; then
   >@2 echo "File does not exist: scripts/run_test.sh"
   exit 1
@@ -32,7 +37,6 @@ if [ "$VER" == "3.14" ]; then
   expected_failures="$expected_failures;/tokenizedata/bad_coding2.py"
   expected_failures="$expected_failures;/tokenizedata/badsyntax_3131.py"
   expected_failures="$expected_failures;/tokenizedata/badsyntax_pep3120.py"
-
 elif [ "$VER" == "3.13" ]; then
   expected_failures=""
 elif [ "$VER" == "3.12" ]; then
@@ -85,6 +89,14 @@ for i in `find $prefix/Lib/test -name "*.py"`; do
   else
     if [ "$status" -ne 0 ]; then
       failures=$((failures + 1))
+    fi
+  fi
+  # See FAIL_FAST note above
+  if [[ -n "$FAIL_FAST" ]]; then
+    if [ "$failures" -ne 0 ]; then
+      >&2 echo "Failed"
+      >&2 cat "$report"
+      exit 1
     fi
   fi
 done

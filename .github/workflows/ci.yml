@@ -152,7 +152,7 @@ jobs:
         build: true
         build-args: "strata:exe"
     - name: Run test script
-      run: ./scripts/run_cpython_tests.sh ${{ matrix.python_version }}
+      run: FAIL_FAST=1 ./scripts/run_cpython_tests.sh ${{ matrix.python_version }}
       working-directory: Tools/Python
 
   cbmc:
