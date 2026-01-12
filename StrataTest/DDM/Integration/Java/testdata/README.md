@@ -4,10 +4,9 @@
 
 ## To regenerate
 
-From the repository root:
+From this directory:
 
 ```bash
-cd Tools/Java
 ./regenerate-testdata.sh
 ```
 

@@ -1,5 +1,3 @@
-package com.strata.test;
-
 import static com.strata.simple.Simple.*;
 import com.strata.simple.*;
 import com.amazon.ion.*;
