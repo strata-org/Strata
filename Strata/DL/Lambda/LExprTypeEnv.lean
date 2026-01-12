@@ -562,7 +562,8 @@ environment `T`.
 This function does not descend into the subtrees of `mty`, nor does it check
 whether the de-aliased types are registered/known.
 -/
-def LMonoTy.aliasDef? [ToFormat IDMeta] (mty : LMonoTy) (Env : TEnv IDMeta) : (Option LMonoTy × TEnv IDMeta) :=
+def LMonoTy.aliasDef? [ToFormat IDMeta] (mty : LMonoTy) (Env : TEnv IDMeta) :
+    (Option LMonoTy × TEnv IDMeta) :=
   match mty with
   | .ftvar _ =>
     -- We can't have a free variable be the LHS of an alias definition because
@@ -581,7 +582,7 @@ def LMonoTy.aliasDef? [ToFormat IDMeta] (mty : LMonoTy) (Env : TEnv IDMeta) : (O
       let alias_def := lst[1]!
       match Constraints.unify [(mty, alias_inst)] Env.stateSubstInfo with
       | .error e =>
-        panic! s!"[LMonoTy.aliasDef?] {e}"
+        panic! s!"[LMonoTy.aliasDef?] {format e}"
       | .ok S =>
         (alias_def.subst S.subst, Env.updateSubst S)
 
@@ -672,7 +673,8 @@ mutual
 /--
 De-alias `mty`, including at the subtrees.
 -/
-partial def LMonoTy.resolveAliases [ToFormat IDMeta] (mty : LMonoTy) (Env : TEnv IDMeta) : (Option LMonoTy × TEnv IDMeta) :=
+partial def LMonoTy.resolveAliases [ToFormat IDMeta] (mty : LMonoTy) (Env : TEnv IDMeta) :
+    (Option LMonoTy × TEnv IDMeta) :=
   let (maybe_mty, Env) := LMonoTy.aliasDef? mty Env
   match maybe_mty with
   | some (.tcons name args) =>
@@ -794,7 +796,8 @@ def LMonoTy.instantiateWithCheck (mty : LMonoTy) (C: LContext T) (Env : TEnv T.I
 Instantiate `ty`, with resolution of type aliases to type definitions and checks
 for registered types.
 -/
-def LTy.instantiateWithCheck [ToFormat T.IDMeta] (ty : LTy) (C: LContext T) (Env : TEnv T.IDMeta) : Except Format (LMonoTy × TEnv T.IDMeta) := do
+def LTy.instantiateWithCheck [ToFormat T.IDMeta] (ty : LTy) (C: LContext T) (Env : TEnv T.IDMeta) :
+    Except Format (LMonoTy × TEnv T.IDMeta) := do
   let (mty, Env) := match ty.resolveAliases Env with
                   | (some ty', Env) => (ty', Env)
                   | (none, Env) =>

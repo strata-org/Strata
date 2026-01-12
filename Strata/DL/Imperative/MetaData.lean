@@ -183,4 +183,28 @@ instance [Repr P.Expr] [Repr P.Ident] : Repr (MetaDataElem P) where
 
 def MetaData.fileRange : MetaDataElem.Field P := .label "fileRange"
 
+def MetaData.formatFileRange? {P} [BEq P.Ident] (md : MetaData P) (includeEnd? : Bool := false) :
+    Option Std.Format := do
+  let fileRangeElem ← md.findElem MetaData.fileRange
+  match fileRangeElem.value with
+  | .fileRange m =>
+    let baseName := match m.file with
+                    | .file path => (path.splitToList (· == '/')).getLast!
+    if includeEnd? then
+      if m.start.line == m.ending.line then
+        return f!"{baseName}({m.start.line}, ({m.start.column}-{m.ending.column}))"
+      else
+        return f!"{baseName}(({m.start.line}, {m.start.column})-({m.ending.line}, {m.ending.column}))"
+    else -- don't include the end position.
+      return f!"{baseName}({m.start.line}, {m.start.column})"
+  | _ => none
+
+def MetaData.formatFileRangeD {P} [BEq P.Ident] (md : MetaData P) (includeEnd? : Bool := false)
+    : Std.Format :=
+  match formatFileRange? md includeEnd? with
+  | .none => ""
+  | .some f => f
+
+---------------------------------------------------------------------
+
 end Imperative

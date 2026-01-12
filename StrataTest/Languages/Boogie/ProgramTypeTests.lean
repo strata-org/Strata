@@ -37,7 +37,10 @@ def bad_prog : Program := { decls := [
       }
 ]}
 
-/-- info: error: Cannot unify differently named type constructors bool and int! -/
+/--
+info: error: Impossible to unify (Foo bool bool) with (Foo int bool).
+First mismatch: bool with int.
+-/
 #guard_msgs in
 #eval do let ans ← typeCheckAndPartialEval Options.default bad_prog
          return (format ans)

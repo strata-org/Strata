@@ -8,6 +8,13 @@ import Strata.DDM.BuiltinDialects.BuiltinM
 import Strata.DDM.Integration.Lean
 import Strata.DDM.Util.Format
 
+/-! # The SMTLib syntax
+
+This file defines the syntax of SMTLib 2.7, which is defined at
+https://smt-lib.org/papers/smt-lib-reference-v2.7-r2025-07-07.pdf,
+Appendix B. Concrete Syntax.
+-/
+
 namespace Strata
 
 open Elab
@@ -35,6 +42,7 @@ private def reservedKeywords := [
     ("check_sat_assuming", "check-sat-assuming"),
     ("declare_const", "declare-const"),
     ("declare_datatype", "declare-datatype"),
+    ("declare_datatypes", "declare-datatypes"),
     ("declare_fun", "declare-fun"),
     ("declare_sort", "declare-sort"),
     ("declare_sort_parameter", "declare-sort-parameter"),
@@ -72,7 +80,7 @@ private def reservedKeywords := [
   This makes the below list exclude "_" and "!" because it is already in
   reservedKeywords.
 -/
-private def specialCharsInSimpleSymbol := [
+def specialCharsInSimpleSymbol := [
     ("plus", "+"),
     ("minus", "-"),
     -- ("slash", "/"), -- This causes an error in the SMT dialect definition
@@ -95,14 +103,14 @@ private def specialCharsInSimpleSymbol := [
 -- https://smt-lib.org/papers/smt-lib-reference-v2.7-r2025-07-07.pdf
 -- Appendix B. Concrete Syntax
 -- Prepare reserved keywords and simple symbols in advance.
-private def smtReservedKeywordsDialect : Dialect :=
+def smtReservedKeywordsDialect : Dialect :=
   BuiltinM.create! "SMTReservedKeywords" #[] do
     declareAtomicCat q`SMTReservedKeywords.Reserved
 
     for (name, s) in reservedKeywords do
       declareOp {
         name := s!"reserved_{name}",
-        argDecls := #[],
+        argDecls := ArgDecls.empty,
         category := q`SMTReservedKeywords.Reserved,
         syntaxDef := .ofList [.str s]
       }
@@ -113,7 +121,7 @@ private def smtReservedKeywordsDialect : Dialect :=
     for (name, s) in specialCharsInSimpleSymbol do
       declareOp {
         name := s!"simple_symbol_{name}",
-        argDecls := #[],
+        argDecls := ArgDecls.empty,
         category := q`SMTReservedKeywords.SimpleSymbol,
         syntaxDef := .ofList [.str s]
       }
@@ -136,30 +144,46 @@ import SMTReservedKeywords;
 // <string> is Str.
 
 // <simple_symbol> is QualifiedIdent.
-op simple_symbol_qid (s:QualifiedIdent) : SimpleSymbol => s;
-// The two symbols "true" and "false" are not parsed as QualifiedIdent.
+op simple_symbol_qid (@[unwrap] s:QualifiedIdent) : SimpleSymbol => s;
+// These strings are not parsed as QualifiedIdent.
 // This is because they are currently used as keywords in the Init dialect
 // (see Strata/DDM/BuiltinDialects/Init.lean)
 op simple_symbol_tt () : SimpleSymbol => "true";
 op simple_symbol_ff () : SimpleSymbol => "false";
+op simple_symbol_none () : SimpleSymbol => "none";
+op simple_symbol_some () : SimpleSymbol => "some";
 
 // <symbol> is simplified to <simple_symbol>.
 // - TODO:
 //   * Support quoted symbols
 //   * Support symbols with non-ascii characters (&, ., !, etc)
 category Symbol;
-op symbol (s:SimpleSymbol) : Symbol => s;
+op symbol (@[unwrap] s:SimpleSymbol) : Symbol => s;
+
+category SymbolList; // For spacing, has at least one element
+op symbol_list_one (se:Symbol) : SymbolList => se;
+op symbol_list_cons (se:Symbol, sse:SymbolList) : SymbolList => se " " sse;
 
 category Keyword;
-op kw_symbol (s:SimpleSymbol) : Keyword => ":" s;
+op kw_symbol (@[unwrap] s:SimpleSymbol) : Keyword => ":" s;
 
 
 // 2. S-expressions
-// Special constants
+// Special constants.
 category SpecConstant;
-op sc_numeral (n:Num) : SpecConstant => n;
-op sc_decimal (d:Decimal) : SpecConstant => d;
-op sc_str (s:Str) : SpecConstant => s;
+op sc_numeral (@[unwrap] n:Num) : SpecConstant => n;
+op sc_decimal (@[unwrap] d:Decimal) : SpecConstant => d;
+op sc_str (@[unwrap] s:Str) : SpecConstant => s;
+
+// sign is not a part of the standard, but it seems CVC5 and Z3
+// support this for convenience.
+// Note that negative integers like '-1231' are symbols in Std! (Sec 3.1. Lexicon)
+// The only way to create a unary symbol is through identifiers, but this
+// makes its DDM format wrapped with pipes, like '|-1231|`. Since such
+// representation cannot be recognized by Z3, make a workaround which is to have
+// separate `*_neg` categories for sc_numeral.
+op sc_numeral_neg (@[unwrap] n:Num) : SpecConstant => "-" n:0;
+op sc_decimal_neg (@[unwrap] n:Decimal) : SpecConstant => "-" n:0;
 
 category SExpr;
 op se_spec_const (s:SpecConstant) : SExpr => s;
@@ -167,26 +191,40 @@ op se_symbol (s:Symbol) : SExpr => s;
 op se_reserved (s:Reserved) : SExpr => s;
 op se_keyword (s:Keyword) : SExpr => s;
 
-op se_ls (s:Seq SExpr) : SExpr => "(" s ")";
+category SExprList; // For spacing, has at least one element
+op sexpr_list_one (se:SExpr) : SExprList => se;
+op sexpr_list_cons (se:SExpr, sse:SExprList) : SExprList => se " " sse;
+
+op se_ls (s:Option SExprList) : SExpr => "(" s ")";
 
 
-// 3. Identifier
+category SMTIdentifier;
+// 3. Identifier. Use 'SMTIdentifier' because the 'Identifier' category is
+// already defined in DDM
 category Index;
-op ind_numeral (n:Num) : Index => n;
-op ind_symbol (s:Symbol) : Index => s;
+op ind_numeral (@[unwrap] n:Num) : Index => n;
+op ind_symbol (@[unwrap] s:Symbol) : Index => s;
 
-category Identifier;
-op iden_simple (s:Symbol) : Identifier => s;
-op iden_indexed (s:Symbol, i0:Index, il:Seq Index) : Identifier =>
-  "(" "_" s i0 il ")";
+op iden_simple (s:Symbol) : SMTIdentifier => s;
+
+category IndexList; // For spacing; has at least one element
+op index_list_one (i:Index) : IndexList => i;
+op index_list_cons (i:Index, spi:IndexList) : IndexList => i " " spi;
+
+op iden_indexed (s:Symbol, si:IndexList) : SMTIdentifier =>
+  "(" "_ " s " " si ")";
 
 
 // 4. Sorts
 category SMTSort;
-op smtsort_ident (s:Identifier) : SMTSort => s;
+op smtsort_ident (s:SMTIdentifier) : SMTSort => s;
 
-op smtsort_param (s:Identifier, s0:SMTSort, sl:Seq SMTSort) : SMTSort
-  => "(" s s0 sl ")";
+category SMTSortList; // For spacing; has at least one element
+op smtsort_list_one (i:SMTSort) : SMTSortList => i;
+op smtsort_list_cons (i:SMTSort, spi:SMTSortList) : SMTSortList => i " " spi;
+
+op smtsort_param (s:SMTIdentifier, sl:SMTSortList) : SMTSort
+  => "(" s " " sl ")";
 
 
 // 5. Attributes
@@ -198,78 +236,149 @@ op av_sel (s:Seq SExpr) : AttributeValue => "(" s ")";
 category Attribute;
 op att_kw (k:Keyword, av:Option AttributeValue) : Attribute => k av;
 
+category AttributeList; // For spacing; has at least one element
+op att_list_one (i:Attribute) : AttributeList => i;
+op att_list_cons (i:Attribute, spi:AttributeList) : AttributeList => i " " spi;
+
 
 // 6. Terms
 category QualIdentifier;
-op qi_ident (i:Identifier) : QualIdentifier => i;
-op qi_isort (i:Identifier, s:SMTSort) : QualIdentifier => "(" "as" i s ")";
+op qi_ident (i:SMTIdentifier) : QualIdentifier => i;
+op qi_isort (i:SMTIdentifier, s:SMTSort) : QualIdentifier =>
+  "(" "as " i " " s ")";
 
 category Term; // Forward declaration
 
+category TermList; // For Spacing
+op term_list_one (i:Term) : TermList => i:0;
+op term_list_cons (i:Term, spi:TermList) : TermList => i:0 " " spi:0;
+
 category ValBinding;
-op val_binding (s:Symbol, t:Term) : ValBinding => "(" s t ")";
+op val_binding (s:Symbol, t:Term) : ValBinding => "(" s " " t ")";
+
+category ValBindingList; // For spacing; has at least one element
+op val_binding_list_one (i:ValBinding) : ValBindingList => i;
+op val_binding_list_cons (i:ValBinding, spi:ValBindingList) : ValBindingList => i " " spi;
 
 category SortedVar;
-op sorted_var (s:Symbol, so:SMTSort) : SortedVar => "(" s so ")";
+op sorted_var (s:Symbol, so:SMTSort) : SortedVar => "(" s " " so ")";
+
+category SortedVarList; // For spacing; has at least one element
+op sorted_var_list_one (i:SortedVar) : SortedVarList => i;
+op sorted_var_list_cons (i:SortedVar, spi:SortedVarList) : SortedVarList => i " " spi;
 
 // TODO: support the match statement
 // category Pattern;
 
 op spec_constant_term (sc:SpecConstant) : Term => sc;
 op qual_identifier (qi:QualIdentifier) : Term => qi;
-op qual_identifier_args (qi:QualIdentifier, t0:Term, ts:Seq Term) : Term =>
-  "(" qi t0 ts ")";
+op qual_identifier_args (qi:QualIdentifier, ts:TermList) : Term =>
+  "(" qi " " ts ")";
 
-op let_smt (vb:ValBinding, vbps: Seq ValBinding, t:Term) : Term =>
-  "(" "let" "(" vb vbps ")" t ")";
-op lambda_smt (sv: SortedVar, svs: Seq SortedVar, t:Term) : Term =>
-  "(" "lambda" "(" sv svs ")" t ")";
-op forall_smt (sv: SortedVar, svs: Seq SortedVar, t:Term) : Term =>
-  "(" "forall" "(" sv svs ")" t ")";
-op exists_smt (sv: SortedVar, svs: Seq SortedVar, t:Term) : Term =>
-  "(" "exists" "(" sv svs ")" t ")";
-op bang (t:Term, attr0: Attribute, attrs:Seq Attribute) : Term =>
-  "(" "!" t attr0 attrs ")";
+op let_smt (vbps: ValBindingList, t:Term) : Term =>
+  "(" "let" "(" vbps ")" t ")";
+op lambda_smt (svs: SortedVarList, t:Term) : Term =>
+  "(" "lambda" "(" svs ")" t ")";
+op forall_smt (svs: SortedVarList, t:Term) : Term =>
+  "(" "forall" "(" svs ")" t ")";
+op exists_smt (svs: SortedVarList, t:Term) : Term =>
+  "(" "exists" "(" svs ")" t ")";
+op bang (t:Term, attrs:AttributeList) : Term =>
+  "(" "!" t " " attrs ")";
 
 
 // 7. Theories
 
 category TheoryDecl;
 // TODO: theory_attribute
-op theory_decl (s:Symbol) : TheoryDecl => "(" "theory" s ")";
+op theory_decl (s:Symbol) : TheoryDecl => "(" "theory " s ")";
 
 
 // 8. Logic
 
 category Logic;
 // TODO: logic_attribute
-op logic (s:Symbol) : Logic => "(" "logic" s ")";
+op logic (s:Symbol) : Logic => "(" "logic " s ")";
 
 
-// 9. Info flags: TODO
+// 9. Info flags
 
-// 10. Command options: TODO
+category InfoFlag;
+op info_flag_stat () : InfoFlag => ":all-statistics";
+op info_flag_stlvl () : InfoFlag => ":assertion-stack-levels";
+op info_flag_authors () : InfoFlag => ":authors";
+op info_flag_errb () : InfoFlag => ":error-behavior";
+// This collides with the ':named' term attribute. This file has the example.
+// op info_flag_name () : InfoFlag => ":name";
+op info_flag_reasonu () : InfoFlag => ":reason-unknown";
+op info_flag_version () : InfoFlag => ":version";
+
+// 10. Command options
 
 category BValue;
 op bvalue_true () : BValue => "true";
 op bvalue_false () : BValue => "false";
+
+category SMTOption;
+// NOTE: "Solver-specific option names are allowed and indeed expected."
+// A set of standard options is presented here.
+op smtoption_diagoc (s:Str) : SMTOption => ":diagnostic-output-channel " s;
+op smtoption_globald (b:BValue) : SMTOption => ":global-declarations " b;
+op smtoption_interm (b:BValue) : SMTOption => ":interactive-mode " b;
+op smtoption_prints (b:BValue) : SMTOption => ":print-success " b;
+op smtoption_produceasr (b:BValue) : SMTOption => ":produce-assertions " b;
+op smtoption_produceasn (b:BValue) : SMTOption => ":produce-assignments " b;
+op smtoption_producem (b:BValue) : SMTOption => ":produce-models " b;
+op smtoption_producep (b:BValue) : SMTOption => ":produce-proofs " b;
+op smtoption_produceua (b:BValue) : SMTOption =>
+  ":produce-unsat-assumptions " b;
+op smtoption_produceuc (b:BValue) : SMTOption => ":produce-unsat-cores " b;
+op smtoption_rseed (n:Num) : SMTOption => ":random-seed " n;
+op smtoption_regularoc (s:Str) : SMTOption => ":regular-output-channel " s;
+op smtoption_reproduciblerl (n:Num) : SMTOption =>
+  ":reproducible-resource-limit " n;
+op smtoption_verbosity (n:Num) : SMTOption => ":verbosity " n;
+op smtoption_attr (a:Attribute) : SMTOption => a;
 
 // 11. Commands
 
 category SortDec;
 op sort_dec (s:Symbol, n:Num) : SortDec => "(" s n ")";
 
+category SortDecList; // For spacing; has at least one element
+op sort_dec_list_one (i:SortDec) : SortDecList => i;
+op sort_dec_list_cons (i:SortDec, spi:SortDecList) : SortDecList =>
+  i " " spi;
+
 category SelectorDec;
 op selector_dec (s:Symbol, so:SMTSort) : SelectorDec => "(" s so ")";
 
+category SelectorDecList; // For spacing; has at least one element
+op selector_dec_list_one (i:SelectorDec) : SelectorDecList => i;
+op selector_dec_list_cons (i:SelectorDec, spi:SelectorDecList) : SelectorDecList =>
+  i " " spi;
+
 category ConstructorDec;
-op constructor_dec (s:Symbol, sdl:Seq SelectorDec) : ConstructorDec =>
-  "(" s sdl ")";
+op constructor_dec (s:Symbol, sdl:Option SelectorDecList) : ConstructorDec =>
+  "(" s " " sdl ")";
+
+category ConstructorDecList; // For spacing; has at least one element
+op constructor_list_one (i:ConstructorDec) : ConstructorDecList => i;
+op constructor_list_cons (i:ConstructorDec, spi:ConstructorDecList)
+  : ConstructorDecList =>
+  i " " spi;
 
 category DatatypeDec;
-op datatype_dec (c0:ConstructorDec, cs:Seq ConstructorDec) : DatatypeDec
-  => "(" c0 cs ")";
-// TODO: ( par ( <symbol>+ ) ( <constructor_dec>+ ))
+op datatype_dec (cs:ConstructorDecList) : DatatypeDec
+  => "(" cs ")";
+op datatype_dec_par (symbols: SymbolList, cs:ConstructorDecList) : DatatypeDec
+  => "(" "par " "(" symbols ")" "(" cs ")" ")";
+
+category DatatypeDecList; // For spacing; has at least one element
+op datatype_dec_list_one (i:DatatypeDec) : DatatypeDecList => i;
+op datatype_dec_list_cons (i:DatatypeDec, spi:DatatypeDecList)
+  : DatatypeDecList =>
+  i " " spi;
 
 category FunctionDec;
 op function_dec (s:Symbol, sv:Seq SortedVar, so:SMTSort) : FunctionDec
@@ -278,6 +387,12 @@ op function_dec (s:Symbol, sv:Seq SortedVar, so:SMTSort) : FunctionDec
 category FunctionDef;
 op function_def (s:Symbol, sv:Seq SortedVar, so:SMTSort, t:Term) : FunctionDef
   => s "(" sv ")" so t;
+
+category FunctionDefList; // For spacing; has at least one element
+op function_def_list_one (i:FunctionDef) : FunctionDefList => i;
+op function_def_list_cons (i:FunctionDef, spi:FunctionDefList)
+  : FunctionDefList =>
+  i " " spi;
 
 #end
 
@@ -290,48 +405,54 @@ import SMTCore;
 
 // 11. Commands (cont.)
 
-// 'the_' is necessary, otherwise it raises "unexpected token 'assert'; expected identifier"
-op the_assert (t:Term) : Command => "(" "assert" t ")";
+// cmd_' is necessary, otherwise it raises "unexpected token 'assert'; expected identifier"
+op cmd_assert (t:Term) : Command => "(" "assert " t ")";
 op check_sat () : Command => "(" "check-sat" ")";
-op check_sat_assuming (ts:Seq Term) : Command => "(" "check-sat-assuming" ts ")";
+op check_sat_assuming (ts:Option TermList) : Command =>
+  "(" "check-sat-assuming " ts ")";
 op declare_const (s:Symbol, so:SMTSort) : Command =>
-  "(" "declare-const" s so ")";
-op declare_datatype (s:Symbol, so:SMTSort) : Command =>
-  "(" "declare-datatype" s so ")";
-// TODO: declare-datatypes; what is ^(n+1)?
-op declare_fun (s:Symbol, sol:Seq SMTSort, range:SMTSort) : Command =>
-  "(" "declare-fun" s "(" sol ")" range ")";
+  "(" "declare-const " s so ")";
+op declare_datatype (s:Symbol, so:DatatypeDec) : Command =>
+  "(" "declare-datatype " s so ")";
+// The size of SortDec and DatatypeDec must be equal, but omit the check in
+// this DDM definition because its representation can be quite ugly.
+op declare_datatypes (s:SortDecList, so:DatatypeDecList) : Command =>
+  "(" "declare-datatypes" "(" s ")" "(" so ")" ")";
+op declare_fun (s:Symbol, sol:Option SMTSortList, range:SMTSort) : Command =>
+  "(" "declare-fun " s "(" sol ")" range ")";
 op declare_sort (s:Symbol, n:Num) : Command =>
-  "(" "declare-sort" s n ")";
+  "(" "declare-sort " s n ")";
 op declare_sort_parameter (s:Symbol) : Command =>
-  "(" "declare-sort-parameter" s ")";
+  "(" "declare-sort-parameter " s ")";
 op define_const (s:Symbol, so:SMTSort, t:Term) : Command =>
-  "(" "define-const" s so t ")";
+  "(" "define-const " s so t ")";
 op define_fun (fdef:FunctionDef) : Command =>
-  "(" "define-fun" fdef ")";
+  "(" "define-fun " fdef ")";
 op define_fun_rec (fdef:FunctionDef) : Command =>
-  "(" "define-fun-rec" fdef ")";
+  "(" "define-fun-rec " fdef ")";
+op define_funs_rec (fdefs:FunctionDefList, terms:TermList) : Command =>
+  "(" "define-funs-rec" "(" fdefs ")" "(" terms ")" ")";
 op define_sort (s:Symbol, sl:Seq Symbol, so:SMTSort) : Command =>
-  "(" "define-sort" s "(" sl ")" so ")";
-op the_echo (s:Str) : Command => "(" "echo" s ")";
-op the_exit () : Command => "(" "exit" ")";
+  "(" "define-sort " s "(" sl ")" so ")";
+op cmd_echo (s:Str) : Command => "(" "echo " s ")";
+op cmd_exit () : Command => "(" "exit" ")";
 op get_assertions () : Command => "(" "get-assertions" ")";
-op get_assignments () : Command => "(" "get-assignments" ")";
-// TODO: get-info
+op get_assignment () : Command => "(" "get-assignment" ")";
+op get_info (x:InfoFlag) : Command => "(" "get-info " x ")";
 op get_model () : Command => "(" "get-model" ")";
-op get_option (kw:Keyword) : Command => "(" "get-option" kw ")";
+op get_option (kw:Keyword) : Command => "(" "get-option " kw ")";
 op get_proof () : Command => "(" "get-proof" ")";
 op get_unsat_assumptions () : Command => "(" "get-unsat-assumptions" ")";
 op get_unsat_core () : Command => "(" "get-unsat-core" ")";
-op get_value (t0:Term, tl:Seq Term) : Command =>
-  "(" "get-value" "(" t0 tl ")" ")";
-op the_pop (n:Num) : Command => "(" "pop" n ")";
-op the_push (n:Num) : Command => "(" "push" n ")";
-op the_reset () : Command => "(" "reset" ")";
+op get_value (tl:TermList) : Command =>
+  "(" "get-value" "(" tl ")" ")";
+op cmd_pop (n:Num) : Command => "(" "pop " n ")";
+op cmd_push (n:Num) : Command => "(" "push " n ")";
+op cmd_reset () : Command => "(" "reset" ")";
 op reset_assertions () : Command => "(" "reset-assertions" ")";
-op set_info (a:Attribute) : Command => "(" "set-info" a ")";
-op set_logic (s:Symbol) : Command => "(" "set-logic" s ")";
-// TODO: set-option
+op set_info (a:Attribute) : Command => "(" "set-info " a ")";
+op set_logic (s:Symbol) : Command => "(" "set-logic " s ")";
+op set_option (s:SMTOption) : Command => "(" "set-option " s ")";
 
 #end
 
@@ -354,25 +475,49 @@ op ru_incomplete () : ReasonUnknown => "incomplete";
 op ru_other (s:SExpr) : ReasonUnknown => s;
 
 category ModelResponse;
-op mr_deffun (fdef:FunctionDef) : ModelResponse => "(" "define-fun" fdef ")";
+op mr_deffun (fdef:FunctionDef) : ModelResponse =>
+  "(" "define-fun " fdef ")";
 op mr_deffunrec (fdef:FunctionDef) : ModelResponse =>
-  "(" "define-fun-rec" fdef ")";
+  "(" "define-fun-rec " fdef ")";
 // TODO: define-funs-rec
 
+category SeqModelResponse;
+op seqmr_nil () : SeqModelResponse => ;
+op seqmr_one (i: ModelResponse) : SeqModelResponse => i;
+op seqmr_cons (i: ModelResponse, is: SeqModelResponse) : SeqModelResponse
+  => i is;
+
 category InfoResponse;
-op ir_stack_levels (n:Num) : InfoResponse => ":assertion-stack-response" n;
-op ir_authors (s:Str) : InfoResponse => ":authors" s;
-op ir_eb (eb:ErrorBehavior) : InfoResponse => ":error-behavior" eb;
-op ir_name (n:Str) : InfoResponse => ":name" n;
-op ir_unknown (r:ReasonUnknown) : InfoResponse => ":reason-unknown" r;
-op ir_ver (s:Str) : InfoResponse => ":version" s;
+op ir_stack_levels (n:Num) : InfoResponse => ":assertion-stack-response " n;
+op ir_authors (s:Str) : InfoResponse => ":authors " s;
+op ir_eb (eb:ErrorBehavior) : InfoResponse => ":error-behavior " eb;
+op ir_name (n:Str) : InfoResponse => ":name " n;
+op ir_unknown (r:ReasonUnknown) : InfoResponse => ":reason-unknown " r;
+op ir_ver (s:Str) : InfoResponse => ":version " s;
 op ir_attr (a:Attribute) : InfoResponse => a;
 
+category InfoResponseList;
+op ir_list_one (i: InfoResponse) : InfoResponseList => i;
+op ir_list_cons (i: InfoResponse, is: InfoResponseList) : InfoResponseList
+  => i is;
+
 category ValuationPair;
-op valuation_pair (t1:Term, t2:Term) : ValuationPair => "(" t1 t2 ")";
+op valuation_pair (t1:Term, t2:Term) : ValuationPair => "(" t1 " " t2 ")";
+
+category ValuationPairList;
+op valuation_pair_list_one (i: ValuationPair) : ValuationPairList => i;
+op valuation_pair_list_cons (i: ValuationPair, is: ValuationPairList)
+  : ValuationPairList
+  => i is;
 
 category TValuationPair;
-op t_valuation_pair (t1:Symbol, t2:BValue) : TValuationPair => "(" t1 t2 ")";
+op t_valuation_pair (t1:Symbol, t2:BValue) : TValuationPair => "(" t1 " " t2 ")";
+
+category TValuationPairList;
+op t_valuation_pair_list_one (i: TValuationPair) : TValuationPairList => i;
+op t_valuation_pair_list_cons (i: TValuationPair, is: TValuationPairList)
+  : TValuationPairList
+  => i is;
 
 category CheckSatResponse;
 op csr_sat () : CheckSatResponse => "sat";
@@ -383,18 +528,20 @@ category EchoResponse;
 op echo_response (s:Str) : EchoResponse => s;
 
 category GetAssertionsResponse;
-op get_assertions_response (t:Seq Term) : GetAssertionsResponse => "(" t ")";
+op get_assertions_response (t:Option TermList) : GetAssertionsResponse =>
+  "(" t ")";
 
 category GetAssignmentResponse;
-op get_assignment_response (t:Seq TValuationPair) : GetAssignmentResponse =>
+op get_assignment_response (t:Option TValuationPairList)
+    : GetAssignmentResponse =>
   "(" t ")";
 
 category GetInfoResponse;
-op get_info_response (i:InfoResponse, i2:Seq InfoResponse) : GetInfoResponse =>
-  "(" i i2 ")";
+op get_info_response (i2:InfoResponseList) : GetInfoResponse =>
+  "(" i2 ")";
 
 category GetModelResponse;
-op get_model_response (mr:Seq ModelResponse) : GetModelResponse =>
+op get_model_response (mr:SeqModelResponse) : GetModelResponse =>
   "(" mr ")";
 
 category GetOptionResponse;
@@ -404,16 +551,16 @@ category GetProofResponse;
 op get_proof_response (s:SExpr) : GetProofResponse => s;
 
 category GetUnsatAssumpResponse;
-op get_unsat_assump_response (ts:Seq Term) : GetUnsatAssumpResponse =>
+op get_unsat_assump_response (ts:Option TermList) : GetUnsatAssumpResponse =>
   "(" ts ")";
 
 category GetUnsatCoreResponse;
-op get_unsat_core_response (ss:Seq Symbol) : GetUnsatCoreResponse =>
+op get_unsat_core_response (ss:Option SymbolList) : GetUnsatCoreResponse =>
   "(" ss ")";
 
 category GetValueResponse;
-op get_value_response (vp:ValuationPair, vps:Seq ValuationPair)
-  : GetValueResponse => "(" vp vps ")";
+op get_value_response (vps:Option ValuationPairList)
+  : GetValueResponse => "(" vps ")";
 
 category SpecificSuccessResponse;
 op ssr_check_sat (r:CheckSatResponse) : SpecificSuccessResponse => r;
@@ -432,10 +579,14 @@ op ssr_get_value (r:GetValueResponse) : SpecificSuccessResponse => r;
 op success () : Command => "success";
 op unsupported () : Command => "unsupported";
 op specific_success_response (ssr:SpecificSuccessResponse) : Command => ssr;
-op error (msg:Str) : Command => "(" "error" msg ")";
+op error (msg:Str) : Command => "(" "error " msg ")";
 
 #end
 
+/--
+info: Strata.SMT : Dialect
+-/
+#guard_msgs in #check SMT
 
 namespace Test
 
@@ -449,7 +600,7 @@ op parse_keyword (x:Keyword): Command => "parse_keyword" x ";";
 op parse_spec_constant (x:SpecConstant): Command => "parse_spec_constant" x ";";
 op parse_sexpr (x:SExpr): Command => "parse_sexpr" x ";";
 op parse_index (x:Index): Command => "parse_index" x ";";
-op parse_identifier (x:Identifier): Command => "parse_identifier" x ";";
+op parse_identifier (x:SMTIdentifier): Command => "parse_identifier" x ";";
 op parse_sort (x:SMTSort): Command => "parse_sort" x ";";
 op parse_attribute_value (x:AttributeValue): Command
   => "parse_attribute_value" x ";";
@@ -492,7 +643,9 @@ parse_symbol + ;
 parse_keyword :aaa ;
 
 parse_spec_constant 1;
+parse_spec_constant -1;
 parse_spec_constant 1.5;
+parse_spec_constant -1.5;
 parse_spec_constant "test";
 
 parse_sexpr 1;
@@ -503,6 +656,7 @@ parse_sexpr (+ a b) ;
 parse_identifier x ;
 parse_identifier ( _ move up) ;
 parse_identifier ( _ BitVec 32) ;
+parse_identifier ( _ bv32 12345) ;
 
 parse_sort Int ;
 parse_sort ( _ BitVec 32 );
@@ -524,6 +678,12 @@ parse_term (- 1 (+ 2 3)) ;
 
 // Attribute
 parse_term (=> (! (> x y) :named p1) (! (= x z) :named p2 )) ;
+// page 34, 3.6.5. Term attributes
+parse_term (forall ((x0 A) (x1 A) (x2 A))
+    (! (=> (and (r x0 x1) (r x1 x2)) (r x0 x2))
+    :pattern ((r x0 x1) (r x1 x2))
+    :pattern ((p x0 a))
+    ));
 
 // Let
 parse_term (let ((x (+ 1 2))) x) ;
@@ -553,7 +713,40 @@ program SMT;
 (check-sat)
 (check-sat-assuming x y)
 (declare-const x Int)
-(declare-datatype X Int)
+
+// declare-datatype examples at page 66
+(declare-datatype Color ((red) (green) (blue)))
+(declare-datatype IntList (
+  (empty)
+  (insert (head Int) (tail IntList))))
+(declare-datatype List
+  (par (E) (
+    (nil)
+    (cons (car E) (cdr (List E))))))
+(declare-datatype Option
+  (par (X) (
+    (none)
+    (some (val X)))))
+(declare-datatype Pair
+  (par (X Y)
+    ((pair (first X) (second Y)))))
+
+// declare-datatypes examples at page 65
+(declare-datatypes ((Color 0)) (
+  ((red) (green) (blue))))
+(declare-datatypes ((IntList 0)) (
+  ((empty) (insert (head Int) (tail IntList)))))
+(declare-datatypes ((List 1)) (
+  (par (T) ((nil) (cons (car T) (cdr (List T)))))))
+(declare-datatypes ((Option 1)) (
+  (par (X) ((none) (some (val X))))))
+(declare-datatypes ((Pair 2)) (
+  (par (X Y) ((pair (first X) (second Y))))))
+(declare-datatypes ((Tree 1) (TreeList 1)) (
+  (par (X) ((node (value X) (children (TreeList X)))))
+  (par (Y) ((empty)
+    (insert (head (Tree Y)) (tail (TreeList Y)))))))
+
 (declare-fun f (Int Int) Int)
 (declare-sort Int 10)
 (declare-sort-parameter X)
@@ -563,7 +756,7 @@ program SMT;
 (echo "x")
 (exit)
 (get-assertions)
-(get-assignments)
+(get-assignment)
 (get-model)
 (get-option :h)
 (get-proof)
@@ -576,6 +769,7 @@ program SMT;
 (reset-assertions)
 (set-info :t 1)
 (set-logic MY_LOGIC)
+(set-option :global-declarations true)
 #end
 
 
@@ -609,7 +803,46 @@ unknown
 // )
 #end
 
-
 end Test
+
+
+-- The ASTs generated by strata_gen.
+
+namespace SMTDDM
+
+-- set_option trace.Strata.generator trueß
+#strata_gen SMT
+
+deriving instance BEq for
+  -- Sequences
+  SpecConstant, QualifiedIdent, SimpleSymbol,
+  Symbol, SymbolList,
+  SortDec, SortDecList,
+  Reserved,
+  Keyword, SExpr, AttributeValue, BValue,
+  Attribute, AttributeList,
+  SMTOption,
+  Index, IndexList,
+  SMTIdentifier,
+  SMTSort, SMTSortList,
+  SortedVar, SortedVarList,
+  QualIdentifier, ValBinding,
+  Term, TermList,
+  InfoFlag,
+  SelectorDec, SelectorDecList,
+  ConstructorDec, ConstructorDecList,
+  DatatypeDec, DatatypeDecList,
+  FunctionDef, FunctionDefList,
+  Command
+
+end SMTDDM
+
+
+namespace SMTResponseDDM
+
+--set_option trace.Strata.generator true
+#strata_gen SMTResponse
+
+end SMTResponseDDM
 
 end Strata

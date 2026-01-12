@@ -234,7 +234,7 @@ def checkInlining (prog : Boogie.Program) (progAns : Boogie.Program)
   let pp' := prog'.decls.zip progAns.decls
   pp'.allM (fun (p,p') => do
     match p,p' with
-    | .proc p, .proc p' =>
+    | .proc p _, .proc p' _ =>
       match alphaEquiv p p' with
       | .ok _ => return .true
       | .error msg =>
