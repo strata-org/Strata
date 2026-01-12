@@ -59,10 +59,6 @@ else
   python="python3"
 fi
 
-if [ "$VER" == "3.14" ]; then
-  python="$python -Xgil=0"
-fi
-
 report="report.$VER.txt"
 
 echo "Generating report in $report" | tee $report
