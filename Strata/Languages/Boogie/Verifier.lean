@@ -159,6 +159,10 @@ def formatPositionMetaData [BEq P.Ident] [ToFormat P.Expr]
     let baseName := match fileRange.file with
                     | .file path => (path.splitToList (· == '/')).getLast!
     return f!"{baseName}({startPos.line}, {startPos.column})"
+  | .file2dRange file2dRange =>
+    let baseName := match file2dRange.file with
+                    | .file path => (path.splitToList (· == '/')).getLast!
+    return f!"{baseName}({file2dRange.start.line}, {file2dRange.ending.column})"
   | _ => none
 
 structure VCResult where
