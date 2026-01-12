@@ -614,55 +614,40 @@ Wellformedness of the factories.
 
 private theorem intRealBoolFactory_wf : FactoryWf intRealBoolFactory := by
   apply FactoryWf.mk
-  · unfold intRealBoolFactory
-    simp only []
-    repeat(
-      apply List.Pairwise.cons
-      (focus ((intros a' Hmem <;>
-        repeat (
-          rcases Hmem with _ | ⟨ a', Hmem ⟩
-          (focus (simp (config := { ground := true }); done)))) <;>
-        contradiction)))
-    apply List.Pairwise.nil
+  · decide
   · unfold intRealBoolFactory
     intros lf Hmem
     repeat (
       rcases Hmem with _ | ⟨ a', Hmem ⟩
-      · apply LFuncWf.mk <;> try (simp (config := { ground := true }); done)
-        -- Tactics below here are for unfolding fns defined in IntBoolFactory.
-        try (
-          simp (config := { ground := true })
-          try unfold unOpCeval
-          try unfold binOpCeval
-          try unfold cevalIntDiv
-          try unfold cevalIntMod
-          intros lf md args res
-          repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
+      · apply LFuncWf.mk
+        · decide
+        · decide
+        · simp (config := { ground := true })
+          try (
+            try unfold unOpCeval
+            try unfold binOpCeval
+            try unfold cevalIntDiv
+            try unfold cevalIntMod
+            intros lf md args res
+            repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
     contradiction
 
 private theorem nonIntRealBoolFactory_wf : FactoryWf nonIntRealBoolFactory := by
   apply FactoryWf.mk
-  · unfold nonIntRealBoolFactory
-    simp only []
-    repeat(
-      apply List.Pairwise.cons
-      (focus ((intros a' Hmem <;>
-        repeat (
-          rcases Hmem with _ | ⟨ a', Hmem ⟩
-          (focus (simp (config := { ground := true }); done)))) <;>
-        contradiction)))
-    apply List.Pairwise.nil
+  · decide
   · unfold nonIntRealBoolFactory
     intros lf Hmem
     repeat (
       rcases Hmem with _ | ⟨ a', Hmem ⟩
-      · apply LFuncWf.mk <;> try (simp (config := { ground := true }); done)
-        try (
-          simp (config := { ground := true })
-          try unfold unOpCeval
-          try unfold binOpCeval
-          intros lf md args res
-          repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
+      · apply LFuncWf.mk
+        · decide
+        · decide
+        · simp (config := { ground := true })
+          try (
+            try unfold unOpCeval
+            try unfold binOpCeval
+            intros lf md args res
+            repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
     contradiction
 
 
@@ -673,18 +658,7 @@ private theorem expandedBVOp_1_8_Factory_wf :
     FactoryWf expandedBVOp_1_8_Factory := by
   unfold expandedBVOp_1_8_Factory
   apply FactoryWf.mk
-  · rw [Array.toList_appendList]
-    simp only []
-    unfold HAppend.hAppend instHAppendOfAppend Append.append List.instAppend
-    simp only [List.append]
-    repeat (
-      apply List.Pairwise.cons
-      (focus ((intros a' Hmem <;>
-        repeat (
-          rcases Hmem with _ | ⟨ a', Hmem ⟩
-          (focus (simp (config := { ground := true }); done)))) <;>
-        contradiction)))
-    apply List.Pairwise.nil
+  · decide
   · unfold HAppend.hAppend Array.instHAppendList
     simp only []
     unfold Array.appendList
@@ -695,33 +669,24 @@ private theorem expandedBVOp_1_8_Factory_wf :
     intros Hmem
     repeat (
       rcases Hmem with _ | ⟨ a', Hmem ⟩
-      · apply LFuncWf.mk <;> try (simp (config := { ground := true }); done)
-        try (
-          simp (config := { ground := true })
-          try unfold bvUnaryOp
-          try unfold bvBinaryOp
-          try unfold bvShiftOp
-          try unfold bvBinaryPred
-          intros lf md args res
-          repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
+      · apply LFuncWf.mk
+        · decide
+        · decide
+        · simp (config := { ground := true })
+          try (
+            try unfold bvUnaryOp
+            try unfold bvBinaryOp
+            try unfold bvShiftOp
+            try unfold bvBinaryPred
+            intros lf md args res
+            repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
     contradiction
 
 private theorem expandedBVOp_16_Factory_wf :
     FactoryWf expandedBVOp_16_Factory := by
   unfold expandedBVOp_16_Factory
   apply FactoryWf.mk
-  · rw [Array.toList_appendList]
-    simp only []
-    unfold HAppend.hAppend instHAppendOfAppend Append.append List.instAppend
-    simp only [List.append]
-    repeat (
-      apply List.Pairwise.cons
-      (focus ((intros a' Hmem <;>
-        repeat (
-          rcases Hmem with _ | ⟨ a', Hmem ⟩
-          (focus (simp (config := { ground := true }); done)))) <;>
-        contradiction)))
-    apply List.Pairwise.nil
+  · decide
   · unfold HAppend.hAppend Array.instHAppendList
     simp only []
     unfold Array.appendList
@@ -732,33 +697,24 @@ private theorem expandedBVOp_16_Factory_wf :
     intros Hmem
     repeat (
       rcases Hmem with _ | ⟨ a', Hmem ⟩
-      · apply LFuncWf.mk <;> try (simp (config := { ground := true }); done)
-        try (
-          simp (config := { ground := true })
-          try unfold bvUnaryOp
-          try unfold bvBinaryOp
-          try unfold bvShiftOp
-          try unfold bvBinaryPred
-          intros lf md args res
-          repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
+      · apply LFuncWf.mk
+        · decide
+        · decide
+        · simp (config := { ground := true })
+          try (
+            try unfold bvUnaryOp
+            try unfold bvBinaryOp
+            try unfold bvShiftOp
+            try unfold bvBinaryPred
+            intros lf md args res
+            repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
     contradiction
 
 private theorem expandedBVOp_32_Factory_wf :
     FactoryWf expandedBVOp_32_Factory := by
   unfold expandedBVOp_32_Factory
   apply FactoryWf.mk
-  · rw [Array.toList_appendList]
-    simp only []
-    unfold HAppend.hAppend instHAppendOfAppend Append.append List.instAppend
-    simp only [List.append]
-    repeat (
-      apply List.Pairwise.cons
-      (focus ((intros a' Hmem <;>
-        repeat (
-          rcases Hmem with _ | ⟨ a', Hmem ⟩
-          (focus (simp (config := { ground := true }); done)))) <;>
-        contradiction)))
-    apply List.Pairwise.nil
+  · decide
   · unfold HAppend.hAppend Array.instHAppendList
     simp only []
     unfold Array.appendList
@@ -769,33 +725,24 @@ private theorem expandedBVOp_32_Factory_wf :
     intros Hmem
     repeat (
       rcases Hmem with _ | ⟨ a', Hmem ⟩
-      · apply LFuncWf.mk <;> try (simp (config := { ground := true }); done)
-        try (
-          simp (config := { ground := true })
-          try unfold bvUnaryOp
-          try unfold bvBinaryOp
-          try unfold bvShiftOp
-          try unfold bvBinaryPred
-          intros lf md args res
-          repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
+      · apply LFuncWf.mk
+        · decide
+        · decide
+        · simp (config := { ground := true })
+          try (
+            try unfold bvUnaryOp
+            try unfold bvBinaryOp
+            try unfold bvShiftOp
+            try unfold bvBinaryPred
+            intros lf md args res
+            repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
     contradiction
 
 private theorem expandedBVOp_64_Factory_wf :
     FactoryWf expandedBVOp_64_Factory := by
   unfold expandedBVOp_64_Factory
   apply FactoryWf.mk
-  · rw [Array.toList_appendList]
-    simp only []
-    unfold HAppend.hAppend instHAppendOfAppend Append.append List.instAppend
-    simp only [List.append]
-    repeat (
-      apply List.Pairwise.cons
-      (focus ((intros a' Hmem <;>
-        repeat (
-          rcases Hmem with _ | ⟨ a', Hmem ⟩
-          (focus (simp (config := { ground := true }); done)))) <;>
-        contradiction)))
-    apply List.Pairwise.nil
+  · decide
   · unfold HAppend.hAppend Array.instHAppendList
     simp only []
     unfold Array.appendList
@@ -806,15 +753,17 @@ private theorem expandedBVOp_64_Factory_wf :
     intros Hmem
     repeat (
       rcases Hmem with _ | ⟨ a', Hmem ⟩
-      · apply LFuncWf.mk <;> try (simp (config := { ground := true }); done)
-        try (
-          simp (config := { ground := true })
-          try unfold bvUnaryOp
-          try unfold bvBinaryOp
-          try unfold bvShiftOp
-          try unfold bvBinaryPred
-          intros lf md args res
-          repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
+      · apply LFuncWf.mk
+        · decide
+        · decide
+        · simp (config := { ground := true })
+          try (
+            try unfold bvUnaryOp
+            try unfold bvBinaryOp
+            try unfold bvShiftOp
+            try unfold bvBinaryPred
+            intros lf md args res
+            repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
     contradiction
 
 def Factory_wf_if_ok: ∀ F', FactoryE = .ok F' → FactoryWf F' := by

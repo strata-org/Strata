@@ -104,10 +104,10 @@ Well-formedness properties of LFunc. These are splitted from LFunc because
 otherwise it becomes impossible to create a 'temporary' LFunc object whose
 wellformedness might not hold yet.
 -/
-structure LFuncWf {T : LExprParams} (f:LFunc T) where
+structure LFuncWf {T : LExprParams} (f : LFunc T) where
   -- No args have same name.
   arg_nodup:
-    List.Pairwise (fun (id1,_) (id2,_) => id1.name ≠ id2.name) f.inputs
+    List.Nodup (f.inputs.map (·.1.name))
   -- Free variables of body must be arguments.
   body_freevars:
     ∀ b freevars, f.body = .some b
@@ -120,6 +120,37 @@ structure LFuncWf {T : LExprParams} (f:LFunc T) where
       → fn md args = .some res
       → args.length = f.inputs.length
 
+instance LFuncWf.arg_nodup_decidable {T : LExprParams} (f : LFunc T):
+    Decidable (List.Nodup (f.inputs.map (·.1.name))) := by
+  apply List.nodupDecidable
+
+instance LFuncWf.body_freevars_decidable {T : LExprParams} (f : LFunc T):
+    Decidable (∀ b freevars, f.body = .some b
+      → freevars = LExpr.freeVars b
+      → (∀ fv, fv ∈ freevars →
+          ∃ arg, List.Mem arg f.inputs ∧ fv.1.name = arg.1.name)) :=
+  match Hbody: f.body with
+  | .some b =>
+    if Hall:(LExpr.freeVars b).all
+        (fun fv => List.any f.inputs (fun arg => fv.1.name == arg.1.name))
+    then by
+      apply isTrue
+      intros b' freevars Hb' Hfreevars fv' Hmem
+      cases Hb'
+      rw [← Hfreevars] at Hall
+      rw [List.all_forall_mem] at Hall
+      have Hall' := Hall fv' Hmem
+      rw [List.any_exists] at Hall'
+      rcases Hall' with ⟨arg', H⟩
+      exists arg'
+      solve | (simp at H ; congr)
+    else by
+      apply isFalse
+      grind
+  | .none => by
+    apply isTrue; grind
+
+-- LFuncWf.concreteEval_argmatch is not decidable.
 
 instance [Inhabited T.Metadata] [Inhabited T.IDMeta] : Inhabited (LFunc T) where
   default := { name := Inhabited.default, inputs := [], output := LMonoTy.bool }
@@ -198,9 +229,13 @@ Well-formedness properties of Factory.
 -/
 structure FactoryWf {T : LExprParams} (fac:Factory T) where
   name_nodup:
-    List.Pairwise (fun lf1 lf2 => lf1.name.name ≠ lf2.name.name) (fac.toList)
+    List.Nodup (fac.toList.map (·.name.name))
   lfuncs_wf:
     ∀ (lf:LFunc T), lf ∈ fac → LFuncWf lf
+
+instance FactoryWf.name_nodup_decidable {T : LExprParams} (fac : Factory T):
+    Decidable (List.Nodup (fac.toList.map (·.name.name))) := by
+  apply List.nodupDecidable
 
 
 def Factory.getFunctionNames (F : @Factory T) : Array T.Identifier :=
@@ -238,10 +273,8 @@ by
   · rename_i heq
     cases Hmatch -- F' is Array.push F
     apply FactoryWf.mk
-    · rw [Array.toList_push]
-      rw [List.pairwise_append]
-      simp only [F_wf.name_nodup]
-      grind
+    · have Hnn := F_wf.name_nodup
+      grind [Array.toList_push,List]
     · intros lf Hmem
       have Hmem' := Array.push_mem F func lf Hmem
       have Hwf := F_wf.lfuncs_wf
