@@ -8,6 +8,7 @@ module
 public import Std.Data.HashMap.Basic
 public import Strata.DDM.Util.ByteArray
 public import Strata.DDM.Util.Decimal
+public import Lean.Data.Position
 
 import Std.Data.HashMap
 import Strata.DDM.Util.Array
@@ -253,6 +254,18 @@ structure FileRange where
 
 instance : ToFormat FileRange where
  format fr := f!"{fr.file}:{fr.range}"
+
+structure File2dRange where
+  file: Uri
+  start: Lean.Position
+  ending: Lean.Position
+  deriving DecidableEq, Repr
+
+instance : ToFormat File2dRange where
+ format fr :=
+    let baseName := match fr.file with
+                    | .file path => (path.splitToList (· == '/')).getLast!
+    f!"{baseName}({fr.start.line}, {fr.start.column})-({fr.ending.line}, {fr.ending.column})"
 
 namespace SourceRange
 

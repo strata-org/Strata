@@ -74,9 +74,11 @@ inductive MetaDataElem.Value (P : PureExpr) where
   | msg (s : String)
   /-- Metadata value in the form of a fileRange. -/
   | fileRange (r: Strata.FileRange)
+  /-- Metadata value in the form of a fileRange. -/
+  | file2dRange (r: Strata.File2dRange)
 
 instance [ToFormat P.Expr] : ToFormat (MetaDataElem.Value P) where
-  format f := match f with | .expr e => f!"{e}" | .msg s => f!"{s}" | .fileRange r => f!"{r}"
+  format f := match f with | .expr e => f!"{e}" | .msg s => f!"{s}" | .fileRange r => f!"{r}" | .file2dRange r => f!"{r}"
 
 instance [Repr P.Expr] : Repr (MetaDataElem.Value P) where
   reprPrec v prec :=
@@ -85,6 +87,7 @@ instance [Repr P.Expr] : Repr (MetaDataElem.Value P) where
       | .expr e => f!"MetaDataElem.Value.expr {reprPrec e prec}"
       | .msg s => f!"MetaDataElem.Value.msg {s}"
       | .fileRange fr => f!"MetaDataElem.Value.fileRange {fr}"
+      | .file2dRange fr => f!"MetaDataElem.Value.file2dRange {fr}"
     Repr.addAppParen res prec
 
 def MetaDataElem.Value.beq [BEq P.Expr] (v1 v2 : MetaDataElem.Value P) :=
@@ -92,6 +95,7 @@ def MetaDataElem.Value.beq [BEq P.Expr] (v1 v2 : MetaDataElem.Value P) :=
   | .expr e1, .expr e2 => e1 == e2
   | .msg m1, .msg m2 => m1 == m2
   | .fileRange r1, .fileRange r2 => r1 == r2
+  | .file2dRange r1, .file2dRange r2 => r1 == r2
   | _, _ => false
 
 instance [BEq P.Expr] : BEq (MetaDataElem.Value P) where
@@ -171,7 +175,7 @@ def MetaData.formatFileRange? {P} [BEq P.Ident] (md : MetaData P) (includeEnd? :
     Option Std.Format := do
   let fileRangeElem ← md.findElem MetaData.fileRange
   match fileRangeElem.value with
-  | .fileRange m =>
+  | .file2dRange m =>
     let baseName := match m.file with
                     | .file path => (path.splitToList (· == '/')).getLast!
     if includeEnd? then
