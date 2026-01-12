@@ -388,10 +388,10 @@ info: B3: .ite
   (.literal () (.intLit () 1))
   (.literal () (.intLit () 0))
 ---
-info: if true then 1 else 0
+info: if true 1 else 0
 -/
 #guard_msgs in
-#eval roundtripExpr $ #strata program B3CST; check if true then 1 else 0 #end
+#eval roundtripExpr $ #strata program B3CST; check if true 1 else 0 #end
 
 /--
 info: B3: .quantifierExpr
@@ -580,5 +580,177 @@ info: forall i : int, j : int pattern i + j i + j >= 0
 #eval roundtripExpr $ #strata program B3CST; check forall i : int, j : int pattern i + j i + j >= 0 #end
 
 end ExpressionRoundtripTests
+
+section AssociativityAndPrecedenceTests
+
+-- Test <== left-associativity
+-- B3 grammar: ExpliesExpr ::= ( LogicalExpr "<==" )* LogicalExpr
+-- Expected: true <== false <== true parses as (true <== false) <== true (left-associative)
+/--
+info: B3: .binaryOp
+  ()
+  (.impliedBy ())
+  (.binaryOp
+    ()
+    (.impliedBy ())
+    (.literal () (.boolLit () true))
+    (.literal () (.boolLit () false)))
+  (.literal () (.boolLit () true))
+---
+info: true <== false <== true
+-/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check true <== false <== true #end
+
+-- Test <== with explicit left-associative parentheses
+-- Should parse the same as without parentheses
+/--
+info: B3: .binaryOp
+  ()
+  (.impliedBy ())
+  (.binaryOp
+    ()
+    (.impliedBy ())
+    (.literal () (.boolLit () true))
+    (.literal () (.boolLit () false)))
+  (.literal () (.boolLit () true))
+---
+info: (true <== false) <== true
+-/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check (true <== false) <== true #end
+
+-- Test <== with explicit right-associative parentheses
+-- Should parse differently than without parentheses (if left-assoc is correct)
+/--
+info: B3: .binaryOp
+  ()
+  (.impliedBy ())
+  (.literal () (.boolLit () true))
+  (.binaryOp
+    ()
+    (.impliedBy ())
+    (.literal () (.boolLit () false))
+    (.literal () (.boolLit () true)))
+---
+info: true <== (false <== true)
+-/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check true <== (false <== true) #end
+
+-- Test ==> right-associativity
+-- B3 grammar: ImpliesExpr ::= LogicalExpr "==>" ImpliesExpr
+-- Expected: true ==> false ==> true parses as true ==> (false ==> true) (right-associative)
+/--
+info: B3: .binaryOp
+  ()
+  (.implies ())
+  (.literal () (.boolLit () true))
+  (.binaryOp
+    ()
+    (.implies ())
+    (.literal () (.boolLit () false))
+    (.literal () (.boolLit () true)))
+---
+info: true ==> false ==> true
+-/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check true ==> false ==> true #end
+
+-- Test ==> with explicit right-associative parentheses
+-- Should parse the same as without parentheses
+/--
+info: B3: .binaryOp
+  ()
+  (.implies ())
+  (.literal () (.boolLit () true))
+  (.binaryOp
+    ()
+    (.implies ())
+    (.literal () (.boolLit () false))
+    (.literal () (.boolLit () true)))
+---
+info: true ==> (false ==> true)
+-/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check true ==> (false ==> true) #end
+
+-- Test ==> with explicit left-associative parentheses
+-- Should parse differently than without parentheses (if right-assoc is correct)
+/--
+info: B3: .binaryOp
+  ()
+  (.implies ())
+  (.binaryOp
+    ()
+    (.implies ())
+    (.literal () (.boolLit () true))
+    (.literal () (.boolLit () false)))
+  (.literal () (.boolLit () true))
+---
+info: (true ==> false) ==> true
+-/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check (true ==> false) ==> true #end
+
+-- Test <==> left-associativity
+-- B3 grammar: Expr ::= ( ImpExpExpr "<=>" )* ImpExpExpr
+-- Expected: true <==> false <==> true parses as (true <==> false) <==> true (left-associative)
+/--
+info: B3: .binaryOp
+  ()
+  (.iff ())
+  (.binaryOp
+    ()
+    (.iff ())
+    (.literal () (.boolLit () true))
+    (.literal () (.boolLit () false)))
+  (.literal () (.boolLit () true))
+---
+info: true <==> false <==> true
+-/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check true <==> false <==> true #end
+
+-- Test <==> binds looser than ==>
+-- B3 grammar hierarchy: Expr (<==>)  contains ImpExpExpr (==>)
+-- Expected: true <==> false ==> true parses as true <==> (false ==> true)
+/--
+info: B3: .binaryOp
+  ()
+  (.iff ())
+  (.literal () (.boolLit () true))
+  (.binaryOp
+    ()
+    (.implies ())
+    (.literal () (.boolLit () false))
+    (.literal () (.boolLit () true)))
+---
+info: true <==> false ==> true
+-/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check true <==> false ==> true #end
+
+-- Test if-then-else as PrimaryExpr (high precedence)
+-- B3 grammar: PrimaryExpr ::= EndlessExpr | AtomicExpr where EndlessExpr ::= "if" Expr Expr "else" Expr
+-- Expected: 1 + if true 2 else 3 parses as 1 + (if true 2 else 3)
+-- Note: Using "then" temporarily until grammar fix is applied
+/--
+info: B3: .binaryOp
+  ()
+  (.add ())
+  (.literal () (.intLit () 1))
+  (.ite
+    ()
+    (.literal () (.boolLit () true))
+    (.literal () (.intLit () 2))
+    (.literal () (.intLit () 3)))
+---
+info: 1 + if true then 2 else 3
+-/
+#guard_msgs in
+#eval roundtripExpr $ #strata program B3CST; check 1 + if true then 2 else 3 #end
+
+end AssociativityAndPrecedenceTests
 
 end B3
