@@ -415,6 +415,17 @@ def TypeFactory.genFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabi
 def TypeFactory.getType (F : @TypeFactory IDMeta) (name : String) : Option (LDatatype IDMeta) :=
   F.find? (fun d => d.name == name)
 
+omit [DecidableEq IDMeta] [Inhabited IDMeta] in theorem TypeFactory.getType_name {F : @TypeFactory IDMeta} {name : String}
+  {l: LDatatype IDMeta}:
+  F.getType name = some l → l.name = name := by
+    unfold TypeFactory.getType; grind
+
+omit [DecidableEq IDMeta] [Inhabited IDMeta] in theorem TypeFactory.getType_mem {F : @TypeFactory IDMeta} {name : String}
+  {l: LDatatype IDMeta}:
+  F.getType name = some l → @Membership.mem (LDatatype IDMeta) (Array (LDatatype IDMeta)) _ F l := by apply Array.mem_of_find?_eq_some
+
+
+
 /--
 Add an `LDatatype` to an existing `TypeFactory`, checking that no
 types are duplicated.
@@ -427,6 +438,174 @@ def TypeFactory.addDatatype (t: @TypeFactory IDMeta) (d: LDatatype IDMeta) : Exc
               Redefinitions are not allowed.\n\
               Existing Type: {d'}\n\
               New Type:{d}"
+
+---------------------------------------------------------------------
+
+-- Inhabited types
+
+/-
+Because we generate destructors, it is vital to ensure that every datatype
+is inhabited. Otherwise, we can have the following:
+```
+type Empty :=.
+type List := Nil | Cons (hd: Empty) (tl: List)
+```
+The only element of `List` is `Nil`, but we also create the destructor
+`hd : List → Empty`, which means `hd Nil` has type `Empty`, contradicting the
+fact that `Empty` is uninhabited.
+
+However, checking type inhabitation is hard for several reasons:
+1. Datatypes can refer to other datatypes. E.g. `type Bad = B(x: Empty)` is
+uninhabited
+2. These dependencies need not be linear. For example,
+the following datatypes are uninhabited:
+```
+type Bad1 := B1(x: Bad2)
+type Bad2 := B2(x: Bad1)
+```
+3. Instantiated type parameters affect things as well. `List Empty` is
+inhabited, but `Either Empty Empty` is not.
+
+We determine if all types in a TypeFactory are inhabited simulataneously,
+memoizing the results. Proving the termination of this function is very
+tricky (though possible), so we leave it `partial` for now.
+
+-/
+
+def typeSet : Type := List String --Temp
+
+def typeInSet (l: String) (s: typeSet) : Bool :=
+  s.elem l
+
+def addTypeToSet (l: String) (s: typeSet) : typeSet :=
+  l :: s
+
+-- TODO: is this anywhere?
+def List.subset {α} (s1 s2: List α) := ∀ x, x ∈ s1 → x ∈ s2
+
+theorem List.subset_nodup_length {α} {s1 s2: List α} (hn: s1.Nodup) (hsub: List.subset s1 s2) : s1.length ≤ s2.length := by
+  induction s1 generalizing s2 with
+  | nil => simp
+  | cons x t IH =>
+    simp only[List.length]
+    -- Idea: x is in s2, so we can remove it
+    have xin: x ∈ s2 := by apply hsub; grind
+    rw[List.mem_iff_append] at xin
+    rcases xin with ⟨l1, ⟨l2, hs2⟩⟩; subst_vars
+    have hsub1: subset t (l1 ++ l2) := by unfold subset at *; grind
+    grind
+
+def List.subset_cons_iff {α} {x: α} {s1 s2: List α}:
+  List.subset (x :: s1) s2 ↔ x ∈ s2 ∧ List.subset s1 s2 := by
+    unfold subset; grind
+
+mutual
+
+/--
+Prove that type symbol `ts` is inhabited, assuming
+that types `seen` are unknown. All other types are assumed inhabited.
+This check is currently conservative: it requires that all type arguments
+are inhabited which rules out the following (valid) type:
+```
+type A := A1(x: Option B)
+type B := B1(y: A)
+```
+-/
+def typesym_inhab (adts: @TypeFactory IDMeta) (seen: typeSet)
+  (hnodup: List.Nodup seen) (hsub: List.subset seen (List.map (fun x => x.name) adts.toList))
+  (ts: String)
+   : StateM typeSet Bool := do
+  let knowType : StateM typeSet Bool := do
+    let s ← get
+    set (addTypeToSet ts s)
+    pure true
+  -- Check if type is already known to be inhabited
+  let s ← get
+  if typeInSet ts s then pure true
+  -- If type in `seen`, it is unknown, so we return false
+  else if hin: typeInSet ts seen then pure false
+  else
+    match ha: adts.getType ts with
+    | none => pure true -- Assume all non-datatypes are inhabited, TODO should we add?
+    | some l =>
+      -- A datatype is inhabited if it has an inhabited constructor
+      let res ← (l.constrs.attach.foldrM (fun c (accC : Bool) => do
+        -- A constructor is inhabited if all of its arguments are inhabited
+        let constrInhab ← (c.1.args.attach.foldrM
+          (fun ty1 (accA: Bool) =>
+              do
+                have hn: List.Nodup (addTypeToSet l.name seen) := by
+                  unfold addTypeToSet; rw[List.nodup_cons]; constructor
+                  . have := TypeFactory.getType_name ha; subst_vars
+                    rw[←List.elem_iff]; apply hin
+                  . assumption
+                have hsub' : List.subset (addTypeToSet l.name seen) (List.map (fun x => x.name) adts.toList) := by
+                  unfold addTypeToSet; rw[List.subset_cons_iff]
+                  constructor <;> try assumption
+                  rw[List.mem_map]; exists l; constructor <;> try grind
+                  have := TypeFactory.getType_mem ha; grind
+                let b1 ← ty_inhab adts (addTypeToSet l.name seen) hn hsub' ty1.1.2
+                pure (b1 && accA)
+            ) true)
+        pure (constrInhab || accC)
+        ) false)
+      if res then knowType else pure false
+  termination_by (adts.size - seen.length, 0)
+  decreasing_by
+    apply Prod.Lex.left; simp only[addTypeToSet, List.length]
+    apply Nat.sub_succ_lt_self
+    have hlen := List.subset_nodup_length hn hsub'; simp_all[addTypeToSet]; omega
+
+def ty_inhab (adts: @TypeFactory IDMeta) (seen: typeSet)
+  (hnodup: List.Nodup seen) (hsub: List.subset seen (List.map (fun x => x.name) adts.toList))
+  (t: LMonoTy) : StateM typeSet Bool :=
+  match t with
+    | .tcons name args => do
+        -- name(args) is inhabited if name is inhabited as a typesym
+        -- and all args are inhabited as types (note this is conservative)
+        let checkTy ← typesym_inhab adts seen hnodup hsub name
+        if checkTy then
+          args.foldrM (fun ty acc => do
+            let x ← ty_inhab adts seen hnodup hsub ty
+            pure (x && acc)
+          ) true
+        else pure false
+    | _ => pure true -- Type variables and bitvectors are inhabited
+termination_by (adts.size - seen.length, t.size)
+decreasing_by
+  . apply Prod.Lex.right; simp only[LMonoTy.size]; omega
+  . rename_i h; have := LMonoTy.size_lt_of_mem h;
+    apply Prod.Lex.right; simp only[LMonoTy.size]; omega
+end
+
+/--
+Prove that ADT with name `a` is inhabited. All other types are assumed inhabited.
+This check is currently conservative: it requires that all type arguments
+are inhabited which rules out the following (valid) type:
+```
+type A := A1(x: Option B)
+type B := B1(y: A)
+```
+-/
+def adt_inhab  (adts: @TypeFactory IDMeta) (a: String) : StateM typeSet Bool :=
+  typesym_inhab adts [] (by grind) (by unfold List.subset; grind) a
+
+/--
+Check that all ADTs in TypeFactory `adts` are inhabited. This uses memoization
+to avoid computing the intermediate results more than once.
+-/
+def TypeFactory.all_inhab (adts: @TypeFactory IDMeta) : Bool :=
+  let x := (Array.foldlM (fun (b: Bool) (l: LDatatype IDMeta) =>
+    do
+      if not b then pure false
+      else
+      adt_inhab adts l.name) true adts)
+  (StateT.run x []).1
+
+
+
+
+-- TODO: change to map
 
 
 ---------------------------------------------------------------------
