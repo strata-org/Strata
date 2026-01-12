@@ -13,15 +13,24 @@ Expected interface for pure expressions that can be used to specialize the
 Imperative dialect.
 -/
 structure PureExpr : Type 1 where
+  /-- Kinds of identifiers allowed in expressions. We expect identifiers to have
+   decidable equality; see `EqIdent`. -/
   Ident   : Type
+  EqIdent : DecidableEq Ident
+  /-- Expressions -/
   Expr    : Type
+  /-- Types -/
   Ty      : Type
-  /-- Typing environment -/
+  /-- Typing environment, expected to contain a map of variables to their types,
+  type substitution, etc.
+  -/
   TyEnv   : Type
+  /-- Typing context, expected to contain information that does not change
+    during type checking/inference (e.g., known types and known functions.)
+  -/
   TyContext : Type
   /-- Evaluation environment -/
   EvalEnv : Type
-  EqIdent : DecidableEq Ident
 
 abbrev PureExpr.TypedIdent (P : PureExpr) := P.Ident × P.Ty
 abbrev PureExpr.TypedExpr (P : PureExpr)  := P.Expr × P.Ty

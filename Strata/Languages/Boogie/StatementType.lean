@@ -29,9 +29,12 @@ def typeCheckCmd (C: LContext BoogieLParams) (Env : TEnv Visibility) (P : Progra
   Except Format (Command × (TEnv Visibility)) := do
   match c with
   | .cmd c =>
+    -- Any errors in `Imperative.Cmd.typeCheck` already include source
+    -- locations.
     let (c, Env) ← Imperative.Cmd.typeCheck C Env c
     .ok (.cmd c, Env)
-  | .call lhs pname args md =>
+  | .call lhs pname args md => try
+    -- `try`: to augment any errors with source location info.
      match Program.Procedure.find? P pname with
      | none => .error f!"[{c}]: Procedure {pname} not found!"
      | some proc =>
@@ -63,10 +66,13 @@ def typeCheckCmd (C: LContext BoogieLParams) (Env : TEnv Visibility) (P : Progra
            let (inp_sig, Env) ← LMonoTySignature.instantiate C Env proc.header.typeArgs proc.header.inputs
            let inp_mtys := LMonoTys.subst Env.stateSubstInfo.subst inp_sig.values
            let lhs_inp_constraints := (args_tys.zip inp_mtys)
-           let S ← Constraints.unify (lhs_inp_constraints ++ ret_lhs_constraints) Env.stateSubstInfo
+           let S ← Constraints.unify (lhs_inp_constraints ++ ret_lhs_constraints) Env.stateSubstInfo |> .mapError format
            let Env := Env.updateSubst S
            let s' := .call lhs pname args' md
            .ok (s', Env)
+      catch e =>
+        -- Add source location to error messages.
+        .error f!"{@MetaData.formatFileRangeD Expression _ md false} {e}"
 
 
 def typeCheckAux (C: LContext BoogieLParams) (Env : TEnv Visibility) (P : Program) (op : Option Procedure) (ss : List Statement) :
@@ -75,6 +81,8 @@ def typeCheckAux (C: LContext BoogieLParams) (Env : TEnv Visibility) (P : Progra
 where
   go (Env : TEnv Visibility) (ss : List Statement) (acc : List Statement) :
     Except Format (List Statement × TEnv Visibility) :=
+    let pfx := fun md => @MetaData.formatFileRangeD Expression _ md false
+    let errorWithSourceLoc := fun e md => if (pfx md).isEmpty then e else f!"{pfx md} {e}"
     match ss with
     | [] => .ok (acc.reverse, Env)
     | s :: srest => do
@@ -90,7 +98,7 @@ where
           let s' := .block label ss' md
           .ok (s', Env.popContext)
 
-        | .ite cond tss ess md => do
+        | .ite cond tss ess md => do try
           let _ ← Env.freeVarCheck cond f!"[{s}]"
           let (conda, Env) ← LExpr.resolve C Env cond
           let condty := conda.toLMonoTy
@@ -101,23 +109,26 @@ where
             let s' := .ite conda.unresolved tb eb md
             .ok (s', Env)
           | _ => .error f!"[{s}]: If's condition {cond} is not of type `bool`!"
+          catch e =>
+            -- Add source location to error messages.
+            .error (errorWithSourceLoc e md)
 
-        | .loop guard measure invariant bss md => do
+        | .loop guard measure invariant bss md => do try
           let _ ← Env.freeVarCheck guard f!"[{s}]"
           let (conda, Env) ← LExpr.resolve C Env guard
           let condty := conda.toLMonoTy
-          let (mt, Env) ← match measure with
+          let (mt, Env) ← (match measure with
           | .some m => do
             let _ ← Env.freeVarCheck m f!"[{s}]"
             let (ma, Env) ← LExpr.resolve C Env m
             .ok (some ma, Env)
-          | _ => .ok (none, Env)
-          let (it, Env) ← match invariant with
+          | _ => .ok (none, Env))
+          let (it, Env) ← (match invariant with
           | .some i => do
             let _ ← Env.freeVarCheck i f!"[{s}]"
             let (ia, Env) ← LExpr.resolve C Env i
             .ok (some ia, Env)
-          | _ => .ok (none, Env)
+          | _ => .ok (none, Env))
           let mty := mt.map LExpr.toLMonoTy
           let ity := it.map LExpr.toLMonoTy
           match (condty, mty, ity) with
@@ -138,8 +149,11 @@ where
                 | _ => .error f!"[{s}]: Loop's invariant {invariant} is not of type `bool`!"
               | _ => .error f!"[{s}]: Loop's measure {measure} is not of type `int`!"
             | _ =>  .error f!"[{s}]: Loop's guard {guard} is not of type `bool`!"
+          catch e =>
+            -- Add source location to error messages.
+            .error (errorWithSourceLoc e md)
 
-        | .goto label _ =>
+        | .goto label md => do try
           match op with
           | .some p =>
             if Block.hasLabelInside label p.body then
@@ -147,6 +161,9 @@ where
             else
               .error f!"Label {label} does not exist in the body of {p.header.name}"
           | .none => .error f!"{s} occurs outside a procedure."
+          catch e =>
+            -- Add source location to error messages.
+            .error (errorWithSourceLoc e md)
 
       go Env srest (s' :: acc)
     termination_by Block.sizeOf ss

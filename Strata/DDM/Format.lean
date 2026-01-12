@@ -640,10 +640,10 @@ end DialectMap
 
 namespace Program
 
-private protected def formatContext (p : Program) (opts : FormatOptions) : FormatContext :=
+protected def formatContext (p : Program) (opts : FormatOptions) : FormatContext :=
   .ofDialects p.dialects p.globalContext opts
 
-private protected def formatState (p : Program) : FormatState where
+protected def formatState (p : Program) : FormatState where
   openDialects := p.dialects.toList.foldl (init := {}) fun a d => a.insert d.name
 
 protected def format (p : Program) (opts : FormatOptions := {}) : Format :=
