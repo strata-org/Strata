@@ -223,9 +223,12 @@ def javaGenCommand : Command where
     let (ld, pd) ← readFile fm v[0]
     match pd with
     | .dialect d =>
-      let files := Strata.Java.generateDialect d v[1]
-      Strata.Java.writeJavaFiles v[2] v[1] files
-      IO.println s!"Generated Java files for {d.name} in {v[2]}/{Strata.Java.packageToPath v[1]}"
+      match Strata.Java.generateDialect d v[1] with
+      | .ok files =>
+        Strata.Java.writeJavaFiles v[2] v[1] files
+        IO.println s!"Generated Java files for {d.name} in {v[2]}/{Strata.Java.packageToPath v[1]}"
+      | .error msg =>
+        exitFailure s!"Error generating Java: {msg}"
     | .program _ =>
       exitFailure "Expected a dialect file, not a program file."
 

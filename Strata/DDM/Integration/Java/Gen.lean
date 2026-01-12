@@ -166,6 +166,7 @@ structure GeneratedFiles where
   records : Array (String × String)
   builders : String × String  -- (filename, content)
   serializer : String
+  deriving Inhabited
 
 /-- Mapping from DDM names to disambiguated Java identifiers. -/
 structure NameAssignments where
@@ -318,9 +319,16 @@ def generateBuilders (package : String) (dialectName : String) (d : Dialect) (na
   let methods := d.declarations.filterMap fun | .op op => some (method op) | _ => none
   s!"package {package};\n\npublic class {dialectName} \{\n{"\n".intercalate methods.toList}\n}\n"
 
-def generateDialect (d : Dialect) (package : String) : GeneratedFiles :=
+def generateDialect (d : Dialect) (package : String) : Except String GeneratedFiles := do
   let names := assignAllNames d
   let opsByCategory := groupOpsByCategory d names
+
+  -- Check for unsupported declarations
+  for decl in d.declarations do
+    match decl with
+    | .type t => throw s!"type declaration '{t.name}' is not supported in Java generation"
+    | .function f => throw s!"function declaration '{f.name}' is not supported in Java generation"
+    | _ => pure ()
 
   -- Categories with operators get sealed interfaces with permits clauses
   let sealedInterfaces := opsByCategory.toList.map fun (cat, ops) =>
@@ -332,11 +340,9 @@ def generateDialect (d : Dialect) (package : String) : GeneratedFiles :=
   let stubInterfaces := names.stubs.toList.map fun (_, name) =>
     generateStubInterface package name
 
-  -- Generate records for operators (fail on unsupported declarations)
+  -- Generate records for operators
   let records := d.declarations.toList.filterMap fun decl =>
     match decl with
-    | .type t => panic! s!"type declaration '{t.name}' is not supported in Java generation"
-    | .function f => panic! s!"function declaration '{f.name}' is not supported in Java generation"
     | .op op =>
       let name := names.operators[(op.category, op.name)]!
       some (s!"{name}.java", (opDeclToJavaRecord d.name names op).toJava package)
@@ -345,12 +351,14 @@ def generateDialect (d : Dialect) (package : String) : GeneratedFiles :=
   -- All interface names for Node permits clause
   let allInterfaceNames := (sealedInterfaces ++ stubInterfaces).map (·.1.dropRight 5)
 
-  { sourceRange := generateSourceRange package
+  return {
+    sourceRange := generateSourceRange package
     node := generateNodeInterface package allInterfaceNames
     interfaces := sealedInterfaces.toArray ++ stubInterfaces.toArray
     records := records.toArray
     builders := (s!"{names.builders}.java", generateBuilders package names.builders d names)
-    serializer := generateSerializer package }
+    serializer := generateSerializer package
+  }
 
 /-! ## File Output -/
 
