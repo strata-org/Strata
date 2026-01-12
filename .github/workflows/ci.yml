@@ -70,7 +70,6 @@ jobs:
           dotnet-version: '8.0.x'
       - name: Build and test Strata
         uses: leanprover/lean-action@v1
-        timeout-minutes: 15
       - name: Build and run StrataVerify
         run: lake exe StrataVerify Examples/SimpleProc.boogie.st
       - name: Build BoogieToStrata

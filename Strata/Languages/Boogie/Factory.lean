@@ -406,13 +406,7 @@ def bv64Extract_31_0_Func  := bvExtractFunc 64 31  0
 def bv64Extract_15_0_Func  := bvExtractFunc 64 15  0
 def bv64Extract_7_0_Func   := bvExtractFunc 64  7  0
 
-/--
-Split Factorys to smaller ones for faster well-formedness proof.
-In the end, we concatenate the smaller Factorys with Factory.addFactory and do
-panic! check.
--/
-
-private def intRealBoolFactory : @Factory BoogieLParams := #[
+def Factory : @Factory BoogieLParams := #[
   @intAddFunc BoogieLParams _,
   @intSubFunc BoogieLParams _,
   @intMulFunc BoogieLParams _,
@@ -439,13 +433,8 @@ private def intRealBoolFactory : @Factory BoogieLParams := #[
   @boolOrFunc BoogieLParams _,
   @boolImpliesFunc BoogieLParams _,
   @boolEquivFunc BoogieLParams _,
-  @boolNotFunc BoogieLParams _
-]
+  @boolNotFunc BoogieLParams _,
 
-/-- All operations other than Int, Real, Bool and the Bit-vector operations
-(which will follow).
--/
-private def nonIntRealBoolFactory : @Factory BoogieLParams := #[
   strLengthFunc,
   strConcatFunc,
   strSubstrFunc,
@@ -472,47 +461,20 @@ private def nonIntRealBoolFactory : @Factory BoogieLParams := #[
   addTriggerGroupFunc,
   emptyTriggerGroupFunc,
   addTriggerFunc,
-]
 
-/-- Bit-vector operations of bit-width 1 and 8. -/
-private def expandedBVOp_1_8_Factory : @Factory BoogieLParams := #[
   bv8ConcatFunc,
   bv8Extract_7_7_Func,
-] ++ (ExpandBVOpFuncNames [1,8])
-
-/-- Bit-vector operations of bit-width 16 -/
-private def expandedBVOp_16_Factory : @Factory BoogieLParams := #[
   bv16ConcatFunc,
   bv16Extract_15_15_Func,
   bv16Extract_7_0_Func,
-] ++ (ExpandBVOpFuncNames [16])
-
-/-- Bit-vector operations of bit-width 32 -/
-private def expandedBVOp_32_Factory : @Factory BoogieLParams := #[
   bv32ConcatFunc,
   bv32Extract_31_31_Func,
   bv32Extract_15_0_Func,
   bv32Extract_7_0_Func,
-] ++ (ExpandBVOpFuncNames [32])
-
-/-- Bit-vector operations of bit-width 64. -/
-private def expandedBVOp_64_Factory : @Factory BoogieLParams := #[
   bv64Extract_31_0_Func,
   bv64Extract_15_0_Func,
-  bv64Extract_7_0_Func,
-] ++ (ExpandBVOpFuncNames [64])
-
-def FactoryE := do
-    let fv ← intRealBoolFactory.addFactory nonIntRealBoolFactory
-    let fv ← fv.addFactory expandedBVOp_1_8_Factory
-    let fv ← fv.addFactory expandedBVOp_16_Factory
-    let fv ← fv.addFactory expandedBVOp_32_Factory
-    let fv ← fv.addFactory expandedBVOp_64_Factory
-    return fv
-
-def Factory : @Factory BoogieLParams := match FactoryE with
-  | .ok F => F | .error _ => panic! "may have duplicated ops"
-
+  bv64Extract_7_0_Func
+] ++ (ExpandBVOpFuncNames [1,8,16,32,64])
 
 open Lean Elab Command in
 elab "DefBVOpFuncExprs" "[" sizes:num,* "]" : command => do
@@ -608,72 +570,37 @@ def builtinFunctions : Array String :=
   Factory.map (fun f => BoogieIdent.toPretty f.name)
 
 
-/--
-Wellformedness of the factories.
--/
+set_option maxRecDepth 32768
+set_option maxHeartbeats 4000000
 
-private theorem intRealBoolFactory_wf : FactoryWf intRealBoolFactory := by
+/--
+Wellformedness of Factory
+-/
+theorem Factory_wf :
+    FactoryWf Factory := by
+  unfold Factory
   apply FactoryWf.mk
-  · decide
-  · unfold intRealBoolFactory
-    intros lf Hmem
+  · decide -- FactoryWf.name_nodup
+  · unfold HAppend.hAppend Array.instHAppendList
+    simp only []
+    unfold Array.appendList
+    simp only [List.foldl, Array.push, List.concat]
+    intros lf
+    rw [← Array.mem_toList_iff]
+    simp only []
+    intros Hmem
     repeat (
       rcases Hmem with _ | ⟨ a', Hmem ⟩
       · apply LFuncWf.mk
-        · decide
-        · decide
-        · simp (config := { ground := true })
+        · decide -- LFuncWf.arg_nodup
+        · decide -- LFuncWf.body_freevars
+        · -- LFuncWf.concreteEval_argmatch
+          simp (config := { ground := true })
           try (
             try unfold unOpCeval
             try unfold binOpCeval
             try unfold cevalIntDiv
             try unfold cevalIntMod
-            intros lf md args res
-            repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
-    contradiction
-
-private theorem nonIntRealBoolFactory_wf : FactoryWf nonIntRealBoolFactory := by
-  apply FactoryWf.mk
-  · decide
-  · unfold nonIntRealBoolFactory
-    intros lf Hmem
-    repeat (
-      rcases Hmem with _ | ⟨ a', Hmem ⟩
-      · apply LFuncWf.mk
-        · decide
-        · decide
-        · simp (config := { ground := true })
-          try (
-            try unfold unOpCeval
-            try unfold binOpCeval
-            intros lf md args res
-            repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
-    contradiction
-
-
-set_option maxRecDepth 32768
-set_option maxHeartbeats 4000000
-
-private theorem expandedBVOp_1_8_Factory_wf :
-    FactoryWf expandedBVOp_1_8_Factory := by
-  unfold expandedBVOp_1_8_Factory
-  apply FactoryWf.mk
-  · decide
-  · unfold HAppend.hAppend Array.instHAppendList
-    simp only []
-    unfold Array.appendList
-    simp only [List.foldl, Array.push, List.concat]
-    intros lf
-    rw [← Array.mem_toList_iff]
-    simp only []
-    intros Hmem
-    repeat (
-      rcases Hmem with _ | ⟨ a', Hmem ⟩
-      · apply LFuncWf.mk
-        · decide
-        · decide
-        · simp (config := { ground := true })
-          try (
             try unfold bvUnaryOp
             try unfold bvBinaryOp
             try unfold bvShiftOp
@@ -681,132 +608,5 @@ private theorem expandedBVOp_1_8_Factory_wf :
             intros lf md args res
             repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
     contradiction
-
-private theorem expandedBVOp_16_Factory_wf :
-    FactoryWf expandedBVOp_16_Factory := by
-  unfold expandedBVOp_16_Factory
-  apply FactoryWf.mk
-  · decide
-  · unfold HAppend.hAppend Array.instHAppendList
-    simp only []
-    unfold Array.appendList
-    simp only [List.foldl, Array.push, List.concat]
-    intros lf
-    rw [← Array.mem_toList_iff]
-    simp only []
-    intros Hmem
-    repeat (
-      rcases Hmem with _ | ⟨ a', Hmem ⟩
-      · apply LFuncWf.mk
-        · decide
-        · decide
-        · simp (config := { ground := true })
-          try (
-            try unfold bvUnaryOp
-            try unfold bvBinaryOp
-            try unfold bvShiftOp
-            try unfold bvBinaryPred
-            intros lf md args res
-            repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
-    contradiction
-
-private theorem expandedBVOp_32_Factory_wf :
-    FactoryWf expandedBVOp_32_Factory := by
-  unfold expandedBVOp_32_Factory
-  apply FactoryWf.mk
-  · decide
-  · unfold HAppend.hAppend Array.instHAppendList
-    simp only []
-    unfold Array.appendList
-    simp only [List.foldl, Array.push, List.concat]
-    intros lf
-    rw [← Array.mem_toList_iff]
-    simp only []
-    intros Hmem
-    repeat (
-      rcases Hmem with _ | ⟨ a', Hmem ⟩
-      · apply LFuncWf.mk
-        · decide
-        · decide
-        · simp (config := { ground := true })
-          try (
-            try unfold bvUnaryOp
-            try unfold bvBinaryOp
-            try unfold bvShiftOp
-            try unfold bvBinaryPred
-            intros lf md args res
-            repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
-    contradiction
-
-private theorem expandedBVOp_64_Factory_wf :
-    FactoryWf expandedBVOp_64_Factory := by
-  unfold expandedBVOp_64_Factory
-  apply FactoryWf.mk
-  · decide
-  · unfold HAppend.hAppend Array.instHAppendList
-    simp only []
-    unfold Array.appendList
-    simp only [List.foldl, Array.push, List.concat]
-    intros lf
-    rw [← Array.mem_toList_iff]
-    simp only []
-    intros Hmem
-    repeat (
-      rcases Hmem with _ | ⟨ a', Hmem ⟩
-      · apply LFuncWf.mk
-        · decide
-        · decide
-        · simp (config := { ground := true })
-          try (
-            try unfold bvUnaryOp
-            try unfold bvBinaryOp
-            try unfold bvShiftOp
-            try unfold bvBinaryPred
-            intros lf md args res
-            repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
-    contradiction
-
-def Factory_wf_if_ok: ∀ F', FactoryE = .ok F' → FactoryWf F' := by
-  -- Challenge: it seems this theorem can be possibly automated with
-  -- a decision procedure for first order logic. Can we use grind?
-  intros F'
-  unfold FactoryE Bind.bind Pure.pure Except.instMonad Except.bind
-  simp only []
-  intro H
-  split at H <;> try contradiction
-  rename_i F1 HF1
-  split at H <;> try contradiction
-  rename_i F2 HF2
-  split at H <;> try contradiction
-  rename_i F3 HF3
-  split at H <;> try contradiction
-  rename_i F4 HF4
-  split at H <;> try contradiction
-  rename_i F5 HF5
-  have Hwf1:= Factory.addFactory_wf intRealBoolFactory intRealBoolFactory_wf
-      nonIntRealBoolFactory nonIntRealBoolFactory_wf F1 HF1
-  have Hwf2:= Factory.addFactory_wf F1 Hwf1
-      expandedBVOp_1_8_Factory expandedBVOp_1_8_Factory_wf F2 HF2
-  have Hwf3:= Factory.addFactory_wf F2 Hwf2
-      expandedBVOp_16_Factory expandedBVOp_16_Factory_wf F3 HF3
-  have Hwf4:= Factory.addFactory_wf F3 Hwf3
-      expandedBVOp_32_Factory expandedBVOp_32_Factory_wf F4 HF4
-  have Hwf5:= Factory.addFactory_wf F4 Hwf4
-      expandedBVOp_64_Factory expandedBVOp_64_Factory_wf F5 HF5
-  unfold Except.pure at H
-  grind
-
-/-
-Currently, this theorem cannot be proven true because the existing proof for
-smaller factories raises timeout/heartbeat error if applied this larger Factory.
-But we are pretty close: Factory_wf_if_ok is proven, and evaluting Factory
-must have raised 'panic!' if it was not ok, so from the fact that it did not
-panic! the resulting Factory is well-formed.
--/
-
-/-
-def Factory_wf: FactoryWf Factory := by
-  sorry
--/
 
 end Boogie
