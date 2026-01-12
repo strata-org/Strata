@@ -308,7 +308,8 @@ spec {
 };
 #end
 
-/-- info: error: Cannot unify differently named type constructors int and bool!-/
+/-- info: error: (0, 0) Impossible to unify (arrow int bool) with (arrow bool $__ty6).
+First mismatch: int with bool.-/
 #guard_msgs in
 #eval (Boogie.typeCheck Options.quiet (TransM.run Inhabited.default (translateProgram eqTypeMismatchPgm)).fst)
 
