@@ -34,7 +34,7 @@ Variable belongs to the particular category below.
 | cat (k : SyntaxCat)
 /--
 Variable is a polymorphic type variable (for function type parameters).
-These are passed through to the Lambda typechecker for inference.
+These are passed through to the dialect's typechecker for inference.
 -/
 | tvar (ann : SourceRange) (name : String)
 deriving Inhabited, Repr

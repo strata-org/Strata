@@ -271,10 +271,8 @@ partial def translateLMonoTy (bindings : TransBindings) (arg : Arg) :
     let var := bindings.boundTypeVars[bindings.boundTypeVars.size - (i+1)]!
     return (.ftvar var)
   | .tvar _ name =>
-    -- Polymorphic type variable translates directly to Lambda free type variable
     return (.ftvar name)
   | .arrow _ argTp resTp =>
-     -- Arrow type translates to LMonoTy.arrow
      let argTy ← translateLMonoTy bindings (.type argTp)
      let resTy ← translateLMonoTy bindings (.type resTp)
      return (.arrow argTy resTy)

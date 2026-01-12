@@ -54,7 +54,7 @@ partial def expandMacros (m : DialectMap) (f : PreType) (args : Nat → Option A
   | .arrow loc a b => .arrow loc <$> expandMacros m a args <*> expandMacros m b args
   | .fvar loc i a => .fvar loc i <$> a.mapM fun e => expandMacros m e args
   | .bvar loc idx => pure (.bvar loc idx)
-  | .tvar loc name => pure (.tvar loc name)  -- tvar passes through unchanged
+  | .tvar loc name => pure (.tvar loc name)
   | .funMacro loc i r => do
     let r ← expandMacros m r args
     match args i with
@@ -78,7 +78,7 @@ the head is in a normal form.
 -/
 partial def hnf (tctx : TypingContext) (e : TypeExpr) : TypeExpr :=
   match e with
-  | .arrow .. | .ident .. | .tvar .. => e  -- tvar is already in normal form
+  | .arrow .. | .ident .. | .tvar .. => e
   | .fvar _ idx args =>
     let gctx := tctx.globalContext
     match gctx.kindOf! idx with
@@ -95,7 +95,7 @@ partial def hnf (tctx : TypingContext) (e : TypeExpr) : TypeExpr :=
       assert! d.isGround
       hnf (tctx.drop (idx + 1)) d
     | .type _ _ none => e
-    | .tvar _ _ => e  -- tvar is already in normal form
+    | .tvar _ _ => e
     | _ => panic! "Expected a type"
 
 /--
@@ -179,7 +179,6 @@ def resolveTypeBinding (tctx : TypingContext) (loc : SourceRange) (name : String
       let info : TypeInfo := { inputCtx := tctx, loc := loc, typeExpr := .bvar loc idx, isInferred := false }
       return .node (.ofTypeInfo info) #[]
     else if let .tvar loc tvarName := k then
-      -- Type variable: produce a .tvar TypeExpr node
       let info : TypeInfo := { inputCtx := tctx, loc := loc, typeExpr := .tvar loc tvarName, isInferred := false }
       return .node (.ofTypeInfo info) #[]
     else
@@ -332,7 +331,7 @@ N.B. This expects that macros have already been expanded in e.
 -/
 partial def headExpandTypeAlias (gctx : GlobalContext) (e : TypeExpr) : TypeExpr :=
   match e with
-  | .arrow .. | .ident .. | .bvar .. | .tvar .. => e  -- tvar is already in normal form
+  | .arrow .. | .ident .. | .bvar .. | .tvar .. => e
   | .fvar _ idx args =>
     match gctx.kindOf! idx with
     | .expr _ => panic! "Type free variable bound to expression."
@@ -353,10 +352,10 @@ partial def checkExpressionType (tctx : TypingContext) (itype rtype : TypeExpr) 
   let itype := tctx.hnf itype
   let rtype := tctx.hnf rtype
   match itype, rtype with
-  -- tvar matches anything (will be inferred by Lambda typechecker)
-  | .tvar _ n1, .tvar _ n2 => return n1 == n2  -- Same type variable
-  | .tvar _ _, _ => return true  -- Type variable matches anything (inferred later)
-  | _, .tvar _ _ => return true  -- Type variable matches anything (inferred later)
+  -- tvar matches anything (dialect responsible for typechecking)
+  | .tvar _ n1, .tvar _ n2 => return n1 == n2
+  | .tvar _ _, _ => return true
+  | _, .tvar _ _ => return true
   | .ident _ iq ia, .ident _ rq ra =>
     if p : iq = rq ∧ ia.size = ra.size then do
       for i in Fin.range ia.size do
@@ -479,7 +478,6 @@ partial def unifyTypes
         logErrorMF exprLoc mf!"Expression has type {withBindings tctx.bindings (mformat inferredType)} when {withBindings tctx.bindings (mformat info.typeExpr)} expected."
       pure args
   | .tvar _ _ =>
-    -- Type variable: skip DDM unification, let Lambda typechecker handle it
     -- tvar nodes are passed through without attempting unification
     pure args
   | .arrow _ ea er =>
@@ -767,7 +765,6 @@ def translateBindingKind (tree : Tree) : ElabM BindingKind := do
               logErrorMF nameLoc mf!"Unexpected arguments to type variable {name}."
               return default
           else if let .tvar loc tvarName := k then
-            -- Type variable: produce a .tvar TypeExpr node
             if tpArgs.isEmpty then
               return .expr (.tvar loc tvarName)
             else
@@ -813,20 +810,17 @@ def evalBindingSpec
   match b with
   | .value b =>
     let ident := evalBindingNameIndex args b.nameIndex
-    -- Collect only .expr bindings, skipping .tvar (type parameters) and .type/.cat
     let (bindings, success) ← runChecked <| elabArgIndex initSize args b.argsIndex fun argLoc b =>
           match b.kind with
           | .expr tp =>
             pure (some (b.ident, tp))
           | .tvar .. =>
-            -- Skip type variable bindings - they are type parameters, not expression parameters
             pure none
           | .type .. | .cat _ => do
             logError argLoc "Expecting expressions in variable binding"
             pure none
     if !success then
       return default
-    -- Filter out None values (from skipped .tvar bindings)
     let bindings := bindings.filterMap id
     let typeTree := args[b.typeIndex.toLevel]
     let kind ←
@@ -855,7 +849,6 @@ def evalBindingSpec
           | .type _ [] _ =>
             pure ()
           | .tvar _ _ =>
-            -- tvar is a type variable, which is valid as a type parameter
             pure ()
           | .type .. | .expr _ | .cat _ => do
             logError argLoc s!"{b.ident} must be have type Type instead of {repr b.kind}."
@@ -991,17 +984,15 @@ TypeArgs is an operation `type_args` with one child that is `CommaSepBy Ident`.
 Option TypeArgs wraps this in an OptionInfo node.
 -/
 def extractTypeVarNames (tree : Tree) : Array String :=
-  -- First, unwrap Option if present
   let innerTree :=
     match tree.info with
     | .ofOptionInfo _ =>
-      -- Option TypeArgs: check if Some or None
       match tree.children[0]? with
-      | none => none  -- None case
+      | none => none
       | some t => some t
     | _ => some tree
   match innerTree with
-  | none => #[]  -- No type args (None case)
+  | none => #[]
   | some typeArgsTree =>
     -- typeArgsTree should be the type_args operation
     -- Its first child should be CommaSepBy Ident
@@ -1079,15 +1070,14 @@ partial def runSyntaxElaborator
           -- Extract type parameter names from the bindings
           let typeParamNames := baseCtx.bindings.toArray.filterMap fun b =>
             match b.kind with
-            | .type _ [] _ => some b.ident  -- Type parameter (no params, no definition)
+            | .type _ [] _ => some b.ident
             | _ => none
-          -- Add the datatype name to the GlobalContext as a type with the correct arity
+          -- Add the datatype name to the GlobalContext as a type
           let gctx := baseCtx.globalContext
           let gctx :=
             if datatypeName ∈ gctx then gctx
             else gctx.push datatypeName (GlobalKind.type typeParamNames.toList none)
-          -- Add .tvar bindings for type parameters (like polymorphic functions do)
-          -- This shadows the .type bindings so type params resolve to .tvar
+          -- Add .tvar bindings for type parameters
           let loc := typeParamsT.info.loc
           let tctx := typeParamNames.foldl (init := baseCtx.withGlobalContext gctx) fun ctx name =>
             ctx.push { ident := name, kind := .tvar loc name }
@@ -1099,10 +1089,9 @@ partial def runSyntaxElaborator
         | some typeArgsLevel =>
           match trees[typeArgsLevel] with
           | some typeArgsTree =>
-            -- Extract identifiers from TypeArgs (or Option TypeArgs) and add as .tvar bindings
+            -- Extract identifiers from TypeArgs and add as .tvar bindings
             let baseCtx := typeArgsTree.resultContext
             let typeVarNames := extractTypeVarNames typeArgsTree
-            -- Add each type variable as a binding with .tvar kind
             let tctx := typeVarNames.foldl (init := baseCtx) fun ctx name =>
               let loc := typeArgsTree.info.loc
               ctx.push { ident := name, kind := .tvar loc name }

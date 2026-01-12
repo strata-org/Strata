@@ -88,11 +88,10 @@ abbrev FreeVarIndex := Nat
 inductive TypeExprF (α : Type) where
   /-- A dialect defined type. -/
 | ident (ann : α) (name : QualifiedIdent) (args : Array (TypeExprF α))
-  /-- A bound type variable at the given deBruijn index in the context.
-      Used for type alias parameters (substituted on instantiation). -/
+  /-- A bound type variable at the given deBruijn index in the context. -/
 | bvar (ann : α) (index : Nat)
   /-- A polymorphic type variable (universally quantified).
-      Used for polymorphic function type parameters (inferred by Lambda typechecker). -/
+      Used for polymorphic function type parameters -/
 | tvar (ann : α) (name : String)
   /-- A reference to a global variable along with any arguments to ensure it is well-typed. -/
 | fvar (ann : α) (fvar : FreeVarIndex) (args : Array (TypeExprF α))
@@ -117,7 +116,7 @@ protected def incIndices {α} (tp : TypeExprF α) (count : Nat) : TypeExprF α :
   | .ident n i args => .ident n i (args.attach.map fun ⟨e, _⟩ => e.incIndices count)
   | .fvar n f args => .fvar n f (args.attach.map fun ⟨e, _⟩ => e.incIndices count)
   | .bvar n idx => .bvar n (idx + count)
-  | .tvar n name => .tvar n name  -- tvar doesn't use indices, pass through unchanged
+  | .tvar n name => .tvar n name  -- tvar doesn't use indices
   | .arrow n a r => .arrow n (a.incIndices count) (r.incIndices count)
 
 /-- Return true if type expression has a bound variable. -/
@@ -125,7 +124,7 @@ protected def hasUnboundVar {α} (bindingCount : Nat := 0) : TypeExprF α → Bo
 | .ident _ _ args => args.attach.any (fun ⟨e, _⟩ => e.hasUnboundVar bindingCount)
 | .fvar _ _ args => args.attach.any (fun ⟨e, _⟩ => e.hasUnboundVar bindingCount)
 | .bvar _ idx => idx ≥ bindingCount
-| .tvar _ _ => true  -- tvar is considered unbound (will be inferred by Lambda typechecker)
+| .tvar _ _ => true
 | .arrow _ a r => a.hasUnboundVar bindingCount || r.hasUnboundVar bindingCount
 termination_by e => e
 
@@ -142,7 +141,7 @@ protected def instTypeM {m α} [Monad m] (d : TypeExprF α) (bindings : α → N
   | .ident n i a =>
     .ident n i <$> a.attach.mapM (fun ⟨e, _⟩ => e.instTypeM bindings)
   | .bvar n idx => bindings n idx
-  | .tvar n name => pure (.tvar n name)  -- tvar doesn't get substituted by type alias instantiation
+  | .tvar n name => pure (.tvar n name)
   | .fvar n idx a => .fvar n idx <$> a.attach.mapM (fun ⟨e, _⟩ => e.instTypeM bindings)
   | .arrow n a b => .arrow n <$> a.instTypeM bindings <*> b.instTypeM bindings
 termination_by d
@@ -494,10 +493,10 @@ inductive PreType where
   /-- A dialect defined type. -/
 | ident (ann : SourceRange) (name : QualifiedIdent) (args : Array PreType)
   /-- A bound type variable at the given deBruijn index in the context.
-      Used for type alias parameters (substituted on instantiation). -/
+      Used for type alias parameters -/
 | bvar (ann : SourceRange) (index : Nat)
   /-- A polymorphic type variable (universally quantified).
-      Used for polymorphic function type parameters (inferred by Lambda typechecker). -/
+      Used for polymorphic function type parameters -/
 | tvar (ann : SourceRange) (name : String)
   /-- A reference to a global variable along with any arguments to ensure it is well-typed. -/
 | fvar (ann : SourceRange) (fvar : FreeVarIndex) (args : Array PreType)
