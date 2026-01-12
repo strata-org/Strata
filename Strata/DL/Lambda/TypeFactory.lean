@@ -7,6 +7,7 @@
 import Strata.DL.Lambda.LExprWF
 import Strata.DL.Lambda.LTy
 import Strata.DL.Lambda.Factory
+import Strata.DL.Util.List
 
 /-!
 ## Lambda's Type Factory
@@ -454,7 +455,7 @@ The only element of `List` is `Nil`, but we also create the destructor
 `hd : List → Empty`, which means `hd Nil` has type `Empty`, contradicting the
 fact that `Empty` is uninhabited.
 
-However, checking type inhabitation is hard for several reasons:
+However, checking type inhabitation is complicated for several reasons:
 1. Datatypes can refer to other datatypes. E.g. `type Bad = B(x: Empty)` is
 uninhabited
 2. These dependencies need not be linear. For example,
@@ -463,57 +464,35 @@ the following datatypes are uninhabited:
 type Bad1 := B1(x: Bad2)
 type Bad2 := B2(x: Bad1)
 ```
-3. Instantiated type parameters affect things as well. `List Empty` is
-inhabited, but `Either Empty Empty` is not.
+3. Instantiated type parameters matter: `List Empty` is
+inhabited, but `Either Empty Empty` is not. Our check is conservative and will
+not allow either of these types.
 
 We determine if all types in a TypeFactory are inhabited simulataneously,
-memoizing the results. Proving the termination of this function is very
-tricky (though possible), so we leave it `partial` for now.
-
+memoizing the results.
 -/
 
-def typeMap : Type := Map String Bool
-
-def getTypeInMap (l: String) (m: typeMap) : Option Bool :=
-  Map.find? m l
-
-def addTypeToMap (l: String) (b: Bool) (m: typeMap) : typeMap :=
-  Map.insert m l b
-
-theorem List.subset_nodup_length {α} {s1 s2: List α} (hn: s1.Nodup) (hsub: s1 ⊆ s2) : s1.length ≤ s2.length := by
-  induction s1 generalizing s2 with
-  | nil => simp
-  | cons x t IH =>
-    simp only[List.length]
-    have xin: x ∈ s2 := by apply hsub; grind
-    rw[List.mem_iff_append] at xin
-    rcases xin with ⟨l1, ⟨l2, hs2⟩⟩; subst_vars
-    have hsub1: t ⊆ (l1 ++ l2) := by grind
-    grind
+abbrev typeMap : Type := Map String Bool
 
 mutual
 
 /--
 Prove that type symbol `ts` is inhabited, assuming
 that types `seen` are unknown. All other types are assumed inhabited.
-This check is currently conservative: it requires that all type arguments
-are inhabited which rules out the following (valid) type:
-```
-type A := A1(x: Option B)
-type B := B1(y: A)
-```
 -/
 def typesym_inhab (adts: @TypeFactory IDMeta) (seen: List String)
   (hnodup: List.Nodup seen) (hsub: seen ⊆ (List.map (fun x => x.name) adts.toList))
   (ts: String)
    : StateM typeMap (Option String) := do
   let knowType (b: Bool) : StateM typeMap (Option String) := do
-    let s ← get
-    set (addTypeToMap ts b s)
+    -- Only add false if not in a cycle, it may resolve later
+    if b || seen.isEmpty then
+      let m ← get
+      set (m.insert ts b)
     if b then pure none else pure (some ts)
   -- Check if type is already known to be inhabited
-  let s ← get
-  match getTypeInMap ts s with
+  let m ← get
+  match m.find? ts with
   | some true => pure none
   | some false => pure (some ts)
   | none =>
@@ -575,12 +554,6 @@ end
 
 /--
 Prove that ADT with name `a` is inhabited. All other types are assumed inhabited.
-This check is currently conservative: it requires that all type arguments
-are inhabited which rules out the following (valid) type:
-```
-type A := A1(x: Option B)
-type B := B1(y: A)
-```
 -/
 def adt_inhab  (adts: @TypeFactory IDMeta) (a: String) : StateM typeMap (Option String) :=
   typesym_inhab adts [] (by grind) (by grind) a
@@ -598,6 +571,9 @@ def TypeFactory.all_inhab (adts: @TypeFactory IDMeta) : Option String :=
       | none => adt_inhab adts l.name) none adts)
   (StateT.run x []).1
 
+/--
+Check that all ADTs in TypeFactory `adts` are inhabited.
+-/
 def TypeFactory.checkInhab (adts: @TypeFactory IDMeta) : Except Format Unit :=
   match adts.all_inhab with
   | none => .ok ()

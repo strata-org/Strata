@@ -480,12 +480,13 @@ end Tree
 -- Typechecking tests
 
 /-
-1. Non-positive type
-type Bad := | C (Bad -> Bad)
+1. Non-positive type (with trivial base case for inhabitation)
+type Bad := | Base | C (Bad -> Bad)
 -/
 
 def badConstr1: LConstr Unit := {name := "C", args := [⟨"x", .arrow (.tcons "Bad" []) (.tcons "Bad" [])⟩], testerName := "isC"}
-def badTy1 : LDatatype Unit := {name := "Bad", typeArgs := [], constrs := [badConstr1], constrs_ne := rfl}
+def badConstr1Base: LConstr Unit := {name := "Base", args := [], testerName := "isBase"}
+def badTy1 : LDatatype Unit := {name := "Bad", typeArgs := [], constrs := [badConstr1Base, badConstr1], constrs_ne := rfl}
 
 /-- info: Error in constructor C: Non-strictly positive occurrence of Bad in type (arrow Bad Bad)
 -/
@@ -493,36 +494,39 @@ def badTy1 : LDatatype Unit := {name := "Bad", typeArgs := [], constrs := [badCo
 #eval format $ typeCheckAndPartialEval #[badTy1] (IntBoolFactory : @Factory TestParams) (intConst () 0)
 
 /-
-2.Non-strictly positive type
-type Bad a := | C ((Bad a -> int) -> int)
+2. Non-strictly positive type (with trivial base case for inhabitation)
+type Bad a := | Base | C ((Bad a -> int) -> int)
 -/
 
 def badConstr2: LConstr Unit := {name := "C", args := [⟨"x", .arrow (.arrow (.tcons "Bad" [.ftvar "a"]) .int) .int⟩], testerName := "isC"}
-def badTy2 : LDatatype Unit := {name := "Bad", typeArgs := ["a"], constrs := [badConstr2], constrs_ne := rfl}
+def badConstr2Base: LConstr Unit := {name := "Base", args := [], testerName := "isBase"}
+def badTy2 : LDatatype Unit := {name := "Bad", typeArgs := ["a"], constrs := [badConstr2Base, badConstr2], constrs_ne := rfl}
 
 /-- info: Error in constructor C: Non-strictly positive occurrence of Bad in type (arrow (arrow (Bad a) int) int)-/
 #guard_msgs in
 #eval format $ typeCheckAndPartialEval #[badTy2] (IntBoolFactory : @Factory TestParams) (intConst () 0)
 
 /-
-3. Non-strictly positive type 2
-type Bad a := | C (int -> (Bad a -> int))
+3. Non-strictly positive type 2 (with trivial base case for inhabitation)
+type Bad a := | Base | C (int -> (Bad a -> int))
 -/
 
 def badConstr3: LConstr Unit := {name := "C", args := [⟨"x", .arrow .int (.arrow (.tcons "Bad" [.ftvar "a"]) .int)⟩], testerName := "isC"}
-def badTy3 : LDatatype Unit := {name := "Bad", typeArgs := ["a"], constrs := [badConstr3], constrs_ne := rfl}
+def badConstr3Base: LConstr Unit := {name := "Base", args := [], testerName := "isBase"}
+def badTy3 : LDatatype Unit := {name := "Bad", typeArgs := ["a"], constrs := [badConstr3Base, badConstr3], constrs_ne := rfl}
 
 /--info: Error in constructor C: Non-strictly positive occurrence of Bad in type (arrow (Bad a) int)-/
 #guard_msgs in
 #eval format $ typeCheckAndPartialEval #[badTy3] (IntBoolFactory : @Factory TestParams) (intConst () 0)
 
 /-
-4. Strictly positive type
-type Good := | C (int -> (int -> Good))
+4. Strictly positive type (with trivial base case for inhabitation)
+type Good := | Base | C (int -> (int -> Good))
 -/
 
 def goodConstr1: LConstr Unit := {name := "C", args := [⟨"x", .arrow .int (.arrow .int (.tcons "Good" [.ftvar "a"]))⟩], testerName := "isC"}
-def goodTy1 : LDatatype Unit := {name := "Good", typeArgs := ["a"], constrs := [goodConstr1], constrs_ne := rfl}
+def goodConstr1Base: LConstr Unit := {name := "Base", args := [], testerName := "isBase"}
+def goodTy1 : LDatatype Unit := {name := "Good", typeArgs := ["a"], constrs := [goodConstr1Base, goodConstr1], constrs_ne := rfl}
 
 /-- info: Annotated expression:
 #0
@@ -534,22 +538,24 @@ info: #0
 #eval format $ typeCheckAndPartialEval #[goodTy1] (IntBoolFactory : @Factory TestParams) (intConst () 0)
 
 /-
-5. Non-uniform type
-type Nonunif a := | C (int -> Nonunif (List a))
+5. Non-uniform type (with trivial base case for inhabitation)
+type Nonunif a := | Base | C (int -> Nonunif (List a))
 -/
 def nonUnifConstr1: LConstr Unit := {name := "C", args := [⟨"x", .arrow .int (.arrow .int (.tcons "Nonunif" [.tcons "List" [.ftvar "a"]]))⟩], testerName := "isC"}
-def nonUnifTy1 : LDatatype Unit := {name := "Nonunif", typeArgs := ["a"], constrs := [nonUnifConstr1], constrs_ne := rfl}
+def nonUnifConstr1Base: LConstr Unit := {name := "Base", args := [], testerName := "isBase"}
+def nonUnifTy1 : LDatatype Unit := {name := "Nonunif", typeArgs := ["a"], constrs := [nonUnifConstr1Base, nonUnifConstr1], constrs_ne := rfl}
 
 /-- info: Error in constructor C: Non-uniform occurrence of Nonunif, which is applied to [(List a)] when it should be applied to [a]-/
 #guard_msgs in
 #eval format $ typeCheckAndPartialEval #[listTy, nonUnifTy1] (IntBoolFactory : @Factory TestParams) (intConst () 0)
 
 /-
-6. Nested types are allowed, though they won't produce a useful elimination principle
-type Nest a := | C (List (Nest a))
+6. Nested types are allowed, though they won't produce a useful elimination principle (with trivial base case for inhabitation)
+type Nest a := | Base | C (List (Nest a))
 -/
 def nestConstr1: LConstr Unit := {name := "C", args := [⟨"x", .tcons "List" [.tcons "Nest" [.ftvar "a"]]⟩], testerName := "isC"}
-def nestTy1 : LDatatype Unit := {name := "Nest", typeArgs := ["a"], constrs := [nestConstr1], constrs_ne := rfl}
+def nestConstr1Base: LConstr Unit := {name := "Base", args := [], testerName := "isBase"}
+def nestTy1 : LDatatype Unit := {name := "Nest", typeArgs := ["a"], constrs := [nestConstr1Base, nestConstr1], constrs_ne := rfl}
 
 /-- info: Annotated expression:
 #0
@@ -589,5 +595,163 @@ Existing Function: func Int.Add :  ((x : int) (y : int)) → int;
 New Function:func Int.Add :  ((x : int)) → Bad;-/
 #guard_msgs in
 #eval format $ typeCheckAndPartialEval #[badTy5] (IntBoolFactory : @Factory TestParams) (intConst () 0)
+
+---------------------------------------------------------------------
+
+-- Inhabited type tests
+
+section InhabitedTests
+
+-- Test 1: Normal inhabited types
+
+-- Option type: Some | None
+def optionTy : LDatatype Unit := {
+  name := "Option", typeArgs := ["a"],
+  constrs := [
+    {name := "None", args := []},
+    {name := "Some", args := [("x", .ftvar "a")]}
+  ], constrs_ne := rfl
+}
+
+/-- info: none -/
+#guard_msgs in #eval TypeFactory.all_inhab #[optionTy]
+
+-- List is already defined above, test it
+/-- info: none -/
+#guard_msgs in #eval TypeFactory.all_inhab #[listTy]
+
+-- Either type: Left a | Right b
+def eitherTy : LDatatype Unit := {
+  name := "Either", typeArgs := ["a", "b"],
+  constrs := [
+    {name := "Left", args := [("l", .ftvar "a")]},
+    {name := "Right", args := [("r", .ftvar "b")]}
+  ], constrs_ne := rfl
+}
+
+/-- info: none -/
+#guard_msgs in #eval TypeFactory.all_inhab #[eitherTy]
+
+-- Nat type: Zero | Succ Nat
+def natTy : LDatatype Unit := {
+  name := "Nat", typeArgs := [],
+  constrs := [
+    {name := "Zero", args := []},
+    {name := "Succ", args := [("n", .tcons "Nat" [])]}
+  ], constrs_ne := rfl
+}
+
+/-- info: none -/
+#guard_msgs in #eval TypeFactory.all_inhab #[natTy]
+
+-- Test 2: Mutually recursive inhabited types
+
+-- Even/Odd mutual recursion (both inhabited via base cases)
+def evenTy : LDatatype Unit := {
+  name := "Even", typeArgs := [],
+  constrs := [
+    {name := "EvenZ", args := []},
+    {name := "EvenS", args := [("o", .tcons "Odd" [])]}
+  ], constrs_ne := rfl
+}
+
+def oddTy : LDatatype Unit := {
+  name := "Odd", typeArgs := [],
+  constrs := [
+    {name := "OddS", args := [("e", .tcons "Even" [])]}
+  ], constrs_ne := rfl
+}
+
+/-- info: none -/
+#guard_msgs in #eval TypeFactory.all_inhab #[evenTy, oddTy]
+
+-- Forest/Tree mutual recursion
+def forestTy : LDatatype Unit := {
+  name := "Forest", typeArgs := ["a"],
+  constrs := [
+    {name := "FNil", args := []},
+    {name := "FCons", args := [("t", .tcons "Tree" [.ftvar "a"]), ("f", .tcons "Forest" [.ftvar "a"])]}
+  ], constrs_ne := rfl
+}
+
+def treeTy2 : LDatatype Unit := {
+  name := "Tree", typeArgs := ["a"],
+  constrs := [
+    {name := "TNode", args := [("x", .ftvar "a"), ("children", .tcons "Forest" [.ftvar "a"])]}
+  ], constrs_ne := rfl
+}
+
+/-- info: none -/
+#guard_msgs in #eval TypeFactory.all_inhab #[forestTy, treeTy2]
+
+-- Test 3: Uninhabited types
+
+-- Empty type (no constructors would be invalid, so single constructor requiring itself)
+def emptyTy : LDatatype Unit := {
+  name := "Empty", typeArgs := [],
+  constrs := [
+    {name := "MkEmpty", args := [("x", .tcons "Empty" [])]}
+  ], constrs_ne := rfl
+}
+
+/-- info: Error: datatype Empty not inhabited -/
+#guard_msgs in
+#eval format $ typeCheckAndPartialEval #[emptyTy] (IntBoolFactory : @Factory TestParams) (intConst () 0)
+
+-- Type requiring uninhabited type
+def needsEmptyTy : LDatatype Unit := {
+  name := "NeedsEmpty", typeArgs := [],
+  constrs := [
+    {name := "MkNeedsEmpty", args := [("x", .tcons "Empty" [])]}
+  ], constrs_ne := rfl
+}
+
+/-- info: Error: datatype Empty not inhabited -/
+#guard_msgs in
+#eval format $ typeCheckAndPartialEval #[emptyTy, needsEmptyTy] (IntBoolFactory : @Factory TestParams) (intConst () 0)
+
+-- Mutually uninhabited types
+def bad1Ty : LDatatype Unit := {
+  name := "Bad1", typeArgs := [],
+  constrs := [
+    {name := "B1", args := [("x", .tcons "Bad2" [])]}
+  ], constrs_ne := rfl
+}
+
+def bad2Ty : LDatatype Unit := {
+  name := "Bad2", typeArgs := [],
+  constrs := [
+    {name := "B2", args := [("x", .tcons "Bad1" [])]}
+  ], constrs_ne := rfl
+}
+
+/-- info: Error: datatype Bad1 not inhabited -/
+#guard_msgs in
+#eval format $ typeCheckAndPartialEval #[bad1Ty, bad2Ty] (IntBoolFactory : @Factory TestParams) (intConst () 0)
+
+-- Three-way mutual uninhabited cycle
+def cycle1Ty : LDatatype Unit := {
+  name := "Cycle1", typeArgs := [],
+  constrs := [{name := "C1", args := [("x", .tcons "Cycle2" [])]}],
+  constrs_ne := rfl
+}
+
+def cycle2Ty : LDatatype Unit := {
+  name := "Cycle2", typeArgs := [],
+  constrs := [{name := "C2", args := [("x", .tcons "Cycle3" [])]}],
+  constrs_ne := rfl
+}
+
+def cycle3Ty : LDatatype Unit := {
+  name := "Cycle3", typeArgs := [],
+  constrs := [{name := "C3", args := [("x", .tcons "Cycle1" [])]}],
+  constrs_ne := rfl
+}
+
+/-- info: Error: datatype Cycle1 not inhabited -/
+#guard_msgs in
+#eval format $ typeCheckAndPartialEval #[cycle1Ty, cycle2Ty, cycle3Ty] (IntBoolFactory : @Factory TestParams) (intConst () 0)
+
+end InhabitedTests
 
 end Lambda
