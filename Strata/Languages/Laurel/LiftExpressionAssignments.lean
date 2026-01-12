@@ -29,12 +29,12 @@ structure SequenceState where
 abbrev SequenceM := StateM SequenceState
 
 def SequenceM.addPrependedStmt (stmt : StmtExpr) : SequenceM Unit :=
-  modify fun s => { s with prependedStmts := s.prependedStmts ++ [stmt] }
+  modify fun s => { s with prependedStmts := stmt :: s.prependedStmts }
 
-def SequenceM.getPrependedStmts : SequenceM (List StmtExpr) := do
+def SequenceM.takePrependedStmts : SequenceM (List StmtExpr) := do
   let stmts := (← get).prependedStmts
   modify fun s => { s with prependedStmts := [] }
-  return stmts
+  return stmts.reverse
 
 def SequenceM.freshTemp : SequenceM Identifier := do
   let counter := (← get).tempCounter
@@ -81,8 +81,8 @@ def transformExpr (expr : StmtExpr) : SequenceM StmtExpr := do
 
   | .Block stmts metadata =>
       -- Block in expression position: move all but last statement to prepended
-      let rec next := fun (remStmts: List StmtExpr) => match remStmts with
-        | last :: [] => transformExpr last
+      let rec next (remStmts: List StmtExpr) := match remStmts with
+        | [last] => transformExpr last
         | head :: tail => do
             let seqStmt ← transformStmt head
             for s in seqStmt do
@@ -108,13 +108,13 @@ def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
   | @StmtExpr.Assert cond md =>
       -- Process the condition, extracting any assignments
       let seqCond ← transformExpr cond
-      let prepended ← SequenceM.getPrependedStmts
-      return prepended ++ [StmtExpr.Assert seqCond md]
+      SequenceM.addPrependedStmt <| StmtExpr.Assert seqCond md
+      SequenceM.takePrependedStmts
 
   | @StmtExpr.Assume cond md =>
       let seqCond ← transformExpr cond
-      let prepended ← SequenceM.getPrependedStmts
-      return prepended ++ [StmtExpr.Assume seqCond md]
+      SequenceM.addPrependedStmt <| StmtExpr.Assume seqCond md
+      SequenceM.takePrependedStmts
 
   | .Block stmts metadata =>
       let seqStmts ← stmts.mapM transformStmt
@@ -124,8 +124,8 @@ def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
       match initializer with
       | some initExpr => do
           let seqInit ← transformExpr initExpr
-          let prepended ← SequenceM.getPrependedStmts
-          return prepended ++ [.LocalVariable name ty (some seqInit)]
+          SequenceM.addPrependedStmt <| .LocalVariable name ty (some seqInit)
+          SequenceM.takePrependedStmts
       | none =>
           return [stmt]
 
@@ -133,15 +133,10 @@ def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
       -- Top-level assignment (statement context)
       let seqTarget ← transformExpr target
       let seqValue ← transformExpr value
-      let prepended ← SequenceM.getPrependedStmts
-      return prepended ++ [.Assign seqTarget seqValue]
+      SequenceM.addPrependedStmt <| .Assign seqTarget seqValue
+      SequenceM.takePrependedStmts
 
   | .IfThenElse cond thenBranch elseBranch =>
-      -- Process condition (extract assignments)
-      let seqCond ← transformExpr cond
-      let prependedCond ← SequenceM.getPrependedStmts
-
-      -- Process branches
       let seqThen ← transformStmt thenBranch
       let thenBlock := .Block seqThen none
 
@@ -151,13 +146,14 @@ def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
             pure (some (.Block se none))
         | none => pure none
 
-      let ifStmt := .IfThenElse seqCond thenBlock seqElse
-      return prependedCond ++ [ifStmt]
+      let seqCond ← transformExpr cond
+      SequenceM.addPrependedStmt <| .IfThenElse seqCond thenBlock seqElse
+      SequenceM.takePrependedStmts
 
   | .StaticCall name args =>
       let seqArgs ← args.mapM transformExpr
-      let prepended ← SequenceM.getPrependedStmts
-      return prepended ++ [.StaticCall name seqArgs]
+      SequenceM.addPrependedStmt <| .StaticCall name seqArgs
+      SequenceM.takePrependedStmts
 
   | _ =>
       return [stmt]
@@ -168,7 +164,7 @@ def transformProcedureBody (body : StmtExpr) : StmtExpr :=
   let (seqStmts, _) := transformStmt body |>.run {}
   match seqStmts with
   | [single] => single
-  | multiple => .Block multiple none
+  | multiple => .Block multiple.reverse none
 
 def transformProcedure (proc : Procedure) : Procedure :=
   match proc.body with
