@@ -480,16 +480,20 @@ private def expandedBVOp_1_8_Factory : @Factory BoogieLParams := #[
   bv8Extract_7_7_Func,
 ] ++ (ExpandBVOpFuncNames [1,8])
 
-/-- Bit-vector operations of bit-width 16 and 32. -/
-private def expandedBVOp_16_32_Factory : @Factory BoogieLParams := #[
+/-- Bit-vector operations of bit-width 16 -/
+private def expandedBVOp_16_Factory : @Factory BoogieLParams := #[
   bv16ConcatFunc,
-  bv32ConcatFunc,
   bv16Extract_15_15_Func,
   bv16Extract_7_0_Func,
+] ++ (ExpandBVOpFuncNames [16])
+
+/-- Bit-vector operations of bit-width 32 -/
+private def expandedBVOp_32_Factory : @Factory BoogieLParams := #[
+  bv32ConcatFunc,
   bv32Extract_31_31_Func,
   bv32Extract_15_0_Func,
   bv32Extract_7_0_Func,
-] ++ (ExpandBVOpFuncNames [16,32])
+] ++ (ExpandBVOpFuncNames [32])
 
 /-- Bit-vector operations of bit-width 64. -/
 private def expandedBVOp_64_Factory : @Factory BoogieLParams := #[
@@ -501,7 +505,8 @@ private def expandedBVOp_64_Factory : @Factory BoogieLParams := #[
 def FactoryE := do
     let fv ← intRealBoolFactory.addFactory nonIntRealBoolFactory
     let fv ← fv.addFactory expandedBVOp_1_8_Factory
-    let fv ← fv.addFactory expandedBVOp_16_32_Factory
+    let fv ← fv.addFactory expandedBVOp_16_Factory
+    let fv ← fv.addFactory expandedBVOp_32_Factory
     let fv ← fv.addFactory expandedBVOp_64_Factory
     return fv
 
@@ -624,7 +629,7 @@ private theorem intRealBoolFactory_wf : FactoryWf intRealBoolFactory := by
     repeat (
       rcases Hmem with _ | ⟨ a', Hmem ⟩
       · apply LFuncWf.mk <;> try (simp (config := { ground := true }); done)
-        -- Tactics below here are for the operations defined in IntBoolFactory.
+        -- Tactics below here are for unfolding fns defined in IntBoolFactory.
         try (
           simp (config := { ground := true })
           try unfold unOpCeval
@@ -701,9 +706,9 @@ private theorem expandedBVOp_1_8_Factory_wf :
           repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
     contradiction
 
-private theorem expandedBVOp_16_32_Factory_wf :
-    FactoryWf expandedBVOp_16_32_Factory := by
-  unfold expandedBVOp_16_32_Factory
+private theorem expandedBVOp_16_Factory_wf :
+    FactoryWf expandedBVOp_16_Factory := by
+  unfold expandedBVOp_16_Factory
   apply FactoryWf.mk
   · rw [Array.toList_appendList]
     simp only []
@@ -738,6 +743,42 @@ private theorem expandedBVOp_16_32_Factory_wf :
           repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
     contradiction
 
+private theorem expandedBVOp_32_Factory_wf :
+    FactoryWf expandedBVOp_32_Factory := by
+  unfold expandedBVOp_32_Factory
+  apply FactoryWf.mk
+  · rw [Array.toList_appendList]
+    simp only []
+    unfold HAppend.hAppend instHAppendOfAppend Append.append List.instAppend
+    simp only [List.append]
+    repeat (
+      apply List.Pairwise.cons
+      (focus ((intros a' Hmem <;>
+        repeat (
+          rcases Hmem with _ | ⟨ a', Hmem ⟩
+          (focus (simp (config := { ground := true }); done)))) <;>
+        contradiction)))
+    apply List.Pairwise.nil
+  · unfold HAppend.hAppend Array.instHAppendList
+    simp only []
+    unfold Array.appendList
+    simp only [List.foldl, Array.push, List.concat]
+    intros lf
+    rw [← Array.mem_toList_iff]
+    simp only []
+    intros Hmem
+    repeat (
+      rcases Hmem with _ | ⟨ a', Hmem ⟩
+      · apply LFuncWf.mk <;> try (simp (config := { ground := true }); done)
+        try (
+          simp (config := { ground := true })
+          try unfold bvUnaryOp
+          try unfold bvBinaryOp
+          try unfold bvShiftOp
+          try unfold bvBinaryPred
+          intros lf md args res
+          repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
+    contradiction
 
 private theorem expandedBVOp_64_Factory_wf :
     FactoryWf expandedBVOp_64_Factory := by
@@ -791,14 +832,18 @@ def Factory_wf_if_ok: ∀ F', FactoryE = .ok F' → FactoryWf F' := by
   rename_i F3 HF3
   split at H <;> try contradiction
   rename_i F4 HF4
+  split at H <;> try contradiction
+  rename_i F5 HF5
   have Hwf1:= Factory.addFactory_wf intRealBoolFactory intRealBoolFactory_wf
       nonIntRealBoolFactory nonIntRealBoolFactory_wf F1 HF1
   have Hwf2:= Factory.addFactory_wf F1 Hwf1
       expandedBVOp_1_8_Factory expandedBVOp_1_8_Factory_wf F2 HF2
   have Hwf3:= Factory.addFactory_wf F2 Hwf2
-      expandedBVOp_16_32_Factory expandedBVOp_16_32_Factory_wf F3 HF3
+      expandedBVOp_16_Factory expandedBVOp_16_Factory_wf F3 HF3
   have Hwf4:= Factory.addFactory_wf F3 Hwf3
-      expandedBVOp_64_Factory expandedBVOp_64_Factory_wf F4 HF4
+      expandedBVOp_32_Factory expandedBVOp_32_Factory_wf F4 HF4
+  have Hwf5:= Factory.addFactory_wf F4 Hwf4
+      expandedBVOp_64_Factory expandedBVOp_64_Factory_wf F5 HF5
   unfold Except.pure at H
   grind
 
