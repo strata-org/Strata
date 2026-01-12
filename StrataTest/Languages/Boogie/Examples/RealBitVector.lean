@@ -242,6 +242,8 @@ Result: success
 Obligation: bad_shift
 Property: assert
 Result: failure
+Model:
+($__x0, #b10011001) ($__y1, #b00000010)
 -/
 #guard_msgs in
 #eval verify "cvc5" bvMoreOpsPgm Inhabited.default Options.quiet

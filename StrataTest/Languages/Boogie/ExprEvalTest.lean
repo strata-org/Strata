@@ -65,7 +65,7 @@ def checkValid (e:LExpr BoogieLParams.mono): IO Bool := do
   | .error msg => throw (IO.userError s!"error: {msg}")
   | .ok (.none) => return false
   | .ok (.some (smt_term, ctx)) =>
-    let ans ← Boogie.dischargeObligation
+    let ans ← Boogie.SMT.dischargeObligation
       { Options.default with verbose := false }
       (LExpr.freeVars e) "z3" s!"exprEvalTest.smt2"
       [smt_term] ctx
