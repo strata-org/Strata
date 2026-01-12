@@ -471,9 +471,9 @@ that types `seen` are unknown. All other types are assumed inhabited.
 The `List.Nodup` and `⊆` hypotheses are only used to prove termination.
 -/
 def typesym_inhab (adts: @TypeFactory IDMeta) (seen: List String)
-  (hnodup: List.Nodup seen) (hsub: seen ⊆ (List.map (fun x => x.name) adts.toList))
-  (ts: String)
-   : StateM typeMap (Option String) := do
+  (hnodup: List.Nodup seen)
+  (hsub: seen ⊆ (List.map (fun x => x.name) adts.toList))
+  (ts: String) : StateM typeMap (Option String) := do
   let knowType (b: Bool) : StateM typeMap (Option String) := do
     -- Only add false if not in a cycle, it may resolve later
     if b || seen.isEmpty then
@@ -523,17 +523,17 @@ def ty_inhab (adts: @TypeFactory IDMeta) (seen: List String)
   (hnodup: List.Nodup seen) (hsub: seen ⊆  (List.map (fun x => x.name) adts.toList))
   (t: LMonoTy) : StateM typeMap Bool :=
   match t with
-    | .tcons name args => do
-        -- name(args) is inhabited if name is inhabited as a typesym
-        -- and all args are inhabited as types (note this is conservative)
-        let checkTy ← typesym_inhab adts seen hnodup hsub name
-        if checkTy.isNone then
-          args.foldrM (fun ty acc => do
-            let x ← ty_inhab adts seen hnodup hsub ty
-            pure (x && acc)
-          ) true
-        else pure false
-    | _ => pure true -- Type variables and bitvectors are inhabited
+  | .tcons name args => do
+      -- name(args) is inhabited if name is inhabited as a typesym
+      -- and all args are inhabited as types (note this is conservative)
+      let checkTy ← typesym_inhab adts seen hnodup hsub name
+      if checkTy.isNone then
+        args.foldrM (fun ty acc => do
+          let x ← ty_inhab adts seen hnodup hsub ty
+          pure (x && acc)
+        ) true
+      else pure false
+  | _ => pure true -- Type variables and bitvectors are inhabited
 termination_by (adts.size - seen.length, t.size)
 decreasing_by
   . apply Prod.Lex.right; simp only[LMonoTy.size]; omega
