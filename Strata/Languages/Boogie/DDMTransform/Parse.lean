@@ -297,25 +297,12 @@ op command_distinct (label : Option Label, exprs : CommaSepBy Expr) : Command =>
 // Datatype Syntax Categories
 // =====================================================================
 
-// Field syntax for datatype constructors
-category Field;
-category FieldList;
-
-@[declare(name, tp), field(name, tp)]
-op field_mk (name : Ident, tp : Type) : Field => name ":" tp;
-
-@[fieldListAtom(f)]
-op fieldListAtom (f : Field) : FieldList => f;
-
-@[scope(fl), fieldListPush(fl, f)]
-op fieldListPush (fl : FieldList, @[scope(fl)] f : Field) : FieldList => fl "," f;
-
 // Constructor syntax for datatypes
 category Constructor;
 category ConstructorList;
 
 @[constructor(name, fields)]
-op constructor_mk (name : Ident, fields : Option FieldList) : Constructor =>
+op constructor_mk (name : Ident, fields : Option (CommaSepBy Binding)) : Constructor =>
   name "(" fields ")";
 
 @[constructorListAtom(c)]

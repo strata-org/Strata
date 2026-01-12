@@ -1766,33 +1766,6 @@ private def getConstructorAnnotation (opDecl : OpDecl) : Option (Nat × Nat) :=
   | _ => none
 
 /--
-Check if an operation has the @[field(name, tp)] annotation.
-Returns the (nameIndex, typeIndex) if present.
--/
-private def getFieldAnnotation (opDecl : OpDecl) : Option (Nat × Nat) :=
-  match opDecl.metadata[q`StrataDDL.field]? with
-  | some #[.catbvar nameIdx, .catbvar typeIdx] => some (nameIdx, typeIdx)
-  | _ => none
-
-/--
-Check if an operation has the @[fieldListAtom(f)] annotation.
-Returns the field index if present.
--/
-private def getFieldListAtomAnnotation (opDecl : OpDecl) : Option Nat :=
-  match opDecl.metadata[q`StrataDDL.fieldListAtom]? with
-  | some #[.catbvar fieldIdx] => some fieldIdx
-  | _ => none
-
-/--
-Check if an operation has the @[fieldListPush(list, f)] annotation.
-Returns the (listIndex, fieldIndex) if present.
--/
-private def getFieldListPushAnnotation (opDecl : OpDecl) : Option (Nat × Nat) :=
-  match opDecl.metadata[q`StrataDDL.fieldListPush]? with
-  | some #[.catbvar listIdx, .catbvar fieldIdx] => some (listIdx, fieldIdx)
-  | _ => none
-
-/--
 Check if an operation has the @[constructorListAtom(c)] annotation.
 Returns the constructor index if present.
 -/
@@ -1811,79 +1784,18 @@ private def getConstructorListPushAnnotation (opDecl : OpDecl) : Option (Nat × 
   | _ => none
 
 /--
-Extract field information using the @[field] annotation.
-Looks up the operation in the dialect and uses the annotation indices.
+Extract fields from a Bindings argument using the existing @[declare] annotations.
 -/
-private def extractFieldInfo (dialects : DialectMap) (arg : Arg) : Option (String × TypeExpr) :=
-  match arg with
-  | .op op =>
-    match lookupOpDecl dialects op.name with
-    | none => none
-    | some opDecl =>
-      match getFieldAnnotation opDecl with
-      | none => none
-      | some (nameIdx, typeIdx) =>
-        -- Convert deBruijn indices to levels
-        let argCount := opDecl.argDecls.size
-        if nameIdx < argCount && typeIdx < argCount then
-          let nameLevel := argCount - nameIdx - 1
-          let typeLevel := argCount - typeIdx - 1
-          if h1 : nameLevel < op.args.size then
-            if h2 : typeLevel < op.args.size then
-              match op.args[nameLevel], op.args[typeLevel] with
-              | .ident _ fieldName, .type fieldType => some (fieldName, fieldType)
-              | _, _ => none
-            else none
-          else none
-        else none
-  | _ => none
-
-/--
-Extract fields from a field list argument using annotations.
-Handles both @[fieldListAtom] (single field) and @[fieldListPush]
-(multiple fields).
--/
-private def extractFieldList (dialects : DialectMap) (arg : Arg) : Array (String × TypeExpr) :=
-  match arg with
-  | .op op =>
-    match lookupOpDecl dialects op.name with
-    | none => #[]
-    | some opDecl =>
-      match getFieldListAtomAnnotation opDecl with
-      | some fieldIdx =>
-        let argCount := opDecl.argDecls.size
-        if fieldIdx < argCount then
-          let fieldLevel := argCount - fieldIdx - 1
-          if h : fieldLevel < op.args.size then
-            match extractFieldInfo dialects op.args[fieldLevel] with
-            | some field => #[field]
-            | none => #[]
-          else #[]
-        else #[]
-      | none =>
-        match getFieldListPushAnnotation opDecl with
-        | some (listIdx, fieldIdx) =>
-          let argCount := opDecl.argDecls.size
-          if listIdx < argCount && fieldIdx < argCount then
-            let listLevel := argCount - listIdx - 1
-            let fieldLevel := argCount - fieldIdx - 1
-            if h1 : listLevel < op.args.size then
-              if h2 : fieldLevel < op.args.size then
-                let prevFields := extractFieldList dialects op.args[listLevel]
-                match extractFieldInfo dialects op.args[fieldLevel] with
-                | some field => prevFields.push field
-                | none => prevFields
-              else #[]
-            else #[]
-          else #[]
-        | none =>
-          match extractFieldInfo dialects arg with
-          | some field => #[field]
-          | none => #[]
-  | _ => #[]
-  decreasing_by
-    simp_wf; rw[OperationF.sizeOf_spec]
-    have := Array.sizeOf_get op.args (opDecl.argDecls.size - listIdx - 1) (by omega); omega
+private def extractFieldsFromBindings (dialects : DialectMap) (arg : Arg) : Array (String × TypeExpr) :=
+  let addField (acc : Array (String × TypeExpr)) (_ : SourceRange)
+      {argDecls : ArgDecls} (b : BindingSpec argDecls) (args : Vector Arg argDecls.size) : Array (String × TypeExpr) :=
+    match b with
+    | .value vb =>
+      match args[vb.nameIndex.toLevel], args[vb.typeIndex.toLevel] with
+      | .ident _ name, .type tp => acc.push (name, tp)
+      | _, _ => acc
+    | _ => acc
+  foldOverArgBindingSpecs dialects addField #[] arg
 
 /--
 Extract constructor information using the @[constructor] annotation.
@@ -1906,11 +1818,11 @@ private def extractSingleConstructor (dialects : DialectMap) (arg : Arg) : Optio
             if h2 : fieldsLevel < op.args.size then
               match op.args[nameLevel] with
               | .ident _ constrName =>
-                -- Extract fields from the optional field list
+                -- Extract fields from the Bindings argument using @[declare] annotations
                 let fields := match op.args[fieldsLevel] with
-                  | .option _ (some fieldListArg) => extractFieldList dialects fieldListArg
+                  | .option _ (some bindingsArg) => extractFieldsFromBindings dialects bindingsArg
                   | .option _ none => #[]
-                  | other => extractFieldList dialects other
+                  | other => extractFieldsFromBindings dialects other
                 some { name := constrName, fields := fields }
               | _ => none
             else none
@@ -1919,8 +1831,10 @@ private def extractSingleConstructor (dialects : DialectMap) (arg : Arg) : Optio
   | _ => none
 
 /--
-This function traverses a constructor list AST node and extracts structured information about each constructor, including its name and fields using the
-dialect annotations `@[constructor]`, `@[field]`, `@[constructorListAtom]`, `@[constructorListPush]`.
+This function traverses a constructor list AST node and extracts structured
+information about each constructor, including its name and fields using the
+dialect annotations `@[constructor]`, `@[constructorListAtom]`,
+`@[constructorListPush]`.
 
 **Example:** For `{ None(), Some(value: T) }`, returns:
 ```
