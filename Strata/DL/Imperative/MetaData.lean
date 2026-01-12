@@ -81,14 +81,6 @@ structure FileRange where
 instance : ToFormat FileRange where
  format fr := f!"{fr.file}:{fr.start}-{fr.ending}"
 
-inductive ObligationKind where
-  | cover
-  | assert
-  deriving DecidableEq, Repr
-
-instance : ToFormat ObligationKind where
-  format o := match o with | .cover => "cover" | .assert => "assert"
-
 /-- A metadata value, which can be either an expression, a message, or a fileRange -/
 inductive MetaDataElem.Value (P : PureExpr) where
   /-- Metadata value in the form of a structured expression. -/
@@ -97,15 +89,12 @@ inductive MetaDataElem.Value (P : PureExpr) where
   | msg (s : String)
   /-- Metadata value in the form of a fileRange. -/
   | fileRange (r: FileRange)
-  /-- Obligation kind -/
-  | obligation (o: ObligationKind)
 
 instance [ToFormat P.Expr] : ToFormat (MetaDataElem.Value P) where
   format f := match f with
               | .expr e => f!"{e}"
               | .msg s => f!"{s}"
               | .fileRange r => f!"{r}"
-              | .obligation o => f!"{o}"
 
 instance [Repr P.Expr] : Repr (MetaDataElem.Value P) where
   reprPrec v prec :=
@@ -114,7 +103,6 @@ instance [Repr P.Expr] : Repr (MetaDataElem.Value P) where
       | .expr e => f!".expr {reprPrec e prec}"
       | .msg s => f!".msg {s}"
       | .fileRange fr => f!".fileRange {fr}"
-      | .obligation o => f!".obligation {o}"
     Repr.addAppParen res prec
 
 def MetaDataElem.Value.beq [BEq P.Expr] (v1 v2 : MetaDataElem.Value P) :=
@@ -122,7 +110,6 @@ def MetaDataElem.Value.beq [BEq P.Expr] (v1 v2 : MetaDataElem.Value P) :=
   | .expr e1, .expr e2 => e1 == e2
   | .msg m1, .msg m2 => m1 == m2
   | .fileRange r1, .fileRange r2 => r1 == r2
-  | .obligation o1, .obligation o2 => o1 == o2
   | _, _ => false
 
 instance [BEq P.Expr] : BEq (MetaDataElem.Value P) where
