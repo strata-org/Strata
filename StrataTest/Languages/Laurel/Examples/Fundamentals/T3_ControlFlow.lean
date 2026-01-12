@@ -45,6 +45,7 @@ procedure dag(a: int) returns (r: int)
 }
 "
 
+#guard_msgs (error, drop all) in
 #eval! testInputWithOffset "ControlFlow" program 14 processLaurelFile
 
 /-
