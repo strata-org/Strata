@@ -319,7 +319,7 @@ def verify (smtsolver : String) (program : Program)
     EIO Format VCResults := do
   match Boogie.typeCheckAndPartialEval options program moreFns with
   | .error err =>
-    .error f!"[Strata.Boogie] Type checking error: {format err}"
+    .error f!"[Strata.Boogie] Type checking error.\n{format err}"
   | .ok pEs =>
     let VCss ← if options.checkOnly then
                  pure []

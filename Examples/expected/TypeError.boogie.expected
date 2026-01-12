@@ -1,0 +1,4 @@
+Successfully parsed.
+[Strata.Boogie] Type checking error.
+TypeError.boogie.st(25, 2) Impossible to unify (Map int (Map bool bool)) with (Map int int).
+First mismatch: (Map bool bool) with int.
