@@ -463,17 +463,17 @@ def Factory : @Factory BoogieLParams := #[
   addTriggerFunc,
 
   bv8ConcatFunc,
-  bv8Extract_7_7_Func,
   bv16ConcatFunc,
+  bv32ConcatFunc,
+  bv8Extract_7_7_Func,
   bv16Extract_15_15_Func,
   bv16Extract_7_0_Func,
-  bv32ConcatFunc,
   bv32Extract_31_31_Func,
   bv32Extract_15_0_Func,
   bv32Extract_7_0_Func,
   bv64Extract_31_0_Func,
   bv64Extract_15_0_Func,
-  bv64Extract_7_0_Func
+  bv64Extract_7_0_Func,
 ] ++ (ExpandBVOpFuncNames [1,8,16,32,64])
 
 open Lean Elab Command in
