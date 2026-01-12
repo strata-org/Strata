@@ -119,7 +119,7 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
                             (fun (l, e) => (toString l, Procedure.Check.mk (E.exprEval e.expr) e.attr e.md))
     -- A free precondition is not checked at call sites, which is
     -- accounted for by `ProofObligations.create` below.
-    let deferred_pre := ProofObligations.create E.pathConditions preconditions
+    let deferred_pre := ProofObligations.createAssertions E.pathConditions preconditions
     let E := { E with deferred := E.deferred ++ deferred_pre }
     -- If the preconditions hold, then the postconditions are
     -- guaranteed to hold.

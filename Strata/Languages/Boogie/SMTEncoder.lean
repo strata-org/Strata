@@ -648,7 +648,7 @@ def ProofObligation.toSMTTerms (E : Env)
   let (assumptions_terms, ctx) ← Boogie.toSMTTerms E assumptions ctx
   let (obligation_pos_term, ctx) ← Boogie.toSMTTerm E [] d.obligation ctx
   let obligation_term :=
-    if d.metadata.hasCoverObligation then
+    if d.property == .cover then
       obligation_pos_term
     else
       Factory.not obligation_pos_term

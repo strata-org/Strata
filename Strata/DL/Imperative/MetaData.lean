@@ -220,26 +220,6 @@ def MetaData.formatFileRangeD {P} [BEq P.Ident] (md : MetaData P) (includeEnd? :
   | .none => ""
   | .some f => f
 
-def MetaData.obligationType : MetaDataElem.Field P := .label "obligationType"
-def MetaData.assertObligation : MetaDataElem.Value P := .obligation .assert
-def MetaData.coverObligation : MetaDataElem.Value P := .obligation .cover
-
-def MetaData.hasAssertObligation {P} [BEq P.Ident] [BEq (MetaDataElem.Value P)]
-    (md : MetaData P) : Bool :=
-  match md.findElem obligationType with
-  | none => false
-  | some ob => ob.value == assertObligation
-
-def MetaData.hasCoverObligation {P} [BEq P.Ident] [BEq (MetaDataElem.Value P)]
-    (md : MetaData P) : Bool :=
-  match md.findElem obligationType with
-  | none => false
-  | some ob => ob.value == coverObligation
-
-def MetaData.hasWellFormedObligation {P} [BEq P.Ident] [BEq (MetaDataElem.Value P)]
-    (md : MetaData P) : Bool :=
-  hasAssertObligation md ^^ hasCoverObligation md
-
 ---------------------------------------------------------------------
 
 end Imperative

@@ -54,6 +54,7 @@ info: [Strata.Boogie] Type checking succeeded.
 
 VCs:
 Label: assert_0
+Property: assert
 Assumptions:
 (P_requires_1, (((~select $__a0) #0) == #0))
 
@@ -63,10 +64,10 @@ Proof Obligation:
 Wrote problem to vcs/assert_0.smt2.
 
 
-Obligation assert_0: could not be proved!
+Result: Obligation: assert_0
+Property: assert
+Result: failure
 
-Result: failed
-CEx: ⏎
 
 Evaluated program:
 type MapII := (Map int int)
@@ -81,8 +82,8 @@ assert [assert_0] (((~select $__a0) #0) == #1)
 ---
 info:
 Obligation: assert_0
-Result: failed
-CEx:
+Property: assert
+Result: failure
 -/
 #guard_msgs in
 #eval verify "cvc5" failing
@@ -106,30 +107,17 @@ spec {
 
 /--
 info:
-
-Obligation assert_0: could not be proved!
-
-Result: failed
-
-
-Obligation assert_1: could not be proved!
-
-Result: failed
-
-
-Obligation assert_2: could not be proved!
-
-Result: failed
----
-info:
 Obligation: assert_0
-Result: failed
+Property: assert
+Result: failure
 
 Obligation: assert_1
-Result: failed
+Property: assert
+Result: failure
 
 Obligation: assert_2
-Result: failed
+Property: assert
+Result: failure
 -/
 #guard_msgs in
 #eval verify "cvc5" failingThrice Inhabited.default Options.quiet

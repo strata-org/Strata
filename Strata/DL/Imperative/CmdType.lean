@@ -11,7 +11,6 @@ import Strata.DL.Imperative.TypeContext
 
 namespace Imperative
 open Std (ToFormat Format format)
-open MetaData (obligationType coverObligation assertObligation)
 
 ---------------------------------------------------------------------
 
@@ -60,7 +59,6 @@ def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
   | .assert label e md =>
     let (e, ety, τ) ← TC.inferType ctx τ c e
     if TC.isBoolType ety then
-       let md := md.pushElem obligationType assertObligation
        let c := Cmd.assert label e md
        .ok (c, τ)
     else
@@ -79,7 +77,6 @@ def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
   | .cover label e md =>
     let (e, ety, τ) ← TC.inferType ctx τ c e
     if TC.isBoolType ety then
-       let md := md.pushElem obligationType coverObligation
        let c := Cmd.cover label e md
        .ok (c, τ)
     else
