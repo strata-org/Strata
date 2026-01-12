@@ -472,32 +472,24 @@ tricky (though possible), so we leave it `partial` for now.
 
 -/
 
-def typeSet : Type := List String --Temp
+def typeMap : Type := Map String Bool
 
-def typeInSet (l: String) (s: typeSet) : Bool :=
-  s.elem l
+def getTypeInMap (l: String) (m: typeMap) : Option Bool :=
+  Map.find? m l
 
-def addTypeToSet (l: String) (s: typeSet) : typeSet :=
-  l :: s
+def addTypeToMap (l: String) (b: Bool) (m: typeMap) : typeMap :=
+  Map.insert m l b
 
--- TODO: is this anywhere?
-def List.subset {α} (s1 s2: List α) := ∀ x, x ∈ s1 → x ∈ s2
-
-theorem List.subset_nodup_length {α} {s1 s2: List α} (hn: s1.Nodup) (hsub: List.subset s1 s2) : s1.length ≤ s2.length := by
+theorem List.subset_nodup_length {α} {s1 s2: List α} (hn: s1.Nodup) (hsub: s1 ⊆ s2) : s1.length ≤ s2.length := by
   induction s1 generalizing s2 with
   | nil => simp
   | cons x t IH =>
     simp only[List.length]
-    -- Idea: x is in s2, so we can remove it
     have xin: x ∈ s2 := by apply hsub; grind
     rw[List.mem_iff_append] at xin
     rcases xin with ⟨l1, ⟨l2, hs2⟩⟩; subst_vars
-    have hsub1: subset t (l1 ++ l2) := by unfold subset at *; grind
+    have hsub1: t ⊆ (l1 ++ l2) := by grind
     grind
-
-def List.subset_cons_iff {α} {x: α} {s1 s2: List α}:
-  List.subset (x :: s1) s2 ↔ x ∈ s2 ∧ List.subset s1 s2 := by
-    unfold subset; grind
 
 mutual
 
@@ -511,60 +503,63 @@ type A := A1(x: Option B)
 type B := B1(y: A)
 ```
 -/
-def typesym_inhab (adts: @TypeFactory IDMeta) (seen: typeSet)
-  (hnodup: List.Nodup seen) (hsub: List.subset seen (List.map (fun x => x.name) adts.toList))
+def typesym_inhab (adts: @TypeFactory IDMeta) (seen: List String)
+  (hnodup: List.Nodup seen) (hsub: seen ⊆ (List.map (fun x => x.name) adts.toList))
   (ts: String)
-   : StateM typeSet Bool := do
-  let knowType : StateM typeSet Bool := do
+   : StateM typeMap (Option String) := do
+  let knowType (b: Bool) : StateM typeMap (Option String) := do
     let s ← get
-    set (addTypeToSet ts s)
-    pure true
+    set (addTypeToMap ts b s)
+    if b then pure none else pure (some ts)
   -- Check if type is already known to be inhabited
   let s ← get
-  if typeInSet ts s then pure true
-  -- If type in `seen`, it is unknown, so we return false
-  else if hin: typeInSet ts seen then pure false
-  else
-    match ha: adts.getType ts with
-    | none => pure true -- Assume all non-datatypes are inhabited, TODO should we add?
-    | some l =>
-      -- A datatype is inhabited if it has an inhabited constructor
-      let res ← (l.constrs.attach.foldrM (fun c (accC : Bool) => do
-        -- A constructor is inhabited if all of its arguments are inhabited
-        let constrInhab ← (c.1.args.attach.foldrM
-          (fun ty1 (accA: Bool) =>
-              do
-                have hn: List.Nodup (addTypeToSet l.name seen) := by
-                  unfold addTypeToSet; rw[List.nodup_cons]; constructor
-                  . have := TypeFactory.getType_name ha; subst_vars
-                    rw[←List.elem_iff]; apply hin
-                  . assumption
-                have hsub' : List.subset (addTypeToSet l.name seen) (List.map (fun x => x.name) adts.toList) := by
-                  unfold addTypeToSet; rw[List.subset_cons_iff]
-                  constructor <;> try assumption
-                  rw[List.mem_map]; exists l; constructor <;> try grind
-                  have := TypeFactory.getType_mem ha; grind
-                let b1 ← ty_inhab adts (addTypeToSet l.name seen) hn hsub' ty1.1.2
-                pure (b1 && accA)
-            ) true)
-        pure (constrInhab || accC)
-        ) false)
-      if res then knowType else pure false
+  match getTypeInMap ts s with
+  | some true => pure none
+  | some false => pure (some ts)
+  | none =>
+    -- If type in `seen`, it is unknown, so we return false
+    if hin: List.elem ts seen then pure (some ts)
+    else
+      match ha: adts.getType ts with
+      | none => pure none -- Assume all non-datatypes are inhabited
+      | some l =>
+        -- A datatype is inhabited if it has an inhabited constructor
+        let res ← (l.constrs.attach.foldrM (fun c (accC : Bool) => do
+          -- A constructor is inhabited if all of its arguments are inhabited
+          let constrInhab ← (c.1.args.attach.foldrM
+            (fun ty1 (accA: Bool) =>
+                do
+                  have hn: List.Nodup (l.name :: seen) := by
+                    rw[List.nodup_cons]; constructor
+                    . have := TypeFactory.getType_name ha; subst_vars
+                      rw[←List.elem_iff]; apply hin
+                    . assumption
+                  have hsub' : (l.name :: seen) ⊆ (List.map (fun x => x.name) adts.toList) := by
+                    apply List.cons_subset.mpr
+                    constructor <;> try assumption
+                    rw[List.mem_map]; exists l; constructor <;> try grind
+                    have := TypeFactory.getType_mem ha; grind
+                  let b1 ← ty_inhab adts (l.name :: seen) hn hsub' ty1.1.2
+                  pure (b1 && accA)
+              ) true)
+          pure (constrInhab || accC)
+          ) false)
+        knowType res
   termination_by (adts.size - seen.length, 0)
   decreasing_by
-    apply Prod.Lex.left; simp only[addTypeToSet, List.length]
+    apply Prod.Lex.left; simp only[List.length]
     apply Nat.sub_succ_lt_self
-    have hlen := List.subset_nodup_length hn hsub'; simp_all[addTypeToSet]; omega
+    have hlen := List.subset_nodup_length hn hsub'; simp_all; omega
 
-def ty_inhab (adts: @TypeFactory IDMeta) (seen: typeSet)
-  (hnodup: List.Nodup seen) (hsub: List.subset seen (List.map (fun x => x.name) adts.toList))
-  (t: LMonoTy) : StateM typeSet Bool :=
+def ty_inhab (adts: @TypeFactory IDMeta) (seen: List String)
+  (hnodup: List.Nodup seen) (hsub: seen ⊆  (List.map (fun x => x.name) adts.toList))
+  (t: LMonoTy) : StateM typeMap Bool :=
   match t with
     | .tcons name args => do
         -- name(args) is inhabited if name is inhabited as a typesym
         -- and all args are inhabited as types (note this is conservative)
         let checkTy ← typesym_inhab adts seen hnodup hsub name
-        if checkTy then
+        if checkTy.isNone then
           args.foldrM (fun ty acc => do
             let x ← ty_inhab adts seen hnodup hsub ty
             pure (x && acc)
@@ -587,26 +582,26 @@ type A := A1(x: Option B)
 type B := B1(y: A)
 ```
 -/
-def adt_inhab  (adts: @TypeFactory IDMeta) (a: String) : StateM typeSet Bool :=
-  typesym_inhab adts [] (by grind) (by unfold List.subset; grind) a
+def adt_inhab  (adts: @TypeFactory IDMeta) (a: String) : StateM typeMap (Option String) :=
+  typesym_inhab adts [] (by grind) (by grind) a
 
 /--
 Check that all ADTs in TypeFactory `adts` are inhabited. This uses memoization
-to avoid computing the intermediate results more than once.
+to avoid computing the intermediate results more than once. Returns `none` if
+all datatypes are inhabited, `some a` for some uninhabited type `a`
 -/
-def TypeFactory.all_inhab (adts: @TypeFactory IDMeta) : Bool :=
-  let x := (Array.foldlM (fun (b: Bool) (l: LDatatype IDMeta) =>
+def TypeFactory.all_inhab (adts: @TypeFactory IDMeta) : Option String :=
+  let x := (Array.foldlM (fun (x: Option String) (l: LDatatype IDMeta) =>
     do
-      if not b then pure false
-      else
-      adt_inhab adts l.name) true adts)
+      match x with
+      | some a => pure (some a)
+      | none => adt_inhab adts l.name) none adts)
   (StateT.run x []).1
 
-
-
-
--- TODO: change to map
-
+def TypeFactory.checkInhab (adts: @TypeFactory IDMeta) : Except Format Unit :=
+  match adts.all_inhab with
+  | none => .ok ()
+  | some a => .error f!"Error: datatype {a} not inhabited"
 
 ---------------------------------------------------------------------
 
