@@ -109,23 +109,23 @@ Wrote problem to vcs/a7.smt2.
 info:
 Obligation: a1
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: a3
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: a4
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: a6
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: a7
 Property: assert
-Result: success
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" gotoPgm

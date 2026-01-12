@@ -59,7 +59,7 @@ Wrote problem to vcs/x_eq_1.smt2.
 
 Result: Obligation: x_eq_1
 Property: assert
-Result: failure
+Result: ❌ fail
 Model:
 ($__x0, 0)
 
@@ -78,7 +78,7 @@ assert [x_eq_1] ($__x0 == #1)
 info:
 Obligation: x_eq_1
 Property: assert
-Result: failure
+Result: ❌ fail
 Model:
 ($__x0, 0)
 -/

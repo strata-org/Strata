@@ -51,11 +51,11 @@ Wrote problem to vcs/Update_ensures_0.smt2.
 info:
 Obligation: a
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: Update_ensures_0
 Property: assert
-Result: success
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" advQuantPgm

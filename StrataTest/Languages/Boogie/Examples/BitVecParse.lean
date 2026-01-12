@@ -48,7 +48,7 @@ Wrote problem to vcs/bitvec64_test.smt2.
 
 Result: Obligation: bitvec64_test
 Property: assert
-Result: failure
+Result: ❌ fail
 
 
 Evaluated program:
@@ -63,11 +63,11 @@ assert [bitvec64_test] #false
 info:
 Obligation: bitvec32_test
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: bitvec64_test
 Property: assert
-Result: failure
+Result: ❌ fail
 -/
 #guard_msgs in
 #eval verify "cvc5" pgm

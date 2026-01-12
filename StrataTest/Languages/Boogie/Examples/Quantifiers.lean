@@ -82,7 +82,7 @@ Wrote problem to vcs/bad.smt2.
 
 Result: Obligation: bad
 Property: assert
-Result: failure
+Result: ❌ fail
 Model:
 ($__x0, 0)
 
@@ -101,15 +101,15 @@ assert [bad] (∀ ((~Int.Lt %0) $__x0))
 info:
 Obligation: good_assert
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: good
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: bad
 Property: assert
-Result: failure
+Result: ❌ fail
 Model:
 ($__x0, 0)
 -/
@@ -155,15 +155,15 @@ Wrote problem to vcs/f_and_g.smt2.
 info:
 Obligation: trigger_assert
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: multi_trigger_assert
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: f_and_g
 Property: assert
-Result: success
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" triggerPgm

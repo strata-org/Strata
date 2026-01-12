@@ -70,11 +70,11 @@ Wrote problem to vcs/barEq.smt2.
 info:
 Obligation: barEq
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: fooEq
 Property: assert
-Result: success
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" funcPgm

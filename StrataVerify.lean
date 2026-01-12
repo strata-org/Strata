@@ -84,7 +84,7 @@ def main (args : List String) : IO UInt32 := do
           println! f!"{posStr} [{vcResult.obligation.label}]: {vcResult.result}"
         let success := vcResults.all Boogie.VCResult.isSuccess
         if success && !opts.checkOnly then
-          println! f!"Proved all {vcResults.size} goals."
+          println! f!"All {vcResults.size} goals passed."
           return 0
         else if success && opts.checkOnly then
           println! f!"Skipping verification."
@@ -92,7 +92,7 @@ def main (args : List String) : IO UInt32 := do
         else
           let provedGoalCount := (vcResults.filter Boogie.VCResult.isSuccess).size
           let failedGoalCount := (vcResults.filter Boogie.VCResult.isNotSuccess).size
-          println! f!"Finished with {provedGoalCount} goals proved, {failedGoalCount} failed."
+          println! f!"Finished with {provedGoalCount} goals passed, {failedGoalCount} failed."
           return 1
     -- Strata.Elab.elabProgram
     | .error errors =>

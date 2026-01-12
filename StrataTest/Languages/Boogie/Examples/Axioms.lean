@@ -90,19 +90,19 @@ Wrote problem to vcs/use_a2_again.smt2.
 info:
 Obligation: use_a1_a2
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: use_f1
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: use_a1_again
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: use_a2_again
 Property: assert
-Result: success
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" axiomPgm1
@@ -151,7 +151,7 @@ Wrote problem to vcs/axiomPgm2_main_assert.smt2.
 info:
 Obligation: axiomPgm2_main_assert
 Property: assert
-Result: success
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "z3" axiomPgm2

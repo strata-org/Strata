@@ -1,23 +1,22 @@
 
-datetime_now_ensures_0: verified
+datetime_now_ensures_0: ✅ pass
 
-datetime_utcnow_ensures_0: verified
+datetime_utcnow_ensures_0: ✅ pass
 
-ensures_str_strp_reverse: verified
+ensures_str_strp_reverse: ✅ pass
 
-assert_name_is_foo: verified
+assert_name_is_foo: ✅ pass
 
-assert_opt_name_none_or_str: verified
+assert_opt_name_none_or_str: ✅ pass
 
-assert_opt_name_none_or_bar: verified
+assert_opt_name_none_or_bar: ✅ pass
 
-ensures_maybe_except_none: verified
+ensures_maybe_except_none: ✅ pass
 
-py_assertion: unknown
+py_assertion: 🟡 unknown
 
-py_assertion: verified
+py_assertion: ✅ pass
 
-py_assertion: verified
+py_assertion: ✅ pass
 
-py_assertion: failed
-CEx: 
+py_assertion: ❌ fail

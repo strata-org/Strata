@@ -73,15 +73,15 @@ Wrote problem to vcs/sum_ensures_1.smt2.
 info:
 Obligation: entry_invariant_0
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: arbitrary_iter_maintain_invariant_0
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: sum_ensures_1
 Property: assert
-Result: success
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" gaussPgm
@@ -119,19 +119,19 @@ spec {
 info:
 Obligation: entry_invariant_0
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: entry_invariant_1
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: arbitrary_iter_maintain_invariant_1
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: arbitrary_iter_maintain_invariant_0
 Property: assert
-Result: success
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" nestedPgm Inhabited.default Options.quiet

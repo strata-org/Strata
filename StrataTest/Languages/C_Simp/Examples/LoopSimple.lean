@@ -187,31 +187,31 @@ Wrote problem to vcs/sum_assert.smt2.
 info:
 Obligation: entry_invariant
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: assert_measure_pos
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: measure_decreases
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: measure_imp_not_guard
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: arbitrary_iter_maintain_invariant
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: sum_assert
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: post
 Property: assert
-Result: success
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval Strata.C_Simp.verify "cvc5" LoopSimplePgm

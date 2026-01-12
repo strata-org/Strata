@@ -76,7 +76,7 @@ Wrote problem to vcs/assert0.smt2.
 info:
 Obligation: assert0
 Property: assert
-Result: success
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" QuantTypeAliases

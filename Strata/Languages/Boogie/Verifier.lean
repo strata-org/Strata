@@ -205,34 +205,44 @@ namespace Boogie
 open Imperative Lambda Strata.SMT
 open Std (ToFormat Format format)
 
-inductive VCResult.Kind where
-  | success
-  | failure
+/--
+Analysis outcome of a verification condition.
+-/
+inductive Outcome where
+  | pass
+  | fail
   | unknown
   | implementationError (e : String)
   deriving Repr, Inhabited, DecidableEq
 
-instance : ToFormat VCResult.Kind where
+instance : ToFormat Outcome where
   format vr := match vr with
-    | .success => "success"
-    | .failure => "failure"
-    | .unknown => "unknown"
-    | .implementationError e => s!"implementationError {e}"
+    | .pass => "✅ pass"
+    | .fail => "❌ fail"
+    | .unknown => "🟡 unknown"
+    | .implementationError e => s!"🚨 Implementation Error! {e}"
 
+/--
+A collection of all information relevant to a verification condition's
+analysis.
+-/
 structure VCResult where
   obligation : Imperative.ProofObligation Expression
   smtResult : SMT.Result := .unknown
-  result : VCResult.Kind := .unknown
+  result : Outcome := .unknown
   estate : EncoderState := EncoderState.init
   verbose : Bool := true
 
-def smtResultToVCResultKind (r : SMT.Result) (isCover : Bool) : VCResult.Kind :=
+/--
+Map the result from an SMT backend engine to an `Outcome`.
+-/
+def smtResultToOutcome (r : SMT.Result) (isCover : Bool) : Outcome :=
   match r with
   | .unknown => .unknown
   | .unsat =>
-    if isCover then .failure else .success
+    if isCover then .fail else .pass
   | .sat _ =>
-    if isCover then .success else .failure
+    if isCover then .pass else .fail
   | .err e => .implementationError e
 
 instance : ToFormat VCResult where
@@ -242,10 +252,10 @@ instance : ToFormat VCResult where
                  {r.smtResult.formatModelIfSat true}"
 
 def VCResult.isSuccess (vr : VCResult) : Bool :=
-  match vr.result with | .success => true | _ => false
+  match vr.result with | .pass => true | _ => false
 
 def VCResult.isFailure (vr : VCResult) : Bool :=
-  match vr.result with | .failure => true | _ => false
+  match vr.result with | .fail => true | _ => false
 
 def VCResult.isUnknown (vr : VCResult) : Bool :=
   match vr.result with | .unknown => true | _ => false
@@ -268,6 +278,9 @@ instance : ToFormat VCResults where
 instance : ToString VCResults where
   toString rs := toString (VCResults.format rs)
 
+/--
+Preprocess a proof obligation before handing it off to a backend engine.
+-/
 def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     (options : Options) : EIO Format (ProofObligation Expression × Option VCResult) := do
   match obligation.property with
@@ -278,7 +291,7 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     if obligation.obligation.isTrue then
       -- We don't need the SMT solver if PE (partial evaluation) is enough to
       -- reduce the consequent to true.
-      let result := { obligation, result := .success, verbose := options.verbose }
+      let result := { obligation, result := .pass, verbose := options.verbose }
       return (obligation, some result)
     else if obligation.obligation.isFalse && obligation.assumptions.isEmpty then
       -- If PE determines that the consequent is false and the path conditions
@@ -290,7 +303,7 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
       dbg_trace f!"\n\nObligation {obligation.label}: failed!\
                    \n\nResult obtained during partial evaluation.\
                    {if options.verbose then prog else ""}"
-      let result := { obligation, result := .failure, verbose := options.verbose }
+      let result := { obligation, result := .fail, verbose := options.verbose }
       return (obligation, some result)
     else if options.removeIrrelevantAxioms then
       -- We attempt to prune the path conditions by excluding all irrelevant
@@ -305,6 +318,10 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     else
       return (obligation, none)
 
+/--
+Invoke a backend engine and get the analysis result for a
+given proof obligation.
+-/
 def getObligationResult (terms : List Term) (ctx : SMT.Context)
     (obligation : ProofObligation Expression) (p : Program)
     (smtsolver : String) (options : Options) : EIO Format VCResult := do
@@ -324,7 +341,7 @@ def getObligationResult (terms : List Term) (ctx : SMT.Context)
     .error e
   | .ok (smt_result, estate) =>
     let result :=  { obligation,
-                     result := smtResultToVCResultKind smt_result (obligation.property == .cover)
+                     result := smtResultToOutcome smt_result (obligation.property == .cover)
                      smtResult := smt_result,
                      estate,
                      verbose := options.verbose }
@@ -335,7 +352,7 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
   let (p, E) := pE
   match E.error with
   | some err =>
-    .error s!"Error during evaluation!\n\
+    .error s!"🚨 Error during evaluation!\n\
               {format err}\n\n\
               Evaluated program: {p}\n\n"
   | _ =>
@@ -382,7 +399,7 @@ def verify (smtsolver : String) (program : Program)
     EIO Format VCResults := do
   match Boogie.typeCheckAndPartialEval options program moreFns with
   | .error err =>
-    .error f!"[Strata.Boogie] Type checking error.\n{format err}"
+    .error f!"❌ Type checking error.\n{format err}"
   | .ok pEs =>
     let VCss ← if options.checkOnly then
                  pure []
@@ -438,7 +455,7 @@ structure Diagnostic where
 def toDiagnostic (vcr : Boogie.VCResult) : Option Diagnostic := do
   -- Only create a diagnostic if verification failed.
   match vcr.result with
-  | .success => none  -- Verification succeeded, no diagnostic
+  | .pass => none  -- Verification succeeded, no diagnostic
   | _ =>
     -- Extract file range from metadata
     let fileRangeElem ← vcr.obligation.metadata.findElem Imperative.MetaData.fileRange

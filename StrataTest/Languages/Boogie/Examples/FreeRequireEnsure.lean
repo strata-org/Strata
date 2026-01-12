@@ -70,7 +70,7 @@ Wrote problem to vcs/g_eq_15_internal.smt2.
 
 Result: Obligation: g_eq_15_internal
 Property: assert
-Result: failure
+Result: ❌ fail
 Model:
 ($__g2, 0)
 
@@ -97,15 +97,15 @@ assert [g_eq_15_internal] ($__g2 == #15)
 info:
 Obligation: g_gt_10_internal
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: g_lt_10
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: g_eq_15_internal
 Property: assert
-Result: failure
+Result: ❌ fail
 Model:
 ($__g2, 0)
 -/

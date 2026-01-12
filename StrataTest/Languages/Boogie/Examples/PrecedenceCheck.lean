@@ -87,23 +87,23 @@ Wrote problem to vcs/implies_equiv.smt2.
 info:
 Obligation: implies_and_eq_not_or_1
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: implies_and_eq_not_or_2
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: implies_and_eq_not_or_3
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: implies_and_eq_not_or_4
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: implies_equiv
 Property: assert
-Result: success
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" precPgm

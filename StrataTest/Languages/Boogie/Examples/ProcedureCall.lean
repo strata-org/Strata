@@ -118,27 +118,27 @@ Wrote problem to vcs/return_value_lemma.smt2.
 info:
 Obligation: new_g_value
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: old_g_property
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: (Origin_Inc_Requires)a_positive
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: (Origin_Inc_Requires)a_positive
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: return_value_lemma
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: assert_0
 Property: assert
-Result: success
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" globalCounterPgm

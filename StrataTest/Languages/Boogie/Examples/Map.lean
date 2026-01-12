@@ -70,7 +70,7 @@ Wrote problem to vcs/a_one_true.smt2.
 
 Result: Obligation: a_one_true
 Property: assert
-Result: failure
+Result: ❌ fail
 
 
 Evaluated program:
@@ -87,11 +87,11 @@ assert [a_one_true] ((~select ~a) #1)
 info:
 Obligation: a_zero_true
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: a_one_true
 Property: assert
-Result: failure
+Result: ❌ fail
 -/
 #guard_msgs in
 #eval verify "cvc5" mapPgm

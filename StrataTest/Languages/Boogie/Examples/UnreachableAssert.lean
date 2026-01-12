@@ -65,15 +65,15 @@ Wrote problem to vcs/x_eq_y.smt2.
 info:
 Obligation: x_eq_y_internal
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: unreachable
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: x_eq_y
 Property: assert
-Result: success
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" unreachableAssertPgm

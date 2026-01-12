@@ -3,51 +3,51 @@
 `StrataTest/Languages/Python/expected/test_precondition_verification.expected` looks like this:
 
 ```
-assert_name_is_foo: verified
+assert_name_is_foo: ✅ pass
 
-assert_opt_name_none_or_str: verified
+assert_opt_name_none_or_str: ✅ pass
 
-assert_opt_name_none_or_bar: verified
+assert_opt_name_none_or_bar: ✅ pass
 
-ensures_maybe_except_none: verified
+ensures_maybe_except_none: ✅ pass
 
-test_helper_procedure_assert_name_is_foo_3: verified
+test_helper_procedure_assert_name_is_foo_3: ✅ pass
 
-test_helper_procedure_assert_opt_name_none_or_str_4: verified
+test_helper_procedure_assert_opt_name_none_or_str_4: ✅ pass
 
-test_helper_procedure_assert_opt_name_none_or_bar_5: verified
+test_helper_procedure_assert_opt_name_none_or_bar_5: ✅ pass
 
-test_helper_procedure_assert_name_is_foo_11: verified
+test_helper_procedure_assert_name_is_foo_11: ✅ pass
 
-test_helper_procedure_assert_opt_name_none_or_str_12: verified
+test_helper_procedure_assert_opt_name_none_or_str_12: ✅ pass
 
-test_helper_procedure_assert_opt_name_none_or_bar_13: verified
+test_helper_procedure_assert_opt_name_none_or_bar_13: ✅ pass
 
-test_helper_procedure_assert_name_is_foo_19: failed
+test_helper_procedure_assert_name_is_foo_19: ❌ fail
 CEx: 
 
-test_helper_procedure_assert_opt_name_none_or_str_20: verified
+test_helper_procedure_assert_opt_name_none_or_str_20: ✅ pass
 
-test_helper_procedure_assert_opt_name_none_or_bar_21: verified
+test_helper_procedure_assert_opt_name_none_or_bar_21: ✅ pass
 
-test_helper_procedure_assert_name_is_foo_27: verified
+test_helper_procedure_assert_name_is_foo_27: ✅ pass
 
-test_helper_procedure_assert_opt_name_none_or_str_28: verified
+test_helper_procedure_assert_opt_name_none_or_str_28: ✅ pass
 
-test_helper_procedure_assert_opt_name_none_or_bar_29: unknown
+test_helper_procedure_assert_opt_name_none_or_bar_29: 🟡 unknown
 
 ```
 
 This can be read as:
 
 ```
-assert_name_is_foo: verified
+assert_name_is_foo: ✅ pass
 
-assert_opt_name_none_or_str: verified
+assert_opt_name_none_or_str: ✅ pass
 
-assert_opt_name_none_or_bar: verified
+assert_opt_name_none_or_bar: ✅ pass
 
-ensures_maybe_except_none: verified
+ensures_maybe_except_none: ✅ pass
 ```
 
 These come from checking that the assertions/ensures in `test_helper_procedure` hold.
@@ -69,11 +69,11 @@ spec {
 
 Each of the following triples:
 ```
-test_helper_procedure_assert_name_is_foo_3: verified
+test_helper_procedure_assert_name_is_foo_3: ✅ pass
 
-test_helper_procedure_assert_opt_name_none_or_str_5: verified
+test_helper_procedure_assert_opt_name_none_or_str_5: ✅ pass
 
-test_helper_procedure_assert_opt_name_none_or_bar_5: verified
+test_helper_procedure_assert_opt_name_none_or_bar_5: ✅ pass
 ```
 
 Comes from checking the assertions in the inlined calls of `test_helper_procedure`. The first two triples succeed, the third has a failure because `"Foo" != "foo"` and the final has an `unknown` (that should ideally be a failure) because `"Bar" != "bar"`.

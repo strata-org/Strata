@@ -170,35 +170,35 @@ Wrote problem to vcs/mix.smt2.
 info:
 Obligation: c_0_eq_a
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: c_1_eq_a
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: a0eq0
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: a1eq1
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: a0eq1
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: a0neq2
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: bTrueEqTrue
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: mix
 Property: assert
-Result: success
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" mapPgm

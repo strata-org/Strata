@@ -98,11 +98,11 @@ Wrote problem to vcs/test_assert.smt2.
 info:
 Obligation: test_assert
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: post
 Property: assert
-Result: success
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval Strata.C_Simp.verify "cvc5" SimpleTestEnv

@@ -44,7 +44,7 @@ Proof Obligation:
 info:
 Obligation: f_test
 Property: assert
-Result: success
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" typeDeclPgm1
@@ -109,7 +109,7 @@ Wrote problem to vcs/fooAssertion.smt2.
 info:
 Obligation: fooAssertion
 Property: assert
-Result: success
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" typeDeclPgm3
@@ -124,7 +124,7 @@ type int := bool;
 #end
 
 /--
-error: [Strata.Boogie] Type checking error.
+error: ❌ Type checking error.
 (0, (0-0)) This type declaration's name is reserved!
 int := bool
 KnownTypes' names:

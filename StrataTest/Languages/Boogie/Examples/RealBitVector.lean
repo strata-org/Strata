@@ -77,7 +77,7 @@ Wrote problem to vcs/real_add_ge_bad.smt2.
 
 Result: Obligation: real_add_ge_bad
 Property: assert
-Result: failure
+Result: ❌ fail
 
 
 Evaluated program:
@@ -96,11 +96,11 @@ assert [real_add_ge_bad] ((~Real.Ge ((~Real.Add ~x) ~y)) #4)
 info:
 Obligation: real_add_ge_good
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: real_add_ge_bad
 Property: assert
-Result: failure
+Result: ❌ fail
 -/
 #guard_msgs in
 #eval verify "cvc5" realPgm
@@ -186,11 +186,11 @@ Wrote problem to vcs/Q_ensures_0.smt2.
 info:
 Obligation: bv_add_ge
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: Q_ensures_0
 Property: assert
-Result: success
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" bvPgm
@@ -217,31 +217,31 @@ procedure P(x: bv8, y: bv8, z: bv8) returns () {
 info:
 Obligation: add_comm
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: xor_cancel
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: div_shift
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: mul_shift
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: demorgan
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: mod_and
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: bad_shift
 Property: assert
-Result: failure
+Result: ❌ fail
 Model:
 ($__x0, #b10011001) ($__y1, #b00000010)
 -/

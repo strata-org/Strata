@@ -63,7 +63,7 @@ Wrote problem to vcs/ctest1.smt2.
 
 Result: Obligation: ctest1
 Property: cover
-Result: failure
+Result: ❌ fail
 
 
 Evaluated program:
@@ -82,17 +82,17 @@ Wrote problem to vcs/atest2.smt2.
 info:
 Obligation: ctest1
 Property: cover
-Result: failure
+Result: ❌ fail
 
 Obligation: ctest2
 Property: cover
-Result: success
+Result: ✅ pass
 Model:
 ($__x0, 3)
 
 Obligation: atest2
 Property: assert
-Result: success
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "z3" coverPgm (options := Options.default)

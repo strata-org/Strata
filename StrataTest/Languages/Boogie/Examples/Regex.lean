@@ -137,39 +137,39 @@ Wrote problem to vcs/optionally_a_check2.smt2.
 info:
 Obligation: hello_dot_ends_with_period
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: dot_ends_with_period
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: bye_exclaim_no_end_with_period
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: ok_chars_str
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: cannot_contain_exclaim
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: has_to_be_at_least_1_char
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: cannot_exceed_10_chars
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: optionally_a_check1
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: optionally_a_check2
 Property: assert
-Result: success
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" regexPgm1
@@ -224,7 +224,7 @@ Proof Obligation:
 
 Result: Obligation: assert_0
 Property: assert
-Result: implementationError SMT Encoding Error! Natural numbers expected as indices for re.loop.
+Result: 🚨 Implementation Error! SMT Encoding Error! Natural numbers expected as indices for re.loop.
 Original expression: (((~Re.Loop ((~Re.Range #a) #z)) #1) %0)
 
 
@@ -244,7 +244,7 @@ assert [assert_1] ((~Str.InRegEx #a) (~bad_re_loop #1))
 
 Result: Obligation: assert_1
 Property: assert
-Result: implementationError SMT Encoding Error! Natural numbers expected as indices for re.loop.
+Result: 🚨 Implementation Error! SMT Encoding Error! Natural numbers expected as indices for re.loop.
 Original expression: (((~Re.Loop ((~Re.Range #a) #z)) #1) %0)
 
 
@@ -264,12 +264,12 @@ assert [assert_1] ((~Str.InRegEx #a) (~bad_re_loop #1))
 info:
 Obligation: assert_0
 Property: assert
-Result: implementationError SMT Encoding Error! Natural numbers expected as indices for re.loop.
+Result: 🚨 Implementation Error! SMT Encoding Error! Natural numbers expected as indices for re.loop.
 Original expression: (((~Re.Loop ((~Re.Range #a) #z)) #1) %0)
 
 Obligation: assert_1
 Property: assert
-Result: implementationError SMT Encoding Error! Natural numbers expected as indices for re.loop.
+Result: 🚨 Implementation Error! SMT Encoding Error! Natural numbers expected as indices for re.loop.
 Original expression: (((~Re.Loop ((~Re.Range #a) #z)) #1) %0)
 -/
 #guard_msgs in
@@ -307,7 +307,7 @@ Wrote problem to vcs/assert_0.smt2.
 info:
 Obligation: assert_0
 Property: assert
-Result: success
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" regexPgm3

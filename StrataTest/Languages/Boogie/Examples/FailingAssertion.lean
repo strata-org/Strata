@@ -66,7 +66,7 @@ Wrote problem to vcs/assert_0.smt2.
 
 Result: Obligation: assert_0
 Property: assert
-Result: failure
+Result: ❌ fail
 
 
 Evaluated program:
@@ -83,7 +83,7 @@ assert [assert_0] (((~select $__a0) #0) == #1)
 info:
 Obligation: assert_0
 Property: assert
-Result: failure
+Result: ❌ fail
 -/
 #guard_msgs in
 #eval verify "cvc5" failing
@@ -109,19 +109,19 @@ spec {
 info:
 Obligation: assert_0
 Property: assert
-Result: failure
+Result: ❌ fail
 Model:
 ($__x0, (- 1))
 
 Obligation: assert_1
 Property: assert
-Result: failure
+Result: ❌ fail
 Model:
 ($__x0, (- 1))
 
 Obligation: assert_2
 Property: assert
-Result: failure
+Result: ❌ fail
 Model:
 ($__x0, 7)
 -/

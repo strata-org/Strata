@@ -73,7 +73,7 @@ Proof Obligation:
 info:
 Obligation: post
 Property: assert
-Result: success
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval Strata.C_Simp.verify "cvc5" MinPgm

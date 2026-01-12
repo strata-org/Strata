@@ -60,11 +60,11 @@ Wrote problem to vcs/n_le_100_postcond.smt2.
 info:
 Obligation: n_gt_100_postcond
 Property: assert
-Result: success
+Result: ✅ pass
 
 Obligation: n_le_100_postcond
 Property: assert
-Result: success
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" procIfPgm

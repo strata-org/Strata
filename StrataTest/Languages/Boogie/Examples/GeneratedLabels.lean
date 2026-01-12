@@ -71,7 +71,7 @@ Wrote problem to vcs/assert_0.smt2.
 info:
 Obligation: assert_0
 Property: assert
-Result: success
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" genLabelsPgm
