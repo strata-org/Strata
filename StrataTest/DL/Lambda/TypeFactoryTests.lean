@@ -480,7 +480,7 @@ end Tree
 -- Typechecking tests
 
 /-
-1. Non-positive type (with trivial base case for inhabitation)
+1. Non-positive type
 type Bad := | Base | C (Bad -> Bad)
 -/
 
@@ -494,7 +494,7 @@ def badTy1 : LDatatype Unit := {name := "Bad", typeArgs := [], constrs := [badCo
 #eval format $ typeCheckAndPartialEval #[badTy1] (IntBoolFactory : @Factory TestParams) (intConst () 0)
 
 /-
-2. Non-strictly positive type (with trivial base case for inhabitation)
+2. Non-strictly positive type
 type Bad a := | Base | C ((Bad a -> int) -> int)
 -/
 
@@ -507,7 +507,7 @@ def badTy2 : LDatatype Unit := {name := "Bad", typeArgs := ["a"], constrs := [ba
 #eval format $ typeCheckAndPartialEval #[badTy2] (IntBoolFactory : @Factory TestParams) (intConst () 0)
 
 /-
-3. Non-strictly positive type 2 (with trivial base case for inhabitation)
+3. Non-strictly positive type 2
 type Bad a := | Base | C (int -> (Bad a -> int))
 -/
 
@@ -520,7 +520,7 @@ def badTy3 : LDatatype Unit := {name := "Bad", typeArgs := ["a"], constrs := [ba
 #eval format $ typeCheckAndPartialEval #[badTy3] (IntBoolFactory : @Factory TestParams) (intConst () 0)
 
 /-
-4. Strictly positive type (with trivial base case for inhabitation)
+4. Strictly positive type
 type Good := | Base | C (int -> (int -> Good))
 -/
 
@@ -602,7 +602,7 @@ New Function:func Int.Add :  ((x : int)) → Bad;-/
 
 section InhabitedTests
 
--- Test 1: Normal inhabited types
+-- Test 1: Standard inhabited types
 
 -- Option type: Some | None
 def optionTy : LDatatype Unit := {
@@ -616,7 +616,6 @@ def optionTy : LDatatype Unit := {
 /-- info: none -/
 #guard_msgs in #eval TypeFactory.all_inhab #[optionTy]
 
--- List is already defined above, test it
 /-- info: none -/
 #guard_msgs in #eval TypeFactory.all_inhab #[listTy]
 
@@ -646,7 +645,7 @@ def natTy : LDatatype Unit := {
 
 -- Test 2: Mutually recursive inhabited types
 
--- Even/Odd mutual recursion (both inhabited via base cases)
+-- Even/Odd mutual recursion (note Odd does not have an explicit base case)
 def evenTy : LDatatype Unit := {
   name := "Even", typeArgs := [],
   constrs := [
@@ -686,7 +685,7 @@ def treeTy2 : LDatatype Unit := {
 
 -- Test 3: Uninhabited types
 
--- Empty type (no constructors would be invalid, so single constructor requiring itself)
+-- Empty type
 def emptyTy : LDatatype Unit := {
   name := "Empty", typeArgs := [],
   constrs := [
@@ -706,9 +705,9 @@ def needsEmptyTy : LDatatype Unit := {
   ], constrs_ne := rfl
 }
 
-/-- info: Error: datatype Empty not inhabited -/
+/-- info: Error: datatype NeedsEmpty not inhabited -/
 #guard_msgs in
-#eval format $ typeCheckAndPartialEval #[emptyTy, needsEmptyTy] (IntBoolFactory : @Factory TestParams) (intConst () 0)
+#eval format $ typeCheckAndPartialEval #[needsEmptyTy, emptyTy] (IntBoolFactory : @Factory TestParams) (intConst () 0)
 
 -- Mutually uninhabited types
 def bad1Ty : LDatatype Unit := {

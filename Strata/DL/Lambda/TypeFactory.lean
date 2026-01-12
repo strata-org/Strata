@@ -416,17 +416,6 @@ def TypeFactory.genFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabi
 def TypeFactory.getType (F : @TypeFactory IDMeta) (name : String) : Option (LDatatype IDMeta) :=
   F.find? (fun d => d.name == name)
 
-omit [DecidableEq IDMeta] [Inhabited IDMeta] in theorem TypeFactory.getType_name {F : @TypeFactory IDMeta} {name : String}
-  {l: LDatatype IDMeta}:
-  F.getType name = some l → l.name = name := by
-    unfold TypeFactory.getType; grind
-
-omit [DecidableEq IDMeta] [Inhabited IDMeta] in theorem TypeFactory.getType_mem {F : @TypeFactory IDMeta} {name : String}
-  {l: LDatatype IDMeta}:
-  F.getType name = some l → @Membership.mem (LDatatype IDMeta) (Array (LDatatype IDMeta)) _ F l := by apply Array.mem_of_find?_eq_some
-
-
-
 /--
 Add an `LDatatype` to an existing `TypeFactory`, checking that no
 types are duplicated.
@@ -479,6 +468,7 @@ mutual
 /--
 Prove that type symbol `ts` is inhabited, assuming
 that types `seen` are unknown. All other types are assumed inhabited.
+The `List.Nodup` and `⊆` hypotheses are only used to prove termination.
 -/
 def typesym_inhab (adts: @TypeFactory IDMeta) (seen: List String)
   (hnodup: List.Nodup seen) (hsub: seen ⊆ (List.map (fun x => x.name) adts.toList))
@@ -503,25 +493,24 @@ def typesym_inhab (adts: @TypeFactory IDMeta) (seen: List String)
       | none => pure none -- Assume all non-datatypes are inhabited
       | some l =>
         -- A datatype is inhabited if it has an inhabited constructor
-        let res ← (l.constrs.attach.foldrM (fun c (accC : Bool) => do
+        let res ← (l.constrs.foldlM (fun accC c => do
           -- A constructor is inhabited if all of its arguments are inhabited
-          let constrInhab ← (c.1.args.attach.foldrM
-            (fun ty1 (accA: Bool) =>
+          let constrInhab ← (c.args.foldlM
+            (fun accA ty1 =>
                 do
                   have hn: List.Nodup (l.name :: seen) := by
                     rw[List.nodup_cons]; constructor
-                    . have := TypeFactory.getType_name ha; subst_vars
-                      rw[←List.elem_iff]; apply hin
+                    . have := Array.find?_some ha; grind
                     . assumption
                   have hsub' : (l.name :: seen) ⊆ (List.map (fun x => x.name) adts.toList) := by
                     apply List.cons_subset.mpr
                     constructor <;> try assumption
                     rw[List.mem_map]; exists l; constructor <;> try grind
-                    have := TypeFactory.getType_mem ha; grind
-                  let b1 ← ty_inhab adts (l.name :: seen) hn hsub' ty1.1.2
-                  pure (b1 && accA)
+                    have := Array.mem_of_find?_eq_some ha; grind
+                  let b1 ← ty_inhab adts (l.name :: seen) hn hsub' ty1.2
+                  pure (accA && b1)
               ) true)
-          pure (constrInhab || accC)
+          pure (accC || constrInhab)
           ) false)
         knowType res
   termination_by (adts.size - seen.length, 0)
