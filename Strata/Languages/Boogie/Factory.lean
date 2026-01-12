@@ -804,9 +804,10 @@ def Factory_wf_if_ok: ∀ F', FactoryE = .ok F' → FactoryWf F' := by
 
 /-
 Currently, this theorem cannot be proven true because the existing proof for
-smaller factories raises timeout/heartbeat error.
+smaller factories raises timeout/heartbeat error if applied this larger Factory.
 But we are pretty close: Factory_wf_if_ok is proven, and evaluting Factory
-must have raised panic! if it was not ok.
+must have raised 'panic!' if it was not ok, so from the fact that it did not
+panic! the resulting Factory is well-formed.
 -/
 
 /-
