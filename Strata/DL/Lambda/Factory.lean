@@ -221,7 +221,12 @@ def Factory.addFactoryFunc (F : @Factory T) (func : LFunc T) : Except Format (@F
               Existing Function: {func'}\n\
               New Function:{func}"
 
+
 omit [Inhabited T.IDMeta] [DecidableEq T.IDMeta] [BEq T.IDMeta] in
+/--
+If Factory.addFactoryFunc succeeds, and the input factory & LFunc were already
+well-formed, the returned factory is also well-formed.
+-/
 theorem Factory.addFactoryFunc_wf
   (F : @Factory T) (F_wf: FactoryWf F) (func : LFunc T) (func_wf: LFuncWf func):
   ∀ F', F.addFactoryFunc func = .ok F' → FactoryWf F' :=
@@ -250,6 +255,12 @@ along the way.
 def Factory.addFactory (F newF : @Factory T) : Except Format (@Factory T) :=
   Array.foldlM (fun factory func => factory.addFactoryFunc func) F newF
 
+
+omit [Inhabited T.IDMeta] [DecidableEq T.IDMeta] [BEq T.IDMeta] in
+/--
+If Factory.addFactory succeeds, and the input two factories were already
+well-formed, the returned factory is also well-formed.
+-/
 theorem Factory.addFactory_wf
   (F : @Factory T) (F_wf: FactoryWf F) (newF : @Factory T)
   (newF_wf: FactoryWf newF):

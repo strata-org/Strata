@@ -152,17 +152,7 @@ info: ok: [(type Boogie.Boundedness.Infinite Foo [_, _]
   func TriggerGroup.empty :  () → TriggerGroup;
   func TriggerGroup.addTrigger : ∀[a]. ((x : a) (t : TriggerGroup)) → TriggerGroup;
   func Bv8.Concat :  ((x : bv8) (y : bv8)) → bv16;
-  func Bv16.Concat :  ((x : bv16) (y : bv16)) → bv32;
-  func Bv32.Concat :  ((x : bv32) (y : bv32)) → bv64;
   func Bv8.Extract_7_7 :  ((x : bv8)) → bv1;
-  func Bv16.Extract_15_15 :  ((x : bv16)) → bv1;
-  func Bv16.Extract_7_0 :  ((x : bv16)) → bv8;
-  func Bv32.Extract_31_31 :  ((x : bv32)) → bv1;
-  func Bv32.Extract_15_0 :  ((x : bv32)) → bv16;
-  func Bv32.Extract_7_0 :  ((x : bv32)) → bv8;
-  func Bv64.Extract_31_0 :  ((x : bv64)) → bv32;
-  func Bv64.Extract_15_0 :  ((x : bv64)) → bv16;
-  func Bv64.Extract_7_0 :  ((x : bv64)) → bv8;
   func Bv1.Neg :  ((x : bv1)) → bv1;
   func Bv1.Add :  ((x : bv1) (y : bv1)) → bv1;
   func Bv1.Sub :  ((x : bv1) (y : bv1)) → bv1;
@@ -209,6 +199,13 @@ info: ok: [(type Boogie.Boundedness.Infinite Foo [_, _]
   func Bv8.SLe :  ((x : bv8) (y : bv8)) → bool;
   func Bv8.SGt :  ((x : bv8) (y : bv8)) → bool;
   func Bv8.SGe :  ((x : bv8) (y : bv8)) → bool;
+  func Bv16.Concat :  ((x : bv16) (y : bv16)) → bv32;
+  func Bv32.Concat :  ((x : bv32) (y : bv32)) → bv64;
+  func Bv16.Extract_15_15 :  ((x : bv16)) → bv1;
+  func Bv16.Extract_7_0 :  ((x : bv16)) → bv8;
+  func Bv32.Extract_31_31 :  ((x : bv32)) → bv1;
+  func Bv32.Extract_15_0 :  ((x : bv32)) → bv16;
+  func Bv32.Extract_7_0 :  ((x : bv32)) → bv8;
   func Bv16.Neg :  ((x : bv16)) → bv16;
   func Bv16.Add :  ((x : bv16) (y : bv16)) → bv16;
   func Bv16.Sub :  ((x : bv16) (y : bv16)) → bv16;
@@ -255,6 +252,9 @@ info: ok: [(type Boogie.Boundedness.Infinite Foo [_, _]
   func Bv32.SLe :  ((x : bv32) (y : bv32)) → bool;
   func Bv32.SGt :  ((x : bv32) (y : bv32)) → bool;
   func Bv32.SGe :  ((x : bv32) (y : bv32)) → bool;
+  func Bv64.Extract_31_0 :  ((x : bv64)) → bv32;
+  func Bv64.Extract_15_0 :  ((x : bv64)) → bv16;
+  func Bv64.Extract_7_0 :  ((x : bv64)) → bv8;
   func Bv64.Neg :  ((x : bv64)) → bv64;
   func Bv64.Add :  ((x : bv64) (y : bv64)) → bv64;
   func Bv64.Sub :  ((x : bv64) (y : bv64)) → bv64;
@@ -376,8 +376,8 @@ info: ok: func identity : ∀[$__ty0]. ((x : $__ty0)) → $__ty0;
 func makePair : ∀[$__ty1, $__ty2]. ((x : $__ty1) (y : $__ty2)) → (Map $__ty1 $__ty2);
 (procedure Test :  () → ())
 modifies: []
-preconditions: 
-postconditions: 
+preconditions: ⏎
+postconditions: ⏎
 body: init (m : (Map int bool)) := (init_m_0 : (Map int bool))
 m := (((~makePair : (arrow int (arrow bool (Map int bool)))) ((~identity : (arrow int int)) #42)) ((~identity : (arrow bool bool)) #true))
 -/

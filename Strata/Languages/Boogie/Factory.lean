@@ -149,7 +149,13 @@ info: [("Neg", "unaryOp"), ("Add", "binaryOp"), ("Sub", "binaryOp"), ("Mul", "bi
 #guard_msgs in
 #eval List.zip BVOpNames BVOpAritys
 
-variable [Coe String BoogieLParams.Identifier]
+/--
+Coercion of a string to BoogieIdent yields an unresolved identifier
+This is the default setting of Strata/Languages/Boogie/Identifiers.lean
+as well
+-/
+instance coeStringIdent: Coe String (BoogieLParams.Identifier) where
+  coe | s => BoogieIdent.unres s
 
 open Lean Elab Command in
 elab "ExpandBVOpFuncDefs" "[" sizes:num,* "]" : command => do
@@ -400,13 +406,19 @@ def bv64Extract_31_0_Func  := bvExtractFunc 64 31  0
 def bv64Extract_15_0_Func  := bvExtractFunc 64 15  0
 def bv64Extract_7_0_Func   := bvExtractFunc 64  7  0
 
-def Factory : @Factory BoogieLParams := #[
-  intAddFunc,
-  intSubFunc,
-  intMulFunc,
-  intDivFunc,
-  intModFunc,
-  intNegFunc,
+/--
+Split Factorys to smaller ones for faster well-formedness proof.
+In the end, we concatenate the smaller Factorys with Factory.addFactory and do
+panic! check.
+-/
+
+private def intRealBoolFactory : @Factory BoogieLParams := #[
+  @intAddFunc BoogieLParams _,
+  @intSubFunc BoogieLParams _,
+  @intMulFunc BoogieLParams _,
+  @intDivFunc BoogieLParams _,
+  @intModFunc BoogieLParams _,
+  @intNegFunc BoogieLParams _,
 
   @intLtFunc BoogieLParams _,
   @intLeFunc BoogieLParams _,
@@ -427,8 +439,13 @@ def Factory : @Factory BoogieLParams := #[
   @boolOrFunc BoogieLParams _,
   @boolImpliesFunc BoogieLParams _,
   @boolEquivFunc BoogieLParams _,
-  @boolNotFunc BoogieLParams _,
+  @boolNotFunc BoogieLParams _
+]
 
+/-- All operations other than Int, Real, Bool and the Bit-vector operations
+(which will follow).
+-/
+private def nonIntRealBoolFactory : @Factory BoogieLParams := #[
   strLengthFunc,
   strConcatFunc,
   strSubstrFunc,
@@ -455,20 +472,42 @@ def Factory : @Factory BoogieLParams := #[
   addTriggerGroupFunc,
   emptyTriggerGroupFunc,
   addTriggerFunc,
+]
 
+/-- Bit-vector operations of bit-width 1 and 8. -/
+private def expandedBVOp_1_8_Factory : @Factory BoogieLParams := #[
   bv8ConcatFunc,
+  bv8Extract_7_7_Func,
+] ++ (ExpandBVOpFuncNames [1,8])
+
+/-- Bit-vector operations of bit-width 16 and 32. -/
+private def expandedBVOp_16_32_Factory : @Factory BoogieLParams := #[
   bv16ConcatFunc,
   bv32ConcatFunc,
-  bv8Extract_7_7_Func,
   bv16Extract_15_15_Func,
   bv16Extract_7_0_Func,
   bv32Extract_31_31_Func,
   bv32Extract_15_0_Func,
   bv32Extract_7_0_Func,
+] ++ (ExpandBVOpFuncNames [16,32])
+
+/-- Bit-vector operations of bit-width 64. -/
+private def expandedBVOp_64_Factory : @Factory BoogieLParams := #[
   bv64Extract_31_0_Func,
   bv64Extract_15_0_Func,
   bv64Extract_7_0_Func,
-] ++ ExpandBVOpFuncNames [1,8,16,32,64]
+] ++ (ExpandBVOpFuncNames [64])
+
+def FactoryE := do
+    let fv ← intRealBoolFactory.addFactory nonIntRealBoolFactory
+    let fv ← fv.addFactory expandedBVOp_1_8_Factory
+    let fv ← fv.addFactory expandedBVOp_16_32_Factory
+    let fv ← fv.addFactory expandedBVOp_64_Factory
+    return fv
+
+def Factory : @Factory BoogieLParams := match FactoryE with
+  | .ok F => F | .error _ => panic! "may have duplicated ops"
+
 
 open Lean Elab Command in
 elab "DefBVOpFuncExprs" "[" sizes:num,* "]" : command => do
@@ -506,16 +545,16 @@ def addTriggerOp : Expression.Expr := addTriggerFunc.opExpr
 instance : Inhabited (⟨ExpressionMetadata, BoogieIdent⟩: LExprParams).Metadata where
   default := ()
 
-def intAddOp : Expression.Expr := intAddFunc.opExpr
-def intSubOp : Expression.Expr := intSubFunc.opExpr
-def intMulOp : Expression.Expr := intMulFunc.opExpr
-def intDivOp : Expression.Expr := intDivFunc.opExpr
-def intModOp : Expression.Expr := intModFunc.opExpr
-def intNegOp : Expression.Expr := intNegFunc.opExpr
-def intLtOp : Expression.Expr := intLtFunc.opExpr
-def intLeOp : Expression.Expr := intLeFunc.opExpr
-def intGtOp : Expression.Expr := intGtFunc.opExpr
-def intGeOp : Expression.Expr := intGeFunc.opExpr
+def intAddOp : Expression.Expr := (@intAddFunc BoogieLParams _).opExpr
+def intSubOp : Expression.Expr := (@intSubFunc BoogieLParams _).opExpr
+def intMulOp : Expression.Expr := (@intMulFunc BoogieLParams _).opExpr
+def intDivOp : Expression.Expr := (@intDivFunc BoogieLParams _).opExpr
+def intModOp : Expression.Expr := (@intModFunc BoogieLParams _).opExpr
+def intNegOp : Expression.Expr := (@intNegFunc BoogieLParams _).opExpr
+def intLtOp : Expression.Expr := (@intLtFunc BoogieLParams _).opExpr
+def intLeOp : Expression.Expr := (@intLeFunc BoogieLParams _).opExpr
+def intGtOp : Expression.Expr := (@intGtFunc BoogieLParams _).opExpr
+def intGeOp : Expression.Expr := (@intGeFunc BoogieLParams _).opExpr
 def realAddOp : Expression.Expr := realAddFunc.opExpr
 def realSubOp : Expression.Expr := realSubFunc.opExpr
 def realMulOp : Expression.Expr := realMulFunc.opExpr
@@ -525,11 +564,11 @@ def realLtOp : Expression.Expr := realLtFunc.opExpr
 def realLeOp : Expression.Expr := realLeFunc.opExpr
 def realGtOp : Expression.Expr := realGtFunc.opExpr
 def realGeOp : Expression.Expr := realGeFunc.opExpr
-def boolAndOp : Expression.Expr := @boolAndFunc.opExpr BoogieLParams _
-def boolOrOp : Expression.Expr := @boolOrFunc.opExpr BoogieLParams _
-def boolImpliesOp : Expression.Expr := @boolImpliesFunc.opExpr BoogieLParams _
-def boolEquivOp : Expression.Expr := @boolEquivFunc.opExpr BoogieLParams _
-def boolNotOp : Expression.Expr := @boolNotFunc.opExpr BoogieLParams _
+def boolAndOp : Expression.Expr := (@boolAndFunc BoogieLParams _).opExpr
+def boolOrOp : Expression.Expr := (@boolOrFunc BoogieLParams _).opExpr
+def boolImpliesOp : Expression.Expr := (@boolImpliesFunc BoogieLParams _).opExpr
+def boolEquivOp : Expression.Expr := (@boolEquivFunc BoogieLParams _).opExpr
+def boolNotOp : Expression.Expr := (@boolNotFunc BoogieLParams _).opExpr
 def strLengthOp : Expression.Expr := strLengthFunc.opExpr
 def strConcatOp : Expression.Expr := strConcatFunc.opExpr
 def strSubstrOp : Expression.Expr := strSubstrFunc.opExpr
@@ -562,5 +601,217 @@ Get all the built-in functions supported by Boogie.
 -/
 def builtinFunctions : Array String :=
   Factory.map (fun f => BoogieIdent.toPretty f.name)
+
+
+/--
+Wellformedness of the factories.
+-/
+
+private theorem intRealBoolFactory_wf : FactoryWf intRealBoolFactory := by
+  apply FactoryWf.mk
+  · unfold intRealBoolFactory
+    simp only []
+    repeat(
+      apply List.Pairwise.cons
+      (focus ((intros a' Hmem <;>
+        repeat (
+          rcases Hmem with _ | ⟨ a', Hmem ⟩
+          (focus (simp (config := { ground := true }); done)))) <;>
+        contradiction)))
+    apply List.Pairwise.nil
+  · unfold intRealBoolFactory
+    intros lf Hmem
+    repeat (
+      rcases Hmem with _ | ⟨ a', Hmem ⟩
+      · apply LFuncWf.mk <;> try (simp (config := { ground := true }); done)
+        -- Tactics below here are for the operations defined in IntBoolFactory.
+        try (
+          simp (config := { ground := true })
+          try unfold unOpCeval
+          try unfold binOpCeval
+          try unfold cevalIntDiv
+          try unfold cevalIntMod
+          intros lf md args res
+          repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
+    contradiction
+
+private theorem nonIntRealBoolFactory_wf : FactoryWf nonIntRealBoolFactory := by
+  apply FactoryWf.mk
+  · unfold nonIntRealBoolFactory
+    simp only []
+    repeat(
+      apply List.Pairwise.cons
+      (focus ((intros a' Hmem <;>
+        repeat (
+          rcases Hmem with _ | ⟨ a', Hmem ⟩
+          (focus (simp (config := { ground := true }); done)))) <;>
+        contradiction)))
+    apply List.Pairwise.nil
+  · unfold nonIntRealBoolFactory
+    intros lf Hmem
+    repeat (
+      rcases Hmem with _ | ⟨ a', Hmem ⟩
+      · apply LFuncWf.mk <;> try (simp (config := { ground := true }); done)
+        try (
+          simp (config := { ground := true })
+          try unfold unOpCeval
+          try unfold binOpCeval
+          intros lf md args res
+          repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
+    contradiction
+
+
+set_option maxRecDepth 32768
+set_option maxHeartbeats 4000000
+
+private theorem expandedBVOp_1_8_Factory_wf :
+    FactoryWf expandedBVOp_1_8_Factory := by
+  unfold expandedBVOp_1_8_Factory
+  apply FactoryWf.mk
+  · rw [Array.toList_appendList]
+    simp only []
+    unfold HAppend.hAppend instHAppendOfAppend Append.append List.instAppend
+    simp only [List.append]
+    repeat (
+      apply List.Pairwise.cons
+      (focus ((intros a' Hmem <;>
+        repeat (
+          rcases Hmem with _ | ⟨ a', Hmem ⟩
+          (focus (simp (config := { ground := true }); done)))) <;>
+        contradiction)))
+    apply List.Pairwise.nil
+  · unfold HAppend.hAppend Array.instHAppendList
+    simp only []
+    unfold Array.appendList
+    simp only [List.foldl, Array.push, List.concat]
+    intros lf
+    rw [← Array.mem_toList_iff]
+    simp only []
+    intros Hmem
+    repeat (
+      rcases Hmem with _ | ⟨ a', Hmem ⟩
+      · apply LFuncWf.mk <;> try (simp (config := { ground := true }); done)
+        try (
+          simp (config := { ground := true })
+          try unfold bvUnaryOp
+          try unfold bvBinaryOp
+          try unfold bvShiftOp
+          try unfold bvBinaryPred
+          intros lf md args res
+          repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
+    contradiction
+
+private theorem expandedBVOp_16_32_Factory_wf :
+    FactoryWf expandedBVOp_16_32_Factory := by
+  unfold expandedBVOp_16_32_Factory
+  apply FactoryWf.mk
+  · rw [Array.toList_appendList]
+    simp only []
+    unfold HAppend.hAppend instHAppendOfAppend Append.append List.instAppend
+    simp only [List.append]
+    repeat (
+      apply List.Pairwise.cons
+      (focus ((intros a' Hmem <;>
+        repeat (
+          rcases Hmem with _ | ⟨ a', Hmem ⟩
+          (focus (simp (config := { ground := true }); done)))) <;>
+        contradiction)))
+    apply List.Pairwise.nil
+  · unfold HAppend.hAppend Array.instHAppendList
+    simp only []
+    unfold Array.appendList
+    simp only [List.foldl, Array.push, List.concat]
+    intros lf
+    rw [← Array.mem_toList_iff]
+    simp only []
+    intros Hmem
+    repeat (
+      rcases Hmem with _ | ⟨ a', Hmem ⟩
+      · apply LFuncWf.mk <;> try (simp (config := { ground := true }); done)
+        try (
+          simp (config := { ground := true })
+          try unfold bvUnaryOp
+          try unfold bvBinaryOp
+          try unfold bvShiftOp
+          try unfold bvBinaryPred
+          intros lf md args res
+          repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
+    contradiction
+
+
+private theorem expandedBVOp_64_Factory_wf :
+    FactoryWf expandedBVOp_64_Factory := by
+  unfold expandedBVOp_64_Factory
+  apply FactoryWf.mk
+  · rw [Array.toList_appendList]
+    simp only []
+    unfold HAppend.hAppend instHAppendOfAppend Append.append List.instAppend
+    simp only [List.append]
+    repeat (
+      apply List.Pairwise.cons
+      (focus ((intros a' Hmem <;>
+        repeat (
+          rcases Hmem with _ | ⟨ a', Hmem ⟩
+          (focus (simp (config := { ground := true }); done)))) <;>
+        contradiction)))
+    apply List.Pairwise.nil
+  · unfold HAppend.hAppend Array.instHAppendList
+    simp only []
+    unfold Array.appendList
+    simp only [List.foldl, Array.push, List.concat]
+    intros lf
+    rw [← Array.mem_toList_iff]
+    simp only []
+    intros Hmem
+    repeat (
+      rcases Hmem with _ | ⟨ a', Hmem ⟩
+      · apply LFuncWf.mk <;> try (simp (config := { ground := true }); done)
+        try (
+          simp (config := { ground := true })
+          try unfold bvUnaryOp
+          try unfold bvBinaryOp
+          try unfold bvShiftOp
+          try unfold bvBinaryPred
+          intros lf md args res
+          repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
+    contradiction
+
+def Factory_wf_if_ok: ∀ F', FactoryE = .ok F' → FactoryWf F' := by
+  -- Challenge: it seems this theorem can be possibly automated with
+  -- a decision procedure for first order logic. Can we use grind?
+  intros F'
+  unfold FactoryE Bind.bind Pure.pure Except.instMonad Except.bind
+  simp only []
+  intro H
+  split at H <;> try contradiction
+  rename_i F1 HF1
+  split at H <;> try contradiction
+  rename_i F2 HF2
+  split at H <;> try contradiction
+  rename_i F3 HF3
+  split at H <;> try contradiction
+  rename_i F4 HF4
+  have Hwf1:= Factory.addFactory_wf intRealBoolFactory intRealBoolFactory_wf
+      nonIntRealBoolFactory nonIntRealBoolFactory_wf F1 HF1
+  have Hwf2:= Factory.addFactory_wf F1 Hwf1
+      expandedBVOp_1_8_Factory expandedBVOp_1_8_Factory_wf F2 HF2
+  have Hwf3:= Factory.addFactory_wf F2 Hwf2
+      expandedBVOp_16_32_Factory expandedBVOp_16_32_Factory_wf F3 HF3
+  have Hwf4:= Factory.addFactory_wf F3 Hwf3
+      expandedBVOp_64_Factory expandedBVOp_64_Factory_wf F4 HF4
+  unfold Except.pure at H
+  grind
+
+/-
+Currently, this theorem cannot be proven true because the existing proof for
+smaller factories raises timeout/heartbeat error.
+But we are pretty close: Factory_wf_if_ok is proven, and evaluting Factory
+must have raised panic! if it was not ok.
+-/
+
+/-
+def Factory_wf: FactoryWf Factory := by
+  sorry
+-/
 
 end Boogie
