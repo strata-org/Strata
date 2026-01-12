@@ -122,22 +122,10 @@ theorem of_mem_pop {α} {a : α} {as : Array α} : a ∈ as.pop → a ∈ as := 
   simp [Array.mem_iff_getElem]
   grind
 
-theorem push_mem:
-  ∀ {T} (x:Array T) (y z:T), z ∈ Array.push x y → z ∈ x ∨ z = y
-:= by
-  grind
-
 theorem toList_list_cons {α}:
   ∀ (hd:α) (tl:List α) (arr:Array α),
     Array.toList arr = hd::tl ↔ arr = (List.toArray [hd]) ++ (List.toArray tl)
 := by grind
-
-theorem foldlM_ofList {α β} {m:Type → Type} [Monad m]:
-  ∀ (arr:Array α) (init:β) (f:β → α → m β),
-    Array.foldlM f init arr = List.foldlM f init (Array.toList arr) := by grind
-
-theorem toList_nil {α}:
-  ∀ (arr:Array α), arr.toList = [] ↔ arr = #[] := by grind
 
 end Array
 end

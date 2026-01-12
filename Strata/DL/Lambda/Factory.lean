@@ -138,9 +138,9 @@ instance LFuncWf.body_freevars_decidable {T : LExprParams} (f : LFunc T):
       intros b' freevars Hb' Hfreevars fv' Hmem
       cases Hb'
       rw [← Hfreevars] at Hall
-      rw [List.all_forall_mem] at Hall
+      rw [List.all_eq_true] at Hall
       have Hall' := Hall fv' Hmem
-      rw [List.any_exists] at Hall'
+      rw [List.any_eq_true] at Hall'
       rcases Hall' with ⟨arg', H⟩
       exists arg'
       solve | (simp at H ; congr)
@@ -276,9 +276,11 @@ by
     · have Hnn := F_wf.name_nodup
       grind [Array.toList_push,List]
     · intros lf Hmem
-      have Hmem' := Array.push_mem F func lf Hmem
-      have Hwf := F_wf.lfuncs_wf
-      grind
+      rw [Array.mem_push] at Hmem
+      cases Hmem
+      · have Hwf := F_wf.lfuncs_wf
+        apply Hwf; assumption
+      · grind
   · grind
 
 /--
@@ -300,11 +302,11 @@ theorem Factory.addFactory_wf
   ∀ F', F.addFactory newF = .ok F' → FactoryWf F' :=
 by
   unfold Factory.addFactory
-  rw [Array.foldlM_ofList]
+  rw [← Array.foldlM_toList]
   generalize Hl: newF.toList = l
   induction l generalizing newF F
-  · rw [Array.toList_nil] at Hl
-    rw [List.foldlM_empty]
+  · rw [Array.toList_eq_nil_iff] at Hl
+    rw [List.foldlM_nil]
     unfold Pure.pure Except.instMonad Except.pure
     grind
   · rename_i lf lf_tail tail_ih

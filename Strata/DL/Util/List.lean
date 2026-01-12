@@ -411,14 +411,4 @@ theorem length_dedup_of_subset_le {α : Type} [DecidableEq α] (l₁ l₂ : List
       simp_all [dedup]
       omega
 
-theorem foldlM_empty {α β} {m:Type → Type} [Monad m]:
-  ∀ (init:β) (f:β → α → m β),
-    List.foldlM f init [] = Pure.pure init := by grind
-
-theorem all_forall_mem:
-  ∀ {T} (l:List T) P, l.all P = true ↔ (∀ m, m ∈ l → P m) := by grind
-
-theorem any_exists:
-  ∀ {T} (l:List T) P, l.any P = true ↔ (∃ m, m ∈ l ∧ P m) := by grind
-
 end List
