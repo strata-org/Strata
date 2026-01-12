@@ -246,7 +246,10 @@ def translateQualifiedIdent (t : Tree) : MaybeQualifiedIdent :=
   | q`Init.qualifiedIdentImplicit, 1 => Id.run do
     let .ident _ name := args[0]
       | return panic! "Expected ident"
-    .name name
+    let name := name.stripPrefix "«" |>.stripSuffix "»"
+    match name.splitOn "." with
+    | [dialect, rest] => .qid { dialect, name := rest }
+    | _ => .name name
   | q`Init.qualifiedIdentExplicit, 2 => Id.run do
     let .ident _ dialect := args[0]
       | return panic! "Expected ident"
