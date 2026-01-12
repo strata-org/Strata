@@ -411,4 +411,8 @@ theorem length_dedup_of_subset_le {α : Type} [DecidableEq α] (l₁ l₂ : List
       simp_all [dedup]
       omega
 
+theorem foldlM_empty {α β} {m:Type → Type} [Monad m]:
+  ∀ (init:β) (f:β → α → m β),
+    List.foldlM f init [] = Pure.pure init := by grind
+
 end List
