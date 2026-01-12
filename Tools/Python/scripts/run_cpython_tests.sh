@@ -38,12 +38,15 @@ if [ "$VER" == "3.14" ]; then
   expected_failures="$expected_failures;/tokenizedata/badsyntax_3131.py"
   expected_failures="$expected_failures;/tokenizedata/badsyntax_pep3120.py"
 elif [ "$VER" == "3.13" ]; then
-  expected_failures=""
-elif [ "$VER" == "3.12" ]; then
-  expected_failures="/tokenizedata/badsyntax_3131.py"
-  expected_failures="$expected_failures;/tokenizedata/badsyntax_pep3120.py"
-  expected_failures="$expected_failures;/tokenizedata/bad_coding.py"
+  expected_failures="/tokenizedata/bad_coding.py"
   expected_failures="$expected_failures;/tokenizedata/bad_coding2.py"
+  expected_failures="$expected_failures;/tokenizedata/badsyntax_3131.py"
+  expected_failures="$expected_failures;/tokenizedata/badsyntax_pep3120.py"
+elif [ "$VER" == "3.12" ]; then
+  expected_failures="/tokenizedata/bad_coding.py"
+  expected_failures="$expected_failures;/tokenizedata/bad_coding2.py"
+  expected_failures="$expected_failures;/tokenizedata/badsyntax_3131.py"
+  expected_failures="$expected_failures;/tokenizedata/badsyntax_pep3120.py"
   expected_failures="$expected_failures;/test_lib2to3/data/different_encoding.py"
   expected_failures="$expected_failures;/test_lib2to3/data/false_encoding.py"
   expected_failures="$expected_failures;/test_lib2to3/data/bom.py"
@@ -88,7 +91,7 @@ for i in `find $prefix/Lib/test -name "*.py"`; do
     fi
   fi
   # See FAIL_FAST note above
-  if [[ -n "$FAIL_FAST" ]]; then
+  if [[ -n "${FAIL_FAST-}" ]]; then
     if [ "$failures" -ne 0 ]; then
       >&2 echo "Failed"
       >&2 cat "$report"
