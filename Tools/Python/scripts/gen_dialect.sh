@@ -13,7 +13,7 @@ dialect_dir="dialects"
 
 mkdir -p "$dialect_dir"
 
-python3 -Xgil=0 -m strata.gen dialect "$dialect_dir"
+python3 -m strata.gen dialect "$dialect_dir"
 $strata print "$dialect_dir/Python.dialect.st.ion" > "$dialect_dir/Python.dialect.st"
 
 $strata check "$dialect_dir/Python.dialect.st.ion"
