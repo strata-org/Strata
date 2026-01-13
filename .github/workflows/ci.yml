@@ -112,6 +112,8 @@ jobs:
         run: .github/scripts/lintWhitespace.sh
       - name: Check for import Lean
         run: .github/scripts/checkLeanImport.sh
+      - name: Check Lean version consistncy
+        run: .github/scripts/check_lean_consistency.sh
 
   build_doc:
     name: Build documentation

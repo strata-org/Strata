@@ -113,7 +113,7 @@ instance : ToFormat Result where
 
 def VC_folder_name: String := "vcs"
 
-def runSolver (solver : String) (args : Array String) : IO String := do
+def runSolver (solver : String) (args : Array String) : IO IO.Process.Output := do
   let output ← IO.Process.output {
     cmd := solver
     args := args
@@ -121,14 +121,15 @@ def runSolver (solver : String) (args : Array String) : IO String := do
   -- dbg_trace f!"runSolver: exitcode: {repr output.exitCode}\n\
   --                         stderr: {repr output.stderr}\n\
   --                         stdout: {repr output.stdout}"
-  return output.stdout
+  return output
 
-def solverResult (vars : List (IdentT LMonoTy Visibility)) (ans : String)
+def solverResult (vars : List (IdentT LMonoTy Visibility)) (output: IO.Process.Output)
     (ctx : SMT.Context) (E : EncoderState) :
   Except Format Result := do
-  let pos := (ans.find (fun c => c == '\n')).byteIdx
-  let verdict := (ans.take pos).trim
-  let rest := ans.drop pos
+  let stdout := output.stdout
+  let pos := (stdout.find (fun c => c == '\n')).byteIdx
+  let verdict := (stdout.take pos).trim
+  let rest := stdout.drop pos
   match verdict with
   | "sat"     =>
     let rawModel ← getModel rest
@@ -141,7 +142,7 @@ def solverResult (vars : List (IdentT LMonoTy Visibility)) (ans : String)
     | .error _model_err => (.ok (.sat []))
   | "unsat"   =>  .ok .unsat
   | "unknown" =>  .ok .unknown
-  | _     =>  .error ans
+  | _     =>  .error (stdout ++ output.stderr)
 
 open Imperative
 
@@ -220,8 +221,8 @@ def dischargeObligation
   let _ ← solver.checkSat ids -- Will return unknown for Solver.fileWriter
   if options.verbose then IO.println s!"Wrote problem to {filename}."
   let flags := getSolverFlags options smtsolver
-  let solver_out ← runSolver smtsolver (#[filename] ++ flags)
-  match solverResult vars solver_out ctx estate with
+  let output ← runSolver smtsolver (#[filename] ++ flags)
+  match solverResult vars output ctx estate with
   | .error e => return .error e
   | .ok result => return .ok (result, estate)
 
@@ -382,7 +383,7 @@ def toDiagnostic (vcr : Boogie.VCResult) : Option Diagnostic := do
     | .fileRange range =>
       let message := match result with
         | .sat _ => "assertion does not hold"
-        | .unknown => "assertion verification result is unknown"
+        | .unknown => "assertion could not be proved"
         | .err msg => s!"verification error: {msg}"
         | _ => "verification failed"
       some {
