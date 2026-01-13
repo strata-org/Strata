@@ -29,37 +29,65 @@ open Strata.B3AST
 -- Batch Verification API
 ---------------------------------------------------------------------
 
-/-- Add declarations and axioms from a transformed B3 program to the verification state -/
-private def addDeclarationsAndAxioms (state : B3VerificationState) (prog : B3AST.Program SourceRange) : IO (B3VerificationState × List String) := do
-  let mut state := state
-  let mut errors := []
-
+/-- Extract function declarations from a B3 program -/
+def extractFunctionDeclarations (prog : B3AST.Program SourceRange) : List (String × List String × String) :=
   match prog with
   | .program _ decls =>
-      -- First pass: declare all functions
-      for decl in decls.val.toList do
+      decls.val.toList.filterMap (fun decl =>
         match decl with
         | .function _ name params resultType _ body =>
-            -- After transformation, functions should have no body
             if body.val.isNone then
               let argTypes := params.val.toList.map (fun p =>
                 match p with
                 | .fParameter _ _ _ ty => b3TypeToSMT ty.val
               )
               let retType := b3TypeToSMT resultType.val
-              state ← addFunctionDecl state name.val argTypes retType
-        | _ => pure ()
+              some (name.val, argTypes, retType)
+            else
+              none
+        | _ => none
+      )
 
-      -- Second pass: add axioms
-      for decl in decls.val.toList do
+/-- Extract axiom expressions from a B3 program -/
+def extractAxioms (prog : B3AST.Program SourceRange) : List (B3AST.Expression SourceRange) :=
+  match prog with
+  | .program _ decls =>
+      decls.val.toList.filterMap (fun decl =>
         match decl with
-        | .axiom _ _ expr =>
-            let convResult := expressionToSMT ConversionContext.empty expr
-            state ← addPathCondition state expr convResult.term
-            errors := errors ++ convResult.errors.map toString
-        | _ => pure ()
+        | .axiom _ _ expr => some expr
+        | _ => none
+      )
+
+/-- Add declarations and axioms from a transformed B3 program to the verification state -/
+private def addDeclarationsAndAxioms (state : B3VerificationState) (prog : B3AST.Program SourceRange) : IO (B3VerificationState × List String) := do
+  let mut state := state
+  let mut errors := []
+
+  -- Add function declarations
+  for (name, argTypes, retType) in extractFunctionDeclarations prog do
+    state ← addFunctionDecl state name argTypes retType
+
+  -- Add axioms
+  for expr in extractAxioms prog do
+    let convResult := expressionToSMT ConversionContext.empty expr
+    state ← addPathCondition state expr convResult.term
+    errors := errors ++ convResult.errors.map toString
 
   return (state, errors)
+
+/-- Extract parameter-free procedures with bodies from a B3 program -/
+def extractVerifiableProcedures (prog : B3AST.Program SourceRange) : List (String × B3AST.Decl SourceRange × B3AST.Statement SourceRange) :=
+  match prog with
+  | .program _ decls =>
+      decls.val.toList.filterMap (fun decl =>
+        match decl with
+        | .procedure _ name params _ body =>
+            if params.val.isEmpty && body.val.isSome then
+              some (name.val, decl, body.val.get!)
+            else
+              none
+        | _ => none
+      )
 
 /-- Verify a B3 program without automatic diagnosis (faster, less detailed errors) -/
 def verifyWithoutDiagnosis (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List (Except String VerificationReport)) := do
@@ -77,26 +105,16 @@ def verifyWithoutDiagnosis (prog : B3AST.Program SourceRange) (solver : Solver) 
   for err in conversionErrors do
     results := results ++ [.error err]
 
-  match prog with
-  | .program _ decls =>
-      -- Check procedures
-      for decl in decls.val.toList do
-        match decl with
-        | .procedure _m _name params _specs body =>
-            -- Only verify parameter-free procedures
-            if params.val.isEmpty && body.val.isSome then
-              let bodyStmt := body.val.get!
-              let execResult ← symbolicExecuteStatements ConversionContext.empty state decl bodyStmt
-              -- Convert StatementResult to Except String VerificationReport
-              let converted := execResult.results.map (fun r =>
-                match r with
-                | .verified report => .ok report
-                | .conversionError msg => .error msg
-              )
-              results := results ++ converted
-            else
-              pure ()  -- Skip procedures with parameters for now
-        | _ => pure ()
+  -- Verify parameter-free procedures
+  for (_name, decl, bodyStmt) in extractVerifiableProcedures prog do
+    let execResult ← symbolicExecuteStatements ConversionContext.empty state decl bodyStmt
+    -- Convert StatementResult to Except String VerificationReport
+    let converted := execResult.results.map (fun r =>
+      match r with
+      | .verified report => .ok report
+      | .conversionError msg => .error msg
+    )
+    results := results ++ converted
 
   closeVerificationState state
   return results
@@ -176,22 +194,13 @@ def verify (prog : Strata.B3AST.Program SourceRange) (solver : Solver) : IO (Lis
   let state ← buildProgramState prog solver
   let mut reports := []
 
-  match prog with
-  | .program _ decls =>
-      for decl in decls.val.toList do
-        match decl with
-        | .procedure _ name params _ body =>
-            if params.val.isEmpty && body.val.isSome then
-              let bodyStmt := body.val.get!
-              let (results, _finalState) ← symbolicExecuteStatementsWithDiagnosis ConversionContext.empty state decl bodyStmt
-
-              reports := reports ++ [{
-                procedureName := name.val
-                results := results
-              }]
-            else
-              pure ()
-        | _ => pure ()
+  -- Verify parameter-free procedures
+  for (name, decl, bodyStmt) in extractVerifiableProcedures prog do
+    let (results, _finalState) ← symbolicExecuteStatementsWithDiagnosis ConversionContext.empty state decl bodyStmt
+    reports := reports ++ [{
+      procedureName := name
+      results := results
+    }]
 
   closeVerificationState state
   return reports
