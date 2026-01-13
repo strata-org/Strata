@@ -285,8 +285,13 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     (options : Options) : EIO Format (ProofObligation Expression × Option VCResult) := do
   match obligation.property with
   | .cover =>
-    -- We do not preprocess any cover obligations.
-    return (obligation, none)
+    if obligation.obligation.isFalse then
+      -- If PE determines that the consequent is false, then we can immediately
+      -- report a failure.
+      let result := { obligation, result := .fail, verbose := options.verbose }
+      return (obligation, some result)
+    else
+      return (obligation, none)
   | .assert =>
     if obligation.obligation.isTrue then
       -- We don't need the SMT solver if PE (partial evaluation) is enough to
@@ -295,7 +300,7 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
       return (obligation, some result)
     else if obligation.obligation.isFalse && obligation.assumptions.isEmpty then
       -- If PE determines that the consequent is false and the path conditions
-      -- are empty, then we can immediate report a verification failure. Note
+      -- are empty, then we can immediately report a verification failure. Note
       -- that we go to the SMT solver if the path conditions aren't empty --
       -- after all, the path conditions could imply false, which the PE isn't
       -- capable enough to infer.
