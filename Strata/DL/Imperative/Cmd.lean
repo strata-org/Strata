@@ -47,10 +47,10 @@ inductive Cmd (P : PureExpr) : Type where
   | assert   (label : String) (b : P.Expr) (md : (MetaData P) := .empty)
   /-- Ignore any execution state in which `b` is not true. -/
   | assume   (label : String) (b : P.Expr) (md : (MetaData P) := .empty)
-  /-- Checks if condition `b` is true on _any_ path where this command is
-    encountered. Reports an error if `b` does not hold on _all_ of these paths.
-    This is the dual of `assert`, and can be used for coverage analysis, as in
-    model checking.
+  /--
+  Checks if there _exists_ a path that reaches this command and condition `b` is
+  true. Reports an error otherwise. This is the dual of `assert`, and can be
+  used for coverage analysis.
   -/
   | cover    (label : String) (b : P.Expr) (md : (MetaData P) := .empty)
 
