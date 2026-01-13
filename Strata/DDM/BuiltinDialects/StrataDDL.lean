@@ -156,10 +156,20 @@ def StrataDDL : Dialect := BuiltinM.create! "StrataDDL" #[initDialect] do
 
   declareMetadata { name := "scope", args := #[.mk "scope" .ident] }
   declareMetadata { name := "unwrap", args := #[] }
+  -- Metadata for marking an operation as a constructor definition
+  declareMetadata { name := "constructor", args := #[.mk "name" .ident, .mk "fields" .ident] }
+  -- Metadata for marking an operation as a constructor list atom (single constructor)
+  declareMetadata { name := "constructorListAtom", args := #[.mk "constructor" .ident] }
+  -- Metadata for marking an operation as a constructor list push (list followed by constructor)
+  declareMetadata { name := "constructorListPush", args := #[.mk "list" .ident, .mk "constructor" .ident] }
   declareMetadata { name := "declareType", args := #[.mk "name" .ident, .mk "args" (.opt .ident)] }
   declareMetadata { name := "aliasType",   args := #[.mk "name" .ident, .mk "args" (.opt .ident), .mk "def" .ident] }
   declareMetadata { name := "declare",     args := #[.mk "name" .ident, .mk "type" .ident] }
   declareMetadata { name := "declareFn",   args := #[.mk "name" .ident, .mk "args" .ident, .mk "type" .ident] }
+  /- Metadata for bringing a datatype name and its type parameters into scope,
+   used for recursive datatype definitions where the datatype name must be visible when parsing constructor field types (e.g., `tail: List` in
+   `Cons(head: int, tail: List)`) -/
+  declareMetadata { name := "scopeDatatype", args := #[.mk "name" .ident, .mk "typeParams" .ident] }
 
 end Strata
 end

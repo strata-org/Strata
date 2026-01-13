@@ -8,6 +8,7 @@ module
 public import Std.Data.HashMap.Basic
 public import Strata.DDM.Util.ByteArray
 public import Strata.DDM.Util.Decimal
+public import Strata.DDM.AST.Datatype
 
 import Std.Data.HashMap
 import Strata.DDM.Util.Array
@@ -314,6 +315,7 @@ inductive MetadataArg where
 | catbvar (index : Nat) -- This is a deBrujin index into current typing environment.
 | num (e : Nat)
 | option (a : Option MetadataArg)
+| functionTemplate (t : FunctionTemplate) -- Function template for datatype declarations
 deriving BEq, Inhabited, Repr
 
 namespace MetadataArg
@@ -328,7 +330,7 @@ protected def instDecidableEq (x y : MetadataArg) : Decidable (x = y) :=
         .isTrue (congrArg _ p)
       else
         .isFalse (by grind)
-    | .catbvar _ | .num _ | .option _ => .isFalse (by grind)
+    | .catbvar _ | .num _ | .option _ | .functionTemplate _ => .isFalse (by grind)
   | .catbvar x =>
     match y with
     | .catbvar y =>
@@ -336,7 +338,7 @@ protected def instDecidableEq (x y : MetadataArg) : Decidable (x = y) :=
         .isTrue (congrArg _ p)
       else
         .isFalse (by grind)
-    | .bool _ | .num _ | .option _ => .isFalse (by grind)
+    | .bool _ | .num _ | .option _ | .functionTemplate _ => .isFalse (by grind)
   | .num x =>
     match y with
     | .num y =>
@@ -344,7 +346,7 @@ protected def instDecidableEq (x y : MetadataArg) : Decidable (x = y) :=
         .isTrue (congrArg _ p)
       else
         .isFalse (by grind)
-    | .bool _ | .catbvar _ | .option _ => .isFalse (by grind)
+    | .bool _ | .catbvar _ | .option _ | .functionTemplate _ => .isFalse (by grind)
   | .option x =>
     match y with
     | .option y =>
@@ -355,7 +357,15 @@ protected def instDecidableEq (x y : MetadataArg) : Decidable (x = y) :=
         | .isTrue p => .isTrue (by grind)
         | .isFalse p => .isFalse (by grind)
       | none, some _ | some _, none => .isFalse (by grind)
-    | .bool _ | .catbvar _ | .num _ => .isFalse (by grind)
+    | .bool _ | .catbvar _ | .num _ | .functionTemplate _ => .isFalse (by grind)
+  | .functionTemplate x =>
+    match y with
+    | .functionTemplate y =>
+      if p : x = y then
+        .isTrue (congrArg _ p)
+      else
+        .isFalse (by intro h; injection h; contradiction)
+    | .bool _ | .catbvar _ | .num _ | .option _ => .isFalse (by grind)
 
 end MetadataArg
 
@@ -420,6 +430,13 @@ private def scopeIndex (metadata : Metadata) : Option Nat :=
   | none => none
   | some #[.catbvar idx] => some idx
   | some _ => panic! s!"Unexpected argument count to {MetadataAttr.scopeName.fullName}"
+
+/-- Returns the datatype scope indices (nameIndex, typeParamsIndex) if @[scopeDatatype] is present. -/
+def scopeDatatypeIndex (metadata : Metadata) : Option (Nat × Nat) :=
+  match metadata[q`StrataDDL.scopeDatatype]? with
+  | none => none
+  | some #[.catbvar nameIdx, .catbvar typeParamsIdx] => some (nameIdx, typeParamsIdx)
+  | some _ => panic! s!"Unexpected argument count to scopeDatatype"
 
 /-- Returns the index of the value in the binding for the given variable of the scope to use. -/
 private def resultIndex (metadata : Metadata) : Option Nat :=
@@ -630,6 +647,21 @@ def argScopeLevel (argDecls : ArgDecls) (level : Fin argDecls.size) : Option (Fi
       let varCount := argDecls.size
       panic! s!"Scope index {idx} out of bounds ({level.val}, varCount = {varCount})"
 
+/-- Returns the datatype scope indices (nameLevel, typeParamsLevel) if @[scopeDatatype] is present.
+    This is used for recursive datatype definitions where the datatype name must be in scope
+    when parsing constructor field types. -/
+def argScopeDatatypeLevel (argDecls : ArgDecls) (level : Fin argDecls.size) : Option (Fin level.val × Fin level.val) :=
+  match argDecls[level].metadata.scopeDatatypeIndex with
+  | none => none
+  | some (nameIdx, typeParamsIdx) =>
+    if h1 : nameIdx < level.val then
+      if h2 : typeParamsIdx < level.val then
+        some (⟨level.val - (nameIdx + 1), by omega⟩, ⟨level.val - (typeParamsIdx + 1), by omega⟩)
+      else
+        panic! s!"scopeDatatype typeParams index {typeParamsIdx} out of bounds ({level.val})"
+    else
+      panic! s!"scopeDatatype name index {nameIdx} out of bounds ({level.val})"
+
 end ArgDecls
 
 /--
@@ -655,12 +687,205 @@ structure TypeBindingSpec (argDecls : ArgDecls) where
   defIndex : Option (DebruijnIndex argDecls.size)
 deriving Repr
 
+/-! ## Datatype Type Building Functions -/
+
 /--
+Resolve a type reference to a concrete TypeExpr. A type reference is
+either a datatype, field type (within perField/perConstructor scope),
+or a built-in (e.g. "bool")
+-/
+def resolveTypeRef (ref : TypeRef)
+    (datatypeType : TypeExpr)
+    (fieldType : Option TypeExpr := none)
+    (dialectName : String) : Except String TypeExpr :=
+  match ref with
+  | .datatype => .ok datatypeType
+  | .fieldType =>
+    match fieldType with
+    | some ft => .ok ft
+    | none => .error "TypeRef.fieldType is only valid in perField scope"
+  | .builtin name => .ok <| TypeExprF.ident default ⟨dialectName, name⟩ #[]
+
+/--
+Information about a single constructor in a datatype.
+-/
+structure ConstructorInfo where
+  /-- Constructor name -/
+  name : String
+  /-- Fields as (fieldName, fieldType) pairs -/
+  fields : Array (String × TypeExpr)
+  deriving Repr
+
+/--
+Build a TypeExpr reference to the datatype with type parameters, using
+`.fvar` for the datatype's GlobalContext index.
+-/
+def mkDatatypeTypeRef (ann : SourceRange) (datatypeIndex : FreeVarIndex) (typeParams : Array String) : TypeExpr :=
+  let typeArgs := typeParams.mapIdx fun i _ => TypeExprF.bvar ann i
+  TypeExprF.fvar ann datatypeIndex typeArgs
+
+/--
+Build an arrow type from field types to the datatype type. E.g. for cons,
+creates `a -> List a -> List a`.
+-/
+def mkConstructorType (ann : SourceRange) (datatypeType : TypeExpr) (fields : Array (String × TypeExpr)) : TypeExpr :=
+  fields.foldr (init := datatypeType) fun (_, fieldType) resultType =>
+    TypeExprF.arrow ann fieldType resultType
+
+/--
+Build a function type from parameter types and return type.
+Returns an arrow type: param1 -> param2 -> ... -> returnType
+-/
+def buildFunctionType (template : FunctionTemplate)
+    (datatypeType : TypeExpr)
+    (fieldType : Option TypeExpr)
+    (dialectName : String) : Except String TypeExpr := do
+  -- Resolve all parameter types
+  let paramTypes ← template.paramTypes.mapM fun ref =>
+    resolveTypeRef ref datatypeType fieldType dialectName
+  -- Resolve return type
+  let returnType ← resolveTypeRef template.returnType datatypeType fieldType dialectName
+  -- Build arrow type: param1 -> param2 -> ... -> returnType
+  .ok <| paramTypes.foldr (init := returnType) fun argType tp => .arrow default argType tp
+
+/--
+Result of expanding a single template.
+Contains the generated function signatures and any errors encountered.
+-/
+structure TemplateExpansionResult where
+  /-- Generated function signatures as (name, type) pairs -/
+  functions : Array (String × TypeExpr)
+  /-- Errors encountered during expansion -/
+  errors : Array String
+  deriving Repr
+
+/--
+Expand a single function template based on its scope.
+
+Function templates specify patterns for generating auxiliary functions
+from datatype declarations. This function expands one template according to
+its iteration scope:
+
+- **perConstructor**: Generates one function per constructor (e.g., testers
+like `..isNone`)
+- **perField**: Generates one function per unique field across all constructors
+(e.g., accessors)
+
+**Parameters:**
+- `datatypeName`: Name of the datatype (used in name pattern expansion)
+- `datatypeType`: TypeExpr for the datatype (used in function signatures)
+- `constructorInfo`: Array of constructor information
+- `template`: The function template to expand
+- `dialectName`: Dialect name (for resolving builtin types)
+- `existingNames`: Set of already-used names (for duplicate detection)
+
+**Example:** For a `perConstructor` template defined as:
+```
+perConstructor([.datatype, .literal "..is", .constructor], [.datatype],
+.builtin "bool")
+```
+This specifies:
+- Name pattern: `[.datatype, .literal "..is", .constructor]` → generates names
+like `Option..isNone`
+- Parameter types: `[.datatype]` → takes one parameter of the datatype type
+- Return type: `.builtin "bool"` → returns a boolean
+
+Applied to `Option<T>` with constructors `None` and `Some`, this generates:
+- `Option..isNone : Option<T> -> bool`
+- `Option..isSome : Option<T> -> bool`
+-/
+def expandSingleTemplate
+    (datatypeName : String)
+    (datatypeType : TypeExpr)
+    (constructorInfo : Array ConstructorInfo)
+    (template : FunctionTemplate)
+    (dialectName : String)
+    (existingNames : Std.HashSet String) : TemplateExpansionResult :=
+  -- First validate the pattern
+  match validateNamePattern template.namePattern template.scope with
+  | some err => { functions := #[], errors := #[err] }
+  | none =>
+    match template.scope with
+    | .perConstructor =>
+      -- Generate one function per constructor
+      let (funcs, errs, _) := constructorInfo.foldl (init := (#[], #[], existingNames)) fun (funcs, errs, names) constr =>
+        let funcName := expandNamePattern template.namePattern datatypeName (some constr.name)
+        if names.contains funcName then
+          (funcs, errs.push s!"Duplicate function name: {funcName}", names)
+        else
+          match buildFunctionType template datatypeType none dialectName with
+          | .ok funcType =>
+            (funcs.push (funcName, funcType), errs, names.insert funcName)
+          | .error e =>
+            (funcs, errs.push e, names)
+      { functions := funcs, errors := errs }
+
+    | .perField =>
+      -- Generate one function per unique field across all constructors
+      -- Error if the same field name appears with different types
+      let allFields := constructorInfo.foldl (init := #[]) fun acc c => acc ++ c.fields
+      let (funcs, errs, _) := allFields.foldl (init := (#[], #[], existingNames)) fun (funcs, errs, names) (fieldName, fieldTp) =>
+        let funcName := expandNamePattern template.namePattern datatypeName none (some fieldName)
+        if names.contains funcName then
+          (funcs, errs.push s!"Duplicate field name '{fieldName}' across constructors in datatype '{datatypeName}'", names)
+        else
+          match buildFunctionType template datatypeType (some fieldTp) dialectName with
+          | .ok funcType =>
+            (funcs.push (funcName, funcType), errs, names.insert funcName)
+          | .error e =>
+            (funcs, errs.push e, names)
+      { functions := funcs, errors := errs }
+
+/--
+This function generates function signatures for an array of function templates
+in order. Templates are specified in `@[declareDatatype]` annotations
+to automatically generate auxiliary functions like testers and field accessors.
+Within each template, functions are generated in constructor/field declaration order.
+
+**Parameters:**
+- `datatypeName`: Name of the datatype
+- `datatypeType`: TypeExpr for the datatype
+- `constructorInfo`: Array of constructor information
+- `templates`: Array of function templates to expand
+- `dialectName`: Dialect name (for resolving builtin types)
+- `existingNames`: Optional set of pre-existing names to avoid
+-/
+def expandFunctionTemplates
+    (datatypeName : String)
+    (datatypeType : TypeExpr)
+    (constructorInfo : Array ConstructorInfo)
+    (templates : Array FunctionTemplate)
+    (dialectName : String)
+    (existingNames : Std.HashSet String := {}) : TemplateExpansionResult :=
+  templates.foldl (init := { functions := #[], errors := #[] }) fun acc template =>
+    -- Track names from previous templates to detect cross-template duplicates
+    let currentNames := acc.functions.foldl (init := existingNames) fun s (name, _) => s.insert name
+    let result := expandSingleTemplate datatypeName datatypeType constructorInfo template dialectName currentNames
+    { functions := acc.functions ++ result.functions
+      errors := acc.errors ++ result.errors }
+
+/--
+Specification for datatype declarations.
+Includes indices for extracting datatype information and optional function templates.
+-/
+structure DatatypeBindingSpec (argDecls : ArgDecls) where
+  /-- deBrujin index of datatype name -/
+  nameIndex : DebruijnIndex argDecls.size
+  /-- deBrujin index of type parameters -/
+  typeParamsIndex : DebruijnIndex argDecls.size
+  /-- deBrujin index of constructors -/
+  constructorsIndex : DebruijnIndex argDecls.size
+  /-- Optional list of function templates to expand -/
+  functionTemplates : Array FunctionTemplate := #[]
+  deriving Repr
+
+/-
 A spec for introducing a new binding into a type context.
 -/
 inductive BindingSpec (argDecls : ArgDecls) where
 | value (_ : ValueBindingSpec argDecls)
 | type (_ : TypeBindingSpec argDecls)
+| datatype (_ : DatatypeBindingSpec argDecls)
 deriving Repr
 
 namespace BindingSpec
@@ -668,6 +893,7 @@ namespace BindingSpec
 def nameIndex {argDecls} : BindingSpec argDecls → DebruijnIndex argDecls.size
 | .value v => v.nameIndex
 | .type v => v.nameIndex
+| .datatype v => v.nameIndex
 
 end BindingSpec
 
@@ -704,6 +930,13 @@ private def mkValueBindingSpec
   if allowCat && argsIndex.isSome then
     newBindingErr "Arguments only allowed when result is a type."
   return { nameIndex, argsIndex, typeIndex, allowCat }
+
+/-- Parse function templates from metadata arguments. -/
+private def parseFunctionTemplates (args : Array MetadataArg) : Array FunctionTemplate :=
+  args.filterMap fun arg =>
+    match arg with
+    | .functionTemplate t => some t
+    | _ => none
 
 def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec argDecls) × Array String :=
   let ins (attr : MetadataAttr) : NewBindingM (Option (BindingSpec argDecls)) := do
@@ -773,6 +1006,31 @@ def parseNewBindings (md : Metadata) (argDecls : ArgDecls) : Array (BindingSpec 
             newBindingErr s!"Scope of definition must match arg scope."
           let defIndex := ⟨defIndex, defP⟩
           some <$> .type <$> pure { nameIndex, argsIndex, defIndex := some defIndex }
+        | { dialect := _, name := "declareDatatype" } => do
+          let args := attr.args
+          if args.size < 3 then
+            newBindingErr "declareDatatype expects at least 3 arguments (name, typeParams, constructors)."
+            return none
+          let .catbvar nameIndex := args[0]!
+            | newBindingErr "declareDatatype: invalid name index"; return none
+          let .catbvar typeParamsIndex := args[1]!
+            | newBindingErr "declareDatatype: invalid typeParams index"; return none
+          let .catbvar constructorsIndex := args[2]!
+            | newBindingErr "declareDatatype: invalid constructors index"; return none
+          let .isTrue nameP := inferInstanceAs (Decidable (nameIndex < argDecls.size))
+            | return panic! "Invalid name index"
+          let .isTrue typeParamsP := inferInstanceAs (Decidable (typeParamsIndex < argDecls.size))
+            | return panic! "Invalid typeParams index"
+          let .isTrue constructorsP := inferInstanceAs (Decidable (constructorsIndex < argDecls.size))
+            | return panic! "Invalid constructors index"
+          -- Parse function templates from remaining arguments (args[3..])
+          let functionTemplates := parseFunctionTemplates (args.extract 3 args.size)
+          some <$> .datatype <$> pure {
+            nameIndex := ⟨nameIndex, nameP⟩,
+            typeParamsIndex := ⟨typeParamsIndex, typeParamsP⟩,
+            constructorsIndex := ⟨constructorsIndex, constructorsP⟩,
+            functionTemplates
+          }
         | _ =>
           pure none
   (md.toArray.filterMapM ins) #[]
@@ -845,6 +1103,7 @@ inductive MetadataArgType
 | ident
 | bool
 | opt (tp : MetadataArgType)
+| functionTemplate  -- Function template for datatype declarations
 deriving DecidableEq, Inhabited, Repr
 
 structure MetadataArgDecl where
@@ -1388,6 +1647,17 @@ partial def resolveBindingIndices { argDecls : ArgDecls } (m : DialectMap) (src 
                 some tp
               | _ => panic! "Bad arg"
     .type params.toList value
+  | .datatype b =>
+    /- For datatypes, resolveBindingIndices only returns the datatype type
+    itself; the constructors and template-generated functions are handled
+    separately in addDatatypeBindings. -/
+    let params : Array String :=
+        let addBinding (a : Array String) (_ : SourceRange) {argDecls : _} (b : BindingSpec argDecls) (args : Vector Arg argDecls.size) :=
+            match args[b.nameIndex.toLevel] with
+            | .ident _ name => a.push name
+            | a => panic! s!"Expected ident for type param {repr a}"
+        foldOverArgAtLevel m addBinding #[] argDecls args b.typeParamsIndex.toLevel
+    .type params.toList none
 
 /--
 Typing environment created from declarations in an environment.
@@ -1414,7 +1684,7 @@ instance : Membership Var GlobalContext where
 def instDecidableMem (v : Var) (ctx : GlobalContext) : Decidable (v ∈ ctx) :=
   inferInstanceAs (Decidable (v ∈ ctx.nameMap))
 
-private def push (ctx : GlobalContext) (v : Var) (k : GlobalKind) : GlobalContext :=
+def push (ctx : GlobalContext) (v : Var) (k : GlobalKind) : GlobalContext :=
   if v ∈ ctx then
     panic! s!"Var {v} already defined"
   else
@@ -1430,15 +1700,239 @@ def kindOf! (ctx : GlobalContext) (idx : FreeVarIndex) : GlobalKind :=
   assert! idx < ctx.vars.size
   ctx.vars[idx]!.snd
 
+/-!
+## Annotation-based Constructor Info Extraction
+
+The following functions implement constructor info extraction using
+`@[constructor(name, fields)]` and `@[field(name, tp)]` annotations.
+
+The annotation-based approach:
+1. Looks up the operation in the dialect's operation declarations
+2. Checks if the operation has the appropriate metadata annotation
+3. Uses the indices from the annotation to extract the relevant arguments
+-/
+
+/--
+Look up an operation's metadata in the dialect.
+Returns the OpDecl if found, or none if the operation is not in the dialect.
+-/
+private def lookupOpDecl (dialects : DialectMap) (opName : QualifiedIdent) : Option OpDecl :=
+  match dialects[opName.dialect]? with
+  | none => none
+  | some dialect => dialect.ops[opName.name]?
+
+/--
+Check if an operation has the @[constructor(name, fields)] annotation.
+Returns the (nameIndex, fieldsIndex) if present.
+-/
+private def getConstructorAnnotation (opDecl : OpDecl) : Option (Nat × Nat) :=
+  match opDecl.metadata[q`StrataDDL.constructor]? with
+  | some #[.catbvar nameIdx, .catbvar fieldsIdx] => some (nameIdx, fieldsIdx)
+  | _ => none
+
+/--
+Check if an operation has the @[constructorListAtom(c)] annotation.
+Returns the constructor index if present.
+-/
+private def getConstructorListAtomAnnotation (opDecl : OpDecl) : Option Nat :=
+  match opDecl.metadata[q`StrataDDL.constructorListAtom]? with
+  | some #[.catbvar constrIdx] => some constrIdx
+  | _ => none
+
+/--
+Check if an operation has the @[constructorListPush(list, c)] annotation.
+Returns the (listIndex, constructorIndex) if present.
+-/
+private def getConstructorListPushAnnotation (opDecl : OpDecl) : Option (Nat × Nat) :=
+  match opDecl.metadata[q`StrataDDL.constructorListPush]? with
+  | some #[.catbvar listIdx, .catbvar constrIdx] => some (listIdx, constrIdx)
+  | _ => none
+
+/--
+Extract fields from a Bindings argument using the existing @[declare] annotations.
+-/
+private def extractFieldsFromBindings (dialects : DialectMap) (arg : Arg) : Array (String × TypeExpr) :=
+  let addField (acc : Array (String × TypeExpr)) (_ : SourceRange)
+      {argDecls : ArgDecls} (b : BindingSpec argDecls) (args : Vector Arg argDecls.size) : Array (String × TypeExpr) :=
+    match b with
+    | .value vb =>
+      match args[vb.nameIndex.toLevel], args[vb.typeIndex.toLevel] with
+      | .ident _ name, .type tp => acc.push (name, tp)
+      | _, _ => acc
+    | _ => acc
+  foldOverArgBindingSpecs dialects addField #[] arg
+
+/--
+Extract constructor information using the @[constructor] annotation.
+-/
+private def extractSingleConstructor (dialects : DialectMap) (arg : Arg) : Option ConstructorInfo :=
+  match arg with
+  | .op op =>
+    match lookupOpDecl dialects op.name with
+    | none => none
+    | some opDecl =>
+      match getConstructorAnnotation opDecl with
+      | none => none
+      | some (nameIdx, fieldsIdx) =>
+        -- Convert deBruijn indices to levels
+        let argCount := opDecl.argDecls.size
+        if nameIdx < argCount && fieldsIdx < argCount then
+          let nameLevel := argCount - nameIdx - 1
+          let fieldsLevel := argCount - fieldsIdx - 1
+          if h1 : nameLevel < op.args.size then
+            if h2 : fieldsLevel < op.args.size then
+              match op.args[nameLevel] with
+              | .ident _ constrName =>
+                -- Extract fields from the Bindings argument using @[declare] annotations
+                let fields := match op.args[fieldsLevel] with
+                  | .option _ (some bindingsArg) => extractFieldsFromBindings dialects bindingsArg
+                  | .option _ none => #[]
+                  | other => extractFieldsFromBindings dialects other
+                some { name := constrName, fields := fields }
+              | _ => none
+            else none
+          else none
+        else none
+  | _ => none
+
+/--
+This function traverses a constructor list AST node and extracts structured
+information about each constructor, including its name and fields using the
+dialect annotations `@[constructor]`, `@[constructorListAtom]`,
+`@[constructorListPush]`.
+
+**Example:** For `{ None(), Some(value: T) }`, returns:
+```
+#[
+  { name := "None", fields := #[] },
+  { name := "Some", fields := #[("value", <TypeExpr for T>)] }
+]
+```
+-/
+def extractConstructorInfo (dialects : DialectMap) (arg : Arg) : Array ConstructorInfo :=
+  match arg with
+  | .op op =>
+    match lookupOpDecl dialects op.name with
+    | none => #[]
+    | some opDecl =>
+      match getConstructorListAtomAnnotation opDecl with
+      | some constrIdx =>
+        let argCount := opDecl.argDecls.size
+        if constrIdx < argCount then
+          let constrLevel := argCount - constrIdx - 1
+          if h : constrLevel < op.args.size then
+            match extractSingleConstructor dialects op.args[constrLevel] with
+            | some constr => #[constr]
+            | none => #[]
+          else #[]
+        else #[]
+      | none =>
+        match getConstructorListPushAnnotation opDecl with
+        | some (listIdx, constrIdx) =>
+          let argCount := opDecl.argDecls.size
+          if listIdx < argCount && constrIdx < argCount then
+            let listLevel := argCount - listIdx - 1
+            let constrLevel := argCount - constrIdx - 1
+            if h1 : listLevel < op.args.size then
+              if h2 : constrLevel < op.args.size then
+                let prevConstrs := extractConstructorInfo dialects op.args[listLevel]
+                match extractSingleConstructor dialects op.args[constrLevel] with
+                | some constr => prevConstrs.push constr
+                | none => prevConstrs
+              else #[]
+            else #[]
+          else #[]
+        | none =>
+          -- Could be a direct constructor operation
+          match extractSingleConstructor dialects arg with
+          | some constr => #[constr]
+          | none => #[]
+  | _ => #[]
+  decreasing_by
+    simp_wf; rw[OperationF.sizeOf_spec]
+    have := Array.sizeOf_get op.args (opDecl.argDecls.size - listIdx - 1) (by omega); omega
+
+/--
+Add all bindings for a datatype declaration to the GlobalContext when
+`@[declareDatatype]` is encountered. Bindings are 1) the type itself (added as
+`GlobalKind.type`) 2) the constructors (e.g. `a → List a → List a` for `Cons`)
+3) template-generated functions as specified via `perConstructor` or `perFields`
+templates.
+
+The entries are generated in the following order: datatype type, constructors
+in declaration order, then template functions in specification order. The
+FreeVarIndex values are consistent with this order.
+
+**Parameters:**
+- `dialects`: Map of all loaded dialects (needed for annotation lookup)
+- `gctx`: Current GlobalContext to extend
+- `src`: Source location for generated type expressions
+- `dialectName`: Name of the dialect containing the datatype
+- `b`: DatatypeBindingSpec with indices for name, type params, constructors, and templates
+- `args`: Actual arguments from the parsed operation
+
+**Example:** For `datatype Option<T> { None(), Some(value: T) }` with a tester template,
+this adds entries for: `Option` (type), `None` (constructor), `Some` (constructor),
+`Option..isNone` (tester), `Option..isSome` (tester).
+-/
+private def addDatatypeBindings
+    (dialects : DialectMap)
+    (gctx : GlobalContext)
+    (src : SourceRange)
+    (dialectName : DialectName)
+    {argDecls : ArgDecls}
+    (b : DatatypeBindingSpec argDecls)
+    (args : Vector Arg argDecls.size)
+    : GlobalContext :=
+
+  let datatypeName :=
+    match args[b.nameIndex.toLevel] with
+    | .ident _ e => e
+    | a => panic! s!"Expected ident for datatype name {repr a}"
+
+  let typeParams : Array String :=
+    let addBinding (a : Array String) (_ : SourceRange) {argDecls : _} (bs : BindingSpec argDecls) (args : Vector Arg argDecls.size) :=
+        match args[bs.nameIndex.toLevel] with
+        | .ident _ name => a.push name
+        | a => panic! s!"Expected ident for type param {repr a}"
+    foldOverArgAtLevel dialects addBinding #[] argDecls args b.typeParamsIndex.toLevel
+
+  let constructorInfo := extractConstructorInfo dialects args[b.constructorsIndex.toLevel]
+
+  -- Step 1: Add datatype type
+  let gctx := gctx.push datatypeName (GlobalKind.type typeParams.toList none)
+  let datatypeIndex := gctx.vars.size - 1
+  let datatypeType := mkDatatypeTypeRef src datatypeIndex typeParams
+
+  -- Step 2: Add constructor signatures
+  let gctx := constructorInfo.foldl (init := gctx) fun gctx constr =>
+    let constrType := mkConstructorType src datatypeType constr.fields
+    gctx.push constr.name (.expr constrType)
+
+  -- Step 3: Expand and add function templates
+  let existingNames : Std.HashSet String := gctx.nameMap.fold (init := {}) fun s name _ => s.insert name
+  let result := expandFunctionTemplates datatypeName datatypeType constructorInfo b.functionTemplates dialectName existingNames
+
+  if !result.errors.isEmpty then
+    panic! s!"Datatype template expansion errors: {result.errors}"
+  else
+    result.functions.foldl (init := gctx) fun gctx (funcName, funcType) =>
+      gctx.push funcName (.expr funcType)
+
 def addCommand (dialects : DialectMap) (init : GlobalContext) (op : Operation) : GlobalContext :=
-    op.foldBindingSpecs dialects addBinding init
-  where addBinding (gctx : GlobalContext) l _ b args :=
-          let name :=
-                match args[b.nameIndex.toLevel] with
-                | .ident _ e => e
-                | a => panic! s!"Expected ident at {b.nameIndex.toLevel} {repr a}"
-          let kind := resolveBindingIndices dialects l b args
-          gctx.push name kind
+    let dialectName := op.name.dialect
+    op.foldBindingSpecs dialects (addBinding dialectName) init
+  where addBinding (dialectName : DialectName) (gctx : GlobalContext) l {argDecls} (b : BindingSpec argDecls) args :=
+          match b with
+          | .datatype datatypeSpec =>
+            addDatatypeBindings dialects gctx l dialectName datatypeSpec args
+          | _ =>
+            let name :=
+                  match args[b.nameIndex.toLevel] with
+                  | .ident _ e => e
+                  | a => panic! s!"Expected ident at {b.nameIndex.toLevel} {repr a}"
+            let kind := resolveBindingIndices dialects l b args
+            gctx.push name kind
 
 end GlobalContext
 
