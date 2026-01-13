@@ -34,8 +34,8 @@ test_helper_procedure_assert_name_is_foo_27: verified
 
 test_helper_procedure_assert_opt_name_none_or_str_28: verified
 
-test_helper_procedure_assert_opt_name_none_or_bar_29: unknown
-
+test_helper_procedure_assert_opt_name_none_or_bar_29: failure
+CEx:
 ```
 
 This can be read as:
@@ -76,4 +76,4 @@ test_helper_procedure_assert_opt_name_none_or_str_5: verified
 test_helper_procedure_assert_opt_name_none_or_bar_5: verified
 ```
 
-Comes from checking the assertions in the inlined calls of `test_helper_procedure`. The first two triples succeed, the third has a failure because `"Foo" != "foo"` and the final has an `unknown` (that should ideally be a failure) because `"Bar" != "bar"`.
+Comes from checking the assertions in the inlined calls of `test_helper_procedure`. The first two triples succeed, the third has a failure because `"Foo" != "foo"`, and the final has a failure because `"Bar" != "bar"`.
