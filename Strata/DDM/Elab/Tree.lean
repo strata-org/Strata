@@ -161,6 +161,15 @@ protected def pushBindings (tctx : TypingContext) (b : Bindings) : TypingContext
   b.toArray.foldl .push tctx
 
 /--
+Create a new TypingContext with a different GlobalContext but the same local
+bindings. Used for recursive datatype definitions where the datatype name needs to be added to the GlobalContext before parsing constructor field types.
+-/
+protected def withGlobalContext (tctx : TypingContext) (gctx : GlobalContext) : TypingContext where
+  globalContext := gctx
+  bindings := tctx.bindings
+  map := tctx.map
+
+/--
 This contains information about a bound or global variable.
 -/
 inductive VarBinding
