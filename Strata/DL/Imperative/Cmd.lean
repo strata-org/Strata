@@ -43,7 +43,7 @@ inductive Cmd (P : PureExpr) : Type where
   | havoc    (name : P.Ident) (md : (MetaData P) := .empty)
   /-- Checks if condition `b` is true on _all_ paths on which this command is
     encountered. Reports an error if `b` does not hold on _any_ of these paths.
-    -/
+  -/
   | assert   (label : String) (b : P.Expr) (md : (MetaData P) := .empty)
   /-- Ignore any execution state in which `b` is not true. -/
   | assume   (label : String) (b : P.Expr) (md : (MetaData P) := .empty)

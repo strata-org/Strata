@@ -9,7 +9,61 @@ import Strata.Languages.Boogie.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
-def coverPgm :=
+def coverPgm1 :=
+#strata
+program Boogie;
+procedure Test() returns ()
+{
+  var x : int;
+  assume (x >= 0);
+
+  if (false) {
+    cover [unreachable_cover1]: (true);
+    cover [unreachable_cover2]: (false);
+    assert [unreachable_assert]: (false);
+  } else {
+    cover [reachable_cover]: (true);
+    cover [unsatisfiable_cover]: (x == -1);
+    assert [reachable_assert]: (true);
+  }
+};
+#end
+
+
+/--
+info:
+Obligation: unreachable_cover1
+Property: cover
+Result: ❌ fail
+
+Obligation: unreachable_cover2
+Property: cover
+Result: ❌ fail
+
+Obligation: unreachable_assert
+Property: assert
+Result: ✅ pass
+
+Obligation: reachable_cover
+Property: cover
+Result: ✅ pass
+Model:
+(init_x_0, 0)
+
+Obligation: unsatisfiable_cover
+Property: cover
+Result: ❌ fail
+
+Obligation: reachable_assert
+Property: assert
+Result: ✅ pass
+-/
+#guard_msgs in
+#eval verify "z3" coverPgm1 (options := Options.quiet)
+
+---------------------------------------------------------------------
+
+def coverPgm2 :=
 #strata
 program Boogie;
 procedure Test(x : int) returns ()
@@ -27,58 +81,6 @@ spec {
 #end
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
-
-
-VCs:
-Label: ctest1
-Property: cover
-Assumptions:
-(<label_ite_cond_true: ((~Int.Le x) #1)>, ((~Int.Le $__x0) #1))
-(Test_requires_0, ((~Int.Gt $__x0) #1))
-
-Proof Obligation:
-#true
-
-Label: ctest2
-Property: cover
-Assumptions:
-(<label_ite_cond_false: !((~Int.Le x) #1)>, (if ((~Int.Le $__x0) #1) then #false else #true))
-(Test_requires_0, ((~Int.Gt $__x0) #1))
-
-Proof Obligation:
-((~Int.Gt $__x0) #2)
-
-Label: atest2
-Property: assert
-Assumptions:
-(<label_ite_cond_false: !((~Int.Le x) #1)>, (if ((~Int.Le $__x0) #1) then #false else #true))
-(Test_requires_0, ((~Int.Gt $__x0) #1))
-
-Proof Obligation:
-((~Int.Gt $__x0) #1)
-
-Wrote problem to vcs/ctest1.smt2.
-
-
-Result: Obligation: ctest1
-Property: cover
-Result: ❌ fail
-
-
-Evaluated program:
-(procedure Test :  ((x : int)) → ())
-modifies: []
-preconditions: (Test_requires_0, (((~Int.Gt : (arrow int (arrow int bool))) (x : int)) #1))
-postconditions: ⏎
-body: assume [Test_requires_0] ((~Int.Gt $__x0) #1)
-#[<[fileRange]: :⟨0, 0⟩-⟨0, 0⟩>] if (((~Int.Le : (arrow int (arrow int bool))) ($__x0 : int)) #1) then {$$_then : {cover [ctest1] #true}}
-else{$$_else : {cover [ctest2] ((~Int.Gt $__x0) #2)
-  assert [atest2] ((~Int.Gt $__x0) #1)}}
-
-Wrote problem to vcs/ctest2.smt2.
-Wrote problem to vcs/atest2.smt2.
----
 info:
 Obligation: ctest1
 Property: cover
@@ -95,6 +97,6 @@ Property: assert
 Result: ✅ pass
 -/
 #guard_msgs in
-#eval verify "z3" coverPgm (options := Options.default)
+#eval verify "z3" coverPgm2 (options := Options.quiet)
 
 ---------------------------------------------------------------------
