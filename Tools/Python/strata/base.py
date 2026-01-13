@@ -8,13 +8,14 @@ Description: Core Strata AST datatypes.
 from bisect import bisect_right
 from dataclasses import dataclass
 from decimal import Decimal
+import sys
 import typing
-from typing import Any, Iterable, cast
+from typing import Any, Callable, Iterable, cast
 
 import amazon.ion.simpleion as ion
 
 def ion_symbol(s : str):
-    return ion.IonPySymbol(s, None)
+    return ion.IonPySymbol(s, None, None)
 
 def ion_sexp(*args):
     h : typing.Any = ion.IonPyList(a for a in args)
@@ -102,14 +103,14 @@ class QualifiedIdent:
 class SyntaxCat:
     ann : Any
     name : QualifiedIdent
-    args: list['SyntaxCat']
+    args: tuple['SyntaxCat', ...]
 
-    def __init__(self, name: QualifiedIdent, args: list['SyntaxCat'] | None = None, *, ann = None):
+    def __init__(self, name: QualifiedIdent, args: tuple['SyntaxCat', ...] | None = None, *, ann = None):
         assert isinstance(name, QualifiedIdent)
-        assert args is None or isinstance(args, list) and all(isinstance(a, SyntaxCat) for a in args)
+        assert args is None or isinstance(args, tuple) and all(isinstance(a, SyntaxCat) for a in args)
         self.ann = ann
         self.name = name
-        self.args = [] if args is None else args
+        self.args = () if args is None else args
 
     def strPrec(self, prec: int) -> str:
         s = f'{str(self.name)}{"".join(' ' + a.strPrec(10) for a in self.args)}'
@@ -248,21 +249,21 @@ class ExprFn(Expr):
         return ion_sexp(ion_symbol("fn"), ann_to_ion(self.ann), self.ident.to_ion())
 
 class OperationArgs:
-    _decls : tuple[ArgDecl, ...]
+    _decls : tuple['ArgDecl', ...]
     _arg_indices : dict[str, int]
     _args : tuple['Arg', ...]
 
-    def __init__(self, decls : tuple[ArgDecl, ...], arg_indices : dict[str, int], *args : 'Arg'):
+    def __init__(self, decls : tuple['ArgDecl', ...], arg_indices : dict[str, int], *args : 'Arg'):
         assert len(args) == len(decls)
         self._decls = decls
         self._arg_indices = arg_indices
         self._args = args
 
-    def __getitem__[T:'Arg'](self, field : str|int) -> T:
+    def __getitem__(self, field : str|int) -> 'Arg':
         if type(field) is int:
-            return cast(T, self._args[field])
+            return self._args[field]
         if type(field) is str:
-            return cast(T, self._args[self._arg_indices[field]])
+            return self._args[self._arg_indices[field]]
         raise ValueError(f'Expected int or str, got {type(field)}')
 
     def items(self) -> Iterable[tuple[str, 'Arg']]:
@@ -406,6 +407,7 @@ strlitSym = ion_symbol("strlit")
 numSym = ion_symbol("num")
 
 optionSym = ion_symbol("option")
+_typeSym = ion_symbol("type")
 
 def is_surrogate(c : str) -> bool:
     return '\ud800' <= c and c <= '\udfff'
@@ -551,25 +553,32 @@ class SyntaxDef:
 
 reserved = { "category", "fn", "import", "metadata", "op", "type" }
 
+_syncat = ion.SymbolToken(u'syncat', None, None)
+
 class SynCatDecl:
-    syncat = ion.SymbolToken(u'syncat', None, None)
-    def __init__(self, dialect : str, name : str, args: list[str]|None = None):
+    dialect : str
+    name : str
+    ident : QualifiedIdent
+    argNames : tuple[str, ...]
+
+    def __init__(self, dialect : str, name : str, args: tuple[str, ...]|None = None):
         assert name not in reserved, f'{name} is a reserved word.'
         self.dialect = dialect
         self.name = name
         self.ident = QualifiedIdent(dialect, name)
-        self.argNames = [] if args is None else args
+        self.argNames = () if args is None else args
 
     def __call__(self, *args):
         assert len(args) == len(self.argNames)
-        return SyntaxCat(self.ident, list(args))
+        return SyntaxCat(self.ident, args)
 
     def to_ion(self):
-        return {
-            "type": self.syncat,
-            "name": self.name,
-            "arguments": self.argNames
-        }
+        d = ion.IonPyDict()
+        d.add_item("type", _syncat)
+        d.add_item("name", self.name)
+        if len(self.argNames) > 0:
+            d.add_item("args", self.argNames)
+        return d
 
 @dataclass
 class ArgDecl:
@@ -623,50 +632,20 @@ class SyntaxArg:
 
 class Indent:
     prec : int
-    value : Template|SyntaxArg
+    value : SyntaxArg
 
-    def __init__(self, prec : int, value : Template|SyntaxArg):
+    def __init__(self, prec : int, value : SyntaxArg):
         assert type(prec) is int and prec > 0
         self.prec = prec
         self.value = value
 
-from string.templatelib import Interpolation, Template
-
-def resolve_template(args : dict[str, int], t : Template) -> list[SyntaxDefAtom|str]:
-    atoms = []
-    for a in t:
-        if isinstance(a, Interpolation):
-            value = a.value
-            if isinstance(value, str):
-                atoms.append(value)
-            elif isinstance(value, SyntaxArg):
-                atoms.append(value.resolve(args))
-            else:
-                assert isinstance(value, Indent)
-                contents = value.value
-                if isinstance(contents, SyntaxArg):
-                    iatoms = (contents.resolve(args),)
-                else:
-                    assert isinstance(contents, Template)
-                    iatoms = tuple(resolve_template(args, contents))
-                atoms.append(SyntaxDefIndent(value.prec, iatoms))
-        else:
-            assert isinstance(a, str)
-            atoms.append(a)
-    return atoms
-
-def resolve_syntax(args : dict[str, int], v : str|Template|SyntaxArg|Indent) -> list[SyntaxDefAtom]:
+def resolve_syntax(args : dict[str, int], v : str|SyntaxArg|Indent) -> list[SyntaxDefAtom]:
     if isinstance(v, str):
         return [v]
-    elif isinstance(v, Template):
-        return resolve_template(args, v)
     elif isinstance(v, Indent):
         contents = v.value
-        if isinstance(contents, SyntaxArg):
-            atoms = (contents.resolve(args),)
-        else:
-            assert isinstance(contents, Template)
-            atoms = tuple(resolve_template(args, contents))
+        assert isinstance(contents, SyntaxArg)
+        atoms = (contents.resolve(args),)
         return [SyntaxDefIndent(v.prec, atoms)]
     else:
         assert isinstance(v, SyntaxArg)
@@ -731,7 +710,6 @@ class OpDecl:
         return flds
 
 class TypeDecl:
-    typeSymbol = ion.SymbolToken(u'type', None, None)
     def __init__(self, name, argNames):
         assert name not in reserved, f'{name} is a reserved word.'
         self.name = name
@@ -739,12 +717,246 @@ class TypeDecl:
 
     def to_ion(self):
         return {
-            "type": self.typeSymbol,
+            "type": _typeSym,
             "name": self.name,
             "argNames": self.argNames
         }
 
 _dialectSym = ion.SymbolToken(u'dialect', None, None)
+
+_importSym = ion.SymbolToken(u'import', None, None)
+
+def is_sexp(v) -> bool:
+    tv = type(v)
+    return tv is ion.IonPyList
+
+def get_field_symbol(event : ion.IonEvent) -> str:
+    field_name = event.field_name
+    assert isinstance(field_name, ion.SymbolToken), f"Expected field name"
+    assert type(field_name.text) is str
+    return field_name.text
+
+def has_field_symbol(event : ion.IonEvent, expected : str) -> bool:
+    field_name = event.field_name
+    if field_name is None:
+        return False
+    assert isinstance(field_name, ion.SymbolToken), f"Expected field name"
+    assert type(field_name.text) is str
+    return field_name.text == expected
+
+def read_event(reader) -> ion.IonEvent:
+    event = reader.send(ion.NEXT_EVENT)
+    assert isinstance(event, ion.IonEvent)
+    return event
+
+def is_container_start(event : ion.IonEvent, expected : ion.IonType):
+    return event.event_type == ion.IonEventType.CONTAINER_START and event.ion_type == expected
+
+def is_container_end(event : ion.IonEvent, expected : ion.IonType):
+    return event.event_type == ion.IonEventType.CONTAINER_END and event.ion_type == expected
+
+def is_list_start(event : ion.IonEvent):
+    return is_container_start(event, ion.IonType.LIST)
+
+def is_list_end(event : ion.IonEvent):
+    return is_container_end(event, ion.IonType.LIST) and event.field_name is None
+
+def is_sexp_start(event : ion.IonEvent):
+    return is_container_start(event, ion.IonType.SEXP)
+
+def is_sexp_end(event : ion.IonEvent):
+    return is_container_end(event, ion.IonType.SEXP) and event.field_name is None
+
+def is_struct_start(event : ion.IonEvent):
+    return is_container_start(event, ion.IonType.STRUCT)
+
+def is_struct_end(event : ion.IonEvent):
+    return is_container_end(event, ion.IonType.STRUCT) and event.field_name is None
+
+def read_list_start(reader):
+    event = read_event(reader)
+    assert is_list_start(event), f"Expected {repr(event)} list start"
+    assert event.field_name is None, "Unexpected field name"
+
+def read_field_list_start(reader) -> str:
+    event = read_event(reader)
+    assert is_list_start(event), f"Expected list start instead of {repr(event)}"
+    return get_field_symbol(event)
+
+def read_sexp_start(reader):
+    event = read_event(reader)
+    assert is_sexp_start(event), f"Expected sexpr start {repr(event)}"
+    assert event.field_name is None, "Unexpected field name"
+
+def read_field_sexp_start(reader) -> str:
+    event = read_event(reader)
+    assert is_sexp_start(event), f"Expected list start instead of {repr(event)}"
+    return get_field_symbol(event)
+
+def read_sexp_end(reader):
+    event = read_event(reader)
+    assert is_sexp_end(event), f"Expected sexp end {repr(event)}"
+    assert event.field_name is None, "Unexpected field name"
+
+def read_struct_start(reader):
+    event = read_event(reader)
+    assert is_struct_start(event), f"Expected struct start {repr(event)}"
+    assert event.field_name is None, "Unexpected field name"
+
+def read_struct_end(reader):
+    event = read_event(reader)
+    assert is_struct_end(event), f"Expected struct end {repr(event)}"
+    assert event.field_name is None, "Unexpected field name"
+
+def is_scalar(event : ion.IonEvent, expected : ion.IonType) -> bool:
+    return event.event_type == ion.IonEventType.SCALAR and event.ion_type == expected
+
+def is_string(event : ion.IonEvent) -> bool:
+    return is_scalar(event, IonType.STRING)
+
+def is_symbol(event : ion.IonEvent) -> bool:
+    return is_scalar(event, IonType.SYMBOL)
+
+def read_scalar(reader, expected : ion.IonType) -> ion.IonEvent:
+    event = read_event(reader)
+    assert is_scalar(event, expected), f"Expected scalar {repr(expected)} instead of {repr(event)}"
+    return event
+
+from amazon.ion.simpleion import IonType
+
+def read_field_symbol(reader) -> tuple[str, ion.IonPySymbol]:
+    event = read_scalar(reader, IonType.SYMBOL)
+    return (get_field_symbol(event), ion.IonPySymbol.from_event(event))
+
+def read_symbol(reader) -> ion.IonPySymbol:
+    event = read_scalar(reader, IonType.SYMBOL)
+    assert event.field_name is None, "Unexpected field name"
+    return ion.IonPySymbol.from_event(event)
+
+def read_field_string(reader) -> tuple[str, str]:
+    event = read_scalar(reader, IonType.STRING)
+    scalar = ion.IonPyText.from_event(event)
+    assert isinstance(scalar, str)
+    return (get_field_symbol(event), scalar)
+
+def read_string(reader) -> str:
+    event = read_scalar(reader, IonType.STRING)
+    assert event.field_name is None, "Unexpected field name"
+    scalar = ion.IonPyText.from_event(event)
+    assert isinstance(scalar, str)
+    return scalar
+
+def read_list[X](reader : object, f : Callable[[object, ion.IonEvent], X] ) -> tuple[X, ...]:
+    res = []
+    while True:
+        event = read_event(reader)
+        if is_list_end(event):
+            return tuple(res)
+        v = f(reader, event)
+        res.append(v)
+
+def read_sexpr[X](reader : object, f : Callable[[object, ion.IonEvent], X] ) -> tuple[X, ...]:
+    res = []
+    while True:
+        event = read_event(reader)
+        if is_sexp_end(event):
+            return tuple(res)
+        v = f(reader, event)
+        res.append(v)
+
+def print_unknown(event : ion.IonEvent):
+    pre : str
+    if event.field_name is None:
+        pre = ""
+    else:
+        pre = f"{get_field_symbol(event)}: "
+    match event.event_type:
+        case ion.IonEventType.SCALAR:
+            match event.ion_type:
+                case ion.IonType.SYMBOL:
+                    scalar = ion.IonPySymbol.from_event(event)
+                    print(f"{pre}Scalar symbol {repr(scalar)}")
+                case _:
+                    print(f"{pre}Scalar event {repr(event.ion_type)}")
+        case ion.IonEventType.CONTAINER_START:
+            print(f"{pre}Container start {repr(event.ion_type)}")
+        case ion.IonEventType.CONTAINER_END:
+            print(f"{pre}Container stop {repr(event.ion_type)}")
+        case _:
+            print(f"{pre}Unknown event {repr(event.event_type)}")
+
+def read_unknown(reader):
+    event = read_event(reader)
+    print_unknown(event)
+    sys.exit("Done")
+
+def read_syncatdecl(reader, dialect : 'Dialect'):
+    (field, name) = read_field_string(reader)
+    assert field == "name", f"Unexpected field {field}"
+
+    event = read_event(reader)
+    args : tuple[str, ...]
+    if has_field_symbol(event, "args"):
+        assert is_list_start(event), f"Expected {repr(event)} list start"
+
+        def get_string_event(reader, event):
+            assert is_string(event)
+            return ion.IonPyText.from_event(event)
+
+        args = read_list(reader, get_string_event)
+        event = read_event(reader)
+    else:
+        args = ()
+
+    assert is_struct_end(event), f"Expected struct_end"
+    dialect.add_syncat(name, args)
+
+def read_ann(event : ion.IonEvent) -> None:
+    assert is_scalar(event, IonType.NULL), f"Expected null {repr(event)}"
+
+def as_qualified_ident(event : ion.IonEvent) -> QualifiedIdent:
+    assert is_symbol(event), f"Expected symbol instead of {repr(event)}"
+    sym = ion.IonPySymbol.from_event(event)
+    assert isinstance(sym.text, str)
+    tokens = sym.text.split('.')
+    assert len(tokens) == 2
+    return QualifiedIdent(tokens[0], tokens[1])
+
+def read_syntaxcat(reader, event) -> SyntaxCat:
+    assert is_sexp_start(event), f"Expected sexpr start {repr(event)}"
+    assert event.field_name is None, "Unexpected field name"
+
+    event = read_event(reader)
+    ann = read_ann(event)
+    event = read_event(reader)
+    assert event.field_name is None, "Unexpected field name"
+    name = as_qualified_ident(event)
+    args = read_sexpr(reader, read_syntaxcat)
+    return SyntaxCat(name, args, ann=ann)
+
+
+def read_argdecl_kind(reader) -> SyntaxCat|TypeExpr:
+    kind = read_symbol(reader)
+    match kind.text:
+        case "category":
+            event = read_event(reader)
+            r = read_syntaxcat(reader, event)
+            read_sexp_end(reader)
+            return r
+        case "type":
+            raise Exception(f"Unknown kind {kind.text}")
+        case _:
+            raise Exception(f"Unknown kind {kind.text}")
+
+def read_arg_decl(reader, event) -> ArgDecl:
+    assert is_struct_start(event), f"Expected {repr(event)} struct start"
+    (field, name) = read_field_string(reader)
+    assert field == "name", f"Unexpected field {field}"
+    field = read_field_sexp_start(reader)
+    assert field == "type", f"Unexpected field {field}"
+    type = read_argdecl_kind(reader)
+    read_struct_end(reader)
+    return ArgDecl(name, type)
 
 class Dialect:
     """
@@ -763,13 +975,13 @@ class Dialect:
     def add_import(self, name: str):
         self.imports.append(name)
 
-    def add_syncat(self, name : str, args: list[str]|None = None) -> SynCatDecl:
+    def add_syncat(self, name : str, args: tuple[str, ...]|None = None) -> SynCatDecl:
         decl = SynCatDecl(self.name, name, args)
         self.add(decl)
         return decl
 
     def add_op(self, name : str, *args: ArgDecl|SyntaxCat,
-            syntax : str|Template|SyntaxArg|Indent|None|list[SyntaxDefAtom] = None,
+            syntax : str|SyntaxArg|Indent|None|list[SyntaxDefAtom] = None,
             prec : int|None = None,
             metadata : Metadata|None = None) -> OpDecl:
         assert name not in reserved, f'{name} is a reserved word.'
@@ -816,12 +1028,88 @@ class Dialect:
         self.decls.append(decl)
 
     def to_ion(self):
-        r : list[object] = [(_dialectSym, self.name)]
+        r : list[object] = [ion_sexp(_dialectSym, self.name)]
         for i in self.imports:
-            r.append({"type": "import", "name": i})
+            d = ion.IonPyDict()
+            d.add_item("type", _importSym)
+            d.add_item("name", i)
+            r.append(d)
         for d in self.decls:
             r.append(d.to_ion())
         return r
+
+    @staticmethod
+    def from_ion(fp) -> 'Dialect':
+#        contents = ion.load(f)
+
+        maybe_ivm = fp.read(4)
+        fp.seek(0)
+        if maybe_ivm == ion._IVM:
+            raw_reader = ion.binary_reader()
+        else:
+            raw_reader = ion.text_reader()
+        from amazon.ion.symbols import SymbolTableCatalog
+        catalog = SymbolTableCatalog()
+        mr = ion.managed_reader(raw_reader, catalog)
+        reader = ion.blocking_reader(mr, fp)
+
+
+        read_list_start(reader)
+
+        # Read dialect name
+        read_sexp_start(reader)
+        assert read_symbol(reader).text == "dialect"
+        dname = read_string(reader)
+        read_sexp_end(reader)
+
+        dialect = Dialect(dname)
+
+
+        while True:
+            event = read_event(reader)
+            assert event.field_name is None, "Unexpected field name"
+
+            if is_list_end(event):
+                break
+
+            assert is_struct_start(event), f"Expected struct start {repr(event)}"
+            (field, field_value) = read_field_symbol(reader)
+            assert field == "type", f"Unexpected field {field}"
+            match field_value.text:
+                case "import":
+                    (field, value) = read_field_string(reader)
+                    assert field == "name", f"Unexpected field {field}"
+                    read_struct_end(reader)
+                    dialect.add_import(value)
+                case "syncat":
+                    read_syncatdecl(reader, dialect)
+                case "op":
+                    (field, name) = read_field_string(reader)
+                    assert field == "name", f"Unexpected field {field}"
+
+                    event = read_event(reader)
+
+                    args : tuple[ArgDecl, ...]
+                    if has_field_symbol(event, "args"):
+                        assert is_list_start(event), f"Expected {repr(event)} list start"
+                        args = read_list(reader, read_arg_decl)
+                        event = read_event(reader)
+                    else:
+                        args = ()
+
+                    assert has_field_symbol(event, "result"), f"Expected result"
+                    result_name = as_qualified_ident(event)
+                    result = SyntaxCat(result_name)
+                    read_struct_end(reader)
+
+                    dialect.add_op(name, *args, result)
+
+        event = read_event(reader)
+        assert event.event_type == ion.IonEventType.STREAM_END, "Expected stream end"
+
+        return dialect
+
+
 
 _programSym = ion.SymbolToken(u'program', None, None)
 
