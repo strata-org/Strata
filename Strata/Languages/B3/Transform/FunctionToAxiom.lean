@@ -10,9 +10,15 @@ import Strata.Languages.B3.DDMTransform.DefinitionAST
 # Function-to-Axiom Transformation
 
 Transforms B3 programs by splitting function definitions into declarations and axioms.
-This is necessary because SMT solvers do not support mutually recursive function definitions
-using the `define-fun` syntax. By converting function bodies to axioms with quantifiers,
-we enable verification of programs with mutually recursive functions.
+
+While SMT-LIB 2.6 provides `define-fun-rec` for mutually recursive definitions,
+we use quantified axioms for broader solver compatibility and to maintain consistency
+with our verification approach. By converting function bodies to axioms with quantifiers,
+we enable verification of programs with mutually recursive functions across different
+SMT solvers.
+
+TODO: Add config option to use `define-fun` for non-recursive functions instead of
+quantified axioms. This could improve solver performance for simple function definitions.
 
 ## Example: Simple Function
 

@@ -17,7 +17,7 @@ open Strata.SMT
 /-!
 # B3 Verifier
 
-Converts B3 programs to SMT and verifies them using Z3/CVC5.
+Converts B3 programs to SMT and verifies them using SMT solvers.
 
 ## Architecture Overview
 
@@ -40,7 +40,7 @@ formatTermDirect (Formatter)
       ↓
   SMT-LIB strings
       ↓
-  Solver (Z3/CVC5)
+  SMT Solver (e.g., Z3/CVC5)
       ↓
   Results (proved/counterexample/unknown)
       ↓
@@ -96,7 +96,7 @@ meta def exampleVerification : IO Unit := do
 
     -- Interpret verification result (merged error and success cases)
     match result with
-    | .error .counterexample => IO.println "✗ Counterexample (possibly wrong)"
+    | .error .counterexample => IO.println "✗ Counterexample found (assertion may not hold)"
     | .error .unknown => IO.println "✗ Unknown"
     | .error .refuted => IO.println "✗ Refuted (proved false/unreachable)"
     | .success .verified => IO.println "✓ Verified (proved)"
@@ -127,7 +127,7 @@ meta def exampleVerification : IO Unit := do
 
 /--
 info: Statement: check 8 == 8 && f(5) == 7
-✗ Counterexample (possibly wrong)
+✗ Counterexample found (assertion may not hold)
   Path condition:
     forall x : int pattern f(x) f(x) == x + 1
   Found 1 diagnosed failures
