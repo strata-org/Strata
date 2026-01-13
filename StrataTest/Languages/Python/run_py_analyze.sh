@@ -9,8 +9,7 @@ for test_file in tests/test_*.py; do
         expected_file="expected/${base_name}.expected"
 
         if [ -f "$expected_file" ]; then
-            echo "------ $test_file -----"
-            (cd ../../../Tools/Python && python -m strata.gen py_to_strata "../../StrataTest/Languages/Python/$test_file" "../../StrataTest/Languages/Python/$ion_file")
+            (cd ../../../Tools/Python && python -m strata.gen py_to_strata --dialect "dialects/Python.dialect.st.ion" "../../StrataTest/Languages/Python/$test_file" "../../StrataTest/Languages/Python/$ion_file")
 
             output=$(cd ../../.. && lake exe strata pyAnalyze "StrataTest/Languages/Python/${ion_file}" 0)
 
