@@ -187,7 +187,7 @@ def getExpressionMetadata : B3AST.Expression M → M
   | .functionCall m _ _ => m
   | .labeledExpr m _ _ => m
   | .letExpr m _ _ _ => m
-  | .quantifierExpr m _ _ _ _ _ => m
+  | .quantifierExpr m _ _ _ _ => m
 
 ---------------------------------------------------------------------
 -- Expression Conversion
@@ -246,8 +246,15 @@ def expressionToSMT (ctx : ConversionContext) (e : B3AST.Expression M) : Convers
       let errors := valueResult.errors ++ bodyResult.errors
       { term := bodyResult.term, errors := errors }
 
-  | .quantifierExpr m qkind var _ty patterns body =>
-      let ctx' := ctx.push var.val
+  | .quantifierExpr m qkind vars patterns body =>
+      -- Handle multiple quantified variables
+      let varList := vars.val.toList.filterMap (fun v =>
+        match _: v with
+        | .quantVarDecl _ name ty => some (name.val, ty.val)
+      )
+
+      -- Extend context with all variables
+      let ctx' := varList.foldl (fun c (name, _) => c.push name) ctx
 
       -- Convert body
       let bodyResult := expressionToSMT ctx' body
@@ -277,16 +284,22 @@ def expressionToSMT (ctx : ConversionContext) (e : B3AST.Expression M) : Convers
         -- No patterns specified in source - don't generate a trigger
         Term.app .triggers [] .trigger
       else if allPatternTerms.isEmpty then
-        -- Patterns specified but empty (shouldn't happen) - generate simple trigger
-        Factory.mkSimpleTrigger var.val .int
+        -- Patterns specified but empty (shouldn't happen) - generate simple trigger for first var
+        match varList.head? with
+        | some (name, _) => Factory.mkSimpleTrigger name .int
+        | none => Term.app .triggers [] .trigger
       else
         -- Patterns specified - use them
         allPatternTerms.foldl (fun acc term => Factory.addTrigger term acc) (Term.app .triggers [] .trigger)
 
-      -- Build quantifier term
-      let term := match _: qkind with
-        | .forall _ => Factory.quant .all var.val .int trigger bodyResult.term
-        | .exists _ => Factory.quant .exist var.val .int trigger bodyResult.term
+      -- Build quantifier term with all variables
+      let qk := match _: qkind with
+        | .forall _ => QuantifierKind.all
+        | .exists _ => QuantifierKind.exist
+
+      let term := varList.foldr (fun (name, _ty) body =>
+        Factory.quant qk name .int trigger body
+      ) bodyResult.term
 
       -- Accumulate all errors
       let allErrors := bodyResult.errors ++ validationErrors ++ patternErrors

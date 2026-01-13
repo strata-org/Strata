@@ -104,9 +104,10 @@ def transformFunctionDecl (decl : B3AST.Decl α) : List ( B3AST.Decl α) :=
               let axiomExpr := paramList.foldr (fun param body =>
                 match param with
                 | FParameter.fParameter _m _inj paramName paramTy =>
+                    let varDecl := VarDecl.quantVarDecl m paramName paramTy
                     Expression.quantifierExpr m
                       (QuantifierKind.forall m)
-                      paramName paramTy ⟨m, #[pattern]⟩ body
+                      ⟨m, #[varDecl]⟩ ⟨m, #[pattern]⟩ body
               ) axiomBody
               let axiomDecl := Decl.axiom m ⟨m, #[]⟩ axiomExpr
               [funcDecl, axiomDecl]
