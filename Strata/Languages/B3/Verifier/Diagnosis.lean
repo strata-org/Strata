@@ -31,6 +31,27 @@ structure DiagnosisResult where
   originalCheck : VerificationReport
   diagnosedFailures : List DiagnosedFailure
 
+---------------------------------------------------------------------
+-- Pure Helper Functions
+---------------------------------------------------------------------
+
+/-- Extract conjunction operands if expression is a conjunction, otherwise return none -/
+def splitConjunction (expr : B3AST.Expression SourceRange) : Option (B3AST.Expression SourceRange × B3AST.Expression SourceRange) :=
+  match expr with
+  | .binaryOp _ (.and _) lhs rhs => some (lhs, rhs)
+  | _ => none
+
+/-- Determine if diagnosis should stop early based on check type and failure status -/
+def shouldStopDiagnosis (isReachCheck : Bool) (isProvablyFalse : Bool) : Bool :=
+  isProvablyFalse || isReachCheck
+
+/-- Upgrade verification result to refuted if provably false -/
+def upgradeToRefutedIfNeeded (result : VerificationReport) (isProvablyFalse : Bool) : VerificationReport :=
+  if isProvablyFalse then
+    { result with result := .error .refuted }
+  else
+    result
+
 /-- Automatically diagnose a failed check to find root cause.
 
 For proof checks (check/assert): Recursively splits conjunctions to find all atomic failures.
@@ -70,8 +91,8 @@ partial def diagnoseFailureGeneric
   let mut diagnosements := []
 
   -- Strategy: Split conjunctions and recursively diagnose
-  match expr with
-  | .binaryOp _ (.and _) lhs rhs =>
+  match splitConjunction expr with
+  | some (lhs, rhs) =>
       let lhsConv := expressionToSMT ConversionContext.empty lhs
       if lhsConv.errors.isEmpty then
         let lhsResult ← checkFn state lhsConv.term vctx
@@ -89,10 +110,7 @@ partial def diagnoseFailureGeneric
           let lhsDiag ← diagnoseFailureGeneric isReachCheck state lhs sourceDecl sourceStmt
           if lhsDiag.diagnosedFailures.isEmpty then
             -- Atomic failure - upgrade to refuted if provably false
-            let finalResult := if isProvablyFalse then
-              { lhsResult with result := .error .refuted }
-            else
-              lhsResult
+            let finalResult := upgradeToRefutedIfNeeded lhsResult isProvablyFalse
             diagnosements := diagnosements ++ [{
               expression := lhs
               report := finalResult
@@ -101,13 +119,8 @@ partial def diagnoseFailureGeneric
             -- Has sub-failures - add those instead
             diagnosements := diagnosements ++ lhsDiag.diagnosedFailures
 
-          -- If provably false, stop here (found root cause, no need to check RHS)
-          if isProvablyFalse then
-            return { originalCheck := originalResult, diagnosedFailures := diagnosements }
-
-          -- For reachability checks: if LHS is unreachable, stop here
-          -- All subsequent conjuncts are trivially unreachable
-          if isReachCheck then
+          -- Stop early if needed (provably false or reachability check)
+          if shouldStopDiagnosis isReachCheck isProvablyFalse then
             return { originalCheck := originalResult, diagnosedFailures := diagnosements }
 
       -- Check right conjunct assuming left conjunct holds
@@ -131,10 +144,7 @@ partial def diagnoseFailureGeneric
           let rhsDiag ← diagnoseFailureGeneric isReachCheck stateForRhs rhs sourceDecl sourceStmt
           if rhsDiag.diagnosedFailures.isEmpty then
             -- Atomic failure - upgrade to refuted if provably false
-            let finalResult := if isProvablyFalse then
-              { rhsResult with result := .error .refuted }
-            else
-              rhsResult
+            let finalResult := upgradeToRefutedIfNeeded rhsResult isProvablyFalse
             diagnosements := diagnosements ++ [{
               expression := rhs
               report := finalResult
