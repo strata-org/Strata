@@ -1,9 +1,18 @@
-/*
+/-
   Copyright Strata Contributors
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
-*/
+-/
 
+import StrataTest.Util.TestDiagnostics
+import StrataTest.Languages.Laurel.TestExamples
+
+open StrataTest.Util
+open Strata
+
+namespace Laurel
+
+def program := r"
 procedure fooReassign(): int {
   var x = 0;
   x = x + 1;
@@ -20,10 +29,14 @@ procedure fooSingleAssign(): int {
 }
 
 procedure fooProof() {
-  assert fooReassign() == fooSingleAssign(); // passes
+  assert fooReassign() == fooSingleAssign();
 }
+"
 
-/*
+-- Not working yet
+-- #eval! testInput "ProcedureCalls" program processLaurelFile
+
+/-
 Translation towards SMT:
 
 function fooReassign(): int {
@@ -49,4 +62,4 @@ function fooSingleAssign(): int {
 proof fooProof_body {
   assert fooReassign() == fooSingleAssign();
 }
-*/
+-/
