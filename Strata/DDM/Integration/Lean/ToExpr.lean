@@ -228,6 +228,47 @@ instance : ToExpr PreType where
 
 end PreType
 
+namespace FunctionIterScope
+
+instance : ToExpr FunctionIterScope where
+  toTypeExpr := mkConst ``FunctionIterScope
+  toExpr
+  | .perConstructor => mkConst ``FunctionIterScope.perConstructor
+  | .perField => mkConst ``FunctionIterScope.perField
+
+end FunctionIterScope
+
+namespace TypeRef
+
+instance : ToExpr TypeRef where
+  toTypeExpr := mkConst ``TypeRef
+  toExpr
+  | .datatype => mkConst ``TypeRef.datatype
+  | .fieldType => mkConst ``TypeRef.fieldType
+  | .builtin name => astExpr! builtin (toExpr name)
+
+end TypeRef
+
+namespace NamePatternPart
+
+instance : ToExpr NamePatternPart where
+  toTypeExpr := mkConst ``NamePatternPart
+  toExpr
+  | .literal s => astExpr! literal (toExpr s)
+  | .datatype => mkConst ``NamePatternPart.datatype
+  | .constructor => mkConst ``NamePatternPart.constructor
+  | .field => mkConst ``NamePatternPart.field
+
+end NamePatternPart
+
+namespace FunctionTemplate
+
+instance : ToExpr FunctionTemplate where
+  toTypeExpr := mkConst ``FunctionTemplate
+  toExpr t := astExpr! mk (toExpr t.scope) (toExpr t.namePattern) (toExpr t.paramTypes) (toExpr t.returnType)
+
+end FunctionTemplate
+
 namespace MetadataArg
 
 private protected def typeExpr := mkConst ``MetadataArg
@@ -239,6 +280,7 @@ private protected def toExpr : MetadataArg → Lean.Expr
 | .option ma =>
   let maExpr := optionToExpr MetadataArg.typeExpr (ma.attach.map fun ⟨a, _⟩ => a.toExpr)
   astExpr! option maExpr
+| .functionTemplate t => astExpr! functionTemplate (toExpr t)
 
 instance : ToExpr MetadataArg where
   toTypeExpr := private MetadataArg.typeExpr
@@ -342,6 +384,18 @@ private protected def toExpr {argDecls} (b : TypeBindingSpec argDecls) (argDecls
 
 end TypeBindingSpec
 
+namespace DatatypeBindingSpec
+
+protected def toExpr {argDecls} (b : DatatypeBindingSpec argDecls) (argDeclsExpr : Lean.Expr) : Lean.Expr :=
+  astExpr! mk
+    argDeclsExpr
+    (toExpr b.nameIndex)
+    (toExpr b.typeParamsIndex)
+    (toExpr b.constructorsIndex)
+    (toExpr b.functionTemplates)
+
+end DatatypeBindingSpec
+
 namespace BindingSpec
 
 private def typeExpr (argDeclsExpr : Lean.Expr) : Lean.Expr := mkApp (mkConst ``BindingSpec) argDeclsExpr
@@ -355,6 +409,7 @@ private def toExpr {argDecls} (bi : BindingSpec argDecls) (argDeclsExpr : Lean.E
   match bi with
   | .value b => astExpr! value argDeclsExpr (b.toExpr argDeclsExpr)
   | .type b => astExpr! type argDeclsExpr (b.toExpr argDeclsExpr)
+  | .datatype b => astExpr! datatype argDeclsExpr (b.toExpr argDeclsExpr)
 
 end BindingSpec
 
@@ -408,6 +463,7 @@ private protected def toExpr : MetadataArgType → Lean.Expr
 | .num => astExpr! num
 | .ident => astExpr! ident
 | .opt tp => astExpr! opt tp.toExpr
+| .functionTemplate => astExpr! functionTemplate
 
 instance : ToExpr MetadataArgType where
   toTypeExpr := private mkConst ``MetadataArgType
