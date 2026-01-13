@@ -6,6 +6,7 @@
 
 import Strata.DL.Imperative.MetaData
 import Strata.Languages.Boogie.Expressions
+import Strata.Languages.Boogie.Procedure
 
 /-
 The Laurel language is supposed to serve as an intermediate verification language for at least Java, Python, JavaScript.
@@ -46,11 +47,24 @@ namespace Laurel
 
 abbrev Identifier := String /- Potentially this could be an Int to save resources. -/
 
+inductive Operation: Type where
+  /- Works on Bool -/
+    /- Equality on composite types uses reference equality for impure types, and structural equality for pure ones -/
+  | Eq | Neq
+  | And | Or | Not
+  /- Works on Int/Float64 -/
+  | Neg | Add | Sub | Mul | Div | Mod
+  | Lt | Leq | Gt | Geq
+  deriving Repr
+
+-- Explicit instance needed for deriving Repr in the mutual block
+instance : Repr (Imperative.MetaData Boogie.Expression) := inferInstance
+
 mutual
 structure Procedure: Type where
   name : Identifier
   inputs : List Parameter
-  output : HighType
+  outputs : List Parameter
   precondition : StmtExpr
   decreases : Option StmtExpr -- optionally prove termination
   determinism: Determinism
@@ -77,6 +91,7 @@ inductive HighType : Type where
   /- Java has implicit intersection types.
      Example: `<cond> ? RustanLeino : AndersHejlsberg` could be typed as `Scientist & Scandinavian`-/
   | Intersection (types : List HighType)
+  deriving Repr
 
 /- No support for something like function-by-method yet -/
 inductive Body where
@@ -86,17 +101,6 @@ inductive Body where
 /- An abstract body is useful for types that are extending.
     A type containing any members with abstract bodies can not be instantiated. -/
   | Abstract (postcondition : StmtExpr)
-
-/- We will support these operations for dynamic types as well -/
-/- The 'truthy' concept from JavaScript should be implemented using a library function -/
-inductive Operation: Type where
-  /- Works on Bool -/
-    /- Equality on composite types uses reference equality for impure types, and structural equality for pure ones -/
-  | Eq | Neq
-  | And | Or | Not
-  /- Works on Int/Float64 -/
-  | Neg | Add | Sub | Mul | Div | Mod
-  | Lt | Leq | Gt | Geq
 
 /-
 A StmtExpr contains both constructs that we typically find in statements and those in expressions.
@@ -176,11 +180,13 @@ An extending type can become concrete by redefining all procedures that had abst
   | All -- All refers to all objects in the heap. Can be used in a reads or modifies clause
 /- Hole has a dynamic type and is useful when programs are only partially available -/
   | Hole
-  deriving Inhabited
 
 inductive ContractType where
   | Reads | Modifies | Precondition | PostCondition
 end
+
+instance : Inhabited StmtExpr where
+  default := .Hole
 
 partial def highEq (a: HighType) (b: HighType) : Bool := match a, b with
   | HighType.TVoid, HighType.TVoid => true
@@ -237,7 +243,7 @@ Example 2:
  -/
 inductive TypeDefinition where
   | Composite (ty : CompositeType)
-  | Constrainted {ConstrainedType} (ty : ConstrainedType)
+  | Constrained (ty : ConstrainedType)
 
 structure Program where
   staticProcedures : List Procedure
