@@ -5,9 +5,11 @@
 -/
 
 import Strata.Languages.Boogie.Verifier
+import Lean.Elab.Command
 
 open Strata
 open String
+open Lean Elab
 namespace StrataTest.Util
 
 /-- A diagnostic expectation parsed from source comments -/
@@ -75,17 +77,20 @@ def matchesDiagnostic (diag : Diagnostic) (exp : DiagnosticExpectation) : Bool :
   diag.ending.column == exp.colEnd &&
   stringContains diag.message exp.message
 
-/-- Generic test function for files with diagnostic expectations.
-    Takes a function that processes a file path and returns a list of diagnostics. -/
-def testFile (processFn : String -> IO (Array Diagnostic)) (filePath : String) : IO Unit := do
-  let content <- IO.FS.readFile filePath
+/-- Test input with line offset - adds imaginary newlines to the start of the input -/
+def testInputWithOffset (filename: String) (input : String) (lineOffset : Nat)
+    (process : Lean.Parser.InputContext -> IO (Array Diagnostic)) : IO Unit := do
+
+  -- Add imaginary newlines to the start of the input so the reported line numbers match the Lean source file
+  let offsetInput := String.join (List.replicate lineOffset "\n") ++ input
+  let inputContext := Parser.stringInputContext filename offsetInput
 
   -- Parse diagnostic expectations from comments
-  let expectations := parseDiagnosticExpectations content
+  let expectations := parseDiagnosticExpectations offsetInput
   let expectedErrors := expectations.filter (fun e => e.level == "error")
 
   -- Get actual diagnostics from the language-specific processor
-  let diagnostics <- processFn filePath
+  let diagnostics <- process inputContext
 
   -- Check if all expected errors are matched
   let mut allMatched := true
@@ -97,7 +102,6 @@ def testFile (processFn : String -> IO (Array Diagnostic)) (filePath : String) :
       allMatched := false
       unmatchedExpectations := unmatchedExpectations.append [exp]
 
-  -- Check if there are unexpected diagnostics
   let mut unmatchedDiagnostics := []
   for diag in diagnostics do
     let matched := expectedErrors.any (fun exp => matchesDiagnostic diag exp)
@@ -108,7 +112,6 @@ def testFile (processFn : String -> IO (Array Diagnostic)) (filePath : String) :
   -- Report results
   if allMatched && diagnostics.size == expectedErrors.length then
     IO.println s!"✓ Test passed: All {expectedErrors.length} error(s) matched"
-    -- Print details of matched expectations
     for exp in expectedErrors do
       IO.println s!"  - Line {exp.line}, Col {exp.colStart}-{exp.colEnd}: {exp.message}"
   else
@@ -124,5 +127,9 @@ def testFile (processFn : String -> IO (Array Diagnostic)) (filePath : String) :
       IO.println s!"\nUnexpected diagnostics:"
       for diag in unmatchedDiagnostics do
         IO.println s!"  - Line {diag.start.line}, Col {diag.start.column}-{diag.ending.column}: {diag.message}"
+    throw (IO.userError "Test failed")
+
+def testInput (filename: String) (input : String) (process : Lean.Parser.InputContext -> IO (Array Diagnostic)) : IO Unit :=
+  testInputWithOffset filename input 0 process
 
 end StrataTest.Util
