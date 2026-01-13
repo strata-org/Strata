@@ -111,29 +111,4 @@ def formatStatement (prog : Program) (stmt : B3AST.Statement SourceRange) (ctx: 
   let fmtState : FormatState := { openDialects := prog.dialects.toList.foldl (init := {}) fun a (dialect : Dialect) => a.insert dialect.name }
   (mformat (ArgF.op cstStmt.toAst) fmtCtx fmtState).format.pretty.trim
 
----------------------------------------------------------------------
--- Metadata Extraction
----------------------------------------------------------------------
-
-/-- Extract metadata from any B3 statement -/
-def getStatementMetadata : B3AST.Statement M → M
-  | .check m _ => m
-  | .assert m _ => m
-  | .assume m _ => m
-  | .reach m _ => m
-  | .blockStmt m _ => m
-  | .probe m _ => m
-  | .varDecl m _ _ _ _ => m
-  | .assign m _ _ => m
-  | .reinit m _ => m
-  | .ifStmt m _ _ _ => m
-  | .ifCase m _ => m
-  | .choose m _ => m
-  | .loop m _ _ => m
-  | .labeledStmt m _ _ => m
-  | .exit m _ => m
-  | .returnStmt m => m
-  | .aForall m _ _ _ => m
-  | .call m _ _ => m
-
 end Strata.B3.Verifier

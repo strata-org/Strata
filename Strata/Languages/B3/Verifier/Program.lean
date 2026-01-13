@@ -108,13 +108,7 @@ def verifyWithoutDiagnosis (prog : B3AST.Program SourceRange) (solver : Solver) 
   -- Verify parameter-free procedures
   for (_name, decl, bodyStmt) in extractVerifiableProcedures prog do
     let execResult ← symbolicExecuteStatements ConversionContext.empty state decl bodyStmt
-    -- Convert StatementResult to Except String VerificationReport
-    let converted := execResult.results.map (fun r =>
-      match r with
-      | .verified report => .ok report
-      | .conversionError msg => .error msg
-    )
-    results := results ++ converted
+    results := results ++ execResult.results.map StatementResult.toExcept
 
   closeVerificationState state
   return results

@@ -91,7 +91,7 @@ def formatStatementError (prog : Program) (stmt : B3AST.Statement SourceRange) :
   let baseOffset := match prog.commands.toList with
     | [op] => op.ann.start
     | _ => { byteIdx := 0 }
-  let loc := formatSourceLocation baseOffset (getStatementMetadata stmt)
+  let loc := formatSourceLocation baseOffset stmt.metadata
   let formatted := formatStatement prog stmt B3.ToCSTContext.empty
   s!"{loc}: {formatted}"
 

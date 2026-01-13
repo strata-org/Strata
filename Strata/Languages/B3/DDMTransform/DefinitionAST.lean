@@ -374,4 +374,25 @@ def Decl.toUnit [Inhabited (Expression Unit)] (d : Decl M) : Decl Unit :=
 def Program.toUnit [Inhabited (Expression Unit)] (p : Program M) : Program Unit :=
   p.mapMetadata (fun _ => ())
 
+/-- Extract metadata from any B3 statement -/
+def Statement.metadata : Statement M → M
+  | .check m _ => m
+  | .assert m _ => m
+  | .assume m _ => m
+  | .reach m _ => m
+  | .blockStmt m _ => m
+  | .probe m _ => m
+  | .varDecl m _ _ _ _ => m
+  | .assign m _ _ => m
+  | .reinit m _ => m
+  | .ifStmt m _ _ _ => m
+  | .ifCase m _ => m
+  | .choose m _ => m
+  | .loop m _ _ => m
+  | .labeledStmt m _ _ => m
+  | .exit m _ => m
+  | .returnStmt m => m
+  | .aForall m _ _ _ => m
+  | .call m _ _ => m
+
 end B3AST
