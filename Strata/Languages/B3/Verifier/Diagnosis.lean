@@ -164,6 +164,20 @@ def diagnoseFailure (state : B3VerificationState) (expr : B3AST.Expression Sourc
 def diagnoseUnreachable (state : B3VerificationState) (expr : B3AST.Expression SourceRange) (sourceDecl : B3AST.Decl SourceRange) (sourceStmt : B3AST.Statement SourceRange) : IO DiagnosisResult :=
   diagnoseFailureGeneric true state expr sourceDecl sourceStmt
 
+/-- Determine which diagnosis function to use based on statement type -/
+def diagnoseFailed (state : B3VerificationState) (sourceDecl : B3AST.Decl SourceRange) (stmt : B3AST.Statement SourceRange) : IO (Option DiagnosisResult) :=
+  match stmt with
+  | .check m expr => do
+      let d ← diagnoseFailure state expr sourceDecl (.check m expr)
+      pure (some d)
+  | .assert m expr => do
+      let d ← diagnoseFailure state expr sourceDecl (.assert m expr)
+      pure (some d)
+  | .reach m expr => do
+      let d ← diagnoseUnreachable state expr sourceDecl (.reach m expr)
+      pure (some d)
+  | _ => pure none
+
 ---------------------------------------------------------------------
 -- Statement Symbolic Execution with Diagnosis
 ---------------------------------------------------------------------
@@ -185,17 +199,7 @@ partial def symbolicExecuteStatementsWithDiagnosis (ctx : ConversionContext) (st
         | .verified report =>
             -- If verification failed, diagnose it
             let diag ← if report.result.isError then
-              match report.context.stmt with
-              | .check m expr =>
-                  let d ← diagnoseFailure state expr sourceDecl (.check m expr)
-                  pure (some d)
-              | .assert m expr =>
-                  let d ← diagnoseFailure state expr sourceDecl (.assert m expr)
-                  pure (some d)
-              | .reach m expr =>
-                  let d ← diagnoseUnreachable state expr sourceDecl (.reach m expr)
-                  pure (some d)
-              | _ => pure none
+              diagnoseFailed state sourceDecl report.context.stmt
             else
               pure none
             resultsWithDiag := resultsWithDiag ++ [(report, diag)]

@@ -37,40 +37,57 @@ inductive StatementResult where
   | verified : VerificationReport → StatementResult
   | conversionError : String → StatementResult
 
+/-- Convert StatementResult to Except for easier error handling -/
+def StatementResult.toExcept : StatementResult → Except String VerificationReport
+  | .verified report => .ok report
+  | .conversionError msg => .error msg
+
 structure SymbolicExecutionResult where
   results : List StatementResult
   finalState : B3VerificationState
+
+/-- Convert conversion errors to StatementResults -/
+def conversionErrorsToResults {M : Type} [Repr M] (errors : List (ConversionError M)) : List StatementResult :=
+  errors.map (fun err => StatementResult.conversionError (toString err))
+
+/-- Create VerificationContext from state and statement -/
+def mkVerificationContext (state : B3VerificationState) (decl : B3AST.Decl SourceRange) (stmt : B3AST.Statement SourceRange) : VerificationContext :=
+  { decl := decl, stmt := stmt, pathCondition := state.pathCondition }
+
+/-- Create a SymbolicExecutionResult with conversion errors and optional verification result -/
+def mkExecutionResult {M : Type} [Repr M] (convErrors : List (ConversionError M)) (verificationResult : Option VerificationReport) (state : B3VerificationState) : SymbolicExecutionResult :=
+  let errorResults := conversionErrorsToResults convErrors
+  let allResults := match verificationResult with
+    | some report => errorResults ++ [StatementResult.verified report]
+    | none => errorResults
+  { results := allResults, finalState := state }
 
 /-- Symbolically execute B3 statements via streaming translation to SMT -/
 partial def symbolicExecuteStatements (ctx : ConversionContext) (state : B3VerificationState) (sourceDecl : B3AST.Decl SourceRange) : B3AST.Statement SourceRange → IO SymbolicExecutionResult
   | .check m expr => do
       let convResult := expressionToSMT ctx expr
-      let vctx : VerificationContext := { decl := sourceDecl, stmt := .check m expr, pathCondition := state.pathCondition }
+      let vctx := mkVerificationContext state sourceDecl (.check m expr)
       let result ← prove state convResult.term vctx
-      let errorResults := convResult.errors.map (fun err => StatementResult.conversionError (toString err))
-      pure { results := errorResults ++ [.verified result], finalState := state }
+      pure <| mkExecutionResult convResult.errors (some result) state
 
   | .assert m expr => do
       let convResult := expressionToSMT ctx expr
-      let vctx : VerificationContext := { decl := sourceDecl, stmt := .assert m expr, pathCondition := state.pathCondition }
+      let vctx := mkVerificationContext state sourceDecl (.assert m expr)
       let result ← prove state convResult.term vctx
       -- Always add to path condition (assert assumes its condition regardless of proof result)
       let newState ← addPathCondition state expr convResult.term
-      let errorResults := convResult.errors.map (fun err => StatementResult.conversionError (toString err))
-      pure { results := errorResults ++ [.verified result], finalState := newState }
+      pure <| mkExecutionResult convResult.errors (some result) newState
 
   | .assume _ expr => do
       let convResult := expressionToSMT ctx expr
       let newState ← addPathCondition state expr convResult.term
-      let errorResults := convResult.errors.map (fun err => StatementResult.conversionError (toString err))
-      pure { results := errorResults, finalState := newState }
+      pure <| mkExecutionResult convResult.errors none newState
 
   | .reach m expr => do
       let convResult := expressionToSMT ctx expr
-      let vctx : VerificationContext := { decl := sourceDecl, stmt := .reach m expr, pathCondition := state.pathCondition }
+      let vctx := mkVerificationContext state sourceDecl (.reach m expr)
       let result ← reach state convResult.term vctx
-      let errorResults := convResult.errors.map (fun err => StatementResult.conversionError (toString err))
-      pure { results := errorResults ++ [.verified result], finalState := state }
+      pure <| mkExecutionResult convResult.errors (some result) state
 
   | .blockStmt _ stmts => do
       let mut currentState := state
