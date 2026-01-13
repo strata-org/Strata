@@ -136,11 +136,14 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    strategy:
+      matrix:
+        python_version: [3.12, 3.13, 3.14]
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
       with:
-        python-version: '3.14'
+        python-version: ${{ matrix.python_version }}
     - name: Build using pip
       run: pip install .
       working-directory: Tools/Python
@@ -151,7 +154,7 @@ jobs:
         build: true
         build-args: "strata:exe"
     - name: Run test script
-      run: ./scripts/run_cpython_tests.sh
+      run: FAIL_FAST=1 ./scripts/run_cpython_tests.sh ${{ matrix.python_version }}
       working-directory: Tools/Python
 
   cbmc:
