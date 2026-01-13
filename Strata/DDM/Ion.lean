@@ -1012,15 +1012,18 @@ private instance : CachedToIon SynCatDecl where
     return .struct #[
       (ionSymbol! "type", ionSymbol! "syncat"),
       (ionSymbol! "name", .string d.name),
-      (ionSymbol! "arguments", .list (.string <$> d.argNames))
+      (ionSymbol! "args", .list (.string <$> d.argNames))
     ]
 
 private protected def fromIon (fields : Array (SymbolId × Ion SymbolId)) : FromIonM SynCatDecl := do
-  let args ← .mapFields fields (.fromList! ["type", "name", "arguments"])
-  pure {
-    name := ← .asString "Category name" args[1],
-    argNames := ← .asListOf "Category arguments" args[2] (.asString "Category argument name"),
-  }
+  let m := .fromOptList! [("type", .req), ("name", .req), ("args", .opt)]
+  let fldArgs ← .mapFields fields m
+  let name ← .asString "Category name" fldArgs[1]
+  let argNames : Array String ←
+        match fldArgs[2] with
+        | .null _ => pure #[]
+        | v =>  .asListOf "Category args" v (.asString "Category argument name")
+  pure { name, argNames := argNames }
 
 end SynCatDecl
 
@@ -1054,16 +1057,16 @@ private protected def fromIon (fields : Array (SymbolId × Ion SymbolId)) : From
   let name ← .asString "Op declaration name" fldArgs[1]
   let argDecls ←
         match fldArgs[2] with
-        | .mk (.null _) => pure {}
+        | .null _ => pure {}
         | v => ArgDecls.ofArray <$> .asListOf "Op declaration arguments" v fromIon
   let category ← QualifiedIdent.fromIon "Op declaration result" fldArgs[3]
   let syntaxDef ←
         match fldArgs[4] with
-        | .mk (.null _) => pure (.mkFunApp name argDecls.size)
+        | .null _ => pure (.mkFunApp name argDecls.size)
         | v => fromIon v
   let metadata ←
         match fldArgs[5] with
-        | .mk (.null _) => pure .empty
+        | .null _ => pure .empty
         | v => fromIon v
   pure {
     name := name
@@ -1262,7 +1265,7 @@ def fromIonFragment (dialect : DialectName) (f : Ion.Fragment) : Except String D
   let (imports, decls) ← f.values.foldlM (init := (#[], #[])) (start := f.offset) fun (imports, decls) v => do
     let fields ← FromIonM.asStruct0 v ⟨f.symbols⟩
     let some (_, val) := fields.find? (·.fst == typeId)
-      | throw "Could not find type"
+      | throw s!"Could not find type in {repr fields}"
     match ← FromIonM.asSymbolString "Dialect kind" val ctx with
     | "import" =>
       let some (_, val) := fields.find? (·.fst == nameId)
