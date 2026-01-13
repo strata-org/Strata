@@ -5,10 +5,12 @@
 -/
 
 import Strata.DDM.AST
+import Strata.DDM.Integration.Categories
 
 namespace Strata.Java
 
 open Strata (Dialect OpDecl ArgDecl ArgDeclKind QualifiedIdent SyntaxCat)
+open Strata.DDM.Integration (primitiveCategories forbiddenCategories abstractCategories)
 
 /-! # Java Code Generator for DDM Dialects
 
@@ -88,14 +90,33 @@ def JavaType.toJavaBoxed : JavaType → String
   | t => t.toJava
 end
 
+/-- Maps a primitive Init category to its Java type. -/
+def primitiveJavaType (qid : QualifiedIdent) : JavaType :=
+  match qid with
+  | q`Init.Ident => .simple "java.lang.String"
+  | q`Init.Num => .simple "java.math.BigInteger"
+  | q`Init.Decimal => .simple "java.math.BigDecimal"
+  | q`Init.Str => .simple "java.lang.String"
+  | q`Init.ByteArray => .array (.simple "byte" (some "java.lang.Byte"))
+  | q`Init.Bool => .simple "boolean" (some "java.lang.Boolean")
+  | _ => panic! s!"Not a primitive category: {qid.dialect}.{qid.name}"
+
+/-- Maps an abstract Init category to its Java interface name. -/
+def abstractJavaName (qid : QualifiedIdent) : String :=
+  match qid with
+  | q`Init.Expr => "Expr"
+  | q`Init.Type => "Type_"
+  | q`Init.TypeP => "TypeP"
+  | _ => panic! s!"Not an abstract category: {qid.dialect}.{qid.name}"
+
 partial def syntaxCatToJavaType (cat : SyntaxCat) : JavaType :=
-  match cat.name with
-  | ⟨"Init", "Ident"⟩ => .simple "java.lang.String"
-  | ⟨"Init", "Num"⟩ => .simple "java.math.BigInteger"
-  | ⟨"Init", "Decimal"⟩ => .simple "java.math.BigDecimal"
-  | ⟨"Init", "Str"⟩ => .simple "java.lang.String"
-  | ⟨"Init", "ByteArray"⟩ => .array (.simple "byte" (some "java.lang.Byte"))
-  | ⟨"Init", "Bool"⟩ => .simple "boolean" (some "java.lang.Boolean")
+  if forbiddenCategories.contains cat.name then
+    panic! s!"{cat.name.dialect}.{cat.name.name} is internal DDM machinery"
+  else if primitiveCategories.contains cat.name then
+    primitiveJavaType cat.name
+  else if abstractCategories.contains cat.name then
+    .simple (abstractJavaName cat.name)
+  else match cat.name with
   | ⟨"Init", "Option"⟩ =>
     match cat.args[0]? with
     | some inner => .optional (syntaxCatToJavaType inner)
@@ -104,32 +125,21 @@ partial def syntaxCatToJavaType (cat : SyntaxCat) : JavaType :=
     match cat.args[0]? with
     | some inner => .list (syntaxCatToJavaType inner)
     | none => panic! "Init.Seq/CommaSepBy requires a type argument"
-  | ⟨"Init", "Expr"⟩ => .simple "Expr"
-  | ⟨"Init", "TypeExpr"⟩ => panic! "Init.TypeExpr is internal DDM machinery; use Init.Type or Init.TypeP instead"
-  | ⟨"Init", "Type"⟩ => .simple "Type_"
-  | ⟨"Init", "TypeP"⟩ => .simple "TypeP"
+  | ⟨"Init", _⟩ => panic! s!"Unknown Init category: {cat.name.name}"
   | ⟨_, name⟩ => .simple (escapeJavaName (toPascalCase name))
 
 def argDeclKindToJavaType : ArgDeclKind → JavaType
   | .type _ => .simple "Expr"
   | .cat c => syntaxCatToJavaType c
 
-/-- Extract the QualifiedIdent for categories that need Java interfaces, or none for primitives -/
+/-- Extract the QualifiedIdent for categories that need Java interfaces, or none for primitives. -/
 partial def syntaxCatToQualifiedName (cat : SyntaxCat) : Option QualifiedIdent :=
-  match cat.name with
-  -- Primitives map to Java types, no interface needed
-  | ⟨"Init", "Ident"⟩ | ⟨"Init", "Num"⟩ | ⟨"Init", "Decimal"⟩
-  | ⟨"Init", "Str"⟩ | ⟨"Init", "ByteArray"⟩ | ⟨"Init", "Bool"⟩ => none
-  -- Containers - recurse into element type
+  if primitiveCategories.contains cat.name then none
+  else if abstractCategories.contains cat.name then some cat.name
+  else match cat.name with
   | ⟨"Init", "Option"⟩ | ⟨"Init", "Seq"⟩ | ⟨"Init", "CommaSepBy"⟩ =>
     cat.args[0]?.bind syntaxCatToQualifiedName
-  -- Abstract Init categories (extension points for dialects)
-  | ⟨"Init", "Expr"⟩ => some ⟨"Init", "Expr"⟩
-  | ⟨"Init", "Type"⟩ => some ⟨"Init", "Type"⟩
-  | ⟨"Init", "TypeP"⟩ => some ⟨"Init", "TypeP"⟩
-  -- Other Init types are internal DDM machinery
   | ⟨"Init", _⟩ => none
-  -- Dialect-defined categories
   | qid => some qid
 
 /-! ## Java Structures -/
@@ -156,6 +166,7 @@ structure GeneratedFiles where
   records : Array (String × String)
   builders : String × String  -- (filename, content)
   serializer : String
+  deriving Inhabited
 
 /-- Mapping from DDM names to disambiguated Java identifiers. -/
 structure NameAssignments where
@@ -194,177 +205,28 @@ s!"package {package};
 public sealed interface {i.name} extends Node{permits} \{}
 "
 
-def generateSourceRange (package : String) : String :=
-s!"package {package};
+def templatePackage := "com.strata.template"
 
-public record SourceRange(long start, long stop) \{
-    public static final SourceRange NONE = new SourceRange(0, 0);
-}
-"
+def sourceRangeTemplate : String := include_str "templates/SourceRange.java"
+def nodeTemplate : String := include_str "templates/Node.java"
+def serializerTemplate : String := include_str "templates/IonSerializer.java"
+
+def generateSourceRange (package : String) : String :=
+  sourceRangeTemplate.replace templatePackage package
 
 def generateNodeInterface (package : String) (categories : List String) : String :=
-  let permits := if categories.isEmpty then ""
-    else " permits " ++ String.intercalate ", " categories
-s!"package {package};
-
-public sealed interface Node{permits} \{
-    SourceRange sourceRange();
-    java.lang.String operationName();
-}
-"
+  let base := nodeTemplate.replace templatePackage package
+  if categories.isEmpty then base
+  else
+    let permits := " permits " ++ String.intercalate ", " categories
+    base.replace "sealed interface Node" s!"sealed interface Node{permits}"
 
 /-- Generate non-sealed stub interface for a category with no operators -/
 def generateStubInterface (package : String) (name : String) : String × String :=
   (s!"{name}.java", s!"package {package};\n\npublic non-sealed interface {name} extends Node \{}\n")
 
 def generateSerializer (package : String) : String :=
-s!"package {package};
-
-import com.amazon.ion.*;
-import com.amazon.ion.system.*;
-
-public class IonSerializer \{
-    private final IonSystem ion;
-
-    public IonSerializer(IonSystem ion) \{
-        this.ion = ion;
-    }
-
-    /** Serialize a node as a top-level command (no \"op\" wrapper). */
-    public IonValue serializeCommand(Node node) \{
-        return serializeNode(node);
-    }
-
-    /** Serialize a node as an argument (with \"op\" wrapper). */
-    public IonValue serialize(Node node) \{
-        return wrapOp(serializeNode(node));
-    }
-
-    private IonSexp serializeNode(Node node) \{
-        IonSexp sexp = ion.newEmptySexp();
-        sexp.add(ion.newSymbol(node.operationName()));
-        sexp.add(serializeSourceRange(node.sourceRange()));
-
-        for (var component : node.getClass().getRecordComponents()) \{
-            if (component.getName().equals(\"sourceRange\")) continue;
-            try \{
-                java.lang.Object value = component.getAccessor().invoke(node);
-                sexp.add(serializeArg(value, component.getType(), component.getGenericType()));
-            } catch (java.lang.Exception e) \{
-                throw new java.lang.RuntimeException(\"Failed to serialize \" + component.getName(), e);
-            }
-        }
-        return sexp;
-    }
-
-    private IonValue wrapOp(IonValue inner) \{
-        IonSexp sexp = ion.newEmptySexp();
-        sexp.add(ion.newSymbol(\"op\"));
-        sexp.add(inner);
-        return sexp;
-    }
-
-    private IonValue serializeSourceRange(SourceRange sr) \{
-        if (sr.start() == 0 && sr.stop() == 0) \{
-            return ion.newNull();
-        }
-        IonSexp sexp = ion.newEmptySexp();
-        sexp.add(ion.newInt(sr.start()));
-        sexp.add(ion.newInt(sr.stop()));
-        return sexp;
-    }
-
-    private IonValue serializeArg(java.lang.Object value, java.lang.Class<?> type, java.lang.reflect.Type genericType) \{
-        if (value == null) \{
-            return serializeOption(java.util.Optional.empty());
-        }
-        if (value instanceof Node n) \{
-            return serialize(n);
-        }
-        if (value instanceof java.lang.String s) \{
-            return serializeIdent(s);
-        }
-        if (value instanceof java.math.BigInteger bi) \{
-            return serializeNum(bi);
-        }
-        if (value instanceof java.math.BigDecimal bd) \{
-            return serializeDecimal(bd);
-        }
-        if (value instanceof byte[] bytes) \{
-            return serializeBytes(bytes);
-        }
-        if (value instanceof java.lang.Boolean b) \{
-            return serializeBool(b);
-        }
-        if (value instanceof java.util.Optional<?> opt) \{
-            return serializeOption(opt);
-        }
-        if (value instanceof java.util.List<?> list) \{
-            return serializeSeq(list, genericType);
-        }
-        throw new java.lang.IllegalArgumentException(\"Unsupported type: \" + type);
-    }
-
-    private IonValue serializeIdent(java.lang.String s) \{
-        IonSexp sexp = ion.newEmptySexp();
-        sexp.add(ion.newSymbol(\"ident\"));
-        sexp.add(ion.newNull());
-        sexp.add(ion.newString(s));
-        return sexp;
-    }
-
-    private IonValue serializeNum(java.math.BigInteger n) \{
-        IonSexp sexp = ion.newEmptySexp();
-        sexp.add(ion.newSymbol(\"num\"));
-        sexp.add(ion.newNull());
-        sexp.add(ion.newInt(n));
-        return sexp;
-    }
-
-    private IonValue serializeDecimal(java.math.BigDecimal d) \{
-        IonSexp sexp = ion.newEmptySexp();
-        sexp.add(ion.newSymbol(\"decimal\"));
-        sexp.add(ion.newNull());
-        sexp.add(ion.newDecimal(d));
-        return sexp;
-    }
-
-    private IonValue serializeBytes(byte[] bytes) \{
-        IonSexp sexp = ion.newEmptySexp();
-        sexp.add(ion.newSymbol(\"bytes\"));
-        sexp.add(ion.newNull());
-        sexp.add(ion.newBlob(bytes));
-        return sexp;
-    }
-
-    private IonValue serializeBool(boolean b) \{
-        IonSexp inner = ion.newEmptySexp();
-        inner.add(ion.newSymbol(b ? \"Init.boolTrue\" : \"Init.boolFalse\"));
-        inner.add(ion.newNull());
-        return wrapOp(inner);
-    }
-
-    private IonValue serializeOption(java.util.Optional<?> opt) \{
-        IonSexp sexp = ion.newEmptySexp();
-        sexp.add(ion.newSymbol(\"option\"));
-        sexp.add(ion.newNull());
-        if (opt.isPresent()) \{
-            sexp.add(serializeArg(opt.get(), opt.get().getClass(), opt.get().getClass()));
-        }
-        return sexp;
-    }
-
-    private IonValue serializeSeq(java.util.List<?> list, java.lang.reflect.Type genericType) \{
-        IonSexp sexp = ion.newEmptySexp();
-        sexp.add(ion.newSymbol(\"seq\"));
-        sexp.add(ion.newNull());
-        for (java.lang.Object item : list) \{
-            sexp.add(serializeArg(item, item.getClass(), item.getClass()));
-        }
-        return sexp;
-    }
-}
-"
+  serializerTemplate.replace templatePackage package
 
 /-- Assign unique Java names to all generated types -/
 def assignAllNames (d : Dialect) : NameAssignments :=
@@ -457,9 +319,16 @@ def generateBuilders (package : String) (dialectName : String) (d : Dialect) (na
   let methods := d.declarations.filterMap fun | .op op => some (method op) | _ => none
   s!"package {package};\n\npublic class {dialectName} \{\n{"\n".intercalate methods.toList}\n}\n"
 
-def generateDialect (d : Dialect) (package : String) : GeneratedFiles :=
+def generateDialect (d : Dialect) (package : String) : Except String GeneratedFiles := do
   let names := assignAllNames d
   let opsByCategory := groupOpsByCategory d names
+
+  -- Check for unsupported declarations
+  for decl in d.declarations do
+    match decl with
+    | .type t => throw s!"type declaration '{t.name}' is not supported in Java generation"
+    | .function f => throw s!"function declaration '{f.name}' is not supported in Java generation"
+    | _ => pure ()
 
   -- Categories with operators get sealed interfaces with permits clauses
   let sealedInterfaces := opsByCategory.toList.map fun (cat, ops) =>
@@ -471,11 +340,9 @@ def generateDialect (d : Dialect) (package : String) : GeneratedFiles :=
   let stubInterfaces := names.stubs.toList.map fun (_, name) =>
     generateStubInterface package name
 
-  -- Generate records for operators (fail on unsupported declarations)
+  -- Generate records for operators
   let records := d.declarations.toList.filterMap fun decl =>
     match decl with
-    | .type t => panic! s!"type declaration '{t.name}' is not supported in Java generation"
-    | .function f => panic! s!"function declaration '{f.name}' is not supported in Java generation"
     | .op op =>
       let name := names.operators[(op.category, op.name)]!
       some (s!"{name}.java", (opDeclToJavaRecord d.name names op).toJava package)
@@ -484,12 +351,14 @@ def generateDialect (d : Dialect) (package : String) : GeneratedFiles :=
   -- All interface names for Node permits clause
   let allInterfaceNames := (sealedInterfaces ++ stubInterfaces).map (·.1.dropRight 5)
 
-  { sourceRange := generateSourceRange package
+  return {
+    sourceRange := generateSourceRange package
     node := generateNodeInterface package allInterfaceNames
     interfaces := sealedInterfaces.toArray ++ stubInterfaces.toArray
     records := records.toArray
     builders := (s!"{names.builders}.java", generateBuilders package names.builders d names)
-    serializer := generateSerializer package }
+    serializer := generateSerializer package
+  }
 
 /-! ## File Output -/
 

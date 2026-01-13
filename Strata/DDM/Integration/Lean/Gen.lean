@@ -7,6 +7,7 @@ import Lean.Elab.Command
 
 import Strata.DDM.BuiltinDialects.Init
 import Strata.DDM.BuiltinDialects.StrataDDL
+import Strata.DDM.Integration.Categories
 import Strata.DDM.Integration.Lean.BoolConv
 import Strata.DDM.Integration.Lean.Env
 import Strata.DDM.Integration.Lean.GenTrace
@@ -127,14 +128,7 @@ def resolveDialects (lookup : String → Option Dialect) (dialects : Array Diale
 
 abbrev CategoryName := QualifiedIdent
 
-/--
-Forbidden categories are categories that
--/
-def forbiddenCategories : Std.HashSet CategoryName := {
-  q`Init.TypeExpr,
-  q`Init.BindingType,
-  q`StrataDDL.Binding
-}
+def forbiddenCategories : Std.HashSet CategoryName := DDM.Integration.forbiddenCategories
 
 private def forbiddenWellDefined : Bool :=
   forbiddenCategories.all fun nm =>
@@ -151,11 +145,7 @@ private def forbiddenWellDefined : Bool :=
 Special categories ignore operations introduced in Init, but are populated
 with operators via functions/types.
 -/
-def specialCategories : Std.HashSet CategoryName := {
-  q`Init.Expr,
-  q`Init.Type,
-  q`Init.TypeP
-}
+def specialCategories : Std.HashSet CategoryName := DDM.Integration.abstractCategories
 
 /--
 Argument declaration for code generation.
@@ -250,10 +240,7 @@ def mkRootIdent (name : Name) : Ident :=
   let rootName := `_root_ ++ name
   .mk (.ident .none name.toString.toSubstring rootName [.decl name []])
 
-/--
-This maps category names in the Init that are already declared to their
-representation.
--/
+/-- Maps primitive Init categories to their Lean types. -/
 def declaredCategories : Std.HashMap CategoryName Name := .ofList [
   (q`Init.Ident, ``String),
   (q`Init.Num, ``Nat),
@@ -262,6 +249,8 @@ def declaredCategories : Std.HashMap CategoryName Name := .ofList [
   (q`Init.ByteArray, ``ByteArray),
   (q`Init.Bool, ``Bool)
 ]
+
+#guard declaredCategories.keys.all (DDM.Integration.primitiveCategories.contains ·)
 
 def ignoredCategories : Std.HashSet CategoryName :=
   .ofList declaredCategories.keys ∪ forbiddenCategories

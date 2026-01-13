@@ -41,7 +41,11 @@ def check (s sub : String) : Bool := (s.splitOn sub).length > 1
       }
     ]
   }
+<<<<<<< HEAD
   let files := generateDialect testDialect "com.test"
+=======
+  let files := (generateDialect testDialect "com.test").toOption.get!
+>>>>>>> origin/main
   assert! files.interfaces.any (fun i => check i.2 "sealed interface Expr")
   assert! files.records.size = 2
   assert! files.records.any (fun r => check r.1 "Literal")
@@ -65,7 +69,11 @@ def check (s sub : String) : Bool := (s.splitOn sub).length > 1
       }
     ]
   }
+<<<<<<< HEAD
   let files := generateDialect testDialect "com.test"
+=======
+  let files := (generateDialect testDialect "com.test").toOption.get!
+>>>>>>> origin/main
   assert! files.records.any (fun r => r.1 == "Int.java")
   assert! files.records.any (fun r => check r.2 "public_")
   pure ()
@@ -85,7 +93,11 @@ def check (s sub : String) : Bool := (s.splitOn sub).length > 1
       }
     ]
   }
+<<<<<<< HEAD
   let files := generateDialect testDialect "com.test"
+=======
+  let files := (generateDialect testDialect "com.test").toOption.get!
+>>>>>>> origin/main
   assert! files.interfaces.any (fun i => i.1 == "Expr.java")
   assert! files.records.any (fun r => r.1 == "Expr_.java")
   pure ()
@@ -104,7 +116,11 @@ def check (s sub : String) : Bool := (s.splitOn sub).length > 1
       .op { name := "class_", argDecls := .ofArray #[], category := ⟨"Dup", "B"⟩, syntaxDef := { atoms := #[], prec := 0 } }  -- Would clash after escaping
     ]
   }
+<<<<<<< HEAD
   let files := generateDialect testDialect "com.test"
+=======
+  let files := (generateDialect testDialect "com.test").toOption.get!
+>>>>>>> origin/main
   let recordNames := files.records.map Prod.fst
   assert! recordNames.toList.eraseDups.length == recordNames.size
   pure ()
@@ -119,7 +135,11 @@ def check (s sub : String) : Bool := (s.splitOn sub).length > 1
       .op { name := "leaf", argDecls := .ofArray #[], category := ⟨"Base", "Node"⟩, syntaxDef := { atoms := #[], prec := 0 } }
     ]
   }
+<<<<<<< HEAD
   let files := generateDialect testDialect "com.test"
+=======
+  let files := (generateDialect testDialect "com.test").toOption.get!
+>>>>>>> origin/main
   let allNames := #["Node.java", "SourceRange.java"] ++ files.interfaces.map Prod.fst ++ files.records.map Prod.fst
   assert! allNames.toList.eraseDups.length == allNames.size
   pure ()
@@ -139,7 +159,11 @@ def check (s sub : String) : Bool := (s.splitOn sub).length > 1
       }
     ]
   }
+<<<<<<< HEAD
   let files := generateDialect testDialect "com.test"
+=======
+  let files := (generateDialect testDialect "com.test").toOption.get!
+>>>>>>> origin/main
   assert! files.interfaces.any (fun i => i.1 == "MyCategory.java")
   assert! files.records.any (fun r => r.1 == "MyOperator.java")
   pure ()
@@ -168,7 +192,11 @@ def check (s sub : String) : Bool := (s.splitOn sub).length > 1
       }
     ]
   }
+<<<<<<< HEAD
   let files := generateDialect testDialect "com.test"
+=======
+  let files := (generateDialect testDialect "com.test").toOption.get!
+>>>>>>> origin/main
   let record := files.records[0]!.2
   assert! check record "java.lang.String ident"
   assert! check record "java.math.BigInteger num"
@@ -195,7 +223,7 @@ def check (s sub : String) : Bool := (s.splitOn sub).length > 1
       }
     ]
   }
-  let files := generateDialect testDialect "com.test"
+  let files := (generateDialect testDialect "com.test").toOption.get!
   let record := files.records[0]!.2
   assert! !(check record "import java.")
   assert! check record "java.lang.String operationName()"
@@ -218,11 +246,16 @@ def check (s sub : String) : Bool := (s.splitOn sub).length > 1
       }
     ]
   }
+<<<<<<< HEAD
   let files := generateDialect testDialect "com.test"
+=======
+  let files := (generateDialect testDialect "com.test").toOption.get!
+>>>>>>> origin/main
   assert! files.interfaces.any (fun i => check i.2 "sealed interface Stmt")
   assert! files.interfaces.any (fun i => check i.2 "non-sealed interface Expr")
   pure ()
 
+<<<<<<< HEAD
 -- Test 10: Real dialect - Boogie
 elab "#testBoogie" : command => do
   let env ← Lean.getEnv
@@ -237,6 +270,21 @@ elab "#testBoogie" : command => do
     Lean.logError s!"Expected 10+ interfaces, got {files.interfaces.size}"
 
 #testBoogie
+=======
+-- Test 10: Boogie dialect returns error (has type/function declarations not yet supported)
+elab "#testBoogieError" : command => do
+  let env ← Lean.getEnv
+  let state := Strata.dialectExt.getState env
+  let some boogie := state.loaded.dialects["Boogie"]?
+    | Lean.logError "Boogie dialect not found"; return
+  match generateDialect boogie "com.strata.boogie" with
+  | .error msg =>
+    if !(check msg "type declaration" || check msg "function declaration") then
+      Lean.logError s!"Expected error about type/function declaration, got: {msg}"
+  | .ok _ => Lean.logError "Expected error for Boogie dialect"
+
+#testBoogieError
+>>>>>>> origin/main
 
 -- Test 11: Cross-dialect name collision (A.Num vs B.Num)
 #eval do
@@ -256,7 +304,11 @@ elab "#testBoogie" : command => do
       }
     ]
   }
+<<<<<<< HEAD
   let files := generateDialect testDialect "com.test"
+=======
+  let files := (generateDialect testDialect "com.test").toOption.get!
+>>>>>>> origin/main
   -- Should have 2 interfaces: one for A.Num, one stub for B.Num
   assert! files.interfaces.size = 2
   let names : List String := files.interfaces.toList.map Prod.fst
@@ -277,7 +329,11 @@ elab "#testCompile" : command => do
   let state := Strata.dialectExt.getState env
   let some simple := state.loaded.dialects["Simple"]?
     | Lean.logError "Simple dialect not found"; return
+<<<<<<< HEAD
   let files := generateDialect simple "com.test"
+=======
+  let files := (generateDialect simple "com.test").toOption.get!
+>>>>>>> origin/main
 
   let dir : System.FilePath := "/tmp/strata-java-test"
   writeJavaFiles dir "com.test" files
@@ -309,7 +365,11 @@ elab "#testRoundtrip" : command => do
     | Lean.logError "Simple dialect not found"; return
   let dm := Strata.DialectMap.ofList! [Strata.initDialect, simple]
   let ionBytes ← IO.FS.readBinFile "StrataTest/DDM/Integration/Java/testdata/comprehensive.ion"
+<<<<<<< HEAD
   match Strata.Program.fileFromIon dm "Simple" ionBytes with
+=======
+  match Strata.Program.fromIon dm "Simple" ionBytes with
+>>>>>>> origin/main
   | .error e => Lean.logError s!"Roundtrip test failed: {e}"
   | .ok prog =>
     if prog.commands.size != 1 then Lean.logError "Expected 1 command"; return
@@ -321,6 +381,7 @@ elab "#testRoundtrip" : command => do
 
 #testRoundtrip
 
+<<<<<<< HEAD
 -- Test 13: Roundtrip with fromIonFiles - verify Lean can read Java-generated Ion array format
 -- Depends on testdata/comprehensive-files.ion (generated by Tools/Java/regenerate-testdata.sh)
 elab "#testRoundtripFiles" : command => do
@@ -375,4 +436,6 @@ elab "#testRoundtripFiles" : command => do
 
 #testRoundtripFiles
 
+=======
+>>>>>>> origin/main
 end Strata.Java.Test
