@@ -153,7 +153,8 @@ def add (m : DialectFileMap) (dir : System.FilePath) : EIO String DialectFileMap
     else if let some stem := matchExt entry.fileName strata_ion_dialect_ext then
       m.addEntry stem .ion entry.path
     else do
-      let _ ← IO.eprintln s!"Skipping {dir / entry.fileName}" |>.toBaseIO
+      if !entry.fileName.startsWith "." then
+        let _ ← IO.eprintln s!"Skipping {dir / entry.fileName}" |>.toBaseIO
       pure m
 
 def ofDirs (dirs : Array System.FilePath) : EIO String DialectFileMap :=
