@@ -1,0 +1,194 @@
+/-
+  Copyright Strata Contributors
+
+  SPDX-License-Identifier: Apache-2.0 OR MIT
+-/
+
+import Strata.Languages.Laurel.Laurel
+
+namespace Laurel
+
+open Std (Format)
+
+mutual
+def formatOperation : Operation → Format
+  | .Eq => "=="
+  | .Neq => "!="
+  | .And => "&&"
+  | .Or => "||"
+  | .Not => "!"
+  | .Neg => "-"
+  | .Add => "+"
+  | .Sub => "-"
+  | .Mul => "*"
+  | .Div => "/"
+  | .Mod => "%"
+  | .Lt => "<"
+  | .Leq => "<="
+  | .Gt => ">"
+  | .Geq => ">="
+
+def formatHighType : HighType → Format
+  | .TVoid => "void"
+  | .TBool => "bool"
+  | .TInt => "int"
+  | .TFloat64 => "float64"
+  | .UserDefined name => Format.text name
+  | .Applied base args =>
+      Format.text "(" ++ formatHighType base ++ " " ++
+      Format.joinSep (args.map formatHighType) " " ++ ")"
+  | .Pure base => "pure(" ++ formatHighType base ++ ")"
+  | .Intersection types =>
+      Format.joinSep (types.map formatHighType) " & "
+
+def formatStmtExpr (s:StmtExpr) : Format :=
+  match h: s with
+  | .IfThenElse cond thenBr elseBr =>
+      "if " ++ formatStmtExpr cond ++ " then " ++ formatStmtExpr thenBr ++
+      match elseBr with
+      | none => ""
+      | some e => " else " ++ formatStmtExpr e
+  | .Block stmts _ =>
+      "{ " ++ Format.joinSep (stmts.map formatStmtExpr) "; " ++ " }"
+  | .LocalVariable name ty init =>
+      "var " ++ Format.text name ++ ": " ++ formatHighType ty ++
+      match init with
+      | none => ""
+      | some e => " := " ++ formatStmtExpr e
+  | .While cond _ _ body =>
+      "while " ++ formatStmtExpr cond ++ " " ++ formatStmtExpr body
+  | .Exit target => "exit " ++ Format.text target
+  | .Return value =>
+      "return" ++
+      match value with
+      | none => ""
+      | some v => " " ++ formatStmtExpr v
+  | .LiteralInt n => Format.text (toString n)
+  | .LiteralBool b => if b then "true" else "false"
+  | .Identifier name => Format.text name
+  | .Assign target value =>
+      formatStmtExpr target ++ " := " ++ formatStmtExpr value
+  | .FieldSelect target field =>
+      formatStmtExpr target ++ "." ++ Format.text field
+  | .PureFieldUpdate target field value =>
+      formatStmtExpr target ++ " with { " ++ Format.text field ++ " := " ++ formatStmtExpr value ++ " }"
+  | .StaticCall name args =>
+      Format.text name ++ "(" ++ Format.joinSep (args.map formatStmtExpr) ", " ++ ")"
+  | .PrimitiveOp op args =>
+      match args with
+      | [a] => formatOperation op ++ formatStmtExpr a
+      | [a, b] => formatStmtExpr a ++ " " ++ formatOperation op ++ " " ++ formatStmtExpr b
+      | _ => formatOperation op ++ "(" ++ Format.joinSep (args.map formatStmtExpr) ", " ++ ")"
+  | .This => "this"
+  | .ReferenceEquals lhs rhs =>
+      formatStmtExpr lhs ++ " === " ++ formatStmtExpr rhs
+  | .AsType target ty =>
+      formatStmtExpr target ++ " as " ++ formatHighType ty
+  | .IsType target ty =>
+      formatStmtExpr target ++ " is " ++ formatHighType ty
+  | .InstanceCall target name args =>
+      formatStmtExpr target ++ "." ++ Format.text name ++ "(" ++
+      Format.joinSep (args.map formatStmtExpr) ", " ++ ")"
+  | .Forall name ty body =>
+      "forall " ++ Format.text name ++ ": " ++ formatHighType ty ++ " => " ++ formatStmtExpr body
+  | .Exists name ty body =>
+      "exists " ++ Format.text name ++ ": " ++ formatHighType ty ++ " => " ++ formatStmtExpr body
+  | .Assigned name => "assigned(" ++ formatStmtExpr name ++ ")"
+  | .Old value => "old(" ++ formatStmtExpr value ++ ")"
+  | .Fresh value => "fresh(" ++ formatStmtExpr value ++ ")"
+  | .Assert cond _ => "assert " ++ formatStmtExpr cond
+  | .Assume cond _ => "assume " ++ formatStmtExpr cond
+  | .ProveBy value proof =>
+      "proveBy(" ++ formatStmtExpr value ++ ", " ++ formatStmtExpr proof ++ ")"
+  | .ContractOf _ fn => "contractOf(" ++ formatStmtExpr fn ++ ")"
+  | .Abstract => "abstract"
+  | .All => "all"
+  | .Hole => "<?>"
+  decreasing_by
+    all_goals (simp_wf; try omega)
+    any_goals (rename_i x_in; have := List.sizeOf_lt_of_mem x_in; omega)
+    subst_vars; cases h; rename_i x_in; have := List.sizeOf_lt_of_mem x_in; omega
+
+def formatParameter (p : Parameter) : Format :=
+  Format.text p.name ++ ": " ++ formatHighType p.type
+
+def formatDeterminism : Determinism → Format
+  | .deterministic none => "deterministic"
+  | .deterministic (some reads) => "deterministic reads " ++ formatStmtExpr reads
+  | .nondeterministic => "nondeterministic"
+
+def formatBody : Body → Format
+  | .Transparent body => formatStmtExpr body
+  | .Opaque post impl =>
+      "opaque ensures " ++ formatStmtExpr post ++
+      match impl with
+      | none => ""
+      | some e => " := " ++ formatStmtExpr e
+  | .Abstract post => "abstract ensures " ++ formatStmtExpr post
+
+def formatProcedure (proc : Procedure) : Format :=
+  "procedure " ++ Format.text proc.name ++
+  "(" ++ Format.joinSep (proc.inputs.map formatParameter) ", " ++ ") returns " ++ Format.line ++
+  "(" ++ Format.joinSep (proc.outputs.map formatParameter) ", " ++ ")" ++ Format.line ++ formatBody proc.body
+
+def formatField (f : Field) : Format :=
+  (if f.isMutable then "var " else "val ") ++
+  Format.text f.name ++ ": " ++ formatHighType f.type
+
+def formatCompositeType (ct : CompositeType) : Format :=
+  "composite " ++ Format.text ct.name ++
+  (if ct.extending.isEmpty then Format.nil else " extends " ++
+   Format.joinSep (ct.extending.map Format.text) ", ") ++
+  " { " ++ Format.joinSep (ct.fields.map formatField) "; " ++ " }"
+
+def formatConstrainedType (ct : ConstrainedType) : Format :=
+  "constrained " ++ Format.text ct.name ++
+  " = " ++ Format.text ct.valueName ++ ": " ++ formatHighType ct.base ++
+  " | " ++ formatStmtExpr ct.constraint
+
+def formatTypeDefinition : TypeDefinition → Format
+  | .Composite ty => formatCompositeType ty
+  | .Constrained ty => formatConstrainedType ty
+
+def formatProgram (prog : Program) : Format :=
+  Format.joinSep (prog.staticProcedures.map formatProcedure) "\n\n"
+
+end
+
+instance : Std.ToFormat Operation where
+  format := formatOperation
+
+instance : Std.ToFormat HighType where
+  format := formatHighType
+
+instance : Std.ToFormat StmtExpr where
+  format := formatStmtExpr
+
+instance : Std.ToFormat Parameter where
+  format := formatParameter
+
+instance : Std.ToFormat Determinism where
+  format := formatDeterminism
+
+instance : Std.ToFormat Body where
+  format := formatBody
+
+instance : Std.ToFormat Procedure where
+  format := formatProcedure
+
+instance : Std.ToFormat Field where
+  format := formatField
+
+instance : Std.ToFormat CompositeType where
+  format := formatCompositeType
+
+instance : Std.ToFormat ConstrainedType where
+  format := formatConstrainedType
+
+instance : Std.ToFormat TypeDefinition where
+  format := formatTypeDefinition
+
+instance : Std.ToFormat Program where
+  format := formatProgram
+
+end Laurel

@@ -1,22 +1,38 @@
-/*
+/-
   Copyright Strata Contributors
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
-*/
+-/
+
+import StrataTest.Util.TestDiagnostics
+import StrataTest.Languages.Laurel.TestExamples
+
+open StrataTest.Util
+open Strata
+
+namespace Laurel
+
+def program := r"
 procedure hasRequires(x: int): (r: int)
   requires assert 1 == 1; x > 2
 {
-  assert x > 0; // pass
-  assert x > 3; // fail
+  assert x > 0;
+    assert x > 3;
+//  ^^^^^^^^^^^^^ error: assertion does not hold
   x + 1
 }
 
 procedure caller() {
-  var x = hasRequires(1) // fail
-  var y = hasRequires(3) // pass
+    var x = hasRequires(1);
+//          ^^^^^^^^^^^^^^ error: precondition does not hold
+  var y = hasRequires(3);
 }
+"
 
-/*
+-- Not working yet
+-- #eval! testInput "Preconditions" program processLaurelFile
+
+/-
 Translation towards SMT:
 
 function hasRequires_requires(x: int): boolean {
@@ -47,4 +63,4 @@ proof caller_body {
   assert hasRequires_ensures(hasRequires_arg1_2); // pass
   var y: int := hasRequires(hasRequires_arg1_2);
 }
-*/
+-/
