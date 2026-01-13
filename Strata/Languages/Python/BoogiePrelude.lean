@@ -551,6 +551,8 @@ spec {
   assume [assume_maybe_except_none]: (ExceptOrNone_tag(maybe_except) == EN_NONE_TAG);
 };
 
+axiom [__end_of_prelude_marker]: (true);
+
 #end
 
 def Boogie.prelude : Boogie.Program :=
