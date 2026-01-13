@@ -169,9 +169,7 @@ inductive ArgF (α : Type) : Type where
 | seq (ann : α) (l : Array (ArgF α))
 | commaSepList (ann : α) (l : Array (ArgF α))
 | spaceSepList (ann : α) (l : Array (ArgF α))
-| spaceSepListNonEmpty (ann : α) (l : Array (ArgF α))
 | spacePrefixedList (ann : α) (l : Array (ArgF α))
-| spacePrefixedListNonEmpty (ann : α) (l : Array (ArgF α))
 deriving Inhabited, Repr
 
 end
@@ -198,9 +196,7 @@ def ArgF.ann {α : Type} : ArgF α → α
 | .seq ann _ => ann
 | .commaSepList ann _ => ann
 | .spaceSepList ann _ => ann
-| .spaceSepListNonEmpty ann _ => ann
 | .spacePrefixedList ann _ => ann
-| .spacePrefixedListNonEmpty ann _ => ann
 
 end
 
@@ -1301,9 +1297,7 @@ partial def foldOverArgBindingSpecs {α β}
   | .seq _ a => a.attach.foldl (init := init) fun init ⟨a, _⟩ => foldOverArgBindingSpecs m f init a
   | .commaSepList _ a => a.attach.foldl (init := init) fun init ⟨a, _⟩ => foldOverArgBindingSpecs m f init a
   | .spaceSepList _ a => a.attach.foldl (init := init) fun init ⟨a, _⟩ => foldOverArgBindingSpecs m f init a
-  | .spaceSepListNonEmpty _ a => a.attach.foldl (init := init) fun init ⟨a, _⟩ => foldOverArgBindingSpecs m f init a
   | .spacePrefixedList _ a => a.attach.foldl (init := init) fun init ⟨a, _⟩ => foldOverArgBindingSpecs m f init a
-  | .spacePrefixedListNonEmpty _ a => a.attach.foldl (init := init) fun init ⟨a, _⟩ => foldOverArgBindingSpecs m f init a
 
 /--
 Invoke a function `f` over each of the declaration specifications for an operator.

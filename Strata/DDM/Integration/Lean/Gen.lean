@@ -575,11 +575,7 @@ partial def ppCatWithUnwrap (annType : Ident) (c : SyntaxCat) (unwrap : Bool) : 
     return mkCApp ``Ann #[mkCApp ``Array #[args[0]], annType]
   | q`Init.SpaceSepBy, 1 =>
     return mkCApp ``Ann #[mkCApp ``Array #[args[0]], annType]
-  | q`Init.SpaceSepByNonEmpty, 1 =>
-    return mkCApp ``Ann #[mkCApp ``Array #[args[0]], annType]
   | q`Init.SpacePrefixedBy, 1 =>
-    return mkCApp ``Ann #[mkCApp ``Array #[args[0]], annType]
-  | q`Init.SpacePrefixedByNonEmpty, 1 =>
     return mkCApp ``Ann #[mkCApp ``Array #[args[0]], annType]
   | q`Init.Option, 1 =>
     return mkCApp ``Ann #[mkCApp ``Option #[args[0]], annType]
@@ -760,17 +756,6 @@ partial def toAstApplyArg (vn : Name) (cat : SyntaxCat) (unwrap : Bool := false)
           mkCApp ``Array.attach #[mkCApp ``Ann.val #[v]]
     ]
     return mkAnnWithTerm ``ArgF.spaceSepList v args
-  | q`Init.SpaceSepByNonEmpty => do
-    assert! cat.args.size = 1
-    let c := cat.args[0]!
-    let e ← genFreshLeanName "e"
-    let canE ← genIdentFrom e (canonical := true)
-    let t ← toAstApplyArg e c
-    let args := mkCApp ``Array.map #[
-          ←`(fun ⟨$canE, _⟩ => $t),
-          mkCApp ``Array.attach #[mkCApp ``Ann.val #[v]]
-    ]
-    return mkAnnWithTerm ``ArgF.spaceSepListNonEmpty v args
   | q`Init.SpacePrefixedBy => do
     assert! cat.args.size = 1
     let c := cat.args[0]!
@@ -782,17 +767,6 @@ partial def toAstApplyArg (vn : Name) (cat : SyntaxCat) (unwrap : Bool := false)
           mkCApp ``Array.attach #[mkCApp ``Ann.val #[v]]
     ]
     return mkAnnWithTerm ``ArgF.spacePrefixedList v args
-  | q`Init.SpacePrefixedByNonEmpty => do
-    assert! cat.args.size = 1
-    let c := cat.args[0]!
-    let e ← genFreshLeanName "e"
-    let canE ← genIdentFrom e (canonical := true)
-    let t ← toAstApplyArg e c
-    let args := mkCApp ``Array.map #[
-          ←`(fun ⟨$canE, _⟩ => $t),
-          mkCApp ``Array.attach #[mkCApp ``Ann.val #[v]]
-    ]
-    return mkAnnWithTerm ``ArgF.spacePrefixedListNonEmpty v args
   | q`Init.Option => do
     assert! cat.args.size = 1
     let c := cat.args[0]!

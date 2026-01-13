@@ -1133,16 +1133,6 @@ partial def catElaborator (c : SyntaxCat) : TypingContext → Syntax → ElabM T
       let (args, resultCtx) ← stx.getSepArgs.foldlM f (#[], tctx)
       let info : SpaceSepInfo := { inputCtx := tctx, loc := loc, args := args.map (·.arg), resultCtx }
       pure <| .node (.ofSpaceSepInfo info) args
-  | q`Init.SpaceSepByNonEmpty =>
-    assert! c.args.size = 1
-    let a := c.args[0]!
-    let f := elabManyElement (catElaborator a)
-    fun tctx stx => do
-      let some loc := mkSourceRange? stx
-        | panic! s!"spaceSepByNonEmpty missing source location {repr stx}"
-      let (args, resultCtx) ← stx.getSepArgs.foldlM f (#[], tctx)
-      let info : SpaceSepNonEmptyInfo := { inputCtx := tctx, loc := loc, args := args.map (·.arg), resultCtx }
-      pure <| .node (.ofSpaceSepNonEmptyInfo info) args
   | q`Init.SpacePrefixedBy =>
     assert! c.args.size = 1
     let a := c.args[0]!
@@ -1153,16 +1143,6 @@ partial def catElaborator (c : SyntaxCat) : TypingContext → Syntax → ElabM T
       let (args, resultCtx) ← stx.getArgs.foldlM f (#[], tctx)
       let info : SpacePrefixedInfo := { inputCtx := tctx, loc := loc, args := args.map (·.arg), resultCtx }
       pure <| .node (.ofSpacePrefixedInfo info) args
-  | q`Init.SpacePrefixedByNonEmpty =>
-    assert! c.args.size = 1
-    let a := c.args[0]!
-    let f := elabManyElement (catElaborator a)
-    fun tctx stx => do
-      let some loc := mkSourceRange? stx
-        | panic! s!"spacePrefixedByNonEmpty missing source location {repr stx}"
-      let (args, resultCtx) ← stx.getArgs.foldlM f (#[], tctx)
-      let info : SpacePrefixedNonEmptyInfo := { inputCtx := tctx, loc := loc, args := args.map (·.arg), resultCtx }
-      pure <| .node (.ofSpacePrefixedNonEmptyInfo info) args
   | _ =>
     assert! c.args.isEmpty
     elabOperation

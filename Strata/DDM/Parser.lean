@@ -775,7 +775,7 @@ def checkLeftRec (thisCatName : QualifiedIdent) (argDecls : ArgDecls) (as : List
         .invalid mf!"Leading symbol cannot be recursive call to {c}"
       else
         .isLeading as
-    | q`Init.SpaceSepBy | q`Init.SpaceSepByNonEmpty | q`Init.SpacePrefixedBy | q`Init.SpacePrefixedByNonEmpty =>
+    | q`Init.SpaceSepBy | q`Init.SpacePrefixedBy =>
       assert! cat.args.size = 1
       let c := cat.args[0]!
       if c.name == thisCatName then
@@ -934,30 +934,27 @@ def many1Parser (p : Parser) : Parser := {
         s
 }
 
+/-- Helper to choose between sepByParser and sepBy1Parser based on nonempty flag -/
+private def commaSepByParserHelper (nonempty : Bool) (p : Parser) : Parser :=
+  if nonempty then
+    sepBy1Parser p (symbolNoAntiquot ",")
+  else
+    sepByParser p (symbolNoAntiquot ",")
+
 /-- Parser function for given syntax category -/
-partial def catParser (ctx : ParsingContext) (cat : SyntaxCat) : Except SyntaxCat Parser :=
+partial def catParser (ctx : ParsingContext) (cat : SyntaxCat) (metadata : Metadata := {}) : Except SyntaxCat Parser :=
   match cat.name with
   | q`Init.CommaSepBy =>
     assert! cat.args.size = 1
-    (sepByParser · (symbolNoAntiquot ",")) <$> catParser ctx cat.args[0]!
-  | q`Init.SpaceSepBy =>
+    let isNonempty := q`StrataDDL.nonempty ∈ metadata
+    commaSepByParserHelper isNonempty <$> catParser ctx cat.args[0]!
+  | q`Init.SpaceSepBy | q`Init.SpacePrefixedBy | q`Init.Seq =>
     assert! cat.args.size = 1
-    manyParser <$> catParser ctx cat.args[0]!
-  | q`Init.SpaceSepByNonEmpty =>
-    assert! cat.args.size = 1
-    many1Parser <$> catParser ctx cat.args[0]!
-  | q`Init.SpacePrefixedBy =>
-    assert! cat.args.size = 1
-    manyParser <$> catParser ctx cat.args[0]!
-  | q`Init.SpacePrefixedByNonEmpty =>
-    assert! cat.args.size = 1
-    many1Parser <$> catParser ctx cat.args[0]!
+    let isNonempty := q`StrataDDL.nonempty ∈ metadata
+    (if isNonempty then many1Parser else manyParser) <$> catParser ctx cat.args[0]!
   | q`Init.Option =>
     assert! cat.args.size = 1
     optionalNoAntiquot <$> catParser ctx cat.args[0]!
-  | q`Init.Seq =>
-    assert! cat.args.size = 1
-    manyParser <$> catParser ctx cat.args[0]!
   | qid =>
     if cat.args.isEmpty then
       .ok (atomCatParser ctx qid)
@@ -977,7 +974,7 @@ private def prependSyntaxDefAtomParser (ctx : ParsingContext) (argDecls : ArgDec
     let addParser (p : Parser) :=
       let q : Parser := Lean.Parser.adaptCacheableContext ({ · with prec }) p
       q >> r
-    match catParser ctx argDecls[v].kind.categoryOf with
+    match catParser ctx argDecls[v].kind.categoryOf argDecls[v].metadata with
     | .ok p =>
       addParser p
     | .error c =>

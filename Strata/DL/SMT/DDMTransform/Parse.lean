@@ -199,7 +199,7 @@ op ind_symbol (@[unwrap] s:Symbol) : Index => s;
 
 op iden_simple (s:Symbol) : SMTIdentifier => s;
 
-op iden_indexed (s:Symbol, si:SpaceSepByNonEmpty Index) : SMTIdentifier =>
+op iden_indexed (s:Symbol, @[nonempty] si:SpaceSepBy Index) : SMTIdentifier =>
   "(" "_ " s " " si ")";
 
 
@@ -207,7 +207,7 @@ op iden_indexed (s:Symbol, si:SpaceSepByNonEmpty Index) : SMTIdentifier =>
 category SMTSort;
 op smtsort_ident (s:SMTIdentifier) : SMTSort => s;
 
-op smtsort_param (s:SMTIdentifier, sl:SpaceSepByNonEmpty SMTSort) : SMTSort
+op smtsort_param (s:SMTIdentifier, @[nonempty] sl:SpaceSepBy SMTSort) : SMTSort
   => "(" s " " sl ")";
 
 
@@ -240,18 +240,18 @@ op sorted_var (s:Symbol, so:SMTSort) : SortedVar => "(" s " " so ")";
 
 op spec_constant_term (sc:SpecConstant) : Term => sc;
 op qual_identifier (qi:QualIdentifier) : Term => qi;
-op qual_identifier_args (qi:QualIdentifier, ts:SpaceSepByNonEmpty Term) : Term =>
+op qual_identifier_args (qi:QualIdentifier, @[nonempty] ts:SpaceSepBy Term) : Term =>
   "(" qi " " ts ")";
 
-op let_smt (vbps: SpaceSepByNonEmpty ValBinding, t:Term) : Term =>
+op let_smt (@[nonempty] vbps: SpaceSepBy ValBinding, t:Term) : Term =>
   "(" "let" "(" vbps ")" t ")";
-op lambda_smt (svs: SpaceSepByNonEmpty SortedVar, t:Term) : Term =>
+op lambda_smt (@[nonempty] svs: SpaceSepBy SortedVar, t:Term) : Term =>
   "(" "lambda" "(" svs ")" t ")";
-op forall_smt (svs: SpaceSepByNonEmpty SortedVar, t:Term) : Term =>
+op forall_smt (@[nonempty] svs: SpaceSepBy SortedVar, t:Term) : Term =>
   "(" "forall" "(" svs ")" t ")";
-op exists_smt (svs: SpaceSepByNonEmpty SortedVar, t:Term) : Term =>
+op exists_smt (@[nonempty] svs: SpaceSepBy SortedVar, t:Term) : Term =>
   "(" "exists" "(" svs ")" t ")";
-op bang (t:Term, attrs:SpaceSepByNonEmpty Attribute) : Term =>
+op bang (t:Term, @[nonempty] attrs:SpaceSepBy Attribute) : Term =>
   "(" "!" t " " attrs ")";
 
 
@@ -321,9 +321,9 @@ op constructor_dec (s:Symbol, sdl:SpaceSepBy SelectorDec) : ConstructorDec =>
   "(" s sdl ")";
 
 category DatatypeDec;
-op datatype_dec (cs:SpaceSepByNonEmpty ConstructorDec) : DatatypeDec
+op datatype_dec (@[nonempty] cs:SpaceSepBy ConstructorDec) : DatatypeDec
   => "(" cs ")";
-op datatype_dec_par (symbols: SpaceSepByNonEmpty Symbol, cs:SpaceSepByNonEmpty ConstructorDec) : DatatypeDec
+op datatype_dec_par (@[nonempty] symbols: SpaceSepBy Symbol, @[nonempty] cs:SpaceSepBy ConstructorDec) : DatatypeDec
   => "(" "par " "(" symbols ")" "(" cs ")" ")";
 
 category FunctionDec;
@@ -356,7 +356,7 @@ op declare_datatype (s:Symbol, so:DatatypeDec) : Command =>
   "(" "declare-datatype " s so ")";
 // The size of SortDec and DatatypeDec must be equal, but omit the check in
 // this DDM definition because its representation can be quite ugly.
-op declare_datatypes (s:SpaceSepByNonEmpty SortDec, so:SpaceSepByNonEmpty DatatypeDec) : Command =>
+op declare_datatypes (@[nonempty] s:SpaceSepBy SortDec, @[nonempty] so:SpaceSepBy DatatypeDec) : Command =>
   "(" "declare-datatypes" "(" s ")" "(" so ")" ")";
 op declare_fun (s:Symbol, sol:SpaceSepBy SMTSort, range:SMTSort) : Command =>
   "(" "declare-fun " s "(" sol ")" range ")";
@@ -370,7 +370,7 @@ op define_fun (fdef:FunctionDef) : Command =>
   "(" "define-fun " fdef ")";
 op define_fun_rec (fdef:FunctionDef) : Command =>
   "(" "define-fun-rec " fdef ")";
-op define_funs_rec (fdefs:SpaceSepByNonEmpty FunctionDef, terms:SpaceSepByNonEmpty Term) : Command =>
+op define_funs_rec (@[nonempty] fdefs:SpaceSepBy FunctionDef, @[nonempty] terms:SpaceSepBy Term) : Command =>
   "(" "define-funs-rec" "(" fdefs ")" "(" terms ")" ")";
 op define_sort (s:Symbol, sl:Seq Symbol, so:SMTSort) : Command =>
   "(" "define-sort " s "(" sl ")" so ")";
@@ -384,7 +384,7 @@ op get_option (kw:Keyword) : Command => "(" "get-option " kw ")";
 op get_proof () : Command => "(" "get-proof" ")";
 op get_unsat_assumptions () : Command => "(" "get-unsat-assumptions" ")";
 op get_unsat_core () : Command => "(" "get-unsat-core" ")";
-op get_value (tl:SpaceSepByNonEmpty Term) : Command =>
+op get_value (@[nonempty] tl:SpaceSepBy Term) : Command =>
   "(" "get-value" "(" tl ")" ")";
 op cmd_pop (n:Num) : Command => "(" "pop " n ")";
 op cmd_push (n:Num) : Command => "(" "push " n ")";
