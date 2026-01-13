@@ -149,14 +149,6 @@ info: [("Neg", "unaryOp"), ("Add", "binaryOp"), ("Sub", "binaryOp"), ("Mul", "bi
 #guard_msgs in
 #eval List.zip BVOpNames BVOpAritys
 
-/--
-Coercion of a string to BoogieIdent yields an unresolved identifier
-This is the default setting of Strata/Languages/Boogie/Identifiers.lean
-as well
--/
-instance coeStringIdent: Coe String (BoogieLParams.Identifier) where
-  coe | s => BoogieIdent.unres s
-
 open Lean Elab Command in
 elab "ExpandBVOpFuncDefs" "[" sizes:num,* "]" : command => do
   for size in sizes.getElems do
@@ -338,8 +330,6 @@ def mapUpdateFunc : LFunc BoogieLParams :=
                     ))))]
      ]
    }
-instance : Coe String BoogieLParams.Identifier where
-  coe | s => ⟨s, .unres⟩
 
 def emptyTriggersFunc : LFunc BoogieLParams :=
     { name := "Triggers.empty",
