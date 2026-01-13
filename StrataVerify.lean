@@ -58,7 +58,6 @@ def main (args : List String) : IO UInt32 := do
   | .ok (opts, file) => do
     let text ← Strata.Util.readInputSource file
     let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
-    let files := Map.insert Map.empty (Strata.Uri.file file) inputCtx.fileMap
     let dctx := Elab.LoadedDialects.builtin
     let dctx := dctx.addDialect! Boogie
     let dctx := dctx.addDialect! C_Simp

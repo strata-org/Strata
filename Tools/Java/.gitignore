@@ -1,7 +1,0 @@
-# Generated during regenerate-testdata.sh (cleaned up after)
-src/main/java/com/strata/simple/
-*.class
-build/
-
-# Downloaded dependency
-ion-java-*.jar
