@@ -8,8 +8,8 @@ module
 public import Strata.DDM.Elab.DeclM
 public import Strata.DDM.Elab.Tree
 
-import Strata.DDM.Util.Array
-import Strata.DDM.Util.Fin
+import all Strata.DDM.Util.Array
+import all Strata.DDM.Util.Fin
 import Strata.DDM.HNF
 
 open Lean (

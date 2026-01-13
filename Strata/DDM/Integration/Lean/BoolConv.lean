@@ -11,27 +11,28 @@ public section
 namespace Strata
 
 /-- Convert Init.Bool inductive to OperationF -/
-def Bool.toAst {α} [Inhabited α] (v : Ann Bool α) : OperationF α :=
-  if v.val then
-    ⟨v.ann, q`Init.boolTrue, #[]⟩
+def OperationF.ofBool {α} (ann : α) (b : Bool) : OperationF α :=
+  if b then
+    { ann := ann, name := q`Init.boolTrue, args := #[] }
   else
-    ⟨v.ann, q`Init.boolFalse, #[]⟩
+    { ann := ann, name := q`Init.boolFalse, args := #[] }
 
 /-- Convert OperationF to Init.Bool -/
-def Bool.ofAst {α} [Inhabited α] [Repr α] (op : OperationF α) : OfAstM (Ann Bool α) :=
-  match op.name with
-  | q`Init.boolTrue =>
-    if op.args.size = 0 then
-      pure ⟨op.ann, true⟩
-    else
-      .error s!"boolTrue expects 0 arguments, got {op.args.size}"
-  | q`Init.boolFalse =>
-    if op.args.size = 0 then
-      pure ⟨op.ann, false⟩
-    else
-      .error s!"boolFalse expects 0 arguments, got {op.args.size}"
-  | _ =>
-    .error s!"Unknown Bool operator: {op.name}"
+def Bool.ofAst {α} [Inhabited α] [Repr α] (arg : ArgF α) : OfAstM Bool := do
+  match arg with
+  | .op op =>
+    match op.name with
+    | q`Init.boolTrue =>
+      if op.args.size ≠ 0 then
+        .error s!"boolTrue expects 0 arguments, got {op.args.size}"
+      pure true
+    | q`Init.boolFalse =>
+      if op.args.size ≠ 0 then
+        .error s!"boolFalse expects 0 arguments, got {op.args.size}"
+      pure false
+    | _ =>
+      .error s!"Unknown Bool operator: {op.name}"
+  | _ => .throwExpected "boolean" arg
 
 end Strata
 end

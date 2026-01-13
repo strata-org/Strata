@@ -4,8 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+set_option autoImplicit false
 
-public section
 namespace List
 
 theorem sizeOf_pos {α} [SizeOf α] (l : List α) : sizeOf l > 0 := by
@@ -34,7 +34,7 @@ theorem sizeOf_lt_of_mem_strict {α} [inst : SizeOf α] {as : List α} {a} (h : 
   | tail _ _ ih => exact Nat.lt_trans ih (by simp +arith)
 
 @[simp]
-theorem sizeOf_set [h : SizeOf α] (as : List α) (i : Nat) (v : α)  :
+theorem sizeOf_set {α} [h : SizeOf α] (as : List α) (i : Nat) (v : α)  :
     sizeOf (as.set i v) =
       if p : i < as.length then
         sizeOf as + sizeOf v - sizeOf as[i]
@@ -57,5 +57,22 @@ theorem sizeOf_set [h : SizeOf α] (as : List α) (i : Nat) (v : α)  :
   case h_3 =>
     simp
 
+/--
+Rewrites non-emptty list membership to drop last and get last.
+-/
+theorem mem_ne_as_dropLast {α} (a : α) {as : List α} (ne : as ≠ []) :
+    a ∈ as ↔ a ∈ as.dropLast ∨ a = as.getLast ne :=
+  match as with
+  | []    => by
+    simp at ne
+  | [b]   => by
+    simp
+  | b0 :: b1 :: bs => by
+    if h : a = b0 then
+      simp [h]
+    else
+      have ne' : b1 :: bs ≠ [] := by simp
+      have p := List.mem_ne_as_dropLast a ne'
+      grind
+
 end List
-end

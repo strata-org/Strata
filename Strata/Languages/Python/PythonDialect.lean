@@ -6,10 +6,7 @@
 
 import Strata.DDM.Integration.Lean
 
-
 namespace Strata
-
-
 
 namespace Python
 #load_dialect "../../../Tools/Python/test_results/dialects/Python.dialect.st.ion"
