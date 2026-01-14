@@ -1,11 +1,21 @@
-/*
+/-
   Copyright Strata Contributors
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
-*/
+-/
+
+import StrataTest.Util.TestDiagnostics
+import StrataTest.Languages.Laurel.TestExamples
+
+open StrataTest.Util
+open Strata
+
+namespace Laurel
+
+def program := r"
 procedure opaqueBody(x: int): (r: int)
 // the presence of the ensures make the body opaque. we can consider more explicit syntax.
-  ensures assert 1 == 1; r >= 0 
+  ensures assert 1 == 1; r >= 0
 {
   Math.abs(x)
 }
@@ -16,13 +26,18 @@ procedure transparantBody(x: int): int
 }
 
 procedure caller() {
-  assert transparantBody(-1) == 1; // pass
-  assert opaqueBody(-1) >= 0 // pass
-  assert opaqueBody(-3) == opaqueBody(-3); // pass because no heap is used and this is a det procedure
-  assert opaqueBody(-1) == 1; // error
+  assert transparantBody(-1) == 1;
+  assert opaqueBody(-1) >= 0
+  assert opaqueBody(-3) == opaqueBody(-3);
+    assert opaqueBody(-1) == 1;
+//  ^^^^^^^^^^^^^^^^^^^^^^^^^^ error: assertion does not hold
 }
+"
 
-/*
+-- Not working yet
+-- #eval! testInput "Postconditions" program processLaurelFile
+
+/-
 Translation towards SMT:
 
 function opaqueBody(x: int): boolean
@@ -50,6 +65,6 @@ proof caller_body {
   assert r_1 >= 0; // pass, using axiom
 
   var r_2: int := opaqueBody_ensures(-1);
-  assert r_2 == 1; // error  
+  assert r_2 == 1; // error
 }
-*/
+-/

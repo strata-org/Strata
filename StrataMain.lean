@@ -271,7 +271,6 @@ def laurelAnalyzeCommand : Command where
 
     let diagnostics ← Laurel.verifyToDiagnosticModels "z3" combinedProgram
 
-    -- Print diagnostics to stdout
     IO.println s!"==== DIAGNOSTICS ===="
     for diag in diagnostics do
       IO.println s!"{Std.format diag.fileRange.file}:{diag.fileRange.range.start}-{diag.fileRange.range.stop}: {diag.message}"
