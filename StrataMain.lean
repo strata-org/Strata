@@ -259,15 +259,16 @@ def laurelAnalyzeCommand : Command where
 
     for strataFile in strataFiles do
 
-      let (laurelProgram, transErrors) := Laurel.TransM.run (Strata.Uri.file strataFile.filePath) (Laurel.parseProgram strataFile.program)
-      if transErrors.size > 0 then
-        exitFailure s!"Translation errors in {strataFile.filePath}: {transErrors}"
+      let transResult := Laurel.TransM.run (Strata.Uri.file strataFile.filePath) (Laurel.parseProgram strataFile.program)
+      match transResult with
+      | .error transErrors => exitFailure s!"Translation errors in {strataFile.filePath}: {transErrors}"
+      | .ok laurelProgram =>
 
-      combinedProgram := {
-        staticProcedures := combinedProgram.staticProcedures ++ laurelProgram.staticProcedures
-        staticFields := combinedProgram.staticFields ++ laurelProgram.staticFields
-        types := combinedProgram.types ++ laurelProgram.types
-      }
+        combinedProgram := {
+          staticProcedures := combinedProgram.staticProcedures ++ laurelProgram.staticProcedures
+          staticFields := combinedProgram.staticFields ++ laurelProgram.staticFields
+          types := combinedProgram.types ++ laurelProgram.types
+        }
 
     let diagnostics ← Laurel.verifyToDiagnosticModels "z3" combinedProgram
 
