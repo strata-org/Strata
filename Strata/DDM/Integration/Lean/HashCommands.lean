@@ -11,6 +11,7 @@ public meta import Strata.DDM.Elab
 public meta import Strata.DDM.Integration.Lean.Env
 public meta import Strata.DDM.Integration.Lean.ToExpr
 public meta import Strata.DDM.TaggedRegions
+public meta import Strata.DDM.Util.Lean
 
 open Lean
 open Lean.Elab (throwUnsupportedSyntax)
@@ -18,6 +19,7 @@ open Lean.Elab.Command (CommandElab CommandElabM liftCoreM)
 open Lean.Elab.Term (TermElab)
 open Lean.Parser (InputContext)
 open System (FilePath)
+open Strata.Lean
 
 public meta section
 namespace Strata

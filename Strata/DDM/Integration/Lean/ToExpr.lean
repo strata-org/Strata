@@ -14,10 +14,11 @@ import Strata.DDM.Util.Lean
 
 meta import Lean.Elab.Term.TermElabM
 
+open Lean
+open Strata.Lean
+
 public section
 namespace Strata
-
-open Lean
 
 namespace QualifiedIdent
 

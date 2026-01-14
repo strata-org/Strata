@@ -10,6 +10,7 @@ public import Strata.DDM.Elab.Tree
 
 import all Strata.DDM.Util.Array
 import all Strata.DDM.Util.Fin
+import all Strata.DDM.Util.Lean
 import Strata.DDM.HNF
 
 open Lean (
