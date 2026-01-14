@@ -66,7 +66,7 @@ def testGrammarFile (dialect: Dialect) (ctx : Lean.Parser.InputContext) : IO Gra
   try
     let loaded := .ofDialects! #[initDialect, dialect]
     let ddmProgram ← Strata.Elab.parseStrataProgramFromDialect loaded dialect.name ctx
-    let formatted := ddmProgram.format.render
+    let formatted := toString ddmProgram
     let normalizedInput := normalizeWhitespace <| stripComments <|
       s!"program {dialect.name}; " ++ ctx.inputString
     let normalizedOutput := normalizeWhitespace formatted

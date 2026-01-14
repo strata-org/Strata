@@ -3,11 +3,14 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
+module
 
+import all Strata.DDM.Util.ByteArray
+meta import Strata.DDM.Util.Ion
 import Strata.DDM.Util.Ion
-import Strata.DDM.Util.ByteArray
 
 open Ion
+open Strata
 
 def example2 : Ion String := .struct #[
   ("foo", .null .null),

@@ -8,11 +8,10 @@ module
 public import Lean.Parser.Types
 
 public import Strata.DDM.AST
+public import Strata.DDM.Elab.LoadedDialects
 public import Strata.DDM.Parser
 import all Strata.DDM.Util.Lean
-public import Strata.DDM.Elab.LoadedDialects
-
-import Strata.DDM.Util.PrattParsingTables
+import all Strata.DDM.Util.PrattParsingTables
 
 set_option autoImplicit false
 
