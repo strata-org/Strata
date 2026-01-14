@@ -11,13 +11,14 @@ import Strata.Languages.Boogie.SMTEncoder
 import Strata.DL.Imperative.MetaData
 import Strata.DL.Imperative.SMTUtils
 import Strata.DL.SMT.CexParser
-import Strata.Util.Diagnostic
+import Strata.DDM.AST
 
 ---------------------------------------------------------------------
 
 namespace Strata.SMT.Encoder
 
 open Strata.SMT.Encoder
+open Strata
 
 -- Derived from Strata.SMT.Encoder.encode.
 def encodeBoogie (ctx : Boogie.SMT.Context) (prelude : SolverM Unit) (ts : List Term) :
@@ -124,7 +125,7 @@ def runSolver (solver : String) (args : Array String) : IO IO.Process.Output := 
   --                         stdout: {repr output.stdout}"
   return output
 
-def solverResult (vars : List (IdentT LMonoTy Visibility)) (output: IO.Process.Output)
+def solverResult (vars : List (IdentT LMonoTy Visibility)) (output : IO.Process.Output)
     (ctx : SMT.Context) (E : EncoderState) :
   Except Format Result := do
   let stdout := output.stdout
@@ -143,17 +144,25 @@ def solverResult (vars : List (IdentT LMonoTy Visibility)) (output: IO.Process.O
     | .error _model_err => (.ok (.sat []))
   | "unsat"   =>  .ok .unsat
   | "unknown" =>  .ok .unknown
-  | _     =>  .error (stdout ++ output.stderr)
+  | _     =>  .error s!"stderr:{output.stderr}\nsolver stdout: {output.stdout}\n"
 
 open Imperative
 
-def formatPositionMetaData [BEq P.Ident] [ToFormat P.Expr] (md : MetaData P): Option Format := do
+def formatPositionMetaData [BEq P.Ident] [ToFormat P.Expr]
+  (files: Map Strata.Uri Lean.FileMap)
+  (md : MetaData P): Option Format := do
   let fileRangeElem ← md.findElem MetaData.fileRange
   match fileRangeElem.value with
-  | .fileRange m =>
-    let baseName := match m.file with
+  | .fileRange fileRange =>
+    let fileMap := (files.find? fileRange.file).get!
+    let startPos := fileMap.toPosition fileRange.range.start
+    let baseName := match fileRange.file with
                     | .file path => (path.splitToList (· == '/')).getLast!
-    return f!"{baseName}({m.start.line}, {m.start.column})"
+    return f!"{baseName}({startPos.line}, {startPos.column})"
+  | .file2dRange file2dRange =>
+    let baseName := match file2dRange.file with
+                    | .file path => (path.splitToList (· == '/')).getLast!
+    return f!"{baseName}({file2dRange.start.line}, {file2dRange.ending.column})"
   | _ => none
 
 structure VCResult where
@@ -292,7 +301,7 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
         -- let rand_suffix ← IO.rand 0 0xFFFFFFFF
         let ans ←
             IO.toEIO
-              (fun e => f!"{e}")
+              (fun e => f!"IO error: {e}")
               (dischargeObligation options
                 (ProofObligation.getVars obligation) smtsolver
                   (Imperative.smt2_filename obligation.label)
@@ -366,28 +375,50 @@ def verify
   else
     panic! s!"DDM Transform Error: {repr errors}"
 
+structure DiagnosticModel where
+  fileRange : Strata.FileRange
+  message : String
+  deriving Repr, BEq
 
-def toDiagnostic (vcr : Boogie.VCResult) : Option Diagnostic := do
-  -- Only create a diagnostic if the result is not .unsat (i.e., verification failed)
+def toDiagnosticModel (vcr : Boogie.VCResult) : Option DiagnosticModel := do
   match vcr.result with
   | .unsat => none  -- Verification succeeded, no diagnostic
   | result =>
-    -- Extract file range from metadata
     let fileRangeElem ← vcr.obligation.metadata.findElem Imperative.MetaData.fileRange
     match fileRangeElem.value with
-    | .fileRange range =>
+    | .fileRange fileRange =>
       let message := match result with
         | .sat _ => "assertion does not hold"
-        | .unknown => "assertion could not be proved"
+        | .unknown => "assertion verification result is unknown"
         | .err msg => s!"verification error: {msg}"
         | _ => "verification failed"
+
       some {
         -- Subtract headerOffset to account for program header we added
-        start := { line := range.start.line, column := range.start.column }
-        ending := { line := range.ending.line, column := range.ending.column }
+        fileRange := fileRange
         message := message
       }
     | _ => none
+
+structure Diagnostic where
+  start : Lean.Position
+  ending : Lean.Position
+  message : String
+  deriving Repr, BEq
+
+def DiagnosticModel.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (dm: DiagnosticModel): Diagnostic :=
+  let fileMap := (files.find? dm.fileRange.file).get!
+  let startPos := fileMap.toPosition dm.fileRange.range.start
+  let endPos := fileMap.toPosition dm.fileRange.range.stop
+  {
+    start := { line := startPos.line, column := startPos.column }
+    ending := { line := endPos.line, column := endPos.column }
+    message := dm.message
+  }
+
+def Boogie.VCResult.toDiagnostic (files: Map Strata.Uri Lean.FileMap) (vcr : Boogie.VCResult) : Option Diagnostic := do
+  let modelOption := toDiagnosticModel vcr
+  modelOption.map (fun dm => dm.toDiagnostic files)
 
 end Strata
 

@@ -21,8 +21,6 @@ open Boogie (intAddOp intSubOp intMulOp intDivOp intModOp intNegOp intLtOp intLe
 namespace Strata.Laurel
 
 open Strata
-
-open Boogie (intAddOp intSubOp intMulOp intDivOp intModOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp)
 open Lambda (LMonoTy LTy LExpr)
 
 /-
@@ -194,7 +192,7 @@ def translateProcedure (proc : Procedure) : Boogie.Procedure :=
 /--
 Translate Laurel Program to Boogie Program
 -/
-def translate (program : Program) : Except (Array Diagnostic) Boogie.Program := do
+def translate (program : Program) : Except (Array DiagnosticModel) Boogie.Program := do
   -- First, sequence all assignments (move them out of expression positions)
   let sequencedProgram ← liftExpressionAssignments program
   dbg_trace "=== Sequenced program Program ==="
@@ -209,7 +207,7 @@ def translate (program : Program) : Except (Array Diagnostic) Boogie.Program := 
 Verify a Laurel program using an SMT solver
 -/
 def verifyToVcResults (smtsolver : String) (program : Program)
-    (options : Options := Options.default) : IO (Except (Array Diagnostic) VCResults) := do
+    (options : Options := Options.default) : IO (Except (Array DiagnosticModel) VCResults) := do
   let boogieProgramExcept := translate program
   -- Debug: Print the generated Boogie program
   match boogieProgramExcept with
@@ -222,10 +220,17 @@ def verifyToVcResults (smtsolver : String) (program : Program)
           (Boogie.verify smtsolver boogieProgram options)
       return .ok ioResult
 
-def verifyToDiagnostics (smtsolver : String) (program : Program): IO (Array Diagnostic)  := do
+def verifyToDiagnostics (smtsolver : String) (files: Map Strata.Uri Lean.FileMap) (program : Program): IO (Array Diagnostic) := do
   let results <- verifyToVcResults smtsolver program
-  return match results with
-    | .error diagnostics => diagnostics
-    | .ok vcResults => vcResults.filterMap toDiagnostic
+  match results with
+  | .error errors => return errors.map (fun dm => dm.toDiagnostic files)
+  | .ok results => return results.filterMap (fun dm => dm.toDiagnostic files)
+
+
+def verifyToDiagnosticModels (smtsolver : String) (program : Program): IO (Array DiagnosticModel) := do
+  let results <- verifyToVcResults smtsolver program
+  match results with
+  | .error errors => return errors
+  | .ok results => return results.filterMap toDiagnosticModel
 
 end Laurel

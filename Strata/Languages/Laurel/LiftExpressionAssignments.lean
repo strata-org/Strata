@@ -26,11 +26,10 @@ Becomes:
   if (x1 == y1) { ... }
 -/
 
-
 structure SequenceState where
   insideCondition : Bool
   prependedStmts : List StmtExpr := []
-  diagnostics : List Diagnostic
+  diagnostics : List DiagnosticModel
   tempCounter : Nat := 0
 
 abbrev SequenceM := StateM SequenceState
@@ -38,13 +37,15 @@ abbrev SequenceM := StateM SequenceState
 def SequenceM.addPrependedStmt (stmt : StmtExpr) : SequenceM Unit :=
   modify fun s => { s with prependedStmts := stmt :: s.prependedStmts }
 
+def SequenceM.addDiagnostic (d : DiagnosticModel) : SequenceM Unit :=
+  modify fun s => { s with diagnostics := d :: s.diagnostics }
+
 def checkOutsideCondition(md: Imperative.MetaData Boogie.Expression): SequenceM Unit := do
   let state <- get
   if state.insideCondition then
-    let fileRange := getFileRange md
+    let fileRange := (Imperative.getFileRange md).get!
     SequenceM.addDiagnostic {
-        start := fileRange.start,
-        ending := fileRange.ending,
+        fileRange := fileRange,
         message := "Could not lift assigment in expression that is evaluated conditionally"
     }
 
@@ -155,7 +156,7 @@ def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
       -- Top-level assignment (statement context)
       let seqTarget ← transformExpr target
       let seqValue ← transformExpr value
-      SequenceM.addPrependedStmt <| .Assign seqTarget seqValue
+      SequenceM.addPrependedStmt <| .Assign seqTarget seqValue md
       SequenceM.takePrependedStmts
 
   | .IfThenElse cond thenBranch elseBranch =>
@@ -189,8 +190,8 @@ end
 def transformProcedureBody (body : StmtExpr) : SequenceM StmtExpr := do
   let seqStmts <- transformStmt body
   match seqStmts with
-  | [single] => single
-  | multiple => .Block multiple.reverse none
+  | [single] => pure single
+  | multiple => pure <| .Block multiple.reverse none
 
 def transformProcedure (proc : Procedure) : SequenceM Procedure := do
   match proc.body with
@@ -202,7 +203,7 @@ def transformProcedure (proc : Procedure) : SequenceM Procedure := do
 /--
 Transform a program to lift all assignments that occur in an expression context.
 -/
-def liftExpressionAssignments (program : Program) : Except (Array Diagnostic) Program :=
+def liftExpressionAssignments (program : Program) : Except (Array DiagnosticModel) Program :=
   let (seqProcedures, afterState) := (program.staticProcedures.mapM transformProcedure).run
     { insideCondition := false, diagnostics := [] }
   if !afterState.diagnostics.isEmpty then
