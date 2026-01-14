@@ -153,16 +153,13 @@ def transformStmt (stmt : StmtExpr) : SequenceM (List StmtExpr) := do
           return [stmt]
 
   | .Assign target value md =>
-      -- Top-level assignment (statement context)
       let seqTarget ← transformExpr target
       let seqValue ← transformExpr value
       SequenceM.addPrependedStmt <| .Assign seqTarget seqValue md
       SequenceM.takePrependedStmts
 
   | .IfThenElse cond thenBranch elseBranch =>
-      -- Process condition (extract assignments)
       let seqCond ← transformExpr cond
-
       SequenceM.setInsideCondition
 
       let seqThen ← transformStmt thenBranch
