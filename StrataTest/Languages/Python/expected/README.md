@@ -3,6 +3,12 @@
 `StrataTest/Languages/Python/expected/test_precondition_verification.expected` looks like this:
 
 ```
+datetime_now_ensures_0: verified
+
+datetime_utcnow_ensures_0: verified
+
+ensures_str_strp_reverse: verified
+
 assert_name_is_foo: verified
 
 assert_opt_name_none_or_str: verified
@@ -11,31 +17,31 @@ assert_opt_name_none_or_bar: verified
 
 ensures_maybe_except_none: verified
 
-test_helper_procedure_assert_name_is_foo_3: verified
+test_helper_procedure_assert_name_is_foo_27: verified
 
-test_helper_procedure_assert_opt_name_none_or_str_4: verified
+test_helper_procedure_assert_opt_name_none_or_str_28: verified
 
-test_helper_procedure_assert_opt_name_none_or_bar_5: verified
+test_helper_procedure_assert_opt_name_none_or_bar_29: verified
 
-test_helper_procedure_assert_name_is_foo_11: verified
-
-test_helper_procedure_assert_opt_name_none_or_str_12: verified
-
-test_helper_procedure_assert_opt_name_none_or_bar_13: verified
-
-test_helper_procedure_assert_name_is_foo_19: failed
-CEx: 
+test_helper_procedure_assert_name_is_foo_19: verified
 
 test_helper_procedure_assert_opt_name_none_or_str_20: verified
 
 test_helper_procedure_assert_opt_name_none_or_bar_21: verified
 
-test_helper_procedure_assert_name_is_foo_27: verified
+test_helper_procedure_assert_name_is_foo_11: failed
+CEx: 
 
-test_helper_procedure_assert_opt_name_none_or_str_28: verified
+test_helper_procedure_assert_opt_name_none_or_str_12: verified
 
-test_helper_procedure_assert_opt_name_none_or_bar_29: failure
-CEx:
+test_helper_procedure_assert_opt_name_none_or_bar_13: verified
+
+test_helper_procedure_assert_name_is_foo_3: verified
+
+test_helper_procedure_assert_opt_name_none_or_str_4: verified
+
+test_helper_procedure_assert_opt_name_none_or_bar_5: failed
+CEx: 
 ```
 
 This can be read as:
@@ -71,9 +77,9 @@ Each of the following triples:
 ```
 test_helper_procedure_assert_name_is_foo_3: verified
 
-test_helper_procedure_assert_opt_name_none_or_str_5: verified
+test_helper_procedure_assert_opt_name_none_or_str_4: verified
 
-test_helper_procedure_assert_opt_name_none_or_bar_5: verified
+test_helper_procedure_assert_opt_name_none_or_bar_5: failed
 ```
 
 Comes from checking the assertions in the inlined calls of `test_helper_procedure`. The first two triples succeed, the third has a failure because `"Foo" != "foo"`, and the final has a failure because `"Bar" != "bar"`.

@@ -209,9 +209,8 @@ end
 
 private def alphaEquiv (p1 p2:Boogie.Procedure):Except Format Bool := do
   if p1.body.length ≠ p2.body.length then
-    dbg_trace f!"p1: {p1}"
-    dbg_trace f!"p2: {p2}"
-    .error (s!"# statements do not match: inlined fn one has {p1.body.length}"
+    .error (s!"# statements do not match: in {p1.header.name}, "
+        ++ s!"inlined fn one has {p1.body.length}"
         ++ s!" whereas the answer has {p2.body.length}")
   else
     let newmap:IdMap := IdMap.mk ([], []) []
@@ -228,7 +227,7 @@ def translate (t : Strata.Program) : Boogie.Program :=
   (TransM.run Inhabited.default (translateProgram t)).fst
 
 def runInlineCall (p : Boogie.Program) : Boogie.Program :=
-  match (runProgram inlineCallStmt p .emp) with
+  match (runProgram inlineCallCmd p .emp) with
   | ⟨.ok res, _⟩ => res
   | ⟨.error e, _⟩ => panic! e
 
@@ -242,7 +241,9 @@ def checkInlining (prog : Boogie.Program) (progAns : Boogie.Program)
       match alphaEquiv p p' with
       | .ok _ => return .true
       | .error msg =>
+        dbg_trace s!"----- Inlined program ----"
         dbg_trace s!"{toString prog'}"
+        dbg_trace s!"----- Answer ----"
         dbg_trace s!"{toString progAns}"
         .error msg
     | _, _ => .error "?")
@@ -253,7 +254,6 @@ def Test1 :=
 #strata
 program Boogie;
 procedure f(x : bool) returns (y : bool) {
-  havoc x;
   y := !x;
 };
 
@@ -268,7 +268,6 @@ def Test1Ans :=
 #strata
 program Boogie;
 procedure f(x : bool) returns (y : bool) {
-  havoc x;
   y := !x;
 };
 
@@ -278,7 +277,7 @@ procedure h() returns () {
   inlined: {
     var tmp_arg_0 : bool := b_in;
     var tmp_arg_1 : bool;
-    havoc tmp_arg_0;
+    havoc tmp_arg_1;
     tmp_arg_1 := !tmp_arg_0;
     b_out := tmp_arg_1;
   }
@@ -326,6 +325,7 @@ procedure h() returns () {
   inlined: {
     var f_x : bool := b_in;
     var f_y : bool;
+    havoc f_y;
     if (f_x) {
       goto f_end;
     } else {
@@ -342,6 +342,59 @@ procedure h() returns () {
 /-- info: ok: true -/
 #guard_msgs in
 #eval checkInlining (translate Test2) (translate Test2Ans)
+
+
+--- Test procedure calls inside subblocks
+
+def Test3 :=
+#strata
+program Boogie;
+procedure f(x : int) returns (y : int) {
+  y := x;
+};
+
+procedure g() returns () {
+  var f_out : int;
+  if (true) {
+    call f_out := f(1);
+  } else {
+    call f_out := f(2);
+  }
+};
+#end
+
+def Test3Ans :=
+#strata
+program Boogie;
+procedure f(x : int) returns (y : int) {
+  y := x;
+};
+
+procedure g() returns () {
+  var f_out : int;
+  if (true) {
+    inlined1: {
+      var f_x : int := 1;
+      var f_y : int;
+      havoc f_y;
+      f_y := f_x;
+      f_out := f_y;
+    }
+  } else {
+    inlined1: {
+      var f_x2 : int := 2;
+      var f_y2 : int;
+      havoc f_y2;
+      f_y2 := f_x2;
+      f_out := f_y2;
+    }
+  }
+};
+#end
+
+/-- info: ok: true -/
+#guard_msgs in
+#eval checkInlining (translate Test3) (translate Test3Ans)
 
 
 end ProcedureInliningExamples

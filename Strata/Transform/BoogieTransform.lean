@@ -187,20 +187,51 @@ def createOldVarsSubst
     | ((v', _), v) => (v, createFvar v')
 
 
-
 /- Generic runner functions -/
 
-def runStmts (f : Statement → Program → BoogieTransformM (List Statement))
+-- Only visit top-level statements and run f
+def runStmts (f : Command → Program → BoogieTransformM (List Statement))
     (ss : List Statement) (inputProg : Program)
     : BoogieTransformM (List Statement) := do
   match ss with
   | [] => return []
   | s :: ss =>
-    let s' := (f s inputProg)
+    let s' := match s with
+      | .cmd c => f c inputProg
+      | s => return [s]
     let ss' := (runStmts f ss inputProg)
     return (← s') ++ (← ss')
 
-def runProcedures (f : Statement → Program → BoogieTransformM (List Statement))
+-- Recursively visit all blocks and run f
+def runStmtsRec (f : Command → Program → BoogieTransformM (List Statement))
+    (ss : List Statement) (inputProg : Program)
+    : BoogieTransformM (List Statement) := do
+  match ss with
+  | [] => return []
+  | s :: ss' =>
+    let ss'' ← (runStmtsRec f ss' inputProg)
+    let sres ← (match s with
+      | .cmd c => do
+        let res ← f c inputProg
+        return res
+      | .block lbl b md => do
+        let b' ← runStmtsRec f b inputProg
+        return [.block lbl b' md]
+      | .ite c thenb elseb md => do
+        let thenb' ← runStmtsRec f thenb inputProg
+        let elseb' ← runStmtsRec f elseb inputProg
+        return [.ite c thenb' elseb' md]
+      | .loop guard measure invariant body md => do
+        let body' ← runStmtsRec f body inputProg
+        return [.loop guard measure invariant body' md]
+      | .goto _lbl _md =>
+        return [s])
+    return (sres ++ ss'')
+termination_by sizeOf ss
+decreasing_by
+  all_goals (unfold Imperative.instSizeOfBlock; decreasing_tactic)
+
+def runProcedures (f : Command → Program → BoogieTransformM (List Statement))
     (dcls : List Decl) (inputProg : Program)
     : BoogieTransformM (List Decl) := do
   match dcls with
@@ -208,11 +239,12 @@ def runProcedures (f : Statement → Program → BoogieTransformM (List Statemen
   | d :: ds =>
     match d with
     | .proc p md =>
-      return Decl.proc { p with body := ← (runStmts f p.body inputProg ) } md ::
-        (← (runProcedures f ds inputProg))
+      return Decl.proc {
+          p with body := ← (runStmtsRec f p.body inputProg)
+        } md :: (← (runProcedures f ds inputProg))
     | _ => return d :: (← (runProcedures f ds inputProg))
 
-def runProgram (f : Statement → Program → BoogieTransformM (List Statement))
+def runProgram (f : Command → Program → BoogieTransformM (List Statement))
     (p : Program) : BoogieTransformM Program := do
   let newDecls ← runProcedures f p.decls p
   return { decls := newDecls }

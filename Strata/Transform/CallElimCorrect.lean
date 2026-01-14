@@ -173,7 +173,7 @@ theorem callElimBlockNoExcept :
   -- ∧ WF.WFStatementsProp p sts
   := by
   intros st p wf
-  simp [Transform.run, runStmts, CallElim.callElimStmts, CallElim.callElimStmt]
+  simp [Transform.run, runStmts, CallElim.callElimStmts, CallElim.callElimCmd]
   cases st with
   | block l b md => exists [.block l b md]
   | ite cd tb eb md => exists [.ite cd tb eb md]
@@ -188,6 +188,7 @@ theorem callElimBlockNoExcept :
       next heq =>
       cases heq
       next st =>
+      simp only [] -- reduce match
       split <;>
         simp only [StateT.run, bind, ExceptT.bind, ExceptT.mk, StateT.bind, genArgExprIdentsTrip, ne_eq, liftM,
               monadLift, MonadLift.monadLift, ExceptT.lift, Functor.map, List.unzip_snd, ite_not, ExceptT.bindCont, ExceptT.map,
@@ -272,10 +273,7 @@ theorem callElimBlockNoExcept :
         unfold BoogieIdent.unres at *
         split at wf <;> simp_all
     . -- other case
-      exfalso
-      next st Hfalse =>
-      specialize Hfalse lhs procName args md
-      simp_all
+      grind
 
 theorem postconditions_subst_unwrap :
   substPost ∈
@@ -3291,7 +3289,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
     := by
   intros Hp Hgv Heval Hwfc Hwf Hwfp Hwfgen Hwfgenst Helim
   cases st <;>
-  simp [Transform.runWith, StateT.run, callElimStmts, runStmts, callElimStmt,
+  simp [Transform.runWith, StateT.run, callElimStmts, runStmts, callElimCmd,
         pure, ExceptT.pure, ExceptT.mk, StateT.pure,
         bind, ExceptT.bind, ExceptT.bindCont, StateT.bind,
         ] at Helim
