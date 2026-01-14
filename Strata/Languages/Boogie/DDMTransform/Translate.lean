@@ -249,6 +249,10 @@ partial def translateLMonoTy (bindings : TransBindings) (arg : Arg) :
                   | .type (.syn syn) _md =>
                     let ty := syn.toLHSLMonoTy
                     pure ty
+                  | .type (.data ldatatype) =>
+                    -- Datatype Declaration
+                    let args := ldatatype.typeArgs.map LMonoTy.ftvar
+                    pure (.tcons ldatatype.name args)
                   | _ =>
                     TransM.error
                       s!"translateLMonoTy not yet implemented for this declaration: \
@@ -1253,6 +1257,166 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
 
 ---------------------------------------------------------------------
 
+/--
+Information about a single constructor extracted during translation.
+This is the Boogie-specific version of `ConstructorInfo` from AST.lean,
+with types translated from `TypeExpr` to `LMonoTy`.
+-/
+structure TransConstructorInfo where
+  /-- Constructor name -/
+  name : BoogieIdent
+  /-- Fields as (fieldName, fieldType) pairs with translated types -/
+  fields : Array (BoogieIdent × LMonoTy)
+  deriving Repr
+
+/--
+Translate constructor information from AST.ConstructorInfo to TransConstructorInfo.
+-/
+private def translateConstructorInfo (bindings : TransBindings) (info : ConstructorInfo) :
+    TransM TransConstructorInfo := do
+  let fields ← info.fields.mapM fun (fieldName, fieldType) => do
+    let translatedType ← translateLMonoTy bindings (.type fieldType)
+    return (fieldName, translatedType)
+  return { name := info.name, fields := fields }
+
+/--
+Extract and translate constructor information from a constructor list argument.
+
+**Parameters:**
+- `p`: The DDM Program (provides dialect map for annotation lookup)
+- `bindings`: Current translation bindings (for type variable resolution)
+- `arg`: The constructor list argument from the parsed datatype command
+-/
+def translateConstructorList (p : Program) (bindings : TransBindings) (arg : Arg) :
+    TransM (Array TransConstructorInfo) := do
+  let constructorInfos := GlobalContext.extractConstructorInfo p.dialects arg
+  constructorInfos.mapM (translateConstructorInfo bindings)
+
+/--
+Translate a datatype declaration to Boogie declarations, updating bindings
+appropriately.
+
+**Important:** The returned `Boogie.Decls` only contains the type declaration
+itself. Factory functions (constructors, testers, destructors) are generated
+automatically by `Env.addDatatypes` during program evaluation to avoid
+duplicates.
+
+**Parameters:**
+- `p`: The DDM Program (provides dialect map)
+- `bindings`: Current translation bindings
+- `op`: The `command_datatype` operation to translate
+-/
+def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) :
+    TransM (Boogie.Decls × TransBindings) := do
+  -- Check operation has correct name and argument count
+  let _ ← @checkOp (Boogie.Decls × TransBindings) op q`Boogie.command_datatype 3
+
+  let datatypeName ← translateIdent String op.args[0]!
+
+  -- Extract type arguments (optional bindings)
+  let (typeArgs, bindings) ←
+    translateOption
+      (fun maybearg =>
+            do match maybearg with
+            | none => pure ([], bindings)
+            | some arg =>
+              let bargs ← checkOpArg arg q`Boogie.mkBindings 1
+              let args ←
+                  match bargs[0]! with
+                  | .commaSepList _ args =>
+                    let (arr, bindings) ← translateTypeBindings bindings args
+                    return (arr.toList, bindings)
+                  | _ => TransM.error
+                          s!"translateDatatype expects a comma separated list: {repr bargs[0]!}")
+                    op.args[1]!
+
+  /- Note: Add a placeholder for the datatype type BEFORE translating
+  constructors, for recursive constructors. Replaced with actual declaration
+  later. -/
+  let placeholderLDatatype : LDatatype Visibility :=
+    { name := datatypeName
+      typeArgs := typeArgs
+      constrs := [{ name := datatypeName, args := [], testerName := "" }]
+      constrs_ne := by simp }
+  let placeholderDecl := Boogie.Decl.type (.data placeholderLDatatype)
+  let bindingsWithPlaceholder := { bindings with freeVars := bindings.freeVars.push placeholderDecl }
+
+  -- Extract constructor information (possibly recursive)
+  let constructors ← translateConstructorList p bindingsWithPlaceholder op.args[2]!
+
+  if h : constructors.size == 0 then
+    TransM.error s!"Datatype {datatypeName} must have at least one constructor"
+  else
+    -- Build LConstr list from TransConstructorInfo
+    let testerPattern : Array NamePatternPart := #[.datatype, .literal "..is", .constructor]
+    let lConstrs : List (LConstr Visibility) := constructors.toList.map fun constr =>
+      let testerName := expandNamePattern testerPattern datatypeName (some constr.name.name)
+      { name := constr.name
+        args := constr.fields.toList.map fun (fieldName, fieldType) => (fieldName, fieldType)
+        testerName := testerName }
+
+    have constrs_ne : lConstrs.length != 0 := by
+      simp [lConstrs]
+      intro heq; subst_vars; apply h; rfl
+
+    let ldatatype : LDatatype Visibility :=
+      { name := datatypeName
+        typeArgs := typeArgs
+        constrs := lConstrs
+        constrs_ne := constrs_ne }
+
+    -- Generate factory from LDatatype and convert to Boogie.Decl
+    -- (used only for bindings.freeVars, not for allDecls)
+    let factory ← match ldatatype.genFactory (T := BoogieLParams) with
+      | .ok f => pure f
+      | .error e => TransM.error s!"Failed to generate datatype factory: {e}"
+    let funcDecls : List Boogie.Decl := factory.toList.map fun func =>
+      Boogie.Decl.func func
+
+    -- Only includes typeDecl, factory functions generated later
+    let typeDecl := Boogie.Decl.type (.data ldatatype)
+    let allDecls := [typeDecl]
+
+    /-
+    We must add to bindings.freeVars in the same order as the DDM's
+    `addDatatypeBindings`: type, constructors, template functions. We do NOT
+    include eliminators here because the DDM does not (yet) produce them.
+    -/
+
+    let constructorNames : List String := lConstrs.map fun c => c.name.name
+    let testerNames : List String := lConstrs.map fun c => c.testerName
+
+    -- Extract all field names across all constructors for field projections
+    -- Note: DDM validates that field names are unique across constructors
+    let fieldNames : List String := lConstrs.foldl (fun acc c =>
+      acc ++ (c.args.map fun (fieldName, _) => fieldName.name)) []
+
+    -- Filter factory functions to get constructors, testers, projections
+    -- TODO: this could be more efficient via `LDatatype.genFunctionMaps`
+    let constructorDecls := funcDecls.filter fun decl =>
+      match decl with
+      | .func f => constructorNames.contains f.name.name
+      | _ => false
+
+    let testerDecls := funcDecls.filter fun decl =>
+      match decl with
+      | .func f => testerNames.contains f.name.name
+      | _ => false
+
+    let fieldAccessorDecls := funcDecls.filter fun decl =>
+      match decl with
+      | .func f => fieldNames.contains f.name.name
+      | _ => false
+
+    let bindingDecls := typeDecl :: constructorDecls ++ testerDecls ++ fieldAccessorDecls
+    let bindings := bindingDecls.foldl (fun b d =>
+      { b with freeVars := b.freeVars.push d }
+    ) bindings
+
+    return (allDecls, bindings)
+
+---------------------------------------------------------------------
+
 def translateGlobalVar (bindings : TransBindings) (op : Operation) :
   TransM (Boogie.Decl × TransBindings) := do
   let _ ← @checkOp (Boogie.Decl × TransBindings) op q`Boogie.command_var 1
@@ -1274,29 +1438,37 @@ partial def translateBoogieDecls (p : Program) (bindings : TransBindings) :
   | 0 => return ([], bindings)
   | _ + 1 =>
     let op := ops[count]!
-    let (decl, bindings) ←
+    -- Commands that produce multiple declarations
+    let (newDecls, bindings) ←
       match op.name with
-      | q`Boogie.command_var =>
-        translateGlobalVar bindings op
-      | q`Boogie.command_constdecl =>
-        translateConstant bindings op
-      | q`Boogie.command_typedecl =>
-        translateTypeDecl bindings op
-      | q`Boogie.command_typesynonym =>
-        translateTypeSynonym bindings op
-      | q`Boogie.command_axiom =>
-        translateAxiom p bindings op
-      | q`Boogie.command_distinct =>
-        translateDistinct p bindings op
-      | q`Boogie.command_procedure =>
-        translateProcedure p bindings op
-      | q`Boogie.command_fndef =>
-        translateFunction .Definition p bindings op
-      | q`Boogie.command_fndecl =>
-        translateFunction .Declaration p bindings op
-      | _ => TransM.error s!"translateBoogieDecls unimplemented for {repr op}"
+      | q`Boogie.command_datatype =>
+        translateDatatype p bindings op
+      | _ =>
+        -- All other commands produce a single declaration
+        let (decl, bindings) ←
+          match op.name with
+          | q`Boogie.command_var =>
+            translateGlobalVar bindings op
+          | q`Boogie.command_constdecl =>
+            translateConstant bindings op
+          | q`Boogie.command_typedecl =>
+            translateTypeDecl bindings op
+          | q`Boogie.command_typesynonym =>
+            translateTypeSynonym bindings op
+          | q`Boogie.command_axiom =>
+            translateAxiom p bindings op
+          | q`Boogie.command_distinct =>
+            translateDistinct p bindings op
+          | q`Boogie.command_procedure =>
+            translateProcedure p bindings op
+          | q`Boogie.command_fndef =>
+            translateFunction .Definition p bindings op
+          | q`Boogie.command_fndecl =>
+            translateFunction .Declaration p bindings op
+          | _ => TransM.error s!"translateBoogieDecls unimplemented for {repr op}"
+        pure ([decl], bindings)
     let (decls, bindings) ← go (count + 1) max bindings ops
-    return ((decl :: decls), bindings)
+    return (newDecls ++ decls, bindings)
 
 def translateProgram (p : Program) : TransM Boogie.Program := do
   let decls ← translateBoogieDecls p {}

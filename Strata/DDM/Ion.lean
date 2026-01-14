@@ -747,6 +747,107 @@ private instance : FromIon SourceRange where
 
 end SourceRange
 
+namespace FunctionIterScope
+
+private instance : CachedToIon FunctionIterScope where
+  cachedToIon refs v := ionScope! FunctionIterScope refs :
+    return match v with
+    | .perConstructor => ionSymbol! "perConstructor"
+    | .perField => ionSymbol! "perField"
+
+private instance : FromIon FunctionIterScope where
+  fromIon v := do
+    match ← .asSymbolString "FunctionIterScope" v with
+    | "perConstructor" => return .perConstructor
+    | "perField" => return .perField
+    | s => throw s!"Unknown FunctionIterScope: {s}"
+
+end FunctionIterScope
+
+namespace TypeRef
+
+private instance : CachedToIon TypeRef where
+  cachedToIon refs v := ionScope! TypeRef refs :
+    return match v with
+    | .datatype => ionSymbol! "datatype"
+    | .fieldType => ionSymbol! "fieldType"
+    | .builtin name => .sexp #[ionSymbol! "builtin", .string name]
+
+private instance : FromIon TypeRef where
+  fromIon v := do
+    match ← .asSymbolOrSexp v with
+    | .string s =>
+      match s with
+      | "datatype" => return .datatype
+      | "fieldType" => return .fieldType
+      | _ => throw s!"Unknown TypeRef symbol: {s}"
+    | .sexp args _ =>
+      let ⟨p⟩ ← .checkArgCount "TypeRef" args 2
+      match ← .asSymbolString "TypeRef kind" args[0] with
+      | "builtin" => .builtin <$> .asString "TypeRef builtin name" args[1]
+      | s => throw s!"Unknown TypeRef sexp kind: {s}"
+
+end TypeRef
+
+namespace NamePatternPart
+
+private instance : CachedToIon NamePatternPart where
+  cachedToIon refs v := ionScope! NamePatternPart refs :
+    return match v with
+    | .literal s => .sexp #[ionSymbol! "literal", .string s]
+    | .datatype => ionSymbol! "datatype"
+    | .constructor => ionSymbol! "constructor"
+    | .field => ionSymbol! "field"
+
+private instance : FromIon NamePatternPart where
+  fromIon v := do
+    match ← .asSymbolOrSexp v with
+    | .string s =>
+      match s with
+      | "datatype" => return .datatype
+      | "constructor" => return .constructor
+      | "field" => return .field
+      | _ => throw s!"Unknown NamePatternPart symbol: {s}"
+    | .sexp args _ =>
+      let ⟨p⟩ ← .checkArgCount "NamePatternPart" args 2
+      match ← .asSymbolString "NamePatternPart kind" args[0] with
+      | "literal" => .literal <$> .asString "NamePatternPart literal" args[1]
+      | s => throw s!"Unknown NamePatternPart sexp kind: {s}"
+
+end NamePatternPart
+
+namespace FunctionTemplate
+
+private instance : CachedToIon FunctionTemplate where
+  cachedToIon refs t := ionScope! FunctionTemplate refs : do
+    let scope ← ionRef! t.scope
+    let namePattern ← t.namePattern.mapM (fun (p : NamePatternPart) => ionRef! p)
+    let paramTypes ← t.paramTypes.mapM (fun (p : TypeRef) => ionRef! p)
+    let returnType ← ionRef! t.returnType
+    return .sexp #[
+      ionSymbol! "FunctionTemplate",
+      scope,
+      .list namePattern,
+      .list paramTypes,
+      returnType
+    ]
+
+private instance : FromIon FunctionTemplate where
+  fromIon v := do
+    let ⟨args, _⟩ ← .asSexp "FunctionTemplate" v
+    let ⟨p⟩ ← .checkArgCount "FunctionTemplate" args 5
+    match ← .asSymbolString "FunctionTemplate tag" args[0] with
+    | "FunctionTemplate" =>
+      return {
+        scope := ← fromIon args[1]
+        namePattern := ← .asListOf "FunctionTemplate namePattern" args[2] fromIon
+        paramTypes := ← .asListOf "FunctionTemplate paramTypes" args[3] fromIon
+        returnType := ← fromIon args[4]
+      }
+    | s => throw s!"Expected FunctionTemplate, got {s}"
+
+end FunctionTemplate
+
 namespace MetadataArg
 
 private protected def toIon (refs : SymbolIdCache) (a : MetadataArg) : InternM (Ion SymbolId) :=
@@ -762,6 +863,8 @@ private protected def toIon (refs : SymbolIdCache) (a : MetadataArg) : InternM (
       match ma with
       | some a => return .sexp #[ionSymbol! "some", ← a.toIon refs]
       | none => return .null
+    | .functionTemplate t =>
+      return .sexp #[ionSymbol! "functionTemplate", ← ionRef! t]
 
 private instance : CachedToIon MetadataArg where
   cachedToIon := MetadataArg.toIon
@@ -782,6 +885,9 @@ private protected def fromIon (v : Ion SymbolId) : FromIonM MetadataArg := do
     let ⟨p⟩ ← .checkArgCount "some" args 2
     have _ : sizeOf args[1] < sizeOf args := by decreasing_tactic
     (.option ∘ some) <$> MetadataArg.fromIon args[1]
+  | "functionTemplate" => do
+    let ⟨p⟩ ← .checkArgCount "functionTemplate" args 2
+    .functionTemplate <$> fromIon args[1]
   | s => throw s!"Unexpected arg {s}"
 
 private instance : FromIon MetadataArg where
@@ -961,6 +1067,7 @@ private protected def toIon (refs : SymbolIdCache) (tp : MetadataArgType) : Ion 
     | .num => ionSymbol! "num"
     | .ident => ionSymbol! "ident"
     | .opt tp => .sexp #[ ionSymbol! "opt", tp.toIon refs]
+    | .functionTemplate => ionSymbol! "functionTemplate"
 
 private instance : CachedToIon MetadataArgType where
   cachedToIon refs tp := return tp.toIon refs
@@ -972,6 +1079,7 @@ private protected def fromIon (v : Ion SymbolId) : FromIonM MetadataArgType := d
     | "bool" => pure .bool
     | "num" => pure .num
     | "ident" => pure .ident
+    | "functionTemplate" => pure .functionTemplate
     | _ => throw s!"Unknown type {s}"
   | .sexp args ap => do
     let .isTrue p := inferInstanceAs (Decidable (args.size ≥ 2))
@@ -1012,15 +1120,18 @@ private instance : CachedToIon SynCatDecl where
     return .struct #[
       (ionSymbol! "type", ionSymbol! "syncat"),
       (ionSymbol! "name", .string d.name),
-      (ionSymbol! "arguments", .list (.string <$> d.argNames))
+      (ionSymbol! "args", .list (.string <$> d.argNames))
     ]
 
 private protected def fromIon (fields : Array (SymbolId × Ion SymbolId)) : FromIonM SynCatDecl := do
-  let args ← .mapFields fields (.fromList! ["type", "name", "arguments"])
-  pure {
-    name := ← .asString "Category name" args[1],
-    argNames := ← .asListOf "Category arguments" args[2] (.asString "Category argument name"),
-  }
+  let m := .fromOptList! [("type", .req), ("name", .req), ("args", .opt)]
+  let fldArgs ← .mapFields fields m
+  let name ← .asString "Category name" fldArgs[1]
+  let argNames : Array String ←
+        match fldArgs[2] with
+        | .null _ => pure #[]
+        | v =>  .asListOf "Category args" v (.asString "Category argument name")
+  pure { name, argNames := argNames }
 
 end SynCatDecl
 
@@ -1054,16 +1165,16 @@ private protected def fromIon (fields : Array (SymbolId × Ion SymbolId)) : From
   let name ← .asString "Op declaration name" fldArgs[1]
   let argDecls ←
         match fldArgs[2] with
-        | .mk (.null _) => pure {}
+        | .null _ => pure {}
         | v => ArgDecls.ofArray <$> .asListOf "Op declaration arguments" v fromIon
   let category ← QualifiedIdent.fromIon "Op declaration result" fldArgs[3]
   let syntaxDef ←
         match fldArgs[4] with
-        | .mk (.null _) => pure (.mkFunApp name argDecls.size)
+        | .null _ => pure (.mkFunApp name argDecls.size)
         | v => fromIon v
   let metadata ←
         match fldArgs[5] with
-        | .mk (.null _) => pure .empty
+        | .null _ => pure .empty
         | v => fromIon v
   pure {
     name := name
@@ -1262,7 +1373,7 @@ def fromIonFragment (dialect : DialectName) (f : Ion.Fragment) : Except String D
   let (imports, decls) ← f.values.foldlM (init := (#[], #[])) (start := f.offset) fun (imports, decls) v => do
     let fields ← FromIonM.asStruct0 v ⟨f.symbols⟩
     let some (_, val) := fields.find? (·.fst == typeId)
-      | throw "Could not find type"
+      | throw s!"Could not find type in {repr fields}"
     match ← FromIonM.asSymbolString "Dialect kind" val ctx with
     | "import" =>
       let some (_, val) := fields.find? (·.fst == nameId)
