@@ -237,8 +237,16 @@ structure SourceRange where
   stop : String.Pos.Raw
 deriving DecidableEq, Inhabited, Repr
 
+namespace SourceRange
+
+def none : SourceRange := { start := 0, stop := 0 }
+
+def isNone (loc : SourceRange) : Bool := loc.start = 0 ∧ loc.stop = 0
+
 instance : ToFormat SourceRange where
  format fr := f!"{fr.start}-{fr.stop}"
+
+end SourceRange
 
 inductive Uri where
   | file (path: String)
@@ -266,14 +274,6 @@ instance : ToFormat File2dRange where
     let baseName := match fr.file with
                     | .file path => (path.splitToList (· == '/')).getLast!
     f!"{baseName}({fr.start.line}, {fr.start.column})-({fr.ending.line}, {fr.ending.column})"
-
-namespace SourceRange
-
-def none : SourceRange := { start := 0, stop := 0 }
-
-def isNone (loc : SourceRange) : Bool := loc.start = 0 ∧ loc.stop = 0
-
-end SourceRange
 
 abbrev Arg := ArgF SourceRange
 abbrev Expr := ExprF SourceRange

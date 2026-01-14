@@ -183,7 +183,7 @@ private protected def asList (v : Ion SymbolId) : FromIonM { a : Array (Ion Symb
   match v with
   | .mk (.list args) =>
     return .mk args (by simp; omega)
-  | x => throw s!"Expected list but got {repr x}"
+  | x => throw s!"Expected list"
 
 private protected def asSexp (name : String) (v : Ion SymbolId) : FromIonM ({ a : Array (Ion SymbolId) // a.size > 0 ∧ sizeOf a < sizeOf v}) :=
   match v with
