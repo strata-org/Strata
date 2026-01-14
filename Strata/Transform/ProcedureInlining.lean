@@ -250,8 +250,8 @@ def inlineCallL (dcls : List Decl) (prog : Program)
   | [] => return []
   | d :: ds =>
     match d with
-    | .proc p =>
-      return Decl.proc { p with body := ← (inlineCallStmts p.body prog ) } ::
+    | .proc p md =>
+      return Decl.proc { p with body := ← (inlineCallStmts p.body prog ) } md ::
         (← (inlineCallL ds prog))
     | _       => return d :: (← (inlineCallL ds prog))
 

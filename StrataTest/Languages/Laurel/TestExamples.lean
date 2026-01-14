@@ -24,9 +24,9 @@ def processLaurelFile (input : InputContext) : IO (Array Diagnostic) := do
   let strataProgram ← parseStrataProgramFromDialect dialects Laurel.name input
 
   -- Convert to Laurel.Program using parseProgram (handles unwrapping the program operation)
-  let (laurelProgram, transErrors) := Laurel.TransM.run input (Laurel.parseProgram strataProgram)
-  if transErrors.size > 0 then
-    throw (IO.userError s!"Translation errors: {transErrors}")
+  let laurelProgram ← match Laurel.TransM.run input (Laurel.parseProgram strataProgram) with
+    | .ok program => pure program
+    | .error errMsg => throw (IO.userError s!"Translation error: {errMsg}")
 
   -- Verify the program
   let diagnostics ← Laurel.verifyToDiagnostics "z3" laurelProgram

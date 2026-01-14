@@ -38,11 +38,13 @@ Preprocess a user-facing type in Boogie amounts to converting a poly-type (i.e.,
 `LTy`) to a mono-type (i.e., `LMonoTy`) via instantiation. We still return an
 `LTy`, with no bound variables.
 -/
-def preprocess (C: LContext BoogieLParams) (Env : TEnv Visibility) (ty : LTy) : Except Format (LTy × TEnv Visibility) := do
+def preprocess (C: LContext BoogieLParams) (Env : TEnv Visibility) (ty : LTy) :
+    Except Format (LTy × TEnv Visibility) := do
   let (mty, Env) ← ty.instantiateWithCheck C Env
   return (.forAll [] mty, Env)
 
-def postprocess (_: LContext BoogieLParams) (Env: TEnv Visibility) (ty : LTy) : Except Format (LTy × TEnv Visibility) := do
+def postprocess (_: LContext BoogieLParams) (Env: TEnv Visibility) (ty : LTy) :
+    Except Format (LTy × TEnv Visibility) := do
   if h: ty.isMonoType then
     let ty := LMonoTy.subst Env.stateSubstInfo.subst (ty.toMonoType h)
     .ok (.forAll [] ty, Env)
@@ -74,7 +76,8 @@ Type constraints come from functions `inferType` and `preprocess`, both of which
 are expected to return `LTy`s with no bound variables which can be safely
 converted to `LMonoTy`s.
 -/
-def canonicalizeConstraints (constraints : List (LTy × LTy)) : Except Format Constraints := do
+def canonicalizeConstraints (constraints : List (LTy × LTy)) :
+    Except Format Constraints := do
   match constraints with
   | [] => .ok []
   | (t1, t2) :: c_rest =>
@@ -88,23 +91,28 @@ def canonicalizeConstraints (constraints : List (LTy × LTy)) : Except Format Co
                 type constraints, but found the following instead:\n\
                 t1: {t1}\nt2: {t2}\n"
 
-def unifyTypes (Env: TEnv Visibility) (constraints : List (LTy × LTy)) : Except Format (TEnv Visibility) := do
+def unifyTypes (Env: TEnv Visibility) (constraints : List (LTy × LTy)) :
+    Except Format (TEnv Visibility) := do
   let constraints ← canonicalizeConstraints constraints
-  let S ← Constraints.unify constraints Env.stateSubstInfo
+  let S ← Constraints.unify constraints Env.stateSubstInfo |> .mapError format
   let Env := Env.updateSubst S
   return Env
 
+def typeErrorFmt (e : Format) : Format :=
+  e
+
 ---------------------------------------------------------------------
 
-instance : Imperative.TypeContext Expression (LContext BoogieLParams) (TEnv Visibility) where
-  isBoolType  := CmdType.isBoolType
-  freeVars    := CmdType.freeVars
-  preprocess  := CmdType.preprocess
-  postprocess := CmdType.postprocess
-  update      := CmdType.update
-  lookup      := CmdType.lookup
-  inferType   := CmdType.inferType
-  unifyTypes  := CmdType.unifyTypes
+instance : Imperative.TypeContext Expression (LContext BoogieLParams) (TEnv Visibility) Format where
+  isBoolType   := CmdType.isBoolType
+  freeVars     := CmdType.freeVars
+  preprocess   := CmdType.preprocess
+  postprocess  := CmdType.postprocess
+  update       := CmdType.update
+  lookup       := CmdType.lookup
+  inferType    := CmdType.inferType
+  unifyTypes   := CmdType.unifyTypes
+  typeErrorFmt := CmdType.typeErrorFmt
 
 end CmdType
 ---------------------------------------------------------------------

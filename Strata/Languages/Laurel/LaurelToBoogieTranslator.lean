@@ -12,6 +12,7 @@ import Strata.Languages.Boogie.Options
 import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LiftExpressionAssignments
 import Strata.DL.Imperative.Stmt
+import Strata.DL.Lambda.LExpr
 import Strata.Languages.Laurel.LaurelFormat
 
 open Boogie (VCResult VCResults)
@@ -21,7 +22,8 @@ namespace Strata.Laurel
 
 open Strata
 
-open Lambda (LMonoTy LTy)
+open Boogie (intAddOp intSubOp intMulOp intDivOp intModOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp)
+open Lambda (LMonoTy LTy LExpr)
 
 /-
 Translate Laurel HighType to Boogie Type
@@ -31,40 +33,43 @@ def translateType (ty : HighType) : LMonoTy :=
   | .TInt => LMonoTy.int
   | .TBool => LMonoTy.bool
   | .TVoid => LMonoTy.bool  -- Using bool as placeholder for void
-  | _ => LMonoTy.int  -- Default to int for other types
+  | _ => panic s!"unsupported type {repr ty}"
 
 /--
 Translate Laurel StmtExpr to Boogie Expression
 -/
-partial def translateExpr (expr : StmtExpr) : Boogie.Expression.Expr :=
-  match expr with
+def translateExpr (expr : StmtExpr) : Boogie.Expression.Expr :=
+  match h: expr with
   | .LiteralBool b => .const () (.boolConst b)
   | .LiteralInt i => .const () (.intConst i)
   | .Identifier name =>
       let ident := Boogie.BoogieIdent.locl name
       .fvar () ident (some LMonoTy.int)  -- Default to int type
+  | .PrimitiveOp op [e] =>
+    match op with
+    | .Not => .app () boolNotOp (translateExpr e)
+    | .Neg => .app () intNegOp (translateExpr e)
+    | _ => panic! s!"translateExpr: Invalid unary op: {repr op}"
+  | .PrimitiveOp op [e1, e2] =>
+    let binOp (bop : Boogie.Expression.Expr): Boogie.Expression.Expr :=
+      LExpr.mkApp () bop [translateExpr e1, translateExpr e2]
+    match op with
+    | .Eq => .eq () (translateExpr e1) (translateExpr e2)
+    | .Neq => .app () boolNotOp (.eq () (translateExpr e1) (translateExpr e2))
+    | .And => binOp boolAndOp
+    | .Or => binOp boolOrOp
+    | .Add => binOp intAddOp
+    | .Sub => binOp intSubOp
+    | .Mul => binOp intMulOp
+    | .Div => binOp intDivOp
+    | .Mod => binOp intModOp
+    | .Lt => binOp intLtOp
+    | .Leq => binOp intLeOp
+    | .Gt => binOp intGtOp
+    | .Geq => binOp intGeOp
+    | _ => panic! s!"translateExpr: Invalid binary op: {repr op}"
   | .PrimitiveOp op args =>
-      let binOp (bop : Boogie.Expression.Expr) (e1 e2 : StmtExpr) : Boogie.Expression.Expr :=
-        .app () (.app () bop (translateExpr e1)) (translateExpr e2)
-      let unOp (uop : Boogie.Expression.Expr) (e : StmtExpr) : Boogie.Expression.Expr :=
-        .app () uop (translateExpr e)
-      match op, args with
-      | .Eq, [e1, e2] => .eq () (translateExpr e1) (translateExpr e2)
-      | .Neq, [e1, e2] => .app () boolNotOp (.eq () (translateExpr e1) (translateExpr e2))
-      | .And, [e1, e2] => binOp boolAndOp e1 e2
-      | .Or, [e1, e2] => binOp boolOrOp e1 e2
-      | .Not, [e] => unOp boolNotOp e
-      | .Neg, [e] => unOp intNegOp e
-      | .Add, [e1, e2] => binOp intAddOp e1 e2
-      | .Sub, [e1, e2] => binOp intSubOp e1 e2
-      | .Mul, [e1, e2] => binOp intMulOp e1 e2
-      | .Div, [e1, e2] => binOp intDivOp e1 e2
-      | .Mod, [e1, e2] => binOp intModOp e1 e2
-      | .Lt, [e1, e2] => binOp intLtOp e1 e2
-      | .Leq, [e1, e2] => binOp intLeOp e1 e2
-      | .Gt, [e1, e2] => binOp intGtOp e1 e2
-      | .Geq, [e1, e2] => binOp intGeOp e1 e2
-      | _, _ => panic! s!"translateExpr: PrimitiveOp {repr op} with {args.length} args"
+    panic! s!"translateExpr: PrimitiveOp {repr op} with {args.length} args"
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond := translateExpr cond
       let bthen := translateExpr thenBranch
@@ -79,12 +84,15 @@ partial def translateExpr (expr : StmtExpr) : Boogie.Expression.Expr :=
       let fnOp := .op () ident (some LMonoTy.int)  -- Assume int return type
       args.foldl (fun acc arg => .app () acc (translateExpr arg)) fnOp
   | _ => panic! Std.Format.pretty (Std.ToFormat.format expr)
+  decreasing_by
+  all_goals (simp_wf; try omega)
+  rename_i x_in; have := List.sizeOf_lt_of_mem x_in; omega
 
 /--
 Translate Laurel StmtExpr to Boogie Statements
 Takes the list of output parameter names to handle return statements correctly
 -/
-partial def translateStmt (outputParams : List Parameter) (stmt : StmtExpr) : List Boogie.Statement :=
+def translateStmt (outputParams : List Parameter) (stmt : StmtExpr) : List Boogie.Statement :=
   match stmt with
   | @StmtExpr.Assert cond md =>
       let boogieExpr := translateExpr cond

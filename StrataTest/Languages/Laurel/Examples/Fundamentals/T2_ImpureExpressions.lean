@@ -23,6 +23,7 @@ procedure NestedImpureStatements() {
 }
 "
 
+#guard_msgs (error, drop all) in
 #eval! testInputWithOffset "NestedImpureStatements" program 14 processLaurelFile
 
 

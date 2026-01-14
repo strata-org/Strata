@@ -12,7 +12,7 @@ namespace Laurel
 open Std (Format)
 
 mutual
-partial def formatOperation : Operation → Format
+def formatOperation : Operation → Format
   | .Eq => "=="
   | .Neq => "!="
   | .And => "&&"
@@ -29,7 +29,7 @@ partial def formatOperation : Operation → Format
   | .Gt => ">"
   | .Geq => ">="
 
-partial def formatHighType : HighType → Format
+def formatHighType : HighType → Format
   | .TVoid => "void"
   | .TBool => "bool"
   | .TInt => "int"
@@ -42,7 +42,8 @@ partial def formatHighType : HighType → Format
   | .Intersection types =>
       Format.joinSep (types.map formatHighType) " & "
 
-partial def formatStmtExpr : StmtExpr → Format
+def formatStmtExpr (s:StmtExpr) : Format :=
+  match h: s with
   | .IfThenElse cond thenBr elseBr =>
       "if " ++ formatStmtExpr cond ++ " then " ++ formatStmtExpr thenBr ++
       match elseBr with
@@ -104,16 +105,20 @@ partial def formatStmtExpr : StmtExpr → Format
   | .Abstract => "abstract"
   | .All => "all"
   | .Hole => "<?>"
+  decreasing_by
+    all_goals (simp_wf; try omega)
+    any_goals (rename_i x_in; have := List.sizeOf_lt_of_mem x_in; omega)
+    subst_vars; cases h; rename_i x_in; have := List.sizeOf_lt_of_mem x_in; omega
 
-partial def formatParameter (p : Parameter) : Format :=
+def formatParameter (p : Parameter) : Format :=
   Format.text p.name ++ ": " ++ formatHighType p.type
 
-partial def formatDeterminism : Determinism → Format
+def formatDeterminism : Determinism → Format
   | .deterministic none => "deterministic"
   | .deterministic (some reads) => "deterministic reads " ++ formatStmtExpr reads
   | .nondeterministic => "nondeterministic"
 
-partial def formatBody : Body → Format
+def formatBody : Body → Format
   | .Transparent body => formatStmtExpr body
   | .Opaque post impl =>
       "opaque ensures " ++ formatStmtExpr post ++
@@ -122,31 +127,31 @@ partial def formatBody : Body → Format
       | some e => " := " ++ formatStmtExpr e
   | .Abstract post => "abstract ensures " ++ formatStmtExpr post
 
-partial def formatProcedure (proc : Procedure) : Format :=
+def formatProcedure (proc : Procedure) : Format :=
   "procedure " ++ Format.text proc.name ++
   "(" ++ Format.joinSep (proc.inputs.map formatParameter) ", " ++ ") returns " ++ Format.line ++
   "(" ++ Format.joinSep (proc.outputs.map formatParameter) ", " ++ ")" ++ Format.line ++ formatBody proc.body
 
-partial def formatField (f : Field) : Format :=
+def formatField (f : Field) : Format :=
   (if f.isMutable then "var " else "val ") ++
   Format.text f.name ++ ": " ++ formatHighType f.type
 
-partial def formatCompositeType (ct : CompositeType) : Format :=
+def formatCompositeType (ct : CompositeType) : Format :=
   "composite " ++ Format.text ct.name ++
   (if ct.extending.isEmpty then Format.nil else " extends " ++
    Format.joinSep (ct.extending.map Format.text) ", ") ++
   " { " ++ Format.joinSep (ct.fields.map formatField) "; " ++ " }"
 
-partial def formatConstrainedType (ct : ConstrainedType) : Format :=
+def formatConstrainedType (ct : ConstrainedType) : Format :=
   "constrained " ++ Format.text ct.name ++
   " = " ++ Format.text ct.valueName ++ ": " ++ formatHighType ct.base ++
   " | " ++ formatStmtExpr ct.constraint
 
-partial def formatTypeDefinition : TypeDefinition → Format
+def formatTypeDefinition : TypeDefinition → Format
   | .Composite ty => formatCompositeType ty
   | .Constrained ty => formatConstrainedType ty
 
-partial def formatProgram (prog : Program) : Format :=
+def formatProgram (prog : Program) : Format :=
   Format.joinSep (prog.staticProcedures.map formatProcedure) "\n\n"
 
 end
