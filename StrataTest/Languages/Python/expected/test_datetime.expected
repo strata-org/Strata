@@ -13,7 +13,7 @@ assert_opt_name_none_or_bar: ✅ pass
 
 ensures_maybe_except_none: ✅ pass
 
-py_assertion: 🟡 unknown
+py_assertion: ✅ pass
 
 py_assertion: ✅ pass
 

@@ -26,5 +26,6 @@ procedure bar() {
     assert false;
 }
 "
-#guard_msgs (error, drop all) in
+
+#guard_msgs(drop info, error) in
 #eval testInputWithOffset "AssertFalse" program 14 processLaurelFile

@@ -35,4 +35,4 @@ test_helper_procedure_assert_name_is_foo_27: ✅ pass
 
 test_helper_procedure_assert_opt_name_none_or_str_28: ✅ pass
 
-test_helper_procedure_assert_opt_name_none_or_bar_29: 🟡 unknown
+test_helper_procedure_assert_opt_name_none_or_bar_29: ❌ fail
