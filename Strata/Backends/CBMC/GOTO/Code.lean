@@ -124,11 +124,13 @@ structure Code where
   statements : List Code := []
   deriving Repr, Inhabited
 
-partial def Code.beq (x y : Code) : Bool :=
+def Code.beq (x y : Code) : Bool :=
   x.id == y.id && x.sourceLoc == y.sourceLoc &&
   x.namedFields == y.namedFields &&
   goExpr x.operands y.operands &&
   goCode x.statements y.statements
+  termination_by (SizeOf.sizeOf x)
+  decreasing_by cases x; simp_wf; omega
   where
     goExpr xs ys :=
       match xs, ys with
@@ -142,11 +144,12 @@ partial def Code.beq (x y : Code) : Bool :=
       | _, [] | [], _ => false
       | x :: xrest, y :: yrest =>
         Code.beq x y && goCode xrest yrest
+    termination_by (SizeOf.sizeOf xs)
 
 instance : BEq Code where
   beq := Code.beq
 
-partial def formatCode (c : Code) : Format :=
+def formatCode (c : Code) : Format :=
   let operands := c.operands.map (fun o => format o)
   let operands := Format.joinSep operands " "
   let statements := c.statements.map (fun s => formatCode s)
@@ -161,6 +164,9 @@ partial def formatCode (c : Code) : Format :=
     base
   else
     f!"{base} {statements}"
+  termination_by (SizeOf.sizeOf c)
+  decreasing_by
+    cases c; simp_all; rename_i s_in; have := List.sizeOf_lt_of_mem s_in; omega
 
 instance : ToFormat Code where
   format c := formatCode c
