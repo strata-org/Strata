@@ -65,19 +65,24 @@ spec {
 /--
 info:
 Obligation: isNone
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: notSome
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: isSome
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: notNone
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestOptionTesters_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" optionTesterPgm Inhabited.default Options.quiet
@@ -118,10 +123,12 @@ spec {
 /--
 info:
 Obligation: notNone
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestOptionHavoc_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" optionHavocPgm Inhabited.default Options.quiet
@@ -159,10 +166,12 @@ spec {
 /--
 info:
 Obligation: exhaustive
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestOptionExhaustive_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" optionExhaustivePgm Inhabited.default Options.quiet
@@ -203,10 +212,12 @@ spec {
 /--
 info:
 Obligation: mutualExclusion
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestOptionMutualExclusion_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" optionMutualExclusionPgm Inhabited.default Options.quiet
@@ -252,13 +263,16 @@ spec {
 /--
 info:
 Obligation: noneEquality
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: someEquality
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestOptionEquality_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" optionEqualityPgm Inhabited.default Options.quiet
@@ -297,10 +311,12 @@ spec {
 /--
 info:
 Obligation: noneVsSome
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestOptionInequality_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" optionInequalityPgm Inhabited.default Options.quiet
@@ -346,13 +362,16 @@ spec {
 /--
 info:
 Obligation: valIs42
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: valIs100
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestOptionDestructor_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" optionDestructorPgm Inhabited.default Options.quiet

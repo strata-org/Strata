@@ -88,6 +88,9 @@ abbrev Statement.assume (label : String) (b : Expression.Expr) (md : MetaData Ex
 abbrev Statement.call (lhs : List Expression.Ident) (pname : String) (args : List Expression.Expr)
     (md : MetaData Expression := .empty) :=
   @Stmt.cmd Expression Command (CmdExt.call lhs pname args md)
+@[match_pattern]
+abbrev Statement.cover (label : String) (b : Expression.Expr) (md : MetaData Expression := .empty) :=
+  @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.cover label b md))
 
 ---------------------------------------------------------------------
 
@@ -104,6 +107,7 @@ def Command.eraseTypes (c : Command) : Command :=
     | .havoc name md => .cmd $ .havoc name md
     | .assert label b md => .cmd $ .assert label b.eraseTypes md
     | .assume label b md => .cmd $ .assume label b.eraseTypes md
+    | .cover label b md => .cmd $ .cover label b.eraseTypes md
   | .call lhs pname args md =>
     .call lhs pname (args.map Lambda.LExpr.eraseTypes) md
 
@@ -326,6 +330,8 @@ def Statement.substFvar (s : Boogie.Statement)
     .assert lbl (Lambda.LExpr.substFvar b fr to) metadata
   | .assume lbl b metadata =>
     .assume lbl (Lambda.LExpr.substFvar b fr to) metadata
+  | .cover lbl b metadata =>
+    .cover lbl (Lambda.LExpr.substFvar b fr to) metadata
   | .call lhs pname args metadata =>
     .call lhs pname (List.map (Lambda.LExpr.substFvar · fr to) args) metadata
 
@@ -368,7 +374,7 @@ def Statement.renameLhs (s : Boogie.Statement)
   | .block lbl b metadata =>
     .block lbl (Block.renameLhs b fr to) metadata
   | .havoc _ _ | .assert _ _ _ | .assume _ _ _ | .ite _ _ _ _
-  | .loop _ _ _ _ _ | .goto _ _ => s
+  | .loop _ _ _ _ _ | .goto _ _ | .cover _ _ _ => s
   termination_by s.sizeOf
   decreasing_by all_goals(simp_wf; try omega)
 end

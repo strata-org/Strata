@@ -1,10 +1,8 @@
 Successfully parsed.
-IfThenElse1.boogie.st(18, 4) [assert_0]: verified
-IfThenElse1.boogie.st(19, 4) [assert_1]: verified
-IfThenElse1.boogie.st(34, 4) [assert_2]: verified
-IfThenElse1.boogie.st(36, 4) [assert_3]: verified
-IfThenElse1.boogie.st(48, 4) [assert_4]: failed
-CEx: (init_x_9, 1) (init_b_8, false) (init_y_10, 0)
-IfThenElse1.boogie.st(60, 4) [assert_5]: failed
-CEx: (init_x_12, 1) (init_y_13, 0)
-Finished with 4 goals proved, 2 failed.
+IfThenElse1.boogie.st(18, 4) [assert_0]: ✅ pass
+IfThenElse1.boogie.st(19, 4) [assert_1]: ✅ pass
+IfThenElse1.boogie.st(34, 4) [assert_2]: ✅ pass
+IfThenElse1.boogie.st(36, 4) [assert_3]: ✅ pass
+IfThenElse1.boogie.st(48, 4) [assert_4]: ❌ fail
+IfThenElse1.boogie.st(60, 4) [assert_5]: ❌ fail
+Finished with 4 goals passed, 2 failed.

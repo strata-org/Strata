@@ -1,3 +1,3 @@
 Successfully parsed.
-bv9.boogie.st(22, 4) [assert_0]: verified
-Proved all 1 goals.
+bv9.boogie.st(22, 4) [assert_0]: ✅ pass
+All 1 goals passed.

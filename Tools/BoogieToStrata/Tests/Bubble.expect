@@ -1,16 +1,16 @@
 Successfully parsed.
-Bubble.boogie.st(31, 4) [entry_invariant_0]: verified
-Bubble.boogie.st(31, 4) [arbitrary_iter_maintain_invariant_0]: verified
-Bubble.boogie.st(43, 4) [entry_invariant_0]: verified
-Bubble.boogie.st(20, 2) [BubbleSort_ensures_1]: verified
-Bubble.boogie.st(21, 2) [BubbleSort_ensures_2]: verified
-Bubble.boogie.st(22, 2) [BubbleSort_ensures_3]: verified
-Bubble.boogie.st(23, 2) [BubbleSort_ensures_4]: verified
-Bubble.boogie.st(57, 8) [entry_invariant_1]: verified
-Bubble.boogie.st(57, 8) [arbitrary_iter_maintain_invariant_1]: verified
-Bubble.boogie.st(43, 4) [arbitrary_iter_maintain_invariant_0]: verified
-Bubble.boogie.st(20, 2) [BubbleSort_ensures_1]: verified
-Bubble.boogie.st(21, 2) [BubbleSort_ensures_2]: verified
-Bubble.boogie.st(22, 2) [BubbleSort_ensures_3]: verified
-Bubble.boogie.st(23, 2) [BubbleSort_ensures_4]: verified
-Proved all 14 goals.
+Bubble.boogie.st(31, 4) [entry_invariant_0]: ✅ pass
+Bubble.boogie.st(31, 4) [arbitrary_iter_maintain_invariant_0]: ✅ pass
+Bubble.boogie.st(43, 4) [entry_invariant_0]: ✅ pass
+Bubble.boogie.st(20, 2) [BubbleSort_ensures_1]: ✅ pass
+Bubble.boogie.st(21, 2) [BubbleSort_ensures_2]: ✅ pass
+Bubble.boogie.st(22, 2) [BubbleSort_ensures_3]: ✅ pass
+Bubble.boogie.st(23, 2) [BubbleSort_ensures_4]: ✅ pass
+Bubble.boogie.st(57, 8) [entry_invariant_1]: ✅ pass
+Bubble.boogie.st(57, 8) [arbitrary_iter_maintain_invariant_1]: ✅ pass
+Bubble.boogie.st(43, 4) [arbitrary_iter_maintain_invariant_0]: ✅ pass
+Bubble.boogie.st(20, 2) [BubbleSort_ensures_1]: ✅ pass
+Bubble.boogie.st(21, 2) [BubbleSort_ensures_2]: ✅ pass
+Bubble.boogie.st(22, 2) [BubbleSort_ensures_3]: ✅ pass
+Bubble.boogie.st(23, 2) [BubbleSort_ensures_4]: ✅ pass
+All 14 goals passed.

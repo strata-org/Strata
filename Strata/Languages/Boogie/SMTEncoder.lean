@@ -615,6 +615,28 @@ def toSMTTerms (E : Env) (es : List (LExpr BoogieLParams.mono)) (ctx : SMT.Conte
     let (erestt, ctx) ← toSMTTerms E erest ctx
     .ok ((et :: erestt), ctx)
 
+/--
+Encode a proof obligation -- which may be of type `assert` or `cover` -- into
+SMTLIB.
+
+Under conditions `P`, `assert(Q)` is encoded into SMTLib as follows:
+```
+(assert P)
+(assert (not Q))
+(check-sat)
+```
+If the result is `unsat`, then `P ∧ ¬Q` is unsatisfiable, which means `P => Q`
+is valid. If the result is `sat`, then the assertion is violated.
+
+Under conditions `P`, `cover(Q)` is encoded into SMTLib as follows:
+```
+(assert P)
+(assert Q)
+(check-sat)
+```
+If the result is `unsat`, then `P ∧ Q` is unsatisfiable, which means that the
+cover is violated. If the result is `sat`, then the cover succeeds.
+-/
 def ProofObligation.toSMTTerms (E : Env)
   (d : Imperative.ProofObligation Expression) (ctx : SMT.Context := SMT.Context.default) :
   Except Format ((List Term) × SMT.Context) := do
@@ -625,7 +647,11 @@ def ProofObligation.toSMTTerms (E : Env)
     (λ ts => Term.app (.core .distinct) ts .bool)
   let (assumptions_terms, ctx) ← Boogie.toSMTTerms E assumptions ctx
   let (obligation_pos_term, ctx) ← Boogie.toSMTTerm E [] d.obligation ctx
-  let obligation_term := Factory.not obligation_pos_term
+  let obligation_term :=
+    if d.property == .cover then
+      obligation_pos_term
+    else
+      Factory.not obligation_pos_term
   .ok ((distinct_assumptions ++ assumptions_terms ++ [obligation_term]), ctx)
 
 ---------------------------------------------------------------------

@@ -1,33 +1,32 @@
 
-datetime_now_ensures_0: verified
+datetime_now_ensures_0: ✅ pass
 
-datetime_utcnow_ensures_0: verified
+datetime_utcnow_ensures_0: ✅ pass
 
-ensures_str_strp_reverse: verified
+ensures_str_strp_reverse: ✅ pass
 
-assert_name_is_foo: verified
+assert_name_is_foo: ✅ pass
 
-assert_opt_name_none_or_str: verified
+assert_opt_name_none_or_str: ✅ pass
 
-assert_opt_name_none_or_bar: verified
+assert_opt_name_none_or_bar: ✅ pass
 
-ensures_maybe_except_none: verified
+ensures_maybe_except_none: ✅ pass
 
-test_helper_procedure_assert_name_is_foo_3: failed
-CEx: 
+test_helper_procedure_assert_name_is_foo_3: ❌ fail
 
-test_helper_procedure_assert_opt_name_none_or_str_4: verified
+test_helper_procedure_assert_opt_name_none_or_str_4: ✅ pass
 
-test_helper_procedure_assert_opt_name_none_or_bar_5: verified
+test_helper_procedure_assert_opt_name_none_or_bar_5: ✅ pass
 
-(Origin_test_helper_procedure_Requires)req_name_is_foo: verified
+(Origin_test_helper_procedure_Requires)req_name_is_foo: ✅ pass
 
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: verified
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass
 
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: verified
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass
 
-(Origin_test_helper_procedure_Requires)req_name_is_foo: verified
+(Origin_test_helper_procedure_Requires)req_name_is_foo: ✅ pass
 
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: verified
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_str: ✅ pass
 
-(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: verified
+(Origin_test_helper_procedure_Requires)req_opt_name_none_or_bar: ✅ pass

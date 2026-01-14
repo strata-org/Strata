@@ -185,6 +185,8 @@ def Command.subst (S : Subst) (c : Command) : Command :=
       .cmd $ .assert label (b.applySubst S) md
     | .assume label b md =>
       .cmd $ .assume label (b.applySubst S) md
+    | .cover label b md =>
+      .cmd $ .cover label (b.applySubst S) md
   | .call lhs pname args md =>
     .call lhs pname (args.map (fun a => a.applySubst S)) md
 

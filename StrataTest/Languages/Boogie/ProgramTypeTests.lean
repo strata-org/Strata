@@ -74,6 +74,7 @@ info: [Strata.Boogie] Type checking succeeded.
 
 VCs:
 Label: test
+Property: assert
 Assumptions:
 
 
@@ -292,6 +293,7 @@ info: ok: [(type Boogie.Boundedness.Infinite Foo [_, _]
   []
   Deferred Proof Obligations:
   Label: test
+  Property: assert
   Assumptions:
   ⏎
   ⏎

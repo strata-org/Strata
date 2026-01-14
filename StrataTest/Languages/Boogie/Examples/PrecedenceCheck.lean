@@ -39,6 +39,7 @@ info: [Strata.Boogie] Type checking succeeded.
 
 VCs:
 Label: implies_and_eq_not_or_1
+Property: assert
 Assumptions:
 
 
@@ -46,6 +47,7 @@ Proof Obligation:
 (((~Bool.And ((~Bool.Implies init_a_0) init_b_1)) ((~Bool.Implies init_c_2) init_d_3)) == ((((~foo init_a_0) init_b_1) init_c_2) init_d_3))
 
 Label: implies_and_eq_not_or_2
+Property: assert
 Assumptions:
 
 
@@ -53,6 +55,7 @@ Proof Obligation:
 (((~Bool.And ((~Bool.Implies init_a_0) init_b_1)) ((~Bool.Implies init_c_2) init_d_3)) == ((((~foo init_a_0) init_b_1) init_c_2) init_d_3))
 
 Label: implies_and_eq_not_or_3
+Property: assert
 Assumptions:
 
 
@@ -60,6 +63,7 @@ Proof Obligation:
 (((~Bool.And ((~Bool.Implies init_a_0) init_b_1)) ((~Bool.Implies init_c_2) init_d_3)) == ((((~foo init_a_0) init_b_1) init_c_2) init_d_3))
 
 Label: implies_and_eq_not_or_4
+Property: assert
 Assumptions:
 
 
@@ -67,6 +71,7 @@ Proof Obligation:
 (((~Bool.And ((~Bool.Implies init_a_0) init_b_1)) ((~Bool.Implies init_c_2) init_d_3)) == ((((~foo init_a_0) init_b_1) init_c_2) init_d_3))
 
 Label: implies_equiv
+Property: assert
 Assumptions:
 
 
@@ -81,19 +86,24 @@ Wrote problem to vcs/implies_equiv.smt2.
 ---
 info:
 Obligation: implies_and_eq_not_or_1
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: implies_and_eq_not_or_2
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: implies_and_eq_not_or_3
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: implies_and_eq_not_or_4
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: implies_equiv
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" precPgm

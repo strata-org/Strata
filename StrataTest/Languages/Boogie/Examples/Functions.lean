@@ -50,6 +50,7 @@ info: [Strata.Boogie] Type checking succeeded.
 
 VCs:
 Label: barEq
+Property: assert
 Assumptions:
 
 
@@ -57,6 +58,7 @@ Proof Obligation:
 ((~barTest1 $__a0) == $__a0)
 
 Label: fooEq
+Property: assert
 Assumptions:
 
 
@@ -67,10 +69,12 @@ Wrote problem to vcs/barEq.smt2.
 ---
 info:
 Obligation: barEq
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: fooEq
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" funcPgm

@@ -160,7 +160,12 @@ def cmdToJson (e : Boogie.Command) (loc: SourceLoc) : Json :=
           ]
         ]
       ]
-    | .havoc _ _ => panic! "Unimplemented"
+    | .cover _ _ md =>
+       panic! s!"{Imperative.MetaData.formatFileRangeD md}\
+                  cover unimplemented"
+    | .havoc _ md =>
+       panic! s!"{Imperative.MetaData.formatFileRangeD md}\
+                  havoc unimplemented"
 
 mutual
 def blockToJson {P : Imperative.PureExpr} (I : Lambda.LExprParams) [IdentToStr (Lambda.Identifier I.IDMeta)] [HasLExpr P I]

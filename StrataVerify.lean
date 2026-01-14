@@ -12,16 +12,6 @@ import Std.Internal.Parsec
 
 open Strata
 
-def isSuccessResult : Boogie.Result → Bool
-| .unsat => true
-| _ => false
-
-def isSuccessVCResult (vcResult : Boogie.VCResult) :=
-  isSuccessResult vcResult.result
-
-def isFailureVCResult (vcResult : Boogie.VCResult) :=
-  !isSuccessResult vcResult.result
-
 def parseOptions (args : List String) : Except Std.Format (Options × String) :=
   go Options.quiet args
     where
@@ -92,17 +82,17 @@ def main (args : List String) : IO UInt32 := do
         for vcResult in vcResults do
           let posStr := Imperative.MetaData.formatFileRangeD vcResult.obligation.metadata
           println! f!"{posStr} [{vcResult.obligation.label}]: {vcResult.result}"
-        let success := vcResults.all isSuccessVCResult
+        let success := vcResults.all Boogie.VCResult.isSuccess
         if success && !opts.checkOnly then
-          println! f!"Proved all {vcResults.size} goals."
+          println! f!"All {vcResults.size} goals passed."
           return 0
         else if success && opts.checkOnly then
           println! f!"Skipping verification."
           return 0
         else
-          let provedGoalCount := (vcResults.filter isSuccessVCResult).size
-          let failedGoalCount := (vcResults.filter isFailureVCResult).size
-          println! f!"Finished with {provedGoalCount} goals proved, {failedGoalCount} failed."
+          let provedGoalCount := (vcResults.filter Boogie.VCResult.isSuccess).size
+          let failedGoalCount := (vcResults.filter Boogie.VCResult.isNotSuccess).size
+          println! f!"Finished with {provedGoalCount} goals passed, {failedGoalCount} failed."
           return 1
     -- Strata.Elab.elabProgram
     | .error errors =>

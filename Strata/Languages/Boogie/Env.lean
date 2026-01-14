@@ -76,6 +76,7 @@ def ProofObligation.getVars (d : ProofObligation Expression)
 
 def ProofObligation.eraseTypes (d : ProofObligation Expression) : ProofObligation Expression :=
   { label := d.label,
+    property := d.property,
     assumptions := d.assumptions.map (fun m => (m.map (fun (label, expr) => (label, expr.eraseTypes)))),
     obligation := d.obligation.eraseTypes,
     metadata := d.metadata
@@ -88,6 +89,7 @@ instance : ToFormat (ProofObligation Expression) where
   format o :=
     let assumptions := PathConditions.format o.assumptions
     f!"Label: {o.label}{Format.line}\
+       Property: {o.property}{Format.line}\
        Assumptions:{Format.line}{assumptions}\
        Proof Obligation:{Format.line}{format o.obligation}{Format.line}"
 
@@ -96,29 +98,26 @@ instance : ToFormat (ProofObligations Expression) where
 
 -- (FIXME) Parameterize by EvalContext typeclass.
 def ProofObligation.create
-  (label : String) (assumptions : PathConditions Expression)
-  (obligation : Procedure.Check):
+  (label : String) (propertyType : PropertyType)
+  (assumptions : PathConditions Expression) (obligation : Procedure.Check):
   Option (ProofObligation Expression) :=
   open Lambda.LExpr.SyntaxMono in
   if obligation.attr == .Free then
     dbg_trace f!"{Format.line}Obligation {label} is free!{Format.line}"
     none
-  --else if obligation.expr.isTrue then
-  --  dbg_trace f!"{Format.line}Obligation {label} proved via evaluation!{Format.line}"
-  --  none
   else
-    some (ProofObligation.mk label assumptions obligation.expr obligation.md)
+    some (ProofObligation.mk label propertyType assumptions obligation.expr obligation.md)
 
-def ProofObligations.create
+def ProofObligations.createAssertions
   (assumptions : PathConditions Expression)
   (obligations : ListMap String Procedure.Check)
   : ProofObligations Expression :=
   match obligations with
   | [] => #[]
   | o :: orest =>
-    let orest' := ProofObligations.create assumptions orest
+    let orest' := ProofObligations.createAssertions assumptions orest
     let o' :=
-      match (ProofObligation.create o.fst assumptions o.snd) with
+      match (ProofObligation.create o.fst .assert assumptions o.snd) with
       | none => #[]
       | some o' => #[o']
     o' ++ orest'
