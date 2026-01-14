@@ -431,6 +431,153 @@ be defined in user definable dialects.
     for special characters.
 
   * `Init.Num` represents numeric natural number literals.
+  
+## Datatypes
+%%%
+tag := "datatypes"
+%%%
+
+The DDM has special support for defining dialects with algebraic datatypes (ADTs) similar to those found in functional programming
+languages. Datatypes allow one to define custom types with multiple constructors, each of
+which can have zero or more fields (constructor arguments).
+
+Datatypes differ from other language constructs (e.g. types, operators), since
+they define several operations simultaneously. For example, an
+SMT datatype declaration defines (in addition to the type itself and the
+constructors) _tester_ functions to identify to which constructor an instance belongs and _accessor_ functions to extract the fields of a constructor.
+Dafny datatypes additionally produce an ordering relation, while Lean inductive
+types produce _eliminator_ instances defining induction principles. The DDM
+enables automatic creation of (a subset of) these auxiliary functions via a
+configurable {deftech}_function template_ system. 
+
+### Example
+
+In the Boogie dialect, the auxiliary functions are testers and accessors. That
+is, one can define the following datatype in Strata.Boogie:
+
+```
+datatype IntList {
+  Nil(),
+  Cons(head: int, tail: IntList)
+};
+```
+
+This declares a list type with two constructors (`Nil` and `Cons`) and two fields (`head` and `tail`). The Boogie dialect automatically generates:
+
+* Constructors: `Nil : IntList` and `Cons : int -> IntList -> IntList`
+* Testers: `IntList..isNil : IntList -> bool` and `IntList..isCons : IntList -> bool`
+* Accessors: `head : IntList -> int` and `tail : IntList -> IntList`
+
+### Defining Datatype Syntax in a Dialect
+
+To support datatypes in a dialect, you must define syntactic categories and
+operators with appropriate annotations. The Boogie dialect provides a complete example.
+
+#### Constructor Syntax
+
+Constructors define the variants of a datatype. Constructor fields are specified
+via Bindings like other function declarations.
+
+```
+category Constructor;
+category ConstructorList;
+
+@[constructor(name, fields)]
+op constructor_mk (name : Ident, fields : Option (CommaSepBy Binding)) : Constructor =>
+  name "(" fields ")";
+
+@[constructorListAtom(c)]
+op constructorListAtom (c : Constructor) : ConstructorList => c;
+
+@[constructorListPush(cl, c)]
+op constructorListPush (cl : ConstructorList, c : Constructor) : ConstructorList =>
+  cl "," c;
+```
+
+The annotations:
+
+* `@[constructor(name, fields)]` marks this operation as a constructor
+definition, where `fields` is a `Bindings` argument containing the constructor
+arguments
+* `@[constructorListAtom(c)]` marks a single-element constructor list
+* `@[constructorListPush(cl, c)]` marks an operation that extends a constructor list
+
+#### Datatype Command
+
+The main datatype declaration uses `@[declareDatatype]` to tie everything together. It is best illustrated with an example (from the Boogie dialect):
+
+```
+@[declareDatatype(name, typeParams, constructors,
+    perConstructor([.datatype, .literal "..is", .constructor], [.datatype], .builtin "bool"),
+    perField([.field], [.datatype], .fieldType))]
+op command_datatype (name : Ident,
+                     typeParams : Option Bindings,
+                     @[scopeDatatype(name, typeParams)] constructors : ConstructorList)
+  : Command =>
+  "datatype " name typeParams " {" constructors "}" ";\n";
+```
+
+`@[declareDatatype]` declares a datatype command operator given the datatype
+name, the optional type parameters, the constructor list, and zero or more
+[function templates](#datatypes-function-templates) to expand. Note that the `@[scopeDatatype]` 
+annotation brings the datatype name and type parameters into scope when
+parsing the constructors, enabling recursive type references.
+
+#### Function Templates
+%%%
+tag := "datatypes-function-templates"
+%%%
+
+Function templates specify patterns for generating auxiliary functions from datatype
+declarations.
+Currently there are two supported templates: `perConstructor` generates one
+function per constructor, while `perField` generates one function per field 
+(note that the DDM enforces that fields are unique across all constructors in
+a datatype).
+
+:::paragraph
+`perConstructor(`_namePattern_`,` _paramTypes_`,` _returnType_`)`
+
+`perField(`_namePattern_`,` _paramTypes_`,` _returnType_`)`
+
+Each template has three components:
+
+* _namePattern_ is an array of name parts: `.datatype`, `.constructor`, or `.literal "str"`
+* _paramTypes_ is an array of type references for parameters
+* _returnType_ is a type reference for the return type
+:::
+
+Name patterns consist of the following components:
+
+* `.datatype` - Expands to the datatype name
+* `.constructor` - Expands to the constructor name in `perConstructor`
+* `.field` - Expands to the field name in `perField`
+* `.literal "str"` - A literal string
+
+Type references consist of the following components:
+
+* `.datatype` - The datatype type (e.g., `IntList`)
+* `.fieldType` - The type of the current field in `perField`
+* `.builtin "bool"` - A built-in type from the dialect
+
+##### Example Templates
+
+The Boogie dialect uses two templates:
+
+The tester template generates `IntList..isNil : IntList -> bool`:
+```
+perConstructor([.datatype, .literal "..is", .constructor], [.datatype], .builtin "bool")
+```
+
+The accessor template generates `head : IntList -> int`:
+```
+perField([.field], [.datatype], .fieldType)
+```
+
+An alternative indexer template could generate `IntList$idx$Nil : IntList -> int`:
+```
+perConstructor([.datatype, .literal "$idx$", .constructor], [.datatype], .builtin "int")
+```
 
 # Lean Integration
 %%%

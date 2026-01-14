@@ -5,6 +5,15 @@ This directory contains a Python package for strata along with a module
 
 It can be installed by running `pip install .` from the root directory.
 
+## Python versions
+
+The Python dialect may only be generated in CPython 3.13 or later, and
+may differ depending on which version of CPython is used.  The Strata
+toolchain currently assumes the dialect is generated in 3.14, and so
+we recommend using that version.
+
+Python parsing may be done in 3.12 by pre-generating the dialect in 3.14.  See the documentation on the `py_to_strata` command below for more details.
+
 ## Generating the DDM dialect.
 
 The `dialect` command can generate either Python dialect.  Strata dialect by
@@ -32,14 +41,24 @@ strata check "*dir*/Python.dialect.st.ion"
 
 The `py_to_strata` subcommand will translate a Python file into a Strata file.
 
+Parsing into Strata requires the Strata Python dialect.  To ensure consistency, this is ideally passed in as a file using the `--dialect` flag, but can be
+generated automatically in Python 3.13 or later.
+
+The `py_to_strata` command takes in two required arguments `input.py` and `output.py.st.ion` and one optional flag parameter.
+
+ * `input.py` should be the name of the input Python file to parse.
+ * `output.py.st.ion` is the name of the output file to write the Strata to.
+ * The `--dialect path` command takes the path to the Python dialect.
+
 As an example, we should using strata.gen to translate `strata/base.py` into Strata below:
 
 ```
-python -m strata.gen py_to_strata strata/base.py base.py.st.ion
+python -m strata.gen py_to_strata --dialect dialects/Python.dialect.st.ion \
+   strata/base.py base.py.st.ion
 ```
 
 This can be checked using the Strata CLI tools:
 
 ```
-strata check --include dialect_dir base.py.st.ion
+strata check --include dialects base.py.st.ion
 ```
