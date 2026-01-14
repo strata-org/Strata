@@ -107,23 +107,25 @@ private def alphaEquivIdents (e1 e2: Expression.Ident) (map:IdMap)
 
 mutual
 
-partial def alphaEquivBlock (b1 b2: Boogie.Block) (map:IdMap)
+def alphaEquivBlock (b1 b2: Boogie.Block) (map:IdMap)
     : Except Format IdMap := do
   if b1.length ≠ b2.length then
     .error "Block lengths do not match"
   else
-    (b1.zip b2).foldlM
+    (b1.attach.zip b2).foldlM
       (fun (map:IdMap) (st1,st2) => do
-        let newmap ← alphaEquivStatement st1 st2 map
+        let newmap ← alphaEquivStatement st1.1 st2 map
         return newmap)
       map
+  termination_by b1.sizeOf
+  decreasing_by cases st1; apply Imperative.sizeOf_stmt_in_block; assumption
 
-partial def alphaEquivStatement (s1 s2: Boogie.Statement) (map:IdMap)
+def alphaEquivStatement (s1 s2: Boogie.Statement) (map:IdMap)
     : Except Format IdMap := do
   let mk_err (s:Format): Except Format IdMap :=
     .error (f!"{s}\ns1:{s1}\ns2:{s2}\nmap:{map.vars}")
 
-  match (s1,s2) with
+  match hs: (s1,s2) with
   | (.block lbl1 b1 _, .block lbl2 b2 _) =>
     -- Since 'goto lbl' can appear before 'lbl' is defined, update the label
     -- map here
@@ -200,6 +202,8 @@ partial def alphaEquivStatement (s1 s2: Boogie.Statement) (map:IdMap)
       mk_err "Commands do not match"
 
   | (_,_) => mk_err "Statements do not match"
+  termination_by s1.sizeOf
+  decreasing_by all_goals(cases hs; simp_all; try omega)
 
 end
 
