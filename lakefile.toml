@@ -30,9 +30,6 @@ globs = ["StrataTest.+"]
 name = "StrataVerify"
 
 [[lean_exe]]
-name = "StrataVerifyB3"
-
-[[lean_exe]]
 name = "StrataToCBMC"
 
 [[lean_exe]]

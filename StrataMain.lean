@@ -8,7 +8,6 @@
 import Strata.DDM.Elab
 import Strata.DDM.Ion
 import Strata.Util.IO
-import Strata.Languages.B3.Verifier.Program
 
 import Strata.Languages.Python.Python
 import StrataTest.Transform.ProcedureInlining
@@ -215,47 +214,6 @@ def pyAnalyzeCommand : Command where
       s := s ++ s!"\n{vcResult.obligation.label}: {Std.format vcResult.result}\n"
     IO.println s
 
-def verifyB3Command : Command where
-  name := "verifyB3"
-  args := [ "file" ]
-  help := "Verify a B3 program using Z3. Write results to stdout."
-  callback := fun fm v => do
-    let (_, pd) ← readFile fm v[0]
-    match pd with
-    | .program prog =>
-        -- Convert to B3 AST
-        match Strata.B3.Verifier.programToB3AST prog with
-        | Except.error msg => exitFailure s!"Failed to parse B3 program: {msg}"
-        | Except.ok ast =>
-            -- Verify with Z3
-            let solver ← Strata.B3.Verifier.createInteractiveSolver "z3"
-            let reports ← Strata.B3.Verifier.verify ast solver
-
-            -- Display results
-            for report in reports do
-              IO.println s!"\nProcedure: {report.procedureName}"
-              for (result, diagnosis) in report.results do
-                let marker := if result.result.isError then "✗" else "✓"
-                let description := match result.result with
-                  | .error .counterexample => "counterexample found"
-                  | .error .unknown => "unknown"
-                  | .error .refuted => "refuted"
-                  | .success .verified => "verified"
-                  | .success .reachable => "reachable"
-                  | .success .reachabilityUnknown => "reachability unknown"
-                IO.println s!"  {marker} {description}"
-
-                -- Show diagnosis if available
-                match diagnosis with
-                | some diag =>
-                    if !diag.diagnosedFailures.isEmpty then
-                      IO.println "  Diagnosed failures:"
-                      for failure in diag.diagnosedFailures do
-                        let formatted := Strata.B3.Verifier.formatExpression prog failure.expression B3.ToCSTContext.empty
-                        IO.println s!"    - {formatted}"
-                | none => pure ()
-    | .dialect _ => exitFailure "Expected B3 program, got dialect definition"
-
 def commandList : List Command := [
       checkCommand,
       toIonCommand,
@@ -263,7 +221,6 @@ def commandList : List Command := [
       diffCommand,
       pyAnalyzeCommand,
       pyTranslateCommand,
-      verifyB3Command,
     ]
 
 def commandMap : Std.HashMap String Command :=
