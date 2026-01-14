@@ -33,7 +33,7 @@ def testSMTGeneration (prog : Program) : IO Unit := do
   let (solver, buffer) ← createBufferSolver
 
   -- Run verification to get both SMT and errors
-  let results ← verifyWithoutDiagnosis ast solver
+  let results ← programToSMTWithoutDiagnosis ast solver
 
   -- Collect and print conversion errors first (strip location info for stable tests)
   let errors := results.filterMap (fun r =>

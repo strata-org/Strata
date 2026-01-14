@@ -92,7 +92,7 @@ def main (args : List String) : IO UInt32 := do
               | Except.error msg => throw (IO.userError s!"Failed to convert to B3 AST: {msg}")
               | Except.ok ast => pure ast
             let solver ← B3.Verifier.createInteractiveSolver "z3"
-            let reports ← B3.Verifier.verify ast solver
+            let reports ← B3.Verifier.programToSMT ast solver
             -- B3 uses a different result format, print directly and return empty array
             for report in reports do
               IO.println s!"\nProcedure: {report.procedureName}"

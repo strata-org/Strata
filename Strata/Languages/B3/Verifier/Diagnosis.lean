@@ -182,15 +182,15 @@ def diagnoseFailed (state : B3VerificationState) (sourceDecl : B3AST.Decl Source
 -- Statement Symbolic Execution with Diagnosis
 ---------------------------------------------------------------------
 
-/-- Symbolically execute statements with automatic diagnosis on failures.
+/-- Translate statements to SMT with automatic diagnosis on failures.
 
-This wraps symbolicExecuteStatements and adds diagnosis for failed checks/asserts/reach.
+This wraps statementToSMT and adds diagnosis for failed checks/asserts/reach.
 The diagnosis analyzes failures but does not modify the verification state.
 -/
-partial def symbolicExecuteStatementsWithDiagnosis (ctx : ConversionContext) (state : B3VerificationState) (sourceDecl : B3AST.Decl SourceRange) : B3AST.Statement SourceRange → IO (List (VerificationReport × Option DiagnosisResult) × B3VerificationState)
+partial def statementToSMTWithDiagnosis (ctx : ConversionContext) (state : B3VerificationState) (sourceDecl : B3AST.Decl SourceRange) : B3AST.Statement SourceRange → IO (List (VerificationReport × Option DiagnosisResult) × B3VerificationState)
   | stmt => do
       -- Symbolically execute the statement to get results and updated state
-      let execResult ← symbolicExecuteStatements ctx state sourceDecl stmt
+      let execResult ← statementToSMT ctx state sourceDecl stmt
 
       -- Add diagnosis to any failed verification results
       let mut resultsWithDiag := []

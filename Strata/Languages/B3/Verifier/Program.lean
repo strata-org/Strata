@@ -89,8 +89,8 @@ def extractVerifiableProcedures (prog : B3AST.Program SourceRange) : List (Strin
         | _ => none
       )
 
-/-- Verify a B3 program without automatic diagnosis (faster, less detailed errors) -/
-def verifyWithoutDiagnosis (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List (Except String VerificationReport)) := do
+/-- Translate a B3 program to SMT without automatic diagnosis (faster, less detailed errors) -/
+def programToSMTWithoutDiagnosis (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List (Except String VerificationReport)) := do
   let mut state ← initVerificationState solver
   let mut results := []
 
@@ -107,7 +107,7 @@ def verifyWithoutDiagnosis (prog : B3AST.Program SourceRange) (solver : Solver) 
 
   -- Verify parameter-free procedures
   for (_name, decl, bodyStmt) in extractVerifiableProcedures prog do
-    let execResult ← symbolicExecuteStatements ConversionContext.empty state decl bodyStmt
+    let execResult ← statementToSMT ConversionContext.empty state decl bodyStmt
     results := results ++ execResult.results.map StatementResult.toExcept
 
   closeVerificationState state
@@ -154,7 +154,7 @@ def buildProgramState (prog : Strata.B3AST.Program SourceRange) (solver : Solver
 def programToSMTCommands (prog : Strata.B3AST.Program SourceRange) : IO String := do
   let (solver, buffer) ← createBufferSolver
   let _ ← (Solver.setLogic "ALL").run solver
-  let _ ← verifyWithoutDiagnosis prog solver
+  let _ ← programToSMTWithoutDiagnosis prog solver
   let contents ← buffer.get
   if h: contents.data.IsValidUTF8
   then return String.fromUTF8 contents.data h
@@ -168,21 +168,21 @@ structure ProcedureReport where
   procedureName : String
   results : List (VerificationReport × Option DiagnosisResult)
 
-/-- Verify a B3 program with automatic diagnosis.
+/-- Translate a B3 program to SMT and verify with automatic diagnosis.
 
 Main entry point for verification.
 
 Workflow:
 1. Build program state (functions, axioms)
 2. For each parameter-free procedure:
-   - Generate VCs from body
+   - Translate statements to SMT
    - Check each VC
    - If failed, automatically diagnose to find root cause
 3. Report all results with diagnosis
 
 The solver is reset at the beginning to ensure clean state.
 -/
-def verify (prog : Strata.B3AST.Program SourceRange) (solver : Solver) : IO (List ProcedureReport) := do
+def programToSMT (prog : Strata.B3AST.Program SourceRange) (solver : Solver) : IO (List ProcedureReport) := do
   -- Reset solver to clean state
   let _ ← (Solver.reset).run solver
   let state ← buildProgramState prog solver
@@ -190,7 +190,7 @@ def verify (prog : Strata.B3AST.Program SourceRange) (solver : Solver) : IO (Lis
 
   -- Verify parameter-free procedures
   for (name, decl, bodyStmt) in extractVerifiableProcedures prog do
-    let (results, _finalState) ← symbolicExecuteStatementsWithDiagnosis ConversionContext.empty state decl bodyStmt
+    let (results, _finalState) ← statementToSMTWithDiagnosis ConversionContext.empty state decl bodyStmt
     reports := reports ++ [{
       procedureName := name
       results := results

@@ -62,8 +62,8 @@ def mkExecutionResult {M : Type} [Repr M] (convErrors : List (ConversionError M)
     | none => errorResults
   { results := allResults, finalState := state }
 
-/-- Symbolically execute B3 statements via streaming translation to SMT -/
-partial def symbolicExecuteStatements (ctx : ConversionContext) (state : B3VerificationState) (sourceDecl : B3AST.Decl SourceRange) : B3AST.Statement SourceRange → IO SymbolicExecutionResult
+/-- Translate B3 statements to SMT via streaming symbolic execution -/
+partial def statementToSMT (ctx : ConversionContext) (state : B3VerificationState) (sourceDecl : B3AST.Decl SourceRange) : B3AST.Statement SourceRange → IO SymbolicExecutionResult
   | .check m expr => do
       let convResult := expressionToSMT ctx expr
       let vctx := mkVerificationContext state sourceDecl (.check m expr)
@@ -93,7 +93,7 @@ partial def symbolicExecuteStatements (ctx : ConversionContext) (state : B3Verif
       let mut currentState := state
       let mut allResults := []
       for stmt in stmts.val.toList do
-        let execResult ← symbolicExecuteStatements ctx currentState sourceDecl stmt
+        let execResult ← statementToSMT ctx currentState sourceDecl stmt
         currentState := execResult.finalState
         allResults := allResults ++ execResult.results
       pure { results := allResults, finalState := currentState }

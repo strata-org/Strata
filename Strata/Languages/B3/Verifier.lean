@@ -49,8 +49,8 @@ Diagnosis (if failed)
 
 ## API Choice
 
-Use `verify` for automatic diagnosis (recommended) - provides detailed error analysis.
-Use `verifyWithoutDiagnosis` for faster verification without diagnosis - returns raw results.
+Use `programToSMT` for automatic diagnosis (recommended) - provides detailed error analysis.
+Use `programToSMTWithoutDiagnosis` for faster verification without diagnosis - returns raw results.
 
 ## Usage
 -/
@@ -74,7 +74,7 @@ meta def exampleVerification : IO Unit := do
 
   -- Create solver and verify
   let solver : Solver ← createInteractiveSolver "z3"
-  let reports : List ProcedureReport ← verify b3AST solver
+  let reports : List ProcedureReport ← programToSMT b3AST solver
   let _ ← (Solver.exit).run solver
 
   -- Destructure results to show types (self-documenting)

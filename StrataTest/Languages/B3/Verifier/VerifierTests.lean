@@ -129,7 +129,7 @@ def testVerification (prog : Program) : IO Unit := do
     | .ok ast => pure ast
     | .error msg => throw (IO.userError s!"Parse error: {msg}")
   let solver ← createInteractiveSolver "z3"
-  let reports ← verify ast solver
+  let reports ← programToSMT ast solver
   let _ ← (Solver.exit).run solver
   for report in reports do
     for (result, diagnosis) in report.results do
