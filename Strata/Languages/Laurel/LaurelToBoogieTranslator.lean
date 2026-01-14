@@ -15,12 +15,12 @@ import Strata.DL.Imperative.Stmt
 import Strata.DL.Lambda.LExpr
 import Strata.Languages.Laurel.LaurelFormat
 
-namespace Laurel
-
 open Boogie (VCResult VCResults)
-open Strata
-
 open Boogie (intAddOp intSubOp intMulOp intDivOp intModOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp)
+
+namespace Strata.Laurel
+
+open Strata
 open Lambda (LMonoTy LTy LExpr)
 
 /-
@@ -75,7 +75,7 @@ def translateExpr (expr : StmtExpr) : Boogie.Expression.Expr :=
                   | some e => translateExpr e
                   | none => .const () (.intConst 0)
       .ite () bcond bthen belse
-  | .Assign _ value => translateExpr value  -- For expressions, just translate the value
+  | .Assign _ value _ => translateExpr value  -- For expressions, just translate the value
   | .StaticCall name args =>
       -- Create function call as an op application
       let ident := Boogie.BoogieIdent.glob name
@@ -115,7 +115,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExpr) : List Boogi
                             | .TBool => .const () (.boolConst false)
                             | _ => .const () (.intConst 0)
           [Boogie.Statement.init ident boogieType defaultExpr]
-  | .Assign target value =>
+  | .Assign target value _ =>
       match target with
       | .Identifier name =>
           let ident := Boogie.BoogieIdent.locl name
@@ -192,32 +192,45 @@ def translateProcedure (proc : Procedure) : Boogie.Procedure :=
 /--
 Translate Laurel Program to Boogie Program
 -/
-def translate (program : Program) : Boogie.Program :=
+def translate (program : Program) : Except (Array DiagnosticModel) Boogie.Program := do
   -- First, sequence all assignments (move them out of expression positions)
-  let sequencedProgram := liftExpressionAssignments program
+  let sequencedProgram ← liftExpressionAssignments program
   dbg_trace "=== Sequenced program Program ==="
   dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format sequencedProgram)))
   dbg_trace "================================="
   -- Then translate to Boogie
   let procedures := sequencedProgram.staticProcedures.map translateProcedure
   let decls := procedures.map (fun p => Boogie.Decl.proc p .empty)
-  { decls := decls }
+  return { decls := decls }
 
 /--
 Verify a Laurel program using an SMT solver
 -/
 def verifyToVcResults (smtsolver : String) (program : Program)
-    (options : Options := Options.default) : IO VCResults := do
-  let boogieProgram := translate program
+    (options : Options := Options.default) : IO (Except (Array DiagnosticModel) VCResults) := do
+  let boogieProgramExcept := translate program
   -- Debug: Print the generated Boogie program
-  dbg_trace "=== Generated Boogie Program ==="
-  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format boogieProgram)))
-  dbg_trace "================================="
-  EIO.toIO (fun f => IO.Error.userError (toString f))
-      (Boogie.verify smtsolver boogieProgram options)
+  match boogieProgramExcept with
+    | .error e => return .error e
+    | .ok boogieProgram =>
+      dbg_trace "=== Generated Boogie Program ==="
+      dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format boogieProgram)))
+      dbg_trace "================================="
+      let ioResult <- EIO.toIO (fun f => IO.Error.userError (toString f))
+          (Boogie.verify smtsolver boogieProgram options)
+      return .ok ioResult
 
-def verifyToDiagnostics (smtsolver : String) (program : Program): IO (Array Diagnostic)  := do
+def verifyToDiagnostics (smtsolver : String) (files: Map Strata.Uri Lean.FileMap) (program : Program): IO (Array Diagnostic) := do
   let results <- verifyToVcResults smtsolver program
-  return results.filterMap toDiagnostic
+  match results with
+  | .error errors => return errors.map (fun dm => dm.toDiagnostic files)
+  | .ok results => return results.filterMap (fun dm => dm.toDiagnostic files)
+
+
+def verifyToDiagnosticModels (smtsolver : String) (program : Program): IO (Array DiagnosticModel) := do
+  let results <- verifyToVcResults smtsolver program
+  match results with
+  | .error errors => return errors
+  | .ok results => return results.filterMap toDiagnosticModel
 
 end Laurel

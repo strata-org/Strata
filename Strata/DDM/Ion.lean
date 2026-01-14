@@ -183,7 +183,7 @@ private protected def asList (v : Ion SymbolId) : FromIonM { a : Array (Ion Symb
   match v with
   | .mk (.list args) =>
     return .mk args (by simp; omega)
-  | _ => throw s!"Expected list"
+  | x => throw s!"Expected list"
 
 private protected def asSexp (name : String) (v : Ion SymbolId) : FromIonM ({ a : Array (Ion SymbolId) // a.size > 0 ∧ sizeOf a < sizeOf v}) :=
   match v with
@@ -284,7 +284,7 @@ private def deserializeValue {α} (bs : ByteArray) (act : Ion SymbolId → FromI
       throw s!"Error reading Ion: {msg} (offset = {off})"
     | .ok a => pure a
   let .isTrue p := inferInstanceAs (Decidable (a.size = 1))
-    | throw s!"Expected single Ion value."
+    | throw s!"Expected single Ion value, but got {repr a}."
   let entries := a[0]
   let .isTrue p := inferInstanceAs (Decidable (entries.size = 2))
     | throw s!"Expected symbol table and value in dialect."
@@ -1405,6 +1405,11 @@ private instance : FromIon Dialect where
 
 end Dialect
 
+structure StrataFile where
+  filePath : String
+  program : Program
+  deriving Inhabited
+
 namespace Program
 
 private instance : CachedToIon Program where
@@ -1430,7 +1435,7 @@ def fromIonFragment (f : Ion.Fragment)
     commands := ← fromIonFragmentCommands f
   }
 
-def fromIon (dialects : DialectMap) (dialect : DialectName) (bytes : ByteArray) : Except String Strata.Program := do
+def fileFromIon (dialects : DialectMap) (dialect : DialectName) (bytes : ByteArray) : Except String Strata.Program := do
   let (hdr, frag) ←
     match Strata.Ion.Header.parse bytes with
     | .error msg =>
@@ -1445,5 +1450,60 @@ def fromIon (dialects : DialectMap) (dialect : DialectName) (bytes : ByteArray) 
       throw s!"{name} program found when {dialect} expected."
     fromIonFragment frag dialects dialect
 
+def filesFromIon (dialects : DialectMap) (bytes : ByteArray) : Except String (List StrataFile) := do
+  let ctx ←
+    match Ion.deserialize bytes with
+    | .error (off, msg) => throw s!"Error reading Ion: {msg} (offset = {off})"
+    | .ok a =>
+      if p : a.size = 1 then
+        pure a[0]
+      else
+        throw s!"Expected single Ion value"
+
+  let .isTrue p := inferInstanceAs (Decidable (ctx.size = 2))
+    | throw "Expected symbol table and value"
+
+  let symbols ←
+    match SymbolTable.ofLocalSymbolTable ctx[0] with
+    | .error (p, msg) => throw s!"Error at {p}: {msg}"
+    | .ok symbols => pure symbols
+
+  let ionCtx : FromIonContext := ⟨symbols⟩
+
+  let ⟨filesList, _⟩ ← FromIonM.asList ctx[1]! ionCtx
+
+  let tbl := symbols
+  let filePathId := tbl.symbolId! "filePath"
+  let programId := tbl.symbolId! "program"
+
+  filesList.toList.mapM fun fileEntry => do
+    let fields ← FromIonM.asStruct0 fileEntry ionCtx
+
+    let some (_, filePathData) := fields.find? (·.fst == filePathId)
+      | throw "Could not find 'filePath' field"
+
+    let some (_, programData) := fields.find? (·.fst == programId)
+      | throw "Could not find 'program' field"
+
+    let filePath ← FromIonM.asString "filePath" filePathData ionCtx
+
+    let ⟨programValues, _⟩ ← FromIonM.asList programData ionCtx
+    let .isTrue ne := inferInstanceAs (Decidable (programValues.size ≥ 1))
+      | throw "Expected program header"
+
+    let hdr ← Ion.Header.fromIon programValues[0] ionCtx
+    let dialect ← match hdr with
+      | .program name => pure name
+      | .dialect _ => throw "Expected program, not dialect"
+
+    let frag : Ion.Fragment := {
+      symbols := symbols,
+      values := programValues,
+      offset := 1
+    }
+
+    let program ← fromIonFragment frag dialects dialect
+
+    pure { filePath := filePath, program := program }
+
 end Strata.Program
-end

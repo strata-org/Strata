@@ -43,6 +43,7 @@ Design choices:
 - Construction of composite types is WIP. It needs a design first.
 
 -/
+namespace Strata
 namespace Laurel
 
 abbrev Identifier := String /- Potentially this could be an Int to save resources. -/
@@ -130,7 +131,7 @@ inductive StmtExpr : Type where
   | LiteralBool (value: Bool)
   | Identifier (name : Identifier)
   /- Assign is only allowed in an impure context -/
-  | Assign (target : StmtExpr) (value : StmtExpr)
+  | Assign (target : StmtExpr) (value : StmtExpr) (md : Imperative.MetaData Boogie.Expression)
   /- Used by itself for fields reads and in combination with Assign for field writes -/
   | FieldSelect (target : StmtExpr) (fieldName : Identifier)
   /- PureFieldUpdate is the only way to assign values to fields of pure types -/

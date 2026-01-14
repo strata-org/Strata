@@ -21,7 +21,7 @@ echo "=== Compiling Java ==="
 javac -cp "$JAR" $GEN_DIR/com/strata/simple/*.java $TESTDATA/GenerateTestData.java
 
 echo "=== Generating test data ==="
-java -cp "$JAR:$GEN_DIR:$TESTDATA" GenerateTestData "$TESTDATA/comprehensive.ion"
+java -cp "$JAR:$GEN_DIR:$TESTDATA" GenerateTestData "$TESTDATA/comprehensive.ion" "$TESTDATA/comprehensive-files.ion"
 
 echo "=== Cleaning up ==="
 rm -rf "$GEN_DIR"
@@ -31,4 +31,4 @@ echo "=== Verifying with Lean ==="
 (cd "$STRATA_ROOT" && lake exe strata print --include "$STRATA_ROOT/StrataTest/DDM/Integration/Java/$TESTDATA" "$STRATA_ROOT/StrataTest/DDM/Integration/Java/$TESTDATA/comprehensive.ion" 2>&1 | tail -1)
 
 echo ""
-echo "Done! Regenerated $TESTDATA/comprehensive.ion"
+echo "Done! Regenerated $TESTDATA/comprehensive.ion and $TESTDATA/comprehensive-files.ion"
