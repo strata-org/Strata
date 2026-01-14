@@ -311,11 +311,13 @@ def Statements.allVarsTrans
 ---------------------------------------------------------------------
 
 mutual
-partial def Block.substFvar (b : Block) (fr:Expression.Ident)
+def Block.substFvar (b : Block) (fr:Expression.Ident)
       (to:Expression.Expr) : Block :=
   List.map (fun s => Statement.substFvar s fr to) b
+  termination_by b.sizeOf
+  decreasing_by apply sizeOf_stmt_in_block; assumption
 
-partial def Statement.substFvar (s : Boogie.Statement)
+def Statement.substFvar (s : Boogie.Statement)
       (fr:Expression.Ident)
       (to:Expression.Expr) : Statement :=
   match s with
@@ -345,16 +347,20 @@ partial def Statement.substFvar (s : Boogie.Statement)
           (Block.substFvar body fr to)
           metadata
   | .goto _ _ => s
+  termination_by s.sizeOf
+  decreasing_by all_goals(simp_wf; try omega)
 end
 
 ---------------------------------------------------------------------
 
 mutual
-partial def Block.renameLhs (b : Block)
+def Block.renameLhs (b : Block)
     (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility) : Block :=
   List.map (fun s => Statement.renameLhs s fr to) b
+  termination_by b.sizeOf
+  decreasing_by apply sizeOf_stmt_in_block; assumption
 
-partial def Statement.renameLhs (s : Boogie.Statement)
+def Statement.renameLhs (s : Boogie.Statement)
     (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility)
     : Statement :=
   match s with
@@ -369,6 +375,8 @@ partial def Statement.renameLhs (s : Boogie.Statement)
     .block lbl (Block.renameLhs b fr to) metadata
   | .havoc _ _ | .assert _ _ _ | .assume _ _ _ | .ite _ _ _ _
   | .loop _ _ _ _ _ | .goto _ _ | .cover _ _ _ => s
+  termination_by s.sizeOf
+  decreasing_by all_goals(simp_wf; try omega)
 end
 
 ---------------------------------------------------------------------

@@ -3,6 +3,12 @@
 `StrataTest/Languages/Python/expected/test_precondition_verification.expected` looks like this:
 
 ```
+datetime_now_ensures_0: ✅ pass
+
+datetime_utcnow_ensures_0: ✅ pass
+
+ensures_str_strp_reverse: ✅ pass
+
 assert_name_is_foo: ✅ pass
 
 assert_opt_name_none_or_str: ✅ pass
@@ -11,31 +17,31 @@ assert_opt_name_none_or_bar: ✅ pass
 
 ensures_maybe_except_none: ✅ pass
 
-test_helper_procedure_assert_name_is_foo_3: ✅ pass
+test_helper_procedure_assert_name_is_foo_27: ✅ pass
 
-test_helper_procedure_assert_opt_name_none_or_str_4: ✅ pass
+test_helper_procedure_assert_opt_name_none_or_str_28: ✅ pass
 
-test_helper_procedure_assert_opt_name_none_or_bar_5: ✅ pass
+test_helper_procedure_assert_opt_name_none_or_bar_29: ✅ pass
 
-test_helper_procedure_assert_name_is_foo_11: ✅ pass
-
-test_helper_procedure_assert_opt_name_none_or_str_12: ✅ pass
-
-test_helper_procedure_assert_opt_name_none_or_bar_13: ✅ pass
-
-test_helper_procedure_assert_name_is_foo_19: ❌ fail
-CEx: 
+test_helper_procedure_assert_name_is_foo_19: ✅ pass
 
 test_helper_procedure_assert_opt_name_none_or_str_20: ✅ pass
 
 test_helper_procedure_assert_opt_name_none_or_bar_21: ✅ pass
 
-test_helper_procedure_assert_name_is_foo_27: ✅ pass
+test_helper_procedure_assert_name_is_foo_11: failed
+CEx: 
 
-test_helper_procedure_assert_opt_name_none_or_str_28: ✅ pass
+test_helper_procedure_assert_opt_name_none_or_str_12: ✅ pass
 
-test_helper_procedure_assert_opt_name_none_or_bar_29: failure
-CEx:
+test_helper_procedure_assert_opt_name_none_or_bar_13: ✅ pass
+
+test_helper_procedure_assert_name_is_foo_3: ✅ pass
+
+test_helper_procedure_assert_opt_name_none_or_str_4: ✅ pass
+
+test_helper_procedure_assert_opt_name_none_or_bar_5: failed
+CEx: 
 ```
 
 This can be read as:
@@ -71,9 +77,9 @@ Each of the following triples:
 ```
 test_helper_procedure_assert_name_is_foo_3: ✅ pass
 
-test_helper_procedure_assert_opt_name_none_or_str_5: ✅ pass
+test_helper_procedure_assert_opt_name_none_or_str_4: ✅ pass
 
-test_helper_procedure_assert_opt_name_none_or_bar_5: ✅ pass
+test_helper_procedure_assert_opt_name_none_or_bar_5: ❌ fail
 ```
 
 Comes from checking the assertions in the inlined calls of `test_helper_procedure`. The first two triples succeed, the third has a failure because `"Foo" != "foo"`, and the final has a failure because `"Bar" != "bar"`.

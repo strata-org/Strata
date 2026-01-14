@@ -106,6 +106,12 @@ def Block.sizeOf (ss : Imperative.Block P C) : Nat :=
 
 end
 
+theorem sizeOf_stmt_in_block {s : Imperative.Stmt P C} {b: Imperative.Block P C} (s_in: s ∈ b) : s.sizeOf < b.sizeOf := by
+  induction b with
+  | nil => grind
+  | cons hd tl IH =>
+    rw[List.mem_cons] at s_in; simp only [Block.sizeOf]; grind
+
 instance (P : PureExpr) : SizeOf (Imperative.Stmt P C) where
   sizeOf := Stmt.sizeOf
 
@@ -244,7 +250,7 @@ instance (P : PureExpr) [HasVarsImp P C] : HasVarsImp P (Block P C) where
 open Std (ToFormat Format format)
 
 mutual
-partial def formatStmt (P : PureExpr) (s : Stmt P C)
+def formatStmt (P : PureExpr) (s : Stmt P C)
   [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] [ToFormat C] : Format :=
   match s with
   | .cmd cmd => format cmd
@@ -256,14 +262,16 @@ partial def formatStmt (P : PureExpr) (s : Stmt P C)
   | .loop guard measure invariant body md => f!"{md}while ({guard}) ({measure}) ({invariant}) " ++
                         Format.bracket "{" f!"{formatBlock P body}" "}"
   | .goto label md => f!"{md}goto {label}"
+  termination_by s.sizeOf
 
-partial def formatBlock (P : PureExpr) (ss : List (Stmt P C))
+def formatBlock (P : PureExpr) (ss : List (Stmt P C))
   [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty] [ToFormat C] : Format :=
     match ss with
     | [] => f!""
     | s :: rest => formatStmt P s ++
                    if rest.isEmpty then f!""
                    else f!"\n{formatBlock P rest}"
+  termination_by (Block.sizeOf ss)
 end
 
 instance [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty]
