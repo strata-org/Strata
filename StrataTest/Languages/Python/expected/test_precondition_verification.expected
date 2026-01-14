@@ -13,28 +13,28 @@ assert_opt_name_none_or_bar: verified
 
 ensures_maybe_except_none: verified
 
-test_helper_procedure_assert_name_is_foo_3: verified
+test_helper_procedure_assert_name_is_foo_27: verified
 
-test_helper_procedure_assert_opt_name_none_or_str_4: verified
+test_helper_procedure_assert_opt_name_none_or_str_28: verified
 
-test_helper_procedure_assert_opt_name_none_or_bar_5: verified
+test_helper_procedure_assert_opt_name_none_or_bar_29: verified
 
-test_helper_procedure_assert_name_is_foo_11: verified
-
-test_helper_procedure_assert_opt_name_none_or_str_12: verified
-
-test_helper_procedure_assert_opt_name_none_or_bar_13: verified
-
-test_helper_procedure_assert_name_is_foo_19: failed
-CEx: 
+test_helper_procedure_assert_name_is_foo_19: verified
 
 test_helper_procedure_assert_opt_name_none_or_str_20: verified
 
 test_helper_procedure_assert_opt_name_none_or_bar_21: verified
 
-test_helper_procedure_assert_name_is_foo_27: verified
+test_helper_procedure_assert_name_is_foo_11: failed
+CEx: 
 
-test_helper_procedure_assert_opt_name_none_or_str_28: verified
+test_helper_procedure_assert_opt_name_none_or_str_12: verified
 
-test_helper_procedure_assert_opt_name_none_or_bar_29: failed
+test_helper_procedure_assert_opt_name_none_or_bar_13: verified
+
+test_helper_procedure_assert_name_is_foo_3: verified
+
+test_helper_procedure_assert_opt_name_none_or_str_4: verified
+
+test_helper_procedure_assert_opt_name_none_or_bar_5: failed
 CEx: 

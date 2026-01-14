@@ -186,7 +186,7 @@ open Lambda.LTy.Syntax
   (.app () (.app () (.op () (BoogieIdent.unres "Int.Add") .none) eb[#100]) eb[#50]))
 
 
--- This may take a while (~ 1min)
+-- This may take a while (~ 5min)
 #eval (checkFactoryOps false)
 
 open Plausible TestGen
