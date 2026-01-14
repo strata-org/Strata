@@ -3,12 +3,8 @@
 
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
-
 import Strata.DL.SMT.DDMTransform.Parse
 import Strata.DL.SMT.Term
-import Strata.DDM.Format
-import Strata.DDM.Util.DecimalRat
-import Strata.DDM.Util.Format
 
 namespace Strata
 
