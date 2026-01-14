@@ -309,6 +309,14 @@ inductive EvalCmd [HasFvar P] [HasBool P] [HasNot P] :
     ----
     EvalCmd δ σ (.assume _ e _) σ
 
+  /-- If `e` evaluates to true in `σ`, evaluate to the same `σ`. This semantics
+  does not have a concept of erroneous executions. -/
+  | eval_cover :
+    δ σ e = .some HasBool.tt →
+    WellFormedSemanticEvalBool δ →
+    ----
+    EvalCmd δ σ (.cover _ e _) σ
+
 end section
 
 theorem InitStateDefCons
