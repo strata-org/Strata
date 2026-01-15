@@ -16,7 +16,7 @@ import Strata.Languages.Boogie.StatementSemantics
 
 /-! ## Theorems related to StatementSemantics -/
 
-namespace Boogie
+namespace Core
 open Imperative
 
 theorem InitStatesEmpty :
@@ -610,7 +610,7 @@ theorem ReadValuesLength :
   induction Hrd <;> simp_all
 
 theorem EvalExpressionsLength :
-  EvalExpressions (P:=Boogie.Expression) δ σ ks vs →
+  EvalExpressions (P:=Core.Expression) δ σ ks vs →
   ks.length = vs.length := by
   intros Hrd
   induction Hrd <;> simp_all
@@ -1707,7 +1707,7 @@ theorem HavocVarsDefined :
 
 theorem EvalCmdDefMonotone :
   isDefined σ v →
-  EvalCmd Boogie.Expression δ σ c σ' →
+  EvalCmd Core.Expression δ σ c σ' →
   isDefined σ' v := by
   intros Hdef Heval
   cases Heval <;> try exact Hdef

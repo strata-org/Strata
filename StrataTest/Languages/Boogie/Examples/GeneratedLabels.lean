@@ -34,8 +34,8 @@ procedure test(h: Heap, ref: Ref, field: Field) returns ()
 #end
 
 /--
-info: type Boogie.Boundedness.Infinite Ref []
-type Boogie.Boundedness.Infinite Field []
+info: type Core.Boundedness.Infinite Ref []
+type Core.Boundedness.Infinite Field []
 type Struct := (Map Field int)
 type Heap := (Map Ref Struct)
 axiom axiom_0: (∀ (∀ (∀ (∀ (((~Bool.Implies : (arrow bool (arrow bool bool))) ((~Bool.Not : (arrow bool bool)) (%2 == %1))) ((((~select : (arrow (Map Field int) (arrow Field int))) %3) %2) == (((~select : (arrow (Map Field int) (arrow Field int))) ((((~update : (arrow (Map Field int) (arrow Field (arrow int (Map Field int))))) %3) %1) %0)) %2)))))));
@@ -53,7 +53,7 @@ assert [assert_0] ((((~select : (arrow (Map Field int) (arrow Field int))) (((~s
 #eval (TransM.run Inhabited.default (translateProgram genLabelsPgm) |>.fst)
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:

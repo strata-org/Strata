@@ -15,8 +15,8 @@ import Strata.Transform.CoreTransform
 import Strata.Transform.CallElim
 
 
-open Boogie
-open Boogie.Transform
+open Core
+open Core.Transform
 open CallElim
 open Strata
 
@@ -177,9 +177,9 @@ procedure h() returns () spec {
 };
 #end
 
-def translate (t : Strata.Program) : Boogie.Program := (TransM.run Inhabited.default (translateProgram t)).fst
+def translate (t : Strata.Program) : Core.Program := (TransM.run Inhabited.default (translateProgram t)).fst
 
-def env := (Lambda.LContext.default.addFactoryFunctions Boogie.Factory)
+def env := (Lambda.LContext.default.addFactoryFunctions Core.Factory)
 
 def translateWF (t : Strata.Program) : WF.WFProgram :=
   let p := translate t
@@ -187,14 +187,14 @@ def translateWF (t : Strata.Program) : WF.WFProgram :=
   | .error e => panic! "Well, " ++ Std.format e |> toString
   | .ok res => { self := p, prop := by exact WF.Program.typeCheckWF H }
 
-def tests : List (Boogie.Program × Boogie.Program) := [
+def tests : List (Core.Program × Core.Program) := [
   (CallElimTest1, CallElimTest1Ans),
   (CallElimTest2, CallElimTest2Ans),
   (CallElimTest3, CallElimTest3Ans),
 ].map (Prod.map translate translate)
 
-def callElim (p : Boogie.Program)
-  : Boogie.Program :=
+def callElim (p : Core.Program)
+  : Core.Program :=
   match (run p callElim') with
   | .ok res => res
   | .error e => panic! e

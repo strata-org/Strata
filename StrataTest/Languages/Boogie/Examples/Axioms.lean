@@ -42,7 +42,7 @@ procedure P2() returns ()
 #end
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
@@ -130,10 +130,10 @@ assert [axiomPgm2_main_assert]: (x >= 0 ==> f(x) > x);
 /-- info: [] -/
 #guard_msgs in
 #eval let (program, _) := Boogie.getProgram axiomPgm2
-      Std.format (Boogie.Program.getIrrelevantAxioms program ["f"])
+      Std.format (Core.Program.getIrrelevantAxioms program ["f"])
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:

@@ -37,7 +37,7 @@ def boogie_pgm := TransM.run Inhabited.default (translateProgram pgm)
 #eval boogie_pgm.snd.isEmpty
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: [Strata.Core] Type checking succeeded.
 
 ---
 info: ok: type set := (Map int bool)
@@ -47,4 +47,4 @@ axiom a1: (∀ (∀ ((((~diff : (arrow (Map int bool) (arrow (Map int bool) (Map
 axiom a2: (∀ (∀ (∀ (∀ ((((~select : (arrow (Map int int) (arrow int int))) ((((~lambda_0 : (arrow bool (arrow int (arrow int (Map int int))))) %3) %2) %1)) %0) == (((~select : (arrow (Map int int) (arrow int int))) ((((~lambda_0 : (arrow bool (arrow int (arrow int (Map int int))))) %3) %1) %2)) %0))))));
 -/
 #guard_msgs in
-#eval Boogie.typeCheck Options.default boogie_pgm.fst
+#eval Core.typeCheck Options.default boogie_pgm.fst

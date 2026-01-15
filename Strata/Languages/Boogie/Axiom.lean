@@ -11,7 +11,7 @@ import Strata.Languages.Boogie.Statement
 import Strata.DL.Lambda.LTy
 import Strata.DL.Lambda.LExpr
 
-namespace Boogie
+namespace Core
 ---------------------------------------------------------------------
 
 open Std (ToFormat Format format)

@@ -57,7 +57,7 @@ procedure P () returns () {
 #eval TransM.run Inhabited.default (translateProgram goodTypeAlias) |>.snd
 
 /--
-info: type Boogie.Boundedness.Infinite Foo [_, _]
+info: type Core.Boundedness.Infinite Foo [_, _]
 type FooAlias a := (Foo int bool)
 type FooAlias2 a := (FooAlias (FooAlias bool))
 func fooVal :  () → (FooAlias2 (Foo int int));
@@ -75,7 +75,7 @@ assert [fooAssertion] ((~fooConst1 : (Foo int bool)) == (~fooConst2 : (Foo int b
 #eval TransM.run Inhabited.default (translateProgram goodTypeAlias) |>.fst
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
@@ -120,7 +120,7 @@ procedure test () returns () {
 #end
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:

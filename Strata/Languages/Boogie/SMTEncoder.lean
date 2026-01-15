@@ -14,7 +14,7 @@ import Strata.DDM.Util.Graph.Tarjan
 
 ---------------------------------------------------------------------
 
-namespace Boogie
+namespace Core
 open Std (ToFormat Format format)
 open Lambda Strata.SMT
 
@@ -642,11 +642,11 @@ def ProofObligation.toSMTTerms (E : Env)
   Except Format ((List Term) × SMT.Context) := do
   let assumptions := d.assumptions.flatten.map (fun a => a.snd)
   let (ctx, distinct_terms) ← E.distinct.foldlM (λ (ctx, tss) es =>
-    do let (ts, ctx') ← Boogie.toSMTTerms E es ctx; pure (ctx', ts :: tss)) (ctx, [])
+    do let (ts, ctx') ← Core.toSMTTerms E es ctx; pure (ctx', ts :: tss)) (ctx, [])
   let distinct_assumptions := distinct_terms.map
     (λ ts => Term.app (.core .distinct) ts .bool)
-  let (assumptions_terms, ctx) ← Boogie.toSMTTerms E assumptions ctx
-  let (obligation_pos_term, ctx) ← Boogie.toSMTTerm E [] d.obligation ctx
+  let (assumptions_terms, ctx) ← Core.toSMTTerms E assumptions ctx
+  let (obligation_pos_term, ctx) ← Core.toSMTTerm E [] d.obligation ctx
   let obligation_term :=
     if d.property == .cover then
       obligation_pos_term
@@ -714,7 +714,7 @@ info: "; f\n(declare-const f0 (arrow Int Int))\n; f\n(declare-fun f1 (Int) Int)\
    (E := {Env.init with exprEnv := {
     Env.init.exprEnv with
       config := { Env.init.exprEnv.config with
-        factory := Boogie.Factory
+        factory := Core.Factory
       }
    }})
 
@@ -754,4 +754,4 @@ info: "; f\n(declare-fun f0 (Int Int) Int)\n; x\n(declare-const f1 Int)\n(define
    }})
 
 
-end Boogie
+end Core

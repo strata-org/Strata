@@ -11,7 +11,7 @@ import Strata.DL.Imperative.PureExpr
 import Strata.Languages.Boogie.Identifiers
 import Strata.DL.Imperative.HasVars
 
-namespace Boogie
+namespace Core
 open Std (ToFormat Format format)
 ---------------------------------------------------------------------
 
@@ -34,4 +34,4 @@ instance : Inhabited Expression.Expr where
 
 ---------------------------------------------------------------------
 
-end Boogie
+end Core

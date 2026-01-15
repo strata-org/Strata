@@ -11,7 +11,7 @@ import Strata.Languages.Boogie.ProcedureEval
 
 ---------------------------------------------------------------------
 
-namespace Boogie
+namespace Core
 
 open Std (ToFormat Format format)
 
@@ -93,4 +93,4 @@ def eval (E : Env) : List (Program × Env) :=
 --------------------------------------------------------------------
 
 end Program
-end Boogie
+end Core

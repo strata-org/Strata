@@ -10,7 +10,7 @@ import Strata.Languages.Boogie.ProgramType
 import Strata.Languages.Boogie.ProgramWF
 import Strata.DL.Lambda.IntBoolFactory
 
-open Boogie
+open Core
 
 /-! ## Deterministic-to-Nondeterministic Examples -/
 section NondetExamples

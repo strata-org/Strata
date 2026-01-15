@@ -10,7 +10,7 @@ import Strata.Languages.Boogie.Statement
 
 ---------------------------------------------------------------------
 
-namespace Boogie
+namespace Core
 
 open Std (ToFormat Format format)
 open Lambda
@@ -39,4 +39,4 @@ open LTy.Syntax LExpr.SyntaxMono in
 
 ---------------------------------------------------------------------
 
-end Boogie
+end Core

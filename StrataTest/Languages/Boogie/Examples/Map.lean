@@ -44,7 +44,7 @@ Errors: #[]
 #eval TransM.run Inhabited.default (translateProgram mapPgm)
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:

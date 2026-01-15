@@ -11,7 +11,7 @@ import Strata.DL.Lambda.Factory
 import Strata.DL.Lambda.IntBoolFactory
 ---------------------------------------------------------------------
 
-namespace Boogie
+namespace Core
 open Lambda LTy.Syntax LExpr.SyntaxMono
 
 @[match_pattern]
@@ -368,7 +368,7 @@ macro "ExpandBVOpFuncNames" "[" sizes:num,* "]" : term => do
   let mut allOps := #[]
   for size in sizes.getElems do
     let s := size.getNat.repr
-    let ops := BVOpNames.map (mkIdent ∘ (.str (.str .anonymous "Boogie")) ∘ (s!"bv{s}" ++ · ++ "Func"))
+    let ops := BVOpNames.map (mkIdent ∘ (.str (.str .anonymous "Core")) ∘ (s!"bv{s}" ++ · ++ "Func"))
     allOps := allOps ++ ops.toArray
   `([$(allOps),*])
 
@@ -476,7 +476,7 @@ elab "DefBVOpFuncExprs" "[" sizes:num,* "]" : command => do
     let s := size.getNat.repr
     for op in BVOpNames do
       let opName := mkIdent (.str .anonymous s!"bv{s}{op}Op")
-      let funcName := mkIdent (.str (.str .anonymous "Boogie") s!"bv{s}{op}Func")
+      let funcName := mkIdent (.str (.str .anonymous "Core") s!"bv{s}{op}Func")
       elabCommand (← `(def $opName : Expression.Expr := ($funcName).opExpr))
 
 instance : Inhabited BoogieLParams.Metadata where
@@ -563,4 +563,4 @@ Get all the built-in functions supported by Boogie.
 def builtinFunctions : Array String :=
   Factory.map (fun f => BoogieIdent.toPretty f.name)
 
-end Boogie
+end Core

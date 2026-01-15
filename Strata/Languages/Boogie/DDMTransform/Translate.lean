@@ -15,7 +15,7 @@ namespace Strata
 
 /- Translating concrete syntax into abstract syntax -/
 
-open Boogie Lambda Imperative Lean.Parser
+open Core Lambda Imperative Lean.Parser
 open Std (ToFormat Format format)
 
 ---------------------------------------------------------------------
@@ -33,7 +33,7 @@ def TransM.run (ictx : InputContext) (m : TransM α) : (α × Array String) :=
   let (v, s) := StateT.run m { inputCtx := ictx, errors := #[] }
   (v, s.errors)
 
-instance : ToString (Boogie.Program × Array String) where
+instance : ToString (Core.Program × Array String) where
   toString p := toString (Std.format p.fst) ++ "\n" ++
                 "Errors: " ++ (toString p.snd)
 
@@ -45,7 +45,7 @@ def TransM.error [Inhabited α] (msg : String) : TransM α := do
 
 /- Metadata -/
 
-def SourceRange.toMetaData (ictx : InputContext) (sr : SourceRange) : Imperative.MetaData Boogie.Expression :=
+def SourceRange.toMetaData (ictx : InputContext) (sr : SourceRange) : Imperative.MetaData Core.Expression :=
   let file := ictx.fileName
   let startPos := ictx.fileMap.toPosition sr.start
   let endPos := ictx.fileMap.toPosition sr.stop
@@ -53,10 +53,10 @@ def SourceRange.toMetaData (ictx : InputContext) (sr : SourceRange) : Imperative
   let fileRangeElt := ⟨ MetaData.fileRange, .fileRange ⟨ uri, startPos, endPos ⟩ ⟩
   #[fileRangeElt]
 
-def getOpMetaData (op : Operation) : TransM (Imperative.MetaData Boogie.Expression) :=
+def getOpMetaData (op : Operation) : TransM (Imperative.MetaData Core.Expression) :=
   return op.ann.toMetaData (← StateT.get).inputCtx
 
-def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Boogie.Expression) :=
+def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Core.Expression) :=
   return arg.ann.toMetaData (← StateT.get).inputCtx
 
 ---------------------------------------------------------------------
@@ -111,7 +111,7 @@ def translateOptionLabel (default : String) (arg : Arg) : TransM String := do
   translateOption (fun maybe_arg => do
                     match maybe_arg with
                     | none => return default
-                    | some lop => let args ← checkOpArg lop q`Boogie.label 1
+                    | some lop => let args ← checkOpArg lop q`Core.label 1
                                   translateIdent String args[0]!)
                   arg
 
@@ -155,7 +155,7 @@ structure GenNum where
 structure TransBindings where
   boundTypeVars : Array TyIdentifier := #[]
   boundVars : Array (LExpr BoogieLParams.mono) := #[]
-  freeVars  : Array Boogie.Decl := #[]
+  freeVars  : Array Core.Decl := #[]
   gen : GenNum := (GenNum.mk 0 0 0 0 0)
 
 def incrNum (gen_kind : GenKind) (b : TransBindings) : TransBindings :=
@@ -178,19 +178,19 @@ instance : ToFormat TransBindings where
                 {Format.line}\
                 Gen: {repr b.gen}"
 
-instance : Inhabited (List Boogie.Statement × TransBindings) where
+instance : Inhabited (List Core.Statement × TransBindings) where
   default := ([], {})
 
-instance : Inhabited Boogie.Decl where
+instance : Inhabited Core.Decl where
   default := .var "badguy" (.forAll [] (.tcons "bool" [])) (.false ())
 
 instance : Inhabited (Procedure.CheckAttr) where
   default := .Default
 
-instance : Inhabited (Boogie.Decl × TransBindings) where
+instance : Inhabited (Core.Decl × TransBindings) where
   default := (.var "badguy" (.forAll [] (.tcons "bool" [])) (.false ()), {})
 
-instance : Inhabited (Boogie.Decls × TransBindings) where
+instance : Inhabited (Core.Decls × TransBindings) where
   default := ([], {})
 
 instance : Inhabited (List BoogieIdent × TransBindings) where
@@ -204,7 +204,7 @@ instance : Inhabited (List TyIdentifier × TransBindings) where
 def translateTypeBinding (bindings : TransBindings) (op : Arg) :
   TransM (TyIdentifier × TransBindings) := do
   -- (FIXME) Account for metadata.
-  let bargs ← checkOpArg op q`Boogie.mkBinding 2
+  let bargs ← checkOpArg op q`Core.mkBinding 2
   let id ← translateIdent TyIdentifier bargs[0]!
   -- (TODO) It looks like other elements of `bargs` are irrelevant here?
   -- Perhaps we should not using `Bindings` for type declarations.
@@ -229,11 +229,11 @@ partial def translateLMonoTy (bindings : TransBindings) (arg : Arg) :
   let .type tp := arg
     | TransM.error s!"translateLMonoTy expected type {repr arg}"
   match tp with
-  | .ident _ q`Boogie.bv1 #[] => pure <| .bitvec 1
-  | .ident _ q`Boogie.bv8 #[] => pure <| .bitvec 8
-  | .ident _ q`Boogie.bv16 #[] => pure <| .bitvec 16
-  | .ident _ q`Boogie.bv32 #[] => pure <| .bitvec 32
-  | .ident _ q`Boogie.bv64 #[] => pure <| .bitvec 64
+  | .ident _ q`Core.bv1 #[] => pure <| .bitvec 1
+  | .ident _ q`Core.bv8 #[] => pure <| .bitvec 8
+  | .ident _ q`Core.bv16 #[] => pure <| .bitvec 16
+  | .ident _ q`Core.bv32 #[] => pure <| .bitvec 32
+  | .ident _ q`Core.bv64 #[] => pure <| .bitvec 64
   | .ident _ i argst =>
       let argst' ← translateLMonoTys bindings (argst.map ArgF.type)
       pure <| (.tcons i.name argst'.toList.reverse)
@@ -283,13 +283,13 @@ def translateTypeArgs (op : Strata.Arg) : TransM (Array TyIdentifier) := do
   translateOption (fun x => do match x with
                   | none => return Array.empty
                   | some a =>
-                    let args ← checkOpArg a q`Boogie.type_args 1
+                    let args ← checkOpArg a q`Core.type_args 1
                     translateCommaSep (translateIdent TyIdentifier) args[0]!)
                   op
 
 def translateTypeSynonym (bindings : TransBindings) (op : Operation) :
-  TransM (Boogie.Decl × TransBindings) := do
-  let _ ← @checkOp (Boogie.Decl × TransBindings) op q`Boogie.command_typesynonym 4
+  TransM (Core.Decl × TransBindings) := do
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_typesynonym 4
   let name ← translateIdent TyIdentifier op.args[0]!
   let (targs, bindings) ←
     translateOption
@@ -297,7 +297,7 @@ def translateTypeSynonym (bindings : TransBindings) (op : Operation) :
             do match maybearg with
             | none => pure ([], bindings)
             | some arg =>
-              let bargs ← checkOpArg arg q`Boogie.mkBindings 1
+              let bargs ← checkOpArg arg q`Core.mkBindings 1
               let args ←
                   match bargs[0]! with
                   | .seq _ .comma args =>
@@ -308,13 +308,13 @@ def translateTypeSynonym (bindings : TransBindings) (op : Operation) :
                     op.args[1]!
   let typedef ← translateLMonoTy bindings op.args[3]!
   let md ← getOpMetaData op
-  let decl := Boogie.Decl.type (.syn { name := name, typeArgs := targs, type := typedef }) md
+  let decl := Core.Decl.type (.syn { name := name, typeArgs := targs, type := typedef }) md
   return (decl, { bindings with freeVars := bindings.freeVars.push decl })
 
 
 def translateTypeDecl (bindings : TransBindings) (op : Operation) :
-  TransM (Boogie.Decl × TransBindings) := do
-  let _ ← @checkOp (Boogie.Decl × TransBindings) op q`Boogie.command_typedecl 2
+  TransM (Core.Decl × TransBindings) := do
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_typedecl 2
   let name ← translateIdent TyIdentifier op.args[0]!
   let numargs ←
     translateOption
@@ -322,7 +322,7 @@ def translateTypeDecl (bindings : TransBindings) (op : Operation) :
             do match maybearg with
             | none => pure 0
             | some arg =>
-              let bargs ← checkOpArg arg q`Boogie.mkBindings 1
+              let bargs ← checkOpArg arg q`Core.mkBindings 1
               let numargs ←
                   match bargs[0]! with
                   | .seq _ .comma args => pure args.size
@@ -332,7 +332,7 @@ def translateTypeDecl (bindings : TransBindings) (op : Operation) :
   let md ← getOpMetaData op
   -- Only the number of type arguments is important; the exact identifiers are
   -- irrelevant.
-  let decl := Boogie.Decl.type (.con { name := name, numargs := numargs }) md
+  let decl := Core.Decl.type (.con { name := name, numargs := numargs }) md
   return (decl, { bindings with freeVars := bindings.freeVars.push decl })
 
 ---------------------------------------------------------------------
@@ -341,7 +341,7 @@ def translateLhs (arg : Arg) : TransM BoogieIdent := do
   let .op op := arg
     | TransM.error s!"translateLhs expected op {repr arg}"
   match op.name, op.args with
-  | q`Boogie.lhsIdent, #[id] => translateIdent BoogieIdent id
+  | q`Core.lhsIdent, #[id] => translateIdent BoogieIdent id
   -- (TODO) Implement lhsArray.
   | _, _ => TransM.error s!"translateLhs: unimplemented for {repr arg}"
 
@@ -350,7 +350,7 @@ def translateBindMk (bindings : TransBindings) (arg : Arg) :
   let .op op := arg
     | TransM.error s!"translateBindMk expected op {repr arg}"
   match op.name, op.args with
-  | q`Boogie.bind_mk, #[ida, targsa, tpa] =>
+  | q`Core.bind_mk, #[ida, targsa, tpa] =>
     let id ← translateIdent BoogieIdent ida
     let args ← translateTypeArgs targsa
     let tp ← translateLMonoTy bindings tpa
@@ -363,7 +363,7 @@ def translateMonoBindMk (bindings : TransBindings) (arg : Arg) :
   let .op op := arg
     | TransM.error s!"translateMonoBindMk expected op {repr arg}"
   match op.name, op.args with
-  | q`Boogie.mono_bind_mk, #[ida, tpa] =>
+  | q`Core.mono_bind_mk, #[ida, tpa] =>
     let id ← translateIdent BoogieIdent ida
     let tp ← translateLMonoTy bindings tpa
     return (id, tp)
@@ -375,13 +375,13 @@ partial def translateDeclList (bindings : TransBindings) (arg : Arg) :
   let .op op := arg
     | TransM.error s!"translateDeclList expects an op {repr arg}"
   match op.name with
-  | q`Boogie.declAtom =>
-    let args ← checkOpArg arg q`Boogie.declAtom 1
+  | q`Core.declAtom =>
+    let args ← checkOpArg arg q`Core.declAtom 1
     let (id, targs, mty) ← translateBindMk bindings args[0]!
     let lty := .forAll targs mty
     pure [(id, lty)]
-  | q`Boogie.declPush =>
-    let args ← checkOpArg arg q`Boogie.declPush 2
+  | q`Core.declPush =>
+    let args ← checkOpArg arg q`Core.declPush 2
     let fst ← translateDeclList bindings args[0]!
     let (id, targs, mty) ← translateBindMk bindings args[1]!
     let lty : LTy := .forAll targs mty
@@ -393,12 +393,12 @@ partial def translateMonoDeclList (bindings : TransBindings) (arg : Arg) :
   let .op op := arg
     | TransM.error s!"translateMonoDeclList expects an op {repr arg}"
   match op.name with
-  | q`Boogie.monoDeclAtom =>
-    let args ← checkOpArg arg q`Boogie.monoDeclAtom 1
+  | q`Core.monoDeclAtom =>
+    let args ← checkOpArg arg q`Core.monoDeclAtom 1
     let (id, mty) ← translateMonoBindMk bindings args[0]!
     pure [(id, mty)]
-  | q`Boogie.monoDeclPush =>
-    let args ← checkOpArg arg q`Boogie.monoDeclPush 2
+  | q`Core.monoDeclPush =>
+    let args ← checkOpArg arg q`Core.monoDeclPush 2
     let fst ← translateMonoDeclList bindings args[0]!
     let (id, mty) ← translateMonoBindMk bindings args[1]!
     pure (fst ++ ListMap.ofList [(id, mty)])
@@ -433,185 +433,185 @@ def isArithTy : LMonoTy → Bool
 | .bitvec _ => true
 | _ => false
 
-def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Boogie.Expression.Expr :=
+def translateFn (ty? : Option LMonoTy) (q : QualifiedIdent) : TransM Core.Expression.Expr :=
   match ty?, q with
-  | _, q`Boogie.equiv    => return boolEquivOp
-  | _, q`Boogie.implies  => return boolImpliesOp
-  | _, q`Boogie.and      => return boolAndOp
-  | _, q`Boogie.or       => return boolOrOp
-  | _, q`Boogie.not      => return boolNotOp
+  | _, q`Core.equiv    => return boolEquivOp
+  | _, q`Core.implies  => return boolImpliesOp
+  | _, q`Core.and      => return boolAndOp
+  | _, q`Core.or       => return boolOrOp
+  | _, q`Core.not      => return boolNotOp
 
-  | .some .int, q`Boogie.le       => return intLeOp
-  | .some .int, q`Boogie.lt       => return intLtOp
-  | .some .int, q`Boogie.ge       => return intGeOp
-  | .some .int, q`Boogie.gt       => return intGtOp
-  | .some .int, q`Boogie.add_expr => return intAddOp
-  | .some .int, q`Boogie.sub_expr => return intSubOp
-  | .some .int, q`Boogie.mul_expr => return intMulOp
-  | .some .int, q`Boogie.div_expr => return intDivOp
-  | .some .int, q`Boogie.mod_expr => return intModOp
-  | .some .int, q`Boogie.neg_expr => return intNegOp
+  | .some .int, q`Core.le       => return intLeOp
+  | .some .int, q`Core.lt       => return intLtOp
+  | .some .int, q`Core.ge       => return intGeOp
+  | .some .int, q`Core.gt       => return intGtOp
+  | .some .int, q`Core.add_expr => return intAddOp
+  | .some .int, q`Core.sub_expr => return intSubOp
+  | .some .int, q`Core.mul_expr => return intMulOp
+  | .some .int, q`Core.div_expr => return intDivOp
+  | .some .int, q`Core.mod_expr => return intModOp
+  | .some .int, q`Core.neg_expr => return intNegOp
 
-  | .some .real, q`Boogie.le       => return realLeOp
-  | .some .real, q`Boogie.lt       => return realLtOp
-  | .some .real, q`Boogie.ge       => return realGeOp
-  | .some .real, q`Boogie.gt       => return realGtOp
-  | .some .real, q`Boogie.add_expr => return realAddOp
-  | .some .real, q`Boogie.sub_expr => return realSubOp
-  | .some .real, q`Boogie.mul_expr => return realMulOp
-  | .some .real, q`Boogie.div_expr => return realDivOp
-  | .some .real, q`Boogie.neg_expr => return realNegOp
+  | .some .real, q`Core.le       => return realLeOp
+  | .some .real, q`Core.lt       => return realLtOp
+  | .some .real, q`Core.ge       => return realGeOp
+  | .some .real, q`Core.gt       => return realGtOp
+  | .some .real, q`Core.add_expr => return realAddOp
+  | .some .real, q`Core.sub_expr => return realSubOp
+  | .some .real, q`Core.mul_expr => return realMulOp
+  | .some .real, q`Core.div_expr => return realDivOp
+  | .some .real, q`Core.neg_expr => return realNegOp
 
-  | .some .bv1, q`Boogie.le       => return bv1ULeOp
-  | .some .bv1, q`Boogie.lt       => return bv1ULtOp
-  | .some .bv1, q`Boogie.ge       => return bv1UGeOp
-  | .some .bv1, q`Boogie.gt       => return bv1UGtOp
-  | .some .bv1, q`Boogie.bvsle    => return bv1SLeOp
-  | .some .bv1, q`Boogie.bvslt    => return bv1SLtOp
-  | .some .bv1, q`Boogie.bvsge    => return bv1SGeOp
-  | .some .bv1, q`Boogie.bvsgt    => return bv1SGtOp
-  | .some .bv1, q`Boogie.neg_expr => return bv1NegOp
-  | .some .bv1, q`Boogie.add_expr => return bv1AddOp
-  | .some .bv1, q`Boogie.sub_expr => return bv1SubOp
-  | .some .bv1, q`Boogie.mul_expr => return bv1MulOp
-  | .some .bv1, q`Boogie.div_expr => return bv1UDivOp
-  | .some .bv1, q`Boogie.mod_expr => return bv1UModOp
-  | .some .bv1, q`Boogie.bvsdiv   => return bv1SDivOp
-  | .some .bv1, q`Boogie.bvsmod   => return bv1SModOp
-  | .some .bv1, q`Boogie.bvnot    => return bv1NotOp
-  | .some .bv1, q`Boogie.bvand    => return bv1AndOp
-  | .some .bv1, q`Boogie.bvor     => return bv1OrOp
-  | .some .bv1, q`Boogie.bvxor    => return bv1XorOp
-  | .some .bv1, q`Boogie.bvshl    => return bv1ShlOp
-  | .some .bv1, q`Boogie.bvushr   => return bv1UShrOp
-  | .some .bv1, q`Boogie.bvsshr   => return bv1SShrOp
+  | .some .bv1, q`Core.le       => return bv1ULeOp
+  | .some .bv1, q`Core.lt       => return bv1ULtOp
+  | .some .bv1, q`Core.ge       => return bv1UGeOp
+  | .some .bv1, q`Core.gt       => return bv1UGtOp
+  | .some .bv1, q`Core.bvsle    => return bv1SLeOp
+  | .some .bv1, q`Core.bvslt    => return bv1SLtOp
+  | .some .bv1, q`Core.bvsge    => return bv1SGeOp
+  | .some .bv1, q`Core.bvsgt    => return bv1SGtOp
+  | .some .bv1, q`Core.neg_expr => return bv1NegOp
+  | .some .bv1, q`Core.add_expr => return bv1AddOp
+  | .some .bv1, q`Core.sub_expr => return bv1SubOp
+  | .some .bv1, q`Core.mul_expr => return bv1MulOp
+  | .some .bv1, q`Core.div_expr => return bv1UDivOp
+  | .some .bv1, q`Core.mod_expr => return bv1UModOp
+  | .some .bv1, q`Core.bvsdiv   => return bv1SDivOp
+  | .some .bv1, q`Core.bvsmod   => return bv1SModOp
+  | .some .bv1, q`Core.bvnot    => return bv1NotOp
+  | .some .bv1, q`Core.bvand    => return bv1AndOp
+  | .some .bv1, q`Core.bvor     => return bv1OrOp
+  | .some .bv1, q`Core.bvxor    => return bv1XorOp
+  | .some .bv1, q`Core.bvshl    => return bv1ShlOp
+  | .some .bv1, q`Core.bvushr   => return bv1UShrOp
+  | .some .bv1, q`Core.bvsshr   => return bv1SShrOp
 
-  | .some .bv8, q`Boogie.le       => return bv8ULeOp
-  | .some .bv8, q`Boogie.lt       => return bv8ULtOp
-  | .some .bv8, q`Boogie.ge       => return bv8UGeOp
-  | .some .bv8, q`Boogie.gt       => return bv8UGtOp
-  | .some .bv8, q`Boogie.bvsle    => return bv8SLeOp
-  | .some .bv8, q`Boogie.bvslt    => return bv8SLtOp
-  | .some .bv8, q`Boogie.bvsge    => return bv8SGeOp
-  | .some .bv8, q`Boogie.bvsgt    => return bv8SGtOp
-  | .some .bv8, q`Boogie.neg_expr => return bv8NegOp
-  | .some .bv8, q`Boogie.add_expr => return bv8AddOp
-  | .some .bv8, q`Boogie.sub_expr => return bv8SubOp
-  | .some .bv8, q`Boogie.mul_expr => return bv8MulOp
-  | .some .bv8, q`Boogie.div_expr => return bv8UDivOp
-  | .some .bv8, q`Boogie.mod_expr => return bv8UModOp
-  | .some .bv8, q`Boogie.bvsdiv   => return bv8SDivOp
-  | .some .bv8, q`Boogie.bvsmod   => return bv8SModOp
-  | .some .bv8, q`Boogie.bvnot    => return bv8NotOp
-  | .some .bv8, q`Boogie.bvand    => return bv8AndOp
-  | .some .bv8, q`Boogie.bvor     => return bv8OrOp
-  | .some .bv8, q`Boogie.bvxor    => return bv8XorOp
-  | .some .bv8, q`Boogie.bvshl    => return bv8ShlOp
-  | .some .bv8, q`Boogie.bvushr   => return bv8UShrOp
-  | .some .bv8, q`Boogie.bvsshr   => return bv8SShrOp
+  | .some .bv8, q`Core.le       => return bv8ULeOp
+  | .some .bv8, q`Core.lt       => return bv8ULtOp
+  | .some .bv8, q`Core.ge       => return bv8UGeOp
+  | .some .bv8, q`Core.gt       => return bv8UGtOp
+  | .some .bv8, q`Core.bvsle    => return bv8SLeOp
+  | .some .bv8, q`Core.bvslt    => return bv8SLtOp
+  | .some .bv8, q`Core.bvsge    => return bv8SGeOp
+  | .some .bv8, q`Core.bvsgt    => return bv8SGtOp
+  | .some .bv8, q`Core.neg_expr => return bv8NegOp
+  | .some .bv8, q`Core.add_expr => return bv8AddOp
+  | .some .bv8, q`Core.sub_expr => return bv8SubOp
+  | .some .bv8, q`Core.mul_expr => return bv8MulOp
+  | .some .bv8, q`Core.div_expr => return bv8UDivOp
+  | .some .bv8, q`Core.mod_expr => return bv8UModOp
+  | .some .bv8, q`Core.bvsdiv   => return bv8SDivOp
+  | .some .bv8, q`Core.bvsmod   => return bv8SModOp
+  | .some .bv8, q`Core.bvnot    => return bv8NotOp
+  | .some .bv8, q`Core.bvand    => return bv8AndOp
+  | .some .bv8, q`Core.bvor     => return bv8OrOp
+  | .some .bv8, q`Core.bvxor    => return bv8XorOp
+  | .some .bv8, q`Core.bvshl    => return bv8ShlOp
+  | .some .bv8, q`Core.bvushr   => return bv8UShrOp
+  | .some .bv8, q`Core.bvsshr   => return bv8SShrOp
 
-  | .some .bv16, q`Boogie.le       => return bv16ULeOp
-  | .some .bv16, q`Boogie.lt       => return bv16ULtOp
-  | .some .bv16, q`Boogie.ge       => return bv16UGeOp
-  | .some .bv16, q`Boogie.gt       => return bv16UGtOp
-  | .some .bv16, q`Boogie.bvsle    => return bv16SLeOp
-  | .some .bv16, q`Boogie.bvslt    => return bv16SLtOp
-  | .some .bv16, q`Boogie.bvsge    => return bv16SGeOp
-  | .some .bv16, q`Boogie.bvsgt    => return bv16SGtOp
-  | .some .bv16, q`Boogie.neg_expr => return bv16NegOp
-  | .some .bv16, q`Boogie.add_expr => return bv16AddOp
-  | .some .bv16, q`Boogie.sub_expr => return bv16SubOp
-  | .some .bv16, q`Boogie.mul_expr => return bv16MulOp
-  | .some .bv16, q`Boogie.div_expr => return bv16UDivOp
-  | .some .bv16, q`Boogie.mod_expr => return bv16UModOp
-  | .some .bv16, q`Boogie.bvsdiv   => return bv16SDivOp
-  | .some .bv16, q`Boogie.bvsmod   => return bv16SModOp
-  | .some .bv16, q`Boogie.bvnot    => return bv16NotOp
-  | .some .bv16, q`Boogie.bvand    => return bv16AndOp
-  | .some .bv16, q`Boogie.bvor     => return bv16OrOp
-  | .some .bv16, q`Boogie.bvxor    => return bv16XorOp
-  | .some .bv16, q`Boogie.bvshl    => return bv16ShlOp
-  | .some .bv16, q`Boogie.bvushr   => return bv16UShrOp
-  | .some .bv16, q`Boogie.bvsshr   => return bv16SShrOp
+  | .some .bv16, q`Core.le       => return bv16ULeOp
+  | .some .bv16, q`Core.lt       => return bv16ULtOp
+  | .some .bv16, q`Core.ge       => return bv16UGeOp
+  | .some .bv16, q`Core.gt       => return bv16UGtOp
+  | .some .bv16, q`Core.bvsle    => return bv16SLeOp
+  | .some .bv16, q`Core.bvslt    => return bv16SLtOp
+  | .some .bv16, q`Core.bvsge    => return bv16SGeOp
+  | .some .bv16, q`Core.bvsgt    => return bv16SGtOp
+  | .some .bv16, q`Core.neg_expr => return bv16NegOp
+  | .some .bv16, q`Core.add_expr => return bv16AddOp
+  | .some .bv16, q`Core.sub_expr => return bv16SubOp
+  | .some .bv16, q`Core.mul_expr => return bv16MulOp
+  | .some .bv16, q`Core.div_expr => return bv16UDivOp
+  | .some .bv16, q`Core.mod_expr => return bv16UModOp
+  | .some .bv16, q`Core.bvsdiv   => return bv16SDivOp
+  | .some .bv16, q`Core.bvsmod   => return bv16SModOp
+  | .some .bv16, q`Core.bvnot    => return bv16NotOp
+  | .some .bv16, q`Core.bvand    => return bv16AndOp
+  | .some .bv16, q`Core.bvor     => return bv16OrOp
+  | .some .bv16, q`Core.bvxor    => return bv16XorOp
+  | .some .bv16, q`Core.bvshl    => return bv16ShlOp
+  | .some .bv16, q`Core.bvushr   => return bv16UShrOp
+  | .some .bv16, q`Core.bvsshr   => return bv16SShrOp
 
-  | .some .bv32, q`Boogie.le       => return bv32ULeOp
-  | .some .bv32, q`Boogie.lt       => return bv32ULtOp
-  | .some .bv32, q`Boogie.ge       => return bv32UGeOp
-  | .some .bv32, q`Boogie.gt       => return bv32UGtOp
-  | .some .bv32, q`Boogie.bvsle    => return bv32SLeOp
-  | .some .bv32, q`Boogie.bvslt    => return bv32SLtOp
-  | .some .bv32, q`Boogie.bvsge    => return bv32SGeOp
-  | .some .bv32, q`Boogie.bvsgt    => return bv32SGtOp
-  | .some .bv32, q`Boogie.neg_expr => return bv32NegOp
-  | .some .bv32, q`Boogie.add_expr => return bv32AddOp
-  | .some .bv32, q`Boogie.sub_expr => return bv32SubOp
-  | .some .bv32, q`Boogie.mul_expr => return bv32MulOp
-  | .some .bv32, q`Boogie.div_expr => return bv32UDivOp
-  | .some .bv32, q`Boogie.mod_expr => return bv32UModOp
-  | .some .bv32, q`Boogie.bvsdiv   => return bv32SDivOp
-  | .some .bv32, q`Boogie.bvsmod   => return bv32SModOp
-  | .some .bv32, q`Boogie.bvnot    => return bv32NotOp
-  | .some .bv32, q`Boogie.bvand    => return bv32AndOp
-  | .some .bv32, q`Boogie.bvor     => return bv32OrOp
-  | .some .bv32, q`Boogie.bvxor    => return bv32XorOp
-  | .some .bv32, q`Boogie.bvshl    => return bv32ShlOp
-  | .some .bv32, q`Boogie.bvushr   => return bv32UShrOp
-  | .some .bv32, q`Boogie.bvsshr   => return bv32SShrOp
+  | .some .bv32, q`Core.le       => return bv32ULeOp
+  | .some .bv32, q`Core.lt       => return bv32ULtOp
+  | .some .bv32, q`Core.ge       => return bv32UGeOp
+  | .some .bv32, q`Core.gt       => return bv32UGtOp
+  | .some .bv32, q`Core.bvsle    => return bv32SLeOp
+  | .some .bv32, q`Core.bvslt    => return bv32SLtOp
+  | .some .bv32, q`Core.bvsge    => return bv32SGeOp
+  | .some .bv32, q`Core.bvsgt    => return bv32SGtOp
+  | .some .bv32, q`Core.neg_expr => return bv32NegOp
+  | .some .bv32, q`Core.add_expr => return bv32AddOp
+  | .some .bv32, q`Core.sub_expr => return bv32SubOp
+  | .some .bv32, q`Core.mul_expr => return bv32MulOp
+  | .some .bv32, q`Core.div_expr => return bv32UDivOp
+  | .some .bv32, q`Core.mod_expr => return bv32UModOp
+  | .some .bv32, q`Core.bvsdiv   => return bv32SDivOp
+  | .some .bv32, q`Core.bvsmod   => return bv32SModOp
+  | .some .bv32, q`Core.bvnot    => return bv32NotOp
+  | .some .bv32, q`Core.bvand    => return bv32AndOp
+  | .some .bv32, q`Core.bvor     => return bv32OrOp
+  | .some .bv32, q`Core.bvxor    => return bv32XorOp
+  | .some .bv32, q`Core.bvshl    => return bv32ShlOp
+  | .some .bv32, q`Core.bvushr   => return bv32UShrOp
+  | .some .bv32, q`Core.bvsshr   => return bv32SShrOp
 
-  | .some .bv64, q`Boogie.le       => return bv64ULeOp
-  | .some .bv64, q`Boogie.lt       => return bv64ULtOp
-  | .some .bv64, q`Boogie.ge       => return bv64UGeOp
-  | .some .bv64, q`Boogie.gt       => return bv64UGtOp
-  | .some .bv64, q`Boogie.bvsle    => return bv64SLeOp
-  | .some .bv64, q`Boogie.bvslt    => return bv64SLtOp
-  | .some .bv64, q`Boogie.bvsge    => return bv64SGeOp
-  | .some .bv64, q`Boogie.bvsgt    => return bv64SGtOp
-  | .some .bv64, q`Boogie.neg_expr => return bv64NegOp
-  | .some .bv64, q`Boogie.add_expr => return bv64AddOp
-  | .some .bv64, q`Boogie.sub_expr => return bv64SubOp
-  | .some .bv64, q`Boogie.mul_expr => return bv64MulOp
-  | .some .bv64, q`Boogie.div_expr => return bv64UDivOp
-  | .some .bv64, q`Boogie.mod_expr => return bv64UModOp
-  | .some .bv64, q`Boogie.bvsdiv   => return bv64SDivOp
-  | .some .bv64, q`Boogie.bvsmod   => return bv64SModOp
-  | .some .bv64, q`Boogie.bvnot    => return bv64NotOp
-  | .some .bv64, q`Boogie.bvand    => return bv64AndOp
-  | .some .bv64, q`Boogie.bvor     => return bv64OrOp
-  | .some .bv64, q`Boogie.bvxor    => return bv64XorOp
-  | .some .bv64, q`Boogie.bvshl    => return bv64ShlOp
-  | .some .bv64, q`Boogie.bvushr   => return bv64UShrOp
-  | .some .bv64, q`Boogie.bvsshr   => return bv64SShrOp
+  | .some .bv64, q`Core.le       => return bv64ULeOp
+  | .some .bv64, q`Core.lt       => return bv64ULtOp
+  | .some .bv64, q`Core.ge       => return bv64UGeOp
+  | .some .bv64, q`Core.gt       => return bv64UGtOp
+  | .some .bv64, q`Core.bvsle    => return bv64SLeOp
+  | .some .bv64, q`Core.bvslt    => return bv64SLtOp
+  | .some .bv64, q`Core.bvsge    => return bv64SGeOp
+  | .some .bv64, q`Core.bvsgt    => return bv64SGtOp
+  | .some .bv64, q`Core.neg_expr => return bv64NegOp
+  | .some .bv64, q`Core.add_expr => return bv64AddOp
+  | .some .bv64, q`Core.sub_expr => return bv64SubOp
+  | .some .bv64, q`Core.mul_expr => return bv64MulOp
+  | .some .bv64, q`Core.div_expr => return bv64UDivOp
+  | .some .bv64, q`Core.mod_expr => return bv64UModOp
+  | .some .bv64, q`Core.bvsdiv   => return bv64SDivOp
+  | .some .bv64, q`Core.bvsmod   => return bv64SModOp
+  | .some .bv64, q`Core.bvnot    => return bv64NotOp
+  | .some .bv64, q`Core.bvand    => return bv64AndOp
+  | .some .bv64, q`Core.bvor     => return bv64OrOp
+  | .some .bv64, q`Core.bvxor    => return bv64XorOp
+  | .some .bv64, q`Core.bvshl    => return bv64ShlOp
+  | .some .bv64, q`Core.bvushr   => return bv64UShrOp
+  | .some .bv64, q`Core.bvsshr   => return bv64SShrOp
 
-  | _, q`Boogie.bvconcat8 => return bv8ConcatOp
-  | _, q`Boogie.bvconcat16 => return bv16ConcatOp
-  | _, q`Boogie.bvconcat32 => return bv32ConcatOp
-  | _, q`Boogie.bvextract_7_7     => return bv8Extract_7_7_Op
-  | _, q`Boogie.bvextract_15_15   => return bv16Extract_15_15_Op
-  | _, q`Boogie.bvextract_31_31   => return bv32Extract_31_31_Op
-  | _, q`Boogie.bvextract_7_0_16  => return bv16Extract_7_0_Op
-  | _, q`Boogie.bvextract_7_0_32  => return bv32Extract_7_0_Op
-  | _, q`Boogie.bvextract_15_0_32 => return bv32Extract_15_0_Op
-  | _, q`Boogie.bvextract_7_0_64  => return bv64Extract_7_0_Op
-  | _, q`Boogie.bvextract_15_0_64 => return bv64Extract_15_0_Op
-  | _, q`Boogie.bvextract_31_0_64 => return bv64Extract_31_0_Op
+  | _, q`Core.bvconcat8 => return bv8ConcatOp
+  | _, q`Core.bvconcat16 => return bv16ConcatOp
+  | _, q`Core.bvconcat32 => return bv32ConcatOp
+  | _, q`Core.bvextract_7_7     => return bv8Extract_7_7_Op
+  | _, q`Core.bvextract_15_15   => return bv16Extract_15_15_Op
+  | _, q`Core.bvextract_31_31   => return bv32Extract_31_31_Op
+  | _, q`Core.bvextract_7_0_16  => return bv16Extract_7_0_Op
+  | _, q`Core.bvextract_7_0_32  => return bv32Extract_7_0_Op
+  | _, q`Core.bvextract_15_0_32 => return bv32Extract_15_0_Op
+  | _, q`Core.bvextract_7_0_64  => return bv64Extract_7_0_Op
+  | _, q`Core.bvextract_15_0_64 => return bv64Extract_15_0_Op
+  | _, q`Core.bvextract_31_0_64 => return bv64Extract_31_0_Op
 
-  | _, q`Boogie.old          => return polyOldOp
-  | _, q`Boogie.str_len      => return strLengthOp
-  | _, q`Boogie.str_concat   => return strConcatOp
-  | _, q`Boogie.str_substr   => return strSubstrOp
-  | _, q`Boogie.str_toregex  => return strToRegexOp
-  | _, q`Boogie.str_inregex  => return strInRegexOp
-  | _, q`Boogie.re_all       => return reAllOp
-  | _, q`Boogie.re_allchar   => return reAllCharOp
-  | _, q`Boogie.re_range     => return reRangeOp
-  | _, q`Boogie.re_concat    => return reConcatOp
-  | _, q`Boogie.re_star      => return reStarOp
-  | _, q`Boogie.re_plus      => return rePlusOp
-  | _, q`Boogie.re_loop      => return reLoopOp
-  | _, q`Boogie.re_union     => return reUnionOp
-  | _, q`Boogie.re_inter     => return reInterOp
-  | _, q`Boogie.re_comp      => return reCompOp
-  | _, q`Boogie.re_none      => return reNoneOp
+  | _, q`Core.old          => return polyOldOp
+  | _, q`Core.str_len      => return strLengthOp
+  | _, q`Core.str_concat   => return strConcatOp
+  | _, q`Core.str_substr   => return strSubstrOp
+  | _, q`Core.str_toregex  => return strToRegexOp
+  | _, q`Core.str_inregex  => return strInRegexOp
+  | _, q`Core.re_all       => return reAllOp
+  | _, q`Core.re_allchar   => return reAllCharOp
+  | _, q`Core.re_range     => return reRangeOp
+  | _, q`Core.re_concat    => return reConcatOp
+  | _, q`Core.re_star      => return reStarOp
+  | _, q`Core.re_plus      => return rePlusOp
+  | _, q`Core.re_loop      => return reLoopOp
+  | _, q`Core.re_union     => return reUnionOp
+  | _, q`Core.re_inter     => return reInterOp
+  | _, q`Core.re_comp      => return reCompOp
+  | _, q`Core.re_none      => return reNoneOp
   | _, _ => TransM.error s!"translateFn: Unknown/unimplemented function {repr q} at type {repr ty?}"
 
 mutual
@@ -621,7 +621,7 @@ def translateQuantifier
   (qk: QuantifierKind)
   (p : Program)
   (bindings : TransBindings) (xsa : Arg) (triggersa: Option Arg) (bodya: Arg) :
-  TransM Boogie.Expression.Expr := do
+  TransM Core.Expression.Expr := do
     let xsArray ← translateDeclList bindings xsa
     -- Note: the indices in the following are placeholders
     let newBoundVars := List.toArray (xsArray.mapIdx (fun i _ => LExpr.bvar () i))
@@ -650,139 +650,139 @@ def translateQuantifier
 
 partial
 def translateTriggerGroup (p: Program) (bindings : TransBindings) (arg : Arg) :
-  TransM Boogie.Expression.Expr := do
+  TransM Core.Expression.Expr := do
   let .op op := arg
     | TransM.error s!"translateTriggerGroup expected op, got {repr arg}"
   match op.name, op.args with
-  | q`Boogie.trigger, #[tsa] => do
+  | q`Core.trigger, #[tsa] => do
    let ts  ← translateCommaSep (fun t => translateExpr p bindings t) tsa
    return ts.foldl (fun g t => .app () (.app () addTriggerOp t) g) emptyTriggerGroupOp
   | _, _ => panic! s!"Unexpected operator in trigger group"
 
 partial
 def translateTriggers (p: Program) (bindings : TransBindings) (arg : Arg) :
-  TransM Boogie.Expression.Expr := do
+  TransM Core.Expression.Expr := do
   let .op op := arg
     | TransM.error s!"translateTriggers expected op, got: {repr arg}"
   match op.name, op.args with
-  | q`Boogie.triggersAtom, #[group] =>
+  | q`Core.triggersAtom, #[group] =>
     let g ← translateTriggerGroup p bindings group
     return .app () (.app () addTriggerGroupOp g) emptyTriggersOp
-  | q`Boogie.triggersPush, #[triggers, group] => do
+  | q`Core.triggersPush, #[triggers, group] => do
     let ts ← translateTriggers p bindings triggers
     let g ← translateTriggerGroup p bindings group
     return .app () (.app () addTriggerGroupOp g) ts
   | _, _ => panic! s!"Unexpected operator in trigger"
 
 partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
-  TransM Boogie.Expression.Expr := do
+  TransM Core.Expression.Expr := do
   let .expr expr := arg
     | TransM.error s!"translateExpr expected expr {repr arg}"
   let (op, args) := expr.flatten
   match op, args with
   -- Constants/Literals
-  | .fn _ q`Boogie.btrue, [] =>
+  | .fn _ q`Core.btrue, [] =>
     return .true ()
-  | .fn _ q`Boogie.bfalse, [] =>
+  | .fn _ q`Core.bfalse, [] =>
     return .false ()
-  | .fn _ q`Boogie.natToInt, [xa] =>
+  | .fn _ q`Core.natToInt, [xa] =>
     let n ← translateNat xa
     return .intConst () n
-  | .fn _ q`Boogie.bv1Lit, [xa] =>
+  | .fn _ q`Core.bv1Lit, [xa] =>
     let n ← translateBitVec 1 xa
     return .bitvecConst () 1 n
-  | .fn _ q`Boogie.bv8Lit, [xa] =>
+  | .fn _ q`Core.bv8Lit, [xa] =>
     let n ← translateBitVec 8 xa
     return .bitvecConst () 8 n
-  | .fn _ q`Boogie.bv16Lit, [xa] =>
+  | .fn _ q`Core.bv16Lit, [xa] =>
     let n ← translateBitVec 16 xa
     return .bitvecConst () 16 n
-  | .fn _ q`Boogie.bv32Lit, [xa] =>
+  | .fn _ q`Core.bv32Lit, [xa] =>
     let n ← translateBitVec 32 xa
     return .bitvecConst () 32 n
-  | .fn _ q`Boogie.bv64Lit, [xa] =>
+  | .fn _ q`Core.bv64Lit, [xa] =>
     let n ← translateBitVec 64 xa
     return .bitvecConst () 64 n
-  | .fn _ q`Boogie.strLit, [xa] =>
+  | .fn _ q`Core.strLit, [xa] =>
     let x ← translateStr xa
     return .strConst () x
-  | .fn _ q`Boogie.realLit, [xa] =>
+  | .fn _ q`Core.realLit, [xa] =>
     let x ← translateReal xa
     return .realConst () (Strata.Decimal.toRat x)
   -- Equality
-  | .fn _ q`Boogie.equal, [_tpa, xa, ya] =>
+  | .fn _ q`Core.equal, [_tpa, xa, ya] =>
     let x ← translateExpr p bindings xa
     let y ← translateExpr p bindings ya
     return .eq () x y
-  | .fn _ q`Boogie.not_equal, [_tpa, xa, ya] =>
+  | .fn _ q`Core.not_equal, [_tpa, xa, ya] =>
     let x ← translateExpr p bindings xa
     let y ← translateExpr p bindings ya
-    return (.app () Boogie.boolNotOp (.eq () x y))
-  | .fn _ q`Boogie.bvnot, [tpa, xa] =>
+    return (.app () Core.boolNotOp (.eq () x y))
+  | .fn _ q`Core.bvnot, [tpa, xa] =>
     let tp ← translateLMonoTy bindings (dealiasTypeArg p tpa)
     let x ← translateExpr p bindings xa
     let fn : LExpr BoogieLParams.mono ←
-      translateFn (.some tp) q`Boogie.bvnot
+      translateFn (.some tp) q`Core.bvnot
     return (.app () fn x)
   -- If-then-else expression
-  | .fn _ q`Boogie.if, [_tpa, ca, ta, fa] =>
+  | .fn _ q`Core.if, [_tpa, ca, ta, fa] =>
     let c ← translateExpr p bindings ca
     let t ← translateExpr p bindings ta
     let f ← translateExpr p bindings fa
     return .ite () c t f
   -- Re.AllChar
-  | .fn _ q`Boogie.re_allchar, [] =>
-    let fn ← translateFn .none q`Boogie.re_allchar
+  | .fn _ q`Core.re_allchar, [] =>
+    let fn ← translateFn .none q`Core.re_allchar
     return fn
   -- Re.None
-  | .fn _ q`Boogie.re_none, [] =>
-    let fn ← translateFn .none q`Boogie.re_none
+  | .fn _ q`Core.re_none, [] =>
+    let fn ← translateFn .none q`Core.re_none
     return fn
   -- Re.All
-  | .fn _ q`Boogie.re_all, [] =>
-    let fn ← translateFn .none q`Boogie.re_all
+  | .fn _ q`Core.re_all, [] =>
+    let fn ← translateFn .none q`Core.re_all
     return fn
   -- Unary function applications
   | .fn _ fni, [xa] =>
     match fni with
-    | q`Boogie.not
-    | q`Boogie.bvextract_7_7
-    | q`Boogie.bvextract_15_15
-    | q`Boogie.bvextract_31_31
-    | q`Boogie.bvextract_7_0_16
-    | q`Boogie.bvextract_7_0_32
-    | q`Boogie.bvextract_15_0_32
-    | q`Boogie.bvextract_7_0_64
-    | q`Boogie.bvextract_15_0_64
-    | q`Boogie.bvextract_31_0_64
-    | q`Boogie.str_len
-    | q`Boogie.str_toregex
-    | q`Boogie.re_star
-    | q`Boogie.re_plus
-    | q`Boogie.re_comp => do
+    | q`Core.not
+    | q`Core.bvextract_7_7
+    | q`Core.bvextract_15_15
+    | q`Core.bvextract_31_31
+    | q`Core.bvextract_7_0_16
+    | q`Core.bvextract_7_0_32
+    | q`Core.bvextract_15_0_32
+    | q`Core.bvextract_7_0_64
+    | q`Core.bvextract_15_0_64
+    | q`Core.bvextract_31_0_64
+    | q`Core.str_len
+    | q`Core.str_toregex
+    | q`Core.re_star
+    | q`Core.re_plus
+    | q`Core.re_comp => do
       let fn ← translateFn .none fni
       let x ← translateExpr p bindings xa
       return .mkApp () fn [x]
     | _ => TransM.error s!"translateExpr unimplemented {repr op} {repr args}"
-  | .fn _ q`Boogie.neg_expr, [tpa, xa] =>
+  | .fn _ q`Core.neg_expr, [tpa, xa] =>
     let ty ← translateLMonoTy bindings (dealiasTypeArg p tpa)
-    let fn ← translateFn ty q`Boogie.neg_expr
+    let fn ← translateFn ty q`Core.neg_expr
     let x ← translateExpr p bindings xa
     return .mkApp () fn [x]
   -- Strings
-  | .fn _ q`Boogie.str_concat, [xa, ya] =>
+  | .fn _ q`Core.str_concat, [xa, ya] =>
      let x ← translateExpr p bindings xa
      let y ← translateExpr p bindings ya
-     return .mkApp () Boogie.strConcatOp [x, y]
-  | .fn _ q`Boogie.str_substr, [xa, ia, na] =>
+     return .mkApp () Core.strConcatOp [x, y]
+  | .fn _ q`Core.str_substr, [xa, ia, na] =>
      let x ← translateExpr p bindings xa
      let i ← translateExpr p bindings ia
      let n ← translateExpr p bindings na
-     return .mkApp () Boogie.strSubstrOp [x, i, n]
-  | .fn _ q`Boogie.old, [_tp, xa] =>
+     return .mkApp () Core.strSubstrOp [x, i, n]
+  | .fn _ q`Core.old, [_tp, xa] =>
      let x ← translateExpr p bindings xa
-     return .mkApp () Boogie.polyOldOp [x]
-  | .fn _ q`Boogie.map_get, [_ktp, _vtp, ma, ia] =>
+     return .mkApp () Core.polyOldOp [x]
+  | .fn _ q`Core.map_get, [_ktp, _vtp, ma, ia] =>
      let kty ← translateLMonoTy bindings _ktp
      let vty ← translateLMonoTy bindings _vtp
      -- TODO: use Boogie.mapSelectOp, but specialized
@@ -790,7 +790,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let m ← translateExpr p bindings ma
      let i ← translateExpr p bindings ia
      return .mkApp () fn [m, i]
-  | .fn _ q`Boogie.map_set, [_ktp, _vtp, ma, ia, xa] =>
+  | .fn _ q`Core.map_set, [_ktp, _vtp, ma, ia, xa] =>
      let kty ← translateLMonoTy bindings _ktp
      let vty ← translateLMonoTy bindings _vtp
      -- TODO: use Boogie.mapUpdateOp, but specialized
@@ -800,13 +800,13 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let x ← translateExpr p bindings xa
      return .mkApp () fn [m, i, x]
   -- Quantifiers
-  | .fn _ q`Boogie.forall, [xsa, ba] =>
+  | .fn _ q`Core.forall, [xsa, ba] =>
     translateQuantifier .all p bindings xsa .none ba
-  | .fn _ q`Boogie.exists, [xsa, ba] =>
+  | .fn _ q`Core.exists, [xsa, ba] =>
     translateQuantifier .exist p bindings xsa .none ba
-  | .fn _ q`Boogie.forallT, [xsa, tsa, ba] =>
+  | .fn _ q`Core.forallT, [xsa, tsa, ba] =>
     translateQuantifier .all p bindings xsa (.some tsa) ba
-  | .fn _ q`Boogie.existsT, [xsa, tsa, ba] =>
+  | .fn _ q`Core.existsT, [xsa, tsa, ba] =>
     translateQuantifier .exist p bindings xsa (.some tsa) ba
   -- Binary function applications (monomorphic)
   | .fn _ fni, [xa, ya] =>
@@ -814,8 +814,8 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     let x ← translateExpr p bindings xa
     let y ← translateExpr p bindings ya
     return .mkApp () fn [x, y]
-  | .fn _ q`Boogie.re_loop, [xa, ya, za] =>
-    let fn ← translateFn .none q`Boogie.re_loop
+  | .fn _ q`Core.re_loop, [xa, ya, za] =>
+    let fn ← translateFn .none q`Core.re_loop
     let x ← translateExpr p bindings xa
     let y ← translateExpr p bindings ya
     let z ← translateExpr p bindings za
@@ -823,27 +823,27 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   -- Binary function applications (polymorphic)
   | .fn _ fni, [tpa, xa, ya] =>
     match fni with
-    | q`Boogie.add_expr
-    | q`Boogie.sub_expr
-    | q`Boogie.mul_expr
-    | q`Boogie.div_expr
-    | q`Boogie.mod_expr
-    | q`Boogie.bvand
-    | q`Boogie.bvor
-    | q`Boogie.bvxor
-    | q`Boogie.bvshl
-    | q`Boogie.bvushr
-    | q`Boogie.bvsshr
-    | q`Boogie.bvsdiv
-    | q`Boogie.bvsmod
-    | q`Boogie.le
-    | q`Boogie.lt
-    | q`Boogie.gt
-    | q`Boogie.ge
-    | q`Boogie.bvsle
-    | q`Boogie.bvslt
-    | q`Boogie.bvsgt
-    | q`Boogie.bvsge =>
+    | q`Core.add_expr
+    | q`Core.sub_expr
+    | q`Core.mul_expr
+    | q`Core.div_expr
+    | q`Core.mod_expr
+    | q`Core.bvand
+    | q`Core.bvor
+    | q`Core.bvxor
+    | q`Core.bvshl
+    | q`Core.bvushr
+    | q`Core.bvsshr
+    | q`Core.bvsdiv
+    | q`Core.bvsmod
+    | q`Core.le
+    | q`Core.lt
+    | q`Core.gt
+    | q`Core.ge
+    | q`Core.bvsle
+    | q`Core.bvslt
+    | q`Core.bvsgt
+    | q`Core.bvsge =>
       let ty ← translateLMonoTy bindings (dealiasTypeArg p tpa)
       if ¬ isArithTy ty then
         TransM.error s!"translateExpr unexpected type for {repr fni}: {repr args}"
@@ -895,7 +895,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
                      Bindings: {format bindings}}"
 
 partial def translateExprs (p : Program) (bindings : TransBindings) (args : Array Arg) :
-  TransM (Array Boogie.Expression.Expr) :=
+  TransM (Array Core.Expression.Expr) :=
   args.mapM (fun a => translateExpr p bindings a)
 end
 
@@ -904,22 +904,22 @@ end
 def translateInvariant (p : Program) (bindings : TransBindings) (arg : Arg) : TransM (Option Expression.Expr) := do
   match arg with
   | .option _ (.some m) => do
-    let args ← checkOpArg m q`Boogie.invariant 1
+    let args ← checkOpArg m q`Core.invariant 1
     translateExpr p bindings args[0]!
   | _ => pure none
 
 def initVarStmts (tpids : ListMap Expression.Ident LTy) (bindings : TransBindings) :
-  TransM ((List Boogie.Statement) × TransBindings) := do
+  TransM ((List Core.Statement) × TransBindings) := do
   match tpids with
   | [] => return ([], bindings)
   | (id, tp) :: rest =>
-    let s := Boogie.Statement.init id tp (Names.initVarValue (id.name ++ "_" ++ (toString bindings.gen.var_def)))
+    let s := Core.Statement.init id tp (Names.initVarValue (id.name ++ "_" ++ (toString bindings.gen.var_def)))
     let bindings := incrNum .var_def bindings
     let (stmts, bindings) ← initVarStmts rest bindings
     return ((s :: stmts), bindings)
 
 def translateVarStatement (bindings : TransBindings) (decls : Array Arg) :
-  TransM ((List Boogie.Statement) × TransBindings) := do
+  TransM ((List Core.Statement) × TransBindings) := do
   if decls.size != 1 then
     TransM.error s!"translateVarStatement unexpected decls length {repr decls}"
   else
@@ -934,7 +934,7 @@ def translateVarStatement (bindings : TransBindings) (decls : Array Arg) :
     return (stmts, { bindings with boundVars := bbindings })
 
 def translateInitStatement (p : Program) (bindings : TransBindings) (args : Array Arg) :
-  TransM ((List Boogie.Statement) × TransBindings) := do
+  TransM ((List Core.Statement) × TransBindings) := do
   if args.size != 3 then
     TransM.error "translateInitStatement unexpected arg length {repr decls}"
   else
@@ -948,82 +948,82 @@ def translateInitStatement (p : Program) (bindings : TransBindings) (args : Arra
 
 mutual
 partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
-  TransM (List Boogie.Statement × TransBindings) := do
+  TransM (List Core.Statement × TransBindings) := do
   let .op op := arg
     | TransM.error s!"translateStmt expected op {repr arg}"
 
   match op.name, op.args with
-  | q`Boogie.varStatement, declsa =>
+  | q`Core.varStatement, declsa =>
     translateVarStatement bindings declsa
-  | q`Boogie.initStatement, args =>
+  | q`Core.initStatement, args =>
     translateInitStatement p bindings args
-  | q`Boogie.assign, #[_tpa, lhsa, ea] =>
+  | q`Core.assign, #[_tpa, lhsa, ea] =>
     let lhs ← translateLhs lhsa
     let val ← translateExpr p bindings ea
     let md ← getOpMetaData op
     return ([.set lhs val md], bindings)
-  | q`Boogie.havoc_statement, #[ida] =>
+  | q`Core.havoc_statement, #[ida] =>
     let id ← translateIdent BoogieIdent ida
     let md ← getOpMetaData op
     return ([.havoc id md], bindings)
-  | q`Boogie.assert, #[la, ca] =>
+  | q`Core.assert, #[la, ca] =>
     let c ← translateExpr p bindings ca
     let default_name := s!"assert_{bindings.gen.assert_def}"
     let bindings := incrNum .assert_def bindings
     let l ← translateOptionLabel default_name la
     let md ← getOpMetaData op
     return ([.assert l c md], bindings)
-  | q`Boogie.cover, #[la, ca] =>
+  | q`Core.cover, #[la, ca] =>
     let c ← translateExpr p bindings ca
     let default_name := s!"cover_{bindings.gen.assert_def}"
     let bindings := incrNum .cover_def bindings
     let l ← translateOptionLabel default_name la
     let md ← getOpMetaData op
     return ([.cover l c md], bindings)
-  | q`Boogie.assume, #[la, ca] =>
+  | q`Core.assume, #[la, ca] =>
     let c ← translateExpr p bindings ca
     let default_name := s!"assume_{bindings.gen.assume_def}"
     let bindings := incrNum .assume_def bindings
     let l ← translateOptionLabel default_name la
     let md ← getOpMetaData op
     return ([.assume l c md], bindings)
-  | q`Boogie.if_statement, #[ca, ta, fa] =>
+  | q`Core.if_statement, #[ca, ta, fa] =>
     let c ← translateExpr p bindings ca
     let (tss, bindings) ← translateBlock p bindings ta
     let (fss, bindings) ← translateElse p bindings fa
     let md ← getOpMetaData op
     return ([.ite c tss fss md], bindings)
-  | q`Boogie.while_statement, #[ca, ia, ba] =>
+  | q`Core.while_statement, #[ca, ia, ba] =>
     let c ← translateExpr p bindings ca
     let i ← translateInvariant p bindings ia
     let (bodyss, bindings) ← translateBlock p bindings ba
     let md ← getOpMetaData op
     return ([.loop c .none i bodyss md], bindings)
-  | q`Boogie.call_statement, #[lsa, fa, esa] =>
+  | q`Core.call_statement, #[lsa, fa, esa] =>
     let ls  ← translateCommaSep (translateIdent BoogieIdent) lsa
     let f   ← translateIdent String fa
     let es  ← translateCommaSep (fun a => translateExpr p bindings a) esa
     let md ← getOpMetaData op
     return ([.call ls.toList f es.toList md], bindings)
-  | q`Boogie.call_unit_statement, #[fa, esa] =>
+  | q`Core.call_unit_statement, #[fa, esa] =>
     let f   ← translateIdent String fa
     let es  ← translateCommaSep (fun a => translateExpr p bindings a) esa
     let md ← getOpMetaData op
     return ([.call [] f es.toList md], bindings)
-  | q`Boogie.block_statement, #[la, ba] =>
+  | q`Core.block_statement, #[la, ba] =>
     let l ← translateIdent String la
     let (ss, bindings) ← translateBlock p bindings ba
     let md ← getOpMetaData op
     return ([.block l ss md], bindings)
-  | q`Boogie.goto_statement, #[la] =>
+  | q`Core.goto_statement, #[la] =>
     let l ← translateIdent String la
     let md ← getOpMetaData op
     return ([.goto l md], bindings)
   | name, args => TransM.error s!"Unexpected statement {name.fullName} with {args.size} arguments."
 
 partial def translateBlock (p : Program) (bindings : TransBindings) (arg : Arg) :
-  TransM ((List Boogie.Statement) × TransBindings) := do
-  let args ← checkOpArg arg q`Boogie.block 1
+  TransM ((List Core.Statement) × TransBindings) := do
+  let args ← checkOpArg arg q`Core.block 1
   let .seq _ .none stmts := args[0]!
     | TransM.error s!"Invalid block {repr args[0]!}"
   let (a, bindings) ← stmts.foldlM (init := (#[], bindings)) fun (a, b) s => do
@@ -1032,15 +1032,15 @@ partial def translateBlock (p : Program) (bindings : TransBindings) (arg : Arg) 
   return (a.toList, bindings)
 
 partial def translateElse (p : Program) (bindings : TransBindings) (arg : Arg) :
-  TransM ((List Boogie.Statement) × TransBindings) := do
+  TransM ((List Core.Statement) × TransBindings) := do
   let .op op := arg
     | TransM.error s!"translateElse expected op {repr arg}"
   match op.name with
-  | q`Boogie.else0 =>
-    let _ ← checkOpArg arg q`Boogie.else0 0
+  | q`Core.else0 =>
+    let _ ← checkOpArg arg q`Core.else0 0
     return ([], bindings)
-  | q`Boogie.else1 =>
-    let args ← checkOpArg arg q`Boogie.else1 1
+  | q`Core.else1 =>
+    let args ← checkOpArg arg q`Core.else1 1
     translateBlock p bindings args[0]!
   | _ => TransM.error s!"translateElse unimplemented for {repr arg}"
 
@@ -1051,7 +1051,7 @@ end
 def translateInitMkBinding (bindings : TransBindings) (op : Arg) :
   TransM (BoogieIdent × LMonoTy) := do
   -- (FIXME) Account for metadata.
-  let bargs ← checkOpArg op q`Boogie.mkBinding 2
+  let bargs ← checkOpArg op q`Core.mkBinding 2
   let id ← translateIdent BoogieIdent bargs[0]!
   let tp ← translateLMonoTy bindings bargs[1]!
   return (id, tp)
@@ -1062,7 +1062,7 @@ def translateInitMkBindings (bindings : TransBindings) (ops : Array Arg) :
 
 def translateBindings (bindings : TransBindings) (op : Arg) :
   TransM (ListMap BoogieIdent LMonoTy) := do
-  let bargs ← checkOpArg op q`Boogie.mkBindings 1
+  let bargs ← checkOpArg op q`Core.mkBindings 1
   match bargs[0]! with
   | .seq _ .comma args =>
     let arr ← translateInitMkBindings bindings args
@@ -1071,7 +1071,7 @@ def translateBindings (bindings : TransBindings) (op : Arg) :
     TransM.error s!"translateBindings expects a comma separated list: {repr op}"
 
 def translateModifies (arg : Arg) : TransM BoogieIdent := do
-  let args ← checkOpArg arg q`Boogie.modifies_spec 1
+  let args ← checkOpArg arg q`Core.modifies_spec 1
   translateIdent BoogieIdent args[0]!
 
 def translateOptionFree (arg : Arg) : TransM Procedure.CheckAttr := do
@@ -1079,13 +1079,13 @@ def translateOptionFree (arg : Arg) : TransM Procedure.CheckAttr := do
     | TransM.error s!"translateOptionFree unexpected {repr arg}"
   match free with
   | some f =>
-    let _ ← checkOpArg f q`Boogie.free 0
+    let _ ← checkOpArg f q`Core.free 0
     return .Free
   | none => return .Default
 
 def translateRequires (p : Program) (name : BoogieIdent) (count : Nat) (bindings : TransBindings) (arg : Arg) :
   TransM (ListMap BoogieLabel Procedure.Check) := do
-  let args ← checkOpArg arg q`Boogie.requires_spec 3
+  let args ← checkOpArg arg q`Core.requires_spec 3
   let l ← translateOptionLabel s!"{name.name}_requires_{count}" args[0]!
   let free? ← translateOptionFree args[1]!
   let e ← translateExpr p bindings args[2]!
@@ -1094,7 +1094,7 @@ def translateRequires (p : Program) (name : BoogieIdent) (count : Nat) (bindings
 
 def translateEnsures (p : Program) (name : BoogieIdent) (count : Nat) (bindings : TransBindings) (arg : Arg) :
   TransM (ListMap BoogieLabel Procedure.Check) := do
-  let args ← checkOpArg arg q`Boogie.ensures_spec 3
+  let args ← checkOpArg arg q`Core.ensures_spec 3
   let l ← translateOptionLabel s!"{name.name}_ensures_{count}" args[0]!
   let free? ← translateOptionFree args[1]!
   let e ← translateExpr p bindings args[2]!
@@ -1106,13 +1106,13 @@ def translateSpecElem (p : Program) (name : BoogieIdent) (count : Nat) (bindings
   let .op op := arg
     | TransM.error s!"translateSpecElem expects an op {repr arg}"
   match op.name with
-  | q`Boogie.modifies_spec =>
+  | q`Core.modifies_spec =>
     let elem ← translateModifies arg
     return ([elem], [], [])
-  | q`Boogie.requires_spec =>
+  | q`Core.requires_spec =>
     let elem ← translateRequires p name count bindings arg
     return ([], elem, [])
-  | q`Boogie.ensures_spec =>
+  | q`Core.ensures_spec =>
     let elem ← translateEnsures p name count bindings arg
     return ([], [], elem)
   | _ =>
@@ -1120,7 +1120,7 @@ def translateSpecElem (p : Program) (name : BoogieIdent) (count : Nat) (bindings
 
 partial def translateSpec (p : Program) (name : BoogieIdent) (bindings : TransBindings) (arg : Arg) :
   TransM (List BoogieIdent × ListMap BoogieLabel Procedure.Check × ListMap BoogieLabel Procedure.Check) := do
-  let sargs ← checkOpArg arg q`Boogie.spec_mk 1
+  let sargs ← checkOpArg arg q`Core.spec_mk 1
   let .seq _ .none args := sargs[0]!
     | TransM.error s!"Invalid specs {repr sargs[0]!}"
   go 0 args.size args
@@ -1134,8 +1134,8 @@ partial def translateSpec (p : Program) (name : BoogieIdent) (bindings : TransBi
     return (mods ++ restmods, reqs ++ restreqs, ens ++ restens)
 
 def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation) :
-  TransM (Boogie.Decl × TransBindings) := do
-  let _ ← @checkOp (Boogie.Decl × TransBindings) op q`Boogie.command_procedure 6
+  TransM (Core.Decl × TransBindings) := do
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_procedure 6
   let pname ← translateIdent BoogieIdent op.args[0]!
   let typeArgs ← translateTypeArgs op.args[1]!
   let sig ← translateBindings bindings op.args[2]!
@@ -1171,8 +1171,8 @@ def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation)
 ---------------------------------------------------------------------
 
 def translateConstant (bindings : TransBindings) (op : Operation) :
-  TransM (Boogie.Decl × TransBindings) := do
-  let _ ← @checkOp (Boogie.Decl × TransBindings) op q`Boogie.command_constdecl 3
+  TransM (Core.Decl × TransBindings) := do
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_constdecl 3
   let cname ← translateIdent BoogieIdent op.args[0]!
   let typeArgs ← translateTypeArgs op.args[1]!
   let ret ← translateLMonoTy bindings op.args[2]!
@@ -1188,8 +1188,8 @@ def translateConstant (bindings : TransBindings) (op : Operation) :
 ---------------------------------------------------------------------
 
 def translateAxiom (p : Program) (bindings : TransBindings) (op : Operation) :
-  TransM (Boogie.Decl × TransBindings) := do
-  let _ ← @checkOp (Boogie.Decl × TransBindings) op q`Boogie.command_axiom 2
+  TransM (Core.Decl × TransBindings) := do
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_axiom 2
   let default_name := s!"axiom_{bindings.gen.axiom_def}"
   let bindings := incrNum .axiom_def bindings
   let l ← translateOptionLabel default_name op.args[0]!
@@ -1198,8 +1198,8 @@ def translateAxiom (p : Program) (bindings : TransBindings) (op : Operation) :
   return (.ax (Axiom.mk l e) md, bindings)
 
 def translateDistinct (p : Program) (bindings : TransBindings) (op : Operation) :
-  TransM (Boogie.Decl × TransBindings) := do
-  let _ ← @checkOp (Boogie.Decl × TransBindings) op q`Boogie.command_distinct 2
+  TransM (Core.Decl × TransBindings) := do
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_distinct 2
   let default_name := s!"axiom_distinct_{bindings.gen.axiom_def}"
   let bindings := incrNum .axiom_def bindings
   let l ← translateOptionLabel default_name op.args[0]!
@@ -1224,16 +1224,16 @@ def translateOptionInline (arg : Arg) : TransM (Array String) := do
     | TransM.error s!"translateOptionInline unexpected {repr arg}"
   match inline with
   | some f =>
-    let _ ← checkOpArg f q`Boogie.inline 0
+    let _ ← checkOpArg f q`Core.inline 0
     return #["inline"]
   | none => return #[]
 
 def translateFunction (status : FnInterp) (p : Program) (bindings : TransBindings) (op : Operation) :
-  TransM (Boogie.Decl × TransBindings) := do
+  TransM (Core.Decl × TransBindings) := do
   let _ ←
     match status with
-    | .Definition  => @checkOp (Boogie.Decl × TransBindings) op q`Boogie.command_fndef  6
-    | .Declaration => @checkOp (Boogie.Decl × TransBindings) op q`Boogie.command_fndecl 4
+    | .Definition  => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndef  6
+    | .Declaration => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndecl 4
   let fname ← translateIdent BoogieIdent op.args[0]!
   let typeArgs ← translateTypeArgs op.args[1]!
   let sig ← translateBindings bindings op.args[2]!
@@ -1305,7 +1305,7 @@ def translateConstructorList (p : Program) (bindings : TransBindings) (arg : Arg
 Translate a datatype declaration to Boogie declarations, updating bindings
 appropriately.
 
-**Important:** The returned `Boogie.Decls` only contains the type declaration
+**Important:** The returned `Core.Decls` only contains the type declaration
 itself. Factory functions (constructors, testers, destructors) are generated
 automatically by `Env.addDatatypes` during program evaluation to avoid
 duplicates.
@@ -1316,9 +1316,9 @@ duplicates.
 - `op`: The `command_datatype` operation to translate
 -/
 def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) :
-    TransM (Boogie.Decls × TransBindings) := do
+    TransM (Core.Decls × TransBindings) := do
   -- Check operation has correct name and argument count
-  let _ ← @checkOp (Boogie.Decls × TransBindings) op q`Boogie.command_datatype 3
+  let _ ← @checkOp (Core.Decls × TransBindings) op q`Core.command_datatype 3
 
   let datatypeName ← translateIdent String op.args[0]!
 
@@ -1329,7 +1329,7 @@ def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) 
             do match maybearg with
             | none => pure ([], bindings)
             | some arg =>
-              let bargs ← checkOpArg arg q`Boogie.mkBindings 1
+              let bargs ← checkOpArg arg q`Core.mkBindings 1
               let args ←
                   match bargs[0]! with
                   | .seq _ .comma args =>
@@ -1347,7 +1347,7 @@ def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) 
       typeArgs := typeArgs
       constrs := [{ name := datatypeName, args := [], testerName := "" }]
       constrs_ne := by simp }
-  let placeholderDecl := Boogie.Decl.type (.data placeholderLDatatype)
+  let placeholderDecl := Core.Decl.type (.data placeholderLDatatype)
   let bindingsWithPlaceholder := { bindings with freeVars := bindings.freeVars.push placeholderDecl }
 
   -- Extract constructor information (possibly recursive)
@@ -1374,16 +1374,16 @@ def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) 
         constrs := lConstrs
         constrs_ne := constrs_ne }
 
-    -- Generate factory from LDatatype and convert to Boogie.Decl
+    -- Generate factory from LDatatype and convert to Core.Decl
     -- (used only for bindings.freeVars, not for allDecls)
     let factory ← match ldatatype.genFactory (T := BoogieLParams) with
       | .ok f => pure f
       | .error e => TransM.error s!"Failed to generate datatype factory: {e}"
-    let funcDecls : List Boogie.Decl := factory.toList.map fun func =>
-      Boogie.Decl.func func
+    let funcDecls : List Core.Decl := factory.toList.map fun func =>
+      Core.Decl.func func
 
     -- Only includes typeDecl, factory functions generated later
-    let typeDecl := Boogie.Decl.type (.data ldatatype)
+    let typeDecl := Core.Decl.type (.data ldatatype)
     let allDecls := [typeDecl]
 
     /-
@@ -1427,8 +1427,8 @@ def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) 
 ---------------------------------------------------------------------
 
 def translateGlobalVar (bindings : TransBindings) (op : Operation) :
-  TransM (Boogie.Decl × TransBindings) := do
-  let _ ← @checkOp (Boogie.Decl × TransBindings) op q`Boogie.command_var 1
+  TransM (Core.Decl × TransBindings) := do
+  let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_var 1
   let (id, targs, mty) ← translateBindMk bindings op.args[0]!
   let ty := LTy.forAll targs mty
   let md ← getOpMetaData op
@@ -1439,10 +1439,10 @@ def translateGlobalVar (bindings : TransBindings) (op : Operation) :
 ---------------------------------------------------------------------
 
 partial def translateBoogieDecls (p : Program) (bindings : TransBindings) :
-  TransM Boogie.Decls := do
+  TransM Core.Decls := do
   let (decls, _) ← go 0 p.commands.size bindings p.commands
   return decls
-  where go (count max : Nat) bindings ops : TransM (Boogie.Decls × TransBindings) := do
+  where go (count max : Nat) bindings ops : TransM (Core.Decls × TransBindings) := do
   match (max - count) with
   | 0 => return ([], bindings)
   | _ + 1 =>
@@ -1450,36 +1450,36 @@ partial def translateBoogieDecls (p : Program) (bindings : TransBindings) :
     -- Commands that produce multiple declarations
     let (newDecls, bindings) ←
       match op.name with
-      | q`Boogie.command_datatype =>
+      | q`Core.command_datatype =>
         translateDatatype p bindings op
       | _ =>
         -- All other commands produce a single declaration
         let (decl, bindings) ←
           match op.name with
-          | q`Boogie.command_var =>
+          | q`Core.command_var =>
             translateGlobalVar bindings op
-          | q`Boogie.command_constdecl =>
+          | q`Core.command_constdecl =>
             translateConstant bindings op
-          | q`Boogie.command_typedecl =>
+          | q`Core.command_typedecl =>
             translateTypeDecl bindings op
-          | q`Boogie.command_typesynonym =>
+          | q`Core.command_typesynonym =>
             translateTypeSynonym bindings op
-          | q`Boogie.command_axiom =>
+          | q`Core.command_axiom =>
             translateAxiom p bindings op
-          | q`Boogie.command_distinct =>
+          | q`Core.command_distinct =>
             translateDistinct p bindings op
-          | q`Boogie.command_procedure =>
+          | q`Core.command_procedure =>
             translateProcedure p bindings op
-          | q`Boogie.command_fndef =>
+          | q`Core.command_fndef =>
             translateFunction .Definition p bindings op
-          | q`Boogie.command_fndecl =>
+          | q`Core.command_fndecl =>
             translateFunction .Declaration p bindings op
           | _ => TransM.error s!"translateBoogieDecls unimplemented for {repr op}"
         pure ([decl], bindings)
     let (decls, bindings) ← go (count + 1) max bindings ops
     return (newDecls ++ decls, bindings)
 
-def translateProgram (p : Program) : TransM Boogie.Program := do
+def translateProgram (p : Program) : TransM Core.Program := do
   let decls ← translateBoogieDecls p {}
   return { decls := decls }
 

@@ -13,7 +13,7 @@ namespace Python
 -------------------------------------------------------------------------------
 
 open Lambda.LExpr
-open Boogie
+open Core
 
 /--
 Python regexes can be interpreted differently based on the matching mode.
@@ -66,17 +66,17 @@ def RegexAST.alwaysConsume (r : RegexAST) : Bool :=
 /--
 Empty regex pattern; matches an empty string.
 -/
-def Boogie.emptyRegex : Boogie.Expression.Expr :=
+def Boogie.emptyRegex : Core.Expression.Expr :=
   mkApp () (.op () strToRegexFunc.name none) [strConst () ""]
 
 /--
 Unmatchable regex pattern.
 -/
-def Boogie.unmatchableRegex : Boogie.Expression.Expr :=
+def Boogie.unmatchableRegex : Core.Expression.Expr :=
   mkApp () (.op () reNoneFunc.name none) []
 
 partial def RegexAST.toBoogie (r : RegexAST) (atStart atEnd : Bool) :
-    Boogie.Expression.Expr :=
+    Core.Expression.Expr :=
   match r with
   | .char c =>
     (mkApp () (.op () strToRegexFunc.name none) [strConst () (toString c)])
@@ -156,7 +156,7 @@ partial def RegexAST.toBoogie (r : RegexAST) (atStart atEnd : Bool) :
       mkApp () (.op () reUnionFunc.name none) [r1b, r2b]
 
 def pythonRegexToBoogie (pyRegex : String) (mode : MatchMode := .fullmatch) :
-    Boogie.Expression.Expr × Option ParseError :=
+    Core.Expression.Expr × Option ParseError :=
   match parseTop pyRegex with
   | .error err => (mkApp () (.op () reAllFunc.name none) [], some err)
   | .ok ast =>

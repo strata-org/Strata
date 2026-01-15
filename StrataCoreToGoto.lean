@@ -10,7 +10,7 @@ import StrataTest.Backends.CBMC.SimpleAdd.SimpleAdd
 def main (args : List String) : IO Unit := do
   match args with
   | ["writeFiles"] =>
-    BoogieToGOTO.writeToGotoJson (programName := "simpleAdd")
+    CoreToGOTO.writeToGotoJson (programName := "simpleAdd")
       (symTabFileName := "StrataTest/Backends/CBMC/SimpleAdd/simpleAdd.symtab.json")
       (gotoFileName := "StrataTest/Backends/CBMC/SimpleAdd/simpleAdd.goto.json")
       Strata.simpleAdd

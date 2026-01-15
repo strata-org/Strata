@@ -11,10 +11,10 @@ import Strata.DL.Lambda.TypeFactory
 /-!
 # Datatype Verification Integration Tests
 
-Verify Boogie programs with datatypes, encoding with declare-datatype
+Verify Strata Core programs with datatypes, encoding with declare-datatype
 -/
 
-namespace Boogie.DatatypeVerificationTests
+namespace Core.DatatypeVerificationTests
 
 open Lambda
 open Std (ToFormat Format)
@@ -108,7 +108,7 @@ Run verification and return a summary string.
 -/
 def runVerificationTest (testName : String) (program : Program) : IO String := do
   try
-    match ← EIO.toIO' (Boogie.verify "cvc5" program Options.quiet) with
+    match ← EIO.toIO' (Core.verify "cvc5" program Options.quiet) with
     | .error err =>
       return s!"{testName}: FAILED\n  Error: {err}"
     | .ok results =>
@@ -614,4 +614,4 @@ info: "Test 8 - Hidden Type Recursion: PASSED\n  Verified 1 obligation(s)\n"
 #eval test8_hiddenTypeRecursion
 
 
-end Boogie.DatatypeVerificationTests
+end Core.DatatypeVerificationTests

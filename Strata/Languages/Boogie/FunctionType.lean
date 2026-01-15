@@ -11,15 +11,15 @@ import Strata.Languages.Boogie.Program
 
 ---------------------------------------------------------------------
 
-namespace Boogie
+namespace Core
 
 namespace Function
 
 open Lambda Imperative
 open Std (ToFormat Format format)
 
-def typeCheck (C: Boogie.Expression.TyContext) (Env : Boogie.Expression.TyEnv) (func : Function) :
-    Except Format (Function × Boogie.Expression.TyEnv) := do
+def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (func : Function) :
+    Except Format (Function × Core.Expression.TyEnv) := do
   -- (FIXME) Very similar to `Lambda.inferOp`, except that the body is annotated
   -- using `LExprT.resolve`. Can we share code here?
   --
@@ -56,4 +56,4 @@ def typeCheck (C: Boogie.Expression.TyContext) (Env : Boogie.Expression.TyEnv) (
 end Function
 
 ---------------------------------------------------------------------
-end Boogie
+end Core

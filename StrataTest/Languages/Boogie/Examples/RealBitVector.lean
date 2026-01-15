@@ -49,7 +49,7 @@ Errors: #[]
 #eval TransM.run Inhabited.default (translateProgram realPgm)
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
@@ -158,7 +158,7 @@ Errors: #[]
 #eval TransM.run Inhabited.default (translateProgram bvPgm)
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:

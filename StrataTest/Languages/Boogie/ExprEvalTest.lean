@@ -28,7 +28,7 @@ import Plausible.Gen
 the SMT expression.
 -/
 
-namespace Boogie
+namespace Core
 
 section Tests
 
@@ -40,16 +40,16 @@ def encode (e:LExpr BoogieLParams.mono)
            (init_state:LState BoogieLParams):
     Except Format (Option (Strata.SMT.Term × SMT.Context))
   := do
-  let init_state ← init_state.addFactory Boogie.Factory
+  let init_state ← init_state.addFactory Core.Factory
   let lcont := { Lambda.LContext.default with
-    functions := Boogie.Factory, knownTypes := Boogie.KnownTypes }
+    functions := Core.Factory, knownTypes := Core.KnownTypes }
   let (e,_T) ← LExpr.annotate lcont tenv e
   let e_res := LExpr.eval init_state.config.fuel init_state e
   match e_res with
   | .const _ _ =>
-    let env := Boogie.Env.init
-    let (smt_term_lhs,ctx) ← Boogie.toSMTTerm env [] e SMT.Context.default
-    let (smt_term_rhs,ctx) ← Boogie.toSMTTerm env [] e_res ctx
+    let env := Core.Env.init
+    let (smt_term_lhs,ctx) ← Core.toSMTTerm env [] e SMT.Context.default
+    let (smt_term_rhs,ctx) ← Core.toSMTTerm env [] e_res ctx
     let smt_term_eq := Strata.SMT.Factory.eq smt_term_lhs smt_term_rhs
     return (.some (smt_term_eq, ctx))
   | _ => return .none
@@ -65,7 +65,7 @@ def checkValid (e:LExpr BoogieLParams.mono): IO Bool := do
   | .error msg => throw (IO.userError s!"error: {msg}")
   | .ok (.none) => return false
   | .ok (.some (smt_term, ctx)) =>
-    let ans ← Boogie.SMT.dischargeObligation
+    let ans ← Core.SMT.dischargeObligation
       { Options.default with verbose := false }
       (LExpr.freeVars e) "z3" s!"exprEvalTest.smt2"
       [smt_term] ctx
@@ -129,7 +129,7 @@ private def mkRandConst (ty:LMonoTy): IO (Option (LExpr BoogieLParams.mono))
     return .none
 
 def checkFactoryOps (verbose:Bool): IO Unit := do
-  let arr:Array (LFunc BoogieLParams) := Boogie.Factory
+  let arr:Array (LFunc BoogieLParams) := Core.Factory
   let print (f:Format): IO Unit :=
     if verbose then IO.println f
     else return ()
@@ -215,4 +215,4 @@ abbrev test_ty : LTy := .forAll [] <| .tcons "bool" []
 
 end Tests
 
-end Boogie
+end Core

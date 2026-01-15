@@ -13,7 +13,7 @@ import Strata.Languages.Boogie.ProcedureType
 
 ---------------------------------------------------------------------
 
-namespace Boogie
+namespace Core
 
 open Std (ToFormat Format format)
 open Lambda
@@ -21,14 +21,14 @@ open Lambda
 
 namespace Program
 
-def typeCheck (C: Boogie.Expression.TyContext) (Env : Boogie.Expression.TyEnv) (program : Program) :
-  Except Format (Program × Boogie.Expression.TyEnv) := do
+def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (program : Program) :
+  Except Format (Program × Core.Expression.TyEnv) := do
     -- Push a type substitution scope to store global type variables.
     let Env := Env.updateSubst { subst := [[]], isWF := SubstWF_of_empty_empty }
     let (decls, Env) ← go C Env program.decls []
     .ok ({ decls }, Env)
 
-  where go C Env remaining acc : Except Format (Decls × Boogie.Expression.TyEnv) :=
+  where go C Env remaining acc : Except Format (Decls × Core.Expression.TyEnv) :=
   match remaining with
   | [] => .ok (acc.reverse, Env)
   | decl :: drest => do
@@ -102,4 +102,4 @@ def typeCheck (C: Boogie.Expression.TyContext) (Env : Boogie.Expression.TyEnv) (
 ---------------------------------------------------------------------
 
 end Program
-end Boogie
+end Core

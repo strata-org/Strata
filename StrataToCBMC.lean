@@ -36,7 +36,7 @@ def main (args : List String) : IO Unit := do
         else if file.endsWith ".core.st" then
           let boogie_prog := (Boogie.getProgram pgm inputCtx).fst
           match boogie_prog.decls.head! with
-            | .proc f => IO.println (Boogie.testSymbols f)
+            | .proc f => IO.println (Core.testSymbols f)
             | _ => IO.println "Error: expected boogie procedure"
         else
           IO.println "Error: Unrecognized file extension"

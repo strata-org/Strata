@@ -11,7 +11,7 @@ import Strata.Languages.Boogie.Statement
 
 ---------------------------------------------------------------------
 
-namespace Boogie
+namespace Core
 
 open Std (ToFormat Format format)
 open Lambda
@@ -209,4 +209,4 @@ instance : HasVarsTrans Expression (List Statement) Procedure where
   allVarsTrans := Statements.allVarsTrans
 
 
-end Boogie
+end Core

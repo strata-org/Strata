@@ -357,7 +357,7 @@ spec {
 
 #end
 
-def Boogie.prelude : Boogie.Program :=
+def Boogie.prelude : Core.Program :=
    Boogie.getProgram Strata.boogiePrelude |>.fst
 
 end Strata

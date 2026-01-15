@@ -97,7 +97,7 @@ return := i
 #eval Strata.to_boogie (Strata.C_Simp.get_program LoopTrivialPgm)
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:

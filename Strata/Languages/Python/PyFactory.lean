@@ -27,7 +27,7 @@ if not re.match(REGEX, name) then # default flags == 0
 ...
 ```
 
-## Corresponding Strata.Boogie:
+## Corresponding Strata.Core:
 
 ```
 procedure _main () {
@@ -61,10 +61,10 @@ if not PyReMatch(REGEX, name, 0) then
 
 -/
 
-open Boogie
+open Core
 open Lambda LTy.Syntax LExpr.SyntaxMono
 
-def reCompileFunc : LFunc Boogie.BoogieLParams :=
+def reCompileFunc : LFunc Core.BoogieLParams :=
     { name := "PyReCompile",
       typeArgs := [],
       inputs := [("string", mty[string]),
@@ -94,7 +94,7 @@ def reCompileFunc : LFunc Boogie.BoogieLParams :=
           | _ => .none)
       }
 
-def ReFactory : @Factory Boogie.BoogieLParams :=
+def ReFactory : @Factory Core.BoogieLParams :=
     #[
       reCompileFunc
     ]

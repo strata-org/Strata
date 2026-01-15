@@ -22,7 +22,7 @@ import Strata.Languages.Boogie.Verifier
 This file contains unit tests for SMT datatype encoding.
 -/
 
-namespace Boogie
+namespace Core
 
 section DatatypeTests
 
@@ -484,4 +484,4 @@ info: (declare-datatype Root (
 
 end DatatypeTests
 
-end Boogie
+end Core

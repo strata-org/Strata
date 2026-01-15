@@ -19,7 +19,7 @@ namespace Strata.SMT.Encoder
 open Strata.SMT.Encoder
 
 -- Derived from Strata.SMT.Encoder.encode.
-def encodeBoogie (ctx : Boogie.SMT.Context) (prelude : SolverM Unit) (ts : List Term) :
+def encodeBoogie (ctx : Core.SMT.Context) (prelude : SolverM Unit) (ts : List Term) :
   SolverM (List String × EncoderState) := do
   Solver.reset
   Solver.setLogic "ALL"
@@ -41,7 +41,7 @@ end Strata.SMT.Encoder
 
 ---------------------------------------------------------------------
 
-namespace Boogie.SMT
+namespace Core.SMT
 open Std (ToFormat Format format)
 open Lambda Strata.SMT
 -- (TODO) Use DL.Imperative.SMTUtils.
@@ -202,10 +202,10 @@ def dischargeObligation
   | .error e => return .error e
   | .ok result => return .ok (result, estate)
 
-end Boogie.SMT
+end Core.SMT
 ---------------------------------------------------------------------
 
-namespace Boogie
+namespace Core
 open Imperative Lambda Strata.SMT
 open Std (ToFormat Format format)
 
@@ -267,8 +267,8 @@ def VCResult.isUnknown (vr : VCResult) : Bool :=
 def VCResult.isImplementationError (vr : VCResult) : Bool :=
   match vr.result with | .implementationError _ => true | _ => false
 
-def VCResult.isNotSuccess (vcResult : Boogie.VCResult) :=
-  !Boogie.VCResult.isSuccess vcResult
+def VCResult.isNotSuccess (vcResult : Core.VCResult) :=
+  !Core.VCResult.isSuccess vcResult
 
 abbrev VCResults := Array VCResult
 
@@ -406,7 +406,7 @@ def verify (smtsolver : String) (program : Program)
     (options : Options := Options.default)
     (moreFns : @Lambda.Factory BoogieLParams := Lambda.Factory.default) :
     EIO Format VCResults := do
-  match Boogie.typeCheckAndPartialEval options program moreFns with
+  match Core.typeCheckAndPartialEval options program moreFns with
   | .error err =>
     .error f!"❌ Type checking error.\n{format err}"
   | .ok pEs =>
@@ -416,7 +416,7 @@ def verify (smtsolver : String) (program : Program)
                  (List.mapM (fun pE => verifySingleEnv smtsolver pE options) pEs)
     .ok VCss.toArray.flatten
 
-end Boogie
+end Core
 ---------------------------------------------------------------------
 
 namespace Strata
@@ -424,31 +424,31 @@ namespace Strata
 open Lean.Parser
 
 def typeCheck (ictx : InputContext) (env : Program) (options : Options := Options.default)
-    (moreFns : @Lambda.Factory Boogie.BoogieLParams := Lambda.Factory.default) :
-  Except Std.Format Boogie.Program := do
+    (moreFns : @Lambda.Factory Core.BoogieLParams := Lambda.Factory.default) :
+  Except Std.Format Core.Program := do
   let (program, errors) := TransM.run ictx (translateProgram env)
   if errors.isEmpty then
     -- dbg_trace f!"AST: {program}"
-    Boogie.typeCheck options program moreFns
+    Core.typeCheck options program moreFns
   else
     .error s!"DDM Transform Error: {repr errors}"
 
 def Boogie.getProgram
   (p : Strata.Program)
-  (ictx : InputContext := Inhabited.default) : Boogie.Program × Array String :=
+  (ictx : InputContext := Inhabited.default) : Core.Program × Array String :=
   TransM.run ictx (translateProgram p)
 
 def verify
     (smtsolver : String) (env : Program)
     (ictx : InputContext := Inhabited.default)
     (options : Options := Options.default)
-    (moreFns : @Lambda.Factory Boogie.BoogieLParams := Lambda.Factory.default)
-    : IO Boogie.VCResults := do
+    (moreFns : @Lambda.Factory Core.BoogieLParams := Lambda.Factory.default)
+    : IO Core.VCResults := do
   let (program, errors) := Boogie.getProgram env ictx
   if errors.isEmpty then
     -- dbg_trace f!"AST: {program}"
     EIO.toIO (fun f => IO.Error.userError (toString f))
-                (Boogie.verify smtsolver program options moreFns)
+                (Core.verify smtsolver program options moreFns)
   else
     panic! s!"DDM Transform Error: {repr errors}"
 
@@ -461,7 +461,7 @@ structure Diagnostic where
   message : String
   deriving Repr, BEq
 
-def toDiagnostic (vcr : Boogie.VCResult) : Option Diagnostic := do
+def toDiagnostic (vcr : Core.VCResult) : Option Diagnostic := do
   -- Only create a diagnostic if verification failed.
   match vcr.result with
   | .pass => none  -- Verification succeeded, no diagnostic

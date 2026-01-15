@@ -107,7 +107,7 @@ return := sum
 #eval Strata.to_boogie (Strata.C_Simp.get_program LoopSimplePgm)
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:

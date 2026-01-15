@@ -6,13 +6,13 @@
 
 import Strata.Languages.Boogie.ProcedureEval
 
-namespace Boogie
+namespace Core
 
 ---------------------------------------------------------------------
 
 section Tests
 open Std (ToFormat Format format)
-open Procedure Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Boogie.Syntax
+open Procedure Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
 
 /--
 info: Error:
@@ -240,4 +240,4 @@ Proof Obligation:
 end Tests
 ---------------------------------------------------------------------
 
-end Boogie
+end Core

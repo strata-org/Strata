@@ -36,16 +36,16 @@ fooConst callees: []
 -/
 #guard_msgs in
 #eval let (program, _) := Boogie.getProgram funcPgm
-      let cg := (Boogie.Program.toFunctionCG program)
-      let ans1 := Boogie.CallGraph.getCalleesClosure cg "barTest4"
-      let ans2 := Boogie.CallGraph.getCallersClosure cg "barTest1"
-      let ans3 := Boogie.CallGraph.getCalleesClosure cg "fooConst"
+      let cg := (Core.Program.toFunctionCG program)
+      let ans1 := Core.CallGraph.getCalleesClosure cg "barTest4"
+      let ans2 := Core.CallGraph.getCallersClosure cg "barTest1"
+      let ans3 := Core.CallGraph.getCalleesClosure cg "fooConst"
       Std.format f!"barTest4 callees: {ans1}\n\
                     barTest1 callers: {ans2}\n\
                     fooConst callees: {ans3}"
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:

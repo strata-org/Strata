@@ -8,10 +8,10 @@ import Strata.Transform.CoreTransform
 
 /-! # Call Elimination Transformation -/
 
-namespace Boogie
+namespace Core
 namespace CallElim
 
-open Boogie.Transform
+open Core.Transform
 
 /--
 The main call elimination transformation algorithm on a single command.
@@ -98,4 +98,4 @@ def callElim' (p : Program) : CoreTransformM Program :=
   runProgram callElimCmd p
 
 end CallElim
-end Boogie
+end Core

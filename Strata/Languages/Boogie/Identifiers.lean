@@ -8,7 +8,7 @@
 
 import Strata.DL.Lambda.LExprTypeEnv
 import Strata.DL.Lambda.Factory
-namespace Boogie
+namespace Core
 
 open Std
 

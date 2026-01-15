@@ -6,13 +6,13 @@
 
 import Strata.Languages.Boogie.Boogie
 
-namespace Boogie
+namespace Core
 
 ---------------------------------------------------------------------
 
 section Tests
 open Std (ToFormat Format format)
-open Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Boogie.Syntax
+open Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
 
 def bad_prog : Program := { decls := [
       -- type Foo _ _;
@@ -69,7 +69,7 @@ def good_prog : Program := { decls := [
 ]}
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
@@ -82,7 +82,7 @@ Proof Obligation:
 (~fooAliasVal == ~fooVal)
 
 ---
-info: ok: [(type Boogie.Boundedness.Infinite Foo [_, _]
+info: ok: [(type Core.Boundedness.Infinite Foo [_, _]
   type FooAlias a := (Foo int bool)
   func fooAliasVal :  () → (Foo int bool);
   func fooVal :  () → (Foo int bool);
@@ -371,7 +371,7 @@ def polyFuncProg : Program := { decls := [
 ]}
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: [Strata.Core] Type checking succeeded.
 
 ---
 info: ok: func identity : ∀[$__ty0]. ((x : $__ty0)) → $__ty0;
@@ -391,4 +391,4 @@ m := (((~makePair : (arrow int (arrow bool (Map int bool)))) ((~identity : (arro
 ---------------------------------------------------------------------
 
 end Tests
-end Boogie
+end Core

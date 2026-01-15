@@ -73,7 +73,7 @@ import Strata.Languages.Boogie.ProcedureWF
  the program is type-checked.
 -/
 
-namespace Boogie
+namespace Core
 namespace WF
 
 open Imperative Std Lambda
@@ -390,4 +390,4 @@ theorem Program.typeCheckWF : Program.typeCheck C T p = .ok (p', T') → WF.WFPr
   exact typeCheck.goWF Hgo
 
 end WF
-end Boogie
+end Core

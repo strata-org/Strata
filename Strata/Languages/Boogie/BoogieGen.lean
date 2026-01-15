@@ -8,9 +8,9 @@ import Strata.Languages.Boogie.Statement
 import Strata.DL.Util.LabelGen
 import Strata.DL.Util.StringGen
 import Strata.DL.Util.ListUtils
-open Boogie Lambda Imperative
+open Core Lambda Imperative
 
-/-! ## Boogie Identifier Generator
+/-! ## Strata Core Identifier Generator
   This file contains a Boogie Identifier generator `BoogieGenState.gen`, where the
   uniqueness of the generated identifiers is designed to be provable. It relies on a
   `StringGenState` to generate unique strings (See `StringGen.lean`).
@@ -24,7 +24,7 @@ def initVarValue (id : BoogieIdent) : Expression.Expr :=
 
 end Names
 
-namespace Boogie
+namespace Core
 
 structure BoogieGenState where
   cs : StringGenState
@@ -32,7 +32,7 @@ structure BoogieGenState where
 
 def BoogieGenState.WF (σ : BoogieGenState)
   := StringGenState.WF σ.cs ∧
-    List.map Boogie.BoogieIdent.temp σ.cs.generated.unzip.snd = σ.generated ∧
+    List.map Core.BoogieIdent.temp σ.cs.generated.unzip.snd = σ.generated ∧
     σ.generated.Nodup ∧
     Forall (BoogieIdent.isTemp ·) σ.generated
 
@@ -110,4 +110,4 @@ instance : LabelGen.WFLabelGen BoogieIdent BoogieGenState where
 
 abbrev BoogieGenM := StateM BoogieGenState
 
-end Boogie
+end Core

@@ -58,7 +58,7 @@ inductive Operation: Type where
   deriving Repr
 
 -- Explicit instance needed for deriving Repr in the mutual block
-instance : Repr (Imperative.MetaData Boogie.Expression) := inferInstance
+instance : Repr (Imperative.MetaData Core.Expression) := inferInstance
 
 mutual
 structure Procedure: Type where
@@ -153,8 +153,8 @@ inductive StmtExpr : Type where
   | Fresh(value : StmtExpr)
 
 /- Related to proofs -/
-  | Assert (condition: StmtExpr) (md : Imperative.MetaData Boogie.Expression)
-  | Assume (condition: StmtExpr) (md : Imperative.MetaData Boogie.Expression)
+  | Assert (condition: StmtExpr) (md : Imperative.MetaData Core.Expression)
+  | Assume (condition: StmtExpr) (md : Imperative.MetaData Core.Expression)
   /-
 ProveBy allows writing proof trees. Its semantics are the same as that of the given `value`,
 but the `proof` is used to help prove any assertions in `value`.

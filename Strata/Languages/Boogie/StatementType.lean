@@ -12,7 +12,7 @@ import Strata.Languages.Boogie.Program
 import Strata.Languages.Boogie.OldExpressions
 import Strata.DL.Imperative.CmdType
 
-namespace Boogie
+namespace Core
 namespace Statement
 
 open Lambda Imperative
@@ -231,4 +231,4 @@ def typeCheck (C: Expression.TyContext) (Env : Expression.TyEnv) (P : Program) (
 
 ---------------------------------------------------------------------
 end Statement
-end Boogie
+end Core

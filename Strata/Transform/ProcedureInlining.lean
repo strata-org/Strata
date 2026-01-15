@@ -14,7 +14,7 @@ import Strata.Transform.CoreTransform
 
 /-! # Procedure Inlining Transformation -/
 
-namespace Boogie
+namespace Core
 namespace ProcedureInlining
 
 open Transform
@@ -26,7 +26,7 @@ def Block.substFvar (b : Block) (fr:Expression.Ident)
   termination_by b.sizeOf
   decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
 
-def Statement.substFvar (s : Boogie.Statement)
+def Statement.substFvar (s : Core.Statement)
       (fr:Expression.Ident)
       (to:Expression.Expr) : Statement :=
   match s with
@@ -65,7 +65,7 @@ def Block.renameLhs (b : Block) (fr: Lambda.Identifier Visibility) (to: Lambda.I
   termination_by b.sizeOf
   decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
 
-def Statement.renameLhs (s : Boogie.Statement) (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility)
+def Statement.renameLhs (s : Core.Statement) (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility)
     : Statement :=
   match s with
   | .init lhs ty rhs metadata =>
@@ -95,7 +95,7 @@ def Block.labels (b : Block): List String :=
 
 -- Assume and Assert's labels have special meanings, so they must not be
 -- mangled during procedure inlining.
-def Statement.labels (s : Boogie.Statement) : List String :=
+def Statement.labels (s : Core.Statement) : List String :=
   match s with
   | .block lbl b _ => lbl :: (Block.labels b)
   | .ite _ thenb elseb _ => (Block.labels thenb) ++ (Block.labels elseb)
@@ -114,7 +114,7 @@ def Block.replaceLabels (b : Block) (map:Map String String)
   decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
 
 def Statement.replaceLabels
-    (s : Boogie.Statement) (map:Map String String) : Boogie.Statement :=
+    (s : Core.Statement) (map:Map String String) : Core.Statement :=
   let app (s:String) :=
     match Map.find? map s with
     | .none => s
@@ -248,7 +248,7 @@ def inlineCallCmd (excluded_calls:List String := [])
               Statement.set lhs_var (.fvar () out_var (.none)))
             outs_lhs_and_sig
 
-        let stmts:List (Imperative.Stmt Boogie.Expression Boogie.Command)
+        let stmts:List (Imperative.Stmt Core.Expression Core.Command)
           := inputInits ++ outputInits ++ outputHavocs ++ proc.body ++
              outputSetStmts
 
@@ -265,4 +265,4 @@ def inlineCallL (dcls : List Decl) (prog : Program)
   runProcedures inlineCallCmd dcls prog
 
 end ProcedureInlining
-end Boogie
+end Core

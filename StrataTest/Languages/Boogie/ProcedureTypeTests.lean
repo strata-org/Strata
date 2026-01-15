@@ -6,13 +6,13 @@
 
 import Strata.Languages.Boogie.ProcedureType
 
-namespace Boogie
+namespace Core
 
 ---------------------------------------------------------------------
 
 section Tests
 open Std (ToFormat Format format)
-open Procedure Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Boogie.Syntax
+open Procedure Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
 
 /--
 info: ok: ((procedure P :  ((x : int)) → ((y : int)))
@@ -26,7 +26,7 @@ info: ok: ((procedure P :  ((x : int)) → ((y : int)))
  aliases: [] state: tyGen: 6 tyPrefix: $__ty exprGen: 0 exprPrefix: $__var subst: [])
 -/
 #guard_msgs in
-#eval do let ans ← typeCheck { LContext.default with functions := Boogie.Factory } TEnv.default
+#eval do let ans ← typeCheck { LContext.default with functions := Core.Factory } TEnv.default
                              Program.init
                              { header := {name := "P",
                                           typeArgs := [],
@@ -54,7 +54,7 @@ body: g := (((~Int.Add : (arrow int (arrow int int))) (a : int)) (g : int))
   let g : TGenEnv Visibility := { @TGenEnv.default Visibility with context := {types := [[("g", t[int])]] }};
   let ans ←
               typeCheck { @LContext.default ⟨Unit, Visibility⟩ with
-                              functions := Boogie.Factory} {@TEnv.default Visibility with genEnv := g}
+                              functions := Core.Factory} {@TEnv.default Visibility with genEnv := g}
                         Program.init
                         { header := { name := "P",
                                       typeArgs := [],
@@ -82,7 +82,7 @@ body: g := (((~Int.Add : (arrow int (arrow int int))) (a : int)) (g : int))
   let g : TGenEnv Visibility := { @TGenEnv.default Visibility with context := {types := [[("g", t[int])]] }};
   let ans ←
               typeCheck { @LContext.default ⟨Unit, Visibility⟩ with
-                              functions := Boogie.Factory}
+                              functions := Core.Factory}
                         { @TEnv.default Visibility with genEnv := g}
                         Program.init
                         { header := { name := "P",
@@ -102,4 +102,4 @@ body: g := (((~Int.Add : (arrow int (arrow int int))) (a : int)) (g : int))
 
 ---------------------------------------------------------------------
 end Tests
-end Boogie
+end Core

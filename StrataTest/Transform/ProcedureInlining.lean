@@ -14,8 +14,8 @@ import Strata.Languages.Boogie.ProgramWF
 import Strata.Transform.CoreTransform
 import Strata.Transform.ProcedureInlining
 
-open Boogie
-open Boogie.Transform
+open Core
+open Core.Transform
 open ProcedureInlining
 open Strata
 open Std
@@ -107,7 +107,7 @@ private def alphaEquivIdents (e1 e2: Expression.Ident) (map:IdMap)
 
 mutual
 
-def alphaEquivBlock (b1 b2: Boogie.Block) (map:IdMap)
+def alphaEquivBlock (b1 b2: Core.Block) (map:IdMap)
     : Except Format IdMap := do
   if b1.length ≠ b2.length then
     .error "Block lengths do not match"
@@ -120,7 +120,7 @@ def alphaEquivBlock (b1 b2: Boogie.Block) (map:IdMap)
   termination_by b1.sizeOf
   decreasing_by cases st1; apply Imperative.sizeOf_stmt_in_block; assumption
 
-def alphaEquivStatement (s1 s2: Boogie.Statement) (map:IdMap)
+def alphaEquivStatement (s1 s2: Core.Statement) (map:IdMap)
     : Except Format IdMap := do
   let mk_err (s:Format): Except Format IdMap :=
     .error (f!"{s}\ns1:{s1}\ns2:{s2}\nmap:{map.vars}")
@@ -207,7 +207,7 @@ def alphaEquivStatement (s1 s2: Boogie.Statement) (map:IdMap)
 
 end
 
-private def alphaEquiv (p1 p2:Boogie.Procedure):Except Format Bool := do
+private def alphaEquiv (p1 p2:Core.Procedure):Except Format Bool := do
   if p1.body.length ≠ p2.body.length then
     .error (s!"# statements do not match: in {p1.header.name}, "
         ++ s!"inlined fn one has {p1.body.length}"
@@ -223,15 +223,15 @@ private def alphaEquiv (p1 p2:Boogie.Procedure):Except Format Bool := do
 
 
 
-def translate (t : Strata.Program) : Boogie.Program :=
+def translate (t : Strata.Program) : Core.Program :=
   (TransM.run Inhabited.default (translateProgram t)).fst
 
-def runInlineCall (p : Boogie.Program) : Boogie.Program :=
+def runInlineCall (p : Core.Program) : Core.Program :=
   match (runProgram inlineCallCmd p .emp) with
   | ⟨.ok res, _⟩ => res
   | ⟨.error e, _⟩ => panic! e
 
-def checkInlining (prog : Boogie.Program) (progAns : Boogie.Program)
+def checkInlining (prog : Core.Program) (progAns : Core.Program)
     : Except Format Bool := do
   let prog' := runInlineCall prog
   let pp' := prog'.decls.zip progAns.decls

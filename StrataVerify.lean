@@ -82,7 +82,7 @@ def main (args : List String) : IO UInt32 := do
         for vcResult in vcResults do
           let posStr := Imperative.MetaData.formatFileRangeD vcResult.obligation.metadata
           println! f!"{posStr} [{vcResult.obligation.label}]: {vcResult.result}"
-        let success := vcResults.all Boogie.VCResult.isSuccess
+        let success := vcResults.all Core.VCResult.isSuccess
         if success && !opts.checkOnly then
           println! f!"All {vcResults.size} goals passed."
           return 0
@@ -90,8 +90,8 @@ def main (args : List String) : IO UInt32 := do
           println! f!"Skipping verification."
           return 0
         else
-          let provedGoalCount := (vcResults.filter Boogie.VCResult.isSuccess).size
-          let failedGoalCount := (vcResults.filter Boogie.VCResult.isNotSuccess).size
+          let provedGoalCount := (vcResults.filter Core.VCResult.isSuccess).size
+          let failedGoalCount := (vcResults.filter Core.VCResult.isNotSuccess).size
           println! f!"Finished with {provedGoalCount} goals passed, {failedGoalCount} failed."
           return 1
     -- Strata.Elab.elabProgram

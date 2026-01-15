@@ -33,7 +33,7 @@ procedure ProcCaller () returns (x : int) {
 #end
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: [Strata.Core] Type checking succeeded.
 
 
 Obligation (Origin_Proc_Requires)g_eq_15 is free!
@@ -79,8 +79,8 @@ Evaluated program:
 var (g : int) := init_g_0
 (procedure Proc :  () → ())
 modifies: [g]
-preconditions: (g_eq_15, ((g : int) == #15) (Attribute: Boogie.Procedure.CheckAttr.Free))
-postconditions: (g_lt_10, (((~Int.Lt : (arrow int (arrow int bool))) (g : int)) #10) (Attribute: Boogie.Procedure.CheckAttr.Free))
+preconditions: (g_eq_15, ((g : int) == #15) (Attribute: Core.Procedure.CheckAttr.Free))
+postconditions: (g_lt_10, (((~Int.Lt : (arrow int (arrow int bool))) (g : int)) #10) (Attribute: Core.Procedure.CheckAttr.Free))
 body: assume [g_eq_15] ($__g0 == #15)
 assert [g_gt_10_internal] ((~Int.Gt $__g0) #10)
 g := ((~Int.Add $__g0) #1)

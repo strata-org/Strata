@@ -28,7 +28,7 @@ import Strata.DL.Util.ListUtils
 -/
 
 namespace CallElimCorrect
-open Boogie Boogie.Transform CallElim
+open Core Core.Transform CallElim
 
 theorem BoogieIdent.isGlob_isGlobOrLocl :
   PredImplies (BoogieIdent.isGlob ·) (BoogieIdent.isGlobOrLocl ·) := by
@@ -165,8 +165,8 @@ theorem getIdentTys!_no_throw :
 
 -- Step 1. A theorem stating that given a well-formed program, call-elim will return no exception
 theorem callElimBlockNoExcept :
-  ∀ (st : Boogie.Statement)
-    (p : Boogie.Program),
+  ∀ (st : Core.Statement)
+    (p : Core.Program),
     WF.WFStatementsProp p [st] →
   ∃ sts, Except.ok sts = ((run [st] (CallElim.callElimStmts · p)))
   -- NOTE: the generated variables will not be local, but temp. So it will not be well-formed
@@ -335,7 +335,7 @@ theorem updatedStateIsDefinedMono :
 
 theorem EvalExpressionUpdatedState {δ : BoogieEval}:
 Imperative.WellFormedSemanticEvalVar δ →
-Boogie.WellFormedBoogieEvalCong δ →
+Core.WellFormedBoogieEvalCong δ →
 Imperative.WellFormedSemanticEvalVal δ →
 ¬ k ∈ (Imperative.HasVarsPure.getVars e) →
 δ σ e = some v' →
@@ -366,11 +366,11 @@ Imperative.WellFormedSemanticEvalVal δ →
 
 theorem EvalExpressionsUpdatedState {δ : BoogieEval} :
   Imperative.WellFormedSemanticEvalVar δ →
-  Boogie.WellFormedBoogieEvalCong δ →
+  Core.WellFormedBoogieEvalCong δ →
   Imperative.WellFormedSemanticEvalVal δ →
   ¬ k ∈ es.flatMap Imperative.HasVarsPure.getVars →
-  EvalExpressions (P:=Boogie.Expression) δ σ es vs →
-  EvalExpressions (P:=Boogie.Expression) δ (updatedState σ k v) es vs := by
+  EvalExpressions (P:=Core.Expression) δ σ es vs →
+  EvalExpressions (P:=Core.Expression) δ (updatedState σ k v) es vs := by
   intros Hwfv Hwfc Hwfvl Hnin Heval
   have Hlen := EvalExpressionsLength Heval
   induction es generalizing vs σ
@@ -391,7 +391,7 @@ theorem EvalExpressionsUpdatedState {δ : BoogieEval} :
 
 theorem EvalExpressionUpdatedStates {δ : BoogieEval} :
   Imperative.WellFormedSemanticEvalVar δ →
-  Boogie.WellFormedBoogieEvalCong δ →
+  Core.WellFormedBoogieEvalCong δ →
   Imperative.WellFormedSemanticEvalVal δ →
   ks'.length = vs'.length →
   ks'.Nodup →
@@ -422,13 +422,13 @@ theorem EvalExpressionUpdatedStates {δ : BoogieEval} :
 
 theorem EvalExpressionsUpdatedStates {δ : BoogieEval} :
   Imperative.WellFormedSemanticEvalVar δ →
-  Boogie.WellFormedBoogieEvalCong δ →
+  Core.WellFormedBoogieEvalCong δ →
   Imperative.WellFormedSemanticEvalVal δ →
   ks'.length = vs'.length →
   ks'.Nodup →
   ks'.Disjoint (es.flatMap Imperative.HasVarsPure.getVars) →
-  EvalExpressions (P:=Boogie.Expression) δ σ es vs →
-  EvalExpressions (P:=Boogie.Expression) δ (updatedStates σ ks' vs') es vs := by
+  EvalExpressions (P:=Core.Expression) δ σ es vs →
+  EvalExpressions (P:=Core.Expression) δ (updatedStates σ ks' vs') es vs := by
   intros Hwfv Hwfc Hwfvl Hlen Hnd Hnin Heval
   have Hlen := EvalExpressionsLength Heval
   induction ks' generalizing vs' σ
@@ -706,7 +706,7 @@ theorem EvalStatementsContractInits :
   -- the generated old variable names shouldn't overlap with original variables
   trips.unzip.1.unzip.1.Disjoint (List.flatMap (Imperative.HasVarsPure.getVars (P:=Expression)) trips.unzip.2) →
   List.Nodup (trips.unzip.1.unzip.1) →
-  EvalExpressions (P:=Boogie.Expression) δ σ (trips.unzip.2) vvs →
+  EvalExpressions (P:=Core.Expression) δ σ (trips.unzip.2) vvs →
   -- ReadValues σ (trips.unzip.2) vvs →
   Imperative.isNotDefined σ (trips.unzip.1.unzip.1) →
   EvalStatementsContract π δ σ
@@ -799,7 +799,7 @@ theorem createFvarsSubstStores :
   Imperative.substDefined σ σA (ks1.zip ks2) →
   Imperative.substStores σ σA (ks1.zip ks2) →
   ReadValues σA ks2 argVals →
-  EvalExpressions (P:=Boogie.Expression) δ σ (createFvars ks1) argVals := by
+  EvalExpressions (P:=Core.Expression) δ σ (createFvars ks1) argVals := by
     intros Hlen Hwfv Hdef Hsubst Hrd
     simp [createFvars]
     have Hlen2 := ReadValuesLength Hrd
@@ -1110,7 +1110,7 @@ case cons h t ih =>
     because then we can't say anything about the stores
     due to not knowing the exact form of the expressions -/
 theorem Lambda.LExpr.substFvarCorrect :
-  Boogie.WellFormedBoogieEvalCong δ →
+  Core.WellFormedBoogieEvalCong δ →
   Imperative.WellFormedSemanticEvalVar (P:=Expression) δ →
   Imperative.WellFormedSemanticEvalVal (P:=Expression) δ →
   Imperative.substStores σ σ' [(fro, to)] →
@@ -1210,7 +1210,7 @@ theorem Lambda.LExpr.substFvarCorrect :
     apply Hwfc.eqcongr <;> grind
 
 theorem Lambda.LExpr.substFvarsCorrectZero :
-  Boogie.WellFormedBoogieEvalCong δ →
+  Core.WellFormedBoogieEvalCong δ →
   Imperative.WellFormedSemanticEvalVar δ →
   Imperative.WellFormedSemanticEvalVal δ →
   Imperative.invStores σ σ' (Imperative.HasVarsPure.getVars e) →
@@ -1572,7 +1572,7 @@ theorem createAssertsCorrect :
   Imperative.WellFormedSemanticEvalVar δ →
   Imperative.WellFormedSemanticEvalVal δ →
   -- TODO: remove congruence of old expressions, and require pre to contain no old expressions
-  Boogie.WellFormedBoogieEvalCong δ →
+  Core.WellFormedBoogieEvalCong δ →
   ks.length = ks'.length →
   Imperative.substNodup (ks.zip ks') →
   Imperative.substDefined σA σ' (ks.zip ks') →
@@ -1630,7 +1630,7 @@ theorem createAssumesCorrect :
   Imperative.WellFormedSemanticEvalBool δ →
   Imperative.WellFormedSemanticEvalVar δ →
   Imperative.WellFormedSemanticEvalVal δ →
-  Boogie.WellFormedBoogieEvalCong δ →
+  Core.WellFormedBoogieEvalCong δ →
   ks.length = ks'.length →
   Imperative.substNodup (ks.zip ks') →
   Imperative.substDefined σA σ' (ks.zip ks') →
@@ -1719,8 +1719,8 @@ theorem createOldStoreSubstEq :
 theorem substOldCorrect :
   Imperative.WellFormedSemanticEvalVar δ →
   Imperative.WellFormedSemanticEvalVal δ →
-  Boogie.WellFormedBoogieEvalCong δ →
-  Boogie.WellFormedBoogieEvalTwoState δ σ₀ σ →
+  Core.WellFormedBoogieEvalCong δ →
+  Core.WellFormedBoogieEvalTwoState δ σ₀ σ →
   OldExpressions.NormalizedOldExpr e →
   --Imperative.invStores σ₀ σ
   --  ((OldExpressions.extractOldExprVars e).removeAll [fro]) →
@@ -2086,7 +2086,7 @@ theorem substOldExpr_cons:
     rename_i _ fn e _ _ H
     generalize H1: (OldExpressions.substOld h.snd (Lambda.LExpr.fvar () h.fst.fst none) fn) = fn'
     generalize H2: (OldExpressions.substOld h.snd (Lambda.LExpr.fvar () h.fst.fst none) e) = e'
-    rw (occs := [3]) [Boogie.OldExpressions.substsOldExpr.eq_def]
+    rw (occs := [3]) [Core.OldExpressions.substsOldExpr.eq_def]
     simp; split
     simp_all [Map.isEmpty]; rename_i H; split at H <;> simp_all
     rw[OldExpressions.substOldExpr_nil, OldExpressions.substOldExpr_nil]; simp
@@ -2128,8 +2128,8 @@ theorem substOldExpr_cons:
 theorem substsOldCorrect :
   Imperative.WellFormedSemanticEvalVar δ →
   Imperative.WellFormedSemanticEvalVal δ →
-  Boogie.WellFormedBoogieEvalCong δ →
-  Boogie.WellFormedBoogieEvalTwoState δ σ₀ σ →
+  Core.WellFormedBoogieEvalCong δ →
+  Core.WellFormedBoogieEvalTwoState δ σ₀ σ →
   OldExpressions.NormalizedOldExpr e →
   Imperative.substStores σ₀ σ (createOldStoreSubst oldTrips) →
   Imperative.substDefined σ₀ σ (createOldStoreSubst oldTrips) →

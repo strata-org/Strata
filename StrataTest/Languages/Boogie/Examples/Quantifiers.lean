@@ -47,7 +47,7 @@ spec {
 #end
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
@@ -117,7 +117,7 @@ Model:
 #eval verify "cvc5" quantPgm Inhabited.default Options.default
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:

@@ -55,10 +55,10 @@ info: { callees := Std.HashMap.ofList [("Inc", []), ("Q2", ["Q1"]), ("P", ["Inc"
 -/
 #guard_msgs in
 #eval let (program, _) := Boogie.getProgram globalCounterPgm
-      Boogie.Program.toProcedureCG program
+      Core.Program.toProcedureCG program
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:

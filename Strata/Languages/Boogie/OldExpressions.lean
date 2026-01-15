@@ -7,15 +7,16 @@
 import Strata.Languages.Boogie.BoogieGen
 import Strata.Languages.Boogie.Procedure
 
-namespace Boogie
+namespace Core
 
 namespace OldExpressions
 
-open Lambda.LExpr.SyntaxMono Lambda.LTy.Syntax Boogie.Syntax
+open Lambda.LExpr.SyntaxMono Lambda.LTy.Syntax Core.Syntax
 
-/-! ## Old Expressions in Boogie
+/-! ## Old Expressions in Strata Core
 
-From Section 4.3 in "This is Boogie 2":
+The `old e` expression in Strata Core follows the syntax of the old expression
+in Boogie. Specifically, in Section 4.3 in "This is Boogie 2":
 
 "Postconditions and procedure implementations are two-state contexts. This means
 that it is possible to refer to two different values of each variable. In a
@@ -698,4 +699,4 @@ inductive ContainsOldVar : Expression.Expr → Prop where
   | eq_2  : ContainsOldVar e2 → ContainsOldVar (.eq m e1 e2)
 
 end OldExpressions
-end Boogie
+end Core

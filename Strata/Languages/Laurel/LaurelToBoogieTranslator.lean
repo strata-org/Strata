@@ -18,10 +18,10 @@ import Strata.Languages.Laurel.LaurelFormat
 
 namespace Laurel
 
-open Boogie (VCResult VCResults)
+open Core (VCResult VCResults)
 open Strata
 
-open Boogie (intAddOp intSubOp intMulOp intDivOp intModOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp)
+open Core (intAddOp intSubOp intMulOp intDivOp intModOp intNegOp intLtOp intLeOp intGtOp intGeOp boolAndOp boolOrOp boolNotOp)
 open Lambda (LMonoTy LTy LExpr)
 
 /-
@@ -37,12 +37,12 @@ def translateType (ty : HighType) : LMonoTy :=
 /--
 Translate Laurel StmtExpr to Boogie Expression
 -/
-def translateExpr (expr : StmtExpr) : Boogie.Expression.Expr :=
+def translateExpr (expr : StmtExpr) : Core.Expression.Expr :=
   match h: expr with
   | .LiteralBool b => .const () (.boolConst b)
   | .LiteralInt i => .const () (.intConst i)
   | .Identifier name =>
-      let ident := Boogie.BoogieIdent.locl name
+      let ident := Core.BoogieIdent.locl name
       .fvar () ident (some LMonoTy.int)  -- Default to int type
   | .PrimitiveOp op [e] =>
     match op with
@@ -50,7 +50,7 @@ def translateExpr (expr : StmtExpr) : Boogie.Expression.Expr :=
     | .Neg => .app () intNegOp (translateExpr e)
     | _ => panic! s!"translateExpr: Invalid unary op: {repr op}"
   | .PrimitiveOp op [e1, e2] =>
-    let binOp (bop : Boogie.Expression.Expr): Boogie.Expression.Expr :=
+    let binOp (bop : Core.Expression.Expr): Core.Expression.Expr :=
       LExpr.mkApp () bop [translateExpr e1, translateExpr e2]
     match op with
     | .Eq => .eq () (translateExpr e1) (translateExpr e2)
@@ -79,7 +79,7 @@ def translateExpr (expr : StmtExpr) : Boogie.Expression.Expr :=
   | .Assign _ value => translateExpr value  -- For expressions, just translate the value
   | .StaticCall name args =>
       -- Create function call as an op application
-      let ident := Boogie.BoogieIdent.glob name
+      let ident := Core.BoogieIdent.glob name
       let fnOp := .op () ident (some LMonoTy.int)  -- Assume int return type
       args.foldl (fun acc arg => .app () acc (translateExpr arg)) fnOp
   | _ => panic! Std.Format.pretty (Std.ToFormat.format expr)
@@ -87,7 +87,7 @@ def translateExpr (expr : StmtExpr) : Boogie.Expression.Expr :=
   all_goals (simp_wf; try omega)
   rename_i x_in; have := List.sizeOf_lt_of_mem x_in; omega
 
-def getNameFromMd (md : Imperative.MetaData Boogie.Expression): String :=
+def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
   let fileRange := (Imperative.getFileRange md).get!
   s!"({fileRange.start.column},{fileRange.start.line})"
 
@@ -95,37 +95,37 @@ def getNameFromMd (md : Imperative.MetaData Boogie.Expression): String :=
 Translate Laurel StmtExpr to Boogie Statements
 Takes the list of output parameter names to handle return statements correctly
 -/
-def translateStmt (outputParams : List Parameter) (stmt : StmtExpr) : List Boogie.Statement :=
+def translateStmt (outputParams : List Parameter) (stmt : StmtExpr) : List Core.Statement :=
   match stmt with
   | @StmtExpr.Assert cond md =>
       let boogieExpr := translateExpr cond
-      [Boogie.Statement.assert ("assert" ++ getNameFromMd md) boogieExpr md]
+      [Core.Statement.assert ("assert" ++ getNameFromMd md) boogieExpr md]
   | @StmtExpr.Assume cond md =>
       let boogieExpr := translateExpr cond
-      [Boogie.Statement.assume ("assume" ++ getNameFromMd md) boogieExpr md]
+      [Core.Statement.assume ("assume" ++ getNameFromMd md) boogieExpr md]
   | .Block stmts _ =>
       stmts.flatMap (translateStmt outputParams)
   | .LocalVariable name ty initializer =>
       let boogieMonoType := translateType ty
       let boogieType := LTy.forAll [] boogieMonoType
-      let ident := Boogie.BoogieIdent.locl name
+      let ident := Core.BoogieIdent.locl name
       match initializer with
       | some initExpr =>
           let boogieExpr := translateExpr initExpr
-          [Boogie.Statement.init ident boogieType boogieExpr]
+          [Core.Statement.init ident boogieType boogieExpr]
       | none =>
           -- Initialize with default value
           let defaultExpr := match ty with
                             | .TInt => .const () (.intConst 0)
                             | .TBool => .const () (.boolConst false)
                             | _ => .const () (.intConst 0)
-          [Boogie.Statement.init ident boogieType defaultExpr]
+          [Core.Statement.init ident boogieType defaultExpr]
   | .Assign target value =>
       match target with
       | .Identifier name =>
-          let ident := Boogie.BoogieIdent.locl name
+          let ident := Core.BoogieIdent.locl name
           let boogieExpr := translateExpr value
-          [Boogie.Statement.set ident boogieExpr]
+          [Core.Statement.set ident boogieExpr]
       | _ => []  -- Can only assign to simple identifiers
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond := translateExpr cond
@@ -137,20 +137,20 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExpr) : List Boogi
       [Imperative.Stmt.ite bcond bthen belse .empty]
   | .StaticCall name args =>
       let boogieArgs := args.map translateExpr
-      [Boogie.Statement.call [] name boogieArgs]
+      [Core.Statement.call [] name boogieArgs]
   | .Return valueOpt =>
       -- In Boogie, returns are done by assigning to output parameters
       match valueOpt, outputParams.head? with
       | some value, some outParam =>
           -- Assign to the first output parameter, then assume false for no fallthrough
-          let ident := Boogie.BoogieIdent.locl outParam.name
+          let ident := Core.BoogieIdent.locl outParam.name
           let boogieExpr := translateExpr value
-          let assignStmt := Boogie.Statement.set ident boogieExpr
-          let noFallThrough := Boogie.Statement.assume "return" (.const () (.boolConst false)) .empty
+          let assignStmt := Core.Statement.set ident boogieExpr
+          let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) .empty
           [assignStmt, noFallThrough]
       | none, _ =>
           -- Return with no value - just indicate no fallthrough
-          let noFallThrough := Boogie.Statement.assume "return" (.const () (.boolConst false)) .empty
+          let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) .empty
           [noFallThrough]
       | some _, none =>
           -- Error: trying to return a value but no output parameters
@@ -160,31 +160,31 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExpr) : List Boogi
 /--
 Translate Laurel Parameter to Boogie Signature entry
 -/
-def translateParameterToBoogie (param : Parameter) : (Boogie.BoogieIdent × LMonoTy) :=
-  let ident := Boogie.BoogieIdent.locl param.name
+def translateParameterToBoogie (param : Parameter) : (Core.BoogieIdent × LMonoTy) :=
+  let ident := Core.BoogieIdent.locl param.name
   let ty := translateType param.type
   (ident, ty)
 
 /--
 Translate Laurel Procedure to Boogie Procedure
 -/
-def translateProcedure (proc : Procedure) : Boogie.Procedure :=
+def translateProcedure (proc : Procedure) : Core.Procedure :=
   -- Translate input parameters
   let inputPairs := proc.inputs.map translateParameterToBoogie
   let inputs := inputPairs
 
-  let header : Boogie.Procedure.Header := {
+  let header : Core.Procedure.Header := {
     name := proc.name
     typeArgs := []
     inputs := inputs
     outputs := proc.outputs.map translateParameterToBoogie
   }
-  let spec : Boogie.Procedure.Spec := {
+  let spec : Core.Procedure.Spec := {
     modifies := []
     preconditions := []
     postconditions := []
   }
-  let body : List Boogie.Statement :=
+  let body : List Core.Statement :=
     match proc.body with
     | .Transparent bodyExpr => translateStmt proc.outputs bodyExpr
     | _ => []  -- TODO: handle Opaque and Abstract bodies
@@ -197,7 +197,7 @@ def translateProcedure (proc : Procedure) : Boogie.Procedure :=
 /--
 Translate Laurel Program to Boogie Program
 -/
-def translate (program : Program) : Boogie.Program :=
+def translate (program : Program) : Core.Program :=
   -- First, sequence all assignments (move them out of expression positions)
   let sequencedProgram := liftExpressionAssignments program
   dbg_trace "=== Sequenced program Program ==="
@@ -205,7 +205,7 @@ def translate (program : Program) : Boogie.Program :=
   dbg_trace "================================="
   -- Then translate to Boogie
   let procedures := sequencedProgram.staticProcedures.map translateProcedure
-  let decls := procedures.map (fun p => Boogie.Decl.proc p .empty)
+  let decls := procedures.map (fun p => Core.Decl.proc p .empty)
   { decls := decls }
 
 /--
@@ -215,11 +215,11 @@ def verifyToVcResults (smtsolver : String) (program : Program)
     (options : Options := Options.default) : IO VCResults := do
   let boogieProgram := translate program
   -- Debug: Print the generated Boogie program
-  dbg_trace "=== Generated Boogie Program ==="
+  dbg_trace "=== Generated Core.Program ==="
   dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format boogieProgram)))
   dbg_trace "================================="
   EIO.toIO (fun f => IO.Error.userError (toString f))
-      (Boogie.verify smtsolver boogieProgram options)
+      (Core.verify smtsolver boogieProgram options)
 
 def verifyToDiagnostics (smtsolver : String) (program : Program): IO (Array Diagnostic)  := do
   let results <- verifyToVcResults smtsolver program

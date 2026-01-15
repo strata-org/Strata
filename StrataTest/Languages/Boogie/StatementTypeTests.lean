@@ -6,14 +6,14 @@
 
 import Strata.Languages.Boogie.StatementType
 
-namespace Boogie
+namespace Core
 ---------------------------------------------------------------------
 
 section Tests
 
 open Std (ToFormat Format format)
 
-open Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Boogie.Syntax
+open Statement Lambda Lambda.LTy.Syntax Lambda.LExpr.SyntaxMono Core.Syntax
 
 /--
 info: ok: init (x : int) := (xinit : int)
@@ -153,4 +153,4 @@ end Tests
 
 ---------------------------------------------------------------------
 
-end Boogie
+end Core

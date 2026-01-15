@@ -11,7 +11,7 @@ import Strata.DL.Util.LabelGen
 
 /-! # Utility functions for program transformation in Strata Core -/
 
-namespace Boogie
+namespace Core
 namespace Transform
 
 open LabelGen
@@ -263,4 +263,4 @@ def run {α : Type} (p : α) (f : α → CoreTransformM β)
   (runWith p f s).fst
 
 end Transform
-end Boogie
+end Core

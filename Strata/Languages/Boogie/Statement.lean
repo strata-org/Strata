@@ -14,7 +14,7 @@ import Strata.DL.Imperative.Stmt
 import Strata.DL.Imperative.HasVars
 import Strata.DL.Lambda.LExpr
 
-namespace Boogie
+namespace Core
 open Imperative
 open Std (ToFormat Format format)
 ---------------------------------------------------------------------
@@ -64,7 +64,7 @@ instance [ToFormat (Cmd P)] [ToFormat (MetaData P)]
 
 ---------------------------------------------------------------------
 
-abbrev Statement := Imperative.Stmt Boogie.Expression Boogie.Command
+abbrev Statement := Imperative.Stmt Core.Expression Core.Command
 abbrev Statements := List Statement
 
 @[match_pattern]
@@ -94,7 +94,7 @@ abbrev Statement.cover (label : String) (b : Expression.Expr) (md : MetaData Exp
 
 ---------------------------------------------------------------------
 
-abbrev Block := Imperative.Block Boogie.Expression Boogie.Command
+abbrev Block := Imperative.Block Core.Expression Core.Command
 
 ---------------------------------------------------------------------
 
@@ -317,7 +317,7 @@ def Block.substFvar (b : Block) (fr:Expression.Ident)
   termination_by b.sizeOf
   decreasing_by apply sizeOf_stmt_in_block; assumption
 
-def Statement.substFvar (s : Boogie.Statement)
+def Statement.substFvar (s : Core.Statement)
       (fr:Expression.Ident)
       (to:Expression.Expr) : Statement :=
   match s with
@@ -360,7 +360,7 @@ def Block.renameLhs (b : Block)
   termination_by b.sizeOf
   decreasing_by apply sizeOf_stmt_in_block; assumption
 
-def Statement.renameLhs (s : Boogie.Statement)
+def Statement.renameLhs (s : Core.Statement)
     (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility)
     : Statement :=
   match s with
@@ -382,4 +382,4 @@ end
 ---------------------------------------------------------------------
 
 
-end Boogie
+end Core

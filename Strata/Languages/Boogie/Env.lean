@@ -9,7 +9,7 @@
 import Strata.Languages.Boogie.Program
 import Strata.DL.Imperative.EvalContext
 
-namespace Boogie
+namespace Core
 open Std (ToFormat Format format)
 open Imperative
 
@@ -140,7 +140,7 @@ structure Env where
 
 def Env.init (empty_factory:=false): Env :=
   let σ := Lambda.LState.init
-  let σ := if empty_factory then σ else σ.setFactory Boogie.Factory
+  let σ := if empty_factory then σ else σ.setFactory Core.Factory
   { error := none,
     program := Program.init,
     substMap := [],
@@ -323,6 +323,6 @@ def Env.addDatatypes (E: Env) (datatypes: List (Lambda.LDatatype Visibility)) : 
   let env ← E.addFactory f
   return { env with datatypes := datatypes.toArray }
 
-end Boogie
+end Core
 
 ---------------------------------------------------------------------

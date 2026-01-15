@@ -13,7 +13,7 @@ import Strata.Languages.Boogie.Axiom
 
 ---------------------------------------------------------------------
 
-namespace Boogie
+namespace Core
 
 open Std (ToFormat Format format)
 open Imperative
@@ -43,13 +43,13 @@ A Boogie declaration.
 Note: constants are 0-ary functions.
  -/
 inductive Decl where
-  | var (name : Expression.Ident) (ty : Expression.Ty) (e : Expression.Expr) (md : MetaData Boogie.Expression := .empty)
-  | type (t : TypeDecl) (md : MetaData Boogie.Expression := .empty)
-  | ax   (a : Axiom) (md : MetaData Boogie.Expression := .empty)
+  | var (name : Expression.Ident) (ty : Expression.Ty) (e : Expression.Expr) (md : MetaData Core.Expression := .empty)
+  | type (t : TypeDecl) (md : MetaData Core.Expression := .empty)
+  | ax   (a : Axiom) (md : MetaData Core.Expression := .empty)
   -- The following is temporary, until we have lists and can encode `distinct` in Lambda.
-  | distinct (name : Expression.Ident) (es : List Expression.Expr) (md : MetaData Boogie.Expression := .empty)
-  | proc (d : Procedure) (md : MetaData Boogie.Expression := .empty)
-  | func (f : Function) (md : MetaData Boogie.Expression := .empty)
+  | distinct (name : Expression.Ident) (es : List Expression.Expr) (md : MetaData Core.Expression := .empty)
+  | proc (d : Procedure) (md : MetaData Core.Expression := .empty)
+  | func (f : Function) (md : MetaData Core.Expression := .empty)
   deriving Inhabited
 
 def Decl.metadata (d : Decl) : MetaData Expression :=
@@ -140,7 +140,7 @@ def Decl.formatWithMetaData (decl : Decl) : Format :=
 
 abbrev Decls := List Decl
 
-/-- A Boogie Program -/
+/-- A Core.Program -/
 structure Program where
   { decls : Decls }
 
@@ -310,4 +310,4 @@ def Program.Procedure.findP? (P : Program) (x : Expression.Ident)
 
 ---------------------------------------------------------------------
 
-end Boogie
+end Core

@@ -12,7 +12,7 @@ import Strata.Languages.Boogie.Env
 import Strata.DL.Imperative.EvalContext
 import Strata.DL.Imperative.CmdEval
 
-namespace Boogie
+namespace Core
 open Lambda Imperative
 open Std (ToFormat Format format)
 
@@ -125,7 +125,7 @@ instance : ToFormat (Cmds Expression × Env) where
 
 ---------------------------------------------------------------------
 
-open LExpr.SyntaxMono LTy.Syntax Boogie.Syntax
+open LExpr.SyntaxMono LTy.Syntax Core.Syntax
 private def testProgram1 : Cmds Expression :=
   [.init "x" t[int] eb[#0],
    .set "x" eb[#10],
@@ -217,4 +217,4 @@ Proof Obligation:
 
 end CmdEval
 ---------------------------------------------------------------------
-end Boogie
+end Core

@@ -14,7 +14,7 @@ import Strata.Languages.Boogie.CmdEval
 
 ---------------------------------------------------------------------
 
-namespace Boogie
+namespace Core
 
 namespace Statement
 
@@ -463,6 +463,6 @@ def evalOne (E : Env) (old_var_subst : SubstMap) (ss : Statements) : Statements 
   | _ => (ss, { E with error := some (.Misc "More than one result environment") })
 
 end Statement
-end Boogie
+end Core
 
 ---------------------------------------------------------------------

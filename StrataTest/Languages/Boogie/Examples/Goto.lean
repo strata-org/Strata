@@ -54,10 +54,10 @@ procedure Test2(x : int) returns (y : bool)
 #end
 
 -- def p := (translateProgram gotoEnv.commands).run
--- def err := Boogie.typeCheckAndPartialEval p.fst
+-- def err := Core.typeCheckAndPartialEval p.fst
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:

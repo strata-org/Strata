@@ -181,12 +181,12 @@ def readPythonStrata (path : String) : IO Strata.Program := do
 def pyTranslateCommand : Command where
   name := "pyTranslate"
   args := [ "file" ]
-  help := "Translate a Strata Python Ion file to Strata.Boogie. Write results to stdout."
+  help := "Translate a Strata Python Ion file to Strata Core. Write results to stdout."
   callback := fun _ v => do
     let pgm ← readPythonStrata v[0]
     let preludePgm := Strata.Python.Internal.Boogie.prelude
     let bpgm := Strata.pythonToBoogie Strata.Python.Internal.signatures pgm
-    let newPgm : Boogie.Program := { decls := preludePgm.decls ++ bpgm.decls }
+    let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
     IO.print newPgm
 
 def pyAnalyzeCommand : Command where
@@ -200,11 +200,11 @@ def pyAnalyzeCommand : Command where
       IO.print pgm
     let preludePgm := Strata.Python.Internal.Boogie.prelude
     let bpgm := Strata.pythonToBoogie Strata.Python.Internal.signatures pgm
-    let newPgm : Boogie.Program := { decls := preludePgm.decls ++ bpgm.decls }
+    let newPgm : Core.Program := { decls := preludePgm.decls ++ bpgm.decls }
     if verbose then
       IO.print newPgm
-    match Boogie.Transform.runProgram
-          (Boogie.ProcedureInlining.inlineCallCmd (excluded_calls := ["main"]))
+    match Core.Transform.runProgram
+          (Core.ProcedureInlining.inlineCallCmd (excluded_calls := ["main"]))
           newPgm .emp with
     | ⟨.error e, _⟩ => panic! e
     | ⟨.ok newPgm, _⟩ =>
@@ -213,7 +213,7 @@ def pyAnalyzeCommand : Command where
         IO.print newPgm
       let solverName : String := "Strata/Languages/Python/z3_parallel.py"
       let vcResults ← EIO.toIO (fun f => IO.Error.userError (toString f))
-                          (Boogie.verify solverName newPgm { Options.default with stopOnFirstError := false, verbose, removeIrrelevantAxioms := true }
+                          (Core.verify solverName newPgm { Options.default with stopOnFirstError := false, verbose, removeIrrelevantAxioms := true }
                                                     (moreFns := Strata.Python.ReFactory))
       let mut s := ""
       for vcResult in vcResults do

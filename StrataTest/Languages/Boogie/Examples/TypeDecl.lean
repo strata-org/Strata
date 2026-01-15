@@ -28,7 +28,7 @@ procedure P () returns () {
 #eval TransM.run Inhabited.default (translateProgram typeDeclPgm1) |>.snd
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:
@@ -91,7 +91,7 @@ procedure P () returns () {
 #eval TransM.run Inhabited.default (translateProgram typeDeclPgm3) |>.snd
 
 /--
-info: [Strata.Boogie] Type checking succeeded.
+info: [Strata.Core] Type checking succeeded.
 
 
 VCs:

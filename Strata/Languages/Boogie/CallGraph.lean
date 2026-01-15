@@ -7,7 +7,7 @@
 import Strata.Languages.Boogie.Program
 
 ---------------------------------------------------------------------
-namespace Boogie
+namespace Core
 
 /-- Generic call graph structure -/
 structure CallGraph where
@@ -198,4 +198,4 @@ def Program.getIrrelevantAxioms (prog : Program) (functions : List String) : Lis
 
 ---------------------------------------------------------------------
 
-end Boogie
+end Core

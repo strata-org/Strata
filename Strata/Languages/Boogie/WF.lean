@@ -35,7 +35,7 @@ import Strata.Languages.Boogie.OldExpressions
  -/
 
 
-namespace Boogie
+namespace Core
 namespace WF
 
 open Imperative
@@ -174,4 +174,4 @@ structure WFProgram extends (Wrapper Program) where
   prop: WFProgramProp self
 
 end WF
-end Boogie
+end Core

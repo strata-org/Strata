@@ -12,7 +12,7 @@ import Strata.Languages.Boogie.ProcedureType
 import Strata.Languages.Boogie.WF
 import Strata.Languages.Boogie.StatementWF
 
-namespace Boogie
+namespace Core
 namespace WF
 
 open Lambda
@@ -121,4 +121,4 @@ theorem Procedure.typeCheckWF : Procedure.typeCheck T p pp = Except.ok (pp', T')
 -/
 
 end WF
-end Boogie
+end Core

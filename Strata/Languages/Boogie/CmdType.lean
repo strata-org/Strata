@@ -11,7 +11,7 @@ import Strata.Languages.Boogie.Expressions
 import Strata.DL.Imperative.TypeContext
 import Strata.DL.Lambda.Factory
 
-namespace Boogie
+namespace Core
 open Lambda Imperative
 open Std (ToFormat Format format)
 
@@ -117,4 +117,4 @@ instance : Imperative.TypeContext Expression (LContext BoogieLParams) (TEnv Visi
 end CmdType
 ---------------------------------------------------------------------
 
-end Boogie
+end Core

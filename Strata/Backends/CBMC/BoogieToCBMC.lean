@@ -15,7 +15,7 @@ import Strata.Backends.CBMC.Common
 open Lean
 open Strata.CBMC
 
-namespace Boogie
+namespace Core
 -- Our test program
 def SimpleTestEnv :=
 #strata
@@ -34,10 +34,10 @@ spec {
 };
 #end
 
-open Boogie in
+open Core in
 def SimpleTestEnvAST := Strata.TransM.run Inhabited.default (Strata.translateProgram (SimpleTestEnv))
 
-def myProc : Boogie.Procedure := match SimpleTestEnvAST.fst.decls.head!.getProc? with
+def myProc : Core.Procedure := match SimpleTestEnvAST.fst.decls.head!.getProc? with
   | .some p => p
   | .none => panic! "Expected procedure"
 
@@ -54,7 +54,7 @@ instance : IdentToStr String where
 class HasLExpr (P : Imperative.PureExpr) (I : Lambda.LExprParams) where
   expr_eq : P.Expr = Lambda.LExpr I.mono
 
-instance : HasLExpr Boogie.Expression BoogieLParams where
+instance : HasLExpr Core.Expression BoogieLParams where
   expr_eq := rfl
 
 def exprToJson (I : Lambda.LExprParams) [IdentToStr (Lambda.Identifier I.IDMeta)] (e : Lambda.LExpr I.mono) (loc: SourceLoc) : Json :=
@@ -79,7 +79,7 @@ def exprToJson (I : Lambda.LExprParams) [IdentToStr (Lambda.Identifier I.IDMeta)
     mkLvalueSymbol s!"{loc.functionName}::{IdentToStr.toStr name}" loc.lineNum loc.functionName
   | _ => panic! "Unimplemented"
 
-def cmdToJson (e : Boogie.Command) (loc: SourceLoc) : Json :=
+def cmdToJson (e : Core.Command) (loc: SourceLoc) : Json :=
   match e with
   | .call _ _ _ _ => panic! "Not supported"
   | .cmd c =>
@@ -207,11 +207,11 @@ def stmtToJson {P : Imperative.PureExpr} (I : Lambda.LExprParams) [IdentToStr (L
   decreasing_by all_goals(simp; omega)
 end
 
-def listToExpr (l: ListMap BoogieLabel Boogie.Procedure.Check) : Boogie.Expression.Expr :=
+def listToExpr (l: ListMap BoogieLabel Core.Procedure.Check) : Core.Expression.Expr :=
   match l with
   | _ => .true ()
 
-def createContractSymbolFromAST (func : Boogie.Procedure) : CBMCSymbol :=
+def createContractSymbolFromAST (func : Core.Procedure) : CBMCSymbol :=
   let location : Location := {
     id := "",
     namedSub := some (Json.mkObj [
@@ -310,14 +310,14 @@ def createContractSymbolFromAST (func : Boogie.Procedure) : CBMCSymbol :=
     value := Json.mkObj [("id", "nil")]
   }
 
-def getParamJson(func: Boogie.Procedure) : Json :=
+def getParamJson(func: Core.Procedure) : Json :=
   Json.mkObj [
     ("id", ""),
     ("sub", Json.arr (func.header.inputs.map (λ i => mkParameter i.fst.name (func.header.name.toPretty) "1")).toArray)
   ]
 
 
-def createImplementationSymbolFromAST (func : Boogie.Procedure) : CBMCSymbol :=
+def createImplementationSymbolFromAST (func : Core.Procedure) : CBMCSymbol :=
   let location : Location := {
     namedSub := some (Json.mkObj [
       ("file", Json.mkObj [("id", "ex_prog.c")]),
@@ -367,7 +367,7 @@ def createImplementationSymbolFromAST (func : Boogie.Procedure) : CBMCSymbol :=
     value := implValue
   }
 
-def testSymbols (proc: Boogie.Procedure) : String := Id.run do
+def testSymbols (proc: Core.Procedure) : String := Id.run do
   -- Generate symbols using AST data
   let contractSymbol := createContractSymbolFromAST proc
   let implSymbol := createImplementationSymbolFromAST proc
@@ -392,4 +392,4 @@ def testSymbols (proc: Boogie.Procedure) : String := Id.run do
   m := m.insert s!"{proc.header.name.name}::1::z" zSymbol
   toString (toJson m)
 
-end Boogie
+end Core

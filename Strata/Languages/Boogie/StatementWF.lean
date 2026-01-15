@@ -12,7 +12,7 @@ import Strata.Languages.Boogie.WF
 import Strata.Languages.Boogie.StatementType
 
 ---------------------------------------------------------------------
-namespace Boogie
+namespace Core
 namespace WF
 
 open Std Lambda
@@ -233,4 +233,4 @@ theorem Statement.typeCheckWF :
 -/
 
 end WF
-end Boogie
+end Core

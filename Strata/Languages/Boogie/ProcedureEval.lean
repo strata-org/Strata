@@ -14,7 +14,7 @@ import Strata.Transform.LoopElim
 
 ---------------------------------------------------------------------
 
-namespace Boogie
+namespace Core
 
 namespace Procedure
 open Std
@@ -89,4 +89,4 @@ def evalOne (E : Env) (p : Procedure) : Procedure × Env :=
 ---------------------------------------------------------------------
 
 end Procedure
-end Boogie
+end Core

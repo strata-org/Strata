@@ -13,15 +13,15 @@ import Strata.Languages.Boogie.OldExpressions
 
 ---------------------------------------------------------------------
 
-namespace Boogie
+namespace Core
 
 open Std (ToFormat Format format)
 open Imperative (MetaData)
 
 namespace Procedure
 
-def typeCheck (C: Boogie.Expression.TyContext) (Env : Boogie.Expression.TyEnv) (p : Program)
-  (proc : Procedure) (md : MetaData Expression) : Except Format (Procedure × Boogie.Expression.TyEnv) :=
+def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (p : Program)
+  (proc : Procedure) (md : MetaData Expression) : Except Format (Procedure × Core.Expression.TyEnv) :=
   let sourceLoc := MetaData.formatFileRangeD md (includeEnd? := false)
   let sourceLoc := if sourceLoc.isEmpty then sourceLoc else f!"{sourceLoc} "
   let errorWithSourceLoc := fun e => if sourceLoc.isEmpty then e else f!"{sourceLoc} {e}"
@@ -102,4 +102,4 @@ def typeCheck (C: Boogie.Expression.TyContext) (Env : Boogie.Expression.TyEnv) (
 
 ---------------------------------------------------------------------
 end Procedure
-end Boogie
+end Core

@@ -16,7 +16,7 @@ import Strata.Transform.DetToNondet
   `StmtToNondetStmtCorrect`)
   -/
 
-open Imperative Boogie
+open Imperative Core
 
 /--
   The proof implementation for `StmtToNondetStmtCorrect` and

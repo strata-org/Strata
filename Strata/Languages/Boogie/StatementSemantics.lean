@@ -10,10 +10,10 @@ import Strata.Languages.Boogie.OldExpressions
 
 ---------------------------------------------------------------------
 
-namespace Boogie
+namespace Core
 
 /-- expressions that can't be reduced when evaluating -/
-inductive Value : Boogie.Expression.Expr → Prop where
+inductive Value : Core.Expression.Expr → Prop where
   | const :  Value (.const () _)
   | bvar  :  Value (.bvar () _)
   | op    :  Value (.op () _ _)
@@ -21,24 +21,24 @@ inductive Value : Boogie.Expression.Expr → Prop where
 
 open Imperative
 
-instance : HasVal Boogie.Expression where value := Value
+instance : HasVal Core.Expression where value := Value
 
-instance : HasFvar Boogie.Expression where
+instance : HasFvar Core.Expression where
   mkFvar := (.fvar () · none)
   getFvar
   | .fvar _ v _ => some v
   | _ => none
 
 @[match_pattern]
-def Boogie.true : Boogie.Expression.Expr := .boolConst () Bool.true
+def Boogie.true : Core.Expression.Expr := .boolConst () Bool.true
 @[match_pattern]
-def Boogie.false : Boogie.Expression.Expr := .boolConst () Bool.false
+def Boogie.false : Core.Expression.Expr := .boolConst () Bool.false
 
-instance : HasBool Boogie.Expression where
+instance : HasBool Core.Expression where
   tt := Boogie.true
   ff := Boogie.false
 
-instance : HasNot Boogie.Expression where
+instance : HasNot Core.Expression where
   not
   | Boogie.true => Boogie.false
   | Boogie.false => Boogie.true
@@ -164,7 +164,7 @@ def updatedStates
 -- where this condition will be asserted at procedures utilizing those two-state functions
 -/
 def WellFormedBoogieEvalTwoState (δ : BoogieEval) (σ₀ σ : BoogieStore) : Prop :=
-    open Boogie.OldExpressions in
+    open Core.OldExpressions in
       (∃ vs vs' σ₁, HavocVars σ₀ vs σ₁ ∧ InitVars σ₁ vs' σ) ∧
       (∀ vs vs' σ₀ σ₁ σ,
         (HavocVars σ₀ vs σ₁ ∧ InitVars σ₁ vs' σ) →
@@ -250,7 +250,7 @@ inductive EvalCommandContract : (String → Option Procedure)  → BoogieEval �
 
   | call_sem {π δ σ args oVals vals σA σAO σO σR n p modvals lhs σ'} :
     π n = .some p →
-    EvalExpressions (P:=Boogie.Expression) δ σ args vals →
+    EvalExpressions (P:=Core.Expression) δ σ args vals →
     ReadValues σ lhs oVals →
     WellFormedSemanticEvalVal δ →
     WellFormedSemanticEvalVar δ →
