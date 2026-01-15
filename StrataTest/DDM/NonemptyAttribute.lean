@@ -23,10 +23,12 @@ op item (n : Num) : Item => n;
 op comma1 (@[nonempty] items : CommaSepBy Item) : Command => "comma1(" items ")";
 op space1 (@[nonempty] items : SpaceSepBy Item) : Command => "space1(" items ")";
 op prefixed1 (@[nonempty] items : SpacePrefixSepBy Item) : Command => "prefixed1(" items ")";
+op seq1 (@[nonempty] items : Seq Item) : Command => "seq1(" items ")";
 
 // Operations without @[nonempty] - allow zero elements
 op comma0 (items : CommaSepBy Item) : Command => "comma0(" items ")";
 op space0 (items : SpaceSepBy Item) : Command => "space0(" items ")";
+op seq0 (items : Seq Item) : Command => "seq0(" items ")";
 
 #end
 
@@ -98,3 +100,25 @@ space0()
 #end
 
 end NonemptyTest.Tests
+
+-- Test that @[nonempty] Seq accepts non-empty lists
+#guard_msgs in
+private def test_nonempty_seq_success := #strata
+program NonemptyTest;
+seq1(1 2 3)
+#end
+
+-- Test that @[nonempty] Seq rejects empty lists
+/-- error: expected expected at least one element -/
+#guard_msgs in
+private def test_nonempty_seq_empty := #strata
+program NonemptyTest;
+seq1()
+#end
+
+-- Test that regular (non-@[nonempty]) Seq allows empty lists
+#guard_msgs in
+private def test_maybe_empty_seq := #strata
+program NonemptyTest;
+seq0()
+#end
