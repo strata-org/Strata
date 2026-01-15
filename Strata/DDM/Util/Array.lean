@@ -110,9 +110,4 @@ theorem of_mem_pop {α} {a : α} {as : Array α} : a ∈ as.pop → a ∈ as := 
   simp [Array.mem_iff_getElem]
   grind
 
-theorem toList_list_cons {α}:
-  ∀ (hd:α) (tl:List α) (arr:Array α),
-    Array.toList arr = hd::tl ↔ arr = (List.toArray [hd]) ++ (List.toArray tl)
-:= by grind
-
 end Array

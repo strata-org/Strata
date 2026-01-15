@@ -308,7 +308,7 @@ by
     unfold Pure.pure Except.instMonad Except.pure
     grind
   · rename_i lf lf_tail tail_ih
-    rw [Array.toList_list_cons] at Hl
+    have Hl: newF = (List.toArray [lf]) ++ (List.toArray lf_tail) := by grind
     have Htail_wf: FactoryWF (lf_tail.toArray) := by
       rw [Hl] at newF_wf
       apply FactoryWF.mk
