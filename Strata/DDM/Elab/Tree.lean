@@ -246,11 +246,7 @@ structure OptionInfo extends ElabInfo where
   deriving Inhabited, Repr
 
 structure SeqInfo extends ElabInfo where
-  args : Array Arg
-  resultCtx : TypingContext
-deriving Inhabited, Repr
-
-structure CommaSepInfo extends ElabInfo where
+  sep : SepFormat
   args : Array Arg
   resultCtx : TypingContext
 deriving Inhabited, Repr
@@ -267,7 +263,6 @@ inductive Info
 | ofBytesInfo (info : ConstInfo ByteArray)
 | ofOptionInfo (info : OptionInfo)
 | ofSeqInfo (info : SeqInfo)
-| ofCommaSepInfo (info : CommaSepInfo)
 deriving Inhabited, Repr
 
 namespace Info
@@ -301,7 +296,6 @@ def elabInfo (info : Info) : ElabInfo :=
   | .ofBytesInfo info => info.toElabInfo
   | .ofOptionInfo info => info.toElabInfo
   | .ofSeqInfo info => info.toElabInfo
-  | .ofCommaSepInfo info => info.toElabInfo
 
 def inputCtx (info : Info) : TypingContext := info.elabInfo.inputCtx
 
@@ -347,8 +341,7 @@ def arg : Tree → Arg
       | #[x] => some x.arg
       | _ => panic! "Unexpected option"
     .option info.loc r
-  | .ofSeqInfo info => .seq info.loc info.args
-  | .ofCommaSepInfo info => .commaSepList info.loc info.args
+  | .ofSeqInfo info => .seq info.loc info.sep info.args
 
 theorem sizeOf_children (t : Tree) (i : Nat) (p : i < t.children.size) : sizeOf t[i] < sizeOf t := by
   match t with
@@ -370,7 +363,6 @@ def resultContext (t : Tree) : TypingContext :=
     else
       info.inputCtx
   | .ofSeqInfo info => info.resultCtx
-  | .ofCommaSepInfo info => info.resultCtx
 termination_by t
 
 def isSpecificOp (tree : Tree) (expected : QualifiedIdent) : Bool :=
@@ -384,14 +376,20 @@ def asOption? (t : Tree) : Option (Option Tree) :=
   | _ => none
 
 def asCommaSepInfo? (t : Tree) : Option (Array Tree) :=
-  if let .ofCommaSepInfo _ := t.info then
-    some t.children
+  if let .ofSeqInfo info := t.info then
+    if info.sep == .comma then
+      some t.children
+    else
+      none
   else
     none
 
 def asCommaSepInfo! (t : Tree) : Array Tree :=
-  if let .ofCommaSepInfo _ := t.info then
-    t.children
+  if let .ofSeqInfo info := t.info then
+    if info.sep == .comma then
+      t.children
+    else
+      panic! "Expected commaSepInfo"
   else
     panic! "Expected commaSepInfo"
 
