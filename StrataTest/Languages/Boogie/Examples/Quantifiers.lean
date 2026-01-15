@@ -52,6 +52,7 @@ info: [Strata.Boogie] Type checking succeeded.
 
 VCs:
 Label: good_assert
+Property: assert
 Assumptions:
 
 
@@ -59,6 +60,7 @@ Proof Obligation:
 (∀ (~Bool.Not (%0 == ((~Int.Add %0) #1))))
 
 Label: good
+Property: assert
 Assumptions:
 
 
@@ -66,6 +68,7 @@ Proof Obligation:
 (∀ (∃ (((~Int.Add ((~Int.Add $__x0) #1)) ((~Int.Add %0) %1)) == ((~Int.Add %1) ((~Int.Add %0) ((~Int.Add $__x0) #1))))))
 
 Label: bad
+Property: assert
 Assumptions:
 
 
@@ -77,10 +80,12 @@ Wrote problem to vcs/good.smt2.
 Wrote problem to vcs/bad.smt2.
 
 
-Obligation bad: could not be proved!
+Result: Obligation: bad
+Property: assert
+Result: ❌ fail
+Model:
+($__x0, 0)
 
-Result: failed
-CEx: ($__x0, 0)
 
 Evaluated program:
 (procedure Test :  ((x : int)) → ((r : int)))
@@ -95,14 +100,18 @@ assert [bad] (∀ ((~Int.Lt %0) $__x0))
 ---
 info:
 Obligation: good_assert
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: good
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: bad
-Result: failed
-CEx: ($__x0, 0)
+Property: assert
+Result: ❌ fail
+Model:
+($__x0, 0)
 -/
 #guard_msgs in
 #eval verify "cvc5" quantPgm Inhabited.default Options.default
@@ -113,6 +122,7 @@ info: [Strata.Boogie] Type checking succeeded.
 
 VCs:
 Label: trigger_assert
+Property: assert
 Assumptions:
 
 (f_pos, (∀ ((~Int.Gt (~f %0)) #0)))
@@ -121,6 +131,7 @@ Proof Obligation:
 ((~Int.Gt (~f $__x0)) #0)
 
 Label: multi_trigger_assert
+Property: assert
 Assumptions:
 
 (f_pos, (∀ ((~Int.Gt (~f %0)) #0)))
@@ -129,6 +140,7 @@ Proof Obligation:
 (∀ ((~Int.Lt ((~g $__x0) %0)) (~f $__x0)))
 
 Label: f_and_g
+Property: assert
 Assumptions:
 
 (f_pos, (∀ ((~Int.Gt (~f %0)) #0)))
@@ -142,13 +154,16 @@ Wrote problem to vcs/f_and_g.smt2.
 ---
 info:
 Obligation: trigger_assert
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: multi_trigger_assert
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: f_and_g
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" triggerPgm

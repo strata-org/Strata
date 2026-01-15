@@ -62,6 +62,7 @@ info: [Strata.Boogie] Type checking succeeded.
 
 VCs:
 Label: a1
+Property: assert
 Assumptions:
 
 
@@ -69,6 +70,7 @@ Proof Obligation:
 #true
 
 Label: a3
+Property: assert
 Assumptions:
 
 
@@ -76,6 +78,7 @@ Proof Obligation:
 #true
 
 Label: a4
+Property: assert
 Assumptions:
 
 
@@ -83,6 +86,7 @@ Proof Obligation:
 #true
 
 Label: a6
+Property: assert
 Assumptions:
 (<label_ite_cond_true: ((~Int.Gt x) #0)>, ((~Int.Gt $__x2) #0))
 
@@ -91,6 +95,7 @@ Proof Obligation:
 ((~Int.Gt ((~Int.Mul $__x2) #2)) $__x2)
 
 Label: a7
+Property: assert
 Assumptions:
 (<label_ite_cond_false: !((~Int.Gt x) #0)>, (if ((~Int.Gt $__x2) #0) then #false else #true))
 
@@ -103,19 +108,24 @@ Wrote problem to vcs/a7.smt2.
 ---
 info:
 Obligation: a1
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: a3
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: a4
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: a6
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: a7
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" gotoPgm

@@ -163,6 +163,7 @@ Warnings:
 []
 Deferred Proof Obligations:
 Label: x_value_eq
+Property: assert
 Assumptions:
 Proof Obligation:
 #true
@@ -206,6 +207,7 @@ Warnings:
 []
 Deferred Proof Obligations:
 Label: x_eq_12
+Property: assert
 Assumptions:
 Proof Obligation:
 ((y : int) == #12)

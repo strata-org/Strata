@@ -40,6 +40,7 @@ Warnings:
 []
 Deferred Proof Obligations:
 Label: x_eq_18
+Property: assert
 Assumptions:
 Proof Obligation:
 #true
@@ -76,6 +77,7 @@ Warnings:
 []
 Deferred Proof Obligations:
 Label: x_eq_12
+Property: assert
 Assumptions:
 Proof Obligation:
 (_yinit == #12)
@@ -150,16 +152,19 @@ Warnings:
 []
 Deferred Proof Obligations:
 Label: m_5_eq_50
+Property: assert
 Assumptions:
 Proof Obligation:
 (((_minit : (arrow int int)) #5) == #50)
 
 Label: m_2_eq_20
+Property: assert
 Assumptions:
 Proof Obligation:
 #true
 
 Label: m_1_eq_10
+Property: assert
 Assumptions:
 Proof Obligation:
 #true
@@ -206,16 +211,19 @@ Warnings:
 []
 Deferred Proof Obligations:
 Label: m_5_eq_50
+Property: assert
 Assumptions:
 Proof Obligation:
 ((_minit #5) == #50)
 
 Label: m_2_eq_20
+Property: assert
 Assumptions:
 Proof Obligation:
 #true
 
 Label: m_1_eq_10
+Property: assert
 Assumptions:
 Proof Obligation:
 #true
@@ -288,6 +296,7 @@ Warnings:
 []
 Deferred Proof Obligations:
 Label: trivial
+Property: assert
 Assumptions:
 (<label_ite_cond_false: !(z == #false)>, (if (zinit == #false) then #false else #true))
 (z_false, (zinit == #false))
@@ -295,6 +304,7 @@ Proof Obligation:
 #true
 
 Label: x_eq_y_label_0
+Property: assert
 Assumptions:
 (z_false, (zinit == #false))
 (<label_ite_cond_true: (z == #false)>, (if (zinit == #false) then (zinit == #false) else #true)) (<label_ite_cond_false: !(z == #false)>, (if (if (zinit == #false) then #false else #true) then (if (zinit == #false) then #false else #true) else #true))
@@ -302,6 +312,7 @@ Proof Obligation:
 ((if (zinit == #false) then #6 else #0) == #6)
 
 Label: x_eq_y
+Property: assert
 Assumptions:
 (z_false, (zinit == #false))
 (<label_ite_cond_true: (z == #false)>, (if (zinit == #false) then (zinit == #false) else #true)) (<label_ite_cond_false: !(z == #false)>, (if (if (zinit == #false) then #false else #true) then (if (zinit == #false) then #false else #true) else #true))
@@ -358,6 +369,7 @@ Warnings:
 []
 Deferred Proof Obligations:
 Label: x_eq_1
+Property: assert
 Assumptions:
 Proof Obligation:
 (($__x0 : int) == #1)

@@ -390,22 +390,17 @@ def elabDialect
   | .dialect loc dialect =>
     elabDialectRest fm dialects #[] inputContext loc dialect startPos stopPos
 
-def parseStrataProgramFromDialect (dialects : LoadedDialects) (dialect : DialectName) (filePath : String) : IO (InputContext × Strata.Program) := do
-  let bytes ← Strata.Util.readBinInputSource filePath
-  let fileContent ← match String.fromUTF8? bytes with
-    | some s => pure s
-    | none => throw (IO.userError s!"File {filePath} contains non UTF-8 data")
+def parseStrataProgramFromDialect (dialects : LoadedDialects) (dialect : DialectName) (input : InputContext) : IO Strata.Program := do
 
   let leanEnv ← Lean.mkEmptyEnvironment 0
-  let inputContext := Strata.Parser.stringInputContext filePath fileContent
 
   let isTrue mem := inferInstanceAs (Decidable (dialect ∈ dialects.dialects))
     | throw <| IO.userError "Internal {dialect} missing from loaded dialects."
 
   let strataProgram ←
-    match elabProgramRest dialects leanEnv inputContext dialect mem 0 with
+    match elabProgramRest dialects leanEnv input dialect mem 0 with
     | .ok program =>
-      pure (inputContext, program)
+      pure program
     | .error errors =>
       let errMsg ← errors.foldlM (init := "Parse errors:\n") fun msg e =>
         return s!"{msg}  {e.pos.line}:{e.pos.column}: {← e.data.toString}\n"

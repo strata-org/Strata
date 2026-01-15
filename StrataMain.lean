@@ -9,8 +9,10 @@ import Strata.DDM.Elab
 import Strata.DDM.Ion
 import Strata.Util.IO
 
+import Strata.DDM.Integration.Java.Gen
 import Strata.Languages.Python.Python
-import StrataTest.Transform.ProcedureInlining
+import Strata.Transform.BoogieTransform
+import Strata.Transform.ProcedureInlining
 
 def exitFailure {α} (message : String) : IO α := do
   IO.eprintln (message  ++ "\n\nRun strata --help for additional help.")
@@ -201,20 +203,42 @@ def pyAnalyzeCommand : Command where
     let newPgm : Boogie.Program := { decls := preludePgm.decls ++ bpgm.decls }
     if verbose then
       IO.print newPgm
-    let newPgm := runInlineCall newPgm
-    if verbose then
-      IO.println "Inlined: "
-      IO.print newPgm
-    let solverName : String := "Strata/Languages/Python/z3_parallel.py"
-    let vcResults ← EIO.toIO (fun f => IO.Error.userError (toString f))
-                        (Boogie.verify solverName newPgm { Options.default with stopOnFirstError := false, verbose, removeIrrelevantAxioms := true }
-                                                   (moreFns := Strata.Python.ReFactory))
-    let mut s := ""
-    for vcResult in vcResults do
-      s := s ++ s!"\n{vcResult.obligation.label}: {Std.format vcResult.result}\n"
-    IO.println s
+    match Boogie.Transform.runProgram
+          (Boogie.ProcedureInlining.inlineCallCmd (excluded_calls := ["main"]))
+          newPgm .emp with
+    | ⟨.error e, _⟩ => panic! e
+    | ⟨.ok newPgm, _⟩ =>
+      if verbose then
+        IO.println "Inlined: "
+        IO.print newPgm
+      let solverName : String := "Strata/Languages/Python/z3_parallel.py"
+      let vcResults ← EIO.toIO (fun f => IO.Error.userError (toString f))
+                          (Boogie.verify solverName newPgm { Options.default with stopOnFirstError := false, verbose, removeIrrelevantAxioms := true }
+                                                    (moreFns := Strata.Python.ReFactory))
+      let mut s := ""
+      for vcResult in vcResults do
+        s := s ++ s!"\n{vcResult.obligation.label}: {Std.format vcResult.result}\n"
+      IO.println s
+
+def javaGenCommand : Command where
+  name := "javaGen"
+  args := [ "dialect-file", "package", "output-dir" ]
+  help := "Generate Java classes from a DDM dialect file."
+  callback := fun fm v => do
+    let (ld, pd) ← readFile fm v[0]
+    match pd with
+    | .dialect d =>
+      match Strata.Java.generateDialect d v[1] with
+      | .ok files =>
+        Strata.Java.writeJavaFiles v[2] v[1] files
+        IO.println s!"Generated Java files for {d.name} in {v[2]}/{Strata.Java.packageToPath v[1]}"
+      | .error msg =>
+        exitFailure s!"Error generating Java: {msg}"
+    | .program _ =>
+      exitFailure "Expected a dialect file, not a program file."
 
 def commandList : List Command := [
+      javaGenCommand,
       checkCommand,
       toIonCommand,
       printCommand,

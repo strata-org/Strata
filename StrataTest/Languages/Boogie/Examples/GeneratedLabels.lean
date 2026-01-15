@@ -58,6 +58,7 @@ info: [Strata.Boogie] Type checking succeeded.
 
 VCs:
 Label: assert_0
+Property: assert
 Assumptions:
 
 (axiom_0, (∀ (∀ (∀ (∀ ((~Bool.Implies (~Bool.Not (%2 == %1))) (((~select %3) %2) == ((~select (((~update %3) %1) %0)) %2))))))))
@@ -69,7 +70,8 @@ Wrote problem to vcs/assert_0.smt2.
 ---
 info:
 Obligation: assert_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" genLabelsPgm

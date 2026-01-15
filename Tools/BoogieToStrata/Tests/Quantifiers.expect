@@ -1,16 +1,16 @@
 Successfully parsed.
-Quantifiers.boogie.st(39, 4) [assert_0]: verified
-Quantifiers.boogie.st(51, 4) [assert_1]: unknown
-Quantifiers.boogie.st(64, 4) [assert_2]: verified
-Quantifiers.boogie.st(76, 4) [assert_3]: unknown
-Quantifiers.boogie.st(89, 4) [assert_4]: verified
-Quantifiers.boogie.st(99, 4) [assert_5]: unknown
-Quantifiers.boogie.st(110, 4) [assert_6]: unknown
-Quantifiers.boogie.st(123, 4) [assert_7]: verified
-Quantifiers.boogie.st(134, 4) [assert_8]: verified
-Quantifiers.boogie.st(146, 4) [assert_9]: verified
-Quantifiers.boogie.st(158, 4) [assert_10]: verified
-Quantifiers.boogie.st(170, 4) [assert_11]: verified
-Quantifiers.boogie.st(183, 4) [assert_12]: verified
-Quantifiers.boogie.st(195, 4) [assert_13]: verified
-Finished with 10 goals proved, 4 failed.
+Quantifiers.boogie.st(39, 4) [assert_0]: ✅ pass
+Quantifiers.boogie.st(51, 4) [assert_1]: 🟡 unknown
+Quantifiers.boogie.st(64, 4) [assert_2]: ✅ pass
+Quantifiers.boogie.st(76, 4) [assert_3]: 🟡 unknown
+Quantifiers.boogie.st(89, 4) [assert_4]: ✅ pass
+Quantifiers.boogie.st(99, 4) [assert_5]: 🟡 unknown
+Quantifiers.boogie.st(110, 4) [assert_6]: 🟡 unknown
+Quantifiers.boogie.st(123, 4) [assert_7]: ✅ pass
+Quantifiers.boogie.st(134, 4) [assert_8]: ✅ pass
+Quantifiers.boogie.st(146, 4) [assert_9]: ✅ pass
+Quantifiers.boogie.st(158, 4) [assert_10]: ✅ pass
+Quantifiers.boogie.st(170, 4) [assert_11]: ✅ pass
+Quantifiers.boogie.st(183, 4) [assert_12]: ✅ pass
+Quantifiers.boogie.st(195, 4) [assert_13]: ✅ pass
+Finished with 10 goals passed, 4 failed.
