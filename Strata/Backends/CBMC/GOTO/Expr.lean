@@ -174,21 +174,24 @@ structure Expr where
   namedFields : List (String × Expr) := []
   deriving Repr, Inhabited
 
-partial def Expr.beq (x y : Expr) : Bool :=
+def Expr.beq (x y : Expr) : Bool :=
   x.id == y.id && x.type == y.type && x.sourceLoc == y.sourceLoc &&
   go x.operands y.operands
+  termination_by (SizeOf.sizeOf x)
+  decreasing_by cases x; simp_wf; omega
   where go xs ys :=
   match xs, ys with
   | [], [] => true
   | _, [] | [], _ => false
   | x :: xrest, y :: yrest =>
     Expr.beq x y && go xrest yrest
+  termination_by (SizeOf.sizeOf xs)
 
 instance : BEq Expr where
   beq := Expr.beq
 
-partial def formatExpr (e : Expr) : Format :=
-  match e.id, e.operands with
+def formatExpr (e : Expr) : Format :=
+  match e.id, _: e.operands with
   | .nullary n, [] => f!"({n} : {e.type})"
   | .unary u, [op] => f!"(({u}{formatExpr op}) : {e.type})"
   | .binary b, [left, right] => f!"(({formatExpr left} {b} {formatExpr right}) : {e.type})"
@@ -204,6 +207,10 @@ partial def formatExpr (e : Expr) : Format :=
     let formatted := ops.map formatExpr
     let operands := Format.joinSep formatted f!" "
     if operands.isEmpty then f!"({id} : {e.type})" else f!"(({id} {operands}) : {e.type})"
+  termination_by (SizeOf.sizeOf e)
+  decreasing_by
+    all_goals (cases e; simp_all; subst_vars; try omega)
+    all_goals (rename_i x_in; have := List.sizeOf_lt_of_mem x_in; omega)
 
 instance : ToFormat Expr where
   format e := formatExpr e

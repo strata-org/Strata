@@ -115,6 +115,9 @@ def Boogie.Cmd.renameVars (frto : Map String String) (c : Imperative.Cmd Boogie.
   | .assert label e _ =>
     let e' := substVarNames e frto
     .assert label e' .empty
+  | .cover label e _ =>
+    let e' := substVarNames e frto
+    .cover label e' .empty
 
 def Boogie.Cmds.renameVars (frto : Map String String)
     (cs : Imperative.Cmds Boogie.Expression) : Imperative.Cmds Boogie.ExprStr :=
@@ -193,7 +196,7 @@ def transformToGoto (boogie : Boogie.Program) : Except Format CProverGOTO.Contex
       let cmds := Boogie.Cmds.renameVars args_renamed cmds
 
       let ans ← @Imperative.Cmds.toGotoTransform Boogie.ExprStr
-                    BoogieToGOTO.instToGotoExprStr Env pname cmds (loc := 0)
+                    BoogieToGOTO.instToGotoExprStr _ Env pname cmds (loc := 0)
       let ending_insts : Array CProverGOTO.Instruction := #[
         -- (FIXME): Add lifetime markers.
         -- { type := .DEAD, locationNum := ans.nextLoc + 1,

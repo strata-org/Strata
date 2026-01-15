@@ -9,9 +9,10 @@ import Strata.DDM.Elab
 import Strata.DDM.Ion
 import Strata.Util.IO
 
-import Strata.Languages.Python.Python
 import Strata.DDM.Integration.Java.Gen
-import StrataTest.Transform.ProcedureInlining
+import Strata.Languages.Python.Python
+import Strata.Transform.BoogieTransform
+import Strata.Transform.ProcedureInlining
 
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
@@ -206,18 +207,22 @@ def pyAnalyzeCommand : Command where
     let newPgm : Boogie.Program := { decls := preludePgm.decls ++ bpgm.decls }
     if verbose then
       IO.print newPgm
-    let newPgm := runInlineCall newPgm
-    if verbose then
-      IO.println "Inlined: "
-      IO.print newPgm
-    let solverName : String := "Strata/Languages/Python/z3_parallel.py"
-    let vcResults ← EIO.toIO (fun f => IO.Error.userError (toString f))
-                        (Boogie.verify solverName newPgm { Options.default with stopOnFirstError := false, verbose, removeIrrelevantAxioms := true }
-                                                   (moreFns := Strata.Python.ReFactory))
-    let mut s := ""
-    for vcResult in vcResults do
-      s := s ++ s!"\n{vcResult.obligation.label}: {Std.format vcResult.result}\n"
-    IO.println s
+    match Boogie.Transform.runProgram
+          (Boogie.ProcedureInlining.inlineCallCmd (excluded_calls := ["main"]))
+          newPgm .emp with
+    | ⟨.error e, _⟩ => panic! e
+    | ⟨.ok newPgm, _⟩ =>
+      if verbose then
+        IO.println "Inlined: "
+        IO.print newPgm
+      let solverName : String := "Strata/Languages/Python/z3_parallel.py"
+      let vcResults ← EIO.toIO (fun f => IO.Error.userError (toString f))
+                          (Boogie.verify solverName newPgm { Options.default with stopOnFirstError := false, verbose, removeIrrelevantAxioms := true }
+                                                    (moreFns := Strata.Python.ReFactory))
+      let mut s := ""
+      for vcResult in vcResults do
+        s := s ++ s!"\n{vcResult.obligation.label}: {Std.format vcResult.result}\n"
+      IO.println s
 
 def javaGenCommand : Command where
   name := "javaGen"
