@@ -166,27 +166,20 @@ def ofOptionM {α β} [Repr α] [SizeOf α]
       (fun v => { ann := ann, val := some v }) <$> act v (by decreasing_tactic)
   | _ => throwExpected "option" arg
 
-def ofCommaSepByM {α β} [Repr α] [SizeOf α]
-      (arg : ArgF α)
-      (act : ∀(e : ArgF α), sizeOf e < sizeOf arg → OfAstM β)
-      : OfAstM (Ann (Array β) α) :=
-  match arg with
-  | .commaSepList ann a => do
-    let val ← a.attach.mapM fun ⟨v, vIn⟩  => do
-      act v (by decreasing_tactic)
-    pure { ann := ann, val := val }
-  | _ => throwExpected "seq" arg
-
 def ofSeqM {α β} [Repr α] [SizeOf α]
+      (sep : SepFormat)
       (arg : ArgF α)
       (act : ∀(e : ArgF α), sizeOf e < sizeOf arg → OfAstM β)
       : OfAstM (Ann (Array β) α) :=
   match arg with
-  | .seq ann a => do
-    let val ← a.attach.mapM fun ⟨v, vIn⟩ =>
-      act v (by decreasing_tactic)
-    pure { ann := ann, val := val }
-  | _ => throwExpected "seq" arg
+  | .seq ann sep' a =>
+    if sep == sep' then do
+      let val ← a.attach.mapM fun ⟨v, vIn⟩ =>
+        act v (by decreasing_tactic)
+      pure { ann := ann, val := val }
+    else
+      throwExpected sep.toString arg
+  | _ => throwExpected sep.toString arg
 
 /--
 Get the expression at index `lvl` in the arguments.

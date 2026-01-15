@@ -30,6 +30,7 @@ info: [Strata.Boogie] Type checking succeeded.
 
 VCs:
 Label: a
+Property: assert
 Assumptions:
 
 (mapAllValues0, (∀ (∀ (((~select %1) %0) == #0))))
@@ -37,6 +38,7 @@ Proof Obligation:
 (((~select $__mArg0) $__kArg1) == #0)
 
 Label: Update_ensures_0
+Property: assert
 Assumptions:
 
 (mapAllValues0, (∀ (∀ (((~select %1) %0) == #0))))
@@ -48,10 +50,12 @@ Wrote problem to vcs/Update_ensures_0.smt2.
 ---
 info:
 Obligation: a
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: Update_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" advQuantPgm

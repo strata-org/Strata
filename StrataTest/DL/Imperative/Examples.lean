@@ -21,6 +21,7 @@ program ArithPrograms;
 
 /--
 info: Label: x_eq_1
+Property : assert
 Assumptions: ⏎
 Obligation: ($__x0 : Num) = 1
 Metadata: ⏎
@@ -54,6 +55,7 @@ program ArithPrograms;
 
 /--
 info: Label: x_eq_y
+Property : assert
 Assumptions: ⏎
 Obligation: true
 Metadata: ⏎
@@ -80,6 +82,7 @@ program ArithPrograms;
 
 /--
 info: Label: double_x_lemma
+Property : assert
 Assumptions: ⏎
 Obligation: 2 × (init_x_0 : Num) = (init_x_0 : Num) + (init_x_0 : Num)
 Metadata: ⏎

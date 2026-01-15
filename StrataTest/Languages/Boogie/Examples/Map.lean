@@ -49,6 +49,7 @@ info: [Strata.Boogie] Type checking succeeded.
 
 VCs:
 Label: a_zero_true
+Property: assert
 Assumptions:
 (a_zero_true_assumption, (((~select ~a) #0) == #true))
 
@@ -56,6 +57,7 @@ Proof Obligation:
 ((~select ~a) #0)
 
 Label: a_one_true
+Property: assert
 Assumptions:
 (a_zero_true_assumption, (((~select ~a) #0) == #true))
 
@@ -66,10 +68,10 @@ Wrote problem to vcs/a_zero_true.smt2.
 Wrote problem to vcs/a_one_true.smt2.
 
 
-Obligation a_one_true: could not be proved!
+Result: Obligation: a_one_true
+Property: assert
+Result: ❌ fail
 
-Result: failed
-CEx: ⏎
 
 Evaluated program:
 func a :  () → (Map int bool);
@@ -84,11 +86,12 @@ assert [a_one_true] ((~select ~a) #1)
 ---
 info:
 Obligation: a_zero_true
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: a_one_true
-Result: failed
-CEx:
+Property: assert
+Result: ❌ fail
 -/
 #guard_msgs in
 #eval verify "cvc5" mapPgm

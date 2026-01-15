@@ -1,14 +1,14 @@
 Successfully parsed.
-Arrays2.boogie.st(22, 2) [P0_ensures_2]: verified
-Arrays2.boogie.st(23, 2) [P0_ensures_3]: verified
-Arrays2.boogie.st(39, 2) [P1_ensures_1]: verified
-Arrays2.boogie.st(55, 2) [P2_ensures_1]: unknown
-Arrays2.boogie.st(72, 2) [Q0_ensures_2]: verified
-Arrays2.boogie.st(73, 2) [Q0_ensures_3]: verified
-Arrays2.boogie.st(89, 2) [Q1_ensures_1]: verified
-Arrays2.boogie.st(106, 2) [Q2_ensures_2]: verified
-Arrays2.boogie.st(123, 2) [Q3_ensures_2]: verified
-Arrays2.boogie.st(139, 2) [Q4_ensures_1]: unknown
-Arrays2.boogie.st(156, 2) [Skip0_ensures_2]: verified
-Arrays2.boogie.st(157, 2) [Skip0_ensures_3]: verified
-Finished with 10 goals proved, 2 failed.
+Arrays2.boogie.st(22, 2) [P0_ensures_2]: ✅ pass
+Arrays2.boogie.st(23, 2) [P0_ensures_3]: ✅ pass
+Arrays2.boogie.st(39, 2) [P1_ensures_1]: ✅ pass
+Arrays2.boogie.st(55, 2) [P2_ensures_1]: 🟡 unknown
+Arrays2.boogie.st(72, 2) [Q0_ensures_2]: ✅ pass
+Arrays2.boogie.st(73, 2) [Q0_ensures_3]: ✅ pass
+Arrays2.boogie.st(89, 2) [Q1_ensures_1]: ✅ pass
+Arrays2.boogie.st(106, 2) [Q2_ensures_2]: ✅ pass
+Arrays2.boogie.st(123, 2) [Q3_ensures_2]: ✅ pass
+Arrays2.boogie.st(139, 2) [Q4_ensures_1]: 🟡 unknown
+Arrays2.boogie.st(156, 2) [Skip0_ensures_2]: ✅ pass
+Arrays2.boogie.st(157, 2) [Skip0_ensures_3]: ✅ pass
+Finished with 10 goals passed, 2 failed.

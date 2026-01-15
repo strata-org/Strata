@@ -42,6 +42,7 @@ info: [Strata.Boogie] Type checking succeeded.
 
 VCs:
 Label: concrete_string_test
+Property: assert
 Assumptions:
 
 
@@ -49,6 +50,7 @@ Proof Obligation:
 #true
 
 Label: s1_s2_len_sum_eq_s3_len
+Property: assert
 Assumptions:
 (s1_len, ((~Str.Length init_s1_0) == #3))
 (s2_len, ((~Str.Length init_s2_1) == #3)) (s1_s2_concat_eq_s3, (((~Str.Concat init_s1_0) init_s2_1) == init_s3_2))
@@ -57,6 +59,7 @@ Proof Obligation:
 (((~Int.Add (~Str.Length init_s1_0)) (~Str.Length init_s2_1)) == (~Str.Length init_s3_2))
 
 Label: substr_of_concat
+Property: assert
 Assumptions:
 (s1_len, ((~Str.Length init_s1_0) == #3))
 (s2_len, ((~Str.Length init_s2_1) == #3)) (s1_s2_concat_eq_s3, (((~Str.Concat init_s1_0) init_s2_1) == init_s3_2))
@@ -65,6 +68,7 @@ Proof Obligation:
 ((((~Str.Substr ((~Str.Concat init_s1_0) init_s2_1)) #0) (~Str.Length init_s1_0)) == init_s1_0)
 
 Label: substr_of_concat_concrete_test
+Property: assert
 Assumptions:
 (s1_len, ((~Str.Length init_s1_0) == #3))
 (s2_len, ((~Str.Length init_s2_1) == #3)) (s1_s2_concat_eq_s3, (((~Str.Concat init_s1_0) init_s2_1) == init_s3_2))
@@ -78,16 +82,20 @@ Wrote problem to vcs/substr_of_concat_concrete_test.smt2.
 ---
 info:
 Obligation: concrete_string_test
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: s1_s2_len_sum_eq_s3_len
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: substr_of_concat
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: substr_of_concat_concrete_test
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" strPgm

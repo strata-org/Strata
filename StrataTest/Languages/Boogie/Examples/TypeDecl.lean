@@ -33,6 +33,7 @@ info: [Strata.Boogie] Type checking succeeded.
 
 VCs:
 Label: f_test
+Property: assert
 Assumptions:
 
 
@@ -42,7 +43,8 @@ Proof Obligation:
 ---
 info:
 Obligation: f_test
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" typeDeclPgm1
@@ -94,6 +96,7 @@ info: [Strata.Boogie] Type checking succeeded.
 
 VCs:
 Label: fooAssertion
+Property: assert
 Assumptions:
 (fooConst1_value, (~fooConst1 == ~fooVal))
 (fooConst2_value, (~fooConst2 == ~fooVal))
@@ -105,7 +108,8 @@ Wrote problem to vcs/fooAssertion.smt2.
 ---
 info:
 Obligation: fooAssertion
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" typeDeclPgm3
@@ -120,7 +124,7 @@ type int := bool;
 #end
 
 /--
-error: [Strata.Boogie] Type checking error.
+error: ❌ Type checking error.
 (0, (0-0)) This type declaration's name is reserved!
 int := bool
 KnownTypes' names:

@@ -89,7 +89,7 @@ def checkOpArg (arg : Arg) (name : QualifiedIdent) (argc : Nat) : TransM (Array 
 
 def translateCommaSep [Inhabited α] (f : Strata.Arg → TransM α) (arg : Strata.Arg) :
   TransM (Array α) := do
-  let .commaSepList _ args := arg
+  let .seq _ .comma args := arg
     | TransM.error s!"Expected commaSepList: {repr arg}"
   args.mapM f
 
@@ -138,7 +138,7 @@ def translateReal (arg : Arg) : TransM Decimal := do
 ---------------------------------------------------------------------
 
 inductive GenKind where
-  | var_def | axiom_def | assume_def | assert_def
+  | var_def | axiom_def | assume_def | assert_def | cover_def
   deriving DecidableEq
 
 /--
@@ -149,13 +149,14 @@ structure GenNum where
   axiom_def : Nat
   assume_def : Nat
   assert_def : Nat
+  cover_def : Nat
   deriving Repr
 
 structure TransBindings where
   boundTypeVars : Array TyIdentifier := #[]
   boundVars : Array (LExpr BoogieLParams.mono) := #[]
   freeVars  : Array Boogie.Decl := #[]
-  gen : GenNum := (GenNum.mk 0 0 0 0)
+  gen : GenNum := (GenNum.mk 0 0 0 0 0)
 
 def incrNum (gen_kind : GenKind) (b : TransBindings) : TransBindings :=
   let gen := b.gen
@@ -165,6 +166,7 @@ def incrNum (gen_kind : GenKind) (b : TransBindings) : TransBindings :=
     | .axiom_def => { gen with axiom_def := gen.axiom_def + 1 }
     | .assume_def => { gen with assume_def := gen.assume_def + 1 }
     | .assert_def => { gen with assert_def := gen.assert_def + 1 }
+    | .cover_def => { gen with cover_def := gen.cover_def + 1 }
   { b with gen := new_gen }
 
 instance : ToFormat TransBindings where
@@ -303,7 +305,7 @@ def translateTypeSynonym (bindings : TransBindings) (op : Operation) :
               let bargs ← checkOpArg arg q`Boogie.mkBindings 1
               let args ←
                   match bargs[0]! with
-                  | .commaSepList _ args =>
+                  | .seq _ .comma args =>
                     let (arr, bindings) ← translateTypeBindings bindings args
                     return (arr.toList, bindings)
                   | _ => TransM.error
@@ -328,7 +330,7 @@ def translateTypeDecl (bindings : TransBindings) (op : Operation) :
               let bargs ← checkOpArg arg q`Boogie.mkBindings 1
               let numargs ←
                   match bargs[0]! with
-                  | .commaSepList _ args => pure args.size
+                  | .seq _ .comma args => pure args.size
                   | _ => TransM.error
                           s!"translateTypeDecl expects a comma separated list: {repr bargs[0]!}")
                     op.args[1]!
@@ -976,6 +978,13 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let l ← translateOptionLabel default_name la
     let md ← getOpMetaData op
     return ([.assert l c md], bindings)
+  | q`Boogie.cover, #[la, ca] =>
+    let c ← translateExpr p bindings ca
+    let default_name := s!"cover_{bindings.gen.assert_def}"
+    let bindings := incrNum .cover_def bindings
+    let l ← translateOptionLabel default_name la
+    let md ← getOpMetaData op
+    return ([.cover l c md], bindings)
   | q`Boogie.assume, #[la, ca] =>
     let c ← translateExpr p bindings ca
     let default_name := s!"assume_{bindings.gen.assume_def}"
@@ -1020,7 +1029,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
 partial def translateBlock (p : Program) (bindings : TransBindings) (arg : Arg) :
   TransM ((List Boogie.Statement) × TransBindings) := do
   let args ← checkOpArg arg q`Boogie.block 1
-  let .seq _ stmts := args[0]!
+  let .seq _ .none stmts := args[0]!
     | TransM.error s!"Invalid block {repr args[0]!}"
   let (a, bindings) ← stmts.foldlM (init := (#[], bindings)) fun (a, b) s => do
       let (s, b) ← translateStmt p b s
@@ -1060,7 +1069,7 @@ def translateBindings (bindings : TransBindings) (op : Arg) :
   TransM (ListMap BoogieIdent LMonoTy) := do
   let bargs ← checkOpArg op q`Boogie.mkBindings 1
   match bargs[0]! with
-  | .commaSepList _ args =>
+  | .seq _ .comma args =>
     let arr ← translateInitMkBindings bindings args
     return arr.toList
   | _ =>
@@ -1117,7 +1126,7 @@ def translateSpecElem (p : Program) (name : BoogieIdent) (count : Nat) (bindings
 partial def translateSpec (p : Program) (name : BoogieIdent) (bindings : TransBindings) (arg : Arg) :
   TransM (List BoogieIdent × ListMap BoogieLabel Procedure.Check × ListMap BoogieLabel Procedure.Check) := do
   let sargs ← checkOpArg arg q`Boogie.spec_mk 1
-  let .seq _ args := sargs[0]!
+  let .seq _ .none args := sargs[0]!
     | TransM.error s!"Invalid specs {repr sargs[0]!}"
   go 0 args.size args
   where go (count max : Nat) (args : Array Arg) := do
@@ -1328,7 +1337,7 @@ def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) 
               let bargs ← checkOpArg arg q`Boogie.mkBindings 1
               let args ←
                   match bargs[0]! with
-                  | .commaSepList _ args =>
+                  | .seq _ .comma args =>
                     let (arr, bindings) ← translateTypeBindings bindings args
                     return (arr.toList, bindings)
                   | _ => TransM.error

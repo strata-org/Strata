@@ -80,6 +80,7 @@ info: [Strata.Boogie] Type checking succeeded.
 
 VCs:
 Label: fooAssertion
+Property: assert
 Assumptions:
 (fooConst1_value, (~fooConst1 == ~fooVal))
 (fooConst2_value, (~fooConst2 == ~fooVal))
@@ -91,7 +92,8 @@ Wrote problem to vcs/fooAssertion.smt2.
 ---
 info:
 Obligation: fooAssertion
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" goodTypeAlias
@@ -123,6 +125,7 @@ info: [Strata.Boogie] Type checking succeeded.
 
 VCs:
 Label: assert_0
+Property: assert
 Assumptions:
 (assume_0, (init_v_2 == #0))
 
@@ -133,7 +136,8 @@ Wrote problem to vcs/assert_0.smt2.
 ---
 info:
 Obligation: assert_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" funcAndTypeAliasesPgm

@@ -67,7 +67,7 @@ instance [Repr P.Ident] : Repr (MetaDataElem.Field P) where
 
 inductive Uri where
   | file (path: String)
-  deriving DecidableEq, Repr
+  deriving DecidableEq, Repr, Inhabited
 
 instance : ToFormat Uri where
  format fr := match fr with | .file path => path
@@ -76,7 +76,7 @@ structure FileRange where
   file: Uri
   start: Lean.Position
   ending: Lean.Position
-  deriving DecidableEq, Repr
+  deriving DecidableEq, Repr, Inhabited
 
 instance : ToFormat FileRange where
  format fr := f!"{fr.file}:{fr.start}-{fr.ending}"
@@ -90,17 +90,19 @@ inductive MetaDataElem.Value (P : PureExpr) where
   /-- Metadata value in the form of a fileRange. -/
   | fileRange (r: FileRange)
 
-
 instance [ToFormat P.Expr] : ToFormat (MetaDataElem.Value P) where
-  format f := match f with | .expr e => f!"{e}" | .msg s => f!"{s}" | .fileRange r => f!"{r}"
+  format f := match f with
+              | .expr e => f!"{e}"
+              | .msg s => f!"{s}"
+              | .fileRange r => f!"{r}"
 
 instance [Repr P.Expr] : Repr (MetaDataElem.Value P) where
   reprPrec v prec :=
     let res :=
       match v with
-      | .expr e => f!"MetaDataElem.Value.expr {reprPrec e prec}"
-      | .msg s => f!"MetaDataElem.Value.msg {s}"
-      | .fileRange fr => f!"MetaDataElem.Value.fileRange {repr fr}"
+      | .expr e => f!".expr {reprPrec e prec}"
+      | .msg s => f!".msg {s}"
+      | .fileRange fr => f!".fileRange {fr}"
     Repr.addAppParen res prec
 
 def MetaDataElem.Value.beq [BEq P.Expr] (v1 v2 : MetaDataElem.Value P) :=
@@ -182,6 +184,13 @@ instance [Repr P.Expr] [Repr P.Ident] : Repr (MetaDataElem P) where
 /-! ### Common metadata fields -/
 
 def MetaData.fileRange : MetaDataElem.Field P := .label "fileRange"
+
+def getFileRange {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Option Imperative.FileRange := do
+  let fileRangeElement <- md.findElem Imperative.MetaData.fileRange
+  match fileRangeElement.value with
+    | .fileRange fileRange =>
+      some fileRange
+    | _ => none
 
 def MetaData.formatFileRange? {P} [BEq P.Ident] (md : MetaData P) (includeEnd? : Bool := false) :
     Option Std.Format := do

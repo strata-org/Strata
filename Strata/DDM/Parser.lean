@@ -767,29 +767,20 @@ def checkLeftRec (thisCatName : QualifiedIdent) (argDecls : ArgDecls) (as : List
     let .isTrue lt := inferInstanceAs (Decidable (v < argDecls.size))
       | return panic! "Invalid index"
     let cat := argDecls[v].kind.categoryOf
-    match cat.name with
-    | q`Init.CommaSepBy =>
+    let isListCategory := cat.name == q`Init.CommaSepBy ||
+                          cat.name == q`Init.SpaceSepBy ||
+                          cat.name == q`Init.SpacePrefixSepBy ||
+                          cat.name == q`Init.Seq ||
+                          cat.name == q`Init.Option
+    if isListCategory then
       assert! cat.args.size = 1
       let c := cat.args[0]!
       if c.name == thisCatName then
         .invalid mf!"Leading symbol cannot be recursive call to {c}"
       else
         .isLeading as
-    | q`Init.Option =>
-      assert! cat.args.size = 1
-      let c := cat.args[0]!
-      if c.name == thisCatName then
-        .invalid mf!"Leading symbol cannot be recursive call to {c}"
-      else
-        .isLeading as
-    | q`Init.Seq =>
-      assert! cat.args.size = 1
-      let c := cat.args[0]!
-      if c.name == thisCatName then
-        .invalid mf!"Leading symbol cannot be recursive call to {c}"
-      else
-        .isLeading as
-    | qid =>
+    else
+      let qid := cat.name
       if cat.args.size > 0 then
         panic! s!"Unknown parametric category '{eformat cat}' is not supported."
       if qid == thisCatName then
@@ -840,6 +831,24 @@ private def sepByParser (p sep : Parser) (allowTrailingSep : Bool := false) : Pa
         s
 }
 
+private def sepBy1Parser (p sep : Parser) (allowTrailingSep : Bool := false) : Parser := {
+  info := sepByInfo p.info sep.info
+  fn   := fun c s =>
+    let s := sepByFn allowTrailingSep p.fn sep.fn c s
+    if s.hasError then
+      s
+    else
+      match s.stxStack.back with
+      | .node .none k args =>
+        if args.isEmpty then
+          -- Require at least one element
+          s.mkError "expected at least one element"
+        else
+          s
+      | _ =>
+        s
+}
+
 def manyParser (p : Parser) : Parser := {
   info := noFirstTokenInfo p.info
   fn   := fun c s =>
@@ -857,18 +866,44 @@ def manyParser (p : Parser) : Parser := {
         s
 }
 
+def many1Parser (p : Parser) : Parser := {
+  info := p.info
+  fn   := fun c s =>
+    let s := manyFn p.fn c s
+    if s.hasError then
+      s
+    else
+      match s.stxStack.back with
+      | .node .none _k args =>
+        if args.isEmpty then
+          s.mkError "expected at least one element"
+        else
+          s
+      | _ =>
+        s
+}
+
+/-- Helper to choose between sepByParser and sepBy1Parser based on nonempty flag -/
+private def commaSepByParserHelper (nonempty : Bool) (p : Parser) : Parser :=
+  if nonempty then
+    sepBy1Parser p (symbolNoAntiquot ",")
+  else
+    sepByParser p (symbolNoAntiquot ",")
+
 /-- Parser function for given syntax category -/
-partial def catParser (ctx : ParsingContext) (cat : SyntaxCat) : Except SyntaxCat Parser :=
+partial def catParser (ctx : ParsingContext) (cat : SyntaxCat) (metadata : Metadata := {}) : Except SyntaxCat Parser :=
   match cat.name with
   | q`Init.CommaSepBy =>
     assert! cat.args.size = 1
-    (sepByParser · (symbolNoAntiquot ",")) <$> catParser ctx cat.args[0]!
+    let isNonempty := q`StrataDDL.nonempty ∈ metadata
+    commaSepByParserHelper isNonempty <$> catParser ctx cat.args[0]!
+  | q`Init.SpaceSepBy | q`Init.SpacePrefixSepBy | q`Init.Seq =>
+    assert! cat.args.size = 1
+    let isNonempty := q`StrataDDL.nonempty ∈ metadata
+    (if isNonempty then many1Parser else manyParser) <$> catParser ctx cat.args[0]!
   | q`Init.Option =>
     assert! cat.args.size = 1
     optionalNoAntiquot <$> catParser ctx cat.args[0]!
-  | q`Init.Seq =>
-    assert! cat.args.size = 1
-    manyParser <$> catParser ctx cat.args[0]!
   | qid =>
     if cat.args.isEmpty then
       .ok (atomCatParser ctx qid)
@@ -888,7 +923,7 @@ private def prependSyntaxDefAtomParser (ctx : ParsingContext) (argDecls : ArgDec
     let addParser (p : Parser) :=
       let q : Parser := Lean.Parser.adaptCacheableContext ({ · with prec }) p
       q >> r
-    match catParser ctx argDecls[v].kind.categoryOf with
+    match catParser ctx argDecls[v].kind.categoryOf argDecls[v].metadata with
     | .ok p =>
       addParser p
     | .error c =>

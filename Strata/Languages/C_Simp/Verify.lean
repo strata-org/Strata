@@ -40,6 +40,7 @@ def translate_cmd (c: C_Simp.Command) : Boogie.Command :=
   | .havoc name _md => .cmd (.havoc ⟨name.name, .unres⟩ {})
   | .assert label b _md => .cmd (.assert label (translate_expr b) {})
   | .assume label b _md =>  .cmd (.assume label (translate_expr b) {})
+  | .cover label b _md =>  .cmd (.cover label (translate_expr b) {})
 
 def translate_stmt (s: Imperative.Stmt C_Simp.Expression C_Simp.Command) : Boogie.Statement :=
   match s with
