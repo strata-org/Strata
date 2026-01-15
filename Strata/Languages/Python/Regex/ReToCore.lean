@@ -66,16 +66,16 @@ def RegexAST.alwaysConsume (r : RegexAST) : Bool :=
 /--
 Empty regex pattern; matches an empty string.
 -/
-def Boogie.emptyRegex : Core.Expression.Expr :=
+def Core.emptyRegex : Core.Expression.Expr :=
   mkApp () (.op () strToRegexFunc.name none) [strConst () ""]
 
 /--
 Unmatchable regex pattern.
 -/
-def Boogie.unmatchableRegex : Core.Expression.Expr :=
+def Core.unmatchableRegex : Core.Expression.Expr :=
   mkApp () (.op () reNoneFunc.name none) []
 
-partial def RegexAST.toBoogie (r : RegexAST) (atStart atEnd : Bool) :
+partial def RegexAST.toCore (r : RegexAST) (atStart atEnd : Bool) :
     Core.Expression.Expr :=
   match r with
   | .char c =>
@@ -84,78 +84,78 @@ partial def RegexAST.toBoogie (r : RegexAST) (atStart atEnd : Bool) :
     mkApp () (.op () reRangeFunc.name none) [strConst () (toString c1), strConst () (toString c2)]
   | .anychar =>
     mkApp () (.op () reAllCharFunc.name none) []
-  | .empty => Boogie.emptyRegex
+  | .empty => Core.emptyRegex
   | .complement r =>
-    let rb := toBoogie r atStart atEnd
+    let rb := toCore r atStart atEnd
     mkApp () (.op () reCompFunc.name none) [rb]
   | .anchor_start =>
-    if atStart then Boogie.emptyRegex else Boogie.unmatchableRegex
+    if atStart then Core.emptyRegex else Core.unmatchableRegex
   | .anchor_end =>
-    if atEnd then Boogie.emptyRegex else Boogie.unmatchableRegex
+    if atEnd then Core.emptyRegex else Core.unmatchableRegex
   | .plus r1 =>
-    toBoogie (.concat r1 (.star r1)) atStart atEnd
+    toCore (.concat r1 (.star r1)) atStart atEnd
   | .star r1 =>
-    let r1b := toBoogie r1 atStart atEnd
+    let r1b := toCore r1 atStart atEnd
     let r2b :=
       match (alwaysConsume r1) with
       | true =>
-        let r1b := toBoogie r1 atStart false -- r1 at the beginning
-        let r2b := toBoogie r1 false false   -- r1s in the middle
-        let r3b := toBoogie r1 false atEnd   -- r1 at the end
+        let r1b := toCore r1 atStart false -- r1 at the beginning
+        let r2b := toCore r1 false false   -- r1s in the middle
+        let r3b := toCore r1 false atEnd   -- r1 at the end
         let r2b := mkApp () (.op () reStarFunc.name none) [r2b]
         mkApp () (.op () reConcatFunc.name none)
           [mkApp () (.op () reConcatFunc.name none) [r1b, r2b], r3b]
       | false =>
         mkApp () (.op () reStarFunc.name none) [r1b]
     mkApp () (.op () reUnionFunc.name none)
-      [mkApp () (.op () reUnionFunc.name none) [Boogie.emptyRegex, r1b], r2b]
+      [mkApp () (.op () reUnionFunc.name none) [Core.emptyRegex, r1b], r2b]
   | .optional r1 =>
-    toBoogie (.union .empty r1) atStart atEnd
+    toCore (.union .empty r1) atStart atEnd
   | .loop r1 n m =>
     match n, m with
-    | 0, 0 => Boogie.emptyRegex
-    | 0, 1 => toBoogie (.union .empty r1) atStart atEnd
+    | 0, 0 => Core.emptyRegex
+    | 0, 1 => toCore (.union .empty r1) atStart atEnd
     | 0, m => -- Note: m >= 2
-      let r1b := toBoogie r1 atStart atEnd
+      let r1b := toCore r1 atStart atEnd
       let r2b := match (alwaysConsume r1) with
                 | true =>
-                  let r1b := toBoogie r1 atStart false -- r1 at the beginning
-                  let r2b := toBoogie r1 false false   -- r1s in the middle
-                  let r3b := toBoogie r1 false atEnd   -- r1 at the end
+                  let r1b := toCore r1 atStart false -- r1 at the beginning
+                  let r2b := toCore r1 false false   -- r1s in the middle
+                  let r3b := toCore r1 false atEnd   -- r1 at the end
                   let r2b := mkApp () (.op () reLoopFunc.name none) [r2b, intConst () 0, intConst () (m-2)]
                   mkApp () (.op () reConcatFunc.name none) [mkApp () (.op () reConcatFunc.name none) [r1b, r2b], r3b]
                 | false =>
                   mkApp () (.op () reLoopFunc.name none) [r1b, intConst () 0, intConst () m]
       mkApp () (.op () reUnionFunc.name none)
-            [mkApp () (.op () reUnionFunc.name none) [Boogie.emptyRegex, r1b],
+            [mkApp () (.op () reUnionFunc.name none) [Core.emptyRegex, r1b],
             r2b]
     | _, _ =>
-      toBoogie (.concat r1 (.loop r1 (n - 1) (m - 1))) atStart atEnd
-  | .group r1 => toBoogie r1 atStart atEnd
+      toCore (.concat r1 (.loop r1 (n - 1) (m - 1))) atStart atEnd
+  | .group r1 => toCore r1 atStart atEnd
   | .concat r1 r2 =>
     match (alwaysConsume r1), (alwaysConsume r2) with
     | true, true =>
-      let r1b := toBoogie r1 atStart false
-      let r2b := toBoogie r2 false atEnd
+      let r1b := toCore r1 atStart false
+      let r2b := toCore r2 false atEnd
       mkApp () (.op () reConcatFunc.name none) [r1b, r2b]
     | true, false =>
-      let r1b := toBoogie r1 atStart atEnd
-      let r2b := toBoogie r2 false atEnd
+      let r1b := toCore r1 atStart atEnd
+      let r2b := toCore r2 false atEnd
       mkApp () (.op () reConcatFunc.name none) [r1b, r2b]
     | false, true =>
-      let r1b := toBoogie r1 atStart false
-      let r2b := toBoogie r2 true atEnd
+      let r1b := toCore r1 atStart false
+      let r2b := toCore r2 true atEnd
       mkApp () (.op () reConcatFunc.name none) [r1b, r2b]
     | false, false =>
-      let r1b := toBoogie r1 atStart atEnd
-      let r2b := toBoogie r2 atStart atEnd
+      let r1b := toCore r1 atStart atEnd
+      let r2b := toCore r2 atStart atEnd
       mkApp () (.op () reConcatFunc.name none) [r1b, r2b]
   | .union r1 r2 =>
-      let r1b := toBoogie r1 atStart atEnd
-      let r2b := toBoogie r2 atStart atEnd
+      let r1b := toCore r1 atStart atEnd
+      let r2b := toCore r2 atStart atEnd
       mkApp () (.op () reUnionFunc.name none) [r1b, r2b]
 
-def pythonRegexToBoogie (pyRegex : String) (mode : MatchMode := .fullmatch) :
+def pythonRegexToCore (pyRegex : String) (mode : MatchMode := .fullmatch) :
     Core.Expression.Expr × Option ParseError :=
   match parseTop pyRegex with
   | .error err => (mkApp () (.op () reAllFunc.name none) [], some err)
@@ -166,7 +166,7 @@ def pythonRegexToBoogie (pyRegex : String) (mode : MatchMode := .fullmatch) :
     | .fullmatch => ast
     | .match => .concat ast dotStar
     | .search => .concat dotStar (.concat ast dotStar)
-    let result := RegexAST.toBoogie ast true true
+    let result := RegexAST.toCore ast true true
     (result, none)
 
 /--
@@ -174,208 +174,208 @@ info: (((~Re.Concat ((~Re.Concat (~Str.ToRegEx #a)) (~Str.ToRegEx #b))) ((~Re.Un
  none)
 -/
 #guard_msgs in
-#eval Std.format$ pythonRegexToBoogie "ab.*" -- Encoded as `ab(|.|..*.)`
+#eval Std.format$ pythonRegexToCore "ab.*" -- Encoded as `ab(|.|..*.)`
 
 /--
 info: (((~Re.Concat ((~Re.Concat (~Str.ToRegEx #a)) (~Str.ToRegEx #b))) ((~Re.Union ((~Re.Union (~Str.ToRegEx #)) ((~Re.Concat (~Str.ToRegEx #c)) (~Str.ToRegEx #)))) ((~Re.Concat ((~Re.Concat ((~Re.Concat (~Str.ToRegEx #c)) ~Re.None)) (~Re.Star ((~Re.Concat (~Str.ToRegEx #c)) ~Re.None)))) ((~Re.Concat (~Str.ToRegEx #c)) (~Str.ToRegEx #))))),
  none)
 -/
 #guard_msgs in
-#eval Std.format$ pythonRegexToBoogie "ab(c$)*"
+#eval Std.format$ pythonRegexToCore "ab(c$)*"
 
 /--
 info: (((~Re.Concat ((~Re.Concat (~Str.ToRegEx #a)) (~Str.ToRegEx #b))) ((~Re.Union ((~Re.Union (~Str.ToRegEx #)) ((~Re.Concat ((~Re.Concat ~Re.None) (~Str.ToRegEx #c))) (~Str.ToRegEx #)))) ((~Re.Concat ((~Re.Concat ((~Re.Concat ((~Re.Concat ~Re.None) (~Str.ToRegEx #c))) ~Re.None)) (~Re.Star ((~Re.Concat ((~Re.Concat ~Re.None) (~Str.ToRegEx #c))) ~Re.None)))) ((~Re.Concat ((~Re.Concat ~Re.None) (~Str.ToRegEx #c))) (~Str.ToRegEx #))))),
  none)
 -/
 #guard_msgs in
-#eval Std.format$ pythonRegexToBoogie "ab(^c$)*"
+#eval Std.format$ pythonRegexToCore "ab(^c$)*"
 
 /-- info: (((~Re.Concat (~Str.ToRegEx #a)) (~Str.ToRegEx #b)), none) -/
 #guard_msgs in
-#eval Std.format$ pythonRegexToBoogie "ab"
+#eval Std.format$ pythonRegexToCore "ab"
 
 /-- info: (((~Re.Union (~Str.ToRegEx #a)) (~Str.ToRegEx #b)), none) -/
 #guard_msgs in
-#eval Std.format$ pythonRegexToBoogie "a|b"
+#eval Std.format$ pythonRegexToCore "a|b"
 
 /--
 info: (((~Re.Concat ((~Re.Concat (~Str.ToRegEx #)) (~Str.ToRegEx #a))) (~Str.ToRegEx #b)), none)
 -/
 #guard_msgs in
-#eval Std.format$ pythonRegexToBoogie "^ab"
+#eval Std.format$ pythonRegexToCore "^ab"
 
 /--
 info: (((~Re.Concat ((~Re.Concat ((~Re.Concat (~Str.ToRegEx #)) (~Str.ToRegEx #a))) (~Str.ToRegEx #b))) (~Str.ToRegEx #)),
  none)
 -/
 #guard_msgs in
-#eval Std.format$ pythonRegexToBoogie "^ab$"
+#eval Std.format$ pythonRegexToCore "^ab$"
 
 /-- info: (((~Re.Concat ((~Re.Concat (~Str.ToRegEx #a)) ~Re.None)) (~Str.ToRegEx #b)), none) -/
 #guard_msgs in
-#eval Std.format$ pythonRegexToBoogie "(a$)b"
+#eval Std.format$ pythonRegexToCore "(a$)b"
 
 /--
 info: (((~Re.Concat ((~Re.Concat ((~Re.Concat ((~Re.Concat ((~Re.Concat (~Str.ToRegEx #)) (~Str.ToRegEx #))) (~Str.ToRegEx #))) (~Str.ToRegEx #a))) (~Str.ToRegEx #))) (~Str.ToRegEx #)),
  none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "^^^a$$"
+#eval Std.format $ pythonRegexToCore "^^^a$$"
 
 /--
 info: (((~Re.Concat (~Str.ToRegEx #)) ((~Re.Concat ((~Re.Concat ((~Re.Concat ((~Re.Concat (~Str.ToRegEx #)) (~Str.ToRegEx #))) (~Str.ToRegEx #a))) (~Str.ToRegEx #))) (~Str.ToRegEx #))),
  none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "^(^^a$$)"
+#eval Std.format $ pythonRegexToCore "^(^^a$$)"
 
 /--
 info: (((~Re.Union ((~Re.Concat ((~Re.Concat (~Str.ToRegEx #)) (~Str.ToRegEx #a))) (~Str.ToRegEx #))) ((~Re.Concat ((~Re.Concat (~Str.ToRegEx #)) (~Str.ToRegEx #b))) (~Str.ToRegEx #))),
  none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "(^a$)|(^b$)"
+#eval Std.format $ pythonRegexToCore "(^a$)|(^b$)"
 
 /--
 info: (((~Re.Concat (~Str.ToRegEx #c)) ((~Re.Union ((~Re.Concat ~Re.None) (~Str.ToRegEx #a))) ((~Re.Concat ~Re.None) (~Str.ToRegEx #b)))),
  none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "c((^a)|(^b))"
+#eval Std.format $ pythonRegexToCore "c((^a)|(^b))"
 
 /--
 info: (((~Re.Concat ((~Re.Union ((~Re.Concat (~Str.ToRegEx #a)) ~Re.None)) ((~Re.Concat (~Str.ToRegEx #b)) ~Re.None))) (~Str.ToRegEx #c)),
  none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "((a$)|(b$))c"
+#eval Std.format $ pythonRegexToCore "((a$)|(b$))c"
 
 /--
 info: (((~Re.Concat ((~Re.Union ((~Re.Concat (~Str.ToRegEx #a)) ~Re.None)) (~Str.ToRegEx #b))) (~Str.ToRegEx #c)), none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "((a$)|(b))c"
+#eval Std.format $ pythonRegexToCore "((a$)|(b))c"
 
 /--
 info: (((~Re.Concat (~Str.ToRegEx #c)) ((~Re.Union ((~Re.Concat (~Str.ToRegEx #a)) (~Str.ToRegEx #))) ((~Re.Concat ((~Re.Concat ~Re.None) (~Str.ToRegEx #b))) (~Str.ToRegEx #)))),
  none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "c((a$)|(^b$))"
+#eval Std.format $ pythonRegexToCore "c((a$)|(^b$))"
 
 /--
 info: (((~Re.Concat ((~Re.Union ((~Re.Concat (~Str.ToRegEx #a)) ~Re.None)) (~Str.ToRegEx #b))) (~Str.ToRegEx #c)), none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "((a$)|(b))c"
+#eval Std.format $ pythonRegexToCore "((a$)|(b))c"
 
 /-- info: (((~Re.Concat ((~Re.Concat (~Str.ToRegEx #)) ~Re.None)) (~Str.ToRegEx #b)), none) -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "^$b"
+#eval Std.format $ pythonRegexToCore "^$b"
 
 /--
 info: (((~Re.Union ((~Re.Concat ((~Re.Concat (~Str.ToRegEx #)) (~Str.ToRegEx #a))) (~Str.ToRegEx #))) ((~Re.Concat ((~Re.Concat (~Str.ToRegEx #)) ~Re.None)) (~Str.ToRegEx #b))),
  none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "^a$|^$b"
+#eval Std.format $ pythonRegexToCore "^a$|^$b"
 
 /--
 info: (((~Re.Concat ((~Re.Concat (~Str.ToRegEx #c)) ((~Re.Union ((~Re.Concat ~Re.None) (~Str.ToRegEx #a))) ((~Re.Concat (~Str.ToRegEx #b)) ~Re.None)))) (~Str.ToRegEx #d)),
  none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "c(^a|b$)d"
+#eval Std.format $ pythonRegexToCore "c(^a|b$)d"
 
 /--
 info: (((~Re.Concat ((~Re.Concat (~Str.ToRegEx #c)) ((~Re.Union ((~Re.Concat ~Re.None) (~Str.ToRegEx #a))) ((~Re.Concat (~Str.ToRegEx #b)) ~Re.None)))) (~Str.ToRegEx #d)),
  none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "(c(^a|b$))d"
+#eval Std.format $ pythonRegexToCore "(c(^a|b$))d"
 
 /--
 info: (((~Re.Concat ((~Re.Union ((~Re.Concat (~Str.ToRegEx #)) (~Str.ToRegEx #a))) ((~Re.Concat (~Str.ToRegEx #b)) ~Re.None))) ((~Re.Union ((~Re.Concat ~Re.None) (~Str.ToRegEx #c))) ((~Re.Concat (~Str.ToRegEx #d)) (~Str.ToRegEx #)))),
  none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "(^a|b$)(^c|d$)"
+#eval Std.format $ pythonRegexToCore "(^a|b$)(^c|d$)"
 
 /--
 info: (((~Re.Concat ((~Re.Concat ((~Re.Union ((~Re.Concat (~Str.ToRegEx #)) (~Str.ToRegEx #a))) ((~Re.Concat (~Str.ToRegEx #b)) ~Re.None))) ~Re.None)) (~Str.ToRegEx #c)),
  none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "((^a|b$)^)c"
+#eval Std.format $ pythonRegexToCore "((^a|b$)^)c"
 
 /-- info: (((~Re.Concat ((~Re.Union (~Str.ToRegEx #)) ~Re.None)) (~Str.ToRegEx #c)), none) -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "(^|$)c"
+#eval Std.format $ pythonRegexToCore "(^|$)c"
 
 /-- info: (((~Re.Concat (~Str.ToRegEx #)) (~Str.ToRegEx #)), none) -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "^^"
+#eval Std.format $ pythonRegexToCore "^^"
 
 /--
 info: (((~Re.Concat ((~Re.Concat ((~Re.Concat (~Str.ToRegEx #)) (~Str.ToRegEx #))) (~Str.ToRegEx #))) (~Str.ToRegEx #)), none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "^$$^"
+#eval Std.format $ pythonRegexToCore "^$$^"
 
 /-- info: (((~Re.Concat ((~Re.Union (~Str.ToRegEx #)) (~Str.ToRegEx #))) (~Str.ToRegEx #)), none) -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "(^|$)^"
+#eval Std.format $ pythonRegexToCore "(^|$)^"
 
 /--
 info: (((~Re.Concat ((~Re.Concat (~Str.ToRegEx #)) (~Str.ToRegEx #a))) (~Str.ToRegEx #)), none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "^a$" .fullmatch
+#eval Std.format $ pythonRegexToCore "^a$" .fullmatch
 
 /--
 info: (~Re.All,
  some Pattern error at position 1: Invalid repeat bounds {100,2}: maximum 2 is less than minimum 100 in pattern 'x{100,2}')
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "x{100,2}" .fullmatch
+#eval Std.format $ pythonRegexToCore "x{100,2}" .fullmatch
 
 -- (unmatchable)
 /-- info: (((~Re.Concat ((~Re.Concat (~Str.ToRegEx #a)) ~Re.None)) (~Str.ToRegEx #b)), none) -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "a^b" .fullmatch
+#eval Std.format $ pythonRegexToCore "a^b" .fullmatch
 
 /--
 info: (((~Re.Concat ((~Re.Concat ((~Re.Concat (~Str.ToRegEx #)) (~Str.ToRegEx #a))) ~Re.None)) (~Str.ToRegEx #b)), none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "^a^b" .fullmatch
+#eval Std.format $ pythonRegexToCore "^a^b" .fullmatch
 
 /-- info: (((~Re.Concat ((~Re.Concat (~Str.ToRegEx #a)) ~Re.None)) (~Str.ToRegEx #b)), none) -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "a$b" .fullmatch
+#eval Std.format $ pythonRegexToCore "a$b" .fullmatch
 
 /-- info: ((~Re.Comp (~Str.ToRegEx #b)), none) -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "[^b]" .fullmatch
+#eval Std.format $ pythonRegexToCore "[^b]" .fullmatch
 
 /-- info: ((~Re.Comp ((~Re.Range #A) #Z)), none) -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "[^A-Z]" .fullmatch
+#eval Std.format $ pythonRegexToCore "[^A-Z]" .fullmatch
 
 /-- info: ((~Re.Comp (~Str.ToRegEx #^)), none) -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "[^^]" .fullmatch
+#eval Std.format $ pythonRegexToCore "[^^]" .fullmatch
 
 /-- info: ((~Str.ToRegEx #a), none) -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "a" .fullmatch
+#eval Std.format $ pythonRegexToCore "a" .fullmatch
 
 /--
 info: (((~Re.Concat (~Str.ToRegEx #a)) ((~Re.Union ((~Re.Union (~Str.ToRegEx #)) ~Re.AllChar)) ((~Re.Concat ((~Re.Concat ~Re.AllChar) (~Re.Star ~Re.AllChar))) ~Re.AllChar))),
  none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "a" .match
+#eval Std.format $ pythonRegexToCore "a" .match
 
 -- search mode tests
 /--
@@ -383,24 +383,24 @@ info: (((~Re.Concat ((~Re.Union ((~Re.Union (~Str.ToRegEx #)) ~Re.AllChar)) ((~R
  none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "a" .search
+#eval Std.format $ pythonRegexToCore "a" .search
 
 /--
 info: (((~Re.Concat ((~Re.Union ((~Re.Union (~Str.ToRegEx #)) ~Re.AllChar)) ((~Re.Concat ((~Re.Concat ~Re.AllChar) (~Re.Star ~Re.AllChar))) ~Re.AllChar))) ((~Re.Concat ((~Re.Concat ((~Re.Concat (~Str.ToRegEx #)) (~Str.ToRegEx #a))) (~Str.ToRegEx #))) ((~Re.Union ((~Re.Union (~Str.ToRegEx #)) ~Re.AllChar)) ((~Re.Concat ((~Re.Concat ~Re.AllChar) (~Re.Star ~Re.AllChar))) ~Re.AllChar)))),
  none)
 -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "^a$" .search
+#eval Std.format $ pythonRegexToCore "^a$" .search
 
 /-- info: (((~Re.Concat (~Str.ToRegEx #)) (~Str.ToRegEx #a)), none) -/
 #guard_msgs in
-#eval Std.format $ pythonRegexToBoogie "^a" .fullmatch
+#eval Std.format $ pythonRegexToCore "^a" .fullmatch
 
 -- -- BAD
--- #eval Std.format $ pythonRegexToBoogie "a$.*" .fullmatch
+-- #eval Std.format $ pythonRegexToCore "a$.*" .fullmatch
 --
 -- -- BAD
--- #eval Std.format $ pythonRegexToBoogie "a$" .match
+-- #eval Std.format $ pythonRegexToCore "a$" .match
 
 
 -------------------------------------------------------------------------------

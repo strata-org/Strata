@@ -12,7 +12,7 @@ import Strata.Languages.Core.DDMTransform.Parse
 import Strata.Languages.Core.Core
 import Strata.Languages.Python.PythonDialect
 import Strata.Languages.Python.FunctionSignatures
-import Strata.Languages.Python.Regex.ReToBoogie
+import Strata.Languages.Python.Regex.ReToCore
 import Strata.Languages.Python.PyFactory
 import Strata.Languages.Python.FunctionSignatures
 
@@ -83,10 +83,10 @@ def unwrapModule (c : Python.Command SourceRange) : Array (Python.stmt SourceRan
   | Python.Command.Module _ body _ => body.val
   | _ => panic! "Expected module"
 
-def strToBoogieExpr (s: String) : Core.Expression.Expr :=
+def strToCoreExpr (s: String) : Core.Expression.Expr :=
   .strConst () s
 
-def intToBoogieExpr (i: Int) : Core.Expression.Expr :=
+def intToCoreExpr (i: Int) : Core.Expression.Expr :=
   .intConst () i
 
 def PyIntToInt (i : Python.int SourceRange) : Int :=
@@ -94,7 +94,7 @@ def PyIntToInt (i : Python.int SourceRange) : Int :=
   | .IntPos _ n => n.val
   | .IntNeg _ n => -n.val
 
-def PyConstToBoogie (c: Python.constant SourceRange) : Core.Expression.Expr :=
+def PyConstToCore (c: Python.constant SourceRange) : Core.Expression.Expr :=
   match c with
   | .ConString _ s => .strConst () s.val
   | .ConPos _ i => .intConst () i.val
@@ -103,7 +103,7 @@ def PyConstToBoogie (c: Python.constant SourceRange) : Core.Expression.Expr :=
   | .ConFloat _ f => .strConst () (f.val)
   | _ => panic! s!"Unhandled Constant: {repr c}"
 
-def PyAliasToBoogieExpr (a : Python.alias SourceRange) : Core.Expression.Expr :=
+def PyAliasToCoreExpr (a : Python.alias SourceRange) : Core.Expression.Expr :=
   match a with
   | .mk_alias _ n as_n =>
   assert! as_n.val.isNone
@@ -170,8 +170,8 @@ def PyExprIdent (e1 e2: Python.expr SourceRange) : Bool :=
   | _ , _ => false
 
 -- TODO: handle rest of names
-def PyListStrToBoogie (names : Array (Python.alias SourceRange)) : Core.Expression.Expr :=
-  .app () (.app () (.op () "ListStr_cons" mty[string → (ListStr → ListStr)]) (PyAliasToBoogieExpr names[0]!))
+def PyListStrToCore (names : Array (Python.alias SourceRange)) : Core.Expression.Expr :=
+  .app () (.app () (.op () "ListStr_cons" mty[string → (ListStr → ListStr)]) (PyAliasToCoreExpr names[0]!))
        (.op () "ListStr_nil" mty[ListStr])
 
 def handleList (_elmts: Array (Python.expr SourceRange)) (expected_type : Lambda.LMonoTy): PyExprTranslated :=
@@ -334,14 +334,14 @@ def remapFname (translation_ctx: TranslationContext) (fname: String) : String :=
 
 mutual
 
-partial def PyExprToBoogieWithSubst (translation_ctx : TranslationContext)  (substitution_records : Option (List SubstitutionRecord)) (e : Python.expr SourceRange) : PyExprTranslated :=
-  PyExprToBoogie translation_ctx e substitution_records
+partial def PyExprToCoreWithSubst (translation_ctx : TranslationContext)  (substitution_records : Option (List SubstitutionRecord)) (e : Python.expr SourceRange) : PyExprTranslated :=
+  PyExprToCore translation_ctx e substitution_records
 
-partial def PyKWordsToBoogie (substitution_records : Option (List SubstitutionRecord)) (kw : Python.keyword SourceRange) : (String × PyExprTranslated) :=
+partial def PyKWordsToCore (substitution_records : Option (List SubstitutionRecord)) (kw : Python.keyword SourceRange) : (String × PyExprTranslated) :=
   match kw with
   | .mk_keyword _ name expr =>
     match name.val with
-    | some n => (n.val, PyExprToBoogieWithSubst default substitution_records expr)
+    | some n => (n.val, PyExprToCoreWithSubst default substitution_records expr)
     | none => panic! "Keyword arg should have a name"
 
 -- TODO: we should be checking that args are right
@@ -352,19 +352,19 @@ partial def argsAndKWordsToCanonicalList (translation_ctx : TranslationContext)
                                  (substitution_records : Option (List SubstitutionRecord) := none) : List Core.Expression.Expr × List Core.Statement :=
   if translation_ctx.func_infos.any (λ e => e.name == fname) || translation_ctx.class_infos.any (λ e => e.name++"___init__" == fname) then
     if translation_ctx.func_infos.any (λ e => e.name == fname) then
-      (args.toList.map (λ a => (PyExprToBoogieWithSubst default substitution_records a).expr), [])
+      (args.toList.map (λ a => (PyExprToCoreWithSubst default substitution_records a).expr), [])
     else
-      (args.toList.map (λ a => (PyExprToBoogieWithSubst default substitution_records a).expr), [])
+      (args.toList.map (λ a => (PyExprToCoreWithSubst default substitution_records a).expr), [])
   else
     let required_order := translation_ctx.signatures.getFuncSigOrder fname
     assert! args.size <= required_order.length
     let remaining := required_order.drop args.size
-    let kws_and_exprs := kwords.toList.map (PyKWordsToBoogie substitution_records)
+    let kws_and_exprs := kwords.toList.map (PyKWordsToCore substitution_records)
     let ordered_remaining_args := remaining.map (λ n => match kws_and_exprs.find? (λ p => p.fst == n) with
       | .some p =>
         noneOrExpr translation_ctx fname n p.snd.expr
-      | .none => Strata.Python.TypeStrToBoogieExpr (translation_ctx.signatures.getFuncSigType fname n))
-    let args := args.map (PyExprToBoogieWithSubst default substitution_records)
+      | .none => Strata.Python.TypeStrToCoreExpr (translation_ctx.signatures.getFuncSigType fname n))
+    let args := args.map (PyExprToCoreWithSubst default substitution_records)
     let args := (List.range required_order.length).filterMap (λ n =>
         if n < args.size then
           let arg_name := required_order[n]! -- Guaranteed by range. Using finRange causes breaking coercions to Nat.
@@ -386,7 +386,7 @@ partial def handleDict (keys: Array (Python.opt_expr SourceRange)) (values: Arra
       match f with
       | .Name _ {ann := _ , val := "str"} _ =>
         assert! args.val.size == 1
-        let dt := (.app () (.op () "datetime_to_str" none) ((PyExprToBoogie default args.val[0]!).expr))
+        let dt := (.app () (.op () "datetime_to_str" none) ((PyExprToCore default args.val[0]!).expr))
         let dict_of_v_is_k := (.assume s!"assume_{n}_key" (.eq () (.app () (.app () (.op () "dict_str_any_get_str" none) dict) (.strConst () n)) dt))
         [in_dict, dict_of_v_is_k]
       | _ => panic! "Unsupported function when constructing map"
@@ -396,7 +396,7 @@ partial def handleDict (keys: Array (Python.opt_expr SourceRange)) (values: Arra
 
   {stmts := res , expr := dict, post_stmts := []}
 
-partial def PyExprToBoogie (translation_ctx : TranslationContext) (e : Python.expr SourceRange) (substitution_records : Option (List SubstitutionRecord) := none) : PyExprTranslated :=
+partial def PyExprToCore (translation_ctx : TranslationContext) (e : Python.expr SourceRange) (substitution_records : Option (List SubstitutionRecord) := none) : PyExprTranslated :=
   if h : substitution_records.isSome && (substitution_records.get!.find? (λ r => PyExprIdent r.pyExpr e)).isSome then
     have hr : (List.find? (fun r => PyExprIdent r.pyExpr e) substitution_records.get!).isSome = true := by rw [Bool.and_eq_true] at h; exact h.2
     let record := (substitution_records.get!.find? (λ r => PyExprIdent r.pyExpr e)).get hr
@@ -405,7 +405,7 @@ partial def PyExprToBoogie (translation_ctx : TranslationContext) (e : Python.ex
     match e with
     | .Call _ f args kwords =>
       panic! s!"Call should be handled at stmt level: \n(func: {repr f}) \n(Records: {repr substitution_records}) \n(AST: {repr e.toAst})"
-    | .Constant _ c _ => {stmts := [], expr :=  PyConstToBoogie c}
+    | .Constant _ c _ => {stmts := [], expr :=  PyConstToCore c}
     | .Name _ n _ =>
       match n.val with
       | "AssertionError" | "Exception" => {stmts := [], expr := .strConst () n.val}
@@ -419,10 +419,10 @@ partial def PyExprToBoogie (translation_ctx : TranslationContext) (e : Python.ex
           else
             {stmts := [], expr := .fvar () n.val none}
         | .none => {stmts := [], expr := .fvar () n.val none}
-    | .JoinedStr _ ss => PyExprToBoogie translation_ctx ss.val[0]! -- TODO: need to actually join strings
+    | .JoinedStr _ ss => PyExprToCore translation_ctx ss.val[0]! -- TODO: need to actually join strings
     | .BinOp _ lhs op rhs =>
-      let lhs := (PyExprToBoogie translation_ctx lhs)
-      let rhs := (PyExprToBoogie translation_ctx rhs)
+      let lhs := (PyExprToCore translation_ctx lhs)
+      let rhs := (PyExprToCore translation_ctx rhs)
       match op with
       | .Add _ =>
         {stmts := lhs.stmts ++ rhs.stmts, expr := handleAdd lhs.expr rhs.expr}
@@ -432,9 +432,9 @@ partial def PyExprToBoogie (translation_ctx : TranslationContext) (e : Python.ex
         {stmts := lhs.stmts ++ rhs.stmts, expr := handleMult translation_ctx lhs.expr rhs.expr}
       | _ => panic! s!"Unhandled BinOp: {repr e}"
     | .Compare _ lhs op rhs =>
-      let lhs := PyExprToBoogie translation_ctx lhs
+      let lhs := PyExprToCore translation_ctx lhs
       assert! rhs.val.size == 1
-      let rhs := PyExprToBoogie translation_ctx rhs.val[0]!
+      let rhs := PyExprToCore translation_ctx rhs.val[0]!
       match op.val with
       | #[v] => match v with
         | Strata.Python.cmpop.Eq _ =>
@@ -452,11 +452,11 @@ partial def PyExprToBoogie (translation_ctx : TranslationContext) (e : Python.ex
       res
     | .ListComp _ keys values => panic! "ListComp must be handled at stmt level"
     | .UnaryOp _ op arg => match op with
-      | .Not _ => {stmts := [], expr := handleNot (PyExprToBoogie translation_ctx arg).expr}
+      | .Not _ => {stmts := [], expr := handleNot (PyExprToCore translation_ctx arg).expr}
       | _ => panic! "Unsupported UnaryOp: {repr e}"
     | .Subscript _ v slice _ =>
-      let l := PyExprToBoogie translation_ctx v
-      let k := PyExprToBoogie translation_ctx slice
+      let l := PyExprToCore translation_ctx v
+      let k := PyExprToCore translation_ctx slice
       -- TODO: we need to plumb the type of `v` here
       match s!"{repr l.expr}" with
       | "LExpr.fvar () { name := \"keys\", metadata := Core.Visibility.unres } none" =>
@@ -488,16 +488,16 @@ partial def initTmpParam (p: Python.expr SourceRange × String) : List Core.Stat
     match f with
     | .Name _ n _ =>
       match n.val with
-      | "json_dumps" => [(.init p.snd t[string] (.strConst () "")), .call [p.snd, "maybe_except"] "json_dumps" [(.app () (.op () "DictStrAny_mk" none) (.strConst () "DefaultDict")), (Strata.Python.TypeStrToBoogieExpr "IntOrNone")]]
+      | "json_dumps" => [(.init p.snd t[string] (.strConst () "")), .call [p.snd, "maybe_except"] "json_dumps" [(.app () (.op () "DictStrAny_mk" none) (.strConst () "DefaultDict")), (Strata.Python.TypeStrToCoreExpr "IntOrNone")]]
       | "str" =>
         assert! args.val.size == 1
-        [(.init p.snd t[string] (.strConst () "")), .set p.snd (.app () (.op () "datetime_to_str" none) ((PyExprToBoogie default args.val[0]!).expr))]
+        [(.init p.snd t[string] (.strConst () "")), .set p.snd (.app () (.op () "datetime_to_str" none) ((PyExprToCore default args.val[0]!).expr))]
       | "int" => [(.init p.snd t[int] (.intConst () 0)), .set p.snd (.op () "datetime_to_int" none)]
       | _ => panic! s!"Unsupported name {n.val}"
     | _ => panic! s!"Unsupported tmp param init call: {repr f}"
   | _ => panic! "Expected Call"
 
-partial def exceptHandlersToBoogie (jmp_targets: List String) (translation_ctx: TranslationContext) (h : Python.excepthandler SourceRange) : List Core.Statement :=
+partial def exceptHandlersToCore (jmp_targets: List String) (translation_ctx: TranslationContext) (h : Python.excepthandler SourceRange) : List Core.Statement :=
   assert! jmp_targets.length >= 2
   match h with
   | .ExceptHandler _ ex_ty _ body =>
@@ -507,14 +507,14 @@ partial def exceptHandlersToBoogie (jmp_targets: List String) (translation_ctx: 
       let get_ex_tag : Core.CoreIdent := "ExceptOrNone_code_val"
       let exception_ty : Core.Expression.Expr := .app () (.op () get_ex_tag none) (.fvar () "maybe_except" none)
       let rhs_curried : Core.Expression.Expr := .app () (.op () inherits_from none) exception_ty
-      let res := PyExprToBoogie translation_ctx ex_ty
+      let res := PyExprToCore translation_ctx ex_ty
       let rhs : Core.Expression.Expr := .app () rhs_curried (res.expr)
       let call := .set "exception_ty_matches" rhs
       res.stmts ++ [call]
     | .none =>
       [.set "exception_ty_matches" (.boolConst () false)]
     let cond := .fvar () "exception_ty_matches" none
-    let body_if_matches := body.val.toList.flatMap (λ s => (PyStmtToBoogie jmp_targets translation_ctx s).fst) ++ [.goto jmp_targets[1]!]
+    let body_if_matches := body.val.toList.flatMap (λ s => (PyStmtToCore jmp_targets translation_ctx s).fst) ++ [.goto jmp_targets[1]!]
     set_ex_ty_matches ++ [.ite cond body_if_matches []]
 
 partial def handleFunctionCall (lhs: List Core.Expression.Ident)
@@ -547,25 +547,25 @@ partial def handleComprehension (lhs: Python.expr SourceRange) (gen: Array (Pyth
   assert! gen.size == 1
   match gen[0]! with
   | .mk_comprehension _ _ itr _ _ =>
-    let res := PyExprToBoogie default itr
+    let res := PyExprToCore default itr
     let guard := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) res.expr) (.intConst () 0))
     let then_ss: List Core.Statement := [.havoc (PyExprToString lhs)]
     let else_ss: List Core.Statement := [.set (PyExprToString lhs) (.op () "ListStr_nil" none)]
     res.stmts ++ [.ite guard then_ss else_ss]
 
-partial def PyStmtToBoogie (jmp_targets: List String) (translation_ctx : TranslationContext) (s : Python.stmt SourceRange) : List Core.Statement × TranslationContext :=
+partial def PyStmtToCore (jmp_targets: List String) (translation_ctx : TranslationContext) (s : Python.stmt SourceRange) : List Core.Statement × TranslationContext :=
   assert! jmp_targets.length > 0
   let non_throw : List Core.Statement × Option (String × Lambda.LMonoTy) := match s with
     | .Import _ names =>
-      ([.call [] "import" [PyListStrToBoogie names.val]], none)
+      ([.call [] "import" [PyListStrToCore names.val]], none)
     | .ImportFrom _ s names i =>
       let n := match s.val with
-      | some s => [strToBoogieExpr s.val]
+      | some s => [strToCoreExpr s.val]
       | none => []
       let i := match i.val with
-      | some i => [intToBoogieExpr (PyIntToInt i)]
+      | some i => [intToCoreExpr (PyIntToInt i)]
       | none => []
-      ([.call [] "importFrom" (n ++ [PyListStrToBoogie names.val] ++ i)], none)
+      ([.call [] "importFrom" (n ++ [PyListStrToCore names.val] ++ i)], none)
     | .Expr _ (.Call _ func args kwords) =>
       let fname := PyExprToString func
       if callCanThrow translation_ctx.func_infos s then
@@ -583,7 +583,7 @@ partial def PyStmtToBoogie (jmp_targets: List String) (translation_ctx : Transla
       (handleFunctionCall [PyExprToString lhs.val[0]!, "maybe_except"] fname args kwords jmp_targets translation_ctx s, none)
     | .Assign _ lhs rhs _ =>
       assert! lhs.val.size == 1
-      let res := PyExprToBoogie translation_ctx rhs
+      let res := PyExprToCore translation_ctx rhs
       (res.stmts ++ [.set (PyExprToString lhs.val[0]!) res.expr], none)
     | .AnnAssign _ lhs ty { ann := _ , val := (.some (.Call _ func args kwords))} _ =>
       let fname := PyExprToString func
@@ -591,54 +591,54 @@ partial def PyStmtToBoogie (jmp_targets: List String) (translation_ctx : Transla
     | .AnnAssign _ lhs ty { ann := _ , val := (.some (.ListComp _ _ gen))} _ =>
       (handleComprehension lhs gen.val, some (PyExprToString lhs, PyExprToMonoTy ty))
     | .AnnAssign _ lhs ty {ann := _, val := (.some e)} _ =>
-      let res := (PyExprToBoogie {translation_ctx with expectedType := PyExprToMonoTy ty} e)
+      let res := (PyExprToCore {translation_ctx with expectedType := PyExprToMonoTy ty} e)
       (res.stmts ++ [.set (PyExprToString lhs) res.expr], some (PyExprToString lhs, PyExprToMonoTy ty))
     | .Try _ body handlers _orelse _finalbody =>
         let new_target := s!"excepthandlers_{jmp_targets[0]!}"
         let entry_except_handlers := [.block new_target []]
         let new_jmp_stack := new_target :: jmp_targets
-        let except_handlers := handlers.val.toList.flatMap (exceptHandlersToBoogie new_jmp_stack translation_ctx)
+        let except_handlers := handlers.val.toList.flatMap (exceptHandlersToCore new_jmp_stack translation_ctx)
         let var_decls := collectVarDecls translation_ctx body.val
-        ([.block "try_block" (var_decls ++ body.val.toList.flatMap (λ s => (PyStmtToBoogie new_jmp_stack translation_ctx s).fst) ++ entry_except_handlers ++ except_handlers)], none)
+        ([.block "try_block" (var_decls ++ body.val.toList.flatMap (λ s => (PyStmtToCore new_jmp_stack translation_ctx s).fst) ++ entry_except_handlers ++ except_handlers)], none)
     | .FunctionDef _ _ _ _ _ _ _ _ => panic! "Can't translate FunctionDef to Boogie statement"
     | .If _ test then_b else_b =>
       let guard_ctx := {translation_ctx with expectedType := some (.tcons "bool" [])}
-      ([.ite (PyExprToBoogie guard_ctx test).expr (ArrPyStmtToBoogie translation_ctx then_b.val).fst (ArrPyStmtToBoogie translation_ctx else_b.val).fst], none)
+      ([.ite (PyExprToCore guard_ctx test).expr (ArrPyStmtToCore translation_ctx then_b.val).fst (ArrPyStmtToCore translation_ctx else_b.val).fst], none)
     | .Return _ v =>
       match v.val with
-      | .some v => ([.set "ret" (PyExprToBoogie translation_ctx v).expr, .goto jmp_targets[0]!], none) -- TODO: need to thread return value name here. For now, assume "ret"
+      | .some v => ([.set "ret" (PyExprToCore translation_ctx v).expr, .goto jmp_targets[0]!], none) -- TODO: need to thread return value name here. For now, assume "ret"
       | .none => ([.goto jmp_targets[0]!], none)
     | .For _ tgt itr body _ _ =>
       -- Do one unrolling:
-      let guard := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) (PyExprToBoogie default itr).expr) (.intConst () 0))
+      let guard := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) (PyExprToCore default itr).expr) (.intConst () 0))
       match tgt with
       | .Name _ n _ =>
         let assign_tgt := [(.init n.val dictStrAnyType dummyDictStrAny)]
-        ([.ite guard (assign_tgt ++ (ArrPyStmtToBoogie translation_ctx body.val).fst) []], none)
+        ([.ite guard (assign_tgt ++ (ArrPyStmtToCore translation_ctx body.val).fst) []], none)
       | _ => panic! s!"tgt must be single name: {repr tgt}"
       -- TODO: missing havoc
     | .While _ test body _ =>
       -- Do one unrolling:
-      let guard := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) (PyExprToBoogie default test).expr) (.intConst () 0))
-      ([.ite guard (ArrPyStmtToBoogie translation_ctx body.val).fst []], none)
+      let guard := .app () (.op () "Bool.Not" none) (.eq () (.app () (.op () "dict_str_any_length" none) (PyExprToCore default test).expr) (.intConst () 0))
+      ([.ite guard (ArrPyStmtToCore translation_ctx body.val).fst []], none)
       -- TODO: missing havoc
     | .Assert _ a _ =>
-      let res := PyExprToBoogie translation_ctx a
+      let res := PyExprToCore translation_ctx a
       ([(.assert "py_assertion" res.expr)], none)
     | .AugAssign _ lhs op rhs =>
       match op with
       | .Add _ =>
         match lhs with
         | .Name _ n _ =>
-          let rhs := PyExprToBoogie translation_ctx rhs
+          let rhs := PyExprToCore translation_ctx rhs
           let new_lhs := (.strConst () "DUMMY_FLOAT")
           (rhs.stmts ++ [.set n.val new_lhs], none)
         | _ => panic! s!"Expected lhs to be name: {repr lhs}"
       | .FloorDiv _ =>
         match lhs with
         | .Name _ n _ =>
-          let lhs := PyExprToBoogie translation_ctx lhs
-          let rhs := PyExprToBoogie translation_ctx rhs
+          let lhs := PyExprToCore translation_ctx lhs
+          let rhs := PyExprToCore translation_ctx rhs
           let new_lhs := .app () (.app () (.op () "Int.Div" mty[int → (int → int)]) lhs.expr) rhs.expr
           (rhs.stmts ++ [.set n.val new_lhs], none)
         | _ => panic! s!"Expected lhs to be name: {repr lhs}"
@@ -653,9 +653,9 @@ partial def PyStmtToBoogie (jmp_targets: List String) (translation_ctx : Transla
   else
     (non_throw.fst, new_translation_ctx)
 
-partial def ArrPyStmtToBoogie (translation_ctx: TranslationContext) (a : Array (Python.stmt SourceRange)) : (List Core.Statement × TranslationContext) :=
+partial def ArrPyStmtToCore (translation_ctx: TranslationContext) (a : Array (Python.stmt SourceRange)) : (List Core.Statement × TranslationContext) :=
   a.foldl (fun (stmts, ctx) stmt =>
-    let (newStmts, newCtx) := PyStmtToBoogie ["end"] ctx stmt
+    let (newStmts, newCtx) := PyStmtToCore ["end"] ctx stmt
     (stmts ++ newStmts, newCtx)
   ) ([], translation_ctx)
 
@@ -674,7 +674,7 @@ def translateFunctions (a : Array (Python.stmt SourceRange)) (translation_ctx: T
                inputs := [],
                outputs := [("maybe_except", (.tcons "ExceptOrNone" []))]},
         spec := default,
-        body := varDecls ++ (ArrPyStmtToBoogie translation_ctx body.val).fst ++ [.block "end" []]
+        body := varDecls ++ (ArrPyStmtToCore translation_ctx body.val).fst ++ [.block "end" []]
       }
       some (.proc proc)
     | _ => none)
@@ -686,10 +686,10 @@ def pyTyStrToLMonoTy (ty_str: String) : Lambda.LMonoTy :=
   | "datetime" => (.tcons "Datetime" [])
   | _ => panic! s!"Unsupported type: {ty_str}"
 
-def pythonFuncToBoogie (name : String) (args: List (String × String)) (body: Array (Python.stmt SourceRange)) (ret : Option (Python.expr SourceRange)) (spec : Core.Procedure.Spec) (translation_ctx : TranslationContext) : Core.Procedure :=
+def pythonFuncToCore (name : String) (args: List (String × String)) (body: Array (Python.stmt SourceRange)) (ret : Option (Python.expr SourceRange)) (spec : Core.Procedure.Spec) (translation_ctx : TranslationContext) : Core.Procedure :=
   let inputs : List (Lambda.Identifier Core.Visibility × Lambda.LMonoTy) := args.map (λ p => (p.fst, pyTyStrToLMonoTy p.snd))
   let varDecls := collectVarDecls translation_ctx body ++ [(.init "exception_ty_matches" t[bool] (.boolConst () false)), (.havoc "exception_ty_matches")]
-  let stmts := (ArrPyStmtToBoogie translation_ctx body).fst
+  let stmts := (ArrPyStmtToCore translation_ctx body).fst
   let body := varDecls ++ stmts ++ [.block "end" []]
   let constructor := name.endsWith "___init__"
   let outputs : Lambda.LMonoTySignature := if not constructor then
@@ -725,14 +725,14 @@ def unpackPyArguments (args: Python.arguments SourceRange) : List (String × Str
         | .some ty => some (name.val, PyExprToString ty)
         | _ => panic! s!"Missing type annotation on arg: {repr a} ({repr args})")
 
-def PyFuncDefToBoogie (s: Python.stmt SourceRange) (translation_ctx: TranslationContext) : List Core.Decl × PythonFunctionDecl :=
+def PyFuncDefToCore (s: Python.stmt SourceRange) (translation_ctx: TranslationContext) : List Core.Decl × PythonFunctionDecl :=
   match s with
   | .FunctionDef _ name args body _ ret _ _ =>
     let args := unpackPyArguments args
-    ([.proc (pythonFuncToBoogie name.val args body.val ret.val default translation_ctx)], {name := name.val, args, ret := s!"{repr ret}"})
+    ([.proc (pythonFuncToCore name.val args body.val ret.val default translation_ctx)], {name := name.val, args, ret := s!"{repr ret}"})
   | _ => panic! s!"Expected function def: {repr s}"
 
-def PyClassDefToBoogie (s: Python.stmt SourceRange) (translation_ctx: TranslationContext) : List Core.Decl × PythonClassDecl :=
+def PyClassDefToCore (s: Python.stmt SourceRange) (translation_ctx: TranslationContext) : List Core.Decl × PythonClassDecl :=
   match s with
   | .ClassDef _ c_name _ _ body _ _ =>
     let member_fn_defs := body.val.toList.filterMap (λ s => match s with
@@ -743,10 +743,10 @@ def PyClassDefToBoogie (s: Python.stmt SourceRange) (translation_ctx: Translatio
       let args := unpackPyArguments f.snd.fst
       let body := f.snd.snd.fst.val
       let ret := f.snd.snd.snd.val
-      .proc (pythonFuncToBoogie (c_name.val++"_"++name) args body ret default translation_ctx)), {name := c_name.val})
+      .proc (pythonFuncToCore (c_name.val++"_"++name) args body ret default translation_ctx)), {name := c_name.val})
   | _ => panic! s!"Expected function def: {repr s}"
 
-def pythonToBoogie (signatures : Python.Signatures) (pgm: Strata.Program): Core.Program :=
+def pythonToCore (signatures : Python.Signatures) (pgm: Strata.Program): Core.Program :=
   let pyCmds := toPyCommands pgm.commands
   assert! pyCmds.size == 1
   let insideMod := unwrapModule pyCmds[0]!
@@ -777,15 +777,15 @@ def pythonToBoogie (signatures : Python.Signatures) (pgm: Strata.Program): Core.
     (y ++ ys, acc'')
   let func_info : TranslationContext := { signatures }
 
-  let func_defs_and_infos := helper PyFuncDefToBoogie (fun acc info => {acc with func_infos := info :: acc.func_infos}) func_info func_defs.toList
+  let func_defs_and_infos := helper PyFuncDefToCore (fun acc info => {acc with func_infos := info :: acc.func_infos}) func_info func_defs.toList
   let func_defs := func_defs_and_infos.fst
   let func_infos := func_defs_and_infos.snd
 
-  let class_defs_and_infos := helper PyClassDefToBoogie (fun acc info => {acc with class_infos := info :: acc.class_infos}) func_infos class_defs.toList
+  let class_defs_and_infos := helper PyClassDefToCore (fun acc info => {acc with class_infos := info :: acc.class_infos}) func_infos class_defs.toList
   let class_defs := class_defs_and_infos.fst
   let class_infos := class_defs_and_infos.snd
   let class_ty_decls := [(.type (.con {name := "LatencyAnalyzer", numargs := 0})) ]
 
-  {decls := globals ++ class_ty_decls ++ func_defs ++ class_defs ++ [.proc (pythonFuncToBoogie "__main__" [] non_func_blocks none default class_infos)]}
+  {decls := globals ++ class_ty_decls ++ func_defs ++ class_defs ++ [.proc (pythonFuncToCore "__main__" [] non_func_blocks none default class_infos)]}
 
 end Strata

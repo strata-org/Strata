@@ -5,7 +5,7 @@
 -/
 
 import Strata.Languages.Core.Verifier
-import Strata.Languages.Python.Regex.ReToBoogie
+import Strata.Languages.Python.Regex.ReToCore
 
 namespace Strata
 namespace Python
@@ -78,10 +78,10 @@ def reCompileFunc : LFunc Core.CoreLParams :=
             -- (FIXME): We use `.match` mode below because we support only
             -- `re.match` for now. However, `re.compile` isn't mode-specific in
             -- general.
-            let (expr, maybe_err) := pythonRegexToBoogie s .match
+            let (expr, maybe_err) := pythonRegexToCore s .match
             match maybe_err with
             | none =>
-              -- Note: Do not use `eb` (in Boogie.Syntax) here (e.g., see below)
+              -- Note: Do not use `eb` (in Strata Core Syntax) here (e.g., see below)
               -- eb[(~ExceptErrorRegex_mkOK expr)]
               -- that captures `expr` as an `.fvar`.
               .some (LExpr.mkApp () (.op () "ExceptErrorRegex_mkOK" none) [expr])

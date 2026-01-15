@@ -9,7 +9,7 @@ import Strata.Languages.Core.Core
 namespace Strata
 namespace Python
 
-/-- A type identifier in the Python Boogie prelude. -/
+/-- A type identifier in the Strata Core prelude for Python. -/
 abbrev TypeId := String
 
 /-- An argument declaration for a Python method -/
@@ -143,7 +143,7 @@ def coreSignatures : Signatures := addCoreDecls |>.run
 
 end
 
-def TypeStrToBoogieExpr (ty: String) : Core.Expression.Expr :=
+def TypeStrToCoreExpr (ty: String) : Core.Expression.Expr :=
   if !ty.endsWith "OrNone" then
     panic! s!"Should only be called for possibly None types. Called for: {ty}"
   else
