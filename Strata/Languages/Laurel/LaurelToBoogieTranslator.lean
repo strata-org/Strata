@@ -12,6 +12,7 @@ import Strata.Languages.Boogie.Options
 import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LiftExpressionAssignments
 import Strata.DL.Imperative.Stmt
+import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
 import Strata.Languages.Laurel.LaurelFormat
 
@@ -86,6 +87,10 @@ def translateExpr (expr : StmtExpr) : Boogie.Expression.Expr :=
   all_goals (simp_wf; try omega)
   rename_i x_in; have := List.sizeOf_lt_of_mem x_in; omega
 
+def getNameFromMd (md : Imperative.MetaData Boogie.Expression): String :=
+  let fileRange := (Imperative.getFileRange md).get!
+  s!"({fileRange.start.column},{fileRange.start.line})"
+
 /--
 Translate Laurel StmtExpr to Boogie Statements
 Takes the list of output parameter names to handle return statements correctly
@@ -94,10 +99,10 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExpr) : List Boogi
   match stmt with
   | @StmtExpr.Assert cond md =>
       let boogieExpr := translateExpr cond
-      [Boogie.Statement.assert "assert" boogieExpr md]
+      [Boogie.Statement.assert ("assert" ++ getNameFromMd md) boogieExpr md]
   | @StmtExpr.Assume cond md =>
       let boogieExpr := translateExpr cond
-      [Boogie.Statement.assume "assume" boogieExpr md]
+      [Boogie.Statement.assume ("assume" ++ getNameFromMd md) boogieExpr md]
   | .Block stmts _ =>
       stmts.flatMap (translateStmt outputParams)
   | .LocalVariable name ty initializer =>
