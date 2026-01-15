@@ -258,10 +258,12 @@ spec {
 /--
 info:
 Obligation: headIs100
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestPolyListHavoc_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" polyListHavocPgm Inhabited.default Options.quiet
@@ -304,10 +306,12 @@ spec {
 /--
 info:
 Obligation: bothCons
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestMultiInstSMT_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" multiInstSMTPgm Inhabited.default Options.quiet
