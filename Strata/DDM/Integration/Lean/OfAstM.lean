@@ -181,31 +181,6 @@ def ofSeqM {α β} [Repr α] [SizeOf α]
       throwExpected sep.toString arg
   | _ => throwExpected sep.toString arg
 
--- Convenience wrappers for backward compatibility
-def ofCommaSepByM {α β} [Repr α] [SizeOf α]
-      (arg : ArgF α)
-      (act : ∀(e : ArgF α), sizeOf e < sizeOf arg → OfAstM β)
-      : OfAstM (Ann (Array β) α) :=
-  ofSeqM .comma arg act
-
-def ofSpaceSepByM {α β} [Repr α] [SizeOf α]
-      (arg : ArgF α)
-      (act : ∀(e : ArgF α), sizeOf e < sizeOf arg → OfAstM β)
-      : OfAstM (Ann (Array β) α) :=
-  ofSeqM .space arg act
-
-def ofSpacePrefixSepByM {α β} [Repr α] [SizeOf α]
-      (arg : ArgF α)
-      (act : ∀(e : ArgF α), sizeOf e < sizeOf arg → OfAstM β)
-      : OfAstM (Ann (Array β) α) :=
-  ofSeqM .spacePrefix arg act
-
-def ofSeqSeqM {α β} [Repr α] [SizeOf α]
-      (arg : ArgF α)
-      (act : ∀(e : ArgF α), sizeOf e < sizeOf arg → OfAstM β)
-      : OfAstM (Ann (Array β) α) :=
-  ofSeqM .none arg act
-
 /--
 Get the expression at index `lvl` in the arguments.
 

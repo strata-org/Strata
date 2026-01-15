@@ -904,13 +904,13 @@ partial def getOfIdentArgWithUnwrap (varName : String) (cat : SyntaxCat) (unwrap
     let ofAst ← ofAstIdentM cid
     pure <| mkApp ofAst #[e]
   | q`Init.CommaSepBy => do
-    getOfIdentArgSeq varName cat e ``OfAstM.ofCommaSepByM
+    getOfIdentArgSeq varName cat e ``SepFormat.comma
   | q`Init.SpaceSepBy => do
-    getOfIdentArgSeq varName cat e ``OfAstM.ofSpaceSepByM
+    getOfIdentArgSeq varName cat e ``SepFormat.space
   | q`Init.SpacePrefixSepBy => do
-    getOfIdentArgSeq varName cat e ``OfAstM.ofSpacePrefixSepByM
+    getOfIdentArgSeq varName cat e ``SepFormat.spacePrefix
   | q`Init.Seq => do
-    getOfIdentArgSeq varName cat e ``OfAstM.ofSeqSeqM
+    getOfIdentArgSeq varName cat e ``SepFormat.none
   | q`Init.Option => do
     let c := cat.args[0]!
     let (vc, vi) ← genFreshIdentPair varName
@@ -923,12 +923,12 @@ partial def getOfIdentArgWithUnwrap (varName : String) (cat : SyntaxCat) (unwrap
     ``(OfAstM.ofOperationM $e fun $vc _ => $ofAst $vi)
 
 where
-  getOfIdentArgSeq (varName : String) (cat : SyntaxCat) (e : Term) (ofAstFn : Name) : GenM Term := do
+  getOfIdentArgSeq (varName : String) (cat : SyntaxCat) (e : Term) (sepFormat : Name) : GenM Term := do
     let c := cat.args[0]!
     let (vc, vi) ← genFreshIdentPair varName
     let body ← getOfIdentArg varName c vi
-    let ofAstFnTerm := mkCApp ofAstFn #[]
-    ``($ofAstFnTerm $e fun $vc _ => $body)
+    let sepFormatTerm := mkCApp sepFormat #[]
+    ``(OfAstM.ofSeqM $sepFormatTerm $e fun $vc _ => $body)
 
 end
 
