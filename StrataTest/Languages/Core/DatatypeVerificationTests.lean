@@ -76,7 +76,7 @@ def containerDatatype : LDatatype Visibility :=
 /-! ## Helper Functions -/
 
 /--
-Create a Boogie program with datatypes and a procedure.
+Create a STrata Core program with datatypes and a procedure.
 -/
 def mkProgramWithDatatypes
   (datatypes : List (LDatatype Visibility))

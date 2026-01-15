@@ -74,7 +74,7 @@ def replaceTypesByFTV (expr: Core.Expression.Expr) (to_replace: List String): Co
     | .eq m e1 e2 => .eq m (replaceTypesByFTV e1 to_replace) (replaceTypesByFTV e2 to_replace)
 
 /--
-  Extract all axioms from the given environment by first translating it into a Boogie Program.
+  Extract all axioms from the given environment by first translating it into a Strata Core Program.
   It then extracts LExpr body from the axioms, and replace all occurences of the typeArgs by a ftvar with the same name
 -/
 def extractAxiomsWithFreeTypeVars (pgm: Program) (typeArgs: List String): (List Core.Expression.Expr) :=

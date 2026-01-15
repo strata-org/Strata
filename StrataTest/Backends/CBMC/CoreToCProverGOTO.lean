@@ -155,13 +155,13 @@ def CProverGOTO.Context.toJson (programName : String) (ctx : CProverGOTO.Context
   { symtab := symbols, goto := goto_functions }
 
 open Lambda.LTy.Syntax in
-def transformToGoto (boogie : Core.Program) : Except Format CProverGOTO.Context := do
+def transformToGoto (cprog : Core.Program) : Except Format CProverGOTO.Context := do
   let Ctx := { Lambda.LContext.default with functions := Core.Factory, knownTypes := Core.KnownTypes }
   let Env := Lambda.TEnv.default
-  let (boogie, _Env) ← Core.Program.typeCheck Ctx Env boogie
+  let (cprog, _Env) ← Core.Program.typeCheck Ctx Env cprog
   dbg_trace f!"[Strata.Core] Type Checking Succeeded!"
-  if h : boogie.decls.length = 1 then
-    let decl := boogie.decls[0]'(by exact Nat.lt_of_sub_eq_succ h)
+  if h : cprog.decls.length = 1 then
+    let decl := cprog.decls[0]'(by exact Nat.lt_of_sub_eq_succ h)
     match decl.getProc? with
     | none => .error f!"[transformToGoto] We can process only Strata Core procedures at this time. \
                         Declaration encountered: {decl}"
