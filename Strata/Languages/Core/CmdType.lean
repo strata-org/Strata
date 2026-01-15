@@ -24,13 +24,13 @@ def isBoolType (ty : LTy) : Bool :=
   | .forAll [] LMonoTy.bool => true
   | _ => false
 
-def lookup (Env : TEnv Visibility) (x : BoogieIdent) : Option LTy :=
+def lookup (Env : TEnv Visibility) (x : CoreIdent) : Option LTy :=
   Env.context.types.find? x
 
-def update (Env : TEnv Visibility) (x : BoogieIdent) (ty : LTy) : TEnv Visibility :=
-  Env.insertInContext (T := BoogieLParams) x ty
+def update (Env : TEnv Visibility) (x : CoreIdent) (ty : LTy) : TEnv Visibility :=
+  Env.insertInContext (T := CoreLParams) x ty
 
-def freeVars (e : (LExpr BoogieLParams.mono)) : List BoogieIdent :=
+def freeVars (e : (LExpr CoreLParams.mono)) : List CoreIdent :=
   (LExpr.freeVars e).map (fun (i, _) => i)
 
 /--
@@ -38,12 +38,12 @@ Preprocess a user-facing type in Boogie amounts to converting a poly-type (i.e.,
 `LTy`) to a mono-type (i.e., `LMonoTy`) via instantiation. We still return an
 `LTy`, with no bound variables.
 -/
-def preprocess (C: LContext BoogieLParams) (Env : TEnv Visibility) (ty : LTy) :
+def preprocess (C: LContext CoreLParams) (Env : TEnv Visibility) (ty : LTy) :
     Except Format (LTy × TEnv Visibility) := do
   let (mty, Env) ← ty.instantiateWithCheck C Env
   return (.forAll [] mty, Env)
 
-def postprocess (_: LContext BoogieLParams) (Env: TEnv Visibility) (ty : LTy) :
+def postprocess (_: LContext CoreLParams) (Env: TEnv Visibility) (ty : LTy) :
     Except Format (LTy × TEnv Visibility) := do
   if h: ty.isMonoType then
     let ty := LMonoTy.subst Env.stateSubstInfo.subst (ty.toMonoType h)
@@ -55,8 +55,8 @@ def postprocess (_: LContext BoogieLParams) (Env: TEnv Visibility) (ty : LTy) :
 The inferred type of `e` will be an `LMonoTy`, but we return an `LTy` with no
 bound variables.
 -/
-def inferType (C: LContext BoogieLParams) (Env: TEnv Visibility) (c : Cmd Expression) (e : LExpr BoogieLParams.mono) :
-    Except Format ((LExpr BoogieLParams.mono) × LTy × TEnv Visibility) := do
+def inferType (C: LContext CoreLParams) (Env: TEnv Visibility) (c : Cmd Expression) (e : LExpr CoreLParams.mono) :
+    Except Format ((LExpr CoreLParams.mono) × LTy × TEnv Visibility) := do
   -- We only allow free variables to appear in `init` statements. Any other
   -- occurrence leads to an error.
   let T ← match c with
@@ -103,7 +103,7 @@ def typeErrorFmt (e : Format) : Format :=
 
 ---------------------------------------------------------------------
 
-instance : Imperative.TypeContext Expression (LContext BoogieLParams) (TEnv Visibility) Format where
+instance : Imperative.TypeContext Expression (LContext CoreLParams) (TEnv Visibility) Format where
   isBoolType   := CmdType.isBoolType
   freeVars     := CmdType.freeVars
   preprocess   := CmdType.preprocess

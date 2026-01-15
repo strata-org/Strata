@@ -41,24 +41,24 @@ def TImplicit {Metadata: Type} (IDMeta: Type): LExprParamsT := ({Metadata := Met
   Convert an LExpr LMonoTy Unit to an LExpr LMonoTy Visibility
   TODO: Remove when Lambda elaborator offers parametric identifier type
 -/
-def ToBoogieIdent {M: Type} (ine: LExpr (@TImplicit M Unit)): LExpr (@TImplicit M Visibility) :=
+def ToCoreIdent {M: Type} (ine: LExpr (@TImplicit M Unit)): LExpr (@TImplicit M Visibility) :=
 match ine with
     | .const m c => .const m c
-    | .op m o oty => .op m (BoogieIdent.unres o.name) oty
+    | .op m o oty => .op m (CoreIdent.unres o.name) oty
     | .bvar m deBruijnIndex => .bvar m deBruijnIndex
-    | .fvar m name oty => .fvar m (BoogieIdent.unres name.name) oty
-    | .abs m oty e => .abs m oty (ToBoogieIdent e)
-    | .quant m k oty tr e => .quant m k oty (ToBoogieIdent tr) (ToBoogieIdent e)
-    | .app m fn e => .app m (ToBoogieIdent fn) (ToBoogieIdent e)
-    | .ite m c t e => .ite m (ToBoogieIdent c) (ToBoogieIdent t) (ToBoogieIdent e)
-    | .eq m e1 e2 => .eq m (ToBoogieIdent e1) (ToBoogieIdent e2)
+    | .fvar m name oty => .fvar m (CoreIdent.unres name.name) oty
+    | .abs m oty e => .abs m oty (ToCoreIdent e)
+    | .quant m k oty tr e => .quant m k oty (ToCoreIdent tr) (ToCoreIdent e)
+    | .app m fn e => .app m (ToCoreIdent fn) (ToCoreIdent e)
+    | .ite m c t e => .ite m (ToCoreIdent c) (ToCoreIdent t) (ToCoreIdent e)
+    | .eq m e1 e2 => .eq m (ToCoreIdent e1) (ToCoreIdent e2)
 
 
 private def bvBinaryOp (fn:∀ {n}, BitVec n → BitVec n → BitVec n)
   (check:∀ {n}, BitVec n → BitVec n → Bool)
-  (m:BoogieLParams.Metadata)
-  (ops:List (LExpr BoogieLParams.mono))
-    : Option (LExpr BoogieLParams.mono) :=
+  (m:CoreLParams.Metadata)
+  (ops:List (LExpr CoreLParams.mono))
+    : Option (LExpr CoreLParams.mono) :=
   match ops with
   | [.bitvecConst _ n1 b1, .bitvecConst _ n2 b2] =>
     if h : n1 = n2 then
@@ -69,9 +69,9 @@ private def bvBinaryOp (fn:∀ {n}, BitVec n → BitVec n → BitVec n)
   | _ => .none
 
 private def bvShiftOp (fn:∀ {n}, BitVec n → Nat → BitVec n)
-  (m:BoogieLParams.Metadata)
-  (ops:List (LExpr BoogieLParams.mono))
-    : Option (LExpr BoogieLParams.mono) :=
+  (m:CoreLParams.Metadata)
+  (ops:List (LExpr CoreLParams.mono))
+    : Option (LExpr CoreLParams.mono) :=
   match ops with
   | [.bitvecConst _ n1 b1, .bitvecConst _ n2 b2] =>
     let i2 := BitVec.toNat b2
@@ -81,18 +81,18 @@ private def bvShiftOp (fn:∀ {n}, BitVec n → Nat → BitVec n)
   | _ => .none
 
 private def bvUnaryOp (fn:∀ {n}, BitVec n → BitVec n)
-  (m:BoogieLParams.Metadata)
-  (ops:List (LExpr BoogieLParams.mono))
-    : Option (LExpr BoogieLParams.mono) :=
+  (m:CoreLParams.Metadata)
+  (ops:List (LExpr CoreLParams.mono))
+    : Option (LExpr CoreLParams.mono) :=
   match ops with
   | [.bitvecConst _ n b] => .some (.bitvecConst m n (fn b))
   | _ => .none
 
 private def bvBinaryPred (fn:∀ {n}, BitVec n → BitVec n → Bool)
   (swap:Bool)
-  (m:BoogieLParams.Metadata)
-  (ops:List (LExpr BoogieLParams.mono))
-    : Option (LExpr BoogieLParams.mono) :=
+  (m:CoreLParams.Metadata)
+  (ops:List (LExpr CoreLParams.mono))
+    : Option (LExpr CoreLParams.mono) :=
   match ops with
   | [.bitvecConst _ n1 b1, .bitvecConst _ n2 b2] =>
     if h : n1 = n2 then
@@ -149,7 +149,7 @@ info: [("Neg", "unaryOp"), ("Add", "binaryOp"), ("Sub", "binaryOp"), ("Mul", "bi
 #guard_msgs in
 #eval List.zip BVOpNames BVOpAritys
 
-variable [Coe String BoogieLParams.Identifier]
+variable [Coe String CoreLParams.Identifier]
 
 open Lean Elab Command in
 elab "ExpandBVOpFuncDefs" "[" sizes:num,* "]" : command => do
@@ -161,7 +161,7 @@ elab "ExpandBVOpFuncDefs" "[" sizes:num,* "]" : command => do
       let opName := Syntax.mkStrLit s!"Bv{s}.{op}"
       let bvTypeName := Name.mkSimple s!"bv{s}"
       let opStr := Syntax.mkStrLit op
-      elabCommand (← `(def $funcName : LFunc BoogieLParams :=
+      elabCommand (← `(def $funcName : LFunc CoreLParams :=
         $funcArity $opName mty[$(mkIdent bvTypeName):ident]
         ((BVOpEvals.find? (fun (k,_) => k == $opStr)).bind (fun (_,w)=>w))))
 
@@ -169,136 +169,136 @@ ExpandBVOpFuncDefs[1, 2, 8, 16, 32, 64]
 
 /- Real Arithmetic Operations -/
 
-def realAddFunc : LFunc BoogieLParams := binaryOp "Real.Add" mty[real] none
-def realSubFunc : LFunc BoogieLParams := binaryOp "Real.Sub" mty[real] none
-def realMulFunc : LFunc BoogieLParams := binaryOp "Real.Mul" mty[real] none
-def realDivFunc : LFunc BoogieLParams := binaryOp "Real.Div" mty[real] none
-def realNegFunc : LFunc BoogieLParams := unaryOp "Real.Neg" mty[real] none
+def realAddFunc : LFunc CoreLParams := binaryOp "Real.Add" mty[real] none
+def realSubFunc : LFunc CoreLParams := binaryOp "Real.Sub" mty[real] none
+def realMulFunc : LFunc CoreLParams := binaryOp "Real.Mul" mty[real] none
+def realDivFunc : LFunc CoreLParams := binaryOp "Real.Div" mty[real] none
+def realNegFunc : LFunc CoreLParams := unaryOp "Real.Neg" mty[real] none
 
 /- Real Comparison Operations -/
-def realLtFunc : LFunc BoogieLParams := binaryPredicate "Real.Lt" mty[real] none
-def realLeFunc : LFunc BoogieLParams := binaryPredicate "Real.Le" mty[real] none
-def realGtFunc : LFunc BoogieLParams := binaryPredicate "Real.Gt" mty[real] none
-def realGeFunc : LFunc BoogieLParams := binaryPredicate "Real.Ge" mty[real] none
+def realLtFunc : LFunc CoreLParams := binaryPredicate "Real.Lt" mty[real] none
+def realLeFunc : LFunc CoreLParams := binaryPredicate "Real.Le" mty[real] none
+def realGtFunc : LFunc CoreLParams := binaryPredicate "Real.Gt" mty[real] none
+def realGeFunc : LFunc CoreLParams := binaryPredicate "Real.Ge" mty[real] none
 
 /- String Operations -/
-def strLengthFunc : LFunc BoogieLParams :=
+def strLengthFunc : LFunc CoreLParams :=
     { name := "Str.Length",
       typeArgs := [],
       inputs := [("x", mty[string])]
       output := mty[int],
-      concreteEval := some (unOpCeval (T:=BoogieLParams) String Int (.intConst (T:=BoogieLParams.mono)) (@LExpr.denoteString BoogieLParams)
+      concreteEval := some (unOpCeval (T:=CoreLParams) String Int (.intConst (T:=CoreLParams.mono)) (@LExpr.denoteString CoreLParams)
                             (fun s => (Int.ofNat (String.length s))))}
 
-def strConcatFunc : LFunc BoogieLParams :=
+def strConcatFunc : LFunc CoreLParams :=
     { name := "Str.Concat",
       typeArgs := [],
       inputs := [("x", mty[string]), ("y", mty[string])]
       output := mty[string],
-      concreteEval := some (binOpCeval String String (.strConst (T := BoogieLParams.mono))
+      concreteEval := some (binOpCeval String String (.strConst (T := CoreLParams.mono))
                             LExpr.denoteString String.append)}
 
-def strSubstrFunc : LFunc BoogieLParams :=
+def strSubstrFunc : LFunc CoreLParams :=
     { name := "Str.Substr",
       typeArgs := [],
       -- longest substring of `x` of length at most `n` starting at position `i`.
       inputs := [("x", mty[string]), ("i", mty[int]), ("n", mty[int])]
       output := mty[string] }
 
-def strToRegexFunc : LFunc BoogieLParams :=
+def strToRegexFunc : LFunc CoreLParams :=
     { name := "Str.ToRegEx",
       typeArgs := [],
       inputs := [("x", mty[string])]
       output := mty[regex] }
 
-def strInRegexFunc : LFunc BoogieLParams :=
+def strInRegexFunc : LFunc CoreLParams :=
     { name := "Str.InRegEx",
       typeArgs := [],
       inputs := [("x", mty[string]), ("y", mty[regex])]
       output := mty[bool] }
 
-def reAllCharFunc : LFunc BoogieLParams :=
+def reAllCharFunc : LFunc CoreLParams :=
     { name := "Re.AllChar",
       typeArgs := [],
       inputs := []
       output := mty[regex] }
 
-def reAllFunc : LFunc BoogieLParams :=
+def reAllFunc : LFunc CoreLParams :=
     { name := "Re.All",
       typeArgs := [],
       inputs := []
       output := mty[regex] }
 
-def reRangeFunc : LFunc BoogieLParams :=
+def reRangeFunc : LFunc CoreLParams :=
     { name := "Re.Range",
       typeArgs := [],
       inputs := [("x", mty[string]), ("y", mty[string])]
       output := mty[regex] }
 
-def reConcatFunc : LFunc BoogieLParams :=
+def reConcatFunc : LFunc CoreLParams :=
     { name := "Re.Concat",
       typeArgs := [],
       inputs := [("x", mty[regex]), ("y", mty[regex])]
       output := mty[regex] }
 
-def reStarFunc : LFunc BoogieLParams :=
+def reStarFunc : LFunc CoreLParams :=
     { name := "Re.Star",
       typeArgs := [],
       inputs := [("x", mty[regex])]
       output := mty[regex] }
 
-def rePlusFunc : LFunc BoogieLParams :=
+def rePlusFunc : LFunc CoreLParams :=
     { name := "Re.Plus",
       typeArgs := [],
       inputs := [("x", mty[regex])]
       output := mty[regex] }
 
-def reLoopFunc : LFunc BoogieLParams :=
+def reLoopFunc : LFunc CoreLParams :=
     { name := "Re.Loop",
       typeArgs := [],
       inputs := [("x", mty[regex]), ("n1", mty[int]), ("n2", mty[int])]
       output := mty[regex] }
 
-def reUnionFunc : LFunc BoogieLParams :=
+def reUnionFunc : LFunc CoreLParams :=
     { name := "Re.Union",
       typeArgs := [],
       inputs := [("x", mty[regex]), ("y", mty[regex])]
       output := mty[regex] }
 
-def reInterFunc : LFunc BoogieLParams :=
+def reInterFunc : LFunc CoreLParams :=
     { name := "Re.Inter",
       typeArgs := [],
       inputs := [("x", mty[regex]), ("y", mty[regex])]
       output := mty[regex] }
 
-def reCompFunc : LFunc BoogieLParams :=
+def reCompFunc : LFunc CoreLParams :=
     { name := "Re.Comp",
       typeArgs := [],
       inputs := [("x", mty[regex])]
       output := mty[regex] }
 
-def reNoneFunc : LFunc BoogieLParams :=
+def reNoneFunc : LFunc CoreLParams :=
     { name := "Re.None",
       typeArgs := [],
       inputs := []
       output := mty[regex] }
 
 /- A polymorphic `old` function with type `∀a. a → a`. -/
-def polyOldFunc : LFunc BoogieLParams :=
+def polyOldFunc : LFunc CoreLParams :=
     { name := "old",
       typeArgs := ["a"],
-      inputs := [((BoogieIdent.locl "x"), mty[%a])]
+      inputs := [((CoreIdent.locl "x"), mty[%a])]
       output := mty[%a]}
 
 /- A `Map` selection function with type `∀k, v. Map k v → k → v`. -/
-def mapSelectFunc : LFunc BoogieLParams :=
+def mapSelectFunc : LFunc CoreLParams :=
    { name := "select",
      typeArgs := ["k", "v"],
      inputs := [("m", mapTy mty[%k] mty[%v]), ("i", mty[%k])],
      output := mty[%v] }
 
 /- A `Map` update function with type `∀k, v. Map k v → k → v → Map k v`. -/
-def mapUpdateFunc : LFunc BoogieLParams :=
+def mapUpdateFunc : LFunc CoreLParams :=
    { name := "update",
      typeArgs := ["k", "v"],
      inputs := [("m", mapTy mty[%k] mty[%v]), ("i", mty[%k]), ("x", mty[%v])],
@@ -306,7 +306,7 @@ def mapUpdateFunc : LFunc BoogieLParams :=
      axioms :=
      [
       -- updateSelect: forall m: Map k v, kk: k, vv: v :: m[kk := vv][kk] == vv
-      ToBoogieIdent esM[∀(Map %k %v):
+      ToCoreIdent esM[∀(Map %k %v):
           (∀ (%k):
             (∀ (%v):{
               (((~select : (Map %k %v) → %k → %v)
@@ -314,7 +314,7 @@ def mapUpdateFunc : LFunc BoogieLParams :=
               (((~select : (Map %k %v) → %k → %v)
                 ((((~update : (Map %k %v) → %k → %v → (Map %k %v)) %2) %1) %0)) %1) == %0))],
       -- updatePreserve: forall m: Map k v, okk: k, kk: k, vv: v :: okk != kk ==> m[kk := vv][okk] == m[okk]
-      ToBoogieIdent esM[∀ (Map %k %v): -- %3 m
+      ToCoreIdent esM[∀ (Map %k %v): -- %3 m
           (∀ (%k): -- %2 okk
             (∀ (%k): -- %1 kk
               (∀ (%v): -- %0 vv
@@ -332,31 +332,31 @@ def mapUpdateFunc : LFunc BoogieLParams :=
                     ))))]
      ]
    }
-instance : Coe String BoogieLParams.Identifier where
+instance : Coe String CoreLParams.Identifier where
   coe | s => ⟨s, .unres⟩
 
-def emptyTriggersFunc : LFunc BoogieLParams :=
+def emptyTriggersFunc : LFunc CoreLParams :=
     { name := "Triggers.empty",
       typeArgs := [],
       inputs := [],
       output := mty[Triggers],
       concreteEval := none }
 
-def addTriggerGroupFunc : LFunc BoogieLParams :=
+def addTriggerGroupFunc : LFunc CoreLParams :=
     { name := "Triggers.addGroup",
       typeArgs := [],
       inputs := [("g", mty[TriggerGroup]), ("t", mty[Triggers])],
       output := mty[Triggers],
       concreteEval := none }
 
-def emptyTriggerGroupFunc : LFunc BoogieLParams :=
+def emptyTriggerGroupFunc : LFunc CoreLParams :=
     { name := "TriggerGroup.empty",
       typeArgs := [],
       inputs := [],
       output := mty[TriggerGroup],
       concreteEval := none }
 
-def addTriggerFunc : LFunc BoogieLParams :=
+def addTriggerFunc : LFunc CoreLParams :=
     { name := "TriggerGroup.addTrigger",
       typeArgs := ["a"],
       inputs := [("x", mty[%a]), ("t", mty[TriggerGroup])],
@@ -372,14 +372,14 @@ macro "ExpandBVOpFuncNames" "[" sizes:num,* "]" : term => do
     allOps := allOps ++ ops.toArray
   `([$(allOps),*])
 
-def bvConcatFunc (size : Nat) : LFunc BoogieLParams :=
+def bvConcatFunc (size : Nat) : LFunc CoreLParams :=
   { name := s!"Bv{size}.Concat",
     typeArgs := [],
     inputs := [("x", .bitvec size), ("y", .bitvec size)]
     output := .bitvec (size*2),
     concreteEval := none }
 
-def bvExtractFunc (size hi lo: Nat) : LFunc BoogieLParams :=
+def bvExtractFunc (size hi lo: Nat) : LFunc CoreLParams :=
   { name := s!"Bv{size}.Extract_{hi}_{lo}",
     typeArgs := [],
     inputs := [("x", .bitvec size)]
@@ -400,7 +400,7 @@ def bv64Extract_31_0_Func  := bvExtractFunc 64 31  0
 def bv64Extract_15_0_Func  := bvExtractFunc 64 15  0
 def bv64Extract_7_0_Func   := bvExtractFunc 64  7  0
 
-def Factory : @Factory BoogieLParams := #[
+def Factory : @Factory CoreLParams := #[
   intAddFunc,
   intSubFunc,
   intMulFunc,
@@ -408,10 +408,10 @@ def Factory : @Factory BoogieLParams := #[
   intModFunc,
   intNegFunc,
 
-  @intLtFunc BoogieLParams _,
-  @intLeFunc BoogieLParams _,
-  @intGtFunc BoogieLParams _,
-  @intGeFunc BoogieLParams _,
+  @intLtFunc CoreLParams _,
+  @intLeFunc CoreLParams _,
+  @intGtFunc CoreLParams _,
+  @intGeFunc CoreLParams _,
 
   realAddFunc,
   realSubFunc,
@@ -423,11 +423,11 @@ def Factory : @Factory BoogieLParams := #[
   realGtFunc,
   realGeFunc,
 
-  @boolAndFunc BoogieLParams _,
-  @boolOrFunc BoogieLParams _,
-  @boolImpliesFunc BoogieLParams _,
-  @boolEquivFunc BoogieLParams _,
-  @boolNotFunc BoogieLParams _,
+  @boolAndFunc CoreLParams _,
+  @boolOrFunc CoreLParams _,
+  @boolImpliesFunc CoreLParams _,
+  @boolEquivFunc CoreLParams _,
+  @boolNotFunc CoreLParams _,
 
   strLengthFunc,
   strConcatFunc,
@@ -479,7 +479,7 @@ elab "DefBVOpFuncExprs" "[" sizes:num,* "]" : command => do
       let funcName := mkIdent (.str (.str .anonymous "Core") s!"bv{s}{op}Func")
       elabCommand (← `(def $opName : Expression.Expr := ($funcName).opExpr))
 
-instance : Inhabited BoogieLParams.Metadata where
+instance : Inhabited CoreLParams.Metadata where
   default := ()
 
 DefBVOpFuncExprs [1, 8, 16, 32, 64]
@@ -503,7 +503,7 @@ def addTriggerGroupOp : Expression.Expr := addTriggerGroupFunc.opExpr
 def emptyTriggerGroupOp : Expression.Expr :=  emptyTriggerGroupFunc.opExpr
 def addTriggerOp : Expression.Expr := addTriggerFunc.opExpr
 
-instance : Inhabited (⟨ExpressionMetadata, BoogieIdent⟩: LExprParams).Metadata where
+instance : Inhabited (⟨ExpressionMetadata, CoreIdent⟩: LExprParams).Metadata where
   default := ()
 
 def intAddOp : Expression.Expr := intAddFunc.opExpr
@@ -525,11 +525,11 @@ def realLtOp : Expression.Expr := realLtFunc.opExpr
 def realLeOp : Expression.Expr := realLeFunc.opExpr
 def realGtOp : Expression.Expr := realGtFunc.opExpr
 def realGeOp : Expression.Expr := realGeFunc.opExpr
-def boolAndOp : Expression.Expr := @boolAndFunc.opExpr BoogieLParams _
-def boolOrOp : Expression.Expr := @boolOrFunc.opExpr BoogieLParams _
-def boolImpliesOp : Expression.Expr := @boolImpliesFunc.opExpr BoogieLParams _
-def boolEquivOp : Expression.Expr := @boolEquivFunc.opExpr BoogieLParams _
-def boolNotOp : Expression.Expr := @boolNotFunc.opExpr BoogieLParams _
+def boolAndOp : Expression.Expr := @boolAndFunc.opExpr CoreLParams _
+def boolOrOp : Expression.Expr := @boolOrFunc.opExpr CoreLParams _
+def boolImpliesOp : Expression.Expr := @boolImpliesFunc.opExpr CoreLParams _
+def boolEquivOp : Expression.Expr := @boolEquivFunc.opExpr CoreLParams _
+def boolNotOp : Expression.Expr := @boolNotFunc.opExpr CoreLParams _
 def strLengthOp : Expression.Expr := strLengthFunc.opExpr
 def strConcatOp : Expression.Expr := strConcatFunc.opExpr
 def strSubstrOp : Expression.Expr := strSubstrFunc.opExpr
@@ -561,6 +561,6 @@ def mkTriggerExpr (ts : List (List Expression.Expr)) : Expression.Expr :=
 Get all the built-in functions supported by Boogie.
 -/
 def builtinFunctions : Array String :=
-  Factory.map (fun f => BoogieIdent.toPretty f.name)
+  Factory.map (fun f => CoreIdent.toPretty f.name)
 
 end Core

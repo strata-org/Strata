@@ -6,7 +6,7 @@
 
 import Strata.DDM.Integration.Lean
 import Strata.DDM.Util.Format
-import Strata.Languages.Core.Boogie
+import Strata.Languages.Core.Core
 
 ---------------------------------------------------------------------
 

@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.BoogieGen
+import Strata.Languages.Core.CoreGen
 import Strata.Languages.Core.Procedure
 
 namespace Core
@@ -58,7 +58,7 @@ def oldExpr
   (e : Expression.Expr)
   : Expression.Expr
   :=
-  .app mApp (.op mOp (BoogieIdent.unres "old") tyold) e
+  .app mApp (.op mOp (CoreIdent.unres "old") tyold) e
 
 @[match_pattern]
 def oldVar
@@ -72,7 +72,7 @@ def oldVar
   := @oldExpr mApp mOp tyold (.fvar mVar v tyv)
 
 inductive IsOldPred : Expression.Expr → Prop where
-  | oldPred : IsOldPred (.op m (BoogieIdent.unres "old") ty)
+  | oldPred : IsOldPred (.op m (CoreIdent.unres "old") ty)
 
 def IsOldPred.decidablePred (e : Expression.Expr): Decidable (IsOldPred e) :=
   match He : e with
@@ -163,7 +163,7 @@ This function is agnostic of old expression normalization (see
 -/
 def containsOldExpr (e : Expression.Expr) : Bool :=
   match e with
-  | .op _ (BoogieIdent.unres "old") _ => true
+  | .op _ (CoreIdent.unres "old") _ => true
   | .op _ _ _ => false
   | .const _ _ | .bvar _ _ | .fvar _ _ _ => false
   | .abs _ _ e' => containsOldExpr e'
@@ -191,8 +191,8 @@ def extractOldExprVars (expr : Expression.Expr)
   | .abs _ _ e => extractOldExprVars e
   | .quant _ _ _ tr e => extractOldExprVars tr ++ extractOldExprVars e
   | .app _ e1 e2 => match e1, e2 with
-    | .op _ (BoogieIdent.unres "old") _, .fvar _ v _ => [v]
-    | .op _ (BoogieIdent.unres "old") _, _ => panic! s!"Old expression {expr} not normalized"
+    | .op _ (CoreIdent.unres "old") _, .fvar _ v _ => [v]
+    | .op _ (CoreIdent.unres "old") _, _ => panic! s!"Old expression {expr} not normalized"
     | e1', e2' => extractOldExprVars e1' ++ extractOldExprVars e2'
   | .ite _ c t e => extractOldExprVars c ++ extractOldExprVars t ++ extractOldExprVars e
   | .eq _ e1 e2 => extractOldExprVars e1 ++ extractOldExprVars e2
@@ -212,7 +212,7 @@ def substOld (var : Expression.Ident) (s e : Expression.Expr) :
   | .quant m qk ty tr' e' => .quant m qk ty (substOld var s tr') (substOld var s e')
   | .app m e1 e2 =>
     match e1, e2 with
-    | .op _ (BoogieIdent.unres "old") _, .fvar _ x _ =>
+    | .op _ (CoreIdent.unres "old") _, .fvar _ x _ =>
       -- NOTE: We rely on the typeChecker to normalize `e` ensure that `old` is
       -- only used with an `fvar`.
       if x == var
@@ -237,7 +237,7 @@ def substsOldExpr (sm : Map Expression.Ident Expression.Expr) (e : Expression.Ex
   | .quant m qk ty tr' e' => .quant m qk ty (substsOldExpr sm tr') (substsOldExpr sm e')
   | .app m e1 e2 =>
     match e1, e2 with
-    | .op _ (BoogieIdent.unres "old") _, .fvar _ x _ =>
+    | .op _ (CoreIdent.unres "old") _, .fvar _ x _ =>
       match sm.find? x with
       | some s => s
       | none => e
@@ -391,7 +391,7 @@ theorem IsOldPredNormalize :
         simp [normalizeOldExpr] at Hold
         cases Hold
       case neg Hneg' =>
-        unfold BoogieIdent.unres at *
+        unfold CoreIdent.unres at *
         unfold normalizeOldExpr at Hold
         split at Hold <;> simp_all
         split at Hold <;> simp_all
@@ -523,7 +523,7 @@ case app fn e fn_ih e_ih =>
           cases Hval with
           | app Hval1 Hval2 Hnold =>
             have Hold'' := IsOldPredNormalize Hval1 Hold'
-            cases Hold'' <;> simp [BoogieIdent.unres] at *
+            cases Hold'' <;> simp [CoreIdent.unres] at *
 case ite c t e c_ih t_ih e_ih =>
   apply c_ih
   cases Hval <;> assumption

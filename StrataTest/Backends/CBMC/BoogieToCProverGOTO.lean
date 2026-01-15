@@ -97,17 +97,17 @@ def Boogie.Cmd.renameVars (frto : Map String String) (c : Imperative.Cmd Core.Ex
   match c with
   | .init name ty e _ =>
     let e' := substVarNames e frto
-    let name_alt := frto.find? (Core.BoogieIdent.toPretty name)
-    let new := name_alt.getD (Core.BoogieIdent.toPretty name)
+    let name_alt := frto.find? (Core.CoreIdent.toPretty name)
+    let new := name_alt.getD (Core.CoreIdent.toPretty name)
     .init new ty e' .empty
   | .set name e _ =>
     let e' := substVarNames e frto
-    let name_alt := frto.find? (Core.BoogieIdent.toPretty name)
-    let new := name_alt.getD (Core.BoogieIdent.toPretty name)
+    let name_alt := frto.find? (Core.CoreIdent.toPretty name)
+    let new := name_alt.getD (Core.CoreIdent.toPretty name)
     .set new e' .empty
   | .havoc name _ =>
-    let name_alt := frto.find? (Core.BoogieIdent.toPretty name)
-    let new := name_alt.getD (Core.BoogieIdent.toPretty name)
+    let name_alt := frto.find? (Core.CoreIdent.toPretty name)
+    let new := name_alt.getD (Core.CoreIdent.toPretty name)
     .havoc new .empty
   | .assume label e _ =>
     let e' := substVarNames e frto
@@ -166,7 +166,7 @@ def transformToGoto (boogie : Core.Program) : Except Format CProverGOTO.Context 
     | none => .error f!"[transformToGoto] We can process only Strata Core procedures at this time. \
                         Declaration encountered: {decl}"
     | some p =>
-      let pname := Core.BoogieIdent.toPretty p.header.name
+      let pname := Core.CoreIdent.toPretty p.header.name
 
       if !p.header.typeArgs.isEmpty then
         .error f!"[transformToGoto] Translation for polymorphic Boogie procedures is unimplemented."
@@ -182,13 +182,13 @@ def transformToGoto (boogie : Core.Program) : Except Format CProverGOTO.Context 
       let ret_tys ← p.header.outputs.values.mapM (fun ty => Lambda.LMonoTy.toGotoType ty)
       let ret_ty := if ret_tys.isEmpty then CProverGOTO.Ty.Empty else ret_tys[0]!
 
-      let formals := p.header.inputs.keys.map Core.BoogieIdent.toPretty
+      let formals := p.header.inputs.keys.map Core.CoreIdent.toPretty
       let formals_tys ← p.header.inputs.values.mapM (fun ty => Lambda.LMonoTy.toGotoType ty)
       let new_formals := formals.map (fun f => CProverGOTO.mkFormalSymbol pname f)
       let formals_renamed := formals.zip new_formals
       let formals_tys : Map String CProverGOTO.Ty := formals.zip formals_tys
 
-      let locals := (Imperative.Block.definedVars p.body).map Core.BoogieIdent.toPretty
+      let locals := (Imperative.Block.definedVars p.body).map Core.CoreIdent.toPretty
       let new_locals := locals.map (fun l => CProverGOTO.mkLocalSymbol pname l)
       let locals_renamed := locals.zip new_locals
 
@@ -204,7 +204,7 @@ def transformToGoto (boogie : Core.Program) : Except Format CProverGOTO.Context 
           { type := .END_FUNCTION, locationNum := ans.nextLoc + 1}]
       let insts := ans.instructions ++ ending_insts
 
-      let pgm := {  name := Core.BoogieIdent.toPretty p.header.name,
+      let pgm := {  name := Core.CoreIdent.toPretty p.header.name,
                     parameterIdentifiers := new_formals.toArray,
                     instructions := insts
                     }

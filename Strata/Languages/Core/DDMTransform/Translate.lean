@@ -6,7 +6,7 @@
 
 import Strata.DDM.AST
 import Strata.Languages.Core.DDMTransform.Parse
-import Strata.Languages.Core.BoogieGen
+import Strata.Languages.Core.CoreGen
 import Strata.DDM.Util.DecimalRat
 
 
@@ -154,7 +154,7 @@ structure GenNum where
 
 structure TransBindings where
   boundTypeVars : Array TyIdentifier := #[]
-  boundVars : Array (LExpr BoogieLParams.mono) := #[]
+  boundVars : Array (LExpr CoreLParams.mono) := #[]
   freeVars  : Array Core.Decl := #[]
   gen : GenNum := (GenNum.mk 0 0 0 0 0)
 
@@ -193,7 +193,7 @@ instance : Inhabited (Core.Decl × TransBindings) where
 instance : Inhabited (Core.Decls × TransBindings) where
   default := ([], {})
 
-instance : Inhabited (List BoogieIdent × TransBindings) where
+instance : Inhabited (List CoreIdent × TransBindings) where
   default := ([], {})
 
 instance : Inhabited (List TyIdentifier × TransBindings) where
@@ -337,21 +337,21 @@ def translateTypeDecl (bindings : TransBindings) (op : Operation) :
 
 ---------------------------------------------------------------------
 
-def translateLhs (arg : Arg) : TransM BoogieIdent := do
+def translateLhs (arg : Arg) : TransM CoreIdent := do
   let .op op := arg
     | TransM.error s!"translateLhs expected op {repr arg}"
   match op.name, op.args with
-  | q`Core.lhsIdent, #[id] => translateIdent BoogieIdent id
+  | q`Core.lhsIdent, #[id] => translateIdent CoreIdent id
   -- (TODO) Implement lhsArray.
   | _, _ => TransM.error s!"translateLhs: unimplemented for {repr arg}"
 
 def translateBindMk (bindings : TransBindings) (arg : Arg) :
-   TransM (BoogieIdent × List TyIdentifier × LMonoTy) := do
+   TransM (CoreIdent × List TyIdentifier × LMonoTy) := do
   let .op op := arg
     | TransM.error s!"translateBindMk expected op {repr arg}"
   match op.name, op.args with
   | q`Core.bind_mk, #[ida, targsa, tpa] =>
-    let id ← translateIdent BoogieIdent ida
+    let id ← translateIdent CoreIdent ida
     let args ← translateTypeArgs targsa
     let tp ← translateLMonoTy bindings tpa
     return (id, args.toList, tp)
@@ -359,12 +359,12 @@ def translateBindMk (bindings : TransBindings) (arg : Arg) :
     TransM.error s!"translateBindMk unimplemented for {repr arg}"
 
 def translateMonoBindMk (bindings : TransBindings) (arg : Arg) :
-   TransM (BoogieIdent × LMonoTy) := do
+   TransM (CoreIdent × LMonoTy) := do
   let .op op := arg
     | TransM.error s!"translateMonoBindMk expected op {repr arg}"
   match op.name, op.args with
   | q`Core.mono_bind_mk, #[ida, tpa] =>
-    let id ← translateIdent BoogieIdent ida
+    let id ← translateIdent CoreIdent ida
     let tp ← translateLMonoTy bindings tpa
     return (id, tp)
   | _, _ =>
@@ -721,7 +721,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   | .fn _ q`Core.bvnot, [tpa, xa] =>
     let tp ← translateLMonoTy bindings (dealiasTypeArg p tpa)
     let x ← translateExpr p bindings xa
-    let fn : LExpr BoogieLParams.mono ←
+    let fn : LExpr CoreLParams.mono ←
       translateFn (.some tp) q`Core.bvnot
     return (.app () fn x)
   -- If-then-else expression
@@ -786,7 +786,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let kty ← translateLMonoTy bindings _ktp
      let vty ← translateLMonoTy bindings _vtp
      -- TODO: use Boogie.mapSelectOp, but specialized
-     let fn : LExpr BoogieLParams.mono := (LExpr.op () "select" (.some (LMonoTy.mkArrow (mapTy kty vty) [kty, vty])))
+     let fn : LExpr CoreLParams.mono := (LExpr.op () "select" (.some (LMonoTy.mkArrow (mapTy kty vty) [kty, vty])))
      let m ← translateExpr p bindings ma
      let i ← translateExpr p bindings ia
      return .mkApp () fn [m, i]
@@ -794,7 +794,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
      let kty ← translateLMonoTy bindings _ktp
      let vty ← translateLMonoTy bindings _vtp
      -- TODO: use Boogie.mapUpdateOp, but specialized
-     let fn : LExpr BoogieLParams.mono := (LExpr.op () "update" (.some (LMonoTy.mkArrow (mapTy kty vty) [kty, vty, mapTy kty vty])))
+     let fn : LExpr CoreLParams.mono := (LExpr.op () "update" (.some (LMonoTy.mkArrow (mapTy kty vty) [kty, vty, mapTy kty vty])))
      let m ← translateExpr p bindings ma
      let i ← translateExpr p bindings ia
      let x ← translateExpr p bindings xa
@@ -927,7 +927,7 @@ def translateVarStatement (bindings : TransBindings) (decls : Array Arg) :
     let (stmts, bindings) ← initVarStmts tpids bindings
     let newVars ← tpids.mapM (fun (id, ty) =>
                     if h: ty.isMonoType then
-                      return ((LExpr.fvar () id (ty.toMonoType h)): LExpr BoogieLParams.mono)
+                      return ((LExpr.fvar () id (ty.toMonoType h)): LExpr CoreLParams.mono)
                     else
                       TransM.error s!"translateVarStatement requires {id} to have a monomorphic type, but it has type {ty}")
     let bbindings := bindings.boundVars ++ newVars
@@ -939,10 +939,10 @@ def translateInitStatement (p : Program) (bindings : TransBindings) (args : Arra
     TransM.error "translateInitStatement unexpected arg length {repr decls}"
   else
     let mty ← translateLMonoTy bindings args[0]!
-    let lhs ← translateIdent BoogieIdent args[1]!
+    let lhs ← translateIdent CoreIdent args[1]!
     let val ← translateExpr p bindings args[2]!
     let ty := (.forAll [] mty)
-    let newBinding: LExpr BoogieLParams.mono := LExpr.fvar () lhs mty
+    let newBinding: LExpr CoreLParams.mono := LExpr.fvar () lhs mty
     let bbindings := bindings.boundVars ++ [newBinding]
     return ([.init lhs ty val], { bindings with boundVars := bbindings })
 
@@ -963,7 +963,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let md ← getOpMetaData op
     return ([.set lhs val md], bindings)
   | q`Core.havoc_statement, #[ida] =>
-    let id ← translateIdent BoogieIdent ida
+    let id ← translateIdent CoreIdent ida
     let md ← getOpMetaData op
     return ([.havoc id md], bindings)
   | q`Core.assert, #[la, ca] =>
@@ -1000,7 +1000,7 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let md ← getOpMetaData op
     return ([.loop c .none i bodyss md], bindings)
   | q`Core.call_statement, #[lsa, fa, esa] =>
-    let ls  ← translateCommaSep (translateIdent BoogieIdent) lsa
+    let ls  ← translateCommaSep (translateIdent CoreIdent) lsa
     let f   ← translateIdent String fa
     let es  ← translateCommaSep (fun a => translateExpr p bindings a) esa
     let md ← getOpMetaData op
@@ -1049,19 +1049,19 @@ end
 ---------------------------------------------------------------------
 
 def translateInitMkBinding (bindings : TransBindings) (op : Arg) :
-  TransM (BoogieIdent × LMonoTy) := do
+  TransM (CoreIdent × LMonoTy) := do
   -- (FIXME) Account for metadata.
   let bargs ← checkOpArg op q`Core.mkBinding 2
-  let id ← translateIdent BoogieIdent bargs[0]!
+  let id ← translateIdent CoreIdent bargs[0]!
   let tp ← translateLMonoTy bindings bargs[1]!
   return (id, tp)
 
 def translateInitMkBindings (bindings : TransBindings) (ops : Array Arg) :
-  TransM (Array (BoogieIdent × LMonoTy)) := do
+  TransM (Array (CoreIdent × LMonoTy)) := do
   ops.mapM (fun op => translateInitMkBinding bindings op)
 
 def translateBindings (bindings : TransBindings) (op : Arg) :
-  TransM (ListMap BoogieIdent LMonoTy) := do
+  TransM (ListMap CoreIdent LMonoTy) := do
   let bargs ← checkOpArg op q`Core.mkBindings 1
   match bargs[0]! with
   | .seq _ .comma args =>
@@ -1070,9 +1070,9 @@ def translateBindings (bindings : TransBindings) (op : Arg) :
   | _ =>
     TransM.error s!"translateBindings expects a comma separated list: {repr op}"
 
-def translateModifies (arg : Arg) : TransM BoogieIdent := do
+def translateModifies (arg : Arg) : TransM CoreIdent := do
   let args ← checkOpArg arg q`Core.modifies_spec 1
-  translateIdent BoogieIdent args[0]!
+  translateIdent CoreIdent args[0]!
 
 def translateOptionFree (arg : Arg) : TransM Procedure.CheckAttr := do
   let .option _ free := arg
@@ -1083,8 +1083,8 @@ def translateOptionFree (arg : Arg) : TransM Procedure.CheckAttr := do
     return .Free
   | none => return .Default
 
-def translateRequires (p : Program) (name : BoogieIdent) (count : Nat) (bindings : TransBindings) (arg : Arg) :
-  TransM (ListMap BoogieLabel Procedure.Check) := do
+def translateRequires (p : Program) (name : CoreIdent) (count : Nat) (bindings : TransBindings) (arg : Arg) :
+  TransM (ListMap CoreLabel Procedure.Check) := do
   let args ← checkOpArg arg q`Core.requires_spec 3
   let l ← translateOptionLabel s!"{name.name}_requires_{count}" args[0]!
   let free? ← translateOptionFree args[1]!
@@ -1092,8 +1092,8 @@ def translateRequires (p : Program) (name : BoogieIdent) (count : Nat) (bindings
   let md ← getArgMetaData arg
   return [(l, { expr := e, attr := free?, md := md })]
 
-def translateEnsures (p : Program) (name : BoogieIdent) (count : Nat) (bindings : TransBindings) (arg : Arg) :
-  TransM (ListMap BoogieLabel Procedure.Check) := do
+def translateEnsures (p : Program) (name : CoreIdent) (count : Nat) (bindings : TransBindings) (arg : Arg) :
+  TransM (ListMap CoreLabel Procedure.Check) := do
   let args ← checkOpArg arg q`Core.ensures_spec 3
   let l ← translateOptionLabel s!"{name.name}_ensures_{count}" args[0]!
   let free? ← translateOptionFree args[1]!
@@ -1101,8 +1101,8 @@ def translateEnsures (p : Program) (name : BoogieIdent) (count : Nat) (bindings 
   let md ← getArgMetaData arg
   return [(l, { expr := e, attr := free?, md := md })]
 
-def translateSpecElem (p : Program) (name : BoogieIdent) (count : Nat) (bindings : TransBindings) (arg : Arg) :
-  TransM (List BoogieIdent × ListMap BoogieLabel Procedure.Check × ListMap BoogieLabel Procedure.Check) := do
+def translateSpecElem (p : Program) (name : CoreIdent) (count : Nat) (bindings : TransBindings) (arg : Arg) :
+  TransM (List CoreIdent × ListMap CoreLabel Procedure.Check × ListMap CoreLabel Procedure.Check) := do
   let .op op := arg
     | TransM.error s!"translateSpecElem expects an op {repr arg}"
   match op.name with
@@ -1118,8 +1118,8 @@ def translateSpecElem (p : Program) (name : BoogieIdent) (count : Nat) (bindings
   | _ =>
     TransM.error s!"translateSpecElem unimplemented for {repr arg}"
 
-partial def translateSpec (p : Program) (name : BoogieIdent) (bindings : TransBindings) (arg : Arg) :
-  TransM (List BoogieIdent × ListMap BoogieLabel Procedure.Check × ListMap BoogieLabel Procedure.Check) := do
+partial def translateSpec (p : Program) (name : CoreIdent) (bindings : TransBindings) (arg : Arg) :
+  TransM (List CoreIdent × ListMap CoreLabel Procedure.Check × ListMap CoreLabel Procedure.Check) := do
   let sargs ← checkOpArg arg q`Core.spec_mk 1
   let .seq _ .none args := sargs[0]!
     | TransM.error s!"Invalid specs {repr sargs[0]!}"
@@ -1136,7 +1136,7 @@ partial def translateSpec (p : Program) (name : BoogieIdent) (bindings : TransBi
 def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
   let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_procedure 6
-  let pname ← translateIdent BoogieIdent op.args[0]!
+  let pname ← translateIdent CoreIdent op.args[0]!
   let typeArgs ← translateTypeArgs op.args[1]!
   let sig ← translateBindings bindings op.args[2]!
   let ret ← translateOptionMonoDeclList bindings op.args[3]!
@@ -1173,7 +1173,7 @@ def translateProcedure (p : Program) (bindings : TransBindings) (op : Operation)
 def translateConstant (bindings : TransBindings) (op : Operation) :
   TransM (Core.Decl × TransBindings) := do
   let _ ← @checkOp (Core.Decl × TransBindings) op q`Core.command_constdecl 3
-  let cname ← translateIdent BoogieIdent op.args[0]!
+  let cname ← translateIdent CoreIdent op.args[0]!
   let typeArgs ← translateTypeArgs op.args[1]!
   let ret ← translateLMonoTy bindings op.args[2]!
   let md ← getOpMetaData op
@@ -1234,7 +1234,7 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
     match status with
     | .Definition  => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndef  6
     | .Declaration => @checkOp (Core.Decl × TransBindings) op q`Core.command_fndecl 4
-  let fname ← translateIdent BoogieIdent op.args[0]!
+  let fname ← translateIdent CoreIdent op.args[0]!
   let typeArgs ← translateTypeArgs op.args[1]!
   let sig ← translateBindings bindings op.args[2]!
   let ret ← translateLMonoTy bindings op.args[3]!
@@ -1273,9 +1273,9 @@ with types translated from `TypeExpr` to `LMonoTy`.
 -/
 structure TransConstructorInfo where
   /-- Constructor name -/
-  name : BoogieIdent
+  name : CoreIdent
   /-- Fields as (fieldName, fieldType) pairs with translated types -/
-  fields : Array (BoogieIdent × LMonoTy)
+  fields : Array (CoreIdent × LMonoTy)
   deriving Repr
 
 /--
@@ -1376,7 +1376,7 @@ def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) 
 
     -- Generate factory from LDatatype and convert to Core.Decl
     -- (used only for bindings.freeVars, not for allDecls)
-    let factory ← match ldatatype.genFactory (T := BoogieLParams) with
+    let factory ← match ldatatype.genFactory (T := CoreLParams) with
       | .ok f => pure f
       | .error e => TransM.error s!"Failed to generate datatype factory: {e}"
     let funcDecls : List Core.Decl := factory.toList.map fun func =>

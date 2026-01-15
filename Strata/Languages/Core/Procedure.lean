@@ -23,22 +23,22 @@ instance : DecidableEq ExpressionMetadata :=
 instance : Repr ExpressionMetadata :=
   show Repr Unit from inferInstance
 
-instance : DecidableEq (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : LExprParamsT).base.Metadata :=
+instance : DecidableEq (⟨⟨ExpressionMetadata, CoreIdent⟩, LMonoTy⟩ : LExprParamsT).base.Metadata :=
   show DecidableEq ExpressionMetadata from inferInstance
 
-instance : DecidableEq (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : LExprParamsT).base.IDMeta :=
-  show DecidableEq BoogieIdent from inferInstance
+instance : DecidableEq (⟨⟨ExpressionMetadata, CoreIdent⟩, LMonoTy⟩ : LExprParamsT).base.IDMeta :=
+  show DecidableEq CoreIdent from inferInstance
 
-instance : DecidableEq (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : LExprParamsT).TypeType :=
+instance : DecidableEq (⟨⟨ExpressionMetadata, CoreIdent⟩, LMonoTy⟩ : LExprParamsT).TypeType :=
   show DecidableEq LMonoTy from inferInstance
 
-instance : Repr (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : LExprParamsT).base.Metadata :=
+instance : Repr (⟨⟨ExpressionMetadata, CoreIdent⟩, LMonoTy⟩ : LExprParamsT).base.Metadata :=
   show Repr ExpressionMetadata from inferInstance
 
-instance : Repr (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : LExprParamsT).base.IDMeta :=
-  show Repr BoogieIdent from inferInstance
+instance : Repr (⟨⟨ExpressionMetadata, CoreIdent⟩, LMonoTy⟩ : LExprParamsT).base.IDMeta :=
+  show Repr CoreIdent from inferInstance
 
-instance : Repr (⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩ : LExprParamsT).TypeType :=
+instance : Repr (⟨⟨ExpressionMetadata, CoreIdent⟩, LMonoTy⟩ : LExprParamsT).TypeType :=
   show Repr LMonoTy from inferInstance
 
 instance : Repr Expression.Expr :=
@@ -47,7 +47,7 @@ instance : Repr Expression.Expr :=
 /-! # Boogie Procedures -/
 
 structure Procedure.Header where
-  name     : BoogieIdent
+  name     : CoreIdent
   typeArgs : List TyIdentifier
   inputs   : @LMonoTySignature Visibility
   outputs  : @LMonoTySignature Visibility
@@ -93,8 +93,8 @@ def Procedure.Check.eraseTypes (c : Procedure.Check) : Procedure.Check :=
 
 structure Procedure.Spec where
   modifies       : List Expression.Ident
-  preconditions  : ListMap BoogieLabel Procedure.Check
-  postconditions : ListMap BoogieLabel Procedure.Check
+  preconditions  : ListMap CoreLabel Procedure.Check
+  postconditions : ListMap CoreLabel Procedure.Check
   deriving Inhabited, Repr
 
 instance : ToFormat Procedure.Spec where
@@ -109,14 +109,14 @@ def Procedure.Spec.eraseTypes (s : Procedure.Spec) : Procedure.Spec :=
     postconditions := s.postconditions.map (fun (l, c) => (l, c.eraseTypes))
   }
 
-def Procedure.Spec.getCheckExprs (conds : ListMap BoogieLabel Procedure.Check) :
+def Procedure.Spec.getCheckExprs (conds : ListMap CoreLabel Procedure.Check) :
   List Expression.Expr :=
   let checks := conds.values
   checks.map (fun c => c.expr)
 
 def Procedure.Spec.updateCheckExprs
-  (es : List Expression.Expr) (conds : ListMap BoogieLabel Procedure.Check) :
-  ListMap BoogieLabel Procedure.Check :=
+  (es : List Expression.Expr) (conds : ListMap CoreLabel Procedure.Check) :
+  ListMap CoreLabel Procedure.Check :=
   let checks := go es conds.values
   conds.keys.zip checks
   where go (es : List Expression.Expr) (checks : List Procedure.Check) :=

@@ -64,7 +64,7 @@ if not PyReMatch(REGEX, name, 0) then
 open Core
 open Lambda LTy.Syntax LExpr.SyntaxMono
 
-def reCompileFunc : LFunc Core.BoogieLParams :=
+def reCompileFunc : LFunc Core.CoreLParams :=
     { name := "PyReCompile",
       typeArgs := [],
       inputs := [("string", mty[string]),
@@ -94,7 +94,7 @@ def reCompileFunc : LFunc Core.BoogieLParams :=
           | _ => .none)
       }
 
-def ReFactory : @Factory Core.BoogieLParams :=
+def ReFactory : @Factory Core.CoreLParams :=
     #[
       reCompileFunc
     ]

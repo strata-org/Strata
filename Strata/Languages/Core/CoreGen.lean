@@ -11,7 +11,7 @@ import Strata.DL.Util.ListUtils
 open Core Lambda Imperative
 
 /-! ## Strata Core Identifier Generator
-  This file contains a Boogie Identifier generator `BoogieGenState.gen`, where the
+  This file contains a Boogie Identifier generator `CoreGenState.gen`, where the
   uniqueness of the generated identifiers is designed to be provable. It relies on a
   `StringGenState` to generate unique strings (See `StringGen.lean`).
 
@@ -19,52 +19,52 @@ open Core Lambda Imperative
 -/
 namespace Names
 
-def initVarValue (id : BoogieIdent) : Expression.Expr :=
-  .fvar () (BoogieIdent.unres ("init_" ++ id.name)) none
+def initVarValue (id : CoreIdent) : Expression.Expr :=
+  .fvar () (CoreIdent.unres ("init_" ++ id.name)) none
 
 end Names
 
 namespace Core
 
-structure BoogieGenState where
+structure CoreGenState where
   cs : StringGenState
-  generated : List BoogieIdent := []
+  generated : List CoreIdent := []
 
-def BoogieGenState.WF (σ : BoogieGenState)
+def CoreGenState.WF (σ : CoreGenState)
   := StringGenState.WF σ.cs ∧
-    List.map Core.BoogieIdent.temp σ.cs.generated.unzip.snd = σ.generated ∧
+    List.map Core.CoreIdent.temp σ.cs.generated.unzip.snd = σ.generated ∧
     σ.generated.Nodup ∧
-    Forall (BoogieIdent.isTemp ·) σ.generated
+    Forall (CoreIdent.isTemp ·) σ.generated
 
-instance : HasSubset BoogieGenState where
+instance : HasSubset CoreGenState where
   Subset σ₁ σ₂ := σ₁.generated.Subset σ₂.generated
 
 @[simp]
-def BoogieGenState.emp : BoogieGenState := { cs := .emp, generated := [] }
+def CoreGenState.emp : CoreGenState := { cs := .emp, generated := [] }
 
-/-- A BoogieIdent generator
-    NOTE: we need to wrap the prefix into a BoogieIdent in order to conform with the interface of UniqueLabelGen.gen
+/-- A CoreIdent generator
+    NOTE: we need to wrap the prefix into a CoreIdent in order to conform with the interface of UniqueLabelGen.gen
     TODO: Maybe use genIdent or genIdents?
     -/
-def BoogieGenState.gen (pf : BoogieIdent) (σ : BoogieGenState)
-  : BoogieIdent × BoogieGenState :=
+def CoreGenState.gen (pf : CoreIdent) (σ : CoreGenState)
+  : CoreIdent × CoreGenState :=
   let (s, cs') := StringGenState.gen pf.name σ.cs
-  let newState : BoogieGenState := { cs := cs', generated := (.temp s) :: σ.generated }
+  let newState : CoreGenState := { cs := cs', generated := (.temp s) :: σ.generated }
   ((.temp s), newState)
 
-theorem genBoogieIdentTemp :
-  BoogieGenState.gen pf s = (l, s') → BoogieIdent.isTemp l := by
+theorem genCoreIdentTemp :
+  CoreGenState.gen pf s = (l, s') → CoreIdent.isTemp l := by
   intros Hgen
-  simp [BoogieGenState.gen] at Hgen
+  simp [CoreGenState.gen] at Hgen
   rw [← Hgen.1]
   constructor
 
-theorem BoogieGenState.WFMono' :
-  BoogieGenState.WF s →
-  BoogieGenState.gen pf s = (l, s') →
-  BoogieGenState.WF s' := by
+theorem CoreGenState.WFMono' :
+  CoreGenState.WF s →
+  CoreGenState.gen pf s = (l, s') →
+  CoreGenState.WF s' := by
   intros Hwf Hgen
-  unfold BoogieGenState.WF at Hwf
+  unfold CoreGenState.WF at Hwf
   simp [gen] at Hgen
   simp [← Hgen]
   generalize h1 : (StringGenState.gen pf.name s.cs).fst = st
@@ -76,7 +76,7 @@ theorem BoogieGenState.WFMono' :
   constructor
   simp_all
   simp [← Hwf.right.left, ← Hgen.left, ← Hstrgen.right, ← Hstrgen.left]
-  constructor <;> try simp [BoogieIdent.isTemp]
+  constructor <;> try simp [CoreIdent.isTemp]
   simp [← Hwf.right.left]
   intro x str Hx
   false_or_by_contra
@@ -86,8 +86,8 @@ theorem BoogieGenState.WFMono' :
   have Hnodup := Hnodup.left x
   simp_all
 
-theorem BoogieGenState.WFMono : ∀ (γ γ' : BoogieGenState) (pf l : BoogieIdent),
-  BoogieGenState.gen pf γ = (l, γ') → WF γ → WF γ' ∧ l ∈ γ'.generated ∧ γ ⊆ γ' := by
+theorem CoreGenState.WFMono : ∀ (γ γ' : CoreGenState) (pf l : CoreIdent),
+  CoreGenState.gen pf γ = (l, γ') → WF γ → WF γ' ∧ l ∈ γ'.generated ∧ γ ⊆ γ' := by
   intros γ γ' pf l Hgen Hwf
   have Hwf':= WFMono' Hwf Hgen
   simp [gen] at Hgen
@@ -97,17 +97,17 @@ theorem BoogieGenState.WFMono : ∀ (γ γ' : BoogieGenState) (pf l : BoogieIden
   simp [Subset, ← Hgen.right]
   apply List.subset_cons_self
 
-/-- BoogieLabelGen guarantees that all labels are .temp -/
-instance : LabelGen.WFLabelGen BoogieIdent BoogieGenState where
+/-- CoreLabelGen guarantees that all labels are .temp -/
+instance : LabelGen.WFLabelGen CoreIdent CoreGenState where
   emp := .emp
-  gen := BoogieGenState.gen
-  generated := BoogieGenState.generated
-  wf := BoogieGenState.WF
+  gen := CoreGenState.gen
+  generated := CoreGenState.generated
+  wf := CoreGenState.WF
   wf_emp := by
-    simp [BoogieGenState.WF, StringGenState.WF, Counter.WF]
+    simp [CoreGenState.WF, StringGenState.WF, Counter.WF]
     constructor
-  wf_gen := BoogieGenState.WFMono
+  wf_gen := CoreGenState.WFMono
 
-abbrev BoogieGenM := StateM BoogieGenState
+abbrev BoogieGenM := StateM CoreGenState
 
 end Core

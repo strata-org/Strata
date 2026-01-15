@@ -175,14 +175,14 @@ theorem Statement.typeCheckWF :
         constructor <;> simp_all
         . -- 13. The `lhs` of a call statement is disjoint from `modifies`, `outputs`, and `inputs` of the procedure
           sorry
-        . -- 7. The `lhs` of a call statement contain no duplicates and are `BoogieIdent.locl`.
+        . -- 7. The `lhs` of a call statement contain no duplicates and are `CoreIdent.locl`.
           sorry
         . refine List.Forall_mem_iff.mpr ?_
           intros arg Hin
           constructor
           refine List.Forall_mem_iff.mpr ?_
           intros var Hin'
-          -- 9. All variables mentioned in `args` of a call statement are either `BoogieIdent.locl` or `BoogieIdent.glob`.
+          -- 9. All variables mentioned in `args` of a call statement are either `CoreIdent.locl` or `CoreIdent.glob`.
           sorry
       | cmd =>
         constructor

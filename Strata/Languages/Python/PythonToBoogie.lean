@@ -9,7 +9,7 @@ import Strata.DDM.AST
 
 import Strata.Languages.Core.DDMTransform.Parse
 
-import Strata.Languages.Core.Boogie
+import Strata.Languages.Core.Core
 import Strata.Languages.Python.PythonDialect
 import Strata.Languages.Python.FunctionSignatures
 import Strata.Languages.Python.Regex.ReToBoogie
@@ -503,8 +503,8 @@ partial def exceptHandlersToBoogie (jmp_targets: List String) (translation_ctx: 
   | .ExceptHandler _ ex_ty _ body =>
     let set_ex_ty_matches := match ex_ty.val with
     | .some ex_ty =>
-      let inherits_from : Core.BoogieIdent := "inheritsFrom"
-      let get_ex_tag : Core.BoogieIdent := "ExceptOrNone_code_val"
+      let inherits_from : Core.CoreIdent := "inheritsFrom"
+      let get_ex_tag : Core.CoreIdent := "ExceptOrNone_code_val"
       let exception_ty : Core.Expression.Expr := .app () (.op () get_ex_tag none) (.fvar () "maybe_except" none)
       let rhs_curried : Core.Expression.Expr := .app () (.op () inherits_from none) exception_ty
       let res := PyExprToBoogie translation_ctx ex_ty

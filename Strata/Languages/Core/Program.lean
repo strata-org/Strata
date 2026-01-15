@@ -22,8 +22,8 @@ open Imperative
 instance : Inhabited TypeDecl where
   default := .con { name := "DefaultType", numargs := 0 }
 
--- ToFormat instance for Function (which is LFunc BoogieLParams)
--- Note: ToFormat BoogieLParams.Identifier is now defined in Identifiers.lean
+-- ToFormat instance for Function (which is LFunc CoreLParams)
+-- Note: ToFormat CoreLParams.Identifier is now defined in Identifiers.lean
 
 inductive DeclKind : Type where
   | var | type | ax | distinct | proc | func

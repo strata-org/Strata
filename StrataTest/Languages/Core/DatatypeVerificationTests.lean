@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Core.Boogie
+import Strata.Languages.Core.Core
 import Strata.Languages.Core.Verifier
 import Strata.DL.Lambda.TypeFactory
 
@@ -85,7 +85,7 @@ def mkProgramWithDatatypes
   : Except Format Program := do
   let proc : Procedure := {
     header := {
-      name := BoogieIdent.unres procName
+      name := CoreIdent.unres procName
       typeArgs := []
       inputs := []
       outputs := []
@@ -137,13 +137,13 @@ procedure testConstructors () {
 def test1_constructorApplication : IO String := do
   let statements : List Statement := [
     -- Create None value
-    Statement.init (BoogieIdent.unres "x") (.forAll [] (LMonoTy.tcons "Option" [.int]))
-      (LExpr.op () (BoogieIdent.unres "None") (.some (LMonoTy.tcons "Option" [.int]))),
+    Statement.init (CoreIdent.unres "x") (.forAll [] (LMonoTy.tcons "Option" [.int]))
+      (LExpr.op () (CoreIdent.unres "None") (.some (LMonoTy.tcons "Option" [.int]))),
 
     -- Create Some value
-    Statement.init (BoogieIdent.unres "y") (.forAll [] (LMonoTy.tcons "Option" [.int]))
+    Statement.init (CoreIdent.unres "y") (.forAll [] (LMonoTy.tcons "Option" [.int]))
       (LExpr.app ()
-        (LExpr.op () (BoogieIdent.unres "Some")
+        (LExpr.op () (CoreIdent.unres "Some")
           (.some (LMonoTy.arrow .int (LMonoTy.tcons "Option" [.int]))))
         (LExpr.intConst () 42)),
 
@@ -175,29 +175,29 @@ procedure testTesters () {
 def test2_testerFunctions : IO String := do
   let statements : List Statement := [
     -- Create None value
-    Statement.init (BoogieIdent.unres "x") (.forAll [] (LMonoTy.tcons "Option" [.int]))
-      (LExpr.op () (BoogieIdent.unres "None") (.some (LMonoTy.tcons "Option" [.int]))),
+    Statement.init (CoreIdent.unres "x") (.forAll [] (LMonoTy.tcons "Option" [.int]))
+      (LExpr.op () (CoreIdent.unres "None") (.some (LMonoTy.tcons "Option" [.int]))),
 
     -- Assert that x is None
     Statement.assert "x_is_none"
       (LExpr.app ()
-        (LExpr.op () (BoogieIdent.unres "isNone")
+        (LExpr.op () (CoreIdent.unres "isNone")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .bool)))
-        (LExpr.fvar () (BoogieIdent.unres "x") (.some (LMonoTy.tcons "Option" [.int])))),
+        (LExpr.fvar () (CoreIdent.unres "x") (.some (LMonoTy.tcons "Option" [.int])))),
 
     -- Create Some value
-    Statement.init (BoogieIdent.unres "y") (.forAll [] (LMonoTy.tcons "Option" [.int]))
+    Statement.init (CoreIdent.unres "y") (.forAll [] (LMonoTy.tcons "Option" [.int]))
       (LExpr.app ()
-        (LExpr.op () (BoogieIdent.unres "Some")
+        (LExpr.op () (CoreIdent.unres "Some")
           (.some (LMonoTy.arrow .int (LMonoTy.tcons "Option" [.int]))))
         (LExpr.intConst () 42)),
 
     -- Assert that y is Some
     Statement.assert "y_is_some"
       (LExpr.app ()
-        (LExpr.op () (BoogieIdent.unres "isSome")
+        (LExpr.op () (CoreIdent.unres "isSome")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .bool)))
-        (LExpr.fvar () (BoogieIdent.unres "y") (.some (LMonoTy.tcons "Option" [.int]))))
+        (LExpr.fvar () (CoreIdent.unres "y") (.some (LMonoTy.tcons "Option" [.int]))))
   ]
 
   match mkProgramWithDatatypes [optionDatatype] "testTesters" statements with
@@ -228,45 +228,45 @@ procedure testDestructors () {
 def test3_destructorFunctions : IO String := do
   let statements : List Statement := [
     -- Create Some(42)
-    Statement.init (BoogieIdent.unres "opt") (.forAll [] (LMonoTy.tcons "Option" [.int]))
+    Statement.init (CoreIdent.unres "opt") (.forAll [] (LMonoTy.tcons "Option" [.int]))
       (LExpr.app ()
-        (LExpr.op () (BoogieIdent.unres "Some")
+        (LExpr.op () (CoreIdent.unres "Some")
           (.some (LMonoTy.arrow .int (LMonoTy.tcons "Option" [.int]))))
         (LExpr.intConst () 42)),
 
     -- Extract value from Some
-    Statement.init (BoogieIdent.unres "value") (.forAll [] LMonoTy.int)
+    Statement.init (CoreIdent.unres "value") (.forAll [] LMonoTy.int)
       (LExpr.app ()
-        (LExpr.op () (BoogieIdent.unres "OptionVal")
+        (LExpr.op () (CoreIdent.unres "OptionVal")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .int)))
-        (LExpr.fvar () (BoogieIdent.unres "opt") (.some (LMonoTy.tcons "Option" [.int])))),
+        (LExpr.fvar () (CoreIdent.unres "opt") (.some (LMonoTy.tcons "Option" [.int])))),
 
     -- Assert that val == 42
     Statement.assert "val_is_42"
       (LExpr.eq ()
-        (LExpr.fvar () (BoogieIdent.unres "value") (.some .int))
+        (LExpr.fvar () (CoreIdent.unres "value") (.some .int))
         (LExpr.intConst () 42)),
 
     -- Create Cons(1, Nil)
-    Statement.init (BoogieIdent.unres "list") (.forAll [] (LMonoTy.tcons "List" [.int]))
+    Statement.init (CoreIdent.unres "list") (.forAll [] (LMonoTy.tcons "List" [.int]))
       (LExpr.app ()
         (LExpr.app ()
-          (LExpr.op () (BoogieIdent.unres "Cons")
+          (LExpr.op () (CoreIdent.unres "Cons")
             (.some (LMonoTy.arrow .int (LMonoTy.arrow (LMonoTy.tcons "List" [.int]) (LMonoTy.tcons "List" [.int])))))
           (LExpr.intConst () 1))
-        (LExpr.op () (BoogieIdent.unres "Nil") (.some (LMonoTy.tcons "List" [.int])))),
+        (LExpr.op () (CoreIdent.unres "Nil") (.some (LMonoTy.tcons "List" [.int])))),
 
     -- Extract head
-    Statement.init (BoogieIdent.unres "head") (.forAll [] LMonoTy.int)
+    Statement.init (CoreIdent.unres "head") (.forAll [] LMonoTy.int)
       (LExpr.app ()
-        (LExpr.op () (BoogieIdent.unres "hd")
+        (LExpr.op () (CoreIdent.unres "hd")
           (.some (LMonoTy.arrow (LMonoTy.tcons "List" [.int]) .int)))
-        (LExpr.fvar () (BoogieIdent.unres "list") (.some (LMonoTy.tcons "List" [.int])))),
+        (LExpr.fvar () (CoreIdent.unres "list") (.some (LMonoTy.tcons "List" [.int])))),
 
     -- Assert head == 1
     Statement.assert "head_is_1"
       (LExpr.eq ()
-        (LExpr.fvar () (BoogieIdent.unres "head") (.some .int))
+        (LExpr.fvar () (CoreIdent.unres "head") (.some .int))
         (LExpr.intConst () 1))
   ]
 
@@ -296,49 +296,49 @@ procedure testNested () {
 def test4_nestedDatatypes : IO String := do
   let statements : List Statement := [
     -- Create a List of Option: Cons(Some(42), Nil)
-    Statement.init (BoogieIdent.unres "listOfOpt")
+    Statement.init (CoreIdent.unres "listOfOpt")
       (.forAll [] (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]]))
       (LExpr.app ()
         (LExpr.app ()
-          (LExpr.op () (BoogieIdent.unres "Cons")
+          (LExpr.op () (CoreIdent.unres "Cons")
             (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int])
               (LMonoTy.arrow (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]])
                 (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]])))))
           (LExpr.app ()
-            (LExpr.op () (BoogieIdent.unres "Some")
+            (LExpr.op () (CoreIdent.unres "Some")
               (.some (LMonoTy.arrow .int (LMonoTy.tcons "Option" [.int]))))
             (LExpr.intConst () 42)))
-        (LExpr.op () (BoogieIdent.unres "Nil")
+        (LExpr.op () (CoreIdent.unres "Nil")
           (.some (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]])))),
 
     -- Assert that the list is Cons
     Statement.assert "list_is_cons"
       (LExpr.app ()
-        (LExpr.op () (BoogieIdent.unres "isCons")
+        (LExpr.op () (CoreIdent.unres "isCons")
           (.some (LMonoTy.arrow (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]]) .bool)))
-        (LExpr.fvar () (BoogieIdent.unres "listOfOpt")
+        (LExpr.fvar () (CoreIdent.unres "listOfOpt")
           (.some (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]])))),
 
     -- Extract the head of the list (which is an Option)
-    Statement.init (BoogieIdent.unres "headOpt") (.forAll [] (LMonoTy.tcons "Option" [.int]))
+    Statement.init (CoreIdent.unres "headOpt") (.forAll [] (LMonoTy.tcons "Option" [.int]))
       (LExpr.app ()
-        (LExpr.op () (BoogieIdent.unres "hd")
+        (LExpr.op () (CoreIdent.unres "hd")
           (.some (LMonoTy.arrow (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]]) (LMonoTy.tcons "Option" [.int]))))
-        (LExpr.fvar () (BoogieIdent.unres "listOfOpt")
+        (LExpr.fvar () (CoreIdent.unres "listOfOpt")
           (.some (LMonoTy.tcons "List" [LMonoTy.tcons "Option" [.int]])))),
 
     -- Extract the value from the Option
-    Statement.init (BoogieIdent.unres "value") (.forAll [] LMonoTy.int)
+    Statement.init (CoreIdent.unres "value") (.forAll [] LMonoTy.int)
       (LExpr.app ()
-        (LExpr.op () (BoogieIdent.unres "OptionVal")
+        (LExpr.op () (CoreIdent.unres "OptionVal")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .int)))
-        (LExpr.fvar () (BoogieIdent.unres "headOpt")
+        (LExpr.fvar () (CoreIdent.unres "headOpt")
           (.some (LMonoTy.tcons "Option" [.int])))),
 
     -- Assert that the extracted value is 42
     Statement.assert "value_is_42"
       (LExpr.eq ()
-        (LExpr.fvar () (BoogieIdent.unres "value") (.some .int))
+        (LExpr.fvar () (CoreIdent.unres "value") (.some .int))
         (LExpr.intConst () 42))
   ]
 
@@ -367,26 +367,26 @@ procedure testTesterHavoc () {
 def test5_testerWithHavoc : IO String := do
   let statements : List Statement := [
     -- Havoc an Option value (non-deterministic)
-    Statement.init (BoogieIdent.unres "x") (.forAll [] (LMonoTy.tcons "Option" [.int]))
-      (LExpr.op () (BoogieIdent.unres "None") (.some (LMonoTy.tcons "Option" [.int]))),
-    Statement.havoc (BoogieIdent.unres "x"),
+    Statement.init (CoreIdent.unres "x") (.forAll [] (LMonoTy.tcons "Option" [.int]))
+      (LExpr.op () (CoreIdent.unres "None") (.some (LMonoTy.tcons "Option" [.int]))),
+    Statement.havoc (CoreIdent.unres "x"),
 
     -- Assume x is Some
     Statement.assume "x_is_some"
       (LExpr.app ()
-        (LExpr.op () (BoogieIdent.unres "isSome")
+        (LExpr.op () (CoreIdent.unres "isSome")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .bool)))
-        (LExpr.fvar () (BoogieIdent.unres "x") (.some (LMonoTy.tcons "Option" [.int])))),
+        (LExpr.fvar () (CoreIdent.unres "x") (.some (LMonoTy.tcons "Option" [.int])))),
 
     -- Assert x is not None (should follow from assumption)
     Statement.assert "x_not_none"
       (LExpr.app ()
-        (LExpr.op () (BoogieIdent.unres "Bool.Not")
+        (LExpr.op () (CoreIdent.unres "Bool.Not")
           (.some (LMonoTy.arrow .bool .bool)))
         (LExpr.app ()
-          (LExpr.op () (BoogieIdent.unres "isNone")
+          (LExpr.op () (CoreIdent.unres "isNone")
             (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .bool)))
-          (LExpr.fvar () (BoogieIdent.unres "x") (.some (LMonoTy.tcons "Option" [.int])))))
+          (LExpr.fvar () (CoreIdent.unres "x") (.some (LMonoTy.tcons "Option" [.int])))))
   ]
 
   match mkProgramWithDatatypes [optionDatatype] "testTesterHavoc" statements with
@@ -414,33 +414,33 @@ procedure testDestructorHavoc () {
 def test6_destructorWithHavoc : IO String := do
   let statements : List Statement := [
     -- Havoc an Option value
-    Statement.init (BoogieIdent.unres "opt") (.forAll [] (LMonoTy.tcons "Option" [.int]))
+    Statement.init (CoreIdent.unres "opt") (.forAll [] (LMonoTy.tcons "Option" [.int]))
       (LExpr.app ()
-        (LExpr.op () (BoogieIdent.unres "Some")
+        (LExpr.op () (CoreIdent.unres "Some")
           (.some (LMonoTy.arrow .int (LMonoTy.tcons "Option" [.int]))))
         (LExpr.intConst () 0)),
-    Statement.havoc (BoogieIdent.unres "opt"),
+    Statement.havoc (CoreIdent.unres "opt"),
 
     -- Assume opt is Some(42)
     Statement.assume "opt_is_some_42"
       (LExpr.eq ()
-        (LExpr.fvar () (BoogieIdent.unres "opt") (.some (LMonoTy.tcons "Option" [.int])))
+        (LExpr.fvar () (CoreIdent.unres "opt") (.some (LMonoTy.tcons "Option" [.int])))
         (LExpr.app ()
-          (LExpr.op () (BoogieIdent.unres "Some")
+          (LExpr.op () (CoreIdent.unres "Some")
             (.some (LMonoTy.arrow .int (LMonoTy.tcons "Option" [.int]))))
           (LExpr.intConst () 42))),
 
     -- Extract value
-    Statement.init (BoogieIdent.unres "value") (.forAll [] LMonoTy.int)
+    Statement.init (CoreIdent.unres "value") (.forAll [] LMonoTy.int)
       (LExpr.app ()
-        (LExpr.op () (BoogieIdent.unres "OptionVal")
+        (LExpr.op () (CoreIdent.unres "OptionVal")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Option" [.int]) .int)))
-        (LExpr.fvar () (BoogieIdent.unres "opt") (.some (LMonoTy.tcons "Option" [.int])))),
+        (LExpr.fvar () (CoreIdent.unres "opt") (.some (LMonoTy.tcons "Option" [.int])))),
 
     -- Assert val == 42
     Statement.assert "val_is_42"
       (LExpr.eq ()
-        (LExpr.fvar () (BoogieIdent.unres "value") (.some .int))
+        (LExpr.fvar () (CoreIdent.unres "value") (.some .int))
         (LExpr.intConst () 42))
   ]
 
@@ -468,26 +468,26 @@ procedure testListHavoc () {
 def test7_listWithHavoc : IO String := do
   let statements : List Statement := [
     -- Havoc a list
-    Statement.init (BoogieIdent.unres "xs") (.forAll [] (LMonoTy.tcons "List" [.int]))
-      (LExpr.op () (BoogieIdent.unres "Nil") (.some (LMonoTy.tcons "List" [.int]))),
-    Statement.havoc (BoogieIdent.unres "xs"),
+    Statement.init (CoreIdent.unres "xs") (.forAll [] (LMonoTy.tcons "List" [.int]))
+      (LExpr.op () (CoreIdent.unres "Nil") (.some (LMonoTy.tcons "List" [.int]))),
+    Statement.havoc (CoreIdent.unres "xs"),
 
     -- Assume xs is Cons
     Statement.assume "xs_is_cons"
       (LExpr.app ()
-        (LExpr.op () (BoogieIdent.unres "isCons")
+        (LExpr.op () (CoreIdent.unres "isCons")
           (.some (LMonoTy.arrow (LMonoTy.tcons "List" [.int]) .bool)))
-        (LExpr.fvar () (BoogieIdent.unres "xs") (.some (LMonoTy.tcons "List" [.int])))),
+        (LExpr.fvar () (CoreIdent.unres "xs") (.some (LMonoTy.tcons "List" [.int])))),
 
     -- Assert xs is not Nil
     Statement.assert "xs_not_nil"
       (LExpr.app ()
-        (LExpr.op () (BoogieIdent.unres "Bool.Not")
+        (LExpr.op () (CoreIdent.unres "Bool.Not")
           (.some (LMonoTy.arrow .bool .bool)))
         (LExpr.app ()
-          (LExpr.op () (BoogieIdent.unres "isNil")
+          (LExpr.op () (CoreIdent.unres "isNil")
             (.some (LMonoTy.arrow (LMonoTy.tcons "List" [.int]) .bool)))
-          (LExpr.fvar () (BoogieIdent.unres "xs") (.some (LMonoTy.tcons "List" [.int])))))
+          (LExpr.fvar () (CoreIdent.unres "xs") (.some (LMonoTy.tcons "List" [.int])))))
   ]
 
   match mkProgramWithDatatypes [listDatatype] "testListHavoc" statements with
@@ -519,42 +519,42 @@ procedure testHiddenTypeRecursion () {
 def test8_hiddenTypeRecursion : IO String := do
   let statements : List Statement := [
     -- Initialize with Empty Container - note we NEVER use Hidden directly
-    Statement.init (BoogieIdent.unres "container")
+    Statement.init (CoreIdent.unres "container")
       (.forAll [] (LMonoTy.tcons "Container" [.int]))
-      (LExpr.op () (BoogieIdent.unres "Empty") (.some (LMonoTy.tcons "Container" [.int]))),
+      (LExpr.op () (CoreIdent.unres "Empty") (.some (LMonoTy.tcons "Container" [.int]))),
 
     -- Havoc the container to make it non-deterministic
-    Statement.havoc (BoogieIdent.unres "container"),
+    Statement.havoc (CoreIdent.unres "container"),
 
     -- Assume container is not Empty (so it must be WithHidden)
     Statement.assume "container_not_empty"
       (LExpr.app ()
-        (LExpr.op () (BoogieIdent.unres "Bool.Not")
+        (LExpr.op () (CoreIdent.unres "Bool.Not")
           (.some (LMonoTy.arrow .bool .bool)))
         (LExpr.app ()
-          (LExpr.op () (BoogieIdent.unres "isEmpty")
+          (LExpr.op () (CoreIdent.unres "isEmpty")
             (.some (LMonoTy.arrow (LMonoTy.tcons "Container" [.int]) .bool)))
-          (LExpr.fvar () (BoogieIdent.unres "container") (.some (LMonoTy.tcons "Container" [.int]))))),
+          (LExpr.fvar () (CoreIdent.unres "container") (.some (LMonoTy.tcons "Container" [.int]))))),
 
     -- Extract the visible part
-    Statement.init (BoogieIdent.unres "visiblePart") (.forAll [] LMonoTy.int)
+    Statement.init (CoreIdent.unres "visiblePart") (.forAll [] LMonoTy.int)
       (LExpr.app ()
-        (LExpr.op () (BoogieIdent.unres "visiblePart")
+        (LExpr.op () (CoreIdent.unres "visiblePart")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Container" [.int]) .int)))
-        (LExpr.fvar () (BoogieIdent.unres "container") (.some (LMonoTy.tcons "Container" [.int])))),
+        (LExpr.fvar () (CoreIdent.unres "container") (.some (LMonoTy.tcons "Container" [.int])))),
 
     -- Assume the visible part has a specific value
     Statement.assume "visible_part_is_42"
       (LExpr.eq ()
-        (LExpr.fvar () (BoogieIdent.unres "visiblePart") (.some .int))
+        (LExpr.fvar () (CoreIdent.unres "visiblePart") (.some .int))
         (LExpr.intConst () 42)),
 
     -- Assert that container is WithHidden
     Statement.assert "container_is_with_hidden"
       (LExpr.app ()
-        (LExpr.op () (BoogieIdent.unres "isWithHidden")
+        (LExpr.op () (CoreIdent.unres "isWithHidden")
           (.some (LMonoTy.arrow (LMonoTy.tcons "Container" [.int]) .bool)))
-        (LExpr.fvar () (BoogieIdent.unres "container") (.some (LMonoTy.tcons "Container" [.int]))))
+        (LExpr.fvar () (CoreIdent.unres "container") (.some (LMonoTy.tcons "Container" [.int]))))
   ]
 
   match mkProgramWithDatatypes [hiddenDatatype, containerDatatype] "testHiddenTypeRecursion" statements with

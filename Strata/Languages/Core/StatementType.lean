@@ -25,7 +25,7 @@ Type checker for Boogie commands.
 Note that this function needs the entire program to type-check `call`
 commands by looking up the corresponding procedure's information.
 -/
-def typeCheckCmd (C: LContext BoogieLParams) (Env : TEnv Visibility) (P : Program) (c : Command) :
+def typeCheckCmd (C: LContext CoreLParams) (Env : TEnv Visibility) (P : Program) (c : Command) :
   Except Format (Command × (TEnv Visibility)) := do
   match c with
   | .cmd c =>
@@ -38,7 +38,7 @@ def typeCheckCmd (C: LContext BoogieLParams) (Env : TEnv Visibility) (P : Progra
      match Program.Procedure.find? P pname with
      | none => .error f!"[{c}]: Procedure {pname} not found!"
      | some proc =>
-       if lhs.any (fun (l: BoogieIdent) => (Env.context.types.find? l).isNone) then
+       if lhs.any (fun (l: CoreIdent) => (Env.context.types.find? l).isNone) then
          .error f!"[{c}]: All the return variables {lhs} must exist in the context!"
        else if lhs.length != proc.header.outputs.length then
          .error f!"[{c}]: Arity mismatch in this call's return values!\
@@ -75,7 +75,7 @@ def typeCheckCmd (C: LContext BoogieLParams) (Env : TEnv Visibility) (P : Progra
         .error f!"{@MetaData.formatFileRangeD Expression _ md false} {e}"
 
 
-def typeCheckAux (C: LContext BoogieLParams) (Env : TEnv Visibility) (P : Program) (op : Option Procedure) (ss : List Statement) :
+def typeCheckAux (C: LContext CoreLParams) (Env : TEnv Visibility) (P : Program) (op : Option Procedure) (ss : List Statement) :
   Except Format (List Statement × TEnv Visibility) :=
   go Env ss []
 where

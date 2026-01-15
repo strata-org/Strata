@@ -70,7 +70,7 @@ def treeDatatype : LDatatype Visibility :=
 /--
 Convert an expression to full SMT string including datatype declarations.
 -/
-def toSMTStringWithDatatypes (e : LExpr BoogieLParams.mono) (datatypes : List (LDatatype Visibility)) : IO String := do
+def toSMTStringWithDatatypes (e : LExpr CoreLParams.mono) (datatypes : List (LDatatype Visibility)) : IO String := do
   match Env.init.addDatatypes datatypes with
   | .error msg => return s!"Error creating environment: {msg}"
   | .ok env =>
@@ -108,7 +108,7 @@ info: (declare-datatype TestOption (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (BoogieIdent.unres "x") (.some (.tcons "TestOption" [.int])))
+  (.fvar () (CoreIdent.unres "x") (.some (.tcons "TestOption" [.int])))
   [optionDatatype]
 
 -- Test 2: Recursive datatype (List) - using List type
@@ -122,7 +122,7 @@ info: (declare-datatype TestList (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (BoogieIdent.unres "xs") (.some (.tcons "TestList" [.int])))
+  (.fvar () (CoreIdent.unres "xs") (.some (.tcons "TestList" [.int])))
   [listDatatype]
 
 -- Test 3: Multiple constructors - Tree with Leaf and Node
@@ -136,7 +136,7 @@ info: (declare-datatype TestTree (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (BoogieIdent.unres "tree") (.some (.tcons "TestTree" [.bool])))
+  (.fvar () (CoreIdent.unres "tree") (.some (.tcons "TestTree" [.bool])))
   [treeDatatype]
 
 -- Test 4: Parametric datatype instantiation - List Int
@@ -150,7 +150,7 @@ info: (declare-datatype TestList (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (BoogieIdent.unres "intList") (.some (.tcons "TestList" [.int])))
+  (.fvar () (CoreIdent.unres "intList") (.some (.tcons "TestList" [.int])))
   [listDatatype]
 
 -- Test 5: Parametric datatype instantiation - List Bool (should reuse same datatype)
@@ -164,7 +164,7 @@ info: (declare-datatype TestList (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (BoogieIdent.unres "boolList") (.some (.tcons "TestList" [.bool])))
+  (.fvar () (CoreIdent.unres "boolList") (.some (.tcons "TestList" [.bool])))
   [listDatatype]
 
 -- Test 6: Multi-field constructor - Tree with 3 fields
@@ -178,7 +178,7 @@ info: (declare-datatype TestTree (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (BoogieIdent.unres "intTree") (.some (.tcons "TestTree" [.int])))
+  (.fvar () (CoreIdent.unres "intTree") (.some (.tcons "TestTree" [.int])))
   [treeDatatype]
 
 -- Test 7: Nested parametric types - List of Option (should declare both datatypes)
@@ -195,7 +195,7 @@ info: (declare-datatype TestOption (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (BoogieIdent.unres "listOfOption") (.some (.tcons "TestList" [.tcons "TestOption" [.int]])))
+  (.fvar () (CoreIdent.unres "listOfOption") (.some (.tcons "TestList" [.tcons "TestOption" [.int]])))
   [listDatatype, optionDatatype]
 
 /-! ## Constructor Application Tests -/
@@ -209,7 +209,7 @@ info: (declare-datatype TestOption (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.op () (BoogieIdent.unres "None") (.some (.tcons "TestOption" [.int])))
+  (.op () (CoreIdent.unres "None") (.some (.tcons "TestOption" [.int])))
   [optionDatatype]
 
 -- Test 9: Some constructor (single-argument)
@@ -221,7 +221,7 @@ info: (declare-datatype TestOption (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (BoogieIdent.unres "Some") (.some (.arrow .int (.tcons "TestOption" [.int])))) (.intConst () 42))
+  (.app () (.op () (CoreIdent.unres "Some") (.some (.arrow .int (.tcons "TestOption" [.int])))) (.intConst () 42))
   [optionDatatype]
 
 -- Test 10: Cons constructor (multi-argument)
@@ -235,9 +235,9 @@ info: (declare-datatype TestList (par (α) (
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
   (.app ()
-    (.app () (.op () (BoogieIdent.unres "Cons") (.some (.arrow .int (.arrow (.tcons "TestList" [.int]) (.tcons "TestList" [.int])))))
+    (.app () (.op () (CoreIdent.unres "Cons") (.some (.arrow .int (.arrow (.tcons "TestList" [.int]) (.tcons "TestList" [.int])))))
       (.intConst () 1))
-    (.op () (BoogieIdent.unres "Nil") (.some (.tcons "TestList" [.int]))))
+    (.op () (CoreIdent.unres "Nil") (.some (.tcons "TestList" [.int]))))
   [listDatatype]
 
 /-! ## Tester Function Tests  -/
@@ -254,8 +254,8 @@ info: (declare-datatype TestOption (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (BoogieIdent.unres "TestOption$isNone") (.some (.arrow (.tcons "TestOption" [.int]) .bool)))
-    (.fvar () (BoogieIdent.unres "x") (.some (.tcons "TestOption" [.int]))))
+  (.app () (.op () (CoreIdent.unres "TestOption$isNone") (.some (.arrow (.tcons "TestOption" [.int]) .bool)))
+    (.fvar () (CoreIdent.unres "x") (.some (.tcons "TestOption" [.int]))))
   [optionDatatype]
 
 -- Test 12: isCons tester
@@ -270,8 +270,8 @@ info: (declare-datatype TestList (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (BoogieIdent.unres "TestList$isCons") (.some (.arrow (.tcons "TestList" [.int]) .bool)))
-    (.fvar () (BoogieIdent.unres "xs") (.some (.tcons "TestList" [.int]))))
+  (.app () (.op () (CoreIdent.unres "TestList$isCons") (.some (.arrow (.tcons "TestList" [.int]) .bool)))
+    (.fvar () (CoreIdent.unres "xs") (.some (.tcons "TestList" [.int]))))
   [listDatatype]
 
 /-! ## Destructor Function Tests -/
@@ -288,8 +288,8 @@ info: (declare-datatype TestOption (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (BoogieIdent.unres "TestOption$SomeProj0") (.some (.arrow (.tcons "TestOption" [.int]) .int)))
-    (.fvar () (BoogieIdent.unres "x") (.some (.tcons "TestOption" [.int]))))
+  (.app () (.op () (CoreIdent.unres "TestOption$SomeProj0") (.some (.arrow (.tcons "TestOption" [.int]) .int)))
+    (.fvar () (CoreIdent.unres "x") (.some (.tcons "TestOption" [.int]))))
   [optionDatatype]
 
 -- Test 14: Cons head destructor
@@ -304,8 +304,8 @@ info: (declare-datatype TestList (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (BoogieIdent.unres "TestList$ConsProj0") (.some (.arrow (.tcons "TestList" [.int]) .int)))
-    (.fvar () (BoogieIdent.unres "xs") (.some (.tcons "TestList" [.int]))))
+  (.app () (.op () (CoreIdent.unres "TestList$ConsProj0") (.some (.arrow (.tcons "TestList" [.int]) .int)))
+    (.fvar () (CoreIdent.unres "xs") (.some (.tcons "TestList" [.int]))))
   [listDatatype]
 
 -- Test 15: Cons tail destructor
@@ -320,8 +320,8 @@ info: (declare-datatype TestList (par (α) (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.app () (.op () (BoogieIdent.unres "TestList$ConsProj1") (.some (.arrow (.tcons "TestList" [.int]) (.tcons "TestList" [.int]))))
-    (.fvar () (BoogieIdent.unres "xs") (.some (.tcons "TestList" [.int]))))
+  (.app () (.op () (CoreIdent.unres "TestList$ConsProj1") (.some (.arrow (.tcons "TestList" [.int]) (.tcons "TestList" [.int]))))
+    (.fvar () (CoreIdent.unres "xs") (.some (.tcons "TestList" [.int]))))
   [listDatatype]
 
 /-! ## Complex Dependency Topological Sorting Tests -/
@@ -416,7 +416,7 @@ info: (declare-datatype Zeta (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (BoogieIdent.unres "alphaVar") (.some (.tcons "Alpha" [])))
+  (.fvar () (CoreIdent.unres "alphaVar") (.some (.tcons "Alpha" [])))
   [alphaDatatype, betaDatatype, gammaDatatype, deltaDatatype, epsilonDatatype, zetaDatatype]
 
 -- Test 17: Diamond dependency pattern
@@ -479,7 +479,7 @@ info: (declare-datatype Root (
 -/
 #guard_msgs in
 #eval format <$> toSMTStringWithDatatypes
-  (.fvar () (BoogieIdent.unres "diamondVar") (.some (.tcons "Diamond" [])))
+  (.fvar () (CoreIdent.unres "diamondVar") (.some (.tcons "Diamond" [])))
   [diamondDatatype, leftDatatype, rightDatatype, rootDatatype]
 
 end DatatypeTests

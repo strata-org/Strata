@@ -32,7 +32,7 @@ namespace Core
 -/
 
 def typeCheck (options : Options) (program : Program)
-    (moreFns : @Lambda.Factory BoogieLParams := Lambda.Factory.default) :
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except Std.Format Program := do
   let T := Lambda.TEnv.default
   let factory ← Core.Factory.addFactory moreFns
@@ -46,7 +46,7 @@ def typeCheck (options : Options) (program : Program)
   return program
 
 def typeCheckAndPartialEval (options : Options) (program : Program)
-    (moreFns : @Lambda.Factory BoogieLParams := Lambda.Factory.default) :
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
     Except Std.Format (List (Program × Env)) := do
   let program ← typeCheck options program moreFns
   -- Extract datatypes from program declarations and add to environment

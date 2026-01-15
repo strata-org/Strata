@@ -9,7 +9,7 @@ import Strata.Languages.Core.Env
 import Strata.Languages.Core.DDMTransform.Parse
 import Strata.Languages.Core.DDMTransform.Translate
 import Strata.DL.Util.Map
-import Strata.Languages.Core.Boogie
+import Strata.Languages.Core.Core
 import Strata.Backends.CBMC.Common
 
 open Lean
@@ -45,7 +45,7 @@ def myProc : Core.Procedure := match SimpleTestEnvAST.fst.decls.head!.getProc? w
 class IdentToStr (I : Type) where
   toStr : I → String
 
-instance : IdentToStr BoogieIdent where
+instance : IdentToStr CoreIdent where
   toStr id := id.toPretty
 
 instance : IdentToStr String where
@@ -54,7 +54,7 @@ instance : IdentToStr String where
 class HasLExpr (P : Imperative.PureExpr) (I : Lambda.LExprParams) where
   expr_eq : P.Expr = Lambda.LExpr I.mono
 
-instance : HasLExpr Core.Expression BoogieLParams where
+instance : HasLExpr Core.Expression CoreLParams where
   expr_eq := rfl
 
 def exprToJson (I : Lambda.LExprParams) [IdentToStr (Lambda.Identifier I.IDMeta)] (e : Lambda.LExpr I.mono) (loc: SourceLoc) : Json :=
@@ -102,7 +102,7 @@ def cmdToJson (e : Core.Command) (loc: SourceLoc) : Json :=
       mkCodeBlock "expression" "6" loc.functionName #[
         mkSideEffect "assign" "6" loc.functionName mkIntType #[
           mkLvalueSymbol s!"{loc.functionName}::1::{name.toPretty}" "6" loc.functionName,
-          exprToJson (I:=BoogieLParams) expr exprLoc
+          exprToJson (I:=CoreLParams) expr exprLoc
         ]
       ]
     | .assert label expr _ =>
@@ -127,7 +127,7 @@ def cmdToJson (e : Core.Command) (loc: SourceLoc) : Json :=
           Json.mkObj [
             ("id", "arguments"),
             ("sub", Json.arr #[
-              exprToJson (I:=BoogieLParams) expr exprLoc,
+              exprToJson (I:=CoreLParams) expr exprLoc,
               mkStringConstant label "7" loc.functionName
             ])
           ]
@@ -155,7 +155,7 @@ def cmdToJson (e : Core.Command) (loc: SourceLoc) : Json :=
           Json.mkObj [
             ("id", "arguments"),
             ("sub", Json.arr #[
-              exprToJson (I:=BoogieLParams) expr exprLoc
+              exprToJson (I:=CoreLParams) expr exprLoc
             ])
           ]
         ]
@@ -207,7 +207,7 @@ def stmtToJson {P : Imperative.PureExpr} (I : Lambda.LExprParams) [IdentToStr (L
   decreasing_by all_goals(simp; omega)
 end
 
-def listToExpr (l: ListMap BoogieLabel Core.Procedure.Check) : Core.Expression.Expr :=
+def listToExpr (l: ListMap CoreLabel Core.Procedure.Check) : Core.Expression.Expr :=
   match l with
   | _ => .true ()
 
@@ -254,7 +254,7 @@ def createContractSymbolFromAST (func : Core.Procedure) : CBMCSymbol :=
     ]),
     ("sub", Json.arr #[
       parameterTuple,
-      exprToJson (I:=BoogieLParams) (listToExpr func.spec.preconditions) {functionName := func.header.name.toPretty, lineNum := "2"}
+      exprToJson (I:=CoreLParams) (listToExpr func.spec.preconditions) {functionName := func.header.name.toPretty, lineNum := "2"}
     ])
   ]
 
@@ -266,7 +266,7 @@ def createContractSymbolFromAST (func : Core.Procedure) : CBMCSymbol :=
     ]),
     ("sub", Json.arr #[
       parameterTuple,
-      exprToJson (I:=BoogieLParams) (listToExpr func.spec.postconditions) {functionName := func.header.name.toPretty, lineNum := "2"}
+      exprToJson (I:=CoreLParams) (listToExpr func.spec.postconditions) {functionName := func.header.name.toPretty, lineNum := "2"}
     ])
   ]
 
@@ -340,7 +340,7 @@ def createImplementationSymbolFromAST (func : Core.Procedure) : CBMCSymbol :=
 
   -- For now, keep the hardcoded implementation but use function name from AST
   let loc : SourceLoc := { functionName := (func.header.name.toPretty), lineNum := "1" }
-  let stmtJsons := (func.body.map (stmtToJson (I:=BoogieLParams) · loc))
+  let stmtJsons := (func.body.map (stmtToJson (I:=CoreLParams) · loc))
 
   let implValue := Json.mkObj [
     ("id", "code"),

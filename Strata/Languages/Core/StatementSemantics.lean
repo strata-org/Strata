@@ -42,7 +42,7 @@ instance : HasNot Core.Expression where
   not
   | Boogie.true => Boogie.false
   | Boogie.false => Boogie.true
-  | e => Lambda.LExpr.app () (Lambda.LFunc.opExpr (T:=BoogieLParams) Lambda.boolNotFunc) e
+  | e => Lambda.LExpr.app () (Lambda.LFunc.opExpr (T:=CoreLParams) Lambda.boolNotFunc) e
 
 abbrev BoogieEval := SemanticEval Expression
 abbrev BoogieStore := SemanticStore Expression

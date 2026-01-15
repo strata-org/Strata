@@ -6,8 +6,8 @@
 
 import Strata.DL.Util.LabelGen
 import Strata.DL.Util.ListUtils
-import Strata.Languages.Core.Boogie
-import Strata.Languages.Core.BoogieGen
+import Strata.Languages.Core.Core
+import Strata.Languages.Core.CoreGen
 import Strata.Languages.Core.ProgramWF
 import Strata.Languages.Core.Statement
 import Strata.Transform.CoreTransform

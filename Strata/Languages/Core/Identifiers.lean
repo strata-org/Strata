@@ -13,7 +13,8 @@ namespace Core
 open Std
 
 /--
- The purpose of `Visiblity` is to denote the visibility/scope of a Boogie identifier.
+ The purpose of `Visiblity` is to denote the visibility/scope of a Strata Core
+ identifier.
 
  For example, global variables should have a `.glob` (i.e., global) visibility,
  and variables declared within a procedure should have a `.locl` (i.e., local)
@@ -34,7 +35,7 @@ open Std
  is the responsibility of the variable generator to ensure that the generated
  names themselves are unique (i.e., do not have duplicates).
 
- See `BoogieGenState` for a unique generator for Boogie Identifiers.
+ See `CoreGenState` for a unique generator for Strata Core Identifiers.
 -/
 inductive Visibility where
   | unres
@@ -50,59 +51,59 @@ instance : ToFormat Visibility where
   | .locl => "l:"
   | .temp => "t:"
 
-abbrev BoogieIdent := Lambda.Identifier Visibility
+abbrev CoreIdent := Lambda.Identifier Visibility
 instance : ToString Visibility where
   toString v := toString $ ToFormat.format v
 
-abbrev BoogieExprMetadata := Unit
-abbrev BoogieLParams: Lambda.LExprParams := {Metadata := BoogieExprMetadata, IDMeta := Visibility}
-abbrev BoogieLabel := String
+abbrev CoreExprMetadata := Unit
+abbrev CoreLParams: Lambda.LExprParams := {Metadata := CoreExprMetadata, IDMeta := Visibility}
+abbrev CoreLabel := String
 
-def BoogieIdentDec : DecidableEq BoogieIdent := inferInstanceAs (DecidableEq (Lambda.Identifier Visibility))
+def CoreIdentDec : DecidableEq CoreIdent := inferInstanceAs (DecidableEq (Lambda.Identifier Visibility))
 
 
 @[match_pattern]
-def BoogieIdent.unres (s : String) : BoogieIdent := ⟨s, Visibility.unres⟩
+def CoreIdent.unres (s : String) : CoreIdent := ⟨s, Visibility.unres⟩
 @[match_pattern]
-def BoogieIdent.glob (s : String) : BoogieIdent := ⟨s, Visibility.glob⟩
+def CoreIdent.glob (s : String) : CoreIdent := ⟨s, Visibility.glob⟩
 @[match_pattern]
-def BoogieIdent.locl (s : String) : BoogieIdent := ⟨s, Visibility.locl⟩
+def CoreIdent.locl (s : String) : CoreIdent := ⟨s, Visibility.locl⟩
 @[match_pattern]
-def BoogieIdent.temp (s : String) : BoogieIdent := ⟨s, Visibility.temp⟩
+def CoreIdent.temp (s : String) : CoreIdent := ⟨s, Visibility.temp⟩
 
-def BoogieIdent.isUnres (id : BoogieIdent) : Bool := match id with
+def CoreIdent.isUnres (id : CoreIdent) : Bool := match id with
   | .unres _ => true | _ => false
-def BoogieIdent.isGlob (id : BoogieIdent) : Bool := match id with
+def CoreIdent.isGlob (id : CoreIdent) : Bool := match id with
   | .glob _ => true | _ => false
-def BoogieIdent.isLocl (id : BoogieIdent) : Bool := match id with
+def CoreIdent.isLocl (id : CoreIdent) : Bool := match id with
   | .locl _ => true | _ => false
-def BoogieIdent.isTemp (id : BoogieIdent) : Bool := match id with
+def CoreIdent.isTemp (id : CoreIdent) : Bool := match id with
   | .temp _ => true | _ => false
 
-def BoogieIdent.isGlobOrLocl (id : BoogieIdent) : Bool :=
-  BoogieIdent.isGlob id ∨ BoogieIdent.isLocl id
+def CoreIdent.isGlobOrLocl (id : CoreIdent) : Bool :=
+  CoreIdent.isGlob id ∨ CoreIdent.isLocl id
 
-instance : Coe String BoogieIdent where
+instance : Coe String CoreIdent where
   coe | s => .unres s
 
--- instance : DecidableEq BoogieIdent := instDecidableEqProd
+-- instance : DecidableEq CoreIdent := instDecidableEqProd
 
-/-- The pretty-printer for Boogie Identifiers.
+/-- The pretty-printer for Strata Core Identifiers.
   We ignore the visibility part so that the output can be parsed again -/
-def BoogieIdent.toPretty (x : BoogieIdent) : String :=
+def CoreIdent.toPretty (x : CoreIdent) : String :=
   match x with | ⟨s, _⟩ => s
 
-/-- The pretty-printer for Boogie Identifiers.
+/-- The pretty-printer for Strata Core Identifiers.
   We ignore the visibility part so that the output can be parsed again -/
-instance : ToFormat BoogieIdent where
-  format i := BoogieIdent.toPretty i
+instance : ToFormat CoreIdent where
+  format i := CoreIdent.toPretty i
 
--- Explicit instances for BoogieLParams field access
-instance : ToFormat BoogieLParams.Identifier :=
-  show ToFormat BoogieIdent from inferInstance
+-- Explicit instances for CoreLParams field access
+instance : ToFormat CoreLParams.Identifier :=
+  show ToFormat CoreIdent from inferInstance
 
-instance : DecidableEq BoogieLParams.Identifier :=
-  show DecidableEq BoogieIdent from inferInstance
+instance : DecidableEq CoreLParams.Identifier :=
+  show DecidableEq CoreIdent from inferInstance
 
 
 
@@ -110,23 +111,23 @@ instance : DecidableEq BoogieLParams.Identifier :=
   This can be useful for both debugging and generating "unique" strings,
   for example, as labels of proof obligations in the VC generator.
 
-  As a general guideline, whenever conversion from a `BoogieIdent` to `String`
+  As a general guideline, whenever conversion from a `CoreIdent` to `String`
   is needed, _always use the `toString` method_." Since `toString` includes the
   scoping information, consistency is ensured. Moreover, we could change the
   string representation fairly easily by overriding the method, if needed.
 -/
-instance : ToString BoogieIdent where
+instance : ToString CoreIdent where
   toString | ⟨s, v⟩ => (toString $ ToFormat.format v) ++ (toString $ ToFormat.format s)
 
-instance : Repr BoogieIdent where
+instance : Repr CoreIdent where
   reprPrec | ⟨s, v⟩, _  => (ToFormat.format v) ++ (ToFormat.format s)
 
-instance : Inhabited BoogieIdent where
+instance : Inhabited CoreIdent where
   default := ⟨"_", .unres⟩
 
 instance : Lambda.HasGen Visibility where
   genVar T := let (sym, state') := (Lambda.TState.genExprSym T.genState)
-              (BoogieIdent.temp sym, { T with genState := state' })
+              (CoreIdent.temp sym, { T with genState := state' })
 
 namespace Syntax
 
@@ -134,30 +135,30 @@ open Lean Elab Meta Lambda.LExpr.SyntaxMono
 
 scoped syntax ident : lidentmono
 /-- Elaborator for String identifiers, construct a String instance -/
-def elabBoogieIdent : Syntax → MetaM Expr
+def elabCoreIdent : Syntax → MetaM Expr
   | `(lidentmono| $s:ident) => do
     let s := toString s.getId
-    return ← mkAppM ``BoogieIdent.unres #[mkStrLit s]
+    return ← mkAppM ``CoreIdent.unres #[mkStrLit s]
   | _ => throwUnsupportedSyntax
 
 --
-instance : MkLExprParams ⟨BoogieExprMetadata, Visibility⟩ where
-  elabIdent := elabBoogieIdent
-  toExpr := mkApp2 (mkConst ``Lambda.LExprParams.mk) (mkConst ``BoogieExprMetadata) (.const ``Visibility [])
+instance : MkLExprParams ⟨CoreExprMetadata, Visibility⟩ where
+  elabIdent := elabCoreIdent
+  toExpr := mkApp2 (mkConst ``Lambda.LExprParams.mk) (mkConst ``CoreExprMetadata) (.const ``Visibility [])
 
-elab "eb[" e:lexprmono "]" : term => elabLExprMono (T:=⟨BoogieExprMetadata, Visibility⟩) e
+elab "eb[" e:lexprmono "]" : term => elabLExprMono (T:=⟨CoreExprMetadata, Visibility⟩) e
 
 /--
-info: Lambda.LExpr.op () (BoogieIdent.unres "old")
-  none : Lambda.LExpr { Metadata := BoogieExprMetadata, IDMeta := Visibility }.mono
+info: Lambda.LExpr.op () (CoreIdent.unres "old")
+  none : Lambda.LExpr { Metadata := CoreExprMetadata, IDMeta := Visibility }.mono
 -/
 #guard_msgs in
 #check eb[~old]
 
 /--
-info: Lambda.LExpr.app () (Lambda.LExpr.op () (BoogieIdent.unres "old") none)
-  (Lambda.LExpr.fvar () (BoogieIdent.unres "a")
-    none) : Lambda.LExpr { Metadata := BoogieExprMetadata, IDMeta := Visibility }.mono
+info: Lambda.LExpr.app () (Lambda.LExpr.op () (CoreIdent.unres "old") none)
+  (Lambda.LExpr.fvar () (CoreIdent.unres "a")
+    none) : Lambda.LExpr { Metadata := CoreExprMetadata, IDMeta := Visibility }.mono
 -/
 #guard_msgs in
 #check eb[(~old a)]
@@ -165,8 +166,8 @@ info: Lambda.LExpr.app () (Lambda.LExpr.op () (BoogieIdent.unres "old") none)
 open Lambda.LTy.Syntax in
 
 /--
-info: Lambda.LExpr.fvar () (BoogieIdent.unres "x")
-  (some (Lambda.LMonoTy.tcons "bool" [])) : Lambda.LExpr { Metadata := BoogieExprMetadata, IDMeta := Visibility }.mono
+info: Lambda.LExpr.fvar () (CoreIdent.unres "x")
+  (some (Lambda.LMonoTy.tcons "bool" [])) : Lambda.LExpr { Metadata := CoreExprMetadata, IDMeta := Visibility }.mono
 -/
 #guard_msgs in
 #check eb[(x : bool)]

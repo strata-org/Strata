@@ -26,11 +26,11 @@ the responsibility of the user to ensure that they are consistent.
 -/
 
 structure Axiom where
-  name : BoogieLabel
-  e : LExpr BoogieLParams.mono
+  name : CoreLabel
+  e : LExpr CoreLParams.mono
 
-instance : ToFormat (BoogieLParams.mono : LExprParamsT).base.Identifier :=
-  show ToFormat BoogieIdent from inferInstance
+instance : ToFormat (CoreLParams.mono : LExprParamsT).base.Identifier :=
+  show ToFormat CoreIdent from inferInstance
 
 instance : ToFormat Axiom where
   format a := f!"axiom {a.name}: {a.e};"

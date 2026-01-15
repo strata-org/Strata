@@ -18,7 +18,7 @@ open Std (ToFormat Format format)
 def ExpressionMetadata := Unit
 
 abbrev Expression : Imperative.PureExpr :=
-   { Ident := BoogieIdent,
+   { Ident := CoreIdent,
      EqIdent := inferInstanceAs (DecidableEq (Lambda.Identifier _))
      Expr := Lambda.LExpr ⟨⟨ExpressionMetadata, Visibility⟩, Lambda.LMonoTy⟩,
      Ty := Lambda.LTy,

@@ -6,7 +6,7 @@
 
 
 
-import Strata.Languages.Core.Boogie
+import Strata.Languages.Core.Core
 import Strata.DL.SMT.SMT
 import Init.Data.String.Extra
 import Strata.DDM.Util.DecimalRat
@@ -35,8 +35,8 @@ structure SMT.Context where
   ifs : Array SMT.IF := #[]
   axms : Array Term := #[]
   tySubst: Map String TermType := []
-  datatypes : Array (LDatatype BoogieLParams.IDMeta) := #[]
-  datatypeFuns : Map String (Op.DatatypeFuncs × LConstr BoogieLParams.IDMeta) := Map.empty
+  datatypes : Array (LDatatype CoreLParams.IDMeta) := #[]
+  datatypeFuns : Map String (Op.DatatypeFuncs × LConstr CoreLParams.IDMeta) := Map.empty
 deriving Repr, DecidableEq, Inhabited
 
 def SMT.Context.default : SMT.Context := {}
@@ -67,7 +67,7 @@ def SMT.Context.removeSubst (ctx : SMT.Context) (newSubst: Map String TermType) 
 def SMT.Context.hasDatatype (ctx : SMT.Context) (name : String) : Bool :=
   (ctx.datatypes.map LDatatype.name).contains name
 
-def SMT.Context.addDatatype (ctx : SMT.Context) (d : LDatatype BoogieLParams.IDMeta) : SMT.Context :=
+def SMT.Context.addDatatype (ctx : SMT.Context) (d : LDatatype CoreLParams.IDMeta) : SMT.Context :=
   if ctx.hasDatatype d.name then ctx
   else
     let (c, i, s) := d.genFunctionMaps
@@ -97,7 +97,7 @@ private def lMonoTyToSMTString (ty : LMonoTy) : String :=
 Build a dependency graph for datatypes.
 Returns a mapping from datatype names to their dependencies.
 -/
-private def buildDatatypeDependencyGraph (datatypes : Array (LDatatype BoogieLParams.IDMeta)) :
+private def buildDatatypeDependencyGraph (datatypes : Array (LDatatype CoreLParams.IDMeta)) :
   Map String (Array String) :=
   let depMap := datatypes.foldl (fun acc d =>
     let deps := d.constrs.foldl (fun deps c =>
@@ -259,7 +259,7 @@ def convertQuantifierKind : Lambda.QuantifierKind -> Strata.SMT.QuantifierKind
 
 mutual
 
-partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr BoogieLParams.mono) (ctx : SMT.Context)
+partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (ctx : SMT.Context)
   : Except Format (Term × SMT.Context) := do
   match e with
   | .boolConst _ b => .ok (Term.bool b, ctx)
@@ -316,7 +316,7 @@ partial def toSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr BoogieLParams.mono)
   | .app _ _ _ =>
     appToSMTTerm E bvs e [] ctx
 
-partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr BoogieLParams.mono) (acc : List Term) (ctx : SMT.Context) :
+partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr CoreLParams.mono) (acc : List Term) (ctx : SMT.Context) :
   Except Format (Term × SMT.Context) := do
   match e with
   -- Special case for indexed SMT operations.
@@ -358,7 +358,7 @@ partial def appToSMTTerm (E : Env) (bvs : BoundVars) (e : LExpr BoogieLParams.mo
 
   | _ => toSMTTerm E bvs e ctx
 
-partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Context) :
+partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Context) :
   Except Format ((List Term → TermType → Term) × TermType × SMT.Context) :=
   open LTy.Syntax in do
   -- Encode the type to ensure any datatypes are registered in the context
@@ -595,7 +595,7 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
           .ok (acc_map.insert tyVar smtTy)
         ) Map.empty
         -- Add all axioms for this function to the context, with types binding for the type variables in the expr
-        let ctx ← func.axioms.foldlM (fun acc_ctx (ax: LExpr BoogieLParams.mono) => do
+        let ctx ← func.axioms.foldlM (fun acc_ctx (ax: LExpr CoreLParams.mono) => do
           let current_axiom_ctx := acc_ctx.addSubst smt_ty_inst
             let (axiom_term, new_ctx) ← toSMTTerm E [] ax current_axiom_ctx
             .ok (new_ctx.addAxiom axiom_term)
@@ -606,7 +606,7 @@ partial def toSMTOp (E : Env) (fn : BoogieIdent) (fnty : LMonoTy) (ctx : SMT.Con
         .ok (.app (Op.uf uf), smt_outty, ctx)
 end
 
-def toSMTTerms (E : Env) (es : List (LExpr BoogieLParams.mono)) (ctx : SMT.Context) :
+def toSMTTerms (E : Env) (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context) :
   Except Format ((List Term) × SMT.Context) := do
   match es with
   | [] => .ok ([], ctx)
@@ -657,7 +657,7 @@ def ProofObligation.toSMTTerms (E : Env)
 ---------------------------------------------------------------------
 
 /-- Convert an expression of type LExpr to a String representation in SMT-Lib syntax, for testing. -/
-def toSMTTermString (e : LExpr BoogieLParams.mono) (E : Env := Env.init) (ctx : SMT.Context := SMT.Context.default)
+def toSMTTermString (e : LExpr CoreLParams.mono) (E : Env := Env.init) (ctx : SMT.Context := SMT.Context.default)
   : IO String := do
   let smtctx := toSMTTerm E [] e ctx
   match smtctx with

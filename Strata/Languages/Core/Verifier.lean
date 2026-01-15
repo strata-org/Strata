@@ -319,7 +319,7 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
       -- axioms w.r.t. the consequent to reduce the size of the proof
       -- obligation.
       let cg := Program.toFunctionCG p
-      let fns := obligation.obligation.getOps.map BoogieIdent.toPretty
+      let fns := obligation.obligation.getOps.map CoreIdent.toPretty
       let relevant_fns := (fns ++ (CallGraph.getAllCalleesClosure cg fns)).dedup
       let irrelevant_axs := Program.getIrrelevantAxioms p relevant_fns
       let new_assumptions := Imperative.PathConditions.removeByNames obligation.assumptions irrelevant_axs
@@ -404,7 +404,7 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
 
 def verify (smtsolver : String) (program : Program)
     (options : Options := Options.default)
-    (moreFns : @Lambda.Factory BoogieLParams := Lambda.Factory.default) :
+    (moreFns : @Lambda.Factory CoreLParams := Lambda.Factory.default) :
     EIO Format VCResults := do
   match Core.typeCheckAndPartialEval options program moreFns with
   | .error err =>
@@ -424,7 +424,7 @@ namespace Strata
 open Lean.Parser
 
 def typeCheck (ictx : InputContext) (env : Program) (options : Options := Options.default)
-    (moreFns : @Lambda.Factory Core.BoogieLParams := Lambda.Factory.default) :
+    (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default) :
   Except Std.Format Core.Program := do
   let (program, errors) := TransM.run ictx (translateProgram env)
   if errors.isEmpty then
@@ -442,7 +442,7 @@ def verify
     (smtsolver : String) (env : Program)
     (ictx : InputContext := Inhabited.default)
     (options : Options := Options.default)
-    (moreFns : @Lambda.Factory Core.BoogieLParams := Lambda.Factory.default)
+    (moreFns : @Lambda.Factory Core.CoreLParams := Lambda.Factory.default)
     : IO Core.VCResults := do
   let (program, errors) := Boogie.getProgram env ictx
   if errors.isEmpty then

@@ -17,7 +17,7 @@ namespace WF
 
 open Lambda
 
-theorem snd_values_mem {ps : ListMap BoogieLabel Procedure.Check} :
+theorem snd_values_mem {ps : ListMap CoreLabel Procedure.Check} :
   x ∈ ps.toList →
   x.snd ∈ ListMap.values ps := by
   intros Hin
@@ -81,9 +81,9 @@ theorem Procedure.typeCheckWF : Procedure.typeCheck T p pp = Except.ok (pp', T')
     exact Hc2
   . -- 11. All `modifies` variables have no duplicates.
     sorry
-  . -- 14. The `inputs` list of a procedure are all `BoogieIdent.locl`
+  . -- 14. The `inputs` list of a procedure are all `CoreIdent.locl`
     sorry
-  . -- 15.  The `outputs` list of a procedure are all `BoogieIdent.locl`
+  . -- 15.  The `outputs` list of a procedure are all `CoreIdent.locl`
     sorry
   . constructor <;> simp
     . -- precondition
@@ -91,7 +91,7 @@ theorem Procedure.typeCheckWF : Procedure.typeCheck T p pp = Except.ok (pp', T')
       intros x Hin
       constructor
       . constructor
-        -- 5. All variables in post-conditions and pre-conditions are either `BoogieIdent.locl` or `BoogieIdent.glob`.
+        -- 5. All variables in post-conditions and pre-conditions are either `CoreIdent.locl` or `CoreIdent.glob`.
         . sorry
         -- 16. All variables in pre/post conditions that are `.locl` must be in `outputs` or `inputs` of the procedure
         . sorry
@@ -107,7 +107,7 @@ theorem Procedure.typeCheckWF : Procedure.typeCheck T p pp = Except.ok (pp', T')
       apply List.Forall_mem_iff.mpr
       intros x Hin
       constructor
-      . -- 5. All variables in post-conditions and pre-conditions are either `BoogieIdent.locl` or `BoogieIdent.glob`.
+      . -- 5. All variables in post-conditions and pre-conditions are either `CoreIdent.locl` or `CoreIdent.glob`.
         sorry
       . -- 6. Postconditions in a procedure are all `ValidExpression`s
         sorry

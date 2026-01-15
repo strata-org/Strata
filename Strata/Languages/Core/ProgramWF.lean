@@ -24,24 +24,24 @@ import Strata.Languages.Core.ProcedureWF
  well-formedness condition is not needed, it is denoted by '-'.
 
  1. All `modifies` variables in a procedure are declared in the program.
- 2. All declared global variables are `BoogieIdent.glob`.
- -  All local variable declarations in a procedure are `BoogieIdent.locl`.
+ 2. All declared global variables are `CoreIdent.glob`.
+ -  All local variable declarations in a procedure are `CoreIdent.locl`.
  4. All local variable declarations in a procedure have no duplicates.
- 5. All variables in post-conditions and pre-conditions are either `BoogieIdent.locl` or `BoogieIdent.glob`.
+ 5. All variables in post-conditions and pre-conditions are either `CoreIdent.locl` or `CoreIdent.glob`.
  6. Postconditions in a procedure are all `ValidExpression`s (c.f., `OldExpressions.lean`),
     that is, the old predicates do not occur on the right hand side of an `.app`.
- 7. The `lhs` of a call statement contain no duplicates and are `BoogieIdent.locl`.
+ 7. The `lhs` of a call statement contain no duplicates and are `CoreIdent.locl`.
     This is to avoid overlapping with global variables that occurs in pre/post conditions, because call elimination directly substitutes `lhs` into the
     pre/post conditions, they must not already exist in the pre/post conditions.
     If a `lhs` needs to be global, a separate transformation can be implemented to create/substitute temporary variables before the call statement, and insert an assignment statement to
  +  The `outputs` list of a procedure contains no duplicates
- 9. All variables mentioned in `args` of a call statement are either `BoogieIdent.locl` or `BoogieIdent.glob`.
+ 9. All variables mentioned in `args` of a call statement are either `CoreIdent.locl` or `CoreIdent.glob`.
  +  The `inputs` list of a procedure contains no duplicates
  11. All `modifies` variables have no duplicates.
  12. The `inputs` list of a procedure is disjoint from the `outputs` list of the procedure
  13. The `lhs` of a call statement is disjoint from `modifies`, `outputs`, and `inputs` of the procedure
- 14. The `inputs` list of a procedure are all `BoogieIdent.locl`
- 15. The `outputs` list of a procedure are all `BoogieIdent.locl`
+ 14. The `inputs` list of a procedure are all `CoreIdent.locl`
+ 15. The `outputs` list of a procedure are all `CoreIdent.locl`
  16. All variables in pre/post conditions that are `.locl` must be in `outputs` or `inputs` of the procedure
 
  In order to fully prove the type checker's properties, it might be necessary to
@@ -133,7 +133,7 @@ theorem Program.typeCheck.goWF' :
               | intro l r =>
                 apply And.intro
                 . constructor
-                  -- 2. All declared global variables are `BoogieIdent.glob`.
+                  -- 2. All declared global variables are `CoreIdent.glob`.
                   sorry
                 . exists v.1, {
                   context := res.snd.context.subst res.snd.state.substInfo.subst,
@@ -173,7 +173,7 @@ theorem Program.typeCheck.goWF' :
             state := (LMonoTys.instantiate td.typeArgs [td.toLHSLMonoTy, td.type] T).snd.state,
             functions := (LMonoTys.instantiate td.typeArgs [td.toLHSLMonoTy, td.type] T).snd.functions,
             knownTypes := (LMonoTys.instantiate td.typeArgs [td.toLHSLMonoTy, td.type] T).snd.knownTypes
-            : TEnv BoogieIdent } -- NOTE: this type annotation is important
+            : TEnv CoreIdent } -- NOTE: this type annotation is important
           = TT at Htc
         exists v'.fst, TT, v'.snd
   | ax a =>

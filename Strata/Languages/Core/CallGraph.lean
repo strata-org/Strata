@@ -76,7 +76,7 @@ def extractFunctionCallsFromExpr (expr : Expression.Expr) : List String :=
   | .fvar _ _ _ => []
   | .bvar _ _ => []
   | .op _ fname _ =>
-    let fname := BoogieIdent.toPretty fname
+    let fname := CoreIdent.toPretty fname
     if builtinFunctions.contains fname then [] else [fname]
   | .const _ _ => []
   | .app _ fn arg => extractFunctionCallsFromExpr fn ++ extractFunctionCallsFromExpr arg
@@ -118,14 +118,14 @@ abbrev FunctionCG := CallGraph
 def Program.toProcedureCG (prog : Program) : ProcedureCG :=
   let procedures := prog.decls.filterMap (fun decl =>
     match decl with
-    | .proc p _ => some (BoogieIdent.toPretty p.header.name, extractCallsFromProcedure p)
+    | .proc p _ => some (CoreIdent.toPretty p.header.name, extractCallsFromProcedure p)
     | _ => none)
   buildCallGraph procedures
 
 def Program.toFunctionCG (prog : Program) : FunctionCG :=
   let functions := prog.decls.filterMap (fun decl =>
     match decl with
-    | .func f _ => some (BoogieIdent.toPretty f.name, extractCallsFromFunction f)
+    | .func f _ => some (CoreIdent.toPretty f.name, extractCallsFromFunction f)
     | _ => none)
   buildCallGraph functions
 
@@ -170,7 +170,7 @@ def Program.toFunctionAxiomMap (prog : Program) : Std.HashMap String (List Strin
 
   let functionAxiomPairs := axioms.flatMap (fun ax =>
     let ops := Lambda.LExpr.getOps ax.e
-    ops.map (fun op => (BoogieIdent.toPretty op, ax)))
+    ops.map (fun op => (CoreIdent.toPretty op, ax)))
 
   functionAxiomPairs.foldl
     (fun acc (funcName, ax) =>
@@ -192,7 +192,7 @@ def Program.getIrrelevantAxioms (prog : Program) (functions : List String) : Lis
     | .ax a _ =>
       let ops := Lambda.LExpr.getOps a.e
       let hasRelevantOp := ops.any (fun op =>
-        functionsSet.binSearch (BoogieIdent.toPretty op) (· < ·) |>.isSome)
+        functionsSet.binSearch (CoreIdent.toPretty op) (· < ·) |>.isSome)
       if hasRelevantOp then none else some a.name
     | _ => none)
 

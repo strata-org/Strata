@@ -18,11 +18,11 @@ instance : ToFormat ExpressionMetadata :=
 
 -- ToFormat instance for Expression.Expr
 instance : ToFormat Expression.Expr := by
-  show ToFormat (Lambda.LExpr BoogieLParams.mono)
+  show ToFormat (Lambda.LExpr CoreLParams.mono)
   infer_instance
 
 -- Custom ToFormat instance for our specific Scope type to get the desired formatting
-private def formatScope (m : Map BoogieIdent (Option Lambda.LMonoTy × Expression.Expr)) : Std.Format :=
+private def formatScope (m : Map CoreIdent (Option Lambda.LMonoTy × Expression.Expr)) : Std.Format :=
   match m with
   | [] => ""
   | [(k, (ty, v))] => go k ty v
@@ -33,7 +33,7 @@ private def formatScope (m : Map BoogieIdent (Option Lambda.LMonoTy × Expressio
     | some ty => f!"({k} : {ty}) → {v}"
     | none => f!"{k} → {v}"
 
-instance : ToFormat (Map BoogieIdent (Option Lambda.LMonoTy × Expression.Expr)) where
+instance : ToFormat (Map CoreIdent (Option Lambda.LMonoTy × Expression.Expr)) where
   format := formatScope
 
 instance : Inhabited ExpressionMetadata :=
@@ -42,8 +42,8 @@ instance : Inhabited ExpressionMetadata :=
 instance : Lambda.Traceable Lambda.LExpr.EvalProvenance ExpressionMetadata where
   combine _ := ()
 
-instance : Inhabited (Lambda.LExpr ⟨⟨ExpressionMetadata, BoogieIdent⟩, LMonoTy⟩) :=
-  show Inhabited (Lambda.LExpr ⟨⟨Unit, BoogieIdent⟩, LMonoTy⟩) from inferInstance
+instance : Inhabited (Lambda.LExpr ⟨⟨ExpressionMetadata, CoreIdent⟩, LMonoTy⟩) :=
+  show Inhabited (Lambda.LExpr ⟨⟨Unit, CoreIdent⟩, LMonoTy⟩) from inferInstance
 
 ---------------------------------------------------------------------
 
@@ -184,7 +184,7 @@ def oldVarSubst (subst :  SubstMap) (E : Env) : SubstMap :=
 def Env.exprEval (E : Env) (e : Expression.Expr) : Expression.Expr :=
   e.eval E.exprEnv.config.fuel E.exprEnv
 
-def Env.pushScope (E : Env) (scope : (Lambda.Scope BoogieLParams)) : Env :=
+def Env.pushScope (E : Env) (scope : (Lambda.Scope CoreLParams)) : Env :=
   { E with exprEnv.state := E.exprEnv.state.push scope }
 
 def Env.pushEmptyScope (E : Env) : Env :=
@@ -193,14 +193,14 @@ def Env.pushEmptyScope (E : Env) : Env :=
 def Env.popScope (E : Env) : Env :=
   { E with exprEnv.state := E.exprEnv.state.pop }
 
-def Env.factory (E : Env) : (@Lambda.Factory BoogieLParams) :=
+def Env.factory (E : Env) : (@Lambda.Factory CoreLParams) :=
   E.exprEnv.config.factory
 
-def Env.addFactory (E : Env) (f : (@Lambda.Factory BoogieLParams)) : Except Format Env := do
+def Env.addFactory (E : Env) (f : (@Lambda.Factory CoreLParams)) : Except Format Env := do
   let exprEnv ← E.exprEnv.addFactory f
   .ok { E with exprEnv := exprEnv }
 
-def Env.addFactoryFunc (E : Env) (func : (Lambda.LFunc BoogieLParams)) : Except Format Env := do
+def Env.addFactoryFunc (E : Env) (func : (Lambda.LFunc CoreLParams)) : Except Format Env := do
   let exprEnv ← E.exprEnv.addFactoryFunc func
   .ok { E with exprEnv := exprEnv }
 
@@ -216,16 +216,16 @@ def Env.addToContext
   List.foldl (fun E (x, v) => E.insertInContext x v) E xs
 
 -- TODO: prove uniqueness, add different prefix
-def Env.genSym (x : String) (c : Lambda.EvalConfig BoogieLParams) : BoogieIdent × Lambda.EvalConfig BoogieLParams :=
+def Env.genSym (x : String) (c : Lambda.EvalConfig CoreLParams) : CoreIdent × Lambda.EvalConfig CoreLParams :=
   let new_idx := c.gen
   let c := c.incGen
   let new_var := c.varPrefix ++ x ++ toString new_idx
   (.temp new_var, c)
 
-def Env.genVar' (x : String) (σ : (Lambda.LState BoogieLParams)) :
-    (BoogieIdent × (Lambda.LState BoogieLParams)) :=
+def Env.genVar' (x : String) (σ : (Lambda.LState CoreLParams)) :
+    (CoreIdent × (Lambda.LState CoreLParams)) :=
   let (new_var, config) := Env.genSym x σ.config
-  let σ : Lambda.LState BoogieLParams := { σ with config := config }
+  let σ : Lambda.LState CoreLParams := { σ with config := config }
   -- let known_vars := Lambda.LState.knownVars σ
   -- if new_var ∈ known_vars then
   --   panic s!"[LState.genVar] Generated variable {Std.format new_var} is not fresh!\n\
@@ -239,7 +239,7 @@ def Env.genVar (x : Expression.Ident) (E : Env) : Expression.Ident × Env :=
   let (var, σ) := Env.genVar' name E.exprEnv
   (var, { E with exprEnv := σ })
 
-def Env.genVars (xs : List String) (σ : Lambda.LState BoogieLParams) : (List BoogieIdent × Lambda.LState BoogieLParams) :=
+def Env.genVars (xs : List String) (σ : Lambda.LState CoreLParams) : (List CoreIdent × Lambda.LState CoreLParams) :=
   match xs with
   | [] => ([], σ)
   | x :: rest =>
@@ -319,7 +319,7 @@ def Env.merge (cond : Expression.Expr) (E1 E2 : Env) : Env :=
     Env.performMerge cond E1 E2 (by simp_all) (by simp_all)
 
 def Env.addDatatypes (E: Env) (datatypes: List (Lambda.LDatatype Visibility)) : Except Format Env := do
-  let f ← Lambda.TypeFactory.genFactory (T:=BoogieLParams) (datatypes.toArray)
+  let f ← Lambda.TypeFactory.genFactory (T:=CoreLParams) (datatypes.toArray)
   let env ← E.addFactory f
   return { env with datatypes := datatypes.toArray }
 

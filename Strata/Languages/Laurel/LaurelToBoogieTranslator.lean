@@ -42,7 +42,7 @@ def translateExpr (expr : StmtExpr) : Core.Expression.Expr :=
   | .LiteralBool b => .const () (.boolConst b)
   | .LiteralInt i => .const () (.intConst i)
   | .Identifier name =>
-      let ident := Core.BoogieIdent.locl name
+      let ident := Core.CoreIdent.locl name
       .fvar () ident (some LMonoTy.int)  -- Default to int type
   | .PrimitiveOp op [e] =>
     match op with
@@ -79,7 +79,7 @@ def translateExpr (expr : StmtExpr) : Core.Expression.Expr :=
   | .Assign _ value => translateExpr value  -- For expressions, just translate the value
   | .StaticCall name args =>
       -- Create function call as an op application
-      let ident := Core.BoogieIdent.glob name
+      let ident := Core.CoreIdent.glob name
       let fnOp := .op () ident (some LMonoTy.int)  -- Assume int return type
       args.foldl (fun acc arg => .app () acc (translateExpr arg)) fnOp
   | _ => panic! Std.Format.pretty (Std.ToFormat.format expr)
@@ -108,7 +108,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExpr) : List Core.
   | .LocalVariable name ty initializer =>
       let boogieMonoType := translateType ty
       let boogieType := LTy.forAll [] boogieMonoType
-      let ident := Core.BoogieIdent.locl name
+      let ident := Core.CoreIdent.locl name
       match initializer with
       | some initExpr =>
           let boogieExpr := translateExpr initExpr
@@ -123,7 +123,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExpr) : List Core.
   | .Assign target value =>
       match target with
       | .Identifier name =>
-          let ident := Core.BoogieIdent.locl name
+          let ident := Core.CoreIdent.locl name
           let boogieExpr := translateExpr value
           [Core.Statement.set ident boogieExpr]
       | _ => []  -- Can only assign to simple identifiers
@@ -143,7 +143,7 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExpr) : List Core.
       match valueOpt, outputParams.head? with
       | some value, some outParam =>
           -- Assign to the first output parameter, then assume false for no fallthrough
-          let ident := Core.BoogieIdent.locl outParam.name
+          let ident := Core.CoreIdent.locl outParam.name
           let boogieExpr := translateExpr value
           let assignStmt := Core.Statement.set ident boogieExpr
           let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) .empty
@@ -160,8 +160,8 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExpr) : List Core.
 /--
 Translate Laurel Parameter to Boogie Signature entry
 -/
-def translateParameterToBoogie (param : Parameter) : (Core.BoogieIdent × LMonoTy) :=
-  let ident := Core.BoogieIdent.locl param.name
+def translateParameterToBoogie (param : Parameter) : (Core.CoreIdent × LMonoTy) :=
+  let ident := Core.CoreIdent.locl param.name
   let ty := translateType param.type
   (ident, ty)
 

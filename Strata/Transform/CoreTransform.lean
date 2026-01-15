@@ -5,8 +5,8 @@
 -/
 
 import Strata.Languages.Core.Statement
-import Strata.Languages.Core.Boogie
-import Strata.Languages.Core.BoogieGen
+import Strata.Languages.Core.Core
+import Strata.Languages.Core.CoreGen
 import Strata.DL.Util.LabelGen
 
 /-! # Utility functions for program transformation in Strata Core -/
@@ -35,7 +35,7 @@ def createFvars (ident : List Expression.Ident)
 
 def genIdent (ident : Expression.Ident) (pf : String → String)
   : BoogieGenM Expression.Ident :=
-    BoogieGenState.gen (pf ident.name)
+    CoreGenState.gen (pf ident.name)
 
 /--
 Generate identifiers in the form of arg_... that can be used to reduce argument expressions to temporary variables.
@@ -252,13 +252,13 @@ def runProgram (f : Command → Program → CoreTransformM (List Statement))
 
 @[simp]
 def runWith {α : Type} (p : α) (f : α → CoreTransformM β)
-    (s : BoogieGenState):
-  Except Err β × BoogieGenState :=
+    (s : CoreGenState):
+  Except Err β × CoreGenState :=
   (StateT.run (f p) s)
 
 @[simp]
 def run {α : Type} (p : α) (f : α → CoreTransformM β)
-      (s : BoogieGenState := .emp):
+      (s : CoreGenState := .emp):
   Except Err β :=
   (runWith p f s).fst
 

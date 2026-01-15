@@ -35,9 +35,9 @@ section Tests
 open Lambda
 open Std
 
-def encode (e:LExpr BoogieLParams.mono)
+def encode (e:LExpr CoreLParams.mono)
            (tenv:TEnv Visibility)
-           (init_state:LState BoogieLParams):
+           (init_state:LState CoreLParams):
     Except Format (Option (Strata.SMT.Term × SMT.Context))
   := do
   let init_state ← init_state.addFactory Core.Factory
@@ -58,7 +58,7 @@ def encode (e:LExpr BoogieLParams.mono)
 Check whether concrete evaluation of e matches the SMT encoding of e.
 Returns false if e did not reduce to a constant.
 -/
-def checkValid (e:LExpr BoogieLParams.mono): IO Bool := do
+def checkValid (e:LExpr CoreLParams.mono): IO Bool := do
   let tenv := TEnv.default
   let init_state := LState.init
   match encode e tenv init_state with
@@ -99,7 +99,7 @@ private def pickRandInt (abs_bound:Nat): IO Int := do
   let rand_size <- IO.rand 0 abs_bound
   return (if rand_sign = 0 then rand_size else - (Int.ofNat rand_size))
 
-private def mkRandConst (ty:LMonoTy): IO (Option (LExpr BoogieLParams.mono))
+private def mkRandConst (ty:LMonoTy): IO (Option (LExpr CoreLParams.mono))
   := do
   match ty with
   | .tcons "int" [] =>
@@ -119,7 +119,7 @@ private def mkRandConst (ty:LMonoTy): IO (Option (LExpr BoogieLParams.mono))
   | .tcons "regex" [] =>
     -- TODO: random regex generator
     return (.some (.app ()
-      (.op () (BoogieIdent.unres "Str.ToRegEx") .none) (.strConst () ".*")))
+      (.op () (CoreIdent.unres "Str.ToRegEx") .none) (.strConst () ".*")))
   | .bitvec n =>
     let specialvals :=
       [0, 1, -1, Int.ofNat n, (Int.pow 2 (n-1)) - 1, -(Int.pow 2 (n-1))]
@@ -129,7 +129,7 @@ private def mkRandConst (ty:LMonoTy): IO (Option (LExpr BoogieLParams.mono))
     return .none
 
 def checkFactoryOps (verbose:Bool): IO Unit := do
-  let arr:Array (LFunc BoogieLParams) := Core.Factory
+  let arr:Array (LFunc CoreLParams) := Core.Factory
   let print (f:Format): IO Unit :=
     if verbose then IO.println f
     else return ()
@@ -143,7 +143,7 @@ def checkFactoryOps (verbose:Bool): IO Unit := do
       let mut unsupported := false
       let mut cnt_skipped := 0
       for _ in [0:cnt] do
-        let args:List (Option (LExpr BoogieLParams.mono))
+        let args:List (Option (LExpr CoreLParams.mono))
           <- e.inputs.mapM (fun t => do
             let res <- mkRandConst t.snd
             match res with
@@ -157,7 +157,7 @@ def checkFactoryOps (verbose:Bool): IO Unit := do
         else
           let args := List.map (Option.get!) args
           let expr := List.foldl (fun e arg => (.app () e arg))
-            (LExpr.op () (BoogieIdent.unres e.name.name) .none) args
+            (LExpr.op () (CoreIdent.unres e.name.name) .none) args
           let res <- checkValid expr
           if ¬ res then
             if cnt_skipped = 0 then
@@ -183,7 +183,7 @@ open Lambda.LTy.Syntax
 #guard_msgs in #eval (checkValid eb[if #1 == #2 then #false else #true])
 /-- info: true -/
 #guard_msgs in #eval (checkValid
-  (.app () (.app () (.op () (BoogieIdent.unres "Int.Add") .none) eb[#100]) eb[#50]))
+  (.app () (.app () (.op () (CoreIdent.unres "Int.Add") .none) eb[#100]) eb[#50]))
 
 
 -- This may take a while (~ 5min)
@@ -193,7 +193,7 @@ open Plausible TestGen
 
 deriving instance Arbitrary for Visibility
 
-def test_lctx : LContext BoogieLParams :=
+def test_lctx : LContext CoreLParams :=
 {
   LContext.empty with
   functions := Boogie.Factory
@@ -206,7 +206,7 @@ abbrev test_ty : LTy := .forAll [] <| .tcons "bool" []
 
 #guard_msgs(drop all) in
 #eval do
-    let P : LExpr BoogieLParams.mono → Prop := fun t => HasType test_lctx test_ctx t test_ty
+    let P : LExpr CoreLParams.mono → Prop := fun t => HasType test_lctx test_ctx t test_ty
     let t ← Gen.runUntil .none (ArbitrarySizedSuchThat.arbitrarySizedST P 5) 5
     IO.println s!"Generated {t}"
     let b ← checkValid t

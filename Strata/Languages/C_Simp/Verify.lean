@@ -16,7 +16,7 @@ namespace Strata
 -- 2. Running SymExec of Lambda and Imp
 
 
-def translate_expr (e : C_Simp.Expression.Expr) : Lambda.LExpr Core.BoogieLParams.mono :=
+def translate_expr (e : C_Simp.Expression.Expr) : Lambda.LExpr Core.CoreLParams.mono :=
   match e with
   | .const m c => .const m c
   | .op m o ty => .op m ⟨o.name, .unres⟩ ty
@@ -28,7 +28,7 @@ def translate_expr (e : C_Simp.Expression.Expr) : Lambda.LExpr Core.BoogieLParam
   | .ite m c t e => .ite m (translate_expr c) (translate_expr t) (translate_expr e)
   | .eq m e1 e2 => .eq m (translate_expr e1) (translate_expr e2)
 
-def translate_opt_expr (e : Option C_Simp.Expression.Expr) : Option (Lambda.LExpr Core.BoogieLParams.mono) :=
+def translate_opt_expr (e : Option C_Simp.Expression.Expr) : Option (Lambda.LExpr Core.CoreLParams.mono) :=
   match e with
   | some e => translate_expr e
   | none => none
