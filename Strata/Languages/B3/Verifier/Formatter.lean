@@ -12,11 +12,7 @@ import Strata.DL.SMT.DDMTransform.Translate
 Formats SMT terms to SMT-LIB syntax using the SMT dialect's pretty-printer.
 
 This module uses `SMTDDM.toString` which translates SMT terms to the SMT dialect's
-AST and then uses the dialect's formatter to generate SMT-LIB strings. This approach:
-- Is more efficient than string interpolation
-- Produces direct, readable SMT-LIB output (no A-normal form)
-- Leverages the existing SMT dialect infrastructure
-- Ensures consistency with other SMT formatting in Strata
+AST and then uses the dialect's formatter to generate SMT-LIB strings.
 -/
 
 namespace Strata.B3.Verifier

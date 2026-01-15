@@ -60,10 +60,6 @@ def VerificationResult.fromDecisionForReach (d : Decision) : VerificationResult 
   | .unknown => .success .reachabilityUnknown
 
 ---------------------------------------------------------------------
--- Verification State
----------------------------------------------------------------------
-
----------------------------------------------------------------------
 -- Verification Context and Results
 ---------------------------------------------------------------------
 

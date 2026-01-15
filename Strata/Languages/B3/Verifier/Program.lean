@@ -91,19 +91,17 @@ def extractVerifiableProcedures (prog : B3AST.Program SourceRange) : List (Strin
 
 /-- Translate a B3 program to SMT without automatic diagnosis (faster, less detailed errors) -/
 def programToSMTWithoutDiagnosis (prog : B3AST.Program SourceRange) (solver : Solver) : IO (List (Except String VerificationReport)) := do
-  let mut state ← initVerificationState solver
+  let initialState ← initVerificationState solver
   let mut results := []
 
   -- Transform: split functions into declarations + axioms
   let transformedProg := Transform.functionToAxiom prog
 
   -- Add function declarations and axioms
-  let (newState, conversionErrors) ← addDeclarationsAndAxioms state transformedProg
-  state := newState
+  let (state, conversionErrors) ← addDeclarationsAndAxioms initialState transformedProg
 
   -- Report conversion errors
-  for err in conversionErrors do
-    results := results ++ [.error err]
+  results := results ++ conversionErrors.map .error
 
   -- Verify parameter-free procedures
   for (_name, decl, bodyStmt) in extractVerifiableProcedures prog do
@@ -114,10 +112,6 @@ def programToSMTWithoutDiagnosis (prog : B3AST.Program SourceRange) (solver : So
 
   closeVerificationState state
   return results
-
----------------------------------------------------------------------
--- Convenience Wrappers
----------------------------------------------------------------------
 
 ---------------------------------------------------------------------
 -- Convenience Wrappers
@@ -188,7 +182,7 @@ def programToSMT (prog : Strata.B3AST.Program SourceRange) (solver : Solver) : I
   -- Reset solver to clean state
   let _ ← (Solver.reset).run solver
   let state ← buildProgramState prog solver
-  let mut reports := []
+  let mut reportsRev := []
 
   -- Verify parameter-free procedures
   for (name, decl, bodyStmt) in extractVerifiableProcedures prog do
@@ -199,10 +193,10 @@ def programToSMT (prog : Strata.B3AST.Program SourceRange) (solver : Solver) : I
       | .verified report => some (report, diag)
       | .conversionError _ => none
     )
-    reports := reports ++ [{
+    reportsRev := {
       procedureName := name
       results := resultsWithDiag
-    }]
+    } :: reportsRev
 
   closeVerificationState state
-  return reports
+  return reportsRev.reverse

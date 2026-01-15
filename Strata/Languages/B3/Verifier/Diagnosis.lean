@@ -187,20 +187,20 @@ partial def statementToSMT (ctx : ConversionContext) (state : B3VerificationStat
       let execResult ← statementToSMTWithoutDiagnosis ctx state sourceDecl stmt
 
       -- Add diagnosis to any failed verification results
-      let mut resultsWithDiag := []
+      let mut resultsWithDiagRev := []
       for (stmtResult, _) in execResult.results do
         match stmtResult with
         | .verified report =>
-            -- If verification failed, diagnose itx²
+            -- If verification failed, diagnose it
             let diag ← if report.result.isError then
               diagnoseFailed state sourceDecl report.context.stmt
             else
               pure none
-            resultsWithDiag := resultsWithDiag ++ [(stmtResult, diag)]
+            resultsWithDiagRev := (stmtResult, diag) :: resultsWithDiagRev
         | .conversionError _ =>
             -- Conversion errors don't have diagnosis
-            resultsWithDiag := resultsWithDiag ++ [(stmtResult, none)]
+            resultsWithDiagRev := (stmtResult, none) :: resultsWithDiagRev
 
-      pure { results := resultsWithDiag, finalState := execResult.finalState }
+      pure { results := resultsWithDiagRev.reverse, finalState := execResult.finalState }
 
 end Strata.B3.Verifier

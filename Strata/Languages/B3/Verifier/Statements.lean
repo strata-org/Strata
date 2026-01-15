@@ -91,12 +91,12 @@ partial def statementToSMTWithoutDiagnosis (ctx : ConversionContext) (state : B3
 
   | .blockStmt _ stmts => do
       let mut currentState := state
-      let mut allResults := []
+      let mut allResultsRev := []
       for stmt in stmts.val.toList do
         let execResult ← statementToSMTWithoutDiagnosis ctx currentState sourceDecl stmt
         currentState := execResult.finalState
-        allResults := allResults ++ execResult.results
-      pure { results := allResults, finalState := currentState }
+        allResultsRev := execResult.results.reverse ++ allResultsRev
+      pure { results := allResultsRev.reverse, finalState := currentState }
 
   | _ =>
       pure { results := [], finalState := state }
