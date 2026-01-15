@@ -6,7 +6,7 @@
 
 -- Fix for https://github.com/strata-org/Strata/issues/105.
 
-import Strata.Languages.Boogie.Verifier
+import Strata.Languages.Core.Verifier
 
 namespace Strata
 

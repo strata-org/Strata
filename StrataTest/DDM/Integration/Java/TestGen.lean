@@ -7,7 +7,7 @@
 import Strata.DDM.Integration.Java
 import Strata.DDM.Integration.Lean.Env  -- For dialectExt
 import Strata.DDM.Integration.Lean.HashCommands  -- For #load_dialect
-import Strata.Languages.Boogie.DDMTransform.Parse  -- Loads Boogie dialect into env
+import Strata.Languages.Core.DDMTransform.Parse  -- Loads Boogie dialect into env
 
 namespace Strata.Java.Test
 

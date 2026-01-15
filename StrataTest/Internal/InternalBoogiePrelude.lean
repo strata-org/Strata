@@ -6,8 +6,8 @@
 
 import Strata.DDM.Elab
 import Strata.DDM.AST
-import Strata.Languages.Boogie.DDMTransform.Parse
-import Strata.Languages.Boogie.Verifier
+import Strata.Languages.Core.DDMTransform.Parse
+import Strata.Languages.Core.Verifier
 import Strata.Languages.Python.BoogiePrelude
 
 namespace Strata

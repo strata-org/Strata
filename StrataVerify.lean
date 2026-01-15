@@ -5,7 +5,7 @@
 -/
 
 -- Executable for verifying a Strata program from a file.
-import Strata.Languages.Boogie.Verifier
+import Strata.Languages.Core.Verifier
 import Strata.Languages.C_Simp.Verify
 import Strata.Util.IO
 import Std.Internal.Parsec

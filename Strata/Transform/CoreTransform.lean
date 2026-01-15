@@ -4,9 +4,9 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Boogie.Statement
-import Strata.Languages.Boogie.Boogie
-import Strata.Languages.Boogie.BoogieGen
+import Strata.Languages.Core.Statement
+import Strata.Languages.Core.Boogie
+import Strata.Languages.Core.BoogieGen
 import Strata.DL.Util.LabelGen
 
 /-! # Utility functions for program transformation in Strata Core -/

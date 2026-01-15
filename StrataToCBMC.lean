@@ -7,7 +7,7 @@ import Lean.Data.Json
 
 import Strata.Backends.CBMC.StrataToCBMC
 import Strata.Backends.CBMC.BoogieToCBMC
-import Strata.Languages.Boogie.Verifier
+import Strata.Languages.Core.Verifier
 import Strata.Languages.C_Simp.Verify
 import Strata.Util.IO
 import Std.Internal.Parsec

@@ -6,11 +6,11 @@
 
 import Strata.DDM.Integration.Lean
 import Strata.DDM.Util.Format
-import Strata.Languages.Boogie.Boogie
-import Strata.Languages.Boogie.DDMTransform.Translate
-import Strata.Languages.Boogie.ProgramType
-import Strata.Languages.Boogie.ProgramWF
-import Strata.Languages.Boogie.StatementSemantics
+import Strata.Languages.Core.Boogie
+import Strata.Languages.Core.DDMTransform.Translate
+import Strata.Languages.Core.ProgramType
+import Strata.Languages.Core.ProgramWF
+import Strata.Languages.Core.StatementSemantics
 import Strata.Transform.CoreTransform
 import Strata.Transform.CallElim
 

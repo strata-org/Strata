@@ -5,8 +5,8 @@
 -/
 
 
-import Strata.Languages.Boogie.Verifier
-import Strata.Languages.Boogie.CallGraph
+import Strata.Languages.Core.Verifier
+import Strata.Languages.Core.CallGraph
 
 ---------------------------------------------------------------------
 namespace Strata

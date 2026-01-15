@@ -5,9 +5,9 @@
 -/
 
 import Strata.Transform.DetToNondet
-import Strata.Languages.Boogie.StatementSemantics
-import Strata.Languages.Boogie.ProgramType
-import Strata.Languages.Boogie.ProgramWF
+import Strata.Languages.Core.StatementSemantics
+import Strata.Languages.Core.ProgramType
+import Strata.Languages.Core.ProgramWF
 import Strata.DL.Lambda.IntBoolFactory
 
 open Core

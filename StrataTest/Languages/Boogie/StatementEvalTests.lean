@@ -4,7 +4,7 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Boogie.StatementEval
+import Strata.Languages.Core.StatementEval
 
 namespace Core
 ---------------------------------------------------------------------

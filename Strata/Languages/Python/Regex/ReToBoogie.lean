@@ -5,7 +5,7 @@
 -/
 
 import Strata.Languages.Python.Regex.ReParser
-import Strata.Languages.Boogie.Factory
+import Strata.Languages.Core.Factory
 
 namespace Strata
 namespace Python

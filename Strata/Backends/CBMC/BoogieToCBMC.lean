@@ -5,11 +5,11 @@
 -/
 
 import Lean.Data.Json
-import Strata.Languages.Boogie.Env
-import Strata.Languages.Boogie.DDMTransform.Parse
-import Strata.Languages.Boogie.DDMTransform.Translate
+import Strata.Languages.Core.Env
+import Strata.Languages.Core.DDMTransform.Parse
+import Strata.Languages.Core.DDMTransform.Translate
 import Strata.DL.Util.Map
-import Strata.Languages.Boogie.Boogie
+import Strata.Languages.Core.Boogie
 import Strata.Backends.CBMC.Common
 
 open Lean

@@ -7,9 +7,9 @@
 import Strata.DDM.Elab
 import Strata.DDM.AST
 
-import Strata.Languages.Boogie.DDMTransform.Parse
+import Strata.Languages.Core.DDMTransform.Parse
 
-import Strata.Languages.Boogie.Boogie
+import Strata.Languages.Core.Boogie
 import Strata.Languages.Python.PythonDialect
 import Strata.Languages.Python.FunctionSignatures
 import Strata.Languages.Python.Regex.ReToBoogie

@@ -5,8 +5,8 @@
 -/
 
 import Strata.DL.Imperative.MetaData
-import Strata.Languages.Boogie.Expressions
-import Strata.Languages.Boogie.Procedure
+import Strata.Languages.Core.Expressions
+import Strata.Languages.Core.Procedure
 
 /-
 The Laurel language is supposed to serve as an intermediate verification language for at least Java, Python, JavaScript.

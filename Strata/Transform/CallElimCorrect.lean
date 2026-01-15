@@ -6,17 +6,17 @@
 
 import Init.Data.List.Basic
 import Init.Data.List.Lemmas
-import Strata.Languages.Boogie.Env
-import Strata.Languages.Boogie.Identifiers
-import Strata.Languages.Boogie.Program
-import Strata.Languages.Boogie.ProgramType
-import Strata.Languages.Boogie.WF
+import Strata.Languages.Core.Env
+import Strata.Languages.Core.Identifiers
+import Strata.Languages.Core.Program
+import Strata.Languages.Core.ProgramType
+import Strata.Languages.Core.WF
 import Strata.DL.Lambda.Lambda
 import Strata.Transform.CoreTransform
 import Strata.Transform.CallElim
 import Strata.DL.Imperative.CmdSemantics
-import Strata.Languages.Boogie.StatementSemantics
-import Strata.Languages.Boogie.StatementSemanticsProps
+import Strata.Languages.Core.StatementSemantics
+import Strata.Languages.Core.StatementSemanticsProps
 import Strata.DL.Util.ListUtils
 
 /-! # Call Elimination Correctness Proof

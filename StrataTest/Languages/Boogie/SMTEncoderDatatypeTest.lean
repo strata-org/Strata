@@ -11,12 +11,12 @@ import Strata.DL.Lambda.LTy
 import Strata.DL.Lambda.TypeFactory
 import Strata.DL.SMT.Term
 import Strata.DL.SMT.Encoder
-import Strata.Languages.Boogie.Env
-import Strata.Languages.Boogie.Factory
-import Strata.Languages.Boogie.Identifiers
-import Strata.Languages.Boogie.Options
-import Strata.Languages.Boogie.SMTEncoder
-import Strata.Languages.Boogie.Verifier
+import Strata.Languages.Core.Env
+import Strata.Languages.Core.Factory
+import Strata.Languages.Core.Identifiers
+import Strata.Languages.Core.Options
+import Strata.Languages.Core.SMTEncoder
+import Strata.Languages.Core.Verifier
 
 /-!
 This file contains unit tests for SMT datatype encoding.

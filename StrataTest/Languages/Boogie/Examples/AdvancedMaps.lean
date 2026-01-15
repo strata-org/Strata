@@ -5,7 +5,7 @@
 -/
 
 
-import Strata.Languages.Boogie.Verifier
+import Strata.Languages.Core.Verifier
 
 ---------------------------------------------------------------------
 open Strata

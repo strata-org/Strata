@@ -4,8 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Boogie.Verifier
-import Strata.Languages.Boogie.CallGraph
+import Strata.Languages.Core.Verifier
+import Strata.Languages.Core.CallGraph
 
 ---------------------------------------------------------------------
 namespace Strata

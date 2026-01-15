@@ -8,7 +8,7 @@ import Strata.DDM.AST
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Laurel
 import Strata.DL.Imperative.MetaData
-import Strata.Languages.Boogie.Expressions
+import Strata.Languages.Core.Expressions
 
 namespace Laurel
 

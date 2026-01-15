@@ -6,7 +6,7 @@
 
 import Strata.Languages.C_Simp.C_Simp
 import Strata.Languages.C_Simp.DDMTransform.Translate
-import Strata.Languages.Boogie.Verifier
+import Strata.Languages.Core.Verifier
 import Strata.DL.Imperative.Stmt
 
 namespace Strata

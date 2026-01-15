@@ -4,11 +4,11 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Languages.Boogie.Program
-import Strata.Languages.Boogie.Verifier
-import Strata.Languages.Boogie.Statement
-import Strata.Languages.Boogie.Procedure
-import Strata.Languages.Boogie.Options
+import Strata.Languages.Core.Program
+import Strata.Languages.Core.Verifier
+import Strata.Languages.Core.Statement
+import Strata.Languages.Core.Procedure
+import Strata.Languages.Core.Options
 import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LiftExpressionAssignments
 import Strata.DL.Imperative.Stmt

@@ -6,10 +6,10 @@
 
 import Strata.DL.Util.LabelGen
 import Strata.DL.Util.ListUtils
-import Strata.Languages.Boogie.Boogie
-import Strata.Languages.Boogie.BoogieGen
-import Strata.Languages.Boogie.ProgramWF
-import Strata.Languages.Boogie.Statement
+import Strata.Languages.Core.Boogie
+import Strata.Languages.Core.BoogieGen
+import Strata.Languages.Core.ProgramWF
+import Strata.Languages.Core.Statement
 import Strata.Transform.CoreTransform
 
 /-! # Procedure Inlining Transformation -/
@@ -223,7 +223,7 @@ def inlineCallCmd (excluded_calls:List String := [])
         --   set x1 := out1    --- outputSetStmts
         --   set x2 := out2
         -- `init outN` is not necessary because calls are only allowed to use
-        -- already declared variables (per Boogie.typeCheck)
+        -- already declared variables (per Core.typeCheck)
 
         -- Create a fresh var statement for each LHS
         let outputTrips ← genOutExprIdentsTrip sigOutputs sigOutputs.unzip.fst
