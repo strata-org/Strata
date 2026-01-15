@@ -28,7 +28,7 @@ namespace Lambda
 
 open Std (ToFormat Format format)
 
-variable {T : LExprParams} [Inhabited T.Metadata] [Inhabited T.IDMeta] [DecidableEq T.IDMeta] [BEq T.IDMeta] [ToFormat T.IDMeta]
+variable {T : LExprParams} [Inhabited T.Metadata] [ToFormat T.IDMeta]
 
 ---------------------------------------------------------------------
 
@@ -100,11 +100,11 @@ structure LFunc (T : LExprParams) where
   axioms   : List (LExpr T.mono) := []  -- For axiomatic definitions
 
 /--
-Well-formedness properties of LFunc. These are splitted from LFunc because
+Well-formedness properties of LFunc. These are split from LFunc because
 otherwise it becomes impossible to create a 'temporary' LFunc object whose
 wellformedness might not hold yet.
 -/
-structure LFuncWf {T : LExprParams} (f : LFunc T) where
+structure LFuncWF {T : LExprParams} (f : LFunc T) where
   -- No args have same name.
   arg_nodup:
     List.Nodup (f.inputs.map (·.1.name))
@@ -120,11 +120,11 @@ structure LFuncWf {T : LExprParams} (f : LFunc T) where
       → fn md args = .some res
       → args.length = f.inputs.length
 
-instance LFuncWf.arg_nodup_decidable {T : LExprParams} (f : LFunc T):
+instance LFuncWF.arg_nodup_decidable {T : LExprParams} (f : LFunc T):
     Decidable (List.Nodup (f.inputs.map (·.1.name))) := by
   apply List.nodupDecidable
 
-instance LFuncWf.body_freevars_decidable {T : LExprParams} (f : LFunc T):
+instance LFuncWF.body_freevars_decidable {T : LExprParams} (f : LFunc T):
     Decidable (∀ b freevars, f.body = .some b
       → freevars = LExpr.freeVars b
       → (∀ fv, fv ∈ freevars →
@@ -150,7 +150,7 @@ instance LFuncWf.body_freevars_decidable {T : LExprParams} (f : LFunc T):
   | .none => by
     apply isTrue; grind
 
--- LFuncWf.concreteEval_argmatch is not decidable.
+-- LFuncWF.concreteEval_argmatch is not decidable.
 
 instance [Inhabited T.Metadata] [Inhabited T.IDMeta] : Inhabited (LFunc T) where
   default := { name := Inhabited.default, inputs := [], output := LMonoTy.bool }
@@ -168,7 +168,7 @@ instance : ToFormat (LFunc T) where
        func {f.name} : {type}{sep}\
        {body}"
 
-def LFunc.type (f : (LFunc T)) : Except Format LTy := do
+def LFunc.type [DecidableEq T.IDMeta] (f : (LFunc T)) : Except Format LTy := do
   if !(decide f.inputs.keys.Nodup) then
     .error f!"[{f.name}] Duplicates found in the formals!\
               {Format.line}\
@@ -227,13 +227,13 @@ instance : Membership (LFunc T) (@Factory T) where
 /--
 Well-formedness properties of Factory.
 -/
-structure FactoryWf {T : LExprParams} (fac:Factory T) where
+structure FactoryWF {T : LExprParams} (fac:Factory T) where
   name_nodup:
     List.Nodup (fac.toList.map (·.name.name))
   lfuncs_wf:
-    ∀ (lf:LFunc T), lf ∈ fac → LFuncWf lf
+    ∀ (lf:LFunc T), lf ∈ fac → LFuncWF lf
 
-instance FactoryWf.name_nodup_decidable {T : LExprParams} (fac : Factory T):
+instance FactoryWF.name_nodup_decidable {T : LExprParams} (fac : Factory T):
     Decidable (List.Nodup (fac.toList.map (·.name.name))) := by
   apply List.nodupDecidable
 
@@ -257,14 +257,13 @@ def Factory.addFactoryFunc (F : @Factory T) (func : LFunc T) : Except Format (@F
               New Function:{func}"
 
 
-omit [Inhabited T.IDMeta] [DecidableEq T.IDMeta] [BEq T.IDMeta] in
 /--
 If Factory.addFactoryFunc succeeds, and the input factory & LFunc were already
 well-formed, the returned factory is also well-formed.
 -/
 theorem Factory.addFactoryFunc_wf
-  (F : @Factory T) (F_wf: FactoryWf F) (func : LFunc T) (func_wf: LFuncWf func):
-  ∀ F', F.addFactoryFunc func = .ok F' → FactoryWf F' :=
+  (F : @Factory T) (F_wf: FactoryWF F) (func : LFunc T) (func_wf: LFuncWF func):
+  ∀ F', F.addFactoryFunc func = .ok F' → FactoryWF F' :=
 by
   unfold Factory.addFactoryFunc
   unfold Factory.getFactoryLFunc
@@ -272,7 +271,7 @@ by
   split at Hmatch -- Case-analysis on the match condition
   · rename_i heq
     cases Hmatch -- F' is Array.push F
-    apply FactoryWf.mk
+    apply FactoryWF.mk
     · have Hnn := F_wf.name_nodup
       grind [Array.toList_push,List]
     · intros lf Hmem
@@ -291,15 +290,14 @@ def Factory.addFactory (F newF : @Factory T) : Except Format (@Factory T) :=
   Array.foldlM (fun factory func => factory.addFactoryFunc func) F newF
 
 
-omit [Inhabited T.IDMeta] [DecidableEq T.IDMeta] [BEq T.IDMeta] in
 /--
 If Factory.addFactory succeeds, and the input two factories were already
 well-formed, the returned factory is also well-formed.
 -/
 theorem Factory.addFactory_wf
-  (F : @Factory T) (F_wf: FactoryWf F) (newF : @Factory T)
-  (newF_wf: FactoryWf newF):
-  ∀ F', F.addFactory newF = .ok F' → FactoryWf F' :=
+  (F : @Factory T) (F_wf: FactoryWF F) (newF : @Factory T)
+  (newF_wf: FactoryWF newF):
+  ∀ F', F.addFactory newF = .ok F' → FactoryWF F' :=
 by
   unfold Factory.addFactory
   rw [← Array.foldlM_toList]
@@ -311,9 +309,9 @@ by
     grind
   · rename_i lf lf_tail tail_ih
     rw [Array.toList_list_cons] at Hl
-    have Htail_wf: FactoryWf (lf_tail.toArray) := by
+    have Htail_wf: FactoryWF (lf_tail.toArray) := by
       rw [Hl] at newF_wf
-      apply FactoryWf.mk
+      apply FactoryWF.mk
       · have newF_wf_name_nodup := newF_wf.name_nodup
         grind
       · intro lf
@@ -322,7 +320,7 @@ by
         apply newF_wf_lfuncs_wf
         apply Array.mem_append_right
         assumption
-    have Hhead_wf: LFuncWf lf := by
+    have Hhead_wf: LFuncWF lf := by
       rw [Hl] at newF_wf
       have Hwf := newF_wf.lfuncs_wf
       apply Hwf
@@ -338,7 +336,7 @@ by
     split at H
     · contradiction
     · rename_i F_interm HaddFacFun
-      have HF_interm_wf: FactoryWf F_interm := by
+      have HF_interm_wf: FactoryWF F_interm := by
         apply (Factory.addFactoryFunc_wf F F_wf lf) <;> assumption
       simp only [] at H
       apply tail_ih F_interm HF_interm_wf (lf_tail.toArray) <;> grind

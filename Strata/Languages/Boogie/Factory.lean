@@ -560,17 +560,16 @@ def builtinFunctions : Array String :=
   Factory.map (fun f => BoogieIdent.toPretty f.name)
 
 
-set_option maxRecDepth 32768
-set_option maxHeartbeats 4000000
-
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 4000000 in
 /--
 Wellformedness of Factory
 -/
 theorem Factory_wf :
-    FactoryWf Factory := by
+    FactoryWF Factory := by
   unfold Factory
-  apply FactoryWf.mk
-  · decide -- FactoryWf.name_nodup
+  apply FactoryWF.mk
+  · decide -- FactoryWF.name_nodup
   · unfold HAppend.hAppend Array.instHAppendList
     simp only []
     unfold Array.appendList
@@ -581,9 +580,9 @@ theorem Factory_wf :
     intros Hmem
     repeat (
       rcases Hmem with _ | ⟨ a', Hmem ⟩
-      · apply LFuncWf.mk
-        · decide -- LFuncWf.arg_nodup
-        · decide -- LFuncWf.body_freevars
+      · apply LFuncWF.mk
+        · decide -- LFuncWF.arg_nodup
+        · decide -- LFuncWF.body_freevars
         · -- LFuncWf.concreteEval_argmatch
           simp (config := { ground := true })
           try (
