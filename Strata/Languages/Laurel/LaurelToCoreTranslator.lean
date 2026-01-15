@@ -25,7 +25,7 @@ open Core (intAddOp intSubOp intMulOp intDivOp intModOp intNegOp intLtOp intLeOp
 open Lambda (LMonoTy LTy LExpr)
 
 /-
-Translate Laurel HighType to Boogie Type
+Translate Laurel HighType to Core Type
 -/
 def translateType (ty : HighType) : LMonoTy :=
   match ty with
@@ -35,7 +35,7 @@ def translateType (ty : HighType) : LMonoTy :=
   | _ => panic s!"unsupported type {repr ty}"
 
 /--
-Translate Laurel StmtExpr to Boogie Expression
+Translate Laurel StmtExpr to Core Expression
 -/
 def translateExpr (expr : StmtExpr) : Core.Expression.Expr :=
   match h: expr with
@@ -92,7 +92,7 @@ def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
   s!"({fileRange.start.column},{fileRange.start.line})"
 
 /--
-Translate Laurel StmtExpr to Boogie Statements
+Translate Laurel StmtExpr to Core Statements
 Takes the list of output parameter names to handle return statements correctly
 -/
 def translateStmt (outputParams : List Parameter) (stmt : StmtExpr) : List Core.Statement :=
@@ -133,13 +133,13 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExpr) : List Core.
       let belse := match elseBranch with
                   | some e => translateStmt outputParams e
                   | none => []
-      -- Use Boogie's if-then-else construct
+      -- Use Core's if-then-else construct
       [Imperative.Stmt.ite bcond bthen belse .empty]
   | .StaticCall name args =>
       let boogieArgs := args.map translateExpr
       [Core.Statement.call [] name boogieArgs]
   | .Return valueOpt =>
-      -- In Boogie, returns are done by assigning to output parameters
+      -- In Core, returns are done by assigning to output parameters
       match valueOpt, outputParams.head? with
       | some value, some outParam =>
           -- Assign to the first output parameter, then assume false for no fallthrough
@@ -158,26 +158,26 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExpr) : List Core.
   | _ => panic! Std.Format.pretty (Std.ToFormat.format stmt)
 
 /--
-Translate Laurel Parameter to Boogie Signature entry
+Translate Laurel Parameter to Core Signature entry
 -/
-def translateParameterToBoogie (param : Parameter) : (Core.CoreIdent × LMonoTy) :=
+def translateParameterToCore (param : Parameter) : (Core.CoreIdent × LMonoTy) :=
   let ident := Core.CoreIdent.locl param.name
   let ty := translateType param.type
   (ident, ty)
 
 /--
-Translate Laurel Procedure to Boogie Procedure
+Translate Laurel Procedure to Core Procedure
 -/
 def translateProcedure (proc : Procedure) : Core.Procedure :=
   -- Translate input parameters
-  let inputPairs := proc.inputs.map translateParameterToBoogie
+  let inputPairs := proc.inputs.map translateParameterToCore
   let inputs := inputPairs
 
   let header : Core.Procedure.Header := {
     name := proc.name
     typeArgs := []
     inputs := inputs
-    outputs := proc.outputs.map translateParameterToBoogie
+    outputs := proc.outputs.map translateParameterToCore
   }
   let spec : Core.Procedure.Spec := {
     modifies := []
@@ -195,7 +195,7 @@ def translateProcedure (proc : Procedure) : Core.Procedure :=
   }
 
 /--
-Translate Laurel Program to Boogie Program
+Translate Laurel Program to Core Program
 -/
 def translate (program : Program) : Core.Program :=
   -- First, sequence all assignments (move them out of expression positions)
@@ -203,7 +203,7 @@ def translate (program : Program) : Core.Program :=
   dbg_trace "=== Sequenced program Program ==="
   dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format sequencedProgram)))
   dbg_trace "================================="
-  -- Then translate to Boogie
+  -- Then translate to Core
   let procedures := sequencedProgram.staticProcedures.map translateProcedure
   let decls := procedures.map (fun p => Core.Decl.proc p .empty)
   { decls := decls }
@@ -214,7 +214,7 @@ Verify a Laurel program using an SMT solver
 def verifyToVcResults (smtsolver : String) (program : Program)
     (options : Options := Options.default) : IO VCResults := do
   let boogieProgram := translate program
-  -- Debug: Print the generated Boogie program
+  -- Debug: Print the generated Core program
   dbg_trace "=== Generated Core.Program ==="
   dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format boogieProgram)))
   dbg_trace "================================="
