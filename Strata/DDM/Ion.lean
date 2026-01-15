@@ -1455,7 +1455,7 @@ def filesFromIon (dialects : DialectMap) (bytes : ByteArray) : Except String (Li
     match Ion.deserialize bytes with
     | .error (off, msg) => throw s!"Error reading Ion: {msg} (offset = {off})"
     | .ok a =>
-      if a.size = 1 then
+      if h : a.size = 1 then
         pure a[0]
       else
         throw s!"Expected single Ion value"
