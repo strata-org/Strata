@@ -191,7 +191,7 @@ partial def statementToSMT (ctx : ConversionContext) (state : B3VerificationStat
       for (stmtResult, _) in execResult.results do
         match stmtResult with
         | .verified report =>
-            -- If verification failed, diagnose it
+            -- If verification failed, diagnose itx²
             let diag ← if report.result.isError then
               diagnoseFailed state sourceDecl report.context.stmt
             else

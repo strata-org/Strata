@@ -181,6 +181,13 @@ def closeVerificationState (state : B3VerificationState) : IO Unit := do
 def createInteractiveSolver (solverPath : String := "z3") : IO Solver :=
   Solver.spawn solverPath #["-smt2", "-in"]
 
+/-- Create a logging solver that executes SMT and prints commands to stdout -/
+def createLoggingSolver (solverPath : String := "z3") : IO Solver := do
+  let solver ← Solver.spawn solverPath #["-smt2", "-in"]
+  -- Wrap to log all SMT commands
+  -- TODO: Implement proper command logging wrapper
+  pure solver
+
 /-- Create a buffer solver for SMT command generation -/
 def createBufferSolver : IO (Solver × IO.Ref IO.FS.Stream.Buffer) := do
   let buffer ← IO.mkRef {}

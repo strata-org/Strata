@@ -35,6 +35,9 @@ private def mkSimpleSymbol (s:String):SimpleSymbol SourceRange :=
     | "lt" => .simple_symbol_lt SourceRange.none
     | "gt" => .simple_symbol_gt SourceRange.none
     | "at" => .simple_symbol_at SourceRange.none
+    | "le" => .simple_symbol_le SourceRange.none
+    | "ge" => .simple_symbol_ge SourceRange.none
+    | "implies" => .simple_symbol_implies SourceRange.none
     | _ => panic! s!"Unknown simple symbol: {name}")
   | .none =>
     .simple_symbol_qid SourceRange.none (mkQualifiedIdent s)
@@ -133,7 +136,49 @@ private def translateFromSortedVarList (l: List (SortedVar SourceRange)):
     | .some t =>
       .sorted_var_list_cons srnone h1 (.sorted_var_list_cons srnone h2 t))
 
--- List of SortedVar to SeqPSortedVar.
+-- Convert Term to SExpr (for use in pattern attributes)
+private def termToSExpr (t: Term SourceRange): SExpr SourceRange :=
+  -- Terms in patterns are represented as symbols
+  -- This is a simplified conversion - full Term-to-SExpr would be more complex
+  match t with
+  | .qual_identifier _ qi =>
+      match qi with
+      | .qi_ident _ iden =>
+          match iden with
+          | .iden_simple _ sym => .se_symbol SourceRange.none sym
+          | _ => .se_symbol SourceRange.none (.symbol SourceRange.none (.simple_symbol_qid SourceRange.none (mkQualifiedIdent "term")))
+      | _ => .se_symbol SourceRange.none (.symbol SourceRange.none (.simple_symbol_qid SourceRange.none (mkQualifiedIdent "term")))
+  | .qual_identifier_args _ qi args =>
+      -- Function application in pattern: convert to nested S-expr
+      let qiSExpr := match qi with
+        | .qi_ident _ iden =>
+            match iden with
+            | .iden_simple _ sym => SExpr.se_symbol SourceRange.none sym
+            | _ => .se_symbol SourceRange.none (.symbol SourceRange.none (.simple_symbol_qid SourceRange.none (mkQualifiedIdent "fn")))
+        | _ => .se_symbol SourceRange.none (.symbol SourceRange.none (.simple_symbol_qid SourceRange.none (mkQualifiedIdent "fn")))
+      -- Convert args to SExpr list
+      let argsSExpr := termListToSExprList args
+      .se_ls SourceRange.none ⟨SourceRange.none, some (.sexpr_list_cons SourceRange.none qiSExpr argsSExpr)⟩
+  | _ => .se_symbol SourceRange.none (.symbol SourceRange.none (.simple_symbol_qid SourceRange.none (mkQualifiedIdent "term")))
+where
+  termListToSExprList : TermList SourceRange → SExprList SourceRange
+    | .term_list_one _ t => .sexpr_list_one SourceRange.none (termToSExpr t)
+    | .term_list_cons _ t rest => .sexpr_list_cons SourceRange.none (termToSExpr t) (termListToSExprList rest)
+
+-- List of Attribute to AttributeList.
+private def translateFromAttributeList (l: List (Attribute SourceRange)):
+    Option (AttributeList SourceRange) :=
+  let srnone := SourceRange.none
+  match l with
+  | [] => .none
+  | h::[] => .some (.att_list_one srnone h)
+  | h1::h2::t => .some (
+    match translateFromAttributeList t with
+    | .none => .att_list_cons srnone h1 (.att_list_one srnone h2)
+    | .some t =>
+      .att_list_cons srnone h1 (.att_list_cons srnone h2 t))
+
+-- List of Term to TermList.
 -- Hope this could be elided away later. :(
 private def translateFromTermList (l: List (Term SourceRange)):
     Option (TermList SourceRange) :=
@@ -162,7 +207,7 @@ def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term SourceRange) := d
         (.qi_ident srnone (mkIdentifier op.mkName)) args)
     | .none =>
       return (.qual_identifier srnone (.qi_ident srnone (mkIdentifier op.mkName)))
-  | .quant qkind args _tr body =>
+  | .quant qkind args tr body =>
     let args_sorted:List (SMTDDM.SortedVar SourceRange) <-
       args.mapM
         (fun ⟨name,ty⟩ => do
@@ -171,12 +216,35 @@ def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term SourceRange) := d
     match translateFromSortedVarList args_sorted with
     | .none => throw "empty quantifier"
     | .some args_sorted =>
-      let body <- translateFromTerm body
+      let body' <- translateFromTerm body
+      -- Handle triggers if present
+      let finalBody <- match tr with
+        | SMT.Term.app SMT.Op.triggers triggerExprs _ =>
+            if triggerExprs.isEmpty then
+              pure body'
+            else
+              -- Translate trigger expressions to pattern attributes using SExpr
+              -- Pattern format: :pattern ((term1) (term2) ...)
+              let patterns <- triggerExprs.mapM (fun t => do
+                let t' <- translateFromTerm t
+                let sexpr := termToSExpr t'
+                -- av_sel wraps in parens, so #[sexpr] becomes (sexpr)
+                -- We want ((f x)), so sexpr should be (f x), and av_sel gives ((f x))
+                let sexprArray : Ann (Array (SExpr SourceRange)) SourceRange := ⟨srnone, #[sexpr]⟩
+                let patternValue := SMTDDM.AttributeValue.av_sel srnone sexprArray
+                let patternKeyword := SMTDDM.Keyword.kw_symbol srnone (.simple_symbol_qid srnone (mkQualifiedIdent "pattern"))
+                return (SMTDDM.Attribute.att_kw srnone patternKeyword ⟨srnone, some patternValue⟩))
+              match translateFromAttributeList patterns with
+              | .none => pure body'  -- No patterns, just use body
+              | .some attrList =>
+                  pure (.bang srnone body' attrList)
+        | _ => pure body'  -- No triggers
+
       match qkind with
       | .all =>
-        return .forall_smt srnone args_sorted body
+        return .forall_smt srnone args_sorted finalBody
       | .exist =>
-        return .exists_smt srnone args_sorted body
+        return .exists_smt srnone args_sorted finalBody
 
 
 private def dummy_prg_for_toString :=

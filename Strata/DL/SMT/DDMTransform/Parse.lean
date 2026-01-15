@@ -97,7 +97,10 @@ def specialCharsInSimpleSymbol := [
     ("caret", "^"),
     ("lt", "<"),
     ("gt", ">"),
-    ("at", "@")
+    ("at", "@"),
+    ("le", "<="),
+    ("ge", ">="),
+    ("implies", "=>")
   ]
 
 -- https://smt-lib.org/papers/smt-lib-reference-v2.7-r2025-07-07.pdf
@@ -165,7 +168,7 @@ op symbol_list_one (se:Symbol) : SymbolList => se;
 op symbol_list_cons (se:Symbol, sse:SymbolList) : SymbolList => se " " sse;
 
 category Keyword;
-op kw_symbol (@[unwrap] s:SimpleSymbol) : Keyword => ":" s;
+op kw_symbol (@[unwrap] s:SimpleSymbol) : Keyword => ":" s:0;
 
 
 // 2. S-expressions
@@ -186,16 +189,16 @@ op sc_numeral_neg (@[unwrap] n:Num) : SpecConstant => "-" n:0;
 op sc_decimal_neg (@[unwrap] n:Decimal) : SpecConstant => "-" n:0;
 
 category SExpr;
-op se_spec_const (s:SpecConstant) : SExpr => s;
-op se_symbol (s:Symbol) : SExpr => s;
-op se_reserved (s:Reserved) : SExpr => s;
-op se_keyword (s:Keyword) : SExpr => s;
+op se_spec_const (s:SpecConstant) : SExpr => s:0;
+op se_symbol (s:Symbol) : SExpr => s:0;
+op se_reserved (s:Reserved) : SExpr => s:0;
+op se_keyword (s:Keyword) : SExpr => s:0;
 
 category SExprList; // For spacing, has at least one element
-op sexpr_list_one (se:SExpr) : SExprList => se;
-op sexpr_list_cons (se:SExpr, sse:SExprList) : SExprList => se " " sse;
+op sexpr_list_one (se:SExpr) : SExprList => se:0;
+op sexpr_list_cons (se:SExpr, sse:SExprList) : SExprList => se:0 " " sse:0;
 
-op se_ls (s:Option SExprList) : SExpr => "(" s ")";
+op se_ls (s:Option SExprList) : SExpr => "(" s:0 ")";
 
 
 category SMTIdentifier;
@@ -229,16 +232,16 @@ op smtsort_param (s:SMTIdentifier, sl:SMTSortList) : SMTSort
 
 // 5. Attributes
 category AttributeValue;
-op av_spec_constant (s:SpecConstant) : AttributeValue => s;
-op av_symbol (s:Symbol) : AttributeValue => s;
-op av_sel (s:Seq SExpr) : AttributeValue => "(" s ")";
+op av_spec_constant (s:SpecConstant) : AttributeValue => s:0;
+op av_symbol (s:Symbol) : AttributeValue => s:0;
+op av_sel (s:Seq SExpr) : AttributeValue => "(" s:0 ")";
 
 category Attribute;
-op att_kw (k:Keyword, av:Option AttributeValue) : Attribute => k av;
+op att_kw (k:Keyword, av:Option AttributeValue) : Attribute => k:0 " " av:0;
 
 category AttributeList; // For spacing; has at least one element
-op att_list_one (i:Attribute) : AttributeList => i;
-op att_list_cons (i:Attribute, spi:AttributeList) : AttributeList => i " " spi;
+op att_list_one (i:Attribute) : AttributeList => i:0;
+op att_list_cons (i:Attribute, spi:AttributeList) : AttributeList => i:0 " " spi:0;
 
 
 // 6. Terms
@@ -268,7 +271,7 @@ op sorted_var_list_one (i:SortedVar) : SortedVarList => i;
 op sorted_var_list_cons (i:SortedVar, spi:SortedVarList) : SortedVarList => i " " spi;
 
 // TODO: support the match statement
-// category Pattern;
+// (Note: Pattern below is for quantifier patterns, not match patterns)
 
 op spec_constant_term (sc:SpecConstant) : Term => sc;
 op qual_identifier (qi:QualIdentifier) : Term => qi;
@@ -276,15 +279,15 @@ op qual_identifier_args (qi:QualIdentifier, ts:TermList) : Term =>
   "(" qi " " ts ")";
 
 op let_smt (vbps: ValBindingList, t:Term) : Term =>
-  "(" "let" "(" vbps ")" t ")";
+  "(" "let " "(" vbps ")" t ")";
 op lambda_smt (svs: SortedVarList, t:Term) : Term =>
-  "(" "lambda" "(" svs ")" t ")";
+  "(" "lambda " "(" svs ")" t ")";
 op forall_smt (svs: SortedVarList, t:Term) : Term =>
-  "(" "forall" "(" svs ")" t ")";
+  "(" "forall " "(" svs ") " t ")";
 op exists_smt (svs: SortedVarList, t:Term) : Term =>
-  "(" "exists" "(" svs ")" t ")";
+  "(" "exists " "(" svs ") " t ")";
 op bang (t:Term, attrs:AttributeList) : Term =>
-  "(" "!" t " " attrs ")";
+  "(" "! " t:0 " " attrs:0 ")";
 
 
 // 7. Theories
