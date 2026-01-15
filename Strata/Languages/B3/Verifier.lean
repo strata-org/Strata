@@ -75,7 +75,7 @@ meta def exampleVerification : IO Unit := do
   -- Create solver and verify
   let solver : Solver ← createInteractiveSolver "cvc5"
   let reports : List ProcedureReport ← programToSMT b3AST solver
-  let _ ← (Solver.exit).run solver
+  -- Don't call exit in tests - let solver terminate naturally
 
   -- Destructure results to show types (self-documenting)
   let [report] ← pure reports | throw (IO.userError "Expected one procedure")
