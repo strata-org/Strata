@@ -71,22 +71,14 @@ private def translateFromTermPrim (t:SMT.TermPrim):
     let bvty := mkSymbol (s!"bv{bv.toNat}")
     let val:Index SourceRange := .ind_numeral srnone bv.width
     return (.qual_identifier srnone
-      (.qi_ident srnone (.iden_indexed srnone bvty (.index_list_one srnone val))))
+      (.qi_ident srnone (.iden_indexed srnone bvty (Ann.mk srnone #[val]))))
   | .string s =>
     return .spec_constant_term srnone (.sc_str srnone s)
 
--- List of SMTSort to SeqPSMTSort.
--- Hope this could be elided away later. :(
+-- List of SMTSort to Array.
 private def translateFromSMTSortList (l: List (SMTSort SourceRange)):
-    Option (SMTSortList SourceRange) :=
-  let srnone := SourceRange.none
-  match l with
-  | [] => .none
-  | h::[] => .some (.smtsort_list_one srnone h)
-  | h1::h2::t => .some (
-    match translateFromSMTSortList t with
-    | .none => .smtsort_list_cons srnone h1 (.smtsort_list_one srnone h2)
-    | .some t => .smtsort_list_cons srnone h1 (.smtsort_list_cons srnone h2 t))
+    Array (SMTSort SourceRange) :=
+  l.toArray
 
 private def translateFromTermType (t:SMT.TermType):
     Except String (SMTDDM.SMTSort SourceRange) := do
@@ -95,10 +87,11 @@ private def translateFromTermType (t:SMT.TermType):
   | .prim tp =>
     match tp with
     | .bitvec n =>
+      let idx : Index SourceRange := .ind_numeral srnone n
       return (.smtsort_ident srnone
         (.iden_indexed srnone
           (mkSymbol "BitVec")
-          (.index_list_one srnone (.ind_numeral srnone n))))
+          (Ann.mk srnone #[idx])))
     | .trigger =>
       throw "don't know how to translate a trigger type"
     | _ =>
@@ -114,37 +107,11 @@ private def translateFromTermType (t:SMT.TermType):
     throw "don't know how to translate an option type"
   | .constr id args =>
     let argtys <- args.mapM translateFromTermType
-    match translateFromSMTSortList argtys with
-    | .none => throw "empty argument to type constructor"
-    | .some argtys =>
-      return .smtsort_param srnone (mkIdentifier id) argtys
-
--- List of SortedVar to SeqPSortedVar.
--- Hope this could be elided away later. :(
-private def translateFromSortedVarList (l: List (SortedVar SourceRange)):
-    Option (SortedVarList SourceRange) :=
-  let srnone := SourceRange.none
-  match l with
-  | [] => .none
-  | h::[] => .some (.sorted_var_list_one srnone h)
-  | h1::h2::t => .some (
-    match translateFromSortedVarList t with
-    | .none => .sorted_var_list_cons srnone h1 (.sorted_var_list_one srnone h2)
-    | .some t =>
-      .sorted_var_list_cons srnone h1 (.sorted_var_list_cons srnone h2 t))
-
--- List of SortedVar to SeqPSortedVar.
--- Hope this could be elided away later. :(
-private def translateFromTermList (l: List (Term SourceRange)):
-    Option (TermList SourceRange) :=
-  let srnone := SourceRange.none
-  match l with
-  | [] => .none
-  | h::[] => .some (.term_list_one srnone h)
-  | h1::h2::t => .some (
-    match translateFromTermList t with
-    | .none => .term_list_cons srnone h1 (.term_list_one srnone h2)
-    | .some t => .term_list_cons srnone h1 (.term_list_cons srnone h2 t))
+    let argtys_array := translateFromSMTSortList argtys
+    if argtys_array.isEmpty then
+      throw "empty argument to type constructor"
+    else
+      return .smtsort_param srnone (mkIdentifier id) (Ann.mk srnone argtys_array)
 
 def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term SourceRange) := do
   let srnone := SourceRange.none
@@ -156,27 +123,28 @@ def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term SourceRange) := d
   | .none _ | .some _ => throw "don't know how to translate none and some"
   | .app op args _ =>
     let args' <- args.mapM translateFromTerm
-    match translateFromTermList args' with
-    | .some args =>
-      return (.qual_identifier_args srnone
-        (.qi_ident srnone (mkIdentifier op.mkName)) args)
-    | .none =>
+    let args_array := args'.toArray
+    if args_array.isEmpty then
       return (.qual_identifier srnone (.qi_ident srnone (mkIdentifier op.mkName)))
+    else
+      return (.qual_identifier_args srnone
+        (.qi_ident srnone (mkIdentifier op.mkName)) (Ann.mk srnone args_array))
   | .quant qkind args _tr body =>
     let args_sorted:List (SMTDDM.SortedVar SourceRange) <-
       args.mapM
         (fun ⟨name,ty⟩ => do
           let ty' <- translateFromTermType ty
           return .sorted_var srnone (mkSymbol name) ty')
-    match translateFromSortedVarList args_sorted with
-    | .none => throw "empty quantifier"
-    | .some args_sorted =>
+    let args_array := args_sorted.toArray
+    if args_array.isEmpty then
+      throw "empty quantifier"
+    else
       let body <- translateFromTerm body
       match qkind with
       | .all =>
-        return .forall_smt srnone args_sorted body
+        return .forall_smt srnone (Ann.mk srnone args_array) body
       | .exist =>
-        return .exists_smt srnone args_sorted body
+        return .exists_smt srnone (Ann.mk srnone args_array) body
 
 
 private def dummy_prg_for_toString :=
