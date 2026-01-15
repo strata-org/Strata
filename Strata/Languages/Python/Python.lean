@@ -6,5 +6,5 @@
 
 import Strata.Languages.Python.PythonToCore
 import Strata.Languages.Python.PythonDialect
-import StrataTest.Internal.InternalBoogiePrelude
+import StrataTest.Internal.InternalCorePrelude
 import StrataTest.Internal.InternalFunctionSignatures

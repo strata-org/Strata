@@ -20,7 +20,7 @@ open Lambda
 /-!
 ## Axioms
 
-Axioms are propositions assumed to be true throughout a Strata.Boogie program.
+Axioms are propositions assumed to be true throughout a Strata Core program.
 They are passed on as assumptions to the SMT solver during VC generation. It's
 the responsibility of the user to ensure that they are consistent.
 -/

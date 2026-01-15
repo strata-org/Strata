@@ -19,7 +19,7 @@ namespace Strata.SMT.Encoder
 open Strata.SMT.Encoder
 
 -- Derived from Strata.SMT.Encoder.encode.
-def encodeBoogie (ctx : Core.SMT.Context) (prelude : SolverM Unit) (ts : List Term) :
+def encodeCore (ctx : Core.SMT.Context) (prelude : SolverM Unit) (ts : List Term) :
   SolverM (List String × EncoderState) := do
   Solver.reset
   Solver.setLogic "ALL"
@@ -193,7 +193,7 @@ def dischargeObligation
   let handle ← IO.FS.Handle.mk filename IO.FS.Mode.write
   let solver ← Solver.fileWriter handle
   let prelude := getSolverPrelude smtsolver
-  let (ids, estate) ← Strata.SMT.Encoder.encodeBoogie ctx prelude terms solver
+  let (ids, estate) ← Strata.SMT.Encoder.encodeCore ctx prelude terms solver
   let _ ← solver.checkSat ids -- Will return unknown for Solver.fileWriter
   if options.verbose then IO.println s!"Wrote problem to {filename}."
   let flags := getSolverFlags options smtsolver

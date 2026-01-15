@@ -4,7 +4,7 @@ echo "Cleaning any previous artifacts"
 rm -f *.json
 rm -f *.gb
 
-echo "Writing out JSON files from a Strata.Boogie program SimpleAdd"
+echo "Writing out JSON files from a Strata Core program SimpleAdd"
 pushd ../../../../
 lake exe StrataCoreToGoto writeFiles
 popd

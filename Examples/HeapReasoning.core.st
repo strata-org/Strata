@@ -1,5 +1,5 @@
 program Core;
-// lake exe StrataVerify Strata/Languages/Boogie/Examples/HeapReasoning.core.st
+// lake exe StrataVerify Examples/HeapReasoning.core.st
 
 // Prelude begin --------------------------------------------------
 type Ref;

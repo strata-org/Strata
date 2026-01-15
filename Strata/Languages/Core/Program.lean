@@ -39,7 +39,7 @@ instance : ToFormat DeclKind where
     | .func => "function"
 
 /--
-A Boogie declaration.
+A Strata Core declaration.
 Note: constants are 0-ary functions.
  -/
 inductive Decl where

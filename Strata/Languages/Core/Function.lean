@@ -15,7 +15,7 @@ namespace Core
 open Std (ToFormat Format format)
 open Lambda
 
-/-! # Boogie Functions -/
+/-! # Strata Core Functions -/
 
 abbrev Function := Lambda.LFunc CoreLParams
 

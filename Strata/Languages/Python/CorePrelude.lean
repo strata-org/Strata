@@ -11,7 +11,7 @@ import Strata.Languages.Core.Verifier
 
 namespace Strata
 
-def boogiePrelude :=
+def corePrelude :=
 #strata
 program Core;
 
@@ -358,6 +358,6 @@ spec {
 #end
 
 def Core.prelude : Core.Program :=
-   Core.getProgram Strata.boogiePrelude |>.fst
+   Core.getProgram Strata.corePrelude |>.fst
 
 end Strata

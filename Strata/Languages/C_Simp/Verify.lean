@@ -103,16 +103,16 @@ def loop_elimination_statement(s : C_Simp.Statement) : Core.Statement :=
     | _, _ => panic! "Loop elimination require measure and invariant"
   | _ => translate_stmt s
 
--- C_Simp functions are Boogie procedures
+-- C_Simp functions are Strata Core procedures
 def loop_elimination_function(f : C_Simp.Function) : Core.Procedure :=
-  let boogie_preconditions := [("pre", {expr := translate_expr f.pre })]
-  let boogie_postconditions := [("post", {expr := translate_expr f.post })]
+  let core_preconditions := [("pre", {expr := translate_expr f.pre })]
+  let core_postconditions := [("post", {expr := translate_expr f.post })]
   {header := {name := f.name.name, typeArgs := [],
               inputs := f.inputs.map (λ p => (p.fst.name, p.snd)),
               outputs := [("return", f.ret_ty)]},
               spec := {modifies := [],
-                       preconditions := boogie_preconditions,
-                       postconditions := boogie_postconditions},
+                       preconditions := core_preconditions,
+                       postconditions := core_postconditions},
                        body := f.body.map loop_elimination_statement}
 
 
@@ -120,7 +120,7 @@ def loop_elimination(program : C_Simp.Program) : Core.Program :=
   {decls := program.funcs.map (λ f => .proc (loop_elimination_function f) {})}
 
 -- Do loop elimination
-def to_boogie(program : C_Simp.Program) : Core.Program :=
+def to_core(program : C_Simp.Program) : Core.Program :=
   loop_elimination program
 
 def C_Simp.get_program (p : Strata.Program) : C_Simp.Program :=
@@ -129,12 +129,12 @@ def C_Simp.get_program (p : Strata.Program) : C_Simp.Program :=
 def C_Simp.typeCheck (p : Strata.Program) (options : Options := Options.default):
   Except Std.Format Core.Program := do
   let program := C_Simp.get_program p
-  Core.typeCheck options (to_boogie program)
+  Core.typeCheck options (to_core program)
 
 def C_Simp.verify (smtsolver : String) (p : Strata.Program) (options : Options := Options.default):
   IO Core.VCResults := do
   let program := C_Simp.get_program p
   EIO.toIO (fun f => IO.Error.userError (toString f))
-    (Core.verify smtsolver (to_boogie program) options)
+    (Core.verify smtsolver (to_core program) options)
 
 end Strata
