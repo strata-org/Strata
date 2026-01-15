@@ -43,7 +43,7 @@ def StatementResult.toExcept : StatementResult → Except String VerificationRep
   | .conversionError msg => .error msg
 
 structure SymbolicExecutionResult where
-  results : List StatementResult
+  results : List (StatementResult × Option DiagnosisResult)
   finalState : B3VerificationState
 
 /-- Convert conversion errors to StatementResults -/
@@ -58,12 +58,12 @@ def mkVerificationContext (state : B3VerificationState) (decl : B3AST.Decl Sourc
 def mkExecutionResult {M : Type} [Repr M] (convErrors : List (ConversionError M)) (verificationResult : Option VerificationReport) (state : B3VerificationState) : SymbolicExecutionResult :=
   let errorResults := conversionErrorsToResults convErrors
   let allResults := match verificationResult with
-    | some report => errorResults ++ [StatementResult.verified report]
-    | none => errorResults
+    | some report => errorResults.map (·, none) ++ [(StatementResult.verified report, none)]
+    | none => errorResults.map (·, none)
   { results := allResults, finalState := state }
 
-/-- Translate B3 statements to SMT via streaming symbolic execution -/
-partial def statementToSMT (ctx : ConversionContext) (state : B3VerificationState) (sourceDecl : B3AST.Decl SourceRange) : B3AST.Statement SourceRange → IO SymbolicExecutionResult
+/-- Translate B3 statements to SMT via streaming symbolic execution (without diagnosis) -/
+partial def statementToSMTWithoutDiagnosis (ctx : ConversionContext) (state : B3VerificationState) (sourceDecl : B3AST.Decl SourceRange) : B3AST.Statement SourceRange → IO SymbolicExecutionResult
   | .check m expr => do
       let convResult := expressionToSMT ctx expr
       let vctx := mkVerificationContext state sourceDecl (.check m expr)
@@ -93,7 +93,7 @@ partial def statementToSMT (ctx : ConversionContext) (state : B3VerificationStat
       let mut currentState := state
       let mut allResults := []
       for stmt in stmts.val.toList do
-        let execResult ← statementToSMT ctx currentState sourceDecl stmt
+        let execResult ← statementToSMTWithoutDiagnosis ctx currentState sourceDecl stmt
         currentState := execResult.finalState
         allResults := allResults ++ execResult.results
       pure { results := allResults, finalState := currentState }

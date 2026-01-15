@@ -85,13 +85,17 @@ end ConversionResult
 
 structure ConversionContext where
   vars : List String  -- Maps de Bruijn index to variable name
+  enableDiagnosis : Bool := true  -- Whether to perform automatic diagnosis on failures
 
 namespace ConversionContext
 
-def empty : ConversionContext := { vars := [] }
+def empty : ConversionContext := { vars := [], enableDiagnosis := true }
+
+def withoutDiagnosis (ctx : ConversionContext) : ConversionContext :=
+  { ctx with enableDiagnosis := false }
 
 def push (ctx : ConversionContext) (name : String) : ConversionContext :=
-  { vars := name :: ctx.vars }
+  { ctx with vars := name :: ctx.vars }
 
 def lookup (ctx : ConversionContext) (idx : Nat) : Option String :=
   ctx.vars[idx]?

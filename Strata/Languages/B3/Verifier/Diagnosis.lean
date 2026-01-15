@@ -23,14 +23,6 @@ namespace Strata.B3.Verifier
 
 open Strata.SMT
 
-structure DiagnosedFailure where
-  expression : B3AST.Expression SourceRange
-  report : VerificationReport  -- Contains context (with pathCondition), result (refuted if provably false), model
-
-structure DiagnosisResult where
-  originalCheck : VerificationReport
-  diagnosedFailures : List DiagnosedFailure
-
 ---------------------------------------------------------------------
 -- Pure Helper Functions
 ---------------------------------------------------------------------
@@ -182,19 +174,21 @@ def diagnoseFailed (state : B3VerificationState) (sourceDecl : B3AST.Decl Source
 -- Statement Symbolic Execution with Diagnosis
 ---------------------------------------------------------------------
 
-/-- Translate statements to SMT with automatic diagnosis on failures.
+/-- Translate statements to SMT with automatic diagnosis on failures (default, recommended).
 
-This wraps statementToSMT and adds diagnosis for failed checks/asserts/reach.
+This adds diagnosis for failed checks/asserts/reach to help identify root causes.
 The diagnosis analyzes failures but does not modify the verification state.
+
+For faster verification without diagnosis, use statementToSMTWithoutDiagnosis.
 -/
-partial def statementToSMTWithDiagnosis (ctx : ConversionContext) (state : B3VerificationState) (sourceDecl : B3AST.Decl SourceRange) : B3AST.Statement SourceRange → IO (List (VerificationReport × Option DiagnosisResult) × B3VerificationState)
+partial def statementToSMT (ctx : ConversionContext) (state : B3VerificationState) (sourceDecl : B3AST.Decl SourceRange) : B3AST.Statement SourceRange → IO SymbolicExecutionResult
   | stmt => do
-      -- Symbolically execute the statement to get results and updated state
-      let execResult ← statementToSMT ctx state sourceDecl stmt
+      -- Translate the statement to SMT and get results
+      let execResult ← statementToSMTWithoutDiagnosis ctx state sourceDecl stmt
 
       -- Add diagnosis to any failed verification results
       let mut resultsWithDiag := []
-      for stmtResult in execResult.results do
+      for (stmtResult, _) in execResult.results do
         match stmtResult with
         | .verified report =>
             -- If verification failed, diagnose it
@@ -202,11 +196,11 @@ partial def statementToSMTWithDiagnosis (ctx : ConversionContext) (state : B3Ver
               diagnoseFailed state sourceDecl report.context.stmt
             else
               pure none
-            resultsWithDiag := resultsWithDiag ++ [(report, diag)]
+            resultsWithDiag := resultsWithDiag ++ [(stmtResult, diag)]
         | .conversionError _ =>
-            -- Conversion errors don't produce VerificationReports, skip them
-            pure ()
+            -- Conversion errors don't have diagnosis
+            resultsWithDiag := resultsWithDiag ++ [(stmtResult, none)]
 
-      pure (resultsWithDiag, execResult.finalState)
+      pure { results := resultsWithDiag, finalState := execResult.finalState }
 
 end Strata.B3.Verifier

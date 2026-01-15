@@ -107,8 +107,10 @@ def programToSMTWithoutDiagnosis (prog : B3AST.Program SourceRange) (solver : So
 
   -- Verify parameter-free procedures
   for (_name, decl, bodyStmt) in extractVerifiableProcedures prog do
-    let execResult ← statementToSMT ConversionContext.empty state decl bodyStmt
-    results := results ++ execResult.results.map StatementResult.toExcept
+    let execResult ← statementToSMTWithoutDiagnosis ConversionContext.empty state decl bodyStmt
+    -- Extract just the StatementResults (no diagnosis)
+    let stmtResults := execResult.results.map (·.1)
+    results := results ++ stmtResults.map StatementResult.toExcept
 
   closeVerificationState state
   return results
@@ -190,10 +192,16 @@ def programToSMT (prog : Strata.B3AST.Program SourceRange) (solver : Solver) : I
 
   -- Verify parameter-free procedures
   for (name, decl, bodyStmt) in extractVerifiableProcedures prog do
-    let (results, _finalState) ← statementToSMTWithDiagnosis ConversionContext.empty state decl bodyStmt
+    let execResult ← statementToSMT ConversionContext.empty state decl bodyStmt
+    -- Extract VerificationReports with diagnosis
+    let resultsWithDiag := execResult.results.filterMap (fun (stmtResult, diag) =>
+      match stmtResult with
+      | .verified report => some (report, diag)
+      | .conversionError _ => none
+    )
     reports := reports ++ [{
       procedureName := name
-      results := results
+      results := resultsWithDiag
     }]
 
   closeVerificationState state

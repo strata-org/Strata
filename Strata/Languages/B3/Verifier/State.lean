@@ -187,4 +187,16 @@ def createBufferSolver : IO (Solver × IO.Ref IO.FS.Stream.Buffer) := do
   let solver ← Solver.bufferWriter buffer
   return (solver, buffer)
 
+---------------------------------------------------------------------
+-- Verification Results
+---------------------------------------------------------------------
+
+structure DiagnosedFailure where
+  expression : B3AST.Expression SourceRange
+  report : VerificationReport  -- Contains context (with pathCondition), result (refuted if provably false), model
+
+structure DiagnosisResult where
+  originalCheck : VerificationReport
+  diagnosedFailures : List DiagnosedFailure
+
 end Strata.B3.Verifier
