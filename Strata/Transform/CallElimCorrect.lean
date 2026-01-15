@@ -2473,7 +2473,7 @@ case cons h t ih =>
   . simp [StateT.pure,pure] at Hgen
     cases Hgen
 
-/--! Theorems about well-formedness of BoogieGen -/
+/--! Theorems about well-formedness of CoreGen -/
 
 theorem genArgExprIdentTemp :
   genArgExprIdent s = (l, s') → CoreIdent.isTemp l :=

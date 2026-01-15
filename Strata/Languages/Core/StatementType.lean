@@ -20,7 +20,7 @@ open Std (ToFormat Format format)
 ---------------------------------------------------------------------
 
 /--
-Type checker for Boogie commands.
+Type checker for Strata Core commands.
 
 Note that this function needs the entire program to type-check `call`
 commands by looking up the corresponding procedure's information.

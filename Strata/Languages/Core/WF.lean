@@ -8,8 +8,8 @@ import Strata.DL.Util.ListUtils
 import Strata.Languages.Core.Program
 import Strata.Languages.Core.OldExpressions
 
-/-! # Well-Formedness of Boogie Programs
- This file contains well-formedness definitions of Boogie `Program`s Note that
+/-! # Well-Formedness of Strata Core Programs
+ This file contains well-formedness definitions of Strata Core `Program`s Note that
  the substructures such as `WFStatementProp` also carry a `Program` instance, and
  this allows us to state more expressive well-formedness conditions than a
  typical inductive relation.

@@ -785,7 +785,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   | .fn _ q`Core.map_get, [_ktp, _vtp, ma, ia] =>
      let kty ← translateLMonoTy bindings _ktp
      let vty ← translateLMonoTy bindings _vtp
-     -- TODO: use Boogie.mapSelectOp, but specialized
+     -- TODO: use Core.mapSelectOp, but specialized
      let fn : LExpr CoreLParams.mono := (LExpr.op () "select" (.some (LMonoTy.mkArrow (mapTy kty vty) [kty, vty])))
      let m ← translateExpr p bindings ma
      let i ← translateExpr p bindings ia
@@ -793,7 +793,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
   | .fn _ q`Core.map_set, [_ktp, _vtp, ma, ia, xa] =>
      let kty ← translateLMonoTy bindings _ktp
      let vty ← translateLMonoTy bindings _vtp
-     -- TODO: use Boogie.mapUpdateOp, but specialized
+     -- TODO: use Core.mapUpdateOp, but specialized
      let fn : LExpr CoreLParams.mono := (LExpr.op () "update" (.some (LMonoTy.mkArrow (mapTy kty vty) [kty, vty, mapTy kty vty])))
      let m ← translateExpr p bindings ma
      let i ← translateExpr p bindings ia
@@ -879,7 +879,7 @@ partial def translateExpr (p : Program) (bindings : TransBindings) (arg : Arg) :
     | _ =>
       TransM.error s!"translateExpr unimplemented fvar decl (no args): {format decl}"
   | .fvar _ i, argsa =>
-    -- Call of a function declared/defined in Boogie.
+    -- Call of a function declared/defined in Core.
     assert! i < bindings.freeVars.size
     let decl := bindings.freeVars[i]!
     match decl with
@@ -1268,7 +1268,7 @@ def translateFunction (status : FnInterp) (p : Program) (bindings : TransBinding
 
 /--
 Information about a single constructor extracted during translation.
-This is the Boogie-specific version of `ConstructorInfo` from AST.lean,
+This is the Strata Core-specific version of `ConstructorInfo` from AST.lean,
 with types translated from `TypeExpr` to `LMonoTy`.
 -/
 structure TransConstructorInfo where

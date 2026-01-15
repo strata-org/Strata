@@ -11,7 +11,7 @@ import StrataTest.Backends.CBMC.ToCProverGOTO
 open Std (ToFormat Format format)
 
 /-
-We map Boogie's procedures to a CProverGOTO program, which is then written to
+We map Strata Core's procedures to a CProverGOTO program, which is then written to
 CBMC-compatible JSON files that contain all the necessary information to
 construct a GOTO binary.
 
@@ -21,16 +21,16 @@ model-check a Strata-generated GOTO binary.
 
 -------------------------------------------------------------------------------
 
-abbrev BoogieParams : Lambda.LExprParams := ⟨Unit, Core.Visibility⟩
+abbrev CoreParams : Lambda.LExprParams := ⟨Unit, Core.Visibility⟩
 
-abbrev Boogie.ExprStr : Imperative.PureExpr :=
-   { Ident := BoogieParams.Identifier,
-     Expr := Lambda.LExpr BoogieParams.mono,
+abbrev Core.ExprStr : Imperative.PureExpr :=
+   { Ident := CoreParams.Identifier,
+     Expr := Lambda.LExpr CoreParams.mono,
      Ty := Lambda.LTy,
-     TyEnv := @Lambda.TEnv BoogieParams.IDMeta,
-     TyContext := @Lambda.LContext BoogieParams,
-     EvalEnv := Lambda.LState BoogieParams
-     EqIdent := inferInstanceAs (DecidableEq BoogieParams.Identifier) }
+     TyEnv := @Lambda.TEnv CoreParams.IDMeta,
+     TyContext := @Lambda.LContext CoreParams,
+     EvalEnv := Lambda.LState CoreParams
+     EqIdent := inferInstanceAs (DecidableEq CoreParams.Identifier) }
 
 namespace CoreToGOTO
 
@@ -55,7 +55,7 @@ instance : Imperative.ToGoto Core.Expression where
   toGotoType := (fun ty => Lambda.LMonoTy.toGotoType ty.toMonoTypeUnsafe)
   toGotoExpr := Lambda.LExpr.toGotoExpr
 
-private def lookupTypeStr (T : Boogie.ExprStr.TyEnv) (i : Boogie.ExprStr.Ident) :
+private def lookupTypeStr (T : Core.ExprStr.TyEnv) (i : Core.ExprStr.Ident) :
     Except Format CProverGOTO.Ty :=
   match T.context.types.find? i with
   | none => .error s!"Cannot find {i} in the type context!"
@@ -65,11 +65,11 @@ private def lookupTypeStr (T : Boogie.ExprStr.TyEnv) (i : Boogie.ExprStr.Ident) 
       ty.toGotoType
     else .error f!"Poly-type unexpected in the context for {i}: {ty}"
 
-private def updateTypeStr (T : Boogie.ExprStr.TyEnv) (i : Boogie.ExprStr.Ident)
-    (ty : Boogie.ExprStr.Ty) : Boogie.ExprStr.TyEnv :=
+private def updateTypeStr (T : Core.ExprStr.TyEnv) (i : Core.ExprStr.Ident)
+    (ty : Core.ExprStr.Ty) : Core.ExprStr.TyEnv :=
   T.insertInContext i ty
 
-instance : Imperative.ToGoto Boogie.ExprStr where
+instance : Imperative.ToGoto Core.ExprStr where
   lookupType := lookupTypeStr
   updateType := updateTypeStr
   identToString := (fun x => x.name)
@@ -92,8 +92,8 @@ def substVarNames {Metadata IDMeta: Type} [DecidableEq IDMeta]
   | .ite _ c t e' => .ite () (substVarNames c frto) (substVarNames t frto) (substVarNames e' frto)
   | .eq _ e1 e2 => .eq () (substVarNames e1 frto) (substVarNames e2 frto)
 
-def Boogie.Cmd.renameVars (frto : Map String String) (c : Imperative.Cmd Core.Expression)
-    : Imperative.Cmd Boogie.ExprStr :=
+def Core.Cmd.renameVars (frto : Map String String) (c : Imperative.Cmd Core.Expression)
+    : Imperative.Cmd Core.ExprStr :=
   match c with
   | .init name ty e _ =>
     let e' := substVarNames e frto
@@ -119,11 +119,11 @@ def Boogie.Cmd.renameVars (frto : Map String String) (c : Imperative.Cmd Core.Ex
     let e' := substVarNames e frto
     .cover label e' .empty
 
-def Boogie.Cmds.renameVars (frto : Map String String)
-    (cs : Imperative.Cmds Core.Expression) : Imperative.Cmds Boogie.ExprStr :=
+def Core.Cmds.renameVars (frto : Map String String)
+    (cs : Imperative.Cmds Core.Expression) : Imperative.Cmds Core.ExprStr :=
   match cs with
   | [] => []
-  | c :: crest => [(Boogie.Cmd.renameVars frto c)] ++ (renameVars frto crest)
+  | c :: crest => [(Core.Cmd.renameVars frto c)] ++ (renameVars frto crest)
 
 -------------------------------------------------------------------------------
 
@@ -169,16 +169,16 @@ def transformToGoto (boogie : Core.Program) : Except Format CProverGOTO.Context 
       let pname := Core.CoreIdent.toPretty p.header.name
 
       if !p.header.typeArgs.isEmpty then
-        .error f!"[transformToGoto] Translation for polymorphic Boogie procedures is unimplemented."
+        .error f!"[transformToGoto] Translation for polymorphic Strata Core procedures is unimplemented."
 
       let cmds ← p.body.mapM
         (fun b => match b with
           | .cmd (.cmd c) => return c
-          | _ => .error f!"[transformToGoto] We can process Boogie commands only, not statements! \
+          | _ => .error f!"[transformToGoto] We can process Strata Core commands only, not statements! \
                            Statement encountered: {b}")
 
       if 1 < p.header.outputs.length then
-        .error f!"[transformToGoto] Translation for multi-return value Boogie procedures is unimplemented."
+        .error f!"[transformToGoto] Translation for multi-return value Strata Core procedures is unimplemented."
       let ret_tys ← p.header.outputs.values.mapM (fun ty => Lambda.LMonoTy.toGotoType ty)
       let ret_ty := if ret_tys.isEmpty then CProverGOTO.Ty.Empty else ret_tys[0]!
 
@@ -193,9 +193,9 @@ def transformToGoto (boogie : Core.Program) : Except Format CProverGOTO.Context 
       let locals_renamed := locals.zip new_locals
 
       let args_renamed := formals_renamed ++ locals_renamed
-      let cmds := Boogie.Cmds.renameVars args_renamed cmds
+      let cmds := Core.Cmds.renameVars args_renamed cmds
 
-      let ans ← @Imperative.Cmds.toGotoTransform Boogie.ExprStr
+      let ans ← @Imperative.Cmds.toGotoTransform Core.ExprStr
                     CoreToGOTO.instToGotoExprStr _ Env pname cmds (loc := 0)
       let ending_insts : Array CProverGOTO.Instruction := #[
         -- (FIXME): Add lifetime markers.
@@ -213,7 +213,7 @@ def transformToGoto (boogie : Core.Program) : Except Format CProverGOTO.Context 
                ret := ret_ty,
                locals := locals }
   else
-    .error f!"[transformToGoto] We can transform only a single Boogie procedure to \
+    .error f!"[transformToGoto] We can transform only a single Strata Core procedure to \
               GOTO at a time!"
 
 open Strata in

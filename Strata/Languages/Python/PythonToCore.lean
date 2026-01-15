@@ -43,7 +43,7 @@ def dummyTimedelta : Core.Expression.Expr := .fvar () "DUMMY_Timedelta" none
 
 -------------------------------------------------------------------------------
 
--- Translating a Python expression can require Boogie statements, e.g., a function call
+-- Translating a Python expression can require Strata Core statements, e.g., a function call
 -- We translate these by first defining temporary variables to store the results of the stmts
 -- and then using those variables in the expression.
 structure PyExprTranslated where
@@ -157,7 +157,7 @@ def handleGt (lhs rhs: Core.Expression.Expr) : Core.Expression.Expr :=
 
 structure SubstitutionRecord where
   pyExpr : Python.expr SourceRange
-  boogieExpr : Core.Expression.Expr
+  coreExpr : Core.Expression.Expr
 
 instance : Repr (List SubstitutionRecord) where
   reprPrec xs _ :=
@@ -292,7 +292,7 @@ partial def collectVarDecls (translation_ctx : TranslationContext) (stmts: Array
     | _ => []
   let dup := stmts.toList.flatMap go
   let dedup := deduplicateTypeAnnotations dup
-  let toBoogie (p: String × String) : List Core.Statement :=
+  let toCore (p: String × String) : List Core.Statement :=
     let name := p.fst
     let ty_name := p.snd
     match ty_name with
@@ -315,7 +315,7 @@ partial def collectVarDecls (translation_ctx : TranslationContext) (stmts: Array
         let user_defined_class_dummy := .fvar () ("DUMMY_" ++ i.name) none
         [(.init name user_defined_class_ty user_defined_class_dummy), (.havoc name)]
       | .none => panic! s!"Unsupported type annotation: `{ty_name}`"
-  let foo := dedup.map toBoogie
+  let foo := dedup.map toCore
   foo.flatten
 
 def isCall (e: Python.expr SourceRange) : Bool :=
@@ -400,7 +400,7 @@ partial def PyExprToCore (translation_ctx : TranslationContext) (e : Python.expr
   if h : substitution_records.isSome && (substitution_records.get!.find? (λ r => PyExprIdent r.pyExpr e)).isSome then
     have hr : (List.find? (fun r => PyExprIdent r.pyExpr e) substitution_records.get!).isSome = true := by rw [Bool.and_eq_true] at h; exact h.2
     let record := (substitution_records.get!.find? (λ r => PyExprIdent r.pyExpr e)).get hr
-    {stmts := [], expr := record.boogieExpr}
+    {stmts := [], expr := record.coreExpr}
   else
     match e with
     | .Call _ f args kwords =>
@@ -527,7 +527,7 @@ partial def handleFunctionCall (lhs: List Core.Expression.Ident)
 
   let fname := remapFname translation_ctx fname
 
-  -- Boogie doesn't allow nested function calls, so we need to introduce temporary variables for each nested call
+  -- Strata Core doesn't allow nested function calls, so we need to introduce temporary variables for each nested call
   let nested_args_calls := args.val.filterMap (λ a => if isCall a then some a else none)
   let args_calls_to_tmps := nested_args_calls.map (λ a => (a, s!"call_arg_tmp_{a.toAst.ann.start}"))
   let nested_kwords_calls := kwords.val.filterMap (λ a =>
@@ -536,8 +536,8 @@ partial def handleFunctionCall (lhs: List Core.Expression.Ident)
     if isCall arg then some arg else none)
   let kwords_calls_to_tmps := nested_kwords_calls.map (λ a => (a, s!"call_kword_tmp_{a.toAst.ann.start}"))
 
-  let substitution_records : List SubstitutionRecord := args_calls_to_tmps.toList.map (λ p => {pyExpr := p.fst, boogieExpr := .fvar () p.snd none}) ++
-                                                        kwords_calls_to_tmps.toList.map (λ p => {pyExpr := p.fst, boogieExpr := .fvar () p.snd none})
+  let substitution_records : List SubstitutionRecord := args_calls_to_tmps.toList.map (λ p => {pyExpr := p.fst, coreExpr := .fvar () p.snd none}) ++
+                                                        kwords_calls_to_tmps.toList.map (λ p => {pyExpr := p.fst, coreExpr := .fvar () p.snd none})
   let res := argsAndKWordsToCanonicalList translation_ctx fname args.val kwords.val substitution_records
   args_calls_to_tmps.toList.flatMap initTmpParam ++
     kwords_calls_to_tmps.toList.flatMap initTmpParam ++
@@ -600,7 +600,7 @@ partial def PyStmtToCore (jmp_targets: List String) (translation_ctx : Translati
         let except_handlers := handlers.val.toList.flatMap (exceptHandlersToCore new_jmp_stack translation_ctx)
         let var_decls := collectVarDecls translation_ctx body.val
         ([.block "try_block" (var_decls ++ body.val.toList.flatMap (λ s => (PyStmtToCore new_jmp_stack translation_ctx s).fst) ++ entry_except_handlers ++ except_handlers)], none)
-    | .FunctionDef _ _ _ _ _ _ _ _ => panic! "Can't translate FunctionDef to Boogie statement"
+    | .FunctionDef _ _ _ _ _ _ _ _ => panic! "Can't translate FunctionDef to Strata Core statement"
     | .If _ test then_b else_b =>
       let guard_ctx := {translation_ctx with expectedType := some (.tcons "bool" [])}
       ([.ite (PyExprToCore guard_ctx test).expr (ArrPyStmtToCore translation_ctx then_b.val).fst (ArrPyStmtToCore translation_ctx else_b.val).fst], none)

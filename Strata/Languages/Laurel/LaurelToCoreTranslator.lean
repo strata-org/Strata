@@ -98,34 +98,34 @@ Takes the list of output parameter names to handle return statements correctly
 def translateStmt (outputParams : List Parameter) (stmt : StmtExpr) : List Core.Statement :=
   match stmt with
   | @StmtExpr.Assert cond md =>
-      let boogieExpr := translateExpr cond
-      [Core.Statement.assert ("assert" ++ getNameFromMd md) boogieExpr md]
+      let coreExpr := translateExpr cond
+      [Core.Statement.assert ("assert" ++ getNameFromMd md) coreExpr md]
   | @StmtExpr.Assume cond md =>
-      let boogieExpr := translateExpr cond
-      [Core.Statement.assume ("assume" ++ getNameFromMd md) boogieExpr md]
+      let coreExpr := translateExpr cond
+      [Core.Statement.assume ("assume" ++ getNameFromMd md) coreExpr md]
   | .Block stmts _ =>
       stmts.flatMap (translateStmt outputParams)
   | .LocalVariable name ty initializer =>
-      let boogieMonoType := translateType ty
-      let boogieType := LTy.forAll [] boogieMonoType
+      let coreMonoType := translateType ty
+      let coreType := LTy.forAll [] coreMonoType
       let ident := Core.CoreIdent.locl name
       match initializer with
       | some initExpr =>
-          let boogieExpr := translateExpr initExpr
-          [Core.Statement.init ident boogieType boogieExpr]
+          let coreExpr := translateExpr initExpr
+          [Core.Statement.init ident coreType coreExpr]
       | none =>
           -- Initialize with default value
           let defaultExpr := match ty with
                             | .TInt => .const () (.intConst 0)
                             | .TBool => .const () (.boolConst false)
                             | _ => .const () (.intConst 0)
-          [Core.Statement.init ident boogieType defaultExpr]
+          [Core.Statement.init ident coreType defaultExpr]
   | .Assign target value =>
       match target with
       | .Identifier name =>
           let ident := Core.CoreIdent.locl name
-          let boogieExpr := translateExpr value
-          [Core.Statement.set ident boogieExpr]
+          let coreExpr := translateExpr value
+          [Core.Statement.set ident coreExpr]
       | _ => []  -- Can only assign to simple identifiers
   | .IfThenElse cond thenBranch elseBranch =>
       let bcond := translateExpr cond
@@ -136,16 +136,16 @@ def translateStmt (outputParams : List Parameter) (stmt : StmtExpr) : List Core.
       -- Use Core's if-then-else construct
       [Imperative.Stmt.ite bcond bthen belse .empty]
   | .StaticCall name args =>
-      let boogieArgs := args.map translateExpr
-      [Core.Statement.call [] name boogieArgs]
+      let coreArgs := args.map translateExpr
+      [Core.Statement.call [] name coreArgs]
   | .Return valueOpt =>
       -- In Core, returns are done by assigning to output parameters
       match valueOpt, outputParams.head? with
       | some value, some outParam =>
           -- Assign to the first output parameter, then assume false for no fallthrough
           let ident := Core.CoreIdent.locl outParam.name
-          let boogieExpr := translateExpr value
-          let assignStmt := Core.Statement.set ident boogieExpr
+          let coreExpr := translateExpr value
+          let assignStmt := Core.Statement.set ident coreExpr
           let noFallThrough := Core.Statement.assume "return" (.const () (.boolConst false)) .empty
           [assignStmt, noFallThrough]
       | none, _ =>
@@ -213,13 +213,13 @@ Verify a Laurel program using an SMT solver
 -/
 def verifyToVcResults (smtsolver : String) (program : Program)
     (options : Options := Options.default) : IO VCResults := do
-  let boogieProgram := translate program
+  let coreProgram := translate program
   -- Debug: Print the generated Core program
   dbg_trace "=== Generated Core.Program ==="
-  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format boogieProgram)))
+  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format coreProgram)))
   dbg_trace "================================="
   EIO.toIO (fun f => IO.Error.userError (toString f))
-      (Core.verify smtsolver boogieProgram options)
+      (Core.verify smtsolver coreProgram options)
 
 def verifyToDiagnostics (smtsolver : String) (program : Program): IO (Array Diagnostic)  := do
   let results <- verifyToVcResults smtsolver program

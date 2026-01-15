@@ -107,7 +107,7 @@ instance : DecidableEq CoreLParams.Identifier :=
 
 
 
-/-- Full representation of Boogie Identifier with scope.
+/-- Full representation of Strata Core Identifier with scope.
   This can be useful for both debugging and generating "unique" strings,
   for example, as labels of proof obligations in the VC generator.
 

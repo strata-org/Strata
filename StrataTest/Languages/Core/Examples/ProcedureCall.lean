@@ -149,7 +149,7 @@ Result: ✅ pass
 -- DDM AST
 #eval globalCounterEnv.commands
 
--- Translation from DDM AST to Boogie/Strata AST
+-- Translation from DDM AST to Strata Core AST
 #eval TransM.run (translateProgram (globalCounterEnv.commands))
 -/
 

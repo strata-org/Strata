@@ -11,7 +11,7 @@ import Strata.DL.Util.ListUtils
 open Core Lambda Imperative
 
 /-! ## Strata Core Identifier Generator
-  This file contains a Boogie Identifier generator `CoreGenState.gen`, where the
+  This file contains a Strata Core Identifier generator `CoreGenState.gen`, where the
   uniqueness of the generated identifiers is designed to be provable. It relies on a
   `StringGenState` to generate unique strings (See `StringGen.lean`).
 
