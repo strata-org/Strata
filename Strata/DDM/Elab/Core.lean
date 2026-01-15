@@ -713,7 +713,7 @@ def translateTypeExpr (tree : Tree) : ElabM TypeExpr := do
 /--
 Evaluate the tree as a type expression.
 -/
-partial def translateBindingKind (tree : Tree) : ElabM BindingKind := do
+def translateBindingKind (tree : Tree) : ElabM BindingKind := do
   let (⟨argInfo, argChildren⟩, args) := flattenTypeApp tree #[]
   let opInfo :=
         match argInfo with
@@ -724,6 +724,38 @@ partial def translateBindingKind (tree : Tree) : ElabM BindingKind := do
     let nameTree := argChildren[0]
     let tpId := translateQualifiedIdent nameTree
     let nameLoc := nameTree.info.loc
+    let tctx := nameTree.info.inputCtx
+    -- First check if the type is in the GlobalContext (for user-defined types like datatypes)
+    if let .name name := tpId then
+      if let some binding := tctx.lookupVar name then
+        let tpArgs ← args.mapM translateTypeExpr
+        match binding with
+        | .fvar fidx k =>
+          match k with
+          | .type params _ =>
+            let params := params.toArray
+            if params.size = tpArgs.size then
+              return .expr (.fvar nameLoc fidx tpArgs)
+            else if let some a := tpArgs[params.size]? then
+              logErrorMF a.ann mf!"Unexpected argument to {name}."
+              return default
+            else
+              logErrorMF nameLoc mf!"{name} expects {params.size} arguments."
+              return default
+          | .expr _ =>
+            logErrorMF nameLoc mf!"Expected a type instead of expression {name}."
+            return default
+        | .bvar idx k =>
+          if let .type loc [] _ := k then
+            if tpArgs.isEmpty then
+              return .expr (.bvar loc idx)
+            else
+              logErrorMF nameLoc mf!"Unexpected arguments to type variable {name}."
+              return default
+          else
+            logErrorMF nameLoc mf!"Expected a type instead of {k}"
+            return default
+    -- Dialect-defined types
     let some (name, decl) ← resolveTypeOrCat nameLoc tpId
       | return default
     match decl with
@@ -808,6 +840,9 @@ def evalBindingSpec
             | _ =>
               panic! "Bad arg"
     pure { ident, kind := .type loc params.toList value }
+  | .datatype b =>
+    let ident := evalBindingNameIndex args b.nameIndex
+    pure { ident, kind := .type loc [] none }
 
 /--
 Given a type expression and a natural number, this returns a
@@ -967,13 +1002,36 @@ partial def runSyntaxElaborator
     let argLevel := ae.argLevel
     let .isTrue argLevelP := inferInstanceAs (Decidable (argLevel < argc))
         | return panic! "Invalid argLevel"
+    -- Compute the typing context for this argument
     let tctx ←
-      match ae.contextLevel with
-      | some idx =>
-        match trees[idx] with
-        | some t => pure t.resultContext
-        | none => continue
-      | none => pure tctx0
+      /- Recursive datatypes make this a bit complicated, since we need to make
+      sure the type is resolved as an fvar even while processing it. -/
+      match ae.datatypeScope with
+      | some (nameLevel, typeParamsLevel) =>
+        let nameTree := trees[nameLevel]
+        let typeParamsTree := trees[typeParamsLevel]
+        match nameTree, typeParamsTree with
+        | some nameT, some typeParamsT =>
+          let datatypeName :=
+            match nameT.info with
+            | .ofIdentInfo info => info.val
+            | _ => panic! "Expected identifier for datatype name"
+          let baseCtx := typeParamsT.resultContext
+          -- Add the datatype name to the GlobalContext as a type
+          let gctx := baseCtx.globalContext
+          let gctx :=
+            if datatypeName ∈ gctx then gctx
+            else gctx.push datatypeName (GlobalKind.type [] none)
+          -- Create a new typing context with the updated GlobalContext
+          pure (baseCtx.withGlobalContext gctx)
+        | _, _ => continue
+      | none =>
+        match ae.contextLevel with
+        | some idx =>
+          match trees[idx] with
+          | some t => pure t.resultContext
+          | none => continue
+        | none => pure tctx0
     let astx := args[ae.syntaxLevel]
     let expectedKind := argDecls[argLevel].kind
     match expectedKind with

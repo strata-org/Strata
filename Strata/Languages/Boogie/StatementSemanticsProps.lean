@@ -1730,6 +1730,7 @@ theorem EvalCmdTouch
     exact TouchVars.update_some Hup TouchVars.none
   case eval_assert => exact TouchVars.none
   case eval_assume => exact TouchVars.none
+  case eval_cover => exact TouchVars.none
 
 theorem UpdateStatesHavocVars : UpdateStates σ vars modvals σ' → HavocVars σ vars σ' := by
   intros H

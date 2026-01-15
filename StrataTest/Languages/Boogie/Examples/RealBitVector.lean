@@ -54,6 +54,7 @@ info: [Strata.Boogie] Type checking succeeded.
 
 VCs:
 Label: real_add_ge_good
+Property: assert
 Assumptions:
 
 (real_x_ge_1, ((~Real.Ge ~x) #1))
@@ -62,6 +63,7 @@ Proof Obligation:
 ((~Real.Ge ((~Real.Add ~x) ~y)) #3)
 
 Label: real_add_ge_bad
+Property: assert
 Assumptions:
 
 (real_x_ge_1, ((~Real.Ge ~x) #1))
@@ -73,10 +75,10 @@ Wrote problem to vcs/real_add_ge_good.smt2.
 Wrote problem to vcs/real_add_ge_bad.smt2.
 
 
-Obligation real_add_ge_bad: could not be proved!
+Result: Obligation: real_add_ge_bad
+Property: assert
+Result: ❌ fail
 
-Result: failed
-CEx: ⏎
 
 Evaluated program:
 func x :  () → real;
@@ -93,11 +95,12 @@ assert [real_add_ge_bad] ((~Real.Ge ((~Real.Add ~x) ~y)) #4)
 ---
 info:
 Obligation: real_add_ge_good
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: real_add_ge_bad
-Result: failed
-CEx:
+Property: assert
+Result: ❌ fail
 -/
 #guard_msgs in
 #eval verify "cvc5" realPgm
@@ -160,6 +163,7 @@ info: [Strata.Boogie] Type checking succeeded.
 
 VCs:
 Label: bv_add_ge
+Property: assert
 Assumptions:
 
 (bv_x_ge_1, ((~Bv8.ULe #1) ~x))
@@ -168,6 +172,7 @@ Proof Obligation:
 (((~Bv8.Add ~x) ~y) == ((~Bv8.Add ~y) ~x))
 
 Label: Q_ensures_0
+Property: assert
 Assumptions:
 
 (bv_x_ge_1, ((~Bv8.ULe #1) ~x))
@@ -180,10 +185,12 @@ Wrote problem to vcs/Q_ensures_0.smt2.
 ---
 info:
 Obligation: bv_add_ge
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: Q_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" bvPgm
@@ -208,32 +215,35 @@ procedure P(x: bv8, y: bv8, z: bv8) returns () {
 
 /--
 info:
-
-Obligation bad_shift: could not be proved!
-
-Result: failed
----
-info:
 Obligation: add_comm
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: xor_cancel
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: div_shift
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: mul_shift
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: demorgan
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: mod_and
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: bad_shift
-Result: failed
+Property: assert
+Result: ❌ fail
+Model:
+($__x0, #b10011001) ($__y1, #b00000010)
 -/
 #guard_msgs in
 #eval verify "cvc5" bvMoreOpsPgm Inhabited.default Options.quiet

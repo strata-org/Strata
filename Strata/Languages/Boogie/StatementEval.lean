@@ -119,7 +119,7 @@ def Command.evalCall (E : Env) (old_var_subst : SubstMap)
                             (fun (l, e) => (toString l, Procedure.Check.mk (E.exprEval e.expr) e.attr e.md))
     -- A free precondition is not checked at call sites, which is
     -- accounted for by `ProofObligations.create` below.
-    let deferred_pre := ProofObligations.create E.pathConditions preconditions
+    let deferred_pre := ProofObligations.createAssertions E.pathConditions preconditions
     let E := { E with deferred := E.deferred ++ deferred_pre }
     -- If the preconditions hold, then the postconditions are
     -- guaranteed to hold.
@@ -150,6 +150,108 @@ def Command.eval (E : Env) (old_var_subst : SubstMap) (c : Command) : Command ×
     Command.evalCall E old_var_subst lhs pname args md
 
 ---------------------------------------------------------------------
+
+mutual
+/--
+Generic function to check if a statement contains a specific command type.
+-/
+def Statement.containsCmd (predicate : Imperative.Cmd Expression → Bool) (s : Statement) : Bool :=
+  match s with
+  | .cmd (.cmd c) => predicate c
+  | .cmd _ => false
+  | .block _ inner_ss _ => Statements.containsCmds predicate inner_ss
+  | .ite _ then_ss else_ss _ => Statements.containsCmds predicate then_ss ||
+                                Statements.containsCmds predicate else_ss
+  | .loop _ _ _ body_ss _ => Statements.containsCmds predicate body_ss
+  | .goto _ _ => false
+  termination_by Imperative.Stmt.sizeOf s
+
+/--
+Generic function to check if statements contain a specific command type.
+-/
+def Statements.containsCmds (predicate : Imperative.Cmd Expression → Bool) (ss : Statements) : Bool :=
+  match ss with
+  | [] => false
+  | s :: ss =>
+    Statement.containsCmd predicate s || Statements.containsCmds predicate ss
+  termination_by Imperative.Block.sizeOf ss
+end
+
+/--
+Detect if statements contain any `cover` commands.
+-/
+def Statements.containsCovers (ss : Statements) : Bool :=
+  Statements.containsCmds
+    (fun c => match c with | .cover _ _ _ => true | _ => false) ss
+
+/--
+Detect if statements contain any `assert` commands.
+-/
+def Statements.containsAsserts (ss : Statements) : Bool :=
+  Statements.containsCmds
+    (fun c => match c with | .assert _ _ _ => true | _ => false) ss
+
+mutual
+/--
+Collect all `cover` commands from a statement `s` with their labels and metadata.
+-/
+def Statement.collectCovers (s : Statement) : List (String × Imperative.MetaData Expression) :=
+  match s with
+  | .cmd (.cmd (.cover label _expr md)) => [(label, md)]
+  | .cmd _ => []
+  | .block _ inner_ss _ => Statements.collectCovers inner_ss
+  | .ite _ then_ss else_ss _ => Statements.collectCovers then_ss ++ Statements.collectCovers else_ss
+  | .loop _ _ _ body_ss _ => Statements.collectCovers body_ss
+  | .goto _ _ => []
+  termination_by Imperative.Stmt.sizeOf s
+/--
+Collect all `cover` commands from statements `ss` with their labels and metadata.
+-/
+def Statements.collectCovers (ss : Statements) : List (String × Imperative.MetaData Expression) :=
+  match ss with
+  | [] => []
+  | s :: ss =>
+    Statement.collectCovers s ++ Statements.collectCovers ss
+  termination_by Imperative.Block.sizeOf ss
+end
+
+mutual
+/--
+Collect all `assert` commands from a statement `s` with their labels and metadata.
+-/
+def Statement.collectAsserts (s : Statement) : List (String × Imperative.MetaData Expression) :=
+  match s with
+  | .cmd (.cmd (.assert label _expr md)) => [(label, md)]
+  | .cmd _ => []
+  | .block _ inner_ss _ => Statements.collectAsserts inner_ss
+  | .ite _ then_ss else_ss _ => Statements.collectAsserts then_ss ++ Statements.collectAsserts else_ss
+  | .loop _ _ _ body_ss _ => Statements.collectAsserts body_ss
+  | .goto _ _ => []
+  termination_by Imperative.Stmt.sizeOf s
+/--
+Collect all `assert` commands from statements `ss` with their labels and metadata.
+-/
+def Statements.collectAsserts (ss : Statements) : List (String × Imperative.MetaData Expression) :=
+  match ss with
+  | [] => []
+  | s :: ss =>
+    Statement.collectAsserts s ++ Statements.collectAsserts ss
+  termination_by Imperative.Block.sizeOf ss
+end
+
+def createFailingCoverObligations
+    (covers : List (String × Imperative.MetaData Expression)) :
+    Imperative.ProofObligations Expression :=
+  covers.toArray.map
+    (fun (label, md) =>
+      (Imperative.ProofObligation.mk label .cover [] (LExpr.false ()) md))
+
+def createPassingAssertObligations
+    (asserts : List (String × Imperative.MetaData Expression)) :
+    Imperative.ProofObligations Expression :=
+  asserts.toArray.map
+    (fun (label, md) =>
+      (Imperative.ProofObligation.mk label .assert [] (LExpr.true ()) md))
 
 abbrev StmtsStack := List Statements
 
@@ -191,16 +293,15 @@ def processGoto : Statements → Option String → (Statements × Option String)
   | [] => ([], .some l) -- Not found, so propagate goto
   | (rest') => (rest', .none) -- Found, so we're done
 
-def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : Option String) :
-  List EnvWithNext :=
-  open LTy.Syntax in
-  go (Imperative.Block.sizeOf ss) (EnvWithNext.mk E .none []) ss optLabel
-  where go steps Ewn ss optLabel :=
+mutual
+def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss : Statements) (optLabel : Option String) :
+    List EnvWithNext :=
   match steps, Ewn.env.error with
   | _, some _ => [{Ewn with nextLabel := .none}]
   | 0, none => [{Ewn with env := { Ewn.env with error := some .OutOfFuel}, nextLabel := .none}]
   | steps' + 1, none =>
-    let go' := go steps'
+    have _htermination_lemma : wfParam steps' < steps' + 1 := by simp [wfParam]
+    let go' := evalAuxGo steps' old_var_subst
     match processGoto ss optLabel with
     | ([], .none) => [{ Ewn with nextLabel := .none }]
     | (_, .some l) => [{ Ewn with nextLabel := .some l }] -- Implies statement list is empty
@@ -218,7 +319,8 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
             let orig_stk := Ewn.stk
             let Ewn := { Ewn with env := Ewn.env.pushEmptyScope,
                                   stk := orig_stk.push [] }
-            let Ewns := go' Ewn ss .none -- Not allowed to jump into a block
+            -- Not allowed to jump into a block
+            let Ewns := go' Ewn ss .none
             let Ewns := Ewns.map
                             (fun (ewn : EnvWithNext) =>
                                  { ewn with env := ewn.env.popScope,
@@ -233,55 +335,42 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
             let Ewn := { Ewn with stk := orig_stk.push [] }
             let cond' := Ewn.env.exprEval cond
             match cond' with
-            | .true _ =>
-              let Ewns := go' Ewn then_ss .none -- Not allowed to jump into a block
-              let Ewns := Ewns.map
-                              (fun (ewn : EnvWithNext) =>
-                                   let ss' := ewn.stk.top
-                                   let s' := Imperative.Stmt.ite cond' ss' [] md
-                                   { ewn with stk := orig_stk.appendToTop [s']})
-              Ewns
-            | .false _ =>
-              let Ewns := go' Ewn else_ss .none -- Not allowed to jump into a block
-              let Ewns := Ewns.map
-                              (fun (ewn : EnvWithNext) =>
-                                   let ss' := ewn.stk.top
-                                   let s' := Imperative.Stmt.ite cond' [] ss' md
-                                   { ewn with stk := orig_stk.appendToTop [s']})
-              Ewns
-            | _ =>
-              let Ewn := { Ewn with env := Ewn.env.pushEmptyScope }
-              let label_true := toString (f!"<label_ite_cond_true: {cond.eraseTypes}>")
-              let label_false := toString (f!"<label_ite_cond_false: !{cond.eraseTypes}>")
-              let path_conds_true := Ewn.env.pathConditions.push [(label_true, cond')]
-              let path_conds_false := Ewn.env.pathConditions.push
-                                        [(label_false, (.ite () cond' (LExpr.false ()) (LExpr.true ())))]
-              let Ewns_t := go' {Ewn with env := {Ewn.env with pathConditions := path_conds_true}} then_ss .none
-              -- We empty the deferred proof obligations in the `else` path to
-              -- avoid duplicate verification checks -- the deferred obligations
-              -- would be checked in the `then` branch anyway.
-              let Ewns_f := go' {Ewn with env := {Ewn.env with pathConditions := path_conds_false, deferred := #[]}} else_ss .none
-              match Ewns_t, Ewns_f with
-                -- Special case: if there's only one result from each path,
-                -- with no next label, we can merge both states into one.
-              | [{ stk := stk_t, env := E_t, nextLabel := .none}],
-                [{ stk := stk_f, env := E_f, nextLabel := .none}] =>
-                let s' := Imperative.Stmt.ite cond' stk_t.top stk_f.top md
-                [EnvWithNext.mk (Env.merge cond' E_t E_f).popScope
-                                .none
-                                (orig_stk.appendToTop [s'])]
-              | _, _ =>
-                let Ewns_t := Ewns_t.map
-                                  (fun (ewn : EnvWithNext) =>
-                                    let s' := Imperative.Stmt.ite (LExpr.true ()) ewn.stk.top [] md
-                                    { ewn with env := ewn.env.popScope,
-                                               stk := orig_stk.appendToTop [s']})
-                let Ewns_f := Ewns_f.map
-                                  (fun (ewn : EnvWithNext) =>
-                                    let s' := Imperative.Stmt.ite (LExpr.false ()) [] ewn.stk.top md
-                                    { ewn with env := ewn.env.popScope,
-                                               stk := orig_stk.appendToTop [s']})
+            | .true _ | .false _ =>
+              let (ss_t, ss_f) := if cond'.isTrue then (then_ss, else_ss) else (else_ss, then_ss)
+              let Ewns_f :=
+                -- Check if `ss_f` contains covers and asserts whose
+                -- verification status needs to be reported.
+                -- All covers in `ss_f` will fail (unreachable). For now, we
+                -- don't distinguish between unreachable and unsatisfiable
+                -- covers.
+                -- All asserts in `ss_f` will succeed (unsatisfiable path
+                -- conditions).
+                if Statements.containsCovers ss_f || Statements.containsAsserts ss_f then
+                  let ss_f_covers := Statements.collectCovers ss_f
+                  let ss_f_asserts := Statements.collectAsserts ss_f
+                  let deferred := createFailingCoverObligations ss_f_covers
+                  let deferred := deferred ++ createPassingAssertObligations ss_f_asserts
+                  [{ Ewn with env.deferred := Ewn.env.deferred ++ deferred }]
+                else
+                  []
+              let Ewns_t :=
+                -- Process `ss_t`.
+                let Ewns := go' Ewn ss_t .none
+                let Ewns := Ewns.map
+                                (fun (ewn : EnvWithNext) =>
+                                     let ss' := ewn.stk.top
+                                     let s' := Imperative.Stmt.ite cond' ss' [] md
+                                     { ewn with stk := orig_stk.appendToTop [s']})
+                Ewns
+              -- Keep the environment order corresponding to program order.
+              if cond'.isTrue then
                 Ewns_t ++ Ewns_f
+              else
+                Ewns_f ++ Ewns_t
+            | _ =>
+              -- Process both branches.
+              processIteBranches steps' old_var_subst
+                Ewn cond cond' then_ss else_ss md orig_stk
 
           | .loop _ _ _ _ _ =>
             panic! "Cannot evaluate `loop` statement. \
@@ -291,6 +380,64 @@ def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : O
           | .goto l md => [{ Ewn with stk := Ewn.stk.appendToTop [.goto l md], nextLabel := (some l)}]
 
       List.flatMap (fun (ewn : EnvWithNext) => go' ewn rest ewn.nextLabel) EAndNexts
+  termination_by (steps, Imperative.Block.sizeOf ss)
+
+def processIteBranches (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext)
+    (cond cond' : Expression.Expr) (then_ss else_ss : Statements)
+    (md : Imperative.MetaData Expression) (orig_stk : StmtsStack) : List EnvWithNext :=
+  let Ewn := { Ewn with env := Ewn.env.pushEmptyScope }
+  let label_true := toString (f!"<label_ite_cond_true: {cond.eraseTypes}>")
+  let label_false := toString (f!"<label_ite_cond_false: !{cond.eraseTypes}>")
+  let path_conds_true := Ewn.env.pathConditions.push [(label_true, cond')]
+  let path_conds_false := Ewn.env.pathConditions.push
+                            [(label_false, (.ite () cond' (LExpr.false ()) (LExpr.true ())))]
+  have : 1 <= Imperative.Block.sizeOf then_ss := by
+   unfold Imperative.Block.sizeOf; split <;> omega
+  have : 1 <= Imperative.Block.sizeOf else_ss := by
+   unfold Imperative.Block.sizeOf; split <;> omega
+  have : Imperative.Block.sizeOf then_ss < Imperative.Block.sizeOf then_ss +
+                                          Imperative.Block.sizeOf else_ss := by
+    omega
+  have : Imperative.Block.sizeOf else_ss < Imperative.Block.sizeOf then_ss +
+                                          Imperative.Block.sizeOf else_ss := by
+   omega
+  let Ewns_t := evalAuxGo steps old_var_subst
+                  {Ewn with env := {Ewn.env with pathConditions := path_conds_true}}
+                  then_ss .none
+  -- We empty the deferred proof obligations in the `else` path to
+  -- avoid duplicate verification checks -- the deferred obligations
+  -- would be checked in the `then` branch anyway.
+  let Ewns_f := evalAuxGo steps old_var_subst
+                  {Ewn with env := {Ewn.env with pathConditions := path_conds_false,
+                                                 deferred := #[]}}
+                  else_ss .none
+  match Ewns_t, Ewns_f with
+  -- Special case: if there's only one result from each path,
+  -- with no next label, we can merge both states into one.
+  | [{ stk := stk_t, env := E_t, nextLabel := .none}],
+    [{ stk := stk_f, env := E_f, nextLabel := .none}] =>
+    let s' := Imperative.Stmt.ite cond' stk_t.top stk_f.top md
+    [EnvWithNext.mk (Env.merge cond' E_t E_f).popScope
+                    .none
+                    (orig_stk.appendToTop [s'])]
+  | _, _ =>
+    let Ewns_t := Ewns_t.map
+                      (fun (ewn : EnvWithNext) =>
+                        let s' := Imperative.Stmt.ite (LExpr.true ()) ewn.stk.top [] md
+                        { ewn with env := ewn.env.popScope,
+                                   stk := orig_stk.appendToTop [s']})
+    let Ewns_f := Ewns_f.map
+                      (fun (ewn : EnvWithNext) =>
+                        let s' := Imperative.Stmt.ite (LExpr.false ()) [] ewn.stk.top md
+                        { ewn with env := ewn.env.popScope,
+                                   stk := orig_stk.appendToTop [s']})
+  Ewns_t ++ Ewns_f
+  termination_by (steps, Imperative.Block.sizeOf then_ss + Imperative.Block.sizeOf else_ss)
+end
+
+def evalAux (E : Env) (old_var_subst : SubstMap) (ss : Statements) (optLabel : Option String) :
+  List EnvWithNext :=
+  evalAuxGo (Imperative.Block.sizeOf ss) old_var_subst (EnvWithNext.mk E .none []) ss optLabel
 
 def gotoToError : EnvWithNext → Statements × Env
   | { stk, env, nextLabel := .none } => (stk.flatten, env)
@@ -305,7 +452,6 @@ to their pre-state value in the enclosing procedure of `ss`.
 -/
 def eval (E : Env) (old_var_subst : SubstMap) (ss : Statements) : List (Statements × Env) :=
   (evalAux E old_var_subst ss .none).map gotoToError
-  -- (evalAuxTailRec E old_var_subst ss .none).map gotoToError
 
 /--
 Partial evaluator for statements yielding one environment and transformed

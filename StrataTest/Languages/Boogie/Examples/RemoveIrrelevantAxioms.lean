@@ -87,188 +87,128 @@ procedure Q3(x : int) returns ()
 
 /--
 info:
-
-Obligation assert_1: could not be proved!
-
-Result: unknown
-
-
-Obligation assert_3: could not be proved!
-
-Result: unknown
-
-
-Obligation assert_4: could not be proved!
-
-Result: failed
-
-
-Obligation assert_5: could not be proved!
-
-Result: failed
-
-
-Obligation assert_6: could not be proved!
-
-Result: failed
-
-
-Obligation assert_7: could not be proved!
-
-Result: failed
-
-
-Obligation assert_8: could not be proved!
-
-Result: failed
-
-
-Obligation assert_9: could not be proved!
-
-Result: failed
-
-
-Obligation assert_10: could not be proved!
-
-Result: failed
-
-
-Obligation assert_11: could not be proved!
-
-Result: failed
----
-info:
 Obligation: assert_0
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: assert_1
-Result: unknown
+Property: assert
+Result: 🟡 unknown
 
 Obligation: assert_2
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: assert_3
-Result: unknown
+Property: assert
+Result: 🟡 unknown
 
 Obligation: assert_4
-Result: failed
+Property: assert
+Result: ❌ fail
+Model:
+($__x0, 3)
 
 Obligation: assert_5
-Result: failed
+Property: assert
+Result: ❌ fail
+Model:
+($__x0, 3)
 
 Obligation: assert_6
-Result: failed
+Property: assert
+Result: ❌ fail
+Model:
+($__x1, 3)
 
 Obligation: assert_7
-Result: failed
+Property: assert
+Result: ❌ fail
+Model:
+($__x1, 3)
 
 Obligation: assert_8
-Result: failed
+Property: assert
+Result: ❌ fail
+Model:
+($__x2, 3)
 
 Obligation: assert_9
-Result: failed
+Property: assert
+Result: ❌ fail
+Model:
+($__x2, 3)
 
 Obligation: assert_10
-Result: failed
+Property: assert
+Result: ❌ fail
+Model:
+($__x3, 3)
 
 Obligation: assert_11
-Result: failed
+Property: assert
+Result: ❌ fail
+Model:
+($__x3, 3)
 -/
 #guard_msgs in
-#eval verify "z3" irrelevantAxiomsTestPgm Inhabited.default {Options.quiet with removeIrrelevantAxioms := true}
+#eval verify "z3" irrelevantAxiomsTestPgm Inhabited.default
+        {Options.quiet with removeIrrelevantAxioms := true}
 
 ---------------------------------------------------------------------
 
 /--
 info:
-
-Obligation assert_1: could not be proved!
-
-Result: unknown
-
-
-Obligation assert_3: could not be proved!
-
-Result: unknown
-
-
-Obligation assert_4: could not be proved!
-
-Result: unknown
-
-
-Obligation assert_5: could not be proved!
-
-Result: unknown
-
-
-Obligation assert_6: could not be proved!
-
-Result: unknown
-
-
-Obligation assert_7: could not be proved!
-
-Result: unknown
-
-
-Obligation assert_8: could not be proved!
-
-Result: unknown
-
-
-Obligation assert_9: could not be proved!
-
-Result: unknown
-
-
-Obligation assert_10: could not be proved!
-
-Result: unknown
-
-
-Obligation assert_11: could not be proved!
-
-Result: unknown
----
-info:
 Obligation: assert_0
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: assert_1
-Result: unknown
+Property: assert
+Result: 🟡 unknown
 
 Obligation: assert_2
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: assert_3
-Result: unknown
+Property: assert
+Result: 🟡 unknown
 
 Obligation: assert_4
-Result: unknown
+Property: assert
+Result: 🟡 unknown
 
 Obligation: assert_5
-Result: unknown
+Property: assert
+Result: 🟡 unknown
 
 Obligation: assert_6
-Result: unknown
+Property: assert
+Result: 🟡 unknown
 
 Obligation: assert_7
-Result: unknown
+Property: assert
+Result: 🟡 unknown
 
 Obligation: assert_8
-Result: unknown
+Property: assert
+Result: 🟡 unknown
 
 Obligation: assert_9
-Result: unknown
+Property: assert
+Result: 🟡 unknown
 
 Obligation: assert_10
-Result: unknown
+Property: assert
+Result: 🟡 unknown
 
 Obligation: assert_11
-Result: unknown
+Property: assert
+Result: 🟡 unknown
 -/
 #guard_msgs in
-#eval verify "z3" irrelevantAxiomsTestPgm Inhabited.default {Options.quiet with removeIrrelevantAxioms := false}
+#eval verify "z3" irrelevantAxiomsTestPgm Inhabited.default
+        {Options.quiet with removeIrrelevantAxioms := false}
 
 ---------------------------------------------------------------------

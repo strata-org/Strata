@@ -87,6 +87,7 @@ info: [Strata.Boogie] Type checking succeeded.
 
 VCs:
 Label: c_0_eq_a
+Property: assert
 Assumptions:
 (P_requires_3, (((~select $__a0) #0) == #0))
 (P_requires_4, (((~select $__c2) #0) == $__a0))
@@ -95,6 +96,7 @@ Proof Obligation:
 (((~select $__c2) #0) == $__a0)
 
 Label: c_1_eq_a
+Property: assert
 Assumptions:
 (P_requires_3, (((~select $__a0) #0) == #0))
 (P_requires_4, (((~select $__c2) #0) == $__a0))
@@ -103,6 +105,7 @@ Proof Obligation:
 (((~select (((~update $__c2) #1) $__a0)) #1) == $__a0)
 
 Label: a0eq0
+Property: assert
 Assumptions:
 (P_requires_3, (((~select $__a0) #0) == #0))
 (P_requires_4, (((~select $__c2) #0) == $__a0))
@@ -111,6 +114,7 @@ Proof Obligation:
 (((~select $__a0) #0) == #0)
 
 Label: a1eq1
+Property: assert
 Assumptions:
 (P_requires_3, (((~select $__a0) #0) == #0))
 (P_requires_4, (((~select $__c2) #0) == $__a0))
@@ -119,6 +123,7 @@ Proof Obligation:
 (((~select (((~update $__a0) #1) #1)) #1) == #1)
 
 Label: a0eq1
+Property: assert
 Assumptions:
 (P_requires_3, (((~select $__a0) #0) == #0))
 (P_requires_4, (((~select $__c2) #0) == $__a0))
@@ -127,6 +132,7 @@ Proof Obligation:
 (((~select (((~update (((~update $__a0) #1) #1)) #0) #1)) #0) == #1)
 
 Label: a0neq2
+Property: assert
 Assumptions:
 (P_requires_3, (((~select $__a0) #0) == #0))
 (P_requires_4, (((~select $__c2) #0) == $__a0))
@@ -135,6 +141,7 @@ Proof Obligation:
 (~Bool.Not (((~select (((~update (((~update $__a0) #1) #1)) #0) #1)) #0) == #2))
 
 Label: bTrueEqTrue
+Property: assert
 Assumptions:
 (P_requires_3, (((~select $__a0) #0) == #0))
 (P_requires_4, (((~select $__c2) #0) == $__a0))
@@ -143,6 +150,7 @@ Proof Obligation:
 (((~select (((~update $__b1) #true) #-1)) #true) == #-1)
 
 Label: mix
+Property: assert
 Assumptions:
 (P_requires_3, (((~select $__a0) #0) == #0))
 (P_requires_4, (((~select $__c2) #0) == $__a0))
@@ -161,28 +169,36 @@ Wrote problem to vcs/mix.smt2.
 ---
 info:
 Obligation: c_0_eq_a
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: c_1_eq_a
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: a0eq0
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: a1eq1
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: a0eq1
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: a0neq2
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: bTrueEqTrue
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: mix
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" mapPgm

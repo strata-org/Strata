@@ -90,17 +90,19 @@ inductive MetaDataElem.Value (P : PureExpr) where
   /-- Metadata value in the form of a fileRange. -/
   | fileRange (r: FileRange)
 
-
 instance [ToFormat P.Expr] : ToFormat (MetaDataElem.Value P) where
-  format f := match f with | .expr e => f!"{e}" | .msg s => f!"{s}" | .fileRange r => f!"{r}"
+  format f := match f with
+              | .expr e => f!"{e}"
+              | .msg s => f!"{s}"
+              | .fileRange r => f!"{r}"
 
 instance [Repr P.Expr] : Repr (MetaDataElem.Value P) where
   reprPrec v prec :=
     let res :=
       match v with
-      | .expr e => f!"MetaDataElem.Value.expr {reprPrec e prec}"
-      | .msg s => f!"MetaDataElem.Value.msg {s}"
-      | .fileRange fr => f!"MetaDataElem.Value.fileRange {repr fr}"
+      | .expr e => f!".expr {reprPrec e prec}"
+      | .msg s => f!".msg {s}"
+      | .fileRange fr => f!".fileRange {fr}"
     Repr.addAppParen res prec
 
 def MetaDataElem.Value.beq [BEq P.Expr] (v1 v2 : MetaDataElem.Value P) :=
