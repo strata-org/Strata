@@ -96,7 +96,7 @@ procedure MS_check (x1: int, x2: int) returns (r1: int, r2: int)
 };
 #end
 
--- #eval IO.println test.format.render
+-- #eval IO.println test
 -- #eval test.commands
 -- #eval TransM.run (translateProgram (test.commands)) |>.snd |>.isEmpty
 

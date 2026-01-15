@@ -839,7 +839,7 @@ private def sepBy1Parser (p sep : Parser) (allowTrailingSep : Bool := false) : P
       s
     else
       match s.stxStack.back with
-      | .node .none k args =>
+      | .node .none _ args =>
         if args.isEmpty then
           -- Require at least one element
           s.mkError "expected at least one element"

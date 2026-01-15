@@ -7,6 +7,7 @@
 -- Executable with utilities for working with Strata files.
 import Strata.DDM.Elab
 import Strata.DDM.Ion
+import Strata.DDM.Util.ByteArray
 import Strata.Util.IO
 
 import Strata.DDM.Integration.Java.Gen
@@ -105,7 +106,7 @@ def readStrataIon (fm : Strata.DialectFileMap) (path : System.FilePath) (bytes :
 def readFile (fm : Strata.DialectFileMap) (path : System.FilePath) : IO (Strata.Elab.LoadedDialects × Strata.DialectOrProgram) := do
   let bytes ← Strata.Util.readBinInputSource path.toString
   let displayPath : System.FilePath := Strata.Util.displayName path.toString
-  if bytes.startsWith Ion.binaryVersionMarker then
+  if Ion.isIonFile bytes then
     readStrataIon fm displayPath bytes
   else
     readStrataText fm displayPath bytes
@@ -172,7 +173,7 @@ def diffCommand : Command where
 
 def readPythonStrata (path : String) : IO Strata.Program := do
   let bytes ← Strata.Util.readBinInputSource path
-  if ! bytes.startsWith Ion.binaryVersionMarker then
+  if ! Ion.isIonFile bytes then
     exitFailure s!"pyAnalyze expected Ion file"
   match Strata.Program.fromIon Strata.Python.Python_map Strata.Python.Python.name bytes with
   | .ok p => pure p

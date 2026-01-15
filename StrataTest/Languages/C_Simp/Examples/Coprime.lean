@@ -57,7 +57,7 @@ info: program C_Simp;
   )
 -/
 #guard_msgs in
-#eval IO.println CoprimePgm.format.render
+#eval IO.println CoprimePgm
 
 
 /--

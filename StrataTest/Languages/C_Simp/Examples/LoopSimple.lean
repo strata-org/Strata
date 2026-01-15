@@ -53,7 +53,7 @@ info: program C_Simp;
   )
 -/
 #guard_msgs in
-#eval IO.println LoopSimplePgm.format.render
+#eval IO.println LoopSimplePgm
 
 /--
 info: function loopSimple {

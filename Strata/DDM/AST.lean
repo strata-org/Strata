@@ -11,7 +11,8 @@ public import Strata.DDM.Util.Decimal
 public import Strata.DDM.AST.Datatype
 
 import Std.Data.HashMap
-import Strata.DDM.Util.Array
+import all Strata.DDM.Util.Array
+import all Strata.DDM.Util.ByteArray
 
 set_option autoImplicit false
 
@@ -30,7 +31,7 @@ namespace QualifiedIdent
 def fullName (i : QualifiedIdent) : String := s!"{i.dialect}.{i.name}"
 
 instance : ToString QualifiedIdent where
-  toString := private fullName
+  toString := fullName
 
 section
 open _root_.Lean
@@ -605,11 +606,13 @@ structure DebruijnIndex (n : Nat) where
   isLt : val < n
 deriving Repr
 
-
 namespace DebruijnIndex
 
 def toLevel {n} : DebruijnIndex n → Fin n
 | ⟨v, lt⟩ => ⟨n - (v+1), by omega⟩
+
+protected def ofNat {n : Nat} [NeZero n] (a : Nat) : DebruijnIndex n :=
+  ⟨a % n, Nat.mod_lt _ (Nat.pos_of_neZero n)⟩
 
 end DebruijnIndex
 
