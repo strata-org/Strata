@@ -31,6 +31,7 @@ def translateType (ty : HighType) : LMonoTy :=
   | .TInt => LMonoTy.int
   | .TBool => LMonoTy.bool
   | .TVoid => LMonoTy.bool  -- Using bool as placeholder for void
+  | .UserDefined _ => .tcons "Composite" []
   | _ => panic s!"unsupported type {repr ty}"
 
 /--
