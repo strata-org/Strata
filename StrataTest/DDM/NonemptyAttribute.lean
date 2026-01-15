@@ -10,7 +10,7 @@ import Strata.DDM.Integration.Lean
 # Tests for @[nonempty] attribute on list constructs
 
 This file tests that the @[nonempty] attribute properly enforces non-empty lists
-for CommaSepBy, SpaceSepBy, and SpacePrefixedBy constructs.
+for CommaSepBy, SpaceSepBy, and SpacePrefixSepBy constructs.
 -/
 
 #dialect
@@ -22,7 +22,7 @@ op item (n : Num) : Item => n;
 // Operations with @[nonempty] - require at least one element
 op comma1 (@[nonempty] items : CommaSepBy Item) : Command => "comma1(" items ")";
 op space1 (@[nonempty] items : SpaceSepBy Item) : Command => "space1(" items ")";
-op prefixed1 (@[nonempty] items : SpacePrefixedBy Item) : Command => "prefixed1(" items ")";
+op prefixed1 (@[nonempty] items : SpacePrefixSepBy Item) : Command => "prefixed1(" items ")";
 
 // Operations without @[nonempty] - allow zero elements
 op comma0 (items : CommaSepBy Item) : Command => "comma0(" items ")";
@@ -68,14 +68,14 @@ program NonemptyTest;
 space1()
 #end
 
--- Test that @[nonempty] SpacePrefixedBy accepts non-empty lists
+-- Test that @[nonempty] SpacePrefixSepBy accepts non-empty lists
 #guard_msgs in
 private def test_nonempty_prefixed_success := #strata
 program NonemptyTest;
 prefixed1(1 2 3)
 #end
 
--- Test that @[nonempty] SpacePrefixedBy rejects empty lists
+-- Test that @[nonempty] SpacePrefixSepBy rejects empty lists
 /-- error: expected expected at least one element -/
 #guard_msgs in
 private def test_nonempty_prefixed_empty := #strata

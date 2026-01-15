@@ -352,10 +352,10 @@ def arg : Tree → Arg
       | #[x] => some x.arg
       | _ => panic! "Unexpected option"
     .option info.loc r
-  | .ofSeqInfo info => .seq info.loc info.args
-  | .ofCommaSepInfo info => .commaSepList info.loc info.args
-  | .ofSpaceSepInfo info => .spaceSepList info.loc info.args
-  | .ofSpacePrefixedInfo info => .spacePrefixedList info.loc info.args
+  | .ofSeqInfo info => .seq info.loc .none info.args
+  | .ofCommaSepInfo info => .seq info.loc .comma info.args
+  | .ofSpaceSepInfo info => .seq info.loc .space info.args
+  | .ofSpacePrefixedInfo info => .seq info.loc .spacePrefix info.args
 
 theorem sizeOf_children (t : Tree) (i : Nat) (p : i < t.children.size) : sizeOf t[i] < sizeOf t := by
   match t with

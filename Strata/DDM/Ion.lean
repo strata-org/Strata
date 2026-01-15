@@ -505,21 +505,14 @@ private protected def ArgF.toIon {α} [ToIon α] (refs : SymbolIdCache) (arg : A
       | some a =>
         args := args.push (← a.toIon refs )
       return .sexp args
-    | .seq ann l => do
-      let args : Array (Ion _) := #[ ionSymbol! "seq", ← toIon ann ]
+    | .seq ann sep l => do
+      let annIon ← toIon ann
+      let args : Array (Ion _) := match sep with
+        | .none => #[ ionSymbol! "seq", annIon ]
+        | .comma => #[ ionSymbol! "commaSepList", annIon ]
+        | .space => #[ ionSymbol! "spaceSepList", annIon ]
+        | .spacePrefix => #[ ionSymbol! "spacePrefixedList", annIon ]
       let args ← l.attach.mapM_off (init := args) fun ⟨v, _⟩ => v.toIon refs
-      return .sexp args
-    | .commaSepList ann l => do
-      let args : Array (Ion _) := #[ ionSymbol! "commaSepList", ← toIon ann ]
-      let args ← l.attach.mapM_off (init := args) fun ⟨v, _⟩ => v.toIon refs
-      return .sexp args
-    | .spaceSepList ann l => do
-      let args : Array (Ion _) := #[ ionSymbol! "spaceSepList", ← toIon ann ]
-      let args ← l.attach.mapM_off (init := args) fun ⟨v, _h⟩ => v.toIon refs
-      return .sexp args
-    | .spacePrefixedList ann l => do
-      let args : Array (Ion _) := #[ ionSymbol! "spacePrefixedList", ← toIon ann ]
-      let args ← l.attach.mapM_off (init := args) fun ⟨v, _h⟩ => v.toIon refs
       return .sexp args
   termination_by sizeOf arg
   decreasing_by
@@ -626,25 +619,25 @@ private protected def ArgF.fromIon {α} [FromIon α] (v : Ion SymbolId) : FromIo
     let ann ← fromIon sexp[1]
     let args ← sexp.attach.mapM_off (start := 2) fun ⟨u, _⟩ =>
       Strata.ArgF.fromIon u
-    return .seq ann args
+    return .seq ann .none args
   | "commaSepList" => do
-    let ⟨p⟩ ← .checkArgMin "seq" sexp 2
+    let ⟨p⟩ ← .checkArgMin "commaSepList" sexp 2
     let ann ← fromIon sexp[1]
     let args ← sexp.attach.mapM_off (start := 2) fun ⟨u, _⟩ =>
       Strata.ArgF.fromIon u
-    return .commaSepList ann args
+    return .seq ann .comma args
   | "spaceSepList" => do
     let ⟨p⟩ ← .checkArgMin "spaceSepList" sexp 2
     let ann ← fromIon sexp[1]
     let args ← sexp.attach.mapM_off (start := 2) fun ⟨u, _⟩ =>
       Strata.ArgF.fromIon u
-    return .spaceSepList ann args
+    return .seq ann .space args
   | "spacePrefixedList" => do
     let ⟨p⟩ ← .checkArgMin "spacePrefixedList" sexp 2
     let ann ← fromIon sexp[1]
     let args ← sexp.attach.mapM_off (start := 2) fun ⟨u, _⟩ =>
       Strata.ArgF.fromIon u
-    return .spacePrefixedList ann args
+    return .seq ann .spacePrefix args
   | str =>
     throw s!"Unexpected identifier {str}"
 termination_by v

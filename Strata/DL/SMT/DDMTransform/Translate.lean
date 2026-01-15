@@ -113,16 +113,6 @@ private def translateFromTermType (t:SMT.TermType):
     else
       return .smtsort_param srnone (mkIdentifier id) (Ann.mk srnone argtys_array)
 
--- List of SortedVar to Array.
-private def translateFromSortedVarList (l: List (SortedVar SourceRange)):
-    Array (SortedVar SourceRange) :=
-  l.toArray
-
--- List of Term to Array.
-private def translateFromTermList (l: List (Term SourceRange)):
-    Array (Term SourceRange) :=
-  l.toArray
-
 def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term SourceRange) := do
   let srnone := SourceRange.none
   match t with
@@ -133,7 +123,7 @@ def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term SourceRange) := d
   | .none _ | .some _ => throw "don't know how to translate none and some"
   | .app op args _ =>
     let args' <- args.mapM translateFromTerm
-    let args_array := translateFromTermList args'
+    let args_array := args'.toArray
     if args_array.isEmpty then
       return (.qual_identifier srnone (.qi_ident srnone (mkIdentifier op.mkName)))
     else
@@ -145,7 +135,7 @@ def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term SourceRange) := d
         (fun ⟨name,ty⟩ => do
           let ty' <- translateFromTermType ty
           return .sorted_var srnone (mkSymbol name) ty')
-    let args_array := translateFromSortedVarList args_sorted
+    let args_array := args_sorted.toArray
     if args_array.isEmpty then
       throw "empty quantifier"
     else

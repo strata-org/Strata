@@ -140,6 +140,14 @@ termination_by d
 
 end TypeExprF
 
+/-- Separator format for sequence formatting -/
+inductive SepFormat where
+| none           -- No separator (original Seq)
+| comma          -- Comma separator (CommaSepBy)
+| space          -- Space separator (SpaceSepBy)
+| spacePrefix    -- Space before each element (SpacePrefixSepBy)
+deriving Inhabited, Repr, BEq
+
 mutual
 
 inductive ExprF (α : Type) : Type where
@@ -166,10 +174,7 @@ inductive ArgF (α : Type) : Type where
 | strlit (ann : α) (i : String)
 | bytes (ann : α) (a : ByteArray)
 | option (ann : α) (l : Option (ArgF α))
-| seq (ann : α) (l : Array (ArgF α))
-| commaSepList (ann : α) (l : Array (ArgF α))
-| spaceSepList (ann : α) (l : Array (ArgF α))
-| spacePrefixedList (ann : α) (l : Array (ArgF α))
+| seq (ann : α) (sep : SepFormat) (l : Array (ArgF α))
 deriving Inhabited, Repr
 
 end
@@ -193,10 +198,7 @@ def ArgF.ann {α : Type} : ArgF α → α
 | .bytes ann _ => ann
 | .strlit ann _ => ann
 | .option ann _ => ann
-| .seq ann _ => ann
-| .commaSepList ann _ => ann
-| .spaceSepList ann _ => ann
-| .spacePrefixedList ann _ => ann
+| .seq ann _ _ => ann
 
 end
 
@@ -292,10 +294,8 @@ private def ArgF.beq {α} [BEq α] (a1 a2 : ArgF α) : Bool :=
     | .none, .none => true
     | .some v1, .some v2 => ArgF.beq v1 v2
     | _, _ => false
-  | .seq a1 v1, .seq a2 v2 =>
-    a1 == a2 && ArgF.array_beq v1 v2
-  | .commaSepList a1 v1, .commaSepList a2 v2 =>
-    a1 == a2 && ArgF.array_beq v1 v2
+  | .seq a1 sep1 v1, .seq a2 sep2 v2 =>
+    a1 == a2 && sep1 == sep2 && ArgF.array_beq v1 v2
   | _, _ => false
 termination_by sizeOf a1
 
@@ -1294,10 +1294,7 @@ partial def foldOverArgBindingSpecs {α β}
   | .expr _ | .type _ | .cat _ | .ident .. | .num .. | .decimal .. | .bytes .. | .strlit .. => init
   | .option _ none => init
   | .option _ (some a) => foldOverArgBindingSpecs m f init a
-  | .seq _ a => a.attach.foldl (init := init) fun init ⟨a, _⟩ => foldOverArgBindingSpecs m f init a
-  | .commaSepList _ a => a.attach.foldl (init := init) fun init ⟨a, _⟩ => foldOverArgBindingSpecs m f init a
-  | .spaceSepList _ a => a.attach.foldl (init := init) fun init ⟨a, _⟩ => foldOverArgBindingSpecs m f init a
-  | .spacePrefixedList _ a => a.attach.foldl (init := init) fun init ⟨a, _⟩ => foldOverArgBindingSpecs m f init a
+  | .seq _ _ a => a.attach.foldl (init := init) fun init ⟨a, _⟩ => foldOverArgBindingSpecs m f init a
 
 /--
 Invoke a function `f` over each of the declaration specifications for an operator.

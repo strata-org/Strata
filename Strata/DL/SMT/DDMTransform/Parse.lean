@@ -346,9 +346,9 @@ import SMTCore;
 // 11. Commands (cont.)
 
 // cmd_' is necessary, otherwise it raises "unexpected token 'assert'; expected identifier"
-op cmd_assert (t:Term) : Command => "(" "assert" t ")";
+op cmd_assert (t:Term) : Command => "(" "assert " t ")";
 op check_sat () : Command => "(" "check-sat" ")";
-op check_sat_assuming (ts:SpacePrefixedBy Term) : Command =>
+op check_sat_assuming (ts:SpacePrefixSepBy Term) : Command =>
   "(" "check-sat-assuming" ts ")";
 op declare_const (s:Symbol, so:SMTSort) : Command =>
   "(" "declare-const " s so ")";
@@ -420,12 +420,6 @@ op mr_deffun (fdef:FunctionDef) : ModelResponse =>
 op mr_deffunrec (fdef:FunctionDef) : ModelResponse =>
   "(" "define-fun-rec " fdef ")";
 // TODO: define-funs-rec
-
-category SeqModelResponse;
-op seqmr_nil () : SeqModelResponse => ;
-op seqmr_one (i: ModelResponse) : SeqModelResponse => i;
-op seqmr_cons (i: ModelResponse, is: SeqModelResponse) : SeqModelResponse
-  => i is;
 
 category InfoResponse;
 op ir_stack_levels (n:Num) : InfoResponse => ":assertion-stack-response " n;

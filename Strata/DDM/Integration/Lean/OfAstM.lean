@@ -171,18 +171,18 @@ def ofCommaSepByM {α β} [Repr α] [SizeOf α]
       (act : ∀(e : ArgF α), sizeOf e < sizeOf arg → OfAstM β)
       : OfAstM (Ann (Array β) α) :=
   match arg with
-  | .commaSepList ann a => do
+  | .seq ann .comma a => do
     let val ← a.attach.mapM fun ⟨v, vIn⟩  => do
       act v (by decreasing_tactic)
     pure { ann := ann, val := val }
-  | _ => throwExpected "seq" arg
+  | _ => throwExpected "commaSepBy" arg
 
 def ofSeqM {α β} [Repr α] [SizeOf α]
       (arg : ArgF α)
       (act : ∀(e : ArgF α), sizeOf e < sizeOf arg → OfAstM β)
       : OfAstM (Ann (Array β) α) :=
   match arg with
-  | .seq ann a => do
+  | .seq ann .none a => do
     let val ← a.attach.mapM fun ⟨v, vIn⟩ =>
       act v (by decreasing_tactic)
     pure { ann := ann, val := val }
@@ -193,22 +193,22 @@ def ofSpaceSepByM {α β} [Repr α] [SizeOf α]
       (act : ∀(e : ArgF α), sizeOf e < sizeOf arg → OfAstM β)
       : OfAstM (Ann (Array β) α) :=
   match arg with
-  | .spaceSepList ann a => do
+  | .seq ann .space a => do
     let val ← a.attach.mapM fun ⟨v, vIn⟩ =>
       act v (by decreasing_tactic)
     pure { ann := ann, val := val }
   | _ => throwExpected "spaceSepBy" arg
 
-def ofSpacePrefixedByM {α β} [Repr α] [SizeOf α]
+def ofSpacePrefixSepByM {α β} [Repr α] [SizeOf α]
       (arg : ArgF α)
       (act : ∀(e : ArgF α), sizeOf e < sizeOf arg → OfAstM β)
       : OfAstM (Ann (Array β) α) :=
   match arg with
-  | .spacePrefixedList ann a => do
+  | .seq ann .spacePrefix a => do
     let val ← a.attach.mapM fun ⟨v, vIn⟩ =>
       act v (by decreasing_tactic)
     pure { ann := ann, val := val }
-  | _ => throwExpected "spacePrefixedBy" arg
+  | _ => throwExpected "spacePrefixSepBy" arg
 
 /--
 Get the expression at index `lvl` in the arguments.

@@ -775,7 +775,7 @@ def checkLeftRec (thisCatName : QualifiedIdent) (argDecls : ArgDecls) (as : List
         .invalid mf!"Leading symbol cannot be recursive call to {c}"
       else
         .isLeading as
-    | q`Init.SpaceSepBy | q`Init.SpacePrefixedBy =>
+    | q`Init.SpaceSepBy | q`Init.SpacePrefixSepBy =>
       assert! cat.args.size = 1
       let c := cat.args[0]!
       if c.name == thisCatName then
@@ -865,41 +865,6 @@ private def sepBy1Parser (p sep : Parser) (allowTrailingSep : Bool := false) : P
         s
 }
 
-private def spacePrefixedParser (p : Parser) : Parser := {
-  info := noFirstTokenInfo p.info
-  fn   := fun c s =>
-    let s := manyFn (andthenFn (symbolNoAntiquot " ").fn p.fn) c s
-    if s.hasError then
-      s
-    else
-      match s.stxStack.back with
-      | .node .none _k args =>
-        if args.isEmpty then
-          s.popSyntax.pushSyntax (.node (emptySourceInfo c s.pos) _k args)
-        else
-          s
-      | _ =>
-        s
-}
-
-private def spacePrefixed1Parser (p : Parser) : Parser := {
-  info := noFirstTokenInfo p.info
-  fn   := fun c s =>
-    let s := manyFn (andthenFn (symbolNoAntiquot " ").fn p.fn) c s
-    if s.hasError then
-      s
-    else
-      match s.stxStack.back with
-      | .node .none _k args =>
-        if args.isEmpty then
-          -- Require at least one element
-          s.mkError "expected at least one element"
-        else
-          s
-      | _ =>
-        s
-}
-
 def manyParser (p : Parser) : Parser := {
   info := noFirstTokenInfo p.info
   fn   := fun c s =>
@@ -948,7 +913,7 @@ partial def catParser (ctx : ParsingContext) (cat : SyntaxCat) (metadata : Metad
     assert! cat.args.size = 1
     let isNonempty := q`StrataDDL.nonempty ∈ metadata
     commaSepByParserHelper isNonempty <$> catParser ctx cat.args[0]!
-  | q`Init.SpaceSepBy | q`Init.SpacePrefixedBy | q`Init.Seq =>
+  | q`Init.SpaceSepBy | q`Init.SpacePrefixSepBy | q`Init.Seq =>
     assert! cat.args.size = 1
     let isNonempty := q`StrataDDL.nonempty ∈ metadata
     (if isNonempty then many1Parser else manyParser) <$> catParser ctx cat.args[0]!

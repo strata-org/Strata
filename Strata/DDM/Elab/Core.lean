@@ -1136,13 +1136,13 @@ partial def catElaborator (c : SyntaxCat) : TypingContext → Syntax → ElabM T
       let (args, resultCtx) ← stx.getSepArgs.foldlM f (#[], tctx)
       let info : SpaceSepInfo := { inputCtx := tctx, loc := loc, args := args.map (·.arg), resultCtx }
       pure <| .node (.ofSpaceSepInfo info) args
-  | q`Init.SpacePrefixedBy =>
+  | q`Init.SpacePrefixSepBy =>
     assert! c.args.size = 1
     let a := c.args[0]!
     let f := elabManyElement (catElaborator a)
     fun tctx stx => do
       let some loc := mkSourceRange? stx
-        | panic! s!"spacePrefixedBy missing source location {repr stx}"
+        | panic! s!"spacePrefixSepBy missing source location {repr stx}"
       let (args, resultCtx) ← stx.getArgs.foldlM f (#[], tctx)
       let info : SpacePrefixedInfo := { inputCtx := tctx, loc := loc, args := args.map (·.arg), resultCtx }
       pure <| .node (.ofSpacePrefixedInfo info) args
