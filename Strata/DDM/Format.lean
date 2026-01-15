@@ -378,16 +378,28 @@ private partial def ArgF.mformatM {α} : ArgF α → FormatM PrecFormat
   match ma with
   | none => pure (.atom .nil)
   | some a => a.mformatM
-| .seq _ entries => do
-  .atom <$> entries.foldlM (init := .nil) fun p a =>
-    return (p ++ (← a.mformatM).format)
-| .commaSepList _ entries => do
-  if z : entries.size = 0 then
-    pure (.atom .nil)
-  else do
-    let f i q s := return s ++ ", " ++ (← entries[i].mformatM).format
-    let a := (← entries[0].mformatM).format
-    .atom <$> entries.size.foldlM f (start := 1) a
+| .seq _ sep entries => do
+  match sep with
+  | .none =>
+    .atom <$> entries.foldlM (init := .nil) fun p a =>
+      return (p ++ (← a.mformatM).format)
+  | .comma =>
+    if z : entries.size = 0 then
+      pure (.atom .nil)
+    else do
+      let f i q s := return s ++ ", " ++ (← entries[i].mformatM).format
+      let a := (← entries[0].mformatM).format
+      .atom <$> entries.size.foldlM f (start := 1) a
+  | .space =>
+    if z : entries.size = 0 then
+      pure (.atom .nil)
+    else do
+      let f i q s := return s ++ " " ++ (← entries[i].mformatM).format
+      let a := (← entries[0].mformatM).format
+      .atom <$> entries.size.foldlM f (start := 1) a
+  | .spacePrefix =>
+    .atom <$> entries.foldlM (init := .nil) fun p a =>
+      return (p ++ " " ++ (← a.mformatM).format)
 
 private partial def ppArgs (f : StrataFormat) (rargs : Array Arg) : FormatM PrecFormat :=
   if rargs.isEmpty then

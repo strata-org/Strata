@@ -18,6 +18,8 @@ namespace Strata
 def SyntaxCat.mkOpt (c:SyntaxCat) : SyntaxCat := { ann := .none, name := q`Init.Option, args := #[c] }
 def SyntaxCat.mkSeq (c:SyntaxCat) : SyntaxCat := { ann := .none, name := q`Init.Seq, args := #[c] }
 def SyntaxCat.mkCommaSepBy (c:SyntaxCat) : SyntaxCat := { ann := .none, name := q`Init.CommaSepBy, args := #[c] }
+def SyntaxCat.mkSpaceSepBy (c:SyntaxCat) : SyntaxCat := { ann := .none, name := q`Init.SpaceSepBy, args := #[c] }
+def SyntaxCat.mkSpacePrefixSepBy (c:SyntaxCat) : SyntaxCat := { ann := .none, name := q`Init.SpacePrefixSepBy, args := #[c] }
 
 def initDialect : Dialect := BuiltinM.create! "Init" #[] do
   let Ident : ArgDeclKind := .cat <| .atom .none q`Init.Ident
@@ -49,6 +51,10 @@ def initDialect : Dialect := BuiltinM.create! "Init" #[] do
   declareCat q`Init.Seq #["a"]
 
   declareCat q`Init.CommaSepBy #["a"]
+
+  declareCat q`Init.SpaceSepBy #["a"]
+
+  declareCat q`Init.SpacePrefixSepBy #["a"]
 
   let QualifiedIdent := q`Init.QualifiedIdent
   declareCat QualifiedIdent

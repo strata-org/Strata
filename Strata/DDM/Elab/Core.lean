@@ -1165,28 +1165,28 @@ partial def catElaborator (c : SyntaxCat) : TypingContext → Syntax → ElabM T
     let a := c.args[0]!
     elabOption (catElaborator a)
   |  q`Init.Seq =>
-    assert! c.args.size = 1
-    let a := c.args[0]!
-    let f := elabManyElement (catElaborator a)
-    fun tctx stx => do
-      let some loc := mkSourceRange? stx
-        | panic! "seq missing source location"
-      let (args, resultCtx) ← stx.getArgs.foldlM f (#[], tctx)
-      let info : SeqInfo := { inputCtx := tctx, loc := loc, args := args.map (·.arg), resultCtx }
-      pure <| .node (.ofSeqInfo info) args
+    elabSeqWith c .none "seq" (·.getArgs)
   | q`Init.CommaSepBy =>
-    assert! c.args.size = 1
-    let a := c.args[0]!
-    let f := elabManyElement (catElaborator a)
-    fun tctx stx => do
-      let some loc := mkSourceRange? stx
-        | panic! s!"commaSepBy missing source location {repr stx}"
-      let (args, resultCtx) ← stx.getSepArgs.foldlM f (#[], tctx)
-      let info : CommaSepInfo := { inputCtx := tctx, loc := loc, args := args.map (·.arg), resultCtx }
-      pure <| .node (.ofCommaSepInfo info) args
+    elabSeqWith c .comma "commaSepBy" (·.getSepArgs)
+  | q`Init.SpaceSepBy =>
+    elabSeqWith c .space "spaceSepBy" (·.getSepArgs)
+  | q`Init.SpacePrefixSepBy =>
+    elabSeqWith c .spacePrefix "spacePrefixSepBy" (·.getArgs)
   | _ =>
     assert! c.args.isEmpty
     elabOperation
+
+where
+  elabSeqWith (c : SyntaxCat) (sep : SepFormat) (name : String) (getArgsFrom : Syntax → Array Syntax) : TypingContext → Syntax → ElabM Tree :=
+    assert! c.args.size = 1
+    let a := c.args[0]!
+    let f := elabManyElement (catElaborator a)
+    fun tctx stx => do
+      let some loc := mkSourceRange? stx
+        | panic! s!"{name} missing source location {repr stx}"
+      let (args, resultCtx) ← (getArgsFrom stx).foldlM f (#[], tctx)
+      let info : SeqInfo := { inputCtx := tctx, loc := loc, sep := sep, args := args.map (·.arg), resultCtx }
+      pure <| .node (.ofSeqInfo info) args
 
 partial def elabExpr (tctx : TypingContext) (stx : Syntax) : ElabM Tree := do
   match stx.getKind with

@@ -160,10 +160,6 @@ op simple_symbol_some () : SimpleSymbol => "some";
 category Symbol;
 op symbol (@[unwrap] s:SimpleSymbol) : Symbol => s;
 
-category SymbolList; // For spacing, has at least one element
-op symbol_list_one (se:Symbol) : SymbolList => se;
-op symbol_list_cons (se:Symbol, sse:SymbolList) : SymbolList => se " " sse;
-
 category Keyword;
 op kw_symbol (@[unwrap] s:SimpleSymbol) : Keyword => ":" s;
 
@@ -191,11 +187,7 @@ op se_symbol (s:Symbol) : SExpr => s;
 op se_reserved (s:Reserved) : SExpr => s;
 op se_keyword (s:Keyword) : SExpr => s;
 
-category SExprList; // For spacing, has at least one element
-op sexpr_list_one (se:SExpr) : SExprList => se;
-op sexpr_list_cons (se:SExpr, sse:SExprList) : SExprList => se " " sse;
-
-op se_ls (s:Option SExprList) : SExpr => "(" s ")";
+op se_ls (s:SpaceSepBy SExpr) : SExpr => "(" s ")";
 
 
 category SMTIdentifier;
@@ -207,11 +199,7 @@ op ind_symbol (@[unwrap] s:Symbol) : Index => s;
 
 op iden_simple (s:Symbol) : SMTIdentifier => s;
 
-category IndexList; // For spacing; has at least one element
-op index_list_one (i:Index) : IndexList => i;
-op index_list_cons (i:Index, spi:IndexList) : IndexList => i " " spi;
-
-op iden_indexed (s:Symbol, si:IndexList) : SMTIdentifier =>
+op iden_indexed (s:Symbol, @[nonempty] si:SpaceSepBy Index) : SMTIdentifier =>
   "(" "_ " s " " si ")";
 
 
@@ -219,11 +207,7 @@ op iden_indexed (s:Symbol, si:IndexList) : SMTIdentifier =>
 category SMTSort;
 op smtsort_ident (s:SMTIdentifier) : SMTSort => s;
 
-category SMTSortList; // For spacing; has at least one element
-op smtsort_list_one (i:SMTSort) : SMTSortList => i;
-op smtsort_list_cons (i:SMTSort, spi:SMTSortList) : SMTSortList => i " " spi;
-
-op smtsort_param (s:SMTIdentifier, sl:SMTSortList) : SMTSort
+op smtsort_param (s:SMTIdentifier, @[nonempty] sl:SpaceSepBy SMTSort) : SMTSort
   => "(" s " " sl ")";
 
 
@@ -236,10 +220,6 @@ op av_sel (s:Seq SExpr) : AttributeValue => "(" s ")";
 category Attribute;
 op att_kw (k:Keyword, av:Option AttributeValue) : Attribute => k av;
 
-category AttributeList; // For spacing; has at least one element
-op att_list_one (i:Attribute) : AttributeList => i;
-op att_list_cons (i:Attribute, spi:AttributeList) : AttributeList => i " " spi;
-
 
 // 6. Terms
 category QualIdentifier;
@@ -249,41 +229,29 @@ op qi_isort (i:SMTIdentifier, s:SMTSort) : QualIdentifier =>
 
 category Term; // Forward declaration
 
-category TermList; // For Spacing
-op term_list_one (i:Term) : TermList => i:0;
-op term_list_cons (i:Term, spi:TermList) : TermList => i:0 " " spi:0;
-
 category ValBinding;
 op val_binding (s:Symbol, t:Term) : ValBinding => "(" s " " t ")";
 
-category ValBindingList; // For spacing; has at least one element
-op val_binding_list_one (i:ValBinding) : ValBindingList => i;
-op val_binding_list_cons (i:ValBinding, spi:ValBindingList) : ValBindingList => i " " spi;
-
 category SortedVar;
 op sorted_var (s:Symbol, so:SMTSort) : SortedVar => "(" s " " so ")";
-
-category SortedVarList; // For spacing; has at least one element
-op sorted_var_list_one (i:SortedVar) : SortedVarList => i;
-op sorted_var_list_cons (i:SortedVar, spi:SortedVarList) : SortedVarList => i " " spi;
 
 // TODO: support the match statement
 // category Pattern;
 
 op spec_constant_term (sc:SpecConstant) : Term => sc;
 op qual_identifier (qi:QualIdentifier) : Term => qi;
-op qual_identifier_args (qi:QualIdentifier, ts:TermList) : Term =>
+op qual_identifier_args (qi:QualIdentifier, @[nonempty] ts:SpaceSepBy Term) : Term =>
   "(" qi " " ts ")";
 
-op let_smt (vbps: ValBindingList, t:Term) : Term =>
+op let_smt (@[nonempty] vbps: SpaceSepBy ValBinding, t:Term) : Term =>
   "(" "let" "(" vbps ")" t ")";
-op lambda_smt (svs: SortedVarList, t:Term) : Term =>
+op lambda_smt (@[nonempty] svs: SpaceSepBy SortedVar, t:Term) : Term =>
   "(" "lambda" "(" svs ")" t ")";
-op forall_smt (svs: SortedVarList, t:Term) : Term =>
+op forall_smt (@[nonempty] svs: SpaceSepBy SortedVar, t:Term) : Term =>
   "(" "forall" "(" svs ")" t ")";
-op exists_smt (svs: SortedVarList, t:Term) : Term =>
+op exists_smt (@[nonempty] svs: SpaceSepBy SortedVar, t:Term) : Term =>
   "(" "exists" "(" svs ")" t ")";
-op bang (t:Term, attrs:AttributeList) : Term =>
+op bang (t:Term, @[nonempty] attrs:SpaceSepBy Attribute) : Term =>
   "(" "!" t " " attrs ")";
 
 
@@ -345,40 +313,18 @@ op smtoption_attr (a:Attribute) : SMTOption => a;
 category SortDec;
 op sort_dec (s:Symbol, n:Num) : SortDec => "(" s n ")";
 
-category SortDecList; // For spacing; has at least one element
-op sort_dec_list_one (i:SortDec) : SortDecList => i;
-op sort_dec_list_cons (i:SortDec, spi:SortDecList) : SortDecList =>
-  i " " spi;
-
 category SelectorDec;
 op selector_dec (s:Symbol, so:SMTSort) : SelectorDec => "(" s so ")";
 
-category SelectorDecList; // For spacing; has at least one element
-op selector_dec_list_one (i:SelectorDec) : SelectorDecList => i;
-op selector_dec_list_cons (i:SelectorDec, spi:SelectorDecList) : SelectorDecList =>
-  i " " spi;
-
 category ConstructorDec;
-op constructor_dec (s:Symbol, sdl:Option SelectorDecList) : ConstructorDec =>
-  "(" s " " sdl ")";
-
-category ConstructorDecList; // For spacing; has at least one element
-op constructor_list_one (i:ConstructorDec) : ConstructorDecList => i;
-op constructor_list_cons (i:ConstructorDec, spi:ConstructorDecList)
-  : ConstructorDecList =>
-  i " " spi;
+op constructor_dec (s:Symbol, sdl:SpaceSepBy SelectorDec) : ConstructorDec =>
+  "(" s sdl ")";
 
 category DatatypeDec;
-op datatype_dec (cs:ConstructorDecList) : DatatypeDec
+op datatype_dec (@[nonempty] cs:SpaceSepBy ConstructorDec) : DatatypeDec
   => "(" cs ")";
-op datatype_dec_par (symbols: SymbolList, cs:ConstructorDecList) : DatatypeDec
+op datatype_dec_par (@[nonempty] symbols: SpaceSepBy Symbol, @[nonempty] cs:SpaceSepBy ConstructorDec) : DatatypeDec
   => "(" "par " "(" symbols ")" "(" cs ")" ")";
-
-category DatatypeDecList; // For spacing; has at least one element
-op datatype_dec_list_one (i:DatatypeDec) : DatatypeDecList => i;
-op datatype_dec_list_cons (i:DatatypeDec, spi:DatatypeDecList)
-  : DatatypeDecList =>
-  i " " spi;
 
 category FunctionDec;
 op function_dec (s:Symbol, sv:Seq SortedVar, so:SMTSort) : FunctionDec
@@ -387,12 +333,6 @@ op function_dec (s:Symbol, sv:Seq SortedVar, so:SMTSort) : FunctionDec
 category FunctionDef;
 op function_def (s:Symbol, sv:Seq SortedVar, so:SMTSort, t:Term) : FunctionDef
   => s "(" sv ")" so t;
-
-category FunctionDefList; // For spacing; has at least one element
-op function_def_list_one (i:FunctionDef) : FunctionDefList => i;
-op function_def_list_cons (i:FunctionDef, spi:FunctionDefList)
-  : FunctionDefList =>
-  i " " spi;
 
 #end
 
@@ -408,17 +348,17 @@ import SMTCore;
 // cmd_' is necessary, otherwise it raises "unexpected token 'assert'; expected identifier"
 op cmd_assert (t:Term) : Command => "(" "assert " t ")";
 op check_sat () : Command => "(" "check-sat" ")";
-op check_sat_assuming (ts:Option TermList) : Command =>
-  "(" "check-sat-assuming " ts ")";
+op check_sat_assuming (ts:SpacePrefixSepBy Term) : Command =>
+  "(" "check-sat-assuming" ts ")";
 op declare_const (s:Symbol, so:SMTSort) : Command =>
   "(" "declare-const " s so ")";
 op declare_datatype (s:Symbol, so:DatatypeDec) : Command =>
   "(" "declare-datatype " s so ")";
 // The size of SortDec and DatatypeDec must be equal, but omit the check in
 // this DDM definition because its representation can be quite ugly.
-op declare_datatypes (s:SortDecList, so:DatatypeDecList) : Command =>
+op declare_datatypes (@[nonempty] s:SpaceSepBy SortDec, @[nonempty] so:SpaceSepBy DatatypeDec) : Command =>
   "(" "declare-datatypes" "(" s ")" "(" so ")" ")";
-op declare_fun (s:Symbol, sol:Option SMTSortList, range:SMTSort) : Command =>
+op declare_fun (s:Symbol, sol:SpaceSepBy SMTSort, range:SMTSort) : Command =>
   "(" "declare-fun " s "(" sol ")" range ")";
 op declare_sort (s:Symbol, n:Num) : Command =>
   "(" "declare-sort " s n ")";
@@ -430,7 +370,7 @@ op define_fun (fdef:FunctionDef) : Command =>
   "(" "define-fun " fdef ")";
 op define_fun_rec (fdef:FunctionDef) : Command =>
   "(" "define-fun-rec " fdef ")";
-op define_funs_rec (fdefs:FunctionDefList, terms:TermList) : Command =>
+op define_funs_rec (@[nonempty] fdefs:SpaceSepBy FunctionDef, @[nonempty] terms:SpaceSepBy Term) : Command =>
   "(" "define-funs-rec" "(" fdefs ")" "(" terms ")" ")";
 op define_sort (s:Symbol, sl:Seq Symbol, so:SMTSort) : Command =>
   "(" "define-sort " s "(" sl ")" so ")";
@@ -444,7 +384,7 @@ op get_option (kw:Keyword) : Command => "(" "get-option " kw ")";
 op get_proof () : Command => "(" "get-proof" ")";
 op get_unsat_assumptions () : Command => "(" "get-unsat-assumptions" ")";
 op get_unsat_core () : Command => "(" "get-unsat-core" ")";
-op get_value (tl:TermList) : Command =>
+op get_value (@[nonempty] tl:SpaceSepBy Term) : Command =>
   "(" "get-value" "(" tl ")" ")";
 op cmd_pop (n:Num) : Command => "(" "pop " n ")";
 op cmd_push (n:Num) : Command => "(" "push " n ")";
@@ -481,12 +421,6 @@ op mr_deffunrec (fdef:FunctionDef) : ModelResponse =>
   "(" "define-fun-rec " fdef ")";
 // TODO: define-funs-rec
 
-category SeqModelResponse;
-op seqmr_nil () : SeqModelResponse => ;
-op seqmr_one (i: ModelResponse) : SeqModelResponse => i;
-op seqmr_cons (i: ModelResponse, is: SeqModelResponse) : SeqModelResponse
-  => i is;
-
 category InfoResponse;
 op ir_stack_levels (n:Num) : InfoResponse => ":assertion-stack-response " n;
 op ir_authors (s:Str) : InfoResponse => ":authors " s;
@@ -496,28 +430,11 @@ op ir_unknown (r:ReasonUnknown) : InfoResponse => ":reason-unknown " r;
 op ir_ver (s:Str) : InfoResponse => ":version " s;
 op ir_attr (a:Attribute) : InfoResponse => a;
 
-category InfoResponseList;
-op ir_list_one (i: InfoResponse) : InfoResponseList => i;
-op ir_list_cons (i: InfoResponse, is: InfoResponseList) : InfoResponseList
-  => i is;
-
 category ValuationPair;
 op valuation_pair (t1:Term, t2:Term) : ValuationPair => "(" t1 " " t2 ")";
 
-category ValuationPairList;
-op valuation_pair_list_one (i: ValuationPair) : ValuationPairList => i;
-op valuation_pair_list_cons (i: ValuationPair, is: ValuationPairList)
-  : ValuationPairList
-  => i is;
-
 category TValuationPair;
 op t_valuation_pair (t1:Symbol, t2:BValue) : TValuationPair => "(" t1 " " t2 ")";
-
-category TValuationPairList;
-op t_valuation_pair_list_one (i: TValuationPair) : TValuationPairList => i;
-op t_valuation_pair_list_cons (i: TValuationPair, is: TValuationPairList)
-  : TValuationPairList
-  => i is;
 
 category CheckSatResponse;
 op csr_sat () : CheckSatResponse => "sat";
@@ -528,20 +445,20 @@ category EchoResponse;
 op echo_response (s:Str) : EchoResponse => s;
 
 category GetAssertionsResponse;
-op get_assertions_response (t:Option TermList) : GetAssertionsResponse =>
+op get_assertions_response (t:SpaceSepBy Term) : GetAssertionsResponse =>
   "(" t ")";
 
 category GetAssignmentResponse;
-op get_assignment_response (t:Option TValuationPairList)
+op get_assignment_response (t:SpaceSepBy TValuationPair)
     : GetAssignmentResponse =>
   "(" t ")";
 
 category GetInfoResponse;
-op get_info_response (i2:InfoResponseList) : GetInfoResponse =>
+op get_info_response (i2:SpaceSepBy InfoResponse) : GetInfoResponse =>
   "(" i2 ")";
 
 category GetModelResponse;
-op get_model_response (mr:SeqModelResponse) : GetModelResponse =>
+op get_model_response (mr:SpaceSepBy ModelResponse) : GetModelResponse =>
   "(" mr ")";
 
 category GetOptionResponse;
@@ -551,15 +468,15 @@ category GetProofResponse;
 op get_proof_response (s:SExpr) : GetProofResponse => s;
 
 category GetUnsatAssumpResponse;
-op get_unsat_assump_response (ts:Option TermList) : GetUnsatAssumpResponse =>
+op get_unsat_assump_response (ts:SpaceSepBy Term) : GetUnsatAssumpResponse =>
   "(" ts ")";
 
 category GetUnsatCoreResponse;
-op get_unsat_core_response (ss:Option SymbolList) : GetUnsatCoreResponse =>
+op get_unsat_core_response (ss:SpaceSepBy Symbol) : GetUnsatCoreResponse =>
   "(" ss ")";
 
 category GetValueResponse;
-op get_value_response (vps:Option ValuationPairList)
+op get_value_response (vps:SpaceSepBy ValuationPair)
   : GetValueResponse => "(" vps ")";
 
 category SpecificSuccessResponse;
@@ -816,23 +733,23 @@ namespace SMTDDM
 deriving instance BEq for
   -- Sequences
   SpecConstant, QualifiedIdent, SimpleSymbol,
-  Symbol, SymbolList,
-  SortDec, SortDecList,
+  Symbol,
+  SortDec,
   Reserved,
   Keyword, SExpr, AttributeValue, BValue,
-  Attribute, AttributeList,
+  Attribute,
   SMTOption,
-  Index, IndexList,
+  Index,
   SMTIdentifier,
-  SMTSort, SMTSortList,
-  SortedVar, SortedVarList,
+  SMTSort,
+  SortedVar,
   QualIdentifier, ValBinding,
-  Term, TermList,
+  Term,
   InfoFlag,
-  SelectorDec, SelectorDecList,
-  ConstructorDec, ConstructorDecList,
-  DatatypeDec, DatatypeDecList,
-  FunctionDef, FunctionDefList,
+  SelectorDec,
+  ConstructorDec,
+  DatatypeDec,
+  FunctionDef,
   Command
 
 end SMTDDM
