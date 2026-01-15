@@ -129,7 +129,7 @@ assert [axiomPgm2_main_assert]: (x >= 0 ==> f(x) > x);
 
 /-- info: [] -/
 #guard_msgs in
-#eval let (program, _) := Boogie.getProgram axiomPgm2
+#eval let (program, _) := Core.getProgram axiomPgm2
       Std.format (Core.Program.getIrrelevantAxioms program ["f"])
 
 /--

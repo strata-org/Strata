@@ -35,7 +35,7 @@ barTest1 callers: [barTest4, barTest3]
 fooConst callees: []
 -/
 #guard_msgs in
-#eval let (program, _) := Boogie.getProgram funcPgm
+#eval let (program, _) := Core.getProgram funcPgm
       let cg := (Core.Program.toFunctionCG program)
       let ans1 := Core.CallGraph.getCalleesClosure cg "barTest4"
       let ans2 := Core.CallGraph.getCallersClosure cg "barTest1"

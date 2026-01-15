@@ -6,7 +6,7 @@
 import Lean.Data.Json
 
 import Strata.Backends.CBMC.StrataToCBMC
-import Strata.Backends.CBMC.BoogieToCBMC
+import Strata.Backends.CBMC.CoreToCBMC
 import Strata.Languages.Core.Verifier
 import Strata.Languages.C_Simp.Verify
 import Strata.Util.IO
@@ -34,10 +34,10 @@ def main (args : List String) : IO Unit := do
           let csimp_prog := C_Simp.get_program pgm
           IO.println (CSimp.testSymbols csimp_prog.funcs.head!)
         else if file.endsWith ".core.st" then
-          let boogie_prog := (Boogie.getProgram pgm inputCtx).fst
-          match boogie_prog.decls.head! with
+          let core_prog := (Core.getProgram pgm inputCtx).fst
+          match core_prog.decls.head! with
             | .proc f => IO.println (Core.testSymbols f)
-            | _ => IO.println "Error: expected boogie procedure"
+            | _ => IO.println "Error: expected Strata Core procedure"
         else
           IO.println "Error: Unrecognized file extension"
     | .error errors =>

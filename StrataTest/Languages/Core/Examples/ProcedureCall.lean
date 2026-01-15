@@ -54,7 +54,7 @@ info: { callees := Std.HashMap.ofList [("Inc", []), ("Q2", ["Q1"]), ("P", ["Inc"
   callers := Std.HashMap.ofList [("Inc", ["P"]), ("Q1", ["Q2"])] }
 -/
 #guard_msgs in
-#eval let (program, _) := Boogie.getProgram globalCounterPgm
+#eval let (program, _) := Core.getProgram globalCounterPgm
       Core.Program.toProcedureCG program
 
 /--

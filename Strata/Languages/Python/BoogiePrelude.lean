@@ -358,6 +358,6 @@ spec {
 #end
 
 def Core.prelude : Core.Program :=
-   Boogie.getProgram Strata.boogiePrelude |>.fst
+   Core.getProgram Strata.boogiePrelude |>.fst
 
 end Strata
