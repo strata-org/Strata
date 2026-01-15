@@ -20,12 +20,17 @@ op optionalAssignment(value: StmtExpr): OptionalAssignment => ":=" value:0;
 op varDecl (name: Ident, varType: Option OptionalType, assignment: Option OptionalAssignment): StmtExpr
   => @[prec(0)] "var " name varType assignment ";";
 
-// Identifiers/Variables
+op call(callee: StmtExpr, args: CommaSepBy StmtExpr): StmtExpr => callee "(" args ")";
+
+// Field access
+op fieldAccess (obj: StmtExpr, field: Ident): StmtExpr => @[prec(90)] obj "#" field;
+
+// Identifiers/Variables - must come after fieldAccess so c.value parses as fieldAccess not identifier
 op identifier (name: Ident): StmtExpr => name;
 op parenthesis (inner: StmtExpr): StmtExpr => "(" inner ")";
 
 // Assignment
-op assign (target: StmtExpr, value: StmtExpr): StmtExpr => target ":=" value ";";
+op assign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10)] target ":=" value ";";
 
 // Binary operators
 op add (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60)] lhs "+" rhs;
@@ -35,11 +40,6 @@ op gt (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs ">" rhs;
 op lt (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs "<" rhs;
 op le (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs "<=" rhs;
 op ge (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs ">=" rhs;
-
-op call(callee: StmtExpr, args: CommaSepBy StmtExpr): StmtExpr => callee "(" args ")";
-
-// Field access
-op fieldAccess (obj: StmtExpr, field: Ident): StmtExpr => @[prec(90)] obj "." field;
 
 // If-else
 category OptionalElse;

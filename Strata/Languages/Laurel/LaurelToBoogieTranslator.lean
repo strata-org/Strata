@@ -11,6 +11,7 @@ import Strata.Languages.Boogie.Procedure
 import Strata.Languages.Boogie.Options
 import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LiftExpressionAssignments
+import Strata.Languages.Laurel.HeapParameterization
 import Strata.DL.Imperative.Stmt
 import Strata.DL.Lambda.LExpr
 import Strata.Languages.Laurel.LaurelFormat
@@ -30,7 +31,9 @@ def translateType (ty : HighType) : LMonoTy :=
   match ty with
   | .TInt => LMonoTy.int
   | .TBool => LMonoTy.bool
-  | .TVoid => LMonoTy.bool  -- Using bool as placeholder for void
+  | .TVoid => LMonoTy.bool
+  | .THeap => .tcons "Heap" []
+  | .TField => .tcons "Field" []
   | .UserDefined _ => .tcons "Composite" []
   | _ => panic s!"unsupported type {repr ty}"
 
@@ -190,19 +193,49 @@ def translateProcedure (proc : Procedure) : Boogie.Procedure :=
     body := body
   }
 
+def heapTypeDecl : Boogie.Decl := .type (.con { name := "Heap", numargs := 0 })
+def fieldTypeDecl : Boogie.Decl := .type (.con { name := "Field", numargs := 0 })
+def compositeTypeDecl : Boogie.Decl := .type (.con { name := "Composite", numargs := 0 })
+
+def readFunction : Boogie.Decl :=
+  let heapTy := LMonoTy.tcons "Heap" []
+  let compTy := LMonoTy.tcons "Composite" []
+  let fieldTy := LMonoTy.tcons "Field" []
+  .func {
+    name := Boogie.BoogieIdent.glob "read"
+    typeArgs := []
+    inputs := [(Boogie.BoogieIdent.locl "heap", heapTy),
+               (Boogie.BoogieIdent.locl "obj", compTy),
+               (Boogie.BoogieIdent.locl "field", fieldTy)]
+    output := LMonoTy.int
+    body := none
+  }
+
+def translateConstant (c : Constant) : Boogie.Decl :=
+  let ty := translateType c.type
+  .func {
+    name := Boogie.BoogieIdent.glob c.name
+    typeArgs := []
+    inputs := []
+    output := ty
+    body := none
+  }
+
 /--
 Translate Laurel Program to Boogie Program
 -/
 def translate (program : Program) : Except (Array DiagnosticModel) Boogie.Program := do
-  -- First, sequence all assignments (move them out of expression positions)
   let sequencedProgram ← liftExpressionAssignments program
-  dbg_trace "=== Sequenced program Program ==="
-  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format sequencedProgram)))
-  dbg_trace "================================="
-  -- Then translate to Boogie
-  let procedures := sequencedProgram.staticProcedures.map translateProcedure
-  let decls := procedures.map (fun p => Boogie.Decl.proc p .empty)
-  return { decls := decls }
+  let heapProgram := heapParameterization sequencedProgram
+  dbg_trace "=== Heap parameterized Program ==="
+  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format heapProgram)))
+  dbg_trace "=================================="
+  let procedures := heapProgram.staticProcedures.map translateProcedure
+  let procDecls := procedures.map (fun p => Boogie.Decl.proc p .empty)
+  let constDecls := heapProgram.constants.map translateConstant
+  let typeDecls := [heapTypeDecl, fieldTypeDecl, compositeTypeDecl]
+  let funcDecls := [readFunction]
+  return { decls := typeDecls ++ funcDecls ++ constDecls ++ procDecls }
 
 /--
 Verify a Laurel program using an SMT solver

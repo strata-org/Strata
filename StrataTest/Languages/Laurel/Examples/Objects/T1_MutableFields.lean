@@ -20,12 +20,12 @@ composite Container {
 procedure foo(c: Container, d: Container) returns (r: int)
   requires c != d
 {
-  var x := c.value;
-  d.value := d.value + 1;
-  assert x == c.value; // pass
+  var x := c#value;
+  d#value := d#value + 1;
+  assert x == c#value; // pass
 
   var e := d;
-  assert e.value == d.value;
+  assert e#value == d#value;
 }
 
 procedure caller(c: Container, d: Container) {
