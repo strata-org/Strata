@@ -55,6 +55,7 @@ info: [Strata.Boogie] Type checking succeeded.
 
 VCs:
 Label: T1_z_eq_g
+Property: assert
 Assumptions:
 
 
@@ -62,6 +63,7 @@ Proof Obligation:
 #true
 
 Label: T1_z_eq_old_g2
+Property: assert
 Assumptions:
 
 
@@ -69,6 +71,7 @@ Proof Obligation:
 #true
 
 Label: T1_g_unchanged
+Property: assert
 Assumptions:
 
 
@@ -76,6 +79,7 @@ Proof Obligation:
 #true
 
 Label: T1_g2_eq_old_g
+Property: assert
 Assumptions:
 
 
@@ -83,6 +87,7 @@ Proof Obligation:
 #true
 
 Label: T1_y_eq_old_g2
+Property: assert
 Assumptions:
 
 
@@ -90,6 +95,7 @@ Proof Obligation:
 #true
 
 Label: T1_z_eq_y
+Property: assert
 Assumptions:
 
 
@@ -97,6 +103,7 @@ Proof Obligation:
 #true
 
 Label: T2_g2_eq_g
+Property: assert
 Assumptions:
 ((Origin_T1_Ensures)T1_g_unchanged, (g == #true))
 ((Origin_T1_Ensures)T1_g2_eq_old_g, ($__g27 == #true)) ((Origin_T1_Ensures)T1_y_eq_old_g2, ($__a5 == #false)) ((Origin_T1_Ensures)T1_z_eq_y, ($__b6 == $__a5))
@@ -105,6 +112,7 @@ Proof Obligation:
 ($__g27 == #true)
 
 Label: T2_g_true
+Property: assert
 Assumptions:
 ((Origin_T1_Ensures)T1_g_unchanged, (g == #true))
 ((Origin_T1_Ensures)T1_g2_eq_old_g, ($__g27 == #true)) ((Origin_T1_Ensures)T1_y_eq_old_g2, ($__a5 == #false)) ((Origin_T1_Ensures)T1_z_eq_y, ($__b6 == $__a5))
@@ -113,6 +121,7 @@ Proof Obligation:
 #true
 
 Label: T2_a_eq_false
+Property: assert
 Assumptions:
 ((Origin_T1_Ensures)T1_g_unchanged, (g == #true))
 ((Origin_T1_Ensures)T1_g2_eq_old_g, ($__g27 == #true)) ((Origin_T1_Ensures)T1_y_eq_old_g2, ($__a5 == #false)) ((Origin_T1_Ensures)T1_z_eq_y, ($__b6 == $__a5))
@@ -121,6 +130,7 @@ Proof Obligation:
 ($__a5 == #false)
 
 Label: T2_b_eq_false
+Property: assert
 Assumptions:
 ((Origin_T1_Ensures)T1_g_unchanged, (g == #true))
 ((Origin_T1_Ensures)T1_g2_eq_old_g, ($__g27 == #true)) ((Origin_T1_Ensures)T1_y_eq_old_g2, ($__a5 == #false)) ((Origin_T1_Ensures)T1_z_eq_y, ($__b6 == $__a5))
@@ -134,34 +144,44 @@ Wrote problem to vcs/T2_b_eq_false.smt2.
 ---
 info:
 Obligation: T1_z_eq_g
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: T1_z_eq_old_g2
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: T1_g_unchanged
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: T1_g2_eq_old_g
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: T1_y_eq_old_g2
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: T1_z_eq_y
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: T2_g2_eq_g
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: T2_g_true
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: T2_a_eq_false
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: T2_b_eq_false
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" oldExprPgm

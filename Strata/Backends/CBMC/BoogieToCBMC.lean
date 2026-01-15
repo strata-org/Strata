@@ -160,10 +160,15 @@ def cmdToJson (e : Boogie.Command) (loc: SourceLoc) : Json :=
           ]
         ]
       ]
-    | .havoc _ _ => panic! "Unimplemented"
+    | .cover _ _ md =>
+       panic! s!"{Imperative.MetaData.formatFileRangeD md}\
+                  cover unimplemented"
+    | .havoc _ md =>
+       panic! s!"{Imperative.MetaData.formatFileRangeD md}\
+                  havoc unimplemented"
 
 mutual
-partial def blockToJson {P : Imperative.PureExpr} (I : Lambda.LExprParams) [IdentToStr (Lambda.Identifier I.IDMeta)] [HasLExpr P I]
+def blockToJson {P : Imperative.PureExpr} (I : Lambda.LExprParams) [IdentToStr (Lambda.Identifier I.IDMeta)] [HasLExpr P I]
   (b: Imperative.Block P Command) (loc: SourceLoc) : Json :=
   Json.mkObj [
     ("id", "code"),
@@ -175,8 +180,10 @@ partial def blockToJson {P : Imperative.PureExpr} (I : Lambda.LExprParams) [Iden
     ]),
     ("sub", Json.arr (b.map (stmtToJson (I:=I) · loc)).toArray)
   ]
+  termination_by (Imperative.Block.sizeOf b)
+  decreasing_by rename_i x_in; apply (Imperative.sizeOf_stmt_in_block x_in)
 
-partial def stmtToJson {P : Imperative.PureExpr} (I : Lambda.LExprParams) [IdentToStr (Lambda.Identifier I.IDMeta)] [HasLExpr P I]
+def stmtToJson {P : Imperative.PureExpr} (I : Lambda.LExprParams) [IdentToStr (Lambda.Identifier I.IDMeta)] [HasLExpr P I]
   (e : Imperative.Stmt P Command) (loc: SourceLoc) : Json :=
   match e with
   | .cmd cmd => cmdToJson cmd loc
@@ -196,6 +203,8 @@ partial def stmtToJson {P : Imperative.PureExpr} (I : Lambda.LExprParams) [Ident
       ])
     ]
   | _ => panic! "Unimplemented"
+  termination_by (Imperative.Stmt.sizeOf e)
+  decreasing_by all_goals(simp; omega)
 end
 
 def listToExpr (l: ListMap BoogieLabel Boogie.Procedure.Check) : Boogie.Expression.Expr :=

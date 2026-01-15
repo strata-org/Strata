@@ -138,7 +138,7 @@ def translateReal (arg : Arg) : TransM Decimal := do
 ---------------------------------------------------------------------
 
 inductive GenKind where
-  | var_def | axiom_def | assume_def | assert_def
+  | var_def | axiom_def | assume_def | assert_def | cover_def
   deriving DecidableEq
 
 /--
@@ -149,13 +149,14 @@ structure GenNum where
   axiom_def : Nat
   assume_def : Nat
   assert_def : Nat
+  cover_def : Nat
   deriving Repr
 
 structure TransBindings where
   boundTypeVars : Array TyIdentifier := #[]
   boundVars : Array (LExpr BoogieLParams.mono) := #[]
   freeVars  : Array Boogie.Decl := #[]
-  gen : GenNum := (GenNum.mk 0 0 0 0)
+  gen : GenNum := (GenNum.mk 0 0 0 0 0)
 
 def incrNum (gen_kind : GenKind) (b : TransBindings) : TransBindings :=
   let gen := b.gen
@@ -165,6 +166,7 @@ def incrNum (gen_kind : GenKind) (b : TransBindings) : TransBindings :=
     | .axiom_def => { gen with axiom_def := gen.axiom_def + 1 }
     | .assume_def => { gen with assume_def := gen.assume_def + 1 }
     | .assert_def => { gen with assert_def := gen.assert_def + 1 }
+    | .cover_def => { gen with cover_def := gen.cover_def + 1 }
   { b with gen := new_gen }
 
 instance : ToFormat TransBindings where
@@ -971,6 +973,13 @@ partial def translateStmt (p : Program) (bindings : TransBindings) (arg : Arg) :
     let l ← translateOptionLabel default_name la
     let md ← getOpMetaData op
     return ([.assert l c md], bindings)
+  | q`Boogie.cover, #[la, ca] =>
+    let c ← translateExpr p bindings ca
+    let default_name := s!"cover_{bindings.gen.assert_def}"
+    let bindings := incrNum .cover_def bindings
+    let l ← translateOptionLabel default_name la
+    let md ← getOpMetaData op
+    return ([.cover l c md], bindings)
   | q`Boogie.assume, #[la, ca] =>
     let c ← translateExpr p bindings ca
     let default_name := s!"assume_{bindings.gen.assume_def}"

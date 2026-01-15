@@ -40,14 +40,18 @@ def translate_cmd (c: C_Simp.Command) : Boogie.Command :=
   | .havoc name _md => .cmd (.havoc ⟨name.name, .unres⟩ {})
   | .assert label b _md => .cmd (.assert label (translate_expr b) {})
   | .assume label b _md =>  .cmd (.assume label (translate_expr b) {})
+  | .cover label b _md =>  .cmd (.cover label (translate_expr b) {})
 
-partial def translate_stmt (s: Imperative.Stmt C_Simp.Expression C_Simp.Command) : Boogie.Statement :=
+def translate_stmt (s: Imperative.Stmt C_Simp.Expression C_Simp.Command) : Boogie.Statement :=
   match s with
   | .cmd c => .cmd (translate_cmd c)
   | .block l b _md => .block l (b.map translate_stmt) {}
   | .ite cond thenb elseb _md => .ite (translate_expr cond) (thenb.map translate_stmt) (elseb.map translate_stmt) {}
   | .loop guard measure invariant body _md => .loop (translate_expr guard) (translate_opt_expr measure) (translate_opt_expr invariant) (body.map translate_stmt) {}
   | .goto label _md => .goto label {}
+  termination_by s.sizeOf
+  decreasing_by
+  all_goals(simp_wf; rename_i x_in; have := Imperative.sizeOf_stmt_in_block x_in; omega)
 
 
 /--

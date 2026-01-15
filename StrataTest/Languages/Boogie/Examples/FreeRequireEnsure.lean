@@ -41,6 +41,7 @@ Obligation (Origin_Proc_Requires)g_eq_15 is free!
 
 VCs:
 Label: g_gt_10_internal
+Property: assert
 Assumptions:
 (g_eq_15, ($__g0 == #15))
 
@@ -48,6 +49,7 @@ Proof Obligation:
 ((~Int.Gt $__g0) #10)
 
 Label: g_lt_10
+Property: assert
 Assumptions:
 (g_eq_15, ($__g0 == #15))
 
@@ -55,6 +57,7 @@ Proof Obligation:
 #true
 
 Label: g_eq_15_internal
+Property: assert
 Assumptions:
 ((Origin_Proc_Ensures)g_lt_10, ((~Int.Lt $__g2) #10))
 
@@ -65,10 +68,12 @@ Wrote problem to vcs/g_gt_10_internal.smt2.
 Wrote problem to vcs/g_eq_15_internal.smt2.
 
 
-Obligation g_eq_15_internal: could not be proved!
+Result: Obligation: g_eq_15_internal
+Property: assert
+Result: ❌ fail
+Model:
+($__g2, 0)
 
-Result: failed
-CEx: ($__g2, 0)
 
 Evaluated program:
 var (g : int) := init_g_0
@@ -91,14 +96,18 @@ assert [g_eq_15_internal] ($__g2 == #15)
 ---
 info:
 Obligation: g_gt_10_internal
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: g_lt_10
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: g_eq_15_internal
-Result: failed
-CEx: ($__g2, 0)
+Property: assert
+Result: ❌ fail
+Model:
+($__g2, 0)
 -/
 #guard_msgs in
 #eval verify "cvc5" freeReqEnsPgm

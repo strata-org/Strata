@@ -55,16 +55,20 @@ spec {
 /--
 info:
 Obligation: isRed
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: notGreen
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: notBlue
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestEnumTesters_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" enumPgm Inhabited.default Options.quiet
@@ -108,13 +112,16 @@ spec {
 /--
 info:
 Obligation: notRed
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: notBlue
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestEnumHavoc_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" enumHavocPgm Inhabited.default Options.quiet
@@ -152,10 +159,12 @@ spec {
 /--
 info:
 Obligation: exhaustive
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestEnumExhaustive_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" enumExhaustivePgm Inhabited.default Options.quiet

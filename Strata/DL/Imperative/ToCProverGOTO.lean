@@ -41,7 +41,7 @@ Convert an `Imperative` command to one or more `CProverGOTO.Instruction`s.
 field of the Imperative command. For now, we just populate source location's
 "comment" field with assertion/assumption names.
 -/
-def Cmd.toGotoInstructions {P} [G: ToGoto P]
+def Cmd.toGotoInstructions {P} [G: ToGoto P] [BEq P.Ident]
     (T : P.TyEnv) (functionName : String) (c : Cmd P) (trans : GotoTransform P.TyEnv) :
     Except Format (GotoTransform P.TyEnv) := do
   match c with
@@ -114,10 +114,13 @@ def Cmd.toGotoInstructions {P} [G: ToGoto P]
               instructions := trans.instructions.push assign_inst,
               nextLoc := trans.nextLoc + 1,
               T := T }
+  | .cover name _b md =>
+    .error s!"{MetaData.formatFileRangeD md} [cover {name}]\
+               Unimplemented command."
 
 open CProverGOTO in
-def Cmds.toGotoTransform {P} [G: ToGoto P] (T : P.TyEnv)
-    (functionName : String) (cs : Cmds P) (loc : Nat := 0) :
+def Cmds.toGotoTransform {P} [G: ToGoto P] [BEq P.Ident]
+    (T : P.TyEnv) (functionName : String) (cs : Cmds P) (loc : Nat := 0) :
     Except Format (GotoTransform P.TyEnv) := do
   let rec go (trans : GotoTransform P.TyEnv) (cs' : List (Cmd P)) :
       Except Format (GotoTransform P.TyEnv) :=
