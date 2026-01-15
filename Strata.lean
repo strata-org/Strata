@@ -15,7 +15,7 @@ import Strata.DL.SMT.SMT
 import Strata.DL.Lambda.Lambda
 import Strata.DL.Imperative.Imperative
 
-/- Boogie -/
+/- Strata Core -/
 import Strata.Languages.Core.StatementSemantics
 
 /- Code Transforms -/

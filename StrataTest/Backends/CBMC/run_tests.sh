@@ -7,7 +7,7 @@ pushd ../../../
 
 echo "Boogie -> CBMC: illustrates verification fail."
 echo "----------------------------------------------------------------------"
-Strata/Backends/CBMC/run_strata_cbmc.sh Strata/Backends/CBMC/tests/simpleTest.boogie.st
+Strata/Backends/CBMC/run_strata_cbmc.sh Strata/Backends/CBMC/tests/simpleTest.core.st
 
 echo "######################################################################"
 

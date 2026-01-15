@@ -135,8 +135,8 @@ Top-level structure:
 ## Other Languages
 
 **C_Simp** (`Strata/Languages/C_Simp/`) - Simplified C-like language
-- Verification via transformation to Boogie
-- Pipeline: Parse → Transform loops → Translate to Boogie → VCG → SMT
+- Verification via transformation to Strata Core
+- Pipeline: Parse → Transform loops → Translate to Strata Core → VCG → SMT
 
 **Dyn** (`Strata/Languages/Dyn/`) - Dynamic language example demonstrating dialect extensibility
 

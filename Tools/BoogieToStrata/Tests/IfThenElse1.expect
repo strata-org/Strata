@@ -1,8 +1,8 @@
 Successfully parsed.
-IfThenElse1.boogie.st(18, 4) [assert_0]: ✅ pass
-IfThenElse1.boogie.st(19, 4) [assert_1]: ✅ pass
-IfThenElse1.boogie.st(34, 4) [assert_2]: ✅ pass
-IfThenElse1.boogie.st(36, 4) [assert_3]: ✅ pass
-IfThenElse1.boogie.st(48, 4) [assert_4]: ❌ fail
-IfThenElse1.boogie.st(60, 4) [assert_5]: ❌ fail
+IfThenElse1.core.st(18, 4) [assert_0]: ✅ pass
+IfThenElse1.core.st(19, 4) [assert_1]: ✅ pass
+IfThenElse1.core.st(34, 4) [assert_2]: ✅ pass
+IfThenElse1.core.st(36, 4) [assert_3]: ✅ pass
+IfThenElse1.core.st(48, 4) [assert_4]: ❌ fail
+IfThenElse1.core.st(60, 4) [assert_5]: ❌ fail
 Finished with 4 goals passed, 2 failed.

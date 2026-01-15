@@ -14,7 +14,7 @@ namespace Strata
 namespace Python
 namespace Internal
 
-def Boogie.prelude : Core.Program := Strata.Boogie.prelude
+def Core.prelude : Core.Program := Strata.Core.prelude
 
 end Internal
 end Python

@@ -300,7 +300,7 @@ some next steps to explore:
   to leverage any analysis available for the latter. You may also want
   to verify any such dialect transformations, i.e., prove that they
   are semantics-preserving. One such example in Strata is for call
-  eliminiation in Boogie, [here](../Strata/Transform/).
+  eliminiation in Strata Core, [here](../Strata/Transform/).
 
 - **Create a Language Frontend**: Develop a parser to translate the
   concrete syntax of your language of interest to Strata.

@@ -31,7 +31,7 @@ def parseOptions (args : List String) : Except Std.Format (Options × String) :=
       | _, args => .error f!"Unknown options: {args}"
 
 def usageMessage : Std.Format :=
-  f!"Usage: StrataVerify [OPTIONS] <file.\{boogie, csimp}.st>{Std.Format.line}\
+  f!"Usage: StrataVerify [OPTIONS] <file.\{core, csimp}.st>{Std.Format.line}\
   {Std.Format.line}\
   Options:{Std.Format.line}\
   {Std.Format.line}  \
@@ -61,7 +61,7 @@ def main (args : List String) : IO UInt32 := do
         let ans := if file.endsWith ".csimp.st" then
                      C_Simp.typeCheck pgm opts
                    else
-                     -- Boogie.
+                     -- Strata Core.
                      typeCheck inputCtx pgm opts
         match ans with
         | .error e =>

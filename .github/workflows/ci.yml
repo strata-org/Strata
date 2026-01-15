@@ -71,13 +71,13 @@ jobs:
       - name: Build and test Strata
         uses: leanprover/lean-action@v1
       - name: Build and run StrataVerify
-        run: lake exe StrataVerify Examples/SimpleProc.boogie.st
+        run: lake exe StrataVerify Examples/SimpleProc.core.st
       - name: Build BoogieToStrata
         run: dotnet build -warnaserror ${SOLUTION}
       - name: Test BoogieToStrata
         run: dotnet test ${SOLUTION}
       - name: Test Strata Command line
-        run: .github/scripts/testStrataCommand.sh        
+        run: .github/scripts/testStrataCommand.sh
       - name: Validate examples against expected output
         working-directory: Examples
         shell: bash
