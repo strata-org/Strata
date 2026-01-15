@@ -832,7 +832,7 @@ def genToAst (cat : QualifiedIdent) (ops : Array DefaultCtor) : GenM Command := 
   let catTerm ← getCategoryTerm cat annType
   let astType : Term := categoryToAstTypeIdent cat annType
   let cases ← toAstBuiltinMatches cat
-  let cases : Array MatchAlt ← ops.mapM_off (init := cases) (toAstMatch cat)
+  let cases : Array MatchAlt := cases ++ (← ops.mapM (toAstMatch cat))
   let toAst ← toAstIdentM cat
   trace[Strata.generator] "Generating {toAst}"
   let src := (←read).src

@@ -6,9 +6,10 @@
 module
 
 /-
-Extra declarations in Fin namespace
+Extra declarations in Fin namespace.
+
+These are private so we do not extend Lean's namespaces.
 -/
-public section
 namespace Fin
 
 instance {n} : Min (Fin n) where
@@ -34,4 +35,3 @@ end Range
 def range (n : Nat) : Range n := .mk
 
 end Fin
-end

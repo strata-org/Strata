@@ -5,11 +5,11 @@
 -/
 module
 
-import Lean.ToExpr
-import Strata.DDM.Util.Lean
 public import Lean.ToExpr
 
-private def String.replicate (n : Nat) (c : Char) := n.repeat (a := "") (·.push c)
+import Lean.ToExpr
+import all Strata.DDM.Util.Lean
+import all Strata.DDM.Util.String
 
 public section
 namespace Strata
