@@ -47,6 +47,7 @@ info: [Strata.Boogie] Type checking succeeded.
 
 VCs:
 Label: use_a1_a2
+Property: assert
 Assumptions:
 
 (a1, (~x == #5))
@@ -55,6 +56,7 @@ Proof Obligation:
 ((~Int.Gt ~x) ~y)
 
 Label: use_f1
+Property: assert
 Assumptions:
 
 (a1, (~x == #5))
@@ -63,6 +65,7 @@ Proof Obligation:
 ((~Int.Gt (~f ((~Int.Add ~x) ~y))) #7)
 
 Label: use_a1_again
+Property: assert
 Assumptions:
 
 (a1, (~x == #5))
@@ -71,6 +74,7 @@ Proof Obligation:
 (~y == #2)
 
 Label: use_a2_again
+Property: assert
 Assumptions:
 
 (a1, (~x == #5))
@@ -85,16 +89,20 @@ Wrote problem to vcs/use_a2_again.smt2.
 ---
 info:
 Obligation: use_a1_a2
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: use_f1
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: use_a1_again
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: use_a2_again
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" axiomPgm1
@@ -130,6 +138,7 @@ info: [Strata.Boogie] Type checking succeeded.
 
 VCs:
 Label: axiomPgm2_main_assert
+Property: assert
 Assumptions:
 
 (f_g_ax, (∀ ((~f %0) == ((~Int.Add (~g %0)) #1))))
@@ -141,7 +150,8 @@ Wrote problem to vcs/axiomPgm2_main_assert.smt2.
 ---
 info:
 Obligation: axiomPgm2_main_assert
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "z3" axiomPgm2

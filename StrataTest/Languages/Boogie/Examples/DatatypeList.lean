@@ -67,19 +67,24 @@ spec {
 /--
 info:
 Obligation: isNil
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: notCons
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: isCons
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: notNil
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestListTesters_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" listTesterPgm Inhabited.default Options.quiet
@@ -120,10 +125,12 @@ spec {
 /--
 info:
 Obligation: notNil
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestListHavoc_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" listHavocPgm Inhabited.default Options.quiet
@@ -161,10 +168,12 @@ spec {
 /--
 info:
 Obligation: exhaustive
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestListExhaustive_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" listExhaustivePgm Inhabited.default Options.quiet
@@ -205,10 +214,12 @@ spec {
 /--
 info:
 Obligation: mutualExclusion
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestListMutualExclusion_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" listMutualExclusionPgm Inhabited.default Options.quiet
@@ -254,13 +265,16 @@ spec {
 /--
 info:
 Obligation: nilEquality
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: consEquality
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestListEquality_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" listEqualityPgm Inhabited.default Options.quiet
@@ -299,10 +313,12 @@ spec {
 /--
 info:
 Obligation: nilVsCons
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestListInequality_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" listInequalityPgm Inhabited.default Options.quiet
@@ -358,19 +374,24 @@ spec {
 /--
 info:
 Obligation: headIs42
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: tailIsNil
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: headIs10
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: tailIsCons
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestListDestructor_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" listDestructorPgm Inhabited.default Options.quiet
@@ -411,10 +432,12 @@ spec {
 /--
 info:
 Obligation: secondIs2
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestListNested_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" listNestedPgm Inhabited.default Options.quiet
@@ -459,10 +482,12 @@ spec {
 /--
 info:
 Obligation: headIs100
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestListDestructorHavoc_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" listDestructorHavocPgm Inhabited.default Options.quiet
@@ -501,10 +526,12 @@ spec {
 /--
 info:
 Obligation: different_values
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestListDifferentValues_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" listDifferentValuesPgm Inhabited.default Options.quiet

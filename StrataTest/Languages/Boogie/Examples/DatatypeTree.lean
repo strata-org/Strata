@@ -65,19 +65,24 @@ spec {
 /--
 info:
 Obligation: isLeaf
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: notNode
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: isNode
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: notLeaf
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestTreeTesters_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" treeTesterPgm Inhabited.default Options.quiet
@@ -118,10 +123,12 @@ spec {
 /--
 info:
 Obligation: notLeaf
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestTreeHavoc_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" treeHavocPgm Inhabited.default Options.quiet
@@ -159,10 +166,12 @@ spec {
 /--
 info:
 Obligation: exhaustive
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestTreeExhaustive_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" treeExhaustivePgm Inhabited.default Options.quiet
@@ -203,10 +212,12 @@ spec {
 /--
 info:
 Obligation: mutualExclusion
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestTreeMutualExclusion_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" treeMutualExclusionPgm Inhabited.default Options.quiet
@@ -252,13 +263,16 @@ spec {
 /--
 info:
 Obligation: leafEquality
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: nodeEquality
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestTreeEquality_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" treeEqualityPgm Inhabited.default Options.quiet
@@ -297,10 +311,12 @@ spec {
 /--
 info:
 Obligation: leafVsNode
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestTreeInequality_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" treeInequalityPgm Inhabited.default Options.quiet
@@ -360,22 +376,28 @@ spec {
 /--
 info:
 Obligation: valIs42
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: leftIsLeaf
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: leftVal
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: rightIsLeaf
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: rightVal
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestTreeDestructor_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" treeDestructorPgm Inhabited.default Options.quiet
@@ -428,13 +450,16 @@ spec {
 /--
 info:
 Obligation: leftLeftIsLeaf
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: leftLeftVal
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestTreeNested_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" treeNestedPgm Inhabited.default Options.quiet
@@ -479,10 +504,12 @@ spec {
 /--
 info:
 Obligation: valIs100
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestTreeDestructorHavoc_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" treeDestructorHavocPgm Inhabited.default Options.quiet
@@ -528,13 +555,16 @@ spec {
 /--
 info:
 Obligation: different_vals
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: different_children
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: TestTreeDifferentValues_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" treeDifferentValuesPgm Inhabited.default Options.quiet

@@ -35,16 +35,24 @@ to `Imperative.Stmt` or other similar types.
 -/
 inductive Cmd (P : PureExpr) : Type where
   /-- Define a variable called `name` with type `ty` and initial value `e`.
-  Note: we may make the initial value optional. -/
+    Note: we may make the initial value optional. -/
   | init     (name : P.Ident) (ty : P.Ty) (e : P.Expr) (md : (MetaData P) := .empty)
   /-- Assign `e` to a pre-existing variable `name`. -/
   | set      (name : P.Ident) (e : P.Expr) (md : (MetaData P) := .empty)
   /-- Assigns an arbitrary value to an existing variable `name`. -/
   | havoc    (name : P.Ident) (md : (MetaData P) := .empty)
-  /-- Check whether condition `b` is true, failing if not. -/
+  /-- Checks if condition `b` is true on _all_ paths on which this command is
+    encountered. Reports an error if `b` does not hold on _any_ of these paths.
+  -/
   | assert   (label : String) (b : P.Expr) (md : (MetaData P) := .empty)
   /-- Ignore any execution state in which `b` is not true. -/
   | assume   (label : String) (b : P.Expr) (md : (MetaData P) := .empty)
+  /--
+  Checks if there _exists_ a path that reaches this command and condition `b` is
+  true. Reports an error otherwise. This is the dual of `assert`, and can be
+  used for coverage analysis.
+  -/
+  | cover    (label : String) (b : P.Expr) (md : (MetaData P) := .empty)
 
 abbrev Cmds (P : PureExpr) := List (Cmd P)
 
@@ -55,8 +63,8 @@ instance [Inhabited P.Ident]: Inhabited (Cmd P) where
 
 def Cmd.getMetaData (c : Cmd P) : MetaData P :=
   match c with
-  | .init _ _ _ md | .set _ _ md
-  | .havoc _ md  | .assert _ _ md | .assume _ _ md =>
+  | .init _ _ _ md | .set _ _ md | .havoc _ md
+  | .assert _ _ md | .assume _ _ md | .cover _ _ md =>
    md
 
 instance : SizeOf String where
@@ -70,6 +78,7 @@ def Cmd.sizeOf (c : Imperative.Cmd P) : Nat :=
   | .havoc  n _ => 1 + SizeOf.sizeOf n
   | .assert l b _ => 1 + SizeOf.sizeOf l + SizeOf.sizeOf b
   | .assume l b _ => 1 + SizeOf.sizeOf l + SizeOf.sizeOf b
+  | .cover l b _ => 1 + SizeOf.sizeOf l + SizeOf.sizeOf b
 
 instance (P : PureExpr) : SizeOf (Imperative.Cmd P) where
   sizeOf := Cmd.sizeOf
@@ -100,6 +109,7 @@ def Cmd.getVars [HasVarsPure P P.Expr] (c : Cmd P) : List P.Ident :=
   | .havoc _ _ => []
   | .assert _ e _ => HasVarsPure.getVars e
   | .assume _ e _ => HasVarsPure.getVars e
+  | .cover _ e _ => HasVarsPure.getVars e
 
 def Cmds.getVars [HasVarsPure P P.Expr] (cs : Cmds P) : List P.Ident :=
   match cs with
@@ -138,6 +148,7 @@ def Cmd.modifiedVars (c : Cmd P) : List P.Ident :=
   | .havoc name _ => [name]
   | .assert _ _ _ => []
   | .assume _ _ _ => []
+  | .cover _ _ _ => []
 
 /-- Get all variables modified by commands `cs`. -/
 def Cmds.modifiedVars (cs : Cmds P) : List P.Ident :=
@@ -168,6 +179,7 @@ def formatCmd (P : PureExpr) (c : Cmd P)
   | .havoc name _md => f!"havoc {name}"
   | .assert label b _md => f!"assert [{label}] {b}"
   | .assume label b _md => f!"assume [{label}] {b}"
+  | .cover label b _md => f!"cover [{label}] {b}"
 
 instance [ToFormat P.Ident] [ToFormat P.Expr] [ToFormat P.Ty]
         : ToFormat (Cmd P) where
