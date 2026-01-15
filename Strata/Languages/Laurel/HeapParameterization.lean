@@ -102,7 +102,15 @@ partial def heapTransformExpr (heap : Identifier) (expr : StmtExpr) : TransformM
   | .LocalVariable n ty i => return .LocalVariable n ty (← i.mapM (heapTransformExpr heap))
   | .While c i d b => return .While (← heapTransformExpr heap c) (← i.mapM (heapTransformExpr heap)) (← d.mapM (heapTransformExpr heap)) (← heapTransformExpr heap b)
   | .Return v => return .Return (← v.mapM (heapTransformExpr heap))
-  | .Assign t v md => return .Assign (← heapTransformExpr heap t) (← heapTransformExpr heap v) md
+  | .Assign t v md =>
+      match t with
+      | .FieldSelect target fieldName =>
+          addFieldConstant fieldName
+          let target' ← heapTransformExpr heap target
+          let v' ← heapTransformExpr heap v
+          -- heap := update(heap, target, field, value)
+          return .Assign (.Identifier heap) (.StaticCall "update" [.Identifier heap, target', .Identifier fieldName, v']) md
+      | _ => return .Assign (← heapTransformExpr heap t) (← heapTransformExpr heap v) md
   | .PureFieldUpdate t f v => return .PureFieldUpdate (← heapTransformExpr heap t) f (← heapTransformExpr heap v)
   | .PrimitiveOp op args => return .PrimitiveOp op (← args.mapM (heapTransformExpr heap))
   | .ReferenceEquals l r => return .ReferenceEquals (← heapTransformExpr heap l) (← heapTransformExpr heap r)

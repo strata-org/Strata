@@ -217,6 +217,72 @@ def readFunction : Boogie.Decl :=
     body := none
   }
 
+def updateFunction : Boogie.Decl :=
+  let heapTy := LMonoTy.tcons "Heap" []
+  let compTy := LMonoTy.tcons "Composite" []
+  let tVar := LMonoTy.ftvar "T"
+  let fieldTy := LMonoTy.tcons "Field" [tVar]
+  .func {
+    name := Boogie.BoogieIdent.glob "update"
+    typeArgs := ["T"]
+    inputs := [(Boogie.BoogieIdent.locl "heap", heapTy),
+               (Boogie.BoogieIdent.locl "obj", compTy),
+               (Boogie.BoogieIdent.locl "field", fieldTy),
+               (Boogie.BoogieIdent.locl "val", tVar)]
+    output := heapTy
+    body := none
+  }
+
+-- Axiom: forall h, o, f, v :: read(update(h, o, f, v), o, f) == v
+def readUpdateSameAxiom : Boogie.Decl :=
+  let heapTy := LMonoTy.tcons "Heap" []
+  let compTy := LMonoTy.tcons "Composite" []
+  let tVar := LMonoTy.ftvar "T"
+  let fieldTy := LMonoTy.tcons "Field" [tVar]
+  -- Build: read(update(h, o, f, v), o, f) == v using de Bruijn indices
+  -- v is bvar 0, f is bvar 1, o is bvar 2, h is bvar 3
+  let v := LExpr.bvar () 0
+  let f := LExpr.bvar () 1
+  let o := LExpr.bvar () 2
+  let h := LExpr.bvar () 3
+  let updateOp := LExpr.op () (Boogie.BoogieIdent.glob "update") none
+  let readOp := LExpr.op () (Boogie.BoogieIdent.glob "read") none
+  let updateExpr := LExpr.mkApp () updateOp [h, o, f, v]
+  let readExpr := LExpr.mkApp () readOp [updateExpr, o, f]
+  let eqBody := LExpr.eq () readExpr v
+  -- Wrap in foralls: forall T, h:Heap, o:Composite, f:Field T, v:T
+  let body := LExpr.all () (some tVar) <|
+              LExpr.all () (some fieldTy) <|
+              LExpr.all () (some compTy) <|
+              LExpr.all () (some heapTy) eqBody
+  .ax { name := "read_update_same", e := body }
+
+-- Axiom: forall h, o1, o2, f, v :: o1 != o2 ==> read(update(h, o1, f, v), o2, f) == read(h, o2, f)
+def readUpdateDiffObjAxiom : Boogie.Decl :=
+  let heapTy := LMonoTy.tcons "Heap" []
+  let compTy := LMonoTy.tcons "Composite" []
+  let tVar := LMonoTy.ftvar "T"
+  let fieldTy := LMonoTy.tcons "Field" [tVar]
+  -- v is bvar 0, f is bvar 1, o2 is bvar 2, o1 is bvar 3, h is bvar 4
+  let v := LExpr.bvar () 0
+  let f := LExpr.bvar () 1
+  let o2 := LExpr.bvar () 2
+  let o1 := LExpr.bvar () 3
+  let h := LExpr.bvar () 4
+  let updateOp := LExpr.op () (Boogie.BoogieIdent.glob "update") none
+  let readOp := LExpr.op () (Boogie.BoogieIdent.glob "read") none
+  let updateExpr := LExpr.mkApp () updateOp [h, o1, f, v]
+  let lhs := LExpr.mkApp () readOp [updateExpr, o2, f]
+  let rhs := LExpr.mkApp () readOp [h, o2, f]
+  let neq := LExpr.app () boolNotOp (LExpr.eq () o1 o2)
+  let implBody := LExpr.app () (LExpr.app () Boogie.boolImpliesOp neq) (LExpr.eq () lhs rhs)
+  let body := LExpr.all () (some tVar) <|
+              LExpr.all () (some fieldTy) <|
+              LExpr.all () (some compTy) <|
+              LExpr.all () (some compTy) <|
+              LExpr.all () (some heapTy) implBody
+  .ax { name := "read_update_diff_obj", e := body }
+
 def translateConstant (c : Constant) : Boogie.Decl :=
   let ty := translateType c.type
   .func {
@@ -240,8 +306,9 @@ def translate (program : Program) : Except (Array DiagnosticModel) Boogie.Progra
   let procDecls := procedures.map (fun p => Boogie.Decl.proc p .empty)
   let constDecls := heapProgram.constants.map translateConstant
   let typeDecls := [heapTypeDecl, fieldTypeDecl, compositeTypeDecl]
-  let funcDecls := [readFunction]
-  return { decls := typeDecls ++ funcDecls ++ constDecls ++ procDecls }
+  let funcDecls := [readFunction, updateFunction]
+  let axiomDecls := [readUpdateSameAxiom, readUpdateDiffObjAxiom]
+  return { decls := typeDecls ++ funcDecls ++ axiomDecls ++ constDecls ++ procDecls }
 
 /--
 Verify a Laurel program using an SMT solver
