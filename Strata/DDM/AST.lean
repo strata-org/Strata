@@ -149,6 +149,36 @@ inductive SepFormat where
 | spacePrefix    -- Space before each element (SpacePrefixSepBy)
 deriving Inhabited, Repr, BEq
 
+namespace SepFormat
+
+def toString : SepFormat → String
+  | .none => "seq"
+  | .comma => "commaSepBy"
+  | .space => "spaceSepBy"
+  | .spacePrefix => "spacePrefixSepBy"
+
+def toIonName : SepFormat → String
+  | .none => "seq"
+  | .comma => "commaSepList"
+  | .space => "spaceSepList"
+  | .spacePrefix => "spacePrefixedList"
+
+def fromIonName? : String → Option SepFormat
+  | "seq" => some .none
+  | "commaSepList" => some .comma
+  | "spaceSepList" => some .space
+  | "spacePrefixedList" => some .spacePrefix
+  | _ => none
+
+theorem fromIonName_toIonName_roundtrip (sep : SepFormat) :
+  fromIonName? (toIonName sep) = some sep := by
+  cases sep <;> rfl
+
+instance : ToString SepFormat where
+  toString := SepFormat.toString
+
+end SepFormat
+
 mutual
 
 inductive ExprF (α : Type) : Type where

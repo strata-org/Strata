@@ -507,11 +507,12 @@ private protected def ArgF.toIon {α} [ToIon α] (refs : SymbolIdCache) (arg : A
       return .sexp args
     | .seq ann sep l => do
       let annIon ← toIon ann
-      let args : Array (Ion _) := match sep with
-        | .none => #[ ionSymbol! "seq", annIon ]
-        | .comma => #[ ionSymbol! "commaSepList", annIon ]
-        | .space => #[ ionSymbol! "spaceSepList", annIon ]
-        | .spacePrefix => #[ ionSymbol! "spacePrefixedList", annIon ]
+      let sepName := sep.toIonName
+      let symb := if sepName == "seq" then ionSymbol! "seq"
+                  else if sepName == "commaSepList" then ionSymbol! "commaSepList"
+                  else if sepName == "spaceSepList" then ionSymbol! "spaceSepList"
+                  else ionSymbol! "spacePrefixedList"
+      let args : Array (Ion _) := #[ symb, annIon ]
       let args ← l.attach.mapM_off (init := args) fun ⟨v, _⟩ => v.toIon refs
       return .sexp args
   termination_by sizeOf arg
@@ -614,48 +615,30 @@ private protected def ArgF.fromIon {α} [FromIon α] (v : Ion SymbolId) : FromIo
       | 3 => some <$> Strata.ArgF.fromIon sexp[2]
       | _ => throw "Option expects at most one value."
     return .option ann v
-  | "seq" => do
-    let ⟨p⟩ ← .checkArgMin "seq" sexp 2
-    let ann ← fromIon sexp[1]
-    let args ← sexp.attach.mapM_off (start := 2) fun ⟨u, _⟩ =>
-      Strata.ArgF.fromIon u
-    return .seq ann .none args
-  | "commaSepList" => do
-    let ⟨p⟩ ← .checkArgMin "commaSepList" sexp 2
-    let ann ← fromIon sexp[1]
-    let args ← sexp.attach.mapM_off (start := 2) fun ⟨u, _⟩ =>
-      Strata.ArgF.fromIon u
-    return .seq ann .comma args
-  | "spaceSepList" => do
-    let ⟨p⟩ ← .checkArgMin "spaceSepList" sexp 2
-    let ann ← fromIon sexp[1]
-    let args ← sexp.attach.mapM_off (start := 2) fun ⟨u, _⟩ =>
-      Strata.ArgF.fromIon u
-    return .seq ann .space args
-  | "spacePrefixedList" => do
-    let ⟨p⟩ ← .checkArgMin "spacePrefixedList" sexp 2
-    let ann ← fromIon sexp[1]
-    let args ← sexp.attach.mapM_off (start := 2) fun ⟨u, _⟩ =>
-      Strata.ArgF.fromIon u
-    return .seq ann .spacePrefix args
   | str =>
-    throw s!"Unexpected identifier {str}"
+    match SepFormat.fromIonName? str with
+    | some sep => do
+      let ⟨p⟩ ← .checkArgMin str sexp 2
+      let ann ← fromIon sexp[1]
+      let args ← sexp.attach.mapM_off (start := 2) fun ⟨u, _⟩ =>
+        Strata.ArgF.fromIon u
+      return .seq ann sep args
+    | none =>
+      throw s!"Unexpected identifier {str}"
 termination_by v
 decreasing_by
-  · have _ : sizeOf sexp[1] < sizeOf sexp := by decreasing_tactic
-    decreasing_tactic
-  · have _ : sizeOf sexp[1] < sizeOf sexp := by decreasing_tactic
-    decreasing_tactic
-  · have _ : sizeOf sexp[2] < sizeOf sexp := by decreasing_tactic
-    decreasing_tactic
-  · have _ : sizeOf u < sizeOf sexp := by decreasing_tactic
-    decreasing_tactic
-  · have _ : sizeOf u < sizeOf sexp := by decreasing_tactic
-    decreasing_tactic
-  · have _ : sizeOf u < sizeOf sexp := by decreasing_tactic
-    decreasing_tactic
-  · have _ : sizeOf u < sizeOf sexp := by decreasing_tactic
-    decreasing_tactic
+  all_goals
+    first
+    | have h : sizeOf sexp[1] < sizeOf sexp := by decreasing_tactic
+      have : sizeOf sexp < sizeOf v := sexpP.2
+      omega
+    | have h : sizeOf sexp[2] < sizeOf sexp := by decreasing_tactic
+      have : sizeOf sexp < sizeOf v := sexpP.2
+      omega
+    | have h : sizeOf u < sizeOf sexp := by decreasing_tactic
+      have : sizeOf sexp < sizeOf v := sexpP.2
+      omega
+    | decreasing_tactic
 
 end
 

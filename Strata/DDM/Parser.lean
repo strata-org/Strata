@@ -767,36 +767,20 @@ def checkLeftRec (thisCatName : QualifiedIdent) (argDecls : ArgDecls) (as : List
     let .isTrue lt := inferInstanceAs (Decidable (v < argDecls.size))
       | return panic! "Invalid index"
     let cat := argDecls[v].kind.categoryOf
-    match cat.name with
-    | q`Init.CommaSepBy =>
+    let isListCategory := cat.name == q`Init.CommaSepBy ||
+                          cat.name == q`Init.SpaceSepBy ||
+                          cat.name == q`Init.SpacePrefixSepBy ||
+                          cat.name == q`Init.Seq ||
+                          cat.name == q`Init.Option
+    if isListCategory then
       assert! cat.args.size = 1
       let c := cat.args[0]!
       if c.name == thisCatName then
         .invalid mf!"Leading symbol cannot be recursive call to {c}"
       else
         .isLeading as
-    | q`Init.SpaceSepBy | q`Init.SpacePrefixSepBy =>
-      assert! cat.args.size = 1
-      let c := cat.args[0]!
-      if c.name == thisCatName then
-        .invalid mf!"Leading symbol cannot be recursive call to {c}"
-      else
-        .isLeading as
-    | q`Init.Option =>
-      assert! cat.args.size = 1
-      let c := cat.args[0]!
-      if c.name == thisCatName then
-        .invalid mf!"Leading symbol cannot be recursive call to {c}"
-      else
-        .isLeading as
-    | q`Init.Seq =>
-      assert! cat.args.size = 1
-      let c := cat.args[0]!
-      if c.name == thisCatName then
-        .invalid mf!"Leading symbol cannot be recursive call to {c}"
-      else
-        .isLeading as
-    | qid =>
+    else
+      let qid := cat.name
       if cat.args.size > 0 then
         panic! s!"Unknown parametric category '{eformat cat}' is not supported."
       if qid == thisCatName then
@@ -873,9 +857,9 @@ def manyParser (p : Parser) : Parser := {
       s
     else
       match s.stxStack.back with
-      | .node .none _k args =>
+      | .node .none k args =>
         if args.isEmpty then
-          s.popSyntax.pushSyntax (.node (emptySourceInfo c s.pos) _k args)
+          s.popSyntax.pushSyntax (.node (emptySourceInfo c s.pos) k args)
         else
           s
       | _ =>

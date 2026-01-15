@@ -673,6 +673,21 @@ def mkAnnWithTerm (argCtor : Name) (annTerm v : Term) : Term :=
 def annToAst (argCtor : Name) (annTerm : Term) : Term :=
   mkCApp argCtor #[mkCApp ``Ann.ann #[annTerm], mkCApp ``Ann.val #[annTerm]]
 
+mutual
+
+partial def toAstApplyArgSeq (v : Ident) (cat : SyntaxCat) (sepFormat : Name) : GenM Term := do
+  assert! cat.args.size = 1
+  let c := cat.args[0]!
+  let e ← genFreshLeanName "e"
+  let canE ← genIdentFrom e (canonical := true)
+  let t ← toAstApplyArg e c
+  let args := mkCApp ``Array.map #[
+        ←`(fun ⟨$canE, _⟩ => $t),
+        mkCApp ``Array.attach #[mkCApp ``Ann.val #[v]]
+  ]
+  let sepExpr := mkCApp sepFormat #[]
+  return mkCApp ``ArgF.seq #[mkCApp ``Ann.ann #[v], sepExpr, args]
+
 partial def toAstApplyArg (vn : Name) (cat : SyntaxCat) (unwrap : Bool := false) : GenM Term := do
   let v := mkIdentFrom (←read).src vn
   match cat.name with
@@ -724,41 +739,13 @@ partial def toAstApplyArg (vn : Name) (cat : SyntaxCat) (unwrap : Bool := false)
     let toAst ← toAstIdentM cat.name
     ``($toAst $v)
   | q`Init.CommaSepBy => do
-    assert! cat.args.size = 1
-    let c := cat.args[0]!
-    let e ← genFreshLeanName "e"
-    let canE ← genIdentFrom e (canonical := true)
-    let t ← toAstApplyArg e c
-    let args := mkCApp ``Array.map #[
-          ←`(fun ⟨$canE, _⟩ => $t),
-          mkCApp ``Array.attach #[mkCApp ``Ann.val #[v]]
-    ]
-    let sepExpr := mkCApp ``SepFormat.comma #[]
-    return mkCApp ``ArgF.seq #[mkCApp ``Ann.ann #[v], sepExpr, args]
+    toAstApplyArgSeq v cat ``SepFormat.comma
   | q`Init.SpaceSepBy => do
-    assert! cat.args.size = 1
-    let c := cat.args[0]!
-    let e ← genFreshLeanName "e"
-    let canE ← genIdentFrom e (canonical := true)
-    let t ← toAstApplyArg e c
-    let args := mkCApp ``Array.map #[
-          ←`(fun ⟨$canE, _⟩ => $t),
-          mkCApp ``Array.attach #[mkCApp ``Ann.val #[v]]
-    ]
-    let sepExpr := mkCApp ``SepFormat.space #[]
-    return mkCApp ``ArgF.seq #[mkCApp ``Ann.ann #[v], sepExpr, args]
+    toAstApplyArgSeq v cat ``SepFormat.space
   | q`Init.SpacePrefixSepBy => do
-    assert! cat.args.size = 1
-    let c := cat.args[0]!
-    let e ← genFreshLeanName "e"
-    let canE ← genIdentFrom e (canonical := true)
-    let t ← toAstApplyArg e c
-    let args := mkCApp ``Array.map #[
-          ←`(fun ⟨$canE, _⟩ => $t),
-          mkCApp ``Array.attach #[mkCApp ``Ann.val #[v]]
-    ]
-    let sepExpr := mkCApp ``SepFormat.spacePrefix #[]
-    return mkCApp ``ArgF.seq #[mkCApp ``Ann.ann #[v], sepExpr, args]
+    toAstApplyArgSeq v cat ``SepFormat.spacePrefix
+  | q`Init.Seq => do
+    toAstApplyArgSeq v cat ``SepFormat.none
   | q`Init.Option => do
     assert! cat.args.size = 1
     let c := cat.args[0]!
@@ -770,22 +757,12 @@ partial def toAstApplyArg (vn : Name) (cat : SyntaxCat) (unwrap : Bool := false)
           mkCApp ``Option.attach #[mkCApp ``Ann.val #[v]]
     ]
     return mkAnnWithTerm ``ArgF.option v args
-  | q`Init.Seq => do
-    assert! cat.args.size = 1
-    let c := cat.args[0]!
-    let e ← genFreshLeanName "e"
-    let canE ← genIdentFrom e (canonical := true)
-    let t ← toAstApplyArg e c
-    let args := mkCApp ``Array.map #[
-          ←`(fun ⟨$canE, _⟩ => $t),
-          mkCApp ``Array.attach #[mkCApp ``Ann.val #[v]]
-    ]
-    let sepExpr := mkCApp ``SepFormat.none #[]
-    return mkCApp ``ArgF.seq #[mkCApp ``Ann.ann #[v], sepExpr, args]
   | qid => do
     assert! cat.args.size = 0
     let toAst ← toAstIdentM qid
     ``(ArgF.op ($toAst $v))
+
+end
 
 abbrev MatchAlt := TSyntax ``Lean.Parser.Term.matchAlt
 
@@ -927,35 +904,31 @@ partial def getOfIdentArgWithUnwrap (varName : String) (cat : SyntaxCat) (unwrap
     let ofAst ← ofAstIdentM cid
     pure <| mkApp ofAst #[e]
   | q`Init.CommaSepBy => do
-    let c := cat.args[0]!
-    let (vc, vi) ← genFreshIdentPair varName
-    let body ← getOfIdentArg varName c vi
-    ``(OfAstM.ofCommaSepByM $e fun $vc _ => $body)
+    getOfIdentArgSeq varName cat e ``OfAstM.ofCommaSepByM
   | q`Init.SpaceSepBy => do
-    let c := cat.args[0]!
-    let (vc, vi) ← genFreshIdentPair varName
-    let body ← getOfIdentArg varName c vi
-    ``(OfAstM.ofSpaceSepByM $e fun $vc _ => $body)
+    getOfIdentArgSeq varName cat e ``OfAstM.ofSpaceSepByM
   | q`Init.SpacePrefixSepBy => do
-    let c := cat.args[0]!
-    let (vc, vi) ← genFreshIdentPair varName
-    let body ← getOfIdentArg varName c vi
-    ``(OfAstM.ofSpacePrefixSepByM $e fun $vc _ => $body)
+    getOfIdentArgSeq varName cat e ``OfAstM.ofSpacePrefixSepByM
+  | q`Init.Seq => do
+    getOfIdentArgSeq varName cat e ``OfAstM.ofSeqSeqM
   | q`Init.Option => do
     let c := cat.args[0]!
     let (vc, vi) ← genFreshIdentPair varName
     let body ← getOfIdentArg varName c vi
     ``(OfAstM.ofOptionM $e fun $vc _ => $body)
-  | q`Init.Seq => do
-    let c := cat.args[0]!
-    let (vc, vi) ← genFreshIdentPair varName
-    let body ← getOfIdentArg "e" c vi
-    ``(OfAstM.ofSeqM $e fun $vc _ => $body)
   | cid => do
     assert! cat.args.isEmpty
     let (vc, vi) ← genFreshIdentPair varName
     let ofAst ← ofAstIdentM cid
     ``(OfAstM.ofOperationM $e fun $vc _ => $ofAst $vi)
+
+where
+  getOfIdentArgSeq (varName : String) (cat : SyntaxCat) (e : Term) (ofAstFn : Name) : GenM Term := do
+    let c := cat.args[0]!
+    let (vc, vi) ← genFreshIdentPair varName
+    let body ← getOfIdentArg varName c vi
+    let ofAstFnTerm := mkCApp ofAstFn #[]
+    ``($ofAstFnTerm $e fun $vc _ => $body)
 
 end
 
