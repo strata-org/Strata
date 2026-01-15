@@ -125,17 +125,4 @@ meta def exampleVerification : IO Unit := do
 
   pure ()
 
-/--
-info: Statement: check 8 == 8 && f(5) == 7
-✗ Unknown
-  Path condition:
-    forall x : int pattern f(x) f(x) == x + 1
-  Found 1 diagnosed failures
-Failing expression: f(5) == 7
-✗ Refuted (proved false/unreachable)
-  Path condition:
-    8 == 8
-    forall x : int pattern f(x) f(x) == x + 1
--/
-#guard_msgs in
-#eval exampleVerification
+-- See StrataTest/Languages/B3/Verifier/VerifierTests.lean for test of this example.

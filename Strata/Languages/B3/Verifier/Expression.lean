@@ -112,7 +112,7 @@ only the types matter for type checking. -/
 def UF_ARG_PLACEHOLDER := "_"
 
 /-- Convert B3 binary operators to SMT terms without constant folding -/
-partial def binaryOpToSMT : B3AST.BinaryOp M → (Term → Term → Term)
+def binaryOpToSMT : B3AST.BinaryOp M → (Term → Term → Term)
   | .iff _ => fun t1 t2 => Term.app .eq [t1, t2] .bool
   | .implies _ => fun t1 t2 => Term.app .implies [t1, t2] .bool
   | .impliedBy _ => fun t1 t2 => Term.app .implies [t2, t1] .bool
@@ -131,7 +131,7 @@ partial def binaryOpToSMT : B3AST.BinaryOp M → (Term → Term → Term)
   | .mod _ => fun t1 t2 => Term.app .mod [t1, t2] .int
 
 /-- Convert B3 unary operators to SMT terms -/
-partial def unaryOpToSMT : B3AST.UnaryOp M → (Term → Term)
+def unaryOpToSMT : B3AST.UnaryOp M → (Term → Term)
   | .not _ => fun t => Term.app .not [t] .bool
   | .neg _ => fun t => Term.app .neg [t] .int
 
@@ -148,7 +148,7 @@ def literalToSMT : B3AST.Literal M → Term
 /-- Collect bound variable indices from a pattern expression.
 Returns error if the expression is not structurally valid as a pattern.
 Valid patterns consist only of function applications, bound variables, and literals. -/
-partial def collectPatternBoundVars (expr : B3AST.Expression M) (exprM : M) : Except (ConversionError M) (List Nat) :=
+def collectPatternBoundVars (expr : B3AST.Expression M) (exprM : M) : Except (ConversionError M) (List Nat) :=
   match expr with
   | .id _ idx => .ok [idx]
   | .literal _ _ => .ok []
@@ -156,6 +156,14 @@ partial def collectPatternBoundVars (expr : B3AST.Expression M) (exprM : M) : Ex
       let results ← args.val.toList.mapM (fun arg => collectPatternBoundVars arg exprM)
       return results.flatten
   | _ => .error (ConversionError.invalidPattern "patterns must consist only of function applications, variables, and literals" exprM)
+  termination_by SizeOf.sizeOf expr
+  decreasing_by
+    simp_wf
+    cases args
+    simp_all
+    rename_i h
+    have := Array.sizeOf_lt_of_mem h
+    omega
 
 /-- Validate pattern expressions for a quantifier -/
 def validatePatternExprs (patterns : Array (B3AST.Expression M)) (patternM : M) : Except (ConversionError M) Unit :=

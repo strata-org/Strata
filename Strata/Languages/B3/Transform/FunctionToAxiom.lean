@@ -80,7 +80,7 @@ namespace Strata.B3.Transform
 
 open Strata.B3AST
 
-def transformFunctionDecl (decl : B3AST.Decl α) : List ( B3AST.Decl α) :=
+def transformFunctionDecl (decl : B3AST.Decl α) : Option (B3AST.Decl α × B3AST.Decl α) :=
   match decl with
   | .function _m name params resultType tag body =>
       match body.val with
@@ -116,42 +116,41 @@ def transformFunctionDecl (decl : B3AST.Decl α) : List ( B3AST.Decl α) :=
                       ⟨m, #[varDecl]⟩ ⟨m, #[pattern]⟩ body
               ) axiomBody
               let axiomDecl := Decl.axiom m ⟨m, #[]⟩ axiomExpr
-              [funcDecl, axiomDecl]
-      | none => [decl]
-  | decl => [decl]
+              some (funcDecl, axiomDecl)
+      | none => none
+  | _ => none
 
 def functionToAxiom (prog : B3AST.Program α) : B3AST.Program α :=
   match prog with
   | Program.program m decls =>
       Id.run do
-        let mut typeDecls : List (B3AST.Decl α) := []
-        let mut funcDecls : List (B3AST.Decl α) := []
-        let mut funcAxioms : List (B3AST.Decl α) := []
-        let mut otherDecls : List (B3AST.Decl α) := []
+        let mut typeDeclsRev : List (B3AST.Decl α) := []
+        let mut funcDeclsRev : List (B3AST.Decl α) := []
+        let mut funcAxiomsRev : List (B3AST.Decl α) := []
+        let mut otherDeclsRev : List (B3AST.Decl α) := []
 
         for decl in decls.val.toList do
           match decl with
           | .typeDecl _ _ | .tagger _ _ _ =>
-              typeDecls := typeDecls ++ [decl]
+              typeDeclsRev := decl :: typeDeclsRev
           | .function _ _ _ _ _ body =>
               match body.val with
               | some bodyAnn =>
                   match bodyAnn with
                   | FunctionBody.functionBody _ _ _ =>
-                      let transformed := transformFunctionDecl decl
-                      match transformed with
-                      | [funcDecl, axiomDecl] =>
-                          funcDecls := funcDecls ++ [funcDecl]
-                          funcAxioms := funcAxioms ++ [axiomDecl]
-                      | _ => otherDecls := otherDecls ++ [decl]
+                      match transformFunctionDecl decl with
+                      | some (funcDecl, axiomDecl) =>
+                          funcDeclsRev := funcDecl :: funcDeclsRev
+                          funcAxiomsRev := axiomDecl :: funcAxiomsRev
+                      | none => otherDeclsRev := decl :: otherDeclsRev
               | none =>
-                  funcDecls := funcDecls ++ [decl]
+                  funcDeclsRev := decl :: funcDeclsRev
           | .axiom _ _ _ =>
-              funcAxioms := funcAxioms ++ [decl]
+              funcAxiomsRev := decl :: funcAxiomsRev
           | _ =>
-              otherDecls := otherDecls ++ [decl]
+              otherDeclsRev := decl :: otherDeclsRev
 
-        let finalDecls := typeDecls ++ funcDecls ++ funcAxioms ++ otherDecls
+        let finalDecls := typeDeclsRev.reverse ++ funcDeclsRev.reverse ++ funcAxiomsRev.reverse ++ otherDeclsRev.reverse
         return Program.program m ⟨decls.ann, finalDecls.toArray⟩
 
 end Strata.B3.Transform

@@ -82,68 +82,55 @@ partial def diagnoseFailureGeneric
 
   let mut diagnosements := []
 
-  -- Strategy: Split conjunctions and recursively diagnose
-  match splitConjunction expr with
-  | some (lhs, rhs) =>
+  -- Helper to diagnose a single conjunct
+  let diagnoseConjunct (expr : B3AST.Expression SourceRange) (convResult : ConversionResult SourceRange)
+                        (checkState : B3VerificationState) (vctx : VerificationContext) : IO (List DiagnosedFailure) := do
+    let result ← checkFn checkState convResult.term vctx
+    if isFailure result.result then
+      -- Check if provably false (not just unprovable)
+      let _ ← push checkState
+      let runCheck : SolverM Decision := do
+        Solver.assert (formatTermDirect convResult.term)
+        Solver.checkSat []
+      let decision ← runCheck.run checkState.smtState.solver
+      let _ ← pop checkState
+      let isProvablyFalse := decision == .unsat
+
+      -- Recursively diagnose
+      let diag ← diagnoseFailureGeneric isReachCheck checkState expr sourceDecl sourceStmt
+      if diag.diagnosedFailures.isEmpty then
+        -- Atomic failure - upgrade to refuted if provably false
+        let finalResult := upgradeToRefutedIfNeeded result isProvablyFalse
+        return [{ expression := expr, report := finalResult }]
+      else
+        -- Has sub-failures - return those
+        return diag.diagnosedFailures
+    else
+      return []
+
+  -- Strategy: Pattern match on conjunctions and recursively diagnose
+  match expr with
+  | .binaryOp _ (.and _) lhs rhs =>
       let lhsConv := expressionToSMT ConversionContext.empty lhs
       if lhsConv.errors.isEmpty then
-        let lhsResult ← checkFn state lhsConv.term vctx
-        if isFailure lhsResult.result then
-          -- Check if LHS is provably false (not just unprovable)
-          let _ ← push state
-          let runCheck : SolverM Decision := do
-            Solver.assert (formatTermDirect lhsConv.term)
-            Solver.checkSat []
-          let decision ← runCheck.run state.smtState.solver
-          let _ ← pop state
-          let isProvablyFalse := decision == .unsat
+        let lhsFailures ← diagnoseConjunct lhs lhsConv state vctx
+        diagnosements := diagnosements ++ lhsFailures
 
-          -- Recursively diagnose the left conjunct
-          let lhsDiag ← diagnoseFailureGeneric isReachCheck state lhs sourceDecl sourceStmt
-          if lhsDiag.diagnosedFailures.isEmpty then
-            -- Atomic failure - upgrade to refuted if provably false
-            let finalResult := upgradeToRefutedIfNeeded lhsResult isProvablyFalse
-            diagnosements := diagnosements ++ [{
-              expression := lhs
-              report := finalResult
-            }]
-          else
-            -- Has sub-failures - add those instead
-            diagnosements := diagnosements ++ lhsDiag.diagnosedFailures
-
-          -- Stop early if needed (provably false or reachability check)
-          if shouldStopDiagnosis isReachCheck isProvablyFalse then
+        -- Stop early if needed (provably false or reachability check)
+        if !lhsFailures.isEmpty then
+          let hasProvablyFalse := lhsFailures.any (fun f =>
+            match f.report.result with | .error .refuted => true | _ => false)
+          if shouldStopDiagnosis isReachCheck hasProvablyFalse then
             return { originalCheck := originalResult, diagnosedFailures := diagnosements }
 
       -- Check right conjunct assuming left conjunct holds
       let rhsConv := expressionToSMT ConversionContext.empty rhs
       if lhsConv.errors.isEmpty && rhsConv.errors.isEmpty then
-        -- Add lhs as assumption when checking rhs (for both proof and reachability checks)
+        -- Add lhs as assumption when checking rhs
         let stateForRhs ← addPathCondition state lhs lhsConv.term
         let vctxForRhs : VerificationContext := { decl := sourceDecl, stmt := sourceStmt, pathCondition := stateForRhs.pathCondition }
-        let rhsResult ← checkFn stateForRhs rhsConv.term vctxForRhs
-        if isFailure rhsResult.result then
-          -- Check if RHS is provably false (not just unprovable)
-          let _ ← push stateForRhs
-          let runCheck : SolverM Decision := do
-            Solver.assert (formatTermDirect rhsConv.term)
-            Solver.checkSat []
-          let decision ← runCheck.run stateForRhs.smtState.solver
-          let _ ← pop stateForRhs
-          let isProvablyFalse := decision == .unsat
-
-          -- Recursively diagnose the right conjunct
-          let rhsDiag ← diagnoseFailureGeneric isReachCheck stateForRhs rhs sourceDecl sourceStmt
-          if rhsDiag.diagnosedFailures.isEmpty then
-            -- Atomic failure - upgrade to refuted if provably false
-            let finalResult := upgradeToRefutedIfNeeded rhsResult isProvablyFalse
-            diagnosements := diagnosements ++ [{
-              expression := rhs
-              report := finalResult
-            }]
-          else
-            -- Has sub-failures - add those instead
-            diagnosements := diagnosements ++ rhsDiag.diagnosedFailures
+        let rhsFailures ← diagnoseConjunct rhs rhsConv stateForRhs vctxForRhs
+        diagnosements := diagnosements ++ rhsFailures
   | _ => pure ()
 
   return { originalCheck := originalResult, diagnosedFailures := diagnosements }
