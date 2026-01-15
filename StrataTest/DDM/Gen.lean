@@ -145,7 +145,7 @@ info: Strata.ExprF.app ()
       (Strata.ArgF.type (Strata.TypeExprF.ident () { dialect := "TestDialect", name := "bool" } (Array.mkEmpty 0))))
     (Strata.ArgF.op
       { ann := (), name := { dialect := "TestDialect", name := "mkBindings" },
-        args := (Array.mkEmpty 1).push (Strata.ArgF.commaSepList () (Array.mkEmpty 0)) }))
+        args := (Array.mkEmpty 1).push (Strata.ArgF.seq () Strata.SepFormat.comma (Array.mkEmpty 0)) }))
   (Strata.ArgF.expr (Strata.ExprF.fn () { dialect := "TestDialect", name := "trueExpr" }))
 -/
 #guard_msgs in
