@@ -30,6 +30,7 @@ info: [Strata.Boogie] Type checking succeeded.
 
 VCs:
 Label: min_ensures_0
+Property: assert
 Assumptions:
 
 
@@ -40,7 +41,8 @@ Wrote problem to vcs/min_ensures_0.smt2.
 ---
 info:
 Obligation: min_ensures_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" testPgm

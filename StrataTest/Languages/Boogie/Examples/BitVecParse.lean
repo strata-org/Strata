@@ -28,6 +28,7 @@ info: [Strata.Boogie] Type checking succeeded.
 
 VCs:
 Label: bitvec32_test
+Property: assert
 Assumptions:
 
 
@@ -35,6 +36,7 @@ Proof Obligation:
 #true
 
 Label: bitvec64_test
+Property: assert
 Assumptions:
 
 
@@ -44,10 +46,10 @@ Proof Obligation:
 Wrote problem to vcs/bitvec64_test.smt2.
 
 
-Obligation bitvec64_test: could not be proved!
+Result: Obligation: bitvec64_test
+Property: assert
+Result: ❌ fail
 
-Result: failed
-CEx: ⏎
 
 Evaluated program:
 (procedure bitVecParseTest :  () → ())
@@ -60,11 +62,12 @@ assert [bitvec64_test] #false
 ---
 info:
 Obligation: bitvec32_test
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: bitvec64_test
-Result: failed
-CEx:
+Property: assert
+Result: ❌ fail
 -/
 #guard_msgs in
 #eval verify "cvc5" pgm

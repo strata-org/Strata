@@ -46,6 +46,7 @@ info: [Strata.Boogie] Type checking succeeded.
 
 VCs:
 Label: assert_0
+Property: assert
 Assumptions:
 (Test_requires_0, ($__x0 == #1))
 
@@ -56,7 +57,8 @@ Wrote problem to vcs/assert_0.smt2.
 ---
 info:
 Obligation: assert_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "z3" assertionNames

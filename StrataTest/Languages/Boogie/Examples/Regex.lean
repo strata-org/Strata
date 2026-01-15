@@ -53,6 +53,7 @@ info: [Strata.Boogie] Type checking succeeded.
 
 VCs:
 Label: hello_dot_ends_with_period
+Property: assert
 Assumptions:
 
 
@@ -60,6 +61,7 @@ Proof Obligation:
 (~Bool.Not ((~Str.InRegEx #hello.) ~cannot_end_with_period))
 
 Label: dot_ends_with_period
+Property: assert
 Assumptions:
 
 
@@ -67,6 +69,7 @@ Proof Obligation:
 (~Bool.Not ((~Str.InRegEx #.) ~cannot_end_with_period))
 
 Label: bye_exclaim_no_end_with_period
+Property: assert
 Assumptions:
 
 
@@ -74,6 +77,7 @@ Proof Obligation:
 ((~Str.InRegEx #bye!) ~cannot_end_with_period)
 
 Label: ok_chars_str
+Property: assert
 Assumptions:
 
 
@@ -81,6 +85,7 @@ Proof Obligation:
 ((~Str.InRegEx #test-str-1) ~ok_chars_regex)
 
 Label: cannot_contain_exclaim
+Property: assert
 Assumptions:
 
 
@@ -88,6 +93,7 @@ Proof Obligation:
 (~Bool.Not ((~Str.InRegEx #test-str!) ~ok_chars_regex))
 
 Label: has_to_be_at_least_1_char
+Property: assert
 Assumptions:
 
 
@@ -95,6 +101,7 @@ Proof Obligation:
 (~Bool.Not ((~Str.InRegEx #) ~ok_chars_regex))
 
 Label: cannot_exceed_10_chars
+Property: assert
 Assumptions:
 
 
@@ -102,6 +109,7 @@ Proof Obligation:
 (~Bool.Not ((~Str.InRegEx #0123456789a) ~ok_chars_regex))
 
 Label: optionally_a_check1
+Property: assert
 Assumptions:
 
 
@@ -109,6 +117,7 @@ Proof Obligation:
 ((~Str.InRegEx #a) ~optionally_a)
 
 Label: optionally_a_check2
+Property: assert
 Assumptions:
 
 
@@ -127,31 +136,40 @@ Wrote problem to vcs/optionally_a_check2.smt2.
 ---
 info:
 Obligation: hello_dot_ends_with_period
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: dot_ends_with_period
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: bye_exclaim_no_end_with_period
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: ok_chars_str
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: cannot_contain_exclaim
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: has_to_be_at_least_1_char
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: cannot_exceed_10_chars
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: optionally_a_check1
-Result: verified
+Property: assert
+Result: ✅ pass
 
 Obligation: optionally_a_check2
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" regexPgm1
@@ -187,6 +205,7 @@ info: [Strata.Boogie] Type checking succeeded.
 
 VCs:
 Label: assert_0
+Property: assert
 Assumptions:
 
 
@@ -194,17 +213,23 @@ Proof Obligation:
 (~Bool.Not ((~Str.InRegEx #0123456789a) (~bad_re_loop $__n0)))
 
 Label: assert_1
+Property: assert
 Assumptions:
 
 
 Proof Obligation:
 ((~Str.InRegEx #a) (~bad_re_loop #1))
 
-[Error] SMT Encoding error for obligation assert_0: ⏎
-Natural numbers expected as indices for re.loop.
+
+
+Result: Obligation: assert_0
+Property: assert
+Result: 🚨 Implementation Error! SMT Encoding Error! Natural numbers expected as indices for re.loop.
 Original expression: (((~Re.Loop ((~Re.Range #a) #z)) #1) %0)
 
-Evaluated program: func bad_re_loop :  ((n : int)) → regex :=
+
+Evaluated program:
+func bad_re_loop :  ((n : int)) → regex :=
   (((((~Re.Loop : (arrow regex (arrow int (arrow int regex)))) (((~Re.Range : (arrow string (arrow string regex))) #a) #z)) #1) (n : int)))
 (procedure main :  ((n : int)) → ())
 modifies: []
@@ -217,11 +242,14 @@ assert [assert_1] ((~Str.InRegEx #a) (~bad_re_loop #1))
 
 
 
-[Error] SMT Encoding error for obligation assert_1: ⏎
-Natural numbers expected as indices for re.loop.
+Result: Obligation: assert_1
+Property: assert
+Result: 🚨 Implementation Error! SMT Encoding Error! Natural numbers expected as indices for re.loop.
 Original expression: (((~Re.Loop ((~Re.Range #a) #z)) #1) %0)
 
-Evaluated program: func bad_re_loop :  ((n : int)) → regex :=
+
+Evaluated program:
+func bad_re_loop :  ((n : int)) → regex :=
   (((((~Re.Loop : (arrow regex (arrow int (arrow int regex)))) (((~Re.Range : (arrow string (arrow string regex))) #a) #z)) #1) (n : int)))
 (procedure main :  ((n : int)) → ())
 modifies: []
@@ -231,45 +259,18 @@ body: init (n1 : int) := init_n1_0
 n1 := #1
 assert [assert_0] (~Bool.Not ((~Str.InRegEx #0123456789a) (~bad_re_loop $__n0)))
 assert [assert_1] ((~Str.InRegEx #a) (~bad_re_loop #1))
-
-
 
 ---
 info:
 Obligation: assert_0
-Result: err [Error] SMT Encoding error for obligation assert_0: ⏎
-Natural numbers expected as indices for re.loop.
+Property: assert
+Result: 🚨 Implementation Error! SMT Encoding Error! Natural numbers expected as indices for re.loop.
 Original expression: (((~Re.Loop ((~Re.Range #a) #z)) #1) %0)
-
-Evaluated program: func bad_re_loop :  ((n : int)) → regex :=
-  (((((~Re.Loop : (arrow regex (arrow int (arrow int regex)))) (((~Re.Range : (arrow string (arrow string regex))) #a) #z)) #1) (n : int)))
-(procedure main :  ((n : int)) → ())
-modifies: []
-preconditions: ⏎
-postconditions: ⏎
-body: init (n1 : int) := init_n1_0
-n1 := #1
-assert [assert_0] (~Bool.Not ((~Str.InRegEx #0123456789a) (~bad_re_loop $__n0)))
-assert [assert_1] ((~Str.InRegEx #a) (~bad_re_loop #1))
-
-
-
 
 Obligation: assert_1
-Result: err [Error] SMT Encoding error for obligation assert_1: ⏎
-Natural numbers expected as indices for re.loop.
+Property: assert
+Result: 🚨 Implementation Error! SMT Encoding Error! Natural numbers expected as indices for re.loop.
 Original expression: (((~Re.Loop ((~Re.Range #a) #z)) #1) %0)
-
-Evaluated program: func bad_re_loop :  ((n : int)) → regex :=
-  (((((~Re.Loop : (arrow regex (arrow int (arrow int regex)))) (((~Re.Range : (arrow string (arrow string regex))) #a) #z)) #1) (n : int)))
-(procedure main :  ((n : int)) → ())
-modifies: []
-preconditions: ⏎
-postconditions: ⏎
-body: init (n1 : int) := init_n1_0
-n1 := #1
-assert [assert_0] (~Bool.Not ((~Str.InRegEx #0123456789a) (~bad_re_loop $__n0)))
-assert [assert_1] ((~Str.InRegEx #a) (~bad_re_loop #1))
 -/
 #guard_msgs in
 #eval verify "cvc5" regexPgm2
@@ -294,6 +295,7 @@ info: [Strata.Boogie] Type checking succeeded.
 
 VCs:
 Label: assert_0
+Property: assert
 Assumptions:
 
 
@@ -304,7 +306,8 @@ Wrote problem to vcs/assert_0.smt2.
 ---
 info:
 Obligation: assert_0
-Result: verified
+Property: assert
+Result: ✅ pass
 -/
 #guard_msgs in
 #eval verify "cvc5" regexPgm3

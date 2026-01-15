@@ -78,12 +78,10 @@ jobs:
         run: dotnet test ${SOLUTION}
       - name: Test Strata Command line
         run: .github/scripts/testStrataCommand.sh        
-      - name: Verify examples
+      - name: Validate examples against expected output
+        working-directory: Examples
         shell: bash
-        run: |
-              find "Examples" -maxdepth 1 -type f -name "*.st" | while IFS= read -r file; do
-                  source ~/.profile && lake exe StrataVerify "$file"
-              done
+        run: ./run_examples.sh
       - uses: actions/setup-python@v5
         with:
           python-version: '3.14'
@@ -114,6 +112,8 @@ jobs:
         run: .github/scripts/lintWhitespace.sh
       - name: Check for import Lean
         run: .github/scripts/checkLeanImport.sh
+      - name: Check Lean version consistncy
+        run: .github/scripts/check_lean_consistency.sh
 
   build_doc:
     name: Build documentation
@@ -136,11 +136,14 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    strategy:
+      matrix:
+        python_version: [3.12, 3.13, 3.14]
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-python@v5
       with:
-        python-version: '3.14'
+        python-version: ${{ matrix.python_version }}
     - name: Build using pip
       run: pip install .
       working-directory: Tools/Python
@@ -151,7 +154,7 @@ jobs:
         build: true
         build-args: "strata:exe"
     - name: Run test script
-      run: ./scripts/run_cpython_tests.sh
+      run: FAIL_FAST=1 ./scripts/run_cpython_tests.sh ${{ matrix.python_version }}
       working-directory: Tools/Python
 
   cbmc:

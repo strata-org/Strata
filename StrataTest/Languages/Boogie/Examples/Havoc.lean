@@ -47,6 +47,7 @@ info: [Strata.Boogie] Type checking succeeded.
 
 VCs:
 Label: x_eq_1
+Property: assert
 Assumptions:
 
 
@@ -56,10 +57,12 @@ Proof Obligation:
 Wrote problem to vcs/x_eq_1.smt2.
 
 
-Obligation x_eq_1: could not be proved!
+Result: Obligation: x_eq_1
+Property: assert
+Result: ❌ fail
+Model:
+($__x0, 0)
 
-Result: failed
-CEx: ($__x0, 0)
 
 Evaluated program:
 (procedure S :  () → ())
@@ -74,8 +77,10 @@ assert [x_eq_1] ($__x0 == #1)
 ---
 info:
 Obligation: x_eq_1
-Result: failed
-CEx: ($__x0, 0)
+Property: assert
+Result: ❌ fail
+Model:
+($__x0, 0)
 -/
 #guard_msgs in
 #eval verify "cvc5" havocPgm

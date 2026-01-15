@@ -256,7 +256,7 @@ def noneOrExpr (translation_ctx : TranslationContext) (fname n : String) (e: Boo
     e
 
 def handleCallThrow (jmp_target : String) : Boogie.Statement :=
-  let cond := .eq () (.app () (.op () "ExceptOrNone_tag" none) (.fvar () "maybe_except" none)) (.op () "EN_STR_TAG" none)
+  let cond := .app () (.op () "ExceptOrNone..isExceptOrNone_mk_code" none) (.fvar () "maybe_except" none)
   .ite cond [.goto jmp_target] []
 
 def deduplicateTypeAnnotations (l : List (String × Option String)) : List (String × String) := Id.run do

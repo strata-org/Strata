@@ -67,7 +67,7 @@ instance [Repr P.Ident] : Repr (MetaDataElem.Field P) where
 
 inductive Uri where
   | file (path: String)
-  deriving DecidableEq
+  deriving DecidableEq, Repr
 
 instance : ToFormat Uri where
  format fr := match fr with | .file path => path
@@ -76,7 +76,7 @@ structure FileRange where
   file: Uri
   start: Lean.Position
   ending: Lean.Position
-  deriving DecidableEq
+  deriving DecidableEq, Repr
 
 instance : ToFormat FileRange where
  format fr := f!"{fr.file}:{fr.start}-{fr.ending}"
@@ -90,17 +90,19 @@ inductive MetaDataElem.Value (P : PureExpr) where
   /-- Metadata value in the form of a fileRange. -/
   | fileRange (r: FileRange)
 
-
 instance [ToFormat P.Expr] : ToFormat (MetaDataElem.Value P) where
-  format f := match f with | .expr e => f!"{e}" | .msg s => f!"{s}" | .fileRange r => f!"{r}"
+  format f := match f with
+              | .expr e => f!"{e}"
+              | .msg s => f!"{s}"
+              | .fileRange r => f!"{r}"
 
 instance [Repr P.Expr] : Repr (MetaDataElem.Value P) where
   reprPrec v prec :=
     let res :=
       match v with
-      | .expr e => f!"MetaDataElem.Value.expr {reprPrec e prec}"
-      | .msg s => f!"MetaDataElem.Value.msg {s}"
-      | .fileRange fr => f!"MetaDataElem.Value.fileRange {fr}"
+      | .expr e => f!".expr {reprPrec e prec}"
+      | .msg s => f!".msg {s}"
+      | .fileRange fr => f!".fileRange {fr}"
     Repr.addAppParen res prec
 
 def MetaDataElem.Value.beq [BEq P.Expr] (v1 v2 : MetaDataElem.Value P) :=
@@ -182,5 +184,29 @@ instance [Repr P.Expr] [Repr P.Ident] : Repr (MetaDataElem P) where
 /-! ### Common metadata fields -/
 
 def MetaData.fileRange : MetaDataElem.Field P := .label "fileRange"
+
+def MetaData.formatFileRange? {P} [BEq P.Ident] (md : MetaData P) (includeEnd? : Bool := false) :
+    Option Std.Format := do
+  let fileRangeElem ← md.findElem MetaData.fileRange
+  match fileRangeElem.value with
+  | .fileRange m =>
+    let baseName := match m.file with
+                    | .file path => (path.splitToList (· == '/')).getLast!
+    if includeEnd? then
+      if m.start.line == m.ending.line then
+        return f!"{baseName}({m.start.line}, ({m.start.column}-{m.ending.column}))"
+      else
+        return f!"{baseName}(({m.start.line}, {m.start.column})-({m.ending.line}, {m.ending.column}))"
+    else -- don't include the end position.
+      return f!"{baseName}({m.start.line}, {m.start.column})"
+  | _ => none
+
+def MetaData.formatFileRangeD {P} [BEq P.Ident] (md : MetaData P) (includeEnd? : Bool := false)
+    : Std.Format :=
+  match formatFileRange? md includeEnd? with
+  | .none => ""
+  | .some f => f
+
+---------------------------------------------------------------------
 
 end Imperative
