@@ -4,17 +4,20 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
-
-public import Strata.DDM.AST
-
+/-
+This module provides ToExpr instances and other methods
+for converting DDM types into Lean expressions.
+-/
 public import Lean.Elab.Term
+meta import Lean.Elab.Term.TermElabM
+public import Strata.DDM.AST
 import Strata.DDM.Util.ByteArray
 import Strata.DDM.Util.Decimal
 import Strata.DDM.Util.Lean
 
-meta import Lean.Elab.Term.TermElabM
 
 open Lean
+open Lean.Elab
 open Strata.Lean
 
 public section
@@ -28,12 +31,17 @@ instance : ToExpr QualifiedIdent where
 
 end QualifiedIdent
 
-section
+namespace SepFormat
 
-open Lean.Elab
+instance : ToExpr SepFormat where
+  toTypeExpr := private mkConst ``SepFormat
+  toExpr
+    | .none => mkConst ``SepFormat.none
+    | .comma => mkConst ``SepFormat.comma
+    | .space => mkConst ``SepFormat.space
+    | .spacePrefix => mkConst ``SepFormat.spacePrefix
 
-private def rootIdent (name : Name) : Ident :=
-  .mk (.ident .none name.toString.toSubstring name [.decl name []])
+end SepFormat
 
 private meta def emptyLevel : Lean.Expr := mkApp (mkConst ``List.nil [.zero]) (mkConst ``Level)
 
@@ -47,7 +55,7 @@ Lean expression and returns another.
 syntax:max (name := astExprElab) "astExpr!" ident : term
 
 @[term_elab astExprElab]
-public meta def astExprElabImpl : Term.TermElab := fun stx _expectedType => do
+meta def astExprElabImpl : Term.TermElab := fun stx _expectedType => do
   match stx with
   | `(astExpr! $ident) => do
     let ctor ← realizeGlobalConstNoOverloadWithInfo ident
@@ -70,7 +78,7 @@ public meta def astExprElabImpl : Term.TermElab := fun stx _expectedType => do
 syntax:max (name := astAnnExprElab) "astAnnExpr!" ident term:max : term
 
 @[term_elab astAnnExprElab]
-public meta def astAnnExprElabImpl : Term.TermElab := fun stx _expectedType => do
+meta def astAnnExprElabImpl : Term.TermElab := fun stx _expectedType => do
   match stx with
   | `(astAnnExpr! $ident $ann) => do
     let ctor ← realizeGlobalConstNoOverloadWithInfo ident
@@ -89,8 +97,6 @@ public meta def astAnnExprElabImpl : Term.TermElab := fun stx _expectedType => d
     return mkApp3 (mkConst mkAppName) ctorExpr annTypeExpr annExpr
   | _ => do
     throwUnsupportedSyntax
-
-end
 
 namespace SyntaxCatF
 
@@ -160,12 +166,9 @@ private def ArgF.toExpr {α} [ToExpr α] : ArgF α → Lean.Expr
 | .option ann a =>
   let tpe := ArgF.typeExpr α
   astAnnExpr! ArgF.option ann (optionToExpr tpe <| a.attach.map fun ⟨e, _⟩ => e.toExpr)
-| .seq ann a =>
+| .seq ann sep a =>
   let tpe := ArgF.typeExpr α
-  astAnnExpr! ArgF.seq ann <| arrayToExpr .zero tpe <| a.map (·.toExpr)
-| .commaSepList ann a =>
-  let tpe := ArgF.typeExpr α
-  astAnnExpr! ArgF.commaSepList ann <| arrayToExpr .zero tpe <| a.map (·.toExpr)
+  astAnnExpr! ArgF.seq ann (toExpr sep) <| arrayToExpr .zero tpe <| a.map (·.toExpr)
 termination_by a => sizeOf a
 
 private protected def OperationF.toExpr {α} [ToExpr α] (op : OperationF α) : Lean.Expr :=

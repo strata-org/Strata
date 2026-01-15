@@ -562,6 +562,10 @@ partial def ppCatWithUnwrap (annType : Ident) (c : SyntaxCat) (unwrap : Bool) : 
   match c.name, eq : args.size with
   | q`Init.CommaSepBy, 1 =>
     return mkCApp ``Ann #[mkCApp ``Array #[args[0]], annType]
+  | q`Init.SpaceSepBy, 1 =>
+    return mkCApp ``Ann #[mkCApp ``Array #[args[0]], annType]
+  | q`Init.SpacePrefixSepBy, 1 =>
+    return mkCApp ``Ann #[mkCApp ``Array #[args[0]], annType]
   | q`Init.Option, 1 =>
     return mkCApp ``Ann #[mkCApp ``Option #[args[0]], annType]
   | q`Init.Seq, 1 =>
@@ -669,6 +673,21 @@ def mkAnnWithTerm (argCtor : Name) (annTerm v : Term) : Term :=
 def annToAst (argCtor : Name) (annTerm : Term) : Term :=
   mkCApp argCtor #[mkCApp ``Ann.ann #[annTerm], mkCApp ``Ann.val #[annTerm]]
 
+mutual
+
+partial def toAstApplyArgSeq (v : Ident) (cat : SyntaxCat) (sepFormat : Name) : GenM Term := do
+  assert! cat.args.size = 1
+  let c := cat.args[0]!
+  let e ← genFreshLeanName "e"
+  let canE ← genIdentFrom e (canonical := true)
+  let t ← toAstApplyArg e c
+  let args := mkCApp ``Array.map #[
+        ←`(fun ⟨$canE, _⟩ => $t),
+        mkCApp ``Array.attach #[mkCApp ``Ann.val #[v]]
+  ]
+  let sepExpr := mkCApp sepFormat #[]
+  return mkCApp ``ArgF.seq #[mkCApp ``Ann.ann #[v], sepExpr, args]
+
 partial def toAstApplyArg (vn : Name) (cat : SyntaxCat) (unwrap : Bool := false) : GenM Term := do
   let v := mkIdentFrom (←read).src vn
   match cat.name with
@@ -720,16 +739,13 @@ partial def toAstApplyArg (vn : Name) (cat : SyntaxCat) (unwrap : Bool := false)
     let toAst ← toAstIdentM cat.name
     ``($toAst $v)
   | q`Init.CommaSepBy => do
-    assert! cat.args.size = 1
-    let c := cat.args[0]!
-    let e ← genFreshLeanName "e"
-    let canE ← genIdentFrom e (canonical := true)
-    let t ← toAstApplyArg e c
-    let args := mkCApp ``Array.map #[
-          ←`(fun ⟨$canE, _⟩ => $t),
-          mkCApp ``Array.attach #[mkCApp ``Ann.val #[v]]
-    ]
-    return mkAnnWithTerm ``ArgF.commaSepList v args
+    toAstApplyArgSeq v cat ``SepFormat.comma
+  | q`Init.SpaceSepBy => do
+    toAstApplyArgSeq v cat ``SepFormat.space
+  | q`Init.SpacePrefixSepBy => do
+    toAstApplyArgSeq v cat ``SepFormat.spacePrefix
+  | q`Init.Seq => do
+    toAstApplyArgSeq v cat ``SepFormat.none
   | q`Init.Option => do
     assert! cat.args.size = 1
     let c := cat.args[0]!
@@ -741,21 +757,12 @@ partial def toAstApplyArg (vn : Name) (cat : SyntaxCat) (unwrap : Bool := false)
           mkCApp ``Option.attach #[mkCApp ``Ann.val #[v]]
     ]
     return mkAnnWithTerm ``ArgF.option v args
-  | q`Init.Seq => do
-    assert! cat.args.size = 1
-    let c := cat.args[0]!
-    let e ← genFreshLeanName "e"
-    let canE ← genIdentFrom e (canonical := true)
-    let t ← toAstApplyArg e c
-    let args := mkCApp ``Array.map #[
-          ←`(fun ⟨$canE, _⟩ => $t),
-          mkCApp ``Array.attach #[mkCApp ``Ann.val #[v]]
-    ]
-    return mkAnnWithTerm ``ArgF.seq v args
   | qid => do
     assert! cat.args.size = 0
     let toAst ← toAstIdentM qid
     ``(ArgF.op ($toAst $v))
+
+end
 
 abbrev MatchAlt := TSyntax ``Lean.Parser.Term.matchAlt
 
@@ -897,25 +904,31 @@ partial def getOfIdentArgWithUnwrap (varName : String) (cat : SyntaxCat) (unwrap
     let ofAst ← ofAstIdentM cid
     pure <| mkApp ofAst #[e]
   | q`Init.CommaSepBy => do
-    let c := cat.args[0]!
-    let (vc, vi) ← genFreshIdentPair varName
-    let body ← getOfIdentArg varName c vi
-    ``(OfAstM.ofCommaSepByM $e fun $vc _ => $body)
+    getOfIdentArgSeq varName cat e ``SepFormat.comma
+  | q`Init.SpaceSepBy => do
+    getOfIdentArgSeq varName cat e ``SepFormat.space
+  | q`Init.SpacePrefixSepBy => do
+    getOfIdentArgSeq varName cat e ``SepFormat.spacePrefix
+  | q`Init.Seq => do
+    getOfIdentArgSeq varName cat e ``SepFormat.none
   | q`Init.Option => do
     let c := cat.args[0]!
     let (vc, vi) ← genFreshIdentPair varName
     let body ← getOfIdentArg varName c vi
     ``(OfAstM.ofOptionM $e fun $vc _ => $body)
-  | q`Init.Seq => do
-    let c := cat.args[0]!
-    let (vc, vi) ← genFreshIdentPair varName
-    let body ← getOfIdentArg "e" c vi
-    ``(OfAstM.ofSeqM $e fun $vc _ => $body)
   | cid => do
     assert! cat.args.isEmpty
     let (vc, vi) ← genFreshIdentPair varName
     let ofAst ← ofAstIdentM cid
     ``(OfAstM.ofOperationM $e fun $vc _ => $ofAst $vi)
+
+where
+  getOfIdentArgSeq (varName : String) (cat : SyntaxCat) (e : Term) (sepFormat : Name) : GenM Term := do
+    let c := cat.args[0]!
+    let (vc, vi) ← genFreshIdentPair varName
+    let body ← getOfIdentArg varName c vi
+    let sepFormatTerm := mkCApp sepFormat #[]
+    ``(OfAstM.ofSeqM $sepFormatTerm $e fun $vc _ => $body)
 
 end
 
@@ -1091,6 +1104,8 @@ def checkInhabited (cat : QualifiedIdent) (ops : Array DefaultCtor) : StateT Inh
         match arg.cat.name with
         | q`Init.Seq => true
         | q`Init.CommaSepBy => true
+        | q`Init.SpaceSepBy => true
+        | q`Init.SpacePrefixSepBy => true
         | q`Init.Option => true
         | c => c ∈ inhabited
     if !isInhabited then

@@ -373,6 +373,8 @@ metadata scope(name : Ident);
 metadata declare(name : Ident, type : TypeOrCat);
 -- Declares a new variable in the resulting scope with metadata determined
 -- by an argument.
+-- Marks a list argument as requiring at least one element
+metadata nonempty;
 ```
 
 As an example, Boogie variable declaration syntax can be defined in Strata using the
@@ -417,9 +419,20 @@ be defined in user definable dialects.
     `c` may be read in or the empty string.
 
   * `Init.Seq c` denotes a sequence of values with category `c`.  Each value of `c` is
-    separated by whitespace.
+    separated by whitespace. When formatted, values are concatenated with no separator.
 
-  * `Init.CommaSepBy c` denotes a comma-separated list of values of type `c`.
+  * `Init.CommaSepBy c` denotes a comma-separated list of values of type `c`. When formatted,
+    values are separated by `, ` (comma followed by space).
+
+  * `Init.SpaceSepBy c` denotes a space-separated list of values of type `c`. Parsing is
+    identical to `Init.Seq`, but when formatted, values are separated by a single space.
+
+  * `Init.SpacePrefixSepBy c` denotes a space-prefix-separated list of values of type `c`.
+    Parsing is identical to `Init.Seq`, but when formatted, each value is prefixed with a space.
+
+  All list categories (`CommaSepBy`, `SpaceSepBy`, `SpacePrefixSepBy`, `Seq`) can be marked
+  with the `@[nonempty]` metadata attribute to require at least one element during parsing.
+  For example: `@[nonempty] items : SpaceSepBy Item` will reject empty lists with a parse error.
 
 * Parsing for primitive literals and identifiers cannot be directly in syntax definitions.
   To accomodate this, the `Init` dialect introduces the syntactic categories for this:

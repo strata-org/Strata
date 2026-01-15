@@ -108,7 +108,7 @@ def translateParameter (arg : Arg) : TransM Parameter := do
 
 def translateParameters (arg : Arg) : TransM (List Parameter) := do
   match arg with
-  | .commaSepList _ args =>
+  | .seq _ .comma args =>
     args.toList.mapM translateParameter
   | _ => pure []
 
@@ -184,7 +184,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
         | .Identifier name => name
         | _ => ""
       let argsList ← match argsSeq with
-        | .commaSepList _ args => args.toList.mapM translateStmtExpr
+        | .seq _ .comma args => args.toList.mapM translateStmtExpr
         | _ => pure []
       return .StaticCall calleeName argsList
     | q`Laurel.return, #[arg0] =>
@@ -209,7 +209,7 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
   | _ => TransM.error s!"translateStmtExpr expects operation"
 
 partial def translateSeqCommand (arg : Arg) : TransM (List StmtExpr) := do
-  let .seq _ args := arg
+  let .seq _ .none args := arg
     | TransM.error s!"translateSeqCommand expects seq"
   let mut stmts : List StmtExpr := []
   for arg in args do
@@ -264,7 +264,7 @@ def parseProgram (prog : Strata.Program) : TransM Laurel.Program := do
     if prog.commands.size == 1 && prog.commands[0]!.name == q`Laurel.program then
       -- Extract procedures from the program operation's first argument (Seq Procedure)
       match prog.commands[0]!.args[0]! with
-      | .seq _ procs => procs.filterMap fun arg =>
+      | .seq _ .none procs => procs.filterMap fun arg =>
           match arg with
           | .op op => some op
           | _ => none
