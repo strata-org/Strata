@@ -5,14 +5,11 @@
 -/
 module
 
-public import Strata.DDM.AST
-
-import Strata.DDM.Util.Format
-import Strata.DDM.Util.Nat
-import Strata.DDM.Util.String
 import Std.Data.HashSet
-
-meta import Strata.DDM.AST
+public import Strata.DDM.AST
+import all Strata.DDM.Util.Format
+import all Strata.DDM.Util.Nat
+import all Strata.DDM.Util.String
 
 open Std (Format format)
 
@@ -114,7 +111,7 @@ private def fvarName (ctx : FormatContext) (idx : FreeVarIndex) : String :=
   else
     s!"fvar!{idx}"
 
-protected def ofDialects (dialects : DialectMap) (globalContext : GlobalContext) (opts : FormatOptions) : FormatContext where
+protected def ofDialects (dialects : DialectMap) (globalContext : GlobalContext := {}) (opts : FormatOptions := {}) : FormatContext where
   opts := opts
   getFnDecl sym := Id.run do
     let .function f := dialects.decl! sym
@@ -456,14 +453,26 @@ private partial def OperationF.mformatM (op : OperationF α) : FormatM PrecForma
 
 end
 
-instance Expr.instToStrataFormat : ToStrataFormat Expr where
+instance ExprF.instToStrataFormat {α} : ToStrataFormat (ExprF α) where
   mformat e c s := private e.mformatM #[] c s |>.fst
 
-instance Arg.instToStrataFormat : ToStrataFormat Arg where
+instance ArgF.instToStrataFormat {α} : ToStrataFormat (ArgF α) where
   mformat a c s := private a.mformatM c s |>.fst
 
-instance Operation.instToStrataFormat : ToStrataFormat Operation where
+
+namespace OperationF
+
+instance {α} : ToStrataFormat (OperationF α) where
   mformat o c s := private o.mformatM c s |>.fst
+
+/--
+This renders an operation returning its string representation and new state.
+-/
+def render {α} (op : OperationF α) (ctx : FormatContext) (s : FormatState) : String × FormatState :=
+  let (f, s) := op.mformatM ctx s
+  (f.format.render, s)
+
+end OperationF
 
 namespace MetadataArg
 
@@ -666,9 +675,11 @@ protected def format (p : Program) (opts : FormatOptions := {}) : Format :=
   p.commands.foldl (init := f!"program {p.dialect};\n") fun f cmd =>
     f ++ (mformat cmd c s).format
 
-instance : ToString Program where
-  toString p := private p.format |>.render
+protected def toString (p : Program) (opts : FormatOptions := {}) : String :=
+  p.format opts |>.render
 
+instance : ToString Program where
+  toString p := p.toString
 protected def ppDialect! (p : Program) (name : DialectName := p.dialect) (opts : FormatOptions := {}) : Format :=
   if mem : name ∈ p.dialects then
     p.dialects.format name mem opts

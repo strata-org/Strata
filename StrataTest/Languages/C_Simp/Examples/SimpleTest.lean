@@ -49,7 +49,7 @@ info: program C_Simp;
   )
 -/
 #guard_msgs in
-#eval IO.println SimpleTestEnv.format.render
+#eval IO.println SimpleTestEnv
 
 
 /--
