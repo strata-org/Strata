@@ -12,7 +12,7 @@ import Strata.Languages.Boogie.Program
 import Strata.Languages.Boogie.ProgramType
 import Strata.Languages.Boogie.WF
 import Strata.DL.Lambda.Lambda
-import Strata.Transform.BoogieTransform
+import Strata.Transform.CoreTransform
 import Strata.Transform.CallElim
 import Strata.DL.Imperative.CmdSemantics
 import Strata.Languages.Boogie.StatementSemantics

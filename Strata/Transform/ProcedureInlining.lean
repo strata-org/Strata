@@ -10,7 +10,7 @@ import Strata.Languages.Boogie.Boogie
 import Strata.Languages.Boogie.BoogieGen
 import Strata.Languages.Boogie.ProgramWF
 import Strata.Languages.Boogie.Statement
-import Strata.Transform.BoogieTransform
+import Strata.Transform.CoreTransform
 
 /-! # Procedure Inlining Transformation -/
 
@@ -135,7 +135,7 @@ end
 
 private def genOldToFreshIdMappings (old_vars : List Expression.Ident)
     (prev_map : Map Expression.Ident Expression.Ident) (prefix_ : String)
-    : BoogieTransformM (Map Expression.Ident Expression.Ident) := do
+    : CoreTransformM (Map Expression.Ident Expression.Ident) := do
   let prev_map <- old_vars.foldlM
     (fun var_map id => do
       let new_name <- genIdent id (fun s => prefix_ ++ "_" ++ s)
@@ -144,7 +144,7 @@ private def genOldToFreshIdMappings (old_vars : List Expression.Ident)
   return prev_map
 
 private def renameAllLocalNames (c:Procedure)
-    : BoogieTransformM (Procedure × Map Expression.Ident Expression.Ident) := do
+    : CoreTransformM (Procedure × Map Expression.Ident Expression.Ident) := do
   let var_map: Map Expression.Ident Expression.Ident := []
   let proc_name := c.header.name.name
 
@@ -194,7 +194,7 @@ the reachability query.
 -/
 def inlineCallCmd (excluded_calls:List String := [])
                   (cmd: Command) (p : Program)
-  : BoogieTransformM (List Statement) :=
+  : CoreTransformM (List Statement) :=
     open Lambda in do
     match cmd with
       | .call lhs procName args _ =>
@@ -257,11 +257,11 @@ def inlineCallCmd (excluded_calls:List String := [])
       | _ => return [.cmd cmd]
 
 def inlineCallStmtsRec (ss: List Statement) (prog : Program)
-  : BoogieTransformM (List Statement) :=
+  : CoreTransformM (List Statement) :=
   runStmtsRec inlineCallCmd ss prog
 
 def inlineCallL (dcls : List Decl) (prog : Program)
-  : BoogieTransformM (List Decl) :=
+  : CoreTransformM (List Decl) :=
   runProcedures inlineCallCmd dcls prog
 
 end ProcedureInlining

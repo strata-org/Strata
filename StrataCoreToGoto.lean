@@ -15,4 +15,4 @@ def main (args : List String) : IO Unit := do
       (gotoFileName := "StrataTest/Backends/CBMC/SimpleAdd/simpleAdd.goto.json")
       Strata.simpleAdd
     IO.println "Written JSON files in StrataTest/Backends/CBMC/SimpleAdd/"
-  | _ => IO.println "Bad usage of BoogieToGoto"
+  | _ => IO.println "Bad usage of StrataCoreToGoto"

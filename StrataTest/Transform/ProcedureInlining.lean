@@ -11,7 +11,7 @@ import Strata.Languages.Boogie.DDMTransform.Translate
 import Strata.Languages.Boogie.StatementSemantics
 import Strata.Languages.Boogie.ProgramType
 import Strata.Languages.Boogie.ProgramWF
-import Strata.Transform.BoogieTransform
+import Strata.Transform.CoreTransform
 import Strata.Transform.ProcedureInlining
 
 open Boogie

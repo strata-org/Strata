@@ -11,7 +11,7 @@ import Strata.Util.IO
 
 import Strata.DDM.Integration.Java.Gen
 import Strata.Languages.Python.Python
-import Strata.Transform.BoogieTransform
+import Strata.Transform.CoreTransform
 import Strata.Transform.ProcedureInlining
 
 def exitFailure {α} (message : String) : IO α := do

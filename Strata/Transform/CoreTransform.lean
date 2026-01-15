@@ -9,7 +9,7 @@ import Strata.Languages.Boogie.Boogie
 import Strata.Languages.Boogie.BoogieGen
 import Strata.DL.Util.LabelGen
 
-/-! # Utility functions for program transformation in Boogie -/
+/-! # Utility functions for program transformation in Strata Core -/
 
 namespace Boogie
 namespace Transform
@@ -78,18 +78,18 @@ def isGlobalVar (p : Program) (ident : Expression.Ident) : Bool :=
 
 abbrev Err := String
 
-abbrev BoogieTransformM := ExceptT Err BoogieGenM
+abbrev CoreTransformM := ExceptT Err BoogieGenM
 
 def getIdentTy? (p : Program) (id : Expression.Ident) := p.getVarTy? id
 
 def getIdentTy! (p : Program) (id : Expression.Ident)
-  : BoogieTransformM (Expression.Ty) := do
+  : CoreTransformM (Expression.Ty) := do
   match getIdentTy? p id with
   | none => throw s!"failed to find type for {Std.format id}"
   | some ty => return ty
 
 def getIdentTys! (p : Program) (ids : List Expression.Ident)
-  : BoogieTransformM (List Expression.Ty) := do
+  : CoreTransformM (List Expression.Ty) := do
   match ids with
   | [] => return []
   | id :: rest =>
@@ -104,7 +104,7 @@ Only types of the 'inputs' parameter are used
 def genArgExprIdentsTrip
   (inputs : @Lambda.LTySignature Visibility)
   (args : List Expression.Expr)
-  : BoogieTransformM (List ((Expression.Ident × Lambda.LTy) × Expression.Expr))
+  : CoreTransformM (List ((Expression.Ident × Lambda.LTy) × Expression.Expr))
   := do
   if inputs.length ≠ args.length then throw "input length and args length mismatch"
   else let gen_idents ← genArgExprIdents args.length
@@ -118,7 +118,7 @@ Only types of the 'outputs' parameter are used.
 def genOutExprIdentsTrip
   (outputs : @Lambda.LTySignature Visibility)
   (lhs : List Expression.Ident)
-  : BoogieTransformM (List ((Expression.Ident × Expression.Ty) × Expression.Ident)) := do
+  : CoreTransformM (List ((Expression.Ident × Expression.Ty) × Expression.Ident)) := do
   if outputs.length ≠ lhs.length then throw "output length and lhs length mismatch"
   else let gen_idents ← genOutExprIdents lhs
        return (gen_idents.zip outputs.unzip.2).zip lhs
@@ -130,7 +130,7 @@ returned list has the shape
 def genOldExprIdentsTrip
   (p : Program)
   (ids : List Expression.Ident)
-  : BoogieTransformM (List ((Expression.Ident × Expression.Ty) × Expression.Ident)) := do
+  : CoreTransformM (List ((Expression.Ident × Expression.Ty) × Expression.Ident)) := do
   let gen_idents ← genOldExprIdents ids
   let tys ← getIdentTys! p ids
   return (gen_idents.zip tys).zip ids
@@ -190,9 +190,9 @@ def createOldVarsSubst
 /- Generic runner functions -/
 
 -- Only visit top-level statements and run f
-def runStmts (f : Command → Program → BoogieTransformM (List Statement))
+def runStmts (f : Command → Program → CoreTransformM (List Statement))
     (ss : List Statement) (inputProg : Program)
-    : BoogieTransformM (List Statement) := do
+    : CoreTransformM (List Statement) := do
   match ss with
   | [] => return []
   | s :: ss =>
@@ -203,9 +203,9 @@ def runStmts (f : Command → Program → BoogieTransformM (List Statement))
     return (← s') ++ (← ss')
 
 -- Recursively visit all blocks and run f
-def runStmtsRec (f : Command → Program → BoogieTransformM (List Statement))
+def runStmtsRec (f : Command → Program → CoreTransformM (List Statement))
     (ss : List Statement) (inputProg : Program)
-    : BoogieTransformM (List Statement) := do
+    : CoreTransformM (List Statement) := do
   match ss with
   | [] => return []
   | s :: ss' =>
@@ -231,9 +231,9 @@ termination_by sizeOf ss
 decreasing_by
   all_goals (unfold Imperative.instSizeOfBlock; decreasing_tactic)
 
-def runProcedures (f : Command → Program → BoogieTransformM (List Statement))
+def runProcedures (f : Command → Program → CoreTransformM (List Statement))
     (dcls : List Decl) (inputProg : Program)
-    : BoogieTransformM (List Decl) := do
+    : CoreTransformM (List Decl) := do
   match dcls with
   | [] => return []
   | d :: ds =>
@@ -244,20 +244,20 @@ def runProcedures (f : Command → Program → BoogieTransformM (List Statement)
         } md :: (← (runProcedures f ds inputProg))
     | _ => return d :: (← (runProcedures f ds inputProg))
 
-def runProgram (f : Command → Program → BoogieTransformM (List Statement))
-    (p : Program) : BoogieTransformM Program := do
+def runProgram (f : Command → Program → CoreTransformM (List Statement))
+    (p : Program) : CoreTransformM Program := do
   let newDecls ← runProcedures f p.decls p
   return { decls := newDecls }
 
 
 @[simp]
-def runWith {α : Type} (p : α) (f : α → BoogieTransformM β)
+def runWith {α : Type} (p : α) (f : α → CoreTransformM β)
     (s : BoogieGenState):
   Except Err β × BoogieGenState :=
   (StateT.run (f p) s)
 
 @[simp]
-def run {α : Type} (p : α) (f : α → BoogieTransformM β)
+def run {α : Type} (p : α) (f : α → CoreTransformM β)
       (s : BoogieGenState := .emp):
   Except Err β :=
   (runWith p f s).fst
