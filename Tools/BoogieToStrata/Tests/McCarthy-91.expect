@@ -1,4 +1,4 @@
 Successfully parsed.
-McCarthy-91.boogie.st(10, 2) [F_ensures_0]: verified
-McCarthy-91.boogie.st(11, 2) [F_ensures_1]: verified
-Proved all 2 goals.
+McCarthy-91.boogie.st(10, 2) [F_ensures_0]: ✅ pass
+McCarthy-91.boogie.st(11, 2) [F_ensures_1]: ✅ pass
+All 2 goals passed.

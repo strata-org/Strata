@@ -1,8 +1,6 @@
 Successfully parsed.
-Unique.boogie.st(28, 4) [assert_0]: failed
-CEx: 
-Unique.boogie.st(29, 4) [assert_1]: verified
-Unique.boogie.st(38, 4) [assert_2]: failed
-CEx: 
-Unique.boogie.st(39, 4) [assert_3]: verified
-Finished with 2 goals proved, 2 failed.
+Unique.boogie.st(28, 4) [assert_0]: ❌ fail
+Unique.boogie.st(29, 4) [assert_1]: ✅ pass
+Unique.boogie.st(38, 4) [assert_2]: ❌ fail
+Unique.boogie.st(39, 4) [assert_3]: ✅ pass
+Finished with 2 goals passed, 2 failed.

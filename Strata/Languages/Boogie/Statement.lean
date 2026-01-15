@@ -88,6 +88,9 @@ abbrev Statement.assume (label : String) (b : Expression.Expr) (md : MetaData Ex
 abbrev Statement.call (lhs : List Expression.Ident) (pname : String) (args : List Expression.Expr)
     (md : MetaData Expression := .empty) :=
   @Stmt.cmd Expression Command (CmdExt.call lhs pname args md)
+@[match_pattern]
+abbrev Statement.cover (label : String) (b : Expression.Expr) (md : MetaData Expression := .empty) :=
+  @Stmt.cmd Expression Command (CmdExt.cmd (Cmd.cover label b md))
 
 ---------------------------------------------------------------------
 
@@ -104,6 +107,7 @@ def Command.eraseTypes (c : Command) : Command :=
     | .havoc name md => .cmd $ .havoc name md
     | .assert label b md => .cmd $ .assert label b.eraseTypes md
     | .assume label b md => .cmd $ .assume label b.eraseTypes md
+    | .cover label b md => .cmd $ .cover label b.eraseTypes md
   | .call lhs pname args md =>
     .call lhs pname (args.map Lambda.LExpr.eraseTypes) md
 
@@ -307,11 +311,13 @@ def Statements.allVarsTrans
 ---------------------------------------------------------------------
 
 mutual
-partial def Block.substFvar (b : Block) (fr:Expression.Ident)
+def Block.substFvar (b : Block) (fr:Expression.Ident)
       (to:Expression.Expr) : Block :=
   List.map (fun s => Statement.substFvar s fr to) b
+  termination_by b.sizeOf
+  decreasing_by apply sizeOf_stmt_in_block; assumption
 
-partial def Statement.substFvar (s : Boogie.Statement)
+def Statement.substFvar (s : Boogie.Statement)
       (fr:Expression.Ident)
       (to:Expression.Expr) : Statement :=
   match s with
@@ -324,6 +330,8 @@ partial def Statement.substFvar (s : Boogie.Statement)
     .assert lbl (Lambda.LExpr.substFvar b fr to) metadata
   | .assume lbl b metadata =>
     .assume lbl (Lambda.LExpr.substFvar b fr to) metadata
+  | .cover lbl b metadata =>
+    .cover lbl (Lambda.LExpr.substFvar b fr to) metadata
   | .call lhs pname args metadata =>
     .call lhs pname (List.map (Lambda.LExpr.substFvar · fr to) args) metadata
 
@@ -339,16 +347,20 @@ partial def Statement.substFvar (s : Boogie.Statement)
           (Block.substFvar body fr to)
           metadata
   | .goto _ _ => s
+  termination_by s.sizeOf
+  decreasing_by all_goals(simp_wf; try omega)
 end
 
 ---------------------------------------------------------------------
 
 mutual
-partial def Block.renameLhs (b : Block)
+def Block.renameLhs (b : Block)
     (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility) : Block :=
   List.map (fun s => Statement.renameLhs s fr to) b
+  termination_by b.sizeOf
+  decreasing_by apply sizeOf_stmt_in_block; assumption
 
-partial def Statement.renameLhs (s : Boogie.Statement)
+def Statement.renameLhs (s : Boogie.Statement)
     (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility)
     : Statement :=
   match s with
@@ -362,7 +374,9 @@ partial def Statement.renameLhs (s : Boogie.Statement)
   | .block lbl b metadata =>
     .block lbl (Block.renameLhs b fr to) metadata
   | .havoc _ _ | .assert _ _ _ | .assume _ _ _ | .ite _ _ _ _
-  | .loop _ _ _ _ _ | .goto _ _ => s
+  | .loop _ _ _ _ _ | .goto _ _ | .cover _ _ _ => s
+  termination_by s.sizeOf
+  decreasing_by all_goals(simp_wf; try omega)
 end
 
 ---------------------------------------------------------------------

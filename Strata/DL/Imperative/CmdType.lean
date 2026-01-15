@@ -73,6 +73,16 @@ def Cmd.typeCheck {P C T} [ToFormat P.Ident] [ToFormat P.Ty] [ToFormat (Cmd P)]
     else
       .error f!"Assumption {label} expected to be of type boolean, \
                 but inferred type is {ety}."
+
+  | .cover label e md =>
+    let (e, ety, τ) ← TC.inferType ctx τ c e
+    if TC.isBoolType ety then
+       let c := Cmd.cover label e md
+       .ok (c, τ)
+    else
+      .error f!"Cover {label} expected to be of type boolean, \
+                but inferred type is {ety}."
+
   catch e =>
     -- Add source location to error messages.
     let sourceLoc := MetaData.formatFileRangeD c.getMetaData

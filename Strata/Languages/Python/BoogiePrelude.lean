@@ -190,14 +190,13 @@ procedure timedelta(days: IntOrNone, hours: IntOrNone) returns (delta : int, may
 spec{
 }
 {
-  havoc delta;
   var days_i : int := 0;
   if (IntOrNone..isIntOrNone_mk_int(days)) {
         days_i := IntOrNone_int_val(days);
   }
   var hours_i : int := 0;
   if (IntOrNone..isIntOrNone_mk_int(hours)) {
-        days_i := IntOrNone_int_val(hours);
+        hours_i := IntOrNone_int_val(hours);
   }
   assume [assume_timedelta_sign_matches]: (delta == (((days_i * 24) + hours_i) * 3600) * 1000000);
 };
@@ -244,7 +243,6 @@ spec {
   ensures (Datetime_get_timedelta(d) == Timedelta_mk(0,0,0));
 }
 {
-  havoc d;
   assume [assume_datetime_now]: (Datetime_get_timedelta(d) == Timedelta_mk(0,0,0));
 };
 
@@ -253,7 +251,6 @@ spec {
   ensures (Datetime_get_timedelta(d) == Timedelta_mk(0,0,0));
 }
 {
-  havoc d;
   assume [assume_datetime_now]: (Datetime_get_timedelta(d) == Timedelta_mk(0,0,0));
 };
 
@@ -282,8 +279,7 @@ axiom [Datetime_lt_ax]:
 
 type Date;
 procedure datetime_date(dt: Datetime) returns (d : Datetime, maybe_except: ExceptOrNone)
-spec{}
-{havoc d;};
+spec{};
 
 function datetime_to_str(dt : Datetime) : string;
 
@@ -295,7 +291,6 @@ spec{
   ensures [ensures_str_strp_reverse]: (forall dt : Datetime :: {d == dt} ((time == datetime_to_str(dt)) <==> (d == dt)));
 }
 {
-  havoc d;
   assume [assume_str_strp_reverse]: (forall dt : Datetime :: {d == dt} ((time == datetime_to_str(dt)) <==> (d == dt)));
 };
 
@@ -310,24 +305,16 @@ procedure import(names : ListStr) returns ();
 procedure print(msg : string, opt : StrOrNone) returns ();
 
 procedure json_dumps(msg : DictStrAny, opt_indent : IntOrNone) returns (s: string, maybe_except: ExceptOrNone)
-spec{}
-{havoc s;}
-;
+spec{};
 
 procedure json_loads(msg : string) returns (d: DictStrAny, maybe_except: ExceptOrNone)
-spec{}
-{havoc d;}
-;
+spec{};
 
 procedure input(msg : string) returns (result: string, maybe_except: ExceptOrNone)
-spec{}
-{havoc result;}
-;
+spec{};
 
 procedure random_choice(l : ListStr) returns (result: string, maybe_except: ExceptOrNone)
-spec{}
-{havoc result;}
-;
+spec{};
 
 function str_in_list_str(s : string, l: ListStr) : bool;
 
