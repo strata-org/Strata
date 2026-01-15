@@ -24,7 +24,7 @@ spec {
 };
 #end
 
--- Translation from DDM AST to Boogie/Strata AST
+-- Translation from DDM AST to Strata Core AST
 
 /-- info: true -/
 #guard_msgs in

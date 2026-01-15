@@ -2088,7 +2088,7 @@ theorem EvalStmtRefinesContract :
     We work around this by requiring this condition at `EvalExpressions`.
   -/
 theorem EvalExpressionIsDefined :
-  WellFormedBoogieEvalCong δ →
+  WellFormedCoreEvalCong δ →
   WellFormedSemanticEvalVar δ →
   (δ σ e).isSome →
   isDefined σ (HasVarsPure.getVars e) := by

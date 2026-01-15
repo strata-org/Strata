@@ -108,6 +108,6 @@ instance : LabelGen.WFLabelGen CoreIdent CoreGenState where
     constructor
   wf_gen := CoreGenState.WFMono
 
-abbrev BoogieGenM := StateM CoreGenState
+abbrev CoreGenM := StateM CoreGenState
 
 end Core

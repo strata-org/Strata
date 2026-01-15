@@ -10,7 +10,7 @@ import Strata.Languages.Core.Verifier
 ---------------------------------------------------------------------
 namespace Strata
 
--- Example Boogie program with axioms
+-- Example Strata Core program with axioms
 def examplePgm :=
 #strata
 program Core;
@@ -21,7 +21,7 @@ axiom [updatePreserves]: forall m: Map k v, okk: k, kk: k, vv: v :: m[kk := vv][
 #end
 
 /--
-  This function extracts the Boogie.Decl in the given program that are axiom declarations
+  This function extracts the Core.Decl in the given program that are axiom declarations
 -/
 def extractAxiomsDecl (prg: Core.Program) : (List Core.Decl) :=
   let rec loop (acc: List Core.Decl) (l: List Core.Decl): List Core.Decl :=
@@ -94,302 +94,302 @@ axiom [updatePreserves]:forall((((m):(Map v k)),((okk):(k))),((kk):(k))),((vv):(
 #eval IO.println examplePgm.format.render
 
 /--
-info: #[{ ann := { start := { byteIdx := 291 }, stop := { byteIdx := 298 } },
+info: #[{ ann := { start := { byteIdx := 296 }, stop := { byteIdx := 303 } },
     name := { dialect := "Core", name := "command_typedecl" },
     args :=
-      ((Array.mkEmpty 2).push (ArgF.ident { start := { byteIdx := 296 }, stop := { byteIdx := 297 } } "k")).push
-        (ArgF.option { start := { byteIdx := 297 }, stop := { byteIdx := 297 } } none) },
-  { ann := { start := { byteIdx := 299 }, stop := { byteIdx := 306 } },
+      ((Array.mkEmpty 2).push (ArgF.ident { start := { byteIdx := 301 }, stop := { byteIdx := 302 } } "k")).push
+        (ArgF.option { start := { byteIdx := 302 }, stop := { byteIdx := 302 } } none) },
+  { ann := { start := { byteIdx := 304 }, stop := { byteIdx := 311 } },
     name := { dialect := "Core", name := "command_typedecl" },
     args :=
-      ((Array.mkEmpty 2).push (ArgF.ident { start := { byteIdx := 304 }, stop := { byteIdx := 305 } } "v")).push
-        (ArgF.option { start := { byteIdx := 305 }, stop := { byteIdx := 305 } } none) },
-  { ann := { start := { byteIdx := 307 }, stop := { byteIdx := 386 } },
+      ((Array.mkEmpty 2).push (ArgF.ident { start := { byteIdx := 309 }, stop := { byteIdx := 310 } } "v")).push
+        (ArgF.option { start := { byteIdx := 310 }, stop := { byteIdx := 310 } } none) },
+  { ann := { start := { byteIdx := 312 }, stop := { byteIdx := 391 } },
     name := { dialect := "Core", name := "command_axiom" },
     args :=
       ((Array.mkEmpty 2).push
-            (ArgF.option { start := { byteIdx := 313 }, stop := { byteIdx := 328 } }
+            (ArgF.option { start := { byteIdx := 318 }, stop := { byteIdx := 333 } }
               (some
                 (ArgF.op
-                  { ann := { start := { byteIdx := 313 }, stop := { byteIdx := 328 } },
+                  { ann := { start := { byteIdx := 318 }, stop := { byteIdx := 333 } },
                     name := { dialect := "Core", name := "label" },
                     args :=
                       (Array.mkEmpty 1).push
-                        (ArgF.ident { start := { byteIdx := 314 }, stop := { byteIdx := 326 } }
+                        (ArgF.ident { start := { byteIdx := 319 }, stop := { byteIdx := 331 } }
                           "updateSelect") })))).push
         (ArgF.expr
-          (ExprF.app { start := { byteIdx := 329 }, stop := { byteIdx := 385 } }
-            (ExprF.app { start := { byteIdx := 329 }, stop := { byteIdx := 385 } }
-              (ExprF.fn { start := { byteIdx := 329 }, stop := { byteIdx := 385 } }
+          (ExprF.app { start := { byteIdx := 334 }, stop := { byteIdx := 390 } }
+            (ExprF.app { start := { byteIdx := 334 }, stop := { byteIdx := 390 } }
+              (ExprF.fn { start := { byteIdx := 334 }, stop := { byteIdx := 390 } }
                 { dialect := "Core", name := "forall" })
               (ArgF.op
-                { ann := { start := { byteIdx := 336 }, stop := { byteIdx := 360 } },
+                { ann := { start := { byteIdx := 341 }, stop := { byteIdx := 365 } },
                   name := { dialect := "Core", name := "declPush" },
                   args :=
                     ((Array.mkEmpty 2).push
                           (ArgF.op
-                            { ann := { start := { byteIdx := 336 }, stop := { byteIdx := 353 } },
+                            { ann := { start := { byteIdx := 341 }, stop := { byteIdx := 358 } },
                               name := { dialect := "Core", name := "declPush" },
                               args :=
                                 ((Array.mkEmpty 2).push
                                       (ArgF.op
-                                        { ann := { start := { byteIdx := 336 }, stop := { byteIdx := 346 } },
+                                        { ann := { start := { byteIdx := 341 }, stop := { byteIdx := 351 } },
                                           name := { dialect := "Core", name := "declAtom" },
                                           args :=
                                             (Array.mkEmpty 1).push
                                               (ArgF.op
-                                                { ann := { start := { byteIdx := 336 }, stop := { byteIdx := 346 } },
+                                                { ann := { start := { byteIdx := 341 }, stop := { byteIdx := 351 } },
                                                   name := { dialect := "Core", name := "bind_mk" },
                                                   args :=
                                                     (((Array.mkEmpty 3).push
                                                               (ArgF.ident
-                                                                { start := { byteIdx := 336 },
-                                                                  stop := { byteIdx := 337 } }
+                                                                { start := { byteIdx := 341 },
+                                                                  stop := { byteIdx := 342 } }
                                                                 "m")).push
                                                           (ArgF.option
-                                                            { start := { byteIdx := 339 }, stop := { byteIdx := 339 } }
+                                                            { start := { byteIdx := 344 }, stop := { byteIdx := 344 } }
                                                             none)).push
                                                       (ArgF.type
                                                         (TypeExprF.ident
-                                                          { start := { byteIdx := 339 }, stop := { byteIdx := 342 } }
+                                                          { start := { byteIdx := 344 }, stop := { byteIdx := 347 } }
                                                           { dialect := "Core", name := "Map" }
                                                           (((Array.mkEmpty 2).push
                                                                 (TypeExprF.fvar
-                                                                  { start := { byteIdx := 345 },
-                                                                    stop := { byteIdx := 346 } }
+                                                                  { start := { byteIdx := 350 },
+                                                                    stop := { byteIdx := 351 } }
                                                                   1 (Array.mkEmpty 0))).push
                                                             (TypeExprF.fvar
-                                                              { start := { byteIdx := 343 },
-                                                                stop := { byteIdx := 344 } }
+                                                              { start := { byteIdx := 348 },
+                                                                stop := { byteIdx := 349 } }
                                                               0 (Array.mkEmpty 0))))) }) })).push
                                   (ArgF.op
-                                    { ann := { start := { byteIdx := 348 }, stop := { byteIdx := 353 } },
+                                    { ann := { start := { byteIdx := 353 }, stop := { byteIdx := 358 } },
                                       name := { dialect := "Core", name := "bind_mk" },
                                       args :=
                                         (((Array.mkEmpty 3).push
                                                   (ArgF.ident
-                                                    { start := { byteIdx := 348 }, stop := { byteIdx := 350 } }
+                                                    { start := { byteIdx := 353 }, stop := { byteIdx := 355 } }
                                                     "kk")).push
-                                              (ArgF.option { start := { byteIdx := 352 }, stop := { byteIdx := 352 } }
+                                              (ArgF.option { start := { byteIdx := 357 }, stop := { byteIdx := 357 } }
                                                 none)).push
                                           (ArgF.type
-                                            (TypeExprF.fvar { start := { byteIdx := 352 }, stop := { byteIdx := 353 } }
+                                            (TypeExprF.fvar { start := { byteIdx := 357 }, stop := { byteIdx := 358 } }
                                               0 (Array.mkEmpty 0))) }) })).push
                       (ArgF.op
-                        { ann := { start := { byteIdx := 355 }, stop := { byteIdx := 360 } },
+                        { ann := { start := { byteIdx := 360 }, stop := { byteIdx := 365 } },
                           name := { dialect := "Core", name := "bind_mk" },
                           args :=
                             (((Array.mkEmpty 3).push
-                                      (ArgF.ident { start := { byteIdx := 355 }, stop := { byteIdx := 357 } }
+                                      (ArgF.ident { start := { byteIdx := 360 }, stop := { byteIdx := 362 } }
                                         "vv")).push
-                                  (ArgF.option { start := { byteIdx := 359 }, stop := { byteIdx := 359 } } none)).push
+                                  (ArgF.option { start := { byteIdx := 364 }, stop := { byteIdx := 364 } } none)).push
                               (ArgF.type
-                                (TypeExprF.fvar { start := { byteIdx := 359 }, stop := { byteIdx := 360 } } 1
+                                (TypeExprF.fvar { start := { byteIdx := 364 }, stop := { byteIdx := 365 } } 1
                                   (Array.mkEmpty 0))) }) }))
             (ArgF.expr
-              (ExprF.app { start := { byteIdx := 364 }, stop := { byteIdx := 385 } }
-                (ExprF.app { start := { byteIdx := 364 }, stop := { byteIdx := 385 } }
-                  (ExprF.app { start := { byteIdx := 364 }, stop := { byteIdx := 385 } }
-                    (ExprF.fn { start := { byteIdx := 364 }, stop := { byteIdx := 385 } }
+              (ExprF.app { start := { byteIdx := 369 }, stop := { byteIdx := 390 } }
+                (ExprF.app { start := { byteIdx := 369 }, stop := { byteIdx := 390 } }
+                  (ExprF.app { start := { byteIdx := 369 }, stop := { byteIdx := 390 } }
+                    (ExprF.fn { start := { byteIdx := 369 }, stop := { byteIdx := 390 } }
                       { dialect := "Core", name := "equal" })
                     (ArgF.type
-                      (TypeExprF.fvar { start := { byteIdx := 345 }, stop := { byteIdx := 346 } } 1 (Array.mkEmpty 0))))
+                      (TypeExprF.fvar { start := { byteIdx := 350 }, stop := { byteIdx := 351 } } 1 (Array.mkEmpty 0))))
                   (ArgF.expr
-                    (ExprF.app { start := { byteIdx := 364 }, stop := { byteIdx := 379 } }
-                      (ExprF.app { start := { byteIdx := 364 }, stop := { byteIdx := 379 } }
-                        (ExprF.app { start := { byteIdx := 364 }, stop := { byteIdx := 379 } }
-                          (ExprF.app { start := { byteIdx := 364 }, stop := { byteIdx := 379 } }
-                            (ExprF.fn { start := { byteIdx := 364 }, stop := { byteIdx := 379 } }
+                    (ExprF.app { start := { byteIdx := 369 }, stop := { byteIdx := 384 } }
+                      (ExprF.app { start := { byteIdx := 369 }, stop := { byteIdx := 384 } }
+                        (ExprF.app { start := { byteIdx := 369 }, stop := { byteIdx := 384 } }
+                          (ExprF.app { start := { byteIdx := 369 }, stop := { byteIdx := 384 } }
+                            (ExprF.fn { start := { byteIdx := 369 }, stop := { byteIdx := 384 } }
                               { dialect := "Core", name := "map_get" })
                             (ArgF.type
-                              (TypeExprF.fvar { start := { byteIdx := 343 }, stop := { byteIdx := 344 } } 0
+                              (TypeExprF.fvar { start := { byteIdx := 348 }, stop := { byteIdx := 349 } } 0
                                 (Array.mkEmpty 0))))
                           (ArgF.type
-                            (TypeExprF.fvar { start := { byteIdx := 345 }, stop := { byteIdx := 346 } } 1
+                            (TypeExprF.fvar { start := { byteIdx := 350 }, stop := { byteIdx := 351 } } 1
                               (Array.mkEmpty 0))))
                         (ArgF.expr
-                          (ExprF.app { start := { byteIdx := 364 }, stop := { byteIdx := 375 } }
-                            (ExprF.app { start := { byteIdx := 364 }, stop := { byteIdx := 375 } }
-                              (ExprF.app { start := { byteIdx := 364 }, stop := { byteIdx := 375 } }
-                                (ExprF.app { start := { byteIdx := 364 }, stop := { byteIdx := 375 } }
-                                  (ExprF.app { start := { byteIdx := 364 }, stop := { byteIdx := 375 } }
-                                    (ExprF.fn { start := { byteIdx := 364 }, stop := { byteIdx := 375 } }
+                          (ExprF.app { start := { byteIdx := 369 }, stop := { byteIdx := 380 } }
+                            (ExprF.app { start := { byteIdx := 369 }, stop := { byteIdx := 380 } }
+                              (ExprF.app { start := { byteIdx := 369 }, stop := { byteIdx := 380 } }
+                                (ExprF.app { start := { byteIdx := 369 }, stop := { byteIdx := 380 } }
+                                  (ExprF.app { start := { byteIdx := 369 }, stop := { byteIdx := 380 } }
+                                    (ExprF.fn { start := { byteIdx := 369 }, stop := { byteIdx := 380 } }
                                       { dialect := "Core", name := "map_set" })
                                     (ArgF.type
-                                      (TypeExprF.fvar { start := { byteIdx := 343 }, stop := { byteIdx := 344 } } 0
+                                      (TypeExprF.fvar { start := { byteIdx := 348 }, stop := { byteIdx := 349 } } 0
                                         (Array.mkEmpty 0))))
                                   (ArgF.type
-                                    (TypeExprF.fvar { start := { byteIdx := 345 }, stop := { byteIdx := 346 } } 1
+                                    (TypeExprF.fvar { start := { byteIdx := 350 }, stop := { byteIdx := 351 } } 1
                                       (Array.mkEmpty 0))))
-                                (ArgF.expr (ExprF.bvar { start := { byteIdx := 364 }, stop := { byteIdx := 365 } } 2)))
-                              (ArgF.expr (ExprF.bvar { start := { byteIdx := 366 }, stop := { byteIdx := 368 } } 1)))
-                            (ArgF.expr (ExprF.bvar { start := { byteIdx := 372 }, stop := { byteIdx := 374 } } 0)))))
-                      (ArgF.expr (ExprF.bvar { start := { byteIdx := 376 }, stop := { byteIdx := 378 } } 1)))))
-                (ArgF.expr (ExprF.bvar { start := { byteIdx := 383 }, stop := { byteIdx := 385 } } 0)))))) },
-  { ann := { start := { byteIdx := 387 }, stop := { byteIdx := 482 } },
+                                (ArgF.expr (ExprF.bvar { start := { byteIdx := 369 }, stop := { byteIdx := 370 } } 2)))
+                              (ArgF.expr (ExprF.bvar { start := { byteIdx := 371 }, stop := { byteIdx := 373 } } 1)))
+                            (ArgF.expr (ExprF.bvar { start := { byteIdx := 377 }, stop := { byteIdx := 379 } } 0)))))
+                      (ArgF.expr (ExprF.bvar { start := { byteIdx := 381 }, stop := { byteIdx := 383 } } 1)))))
+                (ArgF.expr (ExprF.bvar { start := { byteIdx := 388 }, stop := { byteIdx := 390 } } 0)))))) },
+  { ann := { start := { byteIdx := 392 }, stop := { byteIdx := 487 } },
     name := { dialect := "Core", name := "command_axiom" },
     args :=
       ((Array.mkEmpty 2).push
-            (ArgF.option { start := { byteIdx := 393 }, stop := { byteIdx := 411 } }
+            (ArgF.option { start := { byteIdx := 398 }, stop := { byteIdx := 416 } }
               (some
                 (ArgF.op
-                  { ann := { start := { byteIdx := 393 }, stop := { byteIdx := 411 } },
+                  { ann := { start := { byteIdx := 398 }, stop := { byteIdx := 416 } },
                     name := { dialect := "Core", name := "label" },
                     args :=
                       (Array.mkEmpty 1).push
-                        (ArgF.ident { start := { byteIdx := 394 }, stop := { byteIdx := 409 } }
+                        (ArgF.ident { start := { byteIdx := 399 }, stop := { byteIdx := 414 } }
                           "updatePreserves") })))).push
         (ArgF.expr
-          (ExprF.app { start := { byteIdx := 412 }, stop := { byteIdx := 481 } }
-            (ExprF.app { start := { byteIdx := 412 }, stop := { byteIdx := 481 } }
-              (ExprF.fn { start := { byteIdx := 412 }, stop := { byteIdx := 481 } }
+          (ExprF.app { start := { byteIdx := 417 }, stop := { byteIdx := 486 } }
+            (ExprF.app { start := { byteIdx := 417 }, stop := { byteIdx := 486 } }
+              (ExprF.fn { start := { byteIdx := 417 }, stop := { byteIdx := 486 } }
                 { dialect := "Core", name := "forall" })
               (ArgF.op
-                { ann := { start := { byteIdx := 419 }, stop := { byteIdx := 451 } },
+                { ann := { start := { byteIdx := 424 }, stop := { byteIdx := 456 } },
                   name := { dialect := "Core", name := "declPush" },
                   args :=
                     ((Array.mkEmpty 2).push
                           (ArgF.op
-                            { ann := { start := { byteIdx := 419 }, stop := { byteIdx := 444 } },
+                            { ann := { start := { byteIdx := 424 }, stop := { byteIdx := 449 } },
                               name := { dialect := "Core", name := "declPush" },
                               args :=
                                 ((Array.mkEmpty 2).push
                                       (ArgF.op
-                                        { ann := { start := { byteIdx := 419 }, stop := { byteIdx := 437 } },
+                                        { ann := { start := { byteIdx := 424 }, stop := { byteIdx := 442 } },
                                           name := { dialect := "Core", name := "declPush" },
                                           args :=
                                             ((Array.mkEmpty 2).push
                                                   (ArgF.op
                                                     {
                                                       ann :=
-                                                        { start := { byteIdx := 419 }, stop := { byteIdx := 429 } },
+                                                        { start := { byteIdx := 424 }, stop := { byteIdx := 434 } },
                                                       name := { dialect := "Core", name := "declAtom" },
                                                       args :=
                                                         (Array.mkEmpty 1).push
                                                           (ArgF.op
                                                             {
                                                               ann :=
-                                                                { start := { byteIdx := 419 },
-                                                                  stop := { byteIdx := 429 } },
+                                                                { start := { byteIdx := 424 },
+                                                                  stop := { byteIdx := 434 } },
                                                               name := { dialect := "Core", name := "bind_mk" },
                                                               args :=
                                                                 (((Array.mkEmpty 3).push
                                                                           (ArgF.ident
-                                                                            { start := { byteIdx := 419 },
-                                                                              stop := { byteIdx := 420 } }
+                                                                            { start := { byteIdx := 424 },
+                                                                              stop := { byteIdx := 425 } }
                                                                             "m")).push
                                                                       (ArgF.option
-                                                                        { start := { byteIdx := 422 },
-                                                                          stop := { byteIdx := 422 } }
+                                                                        { start := { byteIdx := 427 },
+                                                                          stop := { byteIdx := 427 } }
                                                                         none)).push
                                                                   (ArgF.type
                                                                     (TypeExprF.ident
-                                                                      { start := { byteIdx := 422 },
-                                                                        stop := { byteIdx := 425 } }
+                                                                      { start := { byteIdx := 427 },
+                                                                        stop := { byteIdx := 430 } }
                                                                       { dialect := "Core", name := "Map" }
                                                                       (((Array.mkEmpty 2).push
                                                                             (TypeExprF.fvar
-                                                                              { start := { byteIdx := 428 },
-                                                                                stop := { byteIdx := 429 } }
+                                                                              { start := { byteIdx := 433 },
+                                                                                stop := { byteIdx := 434 } }
                                                                               1 (Array.mkEmpty 0))).push
                                                                         (TypeExprF.fvar
-                                                                          { start := { byteIdx := 426 },
-                                                                            stop := { byteIdx := 427 } }
+                                                                          { start := { byteIdx := 431 },
+                                                                            stop := { byteIdx := 432 } }
                                                                           0 (Array.mkEmpty 0))))) }) })).push
                                               (ArgF.op
-                                                { ann := { start := { byteIdx := 431 }, stop := { byteIdx := 437 } },
+                                                { ann := { start := { byteIdx := 436 }, stop := { byteIdx := 442 } },
                                                   name := { dialect := "Core", name := "bind_mk" },
                                                   args :=
                                                     (((Array.mkEmpty 3).push
                                                               (ArgF.ident
-                                                                { start := { byteIdx := 431 },
-                                                                  stop := { byteIdx := 434 } }
+                                                                { start := { byteIdx := 436 },
+                                                                  stop := { byteIdx := 439 } }
                                                                 "okk")).push
                                                           (ArgF.option
-                                                            { start := { byteIdx := 436 }, stop := { byteIdx := 436 } }
+                                                            { start := { byteIdx := 441 }, stop := { byteIdx := 441 } }
                                                             none)).push
                                                       (ArgF.type
                                                         (TypeExprF.fvar
-                                                          { start := { byteIdx := 436 }, stop := { byteIdx := 437 } } 0
+                                                          { start := { byteIdx := 441 }, stop := { byteIdx := 442 } } 0
                                                           (Array.mkEmpty 0))) }) })).push
                                   (ArgF.op
-                                    { ann := { start := { byteIdx := 439 }, stop := { byteIdx := 444 } },
+                                    { ann := { start := { byteIdx := 444 }, stop := { byteIdx := 449 } },
                                       name := { dialect := "Core", name := "bind_mk" },
                                       args :=
                                         (((Array.mkEmpty 3).push
                                                   (ArgF.ident
-                                                    { start := { byteIdx := 439 }, stop := { byteIdx := 441 } }
+                                                    { start := { byteIdx := 444 }, stop := { byteIdx := 446 } }
                                                     "kk")).push
-                                              (ArgF.option { start := { byteIdx := 443 }, stop := { byteIdx := 443 } }
+                                              (ArgF.option { start := { byteIdx := 448 }, stop := { byteIdx := 448 } }
                                                 none)).push
                                           (ArgF.type
-                                            (TypeExprF.fvar { start := { byteIdx := 443 }, stop := { byteIdx := 444 } }
+                                            (TypeExprF.fvar { start := { byteIdx := 448 }, stop := { byteIdx := 449 } }
                                               0 (Array.mkEmpty 0))) }) })).push
                       (ArgF.op
-                        { ann := { start := { byteIdx := 446 }, stop := { byteIdx := 451 } },
+                        { ann := { start := { byteIdx := 451 }, stop := { byteIdx := 456 } },
                           name := { dialect := "Core", name := "bind_mk" },
                           args :=
                             (((Array.mkEmpty 3).push
-                                      (ArgF.ident { start := { byteIdx := 446 }, stop := { byteIdx := 448 } }
+                                      (ArgF.ident { start := { byteIdx := 451 }, stop := { byteIdx := 453 } }
                                         "vv")).push
-                                  (ArgF.option { start := { byteIdx := 450 }, stop := { byteIdx := 450 } } none)).push
+                                  (ArgF.option { start := { byteIdx := 455 }, stop := { byteIdx := 455 } } none)).push
                               (ArgF.type
-                                (TypeExprF.fvar { start := { byteIdx := 450 }, stop := { byteIdx := 451 } } 1
+                                (TypeExprF.fvar { start := { byteIdx := 455 }, stop := { byteIdx := 456 } } 1
                                   (Array.mkEmpty 0))) }) }))
             (ArgF.expr
-              (ExprF.app { start := { byteIdx := 455 }, stop := { byteIdx := 481 } }
-                (ExprF.app { start := { byteIdx := 455 }, stop := { byteIdx := 481 } }
-                  (ExprF.app { start := { byteIdx := 455 }, stop := { byteIdx := 481 } }
-                    (ExprF.fn { start := { byteIdx := 455 }, stop := { byteIdx := 481 } }
+              (ExprF.app { start := { byteIdx := 460 }, stop := { byteIdx := 486 } }
+                (ExprF.app { start := { byteIdx := 460 }, stop := { byteIdx := 486 } }
+                  (ExprF.app { start := { byteIdx := 460 }, stop := { byteIdx := 486 } }
+                    (ExprF.fn { start := { byteIdx := 460 }, stop := { byteIdx := 486 } }
                       { dialect := "Core", name := "equal" })
                     (ArgF.type
-                      (TypeExprF.fvar { start := { byteIdx := 428 }, stop := { byteIdx := 429 } } 1 (Array.mkEmpty 0))))
+                      (TypeExprF.fvar { start := { byteIdx := 433 }, stop := { byteIdx := 434 } } 1 (Array.mkEmpty 0))))
                   (ArgF.expr
-                    (ExprF.app { start := { byteIdx := 455 }, stop := { byteIdx := 471 } }
-                      (ExprF.app { start := { byteIdx := 455 }, stop := { byteIdx := 471 } }
-                        (ExprF.app { start := { byteIdx := 455 }, stop := { byteIdx := 471 } }
-                          (ExprF.app { start := { byteIdx := 455 }, stop := { byteIdx := 471 } }
-                            (ExprF.fn { start := { byteIdx := 455 }, stop := { byteIdx := 471 } }
+                    (ExprF.app { start := { byteIdx := 460 }, stop := { byteIdx := 476 } }
+                      (ExprF.app { start := { byteIdx := 460 }, stop := { byteIdx := 476 } }
+                        (ExprF.app { start := { byteIdx := 460 }, stop := { byteIdx := 476 } }
+                          (ExprF.app { start := { byteIdx := 460 }, stop := { byteIdx := 476 } }
+                            (ExprF.fn { start := { byteIdx := 460 }, stop := { byteIdx := 476 } }
                               { dialect := "Core", name := "map_get" })
                             (ArgF.type
-                              (TypeExprF.fvar { start := { byteIdx := 426 }, stop := { byteIdx := 427 } } 0
+                              (TypeExprF.fvar { start := { byteIdx := 431 }, stop := { byteIdx := 432 } } 0
                                 (Array.mkEmpty 0))))
                           (ArgF.type
-                            (TypeExprF.fvar { start := { byteIdx := 428 }, stop := { byteIdx := 429 } } 1
+                            (TypeExprF.fvar { start := { byteIdx := 433 }, stop := { byteIdx := 434 } } 1
                               (Array.mkEmpty 0))))
                         (ArgF.expr
-                          (ExprF.app { start := { byteIdx := 455 }, stop := { byteIdx := 466 } }
-                            (ExprF.app { start := { byteIdx := 455 }, stop := { byteIdx := 466 } }
-                              (ExprF.app { start := { byteIdx := 455 }, stop := { byteIdx := 466 } }
-                                (ExprF.app { start := { byteIdx := 455 }, stop := { byteIdx := 466 } }
-                                  (ExprF.app { start := { byteIdx := 455 }, stop := { byteIdx := 466 } }
-                                    (ExprF.fn { start := { byteIdx := 455 }, stop := { byteIdx := 466 } }
+                          (ExprF.app { start := { byteIdx := 460 }, stop := { byteIdx := 471 } }
+                            (ExprF.app { start := { byteIdx := 460 }, stop := { byteIdx := 471 } }
+                              (ExprF.app { start := { byteIdx := 460 }, stop := { byteIdx := 471 } }
+                                (ExprF.app { start := { byteIdx := 460 }, stop := { byteIdx := 471 } }
+                                  (ExprF.app { start := { byteIdx := 460 }, stop := { byteIdx := 471 } }
+                                    (ExprF.fn { start := { byteIdx := 460 }, stop := { byteIdx := 471 } }
                                       { dialect := "Core", name := "map_set" })
                                     (ArgF.type
-                                      (TypeExprF.fvar { start := { byteIdx := 426 }, stop := { byteIdx := 427 } } 0
+                                      (TypeExprF.fvar { start := { byteIdx := 431 }, stop := { byteIdx := 432 } } 0
                                         (Array.mkEmpty 0))))
                                   (ArgF.type
-                                    (TypeExprF.fvar { start := { byteIdx := 428 }, stop := { byteIdx := 429 } } 1
+                                    (TypeExprF.fvar { start := { byteIdx := 433 }, stop := { byteIdx := 434 } } 1
                                       (Array.mkEmpty 0))))
-                                (ArgF.expr (ExprF.bvar { start := { byteIdx := 455 }, stop := { byteIdx := 456 } } 3)))
-                              (ArgF.expr (ExprF.bvar { start := { byteIdx := 457 }, stop := { byteIdx := 459 } } 1)))
-                            (ArgF.expr (ExprF.bvar { start := { byteIdx := 463 }, stop := { byteIdx := 465 } } 0)))))
-                      (ArgF.expr (ExprF.bvar { start := { byteIdx := 467 }, stop := { byteIdx := 470 } } 2)))))
+                                (ArgF.expr (ExprF.bvar { start := { byteIdx := 460 }, stop := { byteIdx := 461 } } 3)))
+                              (ArgF.expr (ExprF.bvar { start := { byteIdx := 462 }, stop := { byteIdx := 464 } } 1)))
+                            (ArgF.expr (ExprF.bvar { start := { byteIdx := 468 }, stop := { byteIdx := 470 } } 0)))))
+                      (ArgF.expr (ExprF.bvar { start := { byteIdx := 472 }, stop := { byteIdx := 475 } } 2)))))
                 (ArgF.expr
-                  (ExprF.app { start := { byteIdx := 475 }, stop := { byteIdx := 481 } }
-                    (ExprF.app { start := { byteIdx := 475 }, stop := { byteIdx := 481 } }
-                      (ExprF.app { start := { byteIdx := 475 }, stop := { byteIdx := 481 } }
-                        (ExprF.app { start := { byteIdx := 475 }, stop := { byteIdx := 481 } }
-                          (ExprF.fn { start := { byteIdx := 475 }, stop := { byteIdx := 481 } }
+                  (ExprF.app { start := { byteIdx := 480 }, stop := { byteIdx := 486 } }
+                    (ExprF.app { start := { byteIdx := 480 }, stop := { byteIdx := 486 } }
+                      (ExprF.app { start := { byteIdx := 480 }, stop := { byteIdx := 486 } }
+                        (ExprF.app { start := { byteIdx := 480 }, stop := { byteIdx := 486 } }
+                          (ExprF.fn { start := { byteIdx := 480 }, stop := { byteIdx := 486 } }
                             { dialect := "Core", name := "map_get" })
                           (ArgF.type
-                            (TypeExprF.fvar { start := { byteIdx := 426 }, stop := { byteIdx := 427 } } 0
+                            (TypeExprF.fvar { start := { byteIdx := 431 }, stop := { byteIdx := 432 } } 0
                               (Array.mkEmpty 0))))
                         (ArgF.type
-                          (TypeExprF.fvar { start := { byteIdx := 428 }, stop := { byteIdx := 429 } } 1
+                          (TypeExprF.fvar { start := { byteIdx := 433 }, stop := { byteIdx := 434 } } 1
                             (Array.mkEmpty 0))))
-                      (ArgF.expr (ExprF.bvar { start := { byteIdx := 475 }, stop := { byteIdx := 476 } } 3)))
-                    (ArgF.expr (ExprF.bvar { start := { byteIdx := 477 }, stop := { byteIdx := 480 } } 2)))))))) }]
+                      (ArgF.expr (ExprF.bvar { start := { byteIdx := 480 }, stop := { byteIdx := 481 } } 3)))
+                    (ArgF.expr (ExprF.bvar { start := { byteIdx := 482 }, stop := { byteIdx := 485 } } 2)))))))) }]
 -/
 #guard_msgs in
 #eval examplePgm.commands

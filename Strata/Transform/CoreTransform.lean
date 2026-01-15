@@ -34,18 +34,18 @@ def createFvars (ident : List Expression.Ident)
   := ident.map createFvar
 
 def genIdent (ident : Expression.Ident) (pf : String → String)
-  : BoogieGenM Expression.Ident :=
+  : CoreGenM Expression.Ident :=
     CoreGenState.gen (pf ident.name)
 
 /--
 Generate identifiers in the form of arg_... that can be used to reduce argument expressions to temporary variables.
 -/
 def genArgExprIdent
-  : BoogieGenM Expression.Ident :=
+  : CoreGenM Expression.Ident :=
     genIdent "arg" tmpVarPrefix
 
 def genArgExprIdents (n:Nat)
-  : BoogieGenM (List Expression.Ident) :=
+  : CoreGenM (List Expression.Ident) :=
   List.mapM (fun _ => genArgExprIdent) (List.replicate n ())
 
 /--
@@ -53,11 +53,11 @@ Retrieves a fresh identifier from the counter generator the given identifier "id
 Assumes that ident contains no duplicates
 -/
 def genOutExprIdent (ident : Expression.Ident)
-  : BoogieGenM Expression.Ident :=
+  : CoreGenM Expression.Ident :=
     genIdent ident tmpVarPrefix
 
 def genOutExprIdents (idents : List Expression.Ident)
-  : BoogieGenM (List Expression.Ident)
+  : CoreGenM (List Expression.Ident)
   := List.mapM genOutExprIdent idents
 
 /--
@@ -65,11 +65,11 @@ Retrieves a fresh identifier from the counter generator the given identifier "id
 Assumes that ident contains no duplicates
 -/
 def genOldExprIdent (ident : Expression.Ident)
-  : BoogieGenM Expression.Ident :=
+  : CoreGenM Expression.Ident :=
     genIdent ident oldVarPrefix
 
 def genOldExprIdents (idents : List Expression.Ident)
-  : BoogieGenM (List Expression.Ident)
+  : CoreGenM (List Expression.Ident)
   := List.mapM genOldExprIdent idents
 
 /-- Checks whether a variable `ident` can be found in program `p` -/
@@ -78,7 +78,7 @@ def isGlobalVar (p : Program) (ident : Expression.Ident) : Bool :=
 
 abbrev Err := String
 
-abbrev CoreTransformM := ExceptT Err BoogieGenM
+abbrev CoreTransformM := ExceptT Err CoreGenM
 
 def getIdentTy? (p : Program) (id : Expression.Ident) := p.getVarTy? id
 

@@ -64,7 +64,7 @@ private def substExpr (e1:Expression.Expr) (map:Map String String) (isReverse: B
   map.foldl
     (fun (e:Expression.Expr) ((i1,i2):String × String) =>
       -- old_id has visibility of temp because the new local variables were
-      -- created by BoogieGenM.
+      -- created by CoreGenM.
       -- new_expr has visibility of unres because that is the default setting
       -- from DDM parsed program, and the substituted program is supposed to be
       -- equivalent to the answer program translated from DDM

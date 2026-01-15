@@ -20,7 +20,7 @@ import Strata.DL.Lambda.TestGen
 import Strata.DL.Lambda.PlausibleHelpers
 import Plausible.Gen
 
-/-! This file does random testing of Boogie operations registered in factory, by
+/-! This file does random testing of Strata Core operations registered in factory, by
 (1) choosing random constant inputs to the operations
 (2) doing concrete evaluation and getting the results,
 (3) SMT encoding the expression, and
@@ -196,8 +196,8 @@ deriving instance Arbitrary for Visibility
 def test_lctx : LContext CoreLParams :=
 {
   LContext.empty with
-  functions := Boogie.Factory
-  knownTypes := Boogie.KnownTypes
+  functions := Core.Factory
+  knownTypes := Core.KnownTypes
 }
 
 def test_ctx : TContext Visibility := ⟨[[]], []⟩
