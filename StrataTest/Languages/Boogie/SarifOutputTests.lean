@@ -23,6 +23,7 @@ namespace Boogie.Sarif.Tests
 open Lean (Json)
 open Imperative
 open Strata.Sarif (Level Message)
+open Boogie.SMT (SMTModel Result)
 
 /-! ## Test Helpers -/
 
@@ -36,43 +37,45 @@ def makeMetadata (file : String) (line col : Nat) : MetaData Expression :=
 /-- Create a simple proof obligation for testing -/
 def makeObligation (label : String) (md : MetaData Expression := #[]) : ProofObligation Expression :=
   { label := label
+    property := .assert
     assumptions := []
     obligation := Lambda.LExpr.boolConst () true
     metadata := md }
 
 /-- Create a VCResult for testing -/
-def makeVCResult (label : String) (result : Boogie.Result) (md : MetaData Expression := #[]) : VCResult :=
+def makeVCResult (label : String) (outcome : Outcome) (smtResult : Result := .unknown) (md : MetaData Expression := #[]) : VCResult :=
   { obligation := makeObligation label md
-    result := result
+    smtResult := smtResult
+    result := outcome
     verbose := true }
 
 /-! ## Level Conversion Tests -/
 
--- Test that unsat (verified) maps to "none" level
-#guard resultToLevel .unsat = Level.none
+-- Test that pass (verified) maps to "none" level
+#guard outcomeToLevel .pass = Level.none
 
--- Test that sat (failed) maps to "error" level
-#guard resultToLevel (.sat []) = Level.error
+-- Test that fail maps to "error" level
+#guard outcomeToLevel .fail = Level.error
 
 -- Test that unknown maps to "warning" level
-#guard resultToLevel .unknown = Level.warning
+#guard outcomeToLevel .unknown = Level.warning
 
--- Test that error maps to "error" level
-#guard resultToLevel (.err "test error") = Level.error
+-- Test that implementationError maps to "error" level
+#guard outcomeToLevel (.implementationError "test error") = Level.error
 
 /-! ## Message Generation Tests -/
 
--- Test unsat message
-#guard resultToMessage .unsat = "Verification succeeded"
+-- Test pass message
+#guard outcomeToMessage .pass .unknown = "Verification succeeded"
 
--- Test sat message without counterexample
-#guard resultToMessage (.sat []) = "Verification failed"
+-- Test fail message without counterexample
+#guard outcomeToMessage .fail .unknown = "Verification failed"
 
 -- Test unknown message
-#guard (resultToMessage .unknown).startsWith "Verification result unknown"
+#guard (outcomeToMessage .unknown .unknown).startsWith "Verification result unknown"
 
 -- Test error message
-#guard (resultToMessage (.err "test error")).startsWith "Verification error:"
+#guard (outcomeToMessage (.implementationError "test error") .unknown).startsWith "Verification error:"
 
 /-! ## Location Extraction Tests -/
 
@@ -105,7 +108,7 @@ def makeVCResult (label : String) (result : Boogie.Result) (md : MetaData Expres
 #guard_msgs in
 #eval
   let md := makeMetadata "/test/file.st" 10 5
-  let vcr := makeVCResult "test_obligation" .unsat md
+  let vcr := makeVCResult "test_obligation" .pass .unsat md
   let sarifResult := vcResultToSarifResult vcr
   if sarifResult.ruleId = "test_obligation" &&
      sarifResult.level = Level.none &&
@@ -118,7 +121,7 @@ def makeVCResult (label : String) (result : Boogie.Result) (md : MetaData Expres
 #guard_msgs in
 #eval
   let md := makeMetadata "/test/file.st" 20 10
-  let vcr := makeVCResult "failed_obligation" (.sat []) md
+  let vcr := makeVCResult "failed_obligation" .fail (.sat []) md
   let sarifResult := vcResultToSarifResult vcr
   if sarifResult.ruleId = "failed_obligation" &&
      sarifResult.level = Level.error &&
@@ -142,7 +145,7 @@ def makeVCResult (label : String) (result : Boogie.Result) (md : MetaData Expres
 -- Test converting an error VCResult
 #guard_msgs in
 #eval
-  let vcr := makeVCResult "error_obligation" (.err "SMT solver error")
+  let vcr := makeVCResult "error_obligation" (.implementationError "SMT solver error")
   let sarifResult := vcResultToSarifResult vcr
   if sarifResult.ruleId = "error_obligation" &&
      sarifResult.level = Level.error &&
@@ -171,8 +174,8 @@ def makeVCResult (label : String) (result : Boogie.Result) (md : MetaData Expres
   let md1 := makeMetadata "/test/file1.st" 10 5
   let md2 := makeMetadata "/test/file2.st" 20 10
   let vcResults : VCResults := #[
-    makeVCResult "obligation1" .unsat md1,
-    makeVCResult "obligation2" (.sat []) md2,
+    makeVCResult "obligation1" .pass .unsat md1,
+    makeVCResult "obligation2" .fail (.sat []) md2,
     makeVCResult "obligation3" .unknown
   ]
   let sarif := vcResultsToSarif vcResults
@@ -207,7 +210,7 @@ def makeVCResult (label : String) (result : Boogie.Result) (md : MetaData Expres
 #eval
   let md := makeMetadata "/test/example.st" 15 7
   let vcResults : VCResults := #[
-    makeVCResult "test_assertion" .unsat md
+    makeVCResult "test_assertion" .pass .unsat md
   ]
   let sarif := vcResultsToSarif vcResults
   let jsonStr := Strata.Sarif.toJsonString sarif
@@ -224,7 +227,7 @@ def makeVCResult (label : String) (result : Boogie.Result) (md : MetaData Expres
 #guard_msgs in
 #eval
   let vcResults : VCResults := #[
-    makeVCResult "simple_test" .unsat
+    makeVCResult "simple_test" .pass
   ]
   let sarif := vcResultsToSarif vcResults
   let prettyJson := Strata.Sarif.toPrettyJsonString sarif
@@ -240,9 +243,9 @@ def makeVCResult (label : String) (result : Boogie.Result) (md : MetaData Expres
 -- Test SARIF output with counter-example
 #guard_msgs in
 #eval
-  let cex : CounterEx := [((BoogieIdent.unres "x", some .int), "42")]
+  let cex : SMTModel := [((BoogieIdent.unres "x", some .int), "42")]
   let md := makeMetadata "/test/cex.st" 25 3
-  let vcr := makeVCResult "cex_obligation" (.sat cex) md
+  let vcr := makeVCResult "cex_obligation" .fail (.sat cex) md
   let sarifResult := vcResultToSarifResult vcr
 
   if sarifResult.level = Level.error &&

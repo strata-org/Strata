@@ -15,27 +15,31 @@ This module provides Boogie-specific conversion functions for SARIF output.
 
 namespace Boogie.Sarif
 
-open Strata.Sarif
+open Strata.Sarif Strata.SMT
 
 /-! ## Boogie-Specific Conversion Functions -/
 
-/-- Convert Boogie Result to SARIF Level -/
-def resultToLevel : Boogie.Result → Level
-  | .unsat => .none      -- Verification passed
-  | .sat _ => .error     -- Verification failed (counterexample found)
-  | .unknown => .warning -- Solver could not determine
-  | .err _ => .error     -- Error during verification
+/-- Convert Boogie Outcome to SARIF Level -/
+def outcomeToLevel : Outcome → Level
+  | .pass => .none
+  | .fail => .error
+  | .unknown => .warning
+  | .implementationError _ => .error
 
-/-- Convert Boogie Result to a descriptive message -/
-def resultToMessage : Boogie.Result → String
-  | .unsat => "Verification succeeded"
-  | .sat cex =>
-    if cex.isEmpty then
-      "Verification failed"
-    else
-      s!"Verification failed with counterexample: {Std.format cex}"
+/-- Convert Boogie Outcome to a descriptive message -/
+def outcomeToMessage (outcome : Outcome) (smtResult : SMT.Result) : String :=
+  match outcome with
+  | .pass => "Verification succeeded"
+  | .fail =>
+    match smtResult with
+    | .sat m =>
+      if m.isEmpty then
+        "Verification failed"
+      else
+        s!"Verification failed with counterexample: {Std.format m}"
+    | _ => "Verification failed"
   | .unknown => "Verification result unknown (solver timeout or incomplete)"
-  | .err msg => s!"Verification error: {msg}"
+  | .implementationError msg => s!"Verification error: {msg}"
 
 /-- Extract location information from metadata -/
 def extractLocation (md : Imperative.MetaData Expression) : Option Location := do
@@ -50,8 +54,8 @@ def extractLocation (md : Imperative.MetaData Expression) : Option Location := d
 /-- Convert a VCResult to a SARIF Result -/
 def vcResultToSarifResult (vcr : VCResult) : Strata.Sarif.Result :=
   let ruleId := vcr.obligation.label
-  let level := resultToLevel vcr.result
-  let messageText := resultToMessage vcr.result
+  let level := outcomeToLevel vcr.result
+  let messageText := outcomeToMessage vcr.result vcr.smtResult
   let message : Strata.Sarif.Message := { text := messageText }
 
   let locations := match extractLocation vcr.obligation.metadata with
