@@ -160,55 +160,6 @@ def solverResult (vars : List (IdentT LMonoTy Visibility)) (output : IO.Process.
   | "unknown" =>  .ok .unknown
   | _     =>  .error s!"stderr:{output.stderr}\nsolver stdout: {output.stdout}\n"
 
-<<<<<<< HEAD
-open Imperative
-
-def formatPositionMetaData [BEq P.Ident] [ToFormat P.Expr]
-  (files: Map Strata.Uri Lean.FileMap)
-  (md : MetaData P): Option Format := do
-  let fileRangeElem ← md.findElem MetaData.fileRange
-  match fileRangeElem.value with
-  | .fileRange fileRange =>
-    let fileMap := (files.find? fileRange.file).get!
-    let startPos := fileMap.toPosition fileRange.range.start
-    let baseName := match fileRange.file with
-                    | .file path => (path.splitToList (· == '/')).getLast!
-    return f!"{baseName}({startPos.line}, {startPos.column})"
-  | .file2dRange file2dRange =>
-    let baseName := match file2dRange.file with
-                    | .file path => (path.splitToList (· == '/')).getLast!
-    return f!"{baseName}({file2dRange.start.line}, {file2dRange.ending.column})"
-  | _ => none
-
-structure VCResult where
-  obligation : Imperative.ProofObligation Expression
-  result : Result := .unknown
-  estate : EncoderState := EncoderState.init
-  verbose : Bool := true
-
-def VCResult.formatWithVerbose (r : VCResult) (verbose : Bool) : Format :=
-  f!"Obligation: {r.obligation.label}\n\
-     Result: {r.result.formatWithVerbose verbose}"
-
-instance : ToFormat VCResult where
-  format r := f!"Obligation: {r.obligation.label}\n\
-                 Result: {r.result.formatWithVerbose r.verbose}"
-                --  EState : {repr r.estate.terms}
-
-abbrev VCResults := Array VCResult
-
-def VCResults.format (rs : VCResults) : Format :=
-  let rsf := rs.map (fun r => f!"{Format.line}{r}")
-  Format.joinSep rsf.toList Format.line
-
-instance : ToFormat VCResults where
-  format := VCResults.format
-
-instance : ToString VCResults where
-  toString rs := toString (VCResults.format rs)
-
-=======
->>>>>>> origin/main
 def getSolverPrelude : String → SolverM Unit
 | "z3" => do
   -- These options are set by the standard Boogie implementation and are
@@ -503,7 +454,6 @@ def verify
   else
     panic! s!"DDM Transform Error: {repr errors}"
 
-<<<<<<< HEAD
 structure DiagnosticModel where
   fileRange : Strata.FileRange
   message : String
@@ -511,16 +461,16 @@ structure DiagnosticModel where
 
 def toDiagnosticModel (vcr : Boogie.VCResult) : Option DiagnosticModel := do
   match vcr.result with
-  | .unsat => none  -- Verification succeeded, no diagnostic
+  | .pass => none  -- Verification succeeded, no diagnostic
   | result =>
     let fileRangeElem ← vcr.obligation.metadata.findElem Imperative.MetaData.fileRange
     match fileRangeElem.value with
     | .fileRange fileRange =>
       let message := match result with
-        | .sat _ => "assertion does not hold"
-        | .unknown => "assertion verification result is unknown"
-        | .err msg => s!"verification error: {msg}"
-        | _ => "verification failed"
+        | .fail => "assertion does not hold"
+        | .unknown => "assertion could not be proved"
+        | .implementationError msg => s!"verification error: {msg}"
+        | _ => panic "impossible"
 
       some {
         -- Subtract headerOffset to account for program header we added
@@ -529,18 +479,12 @@ def toDiagnosticModel (vcr : Boogie.VCResult) : Option DiagnosticModel := do
       }
     | _ => none
 
-=======
----------------------------------------------------------------------
-
-/-- A diagnostic produced by analyzing a file -/
->>>>>>> origin/main
 structure Diagnostic where
   start : Lean.Position
   ending : Lean.Position
   message : String
   deriving Repr, BEq
 
-<<<<<<< HEAD
 def toDiagnostic (files: Map Strata.Uri Lean.FileMap) (vcr : Boogie.VCResult) : Option Diagnostic := do
   let modelOption := toDiagnosticModel vcr
   modelOption.map (fun dm =>
@@ -551,36 +495,6 @@ def toDiagnostic (files: Map Strata.Uri Lean.FileMap) (vcr : Boogie.VCResult) : 
         start := { line := startPos.line, column := startPos.column }
         ending := { line := endPos.line, column := endPos.column }
         message := dm.message
-=======
-def toDiagnostic (vcr : Boogie.VCResult) : Option Diagnostic := do
-  -- Only create a diagnostic if verification failed.
-  match vcr.result with
-  | .pass => none  -- Verification succeeded, no diagnostic
-  | _ =>
-    -- Extract file range from metadata
-    let fileRangeElem ← vcr.obligation.metadata.findElem Imperative.MetaData.fileRange
-    match fileRangeElem.value with
-    | .fileRange range =>
-      let message :=
-      match vcr.obligation.property with
-      | .assert =>
-          match vcr.smtResult with
-          | .sat _ => "assertion does not hold"
-          | .unknown => "assertion verification result is unknown"
-          | .err msg => s!"verification error: {msg}"
-          | _ => "verification failed"
-      | .cover =>
-          match vcr.smtResult with
-          | .unsat => "cover failed"
-          | .unknown => "cover status is unknown"
-          | .err msg => s!"verification error: {msg}"
-          | _ => "verification failed"
-      some {
-        -- Subtract headerOffset to account for program header we added
-        start := { line := range.start.line, column := range.start.column }
-        ending := { line := range.ending.line, column := range.ending.column }
-        message := message
->>>>>>> origin/main
       }
     )
 
