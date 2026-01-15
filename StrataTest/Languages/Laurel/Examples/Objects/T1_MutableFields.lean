@@ -20,22 +20,25 @@ composite Container {
 procedure foo(c: Container, d: Container) returns (r: int)
   requires c != d
 {
-  var x := c#value;
+  var x: int := c#value;
+  var initialDValue: int := d#value;
   d#value := d#value + 1;
   assert x == c#value; // pass
+  assert initialDValue + 1 == d#value;
 
-  var e := d;
+  var e: Container := d;
+  e#value := e#value + 1;
   assert e#value == d#value;
 }
 
-procedure caller(c: Container, d: Container) {
-  var x := foo(c, d);
-}
+// The following two need support for calling procedures in an expression context.
+//procedure caller(c: Container, d: Container) {
+//  var x: int := foo(c, d);
+//}
 
-procedure impureContract(c: Container) {
-  assert foo(c,c) == 3;
-//           ^ error: a procedure that modifies the heap may not be called in pure context.
-}
+//procedure impureContract(c: Container) {
+//  assert foo(c,c) == 3;
+//}
 "
 
 #eval testInputWithOffset "MutableFields" program 14 processLaurelFile

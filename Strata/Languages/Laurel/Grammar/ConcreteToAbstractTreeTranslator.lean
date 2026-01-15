@@ -159,8 +159,8 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
       let varType ← match typeArg with
         | .option _ (some (.op typeOp)) => match typeOp.name, typeOp.args with
           | q`Laurel.optionalType, #[typeArg0] => translateHighType typeArg0
-          | _, _ => pure .TInt
-        | _ => pure .TInt
+          | _, _ => TransM.error s!"Variable {name} requires explicit type"
+        | _ => TransM.error s!"Variable {name} requires explicit type"
       let value ← match assignArg with
         | .option _ (some (.op assignOp)) => match assignOp.args with
           | #[assignArg0] => translateStmtExpr assignArg0 >>= (pure ∘ some)
