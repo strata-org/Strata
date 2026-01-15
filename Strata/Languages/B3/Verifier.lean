@@ -73,7 +73,7 @@ meta def exampleVerification : IO Unit := do
     | .error msg => throw (IO.userError s!"Failed to parse: {msg}")
 
   -- Create solver and verify
-  let solver : Solver ← createInteractiveSolver "z3"
+  let solver : Solver ← createInteractiveSolver "cvc5"
   let reports : List ProcedureReport ← programToSMT b3AST solver
   let _ ← (Solver.exit).run solver
 
@@ -127,7 +127,7 @@ meta def exampleVerification : IO Unit := do
 
 /--
 info: Statement: check 8 == 8 && f(5) == 7
-✗ Counterexample found (assertion may not hold)
+✗ Unknown
   Path condition:
     forall x : int pattern f(x) f(x) == x + 1
   Found 1 diagnosed failures

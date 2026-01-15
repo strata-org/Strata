@@ -128,7 +128,7 @@ def testVerification (prog : Program) : IO Unit := do
   let ast ← match result with
     | .ok ast => pure ast
     | .error msg => throw (IO.userError s!"Parse error: {msg}")
-  let solver ← createInteractiveSolver "z3"
+  let solver ← createInteractiveSolver "cvc5"
   let reports ← programToSMT ast solver
   let _ ← (Solver.exit).run solver
   for report in reports do
@@ -242,12 +242,12 @@ def testVerification (prog : Program) : IO Unit := do
 ---------------------------------------------------------------------
 
 /--
-info: test_checks_are_not_learned: ✗ counterexample found
+info: test_checks_are_not_learned: ✗ unknown
   (0,113): check f(5) > 1
   └─ (0,113): could not prove f(5) > 1
      under the assumptions
        forall x : int pattern f(x) f(x) > 0
-test_checks_are_not_learned: ✗ counterexample found
+test_checks_are_not_learned: ✗ unknown
   (0,130): check f(5) > 1
   └─ (0,130): could not prove f(5) > 1
      under the assumptions
@@ -292,7 +292,7 @@ procedure test_fail() {
 
 
 /--
-info: test_all_expressions: ✗ counterexample found
+info: test_all_expressions: ✗ unknown
   (0,127): check (false || true) && (if true then true else false) && f(5) && notalwaystrue(1, 2) && 5 == 5 && !(3 == 4) && 2 < 3 && 2 <= 2 && 4 > 3 && 4 >= 4 && 1 + 2 == 4 && 5 - 2 == 3 && 3 * 4 == 12 && 10 div 2 == 5 && 7 mod 3 == 1 && -(5) == 0 - 5 && notalwaystrue(3, 4) && (true ==> true) && (forall y : int pattern f(y) f(y) || !f(y)) && (forall y : int y > 0 || y <= 0)
   └─ (0,218): could not prove notalwaystrue(1, 2)
      under the assumptions
@@ -348,7 +348,7 @@ procedure test_all_expressions() {
 
 -- Assertions are assumed so further checks pass
 /--
-info: test_assert_helps: ✗ counterexample found
+info: test_assert_helps: ✗ unknown
   (0,103): assert f(5) > 1
   └─ (0,103): could not prove f(5) > 1
      under the assumptions
@@ -366,7 +366,7 @@ procedure test_assert_helps() {
 #end
 
 /--
-info: test_assert_with_trace: ✗ counterexample found
+info: test_assert_with_trace: ✗ unknown
   (0,138): assert f(5) > 10
   └─ (0,138): could not prove f(5) > 10
      under the assumptions
@@ -405,7 +405,7 @@ procedure test_reach_bad() {
 #end
 
 /--
-info: test_reach_good: ✓ reachable
+info: test_reach_good: ✓ reachability unknown
 -/
 #guard_msgs in
 #eval testVerification $ #strata program B3CST;

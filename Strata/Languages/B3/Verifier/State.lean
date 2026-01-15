@@ -179,14 +179,10 @@ def closeVerificationState (state : B3VerificationState) : IO Unit := do
 
 /-- Create an interactive solver (Z3/CVC5) -/
 def createInteractiveSolver (solverPath : String := "z3") : IO Solver :=
-  Solver.spawn solverPath #["-smt2", "-in"]
-
-/-- Create a logging solver that executes SMT and prints commands to stdout -/
-def createLoggingSolver (solverPath : String := "z3") : IO Solver := do
-  let solver ← Solver.spawn solverPath #["-smt2", "-in"]
-  -- Wrap to log all SMT commands
-  -- TODO: Implement proper command logging wrapper
-  pure solver
+  let args := if solverPath.endsWith "cvc5" || solverPath == "cvc5"
+    then #["--lang", "smt2", "--incremental"]
+    else #["-smt2", "-in"]  -- Z3 flags
+  Solver.spawn solverPath args
 
 /-- Create a buffer solver for SMT command generation -/
 def createBufferSolver : IO (Solver × IO.Ref IO.FS.Stream.Buffer) := do
