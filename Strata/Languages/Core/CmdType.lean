@@ -34,7 +34,7 @@ def freeVars (e : (LExpr CoreLParams.mono)) : List CoreIdent :=
   (LExpr.freeVars e).map (fun (i, _) => i)
 
 /--
-Preprocess a user-facing type in Boogie amounts to converting a poly-type (i.e.,
+Preprocess a user-facing type in Core amounts to converting a poly-type (i.e.,
 `LTy`) to a mono-type (i.e., `LMonoTy`) via instantiation. We still return an
 `LTy`, with no bound variables.
 -/

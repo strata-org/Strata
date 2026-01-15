@@ -245,7 +245,7 @@ partial def translateLMonoTy (bindings : TransBindings) (arg : Arg) :
                     -- Type Declaration
                     let ty := tcons.toType
                     -- While the "unsafe" below looks scary, we should be alright as far as
-                    -- Boogie is concerned. See `Boogie.TypeConstructor`, where there is no
+                    -- Core is concerned. See `Core.TypeConstructor`, where there is no
                     -- facility for providing the type arguments.
                     pure ty.toMonoTypeUnsafe
                   | .type (.syn syn) _md =>
@@ -1438,7 +1438,7 @@ def translateGlobalVar (bindings : TransBindings) (op : Operation) :
 
 ---------------------------------------------------------------------
 
-partial def translateBoogieDecls (p : Program) (bindings : TransBindings) :
+partial def translateCoreDecls (p : Program) (bindings : TransBindings) :
   TransM Core.Decls := do
   let (decls, _) ← go 0 p.commands.size bindings p.commands
   return decls
@@ -1474,13 +1474,13 @@ partial def translateBoogieDecls (p : Program) (bindings : TransBindings) :
             translateFunction .Definition p bindings op
           | q`Core.command_fndecl =>
             translateFunction .Declaration p bindings op
-          | _ => TransM.error s!"translateBoogieDecls unimplemented for {repr op}"
+          | _ => TransM.error s!"translateCoreDecls unimplemented for {repr op}"
         pure ([decl], bindings)
     let (decls, bindings) ← go (count + 1) max bindings ops
     return (newDecls ++ decls, bindings)
 
 def translateProgram (p : Program) : TransM Core.Program := do
-  let decls ← translateBoogieDecls p {}
+  let decls ← translateCoreDecls p {}
   return { decls := decls }
 
 ---------------------------------------------------------------------

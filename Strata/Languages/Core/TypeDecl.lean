@@ -51,7 +51,7 @@ open Lambda.LTy.Syntax in
 #guard_msgs in
 #eval format $ TypeConstructor.toType { name := "Foo", numargs := 3 }
 
-/-! # Boogie Type Synonyms -/
+/-! # Strata Core Type Synonyms -/
 
 structure TypeSynonym where
   name     : String
@@ -81,7 +81,7 @@ def TypeSynonym.toLHSLTy (t : TypeSynonym) : LTy :=
 def TypeSynonym.toRHSLTy (t : TypeSynonym) : LTy :=
   .forAll t.typeArgs t.type
 
-/-! # Boogie Type Declarations -/
+/-! # Strata Core Type Declarations -/
 
 inductive TypeDecl where
   | con : TypeConstructor → TypeDecl

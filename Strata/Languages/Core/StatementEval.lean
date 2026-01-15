@@ -60,7 +60,7 @@ Evaluate a procedure call `lhs := pname(args)`.
 def Command.evalCall (E : Env) (old_var_subst : SubstMap)
   (lhs : List Expression.Ident) (pname : String) (args : List Expression.Expr) (md : Imperative.MetaData Expression) :
   Command × Env :=
-  -- Procedures in Boogie have a `modifies` clause that contain global variables that
+  -- Procedures in Strata Core have a `modifies` clause that contain global variables that
   -- can be modified by the procedure. Also, the procedure's post-conditions can
   -- contain `old <var>` expressions, which refer to the value of
   -- `<var>` before the execution of the procedure (i.e., pre-state). See also
@@ -375,7 +375,7 @@ def evalAuxGo (steps : Nat) (old_var_subst : SubstMap) (Ewn : EnvWithNext) (ss :
           | .loop _ _ _ _ _ =>
             panic! "Cannot evaluate `loop` statement. \
                     Please transform your program to eliminate loops before \
-                    calling Boogie.Statement.evalAux"
+                    calling Core.Statement.evalAux"
 
           | .goto l md => [{ Ewn with stk := Ewn.stk.appendToTop [.goto l md], nextLabel := (some l)}]
 

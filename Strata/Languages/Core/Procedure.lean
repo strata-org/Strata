@@ -44,7 +44,7 @@ instance : Repr (⟨⟨ExpressionMetadata, CoreIdent⟩, LMonoTy⟩ : LExprParam
 instance : Repr Expression.Expr :=
   show Repr Expression.Expr from inferInstance
 
-/-! # Boogie Procedures -/
+/-! # Strata Core Procedures -/
 
 structure Procedure.Header where
   name     : CoreIdent

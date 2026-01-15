@@ -68,8 +68,8 @@ def buildCallGraph (items : List (String × List String)) : CallGraph :=
   { callees := calleeMap, callers := callerMap }
 
 /--
-Extract function calls from an expression. We ignore Boogie's builtin functions
-(`Boogie.builtinFunctions`) here.
+Extract function calls from an expression. We ignore builtin functions
+(`Core.builtinFunctions`) here.
 -/
 def extractFunctionCallsFromExpr (expr : Expression.Expr) : List String :=
   match expr with

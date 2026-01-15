@@ -34,7 +34,7 @@ inductive CmdExt (P : PureExpr) where
          (md : MetaData P := .empty)
 
 /--
-We parameterize Boogie's Commands with Lambda dialect's expressions.
+We parameterize Strata Core's Commands with Lambda dialect's expressions.
 -/
 abbrev Command := CmdExt Expression
 

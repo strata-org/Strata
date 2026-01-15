@@ -54,7 +54,7 @@ The `Imperative` dialect also includes a verification condition generator (VCG) 
 
 The C_Simp dialect ([`Strata.Languages.C_Simp`](../Strata//Languages/C_Simp/)) is a vaguely C-like language intended to show how to model common programming language constructs in Strata. There are many examples in `C_Simp/Examples`. C_Simp builds on the `Imperative` dialect parameterized by the `Lambda` dialect.
 
-`C_Simp/Verify.lean` demonstrates verification via transformation to Strata Core. A loop elimination pass is first run to transform loops into the appropriate `assume` and `assert` commands, and then Boogie’s VCG, described above, is used to verify the program.
+`C_Simp/Verify.lean` demonstrates verification via transformation to Strata Core. A loop elimination pass is first run to transform loops into the appropriate `assume` and `assert` commands, and then Strata Core's VCG, described above, is used to verify the program.
 
 ### Laurel
 

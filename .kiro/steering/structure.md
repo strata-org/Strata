@@ -6,7 +6,7 @@ inclusion: always
 
 ## Overview
 
-Strata is a Lean4 verification framework using **dialects** as composable language building blocks. The primary target is the **Boogie dialect** for deductive program verification.
+Strata is a Lean4 verification framework using **dialects** as composable language building blocks. The primary target is the **Strata Core dialect** for deductive program verification.
 
 ## Repository Structure
 
@@ -210,7 +210,7 @@ Generated VCs saved in `vcs/*.smt2`
 
 Before starting any implementation task:
 
-1. **Identify the layer** you're working on (Lambda, Imperative, Boogie, Transform)
+1. **Identify the layer** you're working on (Lambda, Imperative, Strata Core, Transform)
 2. **Read the core files** for that layer from the Key Files Quick Reference table
 3. **Read related files** in the same directory to understand patterns and conventions
 4. **Check for similar implementations** in other dialects or transformations
@@ -237,6 +237,6 @@ Before starting any implementation task:
 
 - **Expressions:** Start with Lambda dialect (`Strata/DL/Lambda/`)
 - **Statements:** Build on Imperative dialect (`Strata/DL/Imperative/`)
-- **New languages:** Extend existing dialects, follow Boogie as reference
+- **New languages:** Extend existing dialects, follow Strata Core as reference
 - **Transformations:** Implement in `Strata/Transform/`, add tests in `StrataTest/Transform/`
 - **Testing:** Add examples in `Examples/`, unit tests and property-based tests in `StrataTest/`

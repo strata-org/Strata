@@ -558,7 +558,7 @@ def mkTriggerExpr (ts : List (List Expression.Expr)) : Expression.Expr :=
   groups.foldl (fun gs g => .app () (.app () addTriggerGroupOp g) gs) emptyTriggersOp
 
 /--
-Get all the built-in functions supported by Boogie.
+Get all the built-in functions supported by Strata Core.
 -/
 def builtinFunctions : Array String :=
   Factory.map (fun f => CoreIdent.toPretty f.name)
