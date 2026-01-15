@@ -120,8 +120,12 @@ def formatDeterminism : Determinism → Format
 
 def formatBody : Body → Format
   | .Transparent body => formatStmtExpr body
-  | .Opaque post impl =>
-      "opaque ensures " ++ formatStmtExpr post ++
+  | .Opaque post impl determ modif =>
+      "opaque " ++ formatDeterminism determ ++
+      (match modif with
+       | none => ""
+       | some m => " modifies " ++ formatStmtExpr m) ++
+      " ensures " ++ formatStmtExpr post ++
       match impl with
       | none => ""
       | some e => " := " ++ formatStmtExpr e
