@@ -225,9 +225,10 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
     | TransM.error s!"parseProcedure expects operation"
 
   match op.name, op.args with
-  | q`Laurel.procedure, #[arg0, arg1, returnParamsArg, arg3] =>
-    let name ← translateIdent arg0
-    let parameters ← translateParameters arg1
+  | q`Laurel.topLevelProcedure, #[nameArg, paramArg, returnParamsArg,
+      requiresArg, ensuresArg, bodyArg] =>
+    let name ← translateIdent nameArg
+    let parameters ← translateParameters paramArg
     -- returnParamsArg is ReturnParameters category, need to unwrap returnParameters operation
     let returnParameters ← match returnParamsArg with
       | .option _ (some (.op returnOp)) => match returnOp.name, returnOp.args with
@@ -235,7 +236,7 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
         | _, _ => TransM.error s!"Expected returnParameters operation, got {repr returnOp.name}"
       | .option _ none => pure []
       | _ => TransM.error s!"Expected returnParameters operation, got {repr returnParamsArg}"
-    let body ← translateCommand arg3
+    let body ← translateCommand bodyArg
     return {
       name := name
       inputs := parameters
@@ -246,8 +247,8 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
       modifies := none
       body := .Transparent body
     }
-  | q`Laurel.procedure, args =>
-    TransM.error s!"parseProcedure expects 4 arguments, got {args.size}"
+  | q`Laurel.topLevelProcedure, args =>
+    TransM.error s!"parseProcedure expects 7 arguments, got {args.size}"
   | _, _ =>
     TransM.error s!"parseProcedure expects procedure, got {repr op.name}"
 
@@ -272,7 +273,7 @@ def parseProgram (prog : Strata.Program) : TransM Laurel.Program := do
 
   let mut procedures : List Procedure := []
   for op in commands do
-    if op.name == q`Laurel.procedure then
+    if op.name == q`Laurel.topLevelProcedure then
       let proc ← parseProcedure (.op op)
       procedures := procedures ++ [proc]
     else

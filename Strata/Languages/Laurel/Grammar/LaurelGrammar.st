@@ -69,7 +69,10 @@ category OptionalReturnType;
 op optionalReturnType(returnType: LaurelType): OptionalReturnType => ":" returnType;
 
 category OptionalRequires;
-op optionalRequires(cond: StmtExpr): OptionalRequires => "requires" cond;
+op optionalRequires(cond: StmtExpr): OptionalRequires => "requires" cond:0;
+
+category OptionalEnsures;
+op optionalEnsures(cond: StmtExpr): OptionalEnsures => "ensures" cond:0;
 
 category ReturnParameters;
 op returnParameters(parameters: CommaSepBy Parameter): ReturnParameters => "returns" "(" parameters ")";
@@ -79,8 +82,9 @@ op procedure (name : Ident, parameters: CommaSepBy Parameter,
   returnType: Option OptionalReturnType,
   returnParameters: Option ReturnParameters,
   requires: Option OptionalRequires,
+  ensures: Option OptionalEnsures,
   body : StmtExpr) : Procedure =>
-  "procedure " name "(" parameters ")" returnType returnParameters requires body:0;
+  "procedure " name "(" parameters ")" returnType returnParameters requires ensures body:0;
 
 category TopLevel;
 op topLevelComposite(composite: Composite): TopLevel => composite;

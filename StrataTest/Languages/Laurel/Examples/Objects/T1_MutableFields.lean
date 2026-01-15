@@ -17,7 +17,7 @@ def program := r"
   // var value: int // var indicates mutable field
 //}
 
-procedure foo(c: Container, d: Container) returns int
+procedure foo(c: Container, d: Container) returns (r: int)
   requires c != d
 {
   var x := c.value;
@@ -29,12 +29,13 @@ procedure foo(c: Container, d: Container) returns int
 }
 
 procedure caller(c: Container, d: Container) {
-  var x = foo(c, d);
+  var x := foo(c, d);
 }
 
-procedure impureContract(c: Container)
-  ensures foo(c, c)
+procedure impureContract(c: Container) {
+  assert foo(c,c) == 3;
 //           ^ error: a procedure that modifies the heap may not be called in pure context.
+}
 "
 
 #eval testInputWithOffset "MutableFields" program 14 processLaurelFile
