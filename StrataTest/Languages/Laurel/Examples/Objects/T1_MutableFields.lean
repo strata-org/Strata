@@ -13,9 +13,9 @@ namespace Strata
 namespace Laurel
 
 def program := r"
-//composite Container {
-  // var value: int // var indicates mutable field
-//}
+composite Container {
+  var value: int // var indicates mutable field
+}
 
 procedure foo(c: Container, d: Container) returns (r: int)
   requires c != d

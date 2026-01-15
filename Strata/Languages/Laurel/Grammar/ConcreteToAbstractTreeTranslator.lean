@@ -198,6 +198,10 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
           | _, _ => pure none
         | _ => pure none
       return .IfThenElse cond thenBranch elseBranch
+    | q`Laurel.fieldAccess, #[objArg, fieldArg] =>
+      let obj ← translateStmtExpr objArg
+      let field ← translateIdent fieldArg
+      return .FieldSelect obj field
     | _, #[arg0, arg1] => match getBinaryOp? op.name with
       | some primOp =>
         let lhs ← translateStmtExpr arg0

@@ -34,6 +34,7 @@ def formatHighType : HighType → Format
   | .TBool => "bool"
   | .TInt => "int"
   | .TFloat64 => "float64"
+  | .THeap => "Heap"
   | .UserDefined name => Format.text name
   | .Applied base args =>
       Format.text "(" ++ formatHighType base ++ " " ++
