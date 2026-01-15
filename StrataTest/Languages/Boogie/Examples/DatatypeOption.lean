@@ -25,7 +25,7 @@ namespace Strata.DatatypeOptionTest
 
 def optionTesterPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 // Define Option datatype with None() and Some(val: int) constructors
 datatype Option () { None(), Some(val: int) };
@@ -93,7 +93,7 @@ Result: ✅ pass
 
 def optionHavocPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype Option () { None(), Some(val: int) };
 
@@ -139,7 +139,7 @@ Result: ✅ pass
 
 def optionExhaustivePgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype Option () { None(), Some(val: int) };
 
@@ -182,7 +182,7 @@ Result: ✅ pass
 
 def optionMutualExclusionPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype Option () { None(), Some(val: int) };
 
@@ -228,7 +228,7 @@ Result: ✅ pass
 
 def optionEqualityPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype Option () { None(), Some(val: int) };
 
@@ -283,7 +283,7 @@ Result: ✅ pass
 
 def optionInequalityPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype Option () { None(), Some(val: int) };
 
@@ -327,7 +327,7 @@ Result: ✅ pass
 
 def optionDestructorPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype Option () { None(), Some(val: int) };
 

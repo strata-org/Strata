@@ -11,7 +11,7 @@ namespace Strata
 
 def simpleProcPgm : Program :=
 #strata
-program Boogie;
+program Core;
 var g : bool;
 procedure Test(x : bool) returns (y : bool)
 spec {

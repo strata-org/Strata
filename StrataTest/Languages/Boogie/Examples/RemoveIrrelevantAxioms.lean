@@ -11,7 +11,7 @@ namespace Strata
 
 def irrelevantAxiomsTestPgm : Strata.Program :=
 #strata
-program Boogie;
+program Core;
 type StrataHeap;
 type StrataRef;
 type StrataField (t: Type);

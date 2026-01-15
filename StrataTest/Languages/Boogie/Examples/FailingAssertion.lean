@@ -12,7 +12,7 @@ open Strata
 
 private def failing :=
 #strata
-program Boogie;
+program Core;
 
 type MapII := Map int int;
 
@@ -92,7 +92,7 @@ Result: ❌ fail
 
 private def failingThrice :=
 #strata
-program Boogie;
+program Core;
 
 procedure P(x : int) returns ()
 spec {

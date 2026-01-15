@@ -11,7 +11,7 @@ namespace Strata
 
 def procIfPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 procedure F(n : int) returns (r : int)
 spec {

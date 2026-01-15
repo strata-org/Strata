@@ -12,7 +12,7 @@ namespace Strata
 
 private def pgm :=
 #strata
-program Boogie;
+program Core;
 
 type set := Map int bool;
 

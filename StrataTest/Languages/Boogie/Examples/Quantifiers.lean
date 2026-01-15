@@ -11,7 +11,7 @@ namespace Strata
 
 def quantPgm :=
 #strata
-program Boogie;
+program Core;
 procedure Test(x : int) returns (r : int)
 spec {
   ensures [good]: (forall y : int :: exists z : int :: r + (z + y) == y + (z + r));
@@ -25,7 +25,7 @@ spec {
 
 def triggerPgm :=
 #strata
-program Boogie;
+program Core;
 
 function f(x : int): int;
 function g(x : int, y : int): int;

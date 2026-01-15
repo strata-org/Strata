@@ -16,7 +16,7 @@ namespace Strata
 
 def strPgm :=
 #strata
-program Boogie;
+program Core;
 
 procedure main() returns () {
 

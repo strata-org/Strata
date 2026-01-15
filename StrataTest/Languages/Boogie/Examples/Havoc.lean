@@ -11,7 +11,7 @@ namespace Strata
 
 def havocPgm : Program :=
 #strata
-program Boogie;
+program Core;
 procedure S() returns ()
 {
   var x : int;

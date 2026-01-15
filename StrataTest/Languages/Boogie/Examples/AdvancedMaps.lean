@@ -12,7 +12,7 @@ open Strata
 
 private def mapPgm :=
 #strata
-program Boogie;
+program Core;
 
 type MapII := Map int int;
 type MapIMapII := Map int MapII;

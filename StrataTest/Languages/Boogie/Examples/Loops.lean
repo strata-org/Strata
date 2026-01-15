@@ -11,7 +11,7 @@ namespace Strata
 
 def gaussPgm :=
 #strata
-program Boogie;
+program Core;
 
 procedure sum(n : int) returns (s : int)
 spec {
@@ -88,7 +88,7 @@ Result: ✅ pass
 
 def nestedPgm :=
 #strata
-program Boogie;
+program Core;
 
 const top : int;
 axiom [top100]: top == 100;

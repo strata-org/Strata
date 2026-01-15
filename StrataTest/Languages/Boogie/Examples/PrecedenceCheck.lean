@@ -11,7 +11,7 @@ namespace Strata
 
 def precPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 function foo(a : bool, b : bool, c : bool, d : bool) : bool {
   (((!a) || b) && ((!c) || d))

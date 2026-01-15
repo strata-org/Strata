@@ -11,7 +11,7 @@ namespace Strata
 
 def unreachableAssertPgm :=
 #strata
-program Boogie;
+program Core;
 procedure R() returns ()
 {
   var x : int, y : int;

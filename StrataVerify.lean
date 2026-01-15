@@ -49,7 +49,7 @@ def main (args : List String) : IO UInt32 := do
     let text ← Strata.Util.readInputSource file
     let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
     let dctx := Elab.LoadedDialects.builtin
-    let dctx := dctx.addDialect! Boogie
+    let dctx := dctx.addDialect! Core
     let dctx := dctx.addDialect! C_Simp
     let leanEnv ← Lean.mkEmptyEnvironment 0
     match Strata.Elab.elabProgram dctx leanEnv inputCtx with

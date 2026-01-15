@@ -11,7 +11,7 @@ namespace Strata
 
 def assertionNames :=
 #strata
-program Boogie;
+program Core;
 procedure Test(x : int) returns ()
 spec {
   requires x == 1;

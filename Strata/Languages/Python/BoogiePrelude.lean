@@ -13,7 +13,7 @@ namespace Strata
 
 def boogiePrelude :=
 #strata
-program Boogie;
+program Core;
 
 datatype None () {
   None_none()

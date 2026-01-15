@@ -12,7 +12,7 @@ namespace Strata
 
 def gotoPgm : Program :=
 #strata
-program Boogie;
+program Core;
 var g : bool;
 procedure Test1(x : bool) returns (y : bool)
 {

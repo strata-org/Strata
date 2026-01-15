@@ -1,5 +1,5 @@
-program Boogie;
-// lake exe StrataVerify Strata/Languages/Boogie/Examples/HeapReasoning.boogie.st 
+program Core;
+// lake exe StrataVerify Strata/Languages/Boogie/Examples/HeapReasoning.boogie.st
 
 // Prelude begin --------------------------------------------------
 type Ref;
@@ -76,8 +76,8 @@ spec {
   requires allocationTime(initialNext) < tickingClock;
   requires isContainer(r);
 
-  free ensures (forall o: Ref :: 
-    { newHeap[o] } 
+  free ensures (forall o: Ref ::
+    { newHeap[o] }
     (o != null && allocationTime(o) >= 0 && allocationTime(o) < old(tickingClock))
        ==> (newHeap[o] == heap[o] || o == r));
 
@@ -132,8 +132,8 @@ spec {
 
   ensures tickingClock >= old(tickingClock);
 
-  free ensures (forall o: Ref :: 
-    { newHeap[o] } 
+  free ensures (forall o: Ref ::
+    { newHeap[o] }
     (o != null && allocationTime(o) >= 0 && allocationTime(o) < old(tickingClock))
        ==> (newHeap[o] == heap[o] || o == ref1));
 
@@ -197,8 +197,8 @@ spec {
   free requires tickingClock >= 0;
   ensures tickingClock >= old(tickingClock);
 
-  free ensures (forall o: Ref :: 
-    { newHeap[o] } 
+  free ensures (forall o: Ref ::
+    { newHeap[o] }
     (o != null && allocationTime(o) >= 0 && allocationTime(o) < old(tickingClock))
        ==> (newHeap[o] == heap[o]));
 }

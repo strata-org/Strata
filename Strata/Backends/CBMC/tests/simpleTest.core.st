@@ -1,4 +1,4 @@
-program Boogie;
+program Core;
 
 procedure simpleTest(x : int, y : int) returns (ret : int)
 spec {

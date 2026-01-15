@@ -13,7 +13,7 @@ namespace Strata
 
 def axiomPgm1 :=
 #strata
-program Boogie;
+program Core;
 
 const x : int;
 axiom [a1]: x == 5;
@@ -111,7 +111,7 @@ Result: ✅ pass
 
 def axiomPgm2 :=
 #strata
-program Boogie;
+program Core;
 
 function f(x : int) : int;
 function g(x : int) : int;

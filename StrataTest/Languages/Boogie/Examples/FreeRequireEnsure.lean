@@ -11,7 +11,7 @@ namespace Strata
 
 def freeReqEnsPgm : Program :=
 #strata
-program Boogie;
+program Core;
 var g : int;
 procedure Proc() returns ()
 spec {

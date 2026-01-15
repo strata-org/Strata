@@ -12,7 +12,7 @@ set_option maxRecDepth 10000
 
 def msPgm : Program :=
 #strata
-program Boogie;
+program Core;
 // Running example from Mutual Summaries paper
 //
 // int g;

@@ -1,4 +1,4 @@
-program Boogie;
+program Core;
 //
 //  Copyright Strata Contributors
 //

@@ -11,7 +11,7 @@ namespace Strata
 
 def QuantTypeAliases :=
 #strata
-program Boogie;
+program Core;
 
 type Ref;
 type Field;

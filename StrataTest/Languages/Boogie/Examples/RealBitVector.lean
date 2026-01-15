@@ -11,7 +11,7 @@ namespace Strata
 
 def realPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 const x : real;
 const y : real;
@@ -109,7 +109,7 @@ Result: ❌ fail
 
 def bvPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 const x : bv8;
 const y : bv8;
@@ -197,7 +197,7 @@ Result: ✅ pass
 
 def bvMoreOpsPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 procedure P(x: bv8, y: bv8, z: bv8) returns () {
   assert [add_comm]: x + y == y + x;

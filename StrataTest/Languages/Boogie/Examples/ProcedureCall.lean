@@ -12,7 +12,7 @@ namespace Strata
 
 def globalCounterPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 var counter : int;
 

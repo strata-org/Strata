@@ -25,7 +25,7 @@ section CallElimExamples
 
 def CallElimTest1 :=
 #strata
-program Boogie;
+program Core;
 var i : bool;
 var j : bool;
 var k : bool;
@@ -46,7 +46,7 @@ procedure h() returns () spec {
 
 def CallElimTest1Ans :=
 #strata
-program Boogie;
+program Core;
 var i : bool;
 var j : bool;
 var k : bool;
@@ -73,7 +73,7 @@ procedure h() returns () spec {
 
 def CallElimTest2 :=
 #strata
-program Boogie;
+program Core;
 var i : bool;
 var j : bool;
 var k : bool;
@@ -95,7 +95,7 @@ procedure h() returns () spec {
 
 def CallElimTest2Ans :=
 #strata
-program Boogie;
+program Core;
 var i : bool;
 var j : bool;
 var k : bool;
@@ -126,7 +126,7 @@ procedure h() returns () spec {
 
 def CallElimTest3 :=
 #strata
-program Boogie;
+program Core;
 var i : bool;
 var j : bool;
 var k : bool;
@@ -148,7 +148,7 @@ procedure h() returns () spec {
 
 def CallElimTest3Ans :=
 #strata
-program Boogie;
+program Core;
 var i : bool;
 var j : bool;
 var k : bool;

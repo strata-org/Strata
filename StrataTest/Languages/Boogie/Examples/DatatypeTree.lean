@@ -25,7 +25,7 @@ namespace Strata.DatatypeTreeTest
 
 def treeTesterPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 // Define Tree datatype with Leaf(val: int) and Node(left: Tree, right: Tree) constructors
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
@@ -93,7 +93,7 @@ Result: ✅ pass
 
 def treeHavocPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
@@ -139,7 +139,7 @@ Result: ✅ pass
 
 def treeExhaustivePgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
@@ -182,7 +182,7 @@ Result: ✅ pass
 
 def treeMutualExclusionPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
@@ -228,7 +228,7 @@ Result: ✅ pass
 
 def treeEqualityPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
@@ -283,7 +283,7 @@ Result: ✅ pass
 
 def treeInequalityPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
@@ -327,7 +327,7 @@ Result: ✅ pass
 
 def treeDestructorPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
@@ -408,7 +408,7 @@ Result: ✅ pass
 
 def treeNestedPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
@@ -470,7 +470,7 @@ Result: ✅ pass
 
 def treeDestructorHavocPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 
@@ -520,7 +520,7 @@ Result: ✅ pass
 
 def treeDifferentValuesPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype Tree () { Leaf(val: int), Node(left: Tree, right: Tree) };
 

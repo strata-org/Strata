@@ -11,7 +11,7 @@ namespace Strata
 
 private def testPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 procedure min(n : int, m : int) returns (k : int)
 spec {

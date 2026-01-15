@@ -17,7 +17,7 @@ error: Expression has type FooAlias (Foo int int) when Foo bool int expected.
 #guard_msgs in
 def badTypeAlias : Program :=
 #strata
-program Boogie;
+program Core;
 type Foo (a : Type, b : Type);
 type FooAlias (a : Type) := Foo bool bool;
 
@@ -36,7 +36,7 @@ procedure P () returns () {
 
 def goodTypeAlias : Program :=
 #strata
-program Boogie;
+program Core;
 type Foo (a : Type, b : Type);
 type FooAlias (a : Type) := Foo int bool;
 type FooAlias2 (a : Type) := FooAlias (FooAlias bool);
@@ -102,7 +102,7 @@ Result: ✅ pass
 
 def funcAndTypeAliasesPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 type MapInt := Map int int;
 

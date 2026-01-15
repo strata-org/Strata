@@ -11,7 +11,7 @@ namespace Strata
 
 def regexPgm1 :=
 #strata
-program Boogie;
+program Core;
 
 function cannot_end_with_period () : regex {
   re.comp(re.concat (re.* (re.all()), str.to.re(".")))
@@ -178,7 +178,7 @@ Result: ✅ pass
 
 def regexPgm2 :=
 #strata
-program Boogie;
+program Core;
 
 function bad_re_loop (n : int) : regex {
     re.loop(re.range("a", "z"), 1, n)
@@ -279,7 +279,7 @@ Original expression: (((~Re.Loop ((~Re.Range #a) #z)) #1) %0)
 
 def regexPgm3 :=
 #strata
-program Boogie;
+program Core;
 
 procedure main(n : int) returns () {
 

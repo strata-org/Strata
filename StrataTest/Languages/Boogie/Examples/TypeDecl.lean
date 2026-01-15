@@ -11,7 +11,7 @@ namespace Strata
 
 private def typeDeclPgm1 : Program :=
 #strata
-program Boogie;
+program Core;
 type Foo (a : Type, b : Type);
 
 const fooConst : Foo int bool;
@@ -57,7 +57,7 @@ error: Expression has type Foo bool int when Foo bool bool expected.
 #guard_msgs in
 def typeDeclPgm2 :=
 #strata
-program Boogie;
+program Core;
 
 type Foo (a : Type, b : Type);
 
@@ -72,7 +72,7 @@ procedure P () returns () {
 
 def typeDeclPgm3 : Program :=
 #strata
-program Boogie;
+program Core;
 type Foo (a : Type, b : Type);
 
 const fooVal : Foo int bool;
@@ -119,7 +119,7 @@ Result: ✅ pass
 
 def typeDeclPgm4 :=
 #strata
-program Boogie;
+program Core;
 type int := bool;
 #end
 

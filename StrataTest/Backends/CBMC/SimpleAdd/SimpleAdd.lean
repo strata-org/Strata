@@ -13,7 +13,7 @@ namespace Strata
 
 protected def simpleAdd : Program :=
 #strata
-program Boogie;
+program Core;
 procedure simpleAdd (x : bv32, y : bv32) returns () {
 
   assume (x < bv{32}(0xFFFF0000));

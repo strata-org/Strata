@@ -12,7 +12,7 @@ namespace Strata
 
 def funcPgm : Program :=
 #strata
-program Boogie;
+program Core;
 const fooConst : int;
 inline function fooTest() : int { fooConst }
 

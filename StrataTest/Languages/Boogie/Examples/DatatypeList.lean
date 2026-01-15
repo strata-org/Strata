@@ -26,7 +26,7 @@ namespace Strata.DatatypeListTest
 
 def listTesterPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 // Define List datatype with Nil() and Cons(head: int, tail: List) constructors
 // Note: This is a recursive datatype - tail has type List
@@ -95,7 +95,7 @@ Result: ✅ pass
 
 def listHavocPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype List () { Nil(), Cons(head: int, tail: List) };
 
@@ -141,7 +141,7 @@ Result: ✅ pass
 
 def listExhaustivePgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype List () { Nil(), Cons(head: int, tail: List) };
 
@@ -184,7 +184,7 @@ Result: ✅ pass
 
 def listMutualExclusionPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype List () { Nil(), Cons(head: int, tail: List) };
 
@@ -230,7 +230,7 @@ Result: ✅ pass
 
 def listEqualityPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype List () { Nil(), Cons(head: int, tail: List) };
 
@@ -285,7 +285,7 @@ Result: ✅ pass
 
 def listInequalityPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype List () { Nil(), Cons(head: int, tail: List) };
 
@@ -329,7 +329,7 @@ Result: ✅ pass
 
 def listDestructorPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype List () { Nil(), Cons(head: int, tail: List) };
 
@@ -402,7 +402,7 @@ Result: ✅ pass
 
 def listNestedPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype List () { Nil(), Cons(head: int, tail: List) };
 
@@ -448,7 +448,7 @@ Result: ✅ pass
 
 def listDestructorHavocPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype List () { Nil(), Cons(head: int, tail: List) };
 
@@ -498,7 +498,7 @@ Result: ✅ pass
 
 def listDifferentValuesPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype List () { Nil(), Cons(head: int, tail: List) };
 

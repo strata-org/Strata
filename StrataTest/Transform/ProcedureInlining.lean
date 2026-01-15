@@ -252,7 +252,7 @@ def checkInlining (prog : Boogie.Program) (progAns : Boogie.Program)
 
 def Test1 :=
 #strata
-program Boogie;
+program Core;
 procedure f(x : bool) returns (y : bool) {
   y := !x;
 };
@@ -266,7 +266,7 @@ procedure h() returns () {
 
 def Test1Ans :=
 #strata
-program Boogie;
+program Core;
 procedure f(x : bool) returns (y : bool) {
   y := !x;
 };
@@ -291,7 +291,7 @@ procedure h() returns () {
 
 def Test2 :=
 #strata
-program Boogie;
+program Core;
 procedure f(x : bool) returns (y : bool) {
   if (x) {
     goto end;
@@ -310,7 +310,7 @@ procedure h() returns () {
 
 def Test2Ans :=
 #strata
-program Boogie;
+program Core;
 procedure f(x : bool) returns (y : bool) {
   if (x) {
     goto end;
@@ -348,7 +348,7 @@ procedure h() returns () {
 
 def Test3 :=
 #strata
-program Boogie;
+program Core;
 procedure f(x : int) returns (y : int) {
   y := x;
 };
@@ -365,7 +365,7 @@ procedure g() returns () {
 
 def Test3Ans :=
 #strata
-program Boogie;
+program Core;
 procedure f(x : int) returns (y : int) {
   y := x;
 };

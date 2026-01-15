@@ -13,7 +13,7 @@ namespace Strata
 -- Example Boogie program with axioms
 def examplePgm :=
 #strata
-program Boogie;
+program Core;
 type k;
 type v;
 axiom [updateSelect]: forall m: Map k v, kk: k, vv: v :: m[kk := vv][kk] == vv;
@@ -84,7 +84,7 @@ def extractAxiomsWithFreeTypeVars (pgm: Program) (typeArgs: List String): (List 
   axioms.map (fun a => replaceTypesByFTV a typeArgs)
 
 /--
-info: program Boogie;
+info: program Core;
 type k;
 type v;
 axiom [updateSelect]:forall(((m):(Map v k)),((kk):(k))),((vv):(v))::((m)[kk:=vv])[kk]==vv;

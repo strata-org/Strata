@@ -24,7 +24,7 @@ namespace Strata.DatatypeEnumTest
 
 def enumPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 // Define an enum-style datatype with no fields
 datatype Color () { Red(), Green(), Blue() };
@@ -79,7 +79,7 @@ Result: ✅ pass
 
 def enumHavocPgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype Color () { Red(), Green(), Blue() };
 
@@ -132,7 +132,7 @@ Result: ✅ pass
 
 def enumExhaustivePgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 datatype Color () { Red(), Green(), Blue() };
 

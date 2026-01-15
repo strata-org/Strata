@@ -11,7 +11,7 @@ namespace Strata
 
 private def pgm : Program :=
 #strata
-program Boogie;
+program Core;
 
 procedure bitVecParseTest() returns () {
 

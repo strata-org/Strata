@@ -11,7 +11,7 @@ namespace Strata
 
 def oldExprPgm : Program :=
 #strata
-program Boogie;
+program Core;
 var g : bool;
 var g2 : bool;
 

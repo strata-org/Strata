@@ -11,7 +11,7 @@ namespace Strata
 
 def coverPgm1 :=
 #strata
-program Boogie;
+program Core;
 procedure Test() returns ()
 {
   var x : int;
@@ -65,7 +65,7 @@ Result: ✅ pass
 
 def coverPgm2 :=
 #strata
-program Boogie;
+program Core;
 procedure Test(x : int) returns ()
 spec {
   requires x > 1;

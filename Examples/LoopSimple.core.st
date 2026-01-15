@@ -1,4 +1,4 @@
-program Boogie;
+program Core;
 
 procedure loopSimple (n: int) returns (r: int)
 spec {

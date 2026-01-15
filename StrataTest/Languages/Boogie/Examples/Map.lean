@@ -11,7 +11,7 @@ open Strata
 ---------------------------------------------------------------------
 private def mapPgm :=
 #strata
-program Boogie;
+program Core;
 
 const a : Map int bool;
 

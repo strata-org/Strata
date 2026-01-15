@@ -11,7 +11,7 @@ namespace Strata
 
 def advQuantPgm :=
 #strata
-program Boogie;
+program Core;
 axiom [mapAllValues0]: forall m: (Map int int), k: int :: m[k] == 0;
 procedure Update(mArg: Map int int, kArg: int) returns (res: int)
 spec {

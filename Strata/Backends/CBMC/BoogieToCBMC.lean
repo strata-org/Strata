@@ -19,7 +19,7 @@ namespace Boogie
 -- Our test program
 def SimpleTestEnv :=
 #strata
-program Boogie;
+program Core;
 
 procedure simpleTest(x : int, y : int) returns (ret : int)
 spec {

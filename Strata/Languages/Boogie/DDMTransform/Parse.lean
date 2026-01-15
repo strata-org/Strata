@@ -15,12 +15,12 @@ namespace Strata
 ---------------------------------------------------------------------
 ---------------------------------------------------------------------
 
-/- DDM support for parsing and pretty-printing Boogie -/
+/- DDM support for parsing and pretty-printing Strata Core -/
 
 #dialect
-dialect Boogie;
+dialect Core;
 
-// Declare Boogie-specific metadata for datatype declarations
+// Declare Strata Core-specific metadata for datatype declarations
 metadata declareDatatype (name : Ident, typeParams : Ident,
 constructors : Ident, testerTemplate : FunctionTemplate,
 accessorTemplate : FunctionTemplate);
@@ -244,7 +244,7 @@ op command_procedure (name : Ident,
 // type Array a;
 // instead of
 // type Array (a : Type);
-// where the former is what's needed for Boogie.
+// where the former is what Boogie does.
 @[declareType(name, some args)]
 op command_typedecl (name : Ident, args : Option Bindings) : Command =>
   "type " name args ";\n";
@@ -325,11 +325,11 @@ op command_datatype (name : Ident,
 
 #end
 
-namespace BoogieDDM
+namespace CoreDDM
 
 --#strata_gen Boogie
 
-end BoogieDDM
+end CoreDDM
 
 ---------------------------------------------------------------------
 
