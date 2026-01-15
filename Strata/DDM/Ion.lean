@@ -183,7 +183,7 @@ private protected def asList (v : Ion SymbolId) : FromIonM { a : Array (Ion Symb
   match v with
   | .mk (.list args) =>
     return .mk args (by simp; omega)
-  | x => throw s!"Expected list"
+  | _ => throw s!"Expected list"
 
 private protected def asSexp (name : String) (v : Ion SymbolId) : FromIonM ({ a : Array (Ion SymbolId) // a.size > 0 ∧ sizeOf a < sizeOf v}) :=
   match v with
@@ -1455,7 +1455,7 @@ def filesFromIon (dialects : DialectMap) (bytes : ByteArray) : Except String (Li
     match Ion.deserialize bytes with
     | .error (off, msg) => throw s!"Error reading Ion: {msg} (offset = {off})"
     | .ok a =>
-      if p : a.size = 1 then
+      if a.size = 1 then
         pure a[0]
       else
         throw s!"Expected single Ion value"
