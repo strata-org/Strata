@@ -284,7 +284,7 @@ private def deserializeValue {α} (bs : ByteArray) (act : Ion SymbolId → FromI
       throw s!"Error reading Ion: {msg} (offset = {off})"
     | .ok a => pure a
   let .isTrue p := inferInstanceAs (Decidable (a.size = 1))
-    | throw s!"Expected single Ion value, but got {repr a}."
+    | throw s!"Expected single Ion value, but got {a.size} values."
   let entries := a[0]
   let .isTrue p := inferInstanceAs (Decidable (entries.size = 2))
     | throw s!"Expected symbol table and value in dialect."
