@@ -212,7 +212,7 @@ public class StrataGenerator : ReadOnlyVisitor {
     }
 
     private void EmitHeader() {
-        WriteLine("program Boogie;");
+        WriteLine("program Core;");
         WriteLine("type StrataHeap;");
         WriteLine("type StrataRef;");
         WriteLine("type StrataField (t: Type);");

@@ -1,9 +1,9 @@
 Successfully parsed.
-BooleanQuantification.boogie.st(22, 4) [assert_0]: ✅ pass
-BooleanQuantification.boogie.st(31, 4) [assert_1]: ✅ pass
-BooleanQuantification.boogie.st(40, 4) [assert_2]: ✅ pass
-BooleanQuantification.boogie.st(41, 4) [assert_3]: 🟡 unknown
-BooleanQuantification.boogie.st(50, 4) [assert_4]: ✅ pass
-BooleanQuantification.boogie.st(51, 4) [assert_5]: ✅ pass
-BooleanQuantification.boogie.st(52, 4) [assert_6]: ❌ fail
+BooleanQuantification.core.st(22, 4) [assert_0]: ✅ pass
+BooleanQuantification.core.st(31, 4) [assert_1]: ✅ pass
+BooleanQuantification.core.st(40, 4) [assert_2]: ✅ pass
+BooleanQuantification.core.st(41, 4) [assert_3]: 🟡 unknown
+BooleanQuantification.core.st(50, 4) [assert_4]: ✅ pass
+BooleanQuantification.core.st(51, 4) [assert_5]: ✅ pass
+BooleanQuantification.core.st(52, 4) [assert_6]: ❌ fail
 Finished with 5 goals passed, 2 failed.

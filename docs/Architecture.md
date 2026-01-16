@@ -28,28 +28,15 @@ In the current implementation of Strata, composition of dialects can occur in tw
 
 Transformations (located in [`Strata.Transform`](../Strata/Transform/)) are a central part of the Strata infrastructure. For some dialects, semantics can be canonically defined in terms of reduction into simpler dialects. For other dialects, transformation of constructs from one form to another can make certain analyses more straightforward. For example, some analyses work better on structured programs and some are easier to implement on unstructured programs. Or some analyses might work best with imperative assignments preserved, while some forms of verification condition generation work better on “passive” programs consisting of only assertions and assumptions.
 
-## Dialect Library
+## Dialects in Strata
 
-Strata includes several generic dialects that allow it to represent the semantics of a variety of common programming languages. These dialects are currently sufficient to represent the constructs available in Boogie, and allow some flexibility beyond what Boogie provides, as well. These dialects are located in the [`Strata.DL`](../Strata/DL/) namespace.
+### 1. Strata Core
 
-### Lambda
-
-The `Lambda` dialect ([`Strata.DL.Lambda`](../Strata/DL/Lambda/)) is intended to represent pure expressions of the sort that appear in essentially every programming or specification language. This dialect is parameterized by a set of built-in functions, allowing many first-order and higher-order expression languages as specific instantiations.
-
-### Imperative
-
-The `Imperative` dialect ([`Strata.DL.Imperative`](../Strata/DL/Imperative/)) is intended to represent imperative statements of the sort that appear in many programming languages. It is built of commands, which execute atomically, and currently has two mechanisms for combining commands:
-
-* deterministic structured statements (if and while statements with explicit conditions), 
-* non-deterministic structured statements (choice and repetition, with conditions encoded using assumptions), 
-
-### Boogie
-
-The Boogie dialect ([`Strata.Languages.Boogie`](../Strata/Languages/Boogie/)) is intended to roughly mirror the capabilities of the [Boogie Intermediate Verification Language](https://github.com/boogie-org/boogie). As its foundation, it uses the `Imperative` dialect parameterized by the `Lambda` dialect. It specializes these dialects in several ways:
+The Strata Core dialect ([`Strata.Languages.Core`](../Strata/Languages/Core/)) is intended to roughly mirror the capabilities of the [Boogie Intermediate Verification Language](https://github.com/boogie-org/boogie). As its foundation, it uses the `Imperative` semantic building block parameterized by the `Lambda` semantic building block. For the definition of semantic building block, please refer to the next section. It specializes these blocks in several ways:
 
 * It defines a type of identifiers that include scoping information, which is a parameter to `Lambda`.
 * It introduces data types to represent named functions and procedures with contracts.
-* It extends the language of commands from the `Imperative` dialect to include procedure calls, and uses this extended set of commands as a parameter to the various statement types.
+* It extends the language of commands from the `Imperative` block to include procedure calls, and uses this extended set of commands as a parameter to the various statement types.
 
 It currently provides the following features:
 
@@ -65,9 +52,20 @@ The `Imperative` dialect also includes a verification condition generator (VCG) 
 
 ### C_Simp
 
-The C_Simp dialect ([`Strata.Languages.C_Simp`](../Strata//Languages/C_Simp/) is a vaguely C-like language intended to show how to model common programming language constructs in Strata. There are many examples in `C_Simp/Examples`. C_Simp builds on the `Imperative` dialect parameterized by the `Lambda` dialect.
+The C_Simp dialect ([`Strata.Languages.C_Simp`](../Strata//Languages/C_Simp/)) is a vaguely C-like language intended to show how to model common programming language constructs in Strata. There are many examples in `C_Simp/Examples`. C_Simp builds on the `Imperative` dialect parameterized by the `Lambda` dialect.
 
-`C_Simp/Verify.lean` demonstrates verification via transformation to Boogie. A loop elimination pass is first run to transform loops into the appropriate `assume` and `assert` commands, and then Boogie’s VCG, described above, is used to verify the program.
+`C_Simp/Verify.lean` demonstrates verification via transformation to Strata Core. A loop elimination pass is first run to transform loops into the appropriate `assume` and `assert` commands, and then Strata Core's VCG, described above, is used to verify the program.
+
+### Laurel
+
+The Laurel dialect is supposed to serve as an intermediate verification language for at least Java, Python, JavaScript. It is translated to Strata Core during its deductive verification.
+Please refer to the description in the [`Strata.Languages.Laurel.Laurel`](../Strata/Languages/Laurel/Laurel.lean).
+
+### SMTLib
+
+The SMTLib dialect exactly implements the syntax of SMTLib 2.7
+([The SMT-LIB Standard Version 2.7, Feb. 5, 2025](https://smt-lib.org/papers/smt-lib-reference-v2.7-r2025-02-05.pdf)).
+
 
 ## Analysis
 
@@ -76,11 +74,11 @@ Our intent is that analysis implementations in Strata become highly reusable by 
 * An analysis can be defined over, for instance, imperative control flow graphs, while being generic over the types of commands and expressions that may appear in them, other than requiring that certain operations exist on them. This allows it to straightforwardly be applied to various instantiations of that type.
 * An analysis can be defined on one dialect, and transformations can move from other dialects into that one. This allows a single analysis implementation to be applied to multiple languages.
 
-The current Strata implementation includes only one analysis: the Boogie dialect VCG. However, you can add your own analyses on top of the existing dialects. The Imperative dialect includes an inductively-defined operational semantics that can be used as a basis for verifying the correctness of analyses.
+The current Strata implementation includes only one analysis: the Strata Core dialect VCG. However, you can add your own analyses on top of the existing dialects. The Imperative dialect includes an inductively-defined operational semantics that can be used as a basis for verifying the correctness of analyses.
 
 ## External Reasoning Tools
 
-Strata was designed to be used with external reasoning tools such as SMT solvers, CHC solvers, abstract interpretation engines, model checkers, and others. Currently, the VCG for the Boogie language based on partial evaluation along with an interface to SMT solvers (in [`Strata.DL.SMT`](../Strata/DL/SMT/)).
+Strata was designed to be used with external reasoning tools such as SMT solvers, CHC solvers, abstract interpretation engines, model checkers, and others. Currently, the VCG for the Strata Core language based on partial evaluation along with an interface to SMT solvers (in [`Strata.DL.SMT`](../Strata/DL/SMT/)).
 
 ## Third-Party Dialects and Analyses
 

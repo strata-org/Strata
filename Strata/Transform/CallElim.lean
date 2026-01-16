@@ -4,21 +4,21 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
-import Strata.Transform.BoogieTransform
+import Strata.Transform.CoreTransform
 
 /-! # Call Elimination Transformation -/
 
-namespace Boogie
+namespace Core
 namespace CallElim
 
-open Boogie.Transform
+open Core.Transform
 
 /--
 The main call elimination transformation algorithm on a single command.
 The returned result is a sequence of statements
 -/
 def callElimCmd (cmd: Command) (p : Program)
-  : BoogieTransformM (List Statement) := do
+  : CoreTransformM (List Statement) := do
     match cmd with
       | .call lhs procName args _ =>
 
@@ -94,8 +94,8 @@ def callElimL (dcls : List Decl) (prog : Program) :=
 
 /-- Call Elimination for an entire program by walking through all procedure
 bodies -/
-def callElim' (p : Program) : BoogieTransformM Program :=
+def callElim' (p : Program) : CoreTransformM Program :=
   runProgram callElimCmd p
 
 end CallElim
-end Boogie
+end Core
