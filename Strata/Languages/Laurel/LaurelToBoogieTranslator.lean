@@ -91,6 +91,8 @@ def translateExpr (env : TypeEnv) (expr : StmtExpr) : Boogie.Expression.Expr :=
       let ident := Boogie.BoogieIdent.glob name
       let fnOp := .op () ident none
       args.foldl (fun acc arg => .app () acc (translateExpr env arg)) fnOp
+  | .ReferenceEquals e1 e2 =>
+      .eq () (translateExpr env e1) (translateExpr env e2)
   | _ => panic! Std.Format.pretty (Std.ToFormat.format expr)
   decreasing_by
   all_goals (simp_wf; try omega)
@@ -172,7 +174,12 @@ def translateParameterToBoogie (param : Parameter) : (Boogie.BoogieIdent × LMon
 Translate Laurel Procedure to Boogie Procedure
 -/
 def translateProcedure (constants : List Constant) (proc : Procedure) : Boogie.Procedure :=
-  let inputPairs := proc.inputs.map translateParameterToBoogie
+  -- Check if this procedure has a heap parameter (first input named "heap")
+  let hasHeapParam := proc.inputs.any (fun p => p.name == "heap" && p.type == .THeap)
+  -- Rename heap input to heap_in if present
+  let renamedInputs := proc.inputs.map (fun p =>
+    if p.name == "heap" && p.type == .THeap then { p with name := "heap_in" } else p)
+  let inputPairs := renamedInputs.map translateParameterToBoogie
   let inputs := inputPairs
   let header : Boogie.Procedure.Header := {
     name := proc.name
@@ -180,17 +187,33 @@ def translateProcedure (constants : List Constant) (proc : Procedure) : Boogie.P
     inputs := inputs
     outputs := proc.outputs.map translateParameterToBoogie
   }
-  let spec : Boogie.Procedure.Spec := {
-    modifies := []
-    preconditions := []
-    postconditions := []
-  }
   let initEnv : TypeEnv := proc.inputs.map (fun p => (p.name, p.type)) ++
                            proc.outputs.map (fun p => (p.name, p.type)) ++
                            constants.map (fun c => (c.name, c.type))
+  -- Translate precondition if it's not just LiteralBool true
+  let preconditions : ListMap Boogie.BoogieLabel Boogie.Procedure.Check :=
+    match proc.precondition with
+    | .LiteralBool true => []
+    | precond =>
+        let check : Boogie.Procedure.Check := { expr := translateExpr initEnv precond }
+        [("requires", check)]
+  let spec : Boogie.Procedure.Spec := {
+    modifies := []
+    preconditions := preconditions
+    postconditions := []
+  }
+  -- If we have a heap parameter, add initialization: var heap := heap_in
+  let heapInit : List Boogie.Statement :=
+    if hasHeapParam then
+      let heapTy := LMonoTy.tcons "Heap" []
+      let heapType := LTy.forAll [] heapTy
+      let heapIdent := Boogie.BoogieIdent.locl "heap"
+      let heapInExpr := LExpr.fvar () (Boogie.BoogieIdent.locl "heap_in") (some heapTy)
+      [Boogie.Statement.init heapIdent heapType heapInExpr]
+    else []
   let body : List Boogie.Statement :=
     match proc.body with
-    | .Transparent bodyExpr => (translateStmt initEnv proc.outputs bodyExpr).2
+    | .Transparent bodyExpr => heapInit ++ (translateStmt initEnv proc.outputs bodyExpr).2
     | _ => []
   {
     header := header
@@ -208,7 +231,7 @@ def readFunction : Boogie.Decl :=
   let tVar := LMonoTy.ftvar "T"
   let fieldTy := LMonoTy.tcons "Field" [tVar]
   .func {
-    name := Boogie.BoogieIdent.glob "read"
+    name := Boogie.BoogieIdent.glob "heapRead"
     typeArgs := ["T"]
     inputs := [(Boogie.BoogieIdent.locl "heap", heapTy),
                (Boogie.BoogieIdent.locl "obj", compTy),
@@ -223,7 +246,7 @@ def updateFunction : Boogie.Decl :=
   let tVar := LMonoTy.ftvar "T"
   let fieldTy := LMonoTy.tcons "Field" [tVar]
   .func {
-    name := Boogie.BoogieIdent.glob "update"
+    name := Boogie.BoogieIdent.glob "heapStore"
     typeArgs := ["T"]
     inputs := [(Boogie.BoogieIdent.locl "heap", heapTy),
                (Boogie.BoogieIdent.locl "obj", compTy),
@@ -233,55 +256,57 @@ def updateFunction : Boogie.Decl :=
     body := none
   }
 
--- Axiom: forall h, o, f, v :: read(update(h, o, f, v), o, f) == v
+-- Axiom: forall h, o, f, v :: heapRead(heapStore(h, o, f, v), o, f) == v
+-- Using int for field values since Boogie doesn't support polymorphism in axioms
 def readUpdateSameAxiom : Boogie.Decl :=
   let heapTy := LMonoTy.tcons "Heap" []
   let compTy := LMonoTy.tcons "Composite" []
-  let tVar := LMonoTy.ftvar "T"
-  let fieldTy := LMonoTy.tcons "Field" [tVar]
-  -- Build: read(update(h, o, f, v), o, f) == v using de Bruijn indices
-  -- v is bvar 0, f is bvar 1, o is bvar 2, h is bvar 3
-  let v := LExpr.bvar () 0
-  let f := LExpr.bvar () 1
-  let o := LExpr.bvar () 2
-  let h := LExpr.bvar () 3
-  let updateOp := LExpr.op () (Boogie.BoogieIdent.glob "update") none
-  let readOp := LExpr.op () (Boogie.BoogieIdent.glob "read") none
+  let fieldTy := LMonoTy.tcons "Field" [LMonoTy.int]
+  -- Build: heapRead(heapStore(h, o, f, v), o, f) == v using de Bruijn indices
+  -- Quantifier order (outer to inner): int (v), Field int (f), Composite (o), Heap (h)
+  -- So: h is bvar 0, o is bvar 1, f is bvar 2, v is bvar 3
+  let h := LExpr.bvar () 0
+  let o := LExpr.bvar () 1
+  let f := LExpr.bvar () 2
+  let v := LExpr.bvar () 3
+  let updateOp := LExpr.op () (Boogie.BoogieIdent.glob "heapStore") none
+  let readOp := LExpr.op () (Boogie.BoogieIdent.glob "heapRead") none
   let updateExpr := LExpr.mkApp () updateOp [h, o, f, v]
   let readExpr := LExpr.mkApp () readOp [updateExpr, o, f]
   let eqBody := LExpr.eq () readExpr v
-  -- Wrap in foralls: forall T, h:Heap, o:Composite, f:Field T, v:T
-  let body := LExpr.all () (some tVar) <|
+  -- Wrap in foralls: forall v:int, f:Field int, o:Composite, h:Heap
+  let body := LExpr.all () (some LMonoTy.int) <|
               LExpr.all () (some fieldTy) <|
               LExpr.all () (some compTy) <|
               LExpr.all () (some heapTy) eqBody
-  .ax { name := "read_update_same", e := body }
+  .ax { name := "heapRead_heapStore_same", e := body }
 
--- Axiom: forall h, o1, o2, f, v :: o1 != o2 ==> read(update(h, o1, f, v), o2, f) == read(h, o2, f)
+-- Axiom: forall h, o1, o2, f, v :: o1 != o2 ==> heapRead(heapStore(h, o1, f, v), o2, f) == heapRead(h, o2, f)
+-- Using int for field values since Boogie doesn't support polymorphism in axioms
 def readUpdateDiffObjAxiom : Boogie.Decl :=
   let heapTy := LMonoTy.tcons "Heap" []
   let compTy := LMonoTy.tcons "Composite" []
-  let tVar := LMonoTy.ftvar "T"
-  let fieldTy := LMonoTy.tcons "Field" [tVar]
-  -- v is bvar 0, f is bvar 1, o2 is bvar 2, o1 is bvar 3, h is bvar 4
-  let v := LExpr.bvar () 0
-  let f := LExpr.bvar () 1
+  let fieldTy := LMonoTy.tcons "Field" [LMonoTy.int]
+  -- Quantifier order (outer to inner): int (v), Field int (f), Composite (o2), Composite (o1), Heap (h)
+  -- So: h is bvar 0, o1 is bvar 1, o2 is bvar 2, f is bvar 3, v is bvar 4
+  let h := LExpr.bvar () 0
+  let o1 := LExpr.bvar () 1
   let o2 := LExpr.bvar () 2
-  let o1 := LExpr.bvar () 3
-  let h := LExpr.bvar () 4
-  let updateOp := LExpr.op () (Boogie.BoogieIdent.glob "update") none
-  let readOp := LExpr.op () (Boogie.BoogieIdent.glob "read") none
+  let f := LExpr.bvar () 3
+  let v := LExpr.bvar () 4
+  let updateOp := LExpr.op () (Boogie.BoogieIdent.glob "heapStore") none
+  let readOp := LExpr.op () (Boogie.BoogieIdent.glob "heapRead") none
   let updateExpr := LExpr.mkApp () updateOp [h, o1, f, v]
   let lhs := LExpr.mkApp () readOp [updateExpr, o2, f]
   let rhs := LExpr.mkApp () readOp [h, o2, f]
   let neq := LExpr.app () boolNotOp (LExpr.eq () o1 o2)
   let implBody := LExpr.app () (LExpr.app () Boogie.boolImpliesOp neq) (LExpr.eq () lhs rhs)
-  let body := LExpr.all () (some tVar) <|
+  let body := LExpr.all () (some LMonoTy.int) <|
               LExpr.all () (some fieldTy) <|
               LExpr.all () (some compTy) <|
               LExpr.all () (some compTy) <|
               LExpr.all () (some heapTy) implBody
-  .ax { name := "read_update_diff_obj", e := body }
+  .ax { name := "heapRead_heapStore_diff_obj", e := body }
 
 def translateConstant (c : Constant) : Boogie.Decl :=
   let ty := translateType c.type

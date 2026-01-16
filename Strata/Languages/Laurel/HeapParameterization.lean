@@ -24,7 +24,6 @@ structure AnalysisResult where
 partial def collectExpr (expr : StmtExpr) : StateM AnalysisResult Unit := do
   match expr with
   | .FieldSelect target _ =>
-      dbg_trace s!"Found FieldSelect"
       modify fun s => { s with readsHeapDirectly := true }; collectExpr target
   | .InstanceCall target _ args => modify fun s => { s with readsHeapDirectly := true }; collectExpr target; for a in args do collectExpr a
   | .StaticCall callee args => modify fun s => { s with callees := callee :: s.callees }; for a in args do collectExpr a
@@ -89,7 +88,7 @@ partial def heapTransformExpr (heap : Identifier) (expr : StmtExpr) : TransformM
   | .FieldSelect target fieldName =>
       addFieldConstant fieldName
       let t ← heapTransformExpr heap target
-      return .StaticCall "read" [.Identifier heap, t, .Identifier fieldName]
+      return .StaticCall "heapRead" [.Identifier heap, t, .Identifier fieldName]
   | .StaticCall callee args =>
       let args' ← args.mapM (heapTransformExpr heap)
       return if ← readsHeap callee then .StaticCall callee (.Identifier heap :: args') else .StaticCall callee args'
@@ -108,8 +107,8 @@ partial def heapTransformExpr (heap : Identifier) (expr : StmtExpr) : TransformM
           addFieldConstant fieldName
           let target' ← heapTransformExpr heap target
           let v' ← heapTransformExpr heap v
-          -- heap := update(heap, target, field, value)
-          return .Assign (.Identifier heap) (.StaticCall "update" [.Identifier heap, target', .Identifier fieldName, v']) md
+          -- heap := heapStore(heap, target, field, value)
+          return .Assign (.Identifier heap) (.StaticCall "heapStore" [.Identifier heap, target', .Identifier fieldName, v']) md
       | _ => return .Assign (← heapTransformExpr heap t) (← heapTransformExpr heap v) md
   | .PureFieldUpdate t f v => return .PureFieldUpdate (← heapTransformExpr heap t) f (← heapTransformExpr heap v)
   | .PrimitiveOp op args => return .PrimitiveOp op (← args.mapM (heapTransformExpr heap))

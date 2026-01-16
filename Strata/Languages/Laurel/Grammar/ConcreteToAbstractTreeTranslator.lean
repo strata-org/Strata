@@ -251,12 +251,19 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
         | .option _ none => pure []
         | _ => TransM.error s!"Expected returnParameters operation, got {repr returnParamsArg}"
       | _ => TransM.error s!"Expected optionalReturnType operation, got {repr returnTypeArg}"
+    -- Parse precondition (requires clause)
+    let precondition ← match requiresArg with
+      | .option _ (some (.op requiresOp)) => match requiresOp.name, requiresOp.args with
+        | q`Laurel.optionalRequires, #[exprArg] => translateStmtExpr exprArg
+        | _, _ => TransM.error s!"Expected optionalRequires operation, got {repr requiresOp.name}"
+      | .option _ none => pure (.LiteralBool true)
+      | _ => TransM.error s!"Expected optionalRequires operation, got {repr requiresArg}"
     let body ← translateCommand bodyArg
     return {
       name := name
       inputs := parameters
       outputs := returnParameters
-      precondition := .LiteralBool true
+      precondition := precondition
       decreases := none
       body := .Transparent body
     }

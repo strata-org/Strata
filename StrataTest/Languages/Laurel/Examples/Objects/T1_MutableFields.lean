@@ -23,7 +23,8 @@ procedure foo(c: Container, d: Container) returns (r: int)
   var x: int := c#value;
   var initialDValue: int := d#value;
   d#value := d#value + 1;
-  assert x == c#value; // pass
+  c#value := c#value + 1;
+  assert x + 1 == c#value; // pass
   assert initialDValue + 1 == d#value;
 
   var e: Container := d;
