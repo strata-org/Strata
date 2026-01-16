@@ -347,7 +347,7 @@ elab "#testRoundtripFiles" : command => do
     let cmd1 := file1.program.commands[0]!
     if cmd1.name != (⟨"Simple", "block"⟩ : Strata.QualifiedIdent) then
       Lean.logError "File 1: Expected block command"; return
-    if let .seq _ stmts := cmd1.args[0]! then
+    if let .seq _ _ stmts := cmd1.args[0]! then
       if stmts.size != 2 then
         Lean.logError s!"File 1: Expected 2 statements, got {stmts.size}"
         return
@@ -365,7 +365,7 @@ elab "#testRoundtripFiles" : command => do
     let cmd2 := file2.program.commands[0]!
     if cmd2.name != (⟨"Simple", "block"⟩ : Strata.QualifiedIdent) then
       Lean.logError "File 2: Expected block command"; return
-    if let .seq _ stmts := cmd2.args[0]! then
+    if let .seq _ _ stmts := cmd2.args[0]! then
       if stmts.size != 3 then
         Lean.logError s!"File 2: Expected 3 statements, got {stmts.size}"
         return
