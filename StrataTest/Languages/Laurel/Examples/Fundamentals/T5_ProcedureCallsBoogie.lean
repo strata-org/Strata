@@ -4,6 +4,12 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 
+/-
+The purpose of this test is to ensure we're using functions and procedures as well as
+Strata Boogie supports them. When Strata Core makes procedures more powerful, so we
+won't need functions any more, then this test can be merged into other tests.
+-/
+
 import StrataTest.Util.TestDiagnostics
 import StrataTest.Languages.Laurel.TestExamples
 
@@ -38,5 +44,5 @@ procedure caller() {
 }
 "
 
--- #guard_msgs(drop info, error) in
-#eval! testInputWithOffset "T5_ProcedureCallsBoogie" program 14 processLaurelFile
+#guard_msgs(drop info, error) in
+#eval! testInputWithOffset "T5_ProcedureCallsBoogie" program 20 processLaurelFile
