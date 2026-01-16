@@ -89,7 +89,7 @@ def translateExpr (expr : StmtExpr) : Boogie.Expression.Expr :=
 
 def getNameFromMd (md : Imperative.MetaData Boogie.Expression): String :=
   let fileRange := (Imperative.getFileRange md).get!
-  s!"({fileRange.start.column},{fileRange.start.line})"
+  s!"({fileRange.range.start})"
 
 /--
 Translate Laurel StmtExpr to Boogie Statements
