@@ -10,7 +10,7 @@ import StrataTest.Languages.Laurel.TestExamples
 open StrataTest.Util
 open Strata
 
-namespace Laurel
+namespace Strata.Laurel
 
 def program := r"
 procedure syntacticallyABoogieFunction(x: int): int {
@@ -24,18 +24,18 @@ procedure noFunctionBecauseContract() returns (r: int)
 }
 
 procedure noFunctionBecauseStatements(): int {
-  var x := 3
+  var x: int := 3;
   x + 1
 }
 
 procedure caller() {
   assert syntacticallyABoogieFunction(1) == 2;
-  var x := noFunctionBecauseContract();
+  var x: int := noFunctionBecauseContract();
   assert x > 0;
-  var y := noFunctionBecauseStatements();
+  var y: int := noFunctionBecauseStatements();
   assert y == 4;
 }
 "
 
 -- #guard_msgs(drop info, error) in
-#eval! testInput "T5_ProcedureCallsBoogie" program processLaurelFile
+#eval! testInputWithOffset "T5_ProcedureCallsBoogie" program 14 processLaurelFile
