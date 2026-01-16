@@ -258,14 +258,25 @@ def parseProcedure (arg : Arg) : TransM Procedure := do
         | _, _ => TransM.error s!"Expected optionalRequires operation, got {repr requiresOp.name}"
       | .option _ none => pure (.LiteralBool true)
       | _ => TransM.error s!"Expected optionalRequires operation, got {repr requiresArg}"
+    -- Parse postcondition (ensures clause)
+    let postcondition ← match ensuresArg with
+      | .option _ (some (.op ensuresOp)) => match ensuresOp.name, ensuresOp.args with
+        | q`Laurel.optionalEnsures, #[exprArg] => translateStmtExpr exprArg >>= (pure ∘ some)
+        | _, _ => TransM.error s!"Expected optionalEnsures operation, got {repr ensuresOp.name}"
+      | .option _ none => pure none
+      | _ => TransM.error s!"Expected optionalEnsures operation, got {repr ensuresArg}"
     let body ← translateCommand bodyArg
+    -- If there's a postcondition, use Opaque body; otherwise use Transparent
+    let procBody := match postcondition with
+      | some post => Body.Opaque post (some body) .nondeterministic none
+      | none => Body.Transparent body
     return {
       name := name
       inputs := parameters
       outputs := returnParameters
       precondition := precondition
       decreases := none
-      body := .Transparent body
+      body := procBody
     }
   | q`Laurel.procedure, args =>
     TransM.error s!"parseProcedure expects 7 arguments, got {args.size}"

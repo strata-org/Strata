@@ -33,7 +33,8 @@ procedure caller() {
   var x: int := noFunctionBecauseContract();
   assert x > 0;
   var y: int := noFunctionBecauseStatements();
-  assert y == 4;
+    assert y == 4;
+//. ^^^^^^^^^^^^^^ error: assertion could not be proved
 }
 "
 

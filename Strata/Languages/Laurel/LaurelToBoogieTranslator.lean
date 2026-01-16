@@ -94,6 +94,7 @@ def translateExpr (env : TypeEnv) (expr : StmtExpr) : Boogie.Expression.Expr :=
       args.foldl (fun acc arg => .app () acc (translateExpr env arg)) fnOp
   | .ReferenceEquals e1 e2 =>
       .eq () (translateExpr env e1) (translateExpr env e2)
+  | .Block [single] _ => translateExpr env single
   | _ => panic! Std.Format.pretty (Std.ToFormat.format expr)
   decreasing_by
   all_goals (simp_wf; try omega)
@@ -126,6 +127,16 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
       let boogieType := LTy.forAll [] boogieMonoType
       let ident := Boogie.BoogieIdent.locl name
       match initializer with
+      | some (.StaticCall callee args) =>
+          -- Translate as: var name; call name := callee(args)
+          let boogieArgs := args.map (translateExpr env)
+          let defaultExpr := match ty with
+                            | .TInt => .const () (.intConst 0)
+                            | .TBool => .const () (.boolConst false)
+                            | _ => .const () (.intConst 0)
+          let initStmt := Boogie.Statement.init ident boogieType defaultExpr
+          let callStmt := Boogie.Statement.call [ident] callee boogieArgs
+          (env', [initStmt, callStmt])
       | some initExpr =>
           let boogieExpr := translateExpr env initExpr
           (env', [Boogie.Statement.init ident boogieType boogieExpr])
@@ -202,10 +213,17 @@ def translateProcedure (constants : List Constant) (proc : Procedure) : Boogie.P
     | precond =>
         let check : Boogie.Procedure.Check := { expr := translateExpr initEnv precond }
         [("requires", check)]
+  -- Translate postcondition for Opaque bodies
+  let postconditions : ListMap Boogie.BoogieLabel Boogie.Procedure.Check :=
+    match proc.body with
+    | .Opaque postcond _ _ _ =>
+        let check : Boogie.Procedure.Check := { expr := translateExpr initEnv postcond }
+        [("ensures", check)]
+    | _ => []
   let spec : Boogie.Procedure.Spec := {
     modifies := []
     preconditions := preconditions
-    postconditions := []
+    postconditions := postconditions
   }
   -- If we have a heap parameter, add initialization: var heap := heap_in
   let heapInit : List Boogie.Statement :=
@@ -219,6 +237,7 @@ def translateProcedure (constants : List Constant) (proc : Procedure) : Boogie.P
   let body : List Boogie.Statement :=
     match proc.body with
     | .Transparent bodyExpr => heapInit ++ (translateStmt initEnv proc.outputs bodyExpr).2
+    | .Opaque _postcond (some impl) _ _ => heapInit ++ (translateStmt initEnv proc.outputs impl).2
     | _ => []
   {
     header := header
@@ -324,21 +343,74 @@ def translateConstant (c : Constant) : Boogie.Decl :=
   }
 
 /--
+Check if a StmtExpr is a pure expression (can be used as a Boogie function body).
+Pure expressions don't contain statements like assignments, loops, or local variables.
+A Block with a single pure expression is also considered pure.
+-/
+def isPureExpr : StmtExpr → Bool
+  | .LiteralBool _ => true
+  | .LiteralInt _ => true
+  | .Identifier _ => true
+  | .PrimitiveOp _ args => args.attach.all (fun ⟨a, _⟩ => isPureExpr a)
+  | .IfThenElse c t none => isPureExpr c && isPureExpr t
+  | .IfThenElse c t (some e) => isPureExpr c && isPureExpr t && isPureExpr e
+  | .StaticCall _ args => args.attach.all (fun ⟨a, _⟩ => isPureExpr a)
+  | .ReferenceEquals e1 e2 => isPureExpr e1 && isPureExpr e2
+  | .Block [single] _ => isPureExpr single
+  | _ => false
+termination_by e => sizeOf e
+
+/--
+Check if a procedure can be translated as a Boogie function.
+A procedure can be a function if:
+- It has a transparent body that is a pure expression
+- It has no precondition (or just `true`)
+- It has exactly one output parameter (the return type)
+-/
+def canBeBoogieFunction (proc : Procedure) : Bool :=
+  match proc.body with
+  | .Transparent bodyExpr =>
+    isPureExpr bodyExpr &&
+    (match proc.precondition with | .LiteralBool true => true | _ => false) &&
+    proc.outputs.length == 1
+  | _ => false
+
+/--
+Translate a Laurel Procedure to a Boogie Function (when applicable)
+-/
+def translateProcedureToFunction (proc : Procedure) : Boogie.Decl :=
+  let inputs := proc.inputs.map translateParameterToBoogie
+  let outputTy := match proc.outputs.head? with
+    | some p => translateType p.type
+    | none => LMonoTy.int
+  let initEnv : TypeEnv := proc.inputs.map (fun p => (p.name, p.type))
+  let body := match proc.body with
+    | .Transparent bodyExpr => some (translateExpr initEnv bodyExpr)
+    | _ => none
+  .func {
+    name := Boogie.BoogieIdent.glob proc.name
+    typeArgs := []
+    inputs := inputs
+    output := outputTy
+    body := body
+  }
+
+/--
 Translate Laurel Program to Boogie Program
 -/
 def translate (program : Program) : Except (Array DiagnosticModel) Boogie.Program := do
   let sequencedProgram ← liftExpressionAssignments program
   let heapProgram := heapParameterization sequencedProgram
-  dbg_trace "=== Heap parameterized Program ==="
-  dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format heapProgram)))
-  dbg_trace "=================================="
-  let procedures := heapProgram.staticProcedures.map (translateProcedure heapProgram.constants)
+  -- Separate procedures that can be functions from those that must be procedures
+  let (funcProcs, procProcs) := heapProgram.staticProcedures.partition canBeBoogieFunction
+  let procedures := procProcs.map (translateProcedure heapProgram.constants)
   let procDecls := procedures.map (fun p => Boogie.Decl.proc p .empty)
+  let laurelFuncDecls := funcProcs.map translateProcedureToFunction
   let constDecls := heapProgram.constants.map translateConstant
   let typeDecls := [heapTypeDecl, fieldTypeDecl, compositeTypeDecl]
   let funcDecls := [readFunction, updateFunction]
   let axiomDecls := [readUpdateSameAxiom, readUpdateDiffObjAxiom]
-  return { decls := typeDecls ++ funcDecls ++ axiomDecls ++ constDecls ++ procDecls }
+  return { decls := typeDecls ++ funcDecls ++ axiomDecls ++ constDecls ++ laurelFuncDecls ++ procDecls }
 
 /--
 Verify a Laurel program using an SMT solver
