@@ -3317,7 +3317,7 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
     <;> simp [pure] at Helim
   next res l =>
     simp [Helim] at *
-    cases Hwf with | intro Hwf =>
+    simp only [Forall, and_true] at Hwf
     cases Hwf with | mk Hwf =>
     simp [Option.isSome] at Hwf
     split at Hwf <;> simp_all
@@ -3329,7 +3329,8 @@ theorem callElimStatementCorrect [LawfulBEq Expression.Expr] :
     | call_sem lkup Hevalargs Hevalouts Hwfval Hwfvars Hwfb Hwf2 Hwf Hinitin Hinitout Hpre Hhav1 Hhav2 Hpost Hrd Hupdate =>
       next outVals argVals σA σAO σO σR p' modvals =>
       unfold BoogieIdent.unres at Hfind
-      have Hsome : (Program.Procedure.find? p procName).isSome := by simp [Hfind]
+      have Hsome : (Program.Procedure.find? p procName).isSome := by
+        grind
       simp [Option.isSome] at Hsome
       unfold BoogieIdent.unres at *
       have lkup' := lkup

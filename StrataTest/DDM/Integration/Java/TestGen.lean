@@ -314,7 +314,7 @@ elab "#testRoundtrip" : command => do
     if prog.commands.size != 1 then Lean.logError "Expected 1 command"; return
     let cmd := prog.commands[0]!
     if cmd.name != (⟨"Simple", "block"⟩ : Strata.QualifiedIdent) then Lean.logError "Expected block command"; return
-    if let .seq _ stmts := cmd.args[0]! then
+    if let .seq _ _ stmts := cmd.args[0]! then
       if stmts.size != 4 then Lean.logError s!"Expected 4 statements, got {stmts.size}"
     else Lean.logError "Expected seq argument"
 

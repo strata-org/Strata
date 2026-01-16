@@ -4,8 +4,8 @@
   SPDX-License-Identifier: Apache-2.0 OR MIT
 -/
 module
+set_option autoImplicit false
 
-public section
 namespace List
 
 theorem sizeOf_pos {α} [SizeOf α] (l : List α) : sizeOf l > 0 := by
@@ -34,7 +34,7 @@ theorem sizeOf_lt_of_mem_strict {α} [inst : SizeOf α] {as : List α} {a} (h : 
   | tail _ _ ih => exact Nat.lt_trans ih (by simp +arith)
 
 @[simp]
-theorem sizeOf_set [h : SizeOf α] (as : List α) (i : Nat) (v : α)  :
+theorem sizeOf_set {α} [h : SizeOf α] (as : List α) (i : Nat) (v : α)  :
     sizeOf (as.set i v) =
       if p : i < as.length then
         sizeOf as + sizeOf v - sizeOf as[i]
@@ -58,4 +58,3 @@ theorem sizeOf_set [h : SizeOf α] (as : List α) (i : Nat) (v : α)  :
     simp
 
 end List
-end

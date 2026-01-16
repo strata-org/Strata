@@ -13,6 +13,7 @@ import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LiftExpressionAssignments
 import Strata.Languages.Laurel.HeapParameterization
 import Strata.DL.Imperative.Stmt
+import Strata.DL.Imperative.MetaData
 import Strata.DL.Lambda.LExpr
 import Strata.Languages.Laurel.LaurelFormat
 
@@ -98,6 +99,10 @@ def translateExpr (env : TypeEnv) (expr : StmtExpr) : Boogie.Expression.Expr :=
   all_goals (simp_wf; try omega)
   rename_i x_in; have := List.sizeOf_lt_of_mem x_in; omega
 
+def getNameFromMd (md : Imperative.MetaData Boogie.Expression): String :=
+  let fileRange := (Imperative.getFileRange md).get!
+  s!"({fileRange.range.start})"
+
 /--
 Translate Laurel StmtExpr to Boogie Statements
 Takes the type environment and output parameter names
@@ -106,10 +111,10 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
   match stmt with
   | @StmtExpr.Assert cond md =>
       let boogieExpr := translateExpr env cond
-      (env, [Boogie.Statement.assert "assert" boogieExpr md])
+      (env, [Boogie.Statement.assert ("assert" ++ getNameFromMd md) boogieExpr md])
   | @StmtExpr.Assume cond md =>
       let boogieExpr := translateExpr env cond
-      (env, [Boogie.Statement.assume "assume" boogieExpr md])
+      (env, [Boogie.Statement.assume ("assume" ++ getNameFromMd md) boogieExpr md])
   | .Block stmts _ =>
       let (env', stmtsList) := stmts.foldl (fun (e, acc) s =>
         let (e', ss) := translateStmt e outputParams s

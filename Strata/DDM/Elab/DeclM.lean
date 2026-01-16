@@ -8,11 +8,10 @@ module
 public import Lean.Parser.Types
 
 public import Strata.DDM.AST
-public import Strata.DDM.Parser
-public import Strata.DDM.Util.Lean
 public import Strata.DDM.Elab.LoadedDialects
-
-import Strata.DDM.Util.PrattParsingTables
+public import Strata.DDM.Parser
+import all Strata.DDM.Util.Lean
+import all Strata.DDM.Util.PrattParsingTables
 
 set_option autoImplicit false
 
@@ -132,16 +131,20 @@ def runChecked {m α} [ElabClass m] (action : m α) : m (α × Bool) := do
   let r ← action
   return (r, errorCount = (← ElabClass.getErrorCount))
 
-def logError {m} [ElabClass m] (loc : SourceRange) (msg : String) (isSilent : Bool := false): m Unit := do
-  let inputCtx ← ElabClass.getInputContext
+def mkErrorMessage (inputCtx : InputContext) (loc : SourceRange) (msg : String) (isSilent : Bool := false) : Message :=
   let m := Lean.mkStringMessage inputCtx loc.start msg (isSilent := isSilent)
-  let m := if loc.isNone then m else { m with endPos := inputCtx.fileMap.toPosition loc.stop }
-  logErrorMessage m
+  if loc.isNone then m else { m with endPos := inputCtx.fileMap.toPosition loc.stop }
+
+def logError {m} [ElabClass m] (loc : SourceRange) (msg : String) (isSilent : Bool := false) : m Unit := do
+  let inputCtx ← ElabClass.getInputContext
+  logErrorMessage (mkErrorMessage inputCtx loc msg isSilent)
 
 def logErrorMF {m} [ElabClass m] (loc : SourceRange) (msg : StrataFormat) (isSilent : Bool := false) : m Unit := do
+  let inputCtx ← ElabClass.getInputContext
   let c : FormatContext := .ofDialects (← ElabClass.getDialects) (← ElabClass.getGlobalContext) {}
   let s : FormatState := { openDialects := ← ElabClass.getOpenDialects }
-  logError loc (msg c s |>.format |>.pretty) (isSilent := isSilent)
+  let msg := msg c s |>.format |>.pretty
+  logErrorMessage (mkErrorMessage inputCtx loc msg isSilent)
 
 -- DeclM
 

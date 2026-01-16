@@ -13,6 +13,7 @@ public section
 namespace Ion
 
 export Strata (Decimal)
+open Strata.ByteArray
 
 inductive CoreType
 | null

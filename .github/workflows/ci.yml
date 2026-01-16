@@ -77,7 +77,7 @@ jobs:
       - name: Test BoogieToStrata
         run: dotnet test ${SOLUTION}
       - name: Test Strata Command line
-        run: .github/scripts/testStrataCommand.sh        
+        run: .github/scripts/testStrataCommand.sh
       - name: Validate examples against expected output
         working-directory: Examples
         shell: bash
