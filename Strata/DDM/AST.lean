@@ -288,7 +288,7 @@ end SourceRange
 
 inductive Uri where
   | file (path: String)
-  deriving DecidableEq, Repr
+  deriving DecidableEq, Repr, Inhabited
 
 instance : ToFormat Uri where
  format fr := match fr with | .file path => path
@@ -296,7 +296,7 @@ instance : ToFormat Uri where
 structure FileRange where
   file: Uri
   range: Strata.SourceRange
-  deriving DecidableEq, Repr
+  deriving DecidableEq, Repr, Inhabited
 
 instance : ToFormat FileRange where
  format fr := f!"{fr.file}:{fr.range}"
