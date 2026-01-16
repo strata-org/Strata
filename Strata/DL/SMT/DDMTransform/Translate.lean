@@ -114,7 +114,7 @@ private def translateFromTermType (t:SMT.TermType):
       return .smtsort_param srnone (mkIdentifier id) (Ann.mk srnone argtys_array)
 
 -- Helper function to convert a SMTDDM.Term to SExpr for use in pattern attributes
-partial def termToSExpr (t : SMTDDM.Term SourceRange) : SMTDDM.SExpr SourceRange :=
+def termToSExpr (t : SMTDDM.Term SourceRange) : SMTDDM.SExpr SourceRange :=
   let srnone := SourceRange.none
   match t with
   | .qual_identifier _ qi =>
@@ -136,6 +136,11 @@ partial def termToSExpr (t : SMTDDM.Term SourceRange) : SMTDDM.SExpr SourceRange
       let argsSExpr := args.val.map termToSExpr
       .se_ls srnone (Ann.mk srnone ((qiSExpr :: argsSExpr.toList).toArray))
   | _ => .se_symbol srnone (.symbol srnone (.simple_symbol_qid srnone (mkQualifiedIdent "term")))
+  decreasing_by
+    cases args
+    rename_i hargs
+    have := Array.sizeOf_lt_of_mem hargs
+    simp_all; omega
 
 def translateFromTerm (t:SMT.Term): Except String (SMTDDM.Term SourceRange) := do
   let srnone := SourceRange.none
