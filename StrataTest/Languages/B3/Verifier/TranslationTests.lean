@@ -78,7 +78,7 @@ info: (declare-fun abs (Int) Int)
 #guard_msgs in
 #eval testSMTGeneration $ #strata program B3CST;
 function abs(x : int) : int {
-  if x >= 0 then x else -x
+  if x >= 0 x else -x
 }
 procedure test() {
   check abs(-5) == 5
@@ -98,10 +98,10 @@ info: (declare-fun isEven (Int) Int)
 #guard_msgs in
 #eval testSMTGeneration $ #strata program B3CST;
 function isEven(n : int) : int {
-  if n == 0 then 1 else isOdd(n - 1)
+  if n == 0 1 else isOdd(n - 1)
 }
 function isOdd(n : int) : int {
-  if n == 0 then 0 else isEven(n - 1)
+  if n == 0 0 else isEven(n - 1)
 }
 procedure test() {
   check isEven(4) == 1
@@ -153,7 +153,7 @@ procedure test_all_expressions() {
         -5 == 0 - 5 &&
         (true ==> true) &&
         (false || true) &&
-        (if true then true else false) &&
+        (if true true else false) &&
         f(5) &&
         g(1, 2) &&
         (forall y : int pattern f(y) f(y) || !f(y)) &&
