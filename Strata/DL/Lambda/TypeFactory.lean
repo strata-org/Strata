@@ -161,6 +161,26 @@ def checkStrictPosUnifMutual (block: MutualDatatype IDMeta) : Except Format Unit
     ) ()
   ) ()
 
+/--
+Validate a mutual block: check non-empty and no duplicate names.
+-/
+def validateMutualBlock (block: MutualDatatype IDMeta) : Except Format Unit := do
+  if block.isEmpty then
+    .error f!"Error: Empty mutual block is not allowed"
+  let names := block.map (·.name)
+  let duplicates := names.filter (fun n => names.count n > 1)
+  match duplicates.head? with
+  | some dup => throw f!"Duplicate datatype name in mutual block: {dup}"
+  | none => pure ()
+
+/--
+Get all type constructor names referenced in a type.
+-/
+def getTypeRefs (ty: LMonoTy) : List String :=
+  match ty with
+  | .tcons n args => n :: args.flatMap getTypeRefs
+  | _ => []
+
 ---------------------------------------------------------------------
 
 -- Generating constructors and eliminators
@@ -549,8 +569,32 @@ def TypeFactory.allDatatypes (t : @TypeFactory IDMeta) : List (LDatatype IDMeta)
 def TypeFactory.getType (F : @TypeFactory IDMeta) (name : String) : Option (LDatatype IDMeta) :=
   F.allDatatypes.find? (fun d => d.name == name)
 
-/-- Add a mutual block to the TypeFactory, checking for duplicate names. -/
-def TypeFactory.addMutualBlock (t : @TypeFactory IDMeta) (block : MutualDatatype IDMeta) : Except Format (@TypeFactory IDMeta) := do
+/-- Get all datatype names in the TypeFactory. -/
+def TypeFactory.allTypeNames (t : @TypeFactory IDMeta) : List String :=
+  t.allDatatypes.map (·.name)
+
+/--
+Validate that all type references in a mutual block refer to either:
+1. Known primitive types (passed as parameter)
+2. Types already in the TypeFactory
+3. Types within the same mutual block
+-/
+def TypeFactory.validateTypeReferences (t : @TypeFactory IDMeta) (block : MutualDatatype IDMeta) (knownTypes : List String) : Except Format Unit := do
+  let blockNames := block.map (·.name)
+  let existingNames := t.allTypeNames
+  let validNames := knownTypes ++ existingNames ++ blockNames
+  for d in block do
+    for c in d.constrs do
+      for (_, ty) in c.args do
+        for ref in getTypeRefs ty do
+          if !validNames.contains ref then
+            throw f!"Error in datatype {d.name}, constructor {c.name.name}: Undefined type '{ref}'"
+
+/-- Add a mutual block to the TypeFactory, with validation. -/
+def TypeFactory.addMutualBlock (t : @TypeFactory IDMeta) (block : MutualDatatype IDMeta) (knownTypes : List String := []) : Except Format (@TypeFactory IDMeta) := do
+  -- Validate block structure
+  validateMutualBlock block
+  -- Check for duplicate names with existing types
   for d in block do
     match t.getType d.name with
     | some d' => throw f!"A datatype of name {d.name} already exists! \
@@ -558,6 +602,8 @@ def TypeFactory.addMutualBlock (t : @TypeFactory IDMeta) (block : MutualDatatype
                 Existing Type: {d'}\n\
                 New Type:{d}"
     | none => pure ()
+  -- Validate type references
+  t.validateTypeReferences block knownTypes
   .ok (t.push block)
 
 /-- Add a single datatype (as a single-element block). -/

@@ -352,15 +352,12 @@ def LContext.addDatatype [Inhabited T.IDMeta] [Inhabited T.Metadata] (C: LContex
 
 /-- Add a mutual block of datatypes to the context. -/
 def LContext.addMutualBlock [Inhabited T.IDMeta] [Inhabited T.Metadata] [ToFormat T.IDMeta] (C: LContext T) (block: MutualDatatype T.IDMeta) : Except Format (LContext T) := do
-  if block.isEmpty then return C
   -- Check for name clashes with known types
   for d in block do
     if C.knownTypes.containsName d.name then
       throw f!"Cannot name datatype same as known type!\n{d}\nKnownTypes' names:\n{C.knownTypes.keywords}"
-  -- Add all datatypes to the type factory
-  let mut ds := C.datatypes
-  for d in block do
-    ds ← ds.addDatatype d
+  -- Add all datatypes to the type factory with validation
+  let ds ← C.datatypes.addMutualBlock block C.knownTypes.keywords
   -- Generate factory functions for the whole mutual block
   let f ← genBlockFactory block
   let fs ← C.functions.addFactory f

@@ -754,6 +754,45 @@ def badMutualBlock : MutualDatatype Unit := [badATy, badBTy]
 #eval format $
   typeCheckAndPartialEval #[badMutualBlock] (Factory.default : @Factory TestParams) (intConst () 0)
 
+---------------------------------------------------------------------
+-- Test 12: Empty mutual block should be rejected
+---------------------------------------------------------------------
+
+def emptyBlock : MutualDatatype Unit := []
+
+/-- info: Error: Empty mutual block is not allowed -/
+#guard_msgs in
+#eval format $
+  typeCheckAndPartialEval #[emptyBlock] (IntBoolFactory : @Factory TestParams) (intConst () 0)
+
+---------------------------------------------------------------------
+-- Test 13: Type reference in wrong order should be rejected
+---------------------------------------------------------------------
+
+-- Wrapper references List, but List is defined after Wrapper
+def wrapperConstr' : LConstr Unit := {name := "MkWrapper", args := [("xs", .tcons "List" [.int])], testerName := "isMkWrapper"}
+def wrapperTy' : LDatatype Unit := {name := "Wrapper", typeArgs := [], constrs := [wrapperConstr'], constrs_ne := rfl}
+
+/-- info: Error in datatype Wrapper, constructor MkWrapper: Undefined type 'List' -/
+#guard_msgs in
+#eval format $
+  typeCheckAndPartialEval #[[wrapperTy'], [listTy]] (IntBoolFactory : @Factory TestParams) (intConst () 0)
+
+---------------------------------------------------------------------
+-- Test 14: Type depending on previously defined type should work
+---------------------------------------------------------------------
+
+-- List is defined before Wrapper - correct order
+/-- info: Annotated expression:
+#0
+
+---
+info: #0
+-/
+#guard_msgs in
+#eval format $
+  typeCheckAndPartialEval #[[listTy], [wrapperTy']] (IntBoolFactory : @Factory TestParams) (intConst () 0)
+
 end MutualRecursion
 
 end Lambda
