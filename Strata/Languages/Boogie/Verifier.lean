@@ -404,18 +404,14 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
     return results
 
 def verify (smtsolver : String) (program : Program)
+    (tempDir : System.FilePath)
     (options : Options := Options.default)
     (moreFns : @Lambda.Factory BoogieLParams := Lambda.Factory.default)
-    (tempDir : Option String := .none) :
-    EIO Format VCResults := do
+    : EIO Format VCResults := do
   match Boogie.typeCheckAndPartialEval options program moreFns with
   | .error err =>
     .error f!"❌ Type checking error.\n{format err}"
   | .ok pEs =>
-    let tempDir ← IO.toEIO (fun e => f!"{e}")
-      (match tempDir with
-       | .none => IO.FS.createTempDir
-       | .some p => do IO.FS.createDirAll ⟨p⟩; return ⟨p⟩)
     let counter ← IO.toEIO (fun e => f!"{e}") (IO.mkRef 0)
     let VCss ← if options.checkOnly then
                  pure []
@@ -455,8 +451,15 @@ def verify
   let (program, errors) := Boogie.getProgram env ictx
   if errors.isEmpty then
     -- dbg_trace f!"AST: {program}"
-    EIO.toIO (fun f => IO.Error.userError (toString f))
-                (Boogie.verify smtsolver program options moreFns tempDir)
+    let runner tempDir :=
+      EIO.toIO (fun f => IO.Error.userError (toString f))
+                  (Boogie.verify smtsolver program tempDir options moreFns)
+    match tempDir with
+    | .none =>
+      IO.FS.withTempDir runner
+    | .some p =>
+      IO.FS.createDirAll ⟨p⟩
+      runner ⟨p⟩
   else
     panic! s!"DDM Transform Error: {repr errors}"
 

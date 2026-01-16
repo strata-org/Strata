@@ -108,7 +108,8 @@ Run verification and return a summary string.
 -/
 def runVerificationTest (testName : String) (program : Program) : IO String := do
   try
-    match ← EIO.toIO' (Boogie.verify "cvc5" program Options.quiet) with
+    match ← (IO.FS.withTempDir (fun tempDir =>
+      EIO.toIO' (Boogie.verify "cvc5" program tempDir Options.quiet))) with
     | .error err =>
       return s!"{testName}: FAILED\n  Error: {err}"
     | .ok results =>
