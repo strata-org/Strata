@@ -45,7 +45,7 @@ def typeCheck (options : Options) (program : Program)
   let (program, _T) ← Program.typeCheck C T program
   -- dbg_trace f!"[Strata.Boogie] Type variables:\n{T.state.substInfo.subst.length}"
   -- dbg_trace f!"[Strata.Boogie] Annotated program:\n{program}"
-  if options.verbose then dbg_trace f!"[Strata.Boogie] Type checking succeeded.\n"
+  if options.verbose >= .normal then dbg_trace f!"[Strata.Boogie] Type checking succeeded.\n"
   return program
 
 def typeCheckAndPartialEval (options : Options) (program : Program)
@@ -63,10 +63,9 @@ def typeCheckAndPartialEval (options : Options) (program : Program)
                            program := program }
   let E ← E.addDatatypes datatypes
   let pEs := Program.eval E
-  if options.verbose then do
+  if options.verbose >= .normal then do
     dbg_trace f!"{Std.Format.line}VCs:"
     for (_p, E) in pEs do
-      -- dbg_trace f!"Program: {p}"
       dbg_trace f!"{ProofObligations.eraseTypes E.deferred}"
   return pEs
 

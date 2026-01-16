@@ -125,8 +125,6 @@ def Result.formatModelIfSat (r : Result) (verbose : Bool) : Format :=
       f!"\nModel:\n{m}"
   | _ => f!""
 
-def VC_folder_name: String := "vcs"
-
 def runSolver (solver : String) (args : Array String) : IO IO.Process.Output := do
   let output ← IO.Process.output {
     cmd := solver
@@ -187,15 +185,12 @@ def dischargeObligation
   (vars : List (IdentT LMonoTy Visibility)) (smtsolver filename : String)
   (terms : List Term) (ctx : SMT.Context)
   : IO (Except Format (SMT.Result × EncoderState)) := do
-  if !(← System.FilePath.isDir VC_folder_name) then
-    let _ ← IO.FS.createDir VC_folder_name
-  let filename := s!"{VC_folder_name}/{filename}"
   let handle ← IO.FS.Handle.mk filename IO.FS.Mode.write
   let solver ← Solver.fileWriter handle
   let prelude := getSolverPrelude smtsolver
   let (ids, estate) ← Strata.SMT.Encoder.encodeBoogie ctx prelude terms solver
   let _ ← solver.checkSat ids -- Will return unknown for Solver.fileWriter
-  if options.verbose then IO.println s!"Wrote problem to {filename}."
+  if options.verbose > .normal then IO.println s!"Wrote problem to {filename}."
   let flags := getSolverFlags options smtsolver
   let output ← runSolver smtsolver (#[filename] ++ flags)
   match SMT.solverResult vars output ctx estate with
@@ -235,7 +230,7 @@ structure VCResult where
   smtResult : SMT.Result := .unknown
   result : Outcome := .unknown
   estate : EncoderState := EncoderState.init
-  verbose : Bool := true
+  verbose : VerboseMode := .normal
 
 /--
 Map the result from an SMT backend engine to an `Outcome`.
@@ -292,7 +287,7 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
     if obligation.obligation.isFalse then
       -- If PE determines that the consequent is false, then we can immediately
       -- report a failure.
-      let result := { obligation, result := .fail, verbose := options.verbose }
+      let result := { obligation, result := .fail, verbose :=  options.verbose }
       return (obligation, some result)
     else
       return (obligation, none)
@@ -311,7 +306,7 @@ def preprocessObligation (obligation : ProofObligation Expression) (p : Program)
       let prog := f!"\n\nEvaluated program:\n{p}"
       dbg_trace f!"\n\nObligation {obligation.label}: failed!\
                    \n\nResult obtained during partial evaluation.\
-                   {if options.verbose then prog else ""}"
+                   {if options.verbose >= .normal then prog else ""}"
       let result := { obligation, result := .fail, verbose := options.verbose }
       return (obligation, some result)
     else if options.removeIrrelevantAxioms then
@@ -333,20 +328,24 @@ given proof obligation.
 -/
 def getObligationResult (terms : List Term) (ctx : SMT.Context)
     (obligation : ProofObligation Expression) (p : Program)
-    (smtsolver : String) (options : Options) : EIO Format VCResult := do
+    (smtsolver : String) (options : Options) (counter : IO.Ref Nat)
+    (tempDir : System.FilePath) : EIO Format VCResult := do
   let prog := f!"\n\nEvaluated program:\n{p}"
+  let counterVal ← counter.get
+  counter.set (counterVal + 1)
+  let filename := tempDir / s!"{obligation.label}_{counterVal}.smt2"
   let ans ←
       IO.toEIO
         (fun e => f!"{e}")
         (SMT.dischargeObligation options
           (ProofObligation.getVars obligation) smtsolver
-            (Imperative.smt2_filename obligation.label)
+            filename.toString
           terms ctx)
   match ans with
   | .error e =>
     dbg_trace f!"\n\nObligation {obligation.label}: SMT Solver Invocation Error!\
                  \n\nError: {e}\
-                 {if options.verbose then prog else ""}"
+                 {if options.verbose >= .normal then prog else ""}"
     .error e
   | .ok (smt_result, estate) =>
     let result :=  { obligation,
@@ -356,7 +355,8 @@ def getObligationResult (terms : List Term) (ctx : SMT.Context)
                      verbose := options.verbose }
     return result
 
-def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Options) :
+def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Options)
+    (counter : IO.Ref Nat) (tempDir : System.FilePath) :
     EIO Format VCResults := do
   let (p, E) := pE
   match E.error with
@@ -375,7 +375,7 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
           -- No need to use the SMT solver.
           continue
         if (result.isFailure || result.isImplementationError) then
-          if options.verbose then
+          if options.verbose >= .normal then
             let prog := f!"\n\nEvaluated program:\n{p}"
             dbg_trace f!"\n\nResult: {result}\n{prog}"
           if options.stopOnFirstError then break else continue
@@ -387,16 +387,17 @@ def verifySingleEnv (smtsolver : String) (pE : Program × Env) (options : Option
         let result := { obligation,
                         result := .implementationError (toString err),
                         verbose := options.verbose }
-        if options.verbose then
+        if options.verbose >= .normal then
           let prog := f!"\n\nEvaluated program:\n{p}"
           dbg_trace f!"\n\nResult: {result}\n{prog}"
         results := results.push result
         if options.stopOnFirstError then break
       | .ok (terms, ctx) =>
         let result ← getObligationResult terms ctx obligation p smtsolver options
+                      counter tempDir
         results := results.push result
         if result.isNotSuccess then
-        if options.verbose then
+        if options.verbose >= .normal then
           let prog := f!"\n\nEvaluated program:\n{p}"
           dbg_trace f!"\n\nResult: {result}\n{prog}"
           if options.stopOnFirstError then break
@@ -410,10 +411,12 @@ def verify (smtsolver : String) (program : Program)
   | .error err =>
     .error f!"❌ Type checking error.\n{format err}"
   | .ok pEs =>
+    let tempDir ← IO.toEIO (fun e => f!"{e}") IO.FS.createTempDir
+    let counter ← IO.toEIO (fun e => f!"{e}") (IO.mkRef 0)
     let VCss ← if options.checkOnly then
                  pure []
                else
-                 (List.mapM (fun pE => verifySingleEnv smtsolver pE options) pEs)
+                 (List.mapM (fun pE => verifySingleEnv smtsolver pE options counter tempDir) pEs)
     .ok VCss.toArray.flatten
 
 end Boogie

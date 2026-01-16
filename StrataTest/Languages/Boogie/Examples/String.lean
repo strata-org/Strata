@@ -76,9 +76,6 @@ Assumptions:
 Proof Obligation:
 ((((~Str.Substr #testing123) #2) #0) == #)
 
-Wrote problem to vcs/s1_s2_len_sum_eq_s3_len.smt2.
-Wrote problem to vcs/substr_of_concat.smt2.
-Wrote problem to vcs/substr_of_concat_concrete_test.smt2.
 ---
 info:
 Obligation: concrete_string_test

@@ -66,7 +66,6 @@ Assumptions:
 Proof Obligation:
 (((~select ((~select (((~update $__h0) $__ref1) (((~update ((~select $__h0) $__ref1)) $__field2) ((~Int.Add ((~select ((~select $__h0) $__ref1)) $__field2)) #1)))) $__ref1)) $__field2) == ((~Int.Add ((~select ((~select $__h0) $__ref1)) $__field2)) #1))
 
-Wrote problem to vcs/assert_0.smt2.
 ---
 info:
 Obligation: assert_0

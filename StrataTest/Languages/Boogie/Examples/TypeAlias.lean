@@ -88,7 +88,6 @@ Assumptions:
 Proof Obligation:
 (~fooConst1 == ~fooConst2)
 
-Wrote problem to vcs/fooAssertion.smt2.
 ---
 info:
 Obligation: fooAssertion
@@ -132,7 +131,6 @@ Assumptions:
 Proof Obligation:
 ((((~MapGetEq init_d_0) init_k_1) init_v_2) == (((~MapGetEq init_d_0) init_k_1) #0))
 
-Wrote problem to vcs/assert_0.smt2.
 ---
 info:
 Obligation: assert_0

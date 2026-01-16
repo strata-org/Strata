@@ -65,9 +65,11 @@ def checkValid (e:LExpr BoogieLParams.mono): IO Bool := do
   | .error msg => throw (IO.userError s!"error: {msg}")
   | .ok (.none) => return false
   | .ok (.some (smt_term, ctx)) =>
+    let tempDir ← IO.FS.createTempDir
+    let filename := tempDir / s!"exprEvalTest.smt2"
     let ans ← Boogie.SMT.dischargeObligation
-      { Options.default with verbose := false }
-      (LExpr.freeVars e) "z3" s!"exprEvalTest.smt2"
+      { Options.default with verbose := .quiet }
+      (LExpr.freeVars e) "z3" filename.toString
       [smt_term] ctx
     match ans with
     | .ok (.sat _,_) => return true

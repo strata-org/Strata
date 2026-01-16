@@ -16,7 +16,7 @@ def parseOptions (args : List String) : Except Std.Format (Options × String) :=
   go Options.quiet args
     where
       go : Options → List String → Except Std.Format (Options × String)
-      | opts, "--verbose" :: rest => go {opts with verbose := true} rest
+      | opts, "--verbose" :: rest => go {opts with verbose := .normal} rest
       | opts, "--check" :: rest => go {opts with checkOnly := true} rest
       | opts, "--type-check" :: rest => go {opts with typeCheckOnly := true} rest
       | opts, "--parse-only" :: rest => go {opts with parseOnly := true} rest

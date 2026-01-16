@@ -138,9 +138,6 @@ Assumptions:
 Proof Obligation:
 ($__b6 == #false)
 
-Wrote problem to vcs/T2_g2_eq_g.smt2.
-Wrote problem to vcs/T2_a_eq_false.smt2.
-Wrote problem to vcs/T2_b_eq_false.smt2.
 ---
 info:
 Obligation: T1_z_eq_g

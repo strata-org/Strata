@@ -53,7 +53,6 @@ Assumptions:
 Proof Obligation:
 ($__x0 == #1)
 
-Wrote problem to vcs/assert_0.smt2.
 ---
 info:
 Obligation: assert_0

@@ -124,15 +124,6 @@ Assumptions:
 Proof Obligation:
 (~Bool.Not ((~Str.InRegEx #b) ~optionally_a))
 
-Wrote problem to vcs/hello_dot_ends_with_period.smt2.
-Wrote problem to vcs/dot_ends_with_period.smt2.
-Wrote problem to vcs/bye_exclaim_no_end_with_period.smt2.
-Wrote problem to vcs/ok_chars_str.smt2.
-Wrote problem to vcs/cannot_contain_exclaim.smt2.
-Wrote problem to vcs/has_to_be_at_least_1_char.smt2.
-Wrote problem to vcs/cannot_exceed_10_chars.smt2.
-Wrote problem to vcs/optionally_a_check1.smt2.
-Wrote problem to vcs/optionally_a_check2.smt2.
 ---
 info:
 Obligation: hello_dot_ends_with_period
@@ -302,7 +293,6 @@ Assumptions:
 Proof Obligation:
 (~Bool.Not ((~Str.InRegEx init_s_0) ~Re.None))
 
-Wrote problem to vcs/assert_0.smt2.
 ---
 info:
 Obligation: assert_0

@@ -43,7 +43,6 @@ Assumptions:
 Proof Obligation:
 #false
 
-Wrote problem to vcs/bitvec64_test.smt2.
 
 
 Result: Obligation: bitvec64_test

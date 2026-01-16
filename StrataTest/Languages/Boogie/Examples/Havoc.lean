@@ -54,7 +54,6 @@ Assumptions:
 Proof Obligation:
 ($__x0 == #1)
 
-Wrote problem to vcs/x_eq_1.smt2.
 
 
 Result: Obligation: x_eq_1

@@ -59,8 +59,6 @@ Assumptions:
 Proof Obligation:
 (init_x_0 == (if (init_z_2 == #false) then init_x_0 else init_y_1))
 
-Wrote problem to vcs/unreachable.smt2.
-Wrote problem to vcs/x_eq_y.smt2.
 ---
 info:
 Obligation: x_eq_y_internal
