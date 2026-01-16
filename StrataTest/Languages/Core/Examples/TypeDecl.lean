@@ -104,7 +104,6 @@ Assumptions:
 Proof Obligation:
 (~fooConst1 == ~fooConst2)
 
-Wrote problem to vcs/fooAssertion.smt2.
 ---
 info:
 Obligation: fooAssertion

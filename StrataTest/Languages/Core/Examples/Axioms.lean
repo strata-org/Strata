@@ -82,10 +82,6 @@ Assumptions:
 Proof Obligation:
 ((~Int.Gt (~f ~y)) ~y)
 
-Wrote problem to vcs/use_a1_a2.smt2.
-Wrote problem to vcs/use_f1.smt2.
-Wrote problem to vcs/use_a1_again.smt2.
-Wrote problem to vcs/use_a2_again.smt2.
 ---
 info:
 Obligation: use_a1_a2
@@ -146,7 +142,6 @@ Assumptions:
 Proof Obligation:
 ((~Bool.Implies ((~Int.Ge $__x0) #0)) ((~Int.Gt (~f $__x0)) $__x0))
 
-Wrote problem to vcs/axiomPgm2_main_assert.smt2.
 ---
 info:
 Obligation: axiomPgm2_main_assert

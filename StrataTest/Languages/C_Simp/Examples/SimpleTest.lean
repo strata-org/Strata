@@ -93,7 +93,6 @@ Assumptions:
 Proof Obligation:
 #true
 
-Wrote problem to vcs/test_assert.smt2.
 ---
 info:
 Obligation: test_assert

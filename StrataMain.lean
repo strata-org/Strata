@@ -213,9 +213,13 @@ def pyAnalyzeCommand : Command where
         IO.println "Inlined: "
         IO.print newPgm
       let solverName : String := "Strata/Languages/Python/z3_parallel.py"
-      let vcResults ← EIO.toIO (fun f => IO.Error.userError (toString f))
-                          (Core.verify solverName newPgm { Options.default with stopOnFirstError := false, verbose, removeIrrelevantAxioms := true }
-                                                    (moreFns := Strata.Python.ReFactory))
+      let verboseMode := VerboseMode.ofBool verbose
+      let vcResults ← IO.FS.withTempDir (fun tempDir =>
+          EIO.toIO
+            (fun f => IO.Error.userError (toString f))
+            (Core.verify solverName newPgm tempDir
+              { Options.default with stopOnFirstError := false, verbose := verboseMode, removeIrrelevantAxioms := true }
+                                      (moreFns := Strata.Python.ReFactory)))
       let mut s := ""
       for vcResult in vcResults do
         s := s ++ s!"\n{vcResult.obligation.label}: {Std.format vcResult.result}\n"

@@ -141,25 +141,16 @@ def solverResult {P : PureExpr} [ToFormat P.Ident]
   | "unknown" =>  .ok .unknown
   | other     =>  .error other
 
-def VC_folder_name: String := "vcs"
-
-def smt2_filename (name: String) (suffix : String := "") : String :=
-  name ++ suffix ++ ".smt2"
-
 def dischargeObligation {P : PureExpr} [ToFormat P.Ident]
   (encodeTerms : List Strata.SMT.Term → Strata.SMT.SolverM (List String × Strata.SMT.EncoderState))
   (typedVarToSMTFn : P.Ident → P.Ty → Except Format (String × Strata.SMT.TermType))
   (vars : List P.TypedIdent) (smtsolver filename : String)
   (terms : List Strata.SMT.Term) :
   IO (Except Format (Result P.TypedIdent × Strata.SMT.EncoderState)) := do
-  if !(← System.FilePath.isDir VC_folder_name) then
-    let _ ← IO.FS.createDir VC_folder_name
-  let filename := s!"{VC_folder_name}/{filename}"
   let handle ← IO.FS.Handle.mk filename IO.FS.Mode.write
   let solver ← Strata.SMT.Solver.fileWriter handle
   let (ids, estate) ← encodeTerms terms solver
   let _ ← solver.checkSat ids -- Will return unknown for Solver.fileWriter
-  IO.println s!"Wrote problem to {filename}."
   let produce_models ←
     if smtsolver.endsWith "z3" then
       -- No need to specify -model because we already have `get-value` in the

@@ -54,8 +54,6 @@ Assumptions:
 Proof Obligation:
 ((~Bool.Implies ((~Int.Le $__n0) #100)) ((if ((~Int.Lt #100) $__n0) then ((~Int.Sub $__n0) #10) else $__r3) == #91))
 
-Wrote problem to vcs/n_gt_100_postcond.smt2.
-Wrote problem to vcs/n_le_100_postcond.smt2.
 ---
 info:
 Obligation: n_gt_100_postcond

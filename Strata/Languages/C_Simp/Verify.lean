@@ -131,10 +131,18 @@ def C_Simp.typeCheck (p : Strata.Program) (options : Options := Options.default)
   let program := C_Simp.get_program p
   Core.typeCheck options (to_core program)
 
-def C_Simp.verify (smtsolver : String) (p : Strata.Program) (options : Options := Options.default):
+def C_Simp.verify (smtsolver : String) (p : Strata.Program)
+    (options : Options := Options.default)
+    (tempDir : Option String := .none):
   IO Core.VCResults := do
   let program := C_Simp.get_program p
-  EIO.toIO (fun f => IO.Error.userError (toString f))
-    (Core.verify smtsolver (to_core program) options)
+  let runner tempDir := EIO.toIO (fun f => IO.Error.userError (toString f))
+    (Core.verify smtsolver (to_core program) tempDir options)
+  match tempDir with
+  | .none =>
+    IO.FS.withTempDir runner
+  | .some p =>
+    IO.FS.createDirAll ⟨p⟩
+    runner ⟨p⟩
 
 end Strata

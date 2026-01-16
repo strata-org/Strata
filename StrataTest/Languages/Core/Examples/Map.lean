@@ -64,8 +64,6 @@ Assumptions:
 Proof Obligation:
 ((~select ~a) #1)
 
-Wrote problem to vcs/a_zero_true.smt2.
-Wrote problem to vcs/a_one_true.smt2.
 
 
 Result: Obligation: a_one_true

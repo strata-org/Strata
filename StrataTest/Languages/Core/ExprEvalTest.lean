@@ -65,16 +65,18 @@ def checkValid (e:LExpr CoreLParams.mono): IO Bool := do
   | .error msg => throw (IO.userError s!"error: {msg}")
   | .ok (.none) => return false
   | .ok (.some (smt_term, ctx)) =>
-    let ans ← Core.SMT.dischargeObligation
-      { Options.default with verbose := false }
-      (LExpr.freeVars e) "z3" s!"exprEvalTest.smt2"
-      [smt_term] ctx
-    match ans with
-    | .ok (.sat _,_) => return true
-    | _ =>
-      IO.println s!"Test failed on {e}"
-      IO.println s!"The query: {repr smt_term}"
-      throw (IO.userError "- failed")
+    IO.FS.withTempDir (fun tempDir => do
+      let filename := tempDir / s!"exprEvalTest.smt2"
+      let ans ← Core.SMT.dischargeObligation
+        { Options.default with verbose := .quiet }
+        (LExpr.freeVars e) "z3" filename.toString
+        [smt_term] ctx
+      match ans with
+      | .ok (.sat _,_) => return true
+      | _ =>
+        IO.println s!"Test failed on {e}"
+        IO.println s!"The query: {repr smt_term}"
+        throw (IO.userError "- failed"))
 
 /--
 If a randomly chosen value is <= odd / 10, pick from interesting vals,
@@ -203,7 +205,6 @@ def test_lctx : LContext CoreLParams :=
 def test_ctx : TContext Visibility := ⟨[[]], []⟩
 
 abbrev test_ty : LTy := .forAll [] <| .tcons "bool" []
-
 #guard_msgs(drop all) in
 #eval do
     let P : LExpr CoreLParams.mono → Prop := fun t => HasType test_lctx test_ctx t test_ty

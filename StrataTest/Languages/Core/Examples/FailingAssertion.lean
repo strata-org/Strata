@@ -61,7 +61,6 @@ Assumptions:
 Proof Obligation:
 (((~select $__a0) #0) == #1)
 
-Wrote problem to vcs/assert_0.smt2.
 
 
 Result: Obligation: assert_0

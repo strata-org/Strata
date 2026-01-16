@@ -65,7 +65,6 @@ Assumptions:
 Proof Obligation:
 #true
 
-Wrote problem to vcs/barEq.smt2.
 ---
 info:
 Obligation: barEq

@@ -218,8 +218,9 @@ def verifyToVcResults (smtsolver : String) (program : Program)
   dbg_trace "=== Generated Core.Program ==="
   dbg_trace (toString (Std.Format.pretty (Std.ToFormat.format coreProgram)))
   dbg_trace "================================="
-  EIO.toIO (fun f => IO.Error.userError (toString f))
-      (Core.verify smtsolver coreProgram options)
+  IO.FS.withTempDir (fun tempDir =>
+    EIO.toIO (fun f => IO.Error.userError (toString f))
+      (Core.verify smtsolver coreProgram tempDir options))
 
 def verifyToDiagnostics (smtsolver : String) (program : Program): IO (Array Diagnostic)  := do
   let results <- verifyToVcResults smtsolver program

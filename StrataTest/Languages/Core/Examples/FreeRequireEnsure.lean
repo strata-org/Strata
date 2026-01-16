@@ -64,8 +64,6 @@ Assumptions:
 Proof Obligation:
 ($__g2 == #15)
 
-Wrote problem to vcs/g_gt_10_internal.smt2.
-Wrote problem to vcs/g_eq_15_internal.smt2.
 
 
 Result: Obligation: g_eq_15_internal

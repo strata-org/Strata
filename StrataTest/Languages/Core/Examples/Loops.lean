@@ -66,9 +66,6 @@ Assumptions:
 Proof Obligation:
 ((if ((~Int.Lt #0) $__n0) then $__s5 else #0) == ((~Int.Div ((~Int.Mul $__n0) ((~Int.Add $__n0) #1))) #2))
 
-Wrote problem to vcs/entry_invariant_0.smt2.
-Wrote problem to vcs/arbitrary_iter_maintain_invariant_0.smt2.
-Wrote problem to vcs/sum_ensures_1.smt2.
 ---
 info:
 Obligation: entry_invariant_0

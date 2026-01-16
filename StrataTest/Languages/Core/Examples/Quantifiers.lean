@@ -75,9 +75,6 @@ Assumptions:
 Proof Obligation:
 (∀ ((~Int.Lt %0) $__x0))
 
-Wrote problem to vcs/good_assert.smt2.
-Wrote problem to vcs/good.smt2.
-Wrote problem to vcs/bad.smt2.
 
 
 Result: Obligation: bad
@@ -148,9 +145,6 @@ Assumptions:
 Proof Obligation:
 ((~Int.Lt ((~g (~f $__x0)) $__x0)) #0)
 
-Wrote problem to vcs/trigger_assert.smt2.
-Wrote problem to vcs/multi_trigger_assert.smt2.
-Wrote problem to vcs/f_and_g.smt2.
 ---
 info:
 Obligation: trigger_assert

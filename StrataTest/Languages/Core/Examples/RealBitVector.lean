@@ -71,8 +71,6 @@ Assumptions:
 Proof Obligation:
 ((~Real.Ge ((~Real.Add ~x) ~y)) #4)
 
-Wrote problem to vcs/real_add_ge_good.smt2.
-Wrote problem to vcs/real_add_ge_bad.smt2.
 
 
 Result: Obligation: real_add_ge_bad
@@ -180,8 +178,6 @@ Assumptions:
 Proof Obligation:
 (((~Bv1.Add $__x0) $__x0) == ((~Bv1.Sub $__x0) $__x0))
 
-Wrote problem to vcs/bv_add_ge.smt2.
-Wrote problem to vcs/Q_ensures_0.smt2.
 ---
 info:
 Obligation: bv_add_ge

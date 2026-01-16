@@ -158,14 +158,6 @@ Assumptions:
 Proof Obligation:
 (((~select (((~update (((~update $__a0) #1) #1)) #0) #1)) #1) == (~Int.Neg ((~select (((~update $__b1) #true) #-1)) #true)))
 
-Wrote problem to vcs/c_0_eq_a.smt2.
-Wrote problem to vcs/c_1_eq_a.smt2.
-Wrote problem to vcs/a0eq0.smt2.
-Wrote problem to vcs/a1eq1.smt2.
-Wrote problem to vcs/a0eq1.smt2.
-Wrote problem to vcs/a0neq2.smt2.
-Wrote problem to vcs/bTrueEqTrue.smt2.
-Wrote problem to vcs/mix.smt2.
 ---
 info:
 Obligation: c_0_eq_a

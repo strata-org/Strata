@@ -103,8 +103,6 @@ Assumptions:
 Proof Obligation:
 ((~Int.Le $__x2) #0)
 
-Wrote problem to vcs/a6.smt2.
-Wrote problem to vcs/a7.smt2.
 ---
 info:
 Obligation: a1

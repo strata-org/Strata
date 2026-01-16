@@ -78,11 +78,6 @@ Assumptions:
 Proof Obligation:
 ((~Bool.Equiv ((~Bool.Implies init_a_0) init_b_1)) ((~Bool.Or (~Bool.Not init_a_0)) init_b_1))
 
-Wrote problem to vcs/implies_and_eq_not_or_1.smt2.
-Wrote problem to vcs/implies_and_eq_not_or_2.smt2.
-Wrote problem to vcs/implies_and_eq_not_or_3.smt2.
-Wrote problem to vcs/implies_and_eq_not_or_4.smt2.
-Wrote problem to vcs/implies_equiv.smt2.
 ---
 info:
 Obligation: implies_and_eq_not_or_1

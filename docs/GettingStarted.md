@@ -272,8 +272,6 @@ assert [double_x_lemma]: (2 * x == x + x);
 #end
 
 /--
-info: Wrote problem to vcs/double_x_lemma.smt2.
----
 info:
 Obligation: double_x_lemma
 Result: verified
