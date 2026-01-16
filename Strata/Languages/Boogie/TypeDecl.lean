@@ -83,10 +83,13 @@ def TypeSynonym.toRHSLTy (t : TypeSynonym) : LTy :=
 
 /-! # Boogie Type Declarations -/
 
+/-- A Boogie type declaration. The `data` variant stores a mutual block
+    (a non-empty list of mutually recursive datatypes). For non-mutually-recursive
+    datatypes, this is a single-element list. -/
 inductive TypeDecl where
   | con : TypeConstructor → TypeDecl
   | syn : TypeSynonym → TypeDecl
-  | data : LDatatype Visibility → TypeDecl
+  | data : List (LDatatype Visibility) → TypeDecl
   deriving Repr
 
 instance : ToFormat TypeDecl where
@@ -94,12 +97,23 @@ instance : ToFormat TypeDecl where
     match d with
     | .con tc => f!"{tc}"
     | .syn ts => f!"{ts}"
-    | .data td => f!"{td}"
+    | .data [] => f!"<empty mutual block>"
+    | .data [td] => f!"{td}"
+    | .data tds => f!"mutual {Std.Format.joinSep (tds.map format) Format.line} end"
 
+/-- Get all names from a TypeDecl. For mutual blocks, returns all datatype names. -/
+def TypeDecl.names (d : TypeDecl) : List Expression.Ident :=
+  match d with
+  | .con tc => [tc.name]
+  | .syn ts => [ts.name]
+  | .data tds => tds.map (·.name)
+
+/-- Get the primary name of a TypeDecl (first name for mutual blocks). -/
 def TypeDecl.name (d : TypeDecl) : Expression.Ident :=
   match d with
   | .con tc => tc.name
   | .syn ts => ts.name
-  | .data td => td.name
+  | .data [] => ""
+  | .data (td :: _) => td.name
 
 ---------------------------------------------------------------------

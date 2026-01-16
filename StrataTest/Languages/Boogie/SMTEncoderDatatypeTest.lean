@@ -71,7 +71,7 @@ def treeDatatype : LDatatype Visibility :=
 Convert an expression to full SMT string including datatype declarations.
 -/
 def toSMTStringWithDatatypes (e : LExpr BoogieLParams.mono) (datatypes : List (LDatatype Visibility)) : IO String := do
-  match Env.init.addDatatypes datatypes with
+  match Env.init.addDatatypes (datatypes.map (fun d => [d])) with
   | .error msg => return s!"Error creating environment: {msg}"
   | .ok env =>
     match toSMTTerm env [] e SMT.Context.default with

@@ -81,6 +81,10 @@ The default type application for a datatype. E.g. for datatype
 def dataDefault (d: LDatatype IDMeta) : LMonoTy :=
   data d (d.typeArgs.map .ftvar)
 
+/-- A group of mutually recursive datatypes.
+    For non-mutually-recursive datatypes, this is a single-element list. -/
+abbrev MutualDatatype (IDMeta : Type) := List (LDatatype IDMeta)
+
 ---------------------------------------------------------------------
 
 -- Typechecking
@@ -129,6 +133,33 @@ def checkStrictPosUnif (d: LDatatype IDMeta) : Except Format Unit :=
       checkStrictPosUnifTy name.name d ty
     ) () args
   ) () d.constrs
+
+/--
+Check for strict positivity and uniformity of all datatypes in a mutual block
+within type `ty`. The string `c` appears only for error message information.
+-/
+def checkStrictPosUnifTyMutual (c: String) (block: MutualDatatype IDMeta) (ty: LMonoTy) : Except Format Unit :=
+  match ty with
+  | .arrow t1 t2 =>
+    -- Check that no datatype in the block appears in the left side of an arrow
+    match block.find? (fun d => tyNameAppearsIn d.name t1) with
+    | some d => .error f!"Error in constructor {c}: Non-strictly positive occurrence of {d.name} in type {ty}"
+    | none => checkStrictPosUnifTyMutual c block t2
+  | _ =>
+    -- Check uniformity for all datatypes in the block
+    block.foldlM (fun _ d => checkUniform c d.name (d.typeArgs.map .ftvar) ty) ()
+
+/--
+Check for strict positivity and uniformity across a mutual block of datatypes
+-/
+def checkStrictPosUnifMutual (block: MutualDatatype IDMeta) : Except Format Unit :=
+  block.foldlM (fun _ d =>
+    d.constrs.foldlM (fun _ ⟨name, args, _⟩ =>
+      args.foldlM (fun _ ⟨_, ty⟩ =>
+        checkStrictPosUnifTyMutual name.name block ty
+      ) ()
+    ) ()
+  ) ()
 
 ---------------------------------------------------------------------
 
@@ -302,6 +333,105 @@ def elimFunc [Inhabited T.IDMeta] [BEq T.Identifier] (d: LDatatype T.IDMeta) (m:
 
 ---------------------------------------------------------------------
 
+-- Mutual block eliminator generation
+
+/-- Find which datatype in a mutual block a recursive type refers to. -/
+def findRecTyInBlock (block : MutualDatatype IDMeta) (ty : LMonoTy) : Option (LDatatype IDMeta) :=
+  block.find? (fun d => isRecTy d ty)
+
+/--
+Generate recursive type for mutual blocks. Replace references to datatypes
+in the block with the appropriate return type variable.
+-/
+def genRecTyMutual (block : MutualDatatype IDMeta) (retTyVars : List TyIdentifier) (ty : LMonoTy) : Option LMonoTy :=
+  match block.findIdx? (fun d => ty == dataDefault d) with
+  | some idx => retTyVars[idx]? |>.map LMonoTy.ftvar
+  | none =>
+    match ty with
+    | .arrow t1 t2 => (genRecTyMutual block retTyVars t2).map (fun r => .arrow t1 r)
+    | _ => none
+
+/--
+Generate eliminator case type for a constructor in a mutual block.
+`dtIdx` is the index of the datatype this constructor belongs to.
+-/
+def elimTyMutual (block : MutualDatatype IDMeta) (retTyVars : List TyIdentifier)
+    (dtIdx : Nat) (c : LConstr IDMeta) : LMonoTy :=
+  let outputType := retTyVars[dtIdx]? |>.map LMonoTy.ftvar |>.getD (.ftvar "")
+  match c.args with
+  | [] => outputType
+  | _ :: _ =>
+    let argTypes := c.args.map Prod.snd
+    let recTypes := c.args.filterMap fun (_, ty) => genRecTyMutual block retTyVars ty
+    LMonoTy.mkArrow' outputType (argTypes ++ recTypes)
+
+/-- Compute global constructor index within a mutual block. -/
+def globalConstrIdx (block : MutualDatatype IDMeta) (dtIdx : Nat) (constrIdx : Nat) : Nat :=
+  let prevCount := (block.take dtIdx).foldl (fun acc d => acc + d.constrs.length) 0
+  prevCount + constrIdx
+
+/-- Check if a type is recursive within a mutual block. -/
+def isRecTyInBlock (block : MutualDatatype IDMeta) (ty : LMonoTy) : Bool :=
+  block.any (fun d => isRecTy d ty)
+
+/-- Find which datatype and constructor a value belongs to in a mutual block.
+    Unlike datatypeGetConstr, this identifies recursive args across the whole block. -/
+def matchConstrInBlock {T: LExprParams} [BEq T.Identifier] (block : MutualDatatype T.IDMeta) (x : LExpr T.mono)
+    : Option (Nat × Nat × LConstr T.IDMeta × List (LExpr T.mono) × List (LExpr T.mono × LMonoTy)) :=
+  List.zip block (List.range block.length) |>.findSome? fun (d, dtIdx) =>
+    (datatypeGetConstr d x).map fun (c, constrIdx, args, _) =>
+      -- Recompute recs using the whole block, not just d
+      let recs := (List.zip args (c.args.map Prod.snd)).filter (fun (_, ty) => isRecTyInBlock block ty)
+      (dtIdx, constrIdx, c, args, recs)
+
+/-- Construct recursive eliminator call for mutual blocks. -/
+def elimRecCallMutual {T: LExprParams} [Inhabited T.IDMeta] (block : MutualDatatype T.IDMeta) (recArg : LExpr T.mono)
+    (recTy : LMonoTy) (elimArgs : List (LExpr T.mono)) (m : T.Metadata) : Option (LExpr T.mono) :=
+  (findRecTyInBlock block recTy).map fun d =>
+    let elimName := elimFuncName d
+    match recTyStructure d recTy with
+    | .inl _ => (LExpr.op m elimName .none).mkApp m (recArg :: elimArgs)
+    | .inr funArgs =>
+      LExpr.absMulti m funArgs ((LExpr.op m elimName .none).mkApp m (recArg.mkApp m (getBVars m funArgs.length) :: elimArgs))
+
+/-- Generate eliminator concrete evaluator for mutual blocks. -/
+def elimConcreteEvalMutual {T: LExprParams} [BEq T.Identifier] [Inhabited T.IDMeta] (block : MutualDatatype T.IDMeta)
+    (m : T.Metadata) : T.Metadata → List (LExpr T.mono) → Option (LExpr T.mono) :=
+  fun _ args =>
+    match args with
+    | x :: xs =>
+      match matchConstrInBlock block x with
+      | some (dtIdx, constrIdx, _, a, recs) =>
+        let gIdx := globalConstrIdx block dtIdx constrIdx
+        xs[gIdx]?.bind fun f =>
+          let recCalls := recs.filterMap (fun (r, rty) => elimRecCallMutual block r rty xs m)
+          some (f.mkApp m (a ++ recCalls))
+      | none => none
+    | _ => none
+
+/--
+Generate eliminators for all datatypes in a mutual block.
+Each datatype gets its own eliminator, but they share case function arguments
+for all constructors across the block.
+-/
+def elimFuncsMutual [Inhabited T.IDMeta] [BEq T.Identifier] (block : MutualDatatype T.IDMeta) (m : T.Metadata)
+    : List (LFunc T) :=
+  if block.isEmpty then [] else
+  let allTypeArgs := block.flatMap (·.typeArgs)
+  let retTyVars := freshTypeArgs block.length allTypeArgs
+  let allConstrs : List (Nat × LConstr T.IDMeta) :=
+    List.zip block (List.range block.length) |>.flatMap fun (d, dtIdx) => d.constrs.map (dtIdx, ·)
+  let caseTypes := allConstrs.map fun (dtIdx, c) => elimTyMutual block retTyVars dtIdx c
+  List.zip block (List.range block.length) |>.map fun (d, dtIdx) =>
+    let outputTyVar := retTyVars[dtIdx]?.getD ""
+    { name := elimFuncName d
+      typeArgs := retTyVars ++ d.typeArgs
+      inputs := List.zip (genArgNames (allConstrs.length + 1)) (dataDefault d :: caseTypes)
+      output := .ftvar outputTyVar
+      concreteEval := elimConcreteEvalMutual block m }
+
+---------------------------------------------------------------------
+
 -- Generating testers and destructors
 
 /--
@@ -314,6 +444,33 @@ def testerFuncBody {T : LExprParams} [Inhabited T.IDMeta] (d: LDatatype T.IDMeta
   let numargs (c: LConstr T.IDMeta) := c.args.length + ((c.args.map Prod.snd).filter (isRecTy d)).length
   let args := List.map (fun c1 => LExpr.absMultiInfer m (numargs c1) (.boolConst m (c.name.name == c1.name.name))) d.constrs
   .mkApp m (.op m (elimFuncName d) .none) (input :: args)
+
+/--
+Generate tester body for mutual blocks. For mutual eliminators, we need case functions
+for ALL constructors across the block, not just the constructors of one datatype.
+-/
+def testerFuncBodyMutual {T : LExprParams} [Inhabited T.IDMeta] (block: MutualDatatype T.IDMeta)
+    (d: LDatatype T.IDMeta) (c: LConstr T.IDMeta) (input: LExpr T.mono) (m: T.Metadata) : LExpr T.mono :=
+  -- Number of arguments for a constructor in a mutual block
+  let numargs (c: LConstr T.IDMeta) := c.args.length + ((c.args.map Prod.snd).filter (isRecTyInBlock block)).length
+  -- Generate case functions for ALL constructors in the block
+  let args := block.flatMap (fun d' => d'.constrs.map (fun c1 =>
+    LExpr.absMultiInfer m (numargs c1) (.boolConst m (c.name.name == c1.name.name))))
+  .mkApp m (.op m (elimFuncName d) .none) (input :: args)
+
+/--
+Generate tester function for a constructor in a mutual block.
+-/
+def testerFuncMutual {T} [Inhabited T.IDMeta] (block: MutualDatatype T.IDMeta)
+    (d: LDatatype T.IDMeta) (c: LConstr T.IDMeta) (m: T.Metadata) : LFunc T :=
+  let arg := genArgName
+  {name := c.testerName,
+   typeArgs := d.typeArgs,
+   inputs := [(arg, dataDefault d)],
+   output := .bool,
+   body := testerFuncBodyMutual block d c (.fvar m arg .none) m,
+   attr := #["inline_if_val"]
+  }
 
 /--
 Generate tester function for a constructor (e.g. `List$isCons` and
@@ -368,15 +525,44 @@ def destructorFuncs {T} [BEq T.Identifier] [Inhabited T.IDMeta]  (d: LDatatype T
 
 -- Type Factories
 
-def TypeFactory := Array (LDatatype IDMeta)
+/-- A TypeFactory stores datatypes grouped by mutual recursion. -/
+def TypeFactory := Array (MutualDatatype IDMeta)
 
 instance: ToFormat (@TypeFactory IDMeta) where
-  format f := Std.Format.joinSep f.toList f!"{Format.line}"
+  format f :=
+    let formatBlock (block : MutualDatatype IDMeta) : Format :=
+      match block with
+      | [d] => format d
+      | ds => f!"mutual {Std.Format.joinSep (ds.map format) Format.line} end"
+    Std.Format.joinSep (f.toList.map formatBlock) f!"{Format.line}"
 
 instance : Inhabited (@TypeFactory IDMeta) where
   default := #[]
 
 def TypeFactory.default : @TypeFactory IDMeta := #[]
+
+/-- Get all datatypes in the TypeFactory as a flat list. -/
+def TypeFactory.allDatatypes (t : @TypeFactory IDMeta) : List (LDatatype IDMeta) :=
+  t.toList.flatten
+
+/-- Find a datatype by name in the TypeFactory. -/
+def TypeFactory.getType (F : @TypeFactory IDMeta) (name : String) : Option (LDatatype IDMeta) :=
+  F.allDatatypes.find? (fun d => d.name == name)
+
+/-- Add a mutual block to the TypeFactory, checking for duplicate names. -/
+def TypeFactory.addMutualBlock (t : @TypeFactory IDMeta) (block : MutualDatatype IDMeta) : Except Format (@TypeFactory IDMeta) := do
+  for d in block do
+    match t.getType d.name with
+    | some d' => throw f!"A datatype of name {d.name} already exists! \
+                Redefinitions are not allowed.\n\
+                Existing Type: {d'}\n\
+                New Type:{d}"
+    | none => pure ()
+  .ok (t.push block)
+
+/-- Add a single datatype (as a single-element block). -/
+def TypeFactory.addDatatype (t : @TypeFactory IDMeta) (d : LDatatype IDMeta) : Except Format (@TypeFactory IDMeta) :=
+  t.addMutualBlock [d]
 
 /--
 Generates the Factory (containing the eliminator, constructors, testers,
@@ -405,28 +591,28 @@ def LDatatype.genFunctionMaps {T: LExprParams} [Inhabited T.IDMeta] [BEq T.Ident
       (destructorFuncs d c).map (fun f => (f.name.name, (d, c))))).flatten)
 
 /--
-Generates the Factory (containing all constructor and eliminator functions) for the given `TypeFactory`
+Generates the Factory (containing eliminators, constructors, testers, and destructors)
+for a mutual block of datatypes.
 -/
-def TypeFactory.genFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabited T.IDMeta] [ToFormat T.IDMeta] [BEq T.Identifier] (t: @TypeFactory T.IDMeta) : Except Format (@Lambda.Factory T) :=
-  t.foldlM (fun f d => do
-    let f' ← d.genFactory
-    f.addFactory f') Factory.default
-
-def TypeFactory.getType (F : @TypeFactory IDMeta) (name : String) : Option (LDatatype IDMeta) :=
-  F.find? (fun d => d.name == name)
+def genBlockFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabited T.IDMeta] [ToFormat T.IDMeta] [BEq T.Identifier]
+    (block : MutualDatatype T.IDMeta) : Except Format (@Lambda.Factory T) := do
+  if block.isEmpty then return Factory.default
+  -- Check strict positivity and uniformity across the whole block
+  checkStrictPosUnifMutual block
+  let elims := elimFuncsMutual block inst.default
+  let constrs := block.flatMap (fun d => d.constrs.map (fun c => constrFunc c d))
+  let testers := block.flatMap (fun d => d.constrs.map (fun c => testerFuncMutual block d c inst.default))
+  let destrs := block.flatMap (fun d => d.constrs.flatMap (fun c => destructorFuncs d c))
+  Factory.default.addFactory (elims ++ constrs ++ testers ++ destrs).toArray
 
 /--
-Add an `LDatatype` to an existing `TypeFactory`, checking that no
-types are duplicated.
+Generates the Factory (containing all constructor and eliminator functions) for the given `TypeFactory`.
 -/
-def TypeFactory.addDatatype (t: @TypeFactory IDMeta) (d: LDatatype IDMeta) : Except Format (@TypeFactory IDMeta) :=
-  -- Check that type is not redeclared
-  match t.getType d.name with
-  | none => .ok (t.push d)
-  | some d' => .error f!"A datatype of name {d.name} already exists! \
-              Redefinitions are not allowed.\n\
-              Existing Type: {d'}\n\
-              New Type:{d}"
+def TypeFactory.genFactory {T: LExprParams} [inst: Inhabited T.Metadata] [Inhabited T.IDMeta] [ToFormat T.IDMeta] [BEq T.Identifier] (t: @TypeFactory T.IDMeta) : Except Format (@Lambda.Factory T) :=
+  t.foldlM (fun f block => do
+    let f' ← genBlockFactory block
+    f.addFactory f'
+  ) Factory.default
 
 
 ---------------------------------------------------------------------

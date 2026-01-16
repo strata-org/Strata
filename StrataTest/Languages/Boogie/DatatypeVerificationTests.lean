@@ -98,7 +98,7 @@ def mkProgramWithDatatypes
     body := body
   }
 
-  let decls := datatypes.map (fun d => Decl.type (.data d) .empty)
+  let decls := datatypes.map (fun d => Decl.type (.data [d]) .empty)
   return { decls := decls ++ [Decl.proc proc .empty] }
 
 /-! ## Helper for Running Tests -/

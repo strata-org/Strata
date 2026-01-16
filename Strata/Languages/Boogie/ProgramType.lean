@@ -34,9 +34,11 @@ def typeCheck (C: Boogie.Expression.TyContext) (Env : Boogie.Expression.TyEnv) (
   | decl :: drest => do
     let sourceLoc := Imperative.MetaData.formatFileRangeD decl.metadata (includeEnd? := true)
     let errorWithSourceLoc := fun e => if sourceLoc.isEmpty then e else f!"{sourceLoc} {e}"
-    let C := {C with idents := (← C.idents.addWithError decl.name
-                                    f!"{sourceLoc} Error in {decl.kind} {decl.name}: \
-                                       a declaration of this name already exists.")}
+    -- Add all names from the declaration (multiple for mutual datatypes)
+    let C ← decl.names.foldlM (fun C name => do
+      let idents ← C.idents.addWithError name
+        f!"{sourceLoc} Error in {decl.kind} {name}: a declaration of this name already exists."
+      pure {C with idents}) C
     let (decl', C, Env) ←
       match decl with
 
@@ -61,8 +63,8 @@ def typeCheck (C: Boogie.Expression.TyContext) (Env : Boogie.Expression.TyEnv) (
           | .syn ts =>
             let Env ← TEnv.addTypeAlias { typeArgs := ts.typeArgs, name := ts.name, type := ts.type } C Env
             .ok (.type td, C, Env)
-          | .data d =>
-            let C ← C.addDatatype d
+          | .data block =>
+            let C ← C.addMutualBlock block
             .ok (.type td, C, Env)
           catch e =>
             .error (errorWithSourceLoc e)
