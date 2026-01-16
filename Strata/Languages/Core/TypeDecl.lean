@@ -15,7 +15,7 @@ namespace Core
 open Std (ToFormat Format format)
 open Lambda
 
-/-! # Boogie Type Declarations -/
+/-! # Strata Core Type Declarations -/
 
 inductive Boundedness where
   | Finite

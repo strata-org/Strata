@@ -393,6 +393,7 @@ theorem IsOldPredNormalize :
       case neg Hneg' =>
         unfold CoreIdent.unres at *
         unfold normalizeOldExpr at Hold
+        unfold CoreIdent.unres at *
         split at Hold <;> simp_all
         split at Hold <;> simp_all
         unfold normalizeOldExpr at Hold

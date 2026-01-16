@@ -149,8 +149,6 @@ info: [("Neg", "unaryOp"), ("Add", "binaryOp"), ("Sub", "binaryOp"), ("Mul", "bi
 #guard_msgs in
 #eval List.zip BVOpNames BVOpAritys
 
-variable [Coe String CoreLParams.Identifier]
-
 open Lean Elab Command in
 elab "ExpandBVOpFuncDefs" "[" sizes:num,* "]" : command => do
   for size in sizes.getElems do
@@ -332,8 +330,6 @@ def mapUpdateFunc : LFunc CoreLParams :=
                     ))))]
      ]
    }
-instance : Coe String CoreLParams.Identifier where
-  coe | s => ⟨s, .unres⟩
 
 def emptyTriggersFunc : LFunc CoreLParams :=
     { name := "Triggers.empty",
@@ -401,12 +397,12 @@ def bv64Extract_15_0_Func  := bvExtractFunc 64 15  0
 def bv64Extract_7_0_Func   := bvExtractFunc 64  7  0
 
 def Factory : @Factory CoreLParams := #[
-  intAddFunc,
-  intSubFunc,
-  intMulFunc,
-  intDivFunc,
-  intModFunc,
-  intNegFunc,
+  @intAddFunc CoreLParams _,
+  @intSubFunc CoreLParams _,
+  @intMulFunc CoreLParams _,
+  @intDivFunc CoreLParams _,
+  @intModFunc CoreLParams _,
+  @intNegFunc CoreLParams _,
 
   @intLtFunc CoreLParams _,
   @intLeFunc CoreLParams _,
@@ -468,7 +464,7 @@ def Factory : @Factory CoreLParams := #[
   bv64Extract_31_0_Func,
   bv64Extract_15_0_Func,
   bv64Extract_7_0_Func,
-] ++ ExpandBVOpFuncNames [1,8,16,32,64]
+] ++ (ExpandBVOpFuncNames [1,8,16,32,64])
 
 open Lean Elab Command in
 elab "DefBVOpFuncExprs" "[" sizes:num,* "]" : command => do
@@ -506,16 +502,16 @@ def addTriggerOp : Expression.Expr := addTriggerFunc.opExpr
 instance : Inhabited (⟨ExpressionMetadata, CoreIdent⟩: LExprParams).Metadata where
   default := ()
 
-def intAddOp : Expression.Expr := intAddFunc.opExpr
-def intSubOp : Expression.Expr := intSubFunc.opExpr
-def intMulOp : Expression.Expr := intMulFunc.opExpr
-def intDivOp : Expression.Expr := intDivFunc.opExpr
-def intModOp : Expression.Expr := intModFunc.opExpr
-def intNegOp : Expression.Expr := intNegFunc.opExpr
-def intLtOp : Expression.Expr := intLtFunc.opExpr
-def intLeOp : Expression.Expr := intLeFunc.opExpr
-def intGtOp : Expression.Expr := intGtFunc.opExpr
-def intGeOp : Expression.Expr := intGeFunc.opExpr
+def intAddOp : Expression.Expr := (@intAddFunc CoreLParams _).opExpr
+def intSubOp : Expression.Expr := (@intSubFunc CoreLParams _).opExpr
+def intMulOp : Expression.Expr := (@intMulFunc CoreLParams _).opExpr
+def intDivOp : Expression.Expr := (@intDivFunc CoreLParams _).opExpr
+def intModOp : Expression.Expr := (@intModFunc CoreLParams _).opExpr
+def intNegOp : Expression.Expr := (@intNegFunc CoreLParams _).opExpr
+def intLtOp : Expression.Expr := (@intLtFunc CoreLParams _).opExpr
+def intLeOp : Expression.Expr := (@intLeFunc CoreLParams _).opExpr
+def intGtOp : Expression.Expr := (@intGtFunc CoreLParams _).opExpr
+def intGeOp : Expression.Expr := (@intGeFunc CoreLParams _).opExpr
 def realAddOp : Expression.Expr := realAddFunc.opExpr
 def realSubOp : Expression.Expr := realSubFunc.opExpr
 def realMulOp : Expression.Expr := realMulFunc.opExpr
@@ -525,11 +521,11 @@ def realLtOp : Expression.Expr := realLtFunc.opExpr
 def realLeOp : Expression.Expr := realLeFunc.opExpr
 def realGtOp : Expression.Expr := realGtFunc.opExpr
 def realGeOp : Expression.Expr := realGeFunc.opExpr
-def boolAndOp : Expression.Expr := @boolAndFunc.opExpr CoreLParams _
-def boolOrOp : Expression.Expr := @boolOrFunc.opExpr CoreLParams _
-def boolImpliesOp : Expression.Expr := @boolImpliesFunc.opExpr CoreLParams _
-def boolEquivOp : Expression.Expr := @boolEquivFunc.opExpr CoreLParams _
-def boolNotOp : Expression.Expr := @boolNotFunc.opExpr CoreLParams _
+def boolAndOp : Expression.Expr := (@boolAndFunc CoreLParams _).opExpr
+def boolOrOp : Expression.Expr := (@boolOrFunc CoreLParams _).opExpr
+def boolImpliesOp : Expression.Expr := (@boolImpliesFunc CoreLParams _).opExpr
+def boolEquivOp : Expression.Expr := (@boolEquivFunc CoreLParams _).opExpr
+def boolNotOp : Expression.Expr := (@boolNotFunc CoreLParams _).opExpr
 def strLengthOp : Expression.Expr := strLengthFunc.opExpr
 def strConcatOp : Expression.Expr := strConcatFunc.opExpr
 def strSubstrOp : Expression.Expr := strSubstrFunc.opExpr
@@ -562,5 +558,43 @@ Get all the built-in functions supported by Strata Core.
 -/
 def builtinFunctions : Array String :=
   Factory.map (fun f => CoreIdent.toPretty f.name)
+
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 4000000 in
+/--
+Wellformedness of Factory
+-/
+theorem Factory_wf :
+    FactoryWF Factory := by
+  unfold Factory
+  apply FactoryWF.mk
+  · decide -- FactoryWF.name_nodup
+  · unfold HAppend.hAppend Array.instHAppendList
+    simp only []
+    unfold Array.appendList
+    simp only [List.foldl, Array.push, List.concat]
+    intros lf
+    rw [← Array.mem_toList_iff]
+    simp only []
+    intros Hmem
+    repeat (
+      rcases Hmem with _ | ⟨ a', Hmem ⟩
+      · apply LFuncWF.mk
+        · decide -- LFuncWF.arg_nodup
+        · decide -- LFuncWF.body_freevars
+        · -- LFuncWf.concreteEval_argmatch
+          simp (config := { ground := true })
+          try (
+            try unfold unOpCeval
+            try unfold binOpCeval
+            try unfold cevalIntDiv
+            try unfold cevalIntMod
+            try unfold bvUnaryOp
+            try unfold bvBinaryOp
+            try unfold bvShiftOp
+            try unfold bvBinaryPred
+            intros lf md args res
+            repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
+    contradiction
 
 end Core
