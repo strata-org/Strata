@@ -114,7 +114,6 @@ instance : EvalContext Expression Env where
   getPathConditions := CmdEval.getPathConditions
   addPathCondition  := CmdEval.addPathCondition
   deferObligation   := CmdEval.deferObligation
-  -- lookupEval        := Boogie.lookupEval
 
 instance : ToFormat (Cmds Expression × Env) where
   format arg :=

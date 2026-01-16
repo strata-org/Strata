@@ -183,7 +183,7 @@ datatype Client () {
 //  - -999999999 <= days <= 999999999
 // ""
 
-// In Boogie representation, an int type that corresponds to the full
+// In the Strata Core representation, an int type that corresponds to the full
 // milliseconds is simply used. See Timedelta_mk.
 
 procedure timedelta(days: IntOrNone, hours: IntOrNone) returns (delta : int, maybe_except: ExceptOrNone)
