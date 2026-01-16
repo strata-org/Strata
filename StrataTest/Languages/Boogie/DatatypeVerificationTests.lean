@@ -613,5 +613,149 @@ info: "Test 8 - Hidden Type Recursion: PASSED\n  Verified 1 obligation(s)\n"
 #guard_msgs in
 #eval test8_hiddenTypeRecursion
 
+/-! ## Test 9: Mutually Recursive Datatypes with Havoc -/
+
+/-- RoseTree a = Node a (Forest a) -/
+def roseTreeDatatype : LDatatype Visibility :=
+  { name := "RoseTree"
+    typeArgs := ["a"]
+    constrs := [
+      { name := ⟨"Node", .unres⟩, args := [
+          (⟨"nodeVal", .unres⟩, .ftvar "a"),
+          (⟨"children", .unres⟩, .tcons "Forest" [.ftvar "a"])
+        ], testerName := "isNode" }
+    ]
+    constrs_ne := by decide }
+
+/-- Forest a = FNil | FCons (RoseTree a) (Forest a) -/
+def forestDatatype : LDatatype Visibility :=
+  { name := "Forest"
+    typeArgs := ["a"]
+    constrs := [
+      { name := ⟨"FNil", .unres⟩, args := [], testerName := "isFNil" },
+      { name := ⟨"FCons", .unres⟩, args := [
+          (⟨"head", .unres⟩, .tcons "RoseTree" [.ftvar "a"]),
+          (⟨"tail", .unres⟩, .tcons "Forest" [.ftvar "a"])
+        ], testerName := "isFCons" }
+    ]
+    constrs_ne := by decide }
+
+/--
+Create a Boogie program with a mutual block of datatypes.
+-/
+def mkProgramWithMutualDatatypes
+  (mutualBlock : List (LDatatype Visibility))
+  (procName : String)
+  (body : List Statement)
+  : Except Format Program := do
+  let proc : Procedure := {
+    header := {
+      name := BoogieIdent.unres procName
+      typeArgs := []
+      inputs := []
+      outputs := []
+    }
+    spec := {
+      modifies := []
+      preconditions := []
+      postconditions := []
+    }
+    body := body
+  }
+  let decls := [Decl.type (.data mutualBlock) .empty]
+  return { decls := decls ++ [Decl.proc proc .empty] }
+
+/--
+Test mutually recursive datatypes (RoseTree/Forest) with havoc.
+
+mutual
+  datatype RoseTree a = Node a (Forest a)
+  datatype Forest a = FNil | FCons (RoseTree a) (Forest a)
+end
+
+procedure testMutualRecursive () {
+  tree := Node 1 FNil;
+  havoc tree;
+  val := nodeVal tree;
+  assume (val == 42);
+  assert (isNode tree);
+
+  forest := FNil;
+  havoc forest;
+  assume (isFCons forest);
+  assert (not (isFNil forest));
+}
+-/
+def test9_mutualRecursiveWithHavoc : IO String := do
+  let statements : List Statement := [
+    -- Create a tree: Node 1 FNil
+    Statement.init (BoogieIdent.unres "tree") (.forAll [] (LMonoTy.tcons "RoseTree" [.int]))
+      (LExpr.app ()
+        (LExpr.app ()
+          (LExpr.op () (BoogieIdent.unres "Node")
+            (.some (LMonoTy.arrow .int (LMonoTy.arrow (LMonoTy.tcons "Forest" [.int]) (LMonoTy.tcons "RoseTree" [.int])))))
+          (LExpr.intConst () 1))
+        (LExpr.op () (BoogieIdent.unres "FNil") (.some (LMonoTy.tcons "Forest" [.int])))),
+
+    -- Havoc the tree
+    Statement.havoc (BoogieIdent.unres "tree"),
+
+    -- Extract nodeVal
+    Statement.init (BoogieIdent.unres "val") (.forAll [] LMonoTy.int)
+      (LExpr.app ()
+        (LExpr.op () (BoogieIdent.unres "nodeVal")
+          (.some (LMonoTy.arrow (LMonoTy.tcons "RoseTree" [.int]) .int)))
+        (LExpr.fvar () (BoogieIdent.unres "tree") (.some (LMonoTy.tcons "RoseTree" [.int])))),
+
+    -- Assume val == 42
+    Statement.assume "val_is_42"
+      (LExpr.eq ()
+        (LExpr.fvar () (BoogieIdent.unres "val") (.some .int))
+        (LExpr.intConst () 42)),
+
+    -- Assert tree is a Node (always true for RoseTree)
+    Statement.assert "tree_is_node"
+      (LExpr.app ()
+        (LExpr.op () (BoogieIdent.unres "isNode")
+          (.some (LMonoTy.arrow (LMonoTy.tcons "RoseTree" [.int]) .bool)))
+        (LExpr.fvar () (BoogieIdent.unres "tree") (.some (LMonoTy.tcons "RoseTree" [.int])))),
+
+    -- Create a forest: FNil
+    Statement.init (BoogieIdent.unres "forest") (.forAll [] (LMonoTy.tcons "Forest" [.int]))
+      (LExpr.op () (BoogieIdent.unres "FNil") (.some (LMonoTy.tcons "Forest" [.int]))),
+
+    -- Havoc the forest
+    Statement.havoc (BoogieIdent.unres "forest"),
+
+    -- Assume forest is FCons
+    Statement.assume "forest_is_fcons"
+      (LExpr.app ()
+        (LExpr.op () (BoogieIdent.unres "isFCons")
+          (.some (LMonoTy.arrow (LMonoTy.tcons "Forest" [.int]) .bool)))
+        (LExpr.fvar () (BoogieIdent.unres "forest") (.some (LMonoTy.tcons "Forest" [.int])))),
+
+    -- Assert forest is not FNil
+    Statement.assert "forest_not_fnil"
+      (LExpr.app ()
+        (LExpr.op () (BoogieIdent.unres "Bool.Not")
+          (.some (LMonoTy.arrow .bool .bool)))
+        (LExpr.app ()
+          (LExpr.op () (BoogieIdent.unres "isFNil")
+            (.some (LMonoTy.arrow (LMonoTy.tcons "Forest" [.int]) .bool)))
+          (LExpr.fvar () (BoogieIdent.unres "forest") (.some (LMonoTy.tcons "Forest" [.int])))))
+  ]
+
+  match mkProgramWithMutualDatatypes [roseTreeDatatype, forestDatatype] "testMutualRecursive" statements with
+  | .error err =>
+    return s!"Test 9 - Mutual Recursive with Havoc: FAILED (program creation)\n  Error: {err.pretty}"
+  | .ok program =>
+    runVerificationTest "Test 9 - Mutual Recursive with Havoc" program
+
+/--
+info: "Test 9 - Mutual Recursive with Havoc: PASSED\n  Verified 2 obligation(s)\n"
+-/
+#guard_msgs in
+#eval test9_mutualRecursiveWithHavoc
+
 
 end Boogie.DatatypeVerificationTests

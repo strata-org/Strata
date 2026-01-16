@@ -556,6 +556,9 @@ instance: ToFormat (@TypeFactory IDMeta) where
       | ds => f!"mutual {Std.Format.joinSep (ds.map format) Format.line} end"
     Std.Format.joinSep (f.toList.map formatBlock) f!"{Format.line}"
 
+instance [Repr IDMeta] : Repr (@TypeFactory IDMeta) where
+  reprPrec f n := reprPrec f.toList n
+
 instance : Inhabited (@TypeFactory IDMeta) where
   default := #[]
 
