@@ -175,6 +175,13 @@ instance [Repr P.Expr] [Repr P.Ident] : Repr (MetaDataElem P) where
 
 def MetaData.fileRange : MetaDataElem.Field P := .label "fileRange"
 
+def getFileRange {P : PureExpr} [BEq P.Ident] (md: MetaData P) : Option Strata.FileRange := do
+  let fileRangeElement <- md.findElem Imperative.MetaData.fileRange
+  match fileRangeElement.value with
+    | .fileRange fileRange =>
+      some fileRange
+    | _ => none
+
 def MetaData.formatFileRange? {P} [BEq P.Ident] (md : MetaData P) (includeEnd? : Bool := false) :
     Option Std.Format := do
   let fileRangeElem ← md.findElem MetaData.fileRange

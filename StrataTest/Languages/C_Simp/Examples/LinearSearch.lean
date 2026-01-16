@@ -53,7 +53,7 @@ info: program C_Simp;
   )
 -/
 #guard_msgs in
-#eval IO.println LinearSearchEnv.format.render
+#eval IO.println LinearSearchEnv
 
 /--
 info: function linearSearch {
