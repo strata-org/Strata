@@ -149,8 +149,6 @@ info: [("Neg", "unaryOp"), ("Add", "binaryOp"), ("Sub", "binaryOp"), ("Mul", "bi
 #guard_msgs in
 #eval List.zip BVOpNames BVOpAritys
 
-variable [Coe String BoogieLParams.Identifier]
-
 open Lean Elab Command in
 elab "ExpandBVOpFuncDefs" "[" sizes:num,* "]" : command => do
   for size in sizes.getElems do
@@ -332,8 +330,6 @@ def mapUpdateFunc : LFunc BoogieLParams :=
                     ))))]
      ]
    }
-instance : Coe String BoogieLParams.Identifier where
-  coe | s => ⟨s, .unres⟩
 
 def emptyTriggersFunc : LFunc BoogieLParams :=
     { name := "Triggers.empty",
@@ -401,12 +397,12 @@ def bv64Extract_15_0_Func  := bvExtractFunc 64 15  0
 def bv64Extract_7_0_Func   := bvExtractFunc 64  7  0
 
 def Factory : @Factory BoogieLParams := #[
-  intAddFunc,
-  intSubFunc,
-  intMulFunc,
-  intDivFunc,
-  intModFunc,
-  intNegFunc,
+  @intAddFunc BoogieLParams _,
+  @intSubFunc BoogieLParams _,
+  @intMulFunc BoogieLParams _,
+  @intDivFunc BoogieLParams _,
+  @intModFunc BoogieLParams _,
+  @intNegFunc BoogieLParams _,
 
   @intLtFunc BoogieLParams _,
   @intLeFunc BoogieLParams _,
@@ -468,7 +464,7 @@ def Factory : @Factory BoogieLParams := #[
   bv64Extract_31_0_Func,
   bv64Extract_15_0_Func,
   bv64Extract_7_0_Func,
-] ++ ExpandBVOpFuncNames [1,8,16,32,64]
+] ++ (ExpandBVOpFuncNames [1,8,16,32,64])
 
 open Lean Elab Command in
 elab "DefBVOpFuncExprs" "[" sizes:num,* "]" : command => do
@@ -506,16 +502,16 @@ def addTriggerOp : Expression.Expr := addTriggerFunc.opExpr
 instance : Inhabited (⟨ExpressionMetadata, BoogieIdent⟩: LExprParams).Metadata where
   default := ()
 
-def intAddOp : Expression.Expr := intAddFunc.opExpr
-def intSubOp : Expression.Expr := intSubFunc.opExpr
-def intMulOp : Expression.Expr := intMulFunc.opExpr
-def intDivOp : Expression.Expr := intDivFunc.opExpr
-def intModOp : Expression.Expr := intModFunc.opExpr
-def intNegOp : Expression.Expr := intNegFunc.opExpr
-def intLtOp : Expression.Expr := intLtFunc.opExpr
-def intLeOp : Expression.Expr := intLeFunc.opExpr
-def intGtOp : Expression.Expr := intGtFunc.opExpr
-def intGeOp : Expression.Expr := intGeFunc.opExpr
+def intAddOp : Expression.Expr := (@intAddFunc BoogieLParams _).opExpr
+def intSubOp : Expression.Expr := (@intSubFunc BoogieLParams _).opExpr
+def intMulOp : Expression.Expr := (@intMulFunc BoogieLParams _).opExpr
+def intDivOp : Expression.Expr := (@intDivFunc BoogieLParams _).opExpr
+def intModOp : Expression.Expr := (@intModFunc BoogieLParams _).opExpr
+def intNegOp : Expression.Expr := (@intNegFunc BoogieLParams _).opExpr
+def intLtOp : Expression.Expr := (@intLtFunc BoogieLParams _).opExpr
+def intLeOp : Expression.Expr := (@intLeFunc BoogieLParams _).opExpr
+def intGtOp : Expression.Expr := (@intGtFunc BoogieLParams _).opExpr
+def intGeOp : Expression.Expr := (@intGeFunc BoogieLParams _).opExpr
 def realAddOp : Expression.Expr := realAddFunc.opExpr
 def realSubOp : Expression.Expr := realSubFunc.opExpr
 def realMulOp : Expression.Expr := realMulFunc.opExpr
@@ -525,11 +521,11 @@ def realLtOp : Expression.Expr := realLtFunc.opExpr
 def realLeOp : Expression.Expr := realLeFunc.opExpr
 def realGtOp : Expression.Expr := realGtFunc.opExpr
 def realGeOp : Expression.Expr := realGeFunc.opExpr
-def boolAndOp : Expression.Expr := @boolAndFunc.opExpr BoogieLParams _
-def boolOrOp : Expression.Expr := @boolOrFunc.opExpr BoogieLParams _
-def boolImpliesOp : Expression.Expr := @boolImpliesFunc.opExpr BoogieLParams _
-def boolEquivOp : Expression.Expr := @boolEquivFunc.opExpr BoogieLParams _
-def boolNotOp : Expression.Expr := @boolNotFunc.opExpr BoogieLParams _
+def boolAndOp : Expression.Expr := (@boolAndFunc BoogieLParams _).opExpr
+def boolOrOp : Expression.Expr := (@boolOrFunc BoogieLParams _).opExpr
+def boolImpliesOp : Expression.Expr := (@boolImpliesFunc BoogieLParams _).opExpr
+def boolEquivOp : Expression.Expr := (@boolEquivFunc BoogieLParams _).opExpr
+def boolNotOp : Expression.Expr := (@boolNotFunc BoogieLParams _).opExpr
 def strLengthOp : Expression.Expr := strLengthFunc.opExpr
 def strConcatOp : Expression.Expr := strConcatFunc.opExpr
 def strSubstrOp : Expression.Expr := strSubstrFunc.opExpr
@@ -562,5 +558,44 @@ Get all the built-in functions supported by Boogie.
 -/
 def builtinFunctions : Array String :=
   Factory.map (fun f => BoogieIdent.toPretty f.name)
+
+
+set_option maxRecDepth 32768 in
+set_option maxHeartbeats 4000000 in
+/--
+Wellformedness of Factory
+-/
+theorem Factory_wf :
+    FactoryWF Factory := by
+  unfold Factory
+  apply FactoryWF.mk
+  · decide -- FactoryWF.name_nodup
+  · unfold HAppend.hAppend Array.instHAppendList
+    simp only []
+    unfold Array.appendList
+    simp only [List.foldl, Array.push, List.concat]
+    intros lf
+    rw [← Array.mem_toList_iff]
+    simp only []
+    intros Hmem
+    repeat (
+      rcases Hmem with _ | ⟨ a', Hmem ⟩
+      · apply LFuncWF.mk
+        · decide -- LFuncWF.arg_nodup
+        · decide -- LFuncWF.body_freevars
+        · -- LFuncWf.concreteEval_argmatch
+          simp (config := { ground := true })
+          try (
+            try unfold unOpCeval
+            try unfold binOpCeval
+            try unfold cevalIntDiv
+            try unfold cevalIntMod
+            try unfold bvUnaryOp
+            try unfold bvBinaryOp
+            try unfold bvShiftOp
+            try unfold bvBinaryPred
+            intros lf md args res
+            repeat (rcases args with _ | ⟨ args0, args ⟩ <;> try grind)))
+    contradiction
 
 end Boogie
