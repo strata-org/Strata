@@ -280,11 +280,13 @@ theorem addKnownTypeWithErrorIdents {C: Expression.TyContext}: C.addKnownTypeWit
   case error => intros _; contradiction
   case ok k'=> simp[Except.bind]; intros T'; subst T'; rfl
 
+/-
 theorem addDatatypeIdents {C: Expression.TyContext}: C.addDatatype d = .ok C' → C.idents = C'.idents := by
   unfold LContext.addDatatype;
   simp only[bind, Except.bind, pure, Except.pure]; intros Hok
   repeat (split at Hok <;> try contradiction)
   cases Hok <;> rfl
+-/
 
 /--
 If a program typechecks successfully, then every identifier in the list of

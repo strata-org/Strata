@@ -1379,7 +1379,7 @@ def translateDatatype (p : Program) (bindings : TransBindings) (op : Operation) 
 
     -- Generate factory from LDatatype and convert to Core.Decl
     -- (used only for bindings.freeVars, not for allDecls)
-    let factory ← match ldatatype.genFactory (T := CoreLParams) with
+    let factory ← match genBlockFactory [ldatatype] (T := CoreLParams) with
       | .ok f => pure f
       | .error e => TransM.error s!"Failed to generate datatype factory: {e}"
     let funcDecls : List Core.Decl := factory.toList.map fun func =>
