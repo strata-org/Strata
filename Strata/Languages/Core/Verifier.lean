@@ -158,8 +158,8 @@ def solverResult (vars : List (IdentT LMonoTy Visibility)) (output: IO.Process.O
 
 def getSolverPrelude : String → SolverM Unit
 | "z3" => do
-  -- These options are set by the standard Core implementation and are
-  -- generally good for the Core dialect, too, though we may want to
+  -- These options are set by the standard Boogie implementation and are
+  -- generally good for the Boogie dialect, too, though we may want to
   -- have more fine-grained criteria for when to use them.
   Solver.setOption "smt.mbqi" "false"
   Solver.setOption "auto_config" "false"

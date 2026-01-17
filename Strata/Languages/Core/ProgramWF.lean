@@ -295,7 +295,7 @@ program decls is not in the original `LContext`
 theorem Program.typeCheckFunctionDisjoint : Program.typeCheck.go p C T decls acc = .ok (d', T') → (∀ x, x ∈ Program.getNames.go decls → ¬ C.idents.contains x) := by
   -- TODO: This proof needs to be updated to handle mutual datatypes (multiple names per decl)
   sorry
-  /- Original proof:
+  /-
   induction decls generalizing acc p d' T' T C with
   | nil => simp[Program.getNames.go]
   | cons r rs IH =>
@@ -343,7 +343,7 @@ unique.
 theorem Program.typeCheckFunctionNoDup : Program.typeCheck.go p C T decls acc = .ok (d', T') → (Program.getNames.go decls).Nodup := by
   -- TODO: This proof needs to be updated to handle mutual datatypes (multiple names per decl)
   sorry
-  /- Original proof:
+  /-
   induction decls generalizing acc p C T with
   | nil => simp[Program.getNames.go]
   | cons r rs IH =>

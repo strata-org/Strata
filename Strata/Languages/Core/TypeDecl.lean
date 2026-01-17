@@ -83,9 +83,6 @@ def TypeSynonym.toRHSLTy (t : TypeSynonym) : LTy :=
 
 /-! # Strata Core Type Declarations -/
 
-/-- A Boogie type declaration. The `data` variant stores a mutual block
-    (a non-empty list of mutually recursive datatypes). For non-mutually-recursive
-    datatypes, this is a single-element list. -/
 inductive TypeDecl where
   | con : TypeConstructor → TypeDecl
   | syn : TypeSynonym → TypeDecl
@@ -101,7 +98,7 @@ instance : ToFormat TypeDecl where
     | .data [td] => f!"{td}"
     | .data tds => f!"mutual {Std.Format.joinSep (tds.map format) Format.line} end"
 
-/-- Get all names from a TypeDecl. For mutual blocks, returns all datatype names. -/
+/-- Get all names from a TypeDecl. -/
 def TypeDecl.names (d : TypeDecl) : List Expression.Ident :=
   match d with
   | .con tc => [tc.name]

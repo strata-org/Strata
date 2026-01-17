@@ -189,7 +189,7 @@ open Lambda.LTy.Syntax
 
 
 -- This may take a while (~ 5min)
--- #eval (checkFactoryOps false)
+#eval (checkFactoryOps false)
 
 open Plausible TestGen
 

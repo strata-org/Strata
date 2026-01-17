@@ -134,10 +134,8 @@ def declareDatatype (id : String) (params : List String) (constructors : List St
 /-- Declare multiple mutually recursive datatypes. Each element is (name, params, constructors). -/
 def declareDatatypes (dts : List (String × List String × List String)) : SolverM Unit := do
   if dts.isEmpty then return
-  -- Build sort declarations: ((name arity) ...)
   let sortDecls := dts.map fun (name, params, _) => s!"({name} {params.length})"
   let sortDeclStr := String.intercalate " " sortDecls
-  -- Build datatype bodies
   let bodies := dts.map fun (_, params, constrs) =>
     let cInline := String.intercalate " " constrs
     if params.isEmpty then s!"({cInline})"

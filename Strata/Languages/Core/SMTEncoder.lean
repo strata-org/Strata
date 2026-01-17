@@ -35,9 +35,8 @@ structure SMT.Context where
   ifs : Array SMT.IF := #[]
   axms : Array Term := #[]
   tySubst: Map String TermType := []
-  /-- Stores the TypeFactory for datatype ordering during emission.
-      This is redundant with Env.datatypes but needed here to preserve
-      the correct dependency order when emitting declare-datatypes. -/
+  /-- Stores the TypeFactory purely for ordering datatype declarations
+  correctly (TypeFactory in topological order) -/
   typeFactory : @Lambda.TypeFactory CoreLParams.IDMeta := #[]
   seenDatatypes : Std.HashSet String := {}
   datatypeFuns : Map String (Op.DatatypeFuncs × LConstr CoreLParams.IDMeta) := Map.empty
@@ -117,7 +116,6 @@ Single-element blocks use declare-datatype, multi-element blocks use declare-dat
 -/
 def SMT.Context.emitDatatypes (ctx : SMT.Context) : Strata.SMT.SolverM Unit := do
   for block in ctx.typeFactory.toList do
-    -- Filter to only datatypes that are used (in seenDatatypes)
     let usedBlock := block.filter (fun d => ctx.seenDatatypes.contains d.name)
     match usedBlock with
     | [] => pure ()
@@ -557,14 +555,8 @@ partial def toSMTOp (E : Env) (fn : CoreIdent) (fnty : LMonoTy) (ctx : SMT.Conte
         .ok (.app (Op.uf uf), smt_outty, ctx)
 end
 
-/--
-Convert expressions to SMT terms.
-Sets the TypeFactory on the context if not already set, to ensure correct
-datatype emission ordering.
--/
 def toSMTTerms (E : Env) (es : List (LExpr CoreLParams.mono)) (ctx : SMT.Context) :
   Except Format ((List Term) × SMT.Context) := do
-  -- Ensure typeFactory is set for correct datatype emission ordering
   let ctx := if ctx.typeFactory.isEmpty then ctx.withTypeFactory E.datatypes else ctx
   match es with
   | [] => .ok ([], ctx)

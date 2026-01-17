@@ -253,7 +253,7 @@ partial def translateLMonoTy (bindings : TransBindings) (arg : Arg) :
                     pure ty
                   | .type (.data (ldatatype :: _)) _md =>
                     -- Datatype Declaration
-                    -- TODO: For mutual blocks, need to find the specific datatype by name
+                    -- TODO: Handle mutual blocks, need to find the specific datatype by name
                     let args := ldatatype.typeArgs.map LMonoTy.ftvar
                     pure (.tcons ldatatype.name args)
                   | .type (.data []) _md =>
