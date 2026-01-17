@@ -6,7 +6,7 @@
 
 import Strata.DL.Imperative.Stmt
 
-namespace Boogie
+namespace Core
 open Imperative Lambda
 
 /-! ## Loop elimination

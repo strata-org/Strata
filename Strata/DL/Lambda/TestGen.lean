@@ -1052,7 +1052,7 @@ instance {T : LExprParams}
                   return Lambda.LExpr.fvar m x.fst none
                 else
                   throw Gen.genericFailure),
-            (0, -- FIXME: for now we avoid generating lambdas for the boogie translator.
+            (0, -- FIXME: for now we avoid generating lambdas for the Strata Core translator.
               match ty_1 with
               |
               Lambda.LTy.forAll (List.nil)

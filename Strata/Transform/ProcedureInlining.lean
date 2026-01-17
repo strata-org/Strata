@@ -6,15 +6,15 @@
 
 import Strata.DL.Util.LabelGen
 import Strata.DL.Util.ListUtils
-import Strata.Languages.Boogie.Boogie
-import Strata.Languages.Boogie.BoogieGen
-import Strata.Languages.Boogie.ProgramWF
-import Strata.Languages.Boogie.Statement
-import Strata.Transform.BoogieTransform
+import Strata.Languages.Core.Core
+import Strata.Languages.Core.CoreGen
+import Strata.Languages.Core.ProgramWF
+import Strata.Languages.Core.Statement
+import Strata.Transform.CoreTransform
 
 /-! # Procedure Inlining Transformation -/
 
-namespace Boogie
+namespace Core
 namespace ProcedureInlining
 
 open Transform
@@ -26,7 +26,7 @@ def Block.substFvar (b : Block) (fr:Expression.Ident)
   termination_by b.sizeOf
   decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
 
-def Statement.substFvar (s : Boogie.Statement)
+def Statement.substFvar (s : Core.Statement)
       (fr:Expression.Ident)
       (to:Expression.Expr) : Statement :=
   match s with
@@ -65,7 +65,7 @@ def Block.renameLhs (b : Block) (fr: Lambda.Identifier Visibility) (to: Lambda.I
   termination_by b.sizeOf
   decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
 
-def Statement.renameLhs (s : Boogie.Statement) (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility)
+def Statement.renameLhs (s : Core.Statement) (fr: Lambda.Identifier Visibility) (to: Lambda.Identifier Visibility)
     : Statement :=
   match s with
   | .init lhs ty rhs metadata =>
@@ -95,7 +95,7 @@ def Block.labels (b : Block): List String :=
 
 -- Assume and Assert's labels have special meanings, so they must not be
 -- mangled during procedure inlining.
-def Statement.labels (s : Boogie.Statement) : List String :=
+def Statement.labels (s : Core.Statement) : List String :=
   match s with
   | .block lbl b _ => lbl :: (Block.labels b)
   | .ite _ thenb elseb _ => (Block.labels thenb) ++ (Block.labels elseb)
@@ -114,7 +114,7 @@ def Block.replaceLabels (b : Block) (map:Map String String)
   decreasing_by apply Imperative.sizeOf_stmt_in_block; assumption
 
 def Statement.replaceLabels
-    (s : Boogie.Statement) (map:Map String String) : Boogie.Statement :=
+    (s : Core.Statement) (map:Map String String) : Core.Statement :=
   let app (s:String) :=
     match Map.find? map s with
     | .none => s
@@ -135,7 +135,7 @@ end
 
 private def genOldToFreshIdMappings (old_vars : List Expression.Ident)
     (prev_map : Map Expression.Ident Expression.Ident) (prefix_ : String)
-    : BoogieTransformM (Map Expression.Ident Expression.Ident) := do
+    : CoreTransformM (Map Expression.Ident Expression.Ident) := do
   let prev_map <- old_vars.foldlM
     (fun var_map id => do
       let new_name <- genIdent id (fun s => prefix_ ++ "_" ++ s)
@@ -144,7 +144,7 @@ private def genOldToFreshIdMappings (old_vars : List Expression.Ident)
   return prev_map
 
 private def renameAllLocalNames (c:Procedure)
-    : BoogieTransformM (Procedure × Map Expression.Ident Expression.Ident) := do
+    : CoreTransformM (Procedure × Map Expression.Ident Expression.Ident) := do
   let var_map: Map Expression.Ident Expression.Ident := []
   let proc_name := c.header.name.name
 
@@ -194,7 +194,7 @@ the reachability query.
 -/
 def inlineCallCmd (excluded_calls:List String := [])
                   (cmd: Command) (p : Program)
-  : BoogieTransformM (List Statement) :=
+  : CoreTransformM (List Statement) :=
     open Lambda in do
     match cmd with
       | .call lhs procName args _ =>
@@ -223,7 +223,7 @@ def inlineCallCmd (excluded_calls:List String := [])
         --   set x1 := out1    --- outputSetStmts
         --   set x2 := out2
         -- `init outN` is not necessary because calls are only allowed to use
-        -- already declared variables (per Boogie.typeCheck)
+        -- already declared variables (per Core.typeCheck)
 
         -- Create a fresh var statement for each LHS
         let outputTrips ← genOutExprIdentsTrip sigOutputs sigOutputs.unzip.fst
@@ -248,7 +248,7 @@ def inlineCallCmd (excluded_calls:List String := [])
               Statement.set lhs_var (.fvar () out_var (.none)))
             outs_lhs_and_sig
 
-        let stmts:List (Imperative.Stmt Boogie.Expression Boogie.Command)
+        let stmts:List (Imperative.Stmt Core.Expression Core.Command)
           := inputInits ++ outputInits ++ outputHavocs ++ proc.body ++
              outputSetStmts
 
@@ -257,12 +257,12 @@ def inlineCallCmd (excluded_calls:List String := [])
       | _ => return [.cmd cmd]
 
 def inlineCallStmtsRec (ss: List Statement) (prog : Program)
-  : BoogieTransformM (List Statement) :=
+  : CoreTransformM (List Statement) :=
   runStmtsRec inlineCallCmd ss prog
 
 def inlineCallL (dcls : List Decl) (prog : Program)
-  : BoogieTransformM (List Decl) :=
+  : CoreTransformM (List Decl) :=
   runProcedures inlineCallCmd dcls prog
 
 end ProcedureInlining
-end Boogie
+end Core

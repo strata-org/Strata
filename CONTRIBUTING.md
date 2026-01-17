@@ -37,7 +37,7 @@ this can be okay. However, because we aim for it to be possible to
 verify core functionality, we prefer that operations over programs or
 terms -- such as transformations, verification condition generation, or
 testing -- be total functions and that this fact can, at least in
-principle, be proved. That a function is total is also usually a 
+principle, be proved. That a function is total is also usually a
 prerequisite for any proofs that use the function in question.
 
 In some cases, however, it may be valuable to prove properties of code
@@ -131,9 +131,7 @@ main purposes:
   components (e.g., just the DDM, just the partial evaluator of a
   specific dialect, etc.). These tests serve as guides to understand
   how to set up, use, and compose these core components.
-
-* In the `Examples` directories (e.g.,
-  `Strata/Languages/[Boogie|C_Simp]/Examples`), which showcase
+  `StrataTest/Languages/[Core|C_Simp]/Examples` showcases
   end-to-end Strata applications and may include output from external
   solvers.
 
