@@ -6,17 +6,17 @@
 
 import Strata.DDM.Integration.Lean
 import Strata.DDM.Util.Format
-import Strata.Languages.Boogie.Boogie
-import Strata.Languages.Boogie.DDMTransform.Translate
-import Strata.Languages.Boogie.ProgramType
-import Strata.Languages.Boogie.ProgramWF
-import Strata.Languages.Boogie.StatementSemantics
-import Strata.Transform.BoogieTransform
+import Strata.Languages.Core.Core
+import Strata.Languages.Core.DDMTransform.Translate
+import Strata.Languages.Core.ProgramType
+import Strata.Languages.Core.ProgramWF
+import Strata.Languages.Core.StatementSemantics
+import Strata.Transform.CoreTransform
 import Strata.Transform.CallElim
 
 
-open Boogie
-open Boogie.Transform
+open Core
+open Core.Transform
 open CallElim
 open Strata
 
@@ -25,7 +25,7 @@ section CallElimExamples
 
 def CallElimTest1 :=
 #strata
-program Boogie;
+program Core;
 var i : bool;
 var j : bool;
 var k : bool;
@@ -46,7 +46,7 @@ procedure h() returns () spec {
 
 def CallElimTest1Ans :=
 #strata
-program Boogie;
+program Core;
 var i : bool;
 var j : bool;
 var k : bool;
@@ -73,7 +73,7 @@ procedure h() returns () spec {
 
 def CallElimTest2 :=
 #strata
-program Boogie;
+program Core;
 var i : bool;
 var j : bool;
 var k : bool;
@@ -95,7 +95,7 @@ procedure h() returns () spec {
 
 def CallElimTest2Ans :=
 #strata
-program Boogie;
+program Core;
 var i : bool;
 var j : bool;
 var k : bool;
@@ -126,7 +126,7 @@ procedure h() returns () spec {
 
 def CallElimTest3 :=
 #strata
-program Boogie;
+program Core;
 var i : bool;
 var j : bool;
 var k : bool;
@@ -148,7 +148,7 @@ procedure h() returns () spec {
 
 def CallElimTest3Ans :=
 #strata
-program Boogie;
+program Core;
 var i : bool;
 var j : bool;
 var k : bool;
@@ -177,9 +177,9 @@ procedure h() returns () spec {
 };
 #end
 
-def translate (t : Strata.Program) : Boogie.Program := (TransM.run Inhabited.default (translateProgram t)).fst
+def translate (t : Strata.Program) : Core.Program := (TransM.run Inhabited.default (translateProgram t)).fst
 
-def env := (Lambda.LContext.default.addFactoryFunctions Boogie.Factory)
+def env := (Lambda.LContext.default.addFactoryFunctions Core.Factory)
 
 def translateWF (t : Strata.Program) : WF.WFProgram :=
   let p := translate t
@@ -187,14 +187,14 @@ def translateWF (t : Strata.Program) : WF.WFProgram :=
   | .error e => panic! "Well, " ++ Std.format e |> toString
   | .ok res => { self := p, prop := by exact WF.Program.typeCheckWF H }
 
-def tests : List (Boogie.Program × Boogie.Program) := [
+def tests : List (Core.Program × Core.Program) := [
   (CallElimTest1, CallElimTest1Ans),
   (CallElimTest2, CallElimTest2Ans),
   (CallElimTest3, CallElimTest3Ans),
 ].map (Prod.map translate translate)
 
-def callElim (p : Boogie.Program)
-  : Boogie.Program :=
+def callElim (p : Core.Program)
+  : Core.Program :=
   match (run p callElim') with
   | .ok res => res
   | .error e => panic! e

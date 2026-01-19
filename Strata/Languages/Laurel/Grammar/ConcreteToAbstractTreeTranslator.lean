@@ -8,7 +8,7 @@ import Strata.DDM.AST
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Laurel
 import Strata.DL.Imperative.MetaData
-import Strata.Languages.Boogie.Expressions
+import Strata.Languages.Core.Expressions
 
 namespace Laurel
 
@@ -30,7 +30,7 @@ def TransM.run (ictx : InputContext) (m : TransM α) : Except String α :=
 def TransM.error (msg : String) : TransM α :=
   throw msg
 
-def SourceRange.toMetaData (ictx : InputContext) (sr : SourceRange) : Imperative.MetaData Boogie.Expression :=
+def SourceRange.toMetaData (ictx : InputContext) (sr : SourceRange) : Imperative.MetaData Core.Expression :=
   let file := ictx.fileName
   let startPos := ictx.fileMap.toPosition sr.start
   let endPos := ictx.fileMap.toPosition sr.stop
@@ -38,7 +38,7 @@ def SourceRange.toMetaData (ictx : InputContext) (sr : SourceRange) : Imperative
   let fileRangeElt := ⟨ Imperative.MetaDataElem.Field.label "fileRange", .fileRange ⟨ uri, startPos, endPos ⟩ ⟩
   #[fileRangeElt]
 
-def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Boogie.Expression) :=
+def getArgMetaData (arg : Arg) : TransM (Imperative.MetaData Core.Expression) :=
   return SourceRange.toMetaData (← get).inputCtx arg.ann
 
 def checkOp (op : Strata.Operation) (name : QualifiedIdent) (argc : Nat) :

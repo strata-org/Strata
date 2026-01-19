@@ -15,6 +15,7 @@ import Plausible.Sampleable
 import Plausible.DeriveArbitrary
 import Plausible.Attr
 import Strata.DL.Lambda.PlausibleHelpers
+import Strata.Util.Random
 
 -- -- Add these if depending on Chamelean for instance generation.
 -- import Plausible.Chamelean.ArbitrarySizedSuchThat
@@ -1051,7 +1052,7 @@ instance {T : LExprParams}
                   return Lambda.LExpr.fvar m x.fst none
                 else
                   throw Gen.genericFailure),
-            (0, -- FIXME: for now we avoid generating lambdas for the boogie translator.
+            (0, -- FIXME: for now we avoid generating lambdas for the Strata Core translator.
               match ty_1 with
               |
               Lambda.LTy.forAll (List.nil)
@@ -1240,11 +1241,10 @@ def canAnnotate (t : LExpr TrivialParams.mono) : Bool :=
 
 
 #guard_msgs(drop info) in
-#eval do
+#eval Strata.Util.withStdGenSeed 0 do
     let P : LExpr TrivialParams.mono → Prop := fun t => HasType example_lctx example_ctx t example_ty
     let t ← Gen.runUntil (.some 10) (ArbitrarySizedSuchThat.arbitrarySizedST P 5) 5
     IO.println s!"Generated {t}"
-
 
 /-- info: Generating terms of type
 Lambda.LTy.forAll [] (Lambda.LMonoTy.tcons "arrow" [Lambda.LMonoTy.tcons "bool" [], Lambda.LMonoTy.tcons "bool" []])
@@ -1254,7 +1254,7 @@ in factory
 #[Int.Add, Int.Sub, Int.Mul, Int.Div, Int.Mod, Int.Neg, Int.Lt, Int.Le, Int.Gt, Int.Ge, Bool.And, Bool.Or, Bool.Implies, Bool.Equiv, Bool.Not]
 -/
 #guard_msgs in
-#eval do
+#eval Strata.Util.withStdGenSeed 0 do
   IO.println s!"Generating terms of type\n{example_ty}\nin context\n{repr example_ctx}\nin \
                 factory\n{example_lctx.functions.map (fun f : LFunc TrivialParams => f.name)}\n"
   for i in List.range 100 do
@@ -1282,7 +1282,7 @@ in factory
 #[Int.Add, Int.Sub, Int.Mul, Int.Div, Int.Mod, Int.Neg, Int.Lt, Int.Le, Int.Gt, Int.Ge, Bool.And, Bool.Or, Bool.Implies, Bool.Equiv, Bool.Not]
 -/
 #guard_msgs(info, drop error) in
-#eval do
+#eval Strata.Util.withStdGenSeed 0 do
   IO.println s!"Generating terms of type\n{example_ty}\nin context\n{repr example_ctx}\nin \
                 factory\n{example_lctx.functions.map (fun f : LFunc _ => f.name)}\n"
   for _i in List.range 100 do

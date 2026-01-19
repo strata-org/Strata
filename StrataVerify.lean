@@ -5,7 +5,7 @@
 -/
 
 -- Executable for verifying a Strata program from a file.
-import Strata.Languages.Boogie.Verifier
+import Strata.Languages.Core.Verifier
 import Strata.Languages.C_Simp.Verify
 import Strata.Languages.B3.Verifier.Program
 import Strata.Util.IO
@@ -17,7 +17,7 @@ def parseOptions (args : List String) : Except Std.Format (Options × String) :=
   go Options.quiet args
     where
       go : Options → List String → Except Std.Format (Options × String)
-      | opts, "--verbose" :: rest => go {opts with verbose := true} rest
+      | opts, "--verbose" :: rest => go {opts with verbose := .normal} rest
       | opts, "--check" :: rest => go {opts with checkOnly := true} rest
       | opts, "--type-check" :: rest => go {opts with typeCheckOnly := true} rest
       | opts, "--parse-only" :: rest => go {opts with parseOnly := true} rest
@@ -32,7 +32,7 @@ def parseOptions (args : List String) : Except Std.Format (Options × String) :=
       | _, args => .error f!"Unknown options: {args}"
 
 def usageMessage : Std.Format :=
-  f!"Usage: StrataVerify [OPTIONS] <file.\{boogie, csimp, b3}.st>{Std.Format.line}\
+  f!"Usage: StrataVerify [OPTIONS] <file.\{core, csimp, b3}.st>{Std.Format.line}\
   {Std.Format.line}\
   Options:{Std.Format.line}\
   {Std.Format.line}  \
@@ -50,7 +50,7 @@ def main (args : List String) : IO UInt32 := do
     let text ← Strata.Util.readInputSource file
     let inputCtx := Lean.Parser.mkInputContext text (Strata.Util.displayName file)
     let dctx := Elab.LoadedDialects.builtin
-    let dctx := dctx.addDialect! Boogie
+    let dctx := dctx.addDialect! Core
     let dctx := dctx.addDialect! C_Simp
     let dctx := dctx.addDialect! B3CST
     let leanEnv ← Lean.mkEmptyEnvironment 0
@@ -63,7 +63,7 @@ def main (args : List String) : IO UInt32 := do
         let ans := if file.endsWith ".csimp.st" then
                      C_Simp.typeCheck pgm opts
                    else
-                     -- Boogie.
+                     -- Strata Core.
                      typeCheck inputCtx pgm opts
         match ans with
         | .error e =>
@@ -105,7 +105,7 @@ def main (args : List String) : IO UInt32 := do
         for vcResult in vcResults do
           let posStr := Imperative.MetaData.formatFileRangeD vcResult.obligation.metadata
           println! f!"{posStr} [{vcResult.obligation.label}]: {vcResult.result}"
-        let success := vcResults.all Boogie.VCResult.isSuccess
+        let success := vcResults.all Core.VCResult.isSuccess
         if success && !opts.checkOnly then
           println! f!"All {vcResults.size} goals passed."
           return 0
@@ -113,8 +113,8 @@ def main (args : List String) : IO UInt32 := do
           println! f!"Skipping verification."
           return 0
         else
-          let provedGoalCount := (vcResults.filter Boogie.VCResult.isSuccess).size
-          let failedGoalCount := (vcResults.filter Boogie.VCResult.isNotSuccess).size
+          let provedGoalCount := (vcResults.filter Core.VCResult.isSuccess).size
+          let failedGoalCount := (vcResults.filter Core.VCResult.isNotSuccess).size
           println! f!"Finished with {provedGoalCount} goals passed, {failedGoalCount} failed."
           return 1
     -- Strata.Elab.elabProgram
