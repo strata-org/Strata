@@ -128,15 +128,22 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
       let ident := Core.CoreIdent.locl name
       match initializer with
       | some (.StaticCall callee args) =>
-          -- Translate as: var name; call name := callee(args)
-          let boogieArgs := args.map (translateExpr env)
-          let defaultExpr := match ty with
-                            | .TInt => .const () (.intConst 0)
-                            | .TBool => .const () (.boolConst false)
-                            | _ => .const () (.intConst 0)
-          let initStmt := Core.Statement.init ident boogieType defaultExpr
-          let callStmt := Core.Statement.call [ident] callee boogieArgs
-          (env', [initStmt, callStmt])
+          -- Check if this is a heap function (heapRead/heapStore) or a regular procedure call
+          -- Heap functions should be translated as expressions, not call statements
+          if callee == "heapRead" || callee == "heapStore" then
+            -- Translate as expression (function application)
+            let boogieExpr := translateExpr env (.StaticCall callee args)
+            (env', [Core.Statement.init ident boogieType boogieExpr])
+          else
+            -- Translate as: var name; call name := callee(args)
+            let boogieArgs := args.map (translateExpr env)
+            let defaultExpr := match ty with
+                              | .TInt => .const () (.intConst 0)
+                              | .TBool => .const () (.boolConst false)
+                              | _ => .const () (.intConst 0)
+            let initStmt := Core.Statement.init ident boogieType defaultExpr
+            let callStmt := Core.Statement.call [ident] callee boogieArgs
+            (env', [initStmt, callStmt])
       | some initExpr =>
           let boogieExpr := translateExpr env initExpr
           (env', [Core.Statement.init ident boogieType boogieExpr])
@@ -161,8 +168,14 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
                   | none => []
       (env, [Imperative.Stmt.ite bcond bthen belse .empty])
   | .StaticCall name args =>
-      let boogieArgs := args.map (translateExpr env)
-      (env, [Core.Statement.call [] name boogieArgs])
+      -- Heap functions (heapRead/heapStore) should not appear as standalone statements
+      -- Only translate actual procedure calls to call statements
+      if name == "heapRead" || name == "heapStore" then
+        -- This shouldn't happen in well-formed programs, but handle gracefully
+        (env, [])
+      else
+        let boogieArgs := args.map (translateExpr env)
+        (env, [Core.Statement.call [] name boogieArgs])
   | .Return valueOpt =>
       match valueOpt, outputParams.head? with
       | some value, some outParam =>
