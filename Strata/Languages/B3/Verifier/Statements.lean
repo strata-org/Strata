@@ -63,7 +63,7 @@ def mkExecutionResult {M : Type} [Repr M] (convErrors : List (ConversionError M)
   { results := allResults, finalState := state }
 
 /-- Translate B3 statements to SMT via streaming symbolic execution (without diagnosis) -/
-partial def statementToSMTWithoutDiagnosis (ctx : ConversionContext) (state : B3VerificationState) (sourceDecl : B3AST.Decl SourceRange) : B3AST.Statement SourceRange → IO SymbolicExecutionResult
+def statementToSMTWithoutDiagnosis (ctx : ConversionContext) (state : B3VerificationState) (sourceDecl : B3AST.Decl SourceRange) : B3AST.Statement SourceRange → IO SymbolicExecutionResult
   | .check m expr => do
       let convResult := expressionToSMT ctx expr
       let vctx := mkVerificationContext state sourceDecl (.check m expr)
@@ -100,6 +100,14 @@ partial def statementToSMTWithoutDiagnosis (ctx : ConversionContext) (state : B3
 
   | _ =>
       pure { results := [], finalState := state }
+  termination_by stmt => SizeOf.sizeOf stmt
+  decreasing_by
+    simp_wf
+    cases stmts
+    simp_all
+    rename_i h
+    have := Array.sizeOf_lt_of_mem h
+    omega
 
 ---------------------------------------------------------------------
 -- Statement Formatting

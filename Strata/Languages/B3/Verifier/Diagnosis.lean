@@ -168,7 +168,7 @@ The diagnosis analyzes failures but does not modify the verification state.
 
 For faster verification without diagnosis, use statementToSMTWithoutDiagnosis.
 -/
-partial def statementToSMT (ctx : ConversionContext) (state : B3VerificationState) (sourceDecl : B3AST.Decl SourceRange) : B3AST.Statement SourceRange → IO SymbolicExecutionResult
+def statementToSMT (ctx : ConversionContext) (state : B3VerificationState) (sourceDecl : B3AST.Decl SourceRange) : B3AST.Statement SourceRange → IO SymbolicExecutionResult
   | stmt => do
       -- Translate the statement to SMT and get results
       let execResult ← statementToSMTWithoutDiagnosis ctx state sourceDecl stmt
