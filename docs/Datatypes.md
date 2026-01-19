@@ -1,13 +1,13 @@
 # Datatypes in Strata
 
-This document describes the datatype system in Strata.Boogie.
+This document describes the datatype system in Strata Core.
 For DDM-specific documentation on datatype annotations and the function template system, see the [DDM Manual](verso/DDMDoc.lean) (Datatypes section).
 
 ## Overview
 
 Strata supports algebraic datatypes (ADTs) similar to those found in functional programming languages. Datatypes allow one to define custom types with multiple constructors, each of which can have zero or more fields (constructor arguments).
 
-Example in Boogie/Strata Core syntax:
+Example in Strata Core syntax:
 ```boogie
 datatype Option<T> () {
   None(),
@@ -17,7 +17,7 @@ datatype Option<T> () {
 
 ## Datatype Declaration Syntax
 
-### Boogie/Strata Core Dialect
+### Strata Core Dialect
 
 Datatypes are declared using the `datatype` keyword:
 
@@ -72,7 +72,7 @@ datatype Tree<T> () {
 
 ## Generated Functions
 
-When a datatype is declared, Strata.Boogie automatically generates several auxiliary functions:
+When a datatype is declared, Strata Core automatically generates several auxiliary functions:
 
 ### Constructors
 
@@ -117,7 +117,7 @@ Datatypes are encoded in SMT-LIB using the `declare-datatypes` command:
 ))
 ```
 
-The generated functions (constructors, testers, accessors) are 
+The generated functions (constructors, testers, accessors) are
 mapped to the generated SMT functions (e.g. `Option..isNone` is
 automatically mapped to `is-None`).
 
@@ -129,9 +129,9 @@ injectivity of constructors.
 
 1. The DDM does not yet support polymorphic functions, including
 datatype constructors. Polymorphism is supported at the AST level.
-Example: `StrataTest/Languages/Boogie/DatatypeVerificationTests.lean`
+Example: `StrataTest/Languages/Core/DatatypeVerificationTests.lean`
 2. Strata also generates eliminators per data type, allowing
-the definition of terms defined by pattern matching and/or 
+the definition of terms defined by pattern matching and/or
 recursion, with the correct computational behavior.
 This is also not yet available at the DDM level.
 Example: `StrataTest/DL/Lambda/TypeFactoryTests.lean`
@@ -140,7 +140,7 @@ Example: `StrataTest/DL/Lambda/TypeFactoryTests.lean`
 
 See the following test files for working examples:
 
-- `StrataTest/Languages/Boogie/Examples/DatatypeEnum.lean` - Simple enums
-- `StrataTest/Languages/Boogie/Examples/DatatypeOption.lean` - Option type
-- `StrataTest/Languages/Boogie/Examples/DatatypeList.lean` - Recursive lists
-- `StrataTest/Languages/Boogie/Examples/DatatypeTree.lean` - Binary trees
+- `StrataTest/Languages/Core/Examples/DatatypeEnum.lean` - Simple enums
+- `StrataTest/Languages/Core/Examples/DatatypeOption.lean` - Option type
+- `StrataTest/Languages/Core/Examples/DatatypeList.lean` - Recursive lists
+- `StrataTest/Languages/Core/Examples/DatatypeTree.lean` - Binary trees

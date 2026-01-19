@@ -6,7 +6,7 @@
 
 import Strata.Languages.Laurel.Laurel
 import Strata.Languages.Laurel.LaurelFormat
-import Strata.Languages.Boogie.Verifier
+import Strata.Languages.Core.Verifier
 
 
 namespace Strata
@@ -40,7 +40,7 @@ def SequenceM.addPrependedStmt (stmt : StmtExpr) : SequenceM Unit :=
 def SequenceM.addDiagnostic (d : DiagnosticModel) : SequenceM Unit :=
   modify fun s => { s with diagnostics := d :: s.diagnostics }
 
-def checkOutsideCondition(md: Imperative.MetaData Boogie.Expression): SequenceM Unit := do
+def checkOutsideCondition(md: Imperative.MetaData Core.Expression): SequenceM Unit := do
   let state <- get
   if state.insideCondition then
     let fileRange := (Imperative.getFileRange md).get!

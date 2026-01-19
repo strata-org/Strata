@@ -10,7 +10,7 @@ import Strata.DDM.BuiltinDialects.Init
 import Strata.Util.IO
 import Strata.Languages.Laurel.Grammar.LaurelGrammar
 import Strata.Languages.Laurel.Grammar.ConcreteToAbstractTreeTranslator
-import Strata.Languages.Laurel.LaurelToBoogieTranslator
+import Strata.Languages.Laurel.LaurelToCoreTranslator
 
 open StrataTest.Util
 open Strata

@@ -111,4 +111,4 @@ else{}
 return := #true
 -/
 #guard_msgs in
-#eval Strata.to_boogie (Strata.C_Simp.get_program CoprimePgm)
+#eval Strata.to_core (Strata.C_Simp.get_program CoprimePgm)

@@ -5,8 +5,8 @@
 -/
 
 import Strata.DL.Imperative.MetaData
-import Strata.Languages.Boogie.Expressions
-import Strata.Languages.Boogie.Procedure
+import Strata.Languages.Core.Expressions
+import Strata.Languages.Core.Procedure
 
 /-
 The Laurel language is supposed to serve as an intermediate verification language for at least Java, Python, JavaScript.
@@ -59,7 +59,7 @@ inductive Operation: Type where
   deriving Repr
 
 -- Explicit instance needed for deriving Repr in the mutual block
-instance : Repr (Imperative.MetaData Boogie.Expression) := inferInstance
+instance : Repr (Imperative.MetaData Core.Expression) := inferInstance
 
 mutual
 structure Procedure: Type where
@@ -131,7 +131,7 @@ inductive StmtExpr : Type where
   | LiteralBool (value: Bool)
   | Identifier (name : Identifier)
   /- Assign is only allowed in an impure context -/
-  | Assign (target : StmtExpr) (value : StmtExpr) (md : Imperative.MetaData Boogie.Expression)
+  | Assign (target : StmtExpr) (value : StmtExpr) (md : Imperative.MetaData Core.Expression)
   /- Used by itself for fields reads and in combination with Assign for field writes -/
   | FieldSelect (target : StmtExpr) (fieldName : Identifier)
   /- PureFieldUpdate is the only way to assign values to fields of pure types -/
@@ -154,8 +154,8 @@ inductive StmtExpr : Type where
   | Fresh(value : StmtExpr)
 
 /- Related to proofs -/
-  | Assert (condition: StmtExpr) (md : Imperative.MetaData Boogie.Expression)
-  | Assume (condition: StmtExpr) (md : Imperative.MetaData Boogie.Expression)
+  | Assert (condition: StmtExpr) (md : Imperative.MetaData Core.Expression)
+  | Assume (condition: StmtExpr) (md : Imperative.MetaData Core.Expression)
   /-
 ProveBy allows writing proof trees. Its semantics are the same as that of the given `value`,
 but the `proof` is used to help prove any assertions in `value`.

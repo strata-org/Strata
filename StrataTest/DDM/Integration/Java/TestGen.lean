@@ -7,7 +7,7 @@
 import Strata.DDM.Integration.Java
 import Strata.DDM.Integration.Lean.Env  -- For dialectExt
 import Strata.DDM.Integration.Lean.HashCommands  -- For #load_dialect
-import Strata.Languages.Boogie.DDMTransform.Parse  -- Loads Boogie dialect into env
+import Strata.Languages.Core.DDMTransform.Parse  -- Loads Strata Core dialect into env
 
 namespace Strata.Java.Test
 
@@ -223,19 +223,19 @@ def check (s sub : String) : Bool := (s.splitOn sub).length > 1
   assert! files.interfaces.any (fun i => check i.2 "non-sealed interface Expr")
   pure ()
 
--- Test 10: Boogie dialect returns error (has type/function declarations not yet supported)
-elab "#testBoogieError" : command => do
+-- Test 10: Core dialect returns error (has type/function declarations not yet supported)
+elab "#testCoreError" : command => do
   let env ← Lean.getEnv
   let state := Strata.dialectExt.getState env
-  let some boogie := state.loaded.dialects["Boogie"]?
-    | Lean.logError "Boogie dialect not found"; return
-  match generateDialect boogie "com.strata.boogie" with
+  let some core := state.loaded.dialects["Core"]?
+    | Lean.logError "Core dialect not found"; return
+  match generateDialect core "com.strata.core" with
   | .error msg =>
     if !(check msg "type declaration" || check msg "function declaration") then
       Lean.logError s!"Expected error about type/function declaration, got: {msg}"
-  | .ok _ => Lean.logError "Expected error for Boogie dialect"
+  | .ok _ => Lean.logError "Expected error for Core dialect"
 
-#testBoogieError
+#testCoreError
 
 -- Test 11: Cross-dialect name collision (A.Num vs B.Num)
 #eval do

@@ -1,5 +1,5 @@
 Successfully parsed.
-Gauss.boogie.st(18, 4) [entry_invariant_0]: ✅ pass
-Gauss.boogie.st(18, 4) [arbitrary_iter_maintain_invariant_0]: ✅ pass
-Gauss.boogie.st(11, 2) [sum_ensures_1]: ✅ pass
+Gauss.core.st(18, 4) [entry_invariant_0]: ✅ pass
+Gauss.core.st(18, 4) [arbitrary_iter_maintain_invariant_0]: ✅ pass
+Gauss.core.st(11, 2) [sum_ensures_1]: ✅ pass
 All 3 goals passed.
