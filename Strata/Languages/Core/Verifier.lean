@@ -484,7 +484,6 @@ def toDiagnosticModel (vcr : Core.VCResult) : Option DiagnosticModel := do
         | _ => panic "impossible"
 
       some {
-        -- Subtract headerOffset to account for program header we added
         fileRange := fileRange
         message := message
       }
