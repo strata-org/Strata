@@ -420,6 +420,8 @@ def verifyToVcResults (smtsolver : String) (program : Program)
     (tempDir : Option String := .none)
     : IO (Except (Array DiagnosticModel) VCResults) := do
   let boogieProgramExcept := translate program
+    -- Enable removeIrrelevantAxioms to avoid polluting simple assertions with heap axioms
+  let options := { options with removeIrrelevantAxioms := true }
   -- Debug: Print the generated Core program
   match boogieProgramExcept with
     | .error e => return .error e
