@@ -201,11 +201,11 @@ def MetaData.formatFileRange? {P} [BEq P.Ident] (md : MetaData P) (includeEnd? :
                     | .file path => (path.splitToList (· == '/')).getLast!
     if includeEnd? then
       if m.start.line == m.ending.line then
-        return f!"{baseName}:{m.start.line}:{m.start.column}-{m.ending.column}"
+        return f!"{baseName}({m.start.line}, ({m.start.column}-{m.ending.column}))"
       else
-        return f!"{baseName}:{m.start.line}:{m.start.column}-{m.ending.line}:{m.ending.column}"
+        return f!"{baseName}(({m.start.line}, {m.start.column})-({m.ending.line}, {m.ending.column}))"
     else -- don't include the end position.
-      return f!"{baseName}:{m.start.line}:{m.start.column}"
+      return f!"{baseName}({m.start.line}, {m.start.column})"
   | _ => none
 
 def MetaData.formatFileRangeD {P} [BEq P.Ident] (md : MetaData P) (includeEnd? : Bool := false)
