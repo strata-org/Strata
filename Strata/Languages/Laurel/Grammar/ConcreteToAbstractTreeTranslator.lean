@@ -214,6 +214,23 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
       let obj ← translateStmtExpr objArg
       let field ← translateIdent fieldArg
       return .FieldSelect obj field
+    | q`Laurel.while, #[condArg, invSeqArg, bodyArg] =>
+      let cond ← translateStmtExpr condArg
+      let invariants ← match invSeqArg with
+        | .seq _ _ clauses => clauses.toList.mapM fun arg => match arg with
+            | .op invOp => match invOp.name, invOp.args with
+              | q`Laurel.invariantClause, #[exprArg] => translateStmtExpr exprArg
+              | _, _ => TransM.error "Expected invariantClause"
+            | _ => TransM.error "Expected operation"
+        | _ => pure []
+      let body ← translateStmtExpr bodyArg
+      -- Combine multiple invariants with &&
+      let combinedInv := match invariants with
+        | [] => none
+        | [single] => some single
+        | first :: rest => some (rest.foldl (fun acc inv =>
+            .PrimitiveOp Operation.And [acc, inv]) first)
+      return .While cond combinedInv none body
     | _, #[arg0] => match getUnaryOp? op.name with
       | some primOp =>
         let inner ← translateStmtExpr arg0

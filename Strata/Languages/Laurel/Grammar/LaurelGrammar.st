@@ -33,19 +33,19 @@ op parenthesis (inner: StmtExpr): StmtExpr => "(" inner ")";
 op assign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10)] target ":=" value ";";
 
 // Binary operators
-op add (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60)] lhs "+" rhs;
-op sub (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60)] lhs "-" rhs;
-op mul (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(70)] lhs "*" rhs;
-op div (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(70)] lhs "/" rhs;
-op mod (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(70)] lhs "%" rhs;
+op add (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60), leftassoc] lhs "+" rhs;
+op sub (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60), leftassoc] lhs "-" rhs;
+op mul (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(70), leftassoc] lhs "*" rhs;
+op div (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(70), leftassoc] lhs "/" rhs;
+op mod (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(70), leftassoc] lhs "%" rhs;
 op eq (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs "==" rhs;
 op neq (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs "!=" rhs;
 op gt (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs ">" rhs;
 op lt (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs "<" rhs;
 op le (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs "<=" rhs;
 op ge (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs ">=" rhs;
-op and (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(30)] lhs " && " rhs;
-op or (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(20)] lhs " || " rhs;
+op and (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(30), leftassoc] lhs " && " rhs;
+op or (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(20), leftassoc] lhs " || " rhs;
 
 // Unary operators
 op not (inner: StmtExpr): StmtExpr => @[prec(80)] "!" inner;
@@ -62,6 +62,13 @@ op assert (cond : StmtExpr) : StmtExpr => "assert " cond ";";
 op assume (cond : StmtExpr) : StmtExpr => "assume " cond ";";
 op return (value : StmtExpr) : StmtExpr => "return " value ";";
 op block (stmts : Seq StmtExpr) : StmtExpr => @[prec(1000)] "{" stmts "}";
+
+// While loops
+category InvariantClause;
+op invariantClause (cond: StmtExpr): InvariantClause => "invariant" cond:0;
+
+op while (cond: StmtExpr, invariants: Seq InvariantClause, body: StmtExpr): StmtExpr
+  => "while" "(" cond ")" invariants body;
 
 category Parameter;
 op parameter (name: Ident, paramType: LaurelType): Parameter => name ":" paramType;

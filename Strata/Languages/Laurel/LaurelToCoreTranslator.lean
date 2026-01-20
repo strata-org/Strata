@@ -167,6 +167,11 @@ def translateStmt (env : TypeEnv) (outputParams : List Parameter) (stmt : StmtEx
                   | some e => (translateStmt env outputParams e).2
                   | none => []
       (env, [Imperative.Stmt.ite bcond bthen belse .empty])
+  | .While cond invOpt _decOpt body =>
+      let condExpr := translateExpr env cond
+      let invExpr := invOpt.map (translateExpr env)
+      let (_, bodyStmts) := translateStmt env outputParams body
+      (env, [Imperative.Stmt.loop condExpr none invExpr bodyStmts .empty])
   | .StaticCall name args =>
       -- Heap functions (heapRead/heapStore) should not appear as standalone statements
       -- Only translate actual procedure calls to call statements
