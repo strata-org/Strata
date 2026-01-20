@@ -87,8 +87,8 @@ def boolImpliesOp : Core.Expression.Expr :=
 /--
 Translate Laurel StmtExpr to Core Expression
 -/
-def translateExpr (ctMap : ConstrainedTypeMap) (env : TypeEnv) (expr : StmtExpr) : Core.Expression.Expr :=
-  match h: expr with
+partial def translateExpr (ctMap : ConstrainedTypeMap) (env : TypeEnv) (expr : StmtExpr) : Core.Expression.Expr :=
+  match expr with
   | .LiteralBool b => .const () (.boolConst b)
   | .LiteralInt i => .const () (.intConst i)
   | .Identifier name =>
@@ -140,19 +140,35 @@ def translateExpr (ctMap : ConstrainedTypeMap) (env : TypeEnv) (expr : StmtExpr)
       let bodyExpr := translateExpr ctMap env' body
       let coreIdent := Core.CoreIdent.locl _name
       let closedBody := varCloseByName 0 coreIdent bodyExpr
-      LExpr.quant () .all (some coreType) (LExpr.noTrigger ()) closedBody
+      -- forall x: T => body  becomes  forall x. constraint(x) ==> body  if T is constrained
+      let finalBody := match ty with
+        | .UserDefined typeName => match ctMap.get? typeName with
+          | some ct =>
+              let constraintExpr := translateExpr ctMap ((ct.valueName, ty) :: env') ct.constraint
+              let substConstraint := constraintExpr.substFvar (Core.CoreIdent.locl ct.valueName)
+                (.fvar () coreIdent (some (translateTypeWithCT ctMap ty)))
+              LExpr.mkApp () boolImpliesOp [varCloseByName 0 coreIdent substConstraint, closedBody]
+          | none => closedBody
+        | _ => closedBody
+      LExpr.quant () .all (some coreType) (LExpr.noTrigger ()) finalBody
   | .Exists _name ty body =>
       let coreType := translateTypeWithCT ctMap ty
       let env' := (_name, ty) :: env
       let bodyExpr := translateExpr ctMap env' body
       let coreIdent := Core.CoreIdent.locl _name
       let closedBody := varCloseByName 0 coreIdent bodyExpr
-      LExpr.quant () .exist (some coreType) (LExpr.noTrigger ()) closedBody
+      -- exists x: T => body  becomes  exists x. constraint(x) && body  if T is constrained
+      let finalBody := match ty with
+        | .UserDefined typeName => match ctMap.get? typeName with
+          | some ct =>
+              let constraintExpr := translateExpr ctMap ((ct.valueName, ty) :: env') ct.constraint
+              let substConstraint := constraintExpr.substFvar (Core.CoreIdent.locl ct.valueName)
+                (.fvar () coreIdent (some (translateTypeWithCT ctMap ty)))
+              LExpr.mkApp () boolAndOp [varCloseByName 0 coreIdent substConstraint, closedBody]
+          | none => closedBody
+        | _ => closedBody
+      LExpr.quant () .exist (some coreType) (LExpr.noTrigger ()) finalBody
   | _ => panic! Std.Format.pretty (Std.ToFormat.format expr)
-  termination_by expr
-  decreasing_by
-  all_goals (simp_wf; try omega)
-  rename_i x_in; have := List.sizeOf_lt_of_mem x_in; omega
 
 def getNameFromMd (md : Imperative.MetaData Core.Expression): String :=
   let fileRange := (Imperative.getFileRange md).get!
