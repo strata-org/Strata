@@ -80,17 +80,12 @@ def makeVCResult (label : String) (outcome : Outcome) (smtResult : Result := .un
 /-! ## Location Extraction Tests -/
 
 -- Test location extraction from complete metadata
-#guard_msgs in
-#eval
+#guard
   let md := makeMetadata "/test/file.st" 10 5
   let loc? := extractLocation md
   match loc? with
-  | some loc =>
-    if loc.uri = "/test/file.st" && loc.startLine = 10 && loc.startColumn = 5 then
-      pure ()
-    else
-      IO.println s!"Location extraction test failed: uri={loc.uri} line={loc.startLine} col={loc.startColumn}"
-  | none => IO.println "Location extraction test failed: no location"
+  | some loc => loc.uri = "/test/file.st" && loc.startLine = 10 && loc.startColumn = 5
+  | none => false
 
 -- Test location extraction from empty metadata
 #guard (extractLocation #[] == none)
@@ -105,71 +100,65 @@ def makeVCResult (label : String) (outcome : Outcome) (smtResult : Result := .un
 /-! ## VCResult to SARIF Conversion Tests -/
 
 -- Test converting a successful VCResult
-#guard_msgs in
-#eval
+#guard
   let md := makeMetadata "/test/file.st" 10 5
   let vcr := makeVCResult "test_obligation" .pass .unsat md
   let sarifResult := vcResultToSarifResult vcr
-  if sarifResult.ruleId = "test_obligation" &&
-     sarifResult.level = Level.none &&
-     sarifResult.locations.size = 1 then
-    pure ()
-  else
-    IO.println s!"Successful VCResult conversion test failed: {repr sarifResult}"
+  sarifResult.ruleId = "test_obligation" &&
+  sarifResult.level = Level.none &&
+  sarifResult.locations.size = 1 &&
+  match sarifResult.locations[0]? with
+  | some loc =>
+    loc.physicalLocation.artifactLocation.uri = "/test/file.st" &&
+    loc.physicalLocation.region.startLine = 10 &&
+    loc.physicalLocation.region.startColumn = 5
+  | none => false
 
 -- Test converting a failed VCResult
 #guard
   let md := makeMetadata "/test/file.st" 20 10
   let vcr := makeVCResult "failed_obligation" .fail (.sat []) md
   let sarifResult := vcResultToSarifResult vcr
-  let expected := { 
-    ruleId := "failed_obligation"
-    level := Level.error
-    message := { text = "Verification failed" }
-  }
-  sarifResult = expected
+  sarifResult.ruleId = "failed_obligation" &&
+  sarifResult.level = Level.error &&
+  sarifResult.message.text = "Verification failed" &&
+  sarifResult.locations.size = 1 &&
+  match sarifResult.locations[0]? with
+  | some loc =>
+    loc.physicalLocation.artifactLocation.uri = "/test/file.st" &&
+    loc.physicalLocation.region.startLine = 20 &&
+    loc.physicalLocation.region.startColumn = 10
+  | none => false
 
 -- Test converting an unknown VCResult
-#guard_msgs in
-#eval
+#guard
   let vcr := makeVCResult "unknown_obligation" .unknown
   let sarifResult := vcResultToSarifResult vcr
-  if sarifResult.ruleId = "unknown_obligation" &&
-     sarifResult.level = Level.warning &&
-     sarifResult.locations.size = 0 then
-    pure ()
-  else
-    IO.println s!"Unknown VCResult conversion test failed: {repr sarifResult}"
+  sarifResult.ruleId = "unknown_obligation" &&
+  sarifResult.level = Level.warning &&
+  sarifResult.locations.size = 0
 
 -- Test converting an error VCResult
-#guard_msgs in
-#eval
+#guard
   let vcr := makeVCResult "error_obligation" (.implementationError "SMT solver error")
   let sarifResult := vcResultToSarifResult vcr
-  if sarifResult.ruleId = "error_obligation" &&
-     sarifResult.level = Level.error &&
-     (sarifResult.message.text.startsWith "Verification error:") then
-    pure ()
-  else
-    IO.println s!"Error VCResult conversion test failed: {repr sarifResult}"
+  sarifResult.ruleId = "error_obligation" &&
+  sarifResult.level = Level.error &&
+  sarifResult.message.text.startsWith "Verification error:"
 
 /-! ## SARIF Document Structure Tests -/
 
-#guard_msgs in
-#eval
+#guard
   let vcResults : VCResults := #[]
   let sarif := vcResultsToSarif vcResults
-  if sarif.version = "2.1.0" &&
-     sarif.runs.size = 1 &&
-     sarif.runs[0]!.results.size = 0 &&
-     sarif.runs[0]!.tool.driver.name = "Strata" then
-    pure ()
-  else
-    IO.println s!"Empty SARIF document test failed"
+  sarif.version = "2.1.0" &&
+  sarif.runs.size = 1 &&
+  match sarif.runs[0]? with
+  | some run => run.results.size = 0 && run.tool.driver.name = "Strata"
+  | none => false
 
 -- Test creating a SARIF document with multiple VCResults
-#guard_msgs in
-#eval
+#guard
   let md1 := makeMetadata "/test/file1.st" 10 5
   let md2 := makeMetadata "/test/file2.st" 20 10
   let vcResults : VCResults := #[
@@ -178,90 +167,119 @@ def makeVCResult (label : String) (outcome : Outcome) (smtResult : Result := .un
     makeVCResult "obligation3" .unknown
   ]
   let sarif := vcResultsToSarif vcResults
-  if sarif.version = "2.1.0" &&
-     sarif.runs.size = 1 &&
-     sarif.runs[0]!.results.size = 3 &&
-     sarif.runs[0]!.results[0]!.level = Level.none &&
-     sarif.runs[0]!.results[1]!.level = Level.error &&
-     sarif.runs[0]!.results[2]!.level = Level.warning then
-    pure ()
-  else
-    IO.println s!"Multiple VCResults SARIF document test failed"
+  sarif.version = "2.1.0" &&
+  sarif.runs.size = 1 &&
+  match sarif.runs[0]? with
+  | some run =>
+    run.results.size = 3 &&
+    match run.results[0]?, run.results[1]?, run.results[2]? with
+    | some r0, some r1, some r2 =>
+      r0.level = Level.none && r0.locations.size = 1 &&
+      r1.level = Level.error && r1.locations.size = 1 &&
+      r2.level = Level.warning && r2.locations.size = 0
+    | _, _, _ => false
+  | none => false
 
 /-! ## JSON Serialization Tests -/
 
-#guard_msgs in
-#eval
-  let json := Lean.ToJson.toJson Level.none
-  match json with
-  | Json.str "none" => pure ()
-  | _ => IO.println s!"Level serialization test failed: {json}"
+#guard (Lean.ToJson.toJson Level.none == Json.str "none")
 
-#guard_msgs in
-#eval
+#guard
   let msg : Message := { text := "Test message" }
-  let _ := Lean.ToJson.toJson msg
-  -- Just check that it serializes without error
-  pure ()
+  let json := Lean.ToJson.toJson msg
+  match json with
+  | Json.obj _ => true
+  | _ => false
 
 -- Test full SARIF document JSON generation
-#guard_msgs in
-#eval
+#guard
   let md := makeMetadata "/test/example.st" 15 7
   let vcResults : VCResults := #[
     makeVCResult "test_assertion" .pass .unsat md
   ]
   let sarif := vcResultsToSarif vcResults
   let jsonStr := Strata.Sarif.toJsonString sarif
-
-  -- Check that the JSON contains expected fields
-  if (jsonStr.splitOn "\"version\":\"2.1.0\"").length > 1 &&
-     (jsonStr.splitOn "\"Strata\"").length > 1 &&
-     (jsonStr.splitOn "test_assertion").length > 1 then
-    pure ()
-  else
-    IO.println s!"SARIF document JSON generation test failed"
+  (jsonStr.splitOn "\"version\":\"2.1.0\"").length > 1 &&
+  (jsonStr.splitOn "\"Strata\"").length > 1 &&
+  (jsonStr.splitOn "test_assertion").length > 1
 
 -- Test pretty JSON generation
-#guard_msgs in
-#eval
+#guard
   let vcResults : VCResults := #[
     makeVCResult "simple_test" .pass
   ]
   let sarif := vcResultsToSarif vcResults
   let prettyJson := Strata.Sarif.toPrettyJsonString sarif
-
-  -- Pretty JSON should contain newlines for formatting
-  if prettyJson.contains '\n' then
-    pure ()
-  else
-    IO.println s!"Pretty JSON generation test failed"
+  prettyJson.contains '\n'
 
 /-! ## Integration Test with Counter-Examples -/
 
 -- Test SARIF output with counter-example
-#guard_msgs in
-#eval
+#guard
   let cex : SMTModel := [((BoogieIdent.unres "x", some .int), "42")]
   let md := makeMetadata "/test/cex.st" 25 3
   let vcr := makeVCResult "cex_obligation" .fail (.sat cex) md
   let sarifResult := vcResultToSarifResult vcr
+  sarifResult.level = Level.error &&
+  (sarifResult.message.text.splitOn "counterexample").length > 1 &&
+  sarifResult.locations.size = 1 &&
+  match sarifResult.locations[0]? with
+  | some loc =>
+    loc.physicalLocation.artifactLocation.uri = "/test/cex.st" &&
+    loc.physicalLocation.region.startLine = 25 &&
+    loc.physicalLocation.region.startColumn = 3
+  | none => false
 
-  if sarifResult.level = Level.error &&
-     (sarifResult.message.text.splitOn "counterexample").length > 1 &&
-     sarifResult.locations.size = 1 then
-    pure ()
-  else
-    IO.println s!"Counter-example SARIF test failed: {repr sarifResult}"
+/-! ## JSON Output Tests -/
 
-/-! ## Schema URI Test -/
-
+/-- info: "{\"runs\":[{\"results\":[],\"tool\":{\"driver\":{\"informationUri\":\"https://github.com/strata-org/Strata\",\"name\":\"Strata\",\"version\":\"0.1.0\"}}}],\"schema\":\"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json\",\"version\":\"2.1.0\"}" -/
 #guard_msgs in
 #eval
-  let sarif := vcResultsToSarif #[]
-  if sarif.schema = "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json" then
-    pure ()
-  else
-    IO.println s!"Schema URI test failed: {sarif.schema}"
+  let vcResults : VCResults := #[]
+  let sarif := vcResultsToSarif vcResults
+  Strata.Sarif.toJsonString sarif
+
+/-- info: "{\"runs\":[{\"results\":[{\"level\":\"none\",\"locations\":[{\"physicalLocation\":{\"artifactLocation\":{\"uri\":\"/test/pass.st\"},\"region\":{\"startColumn\":5,\"startLine\":10}}}],\"message\":{\"text\":\"Verification succeeded\"},\"ruleId\":\"test_pass\"}],\"tool\":{\"driver\":{\"informationUri\":\"https://github.com/strata-org/Strata\",\"name\":\"Strata\",\"version\":\"0.1.0\"}}}],\"schema\":\"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json\",\"version\":\"2.1.0\"}" -/
+#guard_msgs in
+#eval
+  let md := makeMetadata "/test/pass.st" 10 5
+  let vcResults : VCResults := #[makeVCResult "test_pass" .pass .unsat md]
+  let sarif := vcResultsToSarif vcResults
+  Strata.Sarif.toJsonString sarif
+
+/-- info: "{\"runs\":[{\"results\":[{\"level\":\"error\",\"locations\":[{\"physicalLocation\":{\"artifactLocation\":{\"uri\":\"/test/fail.st\"},\"region\":{\"startColumn\":15,\"startLine\":20}}}],\"message\":{\"text\":\"Verification failed\"},\"ruleId\":\"test_fail\"}],\"tool\":{\"driver\":{\"informationUri\":\"https://github.com/strata-org/Strata\",\"name\":\"Strata\",\"version\":\"0.1.0\"}}}],\"schema\":\"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json\",\"version\":\"2.1.0\"}" -/
+#guard_msgs in
+#eval
+  let md := makeMetadata "/test/fail.st" 20 15
+  let vcResults : VCResults := #[makeVCResult "test_fail" .fail (.sat []) md]
+  let sarif := vcResultsToSarif vcResults
+  Strata.Sarif.toJsonString sarif
+
+/-- info: "{\"runs\":[{\"results\":[{\"level\":\"warning\",\"locations\":[],\"message\":{\"text\":\"Verification result unknown (solver timeout or incomplete)\"},\"ruleId\":\"test_unknown\"}],\"tool\":{\"driver\":{\"informationUri\":\"https://github.com/strata-org/Strata\",\"name\":\"Strata\",\"version\":\"0.1.0\"}}}],\"schema\":\"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json\",\"version\":\"2.1.0\"}" -/
+#guard_msgs in
+#eval
+  let vcResults : VCResults := #[makeVCResult "test_unknown" .unknown]
+  let sarif := vcResultsToSarif vcResults
+  Strata.Sarif.toJsonString sarif
+
+/-- info: "{\"runs\":[{\"results\":[{\"level\":\"error\",\"locations\":[],\"message\":{\"text\":\"Verification error: timeout\"},\"ruleId\":\"test_error\"}],\"tool\":{\"driver\":{\"informationUri\":\"https://github.com/strata-org/Strata\",\"name\":\"Strata\",\"version\":\"0.1.0\"}}}],\"schema\":\"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json\",\"version\":\"2.1.0\"}" -/
+#guard_msgs in
+#eval
+  let vcResults : VCResults := #[makeVCResult "test_error" (.implementationError "timeout")]
+  let sarif := vcResultsToSarif vcResults
+  Strata.Sarif.toJsonString sarif
+
+/-- info: "{\"runs\":[{\"results\":[{\"level\":\"none\",\"locations\":[{\"physicalLocation\":{\"artifactLocation\":{\"uri\":\"/test/multi.st\"},\"region\":{\"startColumn\":1,\"startLine\":5}}}],\"message\":{\"text\":\"Verification succeeded\"},\"ruleId\":\"obligation1\"},{\"level\":\"error\",\"locations\":[{\"physicalLocation\":{\"artifactLocation\":{\"uri\":\"/test/multi.st\"},\"region\":{\"startColumn\":1,\"startLine\":10}}}],\"message\":{\"text\":\"Verification failed\"},\"ruleId\":\"obligation2\"},{\"level\":\"warning\",\"locations\":[],\"message\":{\"text\":\"Verification result unknown (solver timeout or incomplete)\"},\"ruleId\":\"obligation3\"}],\"tool\":{\"driver\":{\"informationUri\":\"https://github.com/strata-org/Strata\",\"name\":\"Strata\",\"version\":\"0.1.0\"}}}],\"schema\":\"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json\",\"version\":\"2.1.0\"}" -/
+#guard_msgs in
+#eval
+  let md1 := makeMetadata "/test/multi.st" 5 1
+  let md2 := makeMetadata "/test/multi.st" 10 1
+  let vcResults : VCResults := #[
+    makeVCResult "obligation1" .pass .unsat md1,
+    makeVCResult "obligation2" .fail (.sat []) md2,
+    makeVCResult "obligation3" .unknown
+  ]
+  let sarif := vcResultsToSarif vcResults
+  Strata.Sarif.toJsonString sarif
 
 end Boogie.Sarif.Tests

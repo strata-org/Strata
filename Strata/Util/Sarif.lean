@@ -31,29 +31,29 @@ structure Location where
 /-- SARIF artifact location representing a file URI -/
 structure ArtifactLocation where
   uri : String
-  deriving Repr, ToJson, FromJson
+  deriving Repr, ToJson, FromJson, DecidableEq
 
 /-- SARIF region representing a source code region with line and column information -/
 structure Region where
   startLine : Nat
   startColumn : Nat
-  deriving Repr, ToJson, FromJson
+  deriving Repr, ToJson, FromJson, DecidableEq
 
 /-- SARIF physical location with region information -/
 structure PhysicalLocation where
   artifactLocation : ArtifactLocation
   region : Region
-  deriving Repr, ToJson, FromJson
+  deriving Repr, ToJson, FromJson, DecidableEq
 
 /-- SARIF location wrapper -/
 structure SarifLocation where
   physicalLocation : PhysicalLocation
-  deriving Repr, ToJson, FromJson
+  deriving Repr, ToJson, FromJson, DecidableEq
 
 /-- SARIF message -/
 structure Message where
   text : String
-  deriving Repr, ToJson, FromJson
+  deriving Repr, ToJson, FromJson, DecidableEq
 
 /-- SARIF result level -/
 inductive Level where
@@ -85,17 +85,19 @@ instance : FromJson Level where
 
 /-- SARIF result representing a single verification result -/
 structure Result where
+  /-- Stable identifier of the rule that was evaluated to produce the result --/
   ruleId : String
   level : Level
   message : Message
   locations : Array SarifLocation := #[]
-  deriving Repr, ToJson, FromJson
+  deriving Repr, ToJson, FromJson, DecidableEq
 
 instance : Inhabited Result where
   default := { ruleId := "", level := .none, message := { text := "" } }
 
 /-- SARIF tool driver information -/
 structure Driver where
+  /-- The exact command-line tool in Strata --/
   name : String
   version : String := "0.1.0"
   informationUri : String := "https://github.com/strata-org/Strata"
