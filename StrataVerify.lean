@@ -88,13 +88,13 @@ def main (args : List String) : IO UInt32 := do
         -- Output in SARIF format if requested
         if opts.outputSarif then
           -- Skip SARIF generation for C_Simp files because the translation from C_Simp to
-          -- Boogie discards metadata (file, line, column information), making SARIF output
+          -- Core discards metadata (file, line, column information), making SARIF output
           -- less useful. The vcResultsToSarif function would work type-wise (both produce
-          -- Boogie.VCResults), but the resulting SARIF would lack location information.
+          -- Core.VCResults), but the resulting SARIF would lack location information.
           if file.endsWith ".csimp.st" then
-            println! "SARIF output is not supported for C_Simp files (.csimp.st) because location metadata is not preserved during translation to Boogie."
+            println! "SARIF output is not supported for C_Simp files (.csimp.st) because location metadata is not preserved during translation to Core."
           else
-            let sarifDoc := Boogie.Sarif.vcResultsToSarif vcResults
+            let sarifDoc := Core.Sarif.vcResultsToSarif vcResults
             let sarifJson := Strata.Sarif.toPrettyJsonString sarifDoc
             let sarifFile := file ++ ".sarif"
             try
