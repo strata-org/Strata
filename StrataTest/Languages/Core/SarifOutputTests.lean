@@ -171,13 +171,12 @@ def makeVCResult (label : String) (outcome : Outcome) (smtResult : Result := .un
   sarif.runs.size = 1 &&
   match sarif.runs[0]? with
   | some run =>
-    run.results.size = 3 &&
-    match run.results[0]?, run.results[1]?, run.results[2]? with
-    | some r0, some r1, some r2 =>
+    match run.results.toList with
+    | [r0, r1, r2] =>
       r0.level = Level.none && r0.locations.size = 1 &&
       r1.level = Level.error && r1.locations.size = 1 &&
       r2.level = Level.warning && r2.locations.size = 0
-    | _, _, _ => false
+    | _ => false
   | none => false
 
 /-! ## JSON Serialization Tests -/
