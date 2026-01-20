@@ -280,22 +280,28 @@ theorem addKnownTypeWithErrorIdents {C: Expression.TyContext}: C.addKnownTypeWit
   case error => intros _; contradiction
   case ok k'=> simp[Except.bind]; intros T'; subst T'; rfl
 
-/-
-theorem addDatatypeIdents {C: Expression.TyContext}: C.addDatatype d = .ok C' → C.idents = C'.idents := by
-  unfold LContext.addDatatype;
-  simp only[bind, Except.bind, pure, Except.pure]; intros Hok
+theorem addMutualBlockIdents {C: Expression.TyContext} {m}: C.addMutualBlock m = .ok C' → C.idents = C'.idents := by
+  unfold LContext.addMutualBlock;
+  simp only[bind, Except.bind, pure, Except.pure];
+  intros Hok
   repeat (split at Hok <;> try contradiction)
-  cases Hok <;> rfl
--/
+  grind
+
+syntax "split_contra" ident : tactic
+macro_rules
+  | `(tactic|split_contra $t) =>
+  `(tactic| split at $t:ident <;> (try contradiction))
+
+syntax "split_contra_case" ident : tactic
+macro_rules
+  | `(tactic|split_contra_case $t) =>
+  `(tactic| split_contra $t:ident; cases $t:ident)
 
 /--
 If a program typechecks successfully, then every identifier in the list of
 program decls is not in the original `LContext`
 -/
 theorem Program.typeCheckFunctionDisjoint : Program.typeCheck.go p C T decls acc = .ok (d', T') → (∀ x, x ∈ Program.getNames.go decls → ¬ C.idents.contains x) := by
-  -- TODO: This proof needs to be updated to handle mutual datatypes (multiple names per decl)
-  sorry
-  /-
   induction decls generalizing acc p d' T' T C with
   | nil => simp[Program.getNames.go]
   | cons r rs IH =>
@@ -303,38 +309,118 @@ theorem Program.typeCheckFunctionDisjoint : Program.typeCheck.go p C T decls acc
          tryCatch, tryCatchThe, MonadExceptOf.tryCatch, Except.tryCatch]
     split <;> try (intros;contradiction)
     rename_i x v Hid
-    split <;> intros tcok <;> split at tcok <;> try contradiction
-    any_goals (split at tcok <;> try contradiction)
-    all_goals (specialize (IH tcok))
-    -- Solve C.idents.contains name = false for all goals
-    all_goals (constructor <;> try simp[Decl.name]; exact (Identifiers.addWithErrorNotin Hid))
-    all_goals(
-      intros a a_in;
-      have a_in' : a.name ∈ Program.getNames.go rs := by
-        unfold Program.getNames.go; rw[List.mem_map ]; exists a
-      have a_notin := IH a.name a_in';
-      have Hcontains := Identifiers.addWithErrorContains Hid a.name)
-    case _ => grind
-    case _ x v hmatch1 =>
-      split at hmatch1 <;> try grind
-      rename_i hmatch2; split at hmatch2 <;> try grind
-      split at hmatch2 <;> try grind
-      rename_i heq
-      have id_eq := addKnownTypeWithErrorIdents heq
-      simp at id_eq; grind
-      split at hmatch2 <;> try grind
-      rename_i Heq
-      have :=addDatatypeIdents Heq; grind
-    case _ => grind
-    case _ => grind
-    case _ => grind
-    case _ x v hmatch1 =>
-      rename_i x v hmatch1
-      split at hmatch1 <;> try grind
-      rename_i hmatch2; split at hmatch2 <;> try grind
-      simp only [LContext.addFactoryFunction] at hmatch2; grind
-    done
-  -/
+    -- Need mem hypothesis in more useful form
+    have a_in': ∀ {x1 x2 l d' T'},
+      Program.typeCheck.go p x1 x2 rs l = .ok (d', T') →
+      ∀ {x: CoreIdent} {a: Decl}, a ∈ rs → x ∈ a.names →
+      x ∈ Program.getNames.go rs := by
+      intros x1 x2 l d' T' Hty x a a_in x_in; unfold Program.getNames.go
+      rw[List.mem_flatMap]; exists a
+    cases r with (simp only[]; intros tcok <;> split_contra tcok <;> simp only [Decl.names] at Hid)
+    | var v =>
+      rename_i Hty
+      split_contra tcok
+      specialize (IH tcok)
+      intros x hx
+      match hx with
+      | Or.inl hx =>
+        have Hnotin:= (Identifiers.addListWithErrorNotin Hid x)
+        simp [Decl.names, Decl.name] at *; subst_vars
+        grind
+      | Or.inr (Exists.intro a (And.intro a_in x_in)) =>
+        have Hcontains := Identifiers.addListWithErrorContains Hid x
+        grind
+    | ax a =>
+      rename_i Hty
+      specialize (IH tcok)
+      intros x hx
+      match hx with
+      | Or.inl hx =>
+        have Hnotin:= (Identifiers.addListWithErrorNotin Hid x)
+        simp [Decl.names, Decl.name] at *; subst_vars
+        grind
+      | Or.inr (Exists.intro a (And.intro a_in x_in)) =>
+        have Hcontains := Identifiers.addListWithErrorContains Hid x
+        grind
+    | distinct d =>
+      rename_i Hty
+      specialize (IH tcok)
+      intros x hx
+      match hx with
+      | Or.inl hx =>
+        have Hnotin:= (Identifiers.addListWithErrorNotin Hid x)
+        simp [Decl.names, Decl.name] at *; subst_vars
+        grind
+      | Or.inr (Exists.intro a (And.intro a_in x_in)) =>
+        have Hcontains := Identifiers.addListWithErrorContains Hid x
+        grind
+    | proc p =>
+      rename_i Hty
+      specialize (IH tcok)
+      intros x hx
+      match hx with
+      | Or.inl hx =>
+        have Hnotin:= (Identifiers.addListWithErrorNotin Hid x)
+        simp [Decl.names, Decl.name] at *; subst_vars
+        grind
+      | Or.inr (Exists.intro a (And.intro a_in x_in)) =>
+        have Hcontains := Identifiers.addListWithErrorContains Hid x
+        grind
+    | func f =>
+      rename_i Hty
+      split_contra_case Hty; rename_i Hty
+      split_contra_case Hty; rename_i Hty
+      specialize (IH tcok)
+      intros x hx
+      match hx with
+      | Or.inl hx =>
+        have Hnotin:= (Identifiers.addListWithErrorNotin Hid x)
+        simp [Decl.names, Decl.name] at *; subst_vars
+        grind
+      | Or.inr (Exists.intro a (And.intro a_in x_in)) =>
+        have Hcontains := Identifiers.addListWithErrorContains Hid x
+        specialize a_in' tcok a_in x_in
+        have a_notin := IH x a_in';
+        simp only[LContext.addFactoryFunction] at a_notin
+        grind
+    | type t =>
+      rename_i Hty
+      cases t with (simp only[] at Hty <;> split_contra_case Hty <;> rename_i Hty <;> split_contra_case Hty <;> rename_i Hty)
+      | con c =>
+        specialize (IH tcok)
+        intros x hx
+        match hx with
+        | Or.inl hx =>
+          have Hnotin:= (Identifiers.addListWithErrorNotin Hid x)
+          simp [Decl.names, Decl.name] at *; subst_vars
+          grind
+        | Or.inr (Exists.intro a (And.intro a_in x_in)) =>
+          have Hcontains := Identifiers.addListWithErrorContains Hid x
+          have := addKnownTypeWithErrorIdents Hty
+          grind
+      | syn s =>
+        specialize (IH tcok)
+        intros x hx
+        match hx with
+        | Or.inl hx =>
+          have Hnotin:= (Identifiers.addListWithErrorNotin Hid x)
+          simp [Decl.names, Decl.name] at *; subst_vars
+          grind
+        | Or.inr (Exists.intro a (And.intro a_in x_in)) =>
+          have Hcontains := Identifiers.addListWithErrorContains Hid x
+          grind
+      | data d =>
+        specialize (IH tcok)
+        intros x hx
+        match hx with
+        | Or.inl hx =>
+          have Hnotin:= (Identifiers.addListWithErrorNotin Hid x)
+          simp [Decl.names, Decl.name] at *; subst_vars
+          grind
+        | Or.inr (Exists.intro a (And.intro a_in x_in)) =>
+          have Hcontains := Identifiers.addListWithErrorContains Hid x
+          have := addMutualBlockIdents Hty;
+          grind
 
 /--
 If a program typechecks succesfully, all identifiers defined in the program are

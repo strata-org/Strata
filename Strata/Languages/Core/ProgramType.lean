@@ -35,10 +35,14 @@ def typeCheck (C: Core.Expression.TyContext) (Env : Core.Expression.TyEnv) (prog
     let sourceLoc := Imperative.MetaData.formatFileRangeD decl.metadata (includeEnd? := true)
     let errorWithSourceLoc := fun e => if sourceLoc.isEmpty then e else f!"{sourceLoc} {e}"
     -- Add all names from the declaration (multiple for mutual datatypes)
-    let C ← decl.names.foldlM (fun C name => do
-      let idents ← C.idents.addWithError name
-        f!"{sourceLoc} Error in {decl.kind} {name}: a declaration of this name already exists."
-      pure {C with idents}) C
+    let idents ← C.idents.addListWithError decl.names (fun n =>
+      f!"{sourceLoc} Error in {decl.kind} {n}: a declaration of this name already exists."
+    )
+    -- decl.names.foldlM (fun C name => do
+    --   let idents ← C.idents.addWithError name
+    --     f!"{sourceLoc} Error in {decl.kind} {name}: a declaration of this name already exists."
+    let C := {C with idents}
+      -- pure {C with idents}) C
     let (decl', C, Env) ←
       match decl with
 
