@@ -126,12 +126,24 @@ instance : Inhabited Procedure where
 def getBinaryOp? (name : QualifiedIdent) : Option Operation :=
   match name with
   | q`Laurel.add => some Operation.Add
+  | q`Laurel.sub => some Operation.Sub
+  | q`Laurel.mul => some Operation.Mul
+  | q`Laurel.div => some Operation.Div
+  | q`Laurel.mod => some Operation.Mod
   | q`Laurel.eq => some Operation.Eq
   | q`Laurel.neq => some Operation.Neq
   | q`Laurel.gt => some Operation.Gt
   | q`Laurel.lt => some Operation.Lt
   | q`Laurel.le => some Operation.Leq
   | q`Laurel.ge => some Operation.Geq
+  | q`Laurel.and => some Operation.And
+  | q`Laurel.or => some Operation.Or
+  | _ => none
+
+def getUnaryOp? (name : QualifiedIdent) : Option Operation :=
+  match name with
+  | q`Laurel.not => some Operation.Not
+  | q`Laurel.neg => some Operation.Neg
   | _ => none
 
 mutual
@@ -202,6 +214,11 @@ partial def translateStmtExpr (arg : Arg) : TransM StmtExpr := do
       let obj ← translateStmtExpr objArg
       let field ← translateIdent fieldArg
       return .FieldSelect obj field
+    | _, #[arg0] => match getUnaryOp? op.name with
+      | some primOp =>
+        let inner ← translateStmtExpr arg0
+        return .PrimitiveOp primOp [inner]
+      | none => TransM.error s!"Unknown unary operation: {op.name}"
     | _, #[arg0, arg1] => match getBinaryOp? op.name with
       | some primOp =>
         let lhs ← translateStmtExpr arg0

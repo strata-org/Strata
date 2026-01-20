@@ -34,12 +34,22 @@ op assign (target: StmtExpr, value: StmtExpr): StmtExpr => @[prec(10)] target ":
 
 // Binary operators
 op add (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60)] lhs "+" rhs;
+op sub (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(60)] lhs "-" rhs;
+op mul (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(70)] lhs "*" rhs;
+op div (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(70)] lhs "/" rhs;
+op mod (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(70)] lhs "%" rhs;
 op eq (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs "==" rhs;
 op neq (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs "!=" rhs;
 op gt (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs ">" rhs;
 op lt (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs "<" rhs;
 op le (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs "<=" rhs;
 op ge (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(40)] lhs ">=" rhs;
+op and (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(30)] lhs " && " rhs;
+op or (lhs: StmtExpr, rhs: StmtExpr): StmtExpr => @[prec(20)] lhs " || " rhs;
+
+// Unary operators
+op not (inner: StmtExpr): StmtExpr => @[prec(80)] "!" inner;
+op neg (inner: StmtExpr): StmtExpr => @[prec(80)] "-" inner;
 
 // If-else
 category OptionalElse;
